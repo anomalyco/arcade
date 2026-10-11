@@ -18,8 +18,8 @@ export const WORLD_SEED = 0x57494e47 // "WING"
 export const SEA_FLOOR = -60
 /** Render/stream tile size and finest mesh resolution. Collision uses the LOD0 triangles. */
 export const TILE_SIZE = 1_000
-export const MESH_SEGMENTS = 64
-export const MESH_CELL = TILE_SIZE / MESH_SEGMENTS // 15.625 m
+export const MESH_SEGMENTS = 32
+export const MESH_CELL = TILE_SIZE / MESH_SEGMENTS // 31.25 m — big low-poly facets
 /** Safe zone is an ellipsoidal dome: safeRadius horizontally, SAFE_ZONE_HEIGHT above the runway. */
 export const SAFE_ZONE_HEIGHT = 1_500
 /** Assumed height of the aircraft origin above the wheels' contact point. */

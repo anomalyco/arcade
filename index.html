@@ -150,6 +150,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width
   <footer class="bar">
     <span>Graphics <span class="seg" id="seg-quality"><button data-q="low">Low</button><button data-q="balanced">Balanced</button><button data-q="high">High</button></span></span>
     <span>Sound <span class="seg"><button id="btn-sound" aria-pressed="true">On</button></span></span>
+    <span>Controls <span class="seg" id="seg-style"><button data-s="direct">Direct</button><button data-s="aim">Mouse-aim</button></span></span>
     <span>Mouse <input type="range" id="sens" min="0.2" max="3" step="0.05" /></span>
     <button class="iconbtn" id="btn-help">Controls</button>
     <span class="grow"></span>
@@ -179,26 +180,25 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width
   <div class="panel">
     <h2>Controls <button type="button" class="iconbtn" data-close>Esc</button></h2>
     <table class="keys">
-      <tr><td>Steer (mouse-aim)</td><td>Move the mouse / trackpad — the aircraft flies toward the circle</td></tr>
-      <tr><td>Throttle / collective</td><td><kbd>W</kbd><kbd>S</kbd></td></tr>
-      <tr><td>Roll</td><td><kbd>A</kbd><kbd>D</kbd></td></tr>
-      <tr><td>Yaw / rudder</td><td><kbd>Q</kbd><kbd>E</kbd></td></tr>
-      <tr><td>Manual pitch</td><td><kbd>↑</kbd><kbd>↓</kbd></td></tr>
+      <tr><td>Pitch / turn</td><td>Mouse (up = nose up) · arrows: <kbd>↑</kbd> nose down, <kbd>↓</kbd> nose up, <kbd>←</kbd><kbd>→</kbd> turn</td></tr>
+      <tr><td>Throttle / collective</td><td><kbd>W</kbd><kbd>S</kbd> · fine throttle <kbd>Wheel</kbd></td></tr>
+      <tr><td>Roll</td><td><kbd>Q</kbd><kbd>E</kbd></td></tr>
+      <tr><td>Rudder (jets) / strafe (heli)</td><td><kbd>A</kbd><kbd>D</kbd></td></tr>
       <tr><td>Boost</td><td><kbd>Shift</kbd></td></tr>
       <tr><td>Airbrake / hover-hold</td><td><kbd>X</kbd></td></tr>
-      <tr><td>Fire primary</td><td><kbd>Left Mouse</kbd><kbd>Space</kbd></td></tr>
-      <tr><td>Secondary / missiles</td><td><kbd>Right Mouse</kbd><kbd>V</kbd></td></tr>
+      <tr><td>Guns (primary)</td><td><kbd>Left Mouse</kbd><kbd>Space</kbd></td></tr>
+      <tr><td>Missiles (secondary / lock)</td><td><kbd>Right Mouse</kbd><kbd>V</kbd></td></tr>
       <tr><td>Flares</td><td><kbd>F</kbd></td></tr>
       <tr><td>Ability (radar pulse / mark)</td><td><kbd>R</kbd></td></tr>
-      <tr><td>Switch seat</td><td><kbd>1</kbd><kbd>2</kbd></td></tr>
-      <tr><td>Free-look</td><td><kbd>C</kbd> (toggle)</td></tr>
-      <tr><td>Camera: chase / cockpit</td><td><kbd>T</kbd> · zoom <kbd>Wheel</kbd></td></tr>
+      <tr><td>Switch seat</td><td><kbd>1</kbd><kbd>2</kbd> · gunners aim the turret with the mouse</td></tr>
+      <tr><td>Free-look</td><td>hold <kbd>C</kbd></td></tr>
+      <tr><td>Camera: chase / cockpit</td><td><kbd>T</kbd></td></tr>
       <tr><td>Gunner zoom</td><td><kbd>Wheel</kbd> · hold <kbd>Z</kbd></td></tr>
       <tr><td>Scoreboard</td><td><kbd>Tab</kbd></td></tr>
       <tr><td>Chat</td><td><kbd>Enter</kbd></td></tr>
       <tr><td>Menu</td><td><kbd>Esc</kbd></td></tr>
     </table>
-    <p class="note">Trackpad: steer by moving, <kbd>Space</kbd> fires guns, <kbd>V</kbd> fires missiles — no right-click needed. Hold fire on the secondary to build a missile lock.</p>
+    <p class="note">Trackpad: steer by moving, <kbd>Space</kbd> fires guns, <kbd>V</kbd> fires missiles — no clicking needed. Keep the target in front of the nose to build a missile lock. Prefer War Thunder-style steering toward a cursor? Pick <b>Mouse-aim</b> under Controls.</p>
   </div>
 </div>
 

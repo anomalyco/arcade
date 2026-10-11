@@ -971,10 +971,13 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     let ammo = 0
     let max = 0
     for (const [seat, slot] of g.weapons) {
+      const ids = VEHICLES[vehicle.kind].seatWeapons[seat]
+      // Duplicate slots (e.g. tvmissile/tvmissile) share slot 0's ammo in combat; count it once.
+      if (slot === 1 && ids[0] === ids[1]) continue
       const w = vehicle.weapons[seat]?.[slot]
-      const id = VEHICLES[vehicle.kind].seatWeapons[seat][slot]
+      const id = ids[slot]
       const cap = WEAPONS[id].ammo
-      if (!w || !Number.isFinite(cap)) return g.order.length
+      if (!w || !Number.isFinite(cap) || cap < 0) return g.order.length
       ammo += Math.max(0, w.ammo)
       max += cap
     }

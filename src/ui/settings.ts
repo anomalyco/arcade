@@ -7,6 +7,8 @@ export interface Settings {
   volume: number
   sensitivity: number
   invertY: boolean
+  /** Direct (Daxship-style rate steering, default) or War Thunder-style mouse-aim. */
+  controlStyle: "direct" | "aim"
 }
 
 const KEY = "wings.settings"
@@ -15,7 +17,7 @@ const listeners: Listener[] = []
 
 function defaults(): Settings {
   const lowEnd = (navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent)
-  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false }
+  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct" }
 }
 
 function load(): Settings {
@@ -24,6 +26,7 @@ function load(): Settings {
     const raw = localStorage.getItem(KEY)
     if (raw) Object.assign(base, JSON.parse(raw))
   } catch {}
+  if (base.controlStyle !== "direct" && base.controlStyle !== "aim") base.controlStyle = "direct"
   if (base.quality !== "low" && base.quality !== "balanced" && base.quality !== "high") base.quality = "balanced"
   return base
 }

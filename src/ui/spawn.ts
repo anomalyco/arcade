@@ -65,7 +65,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
       </button>`
     }).join("")}</section>
     <section class="board-list"><h3>Crew a teammate's aircraft</h3><ul></ul></section>
-    <footer><button class="iconbtn leave">Leave match</button><span class="hint">Tip: move the mouse to steer — the aircraft follows the circle. <kbd>Esc</kbd> for menu.</span></footer>`
+    <footer><button class="iconbtn leave">Leave match</button><span class="hint">Tip: mouse pitches and turns, <kbd>Q</kbd>/<kbd>E</kbd> roll, <kbd>LMB</kbd>/<kbd>Space</kbd> guns, <kbd>RMB</kbd>/<kbd>V</kbd> missiles. <kbd>Esc</kbd> for menu.</span></footer>`
   parent.appendChild(root)
 
   const $ = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector(s) as T

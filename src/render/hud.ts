@@ -8,7 +8,7 @@ import { AIRBASES, WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/g
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"]
 export const TEAM_NAMES = ["Cobalt", "Amber", "Emerald", "Crimson"]
 
-export interface HudWeapon { id: WeaponId; ammo: number; ready: number; lock: number; locked: boolean }
+export interface HudWeapon { id: WeaponId; ammo: number; ready: number; lock: number; locked: boolean; keys?: string }
 
 /** Per-frame HUD input. The game reuses one object and mutates it. */
 export interface HudFrame {
@@ -42,6 +42,8 @@ export interface HudFrame {
   intermission: boolean
   freeLook: boolean
   ping: number
+  /** Direct steering: no mouse-aim circle; the boresight becomes the gun pipper. */
+  direct: boolean
 }
 
 export interface Hud {
@@ -163,14 +165,15 @@ export function createHud(parent: HTMLElement): Hud {
     markers.push({ root: m, label: new Slot(m.querySelector(".lb")!), dist: new Slot(m.querySelector(".ds")!), slot: new Slot(m), tf: new Slot(m), color: "", used: false })
   }
 
-  const weaponRows: { name: Slot; ammo: Slot; bar: Slot; row: Slot }[] = []
+  const weaponRows: { name: Slot; ammo: Slot; bar: Slot; row: Slot; key: Slot }[] = []
   for (let i = 0; i < 2; i++) {
     const r = el("div", "w", weaponsEl, `<span class="k">${i === 0 ? "LMB" : "RMB"}</span><span class="n"></span><span class="a"></span><i></i>`)
-    weaponRows.push({ name: new Slot(r.querySelector(".n")!), ammo: new Slot(r.querySelector(".a")!), bar: new Slot(r.querySelector("i")!), row: new Slot(r) })
+    weaponRows.push({ name: new Slot(r.querySelector(".n")!), ammo: new Slot(r.querySelector(".a")!), bar: new Slot(r.querySelector("i")!), row: new Slot(r), key: new Slot(r.querySelector(".k")!) })
   }
 
   const occlusion = new Map<string, { visible: boolean; at: number }>()
   let frame = 0
+  let isDirect = false
   let lastMap = 0
   let lastBoard = 0
   let w = window.innerWidth, h = window.innerHeight
@@ -289,6 +292,11 @@ export function createHud(parent: HTMLElement): Hud {
       const cam = f.camera
       _cam.copy(cam.position)
       const flying = !!f.vehicle && f.vehicle.alive
+      if (f.direct !== isDirect) {
+        isDirect = f.direct
+        root.classList.toggle("direct", isDirect)
+        ;(isDirect ? bore.el : aim.el).appendChild(hitEl)
+      }
       // Aim reticle + boresight
       if (flying && f.aimPoint && project(f.aimPoint, cam)) aim.setTransform(tf(sx(), sy())); else aim.setTransform(HIDDEN)
       if (flying && f.borePoint && project(f.borePoint, cam)) bore.setTransform(tf(sx(), sy())); else bore.setTransform(HIDDEN)
@@ -358,7 +366,8 @@ export function createHud(parent: HTMLElement): Hud {
         for (let i = 0; i < 2; i++) {
           const wr = weaponRows[i]
           const wpn = f.weapons[i]
-          if (!wpn || (i === 1 && f.weapons[0] && f.weapons[0].id === wpn.id && WEAPONS[wpn.id].kind === "pulse")) { wr.row.setClass("w off"); continue }
+          if (!wpn) { wr.row.setClass("w off"); continue }
+          if (wpn.keys) wr.key.setText(wpn.keys)
           const spec = WEAPONS[wpn.id]
           wr.row.setClass(`w${wpn.ready < 1 ? " reload" : ""}${wpn.locked ? " locked" : ""}`)
           wr.name.setText(spec.name.toUpperCase())

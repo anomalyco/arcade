@@ -1,4 +1,15 @@
-# Art Style Guide — Aircraft
+# Art Style Guide
+
+## World art direction (locked): ISLANDERS-style low-poly
+Reference: Islanders (https://store.steampowered.com/app/1046030/ISLANDERS/), also Townscaper, Sky Rogue.
+- **Faceted, flat-shaded geometry**: each terrain triangle has one flat color (no smooth per-vertex gradients, no noise textures). Low-poly silhouettes with clean, deliberate facets.
+- **One small curated palette** (~12–16 colors total for the whole world), harmonious and slightly desaturated/pastel: soft sand, 2–3 greens (light meadow, mid, deep forest), warm rock/cliff tones, pale snow; water in 2–3 blues (deep, mid, light turquoise shallows) with a crisp, simple foam edge. Colors chosen by height/slope bands with **hard band edges** (no blending/streaks).
+- **Soft, consistent lighting**: a single warm sun + cool sky fill; gentle contrast between lit and shaded facets; no harsh noise. Optional subtle ambient occlusion via darker facets in valleys.
+- **Gradient sky** (horizon light → zenith deeper) and **soft distance fog** that fades islands into the sky color — strong atmospheric perspective.
+- **Props are low-poly and chunky**: cone/ico trees in 2–3 greens, simple blocky buildings in off-white with colored roofs, all flat-shaded, using the same palette.
+- Everything on screen should look like it belongs to the same toy diorama.
+
+# Aircraft
 
 Goal: **as good-looking and detailed as possible, cartoonish, and cheap to render.**
 Think stylized military toy / Pixar-ish chunkiness rather than a sim, while every aircraft stays instantly recognizable as its real counterpart.

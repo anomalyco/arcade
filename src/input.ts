@@ -1,29 +1,45 @@
-// Keyboard + mouse-aim input. The aim is a free world-space direction (yaw/pitch) steered by mouse
-// movement; the flight autopilot flies the nose toward it (War Thunder style).
+// Keyboard + mouse input.
+// Direct style (default, Daxship-like): mouse movement = smoothed steering-rate commands (aim = null).
+// Mouse-aim style (optional): mouse steers a free world-space aim direction the autopilot follows.
+// Gunner seats always aim the turret with the mouse (aim vector).
 import type { FlightInput, SeatInput, Vec3 } from "./sim/types"
 import { settings } from "./ui/settings"
 
-export type InputAction = "seat1" | "seat2" | "freelook" | "view" | "chat" | "menu" | "scoreboard"
+export type InputAction = "seat1" | "seat2" | "view" | "chat" | "menu"
+export type MouseMode = "direct" | "aim"
 
-const BASE_SENS = 0.0021
+const AIM_SENS = 0.0021
+/** Direct steering: radians of commanded rotation per mouse pixel (before sensitivity). */
+const DIRECT_RAD_PER_PX = 0.0018
+/** Nominal full-deflection rates used to normalise mouse rate commands to -1..1. */
+const DIRECT_PITCH_RATE = 1.6
+const DIRECT_YAW_RATE = 1.1
 const MAX_PITCH = 1.5
+
+const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
 
 export class Input {
   aimYaw = 0
   aimPitch = 0
-  /** Free-look offsets applied on top of the aim (camera only). */
+  /** Free-look offsets applied on top of the view (camera only). */
   lookYaw = 0
   lookPitch = 0
   freeLook = false
   scoreboard = false
   zoomHeld = false
-  /** Accumulated wheel delta since last read (positive = zoom out). */
-  wheel = 0
   locked = false
   /** Pointer lock refused (headless, iframe policy…): fall back to raw mouse deltas without lock. */
   lockFailed = false
+  mouseMode: MouseMode = "direct"
+  /** Smoothed direct-steering axes (−1..1), updated by sampleSteering(). */
+  steerYaw = 0
+  steerPitch = 0
+  steerRoll = 0
+  private mouseX = 0
+  private mouseY = 0
+  private wheel = 0
   private keys = new Set<string>()
-  /** Presses since the last seatInput() read, so taps shorter than one send interval still register. */
+  /** Presses since the last seatInput() read, so taps shorter than one tick still register. */
   private latched = new Set<string>()
   private mouseL = false
   private mouseR = false
@@ -52,14 +68,15 @@ export class Input {
     on("contextmenu", e => { if (this.enabled) e.preventDefault() })
     on("wheel", e => {
       if (!this.enabled || !(this.locked || this.lockFailed)) return
-      this.wheel += Math.sign(e.deltaY) * Math.min(3, Math.abs(e.deltaY) / 60 || 1)
+      const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1)
+      this.wheel += clamp(px, -160, 160)
     }, { passive: true })
     docOn("pointerlockchange", () => {
       const was = this.locked
       this.locked = document.pointerLockElement === this.canvas
       this.skipMove = true
       if (this.locked) this.lockFailed = false
-      if (!this.locked && was) { this.mouseL = this.mouseR = false; if (this.enabled) this.actions.push("menu") }
+      if (!this.locked && was) { this.clear(); if (this.enabled) this.actions.push("menu") }
     })
     docOn("pointerlockerror", () => { this.lockFailed = true })
   }
@@ -89,7 +106,7 @@ export class Input {
     if (document.pointerLockElement) document.exitPointerLock()
   }
 
-  /** Point the aim along a world direction (e.g. on spawn). */
+  /** Point the aim along a world direction (e.g. on spawn / entering the gunner seat). */
   setAim(dir: Vec3): void {
     const h = Math.hypot(dir[0], dir[2])
     this.aimYaw = Math.atan2(-dir[0], -dir[2])
@@ -101,7 +118,7 @@ export class Input {
     return dirFromAngles(this.aimYaw, this.aimPitch, out)
   }
 
-  /** Camera look direction (aim + free-look offset). */
+  /** Mouse-aim / gunner camera direction (aim + free-look offset). */
   lookDir(out: Vec3): Vec3 {
     return dirFromAngles(this.aimYaw + this.lookYaw, clamp(this.aimPitch + this.lookPitch, -MAX_PITCH, MAX_PITCH), out)
   }
@@ -113,6 +130,7 @@ export class Input {
     return a
   }
 
+  /** Wheel pixels since last read (positive = scrolled down). */
   takeWheel(): number {
     const w = this.wheel
     this.wheel = 0
@@ -123,16 +141,62 @@ export class Input {
     for (const c of codes) if (this.keys.has(c) || this.latched.has(c)) return true
     return false
   }
+  private held(...codes: string[]): boolean {
+    for (const c of codes) if (this.keys.has(c)) return true
+    return false
+  }
+  private arrowYaw() { return this.held("ArrowLeft") || this.held("ArrowRight") }
+  private arrowPitch() { return this.held("ArrowUp") || this.held("ArrowDown") }
 
-  flightInput(aim: Vec3 | null, out: FlightInput): FlightInput {
-    out.aim = aim
-    out.throttle = (this.down("KeyW") ? 1 : 0) - (this.down("KeyS") ? 1 : 0)
-    out.roll = (this.down("KeyD") ? 1 : 0) - (this.down("KeyA") ? 1 : 0)
-    out.yaw = (this.down("KeyE") ? 1 : 0) - (this.down("KeyQ") ? 1 : 0)
+  /**
+   * Once per frame while piloting in direct mode: converts accumulated mouse motion into smoothed
+   * rate commands (Daxship-style). Held arrows own their axis.
+   */
+  sampleSteering(seconds: number, heli: boolean): void {
+    const dt = clamp(Number.isFinite(seconds) ? seconds : 0, 1 / 240, 0.05)
+    const blend = 1 - Math.exp(-dt / 0.035)
+    const s = DIRECT_RAD_PER_PX * settings.sensitivity
     const inv = settings.invertY ? -1 : 1
-    out.pitch = ((this.down("ArrowUp") ? 1 : 0) - (this.down("ArrowDown") ? 1 : 0)) * inv
-    out.boost = this.down("ShiftLeft", "ShiftRight")
+    const ty = this.arrowYaw() ? (this.held("ArrowRight") ? 1 : 0) - (this.held("ArrowLeft") ? 1 : 0)
+      : clamp((this.mouseX * s) / (dt * DIRECT_YAW_RATE), -1, 1)
+    // Arrows are inverted (Up = nose down). Mouse up (negative movementY) = nose up unless inverted.
+    const tp = this.arrowPitch() ? (this.held("ArrowDown") ? 1 : 0) - (this.held("ArrowUp") ? 1 : 0)
+      : clamp((-this.mouseY * inv * s) / (dt * DIRECT_PITCH_RATE), -1, 1)
+    const qe = (this.held("KeyE") ? 1 : 0) - (this.held("KeyQ") ? 1 : 0)
+    const ad = (this.held("KeyD") ? 1 : 0) - (this.held("KeyA") ? 1 : 0)
+    const tr = heli ? clamp(ad + qe, -1, 1) : qe
+    this.steerYaw += (ty - this.steerYaw) * blend
+    this.steerPitch += (tp - this.steerPitch) * blend
+    this.steerRoll += (tr - this.steerRoll) * blend
+    if (Math.abs(this.steerYaw) < 1e-3) this.steerYaw = 0
+    if (Math.abs(this.steerPitch) < 1e-3) this.steerPitch = 0
+    if (Math.abs(this.steerRoll) < 1e-3) this.steerRoll = 0
+    this.mouseX = this.mouseY = 0
+  }
+
+  /**
+   * Piloting input for one tick. `aim` is only used in mouse-aim mode. `throttleAxis` overrides W/S
+   * (e.g. wheel fine-throttle pulses) when non-null.
+   */
+  flightInput(aim: Vec3 | null, heli: boolean, throttleAxis: number | null, out: FlightInput): FlightInput {
+    const ws = (this.held("KeyW") ? 1 : 0) - (this.held("KeyS") ? 1 : 0)
+    out.throttle = ws !== 0 || throttleAxis === null ? ws : throttleAxis
+    out.boost = this.held("ShiftLeft", "ShiftRight")
     out.brake = this.down("KeyX")
+    const ad = (this.held("KeyD") ? 1 : 0) - (this.held("KeyA") ? 1 : 0)
+    if (this.mouseMode === "direct") {
+      out.aim = null
+      out.pitch = this.steerPitch
+      out.yaw = heli ? this.steerYaw : clamp(this.steerYaw + ad, -1, 1)
+      out.roll = this.steerRoll
+    } else {
+      out.aim = aim
+      const qe = (this.held("KeyE") ? 1 : 0) - (this.held("KeyQ") ? 1 : 0)
+      out.pitch = (this.held("ArrowDown") ? 1 : 0) - (this.held("ArrowUp") ? 1 : 0)
+      const arrowsYaw = (this.held("ArrowRight") ? 1 : 0) - (this.held("ArrowLeft") ? 1 : 0)
+      out.yaw = heli ? arrowsYaw : clamp(arrowsYaw + ad, -1, 1)
+      out.roll = heli ? clamp(ad + qe, -1, 1) : qe
+    }
     return out
   }
 
@@ -157,6 +221,10 @@ export class Input {
     this.latched.clear()
     this.mouseL = this.mouseR = false
     this.zoomHeld = false
+    this.mouseX = this.mouseY = 0
+    this.steerYaw = this.steerPitch = this.steerRoll = 0
+    this.freeLook = false
+    this.lookYaw = this.lookPitch = 0
   }
 
   private onKey(e: KeyboardEvent, down: boolean): void {
@@ -166,21 +234,24 @@ export class Input {
     // The scoreboard works in every in-match state (dead, spawning, paused).
     if (code === "Tab" && this.attached) { e.preventDefault(); this.scoreboard = down; return }
     if (!this.enabled) return
-    if (code === "Tab" || code === "Space" || code.startsWith("Arrow") || code === "AltLeft" || code === "AltRight") e.preventDefault()
-    if (code === "Tab") { this.scoreboard = down; return }
+    if (code === "Space" || code.startsWith("Arrow") || code === "AltLeft" || code === "AltRight") e.preventDefault()
     if (code === "KeyZ") { this.zoomHeld = down; return }
+    if (code === "KeyC") {
+      // Hold to free-look.
+      if (down !== this.freeLook) { this.freeLook = down; this.lookYaw = this.lookPitch = 0 }
+      return
+    }
     if (down) {
       if (e.repeat) return
       this.keys.add(code)
       this.latched.add(code)
+      if (code.startsWith("Arrow")) {
+        if (this.arrowYaw()) this.mouseX = 0
+        if (this.arrowPitch()) this.mouseY = 0
+      }
       switch (code) {
         case "Digit1": this.actions.push("seat1"); break
         case "Digit2": this.actions.push("seat2"); break
-        case "KeyC":
-          this.freeLook = !this.freeLook
-          this.lookYaw = this.lookPitch = 0
-          this.actions.push("freelook")
-          break
         case "KeyT": this.actions.push("view"); break
         case "Enter": e.preventDefault(); this.actions.push("chat"); break
         case "Escape": if (!this.locked) this.actions.push("menu"); break
@@ -193,15 +264,21 @@ export class Input {
   private onMove(e: MouseEvent): void {
     if (!this.enabled || !(this.locked || this.lockFailed)) return
     if (this.skipMove) { this.skipMove = false; return }
-    const s = BASE_SENS * settings.sensitivity
-    const dx = Math.max(-300, Math.min(300, e.movementX))
-    const dy = Math.max(-300, Math.min(300, e.movementY)) * (settings.invertY ? -1 : 1)
+    const dx = clamp(e.movementX, -300, 300)
+    const dy = clamp(e.movementY, -300, 300)
     if (this.freeLook) {
+      const s = AIM_SENS * settings.sensitivity
       this.lookYaw -= dx * s
-      this.lookPitch = clamp(this.lookPitch - dy * s, -MAX_PITCH * 2, MAX_PITCH * 2)
-    } else {
+      this.lookPitch = clamp(this.lookPitch - dy * s, -MAX_PITCH, MAX_PITCH)
+    } else if (this.mouseMode === "aim") {
+      const s = AIM_SENS * settings.sensitivity
+      const inv = settings.invertY ? -1 : 1
       this.aimYaw -= dx * s
-      this.aimPitch = clamp(this.aimPitch - dy * s, -MAX_PITCH, MAX_PITCH)
+      this.aimPitch = clamp(this.aimPitch - dy * inv * s, -MAX_PITCH, MAX_PITCH)
+    } else {
+      // Bounded accumulation (no destination to chase), consumed by sampleSteering().
+      if (!this.arrowYaw()) this.mouseX = clamp(this.mouseX + dx, -80, 80)
+      if (!this.arrowPitch()) this.mouseY = clamp(this.mouseY + dy, -80, 80)
     }
   }
 
@@ -216,10 +293,6 @@ export class Input {
     else if (e.button === 2) this.mouseR = down
     if (down) this.latched.add(`Mouse${e.button}`)
   }
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v
 }
 
 export function dirFromAngles(yaw: number, pitch: number, out: Vec3): Vec3 {

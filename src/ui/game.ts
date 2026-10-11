@@ -20,7 +20,8 @@ import type { FlightInput, FlightState, GameEvent, PlayerInfo, Quat, SeatIndex, 
 import type { RoomConfig, ServerMessage, Snapshot } from "../sim/protocol"
 
 const INTERP_DELAY = 0.1
-const SEND_INTERVAL = 1 / 30
+/** Jet throttle slew (per second) used to turn wheel notches into throttle-axis pulses (mirrors flight.ts). */
+const THROTTLE_RATE: Partial<Record<VehicleEntity["kind"], number>> = { fighter: 0.6, warthog: 0.5, blackbird: 0.45 }
 const MAX_HISTORY = 360
 const SNAP_ERROR = 40
 
@@ -97,9 +98,10 @@ class GameSession implements GameHandle {
   private visuals = new Map<string, Visual>()
   private renderList: VehicleEntity[] = []
   private pred: Prediction | null = null
-  private predAcc = 0
+  private tickAcc = 0
+  private pendingThrottle = 0
+  private lastSeat: SeatInput | null = null
   private seq = 0
-  private sendAcc = 0
   private sentFlight: FlightInput = { aim: null, throttle: 0, roll: 0, yaw: 0, pitch: 0, boost: false, brake: false }
   private flightBuf: FlightInput = { aim: null, throttle: 0, roll: 0, yaw: 0, pitch: 0, boost: false, brake: false }
   private seatBuf: SeatInput = { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false }
@@ -115,8 +117,6 @@ class GameSession implements GameHandle {
   private view: "chase" | "cockpit" = "chase"
   private rtt = 0
   private pingTimer = 0
-  private lastLockProgress = 0
-  private lastWarnAt = 0
   private input: Input
   private hud
   private spawn
@@ -170,7 +170,7 @@ class GameSession implements GameHandle {
       camera: host.camera, time: 0, myId: "", me: null, vehicle: null, seat: null, aimPoint: null, borePoint: null,
       vehicles: this.renderList, players: this.players, speed: 0, altitude: 0, heading: 0, throttle: 0, boost: false,
       protected: false, missileWarning: false, lockTarget: null, lockProgress: 0, lead: null, weapons: [], scores: [],
-      teams: 2, remaining: null, intermission: false, freeLook: false, ping: 0,
+      teams: 2, remaining: null, intermission: false, freeLook: false, ping: 0, direct: false,
     }
     this.offSettings = onSettings(s => {
       deps.audio?.setMuted(s.muted)
@@ -230,6 +230,8 @@ class GameSession implements GameHandle {
       rtt: Math.round(this.rtt), lockFailed: this.input.lockFailed,
       corr: { n: this.corrStats.n, avg: +(this.corrStats.sum / Math.max(1, this.corrStats.n)).toFixed(2), max: +this.corrStats.max.toFixed(2), replay: +(this.corrStats.replay / Math.max(1, this.corrStats.n)).toFixed(1) },
       others: this.renderList.filter(o => o.id !== v?.id).map(o => ({ id: o.id, team: o.team, kind: o.kind, alive: o.alive, hp: o.hp, pos: this.visuals.get(o.id)?.pos.map(Math.round) })),
+      att: v ? (() => { const r = flightReadout(this.pred?.state ?? v.flight); return { pitch: Math.round(r.pitch), roll: Math.round(r.roll), hdg: Math.round(r.heading), thr: +r.throttle.toFixed(2) } })() : null,
+      steer: [+this.input.steerPitch.toFixed(2), +this.input.steerYaw.toFixed(2), +this.input.steerRoll.toFixed(2)], seq: this.seq,
       aim: [+this.input.aimYaw.toFixed(3), +this.input.aimPitch.toFixed(3)], fwd: vis ? forward(vis.quat).map(n => +n.toFixed(2)) : null,
     }
   }
@@ -254,6 +256,7 @@ class GameSession implements GameHandle {
         this.config = m.config
         this.hudFrame.myId = m.playerId
         this.hudFrame.teams = m.config.teams
+        ;(this.deps.audio as { setLocalPlayer?(id: string | null): void } | null)?.setLocalPlayer?.(m.playerId)
         this.welcomeResolve?.()
         break
       case "snapshot":
@@ -306,14 +309,11 @@ class GameSession implements GameHandle {
     const p = this.pred
     if (!p || p.vehicleId !== sv.id) {
       this.pred = { vehicleId: sv.id, state: cloneFlight(sv.flight), history: [], errPos: new Vector3(), errQuat: new Quaternion() }
-      this.predAcc = 0
       return
     }
     const h = p.history
     let drop = 0
-    while (drop < h.length && h[drop].seq < s.ack) drop++
-    // The acked input was applied at least once; later ticks of it may still be pending server-side.
-    if (drop < h.length && h[drop].seq === s.ack) drop++
+    while (drop < h.length && h[drop].seq <= s.ack) drop++
     if (drop) h.splice(0, drop)
     const old = p.state
     const next = cloneFlight(sv.flight)
@@ -347,6 +347,7 @@ class GameSession implements GameHandle {
       this.hud.setVisible(true)
       this.input.setEnabled(true)
       this.input.setAim(forward(v!.flight.orientation))
+      this.deps.host.rig.resetFollow()
       this.deps.host.world.setHighlightTeam(null)
       this.deps.host.rig.setMode(this.me?.seat === 1 ? "gunner" : this.view)
       if (!this.input.locked) this.input.requestLock()
@@ -476,7 +477,7 @@ class GameSession implements GameHandle {
           pos = e.position
           fx.hit(e.position)
           if (e.target === myVeh) { this.hud.damage(); this.deps.host.rig.shake(0.5); local = true }
-          if (e.by === this.playerId) { this.hud.hitmarker(); local = true }
+          if (e.by === this.playerId) this.hud.hitmarker()
           break
         case "kill": {
           pos = e.position
@@ -490,7 +491,7 @@ class GameSession implements GameHandle {
             this.hud.hitmarker(true)
             this.hud.banner("SPLASH ONE", `${victim.name} is going down`, 1800)
           }
-          local = mine
+          local = e.killer === this.playerId
           break
         }
         case "explosion":
@@ -503,7 +504,7 @@ class GameSession implements GameHandle {
           local = e.vehicle === myVeh
           break
         case "lock":
-          local = e.vehicle === myVeh || e.target === myVeh
+          local = e.vehicle === myVeh
           pos = this.posOfVehicle(e.vehicle)
           break
         case "pulse":
@@ -542,46 +543,65 @@ class GameSession implements GameHandle {
     for (const a of input.takeActions()) this.onAction(a)
     if (input.scoreboard !== this.scoreboardShown) { this.scoreboardShown = input.scoreboard; setScoreboard(this.hud, input.scoreboard) }
 
-    input.aimDir(this.aim)
-    input.lookDir(this.look)
-    this.lookV.set(this.look[0], this.look[1], this.look[2])
-
     const me = this.me
     const myVehicle = this.myVehicle()
     const flying = this.state === "flying" && !!myVehicle && myVehicle.alive && !this.paused
     const seat = me?.seat ?? null
+    const heli = myVehicle ? VEHICLES[myVehicle.kind].flight === "heli" : false
 
-    // Input sending (30 Hz)
-    this.sendAcc += dt
-    if (this.sendAcc >= SEND_INTERVAL && this.state === "flying" && myVehicle) {
-      this.sendAcc %= SEND_INTERVAL
+    // Mouse role: gunners always aim the turret; pilots use the chosen control style.
+    const mode = seat === 1 || settings.controlStyle === "aim" ? "aim" : "direct"
+    if (mode !== input.mouseMode) {
+      if (mode === "aim") {
+        const c = this.deps.host.camera
+        _v1.set(0, 0, -1).applyQuaternion(c.quaternion)
+        input.setAim([_v1.x, _v1.y, _v1.z])
+      }
+      input.mouseMode = mode
+    }
+    input.aimDir(this.aim)
+    input.lookDir(this.look)
+    this.lookV.set(this.look[0], this.look[1], this.look[2])
+    const direct = seat === 0 && mode === "direct"
+    if (flying && direct) input.sampleSteering(dt, heli)
+
+    // Wheel: gunner zoom, pilot fine throttle (jets).
+    const wheel = input.takeWheel()
+    if (wheel && seat === 0 && !heli) this.pendingThrottle = Math.max(-1, Math.min(1, this.pendingThrottle - wheel * 0.0005))
+    if (wheel && seat === 1) this.deps.host.rig.gunZoom = Math.max(1, Math.min(8, this.deps.host.rig.gunZoom * Math.pow(1.25, -wheel / 100)))
+
+    // Exactly one input per 60 Hz simulation tick; the same input drives local prediction.
+    this.tickAcc += dt
+    if (this.tickAcc > 0.25) this.tickAcc = 0.25
+    const p = this.pred
+    const rate = myVehicle && !heli ? THROTTLE_RATE[myVehicle.kind] ?? 0.5 : 0
+    while (this.tickAcc >= TICK_DT) {
+      this.tickAcc -= TICK_DT
+      if (this.state !== "flying" || !myVehicle) continue
       const seq = ++this.seq
       const aim: Vec3 = [this.aim[0], this.aim[1], this.aim[2]]
-      const fi = seat === 0 ? (flying ? input.flightInput(aim, this.flightBuf) : { ...this.flightBuf, aim, throttle: 0, roll: 0, yaw: 0, pitch: 0, boost: false, brake: false }) : null
-      const seatIn = flying ? input.seatInput(aim, this.seatBuf) : { aim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
-      if (fi) {
-        this.sentFlight = { ...fi }
-        this.send({ type: "input", seq, flight: this.sentFlight, seat: { ...seatIn } })
-      } else {
-        this.send({ type: "input", seq, seat: { ...seatIn } })
+      let fi: FlightInput | null = null
+      if (seat === 0) {
+        let tAxis: number | null = null
+        if (rate > 0 && Math.abs(this.pendingThrottle) > 1e-4) {
+          tAxis = Math.max(-1, Math.min(1, this.pendingThrottle / (rate * TICK_DT)))
+          this.pendingThrottle -= tAxis * rate * TICK_DT
+        }
+        fi = flying ? { ...input.flightInput(aim, heli, tAxis, this.flightBuf) }
+          : { aim: direct ? null : aim, throttle: 0, roll: 0, yaw: 0, pitch: 0, boost: false, brake: false }
+        this.sentFlight = fi
       }
-    } else if (this.sendAcc > 1) this.sendAcc = 0
-
-    // Local prediction (60 Hz fixed)
-    const p = this.pred
+      const seatIn = flying ? { ...input.seatInput(aim, this.seatBuf) } : { aim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
+      this.lastSeat = seatIn
+      this.send(fi ? { type: "input", seq, flight: fi, seat: seatIn } : { type: "input", seq, seat: seatIn })
+      if (p && fi) {
+        stepFlight(p.state, fi, TICK_DT, worldQuery)
+        p.history.push({ seq, input: fi })
+      }
+    }
     if (p) {
-      this.predAcc += dt
-      let steps = 0
-      while (this.predAcc >= TICK_DT && steps < 8) {
-        this.predAcc -= TICK_DT
-        steps++
-        stepFlight(p.state, this.sentFlight, TICK_DT, worldQuery)
-        p.history.push({ seq: this.seq, input: this.sentFlight })
-      }
-      if (this.predAcc > TICK_DT) this.predAcc = 0
       if (p.history.length > MAX_HISTORY) p.history.splice(0, p.history.length - MAX_HISTORY)
-      const k = Math.exp(-dt * 7)
-      p.errPos.multiplyScalar(k)
+      p.errPos.multiplyScalar(Math.exp(-dt * 7))
       p.errQuat.slerp(_q3.identity(), 1 - Math.exp(-dt * 10))
     }
 
@@ -593,7 +613,7 @@ class GameSession implements GameHandle {
     // Aircraft views (before the camera so attachment anchors are current)
     const ownVis = myVehicle ? this.visuals.get(myVehicle.id) : undefined
     const players = latest ? latest.players : []
-    const firing = flying ? this.seatBuf : null
+    const firing = flying ? this.lastSeat : null
     for (const v of this.visuals.values()) {
       v.view.root.visible = v.render.alive
       if (!v.render.alive) continue
@@ -607,26 +627,21 @@ class GameSession implements GameHandle {
 
     // Camera
     const rig = host.rig
-    const wheel = input.takeWheel()
     if (this.state === "flying" && ownVis) {
       this.lastOwnPos[0] = ownVis.pos[0]; this.lastOwnPos[1] = ownVis.pos[1]; this.lastOwnPos[2] = ownVis.pos[2]
       if (seat === 1) {
         rig.setMode("gunner")
-        if (wheel) rig.gunZoom = Math.max(1, Math.min(8, rig.gunZoom * Math.pow(1.25, -wheel)))
         const z = input.zoomHeld ? Math.max(rig.gunZoom, 4) : rig.gunZoom
         const saved = rig.gunZoom
         rig.gunZoom = z
         const anchor = ownVis.view.anchors?.get(ownVis.kind === "apache" ? "turret_chin_barrel" : "targeting_pod_head")
         rig.gunner(dt, ownVis.kind, ownVis.pos, ownVis.quat, this.lookV, anchor ? anchor.getWorldPosition(_v2) : null)
         rig.gunZoom = saved
+      } else if (direct) {
+        rig.setMode(this.view)
+        if (this.view === "cockpit") rig.cockpitBody(dt, ownVis.kind, ownVis.pos, ownVis.quat, input.lookYaw, input.lookPitch)
+        else rig.chaseBody(dt, ownVis.kind, ownVis.pos, ownVis.flight.velocity, ownVis.quat, input.lookYaw, input.lookPitch, host.groundAt)
       } else {
-        if (wheel) {
-          if (this.view === "cockpit" && wheel > 0) { this.view = "chase"; rig.zoom = 0.6 }
-          else if (this.view === "chase") {
-            rig.zoom = Math.min(2.4, rig.zoom * Math.pow(1.12, wheel))
-            if (rig.zoom < 0.55) { this.view = "cockpit"; rig.zoom = 0.6 }
-          }
-        }
         rig.setMode(this.view)
         if (this.view === "cockpit") rig.cockpit(dt, ownVis.kind, ownVis.pos, ownVis.quat, this.lookV)
         else rig.chase(dt, ownVis.kind, ownVis.pos, ownVis.flight.velocity, this.lookV, host.groundAt)
@@ -873,15 +888,18 @@ class GameSession implements GameHandle {
     f.boost = this.sentFlight.boost
     f.protected = inSafeZone(v.team, pos)
     const aimDist = 1500
-    f.aimPoint = [pos[0] + this.aim[0] * aimDist, pos[1] + this.aim[1] * aimDist, pos[2] + this.aim[2] * aimDist]
+    f.direct = seat === 0 && this.input.mouseMode === "direct"
+    f.aimPoint = f.direct ? null : [pos[0] + this.aim[0] * aimDist, pos[1] + this.aim[1] * aimDist, pos[2] + this.aim[2] * aimDist]
     const boreDir = seat === 0 ? fwd : (v.aim[1] ?? this.aim)
     let boreDist = aimDist
 
     // Weapons readout
     const kinds = VEHICLES[v.kind].seatWeapons[seat]
     const runtime = v.weapons[seat] ?? []
-    for (let i = 0; i < 2; i++) {
+    const dup = kinds[0] === kinds[1]
+    for (let i = 0; i < (dup ? 1 : 2); i++) {
       const w = this.weaponsBuf[i]
+      w.keys = WEAPONS[kinds[i]].kind === "pulse" ? "R" : dup ? "LMB RMB" : i === 0 ? "LMB" : "RMB"
       const rtw = runtime[i]
       const spec = WEAPONS[kinds[i]]
       w.id = kinds[i]
@@ -901,9 +919,8 @@ class GameSession implements GameHandle {
       this.weaponsBuf[0].ready = Math.max(0, Math.min(1, 1 - (v.abilityReadyAt - s.time) / reload))
     }
     const audio = this.deps.audio
-    if (f.lockProgress > 0 && this.lastLockProgress === 0) audio?.ui("lock-tone")
-    if (f.lockProgress >= 1 && this.lastLockProgress < 1) audio?.ui("locked")
-    this.lastLockProgress = f.lockProgress
+    if (f.lockProgress >= 1) audio?.ui("locked")
+    else if (f.lockProgress > 0) audio?.ui("lock-tone")
 
     // Gun lead on the best target near the boresight
     const gun = WEAPONS[kinds[0]].kind === "gun" ? WEAPONS[kinds[0]] : WEAPONS[kinds[1]].kind === "gun" ? WEAPONS[kinds[1]] : null
@@ -939,8 +956,7 @@ class GameSession implements GameHandle {
     f.borePoint = [pos[0] + boreDir[0] * boreDist, pos[1] + boreDir[1] * boreDist, pos[2] + boreDir[2] * boreDist]
 
     for (const m of s.missiles) if (m.target === v.id && m.team !== v.team) { f.missileWarning = true; break }
-    const now = performance.now()
-    if (f.missileWarning && now - this.lastWarnAt > 1100) { this.lastWarnAt = now; audio?.ui("warning") }
+    if (f.missileWarning) audio?.ui("warning")
 
     this.hud.update(f)
   }

@@ -63,6 +63,13 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const paintSound = () => { sound.textContent = settings.muted ? "Off" : "On"; sound.setAttribute("aria-pressed", String(!settings.muted)) }
   paintSound()
   sound.addEventListener("click", () => { updateSettings({ muted: !settings.muted }); paintSound() })
+  const style = $("seg-style")
+  const paintStyle = () => style.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === settings.controlStyle)))
+  paintStyle()
+  style.addEventListener("click", e => {
+    const v = (e.target as HTMLElement).dataset.s as "direct" | "aim" | undefined
+    if (v) { updateSettings({ controlStyle: v }); paintStyle() }
+  })
   const sens = $<HTMLInputElement>("sens")
   sens.value = String(settings.sensitivity)
   sens.addEventListener("input", () => updateSettings({ sensitivity: Number(sens.value) }))

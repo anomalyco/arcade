@@ -30,6 +30,10 @@ const _v = new Vector3()
 const _v2 = new Vector3()
 const _q = new Quaternion()
 const _q2 = new Quaternion()
+const _qy = new Quaternion()
+const _qp = new Quaternion()
+const _x = new Vector3()
+const _up = new Vector3()
 
 /**
  * One camera rig for every mode. Each mode computes a desired pose; switching modes
@@ -51,6 +55,8 @@ export class CameraRig {
   private time = 0
   private shakeAmt = 0
   private orbitAngle = 0
+  private followQ = new Quaternion()
+  private followInit = false
 
   constructor(readonly camera: PerspectiveCamera) {
     this.pos.copy(camera.position)
@@ -91,6 +97,47 @@ export class CameraRig {
     _v.set(position[0], position[1], position[2]).addScaledVector(look, 400).addScaledVector(UP, height * 0.6)
     this.lookAt(this.pos, _v, UP)
     this.fov = this.baseFov + Math.min(14, Math.max(0, speed - 80) * 0.06)
+  }
+
+  /**
+   * Direct-control chase cam: follows the airframe's own attitude (with a little lag) so loops,
+   * rolls and inverted flight read naturally. lookYaw/lookPitch = free-look offsets.
+   */
+  chaseBody(dt: number, kind: VehicleKind, position: Vec3, velocity: Vec3, orientation: Quat, lookYaw: number, lookPitch: number,
+    groundAt: (x: number, z: number) => number): void {
+    const c = CHASE[kind]
+    _q.set(orientation[0], orientation[1], orientation[2], orientation[3])
+    if (!this.followInit) { this.followQ.copy(_q); this.followInit = true }
+    this.followQ.slerp(_q, 1 - Math.exp(-dt * 6))
+    _q2.copy(this.followQ)
+    if (lookYaw || lookPitch) {
+      _q2.multiply(_qy.setFromAxisAngle(UP, lookYaw)).multiply(_qp.setFromAxisAngle(_x.set(1, 0, 0), lookPitch))
+    }
+    const speed = Math.hypot(velocity[0], velocity[1], velocity[2])
+    const dist = c.dist * this.zoom * (1 + Math.min(speed, 260) / 900)
+    const height = c.height * this.zoom
+    _v.set(position[0], position[1], position[2])
+    this.pos.set(0, height, dist).applyQuaternion(_q2).add(_v)
+    const floor = groundAt(this.pos.x, this.pos.z) + 3
+    if (this.pos.y < floor) this.pos.y = floor
+    _v2.set(0, height * 0.55, -80).applyQuaternion(_q2).add(_v)
+    _up.set(0, 1, 0).applyQuaternion(_q2)
+    this.lookAt(this.pos, _v2, _up)
+    this.fov = this.baseFov + Math.min(14, Math.max(0, speed - 80) * 0.06)
+  }
+
+  /** Cockpit view locked to the airframe (direct controls), with free-look offsets. */
+  cockpitBody(dt: number, kind: VehicleKind, position: Vec3, orientation: Quat, lookYaw: number, lookPitch: number): void {
+    _q.set(orientation[0], orientation[1], orientation[2], orientation[3])
+    const o = COCKPIT[kind]
+    this.pos.set(o[0], o[1], o[2]).applyQuaternion(_q).add(_v.set(position[0], position[1], position[2]))
+    _q2.copy(_q).multiply(_qy.setFromAxisAngle(UP, lookYaw)).multiply(_qp.setFromAxisAngle(_x.set(1, 0, 0), lookPitch))
+    this.quat.copy(_q2)
+    this.fov = this.baseFov + 6
+  }
+
+  resetFollow(): void {
+    this.followInit = false
   }
 
   cockpit(dt: number, kind: VehicleKind, position: Vec3, orientation: Quat, look: Vector3): void {

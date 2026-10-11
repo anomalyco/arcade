@@ -18,6 +18,9 @@
 .hud-bore::before, .hud-bore::after { content: ""; position: absolute; background: #fff; box-shadow: 0 0 3px rgba(0, 0, 0, .8); }
 .hud-bore::before { left: -12px; top: -1px; width: 24px; height: 2px; }
 .hud-bore::after { left: -1px; top: -12px; width: 2px; height: 24px; clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%, 0 65%, 100% 65%, 100% 100%, 0 100%); }
+/* Direct steering: the boresight is the gun pipper (where the nose / guns point). */
+.hud.direct .hud-bore::before { left: -16px; top: -16px; width: 32px; height: 32px; border-radius: 50%; background: none; border: 2px solid var(--hud); box-shadow: 0 0 6px rgba(0, 0, 0, .5); }
+.hud.direct .hud-bore::after { left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; clip-path: none; background: var(--hud); }
 .hud-hit { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; opacity: 0; }
 .hud-hit::before, .hud-hit::after { content: ""; position: absolute; left: 13px; top: -4px; width: 2px; height: 36px; background: #fff; transform: rotate(45deg); clip-path: polygon(0 0, 100% 0, 100% 30%, 0 30%, 0 70%, 100% 70%, 100% 100%, 0 100%); }
 .hud-hit::after { transform: rotate(-45deg); }
