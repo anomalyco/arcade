@@ -48,6 +48,10 @@ export interface Snapshot {
   missiles: Missile[]
   flares: Flare[]
   scores: number[]
+  /** Room time when the current match ends (time limit). */
+  matchEndsAt: number
+  /** True between matches (no spawning/scoring); next match starts at `matchEndsAt`. */
+  intermission: boolean
   /** Last input seq processed for the receiving player (for reconciliation). */
   ack: number
 }

@@ -1,4 +1,4 @@
-// STUB — owned by the Audio agent. Signatures are the contract; replace implementations.
+// Procedural Web Audio engine (owned by the Audio agent). Implementation lives in src/audio/.
 import type { GameEvent, Vec3, VehicleEntity } from "./sim/types"
 
 export interface GameAudio {
@@ -17,6 +17,5 @@ export interface GameAudio {
   dispose(): void
 }
 
-export function createAudio(): GameAudio {
-  return { unlock() {}, setListener() {}, updateVehicles() {}, event() {}, ui() {}, setMuted() {}, setVolume() {}, dispose() {} }
-}
+export { createAudio } from "./audio/engine"
+export type { AudioStats, GameAudioEngine } from "./audio/engine"

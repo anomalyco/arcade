@@ -16,7 +16,11 @@ export const TICK_RATE = 60
 export const TICK_DT = 1 / TICK_RATE
 export const SNAPSHOT_RATE = 20
 
-/** Per-tick piloting input (seat 0). All axes are clamped to [-1, 1]. */
+/**
+ * Per-tick piloting input (seat 0). All axes are clamped to [-1, 1].
+ * Signs: roll +1 = roll right (D), pitch +1 = nose up, yaw +1 = yaw right (E).
+ * Helicopters: releasing the throttle axis eases the collective back to hover.
+ */
 export interface FlightInput {
   /** Mouse-aim: desired nose direction as a world-space unit vector. null = no mouse steering. */
   aim: Vec3 | null
@@ -55,6 +59,8 @@ export interface WorldQuery {
   groundHeight(x: number, z: number): number
   /** True when x,z is on a paved runway/apron (wheels roll there without damage). */
   onRunway(x: number, z: number): boolean
+  /** True when the surface at x,z is open water. Optional; flight falls back to height ≤ water level. */
+  isWater?(x: number, z: number): boolean
   /** Map boundary half-extent in meters (square map centered on origin). */
   half: number
   /** Hard altitude ceiling in meters. */
@@ -140,6 +146,8 @@ export interface Missile {
   target: string | null
   /** Player-steered (TV/Hellfire): guidance follows the owner's seat aim. */
   steered: boolean
+  /** Seat that launched it (steering source). */
+  seat?: SeatIndex
   age: number
   ttl: number
 }
@@ -165,8 +173,9 @@ export type WeaponId =
   | "aim47"
   | "radarpulse"
 
+/** Ids: `vehicle`, `target`, `victim` are vehicle ids; `by`, `killer`, `player` are player ids. */
 export type GameEvent =
-  | { type: "fire"; vehicle: string; seat: SeatIndex; weapon: WeaponId }
+  | { type: "fire"; vehicle: string; seat: SeatIndex; weapon: WeaponId; hardpoint?: number }
   | { type: "hit"; target: string; by: string; weapon: WeaponId; damage: number; position: Vec3 }
   | { type: "kill"; victim: string; victimTeam: TeamId; killer: string | null; weapon: WeaponId | "crash"; position: Vec3 }
   | { type: "explosion"; position: Vec3; size: number }

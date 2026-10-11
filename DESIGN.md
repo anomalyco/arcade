@@ -56,6 +56,7 @@ For now **every aircraft has exactly 2 seats**: the pilot flies and fires the fi
 - **Cloudflare Workers + SQLite Durable Objects:**
   - `RoomDirectory`: Tracks active public lobbies for the Room Browser & Quick Play.
   - `Room`: Owns authoritative 60 Hz simulation (stepped every 50 ms / 20 Hz snapshot broadcast), team scores, vehicle seats, projectiles, missiles, radar paint state, and AI bots.
+- **Bots are out of scope for now** (decision): no bot players, no bot UI. `src/sim/bots.ts` exists but is not wired in. Offline practice = solo free flight.
 - **Lobby Configuration:**
   - **Team Count:** 2, 3, or 4 teams.
   - **AI Bots:** Configurable bot count per team (pilots + automatic turret gunners) for solo play or filling open seats.

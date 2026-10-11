@@ -1,0 +1,27 @@
+# Integration TODO (orchestrator)
+
+## Audio hookup
+- Call `audio.setLocalPlayer(playerId)` after welcome. `event(e, pos, local)`: fire → own vehicle fired; hit → own vehicle was hit; kill → you were the killer. Own death detected via victim == own vehicle id.
+- Call `setListener` + `updateVehicles` every frame; `ui("lock-tone"|"locked"|"warning")` every frame while condition holds.
+- `explosion.size`: 1 = aircraft destroyed; >5 = splash radius meters.
+
+## Controls (user decision — Daxship-style), apply to src/input.ts after Client agent finishes
+- Mouse = direct steering (rate commands), `aim: null`. Mouse Y: up = nose up (Daxship default) + "Invert mouse Y" setting.
+- Arrows: Up = nose DOWN, Down = nose UP (inverted), Left/Right = yaw.
+- W/S throttle (persistent) / heli collective; wheel = fine throttle. Q/E roll. A/D = rudder (jets) / strafe (heli).
+- Shift boost, X brake/hover-hold.
+- **Shooting:** Left mouse (hold) = primary guns, Right mouse = secondary/missiles, Space = primary (keyboard/trackpad backup). F flares, R ability, 1/2 seats, hold V = free-look, Enter/T chat, Tab scoreboard, Esc menu.
+- Gunner seat: mouse aims turret (aim vector), same fire buttons.
+- Flight mapping (direct mode, aim=null): pitch +1 = nose up (Arrow Up sends −1), yaw +1 = turn right (jets: coordinated auto-bank turn), roll = Q/E (jets) and A/D strafe (heli → `roll`, not `yaw`). Jets: A/D → yaw (rudder).
+
+- Duplicate weapon slots (e.g. `tvmissile`/`tvmissile`): combat uses slot 0 ammo for both triggers; aircraft view sums both slots → stores never fully hide. Fix: aircraft view should use slot 0 only when both slots are the same weapon (or collapse duplicates into one slot in `vehicles.ts`).
+- Remote afterburner/boost: aircraft guesses boost from `throttle > 0.95`. Consider `FlightState.boosting?` set by flight from input.
+- Bots: removed by user decision; `src/sim/bots.ts` unused. Client/server must not expose bot options.
+- Room engine must pass `world` to `flightReadout` for HUD agl (client side).
+- Cross-engine float drift: reconciliation must tolerate tiny differences.
+- AircraftView extras for client: `setFiring(seat, slot, on)`, `setBoost(on)`, `anchors`, `ready`.
+- Lighting tuned for hemisphere ~1.3 + sun ~2.6, ACES tone mapping, sRGB output.
+- **Client must send exactly one `input` per 60 Hz tick** (server consumes one queued input per tick; client agent was told 30 Hz). Fix in integration.
+- `tests/bots.test.ts` has a failing test; bots are unused — delete or skip.
+- Wire types live in `room-engine.ts` (`createSnapshotDecoder`); consider moving to `protocol.ts`.
+- Aircraft agent killed `vite --host` processes when finishing; restart dev server if needed.

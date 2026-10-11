@@ -16,7 +16,10 @@ export interface WeaponSpec {
   speed: number
   /** Max flight time seconds. */
   ttl: number
+  /** -1 = unlimited (JSON-safe). */
   ammo: number
+  /** Max lock/effective range in meters (missiles). */
+  range?: number
   /** Missiles: seeker cone half-angle (rad) and seconds to achieve lock. */
   lockCone?: number
   lockTime?: number
@@ -56,7 +59,7 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
   hellfire: { id: "hellfire", name: "Hellfire", kind: "missile_steered", damage: 280, splash: 12, rate: 0.4, speed: 240, ttl: 10, ammo: 8, turnRate: 1.8, turret: true },
   maverick: { id: "maverick", name: "Maverick", kind: "missile_steered", damage: 340, splash: 16, rate: 0.3, speed: 250, ttl: 12, ammo: 2, turnRate: 1.5, turret: true },
   aim47: { id: "aim47", name: "Long-Range Interceptor", kind: "missile_long", damage: 320, splash: 14, rate: 0.2, speed: 450, ttl: 16, ammo: 3, lockCone: 0.18, lockTime: 2.5, turnRate: 1.2 },
-  radarpulse: { id: "radarpulse", name: "Radar Pulse", kind: "pulse", damage: 0, splash: 4000, rate: 1 / 20, speed: 0, ttl: 8, ammo: Infinity, turret: true },
+  radarpulse: { id: "radarpulse", name: "Radar Pulse", kind: "pulse", damage: 0, splash: 4000, rate: 1 / 20, speed: 0, ttl: 8, ammo: -1, turret: true },
 }
 
 export const VEHICLES: Record<VehicleKind, VehicleSpec> = {

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
+  <title>Wings — audio preview</title>
+  <style>
+    body { font: 13px/1.4 system-ui, sans-serif; background: #0d1117; color: #d0d7de; margin: 0; padding: 16px 20px 40px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #8b949e; margin: 18px 0 6px; }
+    button { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 6px 10px; margin: 2px; cursor: pointer; font: inherit; }
+    button:hover { background: #30363d; }
+    button.on { background: #1f6feb; border-color: #388bfd; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+    .engine { display: grid; grid-template-columns: 110px 70px repeat(3, minmax(160px, 1fr)); gap: 6px 12px; align-items: center; margin: 4px 0; }
+    label { display: flex; gap: 6px; align-items: center; }
+    input[type=range] { width: 120px; }
+    #meter { width: 320px; height: 14px; background: #161b22; border: 1px solid #30363d; border-radius: 3px; overflow: hidden; }
+    #bar { height: 100%; width: 0; background: linear-gradient(90deg, #2ea043, #d29922 70%, #f85149); }
+    pre { background: #161b22; padding: 8px; border-radius: 6px; margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>Wings — audio preview</h1>
+  <div class="row">
+    <button id="unlock">Unlock audio</button>
+    <label><input type="checkbox" id="mute" /> mute</label>
+    <label>volume <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8" /></label>
+    <div id="meter"><div id="bar"></div></div>
+    <span id="peak">peak —</span>
+  </div>
+  <pre id="stats">locked</pre>
+
+  <h2>Engines (listener at origin, facing −Z)</h2>
+  <div id="engines"></div>
+  <div class="row">
+    <label>fly-by kind <select id="flyKind"><option>fighter</option><option>apache</option><option>warthog</option><option>blackbird</option></select></label>
+    <label>speed m/s <input type="number" id="flySpeed" value="220" style="width:60px" /></label>
+    <label>miss distance m <input type="number" id="flyMiss" value="60" style="width:60px" /></label>
+    <button id="flyby">Fly-by</button>
+  </div>
+
+  <h2>Weapons (hold for rapid fire)</h2>
+  <div class="row" id="weapons"></div>
+  <div class="row">
+    <label><input type="checkbox" id="localFire" checked /> local (own vehicle)</label>
+    <label>remote distance m <input type="range" id="remoteDist" min="10" max="4000" value="150" /></label><span id="remoteDistV">150</span>
+  </div>
+
+  <h2>Events</h2>
+  <div class="row" id="events"></div>
+
+  <h2>UI</h2>
+  <div class="row" id="ui"></div>
+
+  <h2>Stress</h2>
+  <div class="row">
+    <button id="stress">100 explosions + 200 hits in 1 s</button>
+    <button id="gauStorm">8 A-10s firing GAU-8 for 3 s</button>
+  </div>
+  <script type="module" src="./preview.ts"></script>
+</body>
+</html>
