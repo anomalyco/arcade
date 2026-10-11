@@ -16,6 +16,8 @@ export type HudContext = {
   players: { id: string; name: string; human: boolean }[]
   room: string | null
   status: string
+  /** Seconds until an idle kick, while the server's warning is up. */
+  idleIn?: number | null
 }
 
 type Row = { id: string; name: string; human: boolean; best?: number; score?: number }
@@ -131,6 +133,8 @@ export class Hud {
     e.copy = e.room.querySelector("button")!
     e.copy.addEventListener("click", () => this.copyInvite(e.copy!, "COPY INVITE"))
 
+    e.idle = h("div", "h-idle off", r)
+
     e.engine = h("div", "h-keys off", r)
     e.engine.style.cssText = "bottom: 8px; animation: none"
   }
@@ -200,6 +204,10 @@ export class Hud {
     this.updateWorld(view, ctx, isRobber, robber, ghost)
     this.map.update(view, ctx.cam, ctx.myId, ctx.dt)
     this.updateEnd(view, ctx, robberName, survived)
+
+    const idle = ctx.idleIn ?? null
+    show(e.idle!, idle !== null)
+    if (idle !== null) text(e.idle!, `IDLE — PRESS ANY KEY · KICK IN ${idle}`)
 
     if (ctx.room) this.root.dataset.room = ctx.room
     show(e.room!, !!ctx.room && !waiting)

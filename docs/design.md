@@ -114,6 +114,12 @@ carries on), which is the PIT. A change in velocity over 9 m/s stuns. Hits of 6 
   Cars near yours are drawn at that predicted pose, so they touch on screen when they touch; farther away they blend
   back to the interpolated one. Corrections ease out (faster the bigger they are) and only jumps over 6 m snap.
 - Players who join mid-round watch until the next round. A dropped player keeps their seat for 15 s.
+- A singleton `Lobby` DO does matchmaking. Rooms report seats and phase to it (throttled, 60 s heartbeat; stale
+  after 2 min). `/api/quick` returns the fullest public room with space, else a fresh code reserved for a few
+  seconds so simultaneous quick-joiners meet. `/api/create` returns a fresh private code (`?private=1` on the
+  socket makes the room private for good; quick join never hands it out). `/api/stats` counts players and open games.
+- Idle kick: no input activity (any non-neutral or changed input) for 120 s frees the seat at once; the driver
+  sitting dark gets 240 s. The last 20 s, snapshots carry `idleIn`. Nobody is kicked during the end card.
 
 ## WebGPU render pipeline
 

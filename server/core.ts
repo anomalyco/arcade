@@ -1,4 +1,4 @@
-import { MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ, DT } from "../shared/config"
+import { IDLE_DARK_KICK_SECONDS, IDLE_KICK_SECONDS, IDLE_WARN_SECONDS, MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ, DT } from "../shared/config"
 import { type ClientMsg, type Picks, type RosterEntry, type ServerMsg, decodeClient, encodeServer, seedOf } from "../shared/protocol"
 import { type Input, NO_INPUT } from "../shared/sim/vehicle"
 import { type Participant, World } from "../shared/sim/world"
@@ -16,6 +16,9 @@ type Player = {
   input: Input
   starve: number
   goneAt: number
+  /** Ticks connected without input activity, and the last input received (activity is any change or non-neutral input). */
+  idle: number
+  last: Input
 }
 
 /** Disconnected players keep their seat (and car) this long so a reconnect resumes seamlessly. */
@@ -26,6 +29,9 @@ const TRIM_QUEUE = 3
 /** With no input for this long (tab hidden, stalled link) the car lets go of the pedals. */
 const STARVE_TICKS = 15
 const SNAPSHOT_EVERY = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
+
+const sameInput = (a: Input, b: Input) =>
+  a.throttle === b.throttle && a.brake === b.brake && a.steer === b.steer && !!a.handbrake === !!b.handbrake && !!a.boost === !!b.boost && (a.gadget ?? null) === (b.gadget ?? null) && !!a.engine === !!b.engine
 
 function newId() {
   return Math.random().toString(36).slice(2, 10).padEnd(8, "0")
@@ -83,6 +89,8 @@ export class RoomCore {
     if (!p || p.conn !== conn) return
     const last = p.queue.length ? p.queue[p.queue.length - 1]!.seq : p.ack
     if (msg.seq <= last) return
+    if (!sameInput(msg.input, p.last) || !sameInput(msg.input, NO_INPUT)) p.idle = 0
+    p.last = msg.input
     p.queue.push({ seq: msg.seq, input: msg.input })
     if (p.queue.length > MAX_QUEUE) p.queue.splice(0, p.queue.length - TRIM_QUEUE)
   }
@@ -107,7 +115,7 @@ export class RoomCore {
       // First person into an empty room gets a fresh game instead of a stale round.
       if (this.players.size === 0) this.world = null
       const id = msg.id && !this.players.has(msg.id) ? msg.id : newId()
-      p = { id, name: msg.name, picks: msg.picks, conn, queue: [], ack: 0, input: NO_INPUT, starve: 0, goneAt: 0 }
+      p = { id, name: msg.name, picks: msg.picks, conn, queue: [], ack: 0, input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT }
       this.players.set(id, p)
       this.syncParticipants()
     }
@@ -140,6 +148,9 @@ export class RoomCore {
       if (!p.conn && this.tick - p.goneAt > GRACE_TICKS) {
         this.players.delete(p.id)
         left = true
+      } else if (p.conn && ++p.idle >= this.idleLimit(p) && this.kickable(p)) {
+        this.kick(p)
+        left = true
       }
     if (left) {
       this.syncParticipants()
@@ -169,6 +180,38 @@ export class RoomCore {
     if (this.tick % SNAPSHOT_EVERY === 0) for (const p of this.players.values()) if (p.conn) this.sendSnapshot(p)
   }
 
+  /** Idle ticks allowed before a kick: longer for the driver sitting dark on purpose. */
+  idleLimit(p: Player) {
+    const world = this.world
+    const car = world?.carOf(p.id)
+    const dark = !!car && world!.robberId === p.id && !!car.body.engineOff
+    return (dark ? IDLE_DARK_KICK_SECONDS : IDLE_KICK_SECONDS) * TICK_HZ
+  }
+
+  /** Nobody is kicked during the end card or while spectating; the idle timer keeps running meanwhile. */
+  private kickable(p: Player) {
+    const world = this.world
+    return !!world && world.phase !== "end" && !!world.carOf(p.id)
+  }
+
+  /** Seconds until an idle kick, while the warning is up. */
+  idleIn(id: string): number | undefined {
+    const p = this.players.get(id)
+    if (!p) return undefined
+    const left = this.idleLimit(p) - p.idle
+    return left <= IDLE_WARN_SECONDS * TICK_HZ ? Math.max(0, Math.ceil(left / TICK_HZ)) : undefined
+  }
+
+  /** Drops an idle player's seat at once (no reconnect grace). The caller resyncs participants. */
+  private kick(p: Player) {
+    const conn = p.conn!
+    this.send(conn, { type: "error", code: "idle", message: "Kicked for being idle." })
+    this.players.delete(p.id)
+    this.byConn.delete(conn)
+    this.conns.delete(conn)
+    conn.close(4002, "idle")
+  }
+
   /** Spectators (no car this round) get a cop's fog-of-war view, so a second tab can't be used to spot the robber. */
   viewerFor(id: string) {
     const world = this.world!
@@ -180,7 +223,8 @@ export class RoomCore {
     const world = this.world
     if (!world || !p.conn) return
     const car = world.carOf(p.id)
-    this.send(p.conn, { type: "snapshot", tick: this.tick, ack: p.ack, view: world.view(this.viewerFor(p.id)), you: car ? car.body : null })
+    const idleIn = this.idleIn(p.id)
+    this.send(p.conn, { type: "snapshot", tick: this.tick, ack: p.ack, view: world.view(this.viewerFor(p.id)), you: car ? car.body : null, ...(idleIn === undefined ? {} : { idleIn }) })
   }
 
   private broadcastRoster() {

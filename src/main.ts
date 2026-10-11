@@ -12,6 +12,9 @@ import { Renderer } from "./render/renderer"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 
+/** A message for the next lobby (an idle kick reloads the page back to it). */
+const NOTICE_KEY = "getaway.notice"
+
 function fail(msg: string) {
   const el = document.getElementById("overlay")!
   el.innerHTML = `<div class="nogpu"><h1>GETAWAY</h1><p>${msg}</p></div>`
@@ -49,12 +52,15 @@ async function main() {
   const staged = import.meta.env.DEV && q.has("stage")
   let session: Session | null = null
   let choice: Awaited<ReturnType<typeof lobby>> = { mode: "solo", room: null, name: "Dax", picks: { robber: "muscle", cop: "cruiser" } }
+  let notice = sessionStorage.getItem(NOTICE_KEY)
+  sessionStorage.removeItem(NOTICE_KEY)
   while (!session) {
-    if (!staged) choice = await lobby(document.getElementById("overlay")!)
+    if (!staged) choice = await lobby(document.getElementById("overlay")!, notice)
     try {
       session = await connect(choice)
     } catch (e) {
-      alert(`Could not join room ${choice.room}: ${e instanceof Error ? e.message : String(e)}`)
+      const why = e instanceof Error ? e.message : String(e)
+      notice = /room .* is full|could not reach/i.test(why) ? why : `Could not join room ${choice.room}: ${why}`
       history.replaceState(null, "", location.pathname)
     }
   }
@@ -78,6 +84,12 @@ async function main() {
 
   let last = performance.now()
   const frame = (now: number) => {
+    const kicked = session.kicked?.()
+    if (kicked) {
+      sessionStorage.setItem(NOTICE_KEY, /idle/i.test(kicked) ? "You were kicked for being idle" : kicked)
+      location.replace(location.pathname)
+      return
+    }
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
     const input = controls.read(dt)
@@ -98,7 +110,7 @@ async function main() {
     }
     scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
     const events = session.drainEvents()
-    hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status: session.status() })
+    hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status: session.status(), idleIn: session.idleIn?.() })
     sound.update(view, { myId: session.myId, cam, dt, events, input })
     radio.update(view, session.myId, events)
     ;(window as unknown as { __view: unknown }).__view = view

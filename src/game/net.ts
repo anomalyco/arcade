@@ -25,7 +25,9 @@ export class NetSession implements Session {
   private client: NetClient | null = null
   private roster: RosterEntry[] = []
   private rtt = -1
-  private state: "connecting" | "online" | "reconnecting" | "full" | "closed" = "connecting"
+  private state: "connecting" | "online" | "reconnecting" | "full" | "kicked" | "closed" = "connecting"
+  private idle: number | null = null
+  private kickReason: string | null = null
   private retry = 0
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
@@ -85,7 +87,7 @@ export class NetSession implements Session {
     ws.onclose = () => {
       if (this.ws !== ws) return
       this.ws = null
-      if (this.state === "closed" || this.state === "full") return
+      if (this.state === "closed" || this.state === "full" || this.state === "kicked") return
       this.state = "reconnecting"
       const delay = Math.min(5000, 400 * 2 ** this.retry++)
       this.retryTimer = setTimeout(() => this.open(), delay)
@@ -116,9 +118,15 @@ export class NetSession implements Session {
           this.state = "full"
           this.ready?.reject(new RoomFullError(msg.message))
           this.ready = null
+        } else if (msg.code === "idle") {
+          this.state = "kicked"
+          this.kickReason = msg.message
+          this.ready?.reject(new Error(msg.message))
+          this.ready = null
         }
         return
     }
+    if (msg.type === "snapshot") this.idle = msg.idleIn ?? null
     this.client?.receive(msg)
     if (msg.type === "snapshot" && this.ready && this.client) {
       this.ready.resolve(this)
@@ -156,6 +164,14 @@ export class NetSession implements Session {
     const ws = this.ws
     this.ws = null
     ws?.close()
+  }
+
+  idleIn() {
+    return this.state === "online" ? this.idle : null
+  }
+
+  kicked() {
+    return this.kickReason
   }
 
   status() {

@@ -10,6 +10,11 @@ export const WATER_Z = GRID * CELL + ROAD_HALF
 
 export const MIN_COPS = 3
 export const MAX_PLAYERS = 16
+/** Online: a player with no input activity this long is kicked. The driver sitting dark (engine off) gets longer. */
+export const IDLE_KICK_SECONDS = 120
+export const IDLE_DARK_KICK_SECONDS = 240
+/** The last this-many seconds before a kick, the player's snapshots carry a countdown. */
+export const IDLE_WARN_SECONDS = 20
 export const ROUND_SECONDS = 180
 export const INTRO_SECONDS = 4
 export const HEAD_START_SECONDS = 5

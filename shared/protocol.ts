@@ -14,12 +14,15 @@ export type RosterEntry = { id: string; name: string; human: boolean; connected:
 
 export type ServerMsg =
   | { type: "welcome"; id: string; room: string; seed: number; tick: number }
-  /** `ack` is the last input seq the server applied for you; `you` is your car's authoritative body after that input. */
-  | { type: "snapshot"; tick: number; ack: number; view: WorldView; you: Body | null }
+  /**
+   * `ack` is the last input seq the server applied for you; `you` is your car's authoritative body after that input.
+   * `idleIn` is the seconds until you're kicked for idling, only while that warning is up.
+   */
+  | { type: "snapshot"; tick: number; ack: number; view: WorldView; you: Body | null; idleIn?: number }
   | { type: "events"; events: SimEvent[] }
   | { type: "roster"; players: RosterEntry[] }
   | { type: "pong"; t: number }
-  | { type: "error"; code: "full" | "bad"; message: string }
+  | { type: "error"; code: "full" | "bad" | "idle"; message: string }
 
 /**
  * Rounds every number to 3 decimals to keep snapshots small. The authoritative body and the phase clock stay exact

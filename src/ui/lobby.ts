@@ -31,7 +31,7 @@ export function setRoomParam(room: string, replace = false) {
 }
 
 /** Title screen: name, then quick join, create a private game, or join one by code (or from the shared link). */
-export async function lobby(root: HTMLElement): Promise<LobbyResult> {
+export async function lobby(root: HTMLElement, notice: string | null = null): Promise<LobbyResult> {
   const urlRoom = new URLSearchParams(location.search).get("r")?.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || null
   const storedName = localStorage.getItem(NAME_KEY) ?? ""
 
@@ -41,6 +41,7 @@ export async function lobby(root: HTMLElement): Promise<LobbyResult> {
     <div class="lb-inner">
       <h1 class="wordmark">GETAWAY</h1>
       <p class="lb-tag">One driver. Everyone else is a cop. Stay free.</p>
+      ${notice ? `<p class="lb-note">${esc(notice)}</p>` : ""}
       <input class="lb-name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="YOUR NAME" value="${esc(storedName)}"/>
       ${urlRoom ? `<button class="btn primary" data-act="join">JOIN ROOM ${esc(urlRoom)}</button>` : ""}
       <button class="btn ${urlRoom ? "strong" : "primary"}" data-act="quick">QUICK JOIN</button>

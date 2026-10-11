@@ -16,6 +16,10 @@ export interface Session {
   players(): { id: string; name: string; human: boolean }[]
   close(): void
   status(): string
+  /** Online only: seconds until an idle kick while the warning is up. */
+  idleIn?(): number | null
+  /** Online only: why the server removed us for good (an idle kick), once it has. */
+  kicked?(): string | null
 }
 
 /** Solo practice: the full simulation runs in the browser with bot cops. */
