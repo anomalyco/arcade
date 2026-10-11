@@ -158,8 +158,14 @@ export class RoomCore {
       world.setInput(p.id, p.input)
     }
     world.step(DT)
-    const events = world.drainEvents().map((e) => ({ t: e.t, kind: e.kind, text: e.text, carId: e.carId }))
-    if (events.length) this.broadcast({ type: "events", events })
+    const events = world.drainEvents()
+    const all = events.filter((e) => e.to === undefined).map((e) => ({ t: e.t, kind: e.kind, text: e.text, carId: e.carId }))
+    if (all.length) this.broadcast({ type: "events", events: all })
+    // Private events (the driver's own repair while unseen) go to that player only.
+    for (const e of events) {
+      const conn = e.to === undefined ? null : this.players.get(e.to)?.conn
+      if (conn) this.send(conn, { type: "events", events: [{ t: e.t, kind: e.kind, text: e.text, carId: e.carId }] })
+    }
     if (this.tick % SNAPSHOT_EVERY === 0) for (const p of this.players.values()) if (p.conn) this.sendSnapshot(p)
   }
 

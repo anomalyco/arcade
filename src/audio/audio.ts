@@ -40,6 +40,7 @@ export const SFX = [
   "spike_deploy",
   "tire_pop",
   "flat_tire_loop",
+  "repair",
   "bust_sting",
   "round_start_sting",
   "escape_tick",

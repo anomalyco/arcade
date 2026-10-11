@@ -1,4 +1,4 @@
-import { FLAT_GRIP, FLAT_SPEED, type Vehicle } from "../config"
+import { FLAT_ACCEL, FLAT_GRIP, FLAT_SPEED, type Vehicle } from "../config"
 import type { Box } from "./city"
 import { type Contact, CARS, type Mass, STATIC, WALL, boxShape, carHalf, carMass, carShape, collideShapes, resolve, separate } from "./collide"
 
@@ -30,8 +30,8 @@ export type Body = {
   drift?: number
   /** Seconds left spinning on an oil slick (almost no grip, no steering). */
   slip?: number
-  /** Seconds left on a flat tire (lower top speed and grip). */
-  flat?: number
+  /** Popped tires as a bit mask: 1 front left, 2 front right, 4 rear left, 8 rear right. They stay flat until repaired. */
+  wheels?: number
   /** Engine switched off: no throttle, reverse or boost; the car coasts, brakes and steers as it rolls. */
   engineOff?: boolean
   /** Seconds left cranking after a restart, before the throttle answers. */
@@ -56,8 +56,14 @@ export const DRIVE = {
   recoverAngle: 1.0,
   recoverGain: 6,
   reverseMax: 14,
-  flatSpeed: FLAT_SPEED,
-  flatGrip: FLAT_GRIP,
+  /** Flat tires: steering kept per flat front tire, grip kept per flat rear tire (on top of FLAT_GRIP). */
+  flatSteer: 0.8,
+  flatRearGrip: 0.88,
+  /** Yaw rate (rad/s) the car pulls toward its flat side, per tire of left-right imbalance, at speed. */
+  flatPull: 0.1,
+  /** Wobble: yaw rate (rad/s) per flat tire, and how fast it cycles with distance (rad per meter). */
+  flatWobble: 0.12,
+  flatWobbleFreq: 0.35,
   oilGrip: 0.05,
   crank: 0.8,
   /** An engine-off car slower than this is dark: invisible to radar and the helicopter. */
@@ -75,7 +81,15 @@ export const DRIVE = {
 export const RAM_STUN_DV = 9
 
 export function newBody(x: number, z: number, h: number): Body {
-  return { x, z, h, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, flat: 0, engineOff: false, crank: 0, spin: 0 }
+  return { x, z, h, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, wheels: 0, engineOff: false, crank: 0, spin: 0 }
+}
+
+/** Tires in Body.wheels order. */
+export const WHEEL_NAMES = ["FL", "FR", "RL", "RR"] as const
+
+/** How many tires a wheel mask has popped. */
+export function flatCount(wheels = 0) {
+  return (wheels & 1) + ((wheels >> 1) & 1) + ((wheels >> 2) & 1) + ((wheels >> 3) & 1)
 }
 
 /** Switches the engine off, or starts it again (the throttle answers after DRIVE.crank seconds). */
@@ -108,9 +122,11 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
     input = STUNNED
   }
   const slip = b.slip ?? 0
-  const flat = b.flat ?? 0
   if (slip > 0) b.slip = Math.max(0, slip - dt)
-  if (flat > 0) b.flat = Math.max(0, flat - dt)
+  const wheels = b.wheels ?? 0
+  const flats = flatCount(wheels)
+  const fronts = (wheels & 1) + ((wheels >> 1) & 1)
+  const rears = flats - fronts
   const spin = b.spin ?? 0
   if (spin > 0) b.spin = Math.max(0, spin - dt)
   const loose = Math.min(1, spin / DRIVE.spinFull)
@@ -129,7 +145,7 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   const speed = Math.hypot(vf, vl)
   const beta = speed > 1 ? Math.atan2(Math.abs(vl), Math.max(0.1, absVf)) : 0
   const dir = vf >= -0.5 ? 1 : -1
-  const vmax = spec.maxSpeed * (boosting ? DRIVE.boostSpeed : 1) * (flat > 0 ? DRIVE.flatSpeed : 1)
+  const vmax = spec.maxSpeed * (boosting ? DRIVE.boostSpeed : 1) * FLAT_SPEED[flats]!
 
   let drift = b.drift ?? 0
   if (input.handbrake && absVf > 7) drift = 1
@@ -144,6 +160,14 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   // Power oversteer: on throttle the tail keeps swinging the way it is already sliding; counter-steer balances it.
   if (drift > 0 && input.throttle > 0) target -= Math.sign(vl) * Math.min(1, Math.abs(vl) / 5) * spec.turn * DRIVE.powerOversteer * drift * input.throttle
   let rate = input.steer === 0 ? (drift > 0 ? 3 : 6) : drift > 0 ? 7 : 10
+  if (flats > 0) {
+    // Flat fronts don't answer the wheel as well. A one-sided flat drags the car toward it, and the flapping rubber
+    // wobbles it (rear flats more), growing with speed.
+    target *= DRIVE.flatSteer ** fronts
+    const lean = ((wheels >> 1) & 1) + ((wheels >> 3) & 1) - (wheels & 1) - ((wheels >> 2) & 1)
+    const wobble = DRIVE.flatWobble * (0.6 * fronts + rears) * Math.sin(DRIVE.flatWobbleFreq * (b.x + b.z))
+    target += dir * Math.min(1, absVf / 15) * (lean * DRIVE.flatPull + wobble)
+  }
   if (loose > 0) {
     target *= 1 - DRIVE.spinSteer * loose
     rate *= 1 - DRIVE.spinYaw * loose
@@ -163,11 +187,11 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   let a = 0
   if (input.throttle > 0) {
     const x = Math.max(0, vf) / vmax
-    a += spec.accel * input.throttle * (boosting ? DRIVE.boostAccel : 1) * Math.max(0, 1 - x * x) * (vf < 0 ? 1.4 : 1)
+    a += spec.accel * FLAT_ACCEL[flats]! * input.throttle * (boosting ? DRIVE.boostAccel : 1) * Math.max(0, 1 - x * x) * (vf < 0 ? 1.4 : 1)
   }
   if (input.throttle < 0) {
     if (vf > 0.5) a -= spec.brake * -input.throttle
-    else if (!dead) a += spec.accel * 0.6 * input.throttle * Math.max(0, 1 + vf / DRIVE.reverseMax)
+    else if (!dead) a += spec.accel * FLAT_ACCEL[flats]! * 0.6 * input.throttle * Math.max(0, 1 + vf / (DRIVE.reverseMax * FLAT_SPEED[flats]!))
   }
   if (input.brake > 0 && vf > 0.5) a -= spec.brake * input.brake
   if (input.handbrake && absVf > 0.5) a -= 5 * Math.sign(vf)
@@ -179,7 +203,7 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   if (drift > 0) gripMul = 1 + ((input.handbrake ? DRIVE.handbrakeGrip : DRIVE.driftGrip) - 1) * Math.min(1, drift * 2.5)
   // Assist: past ~60 degrees of slide the tires bite back, so overcooked drifts straighten out instead of spinning.
   if (beta > DRIVE.recoverAngle) gripMul *= 1 + DRIVE.recoverGain * (beta - DRIVE.recoverAngle)
-  if (flat > 0) gripMul *= DRIVE.flatGrip
+  if (flats > 0) gripMul *= FLAT_GRIP[flats]! * DRIVE.flatRearGrip ** rears
   if (absVf < 1.5) gripMul *= 2
   // Knocked loose: the tires skid, so the grip assists above don't apply either.
   if (loose > 0) gripMul += (1 - DRIVE.spinGrip - gripMul) * loose

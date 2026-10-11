@@ -71,7 +71,7 @@ export class LocalSession implements Session {
   }
 
   drainEvents() {
-    return this.world.drainEvents()
+    return this.world.drainEvents().filter((e) => e.to === undefined || e.to === this.myId)
   }
 
   players() {

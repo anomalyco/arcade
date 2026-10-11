@@ -1,6 +1,6 @@
-import { END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
-import type { City } from "../../shared/sim/city"
-import { DRIVE } from "../../shared/sim/vehicle"
+import { END_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
+import { type City, shopAt } from "../../shared/sim/city"
+import { DRIVE, flatCount } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
 import { attr, esc, flag, h, show, style, text } from "./dom"
@@ -23,6 +23,8 @@ type Row = { id: string; name: string; human: boolean; best?: number; score?: nu
 /** The parts of the world view the HUD reads. Survival fields are optional while the sim moves over to them. */
 type HudView = Pick<WorldView, "t" | "round" | "phase" | "phaseT" | "robberId" | "bust" | "cars"> & {
   heli?: WorldView["heli"]
+  repair?: number
+  shopCool?: number[]
   props?: WorldView["props"]
   standings: Row[]
   survived?: number
@@ -56,6 +58,7 @@ export class Hud {
   private map!: Minimap
   private flashLeft = 0
   private pips: HTMLElement[] = []
+  private tireDots: SVGRectElement[] = []
 
   constructor(
     readonly root: HTMLElement,
@@ -97,8 +100,19 @@ export class Hud {
     e.gName = e.gadget.querySelector(".g-name")!
     this.pips = [...e.gadget.querySelectorAll<HTMLElement>(".g-pips i")]
     e.gFill = e.gadget.querySelector(".g-bar b")!
-    e.flat = h("div", "h-flat off", r, `<div class="f-line">IMMOBILIZED</div><div class="g-bar"><b></b></div>`)
-    e.fFill = e.flat.querySelector(".g-bar b")!
+    // Driver's tires: a top-down car with a dot per tire (red when popped), then the repair bar in a shop bay.
+    const tire = (i: number, x: number, y: number) => `<rect class="t-w" data-w="${i}" x="${x}" y="${y}" width="4" height="8" rx="1.5"/>`
+    e.tires = h(
+      "div",
+      "h-tires off",
+      r,
+      `<svg viewBox="0 0 24 34"><rect class="t-body" x="5" y="2" width="14" height="30" rx="4"/>${tire(0, 1, 6)}${tire(1, 19, 6)}${tire(2, 1, 21)}${tire(3, 19, 21)}</svg><div class="t-line"></div><div class="t-repair off"><div class="t-rl"></div><div class="g-bar"><b></b></div></div>`,
+    )
+    this.tireDots = [...e.tires.querySelectorAll<SVGRectElement>(".t-w")]
+    e.tLine = e.tires.querySelector(".t-line")!
+    e.tRepair = e.tires.querySelector(".t-repair")!
+    e.tRepairLine = e.tires.querySelector(".t-rl")!
+    e.tFill = e.tires.querySelector(".g-bar b")!
 
     e.end = h("div", "h-end off", r)
 
@@ -197,7 +211,7 @@ export class Hud {
     }
   }
 
-  /** Cops: the spike strip hint. Driver: the flat tire bar. Both: a short flash when someone hits a strip. */
+  /** Cops: the spike strip hint. Driver: tire status and the repair bar. Both: a short flash when a tire pops. */
   private updateGadgets(view: HudView, ctx: HudContext, isRobber: boolean) {
     const e = this.el
     const me = view.cars.find((c) => c.ownerId === ctx.myId && !c.ghost)
@@ -207,7 +221,7 @@ export class Hud {
     show(e.gadget!, !!g)
     if (g) {
       const spec = GADGETS[g.id]
-      text(e.gName!, g.id === "spike" ? `${spec.name} · STOPS THE SUSPECT FOR ${FLAT_SECONDS}S` : spec.name)
+      text(e.gName!, g.id === "spike" ? `${spec.name} · POPS A TIRE` : spec.name)
       // Pips: strips you can still lay before your oldest one is picked up.
       this.pips.forEach((pip, i) => flag(pip, "used", i >= g.charges))
       const fill = g.cooldown > 0 ? 1 - g.cooldown / spec.cooldown : 1
@@ -215,25 +229,46 @@ export class Hud {
       flag(e.gadget!, "dim", !g.ready)
     }
 
-    const flat = isRobber && live && me ? (me.flat ?? 0) : 0
-    show(e.flat!, flat > 0)
-    if (flat > 0) style(e.fFill!, "transform", `scaleX(${Math.min(1, flat / FLAT_SECONDS).toFixed(3)})`)
+    const wheels = isRobber && live && me ? (me.wheels ?? 0) : 0
+    const flats = flatCount(wheels)
+    show(e.tires!, flats > 0)
+    if (flats > 0 && me) {
+      this.tireDots.forEach((d, i) => flag(d, "pop", (wheels & (1 << i)) !== 0))
+      text(e.tLine!, flats === 4 ? "ON THE RIMS" : `${flats}/4 FLAT · FIND A GARAGE`)
+      flag(e.tires!, "rims", flats === 4)
+      // In a bay: the mechanics' progress, or how long until this shop can work again.
+      const shop = shopAt(this.city, me.x, me.z)
+      const cool = shop >= 0 ? (view.shopCool?.[shop] ?? 0) : 0
+      show(e.tRepair!, shop >= 0)
+      if (shop >= 0) {
+        text(e.tRepairLine!, cool > 0 ? `SHOP BUSY · ${Math.ceil(cool)}S` : me.speed >= 2 ? "STOP TO REPAIR" : "REPAIRING")
+        flag(e.tRepair!, "busy", cool > 0)
+        style(e.tFill!, "transform", `scaleX(${(cool > 0 ? 0 : Math.min(1, view.repair ?? 0)).toFixed(3)})`)
+      }
+    }
 
     const tipped = ctx.events.find((ev) => ev.kind === "tip")
-    if (tipped && !ctx.events.some((ev) => ev.kind === "flat")) {
-      this.flashLeft = FLASH_SECONDS
-      text(e.flash!, isRobber ? "DISPATCH HAS YOUR AREA" : "DISPATCH TIP · CHECK MAP")
-      flag(e.flash!, "bad", isRobber)
-    }
+    if (tipped && !ctx.events.some((ev) => ev.kind === "flat")) this.flashText(isRobber ? "DISPATCH HAS YOUR AREA" : "DISPATCH TIP · CHECK MAP", isRobber ? "bad" : "")
     const hit = ctx.events.find((ev) => ev.kind === "flat")
     if (hit && live) {
-      this.flashLeft = FLASH_SECONDS
-      text(e.flash!, isRobber ? `SPIKED · IMMOBILIZED FOR ${FLAT_SECONDS}S` : `SPIKED! SUSPECT STOPPED FOR ${FLAT_SECONDS}S`)
-      flag(e.flash!, "bad", isRobber)
+      // "count|tire"
+      const n = Number(hit.text.split("|")[0]) || 1
+      if (isRobber) this.flashText(n >= 4 ? "ON THE RIMS" : `TIRE POPPED · ${n}/4`, "bad")
+      else this.flashText(n >= 4 ? "SPIKED! ON THE RIMS" : `SPIKED! ${n}/4 TIRES`, "")
     }
+    const fixed = ctx.events.find((ev) => ev.kind === "repair")
+    if (fixed && live) this.flashText(isRobber ? "TIRES REPAIRED" : "SUSPECT'S TIRES REPAIRED", isRobber ? "good" : "")
     this.flashLeft = live ? Math.max(0, this.flashLeft - ctx.dt) : 0
     show(e.flash!, this.flashLeft > 0)
     if (this.flashLeft > 0) style(e.flash!, "opacity", Math.min(1, this.flashLeft / 0.5, (FLASH_SECONDS - this.flashLeft) / 0.12).toFixed(3))
+  }
+
+  private flashText(msg: string, tone: "" | "bad" | "good") {
+    const e = this.el
+    this.flashLeft = FLASH_SECONDS
+    text(e.flash!, msg)
+    flag(e.flash!, "bad", tone === "bad")
+    flag(e.flash!, "good", tone === "good")
   }
 
   private updateWorld(view: HudView, ctx: HudContext, isRobber: boolean, robber: CarView | undefined, ghost: CarView | undefined) {

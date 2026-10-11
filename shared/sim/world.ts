@@ -9,7 +9,6 @@ import {
   EXTRACT_RADIUS,
   EXTRACT_SPEED,
   EXTRACT_SECONDS,
-  FLAT_SECONDS,
   GADGETS,
   HEAD_START_SECONDS,
   HEAR_RANGE,
@@ -18,6 +17,8 @@ import {
   NEAR_MISS_DIST,
   NEAR_MISS_SPEED,
   OIL_SPIN_SECONDS,
+  REPAIR_SECONDS,
+  REPAIR_SPEED,
   ROAD_HALF,
   ROUND_SECONDS,
   SIGHT_RANGE,
@@ -25,7 +26,9 @@ import {
   SCREEN_AHEAD,
   SCREEN_BACK,
   SCREEN_HALF_WIDTH,
+  SHOP_COOLDOWN,
   SPIKE_SPOT_RANGE,
+  SPIKE_THICK,
   VEHICLE_BY_ID,
   VEHICLES,
   type Extraction,
@@ -34,22 +37,23 @@ import {
   type Vehicle,
 } from "../config"
 import { copBrain, robberBrain } from "./bots"
-import { type Box, type City, generateCity, nearestNode, routeNodes } from "./city"
+import { type Box, type City, generateCity, nearestNode, routeNodes, shopAt } from "./city"
 import {
   type GadgetState,
   type GadgetView,
   type Prop,
   type PropView,
-  crossesStrip,
+  type Pose,
   newGadgets,
   placeProp,
   propBox,
   segmentHitsBox,
   segmentHitsCircle,
+  stripWheels,
 } from "./gadgets"
 import { mulberry32, type Rng } from "./rng"
 import { carShape, shapeGap } from "./collide"
-import { type Body, type Impact, type Input, NO_INPUT, collideBoxes, collideCars, forward, isDark, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "./vehicle"
+import { type Body, type Impact, type Input, NO_INPUT, WHEEL_NAMES, collideBoxes, collideCars, flatCount, forward, isDark, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "./vehicle"
 
 /** intro: robber at the scene, alarm ringing. headstart: robber drives, cops wait. chase: everyone drives. end: results. */
 /** waiting: fewer than two players, everyone free-drives until someone joins. */
@@ -98,7 +102,8 @@ export type Car = {
   impactCool: number
 }
 
-export type SimEvent = { t: number; kind: string; text: string; carId?: number }
+/** `to`: deliver only to this player (owner id); everyone gets the rest. */
+export type SimEvent = { t: number; kind: string; text: string; carId?: number; to?: string }
 
 export type CarView = {
   id: number
@@ -121,11 +126,11 @@ export type CarView = {
   ghost: boolean
   /** Gadget slots (Q, E). Only present on the viewer's own car (all cars for an unfiltered view). */
   gadgets?: GadgetView[]
-  /** Body state for client prediction (0 for a ghost): yaw rate, drift state 0..1, oil spin and flat tire seconds left. */
+  /** Body state for client prediction (0 for a ghost): yaw rate, drift state 0..1, oil spin seconds left, popped tires (Body.wheels). */
   yaw?: number
   slide?: number
   slip?: number
-  flat?: number
+  wheels?: number
   /** Engine switched off (no headlights, dim taillights, no engine sound). */
   engineOff?: boolean
   /** The robber's live position comes from shared detection (radar). False when a cop sees a dark robber only on their own screen. */
@@ -167,6 +172,9 @@ export type WorldView = {
   survived: number
   /** The latest dispatch tip (broad area), until the driver is seen again. Visible to everyone. */
   tip?: Tip | null
+  /** Driver's view only: repair progress 0..1 in a shop bay, and each shop's seconds until it can fix tires again. */
+  repair?: number
+  shopCool?: number[]
   /** Best survival time in this room so far, and who set it. */
   best: number
   bestName: string
@@ -239,6 +247,9 @@ export class World {
   roundScore = 0
   survived = 0
   tip: Tip | null = null
+  /** Seconds the driver has sat in a repair bay with flat tires, and each shop's seconds until it can work again. */
+  repair = 0
+  shopCool: number[] = []
   /** Seconds since anyone last had eyes on the driver (or since the last tip). */
   private unseenFor = 0
   /** Radio calls: seconds since the driver was last seen, whether a sighting is still live, and the last "spotted" call. */
@@ -391,6 +402,8 @@ export class World {
     this.reinforcements = 0
     this.survived = 0
     this.tip = null
+    this.repair = 0
+    this.shopCool = this.city.shops.map(() => 0)
     this.unseenFor = 0
     this.unseenRadio = Infinity
     this.sighted = false
@@ -457,8 +470,8 @@ export class World {
     return car
   }
 
-  private emit(kind: string, text: string, carId?: number) {
-    this.events.push({ t: this.t, kind, text, carId })
+  private emit(kind: string, text: string, carId?: number, to?: string) {
+    this.events.push(to === undefined ? { t: this.t, kind, text, carId } : { t: this.t, kind, text, carId, to })
   }
 
   drainEvents(): SimEvent[] {
@@ -532,7 +545,7 @@ export class World {
 
   private stepCars(dt: number) {
     const boxes = this.propBoxes.length ? [...this.city.boxes, ...this.propBoxes] : this.city.boxes
-    const prev = new Map<number, [number, number]>()
+    const prev = new Map<number, Pose>()
     const wall: Impact = { impact: 0, x: 0, z: 0, nx: 0, nz: 0 }
     for (const c of this.cars) {
       for (const g of c.gadgets) g.cooldown = Math.max(0, g.cooldown - dt)
@@ -551,7 +564,7 @@ export class World {
       const slot = c.human ? c.pendingGadget : (input.gadget ?? null)
       c.pendingGadget = null
       if (slot !== null) this.useGadget(c, slot)
-      prev.set(c.id, [c.body.x, c.body.z])
+      prev.set(c.id, { x: c.body.x, z: c.body.z, h: c.body.h })
       c.impact = stepAndCollide(c.body, input, c.vehicle, dt, boxes, wall)
       if (c.impact >= IMPACT_EVENT) this.impactEvent(c, wall)
     }
@@ -643,7 +656,7 @@ export class World {
     }
   }
 
-  private stepProps(dt: number, prev: Map<number, [number, number]>) {
+  private stepProps(dt: number, prev: Map<number, Pose>) {
     let roadblocks = false
     this.props = this.props.filter((p) => {
       // Survival: spike strips are permanent for the rest of the round.
@@ -670,28 +683,60 @@ export class World {
           this.emit("spinout", `${c.name} spun out on the oil`, c.id)
         }
       } else if (p.kind === "spike" && robber && prev.has(robber.id)) {
-        const [px, pz] = prev.get(robber.id)!
-        const crossing = crossesStrip(p, px, pz, robber.body.x, robber.body.z, radiusOf(robber))
-        // Permanent strips trigger once per pass: wait until the driver is clear of it before it can bite again.
-        if (!crossing) {
+        const b = robber.body
+        const v = robber.vehicle
+        const [fx, fz] = forward(p.h)
+        // Permanent strips bite once per pass: wait until the driver is clear of it before it can bite again.
+        const clear = Math.abs((b.x - p.x) * fx + (b.z - p.z) * fz) > v.length / 2 + SPIKE_THICK / 2 + 1 || Math.abs((b.x - p.x) * fz - (b.z - p.z) * fx) > p.r + v.length / 2 + 1
+        if (clear) {
           if (p.hits.length) p.hits.length = 0
           continue
         }
         if (p.hits.includes(robber.id)) continue
-        robber.body.flat = FLAT_SECONDS
-        // Spikes immobilize the driver: no throttle or steering until the tires are sorted.
-        robber.body.stun = Math.max(robber.body.stun, FLAT_SECONDS)
-        // Hitting a strip gives the driver away: the strip's spot becomes the last known position.
-        this.lastSeen = { x: robber.body.x, z: robber.body.z, t: this.t }
-        this.lastSeenH = robber.body.h
+        // One tire per pass: the first intact one to go over the strip.
+        const order = stripWheels(p, prev.get(robber.id)!, b, v.length, v.width)
+        if (!order.length) continue
         if (SURVIVAL) p.hits.push(robber.id)
         else this.props.splice(this.props.indexOf(p), 1)
+        const wheel = order.find((i) => !((b.wheels ?? 0) & (1 << i)))
+        if (wheel === undefined) continue
+        b.wheels = (b.wheels ?? 0) | (1 << wheel)
+        // Hitting a strip gives the driver away: the strip's spot becomes the last known position.
+        this.lastSeen = { x: b.x, z: b.z, t: this.t }
+        this.lastSeenH = b.h
         this.heat += 2
-        const owner = this.cars.find((c) => c.id === p.owner)
-        this.emit("flat", `${robber.name} hit ${owner ? `${owner.name}'s ` : ""}SPIKE STRIP. Flat tire!`, robber.id)
+        // "count|tire", e.g. "2|RL".
+        this.emit("flat", `${flatCount(b.wheels)}|${WHEEL_NAMES[wheel]}`, robber.id)
       }
     }
     if (roadblocks) this.propsChanged()
+  }
+
+  /**
+   * Repair shops: the driver stopped in a bay with flat tires gets them all fixed after REPAIR_SECONDS. Driving out
+   * resets the progress; rolling around inside drains it. A shop that just did a repair needs SHOP_COOLDOWN seconds
+   * before it can do another. Cops never need one. Unless the driver is seen, only the driver hears about it.
+   */
+  private stepRepair(dt: number, r: Car) {
+    for (let i = 0; i < this.shopCool.length; i++) this.shopCool[i] = Math.max(0, this.shopCool[i]! - dt)
+    const b = r.body
+    const i = shopAt(this.city, b.x, b.z)
+    if (i < 0 || !b.wheels || this.shopCool[i]! > 0) {
+      this.repair = 0
+      return
+    }
+    if (speedOf(b) >= REPAIR_SPEED) {
+      this.repair = Math.max(0, this.repair - dt * 2)
+      return
+    }
+    this.repair += dt
+    if (this.repair < REPAIR_SECONDS) return
+    this.repair = 0
+    b.wheels = 0
+    this.shopCool[i] = SHOP_COOLDOWN
+    const shop = this.city.shops[i]!
+    if (this.seen) this.emit("repair", shop.id, r.id)
+    else this.emit("repair", "", r.id, r.ownerId)
   }
 
   /** Is the robber inside a smoke cloud? */
@@ -803,6 +848,7 @@ export class World {
       this.lastSeenH = r.body.h
     }
     if (SURVIVAL) this.stepTip(dt, r)
+    this.stepRepair(dt, r)
 
     // Bust: slow robber with cops pressed against them. One cop works against a wall; more cops are faster.
     const near = cops.filter((c) => Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z) < BUST_RANGE)
@@ -964,7 +1010,7 @@ export class World {
         yaw: hidden ? 0 : b.yaw,
         slide: hidden ? 0 : (b.drift ?? 0),
         slip: hidden ? 0 : (b.slip ?? 0),
-        flat: hidden ? 0 : (b.flat ?? 0),
+        wheels: hidden ? 0 : (b.wheels ?? 0),
         engineOff: hidden ? false : !!b.engineOff,
         radar: c.role === "robber" ? !hidden && !ownSight : undefined,
       })
@@ -997,6 +1043,7 @@ export class World {
       exitOpenIn: this.exitOpenIn(),
       survived: this.survived,
       tip: this.tip,
+      ...(robberView && this.phase === "chase" ? { repair: this.repair / REPAIR_SECONDS, shopCool: [...this.shopCool] } : {}),
       best: this.best,
       bestName: this.bestName,
       newBest: this.newBest,
@@ -1030,6 +1077,3 @@ export class World {
 export const IMPACT_EVENT = 6
 const IMPACT_COOLDOWN = 0.3
 
-export function radiusOf(c: Car) {
-  return Math.max(1.1, c.vehicle.length * 0.42)
-}

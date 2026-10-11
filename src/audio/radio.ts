@@ -98,9 +98,13 @@ export class Radio {
       case "tip":
         if (chase) this.say(this.pick("tip", ["tip_area", "tip_maps"]))
         return
-      case "flat":
-        if (chase) this.say(this.pick("flat", ["flat_strip", "flat_limping"]))
+      case "flat": {
+        if (!chase) return
+        // "count|tire": once they're down to the rims the call is that the suspect is limping.
+        const count = Number(e.text.split("|")[0])
+        this.say(count >= 4 ? "flat_limping" : this.pick("flat", ["flat_strip", "flat_limping"]))
         return
+      }
       case "dispatch":
         if (/fleeing/i.test(e.text)) this.say("chase_start", this.driver ? 0.4 : 0)
         return

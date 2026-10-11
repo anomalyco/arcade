@@ -56,8 +56,8 @@ button { font: inherit; color: inherit; }
 .h-tag span { display: block; transform: translate(-50%, -100%); font: 500 12px/1 var(--display); letter-spacing: 0.16em; color: var(--robber); text-transform: none; white-space: nowrap; }
 .h-tag.ghost span { color: var(--faint); letter-spacing: 0.24em; }
 
-/* Gadget hint (cops) and flat tire (driver): one small line bottom-centre with a hairline bar under it. */
-.h-gadget, .h-flat { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; transition: opacity 0.2s; }
+/* Gadget hint (cops) and tire status (driver): one small line bottom-centre with a hairline bar under it. */
+.h-gadget, .h-tires { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; transition: opacity 0.2s; }
 .g-row { display: flex; align-items: center; gap: 10px; font: 500 12px/1 var(--display); letter-spacing: 0.3em; }
 .g-key { display: grid; place-items: center; width: 18px; height: 18px; padding-left: 0.1em; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 3px; font-weight: 600; letter-spacing: 0.1em; color: var(--text); }
 .g-name { color: var(--text); }
@@ -69,12 +69,21 @@ button { font: inherit; color: inherit; }
 .h-gadget.dim { opacity: 0.4; }
 .h-keys:not(.off) ~ .h-gadget { bottom: 54px; }
 .h-gadget.dim .g-bar b { background: var(--text); }
-.h-flat .f-line { font: 600 13px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: var(--threat); animation: blink 0.9s steps(2) infinite; }
-.h-flat .g-bar { width: 150px; }
-.h-flat .g-bar b { background: var(--threat); box-shadow: 0 0 6px var(--threat); }
+.h-tires svg { width: 18px; height: 26px; overflow: visible; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
+.h-tires .t-body { fill: rgba(5, 7, 11, 0.45); stroke: rgba(238, 241, 246, 0.6); stroke-width: 1.2; }
+.h-tires .t-w { fill: rgba(238, 241, 246, 0.75); }
+.h-tires .t-w.pop { fill: var(--threat); filter: drop-shadow(0 0 2px var(--threat)); }
+.h-tires .t-line { font: 500 11px/1 var(--display); letter-spacing: 0.32em; padding-left: 0.32em; color: var(--dim); }
+.h-tires.rims .t-line { font-weight: 600; color: var(--threat); animation: blink 0.9s steps(2) infinite; }
+.t-repair { display: flex; flex-direction: column; align-items: center; gap: 5px; margin-top: 2px; }
+.t-rl { font: 600 12px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: #4ff0c8; }
+.t-repair .g-bar { width: 140px; }
+.t-repair .g-bar b { background: #4ff0c8; box-shadow: 0 0 6px #4ff0c8; }
+.t-repair.busy .t-rl { color: var(--dim); }
 @keyframes blink { 50% { opacity: 0.55; } }
 .h-flash { position: absolute; left: 0; right: 0; top: 19vh; text-align: center; font: 500 14px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: #ffc93a; }
 .h-flash.bad { font: 500 34px/1 var(--display); letter-spacing: 0.32em; color: var(--threat); }
+.h-flash.good { font: 500 26px/1 var(--display); letter-spacing: 0.32em; color: #4ff0c8; }
 
 /* End card: a low band across the bottom, so the busted car stays visible at screen centre. */
 .h-end { position: absolute; left: 0; right: 0; bottom: 0; height: 40vh; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 7vh; background: linear-gradient(to top, rgba(3, 4, 8, 0.82), rgba(3, 4, 8, 0.5) 55%, transparent); animation: fadein 0.6s ease-out; }

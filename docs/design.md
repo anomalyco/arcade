@@ -6,11 +6,12 @@ a fixed high three-quarter camera that never rotates (see `concept/dir-d-lowpoly
 
 ## Scope
 
-- Driving only. No loot, extraction, gadgets, garage, unlocks or XP.
+- Driving only. No loot, extraction, unlocks or XP. The one gadget is the cops' spike strip; the driver's answer to it
+  is a repair shop.
 - PvP only. There are no bots on the server. Bots still exist in `shared/sim/bots.ts` for tests, the
   balance runner and the dev staging scenes.
 - HUD: a survival clock, the room best, a bust ring, one line of intro text, a short end card and a room
-  invite pill. Nothing else.
+  invite pill. Cops get the spike strip hint; a driver with flats gets a tiny tire glyph and, in a bay, the repair bar.
 
 ## Round
 
@@ -30,7 +31,8 @@ a fixed high three-quarter camera that never rotates (see `concept/dir-d-lowpoly
   unit every 4 s. The helicopter launches 20 s into the chase and sweeps its spotlight over the driver.
 - **Radio:** the sim emits `spotted` (eyes back on the driver after 4 s unseen or 60 m from the last sighting, at
   most every 6 s; text `ground|north` or `heli|east`, heading in map terms with north = camera forward), `lost`
-  (5 s without eyes), `tip` and `flat`. `src/audio/radio.ts` turns them into police radio voice lines
+  (5 s without eyes), `tip` and `flat` (`count|tire`, e.g. `2|RL`; at 4/4 the call is that the suspect is limping).
+  `src/audio/radio.ts` turns them into police radio voice lines
   (`public/sfx/radio/`): clean on the cops' radio, a quiet muffled scanner for the driver, who also gets an alert sting
   when spotted. One line at a time, one queued.
 - **Score:** survival time. Each player's best and the room best are kept for the life of the room.
@@ -49,6 +51,46 @@ along, head-on hits stop with a small bounce. Car hits are resolved at the momen
 off-center hit spins the struck car: a hard knock leaves it loose for up to 1.2 s (low grip and steering, the spin
 carries on), which is the PIT. A change in velocity over 9 m/s stuns. Hits of 6 m/s or more raise an `impact` event
 (`speed|x|z|nx|nz`, normal into the car); an unseen driver's carry only the speed.
+
+## Spike strips and flat tires
+
+- Cops drop a strip behind them with Q or E (10 s cooldown). Strips stay for the round; each cop keeps at most 3 down
+  and laying a fourth picks up their oldest.
+- Each pass over a strip pops one tire: the first intact tire to go over it, from the tire positions (32% of the car's
+  length from the middle, 40% of its width out) against the strip, in crossing order (an axle square to the strip goes
+  left before right). Only tires whose track crosses the strip's length count. A strip bites again only once the car is
+  clear of it. A hit marks the strip as the driver's last known position and raises a `flat` event.
+- Flats stay until repaired (`Body.wheels`, a mask: 1 FL, 2 FR, 4 RL, 8 RR). By number of flats:
+
+  | Flats | Top speed | Grip | Accel |
+  | ----- | --------- | ---- | ----- |
+  | 1     | ×0.8      | ×0.85 | ×0.9  |
+  | 2     | ×0.6      | ×0.7  | ×0.75 |
+  | 3     | ×0.38     | ×0.5  | ×0.55 |
+  | 4     | ×0.2      | ×0.35 | ×0.35 |
+
+  Four flats is driving on the rims, about 6-9 m/s depending on the car, with sparks: slow enough to box in, but the
+  driver can still limp to a shop. Each flat front keeps ×0.8 steering, each flat rear ×0.88 grip on top. A one-sided
+  flat pulls the car toward it (0.1 rad/s per tire of left-right imbalance, at speed), and flats wobble the car with
+  distance travelled (rear flats more). No stun.
+- Drawn: the body sags at popped corners and shimmies a little.
+
+## Repair shops
+
+- Four mechanic shops (`city.shops`), one per quarter of the district and at least 110 m from the precinct, placed from
+  their own seeded stream by taking over a street-front building whose face looks -z or -x (so the bay faces the
+  camera). Each keeps the building's footprint: a 7 m wide, 9 m deep open bay in the middle of the street face, solid
+  side walls and the workshop behind. The sidewalk in front is cleared for a straight pull-in.
+- The driver stopped (under 2 m/s) in a bay with any flats gets every tire fixed after 2.5 s. Leaving the bay resets the
+  progress; rolling around inside drains it. A shop that did a repair can't do another for 45 s. Cops never repair.
+- Everyone has the shops on the minimap (a wrench), so staking one out is a cop strategy. The driver with flats sees
+  working shops lit, an edge arrow to the nearest and a teal pulse on the bay floors; busy ones dim.
+- `repair` event when done: to everyone with the shop id when the driver is seen, otherwise only to the driver with no
+  text (`SimEvent.to`). Repair progress and shop cooldowns are only in the driver's view.
+- Look: cinder block with a yellow stripe, the bay open to the sky under a lintel with AUTO REPAIR and the rolled-up
+  door's housing, a canopy over the back, a warm light bar over the tool wall and a red tool chest on the inner wall
+  that faces the camera, tyre stacks and an oil drum, a painted bay outline, a dropped apron, and a vertical GARAGE
+  neon with a wrench. Impact wrench sound (`public/sfx/repair.mp3`) on the repair.
 
 ## Going dark
 

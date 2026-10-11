@@ -1,4 +1,4 @@
-import type { Input } from "../../shared/sim/vehicle"
+import { flatCount, type Input } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
 import { audio, type AudioEngine, type SfxName } from "./audio"
@@ -488,8 +488,10 @@ export class GameAudio {
       s.skidCool = 1.6
     }
 
-    const flat = (mine.flat ?? 0) > 0 && mine.speed > 1.5
-    this.flat.set(flat ? Math.min(0.55, 0.15 + mine.speed / 50) : 0, 0.55 + Math.min(1, mine.speed / 30) * 0.8, 0, 12000, 0.04, 0.1)
+    // Flapping rubber, louder and grittier with every popped tire; on the rims it grinds even at a crawl.
+    const flats = flatCount(mine.wheels)
+    const flat = flats > 0 && mine.speed > 1.5
+    this.flat.set(flat ? Math.min(0.7, (0.12 + mine.speed / 50) * (0.8 + 0.2 * flats) + (flats === 4 ? 0.12 : 0)) : 0, (0.55 + Math.min(1, mine.speed / 30) * 0.8) * (flats === 4 ? 1.25 : 1), 0, flats === 4 ? 16000 : 12000, 0.04, 0.1)
 
     // Your own lightbar, unpanned and a touch muffled, only once the chase is on.
     const siren = mine.role === "cop" && view.phase === "chase"
@@ -864,9 +866,17 @@ export class GameAudio {
         case "gadget":
           a.play("spike_deploy", { gain: 0.75 * g, pan, wet })
           break
-        case "flat":
+        case "flat": {
           a.play("tire_pop", { gain: own ? 0.95 : 0.85 * g, pan, wet })
           if (own) a.duckFor(0.6, 0.6)
+          // The last tire going: the rim hits the road.
+          if (e.text.startsWith("4|")) a.play("crash_thump_1", { gain: (own ? 0.5 : 0.4) * g, pan, wet, rate: 1.15, delay: 0.08 })
+          break
+        }
+        case "repair":
+          // Impact wrench on the lugs. Only reaches cops when the driver is seen (the event is private otherwise).
+          a.play("repair", { gain: own ? 0.8 : 0.7 * g, pan, wet })
+          if (own) a.play("ui_whoosh", { bus: "sting", gain: 0.2, delay: 0.5 })
           break
         case "near":
           a.play("near_whoosh", { gain: (own ? 0.6 : 0.5) * g, pan, wet, rate: 0.95 + Math.random() * 0.1 })

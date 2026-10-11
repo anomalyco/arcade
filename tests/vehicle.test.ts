@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DT, ROADBLOCK_THICK, VEHICLE_BY_ID, VEHICLES } from "../shared/config"
+import { DT, FLAT_SPEED, ROADBLOCK_THICK, VEHICLE_BY_ID, VEHICLES } from "../shared/config"
 import type { Box } from "../shared/sim/city"
 import { mulberry32 } from "../shared/sim/rng"
 import { boxShape, carHalf, carShape, shapeGap } from "../shared/sim/collide"
@@ -126,9 +126,9 @@ describe("drifting", () => {
 describe("modifiers", () => {
   test("a flat tire lowers top speed", () => {
     const b = newBody(0, 0, 0)
-    b.flat = 60
+    b.wheels = 1
     run(b, input({ throttle: 1 }), 12)
-    expect(speedOf(b)).toBeLessThan(muscle.maxSpeed * DRIVE.flatSpeed + 0.5)
+    expect(speedOf(b)).toBeLessThan(muscle.maxSpeed * FLAT_SPEED[1] + 0.5)
   })
 
   test("oil: almost no grip, the car keeps sliding and spinning", () => {

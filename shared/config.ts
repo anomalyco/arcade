@@ -91,10 +91,19 @@ export const GADGETS: Record<GadgetId, GadgetSpec> = {
 export const LOADOUT: Record<Role, [GadgetId, GadgetId]> = { robber: ["oil", "smoke"], cop: ["spike", "roadblock"] }
 
 export const OIL_SPIN_SECONDS = 1.2
-export const FLAT_SECONDS = 5
-/** A flat tire caps top speed and grip at these fractions. */
-export const FLAT_SPEED = 0.5
-export const FLAT_GRIP = 0.45
+/**
+ * Flat tires, indexed by how many are popped (0..4): fractions of top speed, grip and acceleration. Four flats is
+ * driving on the rims: slow, sluggish and slidey, but the car can still limp to a repair shop.
+ */
+export const FLAT_SPEED = [1, 0.8, 0.6, 0.38, 0.2] as const
+export const FLAT_GRIP = [1, 0.85, 0.7, 0.5, 0.35] as const
+export const FLAT_ACCEL = [1, 0.9, 0.75, 0.55, 0.35] as const
+/** Seconds the driver has to sit still in a repair bay to get every tire fixed. */
+export const REPAIR_SECONDS = 2.5
+/** Faster than this (m/s) in a bay and the mechanics can't work. */
+export const REPAIR_SPEED = 2
+/** Seconds before a shop can fix the driver's tires again. */
+export const SHOP_COOLDOWN = 45
 /** Bust progress per second for each cop pressed against the driver: two cops bust twice as fast as one. */
 export const BUST_RATE_PER_COP = 0.5
 export const SPIKE_THICK = 0.8

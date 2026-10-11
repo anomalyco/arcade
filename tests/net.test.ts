@@ -1,7 +1,7 @@
 import { MAX_STRIPS } from "../shared/sim/world"
 import { MAX_PLAYERS } from "../shared/config"
 import { describe, expect, test } from "bun:test"
-import { DT, FLAT_SECONDS, VEHICLE_BY_ID } from "../shared/config"
+import { DT, REPAIR_SECONDS, VEHICLE_BY_ID } from "../shared/config"
 import { type ServerMsg, decodeServer, encodeClient } from "../shared/protocol"
 import type { Body, Input } from "../shared/sim/vehicle"
 import { type Conn, RoomCore } from "../server/core"
@@ -381,7 +381,7 @@ describe("spike strip", () => {
     expect(b.pipe.received.some((m) => m.type === "events" && m.events.some((e) => e.kind === "gadget"))).toBe(true)
   })
 
-  test("the driver's prediction carries a server-side flat tire without diverging", () => {
+  test("the driver's prediction carries server-side flat tires (pull and wobble included) without diverging", () => {
     const net = new Net()
     const { a, b } = pair(net)
     let hitSeq = 0
@@ -389,7 +389,8 @@ describe("spike strip", () => {
     for (let i = 0; i < 360; i++) {
       net.tick()
       if (i === 320) {
-        net.core.world!.carOf(a.client!.myId)!.body.flat = FLAT_SECONDS
+        // Front and rear left: the car pulls left and wobbles.
+        net.core.world!.carOf(a.client!.myId)!.body.wheels = 0b0101
         hitSeq = a.client!.seq
       }
       view = a.frame(drive(i))
@@ -399,8 +400,41 @@ describe("spike strip", () => {
     const { worst, n } = maxError(a.predicted, a.server, hitSeq + 10)
     expect(n).toBeGreaterThan(10)
     expect(worst).toBeLessThan(1e-9)
-    expect(a.client!.body!.flat).toBeGreaterThan(FLAT_SECONDS - 2)
-    expect(view!.cars.find((c) => c.ownerId === a.client!.myId)!.flat).toBeGreaterThan(FLAT_SECONDS - 2)
+    expect(a.client!.body!.wheels).toBe(0b0101)
+    expect(view!.cars.find((c) => c.ownerId === a.client!.myId)!.wheels).toBe(0b0101)
+  })
+})
+
+describe("repair shops", () => {
+  test("an unseen driver's repair reaches only the driver, and the prediction follows it", () => {
+    const net = new Net()
+    const { a, b } = pair(net)
+    settle(net, a, b)
+    const world = net.core.world!
+    for (let i = 0; i < 400 && !(world.phase === "chase" && world.phaseT > 1); i++) {
+      net.tick()
+      a.frame(IDLE)
+      b.frame(IDLE)
+    }
+    expect(world.phase).toBe("chase")
+    const shop = world.city.shops[0]!
+    const car = world.carOf(a.client!.myId)!
+    Object.assign(car.body, { x: shop.x, z: shop.z, h: shop.h + Math.PI, vx: 0, vz: 0, yaw: 0, wheels: 0b1001 })
+    const still: Input = { ...IDLE, brake: 1 }
+    for (let i = 0; i < 30 * (REPAIR_SECONDS + 1); i++) {
+      net.tick()
+      a.frame(still)
+      b.frame(still)
+      expect(world.seen).toBe(false)
+    }
+    expect(car.body.wheels).toBe(0)
+    expect(a.client!.body!.wheels).toBe(0)
+    const heard = (j: Joined) => j.pipe.received.some((m) => m.type === "events" && m.events.some((e) => e.kind === "repair"))
+    expect(heard(a)).toBe(true)
+    expect(heard(b)).toBe(false)
+    const snaps = (j: Joined) => j.pipe.received.filter((m) => m.type === "snapshot")
+    expect(snaps(b).every((m) => m.type === "snapshot" && m.view.repair === undefined && m.view.shopCool === undefined)).toBe(true)
+    expect(snaps(a).some((m) => m.type === "snapshot" && (m.view.repair ?? 0) > 0.5)).toBe(true)
   })
 })
 

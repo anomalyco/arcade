@@ -306,7 +306,7 @@ export class NetClient {
     if (!base) return view
     const p = this.visual()
     const impact = Math.max(this.impactNow, this.impactPrev)
-    const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, flat: b.flat ?? 0, ghost: false, impact }
+    const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, wheels: b.wheels ?? 0, ghost: false, impact }
     mine.engineOff = !!b.engineOff
     const proxies = new Map(this.proxies.map((q) => [q.id, q]))
     const cars = view.cars.filter((c) => c.ownerId !== this.myId || c.id === this.carId).map((c) => (c.id === this.carId ? mine : this.near(c, p, proxies.get(c.id))))

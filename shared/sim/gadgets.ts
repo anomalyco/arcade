@@ -64,16 +64,55 @@ export function propBox(p: Pick<PropView, "kind" | "x" | "z" | "h" | "r">): Box 
   return { x0: p.x - ax, x1: p.x + ax, z0: p.z - az, z1: p.z + az, h: 1.3, color: [0.95, 0.55, 0.12], neon: null, kind: "special", label: "roadblock" }
 }
 
-/** Did a car of the given radius cross a spike strip moving from (px, pz) to (x, z)? */
-export function crossesStrip(p: PropView, px: number, pz: number, x: number, z: number, radius: number) {
+export type Pose = { x: number; z: number; h: number }
+
+/** Where the tires sit as fractions of the car's length (front and rear axles) and width. */
+export const WHEEL_ALONG = 0.32
+export const WHEEL_SIDE = 0.4
+
+/** World positions of a car's tires in Body.wheels order: front left, front right, rear left, rear right. */
+export function wheelPoints(p: Pose, length: number, width: number): [number, number][] {
   const [fx, fz] = forward(p.h)
-  const along = (ax: number, az: number) => (ax - p.x) * fx + (az - p.z) * fz
-  const across = (ax: number, az: number) => Math.abs((ax - p.x) * fz - (az - p.z) * fx)
-  if (across(x, z) > p.r + radius * 0.4) return false
-  const a0 = along(px, pz)
-  const a1 = along(x, z)
-  const half = SPIKE_THICK / 2 + radius * 0.6
-  return Math.abs(a1) < half || Math.sign(a0) !== Math.sign(a1)
+  const a = length * WHEEL_ALONG
+  const s = width * WHEEL_SIDE
+  // Right is (fz, -fx).
+  return [
+    [p.x + fx * a - fz * s, p.z + fz * a + fx * s],
+    [p.x + fx * a + fz * s, p.z + fz * a - fx * s],
+    [p.x - fx * a - fz * s, p.z - fz * a + fx * s],
+    [p.x - fx * a + fz * s, p.z - fz * a - fx * s],
+  ]
+}
+
+/**
+ * Tires that go over a spike strip on a move from `from` to `to`, in the order they cross it (indices into
+ * Body.wheels). Only tires whose track passes over the strip's length count. Empty unless at least one of them reaches
+ * the strip during this move, so the caller learns about a crossing the moment the first tire touches.
+ */
+export function stripWheels(p: PropView, from: Pose, to: Pose, length: number, width: number): number[] {
+  const [fx, fz] = forward(p.h)
+  const along = ([x, z]: [number, number]) => (x - p.x) * fx + (z - p.z) * fz
+  const across = ([x, z]: [number, number]) => Math.abs((x - p.x) * fz - (z - p.z) * fx)
+  const half = SPIKE_THICK / 2
+  const w0 = wheelPoints(from, length, width)
+  const w1 = wheelPoints(to, length, width)
+  // Which way the car is moving across the strip: the tire furthest along that way crosses first.
+  const c0 = (from.x - p.x) * fx + (from.z - p.z) * fz
+  const c1 = (to.x - p.x) * fx + (to.z - p.z) * fz
+  const way = c1 !== c0 ? Math.sign(c1 - c0) : -Math.sign(c1) || 1
+  let touched = false
+  const over: { i: number; key: number }[] = []
+  for (let i = 0; i < 4; i++) {
+    const a0 = along(w0[i]!)
+    const a1 = along(w1[i]!)
+    if (Math.min(across(w0[i]!), across(w1[i]!)) > p.r) continue
+    if (Math.min(a0, a1) <= half && Math.max(a0, a1) >= -half) touched = true
+    over.push({ i, key: -a1 * way })
+  }
+  if (!touched) return []
+  // Ties (both tires of an axle square to the strip) go left before right, so the order is always the same.
+  over.sort((a, b) => (Math.abs(a.key - b.key) > 0.05 ? a.key - b.key : a.i - b.i))
+  return over.map((o) => o.i)
 }
 
 /** Segment from (ax, az) to (bx, bz) against an axis-aligned box (slab test). */

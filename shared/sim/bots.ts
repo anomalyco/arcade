@@ -1,5 +1,5 @@
-import { type Input, forward, speedOf } from "./vehicle"
-import { nearestNode } from "./city"
+import { type Input, NO_INPUT, flatCount, forward, speedOf } from "./vehicle"
+import { BAY_DEPTH, nearestNode } from "./city"
 import { type Car, SURVIVAL, type World } from "./world"
 
 const TAU = Math.PI * 2
@@ -83,7 +83,33 @@ function hideout(world: World, car: Car): { x: number; z: number } {
   return best
 }
 
+/** With two or more flats, limp to the nearest shop that can work: down the road to its mouth, in, and stop. */
+function toShop(world: World, car: Car): Input | null {
+  const b = car.body
+  if (flatCount(b.wheels) < 2 || world.phase !== "chase") return null
+  let best = -1
+  let bd = Infinity
+  world.city.shops.forEach((s, i) => {
+    const d = Math.hypot(s.x - b.x, s.z - b.z)
+    if ((world.shopCool[i] ?? 0) <= 0 && d < bd) {
+      bd = d
+      best = i
+    }
+  })
+  const s = world.city.shops[best]
+  if (!s) return null
+  if (bd < 2) return { ...NO_INPUT, brake: 1 }
+  const [ox, oz] = forward(s.h)
+  const mx = s.x + ox * (BAY_DEPTH / 2 + 10)
+  const mz = s.z + oz * (BAY_DEPTH / 2 + 10)
+  if (bd < 12 || Math.hypot(mx - b.x, mz - b.z) < 9) return driveToward(car, s.x, s.z, 7)
+  reroute(world, car, mx, mz, 3)
+  return followRoute(world, car, mx, mz, car.vehicle.maxSpeed)
+}
+
 export function robberBrain(world: World, car: Car): Input {
+  const repair = toShop(world, car)
+  if (repair) return repair
   const exit = world.exit
   const b = car.body
   const eta = Math.hypot(exit.x - b.x, exit.z - b.z) / 26

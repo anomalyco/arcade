@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { BUST_SECONDS, CAMERA_YAW, CELL, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE, VEHICLE_BY_ID } from "../shared/config"
+import { BUST_SECONDS, CAMERA_YAW, CELL, DT, END_SECONDS, FLAT_SPEED, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE, VEHICLE_BY_ID } from "../shared/config"
 import { carShape, shapeGap } from "../shared/sim/collide"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
-import { NO_INPUT } from "../shared/sim/vehicle"
+import { NO_INPUT, flatCount } from "../shared/sim/vehicle"
 import { LOST_AFTER, MAX_STRIPS, SPOT_AFTER, TIP_EVERY, TIP_RADIUS, World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
 import { ROAD_X, ROAD_Z, bot, drive, human, humanWorld, place, steps, toChase } from "./sim-helpers"
 
@@ -182,10 +182,10 @@ describe.skipIf(SURVIVAL)("gadgets", () => {
     expect(w.view("r").props!.some((p) => p.kind === "spike")).toBe(true)
     steps(w, 2)
     const flat = w.drainEvents().find((e) => e.kind === "flat")
-    expect(flat?.text).toContain("SPIKE STRIP")
-    expect(w.robber()!.body.flat).toBeGreaterThan(FLAT_SECONDS - 2)
+    expect(flat?.text.startsWith("1|")).toBe(true)
+    expect(flatCount(w.robber()!.body.wheels)).toBe(1)
     expect(w.props.some((p) => p.kind === "spike")).toBe(false)
-    expect(robberOf(w, "r")!.flat).toBeGreaterThan(0)
+    expect(robberOf(w, "r")!.wheels).toBe(w.robber()!.body.wheels)
   })
 
   test("a roadblock is a solid barrier across the road for everyone, then expires", () => {
@@ -539,7 +539,7 @@ describe("radio calls", () => {
 })
 
 describe("survival spike strip", () => {
-  test.skipIf(!SURVIVAL)("a cop drops a strip behind them; the driver crossing it gets a flat and slows down", () => {
+  test.skipIf(!SURVIVAL)("a cop drops a strip behind them; the driver crossing it loses a tire and slows down", () => {
     const w = humanWorld(["c1", "c2"])
     toChase(w)
     place(w, "c1", ROAD_X, ROAD_Z, 0)
@@ -561,11 +561,12 @@ describe("survival spike strip", () => {
       w.setInput("r", { ...NO_INPUT, throttle: 1 })
     })
     const b = w.carOf("r")!.body
-    expect(b.flat ?? 0).toBeGreaterThan(0)
+    expect(flatCount(b.wheels)).toBe(1)
     // The strip marks the last known position.
     expect(Math.hypot(w.lastSeen!.x - strip.x, w.lastSeen!.z - strip.z)).toBeLessThan(10)
+    steps(w, 6, () => w.setInput("r", { ...NO_INPUT, throttle: 1 }))
     top = Math.hypot(b.vx, b.vz)
-    expect(top).toBeLessThan(w.carOf("r")!.vehicle.maxSpeed * 0.75)
+    expect(top).toBeLessThan(w.carOf("r")!.vehicle.maxSpeed * FLAT_SPEED[1] + 0.5)
   })
 })
 
@@ -682,7 +683,7 @@ describe("going dark", () => {
 })
 
 describe("permanent spike strips", () => {
-  test.skipIf(!SURVIVAL)("strips never expire and bite again on every new pass", () => {
+  test.skipIf(!SURVIVAL)("strips never expire and pop another tire on every new pass", () => {
     const w = humanWorld(["c1", "c2"])
     toChase(w)
     place(w, "c1", ROAD_X, ROAD_Z, 0)
@@ -698,9 +699,9 @@ describe("permanent spike strips", () => {
     let flats = 0
     for (const dir of [0, Math.PI]) {
       place(w, "r", strip.x, strip.z + (dir === 0 ? -15 : 15), dir, 15)
-      w.carOf("r")!.body.flat = 0
+      const before = flatCount(w.carOf("r")!.body.wheels)
       steps(w, 2, () => w.setInput("r", { ...NO_INPUT, throttle: 0.6 }))
-      if ((w.carOf("r")!.body.flat ?? 0) > 0) flats++
+      flats += flatCount(w.carOf("r")!.body.wheels) - before
     }
     expect(flats).toBe(2)
     expect(w.props.some((p) => p.id === strip.id)).toBe(true)

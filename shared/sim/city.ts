@@ -16,7 +16,21 @@ export type Box = {
   /** Storeys above the ground floor (buildings only). */
   floors?: number
   /** What a non-building solid is, for the renderer. */
-  use?: "container" | "crane" | "statue"
+  use?: "container" | "crane" | "statue" | "shop"
+}
+
+/**
+ * A mechanic's garage. The service bay is an open drive-in recess off the sidewalk; `h` is the heading out of the bay
+ * toward the street, (x, z) the middle of the bay floor. `lot` is the whole footprint (bay, workshop and side walls).
+ */
+export type Shop = {
+  id: string
+  name: string
+  x: number
+  z: number
+  h: number
+  bay: { x0: number; x1: number; z0: number; z1: number }
+  lot: { x0: number; x1: number; z0: number; z1: number }
 }
 
 export type Park = { x0: number; x1: number; z0: number; z1: number; kind?: "park" | "plaza" }
@@ -44,6 +58,7 @@ export type City = {
   yards: Yard[]
   /** Sidewalk width between the curb and the building line. */
   sidewalk: number
+  shops: Shop[]
 }
 
 export const NODE_COUNT = (GRID + 1) * (GRID + 1)
@@ -348,6 +363,7 @@ export function generateCity(seed: number): City {
   const pcx = precinctBlock[0]! * CELL + CELL / 2
   const pcz = precinctBlock[1]! * CELL + CELL / 2
   const precinctBox = boxes.find((b) => b.label === "PRECINCT")!
+  const shops = placeShops(seed, boxes, trees, lamps, { x: pcx, z: pcz })
   return {
     seed,
     boxes,
@@ -366,7 +382,111 @@ export function generateCity(seed: number): City {
     max: WORLD_MAX,
     yards,
     sidewalk: SIDEWALK,
+    shops,
   }
+}
+
+const SHOP_NAMES = ["Lou's Auto Repair", "Quick Fix Tires", "Mel's Garage", "Eastside Auto"]
+/** Bay opening width and depth (m). */
+export const BAY_WIDTH = 7
+export const BAY_DEPTH = 9
+export const SHOP_HEIGHT = 5.6
+
+/**
+ * Turns a few street-front buildings into mechanic shops, one per quarter of the district (away from the precinct),
+ * from their own seeded stream so the rest of the city stays as generated. Each shop keeps the building's footprint:
+ * an open bay in the middle of the street face, solid side walls, and the workshop behind. Only faces toward -z or -x
+ * are used, so the bay faces the camera. Trees and lamps in front of the bay are cleared so it's a straight pull-in.
+ */
+function placeShops(seed: number, boxes: Box[], trees: Tree[], lamps: City["lamps"], precinct: { x: number; z: number }): Shop[] {
+  const rng = mulberry32(seed ^ 0x51a4e7)
+  const line = (v: number, lo: boolean) => (lo ? Math.floor(v / CELL) * CELL + ROAD_HALF + SIDEWALK : Math.ceil(v / CELL) * CELL - ROAD_HALF - SIDEWALK)
+  type Cand = { b: Box; side: 0 | 2 }
+  const cands: Cand[] = []
+  for (const b of boxes) {
+    if (b.kind !== "building" || b.use || b.label) continue
+    const w = b.x1 - b.x0
+    const d = b.z1 - b.z0
+    // Side 0: the face at z0 looks onto a road (-z). Side 2: the face at x0 (-x).
+    if (Math.abs(b.z0 - line(b.z0, true)) < 0.5 && w >= BAY_WIDTH + 5 && w <= 22 && d >= BAY_DEPTH + 3.5) cands.push({ b, side: 0 })
+    if (Math.abs(b.x0 - line(b.x0, true)) < 0.5 && d >= BAY_WIDTH + 5 && d <= 22 && w >= BAY_DEPTH + 3.5) cands.push({ b, side: 2 })
+  }
+  const shops: Shop[] = []
+  const used = new Set<Box>()
+  const span = GRID * CELL
+  const quarters = [
+    [0.25, 0.25],
+    [0.75, 0.25],
+    [0.25, 0.75],
+    [0.75, 0.75],
+  ]
+  for (const [qx, qz] of quarters) {
+    const tx = span * (qx! + (rng() - 0.5) * 0.25)
+    const tz = span * (qz! + (rng() - 0.5) * 0.25)
+    let best: Cand | null = null
+    let bd = Infinity
+    for (const c of cands) {
+      if (used.has(c.b)) continue
+      const cx = (c.b.x0 + c.b.x1) / 2
+      const cz = (c.b.z0 + c.b.z1) / 2
+      if (Math.hypot(cx - precinct.x, cz - precinct.z) < 110) continue
+      if (shops.some((s) => Math.hypot(s.x - cx, s.z - cz) < 150)) continue
+      const d = Math.hypot(cx - tx, cz - tz)
+      if (d < bd) {
+        bd = d
+        best = c
+      }
+    }
+    if (!best) continue
+    used.add(best.b)
+    const { b, side } = best
+    const i = boxes.indexOf(b)
+    boxes.splice(i, 1)
+    const h = SHOP_HEIGHT
+    const solid = (x0: number, x1: number, z0: number, z1: number) =>
+      boxes.push({ x0, x1, z0, z1, h, color: [0.42, 0.4, 0.37], neon: null, kind: "building", label: null, use: "shop" })
+    let bay: Shop["bay"]
+    let heading: number
+    if (side === 0) {
+      const mid = (b.x0 + b.x1) / 2
+      bay = { x0: mid - BAY_WIDTH / 2, x1: mid + BAY_WIDTH / 2, z0: b.z0, z1: b.z0 + BAY_DEPTH }
+      solid(b.x0, bay.x0, b.z0, bay.z1)
+      solid(bay.x1, b.x1, b.z0, bay.z1)
+      solid(b.x0, b.x1, bay.z1, b.z1)
+      heading = Math.PI
+    } else {
+      const mid = (b.z0 + b.z1) / 2
+      bay = { x0: b.x0, x1: b.x0 + BAY_DEPTH, z0: mid - BAY_WIDTH / 2, z1: mid + BAY_WIDTH / 2 }
+      solid(b.x0, bay.x1, b.z0, bay.z0)
+      solid(b.x0, bay.x1, bay.z1, b.z1)
+      solid(bay.x1, b.x1, b.z0, b.z1)
+      heading = -Math.PI / 2
+    }
+    // Clear the sidewalk in front of the bay (the apron out to the curb).
+    const pad = 2
+    const apron =
+      side === 0
+        ? { x0: bay.x0 - pad, x1: bay.x1 + pad, z0: bay.z0 - SIDEWALK - 1, z1: bay.z0 }
+        : { x0: bay.x0 - SIDEWALK - 1, x1: bay.x0, z0: bay.z0 - pad, z1: bay.z1 + pad }
+    const inApron = (x: number, z: number) => x > apron.x0 - 1 && x < apron.x1 + 1 && z > apron.z0 - 2 && z < apron.z1 + 1
+    for (let k = trees.length - 1; k >= 0; k--) if (inApron(trees[k]!.x, trees[k]!.z)) trees.splice(k, 1)
+    for (let k = lamps.length - 1; k >= 0; k--) if (inApron(lamps[k]!.px ?? lamps[k]!.x, lamps[k]!.pz ?? lamps[k]!.z)) lamps.splice(k, 1)
+    shops.push({
+      id: `shop${shops.length}`,
+      name: SHOP_NAMES[shops.length % SHOP_NAMES.length]!,
+      x: (bay.x0 + bay.x1) / 2,
+      z: (bay.z0 + bay.z1) / 2,
+      h: heading,
+      bay,
+      lot: { x0: b.x0, x1: b.x1, z0: b.z0, z1: b.z1 },
+    })
+  }
+  return shops
+}
+
+/** The shop whose bay contains (x, z), or -1. */
+export function shopAt(city: City, x: number, z: number) {
+  return city.shops.findIndex((s) => x > s.bay.x0 && x < s.bay.x1 && z > s.bay.z0 && z < s.bay.z1)
 }
 
 export function nearestNode(city: City, x: number, z: number): number {
