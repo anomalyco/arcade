@@ -1,0 +1,22 @@
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/600.css";
+
+:root {
+  --robber: #ff8a1f;
+  --cop: #3d7bff;
+  --threat: #ff3b3b;
+  --go: #36f07a;
+  --panel: rgba(8, 10, 16, 0.72);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #eef1f6;
+  --dim: #8b93a3;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Inter", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #05070b; color: var(--text); font-family: var(--body); overflow: hidden; }
+#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#hud, #overlay { position: fixed; inset: 0; pointer-events: none; }
+#overlay > * { pointer-events: auto; }

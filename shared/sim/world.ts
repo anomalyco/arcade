@@ -75,6 +75,8 @@ export type CarView = {
   ghost: boolean
 }
 
+export type Heli = { active: boolean; x: number; y: number; z: number; h: number; sx: number; sz: number; lock: number }
+
 export type Standing = { id: string; name: string; human: boolean; score: number; escapes: number; busts: number }
 
 export type WorldView = {
@@ -98,10 +100,15 @@ export type WorldView = {
   timeLeft: number
   roundScore: { drift: number; nearMisses: number; score: number }
   standings: Standing[]
+  heli: Heli
   cars: CarView[]
 }
 
 const SIGHT_RANGE = 70
+const HELI_DELAY = 20
+const HELI_SPEED = 26
+const HELI_ALT = 42
+const SPOT_RADIUS = 10
 
 export class World {
   city: City
@@ -126,6 +133,7 @@ export class World {
   roundDrift = 0
   roundNear = 0
   roundScore = 0
+  heli: Heli = { active: false, x: 0, y: HELI_ALT, z: 0, h: 0, sx: 0, sz: 0, lock: 0 }
   events: SimEvent[] = []
   standings = new Map<string, Standing>()
   private participants: Participant[] = []
@@ -199,6 +207,8 @@ export class World {
     this.roundScore = 0
     this.seen = false
     this.lastSeen = null
+    const hp = this.city.helipad
+    this.heli = { active: false, x: hp.x, y: hp.y, z: hp.z, h: 0, sx: hp.x, sz: hp.z, lock: 0 }
     this.site = this.city.sites[Math.floor(this.rng() * this.city.sites.length)]!
     const exits = this.city.extraction.filter((e) => Math.hypot(e.x - this.site.x, e.z - this.site.z) > 220)
     this.exit = exits[Math.floor(this.rng() * exits.length)] ?? this.city.extraction[0]!
@@ -362,7 +372,10 @@ export class World {
     if (!r) return
     const cops = this.cops()
     this.heat += dt * 0.5
-    this.seen = cops.some((c) => Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z) < SIGHT_RANGE)
+    this.stepHeli(dt, r)
+    const spotted = this.heli.active && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
+    this.heli.lock = spotted ? this.heli.lock + dt : 0
+    this.seen = spotted || cops.some((c) => Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z) < SIGHT_RANGE)
     if (this.seen) this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
 
     // Bust: slow robber with cops pressed against them. One cop works against a wall; more cops are faster.
@@ -402,6 +415,43 @@ export class World {
       return
     }
     if (this.stars > this.reinforcements + 2 && this.reinforcements < 3) this.addReinforcement()
+  }
+
+  /** The helicopter flies to where the cops think the suspect is and sweeps its spotlight around that point. */
+  private stepHeli(dt: number, r: Car) {
+    const h = this.heli
+    if (!h.active) {
+      if (this.phaseT < HELI_DELAY) return
+      h.active = true
+      this.emit("heli", "Air unit up. Spotlight sweeping.")
+    }
+    h.y += (HELI_ALT - h.y) * Math.min(1, dt * 0.8)
+    const target = this.copTarget()
+    if (!target) return
+    const dx = target.x - h.x
+    const dz = target.z - h.z
+    const d = Math.hypot(dx, dz)
+    const lag = 14
+    if (d > lag) {
+      const step = Math.min(d - lag, HELI_SPEED * dt)
+      h.x += (dx / d) * step
+      h.z += (dz / d) * step
+      h.h = Math.atan2(dx, dz)
+    }
+    let tx: number
+    let tz: number
+    if (this.seen && Math.hypot(r.body.x - h.x, r.body.z - h.z) < 60) {
+      tx = r.body.x + r.body.vx * 0.25
+      tz = r.body.z + r.body.vz * 0.25
+    } else {
+      const a = this.t * 0.9
+      const rad = 18 + 10 * Math.sin(this.t * 0.37)
+      tx = target.x + Math.cos(a) * rad
+      tz = target.z + Math.sin(a * 1.3) * rad
+    }
+    const k = Math.min(1, dt * 2.2)
+    h.sx += (tx - h.sx) * k
+    h.sz += (tz - h.sz) * k
   }
 
   private stepScoring(dt: number) {
@@ -482,6 +532,7 @@ export class World {
       timeLeft: Math.max(0, ROUND_SECONDS + INTRO_SECONDS + HEAD_START_SECONDS - this.t),
       roundScore: { drift: Math.round(this.roundDrift), nearMisses: this.roundNear, score: Math.round(this.roundScore) },
       standings,
+      heli: { ...this.heli },
       cars,
     }
   }

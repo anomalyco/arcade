@@ -1,0 +1,304 @@
+import { vec4 } from "wgpu-matrix"
+import { VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
+import type { City } from "../../shared/sim/city"
+import type { CarView, WorldView } from "../../shared/sim/world"
+import { buildCar, buildHeli, buildRotor } from "../render/car-mesh"
+import { buildCityMesh, type LampLight } from "../render/city-mesh"
+import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FLOATS } from "../render/renderer"
+import { MAX_LIGHTS } from "../render/shaders"
+import type { Camera } from "./camera"
+import { Fx } from "./fx"
+
+const MAX_SPRITES_PER_LIST = 3000
+const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
+const COP_TINT: [number, number, number] = [0.25, 0.5, 1.0]
+const MOON = normalizeV([-0.45, 0.75, -0.5])
+
+function normalizeV(v: number[]): [number, number, number] {
+  const l = Math.hypot(v[0]!, v[1]!, v[2]!)
+  return [v[0]! / l, v[1]! / l, v[2]! / l]
+}
+
+type Vis = { roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number }
+
+/** Matches the shader's siren strobe so glows and lights flash in sync with the lamp geometry. */
+export function sirenOn(phase: number, red: boolean) {
+  if (phase < 0) return 0
+  const t = phase - Math.floor(phase)
+  const a = red ? (t <= 0.5 ? 1 : 0) : t >= 0.5 ? 1 : 0
+  const strobe = (t * 4) % 1 >= 0.5 ? 1 : 0
+  return a * (0.5 + 0.5 * strobe)
+}
+
+export class Scene {
+  readonly fx = new Fx()
+  private lamps: LampLight[]
+  private models = new Map<string, number>()
+  private heliModel: number
+  private rotorModel: number
+  private vis = new Map<number, Vis>()
+  private frame = new Float32Array(FRAME_FLOATS)
+  private lights = new Float32Array(MAX_LIGHTS * 12)
+  private alpha = new Float32Array(MAX_SPRITES_PER_LIST * SPRITE_FLOATS)
+  private add = new Float32Array(MAX_SPRITES_PER_LIST * SPRITE_FLOATS)
+  private time = 0
+  /** Camera shake requests from impacts on the followed car. */
+  shake = 0
+
+  constructor(
+    private renderer: Renderer,
+    readonly city: City,
+  ) {
+    const built = buildCityMesh(city)
+    renderer.setCity(built.mesh)
+    this.lamps = built.lamps
+    for (const v of VEHICLES) this.models.set(v.id, renderer.addModel(buildCar(v)))
+    this.heliModel = renderer.addModel(buildHeli())
+    this.rotorModel = renderer.addModel(buildRotor())
+  }
+
+  private visOf(c: CarView) {
+    let v = this.vis.get(c.id)
+    if (!v) {
+      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0 }
+      this.vis.set(c.id, v)
+    }
+    return v
+  }
+
+  /** Per-car visual dynamics (body roll, pitch) and particle emission. */
+  private animate(view: WorldView, dt: number, focusId: number | null) {
+    for (const c of view.cars) {
+      if (c.ghost) continue
+      const v = this.visOf(c)
+      const spec = VEHICLE_BY_ID.get(c.vehicle)!
+      let dh = c.h - v.h
+      dh = Math.atan2(Math.sin(dh), Math.cos(dh))
+      const yawRate = dt > 0 ? dh / dt : 0
+      const accel = dt > 0 ? (c.speed - v.speed) / dt : 0
+      const k = 1 - Math.exp(-dt * 8)
+      v.roll += (Math.max(-0.11, Math.min(0.11, yawRate * c.speed * 0.0035)) - v.roll) * k
+      v.pitch += (Math.max(-0.06, Math.min(0.06, -accel * 0.004)) - v.pitch) * k
+      v.speed = c.speed
+      v.h = c.h
+      const fx = Math.sin(c.h)
+      const fz = Math.cos(c.h)
+      const rx = Math.cos(c.h)
+      const rz = -Math.sin(c.h)
+      const back = spec.length * 0.36
+      const side = spec.width * 0.4
+      if (c.drift > 4 && c.speed > 7) {
+        const intensity = Math.min(1, (c.drift - 3) / 8)
+        for (const s of [-1, 1]) this.fx.skid(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, Math.atan2(c.vx, c.vz), 0.45 * intensity + 0.15)
+        v.smokeAcc += dt * 30 * intensity
+        while (v.smokeAcc > 1) {
+          v.smokeAcc -= 1
+          const s = Math.random() < 0.5 ? -1 : 1
+          this.fx.smoke(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, c.vx, c.vz, intensity)
+        }
+      }
+      if (c.boost < v.fuel - 1e-4 && c.speed > 4) {
+        for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5, c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8)
+      }
+      v.fuel = c.boost
+      if (c.impact > 5) {
+        const sp = Math.hypot(c.vx, c.vz) || 1
+        this.fx.sparks(c.x + (c.vx / sp) * spec.length * 0.45, c.z + (c.vz / sp) * spec.length * 0.45, -c.vx / sp, -c.vz / sp, Math.min(24, Math.floor(c.impact)))
+        if (c.id === focusId) this.shake = Math.max(this.shake, Math.min(1, c.impact / 18))
+      }
+    }
+    this.fx.update(dt)
+  }
+
+  draw(view: WorldView, cam: Camera, w: number, h: number, dt: number, focus: CarView | null, opts: { bloom?: number; flash?: number } = {}) {
+    this.time += dt
+    this.animate(view, dt, focus?.id ?? null)
+    const t = this.time
+    const vp = cam.matrices(w / h)
+    const f = this.frame
+    f.set(vp, 0)
+    // Shadow camera: orthographic from the moon, centered on the camera focus.
+    const lightEye = [cam.fx + MOON[0] * 300, MOON[1] * 300, cam.fz + MOON[2] * 300]
+    f.set(lightMatrix(lightEye, [cam.fx, 0, cam.fz]), 16)
+    let o = 32
+    const put = (a: number, b: number, c: number, d: number) => {
+      f[o++] = a
+      f[o++] = b
+      f[o++] = c
+      f[o++] = d
+    }
+    put(cam.eye[0], cam.eye[1], cam.eye[2], t)
+    const fp = focus ? [focus.x, 1, focus.z] : [cam.fx, 1, cam.fz]
+    put(fp[0]!, fp[1]!, fp[2]!, focus ? 0.24 : 0)
+    put(w, h, 0, t)
+    put(MOON[0], MOON[1], MOON[2], 0.55)
+    const heli = view.heli
+    if (heli.active) {
+      const dir = normalizeV([heli.sx - heli.x, -heli.y + 0.5, heli.sz - heli.z])
+      put(heli.x, heli.y - 1, heli.z, 1)
+      put(dir[0], dir[1], dir[2], 0.9725)
+    } else {
+      put(0, 0, 0, 0)
+      put(0, -1, 0, 1)
+    }
+    put(0.035, 0.045, 0.085, 0.0035)
+    const clip = vec4.transformMat4([fp[0]!, fp[1]!, fp[2]!, 1], vp)
+    put(clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0)
+
+    // Lights: cars first (they matter most), then the street lamps nearest to the camera focus.
+    const L = this.lights
+    let n = 0
+    const light = (x: number, y: number, z: number, radius: number, r: number, g: number, b: number, intensity: number, dx = 0, dy = 0, dz = 0, cone = -2) => {
+      if (n >= MAX_LIGHTS) return
+      const i = n * 12
+      L[i] = x
+      L[i + 1] = y
+      L[i + 2] = z
+      L[i + 3] = radius
+      L[i + 4] = r
+      L[i + 5] = g
+      L[i + 6] = b
+      L[i + 7] = intensity
+      L[i + 8] = dx
+      L[i + 9] = dy
+      L[i + 10] = dz
+      L[i + 11] = cone
+      n++
+    }
+
+    const alpha = this.alpha
+    const add = this.add
+    let ai = 0
+    let di = 0
+    const sprite = (list: "a" | "d", x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot = 0, stretch = 1, extra = 0) => {
+      if (list === "a") {
+        if (ai < MAX_SPRITES_PER_LIST) Fx.write(alpha, ai++, { x, y, z, size, r, g, b, a, kind, rot, stretch, seed: extra })
+      } else if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x, y, z, size, r, g, b, a, kind, rot, stretch, seed: extra })
+    }
+
+    const batches = new Map<number, number[]>()
+    const ghosts = new Map<number, number[]>()
+    const inst = (model: number, map: Map<number, number[]>, vals: number[]) => {
+      let arr = map.get(model)
+      if (!arr) map.set(model, (arr = []))
+      arr.push(...vals)
+    }
+
+    const chasing = view.phase === "chase" || view.phase === "headstart" || view.phase === "end"
+    for (const c of view.cars) {
+      const spec = VEHICLE_BY_ID.get(c.vehicle)!
+      const model = this.models.get(c.vehicle)!
+      const tint = c.role === "robber" ? ROBBER_TINT : COP_TINT
+      if (c.ghost) {
+        // Last-seen ping for cops: a pulsing ring and a faint silhouette where the suspect was.
+        const pulse = (t * 1.2) % 1
+        sprite("d", c.x, 0.15, c.z, 3 + pulse * 9, 1, 0.2, 0.15, 1.6 * (1 - pulse), 2)
+        sprite("d", c.x, 0.12, c.z, 5, 1, 0.2, 0.15, 0.4, 3)
+        continue
+      }
+      const v = this.visOf(c)
+      const siren = c.role === "cop" && chasing ? t * 1.7 + c.id * 0.37 : -1
+      const braking = c.speed > 2 && c.speed < v.speed - 0.05 ? 1 : 0
+      const vals = [c.x, 0, c.z, c.h, v.roll, v.pitch, siren, braking, tint[0], tint[1], tint[2], 1]
+      inst(model, batches, vals)
+      inst(model, ghosts, vals)
+
+      const fx = Math.sin(c.h)
+      const fz = Math.cos(c.h)
+      const rx = Math.cos(c.h)
+      const rz = -Math.sin(c.h)
+      const half = spec.length / 2
+      // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
+      light(c.x + fx * (half + 0.5), 1.3, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
+      const hw = spec.width / 2 - 0.25
+      for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
+        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.9, 1, 0.95, 0.85, 1.5, 0)
+        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
+      }
+      sprite("d", c.x + fx * (half + 9), 0.06, c.z + fz * (half + 9), 4.2, 1, 0.9, 0.75, 0.22, 3, c.h, 2.2)
+      light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
+      if (siren >= 0) {
+        const red = sirenOn(siren, true)
+        const blue = sirenOn(siren, false)
+        const y = spec.id === "swat" ? 2.9 : 1.9
+        light(c.x - rx * 0.7, y + 0.6, c.z - rz * 0.7, 20, 1, 0.08, 0.08, 5 * red)
+        light(c.x + rx * 0.7, y + 0.6, c.z + rz * 0.7, 20, 0.15, 0.3, 1, 6 * blue)
+        if (red > 0) sprite("d", c.x - rx * 0.45, y, c.z - rz * 0.45, 2.4, 1, 0.1, 0.1, 1.6 * red, 0)
+        if (blue > 0) sprite("d", c.x + rx * 0.45, y, c.z + rz * 0.45, 2.4, 0.2, 0.35, 1, 1.8 * blue, 0)
+      }
+    }
+
+    // Helicopter with spinning rotor and its spotlight beam.
+    if (heli.active) {
+      inst(this.heliModel, batches, [heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, 1.2])
+      inst(this.rotorModel, batches, [heli.x, heli.y + 3.1, heli.z, t * 25, 0, 0, -1, 0, 1, 1, 1, 1.2])
+      inst(this.rotorModel, batches, [heli.x + Math.sin(heli.h) * -7.9 + Math.cos(heli.h) * 0.3, heli.y + 2.3, heli.z + Math.cos(heli.h) * -7.9, t * 40, 0, 0, -1, 0, 1, 1, 1, 0.12])
+      const beam = sprite
+      if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x: heli.x, y: heli.y - 1, z: heli.z, size: 10, r: 0.7, g: 0.78, b: 1, a: 0.07, kind: 5, rot: heli.sx, stretch: 0.2, seed: heli.sz })
+      beam("d", heli.sx, 0.1, heli.sz, 11, 0.9, 0.95, 1, 0.18, 3)
+      sprite("d", heli.x, heli.y - 0.5, heli.z, 1.6, 1, 1, 1, 2.5, 0)
+      if (Math.floor(t * 1.5) % 2 === 0) sprite("d", heli.x, heli.y + 1.6, heli.z, 1.2, 1, 0.1, 0.1, 2, 0)
+    }
+
+    // Extraction point: a tall column of green light and a ground ring.
+    const ex = view.exit
+    sprite("d", ex.x, 0.12, ex.z, 14, 0.25, 1, 0.45, 1.4, 2, t * 0.5)
+    sprite("d", ex.x, 0.1, ex.z, 13, 0.2, 1, 0.4, 0.25 + 0.6 * view.extract, 3)
+    if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x: ex.x, y: 70, z: ex.z, size: 6, r: 0.2, g: 1, b: 0.45, a: 0.1, kind: 5, rot: ex.x, stretch: 0, seed: ex.z })
+    light(ex.x, 4, ex.z, 26, 0.2, 1, 0.4, 2.5)
+
+    // Bust ring around a boxed-in robber.
+    const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
+    if (robber && view.bust > 0.01) {
+      sprite("d", robber.x, 0.15, robber.z, 5.5, 0.25, 0.55, 1, 1 + view.bust * 2, 2, -t * 2)
+    }
+    if (view.phase === "intro") sprite("d", view.site.x, 0.12, view.site.z, 10, 1, 0.3, 0.3, 1 + Math.sin(t * 6), 2)
+
+    // Street lamps: glows for all nearby, real lights for the closest.
+    const near = this.lamps
+      .map((l) => ({ l, d: (l.x - cam.fx) ** 2 + (l.z - cam.fz) ** 2 }))
+      .filter((e) => e.d < 230 * 230)
+      .sort((a, b) => a.d - b.d)
+    for (const { l } of near) {
+      sprite("d", l.x, 6.05, l.z, 1.3, 1, 0.72, 0.4, 1.8, 0)
+      sprite("d", l.x, 0.08, l.z, 8, 1, 0.65, 0.35, 0.1, 3)
+    }
+    for (const { l } of near) light(l.x, l.y, l.z, 17, 1, 0.68, 0.36, 2.4)
+    f[32 + 8 + 2] = n
+
+    const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST)
+    const pack = (map: Map<number, number[]>): InstanceBatch[] => [...map].map(([model, arr]) => ({ model, data: new Float32Array(arr), count: arr.length / INST_FLOATS }))
+    this.renderer.render({
+      frame: f,
+      lights: L,
+      batches: pack(batches),
+      ghosts: pack(ghosts).filter((b) => b.model !== this.heliModel && b.model !== this.rotorModel),
+      sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
+      bloom: opts.bloom ?? 0.9,
+      flash: opts.flash ?? 0,
+    })
+  }
+}
+
+function lightMatrix(eye: number[], target: number[]) {
+  const z = normalizeV([eye[0]! - target[0]!, eye[1]! - target[1]!, eye[2]! - target[2]!])
+  const x = normalizeV([z[2], 0, -z[0]])
+  const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]]
+  const S = 150
+  const near = 50
+  const far = 600
+  // Column-major ortho * lookAt, depth 0..1.
+  const view = [x[0], y[0]!, z[0], 0, x[1], y[1]!, z[1], 0, x[2], y[2]!, z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1]
+  const proj = [1 / S, 0, 0, 0, 0, 1 / S, 0, 0, 0, 0, -1 / (far - near), 0, 0, 0, -near / (far - near), 1]
+  return mul(proj, view)
+}
+
+function dot(a: number[], b: number[]) {
+  return a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!
+}
+
+function mul(a: number[], b: number[]) {
+  const r = new Array<number>(16).fill(0)
+  for (let c = 0; c < 4; c++) for (let rr = 0; rr < 4; rr++) for (let k = 0; k < 4; k++) r[c * 4 + rr]! += a[k * 4 + rr]! * b[c * 4 + k]!
+  return r
+}

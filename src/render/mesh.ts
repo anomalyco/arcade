@@ -34,9 +34,9 @@ export class Mesh {
       const p = (a: number, r: number, y: number) => [cx + Math.cos(a) * r, y, cz + Math.sin(a) * r]
       const am = (a0 + a1) / 2
       const n = [Math.cos(am), 0.4, Math.sin(am)]
-      if (r1 <= 0.001) this.quad(p(a0, r0, y0), p(a1, r0, y0), [cx, y1, cz], [cx, y1, cz], [Math.cos(am), 0.9, Math.sin(am)], col, mat)
-      else this.quad(p(a0, r0, y0), p(a1, r0, y0), p(a1, r1, y1), p(a0, r1, y1), n, col, mat)
-      if (roof && r1 > 0.001) this.quad(p(a0, r1, y1), p(a1, r1, y1), [cx, y1, cz], [cx, y1, cz], [0, 1, 0], col, mat)
+      if (r1 <= 0.001) this.quad(p(a1, r0, y0), p(a0, r0, y0), [cx, y1, cz], [cx, y1, cz], [Math.cos(am), 0.9, Math.sin(am)], col, mat)
+      else this.quad(p(a1, r0, y0), p(a0, r0, y0), p(a0, r1, y1), p(a1, r1, y1), n, col, mat)
+      if (roof && r1 > 0.001) this.quad(p(a1, r1, y1), p(a0, r1, y1), [cx, y1, cz], [cx, y1, cz], [0, 1, 0], col, mat)
     }
   }
 
