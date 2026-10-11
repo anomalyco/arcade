@@ -179,6 +179,10 @@ export const SURVIVAL = true
 /** A backup unit joins the hunt every this many seconds of survival. */
 export const BACKUP_EVERY = 25
 export const MAX_BACKUP = 6
+/** Generous bounds of what a cop's screen can show around their car (camera axes, meters); see World.inView. */
+export const VIEW_HALF_WIDTH = 85
+export const VIEW_BACK = 45
+export const VIEW_AHEAD = 85
 /** Spike strips a cop can have on the road at once; placing another removes their oldest. */
 export const MAX_STRIPS = 3
 /** While nobody has eyes on the driver, dispatch radios a broad area every TIP_EVERY seconds. */
@@ -753,6 +757,18 @@ export class World {
     return Math.abs(side) < SCREEN_HALF_WIDTH && along > -SCREEN_BACK && along < SCREEN_AHEAD
   }
 
+  /**
+   * Could the driver be anywhere on this cop's actual screen? Deliberately generous: the camera zooms out with speed,
+   * leads the car by up to ~16 m and players have wide monitors. Used for drawing the car, never for radar.
+   */
+  inView(cop: Car, r: Car) {
+    const dx = r.body.x - cop.body.x
+    const dz = r.body.z - cop.body.z
+    const along = dx * Math.sin(CAMERA_YAW) + dz * Math.cos(CAMERA_YAW)
+    const side = dx * Math.cos(CAMERA_YAW) - dz * Math.sin(CAMERA_YAW)
+    return Math.abs(side) < VIEW_HALF_WIDTH && along > -VIEW_BACK && along < VIEW_AHEAD
+  }
+
   canSee(cop: Car, r: Car) {
     const a = cop.body
     const b = r.body
@@ -922,7 +938,7 @@ export class World {
     const cars: CarView[] = []
     for (const c of this.cars) {
       // A cop who has the robber on their own screen sees the car with their own eyes, even when it's dark to radar.
-      const ownSight = !showRobber && c.role === "robber" && this.phase === "chase" && viewer?.role === "cop" && this.onScreen(viewer, c)
+      const ownSight = !showRobber && c.role === "robber" && viewer?.role === "cop" && this.inView(viewer, c)
       const hidden = c.role === "robber" && !showRobber && !ownSight
       if (hidden && !this.lastSeen) continue
       const b = c.body
