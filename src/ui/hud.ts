@@ -1,4 +1,4 @@
-import { END_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, VEHICLE_BY_ID, type GadgetId } from "../../shared/config"
+import { END_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, VEHICLE_BY_ID, type GadgetId } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
@@ -146,7 +146,7 @@ export class Hud {
 
     // Top-right: room strip, loot and exit / air unit.
     e.tr = h("div", "h-tr", r)
-    e.room = h("div", "room-strip", e.tr, `<span class="room-code"></span><button class="copy" type="button">COPY INVITE</button><span class="dot"></span><span class="room-status"></span><span class="room-count"></span><button class="help-btn" type="button" title="Help (Esc)">?</button>`)
+    e.room = h("div", "room-strip", e.tr, `<span class="room-code"></span><button class="copy" type="button">INVITE LINK</button><span class="dot"></span><span class="room-status"></span><span class="room-count"></span><button class="help-btn" type="button" title="Help (Esc)">?</button>`)
     e.roomCode = e.room.querySelector(".room-code")!
     e.roomStatus = e.room.querySelector(".room-status")!
     e.roomCount = e.room.querySelector(".room-count")!
@@ -223,8 +223,8 @@ export class Hud {
     e.help.innerHTML = `<div class="help-card">
       <div class="help-head"><b>HOW IT WORKS</b><button type="button" class="help-x">ESC</button></div>
       <div class="help-cols">
-        <div><h4 class="t-robber">GETAWAY DRIVER</h4><p>The job is done. Reach the extraction point shown on your map and hold inside the green zone under 60 km/h for three seconds.</p><p>Cops only see you within 70 m. Lose them, stay out of the helicopter's spotlight, and keep moving: get boxed in at low speed and the bust meter fills.</p><p>Drift and near misses add to your score. Heat rises with time and close calls, and every star past two brings a backup unit.</p></div>
-        <div><h4 class="t-cop">COPS</h4><p>Box the suspect in and keep them under 25 km/h. Two cars bust in four seconds; one car works if you pin them against a wall.</p><p>When you lose sight, the map shows the last-seen ping. The air unit lifts off twenty seconds into the chase and sweeps its spotlight over the area.</p><p>Hold them until the clock runs out and the district seals.</p></div>
+        <div><h4 class="t-robber">GETAWAY DRIVER</h4><p>The job is done. Your ride waits at the extraction point on your map; it opens 40 seconds into the chase. Hold inside the green zone under 60 km/h for three seconds.</p><p>Cops only see you within 70 m. Lose them, stay out of the helicopter's spotlight, and keep moving: get boxed in at low speed and the bust meter fills.</p><p><b>Q</b> drops an oil slick behind you, <b>E</b> a smoke screen. Drift and near misses add to your score; heat brings backup units.</p></div>
+        <div><h4 class="t-cop">COPS</h4><p>Box the suspect in and keep them under 25 km/h. Two cars bust in four seconds; one car works if you pin them against a wall.</p><p>When you lose sight, the map shows the last-seen ping. The air unit lifts off twenty seconds into the chase and sweeps its spotlight over the area.</p><p><b>Q</b> lays a spike strip ahead, <b>E</b> drops a roadblock. Hold them until the clock runs out and the district seals.</p></div>
         <div><h4>CONTROLS</h4><ul class="keys"><li><kbd>W</kbd><kbd>S</kbd> Throttle / reverse</li><li><kbd>A</kbd><kbd>D</kbd> Steer</li><li><kbd>SPACE</kbd> Handbrake</li><li><kbd>SHIFT</kbd> Nitro</li><li><kbd>Q</kbd> <kbd>E</kbd> Gadgets</li><li><kbd>ESC</kbd> This panel</li></ul></div>
       </div></div>`
     e.help.querySelector(".help-x")!.addEventListener("click", () => {
@@ -242,7 +242,7 @@ export class Hud {
     void navigator.clipboard?.writeText(url.toString()).then(
       () => {
         text(this.el.copy!, "LINK COPIED")
-        setTimeout(() => text(this.el.copy!, "COPY INVITE"), 1600)
+        setTimeout(() => text(this.el.copy!, "INVITE LINK"), 1600)
       },
       () => {},
     )
@@ -285,7 +285,7 @@ export class Hud {
   }
 
   private onEvent(ev: SimEvent, view: WorldView, isRobber: boolean) {
-    const robberName = view.cars.find((c) => c.ownerId === view.robberId)?.name ?? "Suspect"
+    const robberName = view.cars.find((c) => c.ownerId === view.robberId)?.name ?? view.standings.find((s) => s.id === view.robberId)?.name ?? "The suspect"
     switch (ev.kind) {
       case "round":
         break
@@ -335,7 +335,7 @@ export class Hud {
         this.toast(ev.text.toUpperCase(), car?.role === "cop" ? "cop" : car?.role === "robber" ? "robber" : "neutral")
       }
     }
-    const dupe = ev.kind === "award" || ev.kind === "near" || (ev.kind === "end" && ev.text === ev.text.toUpperCase())
+    const dupe = ev.kind === "award" || ev.kind === "near" || ev.kind === "go" || (ev.kind === "end" && ev.text === ev.text.toUpperCase())
     if (!dupe) {
       this.feed.push(ev)
       if (this.feed.length > 5) this.feed.shift()
@@ -400,7 +400,8 @@ export class Hud {
 
     // Suspect file.
     const robberAny = view.cars.find((c) => c.ownerId === view.robberId)
-    text(e.susName!, robberAny?.name ?? "Unknown")
+    const robberName = robberAny?.name ?? view.standings.find((s) => s.id === view.robberId)?.name ?? ctx.players.find((p) => p.id === view.robberId)?.name ?? "Unknown"
+    text(e.susName!, robberName)
     text(e.susCar!, VEHICLE_BY_ID.get(robberAny?.vehicle ?? "")?.name.toUpperCase() ?? "")
     text(e.susLoot!, money(view.loot))
     text(e.susSite!, view.site.name)
@@ -420,7 +421,7 @@ export class Hud {
     const copsCount = view.cars.filter((c) => c.role === "cop").length
     text(e.cCops!, String(copsCount))
     text(e.cRound!, String(view.round + 1))
-    let time = view.timeLeft
+    let time = Math.min(view.timeLeft, ROUND_SECONDS)
     let phase = "PURSUIT"
     if (view.phase === "intro") phase = "THE JOB"
     else if (view.phase === "headstart") phase = "HEAD START"
@@ -451,7 +452,7 @@ export class Hud {
       const key = `${view.round}:${isRobber}`
       if (e.role!.dataset.key !== key) {
         e.role!.dataset.key = key
-        const rName = robberAny?.name ?? "The suspect"
+        const rName = robberName
         e.role!.className = `role-card ${isRobber ? "t-robber" : "t-cop"}`
         e.role!.innerHTML = isRobber
           ? `<div class="rc-kicker">ROUND ${view.round + 1} · ${esc(view.site.name.toUpperCase())} · ${money(view.loot)}</div><div class="rc-title">YOU ARE THE GETAWAY DRIVER</div><div class="rc-body">Reach the <b class="t-go">${esc(view.exit.name)}</b>. Hold in the green zone.</div>`
@@ -495,6 +496,16 @@ export class Hud {
       style(e.airFill!, "transform", "scaleX(1)")
       attr(e.air!, "class", "panel air for-cop sweeping")
     }
+  }
+
+  /** Whether a screen point is inside the play area and clear of the corner panels. */
+  private clear(x: number, y: number, W: number, H: number) {
+    if (x < 40 || x > W - 40 || y < 60 || y > H - 40) return false
+    if (x > W - 380 && y < 460) return false
+    if (x < 320 && y < 320) return false
+    if (x < 270 && y > H - 300) return false
+    if (x > W - 520 && y > H - 220) return false
+    return true
   }
 
   /** Screen-space angle in degrees (0 = right, 90 = down) from one ground point to another. */
@@ -570,7 +581,7 @@ export class Hud {
     // Extraction ring and off-screen marker for the robber; last-seen edge marker for cops.
     const exitKnown = isRobber || view.phase === "end"
     const ep = cam.project(view.exit.x, 0.3, view.exit.z, W, H)
-    const exitOn = exitKnown && ep[2] && ep[0] > 40 && ep[0] < W - 40 && ep[1] > 60 && ep[1] < H - 40
+    const exitOn = exitKnown && ep[2] && this.clear(ep[0], ep[1], W, H)
     show(e.extract!, exitKnown && !!exitOn && view.phase !== "intro" || (view.extract > 0 && !!exitOn && robberCar !== undefined))
     if (exitOn) {
       style(e.extract!, "transform", `translate3d(${ep[0].toFixed(1)}px,${ep[1].toFixed(1)}px,0)`)
@@ -584,7 +595,7 @@ export class Hud {
     if (isRobber && !exitOn && view.phase !== "end" && view.phase !== "intro" && mine) edgeTarget = { x: view.exit.x, z: view.exit.z, label: distance(Math.hypot(view.exit.x - mine.x, view.exit.z - mine.z)), tone: "go" }
     else if (!isRobber && ghost && view.phase === "chase") {
       const gp = cam.project(ghost.x, 0.3, ghost.z, W, H)
-      const on = gp[2] && gp[0] > 40 && gp[0] < W - 40 && gp[1] > 60 && gp[1] < H - 40
+      const on = gp[2] && this.clear(gp[0], gp[1], W, H)
       if (!on) edgeTarget = { x: ghost.x, z: ghost.z, label: "LAST SEEN", tone: "threat" }
     }
     show(e.edge!, !!edgeTarget)
@@ -728,7 +739,7 @@ export class Hud {
   }
 
   private renderResults(view: WorldView, ctx: HudContext, isRobber: boolean) {
-    const robberName = view.cars.find((c) => c.ownerId === view.robberId)?.name ?? "The suspect"
+    const robberName = view.cars.find((c) => c.ownerId === view.robberId)?.name ?? view.standings.find((s) => s.id === view.robberId)?.name ?? "The suspect"
     const timeUp = !view.escaped && view.bust < 1 && !this.feed.some((f) => f.kind === "bust" && f.t >= view.t - 0.5)
     const busted = !view.escaped && !timeUp
     let title: string
