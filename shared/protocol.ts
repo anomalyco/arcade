@@ -112,6 +112,15 @@ export function normalizeRoom(code: string): string | null {
   return /^[A-Z0-9]{1,12}$/.test(c) ? c : null
 }
 
+/** Generated room codes: 4 letters, no I or O so they read cleanly aloud and on screen. */
+export const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+export function randomCode(rand: () => number = Math.random): string {
+  let s = ""
+  for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)]
+  return s
+}
+
 export function seedOf(room: string): number {
   let h = 2166136261
   for (let i = 0; i < room.length; i++) h = Math.imul(h ^ room.charCodeAt(i), 16777619)
