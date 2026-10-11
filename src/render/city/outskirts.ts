@@ -12,7 +12,7 @@ const STEEL: Rgb = [0.17, 0.18, 0.22]
 const RAIL: Rgb = [0.5, 0.5, 0.52]
 const BALLAST: Rgb = [0.2, 0.19, 0.2]
 const SLEEPER: Rgb = [0.18, 0.14, 0.12]
-const ROCK: Rgb = [0.27, 0.27, 0.3]
+const ROCK: Rgb = [0.3, 0.28, 0.27]
 const PALETTE: Rgb[] = [
   [0.44, 0.25, 0.2],
   [0.5, 0.31, 0.23],
@@ -172,30 +172,37 @@ function railYard(m: Mesh, rng: () => number, lamps: LampLight[]) {
 function tunnelCut(m: Mesh, rng: () => number, lamps: LampLight[], waterZ: number) {
   const x0 = MAX + 6
   const tz = 2 * CELL
-  const cols = 10
-  const rows = Math.ceil((waterZ + 40 - (EDGE - 120)) / 12)
+  const cols = 16
+  const step = 6
+  const rows = Math.ceil((waterZ + 40 - (EDGE - 120)) / step)
   const hgt: number[][] = []
   for (let i = 0; i <= cols; i++) {
     hgt.push([])
-    for (let j = 0; j <= rows; j++) hgt[i]!.push(i === 0 ? 0 : Math.min(26, 4 + i * 4 + rng() * 6))
+    for (let j = 0; j <= rows; j++) {
+      const z = EDGE - 120 + j * step
+      // A steep lower face of bare rock, then a rolling wooded top; higher over the tunnel.
+      const near = Math.max(0, 1 - Math.abs(z - tz) / 60)
+      const face = Math.min(1, i / 3) * (10 + near * 6)
+      const top = i > 3 ? (i - 3) * 1.2 + Math.sin(z * 0.05 + i) * 2.5 : 0
+      hgt[i]!.push(i === 0 ? 0 : face + top + rng() * 2.5)
+    }
   }
-  const P = (i: number, j: number) => [x0 + i * 9 + (i > 0 ? (rng() - 0.5) * 2 : 0), hgt[i]![j]!, EDGE - 120 + j * 12]
   const pts: number[][][] = []
   for (let i = 0; i <= cols; i++) {
     pts.push([])
-    for (let j = 0; j <= rows; j++) pts[i]!.push(P(i, j))
+    for (let j = 0; j <= rows; j++) pts[i]!.push([x0 + i * step * 0.8 + (i > 0 ? (rng() - 0.5) * 2 : 0), hgt[i]![j]!, EDGE - 120 + j * step + (i > 0 && j > 0 && j < rows ? (rng() - 0.5) * 2 : 0)])
   }
   for (let i = 0; i < cols; i++)
     for (let j = 0; j < rows; j++) {
       const a = pts[i]![j]!, b = pts[i + 1]![j]!, c = pts[i + 1]![j + 1]!, d = pts[i]![j + 1]!
       // Leave the tunnel mouth open.
       const zc = (a[2]! + c[2]!) / 2
-      if (i === 0 && Math.abs(zc - tz) < 10) continue
-      const k = 0.85 + rng() * 0.3
-      const col = i > 3 ? shade([0.16, 0.24, 0.16], k) : shade(ROCK, k)
+      if (i < 1 && Math.abs(zc - tz) < 9) continue
+      const k = 0.8 + rng() * 0.35
+      const col = i > 3 ? shade(rng() < 0.5 ? [0.13, 0.2, 0.14] : [0.16, 0.22, 0.14], k) : shade(ROCK, k)
       m.facet(a, d, c, col)
-      m.facet(a, c, b, shade(col, 0.95))
-      if (i > 3 && rng() < 0.35) tree(m, rng, (a[0]! + c[0]!) / 2, zc, 1 + rng() * 0.4, (a[1]! + c[1]!) / 2)
+      m.facet(a, c, b, shade(col, 0.92))
+      if (i > 3 && rng() < 0.4) tree(m, rng, (a[0]! + c[0]!) / 2, zc, 0.9 + rng() * 0.5, (a[1]! + c[1]!) / 2 - 0.3)
     }
   // Portal: concrete headwall with the bore.
   const px = x0 + 0.5

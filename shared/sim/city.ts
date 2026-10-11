@@ -253,7 +253,7 @@ export function generateCity(seed: number): City {
                   ]
               : [[pa, pb, pc, pd]]
           for (const [qa, qb, qc, qd] of pieces) {
-            const floors = central ? 3 + Math.floor(rng() * 4) : 2 + Math.floor(rng() * rng() * 4)
+            const floors = central ? 3 + Math.floor(rng() * 4) : 2 + Math.floor(rng() * 2.2 + rng() * 2)
             const neon = rng() < 0.22 ? NEONS[Math.floor(rng() * NEONS.length)]! : null
             building(qa, qb, qc, qd, floors, color(), neon)
           }

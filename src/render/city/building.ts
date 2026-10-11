@@ -2,17 +2,17 @@ import { CELL, ROAD_HALF } from "../../../shared/config"
 import { type Box, GROUND_FLOOR } from "../../../shared/sim/city"
 import type { AtlasRegion } from "../atlas"
 import { MAT, type Mesh, type Rgb } from "../mesh"
-import { cylinder, jitter, mix, shade, SKIP, slab, Wall } from "./kit"
+import { beam, cylinder, jitter, mix, shade, SKIP, slab, Wall } from "./kit"
 import type { LampLight } from "./types"
 
 const ROOF: Rgb = [0.2, 0.22, 0.28]
 const ROOF_TRIM: Rgb = [0.33, 0.32, 0.32]
 const ROOFS: Rgb[] = [
-  [0.24, 0.22, 0.22],
-  [0.27, 0.25, 0.24],
-  [0.21, 0.2, 0.21],
-  [0.28, 0.26, 0.23],
-  [0.23, 0.22, 0.23],
+  [0.19, 0.18, 0.19],
+  [0.22, 0.2, 0.2],
+  [0.17, 0.17, 0.18],
+  [0.23, 0.21, 0.19],
+  [0.19, 0.19, 0.2],
 ]
 const STONE: Rgb = [0.44, 0.41, 0.37]
 const DARK_STONE: Rgb = [0.3, 0.3, 0.33]
@@ -21,17 +21,17 @@ const FRAME: Rgb = [0.14, 0.13, 0.13]
 const DOOR: Rgb = [0.2, 0.13, 0.1]
 const METAL: Rgb = [0.36, 0.36, 0.37]
 const LIT: Rgb[] = [
-  [1.0, 0.76, 0.42],
-  [0.95, 0.66, 0.33],
+  [1.0, 0.62, 0.28],
+  [1.0, 0.66, 0.32],
+  [0.95, 0.55, 0.22],
   [1.0, 0.72, 0.4],
-  [0.92, 0.58, 0.28],
-  [1.0, 0.8, 0.52],
-  [0.85, 0.62, 0.38],
+  [0.9, 0.58, 0.3],
+  [1.0, 0.68, 0.36],
 ]
 const SHOP_LIT: Rgb[] = [
-  [1.0, 0.78, 0.48],
-  [1.0, 0.7, 0.38],
-  [0.95, 0.85, 0.65],
+  [0.95, 0.66, 0.36],
+  [0.92, 0.6, 0.3],
+  [0.88, 0.74, 0.56],
 ]
 const AWNINGS: Rgb[] = [
   [0.5, 0.13, 0.12],
@@ -228,7 +228,10 @@ export function building(ctx: BuildingCtx, b: Box) {
   slab(m, x0 - 0.06, x1 + 0.06, ph, ph + 0.14, z0 - 0.06, z0 + pt + 0.06, ROOF_TRIM, MAT.lit, SKIP.bottom | SKIP.px | SKIP.nx)
   slab(m, x0 - 0.06, x1 + 0.06, ph, ph + 0.14, z1 - pt - 0.06, z1 + 0.06, ROOF_TRIM, MAT.lit, SKIP.bottom | SKIP.px | SKIP.nx)
 
-  if (b.label === "PRECINCT") return
+  if (b.label === "PRECINCT") {
+    precinctRoof(ctx, x0 + pt, x1 - pt, z0 + pt, z1 - pt, h + 0.05)
+    return
+  }
   const w = x1 - x0
   const d = z1 - z0
   if (floors >= 3 && w > 12 && d > 12 && rng() < 0.45) {
@@ -273,7 +276,7 @@ function window(ctx: BuildingCtx, W: Wall, a: number, b: number, y0: number, y1:
   const r = 0.24
   W.reveal(m, a, b, y0, y1, r, shade(body, 0.8), trim)
   if (lit) {
-    const c = shade(LIT[Math.floor(rng() * LIT.length)]!, 0.72 + rng() * 0.28)
+    const c = shade(LIT[Math.floor(rng() * LIT.length)]!, 0.66 + rng() * 0.3)
     // Lower pane brighter than the top (a drawn blind or the lamp inside).
     const split = y0 + (y1 - y0) * (0.55 + rng() * 0.2)
     W.rect(m, a, b, y0, split, -r, c, MAT.emissive)
@@ -310,7 +313,7 @@ function shopfront(ctx: BuildingCtx, f: Face, g: number, trim: Rgb, body: Rgb) {
     const gb = b - (k === units - 1 ? 0 : 0.3)
     if (k > 0) W.rect(m, a - 0.3, a + 0.3, 0.55, glassTop, 0, trim)
     const lit = rng() < 0.7
-    const col = lit ? shade(SHOP_LIT[Math.floor(rng() * SHOP_LIT.length)]!, 0.75 + rng() * 0.2) : [0.06, 0.07, 0.1]
+    const col = lit ? shade(SHOP_LIT[Math.floor(rng() * SHOP_LIT.length)]!, 0.6 + rng() * 0.2) : [0.06, 0.07, 0.1]
     // Stall riser, display glass and the door.
     W.rect(m, ga, gb, 0.55, 0.95, 0, shade(trim, 0.6))
     if (f.detail) W.reveal(m, ga, gb, 0.95, glassTop, r, shade(trim, 0.7))
@@ -414,7 +417,7 @@ function groundSpecial(ctx: BuildingCtx, f: Face, b: Box, body: Rgb, trim: Rgb) 
       const c = 0.9 + ((w - 1.8) * (k + 1)) / (cols - 1) - 0.6
       if (c - a > 0.6) {
         const lit = front || k % 2 === 0
-        W.rect(m, a, c, 0.9, g - 0.9, 0.02, lit ? [0.9, 0.72, 0.5] : GLASS, lit ? MAT.emissive : MAT.glass)
+        W.rect(m, a, c, 0.9, g - 0.9, 0.02, lit ? [0.62, 0.48, 0.32] : GLASS, lit ? MAT.emissive : MAT.glass)
       }
     }
   }
@@ -479,6 +482,33 @@ function bladeSign(ctx: BuildingCtx, W: Wall, u: number, y0: number, y1: number,
   slab(m, Math.min(e0[0], e1[0]), Math.max(e0[0], e1[0]), y0, y1, Math.min(e0[2], e1[2]), Math.max(e0[2], e1[2]), shade(tint, 0.6), MAT.emissive, 0)
   const lp = W.p(u, (y0 + y1) / 2, 2.5)
   ctx.lamps.push({ x: lp[0], y: lp[1], z: lp[2], small: true })
+}
+
+/** Precinct roof: clutter kept to the edges around the helipad, a radio mast and the rooftop POLICE lettering. */
+function precinctRoof(ctx: BuildingCtx, x0: number, x1: number, z0: number, z1: number, y: number) {
+  const { m, rng } = ctx
+  const cx = (x0 + x1) / 2
+  const cz = (z0 + z1) / 2
+  for (let x = x0 + 1.5; x < x1 - 2; x += 3.2) {
+    if (Math.abs(x - cx) < 10) continue
+    for (const z of [z0 + 1.2, z1 - 2.4]) {
+      if (rng() < 0.35) continue
+      slab(m, x, x + 2.2, y, y + 1.2, z, z + 1.4, METAL, MAT.lit, SKIP.bottom, shade(METAL, 1.15))
+      cylinder(m, x + 0.7, z + 0.7, 0.45, y + 1.2, y + 1.25, 8, shade(METAL, 0.4))
+    }
+  }
+  const mx = x1 - 3
+  const mz = z1 - 4
+  for (const [a, b] of [
+    [-0.8, -0.8],
+    [0.8, -0.8],
+    [0, 0.8],
+  ] as const)
+    beam(m, [mx + a, y, mz + b], [mx, y + 12, mz], 0.12, [0.55, 0.55, 0.58])
+  for (let k = 1; k < 4; k++) beam(m, [mx - 0.6 * (1 - k / 4), y + k * 3, mz - 0.6 * (1 - k / 4)], [mx + 0.6 * (1 - k / 4), y + k * 3, mz - 0.6 * (1 - k / 4)], 0.06, [0.55, 0.55, 0.58])
+  m.box(mx - 0.2, mx + 0.2, y + 12, y + 12.4, mz - 0.2, mz + 0.2, [1, 0.1, 0.08], MAT.emissive)
+  // Lettering runs along +z with its top toward +x, which reads upright from the fixed camera.
+  m.decal([x0 + 3, y + 0.02, cz - 6], [x0 + 3, y + 0.02, cz + 6], [x0 + 6, y + 0.02, cz + 6], [x0 + 6, y + 0.02, cz - 6], [0, 1, 0], "policeBlock", [0.75, 0.75, 0.72], MAT.decal)
 }
 
 /** Roof clutter: AC units, vents, a stair hut, sometimes a timber water tank or skylights. */
