@@ -168,8 +168,42 @@ const TABLE = {
     }
   } },
   ...digits(),
+  cafe: { x: 1664, y: 128, w: 384, h: 160, paint: text("CAFE", { weight: 800, italic: true }) },
+  pharmacy: { x: 1536, y: 608, w: 512, h: 160, paint: text("PHARMACY", { weight: 700, spacing: 6 }) },
+  laundry: { x: 1024, y: 928, w: 512, h: 160, paint: text("LAUNDRY", { weight: 700, spacing: 6 }) },
+  pizza: { x: 1536, y: 928, w: 512, h: 160, paint: text("PIZZA", { weight: 800, italic: true }) },
+  plaza: { x: 768, y: 1920, w: 1024, h: 128, paint: text("RIVERDALE PLAZA", { weight: 700, spacing: 14 }) },
+  bannerA: { x: 1792, y: 1088, w: 256, h: 512, paint: banner("#1d3157", "#e9c27a") },
+  bannerB: { x: 1792, y: 1600, w: 256, h: 448, paint: banner("#5a1e22", "#f0e2c8") },
   swat: { x: 512, y: 512, w: 128, h: 40, paint: text("S.W.A.T.", { weight: 800 }) },
 } satisfies Record<string, Entry>
+
+/** Street banner: deep color field, a little skyline and the civic slogan. */
+function banner(bg: string, fg: string): Paint {
+  return (g, w, h) => {
+    g.fillStyle = bg
+    g.fillRect(0, 0, w, h)
+    g.fillStyle = fg
+    let x = w * 0.18
+    let s = 11
+    while (x < w * 0.82) {
+      s = (s * 9301 + 49297) % 233280
+      const bw = 12 + (s % 18)
+      const bh = h * (0.18 + ((s >> 4) % 100) / 300)
+      g.fillRect(x, h * 0.62 - bh, bw, bh)
+      x += bw + 3
+    }
+    g.fillRect(w * 0.14, h * 0.62, w * 0.72, 4)
+    g.textAlign = "center"
+    g.textBaseline = "middle"
+    g.font = `800 ${w * 0.15}px ${DISPLAY}`
+    g.fillText("A BRIGHTER", w / 2, h * 0.72)
+    g.fillText("TOMORROW", w / 2, h * 0.8)
+    g.strokeStyle = fg
+    g.lineWidth = 6
+    g.strokeRect(10, 10, w - 20, h - 20)
+  }
+}
 
 export type AtlasRegion = keyof typeof TABLE
 
