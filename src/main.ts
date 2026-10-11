@@ -10,7 +10,7 @@ import { GameAudio } from "./audio/game-audio"
 import { Radio } from "./audio/radio"
 import { Renderer } from "./render/renderer"
 import { Hud } from "./ui/hud"
-import { lobby } from "./ui/lobby"
+import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 
 function fail(msg: string) {
   const el = document.getElementById("overlay")!
@@ -19,8 +19,16 @@ function fail(msg: string) {
 
 async function connect(choice: Awaited<ReturnType<typeof lobby>>): Promise<Session> {
   if (choice.mode === "room" && choice.room) {
-    const { NetSession } = await import("./game/net")
-    return NetSession.connect(choice.room, choice.name, choice.picks)
+    const { NetSession, RoomFullError } = await import("./game/net")
+    try {
+      return await NetSession.connect(choice.room, choice.name, choice.picks, choice.via === "create")
+    } catch (e) {
+      // Quick join lost the race for the last seat: ask the matchmaker once more.
+      if (choice.via !== "quick" || !(e instanceof RoomFullError)) throw e
+      choice.room = await quickRoom()
+      setRoomParam(choice.room, true)
+      return NetSession.connect(choice.room, choice.name, choice.picks)
+    }
   }
   return new LocalSession(choice.name, choice.picks)
 }

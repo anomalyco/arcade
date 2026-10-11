@@ -9,9 +9,14 @@ import type { Session } from "./session"
 const PING_MS = 2000
 const CONNECT_TIMEOUT_MS = 10000
 
-function socketUrl(room: string) {
+function socketUrl(room: string, priv: boolean) {
   const dir = location.pathname.replace(/[^/]*$/, "")
-  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${encodeURIComponent(room)}`
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${encodeURIComponent(room)}${priv ? "?private=1" : ""}`
+}
+
+/** Thrown by NetSession.connect when the room has no free seat. */
+export class RoomFullError extends Error {
+  override name = "RoomFullError"
 }
 
 /** Online room session: a WebSocket to the room's Durable Object, with prediction, interpolation and auto-reconnect. */
@@ -28,9 +33,9 @@ export class NetSession implements Session {
   private ready: { resolve: (s: Session) => void; reject: (e: Error) => void } | null = null
   private id = ""
 
-  /** Resolves once the room has welcomed us and sent the first snapshot. */
-  static connect(room: string, name: string, picks: Record<Role, string>): Promise<Session> {
-    const s = new NetSession(room.toUpperCase(), name, picks)
+  /** Resolves once the room has welcomed us and sent the first snapshot. `priv` makes a brand-new room private. */
+  static connect(room: string, name: string, picks: Record<Role, string>, priv = false): Promise<Session> {
+    const s = new NetSession(room.toUpperCase(), name, picks, priv)
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         s.close()
@@ -54,6 +59,7 @@ export class NetSession implements Session {
     readonly room: string,
     private name: string,
     private picks: Record<Role, string>,
+    private priv: boolean,
   ) {}
 
   get myId() {
@@ -65,7 +71,7 @@ export class NetSession implements Session {
   }
 
   private open() {
-    const ws = new WebSocket(socketUrl(this.room))
+    const ws = new WebSocket(socketUrl(this.room, this.priv))
     this.ws = ws
     ws.onopen = () => {
       this.send({ type: "hello", name: this.name, picks: this.picks, id: this.id || undefined })
@@ -108,7 +114,7 @@ export class NetSession implements Session {
       case "error":
         if (msg.code === "full") {
           this.state = "full"
-          this.ready?.reject(new Error(msg.message))
+          this.ready?.reject(new RoomFullError(msg.message))
           this.ready = null
         }
         return
