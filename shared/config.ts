@@ -52,12 +52,12 @@ export type Vehicle = {
 }
 
 export const VEHICLES: Vehicle[] = [
-  { id: "muscle", name: "Muscle", role: "robber", mass: 1.1, maxSpeed: 42, accel: 15, brake: 22, turn: 1.9, grip: 6.5, hp: 100, boost: 1.0, paint: [0.78, 0.09, 0.1], accent: [0.95, 0.85, 0.5], length: 4.8, width: 1.95, tier: 0, blurb: "Brutal straight-line power. Wide slides." },
-  { id: "compact", name: "Compact", role: "robber", mass: 0.8, maxSpeed: 36, accel: 17, brake: 20, turn: 2.6, grip: 8.5, hp: 80, boost: 0.9, paint: [0.92, 0.6, 0.2], accent: [0.2, 0.2, 0.22], length: 3.9, width: 1.7, tier: 0, blurb: "Quick on the turn. Fits the alleys." },
-  { id: "van", name: "Van", role: "robber", mass: 1.6, maxSpeed: 32, accel: 11, brake: 16, turn: 1.4, grip: 7.5, hp: 150, boost: 0.8, paint: [0.25, 0.42, 0.45], accent: [0.9, 0.9, 0.92], length: 5.2, width: 2.1, tier: 1, blurb: "Carries the heavy take. Tough to stop." },
+  { id: "muscle", name: "Muscle", role: "robber", mass: 1.1, maxSpeed: 42, accel: 15, brake: 22, turn: 1.9, grip: 6.5, hp: 100, boost: 1.0, paint: [0.7, 0.09, 0.07], accent: [0.07, 0.07, 0.08], length: 4.8, width: 1.95, tier: 0, blurb: "Brutal straight-line power. Wide slides." },
+  { id: "compact", name: "Compact", role: "robber", mass: 0.8, maxSpeed: 36, accel: 17, brake: 20, turn: 2.6, grip: 8.5, hp: 80, boost: 0.9, paint: [0.08, 0.6, 0.58], accent: [0.1, 0.1, 0.11], length: 3.9, width: 1.7, tier: 0, blurb: "Quick on the turn. Fits the alleys." },
+  { id: "van", name: "Van", role: "robber", mass: 1.6, maxSpeed: 32, accel: 11, brake: 16, turn: 1.4, grip: 7.5, hp: 150, boost: 0.8, paint: [0.7, 0.72, 0.74], accent: [0.14, 0.14, 0.15], length: 5.2, width: 2.1, tier: 1, blurb: "Carries the heavy take. Tough to stop." },
   { id: "bike", name: "Motorbike", role: "robber", mass: 0.4, maxSpeed: 46, accel: 19, brake: 18, turn: 3.1, grip: 9.5, hp: 50, boost: 1.1, paint: [0.12, 0.13, 0.16], accent: [0.2, 0.9, 0.95], length: 2.6, width: 0.9, tier: 2, blurb: "Fastest route through a crowd. Fragile." },
-  { id: "cruiser", name: "Cruiser", role: "cop", mass: 1.2, maxSpeed: 40, accel: 14, brake: 22, turn: 1.9, grip: 7.0, hp: 120, boost: 0.9, paint: [0.93, 0.94, 0.96], accent: [0.2, 0.42, 0.95], length: 4.9, width: 2.0, tier: 0, blurb: "The standard cruiser. Steady and heavy." },
-  { id: "interceptor", name: "Interceptor", role: "cop", mass: 0.9, maxSpeed: 46, accel: 17, brake: 24, turn: 2.4, grip: 8.0, hp: 110, boost: 1.0, paint: [0.12, 0.16, 0.26], accent: [0.9, 0.2, 0.2], length: 5.0, width: 2.0, tier: 1, blurb: "Fastest in the motor pool. Lighter frame." },
+  { id: "cruiser", name: "Cruiser", role: "cop", mass: 1.2, maxSpeed: 40, accel: 14, brake: 22, turn: 1.9, grip: 7.0, hp: 120, boost: 0.9, paint: [0.8, 0.81, 0.84], accent: [0.05, 0.05, 0.06], length: 4.9, width: 2.0, tier: 0, blurb: "The standard cruiser. Steady and heavy." },
+  { id: "interceptor", name: "Interceptor", role: "cop", mass: 0.9, maxSpeed: 46, accel: 17, brake: 24, turn: 2.4, grip: 8.0, hp: 110, boost: 1.0, paint: [0.8, 0.81, 0.84], accent: [0.05, 0.05, 0.06], length: 5.0, width: 2.0, tier: 1, blurb: "Fastest in the motor pool. Lighter frame." },
   { id: "swat", name: "SWAT Van", role: "cop", mass: 2.0, maxSpeed: 30, accel: 10, brake: 16, turn: 1.3, grip: 7.0, hp: 220, boost: 0.7, paint: [0.12, 0.14, 0.16], accent: [0.3, 0.6, 1.0], length: 5.6, width: 2.3, tier: 2, blurb: "Plow through a roadblock. Slow to start." },
 ]
 

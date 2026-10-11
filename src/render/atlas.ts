@@ -111,9 +111,11 @@ function stripes(a: string, b: string): Paint {
   }
 }
 
-function digits(): Record<string, Entry> {
-  const out: Record<string, Entry> = {}
-  for (let i = 0; i < 10; i++) out[`num${i}`] = { x: 1040 + i * 96, y: 0, w: 88, h: 128, paint: text(String(i), { weight: 800 }) }
+type Digit = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+
+function digits() {
+  const out = {} as Record<`num${Digit}`, Entry>
+  for (let i = 0; i < 10; i++) out[`num${i as Digit}`] = { x: 1040 + i * 96, y: 0, w: 88, h: 128, paint: text(String(i), { weight: 800 }) }
   return out
 }
 
@@ -166,6 +168,7 @@ const TABLE = {
     }
   } },
   ...digits(),
+  swat: { x: 512, y: 512, w: 128, h: 40, paint: text("S.W.A.T.", { weight: 800 }) },
 } satisfies Record<string, Entry>
 
 export type AtlasRegion = keyof typeof TABLE
