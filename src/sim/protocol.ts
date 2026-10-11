@@ -25,6 +25,8 @@ export interface Unit {
   boost: number
   fuel: number
   angle: number
+  // aim-preview level: 0/undefined = base length; each level (targeting lens, LONG SIGHT crate) extends it
+  preview?: number
 }
 
 export interface Shot {
