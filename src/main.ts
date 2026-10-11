@@ -7,6 +7,7 @@ import { Controls } from "./game/input"
 import { Scene } from "./game/scene"
 import { LocalSession, type Session } from "./game/session"
 import { GameAudio } from "./audio/game-audio"
+import { Radio } from "./audio/radio"
 import { Renderer } from "./render/renderer"
 import { Hud } from "./ui/hud"
 import { lobby } from "./ui/lobby"
@@ -53,6 +54,7 @@ async function main() {
   const scene = new Scene(renderer, session.city)
   const hud = new Hud(document.getElementById("hud")!, session.city)
   const sound = new GameAudio(document.getElementById("hud")!)
+  const radio = new Radio()
   const cam = new Camera()
   const controls = new Controls()
   let snapped = false
@@ -90,6 +92,7 @@ async function main() {
     const events = session.drainEvents()
     hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status: session.status() })
     sound.update(view, { myId: session.myId, cam, dt, events, input })
+    radio.update(view, session.myId, events)
     ;(window as unknown as { __view: unknown }).__view = view
     requestAnimationFrame(frame)
   }

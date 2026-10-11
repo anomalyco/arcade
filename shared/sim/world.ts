@@ -182,6 +182,14 @@ export const TIP_EVERY = 60
 /** Radius of the tipped area; the driver is somewhere inside it, not at its center. */
 export const TIP_RADIUS = 110
 
+/** Radio "spotted" call: eyes back on the driver after this many seconds unseen, or this far from the last sighting. */
+export const SPOT_AFTER = 4
+export const SPOT_MOVED = 60
+/** At most one "spotted" call per this many seconds. */
+export const SPOT_COOLDOWN = 6
+/** Radio "lost" call after this many seconds without eyes on the driver. */
+export const LOST_AFTER = 5
+
 /** A broad "suspect reported in this area" circle. `t` is the sim time it was issued. */
 export type Tip = { x: number; z: number; r: number; t: number }
 /** PvP: no bot cars. Rounds need at least this many players. */
@@ -225,6 +233,10 @@ export class World {
   tip: Tip | null = null
   /** Seconds since anyone last had eyes on the driver (or since the last tip). */
   private unseenFor = 0
+  /** Radio calls: seconds since the driver was last seen, whether a sighting is still live, and the last "spotted" call. */
+  private unseenRadio = Infinity
+  private sighted = false
+  private lastSpotT = -Infinity
   best = 0
   bestName = ""
   newBest = false
@@ -372,6 +384,9 @@ export class World {
     this.survived = 0
     this.tip = null
     this.unseenFor = 0
+    this.unseenRadio = Infinity
+    this.sighted = false
+    this.lastSpotT = -Infinity
     this.newBest = false
     this.roundDrift = 0
     this.roundNear = 0
@@ -691,6 +706,35 @@ export class World {
     this.emit("tip", "Dispatch: caller reports the suspect in this area")
   }
 
+  /**
+   * Radio calls. "spotted" when eyes land on the driver after a while unseen or somewhere new (text "heli|north": who saw
+   * them, and their heading in map terms, where north is the camera's forward like the minimap). "lost" once a sighting
+   * has gone cold. Runs before lastSeen is refreshed, so lastSeen is still the previous sighting.
+   */
+  private stepSighting(dt: number, r: Car, wasSeen: boolean, ground: boolean) {
+    if (!this.seen) {
+      this.unseenRadio += dt
+      if (this.sighted && this.unseenRadio >= LOST_AFTER) {
+        this.sighted = false
+        this.emit("lost", "Lost visual on the suspect")
+      }
+      return
+    }
+    const away = this.lastSeen ? Math.hypot(r.body.x - this.lastSeen.x, r.body.z - this.lastSeen.z) : Infinity
+    const fresh = !wasSeen && (this.unseenRadio >= SPOT_AFTER || away > SPOT_MOVED)
+    this.unseenRadio = 0
+    this.sighted = true
+    if (!fresh || this.t - this.lastSpotT < SPOT_COOLDOWN) return
+    this.lastSpotT = this.t
+    const b = r.body
+    const [fx, fz] = speedOf(b) > 2 ? [b.vx, b.vz] : forward(b.h)
+    // Map up is the camera's forward; map right is the camera's screen right.
+    const north = fx * Math.sin(CAMERA_YAW) + fz * Math.cos(CAMERA_YAW)
+    const east = -fx * Math.cos(CAMERA_YAW) + fz * Math.sin(CAMERA_YAW)
+    const heading = Math.abs(north) >= Math.abs(east) ? (north >= 0 ? "north" : "south") : east >= 0 ? "east" : "west"
+    this.emit("spotted", `${ground ? "ground" : "heli"}|${heading}`)
+  }
+
   /** Is the robber inside the area this cop's screen shows? (Survival mode's notion of "seeing" the robber.) */
   onScreen(cop: Car, r: Car) {
     const dx = r.body.x - cop.body.x
@@ -725,7 +769,10 @@ export class World {
     const spotted = this.heli.active && !smoked && !dark && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
     this.heli.lock = spotted ? this.heli.lock + dt : 0
     if (spotted) this.heat += dt * HEAT_SPOT_RATE
-    this.seen = spotted || (!smoked && !dark && cops.some((c) => (SURVIVAL ? this.onScreen(c, r) : this.canSee(c, r))))
+    const wasSeen = this.seen
+    const ground = !smoked && !dark && cops.some((c) => (SURVIVAL ? this.onScreen(c, r) : this.canSee(c, r)))
+    this.seen = spotted || ground
+    this.stepSighting(dt, r, wasSeen, ground)
     if (this.seen) {
       this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
       this.lastSeenH = r.body.h

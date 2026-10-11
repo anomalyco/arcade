@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { BUST_SECONDS, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
+import { BUST_SECONDS, CAMERA_YAW, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
 import { NO_INPUT } from "../shared/sim/vehicle"
-import { MAX_STRIPS, TIP_EVERY, TIP_RADIUS, World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
+import { LOST_AFTER, MAX_STRIPS, SPOT_AFTER, TIP_EVERY, TIP_RADIUS, World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
 import { ROAD_X, ROAD_Z, bot, drive, human, humanWorld, place, steps, toChase } from "./sim-helpers"
 
 const robberOf = (w: World, viewer: string) => w.view(viewer).cars.find((c) => c.ownerId === w.robberId)
@@ -404,6 +404,68 @@ describe("survival sighting", () => {
     const ghost = w.view("c2").cars.find((c) => c.ownerId === "r")!
     expect(ghost.ghost).toBe(true)
     expect(Math.hypot(ghost.x - ROAD_X, ghost.z - ROAD_Z)).toBeLessThan(2)
+  })
+})
+
+describe("radio calls", () => {
+  const radio = (w: World, kind: string) => w.drainEvents().filter((e) => e.kind === kind)
+  /** Both cops far off, out of the driver's way; nobody has eyes on them. */
+  const hide = (w: World) => {
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+  }
+
+  test.skipIf(!SURVIVAL)("reacquiring the driver after a while unseen calls one sighting, with a map heading", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    hide(w)
+    place(w, "r", ROAD_X, ROAD_Z, CAMERA_YAW)
+    steps(w, SPOT_AFTER + 1)
+    w.drainEvents()
+    place(w, "c1", ROAD_X, ROAD_Z - 25)
+    place(w, "r", ROAD_X, ROAD_Z, CAMERA_YAW, 8)
+    steps(w, 0.1)
+    expect(w.seen).toBe(true)
+    expect(radio(w, "spotted").map((e) => e.text)).toEqual(["ground|north"])
+  })
+
+  test.skipIf(!SURVIVAL)("a continuous sighting or a quick blink out of view doesn't repeat the call; losing them does", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    hide(w)
+    place(w, "r", ROAD_X, ROAD_Z)
+    steps(w, SPOT_AFTER + 1)
+    place(w, "c1", ROAD_X, ROAD_Z - 25)
+    steps(w, 8)
+    // Out of view for a second, back in the same spot.
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    steps(w, 1)
+    place(w, "c1", ROAD_X, ROAD_Z - 25)
+    steps(w, 8)
+    const events = w.drainEvents()
+    expect(events.filter((e) => e.kind === "spotted").length).toBe(1)
+    expect(events.filter((e) => e.kind === "lost").length).toBe(0)
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    steps(w, LOST_AFTER + 3)
+    expect(radio(w, "lost").length).toBe(1)
+  })
+
+  test.skipIf(!SURVIVAL)("a spotlight sighting is called in by the helicopter", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    hide(w)
+    place(w, "r", ROAD_X, ROAD_Z)
+    steps(w, SPOT_AFTER + 1)
+    w.drainEvents()
+    w.heli.active = true
+    steps(w, 0.2, () => {
+      w.heli.x = w.heli.sx = ROAD_X
+      w.heli.z = w.heli.sz = ROAD_Z
+    })
+    expect(w.seen).toBe(true)
+    const calls = radio(w, "spotted")
+    expect(calls.length).toBe(1)
+    expect(calls[0]!.text.startsWith("heli|")).toBe(true)
   })
 })
 

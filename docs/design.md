@@ -28,6 +28,11 @@ a fixed high three-quarter camera that never rotates (see `concept/dir-d-lowpoly
   the driver breaks free.
 - **Pressure:** cops see the driver in line of sight, and dispatch radios the driver's position to every
   unit every 4 s. The helicopter launches 20 s into the chase and sweeps its spotlight over the driver.
+- **Radio:** the sim emits `spotted` (eyes back on the driver after 4 s unseen or 60 m from the last sighting, at
+  most every 6 s; text `ground|north` or `heli|east`, heading in map terms with north = camera forward), `lost`
+  (5 s without eyes), `tip` and `flat`. `src/audio/radio.ts` turns them into police radio voice lines
+  (`public/sfx/radio/`): clean on the cops' radio, a quiet muffled scanner for the driver, who also gets an alert sting
+  when spotted. One line at a time, one queued.
 - **Score:** survival time. Each player's best and the room best are kept for the life of the room.
 
 ## Driving
