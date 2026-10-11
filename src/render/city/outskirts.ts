@@ -3,7 +3,7 @@ import { type Box, GROUND_FLOOR, STOREY } from "../../../shared/sim/city"
 import { MAT, type Mesh, type Rgb } from "../mesh"
 import { beam, cylinder, ground, shade, SKIP, slab } from "./kit"
 import { container } from "./harbor"
-import { streetLamp, tree } from "./props"
+import { fence, streetLamp, tree } from "./props"
 import { ASPHALT, CURB, SIDEWALK } from "./streets"
 import type { LampLight } from "./types"
 
@@ -150,6 +150,7 @@ function railYard(m: Mesh, rng: () => number, lamps: LampLight[]) {
   const x0 = -60
   const x1 = 150
   ground(m, x0, x1, z0, z1, 0.0, shade(BALLAST, 1.1))
+  fence(m, x0, x1, z0 - 1, z1 + 1, 0, 2)
   for (let z = z0 + 4; z < z1 - 3; z += 5) {
     for (let x = x0; x < x1; x += 0.9) ground(m, x, x + 0.3, z - 1.1, z + 1.1, 0.03, SLEEPER)
     for (const s of [-0.72, 0.72]) slab(m, x0, x1, 0.03, 0.17, z + s - 0.05, z + s + 0.05, RAIL, MAT.lit, SKIP.bottom | SKIP.nx | SKIP.px)

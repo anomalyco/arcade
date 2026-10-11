@@ -199,3 +199,35 @@ export function cornerBeds(m: Mesh, rng: () => number, city: City) {
         }
     }
 }
+
+/**
+ * Low iron fence around a lot, open where a road or alley meets it (every side gets a gate gap in the middle).
+ */
+export function fence(m: Mesh, x0: number, x1: number, z0: number, z1: number, y: number, h = 1.2) {
+  const iron: Rgb = [0.12, 0.13, 0.15]
+  const run = (ax: number, az: number, bx: number, bz: number) => {
+    const len = Math.hypot(bx - ax, bz - az)
+    const gate0 = len / 2 - 2.5
+    const gate1 = len / 2 + 2.5
+    const ux = (bx - ax) / len
+    const uz = (bz - az) / len
+    for (const [t0, t1] of [
+      [0, gate0],
+      [gate1, len],
+    ] as const) {
+      if (t1 - t0 < 0.5) continue
+      const p0x = ax + ux * t0, p0z = az + uz * t0, p1x = ax + ux * t1, p1z = az + uz * t1
+      beam(m, [p0x, y + h, p0z], [p1x, y + h, p1z], 0.06, iron)
+      beam(m, [p0x, y + h * 0.35, p0z], [p1x, y + h * 0.35, p1z], 0.04, iron)
+      for (let t = t0; t <= t1 + 0.01; t += 0.45) {
+        const px = ax + ux * t, pz = az + uz * t
+        const post = Math.abs((t - t0) % 2.7) < 0.2
+        slab(m, px - (post ? 0.05 : 0.018), px + (post ? 0.05 : 0.018), y, y + h + (post ? 0.12 : 0.04), pz - (post ? 0.05 : 0.018), pz + (post ? 0.05 : 0.018), iron, MAT.lit, SKIP.bottom | SKIP.top)
+      }
+    }
+  }
+  run(x0, z0, x1, z0)
+  run(x0, z1, x1, z1)
+  run(x0, z0, x0, z1)
+  run(x1, z0, x1, z1)
+}

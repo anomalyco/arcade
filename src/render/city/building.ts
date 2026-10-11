@@ -8,15 +8,16 @@ import type { LampLight } from "./types"
 const ROOF: Rgb = [0.2, 0.22, 0.28]
 const ROOF_TRIM: Rgb = [0.33, 0.32, 0.32]
 const ROOFS: Rgb[] = [
-  [0.19, 0.18, 0.19],
-  [0.22, 0.2, 0.2],
-  [0.17, 0.17, 0.18],
-  [0.23, 0.21, 0.19],
-  [0.19, 0.19, 0.2],
+  [0.24, 0.23, 0.24],
+  [0.27, 0.25, 0.24],
+  [0.21, 0.21, 0.23],
+  [0.28, 0.26, 0.23],
+  [0.24, 0.24, 0.25],
 ]
 const STONE: Rgb = [0.44, 0.41, 0.37]
 const DARK_STONE: Rgb = [0.3, 0.3, 0.33]
 const GLASS: Rgb = [0.09, 0.11, 0.16]
+const DARK_PANE: Rgb = [0.05, 0.06, 0.09]
 const FRAME: Rgb = [0.14, 0.13, 0.13]
 const DOOR: Rgb = [0.2, 0.13, 0.1]
 const METAL: Rgb = [0.36, 0.36, 0.37]
@@ -34,11 +35,11 @@ const SHOP_LIT: Rgb[] = [
   [0.88, 0.74, 0.56],
 ]
 const AWNINGS: Rgb[] = [
-  [0.5, 0.13, 0.12],
-  [0.14, 0.3, 0.24],
-  [0.17, 0.2, 0.36],
-  [0.48, 0.34, 0.14],
-  [0.36, 0.14, 0.2],
+  [0.42, 0.13, 0.12],
+  [0.13, 0.27, 0.22],
+  [0.16, 0.19, 0.32],
+  [0.44, 0.31, 0.14],
+  [0.32, 0.14, 0.18],
 ]
 const SHOP_SIGNS: AtlasRegion[] = ["diner", "liquor", "pawn", "cafe", "pharmacy", "laundry", "pizza"]
 
@@ -77,7 +78,7 @@ export function building(ctx: BuildingCtx, b: Box) {
   const trim: Rgb = brick ? mix(STONE, body, 0.25) : shade(body, 0.72)
   const special = b.label
   // Facade rhythm for this building.
-  const bay = 3.4 + rng() * 1.2
+  const bay = 3.0 + rng() * 0.9
   const winW = 1.05 + rng() * 0.35
   const winH = Math.min(storey - 1.2, 1.75 + rng() * 0.35)
   const sill = 0.85 + (storey - 3.4) * 0.3
@@ -190,6 +191,11 @@ export function building(ctx: BuildingCtx, b: Box) {
       const yy = g + 0.3 + (top - g - 0.3 - lh) / 2
       W.decal(m, (w - lw) / 2, (w + lw) / 2, yy, yy + lh, 0.03, "riverdale", shade(body, 1.35), MAT.decal)
     }
+    // Fire escape on some brick side streets: landings at every floor and zigzag stairs.
+    if (brick && f.detail && !board && !letter && floors >= 2 && nb >= 3 && rng() < 0.35) {
+      const k = 1 + Math.floor(rng() * (nb - 2))
+      fireEscape(ctx, W, margin + bw * k - 0.2, margin + bw * (k + 1) + 0.2, g, storey, floors, sill)
+    }
     if (board && ctx.billboard) {
       billboardOn(ctx, W, board[0], board[1], g + 0.8, g + 0.8 + (board[1] - board[0]) * 1.25, ctx.billboard)
       ctx.billboard = null
@@ -285,7 +291,8 @@ function window(ctx: BuildingCtx, W: Wall, a: number, b: number, y0: number, y1:
     W.rect(m, mid - 0.045, mid + 0.045, y0, y1, -r + 0.02, FRAME)
     W.rect(m, a, b, split - 0.04, split + 0.04, -r + 0.02, FRAME)
   } else {
-    W.rect(m, a, b, y0, y1, -r, GLASS, MAT.glass)
+    // Unlit rooms read as dark navy holes; glass here would catch the moon and turn pale.
+    W.rect(m, a, b, y0, y1, -r, DARK_PANE, MAT.lit)
     const mid = (a + b) / 2
     W.rect(m, mid - 0.04, mid + 0.04, y0, y1, -r + 0.02, FRAME)
   }
@@ -432,6 +439,32 @@ function groundSpecial(ctx: BuildingCtx, f: Face, b: Box, body: Rgb, trim: Rgb) 
   }
 }
 
+/** Iron fire escape: a landing with railings at each storey, a stair flight between, a drop ladder at the bottom. */
+function fireEscape(ctx: BuildingCtx, W: Wall, u0: number, u1: number, g: number, storey: number, floors: number, sill: number) {
+  const { m } = ctx
+  const iron: Rgb = [0.1, 0.1, 0.12]
+  const d = 1.3
+  for (let fl = 0; fl < floors; fl++) {
+    const y = g + fl * storey + sill - 0.15
+    W.ledge(m, u0, u1, y - 0.06, y, d, [0.14, 0.14, 0.16])
+    // Railing: top rail and balusters on the front.
+    beam(m, W.p(u0, y + 0.98, d), W.p(u1, y + 0.98, d), 0.06, iron)
+    for (let u = u0; u <= u1 + 0.01; u += 0.4) beam(m, W.p(u, y, d - 0.03), W.p(u, y + 0.98, d - 0.03), 0.03, iron)
+    for (const u of [u0, u1]) {
+      const a = W.p(u, y + 0.98, 0.05)
+      const b = W.p(u, y + 0.98, d)
+      beam(m, a, b, 0.05, iron)
+    }
+    // Stair down to the landing below (or the drop ladder).
+    const a = W.p(fl % 2 ? u0 + 0.3 : u1 - 0.3, y, d * 0.5)
+    const b = W.p(fl % 2 ? u1 - 0.6 : u0 + 0.6, fl === 0 ? y - 1.6 : y - storey, d * 0.5)
+    beam(m, a, b, 0.14, iron)
+    const a2: [number, number, number] = [a[0], a[1] + 0.8, a[2]]
+    const b2: [number, number, number] = [b[0], b[1] + 0.8, b[2]]
+    beam(m, a2, b2, 0.04, iron)
+  }
+}
+
 /** Painted billboard on the facade with a frame and two little floodlights. */
 function billboardOn(ctx: BuildingCtx, W: Wall, u0: number, u1: number, y0: number, y1: number, region: AtlasRegion) {
   const { m } = ctx
@@ -449,7 +482,8 @@ function bladeSign(ctx: BuildingCtx, W: Wall, u: number, y0: number, y1: number,
   const t = 0.4
   const d0 = 0.35
   const d1 = 1.75
-  const glow = shade(tint, 0.3)
+  // Dark backlit panel so the neon letters carry the color.
+  const glow = mix(shade(tint, 0.12), [0.03, 0.03, 0.05], 0.4)
   const a = W.p(u - t / 2, 0, d0)
   const b = W.p(u + t / 2, 0, d1)
   const x0 = Math.min(a[0], b[0])
@@ -467,6 +501,7 @@ function bladeSign(ctx: BuildingCtx, W: Wall, u: number, y0: number, y1: number,
   const n = W.n
   const tt = W.t
   const inset = 0.15
+  const letters = mix(tint, [1, 1, 1], 0.35)
   const lo = y0 + 0.25
   const hi = y1 - 0.25
   for (const s of [-1, 1]) {
@@ -474,8 +509,8 @@ function bladeSign(ctx: BuildingCtx, W: Wall, u: number, y0: number, y1: number,
     const p = (d: number, y: number) => [W.ox + tt[0] * (u + off) + n[0] * d, y, W.oz + tt[2] * (u + off) + n[2] * d]
     const nn = [tt[0] * s, 0, tt[2] * s]
     // Seen from +t the image reads with d increasing to the left; from -t to the right.
-    if (s > 0) m.decal(p(d1 - inset, lo), p(d0 + inset, lo), p(d0 + inset, hi), p(d1 - inset, hi), nn, region, [0.62, 0.66, 0.72], MAT.neon)
-    else m.decal(p(d0 + inset, lo), p(d1 - inset, lo), p(d1 - inset, hi), p(d0 + inset, hi), nn, region, [0.62, 0.66, 0.72], MAT.neon)
+    if (s > 0) m.decal(p(d1 - inset, lo), p(d0 + inset, lo), p(d0 + inset, hi), p(d1 - inset, hi), nn, region, letters, MAT.neon)
+    else m.decal(p(d0 + inset, lo), p(d1 - inset, lo), p(d1 - inset, hi), p(d0 + inset, hi), nn, region, letters, MAT.neon)
   }
   const e0 = W.p(u - t / 2 - 0.03, 0, d1)
   const e1 = W.p(u + t / 2 + 0.03, 0, d1 + 0.06)
