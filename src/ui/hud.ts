@@ -196,6 +196,7 @@ export class Hud {
       text(e.iSub!, view.phase === "headstart" ? `${isRobber ? "COPS IN" : "YOU ROLL IN"} ${Math.max(1, Math.ceil(left))}` : "")
     }
     show(e.keys!, this.firstRound && pre)
+    text(e.keys!, `WASD drive · SPACE drift · SHIFT nitro · H engine${ctx.room ? " · ENTER chat" : ""}`)
 
     this.updateGadgets(view, ctx, isRobber)
     const mine = view.cars.find((c) => c.ownerId === ctx.myId && !c.ghost)

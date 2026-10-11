@@ -4,6 +4,8 @@ import type { Input } from "../../shared/sim/vehicle"
 export class Controls {
   private keys = new Set<string>()
   private steer = 0
+  /** While true (chat open) the car gets neutral input. */
+  paused = false
 
   constructor() {
     addEventListener("keydown", (e) => {
@@ -19,7 +21,17 @@ export class Controls {
     return this.keys.has(code)
   }
 
+  /** Lets go of every held key, e.g. when a text field takes focus. */
+  release() {
+    this.keys.clear()
+  }
+
   read(dt: number): Input {
+    if (this.paused) {
+      this.keys.clear()
+      this.steer = 0
+      return { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false, gadget: null, engine: false }
+    }
     const k = this.keys
     const up = k.has("KeyW") || k.has("ArrowUp")
     const down = k.has("KeyS") || k.has("ArrowDown")

@@ -9,6 +9,7 @@ import { LocalSession, type Session } from "./game/session"
 import { GameAudio } from "./audio/game-audio"
 import { Radio } from "./audio/radio"
 import { Renderer } from "./render/renderer"
+import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 
@@ -71,6 +72,7 @@ async function main() {
   const radio = new Radio()
   const cam = new Camera()
   const controls = new Controls()
+  const chat = session.chat ? new Chat(document.getElementById("hud")!, controls, session) : null
   let snapped = false
 
   const resize = () => {
@@ -111,6 +113,7 @@ async function main() {
     scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
     const events = session.drainEvents()
     hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status: session.status(), idleIn: session.idleIn?.() })
+    chat?.update()
     sound.update(view, { myId: session.myId, cam, dt, events, input })
     radio.update(view, session.myId, events)
     ;(window as unknown as { __view: unknown }).__view = view

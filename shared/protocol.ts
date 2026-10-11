@@ -9,8 +9,14 @@ export type ClientMsg =
   | { type: "hello"; name: string; picks: Picks; id?: string }
   | { type: "input"; seq: number; input: Input }
   | { type: "ping"; t: number }
+  | { type: "chat"; text: string }
 
 export type RosterEntry = { id: string; name: string; human: boolean; connected: boolean }
+
+/** A chat line. "system" lines (joins and leaves) have no sender id and read as "<name> <text>". */
+export type ChatMsg = { type: "chat"; from: string; name: string; role: Role | "system"; text: string; t: number }
+
+export const CHAT_MAX = 140
 
 export type ServerMsg =
   | { type: "welcome"; id: string; room: string; seed: number; tick: number }
@@ -22,6 +28,7 @@ export type ServerMsg =
   | { type: "events"; events: SimEvent[] }
   | { type: "roster"; players: RosterEntry[] }
   | { type: "pong"; t: number }
+  | ChatMsg
   | { type: "error"; code: "full" | "bad" | "idle"; message: string }
 
 /**
@@ -77,6 +84,13 @@ function decodePicks(v: unknown): Picks {
   return { robber: pick("robber"), cop: pick("cop") }
 }
 
+/** Chat text: control and bidi-override characters stripped, whitespace collapsed, at most CHAT_MAX characters. */
+export function cleanChat(v: unknown): string {
+  if (typeof v !== "string") return ""
+  const s = v.replace(/[\p{Cc}\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, " ").replace(/\s+/g, " ").trim()
+  return Array.from(s).slice(0, CHAT_MAX).join("").trim()
+}
+
 export function cleanName(v: unknown): string {
   const s = typeof v === "string" ? v.replace(/[^\p{L}\p{N} _.'-]/gu, "").trim().slice(0, 16) : ""
   return s || "Driver"
@@ -105,6 +119,10 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     }
     case "ping":
       return { type: "ping", t: typeof o.t === "number" && Number.isFinite(o.t) ? o.t : 0 }
+    case "chat": {
+      const text = cleanChat(o.text)
+      return text ? { type: "chat", text } : null
+    }
   }
   return null
 }

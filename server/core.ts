@@ -19,6 +19,9 @@ type Player = {
   /** Ticks connected without input activity, and the last input received (activity is any change or non-neutral input). */
   idle: number
   last: Input
+  /** Chat rate limit: a token bucket, refilled one token per CHAT_REFILL_TICKS up to CHAT_BURST. */
+  chatTokens: number
+  chatAt: number
 }
 
 /** Disconnected players keep their seat (and car) this long so a reconnect resumes seamlessly. */
@@ -28,6 +31,8 @@ const MAX_QUEUE = 10
 const TRIM_QUEUE = 3
 /** With no input for this long (tab hidden, stalled link) the car lets go of the pedals. */
 const STARVE_TICKS = 15
+const CHAT_BURST = 3
+const CHAT_REFILL_TICKS = 0.8 * TICK_HZ
 const SNAPSHOT_EVERY = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
 
 const sameInput = (a: Input, b: Input) =>
@@ -87,12 +92,27 @@ export class RoomCore {
     if (msg.type === "hello") return this.hello(conn, msg)
     const p = this.byConn.get(conn)
     if (!p || p.conn !== conn) return
+    if (msg.type === "chat") return this.chat(p, msg.text)
     const last = p.queue.length ? p.queue[p.queue.length - 1]!.seq : p.ack
     if (msg.seq <= last) return
     if (!sameInput(msg.input, p.last) || !sameInput(msg.input, NO_INPUT)) p.idle = 0
     p.last = msg.input
     p.queue.push({ seq: msg.seq, input: msg.input })
     if (p.queue.length > MAX_QUEUE) p.queue.splice(0, p.queue.length - TRIM_QUEUE)
+  }
+
+  private chat(p: Player, text: string) {
+    p.chatTokens = Math.min(CHAT_BURST, p.chatTokens + (this.tick - p.chatAt) / CHAT_REFILL_TICKS)
+    p.chatAt = this.tick
+    if (p.chatTokens < 1) return
+    p.chatTokens--
+    p.idle = 0
+    const role = this.world && this.world.robberId === p.id ? "robber" : "cop"
+    this.broadcast({ type: "chat", from: p.id, name: p.name, role, text, t: Date.now() })
+  }
+
+  private system(name: string, text: string) {
+    this.broadcast({ type: "chat", from: "", name, role: "system", text, t: Date.now() })
   }
 
   private hello(conn: Conn, msg: Extract<ClientMsg, { type: "hello" }>) {
@@ -115,9 +135,10 @@ export class RoomCore {
       // First person into an empty room gets a fresh game instead of a stale round.
       if (this.players.size === 0) this.world = null
       const id = msg.id && !this.players.has(msg.id) ? msg.id : newId()
-      p = { id, name: msg.name, picks: msg.picks, conn, queue: [], ack: 0, input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT }
+      p = { id, name: msg.name, picks: msg.picks, conn, queue: [], ack: 0, input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT, chatTokens: CHAT_BURST, chatAt: this.tick }
       this.players.set(id, p)
       this.syncParticipants()
+      this.system(p.name, "joined")
     }
     this.byConn.set(conn, p)
     this.send(conn, { type: "welcome", id: p.id, room: this.code, seed: this.seed, tick: this.tick })
@@ -147,9 +168,11 @@ export class RoomCore {
     for (const p of this.players.values())
       if (!p.conn && this.tick - p.goneAt > GRACE_TICKS) {
         this.players.delete(p.id)
+        this.system(p.name, "left")
         left = true
       } else if (p.conn && ++p.idle >= this.idleLimit(p) && this.kickable(p)) {
         this.kick(p)
+        this.system(p.name, "was kicked for idling")
         left = true
       }
     if (left) {

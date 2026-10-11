@@ -162,3 +162,18 @@ button { font: inherit; color: inherit; }
 .h-map { position: absolute; left: 24px; bottom: 24px; width: 196px; height: 196px; border-radius: 50%; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55); }
 .h-map canvas { display: block; border-radius: 50%; }
 .phase-end .h-map { opacity: 0.35; }
+
+/* Chat: a compact log above the minimap; lines fade after a while and all come back while typing. */
+.h-chat { position: absolute; left: 24px; bottom: 232px; width: min(340px, 40vw); display: flex; flex-direction: column; gap: 6px; }
+.c-log { display: flex; flex-direction: column; gap: 2px; }
+.c-line { font: 500 14px/1.25 var(--display); letter-spacing: 0.04em; text-transform: none; color: var(--text); overflow-wrap: anywhere; transition: opacity 0.8s; }
+.c-line.old { opacity: 0; }
+.h-chat.open .c-line { opacity: 1; transition: none; }
+.c-name { font-weight: 600; margin-right: 6px; }
+.c-line.robber .c-name { color: var(--robber); }
+.c-line.cop .c-name { color: var(--cop); }
+.c-line.system { color: var(--faint); }
+.c-line.system .c-name { font-weight: 500; margin-right: 0; }
+.c-input { width: 100%; height: 28px; padding: 0 10px; pointer-events: auto; background: rgba(5, 7, 11, 0.6); border: 1px solid rgba(255, 255, 255, 0.18); outline: none; color: var(--text); font: 500 14px/1 var(--display); letter-spacing: 0.04em; text-transform: none; text-shadow: none; }
+.c-input:focus { border-color: rgba(255, 255, 255, 0.4); }
+.c-input::placeholder { color: var(--faint); }

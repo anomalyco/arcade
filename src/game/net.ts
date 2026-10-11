@@ -1,5 +1,5 @@
 import type { Role } from "../../shared/config"
-import { type ClientMsg, type RosterEntry, type ServerMsg, decodeServer, encodeClient } from "../../shared/protocol"
+import { type ChatMsg, type ClientMsg, type RosterEntry, type ServerMsg, decodeServer, encodeClient } from "../../shared/protocol"
 import { type City, generateCity } from "../../shared/sim/city"
 import type { Input } from "../../shared/sim/vehicle"
 import type { SimEvent, WorldView } from "../../shared/sim/world"
@@ -34,6 +34,7 @@ export class NetSession implements Session {
   private last: WorldView | null = null
   private ready: { resolve: (s: Session) => void; reject: (e: Error) => void } | null = null
   private id = ""
+  private chats: ChatMsg[] = []
 
   /** Resolves once the room has welcomed us and sent the first snapshot. `priv` makes a brand-new room private. */
   static connect(room: string, name: string, picks: Record<Role, string>, priv = false): Promise<Session> {
@@ -110,6 +111,10 @@ export class NetSession implements Session {
       case "pong":
         this.rtt = this.rtt < 0 ? performance.now() - msg.t : this.rtt * 0.7 + (performance.now() - msg.t) * 0.3
         return
+      case "chat":
+        this.chats.push(msg)
+        if (this.chats.length > 50) this.chats.shift()
+        return
       case "roster":
         this.roster = msg.players
         return
@@ -146,6 +151,14 @@ export class NetSession implements Session {
     const v = this.client?.update(dt, input)
     if (v) this.last = v
     return this.last!
+  }
+
+  chat(text: string) {
+    this.send({ type: "chat", text })
+  }
+
+  drainChat(): ChatMsg[] {
+    return this.chats.splice(0)
   }
 
   drainEvents(): SimEvent[] {

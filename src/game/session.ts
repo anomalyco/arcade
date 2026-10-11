@@ -2,6 +2,7 @@ import { DT } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
 import type { Input } from "../../shared/sim/vehicle"
 import { type Participant, type SimEvent, World, type WorldView } from "../../shared/sim/world"
+import type { ChatMsg } from "../../shared/protocol"
 import { BOT_NAMES } from "../../shared/names"
 import { lerpView } from "./interp"
 import { applyStage } from "./stage"
@@ -20,6 +21,9 @@ export interface Session {
   idleIn?(): number | null
   /** Online only: why the server removed us for good (an idle kick), once it has. */
   kicked?(): string | null
+  /** Online only: send a chat line, and take the lines received since the last call. */
+  chat?(text: string): void
+  drainChat?(): ChatMsg[]
 }
 
 /** Solo practice: the full simulation runs in the browser with bot cops. */
