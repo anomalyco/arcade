@@ -47,7 +47,7 @@ import {
   segmentHitsCircle,
 } from "./gadgets"
 import { mulberry32, type Rng } from "./rng"
-import { type Body, type Input, NO_INPUT, forward, lateralSpeed, newBody, speedOf, stepAndCollide } from "./vehicle"
+import { type Body, type Input, NO_INPUT, forward, isDark, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "./vehicle"
 
 /** intro: robber at the scene, alarm ringing. headstart: robber drives, cops wait. chase: everyone drives. end: results. */
 /** waiting: fewer than two players, everyone free-drives until someone joins. */
@@ -89,6 +89,9 @@ export type Car = {
   pendingGadget: 0 | 1 | null
   /** Last gadget value seen from setInput, for edge detection. */
   lastGadget: 0 | 1 | null
+  /** A human engine (H) press waiting for the next tick, and the last engine key state seen, for edge detection. */
+  pendingEngine: boolean
+  lastEngine: boolean
 }
 
 export type SimEvent = { t: number; kind: string; text: string; carId?: number }
@@ -119,6 +122,10 @@ export type CarView = {
   slide?: number
   slip?: number
   flat?: number
+  /** Engine switched off (no headlights, dim taillights, no engine sound). */
+  engineOff?: boolean
+  /** The robber's live position comes from shared detection (radar). False when a cop sees a dark robber only on their own screen. */
+  radar?: boolean
 }
 
 export type Heli = { active: boolean; x: number; y: number; z: number; h: number; sx: number; sz: number; lock: number }
@@ -300,6 +307,9 @@ export class World {
     const g = input.gadget ?? null
     if (g !== null && g !== c.lastGadget) c.pendingGadget = g
     c.lastGadget = g
+    const e = !!input.engine
+    if (e && !c.lastEngine) c.pendingEngine = true
+    c.lastEngine = e
     c.input = input
   }
 
@@ -400,6 +410,8 @@ export class World {
       gadgets: newGadgets(LOADOUT[role]),
       pendingGadget: null,
       lastGadget: null,
+      pendingEngine: false,
+      lastEngine: false,
     }
     this.cars.push(car)
     return car
@@ -488,9 +500,12 @@ export class World {
         c.body.vz *= 0.85
         c.impact = 0
         c.pendingGadget = null
+        c.pendingEngine = false
         continue
       }
       const input = c.human ? c.input : c.role === "robber" ? robberBrain(this, c) : copBrain(this, c)
+      if (c.human ? c.pendingEngine : input.engine) toggleEngine(c.body)
+      c.pendingEngine = false
       const slot = c.human ? c.pendingGadget : (input.gadget ?? null)
       c.pendingGadget = null
       if (slot !== null) this.useGadget(c, slot)
@@ -651,10 +666,12 @@ export class World {
     if (!SURVIVAL && this.phaseT >= EXTRACT_OPEN_SECONDS && this.phaseT - dt < EXTRACT_OPEN_SECONDS) this.emit("exit", `The ride is waiting at the ${this.exit.name}`)
     this.stepHeli(dt, r)
     const smoked = this.inSmoke(r.body.x, r.body.z)
-    const spotted = this.heli.active && !smoked && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
+    // Dark (engine off, standing still): no radar and no helicopter. Cops can still see the car on their own screens and bust it.
+    const dark = isDark(r.body)
+    const spotted = this.heli.active && !smoked && !dark && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
     this.heli.lock = spotted ? this.heli.lock + dt : 0
     if (spotted) this.heat += dt * HEAT_SPOT_RATE
-    this.seen = spotted || (!smoked && cops.some((c) => (SURVIVAL ? this.onScreen(c, r) : this.canSee(c, r))))
+    this.seen = spotted || (!smoked && !dark && cops.some((c) => (SURVIVAL ? this.onScreen(c, r) : this.canSee(c, r))))
     if (this.seen) {
       this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
       this.lastSeenH = r.body.h
@@ -789,9 +806,12 @@ export class World {
   view(viewerId?: string): WorldView {
     const robberView = viewerId === undefined || viewerId === this.robberId || !this.cars.some((c) => c.ownerId === viewerId)
     const showRobber = robberView || this.seen || this.phase === "waiting" || this.phase === "intro" || this.phase === "end"
+    const viewer = viewerId === undefined ? undefined : this.carOf(viewerId)
     const cars: CarView[] = []
     for (const c of this.cars) {
-      const hidden = c.role === "robber" && !showRobber
+      // A cop who has the robber on their own screen sees the car with their own eyes, even when it's dark to radar.
+      const ownSight = !showRobber && c.role === "robber" && this.phase === "chase" && viewer?.role === "cop" && this.onScreen(viewer, c)
+      const hidden = c.role === "robber" && !showRobber && !ownSight
       if (hidden && !this.lastSeen) continue
       const b = c.body
       cars.push({
@@ -817,9 +837,10 @@ export class World {
         slide: hidden ? 0 : (b.drift ?? 0),
         slip: hidden ? 0 : (b.slip ?? 0),
         flat: hidden ? 0 : (b.flat ?? 0),
+        engineOff: hidden ? false : !!b.engineOff,
+        radar: c.role === "robber" ? !hidden && !ownSight : undefined,
       })
     }
-    const viewer = viewerId === undefined ? undefined : this.carOf(viewerId)
     const props: PropView[] = []
     for (const p of this.props) {
       if (viewer?.role === "robber" && p.kind === "spike" && Math.hypot(p.x - viewer.body.x, p.z - viewer.body.z) > SPIKE_SPOT_RANGE) continue
@@ -869,7 +890,7 @@ export class World {
   copTarget(car?: Car): { x: number; z: number; visible: boolean } | null {
     const r = this.robber()
     if (!r) return null
-    if (this.seen) return { x: r.body.x, z: r.body.z, visible: true }
+    if (this.seen || (car && this.phase === "chase" && isDark(r.body) && this.onScreen(car, r))) return { x: r.body.x, z: r.body.z, visible: true }
     if (this.lastSeen && this.t - this.lastSeen.t < 10) return { x: this.lastSeen.x, z: this.lastSeen.z, visible: false }
     // Trail gone cold: ground units fan out along the helicopter's search spiral, each a different way round.
     return { ...this.heliSearch(car ? 2 + car.id * 2.4 : 0), visible: false }

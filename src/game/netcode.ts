@@ -3,7 +3,7 @@ import type { ClientMsg, ServerMsg } from "../../shared/protocol"
 import { quantizeInput } from "../../shared/protocol"
 import type { Box, City } from "../../shared/sim/city"
 import { propBox } from "../../shared/sim/gadgets"
-import { type Body, type Input, lateralSpeed, speedOf, stepAndCollide } from "../../shared/sim/vehicle"
+import { type Body, type Input, lateralSpeed, speedOf, stepAndCollide, toggleEngine } from "../../shared/sim/vehicle"
 import type { CarView, Phase, SimEvent, WorldView } from "../../shared/sim/world"
 import { lerpView } from "./interp"
 
@@ -46,6 +46,9 @@ export class NetClient {
   private acc = 0
   private err = { x: 0, z: 0, h: 0 }
   private boxes: Box[]
+  /** Engine key state the server last saw (edge detection for H presses), at the ack and live. */
+  private ackEngine = false
+  private engineHeld = false
 
   constructor(
     readonly city: City,
@@ -77,6 +80,8 @@ export class NetClient {
     const d = msg.tick - this.est
     if (!last || Math.abs(d) > TICK_HZ / 2) this.est = msg.tick
     else this.est += d * 0.1
+    const acked = this.pending.find((p) => p.seq === msg.ack)
+    if (acked) this.ackEngine = !!acked.input.engine
     this.pending = this.pending.filter((p) => p.seq > msg.ack)
     this.reconcile(msg.view, msg.you)
   }
@@ -102,6 +107,7 @@ export class NetClient {
     this.boxes = props.length ? [...this.city.boxes, ...props] : this.city.boxes
     this.body = clone(you)
     this.prevBody = clone(you)
+    this.engineHeld = this.ackEngine
     for (const p of this.pending) this.advance(p.input)
     if (!before || fresh) {
       this.err = { x: 0, z: 0, h: 0 }
@@ -119,6 +125,8 @@ export class NetClient {
     const b = this.body
     if (!b || !this.vehicle) return
     this.prevBody = clone(b)
+    const press = !!input.engine && !this.engineHeld
+    this.engineHeld = !!input.engine
     this.phaseT += DT
     if (this.phase === "end") return
     if (this.phase === "intro" && this.phaseT >= INTRO_SECONDS) {
@@ -134,6 +142,7 @@ export class NetClient {
       b.vz *= 0.85
       return
     }
+    if (press) toggleEngine(b)
     stepAndCollide(b, input, this.vehicle, DT, radiusOfVehicle(this.vehicle), this.boxes)
   }
 
@@ -193,6 +202,7 @@ export class NetClient {
     if (!base) return view
     const p = this.visual()
     const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, flat: b.flat ?? 0, ghost: false }
+    mine.engineOff = !!b.engineOff
     const cars = view.cars.filter((c) => c.ownerId !== this.myId || c.id === this.carId).map((c) => (c.id === this.carId ? mine : c))
     if (!cars.includes(mine)) cars.push(mine)
     return { ...view, cars }

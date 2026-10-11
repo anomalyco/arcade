@@ -1,5 +1,6 @@
 import { END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
+import { DRIVE } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
 import { attr, esc, flag, h, show, style, text } from "./dom"
@@ -89,7 +90,7 @@ export class Hud {
     e.intro = h("div", "h-intro off", r, `<div class="i-line"></div><div class="i-sub"></div>`)
     e.iLine = e.intro.querySelector(".i-line")!
     e.iSub = e.intro.querySelector(".i-sub")!
-    e.keys = h("div", "h-keys off", r, "WASD drive · SPACE drift · SHIFT nitro")
+    e.keys = h("div", "h-keys off", r, "WASD drive · SPACE drift · SHIFT nitro · H engine")
 
     e.flash = h("div", "h-flash off", r)
     e.gadget = h("div", "h-gadget off", r, `<div class="g-row"><span class="g-key">Q</span><span class="g-name"></span><span class="g-pips">${"<i></i>".repeat(GADGETS.spike.charges)}</span></div><div class="g-bar"><b></b></div>`)
@@ -115,6 +116,9 @@ export class Hud {
     e.roomCode = e.room.querySelector(".code")!
     e.copy = e.room.querySelector("button")!
     e.copy.addEventListener("click", () => this.copyInvite(e.copy!, "COPY INVITE"))
+
+    e.engine = h("div", "h-keys off", r)
+    e.engine.style.cssText = "bottom: 8px; animation: none"
   }
 
   private copyInvite(btn: HTMLElement, label: string) {
@@ -176,6 +180,9 @@ export class Hud {
     show(e.keys!, this.firstRound && pre)
 
     this.updateGadgets(view, ctx, isRobber)
+    const mine = view.cars.find((c) => c.ownerId === ctx.myId && !c.ghost)
+    show(e.engine!, !!mine?.engineOff && !waiting && view.phase !== "end")
+    if (mine?.engineOff) text(e.engine!, isRobber && mine.speed < DRIVE.darkSpeed ? "ENGINE OFF · DARK" : "ENGINE OFF")
     this.updateWorld(view, ctx, isRobber, robber, ghost)
     this.map.update(view, ctx.cam, ctx.myId, ctx.dt)
     this.updateEnd(view, ctx, robberName, survived)

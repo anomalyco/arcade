@@ -52,6 +52,7 @@ export class Controls {
     let gadget: 0 | 1 | null = k.has("KeyQ") ? 0 : k.has("KeyE") ? 1 : null
     if (pad?.buttons[4]?.pressed) gadget = 0
     if (pad?.buttons[3]?.pressed) gadget = 1
-    return { throttle, brake, steer: this.steer, handbrake, boost, gadget }
+    const engine = k.has("KeyH") || !!pad?.buttons[9]?.pressed
+    return { throttle, brake, steer: this.steer, handbrake, boost, gadget, engine }
   }
 }

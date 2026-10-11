@@ -9,6 +9,8 @@ export type Input = {
   boost: boolean
   /** Gadget slot pressed (Q = 0, E = 1). The world fires once per press: a value that repeats across inputs is ignored until it goes back to null. */
   gadget?: 0 | 1 | null
+  /** Engine key (H) held. Each press toggles the engine; like gadgets, a value repeated across inputs does nothing. */
+  engine?: boolean
 }
 
 export const NO_INPUT: Input = { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false }
@@ -29,6 +31,10 @@ export type Body = {
   slip?: number
   /** Seconds left on a flat tire (lower top speed and grip). */
   flat?: number
+  /** Engine switched off: no throttle, reverse or boost; the car coasts, brakes and steers as it rolls. */
+  engineOff?: boolean
+  /** Seconds left cranking after a restart, before the throttle answers. */
+  crank?: number
 }
 
 /** Driving tunables. Speeds in m/s, rates per second. */
@@ -50,10 +56,23 @@ export const DRIVE = {
   flatSpeed: 0.68,
   flatGrip: 0.55,
   oilGrip: 0.05,
+  crank: 0.8,
+  /** An engine-off car slower than this is dark: invisible to radar and the helicopter. */
+  darkSpeed: 1.5,
 }
 
 export function newBody(x: number, z: number, h: number): Body {
-  return { x, z, h, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, flat: 0 }
+  return { x, z, h, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, flat: 0, engineOff: false, crank: 0 }
+}
+
+/** Switches the engine off, or starts it again (the throttle answers after DRIVE.crank seconds). */
+export function toggleEngine(b: Body) {
+  b.engineOff = !b.engineOff
+  b.crank = b.engineOff ? 0 : DRIVE.crank
+}
+
+export function isDark(b: Body) {
+  return !!b.engineOff && speedOf(b) < DRIVE.darkSpeed
 }
 
 export function forward(h: number): [number, number] {
@@ -79,6 +98,10 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   const flat = b.flat ?? 0
   if (slip > 0) b.slip = Math.max(0, slip - dt)
   if (flat > 0) b.flat = Math.max(0, flat - dt)
+  const crank = b.crank ?? 0
+  if (crank > 0) b.crank = Math.max(0, crank - dt)
+  const dead = !!b.engineOff || crank > 0
+  if (dead && (input.throttle > 0 || input.boost)) input = { ...input, throttle: Math.min(0, input.throttle), boost: false }
   const boosting = input.boost && b.boostFuel > 0 && b.stun <= 0
   if (boosting) b.boostFuel = Math.max(0, b.boostFuel - dt / DRIVE.boostDrain)
   else b.boostFuel = Math.min(1, b.boostFuel + dt / DRIVE.boostRefill)
@@ -124,11 +147,11 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   }
   if (input.throttle < 0) {
     if (vf > 0.5) a -= spec.brake * -input.throttle
-    else a += spec.accel * 0.6 * input.throttle * Math.max(0, 1 + vf / DRIVE.reverseMax)
+    else if (!dead) a += spec.accel * 0.6 * input.throttle * Math.max(0, 1 + vf / DRIVE.reverseMax)
   }
   if (input.brake > 0 && vf > 0.5) a -= spec.brake * input.brake
   if (input.handbrake && absVf > 0.5) a -= 5 * Math.sign(vf)
-  a -= input.throttle !== 0 ? 0.02 * vf : Math.sign(vf) * Math.min(Math.abs(vf) * 4, 0.6 + 0.04 * Math.abs(vf))
+  a -= input.throttle !== 0 && !dead ? 0.02 * vf : Math.sign(vf) * Math.min(Math.abs(vf) * 4, 0.6 + 0.04 * Math.abs(vf))
   if (vf > vmax) a -= (vf - vmax) * 0.8
   if (drift > 0) a -= 0.15 * Math.abs(vl) * Math.sign(vf)
 
@@ -149,7 +172,7 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
     vf = 0
     vl = 0
   }
-  if (Math.abs(vf) < 0.05 && Math.abs(vl) < 0.05 && input.throttle === 0) {
+  if (Math.abs(vf) < 0.05 && Math.abs(vl) < 0.05 && (input.throttle === 0 || dead)) {
     vf = 0
     vl = 0
   }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
+import { BUST_SECONDS, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
 import { NO_INPUT } from "../shared/sim/vehicle"
 import { World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
@@ -433,5 +433,117 @@ describe("survival spike strip", () => {
     expect(b.flat ?? 0).toBeGreaterThan(0)
     top = Math.hypot(b.vx, b.vz)
     expect(top).toBeLessThan(w.carOf("r")!.vehicle.maxSpeed * 0.75)
+  })
+})
+
+describe("going dark", () => {
+  /** Turns the robber's engine off with one H press (press, then release). */
+  const killEngine = (w: World) => {
+    w.setInput("r", { ...NO_INPUT, engine: true })
+    steps(w, DT)
+    w.setInput("r", NO_INPUT)
+    expect(w.carOf("r")!.body.engineOff).toBe(true)
+  }
+
+  test.skipIf(!SURVIVAL)("a dark driver on a cop's screen is not seen: no radar for anyone, but that cop still sees the car", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    place(w, "r", ROAD_X, ROAD_Z)
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    killEngine(w)
+    steps(w, 0.2)
+    const last = { ...w.lastSeen! }
+    place(w, "c1", ROAD_X, ROAD_Z - 20)
+    steps(w, 1)
+    expect(w.seen).toBe(false)
+    expect(w.lastSeen).toEqual(last)
+    // c2 gets no live position, only the old ping.
+    const far = w.view("c2").cars.find((c) => c.ownerId === "r")!
+    expect(far.ghost).toBe(true)
+    expect(Math.hypot(far.x - ROAD_X, far.z - ROAD_Z)).toBeGreaterThan(0)
+    expect(far.x).toBe(last.x)
+    // c1 sees the car with their own eyes, but it isn't on radar.
+    const near = w.view("c1").cars.find((c) => c.ownerId === "r")!
+    expect(near.ghost).toBe(false)
+    expect(near.radar).toBe(false)
+    expect(near.engineOff).toBe(true)
+    expect(near.x).toBe(w.carOf("r")!.body.x)
+    // The driver's own view still has radar on.
+    expect(w.view("r").cars.find((c) => c.ownerId === "r")!.radar).toBe(true)
+  })
+
+  test.skipIf(!SURVIVAL)("a rolling engine-off car or a running engine is seen as before", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    place(w, "c1", ROAD_X, ROAD_Z - 20)
+    place(w, "r", ROAD_X, ROAD_Z)
+    steps(w, 0.2)
+    expect(w.seen).toBe(true)
+    const live = w.view("c2").cars.find((c) => c.ownerId === "r")!
+    expect(live.ghost).toBe(false)
+    expect(live.radar).toBe(true)
+    // Engine off but still coasting at speed: still on radar.
+    place(w, "r", ROAD_X, ROAD_Z, 0, 12)
+    killEngine(w)
+    steps(w, 0.1)
+    expect(w.carOf("r")!.body.engineOff).toBe(true)
+    expect(Math.hypot(w.carOf("r")!.body.vx, w.carOf("r")!.body.vz)).toBeGreaterThan(1.5)
+    expect(w.seen).toBe(true)
+    expect(w.view("c2").cars.find((c) => c.ownerId === "r")!.ghost).toBe(false)
+  })
+
+  test.skipIf(!SURVIVAL)("the helicopter's spotlight passes over a dark car without finding it", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    place(w, "r", ROAD_X, ROAD_Z)
+    const hold = () => {
+      Object.assign(w.heli, { active: true, x: ROAD_X, z: ROAD_Z - 5, sx: ROAD_X, sz: ROAD_Z })
+    }
+    steps(w, 0.5, hold)
+    expect(w.seen).toBe(true)
+    expect(w.heli.lock).toBeGreaterThan(0)
+    killEngine(w)
+    steps(w, 1, hold)
+    expect(w.seen).toBe(false)
+    expect(w.heli.lock).toBe(0)
+    expect(w.view("c2").cars.find((c) => c.ownerId === "r")!.ghost).toBe(true)
+  })
+
+  test("cops can still bust a dark driver they get close to", () => {
+    const w = humanWorld()
+    toChase(w)
+    place(w, "r", ROAD_X, ROAD_Z)
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    killEngine(w)
+    place(w, "c1", ROAD_X - 4.5, ROAD_Z)
+    place(w, "c2", ROAD_X + 4.5, ROAD_Z)
+    steps(w, BUST_SECONDS + 0.5)
+    expect(w.carOf("r")!.body.engineOff).toBe(true)
+    expect(w.busted).toBe(true)
+  })
+
+  test("throttle does nothing with the engine off, and works again after the crank delay", () => {
+    const w = humanWorld()
+    toChase(w)
+    place(w, "r", ROAD_X, ROAD_Z)
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    killEngine(w)
+    const b = w.carOf("r")!.body
+    steps(w, 2, () => w.setInput("r", drive(1, { boost: true })))
+    expect(Math.hypot(b.vx, b.vz)).toBe(0)
+    expect(Math.hypot(b.x - ROAD_X, b.z - ROAD_Z)).toBeLessThan(0.01)
+    // Holding H doesn't flicker it: one press, one toggle.
+    w.setInput("r", { ...NO_INPUT, engine: true })
+    steps(w, 0.5, () => w.setInput("r", drive(1, { engine: true })))
+    expect(b.engineOff).toBe(false)
+    expect(Math.hypot(b.vx, b.vz)).toBe(0)
+    steps(w, 1, () => w.setInput("r", drive(1)))
+    expect(Math.hypot(b.vx, b.vz)).toBeGreaterThan(3)
   })
 })

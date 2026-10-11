@@ -53,6 +53,7 @@ export function quantizeInput(i: Input): Input {
   const q = (v: number) => Math.round(v * 1000) / 1000
   const out: Input = { throttle: q(i.throttle), brake: q(i.brake), steer: q(i.steer), handbrake: !!i.handbrake, boost: !!i.boost }
   if (i.gadget === 0 || i.gadget === 1) out.gadget = i.gadget
+  if (i.engine) out.engine = true
   return out
 }
 
@@ -60,7 +61,7 @@ function decodeInput(v: unknown): Input | null {
   if (!v || typeof v !== "object") return null
   const o = v as Record<string, unknown>
   const gadget = o.gadget === 0 || o.gadget === 1 ? o.gadget : null
-  return quantizeInput({ throttle: clamp(o.throttle, -1, 1), brake: clamp(o.brake, 0, 1), steer: clamp(o.steer, -1, 1), handbrake: o.handbrake === true, boost: o.boost === true, gadget })
+  return quantizeInput({ throttle: clamp(o.throttle, -1, 1), brake: clamp(o.brake, 0, 1), steer: clamp(o.steer, -1, 1), handbrake: o.handbrake === true, boost: o.boost === true, gadget, engine: o.engine === true })
 }
 
 function decodePicks(v: unknown): Picks {

@@ -174,7 +174,7 @@ struct VIn {
 
 struct Inst {
   @location(4) posYaw: vec4f,   // x, y, z, yaw
-  @location(5) params: vec4f,   // roll, pitch, siren phase (<0 off), brake
+  @location(5) params: vec4f,   // roll, pitch, siren phase (<0 off), brake (1) or engine off (-1)
   @location(6) tint: vec4f,     // rgb silhouette tint, a scale
 }
 
@@ -232,8 +232,10 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
   let cutHere = cutaway(o.world, o.pos, o.cut);
   var col: vec3f;
   if (mat == 2) {
+    // Lamps. params.w: 1 braking, -1 engine off (headlamps dark, taillights dim).
     let tail = o.color.r > 0.9 && o.color.g < 0.2;
-    col = o.color * select(2.2, select(2.5, 9.0, o.extra.w > 0.5), tail);
+    let off = o.extra.w < -0.5;
+    col = o.color * select(select(2.2, 0.2, off), select(select(2.5, 0.8, off), 9.0, o.extra.w > 0.5), tail);
   } else if (mat == 8) {
     if (tex.a < 0.5) { discard; }
     col = o.color * tex.rgb * 3.0;

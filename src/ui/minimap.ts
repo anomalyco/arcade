@@ -141,7 +141,8 @@ export class Minimap {
       dot(g, r + x, r + y, 3.6, "#3d7bff", "rgba(10, 20, 50, 0.9)")
     }
 
-    if (robber && robber !== me && view.phase !== "waiting") {
+    // A dark driver you can only see with your own eyes stays off the radar.
+    if (robber && robber !== me && view.phase !== "waiting" && (robber.ghost || robber.radar !== false)) {
       const [x, y] = toMap(robber.x, robber.z)
       const inside = Math.hypot(x, y) < r - 6
       if (!robber.ghost) {

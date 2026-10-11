@@ -384,3 +384,37 @@ describe("fog of war", () => {
     expect(spec.client!.body).not.toBeNull()
   })
 })
+
+describe("engine", () => {
+  test("an H press travels through the protocol and the room, and the prediction follows it without diverging", () => {
+    const net = new Net()
+    const a = join(net, "Ada")
+    const hold = (n: number, input: Input) => {
+      for (let i = 0; i < n; i++) {
+        net.tick()
+        a.frame(input)
+      }
+    }
+    hold(60, drive(0))
+    const car = () => net.core.world!.carOf(a.client!.myId)!
+    expect(car().body.engineOff).toBe(false)
+    const start = a.client!.seq
+    // Hold H across several inputs: one toggle. Brake to a stop, then the throttle does nothing.
+    hold(5, { ...IDLE, throttle: 1, engine: true })
+    hold(30, { ...IDLE, throttle: 1 })
+    hold(150, { ...IDLE, brake: 1 })
+    hold(60, { ...IDLE, throttle: 1 })
+    expect(car().body.engineOff).toBe(true)
+    expect(a.client!.body!.engineOff).toBe(true)
+    expect(Math.hypot(car().body.vx, car().body.vz)).toBe(0)
+    expect(a.client!.view()!.cars.find((c) => c.ownerId === a.client!.myId)!.engineOff).toBe(true)
+    // Restart: after the crank the throttle answers again.
+    hold(3, { ...IDLE, throttle: 1, engine: true })
+    hold(60, { ...IDLE, throttle: 1 })
+    expect(car().body.engineOff).toBe(false)
+    expect(Math.hypot(car().body.vx, car().body.vz)).toBeGreaterThan(3)
+    const { worst, n } = maxError(a.predicted, a.server, start)
+    expect(n).toBeGreaterThan(50)
+    expect(worst).toBeLessThan(1e-9)
+  })
+})

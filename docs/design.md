@@ -37,6 +37,18 @@ through thin boxes). Handbrake (Space) drops grip for drifts that hold with thro
 Nitro (Shift) gives +30% top speed and empties in 3.5 s. Ramming is mass-based, and heavy hits stun the
 lighter car.
 
+## Going dark
+
+- H (gamepad Start) toggles the engine. With it off the car has no throttle, reverse or nitro; it coasts,
+  brakes and steers as it rolls. Restarting cranks for 0.8 s before the throttle answers. Headlights go out
+  and the taillights dim.
+- The driver is **dark** while the engine is off and they move slower than 1.5 m/s. A dark driver on a
+  cop's screen does not count as seen: no live minimap dot for anyone, and the last-seen ping isn't
+  refreshed. The helicopter's spotlight doesn't find a dark car either; it keeps searching.
+- A cop who has the dark car on their own screen still sees it in the world, just not on radar. The
+  server only sends a cop the driver's live position when the driver is seen or on that cop's screen.
+- Busting works as usual: a dark car with cops pressed against it is boxed and busted.
+
 ## Netcode
 
 - The Worker routes `/labs/getaway/ws/<ROOM>` to a `Room` Durable Object, one per room code.

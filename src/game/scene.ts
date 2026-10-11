@@ -111,7 +111,7 @@ export class Scene {
           this.fx.smoke(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, c.vx, c.vz, intensity)
         }
       }
-      if (c.boost < v.fuel - 1e-4 && c.speed > 4) {
+      if (c.boost < v.fuel - 1e-4 && c.speed > 4 && !c.engineOff) {
         for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5, c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8)
       }
       v.fuel = c.boost
@@ -218,7 +218,7 @@ export class Scene {
       const v = this.visOf(c)
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = c.speed > 2 && c.speed < v.speed - 0.05 ? 1 : 0
-      const vals = [c.x, 0, c.z, c.h, v.roll, v.pitch, siren, braking, tint[0], tint[1], tint[2], 1]
+      const vals = [c.x, 0, c.z, c.h, v.roll, v.pitch, siren, c.engineOff ? -1 : braking, tint[0], tint[1], tint[2], 1]
       inst(model, batches, vals)
       inst(model, ghosts, vals)
 
@@ -227,16 +227,18 @@ export class Scene {
       const rx = Math.cos(c.h)
       const rz = -Math.sin(c.h)
       const half = spec.length / 2
-      // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
-      light(c.x + fx * (half + 0.5), 1.3, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
+      // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead. An engine-off car goes dark.
+      const lit = !c.engineOff
+      const tail = lit ? 1 : 0.3
+      if (lit) light(c.x + fx * (half + 0.5), 1.3, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
       const hw = spec.width / 2 - 0.25
       for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
-        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
+        if (lit) sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
+        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, (braking ? 2.2 : 1.1) * tail, 0)
       }
       // No beam geometry: the spot light lights the road, plus a faint soft pool ahead of the car.
-      sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
-      light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
+      if (lit) sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
+      light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, (braking ? 3 : 1.2) * tail)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
         const blue = sirenOn(siren, false)
