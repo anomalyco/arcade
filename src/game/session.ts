@@ -28,6 +28,8 @@ export class LocalSession implements Session {
   private prev: WorldView
   private curr: WorldView
   private frozen = false
+  private freezeAt = -1
+  private stageInput: Input | null = null
 
   constructor(name: string, picks: Participant["picks"], seed = 7) {
     this.participants = [{ id: this.myId, name, human: true, picks }]
@@ -43,7 +45,10 @@ export class LocalSession implements Session {
         applyStage(this.world, stage)
         this.curr = this.prev = this.world.view(this.myId)
       }
-      this.frozen = q.has("freeze")
+      // freeze=<seconds>: play scripted input for that long, then stop the sim (smoke and skids get to trail).
+      const f = q.get("freeze")
+      if (f !== null) this.freezeAt = Number(f) || 0
+      if (stage) this.stageInput = { throttle: 1, brake: 0, steer: 0.55, handbrake: true, boost: false }
     }
   }
 
@@ -52,8 +57,9 @@ export class LocalSession implements Session {
   }
 
   update(dt: number, input: Input) {
+    if (this.freezeAt >= 0 && this.world.t - 45 >= this.freezeAt) this.frozen = true
     if (this.frozen) return this.curr
-    this.world.setInput(this.myId, input)
+    this.world.setInput(this.myId, this.stageInput ?? input)
     this.acc = Math.min(this.acc + dt, 0.25)
     while (this.acc >= DT) {
       this.world.step(DT)

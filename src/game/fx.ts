@@ -25,12 +25,14 @@ type Particle = {
 
 /** Pooled particles split into alpha-blended (smoke, skids) and additive (sparks, flames) lists. */
 export class Fx {
+  /** Smoke puffs render as instanced low-poly blobs, not sprites. */
+  puffs: Particle[] = []
   alpha: Particle[] = []
   add: Particle[] = []
   skids: Particle[] = []
 
   smoke(x: number, z: number, vx: number, vz: number, intensity: number) {
-    this.alpha.push({
+    this.puffs.push({
       x: x + (Math.random() - 0.5) * 0.6,
       y: 0.5,
       z: z + (Math.random() - 0.5) * 0.6,
@@ -38,15 +40,15 @@ export class Fx {
       vy: 0.8 + Math.random() * 0.6,
       vz: vz * 0.15 + (Math.random() - 0.5) * 1.5,
       life: 0,
-      max: 1.4 + Math.random() * 0.9,
-      size: 0.9,
-      grow: 2.4,
+      max: 1.1 + Math.random() * 0.8,
+      size: 0.35 + Math.random() * 0.25,
+      grow: 1.5 * (0.6 + intensity * 0.6),
       r: 0.62,
       g: 0.63,
       b: 0.68,
       a: 0.32 * intensity,
       kind: 1,
-      rot: 0,
+      rot: Math.random() * Math.PI * 2,
       stretch: 1,
       seed: Math.random(),
       gravity: 0,
@@ -93,7 +95,7 @@ export class Fx {
   }
 
   update(dt: number) {
-    for (const list of [this.alpha, this.add, this.skids]) {
+    for (const list of [this.puffs, this.alpha, this.add, this.skids]) {
       let w = 0
       for (const p of list) {
         p.life += dt
@@ -126,6 +128,18 @@ export class Fx {
     out[o + 9] = p.rot
     out[o + 10] = p.stretch
     out[o + 11] = p.seed
+  }
+
+  /** Puff instances for the instanced lit pipeline: grow then shrink away, slowly tumbling. */
+  puffInstances(): number[] {
+    const out: number[] = []
+    for (const p of this.puffs) {
+      const t = p.life / p.max
+      const scale = p.size * Math.min(1, t * 8) * (1 - t * t)
+      if (scale < 0.03) continue
+      out.push(p.x, p.y, p.z, p.rot + t * 1.5, 0.3 * t, 0.2, -1, 0, 1, 1, 1, scale)
+    }
+    return out
   }
 
   /** Writes particles into the sprite arrays and returns the counts. */

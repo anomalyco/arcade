@@ -10,7 +10,7 @@ export class Camera {
   readonly fov = 0.6
   fx = 0
   fz = 0
-  dist = 84
+  dist = 76
   private lx = 0
   private lz = 0
   private shake = 0
@@ -32,13 +32,13 @@ export class Camera {
   update(x: number, z: number, vx: number, vz: number, dt: number, zoom = 0) {
     this.t += dt
     const k = 1 - Math.exp(-dt * 2.2)
-    this.lx += (vx * 0.55 - this.lx) * k
-    this.lz += (vz * 0.55 - this.lz) * k
+    this.lx += (vx * 0.35 - this.lx) * k
+    this.lz += (vz * 0.35 - this.lz) * k
     const f = 1 - Math.exp(-dt * 7)
     this.fx += (x + this.lx - this.fx) * f
     this.fz += (z + this.lz - this.fz) * f
     const speed = Math.hypot(vx, vz)
-    const want = 80 + Math.min(speed, 45) * 0.45 + zoom
+    const want = 72 + Math.min(speed, 45) * 0.4 + zoom
     this.dist += (want - this.dist) * (1 - Math.exp(-dt * 1.5))
     this.shake *= Math.exp(-dt * 6)
   }

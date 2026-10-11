@@ -7,7 +7,7 @@ export class Controls {
 
   constructor() {
     addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement) return
+      if (e.target instanceof HTMLInputElement || e.code === "Escape") return
       this.keys.add(e.code)
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
     })
@@ -49,6 +49,9 @@ export class Controls {
     const rate = target === 0 ? 10 : Math.sign(target) !== Math.sign(this.steer) ? 12 : 6
     this.steer += Math.max(-rate * dt, Math.min(rate * dt, target - this.steer))
     if (pad && Math.abs(pad.axes[0] ?? 0) > 0.15) this.steer = target
-    return { throttle, brake, steer: this.steer, handbrake, boost }
+    let gadget: 0 | 1 | null = k.has("KeyQ") ? 0 : k.has("KeyE") ? 1 : null
+    if (pad?.buttons[4]?.pressed) gadget = 0
+    if (pad?.buttons[3]?.pressed) gadget = 1
+    return { throttle, brake, steer: this.steer, handbrake, boost, gadget }
   }
 }

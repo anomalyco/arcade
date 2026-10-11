@@ -2,7 +2,7 @@ import { vec4 } from "wgpu-matrix"
 import { VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
-import { buildCar, buildHeli, buildRotor } from "../render/car-mesh"
+import { buildCar, buildHeli, buildPuff, buildRotor } from "../render/car-mesh"
 import { buildCityMesh, type LampLight } from "../render/city-mesh"
 import { MAT, Mesh } from "../render/mesh"
 import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FLOATS } from "../render/renderer"
@@ -14,6 +14,7 @@ const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
 const COP_TINT: [number, number, number] = [0.25, 0.5, 1.0]
 const SPOT_GROUND_RADIUS = 7.5
+const HELI_SCALE = 0.8
 const MOON = normalizeV([-0.55, 0.62, -0.55])
 
 function normalizeV(v: number[]): [number, number, number] {
@@ -38,6 +39,7 @@ export class Scene {
   private models = new Map<string, number>()
   private heliModel: number
   private rotorModel: number
+  private puffModel: number
   private vis = new Map<number, Vis>()
   private frame = new Float32Array(FRAME_FLOATS)
   private lights = new Float32Array(MAX_LIGHTS * 12)
@@ -57,6 +59,7 @@ export class Scene {
     for (const v of VEHICLES) this.models.set(v.id, renderer.addModel(buildCar(v)))
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
+    this.puffModel = renderer.addModel(buildPuff())
   }
 
   private visOf(c: CarView) {
@@ -133,13 +136,15 @@ export class Scene {
     const fp = focus ? [focus.x, 1, focus.z] : [cam.fx, 1, cam.fz]
     put(fp[0]!, fp[1]!, fp[2]!, focus ? 0.24 : 0)
     put(w, h, 0, t)
-    put(MOON[0], MOON[1], MOON[2], 0.75)
+    put(MOON[0], MOON[1], MOON[2], 0.6)
     const heli = view.heli
     if (heli.active) {
-      const dir = normalizeV([heli.sx - heli.x, -heli.y + 0.5, heli.sz - heli.z])
-      put(heli.x, heli.y - 1, heli.z, 1)
-      const reach = Math.hypot(heli.sx - heli.x, heli.y, heli.sz - heli.z)
-      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS / reach)) - 0.004)
+      const ox = heli.x + Math.sin(heli.h) * 1.7
+      const oz = heli.z + Math.cos(heli.h) * 1.7
+      const dir = normalizeV([heli.sx - ox, -heli.y - 0.4, heli.sz - oz])
+      put(ox, heli.y + 0.4, oz, 1)
+      const reach = Math.hypot(heli.sx - ox, heli.y, heli.sz - oz)
+      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS / reach)) - 0.003)
     } else {
       put(0, 0, 0, 0)
       put(0, -1, 0, 1)
@@ -216,10 +221,14 @@ export class Scene {
       light(c.x + fx * (half + 0.5), 1.3, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
       const hw = spec.width / 2 - 0.25
       for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.9, 1, 0.95, 0.85, 1.5, 0)
+        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
         sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
       }
-      sprite("d", c.x + fx * (half + 9), 0.06, c.z + fz * (half + 9), 4.2, 1, 0.9, 0.75, 0.22, 3, c.h, 2.2)
+      for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
+        const ox = c.x + fx * (half + 0.15) + rx * hw * s
+        const oz = c.z + fz * (half + 0.15) + rz * hw * s
+        cone(beams, [ox, 0.75, oz], [ox + fx * 11 + rx * s * 0.6, 0.2, oz + fz * 11 + rz * s * 0.6], 2.6, [1, 0.88, 0.7], 0.22, 10)
+      }
       light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
@@ -227,8 +236,10 @@ export class Scene {
         const y = spec.id === "swat" ? 2.9 : 1.9
         light(c.x - rx * 0.7, y + 0.6, c.z - rz * 0.7, 20, 1, 0.08, 0.08, 5 * red)
         light(c.x + rx * 0.7, y + 0.6, c.z + rz * 0.7, 20, 0.15, 0.3, 1, 6 * blue)
-        if (red > 0) sprite("d", c.x - rx * 0.45, y, c.z - rz * 0.45, 2.4, 1, 0.1, 0.1, 1.6 * red, 0)
-        if (blue > 0) sprite("d", c.x + rx * 0.45, y, c.z + rz * 0.45, 2.4, 0.2, 0.35, 1, 1.8 * blue, 0)
+        if (red > 0) sprite("d", c.x - rx * 0.45, y, c.z - rz * 0.45, 1.5, 1, 0.1, 0.1, 1.5 * red, 0)
+        if (blue > 0) sprite("d", c.x + rx * 0.45, y, c.z + rz * 0.45, 1.5, 0.2, 0.35, 1, 1.7 * blue, 0)
+        // Colored wash on the road around the cruiser.
+        sprite("d", c.x, 0.08, c.z, 7, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue), 3)
       }
     }
 
@@ -239,13 +250,13 @@ export class Scene {
 
     // Helicopter with spinning rotor and its spotlight beam.
     if (heli.active) {
-      inst(this.heliModel, batches, [heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, 1.2])
-      inst(this.rotorModel, batches, [heli.x, heli.y + 3.1, heli.z, t * 25, 0, 0, -1, 0, 1, 1, 1, 1.2])
-      inst(this.rotorModel, batches, [heli.x + Math.sin(heli.h) * -7.9 + Math.cos(heli.h) * 0.3, heli.y + 2.3, heli.z + Math.cos(heli.h) * -7.9, t * 40, 0, 0, -1, 0, 1, 1, 1, 0.12])
-      const sx = heli.x + Math.sin(heli.h) * 2.4
-      const sz = heli.z + Math.cos(heli.h) * 2.4
-      cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS, [0.75, 0.85, 1], 0.55)
-      sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * 1.25, 0.85, 0.92, 1, 0.22, 3)
+      inst(this.heliModel, batches, [heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, HELI_SCALE])
+      inst(this.rotorModel, batches, [heli.x, heli.y + 3.1 * HELI_SCALE / 1.2, heli.z, t * 25, 0, 0, -1, 0, 1, 1, 1, HELI_SCALE])
+      inst(this.rotorModel, batches, [heli.x + Math.sin(heli.h) * -7.9 * HELI_SCALE / 1.2, heli.y + 2.3 * HELI_SCALE / 1.2, heli.z + Math.cos(heli.h) * -7.9 * HELI_SCALE / 1.2, t * 40, 0, 0, -1, 0, 1, 1, 1, 0.1])
+      const sx = heli.x + Math.sin(heli.h) * 1.7
+      const sz = heli.z + Math.cos(heli.h) * 1.7
+      cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS, [0.75, 0.85, 1], 0.32)
+      sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * 1.3, 0.85, 0.92, 1, 0.1, 3)
       sprite("d", heli.x, heli.y - 0.5, heli.z, 1.6, 1, 1, 1, 2.5, 0)
       if (Math.floor(t * 1.5) % 2 === 0) sprite("d", heli.x, heli.y + 1.6, heli.z, 1.2, 1, 0.1, 0.1, 2, 0)
     }
@@ -270,12 +281,13 @@ export class Scene {
       .filter((e) => e.d < 230 * 230)
       .sort((a, b) => a.d - b.d)
     for (const { l } of near) {
-      sprite("d", l.x, l.small ? 3.75 : 6.05, l.z, l.small ? 0.8 : 1.3, 1, 0.72, 0.4, 1.8, 0)
-      sprite("d", l.x, 0.2, l.z, l.small ? 5 : 9, 1, 0.6, 0.3, 0.14, 3)
+      sprite("d", l.x, l.y + 0.4, l.z, l.small ? 0.6 : 0.9, 1, 0.75, 0.45, 1.6, 0)
     }
-    for (const { l } of near) light(l.x, l.y, l.z, l.small ? 11 : 20, 1, 0.62, 0.3, l.small ? 2.2 : 3.2)
+    for (const { l } of near) light(l.x, l.y, l.z, l.small ? 10 : 17, 1, 0.58, 0.26, l.small ? 3 : 5)
     f[32 + 8 + 2] = n
 
+    const puffs = this.fx.puffInstances()
+    if (puffs.length) batches.set(this.puffModel, puffs)
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST)
     const pack = (map: Map<number, number[]>): InstanceBatch[] => [...map].map(([model, arr]) => ({ model, data: new Float32Array(arr), count: arr.length / INST_FLOATS }))
     const beamData = beams.toArray()
@@ -284,7 +296,7 @@ export class Scene {
       frame: f,
       lights: L,
       batches: pack(batches),
-      ghosts: pack(ghosts).filter((b) => b.model !== this.heliModel && b.model !== this.rotorModel),
+      ghosts: pack(ghosts).filter((b) => b.model !== this.heliModel && b.model !== this.rotorModel && b.model !== this.puffModel),
       sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,

@@ -47,12 +47,13 @@ fn shadow(world: vec3f, n: vec3f) -> f32 {
 }
 
 fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
-  let sky = vec3f(0.11, 0.12, 0.2);
-  let ground = vec3f(0.04, 0.035, 0.04);
-  var c = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.6;
+  // Blue-hour night: a cool sky fill so the whole diorama reads, a dim warm bounce from the street.
+  let sky = vec3f(0.12, 0.16, 0.34);
+  let ground = vec3f(0.05, 0.045, 0.06);
+  var c = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.2;
   let L = normalize(F.moonDir.xyz);
   let ndl = max(dot(n, L), 0.0);
-  c += albedo * vec3f(0.42, 0.5, 0.78) * F.moonDir.w * ndl * shadow(world, n);
+  c += albedo * vec3f(0.45, 0.55, 0.9) * F.moonDir.w * ndl * shadow(world, n);
   let count = u32(F.screen.z);
   for (var i = 0u; i < count; i++) {
     let li = lights[i];
@@ -60,8 +61,9 @@ fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
     let dist = length(d);
     if (dist > li.pos.w) { continue; }
     let l = d / max(dist, 0.001);
-    var att = 1.0 - dist / li.pos.w;
-    att = att * att;
+    let x = dist / li.pos.w;
+    // Smooth windowed inverse-square: bright core, clean edge, so lamp pools read as crisp circles.
+    var att = (1.0 - x * x) * (1.0 - x * x) / (1.0 + 6.0 * x * x);
     if (li.dir.w > -1.5) {
       let cd = dot(-l, li.dir.xyz);
       att *= smoothstep(li.dir.w, li.dir.w + 0.12, cd);
@@ -73,9 +75,9 @@ fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
     let d = world - F.spotPos.xyz;
     let dist = length(d);
     let cd = dot(d / dist, normalize(F.spotDir.xyz));
-    let cone = smoothstep(F.spotDir.w, F.spotDir.w + 0.006, cd);
+    let cone = smoothstep(F.spotDir.w, F.spotDir.w + 0.0025, cd);
     let ndl2 = max(dot(n, -d / dist), 0.0) * 0.8 + 0.2;
-    c += albedo * vec3f(0.95, 0.97, 1.0) * 5.5 * cone * ndl2;
+    c += albedo * vec3f(0.92, 0.96, 1.0) * 6.0 * cone * ndl2;
   }
   return c;
 }
@@ -456,11 +458,16 @@ fn aces(x: vec3f) -> vec3f {
   let bloom = textureSample(bloomTex, samp, o.uv).rgb;
   if (any(raw != raw)) { return vec4f(1.0, 0.0, 1.0, 1.0); }
   let hdr = raw.rgb;
-  var c = hdr * 1.05 + bloom * P.z;
-  c = aces(c * 1.1);
-  let v = length(o.uv - 0.5);
-  c *= mix(1.0, 0.55, smoothstep(0.35, 0.85, v));
-  c = mix(c, c * vec3f(0.96, 0.98, 1.06), 0.5);
+  var c = hdr + bloom * P.z;
+  c = aces(c * 1.25);
+  // Grade: richer saturation, navy shadows, warm highlights.
+  let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+  c = mix(vec3f(l), c, 1.22);
+  c = c * mix(vec3f(0.86, 0.94, 1.18), vec3f(1.06, 1.0, 0.92), smoothstep(0.05, 0.6, l));
+  c += vec3f(0.006, 0.009, 0.022) * (1.0 - smoothstep(0.0, 0.25, l));
+  let v = length((o.uv - 0.5) * vec2f(1.0, 0.8));
+  c *= mix(1.0, 0.6, smoothstep(0.38, 0.82, v));
+  c = max(c, vec3f(0.0));
   // Damage / bust flash tint.
   c = mix(c, vec3f(0.9, 0.1, 0.12), P.w * smoothstep(0.3, 0.8, v));
   return vec4f(pow(c, vec3f(1.0 / 2.2)), 1.0);
@@ -503,8 +510,8 @@ struct BOut {
   let facing = abs(dot(normalize(o.normal), v));
   // uv.x: 0 at the source, 1 at the far end. uv.y: overall strength.
   let along = o.uv.x;
-  let core = pow(facing, 2.2);
-  let fade = mix(1.0, 0.35, along) * smoothstep(0.0, 2.5, o.world.y + 0.5 * (1.0 - along));
+  let core = pow(facing, 3.5);
+  let fade = mix(0.9, 0.25, along) * smoothstep(0.0, 4.0, o.world.y);
   let i = core * fade * o.uv.y * tex.a;
   return vec4f(o.color * i, i);
 }

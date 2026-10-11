@@ -37,9 +37,18 @@ async function main() {
 
   const q = new URLSearchParams(location.search)
   const staged = import.meta.env.DEV && q.has("stage")
-  const choice = staged ? { mode: "solo" as const, room: null, name: "Dax", picks: { robber: "muscle", cop: "cruiser" } } : await lobby(document.getElementById("overlay")!)
+  let session: Session | null = null
+  let choice: Awaited<ReturnType<typeof lobby>> = { mode: "solo", room: null, name: "Dax", picks: { robber: "muscle", cop: "cruiser" } }
+  while (!session) {
+    if (!staged) choice = await lobby(document.getElementById("overlay")!)
+    try {
+      session = await connect(choice)
+    } catch (e) {
+      alert(`Could not join room ${choice.room}: ${e instanceof Error ? e.message : String(e)}`)
+      history.replaceState(null, "", location.pathname)
+    }
+  }
   if (q.has("nohud")) document.getElementById("hud")!.style.display = "none"
-  const session = await connect(choice)
   const scene = new Scene(renderer, session.city)
   const hud = new Hud(document.getElementById("hud")!, session.city)
   const cam = new Camera()
