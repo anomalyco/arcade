@@ -68,7 +68,7 @@ const only = params.get("only") as VehicleKind | null
 
 function makeEntity(kind: VehicleKind, team: TeamId): VehicleEntity {
   const spec = VEHICLES[kind]
-  const w = (id: keyof typeof WEAPONS) => ({ ammo: WEAPONS[id].ammo, readyAt: 0, lockTarget: null, lock: 0 })
+  const w = (id: keyof typeof WEAPONS | null) => ({ ammo: id ? WEAPONS[id].ammo : 0, readyAt: 0, lockTarget: null, lock: 0 })
   return {
     id: kind,
     kind,
@@ -167,7 +167,9 @@ function frame(now: number) {
       const spec = VEHICLES[e.kind]
       e.entity.weapons.forEach((seat, s) =>
         seat.forEach((w, slot) => {
-          const cap = WEAPONS[spec.seatWeapons[s][slot]].ammo
+          const id = spec.seatWeapons[s][slot]
+          if (!id) return
+          const cap = WEAPONS[id].ammo
           w.ammo = Number.isFinite(cap) ? Math.ceil(cap * k) : cap
         }),
       )

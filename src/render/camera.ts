@@ -15,7 +15,7 @@ const GUNNER: Record<VehicleKind, Vec3> = {
   fighter: [0, -1.4, -3],
   apache: [0, -1.3, -4.2],
   warthog: [0, -1.5, -2],
-  blackbird: [0, -1.2, -6],
+  blackbird: [0, -2.4, -15],
 }
 const CHASE: Record<VehicleKind, { dist: number; height: number }> = {
   fighter: { dist: 26, height: 6 },

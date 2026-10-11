@@ -175,9 +175,12 @@ describe("lock-on missiles", () => {
     const bb = vehicle("blackbird", 0, [10, ALT, 0], [0, 0, 0])
     const target = vehicle("fighter", 1, [0, ALT, -5000], [0, 0, 0])
     const w = world([fighter, bb, target])
-    for (let i = 0; i < 10; i++) tick(w, [[fighter, 0, input({ aim: [0, 0, -1] })], [bb, 0, input({ aim: [0, 0, -1] })]])
+    for (let i = 0; i < 10; i++) tick(w, [[fighter, 0, input({ aim: [0, 0, -1] })], [bb, 1, input({ aim: [0, 0, -1] })]])
     expect(fighter.weapons[0][1].lockTarget).toBeNull()
-    expect(bb.weapons[0][0].lockTarget).toBe(target.id)
+    expect(bb.weapons[1][0].lockTarget).toBe(target.id)
+    target.flight.position = [0, ALT, -8500]
+    tick(w, [[bb, 1, input({ aim: [0, 0, -1] })]])
+    expect(bb.weapons[1][0].lockTarget).toBeNull()
   })
 
   test("homing missile hits a straight-flying target", () => {
@@ -240,44 +243,146 @@ describe("lock-on missiles", () => {
   })
 })
 
-describe("steered missiles", () => {
-  test("TV missile follows a moving aim ray", () => {
-    const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
-    const w = world([shooter])
-    const aim0: Vec3 = [0, -0.1, -1]
-    tick(w, [[shooter, 1, input({ aim: aim0, firePrimary: true })]])
-    expect(w.cs.missiles).toHaveLength(1)
-    const m = w.cs.missiles[0]
-    expect(m.steered).toBe(true)
-    // Sweep the aim 25° to the right over 2 s, then hold for 3 s.
-    let aim: Vec3 = aim0
-    for (let i = 0; i < 300; i++) {
-      const a = Math.min(1, i / 120) * (25 * Math.PI / 180)
-      aim = [Math.sin(a), -0.1, -Math.cos(a)]
-      tick(w, [[shooter, 1, input({ aim })]])
-    }
-    // Perpendicular distance from missile to the current aim ray.
-    const o = shooter.flight.position
-    const l = Math.hypot(...aim)
-    const d = aim.map(x => x / l) as Vec3
-    const r = sub(m.position, o)
-    const along = r[0] * d[0] + r[1] * d[1] + r[2] * d[2]
-    const perp = Math.hypot(r[0] - d[0] * along, r[1] - d[1] * along, r[2] - d[2] * along)
-    expect(along).toBeGreaterThan(500)
-    expect(perp).toBeLessThan(25)
+describe("lock-on (gunner) missiles", () => {
+  test("apache gunner hellfire locks along the seat aim and hits an off-boresight target", () => {
+    const apache = vehicle("apache", 0, [0, ALT, 0], [0, 0, -40])
+    const target = vehicle("apache", 1, [1200, ALT - 100, -700], [0, 0, -30])
+    const w = world([apache, target])
+    const aimAt = () => input({ aim: sub(target.flight.position, apache.flight.position) })
+    const ticks = Math.round(WEAPONS.hellfire.lockTime! / TICK_DT)
+    for (let i = 0; i < ticks; i++) tick(w, [[apache, 1, aimAt()]])
+    expect(apache.weapons[1][1].lock).toBe(1)
+    tick(w, [[apache, 1, { ...aimAt(), fireSecondary: true }]])
+    expect(w.cs.missiles[0]).toMatchObject({ target: target.id, steered: false, seat: 1 })
+    // Fire-and-forget: the gunner looks away.
+    for (let i = 0; i < 10 * 60 && w.cs.missiles.length; i++) tick(w, [[apache, 1, input({ aim: [-1, 0, 0] })]])
+    expect(hits(w, target)).toHaveLength(1)
   })
 
-  test("steered missile flies straight when the seat empties", () => {
-    const shooter = vehicle("apache", 0, [0, ALT, 0], [0, 0, -50])
-    const w = world([shooter])
-    tick(w, [[shooter, 1, input({ aim: [0, 0, -1], fireSecondary: true })]])
+  test("pilot seekers lock along the nose, ignoring the seat aim", () => {
+    const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, 0])
+    const target = vehicle("fighter", 1, [1000, ALT, 0], [0, 0, 0])
+    const w = world([shooter, target])
+    for (let i = 0; i < 90; i++) tick(w, [[shooter, 0, input({ aim: [1, 0, 0] })]])
+    expect(shooter.weapons[0][1].lockTarget).toBeNull()
+  })
+
+  test("null slots do nothing (blackbird pilot has no weapons)", () => {
+    const bb = vehicle("blackbird", 0, [0, ALT, 0], [0, 0, -200])
+    expect(bb.weapons[0]).toHaveLength(2)
+    expect(bb.weapons[0][0].ammo).toBe(0)
+    const w = world([bb])
+    for (let i = 0; i < 30; i++) tick(w, [[bb, 0, input({ firePrimary: true, fireSecondary: true })]])
+    expect(w.cs.projectiles.length + w.cs.missiles.length).toBe(0)
+    expect(w.events.filter(e => e.type === "fire")).toHaveLength(0)
+  })
+})
+
+describe("scanner missile (aim47)", () => {
+  function setup() {
+    const bb = vehicle("blackbird", 0, [0, ALT, 0], [0, 0, -200])
+    const target = vehicle("fighter", 1, [-600, ALT + 200, -3000], [150, 0, 0], [1, 0, 0])
+    const w = world([bb, target])
+    const track = (extra: Partial<SeatInput> = {}) => input({ aim: sub(target.flight.position, bb.flight.position), ...extra })
+    const ticks = Math.round(WEAPONS.aim47.lockTime! / TICK_DT)
+    for (let i = 0; i < ticks; i++) tick(w, [[bb, 1, track()]])
+    expect(bb.weapons[1][0].lock).toBe(1)
+    tick(w, [[bb, 1, track({ firePrimary: true })]])
+    expect(w.cs.missiles).toHaveLength(1)
     const m = w.cs.missiles[0]
-    shooter.seats[1] = null
-    shooter.aim[1] = [1, 0, 0]
+    expect(m).toMatchObject({ weapon: "aim47", target: target.id, steered: true, seat: 1 })
+    return { bb, target, w, m, track }
+  }
+
+  test("keeps tracking while the scanner is on target and hits a target 3 km out", () => {
+    const { bb, target, w, m, track } = setup()
+    let guided = true
+    for (let i = 0; i < 22 * 60 && w.cs.missiles.length; i++) {
+      tick(w, [[bb, 1, track()]])
+      if (w.cs.missiles.length && m.target !== target.id) guided = false
+    }
+    expect(guided).toBe(true)
+    expect(hits(w, target)).toHaveLength(1)
+    expect(target.maxHp - target.hp).toBeCloseTo(damageFor("aim47", target, 0))
+  })
+
+  test("loses guidance after the scanner drifts off, flies straight, and re-acquires", () => {
+    const { bb, target, w, m, track } = setup()
+    const away = input({ aim: [1, 0, 0] })
+    const grace = Math.floor(1.5 / TICK_DT) - 2
+    for (let i = 0; i < grace; i++) tick(w, [[bb, 1, away]])
+    expect(m.target).toBe(target.id) // still within the grace period
+    for (let i = 0; i < 6; i++) tick(w, [[bb, 1, away]])
+    expect(m.target).toBeNull()
     const v0 = [...m.velocity]
+    for (let i = 0; i < 20; i++) tick(w, [[bb, 1, away]])
+    const cos = (m.velocity[0] * v0[0] + m.velocity[1] * v0[1] + m.velocity[2] * v0[2]) / (Math.hypot(...m.velocity) * Math.hypot(...v0))
+    expect(cos).toBeGreaterThan(0.99999)
+    tick(w, [[bb, 1, track()]])
+    expect(m.target).toBe(target.id)
+  })
+
+  test("flares are ignored while painted at range, but work when the scanner is off", () => {
+    const a = setup()
+    for (let i = 0; i < 30; i++) tick(a.w, [[a.bb, 1, a.track()]])
+    tick(a.w, [[a.bb, 1, a.track()], [a.target, 0, input({ flares: true })]])
+    expect(a.m.target).toBe(a.target.id)
+
+    let decoyed = 0
+    for (let n = 0; n < 10; n++) {
+      const b = setup()
+      b.w.cs.nextId += n * 5
+      for (let i = 0; i < 30; i++) tick(b.w, [[b.bb, 1, input({ aim: [1, 0, 0] })]])
+      tick(b.w, [[b.bb, 1, input({ aim: [1, 0, 0] })], [b.target, 0, input({ flares: true })]])
+      if (b.m.target?.startsWith(FLARE_TARGET_PREFIX)) decoyed++
+    }
+    expect(decoyed).toBeGreaterThanOrEqual(6)
+  })
+})
+
+describe("ammo regeneration", () => {
+  test("empty magazine refills in `refill` s after `refillDelay`", () => {
+    const f = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
+    const w = world([f])
+    const rt = f.weapons[0][0]
+    rt.ammo = 1
+    tick(w, [[f, 0, input({ firePrimary: true })]])
+    expect(rt.ammo).toBe(0)
+    const spec = WEAPONS.cannon20
+    const t0 = w.now
+    while (w.now - t0 < spec.refillDelay - TICK_DT / 2) tick(w)
+    expect(rt.ammo).toBe(0)
+    while (w.now - t0 < spec.refillDelay + spec.refill - 0.5) tick(w)
+    expect(rt.ammo).toBeGreaterThan(0)
+    expect(rt.ammo).toBeLessThan(spec.ammo)
+    while (w.now - t0 < spec.refillDelay + spec.refill + TICK_DT * 1.5) tick(w)
+    expect(rt.ammo).toBe(spec.ammo)
+    expect(Number.isInteger(rt.ammo)).toBe(true)
+  })
+
+  test("firing resets the regen delay", () => {
+    const f = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
+    const w = world([f])
+    const rt = f.weapons[0][0]
+    rt.ammo = 10
+    tick(w, [[f, 0, input({ firePrimary: true })]])
+    for (let i = 0; i < 90; i++) tick(w)
+    tick(w, [[f, 0, input({ firePrimary: true })]])
+    expect(rt.ammo).toBe(8)
+    for (let i = 0; i < 90; i++) tick(w) // 1.5 s < refillDelay since the last shot
+    expect(rt.ammo).toBe(8)
     for (let i = 0; i < 60; i++) tick(w)
-    const dot = (m.velocity[0] * v0[0] + m.velocity[1] * v0[1] + m.velocity[2] * v0[2]) / (Math.hypot(...m.velocity) * Math.hypot(...v0))
-    expect(dot).toBeGreaterThan(0.9999)
+    expect(rt.ammo).toBeGreaterThan(8)
+  })
+
+  test("missiles regenerate too; unlimited weapons stay -1", () => {
+    const bb = vehicle("blackbird", 0, [0, ALT, 0], [0, 0, -200])
+    expect(bb.weapons[1][1].ammo).toBe(-1)
+    const w = world([bb])
+    bb.weapons[1][0].ammo = 0
+    for (let i = 0; i < (WEAPONS.aim47.refillDelay + WEAPONS.aim47.refill) * 60 + 2; i++) tick(w)
+    expect(bb.weapons[1][0].ammo).toBe(WEAPONS.aim47.ammo)
+    expect(bb.weapons[1][1].ammo).toBe(-1)
   })
 })
 
@@ -294,8 +399,8 @@ describe("radar pulse", () => {
     expect(near.spottedUntil).toBeCloseTo(w.now + WEAPONS.radarpulse.ttl)
     expect(far.spottedUntil).toBe(0)
     expect(friend.spottedUntil).toBe(0)
-    // Cooldown.
-    tick(w, [[bb, 1, input({ ability: true })]])
+    // Cooldown (shared by RMB and the ability key).
+    tick(w, [[bb, 1, input({ ability: true, fireSecondary: true })]])
     expect(w.events.filter(e => e.type === "pulse")).toHaveLength(1)
 
     expect(damageFor("cannon20", near, w.now)).toBeCloseTo(damageFor("cannon20", far, w.now) * 1.2)
@@ -307,6 +412,13 @@ describe("radar pulse", () => {
     const h = hits(w, near)[0]
     expect(h && h.type === "hit" && h.damage).toBeCloseTo(WEAPONS.cannon20.damage * 1.55 * 1.2)
   })
+})
+
+test("radar pulse also fires from the RSO secondary slot, once per press", () => {
+  const bb = vehicle("blackbird", 0, [0, ALT, 0], [0, 0, -200])
+  const w = world([bb])
+  tick(w, [[bb, 1, input({ fireSecondary: true, ability: true })]])
+  expect(w.events.filter(e => e.type === "pulse")).toHaveLength(1)
 })
 
 describe("kills", () => {
@@ -349,8 +461,8 @@ describe("determinism & balance", () => {
         [a, 0, input({ aim: sub(b.flight.position, a.flight.position), firePrimary: i % 90 < 40, fireSecondary: i > 100 })],
         [b, 1, input({ aim: sub(a.flight.position, b.flight.position), firePrimary: true, fireSecondary: i === 200 })],
         [b, 0, input({ flares: i === 250, firePrimary: i % 120 < 10 })],
-        [c, 1, input({ ability: i === 10 })],
-        [c, 0, input({ aim: sub(a.flight.position, c.flight.position), firePrimary: i > 300, flares: i === 400 })],
+        [c, 1, input({ ability: i === 10, aim: sub(a.flight.position, c.flight.position), firePrimary: i > 300 })],
+        [c, 0, input({ flares: i === 400 })],
       ])
     }
     return JSON.stringify({ cs: w.cs, vehicles: w.vehicles, events: w.events })
@@ -377,7 +489,7 @@ describe("determinism & balance", () => {
       table[w] = {}
       for (const k of ["fighter", "apache", "warthog", "blackbird"] as VehicleKind[]) table[w][k] = ttk(w, k).toFixed(2) + "s"
     }
-    for (const w of ["aim9", "aim47", "rockets", "tvmissile", "hellfire", "maverick"] as const) {
+    for (const w of ["aim9", "tvmissile", "hellfire", "maverick", "aim47", "rockets"] as const) {
       table[w] = {}
       for (const k of ["fighter", "apache", "warthog", "blackbird"] as VehicleKind[]) table[w][k] = Math.round(100 * damageFor(w, v(k), 0) / VEHICLES[k].maxHp) + "%"
     }

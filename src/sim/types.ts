@@ -86,6 +86,10 @@ export interface WeaponRuntime {
   lockTarget: string | null
   /** 0..1 lock progress. */
   lock: number
+  /** Server-only: room time of last shot (ammo regen delay). */
+  firedAt?: number
+  /** Server-only: fractional regen accumulator. */
+  regen?: number
 }
 
 export interface VehicleEntity {
@@ -144,8 +148,12 @@ export interface Missile {
   position: Vec3
   velocity: Vec3
   target: string | null
-  /** Player-steered (TV/Hellfire): guidance follows the owner's seat aim. */
+  /** Scanner-guided (aim47): homes only while the operator's scanner stays on target. */
   steered: boolean
+  /** Scanner missiles: currently receiving guidance. */
+  guided?: boolean
+  /** Scanner missiles: the target it was fired at (kept after guidance drops, for the HUD). */
+  scanTarget?: string | null
   /** Seat that launched it (steering source). */
   seat?: SeatIndex
   age: number
@@ -182,6 +190,7 @@ export type GameEvent =
   | { type: "flares"; vehicle: string }
   | { type: "lock"; vehicle: string; target: string; locked: boolean }
   | { type: "pulse"; vehicle: string; team: TeamId; position: Vec3; radius: number }
+  | { type: "guidance"; missile: number; vehicle: string; target: string; guided: boolean }
   | { type: "chat"; player: string; text: string }
   | { type: "score"; scores: number[] }
   | { type: "match-end"; winner: TeamId | null }

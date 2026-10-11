@@ -4,6 +4,16 @@
 // Call order per tick (room engine): stepFlight for every vehicle → applySeatInput for every occupied
 // seat → stepCombat once. Hit detection back-projects vehicles by `velocity * dt`, so it is correct when
 // stepCombat runs after vehicles have moved this tick.
+//
+// Missiles:
+// - missile_lock (aim9, tvmissile, hellfire, maverick): hold the seeker axis (pilot: nose, gunner: seat aim)
+//   on an enemy for lockTime → locked; fire → fire-and-forget proportional-navigation homing.
+// - missile_scanner (aim47): the radar officer's scanner (seat aim) builds the lock; after launch the missile
+//   is semi-active — it homes only while the scanner stays within lockCone × SCANNER_CONE_MARGIN of its
+//   target. Off target for > SCANNER_GRACE s → guidance lost (`target` becomes null, flies straight); it
+//   re-acquires if the scanner returns to the same target while that target is inside the missile's seeker view.
+// Flares: lock missiles are decoyed with a deterministic chance (better at range). Scanner missiles ignore
+//   flares while the scanner is on target, unless the missile is within SCANNER_FLARE_CLOSE m (terminal seeker).
 import type {
   Flare, GameEvent, Missile, Projectile, Quat, SeatIndex, SeatInput, Vec3, VehicleEntity, VehicleKind,
   WeaponId, WeaponRuntime,
@@ -35,8 +45,6 @@ export const CLASS_BONUS: Partial<Record<WeaponId, Partial<Record<VehicleKind, n
 }
 
 export interface MissileTuning {
-  /** Lock range (seeker missiles) or aim-ray length (steered missiles), meters. */
-  range: number
   maxSpeed: number
   /** Motor burn seconds; after burn the missile coasts and decelerates. */
   burn: number
@@ -44,7 +52,7 @@ export interface MissileTuning {
   coastDecel: number
   /** Proximity fuse distance added to the target radius. */
   fuse: number
-  /** Max off-boresight angle (rad) before the seeker loses its target. */
+  /** Max off-boresight angle (rad) of the missile's own seeker (lost beyond it, after MISSILE_LOAL_TIME). */
   gimbal: number
   /** Chance a flare burst decoys this missile when the target is near / beyond `farDist`. */
   flareNear: number
@@ -53,11 +61,13 @@ export interface MissileTuning {
 }
 
 export const MISSILE_TUNING: Partial<Record<WeaponId, MissileTuning>> = {
-  aim9: { range: 2500, maxSpeed: 750, burn: 2.5, accel: 220, coastDecel: 30, fuse: 6, gimbal: 1.2, flareNear: 0.7, flareFar: 0.85, farDist: 1500 },
-  aim47: { range: 6000, maxSpeed: 1100, burn: 5, accel: 180, coastDecel: 15, fuse: 10, gimbal: 0.9, flareNear: 0.55, flareFar: 0.95, farDist: 2000 },
-  tvmissile: { range: 5000, maxSpeed: 320, burn: 12, accel: 40, coastDecel: 0, fuse: 3, gimbal: Math.PI, flareNear: 0, flareFar: 0, farDist: 0 },
-  hellfire: { range: 4000, maxSpeed: 320, burn: 10, accel: 40, coastDecel: 0, fuse: 3, gimbal: Math.PI, flareNear: 0, flareFar: 0, farDist: 0 },
-  maverick: { range: 5000, maxSpeed: 330, burn: 12, accel: 40, coastDecel: 0, fuse: 3, gimbal: Math.PI, flareNear: 0, flareFar: 0, farDist: 0 },
+  aim9: { maxSpeed: 750, burn: 2.5, accel: 220, coastDecel: 30, fuse: 6, gimbal: 1.2, flareNear: 0.7, flareFar: 0.85, farDist: 1500 },
+  // Radar-guided: flares are less effective.
+  tvmissile: { maxSpeed: 700, burn: 3, accel: 160, coastDecel: 25, fuse: 6, gimbal: 1.0, flareNear: 0.45, flareFar: 0.6, farDist: 1500 },
+  hellfire: { maxSpeed: 450, burn: 3, accel: 100, coastDecel: 20, fuse: 4, gimbal: 1.0, flareNear: 0.65, flareFar: 0.8, farDist: 1200 },
+  maverick: { maxSpeed: 480, burn: 3, accel: 100, coastDecel: 20, fuse: 4, gimbal: 1.0, flareNear: 0.6, flareFar: 0.75, farDist: 1500 },
+  // Scanner: flareNear applies only inside SCANNER_FLARE_CLOSE; flareFar when the scanner is off target.
+  aim47: { maxSpeed: 800, burn: 4, accel: 110, coastDecel: 10, fuse: 10, gimbal: 1.0, flareNear: 0.6, flareFar: 0.9, farDist: 0 },
 }
 
 /** Turret arcs in the vehicle body frame (rad). Yaw 0 = nose, elevation 0 = horizon. */
@@ -65,13 +75,17 @@ export const TURRET_ARCS: Partial<Record<WeaponId, { yaw: number; minEl: number;
   chaingun30: { yaw: (110 * Math.PI) / 180, minEl: (-85 * Math.PI) / 180, maxEl: (12 * Math.PI) / 180 },
 }
 
-/** Max angle between seat aim and nose for fixed (non-turret) seekers to lock. */
-export const FIXED_SEEKER_GIMBAL = Math.PI / 3
-/** Lock speed multiplier when the other seat paints the same target (Blackbird RSO). */
-export const PAINT_LOCK_MULT = 2
 export const PROPORTIONAL_NAV_GAIN = 4
 export const MISSILE_MIN_SPEED = 120
+/** Seconds after launch before a missile's own gimbal limit applies (lets turret locks turn off the rail). */
+export const MISSILE_LOAL_TIME = 1
 export const ROCKET_GRAVITY = 9.81
+
+/** Scanner guidance: allowed scanner error = lockCone × margin; guidance lost after this many seconds off. */
+export const SCANNER_CONE_MARGIN = 1.3
+export const SCANNER_GRACE = 1.5
+/** Within this distance of its target a scanner missile's terminal seeker can be flared even when painted. */
+export const SCANNER_FLARE_CLOSE = 1000
 
 export const FLARE_COOLDOWN = 2.5
 export const FLARES_PER_BURST = 3
@@ -99,32 +113,53 @@ export function createCombatState(): CombatState {
   return { projectiles: [], missiles: [], flares: [], nextId: 1 }
 }
 
-/** Fresh weapon runtime arrays. Unlimited ammo (Infinity in the table) is stored as -1 (JSON-safe). */
+/** Server-side extras on WeaponRuntime (not needed on the wire). */
+interface RuntimeExt extends WeaponRuntime {
+  /** Room time of the last shot (regen starts refillDelay later). */
+  firedAt?: number
+  /** Fractional regenerated ammo not yet added to `ammo`. */
+  regen?: number
+}
+
+/** Server-side extras on Missile (scanner guidance). */
+interface MissileExt extends Missile {
+  /** Scanner missiles: the designated target (kept while `target` is null after guidance loss). */
+  scanTarget?: string | null
+  /** Scanner missiles: seconds the scanner has been off target. */
+  scanOff?: number
+}
+
+/**
+ * Fresh weapon runtimes, always two per seat (index = slot). Null slots get an empty placeholder (ammo 0).
+ * Unlimited ammo is -1.
+ */
 export function createWeapons(kind: VehicleKind): [WeaponRuntime[], WeaponRuntime[]] {
   const seats = VEHICLES[kind].seatWeapons
-  const mk = (id: WeaponId): WeaponRuntime => {
-    const ammo = WEAPONS[id].ammo
-    return { ammo: Number.isFinite(ammo) ? ammo : -1, readyAt: 0, lockTarget: null, lock: 0 }
+  const mk = (id: WeaponId | null): WeaponRuntime => {
+    const ammo = id ? WEAPONS[id].ammo : 0
+    const rt: RuntimeExt = { ammo: Number.isFinite(ammo) ? ammo : -1, readyAt: 0, lockTarget: null, lock: 0, firedAt: -1e9, regen: 0 }
+    return rt
   }
   return [seats[0].map(mk), seats[1].map(mk)]
 }
 
-/**
- * Slot whose runtime backs `slot`. When both slots of a seat hold the same weapon, they share slot 0's
- * ammo/cooldown/lock (HUD should show slot 0).
- */
-export function effectiveSlot(kind: VehicleKind, seat: SeatIndex, slot: 0 | 1): 0 | 1 {
-  const w = VEHICLES[kind].seatWeapons[seat]
-  return slot === 1 && w[0] === w[1] ? 0 : slot
+/** Magazine size (-1 unlimited). */
+export function magazine(weapon: WeaponId): number {
+  const a = WEAPONS[weapon].ammo
+  return Number.isFinite(a) ? a : -1
 }
 
 /** Hardpoint index (0-based, alternating) of the missile/rocket launched when ammo dropped to `ammoAfter`. */
 export function launchedHardpoint(weapon: WeaponId, ammoAfter: number): number {
-  return (WEAPONS[weapon].ammo - ammoAfter - 1) % 2
+  return ((((WEAPONS[weapon].ammo - ammoAfter - 1) % 2) + 2) % 2)
 }
 
 export function isHostile(a: VehicleEntity, b: VehicleEntity): boolean {
   return a.team !== b.team
+}
+
+function isLockKind(spec: WeaponSpec): boolean {
+  return spec.kind === "missile_lock" || spec.kind === "missile_scanner"
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -317,7 +352,6 @@ export function leadPoint(shooterPos: Vec3, shooterVel: Vec3, muzzleSpeed: numbe
 }
 
 const _lc: Vec3 = [0, 0, 0]
-const _nose: Vec3 = [0, 0, 0]
 
 function seekerAngle(from: Vec3, axis: Vec3, to: Vec3, outDist: { d: number }): number {
   const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2]
@@ -330,27 +364,34 @@ function seekerAngle(from: Vec3, axis: Vec3, to: Vec3, outDist: { d: number }): 
 
 const _sd = { d: 0 }
 
-/** True when `target` is a valid lock for this seeker (alive, hostile, unprotected, within range/cone/gimbal). */
+/** Seeker angle if `target` is a valid lock (alive, hostile, unprotected, within range & cone), else -1. */
 function lockValid(vehicle: VehicleEntity, spec: WeaponSpec, axis: Vec3, target: VehicleEntity, coneScale: number): number {
   if (!target.alive || target === vehicle || !isHostile(vehicle, target)) return -1
-  const range = MISSILE_TUNING[spec.id]?.range ?? 2500
+  const range = spec.range ?? 2500
   const cone = (spec.lockCone ?? 0.3) * coneScale
   const tp = target.flight.position
   const ang = seekerAngle(vehicle.flight.position, axis, tp, _sd)
   if (_sd.d > range || ang > cone) return -1
-  if (!spec.turret) {
-    rotate(vehicle.flight.orientation, 0, 0, -1, _nose)
-    if (seekerAngle(vehicle.flight.position, _nose, tp, _sd) > FIXED_SEEKER_GIMBAL) return -1
-  }
   if (inSafeZone(target.team, tp)) return -1
   return ang
 }
 
-/** Best lock candidate for a seeker weapon along `aim` (null aim = nose). */
-export function lockCandidate(vehicle: VehicleEntity, weapon: WeaponId, aim: Vec3 | null, vehicles: VehicleEntity[]): VehicleEntity | null {
+/**
+ * Seeker axis for a seat's lock weapon: pilots (seat 0) and fixed weapons lock along the nose; gunner
+ * turret/scanner weapons along the seat aim (nose if no aim).
+ */
+export function seekerAxis(vehicle: VehicleEntity, seat: SeatIndex, weapon: WeaponId, aim: Vec3 | null, out: Vec3): Vec3 {
+  if (seat !== 0 && WEAPONS[weapon].turret && aim && normalizeInto(aim, out)) return out
+  return rotate(vehicle.flight.orientation, 0, 0, -1, out)
+}
+
+/** Best lock candidate for a seat's lock weapon (closest to the seeker axis). */
+export function lockCandidate(
+  vehicle: VehicleEntity, seat: SeatIndex, weapon: WeaponId, aim: Vec3 | null, vehicles: VehicleEntity[],
+): VehicleEntity | null {
   const spec = WEAPONS[weapon]
-  if (spec.kind !== "missile_ir" && spec.kind !== "missile_long") return null
-  const axis = seekerAxis(vehicle, aim, _lc)
+  if (!isLockKind(spec)) return null
+  const axis = seekerAxis(vehicle, seat, weapon, aim, _lc)
   let best: VehicleEntity | null = null
   let bestAng = Infinity
   for (let i = 0; i < vehicles.length; i++) {
@@ -358,11 +399,6 @@ export function lockCandidate(vehicle: VehicleEntity, weapon: WeaponId, aim: Vec
     if (ang >= 0 && ang < bestAng) { bestAng = ang; best = vehicles[i] }
   }
   return best
-}
-
-function seekerAxis(vehicle: VehicleEntity, aim: Vec3 | null, out: Vec3): Vec3 {
-  if (aim && normalizeInto(aim, out)) return out
-  return rotate(vehicle.flight.orientation, 0, 0, -1, out)
 }
 
 function findVehicle(vehicles: VehicleEntity[], id: string): VehicleEntity | null {
@@ -425,11 +461,10 @@ function splash(
 const _dir: Vec3 = [0, 0, 0]
 const _muz: Vec3 = [0, 0, 0]
 const _aim: Vec3 = [0, 0, 0]
-const _paint: Vec3 = [0, 0, 0]
 
 /**
  * Apply one seat's weapon input for this tick (assumes one call per seat per TICK_DT): stores the seat aim,
- * updates seeker locks, fires guns/rockets/missiles, deploys flares and triggers abilities.
+ * updates seeker/scanner locks, fires guns/rockets/missiles, deploys flares and triggers abilities.
  */
 export function applySeatInput(
   cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex, input: SeatInput,
@@ -447,11 +482,8 @@ export function applySeatInput(
 
   // Seekers run continuously, whether or not the trigger is held.
   for (let slot = 0; slot < 2; slot++) {
-    if (effectiveSlot(vehicle.kind, seat, slot as 0 | 1) !== slot) continue
-    const spec = WEAPONS[kinds[slot]]
-    if ((spec.kind === "missile_ir" || spec.kind === "missile_long") && runtimes[slot]) {
-      updateLock(vehicle, seat, spec, runtimes[slot], aim, vehicles, events)
-    }
+    const id = kinds[slot]
+    if (id && runtimes[slot] && isLockKind(WEAPONS[id])) updateLock(vehicle, seat, WEAPONS[id], runtimes[slot], aim, vehicles, events)
   }
 
   if (input.flares) deployFlares(cs, vehicle, vehicles, now, events)
@@ -460,12 +492,12 @@ export function applySeatInput(
   const protectedNow = inSafeZone(vehicle.team, vehicle.flight.position)
   for (let slot = 0; slot < 2; slot++) {
     if (!(slot === 0 ? input.firePrimary : input.fireSecondary)) continue
-    const spec = WEAPONS[kinds[slot]]
+    const id = kinds[slot]
+    const rt = runtimes[slot]
+    if (!id || !rt) continue
+    const spec = WEAPONS[id]
     if (spec.kind === "pulse") { radarPulse(vehicle, seat, vehicles, now, events); continue }
     if (protectedNow) continue
-    const rt = runtimes[effectiveSlot(vehicle.kind, seat, slot as 0 | 1)]
-    if (!rt) continue
-    if (slot === 1 && kinds[1] === kinds[0] && input.firePrimary) continue // same runtime already handled
     if (spec.kind === "gun" || spec.kind === "rockets") fireBallistic(cs, vehicle, seat, spec, rt, aim, now, events)
     else fireMissile(cs, vehicle, seat, spec, rt, now, events)
   }
@@ -475,14 +507,14 @@ function updateLock(
   vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime, aim: Vec3 | null,
   vehicles: VehicleEntity[], events: GameEvent[],
 ): void {
-  const axis = seekerAxis(vehicle, aim, _lc)
+  const axis = seekerAxis(vehicle, seat, spec.id, aim, _lc)
   let target: VehicleEntity | null = null
   if (rt.lockTarget) {
     const cur = findVehicle(vehicles, rt.lockTarget)
     // Hysteresis: keep the current target slightly beyond the acquisition cone.
     if (cur && lockValid(vehicle, spec, axis, cur, 1.15) >= 0) target = cur
   }
-  if (!target) target = lockCandidate(vehicle, spec.id, aim, vehicles)
+  if (!target) target = lockCandidate(vehicle, seat, spec.id, aim, vehicles)
 
   const newId = target ? target.id : null
   if (newId !== rt.lockTarget) {
@@ -491,13 +523,8 @@ function updateLock(
     rt.lock = 0
   }
   if (!target) return
-  let rate = 1
-  const other = vehicle.aim[seat === 0 ? 1 : 0]
-  if (other && vehicle.seats[seat === 0 ? 1 : 0] && normalizeInto(other, _paint)) {
-    if (seekerAngle(vehicle.flight.position, _paint, target.flight.position, _sd) <= (spec.lockCone ?? 0.3)) rate = PAINT_LOCK_MULT
-  }
   const was = rt.lock >= 1
-  rt.lock = Math.min(1, rt.lock + (rate * TICK_DT) / (spec.lockTime ?? 1))
+  rt.lock = Math.min(1, rt.lock + TICK_DT / (spec.lockTime ?? 1))
   // Float accumulation guard so lockTime/TICK_DT ticks reliably reaches 1.
   if (rt.lock > 1 - 1e-9) rt.lock = 1
   if (!was && rt.lock >= 1) events.push({ type: "lock", vehicle: vehicle.id, target: target.id, locked: true })
@@ -516,7 +543,7 @@ function fireBallistic(
   if (rt.readyAt < now - TICK_DT) rt.readyAt = now
   const sv = vehicle.flight.velocity
   let fired = 0
-  while (rt.readyAt <= now + 1e-9 && rt.ammo !== 0 && fired < 8 && cs.projectiles.length < MAX_PROJECTILES) {
+  while (rt.readyAt <= now + 1e-9 && (rt.ammo < 0 || rt.ammo >= 1) && fired < 8 && cs.projectiles.length < MAX_PROJECTILES) {
     const id = cs.nextId++
     weaponDirection(vehicle, spec.id, aim, _dir)
     applySpread(_dir, spec.spread ?? 0, id)
@@ -524,17 +551,17 @@ function fireBallistic(
     muzzlePosition(vehicle, seat, spec.id, _muz, hp)
     const vx = sv[0] + _dir[0] * spec.speed, vy = sv[1] + _dir[1] * spec.speed, vz = sv[2] + _dir[2] * spec.speed
     // Spawned one tick "behind" so this tick's stepCombat sweeps it from (muzzle - v·dt) to the muzzle in
-    // lockstep with vehicles that already moved; `lead` staggers rounds fired earlier within the tick.
+    // lockstep with vehicles that already moved; `back` also staggers rounds fired earlier within the tick.
     const back = now - rt.readyAt - TICK_DT
     cs.projectiles.push({
       id, weapon: spec.id, owner: ownerOf(vehicle, seat), vehicle: vehicle.id, team: vehicle.team,
       position: [_muz[0] + vx * back, _muz[1] + vy * back, _muz[2] + vz * back],
       velocity: [vx, vy, vz], age: back, ttl: spec.ttl,
     })
-    if (rt.ammo > 0) rt.ammo--
+    consumeAmmo(rt, now)
     rt.readyAt += interval
     fired++
-    if (spec.kind === "rockets") events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: spec.id })
+    if (spec.kind === "rockets") events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: spec.id, hardpoint: hp })
   }
   // Guns: one `fire` event at burst start and every 0.25 s while firing (clients loop audio ~0.3 s).
   if (fired > 0 && spec.kind === "gun" && (burstStart || Math.floor(now * 4) !== Math.floor((now - TICK_DT) * 4))) {
@@ -542,29 +569,38 @@ function fireBallistic(
   }
 }
 
+function consumeAmmo(rt: WeaponRuntime, now: number): void {
+  const x = rt as RuntimeExt
+  if (rt.ammo > 0) rt.ammo--
+  x.firedAt = now
+  x.regen = 0
+}
+
 function fireMissile(
   cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime,
   now: number, events: GameEvent[],
 ): void {
-  if (rt.readyAt > now || rt.ammo === 0 || cs.missiles.length >= MAX_MISSILES) return
-  const seeker = spec.kind === "missile_ir" || spec.kind === "missile_long"
+  if (rt.readyAt > now || (rt.ammo >= 0 && rt.ammo < 1) || cs.missiles.length >= MAX_MISSILES) return
   // Holding fire while the seeker is acquiring waits for the lock instead of wasting a dumbfire.
-  if (seeker && rt.lockTarget && rt.lock < 1) return
-  const target = seeker && rt.lockTarget && rt.lock >= 1 ? rt.lockTarget : null
+  if (rt.lockTarget && rt.lock < 1) return
+  const target = rt.lockTarget && rt.lock >= 1 ? rt.lockTarget : null
   const hp = launchedHardpoint(spec.id, rt.ammo - 1)
   muzzlePosition(vehicle, seat, spec.id, _muz, hp)
   rotate(vehicle.flight.orientation, 0, 0, -1, _dir)
   const sv = vehicle.flight.velocity
   const vx = sv[0] + _dir[0] * spec.speed, vy = sv[1] + _dir[1] * spec.speed, vz = sv[2] + _dir[2] * spec.speed
+  const scanner = spec.kind === "missile_scanner"
   // One tick behind the rail, like projectiles (see fireBallistic).
-  cs.missiles.push({
+  const m: MissileExt = {
     id: cs.nextId++, weapon: spec.id, owner: ownerOf(vehicle, seat), vehicle: vehicle.id, team: vehicle.team,
     position: [_muz[0] - vx * TICK_DT, _muz[1] - vy * TICK_DT, _muz[2] - vz * TICK_DT],
-    velocity: [vx, vy, vz], target, steered: spec.kind === "missile_steered", age: -TICK_DT, ttl: spec.ttl,
-  })
-  if (rt.ammo > 0) rt.ammo--
+    velocity: [vx, vy, vz], target, steered: scanner, seat, age: -TICK_DT, ttl: spec.ttl,
+  }
+  if (scanner) { m.scanTarget = target; m.scanOff = 0 }
+  cs.missiles.push(m)
+  consumeAmmo(rt, now)
   rt.readyAt = now + 1 / spec.rate
-  events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: spec.id })
+  events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: spec.id, hardpoint: hp })
 }
 
 function deployFlares(cs: CombatState, vehicle: VehicleEntity, vehicles: VehicleEntity[], now: number, events: GameEvent[]): void {
@@ -586,16 +622,27 @@ function deployFlares(cs: CombatState, vehicle: VehicleEntity, vehicles: Vehicle
   events.push({ type: "flares", vehicle: vehicle.id })
   if (firstId < 0) return
 
-  // Decoy inbound seekers (deterministic roll per missile & burst).
+  // Decoy inbound missiles (deterministic roll per missile & burst).
   for (let i = 0; i < cs.missiles.length; i++) {
-    const m = cs.missiles[i]
-    if (m.steered || m.target !== vehicle.id) continue
+    const m = cs.missiles[i] as MissileExt
     const t = MISSILE_TUNING[m.weapon]
     if (!t) continue
-    const chance = dist(m.position, p) > t.farDist ? t.flareFar : t.flareNear
-    if (hash01(m.id, firstId) < chance) m.target = FLARE_TARGET_PREFIX + firstId
+    const d = dist(m.position, p)
+    let chance: number
+    if (m.steered) {
+      if (m.scanTarget !== vehicle.id) continue
+      const painted = m.target !== null && (m.scanOff ?? 0) === 0
+      chance = d <= SCANNER_FLARE_CLOSE ? t.flareNear : painted ? 0 : t.flareFar
+    } else {
+      if (m.target !== vehicle.id) continue
+      chance = d > t.farDist ? t.flareFar : t.flareNear
+    }
+    if (hash01(m.id, firstId) < chance) {
+      m.target = FLARE_TARGET_PREFIX + firstId
+      if (m.steered) m.scanTarget = null
+    }
   }
-  // Flares also break seeker locks on this vehicle.
+  // Flares also break seeker locks on this vehicle (scanner locks too: the operator must re-acquire).
   for (let i = 0; i < vehicles.length; i++) {
     const o = vehicles[i]
     for (let s = 0; s < 2; s++) {
@@ -610,9 +657,13 @@ function deployFlares(cs: CombatState, vehicle: VehicleEntity, vehicles: Vehicle
   }
 }
 
+function hasPulse(vehicle: VehicleEntity, seat: SeatIndex): boolean {
+  const k = VEHICLES[vehicle.kind].seatWeapons[seat]
+  return k[0] === "radarpulse" || k[1] === "radarpulse"
+}
+
 function triggerAbility(vehicle: VehicleEntity, seat: SeatIndex, aim: Vec3 | null, vehicles: VehicleEntity[], now: number, events: GameEvent[]): void {
-  const kinds = VEHICLES[vehicle.kind].seatWeapons[seat]
-  if (kinds[0] === "radarpulse" || kinds[1] === "radarpulse") { radarPulse(vehicle, seat, vehicles, now, events); return }
+  if (hasPulse(vehicle, seat)) { radarPulse(vehicle, seat, vehicles, now, events); return }
   if (seat !== 1 || !aim || vehicle.abilityReadyAt > now) return
   // Mark target: spot the enemy closest to the aim ray.
   let best: VehicleEntity | null = null
@@ -653,7 +704,7 @@ const _hit: Vec3 = [0, 0, 0]
 const _des: Vec3 = [0, 0, 0]
 const _tp: Vec3 = [0, 0, 0]
 const _tv: Vec3 = [0, 0, 0]
-const _far: Vec3 = [0, 0, 0]
+const _scan: Vec3 = [0, 0, 0]
 
 interface SegmentHit { t: number; vehicle: VehicleEntity | null }
 const _sh: SegmentHit = { t: 2, vehicle: null }
@@ -686,13 +737,43 @@ function lerpInto(a: Vec3, b: Vec3, t: number, out: Vec3): Vec3 {
 }
 
 /**
- * Advance projectiles, missiles and flares one tick; detect hits against living vehicles and the ground,
- * apply damage (respecting safe zones), mark vehicles dead (alive=false) and push hit/kill/explosion events.
+ * Advance projectiles, missiles and flares one tick; regenerate ammo; detect hits against living vehicles
+ * and the ground, apply damage (respecting safe zones), mark vehicles dead and push hit/kill/explosion events.
  */
 export function stepCombat(cs: CombatState, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
+  regenAmmo(vehicles, dt, now)
   stepProjectiles(cs, vehicles, dt, now, events)
   stepMissiles(cs, vehicles, dt, now, events)
   stepFlares(cs, dt)
+}
+
+/** Continuous magazine regen: ammo/refill per second, starting refillDelay s after the weapon last fired. */
+function regenAmmo(vehicles: VehicleEntity[], dt: number, now: number): void {
+  for (let i = 0; i < vehicles.length; i++) {
+    const v = vehicles[i]
+    if (!v.alive) continue
+    const kinds = VEHICLES[v.kind].seatWeapons
+    for (let s = 0; s < 2; s++) {
+      for (let k = 0; k < 2; k++) {
+        const id = kinds[s][k]
+        const rt = v.weapons[s][k] as RuntimeExt | undefined
+        if (!id || !rt) continue
+        const spec = WEAPONS[id]
+        const max = magazine(id)
+        if (max < 0 || spec.refill <= 0) continue
+        if (rt.ammo >= max) { rt.ammo = max; rt.regen = 0; continue }
+        if (now - (rt.firedAt ?? -1e9) < spec.refillDelay - 1e-9) continue
+        let acc = (rt.regen ?? 0) + (max / spec.refill) * dt
+        // Tolerance so `refill` seconds of accumulation fills the magazine despite float error.
+        const whole = Math.floor(acc + 1e-6)
+        if (whole > 0) {
+          rt.ammo = Math.min(max, rt.ammo + whole)
+          acc = Math.max(0, acc - whole)
+        }
+        rt.regen = rt.ammo >= max ? 0 : acc
+      }
+    }
+  }
 }
 
 function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
@@ -734,39 +815,61 @@ function findFlare(cs: CombatState, id: number): Flare | null {
   return null
 }
 
-/** Seat currently steering a player-guided missile, or -1 if the owner left that seat. */
-function steeringSeat(shooter: VehicleEntity, m: Missile): number {
-  const sw = VEHICLES[shooter.kind].seatWeapons
-  for (let s = 0; s < 2; s++) {
-    if (shooter.seats[s] === m.owner && (sw[s][0] === m.weapon || sw[s][1] === m.weapon)) return s
-  }
-  return -1
-}
-
 function detonate(
-  cs: CombatState, m: Missile, pos: Vec3, direct: VehicleEntity | null, vehicles: VehicleEntity[], now: number, events: GameEvent[],
+  m: Missile, pos: Vec3, direct: VehicleEntity | null, vehicles: VehicleEntity[], now: number, events: GameEvent[],
 ): void {
   if (direct) dealDamage(direct, damageFor(m.weapon, direct, now), m.weapon, m.owner, pos, events)
   splash(pos, m.weapon, m.owner, m.team, m.vehicle, direct, vehicles, now, events)
   events.push({ type: "explosion", position: [pos[0], pos[1], pos[2]], size: WEAPONS[m.weapon].splash })
 }
 
+/** True when the scanner operator of missile `m` currently paints its designated target. */
+export function scannerOnTarget(m: Missile, target: VehicleEntity, vehicles: VehicleEntity[]): boolean {
+  const shooter = findVehicle(vehicles, m.vehicle)
+  if (!shooter || !shooter.alive || !target.alive) return false
+  const seat = (m.seat ?? 1) as SeatIndex
+  if (shooter.seats[seat] !== m.owner) return false
+  const aim = shooter.aim[seat]
+  if (!aim || !normalizeInto(aim, _scan)) return false
+  const spec = WEAPONS[m.weapon]
+  const ang = seekerAngle(shooter.flight.position, _scan, target.flight.position, _sd)
+  return ang <= (spec.lockCone ?? 0.12) * SCANNER_CONE_MARGIN && _sd.d <= (spec.range ?? 8000) * 1.1
+}
+
+/** Scanner (semi-active) guidance bookkeeping; returns the vehicle to home on, or null. */
+function scannerGuidance(m: MissileExt, vehicles: VehicleEntity[], tune: MissileTuning, dt: number): VehicleEntity | null {
+  if (!m.scanTarget) return null
+  const target = findVehicle(vehicles, m.scanTarget)
+  if (!target || !target.alive) { m.scanTarget = null; m.target = null; return null }
+  if (scannerOnTarget(m, target, vehicles)) {
+    m.scanOff = 0
+    if (m.target === null) {
+      // Re-acquire only if the target is inside the missile's own seeker view.
+      _dir[0] = m.velocity[0]; _dir[1] = m.velocity[1]; _dir[2] = m.velocity[2]
+      if (normalizeInto(_dir, _dir) && seekerAngle(m.position, _dir, target.flight.position, _sd) <= tune.gimbal) m.target = target.id
+    }
+  } else {
+    m.scanOff = (m.scanOff ?? 0) + dt
+    if (m.scanOff > SCANNER_GRACE) m.target = null
+  }
+  return m.target === target.id ? target : null
+}
+
 function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
   const list = cs.missiles
   let w = 0
   for (let i = 0; i < list.length; i++) {
-    const m = list[i]
+    const m = list[i] as MissileExt
     const spec = WEAPONS[m.weapon]
     const tune = MISSILE_TUNING[m.weapon]!
     m.age += dt
     if (m.age > m.ttl) {
-      detonate(cs, m, m.position, null, vehicles, now, events)
+      detonate(m, m.position, null, vehicles, now, events)
       continue
     }
     const vel = m.velocity, pos = m.position
     let speed = len(vel)
     if (speed < 1e-6) speed = 1e-6
-    _dir[0] = vel[0] / speed; _dir[1] = vel[1] / speed; _dir[2] = vel[2] / speed
 
     // Motor: accelerate during burn, decelerate while coasting.
     if (m.age <= tune.burn) { if (speed < tune.maxSpeed) speed = Math.min(tune.maxSpeed, speed + tune.accel * dt) }
@@ -774,30 +877,31 @@ function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, no
 
     const maxTurn = (spec.turnRate ?? 1) * dt
     let flareTarget: Flare | null = null
-    if (m.steered) {
-      guideSteered(m, tune, vehicles, speed, maxTurn)
-    } else if (m.target) {
-      let ok = false
-      if (m.target.startsWith(FLARE_TARGET_PREFIX)) {
-        flareTarget = findFlare(cs, Number(m.target.slice(FLARE_TARGET_PREFIX.length)))
-        if (flareTarget) {
-          _tp[0] = flareTarget.position[0]; _tp[1] = flareTarget.position[1]; _tp[2] = flareTarget.position[2]
-          _tv[0] = flareTarget.velocity[0]; _tv[1] = flareTarget.velocity[1]; _tv[2] = flareTarget.velocity[2]
-          ok = true
-        }
-      } else {
-        const t = findVehicle(vehicles, m.target)
-        if (t && t.alive) {
-          const fp = t.flight.position, fv = t.flight.velocity
-          _tp[0] = fp[0]; _tp[1] = fp[1]; _tp[2] = fp[2]
-          _tv[0] = fv[0]; _tv[1] = fv[1]; _tv[2] = fv[2]
-          ok = true
-        }
-      }
-      if (ok && seekerAngle(pos, _dir, _tp, _sd) > tune.gimbal) ok = false
-      if (!ok) m.target = null
-      else proNav(pos, _dir, speed, _tp, _tv, dt, maxTurn)
+    let ok = false
+    if (m.target && m.target.startsWith(FLARE_TARGET_PREFIX)) {
+      flareTarget = findFlare(cs, Number(m.target.slice(FLARE_TARGET_PREFIX.length)))
+      if (flareTarget) {
+        _tp[0] = flareTarget.position[0]; _tp[1] = flareTarget.position[1]; _tp[2] = flareTarget.position[2]
+        _tv[0] = flareTarget.velocity[0]; _tv[1] = flareTarget.velocity[1]; _tv[2] = flareTarget.velocity[2]
+        ok = true
+      } else m.target = null
+    } else {
+      const t = m.steered ? scannerGuidance(m, vehicles, tune, dt) : m.target ? findVehicle(vehicles, m.target) : null
+      if (t && t.alive) {
+        const fp = t.flight.position, fv = t.flight.velocity
+        _tp[0] = fp[0]; _tp[1] = fp[1]; _tp[2] = fp[2]
+        _tv[0] = fv[0]; _tv[1] = fv[1]; _tv[2] = fv[2]
+        ok = true
+      } else if (!m.steered) m.target = null
     }
+
+    _dir[0] = vel[0] / len(vel); _dir[1] = vel[1] / len(vel); _dir[2] = vel[2] / len(vel)
+    if (ok && m.age > MISSILE_LOAL_TIME && seekerAngle(pos, _dir, _tp, _sd) > tune.gimbal) {
+      ok = false
+      m.target = null
+      if (m.steered) m.scanTarget = null
+    }
+    if (ok) proNav(pos, _dir, speed, _tp, _tv, dt, maxTurn)
 
     vel[0] = _dir[0] * speed; vel[1] = _dir[1] * speed; vel[2] = _dir[2] * speed
     _p0[0] = pos[0]; _p0[1] = pos[1]; _p0[2] = pos[2]
@@ -806,15 +910,15 @@ function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, no
     const hit = sweepVehicles(_p0, _p1, m.team, m.vehicle, tune.fuse, vehicles, dt)
     const g = segmentHitsGround(_p0, _p1)
     if (hit.vehicle && (g === null || hit.t <= g)) {
-      detonate(cs, m, lerpInto(_p0, _p1, hit.t, _hit), hit.vehicle, vehicles, now, events)
+      detonate(m, lerpInto(_p0, _p1, hit.t, _hit), hit.vehicle, vehicles, now, events)
       continue
     }
     if (g !== null) {
-      detonate(cs, m, lerpInto(_p0, _p1, g, _hit), null, vehicles, now, events)
+      detonate(m, lerpInto(_p0, _p1, g, _hit), null, vehicles, now, events)
       continue
     }
     if (flareTarget && dist(_p1, flareTarget.position) < tune.fuse + 4) {
-      detonate(cs, m, _p1, null, vehicles, now, events)
+      detonate(m, _p1, null, vehicles, now, events)
       continue
     }
     pos[0] = _p1[0]; pos[1] = _p1[1]; pos[2] = _p1[2]
@@ -823,7 +927,7 @@ function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, no
   list.length = w
 }
 
-/** Proportional navigation: commanded accel = N · Ω × Vm, then turn-rate capped. Writes _dir. */
+/** Proportional navigation: commanded accel = N · Ω × Vm, then turn-rate capped. Updates `dir`. */
 function proNav(mp: Vec3, dir: Vec3, speed: number, tp: Vec3, tv: Vec3, dt: number, maxTurn: number): void {
   const rx = tp[0] - mp[0], ry = tp[1] - mp[1], rz = tp[2] - mp[2]
   const r2 = rx * rx + ry * ry + rz * rz
@@ -835,32 +939,9 @@ function proNav(mp: Vec3, dir: Vec3, speed: number, tp: Vec3, tv: Vec3, dt: numb
   const n = PROPORTIONAL_NAV_GAIN
   const ax = n * (oy * vmz - oz * vmy), ay = n * (oz * vmx - ox * vmz), az = n * (ox * vmy - oy * vmx)
   _des[0] = vmx + ax * dt; _des[1] = vmy + ay * dt; _des[2] = vmz + az * dt
-  // If the target is behind the missile's velocity (e.g. just launched off-boresight), pure pursuit.
+  // If the target is behind the missile (e.g. turret lock off the rail), pure pursuit.
   if (rx * dir[0] + ry * dir[1] + rz * dir[2] < 0) { _des[0] = rx; _des[1] = ry; _des[2] = rz }
   if (normalizeInto(_des, _des)) turnToward(dir, _des, maxTurn)
-}
-
-/**
- * Command-to-line-of-sight: steer onto the owner seat's live aim ray (ahead of the missile's projection),
- * clamped to where that ray meets the ground. Flies straight if the shooter died or the seat emptied.
- */
-function guideSteered(m: Missile, tune: MissileTuning, vehicles: VehicleEntity[], speed: number, maxTurn: number): void {
-  const shooter = findVehicle(vehicles, m.vehicle)
-  if (!shooter || !shooter.alive) return
-  const seat = steeringSeat(shooter, m)
-  if (seat < 0) return
-  const aimRaw = shooter.aim[seat]
-  if (!aimRaw || !normalizeInto(aimRaw, _aim)) return
-  const o = shooter.flight.position, mp = m.position
-  const along = (mp[0] - o[0]) * _aim[0] + (mp[1] - o[1]) * _aim[1] + (mp[2] - o[2]) * _aim[2]
-  let ahead = Math.max(along, 0) + Math.max(100, speed * 0.3)
-  _far[0] = o[0] + _aim[0] * tune.range; _far[1] = o[1] + _aim[1] * tune.range; _far[2] = o[2] + _aim[2] * tune.range
-  const g = segmentHitsGround(o, _far)
-  if (g !== null && ahead > g * tune.range) ahead = g * tune.range
-  _des[0] = o[0] + _aim[0] * ahead - mp[0]
-  _des[1] = o[1] + _aim[1] * ahead - mp[1]
-  _des[2] = o[2] + _aim[2] * ahead - mp[2]
-  if (normalizeInto(_des, _des)) turnToward(_dir, _des, maxTurn)
 }
 
 function stepFlares(cs: CombatState, dt: number): void {

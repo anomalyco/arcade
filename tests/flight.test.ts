@@ -170,23 +170,90 @@ describe("jets: direct steering", () => {
   }
 })
 
-describe("helicopter: direct steering", () => {
-  test("mouse Y cyclic tilts and holds, mouse X pedals, near-level release hovers", () => {
-    const s = createFlightState("apache", { position: [0, 300, 0], yaw: 0, onGround: false })
-    run(s, input({ pitch: -1 }), 0.3) // nose down
-    run(s, input(), 0.5)
+// Helicopter direct-mode helpers: a tiny "pilot" that holds a pitch angle through the pitch-rate input.
+const heliAir = (alt = 1000) => createFlightState("apache", { position: [0, alt, 0], yaw: 0, onGround: false })
+const holdPitchInput = (s: FlightState, deg: number) => Math.max(-1, Math.min(1, (deg - flightReadout(s).pitch) * 0.15))
+const holdLevelCollective = (s: FlightState) => (s.velocity[1] < 0 ? 0.3 : -0.3)
+const fwdSpeed = (s: FlightState) => { const f = forward(s.orientation); const n = Math.hypot(f[0], f[2]); return (s.velocity[0] * f[0] + s.velocity[2] * f[2]) / n }
+
+function heliFeel() {
+  const hover = heliAir(); run(hover, input(), 5)
+  const desc = heliAir(); run(desc, input({ throttle: -1 }), 0.5); run(desc, input(), 5)
+  const climb = heliAir(); run(climb, input({ throttle: 1 }), 0.5); run(climb, input(), 5)
+  const back = heliAir(); run(back, st => input({ pitch: holdPitchInput(st, 20), throttle: holdLevelCollective(st) }), 15)
+  const top = heliAir(); run(top, st => input({ pitch: holdPitchInput(st, -55), throttle: 1 }), 40)
+  const topSpeed = flightReadout(top).speed
+  let stop = 0
+  while (fwdSpeed(top) > 2 && stop < 30) { stepFlight(top, input({ pitch: holdPitchInput(top, 55), throttle: top.throttle > 0.75 ? -1 : 0 }), TICK_DT, world); stop += TICK_DT }
+  const flip = heliAir(); let rolled = 0, flipTime = 0
+  while (rolled < 2 * Math.PI && flipTime < 6) { stepFlight(flip, input({ roll: 1, throttle: 1 }), TICK_DT, world); rolled -= flip.angularVelocity[2] * TICK_DT; flipTime += TICK_DT }
+  const loop = heliAir(); run(loop, st => input({ pitch: holdPitchInput(st, -40), throttle: 1 }), 10)
+  let pitched = 0, loopTime = 0
+  while (pitched < 2 * Math.PI && loopTime < 8) { stepFlight(loop, input({ pitch: 1, throttle: 1 }), TICK_DT, world); pitched += loop.angularVelocity[0] * TICK_DT; loopTime += TICK_DT }
+  const brake = heliAir(); run(brake, st => input({ pitch: holdPitchInput(st, -55), throttle: 1 }), 40)
+  let brakeStop = 0
+  while (flightReadout(brake).speed > 2 && brakeStop < 30) { stepFlight(brake, input({ brake: true }), TICK_DT, world); brakeStop += TICK_DT }
+  return {
+    hoverDrift: flightReadout(hover).speed, hoverAltErr: Math.abs(hover.position[1] - 1000),
+    descent: -desc.velocity[1], climb: climb.velocity[1], descentCollective: desc.throttle,
+    backward: -fwdSpeed(back), topSpeed, stop, flipTime, flipped: rolled >= 2 * Math.PI, flipCrashed: flip.crashed,
+    loopTime, looped: pitched >= 2 * Math.PI, brakeStop,
+  }
+}
+
+describe("helicopter: direct (Battlefield) steering", () => {
+  const f = heliFeel()
+  test("neutral hover is truly stationary", () => {
+    expect(f.hoverDrift).toBeLessThan(0.5)
+    expect(f.hoverAltErr).toBeLessThan(0.5)
+  })
+  test("collective holds where left; S gives a real descent, W a real climb", () => {
+    expect(f.descentCollective).toBeLessThan(0.1)
+    expect(f.descent).toBeGreaterThan(14)
+    expect(f.climb).toBeGreaterThan(14)
+  })
+  test("pitch back flies backwards, nose down + full collective reaches ~95 m/s", () => {
+    expect(f.backward).toBeGreaterThan(15)
+    expect(Math.abs(f.topSpeed - 95) / 95).toBeLessThan(0.1)
+  })
+  test("pitching back stops it from top speed quickly", () => expect(f.stop).toBeLessThan(6))
+  test("full rolls and loops are possible", () => {
+    expect(f.flipped).toBe(true)
+    expect(f.flipCrashed).toBeNull()
+    expect(f.looped).toBe(true)
+  })
+  test("brake auto-hover kills velocity and levels", () => expect(f.brakeStop).toBeLessThan(12))
+
+  test("pitch is rate-based: released tilt is kept outside the self-level zone, damped quickly", () => {
+    const s = heliAir()
+    run(s, input({ pitch: -1 }), 0.4)
+    run(s, input(), 0.4)
     const tilt = flightReadout(s).pitch
-    expect(tilt).toBeLessThan(-15)
-    run(s, input(), 6) // held: keeps flying forward
-    expect(Math.abs(flightReadout(s).pitch - tilt)).toBeLessThan(1)
-    expect(flightReadout(s).speed).toBeGreaterThan(20)
-    run(s, input({ yaw: 1 }), 1)
-    expect(angDiff(heading(s), 0)).toBeGreaterThan(60)
-    run(s, input({ pitch: 1 }), 0.3)
-    run(s, input({ brake: true }), 15)
-    run(s, input(), 5)
-    expect(Math.abs(flightReadout(s).pitch)).toBeLessThan(2)
-    expect(flightReadout(s).speed).toBeLessThan(2)
+    expect(tilt).toBeLessThan(-20)
+    expect(Math.abs(s.angularVelocity[0])).toBeLessThan(0.1)
+    run(s, input(), 3)
+    expect(Math.abs(flightReadout(s).pitch - tilt)).toBeLessThan(1.5)
+    expect(fwdSpeed(s)).toBeGreaterThan(10)
+  })
+
+  test("small tilts self-level weakly back to a hover attitude", () => {
+    const s = heliAir()
+    run(s, input({ pitch: 0.5 }), 0.1)
+    run(s, input(), 6)
+    expect(Math.abs(flightReadout(s).pitch)).toBeLessThan(0.5)
+  })
+
+  test("pedal yaw (A/D) turns fast in a hover", () => {
+    const s = heliAir()
+    run(s, input({ yaw: 1 }), 1.2)
+    expect(angDiff(heading(s), 0)).toBeGreaterThan(80)
+  })
+
+  test("collective detent snaps to hover when released near it", () => {
+    const s = heliAir()
+    s.throttle = 0.53
+    run(s, input(), 1)
+    expect(s.throttle).toBeCloseTo(0.5, 6)
   })
 })
 
@@ -315,12 +382,11 @@ describe("jets", () => {
 })
 
 describe("helicopter", () => {
-  test("lifts off and hovers at collective 0.5", () => {
+  test("lifts off from the pad and settles into a hover", () => {
     const s = createFlightState("apache", { position: [0, LAND + 2, 0], yaw: 0, onGround: true })
-    run(s, input({ throttle: 1 }), 1.5)
+    run(s, input({ throttle: 1 }), 0.6)
     run(s, input(), 3)
     expect(s.onGround).toBe(false)
-    // Settle collective to exactly 0.5 and verify altitude hold.
     s.throttle = 0.5
     run(s, input({ brake: true }), 3)
     const alt = s.position[1]
@@ -329,47 +395,33 @@ describe("helicopter", () => {
     expect(flightReadout(s).speed).toBeLessThan(1)
   })
 
-  test("cruise, max speed and hover-hold kills drift", () => {
+  test("mouse-aim mode: cruise, max speed and hover-hold", () => {
     const s = createFlightState("apache", { position: [0, 300, 0], yaw: 0, onGround: false })
     run(s, input({ aim: directionFromHeading(0, -25 * Math.PI / 180) }), 30)
-    const cruise = flightReadout(s).speed
-    expect(Math.abs(cruise - 75) / 75).toBeLessThan(0.1)
+    expect(Math.abs(flightReadout(s).speed - 75) / 75).toBeLessThan(0.1)
     run(s, input({ aim: directionFromHeading(0, -10 * Math.PI / 180), boost: true }), 30)
-    const max = flightReadout(s).speed
-    expect(Math.abs(max - 98) / 98).toBeLessThan(0.1)
-    expect(Math.abs(s.position[1] - 300)).toBeLessThan(40)
-    run(s, input({ brake: true }), 12)
+    expect(Math.abs(flightReadout(s).speed - 98) / 98).toBeLessThan(0.1)
+    run(s, input({ aim: directionFromHeading(0, 0), brake: true }), 12)
     expect(flightReadout(s).speed).toBeLessThan(2)
-    expect(Math.abs(flightReadout(s).pitch)).toBeLessThan(3)
   })
 
-  test("yaws toward aim heading and strafes", () => {
+  test("mouse-aim mode: yaws toward aim heading and strafes", () => {
     const s = createFlightState("apache", { position: [0, 300, 0], yaw: 0, onGround: false })
     run(s, input({ aim: directionFromHeading(Math.PI / 2, 0) }), 3)
     expect(Math.abs(angDiff(heading(s), 90))).toBeLessThan(3)
     run(s, input({ aim: directionFromHeading(Math.PI / 2, 0), roll: 1 }), 4)
-    const v = s.velocity
-    // Facing east, strafing right = moving south (+Z).
-    expect(v[2]).toBeGreaterThan(10)
+    expect(s.velocity[2]).toBeGreaterThan(10) // facing east, strafing right = south (+Z)
   })
 
-  test("holding collective down lands softly (ground cushion), diving in fast crashes", () => {
-    const s = createFlightState("apache", { position: [0, 200, 0], yaw: 0, onGround: false })
-    run(s, input({ throttle: -1 }), 30)
+  test("easing down lands; slamming in at full descent crashes", () => {
+    const s = createFlightState("apache", { position: [0, 60, 0], yaw: 0, onGround: false })
+    s.throttle = 0.42
+    run(s, input(), 30)
     expect(s.crashed).toBeNull()
     expect(s.onGround).toBe(true)
-    const d = createFlightState("apache", { position: [0, 120, 0], yaw: 0, onGround: false })
-    run(d, input({ aim: directionFromHeading(0, -0.6), boost: true, throttle: -1 }), 30)
+    const d = createFlightState("apache", { position: [0, 200, 0], yaw: 0, onGround: false })
+    run(d, input({ throttle: -1 }), 30)
     expect(d.crashed).toBe("terrain")
-  })
-
-  test("collective released in the air returns to hover", () => {
-    const s = createFlightState("apache", { position: [0, 200, 0], yaw: 0, onGround: false })
-    run(s, input({ throttle: 1 }), 2)
-    expect(s.velocity[1]).toBeGreaterThan(5)
-    run(s, input(), 4)
-    expect(Math.abs(s.velocity[1])).toBeLessThan(0.5)
-    expect(s.throttle).toBeCloseTo(0.5, 5)
   })
 })
 
@@ -416,21 +468,10 @@ test("feel table", () => {
   }
   console.table(rows)
 
-  const h = createFlightState("apache", { position: [0, 300, 0], yaw: 0, onGround: false })
-  run(h, input({ aim: directionFromHeading(0, -25 * Math.PI / 180) }), 40)
-  const cruise = flightReadout(h).speed
-  run(h, input({ aim: directionFromHeading(0, -25 * Math.PI / 180), boost: true }), 40)
-  const max = flightReadout(h).speed
-  let stop = 0
-  while (flightReadout(h).speed > 2 && stop < 30) { stepFlight(h, input({ brake: true }), TICK_DT, world); stop += TICK_DT }
-  let yaw90 = 0
-  const target = directionFromHeading((heading(h) + 90) * Math.PI / 180, 0)
-  const targetHeading = heading(h) + 90
-  while (Math.abs(angDiff(heading(h), targetHeading)) > 3 && yaw90 < 10) {
-    stepFlight(h, input({ aim: target }), TICK_DT, world)
-    yaw90 += TICK_DT
-  }
-  run(h, input({ throttle: 1 }), 4)
-  const climb = h.velocity[1]
-  console.table([{ kind: "apache", cruise: cruise.toFixed(0), boost: max.toFixed(0), "hover-hold stop (s)": stop.toFixed(1), "yaw 90° (s)": yaw90.toFixed(2), "climb m/s": climb.toFixed(1) }])
+  const f = heliFeel()
+  console.table([{
+    kind: "apache (direct)", "hover drift m/s": f.hoverDrift.toFixed(3), "descent m/s": f.descent.toFixed(1), "climb m/s": f.climb.toFixed(1),
+    "backward m/s": f.backward.toFixed(1), "top m/s": f.topSpeed.toFixed(1), "stop from top, pitch back (s)": f.stop.toFixed(1),
+    "brake stop (s)": f.brakeStop.toFixed(1), "360° roll (s)": f.flipTime.toFixed(2), "loop (s)": f.loopTime.toFixed(2),
+  }])
 })

@@ -123,8 +123,8 @@ class GameSession implements GameHandle {
   private pause
   private hudFrame: HudFrame
   private weaponsBuf: HudWeapon[] = [
-    { id: "cannon20", ammo: 0, ready: 1, lock: 0, locked: false },
-    { id: "cannon20", ammo: 0, ready: 1, lock: 0, locked: false },
+    { id: "cannon20", ammo: 0, cap: 0, ready: 1, regen: false, lock: 0, locked: false },
+    { id: "cannon20", ammo: 0, cap: 0, ready: 1, regen: false, lock: 0, locked: false },
   ]
   private tracerColors = TEAM_COLORS.map(c => new Color(c).lerp(new Color("#ffe066"), 0.55))
   private offSettings: () => void
@@ -171,6 +171,7 @@ class GameSession implements GameHandle {
       vehicles: this.renderList, players: this.players, speed: 0, altitude: 0, heading: 0, throttle: 0, boost: false,
       protected: false, missileWarning: false, lockTarget: null, lockProgress: 0, lead: null, weapons: [], scores: [],
       teams: 2, remaining: null, intermission: false, freeLook: false, ping: 0, direct: false,
+      seekerCone: 0, seekerCenter: null, scanner: false, scannerCone: 0, scannerRange: null, guide: null, hint: null,
     }
     this.offSettings = onSettings(s => {
       deps.audio?.setMuted(s.muted)
@@ -694,7 +695,8 @@ class GameSession implements GameHandle {
         if (this.state === "flying" && !this.paused && !this.hud.chatOpen()) {
           this.paused = true
           this.input.setEnabled(false)
-          this.pause.show()
+          const mv = this.myVehicle()
+          this.pause.show(!!mv && VEHICLES[mv.kind].flight === "heli")
         }
         break
       default: break
@@ -857,6 +859,38 @@ class GameSession implements GameHandle {
     }
   }
 
+  /** Radar officer scanner: range to the target under the reticle + semi-active guidance status. */
+  private updateScanner(f: HudFrame, s: Snapshot, v: VehicleEntity, pos: Vec3, spec: (typeof WEAPONS)[keyof typeof WEAPONS]): void {
+    const aim = this.aim
+    const cone = spec.lockCone ?? 0.12
+    let best = Infinity
+    for (const o of this.renderList) {
+      if (!o.alive || o.team === v.team) continue
+      const op = this.posOfVehicle(o.id) ?? o.flight.position
+      const dx = op[0] - pos[0], dy = op[1] - pos[1], dz = op[2] - pos[2]
+      const d = Math.hypot(dx, dy, dz)
+      if (d < 1) continue
+      const c = (dx * aim[0] + dy * aim[1] + dz * aim[2]) / d
+      if (c > Math.cos(cone * 2) && d < best) best = d
+    }
+    f.scannerRange = Number.isFinite(best) ? best : null
+    for (const m of s.missiles) {
+      if (m.vehicle !== v.id || WEAPONS[m.weapon].kind !== "missile_scanner") continue
+      const speed = Math.hypot(m.velocity[0], m.velocity[1], m.velocity[2]) || spec.speed
+      const tp = m.target ? this.posOfVehicle(m.target) : null
+      let onTarget = false
+      let tti: number | null = null
+      if (tp) {
+        const dx = tp[0] - pos[0], dy = tp[1] - pos[1], dz = tp[2] - pos[2]
+        const d = Math.hypot(dx, dy, dz) || 1
+        onTarget = (dx * aim[0] + dy * aim[1] + dz * aim[2]) / d >= Math.cos(cone)
+        tti = Math.hypot(tp[0] - m.position[0], tp[1] - m.position[1], tp[2] - m.position[2]) / speed
+      }
+      f.guide = { missile: [m.position[0], m.position[1], m.position[2]], tti, lost: !onTarget }
+      break
+    }
+  }
+
   private updateHud(s: Snapshot, ownVis: Visual | undefined, est: number): void {
     const f = this.hudFrame
     const me = this.me
@@ -876,6 +910,12 @@ class GameSession implements GameHandle {
     f.lockProgress = 0
     f.missileWarning = false
     f.weapons.length = 0
+    f.seekerCone = 0
+    f.seekerCenter = null
+    f.scanner = false
+    f.scannerRange = null
+    f.guide = null
+    f.hint = null
     if (!v || !ownVis || seat === null) { this.hud.update(f); return }
 
     const pos = ownVis.pos
@@ -896,34 +936,46 @@ class GameSession implements GameHandle {
     // Weapons readout
     const kinds = VEHICLES[v.kind].seatWeapons[seat]
     const runtime = v.weapons[seat] ?? []
-    const dup = kinds[0] === kinds[1]
-    for (let i = 0; i < (dup ? 1 : 2); i++) {
-      const w = this.weaponsBuf[i]
-      w.keys = WEAPONS[kinds[i]].kind === "pulse" ? "R" : dup ? "LMB RMB" : i === 0 ? "LMB" : "RMB"
+    const dup = kinds[0] !== null && kinds[0] === kinds[1]
+    let n = 0
+    for (let i = 0; i < 2; i++) {
+      const id = kinds[i]
+      if (!id || (dup && i === 1)) continue
+      const spec = WEAPONS[id]
+      const w = this.weaponsBuf[n++]
       const rtw = runtime[i]
-      const spec = WEAPONS[kinds[i]]
-      w.id = kinds[i]
+      w.id = id
+      w.keys = spec.kind === "pulse" ? (i === 1 ? "RMB · R" : "LMB · R") : dup ? "LMB RMB" : i === 0 ? "LMB" : "RMB"
+      w.cap = spec.ammo
       w.ammo = rtw ? rtw.ammo : spec.ammo
-      const reload = spec.kind === "gun" ? 0 : 1 / spec.rate
+      const reload = spec.kind === "gun" || spec.kind === "rockets" ? 0 : 1 / spec.rate
       w.ready = !rtw || reload <= 0 ? 1 : Math.max(0, Math.min(1, 1 - (rtw.readyAt - s.time) / reload))
+      const lastShot = rtw ? rtw.readyAt - 1 / spec.rate : -Infinity
+      w.regen = spec.ammo > 0 && w.ammo < spec.ammo && s.time - lastShot > spec.refillDelay
       w.lock = rtw?.lock ?? 0
-      w.locked = (rtw?.lock ?? 0) >= 1
+      w.locked = w.lock >= 1
+      if (spec.kind === "pulse") w.ready = Math.max(0, Math.min(1, 1 - (v.abilityReadyAt - s.time) / (1 / spec.rate)))
       f.weapons.push(w)
       if (rtw?.lockTarget && rtw.lock > f.lockProgress) {
         const tp = this.posOfVehicle(rtw.lockTarget)
         if (tp) { f.lockTarget = tp; f.lockProgress = rtw.lock }
       }
+      // Seeker cone (lock-on missiles) around the boresight / seat aim.
+      if (spec.kind === "missile_lock" && spec.lockCone && w.ammo !== 0) f.seekerCone = spec.lockCone
+      if (spec.kind === "missile_scanner") {
+        f.scanner = true
+        f.scannerCone = spec.lockCone ?? 0.12
+        this.updateScanner(f, s, v, pos, spec)
+      }
     }
-    if (seat === 1 && kinds[0] === "radarpulse") {
-      const reload = 1 / WEAPONS.radarpulse.rate
-      this.weaponsBuf[0].ready = Math.max(0, Math.min(1, 1 - (v.abilityReadyAt - s.time) / reload))
-    }
+    if (n === 0) f.hint = "NO WEAPONS — FLY FOR YOUR RADAR OFFICER"
     const audio = this.deps.audio
     if (f.lockProgress >= 1) audio?.ui("locked")
     else if (f.lockProgress > 0) audio?.ui("lock-tone")
 
     // Gun lead on the best target near the boresight
-    const gun = WEAPONS[kinds[0]].kind === "gun" ? WEAPONS[kinds[0]] : WEAPONS[kinds[1]].kind === "gun" ? WEAPONS[kinds[1]] : null
+    const gunId = kinds.find(k => k && WEAPONS[k].kind === "gun") ?? null
+    const gun = gunId ? WEAPONS[gunId] : null
     if (gun) {
       let best: VehicleEntity | null = null
       let bestScore = Math.cos(0.4)
@@ -954,6 +1006,7 @@ class GameSession implements GameHandle {
       }
     }
     f.borePoint = [pos[0] + boreDir[0] * boreDist, pos[1] + boreDir[1] * boreDist, pos[2] + boreDir[2] * boreDist]
+    f.seekerCenter = f.seekerCone > 0 ? (seat === 0 ? [pos[0] + fwd[0] * 1500, pos[1] + fwd[1] * 1500, pos[2] + fwd[2] * 1500] : f.aimPoint) : null
 
     for (const m of s.missiles) if (m.target === v.id && m.team !== v.team) { f.missileWarning = true; break }
     if (f.missileWarning) audio?.ui("warning")

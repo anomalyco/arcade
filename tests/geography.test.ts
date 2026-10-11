@@ -3,7 +3,7 @@ import {
   AIRBASES, BASE_LAYOUT, CEILING, MESH_CELL, SAFE_ZONE_HEIGHT, WATER_LEVEL, WORLD_HALF, baseToWorld, groundHeight, heightBound,
   inSafeZone, onRunway, segmentHitsGround, spawnPoint, surfaceType, terrainHeight, terrainMeshHeight, worldQuery,
 } from "../src/sim/geography"
-import { buildTileIndex, generateTile } from "../src/render/world/tile-gen"
+import { generateCluster } from "../src/render/world/tile-gen"
 import type { TeamId, Vec3 } from "../src/sim/types"
 
 function rng(seed: number) {
@@ -70,26 +70,32 @@ describe("heightfield", () => {
   })
 
   test("groundHeight matches the rendered LOD0 triangles", () => {
-    // Build a mountain tile and compare interpolated triangle heights.
-    const tile = generateTile(-2, -1, 64)
-    const index = buildTileIndex(64)
+    // Central volcano cluster: every rendered (non-skirt) LOD0 face must lie on the physics surface.
+    const cx = 4, cz = 4
+    const data = generateCluster(cx, cz, 0)
     const r = rng(4)
-    const pos = tile.positions
-    let maxErr = 0
-    for (let k = 0; k < 4000; k++) {
-      const tri = Math.floor(r() * 64 * 64 * 2) * 3
-      const a = index[tri], b = index[tri + 1], c = index[tri + 2]
+    const pos = data.positions
+    const faces = pos.length / 9
+    let maxErr = 0, checked = 0
+    for (let k = 0; k < 6000; k++) {
+      const f = Math.floor(r() * faces) * 9
+      const ys = [pos[f + 1], pos[f + 4], pos[f + 7]]
+      // Skirt faces are vertical; skip them.
+      const xs = [pos[f], pos[f + 3], pos[f + 6]], zs = [pos[f + 2], pos[f + 5], pos[f + 8]]
+      const area = (xs[1] - xs[0]) * (zs[2] - zs[0]) - (xs[2] - xs[0]) * (zs[1] - zs[0])
+      if (Math.abs(area) < 1) continue
       let u = r(), v = r()
       if (u + v > 1) { u = 1 - u; v = 1 - v }
       const w = 1 - u - v
-      const lx = pos[a * 3] * w + pos[b * 3] * u + pos[c * 3] * v
-      const ly = pos[a * 3 + 1] * w + pos[b * 3 + 1] * u + pos[c * 3 + 1] * v
-      const lz = pos[a * 3 + 2] * w + pos[b * 3 + 2] * u + pos[c * 3 + 2] * v
-      const h = terrainMeshHeight(-2000 + lx, -1000 + lz)
-      maxErr = Math.max(maxErr, Math.abs(h - ly))
+      const lx = xs[0] * w + xs[1] * u + xs[2] * v
+      const ly = ys[0] * w + ys[1] * u + ys[2] * v
+      const lz = zs[0] * w + zs[1] * u + zs[2] * v
+      maxErr = Math.max(maxErr, Math.abs(terrainMeshHeight(lx, lz) - ly))
+      checked++
     }
+    expect(checked).toBeGreaterThan(3000)
     expect(maxErr).toBeLessThan(0.01)
-    expect(tile.maxY).toBeGreaterThan(100)
+    expect(data.maxY).toBeGreaterThan(1000)
   })
 
   test("groundHeight never below water and coincides with MESH_CELL grid vertices", () => {
@@ -99,7 +105,7 @@ describe("heightfield", () => {
       expect(groundHeight(x, z)).toBeGreaterThanOrEqual(WATER_LEVEL)
     }
     for (let i = 0; i < 2000; i++) {
-      const ix = Math.floor((r() * 2 - 1) * 900), iz = Math.floor((r() * 2 - 1) * 900)
+      const ix = Math.floor((r() * 2 - 1) * 450), iz = Math.floor((r() * 2 - 1) * 450)
       const x = ix * MESH_CELL, z = iz * MESH_CELL
       expect(groundHeight(x, z)).toBeCloseTo(Math.max(0, terrainHeight(x, z)), 6)
     }

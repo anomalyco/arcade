@@ -2,12 +2,14 @@ import {
   Color, DataTexture, LinearFilter, Mesh, PlaneGeometry, RedFormat, ShaderMaterial, UniformsLib, UniformsUtils, UnsignedByteType,
 } from "three"
 import { WORLD_HALF, WORLD_SIZE } from "../../sim/geography"
-import { NOISE_GLSL } from "./glsl"
-import { PALETTE } from "./settings"
+import { PALETTE } from "./palette"
 import { SHORE_MAX, SHORE_MIN, SHORE_SIZE } from "./tile-gen"
-import type { LightingUniforms } from "./terrain-material"
 
-export function createWater(lighting: LightingUniforms) {
+/**
+ * Low-poly stylised sea: three flat depth bands (turquoise shallows → water → deep) with a crisp
+ * foam line, a gentle faceted shimmer near the camera, and the scene fog. Two triangles.
+ */
+export function createWater() {
   const data = new Uint8Array(SHORE_SIZE * SHORE_SIZE) // 0 = deep until the worker fills it in
   const shore = new DataTexture(data, SHORE_SIZE, SHORE_SIZE, RedFormat, UnsignedByteType)
   shore.minFilter = LinearFilter
@@ -17,13 +19,12 @@ export function createWater(lighting: LightingUniforms) {
   const c = (hex: string) => ({ value: new Color(hex) })
   const material = new ShaderMaterial({
     name: "World · ocean",
-    toneMapped: false,
     fog: true,
+    toneMapped: false,
     uniforms: {
-      ...UniformsUtils.clone(UniformsLib.fog), ...lighting,
+      ...UniformsUtils.clone(UniformsLib.fog),
       shore: { value: shore }, time: { value: 0 },
-      deep: c(PALETTE.deepWater), mid: c(PALETTE.midWater), shallow: c(PALETTE.shallowWater), foam: c(PALETTE.foam),
-      abyss: c(PALETTE.abyss), skyHorizon: c(PALETTE.horizon), skyZenith: c(PALETTE.zenith),
+      deep: c(PALETTE.deep), water: c(PALETTE.water), shallow: c(PALETTE.shallow), foam: c(PALETTE.foam),
     },
     vertexShader: /* glsl */ `
       #include <common>
@@ -45,71 +46,40 @@ export function createWater(lighting: LightingUniforms) {
       #include <logdepthbuf_pars_fragment>
       uniform sampler2D shore;
       uniform float time;
-      uniform vec3 deep, mid, shallow, foam, abyss, skyHorizon, skyZenith;
-      uniform vec3 sunDir, sunColor, hemiSky, hemiGround;
+      uniform vec3 deep, water, shallow, foam;
       varying vec3 vWorld;
-      ${NOISE_GLSL}
-      vec2 waveGrad(vec2 p, float t) {
-        vec2 g = vec2(0.0);
-        // A handful of directional sines; derivatives give a cheap analytic normal.
-        vec4 dirsX = vec4(0.8, -0.35, 0.25, -0.9);
-        vec4 dirsZ = vec4(0.6, 0.94, -0.97, 0.3);
-        vec4 freq = vec4(0.021, 0.034, 0.057, 0.093);
-        vec4 amp = vec4(0.9, 0.55, 0.32, 0.2);
-        vec4 speed = vec4(0.9, 1.15, 1.5, 1.9);
-        for (int i = 0; i < 4; i++) {
-          vec2 d = vec2(dirsX[i], dirsZ[i]);
-          float ph = dot(d, p) * freq[i] + t * speed[i];
-          g += d * cos(ph) * freq[i] * amp[i];
-        }
-        return g;
-      }
+      float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      float band(float x, float edge) { float w = fwidth(x) * 0.75 + 1e-4; return smoothstep(edge - w, edge + w, x); }
       void main() {
         #include <logdepthbuf_fragment>
         vec2 p = vWorld.xz;
-        vec3 toEye = cameraPosition - vWorld;
-        float dist = length(toEye);
-        vec3 eye = toEye / dist;
+        float dist = length(cameraPosition - vWorld);
         vec2 uv = (p + ${WORLD_HALF.toFixed(1)}) / ${WORLD_SIZE.toFixed(1)};
         float inside = step(abs(p.x), ${WORLD_HALF.toFixed(1)}) * step(abs(p.y), ${WORLD_HALF.toFixed(1)});
         float h = texture2D(shore, uv).r * ${(SHORE_MAX - SHORE_MIN).toFixed(1)} + ${SHORE_MIN.toFixed(1)};
-        h = mix(-60.0, h, inside);
-        float depth = max(0.0, -h);
+        float depth = mix(60.0, max(0.0, -h), inside);
 
-        float detail = 1.0 - smoothstep(300.0, 3500.0, dist);
-        vec2 g = waveGrad(p, time) * detail;
-        float ripple = (wNoise(p * 0.09 + time * vec2(0.35, 0.2)) - 0.5) * 0.25 * (1.0 - smoothstep(80.0, 700.0, dist));
-        vec3 n = normalize(vec3(-g.x * 1.3 + ripple, 1.0, -g.y * 1.3 + ripple));
-
-        // Stylized depth bands: turquoise shallows → bright blue → deep.
-        vec3 col = mix(shallow, mid, smoothstep(1.0, 9.0, depth));
-        col = mix(col, deep, smoothstep(12.0, 34.0, depth));
-        // Darker sea beyond the map boundary.
+        // Hard depth bands (anti-aliased only across one pixel).
+        vec3 col = mix(shallow, water, band(depth, 5.5));
+        col = mix(col, deep, band(depth, 22.0));
+        // Foam line hugging the coast; breathes slowly.
+        float foamEdge = 0.9 + 0.35 * sin(time * 0.9 + p.x * 0.004 + p.y * 0.003);
+        col = mix(col, foam, 1.0 - band(depth, foamEdge));
+        // Slightly darker sea beyond the map boundary.
         vec2 outside = max(abs(p) - ${WORLD_HALF.toFixed(1)}, 0.0);
-        float beyond = smoothstep(0.0, 1500.0, length(outside));
-        col = mix(col, abyss, beyond * 0.85);
+        col *= 1.0 - 0.12 * smoothstep(0.0, 1200.0, length(outside));
 
-        float ndl = max(dot(n, sunDir), 0.0);
-        vec3 lit = col * (mix(hemiGround, hemiSky, 0.85) + sunColor * (0.55 + 0.45 * ndl)) * RECIPROCAL_PI;
+        // Faceted shimmer: a slowly breathing triangular lattice, fading out with distance.
+        vec2 q = p / 60.0;
+        q.x += q.y * 0.5;
+        vec2 cell = floor(q);
+        vec2 f = fract(q);
+        float tri = step(1.0, f.x + f.y);
+        float r = h21(cell * 2.0 + tri);
+        float facet = sin(time * (0.5 + r * 0.6) + r * 6.283) * 0.028;
+        col *= 1.0 + facet * (1.0 - smoothstep(300.0, 2500.0, dist));
 
-        float fres = pow(1.0 - max(dot(n, eye), 0.0), 4.0);
-        vec3 refl = mix(skyHorizon, skyZenith, clamp(reflect(-eye, n).y * 2.0, 0.0, 1.0));
-        lit = mix(lit, refl, fres * 0.6);
-
-        // Cartoon sun glints.
-        float spec = pow(max(dot(reflect(-sunDir, n), eye), 0.0), 220.0);
-        lit += sunColor * 0.25 * smoothstep(0.25, 0.6, spec);
-
-        // Shoreline foam: animated rings hugging the coast + a solid lip.
-        float shoreBand = 1.0 - smoothstep(0.0, 4.5, depth);
-        float rings = smoothstep(0.55, 0.75, sin(depth * 2.2 - time * 1.6 + wNoise(p * 0.02) * 4.0) * 0.5 + 0.5);
-        float lip = 1.0 - smoothstep(0.15, 0.9, depth);
-        float f = max(lip, rings * shoreBand * 0.8) * inside * step(0.01, h + 40.0);
-        // Scattered whitecaps in open water.
-        lit = mix(lit, foam * (hemiSky + sunColor) * RECIPROCAL_PI * 0.75, f);
-
-        gl_FragColor = vec4(lit, 1.0);
-        #include <tonemapping_fragment>
+        gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
         #include <fog_fragment>
       }
@@ -124,10 +94,9 @@ export function createWater(lighting: LightingUniforms) {
   let dirty = false, lastUpload = 0
   return {
     mesh,
-    writeRows(z0: number, z1: number, rows: Uint8Array) {
+    writeRows(z0: number, rows: Uint8Array) {
       data.set(rows, z0 * SHORE_SIZE)
       dirty = true
-      void z1
     },
     update(time: number) {
       material.uniforms.time.value = time % 3600

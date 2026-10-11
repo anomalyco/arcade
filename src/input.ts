@@ -157,14 +157,21 @@ export class Input {
     const blend = 1 - Math.exp(-dt / 0.035)
     const s = DIRECT_RAD_PER_PX * settings.sensitivity
     const inv = settings.invertY ? -1 : 1
-    const ty = this.arrowYaw() ? (this.held("ArrowRight") ? 1 : 0) - (this.held("ArrowLeft") ? 1 : 0)
-      : clamp((this.mouseX * s) / (dt * DIRECT_YAW_RATE), -1, 1)
+    const arrowsLR = (this.held("ArrowRight") ? 1 : 0) - (this.held("ArrowLeft") ? 1 : 0)
+    const qe = (this.held("KeyE") ? 1 : 0) - (this.held("KeyQ") ? 1 : 0)
+    const mouseXRate = clamp((this.mouseX * s) / (dt * DIRECT_YAW_RATE), -1, 1)
     // Arrows are inverted (Up = nose down). Mouse up (negative movementY) = nose up unless inverted.
     const tp = this.arrowPitch() ? (this.held("ArrowDown") ? 1 : 0) - (this.held("ArrowUp") ? 1 : 0)
       : clamp((-this.mouseY * inv * s) / (dt * DIRECT_PITCH_RATE), -1, 1)
-    const qe = (this.held("KeyE") ? 1 : 0) - (this.held("KeyQ") ? 1 : 0)
-    const ad = (this.held("KeyD") ? 1 : 0) - (this.held("KeyA") ? 1 : 0)
-    const tr = heli ? clamp(ad + qe, -1, 1) : qe
+    let ty: number, tr: number
+    if (heli) {
+      // Battlefield-style: mouse X = cyclic roll, arrows L/R = pedals (A/D added per tick), Q/E = roll.
+      ty = arrowsLR
+      tr = qe !== 0 ? qe : mouseXRate
+    } else {
+      ty = this.arrowYaw() ? arrowsLR : mouseXRate
+      tr = qe
+    }
     this.steerYaw += (ty - this.steerYaw) * blend
     this.steerPitch += (tp - this.steerPitch) * blend
     this.steerRoll += (tr - this.steerRoll) * blend
@@ -187,7 +194,8 @@ export class Input {
     if (this.mouseMode === "direct") {
       out.aim = null
       out.pitch = this.steerPitch
-      out.yaw = heli ? this.steerYaw : clamp(this.steerYaw + ad, -1, 1)
+      // Jets: A/D rudder adds to mouse yaw. Heli: A/D are the pedals.
+      out.yaw = clamp(this.steerYaw + ad, -1, 1)
       out.roll = this.steerRoll
     } else {
       out.aim = aim

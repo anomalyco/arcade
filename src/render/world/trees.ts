@@ -1,25 +1,18 @@
 import {
-  BufferGeometry, Color, ConeGeometry, CylinderGeometry, DataTexture, Float32BufferAttribute, IcosahedronGeometry,
-  MeshToonMaterial, NearestFilter, RedFormat, SphereGeometry, Vector3,
+  BufferGeometry, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute, IcosahedronGeometry, MeshLambertMaterial,
 } from "three"
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
+import { PALETTE } from "./palette"
 
-/** Shared 3-step toon ramp for world props (trees, buildings, clouds). */
-export function createToonRamp(): DataTexture {
-  const data = new Uint8Array([90, 168, 230, 255])
-  const tex = new DataTexture(data, data.length, 1, RedFormat)
-  tex.minFilter = NearestFilter
-  tex.magFilter = NearestFilter
-  tex.generateMipmaps = false
-  tex.needsUpdate = true
-  return tex
-}
+/** White marks "use the instance colour" (foliage); anything else keeps its own palette colour. */
+const FOLIAGE = "#ffffff"
 
-/** Prepare a primitive for merging: drop uvs, bake a flat vertex color. */
-export function painted(geometry: BufferGeometry, color: string | Color, shade = 1): BufferGeometry {
+/** Prepare a primitive for merging: non-indexed, no uvs/normals (flat shading), one vertex colour. */
+export function painted(geometry: BufferGeometry, color: string | Color): BufferGeometry {
   const g = geometry.index ? geometry.toNonIndexed() : geometry
   g.deleteAttribute("uv")
-  const col = new Color(color).multiplyScalar(shade)
+  g.deleteAttribute("normal")
+  const col = new Color(color)
   const n = g.getAttribute("position").count
   const arr = new Float32Array(n * 3)
   for (let i = 0; i < n; i++) { arr[i * 3] = col.r; arr[i * 3 + 1] = col.g; arr[i * 3 + 2] = col.b }
@@ -27,7 +20,7 @@ export function painted(geometry: BufferGeometry, color: string | Color, shade =
   return g
 }
 
-function merge(parts: BufferGeometry[]): BufferGeometry {
+export function merge(parts: BufferGeometry[]): BufferGeometry {
   const g = mergeGeometries(parts, false)
   if (!g) throw new Error("merge failed")
   for (const p of parts) p.dispose()
@@ -35,108 +28,86 @@ function merge(parts: BufferGeometry[]): BufferGeometry {
   return g
 }
 
-function palm(detail: boolean): BufferGeometry {
+function palm(): BufferGeometry {
   const parts: BufferGeometry[] = []
-  const trunkCol = "#9a6b43"
-  // Gently curved trunk from stacked, offset segments.
-  const segs = detail ? 3 : 2
-  const height = 11
-  for (let i = 0; i < segs; i++) {
-    const t0 = i / segs, t1 = (i + 1) / segs
-    const seg = new CylinderGeometry(0.32 - t1 * 0.1, 0.4 - t0 * 0.1, height / segs * 1.04, detail ? 5 : 3, 1, true)
-    seg.translate(0, height * (t0 + t1) / 2, 0)
-    const bend = Math.pow((t0 + t1) / 2, 2) * 1.4
-    seg.translate(bend, 0, 0)
-    parts.push(painted(seg, trunkCol, i % 2 === 0 ? 1 : 0.88))
+  const h = 12
+  for (let i = 0; i < 2; i++) {
+    const seg = new CylinderGeometry(0.45 - i * 0.12, 0.6 - i * 0.12, h / 2 * 1.04, 5, 1, true)
+    seg.translate(i * 0.7, h * (0.25 + i * 0.5), 0)
+    parts.push(painted(seg, PALETTE.trunk))
   }
-  const top = new Vector3(1.4, height, 0)
-  // Drooping fronds: flattened, bent cones fanned around the crown.
-  const fronds = detail ? 7 : 5
-  for (let i = 0; i < fronds; i++) {
-    const a = (i / fronds) * Math.PI * 2 + 0.3
-    const leaf = new ConeGeometry(1.1, 6.2, 4, 1)
-    leaf.scale(0.22, 1, 1)
-    leaf.translate(0, 3.1, 0)
-    leaf.rotateZ(-Math.PI / 2 - 0.3) // point outward and droop
+  const top = [1.2, h, 0] as const
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.4
+    const leaf = new ConeGeometry(1.6, 7, 3, 1)
+    leaf.scale(1, 1, 0.35)
+    leaf.translate(0, 3.5, 0)
+    leaf.rotateZ(-Math.PI / 2 - 0.35)
     leaf.rotateY(a)
-    leaf.translate(top.x, top.y, top.z)
-    parts.push(painted(leaf, i % 2 === 0 ? "#3fae3c" : "#58c447"))
-  }
-  if (detail) {
-    const nut = new SphereGeometry(0.75, 5, 3)
-    nut.translate(top.x, top.y - 0.6, top.z)
-    parts.push(painted(nut, "#6b4a2a"))
+    leaf.translate(top[0], top[1], top[2])
+    parts.push(painted(leaf, FOLIAGE))
   }
   return merge(parts)
 }
 
-function broadleaf(detail: boolean): BufferGeometry {
+function round(): BufferGeometry {
   const parts: BufferGeometry[] = []
-  const trunk = new CylinderGeometry(0.35, 0.55, 5, detail ? 5 : 3, 1, true)
+  const trunk = new CylinderGeometry(0.6, 0.9, 5, 5, 1, true)
   trunk.translate(0, 2.5, 0)
-  parts.push(painted(trunk, "#7a5236"))
-  const crownCol = "#4fae47"
-  const crown = new IcosahedronGeometry(4.2, detail ? 1 : 0)
-  crown.scale(1, 0.85, 1)
-  crown.translate(0, 7.6, 0)
-  parts.push(painted(crown, crownCol))
-  if (detail) {
-    const b1 = new IcosahedronGeometry(2.8, 0)
-    b1.translate(2.4, 6.4, 0.8)
-    parts.push(painted(b1, crownCol, 0.94))
-    const b2 = new IcosahedronGeometry(2.6, 0)
-    b2.translate(-1.9, 9.6, -0.9)
-    parts.push(painted(b2, crownCol, 1.06))
-  }
+  parts.push(painted(trunk, PALETTE.trunk))
+  const crown = new IcosahedronGeometry(5.2, 0)
+  crown.scale(1, 0.9, 1)
+  crown.translate(0, 8.6, 0)
+  parts.push(painted(crown, FOLIAGE))
   return merge(parts)
 }
 
-function pine(detail: boolean): BufferGeometry {
+function cone(): BufferGeometry {
   const parts: BufferGeometry[] = []
-  const trunk = new CylinderGeometry(0.28, 0.42, 3.4, detail ? 5 : 3, 1, true)
-  trunk.translate(0, 1.7, 0)
-  parts.push(painted(trunk, "#6c4a33"))
-  const tiers = detail ? 3 : 2
-  for (let i = 0; i < tiers; i++) {
-    const r = 3.6 - i * 0.9, h = 5.2 - i * 0.6
-    const cone = new ConeGeometry(r, h, detail ? 8 : 6, 1)
-    cone.translate(0, 3.6 + i * 2.9 + h / 2, 0)
-    parts.push(painted(cone, "#2f7d45", 1 - i * 0.05))
-  }
+  const trunk = new CylinderGeometry(0.5, 0.7, 3, 5, 1, true)
+  trunk.translate(0, 1.5, 0)
+  parts.push(painted(trunk, PALETTE.trunk))
+  const c1 = new ConeGeometry(4.6, 9, 6, 1)
+  c1.translate(0, 7, 0)
+  parts.push(painted(c1, FOLIAGE))
+  const c2 = new ConeGeometry(3.3, 6.5, 6, 1)
+  c2.translate(0, 12, 0)
+  parts.push(painted(c2, FOLIAGE))
   return merge(parts)
 }
 
 export interface TreeResources {
-  detailed: BufferGeometry[]
-  simple: BufferGeometry[]
-  material: MeshToonMaterial
-  /** Distance fade uniforms (camera world position is provided by three as cameraPosition). */
+  geometries: BufferGeometry[]
+  material: MeshLambertMaterial
+  /** Distance fade window (start, end) in metres. */
   fade: { value: [number, number] }
   dispose(): void
 }
 
-export function createTreeResources(ramp: DataTexture): TreeResources {
-  const detailed = [palm(true), broadleaf(true), pine(true)]
-  const simple = [palm(false), broadleaf(false), pine(false)]
+export function createTreeResources(): TreeResources {
+  const geometries = [palm(), round(), cone()]
   const fade = { value: [2000, 2500] as [number, number] }
-  const material = new MeshToonMaterial({ vertexColors: true, gradientMap: ramp, toneMapped: false })
+  const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true, toneMapped: false })
   material.name = "World · trees"
   material.onBeforeCompile = shader => {
     shader.uniforms.treeFade = fade
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nuniform vec2 treeFade;")
+      .replace("#include <color_vertex>", /* glsl */ `#include <color_vertex>
+        #ifdef USE_INSTANCING_COLOR
+          vColor.rgb = (color.r > 0.99 && color.g > 0.99 && color.b > 0.99) ? instanceColor.rgb : color.rgb;
+        #endif`)
       .replace("#include <begin_vertex>", /* glsl */ `#include <begin_vertex>
         #ifdef USE_INSTANCING
           vec3 treeRoot = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-          float treeGrow = 1.0 - smoothstep(treeFade.x, treeFade.y, distance(treeRoot.xz, cameraPosition.xz));
-          transformed *= treeGrow;
+          transformed *= 1.0 - smoothstep(treeFade.x, treeFade.y, distance(treeRoot.xz, cameraPosition.xz));
         #endif`)
   }
-  material.customProgramCacheKey = () => "world-trees-v1"
+  material.customProgramCacheKey = () => "world-trees-lowpoly-v1"
   return {
-    detailed, simple, material, fade,
+    geometries, material, fade,
     dispose() {
-      for (const g of [...detailed, ...simple]) g.dispose()
+      for (const g of geometries) g.dispose()
       material.dispose()
     },
   }

@@ -115,30 +115,30 @@ interface HeliHandling {
 
 const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   fighter: {
-    thrust: 13, throttleRate: 0.6,
-    pitchRate: 0.55, pushFrac: 0.5, rollRate: 4.0, yawRate: 0.25,
-    pitchResponse: 7, rollResponse: 11, yawResponse: 7,
-    pitchGain: 2.2, rollGain: 3.2, yawGain: 1.6,
+    thrust: 15, throttleRate: 0.6,
+    pitchRate: 0.72, pushFrac: 0.5, rollRate: 5.2, yawRate: 0.3,
+    pitchResponse: 8.5, rollResponse: 13, yawResponse: 8.5,
+    pitchGain: 2.4, rollGain: 3.6, yawGain: 1.8,
     grip: 3.2, cornerFrac: 0.7, boostAuth: 0.82, bleed: 0.05,
     airbrake: 2.8, wheelBrake: 10, sideLift: 0.55, bankTurn: 1, stability: 0.6,
-    turnFrac: 1.05, maxAutoBank: 70 * DEG, directPush: 0.75, directPitch: 1.25,
+    turnFrac: 1.05, maxAutoBank: 75 * DEG, directPush: 0.75, directPitch: 1.25,
     maxGroundPitch: 13 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   warthog: {
-    thrust: 9, throttleRate: 0.5,
-    pitchRate: 0.5, pushFrac: 0.55, rollRate: 2.5, yawRate: 0.3,
-    pitchResponse: 5.5, rollResponse: 8, yawResponse: 5.5,
-    pitchGain: 1.6, rollGain: 2.3, yawGain: 1.6,
+    thrust: 10.5, throttleRate: 0.5,
+    pitchRate: 0.63, pushFrac: 0.55, rollRate: 3.1, yawRate: 0.35,
+    pitchResponse: 6.5, rollResponse: 9.5, yawResponse: 6.5,
+    pitchGain: 1.8, rollGain: 2.7, yawGain: 1.7,
     grip: 4, cornerFrac: 0.6, boostAuth: 0.85, bleed: 0.035,
     airbrake: 3, wheelBrake: 9, sideLift: 0.6, bankTurn: 1, stability: 0.9,
     turnFrac: 1.05, maxAutoBank: 60 * DEG, directPush: 0.75, directPitch: 1.2,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   blackbird: {
-    thrust: 15, throttleRate: 0.45,
-    pitchRate: 0.22, pushFrac: 0.5, rollRate: 1.6, yawRate: 0.1,
-    pitchResponse: 4, rollResponse: 6, yawResponse: 4,
-    pitchGain: 1.1, rollGain: 1.7, yawGain: 0.8,
+    thrust: 17, throttleRate: 0.45,
+    pitchRate: 0.255, pushFrac: 0.5, rollRate: 1.85, yawRate: 0.12,
+    pitchResponse: 4.5, rollResponse: 6.5, yawResponse: 4.5,
+    pitchGain: 1.25, rollGain: 1.9, yawGain: 0.9,
     grip: 2.2, cornerFrac: 0.6, boostAuth: 0.8, bleed: 0.05,
     airbrake: 2.5, wheelBrake: 9, sideLift: 0.5, bankTurn: 1, stability: 0.4,
     turnFrac: 1.05, maxAutoBank: 55 * DEG, directPush: 0.75, directPitch: 1.3,
@@ -155,6 +155,47 @@ const HELI: Record<"apache", HeliHandling> = {
     yawRate: 1.7, yawGain: 3, yawResponse: 7,
     cyclicGain: 1.8, dragQuad: 1.063e-3, dragLin: 0.03, dragVert: 0.6,
     grip: 0.9, gearHeight: 2,
+  },
+}
+
+interface HeliDirectHandling {
+  /** Collective change per second while W/S held; hover detent half-width and pull rate. */
+  collectiveRate: number
+  detentWidth: number
+  detentRate: number
+  /** Max body rates at full input (rad/s) and their response (1/s; also how fast they damp on release). */
+  pitchRate: number
+  rollRate: number
+  yawRate: number
+  cyclicResponse: number
+  yawResponse: number
+  /** Weak self-level (1/s) applied only within levelZone (rad) of level and with that axis released. */
+  selfLevel: number
+  levelZone: number
+  /** Horizontal share of rotor thrust multiplier, drag (horizontal quad/lin, vertical lin). */
+  cyclicGain: number
+  dragQuad: number
+  dragLin: number
+  dragVert: number
+  /** Brake (X) auto-hover: velocity→tilt gain, max tilt, attitude gain, vertical damping, collective pull. */
+  brakeGain: number
+  brakeTilt: number
+  brakeAttitudeGain: number
+  brakeVertical: number
+  brakeCollectiveRate: number
+  cushion: number
+  cushionHeight: number
+  gearHeight: number
+}
+
+const HELI_DIRECT: Record<"apache", HeliDirectHandling> = {
+  apache: {
+    collectiveRate: 1.2, detentWidth: 0.04, detentRate: 0.25,
+    pitchRate: 1.5, rollRate: 2.4, yawRate: 1.6, cyclicResponse: 8, yawResponse: 7,
+    selfLevel: 0.8, levelZone: 15 * DEG,
+    cyclicGain: 1.3, dragQuad: 8.7e-4, dragLin: 0.15, dragVert: 0.55,
+    brakeGain: 0.6, brakeTilt: 30 * DEG, brakeAttitudeGain: 3, brakeVertical: 1.5, brakeCollectiveRate: 0.8,
+    cushion: 2, cushionHeight: 8, gearHeight: 2,
   },
 }
 
@@ -269,7 +310,10 @@ export function stepFlight(state: FlightState, input: FlightInput, dt: number, w
     }
   }
 
-  if (spec.flight === "heli") stepHeli(state, input, hasAim, dt, world, spec, HELI[state.kind as "apache"])
+  if (spec.flight === "heli") {
+    if (hasAim) stepHeliAim(state, input, dt, world, HELI[state.kind as "apache"])
+    else stepHeliDirect(state, input, dt, world, HELI_DIRECT[state.kind as "apache"])
+  }
   else stepJet(state, input, hasAim, dt, world, spec, JET[state.kind as Exclude<VehicleKind, "apache">])
 }
 
@@ -381,7 +425,7 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
     if (coordinatedTurn !== 0) {
       // Axis blends world up (level turn when upright, pitch-in-bank for free) into body up at
       // knife-edge, and flips to world down when inverted so "right" stays pilot-relative.
-      const uy = U[1], wy = smoothstep(0, 0.35, Math.abs(uy)), k = 1 - wy
+      const uy = U[1], wy = smoothstep(0, 0.18, Math.abs(uy)), k = 1 - wy
       const axX = U[0] * k, axY = (uy < 0 ? -wy : wy) + U[1] * k, axZ = U[2] * k
       const n = Math.sqrt(axX * axX + axY * axY + axZ * axZ)
       if (n > 1e-6) {
@@ -461,7 +505,76 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
   checkBoundary(s, world)
 }
 
-function stepHeli(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, world: WorldQuery, spec: VehicleSpec, h: HeliHandling): void {
+/**
+ * Battlefield-style helicopter (direct mode, aim null). Rotor thrust along body up, collective set by
+ * W/S and held where left (small hover detent), cyclic pitch/roll and pedal yaw are rate commands with
+ * no angle limits. Only light help: rates damp on release and a weak self-level within ~15° of level.
+ */
+function stepHeliDirect(s: FlightState, inp: FlightInput, dt: number, world: WorldQuery, h: HeliDirectHandling): void {
+  const q = s.orientation, v = s.velocity, w = s.angularVelocity, p = s.position
+  const inCollective = axis(inp.throttle)
+  const inRoll = axis(inp.roll), inPitch = axis(inp.pitch), inYaw = axis(inp.yaw)
+  if (inCollective !== 0) s.throttle = clamp(s.throttle + inCollective * h.collectiveRate * dt, 0, 1)
+  else if (!s.onGround) {
+    const d = HOVER_COLLECTIVE - s.throttle
+    const pull = inp.brake ? h.brakeCollectiveRate : Math.abs(d) < h.detentWidth ? h.detentRate : 0
+    const step = pull * dt
+    s.throttle += d > step ? step : d < -step ? -step : d
+  }
+
+  basis(q)
+  const pitchAngle = Math.asin(clamp(F[1], -1, 1))
+  const bank = Math.atan2(-R[1], U[1])
+
+  // Body-space rate targets: x nose-up, y nose-left, z roll-left.
+  let tx = inPitch * h.pitchRate
+  let ty = -inYaw * h.yawRate
+  let tz = -inRoll * h.rollRate
+  if (inp.brake && !s.onGround) {
+    // Auto-hover assist: tilt against velocity (bounded), level otherwise.
+    const heading = Math.atan2(-F[0], -F[2])
+    const vF = v[0] * -Math.sin(heading) + v[2] * -Math.cos(heading)
+    const vR = v[0] * Math.cos(heading) + v[2] * -Math.sin(heading)
+    const pitchT = clamp(Math.atan(vF * h.brakeGain / GRAVITY), -h.brakeTilt, h.brakeTilt)
+    const bankT = clamp(Math.atan(-vR * h.brakeGain / GRAVITY), -h.brakeTilt, h.brakeTilt)
+    if (inPitch === 0) tx = clamp(h.brakeAttitudeGain * wrapAngle(pitchT - pitchAngle), -h.pitchRate, h.pitchRate)
+    if (inRoll === 0) tz = -clamp(h.brakeAttitudeGain * wrapAngle(bankT - bank), -h.rollRate, h.rollRate)
+  } else {
+    if (inPitch === 0 && Math.abs(pitchAngle) < h.levelZone) tx = -pitchAngle * h.selfLevel
+    if (inRoll === 0 && Math.abs(bank) < h.levelZone && Math.abs(pitchAngle) < h.levelZone) tz = bank * h.selfLevel
+  }
+  if (s.onGround && s.throttle < 0.3) ty = 0
+  const kc = 1 - Math.exp(-h.cyclicResponse * dt)
+  w[0] += (tx - w[0]) * kc
+  w[1] += (ty - w[1]) * (1 - Math.exp(-h.yawResponse * dt))
+  w[2] += (tz - w[2]) * kc
+  integrateOrientation(q, w[0], w[1], w[2], dt)
+  basis(q)
+
+  const air = airFactor(p[1], world.ceiling)
+  const lift = GRAVITY * (s.throttle / HOVER_COLLECTIVE) * air
+  const hs = Math.sqrt(v[0] * v[0] + v[2] * v[2])
+  const hd = h.dragQuad * hs + h.dragLin
+  const ax = U[0] * lift * h.cyclicGain - v[0] * hd
+  let ay = U[1] * lift - GRAVITY - v[1] * h.dragVert
+  const az = U[2] * lift * h.cyclicGain - v[2] * hd
+  if (inp.brake) ay -= v[1] * h.brakeVertical
+  const agl = p[1] - h.gearHeight - world.groundHeight(p[0], p[2])
+  if (v[1] < 0 && agl < h.cushionHeight) ay -= v[1] * h.cushion * (1 - Math.max(agl, 0) / h.cushionHeight)
+  if (p[1] > world.ceiling) ay -= (p[1] - world.ceiling) * 0.3
+  v[0] += ax * dt; v[1] += ay * dt; v[2] += az * dt
+  if (p[1] > world.ceiling + 150 && v[1] > 0) v[1] = 0
+
+  p[0] += v[0] * dt; p[1] += v[1] * dt; p[2] += v[2] * dt
+  s.gearDown = true
+  resolveGround(s, world, true, h.gearHeight, h.gearHeight, 0, 0, 0, dt)
+  if (s.crashed) return
+  checkBoundary(s, world)
+}
+
+/** Mouse-aim helicopter (aim non-null): nose follows the aim heading/elevation with stabilized attitude. */
+function stepHeliAim(s: FlightState, inp: FlightInput, dt: number, world: WorldQuery, h: HeliHandling): void {
+  const hasAim = true
   const q = s.orientation, v = s.velocity, w = s.angularVelocity, p = s.position
   const inCollective = axis(inp.throttle)
   if (inCollective !== 0) s.throttle = clamp(s.throttle + inCollective * h.collectiveRate * dt, 0, 1)

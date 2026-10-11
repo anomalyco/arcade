@@ -121,7 +121,7 @@ function frame(now: number) {
   if (now - fpsTime > 500) { fps = frames * 1000 / (now - fpsTime); frames = 0; fpsTime = now }
   const s = world.stats(), info = renderer.info.render
   hud.textContent = `fps ${fps.toFixed(0)}  calls ${info.calls}  tris ${(info.triangles / 1000).toFixed(0)}k\n` +
-    `tiles ${s.visibleTiles}/${s.tiles} pending ${s.pending} trees ${s.trees} shore ${(s.shoreProgress * 100).toFixed(0)}%\n` +
+    `clusters ${s.visibleClusters}/${s.clusters} pending ${s.pending} trees ${s.trees} shore ${(s.shoreProgress * 100).toFixed(0)}%\n` +
     `work ${s.lastWorkMs.toFixed(2)}ms max ${s.maxWorkMs.toFixed(2)}ms ready ${world.ready()}\n` +
     `pos ${camera.position.x.toFixed(0)}, ${camera.position.y.toFixed(0)}, ${camera.position.z.toFixed(0)}`
   requestAnimationFrame(frame)

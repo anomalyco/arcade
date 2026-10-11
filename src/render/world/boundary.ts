@@ -14,6 +14,7 @@ export function createBoundary() {
   geometry.setAttribute("position", new Float32BufferAttribute(pos, 3))
   const material = new ShaderMaterial({
     name: "World · boundary haze",
+    toneMapped: false,
     transparent: true,
     depthWrite: false,
     side: DoubleSide,
@@ -42,8 +43,8 @@ export function createBoundary() {
         float along = abs(vWorld.x) > abs(vWorld.z) ? vWorld.z : vWorld.x;
         float streak = 0.6 + 0.4 * sin(along * 0.012 + sin(along * 0.0031 + time * 0.2) * 3.0 + time * 0.15);
         float height = 1.0 - smoothstep(0.0, 4500.0, vWorld.y);
-        float a = near * height * streak * 0.12;
-        gl_FragColor = vec4(vec3(0.55, 0.5, 0.85) * a, 1.0);
+        float a = near * height * streak * 0.08;
+        gl_FragColor = vec4(vec3(0.62, 0.56, 0.86) * a, 1.0);
       }
     `,
   })

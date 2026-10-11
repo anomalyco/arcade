@@ -24,7 +24,7 @@ You may add private helper types/functions inside your own files.
 | Flight physics | Flight agent | `src/sim/flight.ts`, `tests/flight.test.ts` |
 | World (sim + render) | World agent | `src/sim/geography.ts`, `src/render/world-view.ts`, `src/render/world/**`, `tests/geography.test.ts` |
 | Combat | Combat agent | `src/sim/combat.ts`, `tests/combat.test.ts` |
-| Bots | Bots agent | `src/sim/bots.ts`, `tests/bots.test.ts` |
+| Bots | (removed — out of scope) | — |
 | Server / rooms / net | Server agent | `server.ts`, `src/sim/room-engine.ts`, `src/net.ts`, `src/sim/loopback.ts`, `tests/room.test.ts` |
 | Aircraft rendering | Aircraft agent | `src/render/aircraft.ts`, `src/render/toon.ts` |
 | Audio | Audio agent | `src/audio.ts`, `public/audio/**` |

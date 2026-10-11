@@ -976,6 +976,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       if (slot === 1 && ids[0] === ids[1]) continue
       const w = vehicle.weapons[seat]?.[slot]
       const id = ids[slot]
+      if (!id) continue
       const cap = WEAPONS[id].ammo
       if (!w || !Number.isFinite(cap) || cap < 0) return g.order.length
       ammo += Math.max(0, w.ammo)

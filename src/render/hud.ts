@@ -8,7 +8,19 @@ import { AIRBASES, WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/g
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"]
 export const TEAM_NAMES = ["Cobalt", "Amber", "Emerald", "Crimson"]
 
-export interface HudWeapon { id: WeaponId; ammo: number; ready: number; lock: number; locked: boolean; keys?: string }
+export interface HudWeapon {
+  id: WeaponId
+  ammo: number
+  /** Magazine size (-1 = unlimited). */
+  cap: number
+  /** 0..1 cooldown until the next shot can fire. */
+  ready: number
+  /** Magazine is regenerating right now. */
+  regen: boolean
+  lock: number
+  locked: boolean
+  keys?: string
+}
 
 /** Per-frame HUD input. The game reuses one object and mutates it. */
 export interface HudFrame {
@@ -44,6 +56,18 @@ export interface HudFrame {
   ping: number
   /** Direct steering: no mouse-aim circle; the boresight becomes the gun pipper. */
   direct: boolean
+  /** Lock-on missile seeker cone half-angle (rad), drawn around `seekerCenter`. 0 = hidden. */
+  seekerCone: number
+  seekerCenter: Vec3 | null
+  /** Radar officer scanner reticle (drawn at aimPoint). */
+  scanner: boolean
+  scannerCone: number
+  /** Distance to the enemy under the scanner, meters. */
+  scannerRange: number | null
+  /** Scanner-guided missile in flight. */
+  guide: { missile: Vec3; tti: number | null; lost: boolean } | null
+  /** Seat hint (e.g. Blackbird pilot has no weapons). */
+  hint: string | null
 }
 
 export interface Hud {
@@ -95,6 +119,9 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-dmg"></div>
     <div class="hud-markers"></div>
     <div class="hud-lead"></div>
+    <div class="hud-seeker"></div>
+    <div class="hud-scan"><i class="c"></i><span class="r"></span></div>
+    <div class="hud-msl"><i></i><span>MSL</span></div>
     <div class="hud-lock"><i></i><b>LOCK</b></div>
     <div class="hud-bore"></div>
     <div class="hud-aim"><div class="hud-hit"></div></div>
@@ -104,6 +131,8 @@ export function createHud(parent: HTMLElement): Hud {
     </div>
     <div class="hud-center-msg"><div class="protected">PROTECTED</div><div class="warn">MISSILE</div><div class="freelook">FREE LOOK</div></div>
     <div class="hud-banner"><div class="t"></div><div class="s"></div></div>
+    <div class="hud-guide"><b></b><span></span></div>
+    <div class="hud-hint"></div>
     <div class="hud-tape left"><div class="lbl">SPD</div><div class="val">0</div><div class="unit">KM/H</div><div class="thr"><i></i></div><div class="boost">BOOST</div></div>
     <div class="hud-tape right"><div class="lbl">ALT</div><div class="val">0</div><div class="unit">M</div></div>
     <div class="hud-bottom">
@@ -124,6 +153,16 @@ export function createHud(parent: HTMLElement): Hud {
   const lead = new Slot(q(".hud-lead"))
   const lockBox = new Slot(q(".hud-lock"))
   const lockLbl = new Slot(q(".hud-lock b"))
+  const lockEl = q(".hud-lock")
+  let lockP = -1
+  const seeker = new Slot(q(".hud-seeker"))
+  const scan = new Slot(q(".hud-scan"))
+  const scanRange = new Slot(q(".hud-scan .r"))
+  const msl = new Slot(q(".hud-msl"))
+  const guide = new Slot(q(".hud-guide"))
+  const guideT = new Slot(q(".hud-guide b"))
+  const guideS = new Slot(q(".hud-guide span"))
+  const hint = new Slot(q(".hud-hint"))
   const hitEl = q(".hud-hit")
   const dmgEl = q(".hud-dmg")
   const strip = q(".hud-compass .strip")
@@ -304,8 +343,33 @@ export function createHud(parent: HTMLElement): Hud {
       if (flying && f.lockTarget && f.lockProgress > 0 && project(f.lockTarget, cam)) {
         lockBox.setTransform(tf(sx(), sy()) + ` scale(${(1.8 - f.lockProgress * 0.8).toFixed(2)})`)
         lockBox.setClass(f.lockProgress >= 1 ? "hud-lock locked" : "hud-lock")
-        lockLbl.setText(f.lockProgress >= 1 ? "LOCKED" : "LOCK")
+        lockLbl.setText(f.lockProgress >= 1 ? "LOCKED" : `LOCK ${Math.round(f.lockProgress * 100)}%`)
+        const p = Math.round(f.lockProgress * 20) / 20
+        if (p !== lockP) { lockP = p; lockEl.style.setProperty("--p", String(p)) }
       } else lockBox.setTransform(HIDDEN)
+
+      // Seeker circle: lock cone projected to pixels (radius = tan(cone) / tan(fov/2) * h/2).
+      if (flying && f.seekerCone > 0 && f.seekerCenter && project(f.seekerCenter, cam)) {
+        const r = (Math.tan(f.seekerCone) / Math.tan((cam.fov * Math.PI) / 360)) * h * 0.5
+        seeker.setTransform(tf(sx(), sy()) + ` scale(${(r / 50).toFixed(3)})`)
+      } else seeker.setTransform(HIDDEN)
+      // Scanner reticle replaces the aim circle for the radar officer.
+      if (flying && f.scanner && f.aimPoint && project(f.aimPoint, cam)) {
+        const r = (Math.tan(f.scannerCone) / Math.tan((cam.fov * Math.PI) / 360)) * h * 0.5
+        scan.setTransform(tf(sx(), sy()))
+        scan.el.style.setProperty("--r", `${Math.max(14, r).toFixed(0)}px`)
+        if (frame % 6 === 0) scanRange.setText(f.scannerRange === null ? "RNG —" : `RNG ${(f.scannerRange / 1000).toFixed(1)} km`)
+      } else scan.setTransform(HIDDEN)
+      root.classList.toggle("scanning", flying && f.scanner)
+      if (flying && f.guide) {
+        guide.setClass(f.guide.lost ? "hud-guide on lost" : "hud-guide on")
+        if (frame % 4 === 0) {
+          guideT.setText(f.guide.lost ? "GUIDANCE LOST — PUT THE SCANNER BACK ON TARGET" : "GUIDING — KEEP SCANNER ON TARGET")
+          guideS.setText(f.guide.tti === null ? "NO TARGET" : `IMPACT ${f.guide.tti.toFixed(1)} s`)
+        }
+        if (project(f.guide.missile, cam)) msl.setTransform(tf(sx(), sy())); else msl.setTransform(HIDDEN)
+      } else { guide.setClass("hud-guide"); msl.setTransform(HIDDEN) }
+      if (frame % 10 === 0) { hint.setText(flying && f.hint ? f.hint : ""); hint.setClass(flying && f.hint ? "hud-hint on" : "hud-hint") }
 
       // Target markers
       const myTeam = f.me?.team ?? -1
@@ -369,10 +433,13 @@ export function createHud(parent: HTMLElement): Hud {
           if (!wpn) { wr.row.setClass("w off"); continue }
           if (wpn.keys) wr.key.setText(wpn.keys)
           const spec = WEAPONS[wpn.id]
-          wr.row.setClass(`w${wpn.ready < 1 ? " reload" : ""}${wpn.locked ? " locked" : ""}`)
+          const unlimited = wpn.cap < 0 || wpn.ammo < 0
+          const empty = !unlimited && wpn.ammo <= 0
+          wr.row.setClass(`w${wpn.ready < 1 ? " reload" : ""}${wpn.locked ? " locked" : ""}${wpn.regen ? " regen" : ""}${empty ? " empty" : ""}`)
           wr.name.setText(spec.name.toUpperCase())
-          wr.ammo.setText(spec.kind === "pulse" ? (wpn.ready >= 1 ? "READY" : "CHARGING") : wpn.ammo < 0 || !Number.isFinite(wpn.ammo) ? "∞" : String(wpn.ammo))
-          wr.bar.setTransform(`scaleX(${Math.max(0, Math.min(1, spec.kind.startsWith("missile") && wpn.lock > 0 ? wpn.lock : wpn.ready)).toFixed(2)})`)
+          wr.ammo.setText(spec.kind === "pulse" ? (wpn.ready >= 1 ? "READY" : "CHARGING") : unlimited ? "∞" : empty ? "RELOADING" : `${wpn.ammo}/${wpn.cap}`)
+          const frac = spec.kind === "pulse" ? wpn.ready : unlimited ? 1 : wpn.ammo / Math.max(1, wpn.cap)
+          wr.bar.setTransform(`scaleX(${Math.max(0, Math.min(1, frac)).toFixed(3)})`)
         }
         if (f.remaining !== null) {
           const r = Math.max(0, Math.ceil(f.remaining))

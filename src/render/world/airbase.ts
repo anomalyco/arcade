@@ -1,226 +1,152 @@
 import {
-  AdditiveBlending, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, Group, Mesh,
-  MeshToonMaterial, PlaneGeometry, ShaderMaterial, SphereGeometry, UniformsLib, UniformsUtils, type DataTexture,
+  AdditiveBlending, BoxGeometry, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DoubleSide, Float32BufferAttribute,
+  Group, IcosahedronGeometry, Matrix4, Mesh, MeshLambertMaterial, ShaderMaterial, SphereGeometry,
 } from "three"
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
 import { AIRBASES, BASE_LAYOUT, SAFE_ZONE_HEIGHT, type Airbase } from "../../sim/geography"
-import { NOISE_GLSL } from "./glsl"
-import { TEAM_COLORS } from "./settings"
-import { LIGHTING_GLSL, type LightingUniforms } from "./terrain-material"
-import { painted } from "./trees"
+import { PALETTE, TEAM_COLORS, TEAM_PASTELS } from "./palette"
+import { merge, painted } from "./trees"
 
-// Base-local frame: the base group is rotated by heading, so local +X = right (c), local -Z = forward (a).
+// Base-local frame: local +X = right (c), local -Z = forward (a). Geometry is baked into world space.
 const L = (a: number, c: number): [number, number] => [c, -a]
 
-function runwayMaterial(lighting: LightingUniforms, team: number) {
-  return new ShaderMaterial({
-    name: "World · runway",
-    toneMapped: false,
-    fog: true,
-    uniforms: { ...UniformsUtils.clone(UniformsLib.fog), ...lighting, team: { value: new Color(TEAM_COLORS[team]) } },
-    vertexShader: /* glsl */ `
-      #include <common>
-      #include <fog_pars_vertex>
-      #include <logdepthbuf_pars_vertex>
-      varying vec2 vLocal;
-      varying vec2 vWorldXZ;
-      void main() {
-        vLocal = vec2(position.x, -position.z); // (c, a)
-        vec4 world = modelMatrix * vec4(position, 1.0);
-        vWorldXZ = world.xz;
-        vec4 mvPosition = viewMatrix * world;
-        gl_Position = projectionMatrix * mvPosition;
-        #include <logdepthbuf_vertex>
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      #include <common>
-      #include <fog_pars_fragment>
-      #include <logdepthbuf_pars_fragment>
-      uniform vec3 team;
-      varying vec2 vLocal;
-      varying vec2 vWorldXZ;
-      ${NOISE_GLSL}
-      ${LIGHTING_GLSL}
-      float box(vec2 p, vec2 lo, vec2 hi) { return step(lo.x, p.x) * step(p.x, hi.x) * step(lo.y, p.y) * step(p.y, hi.y); }
-      void main() {
-        #include <logdepthbuf_fragment>
-        float c = vLocal.x, a = vLocal.y;
-        float ac = abs(c), aa = abs(a);
-        vec3 asphalt = vec3(0.16, 0.17, 0.19) * (0.9 + 0.15 * wNoise(vWorldXZ * 0.08) + 0.06 * wNoise(vWorldXZ * 0.9));
-        // Tire marks near the touchdown zones.
-        float tz = smoothstep(700.0, 1100.0, aa) * (1.0 - smoothstep(1100.0, 1180.0, aa));
-        asphalt *= 1.0 - 0.25 * tz * smoothstep(0.55, 0.8, wNoise(vec2(c * 0.6, a * 0.02))) * (1.0 - smoothstep(4.0, 12.0, ac));
-        float paint = 0.0;
-        paint += step(26.5, ac) * step(ac, 28.0); // edge lines
-        paint += step(ac, 0.6) * step(fract(a / 60.0), 0.5) * step(aa, 1080.0); // centre dashes
-        // Threshold "piano keys".
-        float keys = step(1150.0, aa) * step(aa, 1188.0) * step(4.0, ac) * step(ac, 25.0) * step(fract((ac - 4.0) / 3.0), 0.6);
-        paint += keys;
-        // Aiming point blocks and touchdown zone bars.
-        paint += box(vec2(ac, aa), vec2(6.0, 830.0), vec2(14.0, 880.0));
-        paint += box(vec2(ac, aa), vec2(7.0, 1040.0), vec2(9.0, 1065.0)) + box(vec2(ac, aa), vec2(11.0, 1040.0), vec2(13.0, 1065.0));
-        paint += box(vec2(ac, aa), vec2(7.0, 980.0), vec2(9.0, 1000.0)) + box(vec2(ac, aa), vec2(11.0, 980.0), vec2(13.0, 1000.0));
-        paint = clamp(paint, 0.0, 1.0);
-        vec3 col = mix(asphalt, vec3(0.92), paint);
-        // Team-coloured chevrons on the start end (a < 0) before the threshold.
-        float chev = step(1188.0, aa) * step(a, 0.0) * step(fract((-a + ac * 0.8) / 8.0), 0.45) * step(ac, 25.0);
-        col = mix(col, team, chev);
-        gl_FragColor = vec4(col * worldLight(vec3(0.0, 1.0, 0.0)), 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-        #include <fog_fragment>
-      }
-    `,
-  })
+function baseMatrix(base: Airbase) {
+  return new Matrix4().makeRotationY(base.heading).setPosition(base.center[0], base.center[1], base.center[2])
 }
 
-/** Flat colored quads/discs for taxiways, aprons and helipads. */
+/** Flat colored quads/discs (pavement and paint). */
 class FlatBuilder {
   pos: number[] = []
   col: number[] = []
-  quad(a0: number, a1: number, c0: number, c1: number, y: number, color: Color) {
+  quad(a0: number, a1: number, c0: number, c1: number, y: number, color: string) {
+    const k = new Color(color)
     const [x0, z0] = L(a0, c0), [x1, z1] = L(a1, c1)
-    const p = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]
-    const tris = [0, 2, 1, 0, 3, 2]
-    // Ensure upward winding.
-    const cross = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0])
-    const order = cross > 0 ? tris : [0, 1, 2, 0, 2, 3]
-    for (const i of order) { this.pos.push(p[i][0], y, p[i][1]); this.col.push(color.r, color.g, color.b) }
+    const xs = [Math.min(x0, x1), Math.max(x0, x1)], zs = [Math.min(z0, z1), Math.max(z0, z1)]
+    // CCW seen from above (+Y).
+    const v = [[xs[0], zs[0]], [xs[0], zs[1]], [xs[1], zs[1]], [xs[0], zs[0]], [xs[1], zs[1]], [xs[1], zs[0]]]
+    for (const [x, z] of v) { this.pos.push(x, y, z); this.col.push(k.r, k.g, k.b) }
   }
-  disc(a: number, c: number, r0: number, r1: number, y: number, color: Color, seg = 28) {
+  disc(a: number, c: number, r0: number, r1: number, y: number, color: string, seg = 12) {
+    const k = new Color(color)
     const [cx, cz] = L(a, c)
     for (let i = 0; i < seg; i++) {
       const t0 = (i / seg) * Math.PI * 2, t1 = ((i + 1) / seg) * Math.PI * 2
       const o0 = [cx + Math.cos(t0) * r1, cz + Math.sin(t0) * r1], o1 = [cx + Math.cos(t1) * r1, cz + Math.sin(t1) * r1]
       const i0 = [cx + Math.cos(t0) * r0, cz + Math.sin(t0) * r0], i1 = [cx + Math.cos(t1) * r0, cz + Math.sin(t1) * r0]
-      for (const v of [i0, o1, o0, i0, i1, o1]) { this.pos.push(v[0], y, v[1]); this.col.push(color.r, color.g, color.b) }
+      for (const p of [i0, o1, o0, i0, i1, o1]) { this.pos.push(p[0], y, p[1]); this.col.push(k.r, k.g, k.b) }
     }
   }
   geometry(): BufferGeometry {
     const g = new BufferGeometry()
     g.setAttribute("position", new Float32BufferAttribute(this.pos, 3))
     g.setAttribute("color", new Float32BufferAttribute(this.col, 3))
-    const normals = new Float32Array(this.pos.length)
-    for (let i = 1; i < normals.length; i += 3) normals[i] = 1
-    g.setAttribute("normal", new Float32BufferAttribute(normals, 3))
     return g
   }
 }
 
-function pavement(): BufferGeometry {
+function pavement(team: number): BufferGeometry {
   const b = new FlatBuilder()
-  const concrete = new Color("#8e9296"), asphalt = new Color("#3a3d42"), yellow = new Color("#f2c53d"), white = new Color("#f4f4f2")
-  for (const r of BASE_LAYOUT.paved) b.quad(r.a0, r.a1, r.c0, r.c1, r.kind === "apron" ? 0.06 : 0.05, r.kind === "apron" ? concrete : asphalt)
-  // Taxiway centrelines.
-  for (const r of BASE_LAYOUT.paved) {
-    if (r.kind !== "taxiway") continue
-    const along = r.a1 - r.a0 > r.c1 - r.c0
-    if (along) { const m = (r.c0 + r.c1) / 2; b.quad(r.a0 + 12, r.a1 - 12, m - 0.4, m + 0.4, 0.09, yellow) }
-    else { const m = (r.a0 + r.a1) / 2; b.quad(m - 0.4, m + 0.4, r.c0, r.c1 - 12, 0.09, yellow) }
+  const rw = BASE_LAYOUT.runway
+  const paint = PALETTE.marking
+  // Runway slab + simple white markings.
+  b.quad(rw.a0, rw.a1, rw.c0, rw.c1, 0.06, PALETTE.paving)
+  b.quad(rw.a0 + 20, rw.a1 - 20, -28, -26.5, 0.12, paint)
+  b.quad(rw.a0 + 20, rw.a1 - 20, 26.5, 28, 0.12, paint)
+  for (let a = rw.a0 + 90; a < rw.a1 - 90; a += 60) b.quad(a, a + 30, -0.6, 0.6, 0.12, paint)
+  for (const end of [-1, 1]) {
+    const a0 = end < 0 ? rw.a0 + 12 : rw.a1 - 52
+    for (let c = -24; c <= 24; c += 4) if (Math.abs(c) > 2) b.quad(a0, a0 + 40, c - 1, c + 1, 0.12, paint)
+    const aim = end < 0 ? rw.a0 + 340 : rw.a1 - 400
+    b.quad(aim, aim + 60, -15, -7, 0.12, paint)
+    b.quad(aim, aim + 60, 7, 15, 0.12, paint)
   }
-  // Apron parking boxes.
-  for (let a = -440; a < 240; a += 70) b.quad(a, a + 1, 190, 300, 0.09, yellow)
+  // Team band across the start of the runway.
+  b.quad(rw.a0, rw.a0 + 8, rw.c0, rw.c1, 0.12, TEAM_PASTELS[team])
+  for (const r of BASE_LAYOUT.paved) b.quad(r.a0, r.a1, r.c0, r.c1, r.kind === "apron" ? 0.05 : 0.04, r.kind === "apron" ? PALETTE.paving : PALETTE.pavingDark)
   for (const [a, c] of BASE_LAYOUT.helipads) {
     const R = BASE_LAYOUT.helipadRadius
-    b.disc(a, c, 0, R, 0.1, new Color("#6d7176"))
-    b.disc(a, c, R - 1.2, R - 0.4, 0.12, yellow)
-    // "H" (legs along a, crossbar along c).
-    b.quad(a - 5, a + 5, c - 4, c - 2.6, 0.13, white)
-    b.quad(a - 5, a + 5, c + 2.6, c + 4, 0.13, white)
-    b.quad(a - 0.7, a + 0.7, c - 2.6, c + 2.6, 0.13, white)
+    b.disc(a, c, 0, R, 0.09, PALETTE.pavingDark)
+    b.disc(a, c, R - 1.4, R - 0.5, 0.12, paint)
+    b.quad(a - 5, a + 5, c - 4, c - 2.6, 0.12, paint)
+    b.quad(a - 5, a + 5, c + 2.6, c + 4, 0.12, paint)
+    b.quad(a - 0.7, a + 0.7, c - 2.6, c + 2.6, 0.12, paint)
   }
   return b.geometry()
 }
 
-/** Cartoon base buildings, merged into one vertex-coloured geometry per base. */
+/** Chunky low-poly base buildings: off-white walls, team-coloured roofs. */
 function buildings(team: number): BufferGeometry {
   const parts: BufferGeometry[] = []
-  const teamCol = TEAM_COLORS[team]
-  const put = (g: BufferGeometry, a: number, c: number, y: number, rotY = 0) => {
+  const roof = TEAM_PASTELS[team]
+  const put = (g: BufferGeometry, a: number, c: number, y: number, color: string, rotY = 0) => {
     g.rotateY(rotY)
     const [x, z] = L(a, c)
     g.translate(x, y, z)
-    return g
+    parts.push(painted(g, color))
   }
-  // Hangars: half-cylinder roofs facing the apron.
   for (let i = 0; i < 3; i++) {
     const a = -380 + i * 190
-    const roof = new CylinderGeometry(26, 26, 54, 16, 1, false, 0, Math.PI)
-    roof.rotateZ(Math.PI / 2)
-    roof.rotateY(Math.PI / 2)
-    parts.push(painted(put(roof, a, 395, 10), "#b9c2c9"))
-    const walls = new BoxGeometry(52, 10, 54)
-    parts.push(painted(put(walls, a, 395, 5), "#d8d2c4"))
-    const stripe = new CylinderGeometry(26.6, 26.6, 6, 16, 1, false, 0, Math.PI)
-    stripe.rotateZ(Math.PI / 2)
-    stripe.rotateY(Math.PI / 2)
-    parts.push(painted(put(stripe, a, 395, 10), teamCol))
-    const door = new BoxGeometry(40, 18, 1)
-    parts.push(painted(put(door, a, 367.6, 9, Math.PI / 2), "#3c4350"))
+    put(new BoxGeometry(56, 12, 58), a, 400, 6, PALETTE.offWhite)
+    // Faceted barrel roof: a 6-sided half cylinder along the hangar depth.
+    const r = new CylinderGeometry(28, 28, 58, 6, 1, false, -Math.PI / 2, Math.PI)
+    r.rotateX(Math.PI / 2)
+    r.scale(1, 0.55, 1)
+    put(r, a, 400, 12, roof, Math.PI / 2)
+    put(new BoxGeometry(1, 10, 40), a, 370.6, 6, PALETTE.glass)
   }
   // Control tower.
-  const shaft = new CylinderGeometry(4.5, 6, 30, 10)
-  parts.push(painted(put(shaft, 300, 380, 15), "#e8e1d2"))
-  const cab = new CylinderGeometry(9, 7, 7, 10)
-  parts.push(painted(put(cab, 300, 380, 33.5), "#2b4766"))
-  const cabTop = new CylinderGeometry(10, 9.2, 2.2, 10)
-  parts.push(painted(put(cabTop, 300, 380, 38), teamCol))
-  const beacon = new SphereGeometry(1.4, 8, 6)
-  parts.push(painted(put(beacon, 300, 380, 40.5), "#ff5640"))
-  const base = new BoxGeometry(22, 8, 22)
-  parts.push(painted(put(base, 300, 380, 4), "#d8d2c4"))
+  put(new CylinderGeometry(5, 6.5, 30, 6), 300, 380, 15, PALETTE.offWhite)
+  put(new CylinderGeometry(9.5, 7.5, 7, 6), 300, 380, 33.5, PALETTE.glass)
+  put(new ConeGeometry(11, 5, 6), 300, 380, 39.5, roof)
+  put(new BoxGeometry(26, 9, 22), 300, 380, 4.5, PALETTE.offWhite)
+  put(new ConeGeometry(18, 6, 4), 300, 380, 12, roof, Math.PI / 4)
+  // Little crew houses.
+  for (let i = 0; i < 4; i++) {
+    const a = -620 + i * 40
+    put(new BoxGeometry(18, 8, 14), a, 420, 4, PALETTE.offWhite)
+    const gable = new CylinderGeometry(11, 11, 15, 3, 1)
+    gable.rotateZ(Math.PI / 2)
+    gable.scale(1, 0.5, 1)
+    put(gable, a, 420, 9.5, roof)
+  }
   // Fuel tanks.
   for (let i = 0; i < 3; i++) {
-    const tank = new CylinderGeometry(8, 8, 10, 14)
-    parts.push(painted(put(tank, 380 + i * 22, 420, 5), "#eef0ee"))
-    const cap = new SphereGeometry(8, 14, 4, 0, Math.PI * 2, 0, Math.PI / 2)
-    cap.scale(1, 0.35, 1)
-    parts.push(painted(put(cap, 380 + i * 22, 420, 10), teamCol))
+    put(new CylinderGeometry(8, 8, 10, 8), 380 + i * 22, 430, 5, PALETTE.offWhite)
+    put(new ConeGeometry(8.4, 3, 8), 380 + i * 22, 430, 11.5, roof)
   }
-  // Radar dome on a stand.
-  const stand = new CylinderGeometry(1.6, 2.4, 12, 8)
-  parts.push(painted(put(stand, 680, 360, 6), "#9aa1a8"))
-  const dome = new SphereGeometry(7, 14, 10)
-  parts.push(painted(put(dome, 680, 360, 16), "#f4f2ea"))
-  // Windsock pole + sock near the threshold.
-  const pole = new CylinderGeometry(0.25, 0.3, 9, 5)
-  parts.push(painted(put(pole, -1100, -70, 4.5), "#d0d0d0"))
-  const sock = new CylinderGeometry(0.4, 1.1, 5, 8, 1, true)
+  // Radar dome.
+  put(new CylinderGeometry(2, 3, 12, 5), 690, 360, 6, PALETTE.paving)
+  put(new IcosahedronGeometry(7.5, 1), 690, 360, 17, PALETTE.offWhite)
+  // Windsock.
+  put(new CylinderGeometry(0.3, 0.35, 9, 4), -1100, -70, 4.5, PALETTE.offWhite)
+  const sock = new ConeGeometry(1.1, 5, 5, 1, true)
   sock.rotateZ(Math.PI / 2)
-  parts.push(painted(put(sock, -1100, -67, 8.6), "#ff7a2e"))
-  // Runway edge lights (small posts).
-  for (let a = -1200; a <= 1200; a += 100) for (const c of [-31.5, 31.5]) {
-    const light = new BoxGeometry(0.6, 0.7, 0.6)
-    parts.push(painted(put(light, a, c, 0.35), a === -1200 ? "#4ef06a" : a === 1200 ? "#ff4848" : "#fff6c8"))
-  }
-  const merged = mergeGeometries(parts, false)
-  for (const p of parts) p.dispose()
-  if (!merged) throw new Error("airbase merge failed")
-  return merged
+  put(sock, -1100, -67.5, 8.6, roof)
+  return merge(parts)
 }
 
-function domeMaterial(team: number) {
+function domeMaterial() {
   return new ShaderMaterial({
-    name: "World · safe zone dome",
+    name: "World · safe zone domes",
     transparent: true,
     depthWrite: false,
     side: DoubleSide,
     blending: AdditiveBlending,
-    fog: false,
-    uniforms: { color: { value: new Color(TEAM_COLORS[team]) }, strength: { value: 0.5 }, time: { value: 0 }, baseY: { value: 20 } },
+    toneMapped: false,
+    uniforms: { strength: { value: [0.5, 0.5, 0.5, 0.5] }, time: { value: 0 } },
     vertexShader: /* glsl */ `
       #include <common>
       #include <logdepthbuf_pars_vertex>
+      attribute vec3 color;
+      attribute vec3 local;
+      attribute float team;
       varying vec3 vWorld;
-      varying vec3 vNormalW;
       varying vec3 vLocal;
+      varying vec3 vColor;
+      varying float vTeam;
       void main() {
-        vLocal = position;
+        vLocal = local; vColor = color; vTeam = team;
         vec4 world = modelMatrix * vec4(position, 1.0);
         vWorld = world.xyz;
-        vNormalW = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * world;
         #include <logdepthbuf_vertex>
       }
@@ -228,97 +154,91 @@ function domeMaterial(team: number) {
     fragmentShader: /* glsl */ `
       #include <common>
       #include <logdepthbuf_pars_fragment>
-      uniform vec3 color;
-      uniform float strength, time, baseY;
+      uniform float strength[4];
+      uniform float time;
       varying vec3 vWorld;
-      varying vec3 vNormalW;
       varying vec3 vLocal;
+      varying vec3 vColor;
+      varying float vTeam;
       void main() {
         #include <logdepthbuf_fragment>
         vec3 toEye = cameraPosition - vWorld;
         float dist = length(toEye);
-        vec3 n = normalize(vNormalW);
+        vec3 n = normalize(vec3(vLocal.x, vLocal.y * ${(2200 / SAFE_ZONE_HEIGHT).toFixed(4)}, vLocal.z));
         float facing = abs(dot(n, toEye / dist));
         float rim = pow(1.0 - facing, 3.0);
-        // Thin latitude/longitude lines that slowly drift upward.
         vec3 d = normalize(vLocal);
         float lat = asin(clamp(d.y, 0.0, 1.0));
-        float lon = atan(d.z, d.x);
-        float grid = smoothstep(0.96, 1.0, sin(lat * 26.0 - time * 0.4) * 0.5 + 0.5) + smoothstep(0.985, 1.0, sin(lon * 24.0) * 0.5 + 0.5);
-        float ground = 1.0 - smoothstep(0.0, 25.0, vWorld.y - baseY);
+        float ring = smoothstep(0.97, 1.0, sin(lat * 18.0 - time * 0.3) * 0.5 + 0.5);
+        float ground = 1.0 - smoothstep(0.0, 0.015, d.y);
         float fade = 1.0 - smoothstep(6000.0, 13000.0, dist);
-        float near = smoothstep(0.0, 120.0, dist); // avoid a flash when flying through the shell
-        float a = (0.02 + rim * 0.2 + grid * 0.035 + ground * 0.3) * strength * fade * near;
-        gl_FragColor = vec4(color * a, 1.0);
+        float near = smoothstep(0.0, 120.0, dist);
+        int t = int(vTeam + 0.5);
+        float s = t == 0 ? strength[0] : t == 1 ? strength[1] : t == 2 ? strength[2] : strength[3];
+        float a = (0.015 + rim * 0.16 + ring * 0.03 + ground * 0.25) * s * fade * near;
+        gl_FragColor = vec4(vColor * a, 1.0);
       }
     `,
   })
 }
 
+function domes(): BufferGeometry {
+  const parts: BufferGeometry[] = []
+  for (const base of AIRBASES) {
+    const g = new SphereGeometry(1, 48, 16, 0, Math.PI * 2, 0, Math.PI / 2)
+    g.deleteAttribute("uv")
+    g.deleteAttribute("normal")
+    const local = g.getAttribute("position").clone()
+    g.setAttribute("local", local)
+    g.scale(base.safeRadius, SAFE_ZONE_HEIGHT, base.safeRadius)
+    g.translate(base.center[0], base.center[1] - 5, base.center[2])
+    const n = g.getAttribute("position").count
+    const col = new Color(TEAM_COLORS[base.team])
+    g.setAttribute("color", new Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => [col.r, col.g, col.b][i % 3]), 3))
+    g.setAttribute("team", new Float32BufferAttribute(new Float32Array(n).fill(base.team), 1))
+    parts.push(g)
+  }
+  const merged = merge(parts)
+  return merged
+}
+
 export interface AirbaseViews {
   root: Group
-  domes: { mesh: Mesh; material: ShaderMaterial }[]
   setHighlight(team: number | null): void
   update(time: number): void
   dispose(): void
 }
 
-export function createAirbases(lighting: LightingUniforms, ramp: DataTexture): AirbaseViews {
+/** All four airbases: 3 draw calls (pavement, buildings, domes). */
+export function createAirbases(): AirbaseViews {
   const root = new Group()
   root.name = "World · airbases"
-  const disposables: { dispose(): void }[] = []
-  const propMaterial = new MeshToonMaterial({ vertexColors: true, gradientMap: ramp, toneMapped: false })
-  propMaterial.name = "World · base props"
-  const padMaterial = new MeshToonMaterial({ vertexColors: true, gradientMap: ramp, toneMapped: false })
-  padMaterial.name = "World · pavement"
-  disposables.push(propMaterial, padMaterial)
-  const padGeometry = pavement()
-  disposables.push(padGeometry)
-  const domeGeometry = new SphereGeometry(1, 64, 24, 0, Math.PI * 2, 0, Math.PI / 2)
-  disposables.push(domeGeometry)
-  const domes: AirbaseViews["domes"] = []
-
-  for (const base of AIRBASES as Airbase[]) {
-    const g = new Group()
-    g.name = `Airbase ${base.team}`
-    g.position.set(base.center[0], base.center[1], base.center[2])
-    g.rotation.y = base.heading
-    const rw = BASE_LAYOUT.runway
-    const runwayGeo = new PlaneGeometry(rw.c1 - rw.c0, rw.a1 - rw.a0, 1, 1)
-    runwayGeo.rotateX(-Math.PI / 2)
-    const rmat = runwayMaterial(lighting, base.team)
-    const runway = new Mesh(runwayGeo, rmat)
-    runway.position.y = 0.07
-    runway.name = "runway"
-    g.add(runway)
-    disposables.push(runwayGeo, rmat)
-    const pads = new Mesh(padGeometry, padMaterial)
-    pads.name = "pavement"
-    g.add(pads)
-    const bgeo = buildings(base.team)
-    disposables.push(bgeo)
-    const b = new Mesh(bgeo, propMaterial)
-    b.name = "buildings"
-    g.add(b)
-    root.add(g)
-
-    const dmat = domeMaterial(base.team)
-    dmat.uniforms.baseY.value = base.center[1]
-    const dome = new Mesh(domeGeometry, dmat)
-    dome.name = `Safe zone ${base.team}`
-    dome.position.set(base.center[0], base.center[1] - 5, base.center[2])
-    dome.scale.set(base.safeRadius, SAFE_ZONE_HEIGHT, base.safeRadius)
-    dome.renderOrder = 5
-    root.add(dome)
-    disposables.push(dmat)
-    domes.push({ mesh: dome, material: dmat })
+  const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true, toneMapped: false })
+  material.name = "World · base props"
+  const pave: BufferGeometry[] = [], build: BufferGeometry[] = []
+  for (const base of AIRBASES) {
+    const m = baseMatrix(base)
+    pave.push(pavement(base.team).applyMatrix4(m))
+    build.push(buildings(base.team).applyMatrix4(m))
   }
+  const paveGeo = merge(pave), buildGeo = merge(build)
+  const paveMesh = new Mesh(paveGeo, material)
+  paveMesh.name = "pavement"
+  const buildMesh = new Mesh(buildGeo, material)
+  buildMesh.name = "buildings"
+  const domeGeo = domes()
+  const dmat = domeMaterial()
+  const domeMesh = new Mesh(domeGeo, dmat)
+  domeMesh.name = "Safe zones"
+  domeMesh.renderOrder = 5
+  domeMesh.frustumCulled = false
+  root.add(paveMesh, buildMesh, domeMesh)
   return {
-    root, domes,
+    root,
     setHighlight(team) {
-      domes.forEach((d, i) => { d.material.uniforms.strength.value = team === null ? 0.5 : i === team ? 1 : 0.35 })
+      dmat.uniforms.strength.value = [0, 1, 2, 3].map(i => team === null ? 0.6 : i === team ? 1.1 : 0.4)
     },
-    update(time) { for (const d of domes) d.material.uniforms.time.value = time % 1000 },
-    dispose() { for (const d of disposables) d.dispose() },
+    update(time) { dmat.uniforms.time.value = time % 1000 },
+    dispose() { paveGeo.dispose(); buildGeo.dispose(); domeGeo.dispose(); material.dispose(); dmat.dispose() },
   }
 }

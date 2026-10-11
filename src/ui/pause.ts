@@ -1,8 +1,10 @@
 import type { Quality } from "../sim/types"
 import { settings, updateSettings } from "./settings"
+import { controlsHtml } from "./spawn"
 
 export interface PauseMenu {
-  show(): void
+  /** Show the control scheme for the current aircraft (heli vs jet). */
+  show(heli?: boolean): void
   hide(): void
   visible(): boolean
   dispose(): void
@@ -32,12 +34,7 @@ export function createPauseMenu(parent: HTMLElement, actions: {
         <label class="check"><input type="checkbox" class="inv" /> Invert mouse Y</label>
         <label class="check"><input type="checkbox" class="mute" /> Mute</label>
       </div>
-      <details><summary>Controls</summary><div class="keys-mini">
-        <span><kbd>Mouse</kbd> pitch / turn</span><span><kbd>↑</kbd> nose down <kbd>↓</kbd> up</span><span><kbd>W</kbd><kbd>S</kbd> throttle</span><span><kbd>Wheel</kbd> fine throttle</span>
-        <span><kbd>Q</kbd><kbd>E</kbd> roll</span><span><kbd>A</kbd><kbd>D</kbd> rudder / strafe</span><span><kbd>LMB</kbd>/<kbd>Space</kbd> guns</span><span><kbd>RMB</kbd>/<kbd>V</kbd> missiles</span>
-        <span><kbd>Shift</kbd> boost</span><span><kbd>X</kbd> brake/hover</span><span><kbd>F</kbd> flares</span><span><kbd>R</kbd> ability</span>
-        <span><kbd>1</kbd><kbd>2</kbd> seat</span><span>hold <kbd>C</kbd> free look</span><span><kbd>T</kbd> cockpit</span><span><kbd>Tab</kbd> scores</span>
-      </div></details>
+      <details><summary>Controls</summary><div class="ctl"></div></details>
       <button class="btn danger" data-a="leave">Leave match</button>
     </div>`
   parent.appendChild(root)
@@ -73,7 +70,7 @@ export function createPauseMenu(parent: HTMLElement, actions: {
   inv.addEventListener("change", () => updateSettings({ invertY: inv.checked }))
   mute.addEventListener("change", () => updateSettings({ muted: mute.checked }))
   return {
-    show() { paint(); root.hidden = false },
+    show(heli = false) { paint(); q<HTMLElement>(".ctl").innerHTML = controlsHtml(heli); root.hidden = false },
     hide() { root.hidden = true },
     visible: () => !root.hidden,
     dispose() { root.remove() },
