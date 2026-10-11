@@ -84,43 +84,43 @@ function buildings(team: number): BufferGeometry {
     parts.push(painted(g, color))
   }
   for (let i = 0; i < 3; i++) {
-    const a = -380 + i * 190
-    put(new BoxGeometry(56, 12, 58), a, 400, 6, PALETTE.offWhite)
+    const a = -360 + i * 140
+    put(new BoxGeometry(56, 12, 58), a, 370, 6, PALETTE.offWhite)
     // Faceted barrel roof: a 6-sided half cylinder along the hangar depth.
     const r = new CylinderGeometry(28, 28, 58, 6, 1, false, -Math.PI / 2, Math.PI)
     r.rotateX(Math.PI / 2)
     r.scale(1, 0.55, 1)
-    put(r, a, 400, 12, roof, Math.PI / 2)
-    put(new BoxGeometry(1, 10, 40), a, 370.6, 6, PALETTE.glass)
+    put(r, a, 370, 12, roof, Math.PI / 2)
+    put(new BoxGeometry(1, 10, 40), a, 340.6, 6, PALETTE.glass)
   }
   // Control tower.
-  put(new CylinderGeometry(5, 6.5, 30, 6), 300, 380, 15, PALETTE.offWhite)
-  put(new CylinderGeometry(9.5, 7.5, 7, 6), 300, 380, 33.5, PALETTE.glass)
-  put(new ConeGeometry(11, 5, 6), 300, 380, 39.5, roof)
-  put(new BoxGeometry(26, 9, 22), 300, 380, 4.5, PALETTE.offWhite)
-  put(new ConeGeometry(18, 6, 4), 300, 380, 12, roof, Math.PI / 4)
+  put(new CylinderGeometry(5, 6.5, 30, 6), 110, 380, 15, PALETTE.offWhite)
+  put(new CylinderGeometry(9.5, 7.5, 7, 6), 110, 380, 33.5, PALETTE.glass)
+  put(new ConeGeometry(11, 5, 6), 110, 380, 39.5, roof)
+  put(new BoxGeometry(26, 9, 22), 110, 380, 4.5, PALETTE.offWhite)
+  put(new ConeGeometry(18, 6, 4), 110, 380, 12, roof, Math.PI / 4)
   // Little crew houses.
   for (let i = 0; i < 4; i++) {
-    const a = -620 + i * 40
-    put(new BoxGeometry(18, 8, 14), a, 420, 4, PALETTE.offWhite)
+    const a = -640 + i * 40
+    put(new BoxGeometry(18, 8, 14), a, 390, 4, PALETTE.offWhite)
     const gable = new CylinderGeometry(11, 11, 15, 3, 1)
     gable.rotateZ(Math.PI / 2)
     gable.scale(1, 0.5, 1)
-    put(gable, a, 420, 9.5, roof)
+    put(gable, a, 390, 9.5, roof)
   }
   // Fuel tanks.
   for (let i = 0; i < 3; i++) {
-    put(new CylinderGeometry(8, 8, 10, 8), 380 + i * 22, 430, 5, PALETTE.offWhite)
-    put(new ConeGeometry(8.4, 3, 8), 380 + i * 22, 430, 11.5, roof)
+    put(new CylinderGeometry(8, 8, 10, 8), 560 + i * 22, 330, 5, PALETTE.offWhite)
+    put(new ConeGeometry(8.4, 3, 8), 560 + i * 22, 330, 11.5, roof)
   }
   // Radar dome.
-  put(new CylinderGeometry(2, 3, 12, 5), 690, 360, 6, PALETTE.paving)
-  put(new IcosahedronGeometry(7.5, 1), 690, 360, 17, PALETTE.offWhite)
+  put(new CylinderGeometry(2, 3, 12, 5), 760, 380, 6, PALETTE.paving)
+  put(new IcosahedronGeometry(7.5, 1), 760, 380, 17, PALETTE.offWhite)
   // Windsock.
-  put(new CylinderGeometry(0.3, 0.35, 9, 4), -1100, -70, 4.5, PALETTE.offWhite)
+  put(new CylinderGeometry(0.3, 0.35, 9, 4), -650, -70, 4.5, PALETTE.offWhite)
   const sock = new ConeGeometry(1.1, 5, 5, 1, true)
   sock.rotateZ(Math.PI / 2)
-  put(sock, -1100, -67.5, 8.6, roof)
+  put(sock, -650, -67.5, 8.6, roof)
   return merge(parts)
 }
 
@@ -164,14 +164,14 @@ function domeMaterial() {
         #include <logdepthbuf_fragment>
         vec3 toEye = cameraPosition - vWorld;
         float dist = length(toEye);
-        vec3 n = normalize(vec3(vLocal.x, vLocal.y * ${(2200 / SAFE_ZONE_HEIGHT).toFixed(4)}, vLocal.z));
+        vec3 n = normalize(vec3(vLocal.x, vLocal.y * ${(AIRBASES[0].safeRadius / SAFE_ZONE_HEIGHT).toFixed(4)}, vLocal.z));
         float facing = abs(dot(n, toEye / dist));
         float rim = pow(1.0 - facing, 3.0);
         vec3 d = normalize(vLocal);
         float lat = asin(clamp(d.y, 0.0, 1.0));
         float ring = smoothstep(0.97, 1.0, sin(lat * 18.0 - time * 0.3) * 0.5 + 0.5);
         float ground = 1.0 - smoothstep(0.0, 0.015, d.y);
-        float fade = 1.0 - smoothstep(6000.0, 13000.0, dist);
+        float fade = 1.0 - smoothstep(5000.0, 11000.0, dist);
         float near = smoothstep(0.0, 120.0, dist);
         int t = int(vTeam + 0.5);
         float s = t == 0 ? strength[0] : t == 1 ? strength[1] : t == 2 ? strength[2] : strength[3];
@@ -182,24 +182,30 @@ function domeMaterial() {
   })
 }
 
+/** Capsule-shaped domes hugging each runway (matches inSafeZone). */
 function domes(): BufferGeometry {
   const parts: BufferGeometry[] = []
   for (const base of AIRBASES) {
-    const g = new SphereGeometry(1, 48, 16, 0, Math.PI * 2, 0, Math.PI / 2)
+    const g = new SphereGeometry(1, 48, 14, 0, Math.PI * 2, 0, Math.PI / 2)
     g.deleteAttribute("uv")
     g.deleteAttribute("normal")
     const local = g.getAttribute("position").clone()
     g.setAttribute("local", local)
-    g.scale(base.safeRadius, SAFE_ZONE_HEIGHT, base.safeRadius)
-    g.translate(base.center[0], base.center[1] - 5, base.center[2])
-    const n = g.getAttribute("position").count
+    const pos = g.getAttribute("position")
+    const half = base.runwayLength / 2
+    for (let i = 0; i < pos.count; i++) {
+      const lz = pos.getZ(i)
+      pos.setXYZ(i, pos.getX(i) * base.safeRadius, pos.getY(i) * SAFE_ZONE_HEIGHT, lz * base.safeRadius + Math.sign(Math.round(lz * 1e6)) * half)
+    }
+    g.applyMatrix4(baseMatrix(base))
+    g.translate(0, -5, 0)
+    const n = pos.count
     const col = new Color(TEAM_COLORS[base.team])
     g.setAttribute("color", new Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => [col.r, col.g, col.b][i % 3]), 3))
     g.setAttribute("team", new Float32BufferAttribute(new Float32Array(n).fill(base.team), 1))
     parts.push(g)
   }
-  const merged = merge(parts)
-  return merged
+  return merge(parts)
 }
 
 export interface AirbaseViews {

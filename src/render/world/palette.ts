@@ -2,40 +2,40 @@
 // Hex values are display (sRGB) colours; the game renders without tone mapping.
 
 export const PALETTE = {
-  // land
-  sand: "#ecdcae",
-  meadow: "#b5cf7a",
-  grass: "#8fba63",
-  forest: "#5f9a5c",
-  highland: "#a7ad7e",
-  rock: "#c2a68a",
-  rockLight: "#d6c2a8",
-  cliff: "#a08a7b",
-  snow: "#f5f2ea",
-  // trees (reuse the land greens, a touch richer so they read against the ground)
-  treeLight: "#9cc466",
-  treeMid: "#6fa85a",
-  treeDeep: "#4f8a58",
-  trunk: "#9a7458",
+  // land: bright terrace tops, slate cliffs
+  sand: "#f0dca0",
+  meadow: "#cfd66e",
+  grass: "#aecb62",
+  highland: "#93b65e",
+  ochre: "#c8b06a",
+  peak: "#e9e2cc",
+  forestFloor: "#7ea457",
+  cliff: "#667c84",
+  cliffHigh: "#8a9696",
+  seabed: "#b9c79a",
+  // trees
+  treeLight: "#8fbf55",
+  treeMid: "#5f9a4c",
+  treeDeep: "#3f7a49",
+  trunk: "#8a6a50",
   // water
-  shallow: "#93e0d2",
-  water: "#5cb0d2",
-  deep: "#3d84b8",
-  foam: "#f6f3e8",
-  // sky
-  horizon: "#e3eef0",
-  zenith: "#8fbfe2",
+  shallow: "#7ee6d6",
+  water: "#2fb3c6",
+  deep: "#1f7fa6",
+  foam: "#f4fbf6",
+  // sky / haze
+  horizon: "#d3ecea",
+  zenith: "#7dbcdc",
   // built
-  offWhite: "#f1ebdf",
-  paving: "#a9adb0",
-  pavingDark: "#8e9398",
+  offWhite: "#f3eee2",
+  paving: "#a7adb0",
+  pavingDark: "#8b9297",
   marking: "#fbf8f0",
   glass: "#4f6f86",
-  roof: "#d98b6a",
   // lights
-  sunLight: "#ffe9cc",
-  hemiSky: "#c9dcf2",
-  hemiGround: "#d9cdb0",
+  sunLight: "#fff0d8",
+  hemiSky: "#cfe4f2",
+  hemiGround: "#8d9aa0",
   // cosmic accents
   starMint: "#cdf2dc",
   auroraLilac: "#b7a6e6",

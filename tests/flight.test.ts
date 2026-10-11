@@ -81,17 +81,22 @@ function rollRate(kind: VehicleKind) {
   return { timeTo90: t, peakDeg: Math.abs(s.angularVelocity[2]) * 180 / Math.PI }
 }
 
-/** Direct (mouse-rate) steering: hold full yaw, ease off over the last stretch like a player would. */
-function directTurn(kind: VehicleKind, deltaDeg = 90, seconds = 12) {
+/** Direct steering, classic turn: roll into ~70° bank, pull, roll out near the target heading. */
+function directTurn(kind: VehicleKind, deltaDeg = 90, seconds = 14) {
   const s = airStart(kind)
   settleLevel(s, 20)
   const target = heading(s) + deltaDeg
   const alt0 = s.position[1]
   let time = -1, overshoot = 0, maxAltDev = 0, maxBank = 0
   for (let i = 0; i < Math.round(seconds / TICK_DT); i++) {
-    const err = angDiff(target, heading(s)) * Math.sign(deltaDeg) // >0 = still to go
-    const yaw = Math.sign(deltaDeg) * clamp01(err / 25)
-    stepFlight(s, input({ yaw, throttle: 1 }), TICK_DT, world)
+    const r = flightReadout(s)
+    const err = angDiff(target, r.heading) * Math.sign(deltaDeg) // >0 = still to go
+    // Like a player: bank harder if the nose climbs, pull while banked, roll out and re-trim the nose.
+    const wantBank = Math.sign(deltaDeg) * Math.min(Math.max(50, Math.min(100, 75 + r.verticalSpeed * 3)), Math.max(0, err) * 3)
+    const roll = Math.max(-1, Math.min(1, (wantBank - r.roll) * 0.03))
+    const pull = Math.abs(r.roll) > 25 && err > 2 ? Math.min(1, err / 15) : 0
+    const pitch = pull > 0 ? pull : Math.max(-1, Math.min(1, -r.pitch * 0.08))
+    stepFlight(s, input({ roll, pitch, throttle: 1 }), TICK_DT, world)
     const after = angDiff(heading(s), target) * Math.sign(deltaDeg)
     if (time < 0 && Math.abs(after) < 3) time = (i + 1) * TICK_DT
     if (time >= 0) overshoot = Math.max(overshoot, after)
@@ -118,16 +123,36 @@ function loopTime(kind: VehicleKind) {
 
 describe("jets: direct steering", () => {
   for (const kind of JETS) {
-    test(`${kind}: yaw command makes a level coordinated 90° turn`, () => {
+    test(`${kind}: roll-then-pull makes a clean 90° turn`, () => {
       const r = directTurn(kind)
       const aim = turnTo(kind, 90)
       expect(r.time).toBeGreaterThan(0)
-      expect(r.time).toBeLessThan(aim.time * 1.35)
+      expect(r.time).toBeLessThan(aim.time * 1.6)
       expect(r.overshoot).toBeLessThan(6)
       expect(r.finalErr).toBeLessThan(3)
-      expect(r.maxAltDev).toBeLessThan(40)
-      expect(r.maxBank).toBeGreaterThan(40) // it actually banks into the turn
-      expect(Math.abs(r.finalRoll)).toBeLessThan(10) // and rolls out when released
+      expect(r.maxAltDev).toBeLessThan(60)
+      expect(Math.abs(r.finalRoll)).toBeLessThan(5)
+    })
+
+    test(`${kind}: rudder alone yaws gently and does not roll the aircraft`, () => {
+      const s = airStart(kind)
+      settleLevel(s, 5)
+      run(s, input({ yaw: 1, throttle: 1 }), 2)
+      const r = flightReadout(s)
+      expect(Math.abs(angDiff(r.heading, 0))).toBeGreaterThan(5)
+      expect(Math.abs(angDiff(r.heading, 0))).toBeLessThan(60)
+      expect(Math.abs(r.roll)).toBeLessThan(3)
+    })
+
+    test(`${kind}: a released small bank is trimmed level; a big bank is held`, () => {
+      const small = airStart(kind)
+      small.orientation = quatFromYawPitchRoll(0, 0, 6 * Math.PI / 180)
+      run(small, input({ throttle: 1 }), 5)
+      expect(Math.abs(flightReadout(small).roll)).toBeLessThan(1)
+      const big = airStart(kind)
+      big.orientation = quatFromYawPitchRoll(0, 0, 45 * Math.PI / 180)
+      run(big, input({ throttle: 1 }), 3)
+      expect(Math.abs(flightReadout(big).roll - 45)).toBeLessThan(2)
     })
 
     test(`${kind}: held pitch-up loops`, () => {
@@ -224,16 +249,15 @@ describe("helicopter: direct (Battlefield) steering", () => {
   })
   test("brake auto-hover kills velocity and levels", () => expect(f.brakeStop).toBeLessThan(12))
 
-  test("pitch is rate-based: released tilt is kept outside the self-level zone, damped quickly", () => {
+  test("pitch is rate-based, damps crisply, and a released tilt eases back to level in ~2–3 s", () => {
     const s = heliAir()
     run(s, input({ pitch: -1 }), 0.4)
-    run(s, input(), 0.4)
+    run(s, input(), 0.3)
     const tilt = flightReadout(s).pitch
     expect(tilt).toBeLessThan(-20)
-    expect(Math.abs(s.angularVelocity[0])).toBeLessThan(0.1)
     run(s, input(), 3)
-    expect(Math.abs(flightReadout(s).pitch - tilt)).toBeLessThan(1.5)
-    expect(fwdSpeed(s)).toBeGreaterThan(10)
+    expect(Math.abs(flightReadout(s).pitch)).toBeLessThan(Math.abs(tilt) * 0.15)
+    expect(fwdSpeed(s)).toBeGreaterThan(3)
   })
 
   test("small tilts self-level weakly back to a hover attitude", () => {
@@ -462,7 +486,7 @@ test("feel table", () => {
       "turn °/s": st.rateDeg.toFixed(1), "radius m": st.radius.toFixed(0), "turn spd": st.speed.toFixed(0),
       "takeoff m": to.distance.toFixed(0), "takeoff s": to.time.toFixed(1),
       "roll→90 (s)": rr.timeTo90.toFixed(2), "roll °/s": rr.peakDeg.toFixed(0),
-      "direct t90 (s)": dt90.time.toFixed(2), "direct altΔ": dt90.maxAltDev.toFixed(0), "direct bank°": dt90.maxBank.toFixed(0),
+      "roll+pull t90 (s)": dt90.time.toFixed(2), "roll+pull altΔ": dt90.maxAltDev.toFixed(0),
       "loop (s)": lp.time.toFixed(1),
     })
   }

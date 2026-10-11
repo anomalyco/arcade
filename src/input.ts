@@ -1,7 +1,10 @@
 // Keyboard + mouse input.
-// Direct style (default, Daxship-like): mouse movement = smoothed steering-rate commands (aim = null).
-// Mouse-aim style (optional): mouse steers a free world-space aim direction the autopilot follows.
-// Gunner seats always aim the turret with the mouse (aim vector).
+// One control scheme for every aircraft (Battlefield PC style, "direct" mode, aim = null):
+//   W/S throttle·collective · A/D and Q/E yaw · mouse X roll · mouse Y pitch (mouse forward = nose down
+//   unless "Invert mouse Y") · arrows: Up nose down, Down nose up, Left/Right roll · Shift boost · X brake.
+// The mouse acts like a spring-centred stick: deflection ∝ recent mouse velocity, easing back to centre
+// with a short time constant once the mouse stops. Mouse-aim (optional setting) steers a world-space aim
+// direction the autopilot follows. Gunner seats always aim the turret with the mouse.
 import type { FlightInput, SeatInput, Vec3 } from "./sim/types"
 import { settings } from "./ui/settings"
 
@@ -9,22 +12,41 @@ export type InputAction = "seat1" | "seat2" | "view" | "chat" | "menu"
 export type MouseMode = "direct" | "aim"
 
 const AIM_SENS = 0.0021
-/** Direct steering: radians of commanded rotation per mouse pixel (before sensitivity); ~60% of the original 0.0018, and the expo below softens small motions further. */
-const DIRECT_RAD_PER_PX = 0.0011
-/** Expo: output = sign(x)·|x|^EXPO, so small motions give fine control and big motions still reach full rate. */
-const DIRECT_EXPO = 1.4
-/** Smoothing time constant (s) for direct steering; also the decay to zero when the mouse stops. */
-const DIRECT_SMOOTH = 0.09
-/** Per-event and per-frame mouse delta clamps (px) to stop single large deltas spiking the rate. */
-const EVENT_CLAMP = 40
-const FRAME_CLAMP = 60
-/** Nominal full-deflection rates used to normalise mouse rate commands to -1..1. */
-const DIRECT_PITCH_RATE = 1.6
-const DIRECT_YAW_RATE = 1.1
 const MAX_PITCH = 1.5
+/** Mouse speed (px/s at sensitivity 1) that gives full stick deflection. */
+export const STICK_FULL_SPEED = 900
+/** Stick time constant (s): how fast deflection follows the mouse and re-centres when it stops. */
+export const STICK_TAU = 0.06
+/** Single mouse events larger than this (px) are clamped (pointer-lock spikes). */
+const STICK_EVENT_CLAMP = 120
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
-const expo = (v: number) => Math.sign(v) * Math.pow(Math.min(1, Math.abs(v)), DIRECT_EXPO)
+
+/**
+ * Spring-centred virtual stick fed by mouse motion. Linear: deflection = mouse speed / full speed,
+ * low-passed with STICK_TAU. Held keys add a full deflection on the same axis. DOM-free (testable).
+ */
+export class SteerStick {
+  value = 0
+  private px = 0
+  feed(px: number): void {
+    if (Number.isFinite(px)) this.px += clamp(px, -STICK_EVENT_CLAMP, STICK_EVENT_CLAMP)
+  }
+  /** Advance by one frame of `seconds`; returns the deflection in [-1, 1]. */
+  sample(seconds: number, sensitivity = 1, key = 0): number {
+    const dt = clamp(Number.isFinite(seconds) ? seconds : 0, 1 / 500, 0.1)
+    const mouse = clamp((this.px / dt) * sensitivity / STICK_FULL_SPEED, -1, 1)
+    const target = clamp(mouse + key, -1, 1)
+    this.value += (target - this.value) * (1 - Math.exp(-dt / STICK_TAU))
+    if (target === 0 && Math.abs(this.value) < 1e-3) this.value = 0
+    this.px = 0
+    return this.value
+  }
+  reset(): void {
+    this.value = 0
+    this.px = 0
+  }
+}
 
 export class Input {
   aimYaw = 0
@@ -39,16 +61,13 @@ export class Input {
   /** Pointer lock refused (headless, iframe policy…): fall back to raw mouse deltas without lock. */
   lockFailed = false
   mouseMode: MouseMode = "direct"
-  /** Direct-steering axes sent to flight (−1..1): expo applied to the smoothed mouse rates. */
+  /** Direct-steering stick deflections sent to flight (−1..1). */
   steerYaw = 0
   steerPitch = 0
   steerRoll = 0
-  /** Smoothed linear rates before the expo curve. */
-  private linYaw = 0
-  private linPitch = 0
-  private linRoll = 0
-  private mouseX = 0
-  private mouseY = 0
+  private rollStick = new SteerStick()
+  private pitchStick = new SteerStick()
+  private yawStick = new SteerStick()
   private wheel = 0
   private keys = new Set<string>()
   /** Presses since the last seatInput() read, so taps shorter than one tick still register. */
@@ -157,44 +176,20 @@ export class Input {
     for (const c of codes) if (this.keys.has(c)) return true
     return false
   }
-  private arrowYaw() { return this.held("ArrowLeft") || this.held("ArrowRight") }
-  private arrowPitch() { return this.held("ArrowUp") || this.held("ArrowDown") }
+  private axis(neg: string[], pos: string[]): number {
+    return (this.held(...pos) ? 1 : 0) - (this.held(...neg) ? 1 : 0)
+  }
 
   /**
-   * Once per frame while piloting in direct mode: converts accumulated mouse motion into smoothed
-   * rate commands (Daxship-style). Held arrows own their axis.
+   * Once per frame while piloting in direct mode: turns accumulated mouse motion + held keys into stick
+   * deflections. Identical for every aircraft (`heli` is accepted for API compatibility).
    */
-  sampleSteering(seconds: number, heli: boolean): void {
-    const dt = clamp(Number.isFinite(seconds) ? seconds : 0, 1 / 240, 0.05)
-    const blend = 1 - Math.exp(-dt / DIRECT_SMOOTH)
-    const s = DIRECT_RAD_PER_PX * settings.sensitivity
-    const inv = settings.invertY ? -1 : 1
-    const arrowsLR = (this.held("ArrowRight") ? 1 : 0) - (this.held("ArrowLeft") ? 1 : 0)
-    const qe = (this.held("KeyE") ? 1 : 0) - (this.held("KeyQ") ? 1 : 0)
-    const mouseXRate = clamp((this.mouseX * s) / (dt * DIRECT_YAW_RATE), -1, 1)
-    // Arrows are inverted (Up = nose down). Mouse up (negative movementY) = nose up unless inverted.
-    const tp = this.arrowPitch() ? (this.held("ArrowDown") ? 1 : 0) - (this.held("ArrowUp") ? 1 : 0)
-      : clamp((-this.mouseY * inv * s) / (dt * DIRECT_PITCH_RATE), -1, 1)
-    let ty: number, tr: number
-    if (heli) {
-      // Battlefield-style: mouse X = cyclic roll, arrows L/R = pedals (A/D added per tick), Q/E = roll.
-      ty = arrowsLR
-      tr = qe !== 0 ? qe : mouseXRate
-    } else {
-      ty = this.arrowYaw() ? arrowsLR : mouseXRate
-      tr = qe
-    }
-    // Smooth the linear rate first (sparse mouse events average out, decays smoothly to 0 when the
-    // mouse stops), then shape it: keys stay linear (full deflection = 1), mouse gets the expo curve.
-    this.linYaw += (ty - this.linYaw) * blend
-    this.linPitch += (tp - this.linPitch) * blend
-    this.linRoll += (tr - this.linRoll) * blend
-    const dz = (v: number) => (Math.abs(v) < 2e-3 ? 0 : v)
-    this.linYaw = dz(this.linYaw); this.linPitch = dz(this.linPitch); this.linRoll = dz(this.linRoll)
-    this.steerYaw = expo(this.linYaw)
-    this.steerPitch = expo(this.linPitch)
-    this.steerRoll = expo(this.linRoll)
-    this.mouseX = this.mouseY = 0
+  sampleSteering(seconds: number, heli = false): void {
+    const sens = settings.sensitivity
+    this.steerRoll = this.rollStick.sample(seconds, sens, this.axis(["ArrowLeft"], ["ArrowRight"]))
+    // Arrows: Up = nose down, Down = nose up (pitch +1 = nose up).
+    this.steerPitch = this.pitchStick.sample(seconds, sens, this.axis(["ArrowUp"], ["ArrowDown"]))
+    this.steerYaw = this.yawStick.sample(seconds, sens, clamp(this.axis(["KeyA", "KeyQ"], ["KeyD", "KeyE"]), -1, 1))
   }
 
   /**
@@ -202,24 +197,20 @@ export class Input {
    * (e.g. wheel fine-throttle pulses) when non-null.
    */
   flightInput(aim: Vec3 | null, heli: boolean, throttleAxis: number | null, out: FlightInput): FlightInput {
-    const ws = (this.held("KeyW") ? 1 : 0) - (this.held("KeyS") ? 1 : 0)
+    const ws = this.axis(["KeyS"], ["KeyW"])
     out.throttle = ws !== 0 || throttleAxis === null ? ws : throttleAxis
     out.boost = this.held("ShiftLeft", "ShiftRight")
     out.brake = this.down("KeyX")
-    const ad = (this.held("KeyD") ? 1 : 0) - (this.held("KeyA") ? 1 : 0)
     if (this.mouseMode === "direct") {
       out.aim = null
       out.pitch = this.steerPitch
-      // Jets: A/D rudder adds to mouse yaw. Heli: A/D are the pedals.
-      out.yaw = clamp(this.steerYaw + ad, -1, 1)
+      out.yaw = this.steerYaw
       out.roll = this.steerRoll
     } else {
       out.aim = aim
-      const qe = (this.held("KeyE") ? 1 : 0) - (this.held("KeyQ") ? 1 : 0)
-      out.pitch = (this.held("ArrowDown") ? 1 : 0) - (this.held("ArrowUp") ? 1 : 0)
-      const arrowsYaw = (this.held("ArrowRight") ? 1 : 0) - (this.held("ArrowLeft") ? 1 : 0)
-      out.yaw = heli ? arrowsYaw : clamp(arrowsYaw + ad, -1, 1)
-      out.roll = heli ? clamp(ad + qe, -1, 1) : qe
+      out.pitch = this.axis(["ArrowUp"], ["ArrowDown"])
+      out.yaw = clamp(this.axis(["KeyA", "KeyQ"], ["KeyD", "KeyE"]), -1, 1)
+      out.roll = this.axis(["ArrowLeft"], ["ArrowRight"])
     }
     return out
   }
@@ -245,9 +236,8 @@ export class Input {
     this.latched.clear()
     this.mouseL = this.mouseR = false
     this.zoomHeld = false
-    this.mouseX = this.mouseY = 0
     this.steerYaw = this.steerPitch = this.steerRoll = 0
-    this.linYaw = this.linPitch = this.linRoll = 0
+    this.rollStick.reset(); this.pitchStick.reset(); this.yawStick.reset()
     this.freeLook = false
     this.lookYaw = this.lookPitch = 0
   }
@@ -270,10 +260,6 @@ export class Input {
       if (e.repeat) return
       this.keys.add(code)
       this.latched.add(code)
-      if (code.startsWith("Arrow")) {
-        if (this.arrowYaw()) this.mouseX = 0
-        if (this.arrowPitch()) this.mouseY = 0
-      }
       switch (code) {
         case "Digit1": this.actions.push("seat1"); break
         case "Digit2": this.actions.push("seat2"); break
@@ -301,9 +287,10 @@ export class Input {
       this.aimYaw -= dx * s
       this.aimPitch = clamp(this.aimPitch - dy * inv * s, -MAX_PITCH, MAX_PITCH)
     } else {
-      // Bounded accumulation (no destination to chase), consumed by sampleSteering().
-      if (!this.arrowYaw()) this.mouseX = clamp(this.mouseX + clamp(dx, -EVENT_CLAMP, EVENT_CLAMP), -FRAME_CLAMP, FRAME_CLAMP)
-      if (!this.arrowPitch()) this.mouseY = clamp(this.mouseY + clamp(dy, -EVENT_CLAMP, EVENT_CLAMP), -FRAME_CLAMP, FRAME_CLAMP)
+      // Stick: mouse X = roll; mouse Y = pitch, flight-sim style by default (mouse forward, i.e. negative
+      // movementY, = nose down); "Invert mouse Y" flips it.
+      this.rollStick.feed(dx)
+      this.pitchStick.feed(settings.invertY ? -dy : dy)
     }
   }
 

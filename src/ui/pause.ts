@@ -23,19 +23,19 @@ export function createPauseMenu(parent: HTMLElement, actions: {
   root.hidden = true
   root.innerHTML = `
     <div class="panel">
-      <h2>Paused <span class="sub">the sky keeps turning</span></h2>
-      <button class="btn primary" data-a="resume">Resume <span class="k">CLICK</span></button>
-      <button class="btn" data-a="vehicle">Change aircraft / seat</button>
-      <button class="btn" data-a="invite">Copy invite link</button>
+      <h2><span class="title">Paused</span> <span class="sub">the sky keeps turning</span></h2>
+      <button class="btn primary" data-a="resume"><span class="lbl">Resume</span><span class="k">Esc</span></button>
+      <button class="btn" data-a="vehicle"><span class="lbl">Change aircraft / seat</span></button>
+      <button class="btn" data-a="invite"><span class="lbl">Copy invite link</span></button>
       <div class="opts">
         <label>Graphics <span class="seg q"><button data-q="low">Low</button><button data-q="balanced">Balanced</button><button data-q="high">High</button></span></label>
-        <label>Controls <span class="seg st"><button data-s="direct">Direct</button><button data-s="aim">Mouse-aim</button></span></label>
+        <label>Steering <span class="seg st"><button data-s="direct">Direct</button><button data-s="aim">Mouse-aim</button></span></label>
         <label>Mouse <input type="range" class="sens" min="0.2" max="3" step="0.05" /></label>
-        <label class="check"><input type="checkbox" class="inv" /> Invert mouse Y</label>
-        <label class="check"><input type="checkbox" class="mute" /> Mute</label>
+        <div class="checks"><label class="check"><input type="checkbox" class="inv" /> Invert mouse Y</label>
+        <label class="check"><input type="checkbox" class="mute" /> Mute</label></div>
       </div>
       <details><summary>Controls</summary><div class="ctl"></div></details>
-      <button class="btn danger" data-a="leave">Leave match</button>
+      <button class="btn danger" data-a="leave"><span class="lbl">Leave match</span></button>
     </div>`
   parent.appendChild(root)
   const q = <T extends HTMLElement>(s: string) => root.querySelector(s) as T

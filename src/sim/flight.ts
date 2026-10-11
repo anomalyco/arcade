@@ -2,14 +2,13 @@
 // Deterministic, dependency-free, allocation-free in the hot path. Runs identically on the client
 // (prediction) and in the Worker (authority) at a fixed 60 Hz tick.
 //
-// Input sign conventions (FlightInput):
+// Input sign conventions (FlightInput) — one scheme for every aircraft. In direct mode (aim null) the
+// axes are stick deflections in [-1, 1] and every axis commands a body rotation *rate*:
 //   throttle +1 = more throttle / collective (W), -1 = less (S)
-//   roll     +1 = roll right      (overrides auto-bank while held) / heli: strafe right
-//   pitch    +1 = nose up         (rate command; body axis, loops work)
-//   yaw      +1 = turn right      (jets, aim null: coordinated turn with auto-bank; heli: pedal right)
-//   aim      world-space unit vector the pilot wants the nose to point at (mouse-aim mode), or null for
-//            direct (mouse-rate) steering through pitch/yaw/roll.
-// Helicopter direct mode: pitch is a cyclic tilt-rate command and the tilt holds on release.
+//   roll     +1 = roll right   (heli: tilts right → slides right)
+//   pitch    +1 = nose up      (heli: nose up → slows / flies backwards)
+//   yaw      +1 = yaw right    (rudder / tail-rotor pedals)
+//   aim      optional mouse-aim mode: world-space direction the autopilot steers the nose toward.
 //
 // Body axes: nose = -Z, up = +Y, right = +X. angularVelocity is body-space, right-handed:
 //   x > 0 nose up, y > 0 nose left, z > 0 roll left.
@@ -63,11 +62,10 @@ interface JetHandling {
   sideLift: number
   /** Coordinated-turn assist: heading rate = bankTurn × g·sin(bank)/v. */
   bankTurn: number
-  /** Hands-off wings-leveling gain (1/s), only applied when roughly upright. */
+  /** Wings-leveling gain (1/s): mouse-aim hands-off, and direct-mode trim within trimZone. */
   stability: number
-  /** Direct steering: max heading rate as a fraction of pitchRate, auto-bank angle at full yaw, nose-down pitch fraction. */
-  turnFrac: number
-  maxAutoBank: number
+  /** Direct steering: bank residual (rad) trimmed toward level when hands-off, nose-down pitch fraction. */
+  trimZone: number
   directPush: number
   /** Direct steering: pitch authority multiplier over pitchRate (snappier loops than the autopilot). */
   directPitch: number
@@ -121,7 +119,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
     pitchGain: 2.4, rollGain: 3.6, yawGain: 1.8,
     grip: 3.2, cornerFrac: 0.7, boostAuth: 0.82, bleed: 0.05,
     airbrake: 2.8, wheelBrake: 10, sideLift: 0.55, bankTurn: 1, stability: 0.6,
-    turnFrac: 1.05, maxAutoBank: 75 * DEG, directPush: 0.75, directPitch: 1.25,
+    trimZone: 10 * DEG, directPush: 0.75, directPitch: 1.25,
     maxGroundPitch: 13 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   warthog: {
@@ -131,7 +129,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
     pitchGain: 1.8, rollGain: 2.7, yawGain: 1.7,
     grip: 4, cornerFrac: 0.6, boostAuth: 0.85, bleed: 0.035,
     airbrake: 3, wheelBrake: 9, sideLift: 0.6, bankTurn: 1, stability: 0.9,
-    turnFrac: 1.05, maxAutoBank: 60 * DEG, directPush: 0.75, directPitch: 1.2,
+    trimZone: 10 * DEG, directPush: 0.75, directPitch: 1.2,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   blackbird: {
@@ -141,7 +139,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
     pitchGain: 1.25, rollGain: 1.9, yawGain: 0.9,
     grip: 2.2, cornerFrac: 0.6, boostAuth: 0.8, bleed: 0.05,
     airbrake: 2.5, wheelBrake: 9, sideLift: 0.5, bankTurn: 1, stability: 0.4,
-    turnFrac: 1.05, maxAutoBank: 55 * DEG, directPush: 0.75, directPitch: 1.3,
+    trimZone: 10 * DEG, directPush: 0.75, directPitch: 1.3,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
 }
@@ -169,8 +167,10 @@ interface HeliDirectHandling {
   yawRate: number
   cyclicResponse: number
   yawResponse: number
-  /** Weak self-level (1/s) applied only within levelZone (rad) of level and with that axis released. */
+  /** Mild self-level (1/s, capped at maxLevelRate rad/s) on released axes; full within levelZone (rad),
+   *  fading to zero 30° beyond it. */
   selfLevel: number
+  maxLevelRate: number
   levelZone: number
   /** Horizontal share of rotor thrust multiplier, drag (horizontal quad/lin, vertical lin). */
   cyclicGain: number
@@ -191,9 +191,9 @@ interface HeliDirectHandling {
 const HELI_DIRECT: Record<"apache", HeliDirectHandling> = {
   apache: {
     collectiveRate: 1.2, detentWidth: 0.04, detentRate: 0.25,
-    pitchRate: 1.5, rollRate: 2.4, yawRate: 1.6, cyclicResponse: 8, yawResponse: 7,
-    selfLevel: 0.35, levelZone: 5 * DEG,
-    cyclicGain: 1.3, dragQuad: 8.7e-4, dragLin: 0.15, dragVert: 0.55,
+    pitchRate: 1.4, rollRate: 2.2, yawRate: 1.5, cyclicResponse: 12, yawResponse: 10,
+    selfLevel: 1.0, maxLevelRate: 0.5, levelZone: 40 * DEG,
+    cyclicGain: 1.3, dragQuad: 1.6e-3, dragLin: 0.08, dragVert: 0.55,
     brakeGain: 0.6, brakeTilt: 30 * DEG, brakeAttitudeGain: 3, brakeVertical: 1.5, brakeCollectiveRate: 0.8,
     cushion: 2, cushionHeight: 8, gearHeight: 2,
   },
@@ -347,8 +347,6 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
 
   // Desired rates in pilot terms: + pitch up, + yaw right, + roll right (rad/s).
   let pUp = 0, yRight = 0, rRight = 0
-  /** Direct mode: heading rate (rad/s, + right) applied about a world-up-leaning axis. */
-  let coordinatedTurn = 0
 
   if (s.onGround) {
     // Nosewheel steering + rotation.
@@ -395,21 +393,13 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
       yRight = clamp(yRight, -yawMax, yawMax)
       rRight = clamp(rRight, -rollMax, rollMax)
     } else {
-      // Direct (mouse-rate) steering. Pitch is body-axis (loops work); yaw is a coordinated turn.
+      // Direct steering (stick deflections): pitch/roll rates proportional to deflection around the
+      // body axes, gentle rudder. Turning = roll + pull. Only tiny bank residuals (<10°) are trimmed out.
       const directMax = pitchMax * h.directPitch
       pUp = inPitch * directMax * (inPitch < 0 ? h.directPush : 1)
-      const cosPitch = Math.cos(pitchAngle)
-      const absBank = Math.abs(bank)
-      if (inYaw !== 0) {
-        coordinatedTurn = inYaw * h.pitchRate * auth * h.turnFrac
-        // Auto-bank into the turn while roughly upright; inverted/knife-edge flight is left alone.
-        const upright = (1 - smoothstep(70 * DEG, 100 * DEG, absBank)) * smoothstep(0.3, 0.6, cosPitch)
-        const targetBank = inYaw * h.maxAutoBank * (0.5 + 0.5 * Math.min(auth, 1))
-        rRight = h.rollGain * (targetBank - bank) * upright
-      } else if (absBank < 60 * DEG && cosPitch > 0.5) {
-        rRight = -bank * h.stability
-      }
-      if (inRoll !== 0) rRight = inRoll * rollMax
+      yRight = inYaw * yawMax
+      rRight = inRoll * rollMax
+      if (Math.cos(pitchAngle) > 0.5) rRight -= bank * h.stability * (1 - smoothstep(0.5 * h.trimZone, h.trimZone, Math.abs(bank))) * (1 - Math.abs(inRoll))
       pUp = clamp(pUp, -directMax, directMax)
       rRight = clamp(rRight, -rollMax, rollMax)
     }
@@ -422,18 +412,6 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
     const turn = -h.bankTurn * GRAVITY * Math.sin(bank) * Math.max(0, Math.cos(pitchAngle)) * lift / Math.max(speed, stall)
     rotInto(TMP, q, 0, turn, 0, true)
     tx += TMP[0]; ty += TMP[1]; tz += TMP[2]
-    if (coordinatedTurn !== 0) {
-      // Axis blends world up (level turn when upright, pitch-in-bank for free) into body up at
-      // knife-edge, and flips to world down when inverted so "right" stays pilot-relative.
-      const uy = U[1], wy = smoothstep(0, 0.18, Math.abs(uy)), k = 1 - wy
-      const axX = U[0] * k, axY = (uy < 0 ? -wy : wy) + U[1] * k, axZ = U[2] * k
-      const n = Math.sqrt(axX * axX + axY * axY + axZ * axZ)
-      if (n > 1e-6) {
-        const m = -coordinatedTurn / n
-        rotInto(TMP, q, axX * m, axY * m, axZ * m, true)
-        tx += TMP[0]; ty += TMP[1]; tz += TMP[2]
-      }
-    }
     // Stall: nose falls toward the ground and weathervanes into the airflow.
     const unlift = 1 - lift
     if (unlift > 0) {
@@ -540,8 +518,11 @@ function stepHeliDirect(s: FlightState, inp: FlightInput, dt: number, world: Wor
     if (inPitch === 0) tx = clamp(h.brakeAttitudeGain * wrapAngle(pitchT - pitchAngle), -h.pitchRate, h.pitchRate)
     if (inRoll === 0) tz = -clamp(h.brakeAttitudeGain * wrapAngle(bankT - bank), -h.rollRate, h.rollRate)
   } else {
-    if (inPitch === 0 && Math.abs(pitchAngle) < h.levelZone) tx = -pitchAngle * h.selfLevel
-    if (inRoll === 0 && Math.abs(bank) < h.levelZone && Math.abs(pitchAngle) < h.levelZone) tz = bank * h.selfLevel
+    // Mild stability: released axes ease back toward level (fades out for big attitudes so flips stay
+    // possible). Blended by remaining stick deflection, so there's no mode switch.
+    const upright = 1 - smoothstep(h.levelZone, h.levelZone + 30 * DEG, Math.max(Math.abs(pitchAngle), Math.abs(bank)))
+    tx += clamp(-pitchAngle * h.selfLevel, -h.maxLevelRate, h.maxLevelRate) * upright * (1 - Math.abs(inPitch))
+    tz += clamp(bank * h.selfLevel, -h.maxLevelRate, h.maxLevelRate) * upright * (1 - Math.abs(inRoll))
   }
   if (s.onGround && s.throttle < 0.3) ty = 0
   const kc = 1 - Math.exp(-h.cyclicResponse * dt)

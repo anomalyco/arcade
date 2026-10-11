@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 // Renderer + scene host. Loaded lazily after the lobby has painted.
 import {
-  Color, DirectionalLight, Fog, Group, HemisphereLight, Mesh, MeshLambertMaterial, PerspectiveCamera, PlaneGeometry, Scene, WebGLRenderer,
+  BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, Fog, Group, HemisphereLight, Mesh, MeshLambertMaterial, OrthographicCamera, PerspectiveCamera,
+  PlaneGeometry, Scene, ShaderMaterial, SRGBColorSpace, UnsignedByteType, Vector2, WebGLRenderer, WebGLRenderTarget, type Camera,
 } from "three"
 import type { Quality } from "../sim/types"
 import { AIRBASES, groundHeight } from "../sim/geography"
@@ -28,6 +29,79 @@ export interface SceneHost {
   stats: FrameStats
 }
 
+/**
+ * Final grade pass (Balanced/High only): 4× MSAA scene target + one full-screen triangle doing a gentle
+ * saturation/contrast lift and a soft lilac-tinted vignette. Low renders straight to the canvas.
+ */
+const POST_FS = /* glsl */ `
+uniform sampler2D tScene;
+uniform vec2 uAspect;
+uniform float uSat;
+uniform float uContrast;
+uniform float uVignette;
+varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(tScene, vUv).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = max(mix(vec3(l), c, uSat), 0.0);
+  c = 0.18 * pow(c / 0.18 + 1e-5, vec3(uContrast));
+  vec2 d = (vUv - 0.5) * uAspect;
+  float v = smoothstep(0.42, 1.05, length(d));
+  c *= mix(vec3(1.0), vec3(0.86, 0.84, 0.94), v * uVignette);
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+}`
+
+class PostPass {
+  readonly target: WebGLRenderTarget
+  private scene = new Scene()
+  private camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  private mat: ShaderMaterial
+  private size = new Vector2()
+
+  constructor(renderer: WebGLRenderer) {
+    renderer.getDrawingBufferSize(this.size)
+    // At ≥2× pixel ratio aliasing is already small: 2× MSAA keeps the fill cost down on retina laptops.
+    this.target = new WebGLRenderTarget(this.size.x, this.size.y, { samples: renderer.getPixelRatio() >= 2 ? 2 : 4, type: UnsignedByteType, colorSpace: SRGBColorSpace, depthBuffer: true })
+    const geo = new BufferGeometry()
+    geo.setAttribute("position", new Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3))
+    geo.setAttribute("uv", new Float32BufferAttribute([0, 0, 2, 0, 0, 2], 2))
+    this.mat = new ShaderMaterial({
+      vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: POST_FS,
+      uniforms: { tScene: { value: this.target.texture }, uAspect: { value: new Vector2(1, 1) }, uSat: { value: 1.06 }, uContrast: { value: 1.03 }, uVignette: { value: 1 } },
+      depthTest: false, depthWrite: false,
+    })
+    const tri = new Mesh(geo, this.mat)
+    tri.frustumCulled = false
+    this.scene.add(tri)
+  }
+
+  resize(renderer: WebGLRenderer): void {
+    renderer.getDrawingBufferSize(this.size)
+    this.target.setSize(this.size.x, this.size.y)
+    const a = this.size.x / Math.max(1, this.size.y)
+    this.mat.uniforms.uAspect.value.set(a > 1 ? a : 1, a > 1 ? 1 : 1 / a)
+  }
+
+  set menu(on: boolean) {
+    this.mat.uniforms.uSat.value = on ? 0.98 : 1.06
+    this.mat.uniforms.uVignette.value = on ? 1.5 : 1
+  }
+
+  render(renderer: WebGLRenderer, scene: Scene, camera: Camera): void {
+    renderer.setRenderTarget(this.target)
+    renderer.render(scene, camera)
+    renderer.setRenderTarget(null)
+    renderer.render(this.scene, this.camera)
+  }
+
+  dispose(): void {
+    this.target.dispose()
+    this.mat.dispose()
+  }
+}
+
 function pixelRatio(q: Quality): number {
   const dpr = window.devicePixelRatio || 1
   return Math.min(dpr, q === "low" ? 1 : q === "balanced" ? 1.5 : 2)
@@ -36,13 +110,17 @@ function pixelRatio(q: Quality): number {
 export async function createSceneHost(canvas: HTMLCanvasElement, quality: Quality, onStatus: (s: string) => void): Promise<SceneHost> {
   const renderer = new WebGLRenderer({
     canvas,
-    antialias: quality !== "low",
+    // Balanced/High antialias through the multisampled post target instead of the default framebuffer.
+    antialias: false,
     logarithmicDepthBuffer: true,
     powerPreference: "high-performance",
     stencil: false,
   })
   renderer.setPixelRatio(pixelRatio(quality))
   renderer.setSize(window.innerWidth, window.innerHeight, false)
+  renderer.info.autoReset = false
+  let post: PostPass | null = quality === "low" ? null : new PostPass(renderer)
+  post?.resize(renderer)
 
   const scene = new Scene()
   scene.background = new Color("#0b0e1a")
@@ -102,6 +180,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
 
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false)
+    post?.resize(renderer)
     camera.aspect = window.innerWidth / Math.max(1, window.innerHeight)
     camera.updateProjectionMatrix()
   }
@@ -115,7 +194,10 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     },
     setQuality(q) {
       host.quality = q
+      post?.dispose()
+      post = null
       renderer.setPixelRatio(pixelRatio(q))
+      if (q !== "low") post = new PostPass(renderer)
       resize()
       world.setQuality(q)
       effects.setQuality(q)
@@ -139,7 +221,11 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     }
     world.update(camera.position, dt, time)
     effects.update(dt, time, camera)
-    renderer.render(scene, camera)
+    renderer.info.reset()
+    if (post) {
+      post.menu = !frameFn
+      post.render(renderer, scene, camera)
+    } else renderer.render(scene, camera)
     const t1 = performance.now()
     stats.frameMs += (t1 - now - stats.frameMs) * 0.05
     fpsFrames++
@@ -162,5 +248,10 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     }
   }
   renderer.setAnimationLoop(loop)
+  if (import.meta.env.DEV) {
+    const w = window as unknown as { __wingsHost: SceneHost; __wingsPost: (on: boolean) => void }
+    w.__wingsHost = host
+    w.__wingsPost = on => { if (!on && post) { post.dispose(); post = null } else if (on && !post) { post = new PostPass(renderer); post.resize(renderer) } }
+  }
   return host
 }

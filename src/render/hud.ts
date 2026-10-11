@@ -111,41 +111,46 @@ class Slot {
   setClass(c: string) { if (c !== this.cls) { this.cls = c; this.el.className = c } }
 }
 
-interface Marker { root: HTMLElement; label: Slot; dist: Slot; slot: Slot; tf: Slot; color: string; used: boolean }
+interface Marker { root: HTMLElement; label: Slot; glyph: Slot; dist: Slot; slot: Slot; tf: Slot; color: string; used: boolean }
+
+/** Brighter team tints for text/lines on top of the 3D scene (the raw team colours are too dark on sky). */
+const TEAM_TINTS = ["#8fb6ff", "#ffc06a", "#7fe0a0", "#ff8a80"]
+const glyph = (t: number) => `<i class="tg t${t}" style="--c:${TEAM_TINTS[t]}"></i>`
 
 export function createHud(parent: HTMLElement): Hud {
   const root = el("div", "hud", parent)
   root.innerHTML = `
     <div class="hud-dmg"></div>
+    <div class="hud-low"></div>
+    <div class="hud-warnfx"></div>
     <div class="hud-markers"></div>
     <div class="hud-lead"></div>
-    <div class="hud-seeker"></div>
-    <div class="hud-scan"><i class="c"></i><span class="r"></span></div>
+    <div class="hud-seeker"><i></i></div>
+    <div class="hud-scan"><i class="c"></i><i class="x"></i><span class="r"></span></div>
     <div class="hud-msl"><i></i><span>MSL</span></div>
-    <div class="hud-lock"><i></i><b>LOCK</b></div>
-    <div class="hud-bore"></div>
-    <div class="hud-aim"><div class="hud-hit"></div></div>
-    <div class="hud-top">
-      <div class="hud-compass"><div class="strip"></div><i class="caret"></i></div>
-      <div class="hud-score"><span class="teams"></span><span class="timer"></span></div>
+    <div class="hud-lock"><i class="ring"></i><i class="br"></i><b>LOCK</b></div>
+    <div class="hud-bore"><i></i></div>
+    <div class="hud-aim"><i></i><div class="hud-hit"><i></i><i></i><i></i><i></i></div></div>
+    <div class="hud-top z">
+      <div class="hud-compass"><div class="strip"></div><i class="caret"></i><span class="hdg">000</span></div>
+      <div class="hud-score"></div>
+      <div class="hud-center-msg"><div class="protected"><i></i>SAFE ZONE<span>weapons safe</span></div><div class="warn"><b>›</b>MISSILE<b>‹</b></div><div class="freelook">FREE LOOK</div></div>
     </div>
-    <div class="hud-center-msg"><div class="protected">PROTECTED</div><div class="warn">MISSILE</div><div class="freelook">FREE LOOK</div></div>
-    <div class="hud-banner"><div class="t"></div><div class="s"></div></div>
-    <div class="hud-guide"><b></b><span></span></div>
-    <div class="hud-hint"></div>
-    <div class="hud-tape left"><div class="lbl">SPD</div><div class="val">0</div><div class="unit">KM/H</div><div class="thr"><i></i></div><div class="boost">BOOST</div></div>
-    <div class="hud-tape right"><div class="lbl">ALT</div><div class="val">0</div><div class="unit">M</div></div>
-    <div class="hud-bottom">
-      <div class="seat"></div>
-      <div class="hp"><i></i><span></span></div>
+    <div class="hud-banner z"><div class="t"></div><div class="s"></div></div>
+    <div class="hud-guide z"><b></b><span></span></div>
+    <div class="hud-hint z"></div>
+    <div class="hud-tape left"><div class="win"><div class="ladder"></div></div><div class="box"><span class="val">0</span></div><div class="lbl">SPD <em>km/h</em></div><div class="thr"><i></i></div><div class="boost">BOOST</div></div>
+    <div class="hud-tape right"><div class="win"><div class="ladder"></div></div><div class="box"><span class="val">0</span></div><div class="lbl">ALT <em>m</em></div></div>
+    <div class="hud-bottom z">
+      <div class="seat"><span class="nm"></span><span class="flares"></span></div>
+      <div class="hp"><span class="hl">HULL</span><div class="bar"><i class="ghost"></i><i class="fill"></i></div><span class="hv"></span></div>
       <div class="weapons"></div>
-      <div class="flares"></div>
     </div>
-    <div class="hud-feed"></div>
-    <div class="hud-chat"><div class="log"></div><input maxlength="140" placeholder="Say something… (Enter to send, Esc to cancel)" /></div>
-    <canvas class="hud-map" width="180" height="180"></canvas>
-    <div class="hud-board"></div>
-    <div class="hud-ping"></div>`
+    <div class="hud-feed z"></div>
+    <div class="hud-chat z"><div class="log"></div><input maxlength="140" placeholder="Say something… (Enter to send, Esc to cancel)" /></div>
+    <div class="hud-mapwrap z"><canvas class="hud-map"></canvas><span class="n">N</span></div>
+    <div class="hud-board z"></div>
+    <div class="hud-ping z"></div>`
   const q = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector(s) as T
   const markerHost = q(".hud-markers")
   const aim = new Slot(q(".hud-aim"))
@@ -156,7 +161,9 @@ export function createHud(parent: HTMLElement): Hud {
   const lockEl = q(".hud-lock")
   let lockP = -1
   const seeker = new Slot(q(".hud-seeker"))
+  let seekerR = -1
   const scan = new Slot(q(".hud-scan"))
+  let scanR = -1
   const scanRange = new Slot(q(".hud-scan .r"))
   const msl = new Slot(q(".hud-msl"))
   const guide = new Slot(q(".hud-guide"))
@@ -167,47 +174,58 @@ export function createHud(parent: HTMLElement): Hud {
   const dmgEl = q(".hud-dmg")
   const strip = q(".hud-compass .strip")
   const stripTf = new Slot(strip)
-  const teamsEl = q(".hud-score .teams")
-  const timer = new Slot(q(".hud-score .timer"))
+  const hdg = new Slot(q(".hud-compass .hdg"))
+  const scoreEl = q(".hud-score")
+  let scoreHtml = ""
   const centerMsg = new Slot(q(".hud-center-msg"))
   const banner = q(".hud-banner")
   const spd = new Slot(q(".hud-tape.left .val"))
+  const spdLadder = new Slot(q(".hud-tape.left .ladder"))
   const thr = new Slot(q(".hud-tape.left .thr i"))
   const boostEl = new Slot(q(".hud-tape.left .boost"))
   const alt = new Slot(q(".hud-tape.right .val"))
-  const seatEl = new Slot(q(".hud-bottom .seat"))
-  const hpBar = new Slot(q(".hud-bottom .hp i"))
-  const hpTxt = new Slot(q(".hud-bottom .hp span"))
+  const altLadder = new Slot(q(".hud-tape.right .ladder"))
+  const seatEl = new Slot(q(".hud-bottom .seat .nm"))
+  const hpBar = new Slot(q(".hud-bottom .hp .fill"))
+  const hpGhost = new Slot(q(".hud-bottom .hp .ghost"))
+  const hpRow = new Slot(q(".hud-bottom .hp"))
+  const hpTxt = new Slot(q(".hud-bottom .hp .hv"))
   const weaponsEl = q(".hud-bottom .weapons")
   const flares = new Slot(q(".hud-bottom .flares"))
   const feed = q(".hud-feed")
   const chatLog = q(".hud-chat .log")
   const chatInput = q<HTMLInputElement>(".hud-chat input")
   const map = q<HTMLCanvasElement>(".hud-map")
+  const MAP_CSS = 172
+  const mapDpr = Math.min(2, window.devicePixelRatio || 1)
+  map.width = map.height = Math.round(MAP_CSS * mapDpr)
   const mapCtx = map.getContext("2d")!
   const board = q(".hud-board")
   const ping = new Slot(q(".hud-ping"))
+  let lastHpFrac = -1
+  let rootCls = ""
+  let shown = false
 
-  // Compass strip: 3 turns of labels so wrap-around is seamless.
-  const PX_PER_DEG = 4
+  // Compass strip: 3 turns of labels so wrap-around is seamless; minor ticks come from a CSS gradient.
+  const PX_PER_DEG = 3
   let stripHtml = ""
   for (let d = -360; d <= 720; d += 15) {
     const n = ((d % 360) + 360) % 360
-    const label = n === 0 ? "N" : n === 90 ? "E" : n === 180 ? "S" : n === 270 ? "W" : n % 45 === 0 ? String(n) : "·"
-    stripHtml += `<span style="left:${(d + 360) * PX_PER_DEG}px" class="${n % 90 === 0 ? "card" : ""}">${label}</span>`
+    const label = n === 0 ? "N" : n === 90 ? "E" : n === 180 ? "S" : n === 270 ? "W" : n % 45 === 0 ? (n === 45 ? "NE" : n === 135 ? "SE" : n === 225 ? "SW" : "NW") : n % 30 === 0 ? String(n / 10).padStart(2, "0") : ""
+    stripHtml += `<span style="left:${(d + 360) * PX_PER_DEG}px" class="${n % 90 === 0 ? "card" : n % 45 === 0 ? "ic" : ""}">${label}</span>`
   }
   strip.innerHTML = stripHtml
 
   const markers: Marker[] = []
   for (let i = 0; i < MARKERS; i++) {
-    const m = el("div", "mk", markerHost, `<i class="br"></i><span class="lb"></span><span class="ds"></span>`)
-    markers.push({ root: m, label: new Slot(m.querySelector(".lb")!), dist: new Slot(m.querySelector(".ds")!), slot: new Slot(m), tf: new Slot(m), color: "", used: false })
+    const m = el("div", "mk", markerHost, `<i class="br"></i><span class="lb"><i class="tg"></i><span class="nm"></span></span><span class="ds"></span>`)
+    markers.push({ root: m, label: new Slot(m.querySelector(".nm")!), glyph: new Slot(m.querySelector(".tg")!), dist: new Slot(m.querySelector(".ds")!), slot: new Slot(m), tf: new Slot(m), color: "", used: false })
   }
 
-  const weaponRows: { name: Slot; ammo: Slot; bar: Slot; row: Slot; key: Slot }[] = []
+  const weaponRows: { name: Slot; ammo: Slot; bar: Slot; row: Slot; key: Slot; full: number; wasRegen: boolean }[] = []
   for (let i = 0; i < 2; i++) {
-    const r = el("div", "w", weaponsEl, `<span class="k">${i === 0 ? "LMB" : "RMB"}</span><span class="n"></span><span class="a"></span><i></i>`)
-    weaponRows.push({ name: new Slot(r.querySelector(".n")!), ammo: new Slot(r.querySelector(".a")!), bar: new Slot(r.querySelector("i")!), row: new Slot(r), key: new Slot(r.querySelector(".k")!) })
+    const r = el("div", "w", weaponsEl, `<span class="k">${i === 0 ? "LMB" : "RMB"}</span><span class="n"></span><span class="a"></span><i class="bar"><b></b></i>`)
+    weaponRows.push({ name: new Slot(r.querySelector(".n")!), ammo: new Slot(r.querySelector(".a")!), bar: new Slot(r.querySelector(".bar b")!), row: new Slot(r), key: new Slot(r.querySelector(".k")!), full: 0, wasRegen: false })
   }
 
   const occlusion = new Map<string, { visible: boolean; at: number }>()
@@ -216,7 +234,12 @@ export function createHud(parent: HTMLElement): Hud {
   let lastMap = 0
   let lastBoard = 0
   let w = window.innerWidth, h = window.innerHeight
-  const onResize = () => { w = window.innerWidth; h = window.innerHeight }
+  const onResize = () => {
+    w = window.innerWidth; h = window.innerHeight
+    // UI chrome scales with the viewport (1.0 at 900 px tall).
+    root.style.setProperty("--k", Math.max(0.78, Math.min(1.45, Math.min(h / 900, w / 1500))).toFixed(3))
+  }
+  onResize()
   window.addEventListener("resize", onResize)
 
   const project = (p: Vec3, cam: PerspectiveCamera): boolean => {
@@ -227,6 +250,7 @@ export function createHud(parent: HTMLElement): Hud {
   const sy = () => (-_v.y * 0.5 + 0.5) * h
   const tf = (x: number, y: number) => `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`
   const HIDDEN = "translate3d(-9999px,0,0)"
+  const coneR = (cone: number, cam: PerspectiveCamera) => (Math.tan(cone) / Math.tan((cam.fov * Math.PI) / 360)) * h * 0.5
 
   let chatCb: ((t: string | null) => void) | null = null
   chatInput.addEventListener("keydown", e => {
@@ -242,20 +266,25 @@ export function createHud(parent: HTMLElement): Hud {
     cb?.(t)
   }
 
-  // Terrain backdrop for the minimap, sampled once (≈14k height queries) off the critical path.
+  // Terrain backdrop for the minimap in the world's pastel bands, sampled once off the critical path.
   let mapBg: HTMLCanvasElement | null = null
+  const BANDS: [number, number, number, number][] = [
+    [-40, 0x3d, 0x84, 0xb8], [-8, 0x5c, 0xb0, 0xd2], [0, 0x93, 0xe0, 0xd2], [14, 0xec, 0xdc, 0xae], [180, 0xb5, 0xcf, 0x7a],
+    [380, 0x8f, 0xba, 0x63], [620, 0x6f, 0xa8, 0x5a], [900, 0xc2, 0xa6, 0x8a], [1300, 0xd6, 0xc2, 0xa8], [Infinity, 0xf5, 0xf2, 0xea],
+  ]
   const buildMapBg = () => {
-    const N = 120
+    const N = 160
     const c = document.createElement("canvas")
     c.width = c.height = N
     const g = c.getContext("2d")!
     const img = g.createImageData(N, N)
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const x = ((i + 0.5) / N - 0.5) * WORLD_HALF * 2, z = ((j + 0.5) / N - 0.5) * WORLD_HALF * 2
-      const h = terrainHeight(x, z)
+      const ht = terrainHeight(x, z)
+      let b = BANDS[0]
+      for (const band of BANDS) { b = band; if (ht < band[0]) break }
       const o = (j * N + i) * 4
-      if (h <= 0) { const d = Math.max(0, Math.min(1, -h / 60)); img.data[o] = 10; img.data[o + 1] = 22 + 14 * (1 - d); img.data[o + 2] = 40 + 24 * (1 - d); img.data[o + 3] = 200 }
-      else { const e = Math.min(1, h / 900); img.data[o] = 40 + 90 * e; img.data[o + 1] = 70 + 60 * e; img.data[o + 2] = 46 + 80 * e; img.data[o + 3] = 230 }
+      img.data[o] = b[1]; img.data[o + 1] = b[2]; img.data[o + 2] = b[3]; img.data[o + 3] = 255
     }
     g.putImageData(img, 0, 0)
     mapBg = c
@@ -263,42 +292,50 @@ export function createHud(parent: HTMLElement): Hud {
   const idle = (window as unknown as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200))
   idle(buildMapBg)
 
+  const glyphPath = (ctx: CanvasRenderingContext2D, t: number, x: number, y: number, r: number) => {
+    ctx.beginPath()
+    if (t === 0) ctx.arc(x, y, r, 0, Math.PI * 2)
+    else if (t === 1) { ctx.moveTo(x, y - r * 1.15); ctx.lineTo(x + r * 1.1, y + r * 0.85); ctx.lineTo(x - r * 1.1, y + r * 0.85); ctx.closePath() }
+    else if (t === 2) ctx.rect(x - r * 0.88, y - r * 0.88, r * 1.76, r * 1.76)
+    else { ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r * 1.2, y); ctx.lineTo(x, y + r * 1.2); ctx.lineTo(x - r * 1.2, y); ctx.closePath() }
+  }
+
   function drawMap(f: HudFrame) {
-    const S = map.width
+    const S = MAP_CSS
     const k = S / (WORLD_HALF * 2)
     const ctx = mapCtx
-    ctx.clearRect(0, 0, S, S)
-    ctx.fillStyle = "rgba(6,8,16,.72)"
+    ctx.setTransform(mapDpr, 0, 0, mapDpr, 0, 0)
+    ctx.fillStyle = "#5cb0d2"
     ctx.fillRect(0, 0, S, S)
     if (mapBg) { ctx.imageSmoothingEnabled = true; ctx.drawImage(mapBg, 0, 0, S, S) }
-    ctx.strokeStyle = "rgba(190,205,255,.08)"
+    ctx.strokeStyle = "rgba(255,255,255,.16)"
     ctx.lineWidth = 1
-    for (let i = 1; i < 6; i++) {
-      ctx.beginPath(); ctx.moveTo((i * S) / 6, 0); ctx.lineTo((i * S) / 6, S); ctx.stroke()
-      ctx.beginPath(); ctx.moveTo(0, (i * S) / 6); ctx.lineTo(S, (i * S) / 6); ctx.stroke()
-    }
+    ctx.beginPath()
+    for (let i = 1; i < 4; i++) { const g = Math.round((i * S) / 4) + 0.5; ctx.moveTo(g, 0); ctx.lineTo(g, S); ctx.moveTo(0, g); ctx.lineTo(S, g) }
+    ctx.stroke()
     for (let t = 0; t < f.teams; t++) {
       const b = AIRBASES[t]
+      const x = (b.center[0] + WORLD_HALF) * k, y = (b.center[2] + WORLD_HALF) * k
+      ctx.fillStyle = TEAM_COLORS[t] + "33"
       ctx.strokeStyle = TEAM_COLORS[t]
-      ctx.globalAlpha = 0.6
-      ctx.beginPath()
-      ctx.arc((b.center[0] + WORLD_HALF) * k, (b.center[2] + WORLD_HALF) * k, Math.max(4, b.safeRadius * k), 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.globalAlpha = 1
+      ctx.setLineDash([3, 2])
+      ctx.beginPath(); ctx.arc(x, y, Math.max(5, b.safeRadius * k), 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+      ctx.setLineDash([])
     }
     const myTeam = f.me?.team ?? -1
+    ctx.lineWidth = 1.25
     for (const v of f.vehicles) {
       if (!v.alive) continue
-      const own = f.vehicle && v.id === f.vehicle.id
+      if (f.vehicle && v.id === f.vehicle.id) continue
       const spotted = v.spottedUntil > f.time
       if (v.team !== myTeam && !spotted) continue
       const x = (v.flight.position[0] + WORLD_HALF) * k, y = (v.flight.position[2] + WORLD_HALF) * k
-      if (own) continue
+      if (spotted && v.team !== myTeam) { ctx.strokeStyle = "rgba(195,181,255,.9)"; ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.stroke() }
+      glyphPath(ctx, v.team, x, y, v.team === myTeam ? 2.6 : 3.2)
       ctx.fillStyle = TEAM_COLORS[v.team]
-      ctx.beginPath()
-      ctx.arc(x, y, v.team === myTeam ? 2.5 : 3.2, 0, Math.PI * 2)
       ctx.fill()
-      if (spotted && v.team !== myTeam) { ctx.strokeStyle = "#fff"; ctx.stroke() }
+      ctx.strokeStyle = "rgba(255,255,255,.85)"
+      ctx.stroke()
     }
     if (f.vehicle) {
       const p = f.vehicle.flight.position
@@ -307,8 +344,14 @@ export function createHud(parent: HTMLElement): Hud {
       ctx.save()
       ctx.translate(x, y)
       ctx.rotate(a)
+      const cone = ctx.createRadialGradient(0, 0, 0, 0, 0, 34)
+      cone.addColorStop(0, "rgba(255,255,255,.4)"); cone.addColorStop(1, "rgba(255,255,255,0)")
+      ctx.fillStyle = cone
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 34, -Math.PI / 2 - 0.45, -Math.PI / 2 + 0.45); ctx.closePath(); ctx.fill()
       ctx.fillStyle = "#fff"
-      ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 4); ctx.lineTo(0, 2); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill()
+      ctx.strokeStyle = "#1e2433"
+      ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.moveTo(0, -6.5); ctx.lineTo(4.5, 4.5); ctx.lineTo(0, 2.2); ctx.lineTo(-4.5, 4.5); ctx.closePath(); ctx.stroke(); ctx.fill()
       ctx.restore()
     }
   }
@@ -318,9 +361,9 @@ export function createHud(parent: HTMLElement): Hud {
     for (const p of f.players.values()) if (p.team < f.teams) teams[p.team].push(p)
     board.innerHTML = teams.map((list, t) => {
       list.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-      return `<div class="team" style="--c:${TEAM_COLORS[t]}"><h3><span>${TEAM_NAMES[t]}</span><b>${f.scores[t] ?? 0}</b></h3>
+      return `<div class="team${t === (f.me?.team ?? -1) ? " mine" : ""}" style="--c:${TEAM_COLORS[t]}"><h3><i class="tg t${t}"></i><span>${TEAM_NAMES[t]}</span><b>${f.scores[t] ?? 0}</b></h3>
         <table><tr><th>Pilot</th><th>K</th><th>D</th></tr>${list.map(p =>
-          `<tr class="${p.id === f.myId ? "me" : ""}"><td>${esc(p.name)}${p.bot ? ' <em>BOT</em>' : ""}</td><td>${p.kills}</td><td>${p.deaths}</td></tr>`).join("")}</table></div>`
+          `<tr class="${p.id === f.myId ? "me" : ""}"><td>${esc(p.name)}${p.bot ? ' <em>BOT</em>' : ""}</td><td>${p.kills}</td><td>${p.deaths}</td></tr>`).join("") || `<tr><td class="none" colspan="3">No pilots</td></tr>`}</table></div>`
     }).join("")
   }
 
@@ -333,7 +376,6 @@ export function createHud(parent: HTMLElement): Hud {
       const flying = !!f.vehicle && f.vehicle.alive
       if (f.direct !== isDirect) {
         isDirect = f.direct
-        root.classList.toggle("direct", isDirect)
         ;(isDirect ? bore.el : aim.el).appendChild(hitEl)
       }
       // Aim reticle + boresight
@@ -341,35 +383,36 @@ export function createHud(parent: HTMLElement): Hud {
       if (flying && f.borePoint && project(f.borePoint, cam)) bore.setTransform(tf(sx(), sy())); else bore.setTransform(HIDDEN)
       if (flying && f.lead && project(f.lead, cam)) lead.setTransform(tf(sx(), sy())); else lead.setTransform(HIDDEN)
       if (flying && f.lockTarget && f.lockProgress > 0 && project(f.lockTarget, cam)) {
-        lockBox.setTransform(tf(sx(), sy()) + ` scale(${(1.8 - f.lockProgress * 0.8).toFixed(2)})`)
-        lockBox.setClass(f.lockProgress >= 1 ? "hud-lock locked" : "hud-lock")
-        lockLbl.setText(f.lockProgress >= 1 ? "LOCKED" : `LOCK ${Math.round(f.lockProgress * 100)}%`)
+        lockBox.setTransform(tf(sx(), sy()))
+        const locked = f.lockProgress >= 1
+        lockBox.setClass(locked ? "hud-lock locked" : "hud-lock")
+        lockLbl.setText(locked ? "LOCKED" : `LOCK ${Math.round(f.lockProgress * 100)}`)
         const p = Math.round(f.lockProgress * 20) / 20
         if (p !== lockP) { lockP = p; lockEl.style.setProperty("--p", String(p)) }
-      } else lockBox.setTransform(HIDDEN)
+      } else { lockBox.setTransform(HIDDEN); if (lockP !== -1) { lockP = -1; lockEl.style.setProperty("--p", "0") } }
 
       // Seeker circle: lock cone projected to pixels (radius = tan(cone) / tan(fov/2) * h/2).
       if (flying && f.seekerCone > 0 && f.seekerCenter && project(f.seekerCenter, cam)) {
-        const r = (Math.tan(f.seekerCone) / Math.tan((cam.fov * Math.PI) / 360)) * h * 0.5
-        seeker.setTransform(tf(sx(), sy()) + ` scale(${(r / 50).toFixed(3)})`)
+        const r = Math.round(coneR(f.seekerCone, cam))
+        if (r !== seekerR) { seekerR = r; seeker.el.style.setProperty("--r", `${r}px`) }
+        seeker.setTransform(tf(sx(), sy()))
       } else seeker.setTransform(HIDDEN)
       // Scanner reticle replaces the aim circle for the radar officer.
       if (flying && f.scanner && f.aimPoint && project(f.aimPoint, cam)) {
-        const r = (Math.tan(f.scannerCone) / Math.tan((cam.fov * Math.PI) / 360)) * h * 0.5
+        const r = Math.max(16, Math.round(coneR(f.scannerCone, cam)))
         scan.setTransform(tf(sx(), sy()))
-        scan.el.style.setProperty("--r", `${Math.max(14, r).toFixed(0)}px`)
-        if (frame % 6 === 0) scanRange.setText(f.scannerRange === null ? "RNG —" : `RNG ${(f.scannerRange / 1000).toFixed(1)} km`)
+        if (r !== scanR) { scanR = r; scan.el.style.setProperty("--r", `${r}px`) }
+        if (frame % 6 === 0) scanRange.setText(f.scannerRange === null ? "NO RETURN" : `RNG ${(f.scannerRange / 1000).toFixed(1)} KM`)
       } else scan.setTransform(HIDDEN)
-      root.classList.toggle("scanning", flying && f.scanner)
       if (flying && f.guide) {
-        guide.setClass(f.guide.lost ? "hud-guide on lost" : "hud-guide on")
+        guide.setClass(f.guide.lost ? "hud-guide z on lost" : "hud-guide z on")
         if (frame % 4 === 0) {
-          guideT.setText(f.guide.lost ? "GUIDANCE LOST — PUT THE SCANNER BACK ON TARGET" : "GUIDING — KEEP SCANNER ON TARGET")
-          guideS.setText(f.guide.tti === null ? "NO TARGET" : `IMPACT ${f.guide.tti.toFixed(1)} s`)
+          guideT.setText(f.guide.lost ? "GUIDANCE LOST · REACQUIRE" : "GUIDING · HOLD ON TARGET")
+          guideS.setText(f.guide.tti === null ? "NO TARGET" : `IMPACT ${f.guide.tti.toFixed(1)}s`)
         }
         if (project(f.guide.missile, cam)) msl.setTransform(tf(sx(), sy())); else msl.setTransform(HIDDEN)
-      } else { guide.setClass("hud-guide"); msl.setTransform(HIDDEN) }
-      if (frame % 10 === 0) { hint.setText(flying && f.hint ? f.hint : ""); hint.setClass(flying && f.hint ? "hud-hint on" : "hud-hint") }
+      } else { guide.setClass("hud-guide z"); msl.setTransform(HIDDEN) }
+      if (frame % 10 === 0) { hint.setText(flying && f.hint ? f.hint : ""); hint.setClass(flying && f.hint ? "hud-hint z on" : "hud-hint z") }
 
       // Target markers
       const myTeam = f.me?.team ?? -1
@@ -396,37 +439,52 @@ export function createHud(parent: HTMLElement): Hud {
         if (!project(p, cam)) continue
         const m = markers[mi++]
         m.used = true
-        const color = TEAM_COLORS[v.team]
-        if (m.color !== color) { m.color = color; m.root.style.setProperty("--c", color) }
-        m.slot.setClass(`mk ${friend ? "friend" : "enemy"}${spotted ? " spotted" : ""}`)
-        const s = friend ? 1 : Math.max(0.55, Math.min(1.6, 260 / Math.max(1, dist) * 4))
+        const color = TEAM_TINTS[v.team]
+        if (m.color !== color) { m.color = color; m.root.style.setProperty("--c", color); m.glyph.setClass(`tg t${v.team}`) }
+        m.slot.setClass(`mk ${friend ? "friend" : "enemy"}${spotted ? " spotted" : ""}${!friend && dist > 1800 && !spotted ? " far" : ""}`)
+        const s = friend ? 1 : Math.max(0.6, Math.min(1.5, 1040 / Math.max(1, dist)))
         m.tf.setTransform(tf(sx(), sy()) + ` scale(${s.toFixed(2)})`)
         if ((frame + mi) % 8 === 0 || m.label.el.textContent === "") {
           const pilot = v.seats[0] ? f.players.get(v.seats[0]) : null
           m.label.setText(friend || dist < 1800 || spotted ? `${pilot?.name ?? VEHICLES[v.kind].name}` : "")
-          m.dist.setText(dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`)
+          m.dist.setText(dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`)
         }
       }
       for (let i = mi; i < MARKERS; i++) if (markers[i].used) { markers[i].used = false; markers[i].tf.setTransform(HIDDEN) }
 
+      // Tapes: ladders scroll every frame (compositor-only transforms).
+      if (flying) {
+        const kmh = f.speed * 3.6
+        spdLadder.setTransform(`translate3d(0,${(((kmh / 5) * 8) % 40).toFixed(1)}px,0)`)
+        altLadder.setTransform(`translate3d(0,${(((Math.max(0, f.altitude) / 10) * 8) % 40).toFixed(1)}px,0)`)
+        stripTf.setTransform(`translate3d(${(-(f.heading + 360) * PX_PER_DEG).toFixed(1)}px,0,0)`)
+      }
+
       // Throttled text
       if (frame % 4 === 0) {
-        stripTf.setTransform(`translate3d(${(-(f.heading + 360) * PX_PER_DEG).toFixed(1)}px,0,0)`)
+        hdg.setText(String(Math.round(f.heading) % 360).padStart(3, "0"))
         spd.setText(String(Math.round(f.speed * 3.6)))
         alt.setText(String(Math.round(f.altitude)))
         thr.setTransform(`scaleY(${Math.max(0, Math.min(1, f.throttle)).toFixed(2)})`)
         boostEl.setClass(f.boost ? "boost on" : "boost")
         centerMsg.setClass(`hud-center-msg${f.protected && flying ? " is-protected" : ""}${f.missileWarning && flying ? " is-warn" : ""}${f.freeLook && flying ? " is-free" : ""}`)
         const v = f.vehicle
+        let low = false
         if (v) {
           const seatName = f.seat !== null ? VEHICLES[v.kind].seatNames[f.seat].toUpperCase() : ""
           seatEl.setText(`${VEHICLES[v.kind].name.toUpperCase()} · ${seatName}`)
           const hp = Math.max(0, v.hp / v.maxHp)
-          hpBar.setTransform(`scaleX(${hp.toFixed(3)})`)
-          hpBar.setClass(hp < 0.3 ? "low" : "")
-          hpTxt.setText(`${Math.ceil(Math.max(0, v.hp))} / ${v.maxHp}`)
-          flares.setText(f.seat === 0 ? `FLARES ${v.flareCount}` : "")
+          low = hp < 0.3 && flying
+          if (hp !== lastHpFrac) {
+            hpBar.setTransform(`scaleX(${hp.toFixed(3)})`)
+            hpGhost.setTransform(`scaleX(${hp.toFixed(3)})`)
+            hpRow.setClass(`hp${hp < 0.3 ? " low" : hp < 0.6 ? " mid" : ""}${hp > lastHpFrac && lastHpFrac >= 0 ? " heal" : ""}`)
+            lastHpFrac = hp
+          }
+          hpTxt.setText(String(Math.ceil(Math.max(0, v.hp))))
+          flares.setText(f.seat === 0 ? `✦ ${v.flareCount}` : "")
         }
+        const nowMs = performance.now()
         for (let i = 0; i < 2; i++) {
           const wr = weaponRows[i]
           const wpn = f.weapons[i]
@@ -435,34 +493,47 @@ export function createHud(parent: HTMLElement): Hud {
           const spec = WEAPONS[wpn.id]
           const unlimited = wpn.cap < 0 || wpn.ammo < 0
           const empty = !unlimited && wpn.ammo <= 0
-          wr.row.setClass(`w${wpn.ready < 1 ? " reload" : ""}${wpn.locked ? " locked" : ""}${wpn.regen ? " regen" : ""}${empty ? " empty" : ""}`)
+          // Magazine topped back up: brief glow.
+          if (wr.wasRegen && !wpn.regen && !unlimited && wpn.ammo >= wpn.cap) wr.full = nowMs + 700
+          wr.wasRegen = wpn.regen
+          wr.row.setClass(`w${wpn.ready < 1 ? " reload" : ""}${wpn.locked ? " locked" : ""}${wpn.regen ? " regen" : ""}${empty ? " empty" : ""}${wr.full > nowMs ? " full" : ""}`)
           wr.name.setText(spec.name.toUpperCase())
-          wr.ammo.setText(spec.kind === "pulse" ? (wpn.ready >= 1 ? "READY" : "CHARGING") : unlimited ? "∞" : empty ? "RELOADING" : `${wpn.ammo}/${wpn.cap}`)
+          wr.ammo.setText(spec.kind === "pulse" ? (wpn.ready >= 1 ? "READY" : `${Math.round(wpn.ready * 100)}%`) : unlimited ? "∞" : empty ? "RELOAD" : String(wpn.ammo))
           const frac = spec.kind === "pulse" ? wpn.ready : unlimited ? 1 : wpn.ammo / Math.max(1, wpn.cap)
           wr.bar.setTransform(`scaleX(${Math.max(0, Math.min(1, frac)).toFixed(3)})`)
         }
-        if (f.remaining !== null) {
-          const r = Math.max(0, Math.ceil(f.remaining))
-          timer.setText(`${f.intermission ? "NEXT MATCH " : ""}${Math.floor(r / 60)}:${String(r % 60).padStart(2, "0")}`)
-        } else timer.setText("")
+        const cls = `hud${shown ? " flying" : ""}${isDirect ? " direct" : ""}${flying && f.scanner ? " scanning" : ""}${low ? " low" : ""}${f.missileWarning && flying ? " warn" : ""}`
+        if (cls !== rootCls) {
+          // Preserve externally toggled classes (scoreboard / chat).
+          const keep = (root.classList.contains("board") ? " board" : "") + (root.classList.contains("chatting") ? " chatting" : "")
+          rootCls = cls
+          root.className = cls + keep
+        }
         ping.setText(f.ping > 0 ? `${Math.round(f.ping)} ms` : "")
       }
       if (frame % 15 === 0) {
-        let html = ""
-        for (let t = 0; t < f.teams; t++) html += `<span style="--c:${TEAM_COLORS[t]}" class="${t === myTeam ? "mine" : ""}">${f.scores[t] ?? 0}</span>`
-        if (teamsEl.innerHTML !== html) teamsEl.innerHTML = html
+        let teams = ""
+        for (let t = 0; t < f.teams; t++) teams += `<span class="sc${t === myTeam ? " mine" : ""}" style="--c:${TEAM_TINTS[t]}">${glyph(t)}<b>${f.scores[t] ?? 0}</b></span>`
+        let timer = ""
+        if (f.remaining !== null) {
+          const r = Math.max(0, Math.ceil(f.remaining))
+          timer = `<span class="timer${f.intermission ? " inter" : ""}${!f.intermission && r <= 60 ? " end" : ""}">${f.intermission ? "<em>NEXT</em>" : ""}${Math.floor(r / 60)}:${String(r % 60).padStart(2, "0")}</span>`
+        }
+        const html = `<span class="teams">${teams}</span>${timer}`
+        if (html !== scoreHtml) { scoreHtml = html; scoreEl.innerHTML = html }
       }
       const now = performance.now()
-      if (now - lastMap > 120) { lastMap = now; drawMap(f) }
+      if (flying && now - lastMap > 120) { lastMap = now; drawMap(f) }
       const showBoard = root.classList.contains("board")
       if (showBoard && now - lastBoard > 500) { lastBoard = now; drawBoard(f) }
     },
 
     killfeed(killer, killerTeam, victim, victimTeam, weapon, mine) {
       const row = el("div", mine ? "mine" : "", feed)
+      const kt = killerTeam ?? 0
       row.innerHTML = killer
-        ? `<b style="color:${TEAM_COLORS[killerTeam ?? 0]}">${esc(killer)}</b><span>${esc(weapon)}</span><b style="color:${TEAM_COLORS[victimTeam]}">${esc(victim)}</b>`
-        : `<b style="color:${TEAM_COLORS[victimTeam]}">${esc(victim)}</b><span>${esc(weapon)}</span>`
+        ? `<b style="color:${TEAM_TINTS[kt]}">${glyph(kt)}${esc(killer)}</b><span>${esc(weapon)}</span><b style="color:${TEAM_TINTS[victimTeam]}">${glyph(victimTeam)}${esc(victim)}</b>`
+        : `<b style="color:${TEAM_TINTS[victimTeam]}">${glyph(victimTeam)}${esc(victim)}</b><span>${esc(weapon)}</span>`
       setTimeout(() => row.classList.add("out"), 6500)
       setTimeout(() => row.remove(), 7200)
       while (feed.childElementCount > 6) feed.firstElementChild!.remove()
@@ -470,7 +541,7 @@ export function createHud(parent: HTMLElement): Hud {
 
     chat(name, team, text) {
       const row = el("div", "", chatLog)
-      row.innerHTML = `<b style="color:${team === null ? "#aab" : TEAM_COLORS[team]}">${esc(name)}</b> ${esc(text)}`
+      row.innerHTML = `<b style="color:${team === null ? "#d6d9e4" : TEAM_TINTS[team]}">${team === null ? "" : glyph(team)}${esc(name)}</b> ${esc(text)}`
       setTimeout(() => row.classList.add("out"), 12000)
       while (chatLog.childElementCount > 8) chatLog.firstElementChild!.remove()
     },
@@ -498,7 +569,9 @@ export function createHud(parent: HTMLElement): Hud {
     },
 
     setVisible(flying) {
+      shown = flying
       root.classList.toggle("flying", flying)
+      rootCls = ""
     },
 
     openChat(onSend) {

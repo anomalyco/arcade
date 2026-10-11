@@ -43,28 +43,26 @@ if (params.get("markers") === "1") {
 const views: Record<string, () => [number[], number[]]> = {
   base: () => {
     const b = AIRBASES[0]
-    const [x, z] = baseToWorld(b, -1500, -260), [lx, lz] = baseToWorld(b, -700, 120)
-    return [[x, 90, z], [lx, 20, lz]]
+    const [x, z] = baseToWorld(b, -900, -220), [lx, lz] = baseToWorld(b, -200, 120)
+    return [[x, 70, z], [lx, 20, lz]]
   },
   apron: () => {
     const b = AIRBASES[2]
-    const [x, z] = baseToWorld(b, 200, 120), [lx, lz] = baseToWorld(b, 450, 300)
-    return [[x, 45, z], [lx, 20, lz]]
+    const [x, z] = baseToWorld(b, -100, 120), [lx, lz] = baseToWorld(b, 200, 330)
+    return [[x, 40, z], [lx, 20, lz]]
   },
   approach: () => {
     const b = AIRBASES[1]
-    const [x, z] = baseToWorld(b, -3200, 400), [lx, lz] = baseToWorld(b, 0, 100)
-    return [[x, 450, z], [lx, 20, lz]]
+    const [x, z] = baseToWorld(b, 1800, 500), [lx, lz] = baseToWorld(b, 0, 100)
+    return [[x, 350, z], [lx, 20, lz]]
   },
-  crater: () => [[-2600, 1500, -1400], [-1700, 1050, -800]],
-  gorge: () => [[-1350, 40, 2050], [-200, 40, 1500]],
-  canyon: () => [[-1900, 90, 2700], [-300, 60, 1500]],
-  volcano: () => [[-6500, 1500, 3800], [-1600, 700, -900]],
-  water: () => [[-2500, 12, 9500], [500, 60, 6500]],
-  spires: () => [[-400, 180, 8600], [2200, 150, 6000]],
-  overview: () => [[0, 9000, 16000], [0, 0, 0]],
-  edge: () => [[0, 400, -13500], [0, 300, -16000]],
-  mesa: () => [[-9800, 300, -3500], [-6600, 250, -1600]],
+  center: () => [[-3800, 700, 3600], [0, 250, 0]],
+  peaks: () => [[1800, 420, 2400], [0, 350, -300]],
+  low: () => [[2600, 60, 3900], [0, 120, 0]],
+  water: () => [[3000, 14, 5200], [1500, 30, 2500]],
+  overview: () => [[0, 5500, 9500], [0, 0, 0]],
+  top: () => [[0, 14000, 1], [0, 0, 0]],
+  edge: () => [[0, 300, -7400], [0, 300, -9000]],
 }
 let yaw = 0, pitch = 0
 function setCam(p: number[], l: number[]) {

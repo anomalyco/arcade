@@ -1,27 +1,28 @@
 // World geography — owned by the World agent. Pure, deterministic, dependency-free (server safe).
 //
-// The world is a 30 × 30 km tropical archipelago. Heights come from a small set of hand-placed and
-// seeded descriptors (islands with peaks, karst spires, carved canyons, four airbase plateaus) looked
-// up through a 1 km spatial index, so a height sample touches only the few features nearby.
-//
-// Collision surface == rendered surface: the renderer triangulates `terrainHeight` on a regular grid
-// (LOD0 cell = MESH_CELL) and `groundHeight` interpolates exactly the same triangles.
+// A 16 × 16 km procedurally generated archipelago (ISLANDERS-style terraced islands). On first use
+// the module bakes a heightmap on a jittered triangle grid (MESH_CELL spacing):
+//   seeded island masks (domain-warped) → fBm + ridged mountains + a couple of central peaks →
+//   carved canyons → droplet erosion + thermal smoothing → terracing → flat airbase plateaus.
+// The rendered LOD0 mesh uses exactly these vertices and triangles, and every physics query
+// interpolates the same triangles, so collision always matches what players see.
 import type { TeamId, Vec3, VehicleKind, WorldQuery } from "./types"
 
-export const WORLD_SIZE = 30_000
+export const WORLD_SIZE = 16_000
 export const WORLD_HALF = WORLD_SIZE / 2
 export const WATER_LEVEL = 0
-export const CEILING = 6_000
+export const CEILING = 4_000
 export const WORLD_SEED = 0x57494e47 // "WING"
 
-/** Ocean floor depth used far from any island. */
-export const SEA_FLOOR = -60
-/** Render/stream tile size and finest mesh resolution. Collision uses the LOD0 triangles. */
-export const TILE_SIZE = 1_000
-export const MESH_SEGMENTS = 32
-export const MESH_CELL = TILE_SIZE / MESH_SEGMENTS // 31.25 m — big low-poly facets
-/** Safe zone is an ellipsoidal dome: safeRadius horizontally, SAFE_ZONE_HEIGHT above the runway. */
-export const SAFE_ZONE_HEIGHT = 1_500
+/** Ocean floor depth far from land. */
+export const SEA_FLOOR = -40
+/** Grid spacing of the collision/LOD0 mesh (vertices are jittered by up to JITTER × cell). */
+export const MESH_CELL = 25
+export const MESH_SEGMENTS = WORLD_SIZE / MESH_CELL // 640 cells per side
+/** Fraction of a cell each vertex may be displaced in x/z (irregular low-poly facets). */
+export const JITTER = 0.26
+/** Safe zone: everything within safeRadius of the runway centre-line, under a dome SAFE_ZONE_HEIGHT tall. */
+export const SAFE_ZONE_HEIGHT = 400
 /** Assumed height of the aircraft origin above the wheels' contact point. */
 export const SPAWN_CLEARANCE: Record<"jet" | "heli", number> = { jet: 2.2, heli: 1.9 }
 
@@ -33,32 +34,32 @@ export interface Airbase {
   heading: number
   runwayLength: number
   runwayWidth: number
-  /** Protected radius around center (no damage taken/dealt by this team's aircraft inside). */
+  /** Protected distance from the runway centre-line segment (capsule), see inSafeZone. */
   safeRadius: number
   /** Helipad positions (y = pad elevation). */
   helipads: Vec3[]
 }
 
-const BASE_DISTANCE = 12_000
+const BASE_DISTANCE = 5_500
 const BASE_ELEVATION = 20
 
 /** Paved areas in base-local coordinates: a = along takeoff direction (+a toward map center), c = to the right. */
 export interface PavedRect { a0: number; a1: number; c0: number; c1: number; kind: "runway" | "taxiway" | "apron" }
 export const BASE_LAYOUT = {
-  runway: { a0: -1200, a1: 1200, c0: -30, c1: 30, kind: "runway" } as PavedRect,
+  runway: { a0: -700, a1: 700, c0: -30, c1: 30, kind: "runway" } as PavedRect,
   paved: [
-    { a0: -1140, a1: 1140, c0: 140, c1: 164, kind: "taxiway" },
-    { a0: -1140, a1: -1116, c0: 30, c1: 164, kind: "taxiway" },
-    { a0: 1116, a1: 1140, c0: 30, c1: 164, kind: "taxiway" },
-    { a0: -12, a1: 12, c0: 30, c1: 164, kind: "taxiway" },
-    { a0: -480, a1: 260, c0: 164, c1: 340, kind: "apron" },
-    { a0: 300, a1: 640, c0: 164, c1: 300, kind: "apron" },
+    { a0: -650, a1: 650, c0: 130, c1: 152, kind: "taxiway" },
+    { a0: -650, a1: -628, c0: 30, c1: 152, kind: "taxiway" },
+    { a0: 628, a1: 650, c0: 30, c1: 152, kind: "taxiway" },
+    { a0: -11, a1: 11, c0: 30, c1: 152, kind: "taxiway" },
+    { a0: -420, a1: 160, c0: 152, c1: 310, kind: "apron" },
+    { a0: 200, a1: 500, c0: 152, c1: 280, kind: "apron" },
   ] as PavedRect[],
   /** Helipad centers (a, c) and radius. */
-  helipads: [[360, 232], [440, 232], [520, 232], [600, 232]] as [number, number][],
+  helipads: [[240, 216], [310, 216], [380, 216], [450, 216]] as [number, number][],
   helipadRadius: 15,
-  /** Perfectly flat plateau (rounded later by the coastline). */
-  flat: { a0: -1500, a1: 1500, c0: -300, c1: 620 },
+  /** Perfectly flat plateau around the runway, aprons and buildings. */
+  flat: { a0: -900, a1: 900, c0: -200, c1: 520 },
 }
 
 export const AIRBASES: Airbase[] = ([0, 1, 2, 3] as TeamId[]).map(team => {
@@ -66,7 +67,7 @@ export const AIRBASES: Airbase[] = ([0, 1, 2, 3] as TeamId[]).map(team => {
   const dir = [[0, 1], [0, -1], [-1, 0], [1, 0]][team]
   const center: Vec3 = [dir[0] * BASE_DISTANCE, BASE_ELEVATION, dir[1] * BASE_DISTANCE]
   const heading = Math.atan2(dir[0], dir[1]) // yaw so that -Z (nose) faces the center
-  const base: Airbase = { team, center, heading, runwayLength: 2_400, runwayWidth: 60, safeRadius: 2_200, helipads: [] }
+  const base: Airbase = { team, center, heading, runwayLength: 1_400, runwayWidth: 60, safeRadius: 500, helipads: [] }
   base.helipads = BASE_LAYOUT.helipads.map(([a, c]) => {
     const [x, z] = baseToWorld(base, a, c)
     return [x, BASE_ELEVATION, z] as Vec3
@@ -80,14 +81,11 @@ export function baseToWorld(base: Airbase, a: number, c: number): [number, numbe
   // forward = (-sin, -cos), right = (cos, -sin)
   return [base.center[0] - s * a + k * c, base.center[2] - k * a - s * c]
 }
-
 function worldToBaseA(base: Airbase, x: number, z: number): number {
-  const s = Math.sin(base.heading), k = Math.cos(base.heading)
-  return -(x - base.center[0]) * s - (z - base.center[2]) * k
+  return -(x - base.center[0]) * Math.sin(base.heading) - (z - base.center[2]) * Math.cos(base.heading)
 }
 function worldToBaseC(base: Airbase, x: number, z: number): number {
-  const s = Math.sin(base.heading), k = Math.cos(base.heading)
-  return (x - base.center[0]) * k - (z - base.center[2]) * s
+  return (x - base.center[0]) * Math.cos(base.heading) - (z - base.center[2]) * Math.sin(base.heading)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -109,6 +107,23 @@ export function noise2(x: number, z: number, seed = WORLD_SEED): number {
   return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1
 }
 
+function fbm(x: number, z: number, seed: number, octaves: number): number {
+  let sum = 0, amp = 0.5, f = 1
+  for (let o = 0; o < octaves; o++) { sum += noise2(x * f, z * f, seed + o * 101) * amp; f *= 2.03; amp *= 0.5 }
+  return sum
+}
+
+function ridged(x: number, z: number, seed: number, octaves: number): number {
+  let sum = 0, amp = 0.5, f = 1, w = 1
+  for (let o = 0; o < octaves; o++) {
+    let n = 1 - Math.abs(noise2(x * f, z * f, seed + o * 131))
+    n *= n * w
+    w = Math.min(1, n * 2)
+    sum += n * amp; f *= 2.1; amp *= 0.5
+  }
+  return sum
+}
+
 function smooth(a: number, b: number, x: number): number {
   const t = x <= a ? 0 : x >= b ? 1 : (x - a) / (b - a)
   return t * t * (3 - 2 * t)
@@ -127,411 +142,380 @@ export function seededRandom(seed: number): () => number {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Feature descriptors
-
-export interface Peak {
-  /** Island-local normalized position and radius (fraction of island radii). */
-  u: number; v: number; r: number
-  h: number
-  /** Volcano crater radius (normalized to r), 0 = none. */
-  crater?: number
-}
-
-export interface Island {
-  id: number
-  name: string
-  x: number; z: number
-  rx: number; rz: number
-  rot: number
-  /** Rolling hill height on the interior. */
-  hill: number
-  peaks: Peak[]
-  /** Terrace step height for mesa-style islands (0 = none). */
-  terrace: number
-  /** Ridged-noise strength on mountains (0..1). */
-  rugged: number
-  // derived
-  cos: number; sin: number; reach: number; seed: number; maxHeight: number
-}
-
-interface Spire { x: number; z: number; r: number; h: number; seed: number }
-interface CanyonSeg {
-  ax: number; az: number; bx: number; bz: number
-  /** Half-width at a and b. */
-  wa: number; wb: number
-  floor: number
-  slope: number
-  minX: number; maxX: number; minZ: number; maxZ: number
-}
-
-function makeIsland(id: number, name: string, x: number, z: number, rx: number, rz: number, rot: number, hill: number, peaks: Peak[], terrace = 0, rugged = 0.6): Island {
-  let peakSum = 0
-  for (const p of peaks) peakSum = Math.max(peakSum, p.h)
-  // Overlapping peaks can stack; bound conservatively.
-  let stack = 0
-  for (const p of peaks) stack += p.h
-  return {
-    id, name, x, z, rx, rz, rot, hill, peaks, terrace, rugged,
-    cos: Math.cos(rot), sin: Math.sin(rot), reach: Math.max(rx, rz) * 1.5 + 200,
-    seed: (WORLD_SEED + id * 7919) | 0,
-    maxHeight: 6 + hill + Math.min(stack, peakSum * 1.6) * 1.12 + 22 + terrace,
-  }
-}
-
-function buildFeatures() {
-  const islands: Island[] = []
-  const add = (name: string, x: number, z: number, rx: number, rz: number, rot: number, hill: number, peaks: Peak[], terrace = 0, rugged = 0.6) => {
-    islands.push(makeIsland(islands.length, name, x, z, rx, rz, rot, hill, peaks, terrace, rugged))
-  }
-  // Central volcano island — the main combat landmark, split by Serpent Gorge.
-  add("Tamaru", -500, -200, 4300, 3100, 0.35, 70, [
-    { u: -0.28, v: -0.18, r: 0.62, h: 1270, crater: 0.13 },
-    { u: 0.42, v: 0.32, r: 0.38, h: 560 },
-    { u: 0.12, v: -0.62, r: 0.3, h: 420 },
-    { u: -0.62, v: 0.5, r: 0.3, h: 360 },
-  ], 0, 0.55)
-  // East ridge: a long serrated spine with passes.
-  add("Kaimana Spine", 6600, 1400, 2900, 1000, -0.95, 50, [
-    { u: -0.62, v: 0.0, r: 0.42, h: 640 },
-    { u: -0.08, v: 0.05, r: 0.42, h: 860 },
-    { u: 0.5, v: -0.05, r: 0.38, h: 720 },
-  ], 0, 0.95)
-  // West mesas: terraced tablelands cut by a dry canyon.
-  add("Tablelands", -6600, -1600, 2500, 2100, 0.5, 40, [
-    { u: 0.05, v: 0.0, r: 0.95, h: 470 },
-    { u: 0.45, v: -0.45, r: 0.45, h: 220 },
-  ], 70, 0.35)
-  // North twin peaks with a green valley between.
-  add("Twin Sisters", 1400, -6900, 2300, 1600, 0.2, 60, [
-    { u: -0.4, v: 0.0, r: 0.5, h: 960 },
-    { u: 0.42, v: 0.1, r: 0.46, h: 780 },
-  ], 0, 0.75)
-  // South-west rolling jungle island.
-  add("Verdant", -4600, 5600, 2100, 1500, -0.4, 120, [
-    { u: 0.1, v: 0.1, r: 0.7, h: 420 },
-    { u: -0.5, v: -0.2, r: 0.35, h: 260 },
-  ], 0, 0.4)
-  // North-east highlands.
-  add("Ember Rise", 5600, -5200, 1900, 1400, 0.8, 60, [
-    { u: 0.0, v: 0.0, r: 0.7, h: 680 },
-    { u: 0.55, v: 0.3, r: 0.3, h: 300 },
-  ], 0, 0.8)
-  // South lagoon islands among the karst spires.
-  add("Lagoon Key", 2600, 6200, 1300, 700, 0.3, 30, [{ u: 0.2, v: 0, r: 0.6, h: 140 }], 0, 0.3)
-  add("Coral Cay", -800, 5200, 900, 500, -0.6, 25, [{ u: 0, v: 0, r: 0.6, h: 70 }], 0, 0.2)
-  // Corner outposts (one per quadrant) so the outer ring is not totally empty.
-  add("Pele Rock", 9300, 9100, 1500, 1000, 0.7, 50, [{ u: 0, v: 0, r: 0.7, h: 520 }], 0, 0.8)
-  add("Mist Isle", -9200, -9300, 1500, 1100, -0.7, 50, [{ u: 0, v: 0.1, r: 0.7, h: 560 }], 0, 0.7)
-  add("Turtle Isle", -9400, 9000, 1400, 1100, 0.2, 80, [{ u: 0.1, v: 0, r: 0.8, h: 300 }], 50, 0.4)
-  add("Anvil", 9100, -9300, 1300, 1000, -0.3, 40, [{ u: 0, v: 0, r: 0.8, h: 380 }], 60, 0.4)
-
-  // Seeded islets scattered in the inner theater, kept off the base approaches.
-  const rand = seededRandom(WORLD_SEED ^ 0x1517)
-  let tries = 0
-  while (islands.length < 34 && tries++ < 4000) {
-    const ang = rand() * Math.PI * 2
-    const dist = 2500 + rand() * 8200
-    const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist
-    const rx = 220 + rand() * 520, rz = rx * (0.45 + rand() * 0.45)
-    if (AIRBASES.some(b => Math.hypot(x - b.center[0], z - b.center[2]) < 4200 + rx)) continue
-    if (Math.abs(x) > WORLD_HALF - 1500 || Math.abs(z) > WORLD_HALF - 1500) continue
-    if (islands.some(i => Math.hypot(x - i.x, z - i.z) < (Math.max(rx, rz) + Math.max(i.rx, i.rz)) * 1.05 + 250)) continue
-    const h = 40 + rand() * 220
-    add(`Islet ${islands.length}`, x, z, rx, rz, rand() * Math.PI, 15 + rand() * 25,
-      [{ u: (rand() - 0.5) * 0.4, v: (rand() - 0.5) * 0.4, r: 0.6 + rand() * 0.3, h }], rand() < 0.25 ? 30 : 0, 0.3 + rand() * 0.5)
-  }
-
-  // Karst spires — tall pillars rising out of the southern lagoon.
-  const spires: Spire[] = []
-  const srand = seededRandom(WORLD_SEED ^ 0x5b17e)
-  for (let i = 0; i < 16; i++) {
-    const ang = -0.3 + (i / 16) * Math.PI * 1.25 + (srand() - 0.5) * 0.25
-    const rad = 1300 + srand() * 1200
-    spires.push({ x: 1800 + Math.cos(ang) * rad * 1.4, z: 5900 + Math.sin(ang) * rad * 0.7, r: 85 + srand() * 70, h: 160 + srand() * 230, seed: (WORLD_SEED + 31 * i) | 0 })
-  }
-
-  // Canyons as polylines: [x, z, halfWidth] points.
-  const canyonDefs: { pts: [number, number, number][]; floor: number; slope: number }[] = [
-    // Serpent Gorge: a sea-level fjord through Tamaru, east of the volcano.
-    { pts: [[-2600, 3600, 150], [-1500, 2200, 120], [-200, 1500, 95], [900, 900, 110], [1500, -300, 90], [2000, -1700, 120], [3300, -2900, 170]], floor: -10, slope: 3.2 },
-    // Dry canyon through the Tablelands mesas.
-    { pts: [[-9200, -600, 120], [-7600, -1200, 90], [-6500, -1500, 70], [-5600, -2300, 85], [-4000, -3200, 130]], floor: 28, slope: 2.6 },
-    // Green valley between the Twin Sisters.
-    { pts: [[1300, -9100, 200], [1350, -7600, 170], [1600, -6500, 160], [1500, -4700, 220]], floor: 34, slope: 1.1 },
-    // Pass through the Kaimana Spine.
-    { pts: [[5000, 260, 120], [6350, 1150, 70], [7900, 2200, 120]], floor: 70, slope: 2.4 },
-  ]
-  const canyons: CanyonSeg[] = []
-  for (const def of canyonDefs) {
-    for (let i = 0; i < def.pts.length - 1; i++) {
-      const [ax, az, wa] = def.pts[i], [bx, bz, wb] = def.pts[i + 1]
-      const m = Math.max(wa, wb) + 1400 / def.slope + 120
-      canyons.push({ ax, az, bx, bz, wa, wb, floor: def.floor, slope: def.slope,
-        minX: Math.min(ax, bx) - m, maxX: Math.max(ax, bx) + m, minZ: Math.min(az, bz) - m, maxZ: Math.max(az, bz) + m })
-    }
-  }
-  return { islands, spires, canyons }
-}
-
-const FEATURES = buildFeatures()
+// Island layout (cheap, computed eagerly)
 
 export interface IslandInfo { name: string; x: number; z: number; radius: number; height: number }
+interface Blob { x: number; z: number; r: number; amp: number }
+interface Peak { x: number; z: number; r: number; h: number }
+
+function nearBase(x: number, z: number, margin: number): boolean {
+  for (const b of AIRBASES) if (Math.hypot(x - b.center[0], z - b.center[2]) < margin) return true
+  return false
+}
+
+function layout(seed: number) {
+  const rand = seededRandom(seed ^ 0x15a7d)
+  const blobs: Blob[] = []
+  const names: IslandInfo[] = []
+  // Big central island, made of a few overlapping lobes.
+  blobs.push({ x: 0, z: 0, r: 2500, amp: 1 })
+  for (let i = 0; i < 3; i++) {
+    const a = rand() * Math.PI * 2, d = 700 + rand() * 900
+    blobs.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1100 + rand() * 700, amp: 0.85 })
+  }
+  names.push({ name: "Mainland", x: 0, z: 0, radius: 2600, height: 0 })
+  // Medium islands on the diagonals between bases, plus a couple on the axes.
+  const mediums = 7 + Math.floor(rand() * 2)
+  for (let i = 0; i < mediums; i++) {
+    for (let tries = 0; tries < 40; tries++) {
+      const a = (i / mediums) * Math.PI * 2 + Math.PI / 4 + (rand() - 0.5) * 0.7
+      const d = 3600 + rand() * 1700
+      const x = Math.cos(a) * d, z = Math.sin(a) * d
+      const r = 800 + rand() * 700
+      if (nearBase(x, z, 1400 + r)) continue
+      if (Math.abs(x) > WORLD_HALF - r - 400 || Math.abs(z) > WORLD_HALF - r - 400) continue
+      blobs.push({ x, z, r, amp: 0.75 + rand() * 0.3 })
+      names.push({ name: `Isle ${names.length}`, x, z, radius: r, height: 0 })
+      break
+    }
+  }
+  // Islets scattered everywhere except the runways.
+  for (let i = 0, tries = 0; i < 26 && tries < 2000; tries++) {
+    const x = (rand() * 2 - 1) * (WORLD_HALF - 700), z = (rand() * 2 - 1) * (WORLD_HALF - 700)
+    const r = 180 + rand() * 380
+    if (nearBase(x, z, 1300 + r)) continue
+    if (Math.hypot(x, z) < 2600) continue
+    blobs.push({ x, z, r, amp: 0.45 + rand() * 0.45 })
+    i++
+  }
+  // Low base islands: a chain of blobs along each runway (flattened later).
+  for (const b of AIRBASES) {
+    for (const a of [-750, -250, 250, 750]) {
+      const [x, z] = baseToWorld(b, a + (rand() - 0.5) * 200, 160 + (rand() - 0.5) * 380)
+      blobs.push({ x, z, r: 560 + rand() * 260, amp: 0.5 })
+    }
+  }
+  // A couple of tall peaks near the centre.
+  const peaks: Peak[] = []
+  for (let i = 0; i < 2; i++) {
+    const a = rand() * Math.PI * 2 + i * Math.PI, d = 500 + rand() * 900
+    peaks.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1500 + rand() * 500, h: 400 - i * 90 + rand() * 90 })
+  }
+  return { blobs, peaks, names }
+}
+
+let layoutSeed = WORLD_SEED
+let LAYOUT = layout(layoutSeed)
 /** Named islands for minimaps / labels. */
-export const ISLANDS: readonly IslandInfo[] = FEATURES.islands.map(i => ({
-  name: i.name, x: i.x, z: i.z, radius: Math.max(i.rx, i.rz),
-  height: i.peaks.reduce((m, p) => Math.max(m, p.h), 0) + i.hill,
-}))
+export const ISLANDS: IslandInfo[] = LAYOUT.names
 
 // ---------------------------------------------------------------------------------------------
-// Spatial index: 1 km buckets covering the map.
+// Heightmap bake (lazy, cached)
 
-const BUCKET = 1_000
-const BN = WORLD_SIZE / BUCKET // 30
-interface Bucket { islands: Island[]; spires: Spire[]; canyons: CanyonSeg[]; base: Airbase | null; bound: number }
-const buckets: Bucket[] = []
-for (let i = 0; i < BN * BN; i++) buckets.push({ islands: [], spires: [], canyons: [], base: null, bound: WATER_LEVEL })
+const N = MESH_SEGMENTS
+const STRIDE = N + 1
+const BOUND_BLOCK = 500
+const BN = WORLD_SIZE / BOUND_BLOCK
 
-function eachBucket(minX: number, maxX: number, minZ: number, maxZ: number, fn: (b: Bucket) => void) {
-  const x0 = Math.max(0, Math.floor((minX + WORLD_HALF) / BUCKET)), x1 = Math.min(BN - 1, Math.floor((maxX + WORLD_HALF) / BUCKET))
-  const z0 = Math.max(0, Math.floor((minZ + WORLD_HALF) / BUCKET)), z1 = Math.min(BN - 1, Math.floor((maxZ + WORLD_HALF) / BUCKET))
-  for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) fn(buckets[z * BN + x])
-}
-for (const island of FEATURES.islands) {
-  eachBucket(island.x - island.reach, island.x + island.reach, island.z - island.reach, island.z + island.reach, b => {
-    b.islands.push(island); b.bound = Math.max(b.bound, island.maxHeight)
-  })
-}
-for (const s of FEATURES.spires) {
-  eachBucket(s.x - s.r * 1.6, s.x + s.r * 1.6, s.z - s.r * 1.6, s.z + s.r * 1.6, b => { b.spires.push(s); b.bound = Math.max(b.bound, s.h + 10) })
-}
-for (const c of FEATURES.canyons) eachBucket(c.minX, c.maxX, c.minZ, c.maxZ, b => b.canyons.push(c))
-const BASE_REACH = 2_300
-for (const base of AIRBASES) {
-  eachBucket(base.center[0] - BASE_REACH, base.center[0] + BASE_REACH, base.center[2] - BASE_REACH, base.center[2] + BASE_REACH, b => {
-    b.base = base; b.bound = Math.max(b.bound, BASE_ELEVATION + 170)
-  })
+interface Baked {
+  seed: number
+  /** Vertex heights. */
+  h: Float32Array
+  /** Vertex world x/z (jittered). */
+  vx: Float32Array
+  vz: Float32Array
+  /** Per-cell diagonal: 0 = b–c (triangles a,c,b / b,c,d), 1 = a–d (a,c,d / a,d,b). */
+  diag: Uint8Array
+  /** Max surface height per 500 m block. */
+  bound: Float32Array
+  ms: number
 }
 
-function bucketAt(x: number, z: number): Bucket | null {
-  if (!(x > -WORLD_HALF && x < WORLD_HALF && z > -WORLD_HALF && z < WORLD_HALF)) return null
-  return buckets[Math.floor((z + WORLD_HALF) / BUCKET) * BN + Math.floor((x + WORLD_HALF) / BUCKET)]
+let baked: Baked | null = null
+
+/** Rebuild the world for another seed (e.g. per room). Clears the cached heightmap. */
+export function setWorldSeed(seed: number) {
+  if (seed === layoutSeed && LAYOUT) return
+  layoutSeed = seed | 0
+  LAYOUT = layout(layoutSeed)
+  ISLANDS.length = 0
+  ISLANDS.push(...LAYOUT.names)
+  baked = null
 }
 
-/** Conservative upper bound of the solid surface inside the 1 km cell containing x,z (≥ WATER_LEVEL). */
-export function heightBound(x: number, z: number): number {
-  const b = bucketAt(x, z)
-  return b ? b.bound : WATER_LEVEL
-}
-
-/** True if the 1 km tile (tx, tz in tile units, origin at world origin) may contain land or shallows. */
-export function tileHasTerrain(tx: number, tz: number): boolean {
-  const b = bucketAt(tx * TILE_SIZE + TILE_SIZE / 2, tz * TILE_SIZE + TILE_SIZE / 2)
-  return !!b && (b.islands.length > 0 || b.spires.length > 0 || b.base !== null)
-}
-
-// ---------------------------------------------------------------------------------------------
-// Height functions
-
-function islandHeight(I: Island, x: number, z: number): number {
-  const dx = x - I.x, dz = z - I.z
-  if (dx > I.reach || dx < -I.reach || dz > I.reach || dz < -I.reach) return SEA_FLOOR
-  const u = (dx * I.cos + dz * I.sin) / I.rx
-  const v = (-dx * I.sin + dz * I.cos) / I.rz
-  const r = Math.sqrt(u * u + v * v)
-  if (r > 1.45) return SEA_FLOOR
-  const warp = noise2(u * 2.3 + 11.1, v * 2.3 - 3.7, I.seed) * 0.2 + noise2(u * 6.1, v * 6.1, I.seed + 1) * 0.06
-  const coast = 1 - r + warp
-  const rmin = I.rx < I.rz ? I.rx : I.rz
-  const meters = coast * rmin // approximate signed distance to the shoreline
-  if (meters < 0) {
-    // Gentle turquoise shelf, then dropping to the ocean floor.
-    const h = -1.2 + meters * 0.09 + meters * meters * -0.00012
-    return h < SEA_FLOOR ? SEA_FLOOR : h
-  }
-  // Beach (≈0 – 3 m over the first ~50 m), then interior.
-  let h = -1.2 + Math.min(meters, 50) * 0.08
-  const inland = smooth(30, 30 + rmin * 0.35, meters)
-  if (inland <= 0) return h
-  const hills = I.hill * inland * (0.55 + 0.45 * noise2(x * 0.0021, z * 0.0021, I.seed + 2))
-  let m = 0, volcano = 0
-  for (let i = 0; i < I.peaks.length; i++) {
-    const p = I.peaks[i]
-    const pu = (u - p.u) / p.r, pv = (v - p.v) / p.r
-    const t2 = pu * pu + pv * pv
-    if (t2 >= 1) continue
-    const d = Math.sqrt(t2)
-    const f = 1 - d
-    if (p.crater) {
-      // Cartoon volcano: concave cone, radial ridges, rim and a bowl-shaped crater.
-      const c = p.crater
-      let ph = p.h * Math.pow(f, 1.6) * (1 + 0.6 * d)
-      const ang = Math.atan2(pv, pu)
-      const ribs = Math.sin(ang * 13 + noise2(pu * 3, pv * 3, I.seed + 8) * 2.5)
-      ph *= 1 + 0.05 * ribs * smooth(c * 1.5, 0.5, d) * (1 - smooth(0.6, 1, d))
-      if (d < c * 1.8) {
-        const k = d / c
-        const rimH = p.h * 0.93
-        const inner = rimH - p.h * 0.17 * (1 - k * k)
-        ph = k < 1 ? inner : rimH + (ph - rimH) * smooth(1, 1.8, k)
-      }
-      volcano += ph
-      continue
-    }
-    m += p.h * f * f * (3 - 2 * f)
-  }
-  if (m > 0) {
-    const ridged = 1 - Math.abs(noise2(x * 0.0024 + 7.3, z * 0.0024 - 1.9, I.seed + 3))
-    const gully = 1 - Math.abs(noise2(x * 0.0061, z * 0.0061, I.seed + 4))
-    m *= 1 - I.rugged * 0.32 + I.rugged * (0.42 * ridged * ridged + 0.12 * gully * gully)
-    m *= inland
-  }
-  m += volcano * inland
-  let land = hills + m
-  if (I.terrace > 0 && land > 25) {
-    const s = land / I.terrace, fl = Math.floor(s), fr = s - fl
-    land = (fl + smooth(0.62, 0.95, fr)) * I.terrace * 0.85 + land * 0.15
-  }
-  h += land + noise2(x * 0.011, z * 0.011, I.seed + 5) * 3.5 * inland
-  return h
-}
-
-function spireHeight(s: Spire, x: number, z: number): number {
-  const dx = x - s.x, dz = z - s.z
-  const d = Math.sqrt(dx * dx + dz * dz) / s.r
-  if (d > 1.6) return SEA_FLOOR
-  const wob = noise2(dx * 0.03, dz * 0.03, s.seed) * 0.12
-  const k = d + wob
-  // Steep, slightly bulging walls with a rounded jungle cap, and a skirt of rubble at the base.
-  const body = 1 - smooth(0.62, 1.0, k)
-  const cap = 1 - 0.18 * k * k
-  const foot = (1 - smooth(0.9, 1.6, k)) * 14
-  return Math.max(-3 + foot, s.h * body * cap)
-}
-
-function canyonCarve(c: CanyonSeg, x: number, z: number, h: number): number {
-  if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) return h
-  const ex = c.bx - c.ax, ez = c.bz - c.az
-  const len2 = ex * ex + ez * ez
-  let t = ((x - c.ax) * ex + (z - c.az) * ez) / len2
-  t = t < 0 ? 0 : t > 1 ? 1 : t
-  const px = x - (c.ax + ex * t), pz = z - (c.az + ez * t)
-  const w = c.wa + (c.wb - c.wa) * t
-  const d = Math.sqrt(px * px + pz * pz) + noise2(x * 0.007, z * 0.007, WORLD_SEED + 77) * w * 0.35
-  const e = d - w
-  const carved = e <= 0 ? c.floor : c.floor + c.slope * (e * e) / (e + 30)
-  return carved < h ? carved : h
-}
-
-/** Airbase island: exactly flat plateau at BASE_ELEVATION, falling to beaches, plus a couple of hills. */
-function baseHeight(base: Airbase, x: number, z: number): number {
-  const a = worldToBaseA(base, x, z), c = worldToBaseC(base, x, z)
+/** Base plateau metrics: signed distance (m) outside the flat rectangle of the nearest base. */
+function baseFlatDistance(x: number, z: number): number {
+  let best = Infinity
   const F = BASE_LAYOUT.flat
-  const da = a < F.a0 ? F.a0 - a : a > F.a1 ? a - F.a1 : 0
-  const dc = c < F.c0 ? F.c0 - c : c > F.c1 ? c - F.c1 : 0
-  if (da === 0 && dc === 0) return BASE_ELEVATION
-  let d = Math.sqrt(da * da + dc * dc)
-  d += noise2(x * 0.0035, z * 0.0035, WORLD_SEED + 900 + base.team) * 140 * smooth(0, 260, d)
-  let h: number
-  if (d < 110) h = BASE_ELEVATION - smooth(0, 110, d) * 13
-  else if (d < 200) h = 7 - smooth(110, 200, d) * 8.2
-  else h = Math.max(SEA_FLOOR, -1.2 - (d - 200) * 0.09 - (d - 200) * (d - 200) * 0.00012)
-  // Two grassy hills on the outboard (left) side, clear of the flight paths.
-  const hills: [number, number, number, number][] = [[520, -760, 360, 150], [-640, -700, 300, 110]]
-  for (const [ha, hc, hr, hh] of hills) {
-    const q = Math.hypot(a - ha, c - hc) / hr
-    if (q < 1) {
-      const f = 1 - q
-      h = Math.max(h, BASE_ELEVATION - 6 + hh * f * f * (3 - 2 * f))
+  for (const b of AIRBASES) {
+    const dx = x - b.center[0], dz = z - b.center[2]
+    if (dx * dx + dz * dz > 2500 * 2500) continue
+    const a = worldToBaseA(b, x, z), c = worldToBaseC(b, x, z)
+    const da = Math.max(F.a0 - a, a - F.a1, 0), dc = Math.max(F.c0 - c, c - F.c1, 0)
+    const d = da === 0 && dc === 0 ? -Math.min(a - F.a0, F.a1 - a, c - F.c0, F.c1 - c) : Math.hypot(da, dc)
+    if (d < best) best = d
+  }
+  return best
+}
+
+const TERRACES = [3.5, 18, 40, 68, 104, 150, 205, 270, 345, 430, 525, 630, 745, 870]
+
+function terrace(h: number, wobble: number): number {
+  if (h <= TERRACES[0]) return h
+  const hh = h + wobble
+  for (let k = 0; k < TERRACES.length - 1; k++) {
+    const lo = TERRACES[k], hi = TERRACES[k + 1]
+    if (hh < hi) {
+      const f = (hh - lo) / (hi - lo)
+      // Mostly flat shelf, then a steep riser to the next level.
+      return Math.max(TERRACES[0], lo + (hi - lo) * (0.05 * f + 0.95 * smooth(0.7, 0.98, f)) - wobble * 0.1)
     }
   }
-  return h
+  return hh
 }
 
-/** Continuous terrain/seabed height (may be below water). */
-export function terrainHeight(x: number, z: number): number {
-  const b = bucketAt(x, z)
-  if (!b) return SEA_FLOOR
-  let h = SEA_FLOOR
-  if (b.base) {
-    const bh = baseHeight(b.base, x, z)
-    if (bh === BASE_ELEVATION) return bh
-    h = bh
+function bake(seed: number): Baked {
+  const t0 = typeof performance !== "undefined" ? performance.now() : Date.now()
+  const { blobs, peaks } = LAYOUT
+  const h = new Float32Array(STRIDE * STRIDE)
+  const vx = new Float32Array(STRIDE * STRIDE)
+  const vz = new Float32Array(STRIDE * STRIDE)
+  const diag = new Uint8Array(N * N)
+  const land = new Float32Array(STRIDE * STRIDE)
+
+  // 1. Jittered vertex positions + base elevation field.
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      const k = j * STRIDE + i
+      const edge = i === 0 || j === 0 || i === N || j === N
+      const jx = edge ? 0 : (hash2(i, j, seed ^ 0x1111) - 0.5) * 2 * JITTER * MESH_CELL
+      const jz = edge ? 0 : (hash2(i, j, seed ^ 0x2222) - 0.5) * 2 * JITTER * MESH_CELL
+      const x = -WORLD_HALF + i * MESH_CELL + jx, z = -WORLD_HALF + j * MESH_CELL + jz
+      vx[k] = x; vz[k] = z
+      // Domain-warped island mask.
+      const wx = x + fbm(x * 0.00045, z * 0.00045, seed + 7, 4) * 800
+      const wz = z + fbm(x * 0.00045 + 31.7, z * 0.00045 - 12.3, seed + 9, 4) * 800
+      let m = 0
+      for (let b = 0; b < blobs.length; b++) {
+        const B = blobs[b]
+        const dx = wx - B.x, dz = wz - B.z
+        const d2 = (dx * dx + dz * dz) / (B.r * B.r)
+        if (d2 >= 1.44) continue
+        const v = (1 - smooth(0.25, 1.2, Math.sqrt(d2))) * B.amp
+        if (v > m) m = v
+      }
+      // Bays and headlands: carve the mask with mid-frequency noise.
+      if (m > 0) m -= (fbm(x * 0.0016, z * 0.0016, seed + 13, 3) * 0.5 + 0.25) * 0.42 * smooth(0, 0.6, m) * (1 - smooth(0.6, 1, m) * 0.5)
+      if (m <= 0.001) { h[k] = SEA_FLOOR; continue }
+      land[k] = m
+      // Rolling hills + ridged mountains growing toward island cores.
+      const hills = (fbm(x * 0.0011, z * 0.0011, seed + 21, 4) * 0.5 + 0.5) * 120
+      const mtn = ridged(wx * 0.0005, wz * 0.0005, seed + 33, 4) * 260 * smooth(0.45, 1, m)
+      let e = -30 + m * 95 + (hills + mtn) * smooth(0.2, 0.75, m)
+      for (const P of peaks) {
+        const d = Math.hypot(x - P.x, z - P.z) / P.r
+        if (d < 1) { const f = 1 - d; e += P.h * f * f * (3 - 2 * f) * (0.8 + 0.4 * ridged(x * 0.002, z * 0.002, seed + 41, 2)) }
+      }
+      // Canyons: warped ridged-noise channels carved down to sea level (fly-through fjords).
+      const cn = Math.abs(noise2(wx * 0.00042 + 5.1, wz * 0.00042 - 2.7, seed + 55))
+      const ch = 1 - smooth(0.035, 0.09, cn)
+      if (ch > 0 && e > -2) e = e + (Math.min(e, -4 + cn * 120) - e) * ch * smooth(0.25, 0.5, m)
+      h[k] = Math.max(SEA_FLOOR, e)
+    }
   }
-  const islands = b.islands
-  for (let i = 0; i < islands.length; i++) {
-    const ih = islandHeight(islands[i], x, z)
-    if (ih > h) h = ih
+  // 2. Droplet hydraulic erosion (gullies, softened slopes), on land only.
+  erode(h, land, seed)
+  // 3. One thermal pass to knock down single-vertex spikes.
+  const talus = 38
+  for (let j = 1; j < N; j++) for (let i = 1; i < N; i++) {
+    const k = j * STRIDE + i
+    const avg = (h[k - 1] + h[k + 1] + h[k - STRIDE] + h[k + STRIDE]) * 0.25
+    if (h[k] - avg > talus) h[k] = avg + talus
   }
-  const spires = b.spires
-  for (let i = 0; i < spires.length; i++) {
-    const sh = spireHeight(spires[i], x, z)
-    if (sh > h) h = sh
+  // 3b. Two smoothing passes on land so terrace edges come out as clean, sweeping contours.
+  const tmp = new Float32Array(h.length)
+  for (let pass = 0; pass < 2; pass++) {
+    tmp.set(h)
+    for (let j = 1; j < N; j++) for (let i = 1; i < N; i++) {
+      const k = j * STRIDE + i
+      if (tmp[k] <= 0) continue
+      h[k] = tmp[k] * 0.4 + (tmp[k - 1] + tmp[k + 1] + tmp[k - STRIDE] + tmp[k + STRIDE]) * 0.15
+    }
   }
-  if (h > -12) {
-    const canyons = b.canyons
-    for (let i = 0; i < canyons.length; i++) h = canyonCarve(canyons[i], x, z, h)
+  // 4. Terraces + airbase plateaus.
+  for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+    const k = j * STRIDE + i
+    const x = vx[k], z = vz[k]
+    let y = h[k]
+    if (y > 0) y = terrace(y, noise2(x * 0.0009, z * 0.0009, seed + 77) * 9)
+    const bd = baseFlatDistance(x, z)
+    if (bd < 420) {
+      if (bd <= 0) y = BASE_ELEVATION
+      else {
+        // Grassy plateau shoulder easing into the natural island around it.
+        const t = smooth(60, 420, bd + noise2(x * 0.006, z * 0.006, seed + 91) * 50)
+        y = BASE_ELEVATION + (y - BASE_ELEVATION) * t
+        if (bd < 60) y = BASE_ELEVATION
+      }
+    }
+    h[k] = y
   }
-  return h
+  // 5. Triangulation diagonals and coarse bounds.
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) diag[j * N + i] = hash2(i, j, seed ^ 0x3333) < 0.5 ? 0 : 1
+  const bound = new Float32Array(BN * BN).fill(WATER_LEVEL)
+  for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+    const k = j * STRIDE + i
+    const bx = Math.min(BN - 1, Math.floor((vx[k] + WORLD_HALF) / BOUND_BLOCK))
+    const bz = Math.min(BN - 1, Math.floor((vz[k] + WORLD_HALF) / BOUND_BLOCK))
+    // A vertex can shape triangles reaching into neighbouring blocks.
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const X = bx + dx, Z = bz + dz
+      if (X < 0 || Z < 0 || X >= BN || Z >= BN) continue
+      const o = Z * BN + X
+      if (h[k] > bound[o]) bound[o] = h[k]
+    }
+  }
+  const ms = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0
+  return { seed, h, vx, vz, diag, bound, ms }
 }
 
-// Direct-mapped cache of LOD0 grid vertex heights. Pure memoization: results are identical with or
-// without it, it just makes repeated physics queries around the same aircraft cheap.
-const CACHE_BITS = 16
-const CACHE_MASK = (1 << CACHE_BITS) - 1
-const cacheKey = new Int32Array(1 << CACHE_BITS).fill(-0x7fffffff)
-const cacheVal = new Float64Array(1 << CACHE_BITS)
-const GRID_OFFSET = 4096
-
-function vertexHeight(ix: number, iz: number): number {
-  const key = ((ix + GRID_OFFSET) << 13) | (iz + GRID_OFFSET)
-  const slot = (Math.imul(key, 0x9e3779b1) >>> (32 - CACHE_BITS)) & CACHE_MASK
-  if (cacheKey[slot] === key) return cacheVal[slot]
-  const h = terrainHeight(ix * MESH_CELL, iz * MESH_CELL)
-  cacheKey[slot] = key
-  cacheVal[slot] = h
-  return h
+function erode(h: Float32Array, land: Float32Array, seed: number) {
+  const rand = seededRandom(seed ^ 0xe40d)
+  const drops = 26_000
+  const inertia = 0.3, capacityK = 3, depositK = 0.3, erodeK = 0.25, evap = 0.03, gravity = 4, maxSteps = 40
+  const hAt = (x: number, y: number) => {
+    const i = x | 0, j = y | 0, u = x - i, v = y - j, k = j * STRIDE + i
+    return h[k] * (1 - u) * (1 - v) + h[k + 1] * u * (1 - v) + h[k + STRIDE] * (1 - u) * v + h[k + STRIDE + 1] * u * v
+  }
+  for (let d = 0; d < drops; d++) {
+    let x = 1 + rand() * (N - 2), y = 1 + rand() * (N - 2)
+    if (land[(y | 0) * STRIDE + (x | 0)] < 0.3) continue
+    let dx = 0, dy = 0, speed = 1, water = 1, sediment = 0
+    for (let s = 0; s < maxSteps; s++) {
+      const i = x | 0, j = y | 0, u = x - i, v = y - j, k = j * STRIDE + i
+      const h00 = h[k], h10 = h[k + 1], h01 = h[k + STRIDE], h11 = h[k + STRIDE + 1]
+      const gx = (h10 - h00) * (1 - v) + (h11 - h01) * v
+      const gy = (h01 - h00) * (1 - u) + (h11 - h10) * u
+      const hOld = h00 * (1 - u) * (1 - v) + h10 * u * (1 - v) + h01 * (1 - u) * v + h11 * u * v
+      dx = dx * inertia - gx * (1 - inertia)
+      dy = dy * inertia - gy * (1 - inertia)
+      const len = Math.hypot(dx, dy)
+      if (len < 1e-6) break
+      dx /= len; dy /= len
+      x += dx; y += dy
+      if (x < 1 || y < 1 || x >= N - 1 || y >= N - 1) break
+      const hNew = hAt(x, y)
+      const dh = hNew - hOld
+      if (hOld < -2) break
+      const cap = Math.max(-dh * speed * water * capacityK, 0.01)
+      if (sediment > cap || dh > 0) {
+        const amt = dh > 0 ? Math.min(dh, sediment) : (sediment - cap) * depositK
+        sediment -= amt
+        h[k] += amt * (1 - u) * (1 - v); h[k + 1] += amt * u * (1 - v); h[k + STRIDE] += amt * (1 - u) * v; h[k + STRIDE + 1] += amt * u * v
+      } else {
+        const amt = Math.min((cap - sediment) * erodeK, -dh)
+        h[k] -= amt * (1 - u) * (1 - v); h[k + 1] -= amt * u * (1 - v); h[k + STRIDE] -= amt * (1 - u) * v; h[k + STRIDE + 1] -= amt * u * v
+        sediment += amt
+      }
+      speed = Math.sqrt(Math.max(0, speed * speed - dh * gravity))
+      water *= 1 - evap
+    }
+  }
 }
 
-/**
- * Height of the rendered LOD0 terrain mesh at x,z: exact interpolation of the grid triangles
- * (cell MESH_CELL, diagonal from (x0+1, z0) to (x0, z0+1)). Pass a coarser cell to match other LODs.
- */
-export function terrainMeshHeight(x: number, z: number, cell = MESH_CELL): number {
+function world(): Baked {
+  if (!baked || baked.seed !== layoutSeed) baked = bake(layoutSeed)
+  return baked
+}
+
+/** Force the heightmap bake now (e.g. behind a loading screen). Returns bake time in ms. */
+export function bakeWorld(): number {
+  return world().ms
+}
+
+/** Raw baked mesh data for renderers (shared, do not mutate). */
+export function worldMesh() {
+  const w = world()
+  return { n: N, stride: STRIDE, cell: MESH_CELL, h: w.h, vx: w.vx, vz: w.vz, diag: w.diag, bakeMs: w.ms }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Surface queries
+
+const triScratch = { h: 0 }
+
+/** Height of triangle (p0,p1,p2) at (x,z) if inside (with tolerance), stored in triScratch. */
+function inTri(w: Baked, k0: number, k1: number, k2: number, x: number, z: number): boolean {
+  const x0 = w.vx[k0], z0 = w.vz[k0], x1 = w.vx[k1], z1 = w.vz[k1], x2 = w.vx[k2], z2 = w.vz[k2]
+  const det = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2)
+  const l0 = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / det
+  const l1 = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / det
+  const l2 = 1 - l0 - l1
+  const e = -1e-6
+  if (l0 < e || l1 < e || l2 < e) return false
+  const h2 = w.h[k2]
+  // Relative form: exact on flat triangles (runways read exactly BASE_ELEVATION).
+  triScratch.h = h2 + l0 * (w.h[k0] - h2) + l1 * (w.h[k1] - h2)
+  return true
+}
+
+function cellHeight(w: Baked, i: number, j: number, x: number, z: number): boolean {
+  if (i < 0 || j < 0 || i >= N || j >= N) return false
+  const a = j * STRIDE + i, b = a + 1, c = a + STRIDE, d = c + 1
+  if (w.diag[j * N + i] === 0) return inTri(w, a, c, b, x, z) || inTri(w, b, c, d, x, z)
+  return inTri(w, a, c, d, x, z) || inTri(w, a, d, b, x, z)
+}
+
+const SEARCH = [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]
+
+/** Height of the rendered LOD0 terrain mesh (terrain or seabed) at x,z. */
+export function terrainMeshHeight(x: number, z: number): number {
   if (!(x > -WORLD_HALF && x < WORLD_HALF && z > -WORLD_HALF && z < WORLD_HALF)) return SEA_FLOOR
-  const gx = x / cell, gz = z / cell
-  const ix = Math.floor(gx), iz = Math.floor(gz)
-  const u = gx - ix, v = gz - iz
-  let a: number, b: number, c: number, d: number
-  if (cell === MESH_CELL) {
-    b = vertexHeight(ix + 1, iz); c = vertexHeight(ix, iz + 1)
-    if (u + v <= 1) { a = vertexHeight(ix, iz); return a + (b - a) * u + (c - a) * v }
-    d = vertexHeight(ix + 1, iz + 1); return d + (c - d) * (1 - u) + (b - d) * (1 - v)
-  }
-  const x0 = ix * cell, z0 = iz * cell
-  b = terrainHeight(x0 + cell, z0); c = terrainHeight(x0, z0 + cell)
-  if (u + v <= 1) { a = terrainHeight(x0, z0); return a + (b - a) * u + (c - a) * v }
-  d = terrainHeight(x0 + cell, z0 + cell); return d + (c - d) * (1 - u) + (b - d) * (1 - v)
+  const w = world()
+  const gx = (x + WORLD_HALF) / MESH_CELL, gz = (z + WORLD_HALF) / MESH_CELL
+  const i = Math.floor(gx), j = Math.floor(gz)
+  // Probe the nearest neighbour cells first.
+  const sx = gx - i < 0.5 ? -1 : 1, sz = gz - j < 0.5 ? -1 : 1
+  if (cellHeight(w, i, j, x, z)) return triScratch.h
+  if (cellHeight(w, i + sx, j, x, z)) return triScratch.h
+  if (cellHeight(w, i, j + sz, x, z)) return triScratch.h
+  if (cellHeight(w, i + sx, j + sz, x, z)) return triScratch.h
+  for (const [di, dj] of SEARCH) if (cellHeight(w, i + di, j + dj, x, z)) return triScratch.h
+  // Numerical fallback: nearest vertex.
+  const k = Math.min(N, Math.max(0, Math.round(gz))) * STRIDE + Math.min(N, Math.max(0, Math.round(gx)))
+  return w.h[k]
+}
+
+/** Terrain height (same surface as the mesh; kept for API compatibility). */
+export function terrainHeight(x: number, z: number): number {
+  return terrainMeshHeight(x, z)
 }
 
 /** Solid surface height (terrain mesh or water) used by physics. */
 export function groundHeight(x: number, z: number): number {
-  const b = bucketAt(x, z)
-  // Open ocean: no feature within reach of this cell.
-  if (!b || (b.islands.length === 0 && b.spires.length === 0 && b.base === null)) return WATER_LEVEL
+  if (!(x > -WORLD_HALF && x < WORLD_HALF && z > -WORLD_HALF && z < WORLD_HALF)) return WATER_LEVEL
+  const w = world()
+  const bi = Math.floor((x + WORLD_HALF) / BOUND_BLOCK), bj = Math.floor((z + WORLD_HALF) / BOUND_BLOCK)
+  if (w.bound[bj * BN + bi] <= WATER_LEVEL) return WATER_LEVEL
   const h = terrainMeshHeight(x, z)
   return h > WATER_LEVEL ? h : WATER_LEVEL
 }
 
-/** True where the surface at x,z is open water (sea or flooded canyon), per the LOD0 mesh. */
+/** Conservative upper bound of the solid surface in the 500 m block containing x,z (≥ WATER_LEVEL). */
+export function heightBound(x: number, z: number): number {
+  if (!(x > -WORLD_HALF && x < WORLD_HALF && z > -WORLD_HALF && z < WORLD_HALF)) return WATER_LEVEL
+  const w = world()
+  return w.bound[Math.floor((z + WORLD_HALF) / BOUND_BLOCK) * BN + Math.floor((x + WORLD_HALF) / BOUND_BLOCK)]
+}
+
+/** True where the surface at x,z is open water. */
 export function isWater(x: number, z: number): boolean {
-  const b = bucketAt(x, z)
-  if (!b || (b.islands.length === 0 && b.spires.length === 0 && b.base === null)) return true
   return terrainMeshHeight(x, z) <= WATER_LEVEL
 }
 
 function nearestBase(x: number, z: number): Airbase | null {
-  const b = bucketAt(x, z)
-  return b ? b.base : null
+  for (const b of AIRBASES) if (Math.abs(x - b.center[0]) < 1600 && Math.abs(z - b.center[2]) < 1600) return b
+  return null
 }
 
 function inRect(r: { a0: number; a1: number; c0: number; c1: number }, a: number, c: number): boolean {
@@ -558,23 +542,31 @@ export function surfaceType(x: number, z: number): SurfaceType {
   const h = terrainMeshHeight(x, z)
   if (h <= WATER_LEVEL) return "water"
   if (h < 4) return "sand"
-  if (h > 980) return "snow"
-  const e = 6
-  const sx = (terrainHeight(x + e, z) - terrainHeight(x - e, z)) / (2 * e)
-  const sz = (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e)
-  const slope = Math.sqrt(sx * sx + sz * sz)
-  if (slope > 1.1 || h > 720) return "rock"
-  return h > 80 ? "forest" : "grass"
+  const e = MESH_CELL
+  const sx = (terrainMeshHeight(x + e, z) - terrainMeshHeight(x - e, z)) / (2 * e)
+  const sz = (terrainMeshHeight(x, z + e) - terrainMeshHeight(x, z - e)) / (2 * e)
+  if (Math.hypot(sx, sz) > 0.9 || h > 600) return "rock"
+  return h > 120 ? "forest" : "grass"
 }
 
-/** Inside the team's ellipsoidal safe-zone dome (safeRadius wide, SAFE_ZONE_HEIGHT tall). */
+/** Distance (m) from x,z to the base's runway centre-line segment. */
+function runwayDistance(base: Airbase, x: number, z: number): number {
+  const a = worldToBaseA(base, x, z), c = worldToBaseC(base, x, z)
+  const half = base.runwayLength / 2
+  const da = a < -half ? -half - a : a > half ? a - half : 0
+  return Math.hypot(da, c)
+}
+
+/**
+ * Inside the team's protected zone: a capsule-shaped dome around the runway, safeRadius out from the
+ * runway centre-line and SAFE_ZONE_HEIGHT tall (ellipsoidal profile).
+ */
 export function inSafeZone(team: TeamId, p: Vec3): boolean {
   const base = AIRBASES[team]
   if (!base) return false
-  const dx = (p[0] - base.center[0]) / base.safeRadius
-  const dz = (p[2] - base.center[2]) / base.safeRadius
-  const dy = Math.max(0, p[1] - base.center[1]) / SAFE_ZONE_HEIGHT
-  return dx * dx + dz * dz + dy * dy < 1
+  const d = runwayDistance(base, p[0], p[2]) / base.safeRadius
+  const y = Math.max(0, p[1] - base.center[1]) / SAFE_ZONE_HEIGHT
+  return d * d + y * y < 1
 }
 
 export interface SpawnPoint {
@@ -587,7 +579,7 @@ export interface SpawnPoint {
 
 /**
  * Spawn slot for a team's vehicle. index lets multiple vehicles spawn without overlap.
- * Jets line up two abreast from the runway threshold (16 slots, then wrap); helicopters use helipads,
+ * Jets line up two abreast from the runway threshold (12 slots, then wrap); helicopters use helipads,
  * spilling onto the helipad apron beyond four.
  */
 export function spawnPoint(team: TeamId, kind: VehicleKind, index: number): SpawnPoint {
@@ -597,51 +589,45 @@ export function spawnPoint(team: TeamId, kind: VehicleKind, index: number): Spaw
     const pads = BASE_LAYOUT.helipads
     const slot = i % 8
     const [pa, pc] = pads[slot % pads.length]
-    const [x, z] = baseToWorld(base, pa, slot < pads.length ? pc : pc + 50)
+    const [x, z] = baseToWorld(base, pa, slot < pads.length ? pc : pc + 44)
     return { position: [x, BASE_ELEVATION + SPAWN_CLEARANCE.heli, z], yaw: base.heading, onGround: true }
   }
-  const slot = i % 16
-  const a = BASE_LAYOUT.runway.a0 + 70 + Math.floor(slot / 2) * 75
+  const slot = i % 12
+  const a = BASE_LAYOUT.runway.a0 + 60 + Math.floor(slot / 2) * 60 + (slot % 2) * 25
   const c = slot % 2 === 0 ? -13 : 13
-  const [x, z] = baseToWorld(base, a + (slot % 2) * 30, c)
+  const [x, z] = baseToWorld(base, a, c)
   return { position: [x, BASE_ELEVATION + SPAWN_CLEARANCE.jet, z], yaw: base.heading, onGround: true }
 }
 
 // ---------------------------------------------------------------------------------------------
 // Segment test
 
-/** Steepest terrain gradient we expect (rise/run); used for safe adaptive marching. */
-const MAX_SLOPE = 6
+/** Steepest mesh gradient we expect (rise/run); used for safe adaptive marching. */
+const MAX_SLOPE = 9
 
 /** Fraction [0,1] along segment a→b where it first goes below the ground surface, or null. */
 export function segmentHitsGround(a: Vec3, b: Vec3): number | null {
   const ax = a[0], ay = a[1], az = a[2]
   const dx = b[0] - ax, dy = b[1] - ay, dz = b[2] - az
   const minY = ay < b[1] ? ay : b[1]
-  // Fast reject: entire segment above every bound it can touch.
+  const horiz = Math.sqrt(dx * dx + dz * dz)
   if (minY > WATER_LEVEL) {
-    const horiz = Math.sqrt(dx * dx + dz * dz)
-    if (minY > 1300) return null
     let bound = Math.max(heightBound(ax, az), heightBound(b[0], b[2]))
-    if (horiz > BUCKET * 0.5) {
-      const n = Math.ceil(horiz / (BUCKET * 0.5))
+    if (horiz > BOUND_BLOCK * 0.5) {
+      const n = Math.ceil(horiz / (BOUND_BLOCK * 0.5))
       for (let i = 1; i < n; i++) bound = Math.max(bound, heightBound(ax + dx * i / n, az + dz * i / n))
     }
     if (minY > bound) return null
   }
   const g0 = ay - groundHeight(ax, az)
   if (g0 <= 0) return 0
-  const horiz = Math.sqrt(dx * dx + dz * dz)
   const len = Math.sqrt(horiz * horiz + dy * dy)
   if (len < 1e-9) return null
-  // Adaptive march: the clearance limits how far we can move before possibly touching the surface.
   const vert = Math.abs(dy) / Math.max(horiz, 1e-9)
-  const minStep = Math.min(1, 2 / len)
+  const minStep = Math.min(1, 1.5 / len)
   let t = 0, gap = g0
   while (t < 1) {
-    const safeHoriz = gap / (MAX_SLOPE + vert)
-    let step = horiz > 1e-9 ? safeHoriz / horiz : 1
-    if (horiz <= 1e-9) step = gap / Math.max(Math.abs(dy), 1e-9) // vertical segment
+    let step = horiz > 1e-9 ? gap / (MAX_SLOPE + vert) / horiz : gap / Math.max(Math.abs(dy), 1e-9)
     if (step < minStep) step = minStep
     let t1 = t + step
     if (t1 > 1) t1 = 1
@@ -650,8 +636,7 @@ export function segmentHitsGround(a: Vec3, b: Vec3): number | null {
       let lo = t, hi = t1
       for (let k = 0; k < 18; k++) {
         const mid = (lo + hi) * 0.5
-        const gm = ay + dy * mid - groundHeight(ax + dx * mid, az + dz * mid)
-        if (gm <= 0) hi = mid
+        if (ay + dy * mid - groundHeight(ax + dx * mid, az + dz * mid) <= 0) hi = mid
         else lo = mid
       }
       return hi

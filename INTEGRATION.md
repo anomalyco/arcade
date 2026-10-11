@@ -1,5 +1,9 @@
 # Integration TODO (orchestrator)
 
+## Controls help text (unified Battlefield scheme) — apply in spawn.ts/index.html/pause.ts
+- Same for all aircraft: "Pitch: Mouse Y (forward = nose down) · ↑ down ↓ up", "Roll: Mouse X · ←→", "Yaw: A D · Q E", "Throttle/Collective: W S", "Boost / brake·auto-hover: Shift X". Drop separate Apache table. Pause checkbox: "Invert mouse Y (mouse forward = nose up)".
+- Heli trade-off: self-level means sustained forward flight needs repeated forward nudges. Revisit after playtest (option: hold-tilt when |pitch| > ~8°).
+
 ## Audio hookup
 - Call `audio.setLocalPlayer(playerId)` after welcome. `event(e, pos, local)`: fire → own vehicle fired; hit → own vehicle was hit; kill → you were the killer. Own death detected via victim == own vehicle id.
 - Call `setListener` + `updateVehicles` every frame; `ui("lock-tone"|"locked"|"warning")` every frame while condition holds.

@@ -35,6 +35,33 @@ const _qp = new Quaternion()
 const _x = new Vector3()
 const _up = new Vector3()
 
+const HELI_PITCH_FOLLOW = 0.7
+const HELI_ROLL_FOLLOW = 0.3
+
+/**
+ * Helicopter chase attitude: full yaw, most of the pitch, only part of the roll so the horizon stays
+ * readable. Roll follow ramps to 1 when the heli goes past ~90° bank so flips stay continuous.
+ */
+function horizonFollow(q: Quaternion, out: Quaternion): Quaternion {
+  const f = _hf.set(0, 0, -1).applyQuaternion(q)
+  const r = _hr.set(1, 0, 0).applyQuaternion(q)
+  const u = _hu.set(0, 1, 0).applyQuaternion(q)
+  const yaw = Math.atan2(-f.x, -f.z)
+  const pitch = Math.asin(MathUtils.clamp(f.y, -1, 1))
+  const bank = Math.atan2(-r.y, u.y)
+  const t = MathUtils.smoothstep(Math.abs(bank), Math.PI / 3, Math.PI * 0.85)
+  const rollK = HELI_ROLL_FOLLOW + (1 - HELI_ROLL_FOLLOW) * t
+  const pitchK = HELI_PITCH_FOLLOW + (1 - HELI_PITCH_FOLLOW) * t
+  _hq.setFromAxisAngle(UP, yaw)
+  out.copy(_hq).multiply(_hq2.setFromAxisAngle(_hr.set(1, 0, 0), pitch * pitchK)).multiply(_hq2.setFromAxisAngle(_hu.set(0, 0, 1), -bank * rollK))
+  return out
+}
+const _hf = new Vector3()
+const _hr = new Vector3()
+const _hu = new Vector3()
+const _hq = new Quaternion()
+const _hq2 = new Quaternion()
+
 /**
  * One camera rig for every mode. Each mode computes a desired pose; switching modes
  * blends from the previous pose so cuts never pop.
@@ -100,15 +127,19 @@ export class CameraRig {
   }
 
   /**
-   * Direct-control chase cam: follows the airframe's own attitude (with a little lag) so loops,
-   * rolls and inverted flight read naturally. lookYaw/lookPitch = free-look offsets.
+   * Direct-control chase cam. Jets: follows the airframe's full attitude (roll included) with light
+   * smoothing so loops, rolls and inverted flight read naturally. Helicopter: follows yaw and most of
+   * the pitch but only part of the roll, keeping the horizon readable. lookYaw/lookPitch = free-look.
    */
   chaseBody(dt: number, kind: VehicleKind, position: Vec3, velocity: Vec3, orientation: Quat, lookYaw: number, lookPitch: number,
     groundAt: (x: number, z: number) => number): void {
     const c = CHASE[kind]
     _q.set(orientation[0], orientation[1], orientation[2], orientation[3])
+    const heli = kind === "apache"
+    if (heli) horizonFollow(_q, _q)
     if (!this.followInit) { this.followQ.copy(_q); this.followInit = true }
-    this.followQ.slerp(_q, 1 - Math.exp(-dt * 6))
+    // Frame-rate independent smoothing; jets follow a touch quicker (roll included), helis softer.
+    this.followQ.slerp(_q, 1 - Math.exp(-dt * (heli ? 5 : 7)))
     _q2.copy(this.followQ)
     if (lookYaw || lookPitch) {
       _q2.multiply(_qy.setFromAxisAngle(UP, lookYaw)).multiply(_qp.setFromAxisAngle(_x.set(1, 0, 0), lookPitch))

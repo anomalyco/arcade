@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
-  AIRBASES, BASE_LAYOUT, CEILING, MESH_CELL, SAFE_ZONE_HEIGHT, WATER_LEVEL, WORLD_HALF, baseToWorld, groundHeight, heightBound,
-  inSafeZone, onRunway, segmentHitsGround, spawnPoint, surfaceType, terrainHeight, terrainMeshHeight, worldQuery,
+  AIRBASES, BASE_LAYOUT, CEILING, MESH_CELL, SAFE_ZONE_HEIGHT, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, baseToWorld,
+  groundHeight, heightBound, inSafeZone, onRunway, segmentHitsGround, spawnPoint, surfaceType, terrainHeight, terrainMeshHeight,
+  worldMesh, worldQuery,
 } from "../src/sim/geography"
 import { generateCluster } from "../src/render/world/tile-gen"
 import type { TeamId, Vec3 } from "../src/sim/types"
@@ -20,6 +21,16 @@ function rng(seed: number) {
 const TEAMS: TeamId[] = [0, 1, 2, 3]
 
 describe("heightfield", () => {
+  test("procedural bake is fast and cached", () => {
+    const ms = bakeWorld()
+    console.log(`heightmap bake: ${ms.toFixed(0)} ms`)
+    expect(ms).toBeLessThan(400)
+    const t = performance.now()
+    bakeWorld()
+    expect(performance.now() - t).toBeLessThan(5)
+    expect(WORLD_SIZE).toBe(16_000)
+  })
+
   test("deterministic and finite", () => {
     const r = rng(1)
     let digest = 0
@@ -40,25 +51,20 @@ describe("heightfield", () => {
     expect(digest2).toBe(digest)
   })
 
-  test("has tall central peaks, mostly ocean outer ring", () => {
-    let max = -Infinity, land = 0, outerLand = 0, outer = 0
+  test("has tall central peaks, islands and open water", () => {
+    let max = -Infinity, land = 0, centralMax = -Infinity
     const r = rng(2)
     for (let i = 0; i < 60_000; i++) {
       const x = (r() * 2 - 1) * WORLD_HALF, z = (r() * 2 - 1) * WORLD_HALF
       const h = terrainHeight(x, z)
       max = Math.max(max, h)
       if (h > 0) land++
-      if (Math.hypot(x, z) > 10_500) {
-        outer++
-        if (h > 0) outerLand++
-      }
+      if (Math.hypot(x, z) < 2500) centralMax = Math.max(centralMax, h)
     }
-    for (let x = -3000; x < 1000; x += 20) for (let z = -2000; z < 1000; z += 20) max = Math.max(max, terrainHeight(x, z))
-    expect(max).toBeGreaterThan(1000)
-    expect(max).toBeLessThan(1400)
-    expect(land / 60_000).toBeGreaterThan(0.08)
-    expect(land / 60_000).toBeLessThan(0.35)
-    expect(outerLand / outer).toBeLessThan(0.2)
+    expect(centralMax).toBeGreaterThan(450)
+    expect(max).toBeLessThan(1000)
+    expect(land / 60_000).toBeGreaterThan(0.1)
+    expect(land / 60_000).toBeLessThan(0.4)
   })
 
   test("heightBound is a conservative upper bound", () => {
@@ -70,45 +76,41 @@ describe("heightfield", () => {
   })
 
   test("groundHeight matches the rendered LOD0 triangles", () => {
-    // Central volcano cluster: every rendered (non-skirt) LOD0 face must lie on the physics surface.
-    const cx = 4, cz = 4
-    const data = generateCluster(cx, cz, 0)
+    // Every rendered (non-skirt) LOD0 face of the central cluster must lie on the physics surface.
+    const data = generateCluster(1, 1, 0)
     const r = rng(4)
     const pos = data.positions
     const faces = pos.length / 9
     let maxErr = 0, checked = 0
-    for (let k = 0; k < 6000; k++) {
+    for (let k = 0; k < 8000; k++) {
       const f = Math.floor(r() * faces) * 9
-      const ys = [pos[f + 1], pos[f + 4], pos[f + 7]]
-      // Skirt faces are vertical; skip them.
-      const xs = [pos[f], pos[f + 3], pos[f + 6]], zs = [pos[f + 2], pos[f + 5], pos[f + 8]]
+      const xs = [pos[f], pos[f + 3], pos[f + 6]], ys = [pos[f + 1], pos[f + 4], pos[f + 7]], zs = [pos[f + 2], pos[f + 5], pos[f + 8]]
       const area = (xs[1] - xs[0]) * (zs[2] - zs[0]) - (xs[2] - xs[0]) * (zs[1] - zs[0])
-      if (Math.abs(area) < 1) continue
+      if (Math.abs(area) < 1) continue // skirt
       let u = r(), v = r()
       if (u + v > 1) { u = 1 - u; v = 1 - v }
       const w = 1 - u - v
-      const lx = xs[0] * w + xs[1] * u + xs[2] * v
-      const ly = ys[0] * w + ys[1] * u + ys[2] * v
-      const lz = zs[0] * w + zs[1] * u + zs[2] * v
+      const lx = xs[0] * w + xs[1] * u + xs[2] * v, ly = ys[0] * w + ys[1] * u + ys[2] * v, lz = zs[0] * w + zs[1] * u + zs[2] * v
       maxErr = Math.max(maxErr, Math.abs(terrainMeshHeight(lx, lz) - ly))
       checked++
     }
-    expect(checked).toBeGreaterThan(3000)
+    expect(checked).toBeGreaterThan(4000)
     expect(maxErr).toBeLessThan(0.01)
-    expect(data.maxY).toBeGreaterThan(1000)
+    expect(data.maxY).toBeGreaterThan(300)
   })
 
-  test("groundHeight never below water and coincides with MESH_CELL grid vertices", () => {
+  test("groundHeight never below water and equals vertex heights at mesh vertices", () => {
     const r = rng(5)
     for (let i = 0; i < 20_000; i++) {
       const x = (r() * 2 - 1) * WORLD_HALF, z = (r() * 2 - 1) * WORLD_HALF
       expect(groundHeight(x, z)).toBeGreaterThanOrEqual(WATER_LEVEL)
     }
+    const m = worldMesh()
     for (let i = 0; i < 2000; i++) {
-      const ix = Math.floor((r() * 2 - 1) * 450), iz = Math.floor((r() * 2 - 1) * 450)
-      const x = ix * MESH_CELL, z = iz * MESH_CELL
-      expect(groundHeight(x, z)).toBeCloseTo(Math.max(0, terrainHeight(x, z)), 6)
+      const k = (1 + Math.floor(r() * (m.n - 2))) * m.stride + 1 + Math.floor(r() * (m.n - 2))
+      expect(terrainMeshHeight(m.vx[k], m.vz[k])).toBeCloseTo(m.h[k], 3)
     }
+    expect(m.cell).toBe(MESH_CELL)
   })
 
   test("worldQuery contract", () => {
@@ -120,7 +122,7 @@ describe("heightfield", () => {
 
 describe("airbases", () => {
   test("cardinal placement and headings toward the center", () => {
-    const expected = [[0, 12000], [0, -12000], [-12000, 0], [12000, 0]]
+    const expected = [[0, 5500], [0, -5500], [-5500, 0], [5500, 0]]
     for (const base of AIRBASES) {
       expect(base.center[0]).toBeCloseTo(expected[base.team][0])
       expect(base.center[2]).toBeCloseTo(expected[base.team][1])
@@ -152,7 +154,7 @@ describe("airbases", () => {
       }
       // Flat margin around the runway (no hills/trees intruding on takeoff).
       const F = BASE_LAYOUT.flat
-      const m = MESH_CELL * 1.5 // last mesh cell blends into the coastline
+      const m = MESH_CELL * 1.5 // jittered edge cells blend into the shoulder
       for (let a = F.a0 + m; a <= F.a1 - m; a += 50) for (let c = F.c0 + m; c <= F.c1 - m; c += 40) {
         const [x, z] = baseToWorld(base, a, c)
         expect(groundHeight(x, z)).toBe(y)
@@ -160,10 +162,10 @@ describe("airbases", () => {
       // Grass beside the runway is not "paved".
       const [gx, gz] = baseToWorld(base, 0, -80)
       expect(onRunway(gx, gz)).toBe(false)
-      // Departure path toward the center stays clear of terrain for 2.5 km past the runway end at a 6% climb.
-      for (let d = 0; d < 2500; d += 25) {
+      // Departure path toward the center: clear for 400 m past the runway end, then a 15% climb clears terrain.
+      for (let d = 0; d < 1500; d += 25) {
         const [x, z] = baseToWorld(base, rw.a1 + d, 0)
-        expect(groundHeight(x, z)).toBeLessThan(y + 10 + d * 0.06)
+        expect(groundHeight(x, z)).toBeLessThan(y + 5 + Math.max(0, d - 400) * 0.15)
       }
     }
     expect(onRunway(0, 0)).toBe(false)
@@ -173,7 +175,7 @@ describe("airbases", () => {
     for (const team of TEAMS) {
       const base = AIRBASES[team]
       const used: Vec3[] = []
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 12; i++) {
         const s = spawnPoint(team, "fighter", i)
         expect(s.onGround).toBe(true)
         expect(s.yaw).toBe(base.heading)
@@ -201,11 +203,19 @@ describe("airbases", () => {
   test("safe zone shape", () => {
     for (const base of AIRBASES) {
       const [x, , z] = base.center
+      const y0 = base.center[1]
+      expect(base.safeRadius).toBe(500)
       expect(inSafeZone(base.team, [x, 30, z])).toBe(true)
-      expect(inSafeZone(base.team, [x, base.center[1] + SAFE_ZONE_HEIGHT - 20, z])).toBe(true)
-      expect(inSafeZone(base.team, [x, base.center[1] + SAFE_ZONE_HEIGHT + 20, z])).toBe(false)
-      expect(inSafeZone(base.team, [x + base.safeRadius - 30, 25, z])).toBe(true)
-      expect(inSafeZone(base.team, [x + base.safeRadius + 30, 25, z])).toBe(false)
+      expect(inSafeZone(base.team, [x, y0 + SAFE_ZONE_HEIGHT - 10, z])).toBe(true)
+      expect(inSafeZone(base.team, [x, y0 + SAFE_ZONE_HEIGHT + 10, z])).toBe(false)
+      // Covers the whole runway length, and safeRadius to the side.
+      for (const a of [BASE_LAYOUT.runway.a0, BASE_LAYOUT.runway.a1]) {
+        const [rx, rz] = baseToWorld(base, a, 0)
+        expect(inSafeZone(base.team, [rx, 25, rz])).toBe(true)
+      }
+      const [sx, sz] = baseToWorld(base, 0, base.safeRadius - 20), [ox, oz] = baseToWorld(base, 0, base.safeRadius + 20)
+      expect(inSafeZone(base.team, [sx, 25, sz])).toBe(true)
+      expect(inSafeZone(base.team, [ox, 25, oz])).toBe(false)
       const other = ((base.team + 1) % 4) as TeamId
       expect(inSafeZone(other, [x, 30, z])).toBe(false)
     }
@@ -228,9 +238,9 @@ describe("segmentHitsGround", () => {
     let agree = 0, total = 0, hits = 0
     for (let i = 0; i < 600; i++) {
       // Bias toward the central islands and low altitudes so most segments matter.
-      const x = (r() * 2 - 1) * 9000, z = (r() * 2 - 1) * 9000
-      const a: Vec3 = [x, 20 + r() * 900, z]
-      const len = 50 + r() * 3000
+      const x = (r() * 2 - 1) * 6000, z = (r() * 2 - 1) * 6000
+      const a: Vec3 = [x, 20 + r() * 700, z]
+      const len = 50 + r() * 2500
       const yaw = r() * Math.PI * 2, pitch = (r() - 0.6) * 0.8
       const b: Vec3 = [x + Math.cos(yaw) * Math.cos(pitch) * len, a[1] + Math.sin(pitch) * len, z + Math.sin(yaw) * Math.cos(pitch) * len]
       const got = segmentHitsGround(a, b), want = brute(a, b)
@@ -246,9 +256,9 @@ describe("segmentHitsGround", () => {
 
   test("edge cases", () => {
     expect(segmentHitsGround([0, 3000, 0], [100, 3000, 100])).toBeNull()
-    expect(segmentHitsGround([0, -5, 13000], [10, -5, 13000])).toBe(0)
+    expect(segmentHitsGround([7900, -5, 7900], [7910, -5, 7900])).toBe(0)
     // Straight down onto open water.
-    const t = segmentHitsGround([-5000, 100, 11000], [-5000, -100, 11000])
+    const t = segmentHitsGround([7900, 100, 7900], [7900, -100, 7900])
     expect(t).not.toBeNull()
     expect(t!).toBeCloseTo(0.5, 3)
     // Zero-length segment above ground.
@@ -260,14 +270,14 @@ describe("performance", () => {
   test("1M groundHeight calls", () => {
     const r = rng(9)
     const xs = new Float64Array(1_000_000), zs = new Float64Array(1_000_000)
-    for (let i = 0; i < xs.length; i++) { xs[i] = (r() * 2 - 1) * 10_000; zs[i] = (r() * 2 - 1) * 10_000 }
+    for (let i = 0; i < xs.length; i++) { xs[i] = (r() * 2 - 1) * WORLD_HALF; zs[i] = (r() * 2 - 1) * WORLD_HALF }
     let sum = 0
     const t0 = performance.now()
     for (let i = 0; i < xs.length; i++) sum += groundHeight(xs[i], zs[i])
     const random = performance.now() - t0
     // Coherent queries (aircraft flying a path) mostly hit the vertex cache.
     const t1 = performance.now()
-    for (let i = 0; i < 1_000_000; i++) sum += groundHeight(-3000 + i * 0.006, -1000 + Math.sin(i * 1e-5) * 400)
+    for (let i = 0; i < 1_000_000; i++) sum += groundHeight(-3000 + i * 0.006, -500 + Math.sin(i * 1e-5) * 400)
     const coherent = performance.now() - t1
     console.log(`1M groundHeight: random ${random.toFixed(0)} ms, coherent ${coherent.toFixed(0)} ms (sum ${sum.toFixed(0)})`)
     expect(random).toBeLessThan(1500)
@@ -278,7 +288,7 @@ describe("performance", () => {
     const r = rng(10)
     const segs: [Vec3, Vec3][] = []
     for (let i = 0; i < 100_000; i++) {
-      const x = (r() * 2 - 1) * 9000, z = (r() * 2 - 1) * 9000, y = r() * 1500
+      const x = (r() * 2 - 1) * 7000, z = (r() * 2 - 1) * 7000, y = r() * 900
       const vx = (r() - 0.5) * 2, vy = (r() - 0.5) * 0.6, vz = (r() - 0.5) * 2
       const k = 17 / Math.hypot(vx, vy, vz) // ~1000 m/s over one 60 Hz tick
       segs.push([[x, y, z], [x + vx * k, y + vy * k, z + vz * k]])

@@ -1,10 +1,9 @@
 import {
   BufferAttribute, BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Mesh, Sphere, Vector3, type Material,
 } from "three"
-import { tileHasTerrain } from "../../sim/geography"
 import type { WorldQualitySettings } from "./settings"
 import {
-  CLUSTER_N, CLUSTER_SIZE, SHORE_SIZE, TREE_KINDS, clusterHasTerrain, clusterOrigin, generateCluster, generateShoreRows,
+  CLUSTER_N, CLUSTER_SIZE, SHORE_SIZE, TREE_KINDS, clusterOrigin, generateCluster, generateShoreRows,
   generateTrees, type ClusterData, type TreeData,
 } from "./tile-gen"
 import type { WorkerRequest } from "./terrain-worker"
@@ -60,7 +59,7 @@ interface Cluster {
   wantTrees: boolean
 }
 
-const SHORE_CHUNK = 128
+const SHORE_CHUNK = 64
 
 export interface StreamerStats {
   clusters: number; visibleClusters: number; pending: number; trees: number; triangles: number; lastWorkMs: number; maxWorkMs: number
@@ -92,7 +91,6 @@ export class TerrainStreamer {
     this.terrainRoot.name = "World · terrain clusters"
     this.treeRoot.name = "World · trees"
     for (let cz = 0; cz < CLUSTER_N; cz++) for (let cx = 0; cx < CLUSTER_N; cx++) {
-      if (!clusterHasTerrain(cx, cz, tileHasTerrain)) continue
       this.clusters.push({ cx, cz, mesh: null, lod: -1, pending: -1, wantLod: 3, visible: false, dist: Infinity, lastWanted: 0,
         trees: null, treesPending: false, wantTrees: false })
     }
