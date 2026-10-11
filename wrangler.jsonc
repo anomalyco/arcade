@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wings",
+  "main": "server.ts",
+  "account_id": "15d29c8639fd3733b1b5486a2acfd968",
+  "compatibility_date": "2026-09-07",
+  "workers_dev": true,
+  "routes": [{ "pattern": "anoma.ly/labs/wings*", "zone_name": "anoma.ly" }],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/labs/wings", "/labs/wings/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "Room" },
+      { "name": "DIRECTORY", "class_name": "RoomDirectory" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Room", "RoomDirectory"] }
+  ]
+}
