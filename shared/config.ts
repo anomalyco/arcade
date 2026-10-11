@@ -9,7 +9,7 @@ export const WORLD_MAX = GRID * CELL + ROAD_HALF
 export const WATER_Z = GRID * CELL + ROAD_HALF
 
 export const MIN_COPS = 3
-export const MAX_PLAYERS = 6
+export const MAX_PLAYERS = 16
 export const ROUND_SECONDS = 180
 export const INTRO_SECONDS = 4
 export const HEAD_START_SECONDS = 5

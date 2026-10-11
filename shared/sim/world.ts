@@ -357,7 +357,7 @@ export class World {
     this.spawn(robber, "robber", this.site.x, this.site.z - 10, 0)
     const cops = this.participants.filter((p) => p.id !== robber.id)
     const n = this.city.nodes[this.city.precinct.spawnNode]!
-    cops.forEach((p, i) => this.spawn(p, "cop", n.x + (i % 2 === 0 ? -2.5 : 2.5), n.z + Math.floor(i / 2) * 7, Math.PI))
+    cops.forEach((p, i) => this.spawn(p, "cop", n.x + (i % 2 === 0 ? -2.5 : 2.5), n.z + Math.floor(i / 2) * 6.5, Math.PI))
     this.emit("round", SURVIVAL ? `${robber.name} is on the run.` : `${robber.name} hit ${this.site.name}. Get to the ${this.exit.name}.`)
   }
 

@@ -1,3 +1,4 @@
+import { MAX_PLAYERS } from "../shared/config"
 import { describe, expect, test } from "bun:test"
 import { DT } from "../shared/config"
 import { type ServerMsg, decodeServer, encodeClient } from "../shared/protocol"
@@ -194,7 +195,7 @@ describe("prediction", () => {
 })
 
 describe("room", () => {
-  test("a lone player waits and free-drives; a second player starts the round; the room caps at six humans", () => {
+  test("a lone player waits and free-drives; a second player starts the round; the room caps at MAX_PLAYERS humans", () => {
     const net = new Net()
     const a = join(net, "Ada")
     settle(net, a)
@@ -213,9 +214,9 @@ describe("room", () => {
     expect(world.round).toBe(0)
     expect(world.robberId).toBe(a.client!.myId)
     expect(world.carOf(b.client!.myId)!.role).toBe("cop")
-    const others = [1, 2, 3, 4].map((i) => join(net, `P${i}`))
+    const others = Array.from({ length: MAX_PLAYERS - 2 }, (_, i) => join(net, `P${i}`))
     settle(net, ...others)
-    expect(net.core.participants().length).toBe(6)
+    expect(net.core.participants().length).toBe(MAX_PLAYERS)
     expect(net.core.participants().every((p) => p.human)).toBe(true)
     const late = join(net, "Late")
     for (let i = 0; i < 6; i++) {
