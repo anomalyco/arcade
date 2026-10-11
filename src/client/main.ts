@@ -2,7 +2,7 @@ import type { Aim, FallingChunk, FeedEntry, Frame, LiveProjectile, Screen, UISta
 import { createRenderer } from "./render/index"
 import { createUI } from "./ui/index"
 import { connectOnline, createLocal, createRoom, roomFromLocation, roomLink, type Transport } from "./net"
-import { awardMatch, loadProfile, saveProfile } from "./profile"
+import { loadProfile, saveProfile } from "./profile"
 import { TEAM_COLORS, type ClassId, type MatchView, type PathOut, type ServerMsg, type Shot, type SimEvent, type Unit, type VolleyResult } from "../sim/protocol"
 import { generateTerrain, spawnPoints, unpackMask, type Mask } from "../sim/terrain"
 import { chunkLand, chunkRemove, decodeChunk, applyTerrainEvent } from "../sim/replay"
@@ -26,9 +26,6 @@ let aimSentAt = 0
 let feed: FeedEntry[] = []
 let feedId = 0
 let lastPickup: UIState["lastPickup"] = null
-let xpGain: UIState["xpGain"] = null
-let awarded = -1
-let lastPhase = ""
 let lastVolleyKey = ""
 
 interface Pending {
@@ -82,21 +79,6 @@ function applyView(next: MatchView): void {
     const weapon = aim && u && u.ammo[aim.weapon] > 0 ? aim.weapon : "shell"
     aim = { angle: u?.angle ?? Math.PI / 4, power: aim?.power ?? 62, weapon }
     aimSent = ""
-  }
-  if (next.phase === "over" && awarded !== next.battle + next.seed) {
-    awarded = next.battle + next.seed
-    const p = me()
-    if (p && !p.spectator) {
-      const winner = next.matchWinner
-      const res = awardMatch(profile, { damage: p.damage, kills: p.kills, wins: p.wins, battles: next.battles, won: winner === p.id })
-      profile = res.profile
-      saveProfile(profile)
-      xpGain = { amount: res.gained, leveledTo: res.leveledTo }
-    }
-  }
-  if (next.phase !== lastPhase) {
-    if (next.phase === "lobby") xpGain = null
-    lastPhase = next.phase
   }
 }
 
@@ -468,10 +450,10 @@ async function play(opts: { online: boolean; room?: string }): Promise<void> {
   t.onStatus((s) => {
     if (s === "open" && !joined) {
       joined = true
-      t.send({ type: "join", name: profile.name.trim().slice(0, 16), cls: profile.cls, level: profile.level })
+      t.send({ type: "join", name: profile.name.trim().slice(0, 16), cls: profile.cls })
       if (!t.online) t.send({ type: "start", mode: "ffa", bots: 5, battles: 3 })
     } else if (s === "open") {
-      t.send({ type: "join", name: profile.name.trim().slice(0, 16), cls: profile.cls, level: profile.level })
+      t.send({ type: "join", name: profile.name.trim().slice(0, 16), cls: profile.cls })
     }
   })
 }
@@ -633,7 +615,6 @@ function loop(now: number): void {
     spectating: !!p?.spectator,
     serverNow: transport ? transport.serverNow() : Date.now(),
     lastPickup,
-    xpGain,
   })
   requestAnimationFrame(loop)
 }

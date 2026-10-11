@@ -93,7 +93,7 @@ export class Room extends DurableObject<Env> {
       }
       session.joined = true
       this.byPid.set(session.pid, session)
-      match.join(session.pid, msg.name, msg.cls, msg.level, now)
+      match.join(session.pid, msg.name, msg.cls, now)
     } else if (session.joined) {
       match.handle(session.pid, msg, now)
     } else {

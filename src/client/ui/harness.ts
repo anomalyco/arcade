@@ -4,7 +4,6 @@ import type { ClassId, MatchView, Phase, PlayerView, Unit } from "../../sim/prot
 import { WEAPONS, WEAPON_IDS, type WeaponId } from "../../sim/weapons"
 import { CLASSES } from "../../sim/classes"
 import { createUI } from "./index"
-import { xpForLevel } from "../profile"
 
 const params = new URLSearchParams(location.search)
 const screen = (params.get("screen") ?? "game") as Screen
@@ -57,7 +56,6 @@ const players: PlayerView[] = names.map((name, i) => ({
   kills: [3, 2, 4, 1, 1, 0, 2, 0][i],
   wins: [1, 0, 2, 0, 0, 0, 1, 0][i],
   cls: classes[i],
-  level: [6, 3, 9, 2, 4, 1, 1, 1][i],
   host: i === 0,
 }))
 if (screen === "game" && variant !== "locked") players[0].locked = false
@@ -92,13 +90,7 @@ if (screen === "lobby" && variant === "guest") {
 
 const profile: Profile = {
   name: params.has("noname") ? "" : "dax",
-  xp: screen === "results" && variant !== "nolevel" ? xpForLevel(5) + 120 : xpForLevel(3) + 420,
-  level: screen === "results" && variant !== "nolevel" ? 5 : 3,
   cls: "howitzer",
-  cosmetic: "standard",
-  matches: 14,
-  wins: 3,
-  kills: 41,
 }
 
 const aim: Aim = { angle: (47 * Math.PI) / 180, power: 72, weapon: (params.get("weapon") as WeaponId) ?? "shell" }
@@ -123,7 +115,6 @@ const state: UIState = {
   spectating: variant === "spectate",
   serverNow: t0,
   lastPickup: variant === "pickup" ? { kind: "shield", detail: "40 HP barrier this volley", at: now0 } : null,
-  xpGain: screen === "results" ? { amount: 640, leveledTo: variant === "nolevel" ? null : 5 } : null,
 }
 
 const log = (name: string) => (...args: unknown[]) => console.log("[action]", name, ...args)

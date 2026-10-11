@@ -44,7 +44,6 @@ interface Player {
   id: string
   name: string
   cls: ClassId
-  level: number
   bot: boolean
   connected: boolean
   host: boolean
@@ -127,19 +126,17 @@ export class Match {
   // -------------------------------------------------------------------------
   // connections
 
-  join(id: string, name: string, cls: ClassId, level: number, now: number): void {
+  join(id: string, name: string, cls: ClassId, now: number): void {
     const existing = this.players.find((p) => p.id === id)
     if (existing) {
       existing.connected = true
       existing.name = this.cleanName(name, existing.name)
-      if (this.phase === "lobby" || this.phase === "shop" || this.phase === "over") existing.cls = this.cleanClass(cls, level)
-      existing.level = level
+      if (this.phase === "lobby" || this.phase === "shop" || this.phase === "over") existing.cls = this.cleanClass(cls)
     } else {
       const p: Player = {
         id,
         name: this.cleanName(name, `PILOT ${this.nextSlot + 1}`),
-        cls: this.cleanClass(cls, level),
-        level,
+        cls: this.cleanClass(cls),
         bot: false,
         connected: true,
         host: false,
@@ -187,7 +184,7 @@ export class Match {
       return
     }
     if (msg.type === "join") {
-      this.join(id, msg.name, msg.cls, msg.level, now)
+      this.join(id, msg.name, msg.cls, now)
       return
     }
     if (!p) return
@@ -203,7 +200,7 @@ export class Match {
           this.error(id, "Class changes apply between battles")
           return
         }
-        p.cls = this.cleanClass(msg.cls, p.level)
+        p.cls = this.cleanClass(msg.cls)
         this.stateDirty = true
         break
       }
@@ -298,7 +295,6 @@ export class Match {
         kills: p.kills,
         wins: p.wins,
         cls: p.cls,
-        level: p.level,
         host: p.host,
       }))
     const v: MatchView = {
@@ -378,7 +374,6 @@ export class Match {
       id: `bot:${this.matchNo}:${++this.botCount}`,
       name,
       cls,
-      level: 1 + Math.floor(r() * 10),
       bot: true,
       connected: true,
       host: false,
@@ -708,10 +703,8 @@ export class Match {
     return n || fallback
   }
 
-  private cleanClass(cls: ClassId, level: number): ClassId {
-    const def = CLASSES[cls]
-    if (!def) return "howitzer"
-    return (level ?? 1) >= def.unlock ? cls : "howitzer"
+  private cleanClass(cls: ClassId): ClassId {
+    return CLASSES[cls] ? cls : "howitzer"
   }
 
   private fixHost(): void {

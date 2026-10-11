@@ -48,19 +48,19 @@ Crates parachute in at procedural positions between volleys. **You claim a crate
 ## Progression
 
 - **Within a match:** you earn credits for damage (about 1 per HP), kills (150), surviving a battle (100) and winning a battle (250). You spend them in the between-battle **armory** on weapon ammo and upgrades (armor plating, fuel tank, targeting lens, damage boost, repair kit). The scoreboard tracks kills, damage, wins and credits.
-- **Across matches:** a profile in `localStorage` holds your XP and level. Levels unlock unit classes and cosmetics (trim and chevron styles).
+- **Nothing to unlock.** Every unit class and every weapon is available from the start. The browser only remembers your name and last unit.
 - **Unit classes** come from the lineup concept. Each has different HP, fuel and launch power, plus a passive:
 
-| Class | Unlock level | Passive |
-| --- | --- | --- |
-| Mortar Crawler | 1 | Starts each battle shielded |
-| Wheeled Howitzer | 1 | Extra cluster round |
-| Rocket Buggy | 2 | Double fuel |
-| Rail Cannon | 3 | Higher muzzle velocity |
-| Hover Drone | 4 | No fall damage |
-| Missile Walker | 5 | Climbs steep slopes |
-| Siege Tank | 6 | +20% damage, less fuel |
-| Mast Catapult | 8 | Half wind effect |
+| Class | Passive |
+| --- | --- |
+| Mortar Crawler | Starts each battle shielded |
+| Wheeled Howitzer | Extra cluster round |
+| Rocket Buggy | Double fuel |
+| Rail Cannon | Higher muzzle velocity |
+| Hover Drone | No fall damage |
+| Missile Walker | Climbs steep slopes |
+| Siege Tank | +20% damage, less fuel |
+| Mast Catapult | Half wind effect |
 
 ## Procedural content
 

@@ -74,7 +74,7 @@ export function parseClientMsg(text: string): ClientMsg | null {
   switch (m.type) {
     case "join": {
       const c = cls(m.cls) ?? "crawler"
-      return { type: "join", name: cleanName(m.name), cls: c, level: int(m.level, 1, 999) ?? 1 }
+      return { type: "join", name: cleanName(m.name), cls: c }
     }
     case "aim": {
       const angle = num(m.angle, -720, 720)

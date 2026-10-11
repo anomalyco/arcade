@@ -26,7 +26,6 @@
     "src/client",
     "src/sim",
     "test",
-    "scripts",
     "vite.config.ts"
   ]
 }

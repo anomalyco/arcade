@@ -1,9 +1,9 @@
 import type { ClassId } from "../../sim/protocol"
 import { CLASSES } from "../../sim/classes"
 import { cls, h, segBar, setSegBar } from "./dom"
-import { LOCK, unitGlyph } from "./glyphs"
+import { unitGlyph } from "./glyphs"
 
-export const CLASS_ORDER = (Object.keys(CLASSES) as ClassId[]).sort((a, b) => CLASSES[a].unlock - CLASSES[b].unlock)
+export const CLASS_ORDER = Object.keys(CLASSES) as ClassId[]
 
 const max = (k: "maxHp" | "fuel" | "power") => Math.max(1, ...CLASS_ORDER.map((id) => CLASSES[id][k]))
 
@@ -22,7 +22,6 @@ export function createClassStrip(onPick: (id: ClassId) => void, compact = false)
       <div class="cls-role"></div>
       <div class="cls-stats"></div>
       <div class="cls-passive"></div>
-      <div class="cls-lock">${LOCK}<span>LVL ${c.unlock}</span></div>
     `
     ;(card.querySelector(".cls-name") as HTMLElement).textContent = c.name.toUpperCase()
     ;(card.querySelector(".cls-role") as HTMLElement).textContent = c.role.toUpperCase()
@@ -38,18 +37,13 @@ export function createClassStrip(onPick: (id: ClassId) => void, compact = false)
       setSegBar(b, v / m)
       stats.append(h("div", "cls-stat", [h("span", "", [label]), b]))
     }
-    card.addEventListener("click", () => {
-      if (!card.classList.contains("locked")) onPick(id)
-    })
+    card.addEventListener("click", () => onPick(id))
     el.append(card)
     return { id, card }
   })
 
-  function update(selected: ClassId, level: number): void {
-    for (const { id, card } of cards) {
-      cls(card, "sel", id === selected)
-      cls(card, "locked", CLASSES[id].unlock > level)
-    }
+  function update(selected: ClassId): void {
+    for (const { id, card } of cards) cls(card, "sel", id === selected)
   }
 
   return { el, update }

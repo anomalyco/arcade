@@ -1,7 +1,6 @@
 import type { UIActions, UIState } from "../contracts"
 import { CLASSES } from "../../sim/classes"
-import { levelProgress } from "../profile"
-import { cls, fmtNum, h, show, style, text } from "./dom"
+import { cls, h, show, text } from "./dom"
 import { wordmark } from "./common"
 import { createClassStrip } from "./classes"
 
@@ -23,14 +22,6 @@ export function createTitle(actions: UIActions) {
           <button type="button" class="btn btn-accent tt-join">JOIN ROOM <span class="btn-sub tt-room"></span></button>
         </div>
       </form>
-      <div class="tt-profile">
-        <div class="tt-lvl"><span class="tt-lvl-l">LEVEL</span><span class="tt-lvl-v">1</span></div>
-        <div class="tt-xp">
-          <div class="tt-xp-row"><span class="tt-xp-t">0 / 0 XP</span><span class="tt-xp-next"></span></div>
-          <div class="tt-xp-bar"><i></i></div>
-          <div class="tt-record"></div>
-        </div>
-      </div>
     </div>
     <div class="tt-units">
       <div class="tt-units-head"><span>SELECT UNIT</span><span class="tt-unit-desc"></span></div>
@@ -43,11 +34,6 @@ export function createTitle(actions: UIActions) {
   const create = q<HTMLButtonElement>(".tt-create")
   const join = q<HTMLButtonElement>(".tt-join")
   const roomTag = q(".tt-room")
-  const lvl = q(".tt-lvl-v")
-  const xpT = q(".tt-xp-t")
-  const xpNext = q(".tt-xp-next")
-  const xpBar = q(".tt-xp-bar i")
-  const record = q(".tt-record")
   const units = q(".tt-units")
   const unitDesc = q(".tt-unit-desc")
 
@@ -99,17 +85,7 @@ export function createTitle(actions: UIActions) {
     text(roomTag, room ? room.toUpperCase() : "")
     cls(el, "has-room", !!room)
 
-    const lp = levelProgress(pr.xp)
-    text(lvl, lp.level)
-    text(xpT, `${fmtNum(lp.into)} / ${fmtNum(lp.need)} XP`)
-    const next = Object.values(CLASSES)
-      .filter((c) => c.unlock > lp.level)
-      .sort((a, b) => a.unlock - b.unlock)[0]
-    text(xpNext, next ? `LVL ${next.unlock} UNLOCKS ${next.name.toUpperCase()}` : "ALL UNITS UNLOCKED")
-    style(xpBar, "width", `${(lp.frac * 100).toFixed(1)}%`)
-    text(record, `${pr.matches} MATCHES  ·  ${pr.wins} WINS  ·  ${pr.kills} KILLS`)
-
-    strip.update(pr.cls, lp.level)
+    strip.update(pr.cls)
     text(unitDesc, CLASSES[pr.cls]?.desc ?? "")
   }
 

@@ -4,7 +4,6 @@ export interface ClassDef {
   id: ClassId
   name: string
   role: string
-  unlock: number
   maxHp: number
   fuel: number
   power: number
@@ -13,14 +12,14 @@ export interface ClassDef {
 }
 
 export const CLASSES: Record<ClassId, ClassDef> = {
-  crawler: { id: "crawler", name: "Mortar Crawler", role: "Bruiser", unlock: 1, maxHp: 110, fuel: 90, power: 0.97, passive: "Starts every battle with a 15 HP shield.", desc: "Tracked mortar carrier. Tough, steady and hard to dislodge." },
-  howitzer: { id: "howitzer", name: "Wheeled Howitzer", role: "All-rounder", unlock: 1, maxHp: 100, fuel: 110, power: 1, passive: "Gains +1 cluster round at the start of every battle.", desc: "Balanced field gun with a generous ammo locker." },
-  buggy: { id: "buggy", name: "Rocket Buggy", role: "Skirmisher", unlock: 2, maxHp: 85, fuel: 220, power: 0.96, passive: "Double fuel: drives twice as far every volley.", desc: "Six-wheel launcher that never stops moving." },
-  rail: { id: "rail", name: "Rail Cannon", role: "Sniper", unlock: 3, maxHp: 85, fuel: 80, power: 1.16, passive: "Higher maximum launch speed for flat, long shots.", desc: "Magnetic accelerator that reaches across the whole map." },
-  drone: { id: "drone", name: "Hover Drone", role: "Scout", unlock: 4, maxHp: 80, fuel: 140, power: 0.98, passive: "Never takes fall damage.", desc: "Hovering platform that shrugs off collapses and drops." },
-  walker: { id: "walker", name: "Missile Walker", role: "Climber", unlock: 5, maxHp: 95, fuel: 120, power: 1.02, passive: "Climbs and holds much steeper slopes without sliding.", desc: "Legged launcher that perches where tanks cannot." },
-  siege: { id: "siege", name: "Siege Tank", role: "Heavy", unlock: 6, maxHp: 140, fuel: 55, power: 1, passive: "+20% damage on everything it fires.", desc: "Double-barrel monster. Slow, heavy, devastating." },
-  catapult: { id: "catapult", name: "Mast Catapult", role: "Artillerist", unlock: 8, maxHp: 95, fuel: 90, power: 1.05, passive: "Shots feel only half the wind.", desc: "Tall mast thrower whose heavy payloads cut through gusts." },
+  crawler: { id: "crawler", name: "Mortar Crawler", role: "Bruiser", maxHp: 110, fuel: 90, power: 0.97, passive: "Starts every battle with a 15 HP shield.", desc: "Tracked mortar carrier. Tough, steady and hard to dislodge." },
+  howitzer: { id: "howitzer", name: "Wheeled Howitzer", role: "All-rounder", maxHp: 100, fuel: 110, power: 1, passive: "Gains +1 cluster round at the start of every battle.", desc: "Balanced field gun with a generous ammo locker." },
+  buggy: { id: "buggy", name: "Rocket Buggy", role: "Skirmisher", maxHp: 85, fuel: 220, power: 0.96, passive: "Double fuel: drives twice as far every volley.", desc: "Six-wheel launcher that never stops moving." },
+  rail: { id: "rail", name: "Rail Cannon", role: "Sniper", maxHp: 85, fuel: 80, power: 1.16, passive: "Higher maximum launch speed for flat, long shots.", desc: "Magnetic accelerator that reaches across the whole map." },
+  drone: { id: "drone", name: "Hover Drone", role: "Scout", maxHp: 80, fuel: 140, power: 0.98, passive: "Never takes fall damage.", desc: "Hovering platform that shrugs off collapses and drops." },
+  walker: { id: "walker", name: "Missile Walker", role: "Climber", maxHp: 95, fuel: 120, power: 1.02, passive: "Climbs and holds much steeper slopes without sliding.", desc: "Legged launcher that perches where tanks cannot." },
+  siege: { id: "siege", name: "Siege Tank", role: "Heavy", maxHp: 140, fuel: 55, power: 1, passive: "+20% damage on everything it fires.", desc: "Double-barrel monster. Slow, heavy, devastating." },
+  catapult: { id: "catapult", name: "Mast Catapult", role: "Artillerist", maxHp: 95, fuel: 90, power: 1.05, passive: "Shots feel only half the wind.", desc: "Tall mast thrower whose heavy payloads cut through gusts." },
 }
 
 export const CLASS_IDS = Object.keys(CLASSES) as ClassId[]

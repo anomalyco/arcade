@@ -100,7 +100,6 @@ export interface PlayerView {
   kills: number
   wins: number
   cls: ClassId
-  level: number
   host: boolean
 }
 
@@ -126,7 +125,7 @@ export interface MatchView {
 }
 
 export type ClientMsg =
-  | { type: "join"; name: string; cls: ClassId; level: number }
+  | { type: "join"; name: string; cls: ClassId }
   | { type: "aim"; angle: number; power: number; weapon: WeaponId }
   | { type: "move"; dir: -1 | 1 }
   | { type: "lock" }

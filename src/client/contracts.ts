@@ -83,13 +83,7 @@ export interface FeedEntry {
 
 export interface Profile {
   name: string
-  xp: number
-  level: number
   cls: ClassId
-  cosmetic: string
-  matches: number
-  wins: number
-  kills: number
 }
 
 export interface UIState {
@@ -105,8 +99,6 @@ export interface UIState {
   // server time estimate in ms (use with view.phaseEndsAt)
   serverNow: number
   lastPickup: { kind: PowerupId; detail: string; at: number } | null
-  // XP awarded at match end, for the results screen
-  xpGain: { amount: number; leveledTo: number | null } | null
 }
 
 export interface UIActions {

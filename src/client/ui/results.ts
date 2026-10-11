@@ -1,10 +1,8 @@
 import type { UIActions, UIState } from "../contracts"
 import type { PlayerView } from "../../sim/protocol"
 import { CLASSES } from "../../sim/classes"
-import { levelProgress, unlocksBetween } from "../profile"
-import { cls, fmtClock, fmtNum, h, Keyed, show, style, text } from "./dom"
+import { cls, fmtClock, fmtNum, h, Keyed, style, text } from "./dom"
 import { me, teamColor, winnerName, wordmark } from "./common"
-import { unitGlyph } from "./glyphs"
 
 interface Row {
   el: HTMLElement
@@ -34,16 +32,6 @@ export function createResults(actions: UIActions) {
           <div class="rt-rows"></div>
         </div>
         <div class="rs-side">
-          <div class="rs-xp cham-soft">
-            <div class="xp-top"><span class="xp-l">EXPERIENCE</span><span class="xp-gain"></span></div>
-            <div class="xp-lvl"><span class="xp-lvl-l">LEVEL</span><span class="xp-lvl-v">1</span></div>
-            <div class="xp-bar"><i></i></div>
-            <div class="xp-meta"><span class="xp-into"></span><span class="xp-need"></span></div>
-            <div class="xp-up">
-              <div class="xp-up-t">LEVEL UP</div>
-              <div class="xp-unlocks"></div>
-            </div>
-          </div>
           <div class="rs-next"><span>NEXT MATCH IN</span><b class="rs-clock">0:00</b></div>
           <button class="btn btn-ghost rs-back">BACK TO TITLE</button>
         </div>
@@ -55,15 +43,7 @@ export function createResults(actions: UIActions) {
   const winnerEl = q(".rs-winner")
   const you = q(".rs-you")
   const rowsEl = q(".rt-rows")
-  const gain = q(".xp-gain")
-  const lvl = q(".xp-lvl-v")
-  const bar = q(".xp-bar i")
-  const into = q(".xp-into")
-  const need = q(".xp-need")
-  const up = q(".xp-up")
-  const unlocks = q(".xp-unlocks")
   const clock = q(".rs-clock")
-  const xpBox = q(".rs-xp")
   q(".rs-back").addEventListener("click", () => actions.leave())
 
   let cur: UIState
@@ -89,11 +69,6 @@ export function createResults(actions: UIActions) {
     },
   )
 
-  let animKey = ""
-  let animStart = 0
-  let from = 0
-  let to = 0
-  let unlockKey = ""
 
   function update(state: UIState): void {
     const view = state.view
@@ -110,49 +85,6 @@ export function createResults(actions: UIActions) {
     const ranked = view.players.filter((x) => !x.spectator).sort((a, b) => b.score - a.score || b.wins - a.wins || b.kills - a.kills)
     rows.sync(ranked, (x) => x.id)
 
-    // xp bar animation
-    const xg = state.xpGain
-    show(xpBox, !!xg)
-    const key = xg ? `${state.profile.xp}:${xg.amount}` : ""
-    const now = performance.now()
-    if (key !== animKey) {
-      animKey = key
-      animStart = now + 400
-      to = state.profile.xp
-      from = Math.max(0, to - (xg?.amount ?? 0))
-    }
-    if (xg) {
-      const t = Math.max(0, Math.min(1, (now - animStart) / 1800))
-      const e = 1 - Math.pow(1 - t, 3)
-      const x = from + (to - from) * e
-      const lp = levelProgress(x)
-      text(gain, `+${fmtNum(Math.round((to - from) * e))} XP`)
-      text(lvl, lp.level)
-      style(bar, "width", `${(lp.frac * 100).toFixed(2)}%`)
-      text(into, `${fmtNum(lp.into)} XP`)
-      text(need, `${fmtNum(lp.need)} TO NEXT`)
-      const startLevel = levelProgress(from).level
-      const leveled = lp.level > startLevel
-      cls(up, "on", leveled)
-      const uk = `${startLevel}-${lp.level}`
-      if (leveled && uk !== unlockKey) {
-        unlockKey = uk
-        const u = unlocksBetween(startLevel, lp.level)
-        unlocks.innerHTML = ""
-        for (const c of u.classes) {
-          const item = h("div", "xp-unlock")
-          item.innerHTML = `${unitGlyph(c, 56, 28)}<span><em>NEW UNIT</em><b></b></span>`
-          ;(item.querySelector("b") as HTMLElement).textContent = CLASSES[c].name.toUpperCase()
-          unlocks.append(item)
-        }
-        for (const c of u.cosmetics) {
-          const item = h("div", "xp-unlock cos")
-          item.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l7 7 7-7"/></svg><span><em>NEW CHEVRON</em><b></b></span>`
-          ;(item.querySelector("b") as HTMLElement).textContent = c.name.toUpperCase()
-          unlocks.append(item)
-        }
-      }
-    }
     text(clock, fmtClock(view.phaseEndsAt - state.serverNow))
   }
 

@@ -1624,66 +1624,6 @@ kbd {
   color: var(--text);
   border-color: rgba(220, 232, 240, 0.35);
 }
-.tt-profile {
-  margin-top: 34px;
-  padding-top: 24px;
-  border-top: 1px solid rgba(220, 232, 240, 0.1);
-  display: flex;
-  gap: 22px;
-  align-items: center;
-}
-.tt-lvl {
-  width: 66px;
-  height: 66px;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: var(--graphite);
-}
-.tt-lvl-l {
-  font-size: 9px;
-  letter-spacing: 0.24em;
-  color: var(--dim);
-}
-.tt-lvl-v {
-  font-family: var(--sans);
-  font-size: 28px;
-  font-weight: 700;
-  color: #fff;
-  line-height: 1.1;
-}
-.tt-xp {
-  flex: 1;
-}
-.tt-xp-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  color: #b9c7d2;
-}
-.tt-xp-next {
-  color: var(--dim);
-  font-size: 10px;
-}
-.tt-xp-bar {
-  margin-top: 8px;
-  height: 4px;
-  background: rgba(220, 232, 240, 0.1);
-}
-.tt-xp-bar i {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-}
-.tt-record {
-  margin-top: 10px;
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  color: var(--faint);
-}
 
 .tt-units {
   pointer-events: auto;
@@ -1792,28 +1732,6 @@ kbd {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.cls-lock {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: none;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 7px;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  color: #c6ced5;
-  background: rgba(0, 0, 0, 0.45);
-}
-.cls-card.locked {
-  cursor: not-allowed;
-}
-.cls-card.locked > :not(.cls-lock) {
-  opacity: 0.32;
-}
-.cls-card.locked .cls-lock {
-  display: flex;
-}
 .cls-card.sel {
   background: #262b31;
   border-top-color: var(--accent);
@@ -1840,12 +1758,6 @@ kbd {
 }
 .classes.compact .cls-role {
   display: none;
-}
-.classes.compact .cls-lock {
-  top: 6px;
-  right: 6px;
-  padding: 3px 5px;
-  font-size: 9px;
 }
 .classes.compact .cls-passive,
 .classes.compact .cls-stats {
@@ -1980,13 +1892,6 @@ kbd {
   font-size: 9px;
   letter-spacing: 0.2em;
   color: var(--dim);
-}
-.lb-lvl {
-  grid-column: 3;
-  grid-row: 1 / 3;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: #9fb0bd;
 }
 .lb-tags {
   grid-column: 4;
@@ -2285,115 +2190,11 @@ kbd {
   flex-direction: column;
   gap: 20px;
 }
-.rs-xp {
-  padding: 22px 24px;
-}
-.xp-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.xp-l {
-  font-size: 12px;
-  letter-spacing: 0.3em;
-  color: var(--dim);
-}
-.xp-gain {
-  font-family: var(--sans);
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--cyan);
-  text-shadow: 0 0 14px rgba(62, 230, 255, 0.5);
-  font-variant-numeric: tabular-nums;
-}
-.xp-lvl {
-  margin-top: 16px;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.xp-lvl-l {
-  font-size: 12px;
-  letter-spacing: 0.3em;
-  color: #b9c7d2;
-}
-.xp-lvl-v {
-  font-family: var(--sans);
-  font-size: 44px;
-  font-weight: 700;
-  color: #fff;
-  line-height: 1;
-}
-.xp-bar {
-  margin-top: 14px;
-  height: 10px;
-  padding: 2px;
-  border: 1px solid rgba(140, 180, 205, 0.4);
-}
-.xp-bar i {
-  display: block;
-  height: 100%;
-  background: var(--cyan);
-  box-shadow: 0 0 10px var(--cyan);
-}
-.xp-meta {
-  margin-top: 8px;
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--dim);
-}
-.xp-up {
-  display: none;
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-.xp-up.on {
-  display: block;
-  animation: pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
-}
 @keyframes pop {
   from {
     transform: scale(0.92);
     opacity: 0;
   }
-}
-.xp-up-t {
-  font-family: var(--sans);
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0.3em;
-  color: var(--gold);
-  text-shadow: 0 0 16px rgba(255, 210, 63, 0.6);
-}
-.xp-unlocks {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.xp-unlock {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 12px;
-  background: rgba(255, 210, 63, 0.06);
-  border: 1px solid rgba(255, 210, 63, 0.3);
-  color: var(--gold);
-}
-.xp-unlock em {
-  display: block;
-  font-style: normal;
-  font-size: 9px;
-  letter-spacing: 0.26em;
-  color: #c9b87a;
-}
-.xp-unlock b {
-  font-size: 14px;
-  letter-spacing: 0.14em;
-  color: #fff3c8;
 }
 .rs-next {
   display: flex;

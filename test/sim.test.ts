@@ -224,7 +224,6 @@ test("moveUnit walks the surface and never enters terrain", () => {
 
 test("classes and shop", () => {
   expect(Object.keys(CLASSES).length).toBe(8)
-  expect(CLASSES.catapult.unlock).toBe(8)
   expect(SHOP.filter((i) => i.kind === "weapon").length).toBe(11)
   const l = newLoadout(400)
   expect(applyPurchase(l, "mirv")).toBe(null)
@@ -245,7 +244,7 @@ test("bot finds a dangerous shot", () => {
 test("a bots match with one auto-locking human runs to the end and back to lobby", () => {
   const m = new Match("test", 1234)
   let now = 1000
-  m.join("h", "Human", "crawler", 10, now)
+  m.join("h", "Human", "crawler", now)
   m.handle("h", { type: "start", mode: "ffa", bots: 5, battles: 2 }, now)
   let sawVolley = 0
   let sawShop = false
@@ -295,7 +294,7 @@ test("a bots match with one auto-locking human runs to the end and back to lobby
 test("mid-battle joiners spectate until the next battle; class passives apply at spawn", () => {
   const m = new Match("j", 77)
   let now = 0
-  m.join("a", "Alpha", "crawler", 10, now)
+  m.join("a", "Alpha", "crawler", now)
   m.handle("a", { type: "start", mode: "teams", bots: 3, battles: 2 }, now)
   let v = m.view(false, now)
   expect(v.phase).toBe("aim")
@@ -303,7 +302,7 @@ test("mid-battle joiners spectate until the next battle; class passives apply at
   const mine = v.units[v.players.find((p) => p.id === "a")!.unit]!
   expect(mine.shield).toBe(15)
   expect(new Set(v.units.map((u) => u.team)).size).toBe(2)
-  m.join("b", "Bravo", "howitzer", 1, now)
+  m.join("b", "Bravo", "howitzer", now)
   const welcome = m.drain().find((o) => o.to === "b" && o.msg.type === "welcome")
   expect(welcome && welcome.msg.type === "welcome" && typeof welcome.msg.view.mask).toBe("string")
   v = m.view(false, now)
