@@ -28,16 +28,40 @@ const GEARS = [0, 9, 17, 26, 35, 46, 80]
 /** Siren switches to yelp inside this distance of the driver. */
 const YELP_IN = 34
 const YELP_OUT = 46
+/** Collisions: impact speed (m/s) below which nothing plays, and the minimum gap between two hits on one car. */
+const HIT_MIN = 2.5
+const HIT_GAP = 0.25
+/** Another car's centre within this of a hit car makes it a car-on-car hit (otherwise it's a wall). */
+const PAIR_DIST = 6.5
+/** Lingering contact below the hit threshold (pushing or sliding along something) feeds the scrape loop instead. */
+const CONTACT_MIN = 0.25
+
+const THUMPS: SfxName[] = ["crash_thump_1", "crash_thump_2", "crash_thump_3"]
+const BUMPS: SfxName[] = ["crash_bump_1", "crash_bump_2", "crash_bump_3"]
+const CRUNCHES: SfxName[] = ["crash_crunch_1", "crash_crunch_2", "crash_crunch_3"]
+const HEAVIES: SfxName[] = ["crash_heavy_1", "crash_heavy_2", "crash_heavy_3"]
+const DEBRIS: SfxName[] = ["crash_debris_1", "crash_debris_2"]
+const WALLS: SfxName[] = ["crash_wall_1", "crash_wall_2", "crash_wall_3"]
+const CHIRPS: SfxName[] = ["shove_chirp_1", "shove_chirp_2"]
+
+/** 0 at a, 1 at b, clamped. */
+const ramp = (v: number, a: number, b: number) => Math.max(0, Math.min(1, (v - a) / (b - a)))
 
 type CarState = {
   seen: number
   speed: number
   boost: number
-  impact: number
   drift: number
   rpm: number
   load: number
+  /** Collisions: seconds until another hit may sound, whether the impact has dropped (and stayed low) since the last one, its speed. */
   impactCool: number
+  armed: boolean
+  lowT: number
+  lastHit: number
+  /** Seconds of scrape left after the last frame in contact, and the sliding speed along whatever it touches. */
+  contactT: number
+  contactV: number
   nitroCool: number
   skidCool: number
   /** Own car: the tires are in a real slide (hysteresis, so the squeal doesn't flicker at the threshold). */
@@ -219,7 +243,14 @@ export class GameAudio {
   private candidates: Car[] = []
   private dists = new Map<number, number>()
   private byDist = (p: Car, q: Car) => this.dists.get(p.id)! - this.dists.get(q.id)!
-  private scrapeT = 0
+  /** The nearest other car grinding along something. */
+  private worldScrape!: LoopVoice
+  /** 0..1 dip in your engine after a heavy hit, recovering over a few hundred ms. */
+  private engDuck = 0
+  /** Last variant played per layer, so the same take never fires twice in a row. */
+  private lastPick = new Map<SfxName[], number>()
+  /** Contact points from the sim's "impact" events (car id -> point and when it arrived), used to place the hit. */
+  private hints = new Map<number, { x: number; z: number; t: number }>()
   private heliX = 0
   private heliZ = 0
   private heliVX = 0
@@ -263,6 +294,8 @@ export class GameAudio {
     this.flat.use(a.buffer("flat_tire_loop"))
     this.scrape = new LoopVoice(a, a.sfx)
     this.scrape.use(a.buffer("scrape_loop"))
+    this.worldScrape = new LoopVoice(a, a.sfx)
+    this.worldScrape.use(a.buffer("scrape_loop"))
     this.ownSiren = new SirenVoice(a, a.sfx)
     for (let i = 0; i < ENGINE_VOICES; i++) this.engines.push(new LoopVoice(a, a.sfx))
     for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(a, a.sfx))
@@ -305,6 +338,7 @@ export class GameAudio {
     this.helicopter(view, dt)
     this.tension(view, mine, dt)
     this.oneShotsFromState(view, mine)
+    this.collisions(view, mine, dt)
     // Forget cars that left the view.
     if (this.frame % 60 === 0) for (const [id, s] of this.states) if (this.frame - s.seen > 60) this.states.delete(id)
   }
@@ -316,11 +350,15 @@ export class GameAudio {
         seen: 0,
         speed: c.speed,
         boost: c.boost,
-        impact: 0,
         drift: 0,
         rpm: 0,
         load: 0,
         impactCool: 0,
+        armed: true,
+        lowT: 0,
+        lastHit: 0,
+        contactT: 0,
+        contactV: 0,
         nitroCool: 0,
         skidCool: 0,
         sliding: false,
@@ -334,6 +372,7 @@ export class GameAudio {
     }
     s.seen = this.frame
     s.impactCool = Math.max(0, s.impactCool - dt)
+    s.contactT = Math.max(0, s.contactT - dt)
     s.nitroCool = Math.max(0, s.nitroCool - dt)
     s.skidCool = Math.max(0, s.skidCool - dt)
   }
@@ -389,7 +428,6 @@ export class GameAudio {
       this.scrub.silence()
       this.rush.silence(0.12)
       this.flat.silence()
-      this.scrape.silence()
       this.ownSiren.out.silence(0.3)
       return
     }
@@ -413,7 +451,8 @@ export class GameAudio {
     s.load += (Math.min(1, throttle) - s.load) * (1 - Math.exp(-dt * 8))
     // Boost lifts the note and opens the tone a little on top of the extra load.
     const rate = this.rpmFor(s, mine.speed, s.load, dt) * (1 + 0.05 * s.boostAmt)
-    const engGain = off ? 0 : 0.34 + 0.26 * s.load + 0.12 * Math.min(1, mine.speed / 40) + 0.05 * s.boostAmt
+    this.engDuck *= Math.exp(-dt / 0.35)
+    const engGain = (off ? 0 : 0.34 + 0.26 * s.load + 0.12 * Math.min(1, mine.speed / 40) + 0.05 * s.boostAmt) * (1 - this.engDuck)
     const engCut = (1400 + 9000 * (0.25 + 0.75 * s.load) * (0.6 + 0.4 * s.rpm)) * (1 + 0.4 * s.boostAmt)
     this.engine.set(engGain, rate, 0, engCut, 0.05, off ? 0.25 : 0.05)
 
@@ -451,11 +490,6 @@ export class GameAudio {
 
     const flat = (mine.flat ?? 0) > 0 && mine.speed > 1.5
     this.flat.set(flat ? Math.min(0.55, 0.15 + mine.speed / 50) : 0, 0.55 + Math.min(1, mine.speed / 30) * 0.8, 0, 12000, 0.04, 0.1)
-
-    // Wall scrape: repeated light contacts while moving read as sliding along a wall.
-    if (mine.impact > 0.4 && mine.impact < 9 && mine.speed > 5) this.scrapeT = 0.18
-    this.scrapeT = Math.max(0, this.scrapeT - dt)
-    this.scrape.set(this.scrapeT > 0 ? Math.min(0.5, 0.18 + mine.speed / 60) : 0, 0.85 + Math.min(1, mine.speed / 40) * 0.3, 0, 14000, 0.08, this.scrapeT > 0 ? 0.03 : 0.1)
 
     // Your own lightbar, unpanned and a touch muffled, only once the chase is on.
     const siren = mine.role === "cop" && view.phase === "chase"
@@ -586,7 +620,7 @@ export class GameAudio {
     this.a.play("escape_tick", { gain: g * 0.6, rate: 0.92 + 0.1 * b, delay: 0.19 })
   }
 
-  /** Impacts, nitro and tire chirps detected from per-car state changes. */
+  /** Nitro and tire chirps detected from per-car state changes. */
   private oneShotsFromState(view: WorldView, mine: Car | null) {
     const end = view.phase === "end"
     for (const c of view.cars) {
@@ -600,13 +634,6 @@ export class GameAudio {
           const pan = own ? 0 : sp!.pan
           const wet = own ? 0.08 : sp!.wet
           const cutoff = own ? 18000 : sp!.cutoff
-          // Impacts: a fresh hit (not the same contact lingering across frames).
-          if (c.impact > 2.5 && s.impactCool <= 0 && c.impact > s.impact * 1.4) {
-            const heavy = c.impact >= 9
-            const amt = Math.min(1, c.impact / (heavy ? 22 : 9))
-            this.a.play(heavy ? "impact_heavy" : "impact_light", { gain: g * (0.45 + 0.55 * amt) * (heavy ? 0.9 : 0.8), rate: 0.9 + Math.random() * 0.2, pan, wet, cutoff })
-            s.impactCool = heavy ? 0.35 : 0.18
-          }
           // Your own nitro and tires are driven from your controls in ownCar.
           if (!own) {
             // Nitro: fuel starts draining.
@@ -625,9 +652,154 @@ export class GameAudio {
       }
       s.speed = c.speed
       s.boost = c.boost
-      s.impact = c.impact
       s.drift = c.drift
     }
+  }
+
+  /**
+   * Collisions from each car's impact speed. A fresh hit (above HIT_MIN, the impact having dropped since the last one
+   * or coming in much harder, and at least HIT_GAP after it) is layered by speed; lingering contact feeds the scrapes.
+   * Works from CarView.impact alone; the sim's "impact" events only add where the contact was.
+   */
+  private collisions(view: WorldView, mine: Car | null, dt: number) {
+    const end = view.phase === "end"
+    for (const [id, h] of this.hints) if (this.a.now - h.t > 0.25) this.hints.delete(id)
+    // Your car first, so a hit between you and another car is heard from your seat.
+    const order = this.candidates
+    order.length = 0
+    if (mine) order.push(mine)
+    for (const c of view.cars) if (c !== mine) order.push(c)
+    for (const c of order) {
+      const s = this.states.get(c.id)!
+      const v = c.impact
+      // Re-arms once the impact has stayed low for a moment, so contact flickering on and off can't machine-gun.
+      s.lowT = v < Math.max(1.2, 0.35 * s.lastHit) ? s.lowT + dt : 0
+      if (s.lowT > 0.1) s.armed = true
+      if (c.ghost || end) continue
+      // A hard hit alone doesn't start the scrape; contact that carries on after it (or never got that hard) does.
+      if (v > CONTACT_MIN && (v < HIT_MIN || s.contactT > 0)) {
+        const touching = this.partner(view, c, CONTACT_MIN)
+        if (c.speed > 2 || touching) {
+          s.contactT = 0.14
+          s.contactV = touching ? Math.hypot(c.vx - touching.vx, c.vz - touching.vz) : c.speed
+        }
+      }
+      if (v < HIT_MIN || s.impactCool > 0 || !(s.armed || v > 1.6 * s.lastHit)) continue
+      // Both cars of a pair report the same hit (the other at about the same speed); it sounds once.
+      const partner = this.partner(view, c, v * 0.5)
+      for (const st of partner ? [s, this.states.get(partner.id)!] : [s]) {
+        st.impactCool = HIT_GAP
+        st.armed = false
+        st.lastHit = v
+      }
+      this.crash(c, partner, v, mine)
+    }
+    this.scrapes(view, mine)
+  }
+
+  /** The nearest visible car close enough to c, and itself reporting at least `impact`, to be what c hit. */
+  private partner(view: WorldView, c: Car, impact: number): Car | undefined {
+    let best: Car | undefined
+    let bd = PAIR_DIST
+    for (const o of view.cars) {
+      if (o === c || o.ghost || o.impact < impact) continue
+      const d = Math.hypot(o.x - c.x, o.z - c.z)
+      if (d < bd) {
+        bd = d
+        best = o
+      }
+    }
+    return best
+  }
+
+  /**
+   * One hit: a low body thump under everything, then by speed the bumper knock, metal crunch and heavy crash crossfading
+   * into each other (a debris tail on the biggest and a tire bark for the shoved car), or a dull concrete hit when no car
+   * was involved. Your own hits play close and unpanned bar a nudge toward the side that took it; others are placed like
+   * their engines. Heavy hits dip your engine, and a big one on you muffles the world for a moment.
+   */
+  private crash(c: Car, partner: Car | undefined, v: number, mine: Car | null) {
+    const own = !!mine && (c === mine || partner === mine)
+    const hint = this.hints.get(c.id) ?? (partner && this.hints.get(partner.id))
+    const x = hint ? hint.x : partner ? (c.x + partner.x) / 2 : c.x
+    const z = hint ? hint.z : partner ? (c.z + partner.z) / 2 : c.z
+    let g = 1
+    let pan = 0
+    let wet = 0.06
+    let cutoff = 18000
+    if (own && mine) pan = Math.max(-0.3, Math.min(0.3, ((x - mine.x) * this.rx + (z - mine.z) * this.rz) / 8))
+    else {
+      const sp = this.spatial(x, z)
+      if (sp.gain < 0.03) return
+      g = sp.gain
+      pan = sp.pan
+      wet = sp.wet
+      cutoff = sp.cutoff
+    }
+    // Your own hits skip the sfx bus so the daze muffle below doesn't swallow them.
+    const bus = own ? "sting" : "sfx"
+    const level = g * (0.4 + 0.6 * Math.pow(ramp(v, HIT_MIN, 20), 0.7))
+    const layer = (list: SfxName[], gain: number, rate = 1, delay = 0) => {
+      if (gain * level < 0.015) return
+      this.a.play(this.pick(list), { bus, gain: gain * level * (0.9 + 0.2 * Math.random()), rate: rate * (0.94 + 0.12 * Math.random()), pan, wet, cutoff, delay })
+    }
+    // Heavier hits sit a little lower.
+    const low = 1.04 - 0.1 * ramp(v, 4, 20)
+    layer(THUMPS, 0.6 + 0.4 * ramp(v, 3, 16), low)
+    if (!partner) {
+      layer(WALLS, 0.85, low)
+      layer(CRUNCHES, 0.5 * ramp(v, 11, 18))
+      layer(DEBRIS, 0.35 * ramp(v, 17, 24), 1, 0.05)
+    } else {
+      layer(BUMPS, 0.8 * (1 - ramp(v, 7, 9.5)))
+      layer(CRUNCHES, 0.85 * ramp(v, 6, 9) * (1 - 0.45 * ramp(v, 13, 18)))
+      layer(HEAVIES, 0.95 * ramp(v, 12, 16))
+      layer(DEBRIS, 0.5 * ramp(v, 14, 20), 1, 0.06)
+      if (v > 4.5) layer(CHIRPS, 0.3 + 0.25 * ramp(v, 4.5, 14), 1, 0.035)
+    }
+    const heavy = ramp(v, 10, 20)
+    if (heavy > 0) this.engDuck = Math.max(this.engDuck, 0.4 * heavy * Math.min(1, g * 1.5))
+    if (own && v >= 13) this.a.dazeFor(0.35 + 0.15 * ramp(v, 13, 24))
+  }
+
+  private pick(list: SfxName[]): SfxName {
+    const last = this.lastPick.get(list) ?? -1
+    let i = Math.floor(Math.random() * list.length)
+    if (i === last) i = (i + 1 + Math.floor(Math.random() * (list.length - 1))) % list.length
+    this.lastPick.set(list, i)
+    return list[i]!
+  }
+
+  /** Metal grinding while in contact, pitch and level following the sliding speed: yours, and the loudest other car's. */
+  private scrapes(view: WorldView, mine: Car | null) {
+    const live = view.phase !== "end"
+    const ms = mine && live ? this.states.get(mine.id) : undefined
+    const mineOn = !!ms && ms.contactT > 0 && ms.contactV > 1.5
+    if (mineOn) {
+      const k = ramp(ms.contactV, 1.5, 28)
+      this.scrape.set(0.14 + 0.38 * k, 0.78 + 0.42 * k, 0, 2400 + 9600 * k, 0.06, 0.05)
+    } else this.scrape.silence(0.15)
+    let best: Car | null = null
+    let bestG = 0.03
+    let sp: Spatial | null = null
+    if (live)
+      for (const c of view.cars) {
+        if (c === mine || c.ghost) continue
+        const s = this.states.get(c.id)!
+        if (s.contactT <= 0 || s.contactV <= 1.5) continue
+        // Grinding against you is already your scrape.
+        if (mineOn && mine && Math.hypot(c.x - mine.x, c.z - mine.z) < PAIR_DIST) continue
+        const p = this.spatial(c.x, c.z)
+        if (p.gain > bestG) {
+          bestG = p.gain
+          best = c
+          sp = { ...p }
+        }
+      }
+    if (best && sp) {
+      const k = ramp(this.states.get(best.id)!.contactV, 1.5, 28)
+      this.worldScrape.set(sp.gain * (0.12 + 0.34 * k), 0.78 + 0.42 * k, sp.pan, Math.min(sp.cutoff, 2400 + 9600 * k), sp.wet, 0.06)
+    } else this.worldScrape.silence(0.15)
   }
 
   private phases(view: WorldView, mine: Car | null) {
@@ -699,6 +871,12 @@ export class GameAudio {
         case "near":
           a.play("near_whoosh", { gain: (own ? 0.6 : 0.5) * g, pan, wet, rate: 0.95 + Math.random() * 0.1 })
           break
+        case "impact": {
+          // "speed|x|z|nx|nz": only the contact point is used, to place the hit that the car's impact speed triggers.
+          const f = e.text.split("|").map(Number)
+          if (e.carId !== undefined && f.length >= 3 && Number.isFinite(f[1]) && Number.isFinite(f[2])) this.hints.set(e.carId, { x: f[1]!, z: f[2]!, t: a.now })
+          break
+        }
       }
     }
   }

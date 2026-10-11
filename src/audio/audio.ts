@@ -1,8 +1,8 @@
 /**
  * Web Audio context, buses and sample bank.
  *
- * Graph: sfx -> duck -> master, ambience -> duck -> master, stinger -> master, reverb send -> convolver -> master,
- * master -> soft compressor -> destination. The context starts on the first click or key press (browsers block audio
+ * Graph: sfx -> duck -> daze -> master, ambience -> duck -> daze -> master, stinger -> master, reverb send -> convolver ->
+ * duck, master -> soft compressor -> destination. The context starts on the first click or key press (browsers block audio
  * until then); M toggles a global mute that is remembered in localStorage.
  */
 
@@ -14,8 +14,25 @@ export const SFX = [
   "skid_short",
   "nitro_burst",
   "nitro_rush_loop",
-  "impact_light",
-  "impact_heavy",
+  "crash_thump_1",
+  "crash_thump_2",
+  "crash_thump_3",
+  "crash_bump_1",
+  "crash_bump_2",
+  "crash_bump_3",
+  "crash_crunch_1",
+  "crash_crunch_2",
+  "crash_crunch_3",
+  "crash_heavy_1",
+  "crash_heavy_2",
+  "crash_heavy_3",
+  "crash_debris_1",
+  "crash_debris_2",
+  "crash_wall_1",
+  "crash_wall_2",
+  "crash_wall_3",
+  "shove_chirp_1",
+  "shove_chirp_2",
   "scrape_loop",
   "siren_wail_loop",
   "siren_yelp_loop",
@@ -51,6 +68,8 @@ export class AudioEngine {
   verb!: GainNode
   muted = false
   private duck!: GainNode
+  /** Low-pass after the duck, normally wide open; closes briefly when your car takes a big hit. */
+  private daze!: BiquadFilterNode
   private buffers = new Map<SfxName, AudioBuffer>()
   private raw = new Map<SfxName, Promise<ArrayBuffer | null>>()
   private oneShots = 0
@@ -143,6 +162,17 @@ export class AudioEngine {
     g.setTargetAtTime(1, t + seconds, 0.5)
   }
 
+  /** Muffles the sfx and ambience buses for a moment (a big hit on your car), then opens them back up. */
+  dazeFor(seconds: number, cutoff = 650) {
+    if (!this.ctx) return
+    const f = this.daze.frequency
+    const t = this.ctx.currentTime
+    f.cancelScheduledValues(t)
+    f.setValueAtTime(f.value, t)
+    f.exponentialRampToValueAtTime(cutoff, t + 0.04)
+    f.setTargetAtTime(20000, t + seconds * 0.45, seconds * 0.3)
+  }
+
   /** Fire-and-forget one-shot. Returns false if it could not play (not unlocked, not loaded, or too many voices). */
   play(name: SfxName, o: PlayOpts = {}): boolean {
     const ctx = this.ctx
@@ -203,8 +233,13 @@ export class AudioEngine {
     this.master = ctx.createGain()
     this.master.gain.value = this.muted ? 0 : 1
     this.master.connect(comp)
+    this.daze = ctx.createBiquadFilter()
+    this.daze.type = "lowpass"
+    this.daze.frequency.value = 20000
+    this.daze.Q.value = 0.707
+    this.daze.connect(this.master)
     this.duck = ctx.createGain()
-    this.duck.connect(this.master)
+    this.duck.connect(this.daze)
     this.sfx = ctx.createGain()
     this.sfx.connect(this.duck)
     this.amb = ctx.createGain()
