@@ -113,13 +113,19 @@ export function generateCity(seed: number): City {
       const z0 = bz0 + inset
       const z1 = bz1 - inset
       if (i === precinctBlock[0] && j === precinctBlock[1]) {
-        boxes.push({ x0, x1, z0, z1, h: 22, color: [0.5, 0.52, 0.56], neon: null, kind: "building", label: "PRECINCT" })
+        boxes.push({ x0, x1, z0, z1, h: 14, color: [0.5, 0.52, 0.56], neon: null, kind: "building", label: "PRECINCT" })
         continue
       }
       if (siteBlocks.has(key)) {
         const label = key === `${bankBlock[0]},${bankBlock[1]}` ? "bank" : key === `${jewelryBlock[0]},${jewelryBlock[1]}` ? "jewelry" : "gallery"
-        const h = label === "bank" ? 30 : 16 + rng() * 8
-        boxes.push({ x0, x1, z0, z1, h, color: label === "bank" ? [0.6, 0.58, 0.52] : [0.3, 0.26, 0.3], neon: label === "bank" ? [1, 0.2, 0.42] : [0.3, 0.95, 0.9], kind: "building", label })
+        // The job building fronts the west road; the rest of the block is two row buildings behind an alley.
+        const h = label === "bank" ? 20 : 11 + rng() * 5
+        const mid = x0 + (x1 - x0) * 0.5
+        boxes.push({ x0, x1: mid - ALLEY / 2, z0, z1, h, color: label === "bank" ? [0.62, 0.58, 0.5] : [0.32, 0.27, 0.3], neon: label === "bank" ? [1, 0.25, 0.4] : [0.3, 0.95, 0.9], kind: "building", label })
+        alleys.push({ x0: mid - ALLEY / 2, x1: mid + ALLEY / 2, z0: bz0, z1: bz1 })
+        const zm = (z0 + z1) / 2
+        boxes.push({ x0: mid + ALLEY / 2, x1, z0, z1: zm, h: 9 + rng() * 8, color: PALETTE[Math.floor(rng() * PALETTE.length)]!, neon: null, kind: "building", label: null })
+        boxes.push({ x0: mid + ALLEY / 2, x1, z0: zm, z1, h: 9 + rng() * 8, color: PALETTE[Math.floor(rng() * PALETTE.length)]!, neon: null, kind: "building", label: null })
         continue
       }
       const central = Math.abs(i - 3) <= 1 && Math.abs(j - 3) <= 1
@@ -164,8 +170,8 @@ export function generateCity(seed: number): City {
           const pb = alongX ? a + (b - a) * s1 : b
           const pc = alongX ? c : c + (d - c) * s0
           const pd = alongX ? d : c + (d - c) * s1
-          const tall = central ? 18 + rng() * 26 : 0
-          const h = tall > 0 ? tall : 8 + rng() * rng() * 26
+          const tall = central ? 13 + rng() * 20 : 0
+          const h = tall > 0 ? tall : 7 + rng() * rng() * 18
           const color = PALETTE[Math.floor(rng() * PALETTE.length)]!
           const neon = rng() < 0.22 ? NEONS[Math.floor(rng() * NEONS.length)]! : null
           boxes.push({ x0: pa, x1: pb, z0: pc, z1: pd, h, color, neon, kind: "building", label: null })
