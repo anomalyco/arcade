@@ -8,7 +8,7 @@ export default defineConfig(({ command }) => ({
     target: "esnext",
     outDir: "dist/labs/salvo",
     emptyOutDir: true,
-    rollupOptions: { input: { main: resolve(__dirname, "index.html") } },
+    rollupOptions: { input: { main: resolve(import.meta.dirname, "index.html") } },
   },
   server: {
     allowedHosts: true,
