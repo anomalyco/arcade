@@ -39,21 +39,3 @@ export function attr(el: Element, name: string, v: string) {
 }
 
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-
-export const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`
-
-export function clock(sec: number) {
-  const s = Math.max(0, Math.floor(sec))
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
-}
-
-export function shortClock(sec: number) {
-  const s = Math.max(0, Math.floor(sec))
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
-}
-
-export function distance(m: number) {
-  return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m / 10) * 10}m`
-}
-
-export const STAR = `<svg viewBox="0 0 24 24"><path d="M12 2.6l2.8 6.1 6.6.7-5 4.5 1.4 6.6L12 17.2l-5.8 3.3 1.4-6.6-5-4.5 6.6-.7z"/></svg>`
