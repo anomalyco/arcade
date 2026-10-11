@@ -207,7 +207,7 @@ export class Scene {
         continue
       }
       const v = this.visOf(c)
-      const siren = c.role === "cop" && chasing ? t * 1.7 + c.id * 0.37 : -1
+      const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = c.speed > 2 && c.speed < v.speed - 0.05 ? 1 : 0
       const vals = [c.x, 0, c.z, c.h, v.roll, v.pitch, siren, braking, tint[0], tint[1], tint[2], 1]
       inst(model, batches, vals)
@@ -225,11 +225,8 @@ export class Scene {
         sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
         sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
       }
-      for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-        const ox = c.x + fx * (half + 0.15) + rx * hw * s
-        const oz = c.z + fz * (half + 0.15) + rz * hw * s
-        cone(beams, [ox, 0.75, oz], [ox + fx * 11 + rx * s * 0.6, 0.2, oz + fz * 11 + rz * s * 0.6], 2.6, [1, 0.88, 0.7], 0.22, 10)
-      }
+      // No beam geometry: the spot light lights the road, plus a faint soft pool ahead of the car.
+      sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
       light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
