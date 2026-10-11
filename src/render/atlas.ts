@@ -176,7 +176,31 @@ const TABLE = {
   bannerA: { x: 1792, y: 1088, w: 256, h: 512, paint: banner("#1d3157", "#e9c27a") },
   bannerB: { x: 1792, y: 1600, w: 256, h: 448, paint: banner("#5a1e22", "#f0e2c8") },
   swat: { x: 512, y: 512, w: 128, h: 40, paint: text("S.W.A.T.", { weight: 800 }) },
+  garage: { x: 0, y: 256, w: 128, h: 512, paint: vertical("GARAGE") },
+  wrench: { x: 128, y: 256, w: 128, h: 128, paint: wrench },
+  autoRepair: { x: 1536, y: 1792, w: 256, h: 128, paint: text("AUTO REPAIR", { weight: 800, size: 70, spacing: 4 }) },
 } satisfies Record<string, Entry>
+
+/** A wrench lying diagonally: round head with an open jaw at the top right, handle down to the bottom left. */
+function wrench(g: OffscreenCanvasRenderingContext2D, w: number, h: number) {
+  g.save()
+  g.translate(w / 2, h / 2)
+  g.rotate(Math.PI / 4)
+  g.fillStyle = "#fff"
+  const s = Math.min(w, h)
+  g.beginPath()
+  g.roundRect(-s * 0.075, -s * 0.12, s * 0.15, s * 0.52, s * 0.07)
+  g.fill()
+  g.beginPath()
+  g.arc(0, -s * 0.22, s * 0.17, 0, Math.PI * 2)
+  g.fill()
+  g.globalCompositeOperation = "destination-out"
+  g.fillRect(-s * 0.06, -s * 0.42, s * 0.12, s * 0.2)
+  g.beginPath()
+  g.arc(0, s * 0.33, s * 0.035, 0, Math.PI * 2)
+  g.fill()
+  g.restore()
+}
 
 /** Street banner: deep color field, a little skyline and the civic slogan. */
 function banner(bg: string, fg: string): Paint {

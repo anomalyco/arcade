@@ -8,6 +8,7 @@ import { MAT, type Mesh } from "./mesh"
 import { outskirts } from "./city/outskirts"
 import { parks } from "./city/parks"
 import { cornerBeds, streetFurniture, trees, yards } from "./city/props"
+import { shop } from "./city/shop"
 import { streets } from "./city/streets"
 import type { LampLight } from "./city/types"
 
@@ -78,6 +79,7 @@ export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[] } {
   }
   for (const b of buildings) draw(b, touchingOf(b, buildings))
 
+  for (const s of city.shops) shop(m, s, lamps)
   for (const b of city.boxes) if (b.use === "container") container(m, b)
   crane(m, city.boxes.filter((b) => b.use === "crane"), lamps, city.waterZ)
 

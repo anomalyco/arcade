@@ -61,13 +61,14 @@ export class Fx {
     if (this.skids.length > 1600) this.skids.splice(0, this.skids.length - 1600)
   }
 
-  sparks(x: number, z: number, nx: number, nz: number, n: number) {
+  /** A burst of sparks flying out along (nx, nz); `y` is how high they start (a bare rim on the road: low). */
+  sparks(x: number, z: number, nx: number, nz: number, n: number, y = 0.6) {
     for (let i = 0; i < n; i++) {
       const a = Math.atan2(nz, nx) + (Math.random() - 0.5) * 2.2
       const sp = 6 + Math.random() * 14
       this.add.push({
         x,
-        y: 0.6 + Math.random() * 0.5,
+        y: y + Math.random() * 0.5,
         z,
         vx: Math.cos(a) * sp,
         vy: 2 + Math.random() * 5,

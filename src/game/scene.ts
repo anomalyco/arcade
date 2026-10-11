@@ -24,7 +24,7 @@ function normalizeV(v: number[]): [number, number, number] {
   return [v[0]! / l, v[1]! / l, v[2]! / l]
 }
 
-type Vis = { roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number }
+type Vis = { roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number; sparkAcc: number }
 
 /** Matches the shader's siren strobe so glows and lights flash in sync with the lamp geometry. */
 export function sirenOn(phase: number, red: boolean) {
@@ -74,7 +74,7 @@ export class Scene {
   private visOf(c: CarView) {
     let v = this.vis.get(c.id)
     if (!v) {
-      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0 }
+      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0 }
       this.vis.set(c.id, v)
     }
     return v
@@ -115,6 +115,19 @@ export class Scene {
         for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5, c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8)
       }
       v.fuel = c.boost
+      // On the rims: sparks trail off the bare wheels.
+      if (c.wheels === 15 && c.speed > 2) {
+        v.sparkAcc += dt * (4 + c.speed * 1.5)
+        const along = spec.length * 0.32
+        const side = spec.width * 0.4
+        while (v.sparkAcc > 1) {
+          v.sparkAcc -= 1
+          const k = Math.floor(Math.random() * 4)
+          const a = k < 2 ? along : -along
+          const s = k % 2 ? side : -side
+          this.fx.sparks(c.x + fx * a + rx * s, c.z + fz * a + rz * s, -fx, -fz, 2, 0.1)
+        }
+      }
       if (c.impact > 5) {
         const sp = Math.hypot(c.vx, c.vz) || 1
         this.fx.sparks(c.x + (c.vx / sp) * spec.length * 0.45, c.z + (c.vz / sp) * spec.length * 0.45, -c.vx / sp, -c.vz / sp, Math.min(24, Math.floor(c.impact)))
@@ -218,13 +231,27 @@ export class Scene {
       const v = this.visOf(c)
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = c.speed > 2 && c.speed < v.speed - 0.05 ? 1 : 0
+      // Popped tires: the body sags at those corners (roll toward the flat side, nose or tail down) and shimmies a little.
+      const wm = c.wheels ?? 0
+      let sagRoll = 0
+      let sagPitch = 0
+      let sagY = 0
+      if (wm) {
+        const left = (wm & 1) + ((wm >> 2) & 1)
+        const right = ((wm >> 1) & 1) + ((wm >> 3) & 1)
+        const front = (wm & 1) + ((wm >> 1) & 1)
+        const rear = ((wm >> 2) & 1) + ((wm >> 3) & 1)
+        sagRoll = -0.06 * (right - left) + 0.012 * Math.sin(t * (6 + c.speed * 0.8) + c.id) * Math.min(1, c.speed / 8)
+        sagPitch = 0.025 * (front - rear)
+        sagY = -0.045 * (left + right)
+      }
       if (c.engineOff) {
         // Engine off: exactly like a parked car (same instance params, no lights, glows or silhouette), so it blends in.
-        inst(model, batches, [c.x, 0, c.z, c.h, 0, 0, -1, -1, 0, 0, 0, 1])
-        if (c.id === focus?.id) inst(model, ghosts, [c.x, 0, c.z, c.h, 0, 0, -1, -1, tint[0], tint[1], tint[2], 1])
+        inst(model, batches, [c.x, sagY, c.z, c.h, sagRoll, sagPitch, -1, -1, 0, 0, 0, 1])
+        if (c.id === focus?.id) inst(model, ghosts, [c.x, sagY, c.z, c.h, sagRoll, sagPitch, -1, -1, tint[0], tint[1], tint[2], 1])
         continue
       }
-      const vals = [c.x, 0, c.z, c.h, v.roll, v.pitch, siren, braking, tint[0], tint[1], tint[2], 1]
+      const vals = [c.x, sagY, c.z, c.h, v.roll + sagRoll, v.pitch + sagPitch, siren, braking, tint[0], tint[1], tint[2], 1]
       inst(model, batches, vals)
       inst(model, ghosts, vals)
 
@@ -285,6 +312,17 @@ export class Scene {
       sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * 1.3, 0.85, 0.92, 1, 0.1, 3)
       sprite("d", heli.x, heli.y - 0.5, heli.z, 1.6, 1, 1, 1, 2.5, 0)
       if (Math.floor(t * 1.5) % 2 === 0) sprite("d", heli.x, heli.y + 1.6, heli.z, 1.2, 1, 0.1, 0.1, 2, 0)
+    }
+
+    // Repair bays: a soft teal pulse on each working bay floor for a driver with flat tires.
+    if (focus && focus.ownerId === view.robberId && focus.wheels && view.phase === "chase") {
+      const pulse = (t * 0.8) % 1
+      this.city.shops.forEach((s, i) => {
+        if ((view.shopCool?.[i] ?? 0) > 0) return
+        if ((s.x - cam.fx) ** 2 + (s.z - cam.fz) ** 2 > 200 * 200) return
+        sprite("d", s.x, 0.25, s.z, 4.5, 0.25, 1, 0.8, 0.22 + 0.12 * Math.sin(t * 3), 3)
+        sprite("d", s.x, 0.25, s.z, 2.5 + pulse * 4, 0.25, 1, 0.8, 1.2 * (1 - pulse), 2)
+      })
     }
 
     // Bust ring around a boxed-in robber.
