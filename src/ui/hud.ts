@@ -218,6 +218,12 @@ export class Hud {
     show(e.flat!, flat > 0)
     if (flat > 0) style(e.fFill!, "transform", `scaleX(${Math.min(1, flat / FLAT_SECONDS).toFixed(3)})`)
 
+    const tipped = ctx.events.find((ev) => ev.kind === "tip")
+    if (tipped && !ctx.events.some((ev) => ev.kind === "flat")) {
+      this.flashLeft = FLASH_SECONDS
+      text(e.flash!, isRobber ? "DISPATCH HAS YOUR AREA" : "DISPATCH TIP · CHECK MAP")
+      flag(e.flash!, "bad", isRobber)
+    }
     const hit = ctx.events.find((ev) => ev.kind === "flat")
     if (hit && live) {
       this.flashLeft = FLASH_SECONDS
@@ -244,7 +250,8 @@ export class Hud {
 
     // Cops get a small tag over the suspect, or over the last sighting when out of view.
     const target = robber ?? ghost
-    const tagOn = !isRobber && !!target && (view.phase === "chase" || view.phase === "headstart")
+    // No tag over a dark driver: they should look like any other parked car.
+    const tagOn = !isRobber && !!target && !(target.engineOff && target.radar === false) && (view.phase === "chase" || view.phase === "headstart")
     show(e.tag!, tagOn)
     if (tagOn && target) {
       const p = cam.project(target.x, 2.4, target.z, W, H)

@@ -161,6 +161,8 @@ export type WorldView = {
   props?: PropView[]
   /** Seconds the robber has stayed free since the cops were dispatched (frozen once busted). */
   survived: number
+  /** The latest dispatch tip (broad area), until the driver is seen again. Visible to everyone. */
+  tip?: Tip | null
   /** Best survival time in this room so far, and who set it. */
   best: number
   bestName: string
@@ -175,6 +177,13 @@ export const BACKUP_EVERY = 25
 export const MAX_BACKUP = 6
 /** Spike strips a cop can have on the road at once; placing another removes their oldest. */
 export const MAX_STRIPS = 3
+/** While nobody has eyes on the driver, dispatch radios a broad area every TIP_EVERY seconds. */
+export const TIP_EVERY = 60
+/** Radius of the tipped area; the driver is somewhere inside it, not at its center. */
+export const TIP_RADIUS = 110
+
+/** A broad "suspect reported in this area" circle. `t` is the sim time it was issued. */
+export type Tip = { x: number; z: number; r: number; t: number }
 /** PvP: no bot cars. Rounds need at least this many players. */
 export const PVP = true
 export const MIN_PLAYERS = 2
@@ -213,6 +222,9 @@ export class World {
   roundNear = 0
   roundScore = 0
   survived = 0
+  tip: Tip | null = null
+  /** Seconds since anyone last had eyes on the driver (or since the last tip). */
+  private unseenFor = 0
   best = 0
   bestName = ""
   newBest = false
@@ -358,6 +370,8 @@ export class World {
     this.extract = 0
     this.reinforcements = 0
     this.survived = 0
+    this.tip = null
+    this.unseenFor = 0
     this.newBest = false
     this.roundDrift = 0
     this.roundNear = 0
@@ -655,6 +669,25 @@ export class World {
   }
 
   /** Line of sight from a cop to the robber: within sight range, not through smoke, and not around a building unless close enough to hear. */
+  /**
+   * Dispatch tips: after TIP_EVERY seconds with nobody seeing the driver, cops get a broad circle that contains the
+   * driver somewhere inside it (offset from the center by a seeded random amount), then again every TIP_EVERY seconds.
+   */
+  private stepTip(dt: number, r: Car) {
+    if (this.seen) {
+      this.unseenFor = 0
+      this.tip = null
+      return
+    }
+    this.unseenFor += dt
+    if (this.unseenFor < TIP_EVERY) return
+    this.unseenFor = 0
+    const a = this.rng() * Math.PI * 2
+    const off = TIP_RADIUS * (0.25 + 0.5 * this.rng())
+    this.tip = { x: r.body.x + Math.cos(a) * off, z: r.body.z + Math.sin(a) * off, r: TIP_RADIUS, t: this.t }
+    this.emit("tip", "Dispatch: caller reports the suspect in this area")
+  }
+
   /** Is the robber inside the area this cop's screen shows? (Survival mode's notion of "seeing" the robber.) */
   onScreen(cop: Car, r: Car) {
     const dx = r.body.x - cop.body.x
@@ -694,6 +727,7 @@ export class World {
       this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
       this.lastSeenH = r.body.h
     }
+    if (SURVIVAL) this.stepTip(dt, r)
 
     // Bust: slow robber with cops pressed against them. One cop works against a wall; more cops are faster.
     const near = cops.filter((c) => Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z) < BUST_RANGE)
@@ -886,6 +920,7 @@ export class World {
       extract: this.extract / EXTRACT_SECONDS,
       exitOpenIn: this.exitOpenIn(),
       survived: this.survived,
+      tip: this.tip,
       best: this.best,
       bestName: this.bestName,
       newBest: this.newBest,

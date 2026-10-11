@@ -71,7 +71,7 @@ export class Minimap {
     return cv
   }
 
-  update(view: Pick<WorldView, "cars" | "robberId" | "phase"> & { heli?: WorldView["heli"]; props?: WorldView["props"] }, cam: Camera, myId: string, dt: number) {
+  update(view: Pick<WorldView, "cars" | "robberId" | "phase" | "t"> & { heli?: WorldView["heli"]; props?: WorldView["props"]; tip?: WorldView["tip"] }, cam: Camera, myId: string, dt: number) {
     this.t += dt
     const g = this.g
     const r = SIZE / 2
@@ -105,6 +105,25 @@ export class Minimap {
     const iAmCop = me?.role === "cop"
     const robber = view.cars.find((c) => c.ownerId === view.robberId)
     const arrows: { x: number; z: number; color: string }[] = []
+
+    // Dispatch tip: a broad dashed circle the driver is somewhere inside. Fades over the minute until the next tip.
+    const tip = view.tip
+    if (tip && view.phase === "chase") {
+      const [tx, ty] = toMap(tip.x, tip.z)
+      const age = Math.max(0, view.t - tip.t)
+      const fade = Math.max(0.35, 1 - age / 60)
+      const fresh = age < 3 ? 0.5 + 0.5 * Math.sin(age * 12) : 0
+      g.fillStyle = `rgba(255, 138, 31, ${(0.1 + 0.1 * fresh) * fade})`
+      g.strokeStyle = `rgba(255, 138, 31, ${0.7 * fade})`
+      g.lineWidth = 1.5
+      g.setLineDash([5, 4])
+      g.beginPath()
+      g.arc(r + tx, r + ty, tip.r * scale, 0, Math.PI * 2)
+      g.fill()
+      g.stroke()
+      g.setLineDash([])
+      if (Math.hypot(tx, ty) - tip.r * scale > r - 6) arrows.push({ x: tip.x, z: tip.z, color: `rgba(255, 138, 31, ${0.6 * fade})` })
+    }
 
     // Helicopter spotlight.
     if (view.heli?.active) {

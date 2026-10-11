@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { BUST_SECONDS, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
 import { NO_INPUT } from "../shared/sim/vehicle"
-import { MAX_STRIPS, World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
+import { MAX_STRIPS, TIP_EVERY, TIP_RADIUS, World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
 import { ROAD_X, ROAD_Z, bot, drive, human, humanWorld, place, steps, toChase } from "./sim-helpers"
 
 const robberOf = (w: World, viewer: string) => w.view(viewer).cars.find((c) => c.ownerId === w.robberId)
@@ -592,5 +592,28 @@ describe("spike strip limit", () => {
     const mine = w.props.filter((p) => p.kind === "spike").map((p) => p.id)
     expect(mine).toEqual(ids.slice(-MAX_STRIPS))
     expect(w.carOf("c1")!.gadgets[0]!.charges).toBe(0)
+  })
+})
+
+describe("dispatch tip", () => {
+  test.skipIf(!SURVIVAL)("after a minute unseen, everyone gets a broad area that contains the driver, not centered on them", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    place(w, "r", ROAD_X, ROAD_Z + 100)
+    steps(w, TIP_EVERY - 1)
+    expect(w.view("c1").tip ?? null).toBeNull()
+    steps(w, 2)
+    const tip = w.view("c1").tip!
+    expect(tip).toBeTruthy()
+    const d = Math.hypot(tip.x - ROAD_X, tip.z - (ROAD_Z + 100))
+    expect(d).toBeLessThan(TIP_RADIUS)
+    expect(d).toBeGreaterThan(TIP_RADIUS * 0.2)
+    expect(w.drainEvents().some((e) => e.kind === "tip")).toBe(true)
+    // Seen again: the tip clears.
+    place(w, "c1", ROAD_X, ROAD_Z + 80)
+    steps(w, 0.2)
+    expect(w.view("c1").tip ?? null).toBeNull()
   })
 })
