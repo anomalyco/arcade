@@ -4,7 +4,7 @@ import type { World } from "../../shared/sim/world"
  * Dev-only staged moments for screenshot comparisons against the concept art (`?stage=<name>`, add `&freeze`
  * to stop the simulation). Positions are around the intersection at (228, 152).
  */
-export function applyStage(w: World, name: string) {
+export function applyStage(w: World, name: string, viewer = "me") {
   const r = w.robber()
   if (!r) return
   w.phase = "chase"
@@ -25,6 +25,22 @@ export function applyStage(w: World, name: string) {
     ] as const
     trail.forEach(([x, z, h], i) => cops[i] && put(cops[i]!.body, x, z, h, 0, 18))
     Object.assign(w.heli, { active: true, x: 250, y: 16, z: 160, h: -1.6, sx: 238, sz: 186 })
+  } else if (name === "copview" || name === "copping") {
+    // You are a cop far from the action. copview: another cop has the driver on screen 250 m away.
+    // copping: nobody sees the driver, so you get the last-seen ping.
+    const me = w.carOf(viewer)!
+    const rob = cops.find((c) => c.ownerId !== viewer)!
+    const copVehicle = rob.vehicle
+    rob.role = "robber"
+    rob.vehicle = me.vehicle
+    me.role = "cop"
+    me.vehicle = copVehicle
+    w.robberId = rob.ownerId
+    put(me.body, 228, 100, 0, 0, 0)
+    put(rob.body, name === "copview" ? 428 : 290, name === "copview" ? 260 : 150, 0.5, 4, 14)
+    const other = w.cops().find((c) => c !== me)
+    if (other) put(other.body, name === "copview" ? 423 : -150, name === "copview" ? 245 : -150, 0.4, 4, 14)
+    w.lastSeen = { x: 270, z: 130, t: w.t }
   } else if (name === "roadblock") {
     // dir-d-lowpoly-2: suspect pinned by the spotlight, cruisers converging.
     put(r.body, 236, 156, 1.2, 9, 3)

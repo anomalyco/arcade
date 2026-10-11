@@ -3,6 +3,7 @@ import type { City } from "../../shared/sim/city"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
 import { attr, esc, flag, h, show, style, text } from "./dom"
+import { Minimap } from "./minimap"
 
 export type HudContext = {
   myId: string
@@ -20,6 +21,7 @@ type Row = { id: string; name: string; human: boolean; best?: number; score?: nu
 
 /** The parts of the world view the HUD reads. Survival fields are optional while the sim moves over to them. */
 type HudView = Pick<WorldView, "t" | "round" | "phase" | "phaseT" | "robberId" | "bust" | "cars"> & {
+  heli?: WorldView["heli"]
   standings: Row[]
   survived?: number
   best?: number
@@ -48,6 +50,7 @@ export class Hud {
   private firstRound = true
   private startBest: number | undefined
   private resultsFor = -1
+  private map!: Minimap
 
   constructor(
     readonly root: HTMLElement,
@@ -55,6 +58,7 @@ export class Hud {
   ) {
     root.classList.add("hud")
     this.build()
+    this.map = new Minimap(root, city)
   }
 
   private build() {
@@ -160,6 +164,7 @@ export class Hud {
     show(e.keys!, this.firstRound && pre)
 
     this.updateWorld(view, ctx, isRobber, robber, ghost)
+    this.map.update(view, ctx.cam, ctx.myId, ctx.dt)
     this.updateEnd(view, ctx, robberName, survived)
 
     if (ctx.room) this.root.dataset.room = ctx.room

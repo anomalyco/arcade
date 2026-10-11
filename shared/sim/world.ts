@@ -20,6 +20,10 @@ import {
   ROAD_HALF,
   ROUND_SECONDS,
   SIGHT_RANGE,
+  CAMERA_YAW,
+  SCREEN_AHEAD,
+  SCREEN_BACK,
+  SCREEN_HALF_WIDTH,
   SPIKE_SPOT_RANGE,
   VEHICLE_BY_ID,
   VEHICLES,
@@ -165,8 +169,6 @@ export const MAX_BACKUP = 6
 /** PvP: no bot cars. Rounds need at least this many players. */
 export const PVP = true
 export const MIN_PLAYERS = 2
-/** Dispatch radios the robber's position to every unit this often, so the pressure never lets up. */
-export const PING_EVERY = 4
 
 export const HEAT_RATE = 0.35
 export const HEAT_SEEN_RATE = 0.8
@@ -607,6 +609,15 @@ export class World {
   }
 
   /** Line of sight from a cop to the robber: within sight range, not through smoke, and not around a building unless close enough to hear. */
+  /** Is the robber inside the area this cop's screen shows? (Survival mode's notion of "seeing" the robber.) */
+  onScreen(cop: Car, r: Car) {
+    const dx = r.body.x - cop.body.x
+    const dz = r.body.z - cop.body.z
+    const along = dx * Math.sin(CAMERA_YAW) + dz * Math.cos(CAMERA_YAW)
+    const side = dx * Math.cos(CAMERA_YAW) - dz * Math.sin(CAMERA_YAW)
+    return Math.abs(side) < SCREEN_HALF_WIDTH && along > -SCREEN_BACK && along < SCREEN_AHEAD
+  }
+
   canSee(cop: Car, r: Car) {
     const a = cop.body
     const b = r.body
@@ -630,9 +641,8 @@ export class World {
     const spotted = this.heli.active && !smoked && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
     this.heli.lock = spotted ? this.heli.lock + dt : 0
     if (spotted) this.heat += dt * HEAT_SPOT_RATE
-    this.seen = spotted || (!smoked && cops.some((c) => this.canSee(c, r)))
-    const ping = SURVIVAL && (!this.lastSeen || this.t - this.lastSeen.t >= PING_EVERY)
-    if (this.seen || ping) {
+    this.seen = spotted || (!smoked && cops.some((c) => (SURVIVAL ? this.onScreen(c, r) : this.canSee(c, r))))
+    if (this.seen) {
       this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
       this.lastSeenH = r.body.h
     }

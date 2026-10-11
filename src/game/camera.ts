@@ -1,3 +1,4 @@
+import { CAMERA_YAW } from "../../shared/config"
 import { mat4, vec4 } from "wgpu-matrix"
 
 /**
@@ -5,7 +6,7 @@ import { mat4, vec4 } from "wgpu-matrix"
  * rotates with it, so the city keeps the same diorama orientation through every turn.
  */
 export class Camera {
-  readonly yaw = Math.PI / 4 + 0.16
+  readonly yaw = CAMERA_YAW
   readonly pitch = 0.93
   readonly fov = 0.6
   fx = 0

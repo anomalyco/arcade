@@ -98,3 +98,13 @@ export const SPIKE_SPOT_RANGE = 40
 export const SIGHT_RANGE = 70
 /** Inside this range cops always know where the robber is (sirens, engine noise), even around a corner. */
 export const HEAR_RANGE = 20
+
+/** Fixed camera yaw (radians). The camera never rotates, so "on screen" is a box in these ground axes. */
+export const CAMERA_YAW = Math.PI / 4 + 0.16
+/**
+ * The ground area a player's screen shows around their car at the default zoom, in camera axes (meters):
+ * sideways half-width, and how far it reaches toward the bottom and top of the screen.
+ */
+export const SCREEN_HALF_WIDTH = 40
+export const SCREEN_BACK = 24
+export const SCREEN_AHEAD = 40

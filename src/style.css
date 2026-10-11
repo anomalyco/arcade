@@ -119,3 +119,7 @@ button { font: inherit; color: inherit; }
 .btn.link { height: 30px; border: 0; color: var(--dim); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; }
 .lb-join { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
 .lb-join input { text-transform: uppercase; letter-spacing: 0.4em; }
+
+.h-map { position: absolute; left: 24px; bottom: 24px; width: 196px; height: 196px; border-radius: 50%; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55); }
+.h-map canvas { display: block; border-radius: 50%; }
+.phase-end .h-map { opacity: 0.35; }

@@ -34,7 +34,7 @@ describe("fog of war", () => {
   test("in plain sight the cops see the live car", () => {
     const w = humanWorld()
     toChase(w)
-    place(w, "c1", ROAD_X, ROAD_Z - 50)
+    place(w, "c1", ROAD_X, ROAD_Z - 25)
     place(w, "r", ROAD_X, ROAD_Z)
     steps(w, 0.1)
     expect(w.seen).toBe(true)
@@ -43,7 +43,8 @@ describe("fog of war", () => {
     expect(v.x).toBe(w.robber()!.body.x)
   })
 
-  test("buildings block line of sight beyond hearing range", () => {
+  // Survival uses "on any cop's screen" instead of line of sight.
+  test.skipIf(SURVIVAL)("buildings block line of sight beyond hearing range", () => {
     const w = humanWorld()
     toChase(w)
     const clear = (x: number, z: number) => !w.city.boxes.some((b) => x > b.x0 - 3 && x < b.x1 + 3 && z > b.z0 - 3 && z < b.z1 + 3)
@@ -286,7 +287,8 @@ describe("rounds", () => {
     expect(robbers[2]).toBe("me")
   })
 
-  test("survival: bots-only rounds end in a bust, with survival time and room best recorded", () => {
+  // Bot cops (no backup under PvP) can lose a bot driver indefinitely; only meaningful with backup.
+  test.skipIf(PVP)("survival: bots-only rounds end in a bust, with survival time and room best recorded", () => {
     for (const seed of [1, 2, 3]) {
       const w = new World(seed * 7919, ["a", "b", "c", "d", "e"].map(bot))
       while (w.phase !== "end" && w.t < 900) w.step(DT)
@@ -379,5 +381,28 @@ describe.skipIf(!PVP)("waiting", () => {
     w.setParticipants([human("a")])
     expect(w.phase).toBe("waiting")
     expect(w.cars.length).toBe(1)
+  })
+})
+
+describe("survival sighting", () => {
+  test.skipIf(!SURVIVAL)("the driver is live for every cop while any cop has them on screen, a last-seen ping otherwise", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    // c1 right next to the robber (on c1's screen), c2 far away.
+    place(w, "r", ROAD_X, ROAD_Z)
+    place(w, "c1", ROAD_X, ROAD_Z - 20)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    steps(w, 0.2)
+    const live = w.view("c2").cars.find((c) => c.ownerId === "r")!
+    expect(live.ghost).toBe(false)
+    expect(Math.hypot(live.x - w.carOf("r")!.body.x, live.z - w.carOf("r")!.body.z)).toBeLessThan(1)
+    // Both cops far off screen: c2 only gets where the driver was last seen.
+    place(w, "c1", ROAD_X - 300, ROAD_Z - 200)
+    steps(w, 0.2)
+    place(w, "r", ROAD_X, ROAD_Z + 60)
+    steps(w, 0.2)
+    const ghost = w.view("c2").cars.find((c) => c.ownerId === "r")!
+    expect(ghost.ghost).toBe(true)
+    expect(Math.hypot(ghost.x - ROAD_X, ghost.z - ROAD_Z)).toBeLessThan(2)
   })
 })
