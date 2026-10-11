@@ -12,7 +12,7 @@ import { Fx } from "./fx"
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
 const COP_TINT: [number, number, number] = [0.25, 0.5, 1.0]
-const MOON = normalizeV([-0.45, 0.75, -0.5])
+const MOON = normalizeV([-0.55, 0.62, -0.55])
 
 function normalizeV(v: number[]): [number, number, number] {
   const l = Math.hypot(v[0]!, v[1]!, v[2]!)
@@ -131,7 +131,7 @@ export class Scene {
     const fp = focus ? [focus.x, 1, focus.z] : [cam.fx, 1, cam.fz]
     put(fp[0]!, fp[1]!, fp[2]!, focus ? 0.24 : 0)
     put(w, h, 0, t)
-    put(MOON[0], MOON[1], MOON[2], 0.55)
+    put(MOON[0], MOON[1], MOON[2], 0.75)
     const heli = view.heli
     if (heli.active) {
       const dir = normalizeV([heli.sx - heli.x, -heli.y + 0.5, heli.sz - heli.z])
@@ -228,6 +228,11 @@ export class Scene {
       }
     }
 
+    for (const p of this.city.parked) {
+      if ((p.x - cam.fx) ** 2 + (p.z - cam.fz) ** 2 > 260 * 260) continue
+      inst(this.models.get(p.model)!, batches, [p.x, 0, p.z, p.h, 0, 0, -1, 0, 0, 0, 0, 1])
+    }
+
     // Helicopter with spinning rotor and its spotlight beam.
     if (heli.active) {
       inst(this.heliModel, batches, [heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, 1.2])
@@ -260,10 +265,10 @@ export class Scene {
       .filter((e) => e.d < 230 * 230)
       .sort((a, b) => a.d - b.d)
     for (const { l } of near) {
-      sprite("d", l.x, 6.05, l.z, 1.3, 1, 0.72, 0.4, 1.8, 0)
-      sprite("d", l.x, 0.08, l.z, 8, 1, 0.65, 0.35, 0.1, 3)
+      sprite("d", l.x, l.small ? 3.75 : 6.05, l.z, l.small ? 0.8 : 1.3, 1, 0.72, 0.4, 1.8, 0)
+      sprite("d", l.x, 0.2, l.z, l.small ? 5 : 9, 1, 0.6, 0.3, 0.14, 3)
     }
-    for (const { l } of near) light(l.x, l.y, l.z, 17, 1, 0.68, 0.36, 2.4)
+    for (const { l } of near) light(l.x, l.y, l.z, l.small ? 11 : 20, 1, 0.62, 0.3, l.small ? 2.2 : 3.2)
     f[32 + 8 + 2] = n
 
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST)

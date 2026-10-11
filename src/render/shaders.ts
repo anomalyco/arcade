@@ -45,9 +45,9 @@ fn shadow(world: vec3f, n: vec3f) -> f32 {
 }
 
 fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
-  let sky = vec3f(0.14, 0.17, 0.30);
-  let ground = vec3f(0.05, 0.05, 0.07);
-  var c = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.15;
+  let sky = vec3f(0.10, 0.13, 0.26);
+  let ground = vec3f(0.03, 0.03, 0.05);
+  var c = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.6;
   let L = normalize(F.moonDir.xyz);
   let ndl = max(dot(n, L), 0.0);
   c += albedo * vec3f(0.42, 0.5, 0.78) * F.moonDir.w * ndl * shadow(world, n);
@@ -98,10 +98,10 @@ fn facade(base: vec3f, world: vec3f, n: vec3f) -> vec4f {
   if (pane < 0.5) { return vec4f(base, 0.0); }
   let h = hash2(id + floor(world.xz / 97.0) * 13.0 + n.xz * 7.0);
   let ground = select(0.0, 1.0, v < 4.8);
-  let lit = step(0.66 - ground * 0.25, h);
-  let warm = mix(vec3f(1.0, 0.68, 0.32), vec3f(1.0, 0.85, 0.55), hash2(id * 3.1));
-  let glass = vec3f(0.05, 0.07, 0.11);
-  return vec4f(select(glass, warm * (1.6 + ground * 0.8), lit > 0.5), lit);
+  let lit = step(0.72 - ground * 0.2, h);
+  let warm = mix(vec3f(1.0, 0.55, 0.18), vec3f(1.0, 0.75, 0.4), hash2(id * 3.1));
+  let glass = vec3f(0.012, 0.016, 0.03);
+  return vec4f(select(glass, warm * (0.9 + 0.5 * hash2(id * 1.7) + ground * 0.5), lit > 0.5), lit);
 }
 `
 
@@ -130,7 +130,7 @@ struct VIn {
   o.world = v.pos;
   o.pos = F.viewProj * vec4f(v.pos, 1.0);
   o.normal = v.normal;
-  o.color = v.color;
+  o.color = pow(v.color, vec3f(2.2));
   o.mat = v.mat * 4.0;
   o.extra = vec4f(0.0);
   o.cut = 1.0;
@@ -166,7 +166,7 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.world = instWorld(v.pos, inst);
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal, inst);
-  o.color = v.color;
+  o.color = pow(v.color, vec3f(2.2));
   o.mat = v.mat * 4.0;
   o.extra = inst.params;
   o.cut = 0.0;
@@ -182,9 +182,11 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
   if (r > 1.0) { return false; }
   // Only geometry nearer to the camera than the car gets cut.
   if (distance(world, F.cam.xyz) > distance(F.focus.xyz, F.cam.xyz) - 3.0) { return false; }
-  let fade = smoothstep(1.0, 0.55, r);
-  let bayer = hash2(floor(fragPos.xy));
-  return bayer < fade * 0.82;
+  let fade = smoothstep(1.0, 0.7, r);
+  let p = vec2u(fragPos.xy) % 4u;
+  let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  let bayer = (m[p.y * 4u + p.x] + 0.5) / 16.0;
+  return bayer < fade * 0.9;
 }
 
 @fragment fn fs(o: VOut) -> @location(0) vec4f {
@@ -193,7 +195,7 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
   var col: vec3f;
   if (mat == 2) {
     let tail = o.color.r > 0.9 && o.color.g < 0.2;
-    col = o.color * select(4.0, select(2.5, 9.0, o.extra.w > 0.5), tail);
+    col = o.color * select(2.2, select(2.5, 9.0, o.extra.w > 0.5), tail);
   } else if (mat == 5) {
     // Siren lamp: alternating red and blue strobes; dim when off.
     let phase = o.extra.z;
