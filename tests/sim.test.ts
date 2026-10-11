@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { BUST_SECONDS, CAMERA_YAW, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
+import { BUST_SECONDS, CAMERA_YAW, CELL, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE, VEHICLE_BY_ID } from "../shared/config"
+import { carShape, shapeGap } from "../shared/sim/collide"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
 import { NO_INPUT } from "../shared/sim/vehicle"
 import { LOST_AFTER, MAX_STRIPS, SPOT_AFTER, TIP_EVERY, TIP_RADIUS, World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
@@ -245,6 +246,76 @@ describe("cars", () => {
   })
 })
 
+describe("car contact", () => {
+  const ROAD_CROSS = 3 * CELL
+  const gap = (w: World, a: string, b: string) => {
+    const ca = w.carOf(a)!
+    const cb = w.carOf(b)!
+    return shapeGap(carShape(ca.body, ca.vehicle), carShape(cb.body, cb.vehicle))
+  }
+
+  test("cars side by side settle touching, about their widths apart (no circle-sized gap)", () => {
+    const w = humanWorld(["c1"])
+    toChase(w)
+    place(w, "r", ROAD_X, ROAD_Z)
+    place(w, "c1", ROAD_X + 1.2, ROAD_Z + 0.4)
+    steps(w, 1)
+    const d = Math.abs(w.carOf("c1")!.body.x - w.robber()!.body.x)
+    expect(d).toBeGreaterThan(1.8)
+    expect(d).toBeLessThan(2.2)
+    expect(gap(w, "r", "c1")).toBeLessThan(0.3)
+    expect(gap(w, "r", "c1")).toBeGreaterThan(-0.05)
+  })
+
+  test("a T-bone pushes the struck car across and a rear-quarter hit spins it, with an impact event at the contact", () => {
+    for (const off of [0, -1.6]) {
+      const w = humanWorld(["c1"])
+      toChase(w)
+      w.drainEvents()
+      place(w, "r", ROAD_X, ROAD_CROSS + off)
+      place(w, "c1", ROAD_X + 12, ROAD_CROSS, -Math.PI / 2, 16)
+      w.setInput("c1", drive(0.3))
+      let worst = Infinity
+      let impact = 0
+      steps(w, 1.5, () => {
+        worst = Math.min(worst, gap(w, "r", "c1"))
+        impact = Math.max(impact, w.robber()!.impact)
+      })
+      const r = w.robber()!.body
+      expect(impact).toBeGreaterThan(12)
+      expect(r.x).toBeLessThan(ROAD_X - 2)
+      if (off === 0) expect(Math.abs(r.h)).toBeLessThan(0.1)
+      else expect(Math.abs(r.h)).toBeGreaterThan(0.5)
+      expect(worst).toBeGreaterThan(-0.1)
+      const hits = w.drainEvents().filter((e) => e.kind === "impact")
+      const mine = hits.find((e) => e.carId === w.robber()!.id)!
+      expect(mine).toBeDefined()
+      const [speed, x, z, nx] = mine.text.split("|").map(Number)
+      expect(speed).toBeGreaterThan(12)
+      // The contact is on the robber's right flank, and the normal pushes it toward -x.
+      expect(Math.abs(x! - (ROAD_X + VEHICLE_BY_ID.get("muscle")!.width / 2))).toBeLessThan(0.5)
+      expect(Math.abs(z! - ROAD_CROSS)).toBeLessThan(1.5)
+      expect(nx).toBeLessThan(-0.9)
+      expect(hits.some((e) => e.carId === w.carOf("c1")!.id)).toBe(true)
+    }
+  })
+
+  test("an unseen driver's impact events carry no position", () => {
+    const w = humanWorld(["c1"])
+    toChase(w)
+    // Far from the cop at the precinct, out of everyone's sight, straight into a wall.
+    const bx = w.city.boxes.find((b) => b.kind === "building" && b.x1 - b.x0 > 20 && Math.hypot(b.x0 - w.carOf("c1")!.body.x, b.z0 - w.carOf("c1")!.body.z) > 250)!
+    place(w, "r", bx.x0 - 8, (bx.z0 + bx.z1) / 2, Math.PI / 2, 25)
+    w.step(DT)
+    w.seen = false
+    w.drainEvents()
+    steps(w, 1, () => (w.seen = false))
+    const hit = w.drainEvents().find((e) => e.kind === "impact" && e.carId === w.robber()!.id)
+    expect(hit).toBeDefined()
+    expect(hit!.text.includes("|")).toBe(false)
+  })
+})
+
 describe("rounds", () => {
   test("phases cycle intro -> headstart -> chase -> end -> next round, and the robber rotates between humans", () => {
     const w = new World(11, [human("h1"), human("h2"), bot("b1"), bot("b2"), bot("b3")])
@@ -273,13 +344,11 @@ describe("rounds", () => {
   test("a lone human alternates with a bot robber", () => {
     const w = new World(5, [human("me"), bot("b1"), bot("b2"), bot("b3")])
     const robbers = [w.robberId]
-    let round = 0
-    for (let i = 0; i < 30 * 4000 && w.round < 3; i++) {
-      w.step(DT)
-      if (w.round !== round) {
-        round = w.round
-        robbers.push(w.robberId)
-      }
+    // Rounds are started directly: whether bot cops catch a parked human is up to the chase, not the rotation.
+    for (let k = 0; k < 3; k++) {
+      steps(w, 1)
+      w.startRound()
+      robbers.push(w.robberId)
     }
     expect(robbers.length).toBe(4)
     expect(robbers[0]).toBe("me")

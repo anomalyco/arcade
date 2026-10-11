@@ -1,11 +1,13 @@
 import { MAX_STRIPS } from "../shared/sim/world"
 import { MAX_PLAYERS } from "../shared/config"
 import { describe, expect, test } from "bun:test"
-import { DT, FLAT_SECONDS } from "../shared/config"
+import { DT, FLAT_SECONDS, VEHICLE_BY_ID } from "../shared/config"
 import { type ServerMsg, decodeServer, encodeClient } from "../shared/protocol"
 import type { Body, Input } from "../shared/sim/vehicle"
 import { type Conn, RoomCore } from "../server/core"
 import { NetClient } from "../src/game/netcode"
+import { carShape, shapeGap } from "../shared/sim/collide"
+import { ROAD_X, ROAD_Z } from "./sim-helpers"
 
 /** A socket pair with fixed one-way latency, measured in ticks. */
 class Pipe {
@@ -192,6 +194,69 @@ describe("prediction", () => {
     for (let i = 1; i < xs.length; i++) if (xs[i] === xs[i - 1]) still++
     expect(xs.length).toBeGreaterThan(30)
     expect(still / xs.length).toBeLessThan(0.2)
+  })
+})
+
+describe("prediction with contact", () => {
+  /** Ada (the robber) rams Bo's parked cruiser from behind at full throttle, then keeps pushing. */
+  function ram(latency: number) {
+    const net = new Net()
+    const a = join(net, "Ada", latency)
+    const b = join(net, "Bo", latency)
+    let start = 0
+    let jump = 0
+    let contact = 0
+    let touchGap = Infinity
+    let overlap = Infinity
+    let prev: { x: number; z: number } | null = null
+    for (let i = 0; i < 520; i++) {
+      net.tick()
+      const world = net.core.world
+      if (!start && world?.phase === "chase" && a.client?.body) {
+        const ra = world.carOf(a.client.myId)!.body
+        const rb = world.carOf(b.client!.myId)!.body
+        Object.assign(ra, { x: ROAD_X, z: ROAD_Z - 40, h: 0, vx: 0, vz: 0, yaw: 0 })
+        Object.assign(rb, { x: ROAD_X + 0.6, z: ROAD_Z, h: 0, vx: 0, vz: 0, yaw: 0 })
+        start = a.client.seq + latency * 2 + 4
+      }
+      const v = a.frame(start ? { ...IDLE, throttle: 1 } : IDLE)
+      b.frame(IDLE)
+      const mine = v?.cars.find((c) => c.ownerId === a.client?.myId)
+      if (start && a.client!.seq > start && mine) {
+        // Frames land on tick boundaries, so the drawn car is the previous predicted tick plus the eased correction.
+        const body = a.predicted.get(a.client!.seq - 1)!
+        const corr = { x: mine.x - body.x, z: mine.z - body.z }
+        if (prev) jump = Math.max(jump, Math.hypot(corr.x - prev.x, corr.z - prev.z))
+        prev = corr
+        const other = v!.cars.find((c) => c.ownerId === b.client!.myId)!
+        const drawn = shapeGap(carShape(mine, VEHICLE_BY_ID.get(mine.vehicle)!), carShape(other, VEHICLE_BY_ID.get(other.vehicle)!))
+        overlap = Math.min(overlap, drawn)
+        // The first frame showing the hit: the cars should visibly touch right then, not short of each other.
+        if (!contact && mine.impact > 5) {
+          contact = a.client!.seq
+          touchGap = drawn
+        }
+      }
+    }
+    return { a, net, start, jump, contact, touchGap, overlap, cop: net.core.world!.carOf(b.client!.myId)!.body }
+  }
+
+  test("ramming another car is predicted locally: the server agrees closely and the drawn car never jumps", () => {
+    for (const lat of [2, 4]) {
+      const { a, start, jump, contact, touchGap, overlap, cop } = ram(lat)
+      expect(start).toBeGreaterThan(0)
+      expect(contact).toBeGreaterThan(0)
+      // On screen the cars meet when the hit lands, and never visibly sink into each other.
+      expect(Math.abs(touchGap)).toBeLessThan(0.6)
+      expect(overlap).toBeGreaterThan(-0.3)
+      // The hit really happened on the server: the cruiser got shoved up the road.
+      expect(cop.z).toBeGreaterThan(ROAD_Z + 5)
+      const { worst, n } = maxError(a.predicted, a.server, start + 4)
+      expect(n).toBeGreaterThan(40)
+      expect(worst).toBeLessThan(0.5)
+      // Corrections are eased: frame to frame the drawn car moves by its velocity, give or take a few centimeters.
+      expect(jump).toBeLessThan(0.15)
+    }
   })
 })
 

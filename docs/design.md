@@ -39,8 +39,16 @@ a fixed high three-quarter camera that never rotates (see `concept/dir-d-lowpoly
 
 Arcade bicycle model in `shared/sim/vehicle.ts` (`stepAndCollide`, substepped so fast cars can't pass
 through thin boxes). Handbrake (Space) drops grip for drifts that hold with throttle and counter-steer.
-Nitro (Shift) gives +30% top speed and empties in 3.5 s. Ramming is mass-based, and heavy hits stun the
-lighter car.
+Nitro (Shift) gives +30% top speed and empties in 3.5 s.
+
+Collisions (`shared/sim/collide.ts`): every car is an oriented box (96% of its drawn length and width), tested with
+separating axes against the axis-aligned city boxes and against other cars, with a one- or two-point contact manifold.
+Contacts resolve with rigid-body impulses: mass from the vehicle spec, spin through the yaw rate, friction at the
+contact and a 0.25 bounce (none below 1.5 m/s, so a car pressed against a wall rests still). Walls: glancing hits slide
+along, head-on hits stop with a small bounce. Car hits are resolved at the moment of first touch (no sinking in), and an
+off-center hit spins the struck car: a hard knock leaves it loose for up to 1.2 s (low grip and steering, the spin
+carries on), which is the PIT. A change in velocity over 9 m/s stuns. Hits of 6 m/s or more raise an `impact` event
+(`speed|x|z|nx|nz`, normal into the car); an unseen driver's carry only the speed.
 
 ## Going dark
 
@@ -59,7 +67,10 @@ lighter car.
 - The Worker routes `/labs/getaway/ws/<ROOM>` to a `Room` Durable Object, one per room code.
 - The DO runs `World` from `shared/` at 30 Hz and sends per-viewer snapshots at 15 Hz.
 - The client predicts its own car with the shared physics and reconciles against acked inputs. Other cars
-  are interpolated about 100 ms behind.
+  are interpolated about 100 ms behind. For prediction, the other cars in the latest snapshot are extrapolated tick by
+  tick in step with your car and collide with it (taking the push), so hits land at once instead of a round trip later.
+  Cars near yours are drawn at that predicted pose, so they touch on screen when they touch; farther away they blend
+  back to the interpolated one. Corrections ease out (faster the bigger they are) and only jumps over 6 m snap.
 - Players who join mid-round watch until the next round. A dropped player keeps their seat for 15 s.
 
 ## WebGPU render pipeline

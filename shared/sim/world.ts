@@ -48,7 +48,8 @@ import {
   segmentHitsCircle,
 } from "./gadgets"
 import { mulberry32, type Rng } from "./rng"
-import { type Body, type Input, NO_INPUT, forward, isDark, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "./vehicle"
+import { carShape, shapeGap } from "./collide"
+import { type Body, type Impact, type Input, NO_INPUT, collideBoxes, collideCars, forward, isDark, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "./vehicle"
 
 /** intro: robber at the scene, alarm ringing. headstart: robber drives, cops wait. chase: everyone drives. end: results. */
 /** waiting: fewer than two players, everyone free-drives until someone joins. */
@@ -93,6 +94,8 @@ export type Car = {
   /** A human engine (H) press waiting for the next tick, and the last engine key state seen, for edge detection. */
   pendingEngine: boolean
   lastEngine: boolean
+  /** Seconds before this car can raise another "impact" event. */
+  impactCool: number
 }
 
 export type SimEvent = { t: number; kind: string; text: string; carId?: number }
@@ -444,6 +447,7 @@ export class World {
       lastGadget: null,
       pendingEngine: false,
       lastEngine: false,
+      impactCool: 0,
     }
     this.cars.push(car)
     return car
@@ -525,8 +529,10 @@ export class World {
   private stepCars(dt: number) {
     const boxes = this.propBoxes.length ? [...this.city.boxes, ...this.propBoxes] : this.city.boxes
     const prev = new Map<number, [number, number]>()
+    const wall: Impact = { impact: 0, x: 0, z: 0, nx: 0, nz: 0 }
     for (const c of this.cars) {
       for (const g of c.gadgets) g.cooldown = Math.max(0, g.cooldown - dt)
+      c.impactCool = Math.max(0, c.impactCool - dt)
       if (!this.moving(c)) {
         c.body.vx *= 0.85
         c.body.vz *= 0.85
@@ -542,46 +548,44 @@ export class World {
       c.pendingGadget = null
       if (slot !== null) this.useGadget(c, slot)
       prev.set(c.id, [c.body.x, c.body.z])
-      c.impact = stepAndCollide(c.body, input, c.vehicle, dt, radiusOf(c), boxes)
+      c.impact = stepAndCollide(c.body, input, c.vehicle, dt, boxes, wall)
+      if (c.impact >= IMPACT_EVENT) this.impactEvent(c, wall)
     }
-    const live = this.cars.filter((c) => this.moving(c))
-    for (let i = 0; i < live.length; i++)
-      for (let j = i + 1; j < live.length; j++) {
-        const a = live[i]!
-        const b = live[j]!
-        const ra = radiusOf(a)
-        const rb = radiusOf(b)
-        const dx = b.body.x - a.body.x
-        const dz = b.body.z - a.body.z
-        const d = Math.hypot(dx, dz)
-        if (d >= ra + rb || d < 1e-6) continue
-        const nx = dx / d
-        const nz = dz / d
-        const overlap = ra + rb - d
-        const ma = a.vehicle.mass
-        const mb = b.vehicle.mass
-        a.body.x -= (nx * overlap * mb) / (ma + mb)
-        a.body.z -= (nz * overlap * mb) / (ma + mb)
-        b.body.x += (nx * overlap * ma) / (ma + mb)
-        b.body.z += (nz * overlap * ma) / (ma + mb)
-        const vn = (b.body.vx - a.body.vx) * nx + (b.body.vz - a.body.vz) * nz
-        if (vn >= 0) continue
-        const imp = (-(1 + RESTITUTION) * vn) / (1 / ma + 1 / mb)
-        a.body.vx -= (imp / ma) * nx
-        a.body.vz -= (imp / ma) * nz
-        b.body.vx += (imp / mb) * nx
-        b.body.vz += (imp / mb) * nz
-        a.impact = Math.max(a.impact, -vn)
-        b.impact = Math.max(b.impact, -vn)
-        // Whoever takes the bigger change in velocity (the lighter car) gets knocked silly.
-        for (const [c, dv] of [
-          [a, imp / ma],
-          [b, imp / mb],
-        ] as const)
-          if (dv > RAM_STUN_DV) c.body.stun = Math.max(c.body.stun, Math.min(1.1, dv / 22))
-        if (this.phase === "chase" && (a.role === "robber" || b.role === "robber") && -vn > 8) this.heat += 1
+    // Every car is solid; one that isn't moving this phase (frozen at the precinct) is an immovable obstacle.
+    const touched = new Set<Car>()
+    for (let i = 0; i < this.cars.length; i++)
+      for (let j = i + 1; j < this.cars.length; j++) {
+        const a = this.cars[i]!
+        const b = this.cars[j]!
+        const ma = this.moving(a)
+        const mb = this.moving(b)
+        const hit = collideCars(a.body, a.vehicle, b.body, b.vehicle, dt, !ma, !mb)
+        if (!hit) continue
+        if (ma) touched.add(a)
+        if (mb) touched.add(b)
+        a.impact = Math.max(a.impact, hit.impact)
+        b.impact = Math.max(b.impact, hit.impact)
+        if (this.phase === "chase" && (a.role === "robber" || b.role === "robber") && hit.impact > 8) this.heat += 1
+        if (hit.impact >= IMPACT_EVENT) {
+          this.impactEvent(a, { ...hit, nx: -hit.nx, nz: -hit.nz })
+          this.impactEvent(b, hit)
+        }
       }
+    // A shove can push a car into a wall; settle it against the city again.
+    for (const c of touched) collideBoxes(c.body, c.vehicle, boxes)
     this.stepProps(dt, prev)
+  }
+
+  /**
+   * "impact" event for a hard hit: text "speed|x|z|nx|nz" (contact point, normal pointing into the car). Events reach
+   * every player, so an unseen driver's hits carry only the speed.
+   */
+  private impactEvent(c: Car, hit: Impact) {
+    if (c.impactCool > 0) return
+    c.impactCool = IMPACT_COOLDOWN
+    const hidden = c.role === "robber" && this.phase === "chase" && !this.seen
+    const f = (v: number, d: number) => v.toFixed(d)
+    this.emit("impact", hidden ? f(hit.impact, 1) : [f(hit.impact, 1), f(hit.x, 2), f(hit.z, 2), f(hit.nx, 3), f(hit.nz, 3)].join("|"), c.id)
   }
 
   /** Q / E. Robber gadgets work from the head start on; cop gadgets once the chase is on. */
@@ -896,7 +900,7 @@ export class World {
     if (sp < NEAR_MISS_SPEED || r.nearCool > 0 || this.phase !== "chase") return
     for (const c of this.cops()) {
       const d = Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z)
-      if (d < NEAR_MISS_DIST + 2.5 && d > radiusOf(c) + radiusOf(r) + 0.2 && r.impact < 1) {
+      if (d < NEAR_MISS_DIST + 2.5 && r.impact < 1 && shapeGap(carShape(c.body, c.vehicle), carShape(r.body, r.vehicle)) > 0.3) {
         this.roundNear++
         this.roundScore += 500
         this.credit(r.ownerId, 500)
@@ -1004,8 +1008,9 @@ export class World {
   }
 }
 
-const RESTITUTION = 0.25
-const RAM_STUN_DV = 9
+/** Hits at least this hard (m/s at the contact) raise an "impact" event, at most once per IMPACT_COOLDOWN seconds per car. */
+export const IMPACT_EVENT = 6
+const IMPACT_COOLDOWN = 0.3
 
 export function radiusOf(c: Car) {
   return Math.max(1.1, c.vehicle.length * 0.42)
