@@ -69,6 +69,14 @@ button { font: inherit; color: inherit; }
 .e-next { margin-top: 26px; font: 500 11px/1 var(--display); letter-spacing: 0.36em; padding-left: 0.36em; color: var(--faint); }
 .e-next b { font-weight: 600; color: var(--dim); }
 
+.h-wait { position: absolute; left: 0; right: 0; top: 30vh; display: flex; flex-direction: column; align-items: center; animation: fadein 0.8s ease-out; }
+.w-line { font: 300 40px/1 var(--display); letter-spacing: 0.32em; padding-left: 0.32em; }
+.w-sub { margin-top: 14px; font: 500 13px/1.4 var(--display); letter-spacing: 0.22em; padding-left: 0.22em; color: var(--dim); }
+.w-invite { margin-top: 34px; display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 22px; background: rgba(5, 7, 11, 0.62); border: 1px solid rgba(255, 255, 255, 0.16); pointer-events: auto; text-shadow: none; }
+.w-invite span { font: 500 11px/1 var(--display); letter-spacing: 0.36em; color: var(--dim); }
+.w-invite b { font: 500 30px/1 var(--display); letter-spacing: 0.3em; color: var(--text); }
+.w-invite button { cursor: pointer; height: 38px; padding: 0 18px; border: 0; background: var(--text); color: #05070b; font: 600 13px/1 var(--display); letter-spacing: 0.24em; }
+.w-invite button:hover { background: #fff; }
 .h-room { position: absolute; right: 14px; bottom: 12px; display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 4px 0 10px; border-radius: 11px; background: rgba(5, 7, 11, 0.55); pointer-events: auto; text-shadow: none; font: 500 11px/1 var(--display); letter-spacing: 0.2em; color: var(--dim); }
 .h-room .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--go); }
 .h-room[data-status="pending"] .dot { background: #ffc24a; }
@@ -99,11 +107,10 @@ button { font: inherit; color: inherit; }
 .lobby input::placeholder { color: var(--faint); }
 .lobby input:focus { border-bottom-color: var(--robber); }
 .lb-name { margin-bottom: 14px; }
-.lb-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .btn { cursor: pointer; height: 42px; padding: 0 14px; white-space: nowrap; background: transparent; border: 1px solid rgba(255, 255, 255, 0.2); color: var(--text); font: 500 14px/1 var(--display); letter-spacing: 0.28em; transition: background 0.15s, border-color 0.15s; }
 .btn:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.45); }
 .btn.primary { height: 48px; background: var(--text); border-color: var(--text); color: #05070b; font-weight: 600; }
 .btn.primary:hover { background: #fff; }
 .btn.link { height: 30px; border: 0; color: var(--dim); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; }
-.lb-join { display: grid; grid-template-columns: 1fr 90px; gap: 10px; }
+.lb-join { display: grid; grid-template-columns: 1fr 130px; gap: 10px; }
 .lb-join input { text-transform: uppercase; letter-spacing: 0.4em; }

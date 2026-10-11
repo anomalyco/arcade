@@ -24,6 +24,7 @@ type HudView = Pick<WorldView, "t" | "round" | "phase" | "phaseT" | "robberId" |
   survived?: number
   best?: number
   bestName?: string
+  newBest?: boolean
   busted?: boolean
   escaped?: boolean
 }
@@ -84,21 +85,31 @@ export class Hud {
 
     e.end = h("div", "h-end off", r)
 
+    e.wait = h(
+      "div",
+      "h-wait off",
+      r,
+      `<div class="w-line">WAITING FOR PLAYERS</div><div class="w-sub">Rounds start when a second driver joins. Drive around until then.</div><div class="w-invite"><span>ROOM</span><b class="w-code"></b><button type="button">COPY INVITE LINK</button></div>`,
+    )
+    e.wCode = e.wait.querySelector(".w-code")!
+    e.wCopy = e.wait.querySelector("button")!
+    e.wCopy.addEventListener("click", () => this.copyInvite(e.wCopy!, "COPY INVITE LINK"))
+
     e.room = h("div", "h-room off", r, `<i class="dot"></i><span class="code"></span><button type="button">COPY INVITE</button>`)
     e.roomCode = e.room.querySelector(".code")!
     e.copy = e.room.querySelector("button")!
-    e.copy.addEventListener("click", () => this.copyInvite())
+    e.copy.addEventListener("click", () => this.copyInvite(e.copy!, "COPY INVITE"))
   }
 
-  private copyInvite() {
+  private copyInvite(btn: HTMLElement, label: string) {
     const room = this.root.dataset.room
     if (!room) return
     const url = new URL(location.href)
     url.search = `?r=${room}`
     void navigator.clipboard?.writeText(url.toString()).then(
       () => {
-        text(this.el.copy!, "COPIED")
-        setTimeout(() => text(this.el.copy!, "COPY INVITE"), 1500)
+        text(btn, "LINK COPIED")
+        setTimeout(() => text(btn, label), 1500)
       },
       () => {},
     )
@@ -119,7 +130,12 @@ export class Hud {
       this.startBest = view.best
       this.resultsFor = -1
     }
-    attr(this.root, "class", `hud ${isRobber ? "role-robber" : "role-cop"} phase-${view.phase}`)
+    // "waiting" (fewer than two players) is newer than the Phase union in some builds of the sim.
+    const phase: string = view.phase
+    const waiting = phase === "waiting"
+    attr(this.root, "class", `hud ${isRobber ? "role-robber" : "role-cop"} phase-${phase}`)
+    show(e.wait!, waiting)
+    if (waiting) text(e.wCode!, ctx.room ?? "—")
 
     // Survival clock.
     const chase = view.phase === "chase"
@@ -147,7 +163,7 @@ export class Hud {
     this.updateEnd(view, ctx, robberName, survived)
 
     if (ctx.room) this.root.dataset.room = ctx.room
-    show(e.room!, !!ctx.room)
+    show(e.room!, !!ctx.room && !waiting)
     if (ctx.room) {
       text(e.roomCode!, ctx.room)
       const st = ctx.status.toLowerCase()
@@ -190,7 +206,7 @@ export class Hud {
     if (this.resultsFor !== view.round) {
       this.resultsFor = view.round
       const isRobber = ctx.myId === view.robberId
-      const newBest = survived > 0 && (this.startBest === undefined || survived > this.startBest) && (view.best === undefined || survived >= view.best - 0.05)
+      const newBest = view.newBest ?? (survived > 0 && (this.startBest === undefined || survived > this.startBest) && (view.best === undefined || survived >= view.best - 0.05))
       const title = view.escaped ? "GOT AWAY" : "BUSTED"
       const who = isRobber ? "YOU STAYED FREE FOR" : `${esc(robberName.toUpperCase())} STAYED FREE FOR`
       const rows = [...view.standings]
