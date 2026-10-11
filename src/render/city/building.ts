@@ -20,7 +20,7 @@ const GLASS: Rgb = [0.09, 0.11, 0.16]
 const DARK_PANE: Rgb = [0.05, 0.06, 0.09]
 const FRAME: Rgb = [0.14, 0.13, 0.13]
 const DOOR: Rgb = [0.2, 0.13, 0.1]
-const METAL: Rgb = [0.36, 0.36, 0.37]
+const METAL: Rgb = [0.27, 0.28, 0.3]
 const LIT: Rgb[] = [
   [1.0, 0.62, 0.28],
   [1.0, 0.66, 0.32],
@@ -30,16 +30,16 @@ const LIT: Rgb[] = [
   [1.0, 0.68, 0.36],
 ]
 const SHOP_LIT: Rgb[] = [
-  [0.95, 0.66, 0.36],
-  [0.92, 0.6, 0.3],
-  [0.88, 0.74, 0.56],
+  [1.0, 0.62, 0.3],
+  [0.95, 0.56, 0.26],
+  [0.9, 0.66, 0.42],
 ]
 const AWNINGS: Rgb[] = [
-  [0.42, 0.13, 0.12],
-  [0.13, 0.27, 0.22],
-  [0.16, 0.19, 0.32],
-  [0.44, 0.31, 0.14],
-  [0.32, 0.14, 0.18],
+  [0.3, 0.1, 0.1],
+  [0.1, 0.2, 0.17],
+  [0.12, 0.14, 0.24],
+  [0.32, 0.23, 0.11],
+  [0.24, 0.1, 0.13],
 ]
 const SHOP_SIGNS: AtlasRegion[] = ["diner", "liquor", "pawn", "cafe", "pharmacy", "laundry", "pizza"]
 
@@ -79,10 +79,10 @@ export function building(ctx: BuildingCtx, b: Box) {
   const special = b.label
   // Facade rhythm for this building.
   const bay = 3.0 + rng() * 0.9
-  const winW = 1.05 + rng() * 0.35
-  const winH = Math.min(storey - 1.2, 1.75 + rng() * 0.35)
+  const winW = 0.95 + rng() * 0.3
+  const winH = Math.min(storey - 1.1, 1.9 + rng() * 0.3)
   const sill = 0.85 + (storey - 3.4) * 0.3
-  const litRatio = 0.35 + rng() * 0.35
+  const litRatio = 0.42 + rng() * 0.33
   const paired = rng() < 0.3 && bay > 4
   const courses = rng() < 0.55
 
@@ -320,7 +320,7 @@ function shopfront(ctx: BuildingCtx, f: Face, g: number, trim: Rgb, body: Rgb) {
     const gb = b - (k === units - 1 ? 0 : 0.3)
     if (k > 0) W.rect(m, a - 0.3, a + 0.3, 0.55, glassTop, 0, trim)
     const lit = rng() < 0.7
-    const col = lit ? shade(SHOP_LIT[Math.floor(rng() * SHOP_LIT.length)]!, 0.6 + rng() * 0.2) : [0.06, 0.07, 0.1]
+    const col = lit ? shade(SHOP_LIT[Math.floor(rng() * SHOP_LIT.length)]!, 0.45 + rng() * 0.15) : [0.06, 0.07, 0.1]
     // Stall riser, display glass and the door.
     W.rect(m, ga, gb, 0.55, 0.95, 0, shade(trim, 0.6))
     if (f.detail) W.reveal(m, ga, gb, 0.95, glassTop, r, shade(trim, 0.7))
@@ -337,13 +337,13 @@ function shopfront(ctx: BuildingCtx, f: Face, g: number, trim: Rgb, body: Rgb) {
     }
     // Sign on the fascia or an awning.
     const roll = rng()
-    if (roll < 0.45) {
+    if (roll < 0.55) {
       const region = SHOP_SIGNS[Math.floor(rng() * SHOP_SIGNS.length)]!
       const sw = Math.min(gb - ga - 0.6, 3.6)
       const cu = (ga + gb) / 2
       const tint: Rgb = rng() < 0.5 ? [1, 0.82, 0.55] : rng() < 0.5 ? [1, 0.45, 0.55] : [0.55, 0.9, 1]
       W.decal(m, cu - sw / 2, cu + sw / 2, glassTop + 0.05, g - 0.4, 0.04, region, shade(tint, 0.6), MAT.neon)
-    } else if (roll < 0.85) {
+    } else if (roll < 0.8) {
       W.awning(m, ga - 0.1, gb + 0.1, glassTop + 0.25, 1.5, 0.55, AWNINGS[Math.floor(rng() * AWNINGS.length)]!)
     }
     if (lit && f.detail && rng() < 0.5) {
@@ -583,19 +583,36 @@ function roof(ctx: BuildingCtx, x0: number, x1: number, z0: number, z1: number, 
       m.box(cx - 0.15, cx + 0.15, y + 2.2, y + 2.4, cz - 1.62, cz - 1.5, [1, 0.8, 0.5], MAT.emissive)
     }
   }
-  const n = 2 + Math.floor(rng() * 3 + (w * d) / 70)
+  // Large rooftop plant: a packaged unit on a curb with two fans on top, the biggest silhouette on most roofs.
+  if (w * d > 120) {
+    const big = place(4.2, 2.4)
+    if (big) {
+      const [cx, cz] = big
+      slab(m, cx - 2.2, cx + 2.2, y, y + 0.25, cz - 1.3, cz + 1.3, ROOF_TRIM)
+      slab(m, cx - 2.1, cx + 2.1, y + 0.25, y + 1.9, cz - 1.2, cz + 1.2, METAL, MAT.lit, SKIP.bottom, shade(METAL, 1.12))
+      for (const fx of [-1, 1]) {
+        cylinder(m, cx + fx, cz, 0.75, y + 1.9, y + 2.05, 10, shade(METAL, 0.85))
+        cylinder(m, cx + fx, cz, 0.6, y + 2.05, y + 2.07, 10, shade(METAL, 0.35))
+      }
+      for (let u = cx - 1.9; u < cx + 1.9; u += 0.3) m.quad([u + 0.12, y + 0.45, cz - 1.21], [u, y + 0.45, cz - 1.21], [u, y + 1.7, cz - 1.21], [u + 0.12, y + 1.7, cz - 1.21], [0, 0, -1], shade(METAL, 0.6))
+    }
+  }
+  const n = 2 + Math.floor(rng() * 3 + (w * d) / 55)
   for (let i = 0; i < n; i++) {
-    const big = rng() < 0.35
-    const sx = big ? 2.4 : 1.3
-    const sz = big ? 1.6 : 1.1
+    const big = rng() < 0.4
+    const sx = big ? 2.6 : 1.4
+    const sz = big ? 1.8 : 1.1
     const p = place(sx, sz)
     if (!p) continue
     const [cx, cz] = p
-    const hh = big ? 1.3 : 0.9
-    slab(m, cx - sx / 2, cx + sx / 2, y, y + hh, cz - sz / 2, cz + sz / 2, METAL, MAT.lit, SKIP.bottom, shade(METAL, 1.15))
-    // Grille and fan.
-    m.quad([cx - sx / 2 + 0.1, y + 0.15, cz - sz / 2 - 0.01], [cx - sx / 2 + 0.1, y + hh - 0.15, cz - sz / 2 - 0.01], [cx + sx / 2 - 0.1, y + hh - 0.15, cz - sz / 2 - 0.01], [cx + sx / 2 - 0.1, y + 0.15, cz - sz / 2 - 0.01], [0, 0, -1], shade(METAL, 0.55))
-    if (big) cylinder(m, cx - 0.5, cz, 0.45, y + hh, y + hh + 0.05, 8, shade(METAL, 0.4))
+    const hh = big ? 1.4 : 1.0
+    const col = shade(METAL, 0.9 + rng() * 0.25)
+    slab(m, cx - sx / 2, cx + sx / 2, y, y + hh, cz - sz / 2, cz + sz / 2, col, MAT.lit, SKIP.bottom, shade(col, 1.15))
+    // Grille on the face toward the camera and a fan on top.
+    m.quad([cx - sx / 2 + 0.1, y + 0.15, cz - sz / 2 - 0.01], [cx - sx / 2 + 0.1, y + hh - 0.15, cz - sz / 2 - 0.01], [cx + sx / 2 - 0.1, y + hh - 0.15, cz - sz / 2 - 0.01], [cx + sx / 2 - 0.1, y + 0.15, cz - sz / 2 - 0.01], [0, 0, -1], shade(METAL, 0.5))
+    cylinder(m, cx - (big ? 0.5 : 0), cz, big ? 0.5 : 0.35, y + hh, y + hh + 0.05, 8, shade(METAL, 0.4))
+    // Refrigerant line running off to the parapet.
+    if (rng() < 0.4) slab(m, cx - 0.06, cx + 0.06, y + 0.1, y + 0.22, z0, cz - sz / 2, shade(METAL, 0.7))
   }
   for (let i = 0; i < 2 + Math.floor(rng() * 4); i++) {
     const p = place(0.5, 0.5)
