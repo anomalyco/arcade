@@ -421,14 +421,16 @@ function handles(m: Mesh, x: number, zs: number[], y: number, col: Rgb) {
 // ---------------------------------------------------------------------------------------------------------------
 // Vehicles
 
+/** Windows: the glass material for the steep side glass, a darker lit tint for the shallow wind- and rear screens. */
 const glass: Paint = { col: GLASS, mat: MAT.glass }
+const screen: Paint = { col: [0.035, 0.045, 0.075], mat: PAINT }
 
 /** Sedan greenhouse paint: glass windows with body-colored pillars, roof, and an optional B-pillar segment. */
 function sedanCab(pillar: Rgb, roof: Rgb, bSeg = -1): CabPaint {
   return (band, seg, segs) => {
     if (band === 0) return seg === bSeg ? { col: pillar } : glass
     if (band === 1) return { col: pillar }
-    return seg === 0 || seg === segs - 1 ? glass : { col: roof }
+    return seg === 0 || seg === segs - 1 ? screen : { col: roof }
   }
 }
 
@@ -613,7 +615,7 @@ function compact(m: Mesh, v: Vehicle) {
   cab(m, body.cab, (band, seg, segs) => {
     if (band === 0) return seg === 2 ? { col: trim } : glass
     if (band === 1) return { col: seg === 0 || seg === segs - 1 ? trim : paint }
-    return seg === 0 || seg === segs - 1 ? glass : { col: paint }
+    return seg === 0 || seg === segs - 1 ? screen : { col: paint }
   })
   frontFascia(m, body, { bumper: trim, grille: INK, lampW: 0.3, lampH: 0.1, grilleH: 0.12 })
   rearFascia(m, body, { bumper: trim, lampW: 0.2, lampH: 0.18, lampY: 0.8 })
@@ -726,10 +728,10 @@ function swat(m: Mesh, v: Vehicle, unit: number) {
   m.box(-0.01, 0.01, 0.5, 2.4, zr - 0.012, zr + 0.01, INK)
   // Side steps, roof hatch, lightbar and lettering.
   for (const s of [-1, 1]) m.box(s * hw - 0.12, s * hw + 0.12, 0.42, 0.5, -1.6, 0.9, TRIM)
-  block(m, -0.35, 0.35, 2.5, 2.58, -1.8, -1.1, [0.09, 0.1, 0.12])
+  block(m, -0.35, 0.35, 2.5, 2.58, -2.65, -2.25, [0.09, 0.1, 0.12])
   lightbar(m, 2.5, 0, hw - 0.25, 0.32, 0.17)
-  topDecal(m, 2.506, 0, -1.2, 1.7, 0.45, "swat", WHITE)
-  topDecal(m, 2.506, 0, -2.1, 0.7, 0.4, `num${unit % 10}` as AtlasRegion, WHITE)
+  topDecal(m, 2.506, 0, -0.95, 1.7, 0.5, "swat", WHITE)
+  topDecal(m, 2.506, 0, -1.75, 0.6, 0.45, `num${unit % 10}` as AtlasRegion, WHITE)
   sideText(m, hw + 0.006, -0.8, 1.5, 2.6, 0.42, "policeBlock", WHITE)
   frontDecal(m, zf + 0.012, 0, 0.73, 0.75, 0.16, "policeBlock", WHITE)
 }
@@ -849,21 +851,17 @@ export function buildHeli(): Mesh {
     (seg, e) => {
       const upper = e >= 1 && e <= 3
       const side = e === 0 || e === 4
-      if (seg <= 1 && (upper || side) && !(seg === 0 && side)) return glass
-      if (seg === 2 && (e === 1 || e === 3)) return glass
-      if (seg === 3 && (e === 1 || e === 3)) return glass
-      if (seg >= 5) return { col: e >= 5 ? white : navy }
-      if (side || upper) return { col: navy }
-      return { col: white }
+      // Nose: windscreen over a white chin. Cabin: navy flanks under side windows, white belly band.
+      if (seg <= 1) return upper || (side && seg === 1) ? screen : { col: white }
+      if (seg <= 3 && (e === 1 || e === 3)) return glass
+      if (seg <= 4) return { col: e === 2 || side || upper ? navy : white }
+      if (seg === 5) return { col: e === 2 || upper ? navy : white }
+      return { col: e === 2 ? navy : white }
     },
     { front: { col: navy }, back: { col: navy } },
   )
-  // Door frames on the cabin glass, flank lettering.
-  for (const s of [-1, 1]) {
-    const x = s * (Math.cos(Math.PI / 8) * 1.05 + 0.004)
-    poly(m, [[x, 1.0, -0.3], [x, 1.0, -0.42], [x, 1.75, -0.42], [x, 1.75, -0.3]], navy, PAINT, [0, 1.4, -0.36])
-  }
-  sideText(m, Math.cos(Math.PI / 8) * 1.05 + 0.008, 0.05, 1.4, 1.6, 0.42, "police", WHITE)
+  // Flank lettering.
+  sideText(m, Math.cos(Math.PI / 8) * 1.05 + 0.008, 0.0, 1.36, 1.7, 0.4, "policeBlock", WHITE)
   // Engine cowling, mast, exhaust.
   block(m, -0.55, 0.55, 2.2, 2.5, -1.7, 0.5, navy, PAINT, 0.12)
   m.box(-0.1, 0.1, 2.5, 2.6, -0.1, 0.1, TRIM, MAT.lit)
