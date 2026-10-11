@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
 import { NO_INPUT } from "../shared/sim/vehicle"
-import { World, type Phase } from "../shared/sim/world"
+import { World, type Phase, SURVIVAL } from "../shared/sim/world"
 import { ROAD_X, ROAD_Z, bot, drive, human, humanWorld, place, steps, toChase } from "./sim-helpers"
 
 const robberOf = (w: World, viewer: string) => w.view(viewer).cars.find((c) => c.ownerId === w.robberId)
@@ -62,7 +62,7 @@ describe("fog of war", () => {
     expect(robberOf(w, "c1")!.ghost).toBe(true)
   })
 
-  test("smoke breaks line of sight, through the cloud and inside it", () => {
+  test.skipIf(SURVIVAL)("smoke breaks line of sight, through the cloud and inside it", () => {
     const w = humanWorld()
     toChase(w)
     place(w, "c1", ROAD_X, ROAD_Z - 35)
@@ -92,7 +92,8 @@ describe("fog of war", () => {
   })
 })
 
-describe("gadgets", () => {
+// Gadgets are switched off in survival mode.
+describe.skipIf(SURVIVAL)("gadgets", () => {
   test("presses are edge-triggered and limited by cooldown and charges", () => {
     const w = humanWorld()
     toChase(w)
@@ -250,7 +251,7 @@ describe("rounds", () => {
     const robbers = [w.robberId]
     const starts: number[] = []
     let round = w.round
-    for (let i = 0; i < 30 * 600 && w.round < 2; i++) {
+    for (let i = 0; i < 30 * 3000 && w.round < 2; i++) {
       w.step(DT)
       if (w.phase !== seen[seen.length - 1]) {
         seen.push(w.phase)
@@ -266,14 +267,13 @@ describe("rounds", () => {
     expect(Math.abs(starts[1]! - INTRO_SECONDS - HEAD_START_SECONDS)).toBeLessThan(0.1)
     expect(robbers).toEqual(["h1", "h2", "h1"])
     expect(w.props.length).toBe(0)
-    expect(w.robber()!.gadgets[0]!.charges).toBe(GADGETS.oil.charges)
   })
 
   test("a lone human alternates with a bot robber", () => {
     const w = new World(5, [human("me"), bot("b1"), bot("b2"), bot("b3")])
     const robbers = [w.robberId]
     let round = 0
-    for (let i = 0; i < 30 * 1000 && w.round < 3; i++) {
+    for (let i = 0; i < 30 * 4000 && w.round < 3; i++) {
       w.step(DT)
       if (w.round !== round) {
         round = w.round
@@ -286,21 +286,20 @@ describe("rounds", () => {
     expect(robbers[2]).toBe("me")
   })
 
-  test("bots-only rounds end in an escape or a bust within the time limit", () => {
-    const outcomes: string[] = []
-    for (const seed of [1, 2, 3, 4, 5, 6]) {
+  test("survival: bots-only rounds end in a bust, with survival time and room best recorded", () => {
+    for (const seed of [1, 2, 3]) {
       const w = new World(seed * 7919, ["a", "b", "c", "d", "e"].map(bot))
-      while (w.phase !== "end" && w.t < ROUND_SECONDS + 20) w.step(DT)
+      while (w.phase !== "end" && w.t < 900) w.step(DT)
       expect(w.phase).toBe("end")
-      expect(w.escaped !== w.busted).toBe(true)
-      outcomes.push(w.escaped ? "escape" : "bust")
-      expect(w.drainEvents().some((e) => e.kind === "gadget")).toBe(true)
-      // Then the next round starts.
+      expect(w.busted).toBe(true)
+      const v = w.view()
+      expect(v.survived).toBeGreaterThan(5)
+      expect(v.best).toBe(v.survived)
+      expect(v.newBest).toBe(true)
+      expect(w.cops().length).toBeGreaterThan(3)
       for (let i = 0; i < (END_SECONDS + 0.1) / DT; i++) w.step(DT)
       expect(w.round).toBe(1)
     }
-    expect(outcomes).toContain("escape")
-    expect(outcomes).toContain("bust")
   })
 
   test("the simulation is deterministic", () => {

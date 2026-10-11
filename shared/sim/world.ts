@@ -46,7 +46,8 @@ import { mulberry32, type Rng } from "./rng"
 import { type Body, type Input, NO_INPUT, forward, lateralSpeed, newBody, speedOf, stepAndCollide } from "./vehicle"
 
 /** intro: robber at the scene, alarm ringing. headstart: robber drives, cops wait. chase: everyone drives. end: results. */
-export type Phase = "intro" | "headstart" | "chase" | "end"
+/** waiting: fewer than two players, everyone free-drives until someone joins. */
+export type Phase = "waiting" | "intro" | "headstart" | "chase" | "end"
 
 export type Participant = {
   id: string
@@ -118,7 +119,7 @@ export type CarView = {
 
 export type Heli = { active: boolean; x: number; y: number; z: number; h: number; sx: number; sz: number; lock: number }
 
-export type Standing = { id: string; name: string; human: boolean; score: number; escapes: number; busts: number }
+export type Standing = { id: string; name: string; human: boolean; score: number; escapes: number; busts: number; best: number }
 
 export type WorldView = {
   t: number
@@ -147,7 +148,25 @@ export type WorldView = {
   cars: CarView[]
   /** Deployed gadgets. Spike strips are hidden from the robber beyond SPIKE_SPOT_RANGE; robber props are hidden from cops until revealed. */
   props?: PropView[]
+  /** Seconds the robber has stayed free since the cops were dispatched (frozen once busted). */
+  survived: number
+  /** Best survival time in this room so far, and who set it. */
+  best: number
+  bestName: string
+  /** The round that just ended set a new room best. */
+  newBest: boolean
 }
+
+/** Survival mode: no extraction, no gadgets; the chase runs until the robber is busted. */
+export const SURVIVAL = true
+/** A backup unit joins the hunt every this many seconds of survival. */
+export const BACKUP_EVERY = 25
+export const MAX_BACKUP = 6
+/** PvP: no bot cars. Rounds need at least this many players. */
+export const PVP = true
+export const MIN_PLAYERS = 2
+/** Dispatch radios the robber's position to every unit this often, so the pressure never lets up. */
+export const PING_EVERY = 4
 
 export const HEAT_RATE = 0.35
 export const HEAT_SEEN_RATE = 0.8
@@ -182,6 +201,10 @@ export class World {
   roundDrift = 0
   roundNear = 0
   roundScore = 0
+  survived = 0
+  best = 0
+  bestName = ""
+  newBest = false
   heli: Heli = { active: false, x: 0, y: HELI_ALT, z: 0, h: 0, sx: 0, sz: 0, lock: 0 }
   events: SimEvent[] = []
   props: Prop[] = []
@@ -232,8 +255,30 @@ export class World {
   /** Updates the roster. New humans join as spectators until the next round; leavers' cars are handed to bots. */
   setParticipants(ps: Participant[]) {
     this.participants = ps
-    for (const p of ps) if (!this.standings.has(p.id)) this.standings.set(p.id, { id: p.id, name: p.name, human: p.human, score: 0, escapes: 0, busts: 0 })
+    for (const p of ps) if (!this.standings.has(p.id)) this.standings.set(p.id, { id: p.id, name: p.name, human: p.human, score: 0, escapes: 0, busts: 0, best: 0 })
     for (const c of this.cars) if (c.human && !ps.some((p) => p.id === c.ownerId)) c.human = false
+    if (!PVP || (this.round < 0 && this.phase !== "waiting")) return
+    const enough = ps.length >= MIN_PLAYERS
+    if (this.phase === "waiting") {
+      if (enough) this.startRound()
+      else this.syncWaitingCars()
+    } else if (!enough || !ps.some((p) => p.id === this.robberId)) {
+      // Not enough players left, or the robber walked out: back to the start.
+      this.startRound()
+    } else {
+      // Leavers' cars disappear; there are no bots to hand them to.
+      this.cars = this.cars.filter((c) => ps.some((p) => p.id === c.ownerId) || c.ownerId.startsWith("backup-"))
+    }
+  }
+
+  /** While waiting, every player has a car to drive around in. */
+  private syncWaitingCars() {
+    this.cars = this.cars.filter((c) => this.participants.some((p) => p.id === c.ownerId))
+    this.participants.forEach((p, i) => {
+      if (this.cars.some((c) => c.ownerId === p.id)) return
+      const site = this.city.sites[i % this.city.sites.length]!
+      this.spawn(p, "robber", site.x, site.z - 10, 0)
+    })
   }
 
   /** Gadget presses are latched until the next tick, and a value repeated across inputs only fires once. */
@@ -257,6 +302,18 @@ export class World {
   }
 
   startRound() {
+    if (PVP && this.participants.length < MIN_PLAYERS) {
+      this.phase = "waiting"
+      this.phaseT = 0
+      this.robberId = ""
+      this.bust = 0
+      this.busted = false
+      this.cars = []
+      const hp = this.city.helipad
+      this.heli = { active: false, x: hp.x, y: hp.y, z: hp.z, h: 0, sx: hp.x, sz: hp.z, lock: 0 }
+      this.syncWaitingCars()
+      return
+    }
     this.round++
     this.phase = "intro"
     this.phaseT = 0
@@ -268,6 +325,8 @@ export class World {
     this.escaped = false
     this.extract = 0
     this.reinforcements = 0
+    this.survived = 0
+    this.newBest = false
     this.roundDrift = 0
     this.roundNear = 0
     this.roundScore = 0
@@ -289,7 +348,7 @@ export class World {
     const cops = this.participants.filter((p) => p.id !== robber.id)
     const n = this.city.nodes[this.city.precinct.spawnNode]!
     cops.forEach((p, i) => this.spawn(p, "cop", n.x + (i % 2 === 0 ? -2.5 : 2.5), n.z + Math.floor(i / 2) * 7, Math.PI))
-    this.emit("round", `${robber.name} hit ${this.site.name}. Get to the ${this.exit.name}.`)
+    this.emit("round", SURVIVAL ? `${robber.name} is on the run.` : `${robber.name} hit ${this.site.name}. Get to the ${this.exit.name}.`)
   }
 
   private spawn(p: Participant, role: Role, x: number, z: number, h: number) {
@@ -358,6 +417,12 @@ export class World {
     const robber = this.robber()
     const st = this.standings.get(this.robberId)
     if (escaped && st) st.escapes++
+    if (st && this.survived > st.best) st.best = this.survived
+    if (this.survived > this.best) {
+      this.best = this.survived
+      this.bestName = robber?.name ?? ""
+      this.newBest = true
+    }
     this.emit("end", text, robber?.id)
     if (this.roundDrift > 0 && robber) this.emit("award", `Drift king: ${robber.name} ${Math.round(this.roundDrift)}`)
     if (this.roundNear > 0 && robber) this.emit("award", `Close calls: ${this.roundNear}`)
@@ -387,6 +452,7 @@ export class World {
   }
 
   private moving(c: Car) {
+    if (this.phase === "waiting") return true
     if (this.phase === "intro") return false
     if (this.phase === "headstart") return c.role === "robber"
     return !(c.role === "robber" && this.busted)
@@ -460,7 +526,7 @@ export class World {
   }
 
   useGadget(c: Car, slot: 0 | 1): boolean {
-    if (!this.gadgetReady(c, slot)) return false
+    if (SURVIVAL || !this.gadgetReady(c, slot)) return false
     const g = c.gadgets[slot]!
     const spec = GADGETS[g.id]
     g.charges--
@@ -548,15 +614,17 @@ export class World {
     const r = this.robber()
     if (!r) return
     const cops = this.cops()
+    this.survived = this.phaseT
     this.heat += dt * (this.seen ? HEAT_SEEN_RATE : HEAT_RATE)
-    if (this.phaseT >= EXTRACT_OPEN_SECONDS && this.phaseT - dt < EXTRACT_OPEN_SECONDS) this.emit("exit", `The ride is waiting at the ${this.exit.name}`)
+    if (!SURVIVAL && this.phaseT >= EXTRACT_OPEN_SECONDS && this.phaseT - dt < EXTRACT_OPEN_SECONDS) this.emit("exit", `The ride is waiting at the ${this.exit.name}`)
     this.stepHeli(dt, r)
     const smoked = this.inSmoke(r.body.x, r.body.z)
     const spotted = this.heli.active && !smoked && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
     this.heli.lock = spotted ? this.heli.lock + dt : 0
     if (spotted) this.heat += dt * HEAT_SPOT_RATE
     this.seen = spotted || (!smoked && cops.some((c) => this.canSee(c, r)))
-    if (this.seen) {
+    const ping = SURVIVAL && (!this.lastSeen || this.t - this.lastSeen.t >= PING_EVERY)
+    if (this.seen || ping) {
       this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
       this.lastSeenH = r.body.h
     }
@@ -579,6 +647,11 @@ export class World {
         return
       }
     } else this.bust = Math.max(0, this.bust - dt * 0.4)
+
+    if (SURVIVAL) {
+      if (!PVP && this.reinforcements < MAX_BACKUP && this.phaseT >= BACKUP_EVERY * (this.reinforcements + 1)) this.addReinforcement()
+      return
+    }
 
     const d = Math.hypot(r.body.x - this.exit.x, r.body.z - this.exit.z)
     // In the zone and slow enough: the ride loads up. Cops pressed against the car and the helicopter's spotlight
@@ -742,6 +815,10 @@ export class World {
       escaped: this.escaped,
       extract: this.extract / EXTRACT_SECONDS,
       exitOpenIn: this.exitOpenIn(),
+      survived: this.survived,
+      best: this.best,
+      bestName: this.bestName,
+      newBest: this.newBest,
       timeLeft: Math.max(0, ROUND_SECONDS + INTRO_SECONDS + HEAD_START_SECONDS - this.t),
       roundScore: { drift: Math.round(this.roundDrift), nearMisses: this.roundNear, score: Math.round(this.roundScore) },
       standings,

@@ -1,6 +1,6 @@
 import { type Input, forward, speedOf } from "./vehicle"
 import { nearestNode } from "./city"
-import type { Car, World } from "./world"
+import { type Car, SURVIVAL, type World } from "./world"
 
 const TAU = Math.PI * 2
 
@@ -74,7 +74,7 @@ function hideout(world: World, car: Car): { x: number; z: number } {
     let away = 260
     for (const c of cops) away = Math.min(away, Math.hypot(c.body.x - n.x, c.body.z - n.z))
     const d = Math.hypot(n.x - car.body.x, n.z - car.body.z)
-    const score = away - 0.3 * Math.hypot(n.x - world.exit.x, n.z - world.exit.z) - 0.1 * d + (d < 30 ? -80 : 0)
+    const score = away - 0.1 * d + (d < 30 ? -80 : 0)
     if (score > bestScore) {
       bestScore = score
       best = n
@@ -88,7 +88,7 @@ export function robberBrain(world: World, car: Car): Input {
   const b = car.body
   const eta = Math.hypot(exit.x - b.x, exit.z - b.z) / 26
   let goal: { x: number; z: number } = exit
-  if (world.exitOpenIn() > eta) {
+  if (SURVIVAL || world.exitOpenIn() > eta) {
     car.hideT -= 1 / 30
     if (car.hideT <= 0 || Math.hypot(car.hideX - b.x, car.hideZ - b.z) < 20) {
       const h = hideout(world, car)
@@ -142,7 +142,7 @@ export function copBrain(world: World, car: Car): Input {
   }
   // Every other unit covers the extraction point (all of them once the ride is about to arrive and the trail is cold).
   const closing = world.exitOpenIn() < 15
-  const guard = car.id % 2 === 0 ? closing || !target.visible : closing && !target.visible
+  const guard = !SURVIVAL && (car.id % 2 === 0 ? closing || !target.visible : closing && !target.visible)
   const tx = guard ? world.exit.x : target.x
   const tz = guard ? world.exit.z : target.z
   reroute(world, car, tx, tz, 2.5)

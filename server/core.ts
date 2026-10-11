@@ -1,5 +1,4 @@
-import { MAX_PLAYERS, MIN_COPS, SNAPSHOT_HZ, TICK_HZ, DT } from "../shared/config"
-import { BOT_NAMES } from "../shared/names"
+import { MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ, DT } from "../shared/config"
 import { type ClientMsg, type Picks, type RosterEntry, type ServerMsg, decodeClient, encodeServer, seedOf } from "../shared/protocol"
 import { type Input, NO_INPUT } from "../shared/sim/vehicle"
 import { type Participant, World } from "../shared/sim/world"
@@ -118,13 +117,9 @@ export class RoomCore {
     this.sendSnapshot(p)
   }
 
-  /** Humans in join order, then bots so there are always MIN_COPS cops besides the robber. */
+  /** Humans in join order. PvP only: no bots. */
   participants(): Participant[] {
-    const ps: Participant[] = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, human: true, picks: p.picks }))
-    const bots = Math.max(0, MIN_COPS + 1 - ps.length)
-    for (let i = 0; i < bots; i++)
-      ps.push({ id: `bot${i}`, name: BOT_NAMES[i % BOT_NAMES.length]!, human: false, picks: { robber: i % 2 ? "compact" : "muscle", cop: i === 1 ? "interceptor" : "cruiser" } })
-    return ps
+    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, human: true, picks: p.picks }))
   }
 
   private syncParticipants() {

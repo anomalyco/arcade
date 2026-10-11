@@ -66,7 +66,7 @@ describe("bust", () => {
   })
 })
 
-describe("extraction", () => {
+describe.skipIf(SURVIVAL)("extraction", () => {
   test("the extraction point is closed until EXTRACT_OPEN_SECONDS into the chase", () => {
     const w = humanWorld()
     toChase(w)

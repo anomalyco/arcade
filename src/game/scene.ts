@@ -261,19 +261,11 @@ export class Scene {
       if (Math.floor(t * 1.5) % 2 === 0) sprite("d", heli.x, heli.y + 1.6, heli.z, 1.2, 1, 0.1, 0.1, 2, 0)
     }
 
-    // Extraction point: a tall column of green light and a ground ring.
-    const ex = view.exit
-    sprite("d", ex.x, 0.12, ex.z, 14, 0.25, 1, 0.45, 1.4, 2, t * 0.5)
-    sprite("d", ex.x, 0.1, ex.z, 13, 0.2, 1, 0.4, 0.25 + 0.6 * view.extract, 3)
-    cone(beams, [ex.x, 60, ex.z], [ex.x, 0, ex.z], 7, [0.25, 1, 0.5], 0.35, 16)
-    light(ex.x, 4, ex.z, 26, 0.2, 1, 0.4, 2.5)
-
     // Bust ring around a boxed-in robber.
     const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
     if (robber && view.bust > 0.01) {
       sprite("d", robber.x, 0.15, robber.z, 5.5, 0.25, 0.55, 1, 1 + view.bust * 2, 2, -t * 2)
     }
-    if (view.phase === "intro") sprite("d", view.site.x, 0.12, view.site.z, 10, 1, 0.3, 0.3, 1 + Math.sin(t * 6), 2)
 
     // Street lamps: glows for all nearby, real lights for the closest.
     const near = this.lamps
