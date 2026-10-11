@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
 import { NO_INPUT } from "../shared/sim/vehicle"
-import { World, type Phase, SURVIVAL } from "../shared/sim/world"
+import { World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
 import { ROAD_X, ROAD_Z, bot, drive, human, humanWorld, place, steps, toChase } from "./sim-helpers"
 
 const robberOf = (w: World, viewer: string) => w.view(viewer).cars.find((c) => c.ownerId === w.robberId)
@@ -311,7 +311,7 @@ describe("rounds", () => {
     expect(run()).toBe(run())
   })
 
-  test("heat rises over the chase and calls backup at higher stars", () => {
+  test(PVP ? "heat rises over the chase; no backup units in PvP" : "heat rises over the chase and calls backup at higher stars", () => {
     const w = humanWorld()
     toChase(w)
     place(w, "c1", ROAD_X, ROAD_Z - 40)
@@ -328,6 +328,56 @@ describe("rounds", () => {
     expect(heat[30 * 30]!).toBeGreaterThan(heat[30 * 5]!)
     expect(Math.max(...heat)).toBeGreaterThan(50)
     expect(maxStars).toBeGreaterThanOrEqual(3)
-    expect(maxCops).toBeGreaterThan(2)
+    if (PVP) expect(maxCops).toBe(2)
+    else expect(maxCops).toBeGreaterThan(2)
+  })
+})
+
+describe.skipIf(!PVP)("waiting", () => {
+  test("a lone player free-drives, a second join starts the round, and the robber leaving drops back to waiting", () => {
+    const w = new World(3, [human("a")])
+    expect(w.phase).toBe("waiting")
+    expect(w.robberId).toBe("")
+    expect(w.round).toBe(-1)
+    const car = w.carOf("a")!
+    expect(car.role).toBe("robber")
+    const own = w.view("a").cars.find((c) => c.ownerId === "a")!
+    expect(own.ghost).toBe(false)
+    expect(w.view("a").site).toBeDefined()
+    w.setInput("a", drive(1))
+    steps(w, 30)
+    expect(w.phase).toBe("waiting")
+    expect(Math.hypot(car.body.x - car.homeX, car.body.z - car.homeZ)).toBeGreaterThan(10)
+    expect(w.view("a").cars.find((c) => c.ownerId === "a")!.ghost).toBe(false)
+
+    w.setParticipants([human("a"), human("b")])
+    expect(w.phase).toBe("intro")
+    expect(w.round).toBe(0)
+    expect(w.robberId).toBe("a")
+    expect(w.carOf("b")!.role).toBe("cop")
+    expect(w.cars.length).toBe(2)
+
+    toChase(w)
+    expect(w.phase).toBe("chase")
+    w.setParticipants([human("b")])
+    expect(w.phase).toBe("waiting")
+    expect(w.robberId).toBe("")
+    expect(w.cars.map((c) => c.ownerId)).toEqual(["b"])
+    expect(w.carOf("b")!.role).toBe("robber")
+    steps(w, 1)
+    expect(w.phase).toBe("waiting")
+  })
+
+  test("a cop leaving keeps the round going while two players remain", () => {
+    const w = new World(3, [human("a"), human("b"), human("c")])
+    toChase(w)
+    const round = w.round
+    w.setParticipants([human("a"), human("b")])
+    expect(w.phase).toBe("chase")
+    expect(w.round).toBe(round)
+    expect(w.carOf("c")).toBeUndefined()
+    w.setParticipants([human("a")])
+    expect(w.phase).toBe("waiting")
+    expect(w.cars.length).toBe(1)
   })
 })

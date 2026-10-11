@@ -308,6 +308,14 @@ export class World {
       this.robberId = ""
       this.bust = 0
       this.busted = false
+      this.boxed = false
+      this.seen = false
+      this.lastSeen = null
+      this.props = []
+      this.propsChanged()
+      // Views always carry a site and exit; before the first round there is none, so point at a fixed one.
+      this.site ??= this.city.sites[0]!
+      this.exit ??= this.city.extraction[0]!
       this.cars = []
       const hp = this.city.helipad
       this.heli = { active: false, x: hp.x, y: hp.y, z: hp.z, h: 0, sx: hp.x, sz: hp.z, lock: 0 }
@@ -757,7 +765,7 @@ export class World {
   /** What a given viewer is allowed to know. Cops get the robber's last-seen ping instead of the live car when it is out of sight. */
   view(viewerId?: string): WorldView {
     const robberView = viewerId === undefined || viewerId === this.robberId || !this.cars.some((c) => c.ownerId === viewerId)
-    const showRobber = robberView || this.seen || this.phase === "intro" || this.phase === "end"
+    const showRobber = robberView || this.seen || this.phase === "waiting" || this.phase === "intro" || this.phase === "end"
     const cars: CarView[] = []
     for (const c of this.cars) {
       const hidden = c.role === "robber" && !showRobber

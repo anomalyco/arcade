@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { BUST_SECONDS, DT, EXTRACT_BOXED_RATE, EXTRACT_OPEN_SECONDS, EXTRACT_SECONDS } from "../shared/config"
 import { NO_INPUT } from "../shared/sim/vehicle"
+import { SURVIVAL } from "../shared/sim/world"
 import { ROAD_X, ROAD_Z, drive, humanWorld, place, steps, toChase } from "./sim-helpers"
 
 describe("bust", () => {

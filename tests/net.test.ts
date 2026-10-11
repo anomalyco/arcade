@@ -102,13 +102,40 @@ function maxError(predicted: Map<number, Body>, server: Map<number, Body>, from 
   return { worst, n }
 }
 
+const IDLE: Input = { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false }
+
+/** Two players joining together: Ada (first in) is the robber of round one, Bo a cop. */
+function pair(net: Net) {
+  const a = join(net, "Ada")
+  const b = join(net, "Bo")
+  return { a, b }
+}
+
 describe("prediction", () => {
-  test("predicted car matches the server body for every acked input", () => {
+  test("a lone player's free driving is predicted exactly while waiting", () => {
     const net = new Net()
     const a = join(net, "Ada")
+    for (let i = 0; i < 300; i++) {
+      net.tick()
+      a.frame(drive(i))
+    }
+    const world = net.core.world!
+    expect(world.phase).toBe("waiting")
+    expect(world.robberId).toBe("")
+    const { worst, n } = maxError(a.predicted, a.server)
+    expect(n).toBeGreaterThan(100)
+    expect(worst).toBeLessThan(1e-9)
+    const car = world.carOf(a.client!.myId)!
+    expect(Math.hypot(car.body.x - car.homeX, car.body.z - car.homeZ)).toBeGreaterThan(5)
+  })
+
+  test("predicted car matches the server body for every acked input", () => {
+    const net = new Net()
+    const { a, b } = pair(net)
     for (let i = 0; i < 260; i++) {
       net.tick()
       a.frame(drive(i))
+      b.frame(IDLE)
     }
     const world = net.core.world!
     expect(world.robberId).toBe(a.client!.myId)
@@ -123,7 +150,7 @@ describe("prediction", () => {
 
   test("reconciles after a server-side correction and the drawn car converges", () => {
     const net = new Net()
-    const a = join(net, "Ada")
+    const { a, b } = pair(net)
     let hitSeq = 0
     let view = null
     for (let i = 0; i < 300; i++) {
@@ -135,6 +162,7 @@ describe("prediction", () => {
         hitSeq = a.client!.seq
       }
       view = a.frame(drive(i))
+      b.frame(IDLE)
     }
     expect(hitSeq).toBeGreaterThan(0)
     const { worst, n } = maxError(a.predicted, a.server, hitSeq + 10)
@@ -148,15 +176,14 @@ describe("prediction", () => {
 
   test("other cars are interpolated between snapshots", () => {
     const net = new Net()
-    const a = join(net, "Ada")
-    settle(net, a)
-    net.core.world!.startRound()
+    const { a, b } = pair(net)
     const xs: number[] = []
     for (let i = 0; i < 420; i++) {
       net.tick()
-      const v = a.frame({ throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false })
-      const bot = v?.cars.find((c) => c.role === "cop" && !c.human)
-      if (v?.phase === "chase" && bot && bot.speed > 3) xs.push(bot.x + bot.z)
+      const v = a.frame(IDLE)
+      b.frame(drive(i))
+      const cop = v?.cars.find((c) => c.ownerId === b.client?.myId)
+      if (v?.phase === "chase" && cop && cop.speed > 3) xs.push(cop.x + cop.z)
     }
     // Snapshots arrive every other tick, yet the drawn position changes every frame.
     let still = 0
@@ -167,12 +194,26 @@ describe("prediction", () => {
 })
 
 describe("room", () => {
-  test("bots fill the cop side and the room caps at six humans", () => {
+  test("a lone player waits and free-drives; a second player starts the round; the room caps at six humans", () => {
     const net = new Net()
     const a = join(net, "Ada")
     settle(net, a)
-    expect(net.core.participants().length).toBe(4)
-    const others = [1, 2, 3, 4, 5].map((i) => join(net, `P${i}`))
+    expect(net.core.participants().length).toBe(1)
+    expect(a.client!.latest!.view.phase).toBe("waiting")
+    expect(a.client!.body).not.toBeNull()
+    for (let i = 0; i < 60; i++) {
+      net.tick()
+      a.frame(drive(i))
+    }
+    expect(net.core.world!.phase).toBe("waiting")
+    const b = join(net, "Bo")
+    settle(net, b)
+    const world = net.core.world!
+    expect(world.phase).toBe("intro")
+    expect(world.round).toBe(0)
+    expect(world.robberId).toBe(a.client!.myId)
+    expect(world.carOf(b.client!.myId)!.role).toBe("cop")
+    const others = [1, 2, 3, 4].map((i) => join(net, `P${i}`))
     settle(net, ...others)
     expect(net.core.participants().length).toBe(6)
     expect(net.core.participants().every((p) => p.human)).toBe(true)
@@ -185,40 +226,59 @@ describe("room", () => {
     expect(late.pipe.closed).toBe(true)
   })
 
+  test("the round falls back to waiting when the robber's seat expires", () => {
+    const net = new Net()
+    const { a, b } = pair(net)
+    settle(net, a, b)
+    expect(net.core.world!.robberId).toBe(a.client!.myId)
+    net.core.close(a.pipe.conn)
+    for (let i = 0; i < 30 * 16; i++) {
+      net.tick()
+      b.frame(drive(i))
+    }
+    expect(net.core.humans()).toBe(1)
+    expect(net.core.world!.phase).toBe("waiting")
+    expect(b.client!.latest!.view.phase).toBe("waiting")
+    expect(b.client!.body).not.toBeNull()
+  })
+
   test("mid-round joiners spectate with a view, then get a car next round", () => {
     const net = new Net()
-    const a = join(net, "Ada")
-    settle(net, a)
-    const b = join(net, "Bo")
-    settle(net, b)
+    const { a, b } = pair(net)
+    settle(net, a, b)
+    const c = join(net, "Cy")
+    settle(net, c)
     for (let i = 0; i < 10; i++) {
       net.tick()
       a.frame(drive(i))
       b.frame(drive(i))
+      c.frame(drive(i))
     }
-    const snaps = b.pipe.received.filter((m) => m.type === "snapshot")
+    const snaps = c.pipe.received.filter((m) => m.type === "snapshot")
     expect(snaps.length).toBeGreaterThan(0)
     for (const s of snaps) {
       expect(s.you).toBeNull()
       expect(s.view.cars.length).toBeGreaterThan(0)
     }
-    expect(b.client!.body).toBeNull()
+    expect(c.client!.body).toBeNull()
     net.core.world!.startRound()
     for (let i = 0; i < 10; i++) {
       net.tick()
       a.frame(drive(i))
       b.frame(drive(i))
+      c.frame(drive(i))
     }
-    expect(b.client!.body).not.toBeNull()
+    expect(c.client!.body).not.toBeNull()
     expect(a.client!.body).not.toBeNull()
-    expect(net.core.world!.carOf(b.client!.myId)!.human).toBe(true)
+    expect(net.core.world!.carOf(c.client!.myId)!.human).toBe(true)
   })
 
   test("a reconnect within the grace period resumes the same seat and car", () => {
     const net = new Net()
-    const a = join(net, "Ada")
-    settle(net, a)
+    const { a, b } = pair(net)
+    settle(net, a, b)
     const id = a.client!.myId
+    const round = net.core.world!.round
     net.core.close(a.pipe.conn)
     for (let i = 0; i < 30; i++) net.tick()
     expect(net.core.world!.carOf(id)!.human).toBe(true)
@@ -228,21 +288,22 @@ describe("room", () => {
     net.t += 3
     const welcome = p.take().find((m) => m.type === "welcome")
     expect(welcome && welcome.type === "welcome" && welcome.id).toBe(id)
-    expect(net.core.humans()).toBe(1)
+    expect(net.core.humans()).toBe(2)
+    expect(net.core.world!.round).toBe(round)
+    expect(net.core.world!.robberId).toBe(id)
   })
 })
 
 describe("fog of war", () => {
   test("cop and spectator snapshots never carry the robber's live position while unseen", () => {
     const net = new Net()
+    const rob = join(net, "Rob")
     const cop = join(net, "Cop")
-    settle(net, cop)
-    // Round 1 alternates a lone human onto the cop side with a bot robber.
-    net.core.world!.startRound()
+    settle(net, rob, cop)
     const spec = join(net, "Spec")
     const world = net.core.world!
+    expect(world.robberId).toBe(rob.client!.myId)
     let unseen = 0
-    let seen = 0
     for (const j of [cop, spec]) {
       const send = j.pipe.conn.send
       j.pipe.conn.send = (data) => {
@@ -260,21 +321,20 @@ describe("fog of war", () => {
                 expect(Math.hypot(c.x - world.lastSeen!.x, c.z - world.lastSeen!.z)).toBeLessThan(0.01)
               }
             if (m.you) expect(Math.hypot(m.you.x - robber.body.x, m.you.z - robber.body.z)).toBeGreaterThan(0)
-          } else if (world.phase === "chase") seen++
+          }
           for (const c of m.view.cars) if (c.ghost) expect(c.speed).toBe(0)
         }
         send(data)
       }
     }
-    expect(world.robberId.startsWith("bot")).toBe(true)
     for (let i = 0; i < 30 * 40 && world.phase !== "end"; i++) {
       net.tick()
+      rob.frame(drive(i))
       cop.frame({ throttle: 0, brake: 1, steer: 0, handbrake: false, boost: false })
       spec.frame(drive(i))
     }
     expect(unseen).toBeGreaterThan(100)
     expect(cop.client!.body).not.toBeNull()
     expect(spec.client!.body).toBeNull()
-    void seen
   })
 })

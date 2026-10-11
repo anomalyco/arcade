@@ -114,7 +114,7 @@ export class NetClient {
     else this.err = { x: ex, z: ez, h: wrap(before.h - after.h) }
   }
 
-  /** One predicted tick, following World.step: phase clock first, then drive or hold still. */
+  /** One predicted tick, following World.step: phase clock first, then drive or hold still. Waiting never advances on its own. */
   private advance(input: Input) {
     const b = this.body
     if (!b || !this.vehicle) return
@@ -128,7 +128,7 @@ export class NetClient {
       this.phase = "chase"
       this.phaseT = 0
     }
-    const moving = this.phase === "chase" || (this.phase === "headstart" && this.role === "robber")
+    const moving = this.phase === "waiting" || this.phase === "chase" || (this.phase === "headstart" && this.role === "robber")
     if (!moving) {
       b.vx *= 0.85
       b.vz *= 0.85
