@@ -5,7 +5,7 @@ import type { Session } from "../game/session"
 import { h } from "./dom"
 
 const MAX_LINES = 6
-const FADE_MS = 10_000
+const FADE_MS = 15_000
 
 /** Room chat above the minimap. ENTER or T opens the input; ENTER sends, ESC closes. The car idles while typing. */
 export class Chat {

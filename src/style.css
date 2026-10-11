@@ -164,15 +164,18 @@ button { font: inherit; color: inherit; }
 .phase-end .h-map { opacity: 0.35; }
 
 /* Chat: a compact log above the minimap; lines fade after a while and all come back while typing. */
-.h-chat { position: absolute; left: 24px; bottom: 232px; width: min(340px, 40vw); display: flex; flex-direction: column; gap: 6px; }
-.c-log { display: flex; flex-direction: column; gap: 2px; }
-.c-line { font: 500 14px/1.25 var(--display); letter-spacing: 0.04em; text-transform: none; color: var(--text); overflow-wrap: anywhere; transition: opacity 0.8s; }
+.h-chat { position: absolute; left: 24px; bottom: 232px; width: min(380px, 40vw); z-index: 5; display: flex; flex-direction: column; gap: 6px; }
+.c-log { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.c-line { max-width: 100%; padding: 4px 9px; background: rgba(4, 6, 10, 0.78); border-left: 2px solid rgba(255, 255, 255, 0.25); font: 500 16px/1.25 var(--display); letter-spacing: 0.04em; text-transform: none; color: #fff; text-shadow: none; overflow-wrap: anywhere; transition: opacity 0.8s; animation: chatin 0.25s ease-out; }
+@keyframes chatin { from { opacity: 0; transform: translateX(-8px); } }
+.c-line.robber { border-left-color: var(--robber); }
+.c-line.cop { border-left-color: var(--cop); }
 .c-line.old { opacity: 0; }
 .h-chat.open .c-line { opacity: 1; transition: none; }
 .c-name { font-weight: 600; margin-right: 6px; }
 .c-line.robber .c-name { color: var(--robber); }
 .c-line.cop .c-name { color: var(--cop); }
-.c-line.system { color: var(--faint); }
+.c-line.system { color: rgba(255, 255, 255, 0.6); background: rgba(4, 6, 10, 0.55); font-size: 13px; }
 .c-line.system .c-name { font-weight: 500; margin-right: 0; }
 .c-input { width: 100%; height: 28px; padding: 0 10px; pointer-events: auto; background: rgba(5, 7, 11, 0.6); border: 1px solid rgba(255, 255, 255, 0.18); outline: none; color: var(--text); font: 500 14px/1 var(--display); letter-spacing: 0.04em; text-transform: none; text-shadow: none; }
 .c-input:focus { border-color: rgba(255, 255, 255, 0.4); }
