@@ -292,9 +292,10 @@ export class Scene {
       .filter((e) => e.d < 230 * 230)
       .sort((a, b) => a.d - b.d)
     for (const { l } of near) {
-      sprite("d", l.x, l.y + 0.4, l.z, l.small ? 0.6 : 0.9, 1, 0.75, 0.45, 1.6, 0)
+      sprite("d", l.x, l.y, l.z, l.small ? 0.6 : 0.9, 1, 0.75, 0.45, 1.6, 0)
     }
-    for (const { l } of near) light(l.x, l.y, l.z, l.small ? 10 : 17, 1, 0.58, 0.26, l.small ? 3 : 5)
+    // Real lights only for lamps that can light what's on screen; the rest just glow.
+    for (const { l, d } of near) if (d < 120 * 120) light(l.x, l.y, l.z, l.small ? 10 : 17, 1, 0.58, 0.26, l.small ? 3 : 5)
     f[32 + 8 + 2] = n
 
     const puffs = this.fx.puffInstances()

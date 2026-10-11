@@ -1,4 +1,4 @@
-export const MAX_LIGHTS = 96
+export const MAX_LIGHTS = 128
 
 /** Shared frame uniforms, lights and lighting model for every lit pipeline. */
 const common = /* wgsl */ `
@@ -254,7 +254,8 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
     col = o.color * (0.25 + on * 9.0);
   } else if (mat == 6) {
     // Glass: dark, with a moonlit sheen and light reflections.
-    col = lighting(o.color, o.world, n) * 0.6 + specular(o.world, n, 1.2) + vec3f(0.02, 0.03, 0.05) * (0.5 + 0.5 * n.y);
+    // Glass: near-black, picking up only highlights from nearby lights (no flat moon wash on vertical panes).
+    col = lighting(o.color, o.world, n) * 0.25 + specular(o.world, n, 0.9) + vec3f(0.006, 0.009, 0.016);
   } else if (mat == 3) {
     let lit = lighting(o.color, o.world, vec3f(0.0, 1.0, 0.0));
     let ripple = sin(o.world.x * 0.35 + F.cam.w * 1.3) * sin(o.world.z * 0.5 - F.cam.w * 0.9);
