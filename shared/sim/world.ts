@@ -597,6 +597,8 @@ export class World {
   private stepProps(dt: number, prev: Map<number, [number, number]>) {
     let roadblocks = false
     this.props = this.props.filter((p) => {
+      // Survival: spike strips are permanent for the rest of the round.
+      if (SURVIVAL && p.kind === "spike") return true
       p.life -= dt
       if (p.life > 0) return true
       roadblocks ||= p.kind === "roadblock"
@@ -620,9 +622,16 @@ export class World {
         }
       } else if (p.kind === "spike" && robber && prev.has(robber.id)) {
         const [px, pz] = prev.get(robber.id)!
-        if (!crossesStrip(p, px, pz, robber.body.x, robber.body.z, radiusOf(robber))) continue
+        const crossing = crossesStrip(p, px, pz, robber.body.x, robber.body.z, radiusOf(robber))
+        // Permanent strips trigger once per pass: wait until the driver is clear of it before it can bite again.
+        if (!crossing) {
+          if (p.hits.length) p.hits.length = 0
+          continue
+        }
+        if (p.hits.includes(robber.id)) continue
         robber.body.flat = FLAT_SECONDS
-        this.props.splice(this.props.indexOf(p), 1)
+        if (SURVIVAL) p.hits.push(robber.id)
+        else this.props.splice(this.props.indexOf(p), 1)
         this.heat += 2
         const owner = this.cars.find((c) => c.id === p.owner)
         this.emit("flat", `${robber.name} hit ${owner ? `${owner.name}'s ` : ""}SPIKE STRIP. Flat tire!`, robber.id)

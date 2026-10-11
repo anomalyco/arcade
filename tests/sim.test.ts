@@ -547,3 +547,29 @@ describe("going dark", () => {
     expect(Math.hypot(b.vx, b.vz)).toBeGreaterThan(3)
   })
 })
+
+describe("permanent spike strips", () => {
+  test.skipIf(!SURVIVAL)("strips never expire and bite again on every new pass", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    place(w, "c1", ROAD_X, ROAD_Z, 0)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    place(w, "r", ROAD_X + 300, ROAD_Z + 200)
+    w.setInput("c1", { ...NO_INPUT, gadget: 0 })
+    steps(w, 0.1)
+    w.setInput("c1", NO_INPUT)
+    place(w, "c1", ROAD_X - 300, ROAD_Z + 200)
+    const strip = w.props.find((p) => p.kind === "spike")!
+    steps(w, 120)
+    expect(w.props.some((p) => p.id === strip.id)).toBe(true)
+    let flats = 0
+    for (const dir of [0, Math.PI]) {
+      place(w, "r", strip.x, strip.z + (dir === 0 ? -15 : 15), dir, 15)
+      w.carOf("r")!.body.flat = 0
+      steps(w, 2, () => w.setInput("r", { ...NO_INPUT, throttle: 0.6 }))
+      if ((w.carOf("r")!.body.flat ?? 0) > 0) flats++
+    }
+    expect(flats).toBe(2)
+    expect(w.props.some((p) => p.id === strip.id)).toBe(true)
+  })
+})
