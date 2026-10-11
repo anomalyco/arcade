@@ -45,7 +45,7 @@ export const DRIVE = {
   driftExit: 3.5,
   driftMomentum: 0.5,
   recoverAngle: 1.0,
-  recoverGain: 3,
+  recoverGain: 6,
   reverseMax: 14,
   flatSpeed: 0.68,
   flatGrip: 0.55,
