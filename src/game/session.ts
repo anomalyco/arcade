@@ -48,7 +48,7 @@ export class LocalSession implements Session {
       // freeze=<seconds>: play scripted input for that long, then stop the sim (smoke and skids get to trail).
       const f = q.get("freeze")
       if (f !== null) this.freezeAt = Number(f) || 0
-      if (stage) this.stageInput = { throttle: 1, brake: 0, steer: 0.55, handbrake: true, boost: false }
+      if (stage) this.stageInput = stage.startsWith("spike") ? { throttle: 1, brake: 0, steer: 0, handbrake: false, boost: false } : { throttle: 1, brake: 0, steer: 0.55, handbrake: true, boost: false }
     }
   }
 

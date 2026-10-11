@@ -71,7 +71,7 @@ export class Minimap {
     return cv
   }
 
-  update(view: Pick<WorldView, "cars" | "robberId" | "phase"> & { heli?: WorldView["heli"] }, cam: Camera, myId: string, dt: number) {
+  update(view: Pick<WorldView, "cars" | "robberId" | "phase"> & { heli?: WorldView["heli"]; props?: WorldView["props"] }, cam: Camera, myId: string, dt: number) {
     this.t += dt
     const g = this.g
     const r = SIZE / 2
@@ -114,6 +114,25 @@ export class Minimap {
       g.arc(r + hx, r + hy, 12 * scale, 0, Math.PI * 2)
       g.fill()
     }
+
+    // Spike strips: a short yellow bar across the road (drawn a little longer than life so it reads at this scale).
+    g.strokeStyle = "#ffc93a"
+    g.lineWidth = 2.5
+    g.lineCap = "round"
+    for (const p of view.props ?? []) {
+      if (p.kind !== "spike") continue
+      const half = Math.max(p.r, 9)
+      const ax = Math.cos(p.h) * half
+      const az = -Math.sin(p.h) * half
+      const [x0, y0] = toMap(p.x - ax, p.z - az)
+      const [x1, y1] = toMap(p.x + ax, p.z + az)
+      if (Math.hypot(x0 + x1, y0 + y1) / 2 > r - 4) continue
+      g.beginPath()
+      g.moveTo(r + x0, r + y0)
+      g.lineTo(r + x1, r + y1)
+      g.stroke()
+    }
+    g.lineCap = "butt"
 
     for (const c of view.cars) {
       if (c === me || c.role !== "cop") continue

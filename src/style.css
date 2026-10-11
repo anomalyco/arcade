@@ -56,6 +56,26 @@ button { font: inherit; color: inherit; }
 .h-tag span { display: block; transform: translate(-50%, -100%); font: 500 12px/1 var(--display); letter-spacing: 0.16em; color: var(--robber); text-transform: none; white-space: nowrap; }
 .h-tag.ghost span { color: var(--faint); letter-spacing: 0.24em; }
 
+/* Gadget hint (cops) and flat tire (driver): one small line bottom-centre with a hairline bar under it. */
+.h-gadget, .h-flat { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; transition: opacity 0.2s; }
+.g-row { display: flex; align-items: center; gap: 10px; font: 500 12px/1 var(--display); letter-spacing: 0.3em; }
+.g-key { display: grid; place-items: center; width: 18px; height: 18px; padding-left: 0.1em; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 3px; font-weight: 600; letter-spacing: 0.1em; color: var(--text); }
+.g-name { color: var(--text); }
+.g-pips { display: flex; gap: 4px; }
+.g-pips i { width: 6px; height: 6px; border-radius: 50%; background: #ffc93a; box-shadow: 0 0 6px rgba(255, 201, 58, 0.6); }
+.g-pips i.used { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3); }
+.g-bar { width: 100%; min-width: 120px; height: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.g-bar b { display: block; height: 100%; background: #ffc93a; transform-origin: left; }
+.h-gadget.dim { opacity: 0.4; }
+.h-keys:not(.off) ~ .h-gadget { bottom: 54px; }
+.h-gadget.dim .g-bar b { background: var(--text); }
+.h-flat .f-line { font: 600 13px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: var(--threat); animation: blink 0.9s steps(2) infinite; }
+.h-flat .g-bar { width: 150px; }
+.h-flat .g-bar b { background: var(--threat); box-shadow: 0 0 6px var(--threat); }
+@keyframes blink { 50% { opacity: 0.55; } }
+.h-flash { position: absolute; left: 0; right: 0; top: 19vh; text-align: center; font: 500 14px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: #ffc93a; }
+.h-flash.bad { font: 500 34px/1 var(--display); letter-spacing: 0.32em; color: var(--threat); }
+
 /* End card: a low band across the bottom, so the busted car stays visible at screen centre. */
 .h-end { position: absolute; left: 0; right: 0; bottom: 0; height: 40vh; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 7vh; background: linear-gradient(to top, rgba(3, 4, 8, 0.82), rgba(3, 4, 8, 0.5) 55%, transparent); animation: fadein 0.6s ease-out; }
 .e-inner { display: flex; align-items: stretch; gap: 44px; }

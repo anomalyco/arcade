@@ -192,7 +192,7 @@ export class NetClient {
     const base = view.cars.find((c) => c.id === this.carId) ?? latest.cars.find((c) => c.id === this.carId)
     if (!base) return view
     const p = this.visual()
-    const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, ghost: false }
+    const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, flat: b.flat ?? 0, ghost: false }
     const cars = view.cars.filter((c) => c.ownerId !== this.myId || c.id === this.carId).map((c) => (c.id === this.carId ? mine : c))
     if (!cars.includes(mine)) cars.push(mine)
     return { ...view, cars }

@@ -1,4 +1,4 @@
-import { END_SECONDS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
+import { END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
@@ -22,6 +22,7 @@ type Row = { id: string; name: string; human: boolean; best?: number; score?: nu
 /** The parts of the world view the HUD reads. Survival fields are optional while the sim moves over to them. */
 type HudView = Pick<WorldView, "t" | "round" | "phase" | "phaseT" | "robberId" | "bust" | "cars"> & {
   heli?: WorldView["heli"]
+  props?: WorldView["props"]
   standings: Row[]
   survived?: number
   best?: number
@@ -33,6 +34,7 @@ type HudView = Pick<WorldView, "t" | "round" | "phase" | "phaseT" | "robberId" |
 
 const RING_R = 38
 const RING_C = 2 * Math.PI * RING_R
+const FLASH_SECONDS = 1.8
 
 /** m:ss.t */
 export function survival(sec: number) {
@@ -51,6 +53,8 @@ export class Hud {
   private startBest: number | undefined
   private resultsFor = -1
   private map!: Minimap
+  private flashLeft = 0
+  private pips: HTMLElement[] = []
 
   constructor(
     readonly root: HTMLElement,
@@ -86,6 +90,14 @@ export class Hud {
     e.iLine = e.intro.querySelector(".i-line")!
     e.iSub = e.intro.querySelector(".i-sub")!
     e.keys = h("div", "h-keys off", r, "WASD drive · SPACE drift · SHIFT nitro")
+
+    e.flash = h("div", "h-flash off", r)
+    e.gadget = h("div", "h-gadget off", r, `<div class="g-row"><span class="g-key">Q</span><span class="g-name"></span><span class="g-pips">${"<i></i>".repeat(GADGETS.spike.charges)}</span></div><div class="g-bar"><b></b></div>`)
+    e.gName = e.gadget.querySelector(".g-name")!
+    this.pips = [...e.gadget.querySelectorAll<HTMLElement>(".g-pips i")]
+    e.gFill = e.gadget.querySelector(".g-bar b")!
+    e.flat = h("div", "h-flat off", r, `<div class="f-line">FLAT TIRE</div><div class="g-bar"><b></b></div>`)
+    e.fFill = e.flat.querySelector(".g-bar b")!
 
     e.end = h("div", "h-end off", r)
 
@@ -163,6 +175,7 @@ export class Hud {
     }
     show(e.keys!, this.firstRound && pre)
 
+    this.updateGadgets(view, ctx, isRobber)
     this.updateWorld(view, ctx, isRobber, robber, ghost)
     this.map.update(view, ctx.cam, ctx.myId, ctx.dt)
     this.updateEnd(view, ctx, robberName, survived)
@@ -175,6 +188,38 @@ export class Hud {
       attr(e.room!, "data-status", /lost|error|closed|offline/.test(st) ? "bad" : /connecting|reconnect/.test(st) ? "pending" : "ok")
       attr(e.room!, "title", ctx.status)
     }
+  }
+
+  /** Cops: the spike strip hint. Driver: the flat tire bar. Both: a short flash when someone hits a strip. */
+  private updateGadgets(view: HudView, ctx: HudContext, isRobber: boolean) {
+    const e = this.el
+    const me = view.cars.find((c) => c.ownerId === ctx.myId && !c.ghost)
+    const live = view.phase === "intro" || view.phase === "headstart" || view.phase === "chase"
+
+    const g = !isRobber && live ? me?.gadgets?.[0] : undefined
+    show(e.gadget!, !!g)
+    if (g) {
+      const spec = GADGETS[g.id]
+      text(e.gName!, spec.name)
+      this.pips.forEach((pip, i) => flag(pip, "used", i >= g.charges))
+      const fill = g.charges <= 0 ? 0 : g.cooldown > 0 ? 1 - g.cooldown / spec.cooldown : 1
+      style(e.gFill!, "transform", `scaleX(${fill.toFixed(3)})`)
+      flag(e.gadget!, "dim", !g.ready)
+    }
+
+    const flat = isRobber && live && me ? (me.flat ?? 0) : 0
+    show(e.flat!, flat > 0)
+    if (flat > 0) style(e.fFill!, "transform", `scaleX(${Math.min(1, flat / FLAT_SECONDS).toFixed(3)})`)
+
+    const hit = ctx.events.find((ev) => ev.kind === "flat")
+    if (hit && live) {
+      this.flashLeft = FLASH_SECONDS
+      text(e.flash!, isRobber ? "FLAT TIRE" : "SPIKED!")
+      flag(e.flash!, "bad", isRobber)
+    }
+    this.flashLeft = live ? Math.max(0, this.flashLeft - ctx.dt) : 0
+    show(e.flash!, this.flashLeft > 0)
+    if (this.flashLeft > 0) style(e.flash!, "opacity", Math.min(1, this.flashLeft / 0.5, (FLASH_SECONDS - this.flashLeft) / 0.12).toFixed(3))
   }
 
   private updateWorld(view: HudView, ctx: HudContext, isRobber: boolean, robber: CarView | undefined, ghost: CarView | undefined) {

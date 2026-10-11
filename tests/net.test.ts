@@ -1,6 +1,6 @@
 import { MAX_PLAYERS } from "../shared/config"
 import { describe, expect, test } from "bun:test"
-import { DT } from "../shared/config"
+import { DT, FLAT_SECONDS } from "../shared/config"
 import { type ServerMsg, decodeServer, encodeClient } from "../shared/protocol"
 import type { Body, Input } from "../shared/sim/vehicle"
 import { type Conn, RoomCore } from "../server/core"
@@ -281,6 +281,60 @@ describe("room", () => {
     expect(net.core.humans()).toBe(2)
     expect(net.core.world!.round).toBe(round)
     expect(net.core.world!.robberId).toBe(id)
+  })
+})
+
+describe("spike strip", () => {
+  test("a cop's Q press travels through the protocol and the room and deploys a strip", () => {
+    const net = new Net()
+    const { a, b } = pair(net)
+    settle(net, a, b)
+    const world = net.core.world!
+    for (let i = 0; i < 400 && !(world.phase === "chase" && world.phaseT > 1); i++) {
+      net.tick()
+      a.frame(drive(i))
+      b.frame(IDLE)
+    }
+    expect(world.phase).toBe("chase")
+    const cop = world.carOf(b.client!.myId)!
+    expect(cop.role).toBe("cop")
+    expect(world.props.length).toBe(0)
+    // Hold Q for a few frames: the press fires once.
+    for (let i = 0; i < 20; i++) {
+      net.tick()
+      a.frame(drive(i))
+      b.frame(i < 5 ? { ...IDLE, gadget: 0 } : IDLE)
+    }
+    expect(world.props.filter((p) => p.kind === "spike").length).toBe(1)
+    expect(world.props[0]!.owner).toBe(cop.id)
+    expect(cop.gadgets[0]!.charges).toBe(2)
+    const mine = b.client!.view()!.cars.find((c) => c.ownerId === b.client!.myId)!
+    expect(mine.gadgets![0]!.charges).toBe(2)
+    expect(mine.gadgets![0]!.ready).toBe(false)
+    expect(b.client!.view()!.props!.some((p) => p.kind === "spike")).toBe(true)
+    expect(b.pipe.received.some((m) => m.type === "events" && m.events.some((e) => e.kind === "gadget"))).toBe(true)
+  })
+
+  test("the driver's prediction carries a server-side flat tire without diverging", () => {
+    const net = new Net()
+    const { a, b } = pair(net)
+    let hitSeq = 0
+    let view = null
+    for (let i = 0; i < 360; i++) {
+      net.tick()
+      if (i === 320) {
+        net.core.world!.carOf(a.client!.myId)!.body.flat = FLAT_SECONDS
+        hitSeq = a.client!.seq
+      }
+      view = a.frame(drive(i))
+      b.frame(IDLE)
+    }
+    expect(hitSeq).toBeGreaterThan(0)
+    const { worst, n } = maxError(a.predicted, a.server, hitSeq + 10)
+    expect(n).toBeGreaterThan(10)
+    expect(worst).toBeLessThan(1e-9)
+    expect(a.client!.body!.flat).toBeGreaterThan(FLAT_SECONDS - 2)
+    expect(view!.cars.find((c) => c.ownerId === a.client!.myId)!.flat).toBeGreaterThan(FLAT_SECONDS - 2)
   })
 })
 

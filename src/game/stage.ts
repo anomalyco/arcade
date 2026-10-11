@@ -1,3 +1,5 @@
+import { GADGETS, LOADOUT } from "../../shared/config"
+import { newGadgets } from "../../shared/sim/gadgets"
 import type { World } from "../../shared/sim/world"
 
 /**
@@ -14,7 +16,33 @@ export function applyStage(w: World, name: string, viewer = "me") {
   const park = (i: number) => Object.assign(cops[i]!.body, { x: -200, z: -200, vx: 0, vz: 0 })
   cops.forEach((_, i) => park(i))
   const put = (b: { x: number; z: number; h: number; vx: number; vz: number }, x: number, z: number, h: number, vx: number, vz: number) => Object.assign(b, { x, z, h, vx, vz })
-  if (name === "chase") {
+  const strip = (x: number, z: number, owner: number) => {
+    const s = GADGETS.spike
+    w.props.push({ id: 900 + w.props.length, kind: "spike", x, z, h: 0, r: s.radius, life: s.ttl, ttl: s.ttl, owner, team: "cop", revealed: true, hits: [] })
+  }
+  if (name === "spike") {
+    // The driver heading up the x=228 avenue toward a spike strip (freeze under ~0.7 s to see it ahead, ~1.6 s for the flat).
+    put(r.body, 227, 128, 0, 0, 16)
+    strip(228, 146, cops[0]!.id)
+    strip(228, 186, cops[1]!.id)
+  } else if (name === "spikecop") {
+    // You are a cop tailing the driver, who is about to run over a strip; one charge left and on cooldown.
+    const me = w.carOf(viewer)!
+    const rob = cops.find((c) => c.ownerId !== viewer)!
+    const copVehicle = rob.vehicle
+    rob.role = "robber"
+    rob.vehicle = me.vehicle
+    me.role = "cop"
+    me.vehicle = copVehicle
+    w.robberId = rob.ownerId
+    put(me.body, 228, 126, 0, 0, 12)
+    put(rob.body, 228, 148, 0, 0, 14)
+    strip(228, 162, me.id)
+    strip(228, 138, me.id)
+    me.gadgets = newGadgets(LOADOUT.cop)
+    rob.gadgets = newGadgets(LOADOUT.robber)
+    Object.assign(me.gadgets[0]!, { charges: 1, cooldown: 6 })
+  } else if (name === "chase") {
     // dir-d-lowpoly-1: robber drifting up the x=228 avenue (screen up-right), three cruisers strung out behind
     // toward the screen's lower left, heli off to the upper left with its beam on the road ahead.
     put(r.body, 226, 150, 0.1, 2, 21)
