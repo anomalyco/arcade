@@ -71,7 +71,12 @@ export class Minimap {
     return cv
   }
 
-  update(view: Pick<WorldView, "cars" | "robberId" | "phase" | "t"> & { heli?: WorldView["heli"]; props?: WorldView["props"]; tip?: WorldView["tip"] }, cam: Camera, myId: string, dt: number) {
+  update(
+    view: Pick<WorldView, "cars" | "robberId" | "phase" | "t"> & { heli?: WorldView["heli"]; props?: WorldView["props"]; tip?: WorldView["tip"]; shopCool?: number[] },
+    cam: Camera,
+    myId: string,
+    dt: number,
+  ) {
     this.t += dt
     const g = this.g
     const r = SIZE / 2
@@ -152,6 +157,38 @@ export class Minimap {
       g.stroke()
     }
     g.lineCap = "butt"
+
+    // Repair shops: a wrench for everyone. A driver with flat tires sees them lit (dim while a shop is cooling down)
+    // and gets an edge arrow to the nearest working one.
+    const flats = me && me.ownerId === view.robberId && view.phase === "chase" ? (me.wheels ?? 0) : 0
+    let nearest: { x: number; z: number } | null = null
+    let nd = Infinity
+    this.city.shops.forEach((s, i) => {
+      const busy = (view.shopCool?.[i] ?? 0) > 0
+      const [x, y] = toMap(s.x, s.z)
+      if (flats && !busy) {
+        const d = Math.hypot(s.x - cx, s.z - cz)
+        if (d < nd) {
+          nd = d
+          nearest = s
+        }
+      }
+      if (Math.hypot(x, y) > r - 6) return
+      if (flats && !busy) {
+        const pulse = (this.t * 1.2) % 1
+        g.strokeStyle = `rgba(79, 240, 200, ${0.7 * (1 - pulse)})`
+        g.lineWidth = 1.5
+        g.beginPath()
+        g.arc(r + x, r + y, 5 + pulse * 8, 0, Math.PI * 2)
+        g.stroke()
+      }
+      wrench(g, r + x, r + y, flats ? (busy ? "rgba(79, 240, 200, 0.35)" : "#4ff0c8") : "rgba(200, 215, 235, 0.7)")
+    })
+    if (nearest) {
+      const n: { x: number; z: number } = nearest
+      const [x, y] = toMap(n.x, n.z)
+      if (Math.hypot(x, y) > r - 6) arrows.push({ x: n.x, z: n.z, color: "#4ff0c8" })
+    }
 
     for (const c of view.cars) {
       if (c === me || c.role !== "cop") continue
@@ -239,6 +276,25 @@ export class Minimap {
       g.restore()
     }
   }
+}
+
+/** A small wrench icon centered on (x, y): a handle with an open jaw at the top right. */
+function wrench(g: CanvasRenderingContext2D, x: number, y: number, color: string) {
+  g.save()
+  g.translate(x, y)
+  g.rotate(-Math.PI / 4)
+  g.fillStyle = "rgba(5, 7, 11, 0.75)"
+  g.beginPath()
+  g.arc(0, 0, 6.5, 0, Math.PI * 2)
+  g.fill()
+  g.fillStyle = color
+  g.fillRect(-1.1, -1, 2.2, 6)
+  g.beginPath()
+  g.arc(0, -2.6, 2.8, 0, Math.PI * 2)
+  g.fill()
+  g.fillStyle = "rgba(5, 7, 11, 1)"
+  g.fillRect(-1, -6, 2, 3.2)
+  g.restore()
 }
 
 function dot(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string, stroke: string) {
