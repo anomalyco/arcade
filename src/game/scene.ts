@@ -218,7 +218,13 @@ export class Scene {
       const v = this.visOf(c)
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = c.speed > 2 && c.speed < v.speed - 0.05 ? 1 : 0
-      const vals = [c.x, 0, c.z, c.h, v.roll, v.pitch, siren, c.engineOff ? -1 : braking, tint[0], tint[1], tint[2], 1]
+      if (c.engineOff) {
+        // Engine off: exactly like a parked car (same instance params, no lights, glows or silhouette), so it blends in.
+        inst(model, batches, [c.x, 0, c.z, c.h, 0, 0, -1, -1, 0, 0, 0, 1])
+        if (c.id === focus?.id) inst(model, ghosts, [c.x, 0, c.z, c.h, 0, 0, -1, -1, tint[0], tint[1], tint[2], 1])
+        continue
+      }
+      const vals = [c.x, 0, c.z, c.h, v.roll, v.pitch, siren, braking, tint[0], tint[1], tint[2], 1]
       inst(model, batches, vals)
       inst(model, ghosts, vals)
 
@@ -227,18 +233,16 @@ export class Scene {
       const rx = Math.cos(c.h)
       const rz = -Math.sin(c.h)
       const half = spec.length / 2
-      // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead. An engine-off car goes dark.
-      const lit = !c.engineOff
-      const tail = lit ? 1 : 0.3
-      if (lit) light(c.x + fx * (half + 0.5), 1.3, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
+      // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
+      light(c.x + fx * (half + 0.5), 1.3, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
       const hw = spec.width / 2 - 0.25
       for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-        if (lit) sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
-        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, (braking ? 2.2 : 1.1) * tail, 0)
+        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
+        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
       }
       // No beam geometry: the spot light lights the road, plus a faint soft pool ahead of the car.
-      if (lit) sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
-      light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, (braking ? 3 : 1.2) * tail)
+      sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
+      light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
         const blue = sirenOn(siren, false)
@@ -255,7 +259,8 @@ export class Scene {
 
     for (const p of this.city.parked) {
       if ((p.x - cam.fx) ** 2 + (p.z - cam.fz) ** 2 > 260 * 260) continue
-      inst(this.models.get(p.model)!, batches, [p.x, 0, p.z, p.h, 0, 0, -1, 0, 0, 0, 0, 1])
+      // Parked cars have their lamps off (brake param -1), the same as an engine-off player car.
+      inst(this.models.get(p.model)!, batches, [p.x, 0, p.z, p.h, 0, 0, -1, -1, 0, 0, 0, 1])
     }
 
     // Deployed spike strips: the model plus blinking red end glows so they read at a glance.

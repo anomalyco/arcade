@@ -235,7 +235,7 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
     // Lamps. params.w: 1 braking, -1 engine off (headlamps dark, taillights dim).
     let tail = o.color.r > 0.9 && o.color.g < 0.2;
     let off = o.extra.w < -0.5;
-    col = o.color * select(select(2.2, 0.2, off), select(select(2.5, 0.8, off), 9.0, o.extra.w > 0.5), tail);
+    col = o.color * select(select(2.2, 0.15, off), select(select(2.5, 0.25, off), 9.0, o.extra.w > 0.5), tail);
   } else if (mat == 8) {
     if (tex.a < 0.5) { discard; }
     col = o.color * tex.rgb * 3.0;
