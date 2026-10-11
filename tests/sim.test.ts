@@ -431,6 +431,8 @@ describe("survival spike strip", () => {
     })
     const b = w.carOf("r")!.body
     expect(b.flat ?? 0).toBeGreaterThan(0)
+    // The strip marks the last known position.
+    expect(Math.hypot(w.lastSeen!.x - strip.x, w.lastSeen!.z - strip.z)).toBeLessThan(10)
     top = Math.hypot(b.vx, b.vz)
     expect(top).toBeLessThan(w.carOf("r")!.vehicle.maxSpeed * 0.75)
   })

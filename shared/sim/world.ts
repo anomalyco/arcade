@@ -653,6 +653,9 @@ export class World {
         }
         if (p.hits.includes(robber.id)) continue
         robber.body.flat = FLAT_SECONDS
+        // Hitting a strip gives the driver away: the strip's spot becomes the last known position.
+        this.lastSeen = { x: robber.body.x, z: robber.body.z, t: this.t }
+        this.lastSeenH = robber.body.h
         if (SURVIVAL) p.hits.push(robber.id)
         else this.props.splice(this.props.indexOf(p), 1)
         this.heat += 2
