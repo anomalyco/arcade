@@ -102,8 +102,7 @@ export class Radio {
         if (chase) this.say(this.pick("flat", ["flat_strip", "flat_limping"]))
         return
       case "dispatch":
-        // Cops already hear a burst of chatter as they roll out; dispatch comes in once it clears.
-        if (/fleeing/i.test(e.text)) this.say("chase_start", this.driver ? 0.4 : 3.6)
+        if (/fleeing/i.test(e.text)) this.say("chase_start", this.driver ? 0.4 : 0)
         return
       case "bust":
         // Cuts off whatever is on the air. No duck here: the bust stinger has its own.

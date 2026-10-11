@@ -641,7 +641,6 @@ export class GameAudio {
     this.phase = view.phase
     if (changed && view.phase === "intro" && prev !== "") a.play("ui_whoosh", { bus: "sting", gain: 0.35 })
     if (changed && view.phase === "headstart" && prev !== "") this.roundSting()
-    if (changed && view.phase === "chase" && prev !== "" && mine?.role === "cop") a.play("radio_chatter", { bus: "sting", gain: 0.7, delay: 0.25 })
     if (changed && view.phase === "end" && view.busted) this.bustSting()
     // Under the end card the world fades away; only the stinger stays.
     const end = view.phase === "end"
@@ -699,9 +698,6 @@ export class GameAudio {
           break
         case "near":
           a.play("near_whoosh", { gain: (own ? 0.6 : 0.5) * g, pan, wet, rate: 0.95 + Math.random() * 0.1 })
-          break
-        case "dispatch":
-          if (mine?.role === "cop" && view.phase === "chase" && this.phase === "chase") a.play("radio_chatter", { bus: "sting", gain: 0.4 })
           break
       }
     }
