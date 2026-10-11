@@ -557,6 +557,8 @@ export class World {
       for (let j = i + 1; j < this.cars.length; j++) {
         const a = this.cars[i]!
         const b = this.cars[j]!
+        // Cops pass through each other; only the driver is solid to them.
+        if (a.role === "cop" && b.role === "cop") continue
         const ma = this.moving(a)
         const mb = this.moving(b)
         const hit = collideCars(a.body, a.vehicle, b.body, b.vehicle, dt, !ma, !mb)

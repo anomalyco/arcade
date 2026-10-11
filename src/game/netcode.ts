@@ -201,6 +201,8 @@ export class NetClient {
     let touched = false
     for (const p of this.proxies) {
       p.impact = 0
+      // Cops pass through each other (mirrors World.stepCars).
+      if (p.role === "cop" && this.role === "cop") continue
       const fixed = !this.moves(p.role)
       const hit = p.id < this.carId ? collideCars(p.body, p.spec, b, this.vehicle, DT, fixed, false) : collideCars(b, this.vehicle, p.body, p.spec, DT, false, fixed)
       if (!hit) continue
