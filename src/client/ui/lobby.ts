@@ -1,9 +1,7 @@
 import type { UIActions, UIState } from "../contracts"
 import type { Mode, PlayerView } from "../../sim/protocol"
-import { CLASSES } from "../../sim/classes"
 import { cls, h, Keyed, show, style, text } from "./dom"
 import { me, teamColor, wordmark } from "./common"
-import { createClassStrip } from "./classes"
 
 const MAX_PLAYERS = 12
 
@@ -11,7 +9,6 @@ interface Row {
   el: HTMLElement
   chip: HTMLElement
   name: HTMLElement
-  cls: HTMLElement
   tags: HTMLElement
 }
 
@@ -42,7 +39,6 @@ export function createLobby(actions: UIActions) {
           <button class="btn btn-ghost lb-leave">LEAVE</button>
         </div>
       </div>
-      <div class="lb-units"><div class="lb-sec"><span>YOUR UNIT</span></div></div>
     </div>
   `
   const q = <T extends Element = HTMLElement>(sel: string) => el.querySelector(sel) as T
@@ -66,8 +62,6 @@ export function createLobby(actions: UIActions) {
   let humans = 1
   let cur: UIState
 
-  const strip = createClassStrip((id) => actions.setClass(id), true)
-  q(".lb-units").append(strip.el)
 
   copy.addEventListener("click", () => {
     void navigator.clipboard?.writeText(url.value).catch(() => {})
@@ -86,14 +80,13 @@ export function createLobby(actions: UIActions) {
     rowsEl,
     () => {
       const row = h("div", "lb-row")
-      row.innerHTML = `<i class="lb-chip"></i><span class="lb-name"></span><span class="lb-cls"></span><span class="lb-tags"></span>`
+      row.innerHTML = `<i class="lb-chip"></i><span class="lb-name"></span><span class="lb-tags"></span>`
       const g = (s: string) => row.querySelector(s) as HTMLElement
-      return { el: row, chip: g(".lb-chip"), name: g(".lb-name"), cls: g(".lb-cls"), tags: g(".lb-tags") }
+      return { el: row, chip: g(".lb-chip"), name: g(".lb-name"), tags: g(".lb-tags") }
     },
     (row, p) => {
       style(row.chip, "--c", teamColor(p.team))
       text(row.name, p.name)
-      text(row.cls, CLASSES[p.cls]?.name.toUpperCase() ?? p.cls)
       const tags = [p.host ? `<b class="tag tag-host">HOST</b>` : "", p.bot ? `<b class="tag">BOT</b>` : "", p.id === cur.you ? `<b class="tag tag-you">YOU</b>` : "", !p.connected && !p.bot ? `<b class="tag tag-off">OFFLINE</b>` : ""].join("")
       if (row.tags.innerHTML !== tags) row.tags.innerHTML = tags
       cls(row.el, "you", p.id === cur.you)
@@ -130,7 +123,6 @@ export function createLobby(actions: UIActions) {
     text(botV, bots)
     text(summary, isHost ? `${humans + bots} UNITS  ·  ${mode === "ffa" ? "FREE FOR ALL" : "TEAMS"}  ·  ${battles} BATTLES` : `${players.length} IN ROOM`)
 
-    strip.update(state.profile.cls)
   }
 
   return { el, update }

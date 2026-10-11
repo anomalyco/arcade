@@ -1,4 +1,3 @@
-import type { ClassId } from "../../sim/protocol"
 import type { WeaponId } from "../../sim/weapons"
 
 // Weapon glyphs on a 24x24 grid, drawn in currentColor.
@@ -25,21 +24,6 @@ export function weaponGlyphInner(id: WeaponId): string {
   return WEAPON_GLYPHS[id]
 }
 
-// Unit silhouettes in side profile on a 64x32 grid, after units-1-lineup.png.
-const UNIT_GLYPHS: Record<ClassId, string> = {
-  crawler: `<path d="M14 15l9-10 4 3-6 9" /><path d="M8 18h30l2 4H6z" fill="currentColor" fill-opacity=".25"/><path d="M10 18v-4h20v4M8 18h30l2 4H6zM7 22l3 5h26l4-5"/><circle cx="13" cy="25" r="1.4"/><circle cx="19" cy="25" r="1.4"/><circle cx="25" cy="25" r="1.4"/><circle cx="31" cy="25" r="1.4"/>`,
-  rail: `<path d="M20 15 62 5" stroke-width="2"/><path d="M22 13c1-2 3-2 3 0s2 2 3 0 3-2 3 0"/><path d="M8 17h28v4H8z" fill="currentColor" fill-opacity=".25"/><path d="M12 17l3-5h12l3 5M4 21h40v4H4zM8 17h28v4"/><path d="M4 25l2 3h36l2-3"/>`,
-  walker: `<path d="M18 4h26v10H18z" fill="currentColor" fill-opacity=".25"/><path d="M18 4h26v10H18zM24 14v4h12v-4"/><circle cx="38" cy="7" r="1"/><circle cx="41" cy="7" r="1"/><circle cx="38" cy="11" r="1"/><circle cx="41" cy="11" r="1"/><path d="M25 18l-7 4-4 7M35 18l7 4 4 7M27 18l-2 5 1 6M33 18l2 5-1 6"/>`,
-  howitzer: `<path d="M24 16 58 4" stroke-width="2"/><path d="M18 14h14v6H18z" fill="currentColor" fill-opacity=".25"/><path d="M18 14h14v6H18zM20 20l-14 8M32 20l14 8"/><circle cx="20" cy="24" r="5"/><circle cx="31" cy="24" r="5"/>`,
-  drone: `<path d="M18 8h22v6H18z" fill="currentColor" fill-opacity=".25"/><path d="M18 8h22v6H18zM6 10h12M40 10h12M6 10v3h8v-3M44 10v3h8v-3M29 14v4l-6 8"/><path d="M10 16v4M48 16v4" stroke-dasharray="1.5 1.5"/><circle cx="22" cy="27" r="2" fill="currentColor"/>`,
-  siege: `<path d="M30 10 58 4M30 14 58 8" stroke-width="1.8"/><path d="M14 9h18v7H14z" fill="currentColor" fill-opacity=".25"/><path d="M14 9h18v7H14zM6 16h38l4 5H4zM4 21l3 6h36l5-6"/><circle cx="12" cy="24" r="1.4"/><circle cx="18" cy="24" r="1.4"/><circle cx="24" cy="24" r="1.4"/><circle cx="30" cy="24" r="1.4"/><circle cx="36" cy="24" r="1.4"/>`,
-  catapult: `<path d="M24 19 44 3M28 19 44 3" /><path d="M42 2h6l-2 6h-5z" fill="currentColor" fill-opacity=".35"/><path d="M42 2h6l-2 6h-5zM18 19 44 3"/><path d="M12 15h14v4H12z" fill="currentColor" fill-opacity=".25"/><path d="M12 15h14v4H12zM6 19h34l2 4H4zM5 23l3 5h28l4-5"/>`,
-  buggy: `<path d="M22 8 40 2l2 4-18 6z" fill="currentColor" fill-opacity=".3"/><path d="M22 8 40 2l2 4-18 6zM24 12v4"/><path d="M8 16h40l4 4v3H6v-4z" fill="currentColor" fill-opacity=".15"/><path d="M8 16h40l4 4v3H6v-4zM36 16l3-4h7l2 4"/><circle cx="13" cy="25" r="3.5"/><circle cx="25" cy="25" r="3.5"/><circle cx="43" cy="25" r="3.5"/>`,
-}
-
-export function unitGlyph(id: ClassId, w = 64, hgt = 32): string {
-  return `<svg class="unit-glyph" viewBox="0 0 64 32" width="${w}" height="${hgt}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${UNIT_GLYPHS[id]}</svg>`
-}
 
 export const CHECK = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6"/></svg>`
 export const LOCK = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>`

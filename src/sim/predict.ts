@@ -15,15 +15,15 @@ export interface Trace {
   apexY: number
 }
 
-type Shooter = Pick<Unit, "id" | "x" | "y" | "cls">
+type Shooter = Pick<Unit, "id" | "x" | "y">
 
 // Flies one projectile with exactly the volley's integration (no splits, wells or crates).
 export function traceShot(mask: Mask, unit: Shooter, angle: number, power: number, wind: number, units: Unit[] | undefined, maxPoints = Infinity): Trace {
   const a = clampAngle(angle)
   const m = muzzle(unit, a)
-  const v = launchVelocity(a, clampPower(power), unit.cls)
+  const v = launchVelocity(a, clampPower(power))
   const b = { x: m.x, y: m.y, vx: v.vx, vy: v.vy }
-  const w = windAccel(wind, unit.cls)
+  const w = windAccel(wind)
   const pts = [b.x, b.y]
   let apexY = b.y
   for (let step = 1; step <= MAX_STEPS; step++) {

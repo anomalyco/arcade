@@ -199,7 +199,7 @@ export function createLocal(): Transport {
         queueMicrotask(() => deliver({ type: "pong", t: msg.t, now }))
         return
       }
-      if (msg.type === "join") match.join(id, msg.name, msg.cls, now)
+      if (msg.type === "join") match.join(id, msg.name, now)
       else match.handle(id, msg, now)
       flush()
     },

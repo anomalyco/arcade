@@ -1,4 +1,4 @@
-import { passiveOf } from "./classes"
+import { VEHICLE } from "./vehicle"
 import type { Unit } from "./protocol"
 import { UNIT_BODY, WORLD_H, WORLD_W, embedded, footGround, isSolid, type Mask } from "./terrain"
 
@@ -38,11 +38,11 @@ export function walk(mask: Mask, x: number, y: number, dir: -1 | 1, px: number, 
 }
 
 // Player/bot driving during the aim phase. Advances a few px along the surface,
-// climbing small steps (class-dependent), refusing steep slopes and drops, consuming fuel.
+// climbing small steps, refusing steep slopes and drops, consuming fuel.
 // Mutates the unit and returns whether it moved.
 export function moveUnit(mask: Mask, unit: Unit, dir: -1 | 1): boolean {
   if (!unit.alive || unit.fuel <= 0) return false
-  const climb = passiveOf(unit.cls).climb
+  const climb = VEHICLE.climb
   // settle first in case the unit rests on a fractional y
   if (!embedded(mask, unit.x, unit.y)) {
     const g = footGround(mask, unit.x, Math.floor(unit.y + UNIT_BODY))

@@ -2,7 +2,6 @@
 // Owned by the integrator: extend only by adding optional fields or new union members.
 import type { WeaponId } from "./weapons"
 
-export type ClassId = "crawler" | "rail" | "walker" | "howitzer" | "drone" | "siege" | "catapult" | "buggy"
 export type PowerupId = "credits" | "weapon" | "shield" | "boost" | "repair" | "preview" | "fuel"
 export type Phase = "lobby" | "aim" | "resolve" | "shop" | "over"
 export type Mode = "ffa" | "teams"
@@ -13,7 +12,6 @@ export interface Unit {
   id: number
   team: number
   name: string
-  cls: ClassId
   x: number
   y: number
   hp: number
@@ -99,7 +97,6 @@ export interface PlayerView {
   damage: number
   kills: number
   wins: number
-  cls: ClassId
   host: boolean
 }
 
@@ -125,14 +122,13 @@ export interface MatchView {
 }
 
 export type ClientMsg =
-  | { type: "join"; name: string; cls: ClassId }
+  | { type: "join"; name: string }
   | { type: "aim"; angle: number; power: number; weapon: WeaponId }
   | { type: "move"; dir: -1 | 1 }
   | { type: "lock" }
   | { type: "buy"; item: string }
   | { type: "ready" }
   | { type: "start"; mode: Mode; bots: number; battles: number }
-  | { type: "class"; cls: ClassId }
   | { type: "ping"; t: number }
 
 export type ServerMsg =

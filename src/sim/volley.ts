@@ -1,5 +1,5 @@
 import { DT, SAMPLE_EVERY, SELF_GRACE, clampAngle, clampPower, hypot, integrate, launchVelocity, ms, muzzle, windAccel } from "./ballistics"
-import { passiveOf } from "./classes"
+import { VEHICLE } from "./vehicle"
 import { walk } from "./move"
 import { rng, type Rand } from "./rng"
 import {
@@ -212,9 +212,7 @@ export function carveRadius(def: WeaponDef): number {
 }
 
 function dmgMult(ctx: Ctx, owner: number): number {
-  const u = ctx.byId.get(owner)
-  if (!u) return 1
-  return passiveOf(u.cls).damage * (ctx.boost.has(owner) ? BOOST : 1)
+  return ctx.boost.has(owner) ? BOOST : 1
 }
 
 // ---------------------------------------------------------------------------
@@ -360,8 +358,8 @@ function launch(ctx: Ctx, shot: Shot): void {
     return
   }
   const m = muzzle(unit, angle)
-  const v = launchVelocity(angle, power, unit.cls)
-  addProj(ctx, unit.id, weapon, m.x, m.y, v.vx, v.vy, windAccel(ctx.wind, unit.cls))
+  const v = launchVelocity(angle, power)
+  addProj(ctx, unit.id, weapon, m.x, m.y, v.vx, v.vy, windAccel(ctx.wind))
 }
 
 function explode(ctx: Ctx, p: Proj): void {
@@ -799,7 +797,7 @@ function stepMotions(ctx: Ctx): void {
     u.y = m.y1
     if (m.kind !== "fall" && m.kind !== "ride") continue
     const dy = m.y1 - m.y0
-    const dmg = dy > FALL_SAFE ? (dy - FALL_SAFE) * FALL_RATE * m.scale * passiveOf(u.cls).fallDamage : 0
+    const dmg = dy > FALL_SAFE ? (dy - FALL_SAFE) * FALL_RATE * m.scale : 0
     emit(ctx, { t: now(ctx), type: "fall", unit: u.id, x: u.x, y: Math.min(u.y, WORLD_H), dy: Math.round(dy), dmg: Math.round(dmg) })
     const culprit = m.cause >= 0 ? m.cause : u.id
     if (u.y >= WORLD_H) applyDamage(ctx, u, u.hp + u.shield, culprit)
@@ -816,7 +814,7 @@ function slopeAt(ctx: Ctx, x: number, y: number): number {
 }
 
 function trySlide(ctx: Ctx, u: Unit): boolean {
-  const limit = passiveOf(u.cls).slide
+  const limit = VEHICLE.slide
   const slope = slopeAt(ctx, u.x, u.y)
   if (Math.abs(slope) <= limit) return false
   if ((ctx.slides.get(u.id) ?? 0) >= MAX_SLIDES) return false

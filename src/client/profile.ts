@@ -1,27 +1,19 @@
 import type { Profile } from "./contracts"
-import type { ClassId } from "../sim/protocol"
-import { CLASSES } from "../sim/classes"
 
 const KEY = "salvo.profile.v1"
 
 export function defaultProfile(): Profile {
-  return { name: "", cls: "crawler" }
+  return { name: "" }
 }
 
 export function loadProfile(): Profile {
-  const base = defaultProfile()
-  let raw: unknown = null
   try {
-    raw = JSON.parse(localStorage.getItem(KEY) ?? "null")
+    const raw: unknown = JSON.parse(localStorage.getItem(KEY) ?? "null")
+    if (raw && typeof raw === "object" && "name" in raw && typeof raw.name === "string") return { name: raw.name.slice(0, 16) }
   } catch {
-    raw = null
+    // corrupt or unavailable storage; start fresh
   }
-  if (!raw || typeof raw !== "object") return base
-  const r = raw as Record<string, unknown>
-  return {
-    name: typeof r.name === "string" ? r.name.slice(0, 16) : "",
-    cls: typeof r.cls === "string" && r.cls in CLASSES ? (r.cls as ClassId) : base.cls,
-  }
+  return defaultProfile()
 }
 
 export function saveProfile(p: Profile): void {

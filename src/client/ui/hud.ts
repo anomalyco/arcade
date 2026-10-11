@@ -2,7 +2,7 @@ import type { FeedEntry, UIActions, UIState } from "../contracts"
 import type { PlayerView } from "../../sim/protocol"
 import { WORLD_H } from "../../sim/terrain"
 import { WEAPONS, WEAPON_IDS, type WeaponId } from "../../sim/weapons"
-import { CLASSES } from "../../sim/classes"
+import { VEHICLE } from "../../sim/vehicle"
 import { attr, cls, fmtClock, fmtNum, h, html, Keyed, s, show, style, text } from "./dom"
 import { ARROW_R, CHECK, weaponGlyph, weaponGlyphInner } from "./glyphs"
 import { me, myUnit, teamColor, winnerName, wordmark } from "./common"
@@ -322,7 +322,7 @@ export function createHud(actions: UIActions) {
       style(apBar, "width", "0%")
     }
     if (unit) {
-      const maxFuel = CLASSES[unit.cls]?.fuel || 100
+      const maxFuel = VEHICLE.fuel
       const frac = Math.max(0, Math.min(1, unit.fuel / maxFuel))
       style(apFuel, "width", `${(frac * 100).toFixed(1)}%`)
       cls(apFuelRow, "empty", frac <= 0.001)

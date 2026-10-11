@@ -7,14 +7,14 @@
 // flips landed=true.
 import { clampAngle, clampPower } from "./ballistics"
 import { botReposition, botShop, planBot, type BotPlan } from "./bot"
-import { CLASSES, CLASS_IDS, classOf, passiveOf } from "./classes"
+import { VEHICLE } from "./vehicle"
 import { moveUnit } from "./move"
 import { rng, type Rand } from "./rng"
 import { applyPurchase, newLoadout, type Loadout } from "./shop"
 import { WORLD_H, WORLD_W, footGround, generateBattle, nextWind, packMask, spawnY, type Mask } from "./terrain"
 import { runVolley } from "./volley"
 import { WEAPONS, type WeaponId } from "./weapons"
-import type { ClassId, ClientMsg, Crate, Ghost, MatchView, Mode, Phase, PlayerView, PowerupId, ServerMsg, Shot, Unit } from "./protocol"
+import type { ClientMsg, Crate, Ghost, MatchView, Mode, Phase, PlayerView, PowerupId, ServerMsg, Shot, Unit } from "./protocol"
 
 export const AIM_MS = 8000
 export const FIRST_AIM_MS = 10000
@@ -43,7 +43,6 @@ const CRATE_KINDS: Array<[PowerupId, number]> = [
 interface Player {
   id: string
   name: string
-  cls: ClassId
   bot: boolean
   connected: boolean
   host: boolean
@@ -126,17 +125,15 @@ export class Match {
   // -------------------------------------------------------------------------
   // connections
 
-  join(id: string, name: string, cls: ClassId, now: number): void {
+  join(id: string, name: string, now: number): void {
     const existing = this.players.find((p) => p.id === id)
     if (existing) {
       existing.connected = true
       existing.name = this.cleanName(name, existing.name)
-      if (this.phase === "lobby" || this.phase === "shop" || this.phase === "over") existing.cls = this.cleanClass(cls)
     } else {
       const p: Player = {
         id,
         name: this.cleanName(name, `PILOT ${this.nextSlot + 1}`),
-        cls: this.cleanClass(cls),
         bot: false,
         connected: true,
         host: false,
@@ -184,7 +181,7 @@ export class Match {
       return
     }
     if (msg.type === "join") {
-      this.join(id, msg.name, msg.cls, now)
+      this.join(id, msg.name, now)
       return
     }
     if (!p) return
@@ -192,16 +189,6 @@ export class Match {
       case "start": {
         if (!p.host || this.phase !== "lobby") return
         this.startMatch(msg.mode === "teams" ? "teams" : "ffa", msg.bots, msg.battles, now)
-        break
-      }
-      case "class": {
-        if (!CLASSES[msg.cls]) return
-        if (this.phase === "aim" || this.phase === "resolve") {
-          this.error(id, "Class changes apply between battles")
-          return
-        }
-        p.cls = this.cleanClass(msg.cls)
-        this.stateDirty = true
         break
       }
       case "aim": {
@@ -294,7 +281,6 @@ export class Match {
         damage: p.damage,
         kills: p.kills,
         wins: p.wins,
-        cls: p.cls,
         host: p.host,
       }))
     const v: MatchView = {
@@ -369,11 +355,9 @@ export class Match {
     let name = BOT_NAMES[Math.floor(r() * BOT_NAMES.length)]!
     for (let k = 0; used.has(name) && k < 40; k++) name = BOT_NAMES[Math.floor(r() * BOT_NAMES.length)]!
     if (used.has(name)) name = `${name}-${++this.botCount}`
-    const cls = CLASS_IDS[Math.floor(r() * CLASS_IDS.length)]!
     this.players.push({
       id: `bot:${this.matchNo}:${++this.botCount}`,
       name,
-      cls,
       bot: true,
       connected: true,
       host: false,
@@ -418,17 +402,13 @@ export class Match {
     order.sort((a, b) => (this.mode === "teams" ? a.p.team - b.p.team : 0) || a.k - b.k)
     this.units = []
     order.forEach(({ p }, i) => {
-      const cls = classOf(p.cls)
-      const pas = passiveOf(p.cls)
       const x = bf.spawns[i]!
-      const maxHp = cls.maxHp + 20 * p.loadout.armor
+      const maxHp = VEHICLE.maxHp + 20 * p.loadout.armor
       const ammo = { ...p.loadout.ammo }
-      ammo.cluster = (ammo.cluster ?? 0) + pas.startCluster
       const unit: Unit = {
         id: i,
         team: p.team,
         name: p.name,
-        cls: p.cls,
         x,
         y: spawnY(this.mask, x),
         hp: maxHp,
@@ -436,7 +416,7 @@ export class Match {
         alive: true,
         kills: 0,
         ammo,
-        shield: pas.startShield,
+        shield: 0,
         boost: p.loadout.boost > 0 ? 1 : 0,
         fuel: this.maxFuel(p),
         angle: x < WORLD_W / 2 ? Math.PI / 4 : (Math.PI * 3) / 4,
@@ -455,7 +435,7 @@ export class Match {
   }
 
   private maxFuel(p: Player): number {
-    return Math.round(classOf(p.cls).fuel * (1 + 0.5 * p.loadout.fuelTank))
+    return Math.round(VEHICLE.fuel * (1 + 0.5 * p.loadout.fuelTank))
   }
 
   private startAim(now: number, fresh: boolean): void {
@@ -701,10 +681,6 @@ export class Match {
   private cleanName(name: string, fallback: string): string {
     const n = String(name ?? "").replace(/\s+/g, " ").trim().slice(0, 16)
     return n || fallback
-  }
-
-  private cleanClass(cls: ClassId): ClassId {
-    return CLASSES[cls] ? cls : "howitzer"
   }
 
   private fixHost(): void {

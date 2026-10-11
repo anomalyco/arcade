@@ -1,5 +1,5 @@
 // Boundary parsing for untrusted WebSocket input. Everything past here is a typed ClientMsg.
-import type { ClassId, ClientMsg, Mode } from "../sim/protocol"
+import type { ClientMsg, Mode } from "../sim/protocol"
 import { WEAPONS, type WeaponId } from "../sim/weapons"
 
 export const BASE = "/labs/salvo"
@@ -9,7 +9,6 @@ export const MAX_HUMANS = 12
 
 const ROOM_RE = /^[a-z0-9]{3,24}$/
 const PID_RE = /^[A-Za-z0-9_-]{8,40}$/
-const CLASSES: readonly ClassId[] = ["crawler", "rail", "walker", "howitzer", "drone", "siege", "catapult", "buggy"]
 const MODES: readonly Mode[] = ["ffa", "teams"]
 
 export function validRoom(room: string): boolean {
@@ -46,10 +45,6 @@ function str(value: unknown, max: number): string | null {
   return value.slice(0, max)
 }
 
-function cls(value: unknown): ClassId | null {
-  return CLASSES.find((c) => c === value) ?? null
-}
-
 function weapon(value: unknown): WeaponId | null {
   return typeof value === "string" && Object.hasOwn(WEAPONS, value) ? (value as WeaponId) : null
 }
@@ -73,8 +68,7 @@ export function parseClientMsg(text: string): ClientMsg | null {
   const m = data as Record<string, unknown>
   switch (m.type) {
     case "join": {
-      const c = cls(m.cls) ?? "crawler"
-      return { type: "join", name: cleanName(m.name), cls: c }
+      return { type: "join", name: cleanName(m.name) }
     }
     case "aim": {
       const angle = num(m.angle, -720, 720)
@@ -96,10 +90,6 @@ export function parseClientMsg(text: string): ClientMsg | null {
     case "start": {
       const mode = MODES.find((x) => x === m.mode) ?? "ffa"
       return { type: "start", mode, bots: int(m.bots, 0, 11) ?? 0, battles: int(m.battles, 1, 15) ?? 3 }
-    }
-    case "class": {
-      const c = cls(m.cls)
-      return c ? { type: "class", cls: c } : null
     }
     case "ping": {
       const t = num(m.t, 0, Number.MAX_SAFE_INTEGER)

@@ -1,6 +1,5 @@
 import type { UIActions, UIState } from "../contracts"
 import type { PlayerView } from "../../sim/protocol"
-import { CLASSES } from "../../sim/classes"
 import { cls, fmtClock, fmtNum, h, Keyed, style, text } from "./dom"
 import { me, teamColor, winnerName, wordmark } from "./common"
 
@@ -9,7 +8,6 @@ interface Row {
   rank: HTMLElement
   chip: HTMLElement
   name: HTMLElement
-  cls: HTMLElement
   w: HTMLElement
   k: HTMLElement
   d: HTMLElement
@@ -28,7 +26,7 @@ export function createResults(actions: UIActions) {
       </div>
       <div class="rs-body">
         <div class="rs-table cham-soft">
-          <div class="rt-head"><span class="rt-rank">#</span><span class="rt-name">PLAYER</span><span class="rt-cls">UNIT</span><span>WINS</span><span>KILLS</span><span>DAMAGE</span><span>SCORE</span></div>
+          <div class="rt-head"><span class="rt-rank">#</span><span class="rt-name">PLAYER</span><span>WINS</span><span>KILLS</span><span>DAMAGE</span><span>SCORE</span></div>
           <div class="rt-rows"></div>
         </div>
         <div class="rs-side">
@@ -51,15 +49,14 @@ export function createResults(actions: UIActions) {
     rowsEl,
     () => {
       const row = h("div", "rt-row")
-      row.innerHTML = `<span class="rt-rank"></span><span class="rt-name"><i class="rt-chip"></i><b></b></span><span class="rt-cls"></span><span class="rt-w"></span><span class="rt-k"></span><span class="rt-d"></span><span class="rt-s"></span>`
+      row.innerHTML = `<span class="rt-rank"></span><span class="rt-name"><i class="rt-chip"></i><b></b></span><span class="rt-w"></span><span class="rt-k"></span><span class="rt-d"></span><span class="rt-s"></span>`
       const g = (s: string) => row.querySelector(s) as HTMLElement
-      return { el: row, rank: g(".rt-rank"), chip: g(".rt-chip"), name: g(".rt-name b"), cls: g(".rt-cls"), w: g(".rt-w"), k: g(".rt-k"), d: g(".rt-d"), s: g(".rt-s") }
+      return { el: row, rank: g(".rt-rank"), chip: g(".rt-chip"), name: g(".rt-name b"), w: g(".rt-w"), k: g(".rt-k"), d: g(".rt-d"), s: g(".rt-s") }
     },
     (row, p, i) => {
       text(row.rank, String(i + 1).padStart(2, "0"))
       style(row.chip, "--c", teamColor(p.team))
       text(row.name, p.name)
-      text(row.cls, CLASSES[p.cls]?.name.toUpperCase() ?? "")
       text(row.w, p.wins)
       text(row.k, p.kills)
       text(row.d, fmtNum(p.damage))

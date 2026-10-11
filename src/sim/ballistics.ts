@@ -1,5 +1,4 @@
-import { classOf, passiveOf } from "./classes"
-import type { ClassId, Unit } from "./protocol"
+import type { Unit } from "./protocol"
 
 export const DT = 1 / 120
 export const GRAVITY = 260
@@ -15,12 +14,12 @@ export interface Body {
   vy: number
 }
 
-export function launchSpeed(power: number, cls?: ClassId): number {
-  return (150 + power * 3.6) * classOf(cls).power
+export function launchSpeed(power: number): number {
+  return 150 + power * 3.6
 }
 
-export function launchVelocity(angle: number, power: number, cls?: ClassId): { vx: number; vy: number } {
-  const s = launchSpeed(power, cls)
+export function launchVelocity(angle: number, power: number): { vx: number; vy: number } {
+  const s = launchSpeed(power)
   return { vx: Math.cos(angle) * s, vy: -Math.sin(angle) * s }
 }
 
@@ -38,8 +37,8 @@ export function clampPower(power: number): number {
   return Math.min(100, Math.max(0, power))
 }
 
-export function windAccel(wind: number, cls?: ClassId): number {
-  return wind * WIND_ACCEL * passiveOf(cls).wind
+export function windAccel(wind: number): number {
+  return wind * WIND_ACCEL
 }
 
 // one fixed integration step; the volley and the aim preview both use exactly this

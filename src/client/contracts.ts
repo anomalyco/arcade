@@ -1,7 +1,7 @@
 // Client module boundaries. main.ts (integrator) owns playback, input and networking;
 // the renderer draws the world; the UI draws DOM overlays. Neither keeps game rules.
 import type { Mask } from "../sim/terrain"
-import type { ClassId, Ghost, MatchView, Mode, PowerupId, SimEvent, Unit } from "../sim/protocol"
+import type { Ghost, MatchView, Mode, PowerupId, SimEvent, Unit } from "../sim/protocol"
 import type { WeaponId } from "../sim/weapons"
 
 export interface Aim {
@@ -83,7 +83,6 @@ export interface FeedEntry {
 
 export interface Profile {
   name: string
-  cls: ClassId
 }
 
 export interface UIState {
@@ -103,7 +102,6 @@ export interface UIState {
 
 export interface UIActions {
   setName(name: string): void
-  setClass(cls: ClassId): void
   play(opts: { online: boolean; room?: string }): void
   start(opts: { mode: Mode; bots: number; battles: number }): void
   aim(aim: Partial<Aim>): void

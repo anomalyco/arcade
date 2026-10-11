@@ -1,8 +1,7 @@
 // Dev-only harness: renders each UI screen with mock state. ui-harness.html?screen=title|lobby|game|shop|results
 import type { Aim, FeedEntry, Profile, Screen, UIActions, UIState } from "../contracts"
-import type { ClassId, MatchView, Phase, PlayerView, Unit } from "../../sim/protocol"
+import type { MatchView, Phase, PlayerView, Unit } from "../../sim/protocol"
 import { WEAPONS, WEAPON_IDS, type WeaponId } from "../../sim/weapons"
-import { CLASSES } from "../../sim/classes"
 import { createUI } from "./index"
 
 const params = new URLSearchParams(location.search)
@@ -15,7 +14,6 @@ document.body.style.background = `#060d14 url(${params.get("bg") ?? (screen === 
 const names = ["dax", "adam", "jay", "frank", "kit", "liz", "ryan", "mo"]
 const teams = [0, 1, 5, 2, 4, 3, 6, 8]
 const hps = [100, 92, 100, 78, 100, 86, 100, 93]
-const classes: ClassId[] = ["howitzer", "crawler", "drone", "walker", "buggy", "siege", "rail", "catapult"]
 
 function ammo(extra: Partial<Record<WeaponId, number>>): Record<WeaponId, number> {
   const a = Object.fromEntries(WEAPON_IDS.map((id) => [id, WEAPONS[id].ammo])) as Record<WeaponId, number>
@@ -26,7 +24,6 @@ const units: Unit[] = names.map((name, i) => ({
   id: i,
   team: teams[i],
   name,
-  cls: classes[i],
   x: 100 + i * 130,
   y: 300,
   hp: variant === "resolve" && i === 3 ? 0 : hps[i],
@@ -55,7 +52,6 @@ const players: PlayerView[] = names.map((name, i) => ({
   damage: [412, 330, 505, 150, 240, 120, 290, 95][i],
   kills: [3, 2, 4, 1, 1, 0, 2, 0][i],
   wins: [1, 0, 2, 0, 0, 0, 1, 0][i],
-  cls: classes[i],
   host: i === 0,
 }))
 if (screen === "game" && variant !== "locked") players[0].locked = false
@@ -90,7 +86,6 @@ if (screen === "lobby" && variant === "guest") {
 
 const profile: Profile = {
   name: params.has("noname") ? "" : "dax",
-  cls: "howitzer",
 }
 
 const aim: Aim = { angle: (47 * Math.PI) / 180, power: 72, weapon: (params.get("weapon") as WeaponId) ?? "shell" }
@@ -121,10 +116,6 @@ const log = (name: string) => (...args: unknown[]) => console.log("[action]", na
 const actions: UIActions = {
   setName: (n) => {
     state.profile = { ...state.profile, name: n }
-  },
-  setClass: (c) => {
-    state.profile = { ...state.profile, cls: c }
-    log("setClass")(c, CLASSES[c].name)
   },
   play: log("play"),
   start: log("start"),

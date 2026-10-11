@@ -3,7 +3,7 @@ import { createRenderer } from "./render/index"
 import { createUI } from "./ui/index"
 import { connectOnline, createLocal, createRoom, roomFromLocation, roomLink, type Transport } from "./net"
 import { loadProfile, saveProfile } from "./profile"
-import { TEAM_COLORS, type ClassId, type MatchView, type PathOut, type ServerMsg, type Shot, type SimEvent, type Unit, type VolleyResult } from "../sim/protocol"
+import { TEAM_COLORS, type MatchView, type PathOut, type ServerMsg, type Shot, type SimEvent, type Unit, type VolleyResult } from "../sim/protocol"
 import { generateTerrain, spawnPoints, unpackMask, type Mask } from "../sim/terrain"
 import { chunkLand, chunkRemove, decodeChunk, applyTerrainEvent } from "../sim/replay"
 import { predictPath } from "../sim/predict"
@@ -450,10 +450,10 @@ async function play(opts: { online: boolean; room?: string }): Promise<void> {
   t.onStatus((s) => {
     if (s === "open" && !joined) {
       joined = true
-      t.send({ type: "join", name: profile.name.trim().slice(0, 16), cls: profile.cls })
+      t.send({ type: "join", name: profile.name.trim().slice(0, 16) })
       if (!t.online) t.send({ type: "start", mode: "ffa", bots: 5, battles: 3 })
     } else if (s === "open") {
-      t.send({ type: "join", name: profile.name.trim().slice(0, 16), cls: profile.cls })
+      t.send({ type: "join", name: profile.name.trim().slice(0, 16) })
     }
   })
 }
@@ -462,11 +462,6 @@ const ui = createUI(root, {
   setName(name) {
     profile = { ...profile, name: name.slice(0, 16) }
     saveProfile(profile)
-  },
-  setClass(cls: ClassId) {
-    profile = { ...profile, cls }
-    saveProfile(profile)
-    transport?.send({ type: "class", cls })
   },
   play(opts) {
     void play(opts)

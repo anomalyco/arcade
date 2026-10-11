@@ -1,8 +1,6 @@
 import type { UIActions, UIState } from "../contracts"
-import { CLASSES } from "../../sim/classes"
 import { cls, h, show, text } from "./dom"
 import { wordmark } from "./common"
-import { createClassStrip } from "./classes"
 
 export function createTitle(actions: UIActions) {
   const el = h("div", "screen title")
@@ -23,9 +21,6 @@ export function createTitle(actions: UIActions) {
         </div>
       </form>
     </div>
-    <div class="tt-units">
-      <div class="tt-units-head"><span>SELECT UNIT</span><span class="tt-unit-desc"></span></div>
-    </div>
   `
   const q = <T extends Element = HTMLElement>(sel: string) => el.querySelector(sel) as T
   const input = q<HTMLInputElement>(".tt-input")
@@ -34,11 +29,7 @@ export function createTitle(actions: UIActions) {
   const create = q<HTMLButtonElement>(".tt-create")
   const join = q<HTMLButtonElement>(".tt-join")
   const roomTag = q(".tt-room")
-  const units = q(".tt-units")
-  const unitDesc = q(".tt-unit-desc")
 
-  const strip = createClassStrip((id) => actions.setClass(id))
-  units.append(strip.el)
 
   let room = ""
   const nameOk = () => input.value.trim().length > 0
@@ -85,8 +76,6 @@ export function createTitle(actions: UIActions) {
     text(roomTag, room ? room.toUpperCase() : "")
     cls(el, "has-room", !!room)
 
-    strip.update(pr.cls)
-    text(unitDesc, CLASSES[pr.cls]?.desc ?? "")
   }
 
   return { el, update }
