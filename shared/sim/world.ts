@@ -669,6 +669,8 @@ export class World {
         }
         if (p.hits.includes(robber.id)) continue
         robber.body.flat = FLAT_SECONDS
+        // Spikes immobilize the driver: no throttle or steering until the tires are sorted.
+        robber.body.stun = Math.max(robber.body.stun, FLAT_SECONDS)
         // Hitting a strip gives the driver away: the strip's spot becomes the last known position.
         this.lastSeen = { x: robber.body.x, z: robber.body.z, t: this.t }
         this.lastSeenH = robber.body.h

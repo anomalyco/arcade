@@ -1,4 +1,4 @@
-import { END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, FLAT_SPEED } from "../../shared/config"
+import { END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
 import { DRIVE } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
@@ -97,7 +97,7 @@ export class Hud {
     e.gName = e.gadget.querySelector(".g-name")!
     this.pips = [...e.gadget.querySelectorAll<HTMLElement>(".g-pips i")]
     e.gFill = e.gadget.querySelector(".g-bar b")!
-    e.flat = h("div", "h-flat off", r, `<div class="f-line">FLAT TIRE · TOP SPEED HALVED</div><div class="g-bar"><b></b></div>`)
+    e.flat = h("div", "h-flat off", r, `<div class="f-line">IMMOBILIZED</div><div class="g-bar"><b></b></div>`)
     e.fFill = e.flat.querySelector(".g-bar b")!
 
     e.end = h("div", "h-end off", r)
@@ -207,7 +207,7 @@ export class Hud {
     show(e.gadget!, !!g)
     if (g) {
       const spec = GADGETS[g.id]
-      text(e.gName!, g.id === "spike" ? `${spec.name} · FLATS TIRES, ${Math.round((1 - FLAT_SPEED) * 100)}% SLOWER FOR ${FLAT_SECONDS}S` : spec.name)
+      text(e.gName!, g.id === "spike" ? `${spec.name} · STOPS THE SUSPECT FOR ${FLAT_SECONDS}S` : spec.name)
       // Pips: strips you can still lay before your oldest one is picked up.
       this.pips.forEach((pip, i) => flag(pip, "used", i >= g.charges))
       const fill = g.cooldown > 0 ? 1 - g.cooldown / spec.cooldown : 1
@@ -228,7 +228,7 @@ export class Hud {
     const hit = ctx.events.find((ev) => ev.kind === "flat")
     if (hit && live) {
       this.flashLeft = FLASH_SECONDS
-      text(e.flash!, isRobber ? `FLAT TIRE · ${Math.round((1 - FLAT_SPEED) * 100)}% SLOWER FOR ${FLAT_SECONDS}S` : `SPIKED! SUSPECT ${Math.round((1 - FLAT_SPEED) * 100)}% SLOWER`)
+      text(e.flash!, isRobber ? `SPIKED · IMMOBILIZED FOR ${FLAT_SECONDS}S` : `SPIKED! SUSPECT STOPPED FOR ${FLAT_SECONDS}S`)
       flag(e.flash!, "bad", isRobber)
     }
     this.flashLeft = live ? Math.max(0, this.flashLeft - ctx.dt) : 0

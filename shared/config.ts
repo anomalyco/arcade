@@ -91,7 +91,7 @@ export const GADGETS: Record<GadgetId, GadgetSpec> = {
 export const LOADOUT: Record<Role, [GadgetId, GadgetId]> = { robber: ["oil", "smoke"], cop: ["spike", "roadblock"] }
 
 export const OIL_SPIN_SECONDS = 1.2
-export const FLAT_SECONDS = 8
+export const FLAT_SECONDS = 5
 /** A flat tire caps top speed and grip at these fractions. */
 export const FLAT_SPEED = 0.5
 export const FLAT_GRIP = 0.45
