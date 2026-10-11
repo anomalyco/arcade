@@ -570,14 +570,38 @@ function handleHeldKeys(dt: number, now: number): void {
   }
 }
 
+// Render resolution adapts to frame time: the glowy art upscales well, so trade pixels for 60fps.
+const MAX_PIXELS = 2_600_000
+let renderScale = 1
+let slowFrames = 0
+let fastFrames = 0
+
 function resize(): void {
-  const dpr = Math.min(2, window.devicePixelRatio || 1)
-  canvas.width = Math.round(window.innerWidth * dpr)
-  canvas.height = Math.round(window.innerHeight * dpr)
-  renderer.resize(window.innerWidth, window.innerHeight, dpr)
+  const w = window.innerWidth
+  const h = window.innerHeight
+  const fit = Math.sqrt(MAX_PIXELS / Math.max(1, w * h))
+  const dpr = Math.max(0.6, Math.min(window.devicePixelRatio || 1, 2, fit) * renderScale)
+  renderer.resize(w, h, dpr)
 }
 window.addEventListener("resize", resize)
 resize()
+
+function adaptQuality(dtMs: number): void {
+  if (document.hidden) return
+  if (dtMs > 22) slowFrames++
+  else slowFrames = Math.max(0, slowFrames - 1)
+  if (dtMs < 14) fastFrames++
+  else fastFrames = 0
+  if (slowFrames > 40 && renderScale > 0.75) {
+    renderScale = Math.max(0.75, renderScale * 0.85)
+    slowFrames = 0
+    resize()
+  } else if (fastFrames > 600 && renderScale < 1) {
+    renderScale = Math.min(1, renderScale * 1.1)
+    fastFrames = 0
+    resize()
+  }
+}
 
 function screen(): Screen {
   if (!transport || !view) return "title"
@@ -588,16 +612,23 @@ function screen(): Screen {
 }
 
 let last = performance.now()
+let lastRaw = 0
 function loop(now: number): void {
   const dtMs = Math.min(50, now - last)
   last = now
+  adaptQuality(now - (lastRaw || now))
+  lastRaw = now
   handleHeldKeys(dtMs / 1000, now)
+  const t0 = performance.now()
   if (playback) stepPlayback(playback, dtMs, now)
+  const t1 = performance.now()
   const frame = frameFor(now, dtMs / 1000)
+  const t2 = performance.now()
   if (frame) renderer.draw(frame)
   else renderer.draw(idleFrame(now, dtMs / 1000))
   const p = me()
   feed = feed.filter((f) => now - f.at < 7000)
+  const t3 = performance.now()
   ui.update({
     screen: screen(),
     view: playback && view ? { ...view, units: playback.units, phase: "resolve" } : view,
@@ -611,8 +642,23 @@ function loop(now: number): void {
     serverNow: transport ? transport.serverNow() : Date.now(),
     lastPickup,
   })
+  if (profiling) profiling.push([t1 - t0, t2 - t1, t3 - t2, performance.now() - t3])
   requestAnimationFrame(loop)
 }
+
+// Dev aid: window.salvoProfile() starts collecting per-frame timings [playback, frame, draw, ui].
+let profiling: number[][] | null = null
+Object.assign(window, {
+  salvoProfile() {
+    profiling = []
+    return () => {
+      const p = profiling ?? []
+      profiling = null
+      const med = (i: number) => p.map((r) => r[i]!).sort((a, b) => a - b)[p.length >> 1] ?? 0
+      return { frames: p.length, playback: med(0), frame: med(1), draw: med(2), ui: med(3) }
+    }
+  },
+})
 
 // Title screen backdrop: a live procedural battlefield with no players.
 const idleSeed = (Date.now() / 86400000) | 0
