@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { BUST_SECONDS, DT, END_SECONDS, FLAT_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, ROUND_SECONDS, SPIKE_SPOT_RANGE } from "../shared/config"
 import { propBox, segmentHitsBox } from "../shared/sim/gadgets"
 import { NO_INPUT } from "../shared/sim/vehicle"
-import { World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
+import { MAX_STRIPS, World, type Phase, PVP, SURVIVAL } from "../shared/sim/world"
 import { ROAD_X, ROAD_Z, bot, drive, human, humanWorld, place, steps, toChase } from "./sim-helpers"
 
 const robberOf = (w: World, viewer: string) => w.view(viewer).cars.find((c) => c.ownerId === w.robberId)
@@ -571,5 +571,26 @@ describe("permanent spike strips", () => {
     }
     expect(flats).toBe(2)
     expect(w.props.some((p) => p.id === strip.id)).toBe(true)
+  })
+})
+
+describe("spike strip limit", () => {
+  test.skipIf(!SURVIVAL)("a cop keeps at most MAX_STRIPS down; placing another picks up their oldest", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    place(w, "r", ROAD_X + 300, ROAD_Z + 200)
+    place(w, "c2", ROAD_X - 300, ROAD_Z - 200)
+    const ids: number[] = []
+    for (let k = 0; k < MAX_STRIPS + 2; k++) {
+      place(w, "c1", ROAD_X, ROAD_Z - 60 + k * 20, 0)
+      w.setInput("c1", { ...NO_INPUT, gadget: 0 })
+      steps(w, 0.1)
+      w.setInput("c1", NO_INPUT)
+      ids.push(w.props[w.props.length - 1]!.id)
+      w.carOf("c1")!.gadgets[0]!.cooldown = 0
+    }
+    const mine = w.props.filter((p) => p.kind === "spike").map((p) => p.id)
+    expect(mine).toEqual(ids.slice(-MAX_STRIPS))
+    expect(w.carOf("c1")!.gadgets[0]!.charges).toBe(0)
   })
 })

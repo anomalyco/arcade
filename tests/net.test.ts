@@ -1,3 +1,4 @@
+import { MAX_STRIPS } from "../shared/sim/world"
 import { MAX_PLAYERS } from "../shared/config"
 import { describe, expect, test } from "bun:test"
 import { DT, FLAT_SECONDS } from "../shared/config"
@@ -307,9 +308,9 @@ describe("spike strip", () => {
     }
     expect(world.props.filter((p) => p.kind === "spike").length).toBe(1)
     expect(world.props[0]!.owner).toBe(cop.id)
-    expect(cop.gadgets[0]!.charges).toBe(2)
+    expect(cop.gadgets[0]!.charges).toBe(MAX_STRIPS - 1)
     const mine = b.client!.view()!.cars.find((c) => c.ownerId === b.client!.myId)!
-    expect(mine.gadgets![0]!.charges).toBe(2)
+    expect(mine.gadgets![0]!.charges).toBe(MAX_STRIPS - 1)
     expect(mine.gadgets![0]!.ready).toBe(false)
     expect(b.client!.view()!.props!.some((p) => p.kind === "spike")).toBe(true)
     expect(b.pipe.received.some((m) => m.type === "events" && m.events.some((e) => e.kind === "gadget"))).toBe(true)

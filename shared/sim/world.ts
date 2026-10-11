@@ -173,6 +173,8 @@ export const SURVIVAL = true
 /** A backup unit joins the hunt every this many seconds of survival. */
 export const BACKUP_EVERY = 25
 export const MAX_BACKUP = 6
+/** Spike strips a cop can have on the road at once; placing another removes their oldest. */
+export const MAX_STRIPS = 3
 /** PvP: no bot cars. Rounds need at least this many players. */
 export const PVP = true
 export const MIN_PLAYERS = 2
@@ -557,7 +559,8 @@ export class World {
     // Survival: cops have only the spike strip; the driver has nothing.
     if (SURVIVAL && (c.role !== "cop" || c.gadgets[slot]?.id !== "spike")) return false
     const g = c.gadgets[slot]
-    if (!g || g.charges <= 0 || g.cooldown > 0) return false
+    // Survival spike strips never run out (placing a fourth picks up your oldest), so only the cooldown gates them.
+    if (!g || g.cooldown > 0 || (g.charges <= 0 && !(SURVIVAL && g.id === "spike"))) return false
     if (c.role === "cop") return this.phase === "chase"
     return (this.phase === "headstart" || this.phase === "chase") && !this.busted
   }
@@ -571,6 +574,12 @@ export class World {
     g.cooldown = spec.cooldown
     const at = placeProp(g.id, c.body, c.vehicle.length)
     this.props.push({ id: this.nextPropId++, kind: g.id, x: at.x, z: at.z, h: at.h, r: spec.radius, life: spec.ttl, ttl: spec.ttl, owner: c.id, team: c.role, revealed: c.role === "cop" || this.seen, hits: [] })
+    if (SURVIVAL && g.id === "spike") {
+      // Each cop keeps at most MAX_STRIPS down; the oldest one disappears. `charges` shows how many are left before that.
+      const mine = this.props.filter((p) => p.kind === "spike" && p.owner === c.id)
+      if (mine.length > MAX_STRIPS) this.props.splice(this.props.indexOf(mine[0]!), 1)
+      g.charges = Math.max(0, MAX_STRIPS - Math.min(MAX_STRIPS, mine.length))
+    }
     if (g.id === "roadblock") this.propsChanged()
     if (c.role === "robber" && this.phase === "chase") this.heat += 2
     this.emit("gadget", `${c.name} deployed ${spec.name}`, c.id)
