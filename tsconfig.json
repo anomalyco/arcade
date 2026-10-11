@@ -1,10 +1,17 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
-    "types": ["@cloudflare/workers-types", "vite/client", "bun"],
+    "types": [
+      "vite/client",
+      "bun"
+    ],
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -15,5 +22,11 @@
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["src", "test"]
+  "include": [
+    "src/client",
+    "src/sim",
+    "test",
+    "scripts",
+    "vite.config.ts"
+  ]
 }

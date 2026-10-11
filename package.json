@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5191 --strictPort",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
     "test": "bun test",
     "check": "bun run typecheck && bun run test && bun run build",
     "deploy": "rm -rf dist && vite build && wrangler deploy"

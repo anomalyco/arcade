@@ -15,7 +15,7 @@
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none",
-    "run_worker_first": ["/labs/salvo/ws*", "/labs/salvo/api/*"]
+    "run_worker_first": ["/labs/salvo/ws*", "/labs/salvo/api/*", "/labs/salvo/r/*"]
   },
   "durable_objects": {
     "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
