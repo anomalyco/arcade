@@ -25,6 +25,8 @@ struct Light {
 @group(0) @binding(1) var<storage, read> lights: array<Light>;
 @group(0) @binding(2) var shadowMap: texture_depth_2d;
 @group(0) @binding(3) var shadowSampler: sampler_comparison;
+@group(0) @binding(4) var atlasTex: texture_2d<f32>;
+@group(0) @binding(5) var atlasSampler: sampler;
 
 fn hash2(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
@@ -78,6 +80,34 @@ fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
   return c;
 }
 
+/** Blinn highlights from the dynamic lights and the moon; strength scales the result. */
+fn specular(world: vec3f, n: vec3f, strength: f32) -> vec3f {
+  let v = normalize(F.cam.xyz - world);
+  var s = vec3f(0.0);
+  let count = u32(F.screen.z);
+  for (var i = 0u; i < count; i++) {
+    let li = lights[i];
+    let d = li.pos.xyz - world;
+    let dist = length(d);
+    if (dist > li.pos.w * 1.4) { continue; }
+    let l = d / max(dist, 0.001);
+    var att = 1.0 - dist / (li.pos.w * 1.4);
+    att = att * att;
+    if (li.dir.w > -1.5) { att *= smoothstep(li.dir.w - 0.1, li.dir.w + 0.12, dot(-l, li.dir.xyz)); }
+    let h = normalize(l + v);
+    s += li.color.rgb * li.color.w * att * pow(max(dot(n, h), 0.0), 24.0) * 0.35;
+  }
+  let hm = normalize(normalize(F.moonDir.xyz) + v);
+  s += vec3f(0.3, 0.38, 0.6) * pow(max(dot(n, hm), 0.0), 60.0) * 0.4;
+  return s * strength;
+}
+
+/** Cheap ambient occlusion for walls: darker toward the street, a touch darker in corners near the ground. */
+fn wallShade(world: vec3f, n: vec3f) -> f32 {
+  if (abs(n.y) > 0.5) { return 1.0; }
+  return mix(0.55, 1.0, smoothstep(0.0, 7.0, world.y));
+}
+
 fn applyFog(c: vec3f, world: vec3f) -> vec3f {
   let dist = length(world - F.cam.xyz);
   let f = 1.0 - exp(-max(dist - 120.0, 0.0) * F.fog.w);
@@ -116,6 +146,7 @@ struct VOut {
   @location(3) @interpolate(flat) mat: f32,
   @location(4) @interpolate(flat) extra: vec4f,
   @location(5) @interpolate(flat) cut: f32,
+  @location(6) uv: vec2f,
 }
 
 struct VIn {
@@ -123,6 +154,7 @@ struct VIn {
   @location(1) normal: vec3f,
   @location(2) color: vec3f,
   @location(3) mat: f32,
+  @location(7) uv: vec2f,
 }
 
 @vertex fn vsStatic(v: VIn) -> VOut {
@@ -131,9 +163,10 @@ struct VIn {
   o.pos = F.viewProj * vec4f(v.pos, 1.0);
   o.normal = v.normal;
   o.color = pow(v.color, vec3f(2.2));
-  o.mat = v.mat * 4.0;
+  o.mat = v.mat;
   o.extra = vec4f(0.0);
   o.cut = 1.0;
+  o.uv = v.uv;
   return o;
 }
 
@@ -167,9 +200,10 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal, inst);
   o.color = pow(v.color, vec3f(2.2));
-  o.mat = v.mat * 4.0;
+  o.mat = v.mat;
   o.extra = inst.params;
   o.cut = 0.0;
+  o.uv = v.uv;
   return o;
 }
 
@@ -190,12 +224,20 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
 }
 
 @fragment fn fs(o: VOut) -> @location(0) vec4f {
+  let tex = textureSample(atlasTex, atlasSampler, o.uv);
   let n = normalize(o.normal);
   let mat = i32(round(o.mat));
+  let cutHere = cutaway(o.world, o.pos, o.cut);
   var col: vec3f;
   if (mat == 2) {
     let tail = o.color.r > 0.9 && o.color.g < 0.2;
     col = o.color * select(2.2, select(2.5, 9.0, o.extra.w > 0.5), tail);
+  } else if (mat == 8) {
+    if (tex.a < 0.5) { discard; }
+    col = o.color * tex.rgb * 3.0;
+  } else if (mat == 7) {
+    if (tex.a < 0.5 || cutHere) { discard; }
+    col = lighting(o.color * tex.rgb, o.world, n) + specular(o.world, n, 0.25);
   } else if (mat == 5) {
     // Siren lamp: alternating red and blue strobes; dim when off.
     let phase = o.extra.z;
@@ -208,17 +250,22 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
       on = a * (0.5 + 0.5 * strobe);
     }
     col = o.color * (0.25 + on * 9.0);
+  } else if (mat == 6) {
+    // Glass: dark, with a moonlit sheen and light reflections.
+    col = lighting(o.color, o.world, n) * 0.6 + specular(o.world, n, 1.2) + vec3f(0.02, 0.03, 0.05) * (0.5 + 0.5 * n.y);
   } else if (mat == 3) {
     let lit = lighting(o.color, o.world, vec3f(0.0, 1.0, 0.0));
     let ripple = sin(o.world.x * 0.35 + F.cam.w * 1.3) * sin(o.world.z * 0.5 - F.cam.w * 0.9);
-    col = lit + vec3f(0.04, 0.07, 0.1) * (ripple * 0.5 + 0.5);
+    col = lit + vec3f(0.04, 0.07, 0.1) * (ripple * 0.5 + 0.5) + specular(o.world, vec3f(0.0, 1.0, 0.0), 1.5);
   } else if (mat == 1) {
-    if (cutaway(o.world, o.pos, o.cut)) { discard; }
+    if (cutHere) { discard; }
     let f = facade(o.color, o.world, n);
-    col = lighting(f.rgb * (1.0 - f.a), o.world, n) + f.rgb * f.a;
+    col = lighting(f.rgb * (1.0 - f.a), o.world, n) * wallShade(o.world, n) + f.rgb * f.a;
   } else {
-    if (mat == 0 && cutaway(o.world, o.pos, o.cut)) { discard; }
-    col = lighting(o.color, o.world, n);
+    if (mat == 0 && cutHere) { discard; }
+    col = lighting(o.color, o.world, n) * wallShade(o.world, n);
+    // Ground surfaces pick up a soft sheen from nearby lights (damp asphalt).
+    if (n.y > 0.9 && o.world.y < 0.3) { col += specular(o.world, n, 0.55); }
   }
   return vec4f(applyFog(col, o.world), 1.0);
 }
@@ -233,6 +280,7 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
   o.mat = 0.0;
   o.extra = inst.params;
   o.cut = 0.0;
+  o.uv = v.uv;
   return o;
 }
 
@@ -416,5 +464,48 @@ fn aces(x: vec3f) -> vec3f {
   // Damage / bust flash tint.
   c = mix(c, vec3f(0.9, 0.1, 0.12), P.w * smoothstep(0.3, 0.8, v));
   return vec4f(pow(c, vec3f(1.0 / 2.2)), 1.0);
+}
+`
+
+/** Volumetric light cones (helicopter spotlight, extraction column): additive, brightest along the core. */
+export const beamShader = /* wgsl */ `
+${common}
+
+struct BIn {
+  @location(0) pos: vec3f,
+  @location(1) normal: vec3f,
+  @location(2) color: vec3f,
+  @location(3) mat: f32,
+  @location(7) uv: vec2f,
+}
+
+struct BOut {
+  @builtin(position) pos: vec4f,
+  @location(0) world: vec3f,
+  @location(1) normal: vec3f,
+  @location(2) color: vec3f,
+  @location(3) uv: vec2f,
+}
+
+@vertex fn vs(v: BIn) -> BOut {
+  var o: BOut;
+  o.world = v.pos;
+  o.pos = F.viewProj * vec4f(v.pos, 1.0);
+  o.normal = v.normal;
+  o.color = v.color;
+  o.uv = v.uv;
+  return o;
+}
+
+@fragment fn fs(o: BOut) -> @location(0) vec4f {
+  let tex = textureSample(atlasTex, atlasSampler, vec2f(0.001, 0.001));
+  let v = normalize(F.cam.xyz - o.world);
+  let facing = abs(dot(normalize(o.normal), v));
+  // uv.x: 0 at the source, 1 at the far end. uv.y: overall strength.
+  let along = o.uv.x;
+  let core = pow(facing, 2.2);
+  let fade = mix(1.0, 0.35, along) * smoothstep(0.0, 2.5, o.world.y + 0.5 * (1.0 - along));
+  let i = core * fade * o.uv.y * tex.a;
+  return vec4f(o.color * i, i);
 }
 `

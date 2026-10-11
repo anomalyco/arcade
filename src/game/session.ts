@@ -4,6 +4,7 @@ import type { Input } from "../../shared/sim/vehicle"
 import { type Participant, type SimEvent, World, type WorldView } from "../../shared/sim/world"
 import { BOT_NAMES } from "../../shared/names"
 import { lerpView } from "./interp"
+import { applyStage } from "./stage"
 
 export interface Session {
   readonly myId: string
@@ -26,6 +27,7 @@ export class LocalSession implements Session {
   private participants: Participant[]
   private prev: WorldView
   private curr: WorldView
+  private frozen = false
 
   constructor(name: string, picks: Participant["picks"], seed = 7) {
     this.participants = [{ id: this.myId, name, human: true, picks }]
@@ -33,7 +35,16 @@ export class LocalSession implements Session {
     this.world = new World(seed, this.participants)
     this.curr = this.world.view(this.myId)
     this.prev = this.curr
-    if (import.meta.env.DEV) (globalThis as unknown as { __world: World }).__world = this.world
+    if (import.meta.env.DEV) {
+      ;(globalThis as unknown as { __world: World }).__world = this.world
+      const q = new URLSearchParams(location.search)
+      const stage = q.get("stage")
+      if (stage) {
+        applyStage(this.world, stage)
+        this.curr = this.prev = this.world.view(this.myId)
+      }
+      this.frozen = q.has("freeze")
+    }
   }
 
   get city() {
@@ -41,6 +52,7 @@ export class LocalSession implements Session {
   }
 
   update(dt: number, input: Input) {
+    if (this.frozen) return this.curr
     this.world.setInput(this.myId, input)
     this.acc = Math.min(this.acc + dt, 0.25)
     while (this.acc >= DT) {

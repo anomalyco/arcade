@@ -12,7 +12,7 @@ const BLACK: Rgb = [0.06, 0.06, 0.07]
 const SIREN_RED: Rgb = [1, 0.05, 0.05]
 const SIREN_BLUE: Rgb = [0.1, 0.25, 1]
 
-export const MAT_SIREN = 5
+export const MAT_SIREN = MAT.siren
 
 /** A tapered cabin with sloped windshield and rear glass. */
 function cabin(m: Mesh, hw: number, y0: number, y1: number, zr0: number, zr1: number, zf0: number, zf1: number, roof: Rgb, glass: Rgb) {
@@ -60,8 +60,8 @@ function lights(m: Mesh, hw: number, y: number, zf: number, zr: number, inset = 
 
 function lightbar(m: Mesh, y: number, z: number, w: number) {
   m.box(-w, w, y, y + 0.08, z - 0.25, z + 0.25, BLACK)
-  m.box(-w, -0.05, y + 0.08, y + 0.3, z - 0.22, z + 0.22, SIREN_RED, MAT_SIREN as 0)
-  m.box(0.05, w, y + 0.08, y + 0.3, z - 0.22, z + 0.22, SIREN_BLUE, MAT_SIREN as 0)
+  m.box(-w, -0.05, y + 0.08, y + 0.3, z - 0.22, z + 0.22, SIREN_RED, MAT.siren)
+  m.box(0.05, w, y + 0.08, y + 0.3, z - 0.22, z + 0.22, SIREN_BLUE, MAT.siren)
 }
 
 export function buildCar(v: Vehicle): Mesh {

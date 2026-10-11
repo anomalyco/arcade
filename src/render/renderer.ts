@@ -1,5 +1,6 @@
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
-import { MAX_LIGHTS, litShader, postShader, shadowShader, spriteShader } from "./shaders"
+import { ATLAS_SIZE } from "./atlas"
+import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
 
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
@@ -26,6 +27,8 @@ export class Renderer {
   private shadowGroup: GPUBindGroup
   private pipes: Record<string, GPURenderPipeline> = {}
   private city: Model | null = null
+  private beams: { buf: GPUBuffer; count: number; cap: number } | null = null
+  private atlas: GPUTexture
   private models: Model[] = []
   private msaa!: GPUTexture
   private depth!: GPUTexture
@@ -55,6 +58,13 @@ export class Renderer {
     this.shadowTex = d.createTexture({ size: [SHADOW_SIZE, SHADOW_SIZE], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
 
+    this.atlas = d.createTexture({
+      size: [ATLAS_SIZE, ATLAS_SIZE],
+      format: "rgba8unorm",
+      mipLevelCount: Math.log2(ATLAS_SIZE) + 1,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    })
+    d.queue.writeTexture({ texture: this.atlas }, new Uint8Array(16 * 16 * 4).fill(255), { bytesPerRow: 16 * 4 }, [16, 16])
     const vis = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT
     const mainLayout = d.createBindGroupLayout({
       entries: [
@@ -62,6 +72,8 @@ export class Renderer {
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" } },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     })
     this.mainGroup = d.createBindGroup({
@@ -71,6 +83,8 @@ export class Renderer {
         { binding: 1, resource: { buffer: this.lightBuf } },
         { binding: 2, resource: this.shadowTex.createView() },
         { binding: 3, resource: d.createSampler({ compare: "less", magFilter: "linear", minFilter: "linear" }) },
+        { binding: 4, resource: this.atlas.createView() },
+        { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 8 }) },
       ],
     })
     const shadowLayout = d.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }] })
@@ -91,6 +105,7 @@ export class Renderer {
         { shaderLocation: 1, offset: 12, format: "float32x3" },
         { shaderLocation: 2, offset: 24, format: "float32x3" },
         { shaderLocation: 3, offset: 36, format: "float32" },
+        { shaderLocation: 7, offset: 40, format: "float32x2" },
       ],
     }
     const meshPosOnly: GPUVertexBufferLayout = { arrayStride: FLOATS_PER_VERT * 4, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }] }
@@ -159,6 +174,7 @@ export class Renderer {
       city: scene("vsStatic", "fs", [meshLayout]),
       inst: scene("vsInst", "fs", [meshLayout, instLayout], { stencil: { compare: "always", passOp: "replace" } }),
       ghost: scene("vsGhost", "fsGhost", [meshLayout, instLayout], { blend: alpha, depthWrite: false, compare: "greater", cull: "back", stencil: { compare: "not-equal", passOp: "keep" } }),
+      beam: scene("vs", "fs", [meshLayout], { blend: additive, depthWrite: false, cull: "none" }, d.createShaderModule({ code: beamShader })),
       spriteAlpha: scene("vs", "fs", [spriteLayout], { blend: alpha, depthWrite: false, cull: "none" }, sprite),
       spriteAdd: scene("vs", "fs", [spriteLayout], { blend: additive, depthWrite: false, cull: "none" }, sprite),
       shadowCity: shadowPipe("vsStatic", [meshPosOnly]),
@@ -179,6 +195,48 @@ export class Renderer {
 
   setCity(mesh: Mesh) {
     this.city = { vbuf: this.upload(mesh.toArray()), count: mesh.count }
+  }
+
+  /** Uploads the decal atlas and builds its mip chain on the CPU (box filter, alpha-weighted). */
+  setAtlas(img: ImageData) {
+    let w = img.width
+    let level = new Uint8Array(img.data.buffer.slice(0))
+    for (let mip = 0; w >= 1; mip++) {
+      this.device.queue.writeTexture({ texture: this.atlas, mipLevel: mip }, level, { bytesPerRow: w * 4 }, [w, w])
+      if (w === 1) break
+      const n = w >> 1
+      const next = new Uint8Array(n * n * 4)
+      for (let y = 0; y < n; y++)
+        for (let x = 0; x < n; x++) {
+          let r = 0, g = 0, b = 0, a = 0
+          for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+            const i = ((y * 2 + dy!) * w + x * 2 + dx!) * 4
+            const al = level[i + 3]!
+            r += level[i]! * al
+            g += level[i + 1]! * al
+            b += level[i + 2]! * al
+            a += al
+          }
+          const o = (y * n + x) * 4
+          next[o] = a ? r / a : 0
+          next[o + 1] = a ? g / a : 0
+          next[o + 2] = a ? b / a : 0
+          next[o + 3] = Math.min(255, (a / 4) * 1.1)
+        }
+      level = next
+      w = n
+    }
+  }
+
+  /** World-space beam geometry (heli spotlight cone, extraction column), rewritten every frame. */
+  setBeams(data: Float32Array<ArrayBuffer>, count: number) {
+    if (!this.beams || this.beams.cap < data.byteLength) {
+      this.beams?.buf.destroy()
+      const cap = Math.max(4096, data.byteLength * 2)
+      this.beams = { buf: this.device.createBuffer({ size: cap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }), count: 0, cap }
+    }
+    if (count) this.device.queue.writeBuffer(this.beams.buf, 0, data.buffer, data.byteOffset, count * FLOATS_PER_VERT * 4)
+    this.beams.count = count
   }
 
   addModel(mesh: Mesh) {
@@ -329,6 +387,11 @@ export class Renderer {
       pass.setPipeline(this.pipes.spriteAdd!)
       pass.setVertexBuffer(0, this.spriteBuf, addOffset)
       pass.draw(6, addCount)
+    }
+    if (this.beams?.count) {
+      pass.setPipeline(this.pipes.beam!)
+      pass.setVertexBuffer(0, this.beams.buf)
+      pass.draw(this.beams.count)
     }
     if (ghostRanges.length) {
       pass.setPipeline(this.pipes.ghost!)

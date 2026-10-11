@@ -4,6 +4,7 @@ import type { City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCar, buildHeli, buildRotor } from "../render/car-mesh"
 import { buildCityMesh, type LampLight } from "../render/city-mesh"
+import { MAT, Mesh } from "../render/mesh"
 import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FLOATS } from "../render/renderer"
 import { MAX_LIGHTS } from "../render/shaders"
 import type { Camera } from "./camera"
@@ -12,6 +13,7 @@ import { Fx } from "./fx"
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
 const COP_TINT: [number, number, number] = [0.25, 0.5, 1.0]
+const SPOT_GROUND_RADIUS = 7.5
 const MOON = normalizeV([-0.55, 0.62, -0.55])
 
 function normalizeV(v: number[]): [number, number, number] {
@@ -136,7 +138,8 @@ export class Scene {
     if (heli.active) {
       const dir = normalizeV([heli.sx - heli.x, -heli.y + 0.5, heli.sz - heli.z])
       put(heli.x, heli.y - 1, heli.z, 1)
-      put(dir[0], dir[1], dir[2], 0.9725)
+      const reach = Math.hypot(heli.sx - heli.x, heli.y, heli.sz - heli.z)
+      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS / reach)) - 0.004)
     } else {
       put(0, 0, 0, 0)
       put(0, -1, 0, 1)
@@ -176,6 +179,7 @@ export class Scene {
       } else if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x, y, z, size, r, g, b, a, kind, rot, stretch, seed: extra })
     }
 
+    const beams = new Mesh()
     const batches = new Map<number, number[]>()
     const ghosts = new Map<number, number[]>()
     const inst = (model: number, map: Map<number, number[]>, vals: number[]) => {
@@ -238,9 +242,10 @@ export class Scene {
       inst(this.heliModel, batches, [heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, 1.2])
       inst(this.rotorModel, batches, [heli.x, heli.y + 3.1, heli.z, t * 25, 0, 0, -1, 0, 1, 1, 1, 1.2])
       inst(this.rotorModel, batches, [heli.x + Math.sin(heli.h) * -7.9 + Math.cos(heli.h) * 0.3, heli.y + 2.3, heli.z + Math.cos(heli.h) * -7.9, t * 40, 0, 0, -1, 0, 1, 1, 1, 0.12])
-      const beam = sprite
-      if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x: heli.x, y: heli.y - 1, z: heli.z, size: 10, r: 0.7, g: 0.78, b: 1, a: 0.07, kind: 5, rot: heli.sx, stretch: 0.2, seed: heli.sz })
-      beam("d", heli.sx, 0.1, heli.sz, 11, 0.9, 0.95, 1, 0.18, 3)
+      const sx = heli.x + Math.sin(heli.h) * 2.4
+      const sz = heli.z + Math.cos(heli.h) * 2.4
+      cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS, [0.75, 0.85, 1], 0.55)
+      sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * 1.25, 0.85, 0.92, 1, 0.22, 3)
       sprite("d", heli.x, heli.y - 0.5, heli.z, 1.6, 1, 1, 1, 2.5, 0)
       if (Math.floor(t * 1.5) % 2 === 0) sprite("d", heli.x, heli.y + 1.6, heli.z, 1.2, 1, 0.1, 0.1, 2, 0)
     }
@@ -249,7 +254,7 @@ export class Scene {
     const ex = view.exit
     sprite("d", ex.x, 0.12, ex.z, 14, 0.25, 1, 0.45, 1.4, 2, t * 0.5)
     sprite("d", ex.x, 0.1, ex.z, 13, 0.2, 1, 0.4, 0.25 + 0.6 * view.extract, 3)
-    if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x: ex.x, y: 70, z: ex.z, size: 6, r: 0.2, g: 1, b: 0.45, a: 0.1, kind: 5, rot: ex.x, stretch: 0, seed: ex.z })
+    cone(beams, [ex.x, 60, ex.z], [ex.x, 0, ex.z], 7, [0.25, 1, 0.5], 0.35, 16)
     light(ex.x, 4, ex.z, 26, 0.2, 1, 0.4, 2.5)
 
     // Bust ring around a boxed-in robber.
@@ -273,6 +278,8 @@ export class Scene {
 
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST)
     const pack = (map: Map<number, number[]>): InstanceBatch[] => [...map].map(([model, arr]) => ({ model, data: new Float32Array(arr), count: arr.length / INST_FLOATS }))
+    const beamData = beams.toArray()
+    this.renderer.setBeams(beamData, beams.count)
     this.renderer.render({
       frame: f,
       lights: L,
@@ -282,6 +289,29 @@ export class Scene {
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,
     })
+  }
+}
+
+/** Open cone from apex to a ground ellipse; uv.x runs 0 at the apex to 1 at the base, uv.y is strength. */
+function cone(m: Mesh, apex: number[], base: number[], radius: number, color: [number, number, number], strength: number, sides = 20) {
+  const ax = base[0]! - apex[0]!, ay = base[1]! - apex[1]!, az = base[2]! - apex[2]!
+  const len = Math.hypot(ax, ay, az)
+  const d = [ax / len, ay / len, az / len]
+  const up = Math.abs(d[1]!) > 0.9 ? [1, 0, 0] : [0, 1, 0]
+  const u = normalizeV([d[1]! * up[2]! - d[2]! * up[1]!, d[2]! * up[0]! - d[0]! * up[2]!, d[0]! * up[1]! - d[1]! * up[0]!])
+  const w = [d[1]! * u[2] - d[2]! * u[1], d[2]! * u[0] - d[0]! * u[2], d[0]! * u[1] - d[1]! * u[0]]
+  const ring = (a: number) => {
+    const c = Math.cos(a), s = Math.sin(a)
+    const off = [u[0] * c + w[0]! * s, u[1] * c + w[1]! * s, u[2] * c + w[2]! * s]
+    return { p: [base[0]! + off[0]! * radius, base[1]! + off[1]! * radius, base[2]! + off[2]! * radius], n: off }
+  }
+  for (let i = 0; i < sides; i++) {
+    const a = ring((i / sides) * Math.PI * 2)
+    const b = ring(((i + 1) / sides) * Math.PI * 2)
+    const nm = normalizeV([a.n[0]! + b.n[0]!, a.n[1]! + b.n[1]!, a.n[2]! + b.n[2]!])
+    m.vert(apex[0]!, apex[1]!, apex[2]!, nm[0], nm[1], nm[2], color, MAT.lit, 0, strength)
+    m.vert(a.p[0]!, a.p[1]!, a.p[2]!, a.n[0]!, a.n[1]!, a.n[2]!, color, MAT.lit, 1, strength)
+    m.vert(b.p[0]!, b.p[1]!, b.p[2]!, b.n[0]!, b.n[1]!, b.n[2]!, color, MAT.lit, 1, strength)
   }
 }
 

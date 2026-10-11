@@ -1,4 +1,7 @@
 import "./style.css"
+import "@fontsource/barlow-condensed/800.css"
+import "@fontsource/barlow-condensed/800-italic.css"
+import { paintAtlas } from "./render/atlas"
 import { Camera } from "./game/camera"
 import { Controls } from "./game/input"
 import { Scene } from "./game/scene"
@@ -30,8 +33,12 @@ async function main() {
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format)
+  void paintAtlas().then((img) => renderer.setAtlas(img))
 
-  const choice = await lobby(document.getElementById("overlay")!)
+  const q = new URLSearchParams(location.search)
+  const staged = import.meta.env.DEV && q.has("stage")
+  const choice = staged ? { mode: "solo" as const, room: null, name: "Dax", picks: { robber: "muscle", cop: "cruiser" } } : await lobby(document.getElementById("overlay")!)
+  if (q.has("nohud")) document.getElementById("hud")!.style.display = "none"
   const session = await connect(choice)
   const scene = new Scene(renderer, session.city)
   const hud = new Hud(document.getElementById("hud")!, session.city)
