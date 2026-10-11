@@ -6,6 +6,7 @@ import { Camera } from "./game/camera"
 import { Controls } from "./game/input"
 import { Scene } from "./game/scene"
 import { LocalSession, type Session } from "./game/session"
+import { GameAudio } from "./audio/game-audio"
 import { Renderer } from "./render/renderer"
 import { Hud } from "./ui/hud"
 import { lobby } from "./ui/lobby"
@@ -51,6 +52,7 @@ async function main() {
   if (q.has("nohud")) document.getElementById("hud")!.style.display = "none"
   const scene = new Scene(renderer, session.city)
   const hud = new Hud(document.getElementById("hud")!, session.city)
+  const sound = new GameAudio(document.getElementById("hud")!)
   const cam = new Camera()
   const controls = new Controls()
   let snapped = false
@@ -85,7 +87,9 @@ async function main() {
       scene.shake = 0
     }
     scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
-    hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events: session.drainEvents(), players: session.players(), room: session.room, status: session.status() })
+    const events = session.drainEvents()
+    hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status: session.status() })
+    sound.update(view, { myId: session.myId, cam, dt, events, input })
     ;(window as unknown as { __view: unknown }).__view = view
     requestAnimationFrame(frame)
   }
