@@ -12,14 +12,14 @@
 .hud:not(.flying) .hud-lead, .hud:not(.flying) .hud-lock, .hud:not(.flying) .hud-markers, .hud:not(.flying) .hud-center-msg { display: none; }
 .hud-aim, .hud-bore, .hud-lead, .hud-lock, .mk { left: 0; top: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); }
 .hud-aim { width: 0; height: 0; }
-.hud-aim::before { content: ""; position: absolute; left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--hud); box-shadow: 0 0 6px rgba(0, 0, 0, .5), inset 0 0 4px rgba(0, 0, 0, .4); }
+.hud-aim::before { content: ""; position: absolute; left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid rgba(240, 248, 255, .55); box-shadow: 0 0 6px rgba(0, 0, 0, .5), inset 0 0 4px rgba(0, 0, 0, .4); }
 .hud-aim::after { content: ""; position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: var(--hud); }
 .hud-bore { width: 0; height: 0; }
 .hud-bore::before, .hud-bore::after { content: ""; position: absolute; background: #fff; box-shadow: 0 0 3px rgba(0, 0, 0, .8); }
 .hud-bore::before { left: -12px; top: -1px; width: 24px; height: 2px; }
 .hud-bore::after { left: -1px; top: -12px; width: 2px; height: 24px; clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%, 0 65%, 100% 65%, 100% 100%, 0 100%); }
 /* Direct steering: the boresight is the gun pipper (where the nose / guns point). */
-.hud.direct .hud-bore::before { left: -16px; top: -16px; width: 32px; height: 32px; border-radius: 50%; background: none; border: 2px solid var(--hud); box-shadow: 0 0 6px rgba(0, 0, 0, .5); }
+.hud.direct .hud-bore::before { left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; background: none; border: 1.5px solid rgba(240, 248, 255, .6); box-shadow: none; }
 .hud.direct .hud-bore::after { left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; clip-path: none; background: var(--hud); }
 .hud-hit { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; opacity: 0; }
 .hud-hit::before, .hud-hit::after { content: ""; position: absolute; left: 13px; top: -4px; width: 2px; height: 36px; background: #fff; transform: rotate(45deg); clip-path: polygon(0 0, 100% 0, 100% 30%, 0 30%, 0 70%, 100% 70%, 100% 100%, 0 100%); }
@@ -29,23 +29,23 @@
 .hud-hit.kill.on { animation: hit .6s ease-out; }
 @keyframes hit { 0% { opacity: 1; transform: scale(.7); } 100% { opacity: 0; transform: scale(1.3); } }
 .hud-lead { width: 0; height: 0; }
-.hud-lead::before { content: ""; position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border: 2px solid #ffd34d; transform: rotate(45deg); box-shadow: 0 0 6px rgba(255, 200, 60, .6); }
+.hud-lead::before { content: ""; position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border: 1.5px solid rgba(255, 244, 214, .75); transform: rotate(45deg); }
 .hud-lock { width: 0; height: 0; transition: none; }
-.hud-lock i { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border: 2px dashed #ffb03a; }
-.hud-lock b { position: absolute; left: -30px; top: 30px; width: 60px; text-align: center; font-weight: 600; color: #ffb03a; font-size: 10px; }
-.hud-lock i::after { content: ""; position: absolute; inset: 3px; background: rgba(255, 176, 58, .28); transform-origin: bottom; transform: scaleY(var(--p, 0)); transition: transform .08s linear; }
+.hud-lock i { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border: 1.5px dashed rgba(255, 236, 210, .7); }
+.hud-lock b { position: absolute; left: -40px; top: 30px; width: 80px; text-align: center; font-weight: 600; color: rgba(255, 236, 210, .85); font-size: 10px; }
+.hud-lock i::after { content: ""; position: absolute; inset: 3px; background: rgba(255, 236, 210, .18); transform-origin: bottom; transform: scaleY(var(--p, 0)); transition: transform .08s linear; }
 .hud-lock.locked i::after { background: rgba(255, 74, 58, .35); transform: none; }
 .hud-seeker, .hud-scan, .hud-msl { left: 0; top: 0; width: 0; height: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); }
-.hud-seeker::before { content: ""; position: absolute; left: -50px; top: -50px; width: 100px; height: 100px; border-radius: 50%; border: 1px dashed rgba(255, 196, 90, .4); box-sizing: border-box; }
+.hud-seeker::before { content: ""; position: absolute; left: -50px; top: -50px; width: 100px; height: 100px; border-radius: 50%; border: 1px solid rgba(240, 248, 255, .16); box-sizing: border-box; }
 .hud-scan { --r: 30px; }
-.hud-scan .c { position: absolute; left: calc(-1 * var(--r)); top: calc(-1 * var(--r)); width: calc(2 * var(--r)); height: calc(2 * var(--r)); border: 2px solid #9dffcf; border-radius: 4px;
-  clip-path: polygon(0 0, 25% 0, 25% 3px, 3px 3px, 3px 25%, 0 25%, 0 75%, 3px 75%, 3px calc(100% - 3px), 25% calc(100% - 3px), 25% 100%, 0 100%, 0 0, 100% 0, 100% 25%, calc(100% - 3px) 25%, calc(100% - 3px) 3px, 75% 3px, 75% 0, 100% 0, 100% 100%, 75% 100%, 75% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 75%, 100% 75%, 100% 100%, 0 100%); filter: drop-shadow(0 0 4px rgba(157, 255, 207, .6)); }
+.hud-scan .c { position: absolute; left: calc(-1 * var(--r)); top: calc(-1 * var(--r)); width: calc(2 * var(--r)); height: calc(2 * var(--r)); border: 1.5px solid rgba(190, 255, 225, .6); border-radius: 4px;
+  clip-path: polygon(0 0, 25% 0, 25% 3px, 3px 3px, 3px 25%, 0 25%, 0 75%, 3px 75%, 3px calc(100% - 3px), 25% calc(100% - 3px), 25% 100%, 0 100%, 0 0, 100% 0, 100% 25%, calc(100% - 3px) 25%, calc(100% - 3px) 3px, 75% 3px, 75% 0, 100% 0, 100% 100%, 75% 100%, 75% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 75%, 100% 75%, 100% 100%, 0 100%); }
 .hud-scan::before, .hud-scan::after { content: ""; position: absolute; background: #9dffcf; }
 .hud-scan::before { left: -10px; top: -1px; width: 20px; height: 2px; }
 .hud-scan::after { left: -1px; top: -10px; width: 2px; height: 20px; }
 .hud-scan .r { position: absolute; left: -60px; top: calc(var(--r) + 8px); width: 120px; text-align: center; color: #9dffcf; font-size: 11px; }
 .hud.scanning .hud-aim { display: none; }
-.hud-msl i { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border: 2px solid #ffd34d; transform: rotate(45deg); }
+.hud-msl i { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border: 1.5px solid rgba(255, 244, 214, .8); transform: rotate(45deg); }
 .hud-msl span { position: absolute; left: 10px; top: -6px; font-size: 9px; color: #ffd34d; }
 .hud-guide { top: 64%; left: 50%; transform: translateX(-50%); text-align: center; display: none; padding: 6px 14px; background: rgba(4, 20, 14, .6); border: 1px solid rgba(157, 255, 207, .5); }
 .hud-guide.on { display: block; }

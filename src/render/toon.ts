@@ -1,4 +1,6 @@
-// Stylized "cartoon" shading for aircraft: banded diffuse, crisp specular blob, soft rim, inverted-hull outlines.
+// Soft "toy diorama" shading for aircraft, matched to the ISLANDERS-style world (flat-shaded Lambert,
+// no tone mapping): flat facets, a gentle 2-band diffuse with a lifted shadow, no specular, faint cool rim.
+// Also holds the pastel palette remap applied to GLB material colors.
 import {
   BackSide,
   Color,
@@ -7,6 +9,7 @@ import {
   MeshToonMaterial,
   NearestFilter,
   RedFormat,
+  SRGBColorSpace,
   UnsignedByteType,
   type ColorRepresentation,
   type WebGLProgramParametersWithUniforms,
@@ -15,8 +18,8 @@ import {
 let gradientMap: DataTexture | null = null
 
 /**
- * Shared gradient ramp for MeshToonMaterial. The toon shader samples it at dot(N, L) * 0.5 + 0.5,
- * so the first half of the ramp is the shadow side and the bands sit on the lit half.
+ * Shared gradient ramp for MeshToonMaterial (sampled at dot(N, L) * 0.5 + 0.5). Two soft bands plus a
+ * narrow mid step; combined with the hemisphere fill the shadow side lands at ~0.55 of the lit side.
  */
 export function toonGradientMap(): DataTexture {
   if (gradientMap) return gradientMap
@@ -24,11 +27,7 @@ export function toonGradientMap(): DataTexture {
   const data = new Uint8Array(n)
   for (let i = 0; i < n; i++) {
     const x = (i + 0.5) / n
-    let v: number
-    if (x < 0.47) v = 0.2
-    else if (x < 0.6) v = 0.5
-    else if (x < 0.8) v = 0.82
-    else v = 1
+    const v = x < 0.5 ? 0.12 : x < 0.56 ? 0.6 : 1
     data[i] = Math.round(v * 255)
   }
   const tex = new DataTexture(data, n, 1, RedFormat, UnsignedByteType)
@@ -40,86 +39,87 @@ export function toonGradientMap(): DataTexture {
   return tex
 }
 
-export interface ToonOptions {
-  color: ColorRepresentation
-  /** 0..1, glTF roughness. Drives highlight size/strength. */
-  roughness?: number
-  metalness?: number
-  opacity?: number
-  transparent?: boolean
-  /** Glass: strong highlight, bright fresnel edge, no depth write. */
-  glass?: boolean
+// ---------------------------------------------------------------------------------------------------------
+// Pastel palette remap (display/sRGB HSL space)
+
+export type PastelKind = "hull" | "glass" | "livery"
+
+const WARM = new Color("#f1ebdf") // world offWhite
+const CHARCOAL_HUE = 0.6
+const _hsl = { h: 0, s: 0, l: 0 }
+
+/**
+ * Deterministic remap of an authored GLB color into the soft world palette: hulls get lighter and less
+ * saturated with a slight warm cast, near-blacks become soft blue-charcoal, glass becomes soft blue-gray.
+ */
+export function pastelize(src: Color, kind: PastelKind = "hull"): Color {
+  const out = new Color()
+  if (kind === "glass") return out.set("#9db4c6")
+  src.getHSL(_hsl, SRGBColorSpace)
+  let { h, s, l } = _hsl
+  if (kind === "livery") {
+    s = Math.min(s, 0.62) * 0.85
+    l = Math.min(0.72, l + (1 - l) * 0.22)
+  } else if (l < 0.2) {
+    // Black / dark metal -> soft charcoal (keeps a hint of the original hue).
+    h = CHARCOAL_HUE
+    s = 0.1
+    l = 0.3 + l * 0.45
+  } else {
+    s *= 0.72
+    l = Math.min(0.9, l + (1 - l) * 0.15)
+  }
+  out.setHSL(h, s, l, SRGBColorSpace)
+  return out.lerp(WARM, kind === "livery" ? 0.04 : 0.08)
 }
 
-const TOON_LIGHTS = /* glsl */ `
-varying vec3 vViewPosition;
-uniform float toonSpecular;
-uniform float toonShininess;
-struct ToonMaterial { vec3 diffuseColor; };
-void RE_Direct_Toon( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in ToonMaterial material, inout ReflectedLight reflectedLight ) {
-  vec3 irradiance = getGradientIrradiance( geometryNormal, directLight.direction ) * directLight.color;
-  reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );
-  vec3 h = normalize( directLight.direction + geometryViewDir );
-  float nh = max( dot( geometryNormal, h ), 0.0 );
-  float s = pow( nh, toonShininess );
-  float fw = fwidth( s ) + 1e-4;
-  s = smoothstep( 0.5 - fw, 0.5 + fw, s );
-  reflectedLight.directSpecular += directLight.color * ( s * toonSpecular );
+export interface ToonOptions {
+  color: ColorRepresentation
+  opacity?: number
+  transparent?: boolean
+  /** Glass: translucent with a soft fresnel edge, no depth write, smooth normals. */
+  glass?: boolean
+  /** Faceted normals like the world terrain/props (default true for opaque). */
+  flat?: boolean
 }
-void RE_IndirectDiffuse_Toon( const in vec3 irradiance, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in ToonMaterial material, inout ReflectedLight reflectedLight ) {
-  reflectedLight.indirectDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );
-}
-#define RE_Direct RE_Direct_Toon
-#define RE_IndirectDiffuse RE_IndirectDiffuse_Toon
-`
 
 const TOON_OUTPUT = /* glsl */ `
   vec3 toonView = normalize( vViewPosition );
   float toonFres = 1.0 - clamp( dot( normal, toonView ), 0.0, 1.0 );
-  float toonRimMask = smoothstep( 0.62, 0.7, toonFres );
-  vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + totalEmissiveRadiance;
-  outgoingLight += toonRim * toonRimMask * ( diffuseColor.rgb * 0.5 + 0.1 );
+  float toonRimMask = smoothstep( 0.6, 0.85, toonFres );
+  vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
+  outgoingLight += toonRimColor * ( toonRimMask * toonRim );
   #ifdef TOON_GLASS
-    diffuseColor.a = mix( diffuseColor.a, 1.0, toonFres * toonFres * 0.6 );
-    diffuseColor.a = max( diffuseColor.a, clamp( length( reflectedLight.directSpecular ) * 0.6, 0.0, 0.8 ) );
+    diffuseColor.a = mix( diffuseColor.a, 0.9, toonFres * toonFres * 0.5 );
   #endif
 `
 
-/** Banded toon material with a crisp highlight and a soft rim. Works with skinning, hemisphere + directional lights. */
+/** Soft 2-band toon material, no specular, faint cool rim. Works with skinning, hemisphere + directional lights. */
 export function createToonMaterial(opts: ToonOptions): MeshToonMaterial {
-  const roughness = opts.roughness ?? 0.55
-  const metal = opts.metalness ?? 0
   const glass = opts.glass === true
-  // Lift near-black albedos slightly so banding and highlights still read on dark paint.
-  const color = new Color(opts.color)
-  const floor = glass ? 0 : 0.03
-  color.r = Math.max(color.r, floor * 0.9)
-  color.g = Math.max(color.g, floor)
-  color.b = Math.max(color.b, floor * 1.25)
   const mat = new MeshToonMaterial({
-    color,
+    color: new Color(opts.color),
     gradientMap: toonGradientMap(),
     transparent: opts.transparent ?? glass,
     opacity: opts.opacity ?? 1,
     depthWrite: !glass,
+    toneMapped: false,
   })
-  const spec = glass ? 0.5 : Math.max(0, (1 - roughness) * 0.22 + metal * 0.12)
-  const shininess = glass ? 160 : 8 + (1 - roughness) * 50
-  const rim = glass ? 0.35 : 0.22
-  mat.userData.toon = { spec, shininess, rim }
+  // MeshToonMaterial has no typed flatShading, but the renderer honors the flag on any material.
+  ;(mat as unknown as { flatShading: boolean }).flatShading = opts.flat ?? !glass
+  const rim = glass ? 0.12 : 0.06
   mat.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
-    shader.uniforms.toonSpecular = { value: spec }
-    shader.uniforms.toonShininess = { value: shininess }
     shader.uniforms.toonRim = { value: rim }
+    shader.uniforms.toonRimColor = { value: new Color("#c9dcf2") }
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <lights_toon_pars_fragment>", TOON_LIGHTS + "\nuniform float toonRim;\n")
+      .replace("#include <lights_toon_pars_fragment>", "#include <lights_toon_pars_fragment>\nuniform float toonRim;\nuniform vec3 toonRimColor;\n")
       .replace(
         "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;",
         TOON_OUTPUT,
       )
     if (glass) shader.fragmentShader = "#define TOON_GLASS\n" + shader.fragmentShader
   }
-  mat.customProgramCacheKey = () => (glass ? "wings-toon-glass" : "wings-toon")
+  mat.customProgramCacheKey = () => (glass ? "wings-toon2-glass" : "wings-toon2")
   return mat
 }
 

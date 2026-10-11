@@ -837,25 +837,12 @@ class GameSession implements GameHandle {
       mp[2] = f.position[2] + f.velocity[2] * t
       fx.flare(mp, dt)
     }
-    // Damage smoke + high-G vapour from airframes
+    // Damage smoke from burning airframes
     for (const v of this.renderList) {
       if (!v.alive) continue
       const vis = this.visuals.get(v.id)!
       const hp = v.hp / v.maxHp
       if (hp < 0.45) fx.damageSmoke(vis.pos, v.flight.velocity, 1 - hp / 0.45, dt)
-      const av = v.flight.angularVelocity
-      const g = Math.abs(av[0]) + Math.abs(av[2]) * 0.3
-      const vel = v.flight.velocity
-      const speed = Math.hypot(vel[0], vel[1], vel[2])
-      if (VEHICLES[v.kind].flight === "jet" && g > 0.5 && speed > 90) {
-        const span = VEHICLES[v.kind].radius * 0.75
-        _q1.set(vis.quat[0], vis.quat[1], vis.quat[2], vis.quat[3])
-        for (const side of [-1, 1]) {
-          _v1.set(side * span, 0, 1).applyQuaternion(_q1)
-          mp[0] = vis.pos[0] + _v1.x; mp[1] = vis.pos[1] + _v1.y; mp[2] = vis.pos[2] + _v1.z
-          fx.vapour(mp, Math.min(1, (g - 0.5) * 1.5))
-        }
-      }
     }
   }
 

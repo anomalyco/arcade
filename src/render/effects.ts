@@ -231,6 +231,7 @@ const SMOKE_A = c("#7a7682"), SMOKE_B = c("#55525e"), SMOKE_LIGHT = c("#d8d6dc")
 const SPARK = c("#ffd27a"), SPARK_B = c("#ff6a00")
 const FLARE_A = c("#fffbe8"), FLARE_B = c("#ffb347")
 const WHITE = c("#ffffff")
+const TRAIL = c("#f3f1f8"), TRAIL_END = c("#e4e8f4")
 const _tmp = new Color()
 
 export interface TracerSource { position: Vec3; velocity: Vec3; color: Color }
@@ -246,8 +247,6 @@ export interface Effects {
   /** Persistent smoke trail emitter (missiles). Call each frame with the current position. */
   trail(id: number, p: Vec3, heavy: boolean): void
   flare(p: Vec3, dt: number): void
-  /** White wingtip vapour (high-G). */
-  vapour(p: Vec3, intensity: number): void
   /** Damage smoke from a burning airframe. */
   damageSmoke(p: Vec3, vel: Vec3, severity: number, dt: number): void
   /** Set this frame's tracers (bullets). Up to the tracer capacity; extra are dropped. */
@@ -367,7 +366,7 @@ export function createEffects(quality: Quality): Effects {
         const v = 40 + s * 6
         glow.emit(now, p[0], p[1], p[2], rnd(v), rnd(v) + 10, rnd(v), 0.6 + Math.random() * 0.8, 0.9, 0.3, SPARK, 1, SPARK_B, 0, 0.8, -25)
       }
-      shell(p, s * 9, 0.7, "#ffb070", 0, 0.9)
+      shell(p, s * 9, 0.6, "#ffe2c4", 0, 0.45)
     },
 
     hit(p) {
@@ -393,14 +392,15 @@ export function createEffects(quality: Quality): Effects {
       t.seen = now
       const dx = p[0] - t.x, dy = p[1] - t.y, dz = p[2] - t.z
       const d = Math.hypot(dx, dy, dz)
-      const spacing = heavy ? 3 / density : 5 / density
-      glow.emit(now, p[0], p[1], p[2], 0, 0, 0, 0.08, 2.4, 1.2, FIRE_A, 1, FIRE_B, 0, 0, 0)
+      const spacing = heavy ? 4 / density : 6 / density
+      glow.emit(now, p[0], p[1], p[2], 0, 0, 0, 0.07, 2, 1, FIRE_A, 0.9, FIRE_B, 0, 0, 0)
       if (d < spacing) return
       const steps = Math.min(16, Math.floor(d / spacing))
       for (let i = 1; i <= steps; i++) {
         const f = i / steps
-        smoke.emit(now, t.x + dx * f, t.y + dy * f, t.z + dz * f, rnd(0.8), rnd(0.8) + 0.4, rnd(0.8),
-          heavy ? 3.2 : 2.2, 1.2, heavy ? 6 : 4.5, SMOKE_WHITE, 0.85, SMOKE_LIGHT, 0, 0.5, 0.4)
+        // Short, soft pastel puffs that fade out quickly.
+        smoke.emit(now, t.x + dx * f, t.y + dy * f, t.z + dz * f, rnd(0.6), rnd(0.6) + 0.3, rnd(0.6),
+          heavy ? 1.3 : 0.9, 0.9, heavy ? 3.2 : 2.4, TRAIL, 0.42, TRAIL_END, 0, 0.6, 0.3)
       }
       t.x = p[0]; t.y = p[1]; t.z = p[2]
     },
@@ -408,11 +408,6 @@ export function createEffects(quality: Quality): Effects {
     flare(p, dt) {
       glow.emit(now, p[0], p[1], p[2], 0, 0, 0, 0.09, 6, 3, FLARE_A, 1, FLARE_B, 0.4, 0, 0)
       if (Math.random() < 0.5 * density) smoke.emit(now, p[0], p[1], p[2], rnd(0.5), 0.5, rnd(0.5), 1.4, 1, 3.5, SMOKE_LIGHT, 0.6, SMOKE_LIGHT, 0, 0.5, 0.5)
-    },
-
-    vapour(p, intensity) {
-      if (Math.random() > density) return
-      glow.emit(now, p[0], p[1], p[2], 0, 0, 0, 0.5, 0.5, 1.4, SMOKE_WHITE, 0.25 * intensity, SMOKE_WHITE, 0, 0, 0)
     },
 
     damageSmoke(p, vel, severity, dt) {

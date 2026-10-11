@@ -192,7 +192,7 @@ const HELI_DIRECT: Record<"apache", HeliDirectHandling> = {
   apache: {
     collectiveRate: 1.2, detentWidth: 0.04, detentRate: 0.25,
     pitchRate: 1.5, rollRate: 2.4, yawRate: 1.6, cyclicResponse: 8, yawResponse: 7,
-    selfLevel: 0.8, levelZone: 15 * DEG,
+    selfLevel: 0.35, levelZone: 5 * DEG,
     cyclicGain: 1.3, dragQuad: 8.7e-4, dragLin: 0.15, dragVert: 0.55,
     brakeGain: 0.6, brakeTilt: 30 * DEG, brakeAttitudeGain: 3, brakeVertical: 1.5, brakeCollectiveRate: 0.8,
     cushion: 2, cushionHeight: 8, gearHeight: 2,

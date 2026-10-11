@@ -1,6 +1,5 @@
 // Dev preview for aircraft rendering: all four aircraft in team colors with animation and draw-call readout.
 import {
-  ACESFilmicToneMapping,
   CircleGeometry,
   Color,
   DirectionalLight,
@@ -18,6 +17,8 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import type { Quality, TeamId, Vec3, VehicleEntity, VehicleKind } from "../../sim/types"
 import { VEHICLES, WEAPONS } from "../../sim/vehicles"
+import { PALETTE } from "../world/palette"
+import { SUN_DIRECTION } from "../world/settings"
 import { aircraftStats, createAircraftView, preloadAircraft, type AircraftView } from "../aircraft"
 
 const params = new URLSearchParams(location.search)
@@ -37,22 +38,26 @@ const renderer = new WebGLRenderer({ antialias: true, logarithmicDepthBuffer: tr
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.setSize(innerWidth, innerHeight)
 renderer.outputColorSpace = SRGBColorSpace
-renderer.toneMapping = ACESFilmicToneMapping
-renderer.toneMappingExposure = 1.0
+// Match the world renderer: no tone mapping.
 document.body.appendChild(renderer.domElement)
 
 const scene = new Scene()
-scene.background = new Color("#9cc4ea")
-scene.fog = new Fog("#9cc4ea", 400, 4000)
-const hemi = new HemisphereLight("#cfe6ff", "#5d6b4a", 1.3)
+scene.background = new Color(PALETTE.horizon)
+scene.fog = new Fog(PALETTE.horizon, 600, 5000)
+const hemi = new HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 2.2)
 scene.add(hemi)
-const sun = new DirectionalLight("#fff3dd", 2.6)
-sun.position.set(-40, 80, -30)
+const sun = new DirectionalLight(PALETTE.sunLight, 2.2)
+sun.position.copy(SUN_DIRECTION).multiplyScalar(100)
 scene.add(sun)
-const ground = new Mesh(new CircleGeometry(3000, 48), new MeshLambertMaterial({ color: "#7d9a5e" }))
+const ground = new Mesh(new CircleGeometry(3000, 48), new MeshLambertMaterial({ color: PALETTE.grass, flatShading: true, toneMapped: false }))
 ground.rotation.x = -Math.PI / 2
 ground.position.y = -4
 scene.add(ground)
+const runway = new Mesh(new CircleGeometry(1, 4), new MeshLambertMaterial({ color: PALETTE.paving, flatShading: true, toneMapped: false }))
+runway.scale.set(90, 30, 1)
+runway.rotation.x = -Math.PI / 2
+runway.position.y = -3.95
+scene.add(runway)
 
 const camera = new PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20000)
 camera.position.set(-38, 22, -48)

@@ -239,7 +239,7 @@ describe("helicopter: direct (Battlefield) steering", () => {
   test("small tilts self-level weakly back to a hover attitude", () => {
     const s = heliAir()
     run(s, input({ pitch: 0.5 }), 0.1)
-    run(s, input(), 6)
+    run(s, input(), 10)
     expect(Math.abs(flightReadout(s).pitch)).toBeLessThan(0.5)
   })
 

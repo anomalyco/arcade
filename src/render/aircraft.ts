@@ -34,7 +34,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import type { PlayerInfo, Quality, SeatIndex, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
-import { createGlowMaterial, createOutlineMaterial, createToonMaterial } from "./toon"
+import { createGlowMaterial, createOutlineMaterial, createToonMaterial, pastelize } from "./toon"
 
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"] as const
 
@@ -133,8 +133,8 @@ const CONFIG: Record<VehicleKind, KindConfig> = {
     ],
     spinners: [],
     afterburners: [
-      { name: "afterburner_L", axis: "y", cone: { dir: "y", sign: -1, length: 2.6 } },
-      { name: "afterburner_R", axis: "y", cone: { dir: "y", sign: -1, length: 2.6 } },
+      { name: "afterburner_L", axis: "y", cone: { dir: "y", sign: -1, length: 1.5 } },
+      { name: "afterburner_R", axis: "y", cone: { dir: "y", sign: -1, length: 1.5 } },
     ],
     ballPod: { name: "targeting_pod_head", seat: 1, maxUp: 0.15 },
     anchors: [
@@ -204,8 +204,8 @@ const CONFIG: Record<VehicleKind, KindConfig> = {
     stores: [{ weapons: [[0, 0], [0, 1]], order: ["missile_3", "missile_2", "missile_1"] }],
     spinners: [],
     afterburners: [
-      { name: "afterburner_L", axis: "z", cone: { dir: "z", sign: 1, length: 4.2 } },
-      { name: "afterburner_R", axis: "z", cone: { dir: "z", sign: 1, length: 4.2 } },
+      { name: "afterburner_L", axis: "z", cone: { dir: "z", sign: 1, length: 2.4 } },
+      { name: "afterburner_R", axis: "z", cone: { dir: "z", sign: 1, length: 2.4 } },
     ],
     rudders: { names: ["fin_L", "fin_R"], gain: -0.9, max: 0.4 },
     anchors: [
@@ -268,6 +268,17 @@ let baseUrlDefault = ((import.meta as unknown as { env?: { BASE_URL?: string } }
 const toonCache = new Map<string, Material>()
 const liveryCache = new Map<number, Material>()
 let outlineMaterial: Material | null = null
+/** Ink outlines are off: the pastel world has none. Flip on for debugging/readability experiments. */
+const OUTLINES = false
+
+/**
+ * Per-name color overrides applied instead of the pastel remap. An override recolors the whole deduped
+ * material group containing a matching node, so it never adds draw calls.
+ */
+const COLOR_OVERRIDES: [RegExp, string, VehicleKind[]?][] = [
+  [/^pilot_\d_torso$/, "#97a274", ["fighter", "apache", "warthog"]], // soft olive flight suit
+  [/^pilot_\d_torso$/, "#dcc48c", ["blackbird"]], // pale gold pressure suit
+]
 
 function getOutlineMaterial(): Material {
   if (!outlineMaterial) outlineMaterial = createOutlineMaterial()
@@ -277,7 +288,7 @@ function getOutlineMaterial(): Material {
 function liveryMaterial(team: TeamId): Material {
   let m = liveryCache.get(team)
   if (!m) {
-    m = createToonMaterial({ color: TEAM_COLORS[team], roughness: 0.5, metalness: 0.2 })
+    m = createToonMaterial({ color: pastelize(new Color(TEAM_COLORS[team]), "livery") })
     liveryCache.set(team, m)
   }
   return m
@@ -372,6 +383,13 @@ function smoothOutlineGeometry(g: BufferGeometry): BufferGeometry {
   return out
 }
 
+/** Nav lights / glows softened for the pastel world (no tone mapping, so keep them below 1.0). */
+function softGlow(role: MatRole, c: Color): Color {
+  if (role === "nav" || role === "strobe" || role === "glow") return c.lerp(new Color(1, 1, 1), 0.35).multiplyScalar(0.85)
+  if (role === "afterburner" || role === "flame") return new Color("#ffbe80")
+  return c
+}
+
 function hex(c: Color): string {
   return c.getHexString()
 }
@@ -457,6 +475,9 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     shared: Material | null
     glowColor: Color
     geoms: BufferGeometry[]
+    names: string[]
+    srcColor: Color
+    key: string
   }
   const buckets = new Map<string, Bucket>()
   const outlineGeoms: BufferGeometry[] = []
@@ -494,28 +515,30 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
           : `${role}:${hex(emissive)}`
     let bucket = buckets.get(key)
     if (!bucket) {
-      let shared: Material | null = null
-      if (role === "toon" || role === "glass") {
-        shared = toonCache.get(key) ?? null
-        if (!shared) {
-          shared = createToonMaterial({
-            color,
-            roughness: rough,
-            metalness: metal,
-            opacity: role === "glass" ? Math.max(0.35, src.opacity) : 1,
-            glass: role === "glass",
-          })
-          toonCache.set(key, shared)
-        }
-      }
-      const glowColor = isGlow ? emissive.clone().lerp(color, 0.25) : color.clone()
-      bucket = { role, shared, glowColor, geoms: [] }
+      const shared: Material | null = null
+      const glowColor = isGlow ? softGlow(role, emissive.clone().lerp(color, 0.25)) : color.clone()
+      bucket = { role, shared, glowColor, geoms: [], names: [], srcColor: color.clone(), key }
       buckets.set(key, bucket)
     }
     const g = prepGeometry(mesh.geometry, toRoot(mesh), bone)
     bucket.geoms.push(g)
-    if (role === "toon" || role === "livery") outlineGeoms.push(g)
+    bucket.names.push(mesh.name)
+    if (OUTLINES && (role === "toon" || role === "livery")) outlineGeoms.push(g)
   })
+
+  // Shared toon materials per deduped group: pastel remap unless a group member matches an override.
+  for (const b of buckets.values()) {
+    if (b.role !== "toon" && b.role !== "glass") continue
+    const override = COLOR_OVERRIDES.find(([re, , kinds]) => (!kinds || kinds.includes(kind)) && b.names.some((n) => re.test(n)))?.[1]
+    const color = override ? new Color(override) : pastelize(b.srcColor, b.role === "glass" ? "glass" : "hull")
+    const cacheKey = `${b.role}:${color.getHexString()}`
+    let shared = toonCache.get(cacheKey) ?? null
+    if (!shared) {
+      shared = createToonMaterial({ color, opacity: b.role === "glass" ? 0.55 : 1, glass: b.role === "glass" })
+      toonCache.set(cacheKey, shared)
+    }
+    b.shared = shared
+  }
 
   // Procedural flame cones (additive) behind afterburner discs.
   const flameGeoms: BufferGeometry[] = []
@@ -535,16 +558,16 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
       const pos = mesh.geometry.getAttribute("position")
       for (let i = 0; i < pos.count; i++) box.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(m))
     })
-    if (!box.isEmpty()) radius = Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5 * 0.92
-    const outer = new Color("#ff7a1a")
-    const inner = new Color("#ffe9a8")
+    if (!box.isEmpty()) radius = Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5 * 0.7
+    const outer = new Color("#ffb070")
+    const inner = new Color("#fff0c8")
     for (const [r, len, seg, col] of [[radius, ab.cone.length, 16, outer], [radius * 0.55, ab.cone.length * 0.6, 12, inner]] as const) {
       const cone = new ConeGeometry(r, len, seg, 4, true)
       // Additive blending: fade to black toward the tip.
       const cp = cone.getAttribute("position")
       const colors = new Float32Array(cp.count * 3)
       for (let i = 0; i < cp.count; i++) {
-        const k = Math.pow(1 - (cp.getY(i) + len / 2) / len, 1.4)
+        const k = Math.pow(1 - (cp.getY(i) + len / 2) / len, 1.8)
         colors[i * 3] = col.r * k
         colors[i * 3 + 1] = col.g * k
         colors[i * 3 + 2] = col.b * k
@@ -561,7 +584,7 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     }
   }
   if (flameGeoms.length) {
-    buckets.set("flame:procedural", { role: "flame", shared: null, glowColor: new Color(1, 1, 1), geoms: flameGeoms })
+    buckets.set("flame:procedural", { role: "flame", shared: null, glowColor: new Color(1, 1, 1), geoms: flameGeoms, names: [], srcColor: new Color(1, 1, 1), key: "flame:procedural" })
   }
 
   const meshes: TemplateMesh[] = []
@@ -819,6 +842,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
   let spool = 0
   let gunSpin = 0
   let throttleVis = 0
+  let boostVis = 0
   let time = Math.random() * 10
   const blinkPhase = Math.random()
   const outlinesEnabled = quality !== "low"
@@ -861,6 +885,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
         case "livery":
           mat = liveryMaterial(team)
           break
+        case "afterburner":
         case "flame": {
           const m = new MeshBasicMaterial({
             color: tm.glowColor.clone(),
@@ -871,15 +896,15 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
             toneMapped: false,
           })
           m.userData.baseColor = tm.glowColor.clone()
-          flameMats.push(m)
+          if (tm.role === "afterburner") afterburnerMats.push(m)
+          else flameMats.push(m)
           owned.push(m)
           mat = m
           break
         }
         default: {
           const m = createGlowMaterial(tm.glowColor, 1)
-          if (tm.role === "afterburner") afterburnerMats.push(m)
-          else if (tm.role === "nav") navMats.push(m)
+          if (tm.role === "nav") navMats.push(m)
           else if (tm.role === "strobe") strobeMats.push(m)
           owned.push(m)
           mat = m
@@ -1017,7 +1042,8 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       const heli = VEHICLES[vehicle.kind].flight === "heli"
       const spoolTarget = heli ? (f.onGround ? 0.3 + 0.7 * f.throttle : 1) : 0.35 + 0.65 * f.throttle
       spool = approach(spool, spoolTarget, heli ? 0.8 : 1.5, dt)
-      throttleVis = approach(throttleVis, f.throttle + (boost ? 0.5 : 0), 6, dt)
+      throttleVis = approach(throttleVis, f.throttle, 6, dt)
+      boostVis = approach(boostVis, boost && vehicle.alive ? 1 : 0, boost ? 7 : 4, dt)
       const gunOn = firing[0][0]
       gunSpin = approach(gunSpin, gunOn ? 1 : 0, gunOn ? 6 : 1.6, dt)
 
@@ -1040,23 +1066,23 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
           setBoneAxis(r, bi, sp.axis, r.spinAngles[bi])
         }
 
-        // Afterburners: stretch + brighten with throttle, flicker on boost.
-        const flicker = 1 + Math.sin(time * 47) * 0.06 + Math.sin(time * 31.7) * 0.04
-        const thr = clamp(throttleVis, 0, 1.5)
+        // Afterburners: invisible at normal throttle; a short soft additive flame fades in only on boost.
+        const flicker = 1 + Math.sin(time * 47) * 0.07 + Math.sin(time * 31.7) * 0.05
+        const bv = boostVis
         for (const ab of cfg.afterburners) {
           const bi = boneAt(r, ab.name)
           if (bi < 0) continue
           const rest = t.bones[bi].scale
-          const len = (0.15 + 0.85 * Math.min(thr, 1) + Math.max(0, thr - 1) * 1.4) * flicker
-          const wid = 0.85 + 0.15 * Math.min(thr, 1) + Math.max(0, thr - 1) * 0.3
+          const len = (0.35 + 0.65 * bv) * flicker
+          const wid = 0.8 + 0.2 * bv
           const b = r.bones[bi]
           b.scale.set(rest.x * (ab.axis === "x" ? len : wid), rest.y * (ab.axis === "y" ? len : wid), rest.z * (ab.axis === "z" ? len : wid))
         }
-        const glow = (0.5 + 1.1 * thr) * flicker
+        const glow = bv * 0.25 * flicker
         for (const m of r.afterburnerMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(glow)
-        const flame = clamp(thr - 0.05, 0, 1.5) * 0.7 * flicker
+        const flame = bv * 0.45 * flicker
         for (const m of r.flameMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(flame)
-        for (const m of r.meshes) if (m.name === "flame") m.visible = flame > 0.02
+        for (const m of r.meshes) if (m.name === "flame" || m.name === "afterburner") m.visible = bv > 0.02
 
         // Aimed equipment (seat aim in body frame).
         _rootQ.copy(root.quaternion)
@@ -1121,9 +1147,9 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
 
         // Nav lights: steady with a slow subtle pulse; tail strobe double-flash.
         const pulse = 0.85 + 0.15 * Math.sin((time + blinkPhase) * 2.4)
-        for (const m of r.navMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(1.4 * pulse)
+        for (const m of r.navMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(pulse)
         const ph = (time * 0.8 + blinkPhase) % 1
-        const strobe = ph < 0.06 || (ph > 0.14 && ph < 0.2) ? 3 : 0.35
+        const strobe = ph < 0.06 || (ph > 0.14 && ph < 0.2) ? 1.15 : 0.45
         for (const m of r.strobeMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(strobe)
       }
 

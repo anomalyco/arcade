@@ -9,14 +9,22 @@ export type InputAction = "seat1" | "seat2" | "view" | "chat" | "menu"
 export type MouseMode = "direct" | "aim"
 
 const AIM_SENS = 0.0021
-/** Direct steering: radians of commanded rotation per mouse pixel (before sensitivity). */
-const DIRECT_RAD_PER_PX = 0.0018
+/** Direct steering: radians of commanded rotation per mouse pixel (before sensitivity); ~60% of the original 0.0018, and the expo below softens small motions further. */
+const DIRECT_RAD_PER_PX = 0.0011
+/** Expo: output = sign(x)·|x|^EXPO, so small motions give fine control and big motions still reach full rate. */
+const DIRECT_EXPO = 1.4
+/** Smoothing time constant (s) for direct steering; also the decay to zero when the mouse stops. */
+const DIRECT_SMOOTH = 0.09
+/** Per-event and per-frame mouse delta clamps (px) to stop single large deltas spiking the rate. */
+const EVENT_CLAMP = 40
+const FRAME_CLAMP = 60
 /** Nominal full-deflection rates used to normalise mouse rate commands to -1..1. */
 const DIRECT_PITCH_RATE = 1.6
 const DIRECT_YAW_RATE = 1.1
 const MAX_PITCH = 1.5
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
+const expo = (v: number) => Math.sign(v) * Math.pow(Math.min(1, Math.abs(v)), DIRECT_EXPO)
 
 export class Input {
   aimYaw = 0
@@ -31,10 +39,14 @@ export class Input {
   /** Pointer lock refused (headless, iframe policy…): fall back to raw mouse deltas without lock. */
   lockFailed = false
   mouseMode: MouseMode = "direct"
-  /** Smoothed direct-steering axes (−1..1), updated by sampleSteering(). */
+  /** Direct-steering axes sent to flight (−1..1): expo applied to the smoothed mouse rates. */
   steerYaw = 0
   steerPitch = 0
   steerRoll = 0
+  /** Smoothed linear rates before the expo curve. */
+  private linYaw = 0
+  private linPitch = 0
+  private linRoll = 0
   private mouseX = 0
   private mouseY = 0
   private wheel = 0
@@ -154,7 +166,7 @@ export class Input {
    */
   sampleSteering(seconds: number, heli: boolean): void {
     const dt = clamp(Number.isFinite(seconds) ? seconds : 0, 1 / 240, 0.05)
-    const blend = 1 - Math.exp(-dt / 0.035)
+    const blend = 1 - Math.exp(-dt / DIRECT_SMOOTH)
     const s = DIRECT_RAD_PER_PX * settings.sensitivity
     const inv = settings.invertY ? -1 : 1
     const arrowsLR = (this.held("ArrowRight") ? 1 : 0) - (this.held("ArrowLeft") ? 1 : 0)
@@ -172,12 +184,16 @@ export class Input {
       ty = this.arrowYaw() ? arrowsLR : mouseXRate
       tr = qe
     }
-    this.steerYaw += (ty - this.steerYaw) * blend
-    this.steerPitch += (tp - this.steerPitch) * blend
-    this.steerRoll += (tr - this.steerRoll) * blend
-    if (Math.abs(this.steerYaw) < 1e-3) this.steerYaw = 0
-    if (Math.abs(this.steerPitch) < 1e-3) this.steerPitch = 0
-    if (Math.abs(this.steerRoll) < 1e-3) this.steerRoll = 0
+    // Smooth the linear rate first (sparse mouse events average out, decays smoothly to 0 when the
+    // mouse stops), then shape it: keys stay linear (full deflection = 1), mouse gets the expo curve.
+    this.linYaw += (ty - this.linYaw) * blend
+    this.linPitch += (tp - this.linPitch) * blend
+    this.linRoll += (tr - this.linRoll) * blend
+    const dz = (v: number) => (Math.abs(v) < 2e-3 ? 0 : v)
+    this.linYaw = dz(this.linYaw); this.linPitch = dz(this.linPitch); this.linRoll = dz(this.linRoll)
+    this.steerYaw = expo(this.linYaw)
+    this.steerPitch = expo(this.linPitch)
+    this.steerRoll = expo(this.linRoll)
     this.mouseX = this.mouseY = 0
   }
 
@@ -231,6 +247,7 @@ export class Input {
     this.zoomHeld = false
     this.mouseX = this.mouseY = 0
     this.steerYaw = this.steerPitch = this.steerRoll = 0
+    this.linYaw = this.linPitch = this.linRoll = 0
     this.freeLook = false
     this.lookYaw = this.lookPitch = 0
   }
@@ -285,8 +302,8 @@ export class Input {
       this.aimPitch = clamp(this.aimPitch - dy * inv * s, -MAX_PITCH, MAX_PITCH)
     } else {
       // Bounded accumulation (no destination to chase), consumed by sampleSteering().
-      if (!this.arrowYaw()) this.mouseX = clamp(this.mouseX + dx, -80, 80)
-      if (!this.arrowPitch()) this.mouseY = clamp(this.mouseY + dy, -80, 80)
+      if (!this.arrowYaw()) this.mouseX = clamp(this.mouseX + clamp(dx, -EVENT_CLAMP, EVENT_CLAMP), -FRAME_CLAMP, FRAME_CLAMP)
+      if (!this.arrowPitch()) this.mouseY = clamp(this.mouseY + clamp(dy, -EVENT_CLAMP, EVENT_CLAMP), -FRAME_CLAMP, FRAME_CLAMP)
     }
   }
 
