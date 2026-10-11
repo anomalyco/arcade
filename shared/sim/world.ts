@@ -3,6 +3,7 @@ import {
   BUST_SECONDS,
   END_SECONDS,
   EXTRACT_BOXED_RATE,
+  EXTRACT_SPOTLIT_RATE,
   EXTRACT_OPEN_SECONDS,
   EXTRACT_RADIUS,
   EXTRACT_SPEED,
@@ -580,9 +581,11 @@ export class World {
     } else this.bust = Math.max(0, this.bust - dt * 0.4)
 
     const d = Math.hypot(r.body.x - this.exit.x, r.body.z - this.exit.z)
-    // In the zone and slow enough: the ride loads up. Cops pressed against the car slow the loading down.
+    // In the zone and slow enough: the ride loads up. Cops pressed against the car and the helicopter's spotlight
+    // both slow the loading down.
     if (this.exitOpenIn() <= 0 && d < EXTRACT_RADIUS && speedOf(r.body) < EXTRACT_SPEED) {
-      this.extract = Math.min(EXTRACT_SECONDS, this.extract + dt * (this.boxed ? EXTRACT_BOXED_RATE : 1))
+      const rate = (spotted ? EXTRACT_SPOTLIT_RATE : 1) * (this.boxed ? EXTRACT_BOXED_RATE : 1)
+      this.extract = Math.min(EXTRACT_SECONDS, this.extract + dt * rate)
       if (this.extract >= EXTRACT_SECONDS) {
         this.credit(this.robberId, this.loot)
         this.roundScore += this.loot

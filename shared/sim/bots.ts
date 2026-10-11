@@ -105,7 +105,7 @@ export function robberBrain(world: World, car: Car): Input {
   const [fx, fz] = forward(b.h)
   const tailed = near.some(({ c, d }) => d < 28 && (c.body.x - b.x) * fx + (c.body.z - b.z) * fz < -0.5 * d)
   if (tailed && speedOf(b) > 12 && world.gadgetReady(car, 0)) input.gadget = 0
-  else if (world.seen && (near.some((n) => n.d < 35) || world.bust > 0.25) && world.gadgetReady(car, 1)) input.gadget = 1
+  else if (world.seen && (near.some((n) => n.d < 35) || world.bust > 0.25 || world.heli.lock > 1.5) && world.gadgetReady(car, 1)) input.gadget = 1
   return input
 }
 

@@ -18,7 +18,9 @@ export const EXTRACT_SECONDS = 3
 export const EXTRACT_RADIUS = 14
 export const EXTRACT_SPEED = 12
 /** Extraction progress rate while boxed in by cops. */
-export const EXTRACT_BOXED_RATE = 0.3
+export const EXTRACT_BOXED_RATE = 0.7
+/** Extraction progress rate under the helicopter's spotlight. */
+export const EXTRACT_SPOTLIT_RATE = 0.6
 /** Chase seconds before the getaway ride reaches the extraction point. Until then the robber has to stay loose. */
 export const EXTRACT_OPEN_SECONDS = 40
 export const BUST_SECONDS = 4
