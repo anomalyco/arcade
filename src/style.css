@@ -39,9 +39,9 @@ button { font: inherit; color: inherit; }
 .c-best { margin-top: 6px; font: 500 11px/1 var(--display); letter-spacing: 0.28em; padding-left: 0.28em; color: var(--faint); }
 .h-clock.record .c-best { color: var(--go); }
 
-.h-intro { position: absolute; left: 0; right: 0; top: 30vh; text-align: center; animation: fadein 0.8s ease-out; }
-.i-line { font: 300 40px/1 var(--display); letter-spacing: 0.32em; padding-left: 0.32em; }
-.i-sub { margin-top: 14px; min-height: 14px; font: 500 13px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: var(--dim); }
+.h-intro { position: absolute; left: 0; right: 0; top: 13vh; text-align: center; animation: fadein 0.8s ease-out; }
+.i-line { font: 300 34px/1 var(--display); letter-spacing: 0.32em; padding-left: 0.32em; }
+.i-sub { margin-top: 12px; min-height: 13px; font: 500 12px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: var(--dim); }
 .h-keys { position: absolute; left: 0; right: 0; bottom: 28px; text-align: center; font: 500 12px/1 var(--display); letter-spacing: 0.3em; color: var(--faint); animation: fadein 1.2s ease-out; }
 @keyframes fadein { from { opacity: 0; } }
 
@@ -56,26 +56,31 @@ button { font: inherit; color: inherit; }
 .h-tag span { display: block; transform: translate(-50%, -100%); font: 500 12px/1 var(--display); letter-spacing: 0.16em; color: var(--robber); text-transform: none; white-space: nowrap; }
 .h-tag.ghost span { color: var(--faint); letter-spacing: 0.24em; }
 
-.h-end { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, rgba(3, 4, 8, 0.35), rgba(3, 4, 8, 0.75)); animation: fadein 0.6s ease-out; }
-.e-inner { display: flex; flex-direction: column; align-items: center; min-width: 280px; }
-.e-title { font: 300 64px/1 var(--display); letter-spacing: 0.36em; padding-left: 0.36em; }
-.e-who { margin-top: 22px; font: 500 11px/1 var(--display); letter-spacing: 0.36em; padding-left: 0.36em; color: var(--dim); }
-.e-time { margin-top: 8px; font: 300 44px/1 var(--display); letter-spacing: 0.04em; }
-.e-best { margin-top: 10px; font: 600 11px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: var(--go); }
-.e-rows { list-style: none; margin: 30px 0 0; padding: 14px 0 0; width: 260px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
-.e-rows li { display: flex; justify-content: space-between; padding: 4px 0; font: 500 14px/1.2 var(--display); letter-spacing: 0.08em; color: var(--dim); text-transform: none; }
+/* End card: a low band across the bottom, so the busted car stays visible at screen centre. */
+.h-end { position: absolute; left: 0; right: 0; bottom: 0; height: 40vh; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 7vh; background: linear-gradient(to top, rgba(3, 4, 8, 0.82), rgba(3, 4, 8, 0.5) 55%, transparent); animation: fadein 0.6s ease-out; }
+.e-inner { display: flex; align-items: stretch; gap: 44px; }
+.e-main { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; text-align: right; }
+.e-title { font: 300 46px/1 var(--display); letter-spacing: 0.32em; margin-right: -0.32em; }
+.e-who { margin-top: 14px; font: 500 10px/1 var(--display); letter-spacing: 0.34em; color: var(--dim); }
+.e-time { margin-top: 6px; display: flex; align-items: baseline; gap: 12px; font: 300 34px/1 var(--display); letter-spacing: 0.04em; }
+.e-best { order: -1; font: 600 10px/1 var(--display); letter-spacing: 0.36em; color: var(--go); }
+.e-side { display: flex; flex-direction: column; justify-content: center; padding-left: 44px; border-left: 1px solid rgba(255, 255, 255, 0.14); }
+.e-rows { list-style: none; margin: 0; padding: 0; width: 220px; }
+.e-rows li { display: flex; justify-content: space-between; padding: 3px 0; font: 500 13px/1.2 var(--display); letter-spacing: 0.08em; color: var(--dim); text-transform: none; }
+.e-rows li:nth-child(n + 6) { display: none; }
 .e-rows li b { font-weight: 500; color: var(--text); }
 .e-rows li.me span { color: var(--text); }
-.e-next { margin-top: 26px; font: 500 11px/1 var(--display); letter-spacing: 0.36em; padding-left: 0.36em; color: var(--faint); }
+.e-next { margin-top: 14px; font: 500 10px/1 var(--display); letter-spacing: 0.34em; color: var(--faint); }
 .e-next b { font-weight: 600; color: var(--dim); }
 
-.h-wait { position: absolute; left: 0; right: 0; top: 30vh; display: flex; flex-direction: column; align-items: center; animation: fadein 0.8s ease-out; }
-.w-line { font: 300 40px/1 var(--display); letter-spacing: 0.32em; padding-left: 0.32em; }
-.w-sub { margin-top: 14px; font: 500 13px/1.4 var(--display); letter-spacing: 0.22em; padding-left: 0.22em; color: var(--dim); }
-.w-invite { margin-top: 34px; display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 22px; background: rgba(5, 7, 11, 0.62); border: 1px solid rgba(255, 255, 255, 0.16); pointer-events: auto; text-shadow: none; }
-.w-invite span { font: 500 11px/1 var(--display); letter-spacing: 0.36em; color: var(--dim); }
-.w-invite b { font: 500 30px/1 var(--display); letter-spacing: 0.3em; color: var(--text); }
-.w-invite button { cursor: pointer; height: 38px; padding: 0 18px; border: 0; background: var(--text); color: #05070b; font: 600 13px/1 var(--display); letter-spacing: 0.24em; }
+/* Waiting: lower third, small, so the car at screen centre stays clear while free-driving. */
+.h-wait { position: absolute; left: 0; right: 0; bottom: 9vh; display: flex; flex-direction: column; align-items: center; animation: fadein 0.8s ease-out; }
+.w-line { font: 300 22px/1 var(--display); letter-spacing: 0.34em; padding-left: 0.34em; }
+.w-sub { margin-top: 8px; font: 500 11px/1.4 var(--display); letter-spacing: 0.24em; padding-left: 0.24em; color: var(--dim); }
+.w-invite { margin-top: 16px; display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 4px 0 14px; background: rgba(5, 7, 11, 0.6); border: 1px solid rgba(255, 255, 255, 0.14); pointer-events: auto; text-shadow: none; }
+.w-invite span { font: 500 10px/1 var(--display); letter-spacing: 0.34em; color: var(--dim); }
+.w-invite b { font: 500 18px/1 var(--display); letter-spacing: 0.28em; color: var(--text); }
+.w-invite button { cursor: pointer; height: 26px; padding: 0 12px; border: 0; background: var(--text); color: #05070b; font: 600 11px/1 var(--display); letter-spacing: 0.22em; }
 .w-invite button:hover { background: #fff; }
 .h-room { position: absolute; right: 14px; bottom: 12px; display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 4px 0 10px; border-radius: 11px; background: rgba(5, 7, 11, 0.55); pointer-events: auto; text-shadow: none; font: 500 11px/1 var(--display); letter-spacing: 0.2em; color: var(--dim); }
 .h-room .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--go); }
@@ -97,11 +102,11 @@ button { font: inherit; color: inherit; }
 .lb-siren { position: absolute; left: 0; right: 0; bottom: 0; height: 45%; background: radial-gradient(ellipse 35% 55% at 25% 100%, rgba(255, 40, 60, 0.12), transparent 70%), radial-gradient(ellipse 35% 55% at 75% 100%, rgba(61, 123, 255, 0.14), transparent 70%); animation: siren 1.8s steps(1) infinite; }
 @keyframes siren { 50% { background: radial-gradient(ellipse 35% 55% at 25% 100%, rgba(61, 123, 255, 0.14), transparent 70%), radial-gradient(ellipse 35% 55% at 75% 100%, rgba(255, 40, 60, 0.12), transparent 70%); } }
 
-.lb-inner { position: relative; display: flex; flex-direction: column; align-items: stretch; width: 320px; gap: 10px; }
-.wordmark { margin: 0; text-align: center; font: 300 76px/1 var(--display); letter-spacing: 0.34em; padding-left: 0.34em; margin-right: -0.34em; }
-.lb-tag { margin: 6px 0 30px; text-align: center; font: 500 12px/1 var(--display); letter-spacing: 0.36em; padding-left: 0.36em; color: var(--dim); text-transform: uppercase; }
+.lb-inner { position: relative; display: flex; flex-direction: column; align-items: stretch; width: 340px; gap: 10px; }
+.wordmark { align-self: center; margin: 0; white-space: nowrap; font: 300 76px/1 var(--display); letter-spacing: 0.34em; padding-left: 0.34em; }
+.lb-tag { align-self: center; white-space: nowrap; margin: 6px 0 30px; text-align: center; font: 500 12px/1 var(--display); letter-spacing: 0.36em; padding-left: 0.36em; color: var(--dim); text-transform: uppercase; }
 .lobby input {
-  height: 44px; padding: 0 14px; background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.22); color: var(--text); outline: none; text-align: center;
+  width: 100%; min-width: 0; height: 44px; padding: 0 14px; background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.22); color: var(--text); outline: none; text-align: center;
   font: 500 18px/1 var(--display); letter-spacing: 0.16em;
 }
 .lobby input::placeholder { color: var(--faint); }
@@ -112,5 +117,5 @@ button { font: inherit; color: inherit; }
 .btn.primary { height: 48px; background: var(--text); border-color: var(--text); color: #05070b; font-weight: 600; }
 .btn.primary:hover { background: #fff; }
 .btn.link { height: 30px; border: 0; color: var(--dim); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; }
-.lb-join { display: grid; grid-template-columns: 1fr 130px; gap: 10px; }
+.lb-join { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
 .lb-join input { text-transform: uppercase; letter-spacing: 0.4em; }

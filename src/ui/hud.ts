@@ -89,7 +89,7 @@ export class Hud {
       "div",
       "h-wait off",
       r,
-      `<div class="w-line">WAITING FOR PLAYERS</div><div class="w-sub">Rounds start when a second driver joins. Drive around until then.</div><div class="w-invite"><span>ROOM</span><b class="w-code"></b><button type="button">COPY INVITE LINK</button></div>`,
+      `<div class="w-line">WAITING FOR PLAYERS</div><div class="w-sub">The round starts when a second driver joins</div><div class="w-invite"><span>ROOM</span><b class="w-code"></b><button type="button">COPY INVITE LINK</button></div>`,
     )
     e.wCode = e.wait.querySelector(".w-code")!
     e.wCopy = e.wait.querySelector("button")!
@@ -214,12 +214,15 @@ export class Hud {
         .map((s) => `<li class="${s.id === ctx.myId ? "me" : ""}"><span>${esc(s.name)}</span><b>${s.best !== undefined ? (s.best > 0 ? survival(s.best) : "—") : Math.round(s.score ?? 0).toLocaleString("en-US")}</b></li>`)
         .join("")
       e.end!.innerHTML = `<div class="e-inner">
-        <div class="e-title">${title}</div>
-        <div class="e-who">${who}</div>
-        <div class="e-time">${survival(survived)}</div>
-        ${newBest ? `<div class="e-best">NEW BEST</div>` : ""}
-        <ol class="e-rows">${rows}</ol>
-        <div class="e-next">NEXT ROUND IN <b></b></div>
+        <div class="e-main">
+          <div class="e-title">${title}</div>
+          <div class="e-who">${who}</div>
+          <div class="e-time">${survival(survived)}${newBest ? `<span class="e-best">NEW BEST</span>` : ""}</div>
+        </div>
+        <div class="e-side">
+          <ol class="e-rows">${rows}</ol>
+          <div class="e-next">NEXT ROUND IN <b></b></div>
+        </div>
       </div>`
       e.endNext = e.end!.querySelector(".e-next b")!
     }
