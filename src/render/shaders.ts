@@ -45,8 +45,8 @@ fn shadow(world: vec3f, n: vec3f) -> f32 {
 }
 
 fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
-  let sky = vec3f(0.10, 0.13, 0.26);
-  let ground = vec3f(0.03, 0.03, 0.05);
+  let sky = vec3f(0.11, 0.12, 0.2);
+  let ground = vec3f(0.04, 0.035, 0.04);
   var c = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.6;
   let L = normalize(F.moonDir.xyz);
   let ndl = max(dot(n, L), 0.0);
@@ -368,13 +368,19 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
   return o;
 }
 
+fn clean(c: vec4f) -> vec4f {
+  // NaN or Inf from any pass would smear across the whole bloom chain; drop them here.
+  let bad = any(c != c) || any(abs(c) > vec4f(6e4));
+  return select(min(c, vec4f(64.0)), vec4f(0.0), bad);
+}
+
 @fragment fn down(o: VO) -> @location(0) vec4f {
   let t = P.xy;
-  var c = textureSample(src, samp, o.uv) * 0.5;
-  c += textureSample(src, samp, o.uv + vec2f(-t.x, -t.y)) * 0.125;
-  c += textureSample(src, samp, o.uv + vec2f(t.x, -t.y)) * 0.125;
-  c += textureSample(src, samp, o.uv + vec2f(-t.x, t.y)) * 0.125;
-  c += textureSample(src, samp, o.uv + vec2f(t.x, t.y)) * 0.125;
+  var c = clean(textureSample(src, samp, o.uv)) * 0.5;
+  c += clean(textureSample(src, samp, o.uv + vec2f(-t.x, -t.y))) * 0.125;
+  c += clean(textureSample(src, samp, o.uv + vec2f(t.x, -t.y))) * 0.125;
+  c += clean(textureSample(src, samp, o.uv + vec2f(-t.x, t.y))) * 0.125;
+  c += clean(textureSample(src, samp, o.uv + vec2f(t.x, t.y))) * 0.125;
   if (P.z > 0.5) {
     // First level: keep only what is brighter than the threshold.
     let l = max(c.r, max(c.g, c.b));
@@ -398,8 +404,10 @@ fn aces(x: vec3f) -> vec3f {
 }
 
 @fragment fn composite(o: VO) -> @location(0) vec4f {
-  let hdr = textureSample(src, samp, o.uv).rgb;
+  let raw = textureSample(src, samp, o.uv);
   let bloom = textureSample(bloomTex, samp, o.uv).rgb;
+  if (any(raw != raw)) { return vec4f(1.0, 0.0, 1.0, 1.0); }
+  let hdr = raw.rgb;
   var c = hdr * 1.05 + bloom * P.z;
   c = aces(c * 1.1);
   let v = length(o.uv - 0.5);

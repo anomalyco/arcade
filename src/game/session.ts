@@ -33,6 +33,7 @@ export class LocalSession implements Session {
     this.world = new World(seed, this.participants)
     this.curr = this.world.view(this.myId)
     this.prev = this.curr
+    if (import.meta.env.DEV) (globalThis as unknown as { __world: World }).__world = this.world
   }
 
   get city() {
