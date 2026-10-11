@@ -1,4 +1,4 @@
-import { IDLE_DARK_KICK_SECONDS, IDLE_KICK_SECONDS, IDLE_WARN_SECONDS, MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ, DT } from "../shared/config"
+import { IDLE_COP_KICK_SECONDS, IDLE_DARK_KICK_SECONDS, IDLE_KICK_SECONDS, IDLE_WARN_SECONDS, MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ, DT } from "../shared/config"
 import { type ClientMsg, type Picks, type RosterEntry, type ServerMsg, decodeClient, encodeServer, seedOf } from "../shared/protocol"
 import { type Input, NO_INPUT } from "../shared/sim/vehicle"
 import { type Participant, World } from "../shared/sim/world"
@@ -185,7 +185,8 @@ export class RoomCore {
     const world = this.world
     const car = world?.carOf(p.id)
     const dark = !!car && world!.robberId === p.id && !!car.body.engineOff
-    return (dark ? IDLE_DARK_KICK_SECONDS : IDLE_KICK_SECONDS) * TICK_HZ
+    const cop = !!car && car.role === "cop" && (world!.phase === "chase" || world!.phase === "headstart")
+    return (dark ? IDLE_DARK_KICK_SECONDS : cop ? IDLE_COP_KICK_SECONDS : IDLE_KICK_SECONDS) * TICK_HZ
   }
 
   /** Nobody is kicked during the end card or while spectating; the idle timer keeps running meanwhile. */

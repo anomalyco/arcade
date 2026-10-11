@@ -13,8 +13,10 @@ export const MAX_PLAYERS = 16
 /** Online: a player with no input activity this long is kicked. The driver sitting dark (engine off) gets longer. */
 export const IDLE_KICK_SECONDS = 120
 export const IDLE_DARK_KICK_SECONDS = 240
+/** Cops in a live round have no reason to sit still. */
+export const IDLE_COP_KICK_SECONDS = 30
 /** The last this-many seconds before a kick, the player's snapshots carry a countdown. */
-export const IDLE_WARN_SECONDS = 20
+export const IDLE_WARN_SECONDS = 10
 export const ROUND_SECONDS = 180
 export const INTRO_SECONDS = 4
 export const HEAD_START_SECONDS = 5
