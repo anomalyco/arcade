@@ -15,6 +15,12 @@ export const INTRO_SECONDS = 4
 export const HEAD_START_SECONDS = 5
 export const END_SECONDS = 9
 export const EXTRACT_SECONDS = 3
+export const EXTRACT_RADIUS = 14
+export const EXTRACT_SPEED = 12
+/** Extraction progress rate while boxed in by cops. */
+export const EXTRACT_BOXED_RATE = 0.3
+/** Chase seconds before the getaway ride reaches the extraction point. Until then the robber has to stay loose. */
+export const EXTRACT_OPEN_SECONDS = 40
 export const BUST_SECONDS = 4
 export const BUST_RANGE = 9
 export const CAR_RADIUS = 2.0
@@ -65,3 +71,28 @@ export type JobSite = {
 }
 
 export type Extraction = { id: string; name: string; x: number; z: number }
+
+export type GadgetId = "oil" | "smoke" | "spike" | "roadblock"
+
+/** charges per round, cooldown between uses (s), prop lifetime (s), prop radius or half-length (m). */
+export type GadgetSpec = { id: GadgetId; name: string; role: Role; charges: number; cooldown: number; ttl: number; radius: number }
+
+export const GADGETS: Record<GadgetId, GadgetSpec> = {
+  oil: { id: "oil", name: "OIL SLICK", role: "robber", charges: 3, cooldown: 8, ttl: 12, radius: 3 },
+  smoke: { id: "smoke", name: "SMOKE SCREEN", role: "robber", charges: 2, cooldown: 14, ttl: 6, radius: 9 },
+  spike: { id: "spike", name: "SPIKE STRIP", role: "cop", charges: 2, cooldown: 12, ttl: 20, radius: 6 },
+  roadblock: { id: "roadblock", name: "ROADBLOCK", role: "cop", charges: 1, cooldown: 20, ttl: 25, radius: 6.5 },
+}
+
+/** Q = slot 0, E = slot 1. */
+export const LOADOUT: Record<Role, [GadgetId, GadgetId]> = { robber: ["oil", "smoke"], cop: ["spike", "roadblock"] }
+
+export const OIL_SPIN_SECONDS = 1.2
+export const FLAT_SECONDS = 6
+export const SPIKE_THICK = 0.8
+export const ROADBLOCK_THICK = 1.6
+/** The robber only notices a spike strip glinting in the headlights inside this range. */
+export const SPIKE_SPOT_RANGE = 40
+export const SIGHT_RANGE = 70
+/** Inside this range cops always know where the robber is (sirens, engine noise), even around a corner. */
+export const HEAR_RANGE = 20

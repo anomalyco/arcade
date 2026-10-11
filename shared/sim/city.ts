@@ -242,8 +242,11 @@ export function nearestNode(city: City, x: number, z: number): number {
   return best
 }
 
-/** Shortest road route between nodes (Dijkstra, the graph is tiny). Returns node indices from `from` to `to`, inclusive. */
-export function routeNodes(city: City, from: number, to: number): number[] {
+/**
+ * Shortest road route between nodes (Dijkstra, the graph is tiny). Returns node indices from `from` to `to`, inclusive.
+ * `blocked(a, b)` can close road segments (roadblocks).
+ */
+export function routeNodes(city: City, from: number, to: number, blocked?: (a: number, b: number) => boolean): number[] {
   const n = city.nodes.length
   const dist = new Array<number>(n).fill(Infinity)
   const prev = new Array<number>(n).fill(-1)
@@ -255,6 +258,7 @@ export function routeNodes(city: City, from: number, to: number): number[] {
     if (u < 0 || u === to) break
     done[u] = true
     for (const v of city.adj[u]!) {
+      if (blocked?.(u, v)) continue
       const a = city.nodes[u]!
       const b = city.nodes[v]!
       const d = dist[u]! + Math.hypot(a.x - b.x, a.z - b.z)

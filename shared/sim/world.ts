@@ -2,12 +2,24 @@ import {
   BUST_RANGE,
   BUST_SECONDS,
   END_SECONDS,
+  EXTRACT_BOXED_RATE,
+  EXTRACT_OPEN_SECONDS,
+  EXTRACT_RADIUS,
+  EXTRACT_SPEED,
   EXTRACT_SECONDS,
+  FLAT_SECONDS,
+  GADGETS,
   HEAD_START_SECONDS,
+  HEAR_RANGE,
   INTRO_SECONDS,
+  LOADOUT,
   NEAR_MISS_DIST,
   NEAR_MISS_SPEED,
+  OIL_SPIN_SECONDS,
+  ROAD_HALF,
   ROUND_SECONDS,
+  SIGHT_RANGE,
+  SPIKE_SPOT_RANGE,
   VEHICLE_BY_ID,
   VEHICLES,
   type Extraction,
@@ -16,9 +28,21 @@ import {
   type Vehicle,
 } from "../config"
 import { copBrain, robberBrain } from "./bots"
-import { type City, generateCity, nearestNode, routeNodes } from "./city"
+import { type Box, type City, generateCity, nearestNode, routeNodes } from "./city"
+import {
+  type GadgetState,
+  type GadgetView,
+  type Prop,
+  type PropView,
+  crossesStrip,
+  newGadgets,
+  placeProp,
+  propBox,
+  segmentHitsBox,
+  segmentHitsCircle,
+} from "./gadgets"
 import { mulberry32, type Rng } from "./rng"
-import { type Body, type Input, NO_INPUT, collideBoxes, lateralSpeed, newBody, speedOf, stepBody } from "./vehicle"
+import { type Body, type Input, NO_INPUT, forward, lateralSpeed, newBody, speedOf, stepAndCollide } from "./vehicle"
 
 /** intro: robber at the scene, alarm ringing. headstart: robber drives, cops wait. chase: everyone drives. end: results. */
 export type Phase = "intro" | "headstart" | "chase" | "end"
@@ -50,6 +74,15 @@ export type Car = {
   homeX: number
   homeZ: number
   nearCool: number
+  hideX: number
+  hideZ: number
+  hideT: number
+  /** Q / E loadout for this round. */
+  gadgets: GadgetState[]
+  /** A human gadget press waiting for the next tick. */
+  pendingGadget: 0 | 1 | null
+  /** Last gadget value seen from setInput, for edge detection. */
+  lastGadget: 0 | 1 | null
 }
 
 export type SimEvent = { t: number; kind: string; text: string; carId?: number }
@@ -73,6 +106,13 @@ export type CarView = {
   impact: number
   /** Cops only see the robber's last known position when out of sight. */
   ghost: boolean
+  /** Gadget slots (Q, E). Only present on the viewer's own car (all cars for an unfiltered view). */
+  gadgets?: GadgetView[]
+  /** Body state for client prediction (0 for a ghost): yaw rate, drift state 0..1, oil spin and flat tire seconds left. */
+  yaw?: number
+  slide?: number
+  slip?: number
+  flat?: number
 }
 
 export type Heli = { active: boolean; x: number; y: number; z: number; h: number; sx: number; sz: number; lock: number }
@@ -97,18 +137,26 @@ export type WorldView = {
   busted: boolean
   escaped: boolean
   extract: number
+  /** Seconds until the extraction point opens (0 once open). */
+  exitOpenIn?: number
   timeLeft: number
   roundScore: { drift: number; nearMisses: number; score: number }
   standings: Standing[]
   heli: Heli
   cars: CarView[]
+  /** Deployed gadgets. Spike strips are hidden from the robber beyond SPIKE_SPOT_RANGE; robber props are hidden from cops until revealed. */
+  props?: PropView[]
 }
 
-const SIGHT_RANGE = 70
-const HELI_DELAY = 20
-const HELI_SPEED = 26
+export const HEAT_RATE = 0.35
+export const HEAT_SEEN_RATE = 0.8
+/** Extra heat per second while the helicopter holds the robber in its spotlight. */
+export const HEAT_SPOT_RATE = 1.2
+export const HELI_DELAY = 20
+export const HELI_SPEED = 26
 const HELI_ALT = 42
-const SPOT_RADIUS = 10
+export const SPOT_RADIUS = 12
+const SPOT_SWEEP = 22
 
 export class World {
   city: City
@@ -135,14 +183,24 @@ export class World {
   roundScore = 0
   heli: Heli = { active: false, x: 0, y: HELI_ALT, z: 0, h: 0, sx: 0, sz: 0, lock: 0 }
   events: SimEvent[] = []
+  props: Prop[] = []
+  /** Chase seconds before the helicopter launches (Infinity grounds it, for balance experiments). */
+  heliDelay = HELI_DELAY
+  /** Collision boxes of live roadblocks, rebuilt when props change. */
+  propBoxes: Box[] = []
   standings = new Map<string, Standing>()
   private participants: Participant[] = []
   private nextId = 1
   private reinforcements = 0
   private robberTurn = 0
+  private nextPropId = 1
+  private lastSeenH = 0
+  private blockedEdges = new Set<number>()
+  private sightBoxes: Box[]
 
   constructor(seed: number, participants: Participant[]) {
     this.city = generateCity(seed)
+    this.sightBoxes = this.city.boxes.filter((b) => b.kind !== "special" && b.h > 3)
     this.rng = mulberry32(seed ^ 0x9e3779b9)
     this.setParticipants(participants)
     this.startRound()
@@ -164,8 +222,10 @@ export class World {
     return this.cars.find((c) => c.ownerId === ownerId)
   }
 
+  /** Road route between two points, avoiding road segments closed by roadblocks. */
   routeTo(x: number, z: number, tx: number, tz: number): number[] {
-    return routeNodes(this.city, nearestNode(this.city, x, z), nearestNode(this.city, tx, tz))
+    const blocked = this.blockedEdges.size ? (a: number, b: number) => this.blockedEdges.has(a * 1024 + b) : undefined
+    return routeNodes(this.city, nearestNode(this.city, x, z), nearestNode(this.city, tx, tz), blocked)
   }
 
   /** Updates the roster. New humans join as spectators until the next round; leavers' cars are handed to bots. */
@@ -175,9 +235,14 @@ export class World {
     for (const c of this.cars) if (c.human && !ps.some((p) => p.id === c.ownerId)) c.human = false
   }
 
+  /** Gadget presses are latched until the next tick, and a value repeated across inputs only fires once. */
   setInput(ownerId: string, input: Input) {
     const c = this.carOf(ownerId)
-    if (c && c.human) c.input = input
+    if (!c || !c.human) return
+    const g = input.gadget ?? null
+    if (g !== null && g !== c.lastGadget) c.pendingGadget = g
+    c.lastGadget = g
+    c.input = input
   }
 
   /** Picks the next robber: humans take turns; a lone human alternates with a bot robber so both roles get played. */
@@ -207,6 +272,8 @@ export class World {
     this.roundScore = 0
     this.seen = false
     this.lastSeen = null
+    this.props = []
+    this.propsChanged()
     const hp = this.city.helipad
     this.heli = { active: false, x: hp.x, y: hp.y, z: hp.z, h: 0, sx: hp.x, sz: hp.z, lock: 0 }
     this.site = this.city.sites[Math.floor(this.rng() * this.city.sites.length)]!
@@ -247,6 +314,12 @@ export class World {
       homeX: x,
       homeZ: z,
       nearCool: 0,
+      hideX: x,
+      hideZ: z,
+      hideT: 0,
+      gadgets: newGadgets(LOADOUT[role]),
+      pendingGadget: null,
+      lastGadget: null,
     }
     this.cars.push(car)
     return car
@@ -319,17 +392,23 @@ export class World {
   }
 
   private stepCars(dt: number) {
-    const boxes = this.city.boxes
+    const boxes = this.propBoxes.length ? [...this.city.boxes, ...this.propBoxes] : this.city.boxes
+    const prev = new Map<number, [number, number]>()
     for (const c of this.cars) {
+      for (const g of c.gadgets) g.cooldown = Math.max(0, g.cooldown - dt)
       if (!this.moving(c)) {
         c.body.vx *= 0.85
         c.body.vz *= 0.85
         c.impact = 0
+        c.pendingGadget = null
         continue
       }
       const input = c.human ? c.input : c.role === "robber" ? robberBrain(this, c) : copBrain(this, c)
-      stepBody(c.body, input, c.vehicle, dt)
-      c.impact = collideBoxes(c.body, radiusOf(c), boxes)
+      const slot = c.human ? c.pendingGadget : (input.gadget ?? null)
+      c.pendingGadget = null
+      if (slot !== null) this.useGadget(c, slot)
+      prev.set(c.id, [c.body.x, c.body.z])
+      c.impact = stepAndCollide(c.body, input, c.vehicle, dt, radiusOf(c), boxes)
     }
     const live = this.cars.filter((c) => this.moving(c))
     for (let i = 0; i < live.length; i++)
@@ -353,30 +432,133 @@ export class World {
         b.body.z += (nz * overlap * ma) / (ma + mb)
         const vn = (b.body.vx - a.body.vx) * nx + (b.body.vz - a.body.vz) * nz
         if (vn >= 0) continue
-        const imp = (-1.25 * vn) / (1 / ma + 1 / mb)
+        const imp = (-(1 + RESTITUTION) * vn) / (1 / ma + 1 / mb)
         a.body.vx -= (imp / ma) * nx
         a.body.vz -= (imp / ma) * nz
         b.body.vx += (imp / mb) * nx
         b.body.vz += (imp / mb) * nz
         a.impact = Math.max(a.impact, -vn)
         b.impact = Math.max(b.impact, -vn)
-        if (-vn > 13) {
-          const weak = ma < mb ? a : b
-          weak.body.stun = Math.max(weak.body.stun, Math.min(1.2, -vn / 25))
-        }
+        // Whoever takes the bigger change in velocity (the lighter car) gets knocked silly.
+        for (const [c, dv] of [
+          [a, imp / ma],
+          [b, imp / mb],
+        ] as const)
+          if (dv > RAM_STUN_DV) c.body.stun = Math.max(c.body.stun, Math.min(1.1, dv / 22))
+        if (this.phase === "chase" && (a.role === "robber" || b.role === "robber") && -vn > 8) this.heat += 1
       }
+    this.stepProps(dt, prev)
+  }
+
+  /** Q / E. Robber gadgets work from the head start on; cop gadgets once the chase is on. */
+  gadgetReady(c: Car, slot: 0 | 1) {
+    const g = c.gadgets[slot]
+    if (!g || g.charges <= 0 || g.cooldown > 0) return false
+    if (c.role === "cop") return this.phase === "chase"
+    return (this.phase === "headstart" || this.phase === "chase") && !this.busted
+  }
+
+  useGadget(c: Car, slot: 0 | 1): boolean {
+    if (!this.gadgetReady(c, slot)) return false
+    const g = c.gadgets[slot]!
+    const spec = GADGETS[g.id]
+    g.charges--
+    g.cooldown = spec.cooldown
+    const at = placeProp(g.id, c.body, c.vehicle.length)
+    this.props.push({ id: this.nextPropId++, kind: g.id, x: at.x, z: at.z, h: at.h, r: spec.radius, life: spec.ttl, ttl: spec.ttl, owner: c.id, team: c.role, revealed: c.role === "cop" || this.seen, hits: [] })
+    if (g.id === "roadblock") this.propsChanged()
+    if (c.role === "robber" && this.phase === "chase") this.heat += 2
+    this.emit("gadget", `${c.name} deployed ${spec.name}`, c.id)
+    return true
+  }
+
+  private propsChanged() {
+    this.propBoxes = []
+    this.blockedEdges.clear()
+    for (const p of this.props) {
+      const box = propBox(p)
+      if (!box) continue
+      this.propBoxes.push(box)
+      const { nodes, adj } = this.city
+      for (let u = 0; u < nodes.length; u++)
+        for (const v of adj[u]!) {
+          const a = nodes[u]!
+          const b = nodes[v]!
+          if (segmentHitsCircle(a.x, a.z, b.x, b.z, p.x, p.z, ROAD_HALF + 1)) this.blockedEdges.add(u * 1024 + v)
+        }
+    }
+  }
+
+  private stepProps(dt: number, prev: Map<number, [number, number]>) {
+    let roadblocks = false
+    this.props = this.props.filter((p) => {
+      p.life -= dt
+      if (p.life > 0) return true
+      roadblocks ||= p.kind === "roadblock"
+      return false
+    })
+    const cops = this.cops()
+    const robber = this.robber()
+    for (const p of [...this.props]) {
+      if (!p.revealed && cops.some((c) => Math.hypot(c.body.x - p.x, c.body.z - p.z) < SIGHT_RANGE)) p.revealed = true
+      if (p.kind === "oil") {
+        for (const c of cops) {
+          if (p.hits.includes(c.id) || !prev.has(c.id) || Math.hypot(c.body.x - p.x, c.body.z - p.z) > p.r + 0.6) continue
+          p.hits.push(c.id)
+          const b = c.body
+          const [fx, fz] = forward(b.h)
+          const side = b.vx * fz - b.vz * fx
+          b.slip = OIL_SPIN_SECONDS
+          b.yaw = (side > 0 ? -1 : 1) * (2.5 + Math.min(2, speedOf(b) / 15))
+          b.drift = 0
+          this.emit("spinout", `${c.name} spun out on the oil`, c.id)
+        }
+      } else if (p.kind === "spike" && robber && prev.has(robber.id)) {
+        const [px, pz] = prev.get(robber.id)!
+        if (!crossesStrip(p, px, pz, robber.body.x, robber.body.z, radiusOf(robber))) continue
+        robber.body.flat = FLAT_SECONDS
+        this.props.splice(this.props.indexOf(p), 1)
+        this.heat += 2
+        const owner = this.cars.find((c) => c.id === p.owner)
+        this.emit("flat", `${robber.name} hit ${owner ? `${owner.name}'s ` : ""}SPIKE STRIP. Flat tire!`, robber.id)
+      }
+    }
+    if (roadblocks) this.propsChanged()
+  }
+
+  /** Is the robber inside a smoke cloud? */
+  inSmoke(x: number, z: number) {
+    return this.props.some((p) => p.kind === "smoke" && Math.hypot(p.x - x, p.z - z) < p.r)
+  }
+
+  /** Line of sight from a cop to the robber: within sight range, not through smoke, and not around a building unless close enough to hear. */
+  canSee(cop: Car, r: Car) {
+    const a = cop.body
+    const b = r.body
+    const d = Math.hypot(a.x - b.x, a.z - b.z)
+    if (d > SIGHT_RANGE) return false
+    for (const p of this.props) if (p.kind === "smoke" && segmentHitsCircle(a.x, a.z, b.x, b.z, p.x, p.z, p.r)) return false
+    if (d < HEAR_RANGE) return true
+    for (const box of this.sightBoxes) if (segmentHitsBox(a.x, a.z, b.x, b.z, box)) return false
+    return true
   }
 
   private stepRules(dt: number) {
     const r = this.robber()
     if (!r) return
     const cops = this.cops()
-    this.heat += dt * 0.5
+    this.heat += dt * (this.seen ? HEAT_SEEN_RATE : HEAT_RATE)
+    if (this.phaseT >= EXTRACT_OPEN_SECONDS && this.phaseT - dt < EXTRACT_OPEN_SECONDS) this.emit("exit", `The ride is waiting at the ${this.exit.name}`)
     this.stepHeli(dt, r)
-    const spotted = this.heli.active && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
+    const smoked = this.inSmoke(r.body.x, r.body.z)
+    const spotted = this.heli.active && !smoked && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
     this.heli.lock = spotted ? this.heli.lock + dt : 0
-    this.seen = spotted || cops.some((c) => Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z) < SIGHT_RANGE)
-    if (this.seen) this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
+    if (spotted) this.heat += dt * HEAT_SPOT_RATE
+    this.seen = spotted || (!smoked && cops.some((c) => this.canSee(c, r)))
+    if (this.seen) {
+      this.lastSeen = { x: r.body.x, z: r.body.z, t: this.t }
+      this.lastSeenH = r.body.h
+    }
 
     // Bust: slow robber with cops pressed against them. One cop works against a wall; more cops are faster.
     const near = cops.filter((c) => Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z) < BUST_RANGE)
@@ -398,8 +580,9 @@ export class World {
     } else this.bust = Math.max(0, this.bust - dt * 0.4)
 
     const d = Math.hypot(r.body.x - this.exit.x, r.body.z - this.exit.z)
-    if (d < 14 && speedOf(r.body) < 16) {
-      this.extract = Math.min(EXTRACT_SECONDS, this.extract + dt)
+    // In the zone and slow enough: the ride loads up. Cops pressed against the car slow the loading down.
+    if (this.exitOpenIn() <= 0 && d < EXTRACT_RADIUS && speedOf(r.body) < EXTRACT_SPEED) {
+      this.extract = Math.min(EXTRACT_SECONDS, this.extract + dt * (this.boxed ? EXTRACT_BOXED_RATE : 1))
       if (this.extract >= EXTRACT_SECONDS) {
         this.credit(this.robberId, this.loot)
         this.roundScore += this.loot
@@ -417,41 +600,55 @@ export class World {
     if (this.stars > this.reinforcements + 2 && this.reinforcements < 3) this.addReinforcement()
   }
 
-  /** The helicopter flies to where the cops think the suspect is and sweeps its spotlight around that point. */
+  /**
+   * The helicopter flies to the suspect while they are seen. Once the trail goes cold it flies an expanding spiral
+   * around the last sighting, sweeping its spotlight; anything inside the beam is seen by every cop.
+   */
   private stepHeli(dt: number, r: Car) {
     const h = this.heli
     if (!h.active) {
-      if (this.phaseT < HELI_DELAY) return
+      if (this.phaseT < this.heliDelay) return
       h.active = true
       this.emit("heli", "Air unit up. Spotlight sweeping.")
     }
     h.y += (HELI_ALT - h.y) * Math.min(1, dt * 0.8)
-    const target = this.copTarget()
-    if (!target) return
+    const live = this.seen && Math.hypot(r.body.x - h.x, r.body.z - h.z) < 90
+    const target = live ? { x: r.body.x, z: r.body.z } : this.heliSearch()
     const dx = target.x - h.x
     const dz = target.z - h.z
     const d = Math.hypot(dx, dz)
-    const lag = 14
+    const lag = live ? 10 : 0
     if (d > lag) {
       const step = Math.min(d - lag, HELI_SPEED * dt)
       h.x += (dx / d) * step
       h.z += (dz / d) * step
-      h.h = Math.atan2(dx, dz)
+      if (d > 2) h.h = Math.atan2(dx, dz)
     }
     let tx: number
     let tz: number
-    if (this.seen && Math.hypot(r.body.x - h.x, r.body.z - h.z) < 60) {
-      tx = r.body.x + r.body.vx * 0.25
-      tz = r.body.z + r.body.vz * 0.25
+    if (live) {
+      tx = r.body.x + r.body.vx * 0.2
+      tz = r.body.z + r.body.vz * 0.2
     } else {
-      const a = this.t * 0.9
-      const rad = 18 + 10 * Math.sin(this.t * 0.37)
-      tx = target.x + Math.cos(a) * rad
-      tz = target.z + Math.sin(a * 1.3) * rad
+      const a = this.t * 2.1
+      const rad = SPOT_SWEEP * (0.6 + 0.4 * Math.sin(this.t * 0.7))
+      tx = h.x + Math.cos(a) * rad
+      tz = h.z + Math.sin(a) * rad
     }
-    const k = Math.min(1, dt * 2.2)
+    const k = Math.min(1, dt * 3)
     h.sx += (tx - h.sx) * k
     h.sz += (tz - h.sz) * k
+  }
+
+  /** Expanding spiral around the last sighting (or the exit when there is none), flown at about the helicopter's speed. */
+  heliSearch(phase = 0): { x: number; z: number } {
+    const c = this.lastSeen ?? { x: this.exit.x, z: this.exit.z, t: this.t }
+    const age = Math.max(0, this.t - c.t)
+    const rad = Math.min(170, 12 + 4.5 * age)
+    const angle = phase + age * Math.min(1.2, (HELI_SPEED * 0.9) / rad)
+    const x = Math.max(0, Math.min(this.city.max - 8, c.x + Math.cos(angle) * rad))
+    const z = Math.max(0, Math.min(this.city.waterZ - 8, c.z + Math.sin(angle) * rad))
+    return { x, z }
   }
 
   private stepScoring(dt: number) {
@@ -498,17 +695,29 @@ export class World {
         vehicle: c.vehicle.id,
         x: hidden ? this.lastSeen!.x : b.x,
         z: hidden ? this.lastSeen!.z : b.z,
-        h: b.h,
+        h: hidden ? this.lastSeenH : b.h,
         vx: hidden ? 0 : b.vx,
         vz: hidden ? 0 : b.vz,
         speed: hidden ? 0 : speedOf(b),
         drift: hidden ? 0 : lateralSpeed(b),
-        stun: b.stun,
-        boost: b.boostFuel,
+        stun: hidden ? 0 : b.stun,
+        boost: hidden ? 0 : b.boostFuel,
         human: c.human,
-        impact: c.impact,
+        impact: hidden ? 0 : c.impact,
         ghost: hidden,
+        gadgets: viewerId === undefined || viewerId === c.ownerId ? c.gadgets.map((g, i) => ({ ...g, ready: this.gadgetReady(c, i as 0 | 1) })) : undefined,
+        yaw: hidden ? 0 : b.yaw,
+        slide: hidden ? 0 : (b.drift ?? 0),
+        slip: hidden ? 0 : (b.slip ?? 0),
+        flat: hidden ? 0 : (b.flat ?? 0),
       })
+    }
+    const viewer = viewerId === undefined ? undefined : this.carOf(viewerId)
+    const props: PropView[] = []
+    for (const p of this.props) {
+      if (viewer?.role === "robber" && p.kind === "spike" && Math.hypot(p.x - viewer.body.x, p.z - viewer.body.z) > SPIKE_SPOT_RANGE) continue
+      if (viewer?.role === "cop" && !p.revealed) continue
+      props.push({ id: p.id, kind: p.kind, x: p.x, z: p.z, h: p.h, r: p.r, life: p.life, ttl: p.ttl })
     }
     const standings = [...this.standings.values()].filter((s) => this.participants.some((p) => p.id === s.id)).sort((a, b) => b.score - a.score)
     return {
@@ -529,23 +738,35 @@ export class World {
       busted: this.busted,
       escaped: this.escaped,
       extract: this.extract / EXTRACT_SECONDS,
+      exitOpenIn: this.exitOpenIn(),
       timeLeft: Math.max(0, ROUND_SECONDS + INTRO_SECONDS + HEAD_START_SECONDS - this.t),
       roundScore: { drift: Math.round(this.roundDrift), nearMisses: this.roundNear, score: Math.round(this.roundScore) },
       standings,
       heli: { ...this.heli },
       cars,
+      props,
     }
   }
 
+  exitOpenIn() {
+    if (this.phase === "intro" || this.phase === "headstart") return EXTRACT_OPEN_SECONDS
+    if (this.phase === "end") return 0
+    return Math.max(0, EXTRACT_OPEN_SECONDS - this.phaseT)
+  }
+
   /** Where cop bots think the robber is: live when seen, otherwise the last sighting, otherwise a guess at the exit. */
-  copTarget(): { x: number; z: number; visible: boolean } | null {
+  copTarget(car?: Car): { x: number; z: number; visible: boolean } | null {
     const r = this.robber()
     if (!r) return null
     if (this.seen) return { x: r.body.x, z: r.body.z, visible: true }
-    if (this.lastSeen && this.t - this.lastSeen.t < 12) return { x: this.lastSeen.x, z: this.lastSeen.z, visible: false }
-    return { x: this.exit.x, z: this.exit.z, visible: false }
+    if (this.lastSeen && this.t - this.lastSeen.t < 10) return { x: this.lastSeen.x, z: this.lastSeen.z, visible: false }
+    // Trail gone cold: ground units fan out along the helicopter's search spiral, each a different way round.
+    return { ...this.heliSearch(car ? 2 + car.id * 2.4 : 0), visible: false }
   }
 }
+
+const RESTITUTION = 0.25
+const RAM_STUN_DV = 9
 
 export function radiusOf(c: Car) {
   return Math.max(1.1, c.vehicle.length * 0.42)
