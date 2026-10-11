@@ -1,4 +1,4 @@
-import type { Vehicle } from "../config"
+import { FLAT_GRIP, FLAT_SPEED, type Vehicle } from "../config"
 import type { Box } from "./city"
 
 export type Input = {
@@ -53,8 +53,8 @@ export const DRIVE = {
   recoverAngle: 1.0,
   recoverGain: 6,
   reverseMax: 14,
-  flatSpeed: 0.68,
-  flatGrip: 0.55,
+  flatSpeed: FLAT_SPEED,
+  flatGrip: FLAT_GRIP,
   oilGrip: 0.05,
   crank: 0.8,
   /** An engine-off car slower than this is dark: invisible to radar and the helicopter. */

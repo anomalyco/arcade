@@ -91,7 +91,12 @@ export const GADGETS: Record<GadgetId, GadgetSpec> = {
 export const LOADOUT: Record<Role, [GadgetId, GadgetId]> = { robber: ["oil", "smoke"], cop: ["spike", "roadblock"] }
 
 export const OIL_SPIN_SECONDS = 1.2
-export const FLAT_SECONDS = 6
+export const FLAT_SECONDS = 8
+/** A flat tire caps top speed and grip at these fractions. */
+export const FLAT_SPEED = 0.5
+export const FLAT_GRIP = 0.45
+/** Bust progress per second for each cop pressed against the driver: two cops bust twice as fast as one. */
+export const BUST_RATE_PER_COP = 0.5
 export const SPIKE_THICK = 0.8
 export const ROADBLOCK_THICK = 1.6
 /** The robber only notices a spike strip glinting in the headlights inside this range. */

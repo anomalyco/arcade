@@ -1,6 +1,7 @@
 import {
   BUST_RANGE,
   BUST_SECONDS,
+  BUST_RATE_PER_COP,
   END_SECONDS,
   EXTRACT_BOXED_RATE,
   EXTRACT_SPOTLIT_RATE,
@@ -783,7 +784,8 @@ export class World {
     const near = cops.filter((c) => Math.hypot(c.body.x - r.body.x, c.body.z - r.body.z) < BUST_RANGE)
     this.boxed = near.length > 0 && speedOf(r.body) < 7
     if (this.boxed) {
-      const rate = near.length === 1 ? 0.45 : 1 + 0.25 * (near.length - 2)
+      // Linear in the number of cops: one cop fills it in BUST_SECONDS * 2, two in BUST_SECONDS, three in BUST_SECONDS / 1.5...
+      const rate = near.length * BUST_RATE_PER_COP
       this.bust = Math.min(1, this.bust + (dt / BUST_SECONDS) * rate)
       if (this.bust >= 1) {
         const pts = 1000 + Math.round(this.loot / 1000)
