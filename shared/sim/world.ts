@@ -270,6 +270,16 @@ export class World {
     } else {
       // Leavers' cars disappear; there are no bots to hand them to.
       this.cars = this.cars.filter((c) => ps.some((p) => p.id === c.ownerId) || c.ownerId.startsWith("backup-"))
+      // Late joiners drop straight in as cops from the precinct; nobody sits out a survival round.
+      if (this.phase !== "end") {
+        const n = this.city.nodes[this.city.precinct.spawnNode]!
+        for (const p of ps) {
+          if (this.cars.some((c) => c.ownerId === p.id)) continue
+          const k = this.cops().length
+          this.spawn(p, "cop", n.x + (k % 2 === 0 ? -2.5 : 2.5), n.z + Math.floor(k / 2) * 7, Math.PI)
+          this.emit("join", `${p.name} joined the pursuit`)
+        }
+      }
     }
   }
 

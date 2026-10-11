@@ -243,10 +243,11 @@ describe("room", () => {
     expect(b.client!.body).not.toBeNull()
   })
 
-  test("mid-round joiners spectate with a view, then get a car next round", () => {
+  test("mid-round joiners drop straight in as cops with their own car", () => {
     const net = new Net()
     const { a, b } = pair(net)
     settle(net, a, b)
+    const robber = net.core.world!.robberId
     const c = join(net, "Cy")
     settle(net, c)
     for (let i = 0; i < 10; i++) {
@@ -255,23 +256,11 @@ describe("room", () => {
       b.frame(drive(i))
       c.frame(drive(i))
     }
-    const snaps = c.pipe.received.filter((m) => m.type === "snapshot")
-    expect(snaps.length).toBeGreaterThan(0)
-    for (const s of snaps) {
-      expect(s.you).toBeNull()
-      expect(s.view.cars.length).toBeGreaterThan(0)
-    }
-    expect(c.client!.body).toBeNull()
-    net.core.world!.startRound()
-    for (let i = 0; i < 10; i++) {
-      net.tick()
-      a.frame(drive(i))
-      b.frame(drive(i))
-      c.frame(drive(i))
-    }
+    const world = net.core.world!
+    expect(world.robberId).toBe(robber)
+    expect(world.carOf(c.client!.myId)!.role).toBe("cop")
+    expect(world.carOf(c.client!.myId)!.human).toBe(true)
     expect(c.client!.body).not.toBeNull()
-    expect(a.client!.body).not.toBeNull()
-    expect(net.core.world!.carOf(c.client!.myId)!.human).toBe(true)
   })
 
   test("a reconnect within the grace period resumes the same seat and car", () => {
@@ -328,14 +317,16 @@ describe("fog of war", () => {
         send(data)
       }
     }
+    const still = { throttle: 0, brake: 1, steer: 0, handbrake: false, boost: false }
     for (let i = 0; i < 30 * 40 && world.phase !== "end"; i++) {
       net.tick()
       rob.frame(drive(i))
-      cop.frame({ throttle: 0, brake: 1, steer: 0, handbrake: false, boost: false })
-      spec.frame(drive(i))
+      cop.frame(still)
+      spec.frame(still)
     }
     expect(unseen).toBeGreaterThan(100)
     expect(cop.client!.body).not.toBeNull()
-    expect(spec.client!.body).toBeNull()
+    // Late joiners drop in as cops, so the third player has a car too.
+    expect(spec.client!.body).not.toBeNull()
   })
 })
