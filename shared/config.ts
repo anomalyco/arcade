@@ -82,11 +82,12 @@ export type GadgetSpec = { id: GadgetId; name: string; role: Role; charges: numb
 export const GADGETS: Record<GadgetId, GadgetSpec> = {
   oil: { id: "oil", name: "OIL SLICK", role: "robber", charges: 3, cooldown: 8, ttl: 12, radius: 3 },
   smoke: { id: "smoke", name: "SMOKE SCREEN", role: "robber", charges: 2, cooldown: 14, ttl: 6, radius: 9 },
-  spike: { id: "spike", name: "SPIKE STRIP", role: "cop", charges: 2, cooldown: 12, ttl: 20, radius: 6 },
+  spike: { id: "spike", name: "SPIKE STRIP", role: "cop", charges: 3, cooldown: 10, ttl: 25, radius: 6 },
   roadblock: { id: "roadblock", name: "ROADBLOCK", role: "cop", charges: 1, cooldown: 20, ttl: 25, radius: 6.5 },
 }
 
 /** Q = slot 0, E = slot 1. */
+/** In survival only the cops' spike strip is active; Q or E deploys it. */
 export const LOADOUT: Record<Role, [GadgetId, GadgetId]> = { robber: ["oil", "smoke"], cop: ["spike", "roadblock"] }
 
 export const OIL_SPIN_SECONDS = 1.2

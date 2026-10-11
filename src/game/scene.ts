@@ -4,6 +4,7 @@ import type { City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
 import { buildPuff } from "../render/puff"
+import { buildSpikeStrip } from "../render/spike"
 import { buildCityMesh, type LampLight } from "../render/city-mesh"
 import { MAT, Mesh } from "../render/mesh"
 import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FLOATS } from "../render/renderer"
@@ -42,6 +43,7 @@ export class Scene {
   private heliModel: number
   private rotorModel: number
   private puffModel: number
+  private spikeModel: number
   private vis = new Map<number, Vis>()
   private frame = new Float32Array(FRAME_FLOATS)
   private lights = new Float32Array(MAX_LIGHTS * 12)
@@ -66,6 +68,7 @@ export class Scene {
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
     this.puffModel = renderer.addModel(buildPuff())
+    this.spikeModel = renderer.addModel(buildSpikeStrip())
   }
 
   private visOf(c: CarView) {
@@ -253,6 +256,17 @@ export class Scene {
       inst(this.models.get(p.model)!, batches, [p.x, 0, p.z, p.h, 0, 0, -1, 0, 0, 0, 0, 1])
     }
 
+    // Deployed spike strips: the model plus blinking red end glows so they read at a glance.
+    for (const p of view.props ?? []) {
+      if (p.kind !== "spike") continue
+      inst(this.spikeModel, batches, [p.x, 0, p.z, p.h, 0, 0, -1, 0, 0, 0, 0, 1])
+      const blink = Math.floor(t * 3 + p.id) % 2 === 0 ? 1.8 : 0.6
+      const ax = Math.cos(p.h) * p.r
+      const az = -Math.sin(p.h) * p.r
+      for (const s of [-1, 1]) sprite("d", p.x + ax * s, 0.3, p.z + az * s, 0.9, 1, 0.12, 0.08, blink, 0)
+      sprite("d", p.x, 0.06, p.z, p.r * 1.1, 1, 0.75, 0.2, 0.08, 3, p.h, 0.25)
+    }
+
     // Helicopter with spinning rotor and its spotlight beam.
     if (heli.active) {
       inst(this.heliModel, batches, [heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, HELI_SCALE])
@@ -293,7 +307,7 @@ export class Scene {
       frame: f,
       lights: L,
       batches: pack(batches),
-      ghosts: pack(ghosts).filter((b) => b.model !== this.heliModel && b.model !== this.rotorModel && b.model !== this.puffModel),
+      ghosts: pack(ghosts).filter((b) => b.model !== this.heliModel && b.model !== this.rotorModel && b.model !== this.puffModel && b.model !== this.spikeModel),
       sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,

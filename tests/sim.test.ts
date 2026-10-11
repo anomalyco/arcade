@@ -406,3 +406,32 @@ describe("survival sighting", () => {
     expect(Math.hypot(ghost.x - ROAD_X, ghost.z - ROAD_Z)).toBeLessThan(2)
   })
 })
+
+describe("survival spike strip", () => {
+  test.skipIf(!SURVIVAL)("a cop drops a strip behind them; the driver crossing it gets a flat and slows down", () => {
+    const w = humanWorld(["c1", "c2"])
+    toChase(w)
+    place(w, "c1", ROAD_X, ROAD_Z, 0)
+    place(w, "c2", ROAD_X + 300, ROAD_Z - 200)
+    place(w, "r", ROAD_X, ROAD_Z - 40, 0, 20)
+    w.setInput("c1", { ...NO_INPUT, gadget: 0 })
+    steps(w, 0.1)
+    w.setInput("c1", NO_INPUT)
+    const strip = w.props.find((p) => p.kind === "spike")!
+    expect(strip).toBeDefined()
+    expect(strip.z).toBeLessThan(ROAD_Z)
+    // Robber can't deploy anything.
+    w.setInput("r", { ...NO_INPUT, gadget: 0 })
+    steps(w, 0.1)
+    expect(w.props.filter((p) => p.kind !== "spike").length).toBe(0)
+    place(w, "c1", ROAD_X + 20, ROAD_Z + 200)
+    let top = 0
+    steps(w, 4, () => {
+      w.setInput("r", { ...NO_INPUT, throttle: 1 })
+    })
+    const b = w.carOf("r")!.body
+    expect(b.flat ?? 0).toBeGreaterThan(0)
+    top = Math.hypot(b.vx, b.vz)
+    expect(top).toBeLessThan(w.carOf("r")!.vehicle.maxSpeed * 0.75)
+  })
+})

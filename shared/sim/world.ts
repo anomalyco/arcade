@@ -529,6 +529,8 @@ export class World {
 
   /** Q / E. Robber gadgets work from the head start on; cop gadgets once the chase is on. */
   gadgetReady(c: Car, slot: 0 | 1) {
+    // Survival: cops have only the spike strip; the driver has nothing.
+    if (SURVIVAL && (c.role !== "cop" || c.gadgets[slot]?.id !== "spike")) return false
     const g = c.gadgets[slot]
     if (!g || g.charges <= 0 || g.cooldown > 0) return false
     if (c.role === "cop") return this.phase === "chase"
@@ -536,7 +538,8 @@ export class World {
   }
 
   useGadget(c: Car, slot: 0 | 1): boolean {
-    if (SURVIVAL || !this.gadgetReady(c, slot)) return false
+    if (SURVIVAL) slot = 0
+    if (!this.gadgetReady(c, slot)) return false
     const g = c.gadgets[slot]!
     const spec = GADGETS[g.id]
     g.charges--

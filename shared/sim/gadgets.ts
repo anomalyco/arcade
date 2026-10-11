@@ -39,7 +39,8 @@ export function placeProp(kind: PropKind, b: Body, carLength: number): { x: numb
     const back = kind === "oil" ? carLength / 2 + GADGETS.oil.radius + 0.5 : 3
     return { x: b.x - fx * back, z: b.z - fz * back, h: b.h }
   }
-  const ahead = kind === "spike" ? 10 : 8
+  // Spike strips drop just behind the cop (lay it in the driver's path when you're ahead); roadblocks go ahead.
+  const ahead = kind === "spike" ? -(carLength / 2 + 2.5) : 8
   const h = snapAxis(b.h)
   let x = b.x + fx * ahead
   let z = b.z + fz * ahead
