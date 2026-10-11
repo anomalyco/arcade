@@ -40,6 +40,12 @@ type CarState = {
   impactCool: number
   nitroCool: number
   skidCool: number
+  /** Own car: the tires are in a real slide (hysteresis, so the squeal doesn't flicker at the threshold). */
+  sliding: boolean
+  /** Own car: nitro firing, seconds since it lit, and a smoothed 0..1 amount for the engine lift. */
+  boosting: boolean
+  boostT: number
+  boostAmt: number
   yelp: boolean
   /** Siren phase offset so a pack of cruisers doesn't wail in unison. */
   sirenOffset: number
@@ -55,6 +61,8 @@ class LoopVoice {
   pan: StereoPannerNode
   send: GainNode
   active = false
+  /** Where sources connect: the low-pass, or the head of an EQ chain set with `eq`. */
+  private input: AudioNode
 
   constructor(
     private a: AudioEngine,
@@ -64,6 +72,7 @@ class LoopVoice {
     this.filter = ctx.createBiquadFilter()
     this.filter.type = "lowpass"
     this.filter.frequency.value = 18000
+    this.input = this.filter
     this.gain = ctx.createGain()
     this.gain.gain.value = 0
     this.pan = ctx.createStereoPanner()
@@ -74,6 +83,22 @@ class LoopVoice {
     this.pan.connect(out)
     this.pan.connect(this.send)
     this.send.connect(a.verb)
+  }
+
+  /** Fixed EQ bands ahead of the low-pass; call before `use`. */
+  eq(...bands: [type: BiquadFilterType, freq: number, gain: number, q: number][]) {
+    let next: AudioNode = this.filter
+    for (const [type, freq, gain, q] of bands.reverse()) {
+      const f = this.a.ctx!.createBiquadFilter()
+      f.type = type
+      f.frequency.value = freq
+      f.gain.value = gain
+      f.Q.value = q
+      f.connect(next)
+      next = f
+    }
+    this.input = next
+    return this
   }
 
   /** Swaps the sample; only restarts the source when it actually changes. */
@@ -88,7 +113,7 @@ class LoopVoice {
     const s = ctx.createBufferSource()
     s.buffer = buf
     s.loop = true
-    s.connect(this.filter)
+    s.connect(this.input)
     s.start(ctx.currentTime, offset * buf.duration)
     this.src = s
     this.buf = buf
@@ -181,6 +206,8 @@ export class GameAudio {
   // Own car.
   private engine!: LoopVoice
   private screech!: LoopVoice
+  private scrub!: LoopVoice
+  private rush!: LoopVoice
   private flat!: LoopVoice
   private scrape!: LoopVoice
   private ownSiren!: SirenVoice
@@ -225,8 +252,13 @@ export class GameAudio {
     if (this.built || !a.ctx || !a.ready) return
     this.built = true
     this.engine = new LoopVoice(a, a.sfx)
-    this.screech = new LoopVoice(a, a.sfx)
+    // The squeal's bite lives at 2-5 kHz: scoop it so the slide sits under the engine instead of whistling over it.
+    this.screech = new LoopVoice(a, a.sfx).eq(["peaking", 3200, -6, 0.8], ["highshelf", 6000, -4, 0.7])
     this.screech.use(a.buffer("tire_screech_loop"))
+    this.scrub = new LoopVoice(a, a.sfx)
+    this.scrub.use(a.buffer("tire_scrub_loop"))
+    this.rush = new LoopVoice(a, a.sfx)
+    this.rush.use(a.buffer("nitro_rush_loop"))
     this.flat = new LoopVoice(a, a.sfx)
     this.flat.use(a.buffer("flat_tire_loop"))
     this.scrape = new LoopVoice(a, a.sfx)
@@ -280,7 +312,24 @@ export class GameAudio {
   private track(c: Car, dt: number) {
     let s = this.states.get(c.id)
     if (!s) {
-      s = { seen: 0, speed: c.speed, boost: c.boost, impact: 0, drift: 0, rpm: 0, load: 0, impactCool: 0, nitroCool: 0, skidCool: 0, yelp: false, sirenOffset: Math.random() }
+      s = {
+        seen: 0,
+        speed: c.speed,
+        boost: c.boost,
+        impact: 0,
+        drift: 0,
+        rpm: 0,
+        load: 0,
+        impactCool: 0,
+        nitroCool: 0,
+        skidCool: 0,
+        sliding: false,
+        boosting: false,
+        boostT: 0,
+        boostAmt: 0,
+        yelp: false,
+        sirenOffset: Math.random(),
+      }
       this.states.set(c.id, s)
     }
     s.seen = this.frame
@@ -337,6 +386,8 @@ export class GameAudio {
     if (!mine || !live) {
       this.engine.silence(0.3)
       this.screech.silence()
+      this.scrub.silence()
+      this.rush.silence(0.12)
       this.flat.silence()
       this.scrape.silence()
       this.ownSiren.out.silence(0.3)
@@ -345,17 +396,58 @@ export class GameAudio {
     const s = this.states.get(mine.id)!
     const a = this.a
     this.engine.use(a.buffer(mine.role === "cop" ? "engine_cop_loop" : "engine_robber_loop"))
-    const accel = (mine.speed - s.speed) / dt
-    const throttle = input ? Math.max(0, input.throttle) + (input.boost && mine.boost > 0 ? 0.3 : 0) : Math.max(0, Math.min(1, accel / 6))
-    s.load += (Math.min(1, throttle) - s.load) * (1 - Math.exp(-dt * 8))
-    const rate = this.rpmFor(s, mine.speed, s.load, dt)
     const off = !!mine.engineOff
-    const engGain = off ? 0 : 0.34 + 0.26 * s.load + 0.12 * Math.min(1, mine.speed / 40)
-    this.engine.set(engGain, rate, 0, 1400 + 9000 * (0.25 + 0.75 * s.load) * (0.6 + 0.4 * s.rpm), 0.05, off ? 0.25 : 0.05)
+    // Nitro fires while you hold boost with fuel left (mirrors the sim); without input, while the fuel drains.
+    const boosting = !off && mine.stun <= 0 && mine.boost > 0.005 && (input ? input.boost : mine.boost < s.boost - 1e-5)
+    if (boosting && !s.boosting) {
+      s.boostT = 0
+      if (s.nitroCool <= 0) a.play("nitro_burst", { gain: 0.75, wet: 0.08 })
+      s.nitroCool = 0.4
+    }
+    s.boosting = boosting
+    s.boostT += dt
+    s.boostAmt += ((boosting ? 1 : 0) - s.boostAmt) * (1 - Math.exp(-dt * (boosting ? 10 : 4)))
 
-    // Tires: lateral speed drives the squeal; it rides a little higher in pitch as the slide gets faster.
-    const slide = mine.speed > 4 ? Math.max(0, Math.min(1, (mine.drift - 2.5) / 9)) : 0
-    this.screech.set(0.5 * slide * slide, 0.92 + 0.16 * slide, 0, 9000, 0.06, slide > 0 ? 0.05 : 0.12)
+    const accel = (mine.speed - s.speed) / dt
+    const throttle = input ? Math.max(0, input.throttle) + (boosting ? 0.3 : 0) : Math.max(0, Math.min(1, accel / 6))
+    s.load += (Math.min(1, throttle) - s.load) * (1 - Math.exp(-dt * 8))
+    // Boost lifts the note and opens the tone a little on top of the extra load.
+    const rate = this.rpmFor(s, mine.speed, s.load, dt) * (1 + 0.05 * s.boostAmt)
+    const engGain = off ? 0 : 0.34 + 0.26 * s.load + 0.12 * Math.min(1, mine.speed / 40) + 0.05 * s.boostAmt
+    const engCut = (1400 + 9000 * (0.25 + 0.75 * s.load) * (0.6 + 0.4 * s.rpm)) * (1 + 0.4 * s.boostAmt)
+    this.engine.set(engGain, rate, 0, engCut, 0.05, off ? 0.25 : 0.05)
+
+    // The rush under the kick: its low-pass opens over the first moments, it thins as the fuel runs dry, and it
+    // fades (darkening) over a few hundred ms when the boost stops.
+    const open = Math.min(1, s.boostT / 0.35)
+    const dry = Math.min(1, 0.7 + (0.3 * mine.boost) / 0.12)
+    this.rush.set(boosting ? 0.4 * dry : 0, 0.94 + 0.12 * Math.min(1, mine.speed / 45), 0, boosting ? 1600 + 8400 * open : 1600, 0.06, boosting ? 0.09 : 0.14)
+
+    // Tires. Ordinary cornering only gets a faint, untonal rubber scrub. The squeal is reserved for real slides (the
+    // handbrake, the drift state, or a lot of sideways speed), with hysteresis so it can't flicker at the threshold.
+    const state = mine.slide ?? 0
+    const handbrake = !!input?.handbrake && mine.speed > 7
+    const was = s.sliding
+    s.sliding = was
+      ? mine.speed > 4 && (handbrake || (state > 0.15 && mine.drift > 2.5) || mine.drift > 4)
+      : mine.speed > 6 && (handbrake || (state > 0.3 && mine.drift > 3) || mine.drift > 6)
+    const k = Math.max(0, Math.min(1, (mine.drift - 3) / 9))
+    const attack = 0.055
+    const release = 0.07
+    if (s.sliding) {
+      // Low scrub leads at small angles; the squeal grows in with the slide, rising in pitch and opening up.
+      this.screech.set(0.3 * (0.3 + 0.7 * k), 0.94 + 0.08 * k + 0.05 * Math.min(1, mine.speed / 40), 0, 2600 + 7400 * k, 0.06, attack)
+      this.scrub.set(0.16 * (1 - 0.5 * k), 0.9 + 0.15 * Math.min(1, mine.speed / 35), 0, 1200 + 1800 * k, 0.04, attack)
+    } else {
+      const corner = mine.speed > 5 ? Math.max(0, Math.min(1, (mine.drift - 2) / 4)) : 0
+      this.screech.set(0, 0.94, 0, 2600, 0.06, release)
+      this.scrub.set(0.07 * corner * corner, 0.9 + 0.15 * Math.min(1, mine.speed / 35), 0, 900 + 600 * corner, 0.04, corner > 0 ? attack : release)
+    }
+    // A chirp only when a hard slide breaks loose, and never more than once every ~1.6 s.
+    if (s.sliding && !was && mine.speed > 10 && (handbrake || state > 0.5 || mine.drift > 8) && s.skidCool <= 0) {
+      a.play("skid_short", { gain: 0.28, rate: 0.95 + Math.random() * 0.1, wet: 0.08 })
+      s.skidCool = 1.6
+    }
 
     const flat = (mine.flat ?? 0) > 0 && mine.speed > 1.5
     this.flat.set(flat ? Math.min(0.55, 0.15 + mine.speed / 50) : 0, 0.55 + Math.min(1, mine.speed / 30) * 0.8, 0, 12000, 0.04, 0.1)
@@ -515,16 +607,19 @@ export class GameAudio {
             this.a.play(heavy ? "impact_heavy" : "impact_light", { gain: g * (0.45 + 0.55 * amt) * (heavy ? 0.9 : 0.8), rate: 0.9 + Math.random() * 0.2, pan, wet, cutoff })
             s.impactCool = heavy ? 0.35 : 0.18
           }
-          // Nitro: fuel starts draining.
-          if (c.boost < s.boost - 1e-4 && s.nitroCool <= 0 && c.speed > 3) {
-            this.a.play("nitro_burst", { gain: g * (own ? 0.7 : 0.6), pan, wet, cutoff })
-            s.nitroCool = 1.2
-          }
-          if (c.boost >= s.boost) s.nitroCool = Math.min(s.nitroCool, 0.25)
-          // Handbrake flick: the slide crossing in fast gives a chirp before the squeal loop takes over.
-          if (c.drift > 5 && s.drift <= 5 && c.speed > 8 && s.skidCool <= 0) {
-            this.a.play("skid_short", { gain: g * (own ? 0.45 : 0.4), rate: 0.95 + Math.random() * 0.1, pan, wet, cutoff })
-            s.skidCool = 0.6
+          // Your own nitro and tires are driven from your controls in ownCar.
+          if (!own) {
+            // Nitro: fuel starts draining.
+            if (c.boost < s.boost - 1e-4 && s.nitroCool <= 0 && c.speed > 3) {
+              this.a.play("nitro_burst", { gain: g * 0.55, pan, wet, cutoff })
+              s.nitroCool = 1.2
+            }
+            if (c.boost >= s.boost) s.nitroCool = Math.min(s.nitroCool, 0.25)
+            // A hard slide breaking loose; ordinary cornering never chirps.
+            if (c.drift > 8 && s.drift <= 8 && c.speed > 10 && s.skidCool <= 0) {
+              this.a.play("skid_short", { gain: g * 0.3, rate: 0.95 + Math.random() * 0.1, pan, wet, cutoff })
+              s.skidCool = 1.6
+            }
           }
         }
       }
