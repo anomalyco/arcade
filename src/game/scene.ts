@@ -2,7 +2,7 @@ import { vec4 } from "wgpu-matrix"
 import { VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
-import { buildCar, buildHeli, buildRotor } from "../render/car-mesh"
+import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
 import { buildPuff } from "../render/puff"
 import { buildCityMesh, type LampLight } from "../render/city-mesh"
 import { MAT, Mesh } from "../render/mesh"
@@ -38,6 +38,7 @@ export class Scene {
   readonly fx = new Fx()
   private lamps: LampLight[]
   private models = new Map<string, number>()
+  private variants = new Map<string, number[]>()
   private heliModel: number
   private rotorModel: number
   private puffModel: number
@@ -57,7 +58,11 @@ export class Scene {
     const built = buildCityMesh(city)
     renderer.setCity(built.mesh)
     this.lamps = built.lamps
-    for (const v of VEHICLES) this.models.set(v.id, renderer.addModel(buildCar(v)))
+    for (const v of VEHICLES) {
+      const ids = buildCarVariants(v).map((m) => renderer.addModel(m))
+      this.variants.set(v.id, ids)
+      this.models.set(v.id, ids[0]!)
+    }
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
     this.puffModel = renderer.addModel(buildPuff())
@@ -96,7 +101,7 @@ export class Scene {
       if (c.drift > 4 && c.speed > 7) {
         const intensity = Math.min(1, (c.drift - 3) / 8)
         for (const s of [-1, 1]) this.fx.skid(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, Math.atan2(c.vx, c.vz), 0.45 * intensity + 0.15)
-        v.smokeAcc += dt * 30 * intensity
+        v.smokeAcc += dt * 16 * intensity
         while (v.smokeAcc > 1) {
           v.smokeAcc -= 1
           const s = Math.random() < 0.5 ? -1 : 1
@@ -197,7 +202,8 @@ export class Scene {
     const chasing = view.phase === "chase" || view.phase === "headstart" || view.phase === "end"
     for (const c of view.cars) {
       const spec = VEHICLE_BY_ID.get(c.vehicle)!
-      const model = this.models.get(c.vehicle)!
+      const vs = this.variants.get(c.vehicle)!
+      const model = vs[c.id % vs.length]!
       const tint = c.role === "robber" ? ROBBER_TINT : COP_TINT
       if (c.ghost) {
         // Last-seen ping for cops: a pulsing ring and a faint silhouette where the suspect was.
@@ -232,10 +238,11 @@ export class Scene {
         const red = sirenOn(siren, true)
         const blue = sirenOn(siren, false)
         const y = spec.id === "swat" ? 2.9 : 1.9
-        light(c.x - rx * 0.7, y + 0.6, c.z - rz * 0.7, 20, 1, 0.08, 0.08, 5 * red)
-        light(c.x + rx * 0.7, y + 0.6, c.z + rz * 0.7, 20, 0.15, 0.3, 1, 6 * blue)
-        if (red > 0) sprite("d", c.x - rx * 0.45, y, c.z - rz * 0.45, 1.5, 1, 0.1, 0.1, 1.5 * red, 0)
-        if (blue > 0) sprite("d", c.x + rx * 0.45, y, c.z + rz * 0.45, 1.5, 0.2, 0.35, 1, 1.7 * blue, 0)
+        // Siren light sits low and to the sides so it paints the road and walls, not the car's own livery.
+        light(c.x - rx * 2.2, y - 1.2, c.z - rz * 2.2, 14, 1, 0.08, 0.08, 3 * red)
+        light(c.x + rx * 2.2, y - 1.2, c.z + rz * 2.2, 14, 0.15, 0.3, 1, 3.6 * blue)
+        if (red > 0) sprite("d", c.x - rx * 0.45, y, c.z - rz * 0.45, 0.9, 1, 0.1, 0.1, 1.5 * red, 0)
+        if (blue > 0) sprite("d", c.x + rx * 0.45, y, c.z + rz * 0.45, 0.9, 0.2, 0.35, 1, 1.7 * blue, 0)
         // Colored wash on the road around the cruiser.
         sprite("d", c.x, 0.08, c.z, 7, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue), 3)
       }

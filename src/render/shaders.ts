@@ -77,7 +77,7 @@ fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
     let cd = dot(d / dist, normalize(F.spotDir.xyz));
     let cone = smoothstep(F.spotDir.w, F.spotDir.w + 0.0025, cd);
     let ndl2 = max(dot(n, -d / dist), 0.0) * 0.8 + 0.2;
-    c += albedo * vec3f(0.92, 0.96, 1.0) * 6.0 * cone * ndl2;
+    c += albedo * vec3f(0.92, 0.96, 1.0) * 3.2 * cone * ndl2;
   }
   return c;
 }
