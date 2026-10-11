@@ -855,8 +855,7 @@ export function buildHeli(): Mesh {
       if (seg <= 1) return upper || (side && seg === 1) ? screen : { col: white }
       if (seg <= 3 && (e === 1 || e === 3)) return glass
       if (seg <= 4) return { col: e === 2 || side || upper ? navy : white }
-      if (seg === 5) return { col: e === 2 || upper ? navy : white }
-      return { col: e === 2 ? navy : white }
+      return { col: white }
     },
     { front: { col: navy }, back: { col: navy } },
   )
@@ -867,7 +866,8 @@ export function buildHeli(): Mesh {
   m.box(-0.1, 0.1, 2.5, 2.6, -0.1, 0.1, TRIM, MAT.lit)
   m.box(-0.4, 0.4, 2.25, 2.4, -2.1, -1.7, TRIM, MAT.lit)
   // Tail fin, stabilizer and nav lights.
-  extrudeX(m, [[-6.0, 1.75], [-6.55, 1.75], [-6.75, 3.0], [-6.45, 3.0]], -0.06, 0.06, navy)
+  extrudeX(m, [[-6.0, 1.75], [-6.55, 1.75], [-6.75, 3.0], [-6.45, 3.0]], -0.06, 0.06, white)
+  extrudeX(m, [[-6.3, 2.5], [-6.62, 2.5], [-6.75, 3.0], [-6.45, 3.0]], -0.065, 0.065, navy)
   extrudeX(m, [[-6.1, 1.85], [-6.6, 1.85], [-6.65, 1.2], [-6.4, 1.2]], -0.05, 0.05, navy)
   extrudeX(m, [[-5.1, 1.84], [-5.6, 1.84], [-5.6, 1.92], [-5.1, 1.92]], -0.95, 0.95, white)
   for (const s of [-1, 1]) {

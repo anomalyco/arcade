@@ -1,8 +1,9 @@
 /**
- * Dev-only turntable for the vehicle models (http://localhost:5173/car-viewer.html). Not part of the production
+ * Dev-only turntable for the vehicle models (http://localhost:<port>/car-viewer.html). Not part of the production
  * build. Query: dist (camera distance, m), cy / cp (camera yaw / pitch), yaw (car heading), spin (rad/s),
  * only (comma list of vehicle ids, "heli"), cols (grid columns), lamps (0 to turn street lamps off), spot (1 = heli
- * spotlight on the first car), siren (phase, -1 off).
+ * spotlight on the first car), siren (phase, -1 off), yaws (comma list: one column per heading), glows=0, brake,
+ * still, and sirenX / sirenY / sirenK / sirenR / glowS / glowA to try siren light and glow placements.
  */
 import { mat4, vec4 } from "wgpu-matrix"
 import { VEHICLES } from "../../shared/config"
@@ -48,13 +49,11 @@ async function main() {
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
   const device = await adapter!.requestDevice()
   device.addEventListener("uncapturederror", (e) => console.error("gpu: " + (e as GPUUncapturedErrorEvent).error.message))
-  console.log("viewer: device ready")
   const context = canvas.getContext("webgpu")!
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format)
   renderer.setAtlas(await paintAtlas())
-  console.log("viewer: atlas ready")
   renderer.setCity(ground())
 
   const only = q.get("only")?.split(",")
@@ -222,7 +221,6 @@ async function main() {
       bloom: 0.9,
       flash: 0,
     })
-    ;(window as unknown as { frames: number }).frames = ((window as unknown as { frames: number }).frames | 0) + 1
     requestAnimationFrame(draw)
   }
   requestAnimationFrame(draw)
