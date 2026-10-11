@@ -23,6 +23,8 @@ export type City = {
   boxes: Box[]
   parks: Park[]
   trees: Tree[]
+  alleys: Alley[]
+  parked: Parked[]
   lamps: { x: number; z: number }[]
   nodes: { x: number; z: number }[]
   adj: number[][]
@@ -38,14 +40,20 @@ export const NODE_COUNT = (GRID + 1) * (GRID + 1)
 export const nodeIndex = (k: number, m: number) => k * (GRID + 1) + m
 
 const PALETTE: Rgb[] = [
-  [0.36, 0.34, 0.33],
-  [0.27, 0.3, 0.36],
-  [0.44, 0.38, 0.32],
-  [0.2, 0.22, 0.26],
-  [0.5, 0.48, 0.44],
-  [0.3, 0.27, 0.3],
-  [0.22, 0.31, 0.3],
+  [0.42, 0.33, 0.27],
+  [0.33, 0.31, 0.32],
+  [0.5, 0.41, 0.32],
+  [0.27, 0.27, 0.3],
+  [0.55, 0.5, 0.43],
+  [0.38, 0.27, 0.24],
+  [0.3, 0.33, 0.33],
+  [0.46, 0.44, 0.42],
 ]
+const PARKED = ["compact", "muscle", "van", "cruiser"]
+export const ALLEY = 7
+
+export type Alley = { x0: number; x1: number; z0: number; z1: number }
+export type Parked = { x: number; z: number; h: number; model: string }
 const NEONS: Rgb[] = [
   [1.0, 0.2, 0.62],
   [0.25, 0.9, 0.95],
@@ -58,6 +66,8 @@ export function generateCity(seed: number): City {
   const boxes: Box[] = []
   const parks: Park[] = []
   const trees: Tree[] = []
+  const alleys: Alley[] = []
+  const parked: Parked[] = []
   const lamps: { x: number; z: number }[] = []
   const nodes: { x: number; z: number }[] = []
   const adj: number[][] = []
@@ -113,24 +123,53 @@ export function generateCity(seed: number): City {
         continue
       }
       const central = Math.abs(i - 3) <= 1 && Math.abs(j - 3) <= 1
+      // Blocks split into lots by drivable alleys (ALLEY m wide), like the dense mockup city.
       const r = rng()
       const lots: [number, number, number, number][] = []
-      if (r < 0.3) lots.push([x0, x1, z0, z1])
-      else if (r < 0.65) {
-        const cut = x0 + (x1 - x0) * (0.38 + rng() * 0.24)
-        lots.push([x0, cut - 1.2, z0, z1], [cut + 1.2, x1, z0, z1])
+      const half = ALLEY / 2
+      if (r < 0.18) lots.push([x0, x1, z0, z1])
+      else if (r < 0.5) {
+        const cut = x0 + (x1 - x0) * (0.4 + rng() * 0.2)
+        lots.push([x0, cut - half, z0, z1], [cut + half, x1, z0, z1])
+        alleys.push({ x0: cut - half, x1: cut + half, z0: bz0, z1: bz1 })
       } else {
         const cx = x0 + (x1 - x0) * (0.4 + rng() * 0.2)
         const cz = z0 + (z1 - z0) * (0.4 + rng() * 0.2)
-        lots.push([x0, cx - 1.2, z0, cz - 1.2], [cx + 1.2, x1, z0, cz - 1.2], [x0, cx - 1.2, cz + 1.2, z1], [cx + 1.2, x1, cz + 1.2, z1])
+        lots.push([x0, cx - half, z0, cz - half], [cx + half, x1, z0, cz - half], [x0, cx - half, cz + half, z1], [cx + half, x1, cz + half, z1])
+        alleys.push({ x0: cx - half, x1: cx + half, z0: bz0, z1: bz1 }, { x0: bx0, x1: bx1, z0: cz - half, z1: cz + half })
       }
       for (const [a, b, c, d] of lots) {
-        if (rng() < 0.12) continue
-        const tall = central ? 22 + rng() * 26 : 0
-        const h = tall > 0 ? tall : 9 + rng() * rng() * 30
-        const color = PALETTE[Math.floor(rng() * PALETTE.length)]!
-        const neon = rng() < 0.28 ? NEONS[Math.floor(rng() * NEONS.length)]! : null
-        boxes.push({ x0: a, x1: b, z0: c, z1: d, h, color, neon, kind: "building", label: null })
+        if (lots.length > 1 && rng() < 0.1) {
+          // Parking lot: a few parked cars as small solid obstacles.
+          const cols = Math.max(1, Math.floor((b - a) / 3.4))
+          for (let k = 0; k < cols; k++) {
+            if (rng() < 0.45) continue
+            const px = a + 1.7 + k * 3.4
+            for (const pz of [c + 3, d - 3]) {
+              if (rng() < 0.4) continue
+              parked.push({ x: px, z: pz, h: pz < (c + d) / 2 ? 0 : Math.PI, model: PARKED[Math.floor(rng() * PARKED.length)]! })
+              boxes.push({ x0: px - 1, x1: px + 1, z0: pz - 2.3, z1: pz + 2.3, h: 1.4, color: [0, 0, 0], neon: null, kind: "special", label: "parked" })
+            }
+          }
+          continue
+        }
+        // Long lots become two or three row buildings of different heights with no gap between them.
+        const long = Math.max(b - a, d - c)
+        const parts = long > 34 ? 3 : long > 20 ? 2 : 1
+        const alongX = b - a >= d - c
+        for (let k = 0; k < parts; k++) {
+          const s0 = k / parts
+          const s1 = (k + 1) / parts
+          const pa = alongX ? a + (b - a) * s0 : a
+          const pb = alongX ? a + (b - a) * s1 : b
+          const pc = alongX ? c : c + (d - c) * s0
+          const pd = alongX ? d : c + (d - c) * s1
+          const tall = central ? 18 + rng() * 26 : 0
+          const h = tall > 0 ? tall : 8 + rng() * rng() * 26
+          const color = PALETTE[Math.floor(rng() * PALETTE.length)]!
+          const neon = rng() < 0.22 ? NEONS[Math.floor(rng() * NEONS.length)]! : null
+          boxes.push({ x0: pa, x1: pb, z0: pc, z1: pd, h, color, neon, kind: "building", label: null })
+        }
       }
       for (let t = 0; t < 4; t++) {
         const tx = rng() < 0.5 ? bx0 + 1.5 : bx1 - 1.5
@@ -169,6 +208,8 @@ export function generateCity(seed: number): City {
     boxes,
     parks,
     trees,
+    alleys,
+    parked,
     lamps,
     nodes,
     adj,
