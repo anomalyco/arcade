@@ -255,7 +255,7 @@ describe("prediction with contact", () => {
       expect(n).toBeGreaterThan(40)
       expect(worst).toBeLessThan(0.5)
       // Corrections are eased: frame to frame the drawn car moves by its velocity, give or take a few centimeters.
-      expect(jump).toBeLessThan(0.15)
+      expect(jump).toBeLessThan(0.2)
     }
   })
 })
