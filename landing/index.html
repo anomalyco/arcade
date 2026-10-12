@@ -3,68 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ARCADE</title>
-    <meta name="description" content="Three browser games: a dark multiplayer shooter, a driving chase and an artillery duel." />
+    <title>Arcade</title>
+    <meta name="description" content="Blackout, Getaway and Salvo. Browser games by Anomaly." />
+    <meta name="theme-color" content="#050608" />
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
-    <header class="top">
-      <a class="wordmark" href="/arcade/">ARCADE</a>
-      <span class="tag">Browser games by Anomaly</span>
+    <header>
+      <span class="mark">Arcade</span>
+      <a class="home" href="https://anoma.ly">anoma.ly</a>
     </header>
 
     <main>
-      <section class="hero">
-        <h1>Three games. Open a link, pick a name, play.</h1>
-        <p>No accounts and no installs. Rooms are shared by link and live for as long as people are playing.</p>
-      </section>
+      <a class="game" href="/arcade/blackout/" style="--accent: #46e3ff; --focus: 40% 45%">
+        <img src="./src/images/blackout.webp" alt="" width="1440" height="900" />
+        <span class="label">
+          <span class="no">01</span>
+          <span class="name">Blackout</span>
+          <span class="kind">Stealth shooter</span>
+        </span>
+        <span class="play">Play</span>
+      </a>
 
-      <section class="grid" aria-label="Games">
-        <article class="card" style="--accent: #3fe0ff">
-          <a class="shot" href="/arcade/blackout/" aria-label="Play Blackout">
-            <img src="./src/images/blackout.webp" alt="Blackout: a top-down view of an office floor in the dark" width="960" height="600" />
-          </a>
-          <div class="body">
-            <span class="index">01</span>
-            <h2>Blackout</h2>
-            <p class="meta">Top-down multiplayer · WebGPU</p>
-            <p class="desc">A stealth deathmatch in a dark office tower. One hit kills, light gives you away, and every sound is a ring everyone can see.</p>
-            <a class="play" href="/arcade/blackout/">PLAY</a>
-          </div>
-        </article>
+      <a class="game" href="/arcade/getaway/" style="--accent: #ff5a5f; --focus: 48% 50%">
+        <img src="./src/images/getaway.webp" alt="" width="1440" height="900" />
+        <span class="label">
+          <span class="no">02</span>
+          <span class="name">Getaway</span>
+          <span class="kind">Cops and robbers</span>
+        </span>
+        <span class="play">Play</span>
+      </a>
 
-        <article class="card" style="--accent: #ff5d5d">
-          <a class="shot" href="/arcade/getaway/" aria-label="Play Getaway">
-            <img src="./src/images/getaway.webp" alt="Getaway: a low-poly city at night with police cruisers in pursuit" width="960" height="600" />
-          </a>
-          <div class="body">
-            <span class="index">02</span>
-            <h2>Getaway</h2>
-            <p class="meta">Driving chase · Multiplayer · WebGPU</p>
-            <p class="desc">One player makes the getaway, everyone else plays the cops. Stay free for as long as you can through a low-poly night city.</p>
-            <a class="play" href="/arcade/getaway/">PLAY</a>
-          </div>
-        </article>
-
-        <article class="card" style="--accent: #ff9f43">
-          <a class="shot" href="/arcade/salvo/" aria-label="Play Salvo">
-            <img src="./src/images/salvo.webp" alt="Salvo: tanks lobbing glowing shells across a night valley" width="960" height="600" />
-          </a>
-          <div class="body">
-            <span class="index">03</span>
-            <h2>Salvo</h2>
-            <p class="meta">Artillery duel · Up to 12 players</p>
-            <p class="desc">Aim at the same time, fire together, and watch the volleys collide. Blast the hill out from under your rivals.</p>
-            <a class="play" href="/arcade/salvo/">PLAY</a>
-          </div>
-        </article>
-      </section>
+      <a class="game" href="/arcade/salvo/" style="--accent: #ffa64a; --focus: 66% 55%">
+        <img src="./src/images/salvo.webp" alt="" width="1440" height="900" />
+        <span class="label">
+          <span class="no">03</span>
+          <span class="name">Salvo</span>
+          <span class="kind">Artillery</span>
+        </span>
+        <span class="play">Play</span>
+      </a>
     </main>
-
-    <footer class="foot">
-      <span>© Anomaly</span>
-      <span>anoma.ly</span>
-    </footer>
   </body>
 </html>
