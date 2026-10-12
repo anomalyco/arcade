@@ -67,7 +67,7 @@ export const FRAG = { fuse: 2, minThrow: 2, maxThrow: 12, release: 1.5, size: 0.
  * clear line, then blows after `delay`, lethal in a wider cone out to `blast` and a little all around. A bullet within
  * `shot` sets it off.
  */
-export const CLAYMORE = { arm: 1, range: 3, cone: (35 * Math.PI) / 180, delay: 0.25, blast: 3.6, blastCone: (45 * Math.PI) / 180, near: 1.2, shot: 0.25 }
+export const CLAYMORE = { arm: 1, range: 3, cone: (40 * Math.PI) / 180, delay: 0.25, blast: 3.6, blastCone: (45 * Math.PI) / 180, near: 1.2, shot: 0.25 }
 /** Health comes back after this long without taking damage. */
 export const REGEN_DELAY = 4
 export const REGEN_RATE = 40

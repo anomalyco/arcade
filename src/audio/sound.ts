@@ -284,16 +284,14 @@ export class Sound {
     this.burst(dest, t + 0.03, "bandpass", 700, 1.4, 0.55, 0.05, 0.16, 2.4)
   }
 
-  /** A claymore set down: legs snapping open and the case on the floor. */
+  /** A claymore set down: a soft click of the legs and the case on the floor. Quiet, so only the nearby hear it. */
   plant(dx: number, dy: number): void {
-    const dest = this.out(dx, dy, 0.55, 0.1)
+    const dest = this.out(dx, dy, 0.22, 0.04)
     if (!dest) return
     const t = this.ctx!.currentTime
-    this.burst(dest, t, "bandpass", 2400, 6, 0.6, 0.001, 0.025)
-    this.burst(dest, t + 0.07, "bandpass", 2900, 6, 0.6, 0.001, 0.025)
-    this.tone(dest, t + 0.12, 190, 90, 0.6, 0.07)
-    this.burst(dest, t + 0.12, "lowpass", 900, 1, 0.4, 0.002, 0.06)
-    this.tone(dest, t + 0.3, 1900, 1900, 0.12, 0.05, "square")
+    this.burst(dest, t, "bandpass", 2600, 6, 0.4, 0.001, 0.015)
+    this.tone(dest, t + 0.05, 170, 90, 0.4, 0.04)
+    this.burst(dest, t + 0.05, "lowpass", 800, 1, 0.3, 0.002, 0.035)
   }
 
   /** A frag clinking off a wall or the floor; `v` is the impact speed. */

@@ -43,6 +43,7 @@ type Flash = { x: number; y: number; t0: number; life: number; power: number }
 /** Rifle and shotgun tracers fly at this speed (m/s) as a streak this long. */
 const TRACER_SPEED = 240
 const TRACER_LEN = 3.2
+const CLAY_SCALE = 1.15
 const HIT_POWER: Record<Gun, number> = { rifle: 0.8, shotgun: 0.3, sniper: 1.8 }
 /** Camera recoil per gun: shove along the aim, shake, zoom punch and a little roll. */
 const CAM_RECOIL: Record<Gun, { kick: number; shake: number; punch: number; roll: number }> = {
@@ -382,7 +383,7 @@ export class Game {
       case "plant": {
         const a = e.by === this.myId ? null : this.avatars.get(e.by)
         if (a) useGear(a, t, true)
-        if (me && e.by !== this.myId) this.sound.plant(e.x - me.x, e.y - me.y)
+        if (me && e.by !== this.myId && Math.hypot(e.x - me.x, e.y - me.y) < 7) this.sound.plant(e.x - me.x, e.y - me.y)
         return
       }
       case "bounce":
@@ -690,17 +691,27 @@ export class Game {
       g.spin += sp * dt * (g.z > FRAG.size + 0.01 ? 9 : 14)
       put(this.gear.frag, g.x, g.z, g.y, g.yaw, [1, 1, 1], g.spin, g.spin * 0.37, 1.35)
     }
+    // Low and dull so they sink into the floor: only the owner gets a dim accent strip, everyone else sees case-dark.
     for (const c of this.snap?.claymores ?? []) {
-      put(this.gear.claymore, c.x, 0, c.y, c.aim, glow(this.colorOf(c.by), 1.2), 0, 0, 1.35)
-      put(this.gear.led, c.x - Math.cos(c.aim) * 0.03, 0.235 * 1.35, c.y - Math.sin(c.aim) * 0.03, c.aim, this.ledColor(c, t), 0, 0, 1.35)
+      const strip = this.friendlyMine(c.by) ? glow(this.colorOf(c.by), 0.22) : [0.012, 0.013, 0.01]
+      put(this.gear.claymore, c.x, 0, c.y, c.aim, strip, 0, 0, CLAY_SCALE)
+      put(this.gear.led, c.x - Math.cos(c.aim) * 0.03, 0.146 * CLAY_SCALE, c.y - Math.sin(c.aim) * 0.03, c.aim, this.ledColor(c, t), 0, 0, CLAY_SCALE)
     }
   }
 
-  /** Claymore light: amber while arming, a slow red blink when armed, a frantic one once tripped. */
+  /** Whether a claymore is yours, so you get to see its accent, arming light and faint cone. */
+  private friendlyMine(by: string): boolean {
+    return by === this.myId
+  }
+
+  /**
+   * Claymore light: off but for a brief dim red pinprick every couple of seconds, a frantic blink once tripped. Its
+   * owner also sees a dim amber while it arms.
+   */
   private ledColor(c: Snapshot["claymores"][number], t: number): [number, number, number] {
     if (c.tripped || this.trips.has(c.id)) return Math.sin(t * 60) > 0 ? [8, 0.5, 0.3] : [1, 0.05, 0.03]
-    if (!c.armed) return [2.5, 1.1, 0.1]
-    return (t + c.id * 0.37) % 1 < 0.18 ? [6, 0.3, 0.2] : [0.6, 0.03, 0.02]
+    if (!c.armed) return this.friendlyMine(c.by) ? [0.8, 0.35, 0.03] : [0.02, 0.004, 0.003]
+    return (t + c.id * 0.37) % 2.5 < 0.06 ? [1.4, 0.07, 0.05] : [0.02, 0.004, 0.003]
   }
 
   /** Frag danger rings, claymore laser cones, blast flashes and shock rings, and the scorch marks they leave. */
@@ -720,14 +731,15 @@ export class Game {
       this.sprite(true, g.x, g.z + 0.08, g.y, on ? 0.22 : 0.1, 1.5, 0.12, 0.05, on ? 1 : 0.5, 0)
       if (g.z < 0.4) this.sprite(true, g.x, 0.03, g.y, FRAG.kill, 1, 0.12, 0.06, 0.35 + (on ? 0.25 : 0), 5, t * 0.8, 0.04)
     }
+    // No trigger cone for enemies; the owner sees a faint one so they know which way it faces.
     for (const c of this.snap?.claymores ?? []) {
       const lx = c.x - Math.cos(c.aim) * 0.03
       const ly = c.y - Math.sin(c.aim) * 0.03
       const led = this.ledColor(c, t)
-      this.sprite(true, lx, 0.33, ly, 0.14 + led[0] * 0.02, led[0] * 0.25, led[1] * 0.25, led[2] * 0.25, 1, 0)
-      if (!c.armed) continue
+      if (led[0] > 0.5) this.sprite(true, lx, 0.17 * CLAY_SCALE + 0.02, ly, led[0] > 4 ? 0.16 : 0.05, led[0] * 0.2, led[1] * 0.2, led[2] * 0.2, 1, 0)
+      if (!c.armed || !this.friendlyMine(c.by)) continue
       const tripped = c.tripped || this.trips.has(c.id)
-      this.sprite(true, c.x, 0.04, c.y, CLAYMORE.range, 1, 0.08, 0.06, tripped ? 1 : 0.55, 8, c.aim, 1, CLAYMORE.cone)
+      this.sprite(true, c.x, 0.04, c.y, CLAYMORE.range, 1, 0.08, 0.06, tripped ? 0.5 : 0.12, 8, c.aim, 1, CLAYMORE.cone)
     }
     for (const b of this.booms) {
       const age = t - b.t0
