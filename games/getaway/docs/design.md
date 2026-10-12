@@ -106,7 +106,7 @@ carries on), which is the PIT. A change in velocity over 9 m/s stuns. Hits of 6 
 
 ## Netcode
 
-- The Worker routes `/labs/getaway/ws/<ROOM>` to a `Room` Durable Object, one per room code.
+- The Worker routes `/arcade/getaway/ws/<ROOM>` to a `Room` Durable Object, one per room code.
 - The DO runs `World` from `shared/` at 30 Hz and sends per-viewer snapshots at 15 Hz.
 - The client predicts its own car with the shared physics and reconciles against acked inputs. Other cars
   are interpolated about 100 ms behind. For prediction, the other cars in the latest snapshot are extrapolated tick by
