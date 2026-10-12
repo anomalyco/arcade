@@ -4,6 +4,7 @@ import type { ClientMessage, RoomConfig, RoomSummary, ServerMessage } from "./si
 import type { TeamId } from "./sim/types"
 import { createLoopbackRoom } from "./sim/loopback"
 import { createSnapshotDecoder } from "./sim/room-engine"
+import type { EngineConfig } from "./sim/room-engine"
 import type { RoomHandlers, RoomStatus } from "./sim/loopback"
 
 export type { RoomHandlers, RoomStatus }
@@ -102,8 +103,8 @@ export function connectRoom(code: string, name: string, handlers: RoomHandlers, 
   }
 }
 
-/** Run a full room (with bots) inside the browser. Same interface as connectRoom. */
-export function createLocalRoom(config: Partial<RoomConfig>, name: string, handlers: RoomHandlers): RoomConnection {
+/** Run a full room inside the browser (config.bots = bots per team, optional botSkill 0..1). Same interface as connectRoom. */
+export function createLocalRoom(config: Partial<EngineConfig>, name: string, handlers: RoomHandlers): RoomConnection {
   const room = createLoopbackRoom(config, name, handlers)
   return { offline: true, send: room.send, close: room.close, rtt: room.rtt }
 }

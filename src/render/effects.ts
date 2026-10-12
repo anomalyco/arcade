@@ -208,6 +208,35 @@ void main() {
   #include <colorspace_fragment>
 }`
 
+// Self-animating tracer (AA): head = start + vel·age; tail trails `len` metres behind. No CPU updates.
+const AATRACER_VS = /* glsl */ `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+attribute vec3 iPos;
+attribute vec3 iVel;
+attribute vec4 iT; // start, life, length, width
+uniform float uTime;
+varying vec2 vUv;
+varying vec3 vColor;
+void main() {
+  float age = uTime - iT.x;
+  if (age < 0.0 || age > iT.y) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  vec3 head = iPos + iVel * age;
+  float sp = max(length(iVel), 1.0);
+  vec3 tailW = head - iVel / sp * min(iT.z, sp * age + 0.01);
+  vec4 h = modelViewMatrix * vec4(head, 1.0);
+  vec4 tl = modelViewMatrix * vec4(tailW, 1.0);
+  float along = position.y + 0.5;
+  vec4 mv = mix(tl, h, along);
+  vec3 side = normalize(cross(h.xyz - tl.xyz, mv.xyz) + vec3(1e-6, 0.0, 0.0));
+  float w = max(iT.w, -mv.z * 0.0012);
+  mv.xyz += side * position.x * 2.0 * w;
+  gl_Position = projectionMatrix * mv;
+  #include <logdepthbuf_vertex>
+  vUv = vec2(position.x * 2.0, along);
+  vColor = vec3(1.0, 0.72, 0.36);
+}`
+
 const SHELL_VS = /* glsl */ `
 #include <common>
 #include <logdepthbuf_pars_vertex>
@@ -356,6 +385,10 @@ export interface Effects {
   explosion(p: Vec3, size: number): void
   hit(p: Vec3): void
   muzzle(p: Vec3, dir: Vec3): void
+  /** Ship anti-air fire from `muzzle` toward `aim`: CIWS = burst of short bright tracers, gun = flash + shell. */
+  aa(muzzle: Vec3, aim: Vec3, kind: "ciws" | "gun"): void
+  /** Gray flak burst (5-inch AA shell). */
+  flak(p: Vec3): void
   pulse(p: Vec3, radius: number, color: string): void
   /** Persistent smoke trail emitter (missiles). Call each frame with the current position. */
   trail(id: number, p: Vec3, heavy: boolean): void
@@ -435,6 +468,21 @@ export function createEffects(quality: Quality): Effects {
   tracers.frustumCulled = false
   tracers.renderOrder = 4
   root.add(tracers)
+
+  // AA tracers (CIWS streams, gun shells): pooled, GPU-animated.
+  const AAT = 768
+  const aaPool = new InstancePool(AAT, quad, [["iPos", 3], ["iVel", 3], ["iT", 4]], new ShaderMaterial({
+    vertexShader: AATRACER_VS, fragmentShader: TRACER_FS, uniforms: { uTime: { value: 0 } }, transparent: true, depthWrite: false, blending: AdditiveBlending, side: DoubleSide,
+  }), 2)
+  aaPool.mesh.renderOrder = 4
+  root.add(aaPool.mesh)
+  const aaTracer = (p: Vec3, vx: number, vy: number, vz: number, life: number, len: number, width: number, delay = 0) => {
+    const i = aaPool.next(now + delay + life)
+    const a = aaPool.arrays
+    a[0][i * 3] = p[0]; a[0][i * 3 + 1] = p[1]; a[0][i * 3 + 2] = p[2]
+    a[1][i * 3] = vx; a[1][i * 3 + 1] = vy; a[1][i * 3 + 2] = vz
+    a[2][i * 4] = now + delay; a[2][i * 4 + 1] = life; a[2][i * 4 + 2] = len; a[2][i * 4 + 3] = width
+  }
 
   // Missile bodies: little white darts with fins.
   const MISSILES = 96
@@ -528,6 +576,7 @@ export function createEffects(quality: Quality): Effects {
       puffPool.mat.uniforms.uSun.value.copy(_sun)
       debrisPool.mat.uniforms.uSun.value.copy(_sun)
       glowPool.flush(now)
+      aaPool.flush(now)
       puffPool.flush(now)
       debrisPool.flush(now)
       for (const s of shells) {
@@ -605,6 +654,37 @@ export function createEffects(quality: Quality): Effects {
       glow.emit(now, p[0] + dir[0] * 2, p[1] + dir[1] * 2, p[2] + dir[2] * 2, 0, 0, 0, 0.055, 2.4, 1.3, FIRE_A, 1, FIRE_B, 0, 0, 0)
     },
 
+    aa(m, aim, kind) {
+      const dx = aim[0] - m[0], dy = aim[1] - m[1], dz = aim[2] - m[2]
+      const d = Math.hypot(dx, dy, dz) || 1
+      const ux = dx / d, uy = dy / d, uz = dz / d
+      if (kind === "ciws") {
+        // ~10 events/s: each spawns a short staggered burst so the stream looks continuous (≈70 rds/s visible).
+        const speed = 1100, n = 7
+        for (let k = 0; k < n; k++) {
+          const sp = 0.012
+          const vx = (ux + rnd(sp)) * speed, vy = (uy + rnd(sp)) * speed, vz = (uz + rnd(sp)) * speed
+          aaTracer(m, vx, vy, vz, Math.min(2.2, d / speed * 1.15), 18, 0.3, k * 0.014)
+        }
+        glow.emit(now, m[0] + ux * 2, m[1] + uy * 2, m[2] + uz * 2, 0, 0, 0, 0.07, 2.6 + Math.random(), 1.2, FIRE_A, 1, FIRE_B, 0, 0, 0)
+      } else {
+        const speed = 800
+        aaTracer(m, ux * speed, uy * speed, uz * speed, Math.min(3, d / speed), 26, 0.4)
+        glow.emit(now, m[0] + ux * 4, m[1] + uy * 4, m[2] + uz * 4, 0, 0, 0, 0.12, 9, 5, WHITE, 1, FIRE_B, 0, 0, 0)
+        puffs.emit(now, m[0] + ux * 6, m[1] + uy * 6, m[2] + uz * 6, ux * 6, uy * 6 + 1, uz * 6, 1.4, 1.5, 4, SMOKE_MID, 0.1, SMOKE_PALE, 0, 0.8, 0.6, 1.5)
+      }
+    },
+
+    flak(p) {
+      glow.emit(now, p[0], p[1], p[2], 0, 0, 0, 0.08, 4, 7, FIRE_A, 0.8, FIRE_B, 0, 0, 0)
+      const n = Math.round(6 * density) + 3
+      for (let i = 0; i < n; i++) {
+        _tmp.copy(SMOKE_DARK).lerp(SMOKE_MID, Math.random() * 0.6)
+        puffs.emit(now, p[0] + rnd(3), p[1] + rnd(3), p[2] + rnd(3), rnd(5), rnd(4) + 1, rnd(5), 2.2 + Math.random() * 1.4, 2.5, 6 + Math.random() * 3, _tmp, 0.05, SMOKE_PALE, 0, 0.9, 0.4, 2)
+      }
+      for (let i = 0; i < n; i++) glow.emit(now, p[0], p[1], p[2], rnd(60), rnd(60), rnd(60), 0.3 + Math.random() * 0.3, 0.8, 0.2, SPARK, 1, SPARK_B, 0, 1, -20)
+    },
+
     pulse(p, radius, color) {
       shell(p, radius, 3.2, color, 0.02, 0.85)
       shell(p, radius * 0.6, 2.4, "#cdf2dc", 0.05, 0.5)
@@ -665,7 +745,7 @@ export function createEffects(quality: Quality): Effects {
     },
 
     dispose() {
-      glowPool.dispose(); puffPool.dispose(); debrisPool.dispose(); tgeo.dispose(); tmat.dispose(); mgeo.dispose(); mmat.dispose(); shellGeo.dispose()
+      glowPool.dispose(); puffPool.dispose(); aaPool.dispose(); debrisPool.dispose(); tgeo.dispose(); tmat.dispose(); mgeo.dispose(); mmat.dispose(); shellGeo.dispose()
       quad.dispose(); puffGeo.dispose(); debrisGeo.dispose()
       shells.forEach(s => s.mat.dispose())
     },

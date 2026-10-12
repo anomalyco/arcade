@@ -108,10 +108,15 @@ export interface VehicleEntity {
   flaresReadyAt: number
   flareCount: number
   abilityReadyAt: number
-  /** Room time until which enemies see this vehicle highlighted (radar paint). */
+  /** Room time until which the enemy team sees this vehicle highlighted (spotted / radar paint). */
   spottedUntil: number
+  /** Recon look-to-spot progress 0..1 held by the spotting vehicle (pilot seat), and its current candidate. */
+  spotProgress?: number
+  spotCandidate?: string | null
   lastDamagedBy: string | null
   alive: boolean
+  /** Room time the vehicle spawned (spawn protection). */
+  spawnedAt?: number
 }
 
 export interface PlayerInfo {
@@ -185,12 +190,16 @@ export type WeaponId =
 export type GameEvent =
   | { type: "fire"; vehicle: string; seat: SeatIndex; weapon: WeaponId; hardpoint?: number }
   | { type: "hit"; target: string; by: string; weapon: WeaponId; damage: number; position: Vec3 }
-  | { type: "kill"; victim: string; victimTeam: TeamId; killer: string | null; weapon: WeaponId | "crash"; position: Vec3 }
+  | { type: "kill"; victim: string; victimTeam: TeamId; killer: string | null; killerTeam?: TeamId; weapon: WeaponId | "crash" | "aa"; position: Vec3 }
+  /** Fleet anti-air fire: `position` = muzzle, `aim` = lead point. ~10/s per firing CIWS, once per gun shot. */
+  | { type: "aa"; ship: string; turret: string; kind: "ciws" | "gun"; target: string; position: Vec3; aim: Vec3 }
   | { type: "explosion"; position: Vec3; size: number }
   | { type: "flares"; vehicle: string }
   | { type: "lock"; vehicle: string; target: string; locked: boolean }
   | { type: "pulse"; vehicle: string; team: TeamId; position: Vec3; radius: number }
   | { type: "guidance"; missile: number; vehicle: string; target: string; guided: boolean }
+  /** An enemy was spotted (recon look-to-spot or radar pulse); `by` = spotting vehicle, `target` = spotted vehicle. */
+  | { type: "spotted"; by: string; team: TeamId; target: string; until: number }
   | { type: "chat"; player: string; text: string }
   | { type: "score"; scores: number[] }
   | { type: "match-end"; winner: TeamId | null }

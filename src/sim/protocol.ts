@@ -9,6 +9,10 @@ export interface RoomConfig {
   teams: number
   /** Bots per team (0..10). Bots fill seats/vehicles server-side. */
   bots: number
+  /** Bot skill 0..1 (default 0.5). */
+  botSkill?: number
+  /** Quick Play: fill each team up to this many players with bots while humans are few. */
+  botFill?: number
   maxPerTeam: number
   scoreLimit: number
   /** Seconds. */

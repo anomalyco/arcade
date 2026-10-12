@@ -95,6 +95,14 @@ controls.update()
 
 setAircraftGroundQuery(() => -4)
 const ALT = Number(params.get("alt") ?? 0)
+if (params.has("occluder")) {
+  // A rock ridge in front of the spotted aircraft to check the through-terrain highlight.
+  const [ox, oz, w] = params.get("occluder")!.split(",").map(Number)
+  const ridge = new Mesh(new CircleGeometry(1, 6), new MeshLambertMaterial({ color: "#7a746b", side: 2 }))
+  ridge.scale.set(w || 8, 7, 1)
+  ridge.position.set(ox || 0, -1, oz || -6)
+  scene.add(ridge)
+}
 const KINDS: VehicleKind[] = ["fighter", "apache", "warthog", "blackbird"]
 const X: Record<VehicleKind, number> = { fighter: -34, apache: -12, warthog: 10, blackbird: 38 }
 const only = params.get("only") as VehicleKind | null
@@ -214,6 +222,7 @@ function frame(now: number) {
       tmpQ.setFromAxisAngle(new Vector3(0, 0, 1), Math.sin(time * 0.5) * 0.4)
       f.orientation = [tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w]
     }
+    e.view.setSpotted(params.get("spot") === e.kind)
     e.view.update(e.entity, [], dt, camera)
   }
   controls.update()

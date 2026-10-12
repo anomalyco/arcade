@@ -3,7 +3,9 @@
 import { Vector3, type PerspectiveCamera } from "three"
 import type { PlayerInfo, TeamId, Vec3, VehicleEntity, WeaponId } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
-import { AIRBASES, WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/geography"
+import { WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/geography"
+import { FLEET, AA_RANGE, type Ship } from "../sim/fleet"
+import { RECON_KINDS, SPOT_CONE, SPOT_DECAY, SPOT_RANGE, SPOT_TIME } from "../sim/combat"
 
 /** Muted team colours (match render/aircraft.ts TEAM_COLORS). */
 export const TEAM_COLORS = ["#3c6ea8", "#c98a2e", "#4e8a5a", "#b04a44"]
@@ -71,12 +73,22 @@ export interface HudFrame {
   hint: string | null
   /** Pilot is in cockpit view: draw the canopy frame. */
   cockpit?: boolean
+  /** Gunner optical zoom (1 = none). */
+  zoom?: number
+  /** Seconds of spawn protection left. */
+  protectedLeft?: number
+  /** Distance to the nearest enemy ship while inside its anti-air umbrella (null = clear). */
+  aaDist?: number | null
+  /** Enemy AA is firing at us right now. */
+  aaFire?: boolean
 }
 
 export interface Hud {
   root: HTMLElement
   update(f: HudFrame): void
-  killfeed(killer: string | null, killerTeam: TeamId | null, victim: string, victimTeam: TeamId, weapon: string, mine: boolean): void
+  killfeed(killer: string | null, killerTeam: TeamId | null, victim: string, victimTeam: TeamId, weapon: string, mine: boolean, bots?: { killer?: boolean; victim?: boolean }): void
+  /** Recon spot confirmation line ("you spotted red fox"). */
+  spotted(by: string | null, byTeam: TeamId | null, target: string, targetTeam: TeamId, mine: boolean): void
   chat(name: string, team: TeamId | null, text: string): void
   banner(text: string, sub?: string, ms?: number): void
   hitmarker(kill?: boolean): void
@@ -117,7 +129,9 @@ class Slot {
   setClass(c: string) { if (c !== this.cls) { this.cls = c; this.el.className = c } }
 }
 
-interface Marker { root: HTMLElement; label: Slot; dist: Slot; slot: Slot; tf: Slot; color: string; used: boolean }
+interface Marker { root: HTMLElement; label: Slot; dist: Slot; slot: Slot; tf: Slot; arc: HTMLElement; arcP: number; color: string; used: boolean }
+interface Edge { slot: Slot; tf: Slot; color: string; used: boolean }
+const EDGES = 12
 
 /** Brighter team tints for text/lines on top of the 3D scene (the raw team colours are too dark on sky). */
 /** Lighter tints of the muted team colours, for text and lines over the world. */
@@ -135,6 +149,12 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-low"></div>
     <div class="hud-warnfx"></div>
     <div class="hud-markers"></div>
+    <div class="hud-edges"></div>
+    <div class="hud-spot"><b></b></div>
+    <div class="hud-ships"></div>
+    <div class="hud-aa"><b>enemy fleet — anti-air</b><span></span></div>
+    <div class="hud-prot"></div>
+    <div class="hud-zoom"></div>
     <div class="hud-lead"></div>
     <div class="hud-scan"><i class="c"></i><i class="x"></i><span class="r"></span></div>
     <div class="hud-msl"><i></i><span>msl</span></div>
@@ -144,7 +164,7 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-top z">
       <div class="hud-compass"><div class="strip"></div><i class="caret"></i><span class="hdg">000</span></div>
       <div class="hud-score"></div>
-      <div class="hud-center-msg"><div class="protected">safe zone<span> · weapons safe</span></div><div class="warn">Missile</div><div class="freelook">free look</div></div>
+      <div class="hud-center-msg"><div class="protected"></div><div class="warn">Missile</div><div class="freelook">free look</div></div>
     </div>
     <div class="hud-banner z"><div class="t"></div><div class="s"></div></div>
     <div class="hud-guide z"><b></b><span></span></div>
@@ -230,9 +250,34 @@ export function createHud(parent: HTMLElement): Hud {
 
   const markers: Marker[] = []
   for (let i = 0; i < MARKERS; i++) {
-    const m = el("div", "mk", markerHost, `<i class="br"></i><span class="lb"><span class="nm"></span></span><span class="ds"></span>`)
-    markers.push({ root: m, label: new Slot(m.querySelector(".nm")!), dist: new Slot(m.querySelector(".ds")!), slot: new Slot(m), tf: new Slot(m), color: "", used: false })
+    const m = el("div", "mk", markerHost, `<i class="br"></i><i class="arc"></i><span class="lb"><span class="nm"></span></span><span class="ds"></span>`)
+    markers.push({ root: m, arc: m.querySelector(".arc") as HTMLElement, arcP: -1, label: new Slot(m.querySelector(".nm")!), dist: new Slot(m.querySelector(".ds")!), slot: new Slot(m), tf: new Slot(m), color: "", used: false })
   }
+
+  const edgeHost = q(".hud-edges")
+  const edges: Edge[] = []
+  for (let i = 0; i < EDGES; i++) {
+    const e = el("i", "edge", edgeHost)
+    edges.push({ slot: new Slot(e), tf: new Slot(e), color: "", used: false })
+  }
+  const shipHost = q(".hud-ships")
+  const shipMk = FLEET.map(sh => {
+    const e = el("div", "shp", shipHost, `<i></i><span class="ds"></span>`)
+    return { sh, tf: new Slot(e), cls: new Slot(e), ds: new Slot(e.querySelector(".ds")!) }
+  })
+  const aaEl = new Slot(q(".hud-aa"))
+  const aaTxt = new Slot(q(".hud-aa span"))
+  const protEl = new Slot(q(".hud-prot"))
+  const spotEl = new Slot(q(".hud-spot"))
+  const spotLbl = new Slot(q(".hud-spot b"))
+  const zoomEl = new Slot(q(".hud-zoom"))
+  // Local look-to-spot estimate (the wire may not carry spotProgress): mirrors combat.updateSpotting.
+  let spotCand: string | null = null
+  let spotProg = 0
+  let spotDoneAt = -1
+  let spotDoneName = ""
+  let lastT = 0
+  const _fwd = new Vector3()
 
   const weaponRows: { name: Slot; ammo: Slot; bar: Slot; row: Slot; key: Slot; full: number; wasRegen: boolean }[] = []
   for (let i = 0; i < 2; i++) {
@@ -323,14 +368,22 @@ export function createHud(parent: HTMLElement): Hud {
     ctx.beginPath()
     for (let i = 1; i < 4; i++) { const g = Math.round((i * S) / 4) + 0.5; ctx.moveTo(g, 0); ctx.lineTo(g, S); ctx.moveTo(0, g); ctx.lineTo(S, g) }
     ctx.stroke()
-    for (let t = 0; t < f.teams; t++) {
-      const b = AIRBASES[t]
-      const x = (b.center[0] + WORLD_HALF) * k, y = (b.center[2] + WORLD_HALF) * k
-      ctx.fillStyle = TEAM_COLORS[t] + "33"
-      ctx.strokeStyle = TEAM_COLORS[t]
-      ctx.setLineDash([2, 3])
-      ctx.beginPath(); ctx.arc(x, y, Math.max(5, b.safeRadius * k), 0, Math.PI * 2); ctx.fill(); ctx.stroke()
-      ctx.setLineDash([])
+    // Fleets: enemy anti-air umbrellas as faint dashed rings; each ship a small hull tick in the team colour.
+    const mt = f.me?.team ?? -1
+    for (const sh of FLEET) {
+      if (sh.team >= f.teams) continue
+      const x = (sh.position[0] + WORLD_HALF) * k, y = (sh.position[2] + WORLD_HALF) * k
+      if (sh.team !== mt) {
+        ctx.strokeStyle = "rgba(255,122,46,.55)"
+        ctx.setLineDash([2, 3])
+        ctx.beginPath(); ctx.arc(x, y, AA_RANGE * k, 0, Math.PI * 2); ctx.stroke()
+        ctx.setLineDash([])
+      }
+      const L = sh.kind === "carrier" ? 5 : 3, W = sh.kind === "carrier" ? 1.6 : 1.1
+      ctx.save(); ctx.translate(x, y); ctx.rotate(-sh.heading)
+      ctx.fillStyle = TEAM_COLORS[sh.team]; ctx.strokeStyle = "rgba(236,234,228,.9)"; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.rect(-W, -L, W * 2, L * 2); ctx.fill(); ctx.stroke()
+      ctx.restore()
     }
     const myTeam = f.me?.team ?? -1
     ctx.lineWidth = 1.25
@@ -371,7 +424,7 @@ export function createHud(parent: HTMLElement): Hud {
       list.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
       return `<div class="team${t === (f.me?.team ?? -1) ? " mine" : ""}" style="--c:${TEAM_COLORS[t]}"><h3><span>${TEAM_NAMES[t]}</span><b>${f.scores[t] ?? 0}</b></h3>
         <table><tr><th>Pilot</th><th>K</th><th>D</th></tr>${list.map(p =>
-          `<tr class="${p.id === f.myId ? "me" : ""}"><td>${esc(p.name.toLowerCase())}${p.id === f.myId ? ' <em>you</em>' : ""}${p.bot ? ' <em>bot</em>' : ""}</td><td>${p.kills}</td><td>${p.deaths}</td></tr>`).join("") || `<tr><td class="none" colspan="3">no pilots</td></tr>`}</table></div>`
+          `<tr class="${p.id === f.myId ? "me" : ""}"><td>${esc(p.name.toLowerCase())}${p.id === f.myId ? '<em>you</em>' : ""}${p.bot ? '<em>bot</em>' : ""}</td><td>${p.kills}</td><td>${p.deaths}</td></tr>`).join("") || `<tr><td class="none" colspan="3">no pilots</td></tr>`}</table></div>`
     }).join("")
   }
 
@@ -423,6 +476,38 @@ export function createHud(parent: HTMLElement): Hud {
       if (myTeam !== accentTeam) { accentTeam = myTeam; root.style.setProperty("--team", myTeam >= 0 ? TEAM_TINTS[myTeam] : "#5aa2ff") }
       let mi = 0
       const ownId = f.vehicle?.id
+      const cx = w / 2, cy = h / 2, k = Number(root.style.getPropertyValue("--k")) || 1
+      // Tape zones (speed left, altitude right): markers there fade so the numbers stay readable.
+      const inTape = (x: number, y: number) => Math.abs(y - cy) < 46 * k && Math.abs(Math.abs(x - cx) - 360 * k) < 90 * k
+
+      // Recon pilot spotting: server progress when available, else a local estimate.
+      const dtT = Math.max(0, Math.min(0.1, f.time - lastT))
+      lastT = f.time
+      const recon = flying && f.seat === 0 && !!f.vehicle && RECON_KINDS.has(f.vehicle.kind)
+      if (recon && f.vehicle) {
+        const sv = f.vehicle as VehicleEntity & { spotProgress?: number; spotCandidate?: string | null }
+        if (sv.spotProgress !== undefined) { spotProg = sv.spotProgress; spotCand = sv.spotCandidate ?? null }
+        else {
+          cam.getWorldDirection(_fwd)
+          let best: string | null = null, bestAng = SPOT_CONE
+          for (const v of f.vehicles) {
+            if (!v.alive || v.team === myTeam || v.spottedUntil > f.time + 1) continue
+            const p = v.flight.position
+            const dx = p[0] - _cam.x, dy = p[1] - _cam.y, dz = p[2] - _cam.z, d = Math.hypot(dx, dy, dz)
+            if (d > SPOT_RANGE || d < 1) continue
+            const ang = Math.acos(Math.max(-1, Math.min(1, (dx * _fwd.x + dy * _fwd.y + dz * _fwd.z) / d)))
+            const lim = v.id === spotCand ? SPOT_CONE * 1.2 : bestAng
+            if (ang < lim && (best === null || ang < bestAng)) { best = v.id; bestAng = ang }
+          }
+          if (best) {
+            if (best !== spotCand) spotProg = 0
+            spotCand = best
+            spotProg = Math.min(1, spotProg + dtT / SPOT_TIME)
+          } else { spotProg = Math.max(0, spotProg - SPOT_DECAY * dtT); if (spotProg === 0) spotCand = null }
+        }
+      } else { spotProg = 0; spotCand = null }
+
+      let ei = 0
       for (const v of f.vehicles) {
         if (mi >= MARKERS) break
         if (!v.alive || v.id === ownId) continue
@@ -430,7 +515,8 @@ export function createHud(parent: HTMLElement): Hud {
         const dist = Math.hypot(p[0] - _cam.x, p[1] - _cam.y, p[2] - _cam.z)
         const friend = v.team === myTeam
         const spotted = !friend && v.spottedUntil > f.time
-        if (!friend && !spotted && dist > 3500) continue
+        const candidate = recon && v.id === spotCand && spotProg > 0
+        if (!friend && !spotted && !candidate && dist > 3500) continue
         if (friend && dist > 6000) continue
         if (!friend && !spotted) {
           let o = occlusion.get(v.id)
@@ -441,20 +527,76 @@ export function createHud(parent: HTMLElement): Hud {
           }
           if (!o.visible) continue
         }
-        if (!project(p, cam)) continue
+        const onScreen = project(p, cam) && _v.x > -1 && _v.x < 1 && _v.y > -1 && _v.y < 1
+        if (!onScreen) {
+          // Off-screen enemies (in range or spotted): small chevron on the screen edge, pointing at them.
+          if (friend || ei >= EDGES || dist > 4000 && !spotted) continue
+          _v.set(p[0], p[1], p[2]).applyMatrix4(cam.matrixWorldInverse)
+          let ex = _v.x, ey = _v.y
+          if (_v.z > 0 && Math.abs(ex) < 1e-3 && Math.abs(ey) < 1e-3) ey = -1
+          const ang = Math.atan2(ex, ey)
+          const mx = cx - 40, my = cy - 40
+          const sc = Math.min(mx / Math.max(1e-3, Math.abs(Math.sin(ang))), my / Math.max(1e-3, Math.abs(Math.cos(ang))))
+          const e = edges[ei++]
+          e.used = true
+          const color = spotted ? "var(--or)" : TEAM_TINTS[v.team]
+          if (e.color !== color) { e.color = color; e.slot.el.style.setProperty("--c", color) }
+          e.slot.setClass(spotted ? "edge spotted" : "edge")
+          e.tf.setTransform(tf(cx + Math.sin(ang) * sc, cy - Math.cos(ang) * sc) + ` rotate(${(ang * 180 / Math.PI).toFixed(0)}deg)`)
+          continue
+        }
+        const x = sx(), y = sy()
         const m = markers[mi++]
         m.used = true
         const color = TEAM_TINTS[v.team]
         if (m.color !== color) { m.color = color; m.root.style.setProperty("--c", color) }
-        m.slot.setClass(`mk ${friend ? "friend" : "enemy"}${spotted ? " spotted" : ""}${!friend && dist > 1800 && !spotted ? " far" : ""}`)
-        const s = friend ? 1 : Math.max(0.6, Math.min(1.5, 1040 / Math.max(1, dist)))
-        m.tf.setTransform(tf(sx(), sy()) + ` scale(${s.toFixed(2)})`)
+        const near = dist < 1800
+        m.slot.setClass(`mk ${friend ? "friend" : "enemy"}${spotted ? " spotted" : ""}${candidate ? " spotting" : ""}${!friend && !near && !spotted ? " far" : ""}${inTape(x, y) ? " tape" : ""}`)
+        // Whole pixels: fractional translate3d blurs the label text on its compositor layer.
+        m.tf.setTransform(`translate3d(${Math.round(x)}px,${Math.round(y)}px,0)`)
+        if (candidate) {
+          const pr = Math.round(spotProg * 40) / 40
+          if (pr !== m.arcP) { m.arcP = pr; m.arc.style.setProperty("--sp", String(pr)) }
+        }
         if ((frame + mi) % 8 === 0 || m.label.el.textContent === "") {
           const pilot = v.seats[0] ? f.players.get(v.seats[0]) : null
-          m.label.setText(friend || dist < 1800 || spotted ? `${pilot?.name ?? VEHICLES[v.kind].name}` : "")
-          m.dist.setText(dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`)
+          m.label.setText(friend || near || spotted || candidate ? `${(pilot?.name ?? VEHICLES[v.kind].name).toLowerCase()}` : "")
+          m.dist.setText(dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist / 10) * 10} m`)
         }
       }
+      for (let i = ei; i < EDGES; i++) if (edges[i].used) { edges[i].used = false; edges[i].tf.setTransform(HIDDEN) }
+      // Fleets: small hull markers with mono distance (enemy fleets within 9 km; own carrier always).
+      for (const m of shipMk) {
+        const sh: Ship = m.sh
+        if (sh.team >= f.teams || !flying) { m.tf.setTransform(HIDDEN); continue }
+        const own = sh.team === myTeam
+        const p: Vec3 = [sh.position[0], 30, sh.position[2]]
+        const d = Math.hypot(p[0] - _cam.x, p[1] - _cam.y, p[2] - _cam.z)
+        if ((own && (sh.kind !== "carrier" || d < 1500)) || (!own && d > 9000) || !project(p, cam) || Math.abs(_v.x) > 1 || Math.abs(_v.y) > 1) { m.tf.setTransform(HIDDEN); continue }
+        m.cls.setClass(`shp${own ? " own" : ""}${!own && d < AA_RANGE ? " hot" : ""}`)
+        m.tf.setTransform(`translate3d(${Math.round(sx())}px,${Math.round(sy())}px,0)`)
+        // Distance only on carriers and on escorts that are close (keeps the fleet from cluttering the centre).
+        const label = own || sh.kind === "carrier" || d < AA_RANGE * 1.5
+        if ((frame + m.sh.position[0]) % 10 < 1 || m.ds.el.textContent === "" !== !label) m.ds.setText(!label ? "" : own ? "home" : d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`)
+      }
+      if (frame % 4 === 0) {
+        const aa = flying && f.aaDist != null
+        aaEl.setClass(aa ? `hud-aa on${f.aaFire ? " fire" : ""}` : "hud-aa")
+        if (aa) aaTxt.setText(` · ${(f.aaDist! / 1000).toFixed(1)} km`)
+        const pl = flying ? f.protectedLeft ?? 0 : 0
+        protEl.setClass(pl > 0 ? "hud-prot on" : "hud-prot")
+        if (pl > 0) protEl.setText(`protected · ${Math.ceil(pl)}s`)
+      }
+      // Spotting status under the crosshair.
+      if (recon && (spotCand && spotProg > 0 || f.time - spotDoneAt < 1.6)) {
+        const done = f.time - spotDoneAt < 1.6
+        spotEl.setClass(done ? "hud-spot on done" : "hud-spot on")
+        spotLbl.setText(done ? `spotted ${spotDoneName}` : `spotting… ${Math.round(spotProg * 100)}`)
+      } else spotEl.setClass("hud-spot")
+      // Gunner zoom readout.
+      const z = flying && f.seat === 1 ? (f.zoom ?? 1) : 0
+      zoomEl.setClass(z > 1.05 ? "hud-zoom on" : "hud-zoom")
+      if (z > 1.05) zoomEl.setText(`${z.toFixed(1)}×`)
       for (let i = mi; i < MARKERS; i++) if (markers[i].used) { markers[i].used = false; markers[i].tf.setTransform(HIDDEN) }
 
       // Tapes: ladders scroll every frame (compositor-only transforms).
@@ -472,7 +614,7 @@ export function createHud(parent: HTMLElement): Hud {
         alt.setText(String(Math.round(f.altitude)))
         thr.setTransform(`scaleY(${Math.max(0, Math.min(1, f.throttle)).toFixed(2)})`)
         boostEl.setClass(f.boost ? "boost on" : "boost")
-        centerMsg.setClass(`hud-center-msg${f.protected && flying ? " is-protected" : ""}${f.missileWarning && flying ? " is-warn" : ""}${f.freeLook && flying ? " is-free" : ""}`)
+        centerMsg.setClass(`hud-center-msg${f.missileWarning && flying ? " is-warn" : ""}${f.freeLook && flying ? " is-free" : ""}`)
         const v = f.vehicle
         let low = false
         if (v) {
@@ -507,7 +649,7 @@ export function createHud(parent: HTMLElement): Hud {
           const frac = spec.kind === "pulse" ? wpn.ready : unlimited ? 1 : wpn.ammo / Math.max(1, wpn.cap)
           wr.bar.setTransform(`scaleX(${Math.max(0, Math.min(1, frac)).toFixed(3)})`)
         }
-        const cls = `hud${shown ? " flying" : ""}${f.cockpit && flying ? " cockpit" : ""}${isDirect ? " direct" : ""}${flying && f.scanner ? " scanning" : ""}${low ? " low" : ""}${f.missileWarning && flying ? " warn" : ""}`
+        const cls = `hud${shown ? " flying" : ""}${f.cockpit && flying ? " cockpit" : ""}${isDirect ? " direct" : ""}${flying && f.scanner ? " scanning" : ""}${low ? " low" : ""}${f.missileWarning && flying ? " warn" : ""}${f.aaFire && flying ? " aafire" : ""}`
         if (cls !== rootCls) {
           // Preserve externally toggled classes (scoreboard / chat).
           const keep = (root.classList.contains("board") ? " board" : "") + (root.classList.contains("chatting") ? " chatting" : "")
@@ -533,14 +675,24 @@ export function createHud(parent: HTMLElement): Hud {
       if (showBoard && now - lastBoard > 500) { lastBoard = now; drawBoard(f) }
     },
 
-    killfeed(killer, killerTeam, victim, victimTeam, weapon, mine) {
+    killfeed(killer, killerTeam, victim, victimTeam, weapon, mine, bots) {
       const row = el("div", mine ? "mine" : "", feed)
       const kt = killerTeam ?? 0
+      const bt = (b?: boolean) => (b ? `<em>bot</em>` : "")
       row.innerHTML = killer
-        ? `<b style="color:${TEAM_TINTS[kt]}">${esc(killer.toLowerCase())}</b><span>${esc(weapon.toLowerCase())}</span><b style="color:${TEAM_TINTS[victimTeam]}">${esc(victim.toLowerCase())}</b>`
-        : `<b style="color:${TEAM_TINTS[victimTeam]}">${esc(victim.toLowerCase())}</b><span>${esc(weapon.toLowerCase())}</span>`
+        ? `<b style="color:${TEAM_TINTS[kt]}">${esc(killer.toLowerCase())}${bt(bots?.killer)}</b><span>${esc(weapon.toLowerCase())}</span><b style="color:${TEAM_TINTS[victimTeam]}">${esc(victim.toLowerCase())}${bt(bots?.victim)}</b>`
+        : `<b style="color:${TEAM_TINTS[victimTeam]}">${esc(victim.toLowerCase())}${bt(bots?.victim)}</b><span>${esc(weapon.toLowerCase())}</span>`
       setTimeout(() => row.classList.add("out"), 6500)
       setTimeout(() => row.remove(), 7200)
+      while (feed.childElementCount > 6) feed.firstElementChild!.remove()
+    },
+
+    spotted(by, byTeam, target, targetTeam, mine) {
+      if (mine) { spotDoneAt = lastT; spotDoneName = target.toLowerCase() }
+      const row = el("div", mine ? "mine spot" : "spot", feed)
+      row.innerHTML = `${by ? `<b style="color:${TEAM_TINTS[byTeam ?? 0]}">${esc(mine ? "you" : by.toLowerCase())}</b>` : ""}<span>spotted</span><b style="color:${TEAM_TINTS[targetTeam]}">${esc(target.toLowerCase())}</b>`
+      setTimeout(() => row.classList.add("out"), 5000)
+      setTimeout(() => row.remove(), 5700)
       while (feed.childElementCount > 6) feed.firstElementChild!.remove()
     },
 

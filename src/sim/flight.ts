@@ -20,6 +20,11 @@ export const NEUTRAL_INPUT: FlightInput = { aim: null, throttle: 0, roll: 0, yaw
 
 export const GRAVITY = 9.81
 const DEG = Math.PI / 180
+/** Catapult: decks (runway surface) higher than this above sea level launch jets. */
+export const CAT_DECK_MIN_HEIGHT = 10
+/** Catapult end speed (× stall) and stroke time (s) from a standstill. */
+export const CAT_END_SPEED = 1.3
+export const CAT_STROKE_TIME = 2.2
 /** Helicopter collective that exactly balances gravity. */
 export const HOVER_COLLECTIVE = 0.5
 
@@ -482,7 +487,13 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
 
   // Forces.
   const engine = 0.35 + 0.65 * air
-  const thrust = (inp.boost ? h.thrust * (spec.boost / spec.cruise) ** 2 : s.throttle * h.thrust) * engine
+  let thrust = (inp.boost ? h.thrust * (spec.boost / spec.cruise) ** 2 : s.throttle * h.thrust) * engine
+  // Carrier catapult: on an elevated deck (a runway well above sea level) with power up and brakes
+  // off, the cat shoves the jet to CAT_END_SPEED × stall within ~CAT_STROKE_TIME, then it flies off.
+  if (s.onGround && !inp.brake && (s.throttle > 0.5 || inp.boost) && vf < CAT_END_SPEED * stall &&
+      world.groundHeight(p[0], p[2]) > CAT_DECK_MIN_HEIGHT && world.onRunway(p[0], p[2])) {
+    thrust += (CAT_END_SPEED * stall) / CAT_STROKE_TIME
+  }
   const dragK = (h.thrust / (spec.cruise * spec.cruise)) * (inp.brake ? h.airbrake : 1)
   const turnRate = Math.sqrt(w[0] * w[0] + w[1] * w[1])
   const resist = speed > 1e-6 ? (dragK * speed * speed + h.bleed * turnRate * speed) / speed : 0

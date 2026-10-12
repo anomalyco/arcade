@@ -42,36 +42,14 @@ if (params.get("markers") === "1") {
 }
 
 const views: Record<string, () => [number[], number[]]> = {
-  base: () => {
-    const b = AIRBASES[0]
-    const [x, z] = baseToWorld(b, -900, -220), [lx, lz] = baseToWorld(b, -200, 120)
-    return [[x, 70, z], [lx, 20, lz]]
-  },
-  apron: () => {
-    const b = AIRBASES[2]
-    const [x, z] = baseToWorld(b, -100, 120), [lx, lz] = baseToWorld(b, 200, 330)
-    return [[x, 40, z], [lx, 20, lz]]
-  },
-  approach: () => {
-    const b = AIRBASES[1]
-    const [x, z] = baseToWorld(b, 1800, 500), [lx, lz] = baseToWorld(b, 0, 100)
-    return [[x, 350, z], [lx, 20, lz]]
-  },
+  fleet: () => { const b = AIRBASES[0]; return [[b.center[0] + 700, 260, b.center[2] - 800], [b.center[0], 0, b.center[2] + 100]] },
+  deck: () => { const b = AIRBASES[0]; return [[b.center[0] + 40, 45, b.center[2] + 210], [b.center[0] - 10, 20, b.center[2] - 60]] },
   center: () => [[-3800, 700, 3600], [0, 250, 0]],
-  peaks: () => [[1800, 420, 2400], [0, 350, -300]],
   low: () => [[2600, 60, 3900], [0, 120, 0]],
-  water: () => [[3000, 14, 5200], [1500, 30, 2500]],
-  overview: () => [[0, 5500, 9500], [0, 0, 0]],
-  top: () => [[0, 14000, 1], [0, 0, 0]],
-  close: () => { const b = AIRBASES[2]; const [x, z] = baseToWorld(b, -150, 440), [lx, lz] = baseToWorld(b, -330, 370); return [[x, 45, z], [lx, 15, lz]] },
-  h30: () => [[3500, 30, 5600], [3500, 30, 0]],
-  h300: () => [[3500, 300, 6500], [3500, 260, 0]],
+  water: () => [[3000, 14, 3800], [0, 60, 1000]],
   h1500: () => [[3500, 1500, 7000], [3500, 1300, 0]],
   sun: () => [[3000, 200, -2000], [3000 - 500, 200 + 300, -2000 + 500]],
-  watcher: () => [[-4500, 250, 2500], [-4500 + 840, 250 + 300, 2500 - 392]],
-  watcherHigh: () => [[-5500, 1500, 3000], [-5500 + 840, 1500 + 150, 3000 - 392]],
-  inside: () => { const b = AIRBASES[0]; return [[b.center[0] + 150, 60, b.center[2] - 400], [b.center[0] - 300, 40, b.center[2] - 2000]] },
-  edge: () => [[2000, 250, -7000], [0, 250, -9000]],
+  overview: () => [[0, 5500, 9500], [0, 0, 0]],
 }
 let yaw = 0, pitch = 0
 function setCam(p: number[], l: number[]) {

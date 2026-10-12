@@ -1,11 +1,13 @@
 // World geography — owned by the World agent. Pure, deterministic, dependency-free (server safe).
 //
-// A 16 × 16 km procedurally generated archipelago of smooth, natural islands. On first use
+// A 16 × 16 km procedurally generated archipelago of smooth, natural islands, with the four team
+// carrier strike groups (fleet.ts) at sea. Ship hulls/decks/islands are part of the solid surface. On first use
 // the module bakes a heightmap on a jittered triangle grid (MESH_CELL spacing):
 //   seeded island masks (domain-warped) → fBm + ridged mountains + a couple of central peaks →
-//   carved canyons → droplet erosion + thermal smoothing → flat airbase plateaus.
+//   carved canyons → droplet erosion + thermal smoothing → open water around every strike group.
 // The rendered LOD0 mesh uses exactly these vertices and triangles, and every physics query
 // interpolates the same triangles, so collision always matches what players see.
+import { AA_RANGE, FLEET, SHIP_SPECS, type Ship, shipToWorld, worldToShip } from "./fleet"
 import type { TeamId, Vec3, VehicleKind, WorldQuery } from "./types"
 
 export const WORLD_SIZE = 16_000
@@ -21,73 +23,54 @@ export const MESH_CELL = 25
 export const MESH_SEGMENTS = WORLD_SIZE / MESH_CELL // 640 cells per side
 /** Fraction of a cell each vertex may be displaced in x/z (irregular low-poly facets). */
 export const JITTER = 0.26
-/** Safe zone: everything within safeRadius of the runway centre-line, under a dome SAFE_ZONE_HEIGHT tall. */
-export const SAFE_ZONE_HEIGHT = 400
 /** Assumed height of the aircraft origin above the wheels' contact point. */
 export const SPAWN_CLEARANCE: Record<"jet" | "heli", number> = { jet: 2.2, heli: 1.9 }
+/** Open water kept around every fleet ship and along each carrier's launch path (m). */
+export const FLEET_CLEARANCE = 2_500
 
+/**
+ * A team's home: derived from its carrier (kept for minimap/HUD consumers).
+ * center = carrier at flight-deck height, runway = the flight deck, safeRadius = AA_RANGE.
+ */
 export interface Airbase {
   team: TeamId
-  /** Center of the base (runway midpoint), y = runway elevation. */
+  /** Carrier position, y = flight-deck height. */
   center: Vec3
-  /** Runway heading as yaw (rad), direction a jet rolls for takeoff, pointing toward the map center. */
+  /** Carrier heading (yaw; bow = launch direction, toward the map centre). */
   heading: number
   runwayLength: number
   runwayWidth: number
-  /** Protected distance from the runway centre-line segment (capsule), see inSafeZone. */
+  /** Strike-group air-defence radius (AA_RANGE). */
   safeRadius: number
-  /** Helipad positions (y = pad elevation). */
+  /** Helicopter spots on the flight deck (y = deck height). */
   helipads: Vec3[]
 }
 
-const BASE_DISTANCE = 5_500
-const BASE_ELEVATION = 20
+const CARRIER = SHIP_SPECS.carrier
+/** Carrier deck spots in ship-local (x, z): two bow catapult lanes (3 slots each) and aft helo spots. */
+export const DECK_LAYOUT = {
+  catapults: [[-14, 40], [6, 52], [-14, 78], [6, 90], [-14, 116], [6, 128]] as [number, number][],
+  heloSpots: [[-27, 92], [-27, 124], [-27, 154], [24, 120], [24, 150]] as [number, number][],
+}
 
-/** Paved areas in base-local coordinates: a = along takeoff direction (+a toward map center), c = to the right. */
-export interface PavedRect { a0: number; a1: number; c0: number; c1: number; kind: "runway" | "taxiway" | "apron" }
-export const BASE_LAYOUT = {
-  runway: { a0: -700, a1: 700, c0: -30, c1: 30, kind: "runway" } as PavedRect,
-  paved: [
-    { a0: -650, a1: 650, c0: 130, c1: 152, kind: "taxiway" },
-    { a0: -650, a1: -628, c0: 30, c1: 152, kind: "taxiway" },
-    { a0: 628, a1: 650, c0: 30, c1: 152, kind: "taxiway" },
-    { a0: -11, a1: 11, c0: 30, c1: 152, kind: "taxiway" },
-    { a0: -420, a1: 160, c0: 152, c1: 310, kind: "apron" },
-    { a0: 200, a1: 500, c0: 152, c1: 280, kind: "apron" },
-  ] as PavedRect[],
-  /** Helipad centers (a, c) and radius. */
-  helipads: [[240, 216], [310, 216], [380, 216], [450, 216]] as [number, number][],
-  helipadRadius: 15,
-  /** Perfectly flat plateau around the runway, aprons and buildings. */
-  flat: { a0: -900, a1: 900, c0: -200, c1: 520 },
+export function carrierOf(team: TeamId): Ship {
+  return FLEET.find(s => s.team === team && s.kind === "carrier")!
 }
 
 export const AIRBASES: Airbase[] = ([0, 1, 2, 3] as TeamId[]).map(team => {
-  // Team 0 south (+Z), 1 north (-Z), 2 west (-X), 3 east (+X); runways point toward the center.
-  const dir = [[0, 1], [0, -1], [-1, 0], [1, 0]][team]
-  const center: Vec3 = [dir[0] * BASE_DISTANCE, BASE_ELEVATION, dir[1] * BASE_DISTANCE]
-  const heading = Math.atan2(dir[0], dir[1]) // yaw so that -Z (nose) faces the center
-  const base: Airbase = { team, center, heading, runwayLength: 1_400, runwayWidth: 60, safeRadius: 500, helipads: [] }
-  base.helipads = BASE_LAYOUT.helipads.map(([a, c]) => {
-    const [x, z] = baseToWorld(base, a, c)
-    return [x, BASE_ELEVATION, z] as Vec3
-  })
-  return base
+  const c = carrierOf(team)
+  return {
+    team, heading: c.heading,
+    center: [c.position[0], CARRIER.deckHeight, c.position[2]] as Vec3,
+    runwayLength: CARRIER.halfLength * 2, runwayWidth: CARRIER.halfWidth * 2, safeRadius: AA_RANGE,
+    helipads: DECK_LAYOUT.heloSpots.slice(0, 4).map(([x, z]) => shipToWorld(c, [x, CARRIER.deckHeight, z])),
+  }
 })
 
-/** Base-local (a along takeoff, c right) → world [x, z]. Yaw 0 = nose toward -Z. */
+/** Base-local (a along the bow, c to starboard) → world [x, z]. Yaw 0 = bow toward -Z. */
 export function baseToWorld(base: Airbase, a: number, c: number): [number, number] {
   const s = Math.sin(base.heading), k = Math.cos(base.heading)
-  // forward = (-sin, -cos), right = (cos, -sin)
   return [base.center[0] - s * a + k * c, base.center[2] - k * a - s * c]
-}
-// Headings are exact multiples of π/2, so sin/cos are cached per team.
-const BASE_SIN = [0, 0, -1, 1], BASE_COS = [1, -1, 0, 0]
-function worldToBaseA(base: Airbase, x: number, z: number): number {
-  return -(x - base.center[0]) * BASE_SIN[base.team] - (z - base.center[2]) * BASE_COS[base.team]
-}
-function worldToBaseC(base: Airbase, x: number, z: number): number {
-  return (x - base.center[0]) * BASE_COS[base.team] - (z - base.center[2]) * BASE_SIN[base.team]
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -150,9 +133,31 @@ export interface IslandInfo { name: string; x: number; z: number; radius: number
 interface Blob { x: number; z: number; r: number; amp: number }
 interface Peak { x: number; z: number; r: number; h: number }
 
+/** Carrier launch lane: open water ±LAUNCH_LANE_HALF wide, out to LAUNCH_LANE_LENGTH ahead of the carrier. */
+export const LAUNCH_LANE_HALF = 450
+export const LAUNCH_LANE_LENGTH = 3_800
+
+/**
+ * Signed clearance (m) of x,z from the strike groups' keep-out areas: FLEET_CLEARANCE around every
+ * ship plus each carrier's launch lane. ≤ 0 inside a keep-out area.
+ */
+export function fleetClearance(x: number, z: number): number {
+  let best = Infinity
+  for (const s of FLEET) {
+    const dx = x - s.position[0], dz = z - s.position[2]
+    let d = Math.hypot(dx, dz) - FLEET_CLEARANCE
+    if (s.kind === "carrier") {
+      const fx = -Math.sin(s.heading), fz = -Math.cos(s.heading)
+      const t = Math.max(0, Math.min(LAUNCH_LANE_LENGTH, dx * fx + dz * fz))
+      d = Math.min(d, Math.hypot(dx - fx * t, dz - fz * t) - LAUNCH_LANE_HALF)
+    }
+    if (d < best) best = d
+  }
+  return best
+}
+
 function nearBase(x: number, z: number, margin: number): boolean {
-  for (const b of AIRBASES) if (Math.hypot(x - b.center[0], z - b.center[2]) < margin) return true
-  return false
+  return fleetClearance(x, z) < margin
 }
 
 function layout(seed: number) {
@@ -160,10 +165,11 @@ function layout(seed: number) {
   const blobs: Blob[] = []
   const names: IslandInfo[] = []
   // Big central island, made of a few overlapping lobes.
-  blobs.push({ x: 0, z: 0, r: 2500, amp: 1 })
+  blobs.push({ x: 0, z: 0, r: 2200, amp: 1 })
   for (let i = 0; i < 3; i++) {
-    const a = rand() * Math.PI * 2, d = 700 + rand() * 900
-    blobs.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1100 + rand() * 700, amp: 0.85 })
+    // Lobes lean toward the diagonals, away from the strike groups on the axes.
+    const a = Math.PI / 4 + Math.floor(rand() * 4) * Math.PI / 2 + (rand() - 0.5) * 0.6, d = 700 + rand() * 900
+    blobs.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1000 + rand() * 600, amp: 0.85 })
   }
   names.push({ name: "Mainland", x: 0, z: 0, radius: 2600, height: 0 })
   // Medium islands on the diagonals between bases, plus a couple on the axes.
@@ -174,7 +180,7 @@ function layout(seed: number) {
       const d = 3600 + rand() * 1700
       const x = Math.cos(a) * d, z = Math.sin(a) * d
       const r = 800 + rand() * 700
-      if (nearBase(x, z, 1400 + r)) continue
+      if (nearBase(x, z, r * 1.3 + 700)) continue
       if (Math.abs(x) > WORLD_HALF - r - 400 || Math.abs(z) > WORLD_HALF - r - 400) continue
       blobs.push({ x, z, r, amp: 0.75 + rand() * 0.3 })
       names.push({ name: `Isle ${names.length}`, x, z, radius: r, height: 0 })
@@ -185,22 +191,15 @@ function layout(seed: number) {
   for (let i = 0, tries = 0; i < 26 && tries < 2000; tries++) {
     const x = (rand() * 2 - 1) * (WORLD_HALF - 700), z = (rand() * 2 - 1) * (WORLD_HALF - 700)
     const r = 180 + rand() * 380
-    if (nearBase(x, z, 1300 + r)) continue
+    if (nearBase(x, z, r * 1.3 + 700)) continue
     if (Math.hypot(x, z) < 2600) continue
     blobs.push({ x, z, r, amp: 0.45 + rand() * 0.45 })
     i++
   }
-  // Low base islands: a chain of blobs along each runway (flattened later).
-  for (const b of AIRBASES) {
-    for (const a of [-750, -250, 250, 750]) {
-      const [x, z] = baseToWorld(b, a + (rand() - 0.5) * 200, 160 + (rand() - 0.5) * 380)
-      blobs.push({ x, z, r: 560 + rand() * 260, amp: 0.5 })
-    }
-  }
   // A couple of tall peaks near the centre.
   const peaks: Peak[] = []
   for (let i = 0; i < 2; i++) {
-    // On the diagonals, so the four departure corridors (cardinal axes) stay low.
+    // On the diagonals, away from the strike groups on the axes.
     const a = Math.PI / 4 + (Math.floor(rand() * 4) + i * 2) * Math.PI / 2 + (rand() - 0.5) * 0.2, d = 1750 + rand() * 350
     peaks.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1050 + rand() * 300, h: 470 - i * 90 + rand() * 90 })
   }
@@ -245,59 +244,6 @@ export function setWorldSeed(seed: number) {
   ISLANDS.push(...LAYOUT.names)
   baked = null
 }
-
-/** Base plateau metrics: signed distance (m) outside the flat rectangle of the nearest base. */
-function baseFlatDistance(x: number, z: number): number {
-  let best = Infinity
-  const F = BASE_LAYOUT.flat
-  for (const b of AIRBASES) {
-    const dx = x - b.center[0], dz = z - b.center[2]
-    if (dx * dx + dz * dz > 2500 * 2500) continue
-    const a = worldToBaseA(b, x, z), c = worldToBaseC(b, x, z)
-    const da = Math.max(F.a0 - a, a - F.a1, 0), dc = Math.max(F.c0 - c, c - F.c1, 0)
-    const d = da === 0 && dc === 0 ? -Math.min(a - F.a0, F.a1 - a, c - F.c0, F.c1 - c) : Math.hypot(da, dc)
-    if (d < best) best = d
-  }
-  return best
-}
-
-/** Corridor glide-slope: terrain within ±CORRIDOR_HALF of a runway's extended centre-line, out to
- * CORRIDOR_LENGTH from the base centre, stays below corridorFloor(d). */
-export const CORRIDOR_HALF = 300
-export const CORRIDOR_LENGTH = 7_000
-export function corridorFloor(d: number): number {
-  return BASE_ELEVATION + 0.05 * Math.max(0, d - 900)
-}
-const corridorScratch = { hard: Infinity }
-function corridorLimit(x: number, z: number) {
-  corridorScratch.hard = Infinity
-  for (const b of AIRBASES) {
-    const a = worldToBaseA(b, x, z)
-    if (a < 600 || a > CORRIDOR_LENGTH + 600) continue
-    const c = Math.abs(worldToBaseC(b, x, z))
-    const floor = corridorFloor(a) - 6
-    // Hard band a little wider than the corridor so interpolated triangles stay below the floor.
-    if (c < CORRIDOR_HALF + 2 * MESH_CELL) corridorScratch.hard = Math.min(corridorScratch.hard, floor)
-  }
-  return corridorScratch
-}
-
-/** 0 inside a departure corridor, rising to 1 over a broad, noise-warped valley shoulder. */
-function corridorOpen(x: number, z: number, seed: number): { t: number; floor: number } {
-  let t = 1, floor = Infinity
-  for (const b of AIRBASES) {
-    const a = worldToBaseA(b, x, z)
-    if (a < 300 || a > CORRIDOR_LENGTH + 1500) continue
-    let c = Math.abs(worldToBaseC(b, x, z)) - CORRIDOR_HALF - 2 * MESH_CELL
-    if (c > 0) c += noise2(x * 0.0015, z * 0.0015, seed + 61 + b.team) * 260 * smooth(0, 300, c)
-    // Ease out of the corridor beyond its far end and near the runway.
-    const ends = Math.max(smooth(CORRIDOR_LENGTH, CORRIDOR_LENGTH + 1500, a), 1 - smooth(300, 900, a))
-    const tt = Math.max(ends, smooth(0, 650, c))
-    if (tt < t) { t = tt; floor = corridorFloor(a) - 8 }
-  }
-  return { t, floor }
-}
-
 
 function bake(seed: number): Baked {
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now()
@@ -355,8 +301,6 @@ function bake(seed: number): Baked {
       const cn = Math.abs(noise2(wx * 0.00042 + 5.1, wz * 0.00042 - 2.7, seed + 55))
       const ch = 1 - smooth(0.035, 0.09, cn)
       if (ch > 0 && e > -2) e = e + (Math.min(e, -4 + cn * 120) - e) * ch * smooth(0.25, 0.5, m)
-      const co = corridorOpen(x, z, seed)
-      if (co.t < 1 && e > co.floor) e = co.floor + (e - co.floor) * co.t
       h[k] = Math.max(SEA_FLOOR, e)
     }
   }
@@ -379,25 +323,14 @@ function bake(seed: number): Baked {
       h[k] = tmp[k] * 0.4 + (tmp[k - 1] + tmp[k + 1] + tmp[k - STRIDE] + tmp[k + STRIDE]) * 0.15
     }
   }
-  // 4. Terraces + airbase plateaus.
-  for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
-    const k = j * STRIDE + i
-    const x = vx[k], z = vz[k]
-    let y = h[k]
-    // Departure corridors: soft valley along each runway's extended centre-line.
-    const lim = corridorLimit(x, z)
-    if (y > lim.hard) y = lim.hard
-    const bd = baseFlatDistance(x, z)
-    if (bd < 420) {
-      if (bd <= 0) y = BASE_ELEVATION
-      else {
-        // Grassy plateau shoulder easing into the natural island around it.
-        const t = smooth(60, 420, bd + noise2(x * 0.006, z * 0.006, seed + 91) * 50)
-        y = BASE_ELEVATION + (y - BASE_ELEVATION) * t
-        if (bd < 60) y = BASE_ELEVATION
-      }
+  // 4. Guaranteed open water around every strike group (and the carriers' launch paths).
+  for (let k = 0; k < h.length; k++) {
+    if (h[k] <= -12) continue
+    const d = fleetClearance(vx[k], vz[k])
+    if (d < 700) {
+      const t = smooth(0, 700, d)
+      h[k] = Math.min(h[k], -12 + (h[k] + 12) * t)
     }
-    h[k] = y
   }
   // 5. Triangulation diagonals and coarse bounds.
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) diag[j * N + i] = hash2(i, j, seed ^ 0x3333) < 0.5 ? 0 : 1
@@ -413,6 +346,14 @@ function bake(seed: number): Baked {
       const o = Z * BN + X
       if (h[k] > bound[o]) bound[o] = h[k]
     }
+  }
+  for (const sh of FLEET) {
+    const sp = SHIP_SPECS[sh.kind]
+    const top = Math.max(sp.deckHeight, sp.island.center[1] + sp.island.half[1]) + 1
+    const r = Math.hypot(sp.halfLength, sp.halfWidth) + 5
+    for (let bz = Math.floor((sh.position[2] - r + WORLD_HALF) / BOUND_BLOCK); bz <= Math.floor((sh.position[2] + r + WORLD_HALF) / BOUND_BLOCK); bz++)
+      for (let bx = Math.floor((sh.position[0] - r + WORLD_HALF) / BOUND_BLOCK); bx <= Math.floor((sh.position[0] + r + WORLD_HALF) / BOUND_BLOCK); bx++)
+        if (bx >= 0 && bz >= 0 && bx < BN && bz < BN) bound[bz * BN + bx] = Math.max(bound[bz * BN + bx], top)
   }
   const ms = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0
   return { seed, h, vx, vz, diag, bound, ms }
@@ -493,7 +434,7 @@ function inTri(w: Baked, k0: number, k1: number, k2: number, x: number, z: numbe
   const e = -1e-6
   if (l0 < e || l1 < e || l2 < e) return false
   const h2 = w.h[k2]
-  // Relative form: exact on flat triangles (runways read exactly BASE_ELEVATION).
+  // Relative form: exact on flat triangles.
   triScratch.h = h2 + l0 * (w.h[k0] - h2) + l1 * (w.h[k1] - h2)
   return true
 }
@@ -530,12 +471,46 @@ export function terrainHeight(x: number, z: number): number {
   return terrainMeshHeight(x, z)
 }
 
-/** Solid surface height (terrain mesh or water) used by physics. */
+// ---------------------------------------------------------------------------------------------
+// Ships as solid ground
+
+const SHIP_BIN = 400
+/** Ship whose hull footprint contains x,z (or null). */
+export function shipAt(x: number, z: number): Ship | null {
+  for (const sh of FLEET) {
+    const sp = SHIP_SPECS[sh.kind]
+    const dx = x - sh.position[0], dz = z - sh.position[2]
+    if (dx > SHIP_BIN || dx < -SHIP_BIN || dz > SHIP_BIN || dz < -SHIP_BIN) continue
+    const l = worldToShip(sh, [x, 0, z])
+    if (Math.abs(l[0]) <= sp.halfWidth && Math.abs(l[2]) <= sp.halfLength) return sh
+  }
+  return null
+}
+
+/** Ship surface height at x,z (deck, or superstructure top), or -Infinity off ships. */
+export function shipHeight(x: number, z: number): number {
+  const sh = shipAt(x, z)
+  if (!sh) return -Infinity
+  const sp = SHIP_SPECS[sh.kind]
+  const l = worldToShip(sh, [x, 0, z])
+  const I = sp.island
+  if (Math.abs(l[0] - I.center[0]) <= I.half[0] && Math.abs(l[2] - I.center[2]) <= I.half[2]) return I.center[1] + I.half[1]
+  return sp.deckHeight
+}
+
+/** Solid surface height (terrain mesh, water, or ship deck/superstructure) used by physics. */
 export function groundHeight(x: number, z: number): number {
   if (!(x > -WORLD_HALF && x < WORLD_HALF && z > -WORLD_HALF && z < WORLD_HALF)) return WATER_LEVEL
   const w = world()
   const bi = Math.floor((x + WORLD_HALF) / BOUND_BLOCK), bj = Math.floor((z + WORLD_HALF) / BOUND_BLOCK)
   if (w.bound[bj * BN + bi] <= WATER_LEVEL) return WATER_LEVEL
+  const h = Math.max(terrainMeshHeight(x, z), WATER_LEVEL)
+  const s = shipHeight(x, z)
+  return s > h ? s : h
+}
+
+/** Terrain/water only (no ships). */
+function terrainGround(x: number, z: number): number {
   const h = terrainMeshHeight(x, z)
   return h > WATER_LEVEL ? h : WATER_LEVEL
 }
@@ -547,37 +522,23 @@ export function heightBound(x: number, z: number): number {
   return w.bound[Math.floor((z + WORLD_HALF) / BOUND_BLOCK) * BN + Math.floor((x + WORLD_HALF) / BOUND_BLOCK)]
 }
 
-/** True where the surface at x,z is open water. */
+/** True where the surface at x,z is open water (false on ship decks). */
 export function isWater(x: number, z: number): boolean {
+  if (shipAt(x, z)) return false
   return terrainMeshHeight(x, z) <= WATER_LEVEL
 }
 
-function nearestBase(x: number, z: number): Airbase | null {
-  for (const b of AIRBASES) if (Math.abs(x - b.center[0]) < 1600 && Math.abs(z - b.center[2]) < 1600) return b
-  return null
-}
-
-function inRect(r: { a0: number; a1: number; c0: number; c1: number }, a: number, c: number): boolean {
-  const e = 0.01
-  return a >= r.a0 - e && a <= r.a1 + e && c >= r.c0 - e && c <= r.c1 + e
-}
-
-/** True on runway, taxiways, aprons and helipads. */
+/** True on a carrier's flight deck (not on the island). Wheels roll here without damage. */
 export function onRunway(x: number, z: number): boolean {
-  const base = nearestBase(x, z)
-  if (!base) return false
-  const a = worldToBaseA(base, x, z), c = worldToBaseC(base, x, z)
-  if (inRect(BASE_LAYOUT.runway, a, c)) return true
-  for (const r of BASE_LAYOUT.paved) if (inRect(r, a, c)) return true
-  const pr = BASE_LAYOUT.helipadRadius
-  for (const [ha, hc] of BASE_LAYOUT.helipads) if ((a - ha) ** 2 + (c - hc) ** 2 <= pr * pr + 0.01) return true
-  return false
+  const sh = shipAt(x, z)
+  if (!sh || sh.kind !== "carrier") return false
+  return shipHeight(x, z) === CARRIER.deckHeight
 }
 
 export type SurfaceType = "water" | "sand" | "grass" | "forest" | "rock" | "snow" | "paved"
-/** Coarse surface classification (for effects, audio, bots). */
+/** Coarse surface classification (for effects, audio, bots). Ship decks are "paved". */
 export function surfaceType(x: number, z: number): SurfaceType {
-  if (onRunway(x, z)) return "paved"
+  if (shipAt(x, z)) return "paved"
   const h = terrainMeshHeight(x, z)
   if (h <= WATER_LEVEL) return "water"
   if (h < 4) return "sand"
@@ -588,54 +549,72 @@ export function surfaceType(x: number, z: number): SurfaceType {
   return h > 120 ? "forest" : "grass"
 }
 
-/** Distance (m) from x,z to the base's runway centre-line segment. */
-function runwayDistance(base: Airbase, x: number, z: number): number {
-  const a = worldToBaseA(base, x, z), c = worldToBaseC(base, x, z)
-  const half = base.runwayLength / 2
-  const da = a < -half ? -half - a : a > half ? a - half : 0
-  return Math.hypot(da, c)
-}
-
-/**
- * Inside the team's protected zone: a capsule-shaped dome around the runway, safeRadius out from the
- * runway centre-line and SAFE_ZONE_HEIGHT tall (ellipsoidal profile).
- */
+/** Inside the team's own strike-group air-defence umbrella (within AA_RANGE of any own ship). */
 export function inSafeZone(team: TeamId, p: Vec3): boolean {
-  const base = AIRBASES[team]
-  if (!base) return false
-  const d = runwayDistance(base, p[0], p[2]) / base.safeRadius
-  const y = Math.max(0, p[1] - base.center[1]) / SAFE_ZONE_HEIGHT
-  return d * d + y * y < 1
+  if (p[1] > CEILING) return false
+  for (const sh of FLEET) {
+    if (sh.team !== team) continue
+    if (Math.hypot(p[0] - sh.position[0], p[2] - sh.position[2]) < AA_RANGE) return true
+  }
+  return false
 }
 
 export interface SpawnPoint {
   position: Vec3
   /** Yaw (rad); 0 = nose toward -Z. */
   yaw: number
-  /** True = start on the runway/helipad with gear down; false = air start. */
+  /** True = start on the deck with gear down; false = air start. */
   onGround: boolean
 }
 
 /**
- * Spawn slot for a team's vehicle. index lets multiple vehicles spawn without overlap.
- * Jets line up two abreast from the runway threshold (12 slots, then wrap); helicopters use helipads,
- * spilling onto the helipad apron beyond four.
+ * Spawn slot for a team's vehicle. Jets stagger along the carrier's two bow catapult lanes (6 slots,
+ * then wrap), facing the bow; helicopters use the aft helo spots.
  */
 export function spawnPoint(team: TeamId, kind: VehicleKind, index: number): SpawnPoint {
-  const base = AIRBASES[team]
+  const c = carrierOf(team)
   const i = Math.max(0, Math.floor(index))
+  const deck = CARRIER.deckHeight
   if (kind === "apache") {
-    const pads = BASE_LAYOUT.helipads
-    const slot = i % 8
-    const [pa, pc] = pads[slot % pads.length]
-    const [x, z] = baseToWorld(base, pa, slot < pads.length ? pc : pc + 44)
-    return { position: [x, BASE_ELEVATION + SPAWN_CLEARANCE.heli, z], yaw: base.heading, onGround: true }
+    const spots = DECK_LAYOUT.heloSpots
+    const [x, z] = spots[i % spots.length]
+    return { position: shipToWorld(c, [x, deck + SPAWN_CLEARANCE.heli, z]), yaw: c.heading, onGround: true }
   }
-  const slot = i % 12
-  const a = BASE_LAYOUT.runway.a0 + 60 + Math.floor(slot / 2) * 60 + (slot % 2) * 25
-  const c = slot % 2 === 0 ? -13 : 13
-  const [x, z] = baseToWorld(base, a, c)
-  return { position: [x, BASE_ELEVATION + SPAWN_CLEARANCE.jet, z], yaw: base.heading, onGround: true }
+  const cats = DECK_LAYOUT.catapults
+  const [x, z] = cats[i % cats.length]
+  return { position: shipToWorld(c, [x, deck + SPAWN_CLEARANCE.jet, z]), yaw: c.heading, onGround: true }
+}
+
+/** Slab test of segment a→b against a ship-local box; returns entry fraction or null. */
+function segmentBox(sh: Ship, a: Vec3, b: Vec3, center: Vec3, half: Vec3): number | null {
+  const la = worldToShip(sh, a), lb = worldToShip(sh, b)
+  let t0 = 0, t1 = 1
+  for (let k = 0; k < 3; k++) {
+    const d = lb[k] - la[k], lo = center[k] - half[k], hi = center[k] + half[k]
+    if (Math.abs(d) < 1e-9) { if (la[k] < lo || la[k] > hi) return null; continue }
+    let u0 = (lo - la[k]) / d, u1 = (hi - la[k]) / d
+    if (u0 > u1) { const t = u0; u0 = u1; u1 = t }
+    if (u0 > t0) t0 = u0
+    if (u1 < t1) t1 = u1
+    if (t0 > t1) return null
+  }
+  return t0
+}
+
+/** First hit of segment a→b with any ship hull or superstructure (fraction), or null. */
+export function segmentHitsShip(a: Vec3, b: Vec3): number | null {
+  let best: number | null = null
+  for (const sh of FLEET) {
+    const sp = SHIP_SPECS[sh.kind]
+    const r = sp.halfLength + 80
+    const px = sh.position[0], pz = sh.position[2]
+    if (Math.max(a[0], b[0]) < px - r || Math.min(a[0], b[0]) > px + r || Math.max(a[2], b[2]) < pz - r || Math.min(a[2], b[2]) > pz + r) continue
+    if (Math.min(a[1], b[1]) > sp.island.center[1] + sp.island.half[1]) continue
+    const hull = segmentBox(sh, a, b, [0, (sp.deckHeight - 15) / 2, 0], [sp.halfWidth, (sp.deckHeight + 15) / 2, sp.halfLength])
+    const isl = segmentBox(sh, a, b, sp.island.center, sp.island.half)
+    for (const t of [hull, isl]) if (t !== null && (best === null || t < best)) best = t
+  }
+  return best
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -644,8 +623,13 @@ export function spawnPoint(team: TeamId, kind: VehicleKind, index: number): Spaw
 /** Steepest mesh gradient we expect (rise/run); used for safe adaptive marching. */
 const MAX_SLOPE = 9
 
-/** Fraction [0,1] along segment a→b where it first goes below the ground surface, or null. */
+/** Fraction [0,1] along segment a→b where it first hits terrain, water or a ship, or null. */
 export function segmentHitsGround(a: Vec3, b: Vec3): number | null {
+  const t = segmentHitsTerrain(a, b), s = segmentHitsShip(a, b)
+  return t === null ? s : s === null ? t : Math.min(t, s)
+}
+
+function segmentHitsTerrain(a: Vec3, b: Vec3): number | null {
   const ax = a[0], ay = a[1], az = a[2]
   const dx = b[0] - ax, dy = b[1] - ay, dz = b[2] - az
   const minY = ay < b[1] ? ay : b[1]
@@ -658,7 +642,7 @@ export function segmentHitsGround(a: Vec3, b: Vec3): number | null {
     }
     if (minY > bound) return null
   }
-  const g0 = ay - groundHeight(ax, az)
+  const g0 = ay - terrainGround(ax, az)
   if (g0 <= 0) return 0
   const len = Math.sqrt(horiz * horiz + dy * dy)
   if (len < 1e-9) return null
@@ -670,12 +654,12 @@ export function segmentHitsGround(a: Vec3, b: Vec3): number | null {
     if (step < minStep) step = minStep
     let t1 = t + step
     if (t1 > 1) t1 = 1
-    const g1 = ay + dy * t1 - groundHeight(ax + dx * t1, az + dz * t1)
+    const g1 = ay + dy * t1 - terrainGround(ax + dx * t1, az + dz * t1)
     if (g1 <= 0) {
       let lo = t, hi = t1
       for (let k = 0; k < 18; k++) {
         const mid = (lo + hi) * 0.5
-        if (ay + dy * mid - groundHeight(ax + dx * mid, az + dz * mid) <= 0) hi = mid
+        if (ay + dy * mid - terrainGround(ax + dx * mid, az + dz * mid) <= 0) hi = mid
         else lo = mid
       }
       return hi

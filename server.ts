@@ -1,7 +1,8 @@
 // Cloudflare Worker entry: static assets under /labs/wings/, REST API, and the Room / RoomDirectory Durable Objects.
 import { DEFAULT_ROOM_CONFIG, EMPTY_ROOM_TTL_MS } from "./src/sim/protocol"
-import type { ClientMessage, RoomConfig, RoomSummary, ServerMessage } from "./src/sim/protocol"
+import type { ClientMessage, RoomSummary, ServerMessage } from "./src/sim/protocol"
 import { RoomEngine, sanitizeConfig } from "./src/sim/room-engine"
+import type { EngineConfig } from "./src/sim/room-engine"
 
 type Env = {
   ROOMS: DurableObjectNamespace
@@ -18,6 +19,8 @@ const DIRECTORY_STALE_MS = 30_000
 const DIRECTORY_REFRESH_MS = 5_000
 const MAX_MESSAGE_BYTES = 8192
 const MAX_MESSAGES_PER_SECOND = 240
+/** Quick-play rooms top each team up to this many players with bots while fewer humans than this are present. */
+const QUICKPLAY_BOT_FILL = 4
 const CLOSE_ROOM_FULL = 4001
 const CLOSE_ROOM_CLOSED = 4004
 
@@ -32,7 +35,7 @@ function newCode(): string {
 }
 
 /** Creates and initializes a room; retries on the (unlikely) code collision. */
-async function createRoom(env: Env, config: RoomConfig): Promise<string> {
+async function createRoom(env: Env, config: EngineConfig): Promise<string> {
   for (let i = 0; i < 5; i++) {
     const code = newCode()
     const response = await room(env, code).fetch("https://room/internal/init", {
@@ -62,7 +65,7 @@ async function api(request: Request, url: URL, env: Env): Promise<Response> {
   if (path === "/api/quickplay" && request.method === "GET") {
     const open = (await listRooms(env)).filter(r => r.humans < r.maxPlayers).sort((a, b) => b.humans - a.humans)
     if (open.length) return Response.json({ code: open[0].code })
-    return Response.json({ code: await createRoom(env, DEFAULT_ROOM_CONFIG) })
+    return Response.json({ code: await createRoom(env, { ...DEFAULT_ROOM_CONFIG, botFill: QUICKPLAY_BOT_FILL }) })
   }
   if (path === "/api/room") {
     const code = (url.searchParams.get("code") ?? "").toLowerCase()
@@ -183,7 +186,7 @@ export class Room implements DurableObject {
 
   private async load(code: string): Promise<RoomEngine> {
     if (this.engine) return this.engine
-    const stored = await this.state.storage.get<RoomConfig>("config")
+    const stored = await this.state.storage.get<EngineConfig>("config")
     const storedCode = await this.state.storage.get<string>("code")
     this.code = storedCode ?? code
     const config = stored ?? sanitizeConfig({ ...DEFAULT_ROOM_CONFIG, name: `Room ${this.code.toUpperCase()}` })

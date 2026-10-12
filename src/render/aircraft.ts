@@ -6,6 +6,10 @@
 // spinning/aiming/hiding (scale 0) costs no extra draw calls.
 import {
   AdditiveBlending,
+  BackSide,
+  CustomBlending,
+  OneMinusSrcAlphaFactor,
+  SrcAlphaFactor,
   Bone,
   Box3,
   BoxGeometry,
@@ -30,6 +34,7 @@ import {
   type Camera,
   type Material,
   type MeshStandardMaterial,
+  type WebGLProgramParametersWithUniforms,
 } from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { mergeGeometries, toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js"
@@ -68,6 +73,13 @@ export interface AircraftView {
    * distance-scaled; remote aircraft grow up to 1.6x between 500 m and 1.5 km for readability.
    */
   setLocal(local: boolean): void
+  /**
+   * Recon "spotted" highlight: a thin safety-orange silhouette rim that stays visible through terrain and
+   * clouds (occluded parts show as a faint orange x-ray fill). Call `view.setSpotted(true)` while the
+   * local player's team has this enemy spotted (`vehicle.spottedUntil > roomTime`), `false` otherwise.
+   * Fades in/out over 0.3 s; costs one extra draw call only while visible.
+   */
+  setSpotted(on: boolean): void
 }
 
 let groundQuery: (x: number, z: number) => number = groundHeight
@@ -281,6 +293,8 @@ interface Template {
   boneInverses: Matrix4[]
   meshes: TemplateMesh[]
   outline: BufferGeometry | null
+  /** Lazily built silhouette hull (shape + skin attributes, smoothed normals) for the spotted highlight. */
+  silhouette?: BufferGeometry
   sphere: Sphere
   anchors: TemplateAnchor[]
   stats: AircraftStats
@@ -845,6 +859,89 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 const FAR_DISTANCE = 1500
+const SPOT_FADE_TIME = 0.3
+const SPOT_COLOR = "#ff7a2e"
+
+/**
+ * Spotted rim: an inverted hull drawn with depth test off just before the aircraft's own opaque parts
+ * (renderOrder 1 vs 2). Visible parts of the aircraft paint over its interior, leaving a thin rim; where
+ * terrain/clouds hide the aircraft the hull remains as a faint fill with a stronger edge. Uses custom
+ * blending so it stays in the opaque queue (ordering relative to the body is what makes the rim work).
+ */
+function createSpotMaterial(): MeshBasicMaterial {
+  const mat = new MeshBasicMaterial({
+    color: SPOT_COLOR,
+    side: BackSide,
+    depthTest: false,
+    depthWrite: false,
+    blending: CustomBlending,
+    blendSrc: SrcAlphaFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    toneMapped: false,
+    fog: false,
+  })
+  mat.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying float vSpotEdge;")
+      .replace(
+        "#include <skinning_vertex>",
+        `#include <skinning_vertex>
+        {
+          #ifdef USE_SKINNING
+            vec3 spN = normalize( objectNormal );
+          #else
+            vec3 spN = normalize( normal );
+          #endif
+          vec4 spView = modelViewMatrix * vec4( transformed, 1.0 );
+          // ~2 px wide at any distance, with a small floor so it reads up close.
+          float spW = max( 0.035, -spView.z * 0.0026 ) / length( modelMatrix[ 0 ].xyz );
+          transformed += spN * spW;
+          vec3 spVN = normalize( normalMatrix * spN );
+          vSpotEdge = 1.0 - abs( dot( spVN, normalize( -spView.xyz ) ) );
+        }`,
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vSpotEdge;")
+      .replace("#include <alphatest_fragment>", "diffuseColor.a *= mix( 0.12, 0.95, smoothstep( 0.35, 0.85, vSpotEdge ) );\n#include <alphatest_fragment>")
+  }
+  mat.customProgramCacheKey = () => "wings-spotted"
+  return mat
+}
+
+/** Shape-only merge of the opaque meshes with normals averaged across coincident vertices (crack-free hull). */
+function silhouetteGeometry(t: Template): BufferGeometry {
+  if (t.silhouette) return t.silhouette
+  const parts = t.meshes
+    .filter((m) => m.role === "toon" || m.role === "livery")
+    .map((m) => {
+      const o = new BufferGeometry()
+      for (const a of ["position", "normal", "skinIndex", "skinWeight"]) o.setAttribute(a, m.geometry.getAttribute(a))
+      o.setIndex(m.geometry.index)
+      return o
+    })
+  const g = mergeGeometries(parts, false)!
+  const pos = g.getAttribute("position")
+  const nrm = g.getAttribute("normal")
+  const si = g.getAttribute("skinIndex")
+  const acc = new Map<string, [number, number, number]>()
+  const keys: string[] = new Array(pos.count)
+  for (let i = 0; i < pos.count; i++) {
+    const k = `${Math.round(pos.getX(i) * 1e3)},${Math.round(pos.getY(i) * 1e3)},${Math.round(pos.getZ(i) * 1e3)},${si.getX(i)}`
+    keys[i] = k
+    let a = acc.get(k)
+    if (!a) acc.set(k, (a = [0, 0, 0]))
+    a[0] += nrm.getX(i)
+    a[1] += nrm.getY(i)
+    a[2] += nrm.getZ(i)
+  }
+  for (let i = 0; i < pos.count; i++) {
+    const a = acc.get(keys[i])!
+    const l = Math.hypot(a[0], a[1], a[2]) || 1
+    nrm.setXYZ(i, a[0] / l, a[1] / l, a[2] / l)
+  }
+  t.silhouette = g
+  return g
+}
 const CREASE_ANGLE = (55 * Math.PI) / 180
 const SHADOW_MAX_AGL = 150
 const _sn = new Vector3()
@@ -985,7 +1082,8 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       mesh.bindMode = DetachedBindMode
       mesh.bind(skeleton, identity)
       mesh.boundingSphere = t.sphere.clone()
-      mesh.renderOrder = tm.role === "glass" || tm.role === "flame" ? 10 + renderOrder++ : 0
+      // Opaque parts draw after the spotted rim (renderOrder 1) so they cover its interior where visible.
+      mesh.renderOrder = tm.role === "glass" || tm.role === "flame" ? 10 + renderOrder++ : 2
       mesh.name = tm.role
       mesh.castShadow = tm.role === "toon" || tm.role === "livery"
       model.add(mesh)
@@ -1076,6 +1174,30 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     shadow.matrixWorldNeedsUpdate = true
   }
 
+  let spottedTarget = false
+  let spotFade = 0
+  let spotMesh: SkinnedMesh | null = null
+  let spotMat: MeshBasicMaterial | null = null
+  const updateSpotted = (r: Rig, dt: number) => {
+    spotFade = clamp(spotFade + (spottedTarget ? dt : -dt) / SPOT_FADE_TIME, 0, 1)
+    if (spotFade <= 0) {
+      if (spotMesh) spotMesh.visible = false
+      return
+    }
+    if (!spotMesh) {
+      spotMat = createSpotMaterial()
+      spotMesh = new SkinnedMesh(silhouetteGeometry(r.t), spotMat)
+      spotMesh.bindMode = DetachedBindMode
+      spotMesh.bind(r.skeleton, new Matrix4())
+      spotMesh.boundingSphere = r.t.sphere.clone()
+      spotMesh.renderOrder = 1
+      spotMesh.name = "spotted"
+      r.model.add(spotMesh)
+    }
+    spotMesh.visible = true
+    spotMat!.opacity = spotFade * spotFade * (3 - 2 * spotFade)
+  }
+
   const boneAt = (r: Rig, name: string): number => r.t.boneIndex.get(name) ?? -1
 
   /** Bone local rotation = rest * axis rotation. */
@@ -1125,6 +1247,9 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     setLocal(local) {
       isLocal = local
     },
+    setSpotted(on) {
+      spottedTarget = on
+    },
     update(vehicle, _players, dt, camera) {
       const f = vehicle.flight
       root.position.set(f.position[0], f.position[1], f.position[2])
@@ -1138,6 +1263,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       root.scale.setScalar(isLocal ? 1 : 1 + 0.6 * k * k * (3 - 2 * k))
       updateShadow()
       if (!rig) return
+      updateSpotted(rig, dt)
       const r = rig
       const t = r.t
       time += dt
@@ -1268,6 +1394,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       root.removeFromParent()
       if (rig) {
         for (const m of rig.owned) m.dispose()
+        spotMat?.dispose()
         rig.skeleton.dispose()
         rig = null
       }

@@ -9,9 +9,12 @@ import type {
 import { SNAPSHOT_RATE, TICK_DT, TICK_RATE } from "./types"
 import { VEHICLES, VEHICLE_KINDS } from "./vehicles"
 import { NEUTRAL_INPUT, createFlightState, stepFlight } from "./flight"
-import { applySeatInput, createCombatState, createWeapons, killVehicle, stepCombat } from "./combat"
+import { applySeatInput, createCombatState, createWeapons, killVehicle, markSpawned, stepCombat } from "./combat"
 import type { CombatState } from "./combat"
-import { inSafeZone, spawnPoint, worldQuery } from "./geography"
+import { spawnPoint, worldQuery } from "./geography"
+import { FLEET, SHIP_SPECS, SPAWN_PROTECTION, worldToShip } from "./fleet"
+import { botInput, chooseBotVehicle, createBotBrain } from "./bots"
+import type { BotBrain } from "./bots"
 
 export interface RoomEngineHooks {
   /** Send a message to one player (by player id). Snapshots go here as full `Snapshot`s only if `sendText` is absent. */
@@ -30,9 +33,9 @@ export const MAX_CATCH_UP = 0.25
 const TICKS_PER_SNAPSHOT = Math.round(TICK_RATE / SNAPSHOT_RATE)
 /** Dead vehicles stay in snapshots this long (wreck/explosion rendering), then are removed. */
 export const WRECK_LINGER = 3
-/** Unmanned vehicle outside its team's safe zone is destroyed after this many seconds. */
+/** Unmanned vehicle away from its own carrier deck is destroyed after this many seconds. */
 export const ABANDONED_DESTROY_DELAY = 20
-/** Unmanned vehicle parked inside its team's safe zone is removed after this many seconds. */
+/** Unmanned vehicle parked on its own carrier deck is removed after this many seconds. */
 export const PARKED_REMOVE_DELAY = 60
 /** Crashes credit the last attacker if it damaged the vehicle within this window. */
 export const CRASH_CREDIT_WINDOW = 8
@@ -67,6 +70,28 @@ function newJitterBuffer(): JitterBuffer {
     synthesized: 0, caughtUp: 0, dropped: 0, late: 0,
   }
 }
+
+/** Bots take an empty gunner seat in a human pilot's aircraft after it has been empty this long (seconds). */
+export const BOT_GUNNER_DELAY = 5
+export const BOT_SKILL_DEFAULT = 0.5
+/** Bot roster is reconciled at least this often (seconds). */
+const BOT_SYNC_INTERVAL = 1
+const BOT_NAMES = [
+  "Viper", "Maverick", "Iceman", "Goose", "Phoenix", "Hangman", "Rooster", "Payback", "Fanboy", "Jester",
+  "Cougar", "Merlin", "Slider", "Hollywood", "Wolfman", "Sundown", "Chipper", "Stinger", "Ghost", "Raven",
+  "Talon", "Havoc", "Nomad", "Reaper", "Saber", "Banshee", "Comet", "Falcon", "Outlaw", "Spectre",
+]
+
+/**
+ * Engine-only config extras (not yet in protocol.ts): `botSkill` 0..1 for bot difficulty, and `botFill` —
+ * when set, each team is topped up with bots to `botFill` total while the room has fewer than `botFill` humans
+ * (used for quick-play rooms) instead of the fixed `bots` per team.
+ */
+export interface RoomExtras {
+  botSkill?: number
+  botFill?: number
+}
+export type EngineConfig = RoomConfig & RoomExtras
 
 const NEUTRAL_SEAT: SeatInput = { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false }
 
@@ -113,6 +138,10 @@ interface PlayerState {
   chatAt: number
   /** Needs the players list in its next snapshot (just joined). */
   needsPlayers: boolean
+  /** Bots only. */
+  brain: BotBrain | null
+  /** Surplus bot: leaves once out of an aircraft, parked safely, or dead. */
+  leaving: boolean
 }
 
 interface VehicleMeta {
@@ -121,23 +150,40 @@ interface VehicleMeta {
   lastHp: number
   lastHitAt: number
   diedAt: number | null
+  /** Room time the gunner seat became empty (bot gunner fill). */
+  gunnerEmptySince: number
 }
 
-/** Bots are disabled for now: `bots` is always sanitized to 0. */
-export function sanitizeConfig(input: unknown, base: RoomConfig = DEFAULT_ROOM_CONFIG): RoomConfig {
+export function sanitizeConfig(input: unknown, base: EngineConfig = DEFAULT_ROOM_CONFIG): EngineConfig {
   const c = (input && typeof input === "object" ? input : {}) as Record<string, unknown>
   const int = (v: unknown, min: number, max: number, fallback: number) =>
     typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback
   const name = typeof c.name === "string" ? cleanText(c.name, 32) : ""
   return {
     teams: int(c.teams, 2, 4, base.teams),
-    bots: 0,
+    bots: int(c.bots, 0, 10, base.bots),
     maxPerTeam: int(c.maxPerTeam, 1, 16, base.maxPerTeam),
     scoreLimit: int(c.scoreLimit, 1, 1000, base.scoreLimit),
     timeLimit: int(c.timeLimit, 60, 7200, base.timeLimit),
     listed: typeof c.listed === "boolean" ? c.listed : base.listed,
     name: name || base.name,
+    ...extras(c, base),
   }
+}
+
+function extras(c: Record<string, unknown>, base: RoomExtras): RoomExtras {
+  const out: RoomExtras = {}
+  const skill = typeof c.botSkill === "number" && Number.isFinite(c.botSkill) ? c.botSkill : base.botSkill
+  if (skill !== undefined) out.botSkill = Math.min(1, Math.max(0, skill))
+  const fill = typeof c.botFill === "number" && Number.isFinite(c.botFill) ? c.botFill : base.botFill
+  if (fill !== undefined) out.botFill = Math.min(16, Math.max(0, Math.round(fill)))
+  return out
+}
+
+function hashString(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
+  return h >>> 0
 }
 
 function cleanText(text: string, max: number): string {
@@ -218,9 +264,15 @@ export class RoomEngine {
   /** Per-player decoders for the legacy (object) snapshot path. */
   private decoders = new Map<string, (m: WireServerMessage) => ServerMessage>()
 
-  constructor(public readonly code: string, public config: RoomConfig, private hooks: RoomEngineHooks) {
+  private rng: () => number
+  private botNames = 0
+  private lastBotSync = -Infinity
+
+  constructor(public readonly code: string, public config: EngineConfig, private hooks: RoomEngineHooks) {
     this.config = sanitizeConfig(config)
     this.scores = new Array(this.config.teams).fill(0)
+    this.rng = createRng(hashString(code))
+    this.syncBots()
   }
 
   // ───────────────────────── players ─────────────────────────
@@ -232,13 +284,10 @@ export class RoomEngine {
   addPlayer(name: string, beforeWelcome?: (playerId: string) => void): string {
     const id = `p${this.nextId++}`
     const team = this.balancedTeam(null)
-    this.players.set(id, {
-      info: { id, name: cleanText(String(name ?? ""), NAME_MAX) || "Pilot", team, vehicleId: null, seat: null, kills: 0, deaths: 0, bot: false, respawnAt: 0 },
-      flight: NEUTRAL_INPUT, seat: NEUTRAL_SEAT, queue: [], jitter: newJitterBuffer(), seq: -1, ack: -1, lastInputAt: -Infinity,
-      chatTokens: CHAT_BURST, chatAt: this.time, needsPlayers: true,
-    })
+    this.players.set(id, this.newPlayer(id, cleanText(String(name ?? ""), NAME_MAX) || "Pilot", team, false))
     beforeWelcome?.(id)
     this.hooks.send(id, { type: "welcome", playerId: id, room: this.code, config: { ...this.config } })
+    this.syncBots()
     this.hooks.onChange?.()
     return id
   }
@@ -249,15 +298,33 @@ export class RoomEngine {
     this.vacate(p.info)
     this.players.delete(playerId)
     this.decoders.delete(playerId)
-    this.hooks.onChange?.()
+    if (!p.info.bot) {
+      this.syncBots()
+      this.hooks.onChange?.()
+    }
   }
 
+  private newPlayer(id: string, name: string, team: TeamId, bot: boolean): PlayerState {
+    return {
+      info: { id, name, team, vehicleId: null, seat: null, kills: 0, deaths: 0, bot, respawnAt: 0 },
+      flight: NEUTRAL_INPUT, seat: NEUTRAL_SEAT, queue: [], jitter: newJitterBuffer(), seq: -1, ack: -1, lastInputAt: -Infinity,
+      chatTokens: CHAT_BURST, chatAt: this.time, needsPlayers: !bot, brain: null, leaving: false,
+    }
+  }
+
+  /** Humans only (bots never keep a room alive). */
   humanCount(): number {
-    return this.players.size
+    let n = 0
+    for (const p of this.players.values()) if (!p.info.bot) n++
+    return n
   }
 
   playerCount(): number {
     return this.players.size
+  }
+
+  botCount(): number {
+    return this.players.size - this.humanCount()
   }
 
   summary(): RoomSummary {
@@ -271,9 +338,10 @@ export class RoomEngine {
     return this.humanCount() >= this.config.teams * this.config.maxPerTeam
   }
 
+  /** Humans per team (bots are ignored for balancing; they make room instead). */
   private teamCounts(exclude: string | null): number[] {
     const counts = new Array(this.config.teams).fill(0)
-    for (const p of this.players.values()) if (p.info.id !== exclude) counts[p.info.team]++
+    for (const p of this.players.values()) if (!p.info.bot && p.info.id !== exclude) counts[p.info.team]++
     return counts
   }
 
@@ -282,6 +350,100 @@ export class RoomEngine {
     let best = 0
     for (let t = 1; t < counts.length; t++) if (counts[t] < counts[best]) best = t
     return best as TeamId
+  }
+
+  // ───────────────────────── bots ─────────────────────────
+
+  /** Bots wanted on a team given current humans. */
+  private wantedBots(team: number, humans: number[]): number {
+    const room = Math.max(0, this.config.maxPerTeam - humans[team])
+    const fill = this.config.botFill
+    if (fill !== undefined && fill > 0) {
+      const total = humans.reduce((a, b) => a + b, 0)
+      return total >= fill ? 0 : Math.min(room, Math.max(0, fill - humans[team]))
+    }
+    return Math.min(room, this.config.bots)
+  }
+
+  /** Add one bot to a team. */
+  addBot(team: TeamId): string {
+    const id = `b${this.nextId++}`
+    const p = this.newPlayer(id, `${BOT_NAMES[this.botNames++ % BOT_NAMES.length]} [AI]`, team, true)
+    p.brain = createBotBrain(Math.floor(this.rng() * 4294967296), this.config.botSkill ?? BOT_SKILL_DEFAULT)
+    p.info.respawnAt = this.time + 0.5 + this.rng() * 2
+    this.players.set(id, p)
+    return id
+  }
+
+  /** Reconcile bot roster: add missing bots, mark surplus ones as leaving (they exit gracefully). */
+  private syncBots(): void {
+    this.lastBotSync = this.time
+    const humans = this.teamCounts(null)
+    for (let t = 0; t < this.config.teams; t++) {
+      const want = this.wantedBots(t, humans)
+      const bots = [...this.players.values()].filter(p => p.info.bot && p.info.team === t)
+      const staying = bots.filter(b => !b.leaving)
+      if (staying.length < want) {
+        // Cancel departures first, then add.
+        let need = want - staying.length
+        for (const b of bots) if (b.leaving && need > 0) { b.leaving = false; need-- }
+        for (let i = 0; i < need; i++) this.addBot(t as TeamId)
+      } else if (staying.length > want) {
+        // Prefer idle bots, then gunners, then pilots.
+        const rank = (b: PlayerState) => (b.info.vehicleId === null ? 0 : b.info.seat === 1 ? 1 : 2)
+        staying.sort((a, b) => rank(a) - rank(b))
+        for (let i = 0; i < staying.length - want; i++) staying[i].leaving = true
+      }
+    }
+    this.retireBots()
+  }
+
+  /** Remove leaving bots that can go now. */
+  private retireBots(): void {
+    for (const p of [...this.players.values()]) {
+      if (!p.info.bot || !p.leaving) continue
+      const v = this.vehicleOf(p.info)
+      if (!v || !v.alive) { this.removePlayer(p.info.id); continue }
+      if (!this.canLeave(v)) continue
+      const otherId = v.seats[p.info.seat === 0 ? 1 : 0]
+      this.removePlayer(p.info.id)
+      // A bot's own parked aircraft leaves with it.
+      if (!otherId) this.removeVehicleQuietly(v)
+    }
+  }
+
+  private removeVehicleQuietly(v: VehicleEntity): void {
+    const meta = this.meta.get(v.id)
+    v.alive = false
+    if (meta) meta.diedAt = -Infinity
+  }
+
+  /** Kick a bot out of its seat (it will respawn shortly). */
+  private evictBot(bot: PlayerState): void {
+    this.vacate(bot.info)
+    bot.info.respawnAt = Math.max(bot.info.respawnAt, this.time + 1)
+  }
+
+  private updateBots(): void {
+    if (this.time - this.lastBotSync >= BOT_SYNC_INTERVAL) this.syncBots()
+    else this.retireBots()
+    if (this.matchEndedAt !== null) return
+    const now = this.time
+    for (const p of this.players.values()) {
+      const bot = p.info
+      if (!bot.bot || p.leaving || bot.vehicleId || now < bot.respawnAt) continue
+      const ride = this.vehicles.find(v => {
+        if (!v.alive || v.team !== bot.team || v.seats[1] || !v.seats[0]) return false
+        const pilot = this.players.get(v.seats[0])
+        return !!pilot && !pilot.info.bot && now - this.meta.get(v.id)!.gunnerEmptySince >= BOT_GUNNER_DELAY
+      })
+      if (ride) { this.seatPlayer(bot, ride, 1); continue }
+      const teammates: PlayerInfo[] = []
+      for (const x of this.players.values()) if (x.info.team === bot.team && x.info.id !== bot.id) teammates.push(x.info)
+      let kind = chooseBotVehicle(bot, teammates, this.vehicles, this.rng)
+      if (!VEHICLES[kind]) kind = VEHICLE_KINDS[Math.floor(this.rng() * VEHICLE_KINDS.length)]
+      this.spawnVehicle(bot, kind)
+    }
   }
 
   /** Players may pick a team if it doesn't make it bigger than the smallest team + 1 and it isn't full. */
@@ -294,7 +456,7 @@ export class RoomEngine {
 
   handle(playerId: string, message: ClientMessage): void {
     const p = this.players.get(playerId)
-    if (!p || !message || typeof message !== "object") return
+    if (!p || p.info.bot || !message || typeof message !== "object") return
     const m = message as unknown as Record<string, unknown>
     switch (m.type) {
       case "ping":
@@ -453,6 +615,7 @@ export class RoomEngine {
   private setTeam(p: PlayerState, team: TeamId): void {
     this.vacate(p.info)
     p.info.team = team
+    this.syncBots()
   }
 
   private onSpawn(p: PlayerState, kind: unknown): void {
@@ -484,7 +647,8 @@ export class RoomEngine {
       flaresReadyAt: 0, flareCount: spec.flares, abilityReadyAt: 0, spottedUntil: 0, lastDamagedBy: null, alive: true,
     }
     this.vehicles.push(v)
-    this.meta.set(v.id, { emptySince: null, lastHp: v.hp, lastHitAt: -Infinity, diedAt: null })
+    this.meta.set(v.id, { emptySince: null, lastHp: v.hp, lastHitAt: -Infinity, diedAt: null, gunnerEmptySince: this.time })
+    markSpawned(v, this.time)
     player.vehicleId = v.id
     player.seat = 0
     const ps = this.players.get(player.id)
@@ -500,8 +664,15 @@ export class RoomEngine {
     if (p.info.vehicleId === v.id) return this.onSwitchSeat(p, seat)
     const current = this.vehicleOf(p.info)
     if (current && current.alive && !this.canLeave(current)) return
-    if (v.seats[seat]) return this.error(p.info.id, "Seat taken.")
+    const occupant = v.seats[seat] ? this.players.get(v.seats[seat]!) : undefined
+    if (v.seats[seat] && !occupant?.info.bot) return this.error(p.info.id, "Seat taken.")
     this.vacate(p.info)
+    if (occupant) {
+      // Humans push bots out. A displaced bot pilot may stay on as gunner; a bot never pilots a human's aircraft.
+      this.evictBot(occupant)
+      const other = (1 - seat) as SeatIndex
+      if (seat === 0 && !v.seats[other] && !occupant.leaving) this.seatPlayer(occupant.info, v, other)
+    }
     this.seatPlayer(p.info, v, seat)
   }
 
@@ -509,10 +680,17 @@ export class RoomEngine {
     if (!isSeat(seat)) return
     const v = this.vehicleOf(p.info)
     if (!v || !v.alive || p.info.seat === seat) return
-    if (v.seats[seat]) return this.error(p.info.id, "Seat taken.")
+    const occupant = v.seats[seat] ? this.players.get(v.seats[seat]!) : undefined
+    if (v.seats[seat] && !occupant?.info.bot) return this.error(p.info.id, "Seat taken.")
     const from = p.info.seat!
     v.seats[from] = null
     v.aim[from] = null
+    if (from === 1) this.meta.get(v.id)!.gunnerEmptySince = this.time
+    if (occupant) {
+      this.evictBot(occupant)
+      // Swap only into the gunner seat; a bot never takes the pilot seat of a human's aircraft.
+      if (from === 1) this.seatPlayer(occupant.info, v, 1)
+    }
     this.seatPlayer(p.info, v, seat)
   }
 
@@ -520,6 +698,7 @@ export class RoomEngine {
     v.seats[seat] = player.id
     player.vehicleId = v.id
     player.seat = seat
+    if (seat === 1) { const meta = this.meta.get(v.id); if (meta) meta.gunnerEmptySince = Infinity }
     const ps = this.players.get(player.id)
     if (ps) { ps.flight = NEUTRAL_INPUT; ps.seat = NEUTRAL_SEAT }
   }
@@ -530,6 +709,7 @@ export class RoomEngine {
     if (v && player.seat !== null && v.seats[player.seat] === player.id) {
       v.seats[player.seat] = null
       v.aim[player.seat] = null
+      if (player.seat === 1) { const meta = this.meta.get(v.id); if (meta) meta.gunnerEmptySince = this.time }
     }
     player.vehicleId = null
     player.seat = null
@@ -541,9 +721,21 @@ export class RoomEngine {
     return player.vehicleId ? this.vehicles.find(v => v.id === player.vehicleId) : undefined
   }
 
-  /** Crew may leave/swap aircraft only on the ground or inside their safe zone. */
+  /** Crew may leave/swap aircraft only on their carrier deck or during spawn protection. */
   private canLeave(v: VehicleEntity): boolean {
-    return v.flight.onGround || inSafeZone(v.team, v.flight.position)
+    return this.onOwnDeck(v) || this.time - (v.spawnedAt ?? -Infinity) < SPAWN_PROTECTION
+  }
+
+  /** Landed on its own team's carrier flight deck. */
+  onOwnDeck(v: VehicleEntity): boolean {
+    if (!v.flight.onGround) return false
+    const spec = SHIP_SPECS.carrier
+    for (const ship of FLEET) {
+      if (ship.team !== v.team || ship.kind !== "carrier") continue
+      const l = worldToShip(ship, v.flight.position)
+      if (Math.abs(l[0]) <= spec.halfWidth + 2 && Math.abs(l[2]) <= spec.halfLength + 2 && l[1] >= spec.deckHeight - 2 && l[1] <= spec.deckHeight + 10) return true
+    }
+    return false
   }
 
   // ───────────────────────── simulation ─────────────────────────
@@ -569,7 +761,25 @@ export class RoomEngine {
     const vehicles = this.vehicles
 
     // One buffered input per player per tick (matches client prediction).
-    for (const p of this.players.values()) this.consumeTick(p)
+    for (const p of this.players.values()) {
+      if (p.info.bot) continue
+      this.consumeTick(p)
+    }
+
+    // Bot brains produce this tick's inputs (same path as human inputs below).
+    for (const v of vehicles) {
+      if (!v.alive) continue
+      for (let i = 0; i < 2; i++) {
+        const id = v.seats[i]
+        const p = id ? this.players.get(id) : undefined
+        if (!p || !p.brain) continue
+        const out = botInput(p.brain, p.info, v, vehicles, now, this.combat.missiles, worldQuery)
+        // botInput reuses its result objects per brain: copy what we keep.
+        p.seat = { ...out.seat, aim: out.seat.aim && [out.seat.aim[0], out.seat.aim[1], out.seat.aim[2]] }
+        if (i === 0) p.flight = out.flight ? { ...out.flight, aim: out.flight.aim && [out.flight.aim[0], out.flight.aim[1], out.flight.aim[2]] } : NEUTRAL_INPUT
+        p.lastInputAt = now
+      }
+    }
 
     // Inputs → flight + weapons.
     for (const v of vehicles) {
@@ -614,10 +824,11 @@ export class RoomEngine {
         v.alive = true
         killVehicle(v, "crash", killer, events)
       }
-      this.onVehicleDestroyed(v, killer)
+      this.onVehicleDestroyed(v, killer, killEvent?.killerTeam)
     }
 
     this.cleanupVehicles()
+    this.updateBots()
     this.updateMatch()
   }
 
@@ -626,7 +837,8 @@ export class RoomEngine {
     return v.lastDamagedBy && this.time - meta.lastHitAt <= CRASH_CREDIT_WINDOW ? v.lastDamagedBy : null
   }
 
-  private onVehicleDestroyed(v: VehicleEntity, killer: string | null): void {
+  /** `killerTeam` scores kills with no killer player (fleet AA). */
+  private onVehicleDestroyed(v: VehicleEntity, killer: string | null, aaTeam?: TeamId): void {
     for (let s = 0; s < 2; s++) {
       const id = v.seats[s]
       const p = id ? this.players.get(id) : undefined
@@ -640,9 +852,8 @@ export class RoomEngine {
       }
       v.seats[s] = null
     }
-    if (!killer) return
-    const kp = this.players.get(killer)
-    const killerTeam = kp ? kp.info.team : this.vehicles.find(x => x.id === killer)?.team
+    const kp = killer ? this.players.get(killer) : undefined
+    const killerTeam = kp ? kp.info.team : killer ? this.vehicles.find(x => x.id === killer)?.team : aaTeam
     if (killerTeam === undefined || killerTeam === v.team) return
     if (kp) kp.info.kills++
     if (this.matchEndedAt !== null) return
@@ -659,13 +870,18 @@ export class RoomEngine {
         if (meta.diedAt !== null && now - meta.diedAt >= WRECK_LINGER) removed = true
         continue
       }
+      // A bot gunner never stays in an aircraft without a pilot.
+      if (!v.seats[0] && v.seats[1]) {
+        const gunner = this.players.get(v.seats[1])
+        if (gunner?.info.bot) this.evictBot(gunner)
+      }
       if (v.seats[0] || v.seats[1]) {
         meta.emptySince = null
         continue
       }
       if (meta.emptySince === null) meta.emptySince = now
       const idle = now - meta.emptySince
-      if (inSafeZone(v.team, v.flight.position)) {
+      if (this.onOwnDeck(v)) {
         if (idle >= PARKED_REMOVE_DELAY) { v.alive = false; meta.diedAt = -Infinity; removed = true }
       } else if (idle >= ABANDONED_DESTROY_DELAY) {
         const killer = this.crashCredit(v, meta)
@@ -711,7 +927,7 @@ export class RoomEngine {
       p.info.seat = null
       p.info.kills = 0
       p.info.deaths = 0
-      p.info.respawnAt = 0
+      p.info.respawnAt = p.info.bot ? this.time + 0.5 + this.rng() * 2 : 0
       p.flight = NEUTRAL_INPUT
       p.seat = NEUTRAL_SEAT
     }
@@ -739,9 +955,9 @@ export class RoomEngine {
     const message: ServerMessage = { type: "events", events: batch }
     if (this.hooks.sendText) {
       const text = JSON.stringify(message)
-      for (const id of this.players.keys()) this.hooks.sendText(id, text)
+      for (const p of this.players.values()) if (!p.info.bot) this.hooks.sendText(p.info.id, text)
     } else {
-      for (const id of this.players.keys()) this.hooks.send(id, message)
+      for (const p of this.players.values()) if (!p.info.bot) this.hooks.send(p.info.id, message)
     }
   }
 
@@ -786,7 +1002,7 @@ export class RoomEngine {
   }
 
   private broadcastSnapshot(): void {
-    if (this.players.size === 0) return
+    if (this.humanCount() === 0) return
     // Players list only when it changed (or periodically as a safety net).
     const list = this.playerList()
     const listJson = JSON.stringify(list)
@@ -798,6 +1014,7 @@ export class RoomEngine {
     const body = JSON.stringify(shared)
     const head = body.slice(0, -1)
     for (const p of this.players.values()) {
+      if (p.info.bot) continue
       const personal = this.wirePersonal(p, p.needsPlayers && !includePlayers)
       p.needsPlayers = false
       const text = `${head},${JSON.stringify(personal).slice(1)}`
@@ -851,6 +1068,9 @@ export interface WireOwn {
   fr: number
   ar: number
   ld: string | null
+  /** Recon look-to-spot progress / candidate (omitted when unset). */
+  sp?: number
+  sc?: string | null
 }
 
 export interface WireProjectile { id: number; w: WeaponId; o: string; vh: string; t: TeamId; p: Vec3; v: Vec3; a: number; l: number }
@@ -908,6 +1128,8 @@ function packOwn(v: VehicleEntity): WireOwn {
     vehicle: v.id, ft: v.flight.tick,
     weapons: [v.weapons[0].map(pack), v.weapons[1].map(pack)],
     fr: r3(v.flaresReadyAt), ar: r3(v.abilityReadyAt), ld: v.lastDamagedBy,
+    ...(v.spotProgress !== undefined ? { sp: r3(v.spotProgress) } : {}),
+    ...(v.spotCandidate !== undefined ? { sc: v.spotCandidate } : {}),
   }
 }
 
@@ -960,6 +1182,8 @@ export function createSnapshotDecoder(): (message: WireServerMessage | ServerMes
           flaresReadyAt: mine ? mine.fr : 0, flareCount: w.fc, abilityReadyAt: mine ? mine.ar : 0,
           spottedUntil: w.su ?? 0, lastDamagedBy: mine ? mine.ld : null, alive: w.d !== 1,
         }
+        if (mine?.sp !== undefined) v.spotProgress = mine.sp
+        if (mine?.sc !== undefined) v.spotCandidate = mine.sc
         return v
       }),
       players,

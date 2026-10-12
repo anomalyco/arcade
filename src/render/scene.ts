@@ -371,6 +371,8 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     return cv.toDataURL("image/png")
   }
 
+  // Dev-only: screenshot tooling can take the camera after the game frame (window.__wingsCam).
+  let camOverride: ((c: PerspectiveCamera, t: number) => void) | null = null
   const _focus = new Vector3()
   let menuT = 0
   const menuFov = 60
@@ -389,8 +391,10 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     last = now
     const time = now / 1000
     frame++
-    if (frameFn) frameFn(dt, time)
-    else {
+    if (frameFn) {
+      frameFn(dt, time)
+      if (import.meta.env.DEV && camOverride) camOverride(camera, time)
+    } else {
       // Menu: a slow, sunny flyover of the islands with the sun behind the camera (front-lit terrain).
       rig.setMode("menu")
       menuT += dt
@@ -446,6 +450,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
   if (import.meta.env.DEV) {
     const w = window as unknown as { __wingsHost: SceneHost; __wingsPost: (on: boolean) => void }
     w.__wingsHost = host
+    ;(window as unknown as { __wingsCam: (f: typeof camOverride) => void }).__wingsCam = fn => { camOverride = fn }
     ;(window as unknown as { __wingsPostObj: () => unknown }).__wingsPostObj = () => post
     w.__wingsPost = on => { if (!on && post) { post.dispose(); post = null } else if (on && !post) { post = new PostPass(renderer); post.resize(renderer) } }
   }

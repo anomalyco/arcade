@@ -1,5 +1,12 @@
 # Integration TODO (orchestrator)
 
+## After carrier strike groups land
+- Only active teams' fleets should exist: use `activeFleet(config.teams)` (fleet.ts) in combat AA, room engine, bots no-fly, world rendering (client knows config from welcome).
+- Bots: switch takeoff logic from runway/corridor to carrier catapult launch; avoid enemy fleet AA range (2.2 km) unless suicidal; heli from deck spots. (Bots session ses_ed34d3943ffefrRH4OjhzZL1Aw)
+- Bots: `botInput` reuses returned objects — server must copy if retained.
+- Client: render AA tracers/flak from combat `aa` events and aim ship turrets via world `getShipTurret`; call `view.setSpotted(on)` for spotted enemies; practice "bots" setting → createLocalRoom config.
+- Types: apply combat's proposed `aa` GameEvent, "aa" WeaponId, VehicleEntity.spawnedAt.
+
 ## Pending for UI agent after current rebuild (user feedback)
 - Remove PULL UP warning entirely (HUD + sound).
 - Remove the giant circles around the crosshair (seeker/lock-cone ring, any large reticle rings). Keep only the small crosshair; lock indication = small box on the target.

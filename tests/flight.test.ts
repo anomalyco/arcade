@@ -508,3 +508,95 @@ test("feel table", () => {
     "brake stop (s)": f.brakeStop.toFixed(1), "strafe bank°": f.strafeBank.toFixed(0), "strafe m/s (4 s)": f.strafeSpeed.toFixed(1), "loop (s)": f.loopTime.toFixed(2),
   }])
 })
+
+describe("carrier deck", () => {
+  // 330 m × 76 m flight deck at 20 m over open water, bow toward -Z.
+  const DECK = 20
+  const onDeck = (x: number, z: number) => Math.abs(x) < 38 && Math.abs(z) < 165
+  const sea: WorldQuery = {
+    groundHeight: (x, z) => (onDeck(x, z) ? DECK : 0),
+    onRunway: onDeck,
+    half: 60000,
+    ceiling: 6000,
+  }
+  // Bow catapult start, ~125 m of deck ahead.
+  const catSpawn = (kind: VehicleKind) => createFlightState(kind, { position: [0, DECK + 2, -40], yaw: 0, onGround: true })
+  const fly = (s: FlightState, f: (s: FlightState) => FlightInput, seconds: number) => {
+    let leftDeckAt: number | null = null, minAlt = Infinity, speedAtEdge = 0
+    for (let i = 0; i < Math.round(seconds / TICK_DT) && !s.crashed; i++) {
+      stepFlight(s, f(s), TICK_DT, sea)
+      if (leftDeckAt === null && !onDeck(s.position[0], s.position[2])) { leftDeckAt = Math.abs(s.position[2] + 40); speedAtEdge = flightReadout(s).speed }
+      if (leftDeckAt !== null) minAlt = Math.min(minAlt, s.position[1])
+    }
+    return { leftDeckAt, minAlt, speedAtEdge }
+  }
+
+  for (const kind of JETS) {
+    const stall = VEHICLES[kind].stall
+    test(`${kind}: catapult launch hands-off (full throttle) climbs away`, () => {
+      const s = catSpawn(kind)
+      const r = fly(s, () => input({ throttle: 1 }), 20)
+      expect(s.crashed).toBeNull()
+      expect(r.leftDeckAt).not.toBeNull()
+      expect(r.leftDeckAt!).toBeLessThan(128) // ran off the bow (125 m of deck)
+      expect(r.speedAtEdge).toBeGreaterThan(stall * 1.15)
+      expect(r.minAlt).toBeGreaterThan(8) // slight sink allowed, never reaches the water
+      expect(s.position[1]).toBeGreaterThan(DECK + 20)
+    })
+
+    test(`${kind}: catapult launch with pitch-up climbs away`, () => {
+      const s = catSpawn(kind)
+      const r = fly(s, () => input({ throttle: 1, aim: directionFromHeading(0, 0.15) }), 20)
+      expect(s.crashed).toBeNull()
+      expect(r.minAlt).toBeGreaterThan(DECK - 5)
+      expect(s.position[1]).toBeGreaterThan(DECK + 60)
+    })
+
+    test(`${kind}: cat stroke reaches ~1.3× stall in ≤ ~2.5 s of power`, () => {
+      const s = catSpawn(kind)
+      s.throttle = 1
+      let t = 0
+      while (s.onGround && flightReadout(s).speed < stall * 1.25 && t < 5) { stepFlight(s, input({ throttle: 1 }), TICK_DT, sea); t += TICK_DT }
+      expect(t).toBeLessThan(2.6)
+      expect(Math.abs(s.position[2] + 40)).toBeLessThan(120)
+    })
+  }
+
+  test("rolls and steers on the deck without sinking through it; brakes hold it", () => {
+    const s = catSpawn("fighter")
+    run2(s, () => input({ yaw: 1 }), 2)
+    expect(s.onGround).toBe(true)
+    expect(s.position[1]).toBeCloseTo(DECK + 2, 3)
+    run2(s, () => input({ brake: true }), 2)
+    expect(flightReadout(s).speed).toBeLessThan(0.5)
+    function run2(st: FlightState, f: () => FlightInput, sec: number) { for (let i = 0; i < sec * 60; i++) stepFlight(st, f(), TICK_DT, sea) }
+  })
+
+  test("gentle gear-down touchdown on the deck is safe", () => {
+    const s = createFlightState("fighter", { position: [0, DECK + 4, 120], yaw: 0, onGround: false })
+    s.orientation = quatFromYawPitchRoll(0, -0.04, 0)
+    s.velocity = [0, -2, -65]
+    s.gearDown = true
+    s.throttle = 0
+    for (let i = 0; i < 60 * 3 && !s.onGround; i++) stepFlight(s, input(), TICK_DT, sea)
+    expect(s.crashed).toBeNull()
+    expect(s.onGround).toBe(true)
+  })
+
+  test("heli lifts off vertically from the deck", () => {
+    const s = createFlightState("apache", { position: [0, DECK + 2, 120], yaw: 0, onGround: true })
+    for (let i = 0; i < 120; i++) stepFlight(s, input({ throttle: 1 }), TICK_DT, sea)
+    for (let i = 0; i < 180; i++) stepFlight(s, input(), TICK_DT, sea)
+    expect(s.crashed).toBeNull()
+    expect(s.onGround).toBe(false)
+    expect(s.position[1]).toBeGreaterThan(DECK + 10)
+    expect(Math.hypot(s.position[0], s.position[2] - 120)).toBeLessThan(3)
+  })
+
+  test("a jet pushed off the deck at low speed falls into the sea", () => {
+    const s = createFlightState("fighter", { position: [0, DECK + 2, -150], yaw: 0, onGround: true })
+    s.velocity = [0, 0, -15]
+    for (let i = 0; i < 60 * 10 && !s.crashed; i++) stepFlight(s, input(), TICK_DT, sea)
+    expect(s.crashed).toBe("water")
+  })
+})

@@ -157,7 +157,8 @@ export class MenuNav {
       if (!b?.dataset.i || t.tagName === "INPUT") return
       const i = Number(b.dataset.i)
       this.select(i, false)
-      this.activate(i, t.closest(".v") && this.item(i)?.adjust && t.closest(".arr.l") ? -1 : 1)
+      const arr = t.closest(".arr")
+      this.activate(i, arr?.classList.contains("l") ? -1 : 1, !!arr)
     })
     host.addEventListener("focusin", e => {
       const b = (e.target as HTMLElement).closest<HTMLElement>(".mi")
@@ -243,11 +244,11 @@ export class MenuNav {
     if (this.metaEl.innerHTML !== meta) this.metaEl.innerHTML = meta
   }
 
-  private activate(i: number, dir: 1 | -1 = 1): void {
+  private activate(i: number, dir: 1 | -1 = 1, viaArrow = false): void {
     const it = this.item(i)
     if (!it || it.disabled?.()) return
     if (it.input && !it.run) { it.input.el.focus(); return }
-    if (it.adjust) { it.adjust(dir); this.sound?.(); this.refresh(); return }
+    if (it.adjust && (viaArrow || !it.run)) { it.adjust(dir); this.sound?.(); this.refresh(); return }
     if (it.run) { this.sound?.(); it.run() }
   }
 
@@ -338,14 +339,14 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const roomsMeta = () => roomErr ? "server unreachable · practice still works" : rooms === null ? "looking for lobbies…" : `online · ${rooms.length} ${rooms.length === 1 ? "lobby" : "lobbies"} open`
 
   // Create lobby
-  const cfg = { ...DEFAULT_ROOM_CONFIG, timeLimit: DEFAULT_ROOM_CONFIG.timeLimit / 60 }
+  const cfg = { ...DEFAULT_ROOM_CONFIG, bots: 3, timeLimit: DEFAULT_ROOM_CONFIG.timeLimit / 60 }
   const nameIn = document.createElement("input")
   nameIn.maxLength = 32
   nameIn.value = cfg.name
   nameIn.spellcheck = false
   nameIn.addEventListener("input", () => { cfg.name = nameIn.value })
   const readConfig = (): RoomConfig => ({
-    ...DEFAULT_ROOM_CONFIG, name: (cfg.name || DEFAULT_ROOM_CONFIG.name).slice(0, 32), teams: cfg.teams, bots: 0,
+    ...DEFAULT_ROOM_CONFIG, name: (cfg.name || DEFAULT_ROOM_CONFIG.name).slice(0, 32), teams: cfg.teams, bots: cfg.bots,
     maxPerTeam: cfg.maxPerTeam, scoreLimit: cfg.scoreLimit, timeLimit: cfg.timeLimit * 60, listed: cfg.listed,
   })
   const scoreSteps = [25, 50, 75, 100, 150, 200, 300], timeSteps = [5, 10, 15, 20, 30, 45, 60]
@@ -356,6 +357,7 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
       { label: "Name", input: { el: nameIn, at: "value" } },
       { label: "Teams", value: () => String(cfg.teams), adjust: d => { cfg.teams = Math.max(2, Math.min(4, cfg.teams + d)) } },
       { label: "Pilots per team", value: () => String(cfg.maxPerTeam), adjust: d => { cfg.maxPerTeam = Math.max(1, Math.min(10, cfg.maxPerTeam + d)) } },
+      { label: "Bots per team", value: () => (cfg.bots ? String(cfg.bots) : "none"), adjust: d => { cfg.bots = Math.max(0, Math.min(10, cfg.bots + d)) }, meta: "ai pilots fill each team; they leave as people join" },
       { label: "Score limit", value: () => String(cfg.scoreLimit), adjust: d => { cfg.scoreLimit = cycle(scoreSteps, scoreSteps.includes(cfg.scoreLimit) ? cfg.scoreLimit : 50, d) } },
       { label: "Time limit", value: () => `${cfg.timeLimit} min`, adjust: d => { cfg.timeLimit = cycle(timeSteps, timeSteps.includes(cfg.timeLimit) ? cfg.timeLimit : 15, d) } },
       { label: "Visibility", value: () => (cfg.listed ? "public" : "invite only"), adjust: () => { cfg.listed = !cfg.listed }, meta: () => cfg.listed ? "listed in browse lobbies" : "only people with the link can join" },
@@ -404,12 +406,16 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const inviteCode = invite ? invite.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) : ""
   if (inviteCode) codeIn.value = inviteCode
 
+  const practiceBots = () => settings.practiceBots ?? 3
   const rootScreen = (): MenuScreen => ({
     size: "big",
     items: [
       ...(inviteCode ? [{ label: `Join ${inviteCode}`, run: () => opts.onStart({ mode: "join", code: inviteCode }), meta: "you were invited to this room" }] : []),
       { label: "Quick play", run: () => opts.onStart({ mode: "quick" }), meta: () => `join the fullest open lobby · ${roomsMeta()}` },
-      { label: "Practice", run: () => opts.onStart({ mode: "offline", config: { ...DEFAULT_ROOM_CONFIG, name: "Practice", teams: 2, bots: 0, listed: false } }), meta: "solo · offline · free flight" },
+      { label: "Practice", value: () => practiceBots() ? `${practiceBots()} bots` : "free flight",
+        adjust: d => updateSettings({ practiceBots: Math.max(0, Math.min(10, practiceBots() + d)) }),
+        run: () => opts.onStart({ mode: "offline", config: { ...DEFAULT_ROOM_CONFIG, name: "Practice", teams: 2, bots: practiceBots(), listed: false } }),
+        meta: () => practiceBots() ? `offline · ${practiceBots()} bots per team · ←→ to change` : "offline · free flight, no bots · ←→ to change" },
       { label: "Create a lobby", run: () => nav.push(createScreen()), meta: "teams, limits and privacy" },
       { label: "Join with a code", run: () => { nav.push(joinScreen()); codeIn.focus() }, meta: "a friend's room code" },
       { label: "Browse lobbies", run: () => { nav.push(browseScreen()); refreshRooms() }, meta: () => roomsMeta() },

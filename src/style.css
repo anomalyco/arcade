@@ -29,7 +29,7 @@
 .hud.direct .hud-bore::before { left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; background: none; border: 1.5px solid rgba(236, 234, 228, .9); box-shadow: none; }
 .hud.direct .hud-bore::after { display: none; }
 .hud-hit { position: absolute; left: 0; top: 0; opacity: 0; }
-.hud-hit i { position: absolute; left: -.75px; top: -17px; width: 1.5px; height: 7px; background: var(--fg); transform-origin: .75px 17px; }
+.hud-hit i { position: absolute; left: -.75px; top: -15px; width: 1.5px; height: 6px; background: var(--fg); transform-origin: .75px 15px; }
 .hud-hit i:nth-child(1) { transform: rotate(45deg); } .hud-hit i:nth-child(2) { transform: rotate(135deg); } .hud-hit i:nth-child(3) { transform: rotate(225deg); } .hud-hit i:nth-child(4) { transform: rotate(315deg); }
 .hud-hit.on { animation: hit .22s ease-out; }
 .hud-hit.kill i { height: 10px; width: 2px; }
@@ -62,19 +62,56 @@
 .hud-hint.on { display: block; }
 @keyframes pulse { to { opacity: .5; } }
 
-/* World markers: thin brackets in the team tint, lowercase names, mono distance. */
-.mk { --c: var(--fg); }
-.mk .br { position: absolute; left: -12px; top: -12px; width: 24px; height: 24px; border: 1.5px solid var(--c); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .4));
-  clip-path: polygon(0 0, 28% 0, 28% 2px, 2px 2px, 2px 28%, 0 28%, 0 72%, 2px 72%, 2px calc(100% - 2px), 28% calc(100% - 2px), 28% 100%, 0 100%,
-    0 0, 100% 0, 100% 28%, calc(100% - 2px) 28%, calc(100% - 2px) 2px, 72% 2px, 72% 0, 100% 0, 100% 100%, 72% 100%, 72% calc(100% - 2px), calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) 72%, 100% 72%, 100% 100%, 0 100%); }
+/* World markers. Enemy: small open brackets in the team tint. Friend: 6 px square + name. Spotted enemy:
+   orange diamond, always shown (through terrain/clouds) until spottedUntil. Name above, mono distance below. */
+.mk { --c: var(--fg); transition: opacity .15s; }
+.mk .br { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border: 1.5px solid var(--c); filter: drop-shadow(0 1px 1px rgba(10, 14, 18, .55));
+  clip-path: polygon(0 0, 32% 0, 32% 2px, 2px 2px, 2px 32%, 0 32%, 0 68%, 2px 68%, 2px calc(100% - 2px), 32% calc(100% - 2px), 32% 100%, 0 100%,
+    0 0, 100% 0, 100% 32%, calc(100% - 2px) 32%, calc(100% - 2px) 2px, 68% 2px, 68% 0, 100% 0, 100% 100%, 68% 100%, 68% calc(100% - 2px), calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) 68%, 100% 68%, 100% 100%, 0 100%); }
 .mk .lb, .mk .ds { position: absolute; left: -100px; width: 200px; text-align: center; white-space: nowrap; }
-.mk .lb { top: -31px; color: var(--c); font: 500 15px var(--narrow); text-transform: lowercase; }
-.mk .ds { top: 16px; font-size: 12px; font-weight: 500; color: var(--dim); }
-.mk.friend .br { left: -3px; top: -3px; width: 6px; height: 6px; clip-path: none; border: 0; background: var(--c); }
-.mk.friend .lb { top: -22px; }
+.mk .lb { top: -30px; color: var(--c); font: 500 15px var(--narrow); text-transform: lowercase; }
+.mk .ds { top: 13px; font: 500 12px var(--mono); color: var(--dim); }
+.mk.far .lb { display: none; }
+.mk.friend .br { left: -3px; top: -3px; width: 6px; height: 6px; clip-path: none; border: 0; background: var(--c); box-shadow: 0 1px 2px rgba(10, 14, 18, .5); }
+.mk.friend .lb { top: -24px; }
 .mk.friend .ds { display: none; }
-.mk.spotted .br { border-color: var(--or); }
-.mk.spotted .lb::after { content: " · spotted"; font: 500 12px var(--mono); color: var(--or); }
+.mk.spotted { --c: var(--or); }
+.mk.spotted .br { left: -6px; top: -6px; width: 12px; height: 12px; clip-path: none; border: 1.5px solid var(--or); transform: rotate(45deg); }
+.mk.spotted .lb { color: var(--fg); }
+.mk .arc { display: none; position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; border-radius: 50%;
+  background: conic-gradient(var(--fg) calc(var(--sp, 0) * 1turn), rgba(236, 234, 228, .22) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); }
+.mk.spotting .arc { display: block; }
+.mk.spotting .lb { display: block; }
+.mk.tape { opacity: .3; }
+.mk.tape .lb, .mk.tape .ds { display: none; }
+/* Off-screen enemies: small chevrons on the screen edge. */
+.hud-edges .edge { position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); --c: var(--fg); }
+.hud-edges .edge::before { content: ""; position: absolute; left: -7px; top: -5px; width: 14px; height: 10px; background: var(--c); clip-path: polygon(50% 0, 100% 100%, 50% 62%, 0 100%); filter: drop-shadow(0 1px 1px rgba(10, 14, 18, .6)); }
+.hud-edges .edge.spotted::before { left: -7px; width: 14px; }
+.hud:not(.flying) .hud-edges, .hud:not(.flying) .hud-spot, .hud:not(.flying) .hud-zoom { display: none; }
+/* Fleet markers: small hull bar + mono distance. Enemy ships inside AA range turn orange. */
+.hud-ships .shp { position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); --c: rgba(236, 234, 228, .9); }
+.hud-ships .shp i { position: absolute; left: -9px; top: -2px; width: 18px; height: 4px; border: 1.5px solid var(--c); filter: drop-shadow(0 1px 1px rgba(10, 14, 18, .55)); }
+.hud-ships .shp .ds { position: absolute; left: -60px; width: 120px; top: 8px; text-align: center; font: 500 12px var(--mono); color: var(--dim); white-space: nowrap; }
+.hud-ships .shp.own i { border-color: var(--fg); background: rgba(236, 234, 228, .5); }
+.hud-ships .shp.hot { --c: var(--or); }
+.hud-ships .shp.hot .ds { color: var(--or); }
+/* Enemy-fleet anti-air warning (above the crosshair) and spawn protection (below). */
+.hud-aa { left: 50%; top: calc(50% - 64px); transform: translateX(-50%); display: none; white-space: nowrap; font: 500 13px var(--mono); color: var(--or); }
+.hud-aa.on { display: block; }
+.hud-aa b { font: 500 15px var(--narrow); }
+.hud-aa.fire b { animation: pulse .35s ease-in-out infinite alternate; }
+.hud.aafire .hud-warnfx { background: radial-gradient(140% 120% at 50% 50%, transparent 62%, rgba(232, 84, 46, .32) 100%); animation: warnfx .7s ease-in-out infinite; }
+.hud-prot { left: 50%; top: calc(50% + 48px); transform: translateX(-50%); display: none; font: 500 12px var(--mono); color: var(--dim); white-space: nowrap; }
+.hud-prot.on { display: block; }
+.hud:not(.flying) .hud-ships, .hud:not(.flying) .hud-aa, .hud:not(.flying) .hud-prot { display: none; }
+/* Recon spotting status + gunner zoom, just under the crosshair. */
+.hud-spot { left: 50%; top: calc(50% + 28px); transform: translateX(-50%); display: none; font: 500 12px var(--mono); white-space: nowrap; }
+.hud-spot.on { display: block; }
+.hud-spot.done { color: var(--or); }
+.hud-zoom { left: calc(50% + 24px); top: calc(50% + 14px); display: none; font: 500 12px var(--mono); }
+.hud-zoom.on { display: block; }
 
 /* Top: score — timer, compass, center messages. */
 .hud-top { top: 14px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -150,7 +187,9 @@
 .hud-bottom .w .bar b { position: absolute; inset: 0; background: var(--fg); transform-origin: left; transition: transform .12s linear; }
 .hud-bottom .w.reload .n { color: var(--dim); }
 .hud-bottom .w.reload .bar b { background: var(--dim); }
-.hud-bottom .w.regen:not(.empty) .a::before { content: "+"; font-size: 12px; color: var(--dim); margin-right: 2px; }
+.hud-bottom .w.regen:not(.empty) .a::before { content: "+"; font-size: 13px; color: var(--dim); margin-right: 3px; }
+.hud-bottom .w.regen .bar b { background: rgba(236, 234, 228, .62); }
+.hud-bottom .w.full .bar b { background: var(--fg); }
 .hud-bottom .w.empty .a { font-size: 13px; color: var(--dim); }
 .hud-bottom .w.locked, .hud-bottom .w.locked .a { color: var(--or); }
 .hud-bottom .w.locked .bar b { background: var(--or); }
@@ -160,6 +199,8 @@
 .hud-feed div { display: flex; gap: 8px; align-items: baseline; transition: opacity .6s; animation: feedin .25s var(--ease); }
 .hud-feed div b { font-weight: 500; }
 .hud-feed div span { font: 500 12px var(--mono); color: var(--dim); }
+.hud-feed em, .hud-chat em { font: 500 10px var(--mono); font-style: normal; color: var(--faint); margin-left: 5px; }
+.hud-feed div.spot span { color: var(--or); }
 .hud-feed div.mine { padding-left: 10px; box-shadow: inset 2px 0 0 var(--fg); }
 .hud-feed div.out { opacity: 0; }
 @keyframes feedin { from { opacity: 0; transform: translateX(-6px); } }

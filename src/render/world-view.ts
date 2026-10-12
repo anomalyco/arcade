@@ -7,7 +7,7 @@ import {
   type Object3D, type Scene, type WebGLRenderer,
 } from "three"
 import type { Quality } from "../sim/types"
-import { createAirbases } from "./world/airbase"
+import { createFleet, type TurretHandle } from "./world/ships"
 import { createBoundary } from "./world/boundary"
 import {
   FOG_COLOR, HEMI_GROUND_COLOR, HEMI_INTENSITY, HEMI_SKY_COLOR, SHADOW_MAP_SIZE, SHADOW_RADIUS, SUN_COLOR, SUN_INTENSITY,
@@ -35,8 +35,12 @@ export interface WorldView {
    * while, shadows follow the camera.
    */
   setShadowFocus(position: Vector3): void
+  /** Aimable pivots of a ship turret (ids from fleet.ts): set yaw.rotation.y / pitch.rotation.x. */
+  getShipTurret(shipId: string, turretId: string): TurretHandle | null
   dispose(): void
 }
+
+export type { TurretHandle }
 
 /** Extra diagnostics for dev tools / preview pages. */
 export interface WorldViewDebug extends WorldView {
@@ -49,6 +53,11 @@ let activeView: WorldView | null = null
 /** Module-level convenience: centre the active world's shadow map on a point. */
 export function setShadowFocus(position: Vector3) {
   activeView?.setShadowFocus(position)
+}
+
+/** Module-level convenience: aimable pivots of a ship turret in the active world. */
+export function getShipTurret(shipId: string, turretId: string): TurretHandle | null {
+  return activeView?.getShipTurret(shipId, turretId) ?? null
 }
 
 export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: Quality): WorldView {
@@ -114,12 +123,11 @@ export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: 
   water.mesh.receiveShadow = false
   const sky = createSky()
   const boundary = createBoundary()
-  const bases = createAirbases()
+  const fleet = createFleet()
   let clouds = createClouds(settings.clouds)
   const streamer = new TerrainStreamer(settings, terrainMaterial, trees, (z0, _z1, rows) => water.writeRows(z0, rows))
 
-  root.add(sky.mesh, water.mesh, streamer.terrainRoot, streamer.treeRoot, bases.root, clouds.mesh, boundary.mesh)
-  bases.setHighlight(null)
+  root.add(sky.mesh, water.mesh, streamer.terrainRoot, streamer.treeRoot, fleet.root, clouds.mesh, boundary.mesh)
 
   const view: WorldViewDebug = {
     root,
@@ -131,7 +139,7 @@ export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: 
       if (sun.castShadow) placeShadow(shadowFocus)
       sky.update(cameraPosition, time)
       water.update(time)
-      bases.update(time, cameraPosition)
+      fleet.update()
       boundary.update(time)
       streamer.update(cameraPosition, Math.max(0, Math.min(dt, 0.5)))
     },
@@ -153,14 +161,16 @@ export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: 
       clouds = createClouds(settings.clouds)
       root.add(clouds.mesh)
     },
-    setHighlightTeam(team) { bases.setHighlight(team) },
+    // Safe-zone domes were removed with the airbases (strike groups use AA + spawn protection).
+    setHighlightTeam(_team) {},
+    getShipTurret: (shipId, turretId) => fleet.getShipTurret(shipId, turretId),
     ready: () => streamer.ready(),
     stats: () => ({ ...streamer.stats, shoreProgress: streamer.shoreProgress }),
     streamer,
     dispose() {
       if (activeView === view) activeView = null
       streamer.dispose()
-      water.dispose(); sky.dispose(); boundary.dispose(); bases.dispose(); clouds.dispose()
+      water.dispose(); sky.dispose(); boundary.dispose(); fleet.dispose(); clouds.dispose()
       trees.dispose(); terrainMaterial.dispose()
       sun.shadow.map?.dispose()
       root.removeFromParent()

@@ -11,6 +11,8 @@ export interface Settings {
   controlStyle: "direct" | "aim"
   /** Pilot control scheme (see input.ts CONTROL_SCHEMES); default "point". */
   controlScheme?: "point" | "battlefield" | "aim"
+  /** Bots per team for offline practice (0 = free flight). */
+  practiceBots?: number
 }
 
 const KEY = "wings.settings"
@@ -19,7 +21,7 @@ const listeners: Listener[] = []
 
 function defaults(): Settings {
   const lowEnd = (navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent)
-  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "point" }
+  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "point", practiceBots: 3 }
 }
 
 function load(): Settings {
@@ -30,6 +32,7 @@ function load(): Settings {
   } catch {}
   if (base.controlStyle !== "direct" && base.controlStyle !== "aim") base.controlStyle = "direct"
   if (base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = base.controlStyle === "aim" ? "aim" : "point"
+  base.practiceBots = Math.max(0, Math.min(10, Math.round(Number(base.practiceBots ?? 3)) || 0))
   if (base.quality !== "low" && base.quality !== "balanced" && base.quality !== "high") base.quality = "balanced"
   return base
 }

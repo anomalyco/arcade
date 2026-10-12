@@ -15,12 +15,13 @@
 // Flares: lock missiles are decoyed with a deterministic chance (better at range). Scanner missiles ignore
 //   flares while the scanner is on target, unless the missile is within SCANNER_FLARE_CLOSE m (terminal seeker).
 import type {
-  Flare, GameEvent, Missile, Projectile, Quat, SeatIndex, SeatInput, Vec3, VehicleEntity, VehicleKind,
+  Flare, GameEvent, Missile, Projectile, Quat, SeatIndex, SeatInput, TeamId, Vec3, VehicleEntity, VehicleKind,
   WeaponId, WeaponRuntime,
 } from "./types"
 import { TICK_DT } from "./types"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
-import { inSafeZone, segmentHitsGround } from "./geography"
+import { segmentHitsGround } from "./geography"
+import { AA_RANGE, FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship, type TurretKind } from "./fleet"
 
 // ---------------------------------------------------------------------------------------------
 // Tuning
@@ -92,6 +93,17 @@ export const FLARES_PER_BURST = 3
 export const FLARE_TTL = 3.5
 export const FLARE_TARGET_PREFIX = "flare:"
 
+/** Recon look-to-spot: vehicles whose pilot (seat 0) spots enemies by holding their view on them. */
+export const RECON_KINDS: ReadonlySet<VehicleKind> = new Set<VehicleKind>(["blackbird"])
+export const SPOT_CONE = (5 * Math.PI) / 180
+export const SPOT_RANGE = 6000
+export const SPOT_TIME = 1.5
+/** Progress lost per second while the candidate is outside the view cone. */
+export const SPOT_DECAY = 1 / 0.4
+export const SPOT_DURATION = 12
+/** Per-target cooldown before it can be look-spotted again. */
+export const SPOT_COOLDOWN = 3
+
 /** Seat-2 "mark target" ability for crews without a radar pulse. */
 export const MARK_COOLDOWN = 10
 export const MARK_DURATION = 8
@@ -107,10 +119,14 @@ export interface CombatState {
   missiles: Missile[]
   flares: Flare[]
   nextId: number
+  /** Fleet AA turret runtime, index-aligned with AA_TURRETS. */
+  turrets?: TurretState[]
+  /** Pending 5-inch flak bursts. */
+  bursts?: FlakBurst[]
 }
 
 export function createCombatState(): CombatState {
-  return { projectiles: [], missiles: [], flares: [], nextId: 1 }
+  return { projectiles: [], missiles: [], flares: [], nextId: 1, turrets: createTurretStates(), bursts: [] }
 }
 
 /** Server-side extras on WeaponRuntime (not needed on the wire). */
@@ -119,6 +135,25 @@ interface RuntimeExt extends WeaponRuntime {
   firedAt?: number
   /** Fractional regenerated ammo not yet added to `ammo`. */
   regen?: number
+}
+
+/** Server-side extras on VehicleEntity. */
+interface VehicleExt extends VehicleEntity {
+  /** Room time before which this vehicle can't be look-spotted again. */
+  spotCooldownUntil?: number
+  /** Room time the vehicle (re)spawned; protected for SPAWN_PROTECTION s. */
+  spawnedAt?: number
+}
+
+/** Room engine: call when a vehicle (re)spawns so it gets SPAWN_PROTECTION seconds of immunity. */
+export function markSpawned(vehicle: VehicleEntity, now: number): void {
+  (vehicle as VehicleExt).spawnedAt = now
+}
+
+/** Spawn-protected vehicles take no damage, can't fire, and are ignored by locks and fleet AA. */
+export function isSpawnProtected(vehicle: VehicleEntity, now: number): boolean {
+  const t = (vehicle as VehicleExt).spawnedAt
+  return t !== undefined && now - t < SPAWN_PROTECTION
 }
 
 /** Server-side extras on Missile (scanner guidance). */
@@ -365,14 +400,14 @@ function seekerAngle(from: Vec3, axis: Vec3, to: Vec3, outDist: { d: number }): 
 const _sd = { d: 0 }
 
 /** Seeker angle if `target` is a valid lock (alive, hostile, unprotected, within range & cone), else -1. */
-function lockValid(vehicle: VehicleEntity, spec: WeaponSpec, axis: Vec3, target: VehicleEntity, coneScale: number): number {
+function lockValid(vehicle: VehicleEntity, spec: WeaponSpec, axis: Vec3, target: VehicleEntity, coneScale: number, now: number): number {
   if (!target.alive || target === vehicle || !isHostile(vehicle, target)) return -1
   const range = spec.range ?? 2500
   const cone = (spec.lockCone ?? 0.3) * coneScale
   const tp = target.flight.position
   const ang = seekerAngle(vehicle.flight.position, axis, tp, _sd)
   if (_sd.d > range || ang > cone) return -1
-  if (inSafeZone(target.team, tp)) return -1
+  if (isSpawnProtected(target, now)) return -1
   return ang
 }
 
@@ -387,7 +422,7 @@ export function seekerAxis(vehicle: VehicleEntity, seat: SeatIndex, weapon: Weap
 
 /** Best lock candidate for a seat's lock weapon (closest to the seeker axis). */
 export function lockCandidate(
-  vehicle: VehicleEntity, seat: SeatIndex, weapon: WeaponId, aim: Vec3 | null, vehicles: VehicleEntity[],
+  vehicle: VehicleEntity, seat: SeatIndex, weapon: WeaponId, aim: Vec3 | null, vehicles: VehicleEntity[], now = 0,
 ): VehicleEntity | null {
   const spec = WEAPONS[weapon]
   if (!isLockKind(spec)) return null
@@ -395,7 +430,7 @@ export function lockCandidate(
   let best: VehicleEntity | null = null
   let bestAng = Infinity
   for (let i = 0; i < vehicles.length; i++) {
-    const ang = lockValid(vehicle, spec, axis, vehicles[i], 1)
+    const ang = lockValid(vehicle, spec, axis, vehicles[i], 1, now)
     if (ang >= 0 && ang < bestAng) { bestAng = ang; best = vehicles[i] }
   }
   return best
@@ -414,23 +449,29 @@ function findVehicle(vehicles: VehicleEntity[], id: string): VehicleEntity | nul
  * Destroy a vehicle once: sets alive=false, hp=0 and pushes `kill` + `explosion`. Returns false if it was
  * already dead. For crashes pass reason "crash"; `killer` undefined credits `lastDamagedBy`.
  */
-export function killVehicle(vehicle: VehicleEntity, reason: WeaponId | "crash", killer: string | null | undefined, events: GameEvent[]): boolean {
+export function killVehicle(
+  vehicle: VehicleEntity, reason: WeaponId | "crash" | "aa", killer: string | null | undefined, events: GameEvent[],
+  killerTeam?: TeamId,
+): boolean {
   if (!vehicle.alive) return false
   vehicle.alive = false
   vehicle.hp = 0
   const p = vehicle.flight.position
-  events.push({
+  const kill = {
     type: "kill", victim: vehicle.id, victimTeam: vehicle.team,
     killer: killer === undefined ? vehicle.lastDamagedBy : killer, weapon: reason, position: [p[0], p[1], p[2]],
-  })
+  } as GameEvent & { killerTeam?: TeamId }
+  // `killerTeam` (proposed type field) lets the room score fleet-AA kills, which have no killer player.
+  if (killerTeam !== undefined) kill.killerTeam = killerTeam
+  events.push(kill)
   events.push({ type: "explosion", position: [p[0], p[1], p[2]], size: VEHICLES[vehicle.kind].radius * 3 })
   return true
 }
 
-/** Apply raw (already multiplied) damage. Respects safe zones. Returns damage dealt. */
-function dealDamage(target: VehicleEntity, amount: number, weapon: WeaponId, owner: string, pos: Vec3, events: GameEvent[]): number {
+/** Apply raw (already multiplied) damage. Respects spawn protection. Returns damage dealt. */
+function dealDamage(target: VehicleEntity, amount: number, weapon: WeaponId, owner: string, pos: Vec3, now: number, events: GameEvent[]): number {
   if (!target.alive || amount <= 0) return 0
-  if (inSafeZone(target.team, target.flight.position)) return 0
+  if (isSpawnProtected(target, now)) return 0
   target.hp -= amount
   target.lastDamagedBy = owner
   events.push({ type: "hit", target: target.id, by: owner, weapon, damage: amount, position: [pos[0], pos[1], pos[2]] })
@@ -450,7 +491,7 @@ function splash(
     if (v === direct || !v.alive || v.team === team || v.id === shooterId) continue
     const d = Math.max(0, dist(pos, v.flight.position) - VEHICLES[v.kind].radius)
     if (d >= radius) continue
-    dealDamage(v, damageFor(weapon, v, now) * (1 - d / radius), weapon, owner, pos, events)
+    dealDamage(v, damageFor(weapon, v, now) * (1 - d / radius), weapon, owner, pos, now, events)
   }
 }
 
@@ -483,13 +524,14 @@ export function applySeatInput(
   // Seekers run continuously, whether or not the trigger is held.
   for (let slot = 0; slot < 2; slot++) {
     const id = kinds[slot]
-    if (id && runtimes[slot] && isLockKind(WEAPONS[id])) updateLock(vehicle, seat, WEAPONS[id], runtimes[slot], aim, vehicles, events)
+    if (id && runtimes[slot] && isLockKind(WEAPONS[id])) updateLock(vehicle, seat, WEAPONS[id], runtimes[slot], aim, vehicles, now, events)
   }
 
+  if (seat === 0 && RECON_KINDS.has(vehicle.kind)) updateSpotting(vehicle, aim, vehicles, now, events)
   if (input.flares) deployFlares(cs, vehicle, vehicles, now, events)
   if (input.ability) triggerAbility(vehicle, seat, aim, vehicles, now, events)
 
-  const protectedNow = inSafeZone(vehicle.team, vehicle.flight.position)
+  const protectedNow = isSpawnProtected(vehicle, now)
   for (let slot = 0; slot < 2; slot++) {
     if (!(slot === 0 ? input.firePrimary : input.fireSecondary)) continue
     const id = kinds[slot]
@@ -503,18 +545,70 @@ export function applySeatInput(
   }
 }
 
+/** View angle if the enemy is within the spot cone, range and line of sight and not on cooldown, else -1. */
+function spotValid(vehicle: VehicleEntity, axis: Vec3, target: VehicleEntity, cone: number, now: number): number {
+  if (!target.alive || !isHostile(vehicle, target)) return -1
+  if (((target as VehicleExt).spotCooldownUntil ?? 0) > now) return -1
+  const ang = seekerAngle(vehicle.flight.position, axis, target.flight.position, _sd)
+  if (ang > cone || _sd.d > SPOT_RANGE) return -1
+  if (segmentHitsGround(vehicle.flight.position, target.flight.position) !== null) return -1
+  return ang
+}
+
+function markSpotted(spotter: VehicleEntity, target: VehicleEntity, until: number, events: GameEvent[]): void {
+  target.spottedUntil = Math.max(target.spottedUntil, until)
+  events.push({ type: "spotted", by: spotter.id, team: spotter.team, target: target.id, until: target.spottedUntil })
+}
+
+/** Recon pilot look-to-spot: progress builds while an enemy stays in the view cone, then spots it. */
+function updateSpotting(vehicle: VehicleEntity, aim: Vec3 | null, vehicles: VehicleEntity[], now: number, events: GameEvent[]): void {
+  let progress = vehicle.spotProgress ?? 0
+  let candidate: VehicleEntity | null = vehicle.spotCandidate ? findVehicle(vehicles, vehicle.spotCandidate) : null
+  let inView = false
+  if (aim) {
+    if (candidate && spotValid(vehicle, aim, candidate, SPOT_CONE * 1.2, now) >= 0) inView = true
+    else {
+      let best: VehicleEntity | null = null
+      let bestAng = Infinity
+      for (let i = 0; i < vehicles.length; i++) {
+        const ang = spotValid(vehicle, aim, vehicles[i], SPOT_CONE, now)
+        if (ang >= 0 && ang < bestAng) { bestAng = ang; best = vehicles[i] }
+      }
+      if (best) {
+        if (best !== candidate) progress = 0
+        candidate = best
+        inView = true
+      }
+    }
+  }
+  if (inView && candidate) {
+    progress += TICK_DT / SPOT_TIME
+    if (progress >= 1 - 1e-9) {
+      markSpotted(vehicle, candidate, now + SPOT_DURATION, events)
+      ;(candidate as VehicleExt).spotCooldownUntil = now + SPOT_COOLDOWN
+      progress = 0
+      candidate = null
+    }
+  } else {
+    progress = Math.max(0, progress - SPOT_DECAY * TICK_DT)
+    if (progress === 0) candidate = null
+  }
+  vehicle.spotProgress = progress
+  vehicle.spotCandidate = candidate ? candidate.id : null
+}
+
 function updateLock(
   vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime, aim: Vec3 | null,
-  vehicles: VehicleEntity[], events: GameEvent[],
+  vehicles: VehicleEntity[], now: number, events: GameEvent[],
 ): void {
   const axis = seekerAxis(vehicle, seat, spec.id, aim, _lc)
   let target: VehicleEntity | null = null
   if (rt.lockTarget) {
     const cur = findVehicle(vehicles, rt.lockTarget)
     // Hysteresis: keep the current target slightly beyond the acquisition cone.
-    if (cur && lockValid(vehicle, spec, axis, cur, 1.15) >= 0) target = cur
+    if (cur && lockValid(vehicle, spec, axis, cur, 1.15, now) >= 0) target = cur
   }
-  if (!target) target = lockCandidate(vehicle, seat, spec.id, aim, vehicles)
+  if (!target) target = lockCandidate(vehicle, seat, spec.id, aim, vehicles, now)
 
   const newId = target ? target.id : null
   if (newId !== rt.lockTarget) {
@@ -688,7 +782,7 @@ function radarPulse(vehicle: VehicleEntity, seat: SeatIndex, vehicles: VehicleEn
   for (let i = 0; i < vehicles.length; i++) {
     const o = vehicles[i]
     if (!o.alive || !isHostile(vehicle, o)) continue
-    if (dist(p, o.flight.position) <= spec.splash) o.spottedUntil = Math.max(o.spottedUntil, now + spec.ttl)
+    if (dist(p, o.flight.position) <= spec.splash) markSpotted(vehicle, o, now + spec.ttl, events)
   }
   events.push({ type: "pulse", vehicle: vehicle.id, team: vehicle.team, position: [p[0], p[1], p[2]], radius: spec.splash })
   events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: "radarpulse" })
@@ -738,13 +832,14 @@ function lerpInto(a: Vec3, b: Vec3, t: number, out: Vec3): Vec3 {
 
 /**
  * Advance projectiles, missiles and flares one tick; regenerate ammo; detect hits against living vehicles
- * and the ground, apply damage (respecting safe zones), mark vehicles dead and push hit/kill/explosion events.
+ * and the ground, apply damage (respecting spawn protection), run fleet AA, mark vehicles dead and push hit/kill/explosion events.
  */
 export function stepCombat(cs: CombatState, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
   regenAmmo(vehicles, dt, now)
   stepProjectiles(cs, vehicles, dt, now, events)
   stepMissiles(cs, vehicles, dt, now, events)
   stepFlares(cs, dt)
+  stepFleetAA(cs, vehicles, dt, now, events)
 }
 
 /** Continuous magazine regen: ammo/refill per second, starting refillDelay s after the weapon last fired. */
@@ -793,7 +888,7 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
     if (hit.vehicle && (g === null || hit.t <= g)) {
       const target = hit.vehicle
       lerpInto(_p0, _p1, hit.t, _hit)
-      dealDamage(target, damageFor(p.weapon, target, now), p.weapon, p.owner, _hit, events)
+      dealDamage(target, damageFor(p.weapon, target, now), p.weapon, p.owner, _hit, now, events)
       splash(_hit, p.weapon, p.owner, p.team, p.vehicle, target, vehicles, now, events)
       if (spec.kind === "rockets") events.push({ type: "explosion", position: [_hit[0], _hit[1], _hit[2]], size: spec.splash })
       continue
@@ -818,7 +913,7 @@ function findFlare(cs: CombatState, id: number): Flare | null {
 function detonate(
   m: Missile, pos: Vec3, direct: VehicleEntity | null, vehicles: VehicleEntity[], now: number, events: GameEvent[],
 ): void {
-  if (direct) dealDamage(direct, damageFor(m.weapon, direct, now), m.weapon, m.owner, pos, events)
+  if (direct) dealDamage(direct, damageFor(m.weapon, direct, now), m.weapon, m.owner, pos, now, events)
   splash(pos, m.weapon, m.owner, m.team, m.vehicle, direct, vehicles, now, events)
   events.push({ type: "explosion", position: [pos[0], pos[1], pos[2]], size: WEAPONS[m.weapon].splash })
 }
@@ -837,7 +932,7 @@ export function scannerOnTarget(m: Missile, target: VehicleEntity, vehicles: Veh
 }
 
 /** Scanner (semi-active) guidance bookkeeping; returns the vehicle to home on, or null. */
-function scannerGuidance(m: MissileExt, vehicles: VehicleEntity[], tune: MissileTuning, dt: number): VehicleEntity | null {
+function scannerGuidance(m: MissileExt, vehicles: VehicleEntity[], tune: MissileTuning, dt: number, events: GameEvent[]): VehicleEntity | null {
   if (!m.scanTarget) return null
   const target = findVehicle(vehicles, m.scanTarget)
   if (!target || !target.alive) { m.scanTarget = null; m.target = null; return null }
@@ -846,11 +941,17 @@ function scannerGuidance(m: MissileExt, vehicles: VehicleEntity[], tune: Missile
     if (m.target === null) {
       // Re-acquire only if the target is inside the missile's own seeker view.
       _dir[0] = m.velocity[0]; _dir[1] = m.velocity[1]; _dir[2] = m.velocity[2]
-      if (normalizeInto(_dir, _dir) && seekerAngle(m.position, _dir, target.flight.position, _sd) <= tune.gimbal) m.target = target.id
+      if (normalizeInto(_dir, _dir) && seekerAngle(m.position, _dir, target.flight.position, _sd) <= tune.gimbal) {
+        m.target = target.id
+        events.push({ type: "guidance", missile: m.id, vehicle: m.vehicle, target: target.id, guided: true })
+      }
     }
   } else {
     m.scanOff = (m.scanOff ?? 0) + dt
-    if (m.scanOff > SCANNER_GRACE) m.target = null
+    if (m.scanOff > SCANNER_GRACE && m.target !== null) {
+      m.target = null
+      events.push({ type: "guidance", missile: m.id, vehicle: m.vehicle, target: target.id, guided: false })
+    }
   }
   return m.target === target.id ? target : null
 }
@@ -886,7 +987,7 @@ function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, no
         ok = true
       } else m.target = null
     } else {
-      const t = m.steered ? scannerGuidance(m, vehicles, tune, dt) : m.target ? findVehicle(vehicles, m.target) : null
+      const t = m.steered ? scannerGuidance(m, vehicles, tune, dt, events) : m.target ? findVehicle(vehicles, m.target) : null
       if (t && t.alive) {
         const fp = t.flight.position, fv = t.flight.velocity
         _tp[0] = fp[0]; _tp[1] = fp[1]; _tp[2] = fp[2]
@@ -958,4 +1059,207 @@ function stepFlares(cs: CombatState, dt: number): void {
     list[w++] = f
   }
   list.length = w
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fleet anti-air (stationary carrier-group turrets; ships are indestructible)
+// ---------------------------------------------------------------------------------------------
+
+/** Proposed WeaponId for fleet AA damage/kills (cast locally until types.ts adds it). */
+export const AA_WEAPON = "aa" as WeaponId
+/** Seconds a turret tracks a new target before it starts hitting. */
+export const AA_ACQUIRE = 0.4
+/** Seconds between target re-scans / line-of-sight checks per turret (staggered across turrets). */
+export const AA_SCAN_INTERVAL = 0.1
+/** CIWS expected damage per second (hit-probability model) at ≤ CIWS_FULL_RANGE; falls to CIWS_EDGE_FACTOR at AA_RANGE. */
+export const CIWS_DPS = 140
+export const CIWS_FULL_RANGE = 800
+export const CIWS_EDGE_FACTOR = 0.3
+/** CIWS damage is applied (and `aa` events emitted) in chunks of this many seconds. */
+export const AA_EVENT_INTERVAL = 0.1
+export const CIWS_TRACER_SPEED = 1100
+/** 5-inch gun: shell speed, reload, flak burst damage/radius, dispersion (fraction of range, 1σ-ish). */
+export const AA_GUN_SHELL_SPEED = 800
+export const AA_GUN_RELOAD = 1.5
+export const AA_GUN_DAMAGE = 140
+export const AA_GUN_SPLASH = 30
+export const AA_GUN_DISPERSION = 0.012
+
+export interface AaTurret {
+  ship: Ship
+  turret: string
+  kind: TurretKind
+  team: TeamId
+  position: Vec3
+}
+
+export interface TurretState {
+  target: string | null
+  /** Seconds tracked on the current target. */
+  track: number
+  /** Accumulated CIWS damage not yet applied. */
+  pending: number
+  nextEventAt: number
+  readyAt: number
+  nextScanAt: number
+}
+
+export interface FlakBurst {
+  at: number
+  position: Vec3
+  ship: string
+  team: TeamId
+}
+
+/** Every fleet turret in world space (static: ships are stationary). */
+export const AA_TURRETS: AaTurret[] = FLEET.flatMap(ship =>
+  SHIP_SPECS[ship.kind].turrets.map(t => ({ ship, turret: t.id, kind: t.kind, team: ship.team, position: shipToWorld(ship, t.offset) })),
+)
+
+function createTurretStates(): TurretState[] {
+  return AA_TURRETS.map((_, i) => ({
+    target: null, track: 0, pending: 0, nextEventAt: 0, readyAt: 0,
+    // Stagger scans so turrets don't all ray-march on the same tick.
+    nextScanAt: (i % 6) * (AA_SCAN_INTERVAL / 6),
+  }))
+}
+
+const _ls: Vec3 = [0, 0, 0]
+const _lead: Vec3 = [0, 0, 0]
+const _zero: Vec3 = [0, 0, 0]
+
+/**
+ * Line of sight from a turret to a point, ignoring the turret's own ship (clip the segment start to where
+ * it leaves the ship's bounding box).
+ */
+export function turretHasLOS(t: AaTurret, p: Vec3): boolean {
+  const spec = SHIP_SPECS[t.ship.kind]
+  const a = worldToShip(t.ship, t.position), b = worldToShip(t.ship, p)
+  const top = Math.max(spec.deckHeight, spec.island.center[1] + spec.island.half[1]) + 2
+  const lo = [-spec.halfWidth - 2, -5, -spec.halfLength - 2], hi = [spec.halfWidth + 2, top, spec.halfLength + 2]
+  // Slab test: exit fraction of segment a→b from the box (a may be inside or outside).
+  let tExit = 0
+  let tEnter = 0, tOut = 1, hits = true
+  for (let k = 0; k < 3; k++) {
+    const d = b[k] - a[k]
+    if (Math.abs(d) < 1e-9) { if (a[k] < lo[k] || a[k] > hi[k]) { hits = false; break } continue }
+    let t0 = (lo[k] - a[k]) / d, t1 = (hi[k] - a[k]) / d
+    if (t0 > t1) { const x = t0; t0 = t1; t1 = x }
+    if (t0 > tEnter) tEnter = t0
+    if (t1 < tOut) tOut = t1
+    if (tEnter > tOut) { hits = false; break }
+  }
+  if (hits && tEnter <= 0) tExit = Math.min(1, tOut + 1e-4)
+  if (tExit >= 1) return true
+  lerpInto(t.position, p, tExit, _ls)
+  return segmentHitsGround(_ls, p) === null
+}
+
+function aaEligible(t: AaTurret, v: VehicleEntity, now: number): boolean {
+  if (!v.alive || v.team === t.team || isSpawnProtected(v, now)) return false
+  const p = v.flight.position
+  const dx = p[0] - t.position[0], dy = p[1] - t.position[1], dz = p[2] - t.position[2]
+  return dx * dx + dy * dy + dz * dz <= AA_RANGE * AA_RANGE
+}
+
+/** Nearest eligible enemy with line of sight (tests LOS in distance order, at most 3 ray-marches). */
+function aaScan(t: AaTurret, vehicles: VehicleEntity[], now: number): VehicleEntity | null {
+  let lastD = -1
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let best: VehicleEntity | null = null
+    let bestD = Infinity
+    for (let i = 0; i < vehicles.length; i++) {
+      const v = vehicles[i]
+      if (!aaEligible(t, v, now)) continue
+      const d = dist(t.position, v.flight.position)
+      if (d > lastD && d < bestD) { bestD = d; best = v }
+    }
+    if (!best) return null
+    if (turretHasLOS(t, best.flight.position)) return best
+    lastD = bestD
+  }
+  return null
+}
+
+function aaDamage(v: VehicleEntity, amount: number, now: number): number {
+  const spotted = v.spottedUntil > now ? SPOTTED_DAMAGE_MULT : 1
+  return amount * ARMOR[v.kind] * spotted
+}
+
+function applyAaDamage(t: AaTurret, v: VehicleEntity, amount: number, pos: Vec3, now: number, events: GameEvent[]): void {
+  if (!v.alive || amount <= 0 || isSpawnProtected(v, now)) return
+  v.hp -= amount
+  events.push({ type: "hit", target: v.id, by: t.ship.id, weapon: AA_WEAPON, damage: amount, position: [pos[0], pos[1], pos[2]] })
+  if (v.hp <= 0) killVehicle(v, "aa", null, events, t.team)
+}
+
+function emitAa(t: AaTurret, target: VehicleEntity, aim: Vec3, events: GameEvent[]): void {
+  // Proposed GameEvent: { type: "aa"; ship; turret; kind; target; position; aim }.
+  events.push({
+    type: "aa", ship: t.ship.id, turret: t.turret, kind: t.kind, target: target.id,
+    position: [t.position[0], t.position[1], t.position[2]], aim: [aim[0], aim[1], aim[2]],
+  } as unknown as GameEvent)
+}
+
+function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
+  if (!cs.turrets || cs.turrets.length !== AA_TURRETS.length) cs.turrets = createTurretStates()
+  if (!cs.bursts) cs.bursts = []
+  const states = cs.turrets
+  for (let i = 0; i < AA_TURRETS.length; i++) {
+    const t = AA_TURRETS[i], st = states[i]
+    let target = st.target ? findVehicle(vehicles, st.target) : null
+    if (target && !aaEligible(t, target, now)) target = null
+    if (now >= st.nextScanAt) {
+      st.nextScanAt = now + AA_SCAN_INTERVAL
+      // Keep a still-visible target; otherwise pick the nearest visible one.
+      if (!target || !turretHasLOS(t, target.flight.position)) target = aaScan(t, vehicles, now)
+    }
+    const id = target ? target.id : null
+    if (id !== st.target) { st.target = id; st.track = 0; st.pending = 0 }
+    if (!target) continue
+    st.track += dt
+    if (st.track < AA_ACQUIRE) continue
+
+    const tp = target.flight.position, tv = target.flight.velocity
+    const d = dist(t.position, tp)
+    if (t.kind === "ciws") {
+      const falloff = d <= CIWS_FULL_RANGE ? 1 : 1 - (1 - CIWS_EDGE_FACTOR) * (d - CIWS_FULL_RANGE) / (AA_RANGE - CIWS_FULL_RANGE)
+      st.pending += aaDamage(target, CIWS_DPS * falloff, now) * dt
+      if (now >= st.nextEventAt) {
+        st.nextEventAt = now + AA_EVENT_INTERVAL
+        if (leadPoint(t.position, _zero, CIWS_TRACER_SPEED, tp, tv, _lead) < 0) { _lead[0] = tp[0]; _lead[1] = tp[1]; _lead[2] = tp[2] }
+        emitAa(t, target, _lead, events)
+        const dmg = st.pending
+        st.pending = 0
+        applyAaDamage(t, target, dmg, tp, now, events)
+      }
+    } else if (now >= st.readyAt) {
+      st.readyAt = now + AA_GUN_RELOAD
+      const tof = leadPoint(t.position, _zero, AA_GUN_SHELL_SPEED, tp, tv, _lead)
+      if (tof < 0) continue
+      const seed = (i + 1) * 7919 + Math.floor(now * 60)
+      const spread = AA_GUN_DISPERSION * d
+      const ox = (hash01(seed, 11) * 2 - 1) * spread, oy = (hash01(seed, 12) * 2 - 1) * spread, oz = (hash01(seed, 13) * 2 - 1) * spread
+      emitAa(t, target, _lead, events)
+      cs.bursts.push({ at: now + tof, position: [_lead[0] + ox, _lead[1] + oy, _lead[2] + oz], ship: t.ship.id, team: t.team })
+    }
+  }
+
+  // Flak bursts: splash to enemies of the firing fleet.
+  const bursts = cs.bursts
+  let w = 0
+  for (let i = 0; i < bursts.length; i++) {
+    const b = bursts[i]
+    if (b.at > now) { bursts[w++] = b; continue }
+    events.push({ type: "explosion", position: b.position, size: AA_GUN_SPLASH * 0.5 })
+    const t = AA_TURRETS.find(x => x.ship.id === b.ship)!
+    for (let k = 0; k < vehicles.length; k++) {
+      const v = vehicles[k]
+      if (!v.alive || v.team === b.team) continue
+      const dd = Math.max(0, dist(b.position, v.flight.position) - VEHICLES[v.kind].radius)
+      if (dd >= AA_GUN_SPLASH) continue
+      applyAaDamage(t, v, aaDamage(v, AA_GUN_DAMAGE * (1 - dd / AA_GUN_SPLASH), now), b.position, now, events)
+    }
+  }
+  bursts.length = w
 }

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
-  AIRBASES, BASE_LAYOUT, CEILING, MESH_CELL, SAFE_ZONE_HEIGHT, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, baseToWorld,
-  groundHeight, heightBound, inSafeZone, onRunway, segmentHitsGround, spawnPoint, surfaceType, terrainHeight, terrainMeshHeight,
-  worldMesh, worldQuery, CORRIDOR_HALF, CORRIDOR_LENGTH, corridorFloor,
+  AIRBASES, CEILING, DECK_LAYOUT, FLEET_CLEARANCE, LAUNCH_LANE_HALF, LAUNCH_LANE_LENGTH, MESH_CELL, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, groundHeight,
+  heightBound, inSafeZone, isWater, onRunway, segmentHitsGround, shipAt, spawnPoint, surfaceType, terrainHeight,
+  terrainMeshHeight, worldMesh, worldQuery,
 } from "../src/sim/geography"
+import { AA_RANGE, FLEET, SHIP_SPECS, shipToWorld } from "../src/sim/fleet"
 import { generateCluster } from "../src/render/world/tile-gen"
 import type { TeamId, Vec3 } from "../src/sim/types"
 
@@ -63,7 +64,7 @@ describe("heightfield", () => {
     }
     expect(centralMax).toBeGreaterThan(380)
     expect(max).toBeLessThan(1000)
-    expect(land / 60_000).toBeGreaterThan(0.1)
+    expect(land / 60_000).toBeGreaterThan(0.05)
     expect(land / 60_000).toBeLessThan(0.4)
   })
 
@@ -121,117 +122,113 @@ describe("heightfield", () => {
   })
 })
 
-describe("airbases", () => {
-  test("cardinal placement and headings toward the center", () => {
-    const expected = [[0, 5500], [0, -5500], [-5500, 0], [5500, 0]]
-    for (const base of AIRBASES) {
-      expect(base.center[0]).toBeCloseTo(expected[base.team][0])
-      expect(base.center[2]).toBeCloseTo(expected[base.team][1])
-      const fx = -Math.sin(base.heading), fz = -Math.cos(base.heading)
-      const toCenter = Math.hypot(base.center[0], base.center[2])
-      expect(fx * -base.center[0] / toCenter + fz * -base.center[2] / toCenter).toBeCloseTo(1, 6)
-      expect(base.helipads.length).toBe(BASE_LAYOUT.helipads.length)
+describe("strike groups", () => {
+  test("open water around every ship and along each carrier's launch path", () => {
+    for (const sh of FLEET) {
+      for (let r = 0; r <= FLEET_CLEARANCE; r += 50) for (let a = 0; a < 64; a++) {
+        const ang = (a / 64) * Math.PI * 2
+        expect(terrainMeshHeight(sh.position[0] + Math.cos(ang) * r, sh.position[2] + Math.sin(ang) * r)).toBeLessThan(0)
+      }
+      if (sh.kind === "carrier") {
+        for (let d = 0; d <= LAUNCH_LANE_LENGTH; d += 25) for (const c of [-LAUNCH_LANE_HALF, 0, LAUNCH_LANE_HALF]) {
+          const p = shipToWorld(sh, [c, 0, -d])
+          expect(terrainMeshHeight(p[0], p[2])).toBeLessThan(0)
+        }
+      }
     }
   })
 
-  test("runways, aprons and helipads are perfectly flat and onRunway", () => {
+  test("AIRBASES are derived from the carriers", () => {
     for (const base of AIRBASES) {
-      const y = base.center[1]
-      const rw = BASE_LAYOUT.runway
-      for (let a = rw.a0; a <= rw.a1; a += 7.3) for (let c = rw.c0; c <= rw.c1; c += 3.1) {
-        const [x, z] = baseToWorld(base, a, c)
-        expect(groundHeight(x, z)).toBe(y)
-        expect(onRunway(x, z)).toBe(true)
-      }
-      for (const r of BASE_LAYOUT.paved) for (let a = r.a0; a <= r.a1; a += 11) for (let c = r.c0; c <= r.c1; c += 5) {
-        const [x, z] = baseToWorld(base, a, c)
-        expect(groundHeight(x, z)).toBe(y)
-        expect(onRunway(x, z)).toBe(true)
-      }
-      for (const p of base.helipads) {
-        expect(groundHeight(p[0], p[2])).toBe(p[1])
-        expect(onRunway(p[0], p[2])).toBe(true)
+      const c = FLEET.find(s => s.team === base.team && s.kind === "carrier")!
+      expect(base.center[0]).toBeCloseTo(c.position[0])
+      expect(base.center[2]).toBeCloseTo(c.position[2])
+      expect(base.center[1]).toBe(SHIP_SPECS.carrier.deckHeight)
+      expect(base.heading).toBe(c.heading)
+      expect(base.safeRadius).toBe(AA_RANGE)
+      // Bow points at the map centre.
+      const fx = -Math.sin(base.heading), fz = -Math.cos(base.heading)
+      const d = Math.hypot(base.center[0], base.center[2])
+      expect(fx * -base.center[0] / d + fz * -base.center[2] / d).toBeCloseTo(1, 6)
+    }
+  })
+
+  test("decks are solid ground; the carrier flight deck is a runway", () => {
+    for (const sh of FLEET) {
+      const sp = SHIP_SPECS[sh.kind]
+      const I = sp.island
+      for (let z = -sp.halfLength + 1; z <= sp.halfLength - 1; z += 13) for (let x = -sp.halfWidth + 1; x <= sp.halfWidth - 1; x += 5) {
+        const p = shipToWorld(sh, [x, 0, z])
+        const inIsland = Math.abs(x - I.center[0]) <= I.half[0] && Math.abs(z - I.center[2]) <= I.half[2]
+        expect(shipAt(p[0], p[2])).toBe(sh)
+        expect(groundHeight(p[0], p[2])).toBe(inIsland ? I.center[1] + I.half[1] : sp.deckHeight)
+        expect(isWater(p[0], p[2])).toBe(false)
+        expect(onRunway(p[0], p[2])).toBe(sh.kind === "carrier" && !inIsland)
         expect(surfaceType(p[0], p[2])).toBe("paved")
       }
-      // Flat margin around the runway (no hills/trees intruding on takeoff).
-      const F = BASE_LAYOUT.flat
-      const m = MESH_CELL * 1.5 // jittered edge cells blend into the shoulder
-      for (let a = F.a0 + m; a <= F.a1 - m; a += 50) for (let c = F.c0 + m; c <= F.c1 - m; c += 40) {
-        const [x, z] = baseToWorld(base, a, c)
-        expect(groundHeight(x, z)).toBe(y)
-      }
-      // Grass beside the runway is not "paved".
-      const [gx, gz] = baseToWorld(base, 0, -80)
-      expect(onRunway(gx, gz)).toBe(false)
-      // Departure path toward the center: clear for 400 m past the runway end, then a 15% climb clears terrain.
-      for (let d = 0; d < 1500; d += 25) {
-        const [x, z] = baseToWorld(base, rw.a1 + d, 0)
-        expect(groundHeight(x, z)).toBeLessThan(y + 5 + Math.max(0, d - 400) * 0.15)
-      }
+      // Just outside the hull is open water.
+      const out = shipToWorld(sh, [sp.halfWidth + 3, 0, 0])
+      expect(groundHeight(out[0], out[2])).toBe(WATER_LEVEL)
+      expect(isWater(out[0], out[2])).toBe(true)
+      expect(onRunway(out[0], out[2])).toBe(false)
     }
     expect(onRunway(0, 0)).toBe(false)
   })
 
-  test("spawn points sit on the surface inside the safe zone, without overlap", () => {
+  test("spawns sit on the carrier deck, facing the bow, without overlap", () => {
     for (const team of TEAMS) {
-      const base = AIRBASES[team]
+      const c = FLEET.find(s => s.team === team && s.kind === "carrier")!
       const used: Vec3[] = []
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < DECK_LAYOUT.catapults.length; i++) {
         const s = spawnPoint(team, "fighter", i)
         expect(s.onGround).toBe(true)
-        expect(s.yaw).toBe(base.heading)
-        const g = groundHeight(s.position[0], s.position[2])
-        expect(s.position[1] - g).toBeCloseTo(2.2, 6)
+        expect(s.yaw).toBe(c.heading)
+        expect(shipAt(s.position[0], s.position[2])).toBe(c)
         expect(onRunway(s.position[0], s.position[2])).toBe(true)
+        expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(2.2, 6)
         expect(inSafeZone(team, s.position)).toBe(true)
-        for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(20)
+        for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(15)
+        used.push(s.position)
+        // At least ~160 m of clear deck ahead of every catapult slot.
+        const ahead = shipToWorld(c, [DECK_LAYOUT.catapults[i][0], 0, DECK_LAYOUT.catapults[i][1] - 160])
+        expect(onRunway(ahead[0], ahead[2])).toBe(true)
+      }
+      for (let i = 0; i < DECK_LAYOUT.heloSpots.length; i++) {
+        const s = spawnPoint(team, "apache", i)
+        expect(onRunway(s.position[0], s.position[2])).toBe(true)
+        expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(1.9, 6)
+        for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(14)
         used.push(s.position)
       }
-      for (let i = 0; i < 8; i++) {
-        const s = spawnPoint(team, "apache", i)
-        const g = groundHeight(s.position[0], s.position[2])
-        expect(s.position[1] - g).toBeCloseTo(1.9, 6)
-        expect(onRunway(s.position[0], s.position[2])).toBe(true)
-        expect(inSafeZone(team, s.position)).toBe(true)
-      }
-      for (const kind of ["warthog", "blackbird"] as const) {
-        const s = spawnPoint(team, kind, 3)
-        expect(onRunway(s.position[0], s.position[2])).toBe(true)
-      }
     }
   })
 
-  test("departure corridors stay under a 3° glide slope for 7 km", () => {
-    for (const base of AIRBASES) {
-      let worst = Infinity
-      for (let d = 910; d <= CORRIDOR_LENGTH; d += 10) for (let c = -CORRIDOR_HALF; c <= CORRIDOR_HALF; c += 15) {
-        const [x, z] = baseToWorld(base, d, c)
-        const g = groundHeight(x, z)
-        expect(g).toBeLessThan(20 + 0.05 * (d - 900))
-        worst = Math.min(worst, corridorFloor(d) - g)
-      }
-      expect(worst).toBeGreaterThan(0)
+  test("inSafeZone = within AA_RANGE of an own ship", () => {
+    for (const sh of FLEET) {
+      expect(inSafeZone(sh.team, [sh.position[0] + AA_RANGE - 50, 300, sh.position[2]])).toBe(true)
+      const other = ((sh.team + 1) % 4) as TeamId
+      expect(inSafeZone(other, [sh.position[0], 300, sh.position[2]])).toBe(false)
     }
+    expect(inSafeZone(0, [0, 300, 0])).toBe(false)
   })
 
-  test("safe zone shape", () => {
-    for (const base of AIRBASES) {
-      const [x, , z] = base.center
-      const y0 = base.center[1]
-      expect(base.safeRadius).toBe(500)
-      expect(inSafeZone(base.team, [x, 30, z])).toBe(true)
-      expect(inSafeZone(base.team, [x, y0 + SAFE_ZONE_HEIGHT - 10, z])).toBe(true)
-      expect(inSafeZone(base.team, [x, y0 + SAFE_ZONE_HEIGHT + 10, z])).toBe(false)
-      // Covers the whole runway length, and safeRadius to the side.
-      for (const a of [BASE_LAYOUT.runway.a0, BASE_LAYOUT.runway.a1]) {
-        const [rx, rz] = baseToWorld(base, a, 0)
-        expect(inSafeZone(base.team, [rx, 25, rz])).toBe(true)
-      }
-      const [sx, sz] = baseToWorld(base, 0, base.safeRadius - 20), [ox, oz] = baseToWorld(base, 0, base.safeRadius + 20)
-      expect(inSafeZone(base.team, [sx, 25, sz])).toBe(true)
-      expect(inSafeZone(base.team, [ox, 25, oz])).toBe(false)
-      const other = ((base.team + 1) % 4) as TeamId
-      expect(inSafeZone(other, [x, 30, z])).toBe(false)
+  test("segments hit ship hulls and superstructure", () => {
+    for (const sh of FLEET) {
+      const sp = SHIP_SPECS[sh.kind]
+      // Horizontal shot through the hull side at half deck height.
+      const a = shipToWorld(sh, [-sp.halfWidth - 50, sp.deckHeight / 2, 0]), b = shipToWorld(sh, [sp.halfWidth + 50, sp.deckHeight / 2, 0])
+      const t = segmentHitsGround(a, b)
+      expect(t).not.toBeNull()
+      expect(t!).toBeCloseTo(50 / (2 * sp.halfWidth + 100), 3)
+      // Shot through the island above deck level.
+      const I = sp.island
+      const c = shipToWorld(sh, [I.center[0] + 40, I.center[1], I.center[2]]), d = shipToWorld(sh, [I.center[0] - 40, I.center[1], I.center[2]])
+      const t2 = segmentHitsGround(c, d)
+      expect(t2).not.toBeNull()
+      expect(t2!).toBeCloseTo((40 - I.half[0]) / 80, 3)
+      // Just above the deck, clear of the island: no hit.
+      const e = shipToWorld(sh, [-sp.halfWidth + 1, sp.deckHeight + 3, -sp.halfLength + 5]), f = shipToWorld(sh, [-sp.halfWidth + 1, sp.deckHeight + 3, sp.halfLength - 5])
+      expect(segmentHitsGround(e, f)).toBeNull()
     }
   })
 })

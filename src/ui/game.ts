@@ -13,7 +13,8 @@ import { createPauseMenu } from "./pause"
 import { toast, type StartRequest } from "./lobby"
 import { onSettings, settings } from "./settings"
 import { cloneFlight, flightReadout, forward, stepFlight } from "../sim/flight"
-import { AIRBASES, inSafeZone, worldQuery } from "../sim/geography"
+import { AIRBASES, worldQuery } from "../sim/geography"
+import { AA_RANGE, FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship } from "../sim/fleet"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { TICK_DT } from "../sim/types"
 import type { FlightInput, FlightState, GameEvent, PlayerInfo, Quat, SeatIndex, SeatInput, TeamId, Vec3, VehicleEntity } from "../sim/types"
@@ -70,6 +71,10 @@ const _q2 = new Quaternion()
 const _q3 = new Quaternion()
 const _v1 = new Vector3()
 const _v2 = new Vector3()
+const SHIP_BY_ID = new Map(FLEET.map(s => [s.id, s]))
+
+/** Smoothed ship turret aim (drives the world's turret pivots). */
+interface TurretAim { ship: Ship; turret: string; offset: Vec3; yaw: number; pitch: number; tYaw: number; tPitch: number; firedAt: number }
 const UP = new Vector3(0, 1, 0)
 
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t }
@@ -459,6 +464,47 @@ class GameSession implements GameHandle {
     return { name: id, team: null }
   }
 
+  private turretAims = new Map<string, TurretAim>()
+  private flakAims: { p: Vec3; t: number }[] = []
+  private aaFiredAt = -Infinity
+  private spawnedAt = 0
+  private spawnedVeh: string | null = null
+
+  private aimTurret(shipId: string, turretId: string, aim: Vec3, now: number): void {
+    const key = `${shipId}:${turretId}`
+    let t = this.turretAims.get(key)
+    if (!t) {
+      const ship = SHIP_BY_ID.get(shipId)
+      const spec = ship ? SHIP_SPECS[ship.kind].turrets.find(x => x.id === turretId) : undefined
+      if (!ship || !spec) return
+      t = { ship, turret: turretId, offset: spec.offset, yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, firedAt: 0 }
+      this.turretAims.set(key, t)
+    }
+    const l = worldToShip(t.ship, aim)
+    const lx = l[0] - t.offset[0], ly = l[1] - t.offset[1], lz = l[2] - t.offset[2]
+    t.tYaw = Math.atan2(-lx, -lz)
+    t.tPitch = Math.atan2(ly, Math.hypot(lx, lz))
+    t.firedAt = now
+  }
+
+  /** Slew turrets toward their last aim while firing; idle ones drift back to rest. */
+  private updateTurrets(dt: number, now: number): void {
+    const world = this.deps.host.world as unknown as { getShipTurret?: (s: string, t: string) => { yaw: { rotation: { y: number } }; pitch: { rotation: { x: number } } } | null }
+    if (!world.getShipTurret) return
+    for (const t of this.turretAims.values()) {
+      const idle = now - t.firedAt > 2.5
+      const ty = idle ? 0 : t.tYaw, tp = idle ? 0 : t.tPitch
+      const rate = idle ? 0.6 : 3.5
+      let dy = ty - t.yaw
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy))
+      t.yaw += Math.sign(dy) * Math.min(Math.abs(dy), rate * dt)
+      t.pitch += Math.sign(tp - t.pitch) * Math.min(Math.abs(tp - t.pitch), rate * 0.7 * dt)
+      const h = world.getShipTurret(t.ship.id, t.turret)
+      if (h) { h.yaw.rotation.y = t.yaw; h.pitch.rotation.x = t.pitch }
+      if (idle && Math.abs(t.yaw) < 1e-3 && Math.abs(t.pitch) < 1e-3) this.turretAims.delete(`${t.ship.id}:${t.turret}`)
+    }
+  }
+
   private posOfVehicle(id: string): Vec3 | null {
     const vis = this.visuals.get(id)
     if (vis) return vis.pos
@@ -471,6 +517,7 @@ class GameSession implements GameHandle {
     const audio = this.deps.audio
     const myVeh = this.me?.vehicleId ?? null
     const cam = this.deps.host.camera.position
+    const now = performance.now() / 1000
     for (const e of events) {
       let pos: Vec3 | null = null
       let local = false
@@ -493,12 +540,23 @@ class GameSession implements GameHandle {
           }
           break
         }
+        case "aa": {
+          pos = e.position
+          fx.aa(e.position, e.aim, e.kind)
+          this.aimTurret(e.ship, e.turret, e.aim, now)
+          if (e.kind === "gun") { this.flakAims.push({ p: e.aim, t: now }); if (this.flakAims.length > 24) this.flakAims.shift() }
+          if (e.target === myVeh) this.aaFiredAt = now
+          // Audio: no dedicated AA sounds yet (TODO audio agent) — CIWS reuses the GAU-8 loop, the 5-inch gun the chain-gun thump.
+          audio?.event({ type: "fire", vehicle: `aa:${e.ship}:${e.turret}`, seat: 0, weapon: e.kind === "ciws" ? "gau8" : "chaingun30" }, e.position, false)
+          continue
+        }
         case "hit":
           pos = e.position
           fx.hit(e.position)
           if (e.target === myVeh) {
             const atk = e.by ? this.players.get(e.by)?.vehicleId : null
-            this.hud.damage(atk ? this.posOfVehicle(atk) : null)
+            const ship = e.by ? SHIP_BY_ID.get(e.by) : undefined
+            this.hud.damage(ship ? shipToWorld(ship, [0, 30, 0]) : atk ? this.posOfVehicle(atk) : null)
             this.deps.host.rig.shake(0.5)
             local = true
           }
@@ -507,11 +565,14 @@ class GameSession implements GameHandle {
         case "kill": {
           pos = e.position
           fx.explosion(e.position, 16)
-          const killer = e.killer ? this.nameOf(e.killer) : null
+          const aaKill = e.weapon === "aa"
+          const fleetTeam = (e.killerTeam ?? 0) as TeamId
+          const killer = aaKill ? { name: `${TEAM_NAMES[fleetTeam]} fleet`, team: fleetTeam } : e.killer ? this.nameOf(e.killer) : null
           const victim = this.nameOf(e.victim)
-          const weapon = e.weapon === "crash" ? "crashed" : WEAPONS[e.weapon]?.name ?? e.weapon
+          const weapon = e.weapon === "crash" ? "crashed" : e.weapon === "aa" ? "anti-air" : WEAPONS[e.weapon]?.name ?? e.weapon
           const mine = e.killer === this.playerId || e.victim === this.playerId || e.victim === myVeh
-          this.hud.killfeed(killer?.name ?? null, killer?.team ?? null, victim.name, e.victimTeam, weapon, mine)
+          this.hud.killfeed(killer?.name ?? null, killer?.team ?? null, victim.name, e.victimTeam, weapon, mine,
+            { killer: !!(e.killer && this.players.get(e.killer)?.bot), victim: !!this.players.get(e.victim)?.bot })
           if (e.killer === this.playerId && e.victim !== this.playerId) {
             this.hud.hitmarker(true)
             this.hud.banner("SPLASH ONE", `${victim.name} is going down`, 1800)
@@ -521,17 +582,21 @@ class GameSession implements GameHandle {
             const kp = kv ? this.posOfVehicle(kv) : null
             const lp = this.lastOwnPos
             const dist = kp ? Math.hypot(kp[0] - lp[0], kp[1] - lp[1], kp[2] - lp[2]) : null
-            const byOther = killer && e.killer !== this.playerId && e.weapon !== "crash"
+            const byOther = killer && (aaKill || e.killer !== this.playerId) && e.weapon !== "crash"
             this.hud.deathCard(byOther ? killer.name : null, byOther ? killer.team : null, weapon, dist)
           }
           local = e.killer === this.playerId
           break
         }
-        case "explosion":
+        case "explosion": {
           pos = e.position
-          fx.explosion(e.position, e.size)
+          // Flak: a burst near a recent 5-inch shell's aim point renders as a gray flak puff.
+          const fl = this.flakAims.findIndex(a => now - a.t < 5 && Math.hypot(a.p[0] - e.position[0], a.p[1] - e.position[1], a.p[2] - e.position[2]) < 160)
+          if (fl >= 0) { this.flakAims.splice(fl, 1); fx.flak(e.position) }
+          else fx.explosion(e.position, e.size)
           if (_v1.set(e.position[0], e.position[1], e.position[2]).distanceTo(cam) < 300) this.deps.host.rig.shake(0.8)
           break
+        }
         case "flares":
           pos = this.posOfVehicle(e.vehicle)
           local = e.vehicle === myVeh
@@ -549,6 +614,13 @@ class GameSession implements GameHandle {
             if (Math.hypot(p[0] - e.position[0], p[1] - e.position[1], p[2] - e.position[2]) < e.radius) this.hud.banner("YOU HAVE BEEN SEEN", "enemy radar painted your aircraft", 2200)
           }
           break
+        case "spotted": {
+          if (e.team !== this.me?.team) break
+          const by = this.nameOf(e.by), tgt = this.nameOf(e.target)
+          const mine = e.by === myVeh
+          this.hud.spotted(by.name, e.team, tgt.name, (tgt.team ?? 0) as TeamId, mine)
+          break
+        }
         case "chat": {
           const n = this.nameOf(e.player)
           this.hud.chat(n.name, n.team, e.text)
@@ -603,6 +675,8 @@ class GameSession implements GameHandle {
     if (wheel && seat === 0 && !heli) this.pendingThrottle = Math.max(-1, Math.min(1, this.pendingThrottle - wheel * 0.0005))
     if (wheel && seat === 1) this.deps.host.rig.gunZoom = Math.max(1, Math.min(8, this.deps.host.rig.gunZoom * Math.pow(1.25, -wheel / 100)))
 
+    _v1.set(0, 0, -1).applyQuaternion(this.deps.host.camera.quaternion)
+    const camFwd: Vec3 = [_v1.x, _v1.y, _v1.z]
     // Exactly one input per 60 Hz simulation tick; the same input drives local prediction.
     this.tickAcc += dt
     if (this.tickAcc > 0.25) this.tickAcc = 0.25
@@ -613,6 +687,9 @@ class GameSession implements GameHandle {
       if (this.state !== "flying" || !myVehicle) continue
       const seq = ++this.seq
       const aim: Vec3 = [this.aim[0], this.aim[1], this.aim[2]]
+      // Direct-steering pilots have no aim cursor: their seat aim is where the camera looks (incl. free-look),
+      // which drives recon look-to-spot.
+      const seatAim: Vec3 = seat === 0 && direct ? camFwd : aim
       let fi: FlightInput | null = null
       if (seat === 0) {
         let tAxis: number | null = null
@@ -624,7 +701,7 @@ class GameSession implements GameHandle {
           : { aim: direct ? null : aim, throttle: 0, roll: 0, yaw: 0, pitch: 0, boost: false, brake: false }
         this.sentFlight = fi
       }
-      const seatIn = flying ? { ...input.seatInput(aim, this.seatBuf) } : { aim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
+      const seatIn = flying ? { ...input.seatInput(seatAim, this.seatBuf) } : { aim: seatAim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
       this.lastSeat = seatIn
       this.send(fi ? { type: "input", seq, flight: fi, seat: seatIn } : { type: "input", seq, seat: seatIn })
       if (p && fi) {
@@ -670,8 +747,10 @@ class GameSession implements GameHandle {
         v.view.setFiring?.(seat, 1, !!firing?.fireSecondary)
         if (seat === 0) v.view.setBoost?.(this.sentFlight.boost)
       }
+      v.view.setSpotted?.(!!me && v.render.team !== me.team && v.render.spottedUntil > (latest?.time ?? 0))
       v.view.update(v.render, players, dt, host.camera)
     }
+    this.updateTurrets(dt, now)
 
     // Camera
     const rig = host.rig
@@ -953,6 +1032,7 @@ class GameSession implements GameHandle {
     f.guide = null
     f.hint = null
     f.cockpit = this.view === "cockpit" && seat === 0
+    f.zoom = this.input.zoomHeld ? Math.max(this.deps.host.rig.gunZoom, 4) : this.deps.host.rig.gunZoom
     if (!v || !ownVis || seat === null) { this.deps.host.setSpeedFx(0, false); this.hud.update(f); return }
 
     const pos = ownVis.pos
@@ -963,7 +1043,19 @@ class GameSession implements GameHandle {
     f.heading = ((Math.atan2(fwd[0], -fwd[2]) * 180) / Math.PI + 360) % 360
     f.throttle = (this.pred?.state ?? v.flight).throttle
     f.boost = this.sentFlight.boost
-    f.protected = inSafeZone(v.team, pos)
+    if (this.spawnedVeh !== v.id) { this.spawnedVeh = v.id; this.spawnedAt = v.spawnedAt ?? s.time }
+    const protLeft = SPAWN_PROTECTION - (s.time - (v.spawnedAt ?? this.spawnedAt))
+    f.protected = protLeft > 0
+    f.protectedLeft = Math.max(0, protLeft)
+    // Enemy fleet anti-air umbrella: nearest enemy ship, and whether its guns are on us right now.
+    let nearShip = Infinity
+    for (const sh of FLEET) {
+      if (sh.team === v.team || sh.team >= (this.config ? this.config.teams : 4)) continue
+      const d = Math.hypot(pos[0] - sh.position[0], pos[1] - sh.position[1], pos[2] - sh.position[2])
+      if (d < nearShip) nearShip = d
+    }
+    f.aaDist = nearShip < AA_RANGE * 1.1 ? nearShip : null
+    f.aaFire = performance.now() / 1000 - this.aaFiredAt < 0.6
     const aimDist = 1500
     f.direct = seat === 0 && this.input.mouseMode === "direct"
     f.aimPoint = f.direct ? null : [pos[0] + this.aim[0] * aimDist, pos[1] + this.aim[1] * aimDist, pos[2] + this.aim[2] * aimDist]
@@ -1005,7 +1097,7 @@ class GameSession implements GameHandle {
         this.updateScanner(f, s, v, pos, spec)
       }
     }
-    if (n === 0) f.hint = "NO WEAPONS — FLY FOR YOUR RADAR OFFICER"
+    if (n === 0) f.hint = "look at enemies to spot them for your team"
     const audio = this.deps.audio
     if (f.lockProgress >= 1) audio?.ui("locked")
     else if (f.lockProgress > 0) audio?.ui("lock-tone")

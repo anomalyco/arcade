@@ -4,6 +4,7 @@
 import type { ClientMessage, RoomConfig, ServerMessage } from "./protocol"
 import { DEFAULT_ROOM_CONFIG } from "./protocol"
 import { RoomEngine, createSnapshotDecoder, sanitizeConfig } from "./room-engine"
+import type { EngineConfig } from "./room-engine"
 
 export type RoomStatus = "connecting" | "open" | "closed"
 
@@ -33,7 +34,7 @@ export interface LoopbackRoom {
 }
 
 export function createLoopbackRoom(
-  config: Partial<RoomConfig>, name: string, handlers: RoomHandlers, options: LoopbackOptions = {},
+  config: Partial<EngineConfig>, name: string, handlers: RoomHandlers, options: LoopbackOptions = {},
 ): LoopbackRoom {
   const now = options.now ?? (() => performance.now())
   let open = true

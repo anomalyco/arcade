@@ -4,7 +4,7 @@
 // Terrain is a smooth-shaded indexed mesh with soft vertex-colour gradients. LOD0 uses exactly the
 // baked jittered vertices + diagonals from geography.ts, i.e. the physics surface.
 import {
-  AIRBASES, BASE_LAYOUT, MESH_CELL, SEA_FLOOR, WORLD_HALF, WORLD_SIZE, noise2, terrainMeshHeight, worldMesh,
+  MESH_CELL, SEA_FLOOR, WORLD_HALF, WORLD_SIZE, noise2, terrainMeshHeight, worldMesh,
 } from "../../sim/geography"
 import { PALETTE_RGB } from "./palette"
 
@@ -196,20 +196,6 @@ export interface TreeData {
 
 const TREE_SPACING = 26
 
-/** True where airbase operations need clear ground (runway corridor, apron, buildings). */
-function baseBlocksTrees(x: number, z: number): boolean {
-  const F = BASE_LAYOUT.flat
-  for (const base of AIRBASES) {
-    const dx = x - base.center[0], dz = z - base.center[2]
-    if (dx * dx + dz * dz > 2200 * 2200) continue
-    const sn = Math.sin(base.heading), k = Math.cos(base.heading)
-    const a = -dx * sn - dz * k, c = dx * k - dz * sn
-    if (a > F.a0 - 60 && a < F.a1 + 60 && c > F.c0 - 60 && c < F.c1 + 60) return true
-    if (a > -1500 && a < 1900 && c > -150 && c < 150) return true
-  }
-  return false
-}
-
 const GREENS = [PALETTE_RGB.treeLight, PALETTE_RGB.treeMid, PALETTE_RGB.treeDeep]
 
 /** Deterministic tree placement for a cluster. maxCount caps the count (quality). */
@@ -242,7 +228,6 @@ export function generateTrees(cx: number, cz: number, maxCount: number): TreeDat
     const coastal = h < 12
     const chance = cover > 0.55 ? 0.5 : coastal ? 0.08 : 0.015
     if (hash01(ix, iz, 3) > chance) continue
-    if (baseBlocksTrees(x, z)) continue
     const y = h - 1
     const r = hash01(ix, iz, 4)
     const kind = coastal && cover < 0.55 ? 0 : r < 0.55 ? 2 : 1
