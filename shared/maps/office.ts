@@ -1,6 +1,5 @@
 import type { Rect, Vec } from "../geom"
 import { Rng } from "../rng"
-import { lightAt } from "../sim/light"
 import { Nav } from "../sim/nav"
 import { Builder, type Gap, T, WALL_H } from "./builder"
 import type { MapDef, Prop } from "./types"
@@ -9,7 +8,7 @@ import type { MapDef, Prop } from "./types"
 const C = 2.4
 const COLD = [0.8, 0.88, 1] as const
 const WARM = [1, 0.72, 0.42] as const
-const SPAWNS_PER_SIDE = 5
+const SPAWNS = 12
 
 type Side = "n" | "s" | "e" | "w"
 type Rot = Prop["rot"]
@@ -68,13 +67,8 @@ export function generateOffice(seed: number): MapDef {
   openPlan(b, r, ws, xe, cy1 + C, H - T, "s")
   for (const y of [cy0 - C, cy1 + C]) for (let x = ws + 0.6; x + 1.2 < xe - 0.4; x += 2.4) b.tape.push([x, y - 0.035, x + 1.2, y + 0.035])
   for (const x of [ws + C, xe - C]) for (let y = cy0 - C + 0.6; y + 1.2 < cy1 + C - 0.4; y += 2.4) b.tape.push([x - 0.035, y, x + 0.035, y + 1.2])
-  if (r.next() < 0.45) {
-    const px = ws + C / 2
-    const py = cy0 + r.range(1, ch - 3)
-    b.noisy.push({ rect: [px - 0.9, py, px + 0.9, py + 2], kind: "puddle" })
-  }
 
-  const map = b.build({ id: `office-${seed}`, seed, name: `Office Tower · FL ${floorOf(seed)}`, blurb: "", size: [W, H], ambient: [0.012, 0.016, 0.03] })
+  const map = b.build({ id: `office-${seed}`, seed, name: `Office Tower · FL ${floorOf(seed)}`, size: [W, H] })
   b.spawns.push(...spawns(map, r, { x: (ws + xe) / 2, y: cy1 + C / 2 }))
   return map
 }
@@ -109,7 +103,7 @@ function core(b: Builder, r: Rng, x0: number, y0: number, x1: number, y1: number
     const room: Rect = [a, y0, z, y1]
     const face: Side = r.next() < 0.5 ? "n" : "s"
     if (kind === "lobby") {
-      ;(face === "n" ? north : south).push([a + 0.5, z - 0.5, "open"])
+      ;(face === "n" ? north : south).push([a + 0.5, z - 0.5])
       lobby(b, r, room, face)
       return
     }
@@ -131,24 +125,22 @@ function lobby(b: Builder, r: Rng, room: Rect, face: Side): void {
   const back = OPP[face]
   const lifts = strip([room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2], back, 2.4, 0.08, 0.92)
   b.wall(lifts[0], lifts[1], lifts[2], lifts[3], WALL_H, "core")
-  b.cores.push(lifts)
   b.floor("wood", room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2)
   const desk = strip(inner(room, face), back, 0.8, 0.3, 0.7)
   const d: Rect = face === "s" ? [desk[0], desk[1] + 2.6, desk[2], desk[3] + 2.6] : [desk[0], desk[1] - 2.6, desk[2], desk[3] - 2.6]
   b.prop("reception", d[0], d[1], d[2], d[3], FACE_IN[back])
   b.prop("plant", room[0] + 0.45, cy(d) - 0.35, room[0] + 1.15, cy(d) + 0.35)
   b.prop("plant", room[2] - 1.15, cy(d) - 0.35, room[2] - 0.45, cy(d) + 0.35)
-  b.light({ kind: "bulb", x: cx(room), y: cy(d), h: 2.5, r: 5, power: 0.75, color: WARM, shootable: true, flicker: r.next() < 0.3 ? 1 : 0 })
+  b.light({ kind: "bulb", x: cx(room), y: cy(d), h: 2.5, r: 5, power: 0.75, color: WARM })
 }
 
 function stair(b: Builder, room: Rect, face: Side, door: Vec): void {
   const shaft = strip([room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2], OPP[face], (room[3] - room[1]) * 0.55)
   b.wall(shaft[0], shaft[1], shaft[2], shaft[3], WALL_H, "core")
-  b.cores.push(shaft)
   b.floor("concrete", room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2)
   const out = face === "n" ? -1 : 1
   b.prop("exitdoor", door.x - 0.7, door.y - 0.2, door.x + 0.7, door.y + 0.2, face === "n" ? 2 : 0, false)
-  b.light({ kind: "exit", x: door.x, y: door.y + out * 0.35, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [0, out, 0.1], shootable: false })
+  b.light({ kind: "exit", x: door.x, y: door.y + out * 0.35, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [0, out, 0.1] })
 }
 
 function toilets(b: Builder, r: Rng, room: Rect, face: Side): void {
@@ -165,19 +157,15 @@ function toilets(b: Builder, r: Rng, room: Rect, face: Side): void {
   const sinks = strip(inner(room, face), "w", 0.55, 0.05, 0.6)
   b.prop("counter", sinks[0], sinks[1], sinks[2], sinks[3], FACE_IN.w)
   const p = inner(room, face)
-  b.noisy.push({ rect: [cx(p) - 0.7, cy(p) - 0.6, cx(p) + 0.7, cy(p) + 0.6], kind: "puddle" })
-  b.light({ kind: "panel", x: cx(room), y: cy(room), h: 2.6, r: 5.5, power: 0.85, color: COLD, shootable: true, flicker: r.next() < 0.7 ? 2 : 1 })
+  b.light({ kind: "panel", x: cx(room), y: cy(room), h: 2.6, r: 5.5, power: 0.85, color: COLD })
 }
 
 function server(b: Builder, r: Rng, room: Rect, face: Side, door: Vec): void {
   const floor: Rect = [room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2]
   b.floor("grate", ...floor)
-  b.noisy.push({ rect: floor, kind: "grate" })
   const p = inner(room, face)
   for (let x = p[0] + 0.1; x + 0.7 <= p[2]; x += 2.2) b.wall(x, p[1] + 0.2, x + 0.7, p[3] - 0.2, 2.1, "rack")
-  const bx = door.x + 0.9 < room[2] - 0.4 ? door.x + 0.9 : door.x - 0.9
-  b.breakers.push({ x: bx, y: door.y + (face === "n" ? 0.35 : -0.35), group: "main" })
-  b.light({ kind: "server", x: cx(p), y: cy(p), h: 2.4, r: 5.5, power: 0.8, color: [0.3, 0.5, 1], shootable: true, flicker: r.next() < 0.5 ? 1 : 0 })
+  b.light({ kind: "server", x: cx(p), y: cy(p), h: 2.4, r: 5.5, power: 0.8, color: [0.3, 0.5, 1] })
 }
 
 function storage(b: Builder, r: Rng, room: Rect, face: Side): void {
@@ -224,7 +212,7 @@ function westRooms(b: Builder, r: Rng, ws: number, H: number): void {
     if (i > 0) b.hwall(y0, T, ws - T / 2)
     const room: Rect = [T / 2, y0, ws, y1]
     const dy = r.range(y0 + 1.4, y1 - 1.4)
-    gaps.push(kind === "kitchen" && r.next() < 0.5 ? [dy - 1.1, dy + 1.1, "open"] : [dy - 0.7, dy + 0.7])
+    gaps.push(kind === "kitchen" && r.next() < 0.5 ? [dy - 1.1, dy + 1.1] : [dy - 0.7, dy + 0.7])
     furnish(b, r, kind, room, "e")
   })
   b.vwall(ws, T, H - T, gaps)
@@ -252,7 +240,6 @@ function eastRooms(b: Builder, r: Rng, xe: number, W: number, H: number): void {
         const parts = Math.max(1, Math.round((e - s) / 2.4))
         for (let k = 0; k < parts; k++) b.pane(xe - 0.06, s + ((e - s) * k) / parts, xe + 0.06, s + ((e - s) * (k + 1)) / parts)
       }
-      b.door([xe - T / 2, dy - 0.7, xe + T / 2, dy + 0.7])
     } else b.vwall(xe, i === 0 ? y0 : y0 + T / 2, i === n - 1 ? y1 : y1 - T / 2, [[dy - 0.7, dy + 0.7]])
     furnish(b, r, kind, room, "w")
   })
@@ -273,12 +260,11 @@ function furnish(b: Builder, r: Rng, kind: RoomKind, room: Rect, door: Side): vo
       b.prop("counter", counter[0], counter[1], counter[2], counter[3], FACE_IN.n)
       b.prop("fridge", counter[2] + 0.1, p[1], counter[2] + 0.95, p[1] + 0.8, FACE_IN.n)
       const vx = back === "w" ? p[0] : p[2] - 1.5
-      const lid = b.light({ kind: "vending", x: vx + 0.75, y: p[3] - 1.1, h: 1.2, r: 4.8, power: 1, color: [0.25, 0.85, 1], cone: [0, -1, -0.25], shootable: true })
+      const lid = b.light({ kind: "vending", x: vx + 0.75, y: p[3] - 1.1, h: 1.2, r: 4.8, power: 1, color: [0.25, 0.85, 1], cone: [0, -1, -0.25] })
       b.prop("vending", vx, p[3] - 0.85, vx + 1.5, p[3], FACE_IN.s, true, lid)
       table(b, cx(p), cy(p) + 0.3, 1.6, 1.0)
       b.prop("cooler", back === "w" ? p[2] - 0.6 : p[0], p[3] - 0.6, back === "w" ? p[2] : p[0] + 0.6, p[3])
-      if (r.next() < 0.5) b.noisy.push({ rect: [counter[0] + 0.4, counter[3] + 0.1, counter[0] + 2.2, counter[3] + 1.4], kind: "puddle" })
-      b.light({ kind: "panel", x: cx(p), y: cy(p) - 0.8, h: 2.6, r: 6, power: 0.9, color: COLD, shootable: true, flicker: r.next() < 0.5 ? 2 : 0 })
+      b.light({ kind: "panel", x: cx(p), y: cy(p) - 0.8, h: 2.6, r: 6, power: 0.9, color: COLD })
       return
     }
     case "manager": {
@@ -303,7 +289,7 @@ function furnish(b: Builder, r: Rng, kind: RoomKind, room: Rect, door: Side): vo
       b.prop("table", c.x - 0.6, c.y - 0.4, c.x + 0.6, c.y + 0.4)
       b.prop("sofa", c.x - 1.2, c.y + 0.8, c.x + 1.2, c.y + 1.6, 2)
       corners()
-      b.light({ kind: "bulb", x: c.x + 1.8, y: c.y - 1.4, h: 1.6, r: 5, power: 0.9, color: WARM, shootable: true, flicker: r.next() < 0.3 ? 1 : 0 })
+      b.light({ kind: "bulb", x: c.x + 1.8, y: c.y - 1.4, h: 1.6, r: 5, power: 0.9, color: WARM })
       return
     }
     case "copy": {
@@ -319,7 +305,7 @@ function furnish(b: Builder, r: Rng, kind: RoomKind, room: Rect, door: Side): vo
       }
       const cab = strip(p, "n", 0.6, 0.1, 0.5)
       b.prop("cabinet", cab[0], cab[1], cab[2], cab[3], FACE_IN.n)
-      b.light({ kind: "panel", x: cx(p), y: cy(p), h: 2.6, r: 5.5, power: 0.85, color: COLD, shootable: true, flicker: r.next() < 0.4 ? 2 : 0 })
+      b.light({ kind: "panel", x: cx(p), y: cy(p), h: 2.6, r: 5.5, power: 0.85, color: COLD })
       return
     }
     case "boardroom": {
@@ -335,7 +321,7 @@ function furnish(b: Builder, r: Rng, kind: RoomKind, room: Rect, door: Side): vo
       const wb = strip(p, back, 0.12, 0.25, 0.75)
       b.prop("whiteboard", wb[0], wb[1], wb[2], wb[3], FACE_IN[back], false)
       corners()
-      b.light({ kind: "pendant", x: cx(t), y: cy(t), h: 2.2, r: 6.5, power: 1, color: WARM, shootable: true })
+      b.light({ kind: "pendant", x: cx(t), y: cy(t), h: 2.2, r: 6.5, power: 1, color: WARM })
       return
     }
     case "meeting": {
@@ -343,7 +329,7 @@ function furnish(b: Builder, r: Rng, kind: RoomKind, room: Rect, door: Side): vo
       const c = { x: cx(p), y: cy(p) }
       table(b, c.x, c.y, 1.3, 1.3)
       b.prop("plant", p[2] - 0.7, p[1], p[2], p[1] + 0.7)
-      if (r.next() < 0.6) b.light({ kind: "pendant", x: c.x, y: c.y, h: 2.2, r: 5.5, power: 0.9, color: WARM, shootable: true, flicker: r.next() < 0.3 ? 1 : 0 })
+      if (r.next() < 0.6) b.light({ kind: "pendant", x: c.x, y: c.y, h: 2.2, r: 5.5, power: 0.9, color: WARM })
       return
     }
   }
@@ -370,8 +356,7 @@ function corridorLights(b: Builder, r: Rng, ws: number, xe: number, cy0: number,
   for (const s of spots) {
     // Not every panel works on this floor.
     if (r.next() < 0.18) continue
-    const f = r.next()
-    b.light({ kind: "panel", x: s.x, y: s.y, h: 2.6, r: 7, power: 0.95, color: COLD, shootable: true, group: "main", flicker: f < 0.15 ? 2 : f < 0.4 ? 1 : 0 })
+    b.light({ kind: "panel", x: s.x, y: s.y, h: 2.6, r: 7, power: 0.95, color: COLD })
   }
 }
 
@@ -414,39 +399,28 @@ function openPlan(b: Builder, r: Rng, ws: number, xe: number, zy0: number, zy1: 
 
 // Spawns ------------------------------------------------------------------------------------------------------------
 
-/** Dark, reachable spots spread across the floor: half in the west, half in the east, for team starts. */
+/** Reachable spots spread evenly across the floor. */
 function spawns(map: MapDef, r: Rng, hub: Vec): Vec[] {
   const nav = new Nav(map)
   const reach = nav.reachable(hub)
-  const occluders = [...map.walls.map((w) => w.rect), ...map.doors.filter((d) => !map.openDoors.includes(d.id)).map((d) => d.rect)]
-  const lights = map.lights.map((l) => ({ x: l.x, y: l.y, r: l.r, power: l.power, cone: l.cone }))
-  const candidates: Vec[] = []
+  const pool: Vec[] = []
   for (let y = 1.2; y < map.size[1] - 1; y += 1.25)
     for (let x = 1.2; x < map.size[0] - 1; x += 1.25) {
       const p = { x: x + r.range(-0.2, 0.2), y: y + r.range(-0.2, 0.2) }
-      if (!nav.walkable(p) || !nav.inMask(reach, p)) continue
-      if (map.doors.some((d) => Math.hypot(p.x - cx(d.rect), p.y - cy(d.rect)) < 1.4)) continue
-      if (lightAt(p.x, p.y, lights, occluders) > 0.12) continue
-      candidates.push(p)
+      if (nav.walkable(p) && nav.inMask(reach, p)) pool.push(p)
     }
-  const mid = map.size[0] / 2
-  const pick = (pool: Vec[], n: number) => {
-    const out: Vec[] = []
-    if (!pool.length) return out
-    out.push(pool[r.int(pool.length)]!)
-    while (out.length < n && out.length < pool.length) {
-      let best = pool[0]!
-      let bd = -1
-      for (const c of pool) {
-        const d = Math.min(...out.map((o) => Math.hypot(o.x - c.x, o.y - c.y)))
-        if (d > bd) {
-          bd = d
-          best = c
-        }
+  const out: Vec[] = [pool[r.int(pool.length)]!]
+  while (out.length < SPAWNS && out.length < pool.length) {
+    let best = pool[0]!
+    let bd = -1
+    for (const c of pool) {
+      const d = Math.min(...out.map((o) => Math.hypot(o.x - c.x, o.y - c.y)))
+      if (d > bd) {
+        bd = d
+        best = c
       }
-      out.push(best)
     }
-    return out
+    out.push(best)
   }
-  return [...pick(candidates.filter((c) => c.x < mid), SPAWNS_PER_SIDE), ...pick(candidates.filter((c) => c.x >= mid), SPAWNS_PER_SIDE)]
+  return out
 }

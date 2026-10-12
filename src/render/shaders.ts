@@ -1,4 +1,4 @@
-import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS, VIEW_RANGE } from "../../shared/config"
+import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../shared/config"
 
 /** Frame uniform layout, in floats. Keep in step with Renderer.frame. */
 export const FRAME_FLOATS = 16 + 4 * 6
@@ -6,7 +6,6 @@ export const FRAME_FLOATS = 16 + 4 * 6
 const common = /* wgsl */ `
 const MAX_LIGHTS: u32 = ${MAX_LIGHTS}u;
 const RAYS: u32 = ${POLAR_RAYS}u;
-const VIEW_RANGE: f32 = ${VIEW_RANGE.toFixed(1)};
 const TAU: f32 = 6.2831853;
 /** Visual brightness of map lights relative to the ambient. The rules use the raw intensity. */
 const GAIN: f32 = 6.0;
@@ -15,7 +14,7 @@ struct Frame {
   viewProj: mat4x4f,
   cam: vec4f,        // eye position xyz, time
   screen: vec4f,     // width, height, light count, occluder count
-  eye: vec4f,        // local player plan x, plan y, line of sight on (0/1), cutaway radius (NDC)
+  eye: vec4f,        // local player plan x, plan y, cutaway on (0/1), cutaway radius (NDC)
   ambient: vec4f,    // sky rgb, flash
   focus: vec4f,      // local player clip x, y, world height of the cut, 0
   grade: vec4f,      // desaturate (dead), exposure, grain, vignette
@@ -99,25 +98,9 @@ fn ambientAt(n: vec3f) -> vec3f {
   return mix(sky * 0.45, sky, n.y * 0.5 + 0.5);
 }
 
-/** Your line of sight: outside it the world is dimmer and greyer. */
-fn losFactor(world: vec3f, n: vec3f) -> f32 {
-  if (F.eye.z < 0.5) { return 1.0; }
-  var sp = world.xz + n.xz * 0.06;
-  let dv = world.xz - F.eye.xy;
-  let d = length(dv);
-  if (n.y > 0.5 && world.y > 0.05 && d > 0.01) { sp = world.xz - dv / d * min(0.5, d); }
-  let inRange = 1.0 - smoothstep(VIEW_RANGE - 3.0, VIEW_RANGE, d);
-  return polarVis(MAX_LIGHTS, F.eye.xy, sp) * inRange;
-}
-
-fn outOfSight(c: vec3f, los: f32) -> vec3f {
-  let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-  let dim = mix(vec3f(l), c, 0.35) * 0.22;
-  return mix(dim, c, los);
-}
 `
 
-/** Polar shadow map: for each light (and the local eye), the distance to the first occluder along each of RAYS angles. */
+/** Polar shadow map: for each light, the distance to the first occluder along each of RAYS angles. */
 export const polarShader = /* wgsl */ `
 ${common}
 @group(0) @binding(3) var<storage, read> occluders: array<vec4f>;
@@ -136,17 +119,13 @@ fn slab(o: f32, d: f32, lo: f32, hi: f32, t0: ptr<function, f32>, t1: ptr<functi
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let idx = gid.x;
-  if (idx >= (MAX_LIGHTS + 1u) * RAYS) { return; }
+  if (idx >= MAX_LIGHTS * RAYS) { return; }
   let slot = idx / RAYS;
   let ang = (f32(idx % RAYS) + 0.5) / f32(RAYS) * TAU;
   let dir = vec2f(cos(ang), sin(ang));
-  var o = F.eye.xy;
-  var maxT = VIEW_RANGE + 2.0;
-  if (slot < MAX_LIGHTS) {
-    if (slot >= u32(F.screen.z)) { polarOut[idx] = 0.0; return; }
-    o = lights[slot].pos.xz;
-    maxT = lights[slot].pos.w + 0.5;
-  }
+  if (slot >= u32(F.screen.z)) { polarOut[idx] = 0.0; return; }
+  let o = lights[slot].pos.xz;
+  let maxT = lights[slot].pos.w + 0.5;
   var t = maxT;
   let n = min(u32(F.screen.w), ${MAX_OCCLUDERS}u);
   for (var i = 0u; i < n; i++) {
@@ -176,8 +155,8 @@ struct VIn {
 
 struct Inst {
   @location(5) posYaw: vec4f,  // x, y, z, yaw
-  @location(6) tint: vec4f,    // rgb accent, crouch scale
-  @location(7) extra: vec4f,   // lie (corpse 0..1), muzzle flash, alpha, 0
+  @location(6) tint: vec4f,    // rgb accent, scale
+  @location(7) extra: vec4f,   // pitch, roll, alpha, hit flash
 }
 
 struct VOut {
@@ -202,25 +181,26 @@ struct VOut {
   return o;
 }
 
-fn instWorld(p: vec3f, inst: Inst) -> vec3f {
-  var q = vec3f(p.x, p.y * inst.tint.w, p.z);
-  // Corpses: tipped onto their back around the model's x axis.
-  let lie = inst.extra.x * 1.5707963;
-  let cl = cos(lie);
-  let sl = sin(lie);
-  q = vec3f(q.x * cl - q.y * sl, q.x * sl + q.y * cl, q.z);
-  q.y += inst.extra.x * 0.2;
+
+/** Part transform: pitch about the model's z axis (positive lifts +x), roll about its x axis, then yaw, then move. */
+fn partRotate(p: vec3f, inst: Inst) -> vec3f {
+  let cp = cos(inst.extra.x);
+  let sp = sin(inst.extra.x);
+  var q = vec3f(p.x * cp - p.y * sp, p.x * sp + p.y * cp, p.z);
+  let cr = cos(inst.extra.y);
+  let sr = sin(inst.extra.y);
+  q = vec3f(q.x, q.y * cr - q.z * sr, q.y * sr + q.z * cr);
   let c = cos(inst.posYaw.w);
   let s = sin(inst.posYaw.w);
-  return vec3f(q.x * c - q.z * s, q.y, q.x * s + q.z * c) + inst.posYaw.xyz;
+  return vec3f(q.x * c - q.z * s, q.y, q.x * s + q.z * c);
+}
+
+fn instWorld(p: vec3f, inst: Inst) -> vec3f {
+  return partRotate(p * inst.tint.w, inst) + inst.posYaw.xyz;
 }
 
 fn instNormal(n: vec3f, inst: Inst) -> vec3f {
-  let lie = inst.extra.x * 1.5707963;
-  var m = vec3f(n.x * cos(lie) - n.y * sin(lie), n.x * sin(lie) + n.y * cos(lie), n.z);
-  let c = cos(inst.posYaw.w);
-  let s = sin(inst.posYaw.w);
-  return vec3f(m.x * c - m.z * s, m.y, m.x * s + m.z * c);
+  return partRotate(n, inst);
 }
 
 @vertex fn vsInst(v: VIn, inst: Inst) -> VOut {
@@ -228,9 +208,10 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.world = instWorld(v.pos, inst);
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal, inst);
+  // Accent parts glow in the player's colour so everyone reads in the dark.
   o.color = select(pow(v.color, vec3f(2.2)), inst.tint.rgb, v.mat > 7.5);
-  o.mat = select(v.mat, 0.0, v.mat > 7.5);
-  o.aux = select(v.aux, 1.0, v.mat > 7.5);
+  o.mat = select(v.mat, 3.0, v.mat > 7.5);
+  o.aux = select(v.aux, 0.85, v.mat > 7.5);
   o.extra = inst.extra;
   return o;
 }
@@ -318,9 +299,9 @@ fn city(p: vec2f) -> vec3f {
     // Soft occlusion where walls and furniture meet the floor.
     if (abs(n.y) < 0.5) { col *= mix(0.6, 1.0, smoothstep(0.0, 1.2, o.world.y)); }
   }
-  let los = losFactor(o.world, n);
-  if (mat != 2 && mat != 3) { col = outOfSight(col, los); }
-  return vec4f(col * alpha, alpha * o.extra.z);
+  col = mix(col, vec3f(2.5), o.extra.w);
+  let a = alpha * o.extra.z;
+  return vec4f(col * a, a);
 }
 `
 

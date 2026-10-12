@@ -5,11 +5,10 @@ import type { Rng } from "../rng"
 
 const CELL = 0.5
 const BLOCKED = 1
-const DOOR = 2
 
 /**
- * Walkable grid for bots. Static solids (walls, windows, glass, furniture) are inflated by the player radius; doors are
- * walkable and bots open them on the way. Paths are A* over 8-connected cells, then string-pulled.
+ * Walkable grid for bots. Solids (walls, windows, glass, furniture) are inflated by the player radius. Paths are A* over
+ * 8-connected cells, then string-pulled.
  */
 export class Nav {
   readonly w: number
@@ -22,14 +21,13 @@ export class Nav {
     this.h = Math.ceil(map.size[1] / CELL)
     this.grid = new Uint8Array(this.w * this.h)
     const pad = PLAYER_RADIUS + 0.02
-    const solid = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass.map((g) => g.rect), ...map.props.filter((p) => p.solid).map((p) => p.rect)]
+    const solid = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
     for (let cy = 0; cy < this.h; cy++)
       for (let cx = 0; cx < this.w; cx++) {
         const x = (cx + 0.5) * CELL
         const y = (cy + 0.5) * CELL
         const i = cy * this.w + cx
         if (solid.some((r) => inRect(x, y, r, pad))) this.grid[i] = BLOCKED
-        else if (map.doors.some((d) => inRect(x, y, d.rect, pad))) this.grid[i] = DOOR
         else this.free.push(i)
       }
   }
@@ -65,7 +63,7 @@ export class Nav {
     return this.center(best)
   }
 
-  /** Cells reachable on foot from p (through doors), as a mask over the grid. */
+  /** Cells reachable on foot from p, as a mask over the grid. */
   reachable(p: Vec): Uint8Array {
     const seen = new Uint8Array(this.w * this.h)
     const start = this.idx(this.nearest(p))
@@ -148,7 +146,7 @@ export class Nav {
           if (this.grid[ni] === BLOCKED || closed[ni]) continue
           // No corner cutting.
           if (dx && dy && (this.grid[cy * this.w + nx] === BLOCKED || this.grid[ny * this.w + cx] === BLOCKED)) continue
-          const cost = (dx && dy ? 1.414 : 1) * (this.grid[ni] === DOOR ? 1.5 : 1)
+          const cost = (dx && dy ? 1.414 : 1)
           const ng = g[cur]! + cost
           if (ng < g[ni]!) {
             g[ni] = ng

@@ -5,6 +5,8 @@ export default defineConfig({
   build: { target: "esnext", outDir: "dist/labs/blackout", emptyOutDir: true },
   server: {
     allowedHosts: true,
+    // Behind the opentunnel HTTPS route the browser reaches HMR on 443.
+    hmr: process.env.TUNNEL ? { clientPort: 443, protocol: "wss" } : undefined,
     proxy: { "/ws": { target: "ws://localhost:8788", ws: true }, "/api": { target: "http://localhost:8788" } },
   },
 })

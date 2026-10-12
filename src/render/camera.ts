@@ -9,10 +9,15 @@ export class Camera {
   readonly fov = 0.52
   x = 0
   z = 0
-  dist = 26
+  dist = 17
   private lx = 0
   private lz = 0
   private shake = 0
+  /** Recoil push: a spring offset on the ground plane. */
+  private kx = 0
+  private kz = 0
+  private kvx = 0
+  private kvz = 0
   private t = 0
   eye: [number, number, number] = [0, 0, 0]
   viewProj = mat4.identity()
@@ -23,7 +28,13 @@ export class Camera {
   }
 
   bump(amount: number): void {
-    this.shake = Math.min(0.6, this.shake + amount)
+    this.shake = Math.min(1, this.shake + amount)
+  }
+
+  /** Shoves the view along (dx, dz), springing back. */
+  kick(dx: number, dz: number, amount: number): void {
+    this.kvx += dx * amount
+    this.kvz += dz * amount
   }
 
   /** Follows a point, leaning slightly toward where you aim. */
@@ -35,15 +46,22 @@ export class Camera {
     const f = 1 - Math.exp(-dt * 6)
     this.x += (x + this.lx - this.x) * f
     this.z += (z + this.lz - this.z) * f
-    const want = wide ? 46 : 26
+    const want = wide ? 30 : 17
     this.dist += (want - this.dist) * (1 - Math.exp(-dt * 2))
-    this.shake *= Math.exp(-dt * 7)
+    this.shake *= Math.exp(-dt * 9)
+    // Critically damped spring back to centre.
+    const kSpring = 220
+    const damp = 2 * Math.sqrt(kSpring)
+    this.kvx += (-kSpring * this.kx - damp * this.kvx) * dt
+    this.kvz += (-kSpring * this.kz - damp * this.kvz) * dt
+    this.kx += this.kvx * dt
+    this.kz += this.kvz * dt
   }
 
   update(aspect: number): Float32Array {
     const s = this.shake
-    const jx = s * Math.sin(this.t * 61) * 0.3
-    const jz = s * Math.cos(this.t * 53) * 0.3
+    const jx = s * (Math.sin(this.t * 71) + Math.sin(this.t * 43) * 0.5) * 0.12 + this.kx
+    const jz = s * (Math.cos(this.t * 59) + Math.cos(this.t * 37) * 0.5) * 0.12 + this.kz
     const target = [this.x + jx, 0, this.z + jz]
     const h = Math.cos(this.pitch) * this.dist
     this.eye = [target[0]!, Math.sin(this.pitch) * this.dist, target[2]! + h]

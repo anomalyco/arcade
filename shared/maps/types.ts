@@ -1,16 +1,9 @@
 import type { Rect, Vec } from "../geom"
-import type { LightDef } from "../sim/light"
 
-/** How a blocking wall is drawn. All styles block light, sight, bullets and movement. */
 export type WallStyle = "wall" | "partition" | "rack" | "shelf" | "pillar" | "stall" | "core"
 
+/** Walls block movement and bullets, and cast light shadows. */
 export type Wall = { rect: Rect; h: number; style: WallStyle }
-
-/** Door. Closed it blocks like a wall; open it blocks nothing. */
-export type Door = { id: number; rect: Rect }
-
-/** Breakable glass. Blocks movement and nothing else; a bullet shatters it. */
-export type Glass = { id: number; rect: Rect }
 
 export type PropKind =
   | "desk"
@@ -26,52 +19,46 @@ export type PropKind =
   | "cooler"
   | "bookshelf"
   | "crate"
-  | "pallet"
-  | "barrel"
-  | "forklift"
-  | "bench"
-  | "exitdoor"
-  | "lamp"
-  | "pillar"
-  | "printer"
   | "whiteboard"
   | "reception"
-  | "liftdoor"
+  | "printer"
+  | "exitdoor"
+  | "lamp"
 
-/** Furniture and clutter. Solid props block movement only. `rot` turns the model in quarter turns. */
+/** Furniture. Solid props block movement only. `rot` turns the model in quarter turns. */
 export type Prop = { kind: PropKind; rect: Rect; rot: 0 | 1 | 2 | 3; solid: boolean; light?: number }
 
-export type FloorKind = "carpet" | "tile" | "concrete" | "grate" | "wood"
+export type FloorKind = "carpet" | "tile" | "wood" | "concrete" | "grate"
 export type Floor = { rect: Rect; kind: FloorKind }
 
-export type Noisy = { rect: Rect; kind: "grate" | "puddle" }
+export type LightKind = "desk" | "panel" | "pendant" | "exit" | "vending" | "server" | "bulb"
 
-export type Breaker = { x: number; y: number; group: string }
+/** A light, for looks only. `h` is its height; `cone` is a floor-plan direction and the cosine of the half-angle. */
+export type LightDef = {
+  id: number
+  kind: LightKind
+  x: number
+  y: number
+  h: number
+  r: number
+  power: number
+  color: readonly [number, number, number]
+  cone?: readonly [number, number, number]
+}
 
 export type MapDef = {
-  /** Unique per layout, e.g. "office-1234". */
   id: string
   seed: number
   name: string
-  blurb: string
   size: readonly [number, number]
   floors: readonly Floor[]
   walls: readonly Wall[]
-  /** Outer windows: block movement and bullets, let light and sight through. */
+  /** Outer windows and interior glass: block movement and bullets, not light. */
   windows: readonly Rect[]
-  glass: readonly Glass[]
-  doors: readonly Door[]
-  /** Doors that start the round open. */
-  openDoors: readonly number[]
+  glass: readonly Rect[]
   props: readonly Prop[]
   lights: readonly LightDef[]
-  breakers: readonly Breaker[]
-  noisy: readonly Noisy[]
   spawns: readonly Vec[]
-  /** Mustard floor tape along aisles, drawn only. */
+  /** Floor tape along aisles, drawn only. */
   tape: readonly Rect[]
-  /** The lift and stair core: solid, drawn with lift doors. */
-  cores: readonly Rect[]
-  /** Base ambient light, linear RGB. Kept tiny: darkness should be dark. */
-  ambient: readonly [number, number, number]
 }

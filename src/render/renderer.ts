@@ -10,7 +10,7 @@ export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
 const MAX_SPRITES = 8192
 const BLOOM_LEVELS = 5
-const SLOTS = MAX_LIGHTS + 1
+const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
 
@@ -61,8 +61,6 @@ export class Renderer {
   private occCount = 0
   width = 0
   height = 0
-  /** Debug: passes to skip, from ?skip=compute,level,inst,glass,sprites,bloom. */
-  skip = new Set((new URLSearchParams(location.search).get("skip") ?? "").split(","))
 
   constructor(
     private device: GPUDevice,
@@ -200,10 +198,6 @@ export class Renderer {
     this.glass = this.upload(glass, this.glass)
   }
 
-  setGlass(glass: Mesh): void {
-    this.glass = this.upload(glass, this.glass)
-  }
-
   addModel(mesh: Mesh): number {
     this.models.push(this.upload(mesh, null))
     return this.models.length - 1
@@ -290,32 +284,24 @@ export class Renderer {
     if (addCount) d.queue.writeBuffer(this.sprites, addOffset, f.addSprites.buffer, 0, addCount * SPRITE_FLOATS * 4)
 
     const enc = d.createCommandEncoder()
-    if (!this.skip.has("compute")) {
-      const cp = enc.beginComputePass()
-      cp.setPipeline(this.polarPipe)
-      cp.setBindGroup(0, this.computeGroup)
-      cp.dispatchWorkgroups(Math.ceil((SLOTS * POLAR_RAYS) / 64))
-      cp.end()
-    }
+    const cp = enc.beginComputePass()
+    cp.setPipeline(this.polarPipe)
+    cp.setBindGroup(0, this.computeGroup)
+    cp.dispatchWorkgroups(Math.ceil((SLOTS * POLAR_RAYS) / 64))
+    cp.end()
 
-    if (this.skip.has("scene")) {
-      const fp0 = enc.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0.2, g: 0, b: 0, a: 1 } }] })
-      fp0.end()
-      d.queue.submit([enc.finish()])
-      return
-    }
     const pass = enc.beginRenderPass({
       colorAttachments: [{ view: this.msaa.createView(), resolveTarget: this.hdr.createView(), clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }],
       depthStencilAttachment: { view: this.depth.createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
     })
     pass.setBindGroup(0, this.sceneGroup)
-    if (this.level?.count && !this.skip.has("level")) {
+    if (this.level?.count) {
       pass.setPipeline(this.pipes.level!)
       pass.setVertexBuffer(0, this.level.buf)
       pass.draw(this.level.count)
     }
     pass.setVertexBuffer(1, this.inst.buf)
-    for (const alpha of this.skip.has("inst") ? [] : [false, true]) {
+    for (const alpha of [false, true]) {
       pass.setPipeline(alpha ? this.pipes.instAlpha! : this.pipes.inst!)
       for (const r of ranges) {
         if (r.alpha !== alpha) continue
@@ -323,19 +309,19 @@ export class Renderer {
         pass.setVertexBuffer(0, m.buf)
         pass.draw(m.count, r.count, 0, r.first)
       }
-      if (!alpha && this.glass?.count && !this.skip.has("glass")) {
+      if (!alpha && this.glass?.count) {
         pass.setPipeline(this.pipes.glass!)
         pass.setVertexBuffer(0, this.glass.buf)
         pass.draw(this.glass.count)
         pass.setVertexBuffer(1, this.inst.buf)
       }
     }
-    if (alphaCount && !this.skip.has("sprites")) {
+    if (alphaCount) {
       pass.setPipeline(this.pipes.spriteAlpha!)
       pass.setVertexBuffer(0, this.sprites, 0)
       pass.draw(6, alphaCount)
     }
-    if (addCount && !this.skip.has("sprites")) {
+    if (addCount) {
       pass.setPipeline(this.pipes.spriteAdd!)
       pass.setVertexBuffer(0, this.sprites, addOffset)
       pass.draw(6, addCount)
@@ -343,14 +329,14 @@ export class Renderer {
     pass.end()
 
     const g = this.postGroups!
-    for (let i = 0; i < (this.skip.has("bloom") ? 0 : BLOOM_LEVELS); i++) {
+    for (let i = 0; i < BLOOM_LEVELS; i++) {
       const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloom[i]!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
       p.setPipeline(this.pipes.down!)
       p.setBindGroup(0, g.down[i]!)
       p.draw(3)
       p.end()
     }
-    for (let k = 0; k < (this.skip.has("bloom") ? 0 : BLOOM_LEVELS - 1); k++) {
+    for (let k = 0; k < BLOOM_LEVELS - 1; k++) {
       const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloom[BLOOM_LEVELS - 2 - k]!.createView(), loadOp: "load", storeOp: "store" }] })
       p.setPipeline(this.pipes.up!)
       p.setBindGroup(0, g.up[k]!)

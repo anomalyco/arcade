@@ -1,6 +1,7 @@
 import { type ClientMsg, type ServerMsg, decodeServer, encodeClient } from "../../shared/protocol"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
-import type { Loadout, SimEvent } from "../../shared/sim/world"
+import type { Gun } from "../../shared/config"
+import type { SimEvent } from "../../shared/sim/world"
 import type { Session } from "./session"
 
 const ID_KEY = "blackout.id."
@@ -24,7 +25,7 @@ export class NetSession implements Session {
   constructor(
     readonly room: string,
     private name: string,
-    private loadout: Loadout,
+    private gun: Gun,
     private onFatal: (message: string) => void,
   ) {
     this.id = sessionStorage.getItem(ID_KEY + room) ?? ""
@@ -50,7 +51,7 @@ export class NetSession implements Session {
   }
 
   send(msg: ClientMsg): void {
-    if (msg.type === "loadout") this.loadout = msg.loadout
+    if (msg.type === "gun") this.gun = msg.gun
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(encodeClient(msg))
   }
 
@@ -70,7 +71,7 @@ export class NetSession implements Session {
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0
-      ws.send(encodeClient({ type: "hello", name: this.name, id: this.id || undefined, loadout: this.loadout }))
+      ws.send(encodeClient({ type: "hello", name: this.name, id: this.id || undefined, gun: this.gun }))
     }
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") return

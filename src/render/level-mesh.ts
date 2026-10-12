@@ -133,53 +133,14 @@ export function buildLevel(map: MapDef): Mesh {
     }
   }
 
-  for (const b of map.breakers) {
-    m.box(b.x - 0.25, 1.0, b.y - 0.12, b.x + 0.25, 1.6, b.y + 0.12, hex(0x6a7084))
-    m.box(b.x - 0.05, 1.45, b.y - 0.13, b.x + 0.05, 1.52, b.y + 0.13, hex(0xffc040), MAT.glow, 3)
-  }
   return m
 }
 
-/** Transparent geometry: window glass, interior glass panes (or their shards), puddles. */
-export function buildGlass(map: MapDef, broken: readonly boolean[]): Mesh {
+/** Transparent geometry: window glass and interior glass panes. */
+export function buildGlass(map: MapDef): Mesh {
   const m = new Mesh()
   const G = hex(0x8fb8e8)
   for (const w of map.windows) m.box(w[0] + 0.12, 0.35, w[1] + 0.12, w[2] - 0.12, 2.6, w[3] - 0.12, G, MAT.glass)
-  for (const g of map.glass) {
-    const [x0, z0, x1, z1] = g.rect
-    if (!broken[g.id]) {
-      m.box(x0, 0.0, z0, x1, 2.5, z1, G, MAT.glass)
-      continue
-    }
-    const cx = (x0 + x1) / 2
-    const cz = (z0 + z1) / 2
-    const horizontal = x1 - x0 > z1 - z0
-    const len = horizontal ? x1 - x0 : z1 - z0
-    for (let i = 0; i < 26; i++) {
-      const t = Math.sin(g.id * 31 + i * 12.7) * 0.5 + 0.5
-      const s = Math.sin(g.id * 7 + i * 3.1)
-      const a = (horizontal ? x0 : z0) + t * len
-      const off = s * 0.8
-      const px = horizontal ? a : cx + off
-      const pz = horizontal ? cz + off : a
-      const r = 0.05 + (Math.abs(Math.sin(i * 5.3)) * 0.08)
-      m.facet([px, 0.012, pz], [px + r, 0.012, pz + r * 0.4], [px + r * 0.3, 0.012, pz - r], hex(0xcfe4ff), MAT.glow, 0.5)
-    }
-  }
-  for (const n of map.noisy) {
-    if (n.kind !== "puddle") continue
-    const [x0, z0, x1, z1] = n.rect
-    const cx = (x0 + x1) / 2
-    const cz = (z0 + z1) / 2
-    const rx = (x1 - x0) / 2
-    const rz = (z1 - z0) / 2
-    for (let i = 0; i < 10; i++) {
-      const a0 = (i / 10) * Math.PI * 2
-      const a1 = ((i + 1) / 10) * Math.PI * 2
-      const k0 = 0.8 + 0.2 * Math.sin(i * 2.3 + cx)
-      const k1 = 0.8 + 0.2 * Math.sin((i + 1) * 2.3 + cx)
-      m.facet([cx, 0.008, cz], [cx + Math.cos(a1) * rx * k1, 0.008, cz + Math.sin(a1) * rz * k1], [cx + Math.cos(a0) * rx * k0, 0.008, cz + Math.sin(a0) * rz * k0], hex(0x1a3350), MAT.glass)
-    }
-  }
+  for (const g of map.glass) m.box(g[0], 0, g[1], g[2], 2.5, g[3], G, MAT.glass)
   return m
 }

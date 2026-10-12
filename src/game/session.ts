@@ -1,7 +1,8 @@
 import { DT, SNAPSHOT_HZ, TICK_HZ } from "../../shared/config"
 import type { ClientMsg } from "../../shared/protocol"
-import { type RosterRow, type Snapshot, buildSnapshot, eventsFor, rosterOf } from "../../shared/sim/view"
-import { type Loadout, type SimEvent, World } from "../../shared/sim/world"
+import { type RosterRow, type Snapshot, buildSnapshot, rosterOf } from "../../shared/sim/view"
+import type { Gun } from "../../shared/config"
+import { type SimEvent, World } from "../../shared/sim/world"
 
 /** What the game loop needs from a match, whether it runs in this tab or in a room on the server. */
 export interface Session {
@@ -29,9 +30,9 @@ export class LocalSession implements Session {
   private events: SimEvent[] = []
   private every = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
 
-  constructor(name: string, loadout: Loadout) {
+  constructor(name: string, gun: Gun) {
     this.world = new World((Math.random() * 2 ** 31) | 0)
-    this.world.addHuman(this.myId, name, loadout)
+    this.world.addHuman(this.myId, name, gun)
     this.publish()
   }
 
@@ -51,8 +52,7 @@ export class LocalSession implements Session {
 
   send(msg: ClientMsg): void {
     if (msg.type === "intent") this.world.push(this.myId, msg.seq, msg.i)
-    else if (msg.type === "loadout") this.world.setLoadout(this.myId, msg.loadout)
-    else if (msg.type === "start") this.world.start(msg.mode, msg.rounds)
+    else if (msg.type === "gun") this.world.pickGun(this.myId, msg.gun)
   }
 
   status(): string | null {
@@ -64,7 +64,7 @@ export class LocalSession implements Session {
     while (this.acc >= DT) {
       this.acc -= DT
       this.world.step()
-      this.events.push(...eventsFor(this.world.takeEvents(), this.myId))
+      this.events.push(...this.world.takeEvents())
       if (this.world.tick % this.every === 0) this.publish()
     }
   }
