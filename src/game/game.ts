@@ -724,9 +724,11 @@ export class Game {
     }
   }
 
-  /** Whether a claymore is yours, so you get to see its accent, arming light and faint cone. */
+  /** Whether a claymore is yours or a teammate's, so you get to see its accent, arming light and faint cone. */
   private friendlyMine(by: string): boolean {
-    return by === this.myId
+    if (by === this.myId) return true
+    const mine = teamOf(this.snap, this.roster, this.myId)
+    return mine >= 0 && teamOf(this.snap, this.roster, by) === mine
   }
 
   /**
