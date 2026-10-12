@@ -39,7 +39,11 @@ Rejected versions (wrong camera angle or not on-style) are in `_rejected/`.
 ## 5. Maps
 - `map-select.png`: The map vote screen. Warehouse, Office Tower FL 12, Rooftop (Rain) and Industrial Yard each show a top-down floor plan with its light placements and stats.
 
-## Recommendation: A. Noir minimal
+## Chosen direction: D. Stylized low-poly (`dir-d-lowpoly-1.png`)
+
+This is the target the game is built against. Flat-shaded low-poly diorama under a fixed tilted camera, a dark navy base that still reads, and saturated coloured practical lights as the only strong colour: warm desk lamps, a cyan vending machine, a magenta EXIT sign, red flares with faceted smoke. White ripple rings for sound. `_rejected/dir-d-lowpoly-1-isometric.png` is the same look from a 45° isometric angle and is an acceptable alternative camera. The `_rejected/iso-spooky-*` images were too realistic and too black.
+
+## Earlier recommendation: A. Noir minimal (superseded)
 
 As an actual playable screen, **Noir minimal is the strongest direction**, and it's what the key moments, menus and HUD were built around.
 
