@@ -155,6 +155,8 @@ class ScriptSession implements Session {
         }
       }
       if (reloads > p.reloads) this.events.push({ k: "reload", by: a.id })
+      // Actor "a" takes a hit from the north every 1.3 s, to show the flinch.
+      if (a.id === "a" && Math.floor(t / 1.3) > Math.floor((t - dt) / 1.3)) this.events.push({ k: "shot", by: "zz", x0: s.x, y0: s.y - 8, x1: s.x, y1: s.y, hit: "a" })
       if (p.alive && !s.alive) {
         const killer = this.actors.find((k) => k.id !== a.id && ["c", "d", "e"][this.kills % 3] === k.id) ?? this.actors.find((k) => k.id !== a.id)
         this.kills++

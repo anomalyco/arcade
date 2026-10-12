@@ -43,9 +43,9 @@ const TRACER_LEN = 3.2
 const HIT_POWER: Record<Gun, number> = { rifle: 0.8, shotgun: 0.3, sniper: 1.8 }
 /** Camera recoil per gun: shove along the aim, shake, zoom punch and a little roll. */
 const CAM_RECOIL: Record<Gun, { kick: number; shake: number; punch: number; roll: number }> = {
-  rifle: { kick: 0.55, shake: 0.07, punch: 0.25, roll: 0.004 },
-  shotgun: { kick: 1.8, shake: 0.32, punch: 1.1, roll: 0.012 },
-  sniper: { kick: 2.2, shake: 0.38, punch: 1.4, roll: 0.014 },
+  rifle: { kick: 3, shake: 0.16, punch: 0.3, roll: 0.006 },
+  shotgun: { kick: 8, shake: 0.5, punch: 1.2, roll: 0.016 },
+  sniper: { kick: 10, shake: 0.6, punch: 1.6, roll: 0.02 },
 }
 export type FeedLine = { killer: string; victim: string; kc: Rgb3; vc: Rgb3; gun: Gun; t: number; mine: boolean }
 

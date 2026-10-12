@@ -232,7 +232,7 @@ export function hit(a: Avatar, dx: number, dy: number, power = 1): void {
   kick(a.hitTwist, (Math.random() < 0.5 ? -1 : 1) * 0.25 * power, 160)
   kick(a.recYaw, (Math.random() - 0.5) * 0.25 * power, 600)
   kick(a.recPitch, -0.12 * power, 600)
-  a.flash = 0.3
+  a.flash = 0.07
 }
 
 // Clips: keyframed hand paths for reloads, pumps and bolts ---------------------------------------------------------
