@@ -6,15 +6,16 @@ export const FLOATS_PER_VERT = 11
 /**
  * Materials the scene shader understands.
  * - lit: diffuse, lit by map lights through the 2D shadow map
- * - floor: lit, with a procedural pattern; aux is the floor kind
+ * - floor: lit exactly by the visibility rule, with a procedural pattern; aux is the floor kind
  * - lamp: emissive tied to map light `aux`, dark when that light is out
  * - glow: constant emissive; aux scales it (LEDs, screens)
- * - wall: lit and cut away when it hides the player
- * - skin: characters; instance tint adds a rim
- * - puddle: glossy dark water that mirrors nearby lights
+ * - wall: lit, and dithered away when it stands between the camera and you
+ * - tape: floor tape, faintly self-lit
+ * - glass: translucent, picks up nearby light
  * - city: the night city far below the windows
+ * - accent: takes the instance's team colour
  */
-export const MAT = { lit: 0, floor: 1, lamp: 2, glow: 3, wall: 4, skin: 5, puddle: 6, city: 7 } as const
+export const MAT = { lit: 0, floor: 1, lamp: 2, glow: 3, wall: 4, tape: 5, glass: 6, city: 7, accent: 8 } as const
 export type Mat = (typeof MAT)[keyof typeof MAT]
 
 export class Mesh {
