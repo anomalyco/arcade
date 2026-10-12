@@ -4,7 +4,7 @@ import { createSoundBank, type SoundBank } from "./buffers"
 
 export const SPEED_OF_SOUND = 343
 /** Global output trim: everything was too loud at full volume. */
-export const MASTER_TRIM = 0.4
+export const MASTER_TRIM = 0.28
 /** HRTF panners are convolution-heavy; everything beyond this budget uses equal-power panning. */
 export const MAX_HRTF = 6
 const MAX_SHOTS = 40
@@ -43,7 +43,7 @@ export class Core {
   readonly helds = new Map<string, Held>()
   private readonly lastPlayed = new Map<string, number>()
   readonly categoryCount = new Map<string, number>()
-  readonly engineLevel = 0.55
+  readonly engineLevel = 0.2
   readonly ambienceLevel = 0.5
 
   constructor(readonly ctx: AudioContext) {
