@@ -437,13 +437,13 @@ export class Game {
 
   private muzzleFlash(x: number, y: number, z: number, aim: number, gun: Gun): void {
     const big = gun !== "rifle"
-    this.flashes.push({ x, y, t0: this.now, life: big ? 0.09 : 0.055, power: gun === "rifle" ? 3 : gun === "shotgun" ? 6 : 5 })
+    this.flashes.push({ x: x + Math.cos(aim) * 0.35, y: y + Math.sin(aim) * 0.35, t0: this.now, life: big ? 0.09 : 0.055, power: gun === "rifle" ? 0.8 : gun === "shotgun" ? 1.6 : 1.4 })
     this.flashFx.push({ x, y, z, aim, gun, t0: this.now, seed: Math.random() })
-    const n = gun === "shotgun" ? 4 : gun === "sniper" ? 3 : 1
+    const n = gun === "shotgun" ? 4 : gun === "sniper" ? 3 : Math.random() < 0.4 ? 1 : 0
     for (let i = 0; i < n; i++) {
-      const s = 0.4 + Math.random() * 0.9
-      const a = aim + (Math.random() - 0.5) * 0.6
-      this.fx(x, y, z, Math.cos(a) * s, Math.sin(a) * s, 0.2 + Math.random() * 0.3, 0.5 + Math.random() * 0.5, big ? 0.16 : 0.09, "smoke")
+      const s = 0.6 + Math.random() * 1.2
+      const a = aim + (Math.random() - 0.5) * 0.7
+      this.fx(x + Math.cos(aim) * 0.15, y + Math.sin(aim) * 0.15, z, Math.cos(a) * s, Math.sin(a) * s, 0.2 + Math.random() * 0.3, 0.6 + Math.random() * 0.6, big ? 0.09 : 0.05, "smoke")
     }
   }
 
@@ -605,22 +605,21 @@ export class Game {
       if (!arr) bodies.set(model, (arr = []))
       arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
     }
-    this.corpses = this.corpses.filter((c) => t - c.t0 < 3.2)
+    this.corpses = this.corpses.filter((c) => t - c.t0 < 3.4)
     for (const c of this.corpses) {
       const age = t - c.t0
       stepRagdoll(c.rd, adt)
-      const fade = Math.max(0, Math.min(1, 1 - (age - 2.5) / 0.6))
-      if (fade <= 0) continue
       const col = this.colorOf(c.id)
-      const dim = 0.25 + 0.75 * Math.exp(-age * 1.5)
-      const pool = Math.max(0, Math.min(1, (age - 0.5) / 2.2))
+      const dim = 0.2 + 0.8 * Math.exp(-age * 1.2)
+      const sink = Math.max(0, age - 2.5) ** 2 * 0.6
+      const pool = Math.max(0, Math.min(1, (age - 0.4) / 2.4))
       if (pool > 0) {
         const bc = ragdollCentre(c.rd)
-        this.sprite(false, bc.x, 0.012, bc.y, 0.12 + 0.5 * Math.sqrt(pool), 0.2, 0.01, 0.015, 0.85 * fade, 6)
+        this.sprite(false, bc.x, 0.012, bc.y, 0.1 + 0.55 * Math.sqrt(pool), 0.07, 0.0, 0.004, 0.9 * Math.max(0, 1 - sink * 4), 6)
       }
-      emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, Math.max(0, 1 - age * 6), fade, Math.max(0, age - 2.4) * 0.35)
+      emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, Math.max(0, 0.7 - age * 5), 1, sink)
     }
-    for (const [model, data] of bodies) emit(model, data, true)
+    for (const [model, data] of bodies) emit(model, data)
 
     // Muzzle flashes: a hot core, petals along the barrel and, for the sniper, the brake's side jets.
     this.flashFx = this.flashFx.filter((f) => t - f.t0 < (f.gun === "rifle" ? 0.05 : 0.075))
@@ -706,10 +705,10 @@ export class Game {
       }
       if (p.kind === "spark") this.sprite(true, p.x, p.z, p.y, p.size * (p.life < 0.1 ? 1 : 1 + a), 1, 0.72, 0.3, a, 0)
       else if (p.kind === "dust") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 2.5), 0.32, 0.31, 0.3, a * 0.55, 1, 0, 0, p.size * 40)
-      else if (p.kind === "smoke") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 1.8), 0.4, 0.4, 0.42, a * a * 0.3, 1, 0, 0, p.size * 40)
+      else if (p.kind === "smoke") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 3), 0.42, 0.42, 0.45, a * a * 0.22, 1, 0, 0, p.size * 40)
       else if (p.kind === "chip") this.sprite(false, p.x, p.z, p.y, p.size, 0.25, 0.26, 0.3, Math.min(1, a * 4), 6)
-      else if (p.kind === "splat") this.sprite(false, p.x, p.z, p.y, p.size, 0.22, 0.012, 0.02, Math.min(1, a * 3) * 0.9, 6)
-      else this.sprite(false, p.x, p.z, p.y, p.size, 0.4, 0.02, 0.03, 1, 6)
+      else if (p.kind === "splat") this.sprite(false, p.x, p.z, p.y, p.size, 0.08, 0.0, 0.005, Math.min(1, a * 3) * 0.9, 6)
+      else this.sprite(false, p.x, p.z, p.y, p.size, 0.22, 0.0, 0.01, 1, 6)
     }
     if (this.particles.length > 1500) this.particles.splice(0, this.particles.length - 1500)
 
@@ -720,7 +719,7 @@ export class Game {
     F.set([this.renderer.width, this.renderer.height, nl, this.map.lights.length], 20)
     const focus = me ? cam.project(me.x, 0.9, me.y, w, h) : { x: 0, y: 0 }
     F.set([me?.x ?? 0, me?.y ?? 0, me ? 1 : 0, 0.24], 24)
-    F.set([0.075, 0.095, 0.2, 0.55], 28)
+    F.set([0.065, 0.085, 0.18, 1.6], 28)
     F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, 0], 32)
     F.set([0, 1, 0, 0], 36)
     F.set([1 / this.map.size[0], 1 / this.map.size[1], this.map.size[0], this.map.size[1]], 40)

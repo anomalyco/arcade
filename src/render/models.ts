@@ -1,38 +1,59 @@
 import type { Prop } from "../../shared/maps"
-import { MAT, Mesh, type Rgb } from "./mesh"
+import { FLOATS_PER_VERT, MAT, Mesh, type Rgb } from "./mesh"
 
 /** sRGB hex to a 0..1 triple (the shader linearises). */
 export const hex = (h: number): Rgb => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255]
 
+/** Deterministic 0..1 generator from a seed. */
+export function rng(seed: number): () => number {
+  let s = Math.floor(Math.abs(seed * 2654435761) % 2147483647) || 1
+  return () => {
+    s = (s * 48271) % 2147483647
+    return s / 2147483647
+  }
+}
+
 export const PAL = {
-  carpet: hex(0x1d2439),
-  tile: hex(0x2b3349),
-  wood: hex(0x3b3136),
-  concrete: hex(0x272b35),
-  grate: hex(0x2e3a4c),
-  wallSide: hex(0x343c52),
-  wallTop: hex(0x5f6880),
-  partition: hex(0x3a445c),
-  partitionCap: hex(0x7d869b),
-  deskTop: hex(0x8d7f6c),
-  dark: hex(0x22252e),
+  carpet: hex(0x2c3656),
+  tile: hex(0x4a505c),
+  wood: hex(0x5a4436),
+  concrete: hex(0x3e434d),
+  grate: hex(0x3a4656),
+  tape: hex(0xb08a2a),
+  wallSide: hex(0x434d68),
+  wallTop: hex(0x56627e),
+  capSide: hex(0x222b48),
+  capEdge: hex(0x6a7694),
+  skirting: hex(0x161a24),
+  doorFrame: hex(0x2a2e38),
+  partition: hex(0x3e4862),
+  stall: hex(0x56607a),
+  partitionCap: hex(0x737b8e),
+  deskTop: hex(0x7a7262),
+  deskBody: hex(0x3a3f4c),
+  dark: hex(0x1c1f27),
   steel: hex(0x6c7487),
-  chair: hex(0x23262f),
-  pot: hex(0x3b3f4b),
-  leaf: hex(0x2f6a48),
-  leaf2: hex(0x41845a),
-  cabinet: hex(0x4a5267),
-  sofa: hex(0x3b3652),
-  table: hex(0x6f6150),
-  paper: hex(0xd8d9d4),
+  chair: hex(0x22252d),
+  pot: hex(0xd4d6d8),
+  soil: hex(0x2a2018),
+  leaf: hex(0x2f6a3e),
+  leaf2: hex(0x4a8a4a),
+  cabinet: hex(0x56607a),
+  sofa: hex(0x3a3a52),
+  table: hex(0x7a6048),
+  paper: hex(0xe0e0da),
   white: hex(0xc8ccd3),
-  crate: hex(0x6d5337),
+  crate: hex(0x9a7448),
   book: [hex(0x8a3c36), hex(0x2f5a7a), hex(0x8a7a3a), hex(0x3e6a4a), hex(0x5a4070)],
-  box: hex(0x7c5d3d),
-  rack: hex(0x15181f),
-  core: hex(0x2b3041),
-  pillar: hex(0x4b5164),
+  box: hex(0x8a6a44),
+  rack: hex(0x13161d),
+  core: hex(0x2e3548),
+  pillar: hex(0x4b5468),
   glassFrame: hex(0x1a1f2b),
+  fixture: hex(0x2a2f3a),
+  fixtureTop: hex(0x3a4052),
+  screenOn: hex(0x7ac0ff),
+  screenOff: hex(0x0c1018),
 }
 
 /** Footprint of a prop in its own frame: width along local x, depth along local z (front faces +z). */
@@ -42,10 +63,86 @@ function local(p: Prop): { w: number; d: number } {
   return p.rot % 2 === 0 ? { w: rw, d: rd } : { w: rd, d: rw }
 }
 
-function monitor(m: Mesh, x: number, z: number, on: boolean): void {
-  m.box(x - 0.28, 0.76, z - 0.03, x + 0.28, 1.08, z + 0.03, PAL.dark)
-  m.box(x - 0.25, 0.79, z + 0.031, x + 0.25, 1.05, z + 0.04, on ? hex(0x2a4a7a) : hex(0x0c0e14), on ? MAT.glow : MAT.lit, on ? 0.6 : 0)
-  m.box(x - 0.04, 0.74, z - 0.04, x + 0.04, 0.78, z + 0.04, PAL.dark)
+/** Rotates every vertex added since `from` by `yaw` around (cx, cz). */
+function spin(m: Mesh, from: number, yaw: number, cx = 0, cz = 0): void {
+  const c = Math.cos(yaw)
+  const s = Math.sin(yaw)
+  for (let i = from; i < m.v.length; i += FLOATS_PER_VERT) {
+    const x = m.v[i]! - cx
+    const z = m.v[i + 2]! - cz
+    m.v[i] = x * c - z * s + cx
+    m.v[i + 2] = x * s + z * c + cz
+    const nx = m.v[i + 3]!
+    const nz = m.v[i + 5]!
+    m.v[i + 3] = nx * c - nz * s
+    m.v[i + 5] = nx * s + nz * c
+  }
+}
+
+function monitor(m: Mesh, x: number, z: number, on: boolean, y = 0.76): void {
+  m.prism(x, z - 0.02, 0.09, 0.07, y, y + 0.015, 6, PAL.dark)
+  m.box(x - 0.02, y, z - 0.04, x + 0.02, y + 0.12, z - 0.01, PAL.dark)
+  m.bevelBox(x - 0.27, y + 0.08, z - 0.025, x + 0.27, y + 0.4, z + 0.015, 0.01, PAL.dark, hex(0x262a33), MAT.shiny)
+  m.box(x - 0.25, y + 0.1, z + 0.015, x + 0.25, y + 0.38, z + 0.022, on ? PAL.screenOn : PAL.screenOff, on ? MAT.glow : MAT.shiny, on ? 1.4 : 0)
+}
+
+function keyboard(m: Mesh, x: number, z: number, y = 0.76): void {
+  m.box(x - 0.21, y, z - 0.07, x + 0.21, y + 0.018, z + 0.07, hex(0x15171c))
+  m.box(x - 0.19, y + 0.018, z - 0.055, x + 0.19, y + 0.022, z + 0.055, hex(0x2c3038))
+}
+
+function mug(m: Mesh, x: number, z: number, col: Rgb, y = 0.76): void {
+  m.prism(x, z, 0.04, 0.04, y, y + 0.1, 7, col)
+  m.prism(x, z, 0.033, 0.033, y + 0.095, y + 0.101, 7, hex(0x2a1a10))
+}
+
+function papers(m: Mesh, x: number, z: number, r: () => number, y = 0.76): void {
+  const n = 1 + Math.floor(r() * 3)
+  for (let k = 0; k < n; k++) m.yawBox(x + (r() - 0.5) * 0.06, z + (r() - 0.5) * 0.06, 0.21, 0.29, y + k * 0.004, y + k * 0.004 + 0.004, (r() - 0.5) * 0.6, PAL.paper)
+}
+
+function plantModel(m: Mesh, s: number, r: () => number): void {
+  // Square white planter, dark soil, a fan of folded faceted leaves.
+  const pw = s * 0.62
+  m.bevelBox(-pw, 0, -pw, pw, 0.42, pw, 0.03, PAL.pot, hex(0xe4e6e8), MAT.lit)
+  m.box(-pw + 0.03, 0.4, -pw + 0.03, pw - 0.03, 0.425, pw - 0.03, PAL.soil)
+  const n = 9
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + r() * 0.5
+    const len = s * (0.9 + r() * 0.7)
+    const up = 0.75 + r() * 0.5
+    const mid = [Math.cos(a) * len * 0.55, 0.42 + up * 0.85, Math.sin(a) * len * 0.55]
+    const tip = [Math.cos(a) * len, 0.42 + up * (0.55 + r() * 0.3), Math.sin(a) * len]
+    const wdt = 0.07 + r() * 0.05
+    const side = [Math.cos(a + Math.PI / 2) * wdt, 0, Math.sin(a + Math.PI / 2) * wdt]
+    const base = [Math.cos(a) * 0.04, 0.43, Math.sin(a) * 0.04]
+    const l = [mid[0]! + side[0]!, mid[1]! - 0.03, mid[2]! + side[2]!]
+    const rr = [mid[0]! - side[0]!, mid[1]! - 0.03, mid[2]! - side[2]!]
+    const c1 = i % 2 ? PAL.leaf : PAL.leaf2
+    const c2 = i % 2 ? PAL.leaf2 : PAL.leaf
+    m.facet(base, l, mid, c1)
+    m.facet(base, mid, rr, c2)
+    m.facet(l, tip, mid, c2)
+    m.facet(mid, tip, rr, c1)
+  }
+}
+
+function chairModel(m: Mesh, r: () => number): void {
+  // Five-star base on casters, gas lift, seat, backrest at -z (you sit facing +z), arms.
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 + 0.3
+    m.yawBox(Math.cos(a) * 0.13, Math.sin(a) * 0.13, 0.26, 0.04, 0.05, 0.09, a, PAL.dark)
+    m.prism(Math.cos(a) * 0.25, Math.sin(a) * 0.25, 0.025, 0.025, 0, 0.05, 5, hex(0x0e1014))
+  }
+  m.prism(0, 0, 0.035, 0.035, 0.08, 0.42, 6, PAL.steel, MAT.shiny)
+  m.bevelBox(-0.24, 0.42, -0.22, 0.24, 0.5, 0.22, 0.03, PAL.chair, hex(0x2a2e38))
+  m.bevelBox(-0.22, 0.52, -0.27, 0.22, 1.0, -0.2, 0.03, PAL.chair, hex(0x2c303a))
+  m.box(-0.04, 0.45, -0.24, 0.04, 0.62, -0.19, PAL.dark)
+  if (r() < 0.8)
+    for (const sx of [-1, 1]) {
+      m.box(sx * 0.25 - 0.02, 0.5, -0.05, sx * 0.25 + 0.02, 0.66, -0.01, PAL.dark)
+      m.box(sx * 0.25 - 0.035, 0.66, -0.14, sx * 0.25 + 0.035, 0.69, 0.1, PAL.dark)
+    }
 }
 
 /** Builds one prop into `m` at its place on the plan. */
@@ -54,122 +151,276 @@ export function buildProp(m: Mesh, p: Prop, seed: number): void {
   const { w, d } = local(p)
   const hw = w / 2
   const hd = d / 2
-  const r = (k: number) => {
-    const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453
-    return x - Math.floor(x)
-  }
+  const r = rng(seed)
   switch (p.kind) {
     case "desk": {
-      m.box(-hw, 0.72, -hd, hw, 0.76, hd, PAL.deskTop)
-      for (const sx of [-1, 1]) m.box(sx * hw - (sx > 0 ? 0.05 : -0.05) - 0.025, 0, -hd + 0.05, sx * hw - (sx > 0 ? 0.05 : -0.05) + 0.025, 0.72, hd - 0.05, PAL.dark)
-      monitor(m, (r(1) - 0.5) * w * 0.3, -hd + 0.22, r(2) < 0.12)
-      m.box(-0.22, 0.76, -hd + 0.36, 0.22, 0.78, -hd + 0.5, PAL.dark)
-      if (r(3) < 0.6) m.box(hw - 0.42, 0.76, -0.05, hw - 0.12, 0.775, 0.17, PAL.paper)
-      if (r(4) < 0.4) m.prism(-hw + 0.2, hd - 0.2, 0.05, 0.05, 0.76, 0.86, 6, hex(0xa0503a))
+      const top = 0.76
+      m.bevelBox(-hw, top - 0.04, -hd, hw, top, hd, 0.012, hex(0x8a8070), PAL.deskTop)
+      // Side panels, a modesty panel at the back, a drawer pedestal on one side.
+      for (const sx of [-1, 1]) m.box(sx * hw - (sx > 0 ? 0.04 : 0), 0, -hd + 0.03, sx * hw + (sx > 0 ? 0 : 0.04), top - 0.04, hd - 0.04, PAL.deskBody)
+      m.box(-hw + 0.04, 0.25, -hd + 0.03, hw - 0.04, top - 0.04, -hd + 0.06, PAL.deskBody)
+      const ped = r() < 0.5 ? -1 : 1
+      const px0 = ped < 0 ? -hw + 0.04 : hw - 0.44
+      m.box(px0, 0.02, -hd + 0.1, px0 + 0.4, top - 0.06, hd - 0.06, hex(0x464c5a))
+      for (let k = 0; k < 3; k++) {
+        const y = 0.06 + k * 0.22
+        m.box(px0 + 0.02, y, hd - 0.06, px0 + 0.38, y + 0.2, hd - 0.05, hex(0x50576a))
+        m.box(px0 + 0.14, y + 0.15, hd - 0.05, px0 + 0.26, y + 0.17, hd - 0.035, PAL.steel)
+      }
+      // PC tower under the desk opposite the pedestal, with a tiny LED.
+      if (r() < 0.6) {
+        const tx = ped < 0 ? hw - 0.3 : -hw + 0.12
+        m.box(tx, 0, -hd + 0.15, tx + 0.18, 0.42, -hd + 0.6, hex(0x16181e))
+        m.box(tx + 0.07, 0.36, -hd + 0.6, tx + 0.11, 0.38, -hd + 0.61, hex(0x40a0ff), MAT.glow, 3)
+      }
+      const mx = (r() - 0.5) * Math.max(0, w - 0.9) * 0.6
+      monitor(m, mx, -hd + 0.2, r() < 0.28)
+      if (r() < 0.25) monitor(m, mx + (mx > 0 ? -0.58 : 0.58), -hd + 0.22, r() < 0.3)
+      keyboard(m, mx, -hd + 0.48)
+      m.box(mx + 0.3, top, -hd + 0.44, mx + 0.36, top + 0.02, -hd + 0.53, hex(0x15171c))
+      if (r() < 0.75) papers(m, mx > 0 ? -hw + 0.3 : hw - 0.3, 0.05, r)
+      if (r() < 0.55) mug(m, mx + (r() < 0.5 ? -0.4 : 0.45), -hd + 0.38, [hex(0xe0e0e0), hex(0xb03a2a), hex(0x2a5a9a), hex(0x2a2a2a)][Math.floor(r() * 4)]!)
+      if (r() < 0.25) {
+        // Little desk plant.
+        const from2 = m.length
+        plantModel(m, 0.12, r)
+        for (let i = from2; i < m.v.length; i += FLOATS_PER_VERT) {
+          m.v[i]! *= 0.55
+          m.v[i + 1] = m.v[i + 1]! * 0.45 + top
+          m.v[i + 2]! *= 0.55
+          m.v[i]! += hw - 0.15
+          m.v[i + 2]! += -hd + 0.15
+        }
+      }
+      if (r() < 0.35) {
+        // Pen cup and a binder stack.
+        m.prism(-hw + 0.15, -hd + 0.18, 0.035, 0.035, top, top + 0.1, 6, hex(0x2a2e38))
+        m.box(-hw + 0.25, top, -hd + 0.08, -hw + 0.33, top + 0.28, -hd + 0.34, [hex(0x2a4a8a), hex(0x8a2a2a), hex(0x2a2a2a)][Math.floor(r() * 3)]!)
+      }
       break
     }
     case "chair": {
-      m.prism(0, 0, 0.22, 0.05, 0.02, 0.1, 5, PAL.dark)
-      m.box(-0.03, 0.08, -0.03, 0.03, 0.42, 0.03, PAL.steel)
-      m.box(-0.22, 0.42, -0.22, 0.22, 0.5, 0.2, PAL.chair)
-      m.box(-0.2, 0.5, 0.17, 0.2, 0.95, 0.24, PAL.chair)
+      chairModel(m, r)
+      spin(m, from, (r() - 0.5) * 0.7)
       break
     }
     case "cabinet": {
-      m.box(-hw, 0, -hd, hw, 1.1, hd, PAL.cabinet, MAT.lit, 0, hex(0x5a6278))
-      for (let y = 0.25; y < 1.1; y += 0.35) m.box(-hw + 0.05, y, hd, hw - 0.05, y + 0.02, hd + 0.01, PAL.steel)
+      const h = 1.1 + (r() < 0.4 ? 0.3 : 0)
+      m.bevelBox(-hw, 0, -hd, hw, h, hd, 0.02, PAL.cabinet, hex(0x667089))
+      const n = h > 1.2 ? 4 : 3
+      const dh = (h - 0.1) / n
+      for (let k = 0; k < n; k++) {
+        const y = 0.06 + k * dh
+        m.box(-hw + 0.04, y, hd, hw - 0.04, y + dh - 0.03, hd + 0.012, hex(0x5e6882))
+        m.box(-0.08, y + dh - 0.12, hd + 0.012, 0.08, y + dh - 0.1, hd + 0.035, PAL.steel, MAT.shiny)
+        m.box(-0.06, y + dh - 0.2, hd + 0.012, 0.06, y + dh - 0.16, hd + 0.016, PAL.paper)
+      }
+      if (r() < 0.4) m.yawBox((r() - 0.5) * w * 0.4, (r() - 0.5) * d * 0.3, 0.3, 0.22, h, h + 0.08 + r() * 0.1, r() - 0.5, PAL.box)
       break
     }
     case "plant": {
-      const s = Math.min(w, d) / 2
-      m.prism(0, 0, s * 0.55, s * 0.7, 0, 0.42, 6, PAL.pot)
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * Math.PI * 2 + r(i)
-        const len = s * (0.9 + r(i + 9) * 0.5)
-        const tip = [Math.cos(a) * len, 0.75 + r(i + 3) * 0.45, Math.sin(a) * len]
-        const side = [Math.cos(a + 1.6) * 0.09, 0, Math.sin(a + 1.6) * 0.09]
-        m.facet([side[0]!, 0.42, side[2]!], [-side[0]!, 0.42, -side[2]!], tip, i % 2 ? PAL.leaf : PAL.leaf2)
-      }
+      plantModel(m, Math.min(w, d) / 2, r)
       break
     }
     case "sofa": {
-      m.box(-hw, 0, -hd, hw, 0.42, hd, PAL.sofa)
-      m.box(-hw, 0.42, -hd, hw, 0.85, -hd + 0.22, PAL.sofa)
-      for (const sx of [-1, 1]) m.box(sx > 0 ? hw - 0.18 : -hw, 0.42, -hd, sx > 0 ? hw : -hw + 0.18, 0.62, hd, PAL.sofa)
-      m.box(-hw + 0.2, 0.42, -hd + 0.24, hw - 0.2, 0.5, hd - 0.05, hex(0x47415f))
+      m.bevelBox(-hw, 0.08, -hd, hw, 0.4, hd, 0.03, PAL.sofa, hex(0x434360))
+      m.bevelBox(-hw, 0.4, -hd, hw, 0.85, -hd + 0.22, 0.04, PAL.sofa, hex(0x47476a))
+      for (const sx of [-1, 1]) m.bevelBox(sx > 0 ? hw - 0.18 : -hw, 0.4, -hd, sx > 0 ? hw : -hw + 0.18, 0.64, hd, 0.04, PAL.sofa, hex(0x47476a))
+      const n = Math.max(2, Math.round((w - 0.36) / 0.6))
+      const cw = (w - 0.36) / n
+      for (let k = 0; k < n; k++) {
+        const x = -hw + 0.18 + k * cw
+        m.bevelBox(x + 0.01, 0.4, -hd + 0.22, x + cw - 0.01, 0.5, hd - 0.03, 0.04, hex(0x4a4a68), hex(0x52527a))
+      }
+      for (const sx of [-1, 1]) m.box(sx * (hw - 0.06) - 0.03, 0, -hd + 0.05, sx * (hw - 0.06) + 0.03, 0.08, hd - 0.05, PAL.dark)
       break
     }
     case "table": {
-      m.box(-hw, 0.7, -hd, hw, 0.75, hd, PAL.table)
-      m.box(-0.06, 0, -0.06, 0.06, 0.7, 0.06, PAL.dark)
-      m.box(-Math.min(hw, 0.4), 0, -Math.min(hd, 0.4), Math.min(hw, 0.4), 0.03, Math.min(hd, 0.4), PAL.dark)
-      if (r(5) < 0.5) m.box(-0.12, 0.75, -0.1, 0.18, 0.765, 0.12, PAL.paper)
+      const big = w > 1.6 || d > 1.6
+      m.bevelBox(-hw, 0.71, -hd, hw, 0.75, hd, 0.015, hex(0x5a4636), PAL.table, MAT.shiny)
+      if (big) {
+        for (const [sx, sz] of [
+          [-1, -1],
+          [1, -1],
+          [-1, 1],
+          [1, 1],
+        ] as const)
+          m.box(sx * (hw - 0.12) - 0.03, 0, sz * (hd - 0.12) - 0.03, sx * (hw - 0.12) + 0.03, 0.71, sz * (hd - 0.12) + 0.03, PAL.dark)
+        for (let k = 0; k < 3; k++) if (r() < 0.6) papers(m, (r() - 0.5) * (w - 0.5), (r() - 0.5) * (d - 0.4), r, 0.75)
+        if (r() < 0.6) mug(m, (r() - 0.5) * (w - 0.4), (r() - 0.5) * (d - 0.3), PAL.white, 0.75)
+        if (r() < 0.5) {
+          // An open laptop.
+          const lx = (r() - 0.5) * (w - 0.6)
+          m.box(lx - 0.17, 0.75, -0.12, lx + 0.17, 0.765, 0.12, hex(0x9aa0aa), MAT.shiny)
+          m.box(lx - 0.17, 0.765, -0.13, lx + 0.17, 0.99, -0.115, hex(0x9aa0aa), MAT.shiny)
+          m.box(lx - 0.15, 0.78, -0.114, lx + 0.15, 0.97, -0.11, PAL.screenOn, MAT.glow, 0.9)
+        }
+      } else {
+        m.prism(0, 0, 0.05, 0.05, 0, 0.71, 6, PAL.dark)
+        m.prism(0, 0, Math.min(hw, hd, 0.35), Math.min(hw, hd, 0.35) * 0.9, 0, 0.03, 8, PAL.dark)
+        if (r() < 0.5) papers(m, -0.05, 0.02, r, 0.75)
+        if (r() < 0.5) mug(m, 0.2, -0.1, PAL.white, 0.75)
+      }
       break
     }
     case "vending": {
-      m.box(-hw, 0, -hd, hw, 1.9, hd, hex(0x1b2636), MAT.lit, 0, hex(0x2a3a50))
+      m.bevelBox(-hw, 0, -hd, hw, 1.9, hd, 0.03, hex(0x1b2636), hex(0x2a3a50), MAT.shiny)
       const lamp = p.light ?? -1
-      if (lamp >= 0) {
-        m.box(-hw + 0.1, 0.55, hd, hw * 0.35, 1.75, hd + 0.02, hex(0x3ad8ff), MAT.lamp, lamp)
-        m.box(hw * 0.45, 0.9, hd, hw - 0.1, 1.6, hd + 0.02, hex(0x2a9ac8), MAT.lamp, lamp)
-        for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) m.box(-hw + 0.18 + i * 0.22, 0.75 + j * 0.3, hd + 0.02, -hw + 0.3 + i * 0.22, 0.92 + j * 0.3, hd + 0.03, hex(0xe8fbff), MAT.lamp, lamp)
-      }
+      const glowMat = lamp >= 0 ? MAT.lamp : MAT.glow
+      const glowAux = lamp >= 0 ? lamp : 0.6
+      // Glass front with rows of cans, a selection panel and a lit header.
+      m.box(-hw + 0.08, 0.5, hd, hw * 0.4, 1.72, hd + 0.015, hex(0x2a8ab0), glowMat, glowAux)
+      for (let j = 0; j < 4; j++)
+        for (let i = 0; i < 4; i++) {
+          const x = -hw + 0.13 + i * ((hw * 1.4 - 0.12) / 4)
+          const col = [hex(0xff4040), hex(0x40c0ff), hex(0xffd040), hex(0x60ff80), hex(0xffffff)][(i + j * 3 + Math.floor(r() * 2)) % 5]!
+          m.box(x, 0.58 + j * 0.28, hd + 0.015, x + 0.1, 0.76 + j * 0.28, hd + 0.03, col, glowMat, glowAux)
+        }
+      m.box(hw * 0.5, 0.9, hd, hw - 0.08, 1.5, hd + 0.02, hex(0x101820))
+      for (let k = 0; k < 6; k++) m.box(hw * 0.55, 1.42 - k * 0.08, hd + 0.02, hw * 0.55 + 0.05, 1.46 - k * 0.08, hd + 0.03, hex(0x9ad8ff), MAT.glow, 1.5)
+      m.box(-hw + 0.08, 1.76, hd, hw - 0.08, 1.86, hd + 0.02, hex(0x7af0ff), glowMat, glowAux)
+      m.box(-hw + 0.1, 0.1, hd, hw - 0.1, 0.38, hd + 0.03, hex(0x0a0e14))
       break
     }
     case "copier":
     case "printer": {
-      const h = p.kind === "copier" ? 1.0 : 0.85
-      m.box(-hw, 0, -hd, hw, h, hd, PAL.white, MAT.lit, 0, hex(0xdfe2e7))
-      m.box(-hw + 0.1, h, -hd + 0.1, hw - 0.1, h + 0.08, hd - 0.15, hex(0x8e939e))
-      m.box(hw - 0.3, h + 0.08, hd - 0.3, hw - 0.12, h + 0.1, hd - 0.18, hex(0x30ff90), MAT.glow, 1.2)
+      const h = p.kind === "copier" ? 0.95 : 0.8
+      m.bevelBox(-hw, 0.05, -hd, hw, h, hd, 0.03, PAL.white, hex(0xdfe2e7))
+      m.box(-hw + 0.03, 0, -hd + 0.03, hw - 0.03, 0.05, hd - 0.03, PAL.dark)
+      for (let k = 0; k < 2; k++) m.box(-hw + 0.05, 0.15 + k * 0.22, hd, hw - 0.05, 0.33 + k * 0.22, hd + 0.01, hex(0xb4b9c2))
+      m.bevelBox(-hw + 0.06, h, -hd + 0.06, hw - 0.08, h + 0.08, hd - 0.18, 0.02, hex(0x8e939e), hex(0x9ea3ae))
+      m.box(hw - 0.35, h, hd - 0.17, hw - 0.04, h + 0.05, hd - 0.04, hex(0x3a3e48))
+      m.box(hw - 0.32, h + 0.05, hd - 0.15, hw - 0.18, h + 0.055, hd - 0.07, hex(0x60b0ff), MAT.glow, 1.2)
+      m.box(hw - 0.12, h + 0.05, hd - 0.12, hw - 0.08, h + 0.06, hd - 0.08, hex(0x30ff90), MAT.glow, 3)
+      // Output tray with a sheet.
+      m.box(-hw - 0.12, h - 0.25, -0.15, -hw, h - 0.23, 0.15, hex(0x9aa0aa))
+      m.box(-hw - 0.1, h - 0.23, -0.12, -hw + 0.08, h - 0.225, 0.12, PAL.paper)
       break
     }
     case "counter": {
-      m.box(-hw, 0, -hd, hw, 0.9, hd, hex(0x5d6578), MAT.lit, 0, hex(0xa9aebb))
-      m.box(-0.3, 0.9, -0.15, 0.3, 0.91, 0.15, hex(0x8a909c))
+      m.box(-hw, 0, -hd, hw, 0.86, hd, hex(0x3e4658))
+      for (let x = -hw + 0.02; x < hw - 0.3; x += 0.6) {
+        m.box(x, 0.1, hd, x + 0.57, 0.8, hd + 0.012, hex(0x4a5468))
+        m.box(x + 0.25, 0.7, hd + 0.012, x + 0.32, 0.72, hd + 0.03, PAL.steel, MAT.shiny)
+      }
+      m.bevelBox(-hw - 0.02, 0.86, -hd - 0.02, hw + 0.02, 0.9, hd + 0.03, 0.01, hex(0x7a808e), hex(0xb0b4bc), MAT.shiny)
+      // Sink, coffee machine, kettle.
+      if (w > 1.2) {
+        m.box(-0.25, 0.86, -0.18, 0.25, 0.905, 0.18, hex(0x50565f), MAT.shiny)
+        m.box(-0.2, 0.88, -0.14, 0.2, 0.906, 0.14, hex(0x1a1d22), MAT.shiny)
+        m.box(-0.02, 0.9, -hd + 0.04, 0.02, 1.15, -hd + 0.08, PAL.steel, MAT.shiny)
+        m.box(-0.02, 1.12, -hd + 0.04, 0.02, 1.15, -0.1, PAL.steel, MAT.shiny)
+      }
+      const cx = hw - 0.35
+      m.bevelBox(cx - 0.15, 0.9, -hd + 0.05, cx + 0.15, 1.3, -hd + 0.35, 0.02, hex(0x1a1c22), hex(0x2a2c34), MAT.shiny)
+      m.box(cx + 0.05, 1.2, -hd + 0.35, cx + 0.1, 1.22, -hd + 0.36, hex(0xff4020), MAT.glow, 3)
+      m.prism(cx, -hd + 0.42, 0.04, 0.04, 0.9, 1.0, 7, PAL.white)
+      if (w > 2) m.bevelBox(-hw + 0.1, 0.9, -hd + 0.05, -hw + 0.6, 1.2, -hd + 0.4, 0.02, hex(0xd0d2d6), hex(0xdcdee2))
       break
     }
     case "fridge":
-      m.box(-hw, 0, -hd, hw, 1.85, hd, hex(0xb9bec9), MAT.lit, 0, hex(0xd2d6dd))
-      m.box(hw - 0.12, 1.0, hd, hw - 0.08, 1.5, hd + 0.04, PAL.steel)
+      m.bevelBox(-hw, 0, -hd, hw, 1.85, hd, 0.04, hex(0xb9bec9), hex(0xd2d6dd), MAT.shiny)
+      m.box(-hw + 0.02, 1.2, hd, hw - 0.02, 1.215, hd + 0.01, hex(0x7a808a))
+      m.box(hw - 0.12, 1.3, hd, hw - 0.08, 1.7, hd + 0.04, PAL.steel, MAT.shiny)
+      m.box(hw - 0.12, 0.7, hd, hw - 0.08, 1.1, hd + 0.04, PAL.steel, MAT.shiny)
+      for (let k = 0; k < 3; k++) m.box(-hw + 0.15 + k * 0.12, 1.5 - k * 0.1, hd, -hw + 0.24 + k * 0.12, 1.6 - k * 0.1, hd + 0.005, [hex(0xe8d870), hex(0xff8aa0), hex(0x8ad0ff)][k]!)
       break
     case "cooler":
-      m.box(-hw, 0, -hd, hw, 1.0, hd, hex(0xc8d4e0))
-      m.prism(0, 0, 0.13, 0.13, 1.0, 1.4, 8, hex(0x4aa0e0), MAT.glow, 0.35)
+      m.bevelBox(-0.16, 0, -0.16, 0.16, 1.0, 0.16, 0.02, hex(0xd8dce4), hex(0xe4e8ee))
+      m.box(-0.1, 0.62, 0.16, 0.1, 0.85, 0.17, hex(0x2a2e38))
+      m.box(-0.06, 0.72, 0.17, -0.02, 0.76, 0.2, hex(0x3a7aff))
+      m.box(0.02, 0.72, 0.17, 0.06, 0.76, 0.2, hex(0xff4a3a))
+      m.box(-0.08, 0.62, 0.16, 0.08, 0.64, 0.22, hex(0x7a808a))
+      m.prism(0, 0, 0.14, 0.14, 1.0, 1.36, 10, hex(0x3a8ae0), MAT.shiny)
+      m.prism(0, 0, 0.14, 0.06, 1.36, 1.44, 10, hex(0x3a8ae0), MAT.shiny)
+      m.prism(0, 0, 0.145, 0.145, 1.12, 1.15, 10, hex(0x5aa8ff), MAT.shiny)
       break
     case "bookshelf": {
-      m.box(-hw, 0, -hd, hw, 1.9, hd, hex(0x3a2f2b))
-      for (let y = 0.1; y < 1.8; y += 0.45)
+      m.box(-hw, 0, -hd, hw, 1.9, hd, hex(0x3a2f2b), MAT.lit, 0, hex(0x4a3c36))
+      for (let y = 0.1; y < 1.8; y += 0.45) {
+        m.box(-hw + 0.03, y - 0.02, -hd + 0.02, hw - 0.03, y, hd + 0.005, hex(0x4a3c36))
         for (let x = -hw + 0.06; x < hw - 0.1; ) {
-          const bw = 0.05 + r(x * 10 + y) * 0.06
-          m.box(x, y, -hd + 0.05, x + bw, y + 0.28 + r(x + y * 3) * 0.08, hd + 0.01, PAL.book[Math.floor(r(x * 7 + y * 5) * 5)]!)
-          x += bw + 0.01
+          const bw = 0.04 + r() * 0.05
+          if (r() < 0.1) {
+            x += 0.15
+            continue
+          }
+          m.box(x, y, -hd + 0.05, x + bw, y + 0.26 + r() * 0.1, hd + 0.01, PAL.book[Math.floor(r() * 5)]!)
+          x += bw + 0.008
         }
+      }
       break
     }
-    case "crate":
-      m.box(-hw, 0, -hd, hw, Math.min(w, d) * 0.9, hd, PAL.crate, MAT.lit, 0, hex(0x84673f))
+    case "crate": {
+      // A stack of cardboard boxes with tape.
+      const s = Math.min(w, d)
+      const h0 = s * 0.55
+      m.box(-hw, 0, -hd, hw, h0, hd, PAL.crate, MAT.lit, 0, hex(0xae8656))
+      m.box(-hw - 0.002, h0 - 0.002, -0.04, hw + 0.002, h0 + 0.002, 0.04, hex(0xc8b080))
+      if (r() < 0.7) {
+        const from2 = m.length
+        const s2 = s * (0.55 + r() * 0.2)
+        m.box(-s2 / 2, h0, -s2 / 2, s2 / 2, h0 + s2 * 0.7, s2 / 2, hex(0x8a6a44), MAT.lit, 0, hex(0xa47c50))
+        m.box(-s2 / 2 - 0.002, h0 + s2 * 0.7 - 0.002, -0.035, s2 / 2 + 0.002, h0 + s2 * 0.7 + 0.002, 0.035, hex(0xc8b080))
+        spin(m, from2, (r() - 0.5) * 0.8)
+      }
       break
-    case "whiteboard":
-      m.box(-hw, 0.9, -hd, hw, 2.0, hd, hex(0xe6eaef))
+    }
+    case "whiteboard": {
+      // Wall-mounted board facing +z with scribbles and a marker tray.
+      m.box(-hw, 0.9, -hd, hw, 2.0, -hd + 0.04, hex(0x9aa0aa), MAT.lit)
+      m.box(-hw + 0.03, 0.93, -hd + 0.04, hw - 0.03, 1.97, -hd + 0.047, hex(0xeef1f4), MAT.shiny)
+      for (let k = 0; k < 7; k++) {
+        const x = -hw + 0.2 + r() * (w - 0.7)
+        const y = 1.1 + r() * 0.7
+        const col = [hex(0x2a4ab0), hex(0xb02a2a), hex(0x2a8a4a), hex(0x222222)][Math.floor(r() * 4)]!
+        const from2 = m.length
+        m.box(-0.12 - r() * 0.15, -0.012, 0, 0.12 + r() * 0.15, 0.012, 0.004, col)
+        spin(m, from2, 0)
+        for (let i = from2; i < m.v.length; i += FLOATS_PER_VERT) {
+          m.v[i]! += x
+          m.v[i + 1]! += y
+          m.v[i + 2]! += -hd + 0.047
+        }
+      }
+      m.box(-hw + 0.2, 0.9, -hd + 0.04, hw - 0.2, 0.92, -hd + 0.1, hex(0x9aa0aa))
+      for (let k = 0; k < 3; k++) m.box(-0.2 + k * 0.12, 0.92, -hd + 0.06, -0.12 + k * 0.12, 0.94, -hd + 0.08, [hex(0x2a4ab0), hex(0xb02a2a), hex(0x2a8a4a)][k]!)
       break
+    }
     case "reception": {
-      m.box(-hw, 0, -hd, hw, 1.05, hd, hex(0x3a4155), MAT.lit, 0, hex(0x9c8b70))
-      monitor(m, 0.3, -hd + 0.25, true)
+      m.bevelBox(-hw, 0, -hd, hw, 1.05, hd, 0.02, hex(0x3a4155), hex(0xb0a080), MAT.lit)
+      m.box(-hw + 0.05, 0.1, hd, hw - 0.05, 0.14, hd + 0.01, hex(0x7ad0ff), MAT.glow, 1.2)
+      m.box(-hw + 0.05, 0.72, -hd - 0.3, hw - 0.05, 0.76, -hd, PAL.deskTop)
+      monitor(m, 0.3, -hd - 0.15, true, 0.76)
       break
     }
     case "lamp": {
-      // Desk lamp on a desk: base, arm and a shade that glows with its light.
-      m.prism(0, 0, 0.08, 0.06, 0.76, 0.79, 6, PAL.dark)
-      m.box(-0.015, 0.79, -0.015, 0.015, 1.05, 0.015, PAL.dark)
-      m.prism(0, 0.06, 0.12, 0.05, 0.94, 1.08, 6, hex(0x2c2c30))
-      if (p.light !== undefined) m.prism(0, 0.06, 0.1, 0.1, 0.935, 0.945, 6, hex(0xffcf8a), MAT.lamp, p.light)
+      // Articulated desk lamp: weighted base, two arm segments, a shade whose inside glows with its light.
+      m.prism(0, 0, 0.08, 0.07, 0.76, 0.79, 8, PAL.dark)
+      m.box(-0.012, 0.78, -0.012, 0.012, 0.98, 0.012, hex(0x2a2c32))
+      m.yawBox(0.06, 0, 0.14, 0.022, 0.97, 0.995, 0, hex(0x2a2c32))
+      m.prism(0.12, 0.0, 0.11, 0.05, 0.9, 1.04, 8, hex(0x26282e), MAT.shiny)
+      if (p.light !== undefined) {
+        m.prism(0.12, 0.0, 0.095, 0.095, 0.895, 0.905, 8, hex(0xffcf8a), MAT.lamp, p.light, true)
+        m.prism(0.12, 0.0, 0.035, 0.035, 0.9, 0.94, 6, hex(0xfff2d0), MAT.lamp, p.light)
+      }
       break
     }
-    case "exitdoor":
-      m.box(-hw - 0.08, 0, -0.06, -hw, 2.25, 0.06, PAL.steel)
-      m.box(hw, 0, -0.06, hw + 0.08, 2.25, 0.06, PAL.steel)
+    case "exitdoor": {
+      // Steel fire door set into the wall (whose faces are 0.15 either side of the line), with frame and push bar.
+      for (const s of [-1, 1]) {
+        const z0 = s * 0.15
+        const z1 = s * 0.19
+        const lo = Math.min(z0, z1)
+        const hi = Math.max(z0, z1)
+        m.box(-hw + 0.02, 0, lo, -hw + 0.1, 2.28, hi, PAL.doorFrame)
+        m.box(hw - 0.1, 0, lo, hw - 0.02, 2.28, hi, PAL.doorFrame)
+        m.box(-hw + 0.02, 2.2, lo, hw - 0.02, 2.28, hi, PAL.doorFrame)
+        m.box(-hw + 0.1, 0, Math.min(z0, s * 0.172), hw - 0.1, 2.2, Math.max(z0, s * 0.172), hex(0x46565a), MAT.shiny)
+        m.box(-hw + 0.2, 1.0, Math.min(s * 0.172, s * 0.22), hw - 0.2, 1.06, Math.max(s * 0.172, s * 0.22), PAL.steel, MAT.shiny)
+      }
       break
+    }
     default:
       m.box(-hw, 0, -hd, hw, 0.8, hd, PAL.cabinet)
   }

@@ -1,38 +1,43 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../shared/config"
 
-/** Frame uniform layout, in floats. Keep in step with Renderer.frame. */
-export const FRAME_FLOATS = 16 + 4 * 6
+/** Frame uniform layout, in floats. Keep in step with Game.build. */
+export const FRAME_FLOATS = 16 + 4 * 7
 
 const common = /* wgsl */ `
 const MAX_LIGHTS: u32 = ${MAX_LIGHTS}u;
 const RAYS: u32 = ${POLAR_RAYS}u;
 const TAU: f32 = 6.2831853;
-/** Visual brightness of map lights relative to the ambient. The rules use the raw intensity. */
+const PI: f32 = 3.1415927;
+/** Visual brightness of lights relative to the ambient. */
 const GAIN: f32 = 6.0;
+const FAR: f32 = 1e9;
 
 struct Frame {
   viewProj: mat4x4f,
   cam: vec4f,        // eye position xyz, time
-  screen: vec4f,     // width, height, light count, occluder count
+  screen: vec4f,     // width, height, light count, map light count
   eye: vec4f,        // local player plan x, plan y, cutaway on (0/1), cutaway radius (NDC)
-  ambient: vec4f,    // sky rgb, flash
+  ambient: vec4f,    // sky rgb, moonlight strength
   focus: vec4f,      // local player clip x, y, world height of the cut, 0
-  grade: vec4f,      // desaturate (dead), exposure, grain, vignette
+  grade: vec4f,      // unused
+  map: vec4f,        // 1 / map width, 1 / map height, map width, map height
 }
 
 struct Light {
   pos: vec4f,    // plan x, height, plan y, radius
   color: vec4f,  // rgb, current power
   cone: vec4f,   // plan dir x, plan dir y, cos half-angle, has cone
-  extra: vec4f,  // base power, 0, 0, 0
+  extra: vec4f,  // first occluder, occluder count, fixture size (shadow softness), map light id or -1
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
 @group(0) @binding(1) var<storage, read> lights: array<Light>;
-@group(0) @binding(2) var<storage, read> polar: array<f32>;
+@group(0) @binding(2) var<storage, read> polar: array<vec4f>;
 
 fn hash2(p: vec2f) -> f32 {
-  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
+  let q = fract(p * vec2f(0.1031, 0.1030));
+  let r = q + dot(q, q.yx + 33.33);
+  return fract((r.x + r.y) * r.x);
 }
 
 fn noise2(p: vec2f) -> f32 {
@@ -42,69 +47,20 @@ fn noise2(p: vec2f) -> f32 {
   return mix(mix(hash2(i), hash2(i + vec2f(1.0, 0.0)), u.x), mix(hash2(i + vec2f(0.0, 1.0)), hash2(i + vec2f(1.0, 1.0)), u.x), u.y);
 }
 
-/** Whether p is in view of origin through the 2D occluders, from the polar shadow map slot. Same rule as the server. */
-fn polarVis(slot: u32, origin: vec2f, p: vec2f) -> f32 {
-  let dv = p - origin;
-  let d = length(dv);
-  if (d < 0.05) { return 1.0; }
-  var a = atan2(dv.y, dv.x);
-  if (a < 0.0) { a += TAU; }
-  let f = a / TAU * f32(RAYS);
-  let i0 = u32(floor(f)) % RAYS;
-  let i1 = (i0 + 1u) % RAYS;
-  let base = slot * RAYS;
-  let occ = mix(polar[base + i0], polar[base + i1], fract(f));
-  return 1.0 - smoothstep(occ - 0.03, occ + 0.03, d);
+fn fbm(p: vec2f) -> f32 {
+  return noise2(p) * 0.5 + noise2(p * 2.03 + 7.1) * 0.3 + noise2(p * 4.1 + 3.7) * 0.2;
 }
-
-/**
- * Light reaching a surface. The floor gets exactly the rule's intensity (power, falloff, cone, 2D occlusion) so what
- * looks lit is what makes you visible. Walls and props add a little 3D form from the light's height.
- */
-fn lightSum(world: vec3f, n: vec3f, honest: bool) -> vec3f {
-  var acc = vec3f(0.0);
-  let count = u32(F.screen.z);
-  var plan = world.xz + n.xz * 0.05;
-  for (var i = 0u; i < count; i++) {
-    let L = lights[i];
-    let power = L.color.w;
-    if (power <= 0.001) { continue; }
-    let lp = L.pos.xz;
-    let dv = world.xz - lp;
-    let d = length(dv);
-    if (d >= L.pos.w) { continue; }
-    var k = 1.0 - d / L.pos.w;
-    var att = k * k * power;
-    if (L.cone.w > 0.5 && d > 0.001) {
-      let c = dot(dv / d, L.cone.xy);
-      let t = clamp((c - L.cone.z) / 0.08, 0.0, 1.0);
-      att *= t * t * (3.0 - 2.0 * t);
-    }
-    var sp = plan;
-    // Tops of partitions and furniture: test a point nudged toward the light so lit tops read as lit.
-    if (n.y > 0.5 && world.y > 0.05) { sp = world.xz - normalize(dv + vec2f(1e-4)) * min(0.45, d); }
-    att *= polarVis(i, lp, sp);
-    if (!honest) {
-      let l = normalize(vec3f(lp.x, L.pos.y, lp.y) - world);
-      att *= 0.45 + 0.75 * max(dot(n, l), 0.0);
-    }
-    acc += L.color.rgb * att;
-  }
-  return acc;
-}
-
-fn ambientAt(n: vec3f) -> vec3f {
-  let sky = F.ambient.rgb;
-  return mix(sky * 0.45, sky, n.y * 0.5 + 0.5);
-}
-
 `
 
-/** Polar shadow map: for each light, the distance to the first occluder along each of RAYS angles. */
+/**
+ * Polar shadow map. For each culled light and each of RAYS angles: the distance to the first occluder at least as tall
+ * as the light (it shadows everything beyond), and the two nearest lower occluders as (enter, exit, height), whose
+ * shadows end where the line from the light clears their top. People are round casters.
+ */
 export const polarShader = /* wgsl */ `
 ${common}
 @group(0) @binding(3) var<storage, read> occluders: array<vec4f>;
-@group(0) @binding(4) var<storage, read_write> polarOut: array<f32>;
+@group(0) @binding(4) var<storage, read_write> polarOut: array<vec4f>;
 
 fn slab(o: f32, d: f32, lo: f32, hi: f32, t0: ptr<function, f32>, t1: ptr<function, f32>) -> bool {
   if (abs(d) < 1e-9) { return o >= lo && o <= hi; }
@@ -119,38 +75,81 @@ fn slab(o: f32, d: f32, lo: f32, hi: f32, t0: ptr<function, f32>, t1: ptr<functi
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let idx = gid.x;
-  if (idx >= MAX_LIGHTS * RAYS) { return; }
   let slot = idx / RAYS;
+  if (slot >= u32(F.screen.z)) { return; }
   let ang = (f32(idx % RAYS) + 0.5) / f32(RAYS) * TAU;
   let dir = vec2f(cos(ang), sin(ang));
-  if (slot >= u32(F.screen.z)) { polarOut[idx] = 0.0; return; }
-  let o = lights[slot].pos.xz;
-  let maxT = lights[slot].pos.w + 0.5;
-  var t = maxT;
-  let n = min(u32(F.screen.w), ${MAX_OCCLUDERS}u);
+  let L = lights[slot];
+  let o = L.pos.xz;
+  let hl = L.pos.y;
+  var full = L.pos.w + 0.5;
+  var a = vec3f(FAR, FAR, 0.0);
+  var b = vec3f(FAR, FAR, 0.0);
+  let first = u32(L.extra.x);
+  let n = min(u32(L.extra.y), ${MAX_OCCLUDERS}u - first);
   for (var i = 0u; i < n; i++) {
-    let r = occluders[i];
+    let r = occluders[(first + i) * 2u];
+    let m = occluders[(first + i) * 2u + 1u];
     var t0 = 0.0;
-    var t1 = t;
-    if (slab(o.x, dir.x, r.x, r.z, &t0, &t1) && slab(o.y, dir.y, r.y, r.w, &t0, &t1)) { t = min(t, t0); }
+    var t1 = full;
+    var hit = false;
+    var h = m.x;
+    if (m.y > 0.5) {
+      // Round caster (a person): its shadow is long but finite even under low lamps.
+      let oc = o - r.xy;
+      let bq = dot(oc, dir);
+      let c = dot(oc, oc) - r.z * r.z;
+      let disc = bq * bq - c;
+      if (disc > 0.0) {
+        let s = sqrt(disc);
+        t0 = max(-bq - s, 0.0);
+        t1 = -bq + s;
+        hit = t1 > 0.0 && t0 < full;
+      }
+      h = min(h, hl - 0.25);
+    } else {
+      hit = slab(o.x, dir.x, r.x, r.z, &t0, &t1) && slab(o.y, dir.y, r.y, r.w, &t0, &t1);
+      t1 = max(t1, t0);
+      // Exit through the far side even when capped by the current full distance.
+      if (hit) {
+        var e0 = 0.0;
+        var e1 = 1e6;
+        if (slab(o.x, dir.x, r.x, r.z, &e0, &e1) && slab(o.y, dir.y, r.y, r.w, &e0, &e1)) { t1 = e1; }
+      }
+    }
+    if (!hit) { continue; }
+    if (h >= hl - 0.02) {
+      full = min(full, t0);
+    } else if (t0 < a.x) {
+      if (b.x < FAR) { b = vec3f(min(b.x, a.x), max(b.y, a.y), max(b.z, a.z)); } else { b = a; }
+      a = vec3f(t0, t1, h);
+    } else if (t0 < b.x && b.x >= FAR) {
+      b = vec3f(t0, t1, h);
+    } else {
+      b = vec3f(min(b.x, t0), max(b.y, t1), max(b.z, h));
+    }
   }
-  polarOut[idx] = t;
+  polarOut[idx * 2u] = vec4f(full, a);
+  polarOut[idx * 2u + 1u] = vec4f(b, 0.0);
 }
 `
 
 /**
- * Materials (vertex attribute): 0 lit, 1 floor (aux = kind), 2 lamp (aux = light id), 3 glow (aux = strength),
- * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint).
+ * Materials (vertex attribute): 0 lit, 1 floor (aux = kind), 2 lamp (aux = map light id), 3 glow (aux = strength),
+ * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
+ * 11 light haze (aux = map light id).
  */
 export const sceneShader = /* wgsl */ `
 ${common}
+@group(0) @binding(3) var<storage, read> lampPower: array<f32>;
+@group(0) @binding(4) var floorTex: texture_2d<f32>;
+@group(0) @binding(5) var floorSamp: sampler;
 
 struct VIn {
   @location(0) pos: vec3f,
-  @location(1) normal: vec3f,
-  @location(2) color: vec3f,
-  @location(3) mat: f32,
-  @location(4) aux: f32,
+  @location(1) normal: vec4f,
+  @location(2) color: vec4f,
+  @location(3) matAux: vec2f,
 }
 
 struct Inst {
@@ -173,14 +172,13 @@ struct VOut {
   var o: VOut;
   o.world = v.pos;
   o.pos = F.viewProj * vec4f(v.pos, 1.0);
-  o.normal = v.normal;
-  o.color = pow(v.color, vec3f(2.2));
-  o.mat = v.mat;
-  o.aux = v.aux;
+  o.normal = v.normal.xyz;
+  o.color = pow(v.color.rgb, vec3f(2.2));
+  o.mat = v.matAux.x;
+  o.aux = v.matAux.y;
   o.extra = vec4f(0.0, 0.0, 1.0, 0.0);
   return o;
 }
-
 
 /** Part transform: pitch about the model's z axis (positive lifts +x), roll about its x axis, then yaw, then move. */
 fn partRotate(p: vec3f, inst: Inst) -> vec3f {
@@ -207,11 +205,12 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   var o: VOut;
   o.world = instWorld(v.pos, inst);
   o.pos = F.viewProj * vec4f(o.world, 1.0);
-  o.normal = instNormal(v.normal, inst);
+  o.normal = instNormal(v.normal.xyz, inst);
+  let accent = v.matAux.x > 7.5 && v.matAux.x < 8.5;
   // Accent parts glow in the player's colour so everyone reads in the dark.
-  o.color = select(pow(v.color, vec3f(2.2)), inst.tint.rgb, v.mat > 7.5);
-  o.mat = select(v.mat, 3.0, v.mat > 7.5);
-  o.aux = select(v.aux, 0.85, v.mat > 7.5);
+  o.color = select(pow(v.color.rgb, vec3f(2.2)), inst.tint.rgb, accent);
+  o.mat = select(v.matAux.x, 3.0, accent);
+  o.aux = select(v.matAux.y, 0.85, accent);
   o.extra = inst.extra;
   return o;
 }
@@ -229,28 +228,176 @@ fn cutaway(world: vec3f, frag: vec4f) -> bool {
   return (m[p.y * 4u + p.x] + 0.5) / 16.0 < smoothstep(1.0, 0.6, r) * 0.85;
 }
 
-fn floorPattern(kind: i32, p: vec2f, base: vec3f) -> vec3f {
+/** Shadow of one lower occluder (enter t0, exit t1, height h) on a point at distance d and height y. */
+fn partialShadow(t0: f32, t1: f32, h: f32, d: f32, y: f32, hl: f32, size: f32) -> f32 {
+  if (t0 >= FAR || y >= h - 0.03 || d <= t0) { return 1.0; }
+  // Lift the light a little for low casters so partitions and furniture throw short, readable shadows.
+  let lift = hl + 0.6;
+  let end = min(t1 * (lift - y) / max(lift - h, 0.05), t1 + 6.0);
+  let e0 = 0.015 + size * 0.04;
+  let e1 = 0.03 + size * 0.5 * (end - t1) / max(t1, 0.3);
+  let s = smoothstep(t0 - e0, t0 + e0, d) * (1.0 - smoothstep(end - e1, end + e1, d));
+  return 1.0 - s * 0.82;
+}
+
+fn tapVis(base: u32, fi: f32, d: f32, y: f32, hl: f32, size: f32) -> f32 {
+  let i = u32(i32(round(fi)) + i32(RAYS) * 4) % RAYS;
+  let p0 = polar[(base + i) * 2u];
+  let p1 = polar[(base + i) * 2u + 1u];
+  let full = p0.x;
+  let ef = 0.03 + size * 0.45 * max(d - full, 0.0) / max(full, 0.3);
+  var v = 1.0 - smoothstep(full - 0.02, full + ef, d);
+  v *= partialShadow(p0.y, p0.z, p0.w, d, y, hl, size);
+  v *= partialShadow(p1.x, p1.y, p1.z, d, y, hl, size);
+  return v;
+}
+
+/** Soft visibility of plan point p at height y from light slot: five taps across the penumbra. */
+fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
+  let dv = p - lp;
+  let d = length(dv);
+  if (d < 0.05) { return 1.0; }
+  var a = atan2(dv.y, dv.x);
+  if (a < 0.0) { a += TAU; }
+  let f = a / TAU * f32(RAYS) - 0.5;
+  let base = slot * RAYS;
+  let stepR = max(size * 0.22 / max(d, 0.4) * f32(RAYS) / TAU, 0.35);
+  var acc = tapVis(base, f, d, y, hl, size) * 0.3;
+  acc += tapVis(base, f - stepR, d, y, hl, size) * 0.2;
+  acc += tapVis(base, f + stepR, d, y, hl, size) * 0.2;
+  acc += tapVis(base, f - stepR * 2.0, d, y, hl, size) * 0.15;
+  acc += tapVis(base, f + stepR * 2.0, d, y, hl, size) * 0.15;
+  return acc;
+}
+
+struct Lit { diff: vec3f, spec: vec3f }
+
+/**
+ * Light reaching a surface from the culled lights: windowed inverse-square falloff from the fixture's 3D position,
+ * a soft cone, the polar shadow map, wrapped diffuse and an optional glossy highlight. A little of each light's
+ * colour leaks past shadows as bounce.
+ */
+fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
+  var out: Lit;
+  out.diff = vec3f(0.0);
+  out.spec = vec3f(0.0);
+  let count = u32(F.screen.z);
+  let plan = world.xz + n.xz * 0.04;
+  for (var i = 0u; i < count; i++) {
+    let L = lights[i];
+    let power = L.color.w;
+    if (power <= 0.001) { continue; }
+    let lp = L.pos.xz;
+    let r = L.pos.w;
+    let dv = world.xz - lp;
+    let dPlan = length(dv);
+    if (dPlan >= r) { continue; }
+    let hl = L.pos.y;
+    let l3 = vec3f(lp.x, hl, lp.y) - world;
+    let d3 = max(length(l3), 0.05);
+    let ldir = l3 / d3;
+    let x = dPlan / r;
+    var win = 1.0 - x * x;
+    win *= win;
+    let dn = max(d3, 1.0);
+    var att = power * win * (0.08 + 2.2 / (1.0 + dn * dn * 0.35));
+    if (L.cone.w > 0.5 && dPlan > 0.001) {
+      let c = dot(dv / dPlan, L.cone.xy);
+      let t = clamp((c - L.cone.z) / 0.25, 0.0, 1.0);
+      att *= t * t * (3.0 - 2.0 * t);
+    }
+    if (att <= 0.0005) { continue; }
+    let ndl = dot(n, ldir);
+    let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);
+    // Tops of furniture and partitions sit inside their own footprint: test the point nudged toward the light.
+    var sp = plan;
+    if (n.y > 0.5 && world.y > 0.05) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
+    let vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y);
+    out.diff += L.color.rgb * att * (diffuse * vis + 0.035);
+    if (shin > 0.0) {
+      let h = normalize(ldir + V);
+      let s = pow(max(dot(n, h), 0.0), shin) * (shin + 2.0) * 0.006;
+      out.spec += L.color.rgb * att * s * vis;
+    }
+  }
+  return out;
+}
+
+/** Cheap unshadowed glow from nearby lights, for wall caps above the fixtures. */
+fn spill(world: vec3f) -> vec3f {
+  var acc = vec3f(0.0);
+  let count = u32(F.screen.z);
+  for (var i = 0u; i < count; i++) {
+    let L = lights[i];
+    let d = length(world.xz - L.pos.xz);
+    let r = L.pos.w * 0.7;
+    if (d >= r) { continue; }
+    let x = 1.0 - d / r;
+    acc += L.color.rgb * L.color.w * x * x;
+  }
+  return acc;
+}
+
+/** Baked floor data: r = ambient occlusion from walls and furniture, g = moonlight through the windows. */
+fn floorData(p: vec2f) -> vec2f {
+  return textureSampleLevel(floorTex, floorSamp, p * F.map.xy, 0.0).rg;
+}
+
+fn ambientAt(n: vec3f) -> vec3f {
+  let sky = F.ambient.rgb;
+  return mix(sky * 0.35, sky, n.y * 0.5 + 0.5);
+}
+
+fn tileEdge(g: vec2f, w: f32) -> f32 {
+  let e = min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y));
+  return smoothstep(0.0, w, e);
+}
+
+/** Floor albedo and glossiness (shininess, strength) by kind. */
+fn floorPattern(kind: i32, p: vec2f, base: vec3f, gloss: ptr<function, vec2f>) -> vec3f {
   var c = base;
   if (kind == 0) {
-    // Carpet tiles, alternating pile direction.
+    // Carpet tiles, alternating pile direction, with fine loop texture.
     let cell = floor(p / 0.6);
-    let checker = (i32(cell.x) + i32(cell.y)) & 1;
-    c *= 0.92 + 0.08 * f32(checker) + 0.06 * (noise2(p * 7.0) - 0.5);
-  } else if (kind == 1) {
     let g = fract(p / 0.6);
-    let grout = 1.0 - (1.0 - smoothstep(0.0, 0.03, g.x) * smoothstep(1.0, 0.97, g.x)) * 0.35 - (1.0 - smoothstep(0.0, 0.03, g.y) * smoothstep(1.0, 0.97, g.y)) * 0.35;
-    c *= max(grout, 0.55);
+    let flip = (i32(cell.x) + i32(cell.y)) & 1;
+    let q = select(p.x, p.y, flip == 1);
+    let stripes = 0.5 + 0.5 * sin(q * 70.0 + noise2(p * 3.0) * 2.0);
+    c *= 0.86 + 0.1 * stripes + 0.1 * (hash2(cell) - 0.5) + 0.1 * (noise2(p * 23.0) - 0.5);
+    c *= mix(0.82, 1.0, tileEdge(g, 0.02));
+    *gloss = vec2f(0.0, 0.0);
+  } else if (kind == 1) {
+    // Linoleum tiles: mottled, slightly different per tile, thin grout, glossy.
+    let cell = floor(p / 0.8);
+    let g = fract(p / 0.8);
+    c *= 0.9 + 0.14 * (hash2(cell * 1.7) - 0.5);
+    c *= 0.85 + 0.3 * fbm(p * 5.0);
+    c *= 1.0 - 0.08 * smoothstep(0.55, 0.8, noise2(p * 0.7 + 4.0));
+    c *= mix(0.62, 1.0, tileEdge(g, 0.012));
+    *gloss = vec2f(70.0, 0.55);
   } else if (kind == 2) {
-    let row = floor(p.y / 0.22);
-    let plank = floor((p.x + hash2(vec2f(row, 1.0)) * 2.0) / 1.6);
-    c *= 0.82 + 0.25 * hash2(vec2f(row, plank));
-    c *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.04, fract(p.y / 0.22)));
+    let row = floor(p.y / 0.2);
+    let plank = floor((p.x + hash2(vec2f(row, 1.0)) * 2.0) / 1.4);
+    c *= 0.78 + 0.32 * hash2(vec2f(row, plank));
+    c *= 0.9 + 0.2 * noise2(vec2f(p.x * 1.5, p.y * 30.0) + plank);
+    c *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.05, fract(p.y / 0.2)));
+    c *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.01, abs(fract((p.x + hash2(vec2f(row, 1.0)) * 2.0) / 1.4) - 0.0)));
+    *gloss = vec2f(30.0, 0.3);
   } else if (kind == 3) {
-    c *= 0.88 + 0.2 * noise2(p * 1.3) + 0.06 * noise2(p * 9.0);
+    c *= 0.8 + 0.3 * fbm(p * 0.9) + 0.08 * noise2(p * 11.0);
+    c *= 1.0 - 0.25 * smoothstep(0.62, 0.75, fbm(p * 0.35 + 9.0));
+    let crack = abs(noise2(p * 1.2) - 0.5);
+    c *= 1.0 - 0.4 * (1.0 - smoothstep(0.0, 0.012, crack)) * step(0.5, noise2(p * 0.3));
+    *gloss = vec2f(10.0, 0.08);
   } else if (kind == 4) {
-    let g = fract(p / 0.25);
-    let bar = smoothstep(0.08, 0.14, g.x) * smoothstep(0.92, 0.86, g.x) * smoothstep(0.08, 0.14, g.y) * smoothstep(0.92, 0.86, g.y);
-    c *= mix(1.35, 0.35, bar);
+    // Raised-floor panels with perforations.
+    let g = fract(p / 0.6);
+    let h = fract(p / 0.05);
+    let hole = 1.0 - smoothstep(0.18, 0.28, length(h - 0.5));
+    let inner = step(0.08, g.x) * step(g.x, 0.92) * step(0.08, g.y) * step(g.y, 0.92);
+    c *= mix(1.0, 0.35, hole * inner);
+    c *= mix(0.55, 1.05, tileEdge(g, 0.02));
+    *gloss = vec2f(40.0, 0.35);
   }
   return c;
 }
@@ -267,37 +414,73 @@ fn city(p: vec2f) -> vec3f {
   return c;
 }
 
+fn lampK(aux: f32) -> f32 {
+  return lampPower[u32(aux)];
+}
+
 @fragment fn fs(o: VOut) -> @location(0) vec4f {
   let n = normalize(o.normal);
   let mat = i32(round(o.mat));
+  let V = normalize(F.cam.xyz - o.world);
   var col: vec3f;
   var alpha = 1.0;
   if (mat == 7) {
     return vec4f(city(o.world.xz), 1.0);
   }
-  if (mat == 4 && cutaway(o.world, o.pos)) { discard; }
+  if ((mat == 4 || mat == 9 || mat == 2 || mat == 11) && cutaway(o.world, o.pos)) { discard; }
+  if (mat == 11) {
+    // Haze under a fixture: denser near the lamp and where you look through more of the cone.
+    let k = lampK(o.aux);
+    let thick = pow(abs(dot(n, V)), 1.6);
+    let fall = smoothstep(-0.2, 2.6, o.world.y);
+    let a = k * thick * fall * 0.11;
+    return vec4f(o.color * a, 0.0);
+  }
   if (mat == 2) {
-    // Fixture tied to a map light: bright when its light is on, near-dark when broken or switched off.
-    let L = lights[u32(o.aux)];
-    let k = L.color.w / max(L.extra.x, 0.001);
-    col = o.color * (0.04 + 3.2 * k);
+    // Fixture tied to a map light: bright when on, near-dark while it stutters.
+    let k = lampK(o.aux);
+    col = o.color * (0.05 + 3.6 * k);
   } else if (mat == 3) {
     col = o.color * o.aux;
-  } else if (mat == 5) {
-    let lit = lightSum(o.world, n, true);
-    col = o.color * (ambientAt(n) * 1.6 + lit * GAIN);
+  } else if (mat == 9) {
+    // Wall caps: the night sky and a cool rim on the bevels keep the plan readable in the dark.
+    let rim = 1.0 - n.y;
+    col = o.color * (vec3f(0.3, 0.34, 0.46) + spill(o.world) * 0.35) + vec3f(0.035, 0.045, 0.08) * rim;
   } else if (mat == 6) {
-    let lit = lightSum(o.world, vec3f(0.0, 1.0, 0.0), false);
-    col = vec3f(0.02, 0.035, 0.06) + lit * 0.5 + vec3f(0.05, 0.08, 0.12) * pow(1.0 - abs(n.y), 3.0);
-    alpha = 0.42;
+    let lit = lightSum(o.world, vec3f(0.0, 1.0, 0.0), V, 0.0, 1.0);
+    col = vec3f(0.006, 0.01, 0.02) + lit.diff * 0.2 + vec3f(0.03, 0.05, 0.09) * pow(1.0 - abs(n.y), 3.0);
+    alpha = 0.22;
   } else {
     var albedo = o.color;
-    let honest = mat == 1;
-    if (mat == 1) { albedo = floorPattern(i32(o.aux), o.world.xz, albedo); }
-    let lit = lightSum(o.world, n, honest);
-    col = albedo * (ambientAt(n) + lit * GAIN);
-    // Soft occlusion where walls and furniture meet the floor.
-    if (abs(n.y) < 0.5) { col *= mix(0.6, 1.0, smoothstep(0.0, 1.2, o.world.y)); }
+    var gloss = vec2f(0.0);
+    if (mat == 1 || mat == 5) {
+      if (mat == 1) { albedo = floorPattern(i32(round(o.aux)), o.world.xz, albedo, &gloss); }
+      else { albedo *= 0.85 + 0.25 * noise2(o.world.xz * 8.0); gloss = vec2f(20.0, 0.2); }
+    } else if (mat == 10) {
+      gloss = vec2f(50.0, 0.5);
+    }
+    let floorish = n.y > 0.5 && o.world.y < 0.05;
+    let wrap = select(0.35, 0.0, floorish);
+    let lit = lightSum(o.world, n, V, gloss.x, wrap);
+    var amb = ambientAt(n);
+    let fd = floorData(o.world.xz);
+    // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
+    let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);
+    let ao = mix(1.0, 1.0 - fd.r * 0.85, low);
+    amb *= ao;
+    var direct = lit.diff * GAIN * mix(1.0, ao, 0.5);
+    if (abs(n.y) < 0.5) {
+      let base = mix(0.55, 1.0, smoothstep(0.0, 0.8, o.world.y));
+      amb *= base;
+      direct *= mix(0.75, 1.0, smoothstep(0.0, 0.5, o.world.y));
+    }
+    // Moonlight through the windows, on the floor and low surfaces.
+    let moon = vec3f(0.5, 0.72, 1.5) * fd.g * F.ambient.w * low * max(n.y, 0.2);
+    col = albedo * (amb + direct + moon) + lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25);
+    if (mat == 1) {
+      // Gloss also catches a faint sheen of the moon and sky on hard floors.
+      col += vec3f(0.01, 0.014, 0.03) * gloss.y * fd.g * 2.0;
+    }
   }
   col = mix(col, vec3f(2.5), o.extra.w);
   let a = alpha * o.extra.z;
@@ -416,27 +599,42 @@ fn clean(c: vec4f) -> vec4f {
   return select(min(c, vec4f(64.0)), vec4f(0.0), bad);
 }
 
+/** 13-tap downsample (Jimenez 2014); the first level also applies a soft-knee threshold. */
 @fragment fn down(o: VO) -> @location(0) vec4f {
   let t = P.xy;
-  var c = clean(textureSample(src, samp, o.uv)) * 0.5;
-  c += clean(textureSample(src, samp, o.uv + vec2f(-t.x, -t.y))) * 0.125;
-  c += clean(textureSample(src, samp, o.uv + vec2f(t.x, -t.y))) * 0.125;
-  c += clean(textureSample(src, samp, o.uv + vec2f(-t.x, t.y))) * 0.125;
-  c += clean(textureSample(src, samp, o.uv + vec2f(t.x, t.y))) * 0.125;
+  let uv = o.uv;
+  let a = clean(textureSample(src, samp, uv + t * vec2f(-2.0, -2.0))).rgb;
+  let b = clean(textureSample(src, samp, uv + t * vec2f(0.0, -2.0))).rgb;
+  let c = clean(textureSample(src, samp, uv + t * vec2f(2.0, -2.0))).rgb;
+  let d = clean(textureSample(src, samp, uv + t * vec2f(-2.0, 0.0))).rgb;
+  let e = clean(textureSample(src, samp, uv)).rgb;
+  let f = clean(textureSample(src, samp, uv + t * vec2f(2.0, 0.0))).rgb;
+  let g = clean(textureSample(src, samp, uv + t * vec2f(-2.0, 2.0))).rgb;
+  let h = clean(textureSample(src, samp, uv + t * vec2f(0.0, 2.0))).rgb;
+  let i = clean(textureSample(src, samp, uv + t * vec2f(2.0, 2.0))).rgb;
+  let j = clean(textureSample(src, samp, uv + t * vec2f(-1.0, -1.0))).rgb;
+  let k = clean(textureSample(src, samp, uv + t * vec2f(1.0, -1.0))).rgb;
+  let l = clean(textureSample(src, samp, uv + t * vec2f(-1.0, 1.0))).rgb;
+  let m = clean(textureSample(src, samp, uv + t * vec2f(1.0, 1.0))).rgb;
+  var col = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
   if (P.z > 0.5) {
-    let l = max(c.r, max(c.g, c.b));
-    c = c * max(l - 0.8, 0.0) / max(l, 0.0001);
+    let br = max(col.r, max(col.g, col.b));
+    let knee = 0.5;
+    let th = 0.9;
+    var soft = clamp(br - th + knee, 0.0, 2.0 * knee);
+    soft = soft * soft / (4.0 * knee + 1e-4);
+    col *= max(soft, br - th) / max(br, 1e-4);
   }
-  return vec4f(c.rgb, 1.0);
+  return vec4f(col, 1.0);
 }
 
+/** 3x3 tent upsample, added onto the next level up. */
 @fragment fn up(o: VO) -> @location(0) vec4f {
   let t = P.xy;
-  var c = textureSample(src, samp, o.uv + vec2f(-t.x, 0.0)) * 0.25;
-  c += textureSample(src, samp, o.uv + vec2f(t.x, 0.0)) * 0.25;
-  c += textureSample(src, samp, o.uv + vec2f(0.0, -t.y)) * 0.25;
-  c += textureSample(src, samp, o.uv + vec2f(0.0, t.y)) * 0.25;
-  return vec4f(c.rgb, 1.0);
+  var c = textureSample(src, samp, o.uv).rgb * 4.0;
+  c += (textureSample(src, samp, o.uv + vec2f(-t.x, 0.0)).rgb + textureSample(src, samp, o.uv + vec2f(t.x, 0.0)).rgb + textureSample(src, samp, o.uv + vec2f(0.0, -t.y)).rgb + textureSample(src, samp, o.uv + vec2f(0.0, t.y)).rgb) * 2.0;
+  c += textureSample(src, samp, o.uv + vec2f(-t.x, -t.y)).rgb + textureSample(src, samp, o.uv + vec2f(t.x, -t.y)).rgb + textureSample(src, samp, o.uv + vec2f(-t.x, t.y)).rgb + textureSample(src, samp, o.uv + vec2f(t.x, t.y)).rgb;
+  return vec4f(c / 16.0, 1.0);
 }
 
 fn aces(x: vec3f) -> vec3f {
@@ -444,22 +642,37 @@ fn aces(x: vec3f) -> vec3f {
 }
 
 fn hash(p: vec2f) -> f32 {
-  return fract(sin(dot(p, vec2f(12.9898, 78.233))) * 43758.5453);
+  let q = fract(p * vec2f(0.1031, 0.1030));
+  let r = q + dot(q, q.yx + 33.33);
+  return fract((r.x + r.y) * r.x);
 }
 
 // G: time, desaturate, flash, exposure
 @fragment fn composite(o: VO) -> @location(0) vec4f {
-  let hdr = clean(textureSample(src, samp, o.uv)).rgb;
-  let bloom = textureSample(bloomTex, samp, o.uv).rgb;
-  var c = aces((hdr + bloom * 0.55) * G.w);
+  let uv = o.uv;
+  let fromC = uv - 0.5;
+  // A touch of chromatic fringing toward the corners.
+  let ca = fromC * dot(fromC, fromC) * 0.012;
+  var hdr = vec3f(
+    clean(textureSample(src, samp, uv + ca)).r,
+    clean(textureSample(src, samp, uv)).g,
+    clean(textureSample(src, samp, uv - ca)).b,
+  );
+  let bloom = textureSample(bloomTex, samp, uv).rgb;
+  hdr = hdr + bloom * 0.32;
+  var c = aces(hdr * G.w);
   let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-  c = mix(vec3f(l), c, 1.12 - G.y);
-  c += vec3f(0.004, 0.007, 0.018) * (1.0 - smoothstep(0.0, 0.2, l));
-  let v = length((o.uv - 0.5) * vec2f(1.0, 0.85));
-  c *= mix(1.0, 0.55, smoothstep(0.4, 0.85, v));
+  // Grade: navy in the shadows, a little warmth in the highlights, saturation up.
+  c = mix(vec3f(l), c, 1.15 - G.y);
+  c += vec3f(0.006, 0.011, 0.028) * (1.0 - smoothstep(0.0, 0.25, l));
+  c *= mix(vec3f(0.93, 0.97, 1.06), vec3f(1.04, 1.0, 0.95), smoothstep(0.2, 0.8, l));
+  let v = length(fromC * vec2f(1.0, 0.8));
+  c *= mix(1.0, 0.45, smoothstep(0.32, 0.85, v));
   c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
-  c += (hash(o.uv * 1000.0 + vec2f(G.x * 37.0, G.x * 91.0)) - 0.5) * 0.035;
+  let px = o.pos.xy;
+  let grain = hash(px + fract(G.x * 13.7) * 1000.0) + hash(px * 1.37 + fract(G.x * 7.3) * 500.0) - 1.0;
+  c += grain * 0.022 * (1.0 - l * 0.6);
   return vec4f(c, 1.0);
 }
 `

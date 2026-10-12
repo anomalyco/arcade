@@ -7,8 +7,10 @@ export const MAX_PLAYERS = 12
 export const FILL_TO = 4
 
 /** GPU sizing for the renderer. */
-export const MAX_LIGHTS = 32
-export const MAX_OCCLUDERS = 512
+/** Lights shaded per frame (the culled set near the view), occluders across their shadow casts, and lights per map. */
+export const MAX_LIGHTS = 64
+export const MAX_OCCLUDERS = 16384
+export const MAX_MAP_LIGHTS = 2048
 export const POLAR_RAYS = 1024
 
 export const PLAYER_RADIUS = 0.32
