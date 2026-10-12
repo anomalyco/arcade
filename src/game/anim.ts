@@ -139,6 +139,9 @@ export type Avatar = {
   /** Last frag throw and claymore plant, on the animation clock. */
   throwAt: number
   plantAt: number
+  /** No gun, just hands (infected claws, the gun game knife); and the last melee swing, on the animation clock. */
+  bare: boolean
+  swingAt: number
 }
 
 export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gun): Avatar {
@@ -197,6 +200,8 @@ export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gu
     handVel: [0, 0, 0],
     throwAt: -10,
     plantAt: -10,
+    bare: false,
+    swingAt: -10,
   }
 }
 
@@ -245,6 +250,24 @@ export function useGear(a: Avatar, now: number, plant: boolean): void {
 }
 const THROW = 0.42
 const PLANT = 0.55
+
+/** A melee swing: wind-up (matching the server's), strike, recovery, seconds overall. */
+export function swing(a: Avatar, now: number): void {
+  a.swingAt = now
+}
+const SWING = 0.4
+const WINDUP = 0.15 / SWING
+const STRIKE = 0.6
+
+/** Where a swing is: how far into the wind-up (0..1), the strike (0..1) and the recovery (1 back to 0), and the torso twist. */
+function swingPhase(a: Avatar, now: number): { wind: number; strike: number; back: number; twist: number } | null {
+  const u = (now - a.swingAt) / SWING
+  if (u < 0 || u >= 1) return null
+  const wind = smooth(Math.min(1, u / WINDUP))
+  const strike = u < WINDUP ? 0 : smooth(Math.min(1, (u - WINDUP) / (STRIKE - WINDUP)))
+  const back = u < STRIKE ? 1 : 1 - smooth((u - STRIKE) / (1 - STRIKE))
+  return { wind, strike, back, twist: (0.45 * wind - 0.95 * strike) * back }
+}
 
 /** Taking a hit from direction (dx, dy): the body flinches away, the head snaps and the gun is knocked off line. */
 export function hit(a: Avatar, dx: number, dy: number, power = 1): void {
@@ -425,7 +448,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 
   // Legs face the travel direction, but never more than ~60 degrees off the aim: strafing crosses the feet,
   // and moving away from the aim walks backwards.
-  const blade = BLADE[a.gun]
+  const blade = a.bare ? 0 : BLADE[a.gun]
   if (sp > 0.4) {
     a.turning = false
     let mv = Math.atan2(nvy, nvx)
@@ -608,12 +631,13 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
 
   // Sprinting squares the chest up to the run and carries the gun with it.
   const run = angleDiff(a.legYaw, a.aim) * port * 0.7
-  const torsoYaw = a.aim + run + BLADE[g] * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving + a.hitTwist.x + a.recYaw.x * 0.4
+  const sw = swingPhase(a, now)
+  const torsoYaw = (sw?.twist ?? 0) + a.aim + run + (a.bare ? 0 : BLADE[g]) * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
-  const fwd = 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2 - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const fwd = (a.bare ? 0.2 : 0) + 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2 - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * 2.2 + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
   torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * 0.4)
@@ -643,7 +667,9 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   let gunF = yawFrame([shoulderC[0] + ga * hold.fwd - gs * hold.side, shoulderC[1] + hold.up - rest - gunDrop - raise * 0.22, shoulderC[2] + gs * hold.fwd + ga * hold.side], yaw)
   gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
   gunF = roll(gunF, a.recRoll.x + gunRoll + clamp(-a.aimVel * 0.03, -0.3, 0.3) + raise * 0.5)
-  gunF = moved(gunF, at(gunF, -a.recBack.x - gunPull - raise * 0.12, 0, 0))
+  // A swing with a gun in hand: a bash, the gun driven forward.
+  const bash = sw && !a.bare ? Math.sin(Math.PI * sw.strike) * sw.back : 0
+  gunF = moved(gunF, at(gunF, -a.recBack.x - gunPull - raise * 0.12 + bash * 0.3, 0, 0))
 
   // Hands.
   const pumpBack = g === "shotgun" ? scalarAt(clip?.pump, ct) : 0
@@ -660,7 +686,18 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
     return lerp3(pos(k0), pos(k1), u)
   }
   let handL = handAt(clip?.left, false)
-  const handR = handAt(clip?.right, true)
+  let handR = handAt(clip?.right, true)
+  if (a.bare) {
+    // Arms out ahead, clawing; a swing raises the right hand behind the shoulder and rakes it across.
+    const bob = Math.sin(t * 5 + a.seed) * 0.03
+    handL = at(torso, 0.42, RIG.shoulderY - 0.1 + bob, -0.17)
+    handR = at(torso, 0.42, RIG.shoulderY - 0.1 - bob, 0.17)
+    if (sw) {
+      const back = at(torso, -0.08, RIG.shoulderY + 0.22, 0.42)
+      const end = at(torso, 0.5, RIG.shoulderY - 0.15, -0.25)
+      handR = sw.strike > 0 ? (sw.back < 1 ? lerp3(handR, end, sw.back) : lerp3(back, end, sw.strike)) : lerp3(handR, back, sw.wind)
+    }
+  }
   // Gear: the free hand snaps up behind the shoulder, whips forward and comes back; or reaches down to plant.
   const tw = (now - a.throwAt) / THROW
   if (tw >= 0 && tw < 1) {
@@ -708,6 +745,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   if (magState === "gun") mag = moved(gunF, at(gunF, pts.mag[0], pts.mag[1], pts.mag[2]))
   else if (magState === "hand") mag = moved(gunF, at(fa[0], 0, -RIG.fore - 0.02, 0))
   const pump = g === "shotgun" ? moved(gunF, at(gunF, pts.fore - pumpBack, 0.005, 0)) : null
+  if (a.bare) return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: null, pump: null, mag: null }
   return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: gunF, pump, mag }
 }
 

@@ -284,6 +284,15 @@ export class Sound {
     this.burst(dest, t + 0.03, "bandpass", 700, 1.4, 0.55, 0.05, 0.16, 2.4)
   }
 
+  /** A melee swipe: a fast whoosh through the air. */
+  swipe(dx: number, dy: number, mine: boolean): void {
+    const dest = this.out(dx, dy, mine ? 0.45 : 0.55, 0.08)
+    if (!dest) return
+    const t = this.ctx!.currentTime
+    this.burst(dest, t, "bandpass", 900, 1.2, 0.5, 0.04, 0.12, 3)
+    this.burst(dest, t + 0.05, "bandpass", 2200, 2, 0.25, 0.02, 0.08)
+  }
+
   /** A claymore set down: a soft click of the legs and the case on the floor. Quiet, so only the nearby hear it. */
   plant(dx: number, dy: number): void {
     const dest = this.out(dx, dy, 0.22, 0.04)

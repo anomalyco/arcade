@@ -282,7 +282,7 @@ export function emitRagdoll(push: PushPart, r: Ragdoll, gun: Gun, color: readonl
 }
 
 /** A body where someone died. t0 is seconds. */
-export type Corpse = { id: string; gun: Gun; t0: number; rd: Ragdoll }
+export type Corpse = { id: string; gun: Gun; bare?: boolean; t0: number; rd: Ragdoll }
 
 /** Death variations by the killing gun: rifles mostly crumple or fall back, shotguns throw, snipers spin. */
 export function deathStyle(gun: Gun): DeathStyle {

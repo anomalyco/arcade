@@ -1,6 +1,7 @@
 import { GUNS } from "../config"
 import { type Vec, angleDiff, clearLine } from "../geom"
 import { Rng } from "../rng"
+import { MELEE } from "./melee"
 import { navFor } from "./nav"
 import type { Brain, Intent, Player, World } from "./world"
 
@@ -39,6 +40,8 @@ export class BotBrain implements Brain {
         near = q
       }
     }
+    // Bare hands, or out of rounds with no reload: close in and swing.
+    if (near && (!p.kit.gun || (p.kit.melee && p.mag === 0 && !p.kit.reload))) return this.brawl(world, p, near, nd, i)
     const gun = GUNS[p.gun]
     const sees = !!near && nd <= Math.max(gun.range, 12) && clearLine(p.x, p.y, near.x, near.y, world.blockers)
     const goal = world.mode.botGoal(world, p)
@@ -56,6 +59,8 @@ export class BotBrain implements Brain {
       i.aim = this.aim
       // Semi-automatic guns need the trigger released between shots.
       i.fire = now >= this.reactAt && Math.abs(angleDiff(this.aim, want)) < 0.12 && nd <= gun.range && (gun.auto || world.tick % 2 === 0)
+      // Close enough to swing.
+      if (p.kit.melee && nd < MELEE.range * 0.8 && now >= this.reactAt) i.melee = true
       if (now > this.strafeAt) {
         this.strafe = this.rng.next() < 0.5 ? -1 : 1
         this.strafeAt = now + 0.6 + this.rng.next()
@@ -95,6 +100,31 @@ export class BotBrain implements Brain {
       i.sprint = Math.hypot(dest.x - p.x, dest.y - p.y) > 8
       this.turn(Math.atan2(i.my, i.mx))
       i.aim = this.aim
+    }
+    return i
+  }
+
+  /** Runs at `q` (straight when in sight, else along a path) and swings once in reach. */
+  private brawl(world: World, p: Player, q: Player, d: number, i: Intent): Intent {
+    const now = world.time
+    const sees = clearLine(p.x, p.y, q.x, q.y, world.blockers)
+    const dir = sees ? { x: (q.x - p.x) / (d || 1), y: (q.y - p.y) / (d || 1) } : this.toward(world, p, q)
+    if (this.target !== q.id) {
+      this.target = q.id
+      this.reactAt = now + 0.2 + this.rng.next() * 0.3
+    }
+    const want = sees ? Math.atan2(q.y - p.y, q.x - p.x) : dir ? Math.atan2(dir.y, dir.x) : this.aim
+    this.turn(want)
+    this.turn(want)
+    i.aim = this.aim
+    if (dir) {
+      i.mx = dir.x
+      i.my = dir.y
+      i.sprint = d > 2.5
+    }
+    if (sees && d < MELEE.range * 0.9 && now >= this.reactAt && Math.abs(angleDiff(this.aim, want)) < 0.6) {
+      if (p.kit.gun) i.melee = true
+      else i.fire = true
     }
     return i
   }

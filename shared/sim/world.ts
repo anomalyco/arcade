@@ -1,4 +1,4 @@
-import { CLAYMORE, DT, END_SECONDS, EQUIPS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE, type Weapon } from "../config"
+import { CLAYMORE, DT, END_SECONDS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
 import { type Rect, angleDiff, clearLine, raycast } from "../geom"
 import { type MapDef, getMap } from "../maps"
 import { Rng } from "../rng"
@@ -8,15 +8,19 @@ import { type Mode, type ModeId, createMode, modeOf, tally, voteOptions } from "
 import "./modes-objective"
 import { stepBody } from "./move"
 import { nextHost } from "./host"
+import "./modes-rules"
+import { type Kit, gunKit, kitSprints } from "./kit"
+import { canSwing, startSwing, stepSwing } from "./melee"
 
 export type Phase = "play" | "end"
 
 /**
  * One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. `sprint`
  * holds Shift. `equip` is a press that throws or plants your equipment; (tx, ty) is the cursor on the floor, how far
- * to throw. `use` holds the plant/defuse key in search and destroy.
+ * to throw. `use` holds the plant/defuse key in search and destroy. `melee` is a press of the melee key (V), when the
+ * kit has one; bare-handed, the trigger swings too.
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
@@ -68,6 +72,11 @@ export type Player = {
   stats: Record<string, number>
   /** The team the room host put you on (shared/sim/host.ts), kept across matches; -1 for auto-balance. */
   hostTeam: number
+  /** What the mode armed you with this life (shared/sim/kit.ts). */
+  kit: Kit
+  /** A melee swing lands at this time (0 for none); the next can start at meleeReadyAt. */
+  swingAt: number
+  meleeReadyAt: number
 }
 
 export type SimEvent =
@@ -83,6 +92,7 @@ export type SimEvent =
   | { k: "cap"; team: number; point: string }
   | { k: "bomb"; what: "plant" | "defuse" | "explode"; by: string; x: number; y: number }
   | { k: "round"; team: number; why: string }
+  | { k: "swing"; by: string }
   | { k: "obj"; what: string; team: number; by: string; x: number; y: number }
 
 const BOT_NAMES = ["kade", "rei", "mako", "juno", "lexx", "ryn", "zen", "lee", "nox", "ivo", "sable", "wren"]
@@ -215,7 +225,7 @@ export class World {
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, hostTeam: -1, using: false, caps: 0, plants: 0, defuses: 0, stats: {} }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, hostTeam: -1, using: false, caps: 0, plants: 0, defuses: 0, stats: {}, kit: gunKit("rifle"), swingAt: 0, meleeReadyAt: 0 }
   }
 
   /** Puts a player where the mode says, else at the spawn farthest from everyone alive. */
@@ -237,13 +247,21 @@ export class World {
     p.vy = 0
     p.alive = true
     p.health = HEALTH
-    p.gun = p.pick
-    p.mag = GUNS[p.gun].mag
-    p.equip = p.equipPick
-    p.equipLeft = EQUIPS[p.equip].count
-    p.reloadUntil = 0
+    const kit = this.mode.loadout(this, p)
+    this.arm(p, kit)
+    p.equip = kit.equip ?? p.equipPick
+    p.equipLeft = kit.equip ? kit.equipCount : 0
     p.cooldownUntil = this.time + 0.5
     p.readyAt = 0
+  }
+
+  /** Hands a player a kit: its gun, a full magazine, no reload or swing in progress. Modes call it to re-arm mid-life. */
+  arm(p: Player, kit: Kit): void {
+    p.kit = kit
+    if (kit.gun) p.gun = kit.gun
+    p.mag = kit.mag
+    p.reloadUntil = 0
+    p.swingAt = 0
   }
 
   push(id: string, seq: number, intent: Intent): void {
@@ -293,22 +311,25 @@ export class World {
         p.vy = 0
         continue
       }
-      const sprint = sprints(intent)
-      stepBody(p, intent.mx, intent.my, sprint ? SPRINT_SPEED : SPEED, this.solids, DT)
-      if (sprint) p.readyAt = this.time + SPRINT_TO_FIRE
-      const gun = GUNS[p.gun]
+      const kit = p.kit
+      const sprint = kitSprints(intent, kit)
+      stepBody(p, intent.mx, intent.my, sprint ? kit.run : kit.walk, this.solids, DT)
+      if (sprint && kit.gun) p.readyAt = this.time + SPRINT_TO_FIRE
       if (p.reloadUntil > 0 && this.time >= p.reloadUntil) {
         p.reloadUntil = 0
-        p.mag = gun.mag
+        p.mag = kit.mag
       }
-      if ((intent.reload && p.mag < gun.mag) || (intent.fire && p.mag === 0)) this.reload(p)
+      if (kit.gun && kit.reload && ((intent.reload && p.mag < kit.mag) || (intent.fire && p.mag === 0))) this.reload(p)
       if (intent.equip && p.equipLeft > 0) this.useEquip(p, intent)
+      // Bare hands swing while the trigger is held; anyone with a melee kit swings with V.
+      if ((intent.melee || (!kit.gun && intent.fire)) && canSwing(p, this.time)) startSwing(this, p)
+      stepSwing(this, p)
       // A press during the sprint-to-fire delay is held over until the gun is up.
       const ready = this.time >= p.readyAt
-      const pressed = intent.fire && ready && (gun.auto || !p.triggerHeld)
-      if (pressed && p.reloadUntil === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p)
+      const pressed = !!kit.gun && intent.fire && ready && (kit.auto || !p.triggerHeld)
+      if (pressed && p.reloadUntil === 0 && p.swingAt === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p)
       if (ready || !intent.fire) p.triggerHeld = intent.fire
-      if (p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
+      if (kit.regen && p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
     }
     if (this.phase === "play") this.stepGear()
     if (this.phase === "play") this.mode.step(this)
@@ -413,7 +434,7 @@ export class World {
 
   private fire(p: Player): void {
     const gun = GUNS[p.gun]
-    p.cooldownUntil = this.time + gun.cooldown
+    p.cooldownUntil = this.time + p.kit.cooldown
     p.mag--
     for (let k = 0; k < gun.pellets; k++) {
       const spread = gun.pellets > 1 ? ((k + 0.5) / gun.pellets - 0.5) * 2 * gun.spread + this.rng.range(-0.02, 0.02) : this.rng.range(-gun.spread, gun.spread)
@@ -456,7 +477,7 @@ export class World {
     }
     this.events.push({ k: "shot", by: p.id, x0: p.x, y0: p.y, x1: p.x + dx * stop, y1: p.y + dy * stop, hit: victim?.id ?? "" })
     if (mine) this.claymore(mine, p.id)
-    if (victim) this.damage(victim, gun.damage, p, p.gun, p.x, p.y)
+    if (victim) this.damage(victim, p.kit.damage, p, p.gun, p.x, p.y)
   }
 
   /** `how` and the blast point (fx, fy) default to the killer's gun and position. Killing yourself or a teammate scores nothing. */
@@ -465,10 +486,11 @@ export class World {
     victim.health = 0
     victim.deaths++
     victim.respawnAt = this.time + RESPAWN_SECONDS
+    victim.swingAt = 0
     if (killer !== victim && !this.allies(killer, victim)) killer.kills++
     const d = Math.hypot(victim.x - fx, victim.y - fy) || 1
     this.events.push({ k: "kill", killer: killer.id, victim: victim.id, dx: (victim.x - fx) / d, dy: (victim.y - fy) / d, how })
-    this.mode.killed(this, victim, killer)
+    this.mode.killed(this, victim, killer, how)
   }
 
   /** The match is over: the end screen and the vote for the next mode. */

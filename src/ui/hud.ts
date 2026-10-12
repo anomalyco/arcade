@@ -2,9 +2,10 @@ import { EQUIPS, EQUIP_IDS, type Equip, GUNS, GUN_IDS, type Weapon } from "../..
 import { floorOf } from "../../shared/maps"
 import type { Camera } from "../render/camera"
 import { type Game, css } from "../game/game"
+import { boardLabel, boardStat, fixedLoadout } from "./rules-hud"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-const weaponLabel = (w: Weapon) => (w === "frag" ? "GRENADE" : w === "claymore" ? "CLAYMORE" : GUNS[w].label.toUpperCase())
+const weaponLabel = (w: Weapon) => (w === "frag" ? "GRENADE" : w === "claymore" ? "CLAYMORE" : w === "melee" ? "MELEE" : GUNS[w].label.toUpperCase())
 const equipLabel = (e: Equip) => EQUIPS[e].label.toUpperCase()
 const clock = (s: number) => {
   const t = Math.max(0, Math.ceil(s))
@@ -28,7 +29,7 @@ export class Hud {
       <div id="respawn"></div>
       <div id="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><div id="hm"><i></i><i></i><i></i><i></i></div></div>
       <div id="status"></div>
-      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · F plant/defuse · 1 2 3 guns · 4 5 frag/claymore · TAB scores · T teams · M mute</div>`
+      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · V melee · F plant/defuse · 1 2 3 guns · 4 5 frag/claymore · TAB scores · T teams · M mute</div>`
     for (const e of root.querySelectorAll<HTMLElement>("[id]")) this.el[e.id] = e
   }
 
@@ -45,10 +46,11 @@ export class Hud {
     if (!s) return
     el.floor!.textContent = `OFFICE TOWER · FL ${floorOf(s.map)}`
     el.clock!.textContent = s.phase === "play" ? clock(s.left) : `NEXT FLOOR IN ${Math.ceil(s.left)}`
-    const ranked = [...g.roster].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
+    const by = boardStat(s.mode.id)
+    const ranked = [...g.roster].sort((a, b) => (by ? by(b) - by(a) : 0) || b.kills - a.kills || a.deaths - b.deaths)
     el.board!.innerHTML = ranked
       .slice(0, 4)
-      .map((r, i) => `<div class="${r.id === g.myId ? "me" : ""}"><span>${i + 1}</span><b style="color:${css(g.colorOf(r.id))}">${esc(r.name)}</b><em>${r.kills}</em></div>`)
+      .map((r, i) => `<div class="${r.id === g.myId ? "me" : ""}"><span>${i + 1}</span><b style="color:${css(g.colorOf(r.id))}">${esc(r.name)}</b><em>${boardLabel(s.mode.id, r)}</em></div>`)
       .join("")
     el.tr!.innerHTML = g.feed
       .filter((f) => t - f.t < 6)
@@ -61,24 +63,28 @@ export class Hud {
     bar.style.width = `${hp}%`
     el.hpbar!.classList.toggle("low", hp < 40)
     const gun = GUNS[g.gun]
-    el.gname!.textContent = gun.label.toUpperCase()
+    const kit = g.kit
+    el.gname!.textContent = kit.label
     const reloading = g.reloadUntil > t
-    el.mag!.textContent = reloading ? "" : String(g.mag)
-    el.magmax!.textContent = reloading ? "RELOADING" : ` / ${gun.mag}`
+    el.mag!.textContent = reloading || !kit.gun ? "" : String(g.mag)
+    el.magmax!.textContent = reloading ? "RELOADING" : !kit.gun ? "CLICK TO SWING" : kit.reload ? ` / ${kit.mag}` : " LEFT"
     el.mag!.classList.toggle("empty", g.mag === 0)
     const rb = el.rbar!.firstElementChild as HTMLElement
     rb.style.width = reloading ? `${(1 - (g.reloadUntil - t) / gun.reload) * 100}%` : "0%"
 
-    el.equip!.innerHTML = `<span class="${g.equipLeft > 0 ? "" : "out"}">${equipLabel(g.equip)} ×${g.equipLeft}</span><kbd>G</kbd>`
+    el.equip!.innerHTML = kit.equip ? `<span class="${g.equipLeft > 0 ? "" : "out"}">${equipLabel(g.equip)} ×${g.equipLeft}</span><kbd>G</kbd>` : kit.melee && kit.gun ? `<span>MELEE</span><kbd>V</kbd>` : ""
 
     const b = g.banner && t - g.banner.t < 2.2 ? g.banner : null
     el.banner!.textContent = b?.text ?? ""
     el.banner!.style.opacity = b ? String(Math.min(1, (2.2 - (t - b.t)) * 2)) : "0"
     const pick = s.you?.pick ?? "rifle"
     const epick = s.you?.equipPick ?? "frag"
-    const next = [pick !== g.gun ? GUNS[pick].label.toUpperCase() : "", epick !== g.equip ? equipLabel(epick) : ""].filter(Boolean).join(" · ")
+    const fixed = fixedLoadout(s)
+    const next = fixed ? "" : [pick !== g.gun ? GUNS[pick].label.toUpperCase() : "", epick !== g.equip ? equipLabel(epick) : ""].filter(Boolean).join(" · ")
     el.respawn!.innerHTML =
-      s.phase === "play" && !alive && s.you
+      s.phase === "play" && !alive && s.you && fixed
+        ? s.you.respawnIn < 0 ? "" : `<div class="rt">RESPAWN IN ${Math.ceil(s.you.respawnIn)}</div>`
+        : s.phase === "play" && !alive && s.you
         ? `${s.you.respawnIn < 0 ? "" : `<div class="rt">RESPAWN IN ${Math.ceil(s.you.respawnIn)}</div>`}<div class="picks">${GUN_IDS.map((id, i) => `<span class="${id === pick ? "on" : ""}"><kbd>${i + 1}</kbd>${GUNS[id].label.toUpperCase()}</span>`).join("")}</div><div class="picks">${EQUIP_IDS.map((id, i) => `<span class="${id === epick ? "on" : ""}"><kbd>${i + 4}</kbd>${equipLabel(id)}</span>`).join("")}</div>`
         : alive && next
           ? `<div class="next">NEXT LIFE: ${next}</div>`

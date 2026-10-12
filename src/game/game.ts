@@ -4,14 +4,14 @@ import { type MapDef, getMap } from "../../shared/maps"
 import { type Grenade, type Obstacles, obstaclesOf, stepGrenade } from "../../shared/sim/gear"
 import { type Body, stepBody } from "../../shared/sim/move"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
-import { type Intent, type SimEvent, sprints } from "../../shared/sim/world"
+import type { Intent, SimEvent } from "../../shared/sim/world"
 import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
 import { buildLevel } from "../render/level-mesh"
 import { type Caster, type DynLight, LightCuller } from "../render/lighting"
 import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
-import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, useGear } from "./anim"
+import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, swing, useGear } from "./anim"
 import { type Corpse, type DeathStyle, type Debris, deathStyle, emitRagdoll, ragdoll, ragdollCentre, stepDebris, stepRagdoll } from "./ragdoll"
 import { type Batch, type FrameInput, INST_FLOATS, type Renderer, SPRITE_FLOATS } from "../render/renderer"
 import { FRAME_FLOATS } from "../render/shaders"
@@ -20,6 +20,9 @@ import type { Session } from "./session"
 import { Smoothed } from "./smooth"
 import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
 import { objectiveBanner } from "./objective-fx"
+import { type Kit, gunKit, kitSprints } from "../../shared/sim/kit"
+import { MELEE } from "../../shared/sim/melee"
+import { INF_COLORS, eyes, infected } from "./rules-fx"
 import { carries, slowCarrier } from "../../shared/sim/modes-objective"
 
 export type Rgb3 = [number, number, number]
@@ -90,6 +93,11 @@ export class Game {
   hurt = 0
   // Local weapon prediction.
   gun: Gun = "rifle"
+  /** What the mode armed you with (from the snapshot); prediction follows its rules. */
+  kit: Kit = gunKit("rifle")
+  /** Predicted melee: the next swing can start at swingReady; shots wait until the current one lands at swingLand. */
+  private swingReady = 0
+  private swingLand = 0
   mag = 0
   equip: Equip = "frag"
   equipLeft = 0
@@ -190,6 +198,7 @@ export class Game {
   /** Team colour in team modes, else the palette by roster position. */
   colorOf(id: string): Rgb3 {
     const team = teamOf(this.snap, this.roster, id)
+    if (team >= 0 && this.snap?.mode.id === "inf") return INF_COLORS[team === 1 ? 1 : 0]
     if (team >= 0) return TEAM_COLORS[team]!
     const i = this.roster.findIndex((r) => r.id === id)
     return PALETTE[(i < 0 ? 0 : i) % PALETTE.length]!
@@ -230,6 +239,7 @@ export class Game {
         a.tvy = p.vy
         a.aim = p.aim
         a.gun = p.gun
+        a.bare = !!p.bare
         a.alive = p.alive
       }
       for (const id of [...this.avatars.keys()]) if (!s.players.some((p) => p.id === id)) this.avatars.delete(id)
@@ -258,9 +268,7 @@ export class Game {
   private reconcile(s: Snapshot, mine: Snapshot["players"][number]): void {
     const you = s.you
     if (mine.alive && !this.wasAlive) {
-      this.gun = mine.gun
-      this.mag = GUNS[mine.gun].mag
-      this.reloadUntil = 0
+      this.arm(you?.kit ?? gunKit(mine.gun))
       this.readyAt = 0
       if (you) {
         this.equip = you.equip
@@ -275,9 +283,15 @@ export class Game {
       this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0 })
       return
     }
+    // The mode re-armed you mid-life (a gun game kill, turning infected): swap at once, with the raise.
+    if (you && you.kit.id !== this.kit.id) {
+      this.arm(you.kit)
+      this.readyAt = this.now + 0.3
+      this.avatarMe.raiseAt = this.now
+    }
     this.pending = this.pending.filter((p) => p.seq > s.ack)
     const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
-    for (const p of this.pending) stepBody(b, p.i.mx, p.i.my, sprints(p.i) ? SPRINT_SPEED : SPEED, this.solids, DT)
+    for (const p of this.pending) stepBody(b, p.i.mx, p.i.my, kitSprints(p.i, this.kit) ? this.kit.run : this.kit.walk, this.solids, DT)
     // Adopt the replayed state exactly; a small correction is smoothed out of the drawn position, a big one snaps.
     if (this.body && Math.hypot(b.x - this.body.x, b.y - this.body.y) < 1.5) {
       this.drawn.correct(b.x - this.body.x, b.y - this.body.y)
@@ -291,6 +305,15 @@ export class Game {
         this.equipLeft = you.equipLeft
       }
     }
+  }
+
+  private arm(kit: Kit): void {
+    if (kit.id === "claws" && this.kit.id !== "claws") this.banner = { text: "YOU'RE INFECTED", t: this.now }
+    this.kit = kit
+    if (kit.gun) this.gun = kit.gun
+    this.mag = kit.mag
+    this.reloadUntil = 0
+    this.swingLand = 0
   }
 
   private place(b: Body): void {
@@ -351,7 +374,7 @@ export class Game {
         const blast = e.how === "frag" || e.how === "claymore"
         if (v?.body) {
           this.corpses = this.corpses.filter((c) => c.id !== e.victim)
-          this.corpses.push({ id: e.victim, gun: v.gun, t0: t, rd: ragdoll(v.body, v.gun, v.svx, v.svy, e.dx, e.dy, blast ? blastStyle() : deathStyle(e.how as Gun), this.solids) })
+          this.corpses.push({ id: e.victim, gun: v.gun, bare: v.bare, t0: t, rd: ragdoll(v.body, v.gun, v.svx, v.svy, e.dx, e.dy, blast ? blastStyle() : deathStyle(e.how as Gun), this.solids) })
           v.body = null
           this.blood(v.x, v.y, Math.atan2(e.dy, e.dx), 2)
         }
@@ -403,6 +426,13 @@ export class Game {
       case "explode":
         this.explode(e)
         return
+      case "swing": {
+        if (e.by === this.myId) return
+        const a = this.avatars.get(e.by)
+        if (a) swing(a, t)
+        if (a && me && Math.hypot(a.x - me.x, a.y - me.y) < 14) this.sound.swipe(a.x - me.x, a.y - me.y, false)
+        return
+      }
       case "end":
         return
       case "obj": {
@@ -495,7 +525,8 @@ export class Game {
       const fire = live && input.enabled && input.firing
       const equip = live && input.takeEquip()
       const use = live && input.enabled && (input.held("KeyF") || input.held("KeyE"))
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use }
+      const melee = live && input.takeMelee() && this.kit.melee
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.
@@ -509,10 +540,10 @@ export class Game {
       this.pending.push({ seq, i })
       if (this.pending.length > 90) this.pending.shift()
       this.drawn.tick(this.body)
-      const sprint = sprints(i)
-      stepBody(this.body, i.mx, i.my, sprint ? SPRINT_SPEED : SPEED, this.solids, DT)
+      const sprint = kitSprints(i, this.kit)
+      stepBody(this.body, i.mx, i.my, sprint ? this.kit.run : this.kit.walk, this.solids, DT)
       if (equip && this.equipLeft > 0) this.localEquip()
-      this.localGun(fire, reload, sprint)
+      this.localGun(fire, reload, sprint, melee)
     }
     if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
     this.bloom = Math.max(0, this.bloom - dt * 2.6)
@@ -530,23 +561,34 @@ export class Game {
     else this.sound.toss(0, 0, true)
   }
 
-  /** Mirrors the server's trigger rules so your own shots fire on the frame you click. */
-  private localGun(fire: boolean, reload: boolean, sprint: boolean): void {
+  /** Mirrors the server's trigger and melee rules (from the kit) so your own shots and swings go on the frame you click. */
+  private localGun(fire: boolean, reload: boolean, sprint: boolean, melee: boolean): void {
     const t = this.now
+    const kit = this.kit
+    if ((melee || (!kit.gun && fire)) && kit.melee && t >= this.swingReady) {
+      this.swingReady = t + MELEE.cooldown
+      this.swingLand = t + MELEE.windup
+      swing(this.avatarMe, t)
+      this.sound.swipe(0, 0, true)
+    }
+    if (!kit.gun) {
+      this.triggerHeld = fire
+      return
+    }
     if (sprint) this.readyAt = t + SPRINT_TO_FIRE
     const gun = GUNS[this.gun]
     if (this.reloadUntil > 0 && t >= this.reloadUntil) {
       this.reloadUntil = 0
-      this.mag = gun.mag
+      this.mag = kit.mag
     }
-    if (this.reloadUntil === 0 && ((reload && this.mag < gun.mag) || (fire && this.mag === 0))) {
+    if (kit.reload && this.reloadUntil === 0 && ((reload && this.mag < kit.mag) || (fire && this.mag === 0))) {
       this.reloadUntil = t + gun.reload
     }
     const ready = t >= this.readyAt
-    const pressed = fire && ready && (gun.auto || !this.triggerHeld)
+    const pressed = fire && ready && (kit.auto || !this.triggerHeld)
     if (ready || !fire) this.triggerHeld = fire
-    if (!pressed || this.reloadUntil > 0 || this.mag <= 0 || t < this.cooldownUntil) return
-    this.cooldownUntil = t + gun.cooldown
+    if (!pressed || this.reloadUntil > 0 || this.mag <= 0 || t < this.cooldownUntil || t < this.swingLand) return
+    this.cooldownUntil = t + kit.cooldown
     this.mag--
     this.lastLocalShot = t
     const b = this.body!
@@ -839,6 +881,7 @@ export class Game {
       this.cues(a, animate(a, adt, t, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim), false)
       const col = this.colorOf(a.id)
       pose(push, a, col, this.models)
+      if (infected(snap, this.roster, a.id)) eyes(a, t, (...e) => this.sprite(...e))
       const gc = glow(col, 0.9)
       this.sprite(true, a.x, 0.03, a.y, 0.48, gc[0], gc[1], gc[2], 0.9, 2, 0, 0.14)
     }
@@ -846,6 +889,7 @@ export class Game {
     if (me) {
       const a = this.avatarMe
       a.gun = this.gun
+      a.bare = !this.kit.gun
       a.alive = true
       a.reloadAt = this.reloadUntil > 0 ? this.reloadUntil - GUNS[this.gun].reload : -10
       a.reloadFor = GUNS[this.gun].reload
@@ -853,6 +897,7 @@ export class Game {
       this.cues(a, animate(a, adt, t, d.x, d.y, me.vx, me.vy, this.aim), true)
       const col = this.colorOf(this.myId)
       pose(push, a, col, this.models)
+      if (infected(snap, this.roster, this.myId)) eyes(a, t, (...e) => this.sprite(...e))
       const gc = glow(col, 0.9)
       this.sprite(true, d.x, 0.03, d.y, 0.48, gc[0], gc[1], gc[2], 1, 2, 0, 0.14)
     }
@@ -902,7 +947,10 @@ export class Game {
         const bc = ragdollCentre(c.rd)
         this.sprite(false, bc.x, 0.012, bc.y, 0.1 + 0.55 * Math.sqrt(pool), 0.07, 0.0, 0.004, 0.9 * Math.max(0, 1 - sink * 4), 6)
       }
-      emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, 0, 1, sink)
+      // Bare hands leave no gun behind.
+      const m = this.models
+      const pb: PushPart = c.bare ? (model, ...rest) => void (model !== m.gun[c.gun] && model !== m.mag[c.gun] && model !== m.pump && pushBody(model, ...rest)) : pushBody
+      emitRagdoll(pb, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, 0, 1, sink)
     }
     for (const [model, data] of bodies) emit(model, data)
 

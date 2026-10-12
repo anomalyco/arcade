@@ -5,6 +5,7 @@ import type { Camera } from "../render/camera"
 import { type Game, css } from "../game/game"
 import { TEAM_COLORS, canUse, teamOf } from "../game/mode-fx"
 import { HP, carries } from "../../shared/sim/modes-objective"
+import { rulesObjective, rulesOut, rulesTop } from "./rules-hud"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const tc = (t: number) => (t >= 0 ? css(TEAM_COLORS[t]!) : "var(--dim)")
@@ -50,7 +51,7 @@ export class ModeHud {
   /** Dead in search and destroy: the living teammate the camera follows (sticking with one until they die). */
   spectate(g: Game): { x: number; y: number } | null {
     const s = g.snap
-    if (!s || s.phase !== "play" || s.mode.id !== "snd" || g.alive || s.you?.respawnIn !== -1) return null
+    if (!s || s.phase !== "play" || (s.mode.id !== "snd" && s.mode.id !== "oitc") || g.alive || s.you?.respawnIn !== -1) return null
     const team = teamOf(s, g.roster, g.myId)
     const alive = [...g.avatars.values()].filter((a) => a.alive)
     const mates = alive.filter((a) => teamOf(s, g.roster, a.id) === team)
@@ -67,11 +68,11 @@ export class ModeHud {
     const m = s.mode
     const info = MODES[m.id]
     const team = teamOf(s, g.roster, g.myId)
-    el.mtop!.innerHTML = s.phase === "play" ? this.top(s, g, team) : ""
+    el.mtop!.innerHTML = s.phase === "play" ? (rulesTop(g) ?? this.top(s, g, team)) : ""
 
     // Intro on every new match, and banners at the start and end of each round.
     const key = `${m.id}|${s.map}`
-    if (s.phase === "play" && key !== this.intro.key) this.intro = { key, t, title: info.label.toUpperCase(), text: objective(m, team) }
+    if (s.phase === "play" && key !== this.intro.key) this.intro = { key, t, title: info.label.toUpperCase(), text: rulesObjective(s, team) ?? objective(m, team) }
     if (m.round && s.phase === "play") {
       const rk = `${s.map}|${m.round.n}|${m.round.post}`
       if (rk !== this.roundKey) {
@@ -118,7 +119,7 @@ export class ModeHud {
 
     const spec = s.phase === "play" && s.you?.respawnIn === -1 && !g.alive
     const watched = spec ? g.nameOf(this.watching) : ""
-    el.mspec!.innerHTML = spec ? `YOU ARE DEAD — SPECTATING${watched ? ` <b style="color:${css(g.colorOf(this.watching))}">${esc(watched.toUpperCase())}</b>` : ""}<span>back next round</span>` : ""
+    el.mspec!.innerHTML = spec ? `YOU ARE DEAD — SPECTATING${watched ? ` <b style="color:${css(g.colorOf(this.watching))}">${esc(watched.toUpperCase())}</b>` : ""}<span>${rulesOut(s) ?? "back next round"}</span>` : ""
 
     this.floorLabels(g, s, cam, w, h)
   }

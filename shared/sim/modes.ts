@@ -1,12 +1,14 @@
-import { DT, HEALTH, MATCH_SECONDS } from "../config"
+import { DT, HEALTH, MATCH_SECONDS, type Weapon } from "../config"
 import { type Vec, clearLine } from "../geom"
 import type { Rng } from "../rng"
 import { placesFor } from "./places"
 import type { Intent, Player, World } from "./world"
 import type { FlagView, TagView, ZoneView } from "./modes-objective"
+import type { RulesView } from "./modes-rules"
+import { type Kit, gunKit } from "./kit"
 
-export type ModeId = "ffa" | "tdm" | "dom" | "snd" | "kc" | "hp" | "ctf"
-export const MODE_IDS: readonly ModeId[] = ["ffa", "tdm", "dom", "snd", "kc", "hp", "ctf"]
+export type ModeId = "ffa" | "tdm" | "dom" | "snd" | "kc" | "hp" | "ctf" | "inf" | "gun" | "oitc"
+export const MODE_IDS: readonly ModeId[] = ["ffa", "tdm", "dom", "snd", "kc", "hp", "ctf", "inf", "gun", "oitc"]
 
 export const MODES: Record<ModeId, { label: string; short: string; blurb: string; teams: boolean }> = {
   ffa: { label: "Free for all", short: "FFA", blurb: "Everyone for themselves. Most kills wins.", teams: false },
@@ -16,6 +18,9 @@ export const MODES: Record<ModeId, { label: string; short: string; blurb: string
   kc: { label: "Kill confirmed", short: "KC", blurb: "Kills drop dog tags. Grab enemy tags to score, deny your own.", teams: true },
   hp: { label: "Hardpoint", short: "HP", blurb: "Hold the zone to score. It moves every minute.", teams: true },
   ctf: { label: "Capture the flag", short: "CTF", blurb: "Take their flag home while yours is safe. Three caps wins.", teams: true },
+  inf: { label: "Infected", short: "INF", blurb: "One player turns. Their swipe infects. Survive three minutes.", teams: true },
+  gun: { label: "Gun game", short: "GUN", blurb: "A new gun every kill. First through the ladder wins.", teams: false },
+  oitc: { label: "One in the chamber", short: "OITC", blurb: "One bullet, one kill, three lives. Kills reload you.", teams: false },
 }
 
 export const modeOf = (v: unknown): ModeId | null => ((MODE_IDS as readonly unknown[]).includes(v) ? (v as ModeId) : null)
@@ -52,6 +57,8 @@ export type ModeView = {
   zone?: ZoneView | null
   /** Capture the flag: both flags, orange's first. */
   flags?: FlagView[]
+  /** Infected, gun game, one in the chamber (shared/sim/modes-rules.ts). */
+  rules?: RulesView
 }
 
 /** A free-for-all view with nothing going on, for dev pages that fake a snapshot. */
@@ -141,7 +148,12 @@ export class Mode {
     return i
   }
 
-  killed(_w: World, _victim: Player, _killer: Player): void {}
+  killed(_w: World, _victim: Player, _killer: Player, _how?: Weapon): void {}
+
+  /** What a player fights with: by default the gun and equipment they picked. */
+  loadout(_w: World, p: Player): Kit {
+    return gunKit(p.pick, p.equipPick)
+  }
 
   /** Objectives, once a tick during play. Calls w.endMatch() when the match is won. */
   step(_w: World): void {}

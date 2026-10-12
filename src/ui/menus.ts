@@ -5,6 +5,7 @@ import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import "./teams.css"
 import { css, type Rgb3 } from "../game/game"
 import { TEAM_COLORS } from "../game/mode-fx"
+import { boardStat, rulesColumns, rulesTeam, rulesWinner } from "./rules-hud"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
@@ -38,11 +39,6 @@ export class Menus {
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")
       if (t) this.act(t.dataset.act!, t.dataset.mode)
     })
-    // Hovering a mode chip shows its blurb; anywhere else, the picked mode's.
-    root.addEventListener("mouseover", (e) => {
-      const t = (e.target as HTMLElement).closest<HTMLElement>(".modepick [data-mode]")
-      this.blurb(modeOf(t?.dataset.mode) ?? this.mode)
-    })
     // Team picks act on press: the scoreboard re-renders as the match goes on, which can swallow a click.
     root.addEventListener("pointerdown", (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-host]")
@@ -50,6 +46,11 @@ export class Menus {
       e.preventDefault()
       if (t.dataset.host === "move") this.a.team(t.dataset.id!, t.dataset.team === "1" ? 1 : 0)
       else if (t.dataset.host === "shuffle") this.a.shuffle()
+    })
+    // Hovering a mode chip shows its blurb; anywhere else, the picked mode's.
+    root.addEventListener("mouseover", (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>(".modepick [data-mode]")
+      this.blurb(modeOf(t?.dataset.mode) ?? this.mode)
     })
     root.addEventListener("keydown", (e) => {
       const t = e.target as HTMLElement
@@ -151,7 +152,8 @@ export class Menus {
       return
     }
     const info = MODES[m.id]
-    const ranked = [...roster].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
+    const by = boardStat(m.id)
+    const ranked = [...roster].sort((a, b) => (by ? by(b) - by(a) : 0) || b.kills - a.kills || a.deaths - b.deaths)
     const cols: [string, (r: RosterRow) => number][] = [
       ["KILLS", (r) => r.kills],
       ["DEATHS", (r) => r.deaths],
@@ -162,6 +164,9 @@ export class Menus {
     if (m.id === "kc") cols.push(["CONFIRMS", stat("confirms")], ["DENIES", stat("denies")])
     if (m.id === "hp") cols.push(["ZONE TIME", stat("hill")])
     if (m.id === "ctf") cols.push(["CAPTURES", stat("captures")], ["RETURNS", stat("returns")])
+    cols.push(...rulesColumns(m.id))
+    const teamName = (t: number) => rulesTeam(m.id, t)?.name ?? TEAM_NAMES[t]
+    const teamColor = (t: number) => rulesTeam(m.id, t)?.color ?? css(TEAM_COLORS[t]!)
     // The room host picks sides in team modes: a move button on every row, and shuffle.
     const picks = hostPicks(m.id)
     const amHost = picks && !!roster.find((r) => r.id === myId)?.host
@@ -175,7 +180,7 @@ export class Menus {
     const head = `<thead><tr><th></th>${cols.map(([c]) => `<th>${c}</th>`).join("")}${amHost ? "<th></th>" : ""}</tr></thead>`
     const body = info.teams
       ? [0, 1]
-          .map((t) => `<tr class="team"><td colspan="${span}"><b style="color:${css(TEAM_COLORS[t]!)}">${TEAM_NAMES[t]}</b><span>${m.score[t]}${m.target ? ` / ${m.target}` : ""}</span></td></tr>${ranked.filter((r) => r.team === t).map(row).join("")}`)
+          .map((t) => `<tr class="team"><td colspan="${span}"><b style="color:${teamColor(t)}">${teamName(t)}</b><span>${m.score[t]}${m.target ? ` / ${m.target}` : ""}</span></td></tr>${ranked.filter((r) => r.team === t).map(row).join("")}`)
           .join("")
       : ranked.map(row).join("")
     const hostbar = !picks
@@ -185,8 +190,8 @@ export class Menus {
         : `<div class="hostbar"><span>The host picks teams · <kbd>T</kbd> keeps this open</span></div>`
     let result = ""
     if (s.phase === "end") {
-      const winner = ranked[0]
-      const text = info.teams ? (m.winner >= 0 ? `<span style="color:${css(TEAM_COLORS[m.winner]!)}">${TEAM_NAMES[m.winner]}</span> WINS` : "DRAW") : winner ? `<span style="color:${css(colorOf(winner.id))}">${esc(winner.name.toUpperCase())}</span> WINS` : ""
+      const winner = rulesWinner(s, roster) ?? ranked[0]
+      const text = info.teams ? (m.winner >= 0 ? `<span style="color:${teamColor(m.winner)}">${teamName(m.winner)}</span> WIN${m.id === "inf" ? "" : "S"}` : "DRAW") : winner ? `<span style="color:${css(colorOf(winner.id))}">${esc(winner.name.toUpperCase())}</span> WINS` : ""
       result = `<div class="result">${text}</div><div class="sub">Next floor in ${Math.ceil(s.left)}</div>`
     }
     const url = room ? `${location.origin}${location.pathname}?room=${room}` : ""
