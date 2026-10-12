@@ -339,7 +339,7 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const roomsMeta = () => roomErr ? "server unreachable · practice still works" : rooms === null ? "looking for lobbies…" : `online · ${rooms.length} ${rooms.length === 1 ? "lobby" : "lobbies"} open`
 
   // Create lobby
-  const cfg = { ...DEFAULT_ROOM_CONFIG, bots: 3, timeLimit: DEFAULT_ROOM_CONFIG.timeLimit / 60 }
+  const cfg = { ...DEFAULT_ROOM_CONFIG, bots: 0, timeLimit: DEFAULT_ROOM_CONFIG.timeLimit / 60 }
   const nameIn = document.createElement("input")
   nameIn.maxLength = 32
   nameIn.value = cfg.name
@@ -406,7 +406,7 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const inviteCode = invite ? invite.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) : ""
   if (inviteCode) codeIn.value = inviteCode
 
-  const practiceBots = () => settings.practiceBots ?? 3
+  const practiceBots = () => settings.practiceBots ?? 0
   const rootScreen = (): MenuScreen => ({
     size: "big",
     items: [

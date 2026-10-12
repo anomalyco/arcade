@@ -20,7 +20,7 @@ const DIRECTORY_REFRESH_MS = 5_000
 const MAX_MESSAGE_BYTES = 8192
 const MAX_MESSAGES_PER_SECOND = 240
 /** Quick-play rooms top each team up to this many players with bots while fewer humans than this are present. */
-const QUICKPLAY_BOT_FILL = 4
+const QUICKPLAY_BOT_FILL = 0
 const CLOSE_ROOM_FULL = 4001
 const CLOSE_ROOM_CLOSED = 4004
 
@@ -65,7 +65,7 @@ async function api(request: Request, url: URL, env: Env): Promise<Response> {
   if (path === "/api/quickplay" && request.method === "GET") {
     const open = (await listRooms(env)).filter(r => r.humans < r.maxPlayers).sort((a, b) => b.humans - a.humans)
     if (open.length) return Response.json({ code: open[0].code })
-    return Response.json({ code: await createRoom(env, { ...DEFAULT_ROOM_CONFIG, botFill: QUICKPLAY_BOT_FILL }) })
+    return Response.json({ code: await createRoom(env, { ...DEFAULT_ROOM_CONFIG, ...(QUICKPLAY_BOT_FILL ? { botFill: QUICKPLAY_BOT_FILL } : {}) }) })
   }
   if (path === "/api/room") {
     const code = (url.searchParams.get("code") ?? "").toLowerCase()
