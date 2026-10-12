@@ -31,7 +31,7 @@ export class Hud {
       <div id="respawn"></div>
       <div id="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><div id="hm"><i></i><i></i><i></i><i></i></div></div>
       <div id="status"></div>
-      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · V melee · F vehicle, plant/defuse · H horn · 1 2 3 guns · 4 5 frag/claymore · TAB scores · T teams · M mute</div>`
+      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · V melee · F vehicle, plant/defuse · C seat · H horn · 1 2 3 guns · 4 5 frag/claymore · TAB scores · T teams · M mute</div>`
     for (const e of root.querySelectorAll<HTMLElement>("[id]")) this.el[e.id] = e
   }
 
@@ -91,7 +91,7 @@ export class Hud {
     const vh = ride ? Math.max(0, ride.hp / ride.max) : 0
     const segs = ride ? Array.from({ length: 10 }, (_, i) => `<i class="${i < Math.ceil(vh * 10) ? "on" : ""}"></i>`).join("") : ""
     el.veh!.innerHTML = ride
-      ? `<div class="vl">VEHICLE: ${ride.label} · ${ride.driver ? "DRIVER" : "PASSENGER"}<span>${ride.used}/${ride.seats} SEATS</span></div><div class="vbar${vh < 0.35 ? " low" : ""}">${segs}</div><div class="vk"><kbd>F</kbd> EXIT${ride.driver ? " · <kbd>H</kbd> HORN · <kbd>SHIFT</kbd> HANDBRAKE" : ""}</div>`
+      ? `<div class="vl">VEHICLE: ${ride.label} · ${ride.driver ? "DRIVER" : "PASSENGER"}<span>${ride.used}/${ride.seats} SEATS</span></div><div class="vbar${vh < 0.35 ? " low" : ""}">${segs}</div><div class="vk"><kbd>F</kbd> EXIT · <kbd>C</kbd> SEAT${ride.driver ? " · <kbd>H</kbd> HORN · <kbd>SHIFT</kbd> HANDBRAKE" : ""}</div>`
       : ""
     const vp = g.vehiclePrompt
     const vpp = vp ? cam.project(vp.x, 2.4, vp.y, w, h) : null

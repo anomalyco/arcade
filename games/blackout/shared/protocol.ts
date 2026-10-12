@@ -81,7 +81,7 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null
       if (!i || typeof o.seq !== "number" || !Number.isInteger(o.seq) || o.seq < 0) return null
-      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), use: i.use === true, melee: i.melee === true, ...(i.enter === true ? { enter: true } : {}), ...(i.horn === true ? { horn: true } : {}) } }
+      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), use: i.use === true, melee: i.melee === true, ...(i.enter === true ? { enter: true } : {}), ...(i.seat === true ? { seat: true } : {}), ...(i.horn === true ? { horn: true } : {}) } }
     }
     case "gun":
       return { type: "gun", gun: gunOf(o.gun) }

@@ -485,7 +485,7 @@ export class Game {
         return
       case "veh": {
         const d = this.veh.draws.get(e.id)
-        if (d && me && Math.hypot(d.x - me.x, d.y - me.y) < 20) this.vsound.door(d.x - me.x, d.y - me.y, d.kind === "scooter")
+        if (d && me && e.what !== "seat" && Math.hypot(d.x - me.x, d.y - me.y) < 20) this.vsound.door(d.x - me.x, d.y - me.y, d.kind === "scooter")
         return
       }
       case "wreck":
@@ -594,9 +594,10 @@ export class Game {
       const melee = live && input.takeMelee() && this.kit.melee
       // F gets in or out of a vehicle, unless it plants or defuses here; H is the horn at the wheel.
       const enter = live && input.takeEnter() && !(this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y))
+      const seat = live && input.takeSeat() && !!this.riding
       const driving = this.riding?.seat === 0
       const horn = live && driving && input.held("KeyH")
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(horn ? { horn } : {}) }
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.

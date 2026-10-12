@@ -65,6 +65,33 @@ export function leaveSeat(w: World, p: Player): void {
   p.seat = 0
 }
 
+/**
+ * C: move to the next free seat, in seat order, wrapping round. Leaving the wheel parks the vehicle (it coasts to a
+ * stop); taking it starts driving. Nothing happens when every other seat is taken.
+ */
+export function cycleSeat(w: World, p: Player): boolean {
+  const v = vehicleOf(w, p)
+  if (!v || v.state !== "ok") return false
+  const n = v.seats.length
+  for (let k = 1; k < n; k++) {
+    const s = (p.seat + k) % n
+    if (v.seats[s]) continue
+    v.seats[p.seat] = ""
+    v.seats[s] = p.id
+    const from = p.seat
+    p.seat = s
+    if (s === 0) v.lastDriver = p.id
+    if (from === 0) {
+      v.drive = PARKED
+      v.horn = false
+    }
+    sit(v, p)
+    w.events.push({ k: "veh", what: "seat", id: v.id, by: p.id, seat: s })
+    return true
+  }
+  return false
+}
+
 /** F: get in the nearest vehicle with room, or out of the one you're in. */
 export function toggleSeat(w: World, p: Player): void {
   if (p.veh) exitVehicle(w, p)

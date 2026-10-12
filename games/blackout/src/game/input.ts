@@ -10,6 +10,7 @@ export class Input {
   private equipPressed = false
   private meleePressed = false
   private enterPressed = false
+  private seatPressed = false
   mouse = { x: innerWidth / 2, y: innerHeight / 2 }
   firing = false
   /** Right mouse held: push the camera further toward the cursor. */
@@ -28,6 +29,7 @@ export class Input {
       if (e.code === "KeyG" && !e.repeat) this.equipPressed = true
       if (e.code === "KeyV" && !e.repeat) this.meleePressed = true
       if ((e.code === "KeyF" || e.code === "KeyE") && !e.repeat) this.enterPressed = true
+      if (e.code === "KeyC" && !e.repeat) this.seatPressed = true
     })
     addEventListener("keyup", (e) => this.keys.delete(e.code))
     addEventListener("blur", () => {
@@ -83,6 +85,13 @@ export class Input {
   takeMelee(): boolean {
     const r = this.meleePressed
     this.meleePressed = false
+    return r && this.enabled
+  }
+
+  /** C: next free seat in the vehicle you're riding. */
+  takeSeat(): boolean {
+    const r = this.seatPressed
+    this.seatPressed = false
     return r && this.enabled
   }
 

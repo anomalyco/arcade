@@ -74,6 +74,32 @@ describe("getting in and out", () => {
     expect(a.y).toBeLessThan(v.y)
   })
 
+  test("C moves to the next free seat, skipping taken ones; leaving the wheel parks the vehicle; the protocol carries it", () => {
+    const w = yardWorld(["a", "b"])
+    place(w, "a", 10, 8.5)
+    place(w, "b", 9, 11.4)
+    press(w, { a: { enter: true } })
+    press(w, { b: { enter: true } })
+    const a = w.players.get("a")!
+    const b = w.players.get("b")!
+    const v = jeep(w)
+    expect([a.seat, b.seat]).toEqual([0, 3])
+    events(w)
+    press(w, { a: { seat: true } })
+    expect(a.seat).toBe(1)
+    expect(v.seats).toEqual(["", "a", "", "b"])
+    expect(v.drive.throttle).toBe(0)
+    expect(events(w).some((e) => e.k === "veh" && e.what === "seat" && e.by === "a" && e.seat === 1)).toBe(true)
+    press(w, { a: { seat: true } })
+    expect(a.seat).toBe(2)
+    // Seat 3 is b's: the next free one is the wheel again.
+    press(w, { a: { seat: true } })
+    expect(a.seat).toBe(0)
+    expect(v.seats[0]).toBe("a")
+    const c = decodeClient(JSON.stringify({ type: "intent", seq: 1, i: { mx: 0, my: 0, aim: 0, seat: true } }))
+    expect(c?.type === "intent" && c.i.seat).toBe(true)
+  })
+
   test("too far away, nothing happens; a full vehicle takes nobody else", () => {
     const w = yardWorld(["a", "b", "c"])
     place(w, "a", 10, 5)

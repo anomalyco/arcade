@@ -13,7 +13,7 @@
 - Idle kick (`server/room.ts` RoomCore): 90 s with no input while alive in play gets you kicked (end screen and time dead don't count), with a 15 s `idle` countdown shown in the HUD status line.
 - Vehicles (jeep, van, scooter): only on maps that list `MapDef.vehicles` spawns (never office floors). Physics and
   collisions in `shared/sim/vehicle.ts` + `vehicle-collide.ts` (ported from getaway), rules in `vehicle-rules.ts` (F/E
-  enter/exit via `Intent.enter`, seat 0 drives with WASD + Shift handbrake + H horn, passengers shoot, armour per seat,
+  enter/exit via `Intent.enter`, C cycles to the next free seat via `Intent.seat`, seat 0 drives with WASD + Shift handbrake + H horn, passengers shoot, armour per seat,
   roadkill, explosion → burning wreck → respawn at its spot, `Mode.canRide`). Client: `src/game/vehicles.ts` (draw,
   lamps as dynamic lights, prediction of the vehicle you drive), `src/render/vehicle-mesh.ts`, `src/audio/vehicle-sound.ts`.
   Test yard: `?practice&map=lot` (`shared/sim/vehicle-lot.ts`); `globalThis.practice` is the practice World.

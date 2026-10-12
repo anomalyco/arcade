@@ -12,7 +12,7 @@ import "./modes-rules"
 import { type Kit, gunKit, kitSprints } from "./kit"
 import { canSwing, startSwing, stepSwing } from "./melee"
 import type { VehicleKind } from "./vehicle"
-import { type Vehicle, armorOf, blastVehicles, damageVehicle, leaveSeat, pushOutVehicles, rayVehicles, resetVehicles, rideIntent, stepVehicles, toggleSeat } from "./vehicle-rules"
+import { type Vehicle, armorOf, blastVehicles, damageVehicle, leaveSeat, pushOutVehicles, rayVehicles, resetVehicles, rideIntent, stepVehicles, toggleSeat, cycleSeat } from "./vehicle-rules"
 
 export type Phase = "play" | "end"
 
@@ -23,7 +23,7 @@ export type Phase = "play" | "end"
  * kit has one; bare-handed, the trigger swings too. `enter` is a press of F that gets in or out of a vehicle; driving,
  * (mx, my) are the throttle and steering and `sprint` the handbrake; `horn` holds H.
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; horn?: boolean }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
@@ -103,7 +103,7 @@ export type SimEvent =
   /** The room host restarted the match, in the same mode or a new one (shared/sim/host.ts). */
   | { k: "host"; what: "reset" | "mode"; mode: ModeId }
   /** Someone got in or out of a vehicle; a vehicle blew up; a vehicle hit something at `v` m/s. */
-  | { k: "veh"; what: "enter" | "exit"; id: number; by: string; seat: number }
+  | { k: "veh"; what: "enter" | "exit" | "seat"; id: number; by: string; seat: number }
   | { k: "wreck"; id: number; by: string; x: number; y: number; h: number; kind: VehicleKind }
   | { k: "crash"; id: number; x: number; y: number; v: number }
 
@@ -350,6 +350,7 @@ export class World {
       }
       if (this.phase === "play") intent = this.mode.intent(this, p, intent)
       if (this.phase === "play" && intent.enter) toggleSeat(this, p)
+      else if (this.phase === "play" && intent.seat && p.veh) cycleSeat(this, p)
       if (p.veh) intent = rideIntent(this, p, intent, fresh)
       p.using = intent.use
       p.aim = intent.aim
