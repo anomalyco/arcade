@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { RoomEngine, createSnapshotDecoder, INPUT_QUEUE_MAX, ABANDONED_DESTROY_DELAY, MATCH_RESTART_DELAY, PARKED_REMOVE_DELAY, WRECK_LINGER } from "../src/sim/room-engine"
+import { RoomEngine, createRng, createSnapshotDecoder, INPUT_QUEUE_MAX, JITTER_TARGET_MAX, JITTER_TARGET_MIN, ABANDONED_DESTROY_DELAY, MATCH_RESTART_DELAY, PARKED_REMOVE_DELAY, WRECK_LINGER } from "../src/sim/room-engine"
 import { createLoopbackRoom } from "../src/sim/loopback"
 import type { WireSnapshot } from "../src/sim/room-engine"
 import { DEFAULT_ROOM_CONFIG, RESPAWN_DELAY } from "../src/sim/protocol"
@@ -126,7 +126,7 @@ describe("room engine", () => {
     r.send(a, { type: "input", seq: 4.5, flight: flightInput })
     expect(r.engine.players.get(a)!.seq).toBe(-1)
     r.send(a, { type: "input", seq: 6, flight: { ...flightInput, roll: 7, aim: [0, 0, -2] }, seat: { ...seatInput, firePrimary: "yes" as never } })
-    r.ticks(1)
+    r.ticks(3)
     const p = r.engine.players.get(a)!
     expect(p.seq).toBe(6)
     expect(p.flight.roll).toBe(1)
@@ -239,25 +239,98 @@ describe("room engine", () => {
     expect(r.engine.vehicles.length).toBe(1)
   })
 
-  test("inputs are queued and consumed one per tick; ack = last consumed", () => {
+  test("jitter buffer primes to 2, consumes one per tick, drains bursts beyond the cap", () => {
     const r = setup()
     const a = r.join()
     r.send(a, { type: "spawn", kind: "fighter" })
-    for (let seq = 1; seq <= 4; seq++) r.send(a, { type: "input", seq, flight: { ...flightInput, throttle: seq / 10 } })
     const p = r.engine.players.get(a)!
+    r.send(a, { type: "input", seq: 1, flight: { ...flightInput, throttle: 0.1 } })
+    r.ticks(1)
+    expect(p.ack).toBe(-1) // held ~2 ticks
+    r.send(a, { type: "input", seq: 2, flight: { ...flightInput, throttle: 0.2 } })
     r.ticks(1)
     expect(p.ack).toBe(1)
     expect(p.flight.throttle).toBe(0.1)
-    r.ticks(2)
-    expect(p.ack).toBe(3)
-    expect(r.lastSnap(a).ack).toBe(3)
-    r.ticks(5) // queue drained → last input repeats
-    expect(p.ack).toBe(4)
-    expect(p.flight.throttle).toBe(0.4)
-    // Bounded: a burst beyond the cap drops the oldest.
+    r.ticks(1)
+    expect(p.ack).toBe(2)
+    r.ticks(10) // not a stream: no stand-ins, ack stays at what was sent
+    expect(p.ack).toBe(2)
     for (let seq = 10; seq < 20; seq++) r.send(a, { type: "input", seq, flight: flightInput })
     expect(p.queue.length).toBe(INPUT_QUEUE_MAX)
-    expect(p.ack).toBe(13)
+    expect(p.jitter.dropped).toBe(2)
+    r.ticks(20)
+    expect(p.ack).toBe(19)
+  })
+
+  /** Client sends seq k at tick k; delivery is delayed by `delay(k)` ticks but stays in order. */
+  function jitterRun(delay: (k: number) => number, ticks: number) {
+    const r = setup()
+    const a = r.join()
+    r.send(a, { type: "spawn", kind: "fighter" })
+    const p = r.engine.players.get(a)!
+    const pending: { at: number; seq: number }[] = []
+    let lastAt = 0
+    const consumedAt = new Map<number, number>()
+    const applied: number[] = []
+    let prevAck = -1
+    for (let t = 1; t <= ticks; t++) {
+      const at = Math.max(lastAt, t + delay(t))
+      lastAt = at
+      pending.push({ at, seq: t })
+      while (pending.length && pending[0].at <= t) {
+        const { seq } = pending.shift()!
+        r.send(a, { type: "input", seq, flight: { ...flightInput, throttle: seq / 1000 } })
+      }
+      r.ticks(1)
+      expect(p.ack).toBeGreaterThanOrEqual(prevAck)
+      expect(p.ack - prevAck).toBeLessThanOrEqual(2)
+      for (let s = prevAck + 1; s <= p.ack; s++) consumedAt.set(s, t)
+      prevAck = p.ack
+      const value = Math.round(p.flight.throttle * 1000)
+      if (value !== applied.at(-1)) applied.push(value)
+    }
+    const latency = [...consumedAt].filter(([s]) => s > 0).map(([s, t]) => t - s)
+    return { p, latency, applied }
+  }
+
+  test("jittery arrival → every seq consumed once, nothing dropped or repeated, bounded latency", () => {
+    const rng = createRng(7)
+    const { p, latency, applied } = jitterRun(() => Math.floor(rng() * 2), 1200) // ±1 tick
+    expect(p.jitter.synthesized).toBe(0)
+    expect(p.jitter.dropped).toBe(0)
+    expect(p.jitter.late).toBe(0)
+    expect(p.jitter.caughtUp).toBe(0)
+    expect(Math.max(...latency)).toBeLessThanOrEqual(3)
+    // Real inputs are applied in order, never revisited.
+    for (let i = 1; i < applied.length; i++) expect(applied[i]).toBeGreaterThan(applied[i - 1])
+    expect(p.jitter.target).toBeGreaterThanOrEqual(JITTER_TARGET_MIN)
+    expect(p.jitter.target).toBeLessThanOrEqual(JITTER_TARGET_MAX)
+  })
+
+  test("heavier jitter grows the buffer, then stays clean; late seqs never re-applied", () => {
+    const rng = createRng(11)
+    // Starts on a clean link (small buffer), then 0..3 ticks of jitter.
+    const { p, latency, applied } = jitterRun(k => (k < 30 ? 0 : Math.floor(rng() * 4)), 1800)
+    expect(p.jitter.target).toBeGreaterThanOrEqual(3)
+    expect(p.jitter.synthesized).toBeGreaterThan(0)
+    expect(p.jitter.synthesized).toBeLessThanOrEqual(6)
+    expect(p.jitter.late).toBe(p.jitter.synthesized)
+    expect(p.jitter.dropped).toBe(0)
+    for (let i = 1; i < applied.length; i++) expect(applied[i]).toBeGreaterThan(applied[i - 1])
+    expect(Math.max(...latency.slice(-600))).toBeLessThanOrEqual(3 + JITTER_TARGET_MAX)
+  })
+
+  test("smooth arrival shrinks the buffer; stalls repeat the last input without double-applying late seqs", () => {
+    const smooth = jitterRun(() => 0, 900)
+    expect(smooth.p.jitter.target).toBe(JITTER_TARGET_MIN)
+    expect(smooth.latency.slice(-100).every(l => l <= 1)).toBe(true)
+    // Every 200 ticks the network stalls for 4 ticks, then delivers the backlog at once.
+    const stall = jitterRun(k => (k % 200 >= 100 && k % 200 < 104 ? 104 - (k % 200) : 0), 1000)
+    expect(stall.p.jitter.synthesized).toBeGreaterThan(0)
+    expect(stall.p.jitter.late).toBe(stall.p.jitter.synthesized)
+    for (let i = 1; i < stall.applied.length; i++) expect(stall.applied[i]).toBeGreaterThan(stall.applied[i - 1])
+    expect(stall.p.jitter.target).toBeGreaterThan(JITTER_TARGET_MIN)
+    expect(Math.max(...stall.latency)).toBeLessThanOrEqual(8)
   })
 
   test("wire snapshots: compact, players only when changed, own weapons only", () => {

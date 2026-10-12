@@ -49,6 +49,8 @@ const JITTER_CATCHUP_MARGIN = 2
 const JITTER_WINDOW = 180
 /** Max consecutive dry ticks that stand in for the next seq; beyond that the buffer re-primes. */
 const JITTER_MAX_SYNTH = 4
+/** Contiguous seqs required before dry ticks synthesize stand-ins. */
+const JITTER_STREAM_MIN = 10
 /** Players list is re-sent at least this often even if unchanged (seconds). */
 const PLAYERS_RESEND = 1
 /** Human input older than this stops firing (lost connection / tab hidden). */
@@ -61,7 +63,7 @@ const SPAWN_SLOTS = 16
 
 function newJitterBuffer(): JitterBuffer {
   return {
-    target: JITTER_TARGET_INITIAL, primed: false, starveRun: 0, windowTicks: 0, windowMinDepth: Infinity, windowUnderrun: false, drainOne: false,
+    target: JITTER_TARGET_INITIAL, offset: 0, primed: false, streak: 0, starveRun: 0, windowTicks: 0, windowMinSlack: Infinity, windowUnderruns: 0,
     synthesized: 0, caughtUp: 0, dropped: 0, late: 0,
   }
 }
@@ -70,20 +72,25 @@ const NEUTRAL_SEAT: SeatInput = { aim: null, firePrimary: false, fireSecondary: 
 
 interface QueuedInput {
   seq: number
+  /** Tick at which it arrived. */
+  at: number
   flight?: FlightInput
   seat?: SeatInput
 }
 
 interface JitterBuffer {
   target: number
-  /** False until the queue first fills to `target` (and again after a long gap). */
+  /** Input `seq` is due at tick `seq + offset`. */
+  offset: number
+  /** False until the first arrival (and again after a long gap). */
   primed: boolean
+  /** Consecutive contiguous seqs received (streaming detection). */
+  streak: number
   /** Consecutive dry ticks that stood in for the next seq. */
   starveRun: number
   windowTicks: number
-  windowMinDepth: number
-  windowUnderrun: boolean
-  drainOne: boolean
+  windowMinSlack: number
+  windowUnderruns: number
   /** Counters (diagnostics/tests). */
   synthesized: number
   caughtUp: number
@@ -333,11 +340,12 @@ export class RoomEngine {
     if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0 || seq <= p.seq) return
     if (seq <= p.ack) {
       // Already stood in for by a repeated input while the buffer ran dry: never apply it twice.
+      p.jitter.streak = seq === p.seq + 1 ? p.jitter.streak + 1 : 0
       p.seq = seq
       p.jitter.late++
       return
     }
-    const input: QueuedInput = { seq }
+    const input: QueuedInput = { seq, at: this.tick }
     if (m.flight !== undefined) {
       input.flight = readFlight(m.flight)
       if (!input.flight) return
@@ -346,6 +354,7 @@ export class RoomEngine {
       input.seat = readSeat(m.seat)
       if (!input.seat) return
     }
+    p.jitter.streak = seq === p.seq + 1 ? p.jitter.streak + 1 : 0
     p.seq = seq
     p.lastInputAt = this.time
     p.queue.push(input)
@@ -357,57 +366,68 @@ export class RoomEngine {
   }
 
   /**
-   * Adaptive jitter buffer: consume exactly one input per tick once ~`target` inputs are buffered. A dry tick
-   * repeats the last input and counts as the next seq (so the late original is skipped, not double-applied);
-   * excess depth is drained by consuming two inputs in one tick.
+   * Adaptive jitter buffer (playout schedule): input `seq` is due at tick `seq + offset`, where offset is set on
+   * the first arrival to hold ~`target` ticks. Exactly one input is consumed per tick. A dry tick repeats the last
+   * input as a stand-in for the next seq (ack advances; the late original is skipped, never double-applied).
+   * Repeated underruns grow the buffer (one hold tick); a window with spare depth, or depth above
+   * target + margin, shrinks it (one tick consumes two inputs).
    */
   private consumeTick(p: PlayerState): void {
     const jb = p.jitter
     const q = p.queue
     while (q.length && q[0].seq <= p.ack) { q.shift(); jb.late++ }
     if (!jb.primed) {
-      if (q.length === 0 || q.length < jb.target) return
+      if (!q.length) return
+      jb.offset = q[0].at - q[0].seq + jb.target
       jb.primed = true
+      jb.starveRun = 0
     }
-    if (q.length < jb.windowMinDepth) jb.windowMinDepth = q.length
     if (++jb.windowTicks >= JITTER_WINDOW) {
-      if (!jb.windowUnderrun) {
+      if (jb.windowUnderruns === 0 && jb.windowMinSlack >= 1 && jb.windowMinSlack !== Infinity) {
         if (jb.target > JITTER_TARGET_MIN) jb.target--
-        // A consistently spare input is pure latency: drain one.
-        if (jb.windowMinDepth >= 2 && jb.windowMinDepth !== Infinity) jb.drainOne = true
+        jb.offset--
       }
       jb.windowTicks = 0
-      jb.windowMinDepth = Infinity
-      jb.windowUnderrun = false
+      jb.windowMinSlack = Infinity
+      jb.windowUnderruns = 0
     }
-    const next = q.shift()
-    if (next) {
-      jb.starveRun = 0
-      if (q.length > jb.target + JITTER_CATCHUP_MARGIN || (jb.drainOne && q.length > 0)) {
-        jb.drainOne = false
-        const extra = q.shift()!
-        // Keep one-shot presses from the skipped input.
-        if (next.seat && extra.seat) {
-          extra.seat = { ...extra.seat, flares: extra.seat.flares || next.seat.flares, ability: extra.seat.ability || next.seat.ability }
-        }
-        this.consume(p, next)
-        this.consume(p, extra)
-        jb.caughtUp++
-      } else {
-        this.consume(p, next)
+    if (q.length > jb.target + JITTER_CATCHUP_MARGIN) {
+      jb.offset--
+      jb.caughtUp++
+    }
+    const due = this.tick - jb.offset
+    let consumed = 0
+    while (consumed < 2 && q.length && q[0].seq <= due) {
+      const next = q.shift()!
+      const after = q[0]
+      if (consumed === 0 && after && after.seq <= due && next.seat && after.seat) {
+        // Two inputs this tick: keep one-shot presses from the first.
+        after.seat = { ...after.seat, flares: after.seat.flares || next.seat.flares, ability: after.seat.ability || next.seat.ability }
       }
+      this.consume(p, next)
+      consumed++
+    }
+    if (consumed) {
+      jb.starveRun = 0
+      if (q.length < jb.windowMinSlack) jb.windowMinSlack = q.length
       return
     }
+    if (p.ack >= due) return // ahead of schedule (buffer growing)
     // Dry tick.
-    if (jb.starveRun === 0) {
-      jb.windowUnderrun = true
-      if (jb.target < JITTER_TARGET_MAX) jb.target++
-    }
-    if (jb.starveRun < JITTER_MAX_SYNTH && p.ack >= 0 && this.time - p.lastInputAt <= STALE_INPUT) {
+    if (jb.starveRun === 0) jb.windowUnderruns++
+    // Stand-ins only make sense for a client streaming one contiguous seq per tick.
+    if (jb.starveRun < JITTER_MAX_SYNTH && p.ack >= 0 && jb.streak >= JITTER_STREAM_MIN && this.time - p.lastInputAt <= STALE_INPUT) {
       jb.starveRun++
       jb.synthesized++
       p.ack++
+      jb.windowMinSlack = 0
+      if ((jb.starveRun >= 2 || jb.windowUnderruns >= 2) && jb.target < JITTER_TARGET_MAX) {
+        jb.target++
+        jb.offset++
+        jb.windowUnderruns = 0
+      }
     } else {
+      // Long gap (sender idle): re-prime on the next arrival.
       jb.starveRun = 0
       jb.primed = false
     }
