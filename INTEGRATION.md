@@ -1,5 +1,9 @@
 # Integration TODO (orchestrator)
 
+- Double FOV boost: camera.ts (+6° above cruise) AND scene.ts (+6° while boosting) — keep one (prefer camera.ts).
+- Client must call `view.setLocal(true)` on the local player's own AircraftView (prevents distance up-scaling).
+- Next style pass: "GOLDEN ELDRITCH" (see STYLE.md top) for world, aircraft, effects, UI once current fixes land.
+
 ## Controls help text (unified Battlefield scheme) — apply in spawn.ts/index.html/pause.ts
 - Same for all aircraft: "Pitch: Mouse Y (forward = nose down) · ↑ down ↓ up", "Roll: Mouse X · ←→", "Yaw: A D · Q E", "Throttle/Collective: W S", "Boost / brake·auto-hover: Shift X". Drop separate Apache table. Pause checkbox: "Invert mouse Y (mouse forward = nose up)".
 - Heli trade-off: self-level means sustained forward flight needs repeated forward nudges. Revisit after playtest (option: hold-tilt when |pitch| > ~8°).
@@ -14,7 +18,7 @@
 - Arrows: Up = nose DOWN, Down = nose UP (inverted), Left/Right = yaw.
 - W/S throttle (persistent) / heli collective; wheel = fine throttle. Q/E roll. A/D = rudder (jets) / strafe (heli).
 - Shift boost, X brake/hover-hold.
-- **Shooting:** Left mouse (hold) = primary guns, Right mouse = secondary/missiles, Space = primary (keyboard/trackpad backup). F flares, R ability, 1/2 seats, hold V = free-look, Enter/T chat, Tab scoreboard, Esc menu.
+- **Shooting:** Left mouse (hold) = primary guns, Right mouse = secondary/missiles, Space = primary (keyboard/trackpad backup), V = secondary (backup). F flares, R ability, 1/2 seats, **hold C = free-look**, T = chase/cockpit, Enter = chat, Tab scoreboard, Esc menu. (Superseded mapping below: unified Battlefield scheme.)
 - Gunner seat: mouse aims turret (aim vector), same fire buttons.
 - Flight mapping (direct mode, aim=null): pitch +1 = nose up (Arrow Up sends −1), yaw +1 = turn right (jets: coordinated auto-bank turn), roll = Q/E (jets) and A/D strafe (heli → `roll`, not `yaw`). Jets: A/D → yaw (rudder).
 

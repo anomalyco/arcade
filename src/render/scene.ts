@@ -1,13 +1,13 @@
 /// <reference types="vite/client" />
 // Renderer + scene host. Loaded lazily after the lobby has painted.
 import {
-  BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, Fog, Group, HemisphereLight, Mesh, MeshLambertMaterial, OrthographicCamera, PerspectiveCamera,
+  AmbientLight, Box3, BufferGeometry, Color, LineSegments, Vector3, DirectionalLight, Float32BufferAttribute, Fog, Group, HemisphereLight, Mesh, MeshLambertMaterial, OrthographicCamera, PerspectiveCamera,
   PlaneGeometry, Scene, ShaderMaterial, SRGBColorSpace, UnsignedByteType, Vector2, WebGLRenderer, WebGLRenderTarget, type Camera,
 } from "three"
-import type { Quality } from "../sim/types"
+import type { Quality, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { AIRBASES, groundHeight } from "../sim/geography"
 import { createWorldView, type WorldView } from "./world-view"
-import { preloadAircraft } from "./aircraft"
+import { aircraftReady, createAircraftView, preloadAircraft } from "./aircraft"
 import { createEffects, type Effects } from "./effects"
 import { CameraRig } from "./camera"
 
@@ -27,6 +27,49 @@ export interface SceneHost {
   setQuality(q: Quality): void
   groundAt(x: number, z: number): number
   stats: FrameStats
+  /** Studio 3/4 render of an aircraft in team livery (PNG data URL), cached. null if the model failed to load. */
+  thumbnail(kind: VehicleKind, team: TeamId): Promise<string | null>
+  /** Sense of speed: +6° FOV while boosting, faint speed streaks above 600 km/h. Call each frame (0 when not flying). */
+  setSpeedFx(kmh: number, boost: boolean): void
+}
+
+const STREAKS_VS = /* glsl */ `
+attribute vec4 aSeed; // angle, radius, phase, end (0/1)
+uniform float uTime;
+uniform float uSpeed;
+varying float vA;
+void main() {
+  float L = 260.0;
+  float z = -mod(aSeed.z * L + uTime * uSpeed, L) - 8.0;
+  float len = 4.0 + uSpeed * 0.035;
+  vec3 p = vec3(cos(aSeed.x) * aSeed.y, sin(aSeed.x) * aSeed.y * 0.7, z + aSeed.w * len);
+  vA = (1.0 - smoothstep(120.0, 260.0, -z)) * smoothstep(8.0, 30.0, -z);
+  gl_Position = projectionMatrix * vec4(p, 1.0);
+}`
+const STREAKS_FS = /* glsl */ `
+uniform float uOpacity;
+varying float vA;
+void main() { gl_FragColor = vec4(1.0, 1.0, 1.0, vA * uOpacity); }`
+
+function makeStreaks(): { mesh: LineSegments; mat: ShaderMaterial } {
+  const N = 90
+  const seeds = new Float32Array(N * 8)
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, r = 9 + Math.random() * 22, ph = Math.random()
+    seeds.set([a, r, ph, 0, a, r, ph, 1], i * 8)
+  }
+  const geo = new BufferGeometry()
+  geo.setAttribute("position", new Float32BufferAttribute(new Float32Array(N * 6), 3))
+  geo.setAttribute("aSeed", new Float32BufferAttribute(seeds, 4))
+  const mat = new ShaderMaterial({
+    vertexShader: STREAKS_VS, fragmentShader: STREAKS_FS, transparent: true, depthTest: false, depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uSpeed: { value: 0 }, uOpacity: { value: 0 } },
+  })
+  const mesh = new LineSegments(geo, mat)
+  mesh.frustumCulled = false
+  mesh.renderOrder = 10
+  mesh.visible = false
+  return { mesh, mat }
 }
 
 /**
@@ -205,7 +248,75 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       camera.updateProjectionMatrix()
     },
     groundAt: groundHeight,
+    thumbnail(kind, team) {
+      const key = `${kind}:${team}`
+      let p = thumbs.get(key)
+      if (!p) { p = aircraftLoaded.then(() => renderThumb(kind, team)).catch(() => null); thumbs.set(key, p) }
+      return p
+    },
+    setSpeedFx(kmh, boost) {
+      speedKmh = kmh
+      boosting = boost
+    },
   }
+
+  // ---- aircraft thumbnails (offscreen, same renderer; one-off per kind+team)
+  const thumbs = new Map<string, Promise<string | null>>()
+  const renderThumb = async (kind: VehicleKind, team: TeamId): Promise<string | null> => {
+    if (!aircraftReady(kind)) return null
+    const W = 480, H = 300
+    const sc = new Scene()
+    sc.add(new HemisphereLight("#c9dcf2", "#d9cdb0", 1.3), new AmbientLight("#ffffff", 0.15))
+    const sun = new DirectionalLight("#ffe9cc", 2.6)
+    sun.position.set(0.55, 0.55, 0.62).multiplyScalar(100)
+    sc.add(sun)
+    const view = createAircraftView(kind, team, "high")
+    sc.add(view.root)
+    const cam = new PerspectiveCamera(30, W / H, 0.5, 2000)
+    const fake = {
+      id: "thumb", kind, team, hp: 1, maxHp: 1, seats: ["a", "b"], aim: [null, null], weapons: [[], []], flaresReadyAt: 0, flareCount: 0,
+      abilityReadyAt: 0, spottedUntil: 0, lastDamagedBy: null, alive: true,
+      flight: { kind, position: [0, 0, 0], velocity: [0, 0, 0], orientation: [0, 0, 0, 1], angularVelocity: [0, 0, 0], throttle: 0.6, onGround: false, gearDown: false, crashed: null, tick: 0 },
+    } as unknown as VehicleEntity
+    view.update(fake, [], 0.016, cam)
+    view.update(fake, [], 0.016, cam)
+    const box = new Box3().setFromObject(view.root)
+    const c = box.getCenter(new Vector3())
+    const size = box.getSize(c.clone()).length()
+    // 3/4 front view from slightly above (nose = -Z).
+    cam.position.set(c.x - size * 0.72, c.y + size * 0.42, c.z - size * 0.92)
+    cam.lookAt(c)
+    cam.updateMatrixWorld()
+    const rt = new WebGLRenderTarget(W, H, { samples: 4, type: UnsignedByteType, colorSpace: SRGBColorSpace })
+    const prevBg = sc.background
+    const prevClear = renderer.getClearColor(new Color()), prevAlpha = renderer.getClearAlpha()
+    renderer.setRenderTarget(rt)
+    renderer.setClearColor(0x000000, 0)
+    renderer.clear()
+    renderer.render(sc, cam)
+    renderer.setRenderTarget(null)
+    renderer.setClearColor(prevClear, prevAlpha)
+    sc.background = prevBg
+    const px = new Uint8Array(W * H * 4)
+    renderer.readRenderTargetPixels(rt, 0, 0, W, H, px)
+    rt.dispose()
+    view.dispose()
+    const cv = document.createElement("canvas")
+    cv.width = W; cv.height = H
+    const g = cv.getContext("2d")!
+    const img = g.createImageData(W, H)
+    for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4)
+    g.putImageData(img, 0, 0)
+    return cv.toDataURL("image/png")
+  }
+
+  // ---- sense of speed
+  let speedKmh = 0
+  let boosting = false
+  let fovBoost = 0
+  let streakAmt = 0
+  const streaks = makeStreaks()
+  scene.add(streaks.mesh)
 
   const loop = () => {
     const now = performance.now()
@@ -218,6 +329,15 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       rig.setMode("menu")
       rig.orbit(dt, [0, 0, 0], 7000, 1400, 0.018)
       rig.apply(dt)
+    }
+    fovBoost += ((boosting && frameFn ? 6 : 0) - fovBoost) * (1 - Math.exp(-dt * 3))
+    rig.baseFov = 62 + fovBoost
+    streakAmt += ((frameFn ? Math.min(1, Math.max(0, (speedKmh - 600) / 300)) : 0) - streakAmt) * (1 - Math.exp(-dt * 4))
+    streaks.mesh.visible = streakAmt > 0.01
+    if (streaks.mesh.visible) {
+      streaks.mat.uniforms.uTime.value = time
+      streaks.mat.uniforms.uSpeed.value = speedKmh / 3.6
+      streaks.mat.uniforms.uOpacity.value = streakAmt * 0.22
     }
     world.update(camera.position, dt, time)
     effects.update(dt, time, camera)

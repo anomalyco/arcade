@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, BoxGeometry, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DoubleSide, Float32BufferAttribute,
+  AdditiveBlending, BoxGeometry, FrontSide, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute,
   Group, IcosahedronGeometry, Matrix4, Mesh, MeshLambertMaterial, ShaderMaterial, SphereGeometry,
 } from "three"
 import { AIRBASES, BASE_LAYOUT, SAFE_ZONE_HEIGHT, type Airbase } from "../../sim/geography"
@@ -129,10 +129,10 @@ function domeMaterial() {
     name: "World · safe zone domes",
     transparent: true,
     depthWrite: false,
-    side: DoubleSide,
+    side: FrontSide,
     blending: AdditiveBlending,
     toneMapped: false,
-    uniforms: { strength: { value: [0.5, 0.5, 0.5, 0.5] }, time: { value: 0 } },
+    uniforms: { strength: { value: [1, 1, 1, 1] }, outside: { value: [1, 1, 1, 1] }, time: { value: 0 } },
     vertexShader: /* glsl */ `
       #include <common>
       #include <logdepthbuf_pars_vertex>
@@ -155,6 +155,7 @@ function domeMaterial() {
       #include <common>
       #include <logdepthbuf_pars_fragment>
       uniform float strength[4];
+      uniform float outside[4];
       uniform float time;
       varying vec3 vWorld;
       varying vec3 vLocal;
@@ -166,17 +167,17 @@ function domeMaterial() {
         float dist = length(toEye);
         vec3 n = normalize(vec3(vLocal.x, vLocal.y * ${(AIRBASES[0].safeRadius / SAFE_ZONE_HEIGHT).toFixed(4)}, vLocal.z));
         float facing = abs(dot(n, toEye / dist));
-        float rim = pow(1.0 - facing, 3.0);
-        vec3 d = normalize(vLocal);
-        float lat = asin(clamp(d.y, 0.0, 1.0));
-        float ring = smoothstep(0.97, 1.0, sin(lat * 18.0 - time * 0.3) * 0.5 + 0.5);
-        float ground = 1.0 - smoothstep(0.0, 0.015, d.y);
-        float fade = 1.0 - smoothstep(5000.0, 11000.0, dist);
-        float near = smoothstep(0.0, 120.0, dist);
+        float rim = pow(1.0 - facing, 4.0);
+        float fade = 1.0 - smoothstep(2500.0, 6000.0, dist);
         int t = int(vTeam + 0.5);
         float s = t == 0 ? strength[0] : t == 1 ? strength[1] : t == 2 ? strength[2] : strength[3];
-        float a = (0.015 + rim * 0.16 + ring * 0.03 + ground * 0.25) * s * fade * near;
-        gl_FragColor = vec4(vColor * a, 1.0);
+        float o = t == 0 ? outside[0] : t == 1 ? outside[1] : t == 2 ? outside[2] : outside[3];
+        // Rim-only shell; disappears while the camera is inside it.
+        float a = rim * 0.09 * s * fade * o;
+        // Encode the colour first, then scale: additive blending happens in display space.
+        gl_FragColor = vec4(vColor, 1.0);
+        #include <colorspace_fragment>
+        gl_FragColor.rgb *= a;
       }
     `,
   })
@@ -211,7 +212,7 @@ function domes(): BufferGeometry {
 export interface AirbaseViews {
   root: Group
   setHighlight(team: number | null): void
-  update(time: number): void
+  update(time: number, camera?: { x: number; y: number; z: number }): void
   dispose(): void
 }
 
@@ -242,9 +243,21 @@ export function createAirbases(): AirbaseViews {
   return {
     root,
     setHighlight(team) {
-      dmat.uniforms.strength.value = [0, 1, 2, 3].map(i => team === null ? 0.6 : i === team ? 1.1 : 0.4)
+      dmat.uniforms.strength.value = [0, 1, 2, 3].map(i => team === null ? 0.8 : i === team ? 1 : 0.55)
     },
-    update(time) { dmat.uniforms.time.value = time % 1000 },
+    update(time, camera) {
+      dmat.uniforms.time.value = time % 1000
+      if (!camera) return
+      dmat.uniforms.outside.value = AIRBASES.map(b => {
+        const half = b.runwayLength / 2
+        const a = -(camera.x - b.center[0]) * Math.sin(b.heading) - (camera.z - b.center[2]) * Math.cos(b.heading)
+        const c = (camera.x - b.center[0]) * Math.cos(b.heading) - (camera.z - b.center[2]) * Math.sin(b.heading)
+        const da = Math.max(0, Math.abs(a) - half)
+        const d = Math.hypot(da, c) / b.safeRadius, y = Math.max(0, camera.y - b.center[1]) / SAFE_ZONE_HEIGHT
+        const r = Math.sqrt(d * d + y * y) // < 1 inside the shell
+        return Math.min(1, Math.max(0, (r - 0.95) / 0.25))
+      })
+    },
     dispose() { paveGeo.dispose(); buildGeo.dispose(); domeGeo.dispose(); material.dispose(); dmat.dispose() },
   }
 }

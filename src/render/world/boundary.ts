@@ -38,13 +38,15 @@ export function createBoundary() {
       varying vec3 vWorld;
       void main() {
         #include <logdepthbuf_fragment>
-        float dist = length(cameraPosition - vWorld);
-        float near = 1.0 - smoothstep(1500.0, 6000.0, dist);
-        float along = abs(vWorld.x) > abs(vWorld.z) ? vWorld.z : vWorld.x;
-        float streak = 0.6 + 0.4 * sin(along * 0.012 + sin(along * 0.0031 + time * 0.2) * 3.0 + time * 0.15);
-        float height = 1.0 - smoothstep(0.0, 4500.0, vWorld.y);
-        float a = near * height * streak * 0.08;
-        gl_FragColor = vec4(vec3(0.62, 0.56, 0.86) * a, 1.0);
+        // Distance from the camera to this wall plane, measured horizontally.
+        float onXWall = step(abs(abs(vWorld.x) - ${WORLD_HALF.toFixed(1)}), 1.0);
+        float wallDist = mix(abs(vWorld.z - cameraPosition.z), abs(vWorld.x - cameraPosition.x), onXWall);
+        float near = 1.0 - smoothstep(0.0, 1500.0, wallDist);
+        float height = 1.0 - smoothstep(0.0, 3500.0, vWorld.y);
+        float a = near * height * height * 0.04;
+        gl_FragColor = vec4(vec3(0.72, 0.68, 0.92), 1.0);
+        #include <colorspace_fragment>
+        gl_FragColor.rgb *= a;
       }
     `,
   })

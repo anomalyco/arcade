@@ -42,18 +42,21 @@ export function createSky() {
       void main() {
         vec3 d = normalize(vDir);
         float up = max(d.y, 0.0);
-        vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.55, pow(up, 0.8)));
-        // Warm glow around a soft sun disc.
+        // Narrow horizon haze band, then sky blue.
+        vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.22, pow(up, 0.8)));
+        // Sun: small crisp disc (~2°) + soft additive halo (~6°) + faint wide glow.
         float sd = max(dot(d, sunDir), 0.0);
-        col = mix(col, sunCol, pow(sd, 12.0) * 0.25);
-        col = mix(col, vec3(1.0, 0.99, 0.95), smoothstep(0.9986, 0.9992, sd));
+        float ang = acos(clamp(dot(d, sunDir), -1.0, 1.0));
+        col += sunCol * 0.35 * (1.0 - smoothstep(0.0, 0.055, ang)) * (1.0 - smoothstep(0.0, 0.055, ang));
+        col += sunCol * 0.08 * pow(sd, 24.0);
+        col = mix(col, vec3(1.0, 0.98, 0.92), 1.0 - smoothstep(0.0165, 0.0185, ang));
 
         // The strange star: a tiny mint point with a lilac ring that breathes very slowly.
         float st = max(dot(d, normalize(starDir)), 0.0);
-        float ang = acos(clamp(st, -1.0, 1.0));
+        float sang = acos(clamp(st, -1.0, 1.0));
         float pulse = 0.7 + 0.3 * sin(time * 0.31) * sin(time * 0.07 + 1.3);
-        col = mix(col, starCol, smoothstep(0.0032, 0.0018, ang) * 0.9 * pulse);
-        col = mix(col, lilac, smoothstep(0.0022, 0.0, abs(ang - 0.028)) * 0.35 * pulse);
+        col = mix(col, starCol, smoothstep(0.0032, 0.0018, sang) * 0.9 * pulse);
+        col = mix(col, lilac, smoothstep(0.0022, 0.0, abs(sang - 0.028)) * 0.35 * pulse);
 
         // Faint lilac aurora curtain low over the northern horizon.
         float north = smoothstep(0.2, 0.9, -d.z);

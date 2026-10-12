@@ -1,6 +1,20 @@
 # Art Style Guide
 
-## World art direction (locked): ISLANDERS-style low-poly
+## Signature look (locked, supersedes the Islanders section below): "GOLDEN ELDRITCH"
+A permanent, impossibly beautiful golden hour over a tropical archipelago — and something enormous watching from the sky.
+References for mood: Sable (flat color + fine ink line), Journey (warm glowing light), Outer Wilds (huge celestial bodies on the horizon), Studio Ghibli skies.
+- **Light:** sun low on the horizon (~8–12° elevation), warm apricot/peach key light (`#ffc58a`–`#ffd9a8`), long soft shadows; **shadow side is cool lilac/violet** (`#7d6fa8`-ish), never gray. Strong warm/cool split on every faceted surface.
+- **Sky:** gradient from warm peach at the horizon → rose → dusty lavender → deep indigo at the zenith. Clouds are big soft low-poly banks lit pink/gold on the sun side, lilac in shadow, with a slight rim glow.
+- **The Watcher:** a vast pale moon/planet (with a faint ring and subtle surface detail) hanging huge above the horizon opposite the sun, ~25–35° of sky, slightly too close. Faint aurora ribbons near it. Tasteful, uncanny, never cartoon-scary. It's the game's logo moment.
+- **Sea:** deep teal-indigo, with a bright golden sun-glitter path toward the sun, turquoise shallows turning gold near beaches, soft glowing foam rings.
+- **Terrain:** faceted low-poly kept, palette re-tuned for golden light: warm sand, olive-to-sage greens, terracotta/ochre cliffs, lilac in shade. Fewer, richer colors.
+- **Ink:** thin warm-dark outlines (`#3b2a3f`, ~1–1.5 px, distance-faded) on silhouettes of aircraft, props and terrain ridges — Moebius/Sable feel, subtle, not cartoon-thick.
+- **Atmosphere:** warm haze toward the sun, cooler violet haze away from it; distant islands fade into layered silhouettes.
+- **Effects:** fire/explosions in gold/coral, smoke warm-gray with lilac shadows, tracers warm white-gold.
+- **UI:** keep the frosted panels but tint them warm ivory with deep-indigo text and gold/lilac accents to match.
+- Performance budgets unchanged (≤ 60 world draw calls Balanced, 60 fps laptop).
+
+## World art direction (previous): ISLANDERS-style low-poly
 Reference: Islanders (https://store.steampowered.com/app/1046030/ISLANDERS/), also Townscaper, Sky Rogue.
 - **Faceted, flat-shaded geometry**: each terrain triangle has one flat color (no smooth per-vertex gradients, no noise textures). Low-poly silhouettes with clean, deliberate facets.
 - **One small curated palette** (~12–16 colors total for the whole world), harmonious and slightly desaturated/pastel: soft sand, 2–3 greens (light meadow, mid, deep forest), warm rock/cliff tones, pale snow; water in 2–3 blues (deep, mid, light turquoise shallows) with a crisp, simple foam edge. Colors chosen by height/slope bands with **hard band edges** (no blending/streaks).

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   AIRBASES, BASE_LAYOUT, CEILING, MESH_CELL, SAFE_ZONE_HEIGHT, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, baseToWorld,
   groundHeight, heightBound, inSafeZone, onRunway, segmentHitsGround, spawnPoint, surfaceType, terrainHeight, terrainMeshHeight,
-  worldMesh, worldQuery,
+  worldMesh, worldQuery, CORRIDOR_HALF, CORRIDOR_LENGTH, corridorFloor,
 } from "../src/sim/geography"
 import { generateCluster } from "../src/render/world/tile-gen"
 import type { TeamId, Vec3 } from "../src/sim/types"
@@ -61,7 +61,7 @@ describe("heightfield", () => {
       if (h > 0) land++
       if (Math.hypot(x, z) < 2500) centralMax = Math.max(centralMax, h)
     }
-    expect(centralMax).toBeGreaterThan(450)
+    expect(centralMax).toBeGreaterThan(380)
     expect(max).toBeLessThan(1000)
     expect(land / 60_000).toBeGreaterThan(0.1)
     expect(land / 60_000).toBeLessThan(0.4)
@@ -96,7 +96,7 @@ describe("heightfield", () => {
     }
     expect(checked).toBeGreaterThan(4000)
     expect(maxErr).toBeLessThan(0.01)
-    expect(data.maxY).toBeGreaterThan(300)
+    expect(data.maxY).toBeGreaterThan(150)
   })
 
   test("groundHeight never below water and equals vertex heights at mesh vertices", () => {
@@ -197,6 +197,19 @@ describe("airbases", () => {
         const s = spawnPoint(team, kind, 3)
         expect(onRunway(s.position[0], s.position[2])).toBe(true)
       }
+    }
+  })
+
+  test("departure corridors stay under a 3° glide slope for 7 km", () => {
+    for (const base of AIRBASES) {
+      let worst = Infinity
+      for (let d = 910; d <= CORRIDOR_LENGTH; d += 10) for (let c = -CORRIDOR_HALF; c <= CORRIDOR_HALF; c += 15) {
+        const [x, z] = baseToWorld(base, d, c)
+        const g = groundHeight(x, z)
+        expect(g).toBeLessThan(20 + 0.05 * (d - 900))
+        worst = Math.min(worst, corridorFloor(d) - g)
+      }
+      expect(worst).toBeGreaterThan(0)
     }
   })
 

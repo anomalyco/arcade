@@ -114,7 +114,7 @@ interface HeliHandling {
 const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   fighter: {
     thrust: 15, throttleRate: 0.6,
-    pitchRate: 0.72, pushFrac: 0.5, rollRate: 5.2, yawRate: 0.3,
+    pitchRate: 0.58, pushFrac: 0.5, rollRate: 3.5, yawRate: 0.3,
     pitchResponse: 8.5, rollResponse: 13, yawResponse: 8.5,
     pitchGain: 2.4, rollGain: 3.6, yawGain: 1.8,
     grip: 3.2, cornerFrac: 0.7, boostAuth: 0.82, bleed: 0.05,
@@ -124,7 +124,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   },
   warthog: {
     thrust: 10.5, throttleRate: 0.5,
-    pitchRate: 0.63, pushFrac: 0.55, rollRate: 3.1, yawRate: 0.35,
+    pitchRate: 0.46, pushFrac: 0.55, rollRate: 2.6, yawRate: 0.35,
     pitchResponse: 6.5, rollResponse: 9.5, yawResponse: 6.5,
     pitchGain: 1.8, rollGain: 2.7, yawGain: 1.7,
     grip: 4, cornerFrac: 0.6, boostAuth: 0.85, bleed: 0.035,
@@ -134,7 +134,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   },
   blackbird: {
     thrust: 17, throttleRate: 0.45,
-    pitchRate: 0.255, pushFrac: 0.5, rollRate: 1.85, yawRate: 0.12,
+    pitchRate: 0.24, pushFrac: 0.5, rollRate: 1.75, yawRate: 0.12,
     pitchResponse: 4.5, rollResponse: 6.5, yawResponse: 4.5,
     pitchGain: 1.25, rollGain: 1.9, yawGain: 0.9,
     grip: 2.2, cornerFrac: 0.6, boostAuth: 0.8, bleed: 0.05,
@@ -167,11 +167,15 @@ interface HeliDirectHandling {
   yawRate: number
   cyclicResponse: number
   yawResponse: number
-  /** Mild self-level (1/s, capped at maxLevelRate rad/s) on released axes; full within levelZone (rad),
-   *  fading to zero 30° beyond it. */
-  selfLevel: number
-  maxLevelRate: number
-  levelZone: number
+  /** Righting: rate (rad/s) = min(rightGain·tilt, rightCap), tapering to rightInverted when upside down;
+   *  full stick deflection on an axis scales it by (1 - rightUnderInput). */
+  rightGain: number
+  rightCap: number
+  rightInverted: number
+  rightUnderInput: number
+  /** Released collective above this eases toward hover at highReturnRate (units/s). */
+  highCollective: number
+  highReturnRate: number
   /** Horizontal share of rotor thrust multiplier, drag (horizontal quad/lin, vertical lin). */
   cyclicGain: number
   dragQuad: number
@@ -181,6 +185,7 @@ interface HeliDirectHandling {
   brakeGain: number
   brakeTilt: number
   brakeAttitudeGain: number
+  brakeRecoverRate: number
   brakeVertical: number
   brakeCollectiveRate: number
   cushion: number
@@ -190,11 +195,12 @@ interface HeliDirectHandling {
 
 const HELI_DIRECT: Record<"apache", HeliDirectHandling> = {
   apache: {
-    collectiveRate: 1.2, detentWidth: 0.04, detentRate: 0.25,
-    pitchRate: 1.4, rollRate: 2.2, yawRate: 1.5, cyclicResponse: 12, yawResponse: 10,
-    selfLevel: 1.0, maxLevelRate: 0.5, levelZone: 40 * DEG,
+    collectiveRate: 1.2, detentWidth: 0.1, detentRate: 0.3,
+    pitchRate: 1.5, rollRate: 1.6, yawRate: 1.5, cyclicResponse: 12, yawResponse: 10,
+    rightGain: 1.6, rightCap: 1.0, rightInverted: 0.35, rightUnderInput: 0.5,
+    highCollective: 0.6, highReturnRate: 0.35,
     cyclicGain: 1.3, dragQuad: 1.6e-3, dragLin: 0.08, dragVert: 0.55,
-    brakeGain: 0.6, brakeTilt: 30 * DEG, brakeAttitudeGain: 3, brakeVertical: 1.5, brakeCollectiveRate: 0.8,
+    brakeGain: 0.6, brakeTilt: 30 * DEG, brakeAttitudeGain: 3, brakeRecoverRate: 3, brakeVertical: 1.5, brakeCollectiveRate: 0.8,
     cushion: 2, cushionHeight: 8, gearHeight: 2,
   },
 }
@@ -495,7 +501,11 @@ function stepHeliDirect(s: FlightState, inp: FlightInput, dt: number, world: Wor
   if (inCollective !== 0) s.throttle = clamp(s.throttle + inCollective * h.collectiveRate * dt, 0, 1)
   else if (!s.onGround) {
     const d = HOVER_COLLECTIVE - s.throttle
-    const pull = inp.brake ? h.brakeCollectiveRate : Math.abs(d) < h.detentWidth ? h.detentRate : 0
+    // Hold where left, except: X pulls to hover, near-hover snaps to the detent, and a released high
+    // collective (> highCollective) eases back down (then into the detent) so it doesn't climb forever.
+    const pull = inp.brake ? h.brakeCollectiveRate
+      : Math.abs(d) < h.detentWidth ? h.detentRate
+      : s.throttle > h.highCollective ? h.highReturnRate : 0
     const step = pull * dt
     s.throttle += d > step ? step : d < -step ? -step : d
   }
@@ -508,7 +518,19 @@ function stepHeliDirect(s: FlightState, inp: FlightInput, dt: number, world: Wor
   let tx = inPitch * h.pitchRate
   let ty = -inYaw * h.yawRate
   let tz = -inRoll * h.rollRate
-  if (inp.brake && !s.onGround) {
+  // Righting axis: rotate body-up toward world-up (no yaw component).
+  rotInto(TMP, q, 0, 1, 0, true) // world up in body space
+  const tilt = Math.acos(clamp(TMP[1], -1, 1))
+  let axX = TMP[2], axZ = -TMP[0]
+  let axN = Math.sqrt(axX * axX + axZ * axZ)
+  if (axN < 1e-4) { axX = 0; axZ = 1; axN = 1 }
+  axX /= axN; axZ /= axN
+  if (inp.brake && !s.onGround && tilt > h.brakeTilt * 1.5) {
+    // Auto-hover from an unusual attitude: right it quickly first.
+    const r = Math.min(h.brakeAttitudeGain * tilt, h.brakeRecoverRate)
+    if (inPitch === 0) tx = axX * r
+    if (inRoll === 0) tz = axZ * r
+  } else if (inp.brake && !s.onGround) {
     // Auto-hover assist: tilt against velocity (bounded), level otherwise.
     const heading = Math.atan2(-F[0], -F[2])
     const vF = v[0] * -Math.sin(heading) + v[2] * -Math.cos(heading)
@@ -517,12 +539,13 @@ function stepHeliDirect(s: FlightState, inp: FlightInput, dt: number, world: Wor
     const bankT = clamp(Math.atan(-vR * h.brakeGain / GRAVITY), -h.brakeTilt, h.brakeTilt)
     if (inPitch === 0) tx = clamp(h.brakeAttitudeGain * wrapAngle(pitchT - pitchAngle), -h.pitchRate, h.pitchRate)
     if (inRoll === 0) tz = -clamp(h.brakeAttitudeGain * wrapAngle(bankT - bank), -h.rollRate, h.rollRate)
-  } else {
-    // Mild stability: released axes ease back toward level (fades out for big attitudes so flips stay
-    // possible). Blended by remaining stick deflection, so there's no mode switch.
-    const upright = 1 - smoothstep(h.levelZone, h.levelZone + 30 * DEG, Math.max(Math.abs(pitchAngle), Math.abs(bank)))
-    tx += clamp(-pitchAngle * h.selfLevel, -h.maxLevelRate, h.maxLevelRate) * upright * (1 - Math.abs(inPitch))
-    tz += clamp(bank * h.selfLevel, -h.maxLevelRate, h.maxLevelRate) * upright * (1 - Math.abs(inRoll))
+  } else if (!s.onGround) {
+    // Progressive righting: proportional to tilt up to a cap at moderate angles, tapering to a gentle
+    // pull when inverted (flips stay possible, recovery is slow). Stick input weakens it on that axis
+    // but never removes it, so short key presses can't flip the heli.
+    const strength = Math.min(h.rightGain * tilt, h.rightCap) + (h.rightInverted - h.rightCap) * smoothstep(100 * DEG, 170 * DEG, tilt)
+    tx += axX * strength * (1 - h.rightUnderInput * Math.abs(inPitch))
+    tz += axZ * strength * (1 - h.rightUnderInput * Math.abs(inRoll))
   }
   if (s.onGround && s.throttle < 0.3) ty = 0
   const kc = 1 - Math.exp(-h.cyclicResponse * dt)

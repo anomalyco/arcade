@@ -81,6 +81,8 @@ export interface ToonOptions {
   glass?: boolean
   /** Faceted normals like the world terrain/props (default true for opaque). */
   flat?: boolean
+  /** Multiply by the geometry's per-vertex "color" attribute (baked paint). */
+  vertexColors?: boolean
 }
 
 const TOON_OUTPUT = /* glsl */ `
@@ -103,6 +105,7 @@ export function createToonMaterial(opts: ToonOptions): MeshToonMaterial {
     transparent: opts.transparent ?? glass,
     opacity: opts.opacity ?? 1,
     depthWrite: !glass,
+    vertexColors: opts.vertexColors ?? false,
     toneMapped: false,
   })
   // MeshToonMaterial has no typed flatShading, but the renderer honors the flag on any material.

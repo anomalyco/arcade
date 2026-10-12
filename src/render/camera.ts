@@ -1,5 +1,7 @@
 import { MathUtils, Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three"
 import type { Quat, Vec3, VehicleKind } from "../sim/types"
+import { groundHeight } from "../sim/geography"
+import { VEHICLES } from "../sim/vehicles"
 
 export type CameraMode = "menu" | "orbit" | "chase" | "cockpit" | "gunner" | "death"
 
@@ -17,6 +19,14 @@ const GUNNER: Record<VehicleKind, Vec3> = {
   warthog: [0, -1.5, -2],
   blackbird: [0, -2.4, -15],
 }
+/**
+ * Gunner eye placement relative to the optic: metres along the line of sight (clears the own nose/belly)
+ * and metres straight down (below the fuselage), so the own airframe never fills the frame.
+ */
+const GUNNER_LEAD: Record<VehicleKind, number> = { fighter: 9, apache: 2.5, warthog: 8, blackbird: 4 }
+const GUNNER_DROP: Record<VehicleKind, number> = { fighter: 1.5, apache: 0.6, warthog: 1.5, blackbird: 1.5 }
+/** Minimum eye height above the ground/water surface (m). */
+const GROUND_CLEARANCE = 1.5
 const CHASE: Record<VehicleKind, { dist: number; height: number }> = {
   fighter: { dist: 26, height: 6 },
   apache: { dist: 24, height: 7 },
@@ -34,6 +44,16 @@ const _qy = new Quaternion()
 const _qp = new Quaternion()
 const _x = new Vector3()
 const _up = new Vector3()
+
+/** Max chase-camera trailing time constant at high speed (s). */
+const SPEED_LAG = 0.08
+/** Extra FOV (deg) when flying above cruise (boosting), ramping in over the first 40% of the boost band. */
+const BOOST_FOV = 6
+function boostFov(kind: VehicleKind, speed: number): number {
+  const v = VEHICLES[kind]
+  if (v.flight !== "jet") return 0
+  return BOOST_FOV * MathUtils.smoothstep(speed, v.cruise * 1.02, v.cruise + (v.boost - v.cruise) * 0.4)
+}
 
 const HELI_PITCH_FOLLOW = 0.7
 const HELI_ROLL_FOLLOW = 0.3
@@ -84,6 +104,8 @@ export class CameraRig {
   private orbitAngle = 0
   private followQ = new Quaternion()
   private followInit = false
+  private anchor = new Vector3()
+  private anchorInit = false
 
   constructor(readonly camera: PerspectiveCamera) {
     this.pos.copy(camera.position)
@@ -123,7 +145,7 @@ export class CameraRig {
     if (this.pos.y < floor) this.pos.y = floor
     _v.set(position[0], position[1], position[2]).addScaledVector(look, 400).addScaledVector(UP, height * 0.6)
     this.lookAt(this.pos, _v, UP)
-    this.fov = this.baseFov + Math.min(14, Math.max(0, speed - 80) * 0.06)
+    this.fov = this.baseFov + Math.min(14, Math.max(0, speed - 80) * 0.06) + boostFov(kind, speed)
   }
 
   /**
@@ -147,14 +169,19 @@ export class CameraRig {
     const speed = Math.hypot(velocity[0], velocity[1], velocity[2])
     const dist = c.dist * this.zoom * (1 + Math.min(speed, 260) / 900)
     const height = c.height * this.zoom
+    // Sense of speed: the camera's anchor trails the aircraft slightly at high speed (≤ SPEED_LAG s).
     _v.set(position[0], position[1], position[2])
-    this.pos.set(0, height, dist).applyQuaternion(_q2).add(_v)
+    const lag = SPEED_LAG * MathUtils.smoothstep(speed, 90, 200)
+    if (!this.anchorInit || lag <= 0) { this.anchor.copy(_v); this.anchorInit = true }
+    else this.anchor.lerp(_v, 1 - Math.exp(-dt / lag))
+    if (this.anchor.distanceToSquared(_v) > 400 * 400) this.anchor.copy(_v)
+    this.pos.set(0, height, dist).applyQuaternion(_q2).add(this.anchor)
     const floor = groundAt(this.pos.x, this.pos.z) + 3
     if (this.pos.y < floor) this.pos.y = floor
     _v2.set(0, height * 0.55, -80).applyQuaternion(_q2).add(_v)
     _up.set(0, 1, 0).applyQuaternion(_q2)
     this.lookAt(this.pos, _v2, _up)
-    this.fov = this.baseFov + Math.min(14, Math.max(0, speed - 80) * 0.06)
+    this.fov = this.baseFov + Math.min(14, Math.max(0, speed - 80) * 0.06) + boostFov(kind, speed)
   }
 
   /** Cockpit view locked to the airframe (direct controls), with free-look offsets. */
@@ -169,6 +196,7 @@ export class CameraRig {
 
   resetFollow(): void {
     this.followInit = false
+    this.anchorInit = false
   }
 
   cockpit(dt: number, kind: VehicleKind, position: Vec3, orientation: Quat, look: Vector3): void {
@@ -185,14 +213,17 @@ export class CameraRig {
   /** Gunner optics. `anchor` = world position of the turret / targeting pod when the model provides one. */
   gunner(dt: number, kind: VehicleKind, position: Vec3, orientation: Quat, look: Vector3, anchor: Vector3 | null = null): void {
     _q.set(orientation[0], orientation[1], orientation[2], orientation[3])
-    if (anchor) {
-      // Sit just ahead of the optic along the line of sight so the pod itself never blocks the view.
-      _v2.set(0, -0.6, 0).applyQuaternion(_q)
-      this.pos.copy(anchor).addScaledVector(look, 2.5).add(_v2)
-    } else {
+    if (anchor) this.pos.copy(anchor)
+    else {
       const o = GUNNER[kind]
       this.pos.set(o[0], o[1], o[2]).applyQuaternion(_q).add(_v.set(position[0], position[1], position[2]))
     }
+    // Ahead along the line of sight and below the airframe so the own nose/belly never fills the frame,
+    // and never below the ground (helipad look-down).
+    this.pos.addScaledVector(look, GUNNER_LEAD[kind])
+    this.pos.y -= GUNNER_DROP[kind]
+    const floor = groundHeight(this.pos.x, this.pos.z) + GROUND_CLEARANCE
+    if (this.pos.y < floor) this.pos.y = floor
     _v.copy(this.pos).add(look)
     this.lookAt(this.pos, _v, UP)
     this.fov = 60 / this.gunZoom

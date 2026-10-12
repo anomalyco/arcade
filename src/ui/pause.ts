@@ -31,7 +31,7 @@ export function createPauseMenu(parent: HTMLElement, actions: {
         <label>Graphics <span class="seg q"><button data-q="low">Low</button><button data-q="balanced">Balanced</button><button data-q="high">High</button></span></label>
         <label>Steering <span class="seg st"><button data-s="direct">Direct</button><button data-s="aim">Mouse-aim</button></span></label>
         <label>Mouse <input type="range" class="sens" min="0.2" max="3" step="0.05" /></label>
-        <div class="checks"><label class="check"><input type="checkbox" class="inv" /> Invert mouse Y</label>
+        <div class="checks"><label class="check"><input type="checkbox" class="inv" /> Invert mouse Y (mouse forward = nose up)</label>
         <label class="check"><input type="checkbox" class="mute" /> Mute</label></div>
       </div>
       <details><summary>Controls</summary><div class="ctl"></div></details>

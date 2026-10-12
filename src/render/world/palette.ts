@@ -10,8 +10,10 @@ export const PALETTE = {
   ochre: "#c8b06a",
   peak: "#e9e2cc",
   forestFloor: "#7ea457",
-  cliff: "#667c84",
-  cliffHigh: "#8a9696",
+  cliff: "#a8957f",
+  cliffShade: "#857464",
+  wetRock: "#71848a",
+  cliffHigh: "#b3a28c",
   seabed: "#b9c79a",
   // trees
   treeLight: "#8fbf55",
@@ -24,7 +26,7 @@ export const PALETTE = {
   deep: "#1f7fa6",
   foam: "#f4fbf6",
   // sky / haze
-  horizon: "#d3ecea",
+  horizon: "#acd6e6",
   zenith: "#7dbcdc",
   // built
   offWhite: "#f3eee2",

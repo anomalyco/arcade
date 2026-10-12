@@ -2,7 +2,7 @@
 // No three.js / DOM imports so it can run inside a Web Worker.
 //
 // Terrain is flat-shaded, non-indexed triangles with one colour per face (ISLANDERS-style):
-// bright terrace tops, slate cliffs, soft beaches, darker faces in valleys. LOD0 uses exactly the
+// bright terrace tops, warm sandstone cliffs, soft beaches, darker faces in valleys. LOD0 uses exactly the
 // baked jittered vertices + diagonals from geography.ts, i.e. the physics surface.
 import {
   AIRBASES, BASE_LAYOUT, MESH_CELL, SEA_FLOOR, WORLD_HALF, WORLD_SIZE, noise2, terrainMeshHeight, worldMesh,
@@ -94,9 +94,11 @@ function faceColor(h: number, slope: number, ao: number, x: number, z: number, v
   if (h < -1) col = C.seabed
   else {
     const top = forested ? mixRGB(topColor(h), C.forestFloor, 0.55) : topColor(h)
-    const cliff = h > 520 ? C.cliffHigh : C.cliff
-    // Beach faces stay sandy even when steep-ish; otherwise slope picks top → cliff.
-    const t = h < 3.5 ? step(1.4, 2.2, slope) : step(0.55, 1.05, slope)
+    // Warm sandstone cliffs; darker in occluded valleys; cool wet rock only right at the coast.
+    let cliff = h > 400 ? C.cliffHigh : mixRGB(C.cliff, C.cliffShade, ao)
+    if (h < 14) cliff = mixRGB(C.wetRock, cliff, step(6, 14, h))
+    // Beach faces stay sandy even when steep-ish; moderate slopes keep grass on the ledges.
+    const t = h < 3.5 ? step(1.4, 2.2, slope) : step(0.8, 1.35, slope)
     col = mixRGB(top, cliff, t)
   }
   // Valley occlusion + slight per-face value variation for a hand-made look.

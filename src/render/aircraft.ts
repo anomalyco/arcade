@@ -21,6 +21,7 @@ import {
   MeshBasicMaterial,
   Object3D,
   Quaternion,
+  SRGBColorSpace,
   Skeleton,
   SkinnedMesh,
   Sphere,
@@ -34,6 +35,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import type { PlayerInfo, Quality, SeatIndex, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
+import { groundHeight } from "../sim/geography"
+import { SUN_DIRECTION } from "./world/settings"
+import { createBlobShadow } from "./aircraft-shadow"
 import { createGlowMaterial, createOutlineMaterial, createToonMaterial, pastelize } from "./toon"
 
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"] as const
@@ -55,6 +59,15 @@ export interface AircraftView {
   anchors: Map<string, Object3D>
   /** True once the real model replaced the placeholder. */
   readonly ready: boolean
+  /** Mark the local player's own aircraft (never distance-scaled). */
+  setLocal(local: boolean): void
+}
+
+let groundQuery: (x: number, z: number) => number = groundHeight
+
+/** Override the surface height used for ground shadows (e.g. dev previews with a flat ground). */
+export function setAircraftGroundQuery(fn: (x: number, z: number) => number): void {
+  groundQuery = fn
 }
 
 export interface AircraftStats {
@@ -118,6 +131,8 @@ interface KindConfig {
   rudders?: { names: string[]; gain: number; max: number }
   anchors: AnchorDef[]
   placeholder: { length: number; span: number; heli: boolean }
+  /** Ground blob size [span, length] in meters. */
+  shadow: [number, number]
 }
 
 const CONFIG: Record<VehicleKind, KindConfig> = {
@@ -144,6 +159,7 @@ const CONFIG: Record<VehicleKind, KindConfig> = {
       { key: "targeting_pod_head", node: "targeting_pod_head" },
     ],
     placeholder: { length: 17.5, span: 13, heli: false },
+    shadow: [14, 18],
   },
   apache: {
     file: "apache",
@@ -173,6 +189,7 @@ const CONFIG: Record<VehicleKind, KindConfig> = {
       { key: "main_rotor", node: "main_rotor" },
     ],
     placeholder: { length: 16, span: 5.2, heli: true },
+    shadow: [13, 16],
   },
   warthog: {
     file: "a10",
@@ -197,6 +214,7 @@ const CONFIG: Record<VehicleKind, KindConfig> = {
       { key: "targeting_pod_head", node: "targeting_pod_head" },
     ],
     placeholder: { length: 16.3, span: 17.5, heli: false },
+    shadow: [18.5, 16.5],
   },
   blackbird: {
     file: "yf12",
@@ -216,6 +234,7 @@ const CONFIG: Record<VehicleKind, KindConfig> = {
       { key: "missile_bay_R", node: "missile_bay_R" },
     ],
     placeholder: { length: 31, span: 17, heli: false },
+    shadow: [17, 30],
   },
 }
 
@@ -275,6 +294,26 @@ const OUTLINES = false
  * Per-name color overrides applied instead of the pastel remap. An override recolors the whole deduped
  * material group containing a matching node, so it never adds draw calls.
  */
+/** Group whose paint is the airframe's top color (darkened for countershading). */
+const TOP_PAINT = /^(fuselage|fuselage_top|fuselage_upper)$/
+const TOP_DARKEN = 0.88
+const _hslT = { h: 0, s: 0, l: 0 }
+
+/** Per-mesh color overrides (baked into vertex colors; free). */
+const PART_COLORS: [RegExp, string, VehicleKind[]?][] = [
+  [/^spine_band$/, "#c4cdd7", ["fighter"]], // light dorsal spine band
+  [/^(flap|aileron|stab)_line_[LR]$/, "#a3afbd", ["fighter"]], // light panel lines on the wings
+  [/^panel_band_(aft|tail)$|^engine_panel_band_[LR]$/, "#b9bea5", ["warthog"]],
+  [/^cockpit_spine_hump$/, "#5a6070", ["blackbird"]],
+  [/^tail_boom_band_(front|rear)$|^nacelle_band_[LR]$/, "#c9cfb0", ["apache"]],
+]
+
+let bodyMat: Material | null = null
+function bodyMaterial(): Material {
+  bodyMat ??= createToonMaterial({ color: "#ffffff", vertexColors: true })
+  return bodyMat
+}
+
 const COLOR_OVERRIDES: [RegExp, string, VehicleKind[]?][] = [
   [/^pilot_\d_torso$/, "#97a274", ["fighter", "apache", "warthog"]], // soft olive flight suit
   [/^pilot_\d_torso$/, "#dcc48c", ["blackbird"]], // pale gold pressure suit
@@ -526,11 +565,41 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     if (OUTLINES && (role === "toon" || role === "livery")) outlineGeoms.push(g)
   })
 
-  // Shared toon materials per deduped group: pastel remap unless a group member matches an override.
+  // Opaque paint: every deduped group gets its pastel color (or a group override), then all groups are
+  // baked into vertex colors of a single "body" mesh, so per-part recolors cost no draw calls.
+  const body: Bucket = { role: "toon", shared: bodyMaterial(), glowColor: new Color(1, 1, 1), geoms: [], names: [], srcColor: new Color(1, 1, 1), key: "body" }
+  const kindMatch = (kinds?: VehicleKind[]) => !kinds || kinds.includes(kind)
+  for (const [key, b] of [...buckets]) {
+    if (b.role !== "toon") continue
+    const override = COLOR_OVERRIDES.find(([re, , kinds]) => kindMatch(kinds) && b.names.some((n) => re.test(n)))?.[1]
+    const groupColor = override ? new Color(override) : pastelize(b.srcColor, "hull")
+    // Countershading: the top-paint group is darkened so the airframe reads against the light belly/terrain.
+    if (!override && b.names.some((n) => TOP_PAINT.test(n))) {
+      groupColor.getHSL(_hslT, SRGBColorSpace)
+      groupColor.setHSL(_hslT.h, _hslT.s, _hslT.l * TOP_DARKEN, SRGBColorSpace)
+    }
+    b.geoms.forEach((g, i) => {
+      const name = b.names[i]
+      const partHex = PART_COLORS.find(([re, , kinds]) => kindMatch(kinds) && re.test(name))?.[1]
+      const c = partHex ? new Color(partHex) : groupColor
+      const n = g.getAttribute("position").count
+      const col = new Float32Array(n * 3)
+      for (let k = 0; k < n; k++) {
+        col[k * 3] = c.r
+        col[k * 3 + 1] = c.g
+        col[k * 3 + 2] = c.b
+      }
+      g.setAttribute("color", new Float32BufferAttribute(col, 3))
+      body.geoms.push(g)
+      body.names.push(name)
+    })
+    buckets.delete(key)
+  }
+  if (body.geoms.length) buckets.set("body", body)
+
   for (const b of buckets.values()) {
-    if (b.role !== "toon" && b.role !== "glass") continue
-    const override = COLOR_OVERRIDES.find(([re, , kinds]) => (!kinds || kinds.includes(kind)) && b.names.some((n) => re.test(n)))?.[1]
-    const color = override ? new Color(override) : pastelize(b.srcColor, b.role === "glass" ? "glass" : "hull")
+    if (b.role !== "glass") continue
+    const color = pastelize(b.srcColor, "glass")
     const cacheKey = `${b.role}:${color.getHexString()}`
     let shared = toonCache.get(cacheKey) ?? null
     if (!shared) {
@@ -789,6 +858,13 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 const FAR_DISTANCE = 1500
+const SHADOW_MAX_AGL = 150
+const _sn = new Vector3()
+const _sb = new Vector3()
+const _sr = new Vector3()
+const _v2 = new Vector3()
+const _shadowM = new Matrix4()
+const _rootM = new Matrix4()
 
 interface Rig {
   t: Template
@@ -831,6 +907,10 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
   let placeholder: Mesh | null = new Mesh(placeholderGeometry(kind), liveryMaterial(team))
   placeholder.name = "placeholder"
   root.add(placeholder)
+  const shadow = createBlobShadow()
+  root.add(shadow)
+  const shadowSize = CONFIG[kind].shadow
+  let isLocal = false
 
   let rig: Rig | null = null
   let disposed = false
@@ -977,6 +1057,40 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     void loadKind(kind, baseUrlDefault)
   }
 
+  const updateShadow = () => {
+    // Cast along the world sun direction so the blob sits where the real shadow would.
+    const agl0 = root.position.y - groundQuery(root.position.x, root.position.z)
+    const off = clamp(agl0, 0, SHADOW_MAX_AGL) / Math.max(0.2, SUN_DIRECTION.y)
+    const x = root.position.x - SUN_DIRECTION.x * off
+    const z = root.position.z - SUN_DIRECTION.z * off
+    const h = groundQuery(x, z)
+    const agl = root.position.y - h
+    if (!(agl < SHADOW_MAX_AGL) || agl < -5) {
+      shadow.visible = false
+      return
+    }
+    shadow.visible = true
+    const fade = 1 - clamp(agl / SHADOW_MAX_AGL, 0, 1)
+    ;(shadow.material as MeshBasicMaterial).opacity = 0.45 * fade * (0.6 + 0.4 * fade)
+    // Surface normal from a small height stencil so the blob lies on slopes.
+    const d = 4
+    _sn.set(groundQuery(x - d, z) - groundQuery(x + d, z), 2 * d, groundQuery(x, z - d) - groundQuery(x, z + d)).normalize()
+    // Heading (nose = -Z) projected onto the surface.
+    _sb.set(0, 0, 1).applyQuaternion(root.quaternion)
+    _sb.addScaledVector(_sn, -_sb.dot(_sn))
+    if (_sb.lengthSq() < 1e-6) _sb.set(0, 0, 1)
+    _sb.normalize()
+    _sr.crossVectors(_sn, _sb).normalize()
+    _sb.crossVectors(_sr, _sn)
+    const grow = (1 + (1 - fade) * 0.6) * root.scale.x
+    _shadowM.makeBasis(_sr, _sn, _sb)
+    _shadowM.scale(_v2.set(shadowSize[0] * grow, 1, shadowSize[1] * grow))
+    _shadowM.setPosition(x, h + 0.3, z)
+    _rootM.compose(root.position, root.quaternion, root.scale).invert()
+    shadow.matrix.multiplyMatrices(_rootM, _shadowM)
+    shadow.matrixWorldNeedsUpdate = true
+  }
+
   const boneAt = (r: Rig, name: string): number => r.t.boneIndex.get(name) ?? -1
 
   /** Bone local rotation = rest * axis rotation. */
@@ -1023,18 +1137,26 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     setBoost(on) {
       boostHint = on
     },
+    setLocal(local) {
+      isLocal = local
+    },
     update(vehicle, _players, dt, camera) {
       const f = vehicle.flight
       root.position.set(f.position[0], f.position[1], f.position[2])
       root.quaternion.set(f.orientation[0], f.orientation[1], f.orientation[2], f.orientation[3])
       root.visible = vehicle.alive
-      if (!vehicle.alive || !rig) return
+      if (!vehicle.alive) return
+      _v.setFromMatrixPosition(camera.matrixWorld)
+      const dist = _v.distanceTo(root.position)
+      // Remote aircraft grow up to 1.6x between 500 m and 1.5 km so they stay readable at gun range.
+      const k = clamp((dist - 500) / 1000, 0, 1)
+      root.scale.setScalar(isLocal ? 1 : 1 + 0.6 * k * k * (3 - 2 * k))
+      updateShadow()
+      if (!rig) return
       const r = rig
       const t = r.t
       time += dt
 
-      _v.setFromMatrixPosition(camera.matrixWorld)
-      const dist = _v.distanceTo(root.position)
       const far = dist > FAR_DISTANCE
       if (r.outline) r.outline.visible = outlinesEnabled && !far
 
@@ -1166,6 +1288,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
         rig = null
       }
       placeholder = null
+      ;(shadow.material as MeshBasicMaterial).dispose()
       root.clear()
     },
   }

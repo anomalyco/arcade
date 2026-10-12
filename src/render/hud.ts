@@ -3,7 +3,7 @@
 import { Vector3, type PerspectiveCamera } from "three"
 import type { PlayerInfo, TeamId, Vec3, VehicleEntity, WeaponId } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
-import { AIRBASES, WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/geography"
+import { AIRBASES, WORLD_HALF, groundHeight, segmentHitsGround, terrainHeight } from "../sim/geography"
 
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"]
 export const TEAM_NAMES = ["Cobalt", "Amber", "Emerald", "Crimson"]
@@ -68,6 +68,8 @@ export interface HudFrame {
   guide: { missile: Vec3; tti: number | null; lost: boolean } | null
   /** Seat hint (e.g. Blackbird pilot has no weapons). */
   hint: string | null
+  /** Pilot is in cockpit view: draw the canopy frame. */
+  cockpit?: boolean
 }
 
 export interface Hud {
@@ -77,7 +79,12 @@ export interface Hud {
   chat(name: string, team: TeamId | null, text: string): void
   banner(text: string, sub?: string, ms?: number): void
   hitmarker(kill?: boolean): void
-  damage(): void
+  /** Own aircraft was hit; `from` = attacker position (draws a directional arc). */
+  damage(from?: Vec3 | null): void
+  /** Victim death card: killer null = crashed. */
+  deathCard(killer: string | null, killerTeam: TeamId | null, weapon: string, distance: number | null): void
+  /** True while the ground-proximity warning is showing (the game plays the warning tone). */
+  readonly pullUp: boolean
   setVisible(flying: boolean): void
   openChat(onSend: (text: string | null) => void): void
   chatOpen(): boolean
@@ -120,7 +127,11 @@ const glyph = (t: number) => `<i class="tg t${t}" style="--c:${TEAM_TINTS[t]}"><
 export function createHud(parent: HTMLElement): Hud {
   const root = el("div", "hud", parent)
   root.innerHTML = `
+    <div class="hud-canopy"><svg viewBox="0 0 1600 900" preserveAspectRatio="none"><path d="M70 900C150 520 340 230 640 110L800 84 960 110C1260 230 1450 520 1530 900" /><path class="bow" d="M800 84V-10M560 150 420 -10M1040 150 1180 -10" /></svg></div>
     <div class="hud-dmg"></div>
+    <div class="hud-dir"><i></i></div>
+    <div class="hud-pullup">PULL UP</div>
+    <div class="hud-death"><div class="l1"></div><div class="l2"></div></div>
     <div class="hud-low"></div>
     <div class="hud-warnfx"></div>
     <div class="hud-markers"></div>
@@ -172,6 +183,11 @@ export function createHud(parent: HTMLElement): Hud {
   const hint = new Slot(q(".hud-hint"))
   const hitEl = q(".hud-hit")
   const dmgEl = q(".hud-dmg")
+  const dirEl = q(".hud-dir")
+  const pullEl = new Slot(q(".hud-pullup"))
+  const deathEl = q(".hud-death")
+  let pullUp = false
+  let lastCam: PerspectiveCamera | null = null
   const strip = q(".hud-compass .strip")
   const stripTf = new Slot(strip)
   const hdg = new Slot(q(".hud-compass .hdg"))
@@ -372,6 +388,7 @@ export function createHud(parent: HTMLElement): Hud {
     update(f) {
       frame++
       const cam = f.camera
+      lastCam = cam
       _cam.copy(cam.position)
       const flying = !!f.vehicle && f.vehicle.alive
       if (f.direct !== isDirect) {
@@ -402,7 +419,7 @@ export function createHud(parent: HTMLElement): Hud {
         const r = Math.max(16, Math.round(coneR(f.scannerCone, cam)))
         scan.setTransform(tf(sx(), sy()))
         if (r !== scanR) { scanR = r; scan.el.style.setProperty("--r", `${r}px`) }
-        if (frame % 6 === 0) scanRange.setText(f.scannerRange === null ? "NO RETURN" : `RNG ${(f.scannerRange / 1000).toFixed(1)} KM`)
+        if (frame % 6 === 0) scanRange.setText(f.scannerRange === null ? "NO TARGET" : `RNG ${(f.scannerRange / 1000).toFixed(1)} KM`)
       } else scan.setTransform(HIDDEN)
       if (flying && f.guide) {
         guide.setClass(f.guide.lost ? "hud-guide z on lost" : "hud-guide z on")
@@ -502,7 +519,7 @@ export function createHud(parent: HTMLElement): Hud {
           const frac = spec.kind === "pulse" ? wpn.ready : unlimited ? 1 : wpn.ammo / Math.max(1, wpn.cap)
           wr.bar.setTransform(`scaleX(${Math.max(0, Math.min(1, frac)).toFixed(3)})`)
         }
-        const cls = `hud${shown ? " flying" : ""}${isDirect ? " direct" : ""}${flying && f.scanner ? " scanning" : ""}${low ? " low" : ""}${f.missileWarning && flying ? " warn" : ""}`
+        const cls = `hud${shown ? " flying" : ""}${f.cockpit && flying ? " cockpit" : ""}${isDirect ? " direct" : ""}${flying && f.scanner ? " scanning" : ""}${low ? " low" : ""}${f.missileWarning && flying ? " warn" : ""}`
         if (cls !== rootCls) {
           // Preserve externally toggled classes (scoreboard / chat).
           const keep = (root.classList.contains("board") ? " board" : "") + (root.classList.contains("chatting") ? " chatting" : "")
@@ -510,6 +527,19 @@ export function createHud(parent: HTMLElement): Hud {
           root.className = cls + keep
         }
         ping.setText(f.ping > 0 ? `${Math.round(f.ping)} ms` : "")
+        // Ground proximity: project the velocity forward and look for terrain impact within 6 s.
+        pullUp = false
+        if (flying && f.vehicle) {
+          const p = f.vehicle.flight.position, vel = f.vehicle.flight.velocity
+          const agl = p[1] - groundHeight(p[0], p[2])
+          if (agl < 300 && vel[1] < -2 && !f.vehicle.flight.onGround) {
+            for (let t = 0.5; t <= 6; t += 0.5) {
+              const x = p[0] + vel[0] * t, z = p[2] + vel[2] * t
+              if (p[1] + vel[1] * t < groundHeight(x, z) + 2) { pullUp = true; break }
+            }
+          }
+        }
+        pullEl.setClass(pullUp ? "hud-pullup on" : "hud-pullup")
       }
       if (frame % 15 === 0) {
         let teams = ""
@@ -562,7 +592,35 @@ export function createHud(parent: HTMLElement): Hud {
       hitEl.classList.add("on")
     },
 
-    damage() {
+    get pullUp() { return pullUp },
+
+    deathCard(killer, killerTeam, weapon, distance) {
+      const l1 = deathEl.querySelector(".l1")!, l2 = deathEl.querySelector(".l2")!
+      if (killer) {
+        const t = killerTeam ?? 0
+        l1.innerHTML = `SHOT DOWN BY <b style="color:${TEAM_TINTS[t]}">${glyph(t)}${esc(killer)}</b>`
+        l2.textContent = [weapon, distance !== null ? (distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${Math.round(distance)} m`) : ""].filter(Boolean).join(" · ")
+      } else {
+        l1.textContent = "CRASHED"
+        l2.textContent = weapon && weapon !== "crashed" ? weapon : "watch the ground"
+      }
+      deathEl.classList.remove("show")
+      void deathEl.offsetWidth
+      deathEl.classList.add("show")
+      clearTimeout((deathEl as unknown as { _t: number })._t)
+      ;(deathEl as unknown as { _t: number })._t = window.setTimeout(() => deathEl.classList.remove("show"), 2500)
+    },
+
+    damage(from) {
+      if (from && lastCam) {
+        // Direction of the attacker in camera space → screen angle (0 = up, clockwise).
+        _v.set(from[0], from[1], from[2]).applyMatrix4(lastCam.matrixWorldInverse)
+        const ang = Math.atan2(_v.x, _v.y) * 180 / Math.PI
+        dirEl.style.setProperty("--a", `${ang.toFixed(0)}deg`)
+        dirEl.classList.remove("on")
+        void dirEl.offsetWidth
+        dirEl.classList.add("on")
+      }
       dmgEl.classList.remove("on")
       void dmgEl.offsetWidth
       dmgEl.classList.add("on")

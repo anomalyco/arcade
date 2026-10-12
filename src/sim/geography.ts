@@ -81,11 +81,13 @@ export function baseToWorld(base: Airbase, a: number, c: number): [number, numbe
   // forward = (-sin, -cos), right = (cos, -sin)
   return [base.center[0] - s * a + k * c, base.center[2] - k * a - s * c]
 }
+// Headings are exact multiples of π/2, so sin/cos are cached per team.
+const BASE_SIN = [0, 0, -1, 1], BASE_COS = [1, -1, 0, 0]
 function worldToBaseA(base: Airbase, x: number, z: number): number {
-  return -(x - base.center[0]) * Math.sin(base.heading) - (z - base.center[2]) * Math.cos(base.heading)
+  return -(x - base.center[0]) * BASE_SIN[base.team] - (z - base.center[2]) * BASE_COS[base.team]
 }
 function worldToBaseC(base: Airbase, x: number, z: number): number {
-  return (x - base.center[0]) * Math.cos(base.heading) - (z - base.center[2]) * Math.sin(base.heading)
+  return (x - base.center[0]) * BASE_COS[base.team] - (z - base.center[2]) * BASE_SIN[base.team]
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -198,8 +200,9 @@ function layout(seed: number) {
   // A couple of tall peaks near the centre.
   const peaks: Peak[] = []
   for (let i = 0; i < 2; i++) {
-    const a = rand() * Math.PI * 2 + i * Math.PI, d = 500 + rand() * 900
-    peaks.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1500 + rand() * 500, h: 400 - i * 90 + rand() * 90 })
+    // On the diagonals, so the four departure corridors (cardinal axes) stay low.
+    const a = Math.PI / 4 + (Math.floor(rand() * 4) + i * 2) * Math.PI / 2 + (rand() - 0.5) * 0.2, d = 1750 + rand() * 350
+    peaks.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1050 + rand() * 300, h: 470 - i * 90 + rand() * 90 })
   }
   return { blobs, peaks, names }
 }
@@ -258,7 +261,44 @@ function baseFlatDistance(x: number, z: number): number {
   return best
 }
 
-const TERRACES = [3.5, 18, 40, 68, 104, 150, 205, 270, 345, 430, 525, 630, 745, 870]
+/** Corridor glide-slope: terrain within ±CORRIDOR_HALF of a runway's extended centre-line, out to
+ * CORRIDOR_LENGTH from the base centre, stays below corridorFloor(d). */
+export const CORRIDOR_HALF = 300
+export const CORRIDOR_LENGTH = 7_000
+export function corridorFloor(d: number): number {
+  return BASE_ELEVATION + 0.05 * Math.max(0, d - 900)
+}
+const corridorScratch = { hard: Infinity }
+function corridorLimit(x: number, z: number) {
+  corridorScratch.hard = Infinity
+  for (const b of AIRBASES) {
+    const a = worldToBaseA(b, x, z)
+    if (a < 600 || a > CORRIDOR_LENGTH + 600) continue
+    const c = Math.abs(worldToBaseC(b, x, z))
+    const floor = corridorFloor(a) - 6
+    // Hard band a little wider than the corridor so interpolated triangles stay below the floor.
+    if (c < CORRIDOR_HALF + 2 * MESH_CELL) corridorScratch.hard = Math.min(corridorScratch.hard, floor)
+  }
+  return corridorScratch
+}
+
+/** 0 inside a departure corridor, rising to 1 over a broad, noise-warped valley shoulder. */
+function corridorOpen(x: number, z: number, seed: number): { t: number; floor: number } {
+  let t = 1, floor = Infinity
+  for (const b of AIRBASES) {
+    const a = worldToBaseA(b, x, z)
+    if (a < 300 || a > CORRIDOR_LENGTH + 1500) continue
+    let c = Math.abs(worldToBaseC(b, x, z)) - CORRIDOR_HALF - 2 * MESH_CELL
+    if (c > 0) c += noise2(x * 0.0015, z * 0.0015, seed + 61 + b.team) * 260 * smooth(0, 300, c)
+    // Ease out of the corridor beyond its far end and near the runway.
+    const ends = Math.max(smooth(CORRIDOR_LENGTH, CORRIDOR_LENGTH + 1500, a), 1 - smooth(300, 900, a))
+    const tt = Math.max(ends, smooth(0, 650, c))
+    if (tt < t) { t = tt; floor = corridorFloor(a) - 8 }
+  }
+  return { t, floor }
+}
+
+const TERRACES = [3.5, 22, 52, 95, 150, 225, 320, 440, 590, 760]
 
 function terrace(h: number, wobble: number): number {
   if (h <= TERRACES[0]) return h
@@ -268,7 +308,7 @@ function terrace(h: number, wobble: number): number {
     if (hh < hi) {
       const f = (hh - lo) / (hi - lo)
       // Mostly flat shelf, then a steep riser to the next level.
-      return Math.max(TERRACES[0], lo + (hi - lo) * (0.05 * f + 0.95 * smooth(0.7, 0.98, f)) - wobble * 0.1)
+      return Math.max(TERRACES[0], lo + (hi - lo) * (0.15 * f + 0.85 * smooth(0.55, 0.98, f)) - wobble * 0.1)
     }
   }
   return hh
@@ -283,6 +323,14 @@ function bake(seed: number): Baked {
   const diag = new Uint8Array(N * N)
   const land = new Float32Array(STRIDE * STRIDE)
 
+  // Coarse blob index (500 m blocks): ocean vertices skip all the noise work.
+  const IB = 500, IN = WORLD_SIZE / IB
+  const blobIndex: Blob[][] = []
+  for (let bz = 0; bz < IN; bz++) for (let bx = 0; bx < IN; bx++) {
+    const cx = -WORLD_HALF + (bx + 0.5) * IB, cz = -WORLD_HALF + (bz + 0.5) * IB
+    // Warp displacement ≤ 0.94 × 800 m; block half-diagonal ≈ 354 m.
+    blobIndex.push(blobs.filter(B => Math.hypot(cx - B.x, cz - B.z) < B.r * 1.2 + 760 + 360))
+  }
   // 1. Jittered vertex positions + base elevation field.
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
@@ -292,12 +340,14 @@ function bake(seed: number): Baked {
       const jz = edge ? 0 : (hash2(i, j, seed ^ 0x2222) - 0.5) * 2 * JITTER * MESH_CELL
       const x = -WORLD_HALF + i * MESH_CELL + jx, z = -WORLD_HALF + j * MESH_CELL + jz
       vx[k] = x; vz[k] = z
+      const near = blobIndex[Math.min(IN - 1, Math.floor((z + WORLD_HALF) / IB)) * IN + Math.min(IN - 1, Math.floor((x + WORLD_HALF) / IB))]
+      if (near.length === 0) { h[k] = SEA_FLOOR; continue }
       // Domain-warped island mask.
       const wx = x + fbm(x * 0.00045, z * 0.00045, seed + 7, 4) * 800
       const wz = z + fbm(x * 0.00045 + 31.7, z * 0.00045 - 12.3, seed + 9, 4) * 800
       let m = 0
-      for (let b = 0; b < blobs.length; b++) {
-        const B = blobs[b]
+      for (let b = 0; b < near.length; b++) {
+        const B = near[b]
         const dx = wx - B.x, dz = wz - B.z
         const d2 = (dx * dx + dz * dz) / (B.r * B.r)
         if (d2 >= 1.44) continue
@@ -320,6 +370,8 @@ function bake(seed: number): Baked {
       const cn = Math.abs(noise2(wx * 0.00042 + 5.1, wz * 0.00042 - 2.7, seed + 55))
       const ch = 1 - smooth(0.035, 0.09, cn)
       if (ch > 0 && e > -2) e = e + (Math.min(e, -4 + cn * 120) - e) * ch * smooth(0.25, 0.5, m)
+      const co = corridorOpen(x, z, seed)
+      if (co.t < 1 && e > co.floor) e = co.floor + (e - co.floor) * co.t
       h[k] = Math.max(SEA_FLOOR, e)
     }
   }
@@ -347,7 +399,10 @@ function bake(seed: number): Baked {
     const k = j * STRIDE + i
     const x = vx[k], z = vz[k]
     let y = h[k]
+    // Departure corridors: soft valley along each runway's extended centre-line.
+    const lim = corridorLimit(x, z)
     if (y > 0) y = terrace(y, noise2(x * 0.0009, z * 0.0009, seed + 77) * 9)
+    if (y > lim.hard) y = lim.hard
     const bd = baseFlatDistance(x, z)
     if (bd < 420) {
       if (bd <= 0) y = BASE_ELEVATION

@@ -19,7 +19,7 @@ import type { Quality, TeamId, Vec3, VehicleEntity, VehicleKind } from "../../si
 import { VEHICLES, WEAPONS } from "../../sim/vehicles"
 import { PALETTE } from "../world/palette"
 import { SUN_DIRECTION } from "../world/settings"
-import { aircraftStats, createAircraftView, preloadAircraft, type AircraftView } from "../aircraft"
+import { aircraftStats, createAircraftView, preloadAircraft, setAircraftGroundQuery, type AircraftView } from "../aircraft"
 
 const params = new URLSearchParams(location.search)
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -67,6 +67,8 @@ if (params.has("cam")) camera.position.fromArray(params.get("cam")!.split(",").m
 if (params.has("target")) controls.target.fromArray(params.get("target")!.split(",").map(Number))
 controls.update()
 
+setAircraftGroundQuery(() => -4)
+const ALT = Number(params.get("alt") ?? 0)
 const KINDS: VehicleKind[] = ["fighter", "apache", "warthog", "blackbird"]
 const X: Record<VehicleKind, number> = { fighter: -34, apache: -12, warthog: 10, blackbird: 38 }
 const only = params.get("only") as VehicleKind | null
@@ -80,7 +82,7 @@ function makeEntity(kind: VehicleKind, team: TeamId): VehicleEntity {
     team,
     flight: {
       kind,
-      position: [only ? 0 : X[kind], 0, 0],
+      position: [only ? 0 : X[kind], ALT, 0],
       velocity: [0, 0, 0],
       orientation: [0, 0, 0, 1],
       angularVelocity: [0, 0, 0],

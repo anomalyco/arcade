@@ -151,6 +151,7 @@ class GameSession implements GameHandle {
       invite: () => this.copyInvite(),
       leave: () => this.leave(),
       click,
+      thumb: (kind, team) => host.thumbnail(kind, team),
     })
     this.pause = createPauseMenu(this.uiRoot, {
       resume: () => this.resume(),
@@ -477,7 +478,12 @@ class GameSession implements GameHandle {
         case "hit":
           pos = e.position
           fx.hit(e.position)
-          if (e.target === myVeh) { this.hud.damage(); this.deps.host.rig.shake(0.5); local = true }
+          if (e.target === myVeh) {
+            const atk = e.by ? this.players.get(e.by)?.vehicleId : null
+            this.hud.damage(atk ? this.posOfVehicle(atk) : null)
+            this.deps.host.rig.shake(0.5)
+            local = true
+          }
           if (e.by === this.playerId) this.hud.hitmarker()
           break
         case "kill": {
@@ -491,6 +497,14 @@ class GameSession implements GameHandle {
           if (e.killer === this.playerId && e.victim !== this.playerId) {
             this.hud.hitmarker(true)
             this.hud.banner("SPLASH ONE", `${victim.name} is going down`, 1800)
+          }
+          if (e.victim === this.playerId || (myVeh && e.victim === myVeh)) {
+            const kv = e.killer && e.killer !== this.playerId ? this.players.get(e.killer)?.vehicleId : null
+            const kp = kv ? this.posOfVehicle(kv) : null
+            const lp = this.lastOwnPos
+            const dist = kp ? Math.hypot(kp[0] - lp[0], kp[1] - lp[1], kp[2] - lp[2]) : null
+            const byOther = killer && e.killer !== this.playerId && e.weapon !== "crash"
+            this.hud.deathCard(byOther ? killer.name : null, byOther ? killer.team : null, weapon, dist)
           }
           local = e.killer === this.playerId
           break
@@ -903,7 +917,8 @@ class GameSession implements GameHandle {
     f.scannerRange = null
     f.guide = null
     f.hint = null
-    if (!v || !ownVis || seat === null) { this.hud.update(f); return }
+    f.cockpit = this.view === "cockpit" && seat === 0
+    if (!v || !ownVis || seat === null) { this.deps.host.setSpeedFx(0, false); this.hud.update(f); return }
 
     const pos = ownVis.pos
     const ro = flightReadout(this.pred?.state ?? v.flight)
@@ -998,6 +1013,8 @@ class GameSession implements GameHandle {
     for (const m of s.missiles) if (m.target === v.id && m.team !== v.team) { f.missileWarning = true; break }
     if (f.missileWarning) audio?.ui("warning")
 
+    this.deps.host.setSpeedFx(seat === 0 ? f.speed * 3.6 : 0, seat === 0 && f.boost)
     this.hud.update(f)
+    if (this.hud.pullUp && !f.missileWarning) audio?.ui("warning")
   }
 }

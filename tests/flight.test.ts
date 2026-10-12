@@ -204,7 +204,7 @@ const fwdSpeed = (s: FlightState) => { const f = forward(s.orientation); const n
 function heliFeel() {
   const hover = heliAir(); run(hover, input(), 5)
   const desc = heliAir(); run(desc, input({ throttle: -1 }), 0.5); run(desc, input(), 5)
-  const climb = heliAir(); run(climb, input({ throttle: 1 }), 0.5); run(climb, input(), 5)
+  const climb = heliAir(); run(climb, input({ throttle: 1 }), 5.5)
   const back = heliAir(); run(back, st => input({ pitch: holdPitchInput(st, 20), throttle: holdLevelCollective(st) }), 15)
   const top = heliAir(); run(top, st => input({ pitch: holdPitchInput(st, -55), throttle: 1 }), 40)
   const topSpeed = flightReadout(top).speed
@@ -439,7 +439,7 @@ describe("helicopter", () => {
 
   test("easing down lands; slamming in at full descent crashes", () => {
     const s = createFlightState("apache", { position: [0, 60, 0], yaw: 0, onGround: false })
-    s.throttle = 0.42
+    s.throttle = 0.35
     run(s, input(), 30)
     expect(s.crashed).toBeNull()
     expect(s.onGround).toBe(true)

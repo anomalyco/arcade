@@ -80,7 +80,7 @@ export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: 
       fog.near = Math.min(settings.fogNear + Math.max(0, cameraPosition.y) * 1.5, settings.fogFar * 0.7)
       sky.update(cameraPosition, time)
       water.update(time)
-      bases.update(time)
+      bases.update(time, cameraPosition)
       boundary.update(time)
       streamer.update(cameraPosition, Math.max(0, Math.min(dt, 0.5)))
     },

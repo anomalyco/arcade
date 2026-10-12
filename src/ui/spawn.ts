@@ -21,20 +21,21 @@ const MAX_HP = Math.max(...VEHICLE_KINDS.map(k => VEHICLES[k].maxHp))
 const statBar = (label: string, v: number) =>
   `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(Math.max(0.06, Math.min(1, v)) * 100)}%"></b></i></div>`
 
-/** Pilot control scheme summary (shared by the spawn screen and the pause menu). */
-export function controlsHtml(heli: boolean): string {
+/** Unified control scheme (identical for every aircraft); shared by the spawn screen and the pause menu. */
+export function controlsHtml(_heli = false): string {
   const k = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
-  const rows: [string, string][] = heli
-    ? [
-        ["Nose up / down", `Mouse Y · ${k("↓")}${k("↑")}`], ["Roll (cyclic)", `Mouse X · ${k("Q", "E")}`],
-        ["Yaw (pedals)", k("A", "D")], ["Collective", k("W", "S")], ["Auto-hover · boost", `${k("X")} ${k("Shift")}`],
-      ]
-    : [
-        ["Pitch · turn", `Mouse · ${k("↑", "↓", "←", "→")}`], ["Roll · rudder", `${k("Q", "E")} ${k("A", "D")}`],
-        ["Throttle", `${k("W", "S")} · Wheel`], ["Boost · brake", `${k("Shift")} ${k("X")}`],
-      ]
-  rows.push(["Guns · missiles", `${k("LMB")}${k("Space")} · ${k("RMB")}${k("V")}`], ["Flares · ability", `${k("F")} · ${k("R")}`], ["Seat · look · view", `${k("1", "2")} · ${k("C")} · ${k("T")}`])
-  return `<div class="scheme-grid">${rows.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join("")}</div>`
+  const rows: [string, string][] = [
+    ["Pitch", `Mouse Y (fwd = nose down) · ${k("↑")} down ${k("↓")} up`],
+    ["Roll", `Mouse X · ${k("←", "→")}`],
+    ["Yaw", `${k("A", "D")} · ${k("Q", "E")}`],
+    ["Throttle / collective", k("W", "S")],
+    ["Boost · brake / hover", `${k("Shift")} · ${k("X")}`],
+    ["Guns · missiles", `${k("LMB")}${k("Space")} · ${k("RMB")}${k("V")}`],
+    ["Flares · ability", `${k("F")} · ${k("R")}`],
+    ["Seat · free-look · view", `${k("1", "2")} · hold ${k("C")} · ${k("T")}`],
+    ["Chat · scores · menu", `${k("Enter")} · ${k("Tab")} · ${k("Esc")}`],
+  ]
+  return `<div class="scheme-grid">${rows.map(([a, b]) => `<div><span>${a}</span><span>${b}</span></div>`).join("")}</div>`
 }
 
 export interface SpawnState {
@@ -63,6 +64,8 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
   invite(): void
   leave(): void
   click(): void
+  /** Optional rendered aircraft thumbnail (team livery); the SVG silhouette shows until it resolves. */
+  thumb?(kind: VehicleKind, team: TeamId): Promise<string | null>
 }): SpawnScreen {
   const root = document.createElement("div")
   root.className = "spawn"
@@ -134,6 +137,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
   let lastTeams = ""
   let lastBoard = ""
   let lastCd = "-"
+  let thumbTeam = -1
   const onKey = (e: KeyboardEvent) => {
     if (root.hidden || !canSpawn || e.repeat || (e.target as HTMLElement)?.tagName === "INPUT") return
     const n = Number(e.key)
@@ -170,6 +174,19 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
       if (cd !== lastCd) { countdown.innerHTML = cd; lastCd = cd; countdown.classList.toggle("on", !canSpawn) }
       title.textContent = s.dead ? "Shot down. Again?" : "Choose your wings"
       if (me) root.style.setProperty("--team", TEAM_COLORS[me.team])
+      if (me && me.team !== thumbTeam && actions.thumb) {
+        const team = me.team
+        thumbTeam = team
+        for (const k of VEHICLE_KINDS) actions.thumb(k, team).then(url => {
+          if (!url || thumbTeam !== team) return
+          const art = root.querySelector<HTMLElement>(`.card[data-kind="${k}"] .art`)
+          if (!art) return
+          let img = art.querySelector("img")
+          if (!img) { img = document.createElement("img"); img.className = "thumb"; img.alt = ""; art.appendChild(img) }
+          img.src = url
+          art.classList.add("has-thumb")
+        })
+      }
 
       const counts = new Array(s.config.teams).fill(0)
       for (const p of s.players.values()) if (p.team < counts.length) counts[p.team]++

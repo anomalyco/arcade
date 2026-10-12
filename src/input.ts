@@ -22,12 +22,17 @@ const STICK_EVENT_CLAMP = 120
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
 
+/** Held keys ramp a full deflection in over this long (s), and release twice as fast. */
+export const KEY_RAMP = 0.25
+
 /**
  * Spring-centred virtual stick fed by mouse motion. Linear: deflection = mouse speed / full speed,
- * low-passed with STICK_TAU. Held keys add a full deflection on the same axis. DOM-free (testable).
+ * low-passed with STICK_TAU. Held keys add a deflection that ramps in over KEY_RAMP. DOM-free (testable).
  */
 export class SteerStick {
   value = 0
+  private mouse = 0
+  private key = 0
   private px = 0
   feed(px: number): void {
     if (Number.isFinite(px)) this.px += clamp(px, -STICK_EVENT_CLAMP, STICK_EVENT_CLAMP)
@@ -35,16 +40,19 @@ export class SteerStick {
   /** Advance by one frame of `seconds`; returns the deflection in [-1, 1]. */
   sample(seconds: number, sensitivity = 1, key = 0): number {
     const dt = clamp(Number.isFinite(seconds) ? seconds : 0, 1 / 500, 0.1)
-    const mouse = clamp((this.px / dt) * sensitivity / STICK_FULL_SPEED, -1, 1)
-    const target = clamp(mouse + key, -1, 1)
-    this.value += (target - this.value) * (1 - Math.exp(-dt / STICK_TAU))
-    if (target === 0 && Math.abs(this.value) < 1e-3) this.value = 0
+    const target = clamp((this.px / dt) * sensitivity / STICK_FULL_SPEED, -1, 1)
+    this.mouse += (target - this.mouse) * (1 - Math.exp(-dt / STICK_TAU))
+    if (target === 0 && Math.abs(this.mouse) < 1e-3) this.mouse = 0
+    const d = key - this.key
+    const rampIn = key !== 0 && key * this.key >= 0 && Math.abs(key) > Math.abs(this.key)
+    const step = (rampIn ? 1 : 2) * dt / KEY_RAMP
+    this.key += d > step ? step : d < -step ? -step : d
+    this.value = clamp(this.mouse + this.key, -1, 1)
     this.px = 0
     return this.value
   }
   reset(): void {
-    this.value = 0
-    this.px = 0
+    this.value = this.mouse = this.key = this.px = 0
   }
 }
 

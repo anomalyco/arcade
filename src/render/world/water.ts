@@ -69,6 +69,7 @@ export function createWater() {
         vec2 outside = max(abs(p) - ${WORLD_HALF.toFixed(1)}, 0.0);
         col *= 1.0 - 0.12 * smoothstep(0.0, 1200.0, length(outside));
 
+        float nearFade = 1.0 - smoothstep(600.0, 1500.0, dist);
         // Faceted shimmer: a slowly breathing triangular lattice, fading out with distance.
         vec2 q = p / 60.0;
         q.x += q.y * 0.5;
@@ -79,9 +80,31 @@ export function createWater() {
         float facet = sin(time * (0.5 + r * 0.6) + r * 6.283) * 0.028;
         col *= 1.0 + facet * (1.0 - smoothstep(300.0, 2500.0, dist));
 
+        // Open-sea swell: faceted bands travelling across the lattice (per-triangle, so no gradients).
+        vec2 centre = (cell + (tri > 0.5 ? vec2(0.6667) : vec2(0.3333))) * 60.0;
+        float swell = sin(dot(centre, vec2(0.0042, 0.0029)) - time * 0.55 + r * 0.6);
+        float swell2 = sin(dot(centre, vec2(-0.0021, 0.0051)) - time * 0.37);
+        float bandsLit = step(0.55, swell * 0.7 + swell2 * 0.3);
+        float openSea = smoothstep(6.0, 20.0, depth);
+        col *= 1.0 + (bandsLit * 0.07 - 0.02) * nearFade * openSea;
+
+        // Sparse whitecaps: small triangles that flare up briefly on swell crests.
+        vec2 wq = p / 14.0;
+        wq.x += wq.y * 0.5;
+        vec2 wc = floor(wq);
+        float wt = step(1.0, fract(wq).x + fract(wq).y);
+        float wr = h21(wc * 2.0 + wt + 17.0);
+        float pulse = smoothstep(0.75, 1.0, sin(time * (0.6 + wr) + wr * 40.0));
+        float cap = step(wr, 0.006) * pulse * bandsLit;
+        col = mix(col, foam, cap * 0.6 * nearFade * openSea);
+
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
         #include <fog_fragment>
+        #ifdef USE_FOG
+          // Melt the far sea fully into the horizon colour so there is no seam against the sky.
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(fogFar * 0.6, fogFar * 0.97, vFogDepth));
+        #endif
       }
     `,
   })
