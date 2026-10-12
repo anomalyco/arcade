@@ -89,6 +89,8 @@ export class Game {
   private flashes: Flash[] = []
   private debris: Debris[] = []
   private flashFx: FlashFx[] = []
+  /** Bullet holes in walls: where, facing, height, when. */
+  private holes: { x: number; y: number; z: number; yaw: number; roll: number; t0: number }[] = []
   /** Hit-stop: animation and effects crawl until this time after a kill. */
   private freezeUntil = 0
   private hitSoundAt = -1
@@ -123,6 +125,7 @@ export class Game {
       gun: regGuns(p.gun),
       mag: regGuns(p.mag),
       casing: regGuns(p.casing),
+      hole: reg(p.hole),
     }
     this.map = getMap(1)
     this.load(this.map)
@@ -466,6 +469,8 @@ export class Game {
       this.fx(x - Math.cos(dir) * 0.05, y - Math.sin(dir) * 0.05, z, Math.cos(a) * 0.6, Math.sin(a) * 0.6, 0.3, 0.55 + Math.random() * 0.3, gun === "sniper" ? 0.22 : 0.13, "dust")
     }
     this.fx(x, y, z, 0, 0, 0, 0.06, gun === "sniper" ? 0.6 : 0.35, "spark")
+    this.holes.push({ x: x - Math.cos(dir) * 0.015, y: y - Math.sin(dir) * 0.015, z, yaw: dir, roll: Math.random() * 6.28, t0: this.now })
+    if (this.holes.length > 160) this.holes.shift()
     const me = this.body
     if (me && Math.hypot(x - me.x, y - me.y) < 14) this.sound.impact(x - me.x, y - me.y)
   }
@@ -622,6 +627,15 @@ export class Game {
       emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, Math.max(0, 0.3 - age * 2), 1, sink)
     }
     for (const [model, data] of bodies) emit(model, data)
+
+    // Bullet holes glow hot for a moment, then fade out after a while.
+    this.holes = this.holes.filter((hl) => t - hl.t0 < 12)
+    const holeData: number[] = []
+    for (const hl of this.holes) {
+      const age = t - hl.t0
+      holeData.push(hl.x, hl.z, hl.y, hl.yaw, 1, 1, 1, 1, 0, hl.roll, Math.min(1, (12 - age) / 2), Math.max(0, 0.6 - age * 2))
+    }
+    emit(this.models.hole, holeData, true)
 
     // Muzzle flashes: a hot core, petals along the barrel and, for the sniper, the brake's side jets.
     this.flashFx = this.flashFx.filter((f) => t - f.t0 < (f.gun === "rifle" ? 0.05 : 0.075))

@@ -41,6 +41,7 @@ export type PartModels = {
   gun: Record<Gun, number>
   mag: Record<Gun, number>
   casing: Record<Gun, number>
+  hole: number
 }
 
 /** Animation cues returned by animate(), for sounds and effects synced to the motion. */
@@ -305,8 +306,8 @@ const CYCLES: Record<Gun, Clip> = {
     cues: [[0.02, EV.pumpBack], [0.4, EV.eject], [0.6, EV.pumpFwd]],
   },
   sniper: {
-    gun: [TILT, [0.25, -0.05, -0.18, 0.02, 0.02], [0.75, -0.05, -0.18, 0.02, 0.02], [1, 0, 0, 0, 0]],
-    right: [[0, H], [0.16, 0, -0.01, 0.06, 0.09], [0.24, 0, -0.01, 0.1, 0.1], [0.42, 0, -0.14, 0.1, 0.1], [0.52, 0, -0.14, 0.1, 0.1], [0.66, 0, -0.01, 0.1, 0.1], [0.74, 0, -0.01, 0.06, 0.09], [0.9, H], [1, H]],
+    gun: [TILT, [0.2, -0.08, -0.4, 0.03, 0.03, 0.12], [0.75, -0.08, -0.4, 0.03, 0.03, 0.12], [1, 0, 0, 0, 0, 0]],
+    right: [[0, H], [0.14, 0, -0.01, 0.07, 0.1], [0.22, 0, -0.01, 0.14, 0.11], [0.4, 0, -0.2, 0.14, 0.11], [0.52, 0, -0.2, 0.14, 0.11], [0.66, 0, -0.01, 0.14, 0.11], [0.74, 0, -0.01, 0.07, 0.1], [0.9, H], [1, H]],
     cues: [[0.22, EV.boltOpen], [0.44, EV.eject], [0.72, EV.boltClose]],
   },
 }

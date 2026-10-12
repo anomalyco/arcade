@@ -254,6 +254,23 @@ function casing(g: Gun): Mesh {
   return m
 }
 
+/** A bullet hole: a dark ragged scorch facing -x, unlit so it reads on lit and dark walls alike. */
+function hole(): Mesh {
+  const m = new Mesh()
+  // Ragged scorch ring around a dark centre, as flat fans facing -x.
+  const fan = (x: number, r: (i: number) => number, col: Rgb) => {
+    const n = 7
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2
+      const a1 = ((i + 1) / n) * Math.PI * 2
+      m.facet([x, 0, 0], [x, Math.sin(a0) * r(i), Math.cos(a0) * r(i)], [x, Math.sin(a1) * r(i + 1), Math.cos(a1) * r(i + 1)], col, MAT.glow, 1)
+    }
+  }
+  fan(-0.004, (i) => [0.05, 0.036, 0.046, 0.03, 0.052, 0.04, 0.034][i % 7]!, hex(0x0a0a0c))
+  fan(-0.008, (i) => [0.018, 0.014, 0.02, 0.016, 0.017, 0.013, 0.019][i % 7]!, hex(0x030303))
+  return m
+}
+
 export type PersonModels = {
   pelvis: Mesh
   torso: Mesh
@@ -267,9 +284,10 @@ export type PersonModels = {
   gun: Record<Gun, Mesh>
   mag: Record<Gun, Mesh>
   casing: Record<Gun, Mesh>
+  hole: Mesh
 }
 
 export function personModels(): PersonModels {
   const by = <T>(f: (g: Gun) => T) => Object.fromEntries(GUN_IDS.map((g) => [g, f(g)])) as Record<Gun, T>
-  return { pelvis: pelvis(), torso: torso(), head: head(), upperArm: upperArm(), foreArm: foreArm(), thigh: thigh(), shin: shin(), foot: foot(), pump: pump(), gun: by(gun), mag: by(mag), casing: by(casing) }
+  return { pelvis: pelvis(), torso: torso(), head: head(), upperArm: upperArm(), foreArm: foreArm(), thigh: thigh(), shin: shin(), foot: foot(), pump: pump(), gun: by(gun), mag: by(mag), casing: by(casing), hole: hole() }
 }
