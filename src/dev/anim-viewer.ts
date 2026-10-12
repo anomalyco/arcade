@@ -1,7 +1,7 @@
 // Dev-only animation viewer (anim.html): scripted soldiers running, strafing, stopping, firing, reloading and dying,
 // played through the real Game and Renderer. ?only=a,b picks actors, ?slow=0.25 slows time, ?zoom=9 sets the camera
 // distance, ?manual stops the loop so window.advance(ms) can step it for frame captures.
-import { GUNS, type Gun } from "../../shared/config"
+import { GUNS, SPEED, SPRINT_SPEED, type Gun } from "../../shared/config"
 import { raycast } from "../../shared/geom"
 import type { MapDef } from "../../shared/maps"
 import { Builder } from "../../shared/maps/builder"
@@ -101,6 +101,29 @@ const ACTORS: Actor[] = [
       return { x: 9 + ease(run) * 4, y: 15.5, aim: c > 6 ? 0 : aim, alive: true }
     },
   },
+  // Sprints across the room, stops and fires a burst, sprints back; "w" walks the same line at walk speed.
+  ...(["s", "w"] as const).map(
+    (id): Actor => ({
+      id,
+      gun: "rifle",
+      at: (t) => {
+        const v = id === "s" ? SPRINT_SPEED : SPEED
+        const c = loop(t, 8)
+        const leg = c < 4 ? c : c - 4
+        const dir = c < 4 ? 1 : -1
+        const run = Math.min(leg, 12 / v)
+        const x0 = dir > 0 ? 8 : 20
+        return { x: x0 + dir * v * run, y: id === "s" ? 12 : 15.5, aim: dir > 0 ? 0 : Math.PI, alive: true }
+      },
+      shots:
+        id === "s"
+          ? (t) => {
+              const f = loop(t, 4) - 12 / SPRINT_SPEED - 0.3
+              return f > 0 && f < 0.6 ? Math.floor(f / 0.1) + 1 : 0
+            }
+          : undefined,
+    }),
+  ),
   // Walks a little loop and keeps getting killed.
   {
     id: "f",
