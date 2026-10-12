@@ -50,7 +50,7 @@ export type Plan = {
 }
 
 type Node = { i: number; j: number; x: number; y: number; alive: boolean; fixed: boolean }
-type Link = { a: number; b: number; horiz: boolean; used: boolean }
+type Link = { a: number; b: number; horiz: boolean; used: boolean; kink: boolean }
 type Special = { i0: number; j0: number; i1: number; j1: number; kind: "hall" | "core" }
 
 const round2 = (v: number) => Math.round(v * 100) / 100
@@ -168,9 +168,9 @@ export function layout(r: Rng): Plan {
     for (let i = 0; i < NX; i++) {
       if (!nodes[at(i, j)]!.alive) continue
       if (i + 1 < NX && nodes[at(i + 1, j)]!.alive && !specials.some((s) => i + 0.5 > s.i0 && i + 0.5 < s.i1 + 1 && j > s.j0 && j < s.j1 + 1))
-        links.push({ a: at(i, j), b: at(i + 1, j), horiz: true, used: false })
+        links.push({ a: at(i, j), b: at(i + 1, j), horiz: true, used: false, kink: false })
       if (j + 1 < NY && nodes[at(i, j + 1)]!.alive && !specials.some((s) => i > s.i0 && i < s.i1 + 1 && j + 0.5 > s.j0 && j + 0.5 < s.j1 + 1))
-        links.push({ a: at(i, j), b: at(i, j + 1), horiz: false, used: false })
+        links.push({ a: at(i, j), b: at(i, j + 1), horiz: false, used: false, kink: false })
     }
   const adj: number[][] = nodes.map(() => [])
   links.forEach((l, k) => {
@@ -207,6 +207,12 @@ export function layout(r: Rng): Plan {
     if (opts.length) links[opts[r.int(opts.length)]!]!.used = true
   }
   for (const l of links) if (!l.used && r.next() < 0.03) l.used = true
+  // At least a handful of loops, so there's always another way round.
+  const spare = shuffle(
+    r,
+    links.filter((l) => !l.used),
+  )
+  while (links.filter((l) => l.used).length - (alive.length - 1) < 6 && spare.length) spare.pop()!.used = true
   // Every landmark opens onto at least two corridors.
   for (const s of specials) {
     const rim = links.filter((l) => {
@@ -224,6 +230,36 @@ export function layout(r: Rng): Plan {
     }
   }
 
+  // Break up long straight sightlines: along a row or column of collinear corridor links, jog one link aside every
+  // nine cells or so; a few other straight links jog too.
+  for (const horiz of [true, false]) {
+    for (let line = 0; line < (horiz ? NY : NX); line++) {
+      let acc = 0
+      for (let k = 0; k < (horiz ? NX : NY) - 1; k++) {
+        const a = horiz ? at(k, line) : at(line, k)
+        const b = horiz ? at(k + 1, line) : at(line, k + 1)
+        const l = links.find((q) => q.a === a && q.b === b)
+        const straight = l?.used && (horiz ? nodes[a]!.y === nodes[b]!.y : nodes[a]!.x === nodes[b]!.x)
+        if (!l || !straight) {
+          acc = 0
+          continue
+        }
+        const len = horiz ? nodes[b]!.x - nodes[a]!.x : nodes[b]!.y - nodes[a]!.y
+        acc += len
+        if (len >= 4 && (acc > 7 || r.next() < 0.12)) {
+          l.kink = true
+          acc = 0
+        }
+      }
+    }
+  }
+  const specialCells = specials.map((s) => {
+    const a = nodes[at(s.i0, s.j0)]!
+    const b = nodes[at(s.i1 + 1, s.j1 + 1)]!
+    return [a.x, a.y, b.x, b.y] as const
+  })
+  const inSpecial = (x: number, y: number) => specialCells.some((c) => x > c[0] && x < c[2] && y > c[1] && y < c[3])
+
   const zone = new Int32Array(gw * gh).fill(-1)
   const carve = (cells: [number, number][]) => {
     for (const [x, y] of cells) if (x >= 0 && y >= 0 && x < gw && y < gh) zone[y * gw + x] = 0
@@ -236,6 +272,31 @@ export function layout(r: Rng): Plan {
     const run = (x0: number, y0: number, x1: number, y1: number) => {
       const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))
       for (let k = 0; k <= n; k++) out.push([x0 + Math.sign(x1 - x0) * k, y0 + Math.sign(y1 - y0) * k])
+    }
+    if (l.kink && (l.horiz ? a.y === b.y && b.x - a.x >= 4 : a.x === b.x && b.y - a.y >= 4)) {
+      // A jog: step a cell aside for the middle of the link, away from any landmark.
+      const len = l.horiz ? b.x - a.x : b.y - a.y
+      const m1 = 1 + r.int(len - 3)
+      const m2 = m1 + 2 + r.int(len - m1 - 2)
+      const side = [r.next() < 0.5 ? -1 : 1]
+      side.push(-side[0]!)
+      const ok = (sd: number) => {
+        for (let k = m1; k <= m2; k++) if (l.horiz ? inSpecial(a.x + k, a.y + sd) : inSpecial(a.x + sd, a.y + k)) return false
+        return l.horiz ? a.y + sd >= 0 && a.y + sd < gh : a.x + sd >= 0 && a.x + sd < gw
+      }
+      const sd = side.find(ok)
+      if (sd !== undefined) {
+        if (l.horiz) {
+          run(a.x, a.y, a.x + m1, a.y)
+          run(a.x + m1, a.y + sd, a.x + m2, a.y + sd)
+          run(a.x + m2, a.y, b.x, b.y)
+        } else {
+          run(a.x, a.y, a.x, a.y + m1)
+          run(a.x + sd, a.y + m1, a.x + sd, a.y + m2)
+          run(a.x, a.y + m2, b.x, b.y)
+        }
+        return from === l.a ? out : out.reverse()
+      }
     }
     if (l.horiz) {
       const lo = Math.min(a.x, b.x)
@@ -289,11 +350,16 @@ export function layout(r: Rng): Plan {
     const t = r.next()
     return t < 0.07 ? 1 : t < 0.5 ? 2 : t < 0.86 ? 3 : 4
   }
+  // Runs of identically sized rooms make stretches of corridor look the same.
+  let tw = dim()
+  let th = dim()
   for (let y = 0; y < gh; y++)
     for (let x = 0; x < gw; x++) {
       if (zone[y * gw + x] !== -1) continue
-      const tw = dim()
-      const th = dim()
+      if (r.next() < 0.45) {
+        tw = dim()
+        th = dim()
+      }
       let w = 1
       while (w < tw && x + w < gw && zone[y * gw + x + w] === -1) w++
       let h = 1

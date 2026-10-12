@@ -56,6 +56,7 @@ export function generateOffice(seed: number): MapDef {
     const kind = FLOOR_OF[room.kind]
     if (kind) for (const c of room.rects) b.floor(kind, ...cellRect(plan, c))
   }
+  for (const room of plan.rooms) for (const c of room.rects.slice(1)) clear.push(seam(plan, room.rects[0]!, c))
   for (const room of plan.rooms) if (room.id > 0 && room.rects.length) furnish(b, r, plan, room, clear, W, H)
   corridors(b, r, plan, clear)
   const nav = repair(b, plan, W, H, seed)
@@ -71,6 +72,19 @@ const cellCenter = (p: Plan, i: number): Vec => {
   const x = i % p.gw
   const y = Math.floor(i / p.gw)
   return { x: (p.xs[x]! + p.xs[x + 1]!) / 2, y: (p.ys[y]! + p.ys[y + 1]!) / 2 }
+}
+
+/** Keep-clear zone across the open seam between a room's main rect and a sliver merged into it. */
+function seam(p: Plan, main: CellRect, c: CellRect): Rect {
+  const [x0, y0, x1, y1] = cellRect(p, c)
+  const [mx0, my0, mx1, my1] = cellRect(p, main)
+  const d = DOOR_CLEAR
+  if (Math.abs(x1 - mx0) < 1e-6) return [x1 - d, y0, x1 + d, y1]
+  if (Math.abs(x0 - mx1) < 1e-6) return [x0 - d, y0, x0 + d, y1]
+  if (Math.abs(y1 - my0) < 1e-6) return [x0, y1 - d, x1, y1 + d]
+  if (Math.abs(y0 - my1) < 1e-6) return [x0, y0 - d, x1, y0 + d]
+  // Merged onto another sliver rather than the main rect: keep the whole cell clear.
+  return [x0, y0, x1, y1]
 }
 
 // Walls ---------------------------------------------------------------------------------------------------------------
@@ -483,9 +497,13 @@ function boardroom(f: Fit): void {
 
 function lounge(f: Fit): void {
   const { cx, cy } = f
-  f.put("sofa", [cx - 1.2, cy - 1.6, cx + 1.2, cy - 0.8], 0)
-  f.put("table", [cx - 0.6, cy - 0.4, cx + 0.6, cy + 0.4], 0)
-  f.put("sofa", [cx - 1.2, cy + 0.8, cx + 1.2, cy + 1.6], 2)
+  // Sofas leave a clear walk round each end.
+  const w = Math.min(1.2, (f.iw - 2.6) / 2)
+  if (w >= 0.6 && f.ih >= 4.4) {
+    f.put("sofa", [cx - w, cy - 1.6, cx + w, cy - 0.8], 0)
+    f.put("table", [cx - 0.6, cy - 0.4, cx + 0.6, cy + 0.4], 0)
+    f.put("sofa", [cx - w, cy + 0.8, cx + w, cy + 1.6], 2)
+  }
   f.plant()
   if (f.r.next() < 0.5) f.light("bulb", cx + 1.7, cy - 1.2, 0.2)
 }
@@ -630,18 +648,33 @@ function hub(nav: Nav, p: Plan): Vec {
 function repair(b: Builder, p: Plan, W: number, H: number, seed: number): Nav {
   for (let pass = 0; ; pass++) {
     const nav = new Nav(b.build({ id: `office-${seed}`, seed, name: "", size: [W, H] }))
-    if (pass >= 4) return nav
+    if (pass >= 5) return nav
     const reach = nav.reachable(hub(nav, p))
+    // Unreachable pockets big enough to matter; slivers behind a desk aren't worth losing the desk over.
     const stuck: Vec[] = []
-    for (let cy = 0; cy < nav.h; cy++)
-      for (let cx = 0; cx < nav.w; cx++) {
-        const i = cy * nav.w + cx
-        if (nav.grid[i] === 0 && !reach[i]) stuck.push({ x: (cx + 0.5) * 0.5, y: (cy + 0.5) * 0.5 })
+    const seen = new Uint8Array(nav.grid.length)
+    for (let i = 0; i < nav.grid.length; i++) {
+      if (nav.grid[i] || reach[i] || seen[i]) continue
+      const comp = [i]
+      seen[i] = 1
+      for (let k = 0; k < comp.length; k++) {
+        const c = comp[k]!
+        for (const n of [c + 1, c - 1, c + nav.w, c - nav.w]) {
+          if (n < 0 || n >= nav.grid.length || seen[n] || nav.grid[n] || reach[n]) continue
+          if (Math.abs((n % nav.w) - (c % nav.w)) > 1) continue
+          seen[n] = 1
+          comp.push(n)
+        }
       }
+      if (comp.length >= 12) for (const c of comp) stuck.push({ x: ((c % nav.w) + 0.5) * 0.5, y: (Math.floor(c / nav.w) + 0.5) * 0.5 })
+    }
     if (!stuck.length) return nav
-    const before = b.props.length
-    b.props = b.props.filter((q) => !q.solid || !stuck.some((s) => s.x > q.rect[0] - 0.9 && s.x < q.rect[2] + 0.9 && s.y > q.rect[1] - 0.9 && s.y < q.rect[3] + 0.9))
-    if (b.props.length === before) return nav
+    const near = (rc: Rect, d: number) => stuck.some((s) => s.x > rc[0] - d && s.x < rc[2] + d && s.y > rc[1] - d && s.y < rc[3] + d)
+    const before = b.props.length + b.walls.length
+    b.props = b.props.filter((q) => !q.solid || !near(q.rect, 1))
+    // Then free-standing shelving, racks and stalls; structural walls and cubicle partitions stay.
+    if (b.props.length + b.walls.length === before) b.walls = b.walls.filter((w) => !(w.style === "shelf" || w.style === "rack" || w.style === "stall" || w.style === "pillar") || !near(w.rect, 1))
+    if (b.props.length + b.walls.length === before) return nav
   }
 }
 

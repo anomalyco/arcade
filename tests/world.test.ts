@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { FILL_TO, GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS } from "../shared/config"
+import { type Rect, RectGrid, pushOut, rayRect } from "../shared/geom"
+import { generateOffice } from "../shared/maps/office"
+import { Rng } from "../shared/rng"
 import { buildSnapshot } from "../shared/sim/view"
 import { World } from "../shared/sim/world"
 import { place, run, world } from "./helpers"
@@ -121,5 +124,61 @@ describe("deathmatch", () => {
       }
     }
     expect(kills).toBeGreaterThan(3)
+  })
+})
+
+describe("broadphase", () => {
+  const m = generateOffice(5)
+  const rects: Rect[] = [...m.walls.map((w) => w.rect), ...m.windows, ...m.glass, ...m.props.filter((p) => p.solid).map((p) => p.rect)]
+  const r = new Rng(3)
+
+  test("grid raycasts match a linear scan", () => {
+    const grid = new RectGrid(rects)
+    for (let i = 0; i < 20000; i++) {
+      const ox = r.range(-5, m.size[0] + 5)
+      const oy = r.range(-5, m.size[1] + 5)
+      const a = r.next() < 0.1 ? (r.int(4) * Math.PI) / 2 : r.range(0, 7)
+      const dx = Math.cos(a)
+      const dy = Math.sin(a)
+      const maxT = r.range(0, 60)
+      let best = maxT
+      let hit = false
+      for (const rc of rects) {
+        const t = rayRect(ox, oy, dx, dy, rc, best)
+        if (t < best || (t === best && !hit && t !== Infinity)) {
+          best = t
+          hit = true
+        }
+      }
+      expect(grid.raycast(ox, oy, dx, dy, maxT)).toBe(hit ? best : Infinity)
+    }
+  })
+
+  test("pushOut through the grid matches a linear scan", () => {
+    const R = 0.32
+    for (let i = 0; i < 20000; i++) {
+      const p = { x: r.range(0, m.size[0]), y: r.range(0, m.size[1]) }
+      const q = { ...p }
+      pushOut(p, R, rects)
+      for (let pass = 0; pass < 2; pass++)
+        for (const rc of rects) {
+          const dx = q.x - Math.max(rc[0], Math.min(q.x, rc[2]))
+          const dy = q.y - Math.max(rc[1], Math.min(q.y, rc[3]))
+          const d2 = dx * dx + dy * dy
+          if (d2 >= R * R) continue
+          if (d2 > 1e-12) {
+            const d = Math.sqrt(d2)
+            q.x += (dx / d) * (R - d)
+            q.y += (dy / d) * (R - d)
+            continue
+          }
+          const k = Math.min(q.x - rc[0], rc[2] - q.x, q.y - rc[1], rc[3] - q.y)
+          if (k === q.x - rc[0]) q.x = rc[0] - R
+          else if (k === rc[2] - q.x) q.x = rc[2] + R
+          else if (k === q.y - rc[1]) q.y = rc[1] - R
+          else q.y = rc[3] + R
+        }
+      expect(p).toEqual(q)
+    }
   })
 })
