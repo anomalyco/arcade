@@ -9,7 +9,7 @@ const RAYS: u32 = ${POLAR_RAYS}u;
 const TAU: f32 = 6.2831853;
 const PI: f32 = 3.1415927;
 /** Visual brightness of lights relative to the ambient. */
-const GAIN: f32 = 6.0;
+const GAIN: f32 = 5.0;
 const FAR: f32 = 1e9;
 
 struct Frame {
@@ -299,8 +299,9 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     let x = dPlan / r;
     var win = 1.0 - x * x;
     win *= win;
-    let dn = max(d3, 1.0);
-    var att = power * win * (0.08 + 2.2 / (1.0 + dn * dn * 0.35));
+    // Surfaces right next to a fixture (wall tops, desks under a panel) never get hotter than the floor below it.
+    let dn = max(d3, max(hl * 0.8, 1.25));
+    var att = power * win * (0.1 + 2.6 / (1.0 + dn * dn * 0.3));
     if (L.cone.w > 0.5 && dPlan > 0.001) {
       let c = dot(dv / dPlan, L.cone.xy);
       let t = clamp((c - L.cone.z) / 0.25, 0.0, 1.0);
@@ -316,8 +317,22 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     out.diff += L.color.rgb * att * (diffuse * vis + 0.035);
     if (shin > 0.0) {
       let h = normalize(ldir + V);
-      let s = pow(max(dot(n, h), 0.0), shin) * (shin + 2.0) * 0.006;
+      let s = pow(max(dot(n, h), 0.0), shin) * (shin + 2.0) * 0.004;
       out.spec += L.color.rgb * att * s * vis;
+      if (n.y > 0.9) {
+        // Mirror image of the fixture on a glossy floor: where the eye's reflection sees the lamp, stretched toward
+        // the viewer like a polished, slightly wet surface.
+        let e = F.cam.xyz;
+        let k = hl / (hl + e.y);
+        let pm = lp + (e.xz - lp) * k;
+        let toEye = normalize(e.xz - pm + vec2f(1e-4));
+        let q = world.xz - pm;
+        let along = dot(q, toEye);
+        let across = dot(q, vec2f(-toEye.y, toEye.x));
+        let sz = 0.05 + L.extra.z * 0.45;
+        let r2 = across * across / (sz * sz) + along * along / (sz * sz * 9.0);
+        out.spec += L.color.rgb * power * exp(-r2) * shin * 0.002 * vis;
+      }
     }
   }
   return out;
@@ -404,13 +419,19 @@ fn floorPattern(kind: i32, p: vec2f, base: vec3f, gloss: ptr<function, vec2f>) -
 
 /** The city far below the windows: a dark grid of streets and lit windows. */
 fn city(p: vec2f) -> vec3f {
-  let blk = floor(p / 9.0);
-  let f = fract(p / 9.0);
-  let street = 1.0 - smoothstep(0.02, 0.08, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)));
-  var c = vec3f(0.004, 0.006, 0.014) + vec3f(0.5, 0.32, 0.12) * street * 0.05;
-  let w = floor(p / 0.45);
-  let lit = step(0.93, hash2(w + blk * 7.0)) * (1.0 - street);
-  c += mix(vec3f(1.0, 0.7, 0.35), vec3f(0.5, 0.7, 1.0), hash2(w * 1.7)) * lit * 0.12;
+  let blk = floor(p / 14.0);
+  let f = fract(p / 14.0);
+  let edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+  let street = 1.0 - smoothstep(0.03, 0.07, edge);
+  // Rooftops of different heights read as slightly different navy blocks; streets carry faint sodium light.
+  var c = vec3f(0.006, 0.008, 0.016) * (0.6 + 0.8 * hash2(blk)) * (1.0 - street);
+  c += vec3f(0.9, 0.5, 0.18) * street * 0.035 * (0.6 + 0.4 * sin(p.x * 3.0 + p.y * 2.0));
+  let w = floor(p / 0.3);
+  let lit = step(0.975, hash2(w + blk * 7.0)) * (1.0 - street) * step(0.08, edge);
+  c += mix(vec3f(1.0, 0.75, 0.4), vec3f(0.55, 0.75, 1.0), hash2(w * 1.7)) * lit * 0.05;
+  // A red aircraft light on some roofs.
+  let rc = fract(p / 14.0) - 0.5;
+  c += vec3f(1.0, 0.1, 0.05) * step(0.8, hash2(blk + 3.0)) * (1.0 - smoothstep(0.0, 0.012, length(rc))) * (0.5 + 0.5 * sin(F.cam.w * 2.0 + hash2(blk) * 6.0));
   return c;
 }
 
@@ -445,7 +466,8 @@ fn lampK(aux: f32) -> f32 {
   } else if (mat == 9) {
     // Wall caps: the night sky and a cool rim on the bevels keep the plan readable in the dark.
     let rim = 1.0 - n.y;
-    col = o.color * (vec3f(0.3, 0.34, 0.46) + spill(o.world) * 0.35) + vec3f(0.035, 0.045, 0.08) * rim;
+    let sp = spill(o.world);
+    col = o.color * (vec3f(0.42, 0.48, 0.62) + mix(vec3f(dot(sp, vec3f(0.33))), sp, 0.5) * 0.2) + vec3f(0.03, 0.045, 0.085) * rim;
   } else if (mat == 6) {
     let lit = lightSum(o.world, vec3f(0.0, 1.0, 0.0), V, 0.0, 1.0);
     col = vec3f(0.006, 0.01, 0.02) + lit.diff * 0.2 + vec3f(0.03, 0.05, 0.09) * pow(1.0 - abs(n.y), 3.0);
@@ -472,10 +494,11 @@ fn lampK(aux: f32) -> f32 {
     if (abs(n.y) < 0.5 && mat != 12) {
       let base = mix(0.55, 1.0, smoothstep(0.0, 0.8, o.world.y));
       amb *= base;
-      direct *= mix(0.75, 1.0, smoothstep(0.0, 0.5, o.world.y));
+      // Walls face the fixtures square on; keep them a step below the floor pools so rooms don't blow out.
+      direct *= mix(0.22, 0.38, smoothstep(0.0, 1.5, o.world.y));
     }
     // Moonlight through the windows, on the floor and low surfaces.
-    let moon = vec3f(0.5, 0.72, 1.5) * fd.g * F.ambient.w * low * max(n.y, 0.2);
+    let moon = vec3f(0.62, 0.78, 1.25) * fd.g * F.ambient.w * low * max(n.y, 0.2);
     col = albedo * (amb + direct + moon) + lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25);
     if (mat == 12) {
       // Soldiers: a cool rim and a little fill so they read against dark floors.

@@ -24,7 +24,15 @@ const PROP_H: Partial<Record<PropKind, number>> = {
 /** Apparent size of each fixture, which sets how soft its shadows are. */
 const SIZE: Record<LightKind, number> = { desk: 0.12, panel: 0.5, pendant: 0.3, exit: 0.35, vending: 0.6, server: 0.45, bulb: 0.2 }
 /** How bright each kind looks, relative to the rule's power. */
-const GAIN: Record<LightKind, number> = { desk: 0.8, panel: 1, pendant: 0.9, exit: 1.3, vending: 0.85, server: 1, bulb: 0.9 }
+/** Visual reach relative to the rule's radius: lamps make tight pools, tubes wide ones. */
+const REACH: Record<LightKind, number> = { desk: 0.9, panel: 1, pendant: 0.9, exit: 1, vending: 1, server: 1, bulb: 0.9 }
+/** Practical lights read more saturated than their rule colours: warm goes amber, cold goes blue. */
+const SAT: Record<LightKind, number> = { desk: 1.7, panel: 1.3, pendant: 1.7, exit: 1.3, vending: 1, server: 0.8, bulb: 1.6 }
+const sat = (c: readonly [number, number, number], k: number): [number, number, number] => {
+  const m = Math.max(c[0], c[1], c[2])
+  return [(c[0] / m) ** k * m, (c[1] / m) ** k * m, (c[2] / m) ** k * m]
+}
+const GAIN: Record<LightKind, number> = { desk: 1, panel: 0.85, pendant: 1, exit: 2, vending: 1, server: 0.8, bulb: 1 }
 
 export type DynLight = { x: number; y: number; h: number; r: number; color: readonly [number, number, number]; power: number; size: number }
 export type Caster = { x: number; y: number }
@@ -35,19 +43,24 @@ const hash = (n: number) => {
   return x - Math.floor(x)
 }
 
-/** Whether a light hums and stutters. Purely visual; deterministic per light so everyone sees the same flicker. */
-export function flickers(l: LightDef): boolean {
-  return (l.kind === "panel" || l.kind === "bulb") && hash(l.id * 3.7 + 1) < 0.12
+/**
+ * How unreliable a light looks, 0..1: the map's hint, or else a few tubes and bulbs picked deterministically per light
+ * so everyone sees the same flicker. Purely visual.
+ */
+export function flickers(l: LightDef): number {
+  if (l.flicker !== undefined) return l.flicker
+  return (l.kind === "panel" || l.kind === "bulb") && hash(l.id * 3.7 + 1) < 0.1 ? 0.5 : 0
 }
 
-/** Brightness multiplier of a flickering tube at time t (seconds). */
-export function flicker(id: number, t: number): number {
-  const period = 3 + hash(id) * 6
+/** Brightness multiplier of a stuttering fitting at time t (seconds); worse fittings stutter longer and more often. */
+export function flicker(id: number, t: number, bad: number): number {
+  const period = 2 + hash(id) * 6 * (1.2 - bad)
   const phase = (t + hash(id + 9) * period) % period
-  if (phase > 0.9) return 0.94 + 0.06 * Math.sin(t * 50 + id)
+  const burst = 0.25 + bad * 1.4
+  if (phase > burst) return 0.95 + 0.05 * Math.sin(t * 50 + id)
   const seg = Math.floor(t * 18)
   const r = hash(seg * 0.37 + id * 11.3)
-  return r < 0.45 ? 0.05 : r < 0.6 ? 0.45 : 1
+  return r < 0.3 + bad * 0.3 ? 0.04 : r < 0.75 ? 0.5 : 1
 }
 
 /**
@@ -67,7 +80,7 @@ export class LightCuller {
   private stamp = new Uint32Array(0)
   private stampN = 0
   private cache = new Map<number, Float32Array>()
-  private flick: boolean[] = []
+  private flick: number[] = []
   private order: { l: LightDef; d: number }[] = []
   private static CELL = 4
 
@@ -138,7 +151,7 @@ export class LightCuller {
     const n = Math.min(map.lights.length, MAX_MAP_LIGHTS)
     for (let i = 0; i < n; i++) {
       const l = map.lights[i]!
-      P[i] = this.flick[i] ? flicker(l.id, t) : 1
+      P[i] = this.flick[i]! > 0 ? flicker(l.id, t, this.flick[i]!) : 1
       const dx = Math.max(vx0 - l.x, 0, l.x - vx1)
       const dy = Math.max(vy0 - l.y, 0, l.y - vy1)
       if (dx * dx + dy * dy > l.r * l.r || l.power <= 0) continue
@@ -171,7 +184,8 @@ export class LightCuller {
       if (!list) this.cache.set(l.id, (list = this.gather(l.x, l.y, l.r)))
       const [off, cnt] = pushOcc(l.x, l.y, l.r, list, 0.3)
       const pw = l.power * GAIN[l.kind] * (l.id < n ? P[l.id]! : 1)
-      L.set([l.x, l.h, l.y, l.r, l.color[0], l.color[1], l.color[2], pw, l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0, off, cnt, SIZE[l.kind], l.id], nl * LIGHT_FLOATS)
+      const c = sat(l.color, SAT[l.kind])
+      L.set([l.x, l.h, l.y, l.r * REACH[l.kind], c[0], c[1], c[2], pw, l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0, off, cnt, SIZE[l.kind], l.id], nl * LIGHT_FLOATS)
       nl++
     }
     for (const f of dyn) {
