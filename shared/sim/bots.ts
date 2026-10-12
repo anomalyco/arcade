@@ -14,11 +14,11 @@ const TURN_RATE = 3.2
  */
 export class BotBrain implements Brain {
   private rng: Rng
-  private state: State = "patrol"
+  private state: State = "hold"
   private goal: Vec | null = null
   private path: Vec[] = []
   private stance: Stance = "walk"
-  private holdUntil = 0
+  private holdUntil = -1
   private target: string | null = null
   private lastSeen: Vec | null = null
   private lastSeenAt = -10
@@ -40,6 +40,11 @@ export class BotBrain implements Brain {
   think(world: World, p: Player): Intent {
     const now = world.time
     const i: Intent = { mx: 0, my: 0, stance: "walk", aim: this.aim, fire: false, reload: false, gadget: -1, tx: 0, ty: 0, use: false }
+    // Everyone starts a round by listening.
+    if (this.holdUntil < 0) {
+      this.holdUntil = now + 4 + this.rng.next() * 10
+      this.aim = p.aim
+    }
     if (this.pendingUse) {
       i.use = true
       this.pendingUse = false
@@ -88,7 +93,7 @@ export class BotBrain implements Brain {
     }
     if (best) {
       if (this.target !== best.id || now - this.lastSeenAt > 1.5) {
-        this.reactAt = now + (0.45 + this.rng.next() * 0.45) * (this.patience + 0.4)
+        this.reactAt = now + (0.6 + this.rng.next() * 0.6) * (this.patience + 0.5)
         this.aimError = (this.rng.next() - 0.5) * 0.5
       }
       this.target = best.id
@@ -158,12 +163,12 @@ export class BotBrain implements Brain {
     for (let k = 0; k < 10; k++) {
       const c = nav.randomFree(this.rng)
       const d = Math.hypot(c.x - p.x, c.y - p.y)
-      if (d < 5 || d > 22) continue
+      if (d < 4 || d > 14) continue
       goal = c
       if (!world.litAt(c.x, c.y)) break
     }
     this.state = "patrol"
-    this.setGoal(world, p, goal, this.rng.next() < 0.55 ? "sneak" : "walk")
+    this.setGoal(world, p, goal, this.rng.next() < 0.8 ? "sneak" : "walk")
   }
 
   private setGoal(world: World, p: Player, goal: Vec, stance: Stance): void {
@@ -187,7 +192,7 @@ export class BotBrain implements Brain {
     if (!next) {
       if (this.state === "patrol") {
         this.state = "hold"
-        this.holdUntil = now + (3 + this.rng.next() * 7) * (0.5 + this.patience)
+        this.holdUntil = now + (6 + this.rng.next() * 12) * (0.5 + this.patience)
       }
       this.goal = null
       return
