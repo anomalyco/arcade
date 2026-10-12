@@ -34,12 +34,12 @@ strips the `/arcade/<name>` prefix in its Worker. The landing owns only the exac
 ## History
 
 The games were imported with `git subtree add` from their original repositories, so `git log -- games/<name>` shows
-their full history. Blackout came from https://github.com/anomalyco/blackout.
+their full history. Blackout came from the `anomalyco/blackout` GitHub repository.
 
 ## Migration notes
 
 - These are new Workers, so their Durable Object namespaces are fresh. Live rooms and lobby state from the old
   `anoma.ly/labs/*` deployments do not carry over.
 - The old `anoma.ly/labs/blackout` and `anoma.ly/labs/getaway` URLs (every path, with the query string) permanently
-  redirect to `/arcade/<name>` through `redirects/`. The old labs Workers, the standalone repositories and the
-  `anomalyco/blackout` GitHub repository have been removed; their history is in this repo.
+  redirect to `/arcade/<name>` through `redirects/`. The old labs Workers and the standalone repositories have been removed; their history is in this repo.
+  `anomalyco/blackout` on GitHub is superseded by this repo.
