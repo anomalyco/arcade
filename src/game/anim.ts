@@ -232,7 +232,7 @@ export function hit(a: Avatar, dx: number, dy: number, power = 1): void {
   kick(a.hitTwist, (Math.random() < 0.5 ? -1 : 1) * 0.25 * power, 160)
   kick(a.recYaw, (Math.random() - 0.5) * 0.25 * power, 600)
   kick(a.recPitch, -0.12 * power, 600)
-  a.flash = 1
+  a.flash = 0.3
 }
 
 // Clips: keyframed hand paths for reloads, pumps and bolts ---------------------------------------------------------
@@ -487,7 +487,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   stepSpring(a.hitY, 160, 0.35, dt)
   stepSpring(a.hitTwist, 160, 0.35, dt)
   a.heat *= Math.exp(-dt * (now - a.firedAt < 0.2 ? 0.8 : 4))
-  a.flash *= Math.exp(-dt * 16)
+  a.flash *= Math.exp(-dt * 22)
 
   // Clips: reload first, then the pump or bolt cycle.
   let clip: Clip | null = null

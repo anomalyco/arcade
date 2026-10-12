@@ -475,7 +475,7 @@ export class Game {
     for (let i = 0; i < n; i++) {
       const a = dir + (Math.random() - 0.5) * 1.1
       const s = 1.5 + Math.random() * 3.5
-      this.fx(x, y, 0.9 + Math.random() * 0.4, Math.cos(a) * s, Math.sin(a) * s, Math.random() * 2, 1.2, 0.035 + Math.random() * 0.035, "blood")
+      this.fx(x, y, 0.9 + Math.random() * 0.4, Math.cos(a) * s, Math.sin(a) * s, Math.random() * 2, 1.2, 0.02 + Math.random() * 0.025, "blood")
     }
     if (amount >= 0.5) this.fx(x, y, 1.1, Math.cos(dir) * 0.8, Math.sin(dir) * 0.8, 0.2, 0.3, 0.2, "smoke")
   }
@@ -619,7 +619,7 @@ export class Game {
         const bc = ragdollCentre(c.rd)
         this.sprite(false, bc.x, 0.012, bc.y, 0.1 + 0.55 * Math.sqrt(pool), 0.07, 0.0, 0.004, 0.9 * Math.max(0, 1 - sink * 4), 6)
       }
-      emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, Math.max(0, 0.7 - age * 5), 1, sink)
+      emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, Math.max(0, 0.3 - age * 2), 1, sink)
     }
     for (const [model, data] of bodies) emit(model, data)
 
@@ -694,7 +694,7 @@ export class Game {
           p.kind = "splat"
           p.t0 = t
           p.life = 5 + Math.random() * 2
-          p.size *= 1.6 + Math.random()
+          p.size *= 1.2 + Math.random() * 0.6
           p.z = 0.011
         } else if (p.kind === "spark" && !p.bounced) {
           p.vz = -p.vz * 0.3
@@ -710,7 +710,7 @@ export class Game {
       else if (p.kind === "smoke") this.sprite(false, p.x, p.z, p.y, p.size * (1.5 + age * 4), 0.55, 0.55, 0.58, a * a * 0.25, 0)
       else if (p.kind === "chip") this.sprite(false, p.x, p.z, p.y, p.size, 0.25, 0.26, 0.3, Math.min(1, a * 4), 6)
       else if (p.kind === "splat") this.sprite(false, p.x, p.z, p.y, p.size, 0.08, 0.0, 0.005, Math.min(1, a * 3) * 0.9, 6)
-      else this.sprite(false, p.x, p.z, p.y, p.size, 0.22, 0.0, 0.01, 1, 6)
+      else this.sprite(false, p.x, p.z, p.y, p.size * 1.6, 0.16, 0.0, 0.008, 1, 0)
     }
     if (this.particles.length > 1500) this.particles.splice(0, this.particles.length - 1500)
 
