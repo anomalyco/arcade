@@ -191,7 +191,7 @@ kbd { display: inline-block; font: 700 11.5px/1 var(--sans); min-width: 22px; te
   <footer class="setbar card">
     <span>Graphics <span class="seg" id="seg-quality"><button data-q="low">Low</button><button data-q="balanced">Balanced</button><button data-q="high">High</button></span></span>
     <span>Sound <span class="seg"><button id="btn-sound" aria-pressed="true">On</button></span></span>
-    <span>Steering <span class="seg" id="seg-style"><button data-s="direct">Direct</button><button data-s="aim">Mouse-aim</button></span></span>
+    <span>Steering <span class="seg" id="seg-style"><button data-scheme="point">Point &amp; turn</button><button data-scheme="battlefield">Battlefield</button><button data-scheme="aim">Mouse-aim cursor</button></span></span>
     <span>Mouse <input type="range" id="sens" min="0.2" max="3" step="0.05" aria-label="Mouse sensitivity" /></span>
     <button class="iconbtn" id="btn-help">Controls</button>
   </footer>
@@ -225,23 +225,8 @@ kbd { display: inline-block; font: 700 11.5px/1 var(--sans); min-width: 22px; te
 <div class="modal" id="help-modal" hidden>
   <div class="card">
     <h2><span class="title">Controls</span> <button type="button" class="iconbtn" data-close>Esc</button></h2>
-    <table class="keys">
-      <tr class="sec"><td colspan="2">Flight · all aircraft</td></tr>
-      <tr><td>Pitch</td><td>Mouse Y (forward = nose down) · <kbd>↑</kbd> nose down <kbd>↓</kbd> nose up</td></tr>
-      <tr><td>Roll</td><td>Mouse X · <kbd>←</kbd><kbd>→</kbd></td></tr>
-      <tr><td>Yaw</td><td><kbd>A</kbd><kbd>D</kbd> · <kbd>Q</kbd><kbd>E</kbd></td></tr>
-      <tr><td>Throttle / collective</td><td><kbd>W</kbd><kbd>S</kbd></td></tr>
-      <tr><td>Boost · brake / auto-hover</td><td><kbd>Shift</kbd> · <kbd>X</kbd></td></tr>
-      <tr class="sec"><td colspan="2">Combat</td></tr>
-      <tr><td>Guns</td><td><kbd>Left Mouse</kbd><kbd>Space</kbd></td></tr>
-      <tr><td>Missiles</td><td><kbd>Right Mouse</kbd><kbd>V</kbd></td></tr>
-      <tr><td>Flares · ability</td><td><kbd>F</kbd> · <kbd>R</kbd></td></tr>
-      <tr><td>Switch seat</td><td><kbd>1</kbd><kbd>2</kbd> · gunners aim with the mouse</td></tr>
-      <tr class="sec"><td colspan="2">View &amp; chat</td></tr>
-      <tr><td>Free-look · chase / cockpit</td><td>hold <kbd>C</kbd> · <kbd>T</kbd></td></tr>
-      <tr><td>Chat · scoreboard · menu</td><td><kbd>Enter</kbd> · <kbd>Tab</kbd> · <kbd>Esc</kbd></td></tr>
-    </table>
-    <p class="note">Trackpad: steer by moving, <kbd>Space</kbd> fires guns, <kbd>V</kbd> fires missiles. Keep the target inside the seeker ring to lock on. Want mouse forward = nose up? Tick <b>Invert mouse Y</b> in the pause menu.</p>
+    <table class="keys" id="help-keys"></table>
+    <p class="note">Trackpad: steer by moving, <kbd>Space</kbd> fires guns, <kbd>V</kbd> fires missiles. Keep the target inside the seeker ring to lock on. Want mouse away = nose down? Tick <b>Invert mouse Y</b> in the pause menu. Change steering under <b>Steering</b>.</p>
   </div>
 </div>
 

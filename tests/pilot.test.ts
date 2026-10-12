@@ -25,9 +25,11 @@ let InputCls: typeof import("../src/input").Input
 let SteerStick: typeof import("../src/input").SteerStick
 let flight: typeof import("../src/sim/flight")
 let settings: typeof import("../src/ui/settings").settings
+let inputMod: typeof import("../src/input")
 
 beforeAll(async () => {
-  ;({ Input: InputCls, SteerStick } = await import("../src/input"))
+  inputMod = await import("../src/input")
+  ;({ Input: InputCls, SteerStick } = inputMod)
   flight = await import("../src/sim/flight")
   settings = (await import("../src/ui/settings")).settings
 })
@@ -75,58 +77,79 @@ class Pilot {
 
 describe("stick (mouse → deflection)", () => {
   test("linear in mouse speed, re-centres within ~0.3 s, spikes clamped, frame-rate independent", () => {
-    const at = (pxPerS: number, hz: number, seconds = 0.3) => {
+    const FULL = inputMod.STICK_FULL_SPEED
+    const at = (pxPerS: number, hz: number, seconds = 0.4) => {
       const s = new SteerStick()
       for (let i = 0; i < Math.round(seconds * hz); i++) { s.feed(pxPerS / hz); s.sample(1 / hz) }
       return s
     }
-    const half = at(450, 60).value, full = at(900, 60).value
-    expect(half).toBeCloseTo(0.5, 2)
-    expect(full).toBeCloseTo(1, 1)
-    expect(at(450, 144).value).toBeCloseTo(half, 2)
-    expect(at(450, 30).value).toBeCloseTo(half, 1)
-    const s = at(900, 60)
-    for (let i = 0; i < 18; i++) s.sample(1 / 60) // 0.3 s with no motion
+    const half = at(FULL / 2, 60).value
+    expect(half).toBeCloseTo(0.5, 1)
+    expect(at(FULL, 60).value).toBeCloseTo(1, 1)
+    expect(at(FULL / 2, 144).value).toBeCloseTo(half, 2)
+    expect(at(FULL / 2, 30).value).toBeCloseTo(half, 1)
+    const s = at(FULL, 60)
+    for (let i = 0; i < 24; i++) s.sample(1 / 60) // 0.4 s with no motion
     expect(Math.abs(s.value)).toBeLessThan(0.01)
     const spike = new SteerStick()
     spike.feed(50_000); spike.sample(1 / 60)
     expect(spike.value).toBeLessThanOrEqual(1)
-    for (let i = 0; i < 18; i++) spike.sample(1 / 60)
+    for (let i = 0; i < 24; i++) spike.sample(1 / 60)
     expect(Math.abs(spike.value)).toBeLessThan(0.01)
   })
 
-  test("mouse Y is flight-sim style by default (forward = nose down); Invert flips it", () => {
+  test("default sensitivity is ~1.8× the previous one (500 vs 900 px/s for full deflection)", () => {
+    expect(inputMod.STICK_FULL_SPEED).toBe(500)
+    expect(inputMod.controlScheme()).toBe("point")
+    expect(inputMod.CONTROL_SCHEMES).toEqual(["point", "battlefield", "aim"])
+  })
+
+  test("point & turn: mouse away = nose up (shooter style); Invert flips it", () => {
     const p = new Pilot("fighter")
-    p.run(0.2, 0, -600) // mouse pushed forward
-    expect(p.buf.pitch).toBeLessThan(-0.3)
-    expect(p.state.angularVelocity[0]).toBeLessThan(0)
+    p.run(0.2, 0, -400) // mouse moved up/away
+    expect(p.buf.pitch).toBeGreaterThan(0.3)
+    expect(p.state.angularVelocity[0]).toBeGreaterThan(0)
     settings.invertY = true
     const q = new Pilot("fighter")
-    q.run(0.2, 0, -600)
-    expect(q.buf.pitch).toBeGreaterThan(0.3)
+    q.run(0.2, 0, -400)
+    expect(q.buf.pitch).toBeLessThan(-0.3)
     settings.invertY = false
   })
 
-  test("same mapping for every aircraft: mouse X → roll, A/D and Q/E → yaw, arrows → pitch/roll", () => {
+  test("point & turn mapping, same for every aircraft", () => {
     for (const kind of ["fighter", "apache"] as VehicleKind[]) {
       const p = new Pilot(kind)
-      p.run(0.15, 600, 0)
-      expect(p.buf.roll).toBeGreaterThan(0.3)
-      expect(p.buf.yaw).toBe(0)
+      p.run(0.15, 400, 0) // mouse right
+      expect(p.buf.yaw).toBeGreaterThan(0.3) // = turn right
+      expect(p.buf.roll).toBe(0)
       p.run(0.5)
-      p.key("KeyD", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); p.key("KeyD", false)
-      p.key("KeyQ", true); p.run(0.4); expect(p.buf.yaw).toBeLessThan(-0.9); p.key("KeyQ", false)
-      p.key("ArrowUp", true); p.run(0.4); expect(p.buf.pitch).toBeLessThan(-0.9); p.key("ArrowUp", false)
-      p.key("ArrowLeft", true); p.run(0.4); expect(p.buf.roll).toBeLessThan(-0.9); p.key("ArrowLeft", false)
-      p.run(0.5)
+      p.key("ArrowRight", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); p.key("ArrowRight", false)
+      p.key("KeyQ", true); p.run(0.5); expect(p.buf.yaw).toBeLessThan(-0.9); p.key("KeyQ", false)
+      p.key("KeyD", true); p.run(0.5); expect(p.buf.roll).toBeGreaterThan(0.9); p.key("KeyD", false)
+      p.key("ArrowUp", true); p.run(0.5); expect(p.buf.pitch).toBeLessThan(-0.9); p.key("ArrowUp", false)
+      p.run(0.6)
       expect(p.buf.roll).toBe(0)
       expect(p.buf.pitch).toBe(0)
       expect(p.buf.yaw).toBe(0)
     }
   })
+
+  test("battlefield scheme (optional): mouse X = roll, A/D = yaw, mouse away = nose down", () => {
+    ;(settings as any).controlScheme = "battlefield"
+    try {
+      const p = new Pilot("fighter")
+      p.run(0.15, 400, -400)
+      expect(p.buf.roll).toBeGreaterThan(0.3)
+      expect(p.buf.yaw).toBe(0)
+      expect(p.buf.pitch).toBeLessThan(-0.3)
+      p.key("KeyD", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); p.key("KeyD", false)
+    } finally {
+      ;(settings as any).controlScheme = undefined
+    }
+  })
 })
 
-describe("helicopter pilot", () => {
+describe("helicopter pilot (point & turn)", () => {
   test("hands-off hover holds: drift < 1 m/s over 10 s", () => {
     const p = new Pilot("apache")
     p.run(10)
@@ -134,51 +157,52 @@ describe("helicopter pilot", () => {
     expect(Math.abs(p.state.position[1] - 1000)).toBeLessThan(1)
   })
 
-  test("short mouse-X flick → bounded roll that stops within 0.3 s of the mouse stopping", () => {
+  test("mouse right turns the nose right in a hover, without drifting or flipping", () => {
     const p = new Pilot("apache")
-    p.run(0.1, 1200, 0) // flick right
-    let peakRate = 0
-    p.run(0.3, 0, 0, () => { peakRate = Math.max(peakRate, p.rate) })
-    const bank = p.r.roll
-    expect(bank).toBeGreaterThan(3)
-    expect(bank).toBeLessThan(30)
-    expect(p.rate).toBeLessThan(Math.max(0.1, peakRate * 0.15))
-    // …then it slowly comes back toward level by itself (2–3 s).
-    p.run(3)
-    expect(Math.abs(p.r.roll)).toBeLessThan(Math.abs(bank) * 0.2)
+    p.run(0.5, 400, 0)
+    p.run(0.5)
+    expect(p.r.heading).toBeGreaterThan(20)
+    expect(p.r.heading).toBeLessThan(120)
+    expect(Math.abs(p.r.roll)).toBeLessThan(5) // no bank when hovering
+    p.run(2)
+    expect(p.speed).toBeLessThan(1)
+    expect(p.rate).toBeLessThan(0.05)
   })
 
-  test("push forward → flies forward; pull back → stops and flies backwards; X → hovers", () => {
+  test("mouse down tilts forward and flies forward; up tilts back and flies backwards; X hovers", () => {
     const p = new Pilot("apache")
-    p.run(0.5, 0, -900) // push mouse forward: nose down
+    p.run(0.4, 0, 500) // mouse pulled toward you = nose down
     expect(p.r.pitch).toBeLessThan(-15)
     let maxFwd = 0
     p.run(3, 0, 0, () => { maxFwd = Math.max(maxFwd, p.fwd) })
-    expect(maxFwd).toBeGreaterThan(5)
-    // Pull back (nose up) and keep nudging back to hold it: the heli slows, then reverses.
+    expect(maxFwd).toBeGreaterThan(4)
     let minFwd = Infinity
-    p.run(0.5, 0, 700)
-    p.run(4, 0, 90, () => { minFwd = Math.min(minFwd, p.fwd) })
+    p.run(0.6, 0, -500) // mouse away = nose up
+    p.run(4, 0, -60, () => { minFwd = Math.min(minFwd, p.fwd) })
     expect(minFwd).toBeLessThan(-3)
-    p.key("KeyX", true)
-    p.run(8)
-    p.key("KeyX", false)
+    p.key("KeyX", true); p.run(8); p.key("KeyX", false)
     expect(p.speed).toBeLessThan(1)
     expect(Math.abs(p.r.pitch)).toBeLessThan(3)
     expect(Math.abs(p.r.roll)).toBeLessThan(3)
   })
 
-  test("roll right slides right, pedals yaw without rolling", () => {
+  test("A/D strafes: steady sideways tilt and slide, level again on release", () => {
     const p = new Pilot("apache")
-    p.run(0.2, 900, 0)
-    p.run(1.5)
-    // Nose north (-Z), right = +X.
-    expect(p.state.velocity[0]).toBeGreaterThan(2)
-    const q = new Pilot("apache")
-    q.key("KeyD", true); q.run(1); q.key("KeyD", false)
-    expect(Math.abs(q.r.roll)).toBeLessThan(2)
-    expect(q.r.heading).toBeGreaterThan(45)
-    expect(q.r.heading).toBeLessThan(120)
+    p.key("KeyD", true); p.run(2.5); p.key("KeyD", false)
+    expect(p.r.roll).toBeGreaterThan(18)
+    expect(p.r.roll).toBeLessThan(35)
+    expect(p.state.velocity[0]).toBeGreaterThan(5) // nose north (-Z): right = +X
+    p.run(3)
+    expect(Math.abs(p.r.roll)).toBeLessThan(5)
+  })
+
+  test("turning in forward flight banks into the turn (style + coordination)", () => {
+    const p = new Pilot("apache")
+    p.state.orientation = flight.quatFromYawPitchRoll(0, -0.35, 0)
+    p.state.velocity = [0, 0, -40]
+    p.key("ArrowRight", true); p.run(1.2)
+    expect(p.r.roll).toBeGreaterThan(8)
+    p.key("ArrowRight", false)
   })
 })
 
@@ -186,19 +210,18 @@ describe("helicopter: no accidental flips", () => {
   test("1.5 s of nose-down key does not flip it; releasing rights it", () => {
     const p = new Pilot("apache")
     p.key("ArrowUp", true); p.run(1.5); p.key("ArrowUp", false)
-    const r = p.r
-    expect(Math.abs(r.roll)).toBeLessThan(10) // still upright (a flip reads as roll ±180)
-    expect(r.pitch).toBeGreaterThan(-85)
+    expect(Math.abs(p.r.roll)).toBeLessThan(10) // a flip reads as roll ±180
+    expect(p.r.pitch).toBeGreaterThan(-85)
     p.run(3)
     expect(Math.abs(p.r.pitch)).toBeLessThan(10)
   })
 
-  test("holding the key long enough still flips it (flips are possible)", () => {
+  test("holding nose-down long enough still flips it (flips are possible)", () => {
     const p = new Pilot("apache", 1500)
     let minUp = 1
-    p.key("ArrowRight", true)
-    p.run(4, 0, 0, () => { minUp = Math.min(minUp, flight.up(p.state.orientation)[1]) })
-    p.key("ArrowRight", false)
+    p.key("ArrowUp", true)
+    p.run(5, 0, 0, () => { minUp = Math.min(minUp, flight.up(p.state.orientation)[1]) })
+    p.key("ArrowUp", false)
     expect(minUp).toBeLessThan(-0.5)
   })
 
@@ -207,12 +230,12 @@ describe("helicopter: no accidental flips", () => {
     p.state.orientation = flight.quatFromYawPitchRoll(0, 0.3, Math.PI * 0.97)
     p.run(2)
     const upAfter2 = flight.up(p.state.orientation)[1]
-    expect(upAfter2).toBeGreaterThan(-0.97) // it is coming back…
-    expect(upAfter2).toBeLessThan(0.5) // …but gently
+    expect(upAfter2).toBeGreaterThan(-0.97)
+    expect(upAfter2).toBeLessThan(0.5)
     const q = new Pilot("apache", 2000)
     q.state.orientation = flight.quatFromYawPitchRoll(0, 0.3, Math.PI * 0.97)
     q.key("KeyX", true); q.run(2); q.key("KeyX", false)
-    expect(flight.up(q.state.orientation)[1]).toBeGreaterThan(0.85) // upright; may still be tilting against drift
+    expect(flight.up(q.state.orientation)[1]).toBeGreaterThan(0.85)
   })
 
   test("releasing W at full collective eases back to hover in ~1.5 s", () => {
@@ -226,44 +249,61 @@ describe("helicopter: no accidental flips", () => {
   })
 })
 
-describe("jet pilot", () => {
-  test("roll right then pull: turns right; release → stable, no wobble", () => {
+describe("jet pilot (point & turn)", () => {
+  test("mouse right → turns right with auto-bank, level; release → rolls out, stable, no wobble", () => {
     const p = new Pilot("fighter", 2000)
     p.state.throttle = 1
-    p.run(0.3, 700, 0) // roll right
-    const bank = p.r.roll
-    expect(bank).toBeGreaterThan(25)
-    p.run(2.5, 0, 500) // keep pulling the mouse back = pull
-    const h = p.r.heading
-    expect(h).toBeGreaterThan(40)
-    expect(h).toBeLessThan(180)
-    p.run(0.3, -700, 0) // roll out
-    p.run(1)
+    const alt0 = p.state.position[1]
+    let maxBank = 0
+    p.run(2.5, 350, 0, () => { maxBank = Math.max(maxBank, p.r.roll) })
+    expect(maxBank).toBeGreaterThan(40)
+    expect(p.r.heading).toBeGreaterThan(40)
+    expect(p.r.heading).toBeLessThan(150)
+    expect(Math.abs(p.state.position[1] - alt0)).toBeLessThan(40)
+    p.run(4)
     const rolls: number[] = []
-    p.run(3, 0, 0, () => rolls.push(p.r.roll))
+    p.run(2, 0, 0, () => rolls.push(p.r.roll))
+    expect(Math.abs(p.r.roll)).toBeLessThan(5)
     expect(p.rate).toBeLessThan(0.03)
     expect(Math.max(...rolls) - Math.min(...rolls)).toBeLessThan(3)
-    expect(Math.abs(p.r.roll)).toBeLessThan(20)
+  })
+
+  test("small mouse moves turn gently, big moves turn hard", () => {
+    const turned = (pxPerS: number) => {
+      const p = new Pilot("fighter", 2000)
+      p.state.throttle = 1
+      p.run(1.5, pxPerS, 0)
+      return p.r.heading
+    }
+    const gentle = turned(100), hard = turned(600)
+    expect(gentle).toBeGreaterThan(1)
+    expect(gentle).toBeLessThan(hard / 2.5)
+  })
+
+  test("mouse away → nose up", () => {
+    const p = new Pilot("fighter", 2000)
+    p.run(0.5, 0, -300)
+    expect(p.r.pitch).toBeGreaterThan(5)
+  })
+
+  test("A/D rolls the jet (barrel roll), overriding auto-bank", () => {
+    const p = new Pilot("fighter", 2000)
+    p.state.throttle = 1
+    let rolled = 0
+    p.key("KeyD", true)
+    p.run(2.5, 0, 0, () => { rolled -= p.state.angularVelocity[2] * FRAME })
+    p.key("KeyD", false)
+    expect(rolled).toBeGreaterThan(2 * Math.PI)
   })
 
   test("keyboard roll ramps in over ~0.25 s (no snap)", () => {
     const p = new Pilot("fighter", 2000)
-    p.key("ArrowRight", true)
+    p.key("KeyD", true)
     p.run(0.1)
     expect(p.buf.roll).toBeGreaterThan(0.25)
     expect(p.buf.roll).toBeLessThan(0.6)
     p.run(0.2)
     expect(p.buf.roll).toBe(1)
-    p.key("ArrowRight", false)
-  })
-
-  test("release mid-manoeuvre holds attitude (no self-rolling)", () => {
-    const p = new Pilot("warthog", 2000)
-    p.state.throttle = 1
-    p.run(0.25, 600, 0)
-    p.run(0.5)
-    const bank = p.r.roll
-    p.run(3)
-    expect(Math.abs(p.r.roll - bank)).toBeLessThan(2)
+    p.key("KeyD", false)
   })
 })

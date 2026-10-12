@@ -1,6 +1,7 @@
 import type { Quality } from "../sim/types"
 import { settings, updateSettings } from "./settings"
 import { controlsHtml } from "./spawn"
+import { bindSchemeSeg } from "./lobby"
 
 export interface PauseMenu {
   /** Show the control scheme for the current aircraft (heli vs jet). */
@@ -29,9 +30,9 @@ export function createPauseMenu(parent: HTMLElement, actions: {
       <button class="btn" data-a="invite"><span class="lbl">Copy invite link</span></button>
       <div class="opts">
         <label>Graphics <span class="seg q"><button data-q="low">Low</button><button data-q="balanced">Balanced</button><button data-q="high">High</button></span></label>
-        <label>Steering <span class="seg st"><button data-s="direct">Direct</button><button data-s="aim">Mouse-aim</button></span></label>
+        <label>Steering <span class="seg st"></span></label>
         <label>Mouse <input type="range" class="sens" min="0.2" max="3" step="0.05" /></label>
-        <div class="checks"><label class="check"><input type="checkbox" class="inv" /> Invert mouse Y (mouse forward = nose up)</label>
+        <div class="checks"><label class="check"><input type="checkbox" class="inv" /> Invert mouse Y (mouse away = nose down)</label>
         <label class="check"><input type="checkbox" class="mute" /> Mute</label></div>
       </div>
       <details><summary>Controls</summary><div class="ctl"></div></details>
@@ -42,20 +43,21 @@ export function createPauseMenu(parent: HTMLElement, actions: {
   const seg = q<HTMLElement>(".seg.q")
   const sens = q<HTMLInputElement>(".sens")
   const st = q<HTMLElement>(".seg.st")
+  let heliShown = false
+  const paintScheme = bindSchemeSeg(st, () => { q<HTMLElement>(".ctl").innerHTML = controlsHtml(heliShown) })
   const inv = q<HTMLInputElement>(".inv")
   const mute = q<HTMLInputElement>(".mute")
   const paint = () => {
     seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.q === settings.quality)))
     sens.value = String(settings.sensitivity)
-    st.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === settings.controlStyle)))
+    paintScheme()
     inv.checked = settings.invertY
     mute.checked = settings.muted
   }
   root.addEventListener("click", e => {
     const t = e.target as HTMLElement
     if (t.closest("button")) actions.click()
-    const sb = t.closest<HTMLElement>("[data-s]")
-    if (sb) { updateSettings({ controlStyle: sb.dataset.s as "direct" | "aim" }); paint(); return }
+    if (t.closest("[data-scheme]")) return
     const qb = t.closest<HTMLElement>("[data-q]")
     if (qb) { updateSettings({ quality: qb.dataset.q as Quality }); actions.quality(qb.dataset.q as Quality); paint(); return }
     switch (t.closest<HTMLElement>("[data-a]")?.dataset.a) {
@@ -70,7 +72,7 @@ export function createPauseMenu(parent: HTMLElement, actions: {
   inv.addEventListener("change", () => updateSettings({ invertY: inv.checked }))
   mute.addEventListener("change", () => updateSettings({ muted: mute.checked }))
   return {
-    show(heli = false) { paint(); q<HTMLElement>(".ctl").innerHTML = controlsHtml(heli); root.hidden = false },
+    show(heli = false) { heliShown = heli; paint(); q<HTMLElement>(".ctl").innerHTML = controlsHtml(heli); root.hidden = false },
     hide() { root.hidden = true },
     visible: () => !root.hidden,
     dispose() { root.remove() },

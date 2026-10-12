@@ -121,8 +121,8 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
     pitchResponse: 8.5, rollResponse: 13, yawResponse: 8.5,
     pitchGain: 2.4, rollGain: 3.6, yawGain: 1.8,
     grip: 3.2, cornerFrac: 0.7, boostAuth: 0.82, bleed: 0.05,
-    airbrake: 2.8, wheelBrake: 10, sideLift: 0.55, bankTurn: 1, stability: 0.6,
-    turnFrac: 1.1, maxAutoBank: 70 * DEG, levelBank: 50 * DEG, directPush: 0.75, directPitch: 1.25,
+    airbrake: 2.8, wheelBrake: 10, sideLift: 0.55, bankTurn: 1, stability: 1.5,
+    turnFrac: 1.1, maxAutoBank: 70 * DEG, levelBank: 100 * DEG, directPush: 0.75, directPitch: 1.25,
     maxGroundPitch: 13 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   warthog: {
@@ -131,8 +131,8 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
     pitchResponse: 6.5, rollResponse: 9.5, yawResponse: 6.5,
     pitchGain: 1.8, rollGain: 2.7, yawGain: 1.7,
     grip: 4, cornerFrac: 0.6, boostAuth: 0.85, bleed: 0.035,
-    airbrake: 3, wheelBrake: 9, sideLift: 0.6, bankTurn: 1, stability: 0.9,
-    turnFrac: 1.1, maxAutoBank: 60 * DEG, levelBank: 50 * DEG, directPush: 0.75, directPitch: 1.2,
+    airbrake: 3, wheelBrake: 9, sideLift: 0.6, bankTurn: 1, stability: 1.5,
+    turnFrac: 1.1, maxAutoBank: 60 * DEG, levelBank: 100 * DEG, directPush: 0.75, directPitch: 1.2,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   blackbird: {
@@ -141,8 +141,8 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
     pitchResponse: 4.5, rollResponse: 6.5, yawResponse: 4.5,
     pitchGain: 1.25, rollGain: 1.9, yawGain: 0.9,
     grip: 2.2, cornerFrac: 0.6, boostAuth: 0.8, bleed: 0.05,
-    airbrake: 2.5, wheelBrake: 9, sideLift: 0.5, bankTurn: 1, stability: 0.4,
-    turnFrac: 1.1, maxAutoBank: 55 * DEG, levelBank: 50 * DEG, directPush: 0.75, directPitch: 1.3,
+    airbrake: 2.5, wheelBrake: 9, sideLift: 0.5, bankTurn: 1, stability: 1.0,
+    turnFrac: 1.1, maxAutoBank: 55 * DEG, levelBank: 100 * DEG, directPush: 0.75, directPitch: 1.3,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
 }

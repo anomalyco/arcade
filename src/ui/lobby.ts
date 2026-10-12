@@ -3,6 +3,75 @@ import { DEFAULT_ROOM_CONFIG } from "../sim/protocol"
 import type { Quality } from "../sim/types"
 import { callsign, randomCallsign, settings, updateSettings } from "./settings"
 import { getNet } from "./net-adapter"
+import type { ControlScheme } from "../input"
+
+// Mirrors CONTROL_SCHEMES / CONTROL_SCHEME_LABELS / controlScheme() / setControlScheme() from input.ts.
+// Importing input.ts here would drag the whole Input module into the instant-paint entry chunk (+8 kB).
+const CONTROL_SCHEMES: readonly ControlScheme[] = ["point", "battlefield", "aim"]
+const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { point: "Point & turn", battlefield: "Battlefield (mouse = roll)", aim: "Mouse-aim cursor" }
+const controlScheme = (): ControlScheme => settings.controlStyle === "aim" ? "aim" : settings.controlScheme === "battlefield" ? "battlefield" : "point"
+const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "aim" ? "aim" : "direct", controlScheme: scheme })
+
+const kb = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
+
+/** Control rows for a scheme, grouped into sections (shared by the help modal, spawn screen and pause menu). */
+export function controlRows(scheme: ControlScheme = controlScheme()): { title: string; rows: [string, string][] }[] {
+  const flight: [string, string][] = scheme === "battlefield"
+    ? [
+        ["Nose up / down", `Mouse ↑↓ (forward = nose down) · ${kb("↑")} down ${kb("↓")} up`],
+        ["Roll", `Mouse ←→ · ${kb("←", "→")}`],
+        ["Yaw / pedals", `${kb("A", "D")} · ${kb("Q", "E")}`],
+      ]
+    : scheme === "aim"
+    ? [
+        ["Steer", "Point the mouse cursor where you want to fly"],
+        ["Roll / strafe (heli)", kb("A", "D")],
+        ["Rudder / pedal", kb("Q", "E")],
+      ]
+    : [
+        ["Turn", `Mouse ←→ · ${kb("←", "→")}`],
+        ["Nose up / down", `Mouse ↑↓ · ${kb("↓")} up ${kb("↑")} down`],
+        ["Roll / strafe (heli)", kb("A", "D")],
+        ["Rudder / pedal", kb("Q", "E")],
+      ]
+  flight.push(["Throttle / collective", kb("W", "S")], ["Boost · brake / auto-hover", `${kb("Shift")} · ${kb("X")}`])
+  return [
+    { title: `Flight · ${CONTROL_SCHEME_LABELS[scheme]}`, rows: flight },
+    { title: "Combat", rows: [
+      ["Guns", kb("LMB", "Space")], ["Missiles", kb("RMB", "V")], ["Flares · ability", `${kb("F")} · ${kb("R")}`],
+      ["Switch seat", `${kb("1", "2")} · gunners aim with the mouse`],
+    ] },
+    { title: "View & chat", rows: [
+      ["Free-look · camera", `hold ${kb("C")} · ${kb("T")}`], ["Chat · scores · menu", `${kb("Enter")} · ${kb("Tab")} · ${kb("Esc")}`],
+    ] },
+  ]
+}
+
+/** 3-way steering selector markup (buttons carry data-scheme). */
+export function schemeSegHtml(): string {
+  return CONTROL_SCHEMES.map(s => `<button data-scheme="${s}">${CONTROL_SCHEME_LABELS[s].replace(/ \(.*\)$/, "")}</button>`).join("")
+}
+
+/** Wire a steering selector: paints the current scheme and persists clicks. */
+export function bindSchemeSeg(seg: HTMLElement, onChange?: () => void): () => void {
+  if (!seg.querySelector("[data-scheme]")) seg.innerHTML = schemeSegHtml()
+  const paint = () => {
+    const cur = controlScheme()
+    seg.querySelectorAll<HTMLElement>("[data-scheme]").forEach(b => {
+      b.setAttribute("aria-pressed", String(b.dataset.scheme === cur))
+      b.title = CONTROL_SCHEME_LABELS[b.dataset.scheme as ControlScheme]
+    })
+  }
+  seg.addEventListener("click", e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-scheme]")
+    if (!b) return
+    setControlScheme(b.dataset.scheme as ControlScheme)
+    paint()
+    onChange?.()
+  })
+  paint()
+  return paint
+}
 
 export type StartRequest =
   | { mode: "quick" }
@@ -69,13 +138,12 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const paintSound = () => { sound.textContent = settings.muted ? "Off" : "On"; sound.setAttribute("aria-pressed", String(!settings.muted)) }
   paintSound()
   sound.addEventListener("click", () => { updateSettings({ muted: !settings.muted }); paintSound() })
-  const style = $("seg-style")
-  const paintStyle = () => style.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === settings.controlStyle)))
-  paintStyle()
-  style.addEventListener("click", e => {
-    const v = (e.target as HTMLElement).dataset.s as "direct" | "aim" | undefined
-    if (v) { updateSettings({ controlStyle: v }); paintStyle() }
-  })
+  const paintScheme = bindSchemeSeg($("seg-style"), () => renderHelp())
+  const renderHelp = () => {
+    $("help-keys").innerHTML = controlRows().map(sec =>
+      `<tr class="sec"><td colspan="2">${escapeHtml(sec.title)}</td></tr>` + sec.rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("")).join("")
+  }
+  renderHelp()
   const sens = $<HTMLInputElement>("sens")
   sens.value = String(settings.sensitivity)
   sens.addEventListener("input", () => updateSettings({ sensitivity: Number(sens.value) }))
@@ -90,7 +158,7 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   window.addEventListener("keydown", e => {
     if (e.key === "Escape") document.querySelectorAll<HTMLElement>(".modal").forEach(m => (m.hidden = true))
   })
-  $("btn-help").addEventListener("click", () => openModal("help-modal"))
+  $("btn-help").addEventListener("click", () => { renderHelp(); openModal("help-modal") })
   $("btn-create").addEventListener("click", () => openModal("create-modal"))
 
   const form = $<HTMLFormElement>("create-form")
@@ -181,7 +249,7 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
 
   const busyEl = $("busy")
   return {
-    show() { lobby.hidden = false; document.body.classList.add("in-lobby"); refreshRooms() },
+    show() { paintScheme(); renderHelp(); lobby.hidden = false; document.body.classList.add("in-lobby"); refreshRooms() },
     hide() { lobby.hidden = true; document.body.classList.remove("in-lobby") },
     busy(text) {
       busyEl.hidden = text === null

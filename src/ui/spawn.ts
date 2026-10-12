@@ -2,7 +2,7 @@
 import type { RoomConfig } from "../sim/protocol"
 import type { PlayerInfo, SeatIndex, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { VEHICLES, VEHICLE_KINDS, WEAPONS } from "../sim/vehicles"
-import { TEAM_COLORS, TEAM_NAMES, escapeHtml, teamGlyph } from "./lobby"
+import { TEAM_COLORS, TEAM_NAMES, controlRows, escapeHtml, teamGlyph } from "./lobby"
 
 interface RoleInfo { role: string; blurb: string; icon: string; agility: number; firepower: number }
 const ROLES: Record<VehicleKind, RoleInfo> = {
@@ -21,20 +21,9 @@ const MAX_HP = Math.max(...VEHICLE_KINDS.map(k => VEHICLES[k].maxHp))
 const statBar = (label: string, v: number) =>
   `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(Math.max(0.06, Math.min(1, v)) * 100)}%"></b></i></div>`
 
-/** Unified control scheme (identical for every aircraft); shared by the spawn screen and the pause menu. */
+/** Control scheme summary for the current steering scheme (shared by the spawn screen and the pause menu). */
 export function controlsHtml(_heli = false): string {
-  const k = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
-  const rows: [string, string][] = [
-    ["Pitch", `Mouse Y · ${k("↑")} down ${k("↓")} up`],
-    ["Roll", `Mouse X · ${k("←", "→")}`],
-    ["Yaw", `${k("A", "D")} · ${k("Q", "E")}`],
-    ["Throttle / collective", k("W", "S")],
-    ["Boost · brake / hover", `${k("Shift")} · ${k("X")}`],
-    ["Guns · missiles", `${k("LMB")}${k("Space")} · ${k("RMB")}${k("V")}`],
-    ["Flares · ability", `${k("F")} · ${k("R")}`],
-    ["Seat · free-look · view", `${k("1", "2")} · hold ${k("C")} · ${k("T")}`],
-    ["Chat · scores · menu", `${k("Enter")} · ${k("Tab")} · ${k("Esc")}`],
-  ]
+  const rows = controlRows().flatMap(sec => sec.rows)
   return `<div class="scheme-grid">${rows.map(([a, b]) => `<div><span>${a}</span><span>${b}</span></div>`).join("")}</div>`
 }
 
@@ -118,8 +107,8 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
   const code = $(".code")
   const scheme = $(".scheme")
   let schemeKind: VehicleKind | null = null
-  const showScheme = (k: VehicleKind) => {
-    if (k === schemeKind) return
+  const showScheme = (k: VehicleKind, force = false) => {
+    if (k === schemeKind && !force) return
     schemeKind = k
     scheme.innerHTML = `<h3>Controls <b>${escapeHtml(VEHICLES[k].name)}</b></h3>${controlsHtml(VEHICLES[k].flight === "heli")}`
     root.querySelectorAll(".card").forEach(c => c.classList.toggle("sel", (c as HTMLElement).dataset.kind === k))
@@ -161,7 +150,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
 
   return {
     root,
-    show() { root.hidden = false },
+    show() { root.hidden = false; if (schemeKind) showScheme(schemeKind, true) },
     hide() { root.hidden = true },
     visible: () => !root.hidden,
     update(s) {
