@@ -170,8 +170,7 @@ interface HeliDirectHandling {
   yawRate: number
   cyclicResponse: number
   yawResponse: number
-  /** Strafe (roll channel): bank at full input (rad) and P gain; coordinated bank factor/limit in turns. */
-  strafeBank: number
+  /** Bank P gain for the coordinated bank in forward-flight turns, and its factor/limit. */
   strafeGain: number
   coordBank: number
   maxCoordBank: number
@@ -205,7 +204,7 @@ const HELI_DIRECT: Record<"apache", HeliDirectHandling> = {
   apache: {
     collectiveRate: 1.2, detentWidth: 0.1, detentRate: 0.3,
     pitchRate: 1.5, rollRate: 1.6, yawRate: 1.5, cyclicResponse: 12, yawResponse: 10,
-    strafeBank: 28 * DEG, strafeGain: 4, coordBank: 0.8, maxCoordBank: 25 * DEG,
+    strafeGain: 4, coordBank: 0.8, maxCoordBank: 25 * DEG,
     rightGain: 1.6, rightCap: 1.0, rightInverted: 0.35, rightUnderInput: 0.5,
     highCollective: 0.6, highReturnRate: 0.35,
     cyclicGain: 1.3, dragQuad: 1.6e-3, dragLin: 0.08, dragVert: 0.55,
@@ -550,7 +549,7 @@ function stepHeliDirect(s: FlightState, inp: FlightInput, dt: number, world: Wor
   // Body-space rate targets: x nose-up, y nose-left, z roll-left.
   let tx = inPitch * h.pitchRate
   let ty = -inYaw * h.yawRate
-  let tz = inRoll !== 0 ? -clamp(h.strafeGain * wrapAngle(inRoll * h.strafeBank - bank), -h.rollRate, h.rollRate) : 0
+  let tz = -inRoll * h.rollRate
   // Righting axis: rotate body-up toward world-up (no yaw component).
   rotInto(TMP, q, 0, 1, 0, true) // world up in body space
   const tilt = Math.acos(clamp(TMP[1], -1, 1))
@@ -578,17 +577,17 @@ function stepHeliDirect(s: FlightState, inp: FlightInput, dt: number, world: Wor
     // but never removes it, so short key presses can't flip the heli.
     const strength = Math.min(h.rightGain * tilt, h.rightCap) + (h.rightInverted - h.rightCap) * smoothstep(100 * DEG, 170 * DEG, tilt)
     tx += axX * strength * (1 - h.rightUnderInput * Math.abs(inPitch))
-    const tzRight = axZ * strength
-    // Roll channel = strafe: a bank-angle command (hold A/D → steady sideways tilt, release → level).
-    // Turning (yaw) at speed adds a coordinated bank so forward-flight turns look and fly right.
-    const heading = Math.atan2(-F[0], -F[2])
-    const vF = v[0] * -Math.sin(heading) + v[2] * -Math.cos(heading)
-    const coordBank = clamp(Math.atan((vF * inYaw * h.yawRate) / GRAVITY) * h.coordBank, -h.maxCoordBank, h.maxCoordBank)
-    const turnW = Math.abs(inYaw) * smoothstep(5, 30, vF)
-    const bankT = inRoll * h.strafeBank + coordBank * (1 - Math.abs(inRoll))
-    const cmdW = clamp(Math.abs(inRoll) * 4 + turnW * 4, 0, 1)
-    const tzCmd = -clamp(h.strafeGain * wrapAngle(bankT - bank), -h.rollRate, h.rollRate)
-    tz = tzRight + (tzCmd - tzRight) * cmdW
+    // Roll is a rate command fighting the righting: a partial deflection (A/D strafe, ~0.45) settles at
+    // a steady sideways tilt; a full one (Q/E) overpowers it and rolls on through — flips are possible.
+    tz = -inRoll * h.rollRate + axZ * strength * (1 - h.rightUnderInput * Math.abs(inRoll))
+    if (inRoll === 0 && inYaw !== 0) {
+      // Turning in forward flight banks into the turn (style + coordination); none in a hover.
+      const heading = Math.atan2(-F[0], -F[2])
+      const vF = v[0] * -Math.sin(heading) + v[2] * -Math.cos(heading)
+      const coordBank = clamp(Math.atan((vF * inYaw * h.yawRate) / GRAVITY) * h.coordBank, -h.maxCoordBank, h.maxCoordBank)
+      const turnW = Math.abs(inYaw) * smoothstep(5, 30, vF)
+      tz += (-clamp(h.strafeGain * wrapAngle(coordBank - bank), -h.rollRate, h.rollRate) - tz) * turnW
+    }
   }
   if (s.onGround && s.throttle < 0.3) ty = 0
   const kc = 1 - Math.exp(-h.cyclicResponse * dt)

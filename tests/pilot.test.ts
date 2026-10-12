@@ -116,16 +116,24 @@ describe("stick (mouse → deflection)", () => {
     settings.invertY = false
   })
 
-  test("point & turn mapping, same for every aircraft", () => {
+  test("point & turn mapping: mouse X/←→ turn, Q/E roll, A/D rudder (jet) / strafe (heli)", () => {
     for (const kind of ["fighter", "apache"] as VehicleKind[]) {
+      const heli = kind === "apache"
       const p = new Pilot(kind)
       p.run(0.15, 400, 0) // mouse right
       expect(p.buf.yaw).toBeGreaterThan(0.3) // = turn right
       expect(p.buf.roll).toBe(0)
       p.run(0.5)
       p.key("ArrowRight", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); p.key("ArrowRight", false)
-      p.key("KeyQ", true); p.run(0.5); expect(p.buf.yaw).toBeLessThan(-0.9); p.key("KeyQ", false)
-      p.key("KeyD", true); p.run(0.5); expect(p.buf.roll).toBeGreaterThan(0.9); p.key("KeyD", false)
+      p.run(0.3)
+      p.key("KeyE", true); p.run(0.4); expect(p.buf.roll).toBeGreaterThan(0.9); p.key("KeyE", false)
+      p.run(0.3)
+      p.key("KeyQ", true); p.run(0.4); expect(p.buf.roll).toBeLessThan(-0.9); p.key("KeyQ", false)
+      p.run(0.3)
+      p.key("KeyD", true); p.run(0.4)
+      if (heli) { expect(p.buf.roll).toBeCloseTo(inputMod.HELI_STRAFE_ROLL, 2); expect(p.buf.yaw).toBe(0) }
+      else { expect(p.buf.yaw).toBeGreaterThan(0.9); expect(p.buf.roll).toBe(0) }
+      p.key("KeyD", false)
       p.key("ArrowUp", true); p.run(0.5); expect(p.buf.pitch).toBeLessThan(-0.9); p.key("ArrowUp", false)
       p.run(0.6)
       expect(p.buf.roll).toBe(0)
@@ -143,6 +151,8 @@ describe("stick (mouse → deflection)", () => {
       expect(p.buf.yaw).toBe(0)
       expect(p.buf.pitch).toBeLessThan(-0.3)
       p.key("KeyD", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); p.key("KeyD", false)
+      p.run(0.3)
+      p.key("KeyE", true); p.run(0.4); expect(p.buf.roll).toBeGreaterThan(0.9); p.key("KeyE", false)
     } finally {
       ;(settings as any).controlScheme = undefined
     }
@@ -203,6 +213,27 @@ describe("helicopter pilot (point & turn)", () => {
     p.key("ArrowRight", true); p.run(1.2)
     expect(p.r.roll).toBeGreaterThan(8)
     p.key("ArrowRight", false)
+  })
+})
+
+describe("helicopter: Q/E roll", () => {
+  test("holding E flips the heli (full roll), releasing rights it, X recovers", () => {
+    const p = new Pilot("apache", 1500)
+    let minUp = 1
+    p.key("KeyE", true)
+    p.run(3.5, 0, 0, () => { minUp = Math.min(minUp, flight.up(p.state.orientation)[1]) })
+    p.key("KeyE", false)
+    expect(minUp).toBeLessThan(-0.7)
+    p.key("KeyX", true); p.run(2.5); p.key("KeyX", false)
+    expect(flight.up(p.state.orientation)[1]).toBeGreaterThan(0.85)
+  })
+
+  test("a short E tap does not flip it, and it rights itself", () => {
+    const p = new Pilot("apache")
+    p.key("KeyE", true); p.run(0.6); p.key("KeyE", false)
+    expect(flight.up(p.state.orientation)[1]).toBeGreaterThan(0.3)
+    p.run(3)
+    expect(Math.abs(p.r.roll)).toBeLessThan(8)
   })
 })
 
@@ -286,24 +317,47 @@ describe("jet pilot (point & turn)", () => {
     expect(p.r.pitch).toBeGreaterThan(5)
   })
 
-  test("A/D rolls the jet (barrel roll), overriding auto-bank", () => {
+  test("E = full 360° barrel roll (overrides auto-bank), Q rolls left", () => {
+    for (const [code, sign] of [["KeyE", 1], ["KeyQ", -1]] as const) {
+      const p = new Pilot("fighter", 2000)
+      p.state.throttle = 1
+      let rolled = 0
+      p.key(code, true)
+      p.run(2.5, 0, 0, () => { rolled -= p.state.angularVelocity[2] * FRAME })
+      p.key(code, false)
+      expect(rolled * sign).toBeGreaterThan(2 * Math.PI)
+    }
+  })
+
+  test("roll inverted with Q/E and let go: stays inverted (no forced auto-level)", () => {
     const p = new Pilot("fighter", 2000)
     p.state.throttle = 1
-    let rolled = 0
-    p.key("KeyD", true)
-    p.run(2.5, 0, 0, () => { rolled -= p.state.angularVelocity[2] * FRAME })
-    p.key("KeyD", false)
-    expect(rolled).toBeGreaterThan(2 * Math.PI)
+    p.key("KeyE", true)
+    for (let i = 0; i < 300 && Math.abs(p.r.roll) < 175; i++) p.frame()
+    p.key("KeyE", false)
+    p.run(0.6)
+    const r0 = Math.abs(p.r.roll)
+    expect(r0).toBeGreaterThan(150)
+    p.run(4)
+    expect(Math.abs(p.r.roll)).toBeGreaterThan(150)
+  })
+
+  test("A/D = rudder: turns the jet", () => {
+    const p = new Pilot("fighter", 2000)
+    p.state.throttle = 1
+    p.key("KeyD", true); p.run(2); p.key("KeyD", false)
+    expect(p.r.heading).toBeGreaterThan(20)
+    expect(p.r.heading).toBeLessThan(150)
   })
 
   test("keyboard roll ramps in over ~0.25 s (no snap)", () => {
     const p = new Pilot("fighter", 2000)
-    p.key("KeyD", true)
+    p.key("KeyE", true)
     p.run(0.1)
     expect(p.buf.roll).toBeGreaterThan(0.25)
     expect(p.buf.roll).toBeLessThan(0.6)
     p.run(0.2)
     expect(p.buf.roll).toBe(1)
-    p.key("KeyD", false)
+    p.key("KeyE", false)
   })
 })

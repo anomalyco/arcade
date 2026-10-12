@@ -2,9 +2,9 @@
 // Default "point & turn" scheme (same logic for every aircraft, aim = null):
 //   mouse ←/→ = turn (jets: coordinated auto-bank turn; heli: pedal turn) · mouse ↑/↓ = nose up/down
 //   (mouse away = nose up; "Invert mouse Y" flips) · arrows ↑ nose down, ↓ nose up, ←/→ turn ·
-//   A/D = roll (jets) / strafe (heli) · Q/E = rudder / extra pedal · W/S throttle·collective ·
+//   Q/E = roll (full 360°, flips) · A/D = rudder (jets) / strafe (heli) · W/S throttle·collective ·
 //   Shift boost · X brake / auto-hover.
-// Optional schemes: "battlefield" (mouse X = roll, A/D·Q/E = yaw, mouse forward = nose down) and
+// Optional schemes: "battlefield" (mouse X·Q/E = roll, A/D = yaw, mouse forward = nose down) and
 // "aim" (War Thunder mouse-aim cursor). The mouse acts like a spring-centred stick: deflection ∝ recent
 // mouse velocity, easing back to centre with a short time constant once the mouse stops.
 import type { FlightInput, SeatInput, Vec3 } from "./sim/types"
@@ -35,6 +35,8 @@ export function setControlScheme(scheme: ControlScheme): void {
 }
 
 const AIM_SENS = 0.0021
+/** Heli A/D strafe: roll deflection that the self-righting balances at a steady tilt (~30°). */
+export const HELI_STRAFE_ROLL = 0.45
 const MAX_PITCH = 1.5
 /** Mouse speed (px/s at sensitivity 1) that gives full stick deflection. */
 export const STICK_FULL_SPEED = 500
@@ -99,7 +101,7 @@ export class Input {
   /** Mouse X (+ its keys): turn in point & turn, roll in battlefield. */
   private mouseXStick = new SteerStick()
   private pitchStick = new SteerStick()
-  /** Keyboard-only axis: roll/strafe (A/D) in point & turn, yaw in battlefield. */
+  /** Keyboard-only axis: roll (Q/E; heli strafe A/D) in point & turn, yaw (A/D) in battlefield. */
   private keyStick = new SteerStick()
   private wheel = 0
   private keys = new Set<string>()
@@ -222,11 +224,17 @@ export class Input {
     const pitchKeys = this.axis(["ArrowUp"], ["ArrowDown"]) // ↑ = nose down, ↓ = nose up
     const ad = this.axis(["KeyA"], ["KeyD"]), qe = this.axis(["KeyQ"], ["KeyE"]), lr = this.axis(["ArrowLeft"], ["ArrowRight"])
     if (controlScheme() === "battlefield") {
-      this.steerRoll = this.mouseXStick.sample(seconds, sens, lr)
-      this.steerYaw = this.keyStick.sample(seconds, sens, clamp(ad + qe, -1, 1))
+      this.steerRoll = this.mouseXStick.sample(seconds, sens, clamp(lr + qe, -1, 1))
+      this.steerYaw = this.keyStick.sample(seconds, sens, ad)
+    } else if (heli) {
+      // Heli: mouse X / ←→ = pedal turn. Q/E = full roll (overpowers self-righting → flips);
+      // A/D = strafe, sent as a partial roll that settles at a steady sideways tilt.
+      this.steerYaw = this.mouseXStick.sample(seconds, sens, lr)
+      this.steerRoll = this.keyStick.sample(seconds, sens, qe !== 0 ? qe : ad * HELI_STRAFE_ROLL)
     } else {
-      this.steerYaw = this.mouseXStick.sample(seconds, sens, clamp(lr + qe, -1, 1))
-      this.steerRoll = this.keyStick.sample(seconds, sens, ad)
+      // Jets: mouse X / ←→ / A·D = turn (rudder → coordinated turn). Q/E = roll (barrel rolls).
+      this.steerYaw = this.mouseXStick.sample(seconds, sens, clamp(lr + ad, -1, 1))
+      this.steerRoll = this.keyStick.sample(seconds, sens, qe)
     }
     this.steerPitch = this.pitchStick.sample(seconds, sens, pitchKeys)
   }
@@ -248,8 +256,8 @@ export class Input {
     } else {
       out.aim = aim
       out.pitch = this.axis(["ArrowUp"], ["ArrowDown"])
-      out.yaw = clamp(this.axis(["KeyQ", "ArrowLeft"], ["KeyE", "ArrowRight"]), -1, 1)
-      out.roll = this.axis(["KeyA"], ["KeyD"])
+      out.yaw = clamp(this.axis(["KeyA", "ArrowLeft"], ["KeyD", "ArrowRight"]), -1, 1)
+      out.roll = this.axis(["KeyQ"], ["KeyE"])
     }
     return out
   }

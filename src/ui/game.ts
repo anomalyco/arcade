@@ -1051,6 +1051,5 @@ class GameSession implements GameHandle {
     this.deps.host.setSpeedFx(seat === 0 ? f.speed * 3.6 : 0, seat === 0 && f.boost)
     this.deps.host.setFocus(pos)
     this.hud.update(f)
-    if (this.hud.pullUp && !f.missileWarning) audio?.ui("warning")
   }
 }

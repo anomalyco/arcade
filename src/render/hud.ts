@@ -3,7 +3,7 @@
 import { Vector3, type PerspectiveCamera } from "three"
 import type { PlayerInfo, TeamId, Vec3, VehicleEntity, WeaponId } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
-import { AIRBASES, WORLD_HALF, groundHeight, segmentHitsGround, terrainHeight } from "../sim/geography"
+import { AIRBASES, WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/geography"
 
 /** Muted team colours (match render/aircraft.ts TEAM_COLORS). */
 export const TEAM_COLORS = ["#3c6ea8", "#c98a2e", "#4e8a5a", "#b04a44"]
@@ -84,8 +84,6 @@ export interface Hud {
   damage(from?: Vec3 | null): void
   /** Victim death card: killer null = crashed. */
   deathCard(killer: string | null, killerTeam: TeamId | null, weapon: string, distance: number | null): void
-  /** True while the ground-proximity warning is showing (the game plays the warning tone). */
-  readonly pullUp: boolean
   setVisible(flying: boolean): void
   openChat(onSend: (text: string | null) => void): void
   chatOpen(): boolean
@@ -123,7 +121,7 @@ interface Marker { root: HTMLElement; label: Slot; dist: Slot; slot: Slot; tf: S
 
 /** Brighter team tints for text/lines on top of the 3D scene (the raw team colours are too dark on sky). */
 /** Lighter tints of the muted team colours, for text and lines over the world. */
-const TEAM_TINTS = ["#9fc0e6", "#e8b46a", "#9cc8a4", "#e09a92"]
+const TEAM_TINTS = ["#b4d0f0", "#f2c98a", "#b4dcba", "#efb2aa"]
 const sentence = (t: string) => { const l = t.toLowerCase(); return l.charAt(0).toUpperCase() + l.slice(1) }
 const glyph = (_t: number) => ""
 
@@ -133,13 +131,11 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-canopy"><svg viewBox="0 0 1600 900" preserveAspectRatio="none"><path d="M70 900C150 520 340 230 640 110L800 84 960 110C1260 230 1450 520 1530 900" /><path class="bow" d="M800 84V-10M560 150 420 -10M1040 150 1180 -10" /></svg></div>
     <div class="hud-dmg"></div>
     <div class="hud-dir"><i></i></div>
-    <div class="hud-pullup">Pull up</div>
     <div class="hud-death"><div class="l1"></div><div class="l2"></div></div>
     <div class="hud-low"></div>
     <div class="hud-warnfx"></div>
     <div class="hud-markers"></div>
     <div class="hud-lead"></div>
-    <div class="hud-seeker"><i></i></div>
     <div class="hud-scan"><i class="c"></i><i class="x"></i><span class="r"></span></div>
     <div class="hud-msl"><i></i><span>msl</span></div>
     <div class="hud-lock"><i class="ring"></i><i class="br"></i><b>lock</b></div>
@@ -174,8 +170,6 @@ export function createHud(parent: HTMLElement): Hud {
   const lockLbl = new Slot(q(".hud-lock b"))
   const lockEl = q(".hud-lock")
   let lockP = -1
-  const seeker = new Slot(q(".hud-seeker"))
-  let seekerR = -1
   const scan = new Slot(q(".hud-scan"))
   let scanR = -1
   const scanRange = new Slot(q(".hud-scan .r"))
@@ -187,9 +181,7 @@ export function createHud(parent: HTMLElement): Hud {
   const hitEl = q(".hud-hit")
   const dmgEl = q(".hud-dmg")
   const dirEl = q(".hud-dir")
-  const pullEl = new Slot(q(".hud-pullup"))
   const deathEl = q(".hud-death")
-  let pullUp = false
   let lastCam: PerspectiveCamera | null = null
   const strip = q(".hud-compass .strip")
   const stripTf = new Slot(strip)
@@ -409,15 +401,9 @@ export function createHud(parent: HTMLElement): Hud {
         if (p !== lockP) { lockP = p; lockEl.style.setProperty("--p", String(p)) }
       } else { lockBox.setTransform(HIDDEN); if (lockP !== -1) { lockP = -1; lockEl.style.setProperty("--p", "0") } }
 
-      // Seeker circle: lock cone projected to pixels (radius = tan(cone) / tan(fov/2) * h/2).
-      if (flying && f.seekerCone > 0 && f.seekerCenter && project(f.seekerCenter, cam)) {
-        const r = Math.round(coneR(f.seekerCone, cam))
-        if (r !== seekerR) { seekerR = r; seeker.el.style.setProperty("--r", `${r}px`) }
-        seeker.setTransform(tf(sx(), sy()))
-      } else seeker.setTransform(HIDDEN)
       // Scanner reticle replaces the aim circle for the radar officer.
       if (flying && f.scanner && f.aimPoint && project(f.aimPoint, cam)) {
-        const r = Math.max(16, Math.round(coneR(f.scannerCone, cam)))
+        const r = Math.max(14, Math.min(30, Math.round(coneR(f.scannerCone, cam))))
         scan.setTransform(tf(sx(), sy()))
         if (r !== scanR) { scanR = r; scan.el.style.setProperty("--r", `${r}px`) }
         if (frame % 6 === 0) scanRange.setText(f.scannerRange === null ? "no target" : `rng ${(f.scannerRange / 1000).toFixed(1)} km`)
@@ -529,19 +515,6 @@ export function createHud(parent: HTMLElement): Hud {
           root.className = cls + keep
         }
         ping.setText(f.ping > 0 ? `${Math.round(f.ping)} ms` : "")
-        // Ground proximity: project the velocity forward and look for terrain impact within 6 s.
-        pullUp = false
-        if (flying && f.vehicle) {
-          const p = f.vehicle.flight.position, vel = f.vehicle.flight.velocity
-          const agl = p[1] - groundHeight(p[0], p[2])
-          if (agl < 300 && vel[1] < -2 && !f.vehicle.flight.onGround) {
-            for (let t = 0.5; t <= 6; t += 0.5) {
-              const x = p[0] + vel[0] * t, z = p[2] + vel[2] * t
-              if (p[1] + vel[1] * t < groundHeight(x, z) + 2) { pullUp = true; break }
-            }
-          }
-        }
-        pullEl.setClass(pullUp ? "hud-pullup on" : "hud-pullup")
       }
       if (frame % 15 === 0) {
         let teams = ""
@@ -593,8 +566,6 @@ export function createHud(parent: HTMLElement): Hud {
       void hitEl.offsetWidth
       hitEl.classList.add("on")
     },
-
-    get pullUp() { return pullUp },
 
     deathCard(killer, killerTeam, weapon, distance) {
       const l1 = deathEl.querySelector(".l1")!, l2 = deathEl.querySelector(".l2")!

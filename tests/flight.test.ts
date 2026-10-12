@@ -218,7 +218,7 @@ function heliFeel() {
   const topSpeed = flightReadout(top).speed
   let stop = 0
   while (fwdSpeed(top) > 2 && stop < 30) { stepFlight(top, input({ pitch: holdPitchInput(top, 55), throttle: top.throttle > 0.75 ? -1 : 0 }), TICK_DT, world); stop += TICK_DT }
-  const flip = heliAir(); run(flip, input({ roll: 1 }), 4)
+  const flip = heliAir(); run(flip, input({ roll: 0.45 }), 4)
   const strafeBank = flightReadout(flip).roll
   const loop = heliAir(); run(loop, st => input({ pitch: holdPitchInput(st, -40), throttle: 1 }), 10)
   let pitched = 0, loopTime = 0
@@ -250,7 +250,7 @@ describe("helicopter: direct steering", () => {
     expect(Math.abs(f.topSpeed - 95) / 95).toBeLessThan(0.1)
   })
   test("pitching back stops it from top speed quickly", () => expect(f.stop).toBeLessThan(6))
-  test("loops are possible (pitch); strafe roll is a bank-angle command, not a flip", () => {
+  test("loops are possible (pitch); a partial roll (strafe) settles at a steady tilt, not a flip", () => {
     expect(f.looped).toBe(true)
     expect(f.strafeBank).toBeGreaterThan(20)
     expect(f.strafeBank).toBeLessThan(35)

@@ -25,7 +25,7 @@ export interface LobbyApi {
 /** Muted team colours (mirrors TEAM_COLORS in render/aircraft.ts; not imported to keep three.js out of the entry chunk). */
 export const TEAM_COLORS = ["#3c6ea8", "#c98a2e", "#4e8a5a", "#b04a44"]
 /** Lighter tints of the team colours for text over the world. */
-export const TEAM_TINTS = ["#9fc0e6", "#e8b46a", "#9cc8a4", "#e09a92"]
+export const TEAM_TINTS = ["#b4d0f0", "#f2c98a", "#b4dcba", "#efb2aa"]
 export const TEAM_NAMES = ["Cobalt", "Amber", "Emerald", "Crimson"]
 
 /** Small square swatch in the team colour. */
@@ -71,14 +71,14 @@ export function controlRows(scheme: ControlScheme = controlScheme()): { title: s
     : scheme === "aim"
     ? [
         ["Steer", "point the mouse where you want to fly"],
-        ["Roll / strafe (heli)", kb("a", "d")],
-        ["Rudder / pedal", kb("q", "e")],
+        ["Roll", kb("q", "e")],
+        ["Rudder / strafe (heli)", kb("a", "d")],
       ]
     : [
         ["Turn", `mouse ←→ · ${kb("←", "→")}`],
         ["Nose up / down", `mouse ↑↓ · ${kb("↓")} up ${kb("↑")} down`],
-        ["Roll / strafe (heli)", kb("a", "d")],
-        ["Rudder / pedal", kb("q", "e")],
+        ["Roll", kb("q", "e")],
+        ["Rudder / strafe (heli)", kb("a", "d")],
       ]
   flight.push(["Throttle / collective", kb("w", "s")], ["Boost · brake / auto-hover", `${kb("shift")} · ${kb("x")}`])
   return [

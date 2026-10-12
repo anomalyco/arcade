@@ -37,8 +37,18 @@ export const PARKED_REMOVE_DELAY = 60
 /** Crashes credit the last attacker if it damaged the vehicle within this window. */
 export const CRASH_CREDIT_WINDOW = 8
 export const MATCH_RESTART_DELAY = 15
-/** Max queued inputs per player; older ones are dropped (bounds latency added by jitter buffering). */
-export const INPUT_QUEUE_MAX = 6
+/** Hard cap on queued inputs per player; beyond it the oldest is dropped on arrival. */
+export const INPUT_QUEUE_MAX = 8
+/** Jitter buffer: inputs held before consumption, adapted within [MIN, MAX] from observed underruns/slack. */
+export const JITTER_TARGET_INITIAL = 2
+export const JITTER_TARGET_MIN = 1
+export const JITTER_TARGET_MAX = 4
+/** Depth above target + this margin makes a tick consume two inputs to catch up. */
+const JITTER_CATCHUP_MARGIN = 2
+/** Ticks per adaptation window (target shrinks after a window with no underrun and spare depth). */
+const JITTER_WINDOW = 180
+/** Max consecutive dry ticks that stand in for the next seq; beyond that the buffer re-primes. */
+const JITTER_MAX_SYNTH = 4
 /** Players list is re-sent at least this often even if unchanged (seconds). */
 const PLAYERS_RESEND = 1
 /** Human input older than this stops firing (lost connection / tab hidden). */
@@ -49,6 +59,13 @@ const CHAT_REFILL = 1.5 // seconds per token
 const NAME_MAX = 16
 const SPAWN_SLOTS = 16
 
+function newJitterBuffer(): JitterBuffer {
+  return {
+    target: JITTER_TARGET_INITIAL, primed: false, starveRun: 0, windowTicks: 0, windowMinDepth: Infinity, windowUnderrun: false, drainOne: false,
+    synthesized: 0, caughtUp: 0, dropped: 0, late: 0,
+  }
+}
+
 const NEUTRAL_SEAT: SeatInput = { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false }
 
 interface QueuedInput {
@@ -57,11 +74,29 @@ interface QueuedInput {
   seat?: SeatInput
 }
 
+interface JitterBuffer {
+  target: number
+  /** False until the queue first fills to `target` (and again after a long gap). */
+  primed: boolean
+  /** Consecutive dry ticks that stood in for the next seq. */
+  starveRun: number
+  windowTicks: number
+  windowMinDepth: number
+  windowUnderrun: boolean
+  drainOne: boolean
+  /** Counters (diagnostics/tests). */
+  synthesized: number
+  caughtUp: number
+  dropped: number
+  late: number
+}
+
 interface PlayerState {
   info: PlayerInfo
   flight: FlightInput
   seat: SeatInput
   queue: QueuedInput[]
+  jitter: JitterBuffer
   /** Highest input seq received. */
   seq: number
   /** Last input seq consumed by a tick (sent as snapshot ack). */
@@ -192,7 +227,7 @@ export class RoomEngine {
     const team = this.balancedTeam(null)
     this.players.set(id, {
       info: { id, name: cleanText(String(name ?? ""), NAME_MAX) || "Pilot", team, vehicleId: null, seat: null, kills: 0, deaths: 0, bot: false, respawnAt: 0 },
-      flight: NEUTRAL_INPUT, seat: NEUTRAL_SEAT, queue: [], seq: -1, ack: -1, lastInputAt: -Infinity,
+      flight: NEUTRAL_INPUT, seat: NEUTRAL_SEAT, queue: [], jitter: newJitterBuffer(), seq: -1, ack: -1, lastInputAt: -Infinity,
       chatTokens: CHAT_BURST, chatAt: this.time, needsPlayers: true,
     })
     beforeWelcome?.(id)
@@ -296,6 +331,12 @@ export class RoomEngine {
   private onInput(p: PlayerState, m: Record<string, unknown>): void {
     const seq = m.seq
     if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0 || seq <= p.seq) return
+    if (seq <= p.ack) {
+      // Already stood in for by a repeated input while the buffer ran dry: never apply it twice.
+      p.seq = seq
+      p.jitter.late++
+      return
+    }
     const input: QueuedInput = { seq }
     if (m.flight !== undefined) {
       input.flight = readFlight(m.flight)
@@ -308,8 +349,68 @@ export class RoomEngine {
     p.seq = seq
     p.lastInputAt = this.time
     p.queue.push(input)
-    // Drop the oldest beyond the cap, but keep their state so nothing regresses.
-    while (p.queue.length > INPUT_QUEUE_MAX) this.consume(p, p.queue.shift()!)
+    // Hard cap: drop the oldest, but keep its state so nothing regresses.
+    while (p.queue.length > INPUT_QUEUE_MAX) {
+      this.consume(p, p.queue.shift()!)
+      p.jitter.dropped++
+    }
+  }
+
+  /**
+   * Adaptive jitter buffer: consume exactly one input per tick once ~`target` inputs are buffered. A dry tick
+   * repeats the last input and counts as the next seq (so the late original is skipped, not double-applied);
+   * excess depth is drained by consuming two inputs in one tick.
+   */
+  private consumeTick(p: PlayerState): void {
+    const jb = p.jitter
+    const q = p.queue
+    while (q.length && q[0].seq <= p.ack) { q.shift(); jb.late++ }
+    if (!jb.primed) {
+      if (q.length === 0 || q.length < jb.target) return
+      jb.primed = true
+    }
+    if (q.length < jb.windowMinDepth) jb.windowMinDepth = q.length
+    if (++jb.windowTicks >= JITTER_WINDOW) {
+      if (!jb.windowUnderrun) {
+        if (jb.target > JITTER_TARGET_MIN) jb.target--
+        // A consistently spare input is pure latency: drain one.
+        if (jb.windowMinDepth >= 2 && jb.windowMinDepth !== Infinity) jb.drainOne = true
+      }
+      jb.windowTicks = 0
+      jb.windowMinDepth = Infinity
+      jb.windowUnderrun = false
+    }
+    const next = q.shift()
+    if (next) {
+      jb.starveRun = 0
+      if (q.length > jb.target + JITTER_CATCHUP_MARGIN || (jb.drainOne && q.length > 0)) {
+        jb.drainOne = false
+        const extra = q.shift()!
+        // Keep one-shot presses from the skipped input.
+        if (next.seat && extra.seat) {
+          extra.seat = { ...extra.seat, flares: extra.seat.flares || next.seat.flares, ability: extra.seat.ability || next.seat.ability }
+        }
+        this.consume(p, next)
+        this.consume(p, extra)
+        jb.caughtUp++
+      } else {
+        this.consume(p, next)
+      }
+      return
+    }
+    // Dry tick.
+    if (jb.starveRun === 0) {
+      jb.windowUnderrun = true
+      if (jb.target < JITTER_TARGET_MAX) jb.target++
+    }
+    if (jb.starveRun < JITTER_MAX_SYNTH && p.ack >= 0 && this.time - p.lastInputAt <= STALE_INPUT) {
+      jb.starveRun++
+      jb.synthesized++
+      p.ack++
+    } else {
+      jb.starveRun = 0
+      jb.primed = false
+    }
   }
 
   private consume(p: PlayerState, input: QueuedInput): void {
@@ -447,11 +548,8 @@ export class RoomEngine {
     const events = this.events
     const vehicles = this.vehicles
 
-    // One queued input per player per tick (matches client prediction); an empty queue repeats the last input.
-    for (const p of this.players.values()) {
-      const next = p.queue.shift()
-      if (next) this.consume(p, next)
-    }
+    // One buffered input per player per tick (matches client prediction).
+    for (const p of this.players.values()) this.consumeTick(p)
 
     // Inputs → flight + weapons.
     for (const v of vehicles) {
