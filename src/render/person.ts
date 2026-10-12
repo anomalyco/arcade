@@ -249,7 +249,7 @@ function casing(g: Gun): Mesh {
     m.box(-0.045, -0.013, -0.013, -0.03, 0.013, 0.013, BRASS, MAT.glow, 0.5)
   } else {
     const l = g === "sniper" ? 0.04 : 0.026
-    m.box(-l, -0.008, -0.008, l, 0.008, 0.008, BRASS, MAT.glow, 0.55)
+    m.box(-l, -0.008, -0.008, l, 0.008, 0.008, BRASS, MAT.glow, 0.22)
   }
   return m
 }
