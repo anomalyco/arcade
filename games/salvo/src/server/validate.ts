@@ -2,7 +2,7 @@
 import type { ClientMsg, Mode } from "../sim/protocol"
 import { WEAPONS, type WeaponId } from "../sim/weapons"
 
-export const BASE = "/labs/salvo"
+export const BASE = "/arcade/salvo"
 export const ROOM_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
 export const MAX_MESSAGE_BYTES = 2048
 export const MAX_HUMANS = 12

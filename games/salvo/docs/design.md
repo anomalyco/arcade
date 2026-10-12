@@ -62,7 +62,7 @@ Nothing is baked or hand-placed:
 
 ## Netcode
 
-- One **Room Durable Object** per room (`/labs/salvo/ws/:room`). It holds the authoritative `Match` state machine from `src/sim/match.ts`: lobby → aim → resolve → … → shop → … → over.
+- One **Room Durable Object** per room (`/arcade/salvo/ws/:room`). It holds the authoritative `Match` state machine from `src/sim/match.ts`: lobby → aim → resolve → … → shop → … → over.
 - Clients send intents: `aim`, `move`, `lock`, `buy`, `ready` and `start`. The server validates them.
 - At the end of the aim phase the server runs the deterministic volley simulation (`src/sim/volley.ts`, fixed 1/120 s steps, seeded RNG, integer-free but order-stable) once. It broadcasts the shots, the full event timeline, the projectile paths, and the before and after state (both including the packed terrain mask) along with a state hash.
 - Clients **play back** the timeline: they interpolate projectiles along the sampled paths and replay terrain events onto their local mask exactly (`src/sim/replay.ts`). Then they snap to the authoritative `after` state, so a client can never desync for more than one volley.

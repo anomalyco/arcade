@@ -105,7 +105,7 @@ const state: UIState = {
   aim: screen === "game" ? aim : null,
   profile,
   feed,
-  roomLink: params.has("room") ? "http://localhost:5391/labs/salvo/r/k7q2xm" : screen === "lobby" ? "https://anoma.ly/labs/salvo/r/k7q2xm" : "",
+  roomLink: params.has("room") ? "http://localhost:5391/arcade/salvo/r/k7q2xm" : screen === "lobby" ? "https://anoma.ly/arcade/salvo/r/k7q2xm" : "",
   online: true,
   spectating: variant === "spectate",
   serverNow: t0,

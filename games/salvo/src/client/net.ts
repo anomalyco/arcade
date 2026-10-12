@@ -15,8 +15,8 @@ export interface Transport {
   close(): void
 }
 
-// Server routes always live under /labs/salvo; in vite dev they are proxied to wrangler.
-const SERVER_BASE = "/labs/salvo"
+// Server routes always live under /arcade/salvo; in vite dev they are proxied to wrangler.
+const SERVER_BASE = "/arcade/salvo"
 const ROOM_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
 const ROOM_RE = /^[a-z0-9]{3,24}$/
 const PING_MS = 2000

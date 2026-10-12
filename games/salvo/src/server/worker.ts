@@ -9,7 +9,7 @@ export default {
     const url = new URL(request.url)
     const path = url.pathname
 
-    const ws = path.match(/^\/labs\/salvo\/ws\/([^/]+)\/?$/)
+    const ws = path.match(/^\/arcade\/salvo\/ws\/([^/]+)\/?$/)
     if (ws) {
       const room = ws[1]!.toLowerCase()
       if (!validRoom(room)) return json({ error: "Invalid room" }, 400)
@@ -29,7 +29,7 @@ export default {
     if (path.startsWith(`${BASE}/api/`) || path.startsWith(`${BASE}/ws`)) return json({ error: "Not found" }, 404)
 
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 })
-    const link = path.match(/^\/labs\/salvo\/r\/([^/]+)\/?$/)
+    const link = path.match(/^\/arcade\/salvo\/r\/([^/]+)\/?$/)
     if (link && !validRoom(link[1]!.toLowerCase())) return new Response("Invalid room", { status: 404 })
     if (link || path === BASE || path === `${BASE}/`) {
       const index = new URL(url)

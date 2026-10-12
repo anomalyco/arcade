@@ -28,7 +28,7 @@ class Client {
   constructor(readonly label: string, readonly room: string, readonly pid: string) {}
 
   open(): Promise<void> {
-    this.ws = new WebSocket(`${wsOrigin}/labs/salvo/ws/${this.room}?pid=${this.pid}`)
+    this.ws = new WebSocket(`${wsOrigin}/arcade/salvo/ws/${this.room}?pid=${this.pid}`)
     this.ws.onmessage = (event) => this.onMessage(JSON.parse(String(event.data)) as ServerMsg)
     return new Promise((resolve, reject) => {
       this.ws.onopen = () => resolve()
@@ -79,12 +79,12 @@ class Client {
   }
 }
 
-const health = await fetch(`${origin}/labs/salvo/api/health`)
+const health = await fetch(`${origin}/arcade/salvo/api/health`)
 if (!health.ok) fail(`health returned ${health.status}`)
-const created = await fetch(`${origin}/labs/salvo/api/rooms`, { method: "POST" })
+const created = await fetch(`${origin}/arcade/salvo/api/rooms`, { method: "POST" })
 const { room } = (await created.json()) as { room: string }
 if (!/^[a-z0-9]{5}$/.test(room)) fail(`bad room id ${room}`)
-const link = await fetch(`${origin}/labs/salvo/r/${room}`)
+const link = await fetch(`${origin}/arcade/salvo/r/${room}`)
 if (!link.ok || !(await link.text()).includes("<canvas")) fail(`room link returned ${link.status}`)
 console.log(`room ${room}`)
 
