@@ -621,14 +621,14 @@ function stair(f: Fit): void {
 
 /** Glazed garden court: planters in a grid, benches, a pool of cold light from above. */
 function atrium(f: Fit): void {
-  const nx = Math.max(1, Math.floor((f.iw - 2) / 3))
-  const ny = Math.max(1, Math.floor((f.ih - 2) / 3))
+  const nx = Math.max(1, Math.floor((f.iw - 1.6) / 2.6))
+  const ny = Math.max(1, Math.floor((f.ih - 1.6) / 2.6))
   for (let j = 0; j < ny; j++)
     for (let i = 0; i < nx; i++) {
       const x = f.inner[0] + ((i + 0.5) * f.iw) / nx
       const y = f.inner[1] + ((j + 0.5) * f.ih) / ny
-      if ((i + j) % 2 === 0) f.put("plant", [x - 0.4, y - 0.4, x + 0.4, y + 0.4], 0)
-      else if (f.r.next() < 0.6) f.put("sofa", [x - 0.9, y - 0.4, x + 0.9, y + 0.4], f.r.next() < 0.5 ? 0 : 2)
+      if ((i + j) % 2 === 0) f.put("plant", [x - 0.45, y - 0.45, x + 0.45, y + 0.45], 0)
+      else if (f.r.next() < 0.7) f.put("sofa", [x - 0.9, y - 0.4, x + 0.9, y + 0.4], f.r.next() < 0.5 ? 0 : 2)
     }
   f.plant()
   f.plant()
