@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { FILL_TO, GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS } from "../shared/config"
+import { GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS } from "../shared/config"
 import { type Rect, RectGrid, pushOut, rayRect } from "../shared/geom"
 import { generateOffice } from "../shared/maps/office"
 import { Rng } from "../shared/rng"
@@ -90,11 +90,14 @@ describe("deathmatch", () => {
     expect(buildSnapshot(w, "a").players.map((p) => p.id).sort()).toEqual(["a", "b", "c"])
   })
 
-  test("bots keep the room full and leave as humans join", () => {
+  test("rooms have no bots unless asked; bots leave as humans join", () => {
     const w = new World(1)
     w.addHuman("h1", "one")
-    expect(w.players.size).toBe(FILL_TO)
-    for (let i = 2; i <= FILL_TO + 1; i++) w.addHuman(`h${i}`, "x")
+    expect(w.players.size).toBe(1)
+    w.botFill = 4
+    w.fill()
+    expect(w.players.size).toBe(4)
+    for (let i = 2; i <= 5; i++) w.addHuman(`h${i}`, "x")
     expect([...w.players.values()].every((p) => p.human)).toBe(true)
   })
 
@@ -113,7 +116,7 @@ describe("deathmatch", () => {
 
   test("bots hunt and kill each other without getting stuck in walls", () => {
     const w = new World(42)
-    w.fill()
+    w.fill(4)
     let kills = 0
     for (let i = 0; i < 30 * 90; i++) {
       w.step()

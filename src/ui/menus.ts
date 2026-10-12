@@ -100,7 +100,7 @@ export class Menus {
       <div class="head"><div class="logo small">BLACKOUT</div><span>OFFICE TOWER · FL ${floorOf(s.map)}</span></div>
       ${s.phase === "end" && winner ? `<div class="result"><span style="color:${css(colorOf(winner.id))}">${esc(winner.name.toUpperCase())}</span> WINS</div><div class="sub">Next floor in ${Math.ceil(s.left)}</div>` : ""}
       <table><thead><tr><th></th><th>KILLS</th><th>DEATHS</th></tr></thead><tbody>${ranked
-        .map((r) => `<tr class="${r.id === myId ? "me" : ""}"><td><i style="background:${css(colorOf(r.id))}"></i>${esc(r.name)}${r.human ? "" : " <em>bot</em>"}</td><td>${r.kills}</td><td>${r.deaths}</td></tr>`)
+        .map((r) => `<tr class="${r.id === myId ? "me" : ""}"><td><i style="background:${css(colorOf(r.id))}"></i>${esc(r.name)}</td><td>${r.kills}</td><td>${r.deaths}</td></tr>`)
         .join("")}</tbody></table>
       ${url ? `<div class="share">Invite: <span>${esc(url)}</span></div>` : ""}
     </div>`

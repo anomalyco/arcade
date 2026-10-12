@@ -20,7 +20,7 @@ export interface Session {
   close(): void
 }
 
-/** Practice against bots without a server: the same World runs in the tab. */
+/** Dev practice against bots without a server: the same World runs in the tab. */
 export class LocalSession implements Session {
   readonly room = null
   readonly myId = "you"
@@ -32,6 +32,8 @@ export class LocalSession implements Session {
 
   constructor(name: string, gun: Gun) {
     this.world = new World((Math.random() * 2 ** 31) | 0)
+    // Local practice (dev only, ?practice) is the one place with bots.
+    this.world.botFill = 4
     this.world.addHuman(this.myId, name, gun)
     this.publish()
   }

@@ -3,8 +3,6 @@ export const DT = 1 / TICK_HZ
 export const SNAPSHOT_HZ = 20
 
 export const MAX_PLAYERS = 12
-/** Bots keep a room at this many players. */
-export const FILL_TO = 4
 
 /** GPU sizing for the renderer. */
 /** Lights shaded per frame (the culled set near the view), occluders across their shadow casts, and lights per map. */

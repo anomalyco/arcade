@@ -1,4 +1,4 @@
-import { DT, END_SECONDS, FILL_TO, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED } from "../config"
+import { DT, END_SECONDS, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED } from "../config"
 import { type Rect, raycast } from "../geom"
 import { type MapDef, getMap } from "../maps"
 import { Rng } from "../rng"
@@ -69,6 +69,8 @@ export class World {
   order: string[] = []
   events: SimEvent[] = []
   private botCount = 0
+  /** Players to top the room up to with bots. 0 online; local practice and tests set it. */
+  botFill = 0
 
   constructor(
     seed: number,
@@ -110,11 +112,11 @@ export class World {
     this.order = this.order.filter((x) => x !== id)
   }
 
-  /** Keeps the room at FILL_TO players with bots, removing bots as humans join. */
-  fill(): void {
+  /** Keeps the room at `to` players with bots, removing bots as humans join. Online rooms use 0: humans only. */
+  fill(to = this.botFill): void {
     const bots = [...this.players.values()].filter((p) => !p.human)
-    while (this.players.size > FILL_TO && bots.length) this.remove(bots.pop()!.id)
-    while (this.players.size < FILL_TO) {
+    while (this.players.size > to && bots.length) this.remove(bots.pop()!.id)
+    while (this.players.size < to) {
       const id = `bot${++this.botCount}`
       const p = this.newPlayer(id, BOT_NAMES[(this.botCount - 1) % BOT_NAMES.length]!, new BotBrain(this.rng.next() * 1e9))
       p.pick = this.rng.next() < 0.6 ? "rifle" : this.rng.pick(GUN_IDS)
