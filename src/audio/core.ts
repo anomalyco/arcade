@@ -3,6 +3,8 @@ import type { Vec3 } from "../sim/types"
 import { createSoundBank, type SoundBank } from "./buffers"
 
 export const SPEED_OF_SOUND = 343
+/** Global output trim: everything was too loud at full volume. */
+export const MASTER_TRIM = 0.4
 /** HRTF panners are convolution-heavy; everything beyond this budget uses equal-power panning. */
 export const MAX_HRTF = 6
 const MAX_SHOTS = 40
@@ -43,13 +45,13 @@ export class Core {
     this.bank = createSoundBank(ctx)
     this.limiter = ctx.createDynamicsCompressor()
     // Fast, high-ratio compressor acting as a brick-wall-ish limiter; adds glue and punch to booms.
-    this.limiter.threshold.value = -8
+    this.limiter.threshold.value = -16
     this.limiter.knee.value = 4
     this.limiter.ratio.value = 14
     this.limiter.attack.value = 0.002
     this.limiter.release.value = 0.22
     this.master = ctx.createGain()
-    this.master.gain.value = 0.8
+    this.master.gain.value = 0.8 * MASTER_TRIM
     this.analyser = ctx.createAnalyser()
     this.analyser.fftSize = 2048
     this.limiter.connect(this.master)
@@ -57,7 +59,7 @@ export class Core {
     this.master.connect(this.analyser)
 
     this.engineBus = this.bus(this.engineLevel)
-    this.sfxBus = this.bus(0.9)
+    this.sfxBus = this.bus(0.6)
     this.uiBus = this.bus(0.5)
 
     this.reverb = ctx.createConvolver()

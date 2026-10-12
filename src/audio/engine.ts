@@ -1,7 +1,7 @@
 // Wings audio engine: wires Core + engine voices + SFX behind the GameAudio contract.
 import type { GameAudio } from "../audio"
 import type { GameEvent, Vec3, VehicleEntity } from "../sim/types"
-import { Core } from "./core"
+import { Core, MASTER_TRIM } from "./core"
 import { ENGINE_LOUDNESS, ENGINE_REF, EngineVoice, Wind } from "./engines"
 import * as sfx from "./sfx"
 
@@ -141,7 +141,7 @@ export function createAudio(): GameAudioEngine {
           console.warn("[audio] Web Audio unavailable, running silent", err)
           return
         }
-        core.master.gain.value = muted ? 0 : volume
+        core.master.gain.value = muted ? 0 : volume * MASTER_TRIM
         wind = new Wind(core)
         timer = setInterval(() => { try { housekeep() } catch { /* ignore */ } }, 250)
       }
@@ -324,14 +324,14 @@ export function createAudio(): GameAudioEngine {
     setMuted: guard((m: boolean) => {
       muted = m
       if (!core) return
-      core.master.gain.setTargetAtTime(m ? 0 : volume, core.now, 0.02)
+      core.master.gain.setTargetAtTime(m ? 0 : volume * MASTER_TRIM, core.now, 0.02)
       // Muted = no new graphs at all; existing loops fade and are collected.
       if (m) releaseAllVoices()
     }),
 
     setVolume: guard((v: number) => {
       volume = Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0.8))
-      if (core && !muted) core.master.gain.setTargetAtTime(volume, core.now, 0.02)
+      if (core && !muted) core.master.gain.setTargetAtTime(volume * MASTER_TRIM, core.now, 0.02)
     }),
 
     setLocalPlayer(playerId) {
