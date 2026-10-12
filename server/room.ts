@@ -4,7 +4,7 @@ import { type ClientMsg, decodeClient, encodeServer } from "../shared/protocol"
 import { seedOf } from "../shared/rng"
 import { buildSnapshot, rosterOf } from "../shared/sim/view"
 import { World } from "../shared/sim/world"
-import type { Env } from "./env"
+import { type Env, lobbyOf } from "./env"
 
 const TICK_MS = 1000 / TICK_HZ
 const SNAP_EVERY = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
@@ -96,17 +96,31 @@ export class RoomCore {
   }
 }
 
-/** One Durable Object per room code. Ticks while anyone is connected. */
+/** Lobby reports: at most one per second, and a heartbeat well inside the Lobby's stale window. */
+const REPORT_MIN_MS = 1000
+const HEARTBEAT_MS = 60_000
+
+/** One Durable Object per room code. Ticks while anyone is connected and reports its seats to the Lobby. */
 export class Room extends DurableObject<Env> {
   private core: RoomCore | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private clock = 0
+  /** Rooms made with "Create game" are never handed out by quick join. Sticky for the life of the code. */
+  private priv: boolean | null = null
+  private reported = ""
+  private reportAt = 0
 
   override async fetch(req: Request): Promise<Response> {
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("expected websocket", { status: 426 })
     const code = req.headers.get("x-room")
     if (!code) return new Response("missing room", { status: 400 })
     const core = (this.core ??= new RoomCore(code))
+    this.priv ??= (await this.ctx.storage.get<boolean>("private")) ?? false
+    // Only the first arrival in an empty room can make it private, so a link can't hide an existing public room.
+    if (!this.priv && core.connections === 0 && new URL(req.url).searchParams.get("private") === "1") {
+      this.priv = true
+      await this.ctx.storage.put("private", true)
+    }
     const pair = new WebSocketPair()
     const socket = pair[1]
     socket.accept()
@@ -137,6 +151,7 @@ export class Room extends DurableObject<Env> {
     if (core.connections === 0) {
       clearInterval(this.timer!)
       this.timer = null
+      this.report(core, true)
       // Nobody left: the next visitor gets a fresh room.
       this.core = null
       return
@@ -149,5 +164,21 @@ export class Room extends DurableObject<Env> {
     }
     for (let i = 0; i < due; i++) core.step()
     this.clock += due * TICK_MS
+    this.report(core, false)
+  }
+
+  /** Tells the Lobby our human count and phase when they change (throttled), plus a heartbeat. Fire-and-forget. */
+  private report(core: RoomCore, force: boolean): void {
+    const players = core.connections === 0 ? 0 : core.world.humans.length
+    const phase = core.world.phase
+    const priv = !!this.priv
+    const key = `${players}|${phase}|${priv}`
+    const now = Date.now()
+    if (!force && (now - this.reportAt < REPORT_MIN_MS || (key === this.reported && now - this.reportAt < HEARTBEAT_MS))) return
+    this.reported = key
+    this.reportAt = now
+    lobbyOf(this.env)
+      .report({ code: core.code, players, phase, private: priv })
+      .then(undefined, () => (this.reported = ""))
   }
 }

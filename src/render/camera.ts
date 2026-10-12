@@ -9,7 +9,7 @@ export class Camera {
   readonly fov = 0.52
   x = 0
   z = 0
-  dist = 17
+  dist = 24
   private lx = 0
   private lz = 0
   private shake = 0
@@ -57,7 +57,7 @@ export class Camera {
     const f = 1 - Math.exp(-dt * 6)
     this.x += (x + this.lx - this.x) * f
     this.z += (z + this.lz - this.z) * f
-    const want = wide ? 30 : 17
+    const want = wide ? 42 : 24
     this.dist += (want - this.dist) * (1 - Math.exp(-dt * 2))
     this.shake *= Math.exp(-dt * 9)
     // Critically damped spring back to centre; substepped so a long frame can't make it diverge.

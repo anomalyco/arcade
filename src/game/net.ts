@@ -6,9 +6,9 @@ import type { Session } from "./session"
 
 const ID_KEY = "blackout.id."
 
-function socketUrl(room: string): string {
+function socketUrl(room: string, priv: boolean): string {
   const dir = location.pathname.replace(/[^/]*$/, "")
-  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${encodeURIComponent(room)}`
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${encodeURIComponent(room)}${priv ? "?private=1" : ""}`
 }
 
 /** A room on the server. Reconnects with the same id, so a dropped player keeps their seat for the match. */
@@ -27,6 +27,8 @@ export class NetSession implements Session {
     private name: string,
     private gun: Gun,
     private onFatal: (message: string) => void,
+    /** Created with "Create game": the room stays out of quick join. */
+    private priv = false,
   ) {
     this.id = sessionStorage.getItem(ID_KEY + room) ?? ""
     this.open()
@@ -67,7 +69,7 @@ export class NetSession implements Session {
   }
 
   private open(): void {
-    const ws = new WebSocket(socketUrl(this.room))
+    const ws = new WebSocket(socketUrl(this.room, this.priv))
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0

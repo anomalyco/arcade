@@ -49,11 +49,9 @@ async function main() {
   let session: Session | null = null
   let game: Game | null = null
 
-  const begin = (name: string, g: Gun, s: (name: string) => Session) => {
+  const begin = (name: string, s: (name: string) => Session) => {
     const clean = cleanName(name)
     localStorage.setItem(NAME_KEY, clean)
-    localStorage.setItem(GUN_KEY, g)
-    gun = g
     sound.start()
     session = s(clean)
     game = new Game(renderer, session, sound)
@@ -68,19 +66,22 @@ async function main() {
     history.replaceState(null, "", location.pathname)
     menus.landing(null, message)
   }
-  const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", gun, {
-    practice: (name, g) => begin(name, g, (n) => new LocalSession(n, g)),
-    create: async (name, g) => {
-      const base = location.pathname.replace(/[^/]*$/, "")
-      const res = await fetch(`${base}api/create`, { method: "POST" }).then((r) => r.json() as Promise<{ room: string }>)
-      history.replaceState(null, "", `?room=${res.room}`)
-      begin(name, g, (n) => new NetSession(res.room, n, g, fatal))
-    },
-    join: (name, g, room) => {
-      history.replaceState(null, "", `?room=${room}`)
-      begin(name, g, (n) => new NetSession(room, n, g, fatal))
-    },
+  const base = location.pathname.replace(/[^/]*$/, "")
+  const api = (path: string) => fetch(`${base}api/${path}`, { method: "POST" }).then((r) => r.json() as Promise<{ room: string }>)
+  const enter = (name: string, room: string, priv = false) => {
+    history.replaceState(null, "", `?room=${room}`)
+    begin(name, (n) => new NetSession(room, n, gun, fatal, priv))
+  }
+  const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
+  const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
+    quick: (name) => api("quick").then((r) => enter(name, r.room), failed),
+    create: (name) => api("create").then((r) => enter(name, r.room, true), failed),
+    join: (name, room) => enter(name, room),
   })
+  fetch(`${base}api/stats`)
+    .then((r) => r.json() as Promise<{ players: number; games: number }>)
+    .then((s) => menus.stats(s.players, s.games))
+    .catch(() => {})
   input.onKey = (code) => {
     if (code === "KeyM") sound.setMuted(!sound.muted)
     const i = ["Digit1", "Digit2", "Digit3"].indexOf(code)
@@ -91,7 +92,8 @@ async function main() {
     }
   }
   menus.landing(roomParam)
-  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", gun, (n) => new LocalSession(n, gun))
+  // Dev and screenshots: a local match against bots, no server.
+  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun))
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio, MAX_DPR)

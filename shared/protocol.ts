@@ -72,3 +72,12 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       return null
   }
 }
+
+export const CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"
+
+/** A fresh four-character room code. */
+export function randomCode(rand: () => number = Math.random): string {
+  let out = ""
+  for (let i = 0; i < 4; i++) out += CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)]
+  return out
+}

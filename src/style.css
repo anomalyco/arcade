@@ -622,3 +622,10 @@ tr.me td {
   font-size: 10px;
   letter-spacing: 0.12em;
 }
+
+.stats {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  min-height: 14px;
+}

@@ -1,5 +1,5 @@
 /**
- * Keyboard and mouse. WASD or arrows move, the mouse aims, hold left click to fire, R reloads, 1/2/3 pick a gun
+ * Keyboard and mouse. WASD or arrows move relative to the aim (W toward the cursor), the mouse aims, hold left click to fire, R reloads, 1/2/3 pick a gun
  * for your next life, Tab shows the scores.
  */
 export class Input {
