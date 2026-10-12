@@ -79,12 +79,15 @@ async function main() {
     begin(name, (n) => new NetSession(room, n, gun, equip, fatal, priv, mode))
   }
   const vote = (mode: ModeId) => session?.send({ type: "vote", mode })
+  let scores = false
   const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
   const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
     quick: (name) => api("quick").then((r) => enter(name, r.room), failed),
     create: (name, mode) => api("create").then((r) => enter(name, r.room, true, mode), failed),
     join: (name, room) => enter(name, room),
     vote,
+    team: (id, team) => session?.send({ type: "team", id, team }),
+    shuffle: () => session?.send({ type: "shuffle" }),
   })
   fetch(`${base}api/stats`)
     .then((r) => r.json() as Promise<{ players: number; games: number }>)
@@ -92,6 +95,8 @@ async function main() {
     .catch(() => {})
   input.onKey = (code) => {
     if (code === "KeyM") sound.setMuted(!sound.muted)
+    // T keeps the scoreboard open (the host picks teams there) until pressed again.
+    if (code === "KeyT") scores = !scores
     // Between floors the number keys vote for the next mode.
     if (game?.snap?.phase === "end") {
       const v = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(code)
@@ -150,7 +155,7 @@ async function main() {
       renderer.render(game.build(cam, w, h, dt))
       hud.update(game, cam, w, h, input.mouse, session.status())
       modeHud.update(game, cam, w, h)
-      menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab"), (id) => game!.colorOf(id))
+      menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab") || scores, (id) => game!.colorOf(id))
     }
     requestAnimationFrame(frame)
   }

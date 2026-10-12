@@ -1,6 +1,8 @@
 import { floorOf } from "../../shared/maps"
 import { MODES, MODE_IDS, type ModeId, TEAM_NAMES, modeOf } from "../../shared/sim/modes"
+import { hostPicks } from "../../shared/sim/host"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
+import "./teams.css"
 import { css, type Rgb3 } from "../game/game"
 import { TEAM_COLORS } from "../game/mode-fx"
 
@@ -13,6 +15,9 @@ export type MenuActions = {
   join(name: string, room: string): void
   /** End screen: a vote for the next mode. */
   vote(mode: ModeId): void
+  /** Room host, team modes: move a player to a team, or deal random even teams. */
+  team(id: string, team: 0 | 1): void
+  shuffle(): void
 }
 
 const MODE_KEY = "blackout.mode"
@@ -32,6 +37,14 @@ export class Menus {
     root.addEventListener("click", (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")
       if (t) this.act(t.dataset.act!, t.dataset.mode)
+    })
+    // Team picks act on press: the scoreboard re-renders as the match goes on, which can swallow a click.
+    root.addEventListener("pointerdown", (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>("[data-host]")
+      if (!t || e.button !== 0) return
+      e.preventDefault()
+      if (t.dataset.host === "move") this.a.team(t.dataset.id!, t.dataset.team === "1" ? 1 : 0)
+      else if (t.dataset.host === "shuffle") this.a.shuffle()
     })
     root.addEventListener("keydown", (e) => {
       const t = e.target as HTMLElement
@@ -107,7 +120,10 @@ export class Menus {
     this.root.innerHTML = ""
   }
 
-  /** Shows the scoreboard while Tab is held or between floors, grouped by team in team modes, with the vote between floors. */
+  /**
+   * Shows the scoreboard while Tab is held (or T toggled it open) and between floors, grouped by team in team modes,
+   * with the host's team picks and, between floors, the vote.
+   */
   update(s: Snapshot | null, roster: RosterRow[], myId: string, room: string | null, held: boolean, colorOf: (id: string) => Rgb3): void {
     if (!s) return
     const show = held || s.phase === "end"
@@ -128,13 +144,27 @@ export class Menus {
     ]
     if (m.id === "dom") cols.push(["CAPS", (r) => r.caps])
     if (m.id === "snd") cols.push(["PLANTS", (r) => r.plants], ["DEFUSES", (r) => r.defuses])
-    const row = (r: RosterRow) => `<tr class="${r.id === myId ? "me" : ""}"><td><i style="background:${css(colorOf(r.id))}"></i>${esc(r.name)}</td>${cols.map(([, f]) => `<td>${f(r)}</td>`).join("")}</tr>`
-    const head = `<thead><tr><th></th>${cols.map(([c]) => `<th>${c}</th>`).join("")}</tr></thead>`
+    // The room host picks sides in team modes: a move button on every row, and shuffle.
+    const picks = hostPicks(m.id)
+    const amHost = picks && !!roster.find((r) => r.id === myId)?.host
+    const move = (r: RosterRow) => {
+      const to = r.team === 0 ? 1 : 0
+      return `<td class="mv"><button data-host="move" data-id="${esc(r.id)}" data-team="${to}" title="Move to ${TEAM_NAMES[to]}" style="color:${css(TEAM_COLORS[to]!)}">${to ? "→" : "←"} ${TEAM_NAMES[to]}</button></td>`
+    }
+    const span = cols.length + (amHost ? 2 : 1)
+    const row = (r: RosterRow) =>
+      `<tr class="${r.id === myId ? "me" : ""}"><td><i style="background:${css(colorOf(r.id))}"></i>${esc(r.name)}${r.host ? `<em class="hosttag" title="Room host${picks ? ": picks teams" : ""}">♛ HOST</em>` : ""}</td>${cols.map(([, f]) => `<td>${f(r)}</td>`).join("")}${amHost ? move(r) : ""}</tr>`
+    const head = `<thead><tr><th></th>${cols.map(([c]) => `<th>${c}</th>`).join("")}${amHost ? "<th></th>" : ""}</tr></thead>`
     const body = info.teams
       ? [0, 1]
-          .map((t) => `<tr class="team"><td colspan="${cols.length + 1}"><b style="color:${css(TEAM_COLORS[t]!)}">${TEAM_NAMES[t]}</b><span>${m.score[t]}${m.target ? ` / ${m.target}` : ""}</span></td></tr>${ranked.filter((r) => r.team === t).map(row).join("")}`)
+          .map((t) => `<tr class="team"><td colspan="${span}"><b style="color:${css(TEAM_COLORS[t]!)}">${TEAM_NAMES[t]}</b><span>${m.score[t]}${m.target ? ` / ${m.target}` : ""}</span></td></tr>${ranked.filter((r) => r.team === t).map(row).join("")}`)
           .join("")
       : ranked.map(row).join("")
+    const hostbar = !picks
+      ? ""
+      : amHost
+        ? `<div class="hostbar"><span>YOU'RE THE HOST · move players between teams · picks stick until you shuffle · <kbd>T</kbd> keeps this open</span><button data-host="shuffle">SHUFFLE</button></div>`
+        : `<div class="hostbar"><span>The host picks teams · <kbd>T</kbd> keeps this open</span></div>`
     let result = ""
     if (s.phase === "end") {
       const winner = ranked[0]
@@ -147,6 +177,7 @@ export class Menus {
       <div class="head"><div class="logo small">BLACKOUT</div><span>${esc(info.label.toUpperCase())} · FL ${floorOf(s.map)}</span></div>
       ${result}
       <table>${head}<tbody>${body}</tbody></table>
+      ${hostbar}
       ${m.votes ? this.votes(m.votes, m.id) : ""}
       ${url ? `<div class="share">Invite: <span>${esc(url)}</span></div>` : ""}
     </div>`

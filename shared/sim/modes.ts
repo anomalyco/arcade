@@ -176,14 +176,18 @@ export class Mode {
       for (const p of w.players.values()) p.team = -1
       return
     }
-    for (const p of w.players.values()) if (p.team !== 0 && p.team !== 1) p.team = this.smaller(w, p)
+    // The host's picks (shared/sim/host.ts) stand; only everyone else is balanced around them.
+    const free = (p: Player) => p.hostTeam !== 0 && p.hostTeam !== 1
+    for (const p of w.players.values()) if (!free(p)) p.team = p.hostTeam
+    for (const p of w.players.values()) if (free(p) && p.team !== 0 && p.team !== 1) p.team = this.smaller(w, p)
     for (;;) {
       const a = this.members(w, 0)
       const b = this.members(w, 1)
       if (Math.abs(a.length - b.length) <= 1) return
-      const big = a.length > b.length ? a : b
-      const mover = big.find((p) => !p.human) ?? big[big.length - 1]!
-      mover.team = big === a ? 1 : 0
+      const big = (a.length > b.length ? a : b).filter(free)
+      const mover = big.find((p) => !p.human) ?? big[big.length - 1]
+      if (!mover) return
+      mover.team = a.length > b.length ? 1 : 0
     }
   }
 

@@ -9,6 +9,9 @@ export type ClientMsg =
   | { type: "gun"; gun: Gun }
   | { type: "equip"; equip: Equip }
   | { type: "vote"; mode: ModeId }
+  /** Room host, team modes: move a player to a team, or shuffle everyone. */
+  | { type: "team"; id: string; team: 0 | 1 }
+  | { type: "shuffle" }
   | { type: "ping"; t: number }
 
 export type ServerMsg =
@@ -76,6 +79,10 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       const mode = modeOf(o.mode)
       return mode ? { type: "vote", mode } : null
     }
+    case "team":
+      return typeof o.id === "string" && /^[a-z0-9]{1,16}$/.test(o.id) && (o.team === 0 || o.team === 1) ? { type: "team", id: o.id, team: o.team } : null
+    case "shuffle":
+      return { type: "shuffle" }
     case "ping":
       return { type: "ping", t: num(o.t, 0, Number.MAX_SAFE_INTEGER) }
     default:

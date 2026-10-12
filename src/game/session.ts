@@ -2,6 +2,7 @@ import { DT, SNAPSHOT_HZ, TICK_HZ } from "../../shared/config"
 import type { ClientMsg } from "../../shared/protocol"
 import { type RosterRow, type Snapshot, buildSnapshot, rosterOf } from "../../shared/sim/view"
 import type { Equip, Gun } from "../../shared/config"
+import { moveTeam, shuffleTeams } from "../../shared/sim/host"
 import { MODES, type ModeId } from "../../shared/sim/modes"
 import { type SimEvent, World } from "../../shared/sim/world"
 
@@ -58,6 +59,8 @@ export class LocalSession implements Session {
     else if (msg.type === "gun") this.world.pickGun(this.myId, msg.gun)
     else if (msg.type === "equip") this.world.pickEquip(this.myId, msg.equip)
     else if (msg.type === "vote") this.world.vote(this.myId, msg.mode)
+    else if (msg.type === "team") moveTeam(this.world, this.myId, msg.id, msg.team)
+    else if (msg.type === "shuffle") shuffleTeams(this.world, this.myId)
   }
 
   status(): string | null {

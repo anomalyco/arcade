@@ -28,7 +28,7 @@ export class Hud {
       <div id="respawn"></div>
       <div id="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><div id="hm"><i></i><i></i><i></i><i></i></div></div>
       <div id="status"></div>
-      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · F plant/defuse · 1 2 3 guns · 4 5 frag/claymore · TAB scores · M mute</div>`
+      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · F plant/defuse · 1 2 3 guns · 4 5 frag/claymore · TAB scores · T teams · M mute</div>`
     for (const e of root.querySelectorAll<HTMLElement>("[id]")) this.el[e.id] = e
   }
 

@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers"
 import { MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ } from "../shared/config"
 import { type ClientMsg, decodeClient, encodeServer } from "../shared/protocol"
 import { seedOf } from "../shared/rng"
+import { moveTeam, shuffleTeams } from "../shared/sim/host"
 import { type ModeId, modeOf } from "../shared/sim/modes"
 import { buildSnapshot, rosterOf } from "../shared/sim/view"
 import { World } from "../shared/sim/world"
@@ -58,6 +59,8 @@ export class RoomCore {
     else if (msg.type === "gun") this.world.pickGun(id, msg.gun)
     else if (msg.type === "equip") this.world.pickEquip(id, msg.equip)
     else if (msg.type === "vote") this.world.vote(id, msg.mode)
+    else if (msg.type === "team") moveTeam(this.world, id, msg.id, msg.team)
+    else if (msg.type === "shuffle") shuffleTeams(this.world, id)
   }
 
   private hello(conn: Conn, msg: Extract<ClientMsg, { type: "hello" }>): void {

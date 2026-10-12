@@ -1,0 +1,40 @@
+/* Host team picks on the scoreboard (src/ui/menus.ts). */
+
+#menu.over .score {
+  pointer-events: auto;
+}
+
+.hosttag {
+  margin-left: 10px;
+  color: #ffd27a;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+td.mv {
+  width: 1%;
+  white-space: nowrap;
+}
+
+td.mv button {
+  padding: 3px 8px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hostbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.hostbar button {
+  padding: 6px 12px;
+  font-size: 11px;
+}

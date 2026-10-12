@@ -6,6 +6,7 @@ import { BotBrain } from "./bots"
 import { type Claymore, type Grenade, type Obstacles, launch, obstaclesOf, overlaps, stepGrenade } from "./gear"
 import { type Mode, type ModeId, createMode, modeOf, tally } from "./modes"
 import { stepBody } from "./move"
+import { nextHost } from "./host"
 
 export type Phase = "play" | "end"
 
@@ -62,6 +63,8 @@ export type Player = {
   caps: number
   plants: number
   defuses: number
+  /** The team the room host put you on (shared/sim/host.ts), kept across matches; -1 for auto-balance. */
+  hostTeam: number
 }
 
 export type SimEvent =
@@ -110,6 +113,8 @@ export class World {
   private botCount = 0
   /** Players to top the room up to with bots. 0 online; local practice and tests set it. */
   botFill = 0
+  /** The room host: the first human in, then the longest-connected one. They can pick teams (shared/sim/host.ts). */
+  host = ""
 
   constructor(
     seed: number,
@@ -160,6 +165,7 @@ export class World {
     p.equipPick = equip
     this.players.set(id, p)
     this.order.push(id)
+    this.host ||= id
     if (this.mode.join(this, p)) this.spawn(p)
     this.fill()
     return p
@@ -185,6 +191,7 @@ export class World {
     this.claymores = this.claymores.filter((c) => c.by !== id)
     this.players.delete(id)
     this.order = this.order.filter((x) => x !== id)
+    if (this.host === id) this.host = nextHost(this)
   }
 
   /** Keeps the room at `to` players with bots, removing bots as humans join. Online rooms use 0: humans only. */
@@ -202,7 +209,7 @@ export class World {
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, using: false, caps: 0, plants: 0, defuses: 0 }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, hostTeam: -1, using: false, caps: 0, plants: 0, defuses: 0 }
   }
 
   /** Puts a player where the mode says, else at the spawn farthest from everyone alive. */
