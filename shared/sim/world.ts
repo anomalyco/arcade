@@ -94,6 +94,8 @@ export type SimEvent =
   | { k: "round"; team: number; why: string }
   | { k: "swing"; by: string }
   | { k: "obj"; what: string; team: number; by: string; x: number; y: number }
+  /** The room host restarted the match, in the same mode or a new one (shared/sim/host.ts). */
+  | { k: "host"; what: "reset" | "mode"; mode: ModeId }
 
 const BOT_NAMES = ["kade", "rei", "mako", "juno", "lexx", "ryn", "zen", "lee", "nox", "ivo", "sable", "wren"]
 
@@ -131,6 +133,10 @@ export class World {
   botFill = 0
   /** The room host: the first human in, then the longest-connected one. They can pick teams (shared/sim/host.ts). */
   host = ""
+  /** When the host last reset or switched the match (world time), for the rate limit in shared/sim/host.ts. */
+  hostActAt = -Infinity
+  /** Counts matches, so a restart on the same floor in the same mode still reads as a new match. */
+  match = 0
 
   constructor(
     seed: number,
@@ -523,8 +529,26 @@ export class World {
   private newMatch(): void {
     if (!this.fixed) this.setMap(getMap(this.rng.int(2 ** 31)))
     const next = tally(this.votes.values(), this.mode.id, this.rng, this.voteOptions)
-    this.votes.clear()
     if (next !== this.mode.id) this.mode = createMode(next)
+    this.begin()
+  }
+
+  /**
+   * Starts a fresh match in `id` right away, from play or the end screen: a new floor unless `newFloor` is false,
+   * scores and objectives reset, gear cleared, everyone respawns. Host-picked teams stand.
+   */
+  restart(id: ModeId, newFloor = true): void {
+    if (newFloor && !this.fixed) this.setMap(getMap(this.rng.int(2 ** 31)))
+    this.grenades = []
+    this.claymores = []
+    this.mode = createMode(id)
+    this.begin()
+  }
+
+  private begin(): void {
+    this.votes.clear()
+    this.voteOptions = []
+    this.match++
     this.phase = "play"
     this.phaseEnd = this.time + this.mode.seconds
     this.resetPlayers()

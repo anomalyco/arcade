@@ -2,7 +2,7 @@ import { DT, SNAPSHOT_HZ, TICK_HZ } from "../../shared/config"
 import type { ClientMsg } from "../../shared/protocol"
 import { type RosterRow, type Snapshot, buildSnapshot, rosterOf } from "../../shared/sim/view"
 import type { Equip, Gun } from "../../shared/config"
-import { moveTeam, shuffleTeams } from "../../shared/sim/host"
+import { hostRestart, moveTeam, shuffleTeams } from "../../shared/sim/host"
 import { MODES, type ModeId } from "../../shared/sim/modes"
 import { type SimEvent, World } from "../../shared/sim/world"
 
@@ -61,6 +61,11 @@ export class LocalSession implements Session {
     else if (msg.type === "vote") this.world.vote(this.myId, msg.mode)
     else if (msg.type === "team") moveTeam(this.world, this.myId, msg.id, msg.team)
     else if (msg.type === "shuffle") shuffleTeams(this.world, this.myId)
+    else if (msg.type === "host" && hostRestart(this.world, this.myId, msg.action === "mode" ? msg.mode : this.world.mode.id, msg.newFloor)) {
+      // Practice keeps its 3 on 3 in team modes.
+      this.world.botFill = MODES[this.world.mode.id].teams ? 6 : 4
+      this.world.fill()
+    }
   }
 
   status(): string | null {

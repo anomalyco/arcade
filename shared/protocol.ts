@@ -12,6 +12,9 @@ export type ClientMsg =
   /** Room host, team modes: move a player to a team, or shuffle everyone. */
   | { type: "team"; id: string; team: 0 | 1 }
   | { type: "shuffle" }
+  /** Room host: restart the match in the current mode, or switch to another; a new floor unless newFloor is false. */
+  | { type: "host"; action: "reset"; newFloor: boolean }
+  | { type: "host"; action: "mode"; mode: ModeId; newFloor: boolean }
   | { type: "ping"; t: number }
 
 export type ServerMsg =
@@ -83,6 +86,12 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       return typeof o.id === "string" && /^[a-z0-9]{1,16}$/.test(o.id) && (o.team === 0 || o.team === 1) ? { type: "team", id: o.id, team: o.team } : null
     case "shuffle":
       return { type: "shuffle" }
+    case "host": {
+      const newFloor = o.newFloor !== false
+      if (o.action === "reset") return { type: "host", action: "reset", newFloor }
+      const mode = modeOf(o.mode)
+      return o.action === "mode" && mode ? { type: "host", action: "mode", mode, newFloor } : null
+    }
     case "ping":
       return { type: "ping", t: num(o.t, 0, Number.MAX_SAFE_INTEGER) }
     default:

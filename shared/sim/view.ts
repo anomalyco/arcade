@@ -19,6 +19,8 @@ export type Snapshot = {
   left: number
   /** Seed of the office floor. */
   map: number
+  /** Match number in the room: a host restart on the same floor in the same mode is still a new match. */
+  match?: number
   players: PlayerView[]
   /** Everyone sees every frag and claymore. */
   grenades: GrenadeView[]
@@ -38,6 +40,7 @@ export function buildSnapshot(world: World, viewerId: string): Snapshot {
     phase: world.phase,
     left: Math.max(0, (world.phase === "play" ? world.mode.left(world) : null) ?? world.phaseEnd - world.time),
     map: world.map.seed,
+    match: world.match,
     players: world.order.map((id) => {
       const p = world.players.get(id)!
       return { id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, aim: p.aim, alive: p.alive, gun: p.gun, health: p.health, ...(p.kit.gun ? {} : { bare: true }) }

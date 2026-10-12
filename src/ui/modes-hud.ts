@@ -71,7 +71,7 @@ export class ModeHud {
     el.mtop!.innerHTML = s.phase === "play" ? (rulesTop(g) ?? this.top(s, g, team)) : ""
 
     // Intro on every new match, and banners at the start and end of each round.
-    const key = `${m.id}|${s.map}`
+    const key = `${m.id}|${s.map}|${s.match ?? 0}`
     if (s.phase === "play" && key !== this.intro.key) this.intro = { key, t, title: info.label.toUpperCase(), text: rulesObjective(s, team) ?? objective(m, team) }
     if (m.round && s.phase === "play") {
       const rk = `${s.map}|${m.round.n}|${m.round.post}`

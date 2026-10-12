@@ -19,7 +19,12 @@ export type MenuActions = {
   /** Room host, team modes: move a player to a team, or deal random even teams. */
   team(id: string, team: 0 | 1): void
   shuffle(): void
+  /** Room host: restart now in the current mode (null) or switch to `mode`, on a new floor or the same one. */
+  host(mode: ModeId | null, newFloor: boolean): void
 }
+
+/** A host restart needs a second click within this long. */
+const CONFIRM_MS = 2000
 
 const MODE_KEY = "blackout.mode"
 
@@ -29,6 +34,9 @@ export class Menus {
   private busy = false
   /** The mode Create game will use. */
   private mode: ModeId = modeOf(localStorage.getItem(MODE_KEY)) ?? "tdm"
+  /** Host controls: the restart waiting on its confirming click ("reset" or a mode), and whether it's a new floor. */
+  private armed: { what: string; at: number } | null = null
+  private newFloor = true
 
   constructor(
     private root: HTMLElement,
@@ -46,6 +54,9 @@ export class Menus {
       e.preventDefault()
       if (t.dataset.host === "move") this.a.team(t.dataset.id!, t.dataset.team === "1" ? 1 : 0)
       else if (t.dataset.host === "shuffle") this.a.shuffle()
+      else if (t.dataset.host === "floor") this.newFloor = !this.newFloor
+      else if (t.dataset.host === "reset" || t.dataset.host === "mode") this.confirm(t.dataset.host === "mode" ? (modeOf(t.dataset.mode) ?? "") : "reset")
+      this.key = ""
     })
     // Hovering a mode chip shows its blurb; anywhere else, the picked mode's.
     root.addEventListener("mouseover", (e) => {
@@ -76,6 +87,18 @@ export class Menus {
     } else return
     this.busy = true
     for (const b of this.root.querySelectorAll<HTMLButtonElement>("button")) b.disabled = true
+  }
+
+  /** The first click arms a restart, a second within CONFIRM_MS sends it. */
+  private confirm(what: string): void {
+    if (!what) return
+    const now = performance.now()
+    if (this.armed?.what !== what || now - this.armed.at > CONFIRM_MS) {
+      this.armed = { what, at: now }
+      return
+    }
+    this.armed = null
+    this.a.host(modeOf(what), this.newFloor)
   }
 
   private pickMode(m: ModeId): void {
@@ -143,7 +166,8 @@ export class Menus {
     if (!s) return
     const show = held || s.phase === "end"
     const m = s.mode
-    const key = show ? JSON.stringify([s.phase, roster, room, s.phase === "end" ? Math.ceil(s.left) : 0, m.id, m.score, m.votes]) : ""
+    if (this.armed && performance.now() - this.armed.at > CONFIRM_MS) this.armed = null
+    const key = show ? JSON.stringify([s.phase, roster, room, s.phase === "end" ? Math.ceil(s.left) : 0, m.id, m.score, m.votes, this.armed?.what, this.newFloor]) : ""
     if (key === this.key) return
     this.key = key
     if (!show) {
@@ -201,8 +225,26 @@ export class Menus {
       ${result}
       <table>${head}<tbody>${body}</tbody></table>
       ${hostbar}
+      ${roster.find((r) => r.id === myId)?.host ? this.hostControls(m.id, picks) : ""}
       ${m.votes ? this.votes(m.votes, m.id) : ""}
       ${url ? `<div class="share">Invite: <span>${esc(url)}</span></div>` : ""}
+    </div>`
+  }
+
+  /** The host's restart: RESET MATCH, a new-floor toggle and the ten modes; each restart needs a confirming click. */
+  private hostControls(current: ModeId, picks: boolean): string {
+    const armed = this.armed?.what ?? ""
+    const target = modeOf(armed)
+    const hint = armed === "reset" ? "click again to reset the match" : target ? `click again to switch to ${esc(MODES[target].label.toLowerCase())}` : `restarts for everyone · click twice${picks ? "" : " · <kbd>T</kbd> keeps this open"}`
+    const chips = MODE_IDS.map((id) => {
+      const cls = [id === current ? "on" : "", id === armed ? "armed" : ""].join(" ").trim()
+      const label = id === armed ? "SURE?" : esc(MODES[id].short)
+      return `<button class="${cls}" data-host="${id === current ? "reset" : "mode"}" data-mode="${id}" title="${esc(MODES[id].label)}${id === current ? " (current: reset)" : ""}">${label}</button>`
+    }).join("")
+    return `<div class="hostctl">
+      <div class="hh"><b>HOST</b><span>${hint}</span></div>
+      <div class="hrow"><button class="reset ${armed === "reset" ? "armed" : ""}" data-host="reset">${armed === "reset" ? "CONFIRM RESET?" : "RESET MATCH"}</button><button class="floor ${this.newFloor ? "on" : ""}" data-host="floor" title="Restart on a new procedural floor, or keep this one">${this.newFloor ? "☑ NEW FLOOR" : "☐ SAME FLOOR"}</button></div>
+      <div class="hmodes">${chips}</div>
     </div>`
   }
 

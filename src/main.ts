@@ -88,6 +88,7 @@ async function main() {
     vote,
     team: (id, team) => session?.send({ type: "team", id, team }),
     shuffle: () => session?.send({ type: "shuffle" }),
+    host: (mode, newFloor) => session?.send(mode ? { type: "host", action: "mode", mode, newFloor } : { type: "host", action: "reset", newFloor }),
   })
   fetch(`${base}api/stats`)
     .then((r) => r.json() as Promise<{ players: number; games: number }>)

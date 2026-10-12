@@ -38,3 +38,72 @@ td.mv button {
   padding: 6px 12px;
   font-size: 11px;
 }
+
+/* Host restart controls: reset, new floor, switch mode. */
+
+.hostctl {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.hostctl .hh {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.hostctl .hh b {
+  color: #ffd27a;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+}
+
+.hostctl .hrow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.hostctl .hrow button {
+  padding: 6px 12px;
+  font-size: 11px;
+}
+
+.hostctl .floor {
+  color: var(--dim);
+}
+
+.hostctl .floor.on {
+  color: var(--ink);
+}
+
+.hmodes {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+}
+
+.hmodes button {
+  padding: 5px 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.hmodes button.on {
+  color: var(--ink);
+  border-color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hostctl button.armed {
+  color: #0a0d16;
+  background: #ffd27a;
+  border-color: #ffd27a;
+}

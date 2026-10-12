@@ -54,3 +54,19 @@ function place(w: World, p: Player, team: number): void {
   }
   p.team = team
 }
+
+/** Seconds between host resets and mode switches, so spam can't thrash the room. */
+export const HOST_COOLDOWN = 3
+
+/**
+ * The host starts a fresh match: in the current mode (reset) or another (switch), on a new floor unless `newFloor` is
+ * false, from play or the end screen. Ignored from anyone else and within HOST_COOLDOWN of the last one.
+ */
+export function hostRestart(w: World, by: string, mode: ModeId = w.mode.id, newFloor = true): boolean {
+  if (by !== w.host || !MODES[mode] || w.time - w.hostActAt < HOST_COOLDOWN) return false
+  const what = mode === w.mode.id ? "reset" : "mode"
+  w.hostActAt = w.time
+  w.restart(mode, newFloor)
+  w.events.push({ k: "host", what, mode })
+  return true
+}

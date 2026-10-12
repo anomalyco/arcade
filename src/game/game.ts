@@ -22,6 +22,7 @@ import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
 import { objectiveBanner } from "./objective-fx"
 import { type Kit, gunKit, kitSprints } from "../../shared/sim/kit"
 import { MELEE } from "../../shared/sim/melee"
+import { MODES } from "../../shared/sim/modes"
 import { INF_COLORS, eyes, infected } from "./rules-fx"
 import { carries, slowCarrier } from "../../shared/sim/modes-objective"
 
@@ -176,11 +177,17 @@ export class Game {
     this.obstacles = obstaclesOf(map)
     this.renderer.setLevel(buildLevel(map))
     this.culler.setMap(map)
+    this.clearScene()
+  }
+
+  /** Drops everything left over from the last match: bodies, tracers, frags, blasts. */
+  private clearScene(): void {
     this.corpses = []
     this.tracers = []
     this.particles = []
     this.body = null
     this.pending = []
+    this.wasAlive = false
     this.grenades.clear()
     this.trips.clear()
     this.booms = []
@@ -219,6 +226,7 @@ export class Game {
     if (l && l.snap !== this.snap) {
       const s = l.snap
       if (s.map !== this.map.seed) this.load(getMap(s.map))
+      else if (this.snap && s.match !== this.snap.match) this.clearScene()
       for (const p of s.players) {
         if (p.id === this.myId) continue
         let a = this.avatars.get(p.id)
@@ -434,6 +442,9 @@ export class Game {
         return
       }
       case "end":
+        return
+      case "host":
+        this.banner = { text: e.what === "reset" ? "HOST RESET THE MATCH" : `HOST SWITCHED TO ${MODES[e.mode].label.toUpperCase()}`, t }
         return
       case "obj": {
         const text = objectiveBanner(e, this.myId, teamOf(this.snap, this.roster, this.myId), (id) => this.nameOf(id))
