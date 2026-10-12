@@ -9,7 +9,8 @@ import {
 import type { Quality } from "../sim/types"
 import { createAirbases } from "./world/airbase"
 import { createBoundary } from "./world/boundary"
-import { PALETTE } from "./world/palette"
+import { applyGoldenHaze, createInkMaterial } from "./world/atmosphere"
+import { FOG_COLOR, HEMI_GROUND_COLOR, HEMI_INTENSITY, HEMI_SKY_COLOR, SUN_COLOR, SUN_INTENSITY } from "./world/palette"
 import { SUN_DIRECTION, WORLD_QUALITY } from "./world/settings"
 import { createClouds, createSky } from "./world/sky"
 import { TerrainStreamer, type StreamerStats } from "./world/streamer"
@@ -37,9 +38,6 @@ export interface WorldViewDebug extends WorldView {
   streamer: TerrainStreamer
 }
 
-// Tuned so an upward-facing lit facet shows roughly its palette colour, with a soft 2:1 lit/shade ratio.
-const SUN_INTENSITY = 2.2
-const HEMI_INTENSITY = 2.2
 
 export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: Quality): WorldView {
   void renderer
@@ -47,27 +45,29 @@ export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: 
   const root = new Group()
   root.name = "World"
 
-  // Warm sun + cool sky fill; aircraft and all world props share these.
-  const hemi = new HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, HEMI_INTENSITY)
-  const sun = new DirectionalLight(PALETTE.sunLight, SUN_INTENSITY)
+  // Low apricot sun + rose/lilac hemisphere fill; aircraft and all world props share these.
+  const hemi = new HemisphereLight(HEMI_SKY_COLOR, HEMI_GROUND_COLOR, HEMI_INTENSITY)
+  const sun = new DirectionalLight(SUN_COLOR, SUN_INTENSITY)
   sun.position.copy(SUN_DIRECTION).multiplyScalar(1000)
   sun.target.position.set(0, 0, 0)
   root.add(hemi, sun, sun.target)
 
-  const fog = new Fog(new Color(PALETTE.horizon), settings.fogNear, settings.fogFar)
+  const fog = new Fog(new Color(FOG_COLOR), settings.fogNear, settings.fogFar)
   const previousFog = scene.fog, previousBackground = scene.background
   scene.fog = fog
-  scene.background = new Color(PALETTE.horizon)
+  scene.background = new Color(FOG_COLOR)
 
   const terrainMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true, toneMapped: false })
   terrainMaterial.name = "World · terrain"
+  applyGoldenHaze(terrainMaterial)
+  const inkMaterial = createInkMaterial(0.55)
   const trees = createTreeResources()
   const water = createWater()
   const sky = createSky()
   const boundary = createBoundary()
-  const bases = createAirbases()
+  const bases = createAirbases(inkMaterial)
   let clouds = createClouds(settings.clouds)
-  const streamer = new TerrainStreamer(settings, terrainMaterial, trees, (z0, _z1, rows) => water.writeRows(z0, rows))
+  const streamer = new TerrainStreamer(settings, terrainMaterial, inkMaterial, trees, (z0, _z1, rows) => water.writeRows(z0, rows))
 
   root.add(sky.mesh, water.mesh, streamer.terrainRoot, streamer.treeRoot, bases.root, clouds.mesh, boundary.mesh)
   bases.setHighlight(null)
@@ -77,7 +77,7 @@ export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: 
     far: settings.far,
     update(cameraPosition, dt, time) {
       // Thin the haze when high up so the archipelago stays readable from altitude.
-      fog.near = Math.min(settings.fogNear + Math.max(0, cameraPosition.y) * 1.5, settings.fogFar * 0.7)
+      fog.near = Math.min(settings.fogNear + Math.max(0, cameraPosition.y) * 1.2, settings.fogFar * 0.6)
       sky.update(cameraPosition, time)
       water.update(time)
       bases.update(time, cameraPosition)
@@ -103,7 +103,7 @@ export function createWorldView(renderer: WebGLRenderer, scene: Scene, quality: 
     dispose() {
       streamer.dispose()
       water.dispose(); sky.dispose(); boundary.dispose(); bases.dispose(); clouds.dispose()
-      trees.dispose(); terrainMaterial.dispose()
+      trees.dispose(); terrainMaterial.dispose(); inkMaterial.dispose()
       root.removeFromParent()
       if (scene.fog === fog) scene.fog = previousFog
       scene.background = previousBackground

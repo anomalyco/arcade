@@ -17,7 +17,7 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import type { Quality, TeamId, Vec3, VehicleEntity, VehicleKind } from "../../sim/types"
 import { VEHICLES, WEAPONS } from "../../sim/vehicles"
-import { PALETTE } from "../world/palette"
+import { HEMI_GROUND_COLOR, HEMI_INTENSITY, HEMI_SKY_COLOR, PALETTE, SUN_COLOR, SUN_INTENSITY } from "../world/palette"
 import { SUN_DIRECTION } from "../world/settings"
 import { aircraftStats, createAircraftView, preloadAircraft, setAircraftGroundQuery, type AircraftView } from "../aircraft"
 
@@ -44,9 +44,9 @@ document.body.appendChild(renderer.domElement)
 const scene = new Scene()
 scene.background = new Color(PALETTE.horizon)
 scene.fog = new Fog(PALETTE.horizon, 600, 5000)
-const hemi = new HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 2.2)
+const hemi = new HemisphereLight(HEMI_SKY_COLOR, HEMI_GROUND_COLOR, HEMI_INTENSITY)
 scene.add(hemi)
-const sun = new DirectionalLight(PALETTE.sunLight, 2.2)
+const sun = new DirectionalLight(SUN_COLOR, SUN_INTENSITY)
 sun.position.copy(SUN_DIRECTION).multiplyScalar(100)
 scene.add(sun)
 const ground = new Mesh(new CircleGeometry(3000, 48), new MeshLambertMaterial({ color: PALETTE.grass, flatShading: true, toneMapped: false }))

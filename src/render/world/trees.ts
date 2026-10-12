@@ -2,6 +2,7 @@ import {
   BufferGeometry, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute, IcosahedronGeometry, MeshLambertMaterial,
 } from "three"
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
+import { applyGoldenHaze } from "./atmosphere"
 import { PALETTE } from "./palette"
 
 /** White marks "use the instance colour" (foliage); anything else keeps its own palette colour. */
@@ -104,6 +105,7 @@ export function createTreeResources(): TreeResources {
         #endif`)
   }
   material.customProgramCacheKey = () => "world-trees-lowpoly-v1"
+  applyGoldenHaze(material)
   return {
     geometries, material, fade,
     dispose() {

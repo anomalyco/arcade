@@ -14,6 +14,7 @@ import {
   type ColorRepresentation,
   type WebGLProgramParametersWithUniforms,
 } from "three"
+import { INK_COLOR } from "./world/palette"
 
 let gradientMap: DataTexture | null = null
 
@@ -45,7 +46,6 @@ export function toonGradientMap(): DataTexture {
 export type PastelKind = "hull" | "glass" | "livery"
 
 const WARM = new Color("#f1ebdf") // world offWhite
-const CHARCOAL_HUE = 0.6
 const _hsl = { h: 0, s: 0, l: 0 }
 
 /**
@@ -54,23 +54,35 @@ const _hsl = { h: 0, s: 0, l: 0 }
  */
 export function pastelize(src: Color, kind: PastelKind = "hull"): Color {
   const out = new Color()
-  if (kind === "glass") return out.set("#9db4c6")
+  if (kind === "glass") return out.set("#a9b1d8")
   src.getHSL(_hsl, SRGBColorSpace)
   let { h, s, l } = _hsl
   if (kind === "livery") {
-    s = Math.min(s, 0.62) * 0.85
-    l = Math.min(0.72, l + (1 - l) * 0.22)
-  } else if (l < 0.2) {
-    // Black / dark metal -> soft charcoal (keeps a hint of the original hue).
-    h = CHARCOAL_HUE
-    s = 0.1
-    l = 0.3 + l * 0.45
+    s = Math.min(0.72, s * 0.95)
+    l = Math.min(0.68, l + (1 - l) * 0.14)
+    return out.setHSL(h, s, l, SRGBColorSpace)
+  }
+  if (l < 0.2) {
+    // Black / dark metal -> warm plum graphite.
+    h = 0.84
+    s = 0.13
+    l = 0.28 + l * 0.45
+  } else if (s < 0.14 && l > 0.7) {
+    // Light gray bellies / helmets -> soft cream.
+    h = 0.11
+    s = 0.38
+    l = Math.min(0.9, l + 0.02)
+  } else if (s < 0.14) {
+    // Mid metals -> warm gray.
+    h = 0.07
+    s = 0.07
+    l = l + (1 - l) * 0.08
   } else {
-    s *= 0.72
-    l = Math.min(0.9, l + (1 - l) * 0.15)
+    s = Math.min(0.6, s * 0.82)
+    l = Math.min(0.88, l + (1 - l) * 0.1)
   }
   out.setHSL(h, s, l, SRGBColorSpace)
-  return out.lerp(WARM, kind === "livery" ? 0.04 : 0.08)
+  return out.lerp(WARM, 0.05)
 }
 
 export interface ToonOptions {
@@ -88,15 +100,34 @@ export interface ToonOptions {
 const TOON_OUTPUT = /* glsl */ `
   vec3 toonView = normalize( vViewPosition );
   float toonFres = 1.0 - clamp( dot( normal, toonView ), 0.0, 1.0 );
-  float toonRimMask = smoothstep( 0.6, 0.85, toonFres );
-  vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
+  float toonSunFacing = 1.0;
+  float toonSunSide = 0.5;
+  #if NUM_DIR_LIGHTS > 0
+    float toonNL = dot( normal, directionalLights[ 0 ].direction );
+    toonSunFacing = smoothstep( -0.05, 0.2, toonNL );
+    toonSunSide = clamp( toonNL * 0.5 + 0.5, 0.0, 1.0 );
+  #endif
+  // Golden hour: the sky fill on the shadow side is pushed toward lilac; the sun side keeps it neutral.
+  vec3 toonIndirect = reflectedLight.indirectDiffuse * mix( toonShadowTint, vec3( 1.0 ), toonSunFacing * 0.6 );
+  vec3 outgoingLight = reflectedLight.directDiffuse + toonIndirect + totalEmissiveRadiance;
+  // Soft warm rim on silhouettes that face the sun.
+  float toonRimMask = smoothstep( 0.55, 0.9, toonFres ) * toonSunSide * toonSunSide;
   outgoingLight += toonRimColor * ( toonRimMask * toonRim );
   #ifdef TOON_GLASS
     diffuseColor.a = mix( diffuseColor.a, 0.9, toonFres * toonFres * 0.5 );
   #endif
 `
 
-/** Soft 2-band toon material, no specular, faint cool rim. Works with skinning, hemisphere + directional lights. */
+/** Golden-hour light tuning shared by aircraft materials (overridable once the world exports lighting). */
+export const GOLDEN = {
+  /** Multiplier applied to sky fill on shadow-facing facets (lilac). */
+  shadowTint: new Color(0.9, 0.85, 1.15),
+  rimColor: new Color("#ffc58a"),
+  ink: new Color(INK_COLOR),
+  shadowBlob: new Color("#5b4a86"),
+}
+
+/** Faceted 2-band toon: lilac shadow side, warm sun-side rim, no specular. Works with skinning. */
 export function createToonMaterial(opts: ToonOptions): MeshToonMaterial {
   const glass = opts.glass === true
   const mat = new MeshToonMaterial({
@@ -110,19 +141,23 @@ export function createToonMaterial(opts: ToonOptions): MeshToonMaterial {
   })
   // MeshToonMaterial has no typed flatShading, but the renderer honors the flag on any material.
   ;(mat as unknown as { flatShading: boolean }).flatShading = opts.flat ?? !glass
-  const rim = glass ? 0.12 : 0.06
+  const rim = glass ? 0.3 : 0.38
   mat.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
     shader.uniforms.toonRim = { value: rim }
-    shader.uniforms.toonRimColor = { value: new Color("#c9dcf2") }
+    shader.uniforms.toonRimColor = { value: GOLDEN.rimColor }
+    shader.uniforms.toonShadowTint = { value: GOLDEN.shadowTint }
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <lights_toon_pars_fragment>", "#include <lights_toon_pars_fragment>\nuniform float toonRim;\nuniform vec3 toonRimColor;\n")
+      .replace(
+        "#include <lights_toon_pars_fragment>",
+        "#include <lights_toon_pars_fragment>\nuniform float toonRim;\nuniform vec3 toonRimColor;\nuniform vec3 toonShadowTint;\n",
+      )
       .replace(
         "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;",
         TOON_OUTPUT,
       )
     if (glass) shader.fragmentShader = "#define TOON_GLASS\n" + shader.fragmentShader
   }
-  mat.customProgramCacheKey = () => (glass ? "wings-toon2-glass" : "wings-toon2")
+  mat.customProgramCacheKey = () => (glass ? "wings-golden-glass" : "wings-golden")
   return mat
 }
 
@@ -135,36 +170,41 @@ export function createGlowMaterial(color: ColorRepresentation, intensity = 1): M
 
 export interface OutlineOptions {
   color?: ColorRepresentation
-  /** Outline width in meters per meter of view depth (keeps a roughly constant screen width). */
+  /** Outline width in meters per meter of view depth (≈ constant screen width). */
   perDepth?: number
-  min?: number
-  max?: number
+  /** View depth (m) where the ink starts thinning, and where it is gone. */
+  fadeStart?: number
+  fadeEnd?: number
 }
 
 /**
- * Inverted-hull outline: back faces pushed out along (smoothed) normals. Width grows with view depth so
- * it stays a similar thickness on screen, clamped to [min, max] meters.
+ * Fine ink line (inverted hull): back faces pushed out along smoothed normals by a width proportional
+ * to view depth (≈1–1.5 px), thinning to nothing with distance.
  */
 export function createOutlineMaterial(opts: OutlineOptions = {}): MeshBasicMaterial {
-  const mat = new MeshBasicMaterial({ color: new Color(opts.color ?? "#161a22"), side: BackSide })
-  const perDepth = opts.perDepth ?? 0.0013
-  const min = opts.min ?? 0.022
-  const max = opts.max ?? 0.2
+  const mat = new MeshBasicMaterial({ color: new Color(opts.color ?? GOLDEN.ink), side: BackSide, toneMapped: false })
+  const uniforms = {
+    outlinePerDepth: { value: opts.perDepth ?? 0.0021 },
+    outlineFadeStart: { value: opts.fadeStart ?? 220 },
+    outlineFadeEnd: { value: opts.fadeEnd ?? 900 },
+  }
+  mat.userData.uniforms = uniforms
   mat.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
-    shader.uniforms.outlinePerDepth = { value: perDepth }
-    shader.uniforms.outlineMin = { value: min }
-    shader.uniforms.outlineMax = { value: max }
+    Object.assign(shader.uniforms, uniforms)
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        "#include <common>\nuniform float outlinePerDepth;\nuniform float outlineMin;\nuniform float outlineMax;",
+        "#include <common>\nuniform float outlinePerDepth;\nuniform float outlineFadeStart;\nuniform float outlineFadeEnd;",
       )
       .replace(
         "#include <skinning_vertex>",
         `#include <skinning_vertex>
         {
           vec4 olView = modelViewMatrix * vec4( transformed, 1.0 );
-          float olW = clamp( -olView.z * outlinePerDepth, outlineMin, outlineMax );
+          float olDepth = -olView.z;
+          float olW = olDepth * outlinePerDepth * ( 1.0 - smoothstep( outlineFadeStart, outlineFadeEnd, olDepth ) );
+          // Undo the object's own scale so distance-scaled aircraft keep the same line width.
+          olW /= length( modelMatrix[ 0 ].xyz );
           #ifdef USE_SKINNING
             vec3 olN = objectNormal;
           #else
@@ -174,6 +214,6 @@ export function createOutlineMaterial(opts: OutlineOptions = {}): MeshBasicMater
         }`,
       )
   }
-  mat.customProgramCacheKey = () => "wings-outline"
+  mat.customProgramCacheKey = () => "wings-ink"
   return mat
 }

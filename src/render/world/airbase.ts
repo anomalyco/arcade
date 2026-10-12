@@ -1,10 +1,11 @@
 import {
-  AdditiveBlending, BoxGeometry, FrontSide, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute,
+  AdditiveBlending, BoxGeometry, EdgesGeometry, FrontSide, LineSegments, type ShaderMaterial as InkMaterial, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute,
   Group, IcosahedronGeometry, Matrix4, Mesh, MeshLambertMaterial, ShaderMaterial, SphereGeometry,
 } from "three"
 import { AIRBASES, BASE_LAYOUT, SAFE_ZONE_HEIGHT, type Airbase } from "../../sim/geography"
 import { PALETTE, TEAM_COLORS, TEAM_PASTELS } from "./palette"
 import { merge, painted } from "./trees"
+import { applyGoldenHaze } from "./atmosphere"
 
 // Base-local frame: local +X = right (c), local -Z = forward (a). Geometry is baked into world space.
 const L = (a: number, c: number): [number, number] => [c, -a]
@@ -201,7 +202,7 @@ function domes(): BufferGeometry {
     g.applyMatrix4(baseMatrix(base))
     g.translate(0, -5, 0)
     const n = pos.count
-    const col = new Color(TEAM_COLORS[base.team])
+    const col = new Color(PALETTE.gold).lerp(new Color(TEAM_COLORS[base.team]), 0.3)
     g.setAttribute("color", new Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => [col.r, col.g, col.b][i % 3]), 3))
     g.setAttribute("team", new Float32BufferAttribute(new Float32Array(n).fill(base.team), 1))
     parts.push(g)
@@ -217,11 +218,12 @@ export interface AirbaseViews {
 }
 
 /** All four airbases: 3 draw calls (pavement, buildings, domes). */
-export function createAirbases(): AirbaseViews {
+export function createAirbases(ink: InkMaterial): AirbaseViews {
   const root = new Group()
   root.name = "World · airbases"
   const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true, toneMapped: false })
   material.name = "World · base props"
+  applyGoldenHaze(material)
   const pave: BufferGeometry[] = [], build: BufferGeometry[] = []
   for (const base of AIRBASES) {
     const m = baseMatrix(base)
@@ -239,7 +241,12 @@ export function createAirbases(): AirbaseViews {
   domeMesh.name = "Safe zones"
   domeMesh.renderOrder = 5
   domeMesh.frustumCulled = false
-  root.add(paveMesh, buildMesh, domeMesh)
+  // Ink: crease edges of the buildings (one LineSegments draw call).
+  const edgeGeo = new EdgesGeometry(buildGeo, 35)
+  const edges = new LineSegments(edgeGeo, ink)
+  edges.name = "building ink"
+  edges.renderOrder = 3
+  root.add(paveMesh, buildMesh, edges, domeMesh)
   return {
     root,
     setHighlight(team) {
@@ -258,6 +265,6 @@ export function createAirbases(): AirbaseViews {
         return Math.min(1, Math.max(0, (r - 0.95) / 0.25))
       })
     },
-    dispose() { paveGeo.dispose(); buildGeo.dispose(); domeGeo.dispose(); material.dispose(); dmat.dispose() },
+    dispose() { paveGeo.dispose(); buildGeo.dispose(); edgeGeo.dispose(); domeGeo.dispose(); material.dispose(); dmat.dispose() },
   }
 }

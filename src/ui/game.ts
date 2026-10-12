@@ -50,6 +50,7 @@ interface Visual {
   flight: FlightState
   pos: Vec3
   quat: Quat
+  local?: boolean
 }
 
 interface Prediction {
@@ -126,7 +127,7 @@ class GameSession implements GameHandle {
     { id: "cannon20", ammo: 0, cap: 0, ready: 1, regen: false, lock: 0, locked: false },
     { id: "cannon20", ammo: 0, cap: 0, ready: 1, regen: false, lock: 0, locked: false },
   ]
-  private tracerColors = TEAM_COLORS.map(c => new Color(c).lerp(new Color("#ffe066"), 0.55))
+  private tracerColors = TEAM_COLORS.map(c => new Color(c).lerp(new Color("#ffe2a0"), 0.72))
   private offSettings: () => void
   private ended = false
   private scoreboardShown = false
@@ -631,6 +632,8 @@ class GameSession implements GameHandle {
     const firing = flying ? this.lastSeat : null
     for (const v of this.visuals.values()) {
       v.view.root.visible = v.render.alive
+      const isLocal = v === ownVis
+      if (v.local !== isLocal) { v.local = isLocal; v.view.setLocal?.(isLocal) }
       if (!v.render.alive) continue
       if (v === ownVis && seat !== null) {
         v.view.setFiring?.(seat, 0, !!firing?.firePrimary)

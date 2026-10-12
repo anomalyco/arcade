@@ -285,9 +285,10 @@ export function createHud(parent: HTMLElement): Hud {
   // Terrain backdrop for the minimap in the world's pastel bands, sampled once off the critical path.
   let mapBg: HTMLCanvasElement | null = null
   const BANDS: [number, number, number, number][] = [
-    [-40, 0x3d, 0x84, 0xb8], [-8, 0x5c, 0xb0, 0xd2], [0, 0x93, 0xe0, 0xd2], [14, 0xec, 0xdc, 0xae], [180, 0xb5, 0xcf, 0x7a],
-    [380, 0x8f, 0xba, 0x63], [620, 0x6f, 0xa8, 0x5a], [900, 0xc2, 0xa6, 0x8a], [1300, 0xd6, 0xc2, 0xa8], [Infinity, 0xf5, 0xf2, 0xea],
+    [-40, 0x2c, 0x4f, 0x78], [-8, 0x3f, 0x7f, 0x9a], [0, 0x7f, 0xd0, 0xc0], [14, 0xef, 0xcf, 0x98], [180, 0xb9, 0xb8, 0x66],
+    [380, 0x9a, 0xab, 0x68], [620, 0x6f, 0x8a, 0x55], [900, 0xc4, 0x9a, 0x74], [1300, 0xd6, 0xb4, 0x8e], [Infinity, 0xef, 0xd2, 0xa6],
   ]
+
   const buildMapBg = () => {
     const N = 160
     const c = document.createElement("canvas")
@@ -321,10 +322,10 @@ export function createHud(parent: HTMLElement): Hud {
     const k = S / (WORLD_HALF * 2)
     const ctx = mapCtx
     ctx.setTransform(mapDpr, 0, 0, mapDpr, 0, 0)
-    ctx.fillStyle = "#5cb0d2"
+    ctx.fillStyle = "#3f7f9a"
     ctx.fillRect(0, 0, S, S)
     if (mapBg) { ctx.imageSmoothingEnabled = true; ctx.drawImage(mapBg, 0, 0, S, S) }
-    ctx.strokeStyle = "rgba(255,255,255,.16)"
+    ctx.strokeStyle = "rgba(255,236,200,.16)"
     ctx.lineWidth = 1
     ctx.beginPath()
     for (let i = 1; i < 4; i++) { const g = Math.round((i * S) / 4) + 0.5; ctx.moveTo(g, 0); ctx.lineTo(g, S); ctx.moveTo(0, g); ctx.lineTo(S, g) }
@@ -365,7 +366,7 @@ export function createHud(parent: HTMLElement): Hud {
       ctx.fillStyle = cone
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 34, -Math.PI / 2 - 0.45, -Math.PI / 2 + 0.45); ctx.closePath(); ctx.fill()
       ctx.fillStyle = "#fff"
-      ctx.strokeStyle = "#1e2433"
+      ctx.strokeStyle = "#26204a"
       ctx.lineWidth = 1.5
       ctx.beginPath(); ctx.moveTo(0, -6.5); ctx.lineTo(4.5, 4.5); ctx.lineTo(0, 2.2); ctx.lineTo(-4.5, 4.5); ctx.closePath(); ctx.stroke(); ctx.fill()
       ctx.restore()

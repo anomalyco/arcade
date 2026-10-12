@@ -16,9 +16,10 @@ function blobTexture(): DataTexture {
       // Soft falloff: solid-ish core, smooth fade to the rim.
       const a = r >= 1 ? 0 : Math.min(1, Math.pow(1 - r * r, 0.8) * 1.15)
       const i = (y * n + x) * 4
-      data[i] = 40
-      data[i + 1] = 46
-      data[i + 2] = 60
+      // Lilac, matching the world's violet shadows.
+      data[i] = 58
+      data[i + 1] = 44
+      data[i + 2] = 92
       data[i + 3] = Math.round(a * 255)
     }
   }

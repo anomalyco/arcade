@@ -22,6 +22,8 @@ export interface ClusterData {
   positions: Float32Array
   /** Per-vertex RGB (same for all three vertices of a face), linear bytes. */
   colors: Uint8Array
+  /** Ink line segments (pairs of world-space points) along terrace lips and ridges; LOD 0–1 only. */
+  lines: Float32Array
   minY: number; maxY: number
 }
 
@@ -101,8 +103,9 @@ function faceColor(h: number, slope: number, ao: number, x: number, z: number, v
     const t = h < 3.5 ? step(1.4, 2.2, slope) : step(0.8, 1.35, slope)
     col = mixRGB(top, cliff, t)
   }
-  // Valley occlusion + slight per-face value variation for a hand-made look.
-  const shade = (1 - 0.3 * ao) * (0.965 + 0.07 * varSeed)
+  // Valley occlusion tints toward lilac (never grey), plus slight per-face value variation.
+  col = mixRGB(col, [col[0] * C.lilacShade[0] / 255, col[1] * C.lilacShade[1] / 255, col[2] * C.lilacShade[2] / 255], ao * 0.6)
+  const shade = (1 - 0.12 * ao) * (0.965 + 0.07 * varSeed)
   return [Math.min(255, col[0] * shade), Math.min(255, col[1] * shade), Math.min(255, col[2] * shade)]
 }
 
@@ -122,8 +125,19 @@ export function generateCluster(cx: number, cz: number, lod: number): ClusterDat
     colors[o] = col[0]; colors[o + 1] = col[1]; colors[o + 2] = col[2]
     v++
   }
+  // Per cell triangle: unit normal (for ink creases).
+  const fn = new Float32Array(n * n * 2 * 3)
+  let curFace = 0
   const face = (k0: number, k1: number, k2: number, seed: number) => {
     const y0 = m.h[k0], y1 = m.h[k1], y2 = m.h[k2]
+    {
+      const ax = m.vx[k1] - m.vx[k0], ay = y1 - y0, az = m.vz[k1] - m.vz[k0]
+      const bx = m.vx[k2] - m.vx[k0], by = y2 - y0, bz = m.vz[k2] - m.vz[k0]
+      let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx
+      if (ny < 0) { nx = -nx; ny = -ny; nz = -nz }
+      const l = Math.hypot(nx, ny, nz) || 1
+      fn[curFace * 3] = nx / l; fn[curFace * 3 + 1] = ny / l; fn[curFace * 3 + 2] = nz / l
+    }
     if (y0 < deep && y1 < deep && y2 < deep) return
     const ux = m.vx[k1] - m.vx[k0], uy = y1 - y0, uz = m.vz[k1] - m.vz[k0]
     const wx = m.vx[k2] - m.vx[k0], wy = y2 - y0, wz = m.vz[k2] - m.vz[k0]
@@ -143,9 +157,11 @@ export function generateCluster(cx: number, cz: number, lod: number): ClusterDat
     const i = i0 + I * s, j = j0 + J * s
     const a = j * S + i, b = a + s, c = a + s * S, d = c + s
     const dg = s === 1 ? m.diag[j * m.n + i] : (hash01(i, j, s) < 0.5 ? 0 : 1)
-    if (dg === 0) { face(a, c, b, 0); face(b, c, d, 1) }
-    else { face(a, c, d, 0); face(a, d, b, 1) }
+    curFace = (J * n + I) * 2
+    if (dg === 0) { face(a, c, b, 0); curFace++; face(b, c, d, 1) }
+    else { face(a, c, d, 0); curFace++; face(a, d, b, 1) }
   }
+  const lines = lod <= 1 ? creaseLines(m, fn, n, s, i0, j0) : new Float32Array(0)
   // Skirts below every border edge (hide cracks against neighbours at other LODs).
   const border = (k: number): number => {
     const side = Math.floor(k / n), t = k % n
@@ -162,7 +178,50 @@ export function generateCluster(cx: number, cz: number, lod: number): ClusterDat
     put(q, qt, col); put(q, qb, col); put(p, pb, col)
   }
   if (!Number.isFinite(minY)) { minY = 0; maxY = 0 }
-  return { cx, cz, lod, positions: positions.subarray(0, v * 3), colors: colors.subarray(0, v * 3), minY: minY - 120, maxY }
+  return { cx, cz, lod, positions: positions.subarray(0, v * 3), colors: colors.subarray(0, v * 3), lines, minY: minY - 120, maxY }
+}
+
+/**
+ * Ink along terrain creases: terrace lips (flat ledge meeting a steep riser) and sharp ridges/valleys.
+ * Edge ownership per cell (see generateCluster's triangulation): left → tri0, right → tri1,
+ * top → diag0 ? tri0 : tri1, bottom → diag0 ? tri1 : tri0.
+ */
+function creaseLines(m: ReturnType<typeof worldMesh>, fn: Float32Array, n: number, s: number, i0: number, j0: number): Float32Array {
+  const S = m.stride
+  const out: number[] = []
+  const slopeOf = (f: number) => Math.sqrt(Math.max(0, 1 - fn[f * 3 + 1] ** 2)) / Math.max(fn[f * 3 + 1], 1e-3)
+  const diagOf = (I: number, J: number) => {
+    const i = i0 + I * s, j = j0 + J * s
+    return s === 1 ? m.diag[j * m.n + i] : (hash01(i, j, s) < 0.5 ? 0 : 1)
+  }
+  const test = (f1: number, f2: number, ka: number, kb: number) => {
+    if (m.h[ka] < 2 && m.h[kb] < 2) return
+    const dot = fn[f1 * 3] * fn[f2 * 3] + fn[f1 * 3 + 1] * fn[f2 * 3 + 1] + fn[f1 * 3 + 2] * fn[f2 * 3 + 2]
+    const s1 = slopeOf(f1), s2 = slopeOf(f2)
+    const lip = Math.min(s1, s2) < 0.32 && Math.max(s1, s2) > 1.0
+    const ridge = dot < 0.45
+    if (!lip && !ridge) return
+    out.push(m.vx[ka], m.h[ka], m.vz[ka], m.vx[kb], m.h[kb], m.vz[kb])
+  }
+  for (let J = 0; J < n; J++) for (let I = 0; I < n; I++) {
+    const i = i0 + I * s, j = j0 + J * s
+    const a = j * S + i, b = a + s, c = a + s * S, d = c + s
+    const dg = diagOf(I, J)
+    const t0 = (J * n + I) * 2, t1 = t0 + 1
+    // Diagonal (shared by both triangles of this cell).
+    if (dg === 0) test(t0, t1, b, c)
+    else test(t0, t1, a, d)
+    // Right edge b–d with the right neighbour's left edge (its tri0).
+    if (I + 1 < n) test(t1, (J * n + I + 1) * 2, b, d)
+    // Bottom edge c–d with the lower neighbour's top edge.
+    if (J + 1 < n) {
+      const mine = dg === 0 ? t1 : t0
+      const nd = diagOf(I, J + 1)
+      const theirs = (((J + 1) * n + I) * 2) + (nd === 0 ? 0 : 1)
+      test(mine, theirs, c, d)
+    }
+  }
+  return new Float32Array(out)
 }
 
 // ---------------------------------------------------------------------------------------------

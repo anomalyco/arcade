@@ -41,6 +41,8 @@ import { createBlobShadow } from "./aircraft-shadow"
 import { createGlowMaterial, createOutlineMaterial, createToonMaterial, pastelize } from "./toon"
 
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"] as const
+/** Golden-hour livery paint per team: pastel but saturated, readable at range. */
+export const TEAM_LIVERY = ["#5684da", "#eea44f", "#47b585", "#df6662"] as const
 
 export interface AircraftView {
   root: Object3D
@@ -59,7 +61,11 @@ export interface AircraftView {
   anchors: Map<string, Object3D>
   /** True once the real model replaced the placeholder. */
   readonly ready: boolean
-  /** Mark the local player's own aircraft (never distance-scaled). */
+  /**
+   * Mark the local player's own aircraft. Call `view.setLocal(true)` right after creating the view for
+   * the vehicle the player occupies (and `false` when they leave it). Local aircraft are never
+   * distance-scaled; remote aircraft grow up to 1.6x between 500 m and 1.5 km for readability.
+   */
   setLocal(local: boolean): void
 }
 
@@ -287,8 +293,8 @@ let baseUrlDefault = ((import.meta as unknown as { env?: { BASE_URL?: string } }
 const toonCache = new Map<string, Material>()
 const liveryCache = new Map<number, Material>()
 let outlineMaterial: Material | null = null
-/** Ink outlines are off: the pastel world has none. Flip on for debugging/readability experiments. */
-const OUTLINES = false
+/** Fine warm-dark ink silhouettes (Golden Eldritch); one extra draw call, distance-faded, off on Low. */
+const OUTLINES = true
 
 /**
  * Per-name color overrides applied instead of the pastel remap. An override recolors the whole deduped
@@ -301,7 +307,7 @@ const _hslT = { h: 0, s: 0, l: 0 }
 
 /** Per-mesh color overrides (baked into vertex colors; free). */
 const PART_COLORS: [RegExp, string, VehicleKind[]?][] = [
-  [/^spine_band$/, "#c4cdd7", ["fighter"]], // light dorsal spine band
+  [/^spine_band$/, "#eadfc8", ["fighter"]], // cream dorsal spine band
   [/^(flap|aileron|stab)_line_[LR]$/, "#a3afbd", ["fighter"]], // light panel lines on the wings
   [/^panel_band_(aft|tail)$|^engine_panel_band_[LR]$/, "#b9bea5", ["warthog"]],
   [/^cockpit_spine_hump$/, "#5a6070", ["blackbird"]],
@@ -317,6 +323,15 @@ function bodyMaterial(): Material {
 const COLOR_OVERRIDES: [RegExp, string, VehicleKind[]?][] = [
   [/^pilot_\d_torso$/, "#97a274", ["fighter", "apache", "warthog"]], // soft olive flight suit
   [/^pilot_\d_torso$/, "#dcc48c", ["blackbird"]], // pale gold pressure suit
+  // Golden-hour two-tone: richer tops that hold their hue in warm light, cream/pale bellies.
+  [/^fuselage$/, "#6a82a8", ["fighter"]], // dusty navy-blue
+  [/^fuselage_belly$/, "#f1e4c9", ["fighter"]],
+  [/^fuselage_top$/, "#7d8a63", ["warthog"]], // sage
+  [/^fuselage_belly$/, "#e8dec2", ["warthog"]],
+  [/^fuselage_upper$/, "#74834a", ["apache"]], // olive
+  [/^fuselage_belly$/, "#d3ca9c", ["apache"]],
+  [/^fuselage$/, "#3c3855", ["blackbird"]], // indigo graphite
+  [/^fuselage_belly$/, "#9893b4", ["blackbird"]],
 ]
 
 function getOutlineMaterial(): Material {
@@ -327,7 +342,7 @@ function getOutlineMaterial(): Material {
 function liveryMaterial(team: TeamId): Material {
   let m = liveryCache.get(team)
   if (!m) {
-    m = createToonMaterial({ color: pastelize(new Color(TEAM_COLORS[team]), "livery") })
+    m = createToonMaterial({ color: TEAM_LIVERY[team] })
     liveryCache.set(team, m)
   }
   return m
@@ -549,8 +564,8 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     const key =
       role === "toon" || role === "glass"
         ? `${role}:${hex(color)}:${rough.toFixed(2)}:${metal.toFixed(2)}:${src.opacity.toFixed(2)}`
-        : role === "livery"
-          ? "livery"
+        : role === "livery" || role === "nav"
+          ? role
           : `${role}:${hex(emissive)}`
     let bucket = buckets.get(key)
     if (!bucket) {
@@ -560,6 +575,15 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
       buckets.set(key, bucket)
     }
     const g = prepGeometry(mesh.geometry, toRoot(mesh), bone)
+    if (role === "nav") {
+      // Red and green nav lights share one mesh: their color lives in vertex colors.
+      const c = softGlow(role, emissive.clone().lerp(color, 0.25))
+      const n = g.getAttribute("position").count
+      const col = new Float32Array(n * 3)
+      for (let k = 0; k < n; k++) col.set([c.r, c.g, c.b], k * 3)
+      g.setAttribute("color", new Float32BufferAttribute(col, 3))
+      bucket.glowColor.set(1, 1, 1)
+    }
     bucket.geoms.push(g)
     bucket.names.push(mesh.name)
     if (OUTLINES && (role === "toon" || role === "livery")) outlineGeoms.push(g)
@@ -674,7 +698,14 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
 
   let outline: BufferGeometry | null = null
   if (outlineGeoms.length) {
-    const merged = mergeGeometries(outlineGeoms, false)
+    // Only shape + skinning attributes (paint/vertex colors differ between groups).
+    const shapes = outlineGeoms.map((g) => {
+      const o = new BufferGeometry()
+      for (const a of ["position", "normal", "skinIndex", "skinWeight"]) o.setAttribute(a, g.getAttribute(a))
+      o.setIndex(g.index)
+      return o
+    })
+    const merged = mergeGeometries(shapes, false)
     if (merged) {
       outline = smoothOutlineGeometry(merged)
       outline.deleteAttribute("uv")
@@ -859,6 +890,7 @@ function clamp(v: number, lo: number, hi: number): number {
 
 const FAR_DISTANCE = 1500
 const SHADOW_MAX_AGL = 150
+const INK_MAX_DISTANCE = 950
 const _sn = new Vector3()
 const _sb = new Vector3()
 const _sr = new Vector3()
@@ -984,6 +1016,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
         }
         default: {
           const m = createGlowMaterial(tm.glowColor, 1)
+          m.vertexColors = tm.geometry.hasAttribute("color")
           if (tm.role === "nav") navMats.push(m)
           else if (tm.role === "strobe") strobeMats.push(m)
           owned.push(m)
@@ -1060,7 +1093,8 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
   const updateShadow = () => {
     // Cast along the world sun direction so the blob sits where the real shadow would.
     const agl0 = root.position.y - groundQuery(root.position.x, root.position.z)
-    const off = clamp(agl0, 0, SHADOW_MAX_AGL) / Math.max(0.2, SUN_DIRECTION.y)
+    // Low golden-hour sun: real shadows would land far away, so cap the cast to ~1.2x AGL.
+    const off = clamp(agl0, 0, SHADOW_MAX_AGL) * Math.min(1.2, 1 / Math.max(0.05, SUN_DIRECTION.y)) / Math.max(1e-3, Math.hypot(SUN_DIRECTION.x, SUN_DIRECTION.z))
     const x = root.position.x - SUN_DIRECTION.x * off
     const z = root.position.z - SUN_DIRECTION.z * off
     const h = groundQuery(x, z)
@@ -1071,7 +1105,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     }
     shadow.visible = true
     const fade = 1 - clamp(agl / SHADOW_MAX_AGL, 0, 1)
-    ;(shadow.material as MeshBasicMaterial).opacity = 0.45 * fade * (0.6 + 0.4 * fade)
+    ;(shadow.material as MeshBasicMaterial).opacity = 0.38 * fade * (0.6 + 0.4 * fade)
     // Surface normal from a small height stencil so the blob lies on slopes.
     const d = 4
     _sn.set(groundQuery(x - d, z) - groundQuery(x + d, z), 2 * d, groundQuery(x, z - d) - groundQuery(x, z + d)).normalize()
@@ -1082,7 +1116,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     _sb.normalize()
     _sr.crossVectors(_sn, _sb).normalize()
     _sb.crossVectors(_sr, _sn)
-    const grow = (1 + (1 - fade) * 0.6) * root.scale.x
+    const grow = 0.85 * (1 + (1 - fade) * 0.6) * root.scale.x
     _shadowM.makeBasis(_sr, _sn, _sb)
     _shadowM.scale(_v2.set(shadowSize[0] * grow, 1, shadowSize[1] * grow))
     _shadowM.setPosition(x, h + 0.3, z)
@@ -1158,7 +1192,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       time += dt
 
       const far = dist > FAR_DISTANCE
-      if (r.outline) r.outline.visible = outlinesEnabled && !far
+      if (r.outline) r.outline.visible = outlinesEnabled && dist < INK_MAX_DISTANCE
 
       const boost = boostHint ?? f.throttle > 0.95
       const heli = VEHICLES[vehicle.kind].flight === "heli"

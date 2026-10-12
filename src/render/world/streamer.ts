@@ -1,5 +1,5 @@
 import {
-  BufferAttribute, BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Mesh, Sphere, Vector3, type Material,
+  BufferAttribute, BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, LineSegments, Mesh, Sphere, Vector3, type Material,
 } from "three"
 import type { WorldQualitySettings } from "./settings"
 import {
@@ -48,6 +48,7 @@ function createBackend(onResult: (r: WorkerResult) => void): Backend {
 interface Cluster {
   cx: number; cz: number
   mesh: Mesh | null
+  ink: LineSegments | null
   lod: number // -1 = none
   pending: number // lod requested, -1 = none
   wantLod: number
@@ -85,13 +86,14 @@ export class TerrainStreamer {
   constructor(
     private settings: WorldQualitySettings,
     private material: Material,
+    private inkMaterial: Material,
     private treeRes: TreeResources,
     private onShoreRows: (z0: number, z1: number, rows: Uint8Array) => void,
   ) {
     this.terrainRoot.name = "World · terrain clusters"
     this.treeRoot.name = "World · trees"
     for (let cz = 0; cz < CLUSTER_N; cz++) for (let cx = 0; cx < CLUSTER_N; cx++) {
-      this.clusters.push({ cx, cz, mesh: null, lod: -1, pending: -1, wantLod: 3, visible: false, dist: Infinity, lastWanted: 0,
+      this.clusters.push({ cx, cz, mesh: null, ink: null, lod: -1, pending: -1, wantLod: 3, visible: false, dist: Infinity, lastWanted: 0,
         trees: null, treesPending: false, wantTrees: false })
     }
     this.backend = createBackend(r => this.results.push(r))
@@ -154,6 +156,7 @@ export class TerrainStreamer {
       if (c.mesh) {
         resident++
         c.mesh.visible = c.visible
+        if (c.ink) c.ink.visible = c.visible && d < 3600
         if (c.visible) { visible++; triangles += c.mesh.geometry.getAttribute("position").count / 3 }
       }
       c.wantTrees = d < s.treeRadius && cam.y < 4500
@@ -163,6 +166,7 @@ export class TerrainStreamer {
         this.terrainRoot.remove(c.mesh)
         c.mesh.geometry.dispose()
         c.mesh = null
+        this.dropInk(c)
         c.lod = -1
       }
     }
@@ -244,6 +248,18 @@ export class TerrainStreamer {
       }
       c.mesh.visible = c.visible
       c.lod = data.lod
+      this.dropInk(c)
+      if (data.lines.length) {
+        const lg = new BufferGeometry()
+        lg.setAttribute("position", new BufferAttribute(data.lines, 3))
+        lg.boundingSphere = geometry.boundingSphere.clone()
+        c.ink = new LineSegments(lg, this.inkMaterial)
+        c.ink.name = `ink ${c.cx},${c.cz}`
+        c.ink.matrixAutoUpdate = false
+        c.ink.renderOrder = 2
+        c.ink.visible = c.visible && c.dist < 3600
+        this.terrainRoot.add(c.ink)
+      }
     } else {
       c.treesPending = false
       if (!c.wantTrees) return
@@ -267,6 +283,13 @@ export class TerrainStreamer {
     }
   }
 
+  private dropInk(c: Cluster) {
+    if (!c.ink) return
+    this.terrainRoot.remove(c.ink)
+    c.ink.geometry.dispose()
+    c.ink = null
+  }
+
   private dropTrees(c: Cluster) {
     if (!c.trees) return
     for (const m of c.trees) { this.treeRoot.remove(m); m.dispose() }
@@ -282,6 +305,7 @@ export class TerrainStreamer {
     this.backend.dispose()
     for (const c of this.clusters) {
       if (c.mesh) { this.terrainRoot.remove(c.mesh); c.mesh.geometry.dispose() }
+      this.dropInk(c)
       this.dropTrees(c)
     }
     this.results.length = 0

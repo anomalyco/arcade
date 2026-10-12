@@ -111,7 +111,8 @@ void main() {
   vec3 n = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
   float l = dot(n, uSun);
   // Three soft bands, like the world's toon shading: lit, half, shade (cool sky-tinted).
-  vec3 band = l > 0.3 ? vec3(1.0) : l > -0.15 ? vec3(0.86, 0.87, 0.92) : uSky;
+  // Warm apricot key, lilac half-tone, violet shade (golden-hour split).
+  vec3 band = l > 0.3 ? vec3(1.04, 0.99, 0.92) : l > -0.15 ? vec3(0.93, 0.89, 0.95) : mix(uSky, vec3(1.0), 0.3);
   vec3 col = vColor.rgb * mix(band, vec3(1.25), vColor.a);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
@@ -187,7 +188,7 @@ void main() {
   float core = smoothstep(0.45, 0.95, f);
   float fade = smoothstep(0.0, 0.75, vUv.y);
   // Additive glow with a white-hot core; the warm halo is strong enough to read on bright sky.
-  vec3 col = mix(vColor * 1.4, vec3(1.0, 0.98, 0.9) * 2.0, core);
+  vec3 col = mix(vColor * 1.4, vec3(1.0, 0.94, 0.78) * 2.0, core);
   gl_FragColor = vec4(col * (f * f) * fade, 1.0);
   #include <colorspace_fragment>
 }`
@@ -319,15 +320,15 @@ class Emitter {
 
 const c = (hex: string) => new Color(hex)
 // Pastel fire: butter → peach → coral, cooling to warm charcoal smoke that lightens as it dissipates.
-const FIRE_A = c("#fff4c4"), FIRE_B = c("#ffb066"), FIRE_C = c("#f0705a")
-const BALL_A = c("#ffe08a"), BALL_B = c("#ff8a3d"), SMOKE_WARM = c("#b9aea6"), SMOKE_WARM_PALE = c("#e4ddd6")
-const SMOKE_DARK = c("#85818a"), SMOKE_MID = c("#aeaab2"), SMOKE_PALE = c("#e6e4ea"), SMOKE_WHITE = c("#f7f6f9")
-const SPARK = c("#ffe0a0"), SPARK_B = c("#ff8a3c")
-const FLARE_A = c("#fffbe8"), FLARE_B = c("#ffc070")
-const WHITE = c("#ffffff")
-const TRAIL = c("#ffffff"), TRAIL_END = c("#e6e3ee")
-const DEBRIS_COLS = [c("#8d939c"), c("#a3a8b0"), c("#767c86"), c("#c9ccd0")]
-const SKY_SHADE = c("#b4bfd6")
+const FIRE_A = c("#fff1c2"), FIRE_B = c("#ffbf5e"), FIRE_C = c("#f07a5c")
+const BALL_A = c("#ffdb80"), BALL_B = c("#f58a5a"), SMOKE_WARM = c("#b9aea6"), SMOKE_WARM_PALE = c("#e9ded6")
+const SMOKE_DARK = c("#9a8e8c"), SMOKE_MID = c("#bcb0aa"), SMOKE_PALE = c("#ebe1da"), SMOKE_WHITE = c("#fbf5ee")
+const SPARK = c("#ffe4a3"), SPARK_B = c("#ff9a52")
+const FLARE_A = c("#fff8e2"), FLARE_B = c("#ffc070")
+const WHITE = c("#fff3d2")
+const TRAIL = c("#fff6e8"), TRAIL_END = c("#eadfe0")
+const DEBRIS_COLS = [c("#9a9096"), c("#b0a7a8"), c("#6f6470"), c("#d2c8c2")]
+const SKY_SHADE = c("#a596cf")
 const _tmp = new Color()
 const _sun = new Vector3()
 
@@ -545,7 +546,7 @@ export function createEffects(quality: Quality): Effects {
         const v = s * 0.9
         const r = s * (0.38 + Math.random() * 0.3)
         puffs.emit(now, p[0] + rnd(s * 0.35), p[1] + rnd(s * 0.3), p[2] + rnd(s * 0.35), rnd(v), rnd(v) + s * 0.2, rnd(v),
-          0.62 + Math.random() * 0.12, r * 0.85, r, i % 2 ? BALL_A : BALL_B, 1, BALL_B, 1, 4, 0, 12)
+          0.62 + Math.random() * 0.12, r * 0.85, r, i % 3 === 0 ? BALL_A : i % 3 === 1 ? BALL_B : FIRE_C, 1, i % 2 ? BALL_B : FIRE_C, 1, 4, 0, 12)
       }
       const ns = Math.round((air ? 12 : 5 + s * 0.4) * density) + 3
       for (let i = 0; i < ns; i++) {
@@ -566,7 +567,7 @@ export function createEffects(quality: Quality): Effects {
         for (let i = 0; i < n; i++) {
           const life = 2.2 + Math.random() * 0.8
           const vx = rnd(22), vy = 8 + Math.random() * 14, vz = rnd(22)
-          debrisOne(p, vx, vy, vz, life, 1.8 + Math.random() * 0.8)
+          debrisOne(p, vx, vy, vz, life, 1.1 + Math.random() * 0.5)
           if (wrecks.length < 12) wrecks.push({ x: p[0], y: p[1], z: p[2], vx, vy, vz, t0: now, life, last: now })
         }
       } else debris(p, Math.round(4 * density) + 1, 18 + s, 0.45)
@@ -599,17 +600,18 @@ export function createEffects(quality: Quality): Effects {
       t.seen = now
       const dx = p[0] - t.x, dy = p[1] - t.y, dz = p[2] - t.z
       const d = Math.hypot(dx, dy, dz)
-      const spacing = (heavy ? 1.4 : 2) / density
+      const spacing = (heavy ? 2.2 : 3) / density
       glow.emit(now, p[0], p[1], p[2], 0, 0, 0, 0.07, heavy ? 2.6 : 2, 1, FIRE_A, 0.9, FIRE_B, 0, 0, 0)
       if (d < spacing) return
       const steps = Math.min(16, Math.floor(d / spacing))
       for (let i = 1; i <= steps; i++) {
-        const f = i / steps
+        const f = (i * spacing) / d
         // Soft pastel puffs: start warm-white near the motor, inflate, drift, shrink away.
         puffs.emit(now, t.x + dx * f, t.y + dy * f, t.z + dz * f, rnd(0.5), rnd(0.5) + 0.4, rnd(0.5),
-          heavy ? 2.2 : 1.4, 0.9, heavy ? 1.5 : 1.15, TRAIL, 0.5, TRAIL_END, 0, 0.6, 0.4, 1.1)
+          (heavy ? 2.2 : 1.5) * (0.8 + Math.random() * 0.4), 0.6 + Math.random() * 0.3, (heavy ? 2.6 : 1.8) * (0.7 + Math.random() * 0.6), TRAIL, 0.5, TRAIL_END, 0, 0.6, 0.4, 1.4)
       }
-      t.x = p[0]; t.y = p[1]; t.z = p[2]
+      if (steps >= 16) { t.x = p[0]; t.y = p[1]; t.z = p[2] }
+      else { const f = (steps * spacing) / d; t.x += dx * f; t.y += dy * f; t.z += dz * f }
     },
 
     flare(p, _dt) {
