@@ -53,9 +53,9 @@ export function escapeHtml(s: string): string {
 
 // Mirrors CONTROL_SCHEMES / CONTROL_SCHEME_LABELS / controlScheme() / setControlScheme() from input.ts.
 // Importing input.ts here would drag the whole Input module into the instant-paint entry chunk (+8 kB).
-const CONTROL_SCHEMES: readonly ControlScheme[] = ["keys", "aim", "point", "battlefield"]
+const CONTROL_SCHEMES: readonly ControlScheme[] = ["aim", "keys", "point", "battlefield"]
 const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { keys: "Keyboard flight + mouse aim (default)", aim: "Mouse-aim (instructor)", point: "Point & turn", battlefield: "Battlefield (mouse = roll)" }
-const controlScheme = (): ControlScheme => settings.controlScheme === "aim" || settings.controlScheme === "battlefield" || settings.controlScheme === "point" ? settings.controlScheme : "keys"
+const controlScheme = (): ControlScheme => settings.controlScheme === "aim" || settings.controlScheme === "battlefield" || settings.controlScheme === "point" ? settings.controlScheme : settings.controlScheme === "keys" ? "keys" : "aim"
 const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "aim" || scheme === "point" ? "aim" : "direct", controlScheme: scheme })
 
 const kb = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")

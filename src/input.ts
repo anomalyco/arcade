@@ -17,7 +17,7 @@ export type InputAction = "seat1" | "seat2" | "view" | "chat" | "menu"
 export type MouseMode = "direct" | "aim"
 
 /** Pilot control schemes (settings key `controlScheme`). */
-export const CONTROL_SCHEMES = ["keys", "aim", "point", "battlefield"] as const
+export const CONTROL_SCHEMES = ["aim", "keys", "point", "battlefield"] as const
 export type ControlScheme = (typeof CONTROL_SCHEMES)[number]
 export const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = {
   keys: "Keyboard flight + mouse aim (default)",
@@ -29,7 +29,7 @@ export const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = {
 /** Current pilot scheme (default "keys"). */
 export function controlScheme(): ControlScheme {
   const s = (settings as unknown as { controlScheme?: string }).controlScheme
-  return s === "aim" || s === "battlefield" || s === "point" ? s : "keys"
+  return s === "aim" || s === "battlefield" || s === "point" ? s : s === "keys" ? "keys" : "aim"
 }
 
 /** Persist a scheme (keeps the legacy `controlStyle` flag in sync). */

@@ -114,10 +114,10 @@ describe("stick (mouse → deflection)", () => {
     expect(Math.abs(spike.value)).toBeLessThan(0.01)
   })
 
-  test("default scheme is keyboard flight + mouse aim; schemes exported", () => {
+  test("default scheme is mouse-aim (instructor); schemes exported", () => {
     scheme(undefined)
-    expect(inputMod.controlScheme()).toBe("keys")
-    expect(inputMod.CONTROL_SCHEMES).toEqual(["keys", "aim", "point", "battlefield"])
+    expect(inputMod.controlScheme()).toBe("aim")
+    expect(inputMod.CONTROL_SCHEMES).toEqual(["aim", "keys", "point", "battlefield"])
   })
 })
 
@@ -289,11 +289,11 @@ describe("helicopter pilot (mouse-aim)", () => {
   })
 })
 
-describe("keyboard flight + mouse aim (default)", () => {
+describe("keyboard flight + mouse aim", () => {
   const press = (p: Pilot, code: string, sec: number, each?: () => void) => { p.key(code, true); p.run(sec, 0, 0, each); p.key(code, false) }
 
   test("keys fly: W nose down, S nose up, A/D roll, Q/E rudder; ramp ~0.12 s; flight aim is null", () => {
-    scheme(undefined)
+    scheme("keys")
     const p = new Pilot("fighter", 2000)
     p.key("KeyS", true); p.run(0.06)
     expect(p.buf.pitch).toBeGreaterThan(0.3); expect(p.buf.pitch).toBeLessThan(0.8)
@@ -305,7 +305,7 @@ describe("keyboard flight + mouse aim (default)", () => {
   })
 
   test("Shift = throttle up + boost, Z = throttle down", () => {
-    scheme(undefined)
+    scheme("keys")
     const p = new Pilot("fighter", 2000)
     p.state.throttle = 0.5
     press(p, "ShiftLeft", 0.5)
@@ -315,7 +315,7 @@ describe("keyboard flight + mouse aim (default)", () => {
   })
 
   test("hold S loops; D barrel-rolls 360°; roll + pull turns cleanly; release flies on with no wobble", () => {
-    scheme(undefined)
+    scheme("keys")
     const p = new Pilot("fighter", 2500)
     p.state.throttle = 1
     let pitched = 0
@@ -340,7 +340,7 @@ describe("keyboard flight + mouse aim (default)", () => {
   })
 
   test("mouse moves a body-relative gun reticle clamped to the gimbal cone; it rides with the aircraft", () => {
-    scheme(undefined)
+    scheme("keys")
     const p = new Pilot("fighter", 2500)
     p.run(0.2, 300, 0) // a little right
     expect(p.input.reticleX).toBeGreaterThan(0.02)
@@ -359,7 +359,7 @@ describe("keyboard flight + mouse aim (default)", () => {
   })
 
   test("soft assist only beyond 70% of the cone; then it gently turns toward the reticle", () => {
-    scheme(undefined)
+    scheme("keys")
     const L = inputMod.RETICLE_LIMIT
     const inner = new Pilot("fighter", 2500)
     inner.input.reticleX = 0.6 * L
@@ -383,7 +383,7 @@ describe("keyboard flight + mouse aim (default)", () => {
   })
 
   test("heli: W tilts forward, S back, A/D strafe, Q/E pedals, Space/Z collective, ←/→ flips; Space doesn't fire", () => {
-    scheme(undefined)
+    scheme("keys")
     const p = new Pilot("apache", 1500)
     p.run(5)
     expect(p.speed).toBeLessThan(1)
