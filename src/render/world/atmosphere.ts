@@ -3,7 +3,7 @@
 // seamlessly), height fog, and the shared lightning uniforms.
 import { Color, Vector2, Vector3, type Material } from "three"
 import {
-  Fn, abs, cameraPosition, select, clamp, dot, exp, float, floor, fog, fract, max, mix, normalize, positionWorld, pow, sin, smoothstep,
+  Fn, If, abs, cameraPosition, select, clamp, dot, exp, float, floor, fog, fract, max, mix, normalize, positionWorld, pow, sin, smoothstep,
   time, uniform, vec2, vec3,
 } from "three/tsl"
 import {
@@ -103,33 +103,40 @@ export const horizonColor = Fn(([d]: [N]) => {
  * breaks low toward BREAK_DIRECTION, local lightning illumination. `octaves` sets the detail.
  */
 export function stormSky(d: N, octaves = 5): N {
-  const y = d.y
-  const horizon = horizonColor(d)
-  const yc = max(y, 0.0).add(0.1)
-  const proj = vec2(d.x, d.z).div(yc)
-  const drift = STORM.wind.mul(time).mul(0.0022)
-  const p = proj.mul(1.15).add(drift)
-  const n1 = fbm(p, octaves)
-  const n2 = fbm(p.mul(2.7).add(drift.mul(1.7)).add(vec2(5.2, 1.3)), Math.max(2, octaves - 2))
-  const cover = smoothstep(0.32, 0.72, n1.mul(0.75).add(n2.mul(0.25)))
-  // Lit tops of the billows vs dark bellies.
-  const lit = smoothstep(0.45, 0.85, n2).mul(0.6).add(cover.oneMinus().mul(0.4))
-  let clouds: N = mix(STORM.cloudDark, STORM.cloudLight, lit)
-  // Breaks: thin cover near the horizon toward the break lets brighter mist through.
-  const h = normalize(vec2(d.x, d.z).add(vec2(1e-5, 0)))
-  const br = pow(max(dot(h, STORM.breakDir), 0), 2)
-  const low = smoothstep(0.45, 0.04, y)
-  const gap = smoothstep(0.55, 0.15, cover).mul(br).mul(low)
-  clouds = mix(clouds, STORM.fogBreak.mul(1.35), gap.mul(0.8))
-  // Zenith darkens.
-  clouds = mix(clouds, STORM.zenith, smoothstep(0.25, 0.95, y).mul(0.55))
-  // Lightning lights the cloud deck around the strike, denser cloud glows more.
-  const fl = max(dot(d, STORM.flashDir), 0)
-  const glow = pow(fl, 6).mul(0.9).add(fl.mul(0.12)).add(0.02)
-  // Punch on cloud bellies, mostly above the horizon band.
-  clouds = clouds.add(STORM.lightning.mul(STORM.flash).mul(glow).mul(cover.mul(0.8).add(0.2)).mul(smoothstep(0.03, 0.25, y)))
-  // Melt into the horizon mist.
-  return mix(horizon, clouds, smoothstep(0.0, 0.22, y))
+  // Perf: below the horizon the result is the horizon mist alone, so the cloud noise runs in a branch
+  // (looking down from altitude, or the sky dome behind the sea, costs almost nothing).
+  return Fn(() => {
+    const out: N = horizonColor(d).toVar()
+    If(d.y.greaterThan(0), () => {
+      const y = d.y
+      const yc = max(y, 0.0).add(0.1)
+      const proj = vec2(d.x, d.z).div(yc)
+      const drift = STORM.wind.mul(time).mul(0.0022)
+      const p = proj.mul(1.15).add(drift)
+      const n1 = fbm(p, octaves)
+      const n2 = fbm(p.mul(2.7).add(drift.mul(1.7)).add(vec2(5.2, 1.3)), Math.max(2, octaves - 2))
+      const cover = smoothstep(0.32, 0.72, n1.mul(0.75).add(n2.mul(0.25)))
+      // Lit tops of the billows vs dark bellies.
+      const lit = smoothstep(0.45, 0.85, n2).mul(0.6).add(cover.oneMinus().mul(0.4))
+      let clouds: N = mix(STORM.cloudDark, STORM.cloudLight, lit)
+      // Breaks: thin cover near the horizon toward the break lets brighter mist through.
+      const h = normalize(vec2(d.x, d.z).add(vec2(1e-5, 0)))
+      const br = pow(max(dot(h, STORM.breakDir), 0), 2)
+      const low = smoothstep(0.45, 0.04, y)
+      const gap = smoothstep(0.55, 0.15, cover).mul(br).mul(low)
+      clouds = mix(clouds, STORM.fogBreak.mul(1.35), gap.mul(0.8))
+      // Zenith darkens.
+      clouds = mix(clouds, STORM.zenith, smoothstep(0.25, 0.95, y).mul(0.55))
+      // Lightning lights the cloud deck around the strike, denser cloud glows more.
+      const fl = max(dot(d, STORM.flashDir), 0)
+      const glow = pow(fl, 6).mul(0.9).add(fl.mul(0.12)).add(0.02)
+      // Punch on cloud bellies, mostly above the horizon band.
+      clouds = clouds.add(STORM.lightning.mul(STORM.flash).mul(glow).mul(cover.mul(0.8).add(0.2)).mul(smoothstep(0.03, 0.25, y)))
+      // Melt into the horizon mist.
+      out.assign(mix(out, clouds, smoothstep(0.0, 0.22, y)))
+    })
+    return out
+  })()
 }
 
 // ---------------------------------------------------------------------------------------------

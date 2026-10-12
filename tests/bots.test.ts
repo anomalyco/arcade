@@ -1,13 +1,14 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 import {
-  BOT_NO_FLY_RADIUS, applyAimSafety, botInput, hostileFleetDistance, shipClearanceAlt, chooseBotVehicle, createBotBrain, interceptTime, leadDirection, terrainMinPitch,
+  BOT_NO_FLY_RADIUS, MAX_BOTS_PER_TARGET, jitterAmp, missileInterval, reactionMin, applyAimSafety, botInput, hostileFleetDistance, shipClearanceAlt, chooseBotVehicle, createBotBrain, interceptTime, leadDirection, terrainMinPitch,
 } from "../src/sim/bots"
-import { createWeapons, markSpawned } from "../src/sim/combat"
+import { applySeatInput, createCombatState, createWeapons, markSpawned, stepCombat } from "../src/sim/combat"
 import { FLEET, shipPose } from "../src/sim/fleet"
-import { setFleetState } from "../src/sim/geography"
-import { forward } from "../src/sim/flight"
+import { carrierOf, setFleetState, worldQuery } from "../src/sim/geography"
+import { forward, stepFlight } from "../src/sim/flight"
 import { VEHICLES, WEAPONS } from "../src/sim/vehicles"
-import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, TeamId, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "../src/sim/types"
+import { TICK_DT } from "../src/sim/types"
+import type { FlightInput, GameEvent, Missile, PlayerInfo, Quat, SeatInput, TeamId, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "../src/sim/types"
 
 const flat = (h = 0): WorldQuery => ({ groundHeight: () => h, onRunway: () => true, half: 8_000, ceiling: 4_000 })
 
@@ -49,6 +50,10 @@ const lock = (v: VehicleEntity, seat: 0 | 1, slot: 0 | 1, target: VehicleEntity)
   v.weapons[seat][slot].lockTarget = target.id
 }
 
+// Most scenarios are fleet-free (no active strike groups) so open-air behaviour isn't masked by no-fly zones.
+beforeEach(() => setFleetState(0, 0))
+afterAll(() => setFleetState(0, 4))
+
 test("quatFromDir matches flight.forward", () => {
   const d: Vec3 = [0.3, 0.4, -0.866]
   expect(angle(forward(quatFromDir(d)), d)).toBeLessThan(1e-6)
@@ -83,24 +88,30 @@ describe("math", () => {
 })
 
 describe("pilot", () => {
-  test("jet on the carrier deck: full power, no brake, then holds the bow heading in a gentle climb", () => {
-    const w = flat(20)
-    const brain = createBotBrain(1, 1)
-    const v = vehicle("fighter", 0, [0, 22, 6_050], [0, 0, 0], [0, 0, -1], true)
-    const out = snap(botInput(brain, player(0, 0), v, [v], 0, [], w))
-    expect(out.flight!.throttle).toBe(1)
-    expect(out.flight!.brake).toBe(false)
-    expect(out.flight!.boost).toBe(true)
-    expect(angle(out.flight!.aim!, [0, 0, -1])).toBeLessThan(0.01)
-    // Off the catapult, low over the water: keep the bow heading and climb gently.
-    v.flight.onGround = false
-    v.flight.position = [0, 25, 5_700]
-    v.flight.velocity = [0, 0, -VEHICLES.fighter.stall * 1.3]
-    const out2 = snap(botInput(brain, player(0, 0), v, [v], 3, [], flat(0)))
-    expect(pitchOf(out2.flight!.aim!)).toBeGreaterThan(0.03)
-    expect(pitchOf(out2.flight!.aim!)).toBeLessThan(0.4)
-    expect(Math.abs(out2.flight!.aim![0])).toBeLessThan(0.01)
-    expect(out2.flight!.throttle).toBe(1)
+  test("jet on the carrier deck: full power, no brake, launches along the moving carrier's bow", () => {
+    for (const t of [0, 300]) {
+      setFleetState(t, 4)
+      const c = carrierOf(0)
+      const bow: Vec3 = [-Math.sin(c.heading), 0, -Math.cos(c.heading)]
+      const w = flat(20)
+      const brain = createBotBrain(1, 1)
+      const v = vehicle("fighter", 0, [c.position[0], 22, c.position[2]], [0, 0, 0], [-bow[2], 0, bow[0]], true)
+      const out = snap(botInput(brain, player(0, 0), v, [v], t, [], w))
+      expect(out.flight!.throttle).toBe(1)
+      expect(out.flight!.brake).toBe(false)
+      expect(out.flight!.boost).toBe(true)
+      expect(angle(out.flight!.aim!, bow)).toBeLessThan(0.01)
+      // Off the catapult, low over the water: keep the bow heading and climb gently.
+      v.flight.onGround = false
+      v.flight.position = [c.position[0] + bow[0] * 350, 25, c.position[2] + bow[2] * 350]
+      v.flight.velocity = [bow[0] * VEHICLES.fighter.stall * 1.3, 0, bow[2] * VEHICLES.fighter.stall * 1.3]
+      const out2 = snap(botInput(brain, player(0, 0), v, [v], t + 3, [], flat(0)))
+      const a = out2.flight!.aim!
+      expect(pitchOf(a)).toBeGreaterThan(0.03)
+      expect(pitchOf(a)).toBeLessThan(0.4)
+      expect(Math.abs(a[0] * -bow[2] + a[2] * bow[0])).toBeLessThan(0.01) // no sideways component
+      expect(out2.flight!.throttle).toBe(1)
+    }
   })
 
   test("helicopter lifts vertically off the deck, then departs", () => {
@@ -127,17 +138,31 @@ describe("pilot", () => {
     expect(angle(out.flight!.aim!, lead)).toBeLessThan(0.02)
     expect(out.seat.firePrimary).toBe(true)
 
-    const off = vehicle("fighter", 0, pos, vel, [0.5, 0, -0.86])
-    const out2 = snap(botInput(createBotBrain(3, 1), player(0, 0), off, [off, enemy], 10, [], flat()))
+    // Off-axis: the commanded aim slews toward the lead over time (human-like lag), never snaps.
+    const nose: Vec3 = [0.5, 0, -0.86]
+    const off = vehicle("fighter", 0, pos, vel, nose)
+    const brain = createBotBrain(3, 1)
+    const out2 = snap(botInput(brain, player(0, 0), off, [off, enemy], 10, [], flat()))
     expect(out2.seat.firePrimary).toBe(false)
-    expect(angle(out2.flight!.aim!, lead)).toBeLessThan(0.02)
+    expect(angle(out2.flight!.aim!, lead)).toBeGreaterThan(0.3)
+    let last = out2
+    for (let k = 1; k <= 60; k++) last = snap(botInput(brain, player(0, 0), off, [off, enemy], 10 + k / 60, [], flat()))
+    expect(angle(last.flight!.aim!, lead)).toBeLessThan(0.03)
+    expect(last.seat.firePrimary).toBe(false) // nose still off: no spraying
   })
 
-  test("never targets enemies inside their safe zone", () => {
-    const enemy = vehicle("fighter", 1, [0, 60, -5_500], [0, 0, 0]) // team 1 base, low = protected
-    const me = vehicle("fighter", 0, [0, 300, -4_500], [0, 0, -150], [0, 0, -1])
-    const out = botInput(createBotBrain(4, 1), player(0, 0), me, [me, enemy], 10, [], flat())
-    expect(out.seat.firePrimary || out.seat.fireSecondary).toBe(false)
+  test("normal-skill aim lags and slews slower than hard", () => {
+    const pos: Vec3 = [0, 2000, 0], vel: Vec3 = [0, 0, -150]
+    const slewAfter = (skill: number, ticks: number) => {
+      const enemy = vehicle("fighter", 1, [600, 2000, -800], [0, 0, -150])
+      const me = vehicle("fighter", 0, pos, vel, [0, 0, -1])
+      const brain = createBotBrain(3, skill)
+      let o = snap(botInput(brain, player(0, 0), me, [me, enemy], 10, [], flat()))
+      for (let k = 1; k <= ticks; k++) o = snap(botInput(brain, player(0, 0), me, [me, enemy], 10 + k / 60, [], flat()))
+      return angle(o.flight!.aim!, [0, 0, -1])
+    }
+    expect(slewAfter(0.5, 15)).toBeLessThan(slewAfter(0.95, 15))
+    expect(slewAfter(0.5, 15)).toBeLessThan(0.45) // target sits 0.64 rad off the nose
   })
 
   test("heat-seeker: holds until lock completes, then fires", () => {
@@ -198,6 +223,15 @@ describe("pilot", () => {
 
 describe("carrier fleets", () => {
   const enemyCarrier = FLEET.find(s => s.team === 1 && s.kind === "carrier")!
+  beforeEach(() => setFleetState(0, 4))
+
+  test("never targets enemies sheltering under their own fleet's AA", () => {
+    const c = enemyCarrier.position
+    const enemy = vehicle("fighter", 1, [c[0], 300, c[2] + 300], [0, 0, 0])
+    const me = vehicle("fighter", 0, [c[0], 300, c[2] + 300 + 1_000], [0, 0, -150], [0, 0, -1])
+    const out = botInput(createBotBrain(4, 1), player(0, 0), me, [me, enemy], 10, [], flat())
+    expect(out.seat.firePrimary || out.seat.fireSecondary).toBe(false)
+  })
 
   test("steering refuses to enter a hostile fleet's AA umbrella, but own fleet is fine", () => {
     const cz = enemyCarrier.position[2]
@@ -220,7 +254,7 @@ describe("carrier fleets", () => {
     lock(me, 0, 1, enemy)
     let out = snap(botInput(brain, player(0, 0), me, [me, enemy], 10, [], flat()))
     expect(out.seat.fireSecondary).toBe(true)
-    enemy.flight.position = [0, 1500, enemyCarrier.position[2] + 2_000]
+    enemy.flight.position = [0, 1500, enemyCarrier.position[2] + 1_000]
     expect(hostileFleetDistance(0, 0, enemy.flight.position[2])).toBeLessThan(BOT_NO_FLY_RADIUS)
     me.weapons[0][1].readyAt = 0
     out = snap(botInput(brain, player(0, 0), me, [me, enemy], 20, [], flat()))
@@ -256,25 +290,42 @@ describe("carrier fleets", () => {
   })
 
   test("climbs over ship hulls in its path", () => {
-    const dd = FLEET.find(s => s.kind === "destroyer")!
-    const p: Vec3 = [dd.position[0], 20, dd.position[2] + 400]
-    expect(shipClearanceAlt(p, 0, -1, 1_000, 40)).toBeGreaterThan(50)
-    expect(shipClearanceAlt(p, 0, 1, 1_000, 40)).toBe(-Infinity)
-    const aim: Vec3 = [0, 0, -1]
-    applyAimSafety(aim, p, [0, 0, -120], flat(), 10, 7, dd.team)
+    setFleetState(0, 1)
+    // Aft escort: nothing else lies along its beam, so approach it broadside.
+    const dd = FLEET.find(s => s.team === 0 && s.id.endsWith("dd3"))!
+    const beam: Vec3 = [Math.cos(dd.heading), 0, -Math.sin(dd.heading)] // starboard
+    const p: Vec3 = [dd.position[0] + beam[0] * 400, 20, dd.position[2] + beam[2] * 400]
+    expect(shipClearanceAlt(p, -beam[0], -beam[2], 1_000, 40)).toBeGreaterThan(50)
+    expect(shipClearanceAlt(p, beam[0], beam[2], 1_000, 40)).toBe(-Infinity)
+    const aim: Vec3 = [-beam[0], 0, -beam[2]]
+    applyAimSafety(aim, p, [-beam[0] * 120, 0, -beam[2] * 120], flat(), 10, 7, dd.team)
     expect(pitchOf(aim)).toBeGreaterThan(0.05)
   })
 })
+
+/** Call botInput every tick for `secs` seconds starting at `t0` (aim smoothing settles); returns the last output. */
+function settle(brain: ReturnType<typeof createBotBrain>, bot: PlayerInfo, me: VehicleEntity, vs: VehicleEntity[], t0: number, secs = 1, missiles: Missile[] = []) {
+  let out = snap(botInput(brain, bot, me, vs, t0, missiles, flat()))
+  for (let k = 1; k <= secs * 60; k++) out = snap(botInput(brain, bot, me, vs, t0 + k / 60, missiles, flat()))
+  return out
+}
 
 describe("gunner", () => {
   test("Apache gunner leads and fires the chain gun in range (and in arc)", () => {
     const me = vehicle("apache", 0, [0, 500, 0], [0, 0, 0], [0, 0, -1])
     const enemy = vehicle("apache", 1, [0, 400, -900], [50, 0, 0])
-    const out = snap(botInput(createBotBrain(8, 1), player(0, 1), me, [me, enemy], 10, [], flat()))
+    const brain = createBotBrain(8, 1)
+    const first = snap(botInput(brain, player(0, 1), me, [me, enemy], 10, [], flat()))
     const lead: Vec3 = [0, 0, 0]
     leadDirection(me.flight.position, me.flight.velocity, enemy.flight.position, enemy.flight.velocity, WEAPONS.chaingun30.speed, 0, lead)
-    expect(angle(out.seat.aim!, lead)).toBeLessThan(0.01)
-    expect(out.seat.firePrimary).toBe(true)
+    expect(angle(first.seat.aim!, lead)).toBeGreaterThan(0.05) // turret slews, doesn't snap
+    let fired = false, out = first
+    for (let k = 1; k <= 90; k++) {
+      out = snap(botInput(brain, player(0, 1), me, [me, enemy], 10 + k / 60, [], flat()))
+      fired ||= out.seat.firePrimary
+    }
+    expect(angle(out.seat.aim!, lead)).toBeLessThan(0.03)
+    expect(fired).toBe(true)
     expect(out.flight).toBeUndefined()
     // Target above the turret's elevation limit: track but hold fire.
     enemy.flight.position = [0, 1400, -900]
@@ -284,13 +335,16 @@ describe("gunner", () => {
 
   test("WSO holds the seeker on target and launches only with a full lock", () => {
     const me = vehicle("fighter", 0, [0, 2000, 0], [0, 0, -150])
-    const enemy = vehicle("warthog", 1, [0, 1500, -2500], [100, 0, 0])
+    const enemy = vehicle("warthog", 1, [0, 1700, -1300], [0, 0, 0])
     const brain = createBotBrain(9, 1)
-    const out = snap(botInput(brain, player(0, 1), me, [me, enemy], 10, [], flat()))
+    const out = settle(brain, player(0, 1), me, [me, enemy], 10)
     expect(out.seat.firePrimary).toBe(false)
-    expect(angle(out.seat.aim!, [0, -500, -2500])).toBeLessThan(0.01)
+    expect(angle(out.seat.aim!, [0, -300, -1300])).toBeLessThan(0.025)
     lock(me, 1, 0, enemy)
-    expect(botInput(brain, player(0, 1), me, [me, enemy], 10.1, [], flat()).seat.firePrimary).toBe(true)
+    expect(botInput(brain, player(0, 1), me, [me, enemy], 11.1, [], flat()).seat.firePrimary).toBe(true)
+    // At most one missile per missileInterval.
+    me.weapons[1][0].readyAt = 0
+    expect(botInput(brain, player(0, 1), me, [me, enemy], 13, [], flat()).seat.firePrimary).toBe(false)
   })
 
   test("Blackbird RSO pulses, scanner-locks, fires aim47 and keeps painting until impact", () => {
@@ -304,11 +358,11 @@ describe("gunner", () => {
     expect(out.seat.ability).toBe(true) // warthog within 4 km and unspotted
     near.alive = false
     enemy.spottedUntil = 100
-    out = snap(botInput(brain, rso, me, [me, enemy], 20, [], flat()))
+    out = settle(brain, rso, me, [me, enemy], 20)
     expect(out.seat.firePrimary).toBe(false)
-    expect(angle(out.seat.aim!, [500, -200, -5000])).toBeLessThan(0.01)
+    expect(angle(out.seat.aim!, [500, -200, -5000])).toBeLessThan(0.025)
     lock(me, 1, 0, enemy)
-    out = snap(botInput(brain, rso, me, [me, enemy], 21, [], flat()))
+    out = snap(botInput(brain, rso, me, [me, enemy], 21.1, [], flat()))
     expect(out.seat.firePrimary).toBe(true)
     // Missile in flight: scanner stays on the target even when another enemy is closer.
     const other = vehicle("apache", 1, [-800, 2900, 2_000], [0, 0, 0])
@@ -399,4 +453,109 @@ test("chooseBotVehicle mixes kinds and avoids stacking Blackbirds", () => {
   let bb = 0
   for (let i = 0; i < 400; i++) if (chooseBotVehicle(bot, [], bbs, rng) === "blackbird") bb++
   expect(bb).toBeLessThan(10)
+})
+
+describe("difficulty & fairness", () => {
+  test("skill curves: server default 0.5 = normal, 0.25 = clearly easy", () => {
+    const deg = (r: number) => (r * 180) / Math.PI
+    expect(deg(jitterAmp(0.5))).toBeGreaterThanOrEqual(3)
+    expect(deg(jitterAmp(0.5))).toBeLessThanOrEqual(4)
+    expect(jitterAmp(0.25)).toBeGreaterThan(jitterAmp(0.5) * 1.3)
+    expect(reactionMin(0.5)).toBeCloseTo(0.6) // + up to 0.6 s → 0.6–1.2 s
+    expect(reactionMin(0.25)).toBeGreaterThan(reactionMin(0.5))
+    expect(missileInterval(0.5)).toBeCloseTo(8)
+  })
+
+  test("reacts to an inbound missile only after the reaction delay", () => {
+    const brain = createBotBrain(21, 0.5)
+    const me = vehicle("fighter", 0, [0, 2000, 0], [0, 0, -150])
+    const missile: Missile = { id: 9, weapon: "aim9", owner: "e", vehicle: "x", team: 1, position: [0, 2000, 900], velocity: [0, 0, -500], target: me.id, steered: false, age: 1, ttl: 8 }
+    botInput(brain, player(0, 0), me, [me], 10, [missile], flat())
+    expect(brain.state.threatDelay).toBeGreaterThanOrEqual(0.6)
+    expect(brain.state.threatDelay).toBeLessThanOrEqual(1.2)
+    botInput(brain, player(0, 0), me, [me], 10 + 0.55, [missile], flat())
+    expect(brain.state.phase).not.toBe("defend")
+    botInput(brain, player(0, 0), me, [me], 10 + 1.25, [missile], flat())
+    expect(brain.state.phase).toBe("defend")
+  })
+
+  test("guns fire in short bursts, not a continuous stream", () => {
+    const pos: Vec3 = [0, 2000, 0], vel: Vec3 = [0, 0, -150]
+    const enemy = vehicle("fighter", 1, [0, 2000, -500], [0, 0, -150])
+    const me = vehicle("fighter", 0, pos, vel, [0, 0, -1])
+    const brain = createBotBrain(22, 0.5)
+    let on = 0, toggles = 0, prev = false
+    for (let k = 0; k < 300; k++) {
+      const f = botInput(brain, player(0, 0), me, [me, enemy], 10 + k / 60, [], flat()).seat.firePrimary
+      if (f) on++
+      if (f !== prev) toggles++
+      prev = f
+    }
+    expect(on).toBeGreaterThan(0)
+    expect(on / 300).toBeLessThan(0.6)
+    expect(toggles).toBeGreaterThanOrEqual(4)
+  })
+
+  test("breaks off after taking damage", () => {
+    const enemy = vehicle("fighter", 1, [0, 2000, -500], [0, 0, -150])
+    const me = vehicle("fighter", 0, [0, 2000, 0], [0, 0, -150], [0, 0, -1])
+    let broke = 0
+    for (let seed = 0; seed < 10; seed++) {
+      const brain = createBotBrain(100 + seed, 0.5)
+      me.hp = me.maxHp
+      botInput(brain, player(0, 0), me, [me, enemy], 10, [], flat())
+      me.hp -= 40
+      const out = snap(botInput(brain, player(0, 0), me, [me, enemy], 10 + 1 / 60, [], flat()))
+      if (brain.state.phase === "defend" && !out.seat.firePrimary && !out.seat.fireSecondary) broke++
+    }
+    expect(broke).toBeGreaterThanOrEqual(5)
+  })
+
+  test("at most two bot crews hunt the same target", () => {
+    const human = vehicle("fighter", 1, [0, 2000, -1000], [0, 0, -150])
+    const other = vehicle("fighter", 1, [2500, 2000, -1000], [0, 0, -150])
+    const bots = [0, 1, 2].map(i => vehicle("fighter", 0, [i * 200 - 200, 2000, 0], [0, 0, -150]))
+    const all = [...bots, human, other]
+    const brains = bots.map((_, i) => createBotBrain(30 + i, 0.5))
+    bots.forEach((b, i) => botInput(brains[i], player(0, 0, `p${i}`), b, all, 10, [], flat()))
+    const targets = brains.map(b => b.state.targetId)
+    expect(targets.filter(t => t === human.id).length).toBeLessThanOrEqual(MAX_BOTS_PER_TARGET)
+    expect(targets).toContain(other.id)
+  })
+
+  test("headless dogfight: a normal bot needs ≥ 15 s on average to kill a weaving fighter", () => {
+    const run = (seed: number, skill = 0.5, weave = true) => {
+      const bot = vehicle("fighter", 0, [0, 1600, 2500], [0, 0, -135])
+      const prey = vehicle("fighter", 1, [0, 1600, -800], [0, 0, 135], [0, 0, 1])
+      const all = [bot, prey]
+      const pilot = createBotBrain(seed, skill), wso = createBotBrain(seed + 1000, skill)
+      const cs = createCombatState(), events: GameEvent[] = []
+      for (let t = 1; t <= 40 * 60; t++) {
+        const now = t / 60
+        const p = botInput(pilot, player(0, 0, "bp"), bot, all, now, cs.missiles, worldQuery)
+        const pSeat = { ...p.seat, aim: p.seat.aim && [...p.seat.aim] as Vec3 }
+        const pFlight = { ...p.flight!, aim: p.flight!.aim && [...p.flight!.aim] as Vec3 }
+        const g = botInput(wso, player(0, 1, "bg"), bot, all, now, cs.missiles, worldQuery)
+        const gSeat = { ...g.seat, aim: g.seat.aim && [...g.seat.aim] as Vec3 }
+        const pp = prey.flight.position
+        let yaw = Math.atan2(-prey.flight.velocity[0], -prey.flight.velocity[2])
+        yaw = Math.hypot(pp[0], pp[2]) > 3500 ? Math.atan2(pp[0], pp[2]) : weave ? yaw + 0.3 * Math.sin(now * 0.7) : yaw
+        stepFlight(bot.flight, pFlight, TICK_DT, worldQuery)
+        stepFlight(prey.flight, { aim: [-Math.sin(yaw), (1600 - pp[1]) / 4000, -Math.cos(yaw)], throttle: 0, roll: 0, yaw: 0, pitch: 0, boost: false, brake: false }, TICK_DT, worldQuery)
+        const inbound = weave && cs.missiles.some(m => m.target === prey.id && Math.hypot(m.position[0] - pp[0], m.position[1] - pp[1], m.position[2] - pp[2]) < 1000)
+        bot.aim = [pSeat.aim, gSeat.aim]
+        applySeatInput(cs, bot, 0, pSeat, all, now, events)
+        applySeatInput(cs, bot, 1, gSeat, all, now, events)
+        applySeatInput(cs, prey, 0, { aim: null, firePrimary: false, fireSecondary: false, flares: inbound, ability: false }, all, now, events)
+        stepCombat(cs, all, TICK_DT, now, events)
+        if (!prey.alive || prey.flight.crashed) return now
+      }
+      return 40
+    }
+    const times = [1, 2, 3, 4].map(s => run(s))
+    const mean = times.reduce((a, b) => a + b, 0) / times.length
+    expect(mean).toBeGreaterThanOrEqual(15)
+    // Sanity: the harness can produce kills — a hard bot downs a straight, non-flaring target.
+    expect(Math.min(...[1, 2].map(s => run(s, 0.9, false)))).toBeLessThan(40)
+  })
 })

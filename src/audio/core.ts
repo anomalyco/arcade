@@ -137,7 +137,11 @@ export class Core {
       if (distanceGain(d, ref, rolloff) * (opts.loudness ?? 1) < 0.002) return null
       if (opts.maxDelay) delay = Math.min(d / SPEED_OF_SOUND, opts.maxDelay)
     }
-    const s = new Shot(this, category, at, opts.bus ?? this.sfxBus, ref, rolloff, opts.hrtf ?? true, this.ctx.currentTime + 0.005 + delay)
+    const bus = opts.bus ?? this.sfxBus
+    const s = new Shot(this, category, at, bus, ref, rolloff, opts.hrtf ?? true, this.ctx.currentTime + 0.005 + delay)
+    // Repeated one-shots never sound identical: a per-shot pitch offset (UI stays in tune).
+    s.vary = opts.vary ?? (bus === this.uiBus ? 0 : 0.05)
+    s.cents = 1200 * Math.log2(1 + (Math.random() * 2 - 1) * s.vary)
     this.categoryCount.set(category, count + 1)
     this.shots.push(s)
     return s
@@ -188,6 +192,8 @@ export interface ShotOptions {
   /** Seconds of maximum speed-of-sound delay (0 = none). */
   maxDelay?: number
   bus?: AudioNode
+  /** Random pitch variation per shot (fraction, default 0.05; 0 on the UI bus). */
+  vary?: number
 }
 
 /** Distance gain → air-absorption lowpass → panner chain. `at === null` = centered / non-spatial. */
@@ -291,6 +297,9 @@ export class Shot {
   readonly out: GainNode
   readonly spatial: Spatial
   end: number
+  vary = 0
+  /** Detune applied to every oscillator in this shot (noise rates get the same ratio). */
+  cents = 0
   private readonly nodes: AudioNode[] = []
 
   constructor(private core: Core, readonly category: string, at: Vec3 | null, dest: AudioNode, ref: number, rolloff: number, hrtf: boolean, readonly t: number) {
@@ -314,6 +323,7 @@ export class Shot {
     const o = this.core.ctx.createOscillator()
     o.type = type
     o.frequency.value = freq
+    o.detune.value = this.cents
     o.start(start)
     o.stop(stop)
     return this.track(o, stop)
@@ -324,7 +334,7 @@ export class Shot {
     const s = this.core.ctx.createBufferSource()
     s.buffer = buffer
     s.loop = true
-    s.playbackRate.value = rate
+    s.playbackRate.value = rate * Math.pow(2, this.cents / 1200)
     s.start(start, Math.random() * buffer.duration)
     s.stop(stop)
     return this.track(s, stop)
@@ -357,6 +367,8 @@ export class Shot {
     const g = this.gain(0)
     const p = g.gain
     p.setValueAtTime(0.0001, start)
+    // ≥ 3 ms attack: punchy but never a click.
+    attack = Math.max(0.003, attack)
     p.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + attack)
     p.exponentialRampToValueAtTime(0.0001, start + attack + decay)
     p.setValueAtTime(0, start + attack + decay + 0.01)

@@ -81,8 +81,8 @@ function palm(): BufferGeometry {
   return merge(parts)
 }
 
-/** Wide jungle broadleaf: short trunk under a broad, lumpy, layered canopy (5 blobs). */
-function round(): BufferGeometry {
+/** Wide jungle broadleaf: short trunk under a broad, lumpy, layered canopy (5 blobs). `detail` 0 = distant LOD. */
+function round(detail = 1): BufferGeometry {
   const parts: BufferGeometry[] = []
   const trunk = new CylinderGeometry(0.7, 1.1, 8, 5, 1, true)
   trunk.translate(0, 4, 0)
@@ -91,7 +91,7 @@ function round(): BufferGeometry {
     [0, 11.5, 0, 6.2, 1.1], [4.6, 9.6, 1.5, 4.4, 2.7], [-4.2, 10, -1.8, 4.6, 4.1], [1.2, 9.2, -4.4, 4.0, 5.3], [-1.5, 9.4, 4.2, 4.1, 6.4],
   ]
   for (const [x, y, z, r, sd] of blobs) {
-    const b = blob(r, 1, sd, 0.62)
+    const b = blob(r, detail, sd, 0.62)
     b.translate(x, y, z)
     parts.push(canopy(b, PALETTE.treeMid, 15, 6))
   }
@@ -99,7 +99,7 @@ function round(): BufferGeometry {
 }
 
 /** Tall emergent rainforest tree: thin trunk with two stacked, offset canopy masses. */
-function tall(): BufferGeometry {
+function tall(detail = 1): BufferGeometry {
   const parts: BufferGeometry[] = []
   const trunk = new CylinderGeometry(0.5, 0.9, 13, 5, 1, true)
   trunk.translate(0, 6.5, 0)
@@ -108,7 +108,7 @@ function tall(): BufferGeometry {
     [0, 16, 0, 5.4, 7.7], [3.2, 13.6, 1.2, 3.8, 8.3], [-2.8, 14.2, -1.4, 3.6, 9.1], [0.8, 19.2, -0.6, 3.6, 9.9],
   ]
   for (const [x, y, z, r, sd] of masses) {
-    const b = blob(r, 1, sd, 0.7)
+    const b = blob(r, detail, sd, 0.7)
     b.translate(x, y, z)
     parts.push(canopy(b, PALETTE.treeDeep, 22, 11))
   }
@@ -117,6 +117,9 @@ function tall(): BufferGeometry {
 
 export interface TreeResources {
   geometries: BufferGeometry[]
+  /** Low-poly versions (≈¼ the triangles) for clusters beyond `lodDistance`. */
+  lodGeometries: BufferGeometry[]
+  lodDistance: number
   material: MeshStandardNodeMaterial
   /** Distance fade window (start, end) in metres. */
   fade: { value: [number, number] }
@@ -125,13 +128,14 @@ export interface TreeResources {
 
 export function createTreeResources(): TreeResources {
   const geometries = [palm(), round(), tall()]
+  const lodGeometries = [geometries[0], round(0), tall(0)]
   const fade = { value: [2000, 2500] as [number, number] }
   const material = new MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.48, metalness: 0 })
   material.name = "World · trees"
   return {
-    geometries, material, fade,
+    geometries, lodGeometries, lodDistance: 450, material, fade,
     dispose() {
-      for (const g of geometries) g.dispose()
+      for (const g of new Set([...geometries, ...lodGeometries])) g.dispose()
       material.dispose()
     },
   }

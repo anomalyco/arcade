@@ -1,50 +1,46 @@
-// STORMFRONT ambience: rain, gusting wind, rolling thunder. Everything here is a handful of looping
-// buffer sources and filters built once; per-frame work is ~10 AudioParam targets at ≤ 20 Hz.
-import { airCutoff, clamp, type Core, rand, SPEED_OF_SOUND } from "./core"
+// STORMFRONT ambience: a barely-audible deep storm rumble, gentle lowpassed wind, rolling thunder.
+// No hiss anywhere: every layer is brown noise behind cascaded lowpasses (24 dB/oct), so the bed's
+// energy sits below ~300 Hz. Built once; per-frame work is a few AudioParam targets at ≤ 20 Hz.
+import { clamp, type Core, rand, SPEED_OF_SOUND } from "./core"
 
 export interface StormSettings {
-  /** Rain intensity 0..1 (default 0.75). 0 silences rain and background thunder. */
+  /** Storm intensity 0..1 (default 0.75): scales the rumble bed and background thunder. */
   rain?: number
-  /** Listener is inside a cockpit: rain becomes canopy patter and the world is muffled. */
+  /** Listener is inside a cockpit: the outside world is muffled. */
   cockpit?: boolean
   /** Master switch for the whole ambience bed (default true). */
   enabled?: boolean
 }
 
-interface Layer { filter: BiquadFilterNode; gain: GainNode }
+interface Layer { a: BiquadFilterNode; b: BiquadFilterNode; gain: GainNode }
 
 export class Storm {
   private readonly sources: AudioBufferSourceNode[] = []
   private readonly nodes: AudioNode[] = []
-  private readonly hiss: Layer
-  private readonly body: Layer
-  private readonly sea: Layer
-  private readonly patter: Layer
+  private readonly rumble: Layer
   private readonly wind: Layer
-  private readonly howl: Layer
   private rain = 0.75
-  private cockpit = false
   private enabled = true
-  private gust = 0.4
-  private gustTarget = 0.4
+  private cockpit = false
+  private gust = 0.5
+  private gustTarget = 0.5
   private nextGustAt = 0
+  private swell = 0.7
+  private swellTarget = 0.7
+  private nextSwellAt = 0
   private nextThunderAt: number
   private lastUpdate = 0
 
   constructor(private core: Core) {
-    const bank = core.bank
-    // Each layer is two decorrelated reads of the same buffer → wide stereo without stereo buffers.
-    this.hiss = this.layer(bank.white, 1, 0.93, "highpass", 2800, 0.5)
-    this.body = this.layer(bank.pink, 1, 0.96, "bandpass", 1000, 0.4)
-    this.sea = this.layer(bank.brown, 1, 0.9, "lowpass", 350, 0.6)
-    this.patter = this.layer(bank.crackle, 1.5, 1.7, "bandpass", 3200, 0.7)
-    this.wind = this.layer(bank.pink, 0.8, 0.83, "bandpass", 400, 0.8)
-    this.howl = this.layer(bank.pink, 0.7, 0.72, "bandpass", 500, 6)
-    this.nextThunderAt = core.now + rand(6, 15)
+    this.rumble = this.layer(0.9, 0.86, 140)
+    this.wind = this.layer(1, 0.95, 200)
+    this.nextThunderAt = core.now + rand(8, 20)
   }
 
-  private layer(buffer: AudioBuffer, rateL: number, rateR: number, type: BiquadFilterType, freq: number, q: number): Layer {
+  /** Two decorrelated reads of the brown-noise buffer (wide stereo) → two cascaded lowpasses → gain. */
+  private layer(rateL: number, rateR: number, freq: number): Layer {
     const ctx = this.core.ctx
+    const buffer = this.core.bank.brown
     const merger = ctx.createChannelMerger(2)
     for (const [ch, rate] of [[0, rateL], [1, rateR]] as const) {
       const src = ctx.createBufferSource()
@@ -55,17 +51,22 @@ export class Storm {
       src.start(0, Math.random() * buffer.duration)
       this.sources.push(src)
     }
-    const filter = ctx.createBiquadFilter()
-    filter.type = type
-    filter.frequency.value = freq
-    filter.Q.value = q
+    const lp = (): BiquadFilterNode => {
+      const f = ctx.createBiquadFilter()
+      f.type = "lowpass"
+      f.frequency.value = freq
+      f.Q.value = 0.5
+      return f
+    }
+    const a = lp(), b = lp()
     const gain = ctx.createGain()
     gain.gain.value = 0
-    merger.connect(filter)
-    filter.connect(gain)
+    merger.connect(a)
+    a.connect(b)
+    b.connect(gain)
     gain.connect(this.core.ambienceBus)
-    this.nodes.push(merger, filter, gain)
-    return { filter, gain }
+    this.nodes.push(merger, a, b, gain)
+    return { a, b, gain }
   }
 
   configure(s: StormSettings): void {
@@ -78,7 +79,7 @@ export class Storm {
     }
   }
 
-  /** `speed` = own airspeed (0 when not flying). Altitude comes from the listener. */
+  /** `speed` = own airspeed (0 when not flying). */
   update(speed: number, silent: boolean): void {
     const core = this.core
     const now = core.now
@@ -86,37 +87,25 @@ export class Storm {
     const dt = Math.min(0.5, now - this.lastUpdate)
     this.lastUpdate = now
     const on = this.enabled && !silent ? 1 : 0
-    const rain = this.rain * on
-    const alt = Math.max(0, core.listener[1])
-    // Rain hitting the sea dominates near the surface; up high only the rain around you remains.
-    const sea = 1 / (1 + Math.max(0, alt - 5) / 120)
-    const s = clamp((speed - 20) / 220, 0, 1)
+    const s = clamp((speed - 30) / 230, 0, 1)
 
-    if (now >= this.nextGustAt) {
-      this.gustTarget = Math.pow(rand(0.1, 1), 1.4)
-      this.nextGustAt = now + rand(1.5, 5)
-    }
-    this.gust += (this.gustTarget - this.gust) * Math.min(1, dt * 0.9)
-    const g = this.gust
-    const cp = this.cockpit
-    const set = (p: AudioParam, v: number, tc = 0.15) => p.setTargetAtTime(v, now, tc)
+    // Two slow random walks: the storm swell (8–16 s) and wind gusts (3–8 s).
+    if (now >= this.nextSwellAt) { this.swellTarget = rand(0.45, 1); this.nextSwellAt = now + rand(8, 16) }
+    if (now >= this.nextGustAt) { this.gustTarget = rand(0.3, 1); this.nextGustAt = now + rand(3, 8) }
+    this.swell += (this.swellTarget - this.swell) * Math.min(1, dt * 0.25)
+    this.gust += (this.gustTarget - this.gust) * Math.min(1, dt * 0.4)
+    const set = (p: AudioParam, v: number) => p.setTargetAtTime(v, now, 0.3)
 
-    set(this.hiss.gain.gain, 0.05 * rain * (cp ? 0.4 : 1) * (0.85 + 0.3 * g))
-    set(this.body.gain.gain, 0.055 * rain * (0.6 + 0.4 * sea) * (cp ? 0.6 : 1))
-    set(this.sea.gain.gain, 0.11 * rain * sea)
-    // Patter: faint droplets outside, loud on the canopy (and harder with speed).
-    set(this.patter.gain.gain, rain * (cp ? 0.12 * (0.7 + 0.5 * s) : 0.02))
-    set(this.patter.filter.frequency, cp ? 2400 : 3600)
-    // Storm wind: always some gusting, airspeed adds a rushing layer that also gusts.
-    set(this.wind.gain.gain, on * (0.035 * (0.35 + 0.65 * g) + 0.22 * Math.pow(s, 1.5) * (0.75 + 0.25 * g)))
-    set(this.wind.filter.frequency, 330 + speed * 8 + g * 160)
-    set(this.howl.gain.gain, on * 0.02 * g * g * (0.6 + s))
-    set(this.howl.filter.frequency, 420 + 320 * g + speed * 2, 0.4)
+    set(this.rumble.gain.gain, on * 0.09 * this.rain * this.swell)
+    const wf = 180 + 1.3 * speed + 40 * this.gust
+    set(this.wind.a.frequency, wf)
+    set(this.wind.b.frequency, wf)
+    set(this.wind.gain.gain, on * (0.02 * this.rain * this.gust + 0.16 * Math.pow(s, 1.6) * (0.85 + 0.15 * this.gust)))
 
-    if (rain > 0.2 && now >= this.nextThunderAt) {
-      this.nextThunderAt = now + rand(22, 55)
-      // Unseen far-off storm cells: rumble only, no crack.
-      thunder(core, rand(15, 35), rand(0.25, 0.45) * this.rain)
+    if (on && this.rain > 0.2 && now >= this.nextThunderAt) {
+      this.nextThunderAt = now + rand(25, 60)
+      // Unseen far-off storm cells: a soft low roll.
+      thunder(core, rand(15, 30), rand(0.25, 0.45) * this.rain)
     }
   }
 
@@ -131,8 +120,9 @@ export class Storm {
 }
 
 /**
- * Thunder. `delay` = seconds until the sound arrives (lightning distance / 343); it also sets the
- * timbre: close strikes get a ripping crack before the boom, distant ones are a low rolling rumble.
+ * Thunder. `delay` = seconds until the sound arrives (lightning distance / 343). Deep and rolling:
+ * close strikes open with a lowpassed boom, every strike is a long low rumble with random rolls.
+ * Nothing above a few hundred Hz.
  */
 export function thunder(core: Core, delay: number, intensity: number): void {
   if (!(intensity > 0) || !(delay >= 0)) return
@@ -144,45 +134,45 @@ export function thunder(core: Core, delay: number, intensity: number): void {
   const k = clamp(intensity, 0, 1.5)
   const level = (0.75 * k) / (1 + d / 2500)
   const near = clamp(1 - d / 3000, 0, 1)
-  const len = 2.5 + 3 * Math.min(1, d / 4000) + rand(0, 1.5)
-  const pan = s.panner(rand(-0.6, 0.6))
+  const len = 3 + 3 * Math.min(1, d / 4000) + rand(0, 2)
+  const pan = s.panner(rand(-0.5, 0.5))
 
-  // Rolling envelope: an attack (slow when far) then several random rolls decaying away.
-  const n = 96
+  // Rolling envelope: a soft attack (slower when far), then several random rolls decaying away.
+  const n = 128
   const curve = new Float32Array(n)
-  const attack = 0.02 + 0.3 * Math.min(1, d / 5000)
+  const attack = 0.08 + 0.4 * Math.min(1, d / 5000)
   const rolls: [number, number, number][] = []
   const count = 3 + Math.floor(rand(0, 4))
-  for (let i = 0; i < count; i++) rolls.push([rand(0.1, 0.8) * len, rand(0.15, 0.5), rand(0.4, 1)])
+  for (let i = 0; i < count; i++) rolls.push([rand(0.1, 0.75) * len, rand(0.3, 0.8), rand(0.4, 1)])
   for (let i = 0; i < n; i++) {
     const x = (i / (n - 1)) * len
-    let v = Math.min(1, x / attack) * Math.exp(-x / (len * 0.35))
+    const rise = Math.min(1, x / attack)
+    let v = rise * rise * Math.exp(-x / (len * 0.35))
     for (const [at, w, a] of rolls) v += a * 0.7 * Math.exp(-((x - at) ** 2) / (2 * w * w)) * Math.exp(-x / len)
-    curve[i] = v * level
+    // Fade the last 15% so the tail never cuts off.
+    curve[i] = v * level * Math.min(1, (1 - i / (n - 1)) / 0.15)
   }
-  curve[n - 1] = 0
 
-  const rumble = s.noise(core.bank.brown, t, t + len + 0.1, rand(0.8, 1))
-  const lp = s.filter("lowpass", clamp(airCutoff(d) * 0.25, 90, 1500), 0.7)
+  const cutoff = clamp(300 - d / 40, 90, 300)
+  const rumble = s.noise(core.bank.brown, t, t + len + 0.1, rand(0.75, 0.95))
+  const lpA = s.filter("lowpass", cutoff, 0.5)
+  const lpB = s.filter("lowpass", cutoff, 0.5)
   const env = s.gain(0)
   env.gain.setValueCurveAtTime(curve, t, len)
-  rumble.connect(lp).connect(env).connect(pan)
+  rumble.connect(lpA).connect(lpB).connect(env).connect(pan)
 
-  const sub = s.osc("sine", 38, t, t + len)
+  const sub = s.osc("sine", 40, t, t + len)
   sub.frequency.setValueAtTime(40, t)
   sub.frequency.exponentialRampToValueAtTime(25, t + len)
   const subEnv = s.gain(0)
-  subEnv.gain.setValueCurveAtTime(curve.map((v) => v * 0.5), t, len)
+  subEnv.gain.setValueCurveAtTime(curve.map((v) => v * 0.45), t, len)
   sub.connect(subEnv).connect(s.out)
 
   if (near > 0) {
-    // Close strike: a sharp crack and a tearing crackle across the sky.
-    const c = s.noise(core.bank.white, t, t + 0.3)
-    const hp = s.filter("highpass", 1500)
-    c.connect(hp).connect(s.env(t, 0.003, 0.7 * near * k, 0.25, false)).connect(pan)
-    const tear = s.noise(core.bank.crackle, t + 0.02, t + 1, rand(0.8, 1.2))
-    const bp = s.filter("bandpass", 1800, 0.7)
-    tear.connect(bp).connect(s.env(t + 0.02, 0.05, 0.45 * near * k, 0.8, false)).connect(pan)
+    // Close strike: a deep, lowpassed boom instead of a bright crack.
+    const c = s.noise(core.bank.brown, t, t + 1)
+    const lp = s.filter("lowpass", 550, 0.6)
+    c.connect(lp).connect(s.env(t, 0.012, 0.9 * near * level, 0.7, false)).connect(pan)
   }
-  s.send(0.35, pan)
+  s.send(0.3, pan)
 }

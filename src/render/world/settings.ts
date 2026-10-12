@@ -23,6 +23,8 @@ export interface WorldQualitySettings {
   oceanWaves: number
   /** Extra per-pixel chop waves (normals only). */
   oceanChop: number
+  /** Per-pixel ocean noise detail: 0 = cheap, 1 = reduced far-field warp, 2 = full. */
+  oceanDetail: number
   /** Rain streaks / sea-spray particles around the camera. */
   rain: number
   spray: number
@@ -32,16 +34,16 @@ export interface WorldQualitySettings {
 
 export const WORLD_QUALITY: Record<Quality, WorldQualitySettings> = {
   low: {
-    far: 9_000, fogNear: 150, fogFar: 5_000, viewRadius: 9_000, lod: [800, 2_600, 5_500], treeRadius: 1_200, treesPerCluster: 2_500,
-    clouds: 0, budgetMs: 1.5, inflight: 2, oceanSegments: 96, oceanRings: 64, oceanWaves: 4, oceanChop: 2, rain: 2_500, spray: 0, cloudLayers: 0,
+    far: 8_000, fogNear: 150, fogFar: 5_000, viewRadius: 8_000, lod: [800, 2_600, 5_500], treeRadius: 1_200, treesPerCluster: 2_500,
+    clouds: 0, budgetMs: 1.5, inflight: 2, oceanSegments: 96, oceanRings: 64, oceanWaves: 4, oceanChop: 2, oceanDetail: 0, rain: 2_500, spray: 0, cloudLayers: 0,
   },
   balanced: {
-    far: 12_000, fogNear: 150, fogFar: 5_500, viewRadius: 12_000, lod: [1_300, 3_500, 7_000], treeRadius: 1_700, treesPerCluster: 5_000,
-    clouds: 0, budgetMs: 2, inflight: 3, oceanSegments: 192, oceanRings: 120, oceanWaves: 7, oceanChop: 4, rain: 7_000, spray: 1_200, cloudLayers: 1,
+    far: 10_000, fogNear: 150, fogFar: 5_500, viewRadius: 10_000, lod: [1_300, 3_500, 7_000], treeRadius: 1_700, treesPerCluster: 5_000,
+    clouds: 0, budgetMs: 2, inflight: 3, oceanSegments: 192, oceanRings: 120, oceanWaves: 7, oceanChop: 4, oceanDetail: 1, rain: 7_000, spray: 1_200, cloudLayers: 1,
   },
   high: {
-    far: 15_000, fogNear: 150, fogFar: 6_000, viewRadius: 15_000, lod: [2_000, 4_500, 9_000], treeRadius: 2_400, treesPerCluster: 8_000,
-    clouds: 0, budgetMs: 2, inflight: 4, oceanSegments: 288, oceanRings: 180, oceanWaves: 9, oceanChop: 6, rain: 14_000, spray: 2_500, cloudLayers: 2,
+    far: 12_000, fogNear: 150, fogFar: 6_000, viewRadius: 12_000, lod: [2_000, 4_500, 9_000], treeRadius: 2_400, treesPerCluster: 8_000,
+    clouds: 0, budgetMs: 2, inflight: 4, oceanSegments: 288, oceanRings: 180, oceanWaves: 9, oceanChop: 6, oceanDetail: 2, rain: 14_000, spray: 2_500, cloudLayers: 2,
   },
 }
 

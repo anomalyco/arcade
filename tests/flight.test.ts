@@ -134,33 +134,15 @@ describe("jets: direct steering", () => {
       expect(Math.abs(r.finalRoll)).toBeLessThan(5)
     })
 
-    test(`${kind}: yaw (mouse X) makes a level coordinated turn with auto-bank, then rolls out`, () => {
-      const s = airStart(kind)
-      settleLevel(s, 5)
-      const alt0 = s.position[1]
-      let maxBank = 0, t90 = -1
-      for (let i = 0; i < 60 * 12 && t90 < 0; i++) {
-        stepFlight(s, input({ yaw: 1, throttle: 1 }), TICK_DT, world)
-        maxBank = Math.max(maxBank, flightReadout(s).roll)
-        if (angDiff(heading(s), 90) > -3) t90 = (i + 1) * TICK_DT
-      }
-      expect(t90).toBeGreaterThan(0)
-      expect(t90).toBeLessThan(kind === "blackbird" ? 9 : 4)
-      expect(maxBank).toBeGreaterThan(40) // banks right into a right turn
-      expect(Math.abs(s.position[1] - alt0)).toBeLessThan(40) // level
-      run(s, input({ throttle: 1 }), 4)
-      expect(Math.abs(flightReadout(s).roll)).toBeLessThan(5) // rolls out when released
-    })
-
-    test(`${kind}: roll (A/D) overrides auto-bank; inverted is held, moderate bank eases level`, () => {
-      const inv = airStart(kind)
-      inv.orientation = quatFromYawPitchRoll(0, 0, Math.PI)
-      run(inv, input({ throttle: 1 }), 4)
-      expect(Math.abs(flightReadout(inv).roll)).toBeGreaterThan(170)
-      const mid = airStart(kind)
-      mid.orientation = quatFromYawPitchRoll(0, 0, 30 * Math.PI / 180)
-      run(mid, input({ throttle: 1 }), 8)
-      expect(Math.abs(flightReadout(mid).roll)).toBeLessThan(3)
+    test(`${kind}: manual flying has no hidden assists (bank held, rudder doesn't roll)`, () => {
+      const banked = airStart(kind)
+      banked.orientation = quatFromYawPitchRoll(0, 0, 30 * Math.PI / 180)
+      run(banked, input({ throttle: 1 }), 4)
+      expect(Math.abs(flightReadout(banked).roll - 30)).toBeLessThan(3)
+      const rud = airStart(kind)
+      run(rud, input({ yaw: 1, throttle: 1 }), 2)
+      expect(Math.abs(flightReadout(rud).roll)).toBeLessThan(3)
+      expect(Math.abs(angDiff(heading(rud), 0))).toBeGreaterThan(5)
     })
 
     test(`${kind}: held pitch-up loops`, () => {
@@ -191,11 +173,11 @@ describe("jets: direct steering", () => {
       expect(s.crashed).toBeNull()
     })
 
-    test(`${kind}: Q/E roll overrides auto-bank (barrel roll while turning)`, () => {
+    test(`${kind}: Q/E roll overrides the mouse-aim instructor (barrel roll while aiming)`, () => {
       const s = airStart(kind, 2000)
       let rolled = 0
       for (let i = 0; i < 60 * 6 && rolled < 2 * Math.PI; i++) {
-        stepFlight(s, input({ yaw: 1, roll: 1, throttle: 1 }), TICK_DT, world)
+        stepFlight(s, input({ aim: directionFromHeading(Math.PI / 2, 0), roll: 1, throttle: 1 }), TICK_DT, world)
         rolled -= s.angularVelocity[2] * TICK_DT
       }
       expect(rolled).toBeGreaterThanOrEqual(2 * Math.PI)
@@ -657,5 +639,125 @@ describe("moving carrier deck", () => {
     expect(s.crashed).toBeNull()
     expect(s.onGround).toBe(false)
     expect(s.position[1]).toBeGreaterThan(DECK + 10)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Energy dogfighting: corner speed, sustained turn, bleed, airbrake (printed as a table).
+// ---------------------------------------------------------------------------------------------
+const CORNER: Record<string, number> = { fighter: 110, warthog: 75, blackbird: 170 }
+
+/** Instantaneous pull at a given speed (level start, full throttle, full manual pitch). */
+function pullAt(kind: VehicleKind, v: number) {
+  const s = airStart(kind, 3000)
+  s.velocity = [0, 0, -v]
+  s.throttle = 1
+  let ang = 0
+  const n = Math.round(0.6 / TICK_DT)
+  for (let i = 0; i < n; i++) {
+    stepFlight(s, input({ pitch: 1, throttle: 1 }), TICK_DT, world)
+    if (i >= Math.round(0.25 / TICK_DT)) ang += s.angularVelocity[0] * TICK_DT
+  }
+  return { rateDeg: (ang / (0.35)) * 180 / Math.PI, dvdt: (flightReadout(s).speed - v) / 0.6 }
+}
+
+describe("energy dogfighting", () => {
+  for (const kind of JETS) {
+    test(`${kind}: turn rate peaks at corner speed (lift-limited below, G-limited above)`, () => {
+      const c = CORNER[kind]
+      const slow = pullAt(kind, c * 0.6).rateDeg, at = pullAt(kind, c).rateDeg, fast = pullAt(kind, c * 1.6).rateDeg
+      expect(at).toBeGreaterThan(slow * 1.2)
+      expect(at).toBeGreaterThan(fast * 1.2)
+    })
+
+    test(`${kind}: hard pulls bleed energy, boost restores it`, () => {
+      const s = airStart(kind, 3000)
+      settleLevel(s, 30)
+      const v0 = flightReadout(s).speed
+      run(s, input({ pitch: 1, roll: 0, throttle: 1 }), 3) // loop-ish max pull
+      run(s, st => input({ aim: directionFromHeading(heading(st) * Math.PI / 180 + Math.PI / 2, 0), throttle: 1 }), 5)
+      const bled = flightReadout(s).speed
+      expect(bled).toBeLessThan(v0 * 0.85)
+      run(s, st => input({ aim: directionFromHeading(heading(st) * Math.PI / 180, 0), throttle: 1, boost: true }), 15)
+      expect(flightReadout(s).speed).toBeGreaterThan(v0)
+    })
+
+    test(`${kind}: climbing trades speed for altitude, diving gains it`, () => {
+      const up = airStart(kind, 2000); settleLevel(up, 10)
+      const v0 = flightReadout(up).speed
+      run(up, input({ aim: directionFromHeading(0, 0.8), throttle: 1 }), 6)
+      expect(flightReadout(up).speed).toBeLessThan(v0 * 0.9)
+      const dn = airStart(kind, 3500); settleLevel(dn, 10)
+      run(dn, input({ aim: directionFromHeading(0, -0.6), throttle: 1 }), 6)
+      expect(flightReadout(dn).speed).toBeGreaterThan(v0 * 1.05)
+    })
+
+    test(`${kind}: mouse-aim 180° turn converges without oscillation`, () => {
+      const r = turnTo(kind, 179, 25)
+      expect(r.time).toBeGreaterThan(0)
+      expect(r.time).toBeLessThan(kind === "blackbird" ? 16 : 7)
+      expect(r.overshoot).toBeLessThan(10)
+      expect(r.finalErr).toBeLessThan(3)
+    })
+  }
+
+  test("airbrake + pull reverses tighter from high speed (fighter)", () => {
+    const turned = (brake: boolean) => {
+      const s = airStart("fighter", 3000)
+      settleLevel(s, 20, true) // boost speed, well above corner
+      const h0 = heading(s)
+      let total = 0, prev = h0
+      run(s, st => { const h = heading(st); total += angDiff(h, prev); prev = h; return input({ aim: directionFromHeading((h + 90) * Math.PI / 180, 0), throttle: 1, brake }) }, 4)
+      return total
+    }
+    expect(turned(true)).toBeGreaterThan(turned(false) + 10)
+  })
+
+  test("corner / turn-rate table", () => {
+    const rows: Record<string, unknown>[] = []
+    for (const kind of JETS) {
+      const c = CORNER[kind]
+      const row: Record<string, unknown> = { kind, "corner m/s": c }
+      for (const f of [0.6, 0.8, 1, 1.3, 1.7]) {
+        const r = pullAt(kind, c * f)
+        row[`${f}× corner: °/s (dv/dt)`] = `${r.rateDeg.toFixed(0)} (${r.dvdt.toFixed(0)}) @${Math.round(c * f)}`
+      }
+      const st = sustainedTurn(kind)
+      row["sustained °/s @ m/s"] = `${st.rateDeg.toFixed(0)} @ ${st.speed.toFixed(0)}`
+      rows.push(row)
+    }
+    console.table(rows)
+  })
+})
+
+describe("helicopter: mouse-aim", () => {
+  const aimHeli = () => createFlightState("apache", { position: [0, 500, 0], yaw: 0, onGround: false })
+  test("aim at the horizon hovers in place", () => {
+    const s = aimHeli()
+    run(s, input({ aim: directionFromHeading(0, 0) }), 10)
+    expect(flightReadout(s).speed).toBeLessThan(1)
+    expect(Math.abs(s.position[1] - 500)).toBeLessThan(3)
+  })
+  test("look down → flies forward; look up → slows and backs up; turns to the aim heading", () => {
+    const s = aimHeli()
+    run(s, input({ aim: directionFromHeading(0, -0.4) }), 8)
+    expect(fwdSpeed(s)).toBeGreaterThan(30)
+    run(s, input({ aim: directionFromHeading(0, 0.3) }), 12)
+    expect(fwdSpeed(s)).toBeLessThan(-3)
+    run(s, input({ aim: directionFromHeading(Math.PI / 2, 0) }), 3)
+    expect(Math.abs(angDiff(heading(s), 90))).toBeLessThan(5)
+  })
+  test("A/D (partial roll) strafes; Q/E (full roll) flips; release rights it", () => {
+    const s = aimHeli()
+    run(s, input({ aim: directionFromHeading(0, 0), roll: 0.45 }), 3)
+    expect(flightReadout(s).roll).toBeGreaterThan(15)
+    expect(s.velocity[0]).toBeGreaterThan(3)
+    const f = createFlightState("apache", { position: [0, 1500, 0], yaw: 0, onGround: false })
+    let minUp = 1
+    for (let i = 0; i < 60 * 2; i++) { stepFlight(f, input({ aim: directionFromHeading(0, 0), roll: 1 }), TICK_DT, world); minUp = Math.min(minUp, up(f.orientation)[1]) }
+    expect(minUp).toBeLessThan(-0.7)
+    run(f, input({ aim: directionFromHeading(0, 0) }), 4)
+    expect(up(f.orientation)[1]).toBeGreaterThan(0.9)
+    expect(f.crashed).toBeNull()
   })
 })

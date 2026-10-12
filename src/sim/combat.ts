@@ -37,7 +37,7 @@ export const SPOTTED_DAMAGE_MULT = 1.2
 export const ARMOR: Record<VehicleKind, number> = { fighter: 1, apache: 1, warthog: 0.8, blackbird: 1 }
 /** Per-weapon damage multiplier applied on top of WEAPONS[w].damage. */
 export const WEAPON_DAMAGE_MULT: Record<WeaponId, number> = {
-  cannon20: 1.55, chaingun30: 1.1, gau8: 1, rockets: 1, aim9: 1, tvmissile: 1, hellfire: 1, maverick: 1,
+  cannon20: 1.35, chaingun30: 1.1, gau8: 0.8, rockets: 1, aim9: 1, tvmissile: 1, hellfire: 1, maverick: 1,
   aim47: 1, radarpulse: 0,
 }
 /** Weapon-vs-airframe bonuses (chain gun shreds helicopters and slow planes). */
@@ -62,13 +62,14 @@ export interface MissileTuning {
 }
 
 export const MISSILE_TUNING: Partial<Record<WeaponId, MissileTuning>> = {
-  aim9: { maxSpeed: 750, burn: 2.5, accel: 220, coastDecel: 30, fuse: 6, gimbal: 1.2, flareNear: 0.7, flareFar: 0.85, farDist: 1500 },
+  // Short-range dogfight missile: modest seeker gimbal and turn rate, so a hard break + flares usually beats it.
+  aim9: { maxSpeed: 650, burn: 2, accel: 200, coastDecel: 35, fuse: 6, gimbal: 0.8, flareNear: 0.8, flareFar: 0.9, farDist: 600 },
   // Radar-guided: flares are less effective.
-  tvmissile: { maxSpeed: 700, burn: 3, accel: 160, coastDecel: 25, fuse: 6, gimbal: 1.0, flareNear: 0.45, flareFar: 0.6, farDist: 1500 },
-  hellfire: { maxSpeed: 450, burn: 3, accel: 100, coastDecel: 20, fuse: 4, gimbal: 1.0, flareNear: 0.65, flareFar: 0.8, farDist: 1200 },
-  maverick: { maxSpeed: 480, burn: 3, accel: 100, coastDecel: 20, fuse: 4, gimbal: 1.0, flareNear: 0.6, flareFar: 0.75, farDist: 1500 },
+  tvmissile: { maxSpeed: 620, burn: 2.5, accel: 150, coastDecel: 30, fuse: 6, gimbal: 0.8, flareNear: 0.6, flareFar: 0.7, farDist: 800 },
+  hellfire: { maxSpeed: 420, burn: 3, accel: 100, coastDecel: 20, fuse: 4, gimbal: 0.9, flareNear: 0.75, flareFar: 0.85, farDist: 800 },
+  maverick: { maxSpeed: 440, burn: 3, accel: 100, coastDecel: 20, fuse: 4, gimbal: 0.9, flareNear: 0.7, flareFar: 0.8, farDist: 800 },
   // Scanner: flareNear applies only inside SCANNER_FLARE_CLOSE; flareFar when the scanner is off target.
-  aim47: { maxSpeed: 800, burn: 4, accel: 110, coastDecel: 10, fuse: 10, gimbal: 1.0, flareNear: 0.6, flareFar: 0.9, farDist: 0 },
+  aim47: { maxSpeed: 750, burn: 4, accel: 110, coastDecel: 10, fuse: 10, gimbal: 0.9, flareNear: 0.7, flareFar: 0.9, farDist: 0 },
 }
 
 /** Turret arcs in the vehicle body frame (rad). Yaw 0 = nose, elevation 0 = horizon. */
@@ -605,8 +606,8 @@ function updateLock(
   let target: VehicleEntity | null = null
   if (rt.lockTarget) {
     const cur = findVehicle(vehicles, rt.lockTarget)
-    // Hysteresis: keep the current target slightly beyond the acquisition cone.
-    if (cur && lockValid(vehicle, spec, axis, cur, 1.15, now) >= 0) target = cur
+    // No hysteresis: the lock breaks the moment the target leaves the cone.
+    if (cur && lockValid(vehicle, spec, axis, cur, 1, now) >= 0) target = cur
   }
   if (!target) target = lockCandidate(vehicle, seat, spec.id, aim, vehicles, now)
 
@@ -617,11 +618,13 @@ function updateLock(
     rt.lock = 0
   }
   if (!target) return
-  const was = rt.lock >= 1
+  const was = rt.lock
   rt.lock = Math.min(1, rt.lock + TICK_DT / (spec.lockTime ?? 1))
   // Float accumulation guard so lockTime/TICK_DT ticks reliably reaches 1.
   if (rt.lock > 1 - 1e-9) rt.lock = 1
-  if (!was && rt.lock >= 1) events.push({ type: "lock", vehicle: vehicle.id, target: target.id, locked: true })
+  if (was < 1 && rt.lock >= 1) events.push({ type: "lock", vehicle: vehicle.id, target: target.id, locked: true })
+  // Tracking warning for the target: `locked: false` when acquisition starts and again at half lock.
+  else if (was === 0 || (was < 0.5 && rt.lock >= 0.5)) events.push({ type: "lock", vehicle: vehicle.id, target: target.id, locked: false })
 }
 
 function ownerOf(vehicle: VehicleEntity, seat: SeatIndex): string {
@@ -1069,22 +1072,52 @@ function stepFlares(cs: CombatState, dt: number): void {
 /** Proposed WeaponId for fleet AA damage/kills (cast locally until types.ts adds it). */
 export const AA_WEAPON = "aa" as WeaponId
 /** Seconds a turret tracks a new target before it starts hitting. */
-export const AA_ACQUIRE = 0.4
+export const AA_ACQUIRE = 0.6
 /** Seconds between target re-scans / line-of-sight checks per turret (staggered across turrets). */
 export const AA_SCAN_INTERVAL = 0.1
-/** CIWS expected damage per second (hit-probability model) at ≤ CIWS_FULL_RANGE; falls to CIWS_EDGE_FACTOR at AA_RANGE. */
-export const CIWS_DPS = 140
-export const CIWS_FULL_RANGE = 800
-export const CIWS_EDGE_FACTOR = 0.3
+/**
+ * CIWS expected damage per second per turret (hit-probability model). Full inside CIWS_FULL_RANGE, ramps to
+ * CIWS_OUTER_FACTOR at CIWS_OUTER_RANGE, then thins to CIWS_EDGE_FACTOR at AA_RANGE: skimming the edge is
+ * survivable, pushing inside ~600 m is lethal.
+ */
+export const CIWS_DPS = 130
+export const CIWS_FULL_RANGE = 550
+export const CIWS_OUTER_RANGE = 1000
+export const CIWS_OUTER_FACTOR = 0.4
+export const CIWS_EDGE_FACTOR = 0.25
 /** CIWS damage is applied (and `aa` events emitted) in chunks of this many seconds. */
 export const AA_EVENT_INTERVAL = 0.1
 export const CIWS_TRACER_SPEED = 1100
 /** 5-inch gun: shell speed, reload, flak burst damage/radius, dispersion (fraction of range, 1σ-ish). */
 export const AA_GUN_SHELL_SPEED = 800
-export const AA_GUN_RELOAD = 1.5
-export const AA_GUN_DAMAGE = 140
-export const AA_GUN_SPLASH = 30
-export const AA_GUN_DISPERSION = 0.012
+export const AA_GUN_RELOAD = 2
+export const AA_GUN_DAMAGE = 100
+export const AA_GUN_SPLASH = 25
+export const AA_GUN_DISPERSION = 0.015
+
+/** CIWS damage factor (0..1) at distance d from the mount; 0 beyond AA_RANGE. */
+export function ciwsFactor(d: number): number {
+  if (d > AA_RANGE) return 0
+  if (d <= CIWS_FULL_RANGE) return 1
+  if (d <= CIWS_OUTER_RANGE) return 1 - (1 - CIWS_OUTER_FACTOR) * (d - CIWS_FULL_RANGE) / (CIWS_OUTER_RANGE - CIWS_FULL_RANGE)
+  return CIWS_OUTER_FACTOR - (CIWS_OUTER_FACTOR - CIWS_EDGE_FACTOR) * (d - CIWS_OUTER_RANGE) / (AA_RANGE - CIWS_OUTER_RANGE)
+}
+
+/**
+ * HUD/bot helper: expected CIWS damage per second (before armor) an aircraft of `team` would take at `p`
+ * from every active hostile fleet turret in range, ignoring line of sight and acquisition. 0 = safe.
+ */
+export function fleetAaDps(team: TeamId, p: Vec3): number {
+  const teams = fleetState().teams
+  let dps = 0
+  for (let i = 0; i < AA_TURRETS.length; i++) {
+    const t = AA_TURRETS[i]
+    if (t.team === team || t.kind !== "ciws" || (t.offset && t.team >= teams)) continue
+    refreshTurret(t)
+    dps += CIWS_DPS * ciwsFactor(dist(t.position, p))
+  }
+  return dps
+}
 
 export interface AaTurret {
   ship: Ship
@@ -1248,8 +1281,7 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
     const tp = target.flight.position, tv = target.flight.velocity
     const d = dist(t.position, tp)
     if (t.kind === "ciws") {
-      const falloff = d <= CIWS_FULL_RANGE ? 1 : 1 - (1 - CIWS_EDGE_FACTOR) * (d - CIWS_FULL_RANGE) / (AA_RANGE - CIWS_FULL_RANGE)
-      st.pending += aaDamage(target, CIWS_DPS * falloff, now) * dt
+      st.pending += aaDamage(target, CIWS_DPS * ciwsFactor(d), now) * dt
       if (now >= st.nextEventAt) {
         st.nextEventAt = now + AA_EVENT_INTERVAL
         if (leadPoint(t.position, _zero, CIWS_TRACER_SPEED, tp, tv, _lead) < 0) { _lead[0] = tp[0]; _lead[1] = tp[1]; _lead[2] = tp[2] }

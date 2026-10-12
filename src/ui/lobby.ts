@@ -53,10 +53,10 @@ export function escapeHtml(s: string): string {
 
 // Mirrors CONTROL_SCHEMES / CONTROL_SCHEME_LABELS / controlScheme() / setControlScheme() from input.ts.
 // Importing input.ts here would drag the whole Input module into the instant-paint entry chunk (+8 kB).
-const CONTROL_SCHEMES: readonly ControlScheme[] = ["point", "battlefield", "aim"]
-const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { point: "Point & turn", battlefield: "Battlefield (mouse = roll)", aim: "Mouse-aim cursor" }
-const controlScheme = (): ControlScheme => settings.controlStyle === "aim" ? "aim" : settings.controlScheme === "battlefield" ? "battlefield" : "point"
-const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "aim" ? "aim" : "direct", controlScheme: scheme })
+const CONTROL_SCHEMES: readonly ControlScheme[] = ["aim", "point", "battlefield"]
+const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { aim: "Mouse-aim (default)", point: "Point & turn", battlefield: "Battlefield (mouse = roll)" }
+const controlScheme = (): ControlScheme => settings.controlScheme === "battlefield" || settings.controlScheme === "point" ? settings.controlScheme : "aim"
+const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "battlefield" ? "direct" : "aim", controlScheme: scheme })
 
 const kb = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
 
@@ -70,9 +70,11 @@ export function controlRows(scheme: ControlScheme = controlScheme()): { title: s
       ]
     : scheme === "aim"
     ? [
-        ["Steer", "point the mouse where you want to fly"],
-        ["Roll", kb("q", "e")],
+        ["Steer", "move the mouse where you want to fly"],
+        ["Roll (barrel rolls, inverted)", kb("q", "e")],
+        ["Pitch override (loops)", `${kb("↓")} up ${kb("↑")} down`],
         ["Rudder / strafe (heli)", kb("a", "d")],
+        ["Manual mouse (roll + pitch)", `hold ${kb("alt")} · toggle ${kb("m")}`],
       ]
     : [
         ["Turn", `mouse ←→ · ${kb("←", "→")}`],
@@ -80,7 +82,7 @@ export function controlRows(scheme: ControlScheme = controlScheme()): { title: s
         ["Roll", kb("q", "e")],
         ["Rudder / strafe (heli)", kb("a", "d")],
       ]
-  flight.push(["Throttle / collective", kb("w", "s")], ["Boost · brake / auto-hover", `${kb("shift")} · ${kb("x")}`])
+  flight.push(["Throttle / collective", kb("w", "s")], ["Boost · airbrake / auto-hover", `${kb("shift")} · ${kb("x")}`])
   return [
     { title: `flight · ${CONTROL_SCHEME_LABELS[scheme].toLowerCase()}`, rows: flight },
     { title: "combat", rows: [
@@ -340,24 +342,33 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
 
   // Create lobby
   const cfg = { ...DEFAULT_ROOM_CONFIG, bots: 0, timeLimit: DEFAULT_ROOM_CONFIG.timeLimit / 60 }
+  const botCfg = { on: false, perTeam: 4, skill: 1 }
+  const SKILLS = [{ name: "easy", v: 0.25 }, { name: "normal", v: 0.5 }, { name: "hard", v: 0.85 }]
   const nameIn = document.createElement("input")
   nameIn.maxLength = 32
   nameIn.value = cfg.name
   nameIn.spellcheck = false
   nameIn.addEventListener("input", () => { cfg.name = nameIn.value })
   const readConfig = (): RoomConfig => ({
-    ...DEFAULT_ROOM_CONFIG, name: (cfg.name || DEFAULT_ROOM_CONFIG.name).slice(0, 32), teams: cfg.teams, bots: cfg.bots,
+    ...DEFAULT_ROOM_CONFIG, name: (cfg.name || DEFAULT_ROOM_CONFIG.name).slice(0, 32), teams: cfg.teams, bots: botCfg.on ? botCfg.perTeam : 0,
+    ...(botCfg.on ? { botSkill: SKILLS[botCfg.skill].v } : {}),
     maxPerTeam: cfg.maxPerTeam, scoreLimit: cfg.scoreLimit, timeLimit: cfg.timeLimit * 60, listed: cfg.listed,
   })
   const scoreSteps = [25, 50, 75, 100, 150, 200, 300], timeSteps = [5, 10, 15, 20, 30, 45, 60]
   const createScreen = (): MenuScreen => ({
-    crumb: "03 — <b>create a lobby</b>", size: "mid",
+    crumb: "04 — <b>create a lobby</b>", size: "mid",
     hints: [["↑↓", "select"], ["←→", "change"], ["enter", "confirm"], ["esc", "back"]],
     items: [
+      { label: "Bots", value: () => (botCfg.on ? "on" : "off"), adjust: () => { botCfg.on = !botCfg.on; nav.replace(createScreen()) },
+        meta: () => botCfg.on ? "ai pilots fill each team; they make room as people join" : "humans only — turn on to fight ai pilots" },
+      ...(botCfg.on ? [
+        { label: "Bots per team", value: () => String(botCfg.perTeam), adjust: (d: 1 | -1) => { botCfg.perTeam = Math.max(1, Math.min(10, botCfg.perTeam + d)) },
+          meta: "target pilots per team — each human who joins replaces a bot" },
+        { label: "Bot skill", value: () => SKILLS[botCfg.skill].name, adjust: (d: 1 | -1) => { botCfg.skill = Math.max(0, Math.min(2, botCfg.skill + d)) } },
+      ] as MenuItem[] : []),
       { label: "Name", input: { el: nameIn, at: "value" } },
       { label: "Teams", value: () => String(cfg.teams), adjust: d => { cfg.teams = Math.max(2, Math.min(4, cfg.teams + d)) } },
       { label: "Pilots per team", value: () => String(cfg.maxPerTeam), adjust: d => { cfg.maxPerTeam = Math.max(1, Math.min(10, cfg.maxPerTeam + d)) } },
-      { label: "Bots per team", value: () => (cfg.bots ? String(cfg.bots) : "none"), adjust: d => { cfg.bots = Math.max(0, Math.min(10, cfg.bots + d)) }, meta: "ai pilots fill each team; they leave as people join" },
       { label: "Score limit", value: () => String(cfg.scoreLimit), adjust: d => { cfg.scoreLimit = cycle(scoreSteps, scoreSteps.includes(cfg.scoreLimit) ? cfg.scoreLimit : 50, d) } },
       { label: "Time limit", value: () => `${cfg.timeLimit} min`, adjust: d => { cfg.timeLimit = cycle(timeSteps, timeSteps.includes(cfg.timeLimit) ? cfg.timeLimit : 15, d) } },
       { label: "Visibility", value: () => (cfg.listed ? "public" : "invite only"), adjust: () => { cfg.listed = !cfg.listed }, meta: () => cfg.listed ? "listed in browse lobbies" : "only people with the link can join" },
@@ -379,7 +390,7 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
     opts.onStart({ mode: "join", code: c })
   }
   const joinScreen = (): MenuScreen => ({
-    crumb: "04 — <b>join with a code</b>", size: "big",
+    crumb: "05 — <b>join with a code</b>", size: "big",
     items: [
       { label: "Code", input: { el: codeIn, at: "label" }, run: join, meta: "type the 4–8 character room code" },
       { label: "Join", run: join },
@@ -390,14 +401,14 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const browseScreen = (): MenuScreen => {
     const items: MenuItem[] = (rooms ?? []).map(r => ({
       label: r.name,
-      value: () => (r.players >= r.maxPlayers ? "full" : `${r.players}/${r.maxPlayers}`),
-      meta: `${escapeHtml(r.code.toLowerCase())} · ${r.teams} teams · ${r.humans} pilot${r.humans === 1 ? "" : "s"}`,
+      value: () => `${r.players > r.humans ? "bots · " : ""}${r.players >= r.maxPlayers ? "full" : `${r.players}/${r.maxPlayers}`}`,
+      meta: `${escapeHtml(r.code.toLowerCase())} · ${r.teams} teams · ${r.humans} pilot${r.humans === 1 ? "" : "s"}${r.players > r.humans ? ` · <b>bots</b>` : ""}`,
       disabled: () => r.players >= r.maxPlayers,
       run: () => opts.onStart({ mode: "join", code: r.code }),
     }))
     items.push({ label: "Refresh", small: true, run: () => refreshRooms(), meta: () => roomsMeta() })
     return {
-      crumb: "05 — <b>browse lobbies</b>", size: "mid", items,
+      crumb: "06 — <b>browse lobbies</b>", size: "mid", items,
       note: rooms === null ? "looking for lobbies…" : roomErr ? "can't reach the server right now. <b>practice</b> still works offline." : rooms.length ? "" : "no open lobbies. <b>quick play</b> starts one.",
     }
   }
@@ -406,20 +417,19 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
   const inviteCode = invite ? invite.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) : ""
   if (inviteCode) codeIn.value = inviteCode
 
-  const practiceBots = () => settings.practiceBots ?? 0
   const rootScreen = (): MenuScreen => ({
     size: "big",
     items: [
       ...(inviteCode ? [{ label: `Join ${inviteCode}`, run: () => opts.onStart({ mode: "join", code: inviteCode }), meta: "you were invited to this room" }] : []),
       { label: "Quick play", run: () => opts.onStart({ mode: "quick" }), meta: () => `join the fullest open lobby · ${roomsMeta()}` },
-      { label: "Practice", value: () => practiceBots() ? `${practiceBots()} bots` : "free flight",
-        adjust: d => updateSettings({ practiceBots: Math.max(0, Math.min(10, practiceBots() + d)) }),
-        run: () => opts.onStart({ mode: "offline", config: { ...DEFAULT_ROOM_CONFIG, name: "Practice", teams: 2, bots: practiceBots(), listed: false } }),
-        meta: () => practiceBots() ? `offline · ${practiceBots()} bots per team · ←→ to change` : "offline · free flight, no bots · ←→ to change" },
-      { label: "Create a lobby", run: () => nav.push(createScreen()), meta: "teams, limits and privacy" },
+      { label: "Play with bots", run: () => opts.onStart({ mode: "offline", config: { ...DEFAULT_ROOM_CONFIG, name: "Bots", teams: 2, bots: 4, botSkill: 0.5, listed: false } }),
+        meta: "offline · 2 teams · 4 ai pilots per team · normal skill" },
+      { label: "Practice", run: () => opts.onStart({ mode: "offline", config: { ...DEFAULT_ROOM_CONFIG, name: "Practice", teams: 2, bots: 0, listed: false } }),
+        meta: "solo free flight · no enemies" },
+      { label: "Create a lobby", run: () => nav.push(createScreen()), meta: "bots on or off · teams · limits · privacy" },
       { label: "Join with a code", run: () => { nav.push(joinScreen()); codeIn.focus() }, meta: "a friend's room code" },
       { label: "Browse lobbies", run: () => { nav.push(browseScreen()); refreshRooms() }, meta: () => roomsMeta() },
-      { label: "Settings", run: () => nav.push(settingsScreen(nav, opts.onQuality, "06 — <b>settings</b>")), meta: "graphics · sound · steering · controls" },
+      { label: "Settings", run: () => nav.push(settingsScreen(nav, opts.onQuality, "07 — <b>settings</b>")), meta: "graphics · sound · steering · controls" },
     ],
   })
   nav.reset(rootScreen())
@@ -444,7 +454,7 @@ export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q:
     } finally {
       refreshing = false
     }
-    if (nav.top?.crumb?.startsWith("05")) nav.replace(browseScreen())
+    if (nav.top?.crumb?.startsWith("06")) nav.replace(browseScreen())
     else nav.refresh()
   }
   refreshRooms()

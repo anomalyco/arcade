@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
-  AIRBASES, CEILING, DECK_LAYOUT, FLEET_CLEARANCE, LAUNCH_LANE_HALF, LAUNCH_LANE_LENGTH, MESH_CELL, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, groundHeight,
+  AIRBASES, ARCHIPELAGO_RADIUS, CEILING, DECK_LAYOUT, FLEET_RING_HALF, LAUNCH_LANE_HALF, LAUNCH_LANE_LENGTH, MESH_CELL, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, groundHeight,
   heightBound, inSafeZone, isWater, onRunway, segmentHitsGround, shipAt, spawnPoint, surfaceType, terrainHeight,
   terrainMeshHeight, worldMesh, worldQuery, setFleetState, deckVelocity, carrierOf, segmentHitsShip,
 } from "../src/sim/geography"
-import { AA_RANGE, FLEET, FLEET_APPROACH_TIME, FLEET_END_DISTANCE, FLEET_START_DISTANCE, SHIP_SPECS, shipPose, shipToWorldAt } from "../src/sim/fleet"
+import { AA_RANGE, FLEET, FLEET_ANGULAR_SPEED, FLEET_LAP_TIME, FLEET_ORBIT_RADIUS, SHIP_SPECS, shipPose, shipToWorldAt } from "../src/sim/fleet"
 import { generateCluster } from "../src/render/world/tile-gen"
 import type { TeamId, Vec3 } from "../src/sim/types"
 
@@ -29,7 +29,7 @@ describe("heightfield", () => {
     const t = performance.now()
     bakeWorld()
     expect(performance.now() - t).toBeLessThan(5)
-    expect(WORLD_SIZE).toBe(16_000)
+    expect(WORLD_SIZE).toBe(10_000)
   })
 
   test("deterministic and finite", () => {
@@ -64,7 +64,7 @@ describe("heightfield", () => {
     }
     expect(max).toBeGreaterThan(380)
     expect(max).toBeLessThan(1000)
-    expect(land / 60_000).toBeGreaterThan(0.05)
+    expect(land / 60_000).toBeGreaterThan(0.025)
     expect(land / 60_000).toBeLessThan(0.4)
   })
 
@@ -78,7 +78,7 @@ describe("heightfield", () => {
 
   test("groundHeight matches the rendered LOD0 triangles", () => {
     // Every rendered (non-skirt) LOD0 triangle of the central cluster must lie on the physics surface.
-    const data = generateCluster(1, 1, 0)
+    const data = generateCluster(2, 2, 0)
     const r = rng(4)
     const pos = data.positions, idx = data.index
     const tris = idx.length / 3
@@ -123,15 +123,21 @@ describe("heightfield", () => {
 })
 
 describe("strike groups", () => {
-  const TIMES = [0, FLEET_APPROACH_TIME * 0.37, FLEET_APPROACH_TIME]
+  const TIMES = [0, FLEET_LAP_TIME * 0.137, FLEET_LAP_TIME * 0.61]
   const posed = (t: number) => FLEET.map(sh => ({ ...sh, position: shipPose(sh, t).position }))
 
-  test("open water around every ship and its launch lane along the whole approach", () => {
-    for (let t = 0; t <= FLEET_APPROACH_TIME; t += FLEET_APPROACH_TIME / 12) {
+  test("the orbit ring (every ship and launch lane at every time) is open water", () => {
+    // The ring itself.
+    for (let r = FLEET_ORBIT_RADIUS - FLEET_RING_HALF; r <= FLEET_ORBIT_RADIUS + FLEET_RING_HALF; r += 40) for (let a = 0; a < 360; a++) {
+      const ang = (a / 360) * Math.PI * 2
+      expect(terrainMeshHeight(Math.cos(ang) * r, Math.sin(ang) * r)).toBeLessThan(0)
+    }
+    // Ships, a 300 m margin around them, and the carriers' launch lanes, over a whole lap.
+    for (let t = 0; t <= FLEET_LAP_TIME; t += FLEET_LAP_TIME / 40) {
       for (const sh of FLEET) {
         const p = shipPose(sh, t).position
-        for (let r = 0; r <= FLEET_CLEARANCE; r += 100) for (let a = 0; a < 48; a++) {
-          const ang = (a / 48) * Math.PI * 2
+        for (let r = 0; r <= 300; r += 50) for (let a = 0; a < 24; a++) {
+          const ang = (a / 24) * Math.PI * 2
           expect(terrainMeshHeight(p[0] + Math.cos(ang) * r, p[2] + Math.sin(ang) * r)).toBeLessThan(0)
         }
         if (sh.kind === "carrier") {
@@ -144,6 +150,17 @@ describe("strike groups", () => {
     }
   })
 
+  test("central archipelago inside ARCHIPELAGO_RADIUS; only small rocks beyond the ring", () => {
+    let central = 0
+    for (let x = -WORLD_HALF; x < WORLD_HALF; x += 40) for (let z = -WORLD_HALF; z < WORLD_HALF; z += 40) {
+      const h = terrainMeshHeight(x, z), r = Math.hypot(x, z)
+      if (h <= 0) continue
+      if (r < ARCHIPELAGO_RADIUS) central++
+      else expect(r).toBeGreaterThan(FLEET_ORBIT_RADIUS + FLEET_RING_HALF)
+    }
+    expect(central).toBeGreaterThan(1000)
+  })
+
   test("AIRBASES follow the carriers over time", () => {
     for (const t of TIMES) {
       setFleetState(t, 4)
@@ -154,9 +171,12 @@ describe("strike groups", () => {
         expect(base.center[1]).toBe(SHIP_SPECS.carrier.deckHeight)
         expect(base.safeRadius).toBe(AA_RANGE)
         expect(carrierOf(base.team).position[0]).toBeCloseTo(c[0])
+        // Bow points along the counter-clockwise orbit tangent (velocity direction).
         const fx = -Math.sin(base.heading), fz = -Math.cos(base.heading)
-        const d = Math.hypot(base.center[0], base.center[2])
-        expect(fx * -base.center[0] / d + fz * -base.center[2] / d).toBeCloseTo(1, 6)
+        const v = shipPose(FLEET.find(s => s.team === base.team && s.kind === "carrier")!, t).velocity
+        const sp = Math.hypot(v[0], v[2])
+        expect((fx * v[0] + fz * v[2]) / sp).toBeCloseTo(1, 6)
+        expect(Math.hypot(base.center[0], base.center[2])).toBeCloseTo(FLEET_ORBIT_RADIUS, 3)
       }
     }
     setFleetState(0, 4)
@@ -176,10 +196,10 @@ describe("strike groups", () => {
           expect(isWater(p[0], p[2])).toBe(false)
           expect(onRunway(p[0], p[2])).toBe(sh.kind === "carrier" && !inIsland)
           expect(surfaceType(p[0], p[2])).toBe("paved")
+          // Rigid rotation: v = ω × r at that point of the deck.
           const v = deckVelocity(p[0], p[2])!
-          const want = shipPose(sh, t).velocity
-          expect(v[0]).toBeCloseTo(want[0], 6)
-          expect(v[2]).toBeCloseTo(want[2], 6)
+          expect(v[0]).toBeCloseTo(FLEET_ANGULAR_SPEED * p[2], 6)
+          expect(v[2]).toBeCloseTo(-FLEET_ANGULAR_SPEED * p[0], 6)
         }
         const out = shipToWorldAt(sh, t, [sp.halfWidth + 3, 0, 0])
         expect(groundHeight(out[0], out[2])).toBe(WATER_LEVEL)
@@ -187,10 +207,14 @@ describe("strike groups", () => {
         expect(deckVelocity(out[0], out[2])).toBeNull()
       }
     }
-    // Mid-approach the formation is moving at ~4.7 m/s; at the start/end it's stationary.
+    // The carrier steams at ~13 m/s and its deck velocity matches shipPose.
     setFleetState(300, 4)
     const c = carrierOf(0)
-    expect(Math.hypot(...deckVelocity(c.position[0], c.position[2])!)).toBeCloseTo((FLEET_START_DISTANCE - FLEET_END_DISTANCE) / FLEET_APPROACH_TIME, 3)
+    const cv = deckVelocity(c.position[0], c.position[2])!
+    const want = shipPose(FLEET.find(s => s.id === c.id)!, 300).velocity
+    expect(cv[0]).toBeCloseTo(want[0], 6)
+    expect(cv[2]).toBeCloseTo(want[2], 6)
+    expect(Math.hypot(cv[0], cv[2])).toBeCloseTo(FLEET_ANGULAR_SPEED * FLEET_ORBIT_RADIUS, 3)
     // The old start position is open water once the fleet has moved on.
     const start = FLEET.find(s => s.id === c.id)!.position
     expect(shipAt(start[0], start[2])?.id).not.toBe(c.id)
@@ -303,7 +327,7 @@ describe("segmentHitsGround", () => {
     let agree = 0, total = 0, hits = 0
     for (let i = 0; i < 600; i++) {
       // Bias toward the central islands and low altitudes so most segments matter.
-      const x = (r() * 2 - 1) * 6000, z = (r() * 2 - 1) * 6000
+      const x = (r() * 2 - 1) * 4500, z = (r() * 2 - 1) * 4500
       const a: Vec3 = [x, 20 + r() * 700, z]
       const len = 50 + r() * 2500
       const yaw = r() * Math.PI * 2, pitch = (r() - 0.6) * 0.8
@@ -321,9 +345,9 @@ describe("segmentHitsGround", () => {
 
   test("edge cases", () => {
     expect(segmentHitsGround([0, 3000, 0], [100, 3000, 100])).toBeNull()
-    expect(segmentHitsGround([7900, -5, 7900], [7910, -5, 7900])).toBe(0)
+    expect(segmentHitsGround([4900, -5, 4900], [4910, -5, 4900])).toBe(0)
     // Straight down onto open water.
-    const t = segmentHitsGround([7900, 100, 7900], [7900, -100, 7900])
+    const t = segmentHitsGround([4900, 100, 4900], [4900, -100, 4900])
     expect(t).not.toBeNull()
     expect(t!).toBeCloseTo(0.5, 3)
     // Zero-length segment above ground.
@@ -353,7 +377,7 @@ describe("performance", () => {
     const r = rng(10)
     const segs: [Vec3, Vec3][] = []
     for (let i = 0; i < 100_000; i++) {
-      const x = (r() * 2 - 1) * 7000, z = (r() * 2 - 1) * 7000, y = r() * 900
+      const x = (r() * 2 - 1) * 4800, z = (r() * 2 - 1) * 4800, y = r() * 900
       const vx = (r() - 0.5) * 2, vy = (r() - 0.5) * 0.6, vz = (r() - 0.5) * 2
       const k = 17 / Math.hypot(vx, vy, vz) // ~1000 m/s over one 60 Hz tick
       segs.push([[x, y, z], [x + vx * k, y + vy * k, z + vz * k]])

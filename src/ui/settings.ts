@@ -21,7 +21,7 @@ const listeners: Listener[] = []
 
 function defaults(): Settings {
   const lowEnd = (navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent)
-  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "point", practiceBots: 0 }
+  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "aim", controlScheme: "aim", practiceBots: 0 }
 }
 
 function load(): Settings {
@@ -30,8 +30,11 @@ function load(): Settings {
     const raw = localStorage.getItem(KEY)
     if (raw) Object.assign(base, JSON.parse(raw))
   } catch {}
-  if (base.controlStyle !== "direct" && base.controlStyle !== "aim") base.controlStyle = "direct"
-  if (base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = base.controlStyle === "aim" ? "aim" : "point"
+  if (base.controlStyle !== "direct" && base.controlStyle !== "aim") base.controlStyle = "aim"
+  if (base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = "aim"
+  // Controls v2: mouse-aim became the default — move everyone onto it once (they can switch back).
+  const b = base as Settings & { controlsV2?: boolean }
+  if (!b.controlsV2) { b.controlsV2 = true; base.controlScheme = "aim"; base.controlStyle = "aim" }
   base.practiceBots = Math.max(0, Math.min(10, Math.round(Number(base.practiceBots ?? 0)) || 0))
   if (base.quality !== "low" && base.quality !== "balanced" && base.quality !== "high") base.quality = "balanced"
   return base

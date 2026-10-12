@@ -44,6 +44,18 @@ export interface BotState {
   guideUntil: number
   /** Room time the current engagement started (−1 when not engaged). */
   engagedSince: number
+  /** Reaction delay (s) rolled for the current missile threat. */
+  threatDelay: number
+  /** Gun trigger discipline: fire until `burstUntil`, then hold until `burstPauseUntil`. */
+  burstUntil: number
+  burstPauseUntil: number
+  /** Hull at the previous tick (detects incoming damage) and the break-off window it triggers. */
+  lastHp: number
+  evadeUntil: number
+  evadeCooldownUntil: number
+  /** Smoothed steering/aim direction (human-like lag and overshoot) and the time it was last updated. */
+  steer: Vec3
+  steerAt: number
 }
 
 interface BotOutputs {
@@ -100,6 +112,14 @@ export function createBotBrain(seed: number, skill?: number): BotBrain {
       guideTargetId: null,
       guideUntil: 0,
       engagedSince: -1,
+      threatDelay: 1,
+      burstUntil: 0,
+      burstPauseUntil: 0,
+      lastHp: -1,
+      evadeUntil: 0,
+      evadeCooldownUntil: 0,
+      steer: [0, 0, -1],
+      steerAt: -1,
     },
     out: {
       flight, pilotSeat, gunnerSeat, flightAim, pilotAim, gunnerAim,
@@ -107,9 +127,43 @@ export function createBotBrain(seed: number, skill?: number): BotBrain {
       gunner: { seat: gunnerSeat },
     },
   }
-  brain.state.skill = clamp(skill ?? 0.35 + botRandom(brain) * 0.5, 0, 1)
+  brain.state.skill = clamp(skill ?? 0.35 + botRandom(brain) * 0.3, 0, 1)
   return brain
 }
+
+// ---------------------------------------------------------------------------------------------
+// Skill curves. skill 0.25 = easy, 0.5 = normal (server default), ~0.9 = hard.
+
+/** Aim jitter amplitude (rad, ±): normal ≈ 3.4°, easy ≈ 4.9°, hard ≈ 1.1°. */
+export function jitterAmp(skill: number): number {
+  return 0.11 - 0.1 * skill
+}
+/** Minimum reaction delay (s) to a new missile threat; a random 0–0.6 s is added (normal 0.6–1.2 s). */
+export function reactionMin(skill: number): number {
+  return 1.0 - 0.8 * skill
+}
+/** Seconds between missile launches (normal 8 s). */
+export function missileInterval(skill: number): number {
+  return 11 - 6 * skill
+}
+/** Max gun engagement range (m). */
+function gunRange(skill: number, w: WeaponSpec): number {
+  return Math.min(effectiveRange(w), 600 + 500 * skill)
+}
+/** Fraction of the true lead the bot pulls (lag pursuit at low skill). */
+function leadFactor(skill: number): number {
+  return 0.5 + 0.5 * skill
+}
+/** Max steering slew (rad/s) and first-order lag (s) of the bot's aim. */
+function steerRate(skill: number): number {
+  return 0.8 + 1.2 * skill
+}
+function steerLag(skill: number): number {
+  return 0.6 - 0.45 * skill
+}
+/** Max distinct bot crews hunting the same target. */
+export const MAX_BOTS_PER_TARGET = 2
+const CLAIM_TTL = 1.5
 
 /** Deterministic [0, 1) from the brain's RNG (mulberry32). */
 export function botRandom(brain: BotBrain): number {
@@ -304,9 +358,9 @@ export function groundAhead(pos: Vec3, dir: Vec3, speed: number, ground: GroundQ
  * Bots treat everything within this horizontal range of a non-own fleet ship as a no-fly zone (fleet AA).
  * Ship queries use geography's current poses (`posedFleet`: active teams only, moving with match time).
  */
-export const BOT_NO_FLY_RADIUS = AA_RANGE + 400
+export const BOT_NO_FLY_RADIUS = AA_RANGE + 300
 /** Extra distance outside the no-fly radius where steering starts bending away. */
-const NO_FLY_BUFFER = 1_500
+const NO_FLY_BUFFER = 500
 
 /** Horizontal distance from (x, z) to the nearest ship not belonging to `team` (Infinity if none). */
 export function hostileFleetDistance(team: number, x: number, z: number): number {
@@ -453,6 +507,7 @@ export function selectTarget(
   for (let i = 0; i < vehicles.length; i++) {
     const v = vehicles[i]
     if (v === self || !canEngage(v, self.team, now)) continue
+    if (v.id !== currentId && claimCount(v, self.id, now) >= MAX_BOTS_PER_TARGET) continue
     const d = dist(me, v.flight.position)
     const spotted = v.spottedUntil > now
     if (d > maxRange || (!spotted && d > BOT_VISUAL_RANGE)) continue
@@ -465,6 +520,25 @@ export function selectTarget(
     if (score < bestScore) { bestScore = score; best = v }
   }
   return best
+}
+
+interface Claimed { botClaims?: Record<string, number> }
+
+/** Other bot crews currently hunting `target`. */
+export function claimCount(target: VehicleEntity, selfId: string, now: number): number {
+  const c = (target as Claimed).botClaims
+  if (!c) return 0
+  let n = 0
+  for (const k in c) if (k !== selfId && c[k] > now) n++
+  return n
+}
+
+/** Register this crew (by vehicle id) as hunting `target` for CLAIM_TTL seconds; prunes stale claims. */
+export function claimTarget(target: VehicleEntity, selfId: string, now: number): void {
+  const t = target as Claimed
+  const c = t.botClaims ?? (t.botClaims = {})
+  for (const k in c) if (c[k] <= now) delete c[k]
+  c[selfId] = now + CLAIM_TTL
 }
 
 /** Nearest missile homing on (or scanner-guided toward) this vehicle, or null. */
@@ -489,7 +563,7 @@ export function findThreat(self: VehicleEntity, missiles: readonly Missile[] | u
 function updateJitter(brain: BotBrain, now: number): void {
   const s = brain.state
   if (now < s.jitterUntil) return
-  const amp = (1 - s.skill) * 0.06 + 0.002
+  const amp = jitterAmp(s.skill)
   s.jitterYaw = (botRandom(brain) * 2 - 1) * amp
   s.jitterPitch = (botRandom(brain) * 2 - 1) * amp
   s.jitterUntil = now + 0.3 + botRandom(brain) * 0.5
@@ -503,8 +577,31 @@ function applyJitter(brain: BotBrain, aim: Vec3): Vec3 {
   return setPitch(aim, clamp(pitchOf(aim) + s.jitterPitch, -1.5, 1.5))
 }
 
-function reactionDelay(brain: BotBrain): number {
-  return 0.15 + (1 - brain.state.skill) * 0.8
+/** Ease the bot's steering toward `desired` (in place → result in `desired`): rate-limited, lagged. */
+function smoothSteer(brain: BotBrain, desired: Vec3, now: number, from: Vec3): void {
+  const s = brain.state
+  const dt = s.steerAt < 0 ? 0 : clamp(now - s.steerAt, 0, 0.25)
+  if (s.steerAt < 0 || now - s.steerAt > 0.5) copy3(s.steer, from)
+  s.steerAt = now
+  const st = s.steer
+  const ang = angleBetween(st, desired)
+  if (ang < 1e-6 || dt === 0) { if (dt === 0) copy3(desired, st); else copy3(st, desired); return }
+  const step = Math.min(ang, ang * (1 - Math.exp(-dt / steerLag(s.skill))), steerRate(s.skill) * dt)
+  const t = step / ang
+  // Normalized lerp is accurate enough for small steps.
+  set3(st, st[0] + (desired[0] - st[0]) * t, st[1] + (desired[1] - st[1]) * t, st[2] + (desired[2] - st[2]) * t)
+  norm(st)
+  copy3(desired, st)
+}
+
+/** Gun trigger: short bursts with pauses; returns whether the trigger may be held this tick. */
+function burstAllowed(brain: BotBrain, now: number): boolean {
+  const s = brain.state
+  if (now < s.burstUntil) return true
+  if (now < s.burstPauseUntil) return false
+  s.burstUntil = now + 0.35 + 0.4 * s.skill + botRandom(brain) * 0.3
+  s.burstPauseUntil = s.burstUntil + (1.2 - 0.9 * s.skill) + botRandom(brain) * 0.5
+  return true
 }
 
 function weaponReady(rt: { ammo: number; readyAt: number } | undefined, now: number): boolean {
@@ -582,10 +679,11 @@ export function botInput(
 // ---------------------------------------------------------------------------------------------
 // Pilot
 
-function pickWaypoint(brain: BotBrain, now: number, heli: boolean): void {
+function pickWaypoint(brain: BotBrain, now: number, heli: boolean, half: number): void {
   const s = brain.state
   const ang = botRandom(brain) * Math.PI * 2
-  const r = botRandom(brain) * (heli ? 2_000 : 3_000)
+  // Patrol the central battle space (scaled to the map), inside the carrier orbit.
+  const r = botRandom(brain) * half * (heli ? 0.3 : 0.45)
   set3(s.waypoint, Math.cos(ang) * r, heli ? 180 : 900 + botRandom(brain) * 700, Math.sin(ang) * r)
   s.waypointUntil = now + 20 + botRandom(brain) * 20
 }
@@ -644,9 +742,21 @@ function pilotInput(
   // Threat assessment (with reaction delay).
   const threat = findThreat(vehicle, missiles)
   if (threat) {
-    if (s.threatId !== threat.id) { s.threatId = threat.id; s.threatSeenAt = now; s.breakSign = botRandom(brain) < 0.5 ? -1 : 1 }
+    if (s.threatId !== threat.id) {
+      s.threatId = threat.id; s.threatSeenAt = now; s.breakSign = botRandom(brain) < 0.5 ? -1 : 1
+      s.threatDelay = reactionMin(s.skill) + botRandom(brain) * 0.6
+    }
   } else s.threatId = -1
-  const defending = threat !== null && now >= s.threatSeenAt + reactionDelay(brain)
+  const defending = threat !== null && now >= s.threatSeenAt + s.threatDelay
+
+  // Taking hits: break off for a few seconds (less often for skilled bots).
+  if (s.lastHp >= 0 && vehicle.hp < s.lastHp - 0.5 && now >= s.evadeCooldownUntil && botRandom(brain) < 1 - 0.5 * s.skill) {
+    s.evadeUntil = now + 2 + botRandom(brain) * 2
+    s.evadeCooldownUntil = s.evadeUntil + 4
+    s.breakSign = botRandom(brain) < 0.5 ? -1 : 1
+  }
+  s.lastHp = vehicle.hp
+  const evading = now < s.evadeUntil
 
   // Target selection.
   let target = findVehicle(vehicles, s.targetId)
@@ -654,9 +764,10 @@ function pilotInput(
     const maxRange = vehicle.kind === "blackbird" ? 12_000 : heli ? 5_000 : 9_000
     target = selectTarget(vehicle, vehicles, now, maxRange, s.targetId)
     s.targetId = target ? target.id : null
-    s.retargetAt = now + 0.4 + (1 - s.skill) * 1.2 + botRandom(brain) * 0.3
+    s.retargetAt = now + 0.6 + (1 - s.skill) * 1.5 + botRandom(brain) * 0.4
   }
   if (target && !canEngage(target, vehicle.team, now)) target = null
+  if (target) claimTarget(target, vehicle.id, now)
   const inOwnSafe = inSafeZone(vehicle.team, pos)
 
   if (defending && threat) {
@@ -671,6 +782,15 @@ function pilotInput(
     if (md < flareAt && vehicle.flareCount > 0 && vehicle.flaresReadyAt <= now) seat.flares = true
     heliAlt = Math.max(ground + 40, pos[1] - 30)
     lookTarget = target
+  } else if (evading) {
+    s.phase = "defend"
+    // Break turn away from the current heading, with altitude change if there's room; no shooting.
+    const hx = vel[0], hz = vel[2]
+    headingPitch(hx * 0.3 - hz * s.breakSign, hz * 0.3 + hx * s.breakSign, agl > 700 ? -0.15 : 0.2, aim)
+    desiredThrottle = 1
+    flight.boost = true
+    heliAlt = Math.max(ground + 50, pos[1] - 20)
+    lookTarget = target
   } else if (target) {
     if (s.phase !== "engage") s.engagedSince = now
     s.phase = "engage"
@@ -679,7 +799,7 @@ function pilotInput(
     lookTarget = target
   } else {
     s.phase = "transit"
-    if (now >= s.waypointUntil || Math.hypot(pos[0] - s.waypoint[0], pos[2] - s.waypoint[2]) < (heli ? 400 : 1_000)) pickWaypoint(brain, now, heli)
+    if (now >= s.waypointUntil || Math.hypot(pos[0] - s.waypoint[0], pos[2] - s.waypoint[2]) < (heli ? 400 : 1_000)) pickWaypoint(brain, now, heli, world.half)
     const wp = s.waypoint
     const dx = wp[0] - pos[0], dz = wp[2] - pos[2]
     const hd = Math.sqrt(dx * dx + dz * dz)
@@ -748,8 +868,13 @@ function engage(brain: BotBrain, vehicle: VehicleEntity, target: VehicleEntity, 
   const primary = pId ? WEAPONS[pId] : null
   const steerW = primary && (primary.kind === "gun" || primary.kind === "rockets") ? primary : null
   const lead = _lead
-  if (steerW && d < 2_500) leadDirection(pos, vel, tp, tv, steerW.speed, steerW.kind === "rockets" ? ROCKET_GRAVITY : 0, lead)
-  else norm(set3(lead, tx, ty, tz))
+  if (steerW && d < 2_500) {
+    // Lag pursuit at lower skill: pull only part of the true lead.
+    leadDirection(pos, vel, tp, tv, steerW.speed, steerW.kind === "rockets" ? ROCKET_GRAVITY : 0, lead)
+    const f = leadFactor(s.skill)
+    norm(set3(lead, tx / d * (1 - f) + lead[0] * f, ty / d * (1 - f) + lead[1] * f, tz / d * (1 - f) + lead[2] * f))
+  } else norm(set3(lead, tx, ty, tz))
+  smoothSteer(brain, lead, now, nose)
 
   if (vehicle.kind === "blackbird") {
     // No pilot weapons: keep the target ahead within scanner range (3–6.5 km) and outside gun range.
@@ -801,17 +926,18 @@ function engage(brain: BotBrain, vehicle: VehicleEntity, target: VehicleEntity, 
     const rt = vehicle.weapons[0][slot]
     if (!weaponReady(rt, now)) continue
     if (w.kind === "gun" || w.kind === "rockets") {
-      if (d > effectiveRange(w)) continue
+      if (d > gunRange(s.skill, w)) continue
       leadDirection(pos, vel, tp, tv, w.speed, w.kind === "rockets" ? ROCKET_GRAVITY : 0, _t1)
       const err = angleBetween(nose, _t1)
-      const tol = Math.atan2(VEHICLES[target.kind].radius * (w.kind === "rockets" ? 1.2 : 1.6), d) + 0.004 + (1 - s.skill) * 0.01
-      if (err < tol) {
+      // Fire only when well aligned, in short bursts.
+      const tol = Math.atan2(VEHICLES[target.kind].radius * (1.4 + 0.6 * s.skill), d)
+      if (err < tol && burstAllowed(brain, now)) {
         if (slot === 0) seat.firePrimary = true
         else seat.fireSecondary = true
       }
     } else if (w.kind === "missile_lock") {
       // Fire-and-forget once the nose seeker has a full lock on a valid enemy.
-      if (rt.lock < 1 || !rt.lockTarget || now - s.lastMissileAt < 3) continue
+      if (rt.lock < 1 || !rt.lockTarget || now - s.lastMissileAt < missileInterval(s.skill)) continue
       if (slot === 0) seat.firePrimary = true
       else seat.fireSecondary = true
       s.lastMissileAt = now
@@ -886,9 +1012,10 @@ function gunnerInput(
   if (now >= s.retargetAt || (target && !canEngage(target, vehicle.team, now))) {
     target = selectTarget(vehicle, vehicles, now, maxRange, s.targetId)
     s.targetId = target ? target.id : null
-    s.retargetAt = now + 0.3 + (1 - s.skill) * 1.0 + botRandom(brain) * 0.3
+    s.retargetAt = now + 0.6 + (1 - s.skill) * 1.5 + botRandom(brain) * 0.4
   }
   if (!target || !canEngage(target, vehicle.team, now)) return
+  claimTarget(target, vehicle.id, now)
   const tp = target.flight.position, tv = target.flight.velocity
   const d = dist(pos, tp)
   const canFire = !inOwnSafe
@@ -901,25 +1028,28 @@ function gunnerInput(
     const w = WEAPONS[id]
     const rt = vehicle.weapons[1][slot]
     const range = effectiveRange(w)
-    if (w.kind === "gun" && d <= range && !aimed) {
+    if (w.kind === "gun" && d <= gunRange(s.skill, w) && !aimed) {
       leadDirection(pos, vel, tp, tv, w.speed, 0, aim)
+      smoothSteer(brain, aim, now, nose)
       applyJitter(brain, aim)
       aimed = true
       // Only fire when the turret can actually reach the commanded direction and the aim is near the true lead.
       leadDirection(pos, vel, tp, tv, w.speed, 0, _t1)
       weaponDirection(vehicle, id, aim, _t2)
-      const tol = Math.atan2(VEHICLES[target.kind].radius * 1.6, d) + 0.004
-      if (canFire && weaponReady(rt, now) && angleBetween(_t2, _t1) < tol) {
+      const tol = Math.atan2(VEHICLES[target.kind].radius * (0.8 + 0.4 * s.skill), d)
+      if (canFire && weaponReady(rt, now) && angleBetween(_t2, _t1) < tol && burstAllowed(brain, now)) {
         if (slot === 0) seat.firePrimary = true
         else seat.fireSecondary = true
       }
     } else if ((w.kind === "missile_lock" || w.kind === "missile_scanner") && d <= range && d > 300) {
       if (!aimed) {
-        applyJitter(brain, norm(set3(aim, tp[0] - pos[0], tp[1] - pos[1], tp[2] - pos[2])))
+        norm(set3(aim, tp[0] - pos[0], tp[1] - pos[1], tp[2] - pos[2]))
+        smoothSteer(brain, aim, now, nose)
+        applyJitter(brain, aim)
         aimed = true
       }
       // Missiles launch along the nose: only fire when the target is within the missile's turn-off-the-rail reach.
-      if (canFire && weaponReady(rt, now) && rt.lock >= 1 && rt.lockTarget === target.id && noseAngle < (w.kind === "missile_scanner" ? 0.9 : 1.1) && now - s.lastMissileAt > 2) {
+      if (canFire && weaponReady(rt, now) && rt.lock >= 1 && rt.lockTarget === target.id && noseAngle < (w.kind === "missile_scanner" ? 0.9 : 1.1) && now - s.lastMissileAt > missileInterval(s.skill)) {
         if (slot === 0) seat.firePrimary = true
         else seat.fireSecondary = true
         s.lastMissileAt = now
@@ -928,7 +1058,9 @@ function gunnerInput(
     }
   }
   if (!aimed) {
-    applyJitter(brain, norm(set3(aim, tp[0] - pos[0], tp[1] - pos[1], tp[2] - pos[2])))
+    norm(set3(aim, tp[0] - pos[0], tp[1] - pos[1], tp[2] - pos[2]))
+    smoothSteer(brain, aim, now, nose)
+    applyJitter(brain, aim)
   }
   // Crews without a radar pulse mark the target for the team when it's unspotted and on the crosshair.
   if (!hasPulse && vehicle.abilityReadyAt <= now && target.spottedUntil <= now && d < 4_000 && angleTo(aim, pos, tp) < 0.06) seat.ability = true

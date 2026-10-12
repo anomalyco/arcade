@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
-  AA_ACQUIRE, AA_TURRETS, type AaTurret, isSpawnProtected, markSpawned, turretHasLOS,
-  FLARE_TARGET_PREFIX, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
+  AA_ACQUIRE, AA_TURRETS, fleetAaDps, type AaTurret, isSpawnProtected, markSpawned, turretHasLOS,
+  FLARE_TARGET_PREFIX, WEAPON_DAMAGE_MULT, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
   stepCombat, sweptSphere, type CombatState,
 } from "../src/sim/combat"
 import { WORLD_HALF, groundHeight, segmentHitsGround, setFleetState, terrainHeight } from "../src/sim/geography"
@@ -163,13 +163,19 @@ describe("fleet AA", () => {
   }
   const aaEvents = (w: World, v: VehicleEntity) => w.events.filter(e => (e as unknown as { type: string; target: string }).type === "aa" && (e as unknown as { target: string }).target === v.id)
 
-  test("enemy fighter at 1.2 km is shot down within ~2.5 s, credited to the fleet", () => {
-    const p: Vec3 = [carrier.position[0] + 1200, 300, carrier.position[2]]
-    const f = vehicle("fighter", 0, p, [0, 0, 150], [0, 0, 1])
+  /** First point outward from the team-1 carrier whose nearest enemy turret is ≥ md away. */
+  const atMinDist = (md: number, y = 300): Vec3 => {
+    let d = 0
+    while (minTurretDist(outward(d, y), 0) < md) d += 5
+    return outward(d, y)
+  }
+
+  test("inside ~600 m of the fleet a fighter dies within ~1.5 s, credited to the fleet", () => {
+    const f = vehicle("fighter", 0, atMinDist(550), [0, 0, 0])
     const w = world([f])
     while (f.alive && w.now < 4) tick(w)
     expect(f.alive).toBe(false)
-    expect(w.now).toBeLessThan(2.5)
+    expect(w.now).toBeLessThan(1.7)
     expect(w.now).toBeGreaterThan(AA_ACQUIRE)
     const kill = w.events.find(e => e.type === "kill") as unknown as { killer: unknown; weapon: string; killerTeam: number }
     expect(kill).toMatchObject({ killer: null, weapon: "aa", killerTeam: 1 })
@@ -177,25 +183,46 @@ describe("fleet AA", () => {
     expect(w.events.filter(e => e.type === "kill")).toHaveLength(1)
   })
 
-  test("at the edge of range it takes longer; beyond range untouched", () => {
-    const near = vehicle("fighter", 0, outward(1000, 300), [0, 0, 0])
-    const w1 = world([near])
-    while (near.alive && w1.now < 10) tick(w1)
-    const tNear = w1.now
+  test("at the 1000–1200 m edge damage is light (~15–25% hull per second)", () => {
+    for (const md of [1050, 1150]) {
+      const f = vehicle("fighter", 0, atMinDist(md), [0, 0, 0])
+      const w = world([f])
+      while (w.now < AA_ACQUIRE + 0.1) tick(w)
+      const hp0 = f.hp
+      while (w.now < AA_ACQUIRE + 1.1) tick(w)
+      const perSecond = (hp0 - f.hp) / f.maxHp
+      expect(perSecond).toBeGreaterThan(0.05)
+      expect(perSecond).toBeLessThan(0.3)
+      expect(fleetAaDps(0, f.flight.position) / f.maxHp).toBeCloseTo(perSecond, 1)
+    }
+  })
 
-    let d = 2000
-    while (minTurretDist(outward(d, 300), 0) < 2100) d += 25
-    const edge = vehicle("fighter", 0, outward(d, 300), [0, 0, 0])
-    const w2 = world([edge])
-    while (edge.alive && w2.now < 15) tick(w2)
-    expect(w2.now).toBeGreaterThan(tNear * 1.5)
+  test("a pass skimming the edge is survivable", () => {
+    // Fly a straight tangent line whose closest approach to the nearest turret is ~1100 m.
+    const l = Math.hypot(carrier.position[0], carrier.position[2])
+    const tx = -carrier.position[2] / l, tz = carrier.position[0] / l
+    const closest = (c: Vec3) => {
+      let m = Infinity
+      for (let k = -3000; k <= 3000; k += 20) m = Math.min(m, minTurretDist([c[0] + tx * k, c[1], c[2] + tz * k], 0))
+      return m
+    }
+    let d = 0
+    while (closest(outward(d, 300)) < 1100) d += 10
+    const c = outward(d, 300)
+    const f = vehicle("fighter", 0, [c[0] - tx * 1500, 300, c[2] - tz * 1500], [tx * 200, 0, tz * 200], [tx, 0, tz])
+    const w = world([f])
+    while (w.now < 15) tick(w)
+    expect(f.alive).toBe(true)
+    expect(f.hp).toBeLessThan(f.maxHp)
+  })
 
-    while (minTurretDist(outward(d, 300), 0) < 2500) d += 25
-    const far = vehicle("fighter", 0, outward(d, 300), [0, 0, 0])
-    const w3 = world([far])
-    for (let i = 0; i < 300; i++) tick(w3)
+  test("beyond 1200 m nothing fires (no long-range gun shots)", () => {
+    const far = vehicle("warthog", 0, atMinDist(1250), [0, 0, 0])
+    const w = world([far])
+    for (let i = 0; i < 600; i++) tick(w)
     expect(far.hp).toBe(far.maxHp)
-    expect(aaEvents(w3, far)).toHaveLength(0)
+    expect(w.events).toHaveLength(0)
+    expect(fleetAaDps(0, far.flight.position)).toBe(0)
   })
 
   test("own-team aircraft are never targeted", () => {
@@ -207,7 +234,7 @@ describe("fleet AA", () => {
   })
 
   test("spawn-protected enemies are not engaged", () => {
-    const f = vehicle("fighter", 0, [carrier.position[0] + 800, 200, carrier.position[2]], [0, 0, 0])
+    const f = vehicle("fighter", 0, atMinDist(400, 200), [0, 0, 0])
     const w = world([f])
     markSpawned(f, 0)
     while (w.now < SPAWN_PROTECTION - 0.5) tick(w)
@@ -227,20 +254,26 @@ describe("fleet AA", () => {
       }
     }
     expect(peak[1]).toBeGreaterThan(100)
-    // Put the test ship on open water on one side of the peak, the hidden target just behind the other side.
-    let dir: [number, number] = [1, 0], r = 1000
-    search: for (r = 900; r <= 2400; r += 100) {
-      for (let k = 0; k < 16; k++) {
-        const ang = (k / 16) * Math.PI * 2
-        if (groundHeight(peak[0] - Math.cos(ang) * r, peak[2] - Math.sin(ang) * r) <= 0.5) { dir = [Math.cos(ang), Math.sin(ang)]; break search }
+    // Put the test ship on open water on one side of the peak and the hidden target low behind the other
+    // side, within AA range of the turret.
+    let found: { ship: Ship; turret: AaTurret; hidden: Vec3 } | null = null
+    search: for (let r = 300; r <= 1100; r += 50) {
+      for (let k = 0; k < 32; k++) {
+        const ang = (k / 32) * Math.PI * 2, dx = Math.cos(ang), dz = Math.sin(ang)
+        if (groundHeight(peak[0] - dx * r, peak[2] - dz * r) > 0.5) continue
+        const ship: Ship = { id: "test-dd", team: 1, kind: "destroyer", position: [peak[0] - dx * r, 0, peak[2] - dz * r], heading: 0 }
+        const turret: AaTurret = { ship, turret: "ciws_test", kind: "ciws", team: 1, position: shipToWorld(ship, [0, 18, 0]) }
+        for (let back = 100; r + back <= 1100; back += 50) {
+          const hx = peak[0] + dx * back, hz = peak[2] + dz * back
+          const hidden: Vec3 = [hx, groundHeight(hx, hz) + 15, hz]
+          if (!turretHasLOS(turret, hidden)) { found = { ship, turret, hidden }; break search }
+        }
       }
     }
-    const ship: Ship = { id: "test-dd", team: 1, kind: "destroyer", position: [peak[0] - dir[0] * r, 0, peak[2] - dir[1] * r], heading: 0 }
-    const turret: AaTurret = { ship, turret: "ciws_test", kind: "ciws", team: 1, position: shipToWorld(ship, [0, 18, 0]) }
-    const hx = peak[0] + dir[0] * 800, hz = peak[2] + dir[1] * 800
-    const low = Math.max(peak[1] * 0.4, groundHeight(hx, hz) + 20)
-    const hidden = vehicle("apache", 0, [hx, low, hz], [0, 0, 0])
-    const visible = vehicle("apache", 2, [ship.position[0] - dir[1] * 900, 900, ship.position[2] + dir[0] * 900], [0, 0, 0])
+    expect(found).not.toBeNull()
+    const { ship, turret } = found!
+    const hidden = vehicle("apache", 0, found!.hidden, [0, 0, 0])
+    const visible = vehicle("apache", 2, [ship.position[0], 400, ship.position[2] + 500], [0, 0, 0])
     expect(turretHasLOS(turret, hidden.flight.position)).toBe(false)
     expect(turretHasLOS(turret, visible.flight.position)).toBe(true)
     expect(minTurretDist(hidden.flight.position, 0)).toBeGreaterThan(AA_RANGE)
@@ -260,7 +293,7 @@ describe("fleet AA", () => {
 
   test("5-inch gun fires flak bursts with splash", () => {
     const dd = AA_TURRETS.find(t => t.team === 1 && t.kind === "gun")!
-    const f = vehicle("warthog", 0, [dd.position[0] + 1500, 400, dd.position[2]], [0, 0, 0])
+    const f = vehicle("warthog", 0, [dd.position[0] + 900, 400, dd.position[2]], [0, 0, 0])
     f.hp = 1e6
     const w = world([f])
     for (let i = 0; i < 600; i++) tick(w)
@@ -274,7 +307,7 @@ describe("fleet AA", () => {
       setFleetState(300, 4)
       const moved = shipPose(carrier, 300).position
       expect(Math.hypot(moved[0] - carrier.position[0], moved[2] - carrier.position[2])).toBeGreaterThan(100)
-      const f = vehicle("fighter", 0, [moved[0] + 1200, 300, moved[2]], [0, 0, 0])
+      const f = vehicle("fighter", 0, [moved[0] + 500, 300, moved[2]], [0, 0, 0])
       const w = world([f])
       tick(w)
       const spec = SHIP_SPECS.carrier.turrets[0]
@@ -284,7 +317,7 @@ describe("fleet AA", () => {
       while (f.alive && w.now < 4) tick(w)
       expect(f.alive).toBe(false)
       // Line of sight is tested against the moved hull: a turret sees past its own (moved) ship.
-      expect(turretHasLOS(t, [moved[0] + 1200, 300, moved[2]])).toBe(true)
+      expect(turretHasLOS(t, [moved[0] + 500, 300, moved[2]])).toBe(true)
     })
 
     test("inactive teams' fleets never fire", () => {
@@ -321,25 +354,40 @@ describe("fleet AA", () => {
 })
 
 describe("lock-on missiles", () => {
-  test("lock acquires in lockTime and is lost when out of cone", () => {
+  test("lock acquires in lockTime, warns the target while tracking, and breaks the instant it leaves the cone", () => {
     const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, 0])
-    const target = vehicle("fighter", 1, [0, ALT, -1200], [0, 0, 0])
+    const target = vehicle("fighter", 1, [0, ALT, -900], [0, 0, 0])
     const w = world([shooter, target])
     const rt = shooter.weapons[0][1]
+    const locks = () => w.events.filter(e => e.type === "lock") as Extract<GameEvent, { type: "lock" }>[]
     const ticks = Math.round(WEAPONS.aim9.lockTime! / TICK_DT)
-    for (let i = 0; i < ticks - 1; i++) tick(w, [[shooter, 0, input({ aim: [0, 0, -1] })]])
+    tick(w, [[shooter, 0, input()]])
+    expect(locks()).toEqual([{ type: "lock", vehicle: shooter.id, target: target.id, locked: false }]) // tracking warning
+    for (let i = 0; i < ticks - 2; i++) tick(w, [[shooter, 0, input()]])
     expect(rt.lockTarget).toBe(target.id)
     expect(rt.lock).toBeLessThan(1)
-    expect(w.events.some(e => e.type === "lock")).toBe(false)
-    tick(w, [[shooter, 0, input({ aim: [0, 0, -1] })]])
+    expect(locks().filter(e => e.locked)).toHaveLength(0)
+    expect(locks()).toHaveLength(2) // start + half-way
+    tick(w, [[shooter, 0, input()]])
     expect(rt.lock).toBe(1)
-    expect(w.events.filter(e => e.type === "lock" && e.locked)).toHaveLength(1)
+    expect(locks().filter(e => e.locked)).toHaveLength(1)
 
-    target.flight.position = [900, ALT, -1200] // ~37° off the aim axis
-    tick(w, [[shooter, 0, input({ aim: [0, 0, -1] })]])
+    // Just outside the ~4.6° seeker cone: no hysteresis, the lock drops at once.
+    const off = WEAPONS.aim9.lockCone! * 1.05
+    target.flight.position = [Math.sin(off) * 900, ALT, -Math.cos(off) * 900]
+    tick(w, [[shooter, 0, input()]])
     expect(rt.lockTarget).toBeNull()
     expect(rt.lock).toBe(0)
-    expect(w.events.filter(e => e.type === "lock" && !e.locked)).toHaveLength(1)
+    expect(locks().filter(e => !e.locked)).toHaveLength(3)
+  })
+
+  test("heat-seeker lock range is short (~1.1 km)", () => {
+    const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, 0])
+    const target = vehicle("fighter", 1, [0, ALT, -1300], [0, 0, 0])
+    const w = world([shooter, target])
+    for (let i = 0; i < 10; i++) tick(w, [[shooter, 0, input()]])
+    expect(shooter.weapons[0][1].lockTarget).toBeNull()
+    expect(WEAPONS.aim9.ammo).toBe(2)
   })
 
   test("out of range targets are not locked; aim47 locks at long range", () => {
@@ -355,22 +403,23 @@ describe("lock-on missiles", () => {
     expect(bb.weapons[1][0].lockTarget).toBeNull()
   })
 
-  test("homing missile hits a straight-flying target", () => {
+  test("homing missile hits a straight-flying target (two hits kill a fighter)", () => {
     const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
-    const target = vehicle("fighter", 1, [-200, ALT + 100, -1500], [150, 0, 0], [1, 0, 0])
+    const target = vehicle("fighter", 1, [-60, ALT + 30, -900], [150, 0, -40], [1, 0, 0])
     const w = world([shooter, target])
-    const aimAt = () => input({ aim: sub(target.flight.position, shooter.flight.position) })
-    for (let i = 0; i < 75; i++) tick(w, [[shooter, 0, aimAt()]])
+    const track = () => { shooter.flight.orientation = look(sub(target.flight.position, shooter.flight.position)) }
+    for (let i = 0; i < Math.round(WEAPONS.aim9.lockTime! / TICK_DT) + 1; i++) { track(); tick(w, [[shooter, 0, input()]]) }
     expect(shooter.weapons[0][1].lock).toBe(1)
-    tick(w, [[shooter, 0, { ...aimAt(), fireSecondary: true }]])
+    track()
+    tick(w, [[shooter, 0, input({ fireSecondary: true })]])
     expect(w.cs.missiles).toHaveLength(1)
     expect(w.cs.missiles[0].target).toBe(target.id)
     for (let i = 0; i < 8 * 60 && w.cs.missiles.length; i++) tick(w)
     const h = hits(w, target)
     expect(h).toHaveLength(1)
     const frac = (target.maxHp - target.hp) / target.maxHp
-    expect(frac).toBeGreaterThan(0.55)
-    expect(frac).toBeLessThan(0.65)
+    expect(frac).toBeGreaterThan(0.4)
+    expect(frac).toBeLessThan(0.55)
     expect(target.lastDamagedBy).toBe(shooter.seats[0])
   })
 
@@ -383,17 +432,17 @@ describe("lock-on missiles", () => {
     expect(shooter.weapons[0][1].ammo).toBe(WEAPONS.aim9.ammo - 1)
   })
 
-  test("flares decoy most inbound heat-seekers", () => {
+  test("flares decoy ~80–90% of inbound heat-seekers", () => {
     let decoyed = 0, survived = 0
-    const N = 20
+    const N = 30
     for (let n = 0; n < N; n++) {
       const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
-      const target = vehicle("fighter", 1, [0, ALT, -1400], [0, 0, -150])
+      const target = vehicle("fighter", 1, [0, ALT, -900], [0, 0, -150])
       const w = world([shooter, target])
       w.cs.nextId = 1 + n * 7 // vary ids → vary deterministic rolls
-      for (let i = 0; i < 75; i++) tick(w, [[shooter, 0, input({ aim: [0, 0, -1] })]])
-      tick(w, [[shooter, 0, input({ aim: [0, 0, -1], fireSecondary: true })]])
-      for (let i = 0; i < 60; i++) tick(w)
+      for (let i = 0; i < Math.round(WEAPONS.aim9.lockTime! / TICK_DT) + 1; i++) tick(w, [[shooter, 0, input()]])
+      tick(w, [[shooter, 0, input({ fireSecondary: true })]])
+      for (let i = 0; i < 30; i++) tick(w)
       tick(w, [[target, 0, input({ flares: true })]])
       expect(w.events.some(e => e.type === "flares")).toBe(true)
       expect(target.flareCount).toBe(VEHICLES.fighter.flares - 1)
@@ -401,7 +450,7 @@ describe("lock-on missiles", () => {
       for (let i = 0; i < 8 * 60 && w.cs.missiles.length; i++) tick(w)
       if (target.hp === target.maxHp) survived++
     }
-    expect(decoyed).toBeGreaterThanOrEqual(N * 0.5)
+    expect(decoyed).toBeGreaterThanOrEqual(N * 0.7)
     expect(decoyed).toBeLessThan(N)
     expect(survived).toBe(decoyed)
   })
@@ -582,7 +631,7 @@ describe("radar pulse", () => {
     for (let i = 0; i < 2; i++) tick(w, [[gunner, 0, input({ firePrimary: true })]])
     for (let i = 0; i < 60; i++) tick(w)
     const h = hits(w, near)[0]
-    expect(h && h.type === "hit" && h.damage).toBeCloseTo(WEAPONS.cannon20.damage * 1.55 * 1.2)
+    expect(h && h.type === "hit" && h.damage).toBeCloseTo(WEAPONS.cannon20.damage * WEAPON_DAMAGE_MULT.cannon20 * 1.2)
   })
 })
 
@@ -649,13 +698,17 @@ describe("determinism & balance", () => {
   test("TTK targets", () => {
     const v = (k: VehicleKind) => vehicle(k, 1, [0, 0, 0], [0, 0, 0])
     const ttk = (w: "cannon20" | "gau8" | "chaingun30", k: VehicleKind) => VEHICLES[k].maxHp / (damageFor(w, v(k), 0) * WEAPONS[w].rate)
-    expect(ttk("cannon20", "fighter")).toBeGreaterThan(1.5)
-    expect(ttk("cannon20", "fighter")).toBeLessThan(2.5)
+    expect(ttk("cannon20", "fighter")).toBeGreaterThan(2)
+    expect(ttk("cannon20", "fighter")).toBeLessThan(3)
     expect(ttk("gau8", "fighter")).toBeLessThan(ttk("cannon20", "fighter"))
     expect(ttk("chaingun30", "apache")).toBeLessThan(2.5)
     const aim9 = damageFor("aim9", v("fighter"), 0) / VEHICLES.fighter.maxHp
-    expect(aim9).toBeGreaterThan(0.55)
-    expect(aim9).toBeLessThan(0.65)
+    expect(aim9).toBeGreaterThan(0.4)
+    expect(aim9).toBeLessThan(0.55)
+    expect(2 * aim9).toBeGreaterThanOrEqual(1) // two hits kill
+    const aim47 = damageFor("aim47", v("fighter"), 0) / VEHICLES.fighter.maxHp
+    expect(aim47).toBeGreaterThan(0.5)
+    expect(aim47).toBeLessThan(0.6)
     const table: Record<string, Record<string, string>> = {}
     for (const w of ["cannon20", "gau8", "chaingun30"] as const) {
       table[w] = {}
@@ -692,7 +745,7 @@ describe("recon look-to-spot", () => {
     expect(spotted(w)[0]).toMatchObject({ by: bb.id, team: 0, target: target.id })
     expect(target.spottedUntil).toBeCloseTo(w.now + SPOT_DURATION)
     expect(bb.spotProgress).toBe(0)
-    expect(damageFor("cannon20", target, w.now)).toBeCloseTo(WEAPONS.cannon20.damage * 1.55 * 1.2)
+    expect(damageFor("cannon20", target, w.now)).toBeCloseTo(WEAPONS.cannon20.damage * WEAPON_DAMAGE_MULT.cannon20 * 1.2)
   })
 
   test("decays quickly off target and resets on target switch", () => {

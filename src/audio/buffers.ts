@@ -1,16 +1,12 @@
-// Procedural sample bank. Everything is rendered once at unlock (~10 ms total) so the game
+// Procedural sample bank. Everything is rendered once at unlock (~20 ms total) so the game
 // ships zero audio bytes. Loops are rendered with circular wrap-around (pulse trains) or an
 // end→start crossfade (noise), so they repeat seamlessly.
 
 export interface SoundBank {
-  /** 2 s seamless white noise. */
-  white: AudioBuffer
   /** 2 s seamless pink noise (−3 dB/oct): roar, wind, whooshes. */
   pink: AudioBuffer
   /** 2 s seamless brown noise (−6 dB/oct): rumble, explosions, afterburner. */
   brown: AudioBuffer
-  /** 2 s sparse random pops: afterburner / rocket-motor crackle. */
-  crackle: AudioBuffer
   /** M61 Vulcan: 100 rounds/s buzz-saw pulse train loop. */
   vulcan: AudioBuffer
   /** GAU-8 Avenger: 65 rounds/s (3,900 rpm) heavy saturated growl loop — the BRRRT. */
@@ -66,24 +62,16 @@ function loopNoise(ctx: BaseAudioContext, seconds: number, rng: Rng, next: (whit
   return buffer
 }
 
-/** Two-pole resonant filter applied cyclically (two passes so the state wraps cleanly). */
-function cyclicBandpass(data: Float32Array, sr: number, freq: number, q: number, wet: number): void {
-  const w = (2 * Math.PI * freq) / sr
-  const alpha = Math.sin(w) / (2 * q)
-  const a0 = 1 + alpha
-  const b0 = alpha / a0, b2 = -alpha / a0
-  const a1 = (-2 * Math.cos(w)) / a0, a2 = (1 - alpha) / a0
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0
-  const out = new Float32Array(data.length)
+/** One-pole lowpass applied cyclically (two passes so the loop seam stays clean). */
+function cyclicLowpass(data: Float32Array, sr: number, freq: number): void {
+  const a = 1 - Math.exp((-2 * Math.PI * freq) / sr)
+  let y = 0
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < data.length; i++) {
-      const x = data[i]
-      const y = b0 * x + b2 * x2 - a1 * y1 - a2 * y2
-      x2 = x1; x1 = x; y2 = y1; y1 = y
-      if (pass === 1) out[i] = y
+      y += a * (data[i] - y)
+      if (pass === 1) data[i] = y
     }
   }
-  for (let i = 0; i < data.length; i++) data[i] = data[i] * (1 - wet) + out[i] * wet * 2
 }
 
 function saturate(data: Float32Array, drive: number): void {
@@ -98,6 +86,7 @@ function saturate(data: Float32Array, drive: number): void {
 function pulseLoop(
   ctx: BaseAudioContext, rate: number, cycles: number, pulseSeconds: number, rng: Rng,
   render: (out: Float32Array, sr: number, index: number, rng: Rng) => void,
+  jitter = 0.04,
 ): AudioBuffer {
   const sr = ctx.sampleRate
   const period = Math.round(sr / rate)
@@ -108,9 +97,9 @@ function pulseLoop(
   for (let k = 0; k < cycles; k++) {
     pulse.fill(0)
     render(pulse, sr, k, rng)
-    // Tiny timing jitter (±2% of the period) keeps mechanical loops from sounding synthetic.
-    const jitter = Math.round((rng() - 0.5) * 0.04 * period)
-    const start = k * period + jitter + len
+    // Timing jitter keeps mechanical loops from sounding synthetic (and from forming a pitched buzz).
+    const offset = Math.round((rng() - 0.5) * jitter * period)
+    const start = k * period + offset + len
     for (let j = 0; j < pulse.length; j++) data[(start + j) % len] += pulse[j]
   }
   return buffer
@@ -127,15 +116,17 @@ function impulse(ctx: BaseAudioContext, rng: Rng): AudioBuffer {
     for (let i = 0; i < n; i++) {
       const t = i / sr
       const env = Math.exp(-t / 0.62) * (1 - Math.exp(-t / 0.012))
-      // Progressive damping: the tail gets darker as it decays, like air absorption.
-      const a = 0.85 - 0.75 * (i / n)
+      // Dark from the start (no reverb hiss), darker still as it decays, like air absorption.
+      const a = 0.3 - 0.25 * (i / n)
       lp += a * ((rng() * 2 - 1) - lp)
       data[i] = lp * env
     }
-    // Sparse early reflections off terrain / canyon walls.
+    // Sparse early reflections off terrain / water, smeared over ~2 ms so they don't click.
     for (let r = 0; r < 10; r++) {
       const at = Math.floor((0.008 + rng() * 0.12) * sr)
-      data[at] += (rng() < 0.5 ? -1 : 1) * (0.7 - r * 0.05)
+      const sign = rng() < 0.5 ? -1 : 1
+      const amp = (0.7 - r * 0.05) * 0.15
+      for (let j = 0; j < 100 && at + j < n; j++) data[at + j] += sign * amp * Math.sin((Math.PI * j) / 100)
     }
   }
   return buffer
@@ -143,7 +134,6 @@ function impulse(ctx: BaseAudioContext, rng: Rng): AudioBuffer {
 
 export function createSoundBank(ctx: BaseAudioContext): SoundBank {
   const rng = mulberry32(0x5eed)
-  const white = loopNoise(ctx, 2, rng, (w) => w, 0.9)
 
   let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0
   const pink = loopNoise(ctx, 2, rng, (w) => {
@@ -165,76 +155,33 @@ export function createSoundBank(ctx: BaseAudioContext): SoundBank {
     return last
   }, 0.95)
 
-  let pop = 0, popDecay = 0
-  const crackle = loopNoise(ctx, 2, rng, (w) => {
-    if (rng() < 0.0009) {
-      pop = (rng() < 0.5 ? -1 : 1) * (0.3 + rng() * 0.7)
-      popDecay = 0.9 + rng() * 0.08
+  // Rotary guns: each round is a soft-attack, pitch-dropping thump plus lowpassed (not bright) noise.
+  // Heavy timing/amplitude jitter turns the pulse train into a rip instead of a pitched buzz.
+  const round = (f0: number, f1: number, thumpDecay: number, noiseCoef: number, noiseDecay: number, noiseAmt: number) =>
+    (out: Float32Array, sr: number, _k: number, r: Rng) => {
+      const amp = 0.55 + r() * 0.45
+      const drop = 0.006
+      let lp = 0
+      for (let j = 0; j < out.length; j++) {
+        const t = j / sr
+        const attack = 1 - Math.exp(-t / 0.0012)
+        const phase = 2 * Math.PI * (f1 * t + (f0 - f1) * drop * (1 - Math.exp(-t / drop)))
+        lp += noiseCoef * ((r() * 2 - 1) - lp)
+        out[j] = amp * attack * (Math.sin(phase) * Math.exp(-t / thumpDecay) + noiseAmt * lp * Math.exp(-t / noiseDecay))
+      }
     }
-    pop *= popDecay
-    return pop * (0.6 + 0.4 * w)
-  }, 0.9)
-
-  const vulcan = pulseLoop(ctx, 100, 50, 0.012, rng, (out, sr, k, r) => {
-    const amp = 0.8 + r() * 0.2
-    for (let j = 0; j < out.length; j++) {
-      const t = j / sr
-      const n = r() * 2 - 1
-      out[j] = amp * (
-        n * Math.exp(-t / 0.0012)
-        + 0.6 * Math.sin(2 * Math.PI * 520 * t) * Math.exp(-t / 0.004)
-        + 0.5 * Math.sin(2 * Math.PI * 190 * t) * Math.exp(-t / 0.006)
-      )
-    }
-  })
-  {
-    const d = vulcan.getChannelData(0)
-    cyclicBandpass(d, ctx.sampleRate, 1600, 2, 0.5)
-    saturate(d, 1.8)
-    normalize(d, 0.85)
+  const finishGun = (b: AudioBuffer, lowpass: number, drive: number, peak: number) => {
+    const d = b.getChannelData(0)
+    cyclicLowpass(d, ctx.sampleRate, lowpass)
+    saturate(d, drive)
+    normalize(d, peak)
   }
-
-  const gau8 = pulseLoop(ctx, 65, 65, 0.045, rng, (out, sr, k, r) => {
-    const amp = 0.85 + r() * 0.15
-    let lp = 0
-    for (let j = 0; j < out.length; j++) {
-      const t = j / sr
-      // Pitch-dropping thump: 165 Hz → 55 Hz per round, the low "B" in BRRRT.
-      const phase = 2 * Math.PI * (55 * t + 110 * 0.006 * (1 - Math.exp(-t / 0.006)))
-      const n = r() * 2 - 1
-      lp += 0.35 * (n - lp)
-      out[j] = amp * (
-        Math.sin(phase) * Math.exp(-t / 0.013)
-        + 0.8 * lp * Math.exp(-t / 0.0022)
-        + 0.18 * n * Math.exp(-t / 0.01)
-      )
-    }
-  })
-  {
-    const d = gau8.getChannelData(0)
-    cyclicBandpass(d, ctx.sampleRate, 700, 1.2, 0.35)
-    saturate(d, 3)
-    normalize(d, 0.9)
-  }
-
-  const ciws = pulseLoop(ctx, 75, 60, 0.02, rng, (out, sr, k, r) => {
-    const amp = 0.75 + r() * 0.25
-    for (let j = 0; j < out.length; j++) {
-      const t = j / sr
-      const n = r() * 2 - 1
-      out[j] = amp * (
-        n * Math.exp(-t / 0.0016)
-        + 0.7 * Math.sin(2 * Math.PI * (330 * t + 200 * 0.003 * (1 - Math.exp(-t / 0.003)))) * Math.exp(-t / 0.006)
-        + 0.25 * n * Math.exp(-t / 0.008)
-      )
-    }
-  })
-  {
-    const d = ciws.getChannelData(0)
-    cyclicBandpass(d, ctx.sampleRate, 1100, 1.4, 0.55)
-    saturate(d, 2.4)
-    normalize(d, 0.85)
-  }
+  const vulcan = pulseLoop(ctx, 100, 100, 0.03, rng, round(150, 80, 0.006, 0.25, 0.004, 2.5), 0.18)
+  finishGun(vulcan, 1800, 1.2, 0.8)
+  const gau8 = pulseLoop(ctx, 65, 98, 0.05, rng, round(130, 50, 0.012, 0.15, 0.005, 3), 0.15)
+  finishGun(gau8, 1200, 1.6, 0.85)
+  const ciws = pulseLoop(ctx, 75, 90, 0.035, rng, round(170, 70, 0.008, 0.2, 0.005, 2.8), 0.2)
+  finishGun(ciws, 1500, 1.4, 0.8)
 
   const blades = [1, 0.82, 0.93, 0.78]
   const rotor = pulseLoop(ctx, 19.2, 16, 0.07, rng, (out, sr, k, r) => {
@@ -247,8 +194,7 @@ export function createSoundBank(ctx: BaseAudioContext): SoundBank {
       const env = (1 - Math.exp(-t / 0.004)) * Math.exp(-t / 0.03)
       out[j] = amp * (
         Math.sin(2 * Math.PI * (58 * t + 40 * 0.01 * (1 - Math.exp(-t / 0.01)))) * env
-        + 6 * lp * (1 - Math.exp(-t / 0.002)) * Math.exp(-t / 0.022)
-        + 0.15 * n * Math.exp(-t / 0.003)
+        + 6 * lp * (1 - Math.exp(-t / 0.003)) * Math.exp(-t / 0.022)
       )
     }
   })
@@ -258,5 +204,5 @@ export function createSoundBank(ctx: BaseAudioContext): SoundBank {
     normalize(d, 0.9)
   }
 
-  return { white, pink, brown, crackle, vulcan, gau8, ciws, rotor, impulse: impulse(ctx, rng) }
+  return { pink, brown, vulcan, gau8, ciws, rotor, impulse: impulse(ctx, rng) }
 }

@@ -253,6 +253,7 @@ export function createFleet(): FleetView {
       const p = posedShip(id)
       if (!p) continue
       g.position.set(p.position[0], 0, p.position[2])
+      g.rotation.y = p.heading
       g.visible = p.team < teams
     }
     root.updateMatrixWorld(true)

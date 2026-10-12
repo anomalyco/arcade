@@ -8,8 +8,8 @@ import {
 } from "../../sim/geography"
 import { PALETTE_RGB } from "./palette"
 
-/** Terrain is streamed in 4 × 4 km clusters (4 × 4 over the map) — one draw call each. */
-export const CLUSTER_SIZE = 4_000
+/** Terrain is streamed in 2 × 2 km clusters (5 × 5 over the map) — one draw call each. */
+export const CLUSTER_SIZE = 2_000
 export const CLUSTER_N = WORLD_SIZE / CLUSTER_SIZE
 const CLUSTER_CELLS = CLUSTER_SIZE / MESH_CELL // 160
 /** Vertex stride per LOD level; level 0 is the collision mesh. */

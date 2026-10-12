@@ -1,11 +1,13 @@
 // Entry point. Kept tiny: the lobby is plain HTML/CSS in index.html; three.js, the world, aircraft,
 // audio and the game controller are all dynamically imported after first paint.
 import { initLobby, toast, type StartRequest } from "./ui/lobby"
-import { callsign, settings, onSettings } from "./ui/settings"
+import { callsign, settings, onSettings, updateSettings } from "./ui/settings"
 import type { SceneHost } from "./render/scene"
 import type { GameAudio } from "./audio"
 import type { GameHandle } from "./ui/game"
 
+// First launch (no saved settings): pick Low/Balanced from a quick GPU benchmark once the world is up.
+const firstLaunch = (() => { try { return !localStorage.getItem("wings.settings") && !localStorage.getItem("wings.autoQuality") } catch { return false } })()
 const perf = { start: performance.timeOrigin, menuMs: 0, sceneMs: 0, worldMs: 0, aircraftMs: 0 }
 ;(window as unknown as { __wings: unknown }).__wings = { perf, get stats() { return hostRef?.stats }, get game() { return game?.debug() } }
 
@@ -32,6 +34,7 @@ function bootScene(): Promise<SceneHost> {
     })
     perf.sceneMs = performance.now()
     hostRef = host
+    if (firstLaunch) autoQuality(host)
     return host
   }).catch(err => {
     console.error(err)
@@ -39,6 +42,22 @@ function bootScene(): Promise<SceneHost> {
     hostPromise = null
     throw err
   }))
+}
+
+function autoQuality(host: SceneHost): void {
+  try { localStorage.setItem("wings.autoQuality", "1") } catch {}
+  const run = () => {
+    if (game || starting || settings.quality === "high") return
+    host.benchmark().then(q => {
+      if (game || starting || q === settings.quality) return
+      updateSettings({ quality: q })
+      host.setQuality(q)
+    }).catch(() => {})
+  }
+  // Wait for the world to stream in so the benchmark sees a representative frame.
+  let tries = 0
+  const wait = () => { if (host.world.ready() || ++tries > 40) setTimeout(run, 800); else setTimeout(wait, 250) }
+  wait()
 }
 
 function bootAudio(): Promise<GameAudio | null> {

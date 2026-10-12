@@ -28,7 +28,13 @@ const SUN_DIR = (() => {
   return d && d.length === 3 ? new Vector3(d[0], d[1], d[2]).normalize() : new Vector3(0.4, 0.75, 0.5).normalize()
 })()
 
-export interface FrameStats { fps: number; frameMs: number; drawCalls: number; triangles: number; backend: "webgpu" | "webgl2" }
+export interface FrameStats {
+  fps: number; frameMs: number; drawCalls: number; triangles: number; backend: "webgpu" | "webgl2"
+  /** Current render pixel ratio (base × adaptive scale) and the adaptive scale itself. */
+  pixelRatio: number; resolutionScale: number
+  /** GPU frame estimate (ms, queue completion latency; WebGPU only). */
+  gpuMs: number
+}
 
 export interface SceneHost {
   renderer: WebGPURenderer
@@ -52,11 +58,24 @@ export interface SceneHost {
   setFocus(p: readonly number[] | null): void
   /** Lightning flash (0..1+): pulses exposure and bloom; decays on its own. The world may also expose a value. */
   lightning(intensity: number): void
+  /** Quick GPU benchmark (≈2 s of the menu backdrop at full rate): the preset this machine should start on. */
+  benchmark(): Promise<Quality>
 }
+
+/** Base pixel ratio per preset: retina laptops never render 4× the pixels on Balanced. */
+const MAX_PR: Record<Quality, number> = { low: 1, balanced: 1.25, high: 2 }
+/** Adaptive resolution floor per preset (fraction of the base pixel ratio). */
+const MIN_SCALE: Record<Quality, number> = { low: 0.5, balanced: 0.6, high: 0.7 }
+/** The menu backdrop renders at reduced resolution and 30 fps. */
+const MENU_SCALE = 0.75
+const MENU_FPS = 30
+/** Frame cap while playing (0 = display refresh) and when the window is unfocused. */
+const PLAY_FPS: Record<Quality, number> = { low: 60, balanced: 60, high: 0 }
+const BACKGROUND_FPS = 30
 
 function pixelRatio(q: Quality): number {
   const dpr = window.devicePixelRatio || 1
-  return Math.min(dpr, q === "low" ? 1 : q === "balanced" ? 1.5 : 2)
+  return Math.min(dpr, MAX_PR[q])
 }
 
 /** Faint speed streaks in view space (camera-attached through cameraWorldMatrix). */
@@ -102,7 +121,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
   // WebGL2 without EXT_clip_control can't do reversed Z; fall back to a logarithmic depth buffer.
   if (!renderer.reversedDepthBuffer) (renderer as unknown as { logarithmicDepthBuffer: boolean }).logarithmicDepthBuffer = true
   const backend: FrameStats["backend"] = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "webgpu" : "webgl2"
-  renderer.setPixelRatio(pixelRatio(quality))
+  renderer.setPixelRatio(pixelRatio(quality) * MENU_SCALE)
   renderer.setSize(window.innerWidth, window.innerHeight, false)
   renderer.info.autoReset = false
   renderer.shadowMap.type = PCFShadowMap
@@ -170,9 +189,9 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     pipeline = null
     bloomNode = null
     if (q === "low") return // Low renders straight to the canvas (renderer tone mapping only, no bloom/grain).
-    const pr = renderer.getPixelRatio()
-    // WebGL2 can't blit-resolve the MSAA float depth used by reversed Z: resolve colour only via FXAA there.
-    const msaa = backend === "webgpu" ? (pr >= 2 ? 2 : 4) : 0
+    // MSAA only on High (WebGPU; WebGL2 can't blit-resolve the MSAA float depth used by reversed Z).
+    // Balanced resolves edges with FXAA, which is far cheaper than a multisampled HDR target.
+    const msaa = backend === "webgpu" && q === "high" ? (window.devicePixelRatio >= 2 ? 2 : 4) : 0
     const scenePass = pass(scene, camera, { samples: msaa })
     const col = scenePass.getTextureNode("output")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,6 +210,8 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     // Bloom on HDR emissives (afterburners, tracers, fire, lightning); the dim storm scene stays below threshold.
     bloomNode = bloom(hdr, 0.9, 0.5, 0.82)
     bloomNode.strength = uBloom as never
+    // Bloom is a soft glow: a quarter-res chain on Balanced is indistinguishable and much cheaper.
+    if (q !== "high") bloomNode.setResolutionScale(0.35)
     const lit = hdr.add(bloomNode).mul(uExposure)
     const toned = renderOutput(vec4(lit.rgb, 1), ACESFilmicToneMapping, SRGBColorSpace)
     const ldr: any = msaa ? toned : fxaa(toned)
@@ -214,13 +235,19 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
   renderer.toneMapping = quality === "low" ? ACESFilmicToneMapping : NoToneMapping
 
   let frameFn: ((dt: number, time: number) => void) | null = null
-  const stats: FrameStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, backend }
+  const stats: FrameStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, backend, pixelRatio: renderer.getPixelRatio(), resolutionScale: 1, gpuMs: 0 }
   let last = performance.now()
   let fpsFrames = 0
   let fpsT = last
   let frame = 0
   let worldReadyReported = false
   let flash = 0
+  // Dev (?nocap): no frame cap, menu scale or adaptive resolution — for GPU A/B measurements.
+  const devNoCap = import.meta.env.DEV && new URLSearchParams(location.search).has("nocap")
+  let dynScale = 1, benchmarking = false, okSeconds = 0, adaptAt = performance.now(), lastProbe = 0, gpuProbe = false
+  const intervals: number[] = []
+  const gpuSamples: number[] = []
+  const device = (renderer.backend as unknown as { device?: { queue: { onSubmittedWorkDone(): Promise<unknown> } } }).device ?? null
 
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false)
@@ -236,10 +263,12 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     setFrame(fn) {
       frameFn = fn
       if (!fn) rig.setMode("menu")
+      applyPixelRatio()
     },
     setQuality(q) {
       host.quality = q
-      renderer.setPixelRatio(pixelRatio(q))
+      dynScale = 1
+      applyPixelRatio()
       if (renderer.shadowMap.enabled !== (q !== "low")) renderer.shadowMap.enabled = q !== "low"
       resize()
       buildPipeline(q)
@@ -267,6 +296,37 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     },
     lightning(intensity) {
       flash = Math.max(flash, intensity)
+    },
+    benchmark() {
+      return new Promise<Quality>(resolve => {
+        const q = host.quality
+        benchmarking = true
+        dynScale = 1
+        // Measure the current preset at full game resolution and rate (not the cheaper menu backdrop).
+        applyPixelRatio()
+        gpuSamples.length = 0
+        const intervals: number[] = []
+        let prev = performance.now()
+        const t0 = prev
+        const tick = () => {
+          const n = performance.now()
+          intervals.push(n - prev)
+          prev = n
+          if (n - t0 < 2200) { requestAnimationFrame(tick); return }
+          benchmarking = false
+          const med = (a: number[]) => a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : 0
+          // Skip the first ~0.6 s (pipeline/shader warm-up).
+          const gpu = med(gpuSamples.slice(Math.floor(gpuSamples.length / 3)))
+          const frame = med(intervals.slice(Math.floor(intervals.length / 3)))
+          // Low costs roughly 40% of Balanced on the GPU.
+          const limit = q === "low" ? 4.5 : 11
+          const slow = gpu > 0 ? gpu > limit : frame > (q === "low" ? 17.5 : 20)
+          dynScale = 1
+          applyPixelRatio()
+          resolve(q === "low" ? (slow ? "low" : "balanced") : slow ? "low" : q)
+        }
+        requestAnimationFrame(tick)
+      })
     },
   }
 
@@ -341,8 +401,14 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
 
   const loop = () => {
     const now = performance.now()
-    const dt = Math.min(0.1, (now - last) / 1000)
+    // Frame pacing: cap to 60 fps (Low/Balanced; 120 Hz panels otherwise double the GPU work), 30 fps for
+    // the menu backdrop or an unfocused window. Skipped rAF ticks cost nothing (the canvas keeps its image).
+    const cap = benchmarking || devNoCap ? 0 : !frameFn ? MENU_FPS : !document.hasFocus() ? BACKGROUND_FPS : PLAY_FPS[host.quality]
+    if (cap > 0 && now - last < 1000 / cap - 2.5) return
+    const interval = now - last
+    const dt = Math.min(0.1, interval / 1000)
     last = now
+    adapt(now, interval, cap)
     const t = now / 1000
     frame++
     if (frameFn) {
@@ -385,6 +451,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     renderer.info.reset()
     if (pipeline) pipeline.render()
     else renderer.render(scene, camera)
+    sampleGpu(now)
     const t1 = performance.now()
     stats.frameMs += (t1 - now - stats.frameMs) * 0.05
     fpsFrames++
@@ -406,6 +473,51 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       onStatus("world")
     }
   }
+  // ---- adaptive resolution: keep frames under budget by scaling the pixel ratio (hysteresis, slow to rise).
+  function applyPixelRatio() {
+    const menu = !frameFn && !benchmarking && !devNoCap
+    const pr = Math.max(0.5, pixelRatio(host.quality) * dynScale * (menu ? MENU_SCALE : 1))
+    const rounded = Math.round(pr * 20) / 20
+    stats.resolutionScale = dynScale
+    if (Math.abs(rounded - renderer.getPixelRatio()) < 0.01) return
+    renderer.setPixelRatio(rounded)
+    stats.pixelRatio = rounded
+    resize()
+  }
+  function sampleGpu(now: number) {
+    // Queue-completion latency of this frame's submission ≈ GPU frame time (upper bound). One probe in flight.
+    if (!device || gpuProbe || now - lastProbe < 60) return
+    gpuProbe = true
+    lastProbe = now
+    const t0 = performance.now()
+    device.queue.onSubmittedWorkDone().then(() => {
+      gpuProbe = false
+      const ms = performance.now() - t0
+      gpuSamples.push(ms)
+      if (gpuSamples.length > 64) gpuSamples.shift()
+      stats.gpuMs += (ms - stats.gpuMs) * 0.2
+    }, () => { gpuProbe = false })
+  }
+  function adapt(now: number, interval: number, cap: number) {
+    if (benchmarking || devNoCap) return
+    if (interval < 200) intervals.push(interval) // ignore stalls (tab switches, shader compiles)
+    if (now - adaptAt < 1000) return
+    adaptAt = now
+    if (intervals.length < 10) { intervals.length = 0; return }
+    const budget = 1000 / (cap > 0 ? cap : 60)
+    intervals.sort((a, b) => a - b)
+    const med = intervals[intervals.length >> 1]
+    intervals.length = 0
+    const gpu = gpuSamples.length >= 4 ? [...gpuSamples.slice(-12)].sort((a, b) => a - b)[Math.min(gpuSamples.length, 12) >> 1] : 0
+    const min = MIN_SCALE[host.quality]
+    if (med > budget * 1.2 || gpu > budget * 1.1) {
+      okSeconds = 0
+      if (dynScale > min + 1e-3) { dynScale = Math.max(min, dynScale - (med > budget * 1.7 ? 0.2 : 0.1)); applyPixelRatio(); gpuSamples.length = 0 }
+    } else if (dynScale < 1 && med < budget * 1.08 && (device ? gpu > 0 && gpu < budget * 0.55 : true)) {
+      if (++okSeconds >= (device ? 3 : 8)) { okSeconds = 0; dynScale = Math.min(1, dynScale + 0.05); applyPixelRatio() }
+    } else okSeconds = 0
+  }
+  applyPixelRatio()
   renderer.setAnimationLoop(loop)
   if (import.meta.env.DEV) {
     const w = window as unknown as Record<string, unknown>

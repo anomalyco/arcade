@@ -76,18 +76,23 @@ relatively wetter.
 Levels are measured against the reduced baseline: `MASTER_TRIM` 0.4, sfx bus 0.6, limiter −16 dB.
 
 - **Ambience** (`ambience.ts`, `ambienceBus` 0.5):
-  - Rain is four stereo layers. High-passed hiss, a pink-noise body, and crackle patter are always present. A brown-noise
-    "rain on the sea" layer fades with listener altitude (`1/(1+alt/120 m)`).
-  - Storm wind gusts on a random walk, with a resonant howl on strong gusts. An airspeed rush rises with own speed and
-    gusts too.
-  - Unseen distant thunder rolls every 22–55 s.
-  - Measured output peak is about 0.02, so it stays subtle.
-  - `setStorm({ rain, cockpit, enabled })`. `cockpit` switches to loud canopy patter and closes a 2.6 kHz lowpass over
-    all world sound (the `world` filter). UI sounds are not affected.
-- **`thunder(delay, intensity)`**:
-  - The sound is scheduled `delay` seconds ahead, and the distance (`delay × 343`) sets the timbre.
-  - Strikes under 3 km get a crack and a tearing crackle. Every strike gets a brown-noise rumble whose lowpass follows
-    air absorption, with 3–6 random "rolls" (`setValueCurveAtTime`) and a sub layer.
+  - No rain hiss. The bed is a very soft storm rumble: brown noise behind two cascaded 140 Hz lowpasses, with a slow
+    8–16 s swell.
+  - Wind is lowpassed brown noise. It gusts gently, and its cutoff and level rise only a little with own airspeed.
+  - Unseen distant thunder rolls every 25–60 s.
+  - Measured: 100% of the bed's energy is below 300 Hz, with a peak of about 0.014.
+  - `setStorm({ rain, cockpit, enabled })`. `rain` scales the bed. `cockpit` closes a 2.6 kHz lowpass over all world
+    sound; UI sounds are not affected.
+- **`thunder(delay, intensity)`:** the sound is scheduled `delay` seconds ahead. Strikes under 3 km get a lowpassed
+  boom. Every strike gets a long brown-noise rumble behind two lowpasses at 90–300 Hz, with random "rolls", plus a sub
+  layer. About 99% of its energy is below 300 Hz.
+- **Smoothness rules** (applied after feedback that it sounded "weird" and like "TV static"):
+  - No white noise or crackle anywhere.
+  - Envelope attacks are at least 3 ms.
+  - One-shots get a random ±5% pitch per shot (`Shot.vary`).
+  - Rotary-gun and CIWS loops are jittered low thumps behind 1.1–2.4 kHz lowpasses: a rip, not a buzz.
+  - Jets are a pink/brown-noise roar with a quiet sine hum. Tones stay below about 2.6 kHz.
+  - The reverb impulse is dark.
 - **AA:**
   - CIWS is a 75 rounds/s tearing loop (`Held`, one per turret, kept alive by the ~10/s `aa` events), with a short
     echo tail.

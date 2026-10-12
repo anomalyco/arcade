@@ -53,6 +53,9 @@ function boostFov(kind: VehicleKind, speed: number): number {
   return BOOST_FOV * MathUtils.smoothstep(speed, v.cruise * 1.02, v.cruise + (v.boost - v.cruise) * 0.4)
 }
 
+/** Mouse-aim chase: look-direction smoothing time constant (s). */
+const CHASE_LOOK_LAG = 0.06
+
 const HELI_PITCH_FOLLOW = 0.7
 const HELI_ROLL_FOLLOW = 0.3
 
@@ -102,6 +105,8 @@ export class CameraRig {
   private orbitAngle = 0
   private followQ = new Quaternion()
   private followInit = false
+  private chaseLook = new Vector3(0, 0, -1)
+  private chaseLookInit = false
 
   constructor(readonly camera: PerspectiveCamera) {
     this.pos.copy(camera.position)
@@ -136,10 +141,15 @@ export class CameraRig {
     const speed = Math.hypot(velocity[0], velocity[1], velocity[2])
     const dist = c.dist * this.zoom * (1 + Math.min(speed, 260) / 900)
     const height = c.height * this.zoom
-    this.pos.set(position[0], position[1], position[2]).addScaledVector(look, -dist).addScaledVector(UP, height)
+    // The view swings with the aim (slight lag smooths mouse steps); position stays rigidly tied to the
+    // aircraft so the airframe never surges relative to the camera.
+    if (!this.chaseLookInit || this.chaseLook.dot(look) < 0.2) { this.chaseLook.copy(look); this.chaseLookInit = true }
+    else this.chaseLook.lerp(look, 1 - Math.exp(-dt / CHASE_LOOK_LAG)).normalize()
+    const lk = this.chaseLook
+    this.pos.set(position[0], position[1], position[2]).addScaledVector(lk, -dist).addScaledVector(UP, height)
     const floor = groundAt(this.pos.x, this.pos.z) + 3
     if (this.pos.y < floor) this.pos.y = floor
-    _v.set(position[0], position[1], position[2]).addScaledVector(look, 400).addScaledVector(UP, height * 0.6)
+    _v.set(position[0], position[1], position[2]).addScaledVector(lk, 400).addScaledVector(UP, height * 0.6)
     this.lookAt(this.pos, _v, UP)
     this.fov = this.baseFov + Math.min(14, Math.max(0, speed - 80) * 0.06) + boostFov(kind, speed)
   }
@@ -189,6 +199,7 @@ export class CameraRig {
 
   resetFollow(): void {
     this.followInit = false
+    this.chaseLookInit = false
   }
 
   cockpit(dt: number, kind: VehicleKind, position: Vec3, orientation: Quat, look: Vector3): void {

@@ -686,8 +686,10 @@ class GameSession implements GameHandle {
     const seat = me?.seat ?? null
     const heli = myVehicle ? VEHICLES[myVehicle.kind].flight === "heli" : false
 
-    // Mouse role: gunners always aim the turret; pilots use the chosen control style.
-    const mode = seat === 1 || settings.controlStyle === "aim" ? "aim" : "direct"
+    // Mouse role: gunners always aim the turret; pilots use the chosen scheme (mouse-aim by default,
+    // direct while the manual key is held or with the Battlefield scheme).
+    const mode = input.pilotMouseMode(seat === 0)
+    if (myVehicle && seat === 0) input.setNose(forward(this.pred?.state.orientation ?? myVehicle.flight.orientation))
     if (mode !== input.mouseMode) {
       if (mode === "aim") {
         const c = this.deps.host.camera
@@ -700,7 +702,7 @@ class GameSession implements GameHandle {
     input.lookDir(this.look)
     this.lookV.set(this.look[0], this.look[1], this.look[2])
     const direct = seat === 0 && mode === "direct"
-    if (flying && direct) input.sampleSteering(dt, heli)
+    if (flying && seat === 0) input.sampleSteering(dt, heli)
 
     // Wheel: gunner zoom, pilot fine throttle (jets).
     const wheel = input.takeWheel()

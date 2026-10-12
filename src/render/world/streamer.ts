@@ -55,6 +55,9 @@ interface Cluster {
   dist: number
   lastWanted: number
   trees: InstancedMesh[] | null
+  /** Tree kind per InstancedMesh in `trees` (for LOD swaps) and whether the low-poly LOD is active. */
+  treeKinds: number[]
+  treeLod: boolean
   treesPending: boolean
   wantTrees: boolean
 }
@@ -92,7 +95,7 @@ export class TerrainStreamer {
     this.treeRoot.name = "World · trees"
     for (let cz = 0; cz < CLUSTER_N; cz++) for (let cx = 0; cx < CLUSTER_N; cx++) {
       this.clusters.push({ cx, cz, mesh: null, lod: -1, pending: -1, wantLod: 3, visible: false, dist: Infinity, lastWanted: 0,
-        trees: null, treesPending: false, wantTrees: false })
+        trees: null, treeKinds: [], treeLod: false, treesPending: false, wantTrees: false })
     }
     this.backend = createBackend(r => this.results.push(r))
   }
@@ -153,12 +156,17 @@ export class TerrainStreamer {
       if (c.visible) c.lastWanted = this.elapsed
       if (c.mesh) {
         resident++
-        c.mesh.visible = c.visible
+        c.mesh.visible = c.visible && !c.mesh.userData.empty
         if (c.visible) { visible++; triangles += (c.mesh.geometry.index?.count ?? 0) / 3 }
       }
       c.wantTrees = d < s.treeRadius && cam.y < 4500
       if (!c.wantTrees && c.trees && d > s.treeRadius + 400) this.dropTrees(c)
-      if (c.trees) for (const m of c.trees) { m.visible = c.wantTrees || d < s.treeRadius + 400; trees += m.count }
+      if (c.trees) {
+        // Distant clusters swap to the low-poly tree LOD (hysteresis avoids flicker at the boundary).
+        const lod = c.treeLod ? d > this.treeRes.lodDistance - 80 : d > this.treeRes.lodDistance
+        if (lod !== c.treeLod) this.setTreeLod(c, lod)
+        for (const m of c.trees) { m.visible = c.wantTrees || d < s.treeRadius + 400; trees += m.count }
+      }
       if (c.mesh && !c.visible && this.elapsed - c.lastWanted > 30) {
         this.terrainRoot.remove(c.mesh)
         c.mesh.geometry.dispose()
@@ -244,17 +252,21 @@ export class TerrainStreamer {
         c.mesh.updateMatrix()
         this.terrainRoot.add(c.mesh)
       }
-      c.mesh.visible = c.visible
+      c.mesh.visible = c.visible && data.index.length > 0
+      c.mesh.userData.empty = data.index.length === 0
       c.lod = data.lod
     } else {
       c.treesPending = false
       if (!c.wantTrees) return
       this.dropTrees(c)
       const meshes: InstancedMesh[] = []
+      c.treeKinds = []
+      c.treeLod = c.dist > this.treeRes.lodDistance
       for (let k = 0; k < TREE_KINDS; k++) {
         const count = r.data.counts[k]
         if (!count) continue
-        const mesh = new InstancedMesh(this.treeRes.geometries[k], this.treeRes.material, count)
+        c.treeKinds.push(k)
+        const mesh = new InstancedMesh((c.treeLod ? this.treeRes.lodGeometries : this.treeRes.geometries)[k], this.treeRes.material, count)
         mesh.instanceMatrix = new InstancedBufferAttribute(r.data.matrices[k], 16)
         mesh.position.set(x0, 0, z0)
         mesh.matrixAutoUpdate = false
@@ -266,6 +278,12 @@ export class TerrainStreamer {
       }
       c.trees = meshes
     }
+  }
+
+  private setTreeLod(c: Cluster, lod: boolean) {
+    c.treeLod = lod
+    const set = lod ? this.treeRes.lodGeometries : this.treeRes.geometries
+    c.trees?.forEach((m, i) => { m.geometry = set[c.treeKinds[i]] })
   }
 
   private dropTrees(c: Cluster) {

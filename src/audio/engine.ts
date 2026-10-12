@@ -30,6 +30,8 @@ export interface GameAudioEngine extends GameAudio {
   setLocalPlayer(playerId: string | null): void
   /** Peak absolute sample of the master output over the last ~43 ms (0 when silent/locked). */
   peak(): number
+  /** Current master-output spectrum in dB per FFT bin (bin width = sampleRate / 2048). Debug/tests. */
+  spectrum(): Float32Array
   stats(): AudioStats
   readonly context: AudioContext | null
 }
@@ -54,6 +56,7 @@ export function createAudio(): GameAudioEngine {
   let lastVehicleUpdate = 0
   let timer: ReturnType<typeof setInterval> | null = null
   let peakBuf: Float32Array<ArrayBuffer> | null = null
+  let specBuf: Float32Array<ArrayBuffer> | null = null
   const lastListener: Vec3 = [0, 0, 0]
   let lastListenerTime = -1
   const voices = new Map<string, EngineVoice>()
@@ -402,6 +405,14 @@ export function createAudio(): GameAudioEngine {
         if (v > m) m = v
       }
       return m
+    },
+
+    spectrum() {
+      if (!core) return new Float32Array(0)
+      const a = core.analyser
+      if (!specBuf || specBuf.length !== a.frequencyBinCount) specBuf = new Float32Array(a.frequencyBinCount)
+      a.getFloatFrequencyData(specBuf)
+      return specBuf
     },
 
     stats() {

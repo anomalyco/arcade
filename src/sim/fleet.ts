@@ -58,20 +58,34 @@ export interface Ship {
 }
 
 /** Anti-air defense: any enemy aircraft inside this range of a turret (with line of sight) is engaged. */
-export const AA_RANGE = 2200
+export const AA_RANGE = 1200
 /** Seconds of spawn protection after spawning (replaces the old safe-zone domes). */
 export const SPAWN_PROTECTION = 6
 
-const GROUP_DISTANCE = 6000
+// ── Fleet layout & movement ──────────────────────────────────────────────────
+// Every strike group steams counter-clockwise around the map center on one shared circle, keeping
+// its angular spacing (teams stay opposite each other). The whole picture is a rigid rotation of
+// the t=0 layout about the origin, so pose is a pure function of match time (server/clients agree).
+export const FLEET_ORBIT_RADIUS = 3200
+/** Seconds per full lap (≈13 m/s at the carrier). */
+export const FLEET_LAP_TIME = 1500
+export const FLEET_ANGULAR_SPEED = (2 * Math.PI) / FLEET_LAP_TIME
+/** @deprecated kept for compatibility: fleets no longer approach; they orbit at FLEET_ORBIT_RADIUS. */
+export const FLEET_START_DISTANCE = FLEET_ORBIT_RADIUS
+/** @deprecated see FLEET_START_DISTANCE. */
+export const FLEET_END_DISTANCE = FLEET_ORBIT_RADIUS
+/** @deprecated */
+export const FLEET_APPROACH_TIME = 600
+
 const ESCORTS: Array<{ dx: number; dz: number }> = [
-  { dx: -700, dz: -500 }, { dx: 700, dz: -500 }, { dx: 0, dz: 800 },
+  { dx: -500, dz: -450 }, { dx: 500, dz: -450 }, { dx: 0, dz: 650 },
 ]
 
-/** One strike group per team: 1 carrier + 3 destroyers. Carrier bow points at the map center. */
+/** t=0 layout. Group center angle θ (position = R·(sin θ, cos θ)); bow points along the direction of travel. */
 export const FLEET: Ship[] = ([0, 1, 2, 3] as TeamId[]).flatMap(team => {
-  const dir = [[0, 1], [0, -1], [-1, 0], [1, 0]][team]
-  const cx = dir[0] * GROUP_DISTANCE, cz = dir[1] * GROUP_DISTANCE
-  const heading = Math.atan2(dir[0], dir[1]) // bow (-Z) faces the center
+  const theta = [0, Math.PI, -Math.PI / 2, Math.PI / 2][team]
+  const cx = FLEET_ORBIT_RADIUS * Math.sin(theta), cz = FLEET_ORBIT_RADIUS * Math.cos(theta)
+  const heading = theta - Math.PI / 2 // bow (-Z) along the counter-clockwise tangent
   const c = Math.cos(heading), s = Math.sin(heading)
   const local = (dx: number, dz: number): Vec3 => [cx + dx * c + dz * s, 0, cz - dx * s + dz * c]
   return [
@@ -80,37 +94,31 @@ export const FLEET: Ship[] = ([0, 1, 2, 3] as TeamId[]).flatMap(team => {
   ]
 })
 
-// ── Fleet movement ───────────────────────────────────────────────────────────
-// Strike groups steam slowly toward the map center over the course of a match (escalation:
-// AA umbrellas close in). Pose is a pure function of match time so server and clients agree.
-export const FLEET_START_DISTANCE = 6000
-export const FLEET_END_DISTANCE = 4500
-/** Seconds to go from start to end distance (matches the default 10 min round). */
-export const FLEET_APPROACH_TIME = 600
-
 export interface ShipPose {
   position: Vec3
   heading: number
   /** World velocity m/s (for carrying aircraft parked on deck, wakes, lead aiming). */
   velocity: Vec3
+  /** Yaw rate rad/s (the formation turns as it orbits). */
+  yawRate?: number
 }
 
-/** Current pose of a ship `t` seconds into the match (t clamped to [0, FLEET_APPROACH_TIME]). */
+/** Current pose of a ship `t` seconds into the match: the t=0 pose rotated about the origin by ω·t. */
 export function shipPose(ship: Ship, t: number, out?: ShipPose): ShipPose {
-  const k = Math.min(1, Math.max(0, t / FLEET_APPROACH_TIME))
-  const dist = FLEET_START_DISTANCE + (FLEET_END_DISTANCE - FLEET_START_DISTANCE) * k
-  // Move the whole formation along the bow direction (toward the center), keeping formation offsets.
-  const fx = -Math.sin(ship.heading), fz = -Math.cos(ship.heading) // bow (-Z) in world
-  const advance = FLEET_START_DISTANCE - dist
-  const speed = t > 0 && t < FLEET_APPROACH_TIME ? (FLEET_START_DISTANCE - FLEET_END_DISTANCE) / FLEET_APPROACH_TIME : 0
-  const o = out ?? { position: [0, 0, 0], heading: 0, velocity: [0, 0, 0] }
-  o.position[0] = ship.position[0] + fx * advance
+  const phi = FLEET_ANGULAR_SPEED * Math.max(0, t)
+  const c = Math.cos(phi), s = Math.sin(phi)
+  const x0 = ship.position[0], z0 = ship.position[2]
+  const o = out ?? { position: [0, 0, 0], heading: 0, velocity: [0, 0, 0], yawRate: 0 }
+  const x = x0 * c + z0 * s, z = -x0 * s + z0 * c
+  o.position[0] = x
   o.position[1] = 0
-  o.position[2] = ship.position[2] + fz * advance
-  o.heading = ship.heading
-  o.velocity[0] = fx * speed
+  o.position[2] = z
+  o.heading = ship.heading + phi
+  // Rigid rotation about the origin: v = ω · (z, -x).
+  o.velocity[0] = FLEET_ANGULAR_SPEED * z
   o.velocity[1] = 0
-  o.velocity[2] = fz * speed
+  o.velocity[2] = -FLEET_ANGULAR_SPEED * x
+  o.yawRate = FLEET_ANGULAR_SPEED
   return o
 }
 

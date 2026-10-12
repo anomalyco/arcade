@@ -30,7 +30,7 @@ export function createSky() {
 }
 
 /** Big translucent cloud-deck layers (follow the camera, fade when you fly through them). */
-export function createCloudLayers(count: number) {
+export function createCloudLayers(count: number, octaves = 5) {
   const group = new Group()
   group.name = "World · cloud decks"
   const layers: { mesh: Mesh; alt: number }[] = []
@@ -43,7 +43,7 @@ export function createCloudLayers(count: number) {
     mat.name = `World · cloud deck ${i}`
     const p: N = positionWorld.xz
     const drift: N = STORM.wind.mul(time).mul(1 + i * 0.4)
-    const d1: N = fbm(p.add(drift).mul(0.00042 + i * 0.00013).add(vec2(i * 17.3, i * 5.1)), 5)
+    const d1: N = fbm(p.add(drift).mul(0.00042 + i * 0.00013).add(vec2(i * 17.3, i * 5.1)), octaves)
     const d2: N = fbm(p.add(drift.mul(1.3)).mul(0.0019).add(vec2(3.1, i * 9.7)), 3)
     const dens: N = smoothstep(0.42, 0.75, d1.mul(0.8).add(d2.mul(0.25)))
     const below: N = smoothstep(alt + 30, alt - 30, cameraPosition.y)

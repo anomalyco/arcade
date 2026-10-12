@@ -18,16 +18,13 @@ export class EngineVoice {
   private readonly sources: AudioScheduledSourceNode[] = []
   private readonly nodes: AudioNode[] = []
   private whineA: Tone | null = null
-  private whineB: Tone | null = null
   private whistleA: Tone | null = null
-  private whistleB: Tone | null = null
   private sub: Tone | null = null
   private tail: Tone | null = null
   private tailFilter: BiquadFilterNode | null = null
   private roar: Noise | null = null
   private roar2: Noise | null = null
   private burner: Noise | null = null
-  private crackle: Noise | null = null
   private chop: Noise | null = null
   private own = false
   private doppler = 1
@@ -45,28 +42,26 @@ export class EngineVoice {
     this.mix.gain.value = 0
     this.mix.connect(this.spatial.input)
     const bank = core.bank
+    // Smooth, natural engines: noise roar does the work, tones are quiet sines kept under ~2.5 kHz.
     if (kind === "apache") {
-      this.chop = this.noise(bank.rotor, "lowpass", 1500, 0.8)
-      this.whineA = this.tone("sine", 1700)
-      this.whineB = this.tone("sine", 3900)
+      this.chop = this.noise(bank.rotor, "lowpass", 900, 0.5)
+      this.whineA = this.tone("sine", 1150)
       this.tailFilter = ctx.createBiquadFilter()
       this.tailFilter.type = "lowpass"
-      this.tailFilter.frequency.value = 480
+      this.tailFilter.frequency.value = 250
       this.nodes.push(this.tailFilter)
-      this.tail = this.tone("sawtooth", 107, this.tailFilter)
-      this.roar = this.noise(bank.pink, "lowpass", 600, 0.5)
+      this.tail = this.tone("triangle", 107, this.tailFilter)
+      this.roar = this.noise(bank.pink, "lowpass", 500, 0.5)
     } else {
-      this.whineA = this.tone("triangle", 400)
-      this.whineB = this.tone("sine", 1100)
-      this.roar = this.noise(kind === "blackbird" ? bank.brown : bank.pink, "lowpass", 800, 0.5)
-      if (kind === "blackbird") this.roar2 = this.noise(bank.pink, "lowpass", 1200, 0.5)
+      this.whineA = this.tone("sine", 300)
+      // Roar = brighter pink layer (filter opens with throttle) over a deep brown body.
+      this.roar = this.noise(bank.pink, "lowpass", 600, 0.5)
+      this.roar2 = this.noise(bank.brown, "lowpass", 300, 0.5)
       if (kind === "warthog") {
-        this.whistleA = this.tone("sine", 4200)
-        this.whistleB = this.tone("sine", 2200)
+        this.whistleA = this.tone("sine", 2000)
       } else {
-        this.burner = this.noise(bank.brown, "lowpass", kind === "blackbird" ? 180 : 280, 0.7)
-        this.crackle = this.noise(bank.crackle, "highpass", kind === "blackbird" ? 900 : 1500, 0.6)
-        this.subBase = kind === "blackbird" ? 32 : 42
+        this.burner = this.noise(bank.brown, "lowpass", kind === "blackbird" ? 160 : 220, 0.6)
+        this.subBase = kind === "blackbird" ? 32 : 40
         this.sub = this.tone("sine", this.subBase)
       }
     }
@@ -143,82 +138,71 @@ export class EngineVoice {
     const near = own ? 1.25 : 1
     const set = (p: AudioParam, value: number) => p.setTargetAtTime(value, now, TC)
 
+    const roar = (lpBase: number, lpRange: number, gBase: number, gRange: number, rate: number) => {
+      set(this.roar!.src.playbackRate, (0.85 + 0.25 * thr) * d * rate)
+      set(this.roar!.filter.frequency, (lpBase + lpRange * Math.pow(thr, 1.2)) * near * d)
+      set(this.roar!.gain.gain, gBase + gRange * thr + 0.06 * sn)
+    }
+    const body = (lpBase: number, lpRange: number, gBase: number, gRange: number) => {
+      set(this.roar2!.src.playbackRate, (0.85 + 0.2 * thr) * d)
+      set(this.roar2!.filter.frequency, (lpBase + lpRange * thr) * d)
+      set(this.roar2!.gain.gain, gBase + gRange * thr)
+    }
+    const hum = (f0: number, f1: number, g0: number, g1: number) => {
+      set(this.whineA!.osc.frequency, (f0 + f1 * thr) * d * wob)
+      set(this.whineA!.gain.gain, (g0 + g1 * thr) * near)
+    }
+
     switch (this.kind) {
-      case "fighter": {
-        // Twin F404s: mid triangle whine + inharmonic overtone, pink-noise roar, afterburner.
-        const fw = (420 + 900 * thr) * d * wob
-        set(this.whineA!.osc.frequency, fw)
-        set(this.whineA!.gain.gain, (0.04 + 0.06 * thr) * near)
-        set(this.whineB!.osc.frequency, fw * 2.76)
-        set(this.whineB!.gain.gain, (0.018 + 0.03 * thr) * near)
-        set(this.roar!.src.playbackRate, (0.8 + 0.4 * thr) * d)
-        set(this.roar!.filter.frequency, (500 + 3000 * Math.pow(thr, 1.3)) * near * d)
-        set(this.roar!.gain.gain, 0.2 + 0.32 * thr + 0.08 * sn)
-        this.updateBurner(b, 0.55, 0.28, 0.22, d)
+      case "fighter":
+        // Twin F404s: a smooth roar that opens up with throttle, faint turbine hum, afterburner rumble.
+        roar(350, 1400, 0.2, 0.3, 1)
+        body(220, 260, 0.25, 0.25)
+        hum(280, 420, 0.01, 0.018)
+        this.updateBurner(b, 0.55, 0.25, d)
         break
-      }
-      case "blackbird": {
-        // J58: deep brown-noise roar dominates, low whine, heavy sub afterburner.
-        const fw = (260 + 520 * thr) * d * wob
-        set(this.whineA!.osc.frequency, fw)
-        set(this.whineA!.gain.gain, (0.03 + 0.04 * thr) * near)
-        set(this.whineB!.osc.frequency, fw * 2.76)
-        set(this.whineB!.gain.gain, (0.012 + 0.02 * thr) * near)
-        set(this.roar!.src.playbackRate, (0.75 + 0.35 * thr) * d)
-        set(this.roar!.filter.frequency, (300 + 1200 * thr) * d)
-        set(this.roar!.gain.gain, 0.32 + 0.4 * thr)
-        set(this.roar2!.src.playbackRate, (0.8 + 0.3 * thr) * d)
-        set(this.roar2!.filter.frequency, (900 + 1500 * thr) * near * d)
-        set(this.roar2!.gain.gain, 0.06 + 0.12 * thr + 0.06 * sn)
-        this.updateBurner(b, 0.7, 0.4, 0.28, d)
+      case "blackbird":
+        // J58: deeper and heavier — the brown body dominates.
+        roar(280, 1000, 0.12, 0.2, 0.9)
+        body(180, 300, 0.35, 0.4)
+        hum(200, 320, 0.008, 0.014)
+        this.updateBurner(b, 0.7, 0.35, d)
         break
-      }
       case "warthog": {
-        // TF34 high-bypass fans: the famous "vacuum-cleaner" whistle + fan tone, soft roar.
-        // No afterburner on an A-10; full throttle just pushes the whistle harder.
-        const boost = 1 + 0.35 * b
-        const fwh = (3600 + 1600 * thr) * d * wob
-        set(this.whistleA!.osc.frequency, fwh)
-        set(this.whistleA!.gain.gain, (0.03 + 0.04 * thr) * boost * near)
-        set(this.whistleB!.osc.frequency, fwh * 0.53)
-        set(this.whistleB!.gain.gain, (0.02 + 0.03 * thr) * boost * near)
-        set(this.whineA!.osc.frequency, (260 + 380 * thr) * d * wob)
-        set(this.whineA!.gain.gain, (0.04 + 0.04 * thr) * near)
-        set(this.whineB!.osc.frequency, (260 + 380 * thr) * 3.1 * d)
-        set(this.whineB!.gain.gain, 0.012 + 0.015 * thr)
-        set(this.roar!.src.playbackRate, (0.8 + 0.3 * thr) * d)
-        set(this.roar!.filter.frequency, (400 + 1400 * thr) * near * d)
-        set(this.roar!.gain.gain, 0.14 + 0.22 * thr + 0.06 * sn)
+        // TF34 high-bypass fans: softer roar + the A-10's whistle, kept low and quiet.
+        // No afterburner on an A-10; full throttle just pushes the whistle a little harder.
+        roar(400, 1000, 0.14, 0.22, 1)
+        body(200, 200, 0.16, 0.16)
+        hum(220, 300, 0.016, 0.016)
+        set(this.whistleA!.osc.frequency, (1800 + 800 * thr) * d * wob)
+        set(this.whistleA!.gain.gain, (0.01 + 0.014 * thr) * (1 + 0.3 * b) * near)
         break
       }
       case "apache": {
-        // Governed rotor: rpm barely moves (97–102%); collective loads the blades so the chop
-        // gets louder and brighter, and forward speed adds blade-slap brightness.
+        // Governed rotor: rpm barely moves (97–102%); collective and forward speed make the
+        // chop louder and a little brighter.
         const rpm = (0.97 + 0.05 * thr) * d
         set(this.chop!.src.playbackRate, rpm)
-        set(this.chop!.filter.frequency, (700 + 1600 * thr + 1200 * sn) * near)
+        set(this.chop!.filter.frequency, (500 + 700 * thr + 500 * sn) * near)
         set(this.chop!.gain.gain, 0.45 + 0.35 * thr)
-        set(this.whineA!.osc.frequency, (1650 + 300 * thr) * d * wob)
-        set(this.whineA!.gain.gain, (0.018 + 0.02 * thr) * near)
-        set(this.whineB!.osc.frequency, (1650 + 300 * thr) * 2.31 * d)
-        set(this.whineB!.gain.gain, (0.007 + 0.008 * thr) * near)
+        set(this.whineA!.osc.frequency, (1100 + 200 * thr) * d * wob)
+        set(this.whineA!.gain.gain, (0.006 + 0.006 * thr) * near)
         set(this.tail!.osc.frequency, 19.2 * 5.6 * rpm)
-        set(this.tail!.gain.gain, 0.06 + 0.04 * thr)
-        set(this.roar!.filter.frequency, 500 + 500 * thr)
+        set(this.tail!.gain.gain, 0.03 + 0.02 * thr)
+        set(this.roar!.filter.frequency, 400 + 300 * thr)
         set(this.roar!.gain.gain, 0.05 + 0.1 * thr)
         break
       }
     }
   }
 
-  private updateBurner(b: number, roar: number, sub: number, crackle: number, d: number): void {
+  private updateBurner(b: number, roar: number, sub: number, d: number): void {
     const now = this.core.now
-    if (!this.burner || !this.sub || !this.crackle) return
+    if (!this.burner || !this.sub) return
     this.burner.gain.gain.setTargetAtTime(roar * b, now, 0.15)
     this.burner.src.playbackRate.setTargetAtTime(d, now, TC)
     this.sub.gain.gain.setTargetAtTime(sub * b, now, 0.15)
     this.sub.osc.frequency.setTargetAtTime(this.subBase * d, now, TC)
-    this.crackle.gain.gain.setTargetAtTime(crackle * b * (this.own ? 1.2 : 1), now, 0.15)
   }
 
   /** Fade out; the manager disposes after `stopAt`. */

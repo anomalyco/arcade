@@ -65,11 +65,11 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
   chaingun30: { id: "chaingun30", name: "30mm Chain Gun", kind: "gun", damage: 16, splash: 4, rate: 10, speed: 800, ttl: 2.6, ammo: 300, refill: 15, refillDelay: 2, spread: 0.006, turret: true },
   gau8: { id: "gau8", name: "GAU-8 Avenger", kind: "gun", damage: 14, splash: 2, rate: 30, speed: 1000, ttl: 2.2, ammo: 1100, refill: 15, refillDelay: 2, spread: 0.008 },
   rockets: { id: "rockets", name: "Hydra 70 Rockets", kind: "rockets", damage: 60, splash: 12, rate: 8, speed: 700, ttl: 4, ammo: 38, refill: 20, refillDelay: 2, spread: 0.015 },
-  aim9: { id: "aim9", name: "Heat-Seeker", kind: "missile_lock", damage: 260, splash: 10, rate: 0.5, speed: 300, ttl: 8, ammo: 4, refill: 30, refillDelay: 3, range: 2500, lockCone: 0.35, lockTime: 1.2, turnRate: 2.4 },
-  tvmissile: { id: "tvmissile", name: "Radar Missile", kind: "missile_lock", damage: 280, splash: 12, rate: 0.4, speed: 320, ttl: 10, ammo: 4, refill: 30, refillDelay: 3, range: 3500, lockCone: 0.3, lockTime: 1.6, turnRate: 2.0, turret: true },
-  hellfire: { id: "hellfire", name: "Hellfire", kind: "missile_lock", damage: 280, splash: 12, rate: 0.5, speed: 260, ttl: 10, ammo: 8, refill: 30, refillDelay: 3, range: 2500, lockCone: 0.3, lockTime: 1.2, turnRate: 2.0, turret: true },
-  maverick: { id: "maverick", name: "Maverick", kind: "missile_lock", damage: 340, splash: 16, rate: 0.35, speed: 280, ttl: 12, ammo: 4, refill: 30, refillDelay: 3, range: 3000, lockCone: 0.3, lockTime: 1.5, turnRate: 1.8, turret: true },
-  aim47: { id: "aim47", name: "Long-Range Interceptor", kind: "missile_scanner", damage: 360, splash: 16, rate: 0.25, speed: 450, ttl: 22, ammo: 4, refill: 45, refillDelay: 4, range: 8000, lockCone: 0.12, lockTime: 1.5, turnRate: 1.4, turret: true },
+  aim9: { id: "aim9", name: "Heat-Seeker", kind: "missile_lock", damage: 230, splash: 8, rate: 0.25, speed: 280, ttl: 6, ammo: 2, refill: 40, refillDelay: 4, range: 1100, lockCone: 0.08, lockTime: 2.2, turnRate: 1.6 },
+  tvmissile: { id: "tvmissile", name: "Radar Missile", kind: "missile_lock", damage: 200, splash: 10, rate: 0.2, speed: 300, ttl: 7, ammo: 2, refill: 40, refillDelay: 4, range: 1500, lockCone: 0.07, lockTime: 2.5, turnRate: 1.5, turret: true },
+  hellfire: { id: "hellfire", name: "Hellfire", kind: "missile_lock", damage: 200, splash: 10, rate: 0.25, speed: 260, ttl: 8, ammo: 4, refill: 40, refillDelay: 4, range: 1500, lockCone: 0.07, lockTime: 2.5, turnRate: 1.5, turret: true },
+  maverick: { id: "maverick", name: "Maverick", kind: "missile_lock", damage: 240, splash: 14, rate: 0.2, speed: 280, ttl: 8, ammo: 2, refill: 40, refillDelay: 4, range: 1500, lockCone: 0.07, lockTime: 2.5, turnRate: 1.4, turret: true },
+  aim47: { id: "aim47", name: "Long-Range Interceptor", kind: "missile_scanner", damage: 250, splash: 14, rate: 0.2, speed: 450, ttl: 22, ammo: 3, refill: 50, refillDelay: 5, range: 8000, lockCone: 0.08, lockTime: 3, turnRate: 1.3, turret: true },
   radarpulse: { id: "radarpulse", name: "Radar Pulse", kind: "pulse", damage: 0, splash: 4000, rate: 1 / 20, speed: 0, ttl: 8, ammo: -1, refill: 0, refillDelay: 0, turret: true },
 }
 

@@ -56,18 +56,17 @@ if (params.get("markers") === "1") {
 }
 
 const views: Record<string, () => [number[], number[]]> = {
-  fleet: () => { const b = AIRBASES[0]; return [[b.center[0] + 700, 260, b.center[2] - 800], [b.center[0], 0, b.center[2] + 100]] },
-  deck: () => { const b = AIRBASES[0]; return [[b.center[0] + 40, 45, b.center[2] + 210], [b.center[0] - 10, 20, b.center[2] - 60]] },
-  center: () => [[-3800, 700, 3600], [0, 250, 0]],
-  low: () => [[2600, 60, 3900], [0, 120, 0]],
-  water: () => [[3000, 14, 3800], [0, 60, 1000]],
-  h1500: () => [[3500, 1500, 7000], [3500, 1300, 0]],
-  fleetclose: () => { const b = AIRBASES[0]; return [[b.center[0] + 450, 90, b.center[2] - 250], [b.center[0], 15, b.center[2] + 200]] },
-  chase700: () => [[4200, 700, 6500], [3600, 300, 3500]],
-  chase: () => [[4200, 70, 5200], [4200 + 300, 55, 5200 - 1000]],
+  top: () => [[0, 9000, 1], [0, 0, 0]],
+  fleet: () => { const b = AIRBASES[0]; return [[b.center[0] + 700, 260, b.center[2] - 650], [b.center[0], 0, b.center[2]]] },
+  fleetclose: () => { const b = AIRBASES[0]; return [[b.center[0] + 450, 90, b.center[2] - 250], [b.center[0], 15, b.center[2] + 100]] },
+  deck: () => { const b = AIRBASES[0]; const f = [-Math.sin(b.heading), -Math.cos(b.heading)]; return [[b.center[0] - f[0] * 210 + f[1] * 30, 45, b.center[2] - f[1] * 210 - f[0] * 30], [b.center[0] + f[0] * 60, 20, b.center[2] + f[1] * 60]] },
+  center: () => [[-2400, 600, 2600], [0, 200, 0]],
+  chase: () => [[1800, 70, 1200], [0, 120, 0]],
+  chase700: () => [[2600, 700, 3000], [0, 200, 0]],
+  water: () => [[2000, 14, -2600], [-800, 60, -3200]],
   breakview: () => [[0, 120, 2000], [550, 160, 2000 - 835]],
-  sun: () => [[3000, 200, -2000], [3000 - 500, 200 + 300, -2000 + 500]],
-  overview: () => [[0, 5500, 9500], [0, 0, 0]],
+  h1500: () => [[2500, 1500, 4000], [0, 300, 0]],
+  overview: () => [[0, 4500, 6500], [0, 0, 0]],
 }
 let yaw = 0, pitch = 0
 function setCam(p: number[], l: number[]) {

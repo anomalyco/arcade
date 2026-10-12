@@ -6,7 +6,7 @@ import {
 } from "three"
 import { MeshBasicNodeMaterial } from "three/webgpu"
 import {
-  Fn, Loop, abs, cameraPosition, clamp, cos, dot, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow,
+  Fn, If, Loop, abs, cameraPosition, clamp, cos, dot, exp, float, length, max, min, mix, normalize, positionLocal, positionWorld, pow,
   reflect, sin, smoothstep, sqrt, texture, time, uniform, uniformArray, varying, vec2, vec3,
 } from "three/tsl"
 import { FLEET, SHIP_SPECS } from "../../sim/fleet"
@@ -129,27 +129,57 @@ export function createWater(settings: WorldQualitySettings) {
     const detail: N = smoothstep(3500, 300, dist)
     // Analytic normal: swell slopes + per-pixel chop.
     let nx: N = float(0), nz: N = float(0)
-    // Chop comes in patches (gusts), which also breaks up any remaining regularity.
-    const gust: N = fbm(p.mul(0.006).add(STORM.wind.mul(time).mul(0.003)), 2).mul(1.4).add(0.2)
-    for (const w of [...swells, ...chop]) {
+    for (const w of swells) {
       const k = (2 * Math.PI) / w.length, om = Math.sqrt(G * k)
-      const isChop = chop.includes(w)
-      const amp: N = vCalm.mul(w.amp).mul(smoothstep(w.fade * (isChop ? 0.9 : 1.6), w.fade * 0.15, dist)).mul(isChop ? gust : float(1))
+      const amp: N = vCalm.mul(w.amp).mul(smoothstep(w.fade * 1.6, w.fade * 0.15, dist))
       const ph: N = dot(p, vec2(w.dir[0], w.dir[1])).mul(k).sub(time.mul(om)).add(w.phase)
       const c: N = cos(ph).mul(amp).mul(k)
       nx = nx.add(c.mul(w.dir[0]))
       nz = nz.add(c.mul(w.dir[1]))
     }
+    // Near field (chop + rain ripples) fades out by ~600 m: a dynamic branch skips it beyond.
+    const nearReach = Math.max(600, ...chop.map(w => w.fade * 0.9))
+    const nearSlope = Fn(() => {
+      const r = vec3(0, 0, 0).toVar()
+      If(dist.lessThan(nearReach), () => {
+        // Chop comes in patches (gusts), which also breaks up any remaining regularity.
+        const gust: N = fbm(p.mul(0.006).add(STORM.wind.mul(time).mul(0.003)), 2).mul(1.4).add(0.2)
+        let cx: N = float(0), cz: N = float(0)
+        for (const w of chop) {
+          const k = (2 * Math.PI) / w.length, om = Math.sqrt(G * k)
+          const amp: N = vCalm.mul(w.amp).mul(smoothstep(w.fade * 0.9, w.fade * 0.15, dist)).mul(gust)
+          const ph: N = dot(p, vec2(w.dir[0], w.dir[1])).mul(k).sub(time.mul(om)).add(w.phase)
+          const c: N = cos(ph).mul(amp).mul(k)
+          cx = cx.add(c.mul(w.dir[0]))
+          cz = cz.add(c.mul(w.dir[1]))
+        }
+        // Fine noise ripples on top (rain-pocked surface near the camera).
+        const rip: N = vnoise(p.mul(0.25).add(vec2(time.mul(0.9), time.mul(-0.6)))).sub(0.5).mul(smoothstep(600, 60, dist)).mul(0.12)
+        r.assign(vec3(cx, cz, rip))
+      })
+      return r
+    })()
+    nx = nx.add(nearSlope.x)
+    nz = nz.add(nearSlope.y)
     // Far field: the regular swell normals fade out (see `fade`) and a domain-warped noise slope
     // takes over, so there is no repeating stripe pattern from altitude.
+    // Perf: evaluated only where it shows (dynamic branch), with a lighter warp/octave count below High.
     const farT: N = smoothstep(900, 3000, dist)
-    const fq: N = p.mul(0.0045).add(STORM.wind.mul(time).mul(0.0012))
-    const warp: N = vec2(fbm(fq.add(vec2(3.7, 1.1)), 2), fbm(fq.add(vec2(-2.3, 8.9)), 2)).mul(2.2)
-    const fA: N = fbm(fq.add(warp), 3), fB: N = fbm(fq.add(warp).add(vec2(0.37, 0)), 3), fC: N = fbm(fq.add(warp).add(vec2(0, 0.37)), 3)
-    nx = nx.add(fB.sub(fA).mul(farT).mul(0.9))
-    nz = nz.add(fC.sub(fA).mul(farT).mul(0.9))
-    // Fine noise ripples on top (rain-pocked surface near the camera).
-    const rip: N = vnoise(p.mul(0.25).add(vec2(time.mul(0.9), time.mul(-0.6)))).sub(0.5).mul(smoothstep(600, 60, dist)).mul(0.12)
+    const farSlope = Fn(() => {
+      const r = vec2(0, 0).toVar()
+      If(farT.greaterThan(0.001), () => {
+        const fq: N = p.mul(0.0045).add(STORM.wind.mul(time).mul(0.0012))
+        const wo = s.oceanDetail >= 2 ? 2 : 1
+        const warp: N = s.oceanDetail >= 1 ? vec2(fbm(fq.add(vec2(3.7, 1.1)), wo), fbm(fq.add(vec2(-2.3, 8.9)), wo)).mul(2.2) : vec2(0, 0)
+        const o = s.oceanDetail >= 2 ? 3 : s.oceanDetail >= 1 ? 2 : 1
+        const fA: N = fbm(fq.add(warp), o), fB: N = fbm(fq.add(warp).add(vec2(0.37, 0)), o), fC: N = fbm(fq.add(warp).add(vec2(0, 0.37)), o)
+        r.assign(vec2(fB.sub(fA), fC.sub(fA)).mul(farT).mul(0.9))
+      })
+      return r
+    })()
+    nx = nx.add(farSlope.x)
+    nz = nz.add(farSlope.y)
+    const rip: N = nearSlope.z
     const n: N = normalize(vec3(nx.negate().mul(1.2).add(rip), 1, nz.negate().mul(1.2).sub(rip)))
     const depth: N = (shoreTex as N).sample(p.add(WORLD_HALF).div(WORLD_SIZE)).r.mul(SHORE_MAX - SHORE_MIN).add(SHORE_MIN).negate()
 
@@ -175,7 +205,7 @@ export function createWater(settings: WorldQualitySettings) {
     const w2: N = normalize(STORM.wind)
     const along: N = dot(p, w2), across: N = dot(p, vec2(w2.y.negate(), w2.x))
     const streak: N = vnoise(vec2(along.mul(0.012), across.mul(0.11)).add(vec2(time.mul(0.05), 0)))
-    const blot: N = fbm(p.mul(0.045).add(STORM.wind.mul(time).mul(0.004)), 3)
+    const blot: N = fbm(p.mul(0.045).add(STORM.wind.mul(time).mul(0.004)), s.oceanDetail >= 2 ? 3 : 2)
     const grain: N = vnoise(p.mul(0.12).add(vec2(time.mul(0.2), 0)))
     // Whitecaps: only on the highest crests, broken up by two noise scales.
     const crest: N = smoothstep(0.55, 0.95, vHeight.add(blot.mul(0.35)).sub(0.1))
@@ -190,6 +220,9 @@ export function createWater(settings: WorldQualitySettings) {
       Loop(MAX_SHIPS, ({ i }: { i: N }) => {
         const a: N = shipsA.element(i), b: N = shipsB.element(i)
         const rel: N = p.sub(a.xy)
+        // Perf: skip ships whose wake can't reach this pixel (most of the sea, and unused slots).
+        const reach: N = a.z.div(2.2).add(b.z.mul(110)).add(90)
+        If(dot(rel, rel).lessThan(reach.mul(reach)), () => {
         const aft: N = dot(rel, b.xy.negate())
         const side: N = abs(dot(rel, vec2(b.y.negate(), b.x)))
         const halfLen: N = a.z.div(2.2), halfWid: N = a.w
@@ -201,6 +234,7 @@ export function createWater(settings: WorldQualitySettings) {
         const arm: N = smoothstep(4, 0.5, abs(side.sub(halfWid.add(max(stern, 0).mul(0.36))))).mul(behind).mul(0.6).mul(smoothstep(-5, 20, stern))
         const hull: N = smoothstep(halfWid.add(5), halfWid, side).mul(smoothstep(halfLen.add(6), halfLen, abs(aft))).mul(0.25)
         f.assign(max(f, max(max(trail.mul(0.55), arm.mul(0.8)), hull)))
+        })
       })
       return f
     })()
@@ -256,7 +290,7 @@ export function createWater(settings: WorldQualitySettings) {
         const v = deckVelocity(p.position[0], p.position[2])
         const speed = v ? Math.hypot(v[0], v[2]) : 0
         a.set(p.position[0], p.position[2], sp.halfLength * 2.2, sp.halfWidth)
-        b.set(-Math.sin(sh.heading), -Math.cos(sh.heading), Math.min(1, speed / 4) * 0.7 + 0.3, 0)
+        b.set(-Math.sin(p.heading), -Math.cos(p.heading), Math.min(1, speed / 14) * 0.7 + 0.3, 0)
       })
       if (dirty && time - lastUpload > 0.3) { shore.needsUpdate = true; dirty = false; lastUpload = time }
     },

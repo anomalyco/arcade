@@ -1,19 +1,19 @@
 // World geography — owned by the World agent. Pure, deterministic, dependency-free (server safe).
 //
-// A 16 × 16 km procedurally generated archipelago of smooth, natural islands, with the four team
+// A 10 × 10 km procedurally generated archipelago of smooth, natural islands, with the four team
 // carrier strike groups (fleet.ts) at sea. Ship hulls/decks/islands are part of the solid surface. On first use
 // the module bakes a heightmap on a jittered triangle grid (MESH_CELL spacing):
 //   seeded island masks (domain-warped) → fBm + ridged mountains + a couple of central peaks →
 //   carved canyons → droplet erosion + thermal smoothing → open water around every strike group.
 // The rendered LOD0 mesh uses exactly these vertices and triangles, and every physics query
 // interpolates the same triangles, so collision always matches what players see.
-import { AA_RANGE, FLEET, FLEET_END_DISTANCE, FLEET_START_DISTANCE, SHIP_SPECS, type Ship, shipPose } from "./fleet"
+import { AA_RANGE, FLEET, FLEET_ANGULAR_SPEED, FLEET_ORBIT_RADIUS, SHIP_SPECS, type Ship, shipPose } from "./fleet"
 import type { TeamId, Vec3, VehicleKind, WorldQuery } from "./types"
 
-export const WORLD_SIZE = 16_000
+export const WORLD_SIZE = 10_000
 export const WORLD_HALF = WORLD_SIZE / 2
 export const WATER_LEVEL = 0
-export const CEILING = 4_000
+export const CEILING = 3_500
 export const WORLD_SEED = 0x57494e47 // "WING"
 
 /** Ocean floor depth far from land. */
@@ -36,7 +36,7 @@ export interface Airbase {
   team: TeamId
   /** Carrier position, y = flight-deck height. */
   center: Vec3
-  /** Carrier heading (yaw; bow = launch direction, toward the map centre). */
+  /** Carrier heading (yaw; bow = launch direction, along the orbit tangent). */
   heading: number
   runwayLength: number
   runwayWidth: number
@@ -93,6 +93,8 @@ export function setFleetState(matchTime: number, teams: number): void {
     const P = POSED[i]
     P.position[0] = poseScratch.position[0]
     P.position[2] = poseScratch.position[2]
+    P.heading = poseScratch.heading
+    SIN[i] = Math.sin(P.heading); COS[i] = Math.cos(P.heading)
     VEL[i][0] = poseScratch.velocity[0]; VEL[i][2] = poseScratch.velocity[2]
     const a = FLEET[i].team < n ? 1 : 0
     if (ACTIVE[i] !== a) { ACTIVE[i] = a; changed = true }
@@ -142,6 +144,7 @@ function refreshBase(base: Airbase) {
   const i = SHIP_INDEX.get(`t${base.team}-carrier`)!
   base.center[0] = POSED[i].position[0]
   base.center[2] = POSED[i].position[2]
+  base.heading = POSED[i].heading
   base.helipads.forEach((h, k) => toWorldInto(i, DECK_LAYOUT.heloSpots[k][0], CARRIER.deckHeight, DECK_LAYOUT.heloSpots[k][1], h))
 }
 
@@ -224,84 +227,59 @@ export interface IslandInfo { name: string; x: number; z: number; radius: number
 interface Blob { x: number; z: number; r: number; amp: number }
 interface Peak { x: number; z: number; r: number; h: number }
 
-/** Carrier launch lane: open water ±LAUNCH_LANE_HALF wide, out to LAUNCH_LANE_LENGTH ahead of the carrier. */
-export const LAUNCH_LANE_HALF = 450
-export const LAUNCH_LANE_LENGTH = 2_500
+/** Carrier launch lane: open water ±LAUNCH_LANE_HALF wide, out to LAUNCH_LANE_LENGTH ahead of the bow. */
+export const LAUNCH_LANE_HALF = 300
+export const LAUNCH_LANE_LENGTH = 1_500
+/** Half-width (m) of the open-water ring the strike groups orbit in. */
+export const FLEET_RING_HALF = 1_000
 
 /**
- * Signed clearance (m) of x,z from the strike groups' keep-out areas over the whole match:
- * FLEET_CLEARANCE around every ship anywhere along its approach path, plus each carrier's launch
- * lane ahead of the bow at every point along the path. ≤ 0 inside a keep-out area. Static (uses all
- * four fleets regardless of which teams are in play), since the terrain is baked once.
+ * Signed clearance (m) of x,z from the strike groups' keep-out ring: the fleets orbit the origin at
+ * FLEET_ORBIT_RADIUS, so the whole annulus R ± FLEET_RING_HALF (which also contains every ship,
+ * escort and carrier launch lane at every time) is kept as open water. ≤ 0 inside the ring.
  */
 export function fleetClearance(x: number, z: number): number {
-  const travel = FLEET_START_DISTANCE - FLEET_END_DISTANCE
-  let best = Infinity
-  for (let i = 0; i < NS; i++) {
-    const s = FLEET[i]
-    const fx = -SIN[i], fz = -COS[i]
-    const dx = x - s.position[0], dz = z - s.position[2]
-    const along = dx * fx + dz * fz
-    // Capsule swept by the ship from its start to its end position.
-    const t = Math.max(0, Math.min(travel, along))
-    let d = Math.hypot(dx - fx * t, dz - fz * t) - FLEET_CLEARANCE
-    if (s.kind === "carrier") {
-      const u = Math.max(0, Math.min(travel + LAUNCH_LANE_LENGTH, along))
-      d = Math.min(d, Math.hypot(dx - fx * u, dz - fz * u) - LAUNCH_LANE_HALF)
-    }
-    if (d < best) best = d
-  }
-  return best
+  return Math.abs(Math.hypot(x, z) - FLEET_ORBIT_RADIUS) - FLEET_RING_HALF
 }
 
 function nearBase(x: number, z: number, margin: number): boolean {
   return fleetClearance(x, z) < margin
 }
 
+/** Radius (m) of the central archipelago; the fleets orbit outside it. */
+export const ARCHIPELAGO_RADIUS = 1_700
+
 function layout(seed: number) {
   const rand = seededRandom(seed ^ 0x15a7d)
   const blobs: Blob[] = []
   const names: IslandInfo[] = []
   const peaks: Peak[] = []
-  // The strike groups steam in along the four axes, so the big islands sit on the diagonals.
-  for (let q = 0; q < 4; q++) {
-    const a = Math.PI / 4 + q * Math.PI / 2 + (rand() - 0.5) * 0.12
-    const d = 5200 + rand() * 900
-    const x = Math.cos(a) * d, z = Math.sin(a) * d
-    const r = 1150 + rand() * 450
-    blobs.push({ x, z, r, amp: 1 })
-    for (let k = 0; k < 2; k++) {
-      const b = a + (rand() - 0.5) * 0.35, e = d + (rand() - 0.5) * 1400
-      blobs.push({ x: Math.cos(b) * e, z: Math.sin(b) * e, r: 600 + rand() * 450, amp: 0.85 })
-    }
-    names.push({ name: `Isle ${names.length + 1}`, x, z, radius: r * 1.3, height: 0 })
+  // Central archipelago: a main island with lobes, a couple of satellites, two peaks and channels.
+  blobs.push({ x: 0, z: 0, r: 820, amp: 1 })
+  names.push({ name: "Mainland", x: 0, z: 0, radius: 900, height: 0 })
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + rand() * 0.8, d = 450 + rand() * 350
+    blobs.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 420 + rand() * 220, amp: 0.9 })
   }
-  // A small rocky island right at the centre, where the four launch lanes end.
-  blobs.push({ x: 0, z: 0, r: 520, amp: 0.95 })
-  names.push({ name: "Centre Rock", x: 0, z: 0, radius: 500, height: 0 })
-  peaks.push({ x: 0, z: 0, r: 420, h: 180 })
-  // A few medium islands wherever the lanes leave room.
-  for (let i = 0, tries = 0; i < 5 && tries < 400; tries++) {
-    const x = (rand() * 2 - 1) * (WORLD_HALF - 900), z = (rand() * 2 - 1) * (WORLD_HALF - 900)
-    const r = 450 + rand() * 450
-    if (nearBase(x, z, r * 1.3 + 500)) continue
+  for (let i = 0, tries = 0; i < 4 && tries < 200; tries++) {
+    const a = rand() * Math.PI * 2, d = 1050 + rand() * 350, r = 200 + rand() * 180
+    const x = Math.cos(a) * d, z = Math.sin(a) * d
+    if (blobs.some(B => Math.hypot(B.x - x, B.z - z) < B.r * 0.6 + r)) continue
     blobs.push({ x, z, r, amp: 0.8 })
     names.push({ name: `Isle ${names.length + 1}`, x, z, radius: r, height: 0 })
     i++
   }
-  // Islets scattered everywhere except the runways.
-  for (let i = 0, tries = 0; i < 26 && tries < 2000; tries++) {
-    const x = (rand() * 2 - 1) * (WORLD_HALF - 700), z = (rand() * 2 - 1) * (WORLD_HALF - 700)
-    const r = 180 + rand() * 380
-    if (nearBase(x, z, r * 1.3 + 500)) continue
-    blobs.push({ x, z, r, amp: 0.45 + rand() * 0.45 })
+  const pa = rand() * Math.PI * 2
+  peaks.push({ x: Math.cos(pa) * 260, z: Math.sin(pa) * 260, r: 600, h: 430 + rand() * 80 })
+  peaks.push({ x: Math.cos(pa + 2.6) * 520, z: Math.sin(pa + 2.6) * 520, r: 420, h: 280 + rand() * 60 })
+  // A few small rocks/islets out beyond the orbit ring.
+  for (let i = 0, tries = 0; i < 9 && tries < 2000; tries++) {
+    const a = rand() * Math.PI * 2, d = 4500 + rand() * 450, r = 90 + rand() * 140
+    const x = Math.cos(a) * d, z = Math.sin(a) * d
+    if (Math.abs(x) > WORLD_HALF - 250 || Math.abs(z) > WORLD_HALF - 250) continue
+    if (nearBase(x, z, r * 1.6 + 150)) continue
+    blobs.push({ x, z, r, amp: 0.6 + rand() * 0.35 })
     i++
-  }
-  // Tall peaks on two of the diagonal islands.
-  const first = Math.floor(rand() * 4)
-  for (let i = 0; i < 2; i++) {
-    const B = blobs[(((first + i * 2) % 4) * 3)]
-    peaks.push({ x: B.x + (rand() - 0.5) * 300, z: B.z + (rand() - 0.5) * 300, r: 900 + rand() * 250, h: 470 - i * 90 + rand() * 90 })
   }
   return { blobs, peaks, names }
 }
@@ -359,8 +337,8 @@ function bake(seed: number): Baked {
   const blobIndex: Blob[][] = []
   for (let bz = 0; bz < IN; bz++) for (let bx = 0; bx < IN; bx++) {
     const cx = -WORLD_HALF + (bx + 0.5) * IB, cz = -WORLD_HALF + (bz + 0.5) * IB
-    // Warp displacement ≤ 0.94 × 800 m; block half-diagonal ≈ 354 m.
-    blobIndex.push(blobs.filter(B => Math.hypot(cx - B.x, cz - B.z) < B.r * 1.2 + 760 + 360))
+    // Warp displacement ≤ 0.94 × 320 m; block half-diagonal ≈ 354 m.
+    blobIndex.push(blobs.filter(B => Math.hypot(cx - B.x, cz - B.z) < B.r * 1.2 + 310 + 360))
   }
   // 1. Jittered vertex positions + base elevation field.
   for (let j = 0; j <= N; j++) {
@@ -374,8 +352,8 @@ function bake(seed: number): Baked {
       const near = blobIndex[Math.min(IN - 1, Math.floor((z + WORLD_HALF) / IB)) * IN + Math.min(IN - 1, Math.floor((x + WORLD_HALF) / IB))]
       if (near.length === 0) { h[k] = SEA_FLOOR; continue }
       // Domain-warped island mask.
-      const wx = x + fbm(x * 0.00045, z * 0.00045, seed + 7, 4) * 800
-      const wz = z + fbm(x * 0.00045 + 31.7, z * 0.00045 - 12.3, seed + 9, 4) * 800
+      const wx = x + fbm(x * 0.0009, z * 0.0009, seed + 7, 4) * 320
+      const wz = z + fbm(x * 0.0009 + 31.7, z * 0.0009 - 12.3, seed + 9, 4) * 320
       let m = 0
       for (let b = 0; b < near.length; b++) {
         const B = near[b]
@@ -391,14 +369,14 @@ function bake(seed: number): Baked {
       land[k] = m
       // Rolling hills + ridged mountains growing toward island cores.
       const hills = (fbm(x * 0.0011, z * 0.0011, seed + 21, 4) * 0.5 + 0.5) * 120
-      const mtn = ridged(wx * 0.0005, wz * 0.0005, seed + 33, 4) * 260 * smooth(0.45, 1, m)
+      const mtn = ridged(wx * 0.0011, wz * 0.0011, seed + 33, 4) * 200 * smooth(0.45, 1, m)
       let e = -30 + m * 95 + (hills + mtn) * smooth(0.2, 0.75, m)
       for (const P of peaks) {
         const d = Math.hypot(x - P.x, z - P.z) / P.r
         if (d < 1) { const f = 1 - d; e += P.h * f * f * (3 - 2 * f) * (0.8 + 0.4 * ridged(x * 0.002, z * 0.002, seed + 41, 2)) }
       }
       // Canyons: warped ridged-noise channels carved down to sea level (fly-through fjords).
-      const cn = Math.abs(noise2(wx * 0.00042 + 5.1, wz * 0.00042 - 2.7, seed + 55))
+      const cn = Math.abs(noise2(wx * 0.0011 + 5.1, wz * 0.0011 - 2.7, seed + 55))
       const ch = 1 - smooth(0.035, 0.09, cn)
       if (ch > 0 && e > -2) e = e + (Math.min(e, -4 + cn * 120) - e) * ch * smooth(0.25, 0.5, m)
       h[k] = Math.max(SEA_FLOOR, e)
@@ -426,6 +404,9 @@ function bake(seed: number): Baked {
   // 4. Guaranteed open water around every strike group (and the carriers' launch paths).
   for (let k = 0; k < h.length; k++) {
     if (h[k] <= -12) continue
+    // The central archipelago ends at ARCHIPELAGO_RADIUS (shelf down to the sea floor beyond it).
+    const rc = Math.hypot(vx[k], vz[k])
+    if (rc < FLEET_ORBIT_RADIUS && rc > ARCHIPELAGO_RADIUS - 250) h[k] = Math.min(h[k], -1 - (rc - (ARCHIPELAGO_RADIUS - 250)) * 0.08)
     const d = fleetClearance(vx[k], vz[k])
     if (d < 700) {
       const t = smooth(0, 700, d)
@@ -453,7 +434,7 @@ function bake(seed: number): Baked {
 
 function erode(h: Float32Array, land: Float32Array, seed: number) {
   const rand = seededRandom(seed ^ 0xe40d)
-  const drops = 26_000
+  const drops = 14_000
   const inertia = 0.3, capacityK = 3, depositK = 0.3, erodeK = 0.25, evap = 0.03, gravity = 4, maxSteps = 40
   const hAt = (x: number, y: number) => {
     const i = x | 0, j = y | 0, u = x - i, v = y - j, k = j * STRIDE + i
@@ -604,9 +585,21 @@ export function shipHeight(x: number, z: number): number {
  * Velocity (m/s) of the ship deck under x,z, or null over terrain/water. Returns a shared array —
  * copy it if you keep it.
  */
+const DECK_V: Vec3 = [0, 0, 0]
 export function deckVelocity(x: number, z: number): Vec3 | null {
   const i = shipIndexAt(x, z)
-  return i < 0 ? null : VEL[i]
+  if (i < 0) return null
+  // Rigid rotation of the whole formation about the map origin: v = ω × r = ω·(z, 0, -x).
+  const w = FLEET_ANGULAR_SPEED
+  DECK_V[0] = w * z
+  DECK_V[1] = 0
+  DECK_V[2] = -w * x
+  return DECK_V
+}
+
+/** Yaw rate (rad/s) of the deck under x,z (0 off ships). */
+export function deckYawRate(x: number, z: number): number {
+  return shipIndexAt(x, z) < 0 ? 0 : FLEET_ANGULAR_SPEED
 }
 
 /** Upper bound of any active ship's height near x,z (WATER_LEVEL if none). */
@@ -705,11 +698,11 @@ export function spawnPoint(team: TeamId, kind: VehicleKind, index: number): Spaw
   if (kind === "apache") {
     const spots = DECK_LAYOUT.heloSpots
     const [x, z] = spots[i % spots.length]
-    return { position: toWorldInto(ci, x, deck + SPAWN_CLEARANCE.heli, z, position), yaw: FLEET[ci].heading, onGround: true }
+    return { position: toWorldInto(ci, x, deck + SPAWN_CLEARANCE.heli, z, position), yaw: POSED[ci].heading, onGround: true }
   }
   const cats = DECK_LAYOUT.catapults
   const [x, z] = cats[i % cats.length]
-  return { position: toWorldInto(ci, x, deck + SPAWN_CLEARANCE.jet, z, position), yaw: FLEET[ci].heading, onGround: true }
+  return { position: toWorldInto(ci, x, deck + SPAWN_CLEARANCE.jet, z, position), yaw: POSED[ci].heading, onGround: true }
 }
 
 /** Slab test of segment a→b against a ship-local box (ship index i); returns entry fraction or null. */

@@ -25,8 +25,13 @@ export const CAT_DECK_MIN_HEIGHT = 10
 /** Catapult end speed (× stall) and stroke time (s) from a standstill. */
 export const CAT_END_SPEED = 1.3
 export const CAT_STROKE_TIME = 2.2
+/** Pitch-authority multiplier while the airbrake is out (airbrake + pull = tight reversal). */
+const AIRBRAKE_TURN_BONUS = 1.25
 /** Ground deceleration (m/s²) with the throttle at idle: parking brake / carrier hold-back. */
 const PARK_BRAKE = 6
+/** Helicopter roll input: |roll| ≤ HELI_STRAFE_ROLL is a strafe tilt, above HELI_FLIP_ROLL a free roll. */
+export const HELI_STRAFE_ROLL = 0.45
+const HELI_FLIP_ROLL = 0.7
 /** Helicopter collective that exactly balances gravity. */
 export const HOVER_COLLECTIVE = 0.5
 
@@ -39,9 +44,14 @@ interface JetHandling {
   thrust: number
   /** Throttle change per second while W/S is held. */
   throttleRate: number
-  /** Max pitch rate at corner speed (rad/s). This is the main "turn rate" knob. */
-  pitchRate: number
-  /** Nose-down authority as a fraction of pitchRate. */
+  /** Corner speed (m/s): where the instantaneous turn rate peaks. Below it the rate is lift-limited
+   *  (∝ speed), above it G-limited (∝ 1/speed). */
+  cornerSpeed: number
+  /** Max (instantaneous) pitch rate at corner speed (rad/s). The main turn-rate knob. */
+  cornerRate: number
+  /** Floor on pitch authority at very low speed, as a fraction of cornerRate. */
+  minRateFrac: number
+  /** Nose-down authority as a fraction of the pitch limit. */
   pushFrac: number
   rollRate: number
   yawRate: number
@@ -55,12 +65,9 @@ interface JetHandling {
   yawGain: number
   /** How fast velocity aligns with the nose (1/s). Lower = more drift / slide in hard turns. */
   grip: number
-  /** Full turn authority from cornerFrac × cruise up to cruise. Below that it fades linearly. */
-  cornerFrac: number
-  /** Turn authority multiplier at boost speed (fast = wider turns). */
-  boostAuth: number
-  /** Induced drag in turns: decel = bleed × turnRate × speed. */
-  bleed: number
+  /** Induced drag (energy bleed) in turns: decel = induced · turnRate² · cornerSpeed² / g². Sets the
+   *  sustained turn rate (where full thrust balances parasitic + induced drag). */
+  induced: number
   /** Drag multiplier with the airbrake out. */
   airbrake: number
   /** Wheel brake deceleration on the ground (m/s²). */
@@ -69,16 +76,6 @@ interface JetHandling {
   sideLift: number
   /** Coordinated-turn assist: heading rate = bankTurn × g·sin(bank)/v. */
   bankTurn: number
-  /** Wings-leveling gain (1/s) when released while roughly upright. */
-  stability: number
-  /** Direct steering: heading rate at full yaw as a fraction of pitchRate, auto-bank at full yaw,
-   *  bank below which released wings ease level, nose-down pitch fraction. */
-  turnFrac: number
-  maxAutoBank: number
-  levelBank: number
-  directPush: number
-  /** Direct steering: pitch authority multiplier over pitchRate (snappier loops than the autopilot). */
-  directPitch: number
   /** Max nose-up attitude while wheels are on the ground. */
   maxGroundPitch: number
   /** Body origin height above ground with gear down / belly contact height. */
@@ -107,6 +104,8 @@ interface HeliHandling {
   tiltGain: number
   maxTiltRate: number
   tiltResponse: number
+  /** Free roll rate (rad/s) for full roll input (Q/E flips). */
+  flipRate: number
   yawRate: number
   yawGain: number
   yawResponse: number
@@ -123,33 +122,30 @@ interface HeliHandling {
 
 const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   fighter: {
-    thrust: 15, throttleRate: 0.6,
-    pitchRate: 0.58, pushFrac: 0.5, rollRate: 3.5, yawRate: 0.3,
-    pitchResponse: 8.5, rollResponse: 13, yawResponse: 8.5,
-    pitchGain: 2.4, rollGain: 3.6, yawGain: 1.8,
-    grip: 3.2, cornerFrac: 0.7, boostAuth: 0.82, bleed: 0.05,
-    airbrake: 2.8, wheelBrake: 10, sideLift: 0.55, bankTurn: 1, stability: 1.5,
-    turnFrac: 1.1, maxAutoBank: 70 * DEG, levelBank: 100 * DEG, directPush: 0.75, directPitch: 1.25,
+    thrust: 18, throttleRate: 0.6,
+    cornerSpeed: 110, cornerRate: 1.22, minRateFrac: 0.3, pushFrac: 0.5, rollRate: 4.4, yawRate: 0.3,
+    pitchResponse: 9, rollResponse: 14, yawResponse: 9,
+    pitchGain: 2.6, rollGain: 4, yawGain: 1.8,
+    grip: 4.5, induced: 0.1,
+    airbrake: 3.5, wheelBrake: 10, sideLift: 0.55, bankTurn: 0.5,
     maxGroundPitch: 13 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   warthog: {
-    thrust: 10.5, throttleRate: 0.5,
-    pitchRate: 0.46, pushFrac: 0.55, rollRate: 2.6, yawRate: 0.35,
-    pitchResponse: 6.5, rollResponse: 9.5, yawResponse: 6.5,
-    pitchGain: 1.8, rollGain: 2.7, yawGain: 1.7,
-    grip: 4, cornerFrac: 0.6, boostAuth: 0.85, bleed: 0.035,
-    airbrake: 3, wheelBrake: 9, sideLift: 0.6, bankTurn: 1, stability: 1.5,
-    turnFrac: 1.1, maxAutoBank: 60 * DEG, levelBank: 100 * DEG, directPush: 0.75, directPitch: 1.2,
+    thrust: 12, throttleRate: 0.5,
+    cornerSpeed: 75, cornerRate: 1.0, minRateFrac: 0.35, pushFrac: 0.55, rollRate: 2.8, yawRate: 0.35,
+    pitchResponse: 7.5, rollResponse: 10, yawResponse: 7.5,
+    pitchGain: 2.1, rollGain: 3, yawGain: 1.7,
+    grip: 5, induced: 0.12,
+    airbrake: 3.5, wheelBrake: 9, sideLift: 0.6, bankTurn: 0.5,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   blackbird: {
-    thrust: 17, throttleRate: 0.45,
-    pitchRate: 0.24, pushFrac: 0.5, rollRate: 1.75, yawRate: 0.12,
-    pitchResponse: 4.5, rollResponse: 6.5, yawResponse: 4.5,
-    pitchGain: 1.25, rollGain: 1.9, yawGain: 0.9,
-    grip: 2.2, cornerFrac: 0.6, boostAuth: 0.8, bleed: 0.05,
-    airbrake: 2.5, wheelBrake: 9, sideLift: 0.5, bankTurn: 1, stability: 1.0,
-    turnFrac: 1.1, maxAutoBank: 55 * DEG, levelBank: 100 * DEG, directPush: 0.75, directPitch: 1.3,
+    thrust: 19, throttleRate: 0.45,
+    cornerSpeed: 170, cornerRate: 0.5, minRateFrac: 0.3, pushFrac: 0.5, rollRate: 1.9, yawRate: 0.12,
+    pitchResponse: 5, rollResponse: 7, yawResponse: 5,
+    pitchGain: 1.4, rollGain: 2, yawGain: 0.9,
+    grip: 3, induced: 0.25,
+    airbrake: 3, wheelBrake: 9, sideLift: 0.5, bankTurn: 0.5,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
 }
@@ -159,7 +155,7 @@ const HELI: Record<"apache", HeliHandling> = {
     collectiveRate: 0.8, collectiveReturn: 1.5, altitudeHold: 1.5, cushion: 3, cushionHeight: 10,
     maxTilt: 25 * DEG, boostTilt: 36 * DEG, backTilt: 18 * DEG, sideTilt: 22 * DEG,
     cyclicRate: 0.9, driftKill: 0.35,
-    tiltGain: 4, maxTiltRate: 1.6, tiltResponse: 9,
+    tiltGain: 4, maxTiltRate: 1.6, tiltResponse: 9, flipRate: 2.2,
     yawRate: 1.7, yawGain: 3, yawResponse: 7,
     cyclicGain: 1.8, dragQuad: 1.063e-3, dragLin: 0.03, dragVert: 0.6,
     grip: 0.9, gearHeight: 2,
@@ -355,21 +351,20 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
   const stall = spec.stall
   const lift = smoothstep(0.7 * stall, stall, vf) * air
 
-  // Speed-dependent turn authority: ramps up to corner speed, fades toward boost.
-  const corner = h.cornerFrac * spec.cruise
-  const auth = vf < corner ? Math.max(0.3, vf / corner)
-    : vf <= spec.cruise ? 1
-    : 1 + (h.boostAuth - 1) * clamp((vf - spec.cruise) / (spec.boost - spec.cruise), 0, 1.5)
-  const rollAuth = 0.4 + 0.6 * Math.min(auth, 1)
-  const pitchMax = h.pitchRate * auth, yawMax = h.yawRate * auth, rollMax = h.rollRate * rollAuth
+  // Energy dogfighting: the instantaneous pitch (turn) limit peaks at corner speed — lift-limited (∝ v)
+  // below it, G-limited (∝ 1/v) above it. Roll and rudder lose some authority when slow.
+  const corner = h.cornerSpeed
+  const slowFrac = clamp(vf / corner, 0, 1)
+  // Airbrake out: flaps/brakes let the jet pull harder for a moment (tight reversals) at the cost of speed.
+  const pitchMax = h.cornerRate * Math.max(h.minRateFrac, vf <= corner ? slowFrac : corner / vf) * (inp.brake && !s.onGround ? AIRBRAKE_TURN_BONUS : 1)
+  const yawMax = h.yawRate * Math.max(0.3, slowFrac)
+  const rollMax = h.rollRate * (0.45 + 0.55 * clamp(vf / (0.7 * corner), 0, 1))
 
   const bank = Math.atan2(-R[1], U[1])
   const pitchAngle = Math.asin(clamp(F[1], -1, 1))
 
   // Desired rates in pilot terms: + pitch up, + yaw right, + roll right (rad/s).
   let pUp = 0, yRight = 0, rRight = 0
-  /** Direct mode: heading rate (rad/s, + right) applied about a world-up-leaning axis. */
-  let coordinatedTurn = 0
 
   if (s.onGround) {
     // Nosewheel steering + rotation.
@@ -409,32 +404,20 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
       rRight = h.rollGain * rollErr
       // Rudder only for fine alignment: while banked hard, body-yaw would drag the nose off the horizon.
       yRight = h.yawGain * yawErr * (1 - aggressive)
-      if (inPitch !== 0) pUp = inPitch * pitchMax
+      // Manual mastery: a pitch override flies a pure manual pitch (loops, split-S) — the instructor
+      // stops rolling so it can't corkscrew the manoeuvre; roll/rudder keys override their axes.
+      if (inPitch !== 0) { pUp = inPitch * pitchMax; if (inRoll === 0) rRight = 0; yRight = 0 }
       if (inYaw !== 0) yRight = inYaw * yawMax
       if (inRoll !== 0) rRight = inRoll * rollMax
       pUp = clamp(pUp, -pitchMax * h.pushFrac, pitchMax)
       yRight = clamp(yRight, -yawMax, yawMax)
       rRight = clamp(rRight, -rollMax, rollMax)
     } else {
-      // Direct steering ("point & turn"): pitch is body-axis (loops work); yaw is a coordinated turn —
-      // the jet auto-banks into it and the nose turns about world-up (pitch-in-bank for free), so the
-      // turn stays level. Roll input (A/D) overrides the auto-bank while held (barrel rolls, inverted).
-      const directMax = pitchMax * h.directPitch
-      pUp = inPitch * directMax * (inPitch < 0 ? h.directPush : 1)
-      const cosPitch = Math.cos(pitchAngle)
-      const absBank = Math.abs(bank)
-      if (inYaw !== 0) {
-        coordinatedTurn = inYaw * h.pitchRate * auth * h.turnFrac
-        const upright = (1 - smoothstep(70 * DEG, 100 * DEG, absBank)) * smoothstep(0.3, 0.6, cosPitch)
-        const targetBank = inYaw * h.maxAutoBank * (0.5 + 0.5 * Math.min(auth, 1))
-        rRight = h.rollGain * (targetBank - bank) * upright
-      } else if (absBank < h.levelBank && cosPitch > 0.5) {
-        // Released while roughly upright: wings ease level. Inverted / knife-edge is left alone.
-        rRight = -bank * h.stability * (1 - smoothstep(0.75 * h.levelBank, h.levelBank, absBank))
-      }
-      if (inRoll !== 0) rRight = inRoll * rollMax
-      pUp = clamp(pUp, -directMax, directMax)
-      rRight = clamp(rRight, -rollMax, rollMax)
+      // Manual (direct) flying: stick deflections are pure body rates — pitch, roll, rudder. No assists:
+      // the aircraft holds whatever attitude you leave it in (inverted included).
+      pUp = clamp(inPitch * pitchMax * (inPitch < 0 ? 0.75 : 1), -pitchMax, pitchMax)
+      yRight = inYaw * yawMax
+      rRight = inRoll * rollMax
     }
   }
 
@@ -445,18 +428,6 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
     const turn = -h.bankTurn * GRAVITY * Math.sin(bank) * Math.max(0, Math.cos(pitchAngle)) * lift / Math.max(speed, stall)
     rotInto(TMP, q, 0, turn, 0, true)
     tx += TMP[0]; ty += TMP[1]; tz += TMP[2]
-    if (coordinatedTurn !== 0) {
-      // Axis is world up while upright (level turn), body up near knife-edge, world down when inverted
-      // so "right" stays pilot-relative.
-      const uy = U[1], wy = smoothstep(0, 0.18, Math.abs(uy)), k = 1 - wy
-      const axX = U[0] * k, axY = (uy < 0 ? -wy : wy) + U[1] * k, axZ = U[2] * k
-      const n = Math.sqrt(axX * axX + axY * axY + axZ * axZ)
-      if (n > 1e-6) {
-        const m = -coordinatedTurn / n
-        rotInto(TMP, q, axX * m, axY * m, axZ * m, true)
-        tx += TMP[0]; ty += TMP[1]; tz += TMP[2]
-      }
-    }
     // Stall: nose falls toward the ground and weathervanes into the airflow.
     const unlift = 1 - lift
     if (unlift > 0) {
@@ -501,7 +472,8 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
   }
   const dragK = (h.thrust / (spec.cruise * spec.cruise)) * (inp.brake ? h.airbrake : 1)
   const turnRate = Math.sqrt(w[0] * w[0] + w[1] * w[1])
-  const resist = speed > 1e-6 ? (dragK * speed * speed + h.bleed * turnRate * speed) / speed : 0
+  const inducedDecel = h.induced * turnRate * turnRate * (h.cornerSpeed * h.cornerSpeed) / (GRAVITY * GRAVITY)
+  const resist = speed > 1e-6 ? (dragK * speed * speed + inducedDecel) / speed : 0
   const liftU = lift * GRAVITY * U[1], liftR = lift * GRAVITY * h.sideLift * R[1]
   let ax = F[0] * thrust - v[0] * resist + U[0] * liftU + R[0] * liftR
   let ay = F[1] * thrust - v[1] * resist + U[1] * liftU + R[1] * liftR - GRAVITY
@@ -693,12 +665,15 @@ function stepHeliAim(s: FlightState, inp: FlightInput, dt: number, world: WorldQ
   if (inPitch !== 0) pitchT = hasAim ? inPitch * (inPitch > 0 ? h.backTilt : h.maxTilt) : pitchAngle + (inPitch * h.cyclicRate) / h.tiltGain
   pitchT = pitchT + (holdPitch - pitchT) * hold
   bankT = holdBank * hold
-  if (inRoll !== 0) bankT = inRoll * h.sideTilt
-  else bankT += clamp((-yawLeft * vF) / GRAVITY * 0.7, -20 * DEG, 20 * DEG) * smoothstep(10, 40, vF)
+  // Roll input: a partial deflection (A/D strafe, HELI_STRAFE_ROLL) is a sideways tilt; a full one (Q/E)
+  // is a roll-rate command that can flip the heli. The attitude hold rights it again on release.
+  const flipping = Math.abs(inRoll) > HELI_FLIP_ROLL
+  if (inRoll !== 0 && !flipping) bankT = clamp(inRoll / HELI_STRAFE_ROLL, -1, 1) * h.sideTilt
+  else if (inRoll === 0) bankT += clamp((-yawLeft * vF) / GRAVITY * 0.7, -20 * DEG, 20 * DEG) * smoothstep(10, 40, vF)
   pitchT = clamp(pitchT, -tiltLimit, h.backTilt)
 
   let tx = clamp(h.tiltGain * (pitchT - pitchAngle), -h.maxTiltRate, h.maxTiltRate)
-  let tz = -clamp(h.tiltGain * (bankT - bank), -h.maxTiltRate, h.maxTiltRate)
+  let tz = flipping ? -inRoll * h.flipRate : -clamp(h.tiltGain * wrapAngle(bankT - bank), -h.maxTiltRate, h.maxTiltRate)
   rotInto(TMP, q, 0, yawLeft, 0, true)
   tx += TMP[0]
   const ty = TMP[1]
