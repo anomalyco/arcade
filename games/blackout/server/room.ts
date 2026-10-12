@@ -6,7 +6,7 @@ import { seedOf } from "../shared/rng"
 import { type MapChoice, mapChoiceOf } from "../shared/maps"
 import { hostMaps, hostRestart, moveTeam, shuffleTeams } from "../shared/sim/host"
 import { type ModeId, modeOf } from "../shared/sim/modes"
-import { buildSnapshot, rosterOf } from "../shared/sim/view"
+import { buildSnapshot, rosterOf, snapshotEntities } from "../shared/sim/view"
 import { World } from "../shared/sim/world"
 import { type Env, lobbyOf } from "./env"
 
@@ -178,10 +178,11 @@ export class RoomCore {
     const key = JSON.stringify(roster)
     const rosterChanged = key !== this.rosterKey
     this.rosterKey = key
+    const entities = this.ticks % SNAP_EVERY === 0 ? snapshotEntities(this.world) : null
     for (const [conn, id] of this.conns) {
       if (events.length) conn.send(encodeServer({ type: "ev", events }))
       if (rosterChanged) conn.send(encodeServer({ type: "roster", players: roster }))
-      if (this.ticks % SNAP_EVERY === 0) conn.send(encodeServer(buildSnapshot(this.world, id)))
+      if (entities) conn.send(encodeServer(buildSnapshot(this.world, id, entities)))
     }
   }
 }

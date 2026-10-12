@@ -14,9 +14,9 @@ const CHUNK = 12
 /** Baked floor map resolution, metres per texel. */
 const CELL = 0.125
 
-export type LevelChunk = { data: ArrayBuffer; box: readonly [number, number, number, number] }
+export type LevelChunk = { data: ArrayBuffer; box: readonly [number, number, number, number]; cutBox?: readonly number[] }
 export type FloorMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number }
-export type LevelData = { chunks: LevelChunk[]; glass: ArrayBuffer; floor: FloorMap; bounce: FloorMap }
+export type LevelData = { chunks: LevelChunk[]; glass: LevelChunk[]; floor: FloorMap; bounce: FloorMap }
 /** Bounce map resolution, metres per texel. */
 const BOUNCE_CELL = 0.5
 
@@ -780,17 +780,30 @@ export function buildLevel(map: MapDef): LevelData {
   for (const b of buckets.values()) {
     const m = new Mesh()
     for (const j of b) j.build(m)
-    if (m.count) chunks.push({ data: m.pack(), box: bounds(m) })
+    if (m.count) {
+      const box = bounds(m)
+      const cutBox = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]
+      for (let i = 0; i < m.v.length; i += 11) {
+        const mat = m.v[i + 9]!
+        if (mat !== MAT.wall && mat !== MAT.cap && mat !== MAT.lamp && mat !== MAT.haze) continue
+        for (let k = 0; k < 3; k++) {
+          cutBox[k] = Math.min(cutBox[k]!, m.v[i + k]!)
+          cutBox[k + 3] = Math.max(cutBox[k + 3]!, m.v[i + k]!)
+        }
+      }
+      chunks.push({ data: m.pack(), box, cutBox: Number.isFinite(cutBox[0]) ? cutBox : undefined })
+    }
   }
 
-  const glass = new Mesh()
+  const glassMesh = new Mesh()
   const G = hex(0x8fb8e8)
-  for (const w of map.windows) glass.box(w[0] + 0.12, 0.35, w[1] + 0.12, w[2] - 0.12, 2.6, w[3] - 0.12, G, MAT.glass)
-  for (const g of map.glass) glass.box(g[0], 0, g[1], g[2], 2.5, g[3], G, MAT.glass)
-  for (const l of map.lights) haze(glass, l)
-  for (const l of map.lights) motes(glass, l, rng(seed + l.id * 7 + 3))
+  for (const w of map.windows) glassMesh.box(w[0] + 0.12, 0.35, w[1] + 0.12, w[2] - 0.12, 2.6, w[3] - 0.12, G, MAT.glass)
+  for (const g of map.glass) glassMesh.box(g[0], 0, g[1], g[2], 2.5, g[3], G, MAT.glass)
+  for (const l of map.lights) haze(glassMesh, l)
+  for (const l of map.lights) motes(glassMesh, l, rng(seed + l.id * 7 + 3))
+  const glass: LevelChunk[] = [{ data: glassMesh.pack(), box: [-1e5, -1e5, 1e5, 1e5] }]
 
-  return { chunks, glass: glass.pack(), floor: bakeFloor(map), bounce: bakeBounce(map) }
+  return { chunks, glass, floor: bakeFloor(map), bounce: bakeBounce(map) }
 }
 
 /** Downtown's sidewalk edges that face the road: a curb along each, from the road up to the sidewalk. */

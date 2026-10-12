@@ -1,7 +1,8 @@
 import { chromium } from "playwright-core"
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { encode } from "../../../scripts/encode"
 
 type BenchStepResult = {
   cpuMs: number
@@ -51,9 +52,9 @@ type BenchReport = {
   }
 }
 
-const BENCH_DIR = "/private/var/folders/dd/5fz89drs5p9_r0fk7rwqqnbr0000gn/T/opencode/arcade-bench"
-const PREVIEW_DIR = "/Users/kit/code/open-source/lamplight/captures/preview"
-const DESKTOP_DIR = "/Users/kit/Desktop/Lamplight"
+const BENCH_DIR = process.env.BENCH_DIR ?? join(import.meta.dir, "../../../captures/bench")
+const PREVIEW_DIR = join(import.meta.dir, "../../../captures/preview")
+const DESKTOP_DIR = PREVIEW_DIR
 const KEYFRAMES = [12, 60, 135] as const
 const TOTAL_FRAMES = 180
 
@@ -101,39 +102,11 @@ async function ensureViteServer(preferredPort = 5190): Promise<{ port: number; s
   if (await isViteUp(preferredPort)) {
     return { port: preferredPort, stop: () => {} }
   }
-  const proc = Bun.spawn(["bunx", "vite", "--host", "127.0.0.1", "--port", String(preferredPort)], {
-    cwd: join(import.meta.dir, ".."),
-    stdout: "ignore",
-    stderr: "ignore",
-  })
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    if (await isViteUp(preferredPort)) {
-      return {
-        port: preferredPort,
-        stop: () => {
-          try {
-            proc.kill()
-          } catch {}
-        },
-      }
-    }
-    await Bun.sleep(150)
-  }
-  proc.kill()
-  throw new Error(`Timed out waiting for Vite server on port ${preferredPort}`)
+  throw new Error(`No preview on port ${preferredPort}; pass the existing Nexus preview port with --port.`)
 }
 
 async function runFfmpeg(args: string[]) {
-  const proc = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  const exit = await proc.exited
-  if (exit !== 0) {
-    const err = await new Response(proc.stderr).text()
-    throw new Error(`ffmpeg failed (${exit}): ${err}`)
-  }
+  await encode(args)
 }
 
 async function main() {
@@ -166,13 +139,20 @@ async function main() {
 
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 })
+    await page.routeWebSocket("**", (socket) => {
+      const server = socket.connectToServer()
+      server.onMessage((message) => {
+        if (typeof message === "string" && /"type":"(?:update|full-reload)"/.test(message)) return
+        socket.send(message)
+      })
+    })
     const errors: string[] = []
     page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`))
     page.on("console", (m) => {
       if (m.type() === "error" && !/favicon|woff|Failed to load resource/i.test(m.text())) errors.push(`console.error: ${m.text()}`)
     })
 
-    const url = `http://localhost:${vite.port}/?solo&bench`
+    const url = `http://localhost:${vite.port}/?solo&bench&vanilla=1`
     await page.goto(url, { waitUntil: "networkidle" })
     await page.waitForFunction(
       () => Boolean((window as unknown as { __getawayBench?: { ready?: unknown } }).__getawayBench),
@@ -262,34 +242,8 @@ async function main() {
     // 2. Deterministic 180-frame 30 fps video recording pass.
     const mp4Path = join(BENCH_DIR, `getaway-${phase}.mp4`)
     console.log(`[compare:${phase}] Recording ${TOTAL_FRAMES}-frame 30fps video -> ${mp4Path}`)
-    const ff = Bun.spawn(
-      [
-        "ffmpeg",
-        "-y",
-        "-loglevel",
-        "error",
-        "-f",
-        "image2pipe",
-        "-vcodec",
-        "png",
-        "-r",
-        "30",
-        "-i",
-        "-",
-        "-c:v",
-        "libx264",
-        "-profile:v",
-        "main",
-        "-level:v",
-        "4.0",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        mp4Path,
-      ],
-      { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
-    )
+    const framesDir = join(BENCH_DIR, `getaway-frames-${phase}`)
+    mkdirSync(framesDir, { recursive: true })
 
     await page.evaluate(() => {
       ;(window as unknown as { __getawayBench: { reset(): void } }).__getawayBench.reset()
@@ -304,17 +258,12 @@ async function main() {
         )
       }, i)
       const png = await page.screenshot({ type: "png" })
-      ff.stdin.write(png)
+      writeFileSync(join(framesDir, `f_${String(i).padStart(4, "0")}.png`), png)
       if ((KEYFRAMES as readonly number[]).includes(i)) {
         writeFileSync(join(BENCH_DIR, `getaway-${phase}-f${String(i).padStart(3, "0")}.png`), png)
       }
     }
-    ff.stdin.end()
-    const ffExit = await ff.exited
-    if (ffExit !== 0) {
-      const err = await new Response(ff.stderr).text()
-      throw new Error(`ffmpeg video encode failed (${ffExit}): ${err}`)
-    }
+    await encode(["-framerate", "30", "-i", join(framesDir, "f_%04d.png"), "-c:v", "h264_videotoolbox", "-profile:v", "high", "-q:v", "75", "-pix_fmt", "yuv420p", "-movflags", "+faststart", mp4Path])
 
     // 3. When --phase=after, stitch side-by-side MP4 and 3-frame contact sheet!
     if (phase === "after") {
@@ -382,18 +331,17 @@ async function main() {
         "-filter_complex",
         "[0:v]scale=960:540[b];[1:v]scale=960:540[a];[b][a]hstack=inputs=2[st];[st][2:v]overlay=0:0",
         "-c:v",
-        "libx264",
+        "h264_videotoolbox",
         "-profile:v",
-        "main",
-        "-level:v",
-        "4.0",
+        "high",
+        "-q:v",
+        "75",
         "-pix_fmt",
         "yuv420p",
         "-movflags",
         "+faststart",
         previewMp4,
       ])
-      copyFileSync(previewMp4, desktopMp4)
       console.log(`[compare:after] Stitched side-by-side video -> ${previewMp4} & ${desktopMp4}`)
 
       // Build 3-frame side-by-side contact sheet (1440x1215 <= 1500x1500).
@@ -433,7 +381,6 @@ async function main() {
         "2",
         previewSheet,
       ])
-      copyFileSync(previewSheet, desktopSheet)
       console.log(`[compare:after] Stitched 3-frame contact sheet (1440x1215) -> ${previewSheet} & ${desktopSheet}`)
     }
   } finally {

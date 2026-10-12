@@ -200,7 +200,10 @@ export class RoomCore {
       const conn = e.to === undefined ? null : this.players.get(e.to)?.conn
       if (conn) this.send(conn, { type: "events", events: [{ t: e.t, kind: e.kind, text: e.text, carId: e.carId }] })
     }
-    if (this.tick % SNAPSHOT_EVERY === 0) for (const p of this.players.values()) if (p.conn) this.sendSnapshot(p)
+    if (this.tick % SNAPSHOT_EVERY === 0) {
+      const base = world.viewBase()
+      for (const p of this.players.values()) if (p.conn) this.sendSnapshot(p, base)
+    }
   }
 
   /** Idle ticks allowed before a kick: longer for the driver sitting dark on purpose. */
@@ -243,12 +246,12 @@ export class RoomCore {
     return world.cops()[0]?.ownerId ?? id
   }
 
-  private sendSnapshot(p: Player) {
+  private sendSnapshot(p: Player, base?: ReturnType<World["viewBase"]>) {
     const world = this.world
     if (!world || !p.conn) return
     const car = world.carOf(p.id)
     const idleIn = this.idleIn(p.id)
-    this.send(p.conn, { type: "snapshot", tick: this.tick, ack: p.ack, view: world.view(this.viewerFor(p.id)), you: car ? car.body : null, ...(idleIn === undefined ? {} : { idleIn }) })
+    this.send(p.conn, { type: "snapshot", tick: this.tick, ack: p.ack, view: world.view(this.viewerFor(p.id), base), you: car ? car.body : null, ...(idleIn === undefined ? {} : { idleIn }) })
   }
 
   private broadcastRoster() {

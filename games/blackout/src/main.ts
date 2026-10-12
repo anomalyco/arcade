@@ -84,6 +84,7 @@ async function main() {
   const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
   const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
     quick: (name) => api("quick").then((r) => enter(name, r.room), failed),
+    practice: (name, mode) => begin(name, (n) => new LocalSession(n, gun, equip, mode)),
     create: (name, mode, maps) => api("create").then((r) => enter(name, r.room, true, mode, maps), failed),
     join: (name, room) => enter(name, room),
     vote,

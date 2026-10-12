@@ -107,6 +107,7 @@ export type Avatar = {
   aimVel: number
   legYaw: number
   turning: boolean
+  back: boolean
   phase: number
   duty: number
   gait: number
@@ -174,6 +175,7 @@ export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gu
     aimVel: 0,
     legYaw: aim,
     turning: false,
+    back: false,
     phase: 0,
     duty: 0.6,
     gait: 0,
@@ -452,10 +454,13 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   if (sp > 0.4) {
     a.turning = false
     let mv = Math.atan2(nvy, nvx)
-    if (Math.abs(angleDiff(mv, aim)) > 1.9) mv += Math.PI
+    const dAim = Math.abs(angleDiff(mv, aim))
+    if (a.back ? dAim < 1.72 : dAim > 2.05) a.back = !a.back
+    if (a.back) mv += Math.PI
     const want = aim + clamp(angleDiff(mv, aim), -1.05, 1.05)
     a.legYaw += angleDiff(want, a.legYaw) * Math.min(1, dt * 9)
   } else {
+    a.back = false
     const rest = aim + blade * 0.55
     const d = angleDiff(rest, a.legYaw)
     if (Math.abs(d) > 0.8) a.turning = true
@@ -505,13 +510,15 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
       const lead = left + stance * 0.5
       let tx = rx + nvx * lead
       let ty = ry + nvy * lead
-      // Side-steps shuffle rather than cross: keep the swing foot on its own side of the planted one.
+      // Side-steps shuffle rather than cross: keep the swing foot on its own side of the planted one in aim space.
       const o = a.feet[1 - i]!
       const side = i === 0 ? -1 : 1
-      const lat = (-(tx - o.p[0]) * sl + (ty - o.p[2]) * cl) * side
+      const ca = Math.cos(aim)
+      const sa = Math.sin(aim)
+      const lat = (-(tx - o.p[0]) * sa + (ty - o.p[2]) * ca) * side
       if (lat < 0.16) {
-        tx += -sl * side * (0.16 - lat)
-        ty += cl * side * (0.16 - lat)
+        tx += -sa * side * (0.16 - lat)
+        ty += ca * side * (0.16 - lat)
       }
       const e = smoother(u)
       f.p = [f.lift[0] + (tx - f.lift[0]) * e, Math.sin(Math.PI * u) * (0.06 + 0.09 * k + 0.07 * s), f.lift[2] + (ty - f.lift[2]) * e]

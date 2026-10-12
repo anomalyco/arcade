@@ -91,7 +91,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let r = occluders[(first + i) * 2u];
     let m = occluders[(first + i) * 2u + 1u];
     var t0 = 0.0;
-    var t1 = full;
+    var t1 = 1e6;
     var hit = false;
     var h = m.x;
     if (m.y > 0.5) {
@@ -108,14 +108,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
       h = min(h, hl - 0.25);
     } else {
-      hit = slab(o.x, dir.x, r.x, r.z, &t0, &t1) && slab(o.y, dir.y, r.y, r.w, &t0, &t1);
+      hit = slab(o.x, dir.x, r.x, r.z, &t0, &t1) && slab(o.y, dir.y, r.y, r.w, &t0, &t1) && t0 < full;
       t1 = max(t1, t0);
-      // Exit through the far side even when capped by the current full distance.
-      if (hit) {
-        var e0 = 0.0;
-        var e1 = 1e6;
-        if (slab(o.x, dir.x, r.x, r.z, &e0, &e1) && slab(o.y, dir.y, r.y, r.w, &e0, &e1)) { t1 = e1; }
-      }
     }
     if (!hit) { continue; }
     if (h >= hl - 0.02) {
@@ -123,7 +117,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     } else if (t0 < a.x) {
       if (b.x < FAR) { b = vec3f(min(b.x, a.x), max(b.y, a.y), max(b.z, a.z)); } else { b = a; }
       a = vec3f(t0, t1, h);
-    } else if (t0 < b.x && b.x >= FAR) {
+    } else if (t0 < b.x) {
       b = vec3f(t0, t1, h);
     } else {
       b = vec3f(min(b.x, t0), max(b.y, t1), max(b.z, h));
@@ -258,10 +252,12 @@ fn partialShadow(t0: f32, t1: f32, h: f32, d: f32, y: f32, hl: f32, size: f32) -
 fn tapVis(base: u32, fi: f32, d: f32, y: f32, hl: f32, size: f32) -> f32 {
   let i = u32(i32(round(fi)) + i32(RAYS) * 4) % RAYS;
   let p0 = polar[(base + i) * 2u];
-  let p1 = polar[(base + i) * 2u + 1u];
   let full = p0.x;
   let ef = 0.03 + size * 0.45 * max(d - full, 0.0) / max(full, 0.3);
+  if (d >= full + ef) { return 0.0; }
   var v = 1.0 - smoothstep(full - 0.02, full + ef, d);
+  if (d <= p0.y - 0.04) { return v; }
+  let p1 = polar[(base + i) * 2u + 1u];
   v *= partialShadow(p0.y, p0.z, p0.w, d, y, hl, size);
   v *= partialShadow(p1.x, p1.y, p1.z, d, y, hl, size);
   return v;
@@ -305,8 +301,9 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     let lp = L.pos.xz;
     let r = L.pos.w;
     let dv = world.xz - lp;
-    let dPlan = length(dv);
-    if (dPlan >= r) { continue; }
+    let dPlan2 = dot(dv, dv);
+    if (dPlan2 >= r * r) { continue; }
+    let dPlan = sqrt(dPlan2);
     let hl = L.pos.y;
     let l3 = vec3f(lp.x, hl, lp.y) - world;
     let d3 = max(length(l3), 0.05);
@@ -494,7 +491,7 @@ fn lampK(aux: f32) -> f32 {
   return lampPower[u32(aux)];
 }
 
-@fragment fn fs(o: VOut) -> @location(0) vec4f {
+fn shadeScene(o: VOut) -> vec4f {
   let mat = i32(round(o.mat));
   if (mat == 13) {
     let r = length(o.normal.xy);
@@ -510,7 +507,6 @@ fn lampK(aux: f32) -> f32 {
   if (mat == 7) {
     return vec4f(city(o.world.xz), 1.0);
   }
-  if ((mat == 4 || mat == 9 || mat == 2 || mat == 11) && cutaway(o.world, o.pos)) { discard; }
   if (mat == 11) {
     // Haze under a fixture: denser near the lamp and where you look through more of the cone.
     let k = lampK(o.aux);
@@ -581,6 +577,16 @@ fn lampK(aux: f32) -> f32 {
   col = mix(col, vec3f(2.5), o.extra.w);
   let a = alpha * o.extra.z;
   return vec4f(col * a, a);
+}
+
+@fragment fn fs(o: VOut) -> @location(0) vec4f {
+  let mat = i32(round(o.mat));
+  if ((mat == 4 || mat == 9 || mat == 2 || mat == 11) && cutaway(o.world, o.pos)) { discard; }
+  return shadeScene(o);
+}
+
+@fragment fn fsSolid(o: VOut) -> @location(0) vec4f {
+  return shadeScene(o);
 }
 `
 
