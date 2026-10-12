@@ -579,7 +579,8 @@ function banded(r: Rng, arch: "ring" | "spine" | "atrium"): Gen {
   }
   // Cross corridors: always in spines and round the atrium, otherwise sometimes.
   const gaps = blocks.slice(1).map((b, k) => arch === "spine" || b.kind === "atrium" || blocks[k]!.kind === "atrium" || r.next() < 0.5)
-  if (arch !== "spine" && gaps.length && !gaps.some(Boolean) && r.next() < 0.5) gaps[r.int(gaps.length)] = true
+  // At least one cross corridor, so there's always a way across as well as round.
+  if (gaps.length && !gaps.some(Boolean)) gaps[r.int(gaps.length)] = true
   if (!atrium) {
     let free = IW - coreW - gaps.filter(Boolean).length * c
     let others = blocks.filter((b) => b.kind !== "core")
@@ -834,8 +835,15 @@ function doors(g: Gen): void {
 
 /** Any must-have room the rows didn't produce takes over an ordinary one. */
 function program(g: Gen): void {
-  for (const [kind, n] of g.need) {
-    for (let k = 0; k < n; k++) {
+  const must: [RoomKind, number][] = [
+    ["kitchen", 1],
+    ["copy", 1],
+    ["server", 1],
+    ["storage", 1],
+    ["meeting", 1],
+  ]
+  for (const [kind, n] of must) {
+    for (let have = g.rooms.filter((x) => x.kind === kind).length; have < n; have++) {
       const pool = g.rooms.filter((x) => (x.kind === "office" || x.kind === "empty" || x.kind === "manager") && (x.rect[2] - x.rect[0]) * (x.rect[3] - x.rect[1]) >= 12)
       if (!pool.length) break
       g.r.pick(pool).kind = kind

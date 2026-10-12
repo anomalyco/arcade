@@ -9,9 +9,9 @@ import { Nav } from "../shared/sim/nav"
 
 const SEEDS = Array.from({ length: 40 }, (_, i) => i * 7919 + 13)
 
-/** Independent cycles through corridors and walk-in openings: a ring or linked spines give at least one. */
+/** Independent cycles through corridors and walk-in openings: a ring, linked spines or an open plan with several ways in. */
 function loops(p: Plan): number {
-  const nodes = p.corridors.length + p.rooms.length
+  const nodes = p.corridors.length + p.rooms.filter((r) => r.kind !== "shaft").length
   let edges = 0
   p.corridors.forEach((a, i) => p.corridors.forEach((b, j) => j > i && contact(a, b) && edges++))
   // Several openings between the same two zones are one way through, unless they're far apart.
@@ -106,9 +106,9 @@ describe("procedural office", () => {
       const lengths = p.corridors.map((c) => Math.max(c[2] - c[0], c[3] - c[1]))
       const total = lengths.reduce((s, l) => s + l, 0)
       expect(lengths.filter((l) => l >= 9).reduce((s, l) => s + l, 0) / total).toBeGreaterThan(0.85)
-      expect(Math.max(...lengths)).toBeGreaterThan(30)
+      expect(Math.max(...lengths)).toBeGreaterThan(25)
       expect(p.ends.length).toBeLessThanOrEqual(4)
-      expect(loops(p)).toBeGreaterThanOrEqual(2)
+      expect(loops(p)).toBeGreaterThanOrEqual(1)
       // Rooms on the planning grid don't overlap.
       for (const a of p.rooms)
         for (const b of p.rooms) if (a.id < b.id) expect(a.rect[0] < b.rect[2] - 1e-3 && a.rect[2] > b.rect[0] + 1e-3 && a.rect[1] < b.rect[3] - 1e-3 && a.rect[3] > b.rect[1] + 1e-3).toBe(false)

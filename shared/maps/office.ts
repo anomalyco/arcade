@@ -705,7 +705,7 @@ function corridors(b: Builder, r: Rng, p: Plan, clear: Rect[], W: number, H: num
   for (const pass of [0, 1]) {
     for (const { v, chance } of shuffle(r, spots)) {
       if (pass && b.lights.length >= 12) break
-      if ((!pass && r.next() > chance) || lit.some((q) => Math.hypot(q.x - v.x, q.y - v.y) < (pass ? 9 : 12))) continue
+      if ((!pass && r.next() > chance) || lit.some((q) => Math.hypot(q.x - v.x, q.y - v.y) < (pass ? 7 : 12))) continue
       b.light({ kind: "panel", x: v.x, y: v.y, h: 2.6, r: 6.5, power: 0.85, color: COLD, flicker: r.next() < 0.3 ? r.range(0.3, 0.9) : undefined })
       lit.push(v)
     }

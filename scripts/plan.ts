@@ -1,5 +1,5 @@
 // Draws procedural office floors as SVG floor plans for eyeballing the generator.
-// Usage: bun scripts/plan.ts [seed...] → /tmp/opencode/plans/<seed>.svg and an index.html
+// Usage: bun scripts/plan.ts [seed...] → $PLANS (default /tmp/opencode/plans)/<seed>.svg, grid.svg and index.html
 import { mkdirSync, writeFileSync } from "node:fs"
 import { layout } from "../shared/maps/layout"
 import { generateOffice } from "../shared/maps/office"
@@ -8,7 +8,7 @@ import { Nav } from "../shared/sim/nav"
 
 const seeds = process.argv.slice(2).map(Number)
 if (!seeds.length) seeds.push(1, 2, 3, 4, 5, 6)
-const out = "/tmp/opencode/plans"
+const out = process.env.PLANS ?? "/tmp/opencode/plans"
 mkdirSync(out, { recursive: true })
 const S = 16
 const FLOOR: Record<string, string> = { carpet: "#1b2236", tile: "#26304a", wood: "#2e2a30", concrete: "#22262e", grate: "#1e2a3a" }
