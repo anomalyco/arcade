@@ -198,6 +198,8 @@ describe("broadphase", () => {
     const R = 0.32
     for (let i = 0; i < 20000; i++) {
       const p = { x: r.range(0, m.size[0]), y: r.range(0, m.size[1]) }
+      // Bodies move a fraction of a radius per step, so they're never buried deeper than that in a solid.
+      if (rects.some((rc) => p.x > rc[0] + R && p.x < rc[2] - R && p.y > rc[1] + R && p.y < rc[3] - R)) continue
       const q = { ...p }
       pushOut(p, R, rects)
       for (let pass = 0; pass < 2; pass++)

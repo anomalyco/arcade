@@ -1,8 +1,8 @@
 import type { Rect, Vec } from "../geom"
 import { Rng } from "../rng"
 import { Nav } from "../sim/nav"
-import { Builder, type Gap, T, WALL_H } from "./builder"
-import { type CellRect, EDGE, type Plan, type Room, type Side, layout, shuffle } from "./layout"
+import { Builder, T, WALL_H } from "./builder"
+import { type Plan, type Room, type Side, contact, layout, shuffle } from "./layout"
 import type { FloorKind, MapDef, Prop, PropKind } from "./types"
 
 const COLD = [0.8, 0.88, 1] as const
@@ -28,6 +28,9 @@ const FLOOR_OF: Partial<Record<Room["kind"], FloorKind>> = {
   boardroom: "wood",
   lounge: "wood",
   core: "tile",
+  reception: "wood",
+  atrium: "tile",
+  stair: "concrete",
   storage: "concrete",
   closet: "concrete",
   empty: "concrete",
@@ -37,28 +40,25 @@ const FLOOR_OF: Partial<Record<Room["kind"], FloorKind>> = {
 const overlap = (a: Rect, b: Rect) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1]
 
 /**
- * Procedural office floor from a seed: a labyrinth of narrow corridors with rooms hanging off them (see layout.ts),
- * walls and door gaps on the cell edges, furniture per room kind, sparse lights and spawns spread across the floor.
- * The server and every client build the identical floor from one number.
+ * Procedural office floor from a seed: a believable tower floor plan (see layout.ts), walls with door openings and
+ * glass fronts, furniture per room kind, sparse lights and spawns spread across the floor. The server and every client
+ * build the identical floor from one number.
  */
 export function generateOffice(seed: number): MapDef {
   const r = new Rng(seed)
   const plan = layout(r)
-  const W = plan.xs[plan.gw]!
-  const H = plan.ys[plan.gh]!
+  const { W, H } = plan
   const b = new Builder()
   b.floor("carpet", 0, 0, W, H)
   const clear: Rect[] = []
-  outerWalls(b, r, W, H)
-  walls(b, r, plan, clear, W, H)
+  outerWalls(b, r, W, H, plan.solid)
+  walls(b, plan, clear, W, H)
   for (const room of plan.rooms) {
-    if (!room.rects.length || room.id === 0) continue
     const kind = FLOOR_OF[room.kind]
-    if (kind) for (const c of room.rects) b.floor(kind, ...cellRect(plan, c))
+    if (kind) b.floor(kind, ...room.rect)
   }
-  for (const room of plan.rooms) for (const c of room.rects.slice(1)) clear.push(seam(plan, room.rects[0]!, c))
-  for (const room of plan.rooms) if (room.id > 0 && room.rects.length) furnish(b, r, plan, room, clear, W, H)
-  corridors(b, r, plan, clear)
+  for (const room of plan.rooms) furnish(b, r, plan, room, clear, W, H)
+  corridors(b, r, plan, clear, W, H)
   const nav = repair(b, plan, W, H, seed)
   const map = b.build({ id: `office-${seed}`, seed, name: `Office Tower · FL ${floorOf(seed)}`, size: [W, H] })
   b.spawns.push(...spawns(nav, r, plan))
@@ -67,32 +67,15 @@ export function generateOffice(seed: number): MapDef {
 
 export const floorOf = (seed: number) => 3 + (seed % 57)
 
-const cellRect = (p: Plan, c: CellRect): Rect => [p.xs[c[0]]!, p.ys[c[1]]!, p.xs[c[2] + 1]!, p.ys[c[3] + 1]!]
-const cellCenter = (p: Plan, i: number): Vec => {
-  const x = i % p.gw
-  const y = Math.floor(i / p.gw)
-  return { x: (p.xs[x]! + p.xs[x + 1]!) / 2, y: (p.ys[y]! + p.ys[y + 1]!) / 2 }
-}
-
-/** Keep-clear zone across the open seam between a room's main rect and a sliver merged into it. */
-function seam(p: Plan, main: CellRect, c: CellRect): Rect {
-  const [x0, y0, x1, y1] = cellRect(p, c)
-  const [mx0, my0, mx1, my1] = cellRect(p, main)
-  const d = DOOR_CLEAR
-  if (Math.abs(x1 - mx0) < 1e-6) return [x1 - d, y0, x1 + d, y1]
-  if (Math.abs(x0 - mx1) < 1e-6) return [x0 - d, y0, x0 + d, y1]
-  if (Math.abs(y1 - my0) < 1e-6) return [x0, y1 - d, x1, y1 + d]
-  if (Math.abs(y0 - my1) < 1e-6) return [x0, y0 - d, x1, y0 + d]
-  // Merged onto another sliver rather than the main rect: keep the whole cell clear.
-  return [x0, y0, x1, y1]
-}
-
 // Walls ---------------------------------------------------------------------------------------------------------------
 
-/** Two or three sides of the tower are glass; the rest is the building's shell. */
-function outerWalls(b: Builder, r: Rng, W: number, H: number): void {
-  const sides = shuffle(r, ["n", "s", "e", "w"] as Side[])
-  const glass = new Set(sides.slice(0, 2 + r.int(2)))
+/** Two or three sides of the tower are glass; the rest is the building's shell, including any side an exit is on. */
+function outerWalls(b: Builder, r: Rng, W: number, H: number, solid: Side[]): void {
+  const sides = shuffle(
+    r,
+    (["n", "s", "e", "w"] as Side[]).filter((s) => !solid.includes(s)),
+  )
+  const glass = new Set(sides.slice(0, Math.max(1, Math.min(sides.length, 2 + r.int(2)))))
   const rect: Record<Side, Rect> = { n: [0, 0, W, T], s: [0, H - T, W, H], w: [0, T, T, H - T], e: [W - T, T, W, H - T] }
   for (const s of ["n", "s", "w", "e"] as const) {
     if (glass.has(s)) b.windows.push(rect[s])
@@ -100,68 +83,99 @@ function outerWalls(b: Builder, r: Rng, W: number, H: number): void {
   }
 }
 
-function doorGap(r: Rng, a: number, z: number): Gap {
-  const room = z - a - T - 0.2
-  const w = Math.min(1.2 + r.next() * 0.3, room)
-  const s = a + T / 2 + 0.1 + r.next() * (room - w)
-  return [s, s + w]
+type Span = [number, number]
+
+/** Merges overlapping spans. */
+function union(spans: Span[]): Span[] {
+  const out: Span[] = []
+  for (const s of [...spans].sort((a, b) => a[0] - b[0])) {
+    const last = out[out.length - 1]
+    if (last && s[0] <= last[1] + 1e-3) last[1] = Math.max(last[1], s[1])
+    else out.push([s[0], s[1]])
+  }
+  return out
 }
 
-/** Walls along every edge between zones, merged into runs, with door gaps, glass and open stretches. */
-function walls(b: Builder, r: Rng, p: Plan, clear: Rect[], W: number, H: number): void {
-  const { gw, gh, xs, ys } = p
-  for (let y = 1; y < gh; y++) {
-    const ly = ys[y]!
-    let x0 = -1
-    let gaps: Gap[] = []
-    const flush = (end: number) => {
-      if (x0 >= 0) b.hwall(ly, Math.max(0, xs[x0]! - T / 2), Math.min(W, xs[end]! + T / 2), gaps)
-      x0 = -1
-      gaps = []
-    }
-    for (let x = 0; x < gw; x++) {
-      const k = p.h[y * gw + x]
-      if (k === EDGE.wall || k === EDGE.door) {
-        if (x0 < 0) x0 = x
-        if (k === EDGE.door) {
-          const g = doorGap(r, xs[x]!, xs[x + 1]!)
-          gaps.push(g)
-          clear.push([g[0] - 0.15, ly - DOOR_CLEAR, g[1] + 0.15, ly + DOOR_CLEAR])
-        }
+/** Spans minus the cut spans. */
+function subtract(spans: Span[], cuts: Span[]): Span[] {
+  let out = spans
+  for (const c of cuts) {
+    const next: Span[] = []
+    for (const s of out) {
+      if (c[1] <= s[0] + 1e-3 || c[0] >= s[1] - 1e-3) {
+        next.push(s)
         continue
       }
-      flush(x)
-      if (k === EDGE.glass) b.pane(xs[x]!, ly - 0.06, xs[x + 1]!, ly + 0.06)
-      if (k === EDGE.open) clear.push([xs[x]!, ly - DOOR_CLEAR, xs[x + 1]!, ly + DOOR_CLEAR])
+      if (c[0] > s[0] + 1e-3) next.push([s[0], c[0]])
+      if (c[1] < s[1] - 1e-3) next.push([c[1], s[1]])
     }
-    flush(gw)
+    out = next
   }
-  for (let x = 1; x < gw; x++) {
-    const lx = xs[x]!
-    let y0 = -1
-    let gaps: Gap[] = []
-    const flush = (end: number) => {
-      if (y0 >= 0) b.vwall(lx, Math.max(0, ys[y0]! - T / 2), Math.min(H, ys[end]! + T / 2), gaps)
-      y0 = -1
-      gaps = []
+  return out
+}
+
+/**
+ * Walls along every room edge, merged per wall line, with doors and open stretches as gaps and glass fronts as panes.
+ * Lift shafts are solid blocks; columns stand in open frontages.
+ */
+function walls(b: Builder, p: Plan, clear: Rect[], W: number, H: number): void {
+  const lines = { h: new Map<number, Span[]>(), v: new Map<number, Span[]>() }
+  const cuts = { h: new Map<number, Span[]>(), v: new Map<number, Span[]>() }
+  const gaps = { h: new Map<number, Span[]>(), v: new Map<number, Span[]>() }
+  const add = (m: Map<number, Span[]>, k: number, a: number, z: number) => {
+    const key = Math.round(k * 100)
+    const list = m.get(key) ?? []
+    list.push([a, z])
+    m.set(key, list)
+  }
+  const E = 1e-3
+  const shafts: Rect[] = []
+  for (const room of p.rooms) {
+    const [x0, y0, x1, y1] = room.rect
+    if (room.kind === "shaft") {
+      shafts.push(room.rect)
+      b.wall(Math.max(T, x0 - T / 2), Math.max(T, y0 - T / 2), Math.min(W - T, x1 + T / 2), Math.min(H - T, y1 + T / 2), WALL_H, "core")
+      add(cuts.h, y0, x0 - T / 2, x1 + T / 2)
+      add(cuts.h, y1, x0 - T / 2, x1 + T / 2)
+      add(cuts.v, x0, y0 - T / 2, y1 + T / 2)
+      add(cuts.v, x1, y0 - T / 2, y1 + T / 2)
+      continue
     }
-    for (let y = 0; y < gh; y++) {
-      const k = p.v[y * (gw + 1) + x]
-      if (k === EDGE.wall || k === EDGE.door) {
-        if (y0 < 0) y0 = y
-        if (k === EDGE.door) {
-          const g = doorGap(r, ys[y]!, ys[y + 1]!)
-          gaps.push(g)
-          clear.push([lx - DOOR_CLEAR, g[0] - 0.15, lx + DOOR_CLEAR, g[1] + 0.15])
-        }
-        continue
+    if (y0 > E) add(lines.h, y0, x0, x1)
+    if (y1 < H - E) add(lines.h, y1, x0, x1)
+    if (x0 > E) add(lines.v, x0, y0, y1)
+    if (x1 < W - E) add(lines.v, x1, y0, y1)
+  }
+  for (const o of p.openings) {
+    const hz = Math.abs(o.y0 - o.y1) < E
+    if (o.kind === "glass") b.pane(hz ? o.x0 : o.x0 - 0.06, hz ? o.y0 - 0.06 : o.y0, hz ? o.x1 : o.x0 + 0.06, hz ? o.y0 + 0.06 : o.y1)
+    else if (hz) clear.push([o.x0 - 0.15, o.y0 - DOOR_CLEAR, o.x1 + 0.15, o.y0 + DOOR_CLEAR])
+    else clear.push([o.x0 - DOOR_CLEAR, o.y0 - 0.15, o.x0 + DOOR_CLEAR, o.y1 + 0.15])
+    if (hz) add(gaps.h, o.y0, o.x0, o.x1)
+    else add(gaps.v, o.x0, o.y0, o.y1)
+  }
+  for (const dir of ["h", "v"] as const) {
+    for (const [key, spans] of lines[dir]) {
+      const l = key / 100
+      const max = dir === "h" ? W : H
+      const runs = subtract(union(spans), cuts[dir].get(key) ?? [])
+      const holes = union(gaps[dir].get(key) ?? [])
+      const touches = (u: number) => {
+        const x = dir === "h" ? u : l
+        const y = dir === "h" ? l : u
+        return shafts.some((c) => x >= c[0] - E && x <= c[2] + E && y >= c[1] - E && y <= c[3] + E)
       }
-      flush(y)
-      if (k === EDGE.glass) b.pane(lx - 0.06, ys[y]!, lx + 0.06, ys[y + 1]!)
-      if (k === EDGE.open) clear.push([lx - DOOR_CLEAR, ys[y]!, lx + DOOR_CLEAR, ys[y + 1]!])
+      for (const [a, z] of runs) {
+        // Runs reach half a wall past their ends to close the corners, except into a shaft.
+        const a2 = touches(a) ? a : Math.max(0, a - T / 2)
+        const z2 = touches(z) ? z : Math.min(max, z + T / 2)
+        const inside = holes.filter((g) => g[0] < z - E && g[1] > a + E).map((g): Span => [Math.max(a2, g[0]), Math.min(z2, g[1])])
+        if (dir === "h") b.hwall(l, a2, z2, inside)
+        else b.vwall(l, a2, z2, inside)
+      }
     }
-    flush(gh)
   }
+  for (const c of p.pillars) b.wall(...c, WALL_H, "pillar")
 }
 
 // Furniture -----------------------------------------------------------------------------------------------------------
@@ -271,27 +285,28 @@ class Fit {
   }
 }
 
-/** Which wall of the room's main rect has a door (or an open stretch); null when it's only reached via a merged sliver. */
-function doorSide(p: Plan, c: CellRect): Side | null {
-  const { gw } = p
-  const isDoor = (k: number | undefined) => k === EDGE.door || k === EDGE.open
-  const found: Side[] = []
-  for (let x = c[0]; x <= c[2]; x++) {
-    if (isDoor(p.h[c[1] * gw + x])) found.push("n")
-    if (isDoor(p.h[(c[3] + 1) * gw + x])) found.push("s")
+/** Which wall the room's main way in is on: a door or open stretch, else its front. */
+function doorSide(p: Plan, room: Room): Side {
+  const [x0, y0, x1, y1] = room.rect
+  const E = 1e-3
+  for (const o of p.openings) {
+    if (o.kind === "glass" || (o.a !== room.id && o.b !== room.id)) continue
+    if (Math.abs(o.y0 - o.y1) < E) {
+      if (Math.abs(o.y0 - y0) < E) return "n"
+      if (Math.abs(o.y0 - y1) < E) return "s"
+    } else {
+      if (Math.abs(o.x0 - x0) < E) return "w"
+      if (Math.abs(o.x0 - x1) < E) return "e"
+    }
   }
-  for (let y = c[1]; y <= c[3]; y++) {
-    if (isDoor(p.v[y * (gw + 1) + c[0]])) found.push("w")
-    if (isDoor(p.v[y * (gw + 1) + c[2] + 1])) found.push("e")
-  }
-  return found[0] ?? null
+  return room.front
 }
 
 function furnish(b: Builder, r: Rng, p: Plan, room: Room, clear: Rect[], W: number, H: number): void {
-  const c = room.rects[0]!
-  const [x0, y0, x1, y1] = cellRect(p, c)
-  const inner: Rect = [x0 === 0 ? T + 0.02 : x0 + T / 2 + 0.02, y0 === 0 ? T + 0.02 : y0 + T / 2 + 0.02, x1 >= W ? W - T - 0.02 : x1 - T / 2 - 0.02, y1 >= H ? H - T - 0.02 : y1 - T / 2 - 0.02]
-  const door = doorSide(p, c) ?? (r.next() < 0.5 ? "s" : "e")
+  if (room.kind === "shaft") return
+  const [x0, y0, x1, y1] = room.rect
+  const inner: Rect = [x0 < 0.01 ? T + 0.02 : x0 + T / 2 + 0.02, y0 < 0.01 ? T + 0.02 : y0 + T / 2 + 0.02, x1 > W - 0.01 ? W - T - 0.02 : x1 - T / 2 - 0.02, y1 > H - 0.01 ? H - T - 0.02 : y1 - T / 2 - 0.02]
+  const door = doorSide(p, room)
   const f = new Fit(b, r, inner, door, clear.filter((a) => overlap(a, inner)))
   switch (room.kind) {
     case "office":
@@ -321,7 +336,13 @@ function furnish(b: Builder, r: Rng, p: Plan, room: Room, clear: Rect[], W: numb
     case "hall":
       return void (cubicles(f, true) || lounge(f))
     case "core":
-      return core(f)
+      return lobby(f, !p.rooms.some((x) => x.kind === "reception"))
+    case "reception":
+      return reception(f)
+    case "stair":
+      return stair(f)
+    case "atrium":
+      return atrium(f)
     case "empty":
       return empty(f)
   }
@@ -537,7 +558,7 @@ function cubicles(f: Fit, hall: boolean): boolean {
       f.b.cluster(x, y, lamp)
       f.placed.push(foot)
       placed++
-      if (hall && i < nx - 1 && j < ny - 1 && f.r.next() < 0.35) f.solid([x + px / 2 - 0.25, y + py / 2 - 0.25, x + px / 2 + 0.25, y + py / 2 + 0.25], WALL_H, "pillar")
+      if (hall && i < nx - 1 && j < ny - 1 && (i % 2 === 1 || nx <= 3)) f.solid([x + px / 2 - 0.25, y + py / 2 - 0.25, x + px / 2 + 0.25, y + py / 2 + 0.25], WALL_H, "pillar")
     }
   if (!placed) return false
   if (hall) {
@@ -550,36 +571,68 @@ function cubicles(f: Fit, hall: boolean): boolean {
   return true
 }
 
-/** Lift core: a dark shaft block in the middle with a stair door and its EXIT sign, a lobby ring around it. */
-function core(f: Fit): void {
-  let shaft: Rect | null = null
-  for (const ring of [2.1, 1.6]) {
-    const s: Rect = [f.inner[0] + ring, f.inner[1] + ring, f.inner[2] - ring, f.inner[3] - ring]
-    if (s[2] - s[0] >= 1.2 && s[3] - s[1] >= 1.2 && f.solid(s, WALL_H, "core")) {
-      shaft = s
-      break
+/** Lift lobby: kept clear in front of the lift doors, a bench and a plant by the corridor, a reception desk when roomy. */
+function lobby(f: Fit, desk: boolean): void {
+  const front = f.door
+  const L = f.len(front)
+  const D = f.depth(front)
+  if (desk && L >= 5.4 && D >= 4.2) {
+    const rc = f.at(front, L / 2 - 1.2, 1.4, L / 2 + 1.2, 2.2)
+    if (f.put("reception", rc, FACE_IN[front])) f.put("chair", f.at(front, L / 2 - 0.25, 2.3, L / 2 + 0.25, 2.8), FACE_IN[front], false)
+  }
+  for (const s of shuffle(f.r, [...FLANKS[front]])) {
+    if (D < 3.4) break
+    const u = f.nearFront(s, 1.8, 0.6)
+    if (f.put("sofa", f.at(s, u, 0.05, u + 1.8, 0.8), FACE_IN[s])) break
+  }
+  f.plant()
+  if (f.r.next() < 0.5) f.light("bulb", f.cx, f.cy, 0.3)
+}
+
+/** Reception facing the lifts: a long desk, a waiting sofa, plants, usually a warm light left on. */
+function reception(f: Fit): void {
+  const back = f.back
+  const L = f.len(back)
+  const D = f.depth(back)
+  const w = Math.min(3, L - 2)
+  const u = f.r.next() < 0.5 ? L / 2 - w / 2 : f.nearBack(back, w, 0.9)
+  if (D >= 3.5 && f.put("reception", f.at(back, u, 1.2, u + w, 2.05), FACE_IN[OPP[back]])) f.put("chair", f.at(back, u + w / 2 - 0.25, 0.45, u + w / 2 + 0.25, 0.95), FACE_IN[back], false)
+  const s = f.r.pick(FLANKS[back])
+  const su = f.nearFront(s, 2.0, 0.5)
+  f.put("sofa", f.at(s, su, 0.05, su + 2.0, 0.85), FACE_IN[s])
+  f.plant()
+  f.plant()
+  if (f.r.next() < 0.7) f.light("pendant", f.cx, f.cy)
+}
+
+/** Fire stair: a bare vestibule with the stair door and its EXIT sign on the far wall. */
+function stair(f: Fit): void {
+  const back = f.back
+  const L = f.len(back)
+  const [bx, by] = INTO[back]
+  const rc = f.at(back, L / 2 - 0.7, -0.2, L / 2 + 0.7, 0.2)
+  f.b.prop("exitdoor", rc[0], rc[1], rc[2], rc[3], FACE_IN[back], false)
+  f.placed.push(f.at(back, L / 2 - 0.8, 0, L / 2 + 0.8, 1.2))
+  const m = f.point(back, L / 2, 0.35)
+  f.b.light({ kind: "exit", x: m.x, y: m.y, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [bx, by, 0.1] })
+  const s = f.r.pick(FLANKS[back])
+  if (f.r.next() < 0.5) f.put("crate", f.at(s, f.nearFront(s, 0.7, 0.3), 0.05, f.nearFront(s, 0.7, 0.3) + 0.7, 0.75), 0)
+}
+
+/** Glazed garden court: planters in a grid, benches, a pool of cold light from above. */
+function atrium(f: Fit): void {
+  const nx = Math.max(1, Math.floor((f.iw - 2) / 3))
+  const ny = Math.max(1, Math.floor((f.ih - 2) / 3))
+  for (let j = 0; j < ny; j++)
+    for (let i = 0; i < nx; i++) {
+      const x = f.inner[0] + ((i + 0.5) * f.iw) / nx
+      const y = f.inner[1] + ((j + 0.5) * f.ih) / ny
+      if ((i + j) % 2 === 0) f.put("plant", [x - 0.4, y - 0.4, x + 0.4, y + 0.4], 0)
+      else if (f.r.next() < 0.6) f.put("sofa", [x - 0.9, y - 0.4, x + 0.9, y + 0.4], f.r.next() < 0.5 ? 0 : 2)
     }
-  }
-  if (!shaft) {
-    // Too small for a shaft: a fire door with its EXIT sign on the back wall instead.
-    lounge(f)
-    const L = f.len(f.back)
-    const [bx, by] = INTO[f.back]
-    const rc = f.at(f.back, L / 2 - 0.7, -0.2, L / 2 + 0.7, 0.2)
-    f.b.prop("exitdoor", rc[0], rc[1], rc[2], rc[3], FACE_IN[f.back], false)
-    const m = f.point(f.back, L / 2, 0.35)
-    f.b.light({ kind: "exit", x: m.x, y: m.y, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [bx, by, 0.1] })
-    return
-  }
-  const s = f.door
-  // The stair door on the shaft face toward the main entrance.
-  const [dx, dy] = INTO[s]
-  const fx = s === "w" ? shaft[0] : s === "e" ? shaft[2] : (shaft[0] + shaft[2]) / 2
-  const fy = s === "n" ? shaft[1] : s === "s" ? shaft[3] : (shaft[1] + shaft[3]) / 2
-  const horiz = s === "n" || s === "s"
-  f.b.prop("exitdoor", horiz ? fx - 0.7 : fx - 0.2, horiz ? fy - 0.2 : fy - 0.7, horiz ? fx + 0.7 : fx + 0.2, horiz ? fy + 0.2 : fy + 0.7, FACE_IN[s], false)
-  f.b.light({ kind: "exit", x: fx - dx * 0.35, y: fy - dy * 0.35, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [-dx, -dy, 0.1] })
-  if (f.r.next() < 0.4) f.light("bulb", f.inner[0] + 1, f.inner[1] + 1, 0.3)
+  f.plant()
+  f.plant()
+  if (f.r.next() < 0.6) f.light("panel", f.cx, f.cy, 0.2)
 }
 
 /** Abandoned: a few crates and a stray chair in the dark. */
@@ -596,68 +649,74 @@ function empty(f: Fit): void {
 // Corridors -----------------------------------------------------------------------------------------------------------
 
 /**
- * Sparse panels over a few junctions and stretches, far apart so most corridors are dark, and the dead ends dressed:
- * a vending machine glowing at the end, an EXIT sign over a locked fire door, a water cooler.
+ * Sparse panels over a few corridor junctions and long runs, far apart so most of the floor is dark. Corridors that run
+ * into the outer wall end at a fire exit, or a vending machine glowing at the end, a water cooler or a plant.
  */
-function corridors(b: Builder, r: Rng, p: Plan, clear: Rect[]): void {
-  const { gw, gh } = p
-  const isC = (x: number, y: number) => x >= 0 && y >= 0 && x < gw && y < gh && p.zone[y * gw + x] === 0
+function corridors(b: Builder, r: Rng, p: Plan, clear: Rect[], W: number, H: number): void {
   const lit: Vec[] = []
-  const cells: number[] = []
-  for (let i = 0; i < gw * gh; i++) if (p.zone[i] === 0) cells.push(i)
-  const dirs: [Side, number, number][] = [
-    ["e", 1, 0],
-    ["w", -1, 0],
-    ["s", 0, 1],
-    ["n", 0, -1],
-  ]
-  for (const i of shuffle(r, [...cells])) {
-    const x = i % gw
-    const y = Math.floor(i / gw)
-    const open = dirs.filter(([, dx, dy]) => isC(x + dx, y + dy))
-    const c = cellCenter(p, i)
-    if (open.length === 1) {
-      // Dead end: dress the wall opposite the way in.
-      const end = OPP[open[0]![0]]
-      const edge = end === "n" ? p.h[y * gw + x] : end === "s" ? p.h[(y + 1) * gw + x] : end === "w" ? p.v[y * (gw + 1) + x] : p.v[y * (gw + 1) + x + 1]
-      const outer = (end === "n" && y === 0) || (end === "s" && y === gh - 1) || (end === "w" && x === 0) || (end === "e" && x === gw - 1)
-      if (edge !== EDGE.wall && !outer) continue
-      const [x0, y0, x1, y1] = cellRect(p, [x, y, x, y])
-      const inner: Rect = [x === 0 ? T : x0 + T / 2, y === 0 ? T : y0 + T / 2, x === gw - 1 ? x1 - T : x1 - T / 2, y === gh - 1 ? y1 - T : y1 - T / 2]
-      const f = new Fit(b, r, inner, OPP[end], clear.filter((a) => overlap(a, inner)))
-      const L = f.len(end)
-      const [dx, dy] = INTO[end]
-      const roll = r.next()
-      if (roll < 0.22) {
-        const rc = f.at(end, L / 2 - 0.65, 0, L / 2 + 0.65, 0.8)
-        if (f.fits(rc)) {
-          const m = f.point(end, L / 2, 1.0)
-          const id = b.light({ kind: "vending", x: m.x, y: m.y, h: 1.2, r: 4.8, power: 1, color: [0.25, 0.85, 1], cone: [dx, dy, -0.25], flicker: r.next() < 0.3 ? 0.3 : undefined })
-          f.put("vending", rc, FACE_IN[end], true, id)
-          lit.push(m)
-        }
-      } else if (roll < 0.45 && !outer) {
-        const rc = f.at(end, L / 2 - 0.7, -0.2, L / 2 + 0.7, 0.2)
-        b.prop("exitdoor", rc[0], rc[1], rc[2], rc[3], FACE_IN[end], false)
-        const m = f.point(end, L / 2, 0.35)
-        b.light({ kind: "exit", x: m.x, y: m.y, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [dx, dy, 0.1] })
-      } else if (roll < 0.58) f.put("cooler", f.at(end, L / 2 - 0.3, 0.05, L / 2 + 0.3, 0.6), FACE_IN[end])
-      else if (roll < 0.66) f.put("plant", f.at(end, L / 2 - 0.35, 0.05, L / 2 + 0.35, 0.75), 0)
+  for (const e of p.ends) {
+    const c = p.corridors[-1 - e.corridor]!
+    const y0 = c[1] + T / 2 + 0.02
+    const y1 = c[3] - T / 2 - 0.02
+    const x0 = c[0] + T / 2 + 0.02
+    const x1 = c[2] - T / 2 - 0.02
+    const inner: Rect = e.side === "w" ? [T + 0.02, y0, T + 2.2, y1] : e.side === "e" ? [W - T - 2.2, y0, W - T - 0.02, y1] : e.side === "n" ? [x0, T + 0.02, x1, T + 2.2] : [x0, H - T - 2.2, x1, H - T - 0.02]
+    const end = e.side
+    const f = new Fit(b, r, inner, OPP[end], clear.filter((a) => overlap(a, inner)))
+    const L = f.len(end)
+    const [dx, dy] = INTO[end]
+    if (e.exit) {
+      const rc = f.at(end, L / 2 - 0.7, -0.2, L / 2 + 0.7, 0.2)
+      b.prop("exitdoor", rc[0], rc[1], rc[2], rc[3], FACE_IN[end], false)
+      const m = f.point(end, L / 2, 0.35)
+      b.light({ kind: "exit", x: m.x, y: m.y, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [dx, dy, 0.1] })
       continue
     }
-    const chance = open.length >= 3 ? 0.3 : 0.035
-    if (r.next() > chance || lit.some((q) => Math.hypot(q.x - c.x, q.y - c.y) < 12)) continue
-    b.light({ kind: "panel", x: c.x, y: c.y, h: 2.6, r: 6.5, power: 0.85, color: COLD, flicker: r.next() < 0.3 ? r.range(0.3, 0.9) : undefined })
-    lit.push(c)
+    const roll = r.next()
+    if (roll < 0.5) {
+      const rc = f.at(end, L / 2 - 0.65, 0, L / 2 + 0.65, 0.8)
+      if (f.fits(rc)) {
+        const m = f.point(end, L / 2, 1.0)
+        const id = b.light({ kind: "vending", x: m.x, y: m.y, h: 1.2, r: 4.8, power: 1, color: [0.25, 0.85, 1], cone: [dx, dy, -0.25], flicker: r.next() < 0.3 ? 0.3 : undefined })
+        f.put("vending", rc, FACE_IN[end], true, id)
+        lit.push(m)
+      }
+    } else if (roll < 0.75) f.put("cooler", f.at(end, L / 2 - 0.3, 0.05, L / 2 + 0.3, 0.6), FACE_IN[end])
+    else f.put("plant", f.at(end, L / 2 - 0.35, 0.05, L / 2 + 0.35, 0.75), 0)
+  }
+  // Junctions first, then points along the runs.
+  const spots: { v: Vec; chance: number }[] = []
+  p.corridors.forEach((a, i) =>
+    p.corridors.forEach((c, j) => {
+      if (j <= i) return
+      const t = contact(a, c)
+      if (!t) return
+      const hz = t.side === "n" || t.side === "s"
+      const l = t.side === "n" ? a[1] : t.side === "s" ? a[3] : t.side === "w" ? a[0] : a[2]
+      spots.push({ v: hz ? { x: (t.lo + t.hi) / 2, y: l } : { x: l, y: (t.lo + t.hi) / 2 }, chance: 0.4 })
+    }),
+  )
+  for (const c of p.corridors) {
+    const hz = c[2] - c[0] >= c[3] - c[1]
+    const len = hz ? c[2] - c[0] : c[3] - c[1]
+    for (let u = 3; u < len - 3; u += 6) spots.push({ v: hz ? { x: c[0] + u, y: (c[1] + c[3]) / 2 } : { x: (c[0] + c[2]) / 2, y: c[1] + u }, chance: 0.1 })
+  }
+  for (const { v, chance } of shuffle(r, spots)) {
+    if (r.next() > chance || lit.some((q) => Math.hypot(q.x - v.x, q.y - v.y) < 12)) continue
+    b.light({ kind: "panel", x: v.x, y: v.y, h: 2.6, r: 6.5, power: 0.85, color: COLD, flicker: r.next() < 0.3 ? r.range(0.3, 0.9) : undefined })
+    lit.push(v)
   }
 }
 
 // Checks and spawns ---------------------------------------------------------------------------------------------------
 
-/** A corridor cell whose centre is walkable, to flood the floor from. */
+/** A corridor spot that is walkable, to flood the floor from. */
 function hub(nav: Nav, p: Plan): Vec {
-  for (let i = 0; i < p.gw * p.gh; i++) if (p.zone[i] === 0 && nav.walkable(cellCenter(p, i))) return cellCenter(p, i)
-  return { x: p.xs[1]!, y: p.ys[1]! }
+  for (const c of p.corridors) {
+    const v = { x: (c[0] + c[2]) / 2, y: (c[1] + c[3]) / 2 }
+    if (nav.walkable(v)) return v
+  }
+  return nav.nearest({ x: p.W / 2, y: p.H / 2 })
 }
 
 /** Removes solid furniture that seals off a pocket of floor, until everything walkable is reachable. Returns the nav grid. */
