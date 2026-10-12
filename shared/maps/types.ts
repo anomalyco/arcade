@@ -24,6 +24,8 @@ export type PropKind =
   | "printer"
   | "exitdoor"
   | "lamp"
+  | "boards"
+  | "ladder"
 
 /** Furniture. Solid props block movement only. `rot` turns the model in quarter turns. */
 export type Prop = { kind: PropKind; rect: Rect; rot: 0 | 1 | 2 | 3; solid: boolean; light?: number }
@@ -63,4 +65,6 @@ export type MapDef = {
   spawns: readonly Vec[]
   /** Floor tape along aisles, drawn only. */
   tape: readonly Rect[]
+  /** Parts of the bounding rect outside the building (terraces, light wells): glazed round and never walkable. */
+  voids?: readonly Rect[]
 }

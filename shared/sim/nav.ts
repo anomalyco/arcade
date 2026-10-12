@@ -36,6 +36,15 @@ export class Nav {
       const y1 = Math.min(this.h - 1, Math.floor((r[3] + pad) / CELL - 0.5))
       for (let cy = y0; cy <= y1; cy++) this.grid.fill(BLOCKED, cy * this.w + x0, cy * this.w + x1 + 1)
     }
+    // Outside the building: cells whose centres lie in a void, out to the grid's edge where it meets the map's.
+    const [W, H] = map.size
+    for (const r of map.voids ?? []) {
+      const x0 = r[0] <= 0.01 ? 0 : Math.max(0, Math.ceil(r[0] / CELL - 0.5))
+      const x1 = r[2] >= W - 0.01 ? this.w - 1 : Math.min(this.w - 1, Math.floor(r[2] / CELL - 0.5))
+      const y0 = r[1] <= 0.01 ? 0 : Math.max(0, Math.ceil(r[1] / CELL - 0.5))
+      const y1 = r[3] >= H - 0.01 ? this.h - 1 : Math.min(this.h - 1, Math.floor(r[3] / CELL - 0.5))
+      for (let cy = y0; cy <= y1; cy++) this.grid.fill(BLOCKED, cy * this.w + x0, cy * this.w + x1 + 1)
+    }
     for (let i = 0; i < this.grid.length; i++) if (this.grid[i] !== BLOCKED) this.free.push(i)
     const n = this.w * this.h
     this.g = new Float32Array(n)

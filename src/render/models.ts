@@ -421,6 +421,24 @@ export function buildProp(m: Mesh, p: Prop, seed: number): void {
       }
       break
     }
+    case "boards": {
+      // Plasterboard stacked on two battens, the top sheets a little askew.
+      for (const sx of [-0.3, 0.3]) m.box(sx * w - 0.04, 0, -hd + 0.02, sx * w + 0.04, 0.08, hd - 0.02, hex(0x5a4430))
+      const sheets = 3 + Math.floor(r() * 4)
+      for (let k = 0; k < sheets; k++) {
+        const from2 = m.length
+        const y = 0.08 + k * 0.05
+        m.box(-hw + 0.02, y, -hd + 0.02, hw - 0.02, y + 0.045, hd - 0.02, k % 2 ? hex(0xb4b6b0) : hex(0xa8aaa4), MAT.lit, 0, hex(0xc4c6c0))
+        if (k >= sheets - 2) spin(m, from2, (r() - 0.5) * 0.12)
+      }
+      break
+    }
+    case "ladder": {
+      // An aluminium ladder laid on the floor: two rails and rungs.
+      for (const sx of [-1, 1]) m.box(sx * hw - (sx > 0 ? 0.05 : 0), 0, -hd, sx * hw + (sx > 0 ? 0 : 0.05), 0.07, hd, hex(0x9aa2ae), MAT.shiny)
+      for (let z = -hd + 0.15; z < hd - 0.1; z += 0.28) m.box(-hw + 0.05, 0.02, z - 0.02, hw - 0.05, 0.05, z + 0.02, hex(0x8a929e), MAT.shiny)
+      break
+    }
     default:
       m.box(-hw, 0, -hd, hw, 0.8, hd, PAL.cabinet)
   }

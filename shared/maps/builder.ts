@@ -20,6 +20,7 @@ export class Builder {
   lights: LightDef[] = []
   spawns: Vec[] = []
   tape: Rect[] = []
+  voids: Rect[] = []
 
   floor(kind: FloorKind, x0: number, y0: number, x1: number, y1: number): void {
     this.floors.push({ kind, rect: [x0, y0, x1, y1] })
@@ -104,6 +105,6 @@ export class Builder {
   }
 
   build(base: Pick<MapDef, "id" | "seed" | "name" | "size">): MapDef {
-    return { ...base, floors: this.floors, walls: this.walls, windows: this.windows, glass: this.glass, props: this.props, lights: this.lights, spawns: this.spawns, tape: this.tape }
+    return { ...base, floors: this.floors, walls: this.walls, windows: this.windows, glass: this.glass, props: this.props, lights: this.lights, spawns: this.spawns, tape: this.tape, voids: this.voids }
   }
 }
