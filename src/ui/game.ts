@@ -20,7 +20,9 @@ import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { leadPoint } from "../sim/combat"
 import { TICK_DT } from "../sim/types"
 import type { FlightInput, FlightState, GameEvent, PlayerInfo, Quat, SeatIndex, SeatInput, TeamId, Vec3, VehicleEntity } from "../sim/types"
-import type { RoomConfig, ServerMessage, Snapshot } from "../sim/protocol"
+import type { RoomConfig, ServerMessage, ShipState, Snapshot } from "../sim/protocol"
+import { shipById, shipName } from "./fleet-names"
+import { CIWS_TRACER_SPEED, AA_GUN_SHELL_SPEED } from "../sim/combat"
 
 const INTERP_DELAY = 0.1
 /** Jet throttle slew (per second) used to turn wheel notches into throttle-axis pulses (mirrors flight.ts). */
@@ -121,7 +123,7 @@ class GameSession implements GameHandle {
   private aim: Vec3 = [0, 0, -1]
   private look: Vec3 = [0, 0, -1]
   private lookV = new Vector3()
-  private state: "spawn" | "flying" | "dead" = "spawn"
+  private state: "spawn" | "flying" | "dead" | "turret" = "spawn"
   private paused = false
   private deathAt = 0
   private deathPos: Vec3 = [0, 0, 0]
@@ -165,6 +167,7 @@ class GameSession implements GameHandle {
       leave: () => this.leave(),
       click,
       thumb: (kind, team) => host.thumbnail(kind, team),
+      manTurret: (ship, turret) => { this.input.requestLock(); this.send({ type: "man-turret", ship, turret }); deps.audio?.ui("confirm") },
     })
     this.pause = createPauseMenu(this.uiRoot, {
       resume: () => this.resume(),
@@ -327,6 +330,12 @@ class GameSession implements GameHandle {
     this.players.clear()
     for (const p of s.players) this.players.set(p.id, p)
     this.me = this.players.get(this.playerId) ?? null
+    if (s.ships) {
+      this.shipStates = s.ships
+      const w = this.deps.host.world as unknown as { setShipStates?: (x: ShipState[], t?: number) => void; applyShipStates?: (x: ShipState[], t?: number) => void }
+      ;(w.setShipStates ?? w.applyShipStates)?.call(w, s.ships, s.time)
+    }
+    if (s.craters?.length) (this.deps.host.world as unknown as { addCraters?: (c: { position: Vec3; radius: number }[]) => void }).addCraters?.(s.craters)
     this.reconcile(s)
     this.updateLifeState()
   }
@@ -382,6 +391,10 @@ class GameSession implements GameHandle {
   }
 
   private updateLifeState(): void {
+    const manning = this.me?.turret ?? null
+    if (manning && this.state !== "turret") { this.enterTurret(); return }
+    if (manning) return
+    if (!manning && this.state === "turret") { this.enterSpawn(); return }
     const v = this.myVehicle()
     const flying = !!v && v.alive
     if (flying && this.state !== "flying") {
@@ -409,6 +422,42 @@ class GameSession implements GameHandle {
         this.deps.host.rig.setMode("death")
       }
     }
+  }
+
+  private turretZoom = 1
+  private turretHeat = 0
+  private turretOverheat = false
+  private shipStates: ShipState[] = []
+  private underAttackAt = -Infinity
+  private sinkFx: { p: Vec3; until: number; next: number }[] = []
+
+  private enterTurret(): void {
+    this.state = "turret"
+    this.voluntaryLeave = false
+    this.spawn.hide()
+    this.hud.setVisible(true)
+    this.input.mouseMode = "aim"
+    this.input.setEnabled(true)
+    const t = this.myTurretPose()
+    if (t) {
+      // Start looking outward from the ship's centreline.
+      const dx = t.pos[0] - t.ship.position[0], dz = t.pos[2] - t.ship.position[2]
+      const d = Math.hypot(dx, dz) || 1
+      this.input.setAim([dx / d * 0.97, 0.24, dz / d * 0.97])
+    }
+    this.turretZoom = 1
+    this.deps.host.world.setHighlightTeam(null)
+    if (!this.input.locked) this.input.requestLock()
+  }
+
+  /** World pose of the turret the local player mans (posed ship + mount offset). */
+  private myTurretPose(): { ship: Ship; pos: Vec3; kind: "ciws" | "gun"; id: string } | null {
+    const mt = this.me?.turret
+    if (!mt) return null
+    const ship = posedShip(mt.ship)
+    const spec = ship ? SHIP_SPECS[ship.kind].turrets.find(x => x.id === mt.turret) : undefined
+    if (!ship || !spec) return null
+    return { ship, pos: shipToWorld(ship, spec.offset), kind: spec.kind, id: spec.id }
   }
 
   private enterSpawn(): void {
@@ -538,6 +587,68 @@ class GameSession implements GameHandle {
     if (!s || !this.config) return
     const started = s.matchStartedAt ?? 0
     setFleetState(s.intermission ? 0 : Math.max(0, est - started), this.config.teams)
+  }
+
+  private updateTurretHud(f: HudFrame, s: Snapshot): void {
+    const t = this.myTurretPose()
+    if (!t) return
+    const st = this.shipStates.find(x => x.id === t.ship.id)
+    const aim = this.clampTurretAim(this.aim)
+    const cam = this.deps.host.camera
+    f.zoom = this.turretZoom
+    f.direct = false
+    f.speed = 0
+    f.altitude = t.pos[1]
+    f.heading = ((Math.atan2(aim[0], -aim[2]) * 180) / Math.PI + 360) % 360
+    f.aimPoint = [t.pos[0] + aim[0] * 1500, t.pos[1] + aim[1] * 1500, t.pos[2] + aim[2] * 1500]
+    f.turret = {
+      name: `${shipName(t.ship.id)} · ${t.kind === "gun" ? "5-inch" : "ciws"}`, kind: t.kind,
+      heat: this.turretHeat, overheat: this.turretOverheat,
+      shipHp: st ? st.hp / st.maxHp : 1, turretHp: st?.turrets[t.id] ? st.turrets[t.id].hp : null, pos: t.pos,
+    }
+    // Lead on the enemy aircraft closest to the aim within range.
+    const speed = t.kind === "gun" ? AA_GUN_SHELL_SPEED : CIWS_TRACER_SPEED
+    let best: VehicleEntity | null = null, bestC = Math.cos(0.25)
+    for (const o of this.renderList) {
+      if (!o.alive || o.team === this.me?.team) continue
+      const op = this.posOfVehicle(o.id) ?? o.flight.position
+      const dx = op[0] - t.pos[0], dy = op[1] - t.pos[1], dz = op[2] - t.pos[2], d = Math.hypot(dx, dy, dz)
+      if (d > 3000 || d < 20) continue
+      const c = (dx * aim[0] + dy * aim[1] + dz * aim[2]) / d
+      if (c > bestC) { bestC = c; best = o }
+    }
+    if (best) {
+      const lead: Vec3 = [0, 0, 0]
+      if (leadPoint(t.pos, [0, 0, 0], speed, this.posOfVehicle(best.id) ?? best.flight.position, best.flight.velocity, lead) > 0) f.lead = lead
+    }
+    void cam; void s
+  }
+
+  /** Turret elevation limits (CIWS −10…85°, 5-inch −5…70°). */
+  private clampTurretAim(a: Vec3): Vec3 {
+    const kind = this.myTurretPose()?.kind ?? "ciws"
+    const lo = (kind === "gun" ? -5 : -10) * Math.PI / 180, hi = (kind === "gun" ? 70 : 85) * Math.PI / 180
+    const h = Math.hypot(a[0], a[2]) || 1e-6
+    const el = Math.max(lo, Math.min(hi, Math.atan2(a[1], h)))
+    return [a[0] / h * Math.cos(el), Math.sin(el), a[2] / h * Math.cos(el)]
+  }
+
+  /** Camera just above/behind the mount, riding the ship, looking along the aim (or free-look). */
+  private turretCamera(_dt: number, now: number): void {
+    const t = this.myTurretPose()
+    const cam = this.deps.host.camera
+    if (!t) return
+    const aim = this.clampTurretAim(this.aim)
+    const look = this.input.freeLook ? [this.look[0], this.look[1], this.look[2]] : aim
+    // Above and behind the mount so the gun housing frames the bottom of the view without blocking it.
+    const back = t.kind === "gun" ? 12 : 9, up = t.kind === "gun" ? 6 : 6.5
+    cam.position.set(t.pos[0] - aim[0] * back, t.pos[1] + up, t.pos[2] - aim[2] * back)
+    cam.up.set(0, 1, 0)
+    cam.lookAt(cam.position.x + look[0] * 100, cam.position.y + look[1] * 100, cam.position.z + look[2] * 100)
+    const fov = 62 / this.turretZoom
+    if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix() }
+    cam.updateMatrixWorld()
+    this.aimTurret(t.ship.id, t.id, [t.pos[0] + aim[0] * 800, t.pos[1] + aim[1] * 800, t.pos[2] + aim[2] * 800], now)
   }
 
   /** Keep the local gun loop alive while the trigger is held (server fire events arrive throttled). */
@@ -680,9 +791,49 @@ class GameSession implements GameHandle {
         }
         case "score":
           break
-        case "match-end":
-          this.hud.banner(e.winner === null ? "STALEMATE" : `${TEAM_NAMES[e.winner].toUpperCase()} PREVAILS`,
-            e.winner !== null && e.winner === this.me?.team ? "Your banner holds the sky" : "The sky remembers", 6500)
+        case "match-end": {
+          const myTeam = this.me?.team ?? -1
+          const result = e.winner === null ? "draw" : e.winner === myTeam ? "victory" : "defeat"
+          const why = e.reason === "carriers-sunk"
+            ? (e.winner === null ? "every carrier went down" : result === "victory" ? "the enemy carriers are sunk" : "our carriers are sunk")
+            : e.reason === "time" ? "time ran out — most ship damage dealt" : e.winner === null ? "no winner" : `${TEAM_NAMES[e.winner].toLowerCase()} wins on score`
+          this.hud.endScreen(result, why, e.winner === null ? null : e.winner)
+          break
+        }
+        case "ship-hit": {
+          pos = e.position
+          fx.shipHit(e.position, e.damage)
+          const ship = posedShip(e.ship)
+          const by = e.by ? this.nameOf(e.by) : null
+          if (by && (e.by === this.playerId || e.damage >= 150)) this.hud.feedLine(by.name, by.team, `hit ${shipName(e.ship)} −${Math.round(e.damage)}`, e.by === this.playerId)
+          if (e.by === this.playerId) this.hud.hitmarker(false, e.damage)
+          if (ship && ship.team === this.me?.team && ship.kind === "carrier" && now - this.underAttackAt > 20) {
+            this.underAttackAt = now
+            this.hud.banner("Our carrier is under attack", shipName(e.ship), 2400)
+          }
+          break
+        }
+        case "turret-destroyed": {
+          const by = e.by ? this.nameOf(e.by) : null
+          this.hud.feedLine(by?.name ?? null, by?.team ?? null, `knocked out ${shipName(e.ship)} ${e.turret.replace(/_/g, " ")}`, e.by === this.playerId)
+          const ship = posedShip(e.ship)
+          const spec = ship ? SHIP_SPECS[ship.kind].turrets.find(x => x.id === e.turret) : undefined
+          if (ship && spec) { pos = shipToWorld(ship, spec.offset); fx.explosion(pos, 8) }
+          break
+        }
+        case "ship-sunk": {
+          pos = e.position
+          const enemy = e.team !== this.me?.team
+          const isCarrier = shipById(e.ship)?.kind === "carrier"
+          this.hud.feedLine(null, e.team, `${shipName(e.ship)} sunk`, enemy)
+          if (isCarrier) this.hud.banner(enemy ? "Enemy carrier sunk" : "Carrier lost", shipName(e.ship), 3200)
+          fx.explosion(e.position, 24)
+          this.sinkFx.push({ p: [...e.position] as Vec3, until: now + 7, next: now })
+          break
+        }
+        case "crater":
+          pos = e.position
+          ;(this.deps.host.world as unknown as { addCraters?: (c: { position: Vec3; radius: number }[]) => void }).addCraters?.([{ position: e.position, radius: e.radius }])
           break
       }
       if (!skipAudio) audio?.event(e, pos, local)
@@ -709,7 +860,7 @@ class GameSession implements GameHandle {
 
     // Mouse role: gunners always aim the turret; pilots use the chosen scheme (mouse-aim by default,
     // direct while the manual key is held or with the Battlefield scheme).
-    const mode = input.pilotMouseMode(seat === 0)
+    const mode = this.state === "turret" ? "aim" : input.pilotMouseMode(seat === 0)
     if (myVehicle && seat === 0) {
       const o = this.pred?.state.orientation ?? myVehicle.flight.orientation
       input.setNose(forward(o))
@@ -732,6 +883,7 @@ class GameSession implements GameHandle {
     // Wheel: gunner zoom, pilot fine throttle (jets).
     const wheel = input.takeWheel()
     if (wheel && seat === 0 && !heli) this.pendingThrottle = Math.max(-1, Math.min(1, this.pendingThrottle - wheel * 0.0005))
+    if (wheel && this.state === "turret") this.turretZoom = Math.max(1, Math.min(6, this.turretZoom * Math.pow(1.25, -wheel / 100)))
     if (wheel && seat === 1) this.deps.host.rig.gunZoom = Math.max(1, Math.min(8, this.deps.host.rig.gunZoom * Math.pow(1.25, -wheel / 100)))
 
     _v1.set(0, 0, -1).applyQuaternion(this.deps.host.camera.quaternion)
@@ -743,6 +895,20 @@ class GameSession implements GameHandle {
     const rate = myVehicle && !heli ? THROTTLE_RATE[myVehicle.kind] ?? 0.5 : 0
     while (this.tickAcc >= TICK_DT) {
       this.tickAcc -= TICK_DT
+      if (this.state === "turret") {
+        // Ship gun seat: seat input only (aim + trigger); the server aims and fires the mount.
+        const live = !this.paused && !this.hud.chatOpen()
+        const aim = this.clampTurretAim(this.aim)
+        const seatIn = live ? { ...input.seatInput(aim, this.seatBuf) } : { aim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
+        if (this.turretOverheat) seatIn.firePrimary = false
+        const heating = seatIn.firePrimary
+        this.turretHeat = Math.max(0, Math.min(1, this.turretHeat + (heating ? TICK_DT / 6 : -TICK_DT / 3)))
+        if (this.turretHeat >= 1) this.turretOverheat = true
+        if (this.turretOverheat && this.turretHeat < 0.35) this.turretOverheat = false
+        this.lastSeat = seatIn
+        this.send({ type: "input", seq: ++this.seq, seat: seatIn })
+        continue
+      }
       if (this.state !== "flying" || !myVehicle) continue
       const seq = ++this.seq
       const aim: Vec3 = [this.aim[0], this.aim[1], this.aim[2]]
@@ -846,10 +1012,19 @@ class GameSession implements GameHandle {
       rig.orbit(dt, b.center, 650, 170, 0.06)
     }
     rig.apply(dt)
+    if (this.state === "turret") this.turretCamera(dt, now)
     const cockpitNow = this.state === "flying" && seat === 0 && this.view === "cockpit"
     if (cockpitNow !== this.stormCockpit) { this.stormCockpit = cockpitNow; this.deps.audio?.setStorm({ enabled: true, rain: 1, cockpit: cockpitNow }) }
 
     if (latest) this.updateProjectiles(latest, est, dt)
+    for (let i = this.sinkFx.length - 1; i >= 0; i--) {
+      const sf = this.sinkFx[i]
+      if (now > sf.until) { this.sinkFx.splice(i, 1); continue }
+      if (now >= sf.next) {
+        sf.next = now + 0.35 + Math.random() * 0.8
+        host.effects.explosion([sf.p[0] + (Math.random() - 0.5) * 220, 8 + Math.random() * 20, sf.p[2] + (Math.random() - 0.5) * 220], 6 + Math.random() * 6)
+      }
+    }
     this.sustainGunAudio(flying)
 
     // Audio
@@ -866,7 +1041,7 @@ class GameSession implements GameHandle {
     if (latest) {
       this.updateHud(latest, ownVis, est)
       if (this.spawn.visible()) {
-        this.spawn.update({ me, players: this.players, vehicles: latest.vehicles, time: latest.time, config: this.config, room: this.offline ? "OFFLINE" : this.room, dead: this.me ? this.me.deaths > 0 : false })
+        this.spawn.update({ me, players: this.players, vehicles: latest.vehicles, time: latest.time, config: this.config, room: this.offline ? "OFFLINE" : this.room, dead: this.me ? this.me.deaths > 0 : false, ships: latest.ships })
       }
     }
   }
@@ -1118,6 +1293,9 @@ class GameSession implements GameHandle {
     f.hint = null
     f.cockpit = this.view === "cockpit" && seat === 0
     f.zoom = this.input.zoomHeld ? Math.max(this.deps.host.rig.gunZoom, 4) : this.deps.host.rig.gunZoom
+    f.ships = this.shipStates
+    f.turret = null
+    if (this.state === "turret") { this.updateTurretHud(f, s); this.hud.update(f); return }
     if (!v || !ownVis || seat === null) { this.deps.host.setSpeedFx(0, false); this.hud.update(f); return }
 
     const pos = ownVis.pos

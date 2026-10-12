@@ -1,6 +1,6 @@
 // Authoritative game loop shared by the Room Durable Object and the browser's offline/loopback mode.
 // Owned by the Server agent. Dependency-free: no DOM, no Date.now/Math.random inside the simulation.
-import type { ClientMessage, RoomConfig, RoomSummary, ServerMessage, Snapshot } from "./protocol"
+import type { ClientMessage, Crater, RoomConfig, RoomSummary, ServerMessage, ShipState, Snapshot } from "./protocol"
 import { DEFAULT_ROOM_CONFIG, RESPAWN_DELAY } from "./protocol"
 import type {
   Flare, FlightInput, FlightState, GameEvent, Missile, PlayerInfo, Projectile, Quat, SeatIndex, SeatInput, TeamId, Vec3,
@@ -9,10 +9,12 @@ import type {
 import { SNAPSHOT_RATE, TICK_DT, TICK_RATE } from "./types"
 import { VEHICLES, VEHICLE_KINDS } from "./vehicles"
 import { NEUTRAL_INPUT, createFlightState, stepFlight } from "./flight"
-import { applySeatInput, createCombatState, createWeapons, killVehicle, markSpawned, stepCombat } from "./combat"
+import {
+  applySeatInput, applyTurretInput, createCombatState, createWeapons, killVehicle, markSpawned, shipRuntime, stepCombat, turretOperational,
+} from "./combat"
 import type { CombatState } from "./combat"
-import { carrierOf, deckVelocity, setFleetState, spawnPoint, worldQuery as baseWorldQuery } from "./geography"
-import { SHIP_SPECS, SPAWN_PROTECTION, worldToShip } from "./fleet"
+import { carrierOf, deckVelocity, posedShip, setFleetState, setShipStates, spawnPoint, worldQuery as baseWorldQuery } from "./geography"
+import { FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip } from "./fleet"
 import { botInput, chooseBotVehicle, createBotBrain } from "./bots"
 import type { BotBrain } from "./bots"
 
@@ -272,6 +274,11 @@ export class RoomEngine {
   /** Per-player decoders for the legacy (object) snapshot path. */
   private decoders = new Map<string, (m: WireServerMessage) => ServerMessage>()
 
+  /** Enemy aircraft destroyed per team (time-limit tiebreak). */
+  teamKills: number[]
+  private cratersSent = 0
+  private lastShipsJson = ""
+  private lastShipsAt = -Infinity
   private rng: () => number
   private botNames = 0
   private lastBotSync = -Infinity
@@ -279,6 +286,7 @@ export class RoomEngine {
   constructor(public readonly code: string, public config: EngineConfig, private hooks: RoomEngineHooks) {
     this.config = sanitizeConfig(config)
     this.scores = new Array(this.config.teams).fill(0)
+    this.teamKills = new Array(this.config.teams).fill(0)
     this.rng = createRng(hashString(code))
     this.syncBots()
   }
@@ -303,6 +311,7 @@ export class RoomEngine {
   removePlayer(playerId: string): void {
     const p = this.players.get(playerId)
     if (!p) return
+    this.leaveTurret(p.info)
     this.vacate(p.info)
     this.players.delete(playerId)
     this.decoders.delete(playerId)
@@ -314,7 +323,7 @@ export class RoomEngine {
 
   private newPlayer(id: string, name: string, team: TeamId, bot: boolean): PlayerState {
     return {
-      info: { id, name, team, vehicleId: null, seat: null, kills: 0, deaths: 0, bot, respawnAt: 0 },
+      info: { id, name, team, vehicleId: null, seat: null, kills: 0, deaths: 0, bot, respawnAt: 0, turret: null },
       flight: NEUTRAL_INPUT, seat: NEUTRAL_SEAT, queue: [], jitter: newJitterBuffer(), seq: -1, ack: -1, lastInputAt: -Infinity,
       chatTokens: CHAT_BURST, chatAt: this.time, needsPlayers: !bot, brain: null, leaving: false,
     }
@@ -486,11 +495,14 @@ export class RoomEngine {
         return
       case "spawn":
         return this.onSpawn(p, m.kind)
+      case "man-turret":
+        return this.onManTurret(p, m.ship, m.turret)
       case "board":
         return this.onBoard(p, m.vehicle, m.seat)
       case "switch-seat":
         return this.onSwitchSeat(p, m.seat)
       case "leave-vehicle": {
+        if (p.info.turret) { this.leaveTurret(p.info); return }
         const v = this.vehicleOf(p.info)
         if (v && v.alive && !this.canLeave(v)) return this.error(playerId, "You can only bail out at base.")
         this.vacate(p.info)
@@ -622,6 +634,7 @@ export class RoomEngine {
 
   private setTeam(p: PlayerState, team: TeamId): void {
     this.vacate(p.info)
+    this.leaveTurret(p.info)
     p.info.team = team
     this.syncBots()
   }
@@ -632,8 +645,60 @@ export class RoomEngine {
     if (this.time < p.info.respawnAt) return this.error(p.info.id, "Respawn not ready.")
     const current = this.vehicleOf(p.info)
     if (current && current.alive && !this.canLeave(current)) return this.error(p.info.id, "Return to base to change aircraft.")
+    if (!this.spawnCarrier(p.info.team)) return this.error(p.info.id, "Your carriers have been sunk.")
     this.vacate(p.info)
+    this.leaveTurret(p.info)
     this.spawnVehicle(p.info, kind as VehicleKind)
+  }
+
+  /** Man one of your fleet's turrets instead of flying (seat input aims and fires it). */
+  private onManTurret(p: PlayerState, shipId: unknown, turretId: unknown): void {
+    if (typeof shipId !== "string" || typeof turretId !== "string") return
+    const ship = FLEET.find(s => s.id === shipId)
+    const mount = ship ? SHIP_SPECS[ship.kind].turrets.find(t => t.id === turretId) : undefined
+    if (!ship || !mount || ship.team !== p.info.team || ship.team >= this.config.teams || !mount.mannable) return this.error(p.info.id, "Can't man that turret.")
+    if (this.matchEndedAt !== null) return this.error(p.info.id, "Match over — next round starting soon.")
+    if (this.time < p.info.respawnAt) return this.error(p.info.id, "Respawn not ready.")
+    if (!turretOperational(this.combat, shipId, turretId)) return this.error(p.info.id, "That turret is knocked out.")
+    const tr = shipRuntime(this.combat, shipId)!.turrets[turretId]
+    if (tr.manned && tr.manned !== p.info.id) return this.error(p.info.id, "That turret is already manned.")
+    const current = this.vehicleOf(p.info)
+    if (current && current.alive && !this.canLeave(current)) return this.error(p.info.id, "Return to base first.")
+    this.vacate(p.info)
+    this.leaveTurret(p.info)
+    tr.manned = p.info.id
+    p.info.turret = { ship: shipId, turret: turretId }
+    p.seat = NEUTRAL_SEAT
+  }
+
+  private leaveTurret(player: PlayerInfo): void {
+    const t = player.turret
+    if (!t) return
+    const tr = shipRuntime(this.combat, t.ship)?.turrets[t.turret]
+    if (tr && tr.manned === player.id) tr.manned = null
+    player.turret = null
+  }
+
+  /** The team's first carrier still afloat (spawns go there), or null when all are sunk. */
+  spawnCarrier(team: TeamId): string | null {
+    for (const sh of FLEET) {
+      if (sh.team !== team || sh.kind !== "carrier") continue
+      const rt = shipRuntime(this.combat, sh.id)
+      if (rt && !rt.sunk) return sh.id
+    }
+    return null
+  }
+
+  /** Spawn slot on whichever carrier is afloat (geography lays out the primary carrier; mirror onto others). */
+  private spawnAt(team: TeamId, kind: VehicleKind, index: number) {
+    const sp = spawnPoint(team, kind, index)
+    const id = this.spawnCarrier(team)
+    const primary = carrierOf(team)
+    if (!id || id === primary.id) return sp
+    const other = posedShip(id)
+    if (!other) return sp
+    const local = worldToShip(primary, sp.position)
+    return { ...sp, position: shipToWorld(other, local), yaw: sp.yaw + other.heading - primary.heading }
   }
 
   /** Create a vehicle at the team's base with `player` in the pilot seat. */
@@ -643,7 +708,7 @@ export class RoomEngine {
     const team = player.team
     let index = 0
     for (let i = 0; i < SPAWN_SLOTS; i++) {
-      const sp = spawnPoint(team, kind, i).position
+      const sp = this.spawnAt(team, kind, i).position
       const blocked = this.vehicles.some(v => v.alive && Math.hypot(v.flight.position[0] - sp[0], v.flight.position[1] - sp[1], v.flight.position[2] - sp[2]) < 25)
       if (!blocked) { index = i; break }
       index = i + 1
@@ -651,7 +716,7 @@ export class RoomEngine {
     const spec = VEHICLES[kind]
     const v: VehicleEntity = {
       id: `v${this.nextId++}`, kind, team,
-      flight: createFlightState(kind, spawnPoint(team, kind, index % SPAWN_SLOTS)),
+      flight: createFlightState(kind, this.spawnAt(team, kind, index % SPAWN_SLOTS)),
       hp: spec.maxHp, maxHp: spec.maxHp,
       seats: [player.id, null], aim: [null, null], weapons: createWeapons(kind),
       flaresReadyAt: 0, flareCount: spec.flares, abilityReadyAt: 0, spottedUntil: 0, lastDamagedBy: null, alive: true,
@@ -741,8 +806,15 @@ export class RoomEngine {
     if (!v.flight.onGround) return false
     const spec = SHIP_SPECS.carrier
     this.syncFleet()
-    const l = worldToShip(carrierOf(v.team), v.flight.position)
-    return Math.abs(l[0]) <= spec.halfWidth + 2 && Math.abs(l[2]) <= spec.halfLength + 2 && l[1] >= spec.deckHeight - 2 && l[1] <= spec.deckHeight + 10
+    for (const sh of FLEET) {
+      if (sh.team !== v.team || sh.kind !== "carrier") continue
+      const rt = shipRuntime(this.combat, sh.id)
+      const posed = posedShip(sh.id)
+      if (!posed || (rt && rt.sunk)) continue
+      const l = worldToShip(posed, v.flight.position)
+      if (Math.abs(l[0]) <= spec.halfWidth + 2 && Math.abs(l[2]) <= spec.halfLength + 2 && l[1] >= spec.deckHeight - 2 && l[1] <= spec.deckHeight + 10) return true
+    }
+    return false
   }
 
   // ───────────────────────── simulation ─────────────────────────
@@ -781,7 +853,7 @@ export class RoomEngine {
         const id = v.seats[i]
         const p = id ? this.players.get(id) : undefined
         if (!p || !p.brain) continue
-        const out = botInput(p.brain, p.info, v, vehicles, now, this.combat.missiles, worldQuery)
+        const out = botInput(p.brain, p.info, v, vehicles, now, this.combat.missiles, worldQuery, this.combat.ships)
         // botInput reuses its result objects per brain: copy what we keep.
         p.seat = { ...out.seat, aim: out.seat.aim && [out.seat.aim[0], out.seat.aim[1], out.seat.aim[2]] }
         if (i === 0) p.flight = out.flight ? { ...out.flight, aim: out.flight.aim && [out.flight.aim[0], out.flight.aim[1], out.flight.aim[2]] } : NEUTRAL_INPUT
@@ -805,8 +877,26 @@ export class RoomEngine {
       }
     }
 
+    // Player-manned ship turrets.
+    for (const p of this.players.values()) {
+      const t = p.info.turret
+      if (!t) continue
+      const input = now - p.lastInputAt > STALE_INPUT ? { ...p.seat, firePrimary: false } : p.seat
+      applyTurretInput(this.combat, t.ship, t.turret, p.info.id, input, now, events)
+    }
+
     const eventStart = events.length
     stepCombat(this.combat, vehicles, TICK_DT, now, events)
+
+    // Sunk ships / knocked-out turrets throw their gunners back to the spawn screen (counts as a death).
+    for (const p of this.players.values()) {
+      const t = p.info.turret
+      if (!t || turretOperational(this.combat, t.ship, t.turret)) continue
+      this.leaveTurret(p.info)
+      p.info.deaths++
+      p.info.respawnAt = now + RESPAWN_DELAY
+      p.seat = NEUTRAL_SEAT
+    }
 
     // Damage bookkeeping (for crash credit) + crashes.
     for (const v of vehicles) {
@@ -837,6 +927,7 @@ export class RoomEngine {
 
     this.cleanupVehicles()
     this.updateBots()
+    if (this.matchEndedAt === null) this.updateScores()
     this.updateMatch()
   }
 
@@ -865,8 +956,25 @@ export class RoomEngine {
     if (killerTeam === undefined || killerTeam === v.team) return
     if (kp) kp.info.kills++
     if (this.matchEndedAt !== null) return
-    this.scores[killerTeam]++
-    this.events.push({ type: "score", scores: [...this.scores] })
+    this.teamKills[killerTeam]++
+  }
+
+  /** Total max hp of the enemy fleets (active teams) a team is fighting. */
+  private enemyFleetHp(team: number): number {
+    let hp = 0
+    for (const sh of FLEET) if (sh.team !== team && sh.team < this.config.teams) hp += SHIP_SPECS[sh.kind].maxHp
+    return hp
+  }
+
+  /** Scores = % of enemy fleet hp destroyed (0–100, 1 decimal); emits `score` on change. */
+  private updateScores(): void {
+    const dealt = this.combat.shipDamageBy ?? []
+    let changed = false
+    for (let t = 0; t < this.config.teams; t++) {
+      const pct = Math.round((1000 * (dealt[t] ?? 0)) / Math.max(1, this.enemyFleetHp(t))) / 10
+      if (pct !== this.scores[t]) { this.scores[t] = pct; changed = true }
+    }
+    if (changed) this.events.push({ type: "score", scores: [...this.scores] })
   }
 
   private cleanupVehicles(): void {
@@ -916,16 +1024,29 @@ export class RoomEngine {
       if (now - this.matchEndedAt >= MATCH_RESTART_DELAY) this.resetMatch()
       return
     }
-    const top = Math.max(...this.scores)
-    const leaders = this.scores.flatMap((s, t) => (s === top ? [t as TeamId] : []))
-    if (top >= this.config.scoreLimit) this.endMatch(leaders[0])
-    else if (now - this.matchStartedAt >= this.config.timeLimit) this.endMatch(leaders.length === 1 ? leaders[0] : null)
+    // Fleet Strike: a team is out when all its carriers are sunk; last team with a carrier wins.
+    const alive: TeamId[] = []
+    for (let t = 0; t < this.config.teams; t++) if (this.spawnCarrier(t as TeamId)) alive.push(t as TeamId)
+    if (alive.length <= 1) return this.endMatch(alive.length === 1 ? alive[0] : null, "carriers-sunk")
+    if (now - this.matchStartedAt >= this.config.timeLimit) {
+      // Time: most enemy ship damage dealt, then kills.
+      const dealt = this.combat.shipDamageBy ?? []
+      let best: TeamId | null = null
+      let tie = false
+      for (const t of alive) {
+        if (best === null) { best = t; continue }
+        const a = dealt[t] ?? 0, b = dealt[best] ?? 0
+        if (a > b + 1e-6 || (Math.abs(a - b) <= 1e-6 && this.teamKills[t] > this.teamKills[best])) { best = t; tie = false }
+        else if (Math.abs(a - b) <= 1e-6 && this.teamKills[t] === this.teamKills[best]) tie = true
+      }
+      this.endMatch(tie ? null : best, "time")
+    }
   }
 
-  private endMatch(winner: TeamId | null): void {
+  private endMatch(winner: TeamId | null, reason: "carriers-sunk" | "time" | "score"): void {
     this.matchEndedAt = this.time
     this.winner = winner
-    this.events.push({ type: "match-end", winner })
+    this.events.push({ type: "match-end", winner, reason })
     this.hooks.onChange?.()
   }
 
@@ -936,6 +1057,7 @@ export class RoomEngine {
       p.info.kills = 0
       p.info.deaths = 0
       p.info.respawnAt = p.info.bot ? this.time + 0.5 + this.rng() * 2 : 0
+      p.info.turret = null
       p.flight = NEUTRAL_INPUT
       p.seat = NEUTRAL_SEAT
     }
@@ -943,6 +1065,9 @@ export class RoomEngine {
     this.meta.clear()
     this.combat = createCombatState()
     this.scores = new Array(this.config.teams).fill(0)
+    this.teamKills = new Array(this.config.teams).fill(0)
+    this.cratersSent = 0
+    this.lastShipsJson = ""
     this.matchStartedAt = this.time
     this.matchEndedAt = null
     this.winner = null
@@ -961,6 +1086,8 @@ export class RoomEngine {
    */
   syncFleet(): void {
     setFleetState(this.matchTime(), this.config.teams)
+    // Sunk ships stop being spawn points / AA / (after SINK_SOLID_TIME) collision in geography.
+    setShipStates(this.shipStates(), this.time)
   }
 
   /** Room time when the match ends (running) or the next one starts (intermission). */
@@ -1007,19 +1134,38 @@ export class RoomEngine {
       matchStartedAt: r3(this.matchStartedAt),
       intermission: this.matchEndedAt !== null,
     }
-    if (withPlayers) shared.players = this.playerList()
+    if (withPlayers) { shared.players = this.playerList(); shared.ships = this.shipStates(); shared.craters = (cs.craters ?? []).slice() }
     return shared
+  }
+
+  /** Ship objectives of active teams (protocol ShipState). */
+  shipStates(): ShipState[] {
+    const out: ShipState[] = []
+    for (const sh of FLEET) {
+      if (sh.team >= this.config.teams) continue
+      const rt = shipRuntime(this.combat, sh.id)
+      if (!rt) continue
+      const turrets: ShipState["turrets"] = {}
+      for (const k in rt.turrets) turrets[k] = { hp: Math.round(rt.turrets[k].hp), manned: rt.turrets[k].manned }
+      out.push({ id: sh.id, hp: Math.round(rt.hp), maxHp: rt.maxHp, sunk: rt.sunk, sunkAt: r2(rt.sunkAt), turrets, damage: rt.damage.map(d => [d[0], d[1], d[2]] as Vec3) })
+    }
+    return out
   }
 
   private playerList(): PlayerInfo[] {
     return [...this.players.values()].map(p => ({ ...p.info, respawnAt: r2(p.info.respawnAt) }))
   }
 
-  private wirePersonal(p: PlayerState | null, players: boolean): Pick<WireSnapshot, "ack" | "own" | "players"> {
-    const out: Pick<WireSnapshot, "ack" | "own" | "players"> = { ack: p ? p.ack : -1 }
+  private wirePersonal(p: PlayerState | null, full: boolean): Pick<WireSnapshot, "ack" | "own" | "players" | "ships" | "craters"> {
+    const out: Pick<WireSnapshot, "ack" | "own" | "players" | "ships" | "craters"> = { ack: p ? p.ack : -1 }
     const v = p ? this.vehicleOf(p.info) : undefined
     if (v) out.own = packOwn(v)
-    if (players) out.players = this.playerList()
+    // Joiners get everything (these keys come after the shared ones, so JSON.parse keeps these).
+    if (full) {
+      out.players = this.playerList()
+      out.ships = this.shipStates()
+      out.craters = (this.combat.craters ?? []).slice()
+    }
     return out
   }
 
@@ -1032,12 +1178,22 @@ export class RoomEngine {
     if (includePlayers) { this.lastPlayersJson = listJson; this.lastPlayersAt = this.time }
     const shared = this.wireShared(false)
     if (includePlayers) shared.players = list
+    // Ships only when changed (or once a second); craters as a diff since the last broadcast.
+    const ships = this.shipStates()
+    const shipsJson = JSON.stringify(ships)
+    if (shipsJson !== this.lastShipsJson || this.time - this.lastShipsAt >= PLAYERS_RESEND) {
+      this.lastShipsJson = shipsJson
+      this.lastShipsAt = this.time
+      shared.ships = ships
+    }
+    const craters = this.combat.craters ?? []
+    if (craters.length > this.cratersSent) { shared.craters = craters.slice(this.cratersSent); this.cratersSent = craters.length }
     // Serialize the shared body once; per-player fields are appended as a short JSON tail.
     const body = JSON.stringify(shared)
     const head = body.slice(0, -1)
     for (const p of this.players.values()) {
       if (p.info.bot) continue
-      const personal = this.wirePersonal(p, p.needsPlayers && !includePlayers)
+      const personal = this.wirePersonal(p, p.needsPlayers)
       p.needsPlayers = false
       const text = `${head},${JSON.stringify(personal).slice(1)}`
       if (this.hooks.sendText) this.hooks.sendText(p.info.id, text)
@@ -1107,6 +1263,10 @@ export interface WireSnapshot {
   vehicles: WireVehicle[]
   /** Present only when changed (≤ once per second otherwise) or for newly joined players. */
   players?: PlayerInfo[]
+  /** Ship objectives: when changed (≤ once per second otherwise) or on join. */
+  ships?: ShipState[]
+  /** Craters since the last snapshot; the full list on join. */
+  craters?: Crater[]
   projectiles: WireProjectile[]
   missiles: WireMissile[]
   flares: WireFlare[]
@@ -1186,10 +1346,12 @@ export function snapshotMatchTime(s: Snapshot): number {
  */
 export function createSnapshotDecoder(): (message: WireServerMessage | ServerMessage) => ServerMessage {
   let players: PlayerInfo[] = []
+  let ships: ShipState[] | undefined
   return message => {
     if (message.type !== "snapshot" || !("wire" in message)) return message as ServerMessage
     const m = message as WireSnapshot
     if (m.players) players = m.players
+    if (m.ships) ships = m.ships
     const own = m.own
     return {
       type: "snapshot",
@@ -1217,6 +1379,8 @@ export function createSnapshotDecoder(): (message: WireServerMessage | ServerMes
         return v
       }),
       players,
+      ...(ships ? { ships } : {}),
+      ...(m.craters ? { craters: m.craters } : {}),
       projectiles: m.projectiles.map(x => ({ id: x.id, weapon: x.w, owner: x.o, vehicle: x.vh, team: x.t, position: x.p, velocity: x.v, age: x.a, ttl: x.l })),
       missiles: m.missiles.map(x => {
         const out: Missile = {

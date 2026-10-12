@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { RoomEngine, createRng, createSnapshotDecoder, snapshotMatchTime, INPUT_QUEUE_MAX, JITTER_TARGET_MAX, JITTER_TARGET_MIN, ABANDONED_DESTROY_DELAY, MATCH_RESTART_DELAY, PARKED_REMOVE_DELAY, WRECK_LINGER } from "../src/sim/room-engine"
 import { createLoopbackRoom } from "../src/sim/loopback"
-import { FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipPose } from "../src/sim/fleet"
-import { fleetState, setFleetState } from "../src/sim/geography"
+import { FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipPose, shipToWorld, worldToShip } from "../src/sim/fleet"
+import { fleetState, posedShip, setFleetState } from "../src/sim/geography"
+import { damageShip } from "../src/sim/combat"
 import type { WireSnapshot } from "../src/sim/room-engine"
 import { DEFAULT_ROOM_CONFIG, RESPAWN_DELAY } from "../src/sim/protocol"
 import type { ClientMessage, RoomConfig, ServerMessage, Snapshot } from "../src/sim/protocol"
@@ -138,7 +139,7 @@ describe("room engine", () => {
     }
     const kill = r.events(a).find(e => e.type === "kill") as Extract<GameEvent, { type: "kill" }>
     expect(kill).toMatchObject({ victim: v.id, killer: null, weapon: "aa", killerTeam: 1 })
-    expect(r.engine.scores).toEqual([0, 1])
+    expect(r.engine.teamKills).toEqual([0, 1])
     expect(r.player(a).deaths).toBe(1)
   })
 
@@ -221,8 +222,8 @@ describe("room engine", () => {
     expect(r.vehicle(a)?.kind).toBe("warthog")
   })
 
-  test("kills score for the attacker's team; scoreLimit ends and restarts the match", () => {
-    const r = setup({ scoreLimit: 2 })
+  test("kills count toward team kills (tiebreak), not the objective score", () => {
+    const r = setup()
     const a = r.join(), b = r.join()
     const kill = (victim: string, weapon: "combat" | "crash") => {
       r.send(victim, { type: "spawn", kind: "fighter" })
@@ -236,12 +237,38 @@ describe("room engine", () => {
       r.seconds(RESPAWN_DELAY + 0.1)
     }
     kill(b, "combat")
-    expect(r.engine.scores).toEqual([1, 0])
-    expect(r.player(a).kills).toBe(1)
     kill(b, "crash") // recently damaged → credited
-    expect(r.engine.scores).toEqual([2, 0])
-    const end = r.events(a).find(e => e.type === "match-end")
-    expect(end).toEqual({ type: "match-end", winner: 0 })
+    expect(r.engine.teamKills).toEqual([2, 0])
+    expect(r.player(a).kills).toBe(2)
+    expect(r.engine.scores).toEqual([0, 0])
+  })
+
+  test("Fleet Strike: ship damage scores %, sinking both carriers wins, then the match restarts", () => {
+    const r = setup()
+    const a = r.join()
+    r.ticks(1)
+    const enemy = FLEET.filter(s => s.team === 1)
+    const enemyHp = enemy.reduce((n, s) => n + SHIP_SPECS[s.kind].maxHp, 0)
+    const hit = (id: string, amount: number) => {
+      const ship = posedShip(id)!
+      damageShip(r.engine.combat, id, amount, a, 0, [ship.position[0], 10, ship.position[2]], r.engine.time, (r.engine as unknown as { events: GameEvent[] }).events)
+    }
+    hit("t1-dd1", 2000)
+    r.ticks(1)
+    expect(r.engine.scores[0]).toBeCloseTo(Math.round(1000 * 2000 / enemyHp) / 10, 5)
+    expect(r.events(a).some(e => e.type === "ship-hit" && e.ship === "t1-dd1")).toBe(true)
+    // Ships ride in snapshots (only when changed) and decode into Snapshot.ships.
+    r.ticks(3)
+    const ships = r.lastSnap(a).ships!
+    expect(ships.length).toBe(FLEET.filter(s => s.team < 2).length)
+    expect(ships.find(s => s.id === "t1-dd1")!.hp).toBe(SHIP_SPECS.destroyer.maxHp - 2000)
+    hit("t1-carrier", 1e6)
+    r.ticks(1)
+    expect(r.events(a).some(e => e.type === "ship-sunk" && e.ship === "t1-carrier")).toBe(true)
+    expect(r.engine.matchEndedAt).toBeNull() // second carrier still afloat
+    hit("t1-carrier2", 1e6)
+    r.ticks(1)
+    expect(r.events(a).find(e => e.type === "match-end")).toEqual({ type: "match-end", winner: 0, reason: "carriers-sunk" })
     r.send(a, { type: "spawn", kind: "fighter" })
     expect(r.player(a).vehicleId).toBeNull() // intermission
     r.ticks(3)
@@ -251,7 +278,86 @@ describe("room engine", () => {
     expect(r.engine.scores).toEqual([0, 0])
     expect(r.engine.matchEndedAt).toBeNull()
     expect(r.lastSnap(a).intermission).toBe(false)
-    expect(r.player(a).kills).toBe(0)
+    expect(r.lastSnap(a).ships!.every(s => !s.sunk && s.hp === s.maxHp)).toBe(true)
+  })
+
+  test("time limit: most enemy ship damage wins (reason time)", () => {
+    const r = setup({ timeLimit: 60 })
+    const a = r.join()
+    r.ticks(1)
+    const ship = posedShip("t0-dd2")!
+    damageShip(r.engine.combat, "t0-dd2", 500, null, 1, [ship.position[0], 10, ship.position[2]], r.engine.time, [])
+    r.seconds(60.05)
+    expect(r.events(a).find(e => e.type === "match-end")).toEqual({ type: "match-end", winner: 1, reason: "time" })
+  })
+
+  test("a sunk primary carrier moves spawns to the second carrier; all sunk → no spawning", () => {
+    const r = setup({ teams: 3 })
+    const a = r.join()
+    r.ticks(1)
+    damageShip(r.engine.combat, "t0-carrier", 1e6, null, 1, posedShip("t0-carrier")!.position, r.engine.time, [])
+    r.send(a, { type: "spawn", kind: "fighter" })
+    const v = r.vehicle(a)!
+    const c2 = posedShip("t0-carrier2")!
+    const l = worldToShip(c2, v.flight.position)
+    expect(Math.abs(l[0]) <= SHIP_SPECS.carrier.halfWidth && Math.abs(l[2]) <= SHIP_SPECS.carrier.halfLength).toBe(true)
+    expect(r.engine.onOwnDeck(v)).toBe(true)
+    r.send(a, { type: "leave-vehicle" })
+    damageShip(r.engine.combat, "t0-carrier2", 1e6, null, 1, c2.position, r.engine.time, [])
+    r.send(a, { type: "spawn", kind: "fighter" })
+    expect(r.player(a).vehicleId).toBeNull()
+    expect(r.of(a, "error").at(-1)?.message).toContain("sunk")
+  })
+
+  test("manning a turret: aims + fires real rounds credited to the player; knocked out → back to spawn", () => {
+    const r = setup()
+    const a = r.join()
+    r.send(a, { type: "man-turret", ship: "t1-carrier", turret: "ciws_bow_port" }) // enemy ship: refused
+    expect(r.player(a).turret).toBeNull()
+    r.send(a, { type: "man-turret", ship: "t0-carrier", turret: "ciws_bow_port" })
+    expect(r.player(a).turret).toEqual({ ship: "t0-carrier", turret: "ciws_bow_port" })
+    const b = r.join(), c = r.join()
+    expect(r.player(c).team).toBe(0)
+    r.send(c, { type: "man-turret", ship: "t0-carrier", turret: "ciws_bow_port" }) // already manned
+    expect(r.player(c).turret).toBeNull()
+    r.send(a, { type: "input", seq: 1, seat: { ...seatInput, aim: [0, 0.3, -1], firePrimary: true } })
+    r.send(a, { type: "input", seq: 2, seat: { ...seatInput, aim: [0, 0.3, -1], firePrimary: true } })
+    r.ticks(10)
+    const rounds = r.engine.combat.projectiles.filter(p => p.owner === a)
+    expect(rounds.length).toBeGreaterThan(0)
+    expect(rounds[0].team).toBe(0)
+    const dir = rounds[0].velocity, n = Math.hypot(...dir)
+    expect(dir[1] / n).toBeCloseTo(0.3 / Math.hypot(0.3, 1), 1)
+    r.ticks(3)
+    expect(r.lastSnap(b).ships!.find(s => s.id === "t0-carrier")!.turrets.ciws_bow_port.manned).toBe(a)
+    // The turret is knocked out → the gunner goes back to the spawn screen.
+    const tpos = shipToWorld(posedShip("t0-carrier")!, SHIP_SPECS.carrier.turrets[0].offset)
+    damageShip(r.engine.combat, "t0-carrier", 700, b, 1, tpos, r.engine.time, (r.engine as unknown as { events: GameEvent[] }).events)
+    r.ticks(1)
+    expect(r.events(a).some(e => e.type === "turret-destroyed" && e.turret === "ciws_bow_port")).toBe(true)
+    expect(r.player(a).turret).toBeNull()
+    expect(r.player(a).deaths).toBe(1)
+    expect(r.player(a).respawnAt).toBeGreaterThan(r.engine.time)
+    // Leaving a turret voluntarily.
+    r.send(c, { type: "man-turret", ship: "t0-dd1", turret: "gun_fwd" })
+    expect(r.player(c).turret?.turret).toBe("gun_fwd")
+    r.send(c, { type: "leave-vehicle" })
+    expect(r.player(c).turret).toBeNull()
+  })
+
+  test("craters: full list on join, then diffs", () => {
+    const r = setup()
+    const a = r.join()
+    r.engine.combat.craters!.push({ position: [1, 2, 3], radius: 8 })
+    r.ticks(3)
+    expect(r.lastSnap(a).craters).toEqual([{ position: [1, 2, 3], radius: 8 }])
+    r.ticks(3)
+    expect(r.lastSnap(a).craters).toBeUndefined()
+    const b = r.join()
+    r.engine.combat.craters!.push({ position: [4, 5, 6], radius: 10 })
+    r.ticks(3)
+    expect(r.lastSnap(a).craters).toEqual([{ position: [4, 5, 6], radius: 10 }])
+    expect(r.lastSnap(b).craters!.length).toBe(2)
   })
 
   test("match time drives the fleet, spawns use the current carrier pose, and it resets on restart", () => {
@@ -286,7 +392,7 @@ describe("room engine", () => {
     const r = setup({ timeLimit: 60 })
     const a = r.join()
     r.seconds(60.05)
-    expect(r.events(a).find(e => e.type === "match-end")).toEqual({ type: "match-end", winner: null })
+    expect(r.events(a).find(e => e.type === "match-end")).toEqual({ type: "match-end", winner: null, reason: "time" })
   })
 
   test("chat is sanitized and rate limited", () => {
@@ -428,7 +534,7 @@ describe("room engine", () => {
     r.ticks(1)
     v.flight.crashed = "terrain"
     r.ticks(1)
-    expect(r.engine.scores).toEqual([0, 1])
+    expect(r.engine.teamKills).toEqual([0, 1])
     expect(enemyBot.kills).toBe(1)
   })
 

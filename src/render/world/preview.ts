@@ -5,7 +5,9 @@ import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer } from "three/
 import { float, pass, screenUV, smoothstep, length, vec3 } from "three/tsl"
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js"
 import { createWorldView, type WorldViewDebug } from "../world-view"
-import { AIRBASES, baseToWorld, groundHeight, setFleetState, spawnPoint } from "../../sim/geography"
+import { AIRBASES, baseToWorld, groundHeight, setFleetState, spawnPoint, terrainMeshHeight } from "../../sim/geography"
+import { FLEET, SHIP_SPECS } from "../../sim/fleet"
+import type { ShipState } from "../../sim/protocol"
 import type { Quality, TeamId } from "../../sim/types"
 
 const params = new URLSearchParams(location.search)
@@ -55,7 +57,34 @@ if (params.get("markers") === "1") {
   }
 }
 
+if (params.get("dmg") === "1") {
+  const sinkAge = Number(params.get("sink") ?? 6)
+  const ships: ShipState[] = FLEET.filter(f => f.team === 0).map(f => {
+    const sp = SHIP_SPECS[f.kind]
+    const turrets = Object.fromEntries(sp.turrets.map(t => [t.id, { hp: 1, manned: null }]))
+    if (f.id === "t0-carrier") {
+      turrets.ciws_bow_port.hp = 0
+      return { id: f.id, hp: sp.maxHp * 0.3, maxHp: sp.maxHp, sunk: false, sunkAt: 0, turrets,
+        damage: [[-20, 20, -90], [15, 20, 30], [-30, 12, 110], [10, 20, -20]] as [number, number, number][] }
+    }
+    if (f.id === "t0-dd1") return { id: f.id, hp: 0, maxHp: sp.maxHp, sunk: true, sunkAt: 100, turrets, damage: [[0, 9, -30], [4, 12, 20]] as [number, number, number][] }
+    return { id: f.id, hp: sp.maxHp, maxHp: sp.maxHp, sunk: false, sunkAt: 0, turrets, damage: [] }
+  })
+  world.applyShipStates(ships, 100 + sinkAge)
+  const craters = []
+  for (let i = 0; i < 9; i++) {
+    const a = i * 2.1, r = 200 + i * 70
+    const x = Math.cos(a) * r, z = Math.sin(a) * r
+    craters.push({ position: [x, terrainMeshHeight(x, z), z] as [number, number, number], radius: 18 + (i % 3) * 10 })
+  }
+  world.addCraters(craters)
+}
+
 const views: Record<string, () => [number[], number[]]> = {
+  dmgcarrier: () => { const b = AIRBASES[0]; return [[b.center[0] + 420, 140, b.center[2] - 380], [b.center[0], 20, b.center[2]]] },
+  dmgfar: () => { const b = AIRBASES[0]; return [[b.center[0] + 1400, 260, b.center[2] - 1100], [b.center[0], 80, b.center[2]]] },
+  craters: () => { const a = 4 * 2.1, r = 200 + 4 * 70, x = Math.cos(a) * r, z = Math.sin(a) * r; return [[x + 90, terrainMeshHeight(x, z) + 70, z + 90], [x, terrainMeshHeight(x, z), z]] },
+  sinking: () => { const b = AIRBASES[0]; const f = [-Math.sin(b.heading), -Math.cos(b.heading)], r = [Math.cos(b.heading), -Math.sin(b.heading)]; const x = b.center[0] + r[0] * -340 + f[0] * 500, z = b.center[2] + r[1] * -340 + f[1] * 500; return [[x + 260, 70, z + 200], [x, 5, z]] },
   top: () => [[0, 9000, 1], [0, 0, 0]],
   fleet: () => { const b = AIRBASES[0]; return [[b.center[0] + 700, 260, b.center[2] - 650], [b.center[0], 0, b.center[2]]] },
   fleetclose: () => { const b = AIRBASES[0]; return [[b.center[0] + 450, 90, b.center[2] - 250], [b.center[0], 15, b.center[2] + 100]] },

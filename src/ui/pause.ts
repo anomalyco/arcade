@@ -31,7 +31,7 @@ export function createPauseMenu(parent: HTMLElement, actions: {
     hints: [["↑↓", "select"], ["enter", "confirm"], ["esc", "resume"]],
     items: [
       { label: "Resume", run: () => actions.resume() },
-      { label: "Change aircraft", run: () => actions.changeVehicle(), meta: "pick another aircraft or seat" },
+      { label: "Switch role", run: () => actions.changeVehicle(), meta: "another aircraft or seat, or man your fleet's guns" },
       { label: "Invite friends", run: () => actions.invite(), meta: "copies the room link" },
       { label: "Settings", run: () => nav.push(settingsScreen(nav, actions.quality, "04 — <b>settings</b>")), meta: "graphics · sound · steering" },
       { label: "Controls", run: () => nav.push({ crumb: "05 — <b>controls</b>", html: controlsTable(), hints: [["esc", "back"]] }) },

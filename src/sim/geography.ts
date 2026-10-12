@@ -8,6 +8,7 @@
 // The rendered LOD0 mesh uses exactly these vertices and triangles, and every physics query
 // interpolates the same triangles, so collision always matches what players see.
 import { AA_RANGE, FLEET, FLEET_ANGULAR_SPEED, FLEET_ORBIT_RADIUS, SHIP_SPECS, type Ship, shipPose } from "./fleet"
+import type { ShipState } from "./protocol"
 import type { TeamId, Vec3, VehicleKind, WorldQuery } from "./types"
 
 export const WORLD_SIZE = 10_000
@@ -62,6 +63,17 @@ const POSED: Ship[] = FLEET.map(sh => ({ ...sh, position: [sh.position[0], 0, sh
 const SIN = new Float64Array(NS), COS = new Float64Array(NS)
 const VEL: Vec3[] = FLEET.map(() => [0, 0, 0] as Vec3)
 const ACTIVE = new Uint8Array(NS).fill(1)
+/** Team in play (independent of damage). */
+const TEAM_ON = new Uint8Array(NS).fill(1)
+/** Not sunk (still fights / provides AA / can host spawns). */
+const ALIVE = new Uint8Array(NS).fill(1)
+/** Still solid (afloat, or sank less than SINK_SOLID_TIME ago). */
+const SOLID = new Uint8Array(NS).fill(1)
+/** Seconds a sunk ship remains ground/collision while it goes down. */
+export const SINK_SOLID_TIME = 20
+/** Carrier FLEET indices per team, in FLEET order. */
+const CARRIERS_OF: number[][] = [[], [], [], []]
+FLEET.forEach((sh, i) => { if (sh.kind === "carrier") CARRIERS_OF[sh.team].push(i) })
 /** Bounding radius (m) of each ship's footprint. */
 const REACH = new Float64Array(NS)
 const TOP = new Float64Array(NS)
@@ -96,11 +108,42 @@ export function setFleetState(matchTime: number, teams: number): void {
     P.heading = poseScratch.heading
     SIN[i] = Math.sin(P.heading); COS[i] = Math.cos(P.heading)
     VEL[i][0] = poseScratch.velocity[0]; VEL[i][2] = poseScratch.velocity[2]
-    const a = FLEET[i].team < n ? 1 : 0
+    TEAM_ON[i] = FLEET[i].team < n ? 1 : 0
+  }
+  if (refreshActive() || changed) activeShips = POSED.filter((_, i) => ACTIVE[i] === 1)
+  for (const base of AIRBASES) refreshBase(base)
+}
+
+function refreshActive(): boolean {
+  let changed = false
+  for (let i = 0; i < NS; i++) {
+    const a = TEAM_ON[i] && SOLID[i] ? 1 : 0
     if (ACTIVE[i] !== a) { ACTIVE[i] = a; changed = true }
   }
-  if (changed) activeShips = POSED.filter((_, i) => ACTIVE[i] === 1)
+  return changed
+}
+
+/**
+ * Apply ship damage state (room engine every tick, client every snapshot). Sunk ships stop
+ * providing AA/spawns immediately and stop being ground/collision SINK_SOLID_TIME s after
+ * `sunkAt` (pass the current room time as `now`; omit it to drop sunk ships at once).
+ */
+export function setShipStates(ships: readonly ShipState[] | undefined, now = Infinity): void {
+  if (!ships) return
+  for (const st of ships) {
+    const i = SHIP_INDEX.get(st.id)
+    if (i === undefined) continue
+    ALIVE[i] = st.sunk ? 0 : 1
+    SOLID[i] = !st.sunk || now - st.sunkAt < SINK_SOLID_TIME ? 1 : 0
+  }
+  if (refreshActive()) activeShips = POSED.filter((_, i) => ACTIVE[i] === 1)
   for (const base of AIRBASES) refreshBase(base)
+}
+
+/** True if the ship (by id) has not been sunk. */
+export function shipAlive(id: string): boolean {
+  const i = SHIP_INDEX.get(id)
+  return i !== undefined && ALIVE[i] === 1
 }
 
 /** Current fleet clock and team count. */
@@ -120,8 +163,20 @@ export function posedShip(id: string): Ship | null {
 }
 
 /** The team's carrier at its current pose (also returned for inactive teams). */
+function carrierIndex(team: TeamId): number {
+  const list = CARRIERS_OF[team]
+  for (const i of list) if (ALIVE[i]) return i
+  return list[0]
+}
+
+/** The team's first non-sunk carrier at its current pose (the first carrier if all are sunk). */
 export function carrierOf(team: TeamId): Ship {
-  return POSED[SHIP_INDEX.get(`t${team}-carrier`)!]
+  return POSED[carrierIndex(team)]
+}
+
+/** All of the team's non-sunk carriers (at current poses). */
+export function carriersOf(team: TeamId): Ship[] {
+  return CARRIERS_OF[team].filter(i => ALIVE[i]).map(i => POSED[i])
 }
 
 // Ship-local helpers on cached poses (write into scratch, no allocation).
@@ -141,7 +196,7 @@ function toWorldInto(i: number, lx: number, ly: number, lz: number, out: Vec3): 
 }
 
 function refreshBase(base: Airbase) {
-  const i = SHIP_INDEX.get(`t${base.team}-carrier`)!
+  const i = carrierIndex(base.team)
   base.center[0] = POSED[i].position[0]
   base.center[2] = POSED[i].position[2]
   base.heading = POSED[i].heading
@@ -670,7 +725,7 @@ export function surfaceType(x: number, z: number): SurfaceType {
 export function inSafeZone(team: TeamId, p: Vec3): boolean {
   if (p[1] > CEILING) return false
   for (let i = 0; i < NS; i++) {
-    if (!ACTIVE[i] || FLEET[i].team !== team) continue
+    if (!ACTIVE[i] || !ALIVE[i] || FLEET[i].team !== team) continue
     const P = POSED[i].position
     const dx = p[0] - P[0], dz = p[2] - P[2]
     if (dx * dx + dz * dz < AA_RANGE * AA_RANGE) return true
@@ -687,12 +742,20 @@ export interface SpawnPoint {
 }
 
 /**
- * Spawn slot for a team's vehicle. Jets stagger along the carrier's two bow catapult lanes (6 slots,
- * then wrap), facing the bow; helicopters use the aft helo spots.
+ * Spawn slot for a team's vehicle, spread across the team's non-sunk carriers (index alternates
+ * carriers). Jets stagger along each carrier's two bow catapult lanes (6 slots per carrier, then
+ * wrap), facing the bow; helicopters use the aft helo spots.
  */
 export function spawnPoint(team: TeamId, kind: VehicleKind, index: number): SpawnPoint {
-  const ci = SHIP_INDEX.get(`t${team}-carrier`)!
-  const i = Math.max(0, Math.floor(index))
+  const k = Math.max(0, Math.floor(index))
+  let live = 0
+  for (const c of CARRIERS_OF[team]) if (ALIVE[c]) live++
+  let ci = CARRIERS_OF[team][0]
+  if (live > 0) {
+    let n = k % live
+    for (const c of CARRIERS_OF[team]) if (ALIVE[c] && n-- === 0) { ci = c; break }
+  }
+  const i = live > 0 ? Math.floor(k / live) : k
   const deck = CARRIER.deckHeight
   const position: Vec3 = [0, 0, 0]
   if (kind === "apache") {

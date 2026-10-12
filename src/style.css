@@ -331,3 +331,47 @@
 .game-ui:has(.pause:not([hidden])) .hud { opacity: .25; transition: opacity .2s; }
 .game-ui:has(.spawn:not([hidden])) .hud .hud-feed { top: auto; bottom: 50px; left: auto; right: var(--x); align-items: flex-end; background: none; }
 .pause .wm { font-size: clamp(72px, 12vh, 120px); }
+
+/* ---------------------------------------------------------------- Fleet Strike */
+.hud-obj { display: flex; gap: 22px; align-items: center; margin-top: 2px; }
+.hud-obj:empty { display: none; }
+.hud-obj .ot { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--mono); color: var(--c); }
+.hud-obj .ot em { font-style: normal; margin-right: 2px; }
+.hud-obj .ot.mine em { text-decoration: underline; text-underline-offset: 4px; }
+.hud-obj .cb { position: relative; display: inline-block; width: 46px; height: 5px; background: rgba(8, 12, 12, .45); box-shadow: 0 1px 2px rgba(8, 12, 12, .5); }
+.hud-obj .cb b { display: block; height: 100%; background: var(--c); }
+.hud-obj .cb.low b { background: var(--or); }
+.hud-obj .cb.sunk { background: rgba(8, 12, 12, .3); }
+.hud-obj .cb.sunk::after { content: ""; position: absolute; left: -3px; right: -3px; top: 50%; height: 1.5px; background: var(--fg); transform: rotate(-12deg); }
+.hud-feed div .tx { font: 500 12px var(--mono); color: var(--dim); }
+/* Turret seat panel replaces the aircraft hull/weapons readout. */
+.hud-tur { left: 50%; bottom: 24px; transform: translateX(-50%); width: 340px; display: none; }
+.hud.on-turret .hud-tur { display: block; }
+.hud.on-turret .hud-bottom, .hud.on-turret .hud-tape { display: none; }
+.hud-tur .tn { font: 500 12px var(--mono); color: var(--dim); margin-bottom: 8px; }
+.hud-tur .row { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; }
+.hud-tur .hl { font-size: 14px; color: var(--dim); }
+.hud-tur .v { font: 500 15px var(--mono); }
+.hud-tur .bar { position: relative; height: 4px; margin-top: 5px; background: rgba(8, 12, 12, .35); overflow: hidden; box-shadow: 0 1px 3px rgba(8, 12, 12, .35); }
+.hud-tur .bar i { position: absolute; inset: 0; background: var(--fg); transform-origin: left; transition: transform .12s linear; }
+.hud-tur.hot .hb i, .hud-tur.hot .ht { background: var(--or); color: var(--or); }
+.hud-tur.hot .ht { background: none; }
+.hud-tur.dead .tn::after { content: " · knocked out"; color: var(--or); }
+/* Match result */
+.hud-end { inset: 0; display: none; flex-direction: column; justify-content: center; padding-left: var(--x); background: linear-gradient(90deg, rgba(10, 14, 14, .82) 0%, rgba(10, 14, 14, .45) 50%, rgba(10, 14, 14, .2) 100%); z-index: 6; }
+.hud-end.show { display: flex; animation: fade .4s ease both; }
+.hud-end .r { font: 700 clamp(84px, 15vh, 150px)/.9 var(--narrow); letter-spacing: -.035em; }
+.hud-end.victory .r { color: var(--fg); }
+.hud-end.defeat .r { color: var(--or); }
+.hud-end .why { margin-top: 14px; font: 500 20px var(--narrow); color: var(--fg); }
+.hud-end .nx { margin-top: 8px; font: 500 12px var(--mono); color: var(--dim); }
+/* Spawn tabs */
+.sp-head .tabs { display: flex; gap: 22px; align-items: baseline; margin-top: 12px; font: 500 18px var(--narrow); }
+.sp-head .tabs[hidden] { display: none; }
+.sp-head .tabs button { color: var(--dim); padding-bottom: 3px; border-bottom: 2px solid transparent; }
+.sp-head .tabs button:hover { color: var(--fg); }
+.sp-head .tabs button.on { color: var(--fg); border-bottom-color: var(--or); }
+.spawn.guns .sp-detail .thumb { display: none; }
+.spawn.guns .sp-list .menu.mid .mi { grid-template-columns: 34px 22px minmax(0, 230px) 1fr; }
+.spawn.guns .sp-list .mi.sm .t { line-height: 1.5 !important; }
+.spawn.guns .sp-list { top: clamp(200px, 31vh, 300px); }

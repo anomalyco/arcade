@@ -86,6 +86,8 @@ export class TerrainStreamer {
   private shoreNext = 0
   private shoreDone = 0
   private disposed = false
+  /** Called for every tree InstancedMesh created / removed (crater scorching). */
+  onTreeMesh: ((mesh: InstancedMesh, added: boolean) => void) | null = null
   stats: StreamerStats = { clusters: 0, visibleClusters: 0, pending: 0, trees: 0, triangles: 0, lastWorkMs: 0, maxWorkMs: 0 }
 
   constructor(
@@ -276,6 +278,7 @@ export class TerrainStreamer {
         if (copy) mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(src.length), 16)
         this.treeRoot.add(mesh)
         meshes.push(mesh)
+        this.onTreeMesh?.(mesh, true)
         return mesh
       }
       for (let k = 0; k < TREE_KINDS; k++) {
@@ -315,7 +318,7 @@ export class TerrainStreamer {
 
   private dropTrees(c: Cluster) {
     if (!c.trees) return
-    for (const m of c.trees) { this.treeRoot.remove(m); m.dispose() }
+    for (const m of c.trees) { this.onTreeMesh?.(m, false); this.treeRoot.remove(m); m.dispose() }
     c.trees = null
   }
 

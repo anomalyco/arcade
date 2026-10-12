@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   AIRBASES, ARCHIPELAGO_RADIUS, CEILING, DECK_LAYOUT, FLEET_RING_HALF, LAUNCH_LANE_HALF, LAUNCH_LANE_LENGTH, MESH_CELL, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, groundHeight,
   heightBound, inSafeZone, isWater, onRunway, segmentHitsGround, shipAt, spawnPoint, surfaceType, terrainHeight,
-  terrainMeshHeight, worldMesh, worldQuery, setFleetState, deckVelocity, carrierOf, segmentHitsShip,
+  terrainMeshHeight, worldMesh, worldQuery, setFleetState, setShipStates, carriersOf, shipAlive, SINK_SOLID_TIME, deckVelocity, carrierOf, segmentHitsShip,
 } from "../src/sim/geography"
 import { AA_RANGE, FLEET, FLEET_ANGULAR_SPEED, FLEET_LAP_TIME, FLEET_ORBIT_RADIUS, SHIP_SPECS, shipPose, shipToWorldAt } from "../src/sim/fleet"
 import { generateCluster } from "../src/render/world/tile-gen"
@@ -176,7 +176,9 @@ describe("strike groups", () => {
         const v = shipPose(FLEET.find(s => s.team === base.team && s.kind === "carrier")!, t).velocity
         const sp = Math.hypot(v[0], v[2])
         expect((fx * v[0] + fz * v[2]) / sp).toBeCloseTo(1, 6)
-        expect(Math.hypot(base.center[0], base.center[2])).toBeCloseTo(FLEET_ORBIT_RADIUS, 3)
+        // The base follows the team's first carrier (rigid rotation keeps its distance from the centre).
+        const c0 = FLEET.find(s => s.team === base.team && s.kind === "carrier")!
+        expect(Math.hypot(base.center[0], base.center[2])).toBeCloseTo(Math.hypot(c0.position[0], c0.position[2]), 3)
       }
     }
     setFleetState(0, 4)
@@ -214,7 +216,7 @@ describe("strike groups", () => {
     const want = shipPose(FLEET.find(s => s.id === c.id)!, 300).velocity
     expect(cv[0]).toBeCloseTo(want[0], 6)
     expect(cv[2]).toBeCloseTo(want[2], 6)
-    expect(Math.hypot(cv[0], cv[2])).toBeCloseTo(FLEET_ANGULAR_SPEED * FLEET_ORBIT_RADIUS, 3)
+    expect(Math.hypot(cv[0], cv[2])).toBeCloseTo(FLEET_ANGULAR_SPEED * Math.hypot(c.position[0], c.position[2]), 3)
     // The old start position is open water once the fleet has moved on.
     const start = FLEET.find(s => s.id === c.id)!.position
     expect(shipAt(start[0], start[2])?.id).not.toBe(c.id)
@@ -235,26 +237,33 @@ describe("strike groups", () => {
     setFleetState(0, 4)
   })
 
-  test("spawns sit on the (moving) carrier deck, facing the bow, without overlap", () => {
+  test("spawns sit on the (moving) carrier decks, split across both carriers, without overlap", () => {
     for (const t of TIMES) {
       setFleetState(t, 4)
       for (const team of TEAMS) {
-        const c = carrierOf(team)
+        const carriers = carriersOf(team)
+        expect(carriers.length).toBe(2)
         const used: Vec3[] = []
-        for (let i = 0; i < DECK_LAYOUT.catapults.length; i++) {
+        const seen = new Set<string>()
+        for (let i = 0; i < DECK_LAYOUT.catapults.length * 2; i++) {
           const s = spawnPoint(team, "fighter", i)
+          const on = shipAt(s.position[0], s.position[2])!
+          expect(on.kind).toBe("carrier")
+          expect(on.team).toBe(team)
+          seen.add(on.id)
           expect(s.onGround).toBe(true)
-          expect(s.yaw).toBe(c.heading)
-          expect(shipAt(s.position[0], s.position[2])?.id).toBe(c.id)
+          expect(s.yaw).toBeCloseTo(on.heading, 9)
           expect(onRunway(s.position[0], s.position[2])).toBe(true)
           expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(2.2, 6)
           expect(inSafeZone(team, s.position)).toBe(true)
           for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(15)
           used.push(s.position)
-          const ahead = shipToWorldAt(FLEET.find(f => f.id === c.id)!, t, [DECK_LAYOUT.catapults[i][0], 0, DECK_LAYOUT.catapults[i][1] - 160])
+          const slot = DECK_LAYOUT.catapults[Math.floor(i / 2) % DECK_LAYOUT.catapults.length]
+          const ahead = shipToWorldAt(FLEET.find(f => f.id === on.id)!, t, [slot[0], 0, slot[1] - 160])
           expect(onRunway(ahead[0], ahead[2])).toBe(true)
         }
-        for (let i = 0; i < DECK_LAYOUT.heloSpots.length; i++) {
+        expect(seen.size).toBe(2)
+        for (let i = 0; i < DECK_LAYOUT.heloSpots.length * 2; i++) {
           const s = spawnPoint(team, "apache", i)
           expect(onRunway(s.position[0], s.position[2])).toBe(true)
           expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(1.9, 6)
@@ -263,6 +272,28 @@ describe("strike groups", () => {
         }
       }
     }
+    setFleetState(0, 4)
+  })
+
+  test("sunk ships: no spawns/AA at once, no collision after SINK_SOLID_TIME", () => {
+    setFleetState(100, 4)
+    const first = carrierOf(0), second = carriersOf(0)[1]
+    const p = [first.position[0], first.position[2]]
+    const state = (sunk: boolean, sunkAt = 0) => [{ id: first.id, hp: sunk ? 0 : 1, maxHp: 1, sunk, sunkAt, turrets: {}, damage: [] }]
+    setShipStates(state(true, 50), 55)
+    expect(shipAlive(first.id)).toBe(false)
+    expect(carrierOf(0).id).toBe(second.id)
+    expect(AIRBASES[0].center[0]).toBeCloseTo(second.position[0])
+    for (let i = 0; i < 6; i++) expect(shipAt(spawnPoint(0, "fighter", i).position[0], spawnPoint(0, "fighter", i).position[2])?.id).toBe(second.id)
+    expect(shipAt(p[0], p[1])?.id).toBe(first.id) // still solid while going down
+    setShipStates(state(true, 50), 50 + SINK_SOLID_TIME + 1)
+    expect(shipAt(p[0], p[1])).toBeNull()
+    expect(groundHeight(p[0], p[1])).toBe(WATER_LEVEL)
+    const a: Vec3 = [p[0] - 100, 5, p[1]], b: Vec3 = [p[0] + 100, 5, p[1]]
+    expect(segmentHitsShip(a, b)).toBeNull()
+    setShipStates(state(false))
+    expect(shipAt(p[0], p[1])?.id).toBe(first.id)
+    expect(carrierOf(0).id).toBe(first.id)
     setFleetState(0, 4)
   })
 

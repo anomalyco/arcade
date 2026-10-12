@@ -4,7 +4,7 @@ import {
 } from "../src/sim/bots"
 import { applySeatInput, createCombatState, createWeapons, markSpawned, stepCombat } from "../src/sim/combat"
 import { FLEET, shipPose } from "../src/sim/fleet"
-import { carrierOf, setFleetState, worldQuery } from "../src/sim/geography"
+import { carrierOf, posedFleet, setFleetState, worldQuery } from "../src/sim/geography"
 import { forward, stepFlight } from "../src/sim/flight"
 import { VEHICLES, WEAPONS } from "../src/sim/vehicles"
 import { TICK_DT } from "../src/sim/types"
@@ -259,7 +259,9 @@ describe("carrier fleets", () => {
     me.weapons[0][1].readyAt = 0
     out = snap(botInput(brain, player(0, 0), me, [me, enemy], 20, [], flat()))
     expect(out.seat.firePrimary || out.seat.fireSecondary).toBe(false)
-    expect(brain.state.phase).toBe("transit")
+    // No air target: patrol, or (strike role) go after enemy ships.
+    expect(brain.state.phase === "transit" || brain.state.phase === "strike").toBe(true)
+    expect(brain.state.targetId).toBeNull()
   })
 
   test("ignores spawn-protected enemies", () => {
@@ -558,5 +560,66 @@ describe("difficulty & fairness", () => {
     expect(mean).toBeGreaterThanOrEqual(15)
     // Sanity: the harness can produce kills — a hard bot downs a straight, non-flaring target.
     expect(Math.min(...[1, 2].map(s => run(s, 0.9, false)))).toBeLessThan(40)
+  })
+})
+
+describe("Fleet Strike runs", () => {
+  beforeEach(() => setFleetState(0, 2))
+  /** A strike-role brain (the role is rolled per sortie; retry seeds until one strikes). */
+  const striker = (v: VehicleEntity) => {
+    for (let seed = 1; seed < 200; seed++) {
+      const b = createBotBrain(seed, 0.8)
+      botInput(b, player(0, 0), v, [v], 0, [], flat())
+      if (b.state.role === "strike") return b
+    }
+    throw new Error("no striker")
+  }
+  const c1 = () => posedFleet().find(s => s.id === "t1-carrier")!
+  const at = (d: number, y: number): { pos: Vec3; dir: Vec3 } => {
+    const c = c1()
+    const l = Math.hypot(c.position[0], c.position[2])
+    const ux = -c.position[0] / l, uz = -c.position[2] / l // toward the map center
+    return { pos: [c.position[0] + ux * d, y, c.position[2] + uz * d], dir: [-ux, 0, -uz] }
+  }
+
+  test("approaches an enemy ship, launches when the seeker has the ship, breaks away inside 800 m", () => {
+    const far = at(4_000, 400)
+    const me = vehicle("fighter", 0, far.pos, [far.dir[0] * 180, 0, far.dir[2] * 180], far.dir)
+    const brain = striker(me)
+    let out = snap(botInput(brain, player(0, 0), me, [me], 1, [], flat()))
+    expect(brain.state.phase).toBe("strike")
+    expect(brain.state.strikeShip?.startsWith("t1-")).toBe(true)
+    expect(angle(out.flight!.aim!, far.dir)).toBeLessThan(0.6)
+    // In launch range with a ship lock → fire the lock missile.
+    const near = at(1_200, 300)
+    me.flight.position = near.pos
+    brain.state.strikeShip = "t1-carrier"
+    me.weapons[0][1].lockTarget = "ship:t1-carrier"
+    me.weapons[0][1].lock = 1
+    out = snap(botInput(brain, player(0, 0), me, [me], 20, [], flat()))
+    expect(out.seat.fireSecondary).toBe(true)
+    // Inside the break range: egress (heading away from the ship).
+    const close = at(500, 250)
+    me.flight.position = close.pos
+    out = snap(botInput(brain, player(0, 0), me, [me], 21, [], flat()))
+    expect(brain.state.strikePhase).toBe("egress")
+    // Turning off the ship (the low-altitude envelope limits how hard it pulls in one go).
+    expect(angle([out.flight!.aim![0], 0, out.flight!.aim![2]], close.dir)).toBeGreaterThan(0.5)
+  })
+
+  test("sunk ships are not attacked; enemies near our fleet pull strikers back to defend", () => {
+    const far = at(4_000, 400)
+    const me = vehicle("fighter", 0, far.pos, [far.dir[0] * 180, 0, far.dir[2] * 180], far.dir)
+    const brain = striker(me)
+    const sunk: Record<string, { sunk: boolean }> = {}
+    for (const s of posedFleet()) if (s.team === 1 && s.id !== "t1-dd3") sunk[s.id] = { sunk: true }
+    botInput(brain, player(0, 0), me, [me], 1, [], flat(), sunk)
+    expect(brain.state.strikeShip).toBe("t1-dd3")
+    const own = posedFleet().find(s => s.id === "t0-carrier")!
+    const raider = vehicle("fighter", 1, [own.position[0] + 1500, 600, own.position[2]], [0, 0, 0])
+    me.flight.position = [own.position[0] + 4500, 600, own.position[2]]
+    brain.state.defender = true
+    botInput(brain, player(0, 0), me, [me, raider], 5, [], flat(), sunk)
+    expect(brain.state.phase).toBe("engage")
   })
 })

@@ -20,6 +20,9 @@ import { createCloudLayers, createLightning, createSky } from "./world/sky"
 import { TerrainStreamer, type StreamerStats } from "./world/streamer"
 import { createTreeResources } from "./world/trees"
 import { createWater } from "./world/water"
+import { createCraters } from "./world/craters"
+import type { Crater, ShipState } from "../sim/protocol"
+import { setShipStates } from "../sim/geography"
 import * as aircraftModule from "./aircraft"
 
 export interface WorldView {
@@ -49,6 +52,14 @@ export interface WorldView {
   setShadowFocus(position: Vector3): void
   /** Aimable pivots of a ship turret (ids from fleet.ts): set yaw.rotation.y / pitch.rotation.x. */
   getShipTurret(shipId: string, turretId: string): TurretHandle | null
+  /**
+   * Ship damage from each snapshot (`Snapshot.ships`, `now` = snapshot room time): fires/smoke at
+   * hit points, scorch, knocked-out turrets, list/settle, sinking. Also forwards to geography
+   * setShipStates so sunk ships stop being ground/collision on the client.
+   */
+  applyShipStates(ships: readonly ShipState[] | undefined, now?: number): void
+  /** Persistent island craters (`Snapshot.craters` / crater events); visual only. */
+  addCraters(craters: readonly Crater[] | undefined): void
   dispose(): void
 }
 
@@ -74,6 +85,16 @@ export function getShipTurret(shipId: string, turretId: string): TurretHandle | 
 }
 
 /** Current lightning flash of the active world (0..1). */
+/** Module-level convenience: apply ship damage states to the active world. */
+export function applyShipStates(ships: readonly ShipState[] | undefined, now?: number) {
+  activeView?.applyShipStates(ships, now)
+}
+
+/** Module-level convenience: add island craters to the active world. */
+export function addCraters(craters: readonly Crater[] | undefined) {
+  activeView?.addCraters(craters)
+}
+
 export function lightningIntensity(): number {
   return activeView?.lightning ?? 0
 }
@@ -146,6 +167,8 @@ export function createWorldView(renderer: unknown, scene: Scene, quality: Qualit
   let spray = createParticles({ count: Math.max(1, settings.spray), box: 160, fall: 0, brightness: 0.05, width: 0.05, spray: true })
   spray.setVisibility(settings.spray > 0 ? 1 : 0)
   const streamer = new TerrainStreamer(settings, terrainMaterial, trees, (z0, _z1, rows) => water.writeRows(z0, rows))
+  const craters = createCraters(terrainMaterial)
+  streamer.onTreeMesh = (mesh, added) => added ? craters.trackTrees(mesh) : craters.untrackTrees(mesh)
 
   root.add(sky.mesh, water.mesh, streamer.terrainRoot, streamer.treeRoot, fleet.root, clouds.group, lightning.mesh, rain.mesh, spray.mesh)
 
@@ -183,7 +206,7 @@ export function createWorldView(renderer: unknown, scene: Scene, quality: Qualit
       sky.update(cameraPosition, time)
       clouds.update(cameraPosition)
       water.update(time, cameraPosition)
-      fleet.update(cameraPosition)
+      fleet.update(cameraPosition, step)
       streamer.update(cameraPosition, step)
     },
     setShadowFocus(_position) {},
@@ -203,6 +226,11 @@ export function createWorldView(renderer: unknown, scene: Scene, quality: Qualit
     },
     setHighlightTeam(_team) {},
     getShipTurret: (shipId, turretId) => fleet.getShipTurret(shipId, turretId),
+    applyShipStates(ships, now) {
+      fleet.applyStates(ships, now)
+      setShipStates(ships, now)
+    },
+    addCraters: list => craters.add(list),
     ready: () => streamer.ready(),
     stats: () => ({ ...streamer.stats, shoreProgress: streamer.shoreProgress }),
     streamer,

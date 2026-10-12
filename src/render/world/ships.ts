@@ -7,12 +7,14 @@
 // (geography.setFleetState) every frame; inactive teams' ships are hidden.
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, Group, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh,
-  MeshLambertMaterial, Object3D, Vector3, type Material,
+  MeshLambertMaterial, Object3D, Quaternion, Vector3, type Material,
 } from "three"
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu"
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
 import { FLEET, SHIP_SPECS, type Ship, type ShipKind, type TurretKind } from "../../sim/fleet"
 import { fleetState, posedShip } from "../../sim/geography"
+import type { ShipState } from "../../sim/protocol"
+import { EmitterKind, createFireSystem } from "./fire"
 import { PALETTE, TEAM_COLORS } from "./palette"
 
 export interface TurretHandle {
@@ -156,13 +158,31 @@ function placeholderModel(kind: ShipKind): Object3D {
 }
 
 const ZERO = new Matrix4().makeScale(0, 0, 0)
+const WHITE = new Color(1, 1, 1)
+const CHAR = new Color(0.12, 0.11, 0.1)
 
 export interface FleetView {
   root: Group
   readonly loadedModels: string[]
   getShipTurret(shipId: string, turretId: string): TurretHandle | null
-  update(camera?: Vector3): void
+  update(camera?: Vector3, dt?: number): void
+  /** Ship damage/sinking state from the latest snapshot. `now` = room time (for sinking progress). */
+  applyStates(ships: readonly ShipState[] | undefined, now?: number): void
   dispose(): void
+}
+
+/** Seconds a sunk ship takes to disappear below the surface. */
+const SINK_TIME = 20
+
+interface DamageView {
+  hp: number
+  sunk: boolean
+  /** Local clock time the sinking started. */
+  sinkStart: number
+  damage: Vector3[]
+  deadTurrets: Set<string>
+  /** Per-ship random list direction (±1) and bow/stern bias. */
+  side: number
 }
 
 export function createFleet(): FleetView {
@@ -192,7 +212,7 @@ export function createFleet(): FleetView {
       const pitch = new Object3D()
       yaw.add(pitch)
       g.add(yaw)
-      turretHandles.set(`${sh.id}/${t.id}`, { yaw, pitch, kind: t.kind, ship: sh })
+      turretHandles.set(`${sh.id}/${t.id}`, { yaw, pitch, kind: t.kind, ship: sh, id: t.id } as TurretHandle & { kind: TurretKind; ship: Ship })
     }
   }
 
@@ -231,6 +251,7 @@ export function createFleet(): FleetView {
         for (const part of parts) {
           const mesh = new InstancedMesh(part.geometry, matFor(part.color, part.livery), handles.length)
           if (part.livery) handles.forEach((h, i) => mesh.setColorAt(i, new Color(TEAM_COLORS[(h as { ship: Ship }).ship.team])))
+          else handles.forEach((_, i) => mesh.setColorAt(i, WHITE))
           mesh.castShadow = true
           mesh.frustumCulled = false
           mesh.name = `turret ${tk} ${partName}`
@@ -249,12 +270,35 @@ export function createFleet(): FleetView {
   /** Move every ship to its current pose (fleet clock), hide inactive teams, update turrets/wakes. */
   function sync() {
     const teams = fleetState().teams
+    // Knocked-out turrets slump (overrides any aim the client set this frame).
+    for (const h of turretHandles.values()) {
+      const tid = (h as { id?: string }).id ?? ""
+      if (states.get(h.ship.id)?.deadTurrets.has(tid)) { h.pitch.rotation.set(-0.45, 0, 0); h.yaw.rotation.z = 0.12 }
+      else if (h.yaw.rotation.z !== 0) h.yaw.rotation.z = 0
+    }
     for (const [id, g] of shipGroups) {
       const p = posedShip(id)
       if (!p) continue
-      g.position.set(p.position[0], 0, p.position[2])
-      g.rotation.y = p.heading
-      g.visible = p.team < teams
+      const st = states.get(id)
+      const sp = SHIP_SPECS[p.kind]
+      let settle = 0, roll = 0, pitch = 0, hidden = false
+      if (st) {
+        const dmg = 1 - Math.max(0, Math.min(1, st.hp))
+        // Health-based list and settling.
+        roll = st.side * dmg * 0.07
+        settle = -dmg * 1.6
+        if (st.sunk) {
+          const k = Math.max(0, clock - st.sinkStart) / SINK_TIME
+          const e = k * k * (3 - 2 * k)
+          settle -= e * (sp.deckHeight + (p.kind === "carrier" ? 34 : 24) + 10)
+          roll += st.side * e * 0.22
+          pitch = -e * 0.09 * st.side
+          hidden = k >= 1.15
+        }
+      }
+      g.position.set(p.position[0], settle, p.position[2])
+      g.rotation.set(pitch, p.heading, roll, "YXZ")
+      g.visible = p.team < teams && !hidden
     }
     root.updateMatrixWorld(true)
     for (const hm of hullMeshes) {
@@ -268,10 +312,14 @@ export function createFleet(): FleetView {
       tm.handles.forEach((h, i) => {
         const vis = shipGroups.get(h.ship.id)!.visible
         tm.mesh.setMatrixAt(i, !vis ? ZERO : tm.part === "yaw" ? h.yaw.matrixWorld : h.pitch.matrixWorld)
+        const dead = states.get(h.ship.id)?.deadTurrets.has((h as { id?: string }).id ?? "") ?? false
+        if (tm.mesh.instanceColor && tm.mesh.material !== liveryMaterial) tm.mesh.setColorAt(i, dead ? CHAR : WHITE)
       })
       tm.mesh.instanceMatrix.needsUpdate = true
+      if (tm.mesh.instanceColor) tm.mesh.instanceColor.needsUpdate = true
     }
     syncLights()
+    syncDamage()
   }
 
   // Nav / deck lights: small emissive points (HDR for bloom), grown with distance so they stay visible.
@@ -303,7 +351,8 @@ export function createFleet(): FleetView {
     const teams = fleetState().teams
     lightDefs.forEach((d, i) => {
       const g = shipGroups.get(d.ship.id)!
-      if (d.ship.team >= teams) { lights.setMatrixAt(i, ZERO); return }
+      const st = states.get(d.ship.id)
+      if (d.ship.team >= teams || !g.visible || (st && (st.sunk || st.hp < 0.15) && (i * 7919) % 3 !== 0)) { lights.setMatrixAt(i, ZERO); return }
       lp.copy(d.local).applyMatrix4(g.matrixWorld)
       const s = Math.max(1, lp.distanceTo(cameraPos) * 0.0022)
       lm.makeScale(s, s, s).setPosition(lp)
@@ -312,6 +361,83 @@ export function createFleet(): FleetView {
     lights.instanceMatrix.needsUpdate = true
   }
   const cameraPos = new Vector3()
+
+  // ---- damage: states, fires/smoke, scorch decals ----
+  const states = new Map<string, DamageView>()
+  let clock = 0
+  const fire = createFireSystem()
+  for (const m of fire.meshes) root.add(m)
+  const MAX_SCORCH = 160
+  const scorchMat = new MeshStandardNodeMaterial({ color: "#0d0c0b", roughness: 0.35, metalness: 0.1 })
+  scorchMat.name = "World · scorch"
+  const scorch = new InstancedMesh(new IcosahedronGeometry(1, 2), scorchMat, MAX_SCORCH)
+  scorch.frustumCulled = false
+  scorch.name = "World · ship scorch"
+  root.add(scorch)
+  const wp = new Vector3(), sm = new Matrix4(), sq = new Quaternion(), ss = new Vector3()
+
+  function syncDamage() {
+    fire.begin()
+    let nScorch = 0
+    for (const [id, st] of states) {
+      const g = shipGroups.get(id)
+      const p = posedShip(id)
+      if (!g || !p || !g.visible) continue
+      const sp = SHIP_SPECS[p.kind]
+      const dmg = 1 - Math.max(0, Math.min(1, st.hp))
+      const big = p.kind === "carrier" ? 1 : 0.7
+      g.getWorldQuaternion(sq)
+      // Fires + smoke columns at the hit points (stronger with damage).
+      st.damage.forEach((d, k) => {
+        wp.copy(d).applyMatrix4(g.matrixWorld)
+        const sinkingFade = st.sunk ? Math.max(0, 1 - (clock - st.sinkStart) / (SINK_TIME * 0.6)) : 1
+        if (k < 6 && wp.y > 0.5) fire.emit(wp.x, wp.y + 1, wp.z, EmitterKind.Fire, (5 + 7 * dmg) * big, (0.6 + 0.6 * dmg) * sinkingFade, 160 + 140 * dmg)
+        if (nScorch < MAX_SCORCH) {
+          const r = (6 + 6 * dmg) * big
+          ss.set(r, Math.max(0.6, r * 0.12), r)
+          sm.compose(wp, sq, ss)
+          scorch.setMatrixAt(nScorch++, sm)
+        }
+      })
+      // Knocked-out turrets smoulder.
+      for (const t of sp.turrets) if (st.deadTurrets.has(t.id)) {
+        wp.set(...t.offset).applyMatrix4(g.matrixWorld)
+        fire.emit(wp.x, wp.y + 1.5, wp.z, EmitterKind.Fire, 2.5, 0.8, 90)
+      }
+      if (st.sunk) {
+        const k = Math.max(0, clock - st.sinkStart) / SINK_TIME
+        // Heavy smoke from the hull and churned foam/bubbles around it while it goes down.
+        for (const z of [-0.5, 0, 0.5]) {
+          wp.set(0, sp.deckHeight, z * sp.halfLength).applyMatrix4(g.matrixWorld)
+          fire.emit(wp.x, Math.max(wp.y, 1), wp.z, EmitterKind.Smoke, 16 * big, 1.1 * Math.max(0.2, 1 - k * 0.6), 320)
+          wp.set(st.side * sp.halfWidth * 0.8, 0, z * sp.halfLength * 1.1).applyMatrix4(g.matrixWorld)
+          fire.emit(wp.x, 0.6, wp.z, EmitterKind.Foam, 22 * big, Math.min(1, 0.4 + k), 0)
+        }
+      }
+    }
+    fire.end()
+    for (let i = nScorch; i < MAX_SCORCH; i++) scorch.setMatrixAt(i, ZERO)
+    scorch.instanceMatrix.needsUpdate = true
+  }
+
+  function applyStates(ships: readonly ShipState[] | undefined, now?: number) {
+    if (!ships) return
+    for (const s of ships) {
+      let st = states.get(s.id)
+      if (!st) {
+        let h = 0
+        for (const ch of s.id) h = (h * 31 + ch.charCodeAt(0)) | 0
+        st = { hp: 1, sunk: false, sinkStart: 0, damage: [], deadTurrets: new Set(), side: h & 1 ? 1 : -1 }
+        states.set(s.id, st)
+      }
+      st.hp = s.maxHp > 0 ? s.hp / s.maxHp : 1
+      if (s.sunk && !st.sunk) st.sinkStart = now !== undefined && s.sunkAt > 0 ? clock - Math.max(0, now - s.sunkAt) : clock
+      st.sunk = s.sunk
+      st.damage = s.damage.slice(0, 12).map(d => new Vector3(d[0], d[1], d[2]))
+      st.deadTurrets.clear()
+      for (const [tid, t] of Object.entries(s.turrets)) if (t.hp <= 0) st.deadTurrets.add(tid)
+    }
+  }
 
   const placeholder = { carrier: buildTemplate("carrier", placeholderModel("carrier")), destroyer: buildTemplate("destroyer", placeholderModel("destroyer")) }
   build(placeholder)
@@ -349,12 +475,14 @@ export function createFleet(): FleetView {
       const h = turretHandles.get(`${shipId}/${turretId}`)
       return h ? { yaw: h.yaw, pitch: h.pitch } : null
     },
-    update(camera?: Vector3) { if (camera) cameraPos.copy(camera); sync() },
+    applyStates,
+    update(camera?: Vector3, dt = 0) { clock += Math.max(0, dt); if (camera) cameraPos.copy(camera); sync() },
     dispose() {
       disposed = true
       for (const m of meshes) { m.geometry.dispose(); m.dispose() }
       bodyMaterial.dispose(); liveryMaterial.dispose()
       lights.geometry.dispose(); lightMaterial.dispose()
+      fire.dispose(); scorch.geometry.dispose(); scorchMat.dispose(); scorch.dispose()
       root.removeFromParent()
     },
   }

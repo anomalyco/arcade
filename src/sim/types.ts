@@ -134,6 +134,8 @@ export interface PlayerInfo {
   bot: boolean
   /** Room time when the player may spawn again (after death). */
   respawnAt: number
+  /** When manning a ship turret instead of flying: ship + turret ids. */
+  turret?: { ship: string; turret: string } | null
 }
 
 export interface Projectile {
@@ -202,8 +204,16 @@ export type GameEvent =
   | { type: "lock"; vehicle: string; target: string; locked: boolean }
   | { type: "pulse"; vehicle: string; team: TeamId; position: Vec3; radius: number }
   | { type: "guidance"; missile: number; vehicle: string; target: string; guided: boolean }
+  /** A ship took damage (`by` = player id or null), at a world position. */
+  | { type: "ship-hit"; ship: string; by: string | null; damage: number; position: Vec3; turret?: string }
+  /** A ship turret was knocked out. */
+  | { type: "turret-destroyed"; ship: string; turret: string; by: string | null }
+  /** A ship sank. `team` = the ship's team. */
+  | { type: "ship-sunk"; ship: string; team: TeamId; by: string | null; position: Vec3 }
+  /** Terrain damage: a crater/scorch mark on an island. */
+  | { type: "crater"; position: Vec3; radius: number }
   /** An enemy was spotted (recon look-to-spot or radar pulse); `by` = spotting vehicle, `target` = spotted vehicle. */
   | { type: "spotted"; by: string; team: TeamId; target: string; until: number }
   | { type: "chat"; player: string; text: string }
   | { type: "score"; scores: number[] }
-  | { type: "match-end"; winner: TeamId | null }
+  | { type: "match-end"; winner: TeamId | null; reason?: "carriers-sunk" | "time" | "score" }

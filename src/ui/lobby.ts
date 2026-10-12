@@ -76,6 +76,11 @@ function keyFlightRows(): { title: string; rows: [string, string][] }[] {
       ["Guns · missiles", `${kb("lmb")} · ${kb("rmb")} ${kb("v")}`], ["Flares · ability", `${kb("f")} · ${kb("r")}`],
       ["Switch seat", `${kb("1")} ${kb("2")} · gunners aim with the mouse`],
     ] },
+    { title: "man the guns (fleet strike)", rows: [
+      ["Take a ship gun", `spawn screen → <b>man the guns</b> tab (${kb("g")}) · pause → switch role`],
+      ["Aim · fire", `mouse · ${kb("lmb")} ${kb("space")} — ciws for close range, 5-inch flak for long range`],
+      ["Zoom · free-look", `${kb("wheel")} · hold ${kb("c")} — watch the heat bar, overheated guns pause`],
+    ] },
     { title: "view & comms", rows: [
       ["Free-look · camera", `hold ${kb("c")} · ${kb("t")}`], ["Chat · scores · menu", `${kb("enter")} · ${kb("tab")} · ${kb("esc")}`],
     ] },
@@ -111,6 +116,11 @@ export function controlRows(scheme: ControlScheme = controlScheme()): { title: s
     { title: "combat", rows: [
       ["Guns", `${kb("lmb")} ${kb("space")}`], ["Missiles", `${kb("rmb")} ${kb("v")}`], ["Flares · ability", `${kb("f")} · ${kb("r")}`],
       ["Switch seat", `${kb("1")} ${kb("2")} · gunners aim with the mouse`],
+    ] },
+    { title: "man the guns (fleet strike)", rows: [
+      ["Take a ship gun", `spawn screen → <b>man the guns</b> tab (${kb("g")}) · pause → switch role`],
+      ["Aim · fire", `mouse · ${kb("lmb")} ${kb("space")} — ciws for close range, 5-inch flak for long range`],
+      ["Zoom · free-look", `${kb("wheel")} · hold ${kb("c")} — watch the heat bar, overheated guns pause`],
     ] },
     { title: "view & comms", rows: [
       ["Free-look · camera", `hold ${kb("c")} · ${kb("t")}`], ["Chat · scores · menu", `${kb("enter")} · ${kb("tab")} · ${kb("esc")}`],

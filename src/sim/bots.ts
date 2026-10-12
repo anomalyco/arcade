@@ -4,7 +4,7 @@
 import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "./types"
 import { LAUNCH_LANE_LENGTH, carrierOf, inSafeZone, posedFleet, worldQuery } from "./geography"
 import { GUN_FULL_RANGE, GUN_GIMBAL, ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
-import { AA_RANGE, SHIP_SPECS } from "./fleet"
+import { AA_RANGE, SHIP_SPECS, type Ship } from "./fleet"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
 
 /** Enemies closer than this are visible without being spotted. */
@@ -15,7 +15,20 @@ export const BOT_PULSE_RANGE = 4_000
 /** Helicopters lift vertically off the deck to this altitude (m above sea level) before departing. */
 const HELI_LIFTOFF_ALT = 95
 
-export type BotPhase = "takeoff" | "transit" | "engage" | "defend"
+export type BotPhase = "takeoff" | "transit" | "engage" | "defend" | "strike"
+
+/** Fleet Strike: bot strike runs launch at ≤ this range and break away inside STRIKE_BREAK_RANGE. */
+export const STRIKE_LAUNCH_RANGE = 1_500
+export const STRIKE_BREAK_RANGE = 600
+/** Egress until this far from the target ship before re-attacking. */
+export const STRIKE_REATTACK_RANGE = 2_600
+/** Enemy aircraft this close to an own ship pull strikers back to defend. */
+export const DEFEND_FLEET_RANGE = 3_000
+/** Strikers turn to fight enemy aircraft closer than this. */
+export const STRIKE_SELF_DEFENSE = 1_200
+
+/** Minimal ship status bots need (pass combat's `cs.ships`). */
+export interface BotShipStatus { sunk: boolean }
 
 export interface BotState {
   /** mulberry32 state. */
@@ -58,6 +71,13 @@ export interface BotState {
   /** Smoothed steering/aim direction (human-like lag and overshoot) and the time it was last updated. */
   steer: Vec3
   steerAt: number
+  /** Fleet Strike role for this sortie, current target ship and run phase. */
+  role: "strike" | "fighter"
+  /** Strikers that turn back to defend the fleet when it's raided (rolled per sortie). */
+  defender: boolean
+  strikeShip: string | null
+  strikePhase: "approach" | "egress"
+  strikeUntil: number
 }
 
 interface BotOutputs {
@@ -125,6 +145,11 @@ export function createBotBrain(seed: number, skill?: number): BotBrain {
       gunAimSet: false,
       steer: [0, 0, -1],
       steerAt: -1,
+      role: "fighter",
+      defender: false,
+      strikeShip: null,
+      strikePhase: "approach",
+      strikeUntil: 0,
     },
     out: {
       flight, pilotSeat, gunnerSeat, flightAim, pilotAim, gunnerAim,
@@ -665,6 +690,108 @@ function resetForVehicle(brain: BotBrain, vehicle: VehicleEntity): void {
   s.guideUntil = 0
   s.engagedSince = -1
   s.breakSign = botRandom(brain) < 0.5 ? -1 : 1
+  // Strike role for crews with anti-ship weapons (pilot rockets / lock missiles); the rest fly cover.
+  s.role = hasAntiShip(vehicle.kind, 0) && botRandom(brain) < 0.65 ? "strike" : "fighter"
+  s.defender = botRandom(brain) < 0.35
+  s.strikeShip = null
+  s.strikePhase = "approach"
+  s.strikeUntil = 0
+}
+
+/** Seat has rockets or lock-on missiles (usable against ships). */
+function hasAntiShip(kind: VehicleKind, seat: 0 | 1): boolean {
+  for (const id of VEHICLES[kind].seatWeapons[seat]) {
+    const k = id ? WEAPONS[id].kind : null
+    if (k === "rockets" || k === "missile_lock") return true
+  }
+  return false
+}
+
+/** Nearest enemy ship still afloat (carriers preferred), or null. */
+function pickStrikeShip(team: number, pos: Vec3, ships: Readonly<Record<string, BotShipStatus>> | undefined, preferEscort: boolean): Ship | null {
+  const fleet = posedFleet()
+  let best: Ship | null = null
+  let bestScore = Infinity
+  for (let i = 0; i < fleet.length; i++) {
+    const sh = fleet[i]
+    if (sh.team === team || ships?.[sh.id]?.sunk) continue
+    let score = Math.hypot(sh.position[0] - pos[0], sh.position[2] - pos[2])
+    if ((sh.kind === "carrier") === preferEscort) score *= 1.6
+    if (score < bestScore) { bestScore = score; best = sh }
+  }
+  return best
+}
+
+/** Enemy aircraft threatening our fleet (within DEFEND_FLEET_RANGE of an own ship). */
+function fleetThreatened(team: number, target: VehicleEntity): boolean {
+  const fleet = posedFleet()
+  const p = target.flight.position
+  for (let i = 0; i < fleet.length; i++) {
+    const sh = fleet[i]
+    if (sh.team === team && Math.hypot(sh.position[0] - p[0], sh.position[2] - p[2]) < DEFEND_FLEET_RANGE) return true
+  }
+  return false
+}
+
+/**
+ * Strike run against a ship: approach at low-medium altitude with the nose on the ship (lock / rockets),
+ * launch inside STRIKE_LAUNCH_RANGE, break away inside STRIKE_BREAK_RANGE (or after firing), extend to
+ * STRIKE_REATTACK_RANGE, repeat. Writes the desired nose into `aim`; returns desired throttle.
+ */
+function strike(brain: BotBrain, vehicle: VehicleEntity, ship: Ship, now: number, aim: Vec3, heli: boolean): number {
+  const s = brain.state
+  const o = brain.out
+  const flight = o.flight, seat = o.pilotSeat
+  const fs = vehicle.flight
+  const pos = fs.position
+  const sp = SHIP_SPECS[ship.kind]
+  const tx = ship.position[0] - pos[0], tz = ship.position[2] - pos[2], ty = sp.deckHeight * 0.6 - pos[1]
+  const hd = Math.sqrt(tx * tx + tz * tz)
+  if (s.strikePhase === "egress") {
+    if (hd > STRIKE_REATTACK_RANGE && now >= s.strikeUntil) s.strikePhase = "approach"
+    else {
+      // Extend away, offset to the break side, climbing a little.
+      const c = Math.cos(0.5 * s.breakSign), sn = Math.sin(0.5 * s.breakSign)
+      headingPitch((-tx * c - tz * sn) / hd, (tx * sn - tz * c) / hd, heli ? -0.2 : 0.12, aim)
+      flight.boost = !heli
+      return 1
+    }
+  }
+  if (hd < STRIKE_BREAK_RANGE) {
+    s.strikePhase = "egress"
+    s.strikeUntil = now + 6
+    s.breakSign = botRandom(brain) < 0.5 ? -1 : 1
+    headingPitch(-tx, -tz, 0.1, aim)
+    return 1
+  }
+  const cruiseAlt = heli ? 120 : 380
+  if (hd > STRIKE_LAUNCH_RANGE + 600) {
+    headingPitch(tx, tz, clamp(Math.atan2(cruiseAlt - pos[1], 1_500), -0.3, 0.3), aim)
+    flight.boost = !heli && hd > 4_000
+    return heli ? 0.9 : 1
+  }
+  // Attack leg: nose on the ship's aim point (seeker axis / rocket line).
+  norm(set3(aim, tx, ty, tz))
+  const nose = noseInto(fs.orientation, _nose)
+  const spec = VEHICLES[vehicle.kind]
+  let fired = false
+  for (let slot = 0; slot < 2; slot++) {
+    const id = spec.seatWeapons[0][slot]
+    if (!id) continue
+    const w = WEAPONS[id]
+    const rt = vehicle.weapons[0][slot]
+    if (!weaponReady(rt, now)) continue
+    if (w.kind === "missile_lock" && rt.lock >= 1 && rt.lockTarget?.startsWith("ship:") && now - crewMissileAt(vehicle) > 1.5) fired = true
+    else if (w.kind === "rockets" && hd < 1_100 && angleBetween(nose, aim) < 0.06) fired = true
+    else continue
+    if (slot === 0) seat.firePrimary = true
+    else seat.fireSecondary = true
+    s.lastMissileAt = now
+    ;(vehicle as CrewMemo).botMissileAt = now
+  }
+  if (fired && hd < STRIKE_LAUNCH_RANGE - 200 && botRandom(brain) < 0.05) { s.strikePhase = "egress"; s.strikeUntil = now + 6 }
+  // Slow the attack leg so the seeker has time to lock before the break.
+  return heli ? 0.8 : 0.55
 }
 
 /**
@@ -674,7 +801,7 @@ function resetForVehicle(brain: BotBrain, vehicle: VehicleEntity): void {
  */
 export function botInput(
   brain: BotBrain, bot: PlayerInfo, vehicle: VehicleEntity, vehicles: VehicleEntity[], now: number,
-  missiles?: readonly Missile[], world: WorldQuery = worldQuery,
+  missiles?: readonly Missile[], world: WorldQuery = worldQuery, ships?: Readonly<Record<string, BotShipStatus>>,
 ): { flight?: FlightInput; seat: SeatInput } {
   const o = brain.out
   if (!vehicle.alive || vehicle.flight.crashed || (bot.seat !== 0 && bot.seat !== 1)) {
@@ -686,8 +813,8 @@ export function botInput(
   }
   if (brain.state.vehicleId !== vehicle.id) resetForVehicle(brain, vehicle)
   updateJitter(brain, now)
-  if (bot.seat === 0) return pilotInput(brain, bot, vehicle, vehicles, now, missiles, world)
-  gunnerInput(brain, bot, vehicle, vehicles, now, missiles)
+  if (bot.seat === 0) return pilotInput(brain, bot, vehicle, vehicles, now, missiles, world, ships)
+  gunnerInput(brain, bot, vehicle, vehicles, now, missiles, ships)
   return o.gunner
 }
 
@@ -705,7 +832,7 @@ function pickWaypoint(brain: BotBrain, now: number, heli: boolean, half: number)
 
 function pilotInput(
   brain: BotBrain, bot: PlayerInfo, vehicle: VehicleEntity, vehicles: VehicleEntity[], now: number,
-  missiles: readonly Missile[] | undefined, world: WorldQuery,
+  missiles: readonly Missile[] | undefined, world: WorldQuery, ships?: Readonly<Record<string, BotShipStatus>>,
 ): { flight: FlightInput; seat: SeatInput } {
   const s = brain.state
   const o = brain.out
@@ -766,7 +893,9 @@ function pilotInput(
   const defending = threat !== null && now >= s.threatSeenAt + s.threatDelay
 
   // Taking hits: break off for a few seconds (less often for skilled bots).
-  if (s.lastHp >= 0 && vehicle.hp < s.lastHp - 0.5 && now >= s.evadeCooldownUntil && botRandom(brain) < 1 - 0.5 * s.skill) {
+  // (Pressing a strike run: AA chip damage doesn't make strikers abort.)
+  const pressing = s.phase === "strike" && s.strikePhase === "approach"
+  if (!pressing && s.lastHp >= 0 && vehicle.hp < s.lastHp - 0.5 && now >= s.evadeCooldownUntil && botRandom(brain) < 1 - 0.5 * s.skill) {
     s.evadeUntil = now + 2 + botRandom(brain) * 2
     s.evadeCooldownUntil = s.evadeUntil + 4
     s.breakSign = botRandom(brain) < 0.5 ? -1 : 1
@@ -786,7 +915,20 @@ function pilotInput(
   if (target) claimTarget(target, vehicle.id, now)
   const inOwnSafe = inSafeZone(vehicle.team, pos)
 
-  if (defending && threat) {
+  let striking: Ship | null = null
+  // Fleet Strike: strikers attack enemy ships unless an enemy aircraft is close (self-defense) or threatens our fleet.
+  if (s.role === "strike" && !defending && !evading && !(target && (dist(pos, target.flight.position) < STRIKE_SELF_DEFENSE || (s.defender && fleetThreatened(vehicle.team, target))))) {
+    const cur = s.strikeShip ? posedFleet().find(sh => sh.id === s.strikeShip) ?? null : null
+    striking = cur && !ships?.[cur.id]?.sunk ? cur : pickStrikeShip(vehicle.team, pos, ships, botRandom(brain) < 0.3)
+    s.strikeShip = striking ? striking.id : null
+  }
+
+  if (striking) {
+    s.phase = "strike"
+    desiredThrottle = strike(brain, vehicle, striking, now, aim, heli)
+    if (heli) heliAlt = ground + (s.strikePhase === "egress" ? 150 : 110)
+    lookTarget = null
+  } else if (defending && threat) {
     s.phase = "defend"
     // Beam the missile: turn perpendicular to its line of sight; dive if there's room.
     const lx = pos[0] - threat.position[0], lz = pos[2] - threat.position[2]
@@ -831,8 +973,10 @@ function pilotInput(
   }
   if (s.phase !== "engage") s.engagedSince = -1
 
-  if (s.phase === "engage" && vehicle.kind !== "blackbird") applyJitter(brain, aim)
-  applyAimSafety(aim, pos, vel, world, clearance, lookahead, bot.team, !heli)
+  if ((s.phase === "engage" || s.phase === "strike") && vehicle.kind !== "blackbird") applyJitter(brain, aim, s.phase === "strike" ? 0.4 : 1)
+  // Strike approaches deliberately enter the hostile AA umbrella; everything else avoids it.
+  const runIn = s.phase === "strike" && s.strikePhase === "approach"
+  applyAimSafety(aim, pos, vel, world, runIn ? Math.min(clearance, 60) : clearance, lookahead, runIn ? null : bot.team, !heli)
   if (!heli && speed < spec.stall * 1.3) { desiredThrottle = 1; flight.boost = true }
   return finishPilot(brain, vehicle, aim, heli, desiredThrottle, heliAlt, ground, world, lookTarget)
 }
@@ -985,7 +1129,7 @@ function myScannerMissile(bot: PlayerInfo, vehicle: VehicleEntity, missiles: rea
 
 function gunnerInput(
   brain: BotBrain, bot: PlayerInfo, vehicle: VehicleEntity, vehicles: VehicleEntity[], now: number,
-  missiles: readonly Missile[] | undefined,
+  missiles: readonly Missile[] | undefined, ships?: Readonly<Record<string, BotShipStatus>>,
 ): void {
   const s = brain.state
   const o = brain.out
@@ -1040,7 +1184,28 @@ function gunnerInput(
     s.targetId = target ? target.id : null
     s.retargetAt = now + 0.6 + (1 - s.skill) * 1.5 + botRandom(brain) * 0.4
   }
-  if (!target || !canEngage(target, vehicle.team, now)) return
+  if (!target || !canEngage(target, vehicle.team, now)) {
+    // No air target: put the seeker on the nearest enemy ship in missile range and launch when locked.
+    if (!hasAntiShip(vehicle.kind, 1)) return
+    const ship = pickStrikeShip(vehicle.team, pos, ships, false)
+    if (!ship) return
+    const sx = ship.position[0] - pos[0], sz = ship.position[2] - pos[2]
+    if (Math.hypot(sx, sz) > STRIKE_LAUNCH_RANGE + 300) return
+    norm(set3(aim, sx, SHIP_SPECS[ship.kind].deckHeight * 0.6 - pos[1], sz))
+    smoothSteer(brain, aim, now, nose)
+    for (let slot = 0; slot < 2; slot++) {
+      const id = ids[slot]
+      const rt = vehicle.weapons[1][slot]
+      if (!id || WEAPONS[id].kind !== "missile_lock" || inOwnSafe) continue
+      if (weaponReady(rt, now) && rt.lock >= 1 && rt.lockTarget?.startsWith("ship:") && angleTo(nose, pos, ship.position) < 1.1 && now - crewMissileAt(vehicle) > 1.5) {
+        if (slot === 0) seat.firePrimary = true
+        else seat.fireSecondary = true
+        s.lastMissileAt = now
+        ;(vehicle as CrewMemo).botMissileAt = now
+      }
+    }
+    return
+  }
   claimTarget(target, vehicle.id, now)
   const tp = target.flight.position, tv = target.flight.velocity
   const d = dist(pos, tp)

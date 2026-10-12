@@ -1,6 +1,8 @@
 // Spawn / respawn screen: a numbered aircraft list (same menu language as the main menu) with the selected
 // aircraft's detail on the right, team switch, open seats on teammates' aircraft and the respawn timer.
-import type { RoomConfig } from "../sim/protocol"
+import type { RoomConfig, ShipState } from "../sim/protocol"
+import { activeFleet, SHIP_SPECS } from "../sim/fleet"
+import { shipName, turretName } from "./fleet-names"
 import type { PlayerInfo, SeatIndex, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { VEHICLES, VEHICLE_KINDS, WEAPONS } from "../sim/vehicles"
 import { MenuNav, TEAM_COLORS, TEAM_NAMES, controlsTable, escapeHtml, hintsHtml, type MenuItem } from "./lobby"
@@ -28,6 +30,8 @@ export interface SpawnState {
   config: RoomConfig
   room: string
   dead: boolean
+  /** Ship objectives (Fleet Strike): hp, turrets and who mans them. */
+  ships?: ShipState[]
 }
 
 export interface SpawnScreen {
@@ -36,6 +40,8 @@ export interface SpawnScreen {
   hide(): void
   visible(): boolean
   update(s: SpawnState): void
+  /** Open directly on the "man the guns" tab. */
+  showGuns(): void
   dispose(): void
 }
 
@@ -71,6 +77,8 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
   click(): void
   /** Optional rendered aircraft thumbnail (team livery). */
   thumb?(kind: VehicleKind, team: TeamId): Promise<string | null>
+  /** Man one of your fleet's turrets instead of flying. */
+  manTurret?(ship: string, turret: string): void
 }): SpawnScreen {
   const root = document.createElement("div")
   root.className = "spawn"
@@ -79,6 +87,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     <div class="sp-head">
       <div class="crumb">room <b class="code"></b> · <button class="link invite">copy invite link</button></div>
       <h2 class="title">Choose aircraft</h2>
+      <div class="tabs" role="tablist"><button data-tab="air" class="on">aircraft</button><button data-tab="guns">man the guns</button><kbd>g</kbd></div>
       <div class="teams" aria-label="Team"></div>
     </div>
     <nav class="screen sp-list"></nav>
@@ -131,9 +140,67 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     }
   }
 
+  let tab: "air" | "guns" = "air"
+  let ships: ShipState[] = []
+  let players: Map<string, PlayerInfo> = new Map()
+  let gunsKey = ""
+  interface Mount { ship: string; turret: string }
+  let mounts: Mount[] = []
+  const shipHp = (id: string) => ships.find(x => x.id === id)
+  const mountStatus = (m: Mount) => {
+    const st = shipHp(m.ship)
+    const t = st?.turrets[m.turret]
+    if (st?.sunk) return "sunk"
+    if (t && t.hp <= 0) return "destroyed"
+    if (t?.manned) return t.manned === me?.id ? "you" : `${(players.get(t.manned)?.name ?? "?").toLowerCase()}`
+    return "free"
+  }
+  let me: PlayerInfo | null = null
+  const showMount = (m: Mount) => {
+    shownKind = null
+    thumbImg.hidden = true
+    const st = shipHp(m.ship)
+    const pct = st ? Math.round((st.hp / st.maxHp) * 100) : 100
+    const kind = turretName(m.ship, m.turret).split(" · ")[0]
+    info.innerHTML = `<div class="crumb">man the guns — ${escapeHtml(shipName(m.ship))}</div>
+      <h3 class="name">${escapeHtml(turretName(m.ship, m.turret))}</h3>
+      <p class="blurb">${kind === "ciws"
+        ? "Close-in weapon system: a fast rotary cannon. Hose incoming aircraft and missiles at short range."
+        : "5-inch naval gun: slow, heavy flak shells that burst near aircraft at long range."} Mouse aims, left mouse fires, wheel zooms. Unmanned guns are run by the ship's AI.</p>
+      <dl class="stats"><div><dt>ship hull</dt><dd>${pct}<small>%</small></dd><i class="bar"><b style="width:${pct}%"></b></i></div>
+      <div><dt>status</dt><dd>${escapeHtml(mountStatus(m))}</dd></div></dl>`
+  }
+
   let boardItems: MenuItem[] = []
   const launchMeta = () => (canSpawn ? "" : `respawn in ${Math.ceil(wait)} s · `)
+  const buildGuns = (keepSel: boolean) => {
+    const items: MenuItem[] = mounts.map(m => ({
+      label: `${shipName(m.ship).replace(/^\S+ /, "")} · ${turretName(m.ship, m.turret).split(" · ")[1]}`,
+      small: true,
+      value: () => `${turretName(m.ship, m.turret).split(" · ")[0]} · ${mountStatus(m)}`,
+      meta: () => (canSpawn ? "" : `available in ${Math.ceil(wait)} s`),
+      disabled: () => ["sunk", "destroyed"].includes(mountStatus(m)),
+      run: () => { const st = mountStatus(m); if (canSpawn && (st === "free" || st === "you")) actions.manTurret?.(m.ship, m.turret) },
+    }))
+    if (!items.length) items.push({ label: "No guns available", small: true, meta: "your fleet has no mannable turrets left" })
+    items.push({ label: "Leave match", small: true, run: () => actions.leave(), meta: "back to the main menu" })
+    const screen = {
+      size: "mid" as const, items, sel: keepSel ? nav.index : 0,
+      hints: [["↑↓", "select"], ["enter", "man gun"], ["g", "aircraft"], ["←→", "team"]] as [string, string][],
+    }
+    if (nav.depth) nav.replace(screen)
+    else nav.push(screen)
+  }
+  const setTab = (t: "air" | "guns") => {
+    if (t === tab) return
+    tab = t
+    root.querySelectorAll<HTMLElement>("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === t))
+    root.classList.toggle("guns", t === "guns")
+    title.textContent = t === "guns" ? "Man the guns" : "Choose aircraft"
+    if (t === "guns") { buildGuns(false); if (mounts[0]) showMount(mounts[0]) } else { build(false); shownKind = null; showDetail(VEHICLE_KINDS[0]) }
+  }
   const build = (keepSel = true) => {
+    if (tab === "guns") { buildGuns(keepSel); return }
     const items: MenuItem[] = VEHICLE_KINDS.map(k => ({
       label: VEHICLES[k].name,
       value: () => (VEHICLES[k].flight === "heli" ? "vtol" : "jet"),
@@ -149,15 +216,19 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     if (nav.depth) nav.replace(screen)
     else nav.push(screen)
   }
-  nav.onMove = i => { const k = VEHICLE_KINDS[i]; if (k) showDetail(k) }
+  nav.onMove = i => {
+    if (tab === "guns") { if (mounts[i]) showMount(mounts[i]); return }
+    const k = VEHICLE_KINDS[i]; if (k) showDetail(k)
+  }
   nav.onSide = d => { if (teamCount > 1) actions.team(((myTeam + d + teamCount) % teamCount) as TeamId) }
   build(false)
   showDetail(VEHICLE_KINDS[0])
 
   const onKey = (e: KeyboardEvent) => {
     if (root.hidden || (e.target as HTMLElement)?.tagName === "INPUT") return
+    if ((e.key === "g" || e.key === "G") && !e.repeat && actions.manTurret) { actions.click(); setTab(tab === "air" ? "guns" : "air"); return }
     const n = Number(e.key)
-    if (n >= 1 && n <= VEHICLE_KINDS.length && !e.repeat) {
+    if (tab === "air" && n >= 1 && n <= VEHICLE_KINDS.length && !e.repeat) {
       if (canSpawn) { actions.click(); actions.spawn(VEHICLE_KINDS[n - 1]) }
       return
     }
@@ -171,16 +242,19 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     const team = t.closest<HTMLElement>("[data-team]")
     if (team) { actions.click(); actions.team(Number(team.dataset.team) as TeamId); return }
     if (t.closest(".invite")) { actions.click(); actions.invite() }
+    const tb = t.closest<HTMLElement>("[data-tab]")
+    if (tb) { actions.click(); setTab(tb.dataset.tab as "air" | "guns") }
   })
 
   return {
     root,
     show() { root.hidden = false },
+    showGuns() { root.hidden = false; setTab("guns") },
     hide() { root.hidden = true },
     visible: () => !root.hidden,
     update(s) {
       code.textContent = s.room.toLowerCase()
-      const me = s.me
+      me = s.me
       wait = me ? Math.max(0, me.respawnAt - s.time) : 0
       const could = canSpawn
       canSpawn = !!me && wait <= 0
@@ -188,8 +262,19 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
       countdown.classList.toggle("on", !canSpawn)
       const num = String(Math.ceil(wait)).padStart(2, "0")
       if (cdNum.textContent !== num) cdNum.textContent = num
-      const t = s.dead ? "Shot down" : "Choose aircraft"
+      const t = tab === "guns" ? "Man the guns" : s.dead ? "Shot down" : "Choose aircraft"
       if (title.textContent !== t) title.textContent = t
+      players = s.players
+      ships = s.ships ?? []
+      if (!actions.manTurret || !s.ships) root.querySelector<HTMLElement>(".tabs")!.hidden = true
+      else root.querySelector<HTMLElement>(".tabs")!.hidden = false
+      if (me) {
+        const myT = me.team
+        mounts = activeFleet(s.config.teams).filter(sh => sh.team === myT)
+          .flatMap(sh => SHIP_SPECS[sh.kind].turrets.filter(tt => tt.mannable).map(tt => ({ ship: sh.id, turret: tt.id })))
+        const gk = mounts.map(m => `${m.ship}:${m.turret}:${mountStatus(m)}`).join("|") + `:${canSpawn}`
+        if (tab === "guns" && gk !== gunsKey) { gunsKey = gk; buildGuns(true); if (mounts[nav.index]) showMount(mounts[nav.index]) }
+      }
       if (me && me.team !== myTeam) { myTeam = me.team; paintThumb() }
       loadThumbs(myTeam)
       teamCount = s.config.teams
@@ -210,7 +295,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
         }
       }
       const key = seats.slice(0, 4).map(x => `${x.v.id}:${x.seat}:${x.owner}`).join("|")
-      if (key !== boardKey || could !== canSpawn) {
+      if ((key !== boardKey || could !== canSpawn) && tab === "air") {
         boardKey = key
         boardItems = seats.slice(0, 4).map(x => ({
           label: x.owner ? `Join ${x.owner.toLowerCase()}` : `Empty ${VEHICLES[x.v.kind].name}`,

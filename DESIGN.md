@@ -52,6 +52,15 @@ For now **every aircraft has exactly 2 seats**: the pilot flies and fires the fi
 
 ---
 
+## Game Mode: Fleet Strike (current, supersedes TDM)
+- **Objective:** sink the enemy team's carriers. A team loses when all its carriers are sunk. Time limit fallback (10 min): most enemy ship damage dealt wins (kills as tiebreak).
+- Each team's strike group: **2 carriers + 3 destroyers**, orbiting the map center (see `src/sim/fleet.ts`).
+- Ships have HP (carrier 8,000, destroyer 3,000); missiles/rockets are the anti-ship weapons, guns do little hull damage. Turrets have their own HP and can be knocked out (reducing a group's AA).
+- **Progressive damage:** fires, smoke, scorch marks at hit points, list and sink animation; turret knockouts visible.
+- **Terrain damage:** explosions on islands leave persistent craters/scorch (visual + gameplay-neutral for now).
+- **Fleet AA is a threat, not a death ray:** it chips at you, punishes loitering close to ships, but a skilled pass to launch missiles is survivable.
+- **Man the guns:** instead of spawning an aircraft, a player can man any of their fleet's turrets (CIWS / 5-inch) — mouse aims, LMB fires; AI controls unmanned turrets.
+
 ## Multiplayer, Lobbies & Lifecycle
 - **Cloudflare Workers + SQLite Durable Objects:**
   - `RoomDirectory`: Tracks active public lobbies for the Room Browser & Quick Play.

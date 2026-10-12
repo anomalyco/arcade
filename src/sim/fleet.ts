@@ -1,5 +1,5 @@
 // Carrier strike groups (team home bases). Orchestrator-owned contract; dependency-free.
-// Ships are stationary ("dormant") for now. Positions are world space, meters, Y up.
+// Ships orbit the map center (see shipPose) and are destructible objectives. Positions are world space, meters, Y up.
 // Ship local frame: bow = -Z, starboard = +X, up = +Y, origin at the waterline center.
 import type { TeamId, Vec3 } from "./types"
 
@@ -9,12 +9,16 @@ export type TurretKind = "ciws" | "gun"
 export interface ShipTurret {
   id: string
   kind: TurretKind
+  /** Players may take control of this turret (mouse aims, LMB fires). */
+  mannable?: boolean
   /** Mount position in ship-local coordinates. */
   offset: Vec3
 }
 
 export interface ShipSpec {
   kind: ShipKind
+  /** Hit points (ships are destructible objectives). */
+  maxHp: number
   /** Half extents of the hull collision box (ship-local, centered at the waterline). */
   halfLength: number
   halfWidth: number
@@ -28,22 +32,22 @@ export interface ShipSpec {
 
 export const SHIP_SPECS: Record<ShipKind, ShipSpec> = {
   carrier: {
-    kind: "carrier", halfLength: 166, halfWidth: 38, deckHeight: 20, model: "models/carrier.glb",
+    kind: "carrier", maxHp: 8000, halfLength: 166, halfWidth: 38, deckHeight: 20, model: "models/carrier.glb",
     island: { center: [30, 38, 20], half: [8, 18, 22] },
     turrets: [
-      { id: "ciws_bow_port", kind: "ciws", offset: [-36, 18, -150] },
-      { id: "ciws_bow_stbd", kind: "ciws", offset: [36, 18, -140] },
-      { id: "ciws_aft_port", kind: "ciws", offset: [-36, 18, 150] },
-      { id: "ciws_island", kind: "ciws", offset: [38, 58, 10] },
+      { id: "ciws_bow_port", kind: "ciws", mannable: true, offset: [-36, 18, -150] },
+      { id: "ciws_bow_stbd", kind: "ciws", mannable: true, offset: [36, 18, -140] },
+      { id: "ciws_aft_port", kind: "ciws", mannable: true, offset: [-36, 18, 150] },
+      { id: "ciws_island", kind: "ciws", mannable: true, offset: [38, 58, 10] },
     ],
   },
   destroyer: {
-    kind: "destroyer", halfLength: 78, halfWidth: 10, deckHeight: 9, model: "models/destroyer.glb",
+    kind: "destroyer", maxHp: 3000, halfLength: 78, halfWidth: 10, deckHeight: 9, model: "models/destroyer.glb",
     island: { center: [0, 22, -10], half: [8, 13, 16] },
     turrets: [
-      { id: "gun_fwd", kind: "gun", offset: [0, 11, -52] },
-      { id: "ciws_fwd", kind: "ciws", offset: [0, 30, -24] },
-      { id: "ciws_aft", kind: "ciws", offset: [0, 18, 34] },
+      { id: "gun_fwd", kind: "gun", mannable: true, offset: [0, 11, -52] },
+      { id: "ciws_fwd", kind: "ciws", mannable: true, offset: [0, 30, -24] },
+      { id: "ciws_aft", kind: "ciws", mannable: true, offset: [0, 18, 34] },
     ],
   },
 }
@@ -59,6 +63,15 @@ export interface Ship {
 
 /** Anti-air defense: any enemy aircraft inside this range of a turret (with line of sight) is engaged. */
 export const AA_RANGE = 1200
+
+// ── Objective ────────────────────────────────────────────────────────────────
+// A team loses when all of its carriers are sunk. Destroyers are optional targets (they carry AA).
+// Ships take damage from missiles, rockets and guns; damage is shown progressively (fires, smoke,
+// list/sink) and turrets can be knocked out individually.
+/** Turret hit points (knocked out at 0; repaired never during a match). */
+export const TURRET_HP = 600
+/** Per-weapon damage multiplier against ships (hulls are tough; missiles/rockets are the anti-ship tools). */
+export const SHIP_DAMAGE_SCALE: Record<string, number> = { gun: 0.15, rockets: 1.6, missile_lock: 3, missile_scanner: 3.5, aa: 0 }
 /** Seconds of spawn protection after spawning (replaces the old safe-zone domes). */
 export const SPAWN_PROTECTION = 6
 
@@ -77,8 +90,10 @@ export const FLEET_END_DISTANCE = FLEET_ORBIT_RADIUS
 /** @deprecated */
 export const FLEET_APPROACH_TIME = 600
 
+/** Formation offsets (group-local, bow = -Z). Two carriers abreast + three destroyer escorts. */
+const CARRIERS: Array<{ dx: number; dz: number }> = [{ dx: -260, dz: 0 }, { dx: 260, dz: 120 }]
 const ESCORTS: Array<{ dx: number; dz: number }> = [
-  { dx: -500, dz: -450 }, { dx: 500, dz: -450 }, { dx: 0, dz: 650 },
+  { dx: -600, dz: -500 }, { dx: 600, dz: -500 }, { dx: 0, dz: 750 },
 ]
 
 /** t=0 layout. Group center angle θ (position = R·(sin θ, cos θ)); bow points along the direction of travel. */
@@ -89,7 +104,7 @@ export const FLEET: Ship[] = ([0, 1, 2, 3] as TeamId[]).flatMap(team => {
   const c = Math.cos(heading), s = Math.sin(heading)
   const local = (dx: number, dz: number): Vec3 => [cx + dx * c + dz * s, 0, cz - dx * s + dz * c]
   return [
-    { id: `t${team}-carrier`, team, kind: "carrier" as const, position: local(0, 0), heading },
+    ...CARRIERS.map((o, i) => ({ id: i === 0 ? `t${team}-carrier` : `t${team}-carrier${i + 1}`, team, kind: "carrier" as const, position: local(o.dx, o.dz), heading })),
     ...ESCORTS.map((e, i) => ({ id: `t${team}-dd${i + 1}`, team, kind: "destroyer" as const, position: local(e.dx, e.dz), heading })),
   ]
 })

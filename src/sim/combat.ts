@@ -20,8 +20,11 @@ import type {
 } from "./types"
 import { TICK_DT } from "./types"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
-import { fleetState, groundHeight, isWater, posedShip, segmentHitsGround } from "./geography"
-import { AA_RANGE, FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship, type TurretKind } from "./fleet"
+import { deckVelocity, fleetState, groundHeight, isWater, posedFleet, posedShip, segmentHitsGround, shipAt } from "./geography"
+import {
+  AA_RANGE, FLEET, SHIP_DAMAGE_SCALE, SHIP_SPECS, SPAWN_PROTECTION, TURRET_HP, shipToWorld, worldToShip, type Ship, type TurretKind,
+} from "./fleet"
+import type { Crater } from "./protocol"
 
 // ---------------------------------------------------------------------------------------------
 // Tuning
@@ -148,10 +151,21 @@ export interface CombatState {
   turrets?: TurretState[]
   /** Pending 5-inch flak bursts. */
   bursts?: FlakBurst[]
+  /** Fleet Strike: per-ship runtime (hp, turrets, damage decals), keyed by ship id. */
+  ships?: Record<string, ShipRuntime>
+  /** Damage each team has dealt to enemy ships (index = team). */
+  shipDamageBy?: number[]
+  /** Terrain craters this match (capped at MAX_CRATERS). */
+  craters?: Crater[]
+  /** Player-fired 5-inch shells (flak fuse). */
+  shells?: Shell[]
 }
 
 export function createCombatState(): CombatState {
-  return { projectiles: [], missiles: [], flares: [], nextId: 1, turrets: createTurretStates(), bursts: [] }
+  return {
+    projectiles: [], missiles: [], flares: [], nextId: 1, turrets: createTurretStates(), bursts: [],
+    ships: createShips(), shipDamageBy: [0, 0, 0, 0], craters: [], shells: [],
+  }
 }
 
 /** Server-side extras on WeaponRuntime (not needed on the wire). */
@@ -178,6 +192,8 @@ interface VehicleExt extends VehicleEntity {
 interface ProjectileExt extends Projectile {
   /** Seconds the shooter's view of remote aircraft lagged behind the server (lag compensation rewind). */
   rewind?: number
+  /** Fired from a ship turret: that ship's id (its own hull never stops the round). */
+  ship?: string
 }
 
 /** Room engine: call when a vehicle (re)spawns so it gets SPAWN_PROTECTION seconds of immunity. */
@@ -594,7 +610,7 @@ export function applySeatInput(
   // Seekers run continuously, whether or not the trigger is held.
   for (let slot = 0; slot < 2; slot++) {
     const id = kinds[slot]
-    if (id && runtimes[slot] && isLockKind(WEAPONS[id])) updateLock(vehicle, seat, WEAPONS[id], runtimes[slot], aim, vehicles, now, events)
+    if (id && runtimes[slot] && isLockKind(WEAPONS[id])) updateLock(cs, vehicle, seat, WEAPONS[id], runtimes[slot], aim, vehicles, now, events)
   }
 
   if (seat === 0 && RECON_KINDS.has(vehicle.kind)) updateSpotting(vehicle, aim, vehicles, now, events)
@@ -675,32 +691,42 @@ export function viewDelayOf(input: SeatInput): number {
 }
 
 function updateLock(
-  vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime, aim: Vec3 | null,
+  cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime, aim: Vec3 | null,
   vehicles: VehicleEntity[], now: number, events: GameEvent[],
 ): void {
   const axis = seekerAxis(vehicle, seat, spec.id, aim, _lc)
   let target: VehicleEntity | null = null
+  let shipTarget: string | null = null
   if (rt.lockTarget) {
-    const cur = findVehicle(vehicles, rt.lockTarget)
-    // No hysteresis: the lock breaks the moment the target leaves the cone.
-    if (cur && lockValid(vehicle, spec, axis, cur, 1, now) >= 0) target = cur
+    if (rt.lockTarget.startsWith(SHIP_TARGET_PREFIX)) {
+      if (shipLockAngle(cs, vehicle, spec, axis, rt.lockTarget.slice(SHIP_TARGET_PREFIX.length)) >= 0) shipTarget = rt.lockTarget
+    } else {
+      const cur = findVehicle(vehicles, rt.lockTarget)
+      // No hysteresis: the lock breaks the moment the target leaves the cone.
+      if (cur && lockValid(vehicle, spec, axis, cur, 1, now) >= 0) target = cur
+    }
   }
-  if (!target) target = lockCandidate(vehicle, seat, spec.id, aim, vehicles, now)
+  if (!target && !shipTarget) target = lockCandidate(vehicle, seat, spec.id, aim, vehicles, now)
+  // Lock-on missiles can also lock enemy ships (aim point: amidships).
+  if (!target && !shipTarget && spec.kind === "missile_lock") {
+    const sh = shipLockCandidate(cs, vehicle, spec, axis)
+    if (sh) shipTarget = SHIP_TARGET_PREFIX + sh
+  }
 
-  const newId = target ? target.id : null
+  const newId = target ? target.id : shipTarget
   if (newId !== rt.lockTarget) {
     if (rt.lockTarget && rt.lock >= 1) events.push({ type: "lock", vehicle: vehicle.id, target: rt.lockTarget, locked: false })
     rt.lockTarget = newId
     rt.lock = 0
   }
-  if (!target) return
+  if (!newId) return
   const was = rt.lock
   rt.lock = Math.min(1, rt.lock + TICK_DT / (spec.lockTime ?? 1))
   // Float accumulation guard so lockTime/TICK_DT ticks reliably reaches 1.
   if (rt.lock > 1 - 1e-9) rt.lock = 1
-  if (was < 1 && rt.lock >= 1) events.push({ type: "lock", vehicle: vehicle.id, target: target.id, locked: true })
+  if (was < 1 && rt.lock >= 1) events.push({ type: "lock", vehicle: vehicle.id, target: newId, locked: true })
   // Tracking warning for the target: `locked: false` when acquisition starts and again at half lock.
-  else if (was === 0 || (was < 0.5 && rt.lock >= 0.5)) events.push({ type: "lock", vehicle: vehicle.id, target: target.id, locked: false })
+  else if (was === 0 || (was < 0.5 && rt.lock >= 0.5)) events.push({ type: "lock", vehicle: vehicle.id, target: newId, locked: false })
 }
 
 function ownerOf(vehicle: VehicleEntity, seat: SeatIndex): string {
@@ -921,6 +947,7 @@ export function stepCombat(cs: CombatState, vehicles: VehicleEntity[], dt: numbe
   stepProjectiles(cs, vehicles, dt, now, events)
   stepMissiles(cs, vehicles, dt, now, events)
   stepFlares(cs, dt)
+  stepShells(cs, vehicles, dt, now, events)
   stepFleetAA(cs, vehicles, dt, now, events)
 }
 
@@ -967,7 +994,13 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
     _p0[0] = pos[0]; _p0[1] = pos[1]; _p0[2] = pos[2]
     _p1[0] = pos[0] + vel[0] * dt; _p1[1] = pos[1] + vel[1] * dt; _p1[2] = pos[2] + vel[2] * dt
     const hit = sweepRewound(_p0, _p1, p.team, p.vehicle, vehicles, dt, p.rewind ?? 0, gun)
-    const g = segmentHitsGround(_p0, _p1)
+    let g = segmentHitsGround(_p0, _p1)
+    // Turret rounds pass through their own ship's hull.
+    if (p.ship && g !== null) {
+      const own = shipSegmentT(p.ship, _p0, _p1)
+      if (own !== null && Math.abs(own - g) < 1e-4) g = null
+    }
+    const sh = g !== null ? segmentHitsShipEx(cs, _p0, _p1, now, p.ship ?? null) : null
     if (hit.vehicle && (g === null || hit.t <= g)) {
       const target = hit.vehicle
       lerpInto(_p0, _p1, hit.t, _hit)
@@ -977,9 +1010,17 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
       if (!gun) pushExplosion(events, _hit, spec.splash, "air")
       continue
     }
+    if (g !== null && sh && sh.t <= g + 1e-4) {
+      lerpInto(_p0, _p1, sh.t, _hit)
+      const base = WEAPONS[p.weapon].damage * (gun ? gunRangeFactor(p.weapon, p.age) : 1)
+      if (sh.ship.team !== p.team) damageShip(cs, sh.ship.id, base * shipScale(p.weapon), p.owner, p.team, _hit, now, events)
+      if (!gun || p.id % BULLET_IMPACT_EVERY === 0) pushExplosion(events, _hit, gun ? 1 : spec.splash, "ground")
+      continue
+    }
     if (g !== null) {
       lerpInto(_p0, _p1, g, _hit)
       const surface = surfaceAt(_hit)
+      if (!gun && surface === "ground") addCrater(cs, _hit, craterRadius(p.weapon), events)
       if (gun) {
         // Bullets: no splash in water; small splash (30mm) on land. Visual puff for every Nth round.
         if (surface === "ground") splash(_hit, p.weapon, p.owner, p.team, p.vehicle, null, vehicles, now, events)
@@ -1261,6 +1302,12 @@ function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, no
         _tv[0] = flareTarget.velocity[0]; _tv[1] = flareTarget.velocity[1]; _tv[2] = flareTarget.velocity[2]
         ok = true
       } else m.target = null
+    } else if (m.target && m.target.startsWith(SHIP_TARGET_PREFIX)) {
+      if (shipAimPoint(cs, m.target.slice(SHIP_TARGET_PREFIX.length), _tp)) {
+        const dv = deckVelocity(_tp[0], _tp[2])
+        _tv[0] = dv ? dv[0] : 0; _tv[1] = 0; _tv[2] = dv ? dv[2] : 0
+        ok = true
+      } else m.target = null
     } else {
       const t = m.steered ? scannerGuidance(m, vehicles, tune, dt, events) : m.target ? findVehicle(vehicles, m.target) : null
       if (t && t.alive) {
@@ -1290,8 +1337,17 @@ function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, no
       continue
     }
     if (g !== null) {
+      const sh = segmentHitsShipEx(cs, _p0, _p1, now, null)
+      if (sh && sh.t <= g + 1e-4) {
+        lerpInto(_p0, _p1, sh.t, _hit)
+        if (sh.ship.team !== m.team) damageShip(cs, sh.ship.id, shipDamageFor(m.weapon), m.owner, m.team, _hit, now, events)
+        detonate(m, _hit, null, vehicles, now, events, "ground")
+        continue
+      }
       lerpInto(_p0, _p1, g, _hit)
-      detonate(m, _hit, null, vehicles, now, events, surfaceAt(_hit))
+      const surface = surfaceAt(_hit)
+      detonate(m, _hit, null, vehicles, now, events, surface)
+      if (surface === "ground") addCrater(cs, _hit, craterRadius(m.weapon), events)
       continue
     }
     if (flareTarget && dist(_p1, flareTarget.position) < tune.fuse + 4) {
@@ -1338,6 +1394,369 @@ function stepFlares(cs: CombatState, dt: number): void {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Fleet Strike: destructible ships, turret knockouts, craters, ship locks, manned turrets
+// ---------------------------------------------------------------------------------------------
+
+/** Lock target id prefix for ships (`ship:<shipId>`), like FLARE_TARGET_PREFIX. */
+export const SHIP_TARGET_PREFIX = "ship:"
+/** Ship locks use a wider cone (ships are large) — multiplier on the weapon's lockCone. */
+export const SHIP_LOCK_CONE_SCALE = 1.6
+/** Hits within this distance of a turret mount also damage the turret. */
+export const TURRET_HIT_RADIUS = 12
+/** Max damage decals kept per ship (ring buffer). */
+export const SHIP_DAMAGE_POINTS = 16
+/** A sunk ship stops colliding (for our hit tests) this long after sinking. */
+export const SHIP_SINK_COLLISION_TIME = 20
+export const MAX_CRATERS = 300
+/** Player-manned turrets: CIWS fires 20 mm rounds (cannon20 ballistics) at this rate; 5-inch reload. */
+export const MANNED_CIWS_RATE = 20
+export const MANNED_GUN_RELOAD = 1.5
+export const MANNED_GUN_FUSE = 18
+export const SHELL_TTL = 3.5
+
+export interface ShipTurretRuntime { hp: number; manned: string | null; readyAt: number }
+
+export interface ShipRuntime {
+  id: string
+  team: TeamId
+  kind: Ship["kind"]
+  hp: number
+  maxHp: number
+  sunk: boolean
+  sunkAt: number
+  turrets: Record<string, ShipTurretRuntime>
+  /** Ship-local damage points (ring buffer of SHIP_DAMAGE_POINTS). */
+  damage: Vec3[]
+  damageCount: number
+}
+
+export interface Shell {
+  id: number
+  owner: string
+  ship: string
+  team: TeamId
+  position: Vec3
+  velocity: Vec3
+  age: number
+}
+
+function createShips(): Record<string, ShipRuntime> {
+  const out: Record<string, ShipRuntime> = {}
+  for (const sh of FLEET) {
+    const spec = SHIP_SPECS[sh.kind]
+    const turrets: Record<string, ShipTurretRuntime> = {}
+    for (const t of spec.turrets) turrets[t.id] = { hp: TURRET_HP, manned: null, readyAt: 0 }
+    out[sh.id] = { id: sh.id, team: sh.team, kind: sh.kind, hp: spec.maxHp, maxHp: spec.maxHp, sunk: false, sunkAt: 0, turrets, damage: [], damageCount: 0 }
+  }
+  return out
+}
+
+/** Ship runtime (creating the table on old states). */
+export function shipRuntime(cs: CombatState, id: string): ShipRuntime | null {
+  if (!cs.ships) cs.ships = createShips()
+  return cs.ships[id] ?? null
+}
+
+/** Ship damage for a weapon (base damage × SHIP_DAMAGE_SCALE[kind]). */
+export function shipScale(weapon: WeaponId): number {
+  const spec = WEAPONS[weapon]
+  return spec ? SHIP_DAMAGE_SCALE[spec.kind] ?? 0 : 0
+}
+export function shipDamageFor(weapon: WeaponId): number {
+  return (WEAPONS[weapon]?.damage ?? 0) * shipScale(weapon)
+}
+
+/** Crater radius (m) by weapon (rockets small, heavy missiles large). */
+export function craterRadius(weapon: WeaponId | "flak"): number {
+  if (weapon === "flak") return 6
+  return Math.min(15, Math.max(6, (WEAPONS[weapon]?.splash ?? 8) * 0.8))
+}
+
+/** Record a terrain crater (land only: not water, not ship decks). */
+export function addCrater(cs: CombatState, p: Vec3, radius: number, events: GameEvent[]): void {
+  if (!cs.craters) cs.craters = []
+  if (cs.craters.length >= MAX_CRATERS || isWater(p[0], p[2]) || shipAt(p[0], p[2])) return
+  const position: Vec3 = [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10, Math.round(p[2] * 10) / 10]
+  const r = Math.round(radius * 10) / 10
+  cs.craters.push({ position, radius: r })
+  events.push({ type: "crater", position: [position[0], position[1], position[2]], radius: r })
+}
+
+const _sl0: Vec3 = [0, 0, 0]
+const _sl1: Vec3 = [0, 0, 0]
+
+/** Slab test of a ship-local segment against a box; entry fraction or null. */
+function boxT(a: Vec3, b: Vec3, cx: number, cy: number, cz: number, hx: number, hy: number, hz: number): number | null {
+  let t0 = 0, t1 = 1
+  for (let k = 0; k < 3; k++) {
+    const pa = a[k], d = b[k] - pa
+    const c = k === 0 ? cx : k === 1 ? cy : cz, h = k === 0 ? hx : k === 1 ? hy : hz
+    const lo = c - h, hi = c + h
+    if (Math.abs(d) < 1e-9) { if (pa < lo || pa > hi) return null; continue }
+    let u0 = (lo - pa) / d, u1 = (hi - pa) / d
+    if (u0 > u1) { const x = u0; u0 = u1; u1 = x }
+    if (u0 > t0) t0 = u0
+    if (u1 < t1) t1 = u1
+    if (t0 > t1) return null
+  }
+  return t0
+}
+
+function toShipLocal(ship: Ship, p: Vec3, out: Vec3): Vec3 {
+  const dx = p[0] - ship.position[0], dz = p[2] - ship.position[2]
+  const c = Math.cos(ship.heading), s = Math.sin(ship.heading)
+  out[0] = dx * c - dz * s
+  out[1] = p[1] - ship.position[1]
+  out[2] = dx * s + dz * c
+  return out
+}
+
+/** Hull/superstructure hit fraction of segment a→b against one (posed) ship, or null. */
+function shipBoxesT(ship: Ship, a: Vec3, b: Vec3): number | null {
+  const sp = SHIP_SPECS[ship.kind]
+  const r = Math.hypot(sp.halfLength, sp.halfWidth) + 5
+  const P = ship.position
+  if (Math.max(a[0], b[0]) < P[0] - r || Math.min(a[0], b[0]) > P[0] + r || Math.max(a[2], b[2]) < P[2] - r || Math.min(a[2], b[2]) > P[2] + r) return null
+  toShipLocal(ship, a, _sl0)
+  toShipLocal(ship, b, _sl1)
+  const hull = boxT(_sl0, _sl1, 0, (sp.deckHeight - 15) / 2, 0, sp.halfWidth, (sp.deckHeight + 15) / 2, sp.halfLength)
+  const I = sp.island
+  const isl = boxT(_sl0, _sl1, I.center[0], I.center[1], I.center[2], I.half[0], I.half[1], I.half[2])
+  return hull === null ? isl : isl === null ? hull : Math.min(hull, isl)
+}
+
+/** Hit fraction of a→b against ship `id` at its current pose (null if none / unknown). */
+export function shipSegmentT(id: string, a: Vec3, b: Vec3): number | null {
+  const ship = posedShip(id)
+  return ship ? shipBoxesT(ship, a, b) : null
+}
+
+const _shipHit = { t: 2, ship: null as unknown as Ship }
+
+/** First active, still-solid ship hit along a→b (skipping `skip`), or null. Shared result object. */
+export function segmentHitsShipEx(cs: CombatState, a: Vec3, b: Vec3, now: number, skip: string | null): { t: number; ship: Ship } | null {
+  const fleet = posedFleet()
+  let best: Ship | null = null
+  let bestT = 2
+  for (let i = 0; i < fleet.length; i++) {
+    const ship = fleet[i]
+    if (ship.id === skip) continue
+    const rt = shipRuntime(cs, ship.id)
+    if (rt && rt.sunk && now - rt.sunkAt > SHIP_SINK_COLLISION_TIME) continue
+    const t = shipBoxesT(ship, a, b)
+    if (t !== null && t < bestT) { bestT = t; best = ship }
+  }
+  if (!best) return null
+  _shipHit.t = bestT
+  _shipHit.ship = best
+  return _shipHit
+}
+
+/** Missile aim point on ship `id` (amidships, ~60% deck height); false if gone/sunk. */
+export function shipAimPoint(cs: CombatState, id: string, out: Vec3): boolean {
+  const ship = posedShip(id)
+  const rt = shipRuntime(cs, id)
+  if (!ship || !rt || rt.sunk || ship.team >= fleetState().teams) return false
+  out[0] = ship.position[0]
+  out[1] = SHIP_SPECS[ship.kind].deckHeight * 0.6
+  out[2] = ship.position[2]
+  return true
+}
+
+const _sap: Vec3 = [0, 0, 0]
+
+/** Seeker angle to an enemy ship if lockable (in range and cone), else -1. */
+function shipLockAngle(cs: CombatState, vehicle: VehicleEntity, spec: WeaponSpec, axis: Vec3, id: string): number {
+  const ship = posedShip(id)
+  if (!ship || ship.team === vehicle.team || !shipAimPoint(cs, id, _sap)) return -1
+  const ang = seekerAngle(vehicle.flight.position, axis, _sap, _sd)
+  const range = spec.range ?? 2500
+  return _sd.d > range || ang > (spec.lockCone ?? 0.3) * SHIP_LOCK_CONE_SCALE ? -1 : ang
+}
+
+function shipLockCandidate(cs: CombatState, vehicle: VehicleEntity, spec: WeaponSpec, axis: Vec3): string | null {
+  const fleet = posedFleet()
+  let best: string | null = null
+  let bestAng = Infinity
+  for (let i = 0; i < fleet.length; i++) {
+    const ang = shipLockAngle(cs, vehicle, spec, axis, fleet[i].id)
+    if (ang >= 0 && ang < bestAng) { bestAng = ang; best = fleet[i].id }
+  }
+  return best
+}
+
+/**
+ * Damage an enemy ship (amount already scaled for ships). Hits near a turret mount damage that turret too.
+ * Pushes ship-hit / turret-destroyed / ship-sunk. Friendly fire is ignored by callers.
+ */
+export function damageShip(
+  cs: CombatState, id: string, amount: number, by: string | null, byTeam: number, worldPos: Vec3, now: number, events: GameEvent[],
+): void {
+  const rt = shipRuntime(cs, id)
+  const ship = posedShip(id)
+  if (!rt || !ship || rt.sunk || amount <= 0 || rt.team === byTeam) return
+  const dealt = Math.min(amount, rt.hp)
+  rt.hp -= dealt
+  if (!cs.shipDamageBy) cs.shipDamageBy = [0, 0, 0, 0]
+  if (byTeam >= 0 && byTeam < 4) cs.shipDamageBy[byTeam] += dealt
+  const local = toShipLocal(ship, worldPos, [0, 0, 0])
+  const decal: Vec3 = [Math.round(local[0] * 10) / 10, Math.round(local[1] * 10) / 10, Math.round(local[2] * 10) / 10]
+  if (rt.damage.length < SHIP_DAMAGE_POINTS) rt.damage.push(decal)
+  else rt.damage[rt.damageCount % SHIP_DAMAGE_POINTS] = decal
+  rt.damageCount++
+  // Nearest turret mount within TURRET_HIT_RADIUS takes the hit as well.
+  let hitTurret: string | null = null
+  let bestD = TURRET_HIT_RADIUS
+  for (const t of SHIP_SPECS[rt.kind].turrets) {
+    const tr = rt.turrets[t.id]
+    if (!tr || tr.hp <= 0) continue
+    const d = Math.hypot(local[0] - t.offset[0], local[1] - t.offset[1], local[2] - t.offset[2])
+    if (d <= bestD) { bestD = d; hitTurret = t.id }
+  }
+  const e: GameEvent = { type: "ship-hit", ship: id, by, damage: Math.round(dealt * 10) / 10, position: [worldPos[0], worldPos[1], worldPos[2]] }
+  if (hitTurret) e.turret = hitTurret
+  events.push(e)
+  if (hitTurret) {
+    const tr = rt.turrets[hitTurret]
+    tr.hp = Math.max(0, tr.hp - amount)
+    if (tr.hp <= 0) events.push({ type: "turret-destroyed", ship: id, turret: hitTurret, by })
+  }
+  if (rt.hp <= 0) {
+    rt.hp = 0
+    rt.sunk = true
+    rt.sunkAt = now
+    events.push({ type: "ship-sunk", ship: id, team: rt.team, by, position: [ship.position[0], 0, ship.position[2]] })
+  }
+}
+
+/** True if this fleet turret may fire (ship afloat, turret intact). */
+export function turretOperational(cs: CombatState, shipId: string, turretId: string): boolean {
+  const rt = shipRuntime(cs, shipId)
+  if (!rt || rt.sunk) return false
+  const tr = rt.turrets[turretId]
+  return !!tr && tr.hp > 0
+}
+
+const _ta: Vec3 = [0, 0, 0]
+const _tm: Vec3 = [0, 0, 0]
+
+/** Fleet turret by ship + turret id. */
+export function findTurret(shipId: string, turretId: string): AaTurret | null {
+  for (let i = 0; i < AA_TURRETS.length; i++) if (AA_TURRETS[i].ship.id === shipId && AA_TURRETS[i].turret === turretId) return AA_TURRETS[i]
+  return null
+}
+
+/** Muzzle for a manned turret shot along `dir`: the mount, pushed out of the own hull/superstructure. */
+function turretMuzzle(t: AaTurret, dir: Vec3, out: Vec3): Vec3 {
+  out[0] = t.position[0] + dir[0] * 3; out[1] = t.position[1] + dir[1] * 3; out[2] = t.position[2] + dir[2] * 3
+  return out
+}
+
+/**
+ * Player-controlled turret: `input.aim` aims, `firePrimary` fires. CIWS fires real 20 mm rounds (cannon20
+ * ballistics); the 5-inch fires a flak shell with a proximity fuse. `player` is credited for hits/kills.
+ */
+export function applyTurretInput(
+  cs: CombatState, shipId: string, turretId: string, player: string, input: SeatInput, now: number, events: GameEvent[],
+): void {
+  const t = findTurret(shipId, turretId)
+  const rt = shipRuntime(cs, shipId)
+  if (!t || !rt || !turretOperational(cs, shipId, turretId) || t.team >= fleetState().teams) return
+  const tr = rt.turrets[turretId]
+  refreshTurret(t)
+  if (!input.firePrimary || !input.aim || !normalizeInto(input.aim, _ta)) return
+  if (tr.readyAt < now - TICK_DT) tr.readyAt = now
+  if (t.kind === "ciws") {
+    const spec = WEAPONS.cannon20
+    let fired = 0
+    while (tr.readyAt <= now + 1e-9 && fired < 4 && cs.projectiles.length < MAX_PROJECTILES) {
+      const id = cs.nextId++
+      _dir[0] = _ta[0]; _dir[1] = _ta[1]; _dir[2] = _ta[2]
+      applySpread(_dir, 0.004, id)
+      turretMuzzle(t, _dir, _tm)
+      const vx = _dir[0] * spec.speed, vy = _dir[1] * spec.speed, vz = _dir[2] * spec.speed
+      const proj: ProjectileExt = {
+        id, weapon: "cannon20", owner: player, vehicle: shipId, team: t.team,
+        position: [_tm[0] - vx * TICK_DT, _tm[1] - vy * TICK_DT, _tm[2] - vz * TICK_DT], velocity: [vx, vy, vz],
+        age: -TICK_DT, ttl: spec.ttl, ship: shipId,
+      }
+      cs.projectiles.push(proj)
+      tr.readyAt += 1 / MANNED_CIWS_RATE
+      fired++
+    }
+    if (fired && Math.floor(now * 4) !== Math.floor((now - TICK_DT) * 4)) emitAa(t, null, aimPointAlong(t.position, _ta, 800), events)
+  } else if (tr.readyAt <= now + 1e-9) {
+    tr.readyAt = now + MANNED_GUN_RELOAD
+    if (!cs.shells) cs.shells = []
+    turretMuzzle(t, _ta, _tm)
+    cs.shells.push({
+      id: cs.nextId++, owner: player, ship: shipId, team: t.team, position: [_tm[0], _tm[1], _tm[2]],
+      velocity: [_ta[0] * AA_GUN_SHELL_SPEED, _ta[1] * AA_GUN_SHELL_SPEED, _ta[2] * AA_GUN_SHELL_SPEED], age: 0,
+    })
+    emitAa(t, null, aimPointAlong(t.position, _ta, 1500), events)
+  }
+}
+
+const _apa: Vec3 = [0, 0, 0]
+function aimPointAlong(p: Vec3, dir: Vec3, d: number): Vec3 {
+  _apa[0] = p[0] + dir[0] * d; _apa[1] = p[1] + dir[1] * d; _apa[2] = p[2] + dir[2] * d
+  return _apa
+}
+
+/** Player 5-inch shells: fly straight, burst near an enemy aircraft, on impact, or at SHELL_TTL. */
+function stepShells(cs: CombatState, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
+  const list = cs.shells
+  if (!list || !list.length) return
+  let w = 0
+  for (let i = 0; i < list.length; i++) {
+    const sh = list[i]
+    sh.age += dt
+    const pos = sh.position, vel = sh.velocity
+    _p0[0] = pos[0]; _p0[1] = pos[1]; _p0[2] = pos[2]
+    _p1[0] = pos[0] + vel[0] * dt; _p1[1] = pos[1] + vel[1] * dt; _p1[2] = pos[2] + vel[2] * dt
+    // Proximity fuse: closest approach to any enemy aircraft this tick.
+    let burstT = -1
+    for (let k = 0; k < vehicles.length; k++) {
+      const v = vehicles[k]
+      if (!v.alive || v.team === sh.team) continue
+      const t = sweptSphere(_p0, _p1, v.flight.position, v.flight.velocity, dt, MANNED_GUN_FUSE + VEHICLES[v.kind].radius)
+      if (t >= 0 && (burstT < 0 || t < burstT)) burstT = t
+    }
+    let g = segmentHitsGround(_p0, _p1)
+    if (g !== null) {
+      const own = shipSegmentT(sh.ship, _p0, _p1)
+      if (own !== null && Math.abs(own - g) < 1e-4 && sh.age < 0.5) g = null
+    }
+    const impact = g !== null && (burstT < 0 || g < burstT)
+    if (burstT < 0 && !impact && sh.age < SHELL_TTL) {
+      pos[0] = _p1[0]; pos[1] = _p1[1]; pos[2] = _p1[2]
+      list[w++] = sh
+      continue
+    }
+    lerpInto(_p0, _p1, impact ? g! : burstT >= 0 ? burstT : 1, _hit)
+    if (impact) {
+      const shp = segmentHitsShipEx(cs, _p0, _p1, now, sh.ship)
+      if (shp && Math.abs(shp.t - g!) < 1e-3) {
+        if (shp.ship.team !== sh.team) damageShip(cs, shp.ship.id, AA_GUN_DAMAGE * (SHIP_DAMAGE_SCALE.rockets ?? 1), sh.owner, sh.team, _hit, now, events)
+        pushExplosion(events, _hit, AA_GUN_SPLASH * 0.5, "ground")
+      } else {
+        const surface = surfaceAt(_hit)
+        pushExplosion(events, _hit, AA_GUN_SPLASH * 0.5, surface)
+        if (surface === "ground") addCrater(cs, _hit, craterRadius("flak"), events)
+      }
+    } else pushExplosion(events, _hit, AA_GUN_SPLASH * 0.5, "air", true)
+    for (let k = 0; k < vehicles.length; k++) {
+      const v = vehicles[k]
+      if (!v.alive || v.team === sh.team) continue
+      const dd = Math.max(0, dist(_hit, v.flight.position) - VEHICLES[v.kind].radius)
+      if (dd >= AA_GUN_SPLASH) continue
+      dealDamage(v, aaDamage(v, AA_GUN_DAMAGE * (1 - dd / AA_GUN_SPLASH), now), AA_WEAPON, sh.owner, _hit, now, events)
+    }
+  }
+  list.length = w
+}
+
+// ---------------------------------------------------------------------------------------------
 // Fleet anti-air (carrier-group turrets; ships are indestructible and follow geography's fleet state,
 // which the room engine sets every tick from match time — see setFleetState)
 // ---------------------------------------------------------------------------------------------
@@ -1345,35 +1764,50 @@ function stepFlares(cs: CombatState, dt: number): void {
 /** Proposed WeaponId for fleet AA damage/kills (cast locally until types.ts adds it). */
 export const AA_WEAPON = "aa" as WeaponId
 /** Seconds a turret tracks a new target before it starts hitting. */
-export const AA_ACQUIRE = 0.6
+export const AA_ACQUIRE = 1.0
 /** Seconds between target re-scans / line-of-sight checks per turret (staggered across turrets). */
 export const AA_SCAN_INTERVAL = 0.1
 /**
- * CIWS expected damage per second per turret (hit-probability model). Full inside CIWS_FULL_RANGE, ramps to
- * CIWS_OUTER_FACTOR at CIWS_OUTER_RANGE, then thins to CIWS_EDGE_FACTOR at AA_RANGE: skimming the edge is
- * survivable, pushing inside ~600 m is lethal.
+ * CIWS expected damage per second per turret (hit-probability model) against a slow, steady target: full
+ * inside CIWS_FULL_RANGE, falling linearly to 0 at CIWS_MAX_RANGE. Actual damage is further scaled by
+ * aaAccuracy (fast, crossing and maneuvering targets are hard to hit). AA is a threat, not a death ray.
  */
-export const CIWS_DPS = 130
-export const CIWS_FULL_RANGE = 550
-export const CIWS_OUTER_RANGE = 1000
-export const CIWS_OUTER_FACTOR = 0.4
-export const CIWS_EDGE_FACTOR = 0.25
+export const CIWS_DPS = 52
+export const CIWS_FULL_RANGE = 400
+export const CIWS_MAX_RANGE = 900
+/** Accuracy model scales: crossing rate (rad/s), lateral acceleration (m/s²), speed (m/s). */
+export const AA_CROSSING_SCALE = 0.3
+export const AA_MANEUVER_SCALE = 35
+export const AA_SPEED_SCALE = 450
 /** CIWS damage is applied (and `aa` events emitted) in chunks of this many seconds. */
 export const AA_EVENT_INTERVAL = 0.1
 export const CIWS_TRACER_SPEED = 1100
-/** 5-inch gun: shell speed, reload, flak burst damage/radius, dispersion (fraction of range, 1σ-ish). */
+/** 5-inch gun: shell speed, reload, flak burst damage/radius, dispersion (fraction of range, ± uniform). */
 export const AA_GUN_SHELL_SPEED = 800
 export const AA_GUN_RELOAD = 2
-export const AA_GUN_DAMAGE = 100
+export const AA_GUN_DAMAGE = 70
 export const AA_GUN_SPLASH = 25
-export const AA_GUN_DISPERSION = 0.015
+export const AA_GUN_DISPERSION = 0.035
 
-/** CIWS damage factor (0..1) at distance d from the mount; 0 beyond AA_RANGE. */
+/** CIWS damage factor (0..1) at distance d from the mount. */
 export function ciwsFactor(d: number): number {
-  if (d > AA_RANGE) return 0
+  if (d >= CIWS_MAX_RANGE) return 0
   if (d <= CIWS_FULL_RANGE) return 1
-  if (d <= CIWS_OUTER_RANGE) return 1 - (1 - CIWS_OUTER_FACTOR) * (d - CIWS_FULL_RANGE) / (CIWS_OUTER_RANGE - CIWS_FULL_RANGE)
-  return CIWS_OUTER_FACTOR - (CIWS_OUTER_FACTOR - CIWS_EDGE_FACTOR) * (d - CIWS_OUTER_RANGE) / (AA_RANGE - CIWS_OUTER_RANGE)
+  return 1 - (d - CIWS_FULL_RANGE) / (CIWS_MAX_RANGE - CIWS_FULL_RANGE)
+}
+
+/**
+ * Hit-probability multiplier (0..1] for fleet AA against a target at distance `d` with velocity `v` and
+ * lateral acceleration `accel` (m/s², from turret tracking): fast, crossing and jinking targets are hard to hit.
+ */
+export function aaAccuracy(turretPos: Vec3, targetPos: Vec3, v: Vec3, accel: number): number {
+  const dx = targetPos[0] - turretPos[0], dy = targetPos[1] - turretPos[1], dz = targetPos[2] - turretPos[2]
+  const d = Math.max(1, Math.sqrt(dx * dx + dy * dy + dz * dz))
+  const radial = (v[0] * dx + v[1] * dy + v[2] * dz) / d
+  const speed2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2]
+  const crossing = Math.sqrt(Math.max(0, speed2 - radial * radial)) / d
+  const c = crossing / AA_CROSSING_SCALE, a = accel / AA_MANEUVER_SCALE, sp = Math.sqrt(speed2) / AA_SPEED_SCALE
+  return 1 / (1 + c * c + a * a + sp * sp)
 }
 
 /**
@@ -1404,6 +1838,9 @@ export interface AaTurret {
 }
 
 export interface TurretState {
+  /** Target velocity last tick and smoothed lateral acceleration (accuracy model). */
+  lastVel?: Vec3
+  accel?: number
   target: string | null
   /** Seconds tracked on the current target. */
   track: number
@@ -1520,10 +1957,9 @@ function applyAaDamage(t: AaTurret, v: VehicleEntity, amount: number, pos: Vec3,
   if (v.hp <= 0) killVehicle(v, "aa", null, events, t.team)
 }
 
-function emitAa(t: AaTurret, target: VehicleEntity, aim: Vec3, events: GameEvent[]): void {
-  // Proposed GameEvent: { type: "aa"; ship; turret; kind; target; position; aim }.
+function emitAa(t: AaTurret, target: VehicleEntity | null, aim: Vec3, events: GameEvent[]): void {
   events.push({
-    type: "aa", ship: t.ship.id, turret: t.turret, kind: t.kind, target: target.id,
+    type: "aa", ship: t.ship.id, turret: t.turret, kind: t.kind, target: target ? target.id : "",
     position: [t.position[0], t.position[1], t.position[2]], aim: [aim[0], aim[1], aim[2]],
   } as unknown as GameEvent)
 }
@@ -1537,6 +1973,10 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
     const t = AA_TURRETS[i], st = states[i]
     // Only fleets of teams in play exist; their turrets ride the moving ships.
     if (t.offset && t.team >= teams) { st.target = null; st.track = 0; st.pending = 0; continue }
+    // Knocked-out turrets, sunk ships and player-manned turrets aren't AI-controlled.
+    const srt = t.offset ? shipRuntime(cs, t.ship.id) : null
+    const trt = srt ? srt.turrets[t.turret] : null
+    if (srt && (srt.sunk || !trt || trt.hp <= 0 || trt.manned)) { st.target = null; st.track = 0; st.pending = 0; continue }
     refreshTurret(t)
     let target = st.target ? findVehicle(vehicles, st.target) : null
     if (target && !aaEligible(t, target, now)) target = null
@@ -1546,15 +1986,25 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
       if (!target || !turretHasLOS(t, target.flight.position)) target = aaScan(t, vehicles, now)
     }
     const id = target ? target.id : null
-    if (id !== st.target) { st.target = id; st.track = 0; st.pending = 0 }
+    if (id !== st.target) { st.target = id; st.track = 0; st.pending = 0; st.accel = 0; st.lastVel = undefined }
     if (!target) continue
+    const tp = target.flight.position, tv = target.flight.velocity
+    // Track the target's lateral acceleration (jinking), smoothed over ~0.3 s.
+    if (st.lastVel) {
+      const ax = (tv[0] - st.lastVel[0]) / dt, ay = (tv[1] - st.lastVel[1]) / dt, az = (tv[2] - st.lastVel[2]) / dt
+      const sp = Math.max(1e-6, Math.sqrt(tv[0] * tv[0] + tv[1] * tv[1] + tv[2] * tv[2]))
+      const along = (ax * tv[0] + ay * tv[1] + az * tv[2]) / sp
+      const lat = Math.sqrt(Math.max(0, ax * ax + ay * ay + az * az - along * along))
+      st.accel = (st.accel ?? 0) + (Math.min(lat, 200) - (st.accel ?? 0)) * Math.min(1, dt / 0.3)
+      st.lastVel[0] = tv[0]; st.lastVel[1] = tv[1]; st.lastVel[2] = tv[2]
+    } else st.lastVel = [tv[0], tv[1], tv[2]]
     st.track += dt
     if (st.track < AA_ACQUIRE) continue
 
-    const tp = target.flight.position, tv = target.flight.velocity
     const d = dist(t.position, tp)
+    const acc = aaAccuracy(t.position, tp, tv, st.accel ?? 0)
     if (t.kind === "ciws") {
-      st.pending += aaDamage(target, CIWS_DPS * ciwsFactor(d), now) * dt
+      st.pending += aaDamage(target, CIWS_DPS * ciwsFactor(d) * acc, now) * dt
       if (now >= st.nextEventAt) {
         st.nextEventAt = now + AA_EVENT_INTERVAL
         if (leadPoint(t.position, _zero, CIWS_TRACER_SPEED, tp, tv, _lead) < 0) { _lead[0] = tp[0]; _lead[1] = tp[1]; _lead[2] = tp[2] }
@@ -1568,7 +2018,8 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
       const tof = leadPoint(t.position, _zero, AA_GUN_SHELL_SPEED, tp, tv, _lead)
       if (tof < 0) continue
       const seed = (i + 1) * 7919 + Math.floor(now * 60)
-      const spread = AA_GUN_DISPERSION * d
+      // Mostly near misses: dispersion grows with range and with how hard the target is to track.
+      const spread = AA_GUN_DISPERSION * d / Math.sqrt(acc)
       const ox = (hash01(seed, 11) * 2 - 1) * spread, oy = (hash01(seed, 12) * 2 - 1) * spread, oz = (hash01(seed, 13) * 2 - 1) * spread
       emitAa(t, target, _lead, events)
       cs.bursts.push({ at: now + tof, position: [_lead[0] + ox, _lead[1] + oy, _lead[2] + oz], ship: t.ship.id, team: t.team })
@@ -1582,7 +2033,8 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
     const b = bursts[i]
     if (b.at > now) { bursts[w++] = b; continue }
     pushExplosion(events, b.position, AA_GUN_SPLASH * 0.5, "air", true)
-    const t = AA_TURRETS.find(x => x.ship.id === b.ship)!
+    const t = AA_TURRETS.find(x => x.ship.id === b.ship)
+    if (!t) continue
     for (let k = 0; k < vehicles.length; k++) {
       const v = vehicles[k]
       if (!v.alive || v.team === b.team) continue

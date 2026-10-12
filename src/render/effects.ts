@@ -178,6 +178,8 @@ export interface Effects {
   aa(muzzle: Vec3, aim: Vec3, kind: "ciws" | "gun"): void
   /** Flak burst (5-inch AA shell): flash + dark smoke. */
   flak(p: Vec3): void
+  /** Hit on a ship hull: heavy flash, fireball scaled by damage, dark smoke column, sparks. */
+  shipHit(p: Vec3, damage: number): void
   /** Shell/missile/aircraft impact on water: white column + spray, ripple rings and a fading foam patch. */
   splash(p: Vec3, size: number): void
   /** Impact on land: dirt and dust, a small flash and a short fire. */
@@ -512,6 +514,17 @@ export function createEffects(quality: Quality): Effects {
         aaTracer(m, ux * speed, uy * speed, uz * speed, Math.min(3, d / speed), 26, 0.45)
         glow(m[0] + ux * 4, m[1] + uy * 4, m[2] + uz * 4, 0, 0, 0, 0.12, 10, 5, WHITE, 1, FIRE_B, 0, 0, 0)
         smoke(m[0] + ux * 6, m[1] + uy * 6, m[2] + uz * 6, ux * 6, uy * 6 + 1, uz * 6, 1.8, 2, 6, SMOKE_MID, 0, SMOKE_PALE, 0, 0.8, 0.6, 1.5)
+      }
+    },
+
+    shipHit(p, damage) {
+      if (damage < 40) { this.hit(p); return }
+      const s = Math.max(6, Math.min(22, 5 + damage / 60))
+      this.explosion(p, s)
+      const n = Math.round((6 + s * 0.4) * density)
+      for (let i = 0; i < n; i++) {
+        _tmp.copy(SMOKE_BLACK).lerp(SMOKE_DARK, Math.random())
+        smoke(p[0] + rnd(s * 0.4), p[1] + rnd(2), p[2] + rnd(s * 0.4), rnd(2), 6 + Math.random() * 6, rnd(2), 5 + Math.random() * 3, s * 0.5, s * 2.6, _tmp, 0, SMOKE_MID, 0, 0.5, 1.2, 1, 0.25 + i * 0.05)
       }
     },
 

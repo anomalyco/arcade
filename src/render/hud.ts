@@ -2,6 +2,7 @@
 // and only written when it changes, so the HUD never forces layout.
 import { Vector3, type PerspectiveCamera } from "three"
 import type { PlayerInfo, TeamId, Vec3, VehicleEntity, WeaponId } from "../sim/types"
+import type { ShipState } from "../sim/protocol"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/geography"
 import { AA_RANGE, FLEET, type Ship } from "../sim/fleet"
@@ -76,6 +77,10 @@ export interface HudFrame {
   cockpit?: boolean
   /** Gunner optical zoom (1 = none). */
   zoom?: number
+  /** Fleet Strike ship objectives (hp per ship). */
+  ships?: ShipState[]
+  /** Set while the local player mans a ship turret instead of flying. */
+  turret?: { name: string; kind: "ciws" | "gun"; heat: number; overheat: boolean; shipHp: number; turretHp: number | null; pos: Vec3 } | null
   /** Gimbaled gun aim point (world), drawn as the gun circle. */
   gunAim?: Vec3 | null
   /** Nose / boresight point (world), drawn as a small cross. */
@@ -94,6 +99,10 @@ export interface Hud {
   root: HTMLElement
   update(f: HudFrame): void
   killfeed(killer: string | null, killerTeam: TeamId | null, victim: string, victimTeam: TeamId, weapon: string, mine: boolean, bots?: { killer?: boolean; victim?: boolean }): void
+  /** Generic feed line: "<who> <text>" (ship hits, knockouts, sinkings). */
+  feedLine(who: string | null, team: TeamId | null, text: string, mine: boolean): void
+  /** Match result screen (Fleet Strike): victory / defeat / draw with a reason line. */
+  endScreen(result: "victory" | "defeat" | "draw", reason: string, winner: TeamId | null): void
   /** Recon spot confirmation line ("you spotted red fox"). */
   spotted(by: string | null, byTeam: TeamId | null, target: string, targetTeam: TeamId, mine: boolean): void
   chat(name: string, team: TeamId | null, text: string): void
@@ -179,6 +188,7 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-top z">
       <div class="hud-compass"><div class="strip"></div><i class="caret"></i><span class="hdg">000</span></div>
       <div class="hud-score"></div>
+      <div class="hud-obj"></div>
       <div class="hud-center-msg"><div class="protected"></div><div class="warn">Missile</div><div class="freelook">free look</div></div>
     </div>
     <div class="hud-banner z"><div class="t"></div><div class="s"></div></div>
@@ -186,6 +196,8 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-hint z"></div>
     <div class="hud-tape left"><div class="win"><div class="ladder"></div></div><div class="box"><span class="val">0</span></div><div class="lbl">km/h</div><div class="thr"><i></i></div><div class="boost">boost</div></div>
     <div class="hud-tape right"><div class="win"><div class="ladder"></div></div><div class="box"><span class="val">0</span></div><div class="lbl">m</div></div>
+    <div class="hud-tur z"><div class="tn"></div><div class="row"><span class="hl">ship hull</span><span class="v sh"></span></div><div class="bar sb"><i></i></div><div class="row"><span class="hl heatl">heat</span><span class="v ht"></span></div><div class="bar hb"><i></i></div></div>
+    <div class="hud-end"><div class="r"></div><div class="why"></div><div class="nx"></div></div>
     <div class="hud-bottom z">
       <div class="seat"><span class="nm"></span><span class="flares"></span></div>
       <div class="hp"><span class="hl">hull</span><div class="bar"><i class="ghost"></i><i class="fill"></i></div><span class="hv"></span></div>
@@ -234,6 +246,16 @@ export function createHud(parent: HTMLElement): Hud {
   const stripTf = new Slot(strip)
   const hdg = new Slot(q(".hud-compass .hdg"))
   const scoreEl = q(".hud-score")
+  const objEl = q(".hud-obj")
+  let objHtml = ""
+  const turEl = q(".hud-tur")
+  const turName = new Slot(q(".hud-tur .tn"))
+  const turShip = new Slot(q(".hud-tur .sh"))
+  const turShipBar = new Slot(q(".hud-tur .sb i"))
+  const turHeat = new Slot(q(".hud-tur .ht"))
+  const turHeatBar = new Slot(q(".hud-tur .hb i"))
+  const endEl = q(".hud-end")
+  const ownPos = (f: HudFrame): Vec3 | null => f.vehicle ? f.vehicle.flight.position : f.turret ? f.turret.pos : null
   let scoreHtml = ""
   const centerMsg = new Slot(q(".hud-center-msg"))
   const banner = q(".hud-banner")
@@ -433,8 +455,8 @@ export function createHud(parent: HTMLElement): Hud {
       ctx.strokeStyle = "rgba(236,234,228,.85)"
       ctx.stroke()
     }
-    if (f.vehicle) {
-      const p = f.vehicle.flight.position
+    if (ownPos(f)) {
+      const p = ownPos(f)!
       const x = (p[0] + WORLD_HALF) * k, y = (p[2] + WORLD_HALF) * k
       const a = (f.heading * Math.PI) / 180
       ctx.save()
@@ -465,14 +487,14 @@ export function createHud(parent: HTMLElement): Hud {
     const fovH = Math.atan(Math.tan(((f.camera.fov * Math.PI) / 180) / 2) * f.camera.aspect)
     ctx.fillStyle = "rgba(236,234,228,.06)"
     ctx.beginPath(); ctx.moveTo(c, c); ctx.arc(c, c, R, -Math.PI / 2 - fovH, -Math.PI / 2 + fovH); ctx.closePath(); ctx.fill()
-    if (!f.vehicle) return
-    const me = f.vehicle.flight.position
+    const me = ownPos(f)
+    if (!me) return
     const hd = (f.heading * Math.PI) / 180
     const cs = Math.cos(hd), sn = Math.sin(hd)
     const myTeam = f.me?.team ?? -1
     const k = R / RADAR_RANGE
     for (const v of f.vehicles) {
-      if (!v.alive || v.id === f.vehicle.id) continue
+      if (!v.alive || v.id === f.vehicle?.id) continue
       const dx = v.flight.position[0] - me[0], dz = v.flight.position[2] - me[2]
       const d = Math.hypot(dx, dz)
       const friend = v.team === myTeam
@@ -512,7 +534,7 @@ export function createHud(parent: HTMLElement): Hud {
       const cam = f.camera
       lastCam = cam
       _cam.copy(cam.position)
-      const flying = !!f.vehicle && f.vehicle.alive
+      const flying = (!!f.vehicle && f.vehicle.alive) || !!f.turret
       if (f.direct !== isDirect) {
         isDirect = f.direct
       }
@@ -682,7 +704,10 @@ export function createHud(parent: HTMLElement): Hud {
         // Distance only on carriers and on escorts that are close (keeps the fleet from cluttering the centre).
         const label = own || sh.kind === "carrier" || d < AA_RANGE * 1.5
         const km = d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`
-        if ((frame + m.sh.position[0]) % 10 < 1 || m.ds.el.textContent === "" !== !label) m.ds.setText(!label ? "" : own ? `carrier ${km}` : km)
+        const st = f.ships?.find(x => x.id === sh.id)
+        if (st?.sunk) { m.tf.setTransform(HIDDEN); continue }
+        const hpTxt = !own && st ? ` · ${Math.round((st.hp / st.maxHp) * 100)}%` : ""
+        if ((frame + m.sh.position[0]) % 10 < 1 || m.ds.el.textContent === "" !== !label) m.ds.setText(!label ? "" : own ? `carrier ${km}` : `${km}${hpTxt}`)
       }
       if (frame % 4 === 0) {
         const aa = flying && f.aaDist != null
@@ -762,6 +787,17 @@ export function createHud(parent: HTMLElement): Hud {
           root.className = cls + keep
         }
         ping.setText(f.ping > 0 ? `${Math.round(f.ping)} ms` : "")
+        const tu = f.turret
+        root.classList.toggle("on-turret", !!tu)
+        if (tu) {
+          turName.setText(tu.name)
+          turShip.setText(`${Math.round(tu.shipHp * 100)}%`)
+          turShipBar.setTransform(`scaleX(${Math.max(0, tu.shipHp).toFixed(3)})`)
+          turHeat.setText(tu.overheat ? "overheated" : `${Math.round(tu.heat * 100)}%`)
+          turHeatBar.setTransform(`scaleX(${tu.heat.toFixed(3)})`)
+          turEl.classList.toggle("hot", tu.overheat || tu.heat > 0.8)
+          turEl.classList.toggle("dead", tu.turretHp !== null && tu.turretHp <= 0)
+        }
       }
       if (frame % 15 === 0) {
         let teams = ""
@@ -773,6 +809,19 @@ export function createHud(parent: HTMLElement): Hud {
         }
         const html = `<span class="teams">${teams}</span>${timer}`
         if (html !== scoreHtml) { scoreHtml = html; scoreEl.innerHTML = html }
+        // Objective: each team's two carriers as small hull bars (sunk = struck through).
+        let oh = ""
+        if (f.ships?.length) {
+          const byTeam: string[][] = Array.from({ length: f.teams }, () => [])
+          for (const st of f.ships) {
+            const sh = FLEET.find(x => x.id === st.id)
+            if (!sh || sh.kind !== "carrier" || sh.team >= f.teams) continue
+            const pct = Math.max(0, st.hp / st.maxHp)
+            byTeam[sh.team].push(`<i class="cb${st.sunk ? " sunk" : ""}${pct < 0.3 && !st.sunk ? " low" : ""}"><b style="width:${(pct * 100).toFixed(0)}%"></b></i>`)
+          }
+          oh = byTeam.map((bars, t) => `<span class="ot${t === myTeam ? " mine" : ""}" style="--c:${TEAM_TINTS[t]}"><em>${TEAM_NAMES[t].toLowerCase()}</em>${bars.join("")}</span>`).join("")
+        }
+        if (oh !== objHtml) { objHtml = oh; objEl.innerHTML = oh }
       }
       const now = performance.now()
       if (flying && now - lastMap > 120) { lastMap = now; drawMap(f); drawRadar(f) }
@@ -790,6 +839,23 @@ export function createHud(parent: HTMLElement): Hud {
       setTimeout(() => row.classList.add("out"), 6500)
       setTimeout(() => row.remove(), 7200)
       while (feed.childElementCount > 6) feed.firstElementChild!.remove()
+    },
+
+    feedLine(who, team, text, mine) {
+      const row = el("div", mine ? "mine" : "", feed)
+      row.innerHTML = `${who ? `<b style="color:${TEAM_TINTS[team ?? 0]}">${esc(who.toLowerCase())}</b>` : ""}<span class="tx" style="${!who && team !== null ? `color:${TEAM_TINTS[team]}` : ""}">${esc(text)}</span>`
+      setTimeout(() => row.classList.add("out"), 6500)
+      setTimeout(() => row.remove(), 7200)
+      while (feed.childElementCount > 6) feed.firstElementChild!.remove()
+    },
+
+    endScreen(result, reason, winner) {
+      endEl.className = `hud-end show ${result}`
+      endEl.querySelector(".r")!.textContent = result === "victory" ? "Victory" : result === "defeat" ? "Defeat" : "Draw"
+      endEl.querySelector(".why")!.textContent = reason
+      endEl.querySelector(".nx")!.textContent = winner !== null ? `${TEAM_NAMES[winner].toLowerCase()} fleet holds the sea · next match soon` : "next match soon"
+      clearTimeout((endEl as unknown as { _t: number })._t)
+      ;(endEl as unknown as { _t: number })._t = window.setTimeout(() => endEl.classList.remove("show"), 9000)
     },
 
     spotted(by, byTeam, target, targetTeam, mine) {
