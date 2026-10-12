@@ -62,20 +62,27 @@ const kb = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
 
 /** Default (Battlefield) rows. */
 function battlefieldRows(): { title: string; rows: [string, string][] }[] {
+  const turn = settings.mouseX !== "roll"
+  const common: [string, string][] = [
+    ["Throttle · collective (heli)", `${kb("w")} up · ${kb("s")} down (jets: airbrake)`],
+    ["Boost · airbrake / auto-hover", `${kb("shift")} · ${kb("x")}`],
+  ]
   return [
-    { title: "flight · battlefield", rows: [
+    { title: "flight · battlefield", rows: [...(turn ? [
+      ["Turn (nose left / right)", `mouse ←→ · ${kb("←", "→")}`],
       ["Pitch", `mouse ↑↓ (away = nose up) · ${kb("↓")} up ${kb("↑")} down`],
+      ["Roll · strafe (heli)", `${kb("a", "d")} · full roll ${kb("q", "e")}`],
+    ] as [string, string][] : [
       ["Roll", `mouse ←→ · ${kb("q", "e")} · ${kb("←", "→")}`],
+      ["Pitch", `mouse ↑↓ (away = nose up) · ${kb("↓")} up ${kb("↑")} down`],
       ["Yaw / pedals", kb("a", "d")],
-      ["Throttle · collective (heli)", `${kb("w")} up · ${kb("s")} down (jets: airbrake)`],
-      ["Boost · airbrake / auto-hover", `${kb("shift")} · ${kb("x")}`],
-    ] },
+    ] as [string, string][]), ...common] },
     { title: "combat", rows: [
       ["Guns · missiles", `${kb("lmb")} · ${kb("rmb")} ${kb("v")}`], ["Flares · ability", `${kb("space")} ${kb("f")} · ${kb("r")}`],
       ["Switch seat", `${kb("1")} ${kb("2")} · gunners aim with the mouse`],
     ] },
     { title: "view & comms", rows: [
-      ["Free-look · camera", `hold ${kb("c")} · ${kb("t")}`], ["Chat · scores · menu", `${kb("enter")} · ${kb("tab")} · ${kb("esc")}`],
+      ["Free-look (plane holds course) · camera", `hold ${kb("c")} or ${kb("alt")} · ${kb("t")}`], ["Chat · scores · menu", `${kb("enter")} · ${kb("tab")} · ${kb("esc")}`],
     ] },
   ]
 }
@@ -369,7 +376,9 @@ export function settingsScreen(nav: MenuNav, onQuality: (q: Quality) => void, cr
         meta: () => ({ low: "1× resolution · no shadows or post", balanced: "soft shadows · anti-aliasing", high: "full resolution · sharper shadows" })[settings.quality] },
       { label: "Sound", value: () => (settings.muted ? "off" : "on"), adjust: () => updateSettings({ muted: !settings.muted }) },
       { label: "Steering", value: () => CONTROL_SCHEME_LABELS[controlScheme()].replace(/ \(.*\)$/, "").toLowerCase(), adjust: d => setControlScheme(cycle(CONTROL_SCHEMES, controlScheme(), d)),
-        meta: () => ({ keys: "keys fly, mouse aims the guns", point: "mouse turns and pitches the nose", battlefield: "mouse pitch & roll, w/s throttle, a/d yaw", aim: "fly toward a mouse cursor" })[controlScheme()] },
+        meta: () => ({ keys: "keys fly, mouse aims the guns", point: "mouse turns and pitches the nose", battlefield: "mouse turns & pitches, a/d roll, w/s throttle", aim: "fly toward a mouse cursor" })[controlScheme()] },
+      { label: "Mouse X", value: () => (settings.mouseX === "roll" ? "roll" : "turn"), adjust: () => updateSettings({ mouseX: settings.mouseX === "roll" ? "turn" : "roll" }),
+        meta: () => settings.mouseX === "roll" ? "classic bf4: mouse left/right rolls" : "mouse left/right turns the nose (battlefield steering)" },
       { label: "Mouse sensitivity", value: () => settings.sensitivity.toFixed(2), adjust: d => updateSettings({ sensitivity: Math.round(Math.max(0.2, Math.min(3, settings.sensitivity + d * 0.1)) * 100) / 100 }) },
       { label: "Invert mouse Y", value: () => (settings.invertY ? "on" : "off"), adjust: () => updateSettings({ invertY: !settings.invertY }), meta: "on = mouse away moves the nose down" },
       { label: "Controls", run: () => nav.push({ crumb: `${crumb} — controls`, html: controlsTable(), hints: [["esc", "back"]] }), meta: "full key reference" },

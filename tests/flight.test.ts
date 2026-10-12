@@ -124,15 +124,20 @@ function loopTime(kind: VehicleKind) {
 
 describe("jets: direct steering", () => {
   for (const kind of JETS) {
-    test(`${kind}: manual flying has no hidden assists (bank held, rudder doesn't roll)`, () => {
-      const banked = airStart(kind)
-      banked.orientation = quatFromYawPitchRoll(0, 0, 30 * Math.PI / 180)
-      run(banked, input({ throttle: 1 }), 4)
-      expect(Math.abs(flightReadout(banked).roll - 30)).toBeLessThan(3)
-      const rud = airStart(kind)
-      run(rud, input({ yaw: 1, throttle: 1 }), 2)
-      expect(Math.abs(flightReadout(rud).roll)).toBeLessThan(3)
-      expect(Math.abs(angDiff(heading(rud), 0))).toBeGreaterThan(5)
+    test(`${kind}: direct yaw-turn swings the nose with a gentle auto-bank; released wings level`, () => {
+      const s = airStart(kind)
+      settleLevel(s, 5)
+      let maxBank = 0
+      run(s, st => { maxBank = Math.max(maxBank, flightReadout(st).roll); return input({ yaw: 1, throttle: 1 }) }, 2)
+      expect(angDiff(heading(s), 0)).toBeGreaterThan(10)
+      expect(maxBank).toBeGreaterThan(8)
+      expect(maxBank).toBeLessThan(40)
+      run(s, input({ throttle: 1 }), 4)
+      expect(Math.abs(flightReadout(s).roll)).toBeLessThan(3)
+      const inv = airStart(kind)
+      inv.orientation = quatFromYawPitchRoll(0, 0, Math.PI)
+      run(inv, input({ throttle: 1 }), 3)
+      expect(Math.abs(flightReadout(inv).roll)).toBeGreaterThan(170) // inverted is left alone
     })
 
     test(`${kind}: held pitch-up loops`, () => {
@@ -849,4 +854,32 @@ describe("bomb ballistics", () => {
     bombImpactPoint([0, 1000, 0], [0, 0, -150], out, { groundHeight: () => 300, onRunway: () => false, half: 1e6, ceiling: 6000 })
     expect(out[1]).toBe(300)
   })
+})
+
+describe("Battlefield yaw-turn (mouse X)", () => {
+  const BANDS: Record<string, [number, number]> = { fighter: [48, 62], warthog: [38, 50], blackbird: [20, 28], bomber: [9, 14] }
+  for (const kind of [...JETS, "bomber"] as VehicleKind[]) {
+    test(`${kind}: full yaw-turn rate in band, small inputs give proportionally small rates, no sideslip`, () => {
+      const rate = (yaw: number) => {
+        const s = airStart(kind, 3000)
+        settleLevel(s, 10)
+        run(s, input({ yaw, throttle: 1 }), 1)
+        const h0 = heading(s)
+        let total = 0, prev = h0, maxSlip = 0
+        run(s, st => {
+          const h = heading(st); total += angDiff(h, prev); prev = h
+          const v = st.velocity, r = right(st.orientation), f = forward(st.orientation)
+          maxSlip = Math.max(maxSlip, Math.abs(Math.atan2(v[0] * r[0] + v[1] * r[1] + v[2] * r[2], v[0] * f[0] + v[1] * f[1] + v[2] * f[2])) * 180 / Math.PI)
+          return input({ yaw, throttle: 1 })
+        }, 2)
+        return { deg: total / 2, slip: maxSlip }
+      }
+      const full = rate(1), small = rate(0.2)
+      expect(full.deg).toBeGreaterThan(BANDS[kind][0])
+      expect(full.deg).toBeLessThan(BANDS[kind][1])
+      expect(small.deg / full.deg).toBeGreaterThan(0.12)
+      expect(small.deg / full.deg).toBeLessThan(0.3)
+      expect(full.slip).toBeLessThan(3)
+    })
+  }
 })

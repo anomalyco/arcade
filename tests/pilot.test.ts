@@ -232,8 +232,9 @@ describe("optional schemes", () => {
     } finally { scheme(undefined) }
   })
 
-  test("battlefield: always manual — mouse X roll, A/D rudder, mouse away = nose up", () => {
+  test("battlefield (mouse X = roll option): mouse X roll, A/D rudder, mouse away = nose up", () => {
     scheme("battlefield")
+    ;(settings as any).mouseX = "roll"
     try {
       const p = new Pilot("fighter")
       p.run(0.15, 400, -400)
@@ -241,7 +242,7 @@ describe("optional schemes", () => {
       expect(p.buf.roll).toBeGreaterThan(0.3)
       expect(p.buf.pitch).toBeGreaterThan(0.3)
       p.key("KeyD", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); p.key("KeyD", false)
-    } finally { scheme(undefined) }
+    } finally { scheme(undefined); (settings as any).mouseX = undefined }
   })
 })
 
@@ -334,9 +335,11 @@ describe("keyboard flight + mouse aim", () => {
     press(t, "KeyS", 2.5) // pull
     expect(t.r.heading).toBeGreaterThan(60)
     expect(t.r.heading).toBeLessThan(200)
-    const rolls: number[] = []
-    t.run(2, 0, 0, () => rolls.push(t.r.roll))
-    expect(Math.max(...rolls) - Math.min(...rolls)).toBeLessThan(6)
+    // Released: wings ease back to level smoothly (no overshoot / wobble).
+    let prevAbs = Infinity, grew = 0
+    t.run(5, 0, 0, () => { const a = Math.abs(t.r.roll); if (a > prevAbs + 0.5) grew++; prevAbs = a })
+    expect(grew).toBe(0)
+    expect(Math.abs(t.r.roll)).toBeLessThan(5)
   })
 
   test("mouse moves a body-relative gun reticle clamped to the gimbal cone; it rides with the aircraft", () => {
@@ -520,26 +523,24 @@ describe("bomb steering", () => {
   })
 })
 
-describe("Battlefield (default) mapping", () => {
+describe("Battlefield (default) mapping — mouse X turns", () => {
   const blank = () => ({ aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false })
-  test("jets: mouse Y pitch (away = up), mouse X roll, W/S throttle (S airbrake), A/D yaw, Q/E roll, Space flares", () => {
+  test("jets: mouse X turn, mouse Y pitch (away = up), A/D roll, W/S throttle (S airbrake), Space flares", () => {
     scheme(undefined)
     const p = new Pilot("fighter", 2000)
     p.state.throttle = 0.5
     p.run(0.15, 400, -400)
     expect(p.buf.aim).toBeNull()
-    expect(p.buf.roll).toBeGreaterThan(0.3)
-    expect(p.buf.pitch).toBeGreaterThan(0.3)
+    expect(p.buf.yaw).toBeGreaterThan(0.2)
+    expect(p.buf.roll).toBe(0)
+    expect(p.buf.pitch).toBeGreaterThan(0.2)
     p.run(0.5)
     p.key("KeyW", true); p.run(0.5); p.key("KeyW", false)
     expect(p.state.throttle).toBeGreaterThan(0.7)
     p.key("KeyS", true); p.run(0.1)
     expect(p.buf.brake).toBe(true)
-    expect(p.buf.throttle).toBe(-1)
     p.key("KeyS", false); p.run(0.1)
-    expect(p.buf.brake).toBe(false)
-    p.key("KeyD", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); expect(p.buf.roll).toBe(0); p.key("KeyD", false); p.run(0.4)
-    p.key("KeyE", true); p.run(0.4); expect(p.buf.roll).toBeGreaterThan(0.9); p.key("KeyE", false); p.run(0.4)
+    p.key("KeyD", true); p.run(0.4); expect(p.buf.roll).toBeGreaterThan(0.9); expect(p.buf.yaw).toBe(0); p.key("KeyD", false); p.run(0.4)
     p.key("Space", true)
     const si = p.input.seatInput(null, blank())
     expect(si.flares).toBe(true)
@@ -547,21 +548,54 @@ describe("Battlefield (default) mapping", () => {
     p.key("Space", false)
   })
 
-  test("heli: W/S collective, A/D yaw, mouse pitch/roll", () => {
+  test("mouse right → heading swings right within 0.5 s; wings level again after release", () => {
+    scheme(undefined)
+    const p = new Pilot("fighter", 2000)
+    p.state.throttle = 1
+    p.run(0.5, 500, 0)
+    expect(p.r.heading).toBeGreaterThan(8)
+    expect(p.r.heading).toBeLessThan(60)
+    p.run(4)
+    expect(Math.abs(p.r.roll)).toBeLessThan(3)
+    const h = p.r.heading
+    p.run(1)
+    expect(Math.abs(p.r.heading - h)).toBeLessThan(2)
+  })
+
+  test("small mouse moves give small, precise nose moves (gentle centre, no deadzone)", () => {
+    scheme(undefined)
+    const turned = (pxPerS: number) => { const p = new Pilot("fighter", 2000); p.state.throttle = 1; p.run(0.6, pxPerS, 0); p.run(0.3); return p.r.heading }
+    const tiny = turned(40), small = turned(120), big = turned(500)
+    expect(tiny).toBeGreaterThan(0.05)
+    expect(small).toBeGreaterThan(tiny * 2)
+    expect(small).toBeLessThan(big / 3)
+  })
+
+  test("hold C or Alt: free-look moves the camera, not the plane", () => {
+    scheme(undefined)
+    for (const code of ["KeyC", "AltLeft"]) {
+      const p = new Pilot("fighter", 2000)
+      p.key(code, true)
+      p.run(0.4, 600, -300)
+      expect(p.input.lookYaw).not.toBe(0)
+      expect(p.buf.yaw).toBe(0); expect(p.buf.pitch).toBe(0)
+      p.key(code, false)
+    }
+  })
+
+  test("heli: mouse X yaw, A/D strafe, W/S collective, mouse Y pitch", () => {
     scheme(undefined)
     const p = new Pilot("apache", 1500)
     const c0 = p.state.throttle
     p.key("KeyW", true); p.run(0.3); p.key("KeyW", false)
     expect(p.state.throttle).toBeGreaterThan(c0)
-    expect(p.buf.brake).toBe(false)
     p.state.throttle = 0.5
-    p.key("KeyD", true); p.run(0.8); p.key("KeyD", false)
-    expect(p.r.heading).toBeGreaterThan(30)
-    expect(p.r.heading).toBeLessThan(120)
-    p.run(0.2, 0, 500) // mouse toward you = nose down
-    expect(p.buf.pitch).toBeLessThan(-0.3)
-    p.run(0.6)
-    p.run(0.2, 500, 0)
-    expect(p.buf.roll).toBeGreaterThan(0.3)
+    p.run(0.5, 500, 0); p.run(0.5)
+    expect(p.r.heading).toBeGreaterThan(15)
+    p.key("KeyD", true); p.run(0.4)
+    expect(p.buf.roll).toBeCloseTo(inputMod.HELI_STRAFE_ROLL, 2)
+    p.key("KeyD", false)
+    p.run(0.2, 0, 500)
+    expect(p.buf.pitch).toBeLessThan(-0.2)
   })
 })

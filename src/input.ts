@@ -1,7 +1,8 @@
 // Keyboard + mouse input.
-// Default scheme "battlefield" (BF3/BF4-style): mouse Y pitch (away = nose up), mouse X roll, W/S throttle
-//   (S also airbrake for jets), A/D yaw, Q/E roll, Space flares, LMB/RMB fire, hold C free-look.
-//   Heli: W/S collective, A/D yaw (pedals), mouse pitch/roll. The mouse acts like a spring-centred stick.
+// Default scheme "battlefield" (2042-style): mouse X turn (yaw-turn; setting `mouseX: "roll"` = BF4 roll),
+//   mouse Y pitch (away = nose up), A/D roll (heli: strafe), Q/E roll, W/S throttle (S also airbrake for
+//   jets; heli collective), Space flares, LMB/RMB fire, hold C or Alt free-look. The mouse acts like a
+//   spring-centred stick with a gentle centre for fine aim.
 // Optional schemes: "aim" (instructor flies toward a mouse cursor), "keys" (keyboard flight + body-relative
 // gun reticle clamped to the gimbal cone) and "point" (point & turn).
 import type { FlightInput, SeatInput, Vec3 } from "./sim/types"
@@ -27,6 +28,17 @@ export const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = {
 export function controlScheme(): ControlScheme {
   const s = (settings as unknown as { controlScheme?: string }).controlScheme
   return s === "aim" || s === "keys" || s === "point" ? s : "battlefield"
+}
+
+/** Battlefield mouse X: "turn" (default, yaw-turn) or "roll" (classic BF4). Settings key `mouseX`. */
+export type MouseXMode = "turn" | "roll"
+export function mouseXMode(): MouseXMode {
+  return (settings as unknown as { mouseX?: string }).mouseX === "roll" ? "roll" : "turn"
+}
+
+/** Mouse stick response: gentle near centre (slope 0.35) for fine aim, full at full deflection, no deadzone. */
+export function fineCurve(x: number): number {
+  return x * (0.35 + 0.65 * Math.abs(x))
 }
 
 /** Persist a scheme (keeps the legacy `controlStyle` flag in sync). */
@@ -376,6 +388,17 @@ export class Input {
     const roll = clamp(qe + lr, -1, 1)
     const mx = this.mouseXStick.sample(seconds, sens)
     const my = this.mouseYStick.sample(seconds, sens)
+    if (this.mouseMode === "direct" && controlScheme() === "battlefield" && mouseXMode() === "turn") {
+      // Battlefield (2042-style): mouse X turns the nose, mouse Y pitches (light curve near zero for fine
+      // aim); A/D roll (heli: strafe), Q/E full roll, ←/→ turn.
+      const rk = this.rollKeys.sample(seconds, sens, heli ? (qe !== 0 ? qe : ad * HELI_STRAFE_ROLL) : clamp(ad + qe, -1, 1))
+      const yk = this.yawKeys.sample(seconds, sens, lr)
+      const pk = this.pitchKeys.sample(seconds, sens, this.axis(["ArrowUp"], ["ArrowDown"]))
+      this.steerRoll = rk
+      this.steerPitch = clamp(pk + fineCurve(my), -1, 1)
+      this.steerYaw = clamp(yk + fineCurve(mx), -1, 1)
+      return
+    }
     // Heli: A/D strafe = a partial roll (a sideways tilt); Q/E/←→ = full roll (flips). Jets: A/D rudder.
     const r = this.rollKeys.sample(seconds, sens, heli && roll === 0 ? ad * HELI_STRAFE_ROLL : roll)
     const p = this.pitchKeys.sample(seconds, sens, this.axis(["ArrowUp"], ["ArrowDown"])) // ↑ = nose down
@@ -481,6 +504,11 @@ export class Input {
     if (!this.enabled) return
     if (code === "Space" || code.startsWith("Arrow") || code === "AltLeft" || code === "AltRight") e.preventDefault()
     if (code === "KeyZ") this.zoomHeld = down // also a flight key (throttle / collective down)
+    if ((code === "AltLeft" || code === "AltRight") && controlScheme() !== "aim" && controlScheme() !== "point") {
+      // Alt also holds free-look (Battlefield / keyboard flight).
+      if (down !== this.freeLook) { this.freeLook = down; this.lookYaw = this.lookPitch = 0 }
+      return
+    }
     if (code === "KeyC") {
       // Hold to free-look.
       if (down !== this.freeLook) { this.freeLook = down; this.lookYaw = this.lookPitch = 0 }

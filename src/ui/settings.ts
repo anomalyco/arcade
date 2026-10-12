@@ -11,6 +11,8 @@ export interface Settings {
   controlStyle: "direct" | "aim"
   /** Pilot control scheme (see input.ts CONTROL_SCHEMES); default "point". */
   controlScheme?: "battlefield" | "keys" | "point" | "aim"
+  /** Battlefield mouse X: turn (default) or roll (BF4). */
+  mouseX?: "turn" | "roll"
   /** Bots per team for offline practice (0 = free flight). */
   practiceBots?: number
 }
@@ -21,7 +23,7 @@ const listeners: Listener[] = []
 
 function defaults(): Settings {
   const lowEnd = (navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent)
-  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "battlefield", practiceBots: 0 }
+  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "battlefield", mouseX: "turn", practiceBots: 0 }
 }
 
 function load(): Settings {
@@ -33,10 +35,11 @@ function load(): Settings {
   if (base.controlStyle !== "direct" && base.controlStyle !== "aim") base.controlStyle = "aim"
   if (base.controlScheme !== "keys" && base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = "battlefield"
   // Controls v3: keyboard flight + mouse aim became the default — move everyone onto it once.
-  const b = base as Settings & { controlsV3?: boolean; controlsV4?: boolean; controlsV5?: boolean }
-  b.controlsV3 = b.controlsV4 = true
-  // Controls v5: Battlefield-style flight became the default — move everyone onto it once.
-  if (!b.controlsV5) { b.controlsV5 = true; base.controlScheme = "battlefield"; base.controlStyle = "direct" }
+  const b = base as Settings & { controlsV3?: boolean; controlsV4?: boolean; controlsV5?: boolean; controlsV6?: boolean }
+  b.controlsV3 = b.controlsV4 = b.controlsV5 = true
+  if (base.mouseX !== "roll") base.mouseX = "turn"
+  // Controls v6: Battlefield with mouse X = turn became the default — move everyone onto it once.
+  if (!b.controlsV6) { b.controlsV6 = true; base.controlScheme = "battlefield"; base.controlStyle = "direct"; base.mouseX = "turn" }
   base.practiceBots = Math.max(0, Math.min(10, Math.round(Number(base.practiceBots ?? 0)) || 0))
   if (base.quality !== "low" && base.quality !== "balanced" && base.quality !== "high") base.quality = "balanced"
   return base

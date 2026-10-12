@@ -25,9 +25,10 @@ export const CAT_DECK_MIN_HEIGHT = 10
 /** Catapult end speed (× stall) and stroke time (s) from a standstill. */
 export const CAT_END_SPEED = 1.3
 export const CAT_STROKE_TIME = 2.2
-/** Direct mode: wing-leveling gain (1/s), active only below DIRECT_LEVEL_BANK of bank. */
-const DIRECT_LEVEL_GAIN = 0.5
-const DIRECT_LEVEL_BANK = 20 * Math.PI / 180
+/** Extra velocity grip (1/s per rad/s of yaw-turn) so yaw-turns don't slide. */
+const YAW_TURN_GRIP = 25
+/** Direct mode: wing-leveling gain (1/s) when the stick is still and roll released (roughly upright). */
+const DIRECT_LEVEL_GAIN = 1.5
 /** Pitch-authority multiplier while the airbrake is out (airbrake + pull = tight reversal). */
 const AIRBRAKE_TURN_BONUS = 1.25
 /** Ground deceleration (m/s²) with the throttle at idle: parking brake / carrier hold-back. */
@@ -68,6 +69,9 @@ interface JetHandling {
   yawGain: number
   /** How fast velocity aligns with the nose (1/s). Lower = more drift / slide in hard turns. */
   grip: number
+  /** Direct mode yaw-turn: nose swing rate (rad/s) at full yaw input, and the auto-bank (rad) it adds. */
+  yawTurnRate: number
+  yawBank: number
   /** Speed (m/s) at which roll reaches full authority (roll fades below it). */
   rollRef: number
   /** Fraction of gravity felt along the flight path (1 = real climb/dive energy; BF-style < 1). */
@@ -142,7 +146,7 @@ interface HeliHandling {
 const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   fighter: {
     thrust: 20, throttleRate: 0.7,
-    cornerSpeed: 92, cornerRate: 1.1, minRateFrac: 0.35, pushFrac: 0.6, rollRate: 4.0, yawRate: 0.44, rollRef: 70,
+    cornerSpeed: 92, cornerRate: 1.1, minRateFrac: 0.35, pushFrac: 0.6, rollRate: 4.0, yawRate: 0.44, rollRef: 70, yawTurnRate: 0.96, yawBank: 30 * DEG,
     pitchResponse: 11, rollResponse: 15, yawResponse: 8,
     pitchGain: 2.8, rollGain: 4, yawGain: 1.8,
     grip: 8, induced: 0.035, pathGravity: 0.5,
@@ -151,7 +155,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   },
   warthog: {
     thrust: 11, throttleRate: 0.55,
-    cornerSpeed: 70, cornerRate: 1.0, minRateFrac: 0.4, pushFrac: 0.6, rollRate: 2.6, yawRate: 0.44, rollRef: 50,
+    cornerSpeed: 70, cornerRate: 1.0, minRateFrac: 0.4, pushFrac: 0.6, rollRate: 2.6, yawRate: 0.44, rollRef: 50, yawTurnRate: 0.79, yawBank: 28 * DEG,
     pitchResponse: 8, rollResponse: 11, yawResponse: 7,
     pitchGain: 2.2, rollGain: 3, yawGain: 1.7,
     grip: 8, induced: 0.04, pathGravity: 0.85,
@@ -160,7 +164,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   },
   blackbird: {
     thrust: 28, throttleRate: 0.5,
-    cornerSpeed: 140, cornerRate: 0.46, minRateFrac: 0.35, pushFrac: 0.5, rollRate: 1.9, yawRate: 0.26, rollRef: 170,
+    cornerSpeed: 140, cornerRate: 0.46, minRateFrac: 0.35, pushFrac: 0.5, rollRate: 1.9, yawRate: 0.26, rollRef: 170, yawTurnRate: 0.44, yawBank: 22 * DEG,
     pitchResponse: 6, rollResponse: 8, yawResponse: 5,
     pitchGain: 1.5, rollGain: 2, yawGain: 0.9,
     grip: 7, induced: 0.06, pathGravity: 0.4,
@@ -170,7 +174,7 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   // Bomber (B-2): heavy, stable, slow to pitch and roll, wide turns; high, efficient cruise; modest boost.
   bomber: {
     thrust: 9, throttleRate: 0.35,
-    cornerSpeed: 110, cornerRate: 0.23, minRateFrac: 0.4, pushFrac: 0.5, rollRate: 0.8, yawRate: 0.09, rollRef: 100,
+    cornerSpeed: 110, cornerRate: 0.23, minRateFrac: 0.4, pushFrac: 0.5, rollRate: 0.8, yawRate: 0.09, rollRef: 100, yawTurnRate: 0.21, yawBank: 15 * DEG,
     pitchResponse: 3.5, rollResponse: 4.5, yawResponse: 3,
     pitchGain: 0.9, rollGain: 1.1, yawGain: 0.6,
     grip: 6, induced: 0.12, pathGravity: 0.7,
@@ -394,6 +398,8 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
 
   // Desired rates in pilot terms: + pitch up, + yaw right, + roll right (rad/s).
   let pUp = 0, yRight = 0, rRight = 0
+  /** Direct mode yaw-turn rate (rad/s, + right) about a world-up-leaning axis. */
+  let yawTurn = 0
 
   if (s.onGround) {
     // Nosewheel steering + rotation.
@@ -442,15 +448,18 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
       yRight = clamp(yRight, -yawMax, yawMax)
       rRight = clamp(rRight, -rollMax, rollMax)
     } else {
-      // Manual (direct / keyboard) flying: stick deflections are pure body rates — pitch, roll, rudder.
-      // The aircraft holds whatever attitude you leave it in (inverted included); the only help is the
-      // bank-turn coordination below and a very mild wing-leveling when already nearly level.
+      // Direct (Battlefield) flying: pitch is a body rate (sweet-spot turns), roll a body rate (A/D), and
+      // yaw is a "yaw-turn": the nose swings left/right about world-up at yawTurnRate (velocity follows,
+      // no sideslip) with a gentle auto-bank for looks. With the stick still and roll released, the wings
+      // ease level while roughly upright (inverted/knife-edge is left alone).
       pUp = clamp(inPitch * pitchMax * (inPitch < 0 ? 0.75 : 1), -pitchMax, pitchMax)
-      yRight = inYaw * yawMax
       rRight = inRoll * rollMax
-      // Very mild wing-leveling only when nearly level with no roll input (never in big banks/inverted).
-      if (inRoll === 0 && Math.cos(pitchAngle) > 0.7) {
-        rRight = -bank * DIRECT_LEVEL_GAIN * (1 - smoothstep(DIRECT_LEVEL_BANK * 0.6, DIRECT_LEVEL_BANK, Math.abs(bank)))
+      const absBank = Math.abs(bank), upright = absBank < 100 * DEG && Math.cos(pitchAngle) > 0.35
+      if (inYaw !== 0) {
+        yawTurn = inYaw * h.yawTurnRate * Math.max(0.4, Math.min(1, vf / (0.7 * corner)))
+        if (inRoll === 0 && upright) rRight = clamp(h.rollGain * (inYaw * h.yawBank - bank), -rollMax, rollMax)
+      } else if (inRoll === 0 && Math.abs(inPitch) < 0.05 && upright) {
+        rRight = clamp(-bank * DIRECT_LEVEL_GAIN, -rollMax, rollMax)
       }
     }
   }
@@ -462,6 +471,17 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
     const turn = -h.bankTurn * GRAVITY * Math.sin(bank) * Math.max(0, Math.cos(pitchAngle)) * lift / Math.max(speed, stall)
     rotInto(TMP, q, 0, turn, 0, true)
     tx += TMP[0]; ty += TMP[1]; tz += TMP[2]
+    if (yawTurn !== 0) {
+      // World-up while upright (flat, level turn), body-up near knife-edge, world-down when inverted so
+      // "right" stays pilot-relative.
+      const uy = U[1], wy = smoothstep(0, 0.18, Math.abs(uy)), k = 1 - wy
+      const axX = U[0] * k, axY = (uy < 0 ? -wy : wy) + U[1] * k, axZ = U[2] * k
+      const n = Math.sqrt(axX * axX + axY * axY + axZ * axZ)
+      if (n > 1e-6) {
+        rotInto(TMP, q, (axX / n) * -yawTurn, (axY / n) * -yawTurn, (axZ / n) * -yawTurn, true)
+        tx += TMP[0]; ty += TMP[1]; tz += TMP[2]
+      }
+    }
     // Stall: nose falls toward the ground and weathervanes into the airflow.
     const unlift = 1 - lift
     if (unlift > 0) {
@@ -521,7 +541,8 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
   speed = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
   const along = v[0] * F[0] + v[1] * F[1] + v[2] * F[2]
   if (speed > 1 && along > 0) {
-    const k = 1 - Math.exp(-h.grip * (0.2 + 0.8 * lift) * dt)
+    // A yaw-turn drags the velocity round with the nose (no sideslip drift).
+    const k = 1 - Math.exp(-(h.grip + Math.abs(yawTurn) * YAW_TURN_GRIP) * (0.2 + 0.8 * lift) * dt)
     v[0] += (F[0] * speed - v[0]) * k
     v[1] += (F[1] * speed - v[1]) * k
     v[2] += (F[2] * speed - v[2]) * k
