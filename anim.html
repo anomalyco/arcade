@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>BLACKOUT · animation viewer</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      canvas { width: 100%; height: 100%; display: block; }
+      #info { position: fixed; left: 12px; top: 10px; color: #9ab; font: 12px monospace; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="info"></div>
+    <script type="module" src="/src/dev/anim-viewer.ts"></script>
+  </body>
+</html>

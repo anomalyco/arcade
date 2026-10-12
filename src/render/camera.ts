@@ -18,6 +18,11 @@ export class Camera {
   private kz = 0
   private kvx = 0
   private kvz = 0
+  /** Recoil punch: a zoom-out and a roll, both springing back. */
+  private zoom = 0
+  private zv = 0
+  private rollA = 0
+  private rv = 0
   private t = 0
   eye: [number, number, number] = [0, 0, 0]
   viewProj = mat4.identity()
@@ -35,6 +40,12 @@ export class Camera {
   kick(dx: number, dz: number, amount: number): void {
     this.kvx += dx * amount
     this.kvz += dz * amount
+  }
+
+  /** A gunshot's punch: pushes the view out by `amount` metres and rolls it by `rollBy` radians. */
+  punch(amount: number, rollBy: number): void {
+    this.zv += amount * 14
+    this.rv += rollBy * 40
   }
 
   /** Follows a point, leaning slightly toward where you aim. */
@@ -56,6 +67,10 @@ export class Camera {
     this.kvz += (-kSpring * this.kz - damp * this.kvz) * dt
     this.kx += this.kvx * dt
     this.kz += this.kvz * dt
+    this.zv += (-400 * this.zoom - 26 * this.zv) * dt
+    this.zoom += this.zv * dt
+    this.rv += (-500 * this.rollA - 30 * this.rv) * dt
+    this.rollA += this.rv * dt
   }
 
   update(aspect: number): Float32Array {
@@ -63,12 +78,39 @@ export class Camera {
     const jx = s * (Math.sin(this.t * 71) + Math.sin(this.t * 43) * 0.5) * 0.12 + this.kx
     const jz = s * (Math.cos(this.t * 59) + Math.cos(this.t * 37) * 0.5) * 0.12 + this.kz
     const target = [this.x + jx, 0, this.z + jz]
-    const h = Math.cos(this.pitch) * this.dist
-    this.eye = [target[0]!, Math.sin(this.pitch) * this.dist, target[2]! + h]
-    const view = mat4.lookAt(this.eye, target, [0, 1, 0])
+    const dist = this.dist + this.zoom
+    const h = Math.cos(this.pitch) * dist
+    this.eye = [target[0]!, Math.sin(this.pitch) * dist, target[2]! + h]
+    const view = mat4.lookAt(this.eye, target, [Math.sin(this.rollA), Math.cos(this.rollA), 0])
     const proj = mat4.perspective(this.fov, aspect, 2, 400)
     this.viewProj = mat4.multiply(proj, view)
     return this.viewProj as Float32Array
+  }
+
+  /** Plan-space bounds of what the screen shows between the floor and the wall tops, from the last update. */
+  groundRect(top = 2.8): [number, number, number, number] {
+    const inv = mat4.inverse(this.viewProj)
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    for (const nx of [-1, 1])
+      for (const ny of [-1, 1]) {
+        const a = vec4.transformMat4([nx, ny, 0, 1], inv)
+        const b = vec4.transformMat4([nx, ny, 1, 1], inv)
+        for (const h of [0, top]) {
+          const ay = a[1]! / a[3]!
+          const by = b[1]! / b[3]!
+          const t = (h - ay) / (by - ay || 1e-6)
+          const x = a[0]! / a[3]! + (b[0]! / b[3]! - a[0]! / a[3]!) * t
+          const z = a[2]! / a[3]! + (b[2]! / b[3]! - a[2]! / a[3]!) * t
+          x0 = Math.min(x0, x)
+          x1 = Math.max(x1, x)
+          y0 = Math.min(y0, z)
+          y1 = Math.max(y1, z)
+        }
+      }
+    return [x0, y0, x1, y1]
   }
 
   /** World point to CSS pixels. */
