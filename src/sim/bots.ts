@@ -3,7 +3,7 @@
 // Hot path is allocation-free: scratch vectors are module-level and outputs are reused per brain.
 import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "./types"
 import { LAUNCH_LANE_LENGTH, carrierOf, inSafeZone, posedFleet, worldQuery } from "./geography"
-import { ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
+import { GUN_FULL_RANGE, ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
 import { AA_RANGE, SHIP_SPECS } from "./fleet"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
 
@@ -81,7 +81,9 @@ export interface BotBrain {
 }
 
 function emptySeat(aim: Vec3): SeatInput {
-  return { aim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
+  // Bots see the authoritative state directly: no lag-compensation rewind (proposed SeatInput.viewDelay).
+  const seat: SeatInput & { viewDelay: number } = { aim, firePrimary: false, fireSecondary: false, flares: false, ability: false, viewDelay: 0 }
+  return seat
 }
 
 export function createBotBrain(seed: number, skill?: number): BotBrain {
@@ -161,6 +163,12 @@ function steerRate(skill: number): number {
 function steerLag(skill: number): number {
   return 0.6 - 0.45 * skill
 }
+/** Missile cadence is shared by the whole crew (pilot + weapons officer bots), stored on the vehicle. */
+interface CrewMemo { botMissileAt?: number }
+function crewMissileAt(v: VehicleEntity): number {
+  return (v as CrewMemo).botMissileAt ?? -1e9
+}
+
 /** Max distinct bot crews hunting the same target. */
 export const MAX_BOTS_PER_TARGET = 2
 const CLAIM_TTL = 1.5
@@ -610,7 +618,7 @@ function weaponReady(rt: { ammo: number; readyAt: number } | undefined, now: num
 
 function effectiveRange(w: WeaponSpec): number {
   switch (w.kind) {
-    case "gun": return Math.min(w.speed * w.ttl * 0.6, 1_300)
+    case "gun": return Math.min(w.speed * w.ttl * 0.8, GUN_FULL_RANGE)
     case "rockets": return Math.min(w.speed * w.ttl * 0.45, 1_200)
     case "missile_lock": return (w.range ?? 2_500) * 0.95
     case "missile_scanner": return (w.range ?? 8_000) * 0.9
@@ -937,10 +945,11 @@ function engage(brain: BotBrain, vehicle: VehicleEntity, target: VehicleEntity, 
       }
     } else if (w.kind === "missile_lock") {
       // Fire-and-forget once the nose seeker has a full lock on a valid enemy.
-      if (rt.lock < 1 || !rt.lockTarget || now - s.lastMissileAt < missileInterval(s.skill)) continue
+      if (rt.lock < 1 || !rt.lockTarget || now - crewMissileAt(vehicle) < missileInterval(s.skill)) continue
       if (slot === 0) seat.firePrimary = true
       else seat.fireSecondary = true
       s.lastMissileAt = now
+      ;(vehicle as CrewMemo).botMissileAt = now
     }
   }
   return throttle
@@ -1049,10 +1058,11 @@ function gunnerInput(
         aimed = true
       }
       // Missiles launch along the nose: only fire when the target is within the missile's turn-off-the-rail reach.
-      if (canFire && weaponReady(rt, now) && rt.lock >= 1 && rt.lockTarget === target.id && noseAngle < (w.kind === "missile_scanner" ? 0.9 : 1.1) && now - s.lastMissileAt > missileInterval(s.skill)) {
+      if (canFire && weaponReady(rt, now) && rt.lock >= 1 && rt.lockTarget === target.id && noseAngle < (w.kind === "missile_scanner" ? 0.9 : 1.1) && now - crewMissileAt(vehicle) > missileInterval(s.skill)) {
         if (slot === 0) seat.firePrimary = true
         else seat.fireSecondary = true
         s.lastMissileAt = now
+        ;(vehicle as CrewMemo).botMissileAt = now
         if (w.kind === "missile_scanner") { s.guideTargetId = target.id; s.guideUntil = now + Math.min(w.ttl, d / w.speed * 2 + 2) }
       }
     }

@@ -133,6 +133,8 @@ class Slot {
 interface Marker { root: HTMLElement; label: Slot; dist: Slot; slot: Slot; tf: Slot; arc: HTMLElement; arcP: number; color: string; used: boolean }
 interface Edge { slot: Slot; tf: Slot; color: string; used: boolean }
 const EDGES = 12
+/** Enemies are only marked inside this range (with line of sight) unless spotted. */
+const ENEMY_VIS_RANGE = 2500
 
 /** Brighter team tints for text/lines on top of the 3D scene (the raw team colours are too dark on sky). */
 /** Lighter tints of the muted team colours, for text and lines over the world. */
@@ -383,6 +385,7 @@ export function createHud(parent: HTMLElement): Hud {
       ctx.save(); ctx.translate(x, y); ctx.rotate(-sh.heading)
       ctx.fillStyle = TEAM_COLORS[sh.team]; ctx.strokeStyle = "rgba(236,234,228,.9)"; ctx.lineWidth = 1
       ctx.beginPath(); ctx.rect(-W, -L, W * 2, L * 2); ctx.fill(); ctx.stroke()
+      if (sh.team === mt && sh.kind === "carrier") { ctx.strokeStyle = "#eceae4"; ctx.lineWidth = 1.2; ctx.strokeRect(-W - 2.5, -L - 2.5, W * 2 + 5, L * 2 + 5) }
       ctx.restore()
     }
     const myTeam = f.me?.team ?? -1
@@ -391,7 +394,7 @@ export function createHud(parent: HTMLElement): Hud {
       if (!v.alive) continue
       if (f.vehicle && v.id === f.vehicle.id) continue
       const spotted = v.spottedUntil > f.time
-      if (v.team !== myTeam && !spotted) continue
+      if (v.team !== myTeam && !spotted && Math.hypot(v.flight.position[0] - (f.vehicle?.flight.position[0] ?? 0), v.flight.position[2] - (f.vehicle?.flight.position[2] ?? 0)) > 1500) continue
       const x = (v.flight.position[0] + WORLD_HALF) * k, y = (v.flight.position[2] + WORLD_HALF) * k
       if (spotted && v.team !== myTeam) { ctx.strokeStyle = "#ff7a2e"; ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.stroke() }
       glyphPath(ctx, v.team, x, y, v.team === myTeam ? 2.6 : 3.2)
@@ -516,13 +519,15 @@ export function createHud(parent: HTMLElement): Hud {
         const friend = v.team === myTeam
         const spotted = !friend && v.spottedUntil > f.time
         const candidate = recon && v.id === spotCand && spotProg > 0
-        if (!friend && !spotted && !candidate && dist > 3500) continue
+        // Enemies: only within visual range with line of sight, unless spotted (spotted ones show through terrain).
+        if (!friend && !spotted && dist > ENEMY_VIS_RANGE) continue
         if (friend && dist > 6000) continue
         if (!friend && !spotted) {
           let o = occlusion.get(v.id)
-          if (!o || f.time - o.at > 0.25) {
+          if (!o || f.time - o.at > 0.2) {
+            // 5 Hz per target, staggered so the checks don't all land on one frame.
             const hit = segmentHitsGround([_cam.x, _cam.y, _cam.z], p)
-            o = { visible: hit === null, at: f.time }
+            o = { visible: hit === null, at: f.time - Math.random() * 0.05 }
             occlusion.set(v.id, o)
           }
           if (!o.visible) continue
@@ -530,7 +535,7 @@ export function createHud(parent: HTMLElement): Hud {
         const onScreen = project(p, cam) && _v.x > -1 && _v.x < 1 && _v.y > -1 && _v.y < 1
         if (!onScreen) {
           // Off-screen enemies (in range or spotted): small chevron on the screen edge, pointing at them.
-          if (friend || ei >= EDGES || dist > 4000 && !spotted) continue
+          if (friend || ei >= EDGES) continue
           _v.set(p[0], p[1], p[2]).applyMatrix4(cam.matrixWorldInverse)
           let ex = _v.x, ey = _v.y
           if (_v.z > 0 && Math.abs(ex) < 1e-3 && Math.abs(ey) < 1e-3) ey = -1
@@ -565,19 +570,25 @@ export function createHud(parent: HTMLElement): Hud {
         }
       }
       for (let i = ei; i < EDGES; i++) if (edges[i].used) { edges[i].used = false; edges[i].tf.setTransform(HIDDEN) }
-      // Fleets: small hull markers with mono distance (enemy fleets within 9 km; own carrier always).
+      // Fleets: small hull markers with mono distance (enemy fleets within 9 km; own carrier when useful).
+      const hpFrac = f.vehicle ? f.vehicle.hp / f.vehicle.maxHp : 1
+      const noMissiles = f.weapons.some(w => WEAPONS[w.id].kind.startsWith("missile")) && f.weapons.every(w => !WEAPONS[w.id].kind.startsWith("missile") || w.ammo === 0)
+      const needHome = hpFrac < 0.3 || noMissiles
       for (const m of shipMk) {
         const sh: Ship = posedShip(m.sh.id) ?? m.sh
         if (sh.team >= f.teams || !flying) { m.tf.setTransform(HIDDEN); continue }
         const own = sh.team === myTeam
         const p: Vec3 = [sh.position[0], 30, sh.position[2]]
         const d = Math.hypot(p[0] - _cam.x, p[1] - _cam.y, p[2] - _cam.z)
-        if ((own && (sh.kind !== "carrier" || d < 1500)) || (!own && d > 9000) || !project(p, cam) || Math.abs(_v.x) > 1 || Math.abs(_v.y) > 1) { m.tf.setTransform(HIDDEN); continue }
+        // Own carrier: only when far (> 3 km) or when you'd want to head home (hull < 30% / no missiles).
+        const wantHome = own && sh.kind === "carrier" && (d > 3000 || needHome)
+        if ((own && !wantHome) || (!own && d > 9000) || !project(p, cam) || Math.abs(_v.x) > 1 || Math.abs(_v.y) > 1) { m.tf.setTransform(HIDDEN); continue }
         m.cls.setClass(`shp${own ? " own" : ""}${!own && d < AA_RANGE ? " hot" : ""}`)
         m.tf.setTransform(`translate3d(${Math.round(sx())}px,${Math.round(sy())}px,0)`)
         // Distance only on carriers and on escorts that are close (keeps the fleet from cluttering the centre).
         const label = own || sh.kind === "carrier" || d < AA_RANGE * 1.5
-        if ((frame + m.sh.position[0]) % 10 < 1 || m.ds.el.textContent === "" !== !label) m.ds.setText(!label ? "" : own ? "home" : d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`)
+        const km = d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`
+        if ((frame + m.sh.position[0]) % 10 < 1 || m.ds.el.textContent === "" !== !label) m.ds.setText(!label ? "" : own ? `carrier ${km}` : km)
       }
       if (frame % 4 === 0) {
         const aa = flying && f.aaDist != null

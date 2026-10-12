@@ -78,6 +78,8 @@ export interface SeatInput {
   flares: boolean
   /** Seat-2 ability (e.g. radar pulse, mark target). */
   ability: boolean
+  /** Seconds the shooter sees remote aircraft behind the server (interp delay + RTT/2), for lag-compensated hits. */
+  viewDelay?: number
 }
 
 export interface WeaponRuntime {
@@ -195,7 +197,7 @@ export type GameEvent =
   | { type: "kill"; victim: string; victimTeam: TeamId; killer: string | null; killerTeam?: TeamId; weapon: WeaponId | "crash" | "aa"; position: Vec3 }
   /** Fleet anti-air fire: `position` = muzzle, `aim` = lead point. ~10/s per firing CIWS, once per gun shot. */
   | { type: "aa"; ship: string; turret: string; kind: "ciws" | "gun"; target: string; position: Vec3; aim: Vec3 }
-  | { type: "explosion"; position: Vec3; size: number }
+  | { type: "explosion"; position: Vec3; size: number; surface?: "water" | "ground" | "air"; kind?: "flak" }
   | { type: "flares"; vehicle: string }
   | { type: "lock"; vehicle: string; target: string; locked: boolean }
   | { type: "pulse"; vehicle: string; team: TeamId; position: Vec3; radius: number }

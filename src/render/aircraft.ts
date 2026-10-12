@@ -646,7 +646,9 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
       const cp = cone.getAttribute("position")
       const colors = new Float32Array(cp.count * 3)
       for (let i = 0; i < cp.count; i++) {
-        const k = Math.pow(1 - (cp.getY(i) + len / 2) / len, 1.8)
+        // Clamp: float error at the apex can give 1 - 1.0000001 < 0, and pow(negative, 1.8) is NaN — a NaN vertex
+        // color makes NaN HDR pixels that bloom smears over the whole frame (black flashes).
+        const k = Math.pow(Math.max(0, 1 - (cp.getY(i) + len / 2) / len), 1.8)
         colors[i * 3] = col.r * k
         colors[i * 3 + 1] = col.g * k
         colors[i * 3 + 2] = col.b * k

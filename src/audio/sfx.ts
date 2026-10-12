@@ -16,8 +16,10 @@ const sweep = (p: AudioParam, from: number, to: number, start: number, dur: numb
 
 const GUN_LOOP = {
   // hold = how long one fire event keeps the loop alive (≈ 2.5 × the event interval).
-  cannon20: { hold: 0.16, release: 0.09, level: 0.5, lp: 1600, lpOwn: 2400, ref: 45 },
-  gau8: { hold: 0.12, release: 0.18, level: 0.75, lp: 1100, lpOwn: 1700, ref: 70 },
+  // Own guns: brighter lowpass (lets the 1–3 kHz crack through) and a higher level so they sit
+  // with the own engine. Remote: the old darker, quieter settings.
+  cannon20: { hold: 0.16, release: 0.09, level: 0.65, levelOwn: 1.3, lp: 1600, lpOwn: 4000, ref: 45 },
+  gau8: { hold: 0.12, release: 0.18, level: 0.975, levelOwn: 1.5, lp: 1100, lpOwn: 3500, ref: 70 },
 } as const
 
 /**
@@ -32,7 +34,7 @@ export function rotaryGun(core: Core, vehicleId: string, weapon: "cannon20" | "g
   if (!h || h.dead) {
     if (!own && !at) return null
     const ctx = core.ctx
-    h = new Held(core, { at: own ? null : at, dest: core.sfxBus, ref: cfg.ref, attack: 0.012, release: cfg.release, level: cfg.level * (own ? 1 : 1.3), vehicleId })
+    h = new Held(core, { at: own ? null : at, dest: core.sfxBus, ref: cfg.ref, attack: 0.012, release: cfg.release, level: own ? cfg.levelOwn : cfg.level, vehicleId })
     const src = ctx.createBufferSource()
     src.buffer = weapon === "gau8" ? core.bank.gau8 : core.bank.vulcan
     src.loop = true
@@ -93,17 +95,27 @@ export function chaingun(core: Core, at: At, own: boolean): void {
   const s = core.shot("chaingun", own ? null : at, { ref: 40, limit: 6 })
   if (!s) return
   const t = s.t + rand(0, 0.008)
-  const k = own ? 1 : 1.2
-  // A round, dull "thud": pitch-dropping body + lowpassed noise, no crack.
-  const o = s.osc("sine", 140, t, t + 0.16)
-  sweep(o.frequency, rand(130, 150), 46, t, 0.11)
+  const k = own ? 1.5 : 1.2
+  // Body: pitch-dropping thump + low-mid punch (100–600 Hz).
+  const o = s.osc("sine", 150, t, t + 0.16)
+  sweep(o.frequency, rand(140, 160), 50, t, 0.11)
   o.connect(s.env(t, 0.003, 0.7 * k, 0.12))
-  const n = s.noise(core.bank.pink, t, t + 0.12)
-  const lp = s.filter("lowpass", rand(900, 1200), 0.6)
-  n.connect(lp).connect(s.env(t, 0.003, 0.35 * k, 0.07))
+  const m = s.noise(core.bank.pink, t, t + 0.12)
+  const mbp = s.filter("bandpass", rand(320, 420), 0.8)
+  m.connect(mbp).connect(s.env(t, 0.003, 0.6 * k, 0.07))
   const b = s.noise(core.bank.brown, t, t + 0.18)
   const blp = s.filter("lowpass", 500)
   b.connect(blp).connect(s.env(t, 0.004, 0.4 * k, 0.13))
+  if (own) {
+    // Crack: a short 1.5–2.5 kHz band transient so our own gun cuts through the engine.
+    const c = s.noise(core.bank.pink, t, t + 0.06)
+    const cbp = s.filter("bandpass", rand(1600, 2300), 1)
+    c.connect(cbp).connect(s.env(t, 0.003, 1.6, 0.035))
+  } else {
+    const n = s.noise(core.bank.pink, t, t + 0.12)
+    const lp = s.filter("lowpass", rand(900, 1200), 0.6)
+    n.connect(lp).connect(s.env(t, 0.003, 0.35 * k, 0.07))
+  }
 }
 
 export function rocket(core: Core, at: At, own: boolean): void {
@@ -203,8 +215,8 @@ export function hitMarker(core: Core): void {
   const s = core.shot("hitmarker", null, { limit: 3, bus: core.uiBus, vary: 0.04 })
   if (!s) return
   const t = s.t
-  s.osc("sine", 1250, t, t + 0.06).connect(s.env(t, 0.003, 0.1, 0.04))
-  s.osc("sine", 620, t, t + 0.06).connect(s.env(t, 0.003, 0.06, 0.045))
+  s.osc("sine", 1700, t, t + 0.06).connect(s.env(t, 0.003, 0.12, 0.035))
+  s.osc("sine", 850, t, t + 0.06).connect(s.env(t, 0.003, 0.06, 0.04))
 }
 
 /** `size`: ~1 = aircraft destroyed; values > 5 are treated as splash radius in meters. */

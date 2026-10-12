@@ -55,12 +55,15 @@ interface Cluster {
   dist: number
   lastWanted: number
   trees: InstancedMesh[] | null
-  /** Tree kind per InstancedMesh in `trees` (for LOD swaps) and whether the low-poly LOD is active. */
-  treeKinds: number[]
-  treeLod: boolean
+  /** Per tree kind: source matrices split each re-plan into full-detail (near) and low-poly (far) instances. */
+  treeSets: TreeSet[]
+  /** Cluster-local camera position of the last near/far split. */
+  treeSplit: [number, number, number]
   treesPending: boolean
   wantTrees: boolean
 }
+
+interface TreeSet { src: Float32Array; count: number; hi: InstancedMesh; lo: InstancedMesh | null }
 
 const SHORE_CHUNK = 64
 
@@ -95,7 +98,7 @@ export class TerrainStreamer {
     this.treeRoot.name = "World · trees"
     for (let cz = 0; cz < CLUSTER_N; cz++) for (let cx = 0; cx < CLUSTER_N; cx++) {
       this.clusters.push({ cx, cz, mesh: null, lod: -1, pending: -1, wantLod: 3, visible: false, dist: Infinity, lastWanted: 0,
-        trees: null, treeKinds: [], treeLod: false, treesPending: false, wantTrees: false })
+        trees: null, treeSets: [], treeSplit: [NaN, 0, 0], treesPending: false, wantTrees: false })
     }
     this.backend = createBackend(r => this.results.push(r))
   }
@@ -162,10 +165,10 @@ export class TerrainStreamer {
       c.wantTrees = d < s.treeRadius && cam.y < 4500
       if (!c.wantTrees && c.trees && d > s.treeRadius + 400) this.dropTrees(c)
       if (c.trees) {
-        // Distant clusters swap to the low-poly tree LOD (hysteresis avoids flicker at the boundary).
-        const lod = c.treeLod ? d > this.treeRes.lodDistance - 80 : d > this.treeRes.lodDistance
-        if (lod !== c.treeLod) this.setTreeLod(c, lod)
-        for (const m of c.trees) { m.visible = c.wantTrees || d < s.treeRadius + 400; trees += m.count }
+        const [x0, z0] = clusterOrigin(c.cx, c.cz)
+        const [sx, sy, sz] = c.treeSplit
+        if (!(Math.hypot(cam.x - x0 - sx, cam.y - sy, cam.z - z0 - sz) < 40)) this.splitTrees(c, cam.x - x0, cam.y, cam.z - z0)
+        for (const m of c.trees) { m.visible = (c.wantTrees || d < s.treeRadius + 400) && m.count > 0; trees += m.count }
       }
       if (c.mesh && !c.visible && this.elapsed - c.lastWanted > 30) {
         this.terrainRoot.remove(c.mesh)
@@ -260,30 +263,54 @@ export class TerrainStreamer {
       if (!c.wantTrees) return
       this.dropTrees(c)
       const meshes: InstancedMesh[] = []
-      c.treeKinds = []
-      c.treeLod = c.dist > this.treeRes.lodDistance
-      for (let k = 0; k < TREE_KINDS; k++) {
-        const count = r.data.counts[k]
-        if (!count) continue
-        c.treeKinds.push(k)
-        const mesh = new InstancedMesh((c.treeLod ? this.treeRes.lodGeometries : this.treeRes.geometries)[k], this.treeRes.material, count)
-        mesh.instanceMatrix = new InstancedBufferAttribute(r.data.matrices[k], 16)
+      c.treeSets = []
+      const make = (geometry: BufferGeometry, count: number, src: Float32Array, copy: boolean) => {
+        const mesh = new InstancedMesh(geometry, this.treeRes.material, count)
+        mesh.instanceMatrix = new InstancedBufferAttribute(src, 16)
         mesh.position.set(x0, 0, z0)
         mesh.matrixAutoUpdate = false
         mesh.updateMatrix()
         mesh.computeBoundingSphere()
         if (mesh.boundingSphere) mesh.boundingSphere.radius += 20
+        // The near/far split rewrites this buffer (bounds above were computed from the full set).
+        if (copy) mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(src.length), 16)
         this.treeRoot.add(mesh)
         meshes.push(mesh)
+        return mesh
+      }
+      for (let k = 0; k < TREE_KINDS; k++) {
+        const count = r.data.counts[k]
+        if (!count) continue
+        const src = r.data.matrices[k]
+        const split = this.treeRes.lodGeometries[k] !== this.treeRes.geometries[k]
+        const hi = make(this.treeRes.geometries[k], count, src, split)
+        const lo = split ? make(this.treeRes.lodGeometries[k], count, src, true) : null
+        c.treeSets.push({ src, count, hi, lo })
       }
       c.trees = meshes
+      c.treeSplit[0] = NaN
+      const cam = this.camera
+      this.splitTrees(c, cam.x - x0, cam.y, cam.z - z0)
     }
   }
 
-  private setTreeLod(c: Cluster, lod: boolean) {
-    c.treeLod = lod
-    const set = lod ? this.treeRes.lodGeometries : this.treeRes.geometries
-    c.trees?.forEach((m, i) => { m.geometry = set[c.treeKinds[i]] })
+  /** Partition a cluster's trees: full detail within `lodDistance` of the camera, low-poly beyond (perf). */
+  private splitTrees(c: Cluster, lx: number, ly: number, lz: number) {
+    c.treeSplit[0] = lx; c.treeSplit[1] = ly; c.treeSplit[2] = lz
+    const L2 = this.treeRes.lodDistance ** 2
+    for (const t of c.treeSets) {
+      if (!t.lo) continue
+      const src = t.src, hiA = t.hi.instanceMatrix.array as Float32Array, loA = t.lo.instanceMatrix.array as Float32Array
+      let nh = 0, nl = 0
+      for (let i = 0; i < t.count; i++) {
+        const o = i * 16
+        const dx = src[o + 12] - lx, dy = src[o + 13] - ly, dz = src[o + 14] - lz
+        if (dx * dx + dy * dy + dz * dz < L2) { hiA.set(src.subarray(o, o + 16), nh * 16); nh++ }
+        else { loA.set(src.subarray(o, o + 16), nl * 16); nl++ }
+      }
+      if (nh !== t.hi.count || nh > 0) { t.hi.count = nh; t.hi.instanceMatrix.needsUpdate = true }
+      if (nl !== t.lo.count || nl > 0) { t.lo.count = nl; t.lo.instanceMatrix.needsUpdate = true }
+    }
   }
 
   private dropTrees(c: Cluster) {

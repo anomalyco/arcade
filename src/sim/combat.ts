@@ -20,7 +20,7 @@ import type {
 } from "./types"
 import { TICK_DT } from "./types"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
-import { fleetState, posedShip, segmentHitsGround } from "./geography"
+import { fleetState, groundHeight, isWater, posedShip, segmentHitsGround } from "./geography"
 import { AA_RANGE, FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship, type TurretKind } from "./fleet"
 
 // ---------------------------------------------------------------------------------------------
@@ -76,6 +76,27 @@ export const MISSILE_TUNING: Partial<Record<WeaponId, MissileTuning>> = {
 export const TURRET_ARCS: Partial<Record<WeaponId, { yaw: number; minEl: number; maxEl: number }>> = {
   chaingun30: { yaw: (110 * Math.PI) / 180, minEl: (-85 * Math.PI) / 180, maxEl: (12 * Math.PI) / 180 },
 }
+
+// --- Guns: lag compensation, hitboxes, range falloff -----------------------------------------
+/**
+ * Default view delay (s) when the room engine doesn't report one: the client renders remote aircraft
+ * ~0.1 s in the past (snapshot interpolation) plus ~half an RTT. Bullets are tested against targets rewound
+ * by the shooter's view delay ("favor the shooter"). Bots pass `viewDelay: 0`.
+ */
+export const VIEW_DELAY_DEFAULT = 0.12
+export const VIEW_DELAY_MAX = 0.3
+/** Ticks of position history kept per vehicle (must cover VIEW_DELAY_MAX + one tick). */
+export const HISTORY_TICKS = 24
+/** Bullet hitbox: fuselage capsule along body Z and wing/rotor capsule along body X, scaled by VEHICLES.radius. */
+export const HITBOX = { fuselageHalf: 1.1, fuselageRadius: 0.55, wingHalf: 1.1, wingRadius: 0.35 }
+/** Full gun damage out to this distance; beyond, it falls linearly to GUN_MIN_DAMAGE at max range (speed × ttl). */
+export const GUN_FULL_RANGE = 800
+export const GUN_MIN_DAMAGE = 0.4
+/** Bullet impacts on ground/water: emit a surface event for every Nth round (cheap visuals). */
+export const BULLET_IMPACT_EVERY = 3
+/** Missiles and rockets that plunge into water: splash limited to this radius and damage fraction. */
+export const WATER_SPLASH_RADIUS = 4
+export const WATER_SPLASH_DAMAGE = 0.3
 
 export const PROPORTIONAL_NAV_GAIN = 4
 export const MISSILE_MIN_SPEED = 120
@@ -144,6 +165,16 @@ interface VehicleExt extends VehicleEntity {
   spotCooldownUntil?: number
   /** Room time the vehicle (re)spawned; protected for SPAWN_PROTECTION s. */
   spawnedAt?: number
+  /** Lag-compensation ring buffer of recent positions (xyz per tick, newest at `histHead`). */
+  hist?: Float64Array
+  histHead?: number
+  histCount?: number
+}
+
+/** Server-side extras on Projectile. */
+interface ProjectileExt extends Projectile {
+  /** Seconds the shooter's view of remote aircraft lagged behind the server (lag compensation rewind). */
+  rewind?: number
 }
 
 /** Room engine: call when a vehicle (re)spawns so it gets SPAWN_PROTECTION seconds of immunity. */
@@ -465,7 +496,8 @@ export function killVehicle(
   // `killerTeam` (proposed type field) lets the room score fleet-AA kills, which have no killer player.
   if (killerTeam !== undefined) kill.killerTeam = killerTeam
   events.push(kill)
-  events.push({ type: "explosion", position: [p[0], p[1], p[2]], size: VEHICLES[vehicle.kind].radius * 3 })
+  const low = p[1] - groundHeight(p[0], p[2]) < 15
+  pushExplosion(events, p, VEHICLES[vehicle.kind].radius * 3, low ? surfaceAt(p) : "air")
   return true
 }
 
@@ -483,17 +515,39 @@ function dealDamage(target: VehicleEntity, amount: number, weapon: WeaponId, own
 /** Splash damage around `pos` (linear falloff from the hull surface), skipping `direct` and friendlies. */
 function splash(
   pos: Vec3, weapon: WeaponId, owner: string, team: number, shooterId: string, direct: VehicleEntity | null,
-  vehicles: VehicleEntity[], now: number, events: GameEvent[],
+  vehicles: VehicleEntity[], now: number, events: GameEvent[], radiusCap = Infinity, scale = 1,
 ): void {
-  const radius = WEAPONS[weapon].splash
-  if (radius <= 0) return
+  const radius = Math.min(WEAPONS[weapon].splash, radiusCap)
+  if (radius <= 0 || scale <= 0) return
   for (let i = 0; i < vehicles.length; i++) {
     const v = vehicles[i]
     if (v === direct || !v.alive || v.team === team || v.id === shooterId) continue
     const d = Math.max(0, dist(pos, v.flight.position) - VEHICLES[v.kind].radius)
     if (d >= radius) continue
-    dealDamage(v, damageFor(weapon, v, now) * (1 - d / radius), weapon, owner, pos, now, events)
+    dealDamage(v, damageFor(weapon, v, now) * scale * (1 - d / radius), weapon, owner, pos, now, events)
   }
+}
+
+export type Surface = "water" | "ground" | "air"
+
+/** Surface under an impact point: open water vs land/ship deck. */
+export function surfaceAt(p: Vec3): "water" | "ground" {
+  return isWater(p[0], p[2]) ? "water" : "ground"
+}
+
+function pushExplosion(events: GameEvent[], p: Vec3, size: number, surface: Surface, flak = false): void {
+  const e: GameEvent = { type: "explosion", position: [p[0], p[1], p[2]], size, surface }
+  if (flak) e.kind = "flak"
+  events.push(e)
+}
+
+/** Gun damage multiplier for a round that has flown `age` seconds (range falloff). */
+export function gunRangeFactor(weapon: WeaponId, age: number): number {
+  const spec = WEAPONS[weapon]
+  const d = Math.max(0, age) * spec.speed
+  if (d <= GUN_FULL_RANGE) return 1
+  const max = Math.max(spec.speed * spec.ttl, GUN_FULL_RANGE + 1)
+  return Math.max(GUN_MIN_DAMAGE, 1 - (1 - GUN_MIN_DAMAGE) * (d - GUN_FULL_RANGE) / (max - GUN_FULL_RANGE))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -541,7 +595,7 @@ export function applySeatInput(
     const spec = WEAPONS[id]
     if (spec.kind === "pulse") { radarPulse(vehicle, seat, vehicles, now, events); continue }
     if (protectedNow) continue
-    if (spec.kind === "gun" || spec.kind === "rockets") fireBallistic(cs, vehicle, seat, spec, rt, aim, now, events)
+    if (spec.kind === "gun" || spec.kind === "rockets") fireBallistic(cs, vehicle, seat, spec, rt, aim, now, events, viewDelayOf(input))
     else fireMissile(cs, vehicle, seat, spec, rt, now, events)
   }
 }
@@ -598,6 +652,13 @@ function updateSpotting(vehicle: VehicleEntity, aim: Vec3 | null, vehicles: Vehi
   vehicle.spotCandidate = candidate ? candidate.id : null
 }
 
+/** Proposed `SeatInput.viewDelay` (s): how far behind the server the shooter sees remote aircraft. */
+export function viewDelayOf(input: SeatInput): number {
+  const d = (input as SeatInput & { viewDelay?: number }).viewDelay
+  if (d === undefined || !Number.isFinite(d)) return VIEW_DELAY_DEFAULT
+  return Math.min(VIEW_DELAY_MAX, Math.max(0, d))
+}
+
 function updateLock(
   vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime, aim: Vec3 | null,
   vehicles: VehicleEntity[], now: number, events: GameEvent[],
@@ -633,7 +694,7 @@ function ownerOf(vehicle: VehicleEntity, seat: SeatIndex): string {
 
 function fireBallistic(
   cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime,
-  aim: Vec3 | null, now: number, events: GameEvent[],
+  aim: Vec3 | null, now: number, events: GameEvent[], viewDelay = VIEW_DELAY_DEFAULT,
 ): void {
   const interval = 1 / spec.rate
   const burstStart = rt.readyAt < now - interval
@@ -650,11 +711,13 @@ function fireBallistic(
     // Spawned one tick "behind" so this tick's stepCombat sweeps it from (muzzle - v·dt) to the muzzle in
     // lockstep with vehicles that already moved; `back` also staggers rounds fired earlier within the tick.
     const back = now - rt.readyAt - TICK_DT
-    cs.projectiles.push({
+    const proj: ProjectileExt = {
       id, weapon: spec.id, owner: ownerOf(vehicle, seat), vehicle: vehicle.id, team: vehicle.team,
       position: [_muz[0] + vx * back, _muz[1] + vy * back, _muz[2] + vz * back],
       velocity: [vx, vy, vz], age: back, ttl: spec.ttl,
-    })
+    }
+    if (viewDelay > 0) proj.rewind = viewDelay
+    cs.projectiles.push(proj)
     consumeAmmo(rt, now)
     rt.readyAt += interval
     fired++
@@ -839,6 +902,7 @@ function lerpInto(a: Vec3, b: Vec3, t: number, out: Vec3): Vec3 {
  */
 export function stepCombat(cs: CombatState, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
   regenAmmo(vehicles, dt, now)
+  recordHistory(vehicles)
   stepProjectiles(cs, vehicles, dt, now, events)
   stepMissiles(cs, vehicles, dt, now, events)
   stepFlares(cs, dt)
@@ -878,28 +942,40 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
   const list = cs.projectiles
   let w = 0
   for (let i = 0; i < list.length; i++) {
-    const p = list[i]
+    const p = list[i] as ProjectileExt
     p.age += dt
     if (p.age > p.ttl) continue
     const spec = WEAPONS[p.weapon]
-    if (spec.kind === "rockets") p.velocity[1] -= ROCKET_GRAVITY * dt
+    const gun = spec.kind === "gun"
+    if (!gun) p.velocity[1] -= ROCKET_GRAVITY * dt
     const pos = p.position, vel = p.velocity
     _p0[0] = pos[0]; _p0[1] = pos[1]; _p0[2] = pos[2]
     _p1[0] = pos[0] + vel[0] * dt; _p1[1] = pos[1] + vel[1] * dt; _p1[2] = pos[2] + vel[2] * dt
-    const hit = sweepVehicles(_p0, _p1, p.team, p.vehicle, 0, vehicles, dt)
+    const hit = sweepRewound(_p0, _p1, p.team, p.vehicle, vehicles, dt, p.rewind ?? 0, gun)
     const g = segmentHitsGround(_p0, _p1)
     if (hit.vehicle && (g === null || hit.t <= g)) {
       const target = hit.vehicle
       lerpInto(_p0, _p1, hit.t, _hit)
-      dealDamage(target, damageFor(p.weapon, target, now), p.weapon, p.owner, _hit, now, events)
+      const dmg = damageFor(p.weapon, target, now) * (gun ? gunRangeFactor(p.weapon, p.age) : 1)
+      dealDamage(target, dmg, p.weapon, p.owner, _hit, now, events)
       splash(_hit, p.weapon, p.owner, p.team, p.vehicle, target, vehicles, now, events)
-      if (spec.kind === "rockets") events.push({ type: "explosion", position: [_hit[0], _hit[1], _hit[2]], size: spec.splash })
+      if (!gun) pushExplosion(events, _hit, spec.splash, "air")
       continue
     }
     if (g !== null) {
       lerpInto(_p0, _p1, g, _hit)
-      splash(_hit, p.weapon, p.owner, p.team, p.vehicle, null, vehicles, now, events)
-      if (spec.kind === "rockets") events.push({ type: "explosion", position: [_hit[0], _hit[1], _hit[2]], size: spec.splash })
+      const surface = surfaceAt(_hit)
+      if (gun) {
+        // Bullets: no splash in water; small splash (30mm) on land. Visual puff for every Nth round.
+        if (surface === "ground") splash(_hit, p.weapon, p.owner, p.team, p.vehicle, null, vehicles, now, events)
+        if (p.id % BULLET_IMPACT_EVERY === 0) pushExplosion(events, _hit, 1, surface)
+      } else if (surface === "water") {
+        splash(_hit, p.weapon, p.owner, p.team, p.vehicle, null, vehicles, now, events, WATER_SPLASH_RADIUS, WATER_SPLASH_DAMAGE)
+        pushExplosion(events, _hit, spec.splash * 0.3, "water")
+      } else {
+        splash(_hit, p.weapon, p.owner, p.team, p.vehicle, null, vehicles, now, events)
+        pushExplosion(events, _hit, spec.splash, "ground")
+      }
       continue
     }
     pos[0] = _p1[0]; pos[1] = _p1[1]; pos[2] = _p1[2]
@@ -908,17 +984,182 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
   list.length = w
 }
 
+// ---------------------------------------------------------------------------------------------
+// Lag compensation & bullet hitboxes
+
+/** Push every living vehicle's current position into its history ring (once per tick). */
+function recordHistory(vehicles: VehicleEntity[]): void {
+  for (let i = 0; i < vehicles.length; i++) {
+    const v = vehicles[i] as VehicleExt
+    if (!v.alive) { v.histCount = 0; continue }
+    const h = v.hist ?? (v.hist = new Float64Array(HISTORY_TICKS * 3))
+    const head = v.histCount ? ((v.histHead ?? 0) + 1) % HISTORY_TICKS : 0
+    const p = v.flight.position
+    h[head * 3] = p[0]; h[head * 3 + 1] = p[1]; h[head * 3 + 2] = p[2]
+    v.histHead = head
+    v.histCount = Math.min(HISTORY_TICKS, (v.histCount ?? 0) + 1)
+  }
+}
+
+/** Position of `v` `back` seconds ago (interpolated from history; clamps to the oldest sample). */
+export function rewoundPosition(v: VehicleEntity, back: number, out: Vec3): Vec3 {
+  const x = v as VehicleExt
+  const p = v.flight.position
+  const n = x.histCount ?? 0
+  if (!x.hist || n === 0 || back <= 0) {
+    // No history yet: extrapolate backwards along the current velocity.
+    const u = v.flight.velocity, b = Math.max(0, back)
+    out[0] = p[0] - u[0] * b; out[1] = p[1] - u[1] * b; out[2] = p[2] - u[2] * b
+    return out
+  }
+  const k = Math.min(back / TICK_DT, n - 1)
+  const i0 = Math.floor(k), f = k - i0, i1 = Math.min(i0 + 1, n - 1)
+  const h = x.hist, head = x.histHead ?? 0
+  const a = ((head - i0) % HISTORY_TICKS + HISTORY_TICKS) % HISTORY_TICKS * 3
+  const b = ((head - i1) % HISTORY_TICKS + HISTORY_TICKS) % HISTORY_TICKS * 3
+  out[0] = h[a] + (h[b] - h[a]) * f
+  out[1] = h[a + 1] + (h[b + 1] - h[a + 1]) * f
+  out[2] = h[a + 2] + (h[b + 2] - h[a + 2]) * f
+  return out
+}
+
+const _c0: Vec3 = [0, 0, 0]
+const _c1: Vec3 = [0, 0, 0]
+const _cv: Vec3 = [0, 0, 0]
+const _ls0: Vec3 = [0, 0, 0]
+const _ls1: Vec3 = [0, 0, 0]
+
+/**
+ * Closest approach between segment P(s)=a+s·(b−a) and Q(t)=c+t·(d−c), s,t ∈ [0,1]. Returns squared distance,
+ * writes s into _segS.
+ */
+let _segS = 0
+function segSegDist2(a: Vec3, b: Vec3, c: Vec3, d: Vec3): number {
+  const d1x = b[0] - a[0], d1y = b[1] - a[1], d1z = b[2] - a[2]
+  const d2x = d[0] - c[0], d2y = d[1] - c[1], d2z = d[2] - c[2]
+  const rx = a[0] - c[0], ry = a[1] - c[1], rz = a[2] - c[2]
+  const A = d1x * d1x + d1y * d1y + d1z * d1z, E = d2x * d2x + d2y * d2y + d2z * d2z
+  const F = d2x * rx + d2y * ry + d2z * rz
+  let s: number, t: number
+  if (A <= 1e-12 && E <= 1e-12) { s = 0; t = 0 }
+  else if (A <= 1e-12) { s = 0; t = clamp01(F / E) }
+  else {
+    const C = d1x * rx + d1y * ry + d1z * rz
+    if (E <= 1e-12) { t = 0; s = clamp01(-C / A) }
+    else {
+      const B = d1x * d2x + d1y * d2y + d1z * d2z
+      const den = A * E - B * B
+      s = den > 1e-12 ? clamp01((B * F - C * E) / den) : 0
+      t = (B * s + F) / E
+      if (t < 0) { t = 0; s = clamp01(-C / A) }
+      else if (t > 1) { t = 1; s = clamp01((B - C) / A) }
+    }
+  }
+  _segS = s
+  const px = a[0] + d1x * s - (c[0] + d2x * t), py = a[1] + d1y * s - (c[1] + d2y * t), pz = a[2] + d1z * s - (c[2] + d2z * t)
+  return px * px + py * py + pz * pz
+}
+
+function clamp01(x: number): number {
+  return x < 0 ? 0 : x > 1 ? 1 : x
+}
+
+const _capA: Vec3 = [0, 0, 0]
+const _capB: Vec3 = [0, 0, 0]
+
+/**
+ * First-contact fraction of a (target-relative, body-frame) segment s0→s1 against the bullet hitbox of a
+ * vehicle with bounding radius R: fuselage capsule along Z plus wing/rotor capsule along X. -1 = miss.
+ */
+export function hitboxSweep(s0: Vec3, s1: Vec3, R: number): number {
+  const segLen = dist(s0, s1)
+  let best = 2
+  for (let k = 0; k < 2; k++) {
+    const half = R * (k === 0 ? HITBOX.fuselageHalf : HITBOX.wingHalf)
+    const r = R * (k === 0 ? HITBOX.fuselageRadius : HITBOX.wingRadius)
+    if (k === 0) { _capA[0] = 0; _capA[1] = 0; _capA[2] = -half; _capB[0] = 0; _capB[1] = 0; _capB[2] = half }
+    else { _capA[0] = -half; _capA[1] = 0; _capA[2] = 0; _capB[0] = half; _capB[1] = 0; _capB[2] = 0 }
+    const d2 = segSegDist2(s0, s1, _capA, _capB)
+    if (d2 > r * r) continue
+    // Back up from the closest approach to the (approximate) entry point.
+    const t = segLen > 1e-9 ? Math.max(0, _segS - Math.sqrt(r * r - d2) / segLen) : 0
+    if (t < best) best = t
+  }
+  return best <= 1 ? best : -1
+}
+
+/**
+ * Nearest hostile hit along p0→p1 with targets rewound by `rewind` s. Bullets (`capsule`) use the
+ * fuselage/wing hitbox; rockets use the bounding sphere. Motion is relative, so nothing tunnels.
+ */
+function sweepRewound(
+  p0: Vec3, p1: Vec3, team: number, shooterId: string, vehicles: VehicleEntity[], dt: number, rewind: number, capsule: boolean,
+): SegmentHit {
+  _sh.t = 2
+  _sh.vehicle = null
+  const mx = (p0[0] + p1[0]) * 0.5, my = (p0[1] + p1[1]) * 0.5, mz = (p0[2] + p1[2]) * 0.5
+  const halfSeg = dist(p0, p1) * 0.5
+  for (let i = 0; i < vehicles.length; i++) {
+    const v = vehicles[i]
+    if (!v.alive || v.team === team || v.id === shooterId) continue
+    const R = VEHICLES[v.kind].radius
+    rewoundPosition(v, rewind, _c1)
+    rewoundPosition(v, rewind + dt, _c0)
+    const dx = _c1[0] - mx, dy = _c1[1] - my, dz = _c1[2] - mz
+    const reach = R * 1.7 + halfSeg + dist(_c0, _c1)
+    if (dx * dx + dy * dy + dz * dz > reach * reach) continue
+    let t: number
+    if (capsule) {
+      const q = v.flight.orientation
+      rotateInv(q, p0[0] - _c0[0], p0[1] - _c0[1], p0[2] - _c0[2], _ls0)
+      rotateInv(q, p1[0] - _c1[0], p1[1] - _c1[1], p1[2] - _c1[2], _ls1)
+      t = hitboxSweep(_ls0, _ls1, R)
+    } else {
+      _cv[0] = (_c1[0] - _c0[0]) / dt; _cv[1] = (_c1[1] - _c0[1]) / dt; _cv[2] = (_c1[2] - _c0[2]) / dt
+      t = sweptSphere(p0, p1, _c1, _cv, dt, R)
+    }
+    if (t >= 0 && t < _sh.t) { _sh.t = t; _sh.vehicle = v }
+  }
+  return _sh
+}
+
+/** HUD lead pipper for a seat's gun against `target` (same ballistics and muzzle as the server). -1 = none. */
+export function gunLeadPoint(shooter: VehicleEntity, seat: SeatIndex, target: VehicleEntity, out: Vec3, weapon?: WeaponId): number {
+  let id = weapon ?? null
+  if (!id) {
+    const ids = VEHICLES[shooter.kind].seatWeapons[seat]
+    id = ids[0] && WEAPONS[ids[0]].kind === "gun" ? ids[0] : ids[1] && WEAPONS[ids[1]].kind === "gun" ? ids[1] : null
+  }
+  if (!id) return -1
+  muzzlePosition(shooter, seat, id, _muz)
+  return leadPoint(_muz, shooter.flight.velocity, WEAPONS[id].speed, target.flight.position, target.flight.velocity, out)
+}
+
 function findFlare(cs: CombatState, id: number): Flare | null {
   for (let i = 0; i < cs.flares.length; i++) if (cs.flares[i].id === id) return cs.flares[i]
   return null
 }
 
+/** Direct hits (incl. proximity-fuse) from lock-on/scanner missiles destroy any aircraft outright. */
+export function missileDirectDamage(weapon: WeaponId, target: VehicleEntity, now: number): number {
+  const k = WEAPONS[weapon].kind
+  if (k === "missile_lock" || k === "missile_scanner") return Math.max(target.hp, target.maxHp) + 1
+  return damageFor(weapon, target, now)
+}
+
 function detonate(
   m: Missile, pos: Vec3, direct: VehicleEntity | null, vehicles: VehicleEntity[], now: number, events: GameEvent[],
+  surface: Surface = "air",
 ): void {
-  if (direct) dealDamage(direct, damageFor(m.weapon, direct, now), m.weapon, m.owner, pos, now, events)
+  const size = WEAPONS[m.weapon].splash
+  if (direct) dealDamage(direct, missileDirectDamage(m.weapon, direct, now), m.weapon, m.owner, pos, now, events)
+  if (surface === "water") {
+    splash(pos, m.weapon, m.owner, m.team, m.vehicle, direct, vehicles, now, events, WATER_SPLASH_RADIUS, WATER_SPLASH_DAMAGE)
+    pushExplosion(events, pos, size * 0.3, "water")
+    return
+  }
   splash(pos, m.weapon, m.owner, m.team, m.vehicle, direct, vehicles, now, events)
-  events.push({ type: "explosion", position: [pos[0], pos[1], pos[2]], size: WEAPONS[m.weapon].splash })
+  pushExplosion(events, pos, size, surface)
 }
 
 /** True when the scanner operator of missile `m` currently paints its designated target. */
@@ -1018,7 +1259,8 @@ function stepMissiles(cs: CombatState, vehicles: VehicleEntity[], dt: number, no
       continue
     }
     if (g !== null) {
-      detonate(m, lerpInto(_p0, _p1, g, _hit), null, vehicles, now, events)
+      lerpInto(_p0, _p1, g, _hit)
+      detonate(m, _hit, null, vehicles, now, events, surfaceAt(_hit))
       continue
     }
     if (flareTarget && dist(_p1, flareTarget.position) < tune.fuse + 4) {
@@ -1308,7 +1550,7 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
   for (let i = 0; i < bursts.length; i++) {
     const b = bursts[i]
     if (b.at > now) { bursts[w++] = b; continue }
-    events.push({ type: "explosion", position: b.position, size: AA_GUN_SPLASH * 0.5 })
+    pushExplosion(events, b.position, AA_GUN_SPLASH * 0.5, "air", true)
     const t = AA_TURRETS.find(x => x.ship.id === b.ship)!
     for (let k = 0; k < vehicles.length; k++) {
       const v = vehicles[k]

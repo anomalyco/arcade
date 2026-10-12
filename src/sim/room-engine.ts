@@ -62,6 +62,8 @@ const CHAT_MAX = 200
 const CHAT_BURST = 4
 const CHAT_REFILL = 1.5 // seconds per token
 const NAME_MAX = 16
+/** Cap on client-reported view delay used for lag-compensated hits (seconds). */
+export const MAX_VIEW_DELAY = 0.3
 const SPAWN_SLOTS = 16
 
 function newJitterBuffer(): JitterBuffer {
@@ -229,7 +231,10 @@ function readSeat(v: unknown): SeatInput | undefined {
   const m = v as Record<string, unknown>
   const aim = readAim(m.aim)
   if (aim === undefined) return undefined
-  return { aim, firePrimary: m.firePrimary === true, fireSecondary: m.fireSecondary === true, flares: m.flares === true, ability: m.ability === true }
+  const out: SeatInput = { aim, firePrimary: m.firePrimary === true, fireSecondary: m.fireSecondary === true, flares: m.flares === true, ability: m.ability === true }
+  // Lag compensation: how far behind the server the shooter sees remote aircraft (seconds, capped).
+  if (typeof m.viewDelay === "number" && Number.isFinite(m.viewDelay)) out.viewDelay = Math.min(MAX_VIEW_DELAY, Math.max(0, m.viewDelay))
+  return out
 }
 
 /** Small fast seeded PRNG (mulberry32). */

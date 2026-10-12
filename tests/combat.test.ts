@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
   AA_ACQUIRE, AA_TURRETS, fleetAaDps, type AaTurret, isSpawnProtected, markSpawned, turretHasLOS,
-  FLARE_TARGET_PREFIX, WEAPON_DAMAGE_MULT, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
+  FLARE_TARGET_PREFIX, WEAPON_DAMAGE_MULT, GUN_FULL_RANGE, VIEW_DELAY_DEFAULT, gunLeadPoint, gunRangeFactor, hitboxSweep, missileDirectDamage, muzzlePosition, rewoundPosition, viewDelayOf, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
   stepCombat, sweptSphere, type CombatState,
 } from "../src/sim/combat"
 import { WORLD_HALF, groundHeight, segmentHitsGround, setFleetState, terrainHeight } from "../src/sim/geography"
@@ -45,8 +45,9 @@ function vehicle(kind: VehicleKind, team: TeamId, position: Vec3, velocity: Vec3
   }
 }
 
-function input(p: Partial<SeatInput> = {}): SeatInput {
-  return { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false, ...p }
+/** Seat input from a shooter that sees the authoritative state (viewDelay 0) unless overridden. */
+function input(p: Partial<SeatInput> & { viewDelay?: number } = {}): SeatInput {
+  return { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false, viewDelay: 0, ...p } as SeatInput
 }
 
 interface World { cs: CombatState; vehicles: VehicleEntity[]; events: GameEvent[]; now: number }
@@ -403,7 +404,7 @@ describe("lock-on missiles", () => {
     expect(bb.weapons[1][0].lockTarget).toBeNull()
   })
 
-  test("homing missile hits a straight-flying target (two hits kill a fighter)", () => {
+  test("homing missile hits a straight-flying target and destroys it", () => {
     const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
     const target = vehicle("fighter", 1, [-60, ALT + 30, -900], [150, 0, -40], [1, 0, 0])
     const w = world([shooter, target])
@@ -417,9 +418,7 @@ describe("lock-on missiles", () => {
     for (let i = 0; i < 8 * 60 && w.cs.missiles.length; i++) tick(w)
     const h = hits(w, target)
     expect(h).toHaveLength(1)
-    const frac = (target.maxHp - target.hp) / target.maxHp
-    expect(frac).toBeGreaterThan(0.4)
-    expect(frac).toBeLessThan(0.55)
+    expect(target.alive).toBe(false) // missile direct hits destroy outright
     expect(target.lastDamagedBy).toBe(shooter.seats[0])
   })
 
@@ -524,7 +523,7 @@ describe("scanner missile (aim47)", () => {
     }
     expect(guided).toBe(true)
     expect(hits(w, target)).toHaveLength(1)
-    expect(target.maxHp - target.hp).toBeCloseTo(damageFor("aim47", target, 0))
+    expect(target.alive).toBe(false)
   })
 
   test("loses guidance after the scanner drifts off, flies straight, and re-acquires", () => {
@@ -702,13 +701,15 @@ describe("determinism & balance", () => {
     expect(ttk("cannon20", "fighter")).toBeLessThan(3)
     expect(ttk("gau8", "fighter")).toBeLessThan(ttk("cannon20", "fighter"))
     expect(ttk("chaingun30", "apache")).toBeLessThan(2.5)
-    const aim9 = damageFor("aim9", v("fighter"), 0) / VEHICLES.fighter.maxHp
-    expect(aim9).toBeGreaterThan(0.4)
-    expect(aim9).toBeLessThan(0.55)
-    expect(2 * aim9).toBeGreaterThanOrEqual(1) // two hits kill
-    const aim47 = damageFor("aim47", v("fighter"), 0) / VEHICLES.fighter.maxHp
-    expect(aim47).toBeGreaterThan(0.5)
-    expect(aim47).toBeLessThan(0.6)
+    // Missile direct hits destroy anything (incl. the armored A-10); splash is moderate.
+    for (const w of ["aim9", "tvmissile", "hellfire", "maverick", "aim47"] as const) {
+      for (const k of ["fighter", "apache", "warthog", "blackbird"] as VehicleKind[]) {
+        const t = v(k)
+        t.spottedUntil = 0
+        expect(missileDirectDamage(w, t, 0)).toBeGreaterThan(t.maxHp)
+        expect(damageFor(w, t, 0) / t.maxHp).toBeLessThan(0.45) // max splash (at the hull)
+      }
+    }
     const table: Record<string, Record<string, string>> = {}
     for (const w of ["cannon20", "gau8", "chaingun30"] as const) {
       table[w] = {}
@@ -716,7 +717,7 @@ describe("determinism & balance", () => {
     }
     for (const w of ["aim9", "tvmissile", "hellfire", "maverick", "aim47", "rockets"] as const) {
       table[w] = {}
-      for (const k of ["fighter", "apache", "warthog", "blackbird"] as VehicleKind[]) table[w][k] = Math.round(100 * damageFor(w, v(k), 0) / VEHICLES[k].maxHp) + "%"
+      for (const k of ["fighter", "apache", "warthog", "blackbird"] as VehicleKind[]) table[w][k] = w === "rockets" ? Math.round(100 * damageFor(w, v(k), 0) / VEHICLES[k].maxHp) + "%" : `kill / ${Math.round(100 * damageFor(w, v(k), 0) / VEHICLES[k].maxHp)}% splash`
     }
     console.table(table)
   })
@@ -819,5 +820,129 @@ describe("recon look-to-spot", () => {
     const ev = spotted(w)
     expect(ev.map(e => e.type === "spotted" && e.target).sort()).toEqual([e1.id, e2.id].sort())
     expect(ev[0]).toMatchObject({ by: bb.id, team: 0, until: w.now + WEAPONS.radarpulse.ttl })
+  })
+})
+
+describe("gun ballistics, lag compensation & impacts", () => {
+  /** Fire a 1 s cannon burst at a 200 m/s crossing target, aiming with the shooter's (possibly lagged) view. */
+  function crossingBurst(viewLag: number, reportedDelay: number) {
+    const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
+    const target = vehicle("fighter", 1, [-300, ALT, -650], [200, 0, 0], [1, 0, 0])
+    const w = world([shooter, target])
+    for (let i = 0; i < 30; i++) tick(w) // build position history
+    const view: Vec3 = [0, 0, 0], lp: Vec3 = [0, 0, 0], muz: Vec3 = [0, 0, 0]
+    for (let i = 0; i < 60; i++) {
+      // The client renders the target `viewLag` s in the past and aims the HUD pipper at that picture.
+      rewoundPosition(target, viewLag, view)
+      muzzlePosition(shooter, 0, "cannon20", muz)
+      leadPoint(muz, shooter.flight.velocity, WEAPONS.cannon20.speed, view, target.flight.velocity, lp)
+      shooter.flight.orientation = look(sub(lp, muz))
+      tick(w, [[shooter, 0, input({ firePrimary: true, viewDelay: reportedDelay } as Partial<SeatInput>)]])
+    }
+    for (let i = 0; i < 60; i++) tick(w)
+    return { shots: 600 - shooter.weapons[0][0].ammo, hits: hits(w, target).length }
+  }
+
+  test("lag compensation: a lagged view still hits when the delay is reported, misses without it", () => {
+    const comp = crossingBurst(0.15, 0.15)
+    const none = crossingBurst(0.15, 0)
+    expect(comp.hits).toBeGreaterThanOrEqual(comp.shots - 1)
+    expect(none.hits).toBeLessThan(comp.shots * 0.3)
+  })
+
+  test("view delay defaults and clamps", () => {
+    expect(viewDelayOf({ aim: null, firePrimary: true, fireSecondary: false, flares: false, ability: false })).toBe(VIEW_DELAY_DEFAULT)
+    expect(viewDelayOf(input({ viewDelay: 5 } as Partial<SeatInput>))).toBeLessThanOrEqual(0.3)
+    expect(viewDelayOf(input({ viewDelay: -1 } as Partial<SeatInput>))).toBe(0)
+  })
+
+  test("gunLeadPoint matches the server ballistics (perfect aim at a crossing target hits)", () => {
+    const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -150])
+    const target = vehicle("fighter", 1, [-250, ALT + 40, -600], [180, 0, 20], [1, 0, 0])
+    const w = world([shooter, target])
+    const lp: Vec3 = [0, 0, 0], muz: Vec3 = [0, 0, 0]
+    for (let i = 0; i < 45; i++) {
+      expect(gunLeadPoint(shooter, 0, target, lp)).toBeGreaterThan(0)
+      muzzlePosition(shooter, 0, "cannon20", muz)
+      shooter.flight.orientation = look(sub(lp, muz))
+      tick(w, [[shooter, 0, input({ firePrimary: true })]])
+    }
+    for (let i = 0; i < 60; i++) tick(w)
+    expect(hits(w, target).length).toBeGreaterThanOrEqual(600 - shooter.weapons[0][0].ammo - 1)
+    expect(gunLeadPoint(vehicle("blackbird", 0, [0, 0, 0], [0, 0, 0]), 0, target, lp)).toBe(-1) // no gun
+  })
+
+  test("bullet hitbox: wings and fuselage capsules, not a big sphere", () => {
+    const R = VEHICLES.fighter.radius
+    // Along body Z (nose→tail line) 7 m to the side, crossing the wing span: hit.
+    expect(hitboxSweep([7, 0, -50], [7, 0, 50], R)).toBeGreaterThanOrEqual(0)
+    // 7 m above the fuselage: clear miss (the old 8 m sphere would have counted it).
+    expect(hitboxSweep([0, 7, -50], [0, 7, 50], R)).toBe(-1)
+    // Through the fuselage from behind: hit, with an entry before the closest approach.
+    const t = hitboxSweep([0, 1, 60], [0, 1, -60], R)
+    expect(t).toBeGreaterThan(0)
+    expect(t).toBeLessThan(0.5)
+  })
+
+  test("guns: full damage to 800 m, falling off beyond", () => {
+    const spec = WEAPONS.cannon20
+    expect(gunRangeFactor("cannon20", (GUN_FULL_RANGE - 10) / spec.speed)).toBe(1)
+    expect(gunRangeFactor("cannon20", spec.ttl)).toBeCloseTo(0.4)
+    expect(spec.speed).toBeGreaterThanOrEqual(1100)
+  })
+
+  /** A sea point and a land point (high terrain). */
+  function surfaces() {
+    let sea: Vec3 | null = null, land: Vec3 | null = null
+    for (let x = -WORLD_HALF + 200; x < WORLD_HALF - 200 && !(sea && land); x += 150) {
+      for (let z = -WORLD_HALF + 200; z < WORLD_HALF - 200 && !(sea && land); z += 150) {
+        const h = terrainHeight(x, z)
+        if (!sea && h < -10 && groundHeight(x, z) === 0) sea = [x, 0, z]
+        if (!land && h > 60) land = [x, groundHeight(x, z), z]
+      }
+    }
+    return { sea: sea!, land: land! }
+  }
+
+  test("rockets and bullets that hit the water splash (no fireball, no bullet damage); land impacts are ground", () => {
+    const { sea, land } = surfaces()
+    expect(sea).toBeDefined()
+    expect(land).toBeDefined()
+    const explosionsAt = (at: Vec3, weapon: "rockets" | "cannon20") => {
+      const shooter = vehicle(weapon === "rockets" ? "apache" : "fighter", 0, [at[0], at[1] + 120, at[2] + 60], [0, 0, 0], [0, -0.9, -0.45])
+      const bystander = vehicle("fighter", 1, [at[0] + 22, at[1] + 3, at[2]], [0, 0, 0])
+      const w = world([shooter, bystander])
+      for (let i = 0; i < 20; i++) tick(w, [[shooter, 0, input({ firePrimary: true })]])
+      for (let i = 0; i < 120; i++) tick(w)
+      return { ex: w.events.filter(e => e.type === "explosion") as Extract<GameEvent, { type: "explosion" }>[], bystander }
+    }
+    const rw = explosionsAt(sea, "rockets")
+    expect(rw.ex.length).toBeGreaterThan(0)
+    expect(rw.ex.every(e => e.surface === "water" && e.size < WEAPONS.rockets.splash)).toBe(true)
+    expect(rw.bystander.hp).toBe(rw.bystander.maxHp) // 22 m away (14 m from its hull): outside the small water splash
+    const bw = explosionsAt(sea, "cannon20")
+    expect(bw.ex.length).toBeGreaterThan(0)
+    expect(bw.ex.every(e => e.surface === "water")).toBe(true)
+    expect(bw.bystander.hp).toBe(bw.bystander.maxHp)
+    const rl = explosionsAt(land, "rockets")
+    expect(rl.ex.some(e => e.surface === "ground" && e.size === WEAPONS.rockets.splash)).toBe(true)
+  })
+
+  test("missiles: air bursts are surface 'air', water impacts small 'water' splashes", () => {
+    const { sea } = surfaces()
+    const shooter = vehicle("fighter", 0, [sea[0], 3000, sea[2]], [0, 0, -150])
+    const w = world([shooter])
+    tick(w, [[shooter, 0, input({ fireSecondary: true })]]) // dumbfire, expires in the air
+    for (let i = 0; i < 8 * 60 && w.cs.missiles.length; i++) tick(w)
+    const air = w.events.filter(e => e.type === "explosion") as Extract<GameEvent, { type: "explosion" }>[]
+    expect(air.length).toBe(1)
+    expect(air[0].surface).toBe("air")
+    const low = vehicle("fighter", 0, [sea[0], 60, sea[2]], [0, -60, -100], [0, -0.6, -0.8])
+    const w2 = world([low])
+    tick(w2, [[low, 0, input({ fireSecondary: true })]])
+    for (let i = 0; i < 8 * 60 && w2.cs.missiles.length; i++) tick(w2)
+    const wet = w2.events.filter(e => e.type === "explosion") as Extract<GameEvent, { type: "explosion" }>[]
+    expect(wet.length).toBe(1)
+    expect(wet[0].surface).toBe("water")
   })
 })

@@ -1,10 +1,10 @@
 // Storm atmosphere shared by all world node materials (TSL): noise helpers, the storm-sky colour
 // function (used by the sky dome, the ocean's reflections and the fog colour, so they always meet
 // seamlessly), height fog, and the shared lightning uniforms.
-import { Color, Vector2, Vector3, type Material } from "three"
+import { Color, DataTexture, LinearFilter, RedFormat, RepeatWrapping, UnsignedByteType, Vector2, Vector3, type Material } from "three"
 import {
   Fn, If, abs, cameraPosition, select, clamp, dot, exp, float, floor, fog, fract, max, mix, normalize, positionWorld, pow, sin, smoothstep,
-  time, uniform, vec2, vec3,
+  texture, time, uniform, vec2, vec3,
 } from "three/tsl"
 import {
   BREAK_DIRECTION, CLOUD_DARK, CLOUD_LIGHT, FOG_BREAK_COLOR, FOG_COLOR, FOG_DENSITY_BASE, FOG_DENSITY_SEA, FOG_HEIGHT_FALLOFF,
@@ -63,12 +63,33 @@ export const hash21 = Fn(([p]: [N]) => {
   return fract(p3.x.add(p3.y).mul(p3.z))
 })
 
+/** Hash lattice for value noise (tiles every NOISE_SIZE cells; seeded, stable across runs). */
+const NOISE_SIZE = 256
+const noiseTexture = (() => {
+  const data = new Uint8Array(NOISE_SIZE * NOISE_SIZE)
+  let s = 0x9e3779b9
+  for (let i = 0; i < data.length; i++) {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5
+    data[i] = (s >>> 0) & 255
+  }
+  const t = new DataTexture(data, NOISE_SIZE, NOISE_SIZE, RedFormat, UnsignedByteType)
+  t.wrapS = t.wrapT = RepeatWrapping
+  t.magFilter = t.minFilter = LinearFilter
+  t.generateMipmaps = false
+  t.needsUpdate = true
+  return t
+})()
+
+/**
+ * Smooth value noise. Perf: one bilinear fetch from a hash lattice texture at the Hermite-remapped
+ * coordinate equals the 4-hash + smoothstep-lerp version (was ~4× the ALU in every storm shader).
+ * Uses an explicit LOD so it is legal inside dynamic branches.
+ */
 export const vnoise = Fn(([p]: [N]) => {
   const i: N = floor(p)
   const f: N = fract(p)
   const u: N = f.mul(f).mul(f.mul(-2).add(3))
-  const a = hash21(i), b = hash21(i.add(vec2(1, 0))), c = hash21(i.add(vec2(0, 1))), d = hash21(i.add(vec2(1, 1)))
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y)
+  return texture(noiseTexture, i.add(u).add(0.5).div(NOISE_SIZE)).level(float(0)).r
 })
 
 /** fBm with `octaves` (compile-time) octaves, result ~0..1. */

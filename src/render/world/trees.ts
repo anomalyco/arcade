@@ -133,7 +133,7 @@ export function createTreeResources(): TreeResources {
   const material = new MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.48, metalness: 0 })
   material.name = "World · trees"
   return {
-    geometries, lodGeometries, lodDistance: 450, material, fade,
+    geometries, lodGeometries, lodDistance: 400, material, fade,
     dispose() {
       for (const g of new Set([...geometries, ...lodGeometries])) g.dispose()
       material.dispose()

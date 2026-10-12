@@ -313,7 +313,7 @@ function settle(brain: ReturnType<typeof createBotBrain>, bot: PlayerInfo, me: V
 describe("gunner", () => {
   test("Apache gunner leads and fires the chain gun in range (and in arc)", () => {
     const me = vehicle("apache", 0, [0, 500, 0], [0, 0, 0], [0, 0, -1])
-    const enemy = vehicle("apache", 1, [0, 400, -900], [50, 0, 0])
+    const enemy = vehicle("apache", 1, [0, 400, -700], [50, 0, 0])
     const brain = createBotBrain(8, 1)
     const first = snap(botInput(brain, player(0, 1), me, [me, enemy], 10, [], flat()))
     const lead: Vec3 = [0, 0, 0]
@@ -328,7 +328,7 @@ describe("gunner", () => {
     expect(fired).toBe(true)
     expect(out.flight).toBeUndefined()
     // Target above the turret's elevation limit: track but hold fire.
-    enemy.flight.position = [0, 1400, -900]
+    enemy.flight.position = [0, 1400, -700]
     const high = snap(botInput(createBotBrain(8, 1), player(0, 1), me, [me, enemy], 10, [], flat()))
     expect(high.seat.firePrimary).toBe(false)
   })

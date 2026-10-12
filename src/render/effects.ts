@@ -161,6 +161,7 @@ const SMOKE_TRAIL = c("#8a8f90"), SMOKE_TRAIL_END = c("#5e6365")
 const SPARK = c("#ffd88a"), SPARK_B = c("#ff8a2a")
 const FLARE_A = c("#fff6dc"), FLARE_B = c("#ffb060")
 const WHITE = c("#ffffff")
+const WATER_WHITE = c("#dfe6e4"), WATER_FADE = c("#a9b4b2"), DIRT = c("#5a5144"), DUST = c("#9a9282")
 const DEBRIS_COLS = [c("#3e4244"), c("#55595b"), c("#2b2e30"), c("#6a6e70")]
 const _tmp = new Color()
 
@@ -177,6 +178,12 @@ export interface Effects {
   aa(muzzle: Vec3, aim: Vec3, kind: "ciws" | "gun"): void
   /** Flak burst (5-inch AA shell): flash + dark smoke. */
   flak(p: Vec3): void
+  /** Shell/missile/aircraft impact on water: white column + spray, ripple rings and a fading foam patch. */
+  splash(p: Vec3, size: number): void
+  /** Impact on land: dirt and dust, a small flash and a short fire. */
+  groundHit(p: Vec3, size: number): void
+  /** Small spray puff (bullet into water) or dust puff (bullet into ground). */
+  spray(p: Vec3, water: boolean): void
   pulse(p: Vec3, radius: number, color: string): void
   /** Persistent smoke trail emitter (missiles). Call each frame with the current position. */
   trail(id: number, p: Vec3, heavy: boolean): void
@@ -343,7 +350,39 @@ export function createEffects(quality: Quality): Effects {
     s.uColor.value.set(color)
   }
 
-  root.add(smokeSprite, debrisMesh, missiles, glowSprite, tracers, aaMesh)
+  // ---- water decals: expanding ripple rings + fading foam patches lying on the sea surface.
+  const decalR = new Ring(128, [3, 4], 1) // pos, t(start, life, size, kind 0 = ring / 1 = foam)
+  const decalMat = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: DoubleSide })
+  {
+    const [pos, t] = decalR.nodes
+    const age = uTime.sub(t.x)
+    const k = age.div(t.y)
+    const alive = step(0, k).mul(step(k, 1))
+    const foam = t.w
+    // Rings expand fast and ease out; foam spreads a little and lingers.
+    const r = t.z.mul(mix(float(1).sub(pow(float(1).sub(k), 2)).mul(1.0).add(0.15), k.mul(0.5).add(0.6), foam))
+    decalMat.positionNode = pos.add(vec3(positionGeometry.x, 0, positionGeometry.y).mul(r.mul(2)).mul(alive))
+    decalMat.colorNode = Fn(() => {
+      const d = length(uv().sub(0.5)).mul(2)
+      const ring = smoothstep(0.78, 0.9, d).mul(smoothstep(1, 0.92, d))
+      const n: N = (mx_noise_float as N)((vec3 as N)(uv().mul(7), t.x))
+      const patch = smoothstep(1, 0.2, d.add(n.mul(0.35))).mul(smoothstep(-0.2, 0.4, n.add(0.2)))
+      const a = mix(ring.mul(0.55), patch.mul(0.4), foam).mul(float(1).sub(k)).mul(alive)
+      return vec4(vec3(0.82, 0.86, 0.85), a)
+    })()
+  }
+  const decalMesh = new Mesh(new PlaneGeometry(1, 1), decalMat)
+  decalMesh.frustumCulled = false
+  decalMesh.count = 0
+  decalMesh.renderOrder = 1
+  const decal = (p: Vec3, size: number, life: number, foam: boolean, delay = 0) => {
+    const i = decalR.next(now + delay + life)
+    const [pos, t] = decalR.arrays
+    pos[i * 3] = p[0]; pos[i * 3 + 1] = 0.6; pos[i * 3 + 2] = p[2]
+    t[i * 4] = now + delay; t[i * 4 + 1] = life; t[i * 4 + 2] = size; t[i * 4 + 3] = foam ? 1 : 0
+  }
+
+  root.add(decalMesh, smokeSprite, debrisMesh, missiles, glowSprite, tracers, aaMesh)
 
   function debris(p: Vec3, n: number, speed: number, size: number) {
     const [pos, vel, t, col, seed] = debrisR.arrays
@@ -381,6 +420,7 @@ export function createEffects(quality: Quality): Effects {
       smokeSprite.count = smokeR.flush(now)
       debrisMesh.count = debrisR.flush(now)
       aaMesh.count = aaR.flush(now)
+      decalMesh.count = decalR.flush(now)
       for (const s of shells) {
         if (!s.active) continue
         const t = (now - s.start) / s.life
@@ -473,6 +513,49 @@ export function createEffects(quality: Quality): Effects {
         glow(m[0] + ux * 4, m[1] + uy * 4, m[2] + uz * 4, 0, 0, 0, 0.12, 10, 5, WHITE, 1, FIRE_B, 0, 0, 0)
         smoke(m[0] + ux * 6, m[1] + uy * 6, m[2] + uz * 6, ux * 6, uy * 6 + 1, uz * 6, 1.8, 2, 6, SMOKE_MID, 0, SMOKE_PALE, 0, 0.8, 0.6, 1.5)
       }
+    },
+
+    splash(p, size) {
+      const s = Math.max(3, Math.min(18, size))
+      const x = p[0], z = p[2]
+      // White water column: tall, fast-rising spray puffs that fall back under gravity.
+      const nc = Math.round((10 + s * 0.8) * density) + 4
+      for (let i = 0; i < nc; i++) {
+        const up = s * (2.2 + Math.random() * 2.2)
+        smoke(x + rnd(s * 0.25), 0.5, z + rnd(s * 0.25), rnd(s * 0.6), up, rnd(s * 0.6), 1.6 + Math.random() * 0.8, s * 0.25, s * (0.55 + Math.random() * 0.4), WATER_WHITE, 0, WATER_FADE, 0, 0.4, -9.8, 3)
+      }
+      // Low spray skirt.
+      const ns = Math.round((8 + s * 0.5) * density) + 3
+      for (let i = 0; i < ns; i++) {
+        const a = Math.random() * Math.PI * 2, v = s * (1.2 + Math.random())
+        smoke(x, 0.6, z, Math.cos(a) * v, s * 0.4 + Math.random() * s * 0.3, Math.sin(a) * v, 1.2 + Math.random() * 0.6, s * 0.2, s * 0.6, WATER_WHITE, 0, WATER_FADE, 0, 1.2, -6, 2)
+      }
+      glow(x, 1, z, 0, 0, 0, 0.08, s * 0.8, s * 1.4, WHITE, 0.25, WHITE, 0, 0, 0)
+      decal(p, s * 2.2, 1.6, false)
+      decal(p, s * 3.4, 2.4, false, 0.25)
+      decal(p, s * 1.5, 7, true)
+    },
+
+    groundHit(p, size) {
+      const s = Math.max(3, Math.min(16, size))
+      glow(p[0], p[1] + 1, p[2], 0, 0, 0, 0.1, s * 1.2, s * 2.2, FIRE_A, 1, FIRE_B, 0, 0, 0)
+      const nd = Math.round((8 + s * 0.6) * density) + 3
+      for (let i = 0; i < nd; i++) {
+        _tmp.copy(DIRT).lerp(DUST, Math.random())
+        // Lifted above the surface so the soft billboards aren't half-buried in the slope.
+        smoke(p[0] + rnd(s * 0.3), p[1] + s * 0.4, p[2] + rnd(s * 0.3), rnd(s * 0.9), s * (1 + Math.random() * 1.6), rnd(s * 0.9), 2.2 + Math.random() * 1.5, s * 0.5, s * (1 + Math.random() * 0.7), _tmp, 0, DUST, 0, 1.4, -3, 2)
+      }
+      const nf = Math.round(3 * density) + 2
+      for (let i = 0; i < nf; i++) smoke(p[0] + rnd(s * 0.3), p[1] + 0.5, p[2] + rnd(s * 0.3), rnd(1), 1.5 + Math.random(), rnd(1), 0.9 + Math.random() * 0.6, s * 0.2, s * 0.45, BALL_A, 1, FIRE_C, 0.8, 1, 0, 6)
+      smoke(p[0], p[1] + 1, p[2], rnd(1), 2.5, rnd(1), 4, s * 0.4, s * 1.4, SMOKE_DARK, 0, SMOKE_MID, 0, 0.6, 0.8, 1.2, 0.4)
+      debris(p, Math.round(4 * density) + 1, 12 + s, 0.35)
+    },
+
+    spray(p, water) {
+      if (water) {
+        for (let i = 0; i < 3; i++) smoke(p[0] + rnd(0.6), 0.4, p[2] + rnd(0.6), rnd(1.5), 5 + Math.random() * 4, rnd(1.5), 0.8 + Math.random() * 0.3, 0.4, 1.4, WATER_WHITE, 0, WATER_FADE, 0, 0.6, -9.8, 3)
+        if (Math.random() < 0.35 * density) decal(p, 2.2, 1.1, false)
+      } else smoke(p[0], p[1] + 0.3, p[2], rnd(1), 2, rnd(1), 1.2, 0.5, 2, DUST, 0, DIRT, 0, 1, -1, 2)
     },
 
     flak(p) {

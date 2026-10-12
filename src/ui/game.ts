@@ -13,10 +13,11 @@ import { createPauseMenu } from "./pause"
 import { toast, type StartRequest } from "./lobby"
 import { onSettings, settings } from "./settings"
 import { cloneFlight, flightReadout, forward, stepFlight } from "../sim/flight"
-import { AIRBASES, deckVelocity, posedFleet, posedShip, setFleetState, worldQuery as baseWorldQuery } from "../sim/geography"
+import { AIRBASES, deckVelocity, groundHeight, posedFleet, posedShip, setFleetState, worldQuery as baseWorldQuery } from "../sim/geography"
 import { AA_RANGE, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship } from "../sim/fleet"
 import type { WorldQuery } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
+import { leadPoint } from "../sim/combat"
 import { TICK_DT } from "../sim/types"
 import type { FlightInput, FlightState, GameEvent, PlayerInfo, Quat, SeatIndex, SeatInput, TeamId, Vec3, VehicleEntity } from "../sim/types"
 import type { RoomConfig, ServerMessage, Snapshot } from "../sim/protocol"
@@ -484,6 +485,8 @@ class GameSession implements GameHandle {
   }
 
   private turretAims = new Map<string, TurretAim>()
+  private projLast = new Map<number, [number, number, number, number]>()
+  private lastProjSnap: Snapshot | null = null
   private offLightning: (() => void) | null = null
   private stormCockpit = false
   private flakAims: { p: Vec3; t: number }[] = []
@@ -623,7 +626,9 @@ class GameSession implements GameHandle {
           pos = e.position
           // Flak: a burst near a recent 5-inch shell's aim point renders as a gray flak puff.
           const fl = this.flakAims.findIndex(a => now - a.t < 5 && Math.hypot(a.p[0] - e.position[0], a.p[1] - e.position[1], a.p[2] - e.position[2]) < 160)
-          if (fl >= 0) { this.flakAims.splice(fl, 1); fx.flak(e.position) }
+          if (e.kind === "flak" || fl >= 0) { if (fl >= 0) this.flakAims.splice(fl, 1); fx.flak(e.position) }
+          else if (e.surface === "water") fx.splash(e.position, e.size)
+          else if (e.surface === "ground") fx.groundHit(e.position, e.size)
           else fx.explosion(e.position, e.size)
           if (_v1.set(e.position[0], e.position[1], e.position[2]).distanceTo(cam) < 300) this.deps.host.rig.shake(0.8)
           break
@@ -735,7 +740,9 @@ class GameSession implements GameHandle {
           : { aim: direct ? null : aim, throttle: 0, roll: 0, yaw: 0, pitch: 0, boost: false, brake: false }
         this.sentFlight = fi
       }
-      const seatIn = flying ? { ...input.seatInput(seatAim, this.seatBuf) } : { aim: seatAim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
+      const seatIn: SeatInput = flying ? { ...input.seatInput(seatAim, this.seatBuf) } : { aim: seatAim, firePrimary: false, fireSecondary: false, flares: false, ability: false }
+      // Lag compensation: remote aircraft are rendered INTERP_DELAY + one-way latency behind the server.
+      seatIn.viewDelay = INTERP_DELAY + (this.offline ? 0 : this.rtt / 2000)
       this.lastSeat = seatIn
       this.send(fi ? { type: "input", seq, flight: fi, seat: seatIn } : { type: "input", seq, seat: seatIn })
       if (p && fi) {
@@ -965,6 +972,26 @@ class GameSession implements GameHandle {
     const rtOwn = est + this.rtt / 1000 - s.time
     const proj = s.projectiles
     const colors = this.tracerColors
+    // Bullets that vanished near the surface since the last snapshot hit water (spray) or ground (dust).
+    if (s !== this.lastProjSnap) {
+      this.lastProjSnap = s
+      const alive = new Set<number>()
+      for (const pr of proj) alive.add(pr.id)
+      let n = 0
+      for (const [id, p] of this.projLast) {
+        if (alive.has(id)) continue
+        this.projLast.delete(id)
+        const g = groundHeight(p[0], p[2])
+        if (n < 6 && p[1] - g < 25 && p[3] > 0) { n++; fx.spray([p[0], Math.max(g, 0), p[2]], g <= 0.5) }
+      }
+      for (const pr of proj) {
+        const dtn = 1 / 20
+        // Predict where it lands within the next snapshot so the puff sits on the surface.
+        const nx = pr.position[0] + pr.velocity[0] * dtn, ny = pr.position[1] + pr.velocity[1] * dtn, nz = pr.position[2] + pr.velocity[2] * dtn
+        const e = this.projLast.get(pr.id)
+        if (e) { e[0] = nx; e[1] = ny; e[2] = nz; e[3] = pr.age + dtn < pr.ttl ? 1 : 0 } else this.projLast.set(pr.id, [nx, ny, nz, 1])
+      }
+    }
     fx.setTracers(proj.length, (i, pos, dir, col) => {
       const pr = proj[i]
       const t = Math.max(-0.2, pr.vehicle === myVeh ? rtOwn : rtRemote)
@@ -1154,19 +1181,12 @@ class GameSession implements GameHandle {
         const c = (dx * boreDir[0] + dy * boreDir[1] + dz * boreDir[2]) / d
         if (c > bestScore) { bestScore = c; best = o; bestDist = d }
       }
-      if (best) {
+      if (best && bestDist <= 1000) {
+        // Lead pipper: combat's own intercept solver (bullets inherit the shooter's velocity), on interpolated positions.
         const own = (this.pred?.state ?? v.flight).velocity
-        const tv = best.flight.velocity
-        const tp = best.flight.position
-        let t = bestDist / gun.speed
+        const tp = this.posOfVehicle(best.id) ?? best.flight.position
         const lead: Vec3 = [0, 0, 0]
-        for (let k = 0; k < 2; k++) {
-          lead[0] = tp[0] + (tv[0] - own[0]) * t
-          lead[1] = tp[1] + (tv[1] - own[1]) * t
-          lead[2] = tp[2] + (tv[2] - own[2]) * t
-          t = Math.hypot(lead[0] - pos[0], lead[1] - pos[1], lead[2] - pos[2]) / gun.speed
-        }
-        f.lead = lead
+        if (leadPoint(pos, own, gun.speed, tp, best.flight.velocity, lead) > 0) f.lead = lead
         boreDist = bestDist
       }
     }

@@ -157,17 +157,24 @@ export function createSoundBank(ctx: BaseAudioContext): SoundBank {
 
   // Rotary guns: each round is a soft-attack, pitch-dropping thump plus lowpassed (not bright) noise.
   // Heavy timing/amplitude jitter turns the pulse train into a rip instead of a pitched buzz.
-  const round = (f0: number, f1: number, thumpDecay: number, noiseCoef: number, noiseDecay: number, noiseAmt: number) =>
+  // `crack`: a ~1.5 ms damped mid tone (1.3–2.7 kHz, random per round) — the transient that cuts
+  // through engine roar without any hiss.
+  const round = (f0: number, f1: number, thumpDecay: number, noiseCoef: number, noiseDecay: number, noiseAmt: number, crack = 0) =>
     (out: Float32Array, sr: number, _k: number, r: Rng) => {
       const amp = 0.55 + r() * 0.45
       const drop = 0.006
+      const cf = 1300 + r() * 1400
       let lp = 0
       for (let j = 0; j < out.length; j++) {
         const t = j / sr
         const attack = 1 - Math.exp(-t / 0.0012)
         const phase = 2 * Math.PI * (f1 * t + (f0 - f1) * drop * (1 - Math.exp(-t / drop)))
         lp += noiseCoef * ((r() * 2 - 1) - lp)
-        out[j] = amp * attack * (Math.sin(phase) * Math.exp(-t / thumpDecay) + noiseAmt * lp * Math.exp(-t / noiseDecay))
+        out[j] = amp * attack * (
+          Math.sin(phase) * Math.exp(-t / thumpDecay)
+          + noiseAmt * lp * Math.exp(-t / noiseDecay)
+          + crack * Math.sin(2 * Math.PI * cf * t) * Math.exp(-t / 0.0015)
+        )
       }
     }
   const finishGun = (b: AudioBuffer, lowpass: number, drive: number, peak: number) => {
@@ -176,10 +183,10 @@ export function createSoundBank(ctx: BaseAudioContext): SoundBank {
     saturate(d, drive)
     normalize(d, peak)
   }
-  const vulcan = pulseLoop(ctx, 100, 100, 0.03, rng, round(150, 80, 0.006, 0.25, 0.004, 2.5), 0.18)
-  finishGun(vulcan, 1800, 1.2, 0.8)
-  const gau8 = pulseLoop(ctx, 65, 98, 0.05, rng, round(130, 50, 0.012, 0.15, 0.005, 3), 0.15)
-  finishGun(gau8, 1200, 1.6, 0.85)
+  const vulcan = pulseLoop(ctx, 100, 100, 0.03, rng, round(220, 110, 0.006, 0.3, 0.004, 2.5, 0.6), 0.18)
+  finishGun(vulcan, 3000, 1.2, 0.8)
+  const gau8 = pulseLoop(ctx, 65, 98, 0.05, rng, round(160, 70, 0.012, 0.2, 0.005, 3, 0.45), 0.15)
+  finishGun(gau8, 2500, 1.6, 0.85)
   const ciws = pulseLoop(ctx, 75, 90, 0.035, rng, round(170, 70, 0.008, 0.2, 0.005, 2.8), 0.2)
   finishGun(ciws, 1500, 1.4, 0.8)
 

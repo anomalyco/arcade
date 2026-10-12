@@ -9,8 +9,8 @@ import {
   RenderTarget, Scene, SRGBColorSpace, UnsignedByteType, Vector3, WebGPURenderer,
 } from "three/webgpu"
 import {
-  attribute, cameraWorldMatrix, dot, float, Fn, hash, length, mix, mod, pass, renderOutput, screenCoordinate, smoothstep, time, uniform, uv,
-  vec2, vec3, vec4,
+  attribute, cameraWorldMatrix, dot, float, floatBitsToUint, Fn, hash, length, max, min, mix, mod, pass, renderOutput, screenCoordinate, select,
+  smoothstep, time, uint, uniform, uv, vec2, vec3, vec4,
 } from "three/tsl"
 import { bloom } from "three/addons/tsl/display/BloomNode.js"
 import { fxaa } from "three/addons/tsl/display/FXAANode.js"
@@ -105,6 +105,18 @@ function makeStreaks() {
   mesh.renderOrder = 10
   mesh.visible = false
   return { mesh, uSpeed, uOpacity }
+}
+
+/** Non-finite channels → 0, finite ones clamped to [0, 64]. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sanitizeHdr(input: any) {
+  return Fn(() => {
+    const c = vec3(input.rgb).toVar()
+    const EXP = uint(0x7f800000)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ch = (x: any) => select((floatBitsToUint(x) as any).bitAnd(EXP).equal(EXP), float(0), min(max(x, 0), 64))
+    return vec4(ch(c.x), ch(c.y), ch(c.z), 1)
+  })()
 }
 
 export async function createSceneHost(canvas: HTMLCanvasElement, quality: Quality, onStatus: (s: string) => void): Promise<SceneHost> {
@@ -207,6 +219,9 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
         return vec4(acc.div(6), 1)
       })()
     }
+    // One NaN/Inf pixel would be smeared over the whole frame by the bloom mip chain (→ black flashes after
+    // ACES), so zero non-finite channels (exponent-bits test: survives fast-math) and cap HDR before bloom.
+    hdr = sanitizeHdr(hdr)
     // Bloom on HDR emissives (afterburners, tracers, fire, lightning); the dim storm scene stays below threshold.
     bloomNode = bloom(hdr, 0.9, 0.5, 0.82)
     bloomNode.strength = uBloom as never
@@ -510,7 +525,9 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     intervals.length = 0
     const gpu = gpuSamples.length >= 4 ? [...gpuSamples.slice(-12)].sort((a, b) => a - b)[Math.min(gpuSamples.length, 12) >> 1] : 0
     const min = MIN_SCALE[host.quality]
-    if (med > budget * 1.2 || gpu > budget * 1.1) {
+    // Only shed pixels when the GPU is plausibly the bottleneck (a CPU-bound frame gains nothing from it).
+    const gpuBound = !device || gpu === 0 || gpu > budget * 0.6
+    if ((med > budget * 1.2 && gpuBound) || gpu > budget * 1.1) {
       okSeconds = 0
       if (dynScale > min + 1e-3) { dynScale = Math.max(min, dynScale - (med > budget * 1.7 ? 0.2 : 0.1)); applyPixelRatio(); gpuSamples.length = 0 }
     } else if (dynScale < 1 && med < budget * 1.08 && (device ? gpu > 0 && gpu < budget * 0.55 : true)) {

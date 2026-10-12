@@ -35,7 +35,9 @@
 .hud-hit.kill i { height: 10px; width: 2px; }
 .hud-hit.kill.on { animation: hit .5s ease-out; }
 @keyframes hit { 0% { opacity: 1; transform: scale(.85); } 100% { opacity: 0; transform: scale(1.15); } }
-.hud-lead::before { content: ""; position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border: 1.5px solid var(--fg); border-radius: 50%; }
+/* Gun lead pipper: where to aim so the rounds meet the target. */
+.hud-lead::before { content: ""; position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border: 1.5px solid var(--fg); border-radius: 50%; filter: drop-shadow(0 1px 1px rgba(8, 12, 12, .6)); }
+.hud-lead::after { content: ""; position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg); }
 
 /* Lock-on: square closes in as the lock builds; orange when locked. */
 .hud-lock { --lc: var(--fg); transition: --p .12s linear; }
@@ -94,7 +96,11 @@
 .hud-ships .shp { position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); --c: rgba(236, 234, 228, .9); }
 .hud-ships .shp i { position: absolute; left: -9px; top: -2px; width: 18px; height: 4px; border: 1.5px solid var(--c); filter: drop-shadow(0 1px 1px rgba(10, 14, 18, .55)); }
 .hud-ships .shp .ds { position: absolute; left: -60px; width: 120px; top: 8px; text-align: center; font: 500 12px var(--mono); color: var(--dim); white-space: nowrap; }
-.hud-ships .shp.own i { border-color: var(--fg); background: rgba(236, 234, 228, .5); }
+/* Own carrier: small flat-top silhouette (deck + island) instead of a hull bar. */
+.hud-ships .shp.own i { left: -11px; top: -6px; width: 22px; height: 9px; border: 0; background: var(--fg);
+  clip-path: polygon(0 70%, 6% 45%, 58% 45%, 60% 0, 74% 0, 76% 45%, 100% 45%, 93% 100%, 5% 100%); }
+.hud-ships .shp.own { overflow: visible; }
+.hud-ships .shp.own .ds { color: var(--fg); }
 .hud-ships .shp.hot { --c: var(--or); }
 .hud-ships .shp.hot .ds { color: var(--or); }
 /* Enemy-fleet anti-air warning (above the crosshair) and spawn protection (below). */
