@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS } from "../shared/config"
+import { GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS, SPRINT_TO_FIRE } from "../shared/config"
 import { type Rect, RectGrid, pushOut, rayRect } from "../shared/geom"
 import { generateOffice } from "../shared/maps/office"
 import { Rng } from "../shared/rng"
@@ -71,6 +71,43 @@ describe("shooting", () => {
     expect(b.health).toBeLessThan(HEALTH)
     run(w, 7)
     expect(b.health).toBe(HEALTH)
+  })
+})
+
+describe("sprint", () => {
+  test("sprinting moves faster than walking", () => {
+    const w = world(["a", "b"])
+    const a = place(w, "a", 12, 12)
+    const b = place(w, "b", 12, 16)
+    run(w, 1, (id) => ({ mx: 1, sprint: id === "a" }))
+    expect(a.x - 12).toBeGreaterThan((b.x - 12) * 1.4)
+  })
+
+  test("pulling the trigger cancels the sprint, and the first shot waits for the gun to come up", () => {
+    const w = world(["a"])
+    const a = place(w, "a", 12, 12)
+    a.cooldownUntil = 0
+    run(w, 0.5, () => ({ mx: 1, sprint: true }))
+    w.takeEvents()
+    const start = w.time
+    let first = -1
+    for (let i = 0; i < 20 && first < 0; i++) {
+      run(w, 1 / 30, () => ({ mx: 1, sprint: true, fire: true }))
+      if (w.takeEvents().some((e) => e.k === "shot")) first = w.time - start
+    }
+    expect(first).toBeGreaterThan(SPRINT_TO_FIRE - 0.04)
+    expect(first).toBeLessThan(SPRINT_TO_FIRE + 0.1)
+  })
+
+  test("a semi-automatic press during the delay still fires once the gun is up", () => {
+    const w = world(["a"])
+    w.pickGun("a", "sniper")
+    w.spawn(w.players.get("a")!)
+    const a = place(w, "a", 12, 12)
+    a.cooldownUntil = 0
+    run(w, 0.5, () => ({ mx: 1, sprint: true }))
+    run(w, 0.5, () => ({ mx: 1, sprint: true, fire: true }))
+    expect(a.mag).toBe(GUNS.sniper.mag - 1)
   })
 })
 

@@ -1,9 +1,9 @@
-import { DT, GUNS, SPEED, type Gun } from "../../shared/config"
+import { DT, GUNS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE, type Gun } from "../../shared/config"
 import { type Rect, raycast } from "../../shared/geom"
 import { type MapDef, getMap } from "../../shared/maps"
 import { stepBody, type Body } from "../../shared/sim/move"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
-import type { Intent, SimEvent } from "../../shared/sim/world"
+import { type Intent, type SimEvent, sprints } from "../../shared/sim/world"
 import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
 import { buildLevel } from "../render/level-mesh"
@@ -77,6 +77,7 @@ export class Game {
   mag = 0
   reloadUntil = 0
   private cooldownUntil = 0
+  private readyAt = 0
   private lastLocalShot = -10
   private triggerHeld = false
   private wasAlive = false
@@ -209,6 +210,7 @@ export class Game {
       this.gun = mine.gun
       this.mag = GUNS[mine.gun].mag
       this.reloadUntil = 0
+      this.readyAt = 0
       this.body = { x: mine.x, y: mine.y, vx: 0, vy: 0 }
       this.pending = []
       this.corpses = this.corpses.filter((c) => c.id !== this.myId)
@@ -220,7 +222,7 @@ export class Game {
     }
     this.pending = this.pending.filter((p) => p.seq > s.ack)
     const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
-    for (const p of this.pending) stepBody(b, p.i.mx, p.i.my, SPEED, this.solids, DT)
+    for (const p of this.pending) stepBody(b, p.i.mx, p.i.my, sprints(p.i) ? SPRINT_SPEED : SPEED, this.solids, DT)
     // Small corrections blend in; big ones snap.
     if (this.body && Math.hypot(b.x - this.body.x, b.y - this.body.y) < 1.5) {
       this.body.x += (b.x - this.body.x) * 0.35
@@ -342,7 +344,7 @@ export class Game {
       const mv = live ? input.move() : { mx: 0, my: 0 }
       const reload = input.takeReload()
       const fire = live && input.enabled && input.firing
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload }
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting }
       const seq = ++this.seq
       this.session.send({ type: "intent", seq, i })
       if (!live || !this.body) {
@@ -351,16 +353,18 @@ export class Game {
       }
       this.pending.push({ seq, i })
       if (this.pending.length > 90) this.pending.shift()
-      stepBody(this.body, i.mx, i.my, SPEED, this.solids, DT)
-      this.localGun(fire, reload)
+      const sprint = sprints(i)
+      stepBody(this.body, i.mx, i.my, sprint ? SPRINT_SPEED : SPEED, this.solids, DT)
+      this.localGun(fire, reload, sprint)
     }
     this.bloom = Math.max(0, this.bloom - dt * 2.6)
     this.hurt = Math.max(0, this.hurt - dt * 0.9)
   }
 
   /** Mirrors the server's trigger rules so your own shots fire on the frame you click. */
-  private localGun(fire: boolean, reload: boolean): void {
+  private localGun(fire: boolean, reload: boolean, sprint: boolean): void {
     const t = this.now
+    if (sprint) this.readyAt = t + SPRINT_TO_FIRE
     const gun = GUNS[this.gun]
     if (this.reloadUntil > 0 && t >= this.reloadUntil) {
       this.reloadUntil = 0
@@ -369,8 +373,9 @@ export class Game {
     if (this.reloadUntil === 0 && ((reload && this.mag < gun.mag) || (fire && this.mag === 0))) {
       this.reloadUntil = t + gun.reload
     }
-    const pressed = fire && (gun.auto || !this.triggerHeld)
-    this.triggerHeld = fire
+    const ready = t >= this.readyAt
+    const pressed = fire && ready && (gun.auto || !this.triggerHeld)
+    if (ready || !fire) this.triggerHeld = fire
     if (!pressed || this.reloadUntil > 0 || this.mag <= 0 || t < this.cooldownUntil) return
     this.cooldownUntil = t + gun.cooldown
     this.mag--
@@ -510,7 +515,7 @@ export class Game {
     const me = this.body
     const dx = me ? a.x - me.x : 0
     const dy = me ? a.y - me.y : 0
-    if (ev & EV.step && me && Math.hypot(dx, dy) < 16) this.sound.step(dx, dy, mine, Math.min(1, Math.hypot(a.svx, a.svy) / SPEED))
+    if (ev & EV.step && me && Math.hypot(dx, dy) < 16) this.sound.step(dx, dy, mine, Math.min(SPRINT_SPEED, Math.hypot(a.svx, a.svy)) / SPEED)
     if (ev & EV.eject) this.casing(a)
     if (ev & EV.magDrop) this.dropMag(a)
     if (Math.hypot(dx, dy) < 22) this.sound.cue(ev, a.gun, dx, dy, mine)

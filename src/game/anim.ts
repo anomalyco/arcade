@@ -110,6 +110,8 @@ export type Avatar = {
   phase: number
   duty: number
   gait: number
+  /** 0..1 blend into the sprint: longer stride, deeper lean, gun down across the chest. */
+  sprint: number
   feet: [Foot, Foot]
   leanX: Spring
   leanY: Spring
@@ -169,6 +171,7 @@ export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gu
     phase: 0,
     duty: 0.6,
     gait: 0,
+    sprint: 0,
     feet: [foot(-1), foot(1)],
     leanX: spring(),
     leanY: spring(),
@@ -396,6 +399,11 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   const sp = Math.hypot(nvx, nvy)
   const k = clamp(sp / SPEED, 0, 1)
   a.gait += ((sp > 0.35 ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
+  // Only sprinters go faster than a walk (snapshots carry velocity, not the key). A shot drops it at once.
+  const sprinting = sp > SPEED + 0.6 && now - a.firedAt > 0.25
+  if (now - a.firedAt < 0.05) a.sprint = 0
+  a.sprint += ((sprinting ? 1 : 0) - a.sprint) * Math.min(1, dt * 9)
+  const s = smooth(a.sprint)
 
   // Legs face the travel direction, but never more than ~60 degrees off the aim: strafing crosses the feet,
   // and moving away from the aim walks backwards.
@@ -418,8 +426,8 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 
   // Gait: a phase-driven stride with stance feet locked to the floor. When slow, keep stepping only while a foot is
   // in the air or out of place, so the soldier settles into a stance and steps when turning on the spot.
-  const strideLen = 0.7 + 0.22 * sp
-  a.duty += ((0.62 - 0.22 * k) - a.duty) * Math.min(1, dt * 5)
+  const strideLen = 0.7 + 0.22 * sp + 0.3 * s
+  a.duty += ((0.62 - 0.22 * k - 0.06 * s) - a.duty) * Math.min(1, dt * 5)
   const duty = a.duty
   const cl = Math.cos(a.legYaw)
   const sl = Math.sin(a.legYaw)
@@ -449,7 +457,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
         f.lift = [f.p[0], 0, f.p[2]]
         f.liftYaw = f.yaw
       }
-      const s = (p - duty) / (1 - duty)
+      const u = (p - duty) / (1 - duty)
       const left = (1 - p) / rate
       const stance = duty / rate
       const [rx, ry] = rest(i)
@@ -464,10 +472,10 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
         tx += -sl * side * (0.16 - lat)
         ty += cl * side * (0.16 - lat)
       }
-      const e = smoother(s)
-      f.p = [f.lift[0] + (tx - f.lift[0]) * e, Math.sin(Math.PI * s) * (0.06 + 0.09 * k), f.lift[2] + (ty - f.lift[2]) * e]
+      const e = smoother(u)
+      f.p = [f.lift[0] + (tx - f.lift[0]) * e, Math.sin(Math.PI * u) * (0.06 + 0.09 * k + 0.07 * s), f.lift[2] + (ty - f.lift[2]) * e]
       f.yaw = f.liftYaw + angleDiff(a.legYaw + (i === 0 ? -0.12 : 0.12), f.liftYaw) * e
-      f.pitch = -Math.sin(Math.PI * 2 * s) * 0.45 * k
+      f.pitch = -Math.sin(Math.PI * 2 * u) * (0.45 + 0.25 * s) * k
     } else if (!f.planted) {
       f.planted = true
       f.p = [f.p[0], 0, f.p[2]]
@@ -528,11 +536,14 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   const th = Math.PI * 2 * (a.phase - duty / 2)
   const moving = a.gait * k
   const still = 1 - a.gait
+  // Sprint pose, eased off while a clip (reload, pump) needs the hands.
+  const sprint = smooth(a.sprint)
+  const port = sprint * (clip ? 0.35 : 1)
   const breath = Math.sin(t * 1.7 + a.seed)
 
   // Pelvis: low and bobbing when running, swaying its weight when standing, kept within reach of both feet.
   const legLen = RIG.thigh + RIG.shin - 0.015
-  let h = HIP - 0.05 * moving - 0.035 * moving * Math.cos(2 * th) + a.dip.x + breath * 0.004 * still
+  let h = HIP - 0.05 * moving - 0.035 * moving * Math.cos(2 * th) - 0.03 * sprint * Math.cos(2 * th) + a.dip.x + breath * 0.004 * still
   const sway = Math.sin(t * 0.55 + a.seed) * 0.025 * still
   const cl = Math.cos(a.legYaw)
   const sl = Math.sin(a.legYaw)
@@ -547,7 +558,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
     const reach = Math.sqrt(Math.max(0, legLen * legLen - d * d)) + RIG.ankle + f.p[1]
     h = Math.min(h, reach)
   }
-  const twist = -Math.sin(th) * 0.22 * moving
+  const twist = -Math.sin(th) * (0.22 + 0.12 * sprint) * moving
   let pelvis = yawFrame([px, h, pz], a.legYaw + twist)
   pelvis = pitch(pelvis, -0.12 * moving - 0.05)
   pelvis = roll(pelvis, 0.06 * moving * Math.cos(th) + sway * 1.4)
@@ -577,31 +588,42 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   const look = scalarAt(clip?.head, ct)
   const reloadHunch = clip?.head ? look * 0.25 : 0
 
-  const torsoYaw = a.aim + BLADE[g] + Math.sin(th) * 0.12 * moving + a.hitTwist.x + a.recYaw.x * 0.4
+  // Sprinting squares the chest up to the run and carries the gun with it.
+  const run = angleDiff(a.legYaw, a.aim) * port * 0.7
+  const torsoYaw = a.aim + run + BLADE[g] * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
-  const fwd = 0.1 + 0.08 * moving + leanFwd * 2.2 - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const fwd = 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2 - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * 2.2 + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
   torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * 0.4)
 
   // Gun: hung off the shoulder line along the exact aim, then recoil, sway, clip tilt and the raise.
   const hold = HOLD[g]
+  // Port arms: muzzle swung left across the chest, down and pulled in.
+  gunYaw += 0.75 * port
+  gunPitch -= 0.4 * port
+  gunRoll += 0.35 * port
+  gunPull += 0.1 * port
+  gunDrop += 0.12 * port
+  const gy = a.aim + run
+  const ga = Math.cos(gy)
+  const gs = Math.sin(gy)
   const shoulderC = at(torso, 0, RIG.shoulderY, 0)
   const rest = HIP + RIG.waist + RIG.shoulderY
   const sway2 = still * 0.012
   const yaw =
-    a.aim +
+    gy +
     a.recYaw.x +
     Math.sin(t * 0.9 + a.seed) * sway2 +
     Math.sin(th) * 0.03 * moving +
     a.heat * 0.035 * Math.sin(t * 41 + a.seed) +
     a.hitTwist.x * 0.3 -
     gunYaw
-  let gunF = yawFrame([shoulderC[0] + ca * hold.fwd - sa * hold.side, shoulderC[1] + hold.up - rest - gunDrop - raise * 0.22, shoulderC[2] + sa * hold.fwd + ca * hold.side], yaw)
-  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * 0.025 * moving + a.heat * 0.03 * Math.sin(t * 53))
+  let gunF = yawFrame([shoulderC[0] + ga * hold.fwd - gs * hold.side, shoulderC[1] + hold.up - rest - gunDrop - raise * 0.22, shoulderC[2] + gs * hold.fwd + ga * hold.side], yaw)
+  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
   gunF = roll(gunF, a.recRoll.x + gunRoll + clamp(-a.aimVel * 0.03, -0.3, 0.3) + raise * 0.5)
   gunF = moved(gunF, at(gunF, -a.recBack.x - gunPull - raise * 0.12, 0, 0))
 

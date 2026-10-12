@@ -62,7 +62,7 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null
       if (!i || typeof o.seq !== "number" || !Number.isInteger(o.seq) || o.seq < 0) return null
-      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true } }
+      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true, sprint: i.sprint === true } }
     }
     case "gun":
       return { type: "gun", gun: gunOf(o.gun) }

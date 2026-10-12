@@ -13,6 +13,9 @@ export const POLAR_RAYS = 1024
 
 export const PLAYER_RADIUS = 0.32
 export const SPEED = 4.2
+/** Holding Shift while moving: faster, but the gun is down. Firing cancels it and the first shot waits SPRINT_TO_FIRE. */
+export const SPRINT_SPEED = 6.3
+export const SPRINT_TO_FIRE = 0.18
 export const ACCEL = 22
 
 export const HIT_RADIUS = 0.38

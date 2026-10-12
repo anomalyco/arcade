@@ -24,7 +24,7 @@ export class BotBrain implements Brain {
 
   think(world: World, p: Player): Intent {
     const now = world.time
-    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false }
+    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false }
     let near: Player | null = null
     let nd = Infinity
     for (const q of world.players.values()) {
@@ -70,6 +70,8 @@ export class BotBrain implements Brain {
       const d = Math.hypot(next.x - p.x, next.y - p.y)
       i.mx = (next.x - p.x) / d
       i.my = (next.y - p.y) / d
+      // Run when the hunt has a long way to go.
+      i.sprint = nd > 8
       this.turn(Math.atan2(i.my, i.mx))
       i.aim = this.aim
     }

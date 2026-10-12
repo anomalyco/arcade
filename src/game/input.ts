@@ -1,5 +1,5 @@
 /**
- * Keyboard and mouse. WASD or arrows move on screen axes, the mouse aims, hold right click to look further ahead, hold left click to fire, R reloads, 1/2/3 pick a gun
+ * Keyboard and mouse. WASD or arrows move on screen axes, the mouse aims, hold right click to look further ahead, hold left click to fire, hold Shift to sprint, R reloads, 1/2/3 pick a gun
  * for your next life, Tab shows the scores.
  */
 export class Input {
@@ -55,6 +55,10 @@ export class Input {
     if (this.held("KeyA") || this.held("ArrowLeft")) mx -= 1
     if (this.held("KeyD") || this.held("ArrowRight")) mx += 1
     return { mx, my }
+  }
+
+  get sprinting(): boolean {
+    return this.enabled && (this.held("ShiftLeft") || this.held("ShiftRight"))
   }
 
   takeReload(): boolean {

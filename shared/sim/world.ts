@@ -1,4 +1,4 @@
-import { DT, END_SECONDS, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED } from "../config"
+import { DT, END_SECONDS, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE } from "../config"
 import { type Rect, raycast } from "../geom"
 import { type MapDef, getMap } from "../maps"
 import { Rng } from "../rng"
@@ -7,9 +7,15 @@ import { stepBody } from "./move"
 
 export type Phase = "play" | "end"
 
-/** One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean }
-export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false }
+/**
+ * One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. `sprint`
+ * holds Shift.
+ */
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean }
+export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false }
+
+/** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
+export const sprints = (i: Intent): boolean => i.sprint && !i.fire && Math.hypot(i.mx, i.my) > 0.1
 
 export interface Brain {
   think(world: World, p: Player): Intent
@@ -28,6 +34,8 @@ export type Player = {
   alive: boolean
   respawnAt: number
   cooldownUntil: number
+  /** No shots before this: the gun is coming up from a sprint. */
+  readyAt: number
   /** The gun you have now, and the one you picked for your next life. */
   gun: Gun
   pick: Gun
@@ -127,7 +135,7 @@ export class World {
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, gun: "rifle", pick: "rifle", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0 }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0 }
   }
 
   /** Puts a player at the spawn farthest from everyone alive. */
@@ -152,6 +160,7 @@ export class World {
     p.mag = GUNS[p.gun].mag
     p.reloadUntil = 0
     p.cooldownUntil = this.time + 0.5
+    p.readyAt = 0
   }
 
   push(id: string, seq: number, intent: Intent): void {
@@ -198,16 +207,20 @@ export class World {
         p.vy = 0
         continue
       }
-      stepBody(p, intent.mx, intent.my, SPEED, this.solids, DT)
+      const sprint = sprints(intent)
+      stepBody(p, intent.mx, intent.my, sprint ? SPRINT_SPEED : SPEED, this.solids, DT)
+      if (sprint) p.readyAt = this.time + SPRINT_TO_FIRE
       const gun = GUNS[p.gun]
       if (p.reloadUntil > 0 && this.time >= p.reloadUntil) {
         p.reloadUntil = 0
         p.mag = gun.mag
       }
       if ((intent.reload && p.mag < gun.mag) || (intent.fire && p.mag === 0)) this.reload(p)
-      const pressed = intent.fire && (gun.auto || !p.triggerHeld)
+      // A press during the sprint-to-fire delay is held over until the gun is up.
+      const ready = this.time >= p.readyAt
+      const pressed = intent.fire && ready && (gun.auto || !p.triggerHeld)
       if (pressed && p.reloadUntil === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p)
-      p.triggerHeld = intent.fire
+      if (ready || !intent.fire) p.triggerHeld = intent.fire
       if (p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
     }
   }

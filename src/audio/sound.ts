@@ -263,7 +263,7 @@ export class Sound {
     this.tone(dest, t, f * 1.47, f * 1.45, 0.12, 0.06, "sine")
   }
 
-  /** A footfall: heel thump and a scuff, louder at a run. */
+  /** A footfall: heel thump and a scuff, louder at a run. `loud` is speed over walk speed: above 1 is a sprint. */
   step(dx: number, dy: number, mine: boolean, loud: number): void {
     const dest = this.out(dx, dy, (mine ? 0.12 : 0.2) * (0.35 + loud * 0.65), 0.05)
     if (!dest) return
