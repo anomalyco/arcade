@@ -44,7 +44,7 @@ export class Camera {
 
   /** A gunshot's punch: pushes the view out by `amount` metres and rolls it by `rollBy` radians. */
   punch(amount: number, rollBy: number): void {
-    this.zv += amount * 14
+    this.zv += amount * 40
     this.rv += rollBy * 40
   }
 
