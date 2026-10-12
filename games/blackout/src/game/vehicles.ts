@@ -11,7 +11,7 @@ import { LAMPS, WHEELS, vehicleModels } from "../render/vehicle-mesh"
 import type { Avatar } from "./anim"
 
 type Rgb3 = [number, number, number]
-type FxKind = "spark" | "dust" | "smoke" | "fire" | "soot" | "chip"
+type FxKind = "spark" | "dust" | "smoke" | "fire" | "soot" | "chip" | "char"
 export type FxFn = (x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, size: number, kind: FxKind) => void
 export type SpriteFn = (add: boolean, x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot?: number, stretch?: number, extra?: number) => void
 export type PartFn = (model: number, x: number, y: number, z: number, yaw: number, tint: Rgb3, pitch: number, roll: number, flash: number, alpha?: number) => void
@@ -225,7 +225,7 @@ export class VehicleFx {
     for (let i = 0; i < 30; i++) {
       const a = R() * Math.PI * 2
       const s = 0.5 + R() * 3
-      fx(x + Math.cos(a) * 0.8, y + Math.sin(a) * 0.8, 1 + R() * 1.5, Math.cos(a) * s, Math.sin(a) * s, 0.8 + R() * 1.2, 3 + R() * 2.5, 0.5 + R() * 0.5, "soot")
+      fx(x + Math.cos(a) * 0.8, y + Math.sin(a) * 0.8, 1 + R() * 1.5, Math.cos(a) * s, Math.sin(a) * s, 0.8 + R() * 1.2, 3 + R() * 2.5, 0.5 + R() * 0.5, i % 2 ? "soot" : "char")
     }
     for (let i = 0; i < 24; i++) {
       const a = R() * Math.PI * 2
@@ -341,13 +341,21 @@ export class VehicleFx {
     if (wreck) {
       // Burning: flames licking up out of it, black smoke, an orange flicker on everything around.
       const flick = 0.75 + 0.25 * Math.sin(t * 23 + d.id) * Math.sin(t * 7.3)
-      dyn.push({ x: d.x, y: d.y, h: 1.4, r: 8, color: [1, 0.5, 0.18], power: 1.1 * flick, size: 0.4 })
-      d.smoke += dt * 14
+      dyn.push({ x: d.x, y: d.y, h: 1.6, r: 9, color: [1, 0.5, 0.18], power: 1.2 * flick, size: 0.4, near: spec.length * 0.5 })
+      // Steady flames on the bodywork, and a column of black smoke drifting up off it.
+      const top = d.kind === "van" ? 1.9 : d.kind === "jeep" ? 1.0 : 0.6
+      for (let i = 0; i < (d.kind === "scooter" ? 1 : 3); i++) {
+        const at = localToWorld(d, (i - 1) * hl * 0.55, ((i * 0.37) % 1 - 0.5) * spec.width * 0.4)
+        const f = 0.7 + 0.3 * Math.sin(t * (11 + i * 3) + i * 2 + d.id)
+        sprite(true, at.x, top + 0.15, at.y, 0.55 * f, 1.7, 0.55, 0.1, 0.75 * f, 0)
+        sprite(true, at.x, top + 0.35, at.y, 0.3 * f, 1.9, 1.0, 0.4, 0.8 * f, 0)
+      }
+      d.smoke += dt * 9
       while (d.smoke > 1) {
         d.smoke--
-        const at = localToWorld(d, (Math.random() - 0.5) * hl * 1.4, (Math.random() - 0.5) * spec.width * 0.7)
-        if (Math.random() < 0.6) fx(at.x, at.y, 0.9 + Math.random() * 0.5, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0.8 + Math.random() * 1.2, 0.4 + Math.random() * 0.35, 0.22 + Math.random() * 0.2, "fire")
-        else fx(at.x, at.y, 1.4, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, 0.7 + Math.random() * 0.6, 2.4 + Math.random() * 1.5, 0.35 + Math.random() * 0.3, "soot")
+        const at = localToWorld(d, (Math.random() - 0.5) * hl * 1.4, (Math.random() - 0.5) * spec.width * 0.6)
+        if (Math.random() < 0.45) fx(at.x, at.y, top + Math.random() * 0.3, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0.8 + Math.random() * 1.2, 0.35 + Math.random() * 0.3, 0.2 + Math.random() * 0.15, "fire")
+        else fx(at.x, at.y, top + 0.4, (Math.random() - 0.5) * 0.3 + 0.25, (Math.random() - 0.5) * 0.3 - 0.15, 0.9 + Math.random() * 0.6, 2.2 + Math.random() * 1.2, 0.3 + Math.random() * 0.2, "char")
       }
       return
     }
@@ -423,7 +431,7 @@ export class VehicleFx {
         const at = localToWorld(d, d.kind === "van" ? hl - 0.6 : hl * 0.55, (Math.random() - 0.5) * 0.4)
         const top = d.kind === "van" ? 1.1 : 1.0
         if (health < 0.2 && Math.random() < 0.35) fx(at.x, at.y, top, 0, 0, 0.8, 0.35, 0.16 + Math.random() * 0.1, "fire")
-        else fx(at.x, at.y, top, (Math.random() - 0.5) * 0.3 + d.vx * 0.2, (Math.random() - 0.5) * 0.3 + d.vy * 0.2, 0.6, 1.6 + Math.random(), 0.16 + (0.45 - health) * 0.5, "soot")
+        else fx(at.x, at.y, top, (Math.random() - 0.5) * 0.3 + d.vx * 0.2, (Math.random() - 0.5) * 0.3 + d.vy * 0.2, 0.6, 1.6 + Math.random(), 0.14 + (0.45 - health) * 0.45, "char")
       }
     }
   }

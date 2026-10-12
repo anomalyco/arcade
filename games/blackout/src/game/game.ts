@@ -49,7 +49,7 @@ export const css = (c: Rgb3) => `rgb(${c.map((v) => Math.round(Math.min(1, v) * 
 
 type Tracer = { x0: number; y0: number; z0: number; x1: number; y1: number; t0: number; life: number; w: number; gun: Gun }
 type FlashFx = { x: number; y: number; z: number; aim: number; gun: Gun; t0: number; seed: number }
-type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; t0: number; life: number; size: number; kind: "spark" | "dust" | "blood" | "splat" | "smoke" | "chip" | "fire" | "soot"; bounced: boolean }
+type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; t0: number; life: number; size: number; kind: "spark" | "dust" | "blood" | "splat" | "smoke" | "chip" | "fire" | "soot" | "char"; bounced: boolean }
 type Flash = { x: number; y: number; t0: number; life: number; power: number }
 /** Rifle and shotgun tracers fly at this speed (m/s) as a streak this long. */
 const TRACER_SPEED = 240
@@ -1215,8 +1215,8 @@ export class Game {
     for (const p of this.particles) {
       const age = t - p.t0
       const a = 1 - age / p.life
-      if (p.kind === "dust" || p.kind === "smoke" || p.kind === "fire" || p.kind === "soot") {
-        const drag = Math.exp(-adt * (p.kind === "fire" ? 7 : p.kind === "soot" ? 2.2 : 3))
+      if (p.kind === "dust" || p.kind === "smoke" || p.kind === "fire" || p.kind === "soot" || p.kind === "char") {
+        const drag = Math.exp(-adt * (p.kind === "fire" ? 7 : p.kind === "soot" || p.kind === "char" ? 2.2 : 3))
         p.vx *= drag
         p.vy *= drag
         p.vz = p.vz * drag + adt * (p.kind === "dust" || p.kind === "smoke" ? 0.25 : 0.6)
@@ -1249,7 +1249,8 @@ export class Game {
         const u = age / p.life
         const g = u < 0.1 ? 0.85 : Math.max(0.1, 0.62 - u * 0.7)
         this.sprite(true, p.x, p.z, p.y, p.size * (0.8 + u * 1.4), 1.7, g, u < 0.1 ? 0.45 : 0.06, (1 - u) ** 2 * 0.9, 0)
-      } else if (p.kind === "soot") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 0.9), 0.13, 0.125, 0.12, Math.min(1, age * 6) * a * a * 0.75, 1, 0, 0, p.size * 40)
+      } else if (p.kind === "char") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 0.7), 0.025, 0.024, 0.026, Math.min(1, age * 4) * a * 0.8, 1, 0, 0, p.size * 40)
+      else if (p.kind === "soot") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 0.9), 0.13, 0.125, 0.12, Math.min(1, age * 6) * a * a * 0.75, 1, 0, 0, p.size * 40)
       else if (p.kind === "chip") this.sprite(false, p.x, p.z, p.y, p.size, 0.25, 0.26, 0.3, Math.min(1, a * 4), 6)
       else if (p.kind === "splat") this.sprite(false, p.x, p.z, p.y, p.size, 0.08, 0.0, 0.005, Math.min(1, a * 3) * 0.9, 6)
       else this.sprite(false, p.x, p.z, p.y, p.size * 1.6, 0.16, 0.0, 0.008, 1, 0)
