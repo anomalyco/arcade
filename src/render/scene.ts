@@ -1,9 +1,19 @@
 /// <reference types="vite/client" />
-// Renderer + scene host. Loaded lazily after the lobby has painted.
+// Renderer + scene host (WebGPU first, automatic WebGL2 fallback). Loaded lazily after the lobby has painted.
+// Import convention for all render code: classes from "three/webgpu", TSL from "three/tsl", addons from
+// "three/addons/…". Both "three" and "three/webgpu" share three.core.js, so plain math imports from "three"
+// (Vector3, Quaternion…) remain identical classes — but materials must be node materials.
 import {
-  AmbientLight, Box3, BufferGeometry, Color, LineSegments, Vector3, DirectionalLight, Float32BufferAttribute, Fog, Group, HemisphereLight, Mesh, MeshLambertMaterial, OrthographicCamera, PerspectiveCamera,
-  PlaneGeometry, PCFShadowMap, Scene, ShaderMaterial, DepthTexture, UnsignedIntType, HalfFloatType, SRGBColorSpace, UnsignedByteType, Vector2, WebGLRenderer, WebGLRenderTarget, type Camera,
-} from "three"
+  ACESFilmicToneMapping, AmbientLight, Box3, BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, Fog, Group, HemisphereLight,
+  LineBasicNodeMaterial, LineSegments, Mesh, MeshLambertMaterial, NoToneMapping, PCFShadowMap, PerspectiveCamera, PlaneGeometry, RenderPipeline,
+  RenderTarget, Scene, SRGBColorSpace, UnsignedByteType, Vector3, WebGPURenderer,
+} from "three/webgpu"
+import {
+  attribute, cameraWorldMatrix, dot, float, Fn, hash, length, mix, mod, pass, renderOutput, screenCoordinate, smoothstep, time, uniform, uv,
+  vec2, vec3, vec4,
+} from "three/tsl"
+import { bloom } from "three/addons/tsl/display/BloomNode.js"
+import { fxaa } from "three/addons/tsl/display/FXAANode.js"
 import type { Quality, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { AIRBASES, groundHeight } from "../sim/geography"
 import { createWorldView, type WorldView } from "./world-view"
@@ -12,16 +22,16 @@ import { createEffects, type Effects } from "./effects"
 import { CameraRig } from "./camera"
 import * as worldPalette from "./world/palette"
 
-/** Sun direction exported by the world palette (falls back to a mid-afternoon sun). */
+/** Sun direction exported by the world palette (falls back to a high overcast key). */
 const SUN_DIR = (() => {
   const d = (worldPalette as unknown as Record<string, unknown>).SUN_DIRECTION as readonly number[] | undefined
   return d && d.length === 3 ? new Vector3(d[0], d[1], d[2]).normalize() : new Vector3(0.4, 0.75, 0.5).normalize()
 })()
 
-export interface FrameStats { fps: number; frameMs: number; drawCalls: number; triangles: number }
+export interface FrameStats { fps: number; frameMs: number; drawCalls: number; triangles: number; backend: "webgpu" | "webgl2" }
 
 export interface SceneHost {
-  renderer: WebGLRenderer
+  renderer: WebGPURenderer
   scene: Scene
   camera: PerspectiveCamera
   world: WorldView
@@ -29,38 +39,28 @@ export interface SceneHost {
   rig: CameraRig
   quality: Quality
   aircraftLoaded: Promise<void>
-  /** Per-frame game callback. null = menu backdrop orbit. */
+  /** Per-frame game callback. null = menu backdrop. */
   setFrame(fn: ((dt: number, time: number) => void) | null): void
   setQuality(q: Quality): void
   groundAt(x: number, z: number): number
   stats: FrameStats
   /** Studio 3/4 render of an aircraft in team livery (PNG data URL), cached. null if the model failed to load. */
   thumbnail(kind: VehicleKind, team: TeamId): Promise<string | null>
-  /** Sense of speed: +6° FOV while boosting, faint speed streaks above 600 km/h. Call each frame (0 when not flying). */
+  /** Speed streaks above 600 km/h and (High) speed blur. Call each frame (0 when not flying). */
   setSpeedFx(kmh: number, boost: boolean): void
-  /** Point the sun shadow map at the player (call each frame while flying). */
+  /** Point the shadow map at the player (call each frame while flying). */
   setFocus(p: readonly number[] | null): void
+  /** Lightning flash (0..1+): pulses exposure and bloom; decays on its own. The world may also expose a value. */
+  lightning(intensity: number): void
 }
 
-const STREAKS_VS = /* glsl */ `
-attribute vec4 aSeed; // angle, radius, phase, end (0/1)
-uniform float uTime;
-uniform float uSpeed;
-varying float vA;
-void main() {
-  float L = 260.0;
-  float z = -mod(aSeed.z * L + uTime * uSpeed, L) - 8.0;
-  float len = 4.0 + uSpeed * 0.035;
-  vec3 p = vec3(cos(aSeed.x) * aSeed.y, sin(aSeed.x) * aSeed.y * 0.7, z + aSeed.w * len);
-  vA = (1.0 - smoothstep(120.0, 260.0, -z)) * smoothstep(8.0, 30.0, -z);
-  gl_Position = projectionMatrix * vec4(p, 1.0);
-}`
-const STREAKS_FS = /* glsl */ `
-uniform float uOpacity;
-varying float vA;
-void main() { gl_FragColor = vec4(1.0, 1.0, 1.0, vA * uOpacity); }`
+function pixelRatio(q: Quality): number {
+  const dpr = window.devicePixelRatio || 1
+  return Math.min(dpr, q === "low" ? 1 : q === "balanced" ? 1.5 : 2)
+}
 
-function makeStreaks(): { mesh: LineSegments; mat: ShaderMaterial } {
+/** Faint speed streaks in view space (camera-attached through cameraWorldMatrix). */
+function makeStreaks() {
   const N = 90
   const seeds = new Float32Array(N * 8)
   for (let i = 0; i < N; i++) {
@@ -70,156 +70,49 @@ function makeStreaks(): { mesh: LineSegments; mat: ShaderMaterial } {
   const geo = new BufferGeometry()
   geo.setAttribute("position", new Float32BufferAttribute(new Float32Array(N * 6), 3))
   geo.setAttribute("aSeed", new Float32BufferAttribute(seeds, 4))
-  const mat = new ShaderMaterial({
-    vertexShader: STREAKS_VS, fragmentShader: STREAKS_FS, transparent: true, depthTest: false, depthWrite: false,
-    uniforms: { uTime: { value: 0 }, uSpeed: { value: 0 }, uOpacity: { value: 0 } },
-  })
+  const uSpeed = uniform(0), uOpacity = uniform(0)
+  const seed = attribute<"vec4">("aSeed", "vec4")
+  const L = float(260)
+  const z = mod(seed.z.mul(L).add(time.mul(uSpeed)), L).negate().sub(8)
+  const len = uSpeed.mul(0.035).add(4)
+  const pView = vec3(seed.x.cos().mul(seed.y), seed.x.sin().mul(seed.y).mul(0.7), z.add(seed.w.mul(len)))
+  const mat = new LineBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false })
+  mat.positionNode = cameraWorldMatrix.mul(vec4(pView, 1)).xyz
+  const fade = smoothstep(260, 120, z.negate()).mul(smoothstep(8, 30, z.negate()))
+  mat.colorNode = vec3(0.92, 0.94, 0.96)
+  mat.opacityNode = fade.mul(uOpacity)
   const mesh = new LineSegments(geo, mat)
   mesh.frustumCulled = false
   mesh.renderOrder = 10
   mesh.visible = false
-  return { mesh, mat }
-}
-
-/**
- * Minimal finish (Balanced/High only; Low renders straight to the canvas):
- * scene → multisampled target (MSAA = the anti-aliasing), a 1/4-res bright-pass for a light bloom on
- * real highlights (sun, fire, glints), then a composite with a touch of saturation/contrast.
- */
-const FS_TRI_VS = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }"
-
-const BLOOM_FS = /* glsl */ `
-uniform sampler2D tScene;
-uniform vec2 uTexel;
-varying vec2 vUv;
-vec3 bright(vec2 uv) {
-  vec3 c = texture2D(tScene, uv).rgb;
-  float l = max(c.r, max(c.g, c.b));
-  // Saturated highlights only (fire, sun, glints): white clouds and pale sky must not glow.
-  float sat = l - min(c.r, min(c.g, c.b));
-  return c * smoothstep(0.9, 1.0, l) * smoothstep(0.15, 0.45, sat);
-}
-void main() {
-  vec3 acc = bright(vUv) * 0.2;
-  for (int i = 0; i < 8; i++) {
-    float a = float(i) * 0.785398;
-    vec2 d = vec2(cos(a), sin(a));
-    acc += bright(vUv + d * uTexel * 2.5) * 0.06 + bright(vUv + d * uTexel * 6.0) * 0.04;
-  }
-  gl_FragColor = vec4(acc, 1.0);
-}`
-
-const POST_FS = /* glsl */ `
-uniform sampler2D tScene;
-uniform sampler2D tBloom;
-uniform float uSat;
-uniform float uContrast;
-uniform float uBloom;
-varying vec2 vUv;
-void main() {
-  vec3 c = texture2D(tScene, vUv).rgb + texture2D(tBloom, vUv).rgb * uBloom;
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = max(mix(vec3(l), c, uSat), 0.0);
-  c = mix(c, c * c * (3.0 - 2.0 * c), uContrast);
-  // Input is already display-encoded (see PostPass), so no colour-space conversion here.
-  gl_FragColor = vec4(c, 1.0);
-}`
-
-class PostPass {
-  readonly target: WebGLRenderTarget
-  private bloomRT: WebGLRenderTarget
-  private scene = new Scene()
-  private camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
-  mat: ShaderMaterial
-  private bloomMat: ShaderMaterial
-  private tri: Mesh
-  private size = new Vector2()
-
-  constructor(renderer: WebGLRenderer) {
-    renderer.getDrawingBufferSize(this.size)
-    // At ≥2× pixel ratio aliasing is already small: 2× MSAA keeps the fill cost down on retina laptops.
-    this.target = new WebGLRenderTarget(this.size.x, this.size.y, {
-      samples: renderer.getPixelRatio() >= 2 ? 2 : 4, type: UnsignedByteType, colorSpace: SRGBColorSpace, depthBuffer: true,
-    })
-    // Render the scene exactly as it would land on the canvas (tone mapping + sRGB encode applied, fog mixed
-    // after conversion): three only does that for "XR" targets, so flag it and force plain RGBA8 storage.
-    this.target.texture.internalFormat = "RGBA8"
-    ;(this.target as unknown as { isXRRenderTarget: boolean }).isXRRenderTarget = true
-    this.bloomRT = new WebGLRenderTarget(1, 1, { type: HalfFloatType })
-    const geo = new BufferGeometry()
-    geo.setAttribute("position", new Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3))
-    geo.setAttribute("uv", new Float32BufferAttribute([0, 0, 2, 0, 0, 2], 2))
-    this.bloomMat = new ShaderMaterial({
-      vertexShader: FS_TRI_VS, fragmentShader: BLOOM_FS, depthTest: false, depthWrite: false,
-      uniforms: { tScene: { value: this.target.texture }, uTexel: { value: new Vector2() } },
-    })
-    this.mat = new ShaderMaterial({
-      vertexShader: FS_TRI_VS,
-      fragmentShader: POST_FS,
-      uniforms: {
-        tScene: { value: this.target.texture }, tBloom: { value: this.bloomRT.texture },
-        uSat: { value: 1.06 }, uContrast: { value: 0.08 }, uBloom: { value: 0.3 },
-      },
-      depthTest: false, depthWrite: false,
-    })
-    this.tri = new Mesh(geo, this.mat)
-    this.tri.frustumCulled = false
-    this.scene.add(this.tri)
-  }
-
-  resize(renderer: WebGLRenderer): void {
-    renderer.getDrawingBufferSize(this.size)
-    this.target.setSize(this.size.x, this.size.y)
-    const bw = Math.max(1, Math.round(this.size.x / 4)), bh = Math.max(1, Math.round(this.size.y / 4))
-    this.bloomRT.setSize(bw, bh)
-    this.bloomMat.uniforms.uTexel.value.set(1 / bw, 1 / bh)
-  }
-
-  render(renderer: WebGLRenderer, scene: Scene, camera: PerspectiveCamera): void {
-    renderer.setRenderTarget(this.target)
-    renderer.render(scene, camera)
-    this.tri.material = this.bloomMat
-    renderer.setRenderTarget(this.bloomRT)
-    renderer.render(this.scene, this.camera)
-    this.tri.material = this.mat
-    renderer.setRenderTarget(null)
-    renderer.render(this.scene, this.camera)
-  }
-
-  dispose(): void {
-    this.target.dispose()
-    this.bloomRT.dispose()
-    this.mat.dispose()
-    this.bloomMat.dispose()
-  }
-}
-
-function pixelRatio(q: Quality): number {
-  const dpr = window.devicePixelRatio || 1
-  return Math.min(dpr, q === "low" ? 1 : q === "balanced" ? 1.5 : 2)
+  return { mesh, uSpeed, uOpacity }
 }
 
 export async function createSceneHost(canvas: HTMLCanvasElement, quality: Quality, onStatus: (s: string) => void): Promise<SceneHost> {
-  const renderer = new WebGLRenderer({
+  const forceWebGL = new URLSearchParams(location.search).has("webgl")
+  const renderer = new WebGPURenderer({
     canvas,
-    // Balanced/High antialias through the multisampled post target instead of the default framebuffer.
-    antialias: false,
-    logarithmicDepthBuffer: true,
+    antialias: false, // MSAA lives on the post scene pass
+    // Reversed-Z float depth: precise from 0.3 m (cockpit) to the 18 km far plane, keeps early-Z (unlike log depth).
+    reversedDepthBuffer: true,
     powerPreference: "high-performance",
-    stencil: false,
+    forceWebGL,
   })
+  await renderer.init()
+  // WebGL2 without EXT_clip_control can't do reversed Z; fall back to a logarithmic depth buffer.
+  if (!renderer.reversedDepthBuffer) (renderer as unknown as { logarithmicDepthBuffer: boolean }).logarithmicDepthBuffer = true
+  const backend: FrameStats["backend"] = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "webgpu" : "webgl2"
   renderer.setPixelRatio(pixelRatio(quality))
   renderer.setSize(window.innerWidth, window.innerHeight, false)
   renderer.info.autoReset = false
-  // Soft sun shadows on Balanced/High; the world positions the shadow camera (setShadowFocus).
   renderer.shadowMap.type = PCFShadowMap
   renderer.shadowMap.enabled = quality !== "low"
-  let post: PostPass | null = quality === "low" ? null : new PostPass(renderer)
-  post?.resize(renderer)
+  renderer.outputColorSpace = SRGBColorSpace
+  renderer.toneMapping = ACESFilmicToneMapping
 
   const scene = new Scene()
-  scene.background = new Color("#0b0e1a")
-  const camera = new PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.5, 20_000)
+  scene.background = new Color("#1e2a28")
+  const camera = new PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.3, 20_000)
   camera.position.set(4000, 900, 4000)
   camera.lookAt(0, 0, 0)
 
@@ -233,13 +126,13 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
   camera.far = world.far
   camera.updateProjectionMatrix()
 
-  // Stand-in sea + light while the world module is still a stub / empty.
+  // Stand-in sea + light while the world module is still empty.
   let fallback: Group | null = null
   const hasContent = () => world.root.children.length > 0 || scene.children.some(o => o !== world.root && o !== fallback && o.name !== "effects")
   if (!hasContent()) {
     fallback = new Group()
     fallback.name = "fallback-world"
-    const sea = new Mesh(new PlaneGeometry(60_000, 60_000), new MeshLambertMaterial({ color: "#16324a" }))
+    const sea = new Mesh(new PlaneGeometry(60_000, 60_000), new MeshLambertMaterial({ color: "#1f2b2a" }))
     sea.rotation.x = -Math.PI / 2
     fallback.add(sea)
     for (const b of AIRBASES) {
@@ -247,38 +140,95 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       rw.rotation.x = -Math.PI / 2
       rw.rotation.z = b.heading
       rw.position.set(b.center[0], b.center[1] - 1.5, b.center[2])
-      const pad = new Mesh(new PlaneGeometry(900, 900), new MeshLambertMaterial({ color: "#2c4a2c" }))
-      pad.rotation.x = -Math.PI / 2
-      pad.position.set(b.center[0], b.center[1] - 2, b.center[2])
-      fallback.add(pad, rw)
+      fallback.add(rw)
     }
-    fallback.add(new HemisphereLight("#bcd0ff", "#1a1a22", 1.6))
-    const sun = new DirectionalLight("#fff1dd", 2.2)
-    sun.position.set(3000, 5000, 2000)
-    fallback.add(sun)
+    fallback.add(new HemisphereLight("#6f7f7c", "#141a19", 1.2))
+    const key = new DirectionalLight("#cfd8d6", 1.2)
+    key.position.set(1000, 5000, 600)
+    fallback.add(key)
     scene.add(fallback)
-    scene.fog = new Fog("#1a2236", 2000, 18_000)
-    scene.background = new Color("#1a2236")
+    scene.fog = new Fog("#2a3532", 800, 6000)
   }
 
   const effects = createEffects(quality)
   scene.add(effects.root)
   const rig = new CameraRig(camera)
 
+  // ---- post pipeline: scene (MSAA) → speed blur (High) → bloom → exposure/ACES → grade, vignette, grain.
+  const uExposure = uniform(1.0)
+  const uBloom = uniform(0.9)
+  const uSat = uniform(0.86)
+  const uVignette = uniform(0.42)
+  const uGrain = uniform(0.035)
+  const uBlur = uniform(0)
+  const uAspect = uniform(16 / 9)
+  let pipeline: RenderPipeline | null = null
+  let bloomNode: ReturnType<typeof bloom> | null = null
+
+  const buildPipeline = (q: Quality) => {
+    pipeline?.dispose()
+    pipeline = null
+    bloomNode = null
+    if (q === "low") return // Low renders straight to the canvas (renderer tone mapping only, no bloom/grain).
+    const pr = renderer.getPixelRatio()
+    // WebGL2 can't blit-resolve the MSAA float depth used by reversed Z: resolve colour only via FXAA there.
+    const msaa = backend === "webgpu" ? (pr >= 2 ? 2 : 4) : 0
+    const scenePass = pass(scene, camera, { samples: msaa })
+    const col = scenePass.getTextureNode("output")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let hdr: any = col
+    if (q === "high") {
+      // Speed blur: a short zoom blur from the screen centre, weighted toward the edges.
+      hdr = Fn(() => {
+        const st = uv()
+        const dir = st.sub(0.5)
+        const w = smoothstep(0.1, 0.55, length(dir)).mul(uBlur)
+        const acc = vec3(0).toVar()
+        for (let i = 0; i < 6; i++) acc.addAssign(col.sample(st.sub(dir.mul(w).mul(i * 0.012))).rgb)
+        return vec4(acc.div(6), 1)
+      })()
+    }
+    // Bloom on HDR emissives (afterburners, tracers, fire, lightning); the dim storm scene stays below threshold.
+    bloomNode = bloom(hdr, 0.9, 0.5, 0.82)
+    bloomNode.strength = uBloom as never
+    const lit = hdr.add(bloomNode).mul(uExposure)
+    const toned = renderOutput(vec4(lit.rgb, 1), ACESFilmicToneMapping, SRGBColorSpace)
+    const ldr: any = msaa ? toned : fxaa(toned)
+    const graded = Fn(() => {
+      const c = ldr.rgb.toVar()
+      const l = dot(c, vec3(0.2126, 0.7152, 0.0722))
+      c.assign(mix(vec3(l), c, uSat))
+      // Cool split: teal-blue in the shadows, a faint warmth only in the brightest highlights.
+      c.mulAssign(mix(vec3(0.95, 1.0, 1.03), vec3(1.02, 1.0, 0.98), smoothstep(0.25, 0.85, l)))
+      const d = length(uv().sub(0.5).mul(vec2(uAspect, 1)))
+      c.mulAssign(float(1).sub(smoothstep(0.45, 1.15, d).mul(uVignette)))
+      const n = hash(screenCoordinate.x.add(screenCoordinate.y.mul(1931.7)).add(time.mul(613.1).fract().mul(4096))).sub(0.5)
+      c.addAssign(n.mul(uGrain))
+      return vec4(c, 1)
+    })()
+    pipeline = new RenderPipeline(renderer)
+    pipeline.outputColorTransform = false
+    pipeline.outputNode = graded
+  }
+  buildPipeline(quality)
+  renderer.toneMapping = quality === "low" ? ACESFilmicToneMapping : NoToneMapping
+
   let frameFn: ((dt: number, time: number) => void) | null = null
-  const stats: FrameStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0 }
+  const stats: FrameStats = { fps: 0, frameMs: 0, drawCalls: 0, triangles: 0, backend }
   let last = performance.now()
   let fpsFrames = 0
   let fpsT = last
   let frame = 0
   let worldReadyReported = false
+  let flash = 0
 
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false)
-    post?.resize(renderer)
     camera.aspect = window.innerWidth / Math.max(1, window.innerHeight)
+    uAspect.value = camera.aspect
     camera.updateProjectionMatrix()
   }
+  resize()
   window.addEventListener("resize", resize)
 
   const host: SceneHost = {
@@ -289,15 +239,11 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     },
     setQuality(q) {
       host.quality = q
-      post?.dispose()
-      post = null
       renderer.setPixelRatio(pixelRatio(q))
-      if (q !== "low") post = new PostPass(renderer)
-      if (renderer.shadowMap.enabled !== (q !== "low")) {
-        renderer.shadowMap.enabled = q !== "low"
-        scene.traverse(o => { const m = (o as Mesh).material; if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.needsUpdate = true })
-      }
+      if (renderer.shadowMap.enabled !== (q !== "low")) renderer.shadowMap.enabled = q !== "low"
       resize()
+      buildPipeline(q)
+      renderer.toneMapping = q === "low" ? ACESFilmicToneMapping : NoToneMapping
       world.setQuality(q)
       effects.setQuality(q)
       camera.far = world.far
@@ -307,7 +253,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     thumbnail(kind, team) {
       const key = `${kind}:${team}`
       let p = thumbs.get(key)
-      if (!p) { p = aircraftLoaded.then(() => renderThumb(kind, team)).catch(() => null); thumbs.set(key, p) }
+      if (!p) { p = aircraftLoaded.then(() => renderThumb(kind, team)).catch(err => { console.warn("thumbnail", err); return null }); thumbs.set(key, p) }
       return p
     },
     setFocus(p) {
@@ -319,63 +265,71 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       speedKmh = kmh
       boosting = boost
     },
+    lightning(intensity) {
+      flash = Math.max(flash, intensity)
+    },
   }
 
-  // ---- aircraft thumbnails (offscreen, same renderer; one-off per kind+team)
+  // ---- aircraft thumbnails (offscreen render target, same renderer; one-off per kind+team)
   const thumbs = new Map<string, Promise<string | null>>()
-  const renderThumb = async (kind: VehicleKind, team: TeamId): Promise<string | null> => {
-    if (!aircraftReady(kind)) return null
-    const W = 480, H = 300
-    const sc = new Scene()
-    sc.add(new HemisphereLight("#cfe6ff", "#b8a98c", 1.4), new AmbientLight("#ffffff", 0.2))
-    const sun = new DirectionalLight("#fff6e8", 2.6)
-    sun.position.set(-0.6, 0.8, -0.5).multiplyScalar(100)
-    sc.add(sun)
-    const view = createAircraftView(kind, team, "high")
-    sc.add(view.root)
-    const cam = new PerspectiveCamera(30, W / H, 0.5, 2000)
-    const fake = {
-      id: "thumb", kind, team, hp: 1, maxHp: 1, seats: ["a", "b"], aim: [null, null], weapons: [[], []], flaresReadyAt: 0, flareCount: 0,
-      abilityReadyAt: 0, spottedUntil: 0, lastDamagedBy: null, alive: true,
-      flight: { kind, position: [0, 0, 0], velocity: [0, 0, 0], orientation: [0, 0, 0, 1], angularVelocity: [0, 0, 0], throttle: 0.6, onGround: false, gearDown: false, crashed: null, tick: 0 },
-    } as unknown as VehicleEntity
-    view.update(fake, [], 0.016, cam)
-    view.update(fake, [], 0.016, cam)
-    const box = new Box3().setFromObject(view.root)
-    const c = box.getCenter(new Vector3())
-    const size = box.getSize(c.clone()).length()
-    // 3/4 front view from slightly above (nose = -Z).
-    cam.position.set(c.x - size * 0.72, c.y + size * 0.42, c.z - size * 0.92)
-    cam.lookAt(c)
-    cam.updateMatrixWorld()
-    const rt = new WebGLRenderTarget(W, H, { samples: 4, type: UnsignedByteType, colorSpace: SRGBColorSpace })
-    const prevBg = sc.background
-    const prevClear = renderer.getClearColor(new Color()), prevAlpha = renderer.getClearAlpha()
-    renderer.setRenderTarget(rt)
-    renderer.setClearColor(0x000000, 0)
-    renderer.clear()
-    renderer.render(sc, cam)
-    renderer.setRenderTarget(null)
-    renderer.setClearColor(prevClear, prevAlpha)
-    sc.background = prevBg
-    const px = new Uint8Array(W * H * 4)
-    renderer.readRenderTargetPixels(rt, 0, 0, W, H, px)
-    rt.dispose()
-    view.dispose()
-    const cv = document.createElement("canvas")
-    cv.width = W; cv.height = H
-    const g = cv.getContext("2d")!
-    const img = g.createImageData(W, H)
-    for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4)
-    g.putImageData(img, 0, 0)
-    return cv.toDataURL("image/png")
+  let thumbChain: Promise<unknown> = Promise.resolve()
+  const renderThumb = (kind: VehicleKind, team: TeamId): Promise<string | null> => {
+    const job = thumbChain.then(async () => {
+      if (!aircraftReady(kind)) return null
+      const W = 480, H = 300
+      const sc = new Scene()
+      sc.add(new HemisphereLight("#c9d4d6", "#3a403e", 1.6), new AmbientLight("#ffffff", 0.25))
+      const key = new DirectionalLight("#f2f0ea", 2.4)
+      key.position.set(-0.6, 0.8, -0.5).multiplyScalar(100)
+      sc.add(key)
+      const view = createAircraftView(kind, team, "high")
+      sc.add(view.root)
+      const cam = new PerspectiveCamera(30, W / H, 0.5, 2000)
+      const fake = {
+        id: "thumb", kind, team, hp: 1, maxHp: 1, seats: ["a", "b"], aim: [null, null], weapons: [[], []], flaresReadyAt: 0, flareCount: 0,
+        abilityReadyAt: 0, spottedUntil: 0, lastDamagedBy: null, alive: true,
+        flight: { kind, position: [0, 0, 0], velocity: [0, 0, 0], orientation: [0, 0, 0, 1], angularVelocity: [0, 0, 0], throttle: 0.6, onGround: false, gearDown: false, crashed: null, tick: 0 },
+      } as unknown as VehicleEntity
+      view.update(fake, [], 0.016, cam)
+      view.update(fake, [], 0.016, cam)
+      const box = new Box3().setFromObject(view.root)
+      const c = box.getCenter(new Vector3())
+      const size = box.getSize(c.clone()).length()
+      cam.position.set(c.x - size * 0.72, c.y + size * 0.42, c.z - size * 0.92)
+      cam.lookAt(c)
+      cam.updateMatrixWorld()
+      const rt = new RenderTarget(W, H, { samples: 4, type: UnsignedByteType, colorSpace: SRGBColorSpace })
+      const prevClear = renderer.getClearColor(new Color()), prevAlpha = renderer.getClearAlpha()
+      renderer.setRenderTarget(rt)
+      renderer.setClearColor(0x000000, 0)
+      renderer.clear()
+      renderer.render(sc, cam)
+      renderer.setRenderTarget(null)
+      renderer.setClearColor(prevClear, prevAlpha)
+      const px = await renderer.readRenderTargetPixelsAsync(rt, 0, 0, W, H) as Uint8Array
+      rt.dispose()
+      view.dispose()
+      const cv = document.createElement("canvas")
+      cv.width = W; cv.height = H
+      const g = cv.getContext("2d")!
+      const img = g.createImageData(W, H)
+      // WebGPU reads top-down with rows padded to 256 bytes; WebGL bottom-up, tightly packed.
+      if (backend === "webgpu") {
+        const stride = Math.ceil((W * 4) / 256) * 256
+        for (let y = 0; y < H; y++) img.data.set(px.subarray(y * stride, y * stride + W * 4), y * W * 4)
+      } else for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4)
+      g.putImageData(img, 0, 0)
+      return cv.toDataURL("image/png")
+    })
+    thumbChain = job.catch(() => null)
+    return job
   }
 
   // Dev-only: screenshot tooling can take the camera after the game frame (window.__wingsCam).
   let camOverride: ((c: PerspectiveCamera, t: number) => void) | null = null
   const _focus = new Vector3()
   let menuT = 0
-  const menuFov = 60
+  const menuFov = 58
   const _wd = new Vector3(), _side = new Vector3(), _look = new Vector3(), _target = new Vector3()
 
   // ---- sense of speed
@@ -389,13 +343,13 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     const now = performance.now()
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
-    const time = now / 1000
+    const t = now / 1000
     frame++
     if (frameFn) {
-      frameFn(dt, time)
-      if (import.meta.env.DEV && camOverride) camOverride(camera, time)
+      frameFn(dt, t)
+      if (import.meta.env.DEV && camOverride) camOverride(camera, t)
     } else {
-      // Menu: a slow, sunny flyover of the islands with the sun behind the camera (front-lit terrain).
+      // Menu: a slow, low pass over the storm sea toward the brighter horizon.
       rig.setMode("menu")
       menuT += dt
       _look.set(-SUN_DIR.x, 0, -SUN_DIR.z)
@@ -405,26 +359,32 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       const yaw = 0.35 + Math.sin(menuT * 0.03) * 0.12
       _wd.copy(_look).multiplyScalar(Math.cos(yaw)).addScaledVector(_side, Math.sin(yaw))
       camera.position.set(0, 0, 0).addScaledVector(_look, -3200).addScaledVector(_side, ((menuT * 14) % 5000) - 2500)
-      camera.position.y = Math.max(groundHeight(camera.position.x, camera.position.z) + 260, 620 + Math.sin(menuT * 0.1) * 30)
-      const pitch = -0.2
+      camera.position.y = Math.max(groundHeight(camera.position.x, camera.position.z) + 160, 260 + Math.sin(menuT * 0.1) * 20)
+      const pitch = -0.06
       _target.copy(camera.position).add(_wd.multiplyScalar(Math.cos(pitch)).setY(Math.sin(pitch)))
       camera.up.set(0, 1, 0)
       camera.lookAt(_target)
       if (Math.abs(camera.fov - menuFov) > 0.01) { camera.fov = menuFov; camera.updateProjectionMatrix() }
     }
-    streakAmt += ((frameFn ? Math.min(1, Math.max(0, (speedKmh - 600) / 300)) : 0) - streakAmt) * (1 - Math.exp(-dt * 4))
+    const speedK = frameFn ? Math.min(1, Math.max(0, (speedKmh - 600) / 300)) : 0
+    streakAmt += (speedK - streakAmt) * (1 - Math.exp(-dt * 4))
     streaks.mesh.visible = streakAmt > 0.01
-    if (streaks.mesh.visible) {
-      streaks.mat.uniforms.uTime.value = time
-      streaks.mat.uniforms.uSpeed.value = speedKmh / 3.6
-      streaks.mat.uniforms.uOpacity.value = streakAmt * 0.22
-    }
-    world.update(camera.position, dt, time)
-    effects.update(dt, time, camera)
+    streaks.uSpeed.value = speedKmh / 3.6
+    streaks.uOpacity.value = streakAmt * 0.18
+    uBlur.value = streakAmt * (boosting ? 1.4 : 0.8)
+    world.update(camera.position, dt, t)
+    effects.update(dt, t, camera)
+
+    // Lightning: the world may expose a 0..1 value; pulse exposure and bloom with it.
+    const wl = (world as unknown as { lightning?: number | (() => number) }).lightning
+    const worldFlash = typeof wl === "function" ? wl() : typeof wl === "number" ? wl : 0
+    flash = Math.max(flash * Math.exp(-dt * 9), worldFlash)
+    uExposure.value = 1 + flash * 0.9
+    uBloom.value = 0.9 + flash * 1.6
+
     renderer.info.reset()
-    if (post) {
-      post.render(renderer, scene, camera)
-    } else renderer.render(scene, camera)
+    if (pipeline) pipeline.render()
+    else renderer.render(scene, camera)
     const t1 = performance.now()
     stats.frameMs += (t1 - now - stats.frameMs) * 0.05
     fpsFrames++
@@ -432,7 +392,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       stats.fps = (fpsFrames * 1000) / (t1 - fpsT)
       fpsFrames = 0
       fpsT = t1
-      stats.drawCalls = renderer.info.render.calls
+      stats.drawCalls = renderer.info.render.drawCalls
       stats.triangles = renderer.info.render.triangles
     }
     if (fallback && frame % 60 === 0 && world.root.children.length > 0) {
@@ -448,11 +408,10 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
   }
   renderer.setAnimationLoop(loop)
   if (import.meta.env.DEV) {
-    const w = window as unknown as { __wingsHost: SceneHost; __wingsPost: (on: boolean) => void }
+    const w = window as unknown as Record<string, unknown>
     w.__wingsHost = host
-    ;(window as unknown as { __wingsCam: (f: typeof camOverride) => void }).__wingsCam = fn => { camOverride = fn }
-    ;(window as unknown as { __wingsPostObj: () => unknown }).__wingsPostObj = () => post
-    w.__wingsPost = on => { if (!on && post) { post.dispose(); post = null } else if (on && !post) { post = new PostPass(renderer); post.resize(renderer) } }
+    w.__wingsCam = (fn: typeof camOverride) => { camOverride = fn }
+    w.__wingsPost = (on: boolean) => buildPipeline(on ? host.quality : "low")
   }
   return host
 }

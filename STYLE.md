@@ -1,5 +1,24 @@
 # Art Style Guide
 
+## CURRENT LOOK (locked, supersedes everything below): "STORMFRONT"
+Reference image (the target): `art/concepts/s1-storm-chase.png`. Secondary: `art/concepts/s2-storm-carrier.png`.
+Semi-realistic, cinematic, dark rainy storm at sea. Lighting and atmosphere carry the look.
+- **Sky:** low, heavy, dark slate-green storm clouds (`#1e2a28`–`#3a4744`), layered and moving; brighter breaks near the horizon; occasional lightning that briefly lights clouds, sea and aircraft.
+- **Light:** dim, cool, diffuse key from above (no hard sun), very low ambient; contrast comes from emissive sources: afterburners (warm `#ffb46a`), tracers, muzzle flashes, explosions, ship lights, AA bursts. Bloom on emissives is essential.
+- **Ocean:** dark gray-green (`#1f2b2a`→`#2e3b38`), large rolling swells + chop, wind-driven foam/whitecaps, spray, specular sheen catching distant light, darker toward the horizon. Proper animated waves (GPU), not flat.
+- **Atmosphere:** dense height + distance fog/mist that swallows the horizon (visibility ~3–6 km, closer near the surface), rain streaks (screen + world particles), rain on the camera optional, wet reflections on decks and aircraft.
+- **Islands:** dark wet rock and deep green vegetation, emerging from mist; surf at the shores.
+- **Aircraft & ships:** realistic matte military gray/olive, wet specular highlights, readable silhouettes against the brighter cloud breaks; team markings muted, but enemies must stay readable (HUD markers do the heavy lifting).
+- **Effects:** fire and tracers are the brightest things on screen (warm orange/yellow), smoke dark and heavy, flak bursts with dark smoke, lightning flashes.
+- **Post:** filmic tone mapping (ACES/AgX), bloom, subtle vignette, slight desaturation, light film grain, optional subtle motion blur at speed. No stylized color grading gimmicks.
+- **Gameplay readability rules:** keep enough visibility to dogfight (fog tuned per altitude, cloud breaks), and never let rain obscure the HUD.
+
+## RENDERER (locked): WebGPU first
+- Three.js `WebGPURenderer` from `three/webgpu` (automatic WebGL2 fallback). All materials must be node materials (`MeshStandardNodeMaterial`, `MeshPhysicalNodeMaterial`, `MeshBasicNodeMaterial`, `SpriteNodeMaterial`, …) or TSL (`three/tsl`) — no GLSL `ShaderMaterial`/`onBeforeCompile`.
+- Post-processing via the node `PostProcessing` pipeline (TSL passes: bloom, tone mapping, grain, vignette).
+- Use GPU compute (TSL `compute`) where it helps: ocean wave displacement/normals, rain and spray particles, effects particles.
+- Keep a quality preset system (Low/Balanced/High). Target 60 fps on a laptop with integrated GPU on Balanced.
+
 ## LOCKED PALETTE: Option B "Muted Tactical" (see art/stylesheets.html, option B) — overrides colors below
 - World: sky `#8fb3cc`→`#dde6ea`, deep sea `#2f5d78`, shallows `#6fa6a8`, grass `#7f9a5a`, sand `#d4c39a`, rock `#7a746b`, trees `#4f6a3e`, cloud/foam `#eef1f2`, concrete `#a9aca8`, aircraft base olive `#5e6658` (per-aircraft variations within this muted family).
 - Teams (muted): blue `#3c6ea8`, orange `#c98a2e`, green `#4e8a5a`, red `#b04a44`. Strong color only on team markings.

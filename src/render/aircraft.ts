@@ -22,7 +22,7 @@ import {
   Group,
   Matrix4,
   Mesh,
-  MeshBasicMaterial,
+  MeshBasicNodeMaterial,
   Object3D,
   Quaternion,
   SRGBColorSpace,
@@ -34,8 +34,8 @@ import {
   type Camera,
   type Material,
   type MeshStandardMaterial,
-  type WebGLProgramParametersWithUniforms,
-} from "three"
+} from "three/webgpu"
+import { abs, dot, float, mix, modelViewMatrix, normalLocal, normalView, normalize, positionLocal, positionViewDirection, smoothstep, uniform, vec4, max as tslMax, modelScale } from "three/tsl"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { mergeGeometries, toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js"
 import type { PlayerInfo, Quality, SeatIndex, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
@@ -43,7 +43,8 @@ import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { groundHeight } from "../sim/geography"
 import { SUN_DIRECTION } from "./world/settings"
 import { createBlobShadow } from "./aircraft-shadow"
-import { createGlowMaterial, createPaintMaterial, paintColor } from "./toon"
+import { createGlassMaterial, createGlowMaterial, createPaintMaterial, paintColor } from "./toon"
+export { setAircraftEnvironment } from "./toon"
 
 /** Muted team colors ("Muted Tactical" palette): blue, orange, green, red. Used by HUD/UI too. */
 export const TEAM_COLORS = ["#3c6ea8", "#c98a2e", "#4e8a5a", "#b04a44"] as const
@@ -342,8 +343,8 @@ function bodyMaterial(metal: boolean): Material {
   let m = paintCache.get(key)
   if (!m) {
     m = metal
-      ? createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.65, metalness: 0.2, reflect: 0.08, rim: 0.05 })
-      : createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.75, metalness: 0.0, reflect: 0.04, rim: 0.05 })
+      ? createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.48, metalness: 0.55, wet: 0.4, envIntensity: 1.0 })
+      : createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.68, metalness: 0.05, wet: 0.55 })
     paintCache.set(key, m)
   }
   return m
@@ -352,7 +353,7 @@ function bodyMaterial(metal: boolean): Material {
 function liveryMaterial(team: TeamId): Material {
   let m = liveryCache.get(team)
   if (!m) {
-    m = createPaintMaterial({ color: TEAM_LIVERY[team], roughness: 0.72, metalness: 0.0, reflect: 0.04, rim: 0.05 })
+    m = createPaintMaterial({ color: TEAM_LIVERY[team], roughness: 0.66, metalness: 0.05, wet: 0.55 })
     liveryCache.set(team, m)
   }
   return m
@@ -423,10 +424,10 @@ function prepGeometry(source: BufferGeometry, m: Matrix4, bone: number, smooth =
   return g
 }
 
-/** Nav lights / glows: small and below 1.0 so they never bloom into big discs. */
+/** Base (unscaled) emissive colors; intensities above 1 are applied per frame for bloom. */
 function softGlow(role: MatRole, c: Color): Color {
-  if (role === "nav" || role === "strobe" || role === "glow") return c.lerp(new Color(1, 1, 1), 0.35).multiplyScalar(0.85)
-  if (role === "afterburner" || role === "flame") return new Color("#ffbe80")
+  if (role === "nav" || role === "strobe" || role === "glow") return c.lerp(new Color(1, 1, 1), 0.15)
+  if (role === "afterburner" || role === "flame") return new Color(AFTERBURNER_CORE)
   return c
 }
 
@@ -612,7 +613,7 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     if (b.role !== "glass") continue
     let shared = paintCache.get("glass") ?? null
     if (!shared) {
-      shared = createPaintMaterial({ color: "#26323d", glass: true, opacity: 0.72, roughness: 0.1, metalness: 0.1, reflect: 0.6 })
+      shared = createGlassMaterial()
       paintCache.set("glass", shared)
     }
     b.shared = shared
@@ -637,8 +638,8 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
       for (let i = 0; i < pos.count; i++) box.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(m))
     })
     if (!box.isEmpty()) radius = Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5 * 0.7
-    const outer = new Color("#ffb070")
-    const inner = new Color("#fff0c8")
+    const outer = new Color("#ff8a3a")
+    const inner = new Color(AFTERBURNER_CORE)
     for (const [r, len, seg, col] of [[radius, ab.cone.length, 16, outer], [radius * 0.55, ab.cone.length * 0.6, 12, inner]] as const) {
       const cone = new ConeGeometry(r, len, seg, 4, true)
       // Additive blending: fade to black toward the tip.
@@ -854,12 +855,19 @@ function approach(cur: number, target: number, rate: number, dt: number): number
   return cur + (target - cur) * (1 - Math.exp(-rate * dt))
 }
 
+function smooth01(x: number): number {
+  const k = x < 0 ? 0 : x > 1 ? 1 : x
+  return k * k * (3 - 2 * k)
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v
 }
 
 const FAR_DISTANCE = 1500
 const SPOT_FADE_TIME = 0.3
+/** Warm afterburner core (STORMFRONT); cones fade core → orange. */
+const AFTERBURNER_CORE = "#ffb46a"
 const SPOT_COLOR = "#ff7a2e"
 
 /**
@@ -868,8 +876,8 @@ const SPOT_COLOR = "#ff7a2e"
  * terrain/clouds hide the aircraft the hull remains as a faint fill with a stronger edge. Uses custom
  * blending so it stays in the opaque queue (ordering relative to the body is what makes the rim work).
  */
-function createSpotMaterial(): MeshBasicMaterial {
-  const mat = new MeshBasicMaterial({
+function createSpotMaterial(): MeshBasicNodeMaterial {
+  const mat = new MeshBasicNodeMaterial({
     color: SPOT_COLOR,
     side: BackSide,
     depthTest: false,
@@ -877,34 +885,17 @@ function createSpotMaterial(): MeshBasicMaterial {
     blending: CustomBlending,
     blendSrc: SrcAlphaFactor,
     blendDst: OneMinusSrcAlphaFactor,
-    toneMapped: false,
     fog: false,
   })
-  mat.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying float vSpotEdge;")
-      .replace(
-        "#include <skinning_vertex>",
-        `#include <skinning_vertex>
-        {
-          #ifdef USE_SKINNING
-            vec3 spN = normalize( objectNormal );
-          #else
-            vec3 spN = normalize( normal );
-          #endif
-          vec4 spView = modelViewMatrix * vec4( transformed, 1.0 );
-          // ~2 px wide at any distance, with a small floor so it reads up close.
-          float spW = max( 0.035, -spView.z * 0.0026 ) / length( modelMatrix[ 0 ].xyz );
-          transformed += spN * spW;
-          vec3 spVN = normalize( normalMatrix * spN );
-          vSpotEdge = 1.0 - abs( dot( spVN, normalize( -spView.xyz ) ) );
-        }`,
-      )
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vSpotEdge;")
-      .replace("#include <alphatest_fragment>", "diffuseColor.a *= mix( 0.12, 0.95, smoothstep( 0.35, 0.85, vSpotEdge ) );\n#include <alphatest_fragment>")
-  }
-  mat.customProgramCacheKey = () => "wings-spotted"
+  const fade = uniform(0)
+  mat.userData.fade = fade
+  // Inflate along the (smoothed, skinned) normal by ~2 px at any distance, with a small floor up close.
+  const viewZ = modelViewMatrix.mul(vec4(positionLocal, 1)).z.negate()
+  const scale = modelScale.x
+  const width = tslMax(float(0.035), viewZ.mul(0.0026)).div(scale)
+  mat.positionNode = positionLocal.add(normalize(normalLocal).mul(width))
+  const edge = float(1).sub(abs(dot(normalize(normalView), positionViewDirection)))
+  mat.opacityNode = mix(float(0.12), float(0.95), smoothstep(0.35, 0.85, edge)).mul(fade)
   return mat
 }
 
@@ -961,10 +952,10 @@ interface Rig {
   outline: SkinnedMesh | null
   /** Per-instance materials to dispose. */
   owned: Material[]
-  afterburnerMats: MeshBasicMaterial[]
-  flameMats: MeshBasicMaterial[]
-  navMats: MeshBasicMaterial[]
-  strobeMats: MeshBasicMaterial[]
+  afterburnerMats: MeshBasicNodeMaterial[]
+  flameMats: MeshBasicNodeMaterial[]
+  navMats: MeshBasicNodeMaterial[]
+  strobeMats: MeshBasicNodeMaterial[]
   spinAngles: number[]
   storeVisible: Map<number, boolean>
   gearScale: number
@@ -1036,10 +1027,10 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     const skeleton = new Skeleton(bones, t.boneInverses)
     const identity = new Matrix4()
     const owned: Material[] = []
-    const afterburnerMats: MeshBasicMaterial[] = []
-    const flameMats: MeshBasicMaterial[] = []
-    const navMats: MeshBasicMaterial[] = []
-    const strobeMats: MeshBasicMaterial[] = []
+    const afterburnerMats: MeshBasicNodeMaterial[] = []
+    const flameMats: MeshBasicNodeMaterial[] = []
+    const navMats: MeshBasicNodeMaterial[] = []
+    const strobeMats: MeshBasicNodeMaterial[] = []
     const meshes: SkinnedMesh[] = []
     let renderOrder = 0
     for (const tm of t.meshes) {
@@ -1054,13 +1045,12 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
           break
         case "afterburner":
         case "flame": {
-          const m = new MeshBasicMaterial({
+          const m = new MeshBasicNodeMaterial({
             color: tm.glowColor.clone(),
             transparent: true,
             blending: AdditiveBlending,
             depthWrite: false,
             vertexColors: tm.geometry.hasAttribute("color"),
-            toneMapped: false,
           })
           m.userData.baseColor = tm.glowColor.clone()
           if (tm.role === "afterburner") afterburnerMats.push(m)
@@ -1154,7 +1144,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
     }
     shadow.visible = true
     const fade = 1 - clamp(agl / SHADOW_MAX_AGL, 0, 1)
-    ;(shadow.material as MeshBasicMaterial).opacity = 0.38 * fade * (0.6 + 0.4 * fade)
+    ;(shadow.material as MeshBasicNodeMaterial).opacity = 0.38 * fade * (0.6 + 0.4 * fade)
     // Surface normal from a small height stencil so the blob lies on slopes.
     const d = 4
     _sn.set(groundQuery(x - d, z) - groundQuery(x + d, z), 2 * d, groundQuery(x, z - d) - groundQuery(x, z + d)).normalize()
@@ -1177,7 +1167,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
   let spottedTarget = false
   let spotFade = 0
   let spotMesh: SkinnedMesh | null = null
-  let spotMat: MeshBasicMaterial | null = null
+  let spotMat: MeshBasicNodeMaterial | null = null
   const updateSpotted = (r: Rig, dt: number) => {
     spotFade = clamp(spotFade + (spottedTarget ? dt : -dt) / SPOT_FADE_TIME, 0, 1)
     if (spotFade <= 0) {
@@ -1195,7 +1185,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       r.model.add(spotMesh)
     }
     spotMesh.visible = true
-    spotMat!.opacity = spotFade * spotFade * (3 - 2 * spotFade)
+    ;(spotMat!.userData.fade as { value: number }).value = spotFade * spotFade * (3 - 2 * spotFade)
   }
 
   const boneAt = (r: Rig, name: string): number => r.t.boneIndex.get(name) ?? -1
@@ -1298,23 +1288,26 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
           setBoneAxis(r, bi, sp.axis, r.spinAngles[bi])
         }
 
-        // Afterburners: invisible at normal throttle; a short soft additive flame fades in only on boost.
+        // Afterburners: nozzle discs glow with throttle (HDR for bloom); flame cones appear at high
+        // throttle and stretch on boost.
         const flicker = 1 + Math.sin(time * 47) * 0.07 + Math.sin(time * 31.7) * 0.05
         const bv = boostVis
+        const thr = clamp(throttleVis, 0, 1)
+        const cone = Math.max(smooth01((thr - 0.7) / 0.3) * 0.45, bv)
         for (const ab of cfg.afterburners) {
           const bi = boneAt(r, ab.name)
           if (bi < 0) continue
           const rest = t.bones[bi].scale
-          const len = (0.35 + 0.65 * bv) * flicker
-          const wid = 0.8 + 0.2 * bv
+          const len = (0.35 + 0.35 * cone + 0.6 * bv) * flicker
+          const wid = 0.85 + 0.15 * cone
           const b = r.bones[bi]
           b.scale.set(rest.x * (ab.axis === "x" ? len : wid), rest.y * (ab.axis === "y" ? len : wid), rest.z * (ab.axis === "z" ? len : wid))
         }
-        const glow = bv * 0.25 * flicker
+        const glow = (0.5 + 2.5 * thr + 4 * bv) * flicker
         for (const m of r.afterburnerMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(glow)
-        const flame = bv * 0.45 * flicker
+        const flame = (cone * 1.2 + bv * 1.6) * flicker
         for (const m of r.flameMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(flame)
-        for (const m of r.meshes) if (m.name === "flame" || m.name === "afterburner") m.visible = bv > 0.02
+        for (const m of r.meshes) if (m.name === "flame") m.visible = flame > 0.03
 
         // Aimed equipment (seat aim in body frame).
         _rootQ.copy(root.quaternion)
@@ -1379,9 +1372,9 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
 
         // Nav lights: steady with a slow subtle pulse; tail strobe double-flash.
         const pulse = 0.85 + 0.15 * Math.sin((time + blinkPhase) * 2.4)
-        for (const m of r.navMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(pulse)
+        for (const m of r.navMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(2.5 * pulse)
         const ph = (time * 0.8 + blinkPhase) % 1
-        const strobe = ph < 0.06 || (ph > 0.14 && ph < 0.2) ? 1.15 : 0.45
+        const strobe = ph < 0.06 || (ph > 0.14 && ph < 0.2) ? 12 : 0.4
         for (const m of r.strobeMats) m.color.copy(m.userData.baseColor as Color).multiplyScalar(strobe)
       }
 
@@ -1399,7 +1392,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
         rig = null
       }
       placeholder = null
-      ;(shadow.material as MeshBasicMaterial).dispose()
+      ;(shadow.material as MeshBasicNodeMaterial).dispose()
       root.clear()
     },
   }

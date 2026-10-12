@@ -485,3 +485,91 @@ export function cockpitTone(core: Core, name: ToneName): void {
   }
   h.hold(name === "warning" ? 0.6 : name === "lock-tone" ? 0.35 : 0.3)
 }
+
+// ---------------------------------------------------------------- fleet anti-air
+
+/**
+ * Phalanx CIWS: a sustain loop per turret (events arrive ~10/s while it fires), 75 rounds/s
+ * tearing buzz-saw. Heard mostly from hundreds of meters away, so air absorption does the rest.
+ */
+export function ciws(core: Core, key: string, at: Vec3): void {
+  let h = core.helds.get(key)
+  if (!h || h.dead) {
+    const ctx = core.ctx
+    h = new Held(core, { at, dest: core.sfxBus, ref: 70, attack: 0.01, release: 0.12, level: 0.7 })
+    const src = ctx.createBufferSource()
+    src.buffer = core.bank.ciws
+    src.loop = true
+    src.playbackRate.value = rand(0.97, 1.03)
+    const lp = ctx.createBiquadFilter()
+    lp.type = "lowpass"
+    lp.frequency.value = 4000
+    src.connect(lp)
+    lp.connect(h.env)
+    const send = ctx.createGain()
+    send.gain.value = 0.3
+    h.env.connect(send)
+    send.connect(core.reverbIn)
+    h.sources.push(src)
+    h.nodes.push(lp, send)
+    const held = h
+    held.onRelease = (t) => {
+      const s = core.shot("ciwstail", held.at, { ref: 70, limit: 3 })
+      if (!s) return
+      const tt = Math.max(s.t, t)
+      const n = s.noise(core.bank.pink, tt, tt + 0.6)
+      const bp = s.filter("bandpass", 900, 1)
+      sweep(bp.frequency, 900, 350, tt, 0.5)
+      const e = s.env(tt, 0.005, 0.2, 0.5)
+      n.connect(bp).connect(e)
+      s.send(0.4, e)
+    }
+    h.start()
+    core.helds.set(key, h)
+  } else h.moveTo(at)
+  h.hold(0.25)
+}
+
+/** Mk 45 5-inch deck gun: a deep cannon report that rolls across the water. */
+export function navalGun(core: Core, at: Vec3): void {
+  const s = core.shot("navalgun", at, { ref: 80, rolloff: 0.8, limit: 4, maxDelay: 1.5, loudness: 1.6 })
+  if (!s) return
+  const t = s.t
+  const c = s.noise(core.bank.white, t, t + 0.08)
+  const hp = s.filter("highpass", 700)
+  c.connect(hp).connect(s.env(t, 0.001, 0.7, 0.05))
+  const b = s.noise(core.bank.brown, t, t + 0.9, rand(0.9, 1.05))
+  const lp = s.filter("lowpass", 1800, 0.8)
+  sweep(lp.frequency, 1800, 150, t, 0.6)
+  const be = s.env(t, 0.003, 0.85, 0.7)
+  b.connect(lp).connect(be)
+  const o = s.osc("sine", 58, t, t + 0.7)
+  sweep(o.frequency, 58, 30, t, 0.5)
+  o.connect(s.env(t, 0.003, 0.75, 0.55))
+  s.send(0.6, be)
+}
+
+/** 5-inch flak burst: a sharp, dry "KRAK" with a dark puff and a shrapnel sprinkle (vs. the long boom of an explosion). */
+export function flakBurst(core: Core, at: Vec3): void {
+  const s = core.shot("flak", at, { ref: 50, rolloff: 0.9, limit: 6, maxDelay: 1.2, loudness: 1.3 })
+  if (!s) return
+  const t = s.t
+  const c = s.noise(core.bank.white, t, t + 0.05)
+  const hp = s.filter("highpass", 1500)
+  c.connect(hp).connect(s.env(t, 0.0008, 0.95, 0.025))
+  const k = s.noise(core.bank.white, t, t + 0.2)
+  const bp = s.filter("bandpass", rand(600, 800), 1)
+  k.connect(bp).connect(s.env(t, 0.002, 0.55, 0.12))
+  const p = s.noise(core.bank.brown, t, t + 0.6)
+  const lp = s.filter("lowpass", 500)
+  const pe = s.env(t, 0.004, 0.5, 0.45)
+  p.connect(lp).connect(pe)
+  const o = s.osc("sine", 90, t, t + 0.2)
+  sweep(o.frequency, 90, 40, t, 0.15)
+  o.connect(s.env(t, 0.002, 0.4, 0.15))
+  const sh = s.noise(core.bank.crackle, t + 0.02, t + 0.45, rand(1, 1.4))
+  const shp = s.filter("highpass", 3000)
+  sh.connect(shp).connect(s.env(t + 0.02, 0.01, 0.2, 0.35))
+  s.send(0.45, pe)
+  if (s.distance < 120) core.duck(0.6, 0.15)
+}

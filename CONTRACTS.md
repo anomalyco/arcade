@@ -31,6 +31,13 @@ You may add private helper types/functions inside your own files.
 | Client app (UI, input, camera, HUD, effects, main loop) | Client agent | `index.html`, `src/main.ts`, `src/style.css`, `src/input.ts`, `src/ui/**`, `src/render/scene.ts`, `src/render/camera.ts`, `src/render/effects.ts`, `src/render/hud.ts` |
 | Models | Model agents | Fiend scenes, `public/models/*.glb` |
 
+## Rendering migration (WebGPU, "STORMFRONT")
+- `src/render/scene.ts` (Client/UI agent) creates `WebGPURenderer` (`await renderer.init()`), owns the `PostProcessing` pipeline, exports the renderer/scene/camera host as before, and exposes `host.lightning(intensity)` hook + current quality.
+- World agent: sky, clouds, fog, ocean (GPU waves), rain/spray particles, islands, ships rendering, lightning events (exports `onLightning(cb)` or a `lightning` value per frame the scene can read for bloom/exposure flashes).
+- Aircraft agent: node materials, wet specular, emissive afterburners/lights tuned for bloom.
+- Effects (UI agent): tracers, flashes, explosions, smoke, flak as node materials / compute particles.
+- Shared lighting/fog constants stay in `src/render/world/palette.ts`.
+
 ## Integration points
 - `src/net.ts` (Server agent) exports `connectRoom(code, name, handlers)` returning `{ send(msg), close() }`, and `createLocalRoom(config, name, handlers)` using `RoomEngine` in-browser for offline play. Handlers: `onMessage(ServerMessage)`, `onStatus("connecting"|"open"|"closed")`. Also `listRooms()`, `createRoom(config)`, `quickPlay()` REST helpers. Base path for all HTTP/WS: `${import.meta.env.BASE_URL}api/...` (i.e. `/labs/wings/api/...`).
 - Server HTTP API (Worker, after stripping the `/labs/wings` prefix): `GET /api/rooms`, `POST /api/rooms` (body: Partial<RoomConfig>) → `{ code }`, `GET /api/quickplay` → `{ code }`, `GET /api/room?code=XXXX` (WebSocket upgrade), `GET /api/health`.

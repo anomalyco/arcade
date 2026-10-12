@@ -194,7 +194,7 @@ export interface TreeData {
   counts: number[]
 }
 
-const TREE_SPACING = 26
+const TREE_SPACING = 17
 
 const GREENS = [PALETTE_RGB.treeLight, PALETTE_RGB.treeMid, PALETTE_RGB.treeDeep]
 
@@ -226,12 +226,12 @@ export function generateTrees(cx: number, cz: number, maxCount: number): TreeDat
     if (slope > 0.55) continue
     const cover = forestCover(x, z, h, slope)
     const coastal = h < 12
-    const chance = cover > 0.55 ? 0.5 : coastal ? 0.08 : 0.015
+    const chance = cover > 0.55 ? 0.72 : coastal ? 0.12 : 0.06
     if (hash01(ix, iz, 3) > chance) continue
     const y = h - 1
     const r = hash01(ix, iz, 4)
     const kind = coastal && cover < 0.55 ? 0 : r < 0.55 ? 2 : 1
-    const scale = 1.1 + hash01(ix, iz, 5) * 0.6
+    const scale = 0.95 + hash01(ix, iz, 5) * 0.55
     const tall = kind === 2 ? 0.9 + hash01(ix, iz, 6) * 0.6 : 0.85 + hash01(ix, iz, 6) * 0.3
     const rot = hash01(ix, iz, 7) * Math.PI * 2
     const lean = kind === 0 ? (hash01(ix, iz, 8) - 0.5) * 0.3 : 0

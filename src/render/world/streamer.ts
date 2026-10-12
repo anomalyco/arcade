@@ -242,7 +242,6 @@ export class TerrainStreamer {
         c.mesh.name = `cluster ${c.cx},${c.cz}`
         c.mesh.matrixAutoUpdate = false
         c.mesh.updateMatrix()
-        c.mesh.receiveShadow = true
         this.terrainRoot.add(c.mesh)
       }
       c.mesh.visible = c.visible
@@ -257,14 +256,11 @@ export class TerrainStreamer {
         if (!count) continue
         const mesh = new InstancedMesh(this.treeRes.geometries[k], this.treeRes.material, count)
         mesh.instanceMatrix = new InstancedBufferAttribute(r.data.matrices[k], 16)
-        mesh.instanceColor = new InstancedBufferAttribute(r.data.colors[k], 3)
         mesh.position.set(x0, 0, z0)
         mesh.matrixAutoUpdate = false
         mesh.updateMatrix()
         mesh.computeBoundingSphere()
         if (mesh.boundingSphere) mesh.boundingSphere.radius += 20
-        mesh.castShadow = true
-        mesh.receiveShadow = true
         this.treeRoot.add(mesh)
         meshes.push(mesh)
       }

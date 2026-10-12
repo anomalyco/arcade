@@ -2,7 +2,8 @@
 import type { GameAudio } from "../audio"
 import type { GameEvent, Vec3, VehicleEntity } from "../sim/types"
 import { Core, MASTER_TRIM } from "./core"
-import { ENGINE_LOUDNESS, ENGINE_REF, EngineVoice, Wind } from "./engines"
+import { Storm, type StormSettings, thunder } from "./ambience"
+import { ENGINE_LOUDNESS, ENGINE_REF, EngineVoice } from "./engines"
 import * as sfx from "./sfx"
 
 /** Max simultaneous engine voices (own vehicle included). */
@@ -20,6 +21,8 @@ export interface AudioStats {
   oneShots: number
   held: number
   hrtf: number
+  /** Active one-shots per category (e.g. "flak", "explosion", "thunder"). */
+  categories: Record<string, number>
 }
 
 export interface GameAudioEngine extends GameAudio {
@@ -38,7 +41,10 @@ export function createAudio(): GameAudioEngine {
     ? (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
     : undefined
   let core: Core | null = null
-  let wind: Wind | null = null
+  let storm: Storm | null = null
+  const stormSettings: StormSettings = {}
+  /** Recent 5-inch aim points: an explosion near one is a flak burst. */
+  const flakAims: { p: Vec3; t: number }[] = []
   let failed = !AC
   let disposed = false
   let muted = false
@@ -93,9 +99,13 @@ export function createAudio(): GameAudioEngine {
     if (!core) return
     const now = core.now
     // Watchdog: if the game stopped calling updateVehicles (menu, disconnect), fade engines out.
-    if (voices.size && performance.now() - lastVehicleUpdate > 500) {
-      for (const voice of voices.values()) { voice.release(); dying.push(voice) }
-      voices.clear()
+    if (performance.now() - lastVehicleUpdate > 500) {
+      if (voices.size) {
+        for (const voice of voices.values()) { voice.release(); dying.push(voice) }
+        voices.clear()
+      }
+      // Keep the storm bed (gusts, background thunder) alive in menus.
+      storm?.update(0, muted)
     }
     for (let i = dying.length - 1; i >= 0; i--) {
       if (now >= dying[i].stopAt) {
@@ -122,6 +132,17 @@ export function createAudio(): GameAudioEngine {
     return vehicles.get(id)?.flight.position ?? null
   }
 
+  /** True (and consumes the aim) if a 5-inch shell aimed near `at` was fired in the last 8 s. */
+  function takeFlakAim(at: Vec3, now: number): boolean {
+    for (let i = flakAims.length - 1; i >= 0; i--) {
+      const a = flakAims[i]
+      if (now - a.t > 8) { flakAims.splice(0, i + 1); break }
+      const dx = a.p[0] - at[0], dy = a.p[1] - at[1], dz = a.p[2] - at[2]
+      if (dx * dx + dy * dy + dz * dz < 150 * 150) { flakAims.splice(i, 1); return true }
+    }
+    return false
+  }
+
   function isOwnVehicle(id: string): boolean {
     return id === ownId
   }
@@ -142,7 +163,8 @@ export function createAudio(): GameAudioEngine {
           return
         }
         core.master.gain.value = muted ? 0 : volume * MASTER_TRIM
-        wind = new Wind(core)
+        storm = new Storm(core)
+        storm.configure(stormSettings)
         timer = setInterval(() => { try { housekeep() } catch { /* ignore */ } }, 250)
       }
       if (core.ctx.state !== "running") {
@@ -192,6 +214,7 @@ export function createAudio(): GameAudioEngine {
       const c = live()
       if (!c) {
         if (voices.size) releaseAllVoices()
+        storm?.update(0, true)
         housekeep()
         return
       }
@@ -242,7 +265,7 @@ export function createAudio(): GameAudioEngine {
         voice.update(cand.v, cand.own, !cand.own && rank < HRTF_ENGINES)
         if (!cand.own) rank++
       }
-      wind?.update(own && vehicles.get(own)?.alive ? ownSpeed : 0)
+      storm?.update(own && vehicles.get(own)?.alive ? ownSpeed : 0, false)
       housekeep()
     }),
 
@@ -253,6 +276,13 @@ export function createAudio(): GameAudioEngine {
         case "fire": {
           const own = local || isOwnVehicle(e.vehicle)
           const at = position ?? positionOf(e.vehicle)
+          // Legacy client path: fleet AA forwarded as fire events with an "aa:<ship>:<turret>" vehicle id.
+          if (e.vehicle.startsWith("aa:")) {
+            if (!at) break
+            if (e.weapon === "gau8") sfx.ciws(c, e.vehicle, at)
+            else if (c.allow(e.vehicle, 0.3)) sfx.navalGun(c, at)
+            break
+          }
           switch (e.weapon) {
             case "cannon20":
             case "gau8":
@@ -285,9 +315,22 @@ export function createAudio(): GameAudioEngine {
           if (ownId && e.victim === ownId) sfx.deathSting(c)
           else if (local || (localPlayer !== null && e.killer === localPlayer)) sfx.killSting(c)
           break
-        case "explosion":
-          sfx.explosion(c, position ?? e.position, e.size)
+        case "aa": {
+          const at = position ?? e.position
+          if (e.kind === "ciws") sfx.ciws(c, `aa:${e.ship}:${e.turret}`, at)
+          else {
+            if (c.allow(`aa:${e.ship}:${e.turret}`, 0.3)) sfx.navalGun(c, at)
+            flakAims.push({ p: e.aim, t: c.now })
+            if (flakAims.length > 32) flakAims.shift()
+          }
           break
+        }
+        case "explosion": {
+          const at = position ?? e.position
+          if ((e as { kind?: string }).kind === "flak" || takeFlakAim(at, c.now)) sfx.flakBurst(c, at)
+          else sfx.explosion(c, at, e.size)
+          break
+        }
         case "flares":
           if (c.allow(`fl:${e.vehicle}`, 0.4)) sfx.flares(c, position ?? positionOf(e.vehicle), local || isOwnVehicle(e.vehicle))
           break
@@ -319,6 +362,16 @@ export function createAudio(): GameAudioEngine {
       if (!c) return
       if (name === "lock-tone" || name === "locked" || name === "warning") sfx.cockpitTone(c, name)
       else sfx.uiBlip(c, name)
+    }),
+
+    thunder: guard((delaySeconds: number, intensity: number) => {
+      const c = live()
+      if (c) thunder(c, delaySeconds, intensity)
+    }),
+
+    setStorm: guard((settings: StormSettings) => {
+      Object.assign(stormSettings, settings)
+      storm?.configure(settings)
     }),
 
     setMuted: guard((m: boolean) => {
@@ -359,6 +412,7 @@ export function createAudio(): GameAudioEngine {
         oneShots: core?.shots.length ?? 0,
         held: core?.helds.size ?? 0,
         hrtf: core?.hrtfInUse ?? 0,
+        categories: Object.fromEntries([...(core?.categoryCount ?? [])].filter(([, n]) => n > 0)),
       }
     },
 
@@ -373,7 +427,7 @@ export function createAudio(): GameAudioEngine {
         for (const v of dying) v.dispose()
         voices.clear()
         dying.length = 0
-        wind?.dispose()
+        storm?.dispose()
         core?.dispose()
         void core?.ctx.close().catch(() => undefined)
       } catch { /* never throw on teardown */ }

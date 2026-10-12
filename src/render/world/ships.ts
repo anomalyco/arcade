@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // Carrier strike groups: all FLEET ships, instanced per ship kind and material.
 // Static hull parts are baked per kind into InstancedMeshes (one per material); team stripes
 // (`livery_*`) share one InstancedMesh per kind with per-instance team colours. Turrets are drawn
@@ -5,12 +6,13 @@
 // A clean placeholder ship is shown until the GLB models load. Ships follow their fleet-clock poses
 // (geography.setFleetState) every frame; inactive teams' ships are hidden.
 import {
-  BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh,
-  MeshLambertMaterial, Object3D, PlaneGeometry, ShaderMaterial, type Material,
+  BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, Group, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh,
+  MeshLambertMaterial, Object3D, Vector3, type Material,
 } from "three"
+import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu"
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
-import { FLEET, FLEET_END_DISTANCE, FLEET_START_DISTANCE, FLEET_APPROACH_TIME, SHIP_SPECS, type Ship, type ShipKind, type TurretKind } from "../../sim/fleet"
-import { deckVelocity, fleetState, posedShip } from "../../sim/geography"
+import { FLEET, SHIP_SPECS, type Ship, type ShipKind, type TurretKind } from "../../sim/fleet"
+import { fleetState, posedShip } from "../../sim/geography"
 import { PALETTE, TEAM_COLORS } from "./palette"
 
 export interface TurretHandle {
@@ -153,88 +155,13 @@ function placeholderModel(kind: ShipKind): Object3D {
   return root
 }
 
-/** Shallow static wake + waterline foam around each hull (one draw call for the whole fleet). */
-function createWake(): InstancedMesh {
-  const geometry = new PlaneGeometry(1, 1)
-  geometry.rotateX(-Math.PI / 2)
-  const material = new ShaderMaterial({
-    name: "World · ship wake",
-    transparent: true,
-    depthWrite: false,
-    fog: true,
-    toneMapped: false,
-    uniforms: { foam: { value: new Color(PALETTE.foam).convertLinearToSRGB() }, fogColor: { value: new Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 } },
-    vertexShader: /* glsl */ `
-      #include <common>
-      #include <fog_pars_vertex>
-      #include <logdepthbuf_pars_vertex>
-      attribute vec2 hullSize;
-      varying vec2 vUv;
-      varying vec2 vHull;
-      void main() {
-        vUv = position.xz;
-        vHull = hullSize;
-        vec4 mvPosition = viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        #include <logdepthbuf_vertex>
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      #include <common>
-      #include <fog_pars_fragment>
-      #include <logdepthbuf_pars_fragment>
-      uniform vec3 foam;
-      varying vec2 vUv;
-      varying vec2 vHull;
-      void main() {
-        #include <logdepthbuf_fragment>
-        // vUv in [-0.5, 0.5]; quad spans 3× hull width, 2.2× hull length (stern at +z).
-        vec2 p = vUv * vec2(3.0 * vHull.x, 2.2 * vHull.y);
-        float hz = vHull.y * 0.5;
-        float hx = vHull.x * 0.5;
-        // Thin foam band along the waterline.
-        vec2 q = vec2(abs(p.x) - hx, abs(p.y + 0.6 * hz) - hz * 1.0);
-        float dHull = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-        // Soft foam hugging the stern half only (bow shapes vary per model).
-        float ring = (1.0 - smoothstep(0.0, 6.0, max(dHull, 0.0))) * smoothstep(-0.2, 0.6, p.y / hz) * 0.35;
-        // Stern wake: widening, fading trail behind the ship.
-        float behind = p.y - hz * 0.4;
-        float trail = 0.0;
-        if (behind > 0.0) {
-          float len = 2.2 * vHull.y * 0.5 - hz * 0.4;
-          float w = hx * (0.7 + behind / len * 1.1);
-          trail = (1.0 - smoothstep(w * 0.4, w, abs(p.x))) * (1.0 - behind / len) * 0.45;
-          trail *= 0.75 + 0.25 * sin(behind * 0.12 + p.x * 0.05);
-        }
-        float a = clamp(max(ring, trail), 0.0, 1.0);
-        if (a < 0.01) discard;
-        gl_FragColor = vec4(foam, a);
-        #include <fog_fragment>
-      }
-    `,
-  })
-  const mesh = new InstancedMesh(geometry, material, FLEET.length)
-  const hull = new Float32Array(FLEET.length * 2)
-  FLEET.forEach((sh, i) => {
-    const sp = SHIP_SPECS[sh.kind]
-    hull[i * 2] = sp.halfWidth * 2
-    hull[i * 2 + 1] = sp.halfLength * 2
-  })
-  geometry.setAttribute("hullSize", new InstancedBufferAttribute(hull, 2))
-  mesh.frustumCulled = false
-  mesh.renderOrder = 1
-  mesh.name = "World · ship wakes"
-  return mesh
-}
-
 const ZERO = new Matrix4().makeScale(0, 0, 0)
-const CRUISE = (FLEET_START_DISTANCE - FLEET_END_DISTANCE) / FLEET_APPROACH_TIME
 
 export interface FleetView {
   root: Group
+  readonly loadedModels: string[]
   getShipTurret(shipId: string, turretId: string): TurretHandle | null
-  update(): void
+  update(camera?: Vector3): void
   dispose(): void
 }
 
@@ -243,9 +170,10 @@ export function createFleet(): FleetView {
   root.name = "World · fleet"
   const drawRoot = new Group()
   root.add(drawRoot)
-  const bodyMaterial = new MeshLambertMaterial({ vertexColors: true, toneMapped: false })
+  // Wet painted steel: fairly smooth so the deck and hull pick up sky/lightning reflections.
+  const bodyMaterial = new MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.35 })
   bodyMaterial.name = "World · ship hull"
-  const liveryMaterial = new MeshLambertMaterial({ color: "#ffffff", toneMapped: false })
+  const liveryMaterial = new MeshStandardNodeMaterial({ color: "#ffffff", roughness: 0.5, metalness: 0.2 })
   liveryMaterial.name = "World · ship livery"
   const matFor = (_c: Color, livery: boolean) => livery ? liveryMaterial : bodyMaterial
 
@@ -317,7 +245,6 @@ export function createFleet(): FleetView {
 
   const shipGroups = new Map<string, Group>()
   root.children.forEach(c => { if (c instanceof Group && c !== drawRoot) shipGroups.set(c.name, c) })
-  const wakeM = new Matrix4(), wakeScale = new Matrix4()
 
   /** Move every ship to its current pose (fleet clock), hide inactive teams, update turrets/wakes. */
   function sync() {
@@ -343,33 +270,59 @@ export function createFleet(): FleetView {
       })
       tm.mesh.instanceMatrix.needsUpdate = true
     }
-    FLEET.forEach((sh, i) => {
-      const g = shipGroups.get(sh.id)!
-      if (!g.visible) { wake.setMatrixAt(i, ZERO); return }
-      const sp = SHIP_SPECS[sh.kind]
-      const v = deckVelocity(g.position.x, g.position.z)
-      const speed = v ? Math.hypot(v[0], v[2]) : 0
-      // Wake length grows with speed (a short foam patch when stopped).
-      const k = 0.55 + 0.45 * Math.min(1, speed / CRUISE)
-      wakeM.makeRotationY(sh.heading).setPosition(g.position.x, 0.15, g.position.z)
-      wakeScale.makeScale(sp.halfWidth * 6, 1, sp.halfLength * 4.4 * k).setPosition(0, 0, sp.halfLength * (0.6 + 1.6 * (k - 0.55)))
-      wake.setMatrixAt(i, wakeM.multiply(wakeScale))
-    })
-    wake.instanceMatrix.needsUpdate = true
+    syncLights()
   }
 
-  const wake = createWake()
-  root.add(wake)
+  // Nav / deck lights: small emissive points (HDR for bloom), grown with distance so they stay visible.
+  const lightDefs: { ship: Ship; local: Vector3; color: Color }[] = []
+  for (const sh of FLEET) {
+    const sp = SHIP_SPECS[sh.kind], I = sp.island
+    const top = I.center[1] + I.half[1]
+    const warm = new Color("#ffb46a").multiplyScalar(6), white = new Color("#fff3e0").multiplyScalar(7)
+    lightDefs.push({ ship: sh, local: new Vector3(I.center[0], top + 6, I.center[2]), color: white })
+    lightDefs.push({ ship: sh, local: new Vector3(I.center[0] - I.half[0] - 0.5, top - 3, I.center[2]), color: new Color("#ff3a2a").multiplyScalar(6) })
+    lightDefs.push({ ship: sh, local: new Vector3(I.center[0] + I.half[0] + 0.5, top - 3, I.center[2]), color: new Color("#3aff6a").multiplyScalar(5) })
+    lightDefs.push({ ship: sh, local: new Vector3(0, sp.deckHeight + 1.5, sp.halfLength - 4), color: white })
+    const n = sh.kind === "carrier" ? 10 : 3
+    for (let k = 0; k < n; k++) {
+      const z = -sp.halfLength * 0.85 + (k / Math.max(1, n - 1)) * sp.halfLength * 1.7
+      lightDefs.push({ ship: sh, local: new Vector3(k % 2 ? sp.halfWidth - 1 : -sp.halfWidth + 1, sp.deckHeight + 0.8, z), color: warm })
+      if (sh.kind === "carrier") lightDefs.push({ ship: sh, local: new Vector3(-4, sp.deckHeight + 0.15, z), color: warm.clone().multiplyScalar(0.6) })
+    }
+  }
+  const lightMaterial = new MeshBasicNodeMaterial({ fog: true })
+  lightMaterial.name = "World · ship lights"
+  const lights = new InstancedMesh(new IcosahedronGeometry(0.6, 1), lightMaterial, lightDefs.length)
+  lightDefs.forEach((d, i) => lights.setColorAt(i, d.color))
+  lights.frustumCulled = false
+  lights.name = "World · ship lights"
+  root.add(lights)
+  const lp = new Vector3(), lm = new Matrix4()
+  function syncLights() {
+    const teams = fleetState().teams
+    lightDefs.forEach((d, i) => {
+      const g = shipGroups.get(d.ship.id)!
+      if (d.ship.team >= teams) { lights.setMatrixAt(i, ZERO); return }
+      lp.copy(d.local).applyMatrix4(g.matrixWorld)
+      const s = Math.max(1, lp.distanceTo(cameraPos) * 0.0022)
+      lm.makeScale(s, s, s).setPosition(lp)
+      lights.setMatrixAt(i, lm)
+    })
+    lights.instanceMatrix.needsUpdate = true
+  }
+  const cameraPos = new Vector3()
+
   const placeholder = { carrier: buildTemplate("carrier", placeholderModel("carrier")), destroyer: buildTemplate("destroyer", placeholderModel("destroyer")) }
   build(placeholder)
 
   // Lazy, non-blocking model load; keep the placeholder if a model is missing.
   let disposed = false
+  let modelsLoaded: string[] = []
   void (async () => {
     try {
       const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js")
       const loader = new GLTFLoader()
-      const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? "/"
+      const base = import.meta.env.BASE_URL ?? "/"
       const loaded: Partial<Record<ShipKind, KindTemplate>> = {}
       await Promise.all(SHIP_KINDS.map(async kind => {
         try {
@@ -380,25 +333,27 @@ export function createFleet(): FleetView {
           holder.add(model)
           model.updateWorldMatrix(true, true)
           loaded[kind] = buildTemplate(kind, holder)
-        } catch { /* model not available yet */ }
+        } catch (e) { console.warn(`[world] ship model ${kind} failed to load`, e) }
       }))
       if (disposed || (!loaded.carrier && !loaded.destroyer)) return
       build({ carrier: loaded.carrier ?? placeholder.carrier, destroyer: loaded.destroyer ?? placeholder.destroyer })
-    } catch { /* loader unavailable */ }
+      modelsLoaded = Object.keys(loaded)
+    } catch (e) { console.warn("[world] GLTFLoader unavailable", e) }
   })()
 
   return {
     root,
+    get loadedModels() { return modelsLoaded },
     getShipTurret(shipId, turretId) {
       const h = turretHandles.get(`${shipId}/${turretId}`)
       return h ? { yaw: h.yaw, pitch: h.pitch } : null
     },
-    update: sync,
+    update(camera?: Vector3) { if (camera) cameraPos.copy(camera); sync() },
     dispose() {
       disposed = true
       for (const m of meshes) { m.geometry.dispose(); m.dispose() }
       bodyMaterial.dispose(); liveryMaterial.dispose()
-      wake.geometry.dispose(); (wake.material as Material).dispose()
+      lights.geometry.dispose(); lightMaterial.dispose()
       root.removeFromParent()
     },
   }

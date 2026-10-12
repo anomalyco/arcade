@@ -71,6 +71,32 @@ relatively wetter.
   - `warning`: a 1.0/1.4 kHz warble, gated at 2.5 Hz.
   - Being locked by an enemy (`lock.target === ownId`) triggers `warning`.
 
+## STORMFRONT ambience and fleet AA
+
+Levels are measured against the reduced baseline: `MASTER_TRIM` 0.4, sfx bus 0.6, limiter −16 dB.
+
+- **Ambience** (`ambience.ts`, `ambienceBus` 0.5):
+  - Rain is four stereo layers. High-passed hiss, a pink-noise body, and crackle patter are always present. A brown-noise
+    "rain on the sea" layer fades with listener altitude (`1/(1+alt/120 m)`).
+  - Storm wind gusts on a random walk, with a resonant howl on strong gusts. An airspeed rush rises with own speed and
+    gusts too.
+  - Unseen distant thunder rolls every 22–55 s.
+  - Measured output peak is about 0.02, so it stays subtle.
+  - `setStorm({ rain, cockpit, enabled })`. `cockpit` switches to loud canopy patter and closes a 2.6 kHz lowpass over
+    all world sound (the `world` filter). UI sounds are not affected.
+- **`thunder(delay, intensity)`**:
+  - The sound is scheduled `delay` seconds ahead, and the distance (`delay × 343`) sets the timbre.
+  - Strikes under 3 km get a crack and a tearing crackle. Every strike gets a brown-noise rumble whose lowpass follows
+    air absorption, with 3–6 random "rolls" (`setValueCurveAtTime`) and a sub layer.
+- **AA:**
+  - CIWS is a 75 rounds/s tearing loop (`Held`, one per turret, kept alive by the ~10/s `aa` events), with a short
+    echo tail.
+  - The 5-inch gun is a deep report with a speed-of-sound delay.
+  - A flak burst is a dry "KRAK", a dark puff, and shrapnel crackle. It's much shorter than an explosion.
+  - An `explosion` counts as flak when it carries `kind: "flak"` or lands within 150 m of a 5-inch `aa.aim` from the
+    last 8 s.
+  - Legacy `fire` events whose vehicle id is `aa:*` are routed to CIWS (weapon `gau8`) or the 5-inch gun.
+
 ## Performance
 
 - Buffers are rendered once and every voice reuses them. Noise starts at random offsets, so repeats never sound

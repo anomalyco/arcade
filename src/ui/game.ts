@@ -191,6 +191,22 @@ class GameSession implements GameHandle {
       deps.audio?.setVolume(s.volume)
     })
     window.addEventListener("keydown", this.onKeyDown)
+    // Thunder: delay = strike distance / speed of sound. Prefer the world's strike position; the direction-only
+    // onLightning hook carries no distance, so assume a mid-range strike (bolts land 2.2–7.2 km out).
+    type LW = { lightningSource?: () => { intensity: number; position: Vec3 | { x: number; y: number; z: number } } | null; onLightning?: (cb: (i: number) => void) => () => void }
+    const lw = host.world as unknown as LW
+    this.offLightning = lw.onLightning?.(intensity => {
+      const src = lw.lightningSource?.()
+      const c = host.camera.position
+      let dist = 4700
+      if (src) {
+        const p = src.position
+        const [x, y, z] = Array.isArray(p) ? p : [(p as { x: number }).x, (p as { y: number }).y, (p as { z: number }).z]
+        dist = Math.hypot(x - c.x, y - c.y, z - c.z)
+      }
+      this.deps.audio?.thunder(dist / 343, src?.intensity ?? intensity)
+    }) ?? null
+    deps.audio?.setStorm({ enabled: true, rain: 1, cockpit: false })
   }
 
   async connect(net: Awaited<ReturnType<typeof getNet>>, code: string, offlineConfig: RoomConfig | null): Promise<void> {
@@ -438,6 +454,7 @@ class GameSession implements GameHandle {
 
   private dispose(): void {
     clearInterval(this.pingTimer)
+    this.offLightning?.()
     window.removeEventListener("keydown", this.onKeyDown)
     this.offSettings()
     this.input.dispose()
@@ -467,6 +484,8 @@ class GameSession implements GameHandle {
   }
 
   private turretAims = new Map<string, TurretAim>()
+  private offLightning: (() => void) | null = null
+  private stormCockpit = false
   private flakAims: { p: Vec3; t: number }[] = []
   private aaFiredAt = -Infinity
   private spawnedAt = 0
@@ -559,8 +578,7 @@ class GameSession implements GameHandle {
           this.aimTurret(e.ship, e.turret, e.aim, now)
           if (e.kind === "gun") { this.flakAims.push({ p: e.aim, t: now }); if (this.flakAims.length > 24) this.flakAims.shift() }
           if (e.target === myVeh) this.aaFiredAt = now
-          // Audio: no dedicated AA sounds yet (TODO audio agent) — CIWS reuses the GAU-8 loop, the 5-inch gun the chain-gun thump.
-          audio?.event({ type: "fire", vehicle: `aa:${e.ship}:${e.turret}`, seat: 0, weapon: e.kind === "ciws" ? "gau8" : "chaingun30" }, e.position, false)
+          audio?.event(e, e.position, false)
           continue
         }
         case "hit":
@@ -798,6 +816,8 @@ class GameSession implements GameHandle {
       rig.orbit(dt, b.center, 650, 170, 0.06)
     }
     rig.apply(dt)
+    const cockpitNow = this.state === "flying" && seat === 0 && this.view === "cockpit"
+    if (cockpitNow !== this.stormCockpit) { this.stormCockpit = cockpitNow; this.deps.audio?.setStorm({ enabled: true, rain: 1, cockpit: cockpitNow }) }
 
     if (latest) this.updateProjectiles(latest, est, dt)
 

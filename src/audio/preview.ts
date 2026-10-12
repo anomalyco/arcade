@@ -143,6 +143,35 @@ $("stress").onclick = () => {
 let storm = 0
 $("gauStorm").onclick = () => { audio.unlock(); storm = performance.now() + 3000 }
 
+// ---------------------------------------------------------------- storm + AA
+const stormSet = () => audio.setStorm({
+  enabled: $<HTMLInputElement>("stormOn").checked,
+  rain: Number($<HTMLInputElement>("rain").value),
+  cockpit: $<HTMLInputElement>("cockpit").checked,
+})
+for (const id of ["stormOn", "rain", "cockpit"]) $(id).oninput = stormSet
+$("alt").oninput = () => { listener[1] = Number($<HTMLInputElement>("alt").value); $("altV").textContent = String(listener[1]) }
+$("thNear").onclick = () => { audio.unlock(); audio.thunder(0.6, 1) }
+$("thMid").onclick = () => { audio.unlock(); audio.thunder(4, 0.8) }
+$("thFar").onclick = () => { audio.unlock(); audio.thunder(12, 0.7) }
+const holdButton = (id: string, every: number, fn: () => void) => {
+  let timer: ReturnType<typeof setInterval> | null = null
+  const btn = $(id)
+  btn.onpointerdown = () => { audio.unlock(); fn(); timer = setInterval(fn, every) }
+  const stop = () => { if (timer) clearInterval(timer); timer = null }
+  btn.onpointerup = stop
+  btn.onpointerleave = stop
+}
+holdButton("ciws", 100, () => audio.event({ type: "aa", ship: "cv0", turret: "ciws_bow_port", kind: "ciws", target: "own", position: remotePos(), aim: [0, 50, 0] }, null, false))
+holdButton("legacyCiws", 100, () => audio.event({ type: "fire", vehicle: "aa:cv0:ciws_island", seat: 0, weapon: "gau8" }, remotePos(), false))
+$("navalGun").onclick = () => {
+  audio.unlock()
+  const aim: Vec3 = [40, 120, -60]
+  audio.event({ type: "aa", ship: "dd1", turret: "gun_fwd", kind: "gun", target: "own", position: remotePos(), aim }, null, false)
+  setTimeout(() => audio.event({ type: "explosion", position: [aim[0] + 10, aim[1] - 5, aim[2] + 8], size: 15 }, null, false), 1500)
+}
+$("flak").onclick = () => { audio.unlock(); audio.event({ type: "explosion", position: remotePos(), size: 15, kind: "flak" } as GameEvent, null, false) }
+
 $("unlock").onclick = () => audio.unlock()
 $<HTMLInputElement>("mute").onchange = (e) => audio.setMuted((e.target as HTMLInputElement).checked)
 $<HTMLInputElement>("volume").oninput = (e) => audio.setVolume(Number((e.target as HTMLInputElement).value))

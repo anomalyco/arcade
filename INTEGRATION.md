@@ -1,5 +1,11 @@
 # Integration TODO (orchestrator)
 
+## Stormfront audio hookup (client, after WebGPU migration)
+- game.ts: forward `aa` events to `audio.event(e, e.position, false)`.
+- On world lightning: `audio.thunder(distance / 343, intensity)`.
+- `audio.setStorm({ cockpit })` when in cockpit view; `setStorm({ rain })` from world rain intensity.
+- Optional: explosion `kind?: "flak"` field for flak bursts.
+
 ## After carrier strike groups land
 - Only active teams' fleets should exist: use `activeFleet(config.teams)` (fleet.ts) in combat AA, room engine, bots no-fly, world rendering (client knows config from welcome).
 - Bots: switch takeoff logic from runway/corridor to carrier catapult launch; avoid enemy fleet AA range (2.2 km) unless suicidal; heli from deck spots. (Bots session ses_ed34d3943ffefrRH4OjhzZL1Aw)

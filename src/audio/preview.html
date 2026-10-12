@@ -54,6 +54,25 @@
   <h2>UI</h2>
   <div class="row" id="ui"></div>
 
+  <h2>Storm</h2>
+  <div class="row">
+    <label><input type="checkbox" id="stormOn" checked /> ambience</label>
+    <label>rain <input type="range" id="rain" min="0" max="1" step="0.01" value="0.75" /></label>
+    <label>listener altitude m <input type="range" id="alt" min="0" max="3000" value="0" /></label><span id="altV">0</span>
+    <label><input type="checkbox" id="cockpit" /> cockpit (canopy)</label>
+    <button id="thNear">thunder near (0.6 s)</button>
+    <button id="thMid">thunder mid (4 s)</button>
+    <button id="thFar">thunder far (12 s)</button>
+  </div>
+
+  <h2>Fleet AA (at remote distance)</h2>
+  <div class="row">
+    <button id="ciws">CIWS (hold)</button>
+    <button id="navalGun">5-inch gun → flak burst</button>
+    <button id="flak">flak burst (explicit kind)</button>
+    <button id="legacyCiws">legacy fire "aa:" CIWS (hold)</button>
+  </div>
+
   <h2>Stress</h2>
   <div class="row">
     <button id="stress">100 explosions + 200 hits in 1 s</button>

@@ -1,37 +1,39 @@
 // Dev preview for aircraft rendering: all four aircraft in team colors with animation and draw-call readout.
 import {
+  ACESFilmicToneMapping,
   CircleGeometry,
   Color,
   DirectionalLight,
   Fog,
   HemisphereLight,
   Mesh,
-  MeshLambertMaterial,
-  PCFSoftShadowMap,
+  MeshStandardNodeMaterial,
+  PCFShadowMap,
   PerspectiveCamera,
   Quaternion,
+  RenderPipeline,
   Scene,
-  SRGBColorSpace,
   Vector3,
-  WebGLRenderer,
-} from "three"
+  WebGPURenderer,
+} from "three/webgpu"
+import { pass } from "three/tsl"
+import { bloom } from "three/addons/tsl/display/BloomNode.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import type { Quality, TeamId, Vec3, VehicleEntity, VehicleKind } from "../../sim/types"
 import { VEHICLES, WEAPONS } from "../../sim/vehicles"
-// Daylight preview lighting from the world's exported constants.
-const DAY = {
-  sunDir: new Vector3(...SUN_DIRECTION).normalize(),
-  sun: SUN_COLOR,
-  sunIntensity: SUN_INTENSITY,
-  hemiSky: HEMI_SKY_COLOR,
-  hemiGround: HEMI_GROUND_COLOR,
-  hemiIntensity: HEMI_INTENSITY,
-  sky: FOG_COLOR,
-  grass: PALETTE.grass,
-  paving: "#8e9398",
-}
-import { FOG_COLOR, HEMI_GROUND_COLOR, HEMI_INTENSITY, HEMI_SKY_COLOR, PALETTE, SUN_COLOR, SUN_DIRECTION, SUN_INTENSITY } from "../world/palette"
 import { aircraftStats, createAircraftView, preloadAircraft, setAircraftGroundQuery, type AircraftView } from "../aircraft"
+
+// STORMFRONT preview lighting: dim cool diffuse key from above, very low ambient, dark sea, dense mist.
+const STORM = {
+  keyDir: new Vector3(0.25, 1, 0.35).normalize(),
+  key: "#b9c7c6",
+  keyIntensity: 2.0,
+  hemiSky: "#6a7a74",
+  hemiGround: "#1c2523",
+  hemiIntensity: 1.6,
+  fog: "#33403d",
+  sea: "#2e3b38",
+}
 
 const params = new URLSearchParams(location.search)
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -46,23 +48,24 @@ if (params.has("q")) qInput.value = params.get("q")!
 if (params.has("static")) autoInput.checked = false
 if (params.has("boost")) boostInput.checked = true
 
-const renderer = new WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true })
+const renderer = new WebGPURenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.setSize(innerWidth, innerHeight)
-renderer.outputColorSpace = SRGBColorSpace
-// Match the world renderer: no tone mapping.
+renderer.toneMapping = ACESFilmicToneMapping
+renderer.toneMappingExposure = Number(params.get("exposure") ?? 1.15)
 renderer.shadowMap.enabled = true
-renderer.shadowMap.type = PCFSoftShadowMap
+renderer.shadowMap.type = PCFShadowMap
 document.body.appendChild(renderer.domElement)
+await renderer.init()
 
 const scene = new Scene()
-scene.background = new Color(DAY.sky)
-scene.fog = new Fog(DAY.sky, 800, 6000)
-const hemi = new HemisphereLight(DAY.hemiSky, DAY.hemiGround, DAY.hemiIntensity)
+scene.background = new Color(STORM.fog)
+scene.fog = new Fog(STORM.fog, 120, 2200)
+const hemi = new HemisphereLight(STORM.hemiSky, STORM.hemiGround, STORM.hemiIntensity)
 scene.add(hemi)
-const sun = new DirectionalLight(DAY.sun, DAY.sunIntensity)
-sun.position.copy(DAY.sunDir).multiplyScalar(100)
-sun.castShadow = true
+const sun = new DirectionalLight(STORM.key, STORM.keyIntensity)
+sun.position.copy(STORM.keyDir).multiplyScalar(100)
+sun.castShadow = params.has("shadows")
 sun.shadow.mapSize.set(2048, 2048)
 sun.shadow.camera.left = -70
 sun.shadow.camera.right = 70
@@ -73,19 +76,20 @@ sun.shadow.bias = -0.0005
 sun.shadow.normalBias = 0.03
 scene.add(sun.target)
 scene.add(sun)
-const ground = new Mesh(new CircleGeometry(3000, 48), new MeshLambertMaterial({ color: DAY.grass }))
+
+const camera = new PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20000)
+
+// Node post: scene pass + bloom on HDR emissives, ACES tone mapping in the output transform.
+const pipeline = new RenderPipeline(renderer)
+const scenePass = pass(scene, camera)
+const sceneColor = scenePass.getTextureNode("output")
+pipeline.outputNode = sceneColor.add(bloom(sceneColor, 0.6, 0.35, 0.85))
+const ground = new Mesh(new CircleGeometry(3000, 48), new MeshStandardNodeMaterial({ color: STORM.sea, roughness: 0.22, metalness: 0 }))
 ground.rotation.x = -Math.PI / 2
 ground.position.y = -4
 ground.receiveShadow = true
 scene.add(ground)
-const runway = new Mesh(new CircleGeometry(1, 4), new MeshLambertMaterial({ color: DAY.paving }))
-runway.scale.set(90, 30, 1)
-runway.rotation.x = -Math.PI / 2
-runway.position.y = -3.95
-runway.receiveShadow = true
-scene.add(runway)
 
-const camera = new PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20000)
 camera.position.set(-38, 22, -48)
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.target.set(0, 0, 0)
@@ -98,7 +102,7 @@ const ALT = Number(params.get("alt") ?? 0)
 if (params.has("occluder")) {
   // A rock ridge in front of the spotted aircraft to check the through-terrain highlight.
   const [ox, oz, w] = params.get("occluder")!.split(",").map(Number)
-  const ridge = new Mesh(new CircleGeometry(1, 6), new MeshLambertMaterial({ color: "#7a746b", side: 2 }))
+  const ridge = new Mesh(new CircleGeometry(1, 6), new MeshStandardNodeMaterial({ color: "#2b2f2d", roughness: 0.6, side: 2 }))
   ridge.scale.set(w || 8, 7, 1)
   ridge.position.set(ox || 0, -1, oz || -6)
   scene.add(ridge)
@@ -226,11 +230,11 @@ function frame(now: number) {
     e.view.update(e.entity, [], dt, camera)
   }
   controls.update()
-  renderer.render(scene, camera)
+  pipeline.render()
 
   const info = renderer.info.render
   const lines = [
-    `fps ${fps.toFixed(0)}  total draws ${info.calls}  tris ${info.triangles}${loadMs ? `  (loaded in ${loadMs.toFixed(0)} ms)` : ""}`,
+    `fps ${fps.toFixed(0)}  total draws ${info.drawCalls}  tris ${info.triangles}${loadMs ? `  (loaded in ${loadMs.toFixed(0)} ms)` : ""}`,
     "kind        draws  tris    outline  bones  mats  (src nodes/meshes/mats)",
   ]
   for (const k of only ? [only] : KINDS) {

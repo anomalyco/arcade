@@ -1,5 +1,5 @@
 // Soft blob "contact shadow" under low-flying aircraft (Low quality fallback when shadow maps are off).
-import { DataTexture, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry, RGBAFormat, UnsignedByteType } from "three"
+import { DataTexture, LinearFilter, Mesh, MeshBasicNodeMaterial, PlaneGeometry, RGBAFormat, UnsignedByteType } from "three/webgpu"
 
 let texture: DataTexture | null = null
 let geometry: PlaneGeometry | null = null
@@ -32,12 +32,11 @@ function blobTexture(): DataTexture {
 /** Unit (1 × 1 m) horizontal blob in the XZ plane; scale X = span, Z = length. */
 export function createBlobShadow(): Mesh {
   geometry ??= new PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
-  const mat = new MeshBasicMaterial({
+  const mat = new MeshBasicNodeMaterial({
     map: blobTexture(),
     transparent: true,
     depthWrite: false,
     opacity: 0.4,
-    toneMapped: false,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -4,

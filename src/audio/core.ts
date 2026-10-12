@@ -29,6 +29,10 @@ export class Core {
   readonly engineBus: GainNode
   readonly sfxBus: GainNode
   readonly uiBus: GainNode
+  /** Storm ambience (rain, wind, background thunder). */
+  readonly ambienceBus: GainNode
+  /** Lowpass over all world sound (not UI): opened fully outside, closes for the cockpit-canopy muffle. */
+  readonly world: BiquadFilterNode
   readonly reverbIn: GainNode
   private readonly reverb: ConvolverNode
   private readonly reverbOut: GainNode
@@ -38,8 +42,9 @@ export class Core {
   readonly shots: Shot[] = []
   readonly helds = new Map<string, Held>()
   private readonly lastPlayed = new Map<string, number>()
-  private readonly categoryCount = new Map<string, number>()
+  readonly categoryCount = new Map<string, number>()
   readonly engineLevel = 0.55
+  readonly ambienceLevel = 0.5
 
   constructor(readonly ctx: AudioContext) {
     this.bank = createSoundBank(ctx)
@@ -58,9 +63,15 @@ export class Core {
     this.master.connect(ctx.destination)
     this.master.connect(this.analyser)
 
-    this.engineBus = this.bus(this.engineLevel)
-    this.sfxBus = this.bus(0.6)
-    this.uiBus = this.bus(0.5)
+    this.world = ctx.createBiquadFilter()
+    this.world.type = "lowpass"
+    this.world.frequency.value = 20000
+    this.world.Q.value = 0.5
+    this.world.connect(this.limiter)
+    this.engineBus = this.bus(this.engineLevel, this.world)
+    this.sfxBus = this.bus(0.6, this.world)
+    this.ambienceBus = this.bus(this.ambienceLevel, this.world)
+    this.uiBus = this.bus(0.5, this.limiter)
 
     this.reverb = ctx.createConvolver()
     this.reverb.buffer = this.bank.impulse
@@ -69,13 +80,13 @@ export class Core {
     this.reverbOut.gain.value = 0.4
     this.reverbIn.connect(this.reverb)
     this.reverb.connect(this.reverbOut)
-    this.reverbOut.connect(this.limiter)
+    this.reverbOut.connect(this.world)
   }
 
-  private bus(level: number): GainNode {
+  private bus(level: number, dest: AudioNode): GainNode {
     const g = this.ctx.createGain()
     g.gain.value = level
-    g.connect(this.limiter)
+    g.connect(dest)
     return g
   }
 
@@ -149,12 +160,14 @@ export class Core {
     }
   }
 
-  /** Briefly dip engine loops so impacts punch through. */
+  /** Briefly dip engine loops and ambience so impacts punch through. */
   duck(amount: number, seconds: number): void {
-    const g = this.engineBus.gain, now = this.ctx.currentTime
-    g.cancelScheduledValues(now)
-    g.setTargetAtTime(this.engineLevel * amount, now, 0.01)
-    g.setTargetAtTime(this.engineLevel, now + seconds, 0.25)
+    const now = this.ctx.currentTime
+    for (const [g, level] of [[this.engineBus.gain, this.engineLevel], [this.ambienceBus.gain, this.ambienceLevel]] as const) {
+      g.cancelScheduledValues(now)
+      g.setTargetAtTime(level * amount, now, 0.01)
+      g.setTargetAtTime(level, now + seconds, 0.25)
+    }
   }
 
   dispose(): void {
@@ -323,6 +336,14 @@ export class Shot {
     f.frequency.value = freq
     f.Q.value = q
     return this.track(f)
+  }
+
+  /** Stereo position for non-spatial shots (−1 left … 1 right), connected to `out`. */
+  panner(pan: number): StereoPannerNode {
+    const p = this.core.ctx.createStereoPanner()
+    p.pan.value = clamp(pan, -1, 1)
+    p.connect(this.out)
+    return this.track(p)
   }
 
   gain(value = 1): GainNode {

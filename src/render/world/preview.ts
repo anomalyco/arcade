@@ -1,6 +1,9 @@
 // Dev-only world preview: http://localhost:5173/labs/wings/src/render/world/preview.html
 // Query: ?view=base|canyon|volcano|water|spires|overview|edge  &q=low|balanced|high  &markers=1
-import { ACESFilmicToneMapping, BoxGeometry, Mesh, MeshToonMaterial, NeutralToneMapping, NoToneMapping, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "three"
+import { ACESFilmicToneMapping, BoxGeometry, Mesh, PerspectiveCamera, Scene, Vector3 } from "three"
+import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer } from "three/webgpu"
+import { float, pass, screenUV, smoothstep, length, vec3 } from "three/tsl"
+import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js"
 import { createWorldView, type WorldViewDebug } from "../world-view"
 import { AIRBASES, baseToWorld, groundHeight, setFleetState, spawnPoint } from "../../sim/geography"
 import type { Quality, TeamId } from "../../sim/types"
@@ -11,12 +14,11 @@ let fleetT = Number(params.get("t") ?? 0)
 const fleetSpeed = Number(params.get("ts") ?? 0)
 const teams = Number(params.get("teams") ?? 4)
 setFleetState(fleetT, teams)
-const renderer = new WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, powerPreference: "high-performance" })
+const renderer = new WebGPURenderer({ antialias: true, logarithmicDepthBuffer: true, forceWebGL: params.get("gl") === "1", powerPreference: "high-performance" })
 renderer.setPixelRatio(Math.min(devicePixelRatio, Number(params.get("pr") ?? 1.5)))
 renderer.setSize(innerWidth, innerHeight)
-const tm = params.get("tm") ?? "none"
-renderer.toneMapping = tm === "aces" ? ACESFilmicToneMapping : tm === "none" ? NoToneMapping : NeutralToneMapping
-renderer.shadowMap.enabled = params.get("shadows") !== "0"
+renderer.toneMapping = ACESFilmicToneMapping
+await renderer.init()
 document.body.appendChild(renderer.domElement)
 
 const scene = new Scene()
@@ -25,10 +27,18 @@ const world = createWorldView(renderer, scene, quality) as WorldViewDebug
 scene.add(world.root)
 camera.far = world.far
 camera.updateProjectionMatrix()
+// Preview post: bloom + light vignette (the game's scene.ts owns the real pipeline).
+const post = new RenderPipeline(renderer)
+const scenePass = pass(scene, camera)
+const color = scenePass.getTextureNode("output")
+const bloomPass = bloom(color, 0.55, 0.45, 0.82)
+const vignette = smoothstep(float(1.05), float(0.35), length(screenUV.sub(0.5).mul(vec3(1.25, 1, 1).xy)))
+post.outputNode = color.add(bloomPass).mul(vignette.mul(0.3).add(0.7))
+const backendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "webgpu" : "webgl2"
 world.setHighlightTeam(params.has("team") ? Number(params.get("team")) : null)
 
 if (params.get("markers") === "1") {
-  const mat = new MeshToonMaterial({ color: "#ff3060" })
+  const mat = new MeshStandardNodeMaterial({ color: "#ff3060" })
   for (const team of [0, 1, 2, 3] as TeamId[]) {
     for (let i = 0; i < 6; i++) {
       const s = spawnPoint(team, "fighter", i)
@@ -52,6 +62,10 @@ const views: Record<string, () => [number[], number[]]> = {
   low: () => [[2600, 60, 3900], [0, 120, 0]],
   water: () => [[3000, 14, 3800], [0, 60, 1000]],
   h1500: () => [[3500, 1500, 7000], [3500, 1300, 0]],
+  fleetclose: () => { const b = AIRBASES[0]; return [[b.center[0] + 450, 90, b.center[2] - 250], [b.center[0], 15, b.center[2] + 200]] },
+  chase700: () => [[4200, 700, 6500], [3600, 300, 3500]],
+  chase: () => [[4200, 70, 5200], [4200 + 300, 55, 5200 - 1000]],
+  breakview: () => [[0, 120, 2000], [550, 160, 2000 - 835]],
   sun: () => [[3000, 200, -2000], [3000 - 500, 200 + 300, -2000 + 500]],
   overview: () => [[0, 5500, 9500], [0, 0, 0]],
 }
@@ -106,27 +120,29 @@ function frame(now: number) {
   camera.position.y = Math.max(camera.position.y, groundHeight(camera.position.x, camera.position.z) + 2)
   if (fleetSpeed) { fleetT += dt * fleetSpeed; setFleetState(fleetT, teams) }
   world.update(camera.position, dt, now / 1000)
-  renderer.render(scene, camera)
+  renderer.toneMappingExposure = 1 + world.lightning * 0.5
+  post.render()
   frames++
   if (now - fpsTime > 500) { fps = frames * 1000 / (now - fpsTime); frames = 0; fpsTime = now }
   const s = world.stats(), info = renderer.info.render
-  hud.textContent = `fps ${fps.toFixed(0)}  calls ${info.calls}  tris ${(info.triangles / 1000).toFixed(0)}k\n` +
+  hud.textContent = `${backendName}  fps ${fps.toFixed(0)}  calls ${info.drawCalls}  tris ${(info.triangles / 1000).toFixed(0)}k\n` +
     `clusters ${s.visibleClusters}/${s.clusters} pending ${s.pending} trees ${s.trees} shore ${(s.shoreProgress * 100).toFixed(0)}%\n` +
     `work ${s.lastWorkMs.toFixed(2)}ms max ${s.maxWorkMs.toFixed(2)}ms ready ${world.ready()}\n` +
     `pos ${camera.position.x.toFixed(0)}, ${camera.position.y.toFixed(0)}, ${camera.position.z.toFixed(0)}`
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)
+if (params.has("strike")) setTimeout(() => world.strikeLightning(), Number(params.get("strike")))
 
 Object.assign(window, {
   __preview: {
-    world, renderer, camera,
+    world, renderer, camera, strike: () => world.strikeLightning(),
     setCam: (p: number[], l: number[]) => setCam(p, l),
     view: (name: string) => setCam(...views[name]()),
     fly: (s: number) => (flySpeed = s),
     stats: () => {
       const sorted = [...frameTimes].sort((a, b) => a - b)
-      return { fps, ...world.stats(), calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, ready: world.ready(),
+      return { fps, ...world.stats(), calls: renderer.info.render.drawCalls, backend: backendName, triangles: renderer.info.render.triangles, ready: world.ready(),
         frameMedian: sorted[Math.floor(sorted.length / 2)], frameP95: sorted[Math.floor(sorted.length * 0.95)] }
     },
   },

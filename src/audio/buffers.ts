@@ -15,6 +15,8 @@ export interface SoundBank {
   vulcan: AudioBuffer
   /** GAU-8 Avenger: 65 rounds/s (3,900 rpm) heavy saturated growl loop — the BRRRT. */
   gau8: AudioBuffer
+  /** Phalanx CIWS: 75 rounds/s (4,500 rpm) tearing buzz — brighter and rippier than the GAU-8. */
+  ciws: AudioBuffer
   /** AH-64 main rotor: 4-blade chop at 19.2 Hz blade-pass, slightly uneven blades. */
   rotor: AudioBuffer
   /** Stereo reverb impulse ("big sky over canyons"). */
@@ -215,6 +217,25 @@ export function createSoundBank(ctx: BaseAudioContext): SoundBank {
     normalize(d, 0.9)
   }
 
+  const ciws = pulseLoop(ctx, 75, 60, 0.02, rng, (out, sr, k, r) => {
+    const amp = 0.75 + r() * 0.25
+    for (let j = 0; j < out.length; j++) {
+      const t = j / sr
+      const n = r() * 2 - 1
+      out[j] = amp * (
+        n * Math.exp(-t / 0.0016)
+        + 0.7 * Math.sin(2 * Math.PI * (330 * t + 200 * 0.003 * (1 - Math.exp(-t / 0.003)))) * Math.exp(-t / 0.006)
+        + 0.25 * n * Math.exp(-t / 0.008)
+      )
+    }
+  })
+  {
+    const d = ciws.getChannelData(0)
+    cyclicBandpass(d, ctx.sampleRate, 1100, 1.4, 0.55)
+    saturate(d, 2.4)
+    normalize(d, 0.85)
+  }
+
   const blades = [1, 0.82, 0.93, 0.78]
   const rotor = pulseLoop(ctx, 19.2, 16, 0.07, rng, (out, sr, k, r) => {
     const amp = blades[k % 4] * (0.92 + r() * 0.08)
@@ -237,5 +258,5 @@ export function createSoundBank(ctx: BaseAudioContext): SoundBank {
     normalize(d, 0.9)
   }
 
-  return { white, pink, brown, crackle, vulcan, gau8, rotor, impulse: impulse(ctx, rng) }
+  return { white, pink, brown, crackle, vulcan, gau8, ciws, rotor, impulse: impulse(ctx, rng) }
 }
