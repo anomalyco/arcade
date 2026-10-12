@@ -14,6 +14,11 @@ const SNAP_EVERY = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
 const MAX_CATCHUP = 4
 /** A dropped player's seat (and score) is kept this long for a reconnect. */
 const GRACE_MS = 15_000
+/** No input for this long while able to play gets you kicked; a warning shows for the last IDLE_WARN_MS. */
+export const IDLE_KICK_MS = 90_000
+export const IDLE_WARN_MS = 15_000
+/** Aim changes smaller than this (radians) don't count as activity. */
+const AIM_ACTIVE = 0.05
 
 export type Conn = { send(data: string): void; close(code?: number, reason?: string): void }
 
@@ -26,10 +31,13 @@ export class RoomCore {
   private gone = new Map<string, number>()
   private rosterKey = ""
   private ticks = 0
+  /** Last activity (clock ms) and aim per player, for the idle kick. */
+  private active = new Map<string, { at: number; aim: number; warned: number }>()
 
   constructor(
     readonly code: string,
     mode: ModeId = "ffa",
+    private clock: () => number = Date.now,
   ) {
     this.world = new World(seedOf(code), null, mode)
   }
@@ -55,8 +63,16 @@ export class RoomCore {
     if (msg.type === "hello") return this.hello(conn, msg)
     const id = this.conns.get(conn)
     if (!id) return
-    if (msg.type === "intent") this.world.push(id, msg.seq, msg.i)
-    else if (msg.type === "gun") this.world.pickGun(id, msg.gun)
+    if (msg.type === "intent") {
+      const i = msg.i
+      const a = this.active.get(id)
+      if (a && (i.mx || i.my || i.fire || i.reload || i.equip || i.use || Math.abs(i.aim - a.aim) > AIM_ACTIVE)) a.at = this.clock()
+      if (a) a.aim = i.aim
+      this.world.push(id, msg.seq, i)
+      return
+    }
+    this.touch(id)
+    if (msg.type === "gun") this.world.pickGun(id, msg.gun)
     else if (msg.type === "equip") this.world.pickEquip(id, msg.equip)
     else if (msg.type === "vote") this.world.vote(id, msg.mode)
     else if (msg.type === "team") moveTeam(this.world, id, msg.id, msg.team)
@@ -79,6 +95,7 @@ export class RoomCore {
       w.addHuman(id, msg.name, msg.gun, msg.equip)
     }
     this.conns.set(conn, id)
+    this.active.set(id, { at: this.clock(), aim: 0, warned: 0 })
     conn.send(encodeServer({ type: "welcome", id, room: this.code }))
     conn.send(encodeServer({ type: "roster", players: rosterOf(w) }))
     conn.send(encodeServer(buildSnapshot(w, id)))
@@ -87,17 +104,56 @@ export class RoomCore {
   close(conn: Conn): void {
     const id = this.conns.get(conn)
     this.conns.delete(conn)
-    if (id && ![...this.conns.values()].includes(id)) this.gone.set(id, Date.now())
+    if (id && ![...this.conns.values()].includes(id)) this.gone.set(id, this.clock())
+  }
+
+  private touch(id: string): void {
+    const a = this.active.get(id)
+    if (a) a.at = this.clock()
+  }
+
+  /**
+   * Kicks players who haven't touched the controls for IDLE_KICK_MS. Time on the end screen or spent dead (waiting to
+   * respawn, or spectating after elimination) doesn't count. The last IDLE_WARN_MS get a countdown.
+   */
+  private idle(now: number): void {
+    for (const [conn, id] of [...this.conns]) {
+      const a = this.active.get(id)
+      const p = this.world.players.get(id)
+      if (!a || !p) continue
+      if (this.world.phase !== "play" || !p.alive) {
+        a.at = now
+        continue
+      }
+      const left = IDLE_KICK_MS - (now - a.at)
+      if (left <= 0) {
+        conn.send(encodeServer({ type: "error", message: "You were kicked for being idle." }))
+        conn.close(4002, "idle")
+        this.conns.delete(conn)
+        this.active.delete(id)
+        this.gone.delete(id)
+        this.world.remove(id)
+        this.world.fill()
+        continue
+      }
+      const secs = left <= IDLE_WARN_MS ? Math.ceil(left / 1000) : 0
+      if (secs !== a.warned) {
+        a.warned = secs
+        conn.send(encodeServer({ type: "idle", seconds: secs }))
+      }
+    }
   }
 
   step(): void {
-    const now = Date.now()
+    const now = this.clock()
     for (const [id, at] of this.gone) {
       if (now - at < GRACE_MS) continue
       this.gone.delete(id)
+      this.active.delete(id)
       this.world.remove(id)
       this.world.fill()
     }
+    this.idle(now)
     this.world.step()
     this.ticks++
     const events = this.world.takeEvents()

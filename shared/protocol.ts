@@ -23,6 +23,8 @@ export type ServerMsg =
   | { type: "roster"; players: RosterRow[] }
   | { type: "ev"; events: SimEvent[] }
   | { type: "error"; message: string }
+  /** Seconds until you're kicked for idling, during the warning; 0 clears it. */
+  | { type: "idle"; seconds: number }
   | { type: "pong"; t: number }
 
 export const NAME_MAX = 14

@@ -23,6 +23,7 @@ export class NetSession implements Session {
   private players: RosterRow[] = []
   private events: SimEvent[] = []
   private problem: string | null = "Connecting…"
+  private idleIn = 0
   private retries = 0
   private closed = false
   private id = ""
@@ -67,7 +68,7 @@ export class NetSession implements Session {
   }
 
   status(): string | null {
-    return this.problem
+    return this.problem ?? (this.idleIn > 0 ? `IDLE · MOVE OR YOU'LL BE KICKED IN ${this.idleIn}` : null)
   }
 
   update(): void {}
@@ -116,6 +117,9 @@ export class NetSession implements Session {
       case "error":
         this.closed = true
         this.onFatal(msg.message)
+        return
+      case "idle":
+        this.idleIn = msg.seconds
         return
       case "pong":
         return
