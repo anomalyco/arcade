@@ -142,6 +142,8 @@ button { font: inherit; color: inherit; }
 .lobby input::placeholder { color: var(--faint); }
 .lobby input:focus { border-bottom-color: var(--robber); }
 .lb-name { margin-bottom: 14px; }
+.lb-name.bad { border-bottom-color: var(--threat) !important; animation: nudge 0.3s; }
+.lb-name.bad::placeholder { color: var(--threat); }
 .btn { cursor: pointer; height: 42px; padding: 0 14px; white-space: nowrap; background: transparent; border: 1px solid rgba(255, 255, 255, 0.2); color: var(--text); font: 500 14px/1 var(--display); letter-spacing: 0.28em; transition: background 0.15s, border-color 0.15s; }
 .btn:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.45); }
 .btn.primary { height: 48px; background: var(--text); border-color: var(--text); color: #05070b; font-weight: 600; }

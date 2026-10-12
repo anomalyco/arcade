@@ -77,7 +77,7 @@ export async function lobby(root: HTMLElement, notice: string | null = null): Pr
     let busy = false
     const finish = (room: string, via: NonNullable<LobbyResult["via"]>) => {
       clearInterval(statsTimer)
-      const name = nameInput.value.trim().slice(0, 16) || "Driver"
+      const name = nameInput.value.trim().slice(0, 16)
       localStorage.setItem(NAME_KEY, name)
       setRoomParam(room)
       el.classList.add("out")
@@ -92,9 +92,20 @@ export async function lobby(root: HTMLElement, notice: string | null = null): Pr
       btn.classList.add("going")
       finish(await askRoom(path), path)
     }
+    /** A name is required: flag the field and refuse to join until there is one. */
+    const named = () => {
+      if (nameInput.value.trim()) return true
+      nameInput.focus()
+      nameInput.placeholder = "ENTER A NAME TO PLAY"
+      nameInput.classList.remove("bad")
+      void nameInput.offsetWidth
+      nameInput.classList.add("bad")
+      return false
+    }
+    nameInput.addEventListener("input", () => nameInput.classList.remove("bad"))
     el.addEventListener("click", (ev) => {
       const act = (ev.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act
-      if (busy || !act) return
+      if (busy || !act || !named()) return
       if (act === "join" && urlRoom) finish(urlRoom, "code")
       else if (act === "quick") void ask("quick", "FINDING A GAME…")
       else if (act === "create") void ask("create", "CREATING…")
