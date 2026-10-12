@@ -2,7 +2,7 @@ import { EQUIPS, EQUIP_IDS, type Equip, GUNS, GUN_IDS, type Weapon } from "../..
 import { floorOf } from "../../shared/maps"
 import type { Camera } from "../render/camera"
 import { type Game, css } from "../game/game"
-import { boardLabel, boardStat, fixedLoadout } from "./rules-hud"
+import { fixedLoadout } from "./rules-hud"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const weaponLabel = (w: Weapon) => (w === "frag" ? "GRENADE" : w === "claymore" ? "CLAYMORE" : w === "melee" ? "MELEE" : GUNS[w].label.toUpperCase())
@@ -12,14 +12,14 @@ const clock = (s: number) => {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
 }
 
-/** In-match HUD: clock, leaderboard, kill feed, health, ammo, crosshair with hitmarkers, banners and names. */
+/** In-match HUD: clock, kill feed, health, ammo, crosshair with hitmarkers, banners and names. */
 export class Hud {
   private el: Record<string, HTMLElement> = {}
   private labels = new Map<string, HTMLElement>()
 
   constructor(private root: HTMLElement) {
     root.innerHTML = `
-      <div id="tl"><div class="brand">BLACKOUT</div><div id="floor"></div><div id="board"></div></div>
+      <div id="tl"><div class="brand">BLACKOUT</div><div id="floor"></div></div>
       <div id="tc"><span id="clock"></span></div>
       <div id="tr"></div>
       <div id="labels"></div>
@@ -46,12 +46,6 @@ export class Hud {
     if (!s) return
     el.floor!.textContent = `OFFICE TOWER · FL ${floorOf(s.map)}`
     el.clock!.textContent = s.phase === "play" ? clock(s.left) : `NEXT FLOOR IN ${Math.ceil(s.left)}`
-    const by = boardStat(s.mode.id)
-    const ranked = [...g.roster].sort((a, b) => (by ? by(b) - by(a) : 0) || b.kills - a.kills || a.deaths - b.deaths)
-    el.board!.innerHTML = ranked
-      .slice(0, 4)
-      .map((r, i) => `<div class="${r.id === g.myId ? "me" : ""}"><span>${i + 1}</span><b style="color:${css(g.colorOf(r.id))}">${esc(r.name)}</b><em>${boardLabel(s.mode.id, r)}</em></div>`)
-      .join("")
     el.tr!.innerHTML = g.feed
       .filter((f) => t - f.t < 6)
       .map((f) => `<div class="${f.mine ? "mine" : ""}"><b style="color:${css(f.kc)}">${esc(f.killer)}</b><em>${weaponLabel(f.how)}</em><b style="color:${css(f.vc)}">${esc(f.victim)}</b></div>`)

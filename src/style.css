@@ -314,32 +314,6 @@ tr.me td {
   color: var(--dim);
 }
 
-#board div {
-  display: flex;
-  gap: 12px;
-  font-size: 13px;
-  padding: 2px 0;
-}
-
-#board span {
-  color: var(--faint);
-  width: 12px;
-}
-
-#board b {
-  font-weight: 500;
-  min-width: 110px;
-}
-
-#board em {
-  font-style: normal;
-}
-
-#board .me {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
 #tc {
   position: absolute;
   top: 20px;

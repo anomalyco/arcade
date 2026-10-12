@@ -19,7 +19,6 @@ export function boardStat(id: ModeId): ((r: RosterRow) => number) | null {
   if (id === "oitc") return (r) => stat(r, "lives") * 1000 + r.kills
   return null
 }
-export const boardLabel = (id: ModeId, r: RosterRow): string => (id === "oitc" ? `${"♥".repeat(stat(r, "lives"))} ${r.kills}` : String(boardStat(id)?.(r) ?? r.kills))
 
 /** Scoreboard columns these modes add. */
 export function rulesColumns(id: ModeId): [string, (r: RosterRow) => number][] {
