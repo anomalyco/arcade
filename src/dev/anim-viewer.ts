@@ -237,7 +237,8 @@ async function main() {
   const frame = (dt: number) => {
     clock += dt * 1000
     game.update(dt, input, cam, innerWidth, innerHeight, clock)
-    const lead = only?.length === 1 ? session.latest()?.snap.players[0] : undefined
+    const fid = params.get("follow") ?? (only?.length === 1 ? only[0] : null)
+    const lead = fid ? session.latest()?.snap.players.find((p) => p.id === fid) : undefined
     if (lead && !params.has("x")) cam.snap(lead.x, lead.y)
     else cam.follow(focus.x, focus.y, 0, 0, dt, false)
     cam.dist = zoom

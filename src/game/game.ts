@@ -624,7 +624,7 @@ export class Game {
         const bc = ragdollCentre(c.rd)
         this.sprite(false, bc.x, 0.012, bc.y, 0.1 + 0.55 * Math.sqrt(pool), 0.07, 0.0, 0.004, 0.9 * Math.max(0, 1 - sink * 4), 6)
       }
-      emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, Math.max(0, 0.3 - age * 2), 1, sink)
+      emitRagdoll(pushBody, c.rd, c.gun, [col[0] * dim, col[1] * dim, col[2] * dim], this.models, 0, 1, sink)
     }
     for (const [model, data] of bodies) emit(model, data)
 
