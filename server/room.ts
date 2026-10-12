@@ -111,14 +111,14 @@ export class RoomCore {
 
 /** Lobby reports: at most one per second, and a heartbeat well inside the Lobby's stale window. */
 const REPORT_MIN_MS = 1000
-const HEARTBEAT_MS = 60_000
+const HEARTBEAT_MS = 10_000
 
 /** One Durable Object per room code. Ticks while anyone is connected and reports its seats to the Lobby. */
 export class Room extends DurableObject<Env> {
   private core: RoomCore | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private clock = 0
-  /** Rooms made with "Create game" are never handed out by quick join. Sticky for the life of the code. */
+  /** Made with "Create game" (reported to the Lobby; quick join still finds the room once people are in it). */
   private priv: boolean | null = null
   /** The mode the room was created with, for the first match whenever the room starts up again. */
   private mode: ModeId | null = null

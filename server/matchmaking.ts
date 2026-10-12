@@ -9,21 +9,21 @@ export type RoomReport = { code: string; players: number; phase: string; private
 export type RoomEntry = RoomReport & { updatedAt: number }
 type Reservation = { code: string; until: number; private: boolean; claims: number }
 
-/** Rooms heartbeat well inside this; an entry older than it belongs to a room that died without saying so. */
-export const STALE_MS = 120_000
+/** Rooms heartbeat every 10 s; an entry older than this belongs to a room that died without saying so. */
+export const STALE_MS = 30_000
 /** A freshly handed-out code stays taken this long, so simultaneous quick-joiners share it until the room reports in. */
 export const RESERVE_MS = 8_000
 
-const open = (r: RoomEntry) => !r.private && r.players > 0 && r.players < MAX_PLAYERS
+/** Any room with people in it and a free seat, whatever its phase or mode, and whether or not it was made with Create game. */
+const open = (r: RoomEntry) => r.players > 0 && r.players < MAX_PLAYERS
 
-/** The public room quick join should send you to: the fullest one with space, rooms between matches first on a tie. */
+/** The room quick join sends you to: the one with the most players and a free seat; ties go to the latest report. */
 export function pickRoom(rooms: Iterable<RoomEntry>): RoomEntry | null {
   let best: RoomEntry | null = null
   for (const r of rooms) {
     if (!open(r)) continue
     if (!best) best = r
     else if (r.players !== best.players) best = r.players > best.players ? r : best
-    else if ((r.phase === "end") !== (best.phase === "waiting")) best = r.phase === "end" ? r : best
     else if (r.updatedAt !== best.updatedAt) best = r.updatedAt > best.updatedAt ? r : best
     else if (r.code < best.code) best = r
   }
