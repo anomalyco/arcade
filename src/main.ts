@@ -26,6 +26,7 @@ async function gpu(canvas: HTMLCanvasElement): Promise<Renderer | null> {
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
   if (!adapter) return null
   const device = await adapter.requestDevice()
+  device.addEventListener("uncapturederror", (e) => console.error(`[gpu] ${e.error.message}`))
   const context = canvas.getContext("webgpu")!
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })

@@ -90,7 +90,6 @@ export class Hud {
     q.clock.textContent = fmt(snap.left)
     q.phase.textContent = phaseLabel(snap)
     q.score.innerHTML = scoreLine(snap, g)
-    q.timer.toggleAttribute("hidden", snap.phase !== "live")
     const bar = q["timer-bar"]!.firstElementChild as HTMLElement
     bar.style.width = `${Math.max(0, Math.min(100, (snap.left / 180) * 100))}%`
 
