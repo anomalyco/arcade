@@ -1,5 +1,5 @@
 import { GUN_IDS, type Gun } from "../../shared/config"
-import { MAT, Mesh, type Rgb } from "./mesh"
+import { MAT, type Mat, Mesh, type Rgb } from "./mesh"
 import { hex } from "./models"
 
 /**
@@ -70,10 +70,20 @@ const OLIVE = hex(0x4c5634)
 const BRASS = hex(0xd8a640)
 const ACC: Rgb = [1, 1, 1]
 
+/** Soldier meshes default to the actor material. */
+class Body extends Mesh {
+  override box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, col: Rgb, mat: Mat = MAT.actor, aux = 0, top?: Rgb, bottom = false): void {
+    super.box(x0, y0, z0, x1, y1, z1, col, mat === MAT.lit ? MAT.actor : mat, aux, top, bottom)
+  }
+  override prism(cx: number, cz: number, r0: number, r1: number, y0: number, y1: number, sides: number, col: Rgb, mat: Mat = MAT.actor, aux = 0, cap = true): void {
+    super.prism(cx, cz, r0, r1, y0, y1, sides, col, mat === MAT.lit ? MAT.actor : mat, aux, cap)
+  }
+}
+
 const acc = (m: Mesh, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => m.box(x0, y0, z0, x1, y1, z1, ACC, MAT.accent)
 
 function pelvis(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   m.box(-0.12, -0.07, -0.18, 0.11, 0.1, 0.18, CLOTH)
   m.box(-0.13, 0.05, -0.19, 0.12, 0.11, 0.19, GEAR)
   // Belt pouches and a holster on the right.
@@ -84,7 +94,7 @@ function pelvis(): Mesh {
 }
 
 function torso(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   // Abdomen and chest.
   m.box(-0.12, -0.02, -0.16, 0.11, 0.2, 0.16, CLOTH)
   m.box(-0.14, 0.15, -0.21, 0.14, 0.45, 0.21, CLOTH)
@@ -106,7 +116,7 @@ function torso(): Mesh {
 }
 
 function head(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   m.box(-0.05, -0.02, -0.05, 0.05, 0.08, 0.05, CLOTH_D)
   // Face under a balaclava, then the helmet shell.
   m.box(-0.07, 0.05, -0.085, 0.1, 0.2, 0.085, hex(0x1d1f25))
@@ -125,16 +135,17 @@ function head(): Mesh {
 }
 
 function upperArm(): Mesh {
-  const m = new Mesh()
-  m.box(-0.08, -0.11, -0.08, 0.08, 0.05, 0.08, GEAR)
+  const m = new Body()
+  m.box(-0.085, -0.11, -0.085, 0.085, 0.05, 0.085, GEAR)
+  // Glowing strip across the top of the shoulder pad, and an armband below it.
+  acc(m, -0.06, 0.05, -0.03, 0.06, 0.07, 0.03)
   m.box(-0.06, -0.29, -0.06, 0.06, -0.05, 0.06, CLOTH)
-  // Glowing armband just below the shoulder pad.
-  acc(m, -0.066, -0.16, -0.066, 0.066, -0.11, 0.066)
+  acc(m, -0.066, -0.16, -0.066, 0.066, -0.12, 0.066)
   return m
 }
 
 function foreArm(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   m.box(-0.055, -0.06, -0.055, 0.055, 0.03, 0.055, CLOTH_D)
   m.box(-0.05, -0.21, -0.05, 0.05, -0.04, 0.05, CLOTH)
   m.box(-0.056, -0.22, -0.056, 0.056, -0.18, 0.056, GEAR)
@@ -144,14 +155,14 @@ function foreArm(): Mesh {
 }
 
 function thigh(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   m.box(-0.085, -0.43, -0.08, 0.085, 0.04, 0.08, CLOTH)
   m.box(-0.07, -0.3, -0.095, 0.05, -0.14, 0.095, CLOTH_D)
   return m
 }
 
 function shin(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   m.box(-0.065, -0.33, -0.065, 0.065, 0.02, 0.065, CLOTH)
   m.box(0.03, -0.12, -0.07, 0.1, 0.06, 0.07, GEAR)
   m.box(-0.075, -0.42, -0.072, 0.08, -0.29, 0.072, BOOT)
@@ -159,7 +170,7 @@ function shin(): Mesh {
 }
 
 function foot(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   m.box(-0.075, -0.07, -0.065, 0.18, 0.02, 0.065, BOOT)
   m.box(-0.08, -0.085, -0.068, 0.19, -0.065, 0.068, SOLE)
   return m
@@ -167,7 +178,7 @@ function foot(): Mesh {
 
 /** Guns: grip at the origin, barrel along +x. Magazines and the shotgun pump are separate parts. */
 function gun(g: Gun): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   if (g === "rifle") {
     m.box(-0.34, -0.07, -0.025, -0.3, 0.06, 0.025, METAL)
     m.box(-0.3, -0.02, -0.022, -0.06, 0.04, 0.022, METAL_L)
@@ -210,7 +221,7 @@ function gun(g: Gun): Mesh {
 
 /** Magazine with its top at the origin. */
 function mag(g: Gun): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   if (g === "rifle") {
     m.box(-0.035, -0.12, -0.018, 0.04, 0.0, 0.018, METAL_L)
     m.box(-0.015, -0.19, -0.018, 0.06, -0.11, 0.018, METAL_L)
@@ -225,14 +236,14 @@ function mag(g: Gun): Mesh {
 }
 
 function pump(): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   m.box(-0.09, -0.035, -0.036, 0.09, 0.03, 0.036, WOOD)
   for (const x of [-0.05, 0, 0.05]) m.box(x - 0.012, -0.04, -0.038, x + 0.012, 0.032, 0.038, hex(0x5a361f))
   return m
 }
 
 function casing(g: Gun): Mesh {
-  const m = new Mesh()
+  const m = new Body()
   if (g === "shotgun") {
     m.box(-0.03, -0.012, -0.012, 0.035, 0.012, 0.012, hex(0xc02626), MAT.glow, 0.35)
     m.box(-0.045, -0.013, -0.013, -0.03, 0.013, 0.013, BRASS, MAT.glow, 0.5)

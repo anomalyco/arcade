@@ -240,7 +240,8 @@ export function hit(a: Avatar, dx: number, dy: number, power = 1): void {
 /** Hand key space: 0 gun-local, 1 torso-local, 2 pelvis-local; "home" keys sit on the grip or fore-end. */
 type Space = 0 | 1 | 2
 type HandKey = [t: number, space: Space, x: number, y: number, z: number] | [t: number, home: "home"]
-type GunKey = [t: number, pitch: number, roll: number, pull: number, drop: number]
+/** Gun offsets: pitch (muzzle up), roll, pull back, drop, and yaw across the body (positive swings the muzzle left). */
+type GunKey = [t: number, pitch: number, roll: number, pull: number, drop: number, yaw?: number]
 type Clip = {
   left?: HandKey[]
   right?: HandKey[]
@@ -257,14 +258,14 @@ const H = "home" as const
 const TILT: GunKey = [0, 0, 0, 0, 0]
 const RELOAD: Record<Gun, Clip> = {
   rifle: {
-    gun: [TILT, [0.12, -0.22, 0.6, 0.1, 0.07], [0.56, -0.28, 0.62, 0.1, 0.08], [0.62, -0.16, 0.5, 0.1, 0.06], [0.72, -0.12, 0.3, 0.08, 0.05], [0.82, -0.06, 0.2, 0.05, 0.03], [1, 0, 0, 0, 0]],
-    left: [[0, H], [0.1, 0, 0.1, -0.09, 0], [0.18, 0, 0.1, -0.12, -0.01], [0.24, 0, 0.12, -0.2, -0.06], [0.36, 1, 0.24, 0.22, -0.08], [0.44, 1, 0.24, 0.2, -0.06], [0.56, 0, 0.11, -0.2, 0], [0.62, 0, 0.1, -0.1, 0], [0.7, 0, -0.03, 0.09, -0.07], [0.79, 0, -0.12, 0.1, -0.06], [0.9, H], [1, H]],
+    gun: [TILT, [0.1, -0.3, 0.75, 0.16, 0.1, 0.55], [0.56, -0.34, 0.8, 0.16, 0.11, 0.6], [0.62, -0.2, 0.65, 0.14, 0.09, 0.5], [0.72, -0.12, 0.35, 0.12, 0.06, 0.35], [0.84, -0.05, 0.15, 0.06, 0.03, 0.15], [1, 0, 0, 0, 0, 0]],
+    left: [[0, H], [0.08, 0, 0.1, -0.09, 0], [0.16, 0, 0.1, -0.12, -0.01], [0.24, 0, 0.12, -0.25, -0.08], [0.34, 1, 0.22, 0.18, -0.2], [0.44, 1, 0.24, 0.18, -0.18], [0.54, 0, 0.11, -0.22, -0.02], [0.62, 0, 0.1, -0.1, 0], [0.7, 0, -0.03, 0.09, -0.07], [0.79, 0, -0.12, 0.1, -0.06], [0.9, H], [1, H]],
     mag: [[0, "gun"], [0.18, "none"], [0.42, "hand"], [0.61, "gun"]],
     head: [[0, 0], [0.12, 0.35], [0.85, 0.3], [1, 0]],
     cues: [[0.16, EV.magOut], [0.18, EV.magDrop], [0.38, EV.grab], [0.61, EV.magIn], [0.78, EV.charge]],
   },
   shotgun: {
-    gun: [TILT, [0.1, -0.12, -0.75, 0.06, 0.09], [0.78, -0.12, -0.75, 0.06, 0.09], [0.86, -0.04, -0.2, 0.03, 0.03], [1, 0, 0, 0, 0]],
+    gun: [TILT, [0.1, -0.15, -0.9, 0.1, 0.1, 0.45], [0.78, -0.15, -0.9, 0.1, 0.1, 0.45], [0.86, -0.04, -0.2, 0.04, 0.03, 0.1], [1, 0, 0, 0, 0, 0]],
     left: [
       [0, H],
       ...[0, 1, 2, 3].flatMap((i): HandKey[] => {
@@ -287,7 +288,7 @@ const RELOAD: Record<Gun, Clip> = {
     cues: [...[0, 1, 2, 3].map((i): [number, number] => [0.1 + i * 0.165 + 0.14, EV.shellIn]), [0.845, EV.pumpBack], [0.9, EV.pumpFwd]],
   },
   sniper: {
-    gun: [TILT, [0.1, -0.15, -0.35, 0.06, 0.06], [0.7, -0.2, 0.45, 0.08, 0.07], [0.8, -0.1, -0.3, 0.06, 0.05], [0.92, -0.03, -0.1, 0.02, 0.01], [1, 0, 0, 0, 0]],
+    gun: [TILT, [0.1, -0.18, -0.45, 0.1, 0.07, 0.3], [0.22, -0.22, 0.5, 0.12, 0.08, 0.4], [0.7, -0.24, 0.55, 0.12, 0.08, 0.45], [0.8, -0.1, -0.3, 0.08, 0.05, 0.2], [0.92, -0.03, -0.1, 0.02, 0.01, 0], [1, 0, 0, 0, 0, 0]],
     right: [[0, H], [0.08, 0, -0.01, 0.06, 0.09], [0.14, 0, -0.01, 0.1, 0.1], [0.2, 0, -0.13, 0.1, 0.1], [0.72, 0, -0.13, 0.1, 0.1], [0.8, 0, -0.01, 0.1, 0.1], [0.86, 0, -0.01, 0.06, 0.09], [0.94, H], [1, H]],
     left: [[0, H], [0.22, 0, 0.08, -0.08, 0], [0.28, 0, 0.1, -0.16, -0.04], [0.4, 1, 0.24, 0.22, -0.08], [0.48, 1, 0.24, 0.2, -0.06], [0.58, 0, 0.09, -0.16, 0], [0.64, 0, 0.08, -0.08, 0], [0.74, H], [1, H]],
     mag: [[0, "gun"], [0.26, "none"], [0.46, "hand"], [0.64, "gun"]],
@@ -452,8 +453,16 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
       const stance = duty / rate
       const [rx, ry] = rest(i)
       const lead = left + stance * 0.5
-      const tx = rx + nvx * lead
-      const ty = ry + nvy * lead
+      let tx = rx + nvx * lead
+      let ty = ry + nvy * lead
+      // Side-steps shuffle rather than cross: keep the swing foot on its own side of the planted one.
+      const o = a.feet[1 - i]!
+      const side = i === 0 ? -1 : 1
+      const lat = (-(tx - o.p[0]) * sl + (ty - o.p[2]) * cl) * side
+      if (lat < 0.16) {
+        tx += -sl * side * (0.16 - lat)
+        ty += cl * side * (0.16 - lat)
+      }
       const e = smoother(s)
       f.p = [f.lift[0] + (tx - f.lift[0]) * e, Math.sin(Math.PI * s) * (0.06 + 0.09 * k), f.lift[2] + (ty - f.lift[2]) * e]
       f.yaw = f.liftYaw + angleDiff(a.legYaw + (i === 0 ? -0.12 : 0.12), f.liftYaw) * e
@@ -553,12 +562,14 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   let gunRoll = 0
   let gunPull = 0
   let gunDrop = 0
+  let gunYaw = 0
   if (clip?.gun) {
     const [k0, k1, u] = keyed(clip.gun, ct)
     gunPitch = k0[1] + (k1[1] - k0[1]) * u
     gunRoll = k0[2] + (k1[2] - k0[2]) * u
     gunPull = k0[3] + (k1[3] - k0[3]) * u
     gunDrop = k0[4] + (k1[4] - k0[4]) * u
+    gunYaw = (k0[5] ?? 0) + ((k1[5] ?? 0) - (k0[5] ?? 0)) * u
   }
   const rs = (now - a.raiseAt) / RAISE
   const raise = rs >= 0 && rs < 1 ? 1 - smoother(rs) : 0
@@ -586,7 +597,8 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
     Math.sin(t * 0.9 + a.seed) * sway2 +
     Math.sin(th) * 0.03 * moving +
     a.heat * 0.035 * Math.sin(t * 41 + a.seed) +
-    a.hitTwist.x * 0.3
+    a.hitTwist.x * 0.3 -
+    gunYaw
   let gunF = yawFrame([shoulderC[0] + ca * hold.fwd - sa * hold.side, shoulderC[1] + hold.up - rest - gunDrop - raise * 0.22, shoulderC[2] + sa * hold.fwd + ca * hold.side], yaw)
   gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * 0.025 * moving + a.heat * 0.03 * Math.sin(t * 53))
   gunF = roll(gunF, a.recRoll.x + gunRoll + clamp(-a.aimVel * 0.03, -0.3, 0.3) + raise * 0.5)
@@ -646,8 +658,14 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: gunF, pump, mag }
 }
 
+/** The team colour (sRGB-ish palette) as a linear glow, so accents stay saturated through tone mapping. */
+export function glow(c: Rgb3, k = 1.5): [number, number, number] {
+  return [c[0] ** 2.2 * k, c[1] ** 2.2 * k, c[2] ** 2.2 * k]
+}
+
 /** Pushes every part of a posed body. */
-export function emitBody(push: PushPart, b: Body, gun: Gun, color: Rgb3, models: PartModels, flash: number, alpha = 1): void {
+export function emitBody(push: PushPart, b: Body, gun: Gun, rgb: Rgb3, models: PartModels, flash: number, alpha = 1): void {
+  const color = glow(rgb)
   emit(push, models.pelvis, b.pelvis, color, flash, alpha)
   emit(push, models.torso, b.torso, color, flash, alpha)
   emit(push, models.head, b.head, color, flash, alpha)

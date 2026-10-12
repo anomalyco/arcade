@@ -469,7 +469,7 @@ fn lampK(aux: f32) -> f32 {
     let ao = mix(1.0, 1.0 - fd.r * 0.85, low);
     amb *= ao;
     var direct = lit.diff * GAIN * mix(1.0, ao, 0.5);
-    if (abs(n.y) < 0.5) {
+    if (abs(n.y) < 0.5 && mat != 12) {
       let base = mix(0.55, 1.0, smoothstep(0.0, 0.8, o.world.y));
       amb *= base;
       direct *= mix(0.75, 1.0, smoothstep(0.0, 0.5, o.world.y));
@@ -477,6 +477,11 @@ fn lampK(aux: f32) -> f32 {
     // Moonlight through the windows, on the floor and low surfaces.
     let moon = vec3f(0.5, 0.72, 1.5) * fd.g * F.ambient.w * low * max(n.y, 0.2);
     col = albedo * (amb + direct + moon) + lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25);
+    if (mat == 12) {
+      // Soldiers: a cool rim and a little fill so they read against dark floors.
+      let rim = pow(1.0 - max(dot(n, V), 0.0), 2.5);
+      col += albedo * vec3f(0.05, 0.06, 0.09) + vec3f(0.07, 0.09, 0.15) * rim;
+    }
     if (mat == 1) {
       // Gloss also catches a faint sheen of the moon and sky on hard floors.
       col += vec3f(0.01, 0.014, 0.03) * gloss.y * fd.g * 2.0;

@@ -9,7 +9,7 @@ import type { Camera } from "../render/camera"
 import { buildLevel } from "../render/level-mesh"
 import { type Caster, type DynLight, LightCuller } from "../render/lighting"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
-import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, gunPoints, hit, newAvatar, pose } from "./anim"
+import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose } from "./anim"
 import { type Corpse, type Debris, deathStyle, emitRagdoll, ragdoll, ragdollCentre, stepDebris, stepRagdoll } from "./ragdoll"
 import { type Batch, type FrameInput, INST_FLOATS, type Renderer, SPRITE_FLOATS } from "../render/renderer"
 import { FRAME_FLOATS } from "../render/shaders"
@@ -559,7 +559,8 @@ export class Game {
       this.cues(a, animate(a, adt, t, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim), false)
       const col = this.colorOf(a.id)
       pose(push, a, col, this.models)
-      this.sprite(true, a.x, 0.03, a.y, 0.48, col[0], col[1], col[2], 0.9, 2, 0, 0.14)
+      const gc = glow(col, 0.9)
+      this.sprite(true, a.x, 0.03, a.y, 0.48, gc[0], gc[1], gc[2], 0.9, 2, 0, 0.14)
     }
     const me = this.alive ? this.body : null
     if (me) {
@@ -571,7 +572,8 @@ export class Game {
       this.cues(a, animate(a, adt, t, me.x, me.y, me.vx, me.vy, this.aim), true)
       const col = this.colorOf(this.myId)
       pose(push, a, col, this.models)
-      this.sprite(true, me.x, 0.03, me.y, 0.48, col[0], col[1], col[2], 1, 2, 0, 0.14)
+      const gc = glow(col, 0.9)
+      this.sprite(true, me.x, 0.03, me.y, 0.48, gc[0], gc[1], gc[2], 1, 2, 0, 0.14)
     }
 
     // Casings and magazines on the floor.
