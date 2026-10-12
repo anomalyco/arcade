@@ -4,8 +4,8 @@ import { VEHICLES } from "../sim/vehicles"
 import { clamp, type Core, Spatial } from "./core"
 
 /** Relative loudness per airframe, used for voice selection and distance culling. */
-export const ENGINE_LOUDNESS: Record<VehicleKind, number> = { fighter: 1, apache: 0.9, warthog: 0.8, blackbird: 1.3 }
-export const ENGINE_REF: Record<VehicleKind, number> = { fighter: 40, apache: 35, warthog: 35, blackbird: 50 }
+export const ENGINE_LOUDNESS: Record<VehicleKind, number> = { fighter: 1, apache: 0.4, warthog: 0.8, blackbird: 1.3 }
+export const ENGINE_REF: Record<VehicleKind, number> = { fighter: 40, apache: 22, warthog: 35, blackbird: 50 }
 
 const TC = 0.06
 

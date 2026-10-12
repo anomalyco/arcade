@@ -7,7 +7,7 @@
 //   carved canyons → droplet erosion + thermal smoothing → open water around every strike group.
 // The rendered LOD0 mesh uses exactly these vertices and triangles, and every physics query
 // interpolates the same triangles, so collision always matches what players see.
-import { AA_RANGE, FLEET, SHIP_SPECS, type Ship, shipToWorld, worldToShip } from "./fleet"
+import { AA_RANGE, FLEET, FLEET_END_DISTANCE, FLEET_START_DISTANCE, SHIP_SPECS, type Ship, shipPose } from "./fleet"
 import type { TeamId, Vec3, VehicleKind, WorldQuery } from "./types"
 
 export const WORLD_SIZE = 16_000
@@ -53,18 +53,109 @@ export const DECK_LAYOUT = {
   heloSpots: [[-27, 92], [-27, 124], [-27, 154], [24, 120], [24, 150]] as [number, number][],
 }
 
-export function carrierOf(team: TeamId): Ship {
-  return FLEET.find(s => s.team === team && s.kind === "carrier")!
+// ---------------------------------------------------------------------------------------------
+// Fleet state (match time + active teams). Ship poses are cached per FLEET index and refreshed by
+// setFleetState, so every ship query is allocation-free.
+
+const NS = FLEET.length
+const POSED: Ship[] = FLEET.map(sh => ({ ...sh, position: [sh.position[0], 0, sh.position[2]] as Vec3 }))
+const SIN = new Float64Array(NS), COS = new Float64Array(NS)
+const VEL: Vec3[] = FLEET.map(() => [0, 0, 0] as Vec3)
+const ACTIVE = new Uint8Array(NS).fill(1)
+/** Bounding radius (m) of each ship's footprint. */
+const REACH = new Float64Array(NS)
+const TOP = new Float64Array(NS)
+FLEET.forEach((sh, i) => {
+  const sp = SHIP_SPECS[sh.kind]
+  SIN[i] = Math.sin(sh.heading); COS[i] = Math.cos(sh.heading)
+  REACH[i] = Math.hypot(sp.halfLength, sp.halfWidth) + 1
+  TOP[i] = Math.max(sp.deckHeight, sp.island.center[1] + sp.island.half[1])
+})
+let fleetTime = 0
+let fleetTeams = 4
+let activeShips: Ship[] = POSED.slice()
+const poseScratch = { position: [0, 0, 0] as Vec3, heading: 0, velocity: [0, 0, 0] as Vec3 }
+
+/** Index of a (posed or FLEET) ship by id. */
+const SHIP_INDEX = new Map(FLEET.map((sh, i) => [sh.id, i]))
+
+/**
+ * Set the fleet clock (match time, seconds) and the number of teams in play. The room engine calls
+ * this every tick; clients every frame from the latest snapshot. Inactive teams have no ships.
+ */
+export function setFleetState(matchTime: number, teams: number): void {
+  fleetTime = Math.max(0, matchTime)
+  const n = Math.max(0, Math.min(4, Math.floor(teams)))
+  let changed = n !== fleetTeams
+  fleetTeams = n
+  for (let i = 0; i < NS; i++) {
+    shipPose(FLEET[i], fleetTime, poseScratch)
+    const P = POSED[i]
+    P.position[0] = poseScratch.position[0]
+    P.position[2] = poseScratch.position[2]
+    VEL[i][0] = poseScratch.velocity[0]; VEL[i][2] = poseScratch.velocity[2]
+    const a = FLEET[i].team < n ? 1 : 0
+    if (ACTIVE[i] !== a) { ACTIVE[i] = a; changed = true }
+  }
+  if (changed) activeShips = POSED.filter((_, i) => ACTIVE[i] === 1)
+  for (const base of AIRBASES) refreshBase(base)
 }
 
+/** Current fleet clock and team count. */
+export function fleetState(): { matchTime: number; teams: number } {
+  return { matchTime: fleetTime, teams: fleetTeams }
+}
+
+/** Ships currently in play, at their current poses (shared objects; do not mutate). */
+export function posedFleet(): readonly Ship[] {
+  return activeShips
+}
+
+/** A ship (by id) at its current pose, or null if unknown. */
+export function posedShip(id: string): Ship | null {
+  const i = SHIP_INDEX.get(id)
+  return i === undefined ? null : POSED[i]
+}
+
+/** The team's carrier at its current pose (also returned for inactive teams). */
+export function carrierOf(team: TeamId): Ship {
+  return POSED[SHIP_INDEX.get(`t${team}-carrier`)!]
+}
+
+// Ship-local helpers on cached poses (write into scratch, no allocation).
+const L = { x: 0, z: 0 }
+function toLocal(i: number, x: number, z: number) {
+  const P = POSED[i].position
+  const dx = x - P[0], dz = z - P[2], c = COS[i], s = SIN[i]
+  L.x = dx * c - dz * s
+  L.z = dx * s + dz * c
+}
+function toWorldInto(i: number, lx: number, ly: number, lz: number, out: Vec3): Vec3 {
+  const P = POSED[i].position, c = COS[i], s = SIN[i]
+  out[0] = P[0] + lx * c + lz * s
+  out[1] = ly
+  out[2] = P[2] - lx * s + lz * c
+  return out
+}
+
+function refreshBase(base: Airbase) {
+  const i = SHIP_INDEX.get(`t${base.team}-carrier`)!
+  base.center[0] = POSED[i].position[0]
+  base.center[2] = POSED[i].position[2]
+  base.helipads.forEach((h, k) => toWorldInto(i, DECK_LAYOUT.heloSpots[k][0], CARRIER.deckHeight, DECK_LAYOUT.heloSpots[k][1], h))
+}
+
+/** Team home bases, derived from each carrier's current pose (updated in place by setFleetState). */
 export const AIRBASES: Airbase[] = ([0, 1, 2, 3] as TeamId[]).map(team => {
   const c = carrierOf(team)
-  return {
+  const base: Airbase = {
     team, heading: c.heading,
     center: [c.position[0], CARRIER.deckHeight, c.position[2]] as Vec3,
     runwayLength: CARRIER.halfLength * 2, runwayWidth: CARRIER.halfWidth * 2, safeRadius: AA_RANGE,
-    helipads: DECK_LAYOUT.heloSpots.slice(0, 4).map(([x, z]) => shipToWorld(c, [x, CARRIER.deckHeight, z])),
+    helipads: DECK_LAYOUT.heloSpots.slice(0, 4).map(() => [0, 0, 0] as Vec3),
   }
+  refreshBase(base)
+  return base
 })
 
 /** Base-local (a along the bow, c to starboard) → world [x, z]. Yaw 0 = bow toward -Z. */
@@ -135,21 +226,28 @@ interface Peak { x: number; z: number; r: number; h: number }
 
 /** Carrier launch lane: open water ±LAUNCH_LANE_HALF wide, out to LAUNCH_LANE_LENGTH ahead of the carrier. */
 export const LAUNCH_LANE_HALF = 450
-export const LAUNCH_LANE_LENGTH = 3_800
+export const LAUNCH_LANE_LENGTH = 2_500
 
 /**
- * Signed clearance (m) of x,z from the strike groups' keep-out areas: FLEET_CLEARANCE around every
- * ship plus each carrier's launch lane. ≤ 0 inside a keep-out area.
+ * Signed clearance (m) of x,z from the strike groups' keep-out areas over the whole match:
+ * FLEET_CLEARANCE around every ship anywhere along its approach path, plus each carrier's launch
+ * lane ahead of the bow at every point along the path. ≤ 0 inside a keep-out area. Static (uses all
+ * four fleets regardless of which teams are in play), since the terrain is baked once.
  */
 export function fleetClearance(x: number, z: number): number {
+  const travel = FLEET_START_DISTANCE - FLEET_END_DISTANCE
   let best = Infinity
-  for (const s of FLEET) {
+  for (let i = 0; i < NS; i++) {
+    const s = FLEET[i]
+    const fx = -SIN[i], fz = -COS[i]
     const dx = x - s.position[0], dz = z - s.position[2]
-    let d = Math.hypot(dx, dz) - FLEET_CLEARANCE
+    const along = dx * fx + dz * fz
+    // Capsule swept by the ship from its start to its end position.
+    const t = Math.max(0, Math.min(travel, along))
+    let d = Math.hypot(dx - fx * t, dz - fz * t) - FLEET_CLEARANCE
     if (s.kind === "carrier") {
-      const fx = -Math.sin(s.heading), fz = -Math.cos(s.heading)
-      const t = Math.max(0, Math.min(LAUNCH_LANE_LENGTH, dx * fx + dz * fz))
-      d = Math.min(d, Math.hypot(dx - fx * t, dz - fz * t) - LAUNCH_LANE_HALF)
+      const u = Math.max(0, Math.min(travel + LAUNCH_LANE_LENGTH, along))
+      d = Math.min(d, Math.hypot(dx - fx * u, dz - fz * u) - LAUNCH_LANE_HALF)
     }
     if (d < best) best = d
   }
@@ -164,44 +262,46 @@ function layout(seed: number) {
   const rand = seededRandom(seed ^ 0x15a7d)
   const blobs: Blob[] = []
   const names: IslandInfo[] = []
-  // Big central island, made of a few overlapping lobes.
-  blobs.push({ x: 0, z: 0, r: 2200, amp: 1 })
-  for (let i = 0; i < 3; i++) {
-    // Lobes lean toward the diagonals, away from the strike groups on the axes.
-    const a = Math.PI / 4 + Math.floor(rand() * 4) * Math.PI / 2 + (rand() - 0.5) * 0.6, d = 700 + rand() * 900
-    blobs.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1000 + rand() * 600, amp: 0.85 })
-  }
-  names.push({ name: "Mainland", x: 0, z: 0, radius: 2600, height: 0 })
-  // Medium islands on the diagonals between bases, plus a couple on the axes.
-  const mediums = 7 + Math.floor(rand() * 2)
-  for (let i = 0; i < mediums; i++) {
-    for (let tries = 0; tries < 40; tries++) {
-      const a = (i / mediums) * Math.PI * 2 + Math.PI / 4 + (rand() - 0.5) * 0.7
-      const d = 3600 + rand() * 1700
-      const x = Math.cos(a) * d, z = Math.sin(a) * d
-      const r = 800 + rand() * 700
-      if (nearBase(x, z, r * 1.3 + 700)) continue
-      if (Math.abs(x) > WORLD_HALF - r - 400 || Math.abs(z) > WORLD_HALF - r - 400) continue
-      blobs.push({ x, z, r, amp: 0.75 + rand() * 0.3 })
-      names.push({ name: `Isle ${names.length}`, x, z, radius: r, height: 0 })
-      break
+  const peaks: Peak[] = []
+  // The strike groups steam in along the four axes, so the big islands sit on the diagonals.
+  for (let q = 0; q < 4; q++) {
+    const a = Math.PI / 4 + q * Math.PI / 2 + (rand() - 0.5) * 0.12
+    const d = 5200 + rand() * 900
+    const x = Math.cos(a) * d, z = Math.sin(a) * d
+    const r = 1150 + rand() * 450
+    blobs.push({ x, z, r, amp: 1 })
+    for (let k = 0; k < 2; k++) {
+      const b = a + (rand() - 0.5) * 0.35, e = d + (rand() - 0.5) * 1400
+      blobs.push({ x: Math.cos(b) * e, z: Math.sin(b) * e, r: 600 + rand() * 450, amp: 0.85 })
     }
+    names.push({ name: `Isle ${names.length + 1}`, x, z, radius: r * 1.3, height: 0 })
+  }
+  // A small rocky island right at the centre, where the four launch lanes end.
+  blobs.push({ x: 0, z: 0, r: 520, amp: 0.95 })
+  names.push({ name: "Centre Rock", x: 0, z: 0, radius: 500, height: 0 })
+  peaks.push({ x: 0, z: 0, r: 420, h: 180 })
+  // A few medium islands wherever the lanes leave room.
+  for (let i = 0, tries = 0; i < 5 && tries < 400; tries++) {
+    const x = (rand() * 2 - 1) * (WORLD_HALF - 900), z = (rand() * 2 - 1) * (WORLD_HALF - 900)
+    const r = 450 + rand() * 450
+    if (nearBase(x, z, r * 1.3 + 500)) continue
+    blobs.push({ x, z, r, amp: 0.8 })
+    names.push({ name: `Isle ${names.length + 1}`, x, z, radius: r, height: 0 })
+    i++
   }
   // Islets scattered everywhere except the runways.
   for (let i = 0, tries = 0; i < 26 && tries < 2000; tries++) {
     const x = (rand() * 2 - 1) * (WORLD_HALF - 700), z = (rand() * 2 - 1) * (WORLD_HALF - 700)
     const r = 180 + rand() * 380
-    if (nearBase(x, z, r * 1.3 + 700)) continue
-    if (Math.hypot(x, z) < 2600) continue
+    if (nearBase(x, z, r * 1.3 + 500)) continue
     blobs.push({ x, z, r, amp: 0.45 + rand() * 0.45 })
     i++
   }
-  // A couple of tall peaks near the centre.
-  const peaks: Peak[] = []
+  // Tall peaks on two of the diagonal islands.
+  const first = Math.floor(rand() * 4)
   for (let i = 0; i < 2; i++) {
-    // On the diagonals, away from the strike groups on the axes.
-    const a = Math.PI / 4 + (Math.floor(rand() * 4) + i * 2) * Math.PI / 2 + (rand() - 0.5) * 0.2, d = 1750 + rand() * 350
-    peaks.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 1050 + rand() * 300, h: 470 - i * 90 + rand() * 90 })
+    const B = blobs[(((first + i * 2) % 4) * 3)]
+    peaks.push({ x: B.x + (rand() - 0.5) * 300, z: B.z + (rand() - 0.5) * 300, r: 900 + rand() * 250, h: 470 - i * 90 + rand() * 90 })
   }
   return { blobs, peaks, names }
 }
@@ -347,14 +447,6 @@ function bake(seed: number): Baked {
       if (h[k] > bound[o]) bound[o] = h[k]
     }
   }
-  for (const sh of FLEET) {
-    const sp = SHIP_SPECS[sh.kind]
-    const top = Math.max(sp.deckHeight, sp.island.center[1] + sp.island.half[1]) + 1
-    const r = Math.hypot(sp.halfLength, sp.halfWidth) + 5
-    for (let bz = Math.floor((sh.position[2] - r + WORLD_HALF) / BOUND_BLOCK); bz <= Math.floor((sh.position[2] + r + WORLD_HALF) / BOUND_BLOCK); bz++)
-      for (let bx = Math.floor((sh.position[0] - r + WORLD_HALF) / BOUND_BLOCK); bx <= Math.floor((sh.position[0] + r + WORLD_HALF) / BOUND_BLOCK); bx++)
-        if (bx >= 0 && bz >= 0 && bx < BN && bz < BN) bound[bz * BN + bx] = Math.max(bound[bz * BN + bx], top)
-  }
   const ms = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0
   return { seed, h, vx, vz, diag, bound, ms }
 }
@@ -474,39 +566,69 @@ export function terrainHeight(x: number, z: number): number {
 // ---------------------------------------------------------------------------------------------
 // Ships as solid ground
 
-const SHIP_BIN = 400
-/** Ship whose hull footprint contains x,z (or null). */
-export function shipAt(x: number, z: number): Ship | null {
-  for (const sh of FLEET) {
-    const sp = SHIP_SPECS[sh.kind]
-    const dx = x - sh.position[0], dz = z - sh.position[2]
-    if (dx > SHIP_BIN || dx < -SHIP_BIN || dz > SHIP_BIN || dz < -SHIP_BIN) continue
-    const l = worldToShip(sh, [x, 0, z])
-    if (Math.abs(l[0]) <= sp.halfWidth && Math.abs(l[2]) <= sp.halfLength) return sh
+/** Index (into FLEET) of the active ship whose hull footprint contains x,z, or -1. Sets L to local coords. */
+function shipIndexAt(x: number, z: number): number {
+  for (let i = 0; i < NS; i++) {
+    if (!ACTIVE[i]) continue
+    const P = POSED[i].position, r = REACH[i]
+    const dx = x - P[0], dz = z - P[2]
+    if (dx > r || dx < -r || dz > r || dz < -r) continue
+    toLocal(i, x, z)
+    const sp = SHIP_SPECS[FLEET[i].kind]
+    if (Math.abs(L.x) <= sp.halfWidth && Math.abs(L.z) <= sp.halfLength) return i
   }
-  return null
+  return -1
+}
+
+/** Active ship (at its current pose) whose hull footprint contains x,z, or null. */
+export function shipAt(x: number, z: number): Ship | null {
+  const i = shipIndexAt(x, z)
+  return i < 0 ? null : POSED[i]
+}
+
+function shipHeightIdx(i: number): number {
+  // Expects L to hold the local coordinates for ship i.
+  const sp = SHIP_SPECS[FLEET[i].kind]
+  const I = sp.island
+  if (Math.abs(L.x - I.center[0]) <= I.half[0] && Math.abs(L.z - I.center[2]) <= I.half[2]) return I.center[1] + I.half[1]
+  return sp.deckHeight
 }
 
 /** Ship surface height at x,z (deck, or superstructure top), or -Infinity off ships. */
 export function shipHeight(x: number, z: number): number {
-  const sh = shipAt(x, z)
-  if (!sh) return -Infinity
-  const sp = SHIP_SPECS[sh.kind]
-  const l = worldToShip(sh, [x, 0, z])
-  const I = sp.island
-  if (Math.abs(l[0] - I.center[0]) <= I.half[0] && Math.abs(l[2] - I.center[2]) <= I.half[2]) return I.center[1] + I.half[1]
-  return sp.deckHeight
+  const i = shipIndexAt(x, z)
+  return i < 0 ? -Infinity : shipHeightIdx(i)
+}
+
+/**
+ * Velocity (m/s) of the ship deck under x,z, or null over terrain/water. Returns a shared array —
+ * copy it if you keep it.
+ */
+export function deckVelocity(x: number, z: number): Vec3 | null {
+  const i = shipIndexAt(x, z)
+  return i < 0 ? null : VEL[i]
+}
+
+/** Upper bound of any active ship's height near x,z (WATER_LEVEL if none). */
+function shipBound(x: number, z: number, margin: number): number {
+  let b = WATER_LEVEL
+  for (let i = 0; i < NS; i++) {
+    if (!ACTIVE[i]) continue
+    const P = POSED[i].position, r = REACH[i] + margin
+    if (Math.abs(x - P[0]) <= r && Math.abs(z - P[2]) <= r && TOP[i] > b) b = TOP[i]
+  }
+  return b
 }
 
 /** Solid surface height (terrain mesh, water, or ship deck/superstructure) used by physics. */
 export function groundHeight(x: number, z: number): number {
   if (!(x > -WORLD_HALF && x < WORLD_HALF && z > -WORLD_HALF && z < WORLD_HALF)) return WATER_LEVEL
+  const i = shipIndexAt(x, z)
+  if (i >= 0) return Math.max(shipHeightIdx(i), terrainGround(x, z))
   const w = world()
   const bi = Math.floor((x + WORLD_HALF) / BOUND_BLOCK), bj = Math.floor((z + WORLD_HALF) / BOUND_BLOCK)
   if (w.bound[bj * BN + bi] <= WATER_LEVEL) return WATER_LEVEL
-  const h = Math.max(terrainMeshHeight(x, z), WATER_LEVEL)
-  const s = shipHeight(x, z)
-  return s > h ? s : h
+  return terrainGround(x, z)
 }
 
 /** Terrain/water only (no ships). */
@@ -519,26 +641,28 @@ function terrainGround(x: number, z: number): number {
 export function heightBound(x: number, z: number): number {
   if (!(x > -WORLD_HALF && x < WORLD_HALF && z > -WORLD_HALF && z < WORLD_HALF)) return WATER_LEVEL
   const w = world()
-  return w.bound[Math.floor((z + WORLD_HALF) / BOUND_BLOCK) * BN + Math.floor((x + WORLD_HALF) / BOUND_BLOCK)]
+  const t = w.bound[Math.floor((z + WORLD_HALF) / BOUND_BLOCK) * BN + Math.floor((x + WORLD_HALF) / BOUND_BLOCK)]
+  const s = shipBound(x, z, BOUND_BLOCK)
+  return s > t ? s : t
 }
 
 /** True where the surface at x,z is open water (false on ship decks). */
 export function isWater(x: number, z: number): boolean {
-  if (shipAt(x, z)) return false
+  if (shipIndexAt(x, z) >= 0) return false
   return terrainMeshHeight(x, z) <= WATER_LEVEL
 }
 
 /** True on a carrier's flight deck (not on the island). Wheels roll here without damage. */
 export function onRunway(x: number, z: number): boolean {
-  const sh = shipAt(x, z)
-  if (!sh || sh.kind !== "carrier") return false
-  return shipHeight(x, z) === CARRIER.deckHeight
+  const i = shipIndexAt(x, z)
+  if (i < 0 || FLEET[i].kind !== "carrier") return false
+  return shipHeightIdx(i) === CARRIER.deckHeight
 }
 
 export type SurfaceType = "water" | "sand" | "grass" | "forest" | "rock" | "snow" | "paved"
 /** Coarse surface classification (for effects, audio, bots). Ship decks are "paved". */
 export function surfaceType(x: number, z: number): SurfaceType {
-  if (shipAt(x, z)) return "paved"
+  if (shipIndexAt(x, z) >= 0) return "paved"
   const h = terrainMeshHeight(x, z)
   if (h <= WATER_LEVEL) return "water"
   if (h < 4) return "sand"
@@ -549,12 +673,14 @@ export function surfaceType(x: number, z: number): SurfaceType {
   return h > 120 ? "forest" : "grass"
 }
 
-/** Inside the team's own strike-group air-defence umbrella (within AA_RANGE of any own ship). */
+/** Inside the team's own strike-group air-defence umbrella (within AA_RANGE of any own active ship). */
 export function inSafeZone(team: TeamId, p: Vec3): boolean {
   if (p[1] > CEILING) return false
-  for (const sh of FLEET) {
-    if (sh.team !== team) continue
-    if (Math.hypot(p[0] - sh.position[0], p[2] - sh.position[2]) < AA_RANGE) return true
+  for (let i = 0; i < NS; i++) {
+    if (!ACTIVE[i] || FLEET[i].team !== team) continue
+    const P = POSED[i].position
+    const dx = p[0] - P[0], dz = p[2] - P[2]
+    if (dx * dx + dz * dz < AA_RANGE * AA_RANGE) return true
   }
   return false
 }
@@ -572,27 +698,32 @@ export interface SpawnPoint {
  * then wrap), facing the bow; helicopters use the aft helo spots.
  */
 export function spawnPoint(team: TeamId, kind: VehicleKind, index: number): SpawnPoint {
-  const c = carrierOf(team)
+  const ci = SHIP_INDEX.get(`t${team}-carrier`)!
   const i = Math.max(0, Math.floor(index))
   const deck = CARRIER.deckHeight
+  const position: Vec3 = [0, 0, 0]
   if (kind === "apache") {
     const spots = DECK_LAYOUT.heloSpots
     const [x, z] = spots[i % spots.length]
-    return { position: shipToWorld(c, [x, deck + SPAWN_CLEARANCE.heli, z]), yaw: c.heading, onGround: true }
+    return { position: toWorldInto(ci, x, deck + SPAWN_CLEARANCE.heli, z, position), yaw: FLEET[ci].heading, onGround: true }
   }
   const cats = DECK_LAYOUT.catapults
   const [x, z] = cats[i % cats.length]
-  return { position: shipToWorld(c, [x, deck + SPAWN_CLEARANCE.jet, z]), yaw: c.heading, onGround: true }
+  return { position: toWorldInto(ci, x, deck + SPAWN_CLEARANCE.jet, z, position), yaw: FLEET[ci].heading, onGround: true }
 }
 
-/** Slab test of segment a→b against a ship-local box; returns entry fraction or null. */
-function segmentBox(sh: Ship, a: Vec3, b: Vec3, center: Vec3, half: Vec3): number | null {
-  const la = worldToShip(sh, a), lb = worldToShip(sh, b)
+/** Slab test of segment a→b against a ship-local box (ship index i); returns entry fraction or null. */
+function segmentBox(i: number, a: Vec3, b: Vec3, center: Vec3, half: Vec3): number | null {
+  toLocal(i, a[0], a[2])
+  const ax = L.x, az = L.z
+  toLocal(i, b[0], b[2])
+  const bx = L.x, bz = L.z
   let t0 = 0, t1 = 1
   for (let k = 0; k < 3; k++) {
-    const d = lb[k] - la[k], lo = center[k] - half[k], hi = center[k] + half[k]
-    if (Math.abs(d) < 1e-9) { if (la[k] < lo || la[k] > hi) return null; continue }
-    let u0 = (lo - la[k]) / d, u1 = (hi - la[k]) / d
+    const pa = k === 0 ? ax : k === 1 ? a[1] : az, pb = k === 0 ? bx : k === 1 ? b[1] : bz
+    const d = pb - pa, lo = center[k] - half[k], hi = center[k] + half[k]
+    if (Math.abs(d) < 1e-9) { if (pa < lo || pa > hi) return null; continue }
+    let u0 = (lo - pa) / d, u1 = (hi - pa) / d
     if (u0 > u1) { const t = u0; u0 = u1; u1 = t }
     if (u0 > t0) t0 = u0
     if (u1 < t1) t1 = u1
@@ -601,18 +732,27 @@ function segmentBox(sh: Ship, a: Vec3, b: Vec3, center: Vec3, half: Vec3): numbe
   return t0
 }
 
-/** First hit of segment a→b with any ship hull or superstructure (fraction), or null. */
+const hullCenter: Record<string, Vec3> = {}, hullHalf: Record<string, Vec3> = {}
+for (const k of Object.keys(SHIP_SPECS) as (keyof typeof SHIP_SPECS)[]) {
+  const sp = SHIP_SPECS[k]
+  hullCenter[k] = [0, (sp.deckHeight - 15) / 2, 0]
+  hullHalf[k] = [sp.halfWidth, (sp.deckHeight + 15) / 2, sp.halfLength]
+}
+
+/** First hit of segment a→b with any active ship hull or superstructure (fraction), or null. */
 export function segmentHitsShip(a: Vec3, b: Vec3): number | null {
   let best: number | null = null
-  for (const sh of FLEET) {
-    const sp = SHIP_SPECS[sh.kind]
-    const r = sp.halfLength + 80
-    const px = sh.position[0], pz = sh.position[2]
-    if (Math.max(a[0], b[0]) < px - r || Math.min(a[0], b[0]) > px + r || Math.max(a[2], b[2]) < pz - r || Math.min(a[2], b[2]) > pz + r) continue
-    if (Math.min(a[1], b[1]) > sp.island.center[1] + sp.island.half[1]) continue
-    const hull = segmentBox(sh, a, b, [0, (sp.deckHeight - 15) / 2, 0], [sp.halfWidth, (sp.deckHeight + 15) / 2, sp.halfLength])
-    const isl = segmentBox(sh, a, b, sp.island.center, sp.island.half)
-    for (const t of [hull, isl]) if (t !== null && (best === null || t < best)) best = t
+  for (let i = 0; i < NS; i++) {
+    if (!ACTIVE[i]) continue
+    const sp = SHIP_SPECS[FLEET[i].kind]
+    const r = REACH[i] + 5
+    const P = POSED[i].position
+    if (Math.max(a[0], b[0]) < P[0] - r || Math.min(a[0], b[0]) > P[0] + r || Math.max(a[2], b[2]) < P[2] - r || Math.min(a[2], b[2]) > P[2] + r) continue
+    if (Math.min(a[1], b[1]) > TOP[i]) continue
+    const hull = segmentBox(i, a, b, hullCenter[sp.kind], hullHalf[sp.kind])
+    if (hull !== null && (best === null || hull < best)) best = hull
+    const isl = segmentBox(i, a, b, sp.island.center, sp.island.half)
+    if (isl !== null && (best === null || isl < best)) best = isl
   }
   return best
 }

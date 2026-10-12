@@ -2,9 +2,9 @@
 // Deterministic, dependency-free pilots and gunners. All randomness comes from the brain's seeded RNG.
 // Hot path is allocation-free: scratch vectors are module-level and outputs are reused per brain.
 import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "./types"
-import { LAUNCH_LANE_LENGTH, inSafeZone, worldQuery } from "./geography"
+import { LAUNCH_LANE_LENGTH, carrierOf, inSafeZone, posedFleet, worldQuery } from "./geography"
 import { ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
-import { AA_RANGE, FLEET, SHIP_SPECS } from "./fleet"
+import { AA_RANGE, SHIP_SPECS } from "./fleet"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
 
 /** Enemies closer than this are visible without being spotted. */
@@ -300,7 +300,10 @@ export function groundAhead(pos: Vec3, dir: Vec3, speed: number, ground: GroundQ
   return max
 }
 
-/** Bots treat everything within this horizontal range of a non-own fleet ship as a no-fly zone (fleet AA). */
+/**
+ * Bots treat everything within this horizontal range of a non-own fleet ship as a no-fly zone (fleet AA).
+ * Ship queries use geography's current poses (`posedFleet`: active teams only, moving with match time).
+ */
 export const BOT_NO_FLY_RADIUS = AA_RANGE + 400
 /** Extra distance outside the no-fly radius where steering starts bending away. */
 const NO_FLY_BUFFER = 1_500
@@ -308,8 +311,9 @@ const NO_FLY_BUFFER = 1_500
 /** Horizontal distance from (x, z) to the nearest ship not belonging to `team` (Infinity if none). */
 export function hostileFleetDistance(team: number, x: number, z: number): number {
   let best = Infinity
-  for (let i = 0; i < FLEET.length; i++) {
-    const sh = FLEET[i]
+  const fleet = posedFleet()
+  for (let i = 0; i < fleet.length; i++) {
+    const sh = fleet[i]
     if (sh.team === team) continue
     const dx = x - sh.position[0], dz = z - sh.position[2]
     const d = Math.sqrt(dx * dx + dz * dz)
@@ -326,8 +330,9 @@ export function shipClearanceAlt(pos: Vec3, dx: number, dz: number, reach: numbe
   const h = Math.sqrt(dx * dx + dz * dz)
   if (h < 1e-6) { dx = 0; dz = 0 } else { dx /= h; dz /= h }
   let need = -Infinity
-  for (let i = 0; i < FLEET.length; i++) {
-    const sh = FLEET[i]
+  const fleet = posedFleet()
+  for (let i = 0; i < fleet.length; i++) {
+    const sh = fleet[i]
     const sp = SHIP_SPECS[sh.kind]
     const top = sp.island.center[1] + sp.island.half[1]
     if (pos[1] > top + margin + 60) continue
@@ -359,8 +364,9 @@ export function applyAimSafety(
     headingPitch(aim[0] * (1 - w) - (pos[0] / cl) * w, aim[2] * (1 - w) - (pos[2] / cl) * w, pitchOf(aim), aim)
   }
   if (team !== null) {
-    for (let i = 0; i < FLEET.length; i++) {
-      const sh = FLEET[i]
+    const fleet = posedFleet()
+    for (let i = 0; i < fleet.length; i++) {
+      const sh = fleet[i]
       if (sh.team === team) continue
       const bx = pos[0] - sh.position[0], bz = pos[2] - sh.position[2]
       const r = Math.sqrt(bx * bx + bz * bz)
@@ -529,6 +535,11 @@ function resetForVehicle(brain: BotBrain, vehicle: VehicleEntity): void {
   s.vehicleId = vehicle.id
   s.phase = vehicle.flight.onGround ? "takeoff" : "transit"
   noseInto(vehicle.flight.orientation, _t0)
+  if (vehicle.flight.onGround) {
+    // Launch along the (current) carrier bow.
+    const hd = carrierOf(vehicle.team).heading
+    set3(_t0, -Math.sin(hd), 0, -Math.cos(hd))
+  }
   const h = Math.sqrt(_t0[0] * _t0[0] + _t0[2] * _t0[2])
   s.runwayDir[0] = h > 1e-6 ? _t0[0] / h : 0
   s.runwayDir[1] = h > 1e-6 ? _t0[2] / h : -1

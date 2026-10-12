@@ -4,7 +4,8 @@ import { Vector3, type PerspectiveCamera } from "three"
 import type { PlayerInfo, TeamId, Vec3, VehicleEntity, WeaponId } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { WORLD_HALF, segmentHitsGround, terrainHeight } from "../sim/geography"
-import { FLEET, AA_RANGE, type Ship } from "../sim/fleet"
+import { AA_RANGE, FLEET, type Ship } from "../sim/fleet"
+import { posedFleet, posedShip } from "../sim/geography"
 import { RECON_KINDS, SPOT_CONE, SPOT_DECAY, SPOT_RANGE, SPOT_TIME } from "../sim/combat"
 
 /** Muted team colours (match render/aircraft.ts TEAM_COLORS). */
@@ -370,8 +371,7 @@ export function createHud(parent: HTMLElement): Hud {
     ctx.stroke()
     // Fleets: enemy anti-air umbrellas as faint dashed rings; each ship a small hull tick in the team colour.
     const mt = f.me?.team ?? -1
-    for (const sh of FLEET) {
-      if (sh.team >= f.teams) continue
+    for (const sh of posedFleet()) {
       const x = (sh.position[0] + WORLD_HALF) * k, y = (sh.position[2] + WORLD_HALF) * k
       if (sh.team !== mt) {
         ctx.strokeStyle = "rgba(255,122,46,.55)"
@@ -567,7 +567,7 @@ export function createHud(parent: HTMLElement): Hud {
       for (let i = ei; i < EDGES; i++) if (edges[i].used) { edges[i].used = false; edges[i].tf.setTransform(HIDDEN) }
       // Fleets: small hull markers with mono distance (enemy fleets within 9 km; own carrier always).
       for (const m of shipMk) {
-        const sh: Ship = m.sh
+        const sh: Ship = posedShip(m.sh.id) ?? m.sh
         if (sh.team >= f.teams || !flying) { m.tf.setTransform(HIDDEN); continue }
         const own = sh.team === myTeam
         const p: Vec3 = [sh.position[0], 30, sh.position[2]]

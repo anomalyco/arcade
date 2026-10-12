@@ -600,3 +600,62 @@ describe("carrier deck", () => {
     expect(s.crashed).toBe("water")
   })
 })
+
+describe("moving carrier deck", () => {
+  const DECK = 20, SPEED = 4.7
+  const mk = () => {
+    let t = 0
+    const cz = () => -SPEED * t // deck center steams toward -Z (bow)
+    const onDeck = (x: number, z: number) => Math.abs(x) < 38 && Math.abs(z - cz()) < 165
+    const w: WorldQuery = {
+      groundHeight: (x, z) => (onDeck(x, z) ? DECK : 0),
+      onRunway: onDeck,
+      deckVelocity: (x, z) => (onDeck(x, z) ? [0, 0, -SPEED] : null),
+      half: 60000,
+      ceiling: 6000,
+    }
+    const step = (s: FlightState, inp: FlightInput) => { stepFlight(s, inp, TICK_DT, w); t += TICK_DT }
+    return { w, step, local: (s: FlightState) => s.position[2] - cz(), onDeck: (s: FlightState) => onDeck(s.position[0], s.position[2]) }
+  }
+
+  for (const kind of ["fighter", "warthog", "blackbird", "apache"] as VehicleKind[]) {
+    test(`${kind}: parked on the moving deck rides along for 60 s`, () => {
+      const d = mk()
+      const s = createFlightState(kind, { position: [10, DECK + 2, 100], yaw: 0, onGround: true })
+      for (let i = 0; i < 60 * 60; i++) d.step(s, input())
+      expect(s.crashed).toBeNull()
+      expect(s.onGround).toBe(true)
+      expect(Math.abs(d.local(s) - 100)).toBeLessThan(3)
+      expect(s.position[1]).toBeCloseTo(DECK + 2, 3)
+    })
+  }
+
+  for (const kind of JETS) {
+    test(`${kind}: catapult launch off the moving deck clears the bow and climbs`, () => {
+      const d = mk()
+      const s = createFlightState(kind, { position: [0, DECK + 2, -40], yaw: 0, onGround: true })
+      for (let i = 0; i < 60 * 2; i++) d.step(s, input()) // sit parked first, picking up deck speed
+      let left = false, minAlt = Infinity
+      for (let i = 0; i < 60 * 20 && !s.crashed; i++) {
+        d.step(s, input({ throttle: 1 }))
+        if (!left && !d.onDeck(s)) left = true
+        if (left) minAlt = Math.min(minAlt, s.position[1])
+      }
+      expect(s.crashed).toBeNull()
+      expect(left).toBe(true)
+      expect(minAlt).toBeGreaterThan(8)
+      expect(s.position[1]).toBeGreaterThan(DECK + 20)
+    })
+  }
+
+  test("heli lifts off the moving deck", () => {
+    const d = mk()
+    const s = createFlightState("apache", { position: [0, DECK + 2, 120], yaw: 0, onGround: true })
+    for (let i = 0; i < 60; i++) d.step(s, input())
+    for (let i = 0; i < 120; i++) d.step(s, input({ throttle: 1 }))
+    for (let i = 0; i < 180; i++) d.step(s, input())
+    expect(s.crashed).toBeNull()
+    expect(s.onGround).toBe(false)
+    expect(s.position[1]).toBeGreaterThan(DECK + 10)
+  })
+})

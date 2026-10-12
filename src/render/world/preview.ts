@@ -2,11 +2,15 @@
 // Query: ?view=base|canyon|volcano|water|spires|overview|edge  &q=low|balanced|high  &markers=1
 import { ACESFilmicToneMapping, BoxGeometry, Mesh, MeshToonMaterial, NeutralToneMapping, NoToneMapping, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "three"
 import { createWorldView, type WorldViewDebug } from "../world-view"
-import { AIRBASES, baseToWorld, groundHeight, spawnPoint } from "../../sim/geography"
+import { AIRBASES, baseToWorld, groundHeight, setFleetState, spawnPoint } from "../../sim/geography"
 import type { Quality, TeamId } from "../../sim/types"
 
 const params = new URLSearchParams(location.search)
 const quality = (params.get("q") ?? "balanced") as Quality
+let fleetT = Number(params.get("t") ?? 0)
+const fleetSpeed = Number(params.get("ts") ?? 0)
+const teams = Number(params.get("teams") ?? 4)
+setFleetState(fleetT, teams)
 const renderer = new WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, powerPreference: "high-performance" })
 renderer.setPixelRatio(Math.min(devicePixelRatio, Number(params.get("pr") ?? 1.5)))
 renderer.setSize(innerWidth, innerHeight)
@@ -100,6 +104,7 @@ function frame(now: number) {
   if (keys.has("KeyQ")) camera.position.y -= speed
   if (flySpeed) camera.position.addScaledVector(fwd, flySpeed * dt)
   camera.position.y = Math.max(camera.position.y, groundHeight(camera.position.x, camera.position.z) + 2)
+  if (fleetSpeed) { fleetT += dt * fleetSpeed; setFleetState(fleetT, teams) }
   world.update(camera.position, dt, now / 1000)
   renderer.render(scene, camera)
   frames++

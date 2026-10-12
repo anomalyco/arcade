@@ -20,7 +20,7 @@ import type {
 } from "./types"
 import { TICK_DT } from "./types"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
-import { segmentHitsGround } from "./geography"
+import { fleetState, posedShip, segmentHitsGround } from "./geography"
 import { AA_RANGE, FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship, type TurretKind } from "./fleet"
 
 // ---------------------------------------------------------------------------------------------
@@ -1062,7 +1062,8 @@ function stepFlares(cs: CombatState, dt: number): void {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Fleet anti-air (stationary carrier-group turrets; ships are indestructible)
+// Fleet anti-air (carrier-group turrets; ships are indestructible and follow geography's fleet state,
+// which the room engine sets every tick from match time — see setFleetState)
 // ---------------------------------------------------------------------------------------------
 
 /** Proposed WeaponId for fleet AA damage/kills (cast locally until types.ts adds it). */
@@ -1090,7 +1091,10 @@ export interface AaTurret {
   turret: string
   kind: TurretKind
   team: TeamId
+  /** Current world position (refreshed from the ship's current pose when `offset` is set). */
   position: Vec3
+  /** Mount position in ship-local coordinates (fleet turrets). */
+  offset?: Vec3
 }
 
 export interface TurretState {
@@ -1111,10 +1115,25 @@ export interface FlakBurst {
   team: TeamId
 }
 
-/** Every fleet turret in world space (static: ships are stationary). */
+/** Every fleet turret (all four teams; inactive teams are skipped at runtime). Positions follow the ships. */
 export const AA_TURRETS: AaTurret[] = FLEET.flatMap(ship =>
-  SHIP_SPECS[ship.kind].turrets.map(t => ({ ship, turret: t.id, kind: t.kind, team: ship.team, position: shipToWorld(ship, t.offset) })),
+  SHIP_SPECS[ship.kind].turrets.map(t => ({ ship, turret: t.id, kind: t.kind, team: ship.team, position: shipToWorld(ship, t.offset), offset: t.offset })),
 )
+
+/** The turret's ship at its current pose (geography fleet state), or its static ship if not part of the fleet. */
+function poseOf(ship: Ship): Ship {
+  return posedShip(ship.id) ?? ship
+}
+
+/** Update a fleet turret's world position from its ship's current pose (in place). */
+export function refreshTurret(t: AaTurret): void {
+  if (!t.offset) return
+  const ship = poseOf(t.ship)
+  const c = Math.cos(ship.heading), s = Math.sin(ship.heading), o = t.offset
+  t.position[0] = ship.position[0] + o[0] * c + o[2] * s
+  t.position[1] = ship.position[1] + o[1]
+  t.position[2] = ship.position[2] - o[0] * s + o[2] * c
+}
 
 function createTurretStates(): TurretState[] {
   return AA_TURRETS.map((_, i) => ({
@@ -1134,7 +1153,9 @@ const _zero: Vec3 = [0, 0, 0]
  */
 export function turretHasLOS(t: AaTurret, p: Vec3): boolean {
   const spec = SHIP_SPECS[t.ship.kind]
-  const a = worldToShip(t.ship, t.position), b = worldToShip(t.ship, p)
+  refreshTurret(t)
+  const ship = poseOf(t.ship)
+  const a = worldToShip(ship, t.position), b = worldToShip(ship, p)
   const top = Math.max(spec.deckHeight, spec.island.center[1] + spec.island.half[1]) + 2
   const lo = [-spec.halfWidth - 2, -5, -spec.halfLength - 2], hi = [spec.halfWidth + 2, top, spec.halfLength + 2]
   // Slab test: exit fraction of segment a→b from the box (a may be inside or outside).
@@ -1205,8 +1226,12 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
   if (!cs.turrets || cs.turrets.length !== AA_TURRETS.length) cs.turrets = createTurretStates()
   if (!cs.bursts) cs.bursts = []
   const states = cs.turrets
+  const teams = fleetState().teams
   for (let i = 0; i < AA_TURRETS.length; i++) {
     const t = AA_TURRETS[i], st = states[i]
+    // Only fleets of teams in play exist; their turrets ride the moving ships.
+    if (t.offset && t.team >= teams) { st.target = null; st.track = 0; st.pending = 0; continue }
+    refreshTurret(t)
     let target = st.target ? findVehicle(vehicles, st.target) : null
     if (target && !aaEligible(t, target, now)) target = null
     if (now >= st.nextScanAt) {

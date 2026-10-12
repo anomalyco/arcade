@@ -80,6 +80,55 @@ export const FLEET: Ship[] = ([0, 1, 2, 3] as TeamId[]).flatMap(team => {
   ]
 })
 
+// ── Fleet movement ───────────────────────────────────────────────────────────
+// Strike groups steam slowly toward the map center over the course of a match (escalation:
+// AA umbrellas close in). Pose is a pure function of match time so server and clients agree.
+export const FLEET_START_DISTANCE = 6000
+export const FLEET_END_DISTANCE = 4500
+/** Seconds to go from start to end distance (matches the default 10 min round). */
+export const FLEET_APPROACH_TIME = 600
+
+export interface ShipPose {
+  position: Vec3
+  heading: number
+  /** World velocity m/s (for carrying aircraft parked on deck, wakes, lead aiming). */
+  velocity: Vec3
+}
+
+/** Current pose of a ship `t` seconds into the match (t clamped to [0, FLEET_APPROACH_TIME]). */
+export function shipPose(ship: Ship, t: number, out?: ShipPose): ShipPose {
+  const k = Math.min(1, Math.max(0, t / FLEET_APPROACH_TIME))
+  const dist = FLEET_START_DISTANCE + (FLEET_END_DISTANCE - FLEET_START_DISTANCE) * k
+  // Move the whole formation along the bow direction (toward the center), keeping formation offsets.
+  const fx = -Math.sin(ship.heading), fz = -Math.cos(ship.heading) // bow (-Z) in world
+  const advance = FLEET_START_DISTANCE - dist
+  const speed = t > 0 && t < FLEET_APPROACH_TIME ? (FLEET_START_DISTANCE - FLEET_END_DISTANCE) / FLEET_APPROACH_TIME : 0
+  const o = out ?? { position: [0, 0, 0], heading: 0, velocity: [0, 0, 0] }
+  o.position[0] = ship.position[0] + fx * advance
+  o.position[1] = 0
+  o.position[2] = ship.position[2] + fz * advance
+  o.heading = ship.heading
+  o.velocity[0] = fx * speed
+  o.velocity[1] = 0
+  o.velocity[2] = fz * speed
+  return o
+}
+
+/** Ship-local → world at match time t. */
+export function shipToWorldAt(ship: Ship, t: number, local: Vec3): Vec3 {
+  const p = shipPose(ship, t)
+  const c = Math.cos(p.heading), s = Math.sin(p.heading)
+  return [p.position[0] + local[0] * c + local[2] * s, local[1], p.position[2] - local[0] * s + local[2] * c]
+}
+
+/** World → ship-local at match time t. */
+export function worldToShipAt(ship: Ship, t: number, w: Vec3): Vec3 {
+  const p = shipPose(ship, t)
+  const dx = w[0] - p.position[0], dz = w[2] - p.position[2]
+  const c = Math.cos(p.heading), s = Math.sin(p.heading)
+  return [dx * c - dz * s, w[1], dx * s + dz * c]
+}
+
 /** Ships that exist in a room with `teams` teams (teams 0..teams-1). Inactive teams have no fleet. */
 export function activeFleet(teams: number): Ship[] {
   return FLEET.filter(s => s.team < teams)

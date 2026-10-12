@@ -23,7 +23,7 @@ export interface RoomConfig {
 }
 
 export const DEFAULT_ROOM_CONFIG: RoomConfig = {
-  teams: 2, bots: 0, maxPerTeam: 10, scoreLimit: 50, timeLimit: 15 * 60, listed: true, name: "Open Skies",
+  teams: 2, bots: 0, maxPerTeam: 10, scoreLimit: 50, timeLimit: 10 * 60, listed: true, name: "Open Skies",
 }
 
 /** Empty rooms (no humans) are destroyed after this many ms. */
@@ -54,6 +54,8 @@ export interface Snapshot {
   scores: number[]
   /** Room time when the current match ends (time limit). */
   matchEndsAt: number
+  /** Room time when the current match started (fleet movement uses match time = time - matchStartedAt). */
+  matchStartedAt?: number
   /** True between matches (no spawning/scoring); next match starts at `matchEndsAt`. */
   intermission: boolean
   /** Last input seq processed for the receiving player (for reconciliation). */

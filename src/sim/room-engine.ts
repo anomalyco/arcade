@@ -4,15 +4,15 @@ import type { ClientMessage, RoomConfig, RoomSummary, ServerMessage, Snapshot } 
 import { DEFAULT_ROOM_CONFIG, RESPAWN_DELAY } from "./protocol"
 import type {
   Flare, FlightInput, FlightState, GameEvent, Missile, PlayerInfo, Projectile, Quat, SeatIndex, SeatInput, TeamId, Vec3,
-  VehicleEntity, VehicleKind, WeaponId, WeaponRuntime,
+  VehicleEntity, VehicleKind, WeaponId, WeaponRuntime, WorldQuery,
 } from "./types"
 import { SNAPSHOT_RATE, TICK_DT, TICK_RATE } from "./types"
 import { VEHICLES, VEHICLE_KINDS } from "./vehicles"
 import { NEUTRAL_INPUT, createFlightState, stepFlight } from "./flight"
 import { applySeatInput, createCombatState, createWeapons, killVehicle, markSpawned, stepCombat } from "./combat"
 import type { CombatState } from "./combat"
-import { spawnPoint, worldQuery } from "./geography"
-import { FLEET, SHIP_SPECS, SPAWN_PROTECTION, worldToShip } from "./fleet"
+import { carrierOf, deckVelocity, setFleetState, spawnPoint, worldQuery as baseWorldQuery } from "./geography"
+import { SHIP_SPECS, SPAWN_PROTECTION, worldToShip } from "./fleet"
 import { botInput, chooseBotVehicle, createBotBrain } from "./bots"
 import type { BotBrain } from "./bots"
 
@@ -92,6 +92,9 @@ export interface RoomExtras {
   botFill?: number
 }
 export type EngineConfig = RoomConfig & RoomExtras
+
+/** World queries for flight/bots, including moving-deck velocity so parked aircraft ride their carrier. */
+const worldQuery: WorldQuery = baseWorldQuery.deckVelocity ? baseWorldQuery : { ...baseWorldQuery, deckVelocity }
 
 const NEUTRAL_SEAT: SeatInput = { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false }
 
@@ -630,6 +633,8 @@ export class RoomEngine {
 
   /** Create a vehicle at the team's base with `player` in the pilot seat. */
   spawnVehicle(player: PlayerInfo, kind: VehicleKind): VehicleEntity {
+    // Spawns (and respawns) always use the carrier's current pose.
+    this.syncFleet()
     const team = player.team
     let index = 0
     for (let i = 0; i < SPAWN_SLOTS; i++) {
@@ -730,12 +735,9 @@ export class RoomEngine {
   onOwnDeck(v: VehicleEntity): boolean {
     if (!v.flight.onGround) return false
     const spec = SHIP_SPECS.carrier
-    for (const ship of FLEET) {
-      if (ship.team !== v.team || ship.kind !== "carrier") continue
-      const l = worldToShip(ship, v.flight.position)
-      if (Math.abs(l[0]) <= spec.halfWidth + 2 && Math.abs(l[2]) <= spec.halfLength + 2 && l[1] >= spec.deckHeight - 2 && l[1] <= spec.deckHeight + 10) return true
-    }
-    return false
+    this.syncFleet()
+    const l = worldToShip(carrierOf(v.team), v.flight.position)
+    return Math.abs(l[0]) <= spec.halfWidth + 2 && Math.abs(l[2]) <= spec.halfLength + 2 && l[1] >= spec.deckHeight - 2 && l[1] <= spec.deckHeight + 10
   }
 
   // ───────────────────────── simulation ─────────────────────────
@@ -756,6 +758,7 @@ export class RoomEngine {
   private step(): void {
     this.tick++
     this.time = this.tick * TICK_DT
+    this.syncFleet()
     const now = this.time
     const events = this.events
     const vehicles = this.vehicles
@@ -942,6 +945,19 @@ export class RoomEngine {
     this.hooks.onChange?.()
   }
 
+  /** Seconds since the current match started (0 during intermission). Drives the fleet approach. */
+  matchTime(): number {
+    return this.matchEndedAt !== null ? 0 : Math.max(0, this.time - this.matchStartedAt)
+  }
+
+  /**
+   * Push this room's match time into geography's (module-global) fleet state. Called at the start of every
+   * tick and before spawns, since several rooms (or the client renderer) may share the module.
+   */
+  syncFleet(): void {
+    setFleetState(this.matchTime(), this.config.teams)
+  }
+
   /** Room time when the match ends (running) or the next one starts (intermission). */
   matchEndsAt(): number {
     return this.matchEndedAt !== null ? this.matchEndedAt + MATCH_RESTART_DELAY : this.matchStartedAt + this.config.timeLimit
@@ -983,6 +999,7 @@ export class RoomEngine {
       flares: cs.flares.map(packFlare),
       scores: this.scores,
       matchEndsAt: r3(this.matchEndsAt()),
+      matchStartedAt: r3(this.matchStartedAt),
       intermission: this.matchEndedAt !== null,
     }
     if (withPlayers) shared.players = this.playerList()
@@ -1090,6 +1107,8 @@ export interface WireSnapshot {
   flares: WireFlare[]
   scores: number[]
   matchEndsAt: number
+  /** Room time the current match started; match time = intermission ? 0 : time - matchStartedAt. */
+  matchStartedAt: number
   intermission: boolean
   ack: number
   own?: WireOwn
@@ -1150,6 +1169,12 @@ function packFlare(x: Flare): WireFlare {
   return { id: x.id, vh: x.vehicle, p: v2(x.position), v: v2(x.velocity), a: r3(x.age), l: r3(x.ttl) }
 }
 
+/** Match time (seconds since the match started; 0 during intermission) as seen in a snapshot. */
+export function snapshotMatchTime(s: Snapshot): number {
+  const started = (s as Snapshot & { matchStartedAt?: number }).matchStartedAt ?? 0
+  return s.intermission ? 0 : Math.max(0, s.time - started)
+}
+
 /**
  * Stateful decoder (one per connection): converts wire snapshots back to the protocol `Snapshot` shape,
  * remembering the last players list. Other messages pass through unchanged.
@@ -1199,8 +1224,10 @@ export function createSnapshotDecoder(): (message: WireServerMessage | ServerMes
       flares: m.flares.map(x => ({ id: x.id, vehicle: x.vh, position: x.p, velocity: x.v, age: x.a, ttl: x.l })),
       scores: m.scores,
       matchEndsAt: m.matchEndsAt,
+      // Proposed protocol field (Snapshot.matchStartedAt); cast until protocol.ts adds it.
+      matchStartedAt: m.matchStartedAt,
       intermission: m.intermission,
       ack: m.ack,
-    }
+    } as Snapshot
   }
 }

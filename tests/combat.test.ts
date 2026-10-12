@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import {
   AA_ACQUIRE, AA_TURRETS, type AaTurret, isSpawnProtected, markSpawned, turretHasLOS,
   FLARE_TARGET_PREFIX, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
   stepCombat, sweptSphere, type CombatState,
 } from "../src/sim/combat"
-import { WORLD_HALF, groundHeight, segmentHitsGround, terrainHeight } from "../src/sim/geography"
-import { AA_RANGE, FLEET, SPAWN_PROTECTION, shipToWorld, type Ship } from "../src/sim/fleet"
+import { WORLD_HALF, groundHeight, segmentHitsGround, setFleetState, terrainHeight } from "../src/sim/geography"
+import { AA_RANGE, FLEET, SPAWN_PROTECTION, SHIP_SPECS, shipPose, shipToWorld, shipToWorldAt, type Ship } from "../src/sim/fleet"
 import { TICK_DT, type GameEvent, type Quat, type SeatIndex, type SeatInput, type TeamId, type Vec3, type VehicleEntity, type VehicleKind } from "../src/sim/types"
 import { VEHICLES, WEAPONS } from "../src/sim/vehicles"
 
@@ -227,11 +227,20 @@ describe("fleet AA", () => {
       }
     }
     expect(peak[1]).toBeGreaterThan(100)
-    const ship: Ship = { id: "test-dd", team: 1, kind: "destroyer", position: [peak[0] - 1000, 0, peak[2]], heading: 0 }
+    // Put the test ship on open water on one side of the peak, the hidden target just behind the other side.
+    let dir: [number, number] = [1, 0], r = 1000
+    search: for (r = 900; r <= 2400; r += 100) {
+      for (let k = 0; k < 16; k++) {
+        const ang = (k / 16) * Math.PI * 2
+        if (groundHeight(peak[0] - Math.cos(ang) * r, peak[2] - Math.sin(ang) * r) <= 0.5) { dir = [Math.cos(ang), Math.sin(ang)]; break search }
+      }
+    }
+    const ship: Ship = { id: "test-dd", team: 1, kind: "destroyer", position: [peak[0] - dir[0] * r, 0, peak[2] - dir[1] * r], heading: 0 }
     const turret: AaTurret = { ship, turret: "ciws_test", kind: "ciws", team: 1, position: shipToWorld(ship, [0, 18, 0]) }
-    const low = Math.max(peak[1] * 0.4, groundHeight(peak[0] + 800, peak[2]) + 20)
-    const hidden = vehicle("apache", 0, [peak[0] + 800, low, peak[2]], [0, 0, 0])
-    const visible = vehicle("apache", 2, [peak[0] - 1000, 900, peak[2] + 900], [0, 0, 0])
+    const hx = peak[0] + dir[0] * 800, hz = peak[2] + dir[1] * 800
+    const low = Math.max(peak[1] * 0.4, groundHeight(hx, hz) + 20)
+    const hidden = vehicle("apache", 0, [hx, low, hz], [0, 0, 0])
+    const visible = vehicle("apache", 2, [ship.position[0] - dir[1] * 900, 900, ship.position[2] + dir[0] * 900], [0, 0, 0])
     expect(turretHasLOS(turret, hidden.flight.position)).toBe(false)
     expect(turretHasLOS(turret, visible.flight.position)).toBe(true)
     expect(minTurretDist(hidden.flight.position, 0)).toBeGreaterThan(AA_RANGE)
@@ -256,6 +265,37 @@ describe("fleet AA", () => {
     const w = world([f])
     for (let i = 0; i < 600; i++) tick(w)
     expect(w.events.filter(e => e.type === "explosion").length).toBeGreaterThan(2)
+  })
+
+  describe("moving fleets", () => {
+    afterEach(() => setFleetState(0, 4))
+
+    test("turrets follow the ships at t=300 and engage around the moved carrier", () => {
+      setFleetState(300, 4)
+      const moved = shipPose(carrier, 300).position
+      expect(Math.hypot(moved[0] - carrier.position[0], moved[2] - carrier.position[2])).toBeGreaterThan(100)
+      const f = vehicle("fighter", 0, [moved[0] + 1200, 300, moved[2]], [0, 0, 0])
+      const w = world([f])
+      tick(w)
+      const spec = SHIP_SPECS.carrier.turrets[0]
+      const t = AA_TURRETS.find(x => x.ship.id === carrier.id && x.turret === spec.id)!
+      const expected = shipToWorldAt(carrier, 300, spec.offset)
+      for (let k = 0; k < 3; k++) expect(t.position[k]).toBeCloseTo(expected[k], 6)
+      while (f.alive && w.now < 4) tick(w)
+      expect(f.alive).toBe(false)
+      // Line of sight is tested against the moved hull: a turret sees past its own (moved) ship.
+      expect(turretHasLOS(t, [moved[0] + 1200, 300, moved[2]])).toBe(true)
+    })
+
+    test("inactive teams' fleets never fire", () => {
+      setFleetState(0, 2)
+      const c3 = FLEET.find(sh => sh.team === 3 && sh.kind === "carrier")!
+      const f = vehicle("fighter", 0, [c3.position[0] + 600, 200, c3.position[2]], [0, 0, 0])
+      const w = world([f])
+      for (let i = 0; i < 300; i++) tick(w)
+      expect(f.hp).toBe(f.maxHp)
+      expect(aaEvents(w, f)).toHaveLength(0)
+    })
   })
 
   test("deterministic and cheap", () => {

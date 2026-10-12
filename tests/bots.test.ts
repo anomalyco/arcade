@@ -3,7 +3,8 @@ import {
   BOT_NO_FLY_RADIUS, applyAimSafety, botInput, hostileFleetDistance, shipClearanceAlt, chooseBotVehicle, createBotBrain, interceptTime, leadDirection, terrainMinPitch,
 } from "../src/sim/bots"
 import { createWeapons, markSpawned } from "../src/sim/combat"
-import { FLEET } from "../src/sim/fleet"
+import { FLEET, shipPose } from "../src/sim/fleet"
+import { setFleetState } from "../src/sim/geography"
 import { forward } from "../src/sim/flight"
 import { VEHICLES, WEAPONS } from "../src/sim/vehicles"
 import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, TeamId, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "../src/sim/types"
@@ -234,6 +235,24 @@ describe("carrier fleets", () => {
     const brain = createBotBrain(14, 1)
     botInput(brain, player(0, 0), me, [me, enemy], 10, [], flat())
     expect(brain.state.targetId).toBeNull()
+  })
+
+  test("uses current ship poses and only active fleets", () => {
+    try {
+      setFleetState(600, 2)
+      const moved = shipPose(enemyCarrier, 600).position
+      expect(Math.abs(moved[2] - enemyCarrier.position[2])).toBeGreaterThan(1_000)
+      expect(hostileFleetDistance(0, moved[0], moved[2])).toBeLessThan(1)
+      // Old (start) position is no longer guarded; inactive teams 2/3 have no fleets.
+      expect(hostileFleetDistance(0, enemyCarrier.position[0], enemyCarrier.position[2])).toBeGreaterThan(500)
+      const west = FLEET.find(s => s.team === 2 && s.kind === "carrier")!
+      expect(hostileFleetDistance(0, west.position[0], west.position[2])).toBeGreaterThan(BOT_NO_FLY_RADIUS)
+      const aim: Vec3 = [0, 0, -1]
+      applyAimSafety(aim, [moved[0], 1500, moved[2] + BOT_NO_FLY_RADIUS + 300], [0, 0, -150], flat(), 150, 7, 0)
+      expect(aim[2]).toBeGreaterThan(-0.75)
+    } finally {
+      setFleetState(0, 4)
+    }
   })
 
   test("climbs over ship hulls in its path", () => {

@@ -2,13 +2,15 @@
 // Static hull parts are baked per kind into InstancedMeshes (one per material); team stripes
 // (`livery_*`) share one InstancedMesh per kind with per-instance team colours. Turrets are drawn
 // instanced too, driven by logical yaw/pitch Object3Ds the client can aim (getShipTurret).
-// A clean placeholder ship is shown until the GLB models load.
+// A clean placeholder ship is shown until the GLB models load. Ships follow their fleet-clock poses
+// (geography.setFleetState) every frame; inactive teams' ships are hidden.
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, Group, InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh,
   MeshLambertMaterial, Object3D, PlaneGeometry, ShaderMaterial, type Material,
 } from "three"
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
-import { FLEET, SHIP_SPECS, type Ship, type ShipKind, type TurretKind } from "../../sim/fleet"
+import { FLEET, FLEET_END_DISTANCE, FLEET_START_DISTANCE, FLEET_APPROACH_TIME, SHIP_SPECS, type Ship, type ShipKind, type TurretKind } from "../../sim/fleet"
+import { deckVelocity, fleetState, posedShip } from "../../sim/geography"
 import { PALETTE, TEAM_COLORS } from "./palette"
 
 export interface TurretHandle {
@@ -214,16 +216,10 @@ function createWake(): InstancedMesh {
   })
   const mesh = new InstancedMesh(geometry, material, FLEET.length)
   const hull = new Float32Array(FLEET.length * 2)
-  const m = new Matrix4(), rot = new Matrix4(), scale = new Matrix4()
   FLEET.forEach((sh, i) => {
     const sp = SHIP_SPECS[sh.kind]
     hull[i * 2] = sp.halfWidth * 2
     hull[i * 2 + 1] = sp.halfLength * 2
-    rot.makeRotationY(sh.heading).setPosition(sh.position[0], 0.15, sh.position[2])
-    // Shift the quad aft so most of it trails behind the stern.
-    scale.makeScale(sp.halfWidth * 6, 1, sp.halfLength * 4.4).setPosition(0, 0, sp.halfLength * 0.6)
-    m.multiplyMatrices(rot, scale)
-    mesh.setMatrixAt(i, m)
   })
   geometry.setAttribute("hullSize", new InstancedBufferAttribute(hull, 2))
   mesh.frustumCulled = false
@@ -231,6 +227,9 @@ function createWake(): InstancedMesh {
   mesh.name = "World · ship wakes"
   return mesh
 }
+
+const ZERO = new Matrix4().makeScale(0, 0, 0)
+const CRUISE = (FLEET_START_DISTANCE - FLEET_END_DISTANCE) / FLEET_APPROACH_TIME
 
 export interface FleetView {
   root: Group
@@ -270,24 +269,23 @@ export function createFleet(): FleetView {
   }
 
   let meshes: InstancedMesh[] = []
-  let turretMeshes: { mesh: InstancedMesh; handles: TurretHandle[]; part: "yaw" | "pitch" }[] = []
+  let hullMeshes: { mesh: InstancedMesh; ships: Ship[] }[] = []
+  let turretMeshes: { mesh: InstancedMesh; handles: (TurretHandle & { ship: Ship })[]; part: "yaw" | "pitch" }[] = []
   const tmp = new Matrix4()
 
   function build(templates: Record<ShipKind, KindTemplate>) {
     for (const m of meshes) { drawRoot.remove(m); m.geometry.dispose(); m.dispose() }
     meshes = []
+    hullMeshes = []
     turretMeshes = []
     for (const kind of SHIP_KINDS) {
       const ships = FLEET.filter(s => s.kind === kind)
       const t = templates[kind]
       for (const part of t.parts) {
         const mesh = new InstancedMesh(part.geometry, matFor(part.color, part.livery), ships.length)
-        ships.forEach((sh, i) => {
-          tmp.makeRotationY(sh.heading).setPosition(sh.position[0], sh.position[1], sh.position[2])
-          mesh.setMatrixAt(i, tmp)
-          if (part.livery) mesh.setColorAt(i, new Color(TEAM_COLORS[sh.team]))
-        })
-        mesh.computeBoundingSphere()
+        if (part.livery) ships.forEach((sh, i) => mesh.setColorAt(i, new Color(TEAM_COLORS[sh.team])))
+        mesh.frustumCulled = false
+        hullMeshes.push({ mesh, ships })
         mesh.castShadow = true
         mesh.receiveShadow = true
         mesh.name = `${kind} ${part.livery ? "livery" : "hull"}`
@@ -314,22 +312,56 @@ export function createFleet(): FleetView {
         }
       }
     }
-    syncTurrets()
+    sync()
   }
 
-  function syncTurrets() {
+  const shipGroups = new Map<string, Group>()
+  root.children.forEach(c => { if (c instanceof Group && c !== drawRoot) shipGroups.set(c.name, c) })
+  const wakeM = new Matrix4(), wakeScale = new Matrix4()
+
+  /** Move every ship to its current pose (fleet clock), hide inactive teams, update turrets/wakes. */
+  function sync() {
+    const teams = fleetState().teams
+    for (const [id, g] of shipGroups) {
+      const p = posedShip(id)
+      if (!p) continue
+      g.position.set(p.position[0], 0, p.position[2])
+      g.visible = p.team < teams
+    }
     root.updateMatrixWorld(true)
+    for (const hm of hullMeshes) {
+      hm.ships.forEach((sh, i) => {
+        const g = shipGroups.get(sh.id)!
+        hm.mesh.setMatrixAt(i, g.visible ? g.matrixWorld : ZERO)
+      })
+      hm.mesh.instanceMatrix.needsUpdate = true
+    }
     for (const tm of turretMeshes) {
-      tm.handles.forEach((h, i) => tm.mesh.setMatrixAt(i, tm.part === "yaw" ? h.yaw.matrixWorld : h.pitch.matrixWorld))
+      tm.handles.forEach((h, i) => {
+        const vis = shipGroups.get(h.ship.id)!.visible
+        tm.mesh.setMatrixAt(i, !vis ? ZERO : tm.part === "yaw" ? h.yaw.matrixWorld : h.pitch.matrixWorld)
+      })
       tm.mesh.instanceMatrix.needsUpdate = true
     }
+    FLEET.forEach((sh, i) => {
+      const g = shipGroups.get(sh.id)!
+      if (!g.visible) { wake.setMatrixAt(i, ZERO); return }
+      const sp = SHIP_SPECS[sh.kind]
+      const v = deckVelocity(g.position.x, g.position.z)
+      const speed = v ? Math.hypot(v[0], v[2]) : 0
+      // Wake length grows with speed (a short foam patch when stopped).
+      const k = 0.55 + 0.45 * Math.min(1, speed / CRUISE)
+      wakeM.makeRotationY(sh.heading).setPosition(g.position.x, 0.15, g.position.z)
+      wakeScale.makeScale(sp.halfWidth * 6, 1, sp.halfLength * 4.4 * k).setPosition(0, 0, sp.halfLength * (0.6 + 1.6 * (k - 0.55)))
+      wake.setMatrixAt(i, wakeM.multiply(wakeScale))
+    })
+    wake.instanceMatrix.needsUpdate = true
   }
-
-  const placeholder = { carrier: buildTemplate("carrier", placeholderModel("carrier")), destroyer: buildTemplate("destroyer", placeholderModel("destroyer")) }
-  build(placeholder)
 
   const wake = createWake()
   root.add(wake)
+  const placeholder = { carrier: buildTemplate("carrier", placeholderModel("carrier")), destroyer: buildTemplate("destroyer", placeholderModel("destroyer")) }
+  build(placeholder)
 
   // Lazy, non-blocking model load; keep the placeholder if a model is missing.
   let disposed = false
@@ -361,7 +393,7 @@ export function createFleet(): FleetView {
       const h = turretHandles.get(`${shipId}/${turretId}`)
       return h ? { yaw: h.yaw, pitch: h.pitch } : null
     },
-    update: syncTurrets,
+    update: sync,
     dispose() {
       disposed = true
       for (const m of meshes) { m.geometry.dispose(); m.dispose() }

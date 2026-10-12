@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { RoomEngine, createRng, createSnapshotDecoder, INPUT_QUEUE_MAX, JITTER_TARGET_MAX, JITTER_TARGET_MIN, ABANDONED_DESTROY_DELAY, MATCH_RESTART_DELAY, PARKED_REMOVE_DELAY, WRECK_LINGER } from "../src/sim/room-engine"
+import { RoomEngine, createRng, createSnapshotDecoder, snapshotMatchTime, INPUT_QUEUE_MAX, JITTER_TARGET_MAX, JITTER_TARGET_MIN, ABANDONED_DESTROY_DELAY, MATCH_RESTART_DELAY, PARKED_REMOVE_DELAY, WRECK_LINGER } from "../src/sim/room-engine"
 import { createLoopbackRoom } from "../src/sim/loopback"
-import { FLEET, SPAWN_PROTECTION } from "../src/sim/fleet"
+import { FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipPose } from "../src/sim/fleet"
+import { fleetState, setFleetState } from "../src/sim/geography"
 import type { WireSnapshot } from "../src/sim/room-engine"
 import { DEFAULT_ROOM_CONFIG, RESPAWN_DELAY } from "../src/sim/protocol"
 import type { ClientMessage, RoomConfig, ServerMessage, Snapshot } from "../src/sim/protocol"
@@ -238,6 +239,34 @@ describe("room engine", () => {
     expect(r.engine.matchEndedAt).toBeNull()
     expect(r.lastSnap(a).intermission).toBe(false)
     expect(r.player(a).kills).toBe(0)
+  })
+
+  test("match time drives the fleet, spawns use the current carrier pose, and it resets on restart", () => {
+    const r = setup({ timeLimit: 400 })
+    const a = r.join()
+    r.seconds(300)
+    expect(r.engine.matchTime()).toBeCloseTo(300, 3)
+    expect(fleetState().matchTime).toBeCloseTo(300, 3)
+    r.send(a, { type: "spawn", kind: "fighter" })
+    const v = r.vehicle(a)!
+    const carrier = FLEET.find(s => s.team === r.player(a).team && s.kind === "carrier")!
+    const pose = shipPose(carrier, r.engine.matchTime())
+    expect(Math.hypot(v.flight.position[0] - pose.position[0], v.flight.position[2] - pose.position[2])).toBeLessThan(SHIP_SPECS.carrier.halfLength + 5)
+    expect(r.engine.onOwnDeck(v)).toBe(true)
+    r.ticks(3)
+    const snap = r.lastSnap(a)
+    expect(snapshotMatchTime(snap)).toBeCloseTo(r.engine.matchTime(), 2)
+    r.seconds(100.1) // time limit → intermission
+    expect(r.engine.matchEndedAt).not.toBeNull()
+    expect(r.engine.matchTime()).toBe(0)
+    r.ticks(3)
+    expect(snapshotMatchTime(r.lastSnap(a))).toBe(0)
+    expect(fleetState().matchTime).toBe(0)
+    r.seconds(MATCH_RESTART_DELAY)
+    expect(r.engine.matchEndedAt).toBeNull()
+    expect(r.engine.matchTime()).toBeLessThan(1)
+    expect((r.lastSnap(a) as Snapshot & { matchStartedAt: number }).matchStartedAt).toBeCloseTo(r.engine.matchStartedAt, 2)
+    setFleetState(0, 4)
   })
 
   test("time limit ends the match (tie → null winner)", () => {

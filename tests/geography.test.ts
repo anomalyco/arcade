@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test"
 import {
   AIRBASES, CEILING, DECK_LAYOUT, FLEET_CLEARANCE, LAUNCH_LANE_HALF, LAUNCH_LANE_LENGTH, MESH_CELL, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, bakeWorld, groundHeight,
   heightBound, inSafeZone, isWater, onRunway, segmentHitsGround, shipAt, spawnPoint, surfaceType, terrainHeight,
-  terrainMeshHeight, worldMesh, worldQuery,
+  terrainMeshHeight, worldMesh, worldQuery, setFleetState, deckVelocity, carrierOf, segmentHitsShip,
 } from "../src/sim/geography"
-import { AA_RANGE, FLEET, SHIP_SPECS, shipToWorld } from "../src/sim/fleet"
+import { AA_RANGE, FLEET, FLEET_APPROACH_TIME, FLEET_END_DISTANCE, FLEET_START_DISTANCE, SHIP_SPECS, shipPose, shipToWorldAt } from "../src/sim/fleet"
 import { generateCluster } from "../src/render/world/tile-gen"
 import type { TeamId, Vec3 } from "../src/sim/types"
 
@@ -62,7 +62,7 @@ describe("heightfield", () => {
       if (h > 0) land++
       if (Math.hypot(x, z) < 2500) centralMax = Math.max(centralMax, h)
     }
-    expect(centralMax).toBeGreaterThan(380)
+    expect(max).toBeGreaterThan(380)
     expect(max).toBeLessThan(1000)
     expect(land / 60_000).toBeGreaterThan(0.05)
     expect(land / 60_000).toBeLessThan(0.4)
@@ -123,113 +123,167 @@ describe("heightfield", () => {
 })
 
 describe("strike groups", () => {
-  test("open water around every ship and along each carrier's launch path", () => {
-    for (const sh of FLEET) {
-      for (let r = 0; r <= FLEET_CLEARANCE; r += 50) for (let a = 0; a < 64; a++) {
-        const ang = (a / 64) * Math.PI * 2
-        expect(terrainMeshHeight(sh.position[0] + Math.cos(ang) * r, sh.position[2] + Math.sin(ang) * r)).toBeLessThan(0)
-      }
-      if (sh.kind === "carrier") {
-        for (let d = 0; d <= LAUNCH_LANE_LENGTH; d += 25) for (const c of [-LAUNCH_LANE_HALF, 0, LAUNCH_LANE_HALF]) {
-          const p = shipToWorld(sh, [c, 0, -d])
-          expect(terrainMeshHeight(p[0], p[2])).toBeLessThan(0)
+  const TIMES = [0, FLEET_APPROACH_TIME * 0.37, FLEET_APPROACH_TIME]
+  const posed = (t: number) => FLEET.map(sh => ({ ...sh, position: shipPose(sh, t).position }))
+
+  test("open water around every ship and its launch lane along the whole approach", () => {
+    for (let t = 0; t <= FLEET_APPROACH_TIME; t += FLEET_APPROACH_TIME / 12) {
+      for (const sh of FLEET) {
+        const p = shipPose(sh, t).position
+        for (let r = 0; r <= FLEET_CLEARANCE; r += 100) for (let a = 0; a < 48; a++) {
+          const ang = (a / 48) * Math.PI * 2
+          expect(terrainMeshHeight(p[0] + Math.cos(ang) * r, p[2] + Math.sin(ang) * r)).toBeLessThan(0)
+        }
+        if (sh.kind === "carrier") {
+          for (let d = 0; d <= LAUNCH_LANE_LENGTH; d += 50) for (const c of [-LAUNCH_LANE_HALF, 0, LAUNCH_LANE_HALF]) {
+            const q = shipToWorldAt(sh, t, [c, 0, -d])
+            expect(terrainMeshHeight(q[0], q[2])).toBeLessThan(0)
+          }
         }
       }
     }
   })
 
-  test("AIRBASES are derived from the carriers", () => {
-    for (const base of AIRBASES) {
-      const c = FLEET.find(s => s.team === base.team && s.kind === "carrier")!
-      expect(base.center[0]).toBeCloseTo(c.position[0])
-      expect(base.center[2]).toBeCloseTo(c.position[2])
-      expect(base.center[1]).toBe(SHIP_SPECS.carrier.deckHeight)
-      expect(base.heading).toBe(c.heading)
-      expect(base.safeRadius).toBe(AA_RANGE)
-      // Bow points at the map centre.
-      const fx = -Math.sin(base.heading), fz = -Math.cos(base.heading)
-      const d = Math.hypot(base.center[0], base.center[2])
-      expect(fx * -base.center[0] / d + fz * -base.center[2] / d).toBeCloseTo(1, 6)
+  test("AIRBASES follow the carriers over time", () => {
+    for (const t of TIMES) {
+      setFleetState(t, 4)
+      for (const base of AIRBASES) {
+        const c = shipPose(FLEET.find(s => s.team === base.team && s.kind === "carrier")!, t).position
+        expect(base.center[0]).toBeCloseTo(c[0])
+        expect(base.center[2]).toBeCloseTo(c[2])
+        expect(base.center[1]).toBe(SHIP_SPECS.carrier.deckHeight)
+        expect(base.safeRadius).toBe(AA_RANGE)
+        expect(carrierOf(base.team).position[0]).toBeCloseTo(c[0])
+        const fx = -Math.sin(base.heading), fz = -Math.cos(base.heading)
+        const d = Math.hypot(base.center[0], base.center[2])
+        expect(fx * -base.center[0] / d + fz * -base.center[2] / d).toBeCloseTo(1, 6)
+      }
     }
+    setFleetState(0, 4)
   })
 
-  test("decks are solid ground; the carrier flight deck is a runway", () => {
-    for (const sh of FLEET) {
-      const sp = SHIP_SPECS[sh.kind]
-      const I = sp.island
-      for (let z = -sp.halfLength + 1; z <= sp.halfLength - 1; z += 13) for (let x = -sp.halfWidth + 1; x <= sp.halfWidth - 1; x += 5) {
-        const p = shipToWorld(sh, [x, 0, z])
-        const inIsland = Math.abs(x - I.center[0]) <= I.half[0] && Math.abs(z - I.center[2]) <= I.half[2]
-        expect(shipAt(p[0], p[2])).toBe(sh)
-        expect(groundHeight(p[0], p[2])).toBe(inIsland ? I.center[1] + I.half[1] : sp.deckHeight)
-        expect(isWater(p[0], p[2])).toBe(false)
-        expect(onRunway(p[0], p[2])).toBe(sh.kind === "carrier" && !inIsland)
-        expect(surfaceType(p[0], p[2])).toBe("paved")
+  test("decks are solid, moving ground; the carrier flight deck is a runway", () => {
+    for (const t of TIMES) {
+      setFleetState(t, 4)
+      for (const sh of FLEET) {
+        const sp = SHIP_SPECS[sh.kind]
+        const I = sp.island
+        for (let z = -sp.halfLength + 1; z <= sp.halfLength - 1; z += 19) for (let x = -sp.halfWidth + 1; x <= sp.halfWidth - 1; x += 7) {
+          const p = shipToWorldAt(sh, t, [x, 0, z])
+          const inIsland = Math.abs(x - I.center[0]) <= I.half[0] && Math.abs(z - I.center[2]) <= I.half[2]
+          expect(shipAt(p[0], p[2])?.id).toBe(sh.id)
+          expect(groundHeight(p[0], p[2])).toBe(inIsland ? I.center[1] + I.half[1] : sp.deckHeight)
+          expect(isWater(p[0], p[2])).toBe(false)
+          expect(onRunway(p[0], p[2])).toBe(sh.kind === "carrier" && !inIsland)
+          expect(surfaceType(p[0], p[2])).toBe("paved")
+          const v = deckVelocity(p[0], p[2])!
+          const want = shipPose(sh, t).velocity
+          expect(v[0]).toBeCloseTo(want[0], 6)
+          expect(v[2]).toBeCloseTo(want[2], 6)
+        }
+        const out = shipToWorldAt(sh, t, [sp.halfWidth + 3, 0, 0])
+        expect(groundHeight(out[0], out[2])).toBe(WATER_LEVEL)
+        expect(isWater(out[0], out[2])).toBe(true)
+        expect(deckVelocity(out[0], out[2])).toBeNull()
       }
-      // Just outside the hull is open water.
-      const out = shipToWorld(sh, [sp.halfWidth + 3, 0, 0])
-      expect(groundHeight(out[0], out[2])).toBe(WATER_LEVEL)
-      expect(isWater(out[0], out[2])).toBe(true)
-      expect(onRunway(out[0], out[2])).toBe(false)
     }
+    // Mid-approach the formation is moving at ~4.7 m/s; at the start/end it's stationary.
+    setFleetState(300, 4)
+    const c = carrierOf(0)
+    expect(Math.hypot(...deckVelocity(c.position[0], c.position[2])!)).toBeCloseTo((FLEET_START_DISTANCE - FLEET_END_DISTANCE) / FLEET_APPROACH_TIME, 3)
+    // The old start position is open water once the fleet has moved on.
+    const start = FLEET.find(s => s.id === c.id)!.position
+    expect(shipAt(start[0], start[2])?.id).not.toBe(c.id)
+    setFleetState(0, 4)
     expect(onRunway(0, 0)).toBe(false)
   })
 
-  test("spawns sit on the carrier deck, facing the bow, without overlap", () => {
-    for (const team of TEAMS) {
-      const c = FLEET.find(s => s.team === team && s.kind === "carrier")!
-      const used: Vec3[] = []
-      for (let i = 0; i < DECK_LAYOUT.catapults.length; i++) {
-        const s = spawnPoint(team, "fighter", i)
-        expect(s.onGround).toBe(true)
-        expect(s.yaw).toBe(c.heading)
-        expect(shipAt(s.position[0], s.position[2])).toBe(c)
-        expect(onRunway(s.position[0], s.position[2])).toBe(true)
-        expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(2.2, 6)
-        expect(inSafeZone(team, s.position)).toBe(true)
-        for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(15)
-        used.push(s.position)
-        // At least ~160 m of clear deck ahead of every catapult slot.
-        const ahead = shipToWorld(c, [DECK_LAYOUT.catapults[i][0], 0, DECK_LAYOUT.catapults[i][1] - 160])
-        expect(onRunway(ahead[0], ahead[2])).toBe(true)
-      }
-      for (let i = 0; i < DECK_LAYOUT.heloSpots.length; i++) {
-        const s = spawnPoint(team, "apache", i)
-        expect(onRunway(s.position[0], s.position[2])).toBe(true)
-        expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(1.9, 6)
-        for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(14)
-        used.push(s.position)
+  test("inactive teams have no ships", () => {
+    setFleetState(100, 2)
+    for (const sh of FLEET) {
+      const p = shipToWorldAt(sh, 100, [0, 0, 0])
+      const active = sh.team < 2
+      expect(shipAt(p[0], p[2]) !== null).toBe(active)
+      expect(inSafeZone(sh.team, [p[0], 300, p[2]])).toBe(active)
+      const a = shipToWorldAt(sh, 100, [-60, 5, 0]), b = shipToWorldAt(sh, 100, [60, 5, 0])
+      expect(segmentHitsShip(a, b) !== null).toBe(active)
+    }
+    setFleetState(0, 4)
+  })
+
+  test("spawns sit on the (moving) carrier deck, facing the bow, without overlap", () => {
+    for (const t of TIMES) {
+      setFleetState(t, 4)
+      for (const team of TEAMS) {
+        const c = carrierOf(team)
+        const used: Vec3[] = []
+        for (let i = 0; i < DECK_LAYOUT.catapults.length; i++) {
+          const s = spawnPoint(team, "fighter", i)
+          expect(s.onGround).toBe(true)
+          expect(s.yaw).toBe(c.heading)
+          expect(shipAt(s.position[0], s.position[2])?.id).toBe(c.id)
+          expect(onRunway(s.position[0], s.position[2])).toBe(true)
+          expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(2.2, 6)
+          expect(inSafeZone(team, s.position)).toBe(true)
+          for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(15)
+          used.push(s.position)
+          const ahead = shipToWorldAt(FLEET.find(f => f.id === c.id)!, t, [DECK_LAYOUT.catapults[i][0], 0, DECK_LAYOUT.catapults[i][1] - 160])
+          expect(onRunway(ahead[0], ahead[2])).toBe(true)
+        }
+        for (let i = 0; i < DECK_LAYOUT.heloSpots.length; i++) {
+          const s = spawnPoint(team, "apache", i)
+          expect(onRunway(s.position[0], s.position[2])).toBe(true)
+          expect(s.position[1] - groundHeight(s.position[0], s.position[2])).toBeCloseTo(1.9, 6)
+          for (const u of used) expect(Math.hypot(u[0] - s.position[0], u[2] - s.position[2])).toBeGreaterThan(14)
+          used.push(s.position)
+        }
       }
     }
+    setFleetState(0, 4)
   })
 
   test("inSafeZone = within AA_RANGE of an own ship", () => {
-    for (const sh of FLEET) {
+    setFleetState(450, 4)
+    for (const sh of posed(450)) {
       expect(inSafeZone(sh.team, [sh.position[0] + AA_RANGE - 50, 300, sh.position[2]])).toBe(true)
       const other = ((sh.team + 1) % 4) as TeamId
       expect(inSafeZone(other, [sh.position[0], 300, sh.position[2]])).toBe(false)
     }
     expect(inSafeZone(0, [0, 300, 0])).toBe(false)
+    setFleetState(0, 4)
   })
 
   test("segments hit ship hulls and superstructure", () => {
-    for (const sh of FLEET) {
-      const sp = SHIP_SPECS[sh.kind]
-      // Horizontal shot through the hull side at half deck height.
-      const a = shipToWorld(sh, [-sp.halfWidth - 50, sp.deckHeight / 2, 0]), b = shipToWorld(sh, [sp.halfWidth + 50, sp.deckHeight / 2, 0])
-      const t = segmentHitsGround(a, b)
-      expect(t).not.toBeNull()
-      expect(t!).toBeCloseTo(50 / (2 * sp.halfWidth + 100), 3)
-      // Shot through the island above deck level.
-      const I = sp.island
-      const c = shipToWorld(sh, [I.center[0] + 40, I.center[1], I.center[2]]), d = shipToWorld(sh, [I.center[0] - 40, I.center[1], I.center[2]])
-      const t2 = segmentHitsGround(c, d)
-      expect(t2).not.toBeNull()
-      expect(t2!).toBeCloseTo((40 - I.half[0]) / 80, 3)
-      // Just above the deck, clear of the island: no hit.
-      const e = shipToWorld(sh, [-sp.halfWidth + 1, sp.deckHeight + 3, -sp.halfLength + 5]), f = shipToWorld(sh, [-sp.halfWidth + 1, sp.deckHeight + 3, sp.halfLength - 5])
-      expect(segmentHitsGround(e, f)).toBeNull()
+    for (const t of TIMES) {
+      setFleetState(t, 4)
+      for (const sh of FLEET) {
+        const sp = SHIP_SPECS[sh.kind]
+        const a = shipToWorldAt(sh, t, [-sp.halfWidth - 50, sp.deckHeight / 2, 0]), b = shipToWorldAt(sh, t, [sp.halfWidth + 50, sp.deckHeight / 2, 0])
+        const hit = segmentHitsGround(a, b)
+        expect(hit).not.toBeNull()
+        expect(hit!).toBeCloseTo(50 / (2 * sp.halfWidth + 100), 3)
+        const I = sp.island
+        const c = shipToWorldAt(sh, t, [I.center[0] + 40, I.center[1], I.center[2]]), d = shipToWorldAt(sh, t, [I.center[0] - 40, I.center[1], I.center[2]])
+        const t2 = segmentHitsGround(c, d)
+        expect(t2).not.toBeNull()
+        expect(t2!).toBeCloseTo((40 - I.half[0]) / 80, 3)
+        const e = shipToWorldAt(sh, t, [-sp.halfWidth + 1, sp.deckHeight + 3, -sp.halfLength + 5]), f = shipToWorldAt(sh, t, [-sp.halfWidth + 1, sp.deckHeight + 3, sp.halfLength - 5])
+        expect(segmentHitsGround(e, f)).toBeNull()
+      }
     }
+    setFleetState(0, 4)
+  })
+
+  test("ship queries are fast", () => {
+    setFleetState(200, 4)
+    const c = carrierOf(0)
+    let sum = 0
+    const t0 = performance.now()
+    for (let i = 0; i < 1_000_000; i++) sum += groundHeight(c.position[0] + (i % 200) - 100, c.position[2] + ((i * 7) % 300) - 150)
+    const ms = performance.now() - t0
+    console.log(`1M groundHeight on/near a carrier: ${ms.toFixed(0)} ms (${sum.toFixed(0)})`)
+    expect(ms).toBeLessThan(600)
+    setFleetState(0, 4)
   })
 })
 

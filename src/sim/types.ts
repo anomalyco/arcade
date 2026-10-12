@@ -65,6 +65,8 @@ export interface WorldQuery {
   half: number
   /** Hard altitude ceiling in meters. */
   ceiling: number
+  /** Velocity of a moving deck (carrier) under x,z, or null/undefined when the surface is static. */
+  deckVelocity?(x: number, z: number): Vec3 | null
 }
 
 /** Per-tick weapons/aim input for a seat. */

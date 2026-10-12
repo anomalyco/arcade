@@ -13,8 +13,9 @@ import { createPauseMenu } from "./pause"
 import { toast, type StartRequest } from "./lobby"
 import { onSettings, settings } from "./settings"
 import { cloneFlight, flightReadout, forward, stepFlight } from "../sim/flight"
-import { AIRBASES, worldQuery } from "../sim/geography"
-import { AA_RANGE, FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship } from "../sim/fleet"
+import { AIRBASES, deckVelocity, posedFleet, posedShip, setFleetState, worldQuery as baseWorldQuery } from "../sim/geography"
+import { AA_RANGE, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship } from "../sim/fleet"
+import type { WorldQuery } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { TICK_DT } from "../sim/types"
 import type { FlightInput, FlightState, GameEvent, PlayerInfo, Quat, SeatIndex, SeatInput, TeamId, Vec3, VehicleEntity } from "../sim/types"
@@ -71,7 +72,8 @@ const _q2 = new Quaternion()
 const _q3 = new Quaternion()
 const _v1 = new Vector3()
 const _v2 = new Vector3()
-const SHIP_BY_ID = new Map(FLEET.map(s => [s.id, s]))
+/** Prediction world: includes the moving carrier decks (same wrapping as the room engine). */
+const worldQuery: WorldQuery = baseWorldQuery.deckVelocity ? baseWorldQuery : { ...baseWorldQuery, deckVelocity }
 
 /** Smoothed ship turret aim (drives the world's turret pivots). */
 interface TurretAim { ship: Ship; turret: string; offset: Vec3; yaw: number; pitch: number; tYaw: number; tPitch: number; firedAt: number }
@@ -474,7 +476,7 @@ class GameSession implements GameHandle {
     const key = `${shipId}:${turretId}`
     let t = this.turretAims.get(key)
     if (!t) {
-      const ship = SHIP_BY_ID.get(shipId)
+      const ship = posedShip(shipId)
       const spec = ship ? SHIP_SPECS[ship.kind].turrets.find(x => x.id === turretId) : undefined
       if (!ship || !spec) return
       t = { ship, turret: turretId, offset: spec.offset, yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, firedAt: 0 }
@@ -503,6 +505,17 @@ class GameSession implements GameHandle {
       if (h) { h.yaw.rotation.y = t.yaw; h.pitch.rotation.x = t.pitch }
       if (idle && Math.abs(t.yaw) < 1e-3 && Math.abs(t.pitch) < 1e-3) this.turretAims.delete(`${t.ship.id}:${t.turret}`)
     }
+  }
+
+  /**
+   * Pose the moving fleets at the estimated server time, from the latest snapshot's match clock (the same
+   * clock the room engine uses, so offline the in-browser engine and the renderer agree).
+   */
+  private syncFleet(est: number): void {
+    const s = this.latest
+    if (!s || !this.config) return
+    const started = s.matchStartedAt ?? 0
+    setFleetState(s.intermission ? 0 : Math.max(0, est - started), this.config.teams)
   }
 
   private posOfVehicle(id: string): Vec3 | null {
@@ -555,7 +568,7 @@ class GameSession implements GameHandle {
           fx.hit(e.position)
           if (e.target === myVeh) {
             const atk = e.by ? this.players.get(e.by)?.vehicleId : null
-            const ship = e.by ? SHIP_BY_ID.get(e.by) : undefined
+            const ship = e.by ? posedShip(e.by) ?? undefined : undefined
             this.hud.damage(ship ? shipToWorld(ship, [0, 30, 0]) : atk ? this.posOfVehicle(atk) : null)
             this.deps.host.rig.shake(0.5)
             local = true
@@ -646,6 +659,7 @@ class GameSession implements GameHandle {
     const now = performance.now() / 1000
 
     for (const a of input.takeActions()) this.onAction(a)
+    this.syncFleet(now + this.timeOffset)
     if (input.scoreboard !== this.scoreboardShown) { this.scoreboardShown = input.scoreboard; setScoreboard(this.hud, input.scoreboard) }
 
     const me = this.me
@@ -1049,8 +1063,8 @@ class GameSession implements GameHandle {
     f.protectedLeft = Math.max(0, protLeft)
     // Enemy fleet anti-air umbrella: nearest enemy ship, and whether its guns are on us right now.
     let nearShip = Infinity
-    for (const sh of FLEET) {
-      if (sh.team === v.team || sh.team >= (this.config ? this.config.teams : 4)) continue
+    for (const sh of posedFleet()) {
+      if (sh.team === v.team) continue
       const d = Math.hypot(pos[0] - sh.position[0], pos[1] - sh.position[1], pos[2] - sh.position[2])
       if (d < nearShip) nearShip = d
     }

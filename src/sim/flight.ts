@@ -25,6 +25,8 @@ export const CAT_DECK_MIN_HEIGHT = 10
 /** Catapult end speed (× stall) and stroke time (s) from a standstill. */
 export const CAT_END_SPEED = 1.3
 export const CAT_STROKE_TIME = 2.2
+/** Ground deceleration (m/s²) with the throttle at idle: parking brake / carrier hold-back. */
+const PARK_BRAKE = 6
 /** Helicopter collective that exactly balances gravity. */
 export const HOVER_COLLECTIVE = 0.5
 
@@ -490,9 +492,12 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
   let thrust = (inp.boost ? h.thrust * (spec.boost / spec.cruise) ** 2 : s.throttle * h.thrust) * engine
   // Carrier catapult: on an elevated deck (a runway well above sea level) with power up and brakes
   // off, the cat shoves the jet to CAT_END_SPEED × stall within ~CAT_STROKE_TIME, then it flies off.
-  if (s.onGround && !inp.brake && (s.throttle > 0.5 || inp.boost) && vf < CAT_END_SPEED * stall &&
+  if (s.onGround && !inp.brake && (s.throttle > 0.5 || inp.boost) &&
       world.groundHeight(p[0], p[2]) > CAT_DECK_MIN_HEIGHT && world.onRunway(p[0], p[2])) {
-    thrust += (CAT_END_SPEED * stall) / CAT_STROKE_TIME
+    // Launch speed is relative to the (possibly moving) deck.
+    const deck = world.deckVelocity?.(p[0], p[2])
+    const vRel = deck ? vf - (deck[0] * F[0] + deck[1] * F[1] + deck[2] * F[2]) : vf
+    if (vRel < CAT_END_SPEED * stall) thrust += (CAT_END_SPEED * stall) / CAT_STROKE_TIME
   }
   const dragK = (h.thrust / (spec.cruise * spec.cruise)) * (inp.brake ? h.airbrake : 1)
   const turnRate = Math.sqrt(w[0] * w[0] + w[1] * w[1])
@@ -519,7 +524,9 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
 
   p[0] += v[0] * dt; p[1] += v[1] * dt; p[2] += v[2] * dt
 
-  const ground = resolveGround(s, world, false, h.gearHeight, h.bellyHeight, spec.stall, h.maxGroundPitch, inp.brake ? h.wheelBrake : 0.4, dt)
+  // Idle on the ground (throttle ~0) holds the parking brake so a parked jet rides along with a deck.
+  const wheelDecel = inp.brake ? h.wheelBrake : s.throttle < 0.05 && !inp.boost ? PARK_BRAKE : 0.4
+  const ground = resolveGround(s, world, false, h.gearHeight, h.bellyHeight, spec.stall, h.maxGroundPitch, wheelDecel, dt)
   if (s.crashed) return
 
   // Gear: auto-retract after climb-out, auto-extend on a slow approach.
@@ -755,11 +762,14 @@ function resolveGround(
   }
   const runway = world.onRunway(p[0], p[2])
   const water = !runway && ground <= WATER_LEVEL + 0.01
+  // Moving deck (carrier): wheel/skid physics and contact limits work relative to the deck.
+  const deck = world.deckVelocity?.(p[0], p[2])
+  const dvx = deck ? deck[0] : 0, dvy = deck ? deck[1] : 0, dvz = deck ? deck[2] : 0
   basis(q)
-  const sink = -v[1]
+  const sink = dvy - v[1]
   const pitch = Math.asin(clamp(F[1], -1, 1))
   const bank = Math.atan2(-R[1], U[1])
-  const hs = Math.sqrt(v[0] * v[0] + v[2] * v[2])
+  const hs = Math.sqrt((v[0] - dvx) ** 2 + (v[2] - dvz) ** 2)
 
   if (water) {
     s.crashed = "water"
@@ -778,7 +788,7 @@ function resolveGround(
 
   s.onGround = true
   p[1] = ground + gearHeight
-  if (v[1] < 0) v[1] = 0
+  if (v[1] < dvy) v[1] = dvy
 
   // Constrain attitude: wings level; jets may rotate nose-up to maxGroundPitch, helis sit level.
   const heading = Math.atan2(-F[0], -F[2])
@@ -789,17 +799,21 @@ function resolveGround(
 
   // Wheels: kill sideways slip, rolling friction / brakes along the nose.
   const hfx = -Math.sin(heading), hfz = -Math.cos(heading)
-  let along = v[0] * hfx + v[2] * hfz
-  let latX = v[0] - hfx * along, latZ = v[2] - hfz * along
+  const rvx = v[0] - dvx, rvz = v[2] - dvz
+  let along = rvx * hfx + rvz * hfz
+  let latX = rvx - hfx * along, latZ = rvz - hfz * along
   const latKeep = Math.exp(-(heli ? 4 : 12) * dt)
   latX *= latKeep; latZ *= latKeep
-  if (heli) along *= Math.exp(-4 * dt)
-  else {
+  if (heli) {
+    along *= Math.exp(-4 * dt)
+    // Skids grip: a slow-sliding heli sticks to the surface (so it rides a moving deck exactly).
+    if (Math.hypot(along, latX, latZ) < 1) along = latX = latZ = 0
+  } else {
     const dec = (wheelDecel + (runway ? 0 : 2)) * dt
     along = along > dec ? along - dec : along < -dec ? along + dec : 0
   }
-  v[0] = hfx * along + latX
-  v[2] = hfz * along + latZ
+  v[0] = hfx * along + latX + dvx
+  v[2] = hfz * along + latZ + dvz
   return ground
 }
 
