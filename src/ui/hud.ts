@@ -81,7 +81,7 @@ export class Hud {
     // Crosshair: spreads with recoil, shows a white hitmarker on hits and a red one on kills.
     const xh = el.xh!
     xh.style.transform = `translate(${mouse.x}px, ${mouse.y}px)`
-    const spread = 7 + g.bloom * 16 + (GUNS[g.gun].pellets > 1 ? 10 : 0)
+    const spread = 6 + g.bloom * 26 + (GUNS[g.gun].pellets > 1 ? 10 : 0)
     xh.style.setProperty("--s", `${spread}px`)
     const hitAge = (performance.now() / 1000 - g.hitAt) / 0.22
     const killAge = (performance.now() / 1000 - g.killAt) / 0.5
