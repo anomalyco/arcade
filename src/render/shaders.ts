@@ -315,7 +315,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     var win = 1.0 - x * x;
     win *= win;
     // Surfaces right next to a fixture (wall tops, desks under a panel) never get hotter than the floor below it.
-    let dn = max(d3, max(hl * 0.8, 1.25));
+    let dn = max(d3, max(hl, 1.25));
     var att = power * win * (0.1 + 2.6 / (1.0 + dn * dn * 0.3));
     if (L.cone.w > 0.5 && dPlan > 0.001) {
       let c = dot(dv / dPlan, L.cone.xy);

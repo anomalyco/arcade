@@ -32,7 +32,7 @@ const sat = (c: readonly [number, number, number], k: number): [number, number, 
   const m = Math.max(c[0], c[1], c[2])
   return [(c[0] / m) ** k * m, (c[1] / m) ** k * m, (c[2] / m) ** k * m]
 }
-const GAIN: Record<LightKind, number> = { desk: 1, panel: 0.85, pendant: 1, exit: 2, vending: 1, server: 0.8, bulb: 1 }
+const GAIN: Record<LightKind, number> = { desk: 0.85, panel: 0.85, pendant: 1, exit: 2, vending: 1, server: 0.8, bulb: 1 }
 
 export type DynLight = { x: number; y: number; h: number; r: number; color: readonly [number, number, number]; power: number; size: number }
 export type Caster = { x: number; y: number }

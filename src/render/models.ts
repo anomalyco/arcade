@@ -29,7 +29,7 @@ export const PAL = {
   partition: hex(0x4a4c56),
   stall: hex(0x5a5c66),
   partitionCap: hex(0x5c6478),
-  deskTop: hex(0x6e6658),
+  deskTop: hex(0x5e584e),
   deskBody: hex(0x3a3f4c),
   dark: hex(0x1c1f27),
   steel: hex(0x6c7487),
@@ -40,7 +40,7 @@ export const PAL = {
   leaf2: hex(0x4a8a4a),
   cabinet: hex(0x5a5e6a),
   sofa: hex(0x3a3a52),
-  table: hex(0x7a6048),
+  table: hex(0x5e4a3a),
   paper: hex(0xe0e0da),
   white: hex(0xc8ccd3),
   crate: hex(0x9a7448),
@@ -237,7 +237,7 @@ export function buildProp(m: Mesh, p: Prop, seed: number): void {
     }
     case "table": {
       const big = w > 1.6 || d > 1.6
-      m.bevelBox(-hw, 0.71, -hd, hw, 0.75, hd, 0.015, hex(0x5a4636), PAL.table, MAT.shiny)
+      m.bevelBox(-hw, 0.71, -hd, hw, 0.75, hd, 0.015, hex(0x4a3a2e), PAL.table)
       if (big) {
         for (const [sx, sz] of [
           [-1, -1],
