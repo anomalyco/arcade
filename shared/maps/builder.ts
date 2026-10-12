@@ -4,8 +4,8 @@ import type { Floor, FloorKind, LightDef, MapDef, Prop, PropKind, Wall, WallStyl
 export const WALL_H = 2.7
 export const PARTITION_H = 1.3
 export const T = 0.3
-/** Lights per map; the GPU holds MAX_LIGHTS. */
-export const LIGHT_BUDGET = 24
+/** Lights per map. The GPU holds MAX_LIGHTS at once, so the renderer uploads the ones nearest the camera. */
+export const LIGHT_BUDGET = 256
 
 /** An opening in a wall. */
 export type Gap = readonly [number, number]

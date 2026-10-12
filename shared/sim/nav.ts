@@ -15,6 +15,12 @@ export class Nav {
   readonly h: number
   readonly grid: Uint8Array
   private free: number[] = []
+  private g: Float32Array
+  private came: Int32Array
+  /** A* bookkeeping is valid for a cell when seen[i] >= stamp; closed cells hold stamp + 1. */
+  private seen: Uint32Array
+  private stamp = 0
+  private heap = new Heap()
 
   constructor(readonly map: MapDef) {
     this.w = Math.ceil(map.size[0] / CELL)
@@ -22,14 +28,19 @@ export class Nav {
     this.grid = new Uint8Array(this.w * this.h)
     const pad = PLAYER_RADIUS + 0.02
     const solid = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
-    for (let cy = 0; cy < this.h; cy++)
-      for (let cx = 0; cx < this.w; cx++) {
-        const x = (cx + 0.5) * CELL
-        const y = (cy + 0.5) * CELL
-        const i = cy * this.w + cx
-        if (solid.some((r) => inRect(x, y, r, pad))) this.grid[i] = BLOCKED
-        else this.free.push(i)
-      }
+    // A cell is blocked when its centre lies within `pad` of a solid.
+    for (const r of solid) {
+      const x0 = Math.max(0, Math.ceil((r[0] - pad) / CELL - 0.5))
+      const x1 = Math.min(this.w - 1, Math.floor((r[2] + pad) / CELL - 0.5))
+      const y0 = Math.max(0, Math.ceil((r[1] - pad) / CELL - 0.5))
+      const y1 = Math.min(this.h - 1, Math.floor((r[3] + pad) / CELL - 0.5))
+      for (let cy = y0; cy <= y1; cy++) this.grid.fill(BLOCKED, cy * this.w + x0, cy * this.w + x1 + 1)
+    }
+    for (let i = 0; i < this.grid.length; i++) if (this.grid[i] !== BLOCKED) this.free.push(i)
+    const n = this.w * this.h
+    this.g = new Float32Array(n)
+    this.came = new Int32Array(n)
+    this.seen = new Uint32Array(n)
   }
 
   private idx(p: Vec): number {
@@ -50,17 +61,30 @@ export class Nav {
   nearest(p: Vec): Vec {
     const i = this.idx(p)
     if (this.grid[i] !== BLOCKED) return p
-    let best = this.free[0]!
+    const cx = i % this.w
+    const cy = Math.floor(i / this.w)
+    let best = -1
     let bd = Infinity
-    for (const f of this.free) {
-      const c = this.center(f)
-      const d = (c.x - p.x) ** 2 + (c.y - p.y) ** 2
-      if (d < bd) {
-        bd = d
-        best = f
+    // Grow square rings until the best hit so far can't be beaten by a farther ring.
+    for (let ring = 1; ring < Math.max(this.w, this.h); ring++) {
+      if (best >= 0 && (ring - 1) * CELL > Math.sqrt(bd)) break
+      for (let y = cy - ring; y <= cy + ring; y++) {
+        if (y < 0 || y >= this.h) continue
+        const edge = y === cy - ring || y === cy + ring
+        for (let x = cx - ring; x <= cx + ring; x += edge ? 1 : ring * 2) {
+          if (x < 0 || x >= this.w) continue
+          const k = y * this.w + x
+          if (this.grid[k] === BLOCKED) continue
+          const c = this.center(k)
+          const d = (c.x - p.x) ** 2 + (c.y - p.y) ** 2
+          if (d < bd) {
+            bd = d
+            best = k
+          }
+        }
       }
     }
-    return this.center(best)
+    return best >= 0 ? this.center(best) : p
   }
 
   /** Cells reachable on foot from p, as a mask over the grid. */
@@ -115,47 +139,57 @@ export class Nav {
     const start = this.idx(this.nearest(from))
     const goal = this.idx(this.nearest(to))
     if (start === goal) return [to]
-    const n = this.w * this.h
-    const g = new Float32Array(n).fill(Infinity)
-    const came = new Int32Array(n).fill(-1)
-    const closed = new Uint8Array(n)
-    const heap = new Heap()
-    const gx = goal % this.w
-    const gy = Math.floor(goal / this.w)
+    if (this.stamp > 0xfffffff0) {
+      this.stamp = 0
+      this.seen.fill(0)
+    }
+    const open = (this.stamp += 2)
+    const shut = open + 1
+    const { g, came, seen, grid, w } = this
+    const heap = this.heap
+    heap.clear()
+    const gx = goal % w
+    const gy = Math.floor(goal / w)
     const h = (i: number) => {
-      const dx = Math.abs((i % this.w) - gx)
-      const dy = Math.abs(Math.floor(i / this.w) - gy)
+      const dx = Math.abs((i % w) - gx)
+      const dy = Math.abs(Math.floor(i / w) - gy)
       return Math.max(dx, dy) + 0.414 * Math.min(dx, dy)
     }
     g[start] = 0
+    came[start] = -1
+    seen[start] = open
     heap.push(start, h(start))
+    let found = false
     while (heap.size) {
       const cur = heap.pop()
-      if (cur === goal) break
-      if (closed[cur]) continue
-      closed[cur] = 1
-      const cx = cur % this.w
-      const cy = Math.floor(cur / this.w)
+      if (cur === goal) {
+        found = true
+        break
+      }
+      if (seen[cur] === shut) continue
+      seen[cur] = shut
+      const cx = cur % w
+      const cy = Math.floor(cur / w)
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) {
           if (!dx && !dy) continue
           const nx = cx + dx
           const ny = cy + dy
-          if (nx < 0 || ny < 0 || nx >= this.w || ny >= this.h) continue
-          const ni = ny * this.w + nx
-          if (this.grid[ni] === BLOCKED || closed[ni]) continue
+          if (nx < 0 || ny < 0 || nx >= w || ny >= this.h) continue
+          const ni = ny * w + nx
+          if (grid[ni] === BLOCKED || seen[ni] === shut) continue
           // No corner cutting.
-          if (dx && dy && (this.grid[cy * this.w + nx] === BLOCKED || this.grid[ny * this.w + cx] === BLOCKED)) continue
-          const cost = (dx && dy ? 1.414 : 1)
-          const ng = g[cur]! + cost
-          if (ng < g[ni]!) {
+          if (dx && dy && (grid[cy * w + nx] === BLOCKED || grid[ny * w + cx] === BLOCKED)) continue
+          const ng = g[cur]! + (dx && dy ? 1.414 : 1)
+          if (seen[ni] !== open || ng < g[ni]!) {
+            seen[ni] = open
             g[ni] = ng
             came[ni] = cur
             heap.push(ni, ng + h(ni))
           }
         }
     }
-    if (came[goal] === -1) return null
+    if (!found) return null
     const cells: Vec[] = []
     for (let c = goal; c !== start && c !== -1; c = came[c]!) cells.push(this.center(c))
     cells.reverse()
@@ -170,6 +204,37 @@ export class Nav {
     }
     return out
   }
+
+  /** Walking distance in metres along the grid from p to every cell (Infinity where unreachable). */
+  distances(p: Vec): Float32Array {
+    const d = new Float32Array(this.w * this.h).fill(Infinity)
+    const start = this.idx(this.nearest(p))
+    d[start] = 0
+    const queue = new Int32Array(this.w * this.h)
+    let head = 0
+    let tail = 0
+    queue[tail++] = start
+    while (head < tail) {
+      const c = queue[head++]!
+      const cx = c % this.w
+      const cy = Math.floor(c / this.w)
+      for (let k = 0; k < 4; k++) {
+        const nx = cx + (k === 0 ? 1 : k === 1 ? -1 : 0)
+        const ny = cy + (k === 2 ? 1 : k === 3 ? -1 : 0)
+        if (nx < 0 || ny < 0 || nx >= this.w || ny >= this.h) continue
+        const n = ny * this.w + nx
+        if (this.grid[n] === BLOCKED || d[n] !== Infinity) continue
+        d[n] = d[c]! + CELL
+        queue[tail++] = n
+      }
+    }
+    return d
+  }
+
+  /** Cell index of a point, for indexing masks and distance fields. */
+  cellOf(p: Vec): number {
+    return this.idx(p)
+  }
 }
 
 class Heap {
@@ -178,6 +243,11 @@ class Heap {
 
   get size() {
     return this.ids.length
+  }
+
+  clear() {
+    this.ids.length = 0
+    this.keys.length = 0
   }
 
   push(id: number, key: number) {

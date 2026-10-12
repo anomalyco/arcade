@@ -44,6 +44,8 @@ export type LightDef = {
   power: number
   color: readonly [number, number, number]
   cone?: readonly [number, number, number]
+  /** How unreliable the fitting is, 0 (steady) to 1 (barely working). A hint for the renderer; optional. */
+  flicker?: number
 }
 
 export type MapDef = {
