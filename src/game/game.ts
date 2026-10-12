@@ -735,7 +735,7 @@ export class Game {
     F.set([this.renderer.width, this.renderer.height, nl, this.map.lights.length], 20)
     const focus = me ? cam.project(me.x, 0.9, me.y, w, h) : { x: 0, y: 0 }
     F.set([me?.x ?? 0, me?.y ?? 0, me ? 1 : 0, 0.24], 24)
-    F.set([0.07, 0.088, 0.16, 1.0], 28)
+    F.set([0.05, 0.06, 0.09, 1.0], 28)
     F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, 0], 32)
     F.set([0, 1, 0, 0], 36)
     F.set([1 / this.map.size[0], 1 / this.map.size[1], this.map.size[0], this.map.size[1]], 40)

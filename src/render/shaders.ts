@@ -503,7 +503,7 @@ fn lampK(aux: f32) -> f32 {
     // Wall caps: the night sky and a cool rim on the bevels keep the plan readable in the dark.
     let rim = 1.0 - n.y;
     let sp = spill(o.world);
-    col = o.color * (vec3f(0.42, 0.48, 0.62) + mix(vec3f(dot(sp, vec3f(0.33))), sp, 0.5) * 0.2) + vec3f(0.03, 0.045, 0.085) * rim;
+    col = o.color * (vec3f(0.5, 0.55, 0.7) + mix(vec3f(dot(sp, vec3f(0.33))), sp, 0.5) * 0.25) + vec3f(0.02, 0.03, 0.06) * rim;
   } else if (mat == 6) {
     col = vec3f(0.006, 0.01, 0.02) + spill(o.world) * 0.12 + vec3f(0.03, 0.05, 0.09) * pow(1.0 - abs(n.y), 3.0);
     alpha = 0.22;

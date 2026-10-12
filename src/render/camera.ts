@@ -5,7 +5,7 @@ import { mat4, vec4 } from "wgpu-matrix"
  * always map-relative. The plan (x, y) maps to world (x, z) with y up.
  */
 export class Camera {
-  readonly pitch = 1.19
+  readonly pitch = 1.1
   readonly fov = 0.52
   x = 0
   z = 0
