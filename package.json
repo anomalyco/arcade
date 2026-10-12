@@ -1,0 +1,26 @@
+{
+  "name": "blackout",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "dev:client": "vite --host 0.0.0.0 --port 5191 --strictPort",
+    "dev:server": "wrangler dev --port 8788",
+    "build": "vite build",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.scripts.json",
+    "check": "tsc --noEmit && bun run typecheck:server && bun test && vite build",
+    "shot": "bun scripts/shot.ts",
+    "deploy": "rm -rf dist && vite build && wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@fontsource/ibm-plex-mono": "^5.2.5",
+    "@types/bun": "^1.4.2",
+    "@webgpu/types": "^0.1.74",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "wrangler": "^4.149.0"
+  }
+}
