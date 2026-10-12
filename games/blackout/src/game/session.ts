@@ -5,6 +5,8 @@ import type { Equip, Gun } from "../../shared/config"
 import { hostRestart, moveTeam, shuffleTeams } from "../../shared/sim/host"
 import { MODES, type ModeId } from "../../shared/sim/modes"
 import { type SimEvent, World } from "../../shared/sim/world"
+import type { MapDef } from "../../shared/maps"
+import { lotMap } from "../../shared/sim/vehicle-lot"
 
 /** What the game loop needs from a match, whether it runs in this tab or in a room on the server. */
 export interface Session {
@@ -20,6 +22,8 @@ export interface Session {
   /** Called every frame; the local session advances its world here. */
   update(dt: number): void
   close(): void
+  /** A practice session on a fixed test map, which the client can't generate from the seed. */
+  fixedMap?(): MapDef | null
 }
 
 /** Dev practice against bots without a server: the same World runs in the tab. */
@@ -32,12 +36,18 @@ export class LocalSession implements Session {
   private events: SimEvent[] = []
   private every = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
 
-  constructor(name: string, gun: Gun, equip: Equip, mode: ModeId = "ffa") {
-    this.world = new World((Math.random() * 2 ** 31) | 0, null, mode)
+  private fixed: MapDef | null
+
+  /** `map` "lot" practices on the vehicle test yard (shared/sim/vehicle-lot.ts). */
+  constructor(name: string, gun: Gun, equip: Equip, mode: ModeId = "ffa", map: string | null = null) {
+    this.fixed = map === "lot" ? lotMap() : null
+    this.world = new World((Math.random() * 2 ** 31) | 0, this.fixed, mode)
     // Local practice (dev only, ?practice) is the one place with bots: 3 on 3 in team modes.
     this.world.botFill = MODES[mode].teams ? 6 : 4
     this.world.addHuman(this.myId, name, gun, equip)
     this.publish()
+    // Dev handle for screenshots and poking at the match from the console.
+    ;(globalThis as { practice?: World }).practice = this.world
   }
 
   latest() {
@@ -87,4 +97,8 @@ export class LocalSession implements Session {
   }
 
   close(): void {}
+
+  fixedMap(): MapDef | null {
+    return this.fixed
+  }
 }

@@ -124,7 +124,7 @@ async function main() {
   sessionStorage.removeItem(REJOIN_KEY)
   if (rejoin && rejoin === roomParam) enter(localStorage.getItem(NAME_KEY) ?? "", rejoin)
   // Dev and screenshots: a local match against bots, no server.
-  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip, modeOf(params.get("mode")) ?? "ffa"))
+  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip, modeOf(params.get("mode")) ?? "ffa", params.get("map")))
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
@@ -155,9 +155,11 @@ async function main() {
       const far = input.looking && alive
       const k = far ? 0.65 : 0.35
       const cap = far ? 11 : 5
-      const lx = alive && body ? Math.max(-cap, Math.min(cap, (game.cursor.x - body.x) * k)) : 0
-      const lz = alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
-      cam.follow(fx, fz, lx, lz, dt, !body)
+      // Driving, it leads ahead along the road instead.
+      const lead = alive && !far ? game.vehicleLead() : null
+      const lx = lead ? lead.x : alive && body ? Math.max(-cap, Math.min(cap, (game.cursor.x - body.x) * k)) : 0
+      const lz = lead ? lead.y : alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
+      cam.follow(fx, fz, lx, lz, dt, !body, alive && !!game.riding)
       renderer.render(game.build(cam, w, h, dt))
       hud.update(game, cam, w, h, input.mouse, session.status())
       modeHud.update(game, cam, w, h)

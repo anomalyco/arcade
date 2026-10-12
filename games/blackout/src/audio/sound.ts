@@ -65,6 +65,11 @@ export class Sound {
     hum.start()
   }
 
+  /** The context, the master bus and the noise buffer for other synths (vehicle engines), once running and unmuted. */
+  bus(): { ctx: AudioContext; master: AudioNode; noise: AudioBuffer } | null {
+    return this.ctx && this.master && this.noise && !this.muted && this.ctx.state === "running" ? { ctx: this.ctx, master: this.master, noise: this.noise } : null
+  }
+
   setMuted(m: boolean): void {
     this.muted = m
     if (this.master) this.master.gain.value = m ? 0 : 0.75

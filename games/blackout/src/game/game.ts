@@ -25,6 +25,10 @@ import { MELEE } from "../../shared/sim/melee"
 import { MODES } from "../../shared/sim/modes"
 import { INF_COLORS, eyes, infected } from "./rules-fx"
 import { carries, slowCarrier } from "../../shared/sim/modes-objective"
+import { forwardSpeed, lateralSpeed } from "../../shared/sim/vehicle"
+import { VehicleSound } from "../audio/vehicle-sound"
+import { FLOOR } from "../render/vehicle-mesh"
+import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -140,6 +144,16 @@ export class Game {
   private alpha = new Float32Array(2048 * SPRITE_FLOATS)
   private nAdd = 0
   private nAlpha = 0
+  /** Vehicles as drawn, and the one you drive predicted (./vehicles.ts); their engines, skids and horns. */
+  veh!: VehicleFx
+  private vsound!: VehicleSound
+  /** The vehicle and seat you're in (from the server), or null on foot. */
+  riding: { veh: number; seat: number } | null = null
+  /** The vehicle F would get you into right now, for the HUD prompt. */
+  vehiclePrompt: VehDraw | null = null
+  /** Each rider's seat pose last frame, so their planted feet ride along. */
+  private seatPose = new Map<string, { x: number; y: number; h: number }>()
+  private fxv: FxFn = (x, y, z, vx, vy, vz, life, size, kind) => this.fx(x, y, z, vx, vy, vz, life, size, kind)
 
   constructor(
     private renderer: Renderer,
@@ -166,6 +180,8 @@ export class Game {
     }
     const gm = gearModels()
     this.gear = { frag: reg(gm.frag), claymore: reg(gm.claymore), led: reg(gm.led) }
+    this.veh = new VehicleFx(renderer)
+    this.vsound = new VehicleSound(sound)
     this.map = getMap(1)
     this.load(this.map)
   }
@@ -192,6 +208,9 @@ export class Game {
     this.trips.clear()
     this.booms = []
     this.scorches = []
+    this.veh?.clear()
+    this.riding = null
+    this.seatPose.clear()
   }
 
   get myId(): string {
@@ -225,6 +244,9 @@ export class Game {
     const l = this.session.latest()
     if (l && l.snap !== this.snap) {
       const s = l.snap
+      // Practice on a fixed test map (?practice&map=lot): load that rather than generating one from the seed.
+      const fixed = this.session.fixedMap?.()
+      if (fixed && fixed !== this.map) this.load(fixed)
       if (s.map !== this.map.seed) this.load(getMap(s.map))
       else if (this.snap && s.match !== this.snap.match) this.clearScene()
       for (const p of s.players) {
@@ -251,6 +273,7 @@ export class Game {
         a.alive = p.alive
       }
       for (const id of [...this.avatars.keys()]) if (!s.players.some((p) => p.id === id)) this.avatars.delete(id)
+      this.veh.ingest(s, this.now)
       const mine = s.players.find((p) => p.id === this.myId)
       if (mine) this.reconcile(s, mine)
       this.syncGrenades(s)
@@ -288,6 +311,8 @@ export class Game {
     }
     this.wasAlive = mine.alive
     if (!mine.alive) {
+      this.riding = null
+      this.veh.pred = null
       this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0 })
       return
     }
@@ -298,13 +323,25 @@ export class Game {
       this.avatarMe.raiseAt = this.now
     }
     this.pending = this.pending.filter((p) => p.seq > s.ack)
-    const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
-    for (const p of this.pending) stepBody(b, p.i.mx, p.i.my, kitSprints(p.i, this.kit) ? this.kit.run : this.kit.walk, this.solids, DT)
-    // Adopt the replayed state exactly; a small correction is smoothed out of the drawn position, a big one snaps.
-    if (this.body && Math.hypot(b.x - this.body.x, b.y - this.body.y) < 1.5) {
-      this.drawn.correct(b.x - this.body.x, b.y - this.body.y)
-      Object.assign(this.body, b)
-    } else this.place(b)
+    const was = this.riding
+    this.riding = mine.veh ? { veh: mine.veh, seat: mine.seat ?? 0 } : null
+    if (this.riding) {
+      // Riding, the vehicle carries you. Driving, your inputs drive it: replay them on the server's vehicle.
+      if (this.riding.seat === 0) this.veh.reconcile(this.riding.veh, this.pending, this.solids)
+      else this.veh.pred = null
+    } else {
+      if (was) this.veh.pred = null
+      const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
+      for (const p of this.pending) {
+        stepBody(b, p.i.mx, p.i.my, kitSprints(p.i, this.kit) ? this.kit.run : this.kit.walk, this.solids, DT)
+        this.veh.pushOut(b)
+      }
+      // Adopt the replayed state exactly; a small correction is smoothed out of the drawn position, a big one snaps.
+      if (!was && this.body && Math.hypot(b.x - this.body.x, b.y - this.body.y) < 1.5) {
+        this.drawn.correct(b.x - this.body.x, b.y - this.body.y)
+        Object.assign(this.body, b)
+      } else this.place(b)
+    }
     if (you) {
       if (you.reloading > 0 && this.reloadUntil <= this.now) this.reloadUntil = this.now + you.reloading
       if (this.now - this.lastLocalShot > 0.6 && this.reloadUntil <= this.now) this.mag = you.mag
@@ -356,7 +393,9 @@ export class Game {
         if (first && a) shoot(a, t)
         const m = a ? this.muzzle(a) : { x: e.x0, y: e.y0, z: SHOULDER - 0.15 }
         this.tracer(m.x, m.y, m.z, e.x1, e.y1, gun)
-        if (!e.hit) this.impact(e.x1, e.y1, dir, gun)
+        if (!e.hit && e.veh) this.veh.ping(e.veh, e.x1, e.y1, dir, this.fxv)
+        else if (!e.hit) this.impact(e.x1, e.y1, dir, gun)
+        if (e.veh && me && Math.hypot(e.x1 - me.x, e.y1 - me.y) < 18) this.sound.impact(e.x1 - me.x, e.y1 - me.y)
         if (e.hit === this.myId) {
           this.hurt = Math.min(1, this.hurt + 0.45)
           this.cam?.bump(0.45)
@@ -379,7 +418,7 @@ export class Game {
       case "kill": {
         const mine = e.victim === this.myId
         const v = mine ? this.avatarMe : this.avatars.get(e.victim)
-        const blast = e.how === "frag" || e.how === "claymore"
+        const blast = e.how === "frag" || e.how === "claymore" || e.how === "vehicle" || e.how === "roadkill"
         if (v?.body) {
           this.corpses = this.corpses.filter((c) => c.id !== e.victim)
           this.corpses.push({ id: e.victim, gun: v.gun, bare: v.bare, t0: t, rd: ragdoll(v.body, v.gun, v.svx, v.svy, e.dx, e.dy, blast ? blastStyle() : deathStyle(e.how as Gun), this.solids) })
@@ -442,6 +481,21 @@ export class Game {
         return
       }
       case "end":
+        return
+      case "veh": {
+        const d = this.veh.draws.get(e.id)
+        if (d && me && Math.hypot(d.x - me.x, d.y - me.y) < 20) this.vsound.door(d.x - me.x, d.y - me.y, d.kind === "scooter")
+        return
+      }
+      case "wreck":
+        this.explode({ k: "explode", kind: "frag", by: e.by, id: -e.id, x: e.x, y: e.y, aim: 0 })
+        this.veh.burst(e.x, e.y, this.fxv)
+        if (e.by === this.myId) this.banner = { text: "VEHICLE DESTROYED", t }
+        return
+      case "crash":
+        if (me && Math.hypot(e.x - me.x, e.y - me.y) < 30) this.vsound.crash(e.x - me.x, e.y - me.y, e.v)
+        if (e.v > 5) for (let i = 0; i < Math.min(14, e.v); i++) this.fx(e.x, e.y, 0.5, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 1 + Math.random() * 3, 0.2 + Math.random() * 0.2, 0.03, "spark")
+        if (this.riding && this.riding.veh === e.id) this.cam?.bump(Math.min(0.8, e.v / 15))
         return
       case "host":
         this.banner = { text: e.what === "reset" ? "HOST RESET THE MATCH" : `HOST SWITCHED TO ${MODES[e.mode].label.toUpperCase()}`, t }
@@ -537,7 +591,11 @@ export class Game {
       const equip = live && input.takeEquip()
       const use = live && input.enabled && (input.held("KeyF") || input.held("KeyE"))
       const melee = live && input.takeMelee() && this.kit.melee
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee }
+      // F gets in or out of a vehicle, unless it plants or defuses here; H is the horn at the wheel.
+      const enter = live && input.takeEnter() && !(this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y))
+      const driving = this.riding?.seat === 0
+      const horn = live && driving && input.held("KeyH")
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(horn ? { horn } : {}) }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.
@@ -550,13 +608,26 @@ export class Game {
       }
       this.pending.push({ seq, i })
       if (this.pending.length > 90) this.pending.shift()
-      this.drawn.tick(this.body)
-      const sprint = kitSprints(i, this.kit)
-      stepBody(this.body, i.mx, i.my, sprint ? this.kit.run : this.kit.walk, this.solids, DT)
+      const sprint = !this.riding && kitSprints(i, this.kit)
+      if (this.riding) {
+        if (driving) this.veh.tick(i, this.solids)
+      } else {
+        this.drawn.tick(this.body)
+        stepBody(this.body, i.mx, i.my, sprint ? this.kit.run : this.kit.walk, this.solids, DT)
+        this.veh.pushOut(this.body)
+      }
+      // At the wheel you drive: no shooting, throwing or swinging.
+      if (driving) {
+        this.triggerHeld = fire
+        continue
+      }
       if (equip && this.equipLeft > 0) this.localEquip()
-      this.localGun(fire, reload, sprint, melee)
+      this.localGun(fire, reload, sprint, melee && !this.riding)
     }
     if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
+    this.veh.frame(dt, this.acc / DT, this.now)
+    this.rideAlong()
+    this.vehicleSounds()
     this.bloom = Math.max(0, this.bloom - dt * 2.6)
     this.hurt = Math.max(0, this.hurt - dt * 0.9)
   }
@@ -612,6 +683,9 @@ export class Game {
       const dx = Math.cos(a)
       const dy = Math.sin(a)
       let stop = Math.min(raycast(b.x, b.y, dx, dy, this.blockers, gun.range), gun.range)
+      const carAt = this.veh.ray(b.x, b.y, dx, dy, stop, this.riding?.veh ?? -1)
+      const car = carAt < stop
+      if (car) stop = carAt
       let nearest = gun.range
       let hit = false
       const myTeam = teamOf(this.snap, this.roster, this.myId)
@@ -628,7 +702,8 @@ export class Game {
       const x1 = b.x + dx * stop
       const y1 = b.y + dy * stop
       this.tracer(muzzle.x, muzzle.y, muzzle.z, x1, y1, this.gun)
-      if (!hit && stop < gun.range) this.impact(x1, y1, a, this.gun)
+      if (!hit && car) this.veh.ping(-1, x1, y1, a, this.fxv)
+      else if (!hit && stop < gun.range) this.impact(x1, y1, a, this.gun)
     }
     this.muzzleFlash(muzzle.x, muzzle.y, muzzle.z, this.aim, this.gun)
     if (this.gun === "rifle") this.casing(me)
@@ -645,7 +720,7 @@ export class Game {
   /** The muzzle of a soldier's gun from its last pose, or where it would be. */
   private muzzle(a: Avatar): { x: number; y: number; z: number } {
     const g = gunPoints(a)
-    if (g) return { x: g.muzzle[0], y: g.muzzle[2], z: g.muzzle[1] }
+    if (g) return { x: g.muzzle[0], y: g.muzzle[2], z: g.muzzle[1] - this.veh.sinkOf(a === this.avatarMe ? this.myId : a.id) }
     const h = HOLD[a.gun]
     const c = Math.cos(a.aim)
     const s = Math.sin(a.aim)
@@ -845,6 +920,91 @@ export class Game {
     else this.nAlpha++
   }
 
+  // Vehicles ----------------------------------------------------------------------------------------------------
+
+  /** Riding, your body is your seat on the drawn vehicle. */
+  private rideAlong(): void {
+    const r = this.riding
+    const d = r ? this.veh.draws.get(r.veh) : undefined
+    if (r && d && this.body && this.alive) {
+      const at = this.veh.seatAt(d, r.seat)
+      this.body.x = at.x
+      this.body.y = at.y
+      this.body.vx = d.vx
+      this.body.vy = d.vy
+      this.drawn.reset(at)
+    }
+    const b = this.body
+    const inf = this.snap?.mode.id === "inf" && teamOf(this.snap, this.roster, this.myId) === 1
+    this.vehiclePrompt = !r && b && this.alive && !inf ? this.veh.enterable(b.x, b.y) : null
+  }
+
+  /** Engines of the vehicles being driven near you, the hardest skid, any horn. */
+  private vehicleSounds(): void {
+    const me = this.body ? this.drawn : null
+    if (!me || this.snap?.phase !== "play") return this.vsound.quiet()
+    const list = []
+    for (const d of this.veh.draws.values()) {
+      if (d.s.wreck || !d.s.seats[0]) continue
+      list.push({ id: d.id, kind: d.kind, dx: d.x - me.x, dy: d.y - me.y, speed: forwardSpeed(d), thr: d.s.thr, slip: Math.abs(lateralSpeed(d)) + (d.s.hb && Math.hypot(d.vx, d.vy) > 4 ? 4 : 0), horn: !!d.s.horn, mine: d.id === this.riding?.veh })
+    }
+    this.vsound.update(list)
+  }
+
+  /** The colour of the team holding a vehicle (its driver's, else any rider's) in team modes, else null. */
+  private vehicleTeam(d: VehDraw): Rgb3 | null {
+    for (const id of d.s.seats) {
+      if (!id) continue
+      const team = teamOf(this.snap, this.roster, id)
+      if (team >= 0) return this.colorOf(id)
+    }
+    return null
+  }
+
+  /** The vehicle you're in, for the HUD: its name, your seat, its health and how full it is. */
+  get ride(): { label: string; driver: boolean; hp: number; max: number; used: number; seats: number } | null {
+    const d = this.riding ? this.veh.draws.get(this.riding.veh) : undefined
+    if (!d || !this.riding) return null
+    return { label: d.spec.label, driver: this.riding.seat === 0, hp: d.s.hp, max: d.spec.hp, used: d.s.seats.filter(Boolean).length, seats: d.s.seats.length }
+  }
+
+  /** Where the camera should lead while you drive (ahead along the velocity), or null on foot. */
+  vehicleLead(): { x: number; y: number } | null {
+    const d = this.riding?.seat === 0 ? this.veh.draws.get(this.riding.veh) : undefined
+    if (!d) return null
+    const k = 0.5
+    const cap = 8
+    return { x: Math.max(-cap, Math.min(cap, d.vx * k)), y: Math.max(-cap * 0.7, Math.min(cap * 0.7, d.vy * k)) }
+  }
+
+  /**
+   * Draws a soldier riding a vehicle: on their seat, feet carried along with it, standing still on board (the driver
+   * facing ahead), sunk into the bodywork or up out of a roof hatch, with their ring on the floor they stand on.
+   * Returns false when they're on foot.
+   */
+  private rider(a: Avatar, id: string, adt: number, t: number, push: PushPart, col: Rgb3): boolean {
+    const r = this.veh.riderOf(id)
+    if (!r) {
+      this.seatPose.delete(id)
+      return false
+    }
+    const { d, seat } = r
+    const at = this.veh.seatAt(d, seat)
+    const pose1 = { x: at.x, y: at.y, h: d.h }
+    const prev = this.seatPose.get(id)
+    if (prev && Math.hypot(prev.x - at.x, prev.y - at.y) < 3) carry(a, prev, pose1)
+    this.seatPose.set(id, pose1)
+    const aim = seat === 0 ? d.h : id === this.myId ? this.aim : a.aim
+    this.cues(a, animate(a, adt, t, at.x, at.y, 0, 0, aim), id === this.myId)
+    const sink = d.spec.seats[seat]!.sink
+    const sunk: PushPart = (model, x, y, z, ...rest) => push(model, x, y - sink, z, ...rest)
+    pose(sunk, a, col, this.models)
+    if (d.kind === "van" && sink > 0) return true
+    const gc = glow(col, 0.9)
+    this.sprite(true, at.x, FLOOR[d.kind], at.y, 0.42, gc[0], gc[1], gc[2], 0.9, 2, 0, 0.14)
+    return true
+  }
+
   build(cam: Camera, w: number, h: number, dt: number): FrameInput {
     const t = this.now
     const snap = this.snap
@@ -867,13 +1027,28 @@ export class Game {
     }
     const casters: Caster[] = []
     for (const a of this.avatars.values()) if (a.alive) casters.push({ x: a.x, y: a.y })
+    const vparts = new Map<number, number[]>()
+    this.veh.emit(
+      t,
+      dt,
+      (model, x, y, z, yaw, tint, pitch, roll, flash, alpha = 1) => {
+        let arr = vparts.get(model)
+        if (!arr) vparts.set(model, (arr = []))
+        arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
+      },
+      (...a) => this.sprite(...a),
+      this.fxv,
+      dyn,
+      casters,
+      (d) => this.vehicleTeam(d),
+    )
     if (this.alive && this.body) casters.push({ x: this.drawn.x, y: this.drawn.y })
     this.culler.update(view, t, dyn, casters)
     const nl = this.culler.lightCount
 
     // Soldiers. A kill freezes animation and effects for a few frames (hit-stop).
     const adt = t < this.freezeUntil ? dt * 0.06 : dt
-    const parts = new Map<number, number[]>()
+    const parts = vparts
     const push: PushPart = (model, x, y, z, yaw, tint, pitch, roll, flash, alpha = 1) => {
       let arr = parts.get(model)
       if (!arr) parts.set(model, (arr = []))
@@ -889,8 +1064,9 @@ export class Game {
       const ny = a.y + (ty - a.y) * k
       const vx = dt > 0 ? (nx - a.x) / dt : 0
       const vy = dt > 0 ? (ny - a.y) / dt : 0
-      this.cues(a, animate(a, adt, t, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim), false)
       const col = this.colorOf(a.id)
+      if (this.rider(a, a.id, adt, t, push, col)) continue
+      this.cues(a, animate(a, adt, t, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim), false)
       pose(push, a, col, this.models)
       if (infected(snap, this.roster, a.id)) eyes(a, t, (...e) => this.sprite(...e))
       const gc = glow(col, 0.9)
@@ -905,12 +1081,14 @@ export class Game {
       a.reloadAt = this.reloadUntil > 0 ? this.reloadUntil - GUNS[this.gun].reload : -10
       a.reloadFor = GUNS[this.gun].reload
       const d = this.drawn
-      this.cues(a, animate(a, adt, t, d.x, d.y, me.vx, me.vy, this.aim), true)
       const col = this.colorOf(this.myId)
-      pose(push, a, col, this.models)
-      if (infected(snap, this.roster, this.myId)) eyes(a, t, (...e) => this.sprite(...e))
-      const gc = glow(col, 0.9)
-      this.sprite(true, d.x, 0.03, d.y, 0.48, gc[0], gc[1], gc[2], 1, 2, 0, 0.14)
+      if (!this.rider(a, this.myId, adt, t, push, col)) {
+        this.cues(a, animate(a, adt, t, d.x, d.y, me.vx, me.vy, this.aim), true)
+        pose(push, a, col, this.models)
+        if (infected(snap, this.roster, this.myId)) eyes(a, t, (...e) => this.sprite(...e))
+        const gc = glow(col, 0.9)
+        this.sprite(true, d.x, 0.03, d.y, 0.48, gc[0], gc[1], gc[2], 1, 2, 0, 0.14)
+      }
     }
 
     // Casings and magazines on the floor.

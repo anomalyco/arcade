@@ -34,8 +34,10 @@ const sat = (c: readonly [number, number, number], k: number): [number, number, 
 }
 const GAIN: Record<LightKind, number> = { desk: 0.85, panel: 0.85, pendant: 1, exit: 2, vending: 1, server: 0.8, bulb: 1 }
 
-export type DynLight = { x: number; y: number; h: number; r: number; color: readonly [number, number, number]; power: number; size: number }
-export type Caster = { x: number; y: number }
+/** A light for this frame only (muzzle flashes, blasts, vehicle lamps); `cone` aims it like a map light's. */
+export type DynLight = { x: number; y: number; h: number; r: number; color: readonly [number, number, number]; power: number; size: number; cone?: readonly [number, number, number]; near?: number }
+/** A round shadow caster: a person by default, or a vehicle's radius and height. */
+export type Caster = { x: number; y: number; r?: number; h?: number }
 export type ViewRect = readonly [number, number, number, number]
 
 const hash = (n: number) => {
@@ -158,7 +160,7 @@ export class LightCuller {
       order.push({ l, d: Math.hypot(l.x - cx, l.y - cy) })
     }
     order.sort((a, b) => a.d - b.d)
-    const room = MAX_LIGHTS - Math.min(dyn.length, 8)
+    const room = MAX_LIGHTS - Math.min(dyn.length, 16)
     const L = this.lights
     L.fill(0)
     let nl = 0
@@ -172,8 +174,9 @@ export class LightCuller {
         if (no >= MAX_OCCLUDERS) break
         const dx = c.x - x
         const dy = c.y - y
-        if (dx * dx + dy * dy > (r + 0.5) * (r + 0.5) || dx * dx + dy * dy < near * near) continue
-        this.occ.set([c.x, c.y, 0.2, 0, 1.75, 1, 0, 0], no * OCC_FLOATS)
+        const cr = c.r ?? 0.2
+        if (dx * dx + dy * dy > (r + 0.3 + cr) * (r + 0.3 + cr) || dx * dx + dy * dy < near * near) continue
+        this.occ.set([c.x, c.y, cr, 0, c.h ?? 1.75, 1, 0, 0], no * OCC_FLOATS)
         no++
       }
       return [off, no - off]
@@ -190,8 +193,8 @@ export class LightCuller {
     }
     for (const f of dyn) {
       if (nl >= MAX_LIGHTS) break
-      const [off, cnt] = pushOcc(f.x, f.y, f.r, this.gather(f.x, f.y, f.r), 1.1)
-      L.set([f.x, f.h, f.y, f.r, f.color[0], f.color[1], f.color[2], f.power, 0, 0, 0, 0, off, cnt, f.size, -1], nl * LIGHT_FLOATS)
+      const [off, cnt] = pushOcc(f.x, f.y, f.r, this.gather(f.x, f.y, f.r), f.near ?? 1.1)
+      L.set([f.x, f.h, f.y, f.r, f.color[0], f.color[1], f.color[2], f.power, f.cone?.[0] ?? 0, f.cone?.[1] ?? 0, f.cone?.[2] ?? 0, f.cone ? 1 : 0, off, cnt, f.size, -1], nl * LIGHT_FLOATS)
       nl++
     }
     this.lightCount = nl

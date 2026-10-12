@@ -1,3 +1,4 @@
+import "./vehicles.css"
 import { EQUIPS, EQUIP_IDS, type Equip, GUNS, GUN_IDS, type Weapon } from "../../shared/config"
 import { floorOf } from "../../shared/maps"
 import type { Camera } from "../render/camera"
@@ -5,7 +6,7 @@ import { type Game, css } from "../game/game"
 import { fixedLoadout } from "./rules-hud"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-const weaponLabel = (w: Weapon) => (w === "frag" ? "GRENADE" : w === "claymore" ? "CLAYMORE" : w === "melee" ? "MELEE" : GUNS[w].label.toUpperCase())
+const weaponLabel = (w: Weapon) => (w === "frag" ? "GRENADE" : w === "claymore" ? "CLAYMORE" : w === "melee" ? "MELEE" : w === "vehicle" ? "EXPLOSION" : w === "roadkill" ? "ROADKILL" : GUNS[w].label.toUpperCase())
 const equipLabel = (e: Equip) => EQUIPS[e].label.toUpperCase()
 const clock = (s: number) => {
   const t = Math.max(0, Math.ceil(s))
@@ -23,13 +24,14 @@ export class Hud {
       <div id="tc"><span id="clock"></span></div>
       <div id="tr"></div>
       <div id="labels"></div>
-      <div id="bl"><div class="hp"><span>HEALTH</span><div id="hpbar"><i></i></div></div></div>
+      <div id="vprompt"></div>
+      <div id="bl"><div id="veh"></div><div class="hp"><span>HEALTH</span><div id="hpbar"><i></i></div></div></div>
       <div id="br"><div id="gname"></div><div id="ammo"><b id="mag"></b><span id="magmax"></span></div><div id="rbar"><i></i></div><div id="equip"></div></div>
       <div id="banner"></div>
       <div id="respawn"></div>
       <div id="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><div id="hm"><i></i><i></i><i></i><i></i></div></div>
       <div id="status"></div>
-      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · V melee · F plant/defuse · 1 2 3 guns · 4 5 frag/claymore · TAB scores · T teams · M mute</div>`
+      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · V melee · F vehicle, plant/defuse · H horn · 1 2 3 guns · 4 5 frag/claymore · TAB scores · T teams · M mute</div>`
     for (const e of root.querySelectorAll<HTMLElement>("[id]")) this.el[e.id] = e
   }
 
@@ -83,6 +85,21 @@ export class Hud {
         : alive && next
           ? `<div class="next">NEXT LIFE: ${next}</div>`
           : ""
+
+    // Vehicles: your seat and the vehicle's health while riding, and the prompt over one you can get in.
+    const ride = alive ? g.ride : null
+    const vh = ride ? Math.max(0, ride.hp / ride.max) : 0
+    const segs = ride ? Array.from({ length: 10 }, (_, i) => `<i class="${i < Math.ceil(vh * 10) ? "on" : ""}"></i>`).join("") : ""
+    el.veh!.innerHTML = ride
+      ? `<div class="vl">VEHICLE: ${ride.label} · ${ride.driver ? "DRIVER" : "PASSENGER"}<span>${ride.used}/${ride.seats} SEATS</span></div><div class="vbar${vh < 0.35 ? " low" : ""}">${segs}</div><div class="vk"><kbd>F</kbd> EXIT${ride.driver ? " · <kbd>H</kbd> HORN · <kbd>SHIFT</kbd> HANDBRAKE" : ""}</div>`
+      : ""
+    const vp = g.vehiclePrompt
+    const vpp = vp ? cam.project(vp.x, 2.4, vp.y, w, h) : null
+    if (vp && vpp?.ok) {
+      el.vprompt!.innerHTML = `<kbd>F</kbd> ENTER ${vp.spec.label} <span>${vp.s.seats.filter(Boolean).length}/${vp.s.seats.length}</span>`
+      el.vprompt!.style.transform = `translate(${vpp.x.toFixed(1)}px, ${vpp.y.toFixed(1)}px) translate(-50%, -100%)`
+      el.vprompt!.style.opacity = "1"
+    } else el.vprompt!.style.opacity = "0"
 
     // Crosshair: spreads with recoil, shows a white hitmarker on hits and a red one on kills.
     const xh = el.xh!

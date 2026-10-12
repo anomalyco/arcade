@@ -1,9 +1,16 @@
 import type { Equip, Gun } from "../config"
 import type { Kit } from "./kit"
 import type { ModeView } from "./modes"
+import type { VehicleKind } from "./vehicle"
 import type { Phase, World } from "./world"
 
-export type PlayerView = { id: string; x: number; y: number; vx: number; vy: number; aim: number; alive: boolean; gun: Gun; health: number; bare?: boolean }
+/** `veh` and `seat` while riding a vehicle. */
+export type PlayerView = { id: string; x: number; y: number; vx: number; vy: number; aim: number; alive: boolean; gun: Gun; health: number; bare?: boolean; veh?: number; seat?: number }
+/**
+ * A vehicle: pose and velocity (w the yaw rate), health, who sits where ("" empty), the driver's steering and throttle
+ * (for the wheels, lights and engine note), and flags for a burning wreck, the horn and the handbrake.
+ */
+export type VehicleView = { id: number; kind: VehicleKind; x: number; y: number; h: number; vx: number; vy: number; w: number; hp: number; seats: string[]; steer: number; thr: number; wreck?: 1; horn?: 1; hb?: 1 }
 export type GrenadeView = { id: number; by: string; x: number; y: number; z: number; vx: number; vy: number; vz: number; fuse: number }
 export type ClaymoreView = { id: number; by: string; x: number; y: number; aim: number; armed: boolean; tripped: boolean }
 export type RosterRow = { id: string; name: string; human: boolean; kills: number; deaths: number; team: number; caps: number; plants: number; defuses: number; stats?: Record<string, number>; host?: true }
@@ -25,6 +32,7 @@ export type Snapshot = {
   /** Everyone sees every frag and claymore. */
   grenades: GrenadeView[]
   claymores: ClaymoreView[]
+  vehicles?: VehicleView[]
   mode: ModeView
   /** `respawnIn` is -1 when you're out until the next round. `kit` is what the mode armed you with. */
   you: { health: number; mag: number; reloading: number; respawnIn: number; pick: Gun; equip: Equip; equipLeft: number; equipPick: Equip; kit: Kit } | null
@@ -43,10 +51,17 @@ export function buildSnapshot(world: World, viewerId: string): Snapshot {
     match: world.match,
     players: world.order.map((id) => {
       const p = world.players.get(id)!
-      return { id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, aim: p.aim, alive: p.alive, gun: p.gun, health: p.health, ...(p.kit.gun ? {} : { bare: true }) }
+      return { id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, aim: p.aim, alive: p.alive, gun: p.gun, health: p.health, ...(p.kit.gun ? {} : { bare: true }), ...(p.veh ? { veh: p.veh, seat: p.seat } : {}) }
     }),
     grenades: world.grenades.map((g) => ({ id: g.id, by: g.by, x: g.x, y: g.y, z: g.z, vx: g.vx, vy: g.vy, vz: g.vz, fuse: Math.max(0, g.at - world.time) })),
     claymores: world.claymores.map((c) => ({ id: c.id, by: c.by, x: c.x, y: c.y, aim: c.aim, armed: world.time >= c.armAt, tripped: c.blowAt > 0 })),
+    ...(world.vehicles.length
+      ? {
+          vehicles: world.vehicles
+            .filter((v) => v.state !== "gone")
+            .map((v) => ({ id: v.id, kind: v.kind, x: v.x, y: v.y, h: v.h, vx: v.vx, vy: v.vy, w: v.w, hp: Math.max(0, v.hp), seats: [...v.seats], steer: v.drive.steer, thr: v.drive.throttle, ...(v.state === "wreck" ? { wreck: 1 as const } : {}), ...(v.horn ? { horn: 1 as const } : {}), ...(v.drive.handbrake && v.seats[0] ? { hb: 1 as const } : {}) })),
+        }
+      : {}),
     mode: world.mode.view(world, viewerId),
     you: me ? { health: me.health, mag: me.mag, reloading: me.reloadUntil > 0 ? Math.max(0, me.reloadUntil - world.time) : 0, respawnIn: me.alive ? 0 : Number.isFinite(me.respawnAt) ? Math.max(0, me.respawnAt - world.time) : -1, pick: me.pick, equip: me.equip, equipLeft: me.equipLeft, equipPick: me.equipPick, kit: me.kit } : null,
   }

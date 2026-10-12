@@ -1,0 +1,63 @@
+/* Vehicle HUD: the seat and health line over the health bar, and the floating F prompt. */
+#veh {
+  margin-bottom: 14px;
+  display: grid;
+  gap: 7px;
+}
+
+#veh:empty {
+  display: none;
+}
+
+#veh .vl {
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  display: flex;
+  gap: 18px;
+}
+
+#veh .vl span {
+  color: var(--dim);
+}
+
+#veh .vbar {
+  display: flex;
+  gap: 4px;
+}
+
+#veh .vbar i {
+  width: 24px;
+  height: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+#veh .vbar i.on {
+  background: var(--ink);
+}
+
+#veh .vbar.low i.on {
+  background: #ff3b30;
+}
+
+#veh .vk {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+}
+
+#vprompt {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+#vprompt span {
+  color: var(--dim);
+  margin-left: 8px;
+}

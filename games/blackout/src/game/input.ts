@@ -1,13 +1,15 @@
 /**
  * Keyboard and mouse. WASD or arrows move on screen axes, the mouse aims, hold right click to look further ahead,
  * hold left click to fire, hold Shift to sprint, R reloads, G or
- * middle click throws or plants your equipment, V swings melee (where the mode allows), 1/2/3 pick a gun and 4/5 frag or claymore for your next life, Tab shows the scores.
+ * middle click throws or plants your equipment, V swings melee (where the mode allows), F gets in or out of a vehicle
+ * (H honks at the wheel), 1/2/3 pick a gun and 4/5 frag or claymore for your next life, Tab shows the scores.
  */
 export class Input {
   private keys = new Set<string>()
   private reloadPressed = false
   private equipPressed = false
   private meleePressed = false
+  private enterPressed = false
   mouse = { x: innerWidth / 2, y: innerHeight / 2 }
   firing = false
   /** Right mouse held: push the camera further toward the cursor. */
@@ -25,6 +27,7 @@ export class Input {
       if (e.code === "KeyR") this.reloadPressed = true
       if (e.code === "KeyG" && !e.repeat) this.equipPressed = true
       if (e.code === "KeyV" && !e.repeat) this.meleePressed = true
+      if ((e.code === "KeyF" || e.code === "KeyE") && !e.repeat) this.enterPressed = true
     })
     addEventListener("keyup", (e) => this.keys.delete(e.code))
     addEventListener("blur", () => {
@@ -80,6 +83,13 @@ export class Input {
   takeMelee(): boolean {
     const r = this.meleePressed
     this.meleePressed = false
+    return r && this.enabled
+  }
+
+  /** F (or E): get in or out of a vehicle. */
+  takeEnter(): boolean {
+    const r = this.enterPressed
+    this.enterPressed = false
     return r && this.enabled
   }
 

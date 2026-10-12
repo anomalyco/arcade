@@ -48,8 +48,8 @@ export class Camera {
     this.rv += rollBy * 40
   }
 
-  /** Follows a point, leaning slightly toward where you aim. */
-  follow(x: number, z: number, aimX: number, aimZ: number, dt: number, wide: boolean): void {
+  /** Follows a point, leaning slightly toward where you aim; pulled back a little in a vehicle (`ride`). */
+  follow(x: number, z: number, aimX: number, aimZ: number, dt: number, wide: boolean, ride = false): void {
     this.t += dt
     const k = 1 - Math.exp(-dt * 3.5)
     this.lx += (aimX - this.lx) * k
@@ -57,7 +57,7 @@ export class Camera {
     const f = 1 - Math.exp(-dt * 6)
     this.x += (x + this.lx - this.x) * f
     this.z += (z + this.lz - this.z) * f
-    const want = wide ? 42 : 24
+    const want = wide ? 42 : ride ? 31 : 24
     this.dist += (want - this.dist) * (1 - Math.exp(-dt * 2))
     this.shake *= Math.exp(-dt * 9)
     // Critically damped spring back to centre; substepped so a long frame can't make it diverge.

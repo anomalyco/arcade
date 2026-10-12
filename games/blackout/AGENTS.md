@@ -11,4 +11,10 @@
 - Target look: `concept/look-1-office.png`. Screenshots: apollo's Chrome via browser-control (call `page.bringToFront()` first or rAF is throttled to 1 fps), or `bun scripts/shot.ts` (local headless SwiftShader).
 - Room host (`shared/sim/host.ts`, ♛ on the scoreboard): picks teams in team modes, and in any mode restarts the match (`hostRestart` → `World.restart`: reset or switch mode, new floor by default, 3 s cooldown, a `host` event for the banner) from the HOST panel in the Tab/T scoreboard (two clicks to confirm).
 - Idle kick (`server/room.ts` RoomCore): 90 s with no input while alive in play gets you kicked (end screen and time dead don't count), with a 15 s `idle` countdown shown in the HUD status line.
+- Vehicles (jeep, van, scooter): only on maps that list `MapDef.vehicles` spawns (never office floors). Physics and
+  collisions in `shared/sim/vehicle.ts` + `vehicle-collide.ts` (ported from getaway), rules in `vehicle-rules.ts` (F/E
+  enter/exit via `Intent.enter`, seat 0 drives with WASD + Shift handbrake + H horn, passengers shoot, armour per seat,
+  roadkill, explosion → burning wreck → respawn at its spot, `Mode.canRide`). Client: `src/game/vehicles.ts` (draw,
+  lamps as dynamic lights, prediction of the vehicle you drive), `src/render/vehicle-mesh.ts`, `src/audio/vehicle-sound.ts`.
+  Test yard: `?practice&map=lot` (`shared/sim/vehicle-lot.ts`); `globalThis.practice` is the practice World.
 - Client/server version: `scripts/build-id.ts` hashes `shared/` into `shared/build.gen.ts` (gitignored; check, test, build, deploy and dev generate it). The client sends it in `hello`; a server with a different hash replies `reload` and the client reloads into the same room (old clients without a build get an error asking them to reload).

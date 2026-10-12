@@ -150,6 +150,11 @@ export class Mode {
 
   killed(_w: World, _victim: Player, _killer: Player, _how?: Weapon): void {}
 
+  /** Whether a player may get in a vehicle (shared/sim/vehicle-rules.ts). */
+  canRide(_w: World, _p: Player): boolean {
+    return true
+  }
+
   /** What a player fights with: by default the gun and equipment they picked. */
   loadout(_w: World, p: Player): Kit {
     return gunKit(p.pick, p.equipPick)

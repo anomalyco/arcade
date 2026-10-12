@@ -67,4 +67,11 @@ export type MapDef = {
   tape: readonly Rect[]
   /** Parts of the bounding rect outside the building (terraces, light wells): glazed round and never walkable. */
   voids?: readonly Rect[]
+  /** Drivable vehicles parked here at the start of every match (shared/sim/vehicle.ts); none indoors. */
+  vehicles?: readonly VehicleSpawn[]
 }
+
+export type VehicleKind = "jeep" | "van" | "scooter"
+
+/** A vehicle's parking spot: its centre, and its heading in radians on the plan (0 faces +x, π/2 faces +y). */
+export type VehicleSpawn = { kind: VehicleKind; x: number; y: number; heading: number }

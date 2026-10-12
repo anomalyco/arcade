@@ -72,6 +72,11 @@ export class Infected extends Mode {
     return gunKit(gun, "frag")
   }
 
+  /** The infected can't get in vehicles. */
+  override canRide(_w: World, p: Player): boolean {
+    return p.team !== 1
+  }
+
   override killed(w: World, victim: Player, killer: Player): void {
     victim.respawnAt = w.time + INF.respawn
     if (victim.team === 1) {

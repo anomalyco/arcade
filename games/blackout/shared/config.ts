@@ -55,7 +55,7 @@ export const EQUIPS: Record<Equip, { label: string; count: number }> = {
 }
 export const EQUIP_IDS = Object.keys(EQUIPS) as Equip[]
 /** What a kill is credited to, for the feed. */
-export type Weapon = Gun | Equip | "melee"
+export type Weapon = Gun | Equip | "melee" | "vehicle" | "roadkill"
 /** No shots for this long after throwing or planting. */
 export const EQUIP_LOCK = 0.45
 

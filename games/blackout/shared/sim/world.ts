@@ -11,6 +11,8 @@ import { nextHost } from "./host"
 import "./modes-rules"
 import { type Kit, gunKit, kitSprints } from "./kit"
 import { canSwing, startSwing, stepSwing } from "./melee"
+import type { VehicleKind } from "./vehicle"
+import { type Vehicle, armorOf, blastVehicles, damageVehicle, leaveSeat, pushOutVehicles, rayVehicles, resetVehicles, rideIntent, stepVehicles, toggleSeat } from "./vehicle-rules"
 
 export type Phase = "play" | "end"
 
@@ -18,9 +20,10 @@ export type Phase = "play" | "end"
  * One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. `sprint`
  * holds Shift. `equip` is a press that throws or plants your equipment; (tx, ty) is the cursor on the floor, how far
  * to throw. `use` holds the plant/defuse key in search and destroy. `melee` is a press of the melee key (V), when the
- * kit has one; bare-handed, the trigger swings too.
+ * kit has one; bare-handed, the trigger swings too. `enter` is a press of F that gets in or out of a vehicle; driving,
+ * (mx, my) are the throttle and steering and `sprint` the handbrake; `horn` holds H.
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; horn?: boolean }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
@@ -77,10 +80,13 @@ export type Player = {
   /** A melee swing lands at this time (0 for none); the next can start at meleeReadyAt. */
   swingAt: number
   meleeReadyAt: number
+  /** The vehicle you're in (0 for none) and your seat in it; seat 0 drives (shared/sim/vehicle-rules.ts). */
+  veh: number
+  seat: number
 }
 
 export type SimEvent =
-  | { k: "shot"; by: string; x0: number; y0: number; x1: number; y1: number; hit: string }
+  | { k: "shot"; by: string; x0: number; y0: number; x1: number; y1: number; hit: string; veh?: number }
   | { k: "kill"; killer: string; victim: string; dx: number; dy: number; how: Weapon }
   | { k: "throw"; by: string; id: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; fuse: number }
   | { k: "plant"; by: string; id: number; x: number; y: number; aim: number }
@@ -96,6 +102,10 @@ export type SimEvent =
   | { k: "obj"; what: string; team: number; by: string; x: number; y: number }
   /** The room host restarted the match, in the same mode or a new one (shared/sim/host.ts). */
   | { k: "host"; what: "reset" | "mode"; mode: ModeId }
+  /** Someone got in or out of a vehicle; a vehicle blew up; a vehicle hit something at `v` m/s. */
+  | { k: "veh"; what: "enter" | "exit"; id: number; by: string; seat: number }
+  | { k: "wreck"; id: number; by: string; x: number; y: number; h: number; kind: VehicleKind }
+  | { k: "crash"; id: number; x: number; y: number; v: number }
 
 const BOT_NAMES = ["kade", "rei", "mako", "juno", "lexx", "ryn", "zen", "lee", "nox", "ivo", "sable", "wren"]
 
@@ -127,6 +137,8 @@ export class World {
   events: SimEvent[] = []
   grenades: Grenade[] = []
   claymores: Claymore[] = []
+  /** Drivable vehicles, from the map's spawns (shared/sim/vehicle-rules.ts). */
+  vehicles: Vehicle[] = []
   private gearId = 0
   private botCount = 0
   /** Players to top the room up to with bots. 0 online; local practice and tests set it. */
@@ -175,6 +187,7 @@ export class World {
     this.blockers = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass]
     this.solids = [...this.blockers, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
     this.obstacles = obstaclesOf(map)
+    resetVehicles(this)
   }
 
   get humans(): Player[] {
@@ -208,6 +221,7 @@ export class World {
   remove(id: string): void {
     const p = this.players.get(id)
     if (p) this.mode.leave(this, p)
+    if (p) leaveSeat(this, p)
     this.votes.delete(id)
     this.grenades = this.grenades.filter((g) => g.by !== id)
     this.claymores = this.claymores.filter((c) => c.by !== id)
@@ -231,11 +245,12 @@ export class World {
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, hostTeam: -1, using: false, caps: 0, plants: 0, defuses: 0, stats: {}, kit: gunKit("rifle"), swingAt: 0, meleeReadyAt: 0 }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, hostTeam: -1, using: false, caps: 0, plants: 0, defuses: 0, stats: {}, kit: gunKit("rifle"), swingAt: 0, meleeReadyAt: 0, veh: 0, seat: 0 }
   }
 
   /** Puts a player where the mode says, else at the spawn farthest from everyone alive. */
   spawn(p: Player): void {
+    leaveSeat(this, p)
     const others = [...this.players.values()].filter((q) => q.alive && q.id !== p.id)
     const at = this.mode.spawnAt(this, p)
     let best = at ?? this.map.spawns[0]!
@@ -295,13 +310,16 @@ export class World {
     for (const id of this.order) {
       const p = this.players.get(id)!
       let intent = NO_INTENT
+      let fresh = false
       if (p.brain) {
         if (p.alive && this.phase === "play") intent = p.brain.think(this, p)
+        fresh = true
       } else {
         const q = p.queue.shift()
         if (q) {
           intent = q.intent
           p.ack = q.seq
+          fresh = true
         }
       }
       if (!p.alive) {
@@ -310,6 +328,8 @@ export class World {
         continue
       }
       if (this.phase === "play") intent = this.mode.intent(this, p, intent)
+      if (this.phase === "play" && intent.enter) toggleSeat(this, p)
+      if (p.veh) intent = rideIntent(this, p, intent, fresh)
       p.using = intent.use
       p.aim = intent.aim
       if (this.phase !== "play") {
@@ -319,7 +339,10 @@ export class World {
       }
       const kit = p.kit
       const sprint = kitSprints(intent, kit)
-      stepBody(p, intent.mx, intent.my, sprint ? kit.run : kit.walk, this.solids, DT)
+      if (!p.veh) {
+        stepBody(p, intent.mx, intent.my, sprint ? kit.run : kit.walk, this.solids, DT)
+        pushOutVehicles(this, p)
+      }
       if (sprint && kit.gun) p.readyAt = this.time + SPRINT_TO_FIRE
       if (p.reloadUntil > 0 && this.time >= p.reloadUntil) {
         p.reloadUntil = 0
@@ -337,6 +360,7 @@ export class World {
       if (ready || !intent.fire) p.triggerHeld = intent.fire
       if (kit.regen && p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
     }
+    if (this.phase === "play") stepVehicles(this)
     if (this.phase === "play") this.stepGear()
     if (this.phase === "play") this.mode.step(this)
   }
@@ -402,8 +426,9 @@ export class World {
       const d = Math.hypot(q.x - g.x, q.y - g.y)
       if (d > FRAG.radius || !clearLine(g.x, g.y, q.x, q.y, this.blockers)) continue
       const u = Math.max(0, (d - FRAG.kill) / (FRAG.radius - FRAG.kill))
-      this.damage(q, d <= FRAG.kill ? HEALTH * 2 : FRAG.edge + (HEALTH - 5 - FRAG.edge) * (1 - u), owner, "frag", g.x, g.y)
+      this.damage(q, (d <= FRAG.kill ? HEALTH * 2 : FRAG.edge + (HEALTH - 5 - FRAG.edge) * (1 - u)) * armorOf(this, q), owner, "frag", g.x, g.y)
     }
+    blastVehicles(this, g.x, g.y, FRAG.radius, 300, owner, "frag")
     for (const c of [...this.claymores]) {
       if (this.claymores.includes(c) && Math.hypot(c.x - g.x, c.y - g.y) <= FRAG.radius && clearLine(g.x, g.y, c.x, c.y, this.blockers)) this.claymore(c, g.by)
     }
@@ -420,8 +445,9 @@ export class World {
       const d = Math.hypot(q.x - c.x, q.y - c.y)
       const inCone = d <= CLAYMORE.blast && Math.abs(angleDiff(Math.atan2(q.y - c.y, q.x - c.x), c.aim)) <= CLAYMORE.blastCone
       const dmg = inCone ? HEALTH * 2 : d <= CLAYMORE.near ? 20 + 60 * (1 - d / CLAYMORE.near) : 0
-      if (dmg > 0 && clearLine(c.x, c.y, q.x, q.y, this.blockers)) this.damage(q, dmg, owner, "claymore", c.x, c.y)
+      if (dmg > 0 && clearLine(c.x, c.y, q.x, q.y, this.blockers)) this.damage(q, dmg * armorOf(this, q), owner, "claymore", c.x, c.y)
     }
+    blastVehicles(this, c.x + Math.cos(c.aim) * 1.2, c.y + Math.sin(c.aim) * 1.2, CLAYMORE.blast * 0.6, 250, owner, "claymore")
   }
 
   /** No friendly fire in team modes; your own frag still hurts you. */
@@ -458,14 +484,22 @@ export class World {
     let nearest = gun.range
     let victim: Player | null = null
     for (const q of this.players.values()) {
-      // Rounds pass through teammates.
-      if (!q.alive || q.id === p.id || this.allies(p, q)) continue
+      // Rounds pass through teammates, and whoever rides with you.
+      if (!q.alive || q.id === p.id || this.allies(p, q) || (p.veh && q.veh === p.veh)) continue
       const t = (q.x - p.x) * dx + (q.y - p.y) * dy
       const off = Math.abs(-(q.x - p.x) * dy + (q.y - p.y) * dx)
       if (t > 0 && t < nearest && t < stop && off <= HIT_RADIUS) {
         nearest = t
         victim = q
       }
+    }
+    // A vehicle in the way takes the round, unless it's aimed at someone riding in it and passes close enough to them.
+    const car = rayVehicles(this, p, p.x, p.y, dx, dy, stop)
+    let struck: Vehicle | null = null
+    if (car && !(victim && (nearest < car.t || (victim.veh === car.v.id && nearest <= car.out)))) {
+      struck = car.v
+      stop = car.t
+      victim = null
     }
     if (victim) stop = nearest
     // Someone else's claymore in the line of fire takes the round and blows.
@@ -478,12 +512,14 @@ export class World {
       if (t > 0.5 && t < stop && off <= CLAYMORE.shot) {
         stop = t
         victim = null
+        struck = null
         mine = c
       }
     }
-    this.events.push({ k: "shot", by: p.id, x0: p.x, y0: p.y, x1: p.x + dx * stop, y1: p.y + dy * stop, hit: victim?.id ?? "" })
+    this.events.push({ k: "shot", by: p.id, x0: p.x, y0: p.y, x1: p.x + dx * stop, y1: p.y + dy * stop, hit: victim?.id ?? "", ...(struck ? { veh: struck.id } : {}) })
     if (mine) this.claymore(mine, p.id)
-    if (victim) this.damage(victim, p.kit.damage, p, p.gun, p.x, p.y)
+    if (struck) damageVehicle(this, struck, p.kit.damage, p, p.gun)
+    if (victim) this.damage(victim, p.kit.damage * armorOf(this, victim), p, p.gun, p.x, p.y)
   }
 
   /** `how` and the blast point (fx, fy) default to the killer's gun and position. Killing yourself or a teammate scores nothing. */
@@ -493,6 +529,7 @@ export class World {
     victim.deaths++
     victim.respawnAt = this.time + RESPAWN_SECONDS
     victim.swingAt = 0
+    leaveSeat(this, victim)
     if (killer !== victim && !this.allies(killer, victim)) killer.kills++
     const d = Math.hypot(victim.x - fx, victim.y - fy) || 1
     this.events.push({ k: "kill", killer: killer.id, victim: victim.id, dx: (victim.x - fx) / d, dy: (victim.y - fy) / d, how })
@@ -549,6 +586,7 @@ export class World {
     this.votes.clear()
     this.voteOptions = []
     this.match++
+    resetVehicles(this)
     this.phase = "play"
     this.phaseEnd = this.time + this.mode.seconds
     this.resetPlayers()
