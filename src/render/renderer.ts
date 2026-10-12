@@ -55,6 +55,7 @@ export class Renderer {
   private gradeBuf: GPUBuffer
   private sceneLayout: GPUBindGroupLayout
   private floorTex: GPUTexture
+  private bounceTex: GPUTexture
   private floorSampler: GPUSampler
   private chunks: Chunk[] = []
   private sceneGroup!: GPUBindGroup
@@ -92,6 +93,7 @@ export class Renderer {
     this.polarBuf = d.createBuffer({ size: SLOTS * POLAR_RAYS * 32, usage: U.STORAGE })
     this.lampBuf = d.createBuffer({ size: MAX_MAP_LIGHTS * 4, usage: U.STORAGE | U.COPY_DST })
     this.floorTex = d.createTexture({ size: [1, 1], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     this.gradeBuf = d.createBuffer({ size: 16, usage: U.UNIFORM | U.COPY_DST })
     this.inst = { buf: d.createBuffer({ size: 4096 * INST_FLOATS * 4, usage: U.VERTEX | U.COPY_DST }), count: 0, cap: 4096 }
@@ -115,6 +117,7 @@ export class Renderer {
         { binding: 3, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 4, visibility: S.FRAGMENT, texture: {} },
         { binding: 5, visibility: S.FRAGMENT, sampler: {} },
+        { binding: 6, visibility: S.FRAGMENT, texture: {} },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -220,6 +223,7 @@ export class Renderer {
         { binding: 3, resource: { buffer: this.lampBuf } },
         { binding: 4, resource: this.floorTex.createView() },
         { binding: 5, resource: this.floorSampler },
+        { binding: 6, resource: this.bounceTex.createView() },
       ],
     })
   }
@@ -248,6 +252,10 @@ export class Renderer {
     this.floorTex.destroy()
     this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.device.queue.writeTexture({ texture: this.floorTex }, f.data, { bytesPerRow: f.w * 2 }, [f.w, f.h])
+    const b = level.bounce
+    this.bounceTex.destroy()
+    this.bounceTex = this.device.createTexture({ size: [b.w, b.h], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.device.queue.writeTexture({ texture: this.bounceTex }, b.data, { bytesPerRow: b.w * 4 }, [b.w, b.h])
     this.makeSceneGroup()
   }
 

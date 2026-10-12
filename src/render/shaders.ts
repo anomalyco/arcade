@@ -144,6 +144,7 @@ ${common}
 @group(0) @binding(3) var<storage, read> lampPower: array<f32>;
 @group(0) @binding(4) var floorTex: texture_2d<f32>;
 @group(0) @binding(5) var floorSamp: sampler;
+@group(0) @binding(6) var bounceTex: texture_2d<f32>;
 
 struct VIn {
   @location(0) pos: vec3f,
@@ -372,6 +373,14 @@ fn floorData(p: vec2f) -> vec2f {
   return textureSampleLevel(floorTex, floorSamp, p * F.map.xy, 0.0).rg;
 }
 
+/** Baked indirect light at a plan point, nudged off walls along the normal. */
+fn bounceAt(p: vec2f) -> vec3f {
+  let b = textureSampleLevel(bounceTex, floorSamp, p * F.map.xy, 0.0);
+  // Texels inside walls are black; renormalise by coverage so wall faces don't sample darkness.
+  let c = b.rgb / max(b.a, 0.25);
+  return c * c * 2.0;
+}
+
 fn ambientAt(n: vec3f) -> vec3f {
   let sky = F.ambient.rgb;
   return mix(sky * 0.35, sky, n.y * 0.5 + 0.5);
@@ -512,6 +521,7 @@ fn lampK(aux: f32) -> f32 {
     let lit = lightSum(o.world, n, V, gloss.x, wrap);
     var amb = ambientAt(n);
     let fd = floorData(o.world.xz);
+    amb += bounceAt(o.world.xz + n.xz * 0.3) * 0.32;
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
     let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);
     let ao = mix(1.0, 1.0 - fd.r * 0.85, low);

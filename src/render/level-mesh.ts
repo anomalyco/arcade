@@ -11,7 +11,9 @@ const CELL = 0.125
 
 export type LevelChunk = { data: ArrayBuffer; box: readonly [number, number, number, number] }
 export type FloorMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number }
-export type LevelData = { chunks: LevelChunk[]; glass: ArrayBuffer; floor: FloorMap }
+export type LevelData = { chunks: LevelChunk[]; glass: ArrayBuffer; floor: FloorMap; bounce: FloorMap }
+/** Bounce map resolution, metres per texel. */
+const BOUNCE_CELL = 0.5
 
 type Rect4 = readonly [number, number, number, number]
 
@@ -584,6 +586,126 @@ export function bakeFloor(map: MapDef): FloorMap {
   return { data, w, h }
 }
 
+/**
+ * Bakes indirect light: each light's colour flood-filled through open floor (walls block, low partitions don't) with a
+ * falloff by path length, so a lit room glows faintly into the corridor through its door and around corners. Stored as
+ * sqrt(rgb) for precision in the dark.
+ */
+export function bakeBounce(map: MapDef): FloorMap {
+  const [W, H] = map.size
+  const w = Math.max(1, Math.ceil(W / BOUNCE_CELL))
+  const h = Math.max(1, Math.ceil(H / BOUNCE_CELL))
+  const cx = W / w
+  const cy = H / h
+  const solid = new Uint8Array(w * h)
+  for (const wl of map.walls) {
+    if (wl.h < 1.8) continue
+    const r = wl.rect
+    // Only cells mostly covered by the wall block, so thin walls between cells still stop the fill.
+    const a0 = Math.max(0, Math.floor(r[0] / cx))
+    const a1 = Math.min(w - 1, Math.ceil(r[2] / cx) - 1)
+    const b0 = Math.max(0, Math.floor(r[1] / cy))
+    const b1 = Math.min(h - 1, Math.ceil(r[3] / cy) - 1)
+    for (let y = b0; y <= b1; y++) for (let x = a0; x <= a1; x++) solid[y * w + x] = 1
+  }
+  const acc = new Float32Array(w * h * 3)
+  const dist = new Float32Array(w * h).fill(Infinity)
+  const touched: number[] = []
+  const N8 = [
+    [1, 0, 1],
+    [-1, 0, 1],
+    [0, 1, 1],
+    [0, -1, 1],
+    [1, 1, Math.SQRT2],
+    [-1, 1, Math.SQRT2],
+    [1, -1, Math.SQRT2],
+    [-1, -1, Math.SQRT2],
+  ] as const
+  const STRENGTH: Record<string, number> = { desk: 0.6, panel: 1, pendant: 1, exit: 0.8, vending: 1.2, server: 0.7, bulb: 0.9 }
+  for (const l of map.lights) {
+    const reach = l.r * 1.5
+    const sx = Math.min(w - 1, Math.max(0, Math.floor(l.x / cx)))
+    const sy = Math.min(h - 1, Math.max(0, Math.floor(l.y / cy)))
+    // Dijkstra over the grid with a simple binary heap.
+    const heap: number[] = []
+    const push = (i: number, d: number) => {
+      heap.push(d, i)
+      let k = heap.length / 2 - 1
+      while (k > 0) {
+        const p = ((k - 1) >> 1)
+        if (heap[p * 2]! <= heap[k * 2]!) break
+        ;[heap[p * 2], heap[k * 2]] = [heap[k * 2]!, heap[p * 2]!]
+        ;[heap[p * 2 + 1], heap[k * 2 + 1]] = [heap[k * 2 + 1]!, heap[p * 2 + 1]!]
+        k = p
+      }
+    }
+    const pop = (): [number, number] => {
+      const d = heap[0]!
+      const i = heap[1]!
+      const ld = heap.pop()!
+      const li = heap.pop()!
+      // pop() took index then distance from the end; restore order.
+      if (heap.length) {
+        heap[0] = li
+        heap[1] = ld
+        let k = 0
+        const n = heap.length / 2
+        for (;;) {
+          const a = k * 2 + 1
+          const b = a + 1
+          let m = k
+          if (a < n && heap[a * 2]! < heap[m * 2]!) m = a
+          if (b < n && heap[b * 2]! < heap[m * 2]!) m = b
+          if (m === k) break
+          ;[heap[m * 2], heap[k * 2]] = [heap[k * 2]!, heap[m * 2]!]
+          ;[heap[m * 2 + 1], heap[k * 2 + 1]] = [heap[k * 2 + 1]!, heap[m * 2 + 1]!]
+          k = m
+        }
+      }
+      return [d, i]
+    }
+    dist[sy * w + sx] = 0
+    touched.push(sy * w + sx)
+    push(sy * w + sx, 0)
+    while (heap.length) {
+      const [d, i] = pop()
+      if (d > dist[i]!) continue
+      const x = i % w
+      const y = (i / w) | 0
+      for (const [dx, dy, c] of N8) {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+        const j = ny * w + nx
+        if (solid[j]) continue
+        // No cutting wall corners diagonally.
+        if (dx && dy && (solid[y * w + nx] || solid[ny * w + x])) continue
+        const nd = d + c * cx
+        if (nd >= reach || nd >= dist[j]!) continue
+        if (dist[j] === Infinity) touched.push(j)
+        dist[j] = nd
+        push(j, nd)
+      }
+    }
+    const k = l.power * (STRENGTH[l.kind] ?? 1)
+    for (const i of touched) {
+      const t = 1 - dist[i]! / reach
+      const f = t * t * k
+      acc[i * 3] += l.color[0] * f
+      acc[i * 3 + 1] += l.color[1] * f
+      acc[i * 3 + 2] += l.color[2] * f
+      dist[i] = Infinity
+    }
+    touched.length = 0
+  }
+  const data = new Uint8Array(w * h * 4)
+  for (let i = 0; i < w * h; i++) {
+    for (let c = 0; c < 3; c++) data[i * 4 + c] = Math.round(Math.sqrt(Math.min(1, acc[i * 3 + c]! * 0.5)) * 255)
+    data[i * 4 + 3] = solid[i] ? 0 : 255
+  }
+  return { data, w, h }
+}
+
 /** Static geometry for a floor, chunked: floors, walls and their fittings, windows' frames, furniture, light fixtures. */
 export function buildLevel(map: MapDef): LevelData {
   const [W, H] = map.size
@@ -632,5 +754,5 @@ export function buildLevel(map: MapDef): LevelData {
   for (const l of map.lights) haze(glass, l)
   for (const l of map.lights) motes(glass, l, rng(seed + l.id * 7 + 3))
 
-  return { chunks, glass: glass.pack(), floor: bakeFloor(map) }
+  return { chunks, glass: glass.pack(), floor: bakeFloor(map), bounce: bakeBounce(map) }
 }
