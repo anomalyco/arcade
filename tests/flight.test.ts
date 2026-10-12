@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-  NEUTRAL_INPUT, cloneFlight, createFlightState, directionFromHeading, flightReadout, forward, quatFromYawPitchRoll, stepFlight, up,
+  BOMB_DRAG, NEUTRAL_INPUT, bombImpactPoint, cloneFlight, createFlightState, directionFromHeading, flightReadout, forward, quatFromYawPitchRoll, stepFlight, up,
 } from "../src/sim/flight"
 import { TICK_DT, type FlightInput, type FlightState, type Vec3, type VehicleKind, type WorldQuery } from "../src/sim/types"
 import { VEHICLES } from "../src/sim/vehicles"
@@ -759,5 +759,78 @@ describe("helicopter: mouse-aim", () => {
     run(f, input({ aim: directionFromHeading(0, 0) }), 4)
     expect(up(f.orientation)[1]).toBeGreaterThan(0.9)
     expect(f.crashed).toBeNull()
+  })
+})
+
+describe("bomber (B-2)", () => {
+  test("feel: sustained turn ~12–15°/s, roll ~45°/s, no practical loop", () => {
+    const st = sustainedTurn("bomber")
+    const rr = rollRate("bomber")
+    const lp = loopTime("bomber")
+    console.table([{ kind: "bomber", "sustained °/s": st.rateDeg.toFixed(1), "@ m/s": st.speed.toFixed(0), "roll °/s": rr.peakDeg.toFixed(0), "loop (s)": lp.done ? lp.time.toFixed(1) : "no" }])
+    expect(st.rateDeg).toBeGreaterThan(11)
+    expect(st.rateDeg).toBeLessThan(16)
+    expect(rr.peakDeg).toBeGreaterThan(38)
+    expect(rr.peakDeg).toBeLessThan(55)
+    expect(!lp.done || lp.time > 25).toBe(true)
+  })
+
+  test("cruise/boost speeds and climbs to 2500 m and cruises there", () => {
+    const s = airStart("bomber", 600)
+    settleLevel(s, 60)
+    expect(Math.abs(flightReadout(s).speed - 150) / 150).toBeLessThan(0.1)
+    let t = 0
+    while (s.position[1] < 2500 && t < 240) { stepFlight(s, input({ aim: directionFromHeading(0, 0.12), throttle: 1 }), TICK_DT, world); t += TICK_DT }
+    expect(s.position[1]).toBeGreaterThanOrEqual(2500)
+    expect(t).toBeGreaterThan(30) // climbs slowly
+    settleLevel(s, 60)
+    expect(s.crashed).toBeNull()
+    expect(Math.abs(s.position[1] - 2500)).toBeLessThan(150)
+    expect(flightReadout(s).speed).toBeGreaterThan(135)
+    settleLevel(s, 60, true)
+    expect(flightReadout(s).speed).toBeLessThan(195) // modest boost
+  })
+
+  test("catapult launch from the carrier clears the bow and climbs away", () => {
+    const DECK = 20
+    const onDeck = (x: number, z: number) => Math.abs(x) < 38 && Math.abs(z) < 165
+    const sea: WorldQuery = { groundHeight: (x, z) => (onDeck(x, z) ? DECK : 0), onRunway: onDeck, half: 60000, ceiling: 6000 }
+    const s = createFlightState("bomber", { position: [0, DECK + 2.5, -40], yaw: 0, onGround: true })
+    let minAlt = Infinity, left = false
+    for (let i = 0; i < 60 * 25 && !s.crashed; i++) {
+      stepFlight(s, input({ throttle: 1 }), TICK_DT, sea)
+      if (!onDeck(s.position[0], s.position[2])) left = true
+      if (left) minAlt = Math.min(minAlt, s.position[1])
+    }
+    expect(s.crashed).toBeNull()
+    expect(left).toBe(true)
+    expect(minAlt).toBeGreaterThan(8)
+    expect(s.position[1]).toBeGreaterThan(DECK + 20)
+  })
+})
+
+describe("bomb ballistics", () => {
+  test("bombImpactPoint matches a fine numeric integration within 5 m", () => {
+    for (const [alt, speed, climb] of [[2500, 150, 0], [800, 120, -10], [3000, 180, 15]]) {
+      const pos: Vec3 = [100, alt, -50], vel: Vec3 = [speed * 0.6, climb, -speed * 0.8]
+      const out: Vec3 = [0, 0, 0]
+      const t = bombImpactPoint(pos, vel, out)
+      // Reference: RK-free fine Euler at 1 ms with the same drag law.
+      let p = [...pos], v = [...vel], tt = 0
+      while (p[1] > 0) {
+        const sp = Math.hypot(v[0], v[1], v[2]), dt = 0.001
+        v = [v[0] - BOMB_DRAG * sp * v[0] * dt, v[1] - (BOMB_DRAG * sp * v[1] + 9.81) * dt, v[2] - BOMB_DRAG * sp * v[2] * dt]
+        p = [p[0] + v[0] * dt, p[1] + v[1] * dt, p[2] + v[2] * dt]
+        tt += dt
+      }
+      expect(Math.hypot(out[0] - p[0], out[2] - p[2])).toBeLessThan(5)
+      expect(Math.abs(t - tt)).toBeLessThan(0.1)
+    }
+  })
+
+  test("respects terrain height when a world is given", () => {
+    const out: Vec3 = [0, 0, 0]
+    bombImpactPoint([0, 1000, 0], [0, 0, -150], out, { groundHeight: () => 300, onRunway: () => false, half: 1e6, ceiling: 6000 })
+    expect(out[1]).toBe(300)
   })
 })

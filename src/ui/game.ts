@@ -12,7 +12,7 @@ import { createSpawnScreen } from "./spawn"
 import { createPauseMenu } from "./pause"
 import { toast, type StartRequest } from "./lobby"
 import { onSettings, settings } from "./settings"
-import { cloneFlight, flightReadout, forward, stepFlight } from "../sim/flight"
+import { bombImpactPoint, cloneFlight, flightReadout, forward, stepFlight } from "../sim/flight"
 import { AIRBASES, deckVelocity, groundHeight, posedFleet, posedShip, setFleetState, worldQuery as baseWorldQuery } from "../sim/geography"
 import { AA_RANGE, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip, type Ship } from "../sim/fleet"
 import type { WorldQuery } from "../sim/types"
@@ -22,7 +22,7 @@ import { TICK_DT } from "../sim/types"
 import type { FlightInput, FlightState, GameEvent, PlayerInfo, Quat, SeatIndex, SeatInput, TeamId, Vec3, VehicleEntity } from "../sim/types"
 import type { RoomConfig, ServerMessage, ShipState, Snapshot } from "../sim/protocol"
 import { shipById, shipName } from "./fleet-names"
-import { CIWS_TRACER_SPEED, AA_GUN_SHELL_SPEED } from "../sim/combat"
+import { CIWS_TRACER_SPEED, AA_GUN_SHELL_SPEED, STEALTH_AA_CEILING } from "../sim/combat"
 
 const INTERP_DELAY = 0.1
 /** Jet throttle slew (per second) used to turn wheel notches into throttle-axis pulses (mirrors flight.ts). */
@@ -866,6 +866,10 @@ class GameSession implements GameHandle {
       input.setNose(forward(o))
       input.setPose(o)
     }
+    // Bombardier: stabilized downward bomb sight (heading only).
+    const bombsight = seat === 1 && myVehicle?.kind === "bomber"
+    input.setBombsight(bombsight)
+    if (bombsight && myVehicle) input.setNose(forward(myVehicle.flight.orientation))
     if (mode !== input.mouseMode) {
       if (mode === "aim") {
         const c = this.deps.host.camera
@@ -984,7 +988,10 @@ class GameSession implements GameHandle {
     const rig = host.rig
     if (this.state === "flying" && ownVis) {
       this.lastOwnPos[0] = ownVis.pos[0]; this.lastOwnPos[1] = ownVis.pos[1]; this.lastOwnPos[2] = ownVis.pos[2]
-      if (seat === 1) {
+      if (seat === 1 && input.bombsight) {
+        rig.setMode("gunner")
+        rig.bombsight(dt, ownVis.kind, ownVis.pos, ownVis.quat, this.lookV, input.zoomHeld ? Math.max(rig.gunZoom, 4) : rig.gunZoom)
+      } else if (seat === 1) {
         rig.setMode("gunner")
         const z = input.zoomHeld ? Math.max(rig.gunZoom, 4) : rig.gunZoom
         const saved = rig.gunZoom
@@ -1167,8 +1174,18 @@ class GameSession implements GameHandle {
     const myVeh = this.me?.vehicleId
     const rtRemote = est - INTERP_DELAY - s.time
     const rtOwn = est + this.rtt / 1000 - s.time
-    const proj = s.projectiles
+    // Bombs are projectiles too, but render as falling bodies (not tracers).
+    const proj = s.projectiles.some(p => p.weapon === "bomb") ? s.projectiles.filter(p => p.weapon !== "bomb") : s.projectiles
+    const bombs = proj === s.projectiles ? [] : s.projectiles.filter(p => p.weapon === "bomb")
     const colors = this.tracerColors
+    fx.setBombs(bombs.length, (i, m) => {
+      const b = bombs[i]
+      const t = Math.max(-0.2, b.vehicle === myVeh ? rtOwn : rtRemote)
+      _v1.set(b.position[0] + b.velocity[0] * t, b.position[1] + b.velocity[1] * t - 4.9 * t * t, b.position[2] + b.velocity[2] * t)
+      _v2.set(_v1.x - b.velocity[0], _v1.y - b.velocity[1], _v1.z - b.velocity[2])
+      m.lookAt(_v2, _v1, UP)
+      m.setPosition(_v1)
+    })
     // Bullets that vanished near the surface since the last snapshot hit water (spray) or ground (dust).
     if (s !== this.lastProjSnap) {
       this.lastProjSnap = s
@@ -1322,6 +1339,32 @@ class GameSession implements GameHandle {
     const aimDist = 1500
     f.direct = seat === 0 && this.input.mouseMode === "direct"
     f.aimPoint = f.direct ? null : [pos[0] + this.aim[0] * aimDist, pos[1] + this.aim[1] * aimDist, pos[2] + this.aim[2] * aimDist]
+    if (this.input.bombsight && this.aim[1] < -0.05) {
+      // Bomb sight: the aim point sits on the ground/sea where the sight ray meets it.
+      const t = Math.max(0, pos[1] - groundHeight(pos[0], pos[2])) / -this.aim[1]
+      f.aimPoint = [pos[0] + this.aim[0] * t, pos[1] + this.aim[1] * t, pos[2] + this.aim[2] * t]
+    }
+    // Bomber: predicted free-fall impact point (HudFrame extension `bombImpact`, world point or null).
+    const hb = f as HudFrame & { bombImpact?: Vec3 | null }
+    f.bombSight = null
+    f.stealth = null
+    if (v.kind === "bomber") {
+      const out: Vec3 = [0, 0, 0]
+      const vel = (this.pred?.state ?? v.flight).velocity
+      const tti = bombImpactPoint(pos, vel, out, worldQuery)
+      hb.bombImpact = tti > 0 ? out : null
+      // Release cue: impact point inside an enemy hull footprint (with a little margin).
+      let over: string | null = null
+      if (tti > 0) for (const sh of posedFleet()) {
+        if (sh.team === v.team) continue
+        const st = this.shipStates.find(x => x.id === sh.id)
+        if (st?.sunk) continue
+        const l = worldToShip(sh, out), sp = SHIP_SPECS[sh.kind]
+        if (Math.abs(l[0]) < sp.halfWidth + 6 && Math.abs(l[2]) < sp.halfLength + 6) { over = sh.id; break }
+      }
+      if (seat === 1) f.bombSight = { impact: tti > 0 ? out : null, tti, alt: pos[1] - Math.max(0, groundHeight(pos[0], pos[2])), speed: Math.hypot(vel[0], vel[1], vel[2]), overShip: over }
+      f.stealth = { above: pos[1] > STEALTH_AA_CEILING, ceiling: STEALTH_AA_CEILING }
+    } else hb.bombImpact = null
     const boreDir = seat === 0 ? fwd : (v.aim[1] ?? this.aim)
     let boreDist = aimDist
     // Keyboard flight: gimbaled gun reticle (body-relative mouse aim) for the HUD.

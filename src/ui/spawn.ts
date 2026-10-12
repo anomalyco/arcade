@@ -13,6 +13,7 @@ const ROLES: Record<VehicleKind, RoleInfo> = {
   apache: { role: "attack helicopter", agility: 0.95, firepower: 0.8, blurb: "Hovers, strafes and hides behind ridges. Rockets for the pilot, chain gun and Hellfires for the gunner." },
   warthog: { role: "close air support", agility: 0.45, firepower: 1, blurb: "Slow, armoured, terrifying. The GAU-8 shreds anything it points at." },
   blackbird: { role: "recon interceptor", agility: 0.35, firepower: 0.55, blurb: "The fastest thing in the sky. The pilot flies; the radar officer paints enemies and guides long-range missiles." },
+  bomber: { role: "stealth bomber", agility: 0.2, firepower: 1, blurb: "Stealth bomber — invisible to radar unless spotted; immune to fleet AA above 600 m; poor maneuverability. The bombardier drops bombs on ships." },
 }
 const MAX_SPEED = Math.max(...VEHICLE_KINDS.map(k => VEHICLES[k].boost))
 const MAX_HP = Math.max(...VEHICLE_KINDS.map(k => VEHICLES[k].maxHp))
@@ -211,7 +212,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     items.push({ label: "Leave match", small: true, run: () => actions.leave(), meta: "back to the main menu" })
     const screen = {
       size: "big" as const, items, sel: keepSel ? nav.index : 0,
-      hints: [["↑↓", "select"], ["enter", "launch"], ["←→", "team"], ["1–4", "quick launch"]] as [string, string][],
+      hints: [["↑↓", "select"], ["enter", "launch"], ["←→", "team"], ["1–5", "quick launch"]] as [string, string][],
     }
     if (nav.depth) nav.replace(screen)
     else nav.push(screen)

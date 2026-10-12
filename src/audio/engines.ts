@@ -4,8 +4,8 @@ import { VEHICLES } from "../sim/vehicles"
 import { clamp, type Core, Spatial } from "./core"
 
 /** Relative loudness per airframe, used for voice selection and distance culling. */
-export const ENGINE_LOUDNESS: Record<VehicleKind, number> = { fighter: 1, apache: 0.4, warthog: 0.8, blackbird: 1.3 }
-export const ENGINE_REF: Record<VehicleKind, number> = { fighter: 40, apache: 22, warthog: 35, blackbird: 50 }
+export const ENGINE_LOUDNESS: Record<VehicleKind, number> = { fighter: 1, apache: 0.4, warthog: 0.8, blackbird: 1.3, bomber: 0.45 }
+export const ENGINE_REF: Record<VehicleKind, number> = { fighter: 40, apache: 22, warthog: 35, blackbird: 50, bomber: 30 }
 
 const TC = 0.06
 
@@ -59,6 +59,10 @@ export class EngineVoice {
       this.roar2 = this.noise(bank.brown, "lowpass", 300, 0.5)
       if (kind === "warthog") {
         this.whistleA = this.tone("sine", 2000)
+      } else if (kind === "bomber") {
+        // B-2: four buried, shielded F118s — a deep, even drone with almost no high end.
+        this.subBase = 28
+        this.sub = this.tone("sine", this.subBase)
       } else {
         this.burner = this.noise(bank.brown, "lowpass", kind === "blackbird" ? 160 : 220, 0.6)
         this.subBase = kind === "blackbird" ? 32 : 40
@@ -168,6 +172,15 @@ export class EngineVoice {
         hum(200, 320, 0.008, 0.014)
         this.updateBurner(b, 0.7, 0.35, d)
         break
+      case "bomber": {
+        // Quiet stealth drone: dark body + a low sine, nothing bright.
+        roar(160, 260, 0.05, 0.08, 0.7)
+        body(110, 140, 0.28, 0.22)
+        hum(90, 60, 0.004, 0.004)
+        set(this.sub!.osc.frequency, (this.subBase + 6 * thr) * d)
+        set(this.sub!.gain.gain, 0.12 + 0.08 * thr)
+        break
+      }
       case "warthog": {
         // TF34 high-bypass fans: softer roar + the A-10's whistle, kept low and quiet.
         // No afterburner on an A-10; full throttle just pushes the whistle a little harder.

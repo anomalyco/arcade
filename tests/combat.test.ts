@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
-  SHIP_TARGET_PREFIX, applyTurretInput, damageShip, shipRuntime, segmentHitsShipEx, SHIP_SINK_COLLISION_TIME,
+  STEALTH_AA_CEILING, STEALTH_LOCK_TIME, SHIP_TARGET_PREFIX, applyTurretInput, damageShip, shipRuntime, segmentHitsShipEx, SHIP_SINK_COLLISION_TIME,
   AA_ACQUIRE, AA_TURRETS, fleetAaDps, type AaTurret, isSpawnProtected, markSpawned, turretHasLOS,
   FLARE_TARGET_PREFIX, WEAPON_DAMAGE_MULT, GUN_FULL_RANGE, VIEW_DELAY_DEFAULT, gunLeadPoint, gunCanReach, GUN_GIMBAL, weaponDirection, gunRangeFactor, hitboxSweep, missileDirectDamage, muzzlePosition, rewoundPosition, viewDelayOf, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
   stepCombat, sweptSphere, type CombatState,
 } from "../src/sim/combat"
-import { WORLD_HALF, groundHeight, isWater, posedShip, segmentHitsGround, setFleetState, shipAt, terrainHeight } from "../src/sim/geography"
+import { WORLD_HALF, groundHeight, isWater, posedShip, segmentHitsGround, setFleetState, shipAt, terrainHeight, worldQuery } from "../src/sim/geography"
+import { bombImpactPoint } from "../src/sim/flight"
 import { AA_RANGE, FLEET, SHIP_DAMAGE_SCALE, TURRET_HP, SPAWN_PROTECTION, SHIP_SPECS, shipPose, shipToWorld, shipToWorldAt, type Ship } from "../src/sim/fleet"
 import { TICK_DT, type GameEvent, type Quat, type SeatIndex, type SeatInput, type TeamId, type Vec3, type VehicleEntity, type VehicleKind } from "../src/sim/types"
 import { VEHICLES, WEAPONS } from "../src/sim/vehicles"
@@ -1157,5 +1158,87 @@ describe("Fleet Strike: ships", () => {
     const flak = w.events.filter(e => e.type === "hit" && e.target === f.id && e.by === "gunner")
     expect(flak.length).toBeGreaterThan(0)
     expect(w.events.some(e => e.type === "explosion" && e.kind === "flak")).toBe(true)
+  })
+})
+
+describe("B-2: bombs & stealth", () => {
+  afterEach(() => setFleetState(0, 4))
+  const dropAll = (w: World, b: VehicleEntity) => {
+    tick(w, [[b, 1, input({ firePrimary: true })]])
+    for (let i = 0; i < 60 * 40 && w.cs.projectiles.some(p => p.weapon === "bomb"); i++) tick(w)
+  }
+
+  test("bombs follow flight's bombImpactPoint and splash into water", () => {
+    let sea: Vec3 = [0, 0, 0]
+    for (let x = -WORLD_HALF + 2000; x < WORLD_HALF; x += 400) if (isWater(x, -WORLD_HALF + 2500) && isWater(x + 1500, -WORLD_HALF + 2500) && !shipAt(x, -WORLD_HALF + 2500)) { sea = [x, 1700, -WORLD_HALF + 2500]; break }
+    const b = vehicle("bomber", 0, sea, [150, 0, 0], [1, 0, 0])
+    const w = world([b])
+    const predicted: Vec3 = [0, 0, 0]
+    // The bomb leaves the bay 3 m below the airframe one tick from now.
+    const t = bombImpactPoint([sea[0] + 150 * TICK_DT, sea[1] - 3, sea[2]], [150, 0, 0], predicted, worldQuery)
+    expect(t).toBeGreaterThan(10)
+    dropAll(w, b)
+    const boom = w.events.find(e => e.type === "explosion" && e.surface === "water") as Extract<GameEvent, { type: "explosion" }>
+    expect(boom).toBeDefined()
+    expect(Math.hypot(boom.position[0] - predicted[0], boom.position[2] - predicted[2])).toBeLessThan(6)
+    expect(w.cs.craters!.length).toBe(0)
+  })
+
+  test("a bomb on an enemy carrier deals WEAPONS.bomb × SHIP_DAMAGE_SCALE.bomb", () => {
+    const c = posedShip("t1-carrier")!
+    const b = vehicle("bomber", 0, [c.position[0], 1700, c.position[2]], [0, 0, 0])
+    const w = world([b])
+    dropAll(w, b)
+    const rt = shipRuntime(w.cs, "t1-carrier")!
+    expect(rt.maxHp - rt.hp).toBeCloseTo(WEAPONS.bomb.damage * SHIP_DAMAGE_SCALE.bomb, 3)
+    expect(w.events.filter(e => e.type === "fire" && e.weapon === "bomb")).toHaveLength(1)
+  })
+
+  test("fleet AA ignores stealth above the ceiling but engages (slower to acquire) below it", () => {
+    // Temporary high turret so the ceiling is within AA range.
+    const ship: Ship = { id: "test-tower", team: 1, kind: "destroyer", position: [0, 0, 0], heading: 0 }
+    const turret: AaTurret = { ship, turret: "ciws_hi", kind: "ciws", team: 1, position: [0, STEALTH_AA_CEILING - 100, 0] }
+    AA_TURRETS.push(turret)
+    try {
+      const firstShot = (kind: VehicleKind, y: number) => {
+        const v = vehicle(kind, 0, [150, y, 0], [0, 0, 0])
+        v.hp = 1e6
+        const w = world([v])
+        for (let i = 0; i < 300; i++) {
+          tick(w)
+          if (w.events.some(e => (e as unknown as { type: string; turret: string }).type === "aa" && (e as unknown as { turret: string }).turret === "ciws_hi")) return w.now
+        }
+        return Infinity
+      }
+      expect(firstShot("bomber", STEALTH_AA_CEILING + 50)).toBe(Infinity)
+      expect(firstShot("fighter", STEALTH_AA_CEILING + 50)).toBeLessThan(AA_ACQUIRE + 0.2)
+      const low = firstShot("bomber", STEALTH_AA_CEILING - 300)
+      expect(low).toBeGreaterThanOrEqual(AA_ACQUIRE * 2)
+      expect(low).toBeLessThan(AA_ACQUIRE * 2 + 0.3)
+    } finally {
+      AA_TURRETS.pop()
+    }
+  })
+
+  test("locking an unspotted stealth aircraft takes STEALTH_LOCK_TIME and spots it; spotted locks normally", () => {
+    const run = (spotted: boolean) => {
+      const f = vehicle("fighter", 0, [0, ALT, 0], [0, 0, 0], [0, 0, -1])
+      const b = vehicle("bomber", 1, [0, ALT, -800], [0, 0, 0])
+      if (spotted) b.spottedUntil = 1e9
+      const w = world([f, b])
+      const at: number[] = []
+      for (let i = 0; i < 60 * 5; i++) {
+        tick(w, [[f, 0, input({ aim: [0, 0, -1] })]])
+        if (f.weapons[0][1].lock >= 1 && !at.length) at.push(w.now)
+      }
+      return { at: at[0] ?? Infinity, b, w }
+    }
+    const hidden = run(false)
+    expect(hidden.at).toBeGreaterThanOrEqual(STEALTH_LOCK_TIME - 0.05)
+    expect(hidden.at).toBeLessThan(STEALTH_LOCK_TIME + 0.1)
+    expect(hidden.b.spottedUntil).toBeGreaterThan(hidden.w.now)
+    expect(hidden.w.events.some(e => e.type === "spotted" && e.target === hidden.b.id)).toBe(true)
+    const seen = run(true)
+    expect(seen.at).toBeLessThan(WEAPONS.aim9.lockTime! + 0.1)
   })
 })

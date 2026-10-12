@@ -149,6 +149,8 @@ interface KindConfig {
   ballPod?: { name: string; seat: SeatIndex; maxUp: number }
   rollPod?: { name: string; seat: SeatIndex }
   rudders?: { names: string[]; gain: number; max: number }
+  /** Hinged doors (bomb bay) that swing open while `seat` is firing/aiming: bone-local axis, open angle per door. */
+  doors?: { names: [string, number][]; axis: Axis; seat: SeatIndex }
   anchors: AnchorDef[]
   placeholder: { length: number; span: number; heli: boolean }
   /** Ground blob size [span, length] in meters. */
@@ -255,6 +257,26 @@ const CONFIG: Record<VehicleKind, KindConfig> = {
     ],
     placeholder: { length: 31, span: 17, heli: false },
     shadow: [17, 30],
+  },
+  bomber: {
+    file: "b2",
+    pivots: [
+      "pilot_1", "pilot_2", "gear", "bomb_bay_doors_L", "bomb_bay_doors_R",
+      "bomb_1", "bomb_2", "bomb_3", "bomb_4", "bomb_5", "bomb_6", "bomb_7", "bomb_8",
+    ],
+    stores: [{ weapons: [[1, 0]], order: ["bomb_8", "bomb_7", "bomb_6", "bomb_5", "bomb_4", "bomb_3", "bomb_2", "bomb_1"] }],
+    spinners: [],
+    // No afterburner: the four buried exhausts are dim glow parts (role "glow" via their exhaust_* names).
+    afterburners: [],
+    doors: { names: [["bomb_bay_doors_L", 1.45], ["bomb_bay_doors_R", -1.45]], axis: "z", seat: 1 },
+    anchors: [
+      { key: "gun", node: "b2", tip: true },
+      { key: "exhaust_L", node: "exhaust_1" },
+      { key: "exhaust_R", node: "exhaust_4" },
+      { key: "bomb_bay", node: "bombs" },
+    ],
+    placeholder: { length: 21, span: 52, heli: false },
+    shadow: [52, 21],
   },
 }
 
@@ -545,6 +567,8 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
       else if (chain.some((n) => n === "navlight_tail")) role = "strobe"
       else if (chain.some((n) => n.startsWith("navlight"))) role = "nav"
       else role = "glow"
+      // Buried stealth exhausts (B-2): a faint warm glow, not an afterburner.
+      if (role === "glow" && chain.some((n) => n.startsWith("exhaust_"))) emissive.multiplyScalar(0.35)
     }
     const color = src.color ? src.color : new Color(1, 1, 1)
     const rough = src.roughness ?? 0.55
@@ -962,6 +986,8 @@ interface Rig {
   storeVisible: Map<number, boolean>
   gearScale: number
   rudder: number
+  /** Bomb-bay door opening 0..1. */
+  doors: number
   turretYaw: number
   turretPitch: number
   podQ: Quaternion
@@ -1104,6 +1130,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       storeVisible: new Map(),
       gearScale: 1,
       rudder: 0,
+      doors: 0,
       turretYaw: 0,
       turretPitch: 0,
       podQ: new Quaternion(),
@@ -1361,6 +1388,16 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
             // Roll about the parent Z axis: rot = Rz(roll) * rest.
             _axisQ.setFromAxisAngle(AXES.z, r.podRoll)
             r.bones[bi].quaternion.copy(_axisQ).multiply(t.bones[bi].quaternion)
+          }
+        }
+        if (cfg.doors) {
+          // Open while the bombardier is aiming/releasing (seat occupied and firing), close otherwise.
+          const d = cfg.doors
+          const want = firing[d.seat][0] || firing[d.seat][1] ? 1 : 0
+          r.doors = approach(r.doors, want, want ? 2.2 : 1.2, dt)
+          for (const [n, ang] of d.names) {
+            const bi = boneAt(r, n)
+            if (bi >= 0) setBoneAxis(r, bi, d.axis, ang * r.doors * r.doors * (3 - 2 * r.doors))
           }
         }
         if (cfg.rudders) {

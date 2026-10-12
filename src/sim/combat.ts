@@ -19,7 +19,9 @@ import type {
   WeaponId, WeaponRuntime,
 } from "./types"
 import { TICK_DT } from "./types"
-import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
+import { STEALTH_AA_CEILING, STEALTH_LOCK_SPOT, STEALTH_LOCK_TIME, VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
+export { STEALTH_AA_CEILING, STEALTH_LOCK_SPOT, STEALTH_LOCK_TIME }
+import { BOMB_STEP, stepBomb } from "./flight"
 import { deckVelocity, fleetState, groundHeight, isWater, posedFleet, posedShip, segmentHitsGround, shipAt } from "./geography"
 import {
   AA_RANGE, FLEET, SHIP_DAMAGE_SCALE, SHIP_SPECS, SPAWN_PROTECTION, TURRET_HP, shipToWorld, worldToShip, type Ship, type TurretKind,
@@ -37,11 +39,19 @@ export const MAX_FLARES = 256
 /** Damage multiplier while radar-spotted. */
 export const SPOTTED_DAMAGE_MULT = 1.2
 /** Damage taken multiplier per airframe (A-10 titanium bathtub). */
-export const ARMOR: Record<VehicleKind, number> = { fighter: 1, apache: 1, warthog: 0.8, blackbird: 1 }
+export const ARMOR: Record<VehicleKind, number> = { fighter: 1, apache: 1, warthog: 0.8, blackbird: 1, bomber: 1 }
 /** Per-weapon damage multiplier applied on top of WEAPONS[w].damage. */
 export const WEAPON_DAMAGE_MULT: Record<WeaponId, number> = {
   cannon20: 1.35, chaingun30: 1.1, gau8: 0.8, rockets: 1, aim9: 1, tvmissile: 1, hellfire: 1, maverick: 1,
-  aim47: 1, radarpulse: 0,
+  aim47: 1, radarpulse: 0, bomb: 1,
+}
+
+/** Bomb near-miss damage to ships (fraction of direct damage at the hull, falling to 0 at splash radius). */
+export const BOMB_NEAR_MISS = 0.5
+
+/** Stealth airframe that isn't currently spotted. */
+export function isHiddenStealth(v: VehicleEntity, now: number): boolean {
+  return !!VEHICLES[v.kind].stealth && v.spottedUntil <= now
 }
 /** Weapon-vs-airframe bonuses (chain gun shreds helicopters and slow planes). */
 export const CLASS_BONUS: Partial<Record<WeaponId, Partial<Record<VehicleKind, number>>>> = {
@@ -627,6 +637,7 @@ export function applySeatInput(
     if (spec.kind === "pulse") { radarPulse(vehicle, seat, vehicles, now, events); continue }
     if (protectedNow) continue
     if (spec.kind === "gun" || spec.kind === "rockets") fireBallistic(cs, vehicle, seat, spec, rt, aim, now, events, viewDelayOf(input))
+    else if (spec.kind === "bomb") fireBomb(cs, vehicle, seat, spec, rt, now, events)
     else fireMissile(cs, vehicle, seat, spec, rt, now, events)
   }
 }
@@ -721,9 +732,12 @@ function updateLock(
   }
   if (!newId) return
   const was = rt.lock
-  rt.lock = Math.min(1, rt.lock + TICK_DT / (spec.lockTime ?? 1))
+  // Unspotted stealth: the seeker must stay on it for STEALTH_LOCK_TIME (completing the lock spots it).
+  const stealthy = target !== null && isHiddenStealth(target, now)
+  rt.lock = Math.min(1, rt.lock + TICK_DT / (stealthy ? Math.max(STEALTH_LOCK_TIME, spec.lockTime ?? 1) : spec.lockTime ?? 1))
   // Float accumulation guard so lockTime/TICK_DT ticks reliably reaches 1.
   if (rt.lock > 1 - 1e-9) rt.lock = 1
+  if (stealthy && rt.lock >= 1) markSpotted(vehicle, target!, now + STEALTH_LOCK_SPOT, events)
   if (was < 1 && rt.lock >= 1) events.push({ type: "lock", vehicle: vehicle.id, target: newId, locked: true })
   // Tracking warning for the target: `locked: false` when acquisition starts and again at half lock.
   else if (was === 0 || (was < 0.5 && rt.lock >= 0.5)) events.push({ type: "lock", vehicle: vehicle.id, target: newId, locked: false })
@@ -768,6 +782,49 @@ function fireBallistic(
   if (fired > 0 && spec.kind === "gun" && (burstStart || Math.floor(now * 4) !== Math.floor((now - TICK_DT) * 4))) {
     events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: spec.id })
   }
+}
+
+/**
+ * Bomb release: drops from the bay (a few meters below the airframe) with the aircraft's velocity; flies the
+ * same gravity + drag model as flight's bombImpactPoint (unguided). Bombs live in `projectiles` (weapon "bomb").
+ */
+function fireBomb(cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex, spec: WeaponSpec, rt: WeaponRuntime, now: number, events: GameEvent[]): void {
+  if (rt.readyAt > now || (rt.ammo >= 0 && rt.ammo < 1) || cs.projectiles.length >= MAX_PROJECTILES) return
+  rotate(vehicle.flight.orientation, 0, -3, 0, _muz)
+  const p = vehicle.flight.position, v = vehicle.flight.velocity
+  cs.projectiles.push({
+    id: cs.nextId++, weapon: spec.id, owner: ownerOf(vehicle, seat), vehicle: vehicle.id, team: vehicle.team,
+    position: [p[0] + _muz[0], p[1] + _muz[1], p[2] + _muz[2]], velocity: [v[0], v[1], v[2]], age: 0, ttl: spec.ttl,
+  })
+  consumeAmmo(rt, now)
+  rt.readyAt = now + 1 / spec.rate
+  events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: spec.id })
+}
+
+/** Bomb impact: ships take direct (or near-miss) damage, aircraft splash, craters on land, splash in water. */
+function bombImpact(cs: CombatState, p: Projectile, pos: Vec3, directShip: Ship | null, vehicles: VehicleEntity[], now: number, events: GameEvent[]): void {
+  const spec = WEAPONS[p.weapon]
+  const full = shipDamageFor(p.weapon)
+  if (directShip) {
+    if (directShip.team !== p.team) damageShip(cs, directShip.id, full, p.owner, p.team, pos, now, events)
+  } else {
+    // Near misses still hurt ships within the blast radius.
+    const fleet = posedFleet()
+    for (let i = 0; i < fleet.length; i++) {
+      const sh = fleet[i]
+      if (sh.team === p.team) continue
+      const sp = SHIP_SPECS[sh.kind]
+      toShipLocal(sh, pos, _sl0)
+      const dx = Math.max(0, Math.abs(_sl0[0]) - sp.halfWidth), dz = Math.max(0, Math.abs(_sl0[2]) - sp.halfLength)
+      const dy = Math.max(0, _sl0[1] - sp.deckHeight)
+      const d = Math.hypot(dx, dy, dz)
+      if (d < spec.splash) damageShip(cs, sh.id, full * BOMB_NEAR_MISS * (1 - d / spec.splash), p.owner, p.team, pos, now, events)
+    }
+  }
+  const surface = directShip ? "ground" : surfaceAt(pos)
+  splash(pos, p.weapon, p.owner, p.team, p.vehicle, null, vehicles, now, events, surface === "water" ? spec.splash * 0.6 : Infinity)
+  pushExplosion(events, pos, surface === "water" ? spec.splash * 0.5 : spec.splash, surface)
+  if (!directShip && surface === "ground") addCrater(cs, pos, 15, events)
 }
 
 function consumeAmmo(rt: WeaponRuntime, now: number): void {
@@ -988,6 +1045,11 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
     p.age += dt
     if (p.age > p.ttl) continue
     const spec = WEAPONS[p.weapon]
+    if (spec.kind === "bomb") {
+      stepBombProjectile(cs, p, vehicles, dt, now, events)
+      if (p.age >= 0) list[w++] = p
+      continue
+    }
     const gun = spec.kind === "gun"
     if (!gun) p.velocity[1] -= ROCKET_GRAVITY * dt
     const pos = p.position, vel = p.velocity
@@ -1038,6 +1100,27 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
     list[w++] = p
   }
   list.length = w
+}
+
+/** Advance a bomb (flight's bomb model); on impact applies effects and marks it spent (age = -1). */
+function stepBombProjectile(cs: CombatState, p: Projectile, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
+  const pos = p.position
+  _p0[0] = pos[0]; _p0[1] = pos[1]; _p0[2] = pos[2]
+  let left = dt
+  while (left > 1e-9) {
+    const h = Math.min(BOMB_STEP, left)
+    stepBomb(pos, p.velocity, h)
+    left -= h
+  }
+  _p1[0] = pos[0]; _p1[1] = pos[1]; _p1[2] = pos[2]
+  const g = segmentHitsGround(_p0, _p1)
+  if (g === null && p.age <= p.ttl) return
+  if (g === null) { p.age = -1; return }
+  const sh = segmentHitsShipEx(cs, _p0, _p1, now, null)
+  const direct = sh && sh.t <= g + 1e-4 ? sh.ship : null
+  lerpInto(_p0, _p1, direct ? sh!.t : g, _hit)
+  bombImpact(cs, p, _hit, direct, vehicles, now, events)
+  p.age = -1
 }
 
 /** True when a seat's gimbaled/turret gun can point at world point `p` (pilot guns: within GUN_GIMBAL of the nose). */
@@ -1922,6 +2005,8 @@ export function turretHasLOS(t: AaTurret, p: Vec3): boolean {
 function aaEligible(t: AaTurret, v: VehicleEntity, now: number): boolean {
   if (!v.alive || v.team === t.team || isSpawnProtected(v, now)) return false
   const p = v.flight.position
+  // Stealth airframes above the AA ceiling are never engaged (spotted or not).
+  if (VEHICLES[v.kind].stealth && p[1] > STEALTH_AA_CEILING) return false
   const dx = p[0] - t.position[0], dy = p[1] - t.position[1], dz = p[2] - t.position[2]
   return dx * dx + dy * dy + dz * dz <= AA_RANGE * AA_RANGE
 }
@@ -1999,7 +2084,8 @@ function stepFleetAA(cs: CombatState, vehicles: VehicleEntity[], dt: number, now
       st.lastVel[0] = tv[0]; st.lastVel[1] = tv[1]; st.lastVel[2] = tv[2]
     } else st.lastVel = [tv[0], tv[1], tv[2]]
     st.track += dt
-    if (st.track < AA_ACQUIRE) continue
+    // Unspotted stealth below the ceiling takes twice as long to acquire.
+    if (st.track < AA_ACQUIRE * (isHiddenStealth(target, now) ? 2 : 1)) continue
 
     const d = dist(t.position, tp)
     const acc = aaAccuracy(t.position, tp, tv, st.accel ?? 0)

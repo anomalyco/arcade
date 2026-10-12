@@ -345,6 +345,36 @@ describe("room engine", () => {
     expect(r.player(c).turret).toBeNull()
   })
 
+  test("visibility: unspotted stealth enemies are filtered out of enemy snapshots", () => {
+    const r = setup()
+    const a = r.join(), b = r.join(), a2 = r.join()
+    expect(r.player(a2).team).toBe(r.player(a).team)
+    r.send(a, { type: "spawn", kind: "bomber" })
+    const bomber = r.vehicle(a)!
+    r.seconds(SPAWN_PROTECTION + 0.5)
+    bomber.flight.position = [0, 1800, 0]
+    bomber.flight.onGround = false
+    r.ticks(3)
+    const ids = (p: string) => r.lastSnap(p).vehicles.map(v => v.id)
+    expect(ids(a2)).toContain(bomber.id)
+    expect(ids(b)).not.toContain(bomber.id)
+    expect(r.engine.snapshotFor(b).vehicles.some(v => v.id === bomber.id)).toBe(false)
+    // Spotted → visible to the enemy.
+    bomber.spottedUntil = r.engine.time + 5
+    r.ticks(3)
+    expect(ids(b)).toContain(bomber.id)
+    // Unspotted again but an enemy aircraft is within 800 m → visible.
+    bomber.spottedUntil = 0
+    r.send(b, { type: "spawn", kind: "fighter" })
+    const f = r.vehicle(b)!
+    r.seconds(SPAWN_PROTECTION + 0.5)
+    f.flight.position = [500, 1800, 0]
+    f.flight.onGround = false
+    bomber.flight.position = [0, 1800, 0]
+    r.ticks(3)
+    expect(ids(b)).toContain(bomber.id)
+  })
+
   test("craters: full list on join, then diffs", () => {
     const r = setup()
     const a = r.join()

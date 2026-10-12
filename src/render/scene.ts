@@ -107,14 +107,14 @@ function makeStreaks() {
   return { mesh, uSpeed, uOpacity }
 }
 
-/** Non-finite channels → 0, finite ones clamped to [0, 64]. */
+/** Non-finite channels → 0, finite ones clamped to [0, 8] (stacked effects can't white-out the bloom). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function sanitizeHdr(input: any) {
   return Fn(() => {
     const c = vec3(input.rgb).toVar()
     const EXP = uint(0x7f800000)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ch = (x: any) => select((floatBitsToUint(x) as any).bitAnd(EXP).equal(EXP), float(0), min(max(x, 0), 64))
+    const ch = (x: any) => select((floatBitsToUint(x) as any).bitAnd(EXP).equal(EXP), float(0), min(max(x, 0), 8))
     return vec4(ch(c.x), ch(c.y), ch(c.z), 1)
   })()
 }
@@ -187,7 +187,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
 
   // ---- post pipeline: scene (MSAA) → speed blur (High) → bloom → exposure/ACES → grade, vignette, grain.
   const uExposure = uniform(1.0)
-  const uBloom = uniform(0.9)
+  const uBloom = uniform(0.6)
   const uSat = uniform(0.86)
   const uVignette = uniform(0.42)
   const uGrain = uniform(0.035)
@@ -223,7 +223,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     // ACES), so zero non-finite channels (exponent-bits test: survives fast-math) and cap HDR before bloom.
     hdr = sanitizeHdr(hdr)
     // Bloom on HDR emissives (afterburners, tracers, fire, lightning); the dim storm scene stays below threshold.
-    bloomNode = bloom(hdr, 0.9, 0.5, 0.82)
+    bloomNode = bloom(hdr, 0.6, 0.45, 0.9)
     bloomNode.strength = uBloom as never
     // Bloom is a soft glow: a quarter-res chain on Balanced is indistinguishable and much cheaper.
     if (q !== "high") bloomNode.setResolutionScale(0.35)
@@ -461,7 +461,7 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     const worldFlash = typeof wl === "function" ? wl() : typeof wl === "number" ? wl : 0
     flash = Math.max(flash * Math.exp(-dt * 9), worldFlash)
     uExposure.value = 1 + flash * 0.9
-    uBloom.value = 0.9 + flash * 1.6
+    uBloom.value = 0.6 + flash * 1.9
 
     renderer.info.reset()
     if (pipeline) pipeline.render()

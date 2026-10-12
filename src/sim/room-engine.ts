@@ -10,10 +10,11 @@ import { SNAPSHOT_RATE, TICK_DT, TICK_RATE } from "./types"
 import { VEHICLES, VEHICLE_KINDS } from "./vehicles"
 import { NEUTRAL_INPUT, createFlightState, stepFlight } from "./flight"
 import {
-  applySeatInput, applyTurretInput, createCombatState, createWeapons, killVehicle, markSpawned, shipRuntime, stepCombat, turretOperational,
+  applySeatInput, applyTurretInput, createCombatState, createWeapons, isHiddenStealth, killVehicle, markSpawned, shipRuntime, stepCombat,
+  turretOperational,
 } from "./combat"
 import type { CombatState } from "./combat"
-import { carrierOf, deckVelocity, posedShip, setFleetState, setShipStates, spawnPoint, worldQuery as baseWorldQuery } from "./geography"
+import { carrierOf, deckVelocity, posedFleet, posedShip, setFleetState, setShipStates, spawnPoint, worldQuery as baseWorldQuery } from "./geography"
 import { FLEET, SHIP_SPECS, SPAWN_PROTECTION, shipToWorld, worldToShip } from "./fleet"
 import { botInput, chooseBotVehicle, createBotBrain } from "./bots"
 import type { BotBrain } from "./bots"
@@ -64,6 +65,8 @@ const CHAT_MAX = 200
 const CHAT_BURST = 4
 const CHAT_REFILL = 1.5 // seconds per token
 const NAME_MAX = 16
+/** An unspotted stealth enemy is sent to a team only within this range of one of its aircraft or ships. */
+export const STEALTH_VISUAL_RANGE = 800
 /** Cap on client-reported view delay used for lag-compensated hits (seconds). */
 export const MAX_VIEW_DELAY = 0.3
 const SPAWN_SLOTS = 16
@@ -1114,7 +1117,29 @@ export class RoomEngine {
     const decode = createSnapshotDecoder()
     const p = this.players.get(playerId)
     const shared = this.wireShared(true)
+    if (p) shared.vehicles = shared.vehicles.filter((_, i) => this.visibleTo(p.info.team, this.vehicles[i]))
     return decode({ ...shared, ...this.wirePersonal(p ?? null, false) } as WireSnapshot) as Snapshot
+  }
+
+  /**
+   * Visibility contract: a stealth enemy is sent to `team` only while spotted or within STEALTH_VISUAL_RANGE
+   * of one of that team's aircraft or (afloat) ships. Everything else is always visible.
+   */
+  visibleTo(team: number, v: VehicleEntity): boolean {
+    if (v.team === team || !isHiddenStealth(v, this.time)) return true
+    const p = v.flight.position, r2 = STEALTH_VISUAL_RANGE * STEALTH_VISUAL_RANGE
+    for (const o of this.vehicles) {
+      if (!o.alive || o.team !== team) continue
+      const q = o.flight.position
+      const dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2]
+      if (dx * dx + dy * dy + dz * dz < r2) return true
+    }
+    for (const sh of posedFleet()) {
+      if (sh.team !== team || shipRuntime(this.combat, sh.id)?.sunk) continue
+      const dx = p[0] - sh.position[0], dy = p[1] - 20, dz = p[2] - sh.position[2]
+      if (dx * dx + dy * dy + dz * dz < r2) return true
+    }
+    return false
   }
 
   private wireShared(withPlayers: boolean): Omit<WireSnapshot, "ack"> {
@@ -1188,14 +1213,28 @@ export class RoomEngine {
     }
     const craters = this.combat.craters ?? []
     if (craters.length > this.cratersSent) { shared.craters = craters.slice(this.cratersSent); this.cratersSent = craters.length }
-    // Serialize the shared body once; per-player fields are appended as a short JSON tail.
-    const body = JSON.stringify(shared)
-    const head = body.slice(0, -1)
+    // Serialize the shared body once (vehicles separately: each packed vehicle is stringified once and
+    // joined per team, so hidden stealth aircraft cost only a filtered join); per-player fields are a tail.
+    const parts = shared.vehicles.map(v => JSON.stringify(v))
+    const { vehicles: _omit, ...rest } = shared
+    const head = `${JSON.stringify(rest).slice(0, -1)},"vehicles":`
+    const all = `[${parts.join(",")}]`
+    const anyHidden = this.vehicles.some(v => isHiddenStealth(v, this.time))
+    const perTeam = new Map<number, string>()
+    const vehiclesFor = (team: number): string => {
+      if (!anyHidden) return all
+      let json = perTeam.get(team)
+      if (json === undefined) {
+        json = `[${parts.filter((_, i) => this.visibleTo(team, this.vehicles[i])).join(",")}]`
+        perTeam.set(team, json)
+      }
+      return json
+    }
     for (const p of this.players.values()) {
       if (p.info.bot) continue
       const personal = this.wirePersonal(p, p.needsPlayers)
       p.needsPlayers = false
-      const text = `${head},${JSON.stringify(personal).slice(1)}`
+      const text = `${head}${vehiclesFor(p.info.team)},${JSON.stringify(personal).slice(1)}`
       if (this.hooks.sendText) this.hooks.sendText(p.info.id, text)
       else {
         let decode = this.decoders.get(p.info.id)

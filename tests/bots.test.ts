@@ -450,7 +450,7 @@ test("chooseBotVehicle mixes kinds and avoids stacking Blackbirds", () => {
   const bot = player(0, 0)
   const seen = new Set<string>()
   for (let i = 0; i < 400; i++) seen.add(chooseBotVehicle(bot, [], [], rng))
-  expect(seen.size).toBe(4)
+  expect(seen.size).toBe(5)
   const bbs = [vehicle("blackbird", 0, [0, 0, 0], [0, 0, 0]), vehicle("blackbird", 0, [0, 0, 0], [0, 0, 0])]
   let bb = 0
   for (let i = 0; i < 400; i++) if (chooseBotVehicle(bot, [], bbs, rng) === "blackbird") bb++
@@ -621,5 +621,45 @@ describe("Fleet Strike runs", () => {
     brain.state.defender = true
     botInput(brain, player(0, 0), me, [me, raider], 5, [], flat(), sunk)
     expect(brain.state.phase).toBe("engage")
+  })
+})
+
+describe("B-2 bots", () => {
+  beforeEach(() => setFleetState(0, 2))
+
+  test("bombardier releases only when the predicted impact is on an enemy ship", () => {
+    const c = posedFleet().find(s => s.id === "t1-carrier")!
+    const b = vehicle("bomber", 0, [c.position[0], 1800, c.position[2]], [0, 0, 0])
+    const brain = createBotBrain(3, 0.8)
+    let out = snap(botInput(brain, player(0, 1), b, [b], 10, [], worldQuery))
+    expect(out.seat.firePrimary).toBe(true)
+    b.flight.position = [c.position[0] + 2_000, 1800, c.position[2] + 2_000]
+    out = snap(botInput(brain, player(0, 1), b, [b], 11, [], worldQuery))
+    expect(out.seat.firePrimary).toBe(false)
+  })
+
+  test("bomber pilot climbs toward cruise altitude and heads for the enemy fleet", () => {
+    const c = posedFleet().find(s => s.id === "t1-carrier")!
+    const start: Vec3 = [c.position[0] * 0.2, 900, c.position[2] * 0.2]
+    const dir: Vec3 = [c.position[0] - start[0], 0, c.position[2] - start[2]]
+    const l = Math.hypot(dir[0], dir[2])
+    const b = vehicle("bomber", 0, start, [dir[0] / l * 150, 0, dir[2] / l * 150], dir)
+    const brain = createBotBrain(5, 0.8)
+    const out = snap(botInput(brain, player(0, 0), b, [b], 30, [], worldQuery))
+    expect(brain.state.phase).toBe("strike")
+    expect(pitchOf(out.flight!.aim!)).toBeGreaterThan(0.1)
+    expect(angle([out.flight!.aim![0], 0, out.flight!.aim![2]], dir)).toBeLessThan(0.5)
+  })
+
+  test("bots don't target unspotted stealth aircraft", () => {
+    const me = vehicle("fighter", 0, [0, 1500, 0], [0, 0, -150])
+    const b2 = vehicle("bomber", 1, [0, 1500, -900], [0, 0, -150])
+    const brain = createBotBrain(21, 1)
+    botInput(brain, player(0, 0), me, [me, b2], 10, [], flat())
+    expect(brain.state.targetId).toBeNull()
+    b2.spottedUntil = 100
+    brain.state.retargetAt = 0
+    botInput(brain, player(0, 0), me, [me, b2], 11, [], flat())
+    expect(brain.state.targetId).toBe(b2.id)
   })
 })

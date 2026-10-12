@@ -129,9 +129,7 @@
 /* Enemy-fleet anti-air warning (above the crosshair) and spawn protection (below). */
 .hud-aa { left: 50%; top: calc(50% - 64px); transform: translateX(-50%); display: none; white-space: nowrap; font: 500 13px var(--mono); color: var(--or); }
 .hud-aa.on { display: block; }
-.hud-aa b { font: 500 15px var(--narrow); }
-.hud-aa.fire b { animation: pulse .35s ease-in-out infinite alternate; }
-.hud.aafire .hud-warnfx { background: radial-gradient(140% 120% at 50% 50%, transparent 62%, rgba(232, 84, 46, .32) 100%); animation: warnfx .7s ease-in-out infinite; }
+.hud-aa b { font: 500 14px var(--narrow); }
 .hud-prot { left: 50%; top: calc(50% + 48px); transform: translateX(-50%); display: none; font: 500 12px var(--mono); color: var(--dim); white-space: nowrap; }
 .hud-prot.on { display: block; }
 .hud:not(.flying) .hud-ships, .hud:not(.flying) .hud-aa, .hud:not(.flying) .hud-prot { display: none; }
@@ -171,8 +169,8 @@
 @keyframes warnfx { 50% { opacity: 1; } }
 .hud-low { background: radial-gradient(130% 110% at 50% 50%, transparent 62%, rgba(176, 74, 68, .28) 100%); }
 .hud.low .hud-low { animation: warnfx 1.8s ease-in-out infinite; }
-.hud-dmg { background: radial-gradient(ellipse at center, transparent 52%, rgba(176, 74, 68, .35) 100%); }
-.hud-dmg.on { animation: dmg .4s ease-out; }
+.hud-dmg { background: radial-gradient(ellipse at center, transparent 60%, rgba(176, 74, 68, .2) 100%); }
+.hud-dmg.on { animation: dmg .3s ease-out; }
 @keyframes dmg { 0% { opacity: 1; } 100% { opacity: 0; } }
 
 .hud-banner { top: 22%; left: 0; right: 0; text-align: center; opacity: 0; transform: translateY(-4px); transition: opacity .3s, transform .4s var(--ease); }
@@ -268,7 +266,7 @@
 .hud-board em { font: 400 10px var(--mono); color: var(--dim); font-style: normal; margin-left: 6px; }
 
 .hud-dir { left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; opacity: 0; transform: rotate(var(--a, 0deg)); text-shadow: none; }
-.hud-dir i { position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid transparent; border-top-color: rgba(224, 154, 146, .95); }
+.hud-dir i { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: rgba(224, 154, 146, .95); }
 .hud-dir.on { animation: dmg .8s ease-out; }
 .hud-death { left: var(--x); top: 40%; opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .4s var(--ease); white-space: nowrap; }
 .hud-death.show { opacity: 1; transform: none; }
@@ -375,3 +373,18 @@
 .spawn.guns .sp-list .menu.mid .mi { grid-template-columns: 34px 22px minmax(0, 230px) 1fr; }
 .spawn.guns .sp-list .mi.sm .t { line-height: 1.5 !important; }
 .spawn.guns .sp-list { top: clamp(200px, 31vh, 300px); }
+
+/* Bomber: predicted impact reticle, readout + release cue, stealth status */
+.hud-bimp { left: 0; top: 0; width: 0; height: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); }
+.hud-bimp i { position: absolute; left: -12px; top: -12px; width: 24px; height: 24px; border: 1.5px solid var(--fg); transform: rotate(45deg); filter: drop-shadow(0 1px 1px rgba(8, 12, 12, .6)); }
+.hud-bimp::after { content: ""; position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; background: var(--fg); }
+.hud-bimp.on i { border-color: var(--or); }
+.hud-bomb { left: 50%; top: calc(50% + 64px); transform: translateX(-50%); display: none; text-align: center; white-space: nowrap; }
+.hud-bomb.on { display: block; }
+.hud-bomb .rel { display: none; font: 700 26px/1 var(--narrow); color: var(--or); letter-spacing: -.01em; margin-bottom: 6px; }
+.hud-bomb.go .rel { display: block; }
+.hud-bomb .rd { font: 500 12px var(--mono); color: var(--fg); }
+.hud-stealth { left: 50%; bottom: 104px; transform: translateX(-50%); display: none; font: 500 12px var(--mono); color: var(--dim); white-space: nowrap; }
+.hud-stealth.on { display: block; }
+.hud-stealth.low { color: var(--or); }
+.hud:not(.flying) .hud-bimp, .hud:not(.flying) .hud-bomb, .hud:not(.flying) .hud-stealth { display: none; }

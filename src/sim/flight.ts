@@ -151,6 +151,16 @@ const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
     airbrake: 3, wheelBrake: 9, sideLift: 0.5, bankTurn: 0.5,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
+  // Bomber (B-2): heavy, stable, slow to pitch and roll, wide turns; high, efficient cruise; modest boost.
+  bomber: {
+    thrust: 9, throttleRate: 0.35,
+    cornerSpeed: 140, cornerRate: 0.3, minRateFrac: 0.35, pushFrac: 0.5, rollRate: 0.8, yawRate: 0.08,
+    pitchResponse: 2.8, rollResponse: 4, yawResponse: 2.8,
+    pitchGain: 0.8, rollGain: 1.1, yawGain: 0.6,
+    grip: 3.5, induced: 0.5,
+    airbrake: 2.5, wheelBrake: 8, sideLift: 0.5, bankTurn: 0.5,
+    maxGroundPitch: 10 * DEG, gearHeight: 2.5, bellyHeight: 1.2,
+  },
 }
 
 const HELI: Record<"apache", HeliHandling> = {
@@ -820,6 +830,51 @@ export function cloneFlight(state: FlightState): FlightState {
     crashed: state.crashed,
     tick: state.tick,
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Bomb ballistics (shared with combat): released at the aircraft's velocity, gravity + light drag.
+// ---------------------------------------------------------------------------------------------
+
+/** Quadratic drag coefficient for free-fall bombs (1/m): a_drag = -BOMB_DRAG·|v|·v. */
+export const BOMB_DRAG = 0.0004
+/** Fixed integration step for bomb flight (s) — combat should step bombs with the same model. */
+export const BOMB_STEP = 1 / 60
+const BOMB_MAX_TIME = 60
+
+/** Advance a bomb one step (semi-implicit Euler). Mutates pos/vel. */
+export function stepBomb(pos: number[], vel: number[], dt: number): void {
+  const sp = Math.sqrt(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2])
+  const k = BOMB_DRAG * sp
+  vel[0] -= vel[0] * k * dt
+  vel[1] -= (vel[1] * k + GRAVITY) * dt
+  vel[2] -= vel[2] * k * dt
+  pos[0] += vel[0] * dt; pos[1] += vel[1] * dt; pos[2] += vel[2] * dt
+}
+
+const BP = [0, 0, 0], BV = [0, 0, 0]
+/**
+ * Predicted impact point of a bomb released at `pos` with velocity `vel` (writes `out`). The surface is
+ * `world.groundHeight` when given, else sea level. Returns the fall time (s), or -1 if it never lands.
+ */
+export function bombImpactPoint(pos: Vec3, vel: Vec3, out: Vec3, world?: WorldQuery): number {
+  BP[0] = pos[0]; BP[1] = pos[1]; BP[2] = pos[2]
+  BV[0] = vel[0]; BV[1] = vel[1]; BV[2] = vel[2]
+  for (let t = 0; t < BOMB_MAX_TIME; t += BOMB_STEP) {
+    const py = BP[1]
+    stepBomb(BP, BV, BOMB_STEP)
+    const g = world ? world.groundHeight(BP[0], BP[2]) : 0
+    if (BP[1] <= g) {
+      // Interpolate back to the surface crossing within this step.
+      const f = py - BP[1] > 1e-9 ? (py - g) / (py - BP[1]) : 1
+      out[0] = BP[0] - BV[0] * BOMB_STEP * (1 - f)
+      out[1] = g
+      out[2] = BP[2] - BV[2] * BOMB_STEP * (1 - f)
+      return t + BOMB_STEP * f
+    }
+  }
+  out[0] = BP[0]; out[1] = BP[1]; out[2] = BP[2]
+  return -1
 }
 
 // ---------------------------------------------------------------------------------------------

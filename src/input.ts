@@ -57,6 +57,9 @@ export const KEY_RAMP = 0.25
 export const KEY_RAMP_FAST = 0.12
 /** Gun reticle gimbal half-angle (rad): combat's GUN_GIMBAL (pilot guns fire inside this cone). */
 export const RETICLE_LIMIT = GUN_GIMBAL
+/** Bomb sight cone half-angle around straight down (rad) and the initial forward lead. */
+export const BOMBSIGHT_CONE = 35 * Math.PI / 180
+const BOMBSIGHT_DEFAULT_FWD = 20 * Math.PI / 180
 /** Soft steering assist starts when the reticle is past this fraction of the cone. */
 export const RETICLE_ASSIST_START = 0.7
 /** Assist deflection at the cone edge (pitch / yaw, −1..1 units added to the keys). */
@@ -127,6 +130,10 @@ export class Input {
   reticleX = 0
   reticleY = 0
   private reticleActive = false
+  /** Bombardier bomb sight: stabilized aim offsets from straight down (rad; fwd = toward the nose). */
+  bombFwd = 0
+  bombSide = 0
+  private bombsightActive = false
   private heliPilot = false
   /** Pilot orientation (for the body-relative reticle). */
   private pose: [number, number, number, number] = [0, 0, 0, 1]
@@ -260,12 +267,35 @@ export class Input {
     return direct ? "direct" : "aim"
   }
 
+  /** Bomb sight on/off (bombardier seat). The sight is stabilized: it uses only the nose heading. */
+  setBombsight(active: boolean): void {
+    if (active && !this.bombsightActive) { this.bombFwd = BOMBSIGHT_DEFAULT_FWD; this.bombSide = 0 }
+    this.bombsightActive = active
+  }
+
+  get bombsight(): boolean {
+    return this.bombsightActive
+  }
+
   aimDir(out: Vec3): Vec3 {
+    if (this.bombsightActive) return this.bombDir(out)
     return dirFromAngles(this.aimYaw, this.aimPitch, out)
+  }
+
+  /** Bomb-sight direction: straight down tilted forward/sideways in the heading frame (no roll/pitch). */
+  private bombDir(out: Vec3): Vec3 {
+    const sy = Math.sin(this.noseYaw), cy = Math.cos(this.noseYaw)
+    const tf = Math.tan(this.bombFwd), ts = Math.tan(this.bombSide)
+    // heading forward (-sin, 0, -cos), heading right (cos, 0, -sin)
+    const x = -sy * tf + cy * ts, y = -1, z = -cy * tf - sy * ts
+    const n = 1 / Math.sqrt(x * x + y * y + z * z)
+    out[0] = x * n; out[1] = y * n; out[2] = z * n
+    return out
   }
 
   /** Mouse-aim / gunner camera direction (aim + free-look offset). */
   lookDir(out: Vec3): Vec3 {
+    if (this.bombsightActive) return this.bombDir(out)
     return dirFromAngles(this.aimYaw + this.lookYaw, clamp(this.aimPitch + this.lookPitch, -MAX_PITCH, MAX_PITCH), out)
   }
 
@@ -427,6 +457,13 @@ export class Input {
       const s = AIM_SENS * settings.sensitivity
       this.lookYaw -= dx * s
       this.lookPitch = clamp(this.lookPitch - dy * s, -MAX_PITCH, MAX_PITCH)
+    } else if (this.bombsightActive) {
+      // Bomb sight: mouse away = aim further ahead; clamped to the sight cone.
+      const s = AIM_SENS * settings.sensitivity * 0.6
+      let f = this.bombFwd - dy * s * (settings.invertY ? -1 : 1), sd = this.bombSide + dx * s
+      const r = Math.hypot(f, sd)
+      if (r > BOMBSIGHT_CONE) { f *= BOMBSIGHT_CONE / r; sd *= BOMBSIGHT_CONE / r }
+      this.bombFwd = f; this.bombSide = sd
     } else if (this.reticleActive) {
       // Gun reticle: body-relative, clamped to the gimbal cone (mouse away = up unless inverted).
       const s = AIM_SENS * settings.sensitivity * 0.5

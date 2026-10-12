@@ -8,7 +8,7 @@ import type { FlightModel, VehicleKind, WeaponId } from "./types"
  *   missile only homes while the scanner stays within `lockCone` of its target (semi-active guidance). Long range, slow to deliver.
  * pulse: radar pulse ability (spots enemies).
  */
-export type WeaponKind = "gun" | "rockets" | "missile_lock" | "missile_scanner" | "pulse"
+export type WeaponKind = "gun" | "rockets" | "missile_lock" | "missile_scanner" | "pulse" | "bomb"
 
 export interface WeaponSpec {
   id: WeaponId
@@ -58,6 +58,8 @@ export interface VehicleSpec {
   seatWeapons: [[WeaponId | null, WeaponId | null], [WeaponId | null, WeaponId | null]]
   flares: number
   seatNames: [string, string]
+  /** Stealth airframe (see STEALTH_* rules). */
+  stealth?: boolean
 }
 
 export const WEAPONS: Record<WeaponId, WeaponSpec> = {
@@ -70,8 +72,20 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
   hellfire: { id: "hellfire", name: "Hellfire", kind: "missile_lock", damage: 130, splash: 12, rate: 0.25, speed: 260, ttl: 8, ammo: 4, refill: 40, refillDelay: 4, range: 1500, lockCone: 0.07, lockTime: 2.5, turnRate: 1.5, turret: true },
   maverick: { id: "maverick", name: "Maverick", kind: "missile_lock", damage: 150, splash: 14, rate: 0.2, speed: 280, ttl: 8, ammo: 2, refill: 40, refillDelay: 4, range: 1500, lockCone: 0.07, lockTime: 2.5, turnRate: 1.4, turret: true },
   aim47: { id: "aim47", name: "Long-Range Interceptor", kind: "missile_scanner", damage: 160, splash: 16, rate: 0.2, speed: 450, ttl: 22, ammo: 3, refill: 50, refillDelay: 5, range: 8000, lockCone: 0.08, lockTime: 3, turnRate: 1.3, turret: true },
+  bomb: { id: "bomb", name: "Bomb", kind: "bomb", damage: 900, splash: 45, rate: 0.6, speed: 0, ttl: 40, ammo: 8, refill: 60, refillDelay: 6, turret: true },
   radarpulse: { id: "radarpulse", name: "Radar Pulse", kind: "pulse", damage: 0, splash: 4000, rate: 1 / 20, speed: 0, ttl: 8, ammo: -1, refill: 0, refillDelay: 0, turret: true },
 }
+
+/**
+ * Stealth rules (enforced by combat + room engine + HUD):
+ * - Unspotted stealth enemies are hidden from a team's snapshots unless within 800 m of that team.
+ * - Locking an unspotted stealth aircraft takes STEALTH_LOCK_TIME; completing it spots it for STEALTH_LOCK_SPOT s.
+ * - Fleet AA never engages stealth aircraft above STEALTH_AA_CEILING (fleet AA otherwise reaches ~1200 m slant range,
+ *   so the ceiling must be well below that to matter).
+ */
+export const STEALTH_AA_CEILING = 600
+export const STEALTH_LOCK_TIME = 4
+export const STEALTH_LOCK_SPOT = 8
 
 export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
   fighter: {
@@ -97,6 +111,12 @@ export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
     maxHp: 380, radius: 12, cruise: 190, boost: 260, stall: 75,
     seatWeapons: [[null, null], ["aim47", "radarpulse"]], flares: 8,
     seatNames: ["Pilot", "Radar Officer"],
+  },
+  bomber: {
+    kind: "bomber", name: "B-2 Spirit", model: "models/b2.glb", flight: "jet",
+    maxHp: 900, radius: 18, cruise: 150, boost: 180, stall: 70,
+    seatWeapons: [[null, null], ["bomb", null]], flares: 10,
+    seatNames: ["Pilot", "Bombardier"], stealth: true,
   },
 }
 

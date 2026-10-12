@@ -11,6 +11,7 @@ const COCKPIT: Record<VehicleKind, Vec3> = {
   apache: [0, 2.5, -1.2],
   warthog: [0, 1.7, -4.4],
   blackbird: [0, 1.6, -9],
+  bomber: [0, 2.2, -9],
 }
 /** Gunner camera: targeting pod / chin turret position. */
 const GUNNER: Record<VehicleKind, Vec3> = {
@@ -18,13 +19,17 @@ const GUNNER: Record<VehicleKind, Vec3> = {
   apache: [0, -1.3, -4.2],
   warthog: [0, -1.5, -2],
   blackbird: [0, -2.4, -15],
+  bomber: [0, -3, -4],
 }
 /**
  * Gunner eye placement relative to the optic: metres along the line of sight (clears the own nose/belly)
  * and metres straight down (below the fuselage), so the own airframe never fills the frame.
  */
-const GUNNER_LEAD: Record<VehicleKind, number> = { fighter: 9, apache: 2.5, warthog: 8, blackbird: 4 }
-const GUNNER_DROP: Record<VehicleKind, number> = { fighter: 1.5, apache: 0.6, warthog: 1.5, blackbird: 1.5 }
+const GUNNER_LEAD: Record<VehicleKind, number> = { fighter: 9, apache: 2.5, warthog: 8, blackbird: 4, bomber: 3 }
+const GUNNER_DROP: Record<VehicleKind, number> = { fighter: 1.5, apache: 0.6, warthog: 1.5, blackbird: 1.5, bomber: 2 }
+/** Bomb-sight optical zoom range. */
+export const BOMBSIGHT_MIN_ZOOM = 2
+export const BOMBSIGHT_MAX_ZOOM = 8
 /** Minimum eye height above the ground/water surface (m). */
 const GROUND_CLEARANCE = 1.5
 const CHASE: Record<VehicleKind, { dist: number; height: number }> = {
@@ -32,6 +37,7 @@ const CHASE: Record<VehicleKind, { dist: number; height: number }> = {
   apache: { dist: 24, height: 7 },
   warthog: { dist: 28, height: 7 },
   blackbird: { dist: 40, height: 9 },
+  bomber: { dist: 60, height: 13 },
 }
 
 const UP = new Vector3(0, 1, 0)
@@ -211,6 +217,25 @@ export class CameraRig {
     _v.copy(this.pos).add(look)
     this.lookAt(this.pos, _v, _v2)
     this.fov = this.baseFov + 6
+  }
+
+  /**
+   * Bombardier bomb sight: from the bomb bay, looking along `look` (toward the chosen ground point),
+   * stabilized — the image never rolls with the aircraft; screen-up is the aircraft's heading.
+   */
+  bombsight(dt: number, kind: VehicleKind, position: Vec3, orientation: Quat, look: Vector3, zoom: number): void {
+    _q.set(orientation[0], orientation[1], orientation[2], orientation[3])
+    const o = GUNNER[kind]
+    this.pos.set(o[0], o[1], o[2]).applyQuaternion(_q).add(_v.set(position[0], position[1], position[2]))
+    this.pos.y -= GUNNER_DROP[kind]
+    // Heading-only "up" (forward on the ground) keeps the sight level whatever the bank.
+    _v2.set(0, 0, -1).applyQuaternion(_q)
+    _v2.y = 0
+    if (_v2.lengthSq() < 1e-6) _v2.set(0, 0, -1)
+    _v2.normalize()
+    _v.copy(this.pos).add(look)
+    this.lookAt(this.pos, _v, _v2)
+    this.fov = 60 / Math.max(BOMBSIGHT_MIN_ZOOM, Math.min(BOMBSIGHT_MAX_ZOOM, zoom))
   }
 
   /** Gunner optics. `anchor` = world position of the turret / targeting pod when the model provides one. */

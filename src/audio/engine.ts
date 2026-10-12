@@ -297,6 +297,9 @@ export function createAudio(): GameAudioEngine {
             case "rockets":
               if (c.allow(`rk:${e.vehicle}`, 0.06)) sfx.rocket(c, at, own)
               break
+            case "bomb":
+              if (c.allow(`bomb:${e.vehicle}`, 0.3)) sfx.bombWhistle(c, at, own)
+              break
             case "radarpulse":
               if (c.allow(`pulse:${e.vehicle}`, 1)) sfx.radarPulse(c, at, own)
               break

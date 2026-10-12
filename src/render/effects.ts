@@ -26,6 +26,8 @@ type N = any
 const uTime = uniform(0)
 /** HDR gain for emissive effects: well above the bloom threshold so fire and tracers glow. */
 const GLOW_GAIN = 5
+/** Cap on any effect's HDR output so stacked effects can't drive bloom to white-out. */
+const EFFECT_HDR_MAX = 4
 const FIRE_GAIN = 3.2
 
 /** Instanced attribute ring buffer; draws only up to the high-water mark and nothing once all have expired. */
@@ -94,6 +96,8 @@ function glowMaterial(r: Ring): SpriteNodeMaterial {
   m.positionNode = center
   m.scaleNode = mix(t.z, t.w, float(1).sub(float(1).sub(k).mul(float(1).sub(k)))).mul(alive)
   m.rotationNode = phys.z.mul(6.2831)
+  // Glows right next to the camera (hits on your own airframe) would fill the screen: fade them in from 12–45 m.
+  const camFade = smoothstep(12, 45, length(center.sub(cameraPosition)))
   m.colorNode = Fn(() => {
     const p = uv().sub(0.5)
     const d = length(p).mul(2)
@@ -103,7 +107,7 @@ function glowMaterial(r: Ring): SpriteNodeMaterial {
       .add(saturate(float(1).sub(abs(p.y).mul(14))).mul(saturate(float(1).sub(abs(p.x).mul(2.2)))))
     const col: N = mix(c0, c1, k)
     const hot = col.rgb.add(vec3(smoothstep(0.35, 0, d).mul(0.8)))
-    return vec4(hot.mul(GLOW_GAIN), core.add(star.mul(0.3)).mul(col.a))
+    return vec4(min(hot.mul(GLOW_GAIN), vec3(EFFECT_HDR_MAX)) as N, core.add(star.mul(0.3)).mul(col.a).mul(camFade))
   })()
   return m
 }
@@ -135,21 +139,21 @@ function smokeMaterial(r: Ring): SpriteNodeMaterial {
 }
 
 /** Camera-facing ribbon between tail and head (world space); `x` across ∈ [-0.5, 0.5], `along` ∈ [0, 1]. */
-function ribbon(head: N, tail: N, width: N): N {
+function ribbon(head: N, tail: N, width: N, distWidth = 0.0014): N {
   const along = positionGeometry.y.add(0.5)
   const p = mix(tail, head, along)
   const side = normalize(cross(head.sub(tail), p.sub(cameraPosition)).add(vec3(1e-5, 0, 0)))
-  const w = max(width, length(p.sub(cameraPosition)).mul(0.0014))
+  const w = max(width, length(p.sub(cameraPosition)).mul(distWidth))
   return p.add(side.mul(positionGeometry.x.mul(2).mul(w)))
 }
 
-function tracerColor(color: N): N {
+function tracerColor(color: N, gain = GLOW_GAIN): N {
   const f = float(1).sub(abs(positionGeometry.x.mul(2)))
   const along = positionGeometry.y.add(0.5)
   const core = smoothstep(0.45, 0.95, f)
   const fade = smoothstep(0, 0.75, along)
   const col = mix(color, vec3(1, 0.93, 0.78).mul(1.6), core)
-  return vec4(col.mul(f.mul(f).mul(f)).mul(fade).mul(GLOW_GAIN), 1)
+  return vec4(min(col.mul(f.mul(f).mul(f)).mul(fade).mul(gain), vec3(EFFECT_HDR_MAX)), 1)
 }
 
 const c = (hex: string) => new Color(hex)
@@ -195,6 +199,8 @@ export interface Effects {
   /** Set this frame's tracers (bullets). Up to the tracer capacity; extra are dropped. */
   setTracers(count: number, write: (i: number, pos: Float32Array, dir: Float32Array, col: Float32Array) => void): void
   setMissiles(count: number, write: (i: number, m: Matrix4) => void): void
+  /** Falling bombs (dark finned bodies). */
+  setBombs(count: number, write: (i: number, m: Matrix4) => void): void
   setQuality(q: Quality): void
   dispose(): void
 }
@@ -302,8 +308,12 @@ export function createEffects(quality: Quality): Effects {
     const head = pos.add(vel.mul(age))
     const sp = max(length(vel), 1)
     const tail = head.sub(vel.div(sp).mul(min(t.z, sp.mul(age).add(0.01))))
-    aaMat.positionNode = ribbon(head, tail, t.w).mul(alive).add(vec3(0, float(1).sub(alive).mul(-1e5), 0))
-    aaMat.colorNode = tracerColor(vec3(1, 0.62, 0.28))
+    // Hidden within 40 m of the camera (never a streak across the lens or through the near plane).
+    const near = min(length(head.sub(cameraPosition)), length(tail.sub(cameraPosition)))
+    const vis = alive.mul(step(40, near))
+    aaMat.positionNode = ribbon(head, tail, t.w, 0.0005).mul(vis).add(vec3(0, float(1).sub(vis).mul(-1e5), 0))
+    // Just above the bloom threshold: readable streaks, not light sabres.
+    aaMat.colorNode = tracerColor(vec3(1, 0.62, 0.28), 1.3).mul(vec4(vec3(smoothstep(40, 120, near)), 1))
   }
   const aaMesh = new Mesh(new PlaneGeometry(1, 1), aaMat)
   aaMesh.frustumCulled = false
@@ -325,6 +335,14 @@ export function createEffects(quality: Quality): Effects {
   missiles.instanceMatrix.setUsage(DynamicDrawUsage)
   missiles.count = 0
   missiles.frustumCulled = false
+  const BOMBS = 48
+  const bgeo = missileGeometry()
+  bgeo.scale(2.2, 2.2, 1.5)
+  const bmat = new MeshStandardNodeMaterial({ color: "#3a3e3c", roughness: 0.6, metalness: 0.2 })
+  const bombsMesh = new InstancedMesh(bgeo, bmat, BOMBS)
+  bombsMesh.instanceMatrix.setUsage(DynamicDrawUsage)
+  bombsMesh.count = 0
+  bombsMesh.frustumCulled = false
 
   // ---- expanding shells: radar pulses and shockwaves (rim-lit)
   const shellGeo = new IcosahedronGeometry(1, 3)
@@ -384,7 +402,7 @@ export function createEffects(quality: Quality): Effects {
     t[i * 4] = now + delay; t[i * 4 + 1] = life; t[i * 4 + 2] = size; t[i * 4 + 3] = foam ? 1 : 0
   }
 
-  root.add(decalMesh, smokeSprite, debrisMesh, missiles, glowSprite, tracers, aaMesh)
+  root.add(decalMesh, smokeSprite, debrisMesh, missiles, bombsMesh, glowSprite, tracers, aaMesh)
 
   function debris(p: Vec3, n: number, speed: number, size: number) {
     const [pos, vel, t, col, seed] = debrisR.arrays
@@ -447,7 +465,7 @@ export function createEffects(quality: Quality): Effects {
     explosion(p, size) {
       const air = size >= 12 || size <= 1
       const s = air ? 9 : Math.max(4, Math.min(16, size))
-      glow(p[0], p[1], p[2], 0, 0, 0, 0.16, s * 2.4, s * 4.2, WHITE, 1, BALL_A, 0, 0, 0)
+      glow(p[0], p[1], p[2], 0, 0, 0, 0.12, s * 1.6, s * 2.8, WHITE, 0.7, BALL_A, 0, 0, 0)
       // Fireball: emissive puffs held near full size, then heavy dark smoke rolls in 0.3 s later.
       const nf = Math.round((air ? 12 : 7 + s * 0.4) * density) + 3
       for (let i = 0; i < nf; i++) {
@@ -464,10 +482,10 @@ export function createEffects(quality: Quality): Effects {
         smoke(p[0] + rnd(s * 0.5), p[1] + rnd(s * 0.35), p[2] + rnd(s * 0.5), rnd(v), rnd(v * 0.5) + s * 0.25, rnd(v),
           3 + Math.random() * 2.5, r * 0.8, r * 2.2, _tmp, 0, SMOKE_MID, 0, 1.2, 1.5, 1.2, 0.3 + Math.random() * 0.15)
       }
-      const nk = Math.round((10 + s) * density)
+      const nk = Math.round((5 + s * 0.5) * density)
       for (let i = 0; i < nk; i++) {
         const v = 35 + s * 5
-        glow(p[0], p[1], p[2], rnd(v), rnd(v) + 10, rnd(v), 0.5 + Math.random() * 0.6, 0.9, 0.25, SPARK, 1, SPARK_B, 0, 1, -25)
+        glow(p[0], p[1], p[2], rnd(v), rnd(v) + 10, rnd(v), 0.4 + Math.random() * 0.4, 0.7, 0.2, SPARK, 0.8, SPARK_B, 0, 1, -25)
       }
       if (air) {
         debris(p, Math.round(8 * density) + 3, 30, 0.7)
@@ -486,9 +504,9 @@ export function createEffects(quality: Quality): Effects {
     },
 
     hit(p) {
-      glow(p[0], p[1], p[2], 0, 0, 0, 0.06, 5, 6.5, WHITE, 1, WHITE, 0.6, 0, 0)
-      glow(p[0], p[1], p[2], 0, 0, 0, 0.16, 3, 4.5, FIRE_A, 1, SPARK, 0, 0, 0)
-      const n = Math.round(7 * density) + 3
+      glow(p[0], p[1], p[2], 0, 0, 0, 0.06, 3.5, 4.5, WHITE, 0.8, WHITE, 0.4, 0, 0)
+      glow(p[0], p[1], p[2], 0, 0, 0, 0.12, 2, 3, FIRE_A, 0.8, SPARK, 0, 0, 0)
+      const n = Math.round(4 * density) + 2
       for (let i = 0; i < n; i++) glow(p[0], p[1], p[2], rnd(55), rnd(55), rnd(55), 0.25 + Math.random() * 0.3, 0.9, 0.2, SPARK, 1, SPARK_B, 0, 1, -20)
       smoke(p[0], p[1], p[2], rnd(1.5), 1.2, rnd(1.5), 1.8, 1, 3, SMOKE_MID, 0, SMOKE_PALE, 0, 0.8, 0.8, 1.5)
       if (Math.random() < 0.35 * density) debris(p, 1, 14, 0.25)
@@ -503,16 +521,17 @@ export function createEffects(quality: Quality): Effects {
       const d = Math.hypot(dx, dy, dz) || 1
       const ux = dx / d, uy = dy / d, uz = dz / d
       if (kind === "ciws") {
-        const speed = 1100, n = 7
+        // The stream is ~70 rds/s; draw only every third round, thin (0.25 m) and short.
+        const speed = 1100, n = 2 + (Math.random() < 0.4 ? 1 : 0)
         for (let k = 0; k < n; k++) {
-          const sp = 0.012
-          aaTracer(m, (ux + rnd(sp)) * speed, (uy + rnd(sp)) * speed, (uz + rnd(sp)) * speed, Math.min(2.2, (d / speed) * 1.15), 18, 0.3, k * 0.014)
+          const sp = 0.01
+          aaTracer(m, (ux + rnd(sp)) * speed, (uy + rnd(sp)) * speed, (uz + rnd(sp)) * speed, Math.min(2.2, (d / speed) * 1.1), 10, 0.25, k * 0.035)
         }
-        glow(m[0] + ux * 2, m[1] + uy * 2, m[2] + uz * 2, 0, 0, 0, 0.07, 2.6 + Math.random(), 1.2, FIRE_A, 1, FIRE_B, 0, 0, 0)
+        glow(m[0] + ux * 2, m[1] + uy * 2, m[2] + uz * 2, 0, 0, 0, 0.05, 1.6, 0.8, FIRE_A, 0.7, FIRE_B, 0, 0, 0)
       } else {
         const speed = 800
-        aaTracer(m, ux * speed, uy * speed, uz * speed, Math.min(3, d / speed), 26, 0.45)
-        glow(m[0] + ux * 4, m[1] + uy * 4, m[2] + uz * 4, 0, 0, 0, 0.12, 10, 5, WHITE, 1, FIRE_B, 0, 0, 0)
+        aaTracer(m, ux * speed, uy * speed, uz * speed, Math.min(3, d / speed), 14, 0.3)
+        glow(m[0] + ux * 4, m[1] + uy * 4, m[2] + uz * 4, 0, 0, 0, 0.1, 4, 2.5, FIRE_A, 0.8, FIRE_B, 0, 0, 0)
         smoke(m[0] + ux * 6, m[1] + uy * 6, m[2] + uz * 6, ux * 6, uy * 6 + 1, uz * 6, 1.8, 2, 6, SMOKE_MID, 0, SMOKE_PALE, 0, 0.8, 0.6, 1.5)
       }
     },
@@ -529,7 +548,7 @@ export function createEffects(quality: Quality): Effects {
     },
 
     splash(p, size) {
-      const s = Math.max(3, Math.min(18, size))
+      const s = Math.max(3, Math.min(30, size))
       const x = p[0], z = p[2]
       // White water column: tall, fast-rising spray puffs that fall back under gravity.
       const nc = Math.round((10 + s * 0.8) * density) + 4
@@ -550,7 +569,7 @@ export function createEffects(quality: Quality): Effects {
     },
 
     groundHit(p, size) {
-      const s = Math.max(3, Math.min(16, size))
+      const s = Math.max(3, Math.min(28, size))
       glow(p[0], p[1] + 1, p[2], 0, 0, 0, 0.1, s * 1.2, s * 2.2, FIRE_A, 1, FIRE_B, 0, 0, 0)
       const nd = Math.round((8 + s * 0.6) * density) + 3
       for (let i = 0; i < nd; i++) {
@@ -572,13 +591,13 @@ export function createEffects(quality: Quality): Effects {
     },
 
     flak(p) {
-      glow(p[0], p[1], p[2], 0, 0, 0, 0.08, 3, 5, FIRE_A, 0.6, FIRE_B, 0, 0, 0)
+      glow(p[0], p[1], p[2], 0, 0, 0, 0.08, 2.5, 4, FIRE_A, 0.5, FIRE_B, 0, 0, 0)
       const n = Math.round(7 * density) + 3
       for (let i = 0; i < n; i++) {
         _tmp.copy(SMOKE_BLACK).lerp(SMOKE_DARK, Math.random())
         smoke(p[0] + rnd(3), p[1] + rnd(3), p[2] + rnd(3), rnd(5), rnd(4) + 1, rnd(5), 3 + Math.random() * 2, 3, 9 + Math.random() * 4, _tmp, 0, SMOKE_MID, 0, 0.9, 0.3, 2)
       }
-      for (let i = 0; i < n; i++) glow(p[0], p[1], p[2], rnd(60), rnd(60), rnd(60), 0.3 + Math.random() * 0.3, 0.8, 0.2, SPARK, 1, SPARK_B, 0, 1, -20)
+      for (let i = 0; i < 3; i++) glow(p[0], p[1], p[2], rnd(60), rnd(60), rnd(60), 0.25 + Math.random() * 0.2, 0.6, 0.15, SPARK, 0.8, SPARK_B, 0, 1, -20)
     },
 
     pulse(p, radius, color) {
@@ -634,6 +653,13 @@ export function createEffects(quality: Quality): Effects {
       }
       missiles.count = n
       if (n) missiles.instanceMatrix.needsUpdate = true
+    },
+
+    setBombs(count, write) {
+      const n = Math.min(count, BOMBS)
+      for (let i = 0; i < n; i++) { write(i, _mat); bombsMesh.setMatrixAt(i, _mat) }
+      bombsMesh.count = n
+      if (n) bombsMesh.instanceMatrix.needsUpdate = true
     },
 
     setQuality(q) {

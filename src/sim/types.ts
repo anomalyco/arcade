@@ -6,7 +6,7 @@ export type Vec3 = [number, number, number]
 export type Quat = [number, number, number, number]
 
 export type TeamId = 0 | 1 | 2 | 3
-export type VehicleKind = "fighter" | "apache" | "warthog" | "blackbird"
+export type VehicleKind = "fighter" | "apache" | "warthog" | "blackbird" | "bomber"
 export type FlightModel = "jet" | "heli"
 export type SeatIndex = 0 | 1
 export type WeaponSlot = "primary" | "secondary"
@@ -181,6 +181,7 @@ export interface Flare {
 }
 
 export type WeaponId =
+  | "bomb"
   | "cannon20"
   | "chaingun30"
   | "gau8"

@@ -107,8 +107,8 @@ if (params.has("occluder")) {
   ridge.position.set(ox || 0, -1, oz || -6)
   scene.add(ridge)
 }
-const KINDS: VehicleKind[] = ["fighter", "apache", "warthog", "blackbird"]
-const X: Record<VehicleKind, number> = { fighter: -34, apache: -12, warthog: 10, blackbird: 38 }
+const KINDS: VehicleKind[] = ["fighter", "apache", "warthog", "blackbird", "bomber"]
+const X: Record<VehicleKind, number> = { fighter: -34, apache: -12, warthog: 10, blackbird: 38, bomber: 80 }
 const only = params.get("only") as VehicleKind | null
 
 function makeEntity(kind: VehicleKind, team: TeamId): VehicleEntity {

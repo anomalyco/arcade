@@ -135,6 +135,25 @@ export function rocket(core: Core, at: At, own: boolean): void {
 
 const MISSILE_SIZE: Partial<Record<WeaponId, number>> = { aim9: 1, tvmissile: 1.1, hellfire: 1, maverick: 1.2, aim47: 1.5 }
 
+/** Bomb release: a soft bay clunk, then the falling whistle (descending, fading as it drops away). */
+export function bombWhistle(core: Core, at: At, own: boolean): void {
+  const s = core.shot("bomb", own ? null : at, { ref: 80, limit: 3 })
+  if (!s) return
+  const t = s.t
+  const k = s.osc("sine", 70, t, t + 0.25)
+  k.connect(s.env(t, 0.004, 0.35, 0.2))
+  const dur = 3.2
+  const w = s.osc("sine", 1500, t + 0.15, t + 0.15 + dur)
+  w.frequency.setValueAtTime(1500, t + 0.15)
+  w.frequency.exponentialRampToValueAtTime(420, t + 0.15 + dur)
+  w.connect(s.env(t + 0.15, 0.4, own ? 0.08 : 0.12, dur))
+  const n = s.noise(core.bank.pink, t + 0.15, t + 0.15 + dur)
+  const bp = s.filter("bandpass", 1400, 3)
+  bp.frequency.setValueAtTime(1400, t + 0.15)
+  bp.frequency.exponentialRampToValueAtTime(380, t + 0.15 + dur)
+  n.connect(bp).connect(s.env(t + 0.15, 0.4, 0.05, dur))
+}
+
 export function missile(core: Core, weapon: WeaponId, at: At, own: boolean): void {
   const size = MISSILE_SIZE[weapon] ?? 1
   const s = core.shot("missile", own ? null : at, { ref: 60 * size, limit: 4, loudness: size })

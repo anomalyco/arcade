@@ -71,7 +71,7 @@ export const AA_RANGE = 1200
 /** Turret hit points (knocked out at 0; repaired never during a match). */
 export const TURRET_HP = 600
 /** Per-weapon damage multiplier against ships (hulls are tough; missiles/rockets are the anti-ship tools). */
-export const SHIP_DAMAGE_SCALE: Record<string, number> = { gun: 0.15, rockets: 1.6, missile_lock: 3, missile_scanner: 3.5, aa: 0 }
+export const SHIP_DAMAGE_SCALE: Record<string, number> = { gun: 0.15, rockets: 1.6, missile_lock: 3, missile_scanner: 3.5, bomb: 3, aa: 0 }
 /** Seconds of spawn protection after spawning (replaces the old safe-zone domes). */
 export const SPAWN_PROTECTION = 6
 

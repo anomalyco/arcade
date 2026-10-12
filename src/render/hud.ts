@@ -77,6 +77,10 @@ export interface HudFrame {
   cockpit?: boolean
   /** Gunner optical zoom (1 = none). */
   zoom?: number
+  /** Bombardier sight (bomber seat 1): predicted impact, time to impact, release cue. */
+  bombSight?: { impact: Vec3 | null; tti: number; alt: number; speed: number; overShip: string | null } | null
+  /** Stealth airframe status for the crew (above/below the fleet AA ceiling). */
+  stealth?: { above: boolean; ceiling: number } | null
   /** Fleet Strike ship objectives (hp per ship). */
   ships?: ShipState[]
   /** Set while the local player mans a ship turret instead of flying. */
@@ -173,6 +177,9 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-ships"></div>
     <div class="hud-aa"><b>enemy fleet — anti-air</b><span></span></div>
     <div class="hud-prot"></div>
+    <div class="hud-bimp"><i></i></div>
+    <div class="hud-bomb z"><div class="rel">release</div><div class="rd"></div></div>
+    <div class="hud-stealth z"></div>
     <div class="hud-zoom"></div>
     <div class="hud-lead"></div>
     <div class="hud-scan"><i class="c"></i><i class="x"></i><span class="r"></span></div>
@@ -317,6 +324,10 @@ export function createHud(parent: HTMLElement): Hud {
   const aaEl = new Slot(q(".hud-aa"))
   const aaTxt = new Slot(q(".hud-aa span"))
   const protEl = new Slot(q(".hud-prot"))
+  const bimp = new Slot(q(".hud-bimp"))
+  const bombEl = new Slot(q(".hud-bomb"))
+  const bombRd = new Slot(q(".hud-bomb .rd"))
+  const stealthEl = new Slot(q(".hud-stealth"))
   const spotEl = new Slot(q(".hud-spot"))
   const spotLbl = new Slot(q(".hud-spot b"))
   const zoomEl = new Slot(q(".hud-zoom"))
@@ -446,6 +457,7 @@ export function createHud(parent: HTMLElement): Hud {
       if (!v.alive) continue
       if (f.vehicle && v.id === f.vehicle.id) continue
       const spotted = v.spottedUntil > f.time
+      if (v.team !== myTeam && !spotted && VEHICLES[v.kind]?.stealth) continue
       if (v.team !== myTeam && !spotted && Math.hypot(v.flight.position[0] - (f.vehicle?.flight.position[0] ?? 0), v.flight.position[2] - (f.vehicle?.flight.position[2] ?? 0)) > 1500) continue
       const x = (v.flight.position[0] + WORLD_HALF) * k, y = (v.flight.position[2] + WORLD_HALF) * k
       if (spotted && v.team !== myTeam) { ctx.strokeStyle = "#ff7a2e"; ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.stroke() }
@@ -500,6 +512,7 @@ export function createHud(parent: HTMLElement): Hud {
       const friend = v.team === myTeam
       const spotted = !friend && v.spottedUntil > f.time
       if (d > RADAR_RANGE && !spotted) continue
+      if (!friend && !spotted && VEHICLES[v.kind]?.stealth) continue
       // Heading h: forward = (sin h, -cos h). Rotate so forward is up.
       const fx = dx * cs + dz * sn, fy = -dx * sn + dz * cs
       let x = fx * k, y = fy * k
@@ -632,6 +645,8 @@ export function createHud(parent: HTMLElement): Hud {
         const friend = v.team === myTeam
         const spotted = !friend && v.spottedUntil > f.time
         const candidate = recon && v.id === spotCand && spotProg > 0
+        // Stealth airframes are invisible to the HUD (marker, tag, arrow) unless spotted.
+        if (!friend && !spotted && VEHICLES[v.kind]?.stealth) continue
         // Enemies: only within visual range with line of sight, unless spotted (spotted ones show through terrain).
         if (!friend && !spotted && dist > ENEMY_VIS_RANGE) continue
         if (friend && dist > 6000) continue
@@ -716,6 +731,16 @@ export function createHud(parent: HTMLElement): Hud {
         const pl = flying ? f.protectedLeft ?? 0 : 0
         protEl.setClass(pl > 0 ? "hud-prot on" : "hud-prot")
         if (pl > 0) protEl.setText(`protected · ${Math.ceil(pl)}s`)
+      }
+      // Bomb sight: predicted impact reticle + readout + release cue.
+      const bs = flying ? f.bombSight : null
+      if (bs?.impact && project(bs.impact, cam)) { bimp.setTransform(tf(sx(), sy())); bimp.setClass(bs.overShip ? "hud-bimp on" : "hud-bimp") } else bimp.setTransform(HIDDEN)
+      if (frame % 4 === 0) {
+        bombEl.setClass(bs ? `hud-bomb z on${bs.overShip ? " go" : ""}` : "hud-bomb z")
+        if (bs) bombRd.setText(`alt ${Math.round(bs.alt)} m · ${Math.round(bs.speed * 3.6)} km/h · impact ${bs.tti > 0 ? `${bs.tti.toFixed(1)} s` : "—"}${bs.overShip ? ` · ${bs.overShip.replace(/^t\d-/, "").replace(/(\D)(\d)$/, "$1 $2")}` : ""}`)
+        const stl = flying ? f.stealth : null
+        stealthEl.setClass(stl ? `hud-stealth z on${stl.above ? "" : " low"}` : "hud-stealth z")
+        if (stl) stealthEl.setText(stl.above ? `stealth · above aa ceiling` : `stealth · below aa ceiling (${stl.ceiling} m)`)
       }
       // Spotting status under the crosshair.
       if (recon && (spotCand && spotProg > 0 || f.time - spotDoneAt < 1.6)) {

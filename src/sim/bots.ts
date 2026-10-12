@@ -3,6 +3,7 @@
 // Hot path is allocation-free: scratch vectors are module-level and outputs are reused per brain.
 import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "./types"
 import { LAUNCH_LANE_LENGTH, carrierOf, inSafeZone, posedFleet, worldQuery } from "./geography"
+import { bombImpactPoint } from "./flight"
 import { GUN_FULL_RANGE, GUN_GIMBAL, ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
 import { AA_RANGE, SHIP_SPECS, type Ship } from "./fleet"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
@@ -16,6 +17,10 @@ export const BOT_PULSE_RANGE = 4_000
 const HELI_LIFTOFF_ALT = 95
 
 export type BotPhase = "takeoff" | "transit" | "engage" | "defend" | "strike"
+
+/** Bomber bots cruise here (above the stealth AA ceiling) and re-attack from this far out. */
+export const BOMBER_CRUISE_ALT = 1_800
+export const BOMBER_REATTACK_RANGE = 4_000
 
 /** Fleet Strike: bot strike runs launch at ≤ this range and break away inside STRIKE_BREAK_RANGE. */
 export const STRIKE_LAUNCH_RANGE = 1_500
@@ -212,20 +217,13 @@ export function botRandom(brain: BotBrain): number {
 // ---------------------------------------------------------------------------------------------
 // Vehicle choice
 
-const KIND_WEIGHT: Record<VehicleKind, number> = { fighter: 3, apache: 2, warthog: 2, blackbird: 1.2 }
+const KIND_WEIGHT: Record<VehicleKind, number> = { fighter: 3, apache: 2, warthog: 2, blackbird: 1.2, bomber: 0.9 }
 const KINDS = Object.keys(KIND_WEIGHT) as VehicleKind[]
 
 /** Vehicle kind a bot picks when spawning: weighted random, discouraging kinds the team already flies. */
 export function chooseBotVehicle(bot: PlayerInfo, teammates: PlayerInfo[], vehicles: VehicleEntity[], rng: () => number): VehicleKind {
-  let f = 0, a = 0, w = 0, b = 0
-  for (const v of vehicles) {
-    if (!v.alive || v.team !== bot.team) continue
-    if (v.kind === "fighter") f++
-    else if (v.kind === "apache") a++
-    else if (v.kind === "warthog") w++
-    else b++
-  }
-  const counts: Record<VehicleKind, number> = { fighter: f, apache: a, warthog: w, blackbird: b }
+  const counts: Record<VehicleKind, number> = { fighter: 0, apache: 0, warthog: 0, blackbird: 0, bomber: 0 }
+  for (const v of vehicles) if (v.alive && v.team === bot.team) counts[v.kind]++
   let total = 0
   for (const k of KINDS) total += kindWeight(k, counts)
   let r = clamp(rng(), 0, 0.999999) * total
@@ -237,7 +235,7 @@ export function chooseBotVehicle(bot: PlayerInfo, teammates: PlayerInfo[], vehic
 }
 
 function kindWeight(k: VehicleKind, counts: Record<VehicleKind, number>): number {
-  return (KIND_WEIGHT[k] / (1 + counts[k] * 1.5)) * (k === "blackbird" && counts.blackbird >= 2 ? 0.1 : 1)
+  return (KIND_WEIGHT[k] / (1 + counts[k] * 1.5)) * ((k === "blackbird" || k === "bomber") && counts[k] >= 2 ? 0.1 : 1)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -522,6 +520,8 @@ const _lead: Vec3 = [0, 0, 0]
 /** Valid target: alive, hostile, not spawn-protected, and not sheltering under any hostile fleet's AA. */
 function canEngage(target: VehicleEntity, myTeam: number, now: number): boolean {
   if (!target.alive || target.team === myTeam || target.flight.crashed || isSpawnProtected(target, now)) return false
+  // Unspotted stealth aircraft are invisible to bots.
+  if (VEHICLES[target.kind].stealth && target.spottedUntil <= now) return false
   const p = target.flight.position
   return !inSafeZone(target.team, p) && hostileFleetDistance(myTeam, p[0], p[2]) > BOT_NO_FLY_RADIUS
 }
@@ -655,6 +655,7 @@ function effectiveRange(w: WeaponSpec): number {
     case "missile_lock": return (w.range ?? 2_500) * 0.95
     case "missile_scanner": return (w.range ?? 8_000) * 0.9
     case "pulse": return BOT_PULSE_RANGE
+    case "bomb": return 0
   }
 }
 
@@ -794,6 +795,38 @@ function strike(brain: BotBrain, vehicle: VehicleEntity, ship: Ship, now: number
   return heli ? 0.8 : 0.55
 }
 
+const _bomb: Vec3 = [0, 0, 0]
+
+/**
+ * Bomber pilot: cruise above the stealth AA ceiling and fly the predicted bomb impact point over the target
+ * ship (aim the aircraft at ship − throw), then extend past it and come around again.
+ */
+function bomberRun(brain: BotBrain, vehicle: VehicleEntity, ship: Ship, now: number, aim: Vec3, world: WorldQuery): number {
+  const s = brain.state
+  const fs = vehicle.flight, pos = fs.position, vel = fs.velocity
+  const altPitch = clamp(Math.atan2(BOMBER_CRUISE_ALT - pos[1], 1_500), -0.25, 0.3)
+  const tx = ship.position[0] - pos[0], tz = ship.position[2] - pos[2]
+  const hd = Math.hypot(tx, tz)
+  if (s.strikePhase === "egress") {
+    if (hd > BOMBER_REATTACK_RANGE) s.strikePhase = "approach"
+    else {
+      headingPitch(vel[0] - tz * 0.15 * s.breakSign, vel[2] + tx * 0.15 * s.breakSign, altPitch, aim)
+      return 0.9
+    }
+  }
+  // Steer so the bomb's impact point (not the aircraft) tracks onto the ship.
+  const fall = bombImpactPoint(pos, vel, _bomb, world)
+  const throwX = fall > 0 ? _bomb[0] - pos[0] : 0, throwZ = fall > 0 ? _bomb[2] - pos[2] : 0
+  const ax = tx - throwX, az = tz - throwZ
+  headingPitch(ax, az, altPitch, aim)
+  // Passed the release point: extend and come around.
+  if (Math.hypot(ax, az) < 250 && ax * vel[0] + az * vel[2] < 0) {
+    s.strikePhase = "egress"
+    s.breakSign = botRandom(brain) < 0.5 ? -1 : 1
+  }
+  return 0.9
+}
+
 /**
  * Compute this tick's input for a bot occupying `vehicle` in its seat. `missiles` (optional, pass
  * `combatState.missiles`) enables missile defence and scanner-guidance tracking; `world` defaults to the
@@ -923,7 +956,14 @@ function pilotInput(
     s.strikeShip = striking ? striking.id : null
   }
 
-  if (striking) {
+  if (vehicle.kind === "bomber" && !defending) {
+    s.phase = "strike"
+    const ship = pickStrikeShip(vehicle.team, pos, ships, false)
+    if (ship) desiredThrottle = bomberRun(brain, vehicle, ship, now, aim, world)
+    else headingPitch(-pos[0], -pos[2], 0, aim)
+    flight.boost = false
+    lookTarget = null
+  } else if (striking) {
     s.phase = "strike"
     desiredThrottle = strike(brain, vehicle, striking, now, aim, heli)
     if (heli) heliAlt = ground + (s.strikePhase === "egress" ? 150 : 110)
@@ -975,7 +1015,7 @@ function pilotInput(
 
   if ((s.phase === "engage" || s.phase === "strike") && vehicle.kind !== "blackbird") applyJitter(brain, aim, s.phase === "strike" ? 0.4 : 1)
   // Strike approaches deliberately enter the hostile AA umbrella; everything else avoids it.
-  const runIn = s.phase === "strike" && s.strikePhase === "approach"
+  const runIn = s.phase === "strike" && (s.strikePhase === "approach" || vehicle.kind === "bomber")
   applyAimSafety(aim, pos, vel, world, runIn ? Math.min(clearance, 60) : clearance, lookahead, runIn ? null : bot.team, !heli)
   if (!heli && speed < spec.stall * 1.3) { desiredThrottle = 1; flight.boost = true }
   return finishPilot(brain, vehicle, aim, heli, desiredThrottle, heliAlt, ground, world, lookTarget)
@@ -1119,6 +1159,24 @@ function engage(brain: BotBrain, vehicle: VehicleEntity, target: VehicleEntity, 
 // ---------------------------------------------------------------------------------------------
 // Gunner / weapons officer (seat 1)
 
+/** Bombardier: release when the predicted impact point lies on an enemy ship that's still afloat. */
+function bombardier(vehicle: VehicleEntity, seat: SeatInput, aim: Vec3, ships: Readonly<Record<string, BotShipStatus>> | undefined, now: number): void {
+  const fs = vehicle.flight, pos = fs.position
+  if (bombImpactPoint(pos, fs.velocity, _bomb, worldQuery) < 0) return
+  norm(set3(aim, _bomb[0] - pos[0], _bomb[1] - pos[1], _bomb[2] - pos[2]))
+  if (!weaponReady(vehicle.weapons[1][0], now)) return
+  const fleet = posedFleet()
+  for (let i = 0; i < fleet.length; i++) {
+    const sh = fleet[i]
+    if (sh.team === vehicle.team || ships?.[sh.id]?.sunk) continue
+    const sp = SHIP_SPECS[sh.kind]
+    const dx = _bomb[0] - sh.position[0], dz = _bomb[2] - sh.position[2]
+    const c = Math.cos(sh.heading), sn = Math.sin(sh.heading)
+    const lx = dx * c - dz * sn, lz = dx * sn + dz * c
+    if (Math.abs(lx) <= sp.halfWidth * 0.9 && Math.abs(lz) <= sp.halfLength * 0.9) { seat.firePrimary = true; return }
+  }
+}
+
 function myScannerMissile(bot: PlayerInfo, vehicle: VehicleEntity, missiles: readonly Missile[]): Missile | null {
   for (let i = 0; i < missiles.length; i++) {
     const m = missiles[i]
@@ -1141,6 +1199,10 @@ function gunnerInput(
   const aim = o.gunnerAim
   const ids = spec.seatWeapons[1]
   const inOwnSafe = inSafeZone(vehicle.team, pos)
+  if (ids[0] && WEAPONS[ids[0]].kind === "bomb") {
+    bombardier(vehicle, seat, aim, ships, now)
+    return
+  }
   let hasPulse = false
   let maxRange = 0
   for (let slot = 0; slot < 2; slot++) {

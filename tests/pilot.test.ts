@@ -409,3 +409,33 @@ describe("keyboard flight + mouse aim", () => {
     expect(minUp).toBeLessThan(-0.5)
   })
 })
+
+describe("bombardier bomb sight", () => {
+  test("aims down within a ±35° cone, stabilized (heading only), mouse away = further ahead", () => {
+    const input = new InputCls(canvas as any)
+    input.setEnabled(true)
+    docH.pointerlockchange?.({})
+    winH.mousemove?.({ movementX: 0, movementY: 0 })
+    input.mouseMode = "aim"
+    input.setNose([0, 0, -1])
+    input.setBombsight(true)
+    const d: [number, number, number] = [0, 0, 0]
+    input.aimDir(d as any)
+    expect(d[1]).toBeLessThan(-0.85) // mostly down
+    expect(d[2]).toBeLessThan(0) // leaning forward (north)
+    const f0 = input.bombFwd
+    winH.mousemove({ movementX: 0, movementY: -50 })
+    expect(input.bombFwd).toBeGreaterThan(f0)
+    for (let i = 0; i < 50; i++) winH.mousemove({ movementX: 300, movementY: -300 })
+    expect(Math.hypot(input.bombFwd, input.bombSide)).toBeCloseTo(inputMod.BOMBSIGHT_CONE, 5)
+    input.aimDir(d as any)
+    expect(Math.acos(-d[1])).toBeLessThanOrEqual(inputMod.BOMBSIGHT_CONE + 1e-6)
+    // Stabilized: only the heading matters (a nose pointing east swings the sight east).
+    input.bombFwd = 0.3; input.bombSide = 0
+    input.setNose([1, -0.2, 0])
+    input.aimDir(d as any)
+    expect(d[0]).toBeGreaterThan(0.2)
+    expect(Math.abs(d[2])).toBeLessThan(1e-9)
+    input.setBombsight(false)
+  })
+})
