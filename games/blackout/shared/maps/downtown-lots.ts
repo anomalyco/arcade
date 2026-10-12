@@ -518,7 +518,7 @@ function plazaBlock(t: Town, k: Block): void {
     const rc: Rect = [cx - fr, cy - fr, cx + fr, cy + fr]
     b.wall(...rc, 0.75, "fountain")
     take(t, [rc[0] - 1.2, rc[1] - 1.2, rc[2] + 1.2, rc[3] + 1.2])
-    b.light({ kind: "glow", x: cx, y: cy, h: 0.9, r: 6, power: 1, color: [0.2, 0.8, 1] })
+    b.light({ kind: "glow", x: cx, y: cy, h: 2.2, r: 6.5, power: 0.55, color: [0.2, 0.8, 1] })
     t.lit.push({ x: cx, y: cy })
   }
   // Subway entrance: a railed stairwell along one side of the plaza, glowing up out of the ground.

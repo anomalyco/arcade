@@ -427,10 +427,20 @@ export function streetWall(m: Mesh, w: Wall, i: number, seed: number): void {
       const cx = (x0 + x1) / 2
       const cz = (z0 + z1) / 2
       const R = Math.min(x1 - x0, z1 - z0) / 2
-      const stone = hex(0x6e727c)
+      const stone = hex(0x4a4e58)
       m.prism(cx, cz, R, R, 0, 0.55, 14, stone, MAT.wall, 0, false)
-      m.prism(cx, cz, R + 0.04, R + 0.04, 0.55, 0.65, 14, hex(0x868a94), MAT.wall)
-      m.prism(cx, cz, R - 0.25, R - 0.25, 0.36, 0.37, 14, hex(0x1aa0e0), MAT.glow, 0.9)
+      m.prism(cx, cz, R + 0.04, R + 0.04, 0.55, 0.65, 14, hex(0x5a5e68), MAT.wall, 0, false)
+      m.prism(cx, cz, R - 0.25, R - 0.25, 0.36, 0.65, 14, hex(0x2a3a48), MAT.wall, 0, false)
+      // The rim's top: a ring of quads, so the water inside stays visible.
+      for (let k = 0; k < 14; k++) {
+        const a0 = (k / 14) * Math.PI * 2
+        const a1 = ((k + 1) / 14) * Math.PI * 2
+        const P = (a: number, r: number) => [cx + Math.cos(a) * r, 0.65, cz + Math.sin(a) * r]
+        m.quad(P(a0, R - 0.25), P(a0, R + 0.04), P(a1, R + 0.04), P(a1, R - 0.25), [0, 1, 0], hex(0x6a6e78), MAT.wall)
+      }
+      // Dark water lit from below: rings of brighter ripples round the jets.
+      m.prism(cx, cz, R - 0.25, R - 0.25, 0.36, 0.37, 14, hex(0x0c3a5a), MAT.glow, 0.8)
+      for (const rr of [R * 0.55, R * 0.75]) m.prism(cx, cz, rr, rr, 0.371, 0.372, 14, hex(0x2a9ad0), MAT.glow, 0.9, false)
       for (let k = 0; k < 6; k++) {
         const a = (k / 6) * Math.PI * 2
         m.box(cx + Math.cos(a) * (R - 0.45) - 0.05, 0.37, cz + Math.sin(a) * (R - 0.45) - 0.05, cx + Math.cos(a) * (R - 0.45) + 0.05, 0.4, cz + Math.sin(a) * (R - 0.45) + 0.05, hex(0x9af0ff), MAT.glow, 3)
