@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { CLAYMORE, EQUIPS, FRAG, GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS, SPRINT_TO_FIRE } from "../shared/config"
+import { CLAYMORE, END_SECONDS, EQUIPS, FRAG, GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS, SPRINT_TO_FIRE } from "../shared/config"
 import { type Rect, RectGrid, pushOut, rayRect } from "../shared/geom"
 import { generateOffice } from "../shared/maps/office"
 import { Builder } from "../shared/maps/builder"
@@ -147,7 +147,7 @@ describe("deathmatch", () => {
     w.players.get("h")!.kills = 3
     for (let i = 0; i < 30 * (MATCH_SECONDS + 1) && w.phase === "play"; i++) w.step()
     expect(w.phase).toBe("end")
-    for (let i = 0; i < 30 * 15 && w.phase === "end"; i++) w.step()
+    for (let i = 0; i < 30 * (END_SECONDS + 1) && w.phase === "end"; i++) w.step()
     expect(w.phase).toBe("play")
     expect(w.map.seed).not.toBe(first)
     expect(w.players.get("h")!.kills).toBe(0)

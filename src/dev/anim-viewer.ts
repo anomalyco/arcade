@@ -6,6 +6,7 @@ import { raycast } from "../../shared/geom"
 import type { MapDef } from "../../shared/maps"
 import { Builder } from "../../shared/maps/builder"
 import type { ClientMsg } from "../../shared/protocol"
+import type { CoverView } from "../../shared/sim/cover"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import type { SimEvent } from "../../shared/sim/world"
 import { Sound } from "../audio/sound"
@@ -54,6 +55,7 @@ type Actor = {
   at(t: number): { x: number; y: number; aim: number; alive: boolean }
   shots?: (t: number) => number
   reloads?: (t: number) => number
+  cover?: (t: number) => CoverView | null
 }
 
 const loop = (t: number, p: number) => ((t % p) + p) % p
@@ -133,6 +135,49 @@ const ACTORS: Actor[] = [
       return { x: 21 + Math.cos(t * 1.6) * 1.2, y: 14 + Math.sin(t * 1.6) * 1.2, aim: t * 1.6 + Math.PI / 2, alive: c < 1.5 }
     },
   },
+  // Cover: "k" crouches behind the partition and pops up to fire over it.
+  {
+    id: "k",
+    gun: "rifle",
+    at: () => ({ x: 12, y: 4.65, aim: -Math.PI / 2 + 0.2, alive: true }),
+    shots: (t) => {
+      const c = loop(t, 4) - 2.15
+      return c > 0 && c < 0.9 ? Math.floor(c / 0.1) + 1 : 0
+    },
+    cover: (t) => ({ nx: 0, ny: 1, low: true, out: loop(t, 4) > 2 && loop(t, 4) < 3.3, peek: 0, enter: false }),
+  },
+  // "h" slides along the wall to its end, leans around the corner and fires, comes back and slides away.
+  {
+    id: "h",
+    gun: "rifle",
+    at: (t) => {
+      const c = loop(t, 6)
+      const y = c < 1.6 ? 10 + 2.4 * c : c < 2.4 ? 13.9 : c < 2.5 ? 13.9 + 5.5 * (c - 2.4) : c < 3.6 ? 14.45 : c < 3.7 ? 14.45 - 5.5 * (c - 3.6) : c < 4.4 ? 13.9 : Math.max(10, 13.9 - 2.4 * (c - 4.4))
+      return { x: 25.65, y, aim: c < 4.4 ? Math.PI / 4 : Math.PI * 0.75, alive: true }
+    },
+    shots: (t) => {
+      const c = loop(t, 6) - 2.6
+      return c > 0 && c < 0.8 ? Math.floor(c / 0.1) + 1 : 0
+    },
+    cover: (t) => {
+      const c = loop(t, 6)
+      return { nx: -1, ny: 0, low: false, out: c > 2.4 && c < 3.7, peek: c > 2.4 && c < 3.7 ? -1 : 0, enter: false }
+    },
+  },
+  // "m" walks up to the partition, slides into cover, crouches, then walks off.
+  {
+    id: "m",
+    gun: "shotgun",
+    at: (t) => {
+      const c = loop(t, 4)
+      const y = c < 1 ? 8.5 - 2.5 * c : c < 1.2 ? 6 - (6 - 4.65) * ease((c - 1) / 0.2) : c < 3 ? 4.65 : 4.65 + 2.5 * (c - 3)
+      return { x: 17, y, aim: -Math.PI / 2, alive: true }
+    },
+    cover: (t) => {
+      const c = loop(t, 4)
+      return c >= 1 && c < 3 ? { nx: 0, ny: 1, low: true, out: false, peek: 0, enter: c < 1.2 } : null
+    },
+  },
 ]
 
 class ScriptSession implements Session {
@@ -204,7 +249,7 @@ class ScriptSession implements Session {
         }
       }
       this.prev.set(a.id, { x: s.x, y: s.y, shots, reloads, alive: s.alive })
-      players.push({ id: a.id, x: s.x, y: s.y, vx, vy, aim: s.aim, alive: s.alive, gun: a.gun, health: 100 })
+      players.push({ id: a.id, x: s.x, y: s.y, vx, vy, aim: s.aim, alive: s.alive, gun: a.gun, health: 100, cover: a.cover?.(t) ?? null })
     }
     this.snap = { snap: { type: "snap", tick: Math.floor(t * 30), t, ack: 0, phase: "play", left: 300, map: SEED, players, grenades: [], claymores: [], you: null }, at: performance.now() }
   }

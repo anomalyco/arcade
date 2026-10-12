@@ -1,14 +1,19 @@
 import { type ClientMsg, type ServerMsg, decodeServer, encodeClient } from "../../shared/protocol"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import type { Equip, Gun } from "../../shared/config"
+import type { ModeId } from "../../shared/sim/modes"
 import type { SimEvent } from "../../shared/sim/world"
 import type { Session } from "./session"
 
 const ID_KEY = "blackout.id."
 
-function socketUrl(room: string, priv: boolean): string {
+function socketUrl(room: string, priv: boolean, mode: ModeId | null): string {
   const dir = location.pathname.replace(/[^/]*$/, "")
-  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${encodeURIComponent(room)}${priv ? "?private=1" : ""}`
+  const q = new URLSearchParams()
+  if (priv) q.set("private", "1")
+  if (mode) q.set("mode", mode)
+  const qs = q.toString()
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${encodeURIComponent(room)}${qs ? `?${qs}` : ""}`
 }
 
 /** A room on the server. Reconnects with the same id, so a dropped player keeps their seat for the match. */
@@ -30,6 +35,8 @@ export class NetSession implements Session {
     private onFatal: (message: string) => void,
     /** Created with "Create game": the room stays out of quick join. */
     private priv = false,
+    /** The mode picked on Create game; the room takes it only from its first arrival. */
+    private mode: ModeId | null = null,
   ) {
     this.id = sessionStorage.getItem(ID_KEY + room) ?? ""
     this.open()
@@ -71,7 +78,7 @@ export class NetSession implements Session {
   }
 
   private open(): void {
-    const ws = new WebSocket(socketUrl(this.room, this.priv))
+    const ws = new WebSocket(socketUrl(this.room, this.priv, this.mode))
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0

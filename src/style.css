@@ -630,6 +630,31 @@ tr.me td {
   font-size: 12px;
 }
 
+#cover {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: var(--dim);
+  opacity: 0;
+  transition: opacity 0.15s;
+  zoom: var(--hud, 1);
+  pointer-events: none;
+}
+
+#cover.on {
+  opacity: 1;
+}
+
+#cover kbd:not(:first-child) {
+  margin-left: 10px;
+}
+
 #help {
   position: absolute;
   bottom: 8px;

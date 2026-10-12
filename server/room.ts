@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers"
 import { MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ } from "../shared/config"
 import { type ClientMsg, decodeClient, encodeServer } from "../shared/protocol"
 import { seedOf } from "../shared/rng"
+import { type ModeId, modeOf } from "../shared/sim/modes"
 import { buildSnapshot, rosterOf } from "../shared/sim/view"
 import { World } from "../shared/sim/world"
 import { type Env, lobbyOf } from "./env"
@@ -25,8 +26,18 @@ export class RoomCore {
   private rosterKey = ""
   private ticks = 0
 
-  constructor(readonly code: string) {
-    this.world = new World(seedOf(code))
+  constructor(
+    readonly code: string,
+    mode: ModeId = "ffa",
+  ) {
+    this.world = new World(seedOf(code), null, mode)
+  }
+
+  /** The creator's pick of mode, taken only while the room is empty. */
+  setMode(mode: ModeId): boolean {
+    if (this.world.humans.length) return false
+    if (this.world.mode.id !== mode) this.world.setMode(mode)
+    return true
   }
 
   get connections(): number {
@@ -45,7 +56,8 @@ export class RoomCore {
     if (!id) return
     if (msg.type === "intent") this.world.push(id, msg.seq, msg.i)
     else if (msg.type === "gun") this.world.pickGun(id, msg.gun)
-    else this.world.pickEquip(id, msg.equip)
+    else if (msg.type === "equip") this.world.pickEquip(id, msg.equip)
+    else if (msg.type === "vote") this.world.vote(id, msg.mode)
   }
 
   private hello(conn: Conn, msg: Extract<ClientMsg, { type: "hello" }>): void {
@@ -108,6 +120,8 @@ export class Room extends DurableObject<Env> {
   private clock = 0
   /** Rooms made with "Create game" are never handed out by quick join. Sticky for the life of the code. */
   private priv: boolean | null = null
+  /** The mode the room was created with, for the first match whenever the room starts up again. */
+  private mode: ModeId | null = null
   private reported = ""
   private reportAt = 0
 
@@ -115,8 +129,15 @@ export class Room extends DurableObject<Env> {
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("expected websocket", { status: 426 })
     const code = req.headers.get("x-room")
     if (!code) return new Response("missing room", { status: 400 })
-    const core = (this.core ??= new RoomCore(code))
+    this.mode ??= modeOf(await this.ctx.storage.get<string>("mode")) ?? "ffa"
+    const core = (this.core ??= new RoomCore(code, this.mode))
     this.priv ??= (await this.ctx.storage.get<boolean>("private")) ?? false
+    // Likewise only the first arrival picks the mode (Create game sends it).
+    const mode = modeOf(new URL(req.url).searchParams.get("mode"))
+    if (mode && core.connections === 0 && core.setMode(mode)) {
+      this.mode = mode
+      await this.ctx.storage.put("mode", mode)
+    }
     // Only the first arrival in an empty room can make it private, so a link can't hide an existing public room.
     if (!this.priv && core.connections === 0 && new URL(req.url).searchParams.get("private") === "1") {
       this.priv = true
@@ -173,13 +194,14 @@ export class Room extends DurableObject<Env> {
     const players = core.connections === 0 ? 0 : core.world.humans.length
     const phase = core.world.phase
     const priv = !!this.priv
-    const key = `${players}|${phase}|${priv}`
+    const mode = core.world.mode.id
+    const key = `${players}|${phase}|${priv}|${mode}`
     const now = Date.now()
     if (!force && (now - this.reportAt < REPORT_MIN_MS || (key === this.reported && now - this.reportAt < HEARTBEAT_MS))) return
     this.reported = key
     this.reportAt = now
     lobbyOf(this.env)
-      .report({ code: core.code, players, phase, private: priv })
+      .report({ code: core.code, players, phase, private: priv, mode })
       .then(undefined, () => (this.reported = ""))
   }
 }

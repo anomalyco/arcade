@@ -13,6 +13,7 @@ import { Input } from "../game/input"
 import type { Session } from "../game/session"
 import { Camera } from "../render/camera"
 import { Renderer } from "../render/renderer"
+import { IDLE_VIEW } from "../../shared/sim/modes"
 
 /** Tiles a floor into a big grid of copies, to stress culling (lights, occluders, chunks). */
 function bigMap(base: MapDef, n: number): MapDef {
@@ -39,13 +40,13 @@ class StillSession implements Session {
   private snap: { snap: Snapshot; at: number }
   constructor(seed: number, people: { x: number; y: number; aim: number }[]) {
     const players = people.map((p, i) => ({ id: i === 0 ? this.myId : `p${i}`, x: p.x, y: p.y, vx: 0, vy: 0, aim: p.aim, alive: true, gun: "rifle" as const, health: 100 }))
-    this.snap = { snap: { type: "snap", tick: 0, t: 0, ack: 0, phase: "play", left: 300, map: seed, players, grenades: [], claymores: [], you: null }, at: performance.now() }
+    this.snap = { snap: { type: "snap", tick: 0, t: 0, ack: 0, phase: "play", left: 300, map: seed, players, grenades: [], claymores: [], mode: IDLE_VIEW, you: null }, at: performance.now() }
   }
   latest() {
     return this.snap
   }
   roster(): RosterRow[] {
-    return this.snap.snap.players.map((p) => ({ id: p.id, name: p.id, human: false, kills: 0, deaths: 0 }))
+    return this.snap.snap.players.map((p) => ({ id: p.id, name: p.id, human: false, kills: 0, deaths: 0, team: -1, caps: 0, plants: 0, defuses: 0 }))
   }
   drainEvents(): SimEvent[] {
     return []

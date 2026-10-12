@@ -1,8 +1,11 @@
 import { MAX_PLAYERS } from "../shared/config"
 import { randomCode } from "../shared/protocol"
 
-/** What a Room tells the Lobby about itself. `players` counts held seats, so a room at MAX_PLAYERS is full. */
-export type RoomReport = { code: string; players: number; phase: string; private: boolean }
+/**
+ * What a Room tells the Lobby about itself. `players` counts held seats, so a room at MAX_PLAYERS is full. `mode` is
+ * the current game mode; quick join ignores it: everyone votes on the next one anyway.
+ */
+export type RoomReport = { code: string; players: number; phase: string; private: boolean; mode?: string }
 export type RoomEntry = RoomReport & { updatedAt: number }
 type Reservation = { code: string; until: number; private: boolean; claims: number }
 

@@ -28,7 +28,8 @@ export class Hud {
       <div id="respawn"></div>
       <div id="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><div id="hm"><i></i><i></i><i></i><i></i></div></div>
       <div id="status"></div>
-      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · 1 2 3 guns · 4 5 frag/claymore · TAB scores · M mute</div>`
+      <div id="cover"></div>
+      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · SPACE cover · RIGHT CLICK look/peek · R reload · G equipment · 1 2 3 guns · 4 5 frag/claymore · TAB scores · M mute</div>`
     for (const e of root.querySelectorAll<HTMLElement>("[id]")) this.el[e.id] = e
   }
 
@@ -69,6 +70,9 @@ export class Hud {
     const rb = el.rbar!.firstElementChild as HTMLElement
     rb.style.width = reloading ? `${(1 - (g.reloadUntil - t) / gun.reload) * 100}%` : "0%"
 
+    const ch = alive ? g.coverHint : null
+    el.cover!.innerHTML = ch ? `<kbd>SPACE</kbd>${ch.kind === "take" ? "TAKE COVER" : ch.kind === "hop" ? "MOVE TO COVER" : "LEAVE COVER"}${ch.corner ? "<kbd>RIGHT CLICK</kbd>PEEK" : ""}` : ""
+    el.cover!.classList.toggle("on", !!ch)
     el.equip!.innerHTML = `<span class="${g.equipLeft > 0 ? "" : "out"}">${equipLabel(g.equip)} ×${g.equipLeft}</span><kbd>G</kbd>`
 
     const b = g.banner && t - g.banner.t < 2.2 ? g.banner : null

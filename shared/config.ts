@@ -74,4 +74,5 @@ export const REGEN_RATE = 40
 
 export const RESPAWN_SECONDS = 3
 export const MATCH_SECONDS = 300
-export const END_SECONDS = 12
+/** The end screen, long enough to vote on the next mode. */
+export const END_SECONDS = 18

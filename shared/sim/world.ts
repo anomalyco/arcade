@@ -1,20 +1,21 @@
-import { CLAYMORE, DT, END_SECONDS, EQUIPS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE, type Weapon } from "../config"
-import { type Rect, angleDiff, clearLine, raycast } from "../geom"
+import { CLAYMORE, DT, END_SECONDS, EQUIPS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
+import { type Rect, angleDiff, clearLine } from "../geom"
 import { type MapDef, getMap } from "../maps"
 import { Rng } from "../rng"
 import { BotBrain } from "./bots"
 import { type Claymore, type Grenade, type Obstacles, launch, obstaclesOf, overlaps, stepGrenade } from "./gear"
-import { stepBody } from "./move"
+import { COVER, type Cover, coverGeo, moveTick, shotLane } from "./cover"
 
 export type Phase = "play" | "end"
 
 /**
  * One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. `sprint`
  * holds Shift. `equip` is a press that throws or plants your equipment; (tx, ty) is the cursor on the floor, how far
- * to throw.
+ * to throw. `cover` is a press that takes, hops or leaves cover; `peek` holds right click, which pops you out of cover
+ * like the trigger does (see shared/sim/cover.ts).
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number }
-export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0 }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; cover: boolean; peek: boolean }
+export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, cover: false, peek: false }
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
 export const sprints = (i: Intent): boolean => i.sprint && !i.fire && Math.hypot(i.mx, i.my) > 0.1
@@ -54,6 +55,8 @@ export type Player = {
   ack: number
   kills: number
   deaths: number
+  /** The surface you're in cover against, or null. */
+  cover: Cover | null
 }
 
 export type SimEvent =
@@ -161,7 +164,7 @@ export class World {
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0 }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, cover: null }
   }
 
   /** Puts a player at the spawn farthest from everyone alive. */
@@ -189,6 +192,7 @@ export class World {
     p.reloadUntil = 0
     p.cooldownUntil = this.time + 0.5
     p.readyAt = 0
+    p.cover = null
   }
 
   push(id: string, seq: number, intent: Intent): void {
@@ -235,9 +239,10 @@ export class World {
         p.vy = 0
         continue
       }
-      const sprint = sprints(intent)
-      stepBody(p, intent.mx, intent.my, sprint ? SPRINT_SPEED : SPEED, this.solids, DT)
+      const mv = moveTick(p, intent, sprints(intent), coverGeo(this.map), this.solids)
+      const sprint = mv.sprint
       if (sprint) p.readyAt = this.time + SPRINT_TO_FIRE
+      if (mv.popped) p.readyAt = Math.max(p.readyAt, this.time + COVER.pop)
       const gun = GUNS[p.gun]
       if (p.reloadUntil > 0 && this.time >= p.reloadUntil) {
         p.reloadUntil = 0
@@ -365,18 +370,21 @@ export class World {
     const gun = GUNS[p.gun]
     const dx = Math.cos(aim)
     const dy = Math.sin(aim)
-    const wall = raycast(p.x, p.y, dx, dy, this.blockers, gun.range)
-    let stop = Math.min(wall, gun.range)
+    // Walls, with the cover rules: popping up over low cover, and crouching behind it.
+    const lane = shotLane(coverGeo(this.map), p, dx, dy, gun.range)
+    let stop = Math.min(lane.wall, gun.range)
+    let nearest = gun.range
     let victim: Player | null = null
     for (const q of this.players.values()) {
       if (!q.alive || q.id === p.id) continue
       const t = (q.x - p.x) * dx + (q.y - p.y) * dy
       const off = Math.abs(-(q.x - p.x) * dy + (q.y - p.y) * dx)
-      if (t > 0 && t < stop && off <= HIT_RADIUS) {
-        stop = t
+      if (t > 0 && t < nearest && off <= HIT_RADIUS && lane.reaches(q, t)) {
+        nearest = t
         victim = q
       }
     }
+    if (victim) stop = nearest
     // Someone else's claymore in the line of fire takes the round and blows.
     let mine: Claymore | null = null
     for (const c of this.claymores) {

@@ -1,5 +1,6 @@
 import { SPEED, type Gun } from "../../shared/config"
 import { angleDiff } from "../../shared/geom"
+import type { CoverView } from "../../shared/sim/cover"
 import { GUNPTS, HIP, HOLD, RIG } from "../render/person"
 import {
   type Frame,
@@ -139,6 +140,16 @@ export type Avatar = {
   /** Last frag throw and claymore plant, on the animation clock. */
   throwAt: number
   plantAt: number
+  /** Cover from the snapshot (or prediction), and blends into its poses: crouched behind low cover, back to a wall
+   * with the gun up, the slide in, and leaning around a corner (-1..1 along the surface). (cnx, cny) is the last
+   * surface's outward normal. */
+  cover: CoverView | null
+  crouch: number
+  wall: number
+  slide: number
+  lean: number
+  cnx: number
+  cny: number
 }
 
 export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gun): Avatar {
@@ -197,6 +208,13 @@ export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gu
     handVel: [0, 0, 0],
     throwAt: -10,
     plantAt: -10,
+    cover: null,
+    crouch: 0,
+    wall: 0,
+    slide: 0,
+    lean: 0,
+    cnx: 0,
+    cny: 0,
   }
 }
 
@@ -418,7 +436,17 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   const k = clamp(sp / SPEED, 0, 1)
   a.gait += ((sp > 0.35 ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
   // Only sprinters go faster than a walk (snapshots carry velocity, not the key). A shot drops it at once.
-  const sprinting = sp > SPEED + 0.6 && now - a.firedAt > 0.25
+  const sprinting = sp > SPEED + 0.6 && now - a.firedAt > 0.25 && !a.cover
+  const cv = a.cover
+  if (cv) {
+    a.cnx = cv.nx
+    a.cny = cv.ny
+  }
+  const kc = 1 - Math.exp(-dt * 12)
+  a.crouch += ((cv?.low && !cv.out ? 1 : 0) - a.crouch) * kc
+  a.wall += ((cv && !cv.low && !cv.peek && !cv.enter ? 1 : 0) - a.wall) * kc
+  a.slide += ((cv?.enter ? 1 : 0) - a.slide) * (1 - Math.exp(-dt * 20))
+  a.lean += ((cv?.peek ?? 0) - a.lean) * (1 - Math.exp(-dt * 14))
   if (now - a.firedAt < 0.05) a.sprint = 0
   a.sprint += ((sprinting ? 1 : 0) - a.sprint) * Math.min(1, dt * 9)
   const s = smooth(a.sprint)
@@ -561,7 +589,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
 
   // Pelvis: low and bobbing when running, swaying its weight when standing, kept within reach of both feet.
   const legLen = RIG.thigh + RIG.shin - 0.015
-  let h = HIP - 0.05 * moving - 0.035 * moving * Math.cos(2 * th) - 0.03 * sprint * Math.cos(2 * th) + a.dip.x + breath * 0.004 * still
+  let h = HIP - 0.05 * moving - 0.035 * moving * Math.cos(2 * th) - 0.03 * sprint * Math.cos(2 * th) + a.dip.x + breath * 0.004 * still - 0.36 * smooth(a.crouch) - 0.16 * a.slide
   const sway = Math.sin(t * 0.55 + a.seed) * 0.025 * still
   const cl = Math.cos(a.legYaw)
   const sl = Math.sin(a.legYaw)
@@ -584,8 +612,9 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   // Lean in the torso's own axes: travel lean and hit pushes come in plan space.
   const ca = Math.cos(a.aim)
   const sa = Math.sin(a.aim)
-  const lx = a.leanX.x + a.hitX.x * 1.4
-  const ly = a.leanY.x + a.hitY.x * 1.4
+  // In cover: lean back against a wall, and out around a corner.
+  const lx = a.leanX.x + a.hitX.x * 1.4 - a.cnx * 0.05 * a.wall - a.cny * a.lean * 0.11
+  const ly = a.leanY.x + a.hitY.x * 1.4 - a.cny * 0.05 * a.wall + a.cnx * a.lean * 0.11
   const leanFwd = lx * ca + ly * sa
   const leanSide = -lx * sa + ly * ca
   let gunPitch = 0
@@ -608,12 +637,17 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
 
   // Sprinting squares the chest up to the run and carries the gun with it.
   const run = angleDiff(a.legYaw, a.aim) * port * 0.7
-  const torsoYaw = a.aim + run + BLADE[g] * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving + a.hitTwist.x + a.recYaw.x * 0.4
+  // Back to a wall, the chest turns along it toward the aim and the gun comes up to high ready until you shoot.
+  const ready = a.wall * clamp((now - a.firedAt - 0.25) / 0.2, 0, 1) * (clip ? 0.3 : 1)
+  let along = Math.atan2(a.cnx, -a.cny)
+  if (Math.abs(angleDiff(along, a.aim)) > Math.PI / 2) along += Math.PI
+  const toWall = clamp(angleDiff(along, a.aim), -0.7, 0.7) * ready * 0.6
+  const torsoYaw = toWall + a.aim + run + BLADE[g] * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
-  const fwd = 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2 - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const fwd = 0.1 + 0.08 * moving + 0.2 * sprint + 0.22 * a.crouch - 0.35 * a.slide + leanFwd * 2.2 - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * 2.2 + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
   torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * 0.4)
@@ -626,6 +660,11 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   gunRoll += 0.35 * port
   gunPull += 0.1 * port
   gunDrop += 0.12 * port
+  // High ready against a wall, muzzle up; crouched, the gun tucked in a little.
+  gunPitch += 0.85 * ready + 0.25 * a.crouch
+  gunPull += 0.1 * ready + 0.04 * a.crouch
+  gunDrop -= 0.04 * ready
+  gunYaw -= toWall * 0.5
   const gy = a.aim + run
   const ga = Math.cos(gy)
   const gs = Math.sin(gy)
