@@ -1,0 +1,151 @@
+import { GUNS } from "../config"
+import { type Vec, angleDiff, clearLine } from "../geom"
+import { Rng } from "../rng"
+import { MELEE } from "./melee"
+import { navFor } from "./nav"
+import type { Brain, Intent, Player, World } from "./world"
+
+const TURN = 4.5 / 30
+
+/**
+ * Hunts the nearest enemy: walks a path toward them, and shoots after a short reaction when it has a clear line. With
+ * nobody in sight it plays the objective, when the mode has one.
+ */
+export class BotBrain implements Brain {
+  private rng: Rng
+  private path: Vec[] = []
+  private repathAt = 0
+  private aim = 0
+  private target = ""
+  private reactAt = 0
+  private error = 0
+  private strafe = 1
+  private strafeAt = 0
+  private goal: { x: number; y: number } | null = null
+
+  constructor(seed: number) {
+    this.rng = new Rng(seed)
+  }
+
+  think(world: World, p: Player): Intent {
+    const now = world.time
+    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
+    let near: Player | null = null
+    let nd = Infinity
+    for (const q of world.players.values()) {
+      if (!q.alive || q.id === p.id || world.allies(p, q)) continue
+      const d = Math.hypot(q.x - p.x, q.y - p.y)
+      if (d < nd) {
+        nd = d
+        near = q
+      }
+    }
+    // Bare hands, or out of rounds with no reload: close in and swing.
+    if (near && (!p.kit.gun || (p.kit.melee && p.mag === 0 && !p.kit.reload))) return this.brawl(world, p, near, nd, i)
+    const gun = GUNS[p.gun]
+    const sees = !!near && nd <= Math.max(gun.range, 12) && clearLine(p.x, p.y, near.x, near.y, world.blockers)
+    const goal = world.mode.botGoal(world, p)
+    const obj = sees && !goal?.rush ? null : goal
+    if (!near && !obj) return i
+    if (near && sees) {
+      if (this.target !== near.id) {
+        this.target = near.id
+        this.reactAt = now + 0.35 + this.rng.next() * 0.4
+        this.error = (this.rng.next() - 0.5) * 0.4
+      }
+      this.error *= 0.93
+      const want = Math.atan2(near.y - p.y, near.x - p.x) + this.error
+      this.turn(want)
+      i.aim = this.aim
+      // Semi-automatic guns need the trigger released between shots.
+      i.fire = now >= this.reactAt && Math.abs(angleDiff(this.aim, want)) < 0.12 && nd <= gun.range && (gun.auto || world.tick % 2 === 0)
+      // Close enough to swing.
+      if (p.kit.melee && nd < MELEE.range * 0.8 && now >= this.reactAt) i.melee = true
+      if (now > this.strafeAt) {
+        this.strafe = this.rng.next() < 0.5 ? -1 : 1
+        this.strafeAt = now + 0.6 + this.rng.next()
+      }
+      i.mx = Math.cos(want + (Math.PI / 2) * this.strafe) * 0.6
+      i.my = Math.sin(want + (Math.PI / 2) * this.strafe) * 0.6
+      // A rushed objective (a flag run) keeps going while shooting.
+      const run = obj?.rush ? this.toward(world, p, obj) : null
+      if (run) {
+        i.mx = run.x
+        i.my = run.y
+      }
+      // Now and then a frag at someone in throwing range.
+      if (p.equip === "frag" && p.equipLeft > 0 && now >= this.reactAt && nd > 4 && nd < 11 && Math.abs(angleDiff(this.aim, want)) < 0.2 && this.rng.next() < 0.012) {
+        i.equip = true
+        i.fire = false
+        i.tx = near.x
+        i.ty = near.y
+      }
+      return i
+    }
+    this.target = ""
+    if (p.mag < gun.mag / 2) i.reload = true
+    const dest = obj ?? near!
+    if (obj && Math.hypot(obj.x - p.x, obj.y - p.y) < 0.8) {
+      // At the objective: hold still, and hold the key when there's something to plant or defuse.
+      i.use = obj.use
+      this.turn(this.aim + 0.02)
+      i.aim = this.aim
+      return i
+    }
+    const dir = this.toward(world, p, dest)
+    if (dir) {
+      i.mx = dir.x
+      i.my = dir.y
+      // Run when the hunt has a long way to go.
+      i.sprint = Math.hypot(dest.x - p.x, dest.y - p.y) > 8
+      this.turn(Math.atan2(i.my, i.mx))
+      i.aim = this.aim
+    }
+    return i
+  }
+
+  /** Runs at `q` (straight when in sight, else along a path) and swings once in reach. */
+  private brawl(world: World, p: Player, q: Player, d: number, i: Intent): Intent {
+    const now = world.time
+    const sees = clearLine(p.x, p.y, q.x, q.y, world.blockers)
+    const dir = sees ? { x: (q.x - p.x) / (d || 1), y: (q.y - p.y) / (d || 1) } : this.toward(world, p, q)
+    if (this.target !== q.id) {
+      this.target = q.id
+      this.reactAt = now + 0.2 + this.rng.next() * 0.3
+    }
+    const want = sees ? Math.atan2(q.y - p.y, q.x - p.x) : dir ? Math.atan2(dir.y, dir.x) : this.aim
+    this.turn(want)
+    this.turn(want)
+    i.aim = this.aim
+    if (dir) {
+      i.mx = dir.x
+      i.my = dir.y
+      i.sprint = d > 2.5
+    }
+    if (sees && d < MELEE.range * 0.9 && now >= this.reactAt && Math.abs(angleDiff(this.aim, want)) < 0.6) {
+      if (p.kit.gun) i.melee = true
+      else i.fire = true
+    }
+    return i
+  }
+
+  /** The unit step along the path to `dest`, repathing now and then or when it moves; null once there. */
+  private toward(world: World, p: Player, dest: Vec): Vec | null {
+    const now = world.time
+    const moved = !this.goal || Math.hypot(this.goal.x - dest.x, this.goal.y - dest.y) > 2
+    if (now >= this.repathAt || !this.path.length || moved) {
+      this.path = navFor(world.map).path(p, dest) ?? []
+      this.goal = { x: dest.x, y: dest.y }
+      this.repathAt = now + 1 + this.rng.next()
+    }
+    while (this.path.length && Math.hypot(this.path[0]!.x - p.x, this.path[0]!.y - p.y) < 0.35) this.path.shift()
+    const next = this.path[0]
+    if (!next) return null
+    const d = Math.hypot(next.x - p.x, next.y - p.y)
+    return { x: (next.x - p.x) / d, y: (next.y - p.y) / d }
+  }
+
+  private turn(want: number): void {
+    this.aim += Math.max(-TURN, Math.min(TURN, angleDiff(want, this.aim)))
+  }
+}

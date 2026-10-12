@@ -1,0 +1,377 @@
+/* ---- Mode HUD: team scores, objectives, progress, banners ------------------------------------- */
+
+#mtop,
+#mbar,
+#mhint,
+#mintro,
+#mspec {
+  zoom: var(--hud, 1);
+}
+
+#mtop {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  white-space: nowrap;
+}
+
+#mtop .scores {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+#mtop .scores b {
+  font-size: 22px;
+  font-weight: 500;
+  min-width: 44px;
+}
+
+#mtop .scores b:first-child {
+  text-align: right;
+}
+
+#mtop .scores b.mine {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+
+#mtop .tgt {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+}
+
+#mtop .pts {
+  display: flex;
+  gap: 8px;
+}
+
+#mtop .pts span {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border: 2px solid;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+#mtop .pts span i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 100%;
+  opacity: 0.45;
+}
+
+#mtop .pts em {
+  position: relative;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+#mtop .pts .hot {
+  animation: mhot 0.5s steps(2) infinite;
+}
+
+@keyframes mhot {
+  50% {
+    border-color: #ff5040 !important;
+  }
+}
+
+#mtop .snd {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+}
+
+#mtop .dots {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+#mtop .role {
+  color: var(--dim);
+}
+
+#mtop .bomb {
+  color: var(--dim);
+}
+
+#mtop .bomb.hot {
+  color: #ff5040;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+#mbar {
+  position: absolute;
+  top: 62%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  transition: opacity 0.15s;
+}
+
+#mbar .track {
+  width: 220px;
+  height: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+#mbar .track i {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+}
+
+#mhint {
+  position: absolute;
+  top: 66%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+#mintro {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+#mintro b {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: 0.36em;
+  margin-right: -0.36em;
+}
+
+#mintro span {
+  color: var(--dim);
+  font-size: 12px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+#mspec {
+  position: absolute;
+  bottom: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  font-size: 18px;
+  letter-spacing: 0.24em;
+  white-space: nowrap;
+}
+
+#mspec b {
+  font-weight: 500;
+}
+
+#mspec span {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.olabel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+
+#mtop .obj {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+#mtop .obj b {
+  font-weight: 500;
+}
+
+#mtop .obj em {
+  font-style: normal;
+  color: var(--dim);
+}
+
+#mtop .obj .hot {
+  animation: mblink 0.6s steps(2) infinite;
+}
+
+@keyframes mblink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Off-screen objective: an arrowhead at the screen edge pointing at it, with its name and distance. */
+.oarrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+.oarrow i {
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 14px solid currentColor;
+}
+
+/* ---- Menus: mode picker and the vote ---------------------------------------------------------- */
+
+.modepick {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  margin-top: -6px;
+}
+
+.modepick button {
+  padding: 6px 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.modepick button.on {
+  color: var(--ink);
+  border-color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modeblurb {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  margin-top: -6px;
+  min-height: 2.8em;
+}
+
+.modeblurb b {
+  display: block;
+  color: var(--dim);
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  margin-bottom: 2px;
+}
+
+tr.team td {
+  padding-top: 14px;
+  border-bottom: 1px solid var(--line);
+  letter-spacing: 0.22em;
+  font-size: 12px;
+}
+
+tr.team td b {
+  font-weight: 500;
+}
+
+tr.team td span {
+  float: right;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.vote {
+  margin-top: 18px;
+}
+
+.vote .vh {
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+
+.vote .vh span {
+  color: var(--faint);
+  letter-spacing: 0.08em;
+  margin-left: 8px;
+}
+
+.vopts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.vopts button {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.vopts button b {
+  flex: 1;
+  font-weight: 500;
+}
+
+.vopts button b small {
+  display: block;
+  color: var(--faint);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.vopts button em {
+  font-style: normal;
+  font-size: 16px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.vopts button.on {
+  border-color: var(--ink);
+  background: rgba(255, 255, 255, 0.1);
+}
