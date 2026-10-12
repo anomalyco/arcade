@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "arcade-labs-redirects",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-08",
+  "account_id": "15d29c8639fd3733b1b5486a2acfd968",
+  "workers_dev": false,
+  // Old labs URLs of the games that moved to /arcade. Add a pair here when another game moves.
+  "routes": [
+    { "pattern": "anoma.ly/labs/blackout", "zone_name": "anoma.ly" },
+    { "pattern": "anoma.ly/labs/blackout/*", "zone_name": "anoma.ly" },
+    { "pattern": "anoma.ly/labs/getaway", "zone_name": "anoma.ly" },
+    { "pattern": "anoma.ly/labs/getaway/*", "zone_name": "anoma.ly" }
+  ]
+}

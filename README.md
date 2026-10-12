@@ -7,6 +7,7 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 | `landing/` | Index page | https://anoma.ly/arcade/ | `arcade-landing` |
 | `games/blackout/` | Top-down stealth shooter (WebGPU, Durable Objects) | https://anoma.ly/arcade/blackout/ | `arcade-blackout` |
 | `games/getaway/` | Cops-and-robbers driving chase (WebGPU, Durable Objects) | https://anoma.ly/arcade/getaway/ | `arcade-getaway` |
+| `redirects/` | 301s from the old `anoma.ly/labs/<game>` URLs to `/arcade/<game>` | — | `arcade-labs-redirects` |
 
 Each folder is an independent Bun project with its own `package.json`, lockfile, `check` script and `wrangler.jsonc`.
 There is no root workspace.
@@ -39,4 +40,6 @@ their full history. Blackout came from https://github.com/anomalyco/blackout.
 
 - These are new Workers, so their Durable Object namespaces are fresh. Live rooms and lobby state from the old
   `anoma.ly/labs/*` deployments do not carry over.
-- The old `blackout` and `getaway` Workers at `anoma.ly/labs/<name>` are still running and can be retired later.
+- The old `anoma.ly/labs/blackout` and `anoma.ly/labs/getaway` URLs (every path, with the query string) permanently
+  redirect to `/arcade/<name>` through `redirects/`. The old labs Workers, the standalone repositories and the
+  `anomalyco/blackout` GitHub repository have been removed; their history is in this repo.
