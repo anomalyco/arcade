@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "arcade-landing",
+  "compatibility_date": "2026-09-08",
+  "account_id": "15d29c8639fd3733b1b5486a2acfd968",
+  "workers_dev": false,
+  // Exact patterns only: the games own /arcade/<name> and /arcade/<name>/*.
+  // /arcade/assets/* carries the landing's bundled CSS and images.
+  "routes": [
+    { "pattern": "anoma.ly/arcade", "zone_name": "anoma.ly" },
+    { "pattern": "anoma.ly/arcade/", "zone_name": "anoma.ly" },
+    { "pattern": "anoma.ly/arcade/assets/*", "zone_name": "anoma.ly" }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  }
+}

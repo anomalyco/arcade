@@ -1,0 +1,16 @@
+{
+  "name": "arcade-landing",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5192 --strictPort",
+    "build": "vite build",
+    "check": "vite build",
+    "deploy": "rm -rf dist && vite build && wrangler deploy"
+  },
+  "devDependencies": {
+    "vite": "^8.3.4",
+    "wrangler": "^4.149.0"
+  }
+}
