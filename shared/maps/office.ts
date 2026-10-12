@@ -701,10 +701,14 @@ function corridors(b: Builder, r: Rng, p: Plan, clear: Rect[], W: number, H: num
     const len = hz ? c[2] - c[0] : c[3] - c[1]
     for (let u = 3; u < len - 3; u += 6) spots.push({ v: hz ? { x: c[0] + u, y: (c[1] + c[3]) / 2 } : { x: (c[0] + c[2]) / 2, y: c[1] + u }, chance: 0.1 })
   }
-  for (const { v, chance } of shuffle(r, spots)) {
-    if (r.next() > chance || lit.some((q) => Math.hypot(q.x - v.x, q.y - v.y) < 12)) continue
-    b.light({ kind: "panel", x: v.x, y: v.y, h: 2.6, r: 6.5, power: 0.85, color: COLD, flicker: r.next() < 0.3 ? r.range(0.3, 0.9) : undefined })
-    lit.push(v)
+  // Then, on a floor that came out too dark to play, a few more.
+  for (const pass of [0, 1]) {
+    for (const { v, chance } of shuffle(r, spots)) {
+      if (pass && b.lights.length >= 12) break
+      if ((!pass && r.next() > chance) || lit.some((q) => Math.hypot(q.x - v.x, q.y - v.y) < (pass ? 9 : 12))) continue
+      b.light({ kind: "panel", x: v.x, y: v.y, h: 2.6, r: 6.5, power: 0.85, color: COLD, flicker: r.next() < 0.3 ? r.range(0.3, 0.9) : undefined })
+      lit.push(v)
+    }
   }
 }
 

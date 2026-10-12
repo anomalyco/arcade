@@ -136,11 +136,20 @@ class Gen {
     readonly H: number,
   ) {}
 
-  room(kind: RoomKind, rc: Rect, front: Side): Room {
-    const room: Room = { id: this.rooms.length, kind, rect: [q(rc[0]), q(rc[1]), q(rc[2]), q(rc[3])], front }
-    this.rooms.push(room)
+  /** How many of each kind the floor has so far. */
+  count = new Map<RoomKind, number>()
+
+  /** Books a room kind against the floor's program. */
+  tally(kind: RoomKind): void {
+    this.count.set(kind, (this.count.get(kind) ?? 0) + 1)
     const n = this.need.get(kind)
     if (n) this.need.set(kind, n - 1)
+  }
+
+  room(kind: RoomKind, rc: Rect, front: Side, tally = true): Room {
+    const room: Room = { id: this.rooms.length, kind, rect: [q(rc[0]), q(rc[1]), q(rc[2]), q(rc[3])], front }
+    this.rooms.push(room)
+    if (tally) this.tally(kind)
     return room
   }
 
@@ -185,7 +194,7 @@ class Gen {
         ? [
             ["manager", bay >= 4.2 ? 1 : 2, 3],
             ["office", 1, bay <= 4.8 ? 4 : 1],
-            ["meeting", span(5), 1.2 + 3 * needs("meeting")],
+            ["meeting", span(5), 0.8 + 3 * needs("meeting")],
             ["boardroom", span(8), depth >= 5 ? (end ? 1.6 : 0.5) : 0],
             ["empty", 1, 0.8],
             ["kitchen", span(6), 0.05 + needs("kitchen")],
@@ -208,17 +217,22 @@ class Gen {
               ["kitchen", span(6), 0.15 + 6 * needs("kitchen")],
               ["copy", 1, 0.3 + 6 * needs("copy")],
               ["server", 1, 0.3 + 6 * needs("server")],
-              ["storage", 1, 1.4 + 4 * needs("storage")],
+              ["storage", 1, 0.8 + 4 * needs("storage")],
               ["meeting", span(4.8), 2 + 4 * needs("meeting")],
               ["boardroom", span(7.5), 0.6],
               ["lounge", span(6), 0.5],
               ["closet", 1, bay <= 3.6 ? 0.6 : 0],
-              ["empty", 1, 1],
-              ["office", 1, 0.6],
+              ["empty", 1, 1.2],
+              ["office", 1, 1],
+              ["manager", bay >= 4.2 ? 1 : 2, 0.6],
             ]
-    const fit = opts.filter(([, n, w]) => w > 0 && n <= left).map(([k, n, w]) => [[k, n] as [RoomKind, number], w] as const)
-    if (!fit.length) return [slot === "perim" ? "office" : "storage", left]
-    return weighted(this.r, fit)
+    // Each repeat of a kind makes it less likely again; offices come in rows, so they're exempt.
+    const big = (k: RoomKind) => k === "kitchen" || k === "lounge" || k === "boardroom" || k === "reception"
+    const used = (k: RoomKind) => (k === "office" || k === "manager" ? 0 : (this.count.get(k) ?? 0) * (big(k) ? 4 : 1.6))
+    const fit = opts.filter(([, n, w]) => w > 0 && n <= left).map(([k, n, w]) => [[k, n] as [RoomKind, number], w / (1 + used(k))] as const)
+    const out: [RoomKind, number] = fit.length ? weighted(this.r, fit) : [slot === "perim" ? "office" : "storage", left]
+    this.tally(out[0])
+    return out
   }
 
   /**
@@ -262,6 +276,7 @@ class Gen {
         if ((groups[k]!.b - groups[k]!.a) * bw < 4.5 && groups.length > 1) merge(k + 1 < groups.length ? k : k - 1)
         const j = groups.findIndex((g) => at(g.a) <= opts.reception! && at(g.b) >= opts.reception!)
         groups[j]!.kind = "reception"
+        this.tally("reception")
       }
     }
     // Doors fall at the same end of every room in a row; glass fronts are a row-wide choice too.
@@ -270,7 +285,7 @@ class Gen {
     return groups.map((g) => {
       const a = q(at(g.a))
       const b = q(at(g.b))
-      const room = this.room(g.kind, along ? [a, rc[1], b, rc[3]] : [rc[0], a, rc[2], b], front)
+      const room = this.room(g.kind, along ? [a, rc[1], b, rc[3]] : [rc[0], a, rc[2], b], front, false)
       this.hand.set(room.id, hand)
       if (glazed || g.kind === "meeting" || g.kind === "boardroom") this.glazed.add(room.id)
       return room
@@ -855,7 +870,6 @@ export function layout(r: Rng): Plan {
     ["sidecore", 2.2],
   ])
   const g = archetype === "sidecore" ? sidecore(r) : banded(r, archetype)
-  if (!g.rooms.some((x) => x.kind === "stair")) throw new Error("no stair")
   program(g)
   doors(g)
   const plan: Plan = { W: g.W, H: g.H, archetype, rooms: g.rooms, corridors: g.corridors, openings: g.openings, ends: g.ends, pillars: g.pillars, solid: [...g.solid] }
