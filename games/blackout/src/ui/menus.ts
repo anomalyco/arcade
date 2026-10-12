@@ -1,8 +1,9 @@
-import { floorOf } from "../../shared/maps"
+import { MAP_CHOICES, type MapChoice, mapChoiceOf, mapLabel } from "../../shared/maps"
 import { MODES, MODE_IDS, type ModeId, TEAM_NAMES, modeOf } from "../../shared/sim/modes"
 import { hostPicks } from "../../shared/sim/host"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import "./teams.css"
+import "./maps.css"
 import { css, type Rgb3 } from "../game/game"
 import { TEAM_COLORS } from "../game/mode-fx"
 import { boardStat, rulesColumns, rulesTeam, rulesWinner } from "./rules-hud"
@@ -11,14 +12,16 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 export type MenuActions = {
   quick(name: string): void
-  /** A private room whose first match is `mode`. */
-  create(name: string, mode: ModeId): void
+  /** A private room whose first match is `mode`, playing on `maps`. */
+  create(name: string, mode: ModeId, maps: MapChoice): void
   join(name: string, room: string): void
   /** End screen: a vote for the next mode. */
   vote(mode: ModeId): void
   /** Room host, team modes: move a player to a team, or deal random even teams. */
   team(id: string, team: 0 | 1): void
   shuffle(): void
+  /** Room host: what the room plays on from the next new map. */
+  maps(maps: MapChoice): void
   /** Room host: restart now in the current mode (null) or switch to `mode`, on a new floor or the same one. */
   host(mode: ModeId | null, newFloor: boolean): void
 }
@@ -27,6 +30,9 @@ export type MenuActions = {
 const CONFIRM_MS = 2000
 
 const MODE_KEY = "blackout.mode"
+const MAP_KEY = "blackout.map"
+const MAP_NAMES: Record<MapChoice, string> = { office: "OFFICE", downtown: "DOWNTOWN", random: "RANDOM" }
+const MAP_BLURBS: Record<MapChoice, string> = { office: "A new office tower floor every match.", downtown: "City blocks at night: streets, alleys, shops and a plaza.", random: "Office or downtown, picked fresh every match." }
 
 /** The landing page and the scoreboard (held with Tab, and shown between floors). */
 export class Menus {
@@ -34,6 +40,8 @@ export class Menus {
   private busy = false
   /** The mode Create game will use. */
   private mode: ModeId = modeOf(localStorage.getItem(MODE_KEY)) ?? "tdm"
+  /** What Create game plays on. */
+  private maps: MapChoice = mapChoiceOf(localStorage.getItem(MAP_KEY)) ?? "random"
   /** Host controls: the restart waiting on its confirming click ("reset" or a mode), and whether it's a new floor. */
   private armed: { what: string; at: number } | null = null
   private newFloor = true
@@ -45,6 +53,7 @@ export class Menus {
   ) {
     root.addEventListener("click", (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")
+      if (t?.dataset.act === "map") return this.pickMap(mapChoiceOf(t.dataset.map) ?? this.maps)
       if (t) this.act(t.dataset.act!, t.dataset.mode)
     })
     // Team picks act on press: the scoreboard re-renders as the match goes on, which can swallow a click.
@@ -55,6 +64,7 @@ export class Menus {
       if (t.dataset.host === "move") this.a.team(t.dataset.id!, t.dataset.team === "1" ? 1 : 0)
       else if (t.dataset.host === "shuffle") this.a.shuffle()
       else if (t.dataset.host === "floor") this.newFloor = !this.newFloor
+      else if (t.dataset.host === "maps") this.a.maps(mapChoiceOf(t.dataset.map) ?? "random")
       else if (t.dataset.host === "reset" || t.dataset.host === "mode") this.confirm(t.dataset.host === "mode" ? (modeOf(t.dataset.mode) ?? "") : "reset")
       this.key = ""
     })
@@ -78,7 +88,7 @@ export class Menus {
     if (this.busy) return
     const name = this.root.querySelector<HTMLInputElement>("#name")?.value ?? this.name
     if (act === "quick") this.a.quick(name)
-    else if (act === "create") this.a.create(name, this.mode)
+    else if (act === "create") this.a.create(name, this.mode, this.maps)
     else if (act === "join") {
       const fixed = this.root.querySelector<HTMLElement>("[data-room]")?.dataset.room
       const code = (fixed ?? this.root.querySelector<HTMLInputElement>("#code")?.value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
@@ -108,8 +118,22 @@ export class Menus {
     this.blurb(m)
   }
 
+  private pickMap(m: MapChoice): void {
+    this.maps = m
+    localStorage.setItem(MAP_KEY, m)
+    for (const b of this.root.querySelectorAll<HTMLElement>(".mappick [data-map]")) b.classList.toggle("on", b.dataset.map === m)
+    const el = this.root.querySelector(".mappick + .modeblurb")
+    if (el) el.innerHTML = `<b>${MAP_NAMES[m]}</b>${esc(MAP_BLURBS[m])}`
+  }
+
+  /** Map chips under the modes: what a created room plays on. */
+  private mapPicker(): string {
+    return `<div class="mappick">${MAP_CHOICES.map((m) => `<button class="${m === this.maps ? "on" : ""}" data-act="map" data-map="${m}" title="${esc(MAP_BLURBS[m])}">${MAP_NAMES[m]}</button>`).join("")}</div>
+      <div class="modeblurb"><b>${MAP_NAMES[this.maps]}</b>${esc(MAP_BLURBS[this.maps])}</div>`
+  }
+
   private blurb(m: ModeId): void {
-    const el = this.root.querySelector(".modeblurb")
+    const el = this.root.querySelector(".modepick + .modeblurb")
     const html = this.blurbHtml(m)
     if (el && el.innerHTML !== html) el.innerHTML = html
   }
@@ -131,7 +155,7 @@ export class Menus {
     this.root.className = "full"
     this.root.innerHTML = `<div class="landing">
       <div class="logo">BLACKOUT</div>
-      <div class="tag">Firefights on an office floor at night.</div>
+      <div class="tag">Firefights at night: office floors and downtown streets.</div>
       ${notice ? `<div class="notice">${esc(notice)}</div>` : ""}
       <label>NAME<input id="name" maxlength="14" value="${esc(this.name)}" placeholder="your name" autofocus /></label>
       ${
@@ -140,6 +164,7 @@ export class Menus {
           : `<button class="primary" data-act="quick" data-primary>QUICK JOIN</button>
              <button data-act="create">CREATE GAME</button>
              ${this.modePicker()}
+             ${this.mapPicker()}
              <div class="row"><input id="code" maxlength="8" placeholder="room code" autocapitalize="off" /><button data-act="join">JOIN</button></div>`
       }
       <div class="stats" id="stats"></div>
@@ -167,7 +192,7 @@ export class Menus {
     const show = held || s.phase === "end"
     const m = s.mode
     if (this.armed && performance.now() - this.armed.at > CONFIRM_MS) this.armed = null
-    const key = show ? JSON.stringify([s.phase, roster, room, s.phase === "end" ? Math.ceil(s.left) : 0, m.id, m.score, m.votes, this.armed?.what, this.newFloor]) : ""
+    const key = show ? JSON.stringify([s.phase, roster, room, s.phase === "end" ? Math.ceil(s.left) : 0, m.id, m.score, m.votes, this.armed?.what, this.newFloor, s.maps]) : ""
     if (key === this.key) return
     this.key = key
     if (!show) {
@@ -216,23 +241,23 @@ export class Menus {
     if (s.phase === "end") {
       const winner = rulesWinner(s, roster) ?? ranked[0]
       const text = info.teams ? (m.winner >= 0 ? `<span style="color:${teamColor(m.winner)}">${teamName(m.winner)}</span> WIN${m.id === "inf" ? "" : "S"}` : "DRAW") : winner ? `<span style="color:${css(colorOf(winner.id))}">${esc(winner.name.toUpperCase())}</span> WINS` : ""
-      result = `<div class="result">${text}</div><div class="sub">Next floor in ${Math.ceil(s.left)}</div>`
+      result = `<div class="result">${text}</div><div class="sub">Next ${s.maps === "random" ? "map" : MAP_NAMES[s.maps ?? "office"].toLowerCase()} in ${Math.ceil(s.left)}</div>`
     }
     const url = room ? `${location.origin}${location.pathname}?room=${room}` : ""
     this.root.className = s.phase === "end" ? "full" : "over"
     this.root.innerHTML = `<div class="score">
-      <div class="head"><div class="logo small">BLACKOUT</div><span>${esc(info.label.toUpperCase())} · FL ${floorOf(s.map)}</span></div>
+      <div class="head"><div class="logo small">BLACKOUT</div><span>${esc(info.label.toUpperCase())} · ${mapLabel(s.mapKind, s.map)}</span></div>
       ${result}
       <table>${head}<tbody>${body}</tbody></table>
       ${hostbar}
-      ${roster.find((r) => r.id === myId)?.host ? this.hostControls(m.id, picks) : ""}
+      ${roster.find((r) => r.id === myId)?.host ? this.hostControls(m.id, picks, s.maps ?? "office") : ""}
       ${m.votes ? this.votes(m.votes, m.id) : ""}
       ${url ? `<div class="share">Invite: <span>${esc(url)}</span></div>` : ""}
     </div>`
   }
 
   /** The host's restart: RESET MATCH, a new-floor toggle and the ten modes; each restart needs a confirming click. */
-  private hostControls(current: ModeId, picks: boolean): string {
+  private hostControls(current: ModeId, picks: boolean, maps: MapChoice): string {
     const armed = this.armed?.what ?? ""
     const target = modeOf(armed)
     const hint = armed === "reset" ? "click again to reset the match" : target ? `click again to switch to ${esc(MODES[target].label.toLowerCase())}` : `restarts for everyone · click twice${picks ? "" : " · <kbd>T</kbd> keeps this open"}`
@@ -245,6 +270,7 @@ export class Menus {
       <div class="hh"><b>HOST</b><span>${hint}</span></div>
       <div class="hrow"><button class="reset ${armed === "reset" ? "armed" : ""}" data-host="reset">${armed === "reset" ? "CONFIRM RESET?" : "RESET MATCH"}</button><button class="floor ${this.newFloor ? "on" : ""}" data-host="floor" title="Restart on a new procedural floor, or keep this one">${this.newFloor ? "☑ NEW FLOOR" : "☐ SAME FLOOR"}</button></div>
       <div class="hmodes">${chips}</div>
+      <div class="hmaps"><span>MAP</span>${MAP_CHOICES.map((c) => `<button class="${c === maps ? "on" : ""}" data-host="maps" data-map="${c}" title="${esc(MAP_BLURBS[c])} From the next new floor.">${MAP_NAMES[c]}</button>`).join("")}</div>
     </div>`
   }
 

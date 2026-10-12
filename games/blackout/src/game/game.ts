@@ -8,7 +8,7 @@ import type { Intent, SimEvent } from "../../shared/sim/world"
 import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
 import { buildLevel } from "../render/level-mesh"
-import { type Caster, type DynLight, LightCuller } from "../render/lighting"
+import { AMBIENT, type Caster, type DynLight, LightCuller } from "../render/lighting"
 import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
 import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, swing, useGear } from "./anim"
@@ -182,7 +182,7 @@ export class Game {
     this.gear = { frag: reg(gm.frag), claymore: reg(gm.claymore), led: reg(gm.led) }
     this.veh = new VehicleFx(renderer)
     this.vsound = new VehicleSound(sound)
-    this.map = getMap(1)
+    this.map = getMap("office", 1)
     this.load(this.map)
   }
 
@@ -247,7 +247,7 @@ export class Game {
       // Practice on a fixed test map (?practice&map=lot): load that rather than generating one from the seed.
       const fixed = this.session.fixedMap?.()
       if (fixed && fixed !== this.map) this.load(fixed)
-      if (s.map !== this.map.seed) this.load(getMap(s.map))
+      if (s.map !== this.map.seed || s.mapKind !== this.map.kind) this.load(getMap(s.mapKind ?? "office", s.map))
       else if (this.snap && s.match !== this.snap.match) this.clearScene()
       for (const p of s.players) {
         if (p.id === this.myId) continue
@@ -1264,7 +1264,7 @@ export class Game {
     F.set([this.renderer.width, this.renderer.height, nl, this.map.lights.length], 20)
     const focus = me ? cam.project(this.drawn.x, 0.9, this.drawn.y, w, h) : { x: 0, y: 0 }
     F.set([me ? this.drawn.x : 0, me ? this.drawn.y : 0, me ? 1 : 0, 0.24], 24)
-    F.set([0.085, 0.1, 0.16, 1.0], 28)
+    F.set(AMBIENT[this.map.kind], 28)
     F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, 0], 32)
     F.set([0, 1, 0, 0], 36)
     F.set([1 / this.map.size[0], 1 / this.map.size[1], this.map.size[0], this.map.size[1]], 40)

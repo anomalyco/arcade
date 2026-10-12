@@ -1,6 +1,6 @@
 import { CLAYMORE, DT, END_SECONDS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
 import { type Rect, angleDiff, clearLine, raycast } from "../geom"
-import { type MapDef, getMap } from "../maps"
+import { type MapChoice, type MapDef, type MapKind, getMap } from "../maps"
 import { Rng } from "../rng"
 import { BotBrain } from "./bots"
 import { type Claymore, type Grenade, type Obstacles, launch, obstaclesOf, overlaps, stepGrenade } from "./gear"
@@ -149,14 +149,18 @@ export class World {
   hostActAt = -Infinity
   /** Counts matches, so a restart on the same floor in the same mode still reads as a new match. */
   match = 0
+  /** What the room plays on: one kind of map every match, or a random kind each match. */
+  maps: MapChoice
 
   constructor(
     seed: number,
     private fixed: MapDef | null = null,
     mode: ModeId = "ffa",
+    maps: MapChoice = "office",
   ) {
     this.rng = new Rng(seed)
-    this.map = fixed ?? getMap(this.rng.int(2 ** 31))
+    this.maps = maps
+    this.map = fixed ?? this.nextMap()
     this.setMap(this.map)
     this.mode = createMode(mode)
     this.phaseEnd = this.mode.seconds
@@ -170,6 +174,23 @@ export class World {
     this.phaseEnd = this.time + this.mode.seconds
     this.resetPlayers()
     this.mode.start(this)
+  }
+
+  /** A fresh map in the room's setting: its kind (random picks one each time) and a new seed. */
+  private nextMap(): MapDef {
+    const kind: MapKind = this.maps === "random" ? (this.rng.next() < 0.5 ? "office" : "downtown") : this.maps
+    return getMap(kind, this.rng.int(2 ** 31))
+  }
+
+  /**
+   * Sets what the room plays on from the next new map. `now` also swaps the current map for one in the new setting and
+   * restarts the match on it: the room creator's pick, before anyone else is in.
+   */
+  setMaps(choice: MapChoice, now = false): void {
+    this.maps = choice
+    if (!now || this.fixed || choice === this.map.kind) return
+    this.setMap(this.nextMap())
+    this.setMode(this.mode.id)
   }
 
   /** Same team, or the same player, in a team mode. */
@@ -564,7 +585,7 @@ export class World {
 
   /** A new floor in the mode that won the vote. */
   private newMatch(): void {
-    if (!this.fixed) this.setMap(getMap(this.rng.int(2 ** 31)))
+    if (!this.fixed) this.setMap(this.nextMap())
     const next = tally(this.votes.values(), this.mode.id, this.rng, this.voteOptions)
     if (next !== this.mode.id) this.mode = createMode(next)
     this.begin()
@@ -575,7 +596,7 @@ export class World {
    * scores and objectives reset, gear cleared, everyone respawns. Host-picked teams stand.
    */
   restart(id: ModeId, newFloor = true): void {
-    if (newFloor && !this.fixed) this.setMap(getMap(this.rng.int(2 ** 31)))
+    if (newFloor && !this.fixed) this.setMap(this.nextMap())
     this.grenades = []
     this.claymores = []
     this.mode = createMode(id)

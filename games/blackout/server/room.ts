@@ -3,7 +3,8 @@ import { MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ } from "../shared/config"
 import { BUILD } from "../shared/build.gen"
 import { type ClientMsg, decodeClient, encodeServer } from "../shared/protocol"
 import { seedOf } from "../shared/rng"
-import { hostRestart, moveTeam, shuffleTeams } from "../shared/sim/host"
+import { type MapChoice, mapChoiceOf } from "../shared/maps"
+import { hostMaps, hostRestart, moveTeam, shuffleTeams } from "../shared/sim/host"
 import { type ModeId, modeOf } from "../shared/sim/modes"
 import { buildSnapshot, rosterOf } from "../shared/sim/view"
 import { World } from "../shared/sim/world"
@@ -39,8 +40,16 @@ export class RoomCore {
     readonly code: string,
     mode: ModeId = "ffa",
     private clock: () => number = Date.now,
+    maps: MapChoice = "office",
   ) {
-    this.world = new World(seedOf(code), null, mode)
+    this.world = new World(seedOf(code), null, mode, maps)
+  }
+
+  /** The creator's pick of what the room plays on, taken only while the room is empty: the first map follows it. */
+  setMaps(maps: MapChoice): boolean {
+    if (this.world.humans.length) return false
+    this.world.setMaps(maps, true)
+    return true
   }
 
   /** The creator's pick of mode, taken only while the room is empty. */
@@ -78,6 +87,7 @@ export class RoomCore {
     else if (msg.type === "vote") this.world.vote(id, msg.mode)
     else if (msg.type === "team") moveTeam(this.world, id, msg.id, msg.team)
     else if (msg.type === "shuffle") shuffleTeams(this.world, id)
+    else if (msg.type === "host" && msg.action === "maps") hostMaps(this.world, id, msg.maps)
     else if (msg.type === "host") hostRestart(this.world, id, msg.action === "mode" ? msg.mode : this.world.mode.id, msg.newFloor)
   }
 
@@ -189,6 +199,8 @@ export class Room extends DurableObject<Env> {
   private priv: boolean | null = null
   /** The mode the room was created with, for the first match whenever the room starts up again. */
   private mode: ModeId | null = null
+  /** What the room plays on (Create game picks it; quick rooms play a random kind each match). */
+  private maps: MapChoice | null = null
   private reported = ""
   private reportAt = 0
 
@@ -197,13 +209,19 @@ export class Room extends DurableObject<Env> {
     const code = req.headers.get("x-room")
     if (!code) return new Response("missing room", { status: 400 })
     this.mode ??= modeOf(await this.ctx.storage.get<string>("mode")) ?? "ffa"
-    const core = (this.core ??= new RoomCore(code, this.mode))
+    this.maps ??= mapChoiceOf(await this.ctx.storage.get<string>("maps")) ?? "random"
+    const core = (this.core ??= new RoomCore(code, this.mode, Date.now, this.maps))
     this.priv ??= (await this.ctx.storage.get<boolean>("private")) ?? false
     // Likewise only the first arrival picks the mode (Create game sends it).
     const mode = modeOf(new URL(req.url).searchParams.get("mode"))
     if (mode && core.connections === 0 && core.setMode(mode)) {
       this.mode = mode
       await this.ctx.storage.put("mode", mode)
+    }
+    const maps = mapChoiceOf(new URL(req.url).searchParams.get("map"))
+    if (maps && core.connections === 0 && core.setMaps(maps)) {
+      this.maps = maps
+      await this.ctx.storage.put("maps", maps)
     }
     // Only the first arrival in an empty room can make it private, so a link can't hide an existing public room.
     if (!this.priv && core.connections === 0 && new URL(req.url).searchParams.get("private") === "1") {

@@ -17,4 +17,12 @@
   roadkill, explosion → burning wreck → respawn at its spot, `Mode.canRide`). Client: `src/game/vehicles.ts` (draw,
   lamps as dynamic lights, prediction of the vehicle you drive), `src/render/vehicle-mesh.ts`, `src/audio/vehicle-sound.ts`.
   Test yard: `?practice&map=lot` (`shared/sim/vehicle-lot.ts`); `globalThis.practice` is the practice World.
+- Map kinds (`MapDef.kind`): `office` (`shared/maps/office.ts`) and `downtown` (`shared/maps/downtown*.ts`: street grid
+  with a ring road, superblocks, stubs closed by hoardings, buildings cut by alleys, enterable shops, plaza, parking lot,
+  park; `roads` + `paint` on the MapDef; drivable `vehicles` in parking lanes and the lot). `getMap(kind, seed)`; the
+  snapshot carries `map` (seed), `mapKind` and `maps` (the room's setting: office, downtown or random per match). Create
+  game picks it (`?map=` on the first socket; quick rooms are random); the host changes it in the HOST panel
+  (`hostMaps`, applies from the next new floor). Downtown renders via `src/render/street-models.ts` (props, buildings,
+  cars, cover) and floor kinds 5-9 in `shaders.ts`; ambient per kind in `lighting.ts` `AMBIENT`. Viewers:
+  `envlab.html?kind=downtown&seed=N`, `?practice&map=downtown`, `KIND=downtown bun scripts/plan.ts`. Concepts: `concept/dt-*.png`.
 - Client/server version: `scripts/build-id.ts` hashes `shared/` into `shared/build.gen.ts` (gitignored; check, test, build, deploy and dev generate it). The client sends it in `hello`; a server with a different hash replies `reload` and the client reloads into the same room (old clients without a build get an error asking them to reload).

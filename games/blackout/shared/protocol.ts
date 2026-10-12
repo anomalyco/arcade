@@ -1,4 +1,5 @@
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "./config"
+import { type MapChoice, mapChoiceOf } from "./maps"
 import { type ModeId, modeOf } from "./sim/modes"
 import type { RosterRow, Snapshot } from "./sim/view"
 import type { Intent, SimEvent } from "./sim/world"
@@ -16,6 +17,8 @@ export type ClientMsg =
   /** Room host: restart the match in the current mode, or switch to another; a new floor unless newFloor is false. */
   | { type: "host"; action: "reset"; newFloor: boolean }
   | { type: "host"; action: "mode"; mode: ModeId; newFloor: boolean }
+  /** Room host: what the room plays on from the next new map (office, downtown or a random kind each match). */
+  | { type: "host"; action: "maps"; maps: MapChoice }
   | { type: "ping"; t: number }
 
 export type ServerMsg =
@@ -95,6 +98,10 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     case "host": {
       const newFloor = o.newFloor !== false
       if (o.action === "reset") return { type: "host", action: "reset", newFloor }
+      if (o.action === "maps") {
+        const maps = mapChoiceOf(o.maps)
+        return maps ? { type: "host", action: "maps", maps } : null
+      }
       const mode = modeOf(o.mode)
       return o.action === "mode" && mode ? { type: "host", action: "mode", mode, newFloor } : null
     }

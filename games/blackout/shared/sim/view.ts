@@ -1,4 +1,5 @@
 import type { Equip, Gun } from "../config"
+import type { MapChoice, MapKind } from "../maps"
 import type { Kit } from "./kit"
 import type { ModeView } from "./modes"
 import type { VehicleKind } from "./vehicle"
@@ -24,8 +25,10 @@ export type Snapshot = {
   phase: Phase
   /** Seconds left in the match (the round or bomb in search and destroy) or the end screen. */
   left: number
-  /** Seed of the office floor. */
+  /** The map: its seed and kind (getMap(mapKind, map) builds it), and what the room plays on from match to match. */
   map: number
+  mapKind: MapKind
+  maps: MapChoice
   /** Match number in the room: a host restart on the same floor in the same mode is still a new match. */
   match?: number
   players: PlayerView[]
@@ -48,6 +51,8 @@ export function buildSnapshot(world: World, viewerId: string): Snapshot {
     phase: world.phase,
     left: Math.max(0, (world.phase === "play" ? world.mode.left(world) : null) ?? world.phaseEnd - world.time),
     map: world.map.seed,
+    mapKind: world.map.kind,
+    maps: world.maps,
     match: world.match,
     players: world.order.map((id) => {
       const p = world.players.get(id)!

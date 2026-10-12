@@ -1,9 +1,9 @@
-// Dev-only environment viewer (envlab.html): a generated office floor through the real Game and Renderer, with a few
-// soldiers standing about. ?seed=N picks the floor, ?x=&y= centre the camera, ?light=K centres on the K-th light of
-// ?kind=panel|desk|exit|..., ?zoom=17 sets the distance, ?big=N tiles the floor NxN to stress culling, ?stress=N
-// renders every frame N times. window.goto(x, y) moves.
+// Dev-only environment viewer (envlab.html): a generated map through the real Game and Renderer, with a few soldiers
+// standing about. ?kind=office|downtown and ?seed=N pick the map, ?x=&y= centre the camera, ?light=K centres on the
+// K-th light of ?lkind=panel|street|neon|..., ?zoom=17 sets the distance, ?big=N tiles the floor NxN to stress
+// culling, ?stress=N renders every frame N times. window.goto(x, y) moves.
 import type { MapDef } from "../../shared/maps"
-import { getMap } from "../../shared/maps"
+import { getMap, mapKindOf } from "../../shared/maps"
 import type { ClientMsg } from "../../shared/protocol"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import type { SimEvent } from "../../shared/sim/world"
@@ -38,9 +38,9 @@ class StillSession implements Session {
   readonly room = null
   readonly myId = "viewer"
   private snap: { snap: Snapshot; at: number }
-  constructor(seed: number, people: { x: number; y: number; aim: number }[]) {
+  constructor(map: MapDef, people: { x: number; y: number; aim: number }[]) {
     const players = people.map((p, i) => ({ id: i === 0 ? this.myId : `p${i}`, x: p.x, y: p.y, vx: 0, vy: 0, aim: p.aim, alive: true, gun: "rifle" as const, health: 100 }))
-    this.snap = { snap: { type: "snap", tick: 0, t: 0, ack: 0, phase: "play", left: 300, map: seed, players, grenades: [], claymores: [], mode: IDLE_VIEW, you: null }, at: performance.now() }
+    this.snap = { snap: { type: "snap", tick: 0, t: 0, ack: 0, phase: "play", left: 300, map: map.seed, mapKind: map.kind, maps: map.kind, players, grenades: [], claymores: [], mode: IDLE_VIEW, you: null }, at: performance.now() }
   }
   latest() {
     return this.snap
@@ -71,11 +71,12 @@ async function main() {
   const renderer = new Renderer(device, context, format)
   const params = new URLSearchParams(location.search)
   const seed = Number(params.get("seed") ?? "1")
-  let map = getMap(seed)
+  const mapKind = mapKindOf(params.get("kind")) ?? "office"
+  let map = getMap(mapKind, seed)
   if (params.has("big")) map = bigMap(map, Number(params.get("big")) || 2)
   let fx = Number(params.get("x") ?? map.size[0] / 2)
   let fy = Number(params.get("y") ?? map.size[1] / 2)
-  const kind = params.get("kind")
+  const kind = params.get("lkind") ?? (mapKindOf(params.get("kind")) ? null : params.get("kind"))
   if (params.has("light")) {
     const ls = map.lights.filter((l) => !kind || l.kind === kind)
     const l = ls[Number(params.get("light")) % Math.max(1, ls.length)]
@@ -88,7 +89,7 @@ async function main() {
     { x: fx + 1.2, y: fy + 0.6, aim: -0.6 },
     { x: fx - 2.5, y: fy - 1.5, aim: 0.4 },
   ]
-  const session = new StillSession(seed, people)
+  const session = new StillSession(map, people)
   const game = new Game(renderer, session, new Sound())
   ;(game as unknown as { load(m: MapDef): void }).load(map)
   const input = new Input(canvas)
@@ -126,7 +127,7 @@ async function main() {
     last = now
     clock += dt * 1000
     fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05
-    info.textContent = `seed ${seed}  ${fx.toFixed(1)},${fy.toFixed(1)}  fps ${fps.toFixed(0)}  chunks ${renderer.drawnChunks}`
+    info.textContent = `${mapKind} ${seed}  ${fx.toFixed(1)},${fy.toFixed(1)}  fps ${fps.toFixed(0)}  chunks ${renderer.drawnChunks}`
     game.update(dt, input, cam, innerWidth, innerHeight, clock)
     cam.follow(fx, fy, 0, 0, dt, false)
     cam.dist = zoom

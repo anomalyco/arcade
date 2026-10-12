@@ -2,10 +2,10 @@ import { DT, SNAPSHOT_HZ, TICK_HZ } from "../../shared/config"
 import type { ClientMsg } from "../../shared/protocol"
 import { type RosterRow, type Snapshot, buildSnapshot, rosterOf } from "../../shared/sim/view"
 import type { Equip, Gun } from "../../shared/config"
-import { hostRestart, moveTeam, shuffleTeams } from "../../shared/sim/host"
+import { hostMaps, hostRestart, moveTeam, shuffleTeams } from "../../shared/sim/host"
 import { MODES, type ModeId } from "../../shared/sim/modes"
 import { type SimEvent, World } from "../../shared/sim/world"
-import type { MapDef } from "../../shared/maps"
+import { type MapDef, mapChoiceOf } from "../../shared/maps"
 import { lotMap } from "../../shared/sim/vehicle-lot"
 
 /** What the game loop needs from a match, whether it runs in this tab or in a room on the server. */
@@ -41,7 +41,8 @@ export class LocalSession implements Session {
   /** `map` "lot" practices on the vehicle test yard (shared/sim/vehicle-lot.ts). */
   constructor(name: string, gun: Gun, equip: Equip, mode: ModeId = "ffa", map: string | null = null) {
     this.fixed = map === "lot" ? lotMap() : null
-    this.world = new World((Math.random() * 2 ** 31) | 0, this.fixed, mode)
+    // Or `map` picks what the practice room plays on: office, downtown or random.
+    this.world = new World((Math.random() * 2 ** 31) | 0, this.fixed, mode, mapChoiceOf(map) ?? "office")
     // Local practice (dev only, ?practice) is the one place with bots: 3 on 3 in team modes.
     this.world.botFill = MODES[mode].teams ? 6 : 4
     this.world.addHuman(this.myId, name, gun, equip)
@@ -71,6 +72,7 @@ export class LocalSession implements Session {
     else if (msg.type === "vote") this.world.vote(this.myId, msg.mode)
     else if (msg.type === "team") moveTeam(this.world, this.myId, msg.id, msg.team)
     else if (msg.type === "shuffle") shuffleTeams(this.world, this.myId)
+    else if (msg.type === "host" && msg.action === "maps") hostMaps(this.world, this.myId, msg.maps)
     else if (msg.type === "host" && hostRestart(this.world, this.myId, msg.action === "mode" ? msg.mode : this.world.mode.id, msg.newFloor)) {
       // Practice keeps its 3 on 3 in team modes.
       this.world.botFill = MODES[this.world.mode.id].teams ? 6 : 4

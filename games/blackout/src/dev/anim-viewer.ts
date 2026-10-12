@@ -207,7 +207,7 @@ class ScriptSession implements Session {
       this.prev.set(a.id, { x: s.x, y: s.y, shots, reloads, alive: s.alive })
       players.push({ id: a.id, x: s.x, y: s.y, vx, vy, aim: s.aim, alive: s.alive, gun: a.gun, health: 100 })
     }
-    this.snap = { snap: { type: "snap", tick: Math.floor(t * 30), t, ack: 0, phase: "play", left: 300, map: SEED, players, grenades: [], claymores: [], mode: IDLE_VIEW, you: null }, at: performance.now() }
+    this.snap = { snap: { type: "snap", tick: Math.floor(t * 30), t, ack: 0, phase: "play", left: 300, map: SEED, mapKind: "office", maps: "office", players, grenades: [], claymores: [], mode: IDLE_VIEW, you: null }, at: performance.now() }
   }
 }
 

@@ -1,5 +1,5 @@
 import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS } from "../../shared/config"
-import type { LightDef, LightKind, MapDef, PropKind } from "../../shared/maps"
+import type { LightDef, LightKind, MapDef, MapKind, PropKind } from "../../shared/maps"
 
 export const LIGHT_FLOATS = 16
 export const OCC_FLOATS = 8
@@ -19,22 +19,34 @@ const PROP_H: Partial<Record<PropKind, number>> = {
   bookshelf: 1.9,
   crate: 0.8,
   reception: 1.05,
+  bin: 0.9,
+  newsbox: 1.05,
+  bench: 0.5,
 }
 
 /** Apparent size of each fixture, which sets how soft its shadows are. */
-const SIZE: Record<LightKind, number> = { desk: 0.12, panel: 0.5, pendant: 0.3, exit: 0.35, vending: 0.6, server: 0.45, bulb: 0.2 }
+const SIZE: Record<LightKind, number> = { desk: 0.12, panel: 0.5, pendant: 0.3, exit: 0.35, vending: 0.6, server: 0.45, bulb: 0.2, street: 0.3, signal: 0.2, neon: 0.9, fire: 0.8, flood: 0.6, glow: 0.7 }
 /** How bright each kind looks, relative to the rule's power. */
 /** Visual reach relative to the rule's radius: lamps make tight pools, tubes wide ones. */
-const REACH: Record<LightKind, number> = { desk: 0.9, panel: 1, pendant: 0.9, exit: 1, vending: 1, server: 1, bulb: 0.9 }
+const REACH: Record<LightKind, number> = { desk: 0.9, panel: 1, pendant: 0.9, exit: 1, vending: 1, server: 1, bulb: 0.9, street: 1, signal: 1, neon: 1, fire: 1, flood: 1, glow: 1 }
 /** Practical lights read more saturated than their rule colours: warm goes amber, cold goes blue. */
-const SAT: Record<LightKind, number> = { desk: 1.7, panel: 1.0, pendant: 1.7, exit: 1.3, vending: 1, server: 0.8, bulb: 1.6 }
+const SAT: Record<LightKind, number> = { desk: 1.7, panel: 1.0, pendant: 1.7, exit: 1.3, vending: 1, server: 0.8, bulb: 1.6, street: 1.5, signal: 1.2, neon: 1.2, fire: 1.4, flood: 1, glow: 1.1 }
 const sat = (c: readonly [number, number, number], k: number): [number, number, number] => {
   const m = Math.max(c[0], c[1], c[2])
   return [(c[0] / m) ** k * m, (c[1] / m) ** k * m, (c[2] / m) ** k * m]
 }
-const GAIN: Record<LightKind, number> = { desk: 0.85, panel: 0.85, pendant: 1, exit: 2, vending: 1, server: 0.8, bulb: 1 }
+const GAIN: Record<LightKind, number> = { desk: 0.85, panel: 0.85, pendant: 1, exit: 2, vending: 1, server: 0.8, bulb: 1, street: 1, signal: 1.6, neon: 1.4, fire: 1.2, flood: 0.9, glow: 1 }
 
 /** A light for this frame only (muzzle flashes, blasts, vehicle lamps); `cone` aims it like a map light's. */
+/**
+ * The sky's ambient light (rgb) and moonlight strength per kind of map, for the frame uniform: the office is lit by
+ * the city through its windows; downtown sits under a darker sky, the moon falling on the open ground.
+ */
+export const AMBIENT: Record<MapKind, readonly [number, number, number, number]> = {
+  office: [0.085, 0.1, 0.16, 1.0],
+  downtown: [0.065, 0.078, 0.13, 0.2],
+}
+
 export type DynLight = { x: number; y: number; h: number; r: number; color: readonly [number, number, number]; power: number; size: number; cone?: readonly [number, number, number]; near?: number }
 /** A round shadow caster: a person by default, or a vehicle's radius and height. */
 export type Caster = { x: number; y: number; r?: number; h?: number }

@@ -1,4 +1,5 @@
 import { RESPAWN_SECONDS } from "../config"
+import type { MapChoice } from "../maps"
 import { MODES, type ModeId, SearchAndDestroy } from "./modes"
 import type { Player, World } from "./world"
 
@@ -62,6 +63,13 @@ export const HOST_COOLDOWN = 3
  * The host starts a fresh match: in the current mode (reset) or another (switch), on a new floor unless `newFloor` is
  * false, from play or the end screen. Ignored from anyone else and within HOST_COOLDOWN of the last one.
  */
+/** The host sets what the room plays on from the next new map (a reset or switch, or the next match). */
+export function hostMaps(w: World, by: string, maps: MapChoice): boolean {
+  if (by !== w.host) return false
+  w.maps = maps
+  return true
+}
+
 export function hostRestart(w: World, by: string, mode: ModeId = w.mode.id, newFloor = true): boolean {
   if (by !== w.host || !MODES[mode] || w.time - w.hostActAt < HOST_COOLDOWN) return false
   const what = mode === w.mode.id ? "reset" : "mode"

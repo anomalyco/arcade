@@ -2,6 +2,7 @@ import { BUILD } from "../../shared/build.gen"
 import { type ClientMsg, type ServerMsg, decodeServer, encodeClient } from "../../shared/protocol"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import type { Equip, Gun } from "../../shared/config"
+import type { MapChoice } from "../../shared/maps"
 import type { ModeId } from "../../shared/sim/modes"
 import type { SimEvent } from "../../shared/sim/world"
 import type { Session } from "./session"
@@ -11,11 +12,12 @@ const RELOAD_KEY = "blackout.reloadAt"
 /** Set before a version reload: main.ts rejoins this room without the landing page. */
 export const REJOIN_KEY = "blackout.rejoin"
 
-function socketUrl(room: string, priv: boolean, mode: ModeId | null): string {
+function socketUrl(room: string, priv: boolean, mode: ModeId | null, maps: MapChoice | null): string {
   const dir = location.pathname.replace(/[^/]*$/, "")
   const q = new URLSearchParams()
   if (priv) q.set("private", "1")
   if (mode) q.set("mode", mode)
+  if (maps) q.set("map", maps)
   const qs = q.toString()
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${encodeURIComponent(room)}${qs ? `?${qs}` : ""}`
 }
@@ -42,6 +44,8 @@ export class NetSession implements Session {
     private priv = false,
     /** The mode picked on Create game; the room takes it only from its first arrival. */
     private mode: ModeId | null = null,
+    /** What Create game picked to play on; likewise taken only from the first arrival. */
+    private maps: MapChoice | null = null,
   ) {
     this.id = sessionStorage.getItem(ID_KEY + room) ?? ""
     this.open()
@@ -83,7 +87,7 @@ export class NetSession implements Session {
   }
 
   private open(): void {
-    const ws = new WebSocket(socketUrl(this.room, this.priv, this.mode))
+    const ws = new WebSocket(socketUrl(this.room, this.priv, this.mode, this.maps))
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0

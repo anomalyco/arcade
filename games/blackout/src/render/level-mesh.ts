@@ -1,9 +1,14 @@
 import type { LightDef, MapDef, Wall } from "../../shared/maps"
+import { SHOP_H as SHOP_TOP } from "../../shared/maps/downtown-town"
 import { MAT, Mesh, type Rgb } from "./mesh"
 import { PAL, buildProp, hex, rng } from "./models"
+import { STREET_PROPS, STREET_WALLS, streetProp, streetWall } from "./street-models"
 
-const FLOOR_KIND = { carpet: 0, tile: 1, wood: 2, concrete: 3, grate: 4 } as const
-const FLOOR_COLOR = { carpet: PAL.carpet, tile: PAL.tile, wood: PAL.wood, concrete: PAL.concrete, grate: PAL.grate } as const
+const FLOOR_KIND = { carpet: 0, tile: 1, wood: 2, concrete: 3, grate: 4, asphalt: 5, sidewalk: 6, plaza: 7, grass: 8, parking: 9 } as const
+const FLOOR_COLOR = { carpet: PAL.carpet, tile: PAL.tile, wood: PAL.wood, concrete: PAL.concrete, grate: PAL.grate, asphalt: hex(0x24262c), sidewalk: hex(0x45484f), plaza: hex(0x4e5058), grass: hex(0x283a28), parking: hex(0x2a2c32) } as const
+/** Downtown: sidewalks, plazas, parks and ground floors stand this far above the road, with curbs where they meet it. */
+const CURB = 0.1
+const LOW_FLOORS = new Set(["asphalt"])
 /** Level geometry is cut into square chunks this wide so only those in view are drawn. */
 const CHUNK = 12
 /** Baked floor map resolution, metres per texel. */
@@ -145,11 +150,13 @@ function decorate(m: Mesh, w: Wall, i: number, seed: number): void {
 
 function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number): void {
   const [x0, z0, x1, z1] = w.rect
+  if (STREET_WALLS.has(w.style)) return streetWall(m, w, i, seed)
   switch (w.style) {
     case "wall":
+    case "shop":
     case "core":
     case "pillar": {
-      const side = w.style === "core" ? PAL.core : w.style === "pillar" ? PAL.pillar : PAL.wallSide
+      const side = w.style === "core" ? PAL.core : w.style === "pillar" ? PAL.pillar : w.style === "shop" ? SHOP_SIDE : PAL.wallSide
       const capH = 0.07
       m.box(x0, 0.1, z0, x1, w.h - capH, z1, side, MAT.wall)
       // Skirting, a hair proud of the face.
@@ -192,7 +199,7 @@ function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number)
           }
         }
       }
-      if (w.style === "wall") {
+      if (w.style === "wall" || w.style === "shop") {
         // Door frames on free wall ends.
         const horizontal = x1 - x0 >= z1 - z0
         const ends: Rect4[] = horizontal
@@ -217,7 +224,7 @@ function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number)
             m.box(x0 - 0.035, 0, a - 0.005, x1 + 0.035, 2.25, a + t + 0.005, PAL.doorFrame, MAT.wall)
           }
         })
-        decorate(m, w, i, seed)
+        if (w.style === "wall") decorate(m, w, i, seed)
       }
       break
     }
@@ -294,10 +301,17 @@ function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number)
   }
 }
 
-function windowGeometry(m: Mesh, w: Rect4): void {
+const SHOP_SIDE = hex(0x4e3c36)
+
+function windowGeometry(m: Mesh, w: Rect4, shop: boolean): void {
   const [x0, z0, x1, z1] = w
   m.box(x0, 0, z0, x1, 0.35, z1, PAL.glassFrame, MAT.wall, 0, hex(0x3a4560))
   m.box(x0, 2.6, z0, x1, 2.75, z1, PAL.glassFrame, MAT.wall, 0, PAL.wallTop)
+  if (shop) {
+    // A shopfront: the wall carries on over the glass up to the parapet.
+    m.box(x0, 2.75, z0, x1, SHOP_TOP - 0.07, z1, SHOP_SIDE, MAT.wall)
+    m.bevelBox(x0 - 0.015, SHOP_TOP - 0.07, z0 - 0.015, x1 + 0.015, SHOP_TOP, z1 + 0.015, 0.035, PAL.capSide, PAL.wallTop, MAT.wall, MAT.cap, PAL.capEdge)
+  }
   const horizontal = x1 - x0 > z1 - z0
   const len = horizontal ? x1 - x0 : z1 - z0
   for (let k = 0; k <= len; k += 2.4) {
@@ -433,11 +447,11 @@ function haze(m: Mesh, l: LightDef): void {
       const k2 = (k + 1) % 4
       m.quadAuto(b[k]!, b[k2]!, t[k2]!, t[k]!, c, MAT.haze, l.id)
     }
-  } else if (l.kind === "pendant" || (l.kind === "bulb" && l.h >= 2.2)) {
+  } else if (l.kind === "pendant" || (l.kind === "bulb" && l.h >= 2.2) || l.kind === "street" || l.kind === "flood") {
     const sides = 10
-    const rt = l.kind === "pendant" ? 0.28 : 0.1
-    const rb = l.kind === "pendant" ? 1.4 : 1.1
-    const y1 = l.kind === "pendant" ? l.h - 0.22 : l.h
+    const rt = l.kind === "pendant" ? 0.28 : l.kind === "street" ? 0.14 : l.kind === "flood" ? 0.5 : 0.1
+    const rb = l.kind === "pendant" ? 1.4 : l.kind === "street" ? 2.3 : l.kind === "flood" ? 3.6 : 1.1
+    const y1 = l.kind === "pendant" ? l.h - 0.22 : l.kind === "street" ? l.h - 0.3 : l.h
     for (let k = 0; k < sides; k++) {
       const a0 = (k / sides) * Math.PI * 2
       const a1 = ((k + 1) / sides) * Math.PI * 2
@@ -496,7 +510,7 @@ export function bakeFloor(map: MapDef): FloorMap {
   }
   for (const wl of map.walls) fill(wl.rect, wl.h >= 2 ? 1 : 0.7)
   for (const r of map.windows) fill(r, 0.6)
-  const PROP_AO: Record<string, number> = { desk: 0.55, table: 0.35, cabinet: 0.9, sofa: 0.8, vending: 1, copier: 0.85, printer: 0.8, counter: 0.9, fridge: 1, cooler: 0.6, bookshelf: 1, crate: 0.85, reception: 0.9, plant: 0.4, chair: 0.2 }
+  const PROP_AO: Record<string, number> = { tree: 0.3, bench: 0.3, bin: 0.4, newsbox: 0.45, desk: 0.55, table: 0.35, cabinet: 0.9, sofa: 0.8, vending: 1, copier: 0.85, printer: 0.8, counter: 0.9, fridge: 1, cooler: 0.6, bookshelf: 1, crate: 0.85, reception: 0.9, plant: 0.4, chair: 0.2 }
   for (const p of map.props) fill(p.rect, PROP_AO[p.kind] ?? 0)
   const walls = new Uint8Array(w * h)
   for (let i = 0; i < w * h; i++) walls[i] = occ[i]! >= 0.95 ? 1 : 0
@@ -525,8 +539,9 @@ export function bakeFloor(map: MapDef): FloorMap {
   blur(occ, ao, 3)
   blur(ao, ao, 3)
 
-  // Moonlight: trace each texel near a window back along the moon direction to the glass.
   const moon = new Float32Array(w * h)
+  if (map.kind === "downtown") skyMoon(map, moon, w, h, cx, cy)
+  // Moonlight: trace each texel near a window back along the moon direction to the glass.
   const tanE = 0.62
   const [mcx, mcy] = [W / 2, H / 2]
   for (const win of map.windows) {
@@ -621,7 +636,7 @@ export function bakeBounce(map: MapDef): FloorMap {
     [1, -1, Math.SQRT2],
     [-1, -1, Math.SQRT2],
   ] as const
-  const STRENGTH: Record<string, number> = { desk: 0.6, panel: 1, pendant: 1, exit: 0.8, vending: 1.2, server: 0.7, bulb: 0.9 }
+  const STRENGTH: Record<string, number> = { desk: 0.6, panel: 1, pendant: 1, exit: 0.8, vending: 1.2, server: 0.7, bulb: 0.9, street: 0.8, signal: 0.5, neon: 1.1, fire: 1.2, flood: 0.8, glow: 0.9 }
   for (const l of map.lights) {
     const reach = l.r * 1.5
     const sx = Math.min(w - 1, Math.max(0, Math.floor(l.x / cx)))
@@ -713,9 +728,10 @@ export function buildLevel(map: MapDef): LevelData {
   const grid = new WallGrid(map.walls)
   const seed = map.seed
 
-  // Floors, cut into chunk-sized pieces.
+  const downtown = map.kind === "downtown"
+  // Floors, cut into chunk-sized pieces. Downtown, everything but the roads stands on a curb.
   map.floors.forEach((f, i) => {
-    const y = i === 0 ? 0 : 0.002 + (i % 8) * 0.0004
+    const y = (i === 0 ? 0 : 0.002 + (i % 8) * 0.0004) + (downtown && !LOW_FLOORS.has(f.kind) ? CURB : 0)
     for (let x = f.rect[0]; x < f.rect[2] - 1e-3; x += CHUNK)
       for (let z = f.rect[1]; z < f.rect[3] - 1e-3; z += CHUNK) {
         const r: Rect4 = [x, z, Math.min(f.rect[2], x + CHUNK), Math.min(f.rect[3], z + CHUNK)]
@@ -723,9 +739,25 @@ export function buildLevel(map: MapDef): LevelData {
       }
   })
   for (const t of map.tape) jobs.push({ x: (t[0] + t[2]) / 2, z: (t[1] + t[3]) / 2, build: (m) => floorQuad(m, t, 0.012, PAL.tape, MAT.tape) })
+  if (downtown) {
+    const raised = map.floors.filter((f) => !LOW_FLOORS.has(f.kind)).map((f) => f.rect)
+    for (const p of map.paint ?? []) {
+      const cx = (p.rect[0] + p.rect[2]) / 2
+      const cz = (p.rect[1] + p.rect[3]) / 2
+      const y = 0.008 + (raised.some((r) => cx > r[0] && cx < r[2] && cz > r[1] && cz < r[3]) ? CURB : 0)
+      const col = p.color === "white" ? hex(0x666a72) : hex(0x8a6820)
+      // Long lines are cut so each piece lands in the chunk it crosses.
+      const ax = p.rect[2] - p.rect[0] >= p.rect[3] - p.rect[1]
+      for (let a = ax ? p.rect[0] : p.rect[1]; a < (ax ? p.rect[2] : p.rect[3]) - 1e-3; a += CHUNK) {
+        const r: Rect4 = ax ? [a, p.rect[1], Math.min(p.rect[2], a + CHUNK), p.rect[3]] : [p.rect[0], a, p.rect[2], Math.min(p.rect[3], a + CHUNK)]
+        jobs.push({ x: (r[0] + r[2]) / 2, z: (r[1] + r[3]) / 2, build: (m) => floorQuad(m, r, y, col, MAT.tape) })
+      }
+    }
+    for (const c of curbs(map)) jobs.push({ x: (c[0] + c[2]) / 2, z: (c[1] + c[3]) / 2, build: (m) => m.box(c[0], 0, c[1], c[2], CURB + 0.004, c[3], hex(0x5e6168), MAT.lit, 0, hex(0x6c6f76)) })
+  }
   map.walls.forEach((w, i) => jobs.push({ x: (w.rect[0] + w.rect[2]) / 2, z: (w.rect[1] + w.rect[3]) / 2, build: (m) => wallGeometry(m, w, i, grid, seed) }))
-  for (const w of map.windows) jobs.push({ x: (w[0] + w[2]) / 2, z: (w[1] + w[3]) / 2, build: (m) => windowGeometry(m, w) })
-  map.props.forEach((p, i) => jobs.push({ x: (p.rect[0] + p.rect[2]) / 2, z: (p.rect[1] + p.rect[3]) / 2, build: (m) => buildProp(m, p, seed + i * 17) }))
+  for (const w of map.windows) jobs.push({ x: (w[0] + w[2]) / 2, z: (w[1] + w[3]) / 2, build: (m) => windowGeometry(m, w, downtown) })
+  map.props.forEach((p, i) => jobs.push({ x: (p.rect[0] + p.rect[2]) / 2, z: (p.rect[1] + p.rect[3]) / 2, build: (m) => (STREET_PROPS.has(p.kind) ? streetProp(m, p, seed + i * 17, map) : buildProp(m, p, seed + i * 17)) }))
   for (const l of map.lights) jobs.push({ x: l.x, z: l.y, build: (m) => fixture(m, l, rng(seed + l.id * 101)) })
 
   const buckets = new Map<number, Job[]>()
@@ -738,8 +770,11 @@ export function buildLevel(map: MapDef): LevelData {
   const chunks: LevelChunk[] = []
   // The city far below and the slab edge are always drawn.
   const base = new Mesh()
-  base.quad([-200, -36, 200], [200, -36, 200], [200, -36, -200], [-200, -36, -200], [0, 1, 0], [0, 0, 0], MAT.city)
-  base.box(-0.4, -0.8, -0.4, W + 0.4, -0.01, H + 0.4, hex(0x141826))
+  if (downtown) surroundings(base, map)
+  else {
+    base.quad([-200, -36, 200], [200, -36, 200], [200, -36, -200], [-200, -36, -200], [0, 1, 0], [0, 0, 0], MAT.city)
+    base.box(-0.4, -0.8, -0.4, W + 0.4, -0.01, H + 0.4, hex(0x141826))
+  }
   chunks.push({ data: base.pack(), box: [-1e5, -1e5, 1e5, 1e5] })
   for (const b of buckets.values()) {
     const m = new Mesh()
@@ -755,4 +790,122 @@ export function buildLevel(map: MapDef): LevelData {
   for (const l of map.lights) motes(glass, l, rng(seed + l.id * 7 + 3))
 
   return { chunks, glass: glass.pack(), floor: bakeFloor(map), bounce: bakeBounce(map) }
+}
+
+/** Downtown's sidewalk edges that face the road: a curb along each, from the road up to the sidewalk. */
+function curbs(map: MapDef): Rect4[] {
+  const raised = map.floors.filter((f) => !LOW_FLOORS.has(f.kind)).map((f) => f.rect)
+  const inside = (x: number, y: number) => raised.some((r) => x > r[0] && x < r[2] && y > r[1] && y < r[3])
+  const out: Rect4[] = []
+  const T = 0.14
+  for (const r of raised) {
+    for (const side of ["n", "s", "w", "e"] as const) {
+      const hz = side === "n" || side === "s"
+      const a0 = hz ? r[0] : r[1]
+      const a1 = hz ? r[2] : r[3]
+      const line = side === "n" ? r[1] : side === "s" ? r[3] : side === "w" ? r[0] : r[2]
+      const o = side === "n" || side === "w" ? -0.05 : 0.05
+      let run = -1
+      const flush = (end: number) => {
+        if (run < 0 || end - run < 0.1) return
+        const lo = side === "n" || side === "w" ? line : line - T
+        out.push(hz ? [run, lo, end, lo + T] : [lo, run, lo + T, end])
+      }
+      for (let a = a0; a <= a1 + 1e-6; a += 0.25) {
+        const u = Math.min(a + 0.125, a1 - 0.01)
+        const open = a < a1 - 1e-6 && !(hz ? inside(u, line + o) : inside(line + o, u))
+        if (open && run < 0) run = a
+        if (!open && run >= 0) {
+          flush(Math.min(a, a1))
+          run = -1
+        }
+      }
+      flush(a1)
+    }
+  }
+  return out
+}
+
+/**
+ * Downtown has no windows to let the moon in: it falls on the open ground from high in the north-north-west, and the
+ * buildings cast long shadows toward the camera.
+ */
+function skyMoon(map: MapDef, moon: Float32Array, w: number, h: number, cx: number, cy: number): void {
+  const S = 2
+  const hw = Math.ceil(w / S)
+  const hh = Math.ceil(h / S)
+  const hm = new Float32Array(hw * hh)
+  for (const wl of map.walls) {
+    if (wl.h < 1.5) continue
+    const r = wl.rect
+    for (let y = Math.max(0, Math.floor(r[1] / (cy * S))); y <= Math.min(hh - 1, Math.ceil(r[3] / (cy * S)) - 1); y++)
+      for (let x = Math.max(0, Math.floor(r[0] / (cx * S))); x <= Math.min(hw - 1, Math.ceil(r[2] / (cx * S)) - 1); x++) hm[y * hw + x] = Math.max(hm[y * hw + x]!, wl.h)
+  }
+  // Toward the moon on the plan, and how fast the ray climbs per metre.
+  const dx = -0.32
+  const dy = -0.95
+  const climb = 0.95
+  const stepM = cx * S
+  const maxD = 11 / climb
+  const lo = new Float32Array(hw * hh)
+  for (let ty = 0; ty < hh; ty++)
+    for (let tx = 0; tx < hw; tx++) {
+      if (hm[ty * hw + tx]! > 0) continue
+      const px = (tx + 0.5) * stepM
+      const py = (ty + 0.5) * stepM
+      let lit = 1
+      for (let d = stepM; d < maxD; d += stepM) {
+        const qx = Math.floor((px + dx * d) / stepM)
+        const qy = Math.floor((py + dy * d) / stepM)
+        if (qx < 0 || qy < 0 || qx >= hw || qy >= hh) break
+        if (hm[qy * hw + qx]! > d * climb) {
+          lit = 0
+          break
+        }
+      }
+      lo[ty * hw + tx] = lit
+    }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) moon[y * w + x] = lo[Math.min(hh - 1, Math.floor(y / S)) * hw + Math.min(hw - 1, Math.floor(x / S))]!
+}
+
+/** Outside a downtown map: more city, a ring of rooftops round the edge with the roads running on into it. */
+function surroundings(m: Mesh, map: MapDef): void {
+  const [W, H] = map.size
+  const r = rng(map.seed * 13 + 5)
+  m.quad([-200, -0.02, 200], [200, -0.02, 200], [200, -0.02, -200], [-200, -0.02, -200], [0, 1, 0], hex(0x0e1016), MAT.lit)
+  const D = 34
+  const exits = (map.roads ?? []).map((rd) => rd.rect).filter((rc) => rc[0] < 0.5 || rc[1] < 0.5 || rc[2] > W - 0.5 || rc[3] > H - 0.5)
+  // The roads that leave the map carry on into the city.
+  for (const e of exits) {
+    const pad = 3
+    if (e[1] < 0.5) floorQuad(m, [e[0] - pad, -D, e[2] + pad, 0], -0.01, hex(0x24262c), MAT.floor, 5)
+    if (e[3] > H - 0.5) floorQuad(m, [e[0] - pad, H, e[2] + pad, H + D], -0.01, hex(0x24262c), MAT.floor, 5)
+    if (e[0] < 0.5) floorQuad(m, [-D, e[1] - pad, 0, e[3] + pad], -0.01, hex(0x24262c), MAT.floor, 5)
+    if (e[2] > W - 0.5) floorQuad(m, [W, e[1] - pad, W + D, e[3] + pad], -0.01, hex(0x24262c), MAT.floor, 5)
+  }
+  const blocked = (rc: Rect4) => exits.some((e) => {
+    const pad = 3.2
+    return rc[0] < e[2] + pad && rc[2] > e[0] - pad && rc[1] < e[3] + pad && rc[3] > e[1] - pad && !(e[0] > 0.5 && e[2] < W - 0.5 && e[1] > 0.5 && e[3] < H - 0.5)
+  })
+  const extend = (e: Rect4): Rect4 => [e[0] < 0.5 ? -D : e[0], e[1] < 0.5 ? -D : e[1], e[2] > W - 0.5 ? W + D : e[2], e[3] > H - 0.5 ? H + D : e[3]]
+  const lanes = exits.map(extend)
+  const put = (rc: Rect4) => {
+    if (lanes.some((e) => rc[0] < e[2] + 3 && rc[2] > e[0] - 3 && rc[1] < e[3] + 3 && rc[3] > e[1] - 3)) return
+    const ht = 7 + r() * 8
+    const v = Math.floor(r() * 65536)
+    streetWall(m, { rect: rc, h: ht, style: "building", v }, 0, map.seed)
+  }
+  void blocked
+  // Rows of blocks along each side, two deep, of varied widths.
+  for (const [a0, a1, side] of [[-D, W + D, "n"], [-D, W + D, "s"], [0, H, "w"], [0, H, "e"]] as const) {
+    for (let a = a0; a < a1; ) {
+      const len = 9 + r() * 12
+      const b = Math.min(a1, a + len)
+      for (const [d0, d1] of [[0, 14 + r() * 4], [18 + r() * 2, D]] as const) {
+        const rc: Rect4 = side === "n" ? [a, -d1, b, -d0] : side === "s" ? [a, H + d0, b, H + d1] : side === "w" ? [-d1, a, -d0, b] : [W + d0, a, W + d1, b]
+        if (b - a > 4) put(rc)
+      }
+      a = b + (r() < 0.25 ? 3 : 0)
+    }
+  }
 }

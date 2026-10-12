@@ -327,7 +327,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);
     // Tops of furniture and partitions sit inside their own footprint: test the point nudged toward the light.
     var sp = plan;
-    if (n.y > 0.5 && world.y > 0.05) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
+    if (n.y > 0.5 && world.y > 0.15) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
     let vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y);
     out.diff += L.color.rgb * att * (diffuse * vis + 0.035);
     if (shin > 0.0) {
@@ -436,6 +436,37 @@ fn floorPattern(kind: i32, p: vec2f, base: vec3f, gloss: ptr<function, vec2f>) -
     c *= mix(1.0, 0.35, hole * inner);
     c *= mix(0.55, 1.05, tileEdge(g, 0.02));
     *gloss = vec2f(40.0, 0.35);
+  } else if (kind == 5 || kind == 9) {
+    // Asphalt after rain: fine aggregate, darker patches of repair, thin cracks, and puddles that mirror the lights.
+    c *= 0.88 + 0.16 * noise2(p * 31.0) + 0.06 * (fbm(p * 0.6) - 0.5);
+    let crack = abs(noise2(p * 0.9 + 5.0) - 0.5);
+    c *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.01, crack)) * step(0.55, noise2(p * 0.25 + 2.0));
+    // Puddles: crisp-edged, slightly darker, mirror-glossy.
+    let wet = smoothstep(0.6, 0.63, fbm(p * 0.32 + vec2f(3.0, 7.0)) + 0.05 * noise2(p * 5.0));
+    let puddle = select(1.0, 0.6, kind == 9) * wet;
+    c *= 1.0 - 0.18 * puddle;
+    *gloss = mix(vec2f(24.0, 0.3), vec2f(160.0, 1.4), puddle);
+  } else if (kind == 6) {
+    // Sidewalk: square concrete slabs, each a slightly different tone, with dark joints. Damp.
+    let g = fract(p / 1.2);
+    let cell = floor(p / 1.2);
+    c *= 0.88 + 0.16 * (hash2(cell * 2.3) - 0.5) + 0.12 * (fbm(p * 2.5) - 0.5);
+    c *= mix(0.6, 1.0, tileEdge(g, 0.018));
+    *gloss = vec2f(30.0, 0.32 + 0.3 * smoothstep(0.55, 0.7, fbm(p * 0.35 + 11.0)));
+  } else if (kind == 7) {
+    // Plaza: big stone tiles laid in a two-tone grid with a border every few tiles, polished.
+    let g = fract(p / 1.5);
+    let cell = floor(p / 1.5);
+    let alt = f32((i32(cell.x) + i32(cell.y)) & 1);
+    c *= mix(0.86, 1.06, alt) + 0.1 * (hash2(cell) - 0.5) + 0.08 * (fbm(p * 1.7) - 0.5);
+    c *= mix(0.68, 1.0, tileEdge(g, 0.012));
+    *gloss = vec2f(60.0, 0.55);
+  } else if (kind == 8) {
+    // Grass: dark blades, clumps and bare patches.
+    c *= 0.78 + 0.35 * noise2(p * 9.0) + 0.2 * (fbm(p * 0.8) - 0.5);
+    c = mix(c, c * vec3f(1.2, 1.0, 0.75), smoothstep(0.62, 0.8, fbm(p * 0.4 + 5.0)) * 0.6);
+    c *= 0.9 + 0.2 * step(0.5, hash2(floor(p * 18.0)));
+    *gloss = vec2f(0.0, 0.0);
   }
   return c;
 }
@@ -516,7 +547,7 @@ fn lampK(aux: f32) -> f32 {
     } else if (mat == 10) {
       gloss = vec2f(50.0, 0.5);
     }
-    let floorish = n.y > 0.5 && o.world.y < 0.05;
+    let floorish = n.y > 0.5 && o.world.y < 0.15;
     let wrap = select(0.35, 0.0, floorish);
     let lit = lightSum(o.world, n, V, gloss.x, wrap);
     var amb = ambientAt(n);
@@ -543,7 +574,7 @@ fn lampK(aux: f32) -> f32 {
     }
     if (mat == 1) {
       // Gloss also catches a faint sheen of the moon and sky on hard floors.
-      col += vec3f(0.01, 0.014, 0.03) * gloss.y * fd.g * 2.0;
+      col += vec3f(0.01, 0.014, 0.03) * gloss.y * fd.g * 2.0 * F.ambient.w;
     }
   }
   col = mix(col, vec3f(2.5), o.extra.w);

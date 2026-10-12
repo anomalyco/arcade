@@ -1,5 +1,5 @@
 import type { Rect, Vec } from "../geom"
-import type { Floor, FloorKind, LightDef, MapDef, Prop, PropKind, Wall, WallStyle } from "./types"
+import type { Floor, FloorKind, LightDef, MapDef, MapKind, Paint, Prop, PropKind, Road, Wall, WallStyle } from "./types"
 
 export const WALL_H = 2.7
 export const PARTITION_H = 1.3
@@ -21,13 +21,15 @@ export class Builder {
   spawns: Vec[] = []
   tape: Rect[] = []
   voids: Rect[] = []
+  paint: Paint[] = []
+  roads: Road[] = []
 
   floor(kind: FloorKind, x0: number, y0: number, x1: number, y1: number): void {
     this.floors.push({ kind, rect: [x0, y0, x1, y1] })
   }
 
-  wall(x0: number, y0: number, x1: number, y1: number, h = WALL_H, style: WallStyle = "wall"): void {
-    if (x1 - x0 > 0.01 && y1 - y0 > 0.01) this.walls.push({ rect: [x0, y0, x1, y1], h, style })
+  wall(x0: number, y0: number, x1: number, y1: number, h = WALL_H, style: WallStyle = "wall", v?: number): void {
+    if (x1 - x0 > 0.01 && y1 - y0 > 0.01) this.walls.push(v === undefined ? { rect: [x0, y0, x1, y1], h, style } : { rect: [x0, y0, x1, y1], h, style, v })
   }
 
   /** A wall centred on y from x0 to x1 with openings in the gaps. */
@@ -104,7 +106,8 @@ export class Builder {
     }
   }
 
-  build(base: Pick<MapDef, "id" | "seed" | "name" | "size">): MapDef {
-    return { ...base, floors: this.floors, walls: this.walls, windows: this.windows, glass: this.glass, props: this.props, lights: this.lights, spawns: this.spawns, tape: this.tape, voids: this.voids }
+  build(base: Pick<MapDef, "id" | "seed" | "name" | "size"> & { kind?: MapKind }): MapDef {
+    const extra = base.kind === "downtown" ? { paint: this.paint, roads: this.roads } : {}
+    return { kind: "office", ...base, ...extra, floors: this.floors, walls: this.walls, windows: this.windows, glass: this.glass, props: this.props, lights: this.lights, spawns: this.spawns, tape: this.tape, voids: this.voids }
   }
 }

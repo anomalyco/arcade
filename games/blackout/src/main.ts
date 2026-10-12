@@ -2,6 +2,7 @@ import "./style.css"
 import "@fontsource/ibm-plex-mono/400.css"
 import "@fontsource/ibm-plex-mono/500.css"
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "../shared/config"
+import type { MapChoice } from "../shared/maps"
 import { cleanName } from "../shared/protocol"
 import { MODE_IDS, type ModeId, modeOf } from "../shared/sim/modes"
 import { Sound } from "./audio/sound"
@@ -74,20 +75,21 @@ async function main() {
   }
   const base = location.pathname.replace(/[^/]*$/, "")
   const api = (path: string) => fetch(`${base}api/${path}`, { method: "POST" }).then((r) => r.json() as Promise<{ room: string }>)
-  const enter = (name: string, room: string, priv = false, mode: ModeId | null = null) => {
+  const enter = (name: string, room: string, priv = false, mode: ModeId | null = null, maps: MapChoice | null = null) => {
     history.replaceState(null, "", `?room=${room}`)
-    begin(name, (n) => new NetSession(room, n, gun, equip, fatal, priv, mode))
+    begin(name, (n) => new NetSession(room, n, gun, equip, fatal, priv, mode, maps))
   }
   const vote = (mode: ModeId) => session?.send({ type: "vote", mode })
   let scores = false
   const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
   const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
     quick: (name) => api("quick").then((r) => enter(name, r.room), failed),
-    create: (name, mode) => api("create").then((r) => enter(name, r.room, true, mode), failed),
+    create: (name, mode, maps) => api("create").then((r) => enter(name, r.room, true, mode, maps), failed),
     join: (name, room) => enter(name, room),
     vote,
     team: (id, team) => session?.send({ type: "team", id, team }),
     shuffle: () => session?.send({ type: "shuffle" }),
+    maps: (maps) => session?.send({ type: "host", action: "maps", maps }),
     host: (mode, newFloor) => session?.send(mode ? { type: "host", action: "mode", mode, newFloor } : { type: "host", action: "reset", newFloor }),
   })
   fetch(`${base}api/stats`)

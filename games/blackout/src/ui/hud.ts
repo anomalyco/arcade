@@ -1,6 +1,6 @@
 import "./vehicles.css"
 import { EQUIPS, EQUIP_IDS, type Equip, GUNS, GUN_IDS, type Weapon } from "../../shared/config"
-import { floorOf } from "../../shared/maps"
+import { mapLabel } from "../../shared/maps"
 import type { Camera } from "../render/camera"
 import { type Game, css } from "../game/game"
 import { fixedLoadout } from "./rules-hud"
@@ -46,7 +46,7 @@ export class Hud {
     const t = performance.now() / 1000
     el.status!.textContent = status ?? ""
     if (!s) return
-    el.floor!.textContent = `OFFICE TOWER · FL ${floorOf(s.map)}`
+    el.floor!.textContent = mapLabel(s.mapKind, s.map)
     el.clock!.textContent = s.phase === "play" ? clock(s.left) : `NEXT FLOOR IN ${Math.ceil(s.left)}`
     el.tr!.innerHTML = g.feed
       .filter((f) => t - f.t < 6)
