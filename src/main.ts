@@ -118,9 +118,12 @@ async function main() {
       const alive = game.alive
       const fx = body?.x ?? game.map.size[0] / 2
       const fz = body?.y ?? game.map.size[1] / 2
-      // Lean the view toward the cursor so you can see where you aim.
-      const lx = alive && body ? Math.max(-4, Math.min(4, (game.cursor.x - body.x) * 0.3)) : 0
-      const lz = alive && body ? Math.max(-3, Math.min(3, (game.cursor.y - body.y) * 0.3)) : 0
+      // Look-ahead: the view leans toward the cursor; holding right click leans much further (scouting, sniping).
+      const far = input.looking && alive
+      const k = far ? 0.65 : 0.35
+      const cap = far ? 11 : 5
+      const lx = alive && body ? Math.max(-cap, Math.min(cap, (game.cursor.x - body.x) * k)) : 0
+      const lz = alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
       cam.follow(fx, fz, lx, lz, dt, !body)
       renderer.render(game.build(cam, w, h, dt))
       hud.update(game, cam, w, h, input.mouse, session.status())

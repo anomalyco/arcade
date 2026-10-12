@@ -51,7 +51,7 @@ export class Camera {
   /** Follows a point, leaning slightly toward where you aim. */
   follow(x: number, z: number, aimX: number, aimZ: number, dt: number, wide: boolean): void {
     this.t += dt
-    const k = 1 - Math.exp(-dt * 2)
+    const k = 1 - Math.exp(-dt * 3.5)
     this.lx += (aimX - this.lx) * k
     this.lz += (aimZ - this.lz) * k
     const f = 1 - Math.exp(-dt * 6)

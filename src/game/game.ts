@@ -332,19 +332,14 @@ export class Game {
     const c = cam.unproject(input.mouse.x, input.mouse.y, w, h, SHOULDER - 0.2)
     this.cursor = c
     const origin = this.body ?? { x: this.map.size[0] / 2, y: this.map.size[1] / 2 }
-    // Keep the last aim while the cursor sits on top of you, so walking forward doesn't spin you round.
+    // Keep the last aim while the cursor sits right on top of you so it doesn't jitter.
     if (Math.hypot(c.x - origin.x, c.y - origin.y) > 0.6) this.aim = Math.atan2(c.y - origin.y, c.x - origin.x)
     this.acc = Math.min(this.acc + dt, DT * 5)
     while (this.acc >= DT) {
       this.acc -= DT
       const live = this.alive
-      const keys = live ? input.move() : { mx: 0, my: 0 }
-      // Movement is relative to where you aim: W walks toward the cursor, S backs away, A and D strafe.
-      const fwd = -keys.my
-      const right = keys.mx
-      const ca = Math.cos(this.aim)
-      const sa = Math.sin(this.aim)
-      const mv = { mx: fwd * ca - right * sa, my: fwd * sa + right * ca }
+      // Screen-relative movement, as in most top-down shooters: WASD move up/left/down/right; the mouse only aims.
+      const mv = live ? input.move() : { mx: 0, my: 0 }
       const reload = input.takeReload()
       const fire = live && input.enabled && input.firing
       const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload }

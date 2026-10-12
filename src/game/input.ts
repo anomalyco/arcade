@@ -1,5 +1,5 @@
 /**
- * Keyboard and mouse. WASD or arrows move relative to the aim (W toward the cursor), the mouse aims, hold left click to fire, R reloads, 1/2/3 pick a gun
+ * Keyboard and mouse. WASD or arrows move on screen axes, the mouse aims, hold right click to look further ahead, hold left click to fire, R reloads, 1/2/3 pick a gun
  * for your next life, Tab shows the scores.
  */
 export class Input {
@@ -7,6 +7,8 @@ export class Input {
   private reloadPressed = false
   mouse = { x: innerWidth / 2, y: innerHeight / 2 }
   firing = false
+  /** Right mouse held: push the camera further toward the cursor. */
+  looking = false
   enabled = false
   onKey: ((code: string) => void) | null = null
 
@@ -23,6 +25,7 @@ export class Input {
     addEventListener("blur", () => {
       this.keys.clear()
       this.firing = false
+      this.looking = false
     })
     addEventListener("mousemove", (e) => {
       this.mouse.x = e.clientX
@@ -30,9 +33,11 @@ export class Input {
     })
     canvas.addEventListener("mousedown", (e) => {
       if (e.button === 0) this.firing = true
+      if (e.button === 2) this.looking = true
     })
     addEventListener("mouseup", (e) => {
       if (e.button === 0) this.firing = false
+      if (e.button === 2) this.looking = false
     })
     canvas.addEventListener("contextmenu", (e) => e.preventDefault())
   }

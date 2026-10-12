@@ -15,7 +15,7 @@ export const POLAR_RAYS = 1024
 
 export const PLAYER_RADIUS = 0.32
 export const SPEED = 4.2
-export const ACCEL = 12
+export const ACCEL = 22
 
 export const HIT_RADIUS = 0.38
 export const HEALTH = 100
