@@ -60,17 +60,29 @@ export class Camera {
     const want = wide ? 30 : 17
     this.dist += (want - this.dist) * (1 - Math.exp(-dt * 2))
     this.shake *= Math.exp(-dt * 9)
-    // Critically damped spring back to centre.
+    // Critically damped spring back to centre; substepped so a long frame can't make it diverge.
     const kSpring = 220
     const damp = 2 * Math.sqrt(kSpring)
-    this.kvx += (-kSpring * this.kx - damp * this.kvx) * dt
-    this.kvz += (-kSpring * this.kz - damp * this.kvz) * dt
-    this.kx += this.kvx * dt
-    this.kz += this.kvz * dt
-    this.zv += (-400 * this.zoom - 26 * this.zv) * dt
-    this.zoom += this.zv * dt
-    this.rv += (-500 * this.rollA - 30 * this.rv) * dt
-    this.rollA += this.rv * dt
+    const n = Math.ceil(dt / (1 / 240))
+    const h = dt / n
+    for (let i = 0; i < n; i++) {
+      this.kvx += (-kSpring * this.kx - damp * this.kvx) * h
+      this.kvz += (-kSpring * this.kz - damp * this.kvz) * h
+      this.kx += this.kvx * h
+      this.kz += this.kvz * h
+      this.zv += (-400 * this.zoom - 26 * this.zv) * h
+      this.zoom += this.zv * h
+      this.rv += (-500 * this.rollA - 30 * this.rv) * h
+      this.rollA += this.rv * h
+    }
+    // Never let a burst of kicks carry the view off: clamp the offsets.
+    const kl = Math.hypot(this.kx, this.kz)
+    if (kl > 0.6) {
+      this.kx *= 0.6 / kl
+      this.kz *= 0.6 / kl
+    }
+    this.zoom = Math.max(-1, Math.min(2.5, this.zoom))
+    this.rollA = Math.max(-0.05, Math.min(0.05, this.rollA))
   }
 
   update(aspect: number): Float32Array {
