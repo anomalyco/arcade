@@ -400,7 +400,7 @@ export class Game {
     }
     this.muzzleFlash(muzzle.x, muzzle.y, muzzle.z, this.aim, this.gun)
     if (this.gun === "rifle") this.casing(me)
-    this.bloom = Math.min(1, this.bloom + (this.gun === "rifle" ? 0.16 : 0.75))
+    this.bloom = Math.min(1, this.bloom + (this.gun === "rifle" ? 0.34 : 0.9))
     const cr = CAM_RECOIL[this.gun]
     this.cam?.kick(-Math.cos(this.aim), -Math.sin(this.aim), cr.kick)
     this.cam?.bump(cr.shake)

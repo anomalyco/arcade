@@ -90,6 +90,17 @@ const ACTORS: Actor[] = [
   },
   { id: "d", gun: "shotgun", at: () => ({ x: 21, y: 10, aim: Math.PI - 0.3, alive: true }), shots: (t) => (loop(t, 6.5) < 3.4 ? Math.floor(loop(t, 6.5) / 0.85) + 1 : 0), reloads: (t) => (loop(t, 6.5) > 3.6 ? 1 : 0) },
   { id: "e", gun: "sniper", at: () => ({ x: 12, y: 8.5, aim: Math.PI + 0.25, alive: true }), shots: (t) => (loop(t, 7) < 3.6 ? Math.floor(loop(t, 7) / 1.25) + 1 : 0), reloads: (t) => (loop(t, 7) > 3.8 ? 1 : 0) },
+  // Stands still and turns on the spot, then starts and stops.
+  {
+    id: "g",
+    gun: "rifle",
+    at: (t) => {
+      const c = loop(t, 8)
+      const aim = Math.floor(c / 1.2) * 1.4
+      const run = c > 6 ? Math.min(1, (c - 6) / 0.9) : 0
+      return { x: 9 + ease(run) * 4, y: 15.5, aim: c > 6 ? 0 : aim, alive: true }
+    },
+  },
   // Walks a little loop and keeps getting killed.
   {
     id: "f",
