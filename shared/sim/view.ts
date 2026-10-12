@@ -17,6 +17,8 @@ export type YouView = {
   id: string
   x: number
   y: number
+  vx: number
+  vy: number
   aim: number
   alive: boolean
   spectator: boolean
@@ -124,6 +126,8 @@ function youView(world: World, p: Player, mines: YouView["mines"]): YouView {
     id: p.id,
     x: p.x,
     y: p.y,
+    vx: p.vx,
+    vy: p.vy,
     aim: p.aim,
     alive: p.alive,
     spectator: p.spectator || (!p.inRound && world.phase === "live"),
