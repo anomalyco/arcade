@@ -142,7 +142,7 @@ function signals(t: Town, j: Junction): void {
     if (!ok(c, 0.2)) continue
     const rc: Rect = [c.x - 0.14, c.y - 0.14, c.x + 0.14, c.y + 0.14]
     const red = (k % 2 === 0) === ns
-    const id = t.b.light({ kind: "signal", x: c.x, y: c.y, h: 3.3, r: 2.8, power: 0.7, color: red ? RED : GREEN })
+    const id = t.b.light({ kind: "signal", x: c.x, y: c.y, h: 3.3, r: 3.4, power: 0.55, color: red ? RED : GREEN })
     t.b.prop("signal", ...rc, c.rot, true, id)
     take(t, [rc[0] - 0.4, rc[1] - 0.4, rc[2] + 0.4, rc[3] + 0.4])
     used.add(k)
@@ -179,13 +179,13 @@ function lamps(t: Town, w: Walk): void {
   if (L < 6) return
   const [ox, oy] = OUT[w.curb]
   const curbLine = w.curb === "n" ? w.rect[1] : w.curb === "s" ? w.rect[3] : w.curb === "w" ? w.rect[0] : w.rect[2]
-  for (let u = 3 + r.next() * 8; u < L - 2; u += 20 + r.next() * 6) {
+  for (let u = 3 + r.next() * 6; u < L - 2; u += 15 + r.next() * 5) {
     const along = (hz ? w.rect[0] : w.rect[1]) + u
     const px = hz ? along : curbLine - ox * 0.35
     const py = hz ? curbLine - oy * 0.35 : along
     const lx = px + ox * 1.25
     const ly = py + oy * 1.25
-    if (t.lit.some((q) => Math.hypot(q.x - lx, q.y - ly) < 9)) continue
+    if (t.lit.some((q) => Math.hypot(q.x - lx, q.y - ly) < 8)) continue
     if (t.junctions.some((j) => overlap(j.rect, [lx - 1, ly - 1, lx + 1, ly + 1]))) continue
     const rc: Rect = [px - 0.15, py - 0.15, px + 0.15, py + 0.15]
     if (!free(t, rc, 0.25)) continue
@@ -322,7 +322,7 @@ function parking(t: Town, s: Street): void {
   const ax = s.axis === "x"
   const lo = ax ? s.rect[0] : s.rect[1]
   const hi = ax ? s.rect[2] : s.rect[3]
-  const skip: [number, number][] = t.junctions.filter((j) => overlap(j.rect, s.rect, 0.01)).map((j) => (ax ? [j.rect[0] - 4.4, j.rect[2] + 4.4] : [j.rect[1] - 4.4, j.rect[3] + 4.4]))
+  const skip: [number, number][] = t.junctions.filter((j) => overlap(j.rect, s.rect, 0.01)).map((j) => (ax ? [j.rect[0] - 5.5, j.rect[2] + 5.5] : [j.rect[1] - 5.5, j.rect[3] + 5.5]))
   for (const side of [0, 1] as const) {
     const pw = s.park[side]
     if (!pw) continue

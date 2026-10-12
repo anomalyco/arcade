@@ -104,7 +104,7 @@ export function lots(t: Town): void {
   // Shops: spread out over the plots with a street front long enough for a door and windows.
   const cands = shuffle(
     r,
-    plots.filter((p) => p.fronts.some((s) => len(p.rect, s) >= 5.5 && depth(p.rect, s) >= 5)),
+    plots.filter((p) => p.fronts.some((s) => len(p.rect, s) >= 5.5 && depth(p.rect, s) >= 5)).sort((a, c) => Number(c.fronts.some((s) => s !== "n")) - Number(a.fronts.some((s) => s !== "n"))),
   )
   const want = 3 + r.int(3)
   const shops: Plot[] = []
@@ -274,7 +274,10 @@ const NEON: Record<ShopKind, { text: string[]; color: readonly [number, number, 
  */
 function shop(t: Town, p: Plot): void {
   const { b, r } = t
-  const front = [...p.fronts].sort((a, c) => len(p.rect, c) - len(p.rect, a))[0]!
+  // The camera looks north, so a front on the south (or the sides) shows its windows and sign; north fronts only when
+  // there's nothing else.
+  const facing: Record<Side, number> = { s: 3, w: 1.5, e: 1.5, n: 0 }
+  const front = [...p.fronts].filter((s) => len(p.rect, s) >= 5).sort((a, c) => facing[c] - facing[a] + (len(p.rect, c) - len(p.rect, a)) * 0.05)[0] ?? p.fronts[0]!
   let rc = p.rect
   const D = depth(rc, front)
   if (D > 11) {
@@ -682,7 +685,7 @@ function parkingBlock(t: Town, k: Block): void {
   const pc = R(pu, pv, pu, pv)
   const pole: Rect = [pc[0] - 0.18, pc[1] - 0.18, pc[0] + 0.18, pc[1] + 0.18]
   if (u0 >= 0.6 && free(t, pole, 0.1)) {
-    const id = b.light({ kind: "flood", x: pc[0], y: pc[1], h: 7, r: 15, power: 1.05, color: [0.82, 0.9, 1] })
+    const id = b.light({ kind: "flood", x: pc[0], y: pc[1], h: 5.6, r: 13, power: 1, color: [0.82, 0.9, 1] })
     b.prop("floodpole", ...pole, 0, true, id)
     take(t, pole)
     t.lit.push({ x: pc[0], y: pc[1] })
@@ -721,7 +724,7 @@ export function wreckAt(t: Town, rc: Rect, axis: "x" | "y"): void {
   const cy = (rc[1] + rc[3]) / 2
   const box: Rect = axis === "x" ? [cx - 2.2, cy - 0.95, cx + 2.2, cy + 0.95] : [cx - 0.95, cy - 2.2, cx + 0.95, cy + 2.2]
   if (!free(t, box, 0.05)) return
-  const id = t.b.light({ kind: "fire", x: cx, y: cy, h: 1.7, r: 10, power: 1.5, color: [1, 0.48, 0.14], flicker: 0.3 })
+  const id = t.b.light({ kind: "fire", x: cx, y: cy, h: 2.2, r: 10, power: 1.4, color: [1, 0.48, 0.14], flicker: 0.3 })
   t.b.wall(...box, 1.2, "wreck", (id >= 0 ? id : 0) * 2 + (axis === "x" ? 0 : 1))
   take(t, box)
   t.lit.push({ x: cx, y: cy })
@@ -765,12 +768,12 @@ function parkBlock(t: Town, k: Block): void {
   for (const p of paths) take(t, [p[0] - 0.3, p[1] - 0.3, p[2] + 0.3, p[3] + 0.3])
   // Trees scattered over the grass, kept apart.
   const trees: { x: number; y: number }[] = []
-  const n = Math.round(((x1 - x0) * (y1 - y0)) / 26)
+  const n = Math.round(((x1 - x0) * (y1 - y0)) / 18)
   for (let k2 = 0; k2 < n * 4 && trees.length < n; k2++) {
     const x = r.range(x0 + 1.8, x1 - 1.8)
     const y = r.range(y0 + 1.8, y1 - 1.8)
     const rc: Rect = [x - 0.3, y - 0.3, x + 0.3, y + 0.3]
-    if (!free(t, rc, 0.8) || trees.some((q) => Math.hypot(q.x - x, q.y - y) < 3.6)) continue
+    if (!free(t, rc, 0.6) || trees.some((q) => Math.hypot(q.x - x, q.y - y) < 3)) continue
     b.prop("tree", ...rc, r.int(4) as Rot, true)
     take(t, rc)
     trees.push({ x, y })
@@ -793,6 +796,7 @@ function parkBlock(t: Town, k: Block): void {
     b.prop("bench", ...rc, alongX ? (s < 0 ? 0 : 2) : s < 0 ? 3 : 1, true)
     take(t, rc)
   }
-  lampAt(t, cx + pw / 2 + 0.3, cy + pw / 2 + 0.3, 0, 4.2)
-  if ((x1 - x0) * (y1 - y0) > 500) lampAt(t, x0 + (cx - x0) / 2, cy - pw / 2 - 0.3, 0, 4.2)
+  lampAt(t, cx + pw / 2 + 0.75, cy + pw / 2 + 0.75, 0, 4.2)
+  lampAt(t, x0 + (cx - x0) * 0.45, cy - pw / 2 - 0.75, 0, 4.2)
+  if ((x1 - x0) * (y1 - y0) > 400) lampAt(t, cx - pw / 2 - 0.75, y1 - (y1 - cy) * 0.45, 0, 4.2)
 }

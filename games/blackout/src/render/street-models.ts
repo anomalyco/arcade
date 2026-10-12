@@ -179,13 +179,14 @@ export function streetProp(m: Mesh, p: Prop, seed: number, map: MapDef): void {
       break
     }
     case "floodpole": {
+      const top = light?.h ?? 6
       m.prism(0, 0, 0.2, 0.15, 0, 0.5, 8, METAL)
-      m.prism(0, 0, 0.08, 0.06, 0.5, 7.1, 8, METAL)
-      m.box(-0.5, 7.0, -0.05, 0.5, 7.08, 0.05, METAL)
+      m.prism(0, 0, 0.08, 0.06, 0.5, top + 0.1, 8, METAL)
+      m.box(-0.5, top, -0.05, 0.5, top + 0.08, 0.05, METAL)
       const [mat, aux] = lamp(hex(0xe8f0ff))
       for (const sx of [-1, 1]) {
-        m.bevelBox(sx * 0.35 - 0.16, 6.92, -0.14, sx * 0.35 + 0.16, 7.2, 0.14, 0.02, METAL, METAL_TOP)
-        m.box(sx * 0.35 - 0.13, 6.9, -0.11, sx * 0.35 + 0.13, 6.93, 0.11, hex(0xeef4ff), mat, aux, undefined, true)
+        m.bevelBox(sx * 0.35 - 0.16, top - 0.08, -0.14, sx * 0.35 + 0.16, top + 0.2, 0.14, 0.02, METAL, METAL_TOP)
+        m.box(sx * 0.35 - 0.13, top - 0.1, -0.11, sx * 0.35 + 0.13, top - 0.07, 0.11, hex(0xeef4ff), mat, aux, undefined, true)
       }
       break
     }
@@ -608,7 +609,7 @@ function building(m: Mesh, w: Wall, v: number, seed: number): void {
       m.prism(cx, cz, R + 0.05, 0.08, roof + 2.3, roof + 2.75, 12, hex(0x3e342c), MAT.wall)
     }
   }
-  const ac = 1 + Math.floor(r() * Math.min(4, area / 10))
+  const ac = 1 + Math.floor(area / 18) + Math.floor(r() * 2)
   for (let k = 0; k < ac; k++) {
     const bw = 0.9 + r() * 0.5
     const bd = 0.8 + r() * 0.3
@@ -635,7 +636,19 @@ function building(m: Mesh, w: Wall, v: number, seed: number): void {
     const at = fit(0.7, 0.7)
     if (at) m.bevelBox(at[0], roof, at[1], at[0] + 0.7, roof + 0.35, at[1] + 0.7, 0.03, hex(0x4a4f5e), hex(0x5a6070), MAT.wall)
   }
-  for (let k = 0; k < 3; k++) {
+  if (area > 24 && r() < 0.7) {
+    // A run of ductwork across the roof.
+    const along = iw > id
+    const len = (along ? iw : id) * (0.4 + r() * 0.4)
+    const at = fit(along ? len : 0.45, along ? 0.45 : len)
+    if (at) {
+      m.box(at[0], roof, at[1], at[0] + (along ? len : 0.45), roof + 0.4, at[1] + (along ? 0.45 : len), hex(0x5a5f6a), MAT.wall, 0, hex(0x6e7480))
+      for (let u = 0.6; u < len; u += 1.2)
+        if (along) m.box(at[0] + u, roof, at[1] - 0.02, at[0] + u + 0.06, roof + 0.42, at[1] + 0.47, hex(0x464a54), MAT.wall)
+        else m.box(at[0] - 0.02, roof, at[1] + u, at[0] + 0.47, roof + 0.42, at[1] + u + 0.06, hex(0x464a54), MAT.wall)
+    }
+  }
+  for (let k = 0; k < 3 + Math.floor(area / 25); k++) {
     const at = fit(0.25, 0.25)
     if (at) m.prism(at[0] + 0.12, at[1] + 0.12, 0.08, 0.08, roof, roof + 0.5 + r() * 0.4, 6, hex(0x50555f), MAT.wall)
   }
@@ -735,8 +748,8 @@ function wreck(m: Mesh, w: Wall, v: number, seed: number): void {
   const hl = L / 2
   const hw = Wd / 2
   const IN = [0, 0.3, 0]
-  const char = hex(0x1e1a18)
-  const rust = hex(0x3a2418)
+  const char = hex(0x141210)
+  const rust = hex(0x1e1410)
   m.box(-hl, 0.12, -hw, hl, 0.72, hw, char, MAT.wall, 0, rust)
   outQuad(m, IN, [hl * 0.3, 0.72, -hw + 0.12], [hl * 0.3, 0.72, hw - 0.12], [-hl * 0.1, 1.05, hw - 0.3], [-hl * 0.1, 1.05, -hw + 0.3], hex(0x141210), MAT.wall)
   outQuad(m, IN, [-hl * 0.1, 1.05, -hw + 0.3], [-hl * 0.1, 1.05, hw - 0.3], [-hl * 0.55, 0.72, hw - 0.12], [-hl * 0.55, 0.72, -hw + 0.12], hex(0x181412), MAT.wall)
@@ -746,15 +759,8 @@ function wreck(m: Mesh, w: Wall, v: number, seed: number): void {
   // Embers along the floor of the cabin and the engine bay.
   m.box(-hl * 0.5, 0.721, -hw + 0.2, hl * 0.3, 0.73, hw - 0.2, hex(0x5a1804), MAT.lamp, id)
   m.box(hl * 0.4, 0.721, -hw + 0.2, hl - 0.15, 0.73, hw - 0.2, hex(0x6a2206), MAT.lamp, id)
-  // Flames: tapering faceted tongues of three colours.
-  for (let k = 0; k < 9; k++) {
-    const fx = (r() - 0.35) * L * 0.75
-    const fz = (r() - 0.5) * Wd * 0.6
-    const fh = 0.6 + r() * 1.1
-    const fr = 0.12 + r() * 0.16
-    const c = r() < 0.4 ? hex(0xffd060) : r() < 0.7 ? hex(0xff8a20) : hex(0xff4a10)
-    m.prism(fx, fz, fr, 0.01, 0.72, 0.72 + fh, 4, c, MAT.lamp, id, false, r() * 3)
-  }
+  // The flames themselves are sprites (src/game/map-fx.ts); here, just the glowing seat frames and a few coals.
+  for (let k = 0; k < 6; k++) m.yawBox((r() - 0.4) * L * 0.6, (r() - 0.5) * Wd * 0.5, 0.25, 0.08, 0.73, 0.78, r() * 3, hex(0x8a2a08), MAT.lamp, id)
   // Soot smudge and debris on the ground round it.
   for (let k = 0; k < 6; k++) m.yawBox((r() - 0.5) * L * 1.4, (r() - 0.5) * Wd * 2.2, 0.15 + r() * 0.3, 0.1 + r() * 0.2, 0.105, 0.14, r() * 3, hex(0x2a2420))
   xform(m, from, ax ? 0 : Math.PI / 2, (x0 + x1) / 2, 0, (z0 + z1) / 2)

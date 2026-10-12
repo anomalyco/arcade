@@ -442,10 +442,11 @@ fn floorPattern(kind: i32, p: vec2f, base: vec3f, gloss: ptr<function, vec2f>) -
     let crack = abs(noise2(p * 0.9 + 5.0) - 0.5);
     c *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.01, crack)) * step(0.55, noise2(p * 0.25 + 2.0));
     // Puddles: crisp-edged, slightly darker, mirror-glossy.
-    let wet = smoothstep(0.6, 0.63, fbm(p * 0.32 + vec2f(3.0, 7.0)) + 0.05 * noise2(p * 5.0));
+    let wet = smoothstep(0.52, 0.56, fbm(p * 0.32 + vec2f(3.0, 7.0)) + 0.05 * noise2(p * 5.0));
     let puddle = select(1.0, 0.6, kind == 9) * wet;
-    c *= 1.0 - 0.18 * puddle;
-    *gloss = mix(vec2f(24.0, 0.3), vec2f(160.0, 1.4), puddle);
+    c *= 1.0 - 0.2 * puddle;
+    // The whole road is damp: a soft sheen everywhere, mirror-sharp in the puddles.
+    *gloss = mix(vec2f(45.0, 0.55), vec2f(160.0, 1.6), puddle);
   } else if (kind == 6) {
     // Sidewalk: square concrete slabs, each a slightly different tone, with dark joints. Damp.
     let g = fract(p / 1.2);

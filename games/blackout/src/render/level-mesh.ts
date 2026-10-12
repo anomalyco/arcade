@@ -5,7 +5,7 @@ import { PAL, buildProp, hex, rng } from "./models"
 import { STREET_PROPS, STREET_WALLS, streetProp, streetWall } from "./street-models"
 
 const FLOOR_KIND = { carpet: 0, tile: 1, wood: 2, concrete: 3, grate: 4, asphalt: 5, sidewalk: 6, plaza: 7, grass: 8, parking: 9 } as const
-const FLOOR_COLOR = { carpet: PAL.carpet, tile: PAL.tile, wood: PAL.wood, concrete: PAL.concrete, grate: PAL.grate, asphalt: hex(0x24262c), sidewalk: hex(0x45484f), plaza: hex(0x4e5058), grass: hex(0x283a28), parking: hex(0x2a2c32) } as const
+const FLOOR_COLOR = { carpet: PAL.carpet, tile: PAL.tile, wood: PAL.wood, concrete: PAL.concrete, grate: PAL.grate, asphalt: hex(0x24262c), sidewalk: hex(0x45484f), plaza: hex(0x4e5058), grass: hex(0x30482e), parking: hex(0x2a2c32) } as const
 /** Downtown: sidewalks, plazas, parks and ground floors stand this far above the road, with curbs where they meet it. */
 const CURB = 0.1
 const LOW_FLOORS = new Set(["asphalt"])
@@ -731,7 +731,8 @@ export function buildLevel(map: MapDef): LevelData {
   const downtown = map.kind === "downtown"
   // Floors, cut into chunk-sized pieces. Downtown, everything but the roads stands on a curb.
   map.floors.forEach((f, i) => {
-    const y = (i === 0 ? 0 : 0.002 + (i % 8) * 0.0004) + (downtown && !LOW_FLOORS.has(f.kind) ? CURB : 0)
+    // Later floors lie on top of earlier ones; downtown stacks more than eight deep (sidewalk, then lot, then paths).
+    const y = (i === 0 ? 0 : 0.002 + (downtown ? Math.min(i, 40) * 0.00025 : (i % 8) * 0.0004)) + (downtown && !LOW_FLOORS.has(f.kind) ? CURB : 0)
     for (let x = f.rect[0]; x < f.rect[2] - 1e-3; x += CHUNK)
       for (let z = f.rect[1]; z < f.rect[3] - 1e-3; z += CHUNK) {
         const r: Rect4 = [x, z, Math.min(f.rect[2], x + CHUNK), Math.min(f.rect[3], z + CHUNK)]

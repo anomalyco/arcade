@@ -29,6 +29,7 @@ import { forwardSpeed, lateralSpeed } from "../../shared/sim/vehicle"
 import { VehicleSound } from "../audio/vehicle-sound"
 import { FLOOR } from "../render/vehicle-mesh"
 import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
+import { mapFires } from "./map-fx"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -1043,6 +1044,7 @@ export class Game {
       (d) => this.vehicleTeam(d),
     )
     if (this.alive && this.body) casters.push({ x: this.drawn.x, y: this.drawn.y })
+    mapFires(this.map, view, t, dt, (...a) => this.sprite(...a), this.fxv)
     this.culler.update(view, t, dyn, casters)
     const nl = this.culler.lightCount
 
