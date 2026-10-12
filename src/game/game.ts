@@ -1,5 +1,5 @@
 import { DT, GUNS, MAX_LIGHTS, SPEED, type Gun } from "../../shared/config"
-import { type Rect, angleDiff, raycast } from "../../shared/geom"
+import { type Rect, raycast } from "../../shared/geom"
 import { type MapDef, getMap } from "../../shared/maps"
 import { stepBody, type Body } from "../../shared/sim/move"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
@@ -7,7 +7,8 @@ import type { Intent, SimEvent } from "../../shared/sim/world"
 import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
 import { buildGlass, buildLevel } from "../render/level-mesh"
-import { HIP, MUZZLE, SHOULDER, personModels } from "../render/person"
+import { MUZZLE, SHOULDER, personModels } from "../render/person"
+import { type Avatar, type Corpse, type PartModels, type PushPart, animate, corpsePose, newAvatar, pose } from "./anim"
 import { type Batch, type FrameInput, INST_FLOATS, LIGHT_FLOATS, type Renderer, SPRITE_FLOATS } from "../render/renderer"
 import { FRAME_FLOATS } from "../render/shaders"
 import type { Input } from "./input"
@@ -30,37 +31,10 @@ const PALETTE: Rgb3[] = [
 ]
 export const css = (c: Rgb3) => `rgb(${c.map((v) => Math.round(Math.min(1, v) * 255)).join(",")})`
 
-/** Animation state for one soldier on screen. */
-type Avatar = {
-  id: string
-  x: number
-  y: number
-  vx: number
-  vy: number
-  /** Server position and velocity the smoothed values chase. */
-  tx: number
-  ty: number
-  tvx: number
-  tvy: number
-  aim: number
-  legYaw: number
-  phase: number
-  kick: number
-  flash: number
-  reloadAt: number
-  reloadFor: number
-  gun: Gun
-  alive: boolean
-  stepAt: number
-}
-
-type Corpse = { id: string; x: number; y: number; dx: number; dy: number; t0: number; gun: Gun }
 type Tracer = { x0: number; y0: number; x1: number; y1: number; t0: number; life: number; w: number }
 type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; t0: number; life: number; size: number; kind: "spark" | "shell" | "blood"; bounced: boolean }
 type Flash = { x: number; y: number; t0: number; life: number; power: number }
 export type FeedLine = { killer: string; victim: string; kc: Rgb3; vc: Rgb3; gun: Gun; t: number; mine: boolean }
-
-const WALK_STRIDE = 3.9
 
 /**
  * The match as this client sees it: predicted own body and own gunfire, smoothed and animated soldiers, effects,
@@ -101,7 +75,7 @@ export class Game {
   private particles: Particle[] = []
   private flashes: Flash[] = []
   private soundAt = new Map<string, number>()
-  private models: { legL: number; legR: number; torso: number; arms: Record<Gun, number>; whole: Record<Gun, number> }
+  private models: PartModels
   private frame = new Float32Array(FRAME_FLOATS)
   private lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   private inst = new Float32Array(2048 * INST_FLOATS)
@@ -173,7 +147,8 @@ export class Game {
         if (p.id === this.myId) continue
         let a = this.avatars.get(p.id)
         if (!a) {
-          a = { id: p.id, x: p.x, y: p.y, vx: 0, vy: 0, tx: p.x, ty: p.y, tvx: 0, tvy: 0, aim: p.aim, legYaw: p.aim, phase: 0, kick: 0, flash: 0, reloadAt: -10, reloadFor: 0, gun: p.gun, alive: p.alive, stepAt: 0 }
+          a = newAvatar(p.id, p.x, p.y, p.aim, p.gun)
+          a.alive = p.alive
           this.avatars.set(p.id, a)
         }
         // Teleport on respawn rather than sliding across the map.
@@ -388,7 +363,7 @@ export class Game {
     this.sound.shot(this.gun, 0, 0, true)
   }
 
-  private avatarMe: Avatar = { id: "me", x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0, tvx: 0, tvy: 0, aim: 0, legYaw: 0, phase: 0, kick: 0, flash: 0, reloadAt: -10, reloadFor: 0, gun: "rifle", alive: false, stepAt: 0 }
+  private avatarMe: Avatar = newAvatar("me", 0, 0, 0, "rifle")
 
   private muzzle(x: number, y: number, aim: number, gun: Gun, kick: number): { x: number; y: number } {
     const d = MUZZLE[gun] - kick * 0.12
@@ -428,63 +403,9 @@ export class Game {
     if (this.particles.length > 600) this.particles.splice(0, this.particles.length - 600)
   }
 
-  // Animation ---------------------------------------------------------------------------------------------------
-
-  private animate(a: Avatar, dt: number, x: number, y: number, vx: number, vy: number, aim: number): void {
-    a.x = x
-    a.y = y
-    a.vx = vx
-    a.vy = vy
-    a.aim = aim
-    const speed = Math.hypot(vx, vy)
-    const k = Math.min(1, speed / SPEED)
-    a.phase += speed * dt * WALK_STRIDE
-    let want = aim
-    if (speed > 0.3) {
-      want = Math.atan2(vy, vx)
-      // Backpedalling: legs face the aim and walk backwards rather than spinning round.
-      if (Math.abs(angleDiff(want, aim)) > Math.PI * 0.6) want += Math.PI
-    }
-    a.legYaw += angleDiff(want, a.legYaw) * Math.min(1, dt * 14)
-    a.kick *= Math.exp(-dt * 13)
-    a.flash *= Math.exp(-dt * 14)
+  private step(a: Avatar, mine: boolean): void {
     const me = this.body
-    if (k > 0.3 && a.phase - a.stepAt > Math.PI) {
-      a.stepAt = a.phase
-      if (me && Math.hypot(x - me.x, y - me.y) < 14) this.sound.step(x - me.x, y - me.y, a === this.avatarMe)
-    }
-  }
-
-  /** Pushes the four parts of one soldier. */
-  private pose(push: (model: number, x: number, y: number, z: number, yaw: number, tint: Rgb3, pitch: number, roll: number, flash: number) => void, a: Avatar, color: Rgb3): void {
-    const speed = Math.hypot(a.vx, a.vy)
-    const k = Math.min(1, speed / SPEED)
-    const backwards = Math.abs(angleDiff(a.legYaw, Math.atan2(a.vy, a.vx))) > Math.PI / 2 && speed > 0.3
-    const swing = Math.sin(a.phase) * 0.62 * k * (backwards ? -1 : 1)
-    const bob = Math.abs(Math.sin(a.phase)) * 0.05 * k
-    const ca = Math.cos(a.aim)
-    const sa = Math.sin(a.aim)
-    const fwd = (a.vx * ca + a.vy * sa) / SPEED
-    const side = (-a.vx * sa + a.vy * ca) / SPEED
-    const hip = HIP + bob
-    push(this.models.legL, a.x, hip, a.y, a.legYaw, color, swing, 0, a.flash)
-    push(this.models.legR, a.x, hip, a.y, a.legYaw, color, -swing, 0, a.flash)
-    const lean = -fwd * 0.1 - a.kick * 0.07
-    const roll = side * 0.1
-    push(this.models.torso, a.x, hip - 0.02, a.y, a.aim, color, lean, roll, a.flash)
-    // Arms: recoil pushes them back and tips the muzzle up; reloading dips the gun.
-    let rp = a.kick * 0.32
-    let rr = 0
-    const rt = (this.now - a.reloadAt) / Math.max(0.01, a.reloadFor)
-    if (rt >= 0 && rt < 1) {
-      const dip = Math.sin(rt * Math.PI)
-      rp -= dip * 0.75
-      rr = dip * 0.5
-    }
-    const back = a.kick * 0.14
-    const sx = a.x - ca * back - sa * roll * 0.1
-    const sz = a.y - sa * back + ca * roll * 0.1
-    push(this.models.arms[a.gun], sx, SHOULDER + bob - 0.02 + Math.sin(lean) * 0.4, sz, a.aim, color, rp + lean, rr + roll, a.flash)
+    if (me && Math.hypot(a.x - me.x, a.y - me.y) < 14) this.sound.step(a.x - me.x, a.y - me.y, mine)
   }
 
   // Frame assembly ----------------------------------------------------------------------------------------------
@@ -538,9 +459,9 @@ export class Game {
       const ny = a.y + (ty - a.y) * k
       const vx = dt > 0 ? (nx - a.x) / dt : 0
       const vy = dt > 0 ? (ny - a.y) / dt : 0
-      this.animate(a, dt, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim)
+      if (animate(a, dt, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim)) this.step(a, false)
       const col = this.colorOf(a.id)
-      this.pose(push, a, col)
+      pose(push, a, col, this.models, t)
       this.sprite(true, a.x, 0.03, a.y, 0.48, col[0], col[1], col[2], 0.9, 2, 0, 0.14)
     }
     const me = this.alive ? this.body : null
@@ -550,9 +471,9 @@ export class Game {
       a.alive = true
       a.reloadAt = this.reloadUntil > 0 ? this.reloadUntil - GUNS[this.gun].reload : -10
       a.reloadFor = GUNS[this.gun].reload
-      this.animate(a, dt, me.x, me.y, me.vx, me.vy, this.aim)
+      if (animate(a, dt, me.x, me.y, me.vx, me.vy, this.aim)) this.step(a, true)
       const col = this.colorOf(this.myId)
-      this.pose(push, a, col)
+      pose(push, a, col, this.models, t)
       this.sprite(true, me.x, 0.03, me.y, 0.48, col[0], col[1], col[2], 1, 2, 0, 0.14)
     }
 
@@ -572,21 +493,14 @@ export class Game {
     }
     for (const [model, data] of parts) emit(model, data)
 
-    // Corpses fall away from the shot with a little slide, then fade before the respawn.
+    // Corpses (drawn with alpha so they can fade out).
     const bodies = new Map<number, number[]>()
-    for (const c of this.corpses) {
-      const age = t - c.t0
-      const f = Math.min(1, age / 0.38)
-      const ease = f * f
-      const slide = (1 - (1 - f) * (1 - f)) * 0.6
-      const fade = Math.max(0, Math.min(1, 1 - (age - 2.2) / 0.6))
-      if (fade <= 0) continue
-      const col = this.colorOf(c.id)
-      const arr = bodies.get(this.models.whole[c.gun]) ?? []
-      const bounce = f >= 1 ? Math.max(0, Math.sin((age - 0.38) * 18) * 0.06 * Math.exp(-(age - 0.38) * 10)) : 0
-      arr.push(c.x + c.dx * slide, 0.16 * ease + bounce, c.y + c.dy * slide, Math.atan2(-c.dy, -c.dx), col[0] * 0.5, col[1] * 0.5, col[2] * 0.5, 1, (Math.PI / 2) * ease, 0, fade, 0)
-      bodies.set(this.models.whole[c.gun], arr)
+    const pushBody: PushPart = (model, x, y, z, yaw, tint, pitch, roll, flash, alpha = 1) => {
+      const arr = bodies.get(model) ?? []
+      arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
+      bodies.set(model, arr)
     }
+    this.corpses = this.corpses.filter((c) => corpsePose(pushBody, c, this.colorOf(c.id), this.models, t))
     for (const [model, data] of bodies) emit(model, data, true)
 
     // Tracers, particles.
