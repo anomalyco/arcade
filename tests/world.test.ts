@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS, SPRINT_TO_FIRE } from "../shared/config"
+import { CLAYMORE, EQUIPS, FRAG, GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS, SPRINT_TO_FIRE } from "../shared/config"
 import { type Rect, RectGrid, pushOut, rayRect } from "../shared/geom"
 import { generateOffice } from "../shared/maps/office"
+import { Builder } from "../shared/maps/builder"
 import { Rng } from "../shared/rng"
+import { type Grenade, PROP_TOP, launch, obstaclesOf, stepGrenade } from "../shared/sim/gear"
 import { buildSnapshot } from "../shared/sim/view"
 import { World } from "../shared/sim/world"
 import { place, run, world } from "./helpers"
@@ -222,5 +224,190 @@ describe("broadphase", () => {
         }
       expect(p).toEqual(q)
     }
+  })
+})
+
+describe("equipment", () => {
+  const frag = (w: World, id: string, tx: number, ty: number) => {
+    const p = w.players.get(id)!
+    run(w, 1 / 30, (q) => (q === id ? { aim: Math.atan2(ty - p.y, tx - p.x), equip: true, tx, ty } : {}))
+  }
+
+  test("a frag kills a player near where it lands once the fuse burns down, and only then", () => {
+    const w = world()
+    place(w, "a", 14, 12)
+    place(w, "b", 20, 12)
+    frag(w, "a", 20, 12)
+    expect(w.grenades.length).toBe(1)
+    run(w, FRAG.fuse - 0.3)
+    expect(w.players.get("b")!.alive).toBe(true)
+    run(w, 0.4)
+    expect(w.grenades.length).toBe(0)
+    expect(w.players.get("b")!.alive).toBe(false)
+    expect(w.players.get("a")!.kills).toBe(1)
+    expect(w.takeEvents().some((e) => e.k === "kill" && e.how === "frag")).toBe(true)
+  })
+
+  test("walls stop the blast", () => {
+    const w = world()
+    place(w, "a", 5, 4)
+    place(w, "b", 11, 4)
+    frag(w, "a", 9.2, 4)
+    run(w, FRAG.fuse - 0.2)
+    expect(w.grenades[0]!.x).toBeLessThan(10)
+    run(w, 0.4)
+    const g = w.players.get("b")!
+    expect(g.alive).toBe(true)
+    expect(g.health).toBe(HEALTH)
+  })
+
+  test("a frag hurts its thrower, and dying to your own scores nothing", () => {
+    const w = world()
+    const a = place(w, "a", 14, 12)
+    frag(w, "a", 16, 12)
+    run(w, FRAG.fuse + 0.2)
+    expect(a.alive).toBe(true)
+    expect(a.health).toBeLessThan(HEALTH)
+    run(w, 6)
+    a.equipLeft = 1
+    frag(w, "a", 16, 12)
+    run(w, 1)
+    place(w, "a", w.grenades[0]!.x, w.grenades[0]!.y)
+    run(w, FRAG.fuse)
+    expect(a.alive).toBe(false)
+    expect(a.kills).toBe(0)
+  })
+
+  test("one piece of equipment per life", () => {
+    const w = world(["a"])
+    place(w, "a", 14, 12)
+    expect(w.players.get("a")!.equipLeft).toBe(EQUIPS.frag.count)
+    for (let i = 0; i < 4; i++) {
+      frag(w, "a", 25, 12)
+      run(w, 0.1)
+    }
+    expect(w.takeEvents().filter((e) => e.k === "throw").length).toBe(EQUIPS.frag.count)
+  })
+
+  test("the equipment pick applies on respawn", () => {
+    const w = world()
+    const a = w.players.get("a")!
+    w.pickEquip("a", "claymore")
+    expect(a.equip).toBe("frag")
+    w.kill(a, w.players.get("b")!)
+    run(w, RESPAWN_SECONDS + 0.2)
+    expect(a.alive).toBe(true)
+    expect(a.equip).toBe("claymore")
+    expect(a.equipLeft).toBe(EQUIPS.claymore.count)
+    expect(buildSnapshot(w, "a").you?.equip).toBe("claymore")
+  })
+
+  const plant = (names: string[] = ["a", "b"]) => {
+    const w = world(names)
+    const a = w.players.get("a")!
+    w.pickEquip("a", "claymore")
+    w.spawn(a)
+    place(w, "a", 14, 12)
+    for (const id of names.slice(1)) place(w, id, 30, 17)
+    run(w, 1 / 30, (id) => (id === "a" ? { aim: east, equip: true } : {}))
+    expect(w.claymores.length).toBe(1)
+    return w
+  }
+
+  test("a claymore arms, then trips on someone walking into its cone and kills them", () => {
+    const w = plant()
+    run(w, CLAYMORE.arm + 0.1)
+    // The owner walks around in front of it freely.
+    place(w, "a", 16, 12)
+    run(w, 0.5)
+    expect(w.claymores[0]!.blowAt).toBe(0)
+    place(w, "a", 10, 12)
+    place(w, "b", 16.5, 12.2)
+    run(w, 1 / 30)
+    expect(w.takeEvents().some((e) => e.k === "beep")).toBe(true)
+    run(w, CLAYMORE.delay + 0.1)
+    expect(w.claymores.length).toBe(0)
+    expect(w.players.get("b")!.alive).toBe(false)
+    expect(w.players.get("a")!.alive).toBe(true)
+    expect(w.players.get("a")!.kills).toBe(1)
+  })
+
+  test("a claymore does nothing before it arms, or to someone beside or behind it", () => {
+    const w = plant()
+    place(w, "b", 16, 12)
+    run(w, 0.5)
+    expect(w.claymores[0]!.blowAt).toBe(0)
+    place(w, "b", 13, 12)
+    run(w, CLAYMORE.arm)
+    place(w, "b", 14.4, 15)
+    run(w, 0.3)
+    expect(w.claymores[0]!.blowAt).toBe(0)
+    expect(w.players.get("b")!.alive).toBe(true)
+  })
+
+  test("shooting a claymore sets it off", () => {
+    const w = plant(["a", "b"])
+    run(w, CLAYMORE.arm + 0.1)
+    const c = w.claymores[0]!
+    const b = place(w, "b", c.x, c.y + 6)
+    b.cooldownUntil = 0
+    w.takeEvents()
+    run(w, 0.2, (id) => (id === "b" ? { aim: -Math.PI / 2, fire: true } : {}))
+    expect(w.claymores.length).toBe(0)
+    expect(w.takeEvents().some((e) => e.k === "explode" && e.kind === "claymore")).toBe(true)
+  })
+
+  test("a frag sets off claymores in its blast", () => {
+    const w = plant(["a", "b"])
+    run(w, CLAYMORE.arm + 0.1)
+    const c = w.claymores[0]!
+    place(w, "b", c.x - 8, c.y + 5)
+    frag(w, "b", c.x - 1, c.y + 1)
+    run(w, FRAG.fuse + 0.2)
+    expect(w.claymores.length).toBe(0)
+  })
+
+  test("a new claymore replaces your last one, and it outlives you", () => {
+    const w = plant()
+    const a = w.players.get("a")!
+    w.kill(a, w.players.get("b")!)
+    run(w, 0.5)
+    expect(w.claymores.length).toBe(1)
+    run(w, RESPAWN_SECONDS)
+    place(w, "a", 20, 12)
+    run(w, 1 / 30, (id) => (id === "a" ? { aim: east, equip: true } : {}))
+    expect(w.claymores.length).toBe(1)
+    expect(w.claymores[0]!.x).toBeGreaterThan(19)
+  })
+})
+
+describe("frag flight", () => {
+  const obstacles = (low: boolean) => {
+    const b = new Builder()
+    b.floor("carpet", 0, 0, 30, 10)
+    b.wall(15, 0, 15.1, 10, low ? 1.3 : 2.7, low ? "partition" : "wall")
+    b.prop("desk", 19, 3, 21, 7)
+    return obstaclesOf(b.build({ id: "t", seed: 0, name: "t", size: [30, 10] }))
+  }
+  const fly = (o: ReturnType<typeof obstacles>, x: number, d: number) => {
+    const g: Grenade = { id: 1, by: "a", at: 0, ...launch(x, 5, 0, d) }
+    for (let i = 0; i < 60; i++) stepGrenade(g, o)
+    return g
+  }
+
+  test("it comes to rest about where you aimed", () => {
+    for (const d of [3, 6, 10]) expect(Math.abs(fly({ rects: [], h: [] }, 0, d).x - d)).toBeLessThan(1)
+  })
+
+  test("it sails over low partitions but bounces off walls", () => {
+    expect(fly(obstacles(true), 11, 9).x).toBeGreaterThan(15.1)
+    expect(fly(obstacles(false), 11, 9).x).toBeLessThan(15)
+  })
+
+  test("it can land on a desk and rest on top", () => {
+    const g = fly(obstacles(false), 17, 4)
+    expect(g.x).toBeGreaterThan(19)
+    expect(g.x).toBeLessThan(21)
+    expect(g.z).toBeCloseTo(PROP_TOP + FRAG.size, 2)
   })
 })

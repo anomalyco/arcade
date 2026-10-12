@@ -1,9 +1,11 @@
-import { GUNS, GUN_IDS } from "../../shared/config"
+import { EQUIPS, EQUIP_IDS, type Equip, GUNS, GUN_IDS, type Weapon } from "../../shared/config"
 import { floorOf } from "../../shared/maps"
 import type { Camera } from "../render/camera"
 import { type Game, css } from "../game/game"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+const weaponLabel = (w: Weapon) => (w === "frag" ? "GRENADE" : w === "claymore" ? "CLAYMORE" : GUNS[w].label.toUpperCase())
+const equipLabel = (e: Equip) => EQUIPS[e].label.toUpperCase()
 const clock = (s: number) => {
   const t = Math.max(0, Math.ceil(s))
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
@@ -21,12 +23,12 @@ export class Hud {
       <div id="tr"></div>
       <div id="labels"></div>
       <div id="bl"><div class="hp"><span>HEALTH</span><div id="hpbar"><i></i></div></div></div>
-      <div id="br"><div id="gname"></div><div id="ammo"><b id="mag"></b><span id="magmax"></span></div><div id="rbar"><i></i></div></div>
+      <div id="br"><div id="gname"></div><div id="ammo"><b id="mag"></b><span id="magmax"></span></div><div id="rbar"><i></i></div><div id="equip"></div></div>
       <div id="banner"></div>
       <div id="respawn"></div>
       <div id="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><div id="hm"><i></i><i></i><i></i><i></i></div></div>
       <div id="status"></div>
-      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · 1 2 3 guns · TAB scores · M mute</div>`
+      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · 1 2 3 guns · 4 5 frag/claymore · TAB scores · M mute</div>`
     for (const e of root.querySelectorAll<HTMLElement>("[id]")) this.el[e.id] = e
   }
 
@@ -50,7 +52,7 @@ export class Hud {
       .join("")
     el.tr!.innerHTML = g.feed
       .filter((f) => t - f.t < 6)
-      .map((f) => `<div class="${f.mine ? "mine" : ""}"><b style="color:${css(f.kc)}">${esc(f.killer)}</b><em>${GUNS[f.gun].label.toUpperCase()}</em><b style="color:${css(f.vc)}">${esc(f.victim)}</b></div>`)
+      .map((f) => `<div class="${f.mine ? "mine" : ""}"><b style="color:${css(f.kc)}">${esc(f.killer)}</b><em>${weaponLabel(f.how)}</em><b style="color:${css(f.vc)}">${esc(f.victim)}</b></div>`)
       .join("")
 
     const alive = g.alive
@@ -67,15 +69,19 @@ export class Hud {
     const rb = el.rbar!.firstElementChild as HTMLElement
     rb.style.width = reloading ? `${(1 - (g.reloadUntil - t) / gun.reload) * 100}%` : "0%"
 
+    el.equip!.innerHTML = `<span class="${g.equipLeft > 0 ? "" : "out"}">${equipLabel(g.equip)} ×${g.equipLeft}</span><kbd>G</kbd>`
+
     const b = g.banner && t - g.banner.t < 2.2 ? g.banner : null
     el.banner!.textContent = b?.text ?? ""
     el.banner!.style.opacity = b ? String(Math.min(1, (2.2 - (t - b.t)) * 2)) : "0"
     const pick = s.you?.pick ?? "rifle"
+    const epick = s.you?.equipPick ?? "frag"
+    const next = [pick !== g.gun ? GUNS[pick].label.toUpperCase() : "", epick !== g.equip ? equipLabel(epick) : ""].filter(Boolean).join(" · ")
     el.respawn!.innerHTML =
       s.phase === "play" && !alive && s.you
-        ? `<div class="rt">RESPAWN IN ${Math.ceil(s.you.respawnIn)}</div><div class="picks">${GUN_IDS.map((id, i) => `<span class="${id === pick ? "on" : ""}"><kbd>${i + 1}</kbd>${GUNS[id].label.toUpperCase()}</span>`).join("")}</div>`
-        : alive && pick !== g.gun
-          ? `<div class="next">NEXT LIFE: ${GUNS[pick].label.toUpperCase()}</div>`
+        ? `<div class="rt">RESPAWN IN ${Math.ceil(s.you.respawnIn)}</div><div class="picks">${GUN_IDS.map((id, i) => `<span class="${id === pick ? "on" : ""}"><kbd>${i + 1}</kbd>${GUNS[id].label.toUpperCase()}</span>`).join("")}</div><div class="picks">${EQUIP_IDS.map((id, i) => `<span class="${id === epick ? "on" : ""}"><kbd>${i + 4}</kbd>${equipLabel(id)}</span>`).join("")}</div>`
+        : alive && next
+          ? `<div class="next">NEXT LIFE: ${next}</div>`
           : ""
 
     // Crosshair: spreads with recoil, shows a white hitmarker on hits and a red one on kills.

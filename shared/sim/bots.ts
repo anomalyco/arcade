@@ -24,7 +24,7 @@ export class BotBrain implements Brain {
 
   think(world: World, p: Player): Intent {
     const now = world.time
-    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false }
+    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0 }
     let near: Player | null = null
     let nd = Infinity
     for (const q of world.players.values()) {
@@ -56,6 +56,13 @@ export class BotBrain implements Brain {
       }
       i.mx = Math.cos(want + (Math.PI / 2) * this.strafe) * 0.6
       i.my = Math.sin(want + (Math.PI / 2) * this.strafe) * 0.6
+      // Now and then a frag at someone in throwing range.
+      if (p.equip === "frag" && p.equipLeft > 0 && now >= this.reactAt && nd > 4 && nd < 11 && Math.abs(angleDiff(this.aim, want)) < 0.2 && this.rng.next() < 0.012) {
+        i.equip = true
+        i.fire = false
+        i.tx = near.x
+        i.ty = near.y
+      }
       return i
     }
     this.target = ""

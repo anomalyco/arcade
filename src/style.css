@@ -468,6 +468,19 @@ tr.me td {
   background: var(--ink);
 }
 
+#equip {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 12px;
+  letter-spacing: 0.24em;
+}
+
+#equip .out {
+  color: var(--faint);
+}
+
 #banner {
   position: absolute;
   top: 30%;
@@ -510,6 +523,10 @@ tr.me td {
 
 #respawn .picks .on {
   color: var(--ink);
+}
+
+#respawn .picks + .picks {
+  margin-top: 10px;
 }
 
 #respawn .next {

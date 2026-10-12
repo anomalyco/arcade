@@ -1,6 +1,6 @@
 import { type ClientMsg, type ServerMsg, decodeServer, encodeClient } from "../../shared/protocol"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
-import type { Gun } from "../../shared/config"
+import type { Equip, Gun } from "../../shared/config"
 import type { SimEvent } from "../../shared/sim/world"
 import type { Session } from "./session"
 
@@ -26,6 +26,7 @@ export class NetSession implements Session {
     readonly room: string,
     private name: string,
     private gun: Gun,
+    private equip: Equip,
     private onFatal: (message: string) => void,
     /** Created with "Create game": the room stays out of quick join. */
     private priv = false,
@@ -54,6 +55,7 @@ export class NetSession implements Session {
 
   send(msg: ClientMsg): void {
     if (msg.type === "gun") this.gun = msg.gun
+    if (msg.type === "equip") this.equip = msg.equip
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(encodeClient(msg))
   }
 
@@ -73,7 +75,7 @@ export class NetSession implements Session {
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0
-      ws.send(encodeClient({ type: "hello", name: this.name, id: this.id || undefined, gun: this.gun }))
+      ws.send(encodeClient({ type: "hello", name: this.name, id: this.id || undefined, gun: this.gun, equip: this.equip }))
     }
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") return

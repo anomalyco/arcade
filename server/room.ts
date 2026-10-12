@@ -44,7 +44,8 @@ export class RoomCore {
     const id = this.conns.get(conn)
     if (!id) return
     if (msg.type === "intent") this.world.push(id, msg.seq, msg.i)
-    else this.world.pickGun(id, msg.gun)
+    else if (msg.type === "gun") this.world.pickGun(id, msg.gun)
+    else this.world.pickEquip(id, msg.equip)
   }
 
   private hello(conn: Conn, msg: Extract<ClientMsg, { type: "hello" }>): void {
@@ -59,7 +60,7 @@ export class RoomCore {
         return
       }
       id = newId()
-      w.addHuman(id, msg.name, msg.gun)
+      w.addHuman(id, msg.name, msg.gun, msg.equip)
     }
     this.conns.set(conn, id)
     conn.send(encodeServer({ type: "welcome", id, room: this.code }))

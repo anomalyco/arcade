@@ -1,11 +1,12 @@
-import { GUN_IDS, type Gun } from "./config"
+import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "./config"
 import type { RosterRow, Snapshot } from "./sim/view"
 import type { Intent, SimEvent } from "./sim/world"
 
 export type ClientMsg =
-  | { type: "hello"; name: string; id?: string; gun: Gun }
+  | { type: "hello"; name: string; id?: string; gun: Gun; equip: Equip }
   | { type: "intent"; seq: number; i: Intent }
   | { type: "gun"; gun: Gun }
+  | { type: "equip"; equip: Equip }
   | { type: "ping"; t: number }
 
 export type ServerMsg =
@@ -42,6 +43,7 @@ export function cleanName(v: unknown): string {
 const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 0)
 
 const gunOf = (v: unknown): Gun => (GUN_IDS as readonly unknown[]).includes(v) ? (v as Gun) : "rifle"
+const equipOf = (v: unknown): Equip => (EQUIP_IDS as readonly unknown[]).includes(v) ? (v as Equip) : "frag"
 
 /** Validates an untrusted client frame. Returns null for anything malformed. */
 export function decodeClient(raw: unknown): ClientMsg | null {
@@ -57,15 +59,17 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   switch (o.type) {
     case "hello": {
       const id = typeof o.id === "string" && /^[a-z0-9]{6,16}$/.test(o.id) ? o.id : undefined
-      return { type: "hello", name: cleanName(o.name), id, gun: gunOf(o.gun) }
+      return { type: "hello", name: cleanName(o.name), id, gun: gunOf(o.gun), equip: equipOf(o.equip) }
     }
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null
       if (!i || typeof o.seq !== "number" || !Number.isInteger(o.seq) || o.seq < 0) return null
-      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true, sprint: i.sprint === true } }
+      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000) } }
     }
     case "gun":
       return { type: "gun", gun: gunOf(o.gun) }
+    case "equip":
+      return { type: "equip", equip: equipOf(o.equip) }
     case "ping":
       return { type: "ping", t: num(o.t, 0, Number.MAX_SAFE_INTEGER) }
     default:

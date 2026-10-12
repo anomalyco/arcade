@@ -200,13 +200,13 @@ class ScriptSession implements Session {
           const dx = (s.x - ks.x) / d
           const dy = (s.y - ks.y) / d
           this.events.push({ k: "shot", by: killer.id, x0: ks.x, y0: ks.y, x1: s.x, y1: s.y, hit: a.id })
-          this.events.push({ k: "kill", killer: killer.id, victim: a.id, dx, dy })
+          this.events.push({ k: "kill", killer: killer.id, victim: a.id, dx, dy, how: killer.gun })
         }
       }
       this.prev.set(a.id, { x: s.x, y: s.y, shots, reloads, alive: s.alive })
       players.push({ id: a.id, x: s.x, y: s.y, vx, vy, aim: s.aim, alive: s.alive, gun: a.gun, health: 100 })
     }
-    this.snap = { snap: { type: "snap", tick: Math.floor(t * 30), t, ack: 0, phase: "play", left: 300, map: SEED, players, you: null }, at: performance.now() }
+    this.snap = { snap: { type: "snap", tick: Math.floor(t * 30), t, ack: 0, phase: "play", left: 300, map: SEED, players, grenades: [], claymores: [], you: null }, at: performance.now() }
   }
 }
 

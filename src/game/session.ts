@@ -1,7 +1,7 @@
 import { DT, SNAPSHOT_HZ, TICK_HZ } from "../../shared/config"
 import type { ClientMsg } from "../../shared/protocol"
 import { type RosterRow, type Snapshot, buildSnapshot, rosterOf } from "../../shared/sim/view"
-import type { Gun } from "../../shared/config"
+import type { Equip, Gun } from "../../shared/config"
 import { type SimEvent, World } from "../../shared/sim/world"
 
 /** What the game loop needs from a match, whether it runs in this tab or in a room on the server. */
@@ -30,11 +30,11 @@ export class LocalSession implements Session {
   private events: SimEvent[] = []
   private every = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
 
-  constructor(name: string, gun: Gun) {
+  constructor(name: string, gun: Gun, equip: Equip) {
     this.world = new World((Math.random() * 2 ** 31) | 0)
     // Local practice (dev only, ?practice) is the one place with bots.
     this.world.botFill = 4
-    this.world.addHuman(this.myId, name, gun)
+    this.world.addHuman(this.myId, name, gun, equip)
     this.publish()
   }
 
@@ -55,6 +55,7 @@ export class LocalSession implements Session {
   send(msg: ClientMsg): void {
     if (msg.type === "intent") this.world.push(this.myId, msg.seq, msg.i)
     else if (msg.type === "gun") this.world.pickGun(this.myId, msg.gun)
+    else if (msg.type === "equip") this.world.pickEquip(this.myId, msg.equip)
   }
 
   status(): string | null {

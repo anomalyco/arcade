@@ -1,7 +1,7 @@
 import "./style.css"
 import "@fontsource/ibm-plex-mono/400.css"
 import "@fontsource/ibm-plex-mono/500.css"
-import { GUN_IDS, type Gun } from "../shared/config"
+import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "../shared/config"
 import { cleanName } from "../shared/protocol"
 import { Sound } from "./audio/sound"
 import { Game } from "./game/game"
@@ -16,6 +16,7 @@ import { Menus } from "./ui/menus"
 const MAX_DPR = 1.5
 const NAME_KEY = "blackout.name"
 const GUN_KEY = "blackout.gun"
+const EQUIP_KEY = "blackout.equip"
 
 async function gpu(canvas: HTMLCanvasElement): Promise<Renderer | string> {
   if (!navigator.gpu) return "BLACKOUT needs WebGPU. Use a recent Chrome, Edge or Safari over https or localhost."
@@ -42,6 +43,8 @@ async function main() {
   const roomParam = (params.get("room") ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || null
   const storedGun = localStorage.getItem(GUN_KEY) as Gun | null
   let gun: Gun = storedGun && GUN_IDS.includes(storedGun) ? storedGun : "rifle"
+  const storedEquip = localStorage.getItem(EQUIP_KEY) as Equip | null
+  let equip: Equip = storedEquip && EQUIP_IDS.includes(storedEquip) ? storedEquip : "frag"
   const sound = new Sound()
   const input = new Input(canvas)
   const cam = new Camera()
@@ -70,7 +73,7 @@ async function main() {
   const api = (path: string) => fetch(`${base}api/${path}`, { method: "POST" }).then((r) => r.json() as Promise<{ room: string }>)
   const enter = (name: string, room: string, priv = false) => {
     history.replaceState(null, "", `?room=${room}`)
-    begin(name, (n) => new NetSession(room, n, gun, fatal, priv))
+    begin(name, (n) => new NetSession(room, n, gun, equip, fatal, priv))
   }
   const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
   const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
@@ -90,10 +93,16 @@ async function main() {
       localStorage.setItem(GUN_KEY, gun)
       session.send({ type: "gun", gun })
     }
+    const e = ["Digit4", "Digit5"].indexOf(code)
+    if (e >= 0 && session) {
+      equip = EQUIP_IDS[e]!
+      localStorage.setItem(EQUIP_KEY, equip)
+      session.send({ type: "equip", equip })
+    }
   }
   menus.landing(roomParam)
   // Dev and screenshots: a local match against bots, no server.
-  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun))
+  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip))
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
@@ -114,7 +123,7 @@ async function main() {
     if (game && session) {
       input.enabled = game.snap?.phase === "play"
       game.update(dt, input, cam, w, h, now)
-      const body = game.body
+      const body = game.body ? game.drawn : null
       const alive = game.alive
       const fx = body?.x ?? game.map.size[0] / 2
       const fz = body?.y ?? game.map.size[1] / 2

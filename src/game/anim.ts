@@ -136,6 +136,9 @@ export type Avatar = {
   body: Body | null
   /** Where the right hand is moving, for dropped magazines. */
   handVel: V3
+  /** Last frag throw and claymore plant, on the animation clock. */
+  throwAt: number
+  plantAt: number
 }
 
 export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gun): Avatar {
@@ -192,6 +195,8 @@ export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gu
     clipPrev: { reload: 2, cycle: 2 },
     body: null,
     handVel: [0, 0, 0],
+    throwAt: -10,
+    plantAt: -10,
   }
 }
 
@@ -227,6 +232,19 @@ export function fire(a: Avatar, now: number): void {
   const c = CYCLE[a.gun]
   if (c) a.cycleAt = now + c.delay
 }
+
+/** Throwing a frag (an overarm whip with the free hand) or planting a claymore (a dip and a reach to the floor). */
+export function useGear(a: Avatar, now: number, plant: boolean): void {
+  if (plant) {
+    a.plantAt = now
+    kick(a.dip, -0.22, 120)
+  } else {
+    a.throwAt = now
+    kick(a.torsoKick, -0.08, 200)
+  }
+}
+const THROW = 0.42
+const PLANT = 0.55
 
 /** Taking a hit from direction (dx, dy): the body flinches away, the head snaps and the gun is knocked off line. */
 export function hit(a: Avatar, dx: number, dy: number, power = 1): void {
@@ -641,8 +659,20 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
     }
     return lerp3(pos(k0), pos(k1), u)
   }
-  const handL = handAt(clip?.left, false)
+  let handL = handAt(clip?.left, false)
   const handR = handAt(clip?.right, true)
+  // Gear: the free hand snaps up behind the shoulder, whips forward and comes back; or reaches down to plant.
+  const tw = (now - a.throwAt) / THROW
+  if (tw >= 0 && tw < 1) {
+    const back = at(torso, -0.22, 0.66, -0.3)
+    const out = at(torso, 0.52, 0.42, -0.1)
+    handL = tw < 0.15 ? lerp3(handL, back, smooth(tw / 0.15)) : tw < 0.4 ? lerp3(back, out, smooth((tw - 0.15) / 0.25)) : lerp3(out, handL, smooth((tw - 0.4) / 0.6))
+  }
+  const pw = (now - a.plantAt) / PLANT
+  if (pw >= 0 && pw < 1) {
+    const down = at(torso, 0.45, -0.25, -0.12)
+    handL = lerp3(handL, down, Math.sin(Math.PI * Math.min(1, pw * 1.3)))
+  }
 
   const shL = at(torso, 0, RIG.shoulderY, -RIG.shoulderW)
   const shR = at(torso, 0, RIG.shoulderY, RIG.shoulderW)

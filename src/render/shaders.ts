@@ -554,7 +554,7 @@ fn lampK(aux: f32) -> f32 {
 
 /**
  * Sprites. kind: 0 glow (camera facing), 1 faceted smoke puff, 2 ground ring, 3 jagged ground ring, 4 ground line
- * (tracer, throw arc), 5 dashed ground ring, 6 ground disc, 7 marker "!".
+ * (tracer, throw arc), 5 dashed ground ring, 6 ground disc, 7 marker "!", 8 ground wedge (claymore cone; extra = half-angle).
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -579,7 +579,7 @@ struct SOut {
   let kind = i32(s.misc.x);
   let size = s.posSize.w;
   var world: vec3f;
-  if (kind >= 2 && kind <= 6) {
+  if ((kind >= 2 && kind <= 6) || kind == 8) {
     let r = s.misc.y;
     let lc = vec2f(c.x * size, c.y * size * select(1.0, max(s.misc.z, 0.001), kind == 4));
     world = s.posSize.xyz + vec3f(lc.x * cos(r) - lc.y * sin(r), 0.0, lc.x * sin(r) + lc.y * cos(r));
@@ -634,6 +634,14 @@ struct SOut {
     let bar = step(abs(o.uv.x), 0.16) * step(-0.2, o.uv.y) * step(o.uv.y, 0.95);
     let pt = step(length(o.uv - vec2f(0.0, -0.6)), 0.2);
     a = max(bar, pt);
+  } else if (kind == 8) {
+    // Wedge out along +x: bright edges, a faint scanning fill and a brighter far rim.
+    let ang = abs(atan2(o.uv.y, o.uv.x));
+    let half = o.misc.w;
+    let inside = (1.0 - smoothstep(half - 0.015, half, ang)) * (1.0 - smoothstep(0.95, 1.0, r));
+    let edge = smoothstep(half - 0.07, half - 0.015, ang);
+    let scan = 0.5 + 0.5 * sin(r * 22.0 - F.cam.w * 7.0);
+    a = inside * (0.1 + 0.08 * scan + 0.8 * edge + 0.35 * smoothstep(0.86, 0.96, r));
   }
   if (a <= 0.002) { discard; }
   return vec4f(rgb * a * o.color.a, a * o.color.a);

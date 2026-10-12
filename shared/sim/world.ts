@@ -1,18 +1,20 @@
-import { DT, END_SECONDS, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE } from "../config"
-import { type Rect, raycast } from "../geom"
+import { CLAYMORE, DT, END_SECONDS, EQUIPS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE, type Weapon } from "../config"
+import { type Rect, angleDiff, clearLine, raycast } from "../geom"
 import { type MapDef, getMap } from "../maps"
 import { Rng } from "../rng"
 import { BotBrain } from "./bots"
+import { type Claymore, type Grenade, type Obstacles, launch, obstaclesOf, overlaps, stepGrenade } from "./gear"
 import { stepBody } from "./move"
 
 export type Phase = "play" | "end"
 
 /**
  * One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. `sprint`
- * holds Shift.
+ * holds Shift. `equip` is a press that throws or plants your equipment; (tx, ty) is the cursor on the floor, how far
+ * to throw.
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean }
-export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number }
+export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0 }
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
 export const sprints = (i: Intent): boolean => i.sprint && !i.fire && Math.hypot(i.mx, i.my) > 0.1
@@ -39,6 +41,10 @@ export type Player = {
   /** The gun you have now, and the one you picked for your next life. */
   gun: Gun
   pick: Gun
+  /** Equipment this life, how many are left, and the pick for the next life. */
+  equip: Equip
+  equipLeft: number
+  equipPick: Equip
   triggerHeld: boolean
   health: number
   hurtAt: number
@@ -52,7 +58,12 @@ export type Player = {
 
 export type SimEvent =
   | { k: "shot"; by: string; x0: number; y0: number; x1: number; y1: number; hit: string }
-  | { k: "kill"; killer: string; victim: string; dx: number; dy: number }
+  | { k: "kill"; killer: string; victim: string; dx: number; dy: number; how: Weapon }
+  | { k: "throw"; by: string; id: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; fuse: number }
+  | { k: "plant"; by: string; id: number; x: number; y: number; aim: number }
+  | { k: "bounce"; id: number; x: number; y: number; v: number }
+  | { k: "beep"; id: number; x: number; y: number }
+  | { k: "explode"; kind: Equip; by: string; id: number; x: number; y: number; aim: number }
   | { k: "reload"; by: string }
   | { k: "end"; winner: string }
 
@@ -68,6 +79,8 @@ export class World {
   solids: Rect[] = []
   /** Block bullets: walls, windows and glass. */
   blockers: Rect[] = []
+  /** What frags bounce off, with heights. */
+  obstacles: Obstacles = { rects: [], h: [] }
   readonly rng: Rng
   time = 0
   tick = 0
@@ -76,6 +89,9 @@ export class World {
   players = new Map<string, Player>()
   order: string[] = []
   events: SimEvent[] = []
+  grenades: Grenade[] = []
+  claymores: Claymore[] = []
+  private gearId = 0
   private botCount = 0
   /** Players to top the room up to with bots. 0 online; local practice and tests set it. */
   botFill = 0
@@ -93,15 +109,17 @@ export class World {
     this.map = map
     this.blockers = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass]
     this.solids = [...this.blockers, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
+    this.obstacles = obstaclesOf(map)
   }
 
   get humans(): Player[] {
     return [...this.players.values()].filter((p) => p.human)
   }
 
-  addHuman(id: string, name: string, gun: Gun = "rifle"): Player {
+  addHuman(id: string, name: string, gun: Gun = "rifle", equip: Equip = "frag"): Player {
     const p = this.newPlayer(id, name, null)
     p.pick = gun
+    p.equipPick = equip
     this.players.set(id, p)
     this.order.push(id)
     this.spawn(p)
@@ -115,7 +133,15 @@ export class World {
     if (p) p.pick = gun
   }
 
+  /** Picks the equipment for your next life. */
+  pickEquip(id: string, equip: Equip): void {
+    const p = this.players.get(id)
+    if (p) p.equipPick = equip
+  }
+
   remove(id: string): void {
+    this.grenades = this.grenades.filter((g) => g.by !== id)
+    this.claymores = this.claymores.filter((c) => c.by !== id)
     this.players.delete(id)
     this.order = this.order.filter((x) => x !== id)
   }
@@ -135,7 +161,7 @@ export class World {
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0 }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0 }
   }
 
   /** Puts a player at the spawn farthest from everyone alive. */
@@ -158,6 +184,8 @@ export class World {
     p.health = HEALTH
     p.gun = p.pick
     p.mag = GUNS[p.gun].mag
+    p.equip = p.equipPick
+    p.equipLeft = EQUIPS[p.equip].count
     p.reloadUntil = 0
     p.cooldownUntil = this.time + 0.5
     p.readyAt = 0
@@ -216,6 +244,7 @@ export class World {
         p.mag = gun.mag
       }
       if ((intent.reload && p.mag < gun.mag) || (intent.fire && p.mag === 0)) this.reload(p)
+      if (intent.equip && p.equipLeft > 0) this.useEquip(p, intent)
       // A press during the sprint-to-fire delay is held over until the gun is up.
       const ready = this.time >= p.readyAt
       const pressed = intent.fire && ready && (gun.auto || !p.triggerHeld)
@@ -223,6 +252,95 @@ export class World {
       if (ready || !intent.fire) p.triggerHeld = intent.fire
       if (p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
     }
+    if (this.phase === "play") this.stepGear()
+  }
+
+  /** Throws the frag toward the cursor, or plants the claymore just ahead facing the aim. */
+  private useEquip(p: Player, intent: Intent): void {
+    p.equipLeft--
+    p.cooldownUntil = Math.max(p.cooldownUntil, this.time + EQUIP_LOCK)
+    const id = ++this.gearId
+    if (p.equip === "frag") {
+      const l = launch(p.x, p.y, p.aim, Math.hypot(intent.tx - p.x, intent.ty - p.y))
+      this.grenades.push({ id, by: p.id, ...l, at: this.time + FRAG.fuse })
+      this.events.push({ k: "throw", by: p.id, id, ...l, fuse: FRAG.fuse })
+      return
+    }
+    // One claymore each: a new one replaces the last.
+    this.claymores = this.claymores.filter((c) => c.by !== p.id)
+    let x = p.x + Math.cos(p.aim) * 0.45
+    let y = p.y + Math.sin(p.aim) * 0.45
+    if (!clearLine(p.x, p.y, x, y, this.solids) || overlaps(x, y, 0.15, this.solids)) {
+      x = p.x
+      y = p.y
+    }
+    this.claymores.push({ id, by: p.id, x, y, aim: p.aim, armAt: this.time + CLAYMORE.arm, blowAt: 0 })
+    this.events.push({ k: "plant", by: p.id, id, x, y, aim: p.aim })
+  }
+
+  /** Grenades fly and blow; armed claymores watch their cone, beep when tripped and blow a moment later. */
+  private stepGear(): void {
+    for (const g of [...this.grenades]) {
+      const v = stepGrenade(g, this.obstacles)
+      if (v > 2) this.events.push({ k: "bounce", id: g.id, x: g.x, y: g.y, v })
+      if (this.time >= g.at) this.frag(g)
+    }
+    for (const c of [...this.claymores]) {
+      if (!this.claymores.includes(c)) continue
+      if (c.blowAt > 0) {
+        if (this.time >= c.blowAt) this.claymore(c, c.by)
+        continue
+      }
+      if (this.time < c.armAt) continue
+      for (const q of this.players.values()) {
+        if (!q.alive || q.id === c.by) continue
+        const d = Math.hypot(q.x - c.x, q.y - c.y)
+        if (d > CLAYMORE.range || Math.abs(angleDiff(Math.atan2(q.y - c.y, q.x - c.x), c.aim)) > CLAYMORE.cone) continue
+        if (!clearLine(c.x, c.y, q.x, q.y, this.blockers)) continue
+        c.blowAt = this.time + CLAYMORE.delay
+        this.events.push({ k: "beep", id: c.id, x: c.x, y: c.y })
+        break
+      }
+    }
+  }
+
+  /** A frag goes off: lethal close in, falling off with distance, stopped by walls. It sets off claymores too. */
+  private frag(g: Grenade): void {
+    this.grenades = this.grenades.filter((o) => o !== g)
+    this.events.push({ k: "explode", kind: "frag", by: g.by, id: g.id, x: g.x, y: g.y, aim: 0 })
+    const owner = this.players.get(g.by)
+    if (!owner) return
+    for (const q of this.players.values()) {
+      if (!q.alive) continue
+      const d = Math.hypot(q.x - g.x, q.y - g.y)
+      if (d > FRAG.radius || !clearLine(g.x, g.y, q.x, q.y, this.blockers)) continue
+      const u = Math.max(0, (d - FRAG.kill) / (FRAG.radius - FRAG.kill))
+      this.damage(q, d <= FRAG.kill ? HEALTH * 2 : FRAG.edge + (HEALTH - 5 - FRAG.edge) * (1 - u), owner, "frag", g.x, g.y)
+    }
+    for (const c of [...this.claymores]) {
+      if (this.claymores.includes(c) && Math.hypot(c.x - g.x, c.y - g.y) <= FRAG.radius && clearLine(g.x, g.y, c.x, c.y, this.blockers)) this.claymore(c, g.by)
+    }
+  }
+
+  /** A claymore blows: lethal in its cone, and hurts anyone right on top of it. `by` gets the kills. */
+  private claymore(c: Claymore, by: string): void {
+    this.claymores = this.claymores.filter((o) => o !== c)
+    this.events.push({ k: "explode", kind: "claymore", by, id: c.id, x: c.x, y: c.y, aim: c.aim })
+    const owner = this.players.get(by) ?? this.players.get(c.by)
+    if (!owner) return
+    for (const q of this.players.values()) {
+      if (!q.alive) continue
+      const d = Math.hypot(q.x - c.x, q.y - c.y)
+      const inCone = d <= CLAYMORE.blast && Math.abs(angleDiff(Math.atan2(q.y - c.y, q.x - c.x), c.aim)) <= CLAYMORE.blastCone
+      const dmg = inCone ? HEALTH * 2 : d <= CLAYMORE.near ? 20 + 60 * (1 - d / CLAYMORE.near) : 0
+      if (dmg > 0 && clearLine(c.x, c.y, q.x, q.y, this.blockers)) this.damage(q, dmg, owner, "claymore", c.x, c.y)
+    }
+  }
+
+  private damage(q: Player, dmg: number, by: Player, how: Weapon, fx: number, fy: number): void {
+    q.health -= dmg
+    q.hurtAt = this.time
+    if (q.health <= 0) this.kill(q, by, how, fx, fy)
   }
 
   private reload(p: Player): void {
@@ -259,26 +377,39 @@ export class World {
         victim = q
       }
     }
+    // Someone else's claymore in the line of fire takes the round and blows.
+    let mine: Claymore | null = null
+    for (const c of this.claymores) {
+      if (c.by === p.id) continue
+      const t = (c.x - p.x) * dx + (c.y - p.y) * dy
+      const off = Math.abs(-(c.x - p.x) * dy + (c.y - p.y) * dx)
+      if (t > 0.5 && t < stop && off <= CLAYMORE.shot) {
+        stop = t
+        victim = null
+        mine = c
+      }
+    }
     this.events.push({ k: "shot", by: p.id, x0: p.x, y0: p.y, x1: p.x + dx * stop, y1: p.y + dy * stop, hit: victim?.id ?? "" })
-    if (!victim) return
-    victim.health -= gun.damage
-    victim.hurtAt = this.time
-    if (victim.health <= 0) this.kill(victim, p)
+    if (mine) this.claymore(mine, p.id)
+    if (victim) this.damage(victim, gun.damage, p, p.gun, p.x, p.y)
   }
 
-  kill(victim: Player, killer: Player): void {
+  /** `how` and the blast point (fx, fy) default to the killer's gun and position. Killing yourself scores nothing. */
+  kill(victim: Player, killer: Player, how: Weapon = killer.gun, fx = killer.x, fy = killer.y): void {
     victim.alive = false
     victim.health = 0
     victim.deaths++
     victim.respawnAt = this.time + RESPAWN_SECONDS
-    killer.kills++
-    const d = Math.hypot(victim.x - killer.x, victim.y - killer.y) || 1
-    this.events.push({ k: "kill", killer: killer.id, victim: victim.id, dx: (victim.x - killer.x) / d, dy: (victim.y - killer.y) / d })
+    if (killer !== victim) killer.kills++
+    const d = Math.hypot(victim.x - fx, victim.y - fy) || 1
+    this.events.push({ k: "kill", killer: killer.id, victim: victim.id, dx: (victim.x - fx) / d, dy: (victim.y - fy) / d, how })
   }
 
   private endMatch(): void {
     this.phase = "end"
     this.phaseEnd = this.time + END_SECONDS
+    this.grenades = []
+    this.claymores = []
     const ranked = [...this.players.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
     this.events.push({ k: "end", winner: ranked[0]?.id ?? "" })
   }

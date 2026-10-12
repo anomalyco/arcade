@@ -46,6 +46,28 @@ export const GUNS: Record<Gun, GunSpec> = {
   sniper: { label: "Sniper", blurb: "One shot, one kill.", cooldown: 1.2, auto: false, damage: 100, pellets: 1, spread: 0, mag: 5, reload: 2.6, range: 45, kick: 1.3 },
 }
 export const GUN_IDS = Object.keys(GUNS) as Gun[]
+
+/** Equipment: one piece per life, either a frag or a claymore, picked like the gun for your next life. */
+export type Equip = "frag" | "claymore"
+export const EQUIPS: Record<Equip, { label: string; count: number }> = {
+  frag: { label: "Frag", count: 1 },
+  claymore: { label: "Claymore", count: 1 },
+}
+export const EQUIP_IDS = Object.keys(EQUIPS) as Equip[]
+/** What a kill is credited to, for the feed. */
+export type Weapon = Gun | Equip
+/** No shots for this long after throwing or planting. */
+export const EQUIP_LOCK = 0.45
+
+/** Frag: thrown toward the cursor, bounces, then blows after the fuse. Lethal inside `kill`, falling off to `radius`. */
+export const FRAG = { fuse: 2, minThrow: 2, maxThrow: 12, release: 1.5, size: 0.09, gravity: 16, radius: 4.5, kill: 2, edge: 10 }
+
+/**
+ * Claymore: planted facing your aim, arms after `arm`, trips when someone else enters the cone within `range` with a
+ * clear line, then blows after `delay`, lethal in a wider cone out to `blast` and a little all around. A bullet within
+ * `shot` sets it off.
+ */
+export const CLAYMORE = { arm: 1, range: 3, cone: (35 * Math.PI) / 180, delay: 0.25, blast: 3.6, blastCone: (45 * Math.PI) / 180, near: 1.2, shot: 0.25 }
 /** Health comes back after this long without taking damage. */
 export const REGEN_DELAY = 4
 export const REGEN_RATE = 40

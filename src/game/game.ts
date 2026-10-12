@@ -1,6 +1,7 @@
-import { DT, GUNS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE, type Gun } from "../../shared/config"
+import { CLAYMORE, DT, EQUIP_LOCK, FRAG, GUNS, SPEED, SPRINT_SPEED, SPRINT_TO_FIRE, type Equip, type Gun, type Weapon } from "../../shared/config"
 import { type Rect, raycast } from "../../shared/geom"
 import { type MapDef, getMap } from "../../shared/maps"
+import { type Grenade, type Obstacles, obstaclesOf, stepGrenade } from "../../shared/sim/gear"
 import { stepBody, type Body } from "../../shared/sim/move"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import { type Intent, type SimEvent, sprints } from "../../shared/sim/world"
@@ -8,13 +9,15 @@ import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
 import { buildLevel } from "../render/level-mesh"
 import { type Caster, type DynLight, LightCuller } from "../render/lighting"
+import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
-import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose } from "./anim"
-import { type Corpse, type Debris, deathStyle, emitRagdoll, ragdoll, ragdollCentre, stepDebris, stepRagdoll } from "./ragdoll"
+import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, useGear } from "./anim"
+import { type Corpse, type DeathStyle, type Debris, deathStyle, emitRagdoll, ragdoll, ragdollCentre, stepDebris, stepRagdoll } from "./ragdoll"
 import { type Batch, type FrameInput, INST_FLOATS, type Renderer, SPRITE_FLOATS } from "../render/renderer"
 import { FRAME_FLOATS } from "../render/shaders"
 import type { Input } from "./input"
 import type { Session } from "./session"
+import { Smoothed } from "./smooth"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -35,7 +38,7 @@ export const css = (c: Rgb3) => `rgb(${c.map((v) => Math.round(Math.min(1, v) * 
 
 type Tracer = { x0: number; y0: number; z0: number; x1: number; y1: number; t0: number; life: number; w: number; gun: Gun }
 type FlashFx = { x: number; y: number; z: number; aim: number; gun: Gun; t0: number; seed: number }
-type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; t0: number; life: number; size: number; kind: "spark" | "dust" | "blood" | "splat" | "smoke" | "chip"; bounced: boolean }
+type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; t0: number; life: number; size: number; kind: "spark" | "dust" | "blood" | "splat" | "smoke" | "chip" | "fire" | "soot"; bounced: boolean }
 type Flash = { x: number; y: number; t0: number; life: number; power: number }
 /** Rifle and shotgun tracers fly at this speed (m/s) as a streak this long. */
 const TRACER_SPEED = 240
@@ -47,7 +50,12 @@ const CAM_RECOIL: Record<Gun, { kick: number; shake: number; punch: number; roll
   shotgun: { kick: 8, shake: 0.5, punch: 1.2, roll: 0.016 },
   sniper: { kick: 10, shake: 0.6, punch: 1.6, roll: 0.02 },
 }
-export type FeedLine = { killer: string; victim: string; kc: Rgb3; vc: Rgb3; gun: Gun; t: number; mine: boolean }
+export type FeedLine = { killer: string; victim: string; kc: Rgb3; vc: Rgb3; how: Weapon; t: number; mine: boolean }
+/** A frag as drawn: simulated locally from the throw (corrected by snapshots), `at` on the client clock. */
+type FragFx = Grenade & { spin: number; yaw: number }
+type Boom = { x: number; y: number; t0: number; kind: Equip; aim: number }
+/** Blasts throw bodies hard, up and away. */
+const blastStyle = (): DeathStyle => ({ push: 7 + Math.random() * 2, lift: 2.6 + Math.random(), spin: (Math.random() - 0.5) * 3, buckle: 0.2 })
 
 /**
  * The match as this client sees it: predicted own body and own gunfire, smoothed and animated soldiers, effects,
@@ -57,7 +65,10 @@ export class Game {
   map: MapDef
   blockers: Rect[] = []
   solids: Rect[] = []
+  obstacles: Obstacles = { rects: [], h: [] }
   body: Body | null = null
+  /** The predicted body as drawn, smooth between ticks and corrections; the camera follows this. */
+  readonly drawn = new Smoothed()
   aim = 0
   cursor = { x: 0, y: 0 }
   snap: Snapshot | null = null
@@ -75,6 +86,16 @@ export class Game {
   // Local weapon prediction.
   gun: Gun = "rifle"
   mag = 0
+  equip: Equip = "frag"
+  equipLeft = 0
+  /** The cursor on the floor, for the throw distance. */
+  ground = { x: 0, y: 0 }
+  private lastEquip = -10
+  private grenades = new Map<number, FragFx>()
+  /** When each tripped claymore beeped. */
+  private trips = new Map<number, number>()
+  private booms: Boom[] = []
+  private scorches: { x: number; y: number; t0: number; r: number; rot: number }[] = []
   reloadUntil = 0
   private cooldownUntil = 0
   private readyAt = 0
@@ -97,6 +118,7 @@ export class Game {
   private hitSoundAt = -1
   private soundAt = new Map<string, number>()
   private models: PartModels
+  private gear: { frag: number; claymore: number; led: number }
   private frame = new Float32Array(FRAME_FLOATS)
   private culler = new LightCuller()
   private inst = new Float32Array(2048 * INST_FLOATS)
@@ -128,6 +150,8 @@ export class Game {
       casing: regGuns(p.casing),
       hole: reg(p.hole),
     }
+    const gm = gearModels()
+    this.gear = { frag: reg(gm.frag), claymore: reg(gm.claymore), led: reg(gm.led) }
     this.map = getMap(1)
     this.load(this.map)
   }
@@ -136,6 +160,7 @@ export class Game {
     this.map = map
     this.blockers = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass]
     this.solids = [...this.blockers, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
+    this.obstacles = obstaclesOf(map)
     this.renderer.setLevel(buildLevel(map))
     this.culler.setMap(map)
     this.corpses = []
@@ -143,6 +168,10 @@ export class Game {
     this.particles = []
     this.body = null
     this.pending = []
+    this.grenades.clear()
+    this.trips.clear()
+    this.booms = []
+    this.scorches = []
   }
 
   get myId(): string {
@@ -198,10 +227,24 @@ export class Game {
       for (const id of [...this.avatars.keys()]) if (!s.players.some((p) => p.id === id)) this.avatars.delete(id)
       const mine = s.players.find((p) => p.id === this.myId)
       if (mine) this.reconcile(s, mine)
+      this.syncGrenades(s)
       this.snap = s
     }
     this.roster = this.session.roster()
     for (const e of this.session.drainEvents()) this.event(e)
+  }
+
+  /** Adopts frags we missed the throw of, corrects drift, and drops ones the server no longer has. */
+  private syncGrenades(s: Snapshot): void {
+    const live = new Set<number>()
+    for (const g of s.grenades) {
+      live.add(g.id)
+      const f = this.grenades.get(g.id)
+      if (!f) this.grenades.set(g.id, { ...g, at: this.now + g.fuse, spin: 0, yaw: Math.random() * 6.28 })
+      else if (Math.hypot(f.x - g.x, f.y - g.y, f.z - g.z) > 0.5) Object.assign(f, { x: g.x, y: g.y, z: g.z, vx: g.vx, vy: g.vy, vz: g.vz })
+    }
+    for (const [id, f] of this.grenades) if (!live.has(id) && f.at - this.now < FRAG.fuse - 0.3) this.grenades.delete(id)
+    for (const id of this.trips.keys()) if (!s.claymores.some((c) => c.id === id)) this.trips.delete(id)
   }
 
   private reconcile(s: Snapshot, mine: Snapshot["players"][number]): void {
@@ -211,29 +254,40 @@ export class Game {
       this.mag = GUNS[mine.gun].mag
       this.reloadUntil = 0
       this.readyAt = 0
-      this.body = { x: mine.x, y: mine.y, vx: 0, vy: 0 }
+      if (you) {
+        this.equip = you.equip
+        this.equipLeft = you.equipLeft
+      }
+      this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0 })
       this.pending = []
       this.corpses = this.corpses.filter((c) => c.id !== this.myId)
     }
     this.wasAlive = mine.alive
     if (!mine.alive) {
-      this.body = { x: mine.x, y: mine.y, vx: 0, vy: 0 }
+      this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0 })
       return
     }
     this.pending = this.pending.filter((p) => p.seq > s.ack)
     const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
     for (const p of this.pending) stepBody(b, p.i.mx, p.i.my, sprints(p.i) ? SPRINT_SPEED : SPEED, this.solids, DT)
-    // Small corrections blend in; big ones snap.
+    // Adopt the replayed state exactly; a small correction is smoothed out of the drawn position, a big one snaps.
     if (this.body && Math.hypot(b.x - this.body.x, b.y - this.body.y) < 1.5) {
-      this.body.x += (b.x - this.body.x) * 0.35
-      this.body.y += (b.y - this.body.y) * 0.35
-      this.body.vx = b.vx
-      this.body.vy = b.vy
-    } else this.body = b
+      this.drawn.correct(b.x - this.body.x, b.y - this.body.y)
+      Object.assign(this.body, b)
+    } else this.place(b)
     if (you) {
       if (you.reloading > 0 && this.reloadUntil <= this.now) this.reloadUntil = this.now + you.reloading
       if (this.now - this.lastLocalShot > 0.6 && this.reloadUntil <= this.now) this.mag = you.mag
+      if (this.now - this.lastEquip > 0.6) {
+        this.equip = you.equip
+        this.equipLeft = you.equipLeft
+      }
     }
+  }
+
+  private place(b: Body): void {
+    this.body = b
+    this.drawn.reset(b)
   }
 
   private event(e: SimEvent): void {
@@ -286,14 +340,14 @@ export class Game {
       case "kill": {
         const mine = e.victim === this.myId
         const v = mine ? this.avatarMe : this.avatars.get(e.victim)
-        const killerGun = e.killer === this.myId ? this.gun : (this.avatars.get(e.killer)?.gun ?? "rifle")
+        const blast = e.how === "frag" || e.how === "claymore"
         if (v?.body) {
           this.corpses = this.corpses.filter((c) => c.id !== e.victim)
-          this.corpses.push({ id: e.victim, gun: v.gun, t0: t, rd: ragdoll(v.body, v.gun, v.svx, v.svy, e.dx, e.dy, deathStyle(killerGun), this.solids) })
+          this.corpses.push({ id: e.victim, gun: v.gun, t0: t, rd: ragdoll(v.body, v.gun, v.svx, v.svy, e.dx, e.dy, blast ? blastStyle() : deathStyle(e.how as Gun), this.solids) })
           v.body = null
           this.blood(v.x, v.y, Math.atan2(e.dy, e.dx), 2)
         }
-        this.feed.unshift({ killer: this.nameOf(e.killer), victim: this.nameOf(e.victim), kc: this.colorOf(e.killer), vc: this.colorOf(e.victim), gun: killerGun, t, mine: e.killer === this.myId || mine })
+        this.feed.unshift({ killer: this.nameOf(e.killer), victim: this.nameOf(e.victim), kc: this.colorOf(e.killer), vc: this.colorOf(e.victim), how: e.how, t, mine: e.killer === this.myId || mine })
         this.feed.length = Math.min(this.feed.length, 5)
         if (e.killer === this.myId) {
           this.killAt = t
@@ -317,9 +371,89 @@ export class Game {
         }
         return
       }
+      case "throw": {
+        this.grenades.set(e.id, { id: e.id, by: e.by, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, at: t + e.fuse, spin: 0, yaw: Math.random() * 6.28 })
+        if (e.by === this.myId) return
+        const a = this.avatars.get(e.by)
+        if (a) useGear(a, t, false)
+        if (me) this.sound.toss(e.x - me.x, e.y - me.y, false)
+        return
+      }
+      case "plant": {
+        const a = e.by === this.myId ? null : this.avatars.get(e.by)
+        if (a) useGear(a, t, true)
+        if (me && e.by !== this.myId) this.sound.plant(e.x - me.x, e.y - me.y)
+        return
+      }
+      case "bounce":
+        if (me && Math.hypot(e.x - me.x, e.y - me.y) < 18) this.sound.bounce(e.x - me.x, e.y - me.y, e.v)
+        return
+      case "beep":
+        this.trips.set(e.id, t)
+        if (me) this.sound.beep(e.x - me.x, e.y - me.y)
+        return
+      case "explode":
+        this.explode(e)
+        return
       case "end":
         return
     }
+  }
+
+  /** A frag or claymore going off: flash, fireball, fragments, smoke, a scorch mark, the shake and the bang. */
+  private explode(e: Extract<SimEvent, { k: "explode" }>): void {
+    const t = this.now
+    const clay = e.kind === "claymore"
+    const f = this.grenades.get(e.id)
+    this.grenades.delete(e.id)
+    this.trips.delete(e.id)
+    const x = e.x
+    const y = e.y
+    const z0 = clay ? 0.15 : (f?.z ?? FRAG.size)
+    this.booms.push({ x, y, t0: t, kind: e.kind, aim: e.aim })
+    this.scorches.push({ x: x + (clay ? Math.cos(e.aim) * 0.4 : 0), y: y + (clay ? Math.sin(e.aim) * 0.4 : 0), t0: t, r: clay ? 1.1 : 1.6, rot: Math.random() * 6.28 })
+    if (this.scorches.length > 24) this.scorches.shift()
+    const R = Math.random
+    const dir = (spread: number) => (clay ? e.aim + (R() - 0.5) * 2 * spread : R() * Math.PI * 2)
+    for (let i = 0; i < 18; i++) {
+      const a = dir(0.55)
+      const s = clay ? 3 + R() * 8 : 1.5 + R() * 5
+      this.fx(x, y, z0 + 0.2 + R() * 0.5, Math.cos(a) * s, Math.sin(a) * s, 1 + R() * 3, 0.3 + R() * 0.35, 0.3 + R() * 0.35, "fire")
+    }
+    for (let i = 0; i < 60; i++) {
+      const a = dir(0.8)
+      const s = 7 + R() * 16
+      this.fx(x, y, z0 + 0.2, Math.cos(a) * s, Math.sin(a) * s, R() * 6, 0.2 + R() * 0.4, 0.035, "spark")
+    }
+    for (let i = 0; i < 22; i++) {
+      const a = dir(0.9)
+      const s = 0.6 + R() * (clay ? 3.5 : 2.6)
+      this.fx(x + Math.cos(a) * 0.3, y + Math.sin(a) * 0.3, 0.3 + R() * 0.8, Math.cos(a) * s, Math.sin(a) * s, 0.5 + R() * 0.8, 2.4 + R() * 1.8, 0.32 + R() * 0.3, "soot")
+    }
+    for (let i = 0; i < 16; i++) {
+      const a = dir(0.9)
+      const s = 2 + R() * 6
+      this.fx(x, y, z0 + 0.1, Math.cos(a) * s, Math.sin(a) * s, 2 + R() * 4, 0.9 + R() * 0.6, 0.03 + R() * 0.03, "chip")
+    }
+    if (clay) {
+      // The ball bearings: a fan of streaks out to the walls.
+      for (let i = 0; i < 16; i++) {
+        const a = e.aim + (R() - 0.5) * 2 * CLAYMORE.blastCone
+        const len = Math.min(raycast(x, y, Math.cos(a), Math.sin(a), this.blockers, CLAYMORE.blast + 2), CLAYMORE.blast + 2) * (0.7 + R() * 0.3)
+        this.tracer(x, y, 0.15, x + Math.cos(a) * len, y + Math.sin(a) * len, "shotgun")
+      }
+    }
+    const me = this.body
+    if (!me) return
+    const dx = x - me.x
+    const dy = y - me.y
+    const d = Math.hypot(dx, dy)
+    const k = Math.max(0, 1 - d / 22)
+    this.cam?.bump(Math.min(1, 1.5 * k))
+    if (d > 0.01) this.cam?.kick(-dx / d, -dy / d, 9 * k * k)
+    this.cam?.punch(3 * k * k, (R() < 0.5 ? -1 : 1) * 0.035 * k)
+    if (this.alive && d < FRAG.radius + 1.5) this.hurt = Math.min(1, this.hurt + 0.6 * (1 - d / (FRAG.radius + 1.5)))
+    this.sound.explode(dx, dy, e.kind)
   }
 
   // Input, prediction, local gunfire ----------------------------------------------------------------------------
@@ -333,7 +467,8 @@ export class Game {
     this.ingest()
     const c = cam.unproject(input.mouse.x, input.mouse.y, w, h, SHOULDER - 0.2)
     this.cursor = c
-    const origin = this.body ?? { x: this.map.size[0] / 2, y: this.map.size[1] / 2 }
+    this.ground = cam.unproject(input.mouse.x, input.mouse.y, w, h, 0)
+    const origin = this.body ? this.drawn : { x: this.map.size[0] / 2, y: this.map.size[1] / 2 }
     // Keep the last aim while the cursor sits right on top of you so it doesn't jitter.
     if (Math.hypot(c.x - origin.x, c.y - origin.y) > 0.6) this.aim = Math.atan2(c.y - origin.y, c.x - origin.x)
     this.acc = Math.min(this.acc + dt, DT * 5)
@@ -344,7 +479,8 @@ export class Game {
       const mv = live ? input.move() : { mx: 0, my: 0 }
       const reload = input.takeReload()
       const fire = live && input.enabled && input.firing
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting }
+      const equip = live && input.takeEquip()
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y }
       const seq = ++this.seq
       this.session.send({ type: "intent", seq, i })
       if (!live || !this.body) {
@@ -354,11 +490,25 @@ export class Game {
       this.pending.push({ seq, i })
       if (this.pending.length > 90) this.pending.shift()
       const sprint = sprints(i)
+      this.drawn.tick(this.body)
       stepBody(this.body, i.mx, i.my, sprint ? SPRINT_SPEED : SPEED, this.solids, DT)
+      if (equip && this.equipLeft > 0) this.localEquip()
       this.localGun(fire, reload, sprint)
     }
+    if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
     this.bloom = Math.max(0, this.bloom - dt * 2.6)
     this.hurt = Math.max(0, this.hurt - dt * 0.9)
+  }
+
+  /** Your own throw or plant animates and sounds at once; the frag itself arrives with the server's throw event. */
+  private localEquip(): void {
+    const t = this.now
+    this.equipLeft--
+    this.lastEquip = t
+    this.cooldownUntil = Math.max(this.cooldownUntil, t + EQUIP_LOCK)
+    useGear(this.avatarMe, t, this.equip === "claymore")
+    if (this.equip === "claymore") this.sound.plant(0, 0)
+    else this.sound.toss(0, 0, true)
   }
 
   /** Mirrors the server's trigger rules so your own shots fire on the frame you click. */
@@ -523,6 +673,81 @@ export class Game {
 
   // Frame assembly ----------------------------------------------------------------------------------------------
 
+  /** Frags tumbling through the air and claymores on their legs, with the claymores' status lights. */
+  private gearParts(parts: Map<number, number[]>, t: number, dt: number): void {
+    const put = (model: number, x: number, y: number, z: number, yaw: number, tint: readonly number[], pitch: number, roll: number, scale: number) => {
+      let arr = parts.get(model)
+      if (!arr) parts.set(model, (arr = []))
+      arr.push(x, y, z, yaw, tint[0]!, tint[1]!, tint[2]!, scale, pitch, roll, 1, 0)
+    }
+    for (const g of this.grenades.values()) {
+      if (t > g.at + 0.3) {
+        this.grenades.delete(g.id)
+        continue
+      }
+      stepGrenade(g, this.obstacles, Math.min(dt, 0.05))
+      const sp = Math.hypot(g.vx, g.vy)
+      g.spin += sp * dt * (g.z > FRAG.size + 0.01 ? 9 : 14)
+      put(this.gear.frag, g.x, g.z, g.y, g.yaw, [1, 1, 1], g.spin, g.spin * 0.37, 1.35)
+    }
+    for (const c of this.snap?.claymores ?? []) {
+      put(this.gear.claymore, c.x, 0, c.y, c.aim, glow(this.colorOf(c.by), 1.2), 0, 0, 1.35)
+      put(this.gear.led, c.x - Math.cos(c.aim) * 0.03, 0.235 * 1.35, c.y - Math.sin(c.aim) * 0.03, c.aim, this.ledColor(c, t), 0, 0, 1.35)
+    }
+  }
+
+  /** Claymore light: amber while arming, a slow red blink when armed, a frantic one once tripped. */
+  private ledColor(c: Snapshot["claymores"][number], t: number): [number, number, number] {
+    if (c.tripped || this.trips.has(c.id)) return Math.sin(t * 60) > 0 ? [8, 0.5, 0.3] : [1, 0.05, 0.03]
+    if (!c.armed) return [2.5, 1.1, 0.1]
+    return (t + c.id * 0.37) % 1 < 0.18 ? [6, 0.3, 0.2] : [0.6, 0.03, 0.02]
+  }
+
+  /** Frag danger rings, claymore laser cones, blast flashes and shock rings, and the scorch marks they leave. */
+  private gearSprites(t: number): void {
+    this.scorches = this.scorches.filter((s) => t - s.t0 < 25)
+    for (const s of this.scorches) {
+      const age = t - s.t0
+      const fade = Math.min(1, (25 - age) / 5)
+      this.sprite(false, s.x, 0.009, s.y, s.r, 0.02, 0.018, 0.016, 0.8 * fade, 6)
+      this.sprite(false, s.x, 0.01, s.y, s.r * 0.65, 0.01, 0.009, 0.008, 0.6 * fade, 3, s.rot, 0.5, s.rot)
+      if (age < 2.5) this.sprite(true, s.x, 0.02, s.y, s.r * 0.6, 1.4, 0.35, 0.06, (1 - age / 2.5) ** 2 * 0.8, 0)
+    }
+    for (const g of this.grenades.values()) {
+      const left = g.at - t
+      const rate = left < 0.6 ? 14 : left < 1.2 ? 8 : 4
+      const on = Math.sin(t * rate * Math.PI) > 0
+      this.sprite(true, g.x, g.z + 0.08, g.y, on ? 0.22 : 0.1, 1.5, 0.12, 0.05, on ? 1 : 0.5, 0)
+      if (g.z < 0.4) this.sprite(true, g.x, 0.03, g.y, FRAG.kill, 1, 0.12, 0.06, 0.35 + (on ? 0.25 : 0), 5, t * 0.8, 0.04)
+    }
+    for (const c of this.snap?.claymores ?? []) {
+      const lx = c.x - Math.cos(c.aim) * 0.03
+      const ly = c.y - Math.sin(c.aim) * 0.03
+      const led = this.ledColor(c, t)
+      this.sprite(true, lx, 0.33, ly, 0.14 + led[0] * 0.02, led[0] * 0.25, led[1] * 0.25, led[2] * 0.25, 1, 0)
+      if (!c.armed) continue
+      const tripped = c.tripped || this.trips.has(c.id)
+      this.sprite(true, c.x, 0.04, c.y, CLAYMORE.range, 1, 0.08, 0.06, tripped ? 1 : 0.55, 8, c.aim, 1, CLAYMORE.cone)
+    }
+    for (const b of this.booms) {
+      const age = t - b.t0
+      const clay = b.kind === "claymore"
+      const ca = Math.cos(b.aim)
+      const sa = Math.sin(b.aim)
+      if (age < 0.09) {
+        const k = 1 - age / 0.09
+        const off = clay ? 0.6 : 0
+        this.sprite(true, b.x + ca * off, 0.6, b.y + sa * off, (clay ? 1.2 : 1.5) * (0.7 + k * 0.5), 2.2, 1.7, 1.1, k, 0)
+      }
+      if (age < 0.35) {
+        const u = age / 0.35
+        if (clay) this.sprite(true, b.x, 0.05, b.y, CLAYMORE.blast * (0.4 + u * 0.8), 2, 0.9, 0.4, (1 - u) ** 2, 8, b.aim, 1, CLAYMORE.blastCone)
+        else this.sprite(true, b.x, 0.05, b.y, 0.4 + Math.sqrt(u) * FRAG.radius, 1.2, 0.8, 0.5, (1 - u) ** 2 * 0.45, 2, 0, 0.05)
+      }
+      if (age < 0.6) this.sprite(true, b.x, 0.03, b.y, clay ? 1.5 : 2, 1.2, 0.4, 0.1, (1 - age / 0.6) ** 2 * 0.7, 6)
+    }
+  }
+
   private sprite(add: boolean, x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot = 0, stretch = 0, extra = 0): void {
     const buf = add ? this.add : this.alpha
     const n = add ? this.nAdd : this.nAlpha
@@ -544,9 +769,17 @@ export class Game {
     const view = cam.groundRect()
     this.flashes = this.flashes.filter((f) => t - f.t0 < f.life)
     const dyn: DynLight[] = this.flashes.map((f) => ({ x: f.x, y: f.y, h: 1.2, r: 7, color: [1, 0.72, 0.38], power: f.power * (1 - (t - f.t0) / f.life), size: 0.05 }))
+    // Blasts: a blinding flash, then the fireball's glow dying away.
+    this.booms = this.booms.filter((b) => t - b.t0 < 1.2)
+    for (const b of this.booms) {
+      const age = t - b.t0
+      const off = b.kind === "claymore" ? 0.9 : 0
+      const flash = Math.max(0, 1 - age / 0.16)
+      dyn.push({ x: b.x + Math.cos(b.aim) * off, y: b.y + Math.sin(b.aim) * off, h: 1.1, r: 6 + 3 * flash, color: [1, 0.62 + 0.25 * flash, 0.3 + 0.4 * flash], power: 4 * flash * flash + 0.9 * Math.exp(-age * 4), size: 0.25 })
+    }
     const casters: Caster[] = []
     for (const a of this.avatars.values()) if (a.alive) casters.push({ x: a.x, y: a.y })
-    if (this.alive && this.body) casters.push({ x: this.body.x, y: this.body.y })
+    if (this.alive && this.body) casters.push({ x: this.drawn.x, y: this.drawn.y })
     this.culler.update(view, t, dyn, casters)
     const nl = this.culler.lightCount
 
@@ -581,11 +814,12 @@ export class Game {
       a.alive = true
       a.reloadAt = this.reloadUntil > 0 ? this.reloadUntil - GUNS[this.gun].reload : -10
       a.reloadFor = GUNS[this.gun].reload
-      this.cues(a, animate(a, adt, t, me.x, me.y, me.vx, me.vy, this.aim), true)
+      const d = this.drawn
+      this.cues(a, animate(a, adt, t, d.x, d.y, me.vx, me.vy, this.aim), true)
       const col = this.colorOf(this.myId)
       pose(push, a, col, this.models)
       const gc = glow(col, 0.9)
-      this.sprite(true, me.x, 0.03, me.y, 0.48, gc[0], gc[1], gc[2], 1, 2, 0, 0.14)
+      this.sprite(true, d.x, 0.03, d.y, 0.48, gc[0], gc[1], gc[2], 1, 2, 0, 0.14)
     }
 
     // Casings and magazines on the floor.
@@ -595,6 +829,8 @@ export class Game {
       const sink = Math.max(0, t - d.t0 - (d.life - 0.5)) * 0.12
       push(d.model, d.p[0], d.p[1] - sink, d.p[2], d.yaw, [1, 1, 1], d.pitch, d.roll, 0)
     }
+
+    this.gearParts(parts, t, dt)
 
     let n = 0
     const batches: Batch[] = []
@@ -695,15 +931,17 @@ export class Game {
       }
     }
 
+    this.gearSprites(t)
+
     this.particles = this.particles.filter((p) => t - p.t0 < p.life)
     for (const p of this.particles) {
       const age = t - p.t0
       const a = 1 - age / p.life
-      if (p.kind === "dust" || p.kind === "smoke") {
-        const drag = Math.exp(-adt * 3)
+      if (p.kind === "dust" || p.kind === "smoke" || p.kind === "fire" || p.kind === "soot") {
+        const drag = Math.exp(-adt * (p.kind === "fire" ? 7 : p.kind === "soot" ? 2.2 : 3))
         p.vx *= drag
         p.vy *= drag
-        p.vz = p.vz * drag + adt * 0.25
+        p.vz = p.vz * drag + adt * (p.kind === "dust" || p.kind === "smoke" ? 0.25 : 0.6)
       } else if (p.kind !== "splat") p.vz -= 9.8 * adt
       p.x += p.vx * adt
       p.y += p.vy * adt
@@ -729,6 +967,11 @@ export class Game {
       if (p.kind === "spark") this.sprite(true, p.x, p.z, p.y, p.size * (p.life < 0.1 ? 1 : 1 + a), 1, 0.72, 0.3, a, 0)
       else if (p.kind === "dust") this.sprite(false, p.x, p.z, p.y, p.size * (1.2 + age * 3), 0.5, 0.48, 0.46, a * a * 0.5, 0)
       else if (p.kind === "smoke") this.sprite(false, p.x, p.z, p.y, p.size * (1.5 + age * 4), 0.55, 0.55, 0.58, a * a * 0.25, 0)
+      else if (p.kind === "fire") {
+        const u = age / p.life
+        const g = u < 0.1 ? 0.85 : Math.max(0.1, 0.62 - u * 0.7)
+        this.sprite(true, p.x, p.z, p.y, p.size * (0.8 + u * 1.4), 1.7, g, u < 0.1 ? 0.45 : 0.06, (1 - u) ** 2 * 0.9, 0)
+      } else if (p.kind === "soot") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 0.9), 0.13, 0.125, 0.12, Math.min(1, age * 6) * a * a * 0.75, 1, 0, 0, p.size * 40)
       else if (p.kind === "chip") this.sprite(false, p.x, p.z, p.y, p.size, 0.25, 0.26, 0.3, Math.min(1, a * 4), 6)
       else if (p.kind === "splat") this.sprite(false, p.x, p.z, p.y, p.size, 0.08, 0.0, 0.005, Math.min(1, a * 3) * 0.9, 6)
       else this.sprite(false, p.x, p.z, p.y, p.size * 1.6, 0.16, 0.0, 0.008, 1, 0)
@@ -740,8 +983,8 @@ export class Game {
     F.set(vp, 0)
     F.set([cam.eye[0], cam.eye[1], cam.eye[2], t], 16)
     F.set([this.renderer.width, this.renderer.height, nl, this.map.lights.length], 20)
-    const focus = me ? cam.project(me.x, 0.9, me.y, w, h) : { x: 0, y: 0 }
-    F.set([me?.x ?? 0, me?.y ?? 0, me ? 1 : 0, 0.24], 24)
+    const focus = me ? cam.project(this.drawn.x, 0.9, this.drawn.y, w, h) : { x: 0, y: 0 }
+    F.set([me ? this.drawn.x : 0, me ? this.drawn.y : 0, me ? 1 : 0, 0.24], 24)
     F.set([0.085, 0.1, 0.16, 1.0], 28)
     F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, 0], 32)
     F.set([0, 1, 0, 0], 36)

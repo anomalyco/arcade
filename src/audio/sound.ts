@@ -273,4 +273,70 @@ export class Sound {
     this.burst(dest, t, "lowpass", 380 * v, 1, 0.8, 0.003, 0.05)
     this.burst(dest, t + 0.015, "bandpass", 1300 * v, 1.2, 0.3 * loud + 0.05, 0.006, 0.06)
   }
+
+  /** A frag thrown: the spoon flicking off and a whoosh. */
+  toss(dx: number, dy: number, mine: boolean): void {
+    const dest = this.out(dx, dy, mine ? 0.5 : 0.6, 0.1)
+    if (!dest) return
+    const t = this.ctx!.currentTime
+    this.tone(dest, t, 3200, 2600, 0.18, 0.04, "triangle")
+    this.burst(dest, t + 0.02, "bandpass", 3600, 6, 0.4, 0.001, 0.03)
+    this.burst(dest, t + 0.03, "bandpass", 700, 1.4, 0.55, 0.05, 0.16, 2.4)
+  }
+
+  /** A claymore set down: legs snapping open and the case on the floor. */
+  plant(dx: number, dy: number): void {
+    const dest = this.out(dx, dy, 0.55, 0.1)
+    if (!dest) return
+    const t = this.ctx!.currentTime
+    this.burst(dest, t, "bandpass", 2400, 6, 0.6, 0.001, 0.025)
+    this.burst(dest, t + 0.07, "bandpass", 2900, 6, 0.6, 0.001, 0.025)
+    this.tone(dest, t + 0.12, 190, 90, 0.6, 0.07)
+    this.burst(dest, t + 0.12, "lowpass", 900, 1, 0.4, 0.002, 0.06)
+    this.tone(dest, t + 0.3, 1900, 1900, 0.12, 0.05, "square")
+  }
+
+  /** A frag clinking off a wall or the floor; `v` is the impact speed. */
+  bounce(dx: number, dy: number, v: number): void {
+    const dest = this.out(dx, dy, Math.min(0.6, 0.12 + v * 0.05), 0.12)
+    if (!dest) return
+    const t = this.ctx!.currentTime
+    const f = 1500 + Math.random() * 500
+    this.tone(dest, t, f, f * 0.97, 0.35, 0.08, "triangle")
+    this.tone(dest, t, f * 1.63, f * 1.6, 0.18, 0.05, "triangle")
+    this.tone(dest, t, 220, 110, 0.5, 0.06)
+    this.burst(dest, t, "bandpass", 2600, 2, 0.3, 0.001, 0.03)
+  }
+
+  /** A tripped claymore's double beep. */
+  beep(dx: number, dy: number): void {
+    const dest = this.out(dx, dy, 0.6, 0.05)
+    if (!dest) return
+    const t = this.ctx!.currentTime
+    this.tone(dest, t, 2600, 2600, 0.35, 0.06, "square", 0.002)
+    this.tone(dest, t + 0.11, 2600, 2600, 0.35, 0.06, "square", 0.002)
+  }
+
+  /**
+   * An explosion: a crack, a body of falling noise, a pitched thump and a long sub-bass drop, a rumbling tail into the
+   * room and debris pattering down after. Carries much further than a gunshot.
+   */
+  explode(dx: number, dy: number, kind: "frag" | "claymore"): void {
+    const d = Math.hypot(dx, dy)
+    const dest = this.out(dx * 0.6, dy * 0.6, 1.9, 0.5)
+    if (!dest) return
+    const t = this.ctx!.currentTime
+    const near = Math.max(0, 1 - d / 25)
+    const v = 0.9 + Math.random() * 0.2
+    this.burst(dest, t, "highpass", 2400 * v, 0.7, kind === "claymore" ? 1.6 : 1.1, 0.001, 0.03)
+    this.burst(dest, t, "lowpass", 4200 * v, 0.6, 1.8, 0.002, 0.45, 0.1)
+    this.tone(dest, t, 110 * v, 32, 2, 0.45, "sine", 0.002)
+    this.tone(dest, t, 52, 18, 1.8 * (0.5 + near), 1.3, "sine", 0.006)
+    this.burst(dest, t + 0.03, "lowpass", 520, 0.7, 1.1, 0.05, 2.4, 0.35)
+    this.burst(dest, t + 0.08, "bandpass", 260, 1, 0.6, 0.1, 1.6, 0.6)
+    for (let i = 0; i < 7; i++) {
+      const at = 0.25 + Math.random() * 0.9
+      this.burst(dest, t + at, "bandpass", 2400 + Math.random() * 2600, 4, 0.08 + Math.random() * 0.12, 0.001, 0.03)
+    }
+  }
 }
