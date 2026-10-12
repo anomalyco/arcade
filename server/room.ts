@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers"
 import { MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ } from "../shared/config"
+import { BUILD } from "../shared/build.gen"
 import { type ClientMsg, decodeClient, encodeServer } from "../shared/protocol"
 import { seedOf } from "../shared/rng"
 import { hostRestart, moveTeam, shuffleTeams } from "../shared/sim/host"
@@ -82,6 +83,12 @@ export class RoomCore {
 
   private hello(conn: Conn, msg: Extract<ClientMsg, { type: "hello" }>): void {
     if (this.conns.has(conn)) return
+    // A client built from different shared code (protocol, simulation) must reload before it can play here.
+    if (msg.build !== BUILD) {
+      conn.send(encodeServer(msg.build ? { type: "reload" } : { type: "error", message: "A new version of BLACKOUT is out. Reload the page." }))
+      conn.close(4003, "stale client")
+      return
+    }
     const w = this.world
     let id = msg.id && this.gone.has(msg.id) && w.players.has(msg.id) ? msg.id : undefined
     if (id) this.gone.delete(id)

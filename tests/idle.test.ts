@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
+import { BUILD } from "../shared/build.gen"
 import { NO_INTENT } from "../shared/sim/world"
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {} }))
@@ -10,7 +11,7 @@ function setup() {
   const sent: string[] = []
   let closed = 0
   const conn = { send: (d: string) => sent.push(d), close: () => closed++ }
-  core.message(conn, JSON.stringify({ type: "hello", name: "afk", gun: "rifle" }))
+  core.message(conn, JSON.stringify({ type: "hello", name: "afk", gun: "rifle", build: BUILD }))
   const id = (JSON.parse(sent[0]!) as { id: string }).id
   let seq = 0
   return {
@@ -65,5 +66,20 @@ describe("idle kick", () => {
     p.respawnAt = Infinity
     s.advance(IDLE_KICK_MS)
     expect(s.closed()).toBe(0)
+  })
+})
+
+describe("client version", () => {
+  test("a client with a different build is told to reload; one without a build gets an error", () => {
+    const core = new RoomCore("vers", "ffa", () => 0)
+    const sent: string[] = []
+    let closed = 0
+    const conn = { send: (d: string) => sent.push(d), close: () => closed++ }
+    core.message(conn, JSON.stringify({ type: "hello", name: "old", gun: "rifle", build: "deadbeef" }))
+    expect(sent.at(-1)).toBe(JSON.stringify({ type: "reload" }))
+    core.message(conn, JSON.stringify({ type: "hello", name: "older", gun: "rifle" }))
+    expect(sent.at(-1)).toContain("new version")
+    expect(closed).toBe(2)
+    expect(core.world.humans.length).toBe(0)
   })
 })

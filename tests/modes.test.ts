@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
+import { BUILD } from "../shared/build.gen"
 import { END_SECONDS, GUNS, HEALTH, RESPAWN_SECONDS } from "../shared/config"
 import { decodeClient } from "../shared/protocol"
 import { Rng } from "../shared/rng"
@@ -345,7 +346,7 @@ describe("rooms", () => {
     expect(core.setMode("snd")).toBe(true)
     expect(core.world.mode.id).toBe("snd")
     const sent: string[] = []
-    core.message({ send: (d) => sent.push(d), close() {} }, JSON.stringify({ type: "hello", name: "x", gun: "rifle", equip: "frag" }))
+    core.message({ send: (d) => sent.push(d), close() {} }, JSON.stringify({ type: "hello", name: "x", gun: "rifle", equip: "frag", build: BUILD }))
     expect(core.world.humans.length).toBe(1)
     expect(core.setMode("tdm")).toBe(false)
     expect(core.world.mode.id).toBe("snd")

@@ -1,4 +1,5 @@
 // Runs the Worker (rooms) and the Vite client together. Vite proxies /ws and /api to the Worker.
+await Bun.spawn(["bun", "scripts/build-id.ts"], { stdio: ["inherit", "inherit", "inherit"] }).exited
 const procs = [
   Bun.spawn(["bunx", "wrangler", "dev", "--port", "8788"], { stdio: ["inherit", "inherit", "inherit"] }),
   Bun.spawn(["bunx", "vite", "--host", "0.0.0.0", "--port", "5191", "--strictPort"], { stdio: ["inherit", "inherit", "inherit"] }),

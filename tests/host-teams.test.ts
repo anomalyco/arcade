@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
+import { BUILD } from "../shared/build.gen"
 import { DT, END_SECONDS } from "../shared/config"
 import { decodeClient } from "../shared/protocol"
 import { moveTeam, shuffleTeams } from "../shared/sim/host"
@@ -120,7 +121,7 @@ describe("room host", () => {
     const join = (name: string) => {
       const sent: string[] = []
       const conn = { send: (d: string) => sent.push(d), close() {} }
-      core.message(conn, JSON.stringify({ type: "hello", name, gun: "rifle", equip: "frag" }))
+      core.message(conn, JSON.stringify({ type: "hello", name, gun: "rifle", equip: "frag", build: BUILD }))
       const id = (JSON.parse(sent[0]!) as { id: string }).id
       return { conn, id }
     }

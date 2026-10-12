@@ -4,7 +4,8 @@ import type { RosterRow, Snapshot } from "./sim/view"
 import type { Intent, SimEvent } from "./sim/world"
 
 export type ClientMsg =
-  | { type: "hello"; name: string; id?: string; gun: Gun; equip: Equip }
+  /** `build` is the client's BUILD (shared/build.gen.ts); the server tells a mismatched client to reload. */
+  | { type: "hello"; name: string; id?: string; gun: Gun; equip: Equip; build?: string }
   | { type: "intent"; seq: number; i: Intent }
   | { type: "gun"; gun: Gun }
   | { type: "equip"; equip: Equip }
@@ -23,6 +24,8 @@ export type ServerMsg =
   | { type: "roster"; players: RosterRow[] }
   | { type: "ev"; events: SimEvent[] }
   | { type: "error"; message: string }
+  /** The server runs different shared code than this client: reload the page. */
+  | { type: "reload" }
   /** Seconds until you're kicked for idling, during the warning; 0 clears it. */
   | { type: "idle"; seconds: number }
   | { type: "pong"; t: number }
@@ -69,7 +72,8 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   switch (o.type) {
     case "hello": {
       const id = typeof o.id === "string" && /^[a-z0-9]{6,16}$/.test(o.id) ? o.id : undefined
-      return { type: "hello", name: cleanName(o.name), id, gun: gunOf(o.gun), equip: equipOf(o.equip) }
+      const build = typeof o.build === "string" && /^[a-f0-9]{1,32}$/.test(o.build) ? o.build : undefined
+      return { type: "hello", name: cleanName(o.name), id, gun: gunOf(o.gun), equip: equipOf(o.equip), build }
     }
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null

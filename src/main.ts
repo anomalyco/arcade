@@ -7,7 +7,7 @@ import { MODE_IDS, type ModeId, modeOf } from "../shared/sim/modes"
 import { Sound } from "./audio/sound"
 import { Game } from "./game/game"
 import { Input } from "./game/input"
-import { NetSession } from "./game/net"
+import { NetSession, REJOIN_KEY } from "./game/net"
 import { LocalSession, type Session } from "./game/session"
 import { Camera } from "./render/camera"
 import { Renderer } from "./render/renderer"
@@ -119,6 +119,10 @@ async function main() {
     }
   }
   menus.landing(roomParam)
+  // Back from a version reload: straight into the same room.
+  const rejoin = sessionStorage.getItem(REJOIN_KEY)
+  sessionStorage.removeItem(REJOIN_KEY)
+  if (rejoin && rejoin === roomParam) enter(localStorage.getItem(NAME_KEY) ?? "", rejoin)
   // Dev and screenshots: a local match against bots, no server.
   if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip, modeOf(params.get("mode")) ?? "ffa"))
 

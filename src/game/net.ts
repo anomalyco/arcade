@@ -1,3 +1,4 @@
+import { BUILD } from "../../shared/build.gen"
 import { type ClientMsg, type ServerMsg, decodeServer, encodeClient } from "../../shared/protocol"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import type { Equip, Gun } from "../../shared/config"
@@ -6,6 +7,9 @@ import type { SimEvent } from "../../shared/sim/world"
 import type { Session } from "./session"
 
 const ID_KEY = "blackout.id."
+const RELOAD_KEY = "blackout.reloadAt"
+/** Set before a version reload: main.ts rejoins this room without the landing page. */
+export const REJOIN_KEY = "blackout.rejoin"
 
 function socketUrl(room: string, priv: boolean, mode: ModeId | null): string {
   const dir = location.pathname.replace(/[^/]*$/, "")
@@ -83,7 +87,7 @@ export class NetSession implements Session {
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0
-      ws.send(encodeClient({ type: "hello", name: this.name, id: this.id || undefined, gun: this.gun, equip: this.equip }))
+      ws.send(encodeClient({ type: "hello", name: this.name, id: this.id || undefined, gun: this.gun, equip: this.equip, build: BUILD }))
     }
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") return
@@ -118,6 +122,17 @@ export class NetSession implements Session {
         this.closed = true
         this.onFatal(msg.message)
         return
+      case "reload": {
+        this.closed = true
+        // Reload once into the same room (main.ts rejoins on its own); a second mismatch within a minute means the new
+        // build isn't being served yet, so say so instead of looping.
+        const last = Number(sessionStorage.getItem(RELOAD_KEY) ?? 0)
+        if (Date.now() - last < 60_000) return this.onFatal("A new version is rolling out. Reload the page in a moment.")
+        sessionStorage.setItem(RELOAD_KEY, String(Date.now()))
+        sessionStorage.setItem(REJOIN_KEY, this.room)
+        location.reload()
+        return
+      }
       case "idle":
         this.idleIn = msg.seconds
         return
