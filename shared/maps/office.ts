@@ -7,7 +7,7 @@ import type { FloorKind, MapDef, Prop, PropKind } from "./types"
 
 const COLD = [0.8, 0.88, 1] as const
 const WARM = [1, 0.72, 0.42] as const
-const SPAWNS = 32
+const SPAWNS = 16
 /** How far a door's clear zone reaches into the rooms either side. */
 const DOOR_CLEAR = 1.3
 
@@ -552,9 +552,25 @@ function cubicles(f: Fit, hall: boolean): boolean {
 
 /** Lift core: a dark shaft block in the middle with a stair door and its EXIT sign, a lobby ring around it. */
 function core(f: Fit): void {
-  const ring = 2.1
-  const shaft: Rect = [f.inner[0] + ring, f.inner[1] + ring, f.inner[2] - ring, f.inner[3] - ring]
-  if (shaft[2] - shaft[0] < 1.2 || shaft[3] - shaft[1] < 1.2 || !f.solid(shaft, WALL_H, "core")) return void lounge(f)
+  let shaft: Rect | null = null
+  for (const ring of [2.1, 1.6]) {
+    const s: Rect = [f.inner[0] + ring, f.inner[1] + ring, f.inner[2] - ring, f.inner[3] - ring]
+    if (s[2] - s[0] >= 1.2 && s[3] - s[1] >= 1.2 && f.solid(s, WALL_H, "core")) {
+      shaft = s
+      break
+    }
+  }
+  if (!shaft) {
+    // Too small for a shaft: a fire door with its EXIT sign on the back wall instead.
+    lounge(f)
+    const L = f.len(f.back)
+    const [bx, by] = INTO[f.back]
+    const rc = f.at(f.back, L / 2 - 0.7, -0.2, L / 2 + 0.7, 0.2)
+    f.b.prop("exitdoor", rc[0], rc[1], rc[2], rc[3], FACE_IN[f.back], false)
+    const m = f.point(f.back, L / 2, 0.35)
+    f.b.light({ kind: "exit", x: m.x, y: m.y, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [bx, by, 0.1] })
+    return
+  }
   const s = f.door
   // The stair door on the shaft face toward the main entrance.
   const [dx, dy] = INTO[s]

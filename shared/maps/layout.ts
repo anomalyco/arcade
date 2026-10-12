@@ -105,8 +105,8 @@ function weighted<T extends string>(r: Rng, table: readonly (readonly [T, number
  *    room-to-room doors for flanking loops.
  */
 export function layout(r: Rng): Plan {
-  const gw = 46 + r.int(9)
-  const gh = 32 + r.int(7)
+  const gw = 23 + r.int(5)
+  const gh = 16 + r.int(4)
   const xs = bounds(r, gw)
   const ys = bounds(r, gh)
   const cols = lines(r, gw)
@@ -122,7 +122,7 @@ export function layout(r: Rng): Plan {
   specials.push({ i0: midI - r.int(2), j0: midJ - r.int(2), i1: 0, j1: 0, kind: "core" })
   specials[0]!.i1 = specials[0]!.i0
   specials[0]!.j1 = specials[0]!.j0
-  const halls = 2 + r.int(2)
+  const halls = 1
   for (let tries = 0; tries < 60 && specials.length < 1 + halls; tries++) {
     const long = 2 + (r.next() < 0.35 ? 1 : 0)
     const short = 1 + (r.next() < 0.35 ? 1 : 0)
@@ -212,7 +212,7 @@ export function layout(r: Rng): Plan {
     r,
     links.filter((l) => !l.used),
   )
-  while (links.filter((l) => l.used).length - (alive.length - 1) < 6 && spare.length) spare.pop()!.used = true
+  while (links.filter((l) => l.used).length - (alive.length - 1) < 3 && spare.length) spare.pop()!.used = true
   // Every landmark opens onto at least two corridors.
   for (const s of specials) {
     const rim = links.filter((l) => {

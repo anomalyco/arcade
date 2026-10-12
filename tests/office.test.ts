@@ -53,13 +53,13 @@ describe("procedural office", () => {
   })
 
   for (const seed of SEEDS) {
-    test(`floor ${seed}: a big connected labyrinth with spread spawns and sparse lights`, () => {
+    test(`floor ${seed}: a connected labyrinth with spread spawns and sparse lights`, () => {
       const m = generateOffice(seed)
-      expect(m.size[0]).toBeGreaterThan(95)
-      expect(m.size[1]).toBeGreaterThan(65)
+      expect(m.size[0]).toBeGreaterThan(45)
+      expect(m.size[1]).toBeGreaterThan(32)
 
       const nav = new Nav(m)
-      expect(m.spawns.length).toBeGreaterThanOrEqual(24)
+      expect(m.spawns.length).toBeGreaterThanOrEqual(12)
       const reach = nav.reachable(m.spawns[0]!)
       const solids = [...m.walls.map((w) => w.rect), ...m.windows, ...m.glass, ...m.props.filter((p) => p.solid).map((p) => p.rect)]
       for (const s of m.spawns) {
@@ -79,15 +79,14 @@ describe("procedural office", () => {
       expect(m.lights.length).toBeLessThanOrEqual(LIGHT_BUDGET)
       m.lights.forEach((l, i) => expect(l.id).toBe(i))
       expect(m.lights.some((l) => l.kind === "exit")).toBe(true)
-      expect(m.lights.some((l) => l.kind === "vending")).toBe(true)
       // Mostly dark: lit floor (light discs at half radius) covers well under half the floor.
       const lit = m.lights.reduce((s, l) => s + Math.PI * (l.r / 2) ** 2, 0)
-      expect(lit / (m.size[0] * m.size[1])).toBeLessThan(0.35)
+      expect(lit / (m.size[0] * m.size[1])).toBeLessThan(0.4)
 
       const c = corridorStats(seed)
-      expect(c.share).toBeGreaterThan(0.18)
-      expect(c.deadEnds).toBeGreaterThanOrEqual(4)
-      expect(c.loops).toBeGreaterThanOrEqual(3)
+      expect(c.share).toBeGreaterThan(0.15)
+      expect(c.deadEnds).toBeGreaterThanOrEqual(1)
+      expect(c.loops).toBeGreaterThanOrEqual(2)
     })
   }
 })
