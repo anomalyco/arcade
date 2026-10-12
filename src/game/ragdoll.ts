@@ -289,9 +289,9 @@ export function deathStyle(gun: Gun): DeathStyle {
   const r = Math.random()
   if (gun === "shotgun") return { push: 5.5 + r * 1.5, lift: 1.6, spin: (Math.random() - 0.5) * 1.5, buckle: 0 }
   if (gun === "sniper") return r < 0.5 ? { push: 4.2, lift: 0.7, spin: (Math.random() < 0.5 ? -1 : 1) * 2.4, buckle: 0.3 } : { push: 4.8, lift: 1, spin: 0.4, buckle: 0 }
-  if (r < 0.4) return { push: 0.9, lift: 0, spin: (Math.random() - 0.5) * 1.2, buckle: 1.6 }
-  if (r < 0.8) return { push: 2.6, lift: 0.3, spin: (Math.random() - 0.5) * 1, buckle: 0.3 }
-  return { push: 2, lift: 0.2, spin: (Math.random() < 0.5 ? -1 : 1) * 2.2, buckle: 0.6 }
+  if (r < 0.4) return { push: 0.7, lift: 0, spin: (Math.random() - 0.5) * 1.2, buckle: 1.6 }
+  if (r < 0.8) return { push: 1.9, lift: 0.2, spin: (Math.random() - 0.5) * 1, buckle: 0.3 }
+  return { push: 1.5, lift: 0.1, spin: (Math.random() < 0.5 ? -1 : 1) * 2.2, buckle: 0.6 }
 }
 
 /** Loose bits that tumble and settle: spent casings, dropped magazines. */

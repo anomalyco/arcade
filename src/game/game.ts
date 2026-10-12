@@ -437,7 +437,7 @@ export class Game {
 
   private muzzleFlash(x: number, y: number, z: number, aim: number, gun: Gun): void {
     const big = gun !== "rifle"
-    this.flashes.push({ x: x + Math.cos(aim) * 0.35, y: y + Math.sin(aim) * 0.35, t0: this.now, life: big ? 0.09 : 0.055, power: gun === "rifle" ? 0.8 : gun === "shotgun" ? 1.6 : 1.4 })
+    this.flashes.push({ x: x + Math.cos(aim) * 0.9, y: y + Math.sin(aim) * 0.9, t0: this.now, life: big ? 0.09 : 0.055, power: gun === "rifle" ? 0.35 : gun === "shotgun" ? 0.75 : 0.65 })
     this.flashFx.push({ x, y, z, aim, gun, t0: this.now, seed: Math.random() })
     const n = gun === "shotgun" ? 4 : gun === "sniper" ? 3 : Math.random() < 0.4 ? 1 : 0
     for (let i = 0; i < n; i++) {
@@ -704,8 +704,8 @@ export class Game {
         }
       }
       if (p.kind === "spark") this.sprite(true, p.x, p.z, p.y, p.size * (p.life < 0.1 ? 1 : 1 + a), 1, 0.72, 0.3, a, 0)
-      else if (p.kind === "dust") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 2.5), 0.32, 0.31, 0.3, a * 0.55, 1, 0, 0, p.size * 40)
-      else if (p.kind === "smoke") this.sprite(false, p.x, p.z, p.y, p.size * (1 + age * 3), 0.42, 0.42, 0.45, a * a * 0.22, 1, 0, 0, p.size * 40)
+      else if (p.kind === "dust") this.sprite(false, p.x, p.z, p.y, p.size * (1.2 + age * 3), 0.5, 0.48, 0.46, a * a * 0.5, 0)
+      else if (p.kind === "smoke") this.sprite(false, p.x, p.z, p.y, p.size * (1.5 + age * 4), 0.55, 0.55, 0.58, a * a * 0.25, 0)
       else if (p.kind === "chip") this.sprite(false, p.x, p.z, p.y, p.size, 0.25, 0.26, 0.3, Math.min(1, a * 4), 6)
       else if (p.kind === "splat") this.sprite(false, p.x, p.z, p.y, p.size, 0.08, 0.0, 0.005, Math.min(1, a * 3) * 0.9, 6)
       else this.sprite(false, p.x, p.z, p.y, p.size, 0.22, 0.0, 0.01, 1, 6)
@@ -719,7 +719,7 @@ export class Game {
     F.set([this.renderer.width, this.renderer.height, nl, this.map.lights.length], 20)
     const focus = me ? cam.project(me.x, 0.9, me.y, w, h) : { x: 0, y: 0 }
     F.set([me?.x ?? 0, me?.y ?? 0, me ? 1 : 0, 0.24], 24)
-    F.set([0.065, 0.085, 0.18, 1.6], 28)
+    F.set([0.055, 0.072, 0.13, 1.0], 28)
     F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, 0], 32)
     F.set([0, 1, 0, 0], 36)
     F.set([1 / this.map.size[0], 1 / this.map.size[1], this.map.size[0], this.map.size[1]], 40)

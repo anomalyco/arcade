@@ -52,12 +52,12 @@ export const MUZZLE: Record<Gun, number> = {
   sniper: HOLD.sniper.fwd + GUNPTS.sniper.muzzle,
 }
 
-const CLOTH = hex(0x283044)
-const CLOTH_D = hex(0x1e2433)
-const GEAR = hex(0x16191f)
-const POUCH = hex(0x3a3a30)
-const HELMET = hex(0x1a1c22)
-const HELMET_T = hex(0x262a33)
+const CLOTH = hex(0x4a5470)
+const CLOTH_D = hex(0x343c52)
+const GEAR = hex(0x262a33)
+const POUCH = hex(0x5a5a46)
+const HELMET = hex(0x2a2e38)
+const HELMET_T = hex(0x3c4250)
 const VISOR = hex(0x07080b)
 const SKIN = hex(0x8a6a50)
 const GLOVE = hex(0x7a5c40)

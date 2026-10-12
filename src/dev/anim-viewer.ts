@@ -2,6 +2,7 @@
 // played through the real Game and Renderer. ?only=a,b picks actors, ?slow=0.25 slows time, ?zoom=9 sets the camera
 // distance, ?manual stops the loop so window.advance(ms) can step it for frame captures.
 import { GUNS, type Gun } from "../../shared/config"
+import { raycast } from "../../shared/geom"
 import type { MapDef } from "../../shared/maps"
 import { Builder } from "../../shared/maps/builder"
 import type { ClientMsg } from "../../shared/protocol"
@@ -44,6 +45,8 @@ function room(): MapDef {
   return b.build({ id: "anim", seed: SEED, name: "Anim", size: [W, H] })
 }
 
+const MAP = room()
+
 type Actor = {
   id: string
   gun: Gun
@@ -76,7 +79,7 @@ const ACTORS: Actor[] = [
   {
     id: "c",
     gun: "rifle",
-    at: (t) => ({ x: 16, y: 8, aim: -Math.PI / 2 + Math.sin(t * 0.4) * 0.5, alive: true }),
+    at: (t) => ({ x: 16, y: 8, aim: Math.sin(t * 0.4) * 0.5, alive: true }),
     shots: (t) => {
       const c = loop(t, 7.5)
       if (c > 4.5) return 0
@@ -85,15 +88,15 @@ const ACTORS: Actor[] = [
     },
     reloads: (t) => (loop(t, 7.5) > 4.6 ? 1 : 0),
   },
-  { id: "d", gun: "shotgun", at: () => ({ x: 20, y: 9, aim: -Math.PI / 2 - 0.4, alive: true }), shots: (t) => (loop(t, 6.5) < 3.4 ? Math.floor(loop(t, 6.5) / 0.85) + 1 : 0), reloads: (t) => (loop(t, 6.5) > 3.6 ? 1 : 0) },
-  { id: "e", gun: "sniper", at: () => ({ x: 12, y: 8.5, aim: -Math.PI / 2 + 0.3, alive: true }), shots: (t) => (loop(t, 7) < 3.6 ? Math.floor(loop(t, 7) / 1.25) + 1 : 0), reloads: (t) => (loop(t, 7) > 3.8 ? 1 : 0) },
+  { id: "d", gun: "shotgun", at: () => ({ x: 21, y: 10, aim: Math.PI - 0.3, alive: true }), shots: (t) => (loop(t, 6.5) < 3.4 ? Math.floor(loop(t, 6.5) / 0.85) + 1 : 0), reloads: (t) => (loop(t, 6.5) > 3.6 ? 1 : 0) },
+  { id: "e", gun: "sniper", at: () => ({ x: 12, y: 8.5, aim: Math.PI + 0.25, alive: true }), shots: (t) => (loop(t, 7) < 3.6 ? Math.floor(loop(t, 7) / 1.25) + 1 : 0), reloads: (t) => (loop(t, 7) > 3.8 ? 1 : 0) },
   // Walks a little loop and keeps getting killed.
   {
     id: "f",
     gun: "rifle",
     at: (t) => {
-      const c = loop(t, 3.5)
-      return { x: 23 + Math.cos(t * 0.8) * 1.2, y: 12 + Math.sin(t * 0.8) * 1.2, aim: t * 0.8 + Math.PI / 2, alive: c < 2.6 }
+      const c = loop(t, 5)
+      return { x: 21 + Math.cos(t * 1.6) * 1.2, y: 14 + Math.sin(t * 1.6) * 1.2, aim: t * 1.6 + Math.PI / 2, alive: c < 1.5 }
     },
   },
 ]
@@ -147,8 +150,7 @@ class ScriptSession implements Session {
           const ang = s.aim + spread
           const dx = Math.cos(ang)
           const dy = Math.sin(ang)
-          // Shots northward stop at the partition at y = 4.3.
-          const stop = dy < -0.05 ? Math.min(g.range, (s.y - 4.3) / -dy) : g.range
+          const stop = Math.min(g.range, raycast(s.x, s.y, dx, dy, MAP.walls.map((w) => w.rect), g.range))
           this.events.push({ k: "shot", by: a.id, x0: s.x, y0: s.y, x1: s.x + dx * stop, y1: s.y + dy * stop, hit: "" })
         }
       }
@@ -190,7 +192,7 @@ async function main() {
   const sound = new Sound()
   addEventListener("pointerdown", () => sound.start())
   const game = new Game(renderer, session, sound)
-  ;(game as unknown as { load(m: MapDef): void }).load(room())
+  ;(game as unknown as { load(m: MapDef): void }).load(MAP)
   const input = new Input(canvas)
   const side = params.get("side")
   const cam = new Camera()
@@ -207,7 +209,7 @@ async function main() {
       return cam.viewProj as Float32Array
     }
   }
-  const focus = { x: Number(params.get("x") ?? "16"), y: Number(params.get("y") ?? "11") }
+  const focus = { x: Number(params.get("x") ?? "16"), y: Number(params.get("y") ?? "10") }
   cam.snap(focus.x, focus.y)
   cam.dist = zoom
   const resize = () => {
