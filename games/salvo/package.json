@@ -1,0 +1,21 @@
+{
+  "name": "salvo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5191 --strictPort",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run test && bun run build",
+    "deploy": "rm -rf dist && vite build && wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@types/bun": "^1.4.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "wrangler": "^4.149.0"
+  }
+}
