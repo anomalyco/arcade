@@ -3,7 +3,7 @@
 // Hot path is allocation-free: scratch vectors are module-level and outputs are reused per brain.
 import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "./types"
 import { LAUNCH_LANE_LENGTH, carrierOf, inSafeZone, posedFleet, worldQuery } from "./geography"
-import { GUN_FULL_RANGE, ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
+import { GUN_FULL_RANGE, GUN_GIMBAL, ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
 import { AA_RANGE, SHIP_SPECS } from "./fleet"
 import { VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
 
@@ -53,6 +53,8 @@ export interface BotState {
   lastHp: number
   evadeUntil: number
   evadeCooldownUntil: number
+  /** Pilot seat aim was set to a gun lead this tick (gimbaled guns) — finishPilot keeps it. */
+  gunAimSet: boolean
   /** Smoothed steering/aim direction (human-like lag and overshoot) and the time it was last updated. */
   steer: Vec3
   steerAt: number
@@ -120,6 +122,7 @@ export function createBotBrain(seed: number, skill?: number): BotBrain {
       lastHp: -1,
       evadeUntil: 0,
       evadeCooldownUntil: 0,
+      gunAimSet: false,
       steer: [0, 0, -1],
       steerAt: -1,
     },
@@ -577,13 +580,17 @@ function updateJitter(brain: BotBrain, now: number): void {
   s.jitterUntil = now + 0.3 + botRandom(brain) * 0.5
 }
 
-function applyJitter(brain: BotBrain, aim: Vec3): Vec3 {
+function applyJitter(brain: BotBrain, aim: Vec3, scale = 1): Vec3 {
   const s = brain.state
-  const c = Math.cos(s.jitterYaw), sn = Math.sin(s.jitterYaw)
+  const jy = s.jitterYaw * scale
+  const c = Math.cos(jy), sn = Math.sin(jy)
   const x = aim[0] * c + aim[2] * sn, z = -aim[0] * sn + aim[2] * c
   aim[0] = x; aim[2] = z
-  return setPitch(aim, clamp(pitchOf(aim) + s.jitterPitch, -1.5, 1.5))
+  return setPitch(aim, clamp(pitchOf(aim) + s.jitterPitch * scale, -1.5, 1.5))
 }
+
+/** Gimbaled pilot-gun aim error relative to the steering jitter (the mouse is steadier than the airframe). */
+export const GUN_AIM_JITTER_SCALE = 0.6
 
 /** Ease the bot's steering toward `desired` (in place → result in `desired`): rate-limited, lagged. */
 function smoothSteer(brain: BotBrain, desired: Vec3, now: number, from: Vec3): void {
@@ -714,6 +721,7 @@ function pilotInput(
   const flight = o.flight
   flight.roll = 0; flight.yaw = 0; flight.pitch = 0; flight.boost = false; flight.brake = false
   const seat = resetSeat(o.pilotSeat, o.pilotAim, null)
+  s.gunAimSet = false
   const aim = copy3(o.flightAim, nose)
   let desiredThrottle = 0.85
   let heliAlt = pos[1]
@@ -848,8 +856,10 @@ function finishPilot(
   }
   if (!Number.isFinite(flight.throttle)) flight.throttle = 0
   flight.aim = aim
-  // Pilot reticle: toward the current target when there is one (drives recon look-to-spot), else the nose aim.
-  if (lookTarget) {
+  // Pilot reticle: the gun lead when engaging with gimbaled guns; else toward the current target (drives recon
+  // look-to-spot); else the nose aim.
+  if (brain.state.gunAimSet) seat.aim = o.pilotAim
+  else if (lookTarget) {
     const tp = lookTarget.flight.position, p = fs.position
     seat.aim = norm(set3(o.pilotAim, tp[0] - p[0], tp[1] - p[1], tp[2] - p[2]))
   } else seat.aim = copy3(o.pilotAim, aim)
@@ -926,6 +936,14 @@ function engage(brain: BotBrain, vehicle: VehicleEntity, target: VehicleEntity, 
     else throttle = 0.8
   }
 
+  // Gimbaled guns: the pilot's mouse aim goes to the true lead (with aim jitter); bullets follow it within
+  // GUN_GIMBAL of the nose.
+  if (steerW && d <= gunRange(s.skill, steerW)) {
+    leadDirection(pos, vel, tp, tv, steerW.speed, steerW.kind === "rockets" ? ROCKET_GRAVITY : 0, o.pilotAim)
+    applyJitter(brain, o.pilotAim, GUN_AIM_JITTER_SCALE)
+    s.gunAimSet = true
+  }
+
   if (inOwnSafe) return throttle
   for (let slot = 0; slot < 2; slot++) {
     const id = slot === 0 ? pId : sId
@@ -934,12 +952,11 @@ function engage(brain: BotBrain, vehicle: VehicleEntity, target: VehicleEntity, 
     const rt = vehicle.weapons[0][slot]
     if (!weaponReady(rt, now)) continue
     if (w.kind === "gun" || w.kind === "rockets") {
-      if (d > gunRange(s.skill, w)) continue
+      if (d > gunRange(s.skill, w) || !s.gunAimSet) continue
       leadDirection(pos, vel, tp, tv, w.speed, w.kind === "rockets" ? ROCKET_GRAVITY : 0, _t1)
-      const err = angleBetween(nose, _t1)
-      // Fire only when well aligned, in short bursts.
+      // Fire short bursts when the lead is inside the gimbal and the (jittered) aim is on it.
       const tol = Math.atan2(VEHICLES[target.kind].radius * (1.4 + 0.6 * s.skill), d)
-      if (err < tol && burstAllowed(brain, now)) {
+      if (angleBetween(nose, _t1) < GUN_GIMBAL * 0.95 && angleBetween(o.pilotAim, _t1) < tol && burstAllowed(brain, now)) {
         if (slot === 0) seat.firePrimary = true
         else seat.fireSecondary = true
       }

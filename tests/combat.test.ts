@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
   AA_ACQUIRE, AA_TURRETS, fleetAaDps, type AaTurret, isSpawnProtected, markSpawned, turretHasLOS,
-  FLARE_TARGET_PREFIX, WEAPON_DAMAGE_MULT, GUN_FULL_RANGE, VIEW_DELAY_DEFAULT, gunLeadPoint, gunRangeFactor, hitboxSweep, missileDirectDamage, muzzlePosition, rewoundPosition, viewDelayOf, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
+  FLARE_TARGET_PREFIX, WEAPON_DAMAGE_MULT, GUN_FULL_RANGE, VIEW_DELAY_DEFAULT, gunLeadPoint, gunCanReach, GUN_GIMBAL, weaponDirection, gunRangeFactor, hitboxSweep, missileDirectDamage, muzzlePosition, rewoundPosition, viewDelayOf, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
   stepCombat, sweptSphere, type CombatState,
 } from "../src/sim/combat"
 import { WORLD_HALF, groundHeight, segmentHitsGround, setFleetState, terrainHeight } from "../src/sim/geography"
@@ -944,5 +944,58 @@ describe("gun ballistics, lag compensation & impacts", () => {
     const wet = w2.events.filter(e => e.type === "explosion") as Extract<GameEvent, { type: "explosion" }>[]
     expect(wet.length).toBe(1)
     expect(wet[0].surface).toBe("water")
+  })
+})
+
+describe("gimbaled pilot guns", () => {
+  test("pilot guns fire toward the seat aim, clamped to GUN_GIMBAL around the nose", () => {
+    const f = vehicle("fighter", 0, [0, ALT, 0], [0, 0, 0])
+    const d: Vec3 = [0, 0, 0]
+    const off = 0.15 // ~8.6°, inside the gimbal
+    weaponDirection(f, "cannon20", [Math.sin(off), 0, -Math.cos(off)], d)
+    expect(Math.acos(-d[2])).toBeCloseTo(off, 6)
+    weaponDirection(f, "cannon20", [1, 0, 0], d) // 90° off: clamped
+    expect(Math.acos(-d[2])).toBeCloseTo(GUN_GIMBAL, 6)
+    expect(d[0]).toBeGreaterThan(0)
+    weaponDirection(f, "gau8", null, d)
+    expect(d).toEqual([0, 0, -1])
+    weaponDirection(f, "aim9", [1, 0, 0], d) // missiles stay on the nose
+    expect(d[2]).toBeCloseTo(-1, 9)
+    expect(gunCanReach(f, 0, [100, ALT, -1000])).toBe(true)
+    expect(gunCanReach(f, 0, [1000, ALT, -1000])).toBe(false)
+  })
+
+  test("reasonable aim (gunLeadPoint ± 0.5°) vs a weaving target at 300–600 m lands ≥ 25% of rounds; hit events credit the shooter", () => {
+    let seed = 7
+    const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296) * 2 - 1
+    let shots = 0, landed = 0
+    for (const range of [300, 450, 600]) {
+      const shooter = vehicle("fighter", 0, [0, ALT, 0], [0, 0, -170])
+      const target = vehicle("fighter", 1, [60, ALT + 20, -range], [0, 0, -170])
+      const w = world([shooter, target])
+      const lp: Vec3 = [0, 0, 0]
+      for (let i = 0; i < 180; i++) {
+        // Target weaves: heading oscillates ±0.4 rad (≈6 g at 170 m/s); shooter's nose loosely follows the target.
+        const hdg = 0.4 * Math.sin(w.now * 0.8)
+        target.flight.velocity = [Math.sin(hdg) * 170, 0, -Math.cos(hdg) * 170]
+        target.flight.orientation = look(target.flight.velocity)
+        shooter.flight.orientation = look(sub(target.flight.position, shooter.flight.position))
+        gunLeadPoint(shooter, 0, target, lp)
+        const aim = sub(lp, shooter.flight.position)
+        const n = Math.hypot(...aim)
+        const yaw = (rnd() * 0.5 * Math.PI) / 180, pitch = (rnd() * 0.5 * Math.PI) / 180
+        const a: Vec3 = [aim[0] / n + yaw, aim[1] / n + pitch, aim[2] / n]
+        tick(w, [[shooter, 0, input({ aim: a, firePrimary: true })]])
+      }
+      for (let i = 0; i < 60; i++) tick(w)
+      shots += 600 - shooter.weapons[0][0].ammo
+      const h = hits(w, target)
+      landed += h.length
+      expect(h.every(e => e.type === "hit" && e.by === shooter.seats[0] && e.weapon === "cannon20")).toBe(true)
+      if (!target.alive) expect(w.events.some(e => e.type === "kill" && e.killer === shooter.seats[0])).toBe(true)
+    }
+    const rate = landed / shots
+    console.log(`gimbaled gun hit rate vs weaving target (300–600 m, ±0.5° aim noise): ${(rate * 100).toFixed(0)}% (${landed}/${shots})`)
+    expect(rate).toBeGreaterThanOrEqual(0.25)
   })
 })

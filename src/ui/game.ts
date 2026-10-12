@@ -6,7 +6,7 @@ import type { SceneHost } from "../render/scene"
 import type { GameAudio } from "../audio"
 import { createAircraftView, type AircraftView } from "../render/aircraft"
 import { createHud, setScoreboard, TEAM_COLORS, TEAM_NAMES, type HudFrame, type HudWeapon } from "../render/hud"
-import { Input } from "../input"
+import { Input, RETICLE_LIMIT } from "../input"
 import { getNet, type Connection } from "./net-adapter"
 import { createSpawnScreen } from "./spawn"
 import { createPauseMenu } from "./pause"
@@ -266,7 +266,7 @@ class GameSession implements GameHandle {
       // Unrounded own-aircraft render position and camera position (jitter measurements).
       ownRaw: vis ? [vis.pos[0], vis.pos[1], vis.pos[2]] : null,
       camRaw: [this.deps.host.camera.position.x, this.deps.host.camera.position.y, this.deps.host.camera.position.z],
-      aim: [+this.input.aimYaw.toFixed(3), +this.input.aimPitch.toFixed(3)], fwd: vis ? forward(vis.quat).map(n => +n.toFixed(2)) : null,
+      aim: [+this.input.aimYaw.toFixed(3), +this.input.aimPitch.toFixed(3)], reticle: [+this.input.reticleX.toFixed(4), +this.input.reticleY.toFixed(4)], fwd: vis ? forward(vis.quat).map(n => +n.toFixed(2)) : null,
     }
   }
 
@@ -540,6 +540,19 @@ class GameSession implements GameHandle {
     setFleetState(s.intermission ? 0 : Math.max(0, est - started), this.config.teams)
   }
 
+  /** Keep the local gun loop alive while the trigger is held (server fire events arrive throttled). */
+  private sustainGunAudio(flying: boolean): void {
+    const audio = this.deps.audio, me = this.me
+    if (!audio || !flying || !me || me.seat === null || !this.lastSeat?.firePrimary) return
+    const v = this.myVehicle()
+    if (!v) return
+    const id = VEHICLES[v.kind].seatWeapons[me.seat][0]
+    if (!id || WEAPONS[id].kind !== "gun") return
+    const rt = v.weapons[me.seat]?.[0]
+    if (rt && rt.ammo === 0) return
+    audio.event({ type: "fire", vehicle: v.id, seat: me.seat, weapon: id }, this.posOfVehicle(v.id), true)
+  }
+
   private posOfVehicle(id: string): Vec3 | null {
     const vis = this.visuals.get(id)
     if (vis) return vis.pos
@@ -556,10 +569,13 @@ class GameSession implements GameHandle {
     for (const e of events) {
       let pos: Vec3 | null = null
       let local = false
+      let skipAudio = false
       switch (e.type) {
         case "fire": {
           pos = this.posOfVehicle(e.vehicle)
           local = e.vehicle === myVeh
+          // Own gun audio is driven locally every frame from the trigger (see sustainGunAudio); skip the echo.
+          if (local && e.seat === this.me?.seat && WEAPONS[e.weapon].kind === "gun") skipAudio = true
           const vis = this.visuals.get(e.vehicle)
           if (vis && pos && WEAPONS[e.weapon].kind === "gun") {
             const a = vis.render.aim[e.seat]
@@ -594,7 +610,7 @@ class GameSession implements GameHandle {
             this.deps.host.rig.shake(0.5)
             local = true
           }
-          if (e.by === this.playerId) this.hud.hitmarker()
+          if (e.by === this.playerId) this.hud.hitmarker(false, e.damage)
           break
         case "kill": {
           pos = e.position
@@ -669,7 +685,7 @@ class GameSession implements GameHandle {
             e.winner !== null && e.winner === this.me?.team ? "Your banner holds the sky" : "The sky remembers", 6500)
           break
       }
-      audio?.event(e, pos, local)
+      if (!skipAudio) audio?.event(e, pos, local)
     }
   }
 
@@ -694,7 +710,11 @@ class GameSession implements GameHandle {
     // Mouse role: gunners always aim the turret; pilots use the chosen scheme (mouse-aim by default,
     // direct while the manual key is held or with the Battlefield scheme).
     const mode = input.pilotMouseMode(seat === 0)
-    if (myVehicle && seat === 0) input.setNose(forward(this.pred?.state.orientation ?? myVehicle.flight.orientation))
+    if (myVehicle && seat === 0) {
+      const o = this.pred?.state.orientation ?? myVehicle.flight.orientation
+      input.setNose(forward(o))
+      input.setPose(o)
+    }
     if (mode !== input.mouseMode) {
       if (mode === "aim") {
         const c = this.deps.host.camera
@@ -728,7 +748,8 @@ class GameSession implements GameHandle {
       const aim: Vec3 = [this.aim[0], this.aim[1], this.aim[2]]
       // Direct-steering pilots have no aim cursor: their seat aim is where the camera looks (incl. free-look),
       // which drives recon look-to-spot.
-      const seatAim: Vec3 = seat === 0 && direct ? camFwd : aim
+      // Keyboard flight: the pilot's guns follow the body-relative mouse reticle (free-look aims the camera).
+      const seatAim: Vec3 = seat === 0 && input.reticleMode && !input.freeLook ? input.reticleDir([0, 0, 0]) : seat === 0 && direct ? camFwd : aim
       let fi: FlightInput | null = null
       if (seat === 0) {
         let tAxis: number | null = null
@@ -829,6 +850,7 @@ class GameSession implements GameHandle {
     if (cockpitNow !== this.stormCockpit) { this.stormCockpit = cockpitNow; this.deps.audio?.setStorm({ enabled: true, rain: 1, cockpit: cockpitNow }) }
 
     if (latest) this.updateProjectiles(latest, est, dt)
+    this.sustainGunAudio(flying)
 
     // Audio
     const audio = this.deps.audio
@@ -1124,6 +1146,13 @@ class GameSession implements GameHandle {
     f.aimPoint = f.direct ? null : [pos[0] + this.aim[0] * aimDist, pos[1] + this.aim[1] * aimDist, pos[2] + this.aim[2] * aimDist]
     const boreDir = seat === 0 ? fwd : (v.aim[1] ?? this.aim)
     let boreDist = aimDist
+    // Keyboard flight: gimbaled gun reticle (body-relative mouse aim) for the HUD.
+    const gunDir: Vec3 | null = seat === 0 && this.input.reticleMode ? this.input.reticleDir([0, 0, 0]) : null
+    const hx = f as HudFrame & { gunAim?: Vec3 | null; nose?: Vec3 | null; gimbalLimit?: number }
+    hx.gunAim = gunDir ? [pos[0] + gunDir[0] * aimDist, pos[1] + gunDir[1] * aimDist, pos[2] + gunDir[2] * aimDist] : null
+    hx.nose = seat === 0 ? [pos[0] + fwd[0] * aimDist, pos[1] + fwd[1] * aimDist, pos[2] + fwd[2] * aimDist] : null
+    hx.gimbalLimit = gunDir ? RETICLE_LIMIT : 0
+    const pickDir = gunDir ?? boreDir
 
     // Weapons readout
     const kinds = VEHICLES[v.kind].seatWeapons[seat]
@@ -1178,7 +1207,7 @@ class GameSession implements GameHandle {
         const dx = op[0] - pos[0], dy = op[1] - pos[1], dz = op[2] - pos[2]
         const d = Math.hypot(dx, dy, dz)
         if (d > 2200 || d < 20) continue
-        const c = (dx * boreDir[0] + dy * boreDir[1] + dz * boreDir[2]) / d
+        const c = (dx * pickDir[0] + dy * pickDir[1] + dz * pickDir[2]) / d
         if (c > bestScore) { bestScore = c; best = o; bestDist = d }
       }
       if (best && bestDist <= 1000) {

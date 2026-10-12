@@ -10,7 +10,7 @@ export interface Settings {
   /** Direct (Daxship-style rate steering, default) or War Thunder-style mouse-aim. */
   controlStyle: "direct" | "aim"
   /** Pilot control scheme (see input.ts CONTROL_SCHEMES); default "point". */
-  controlScheme?: "point" | "battlefield" | "aim"
+  controlScheme?: "keys" | "point" | "battlefield" | "aim"
   /** Bots per team for offline practice (0 = free flight). */
   practiceBots?: number
 }
@@ -21,7 +21,7 @@ const listeners: Listener[] = []
 
 function defaults(): Settings {
   const lowEnd = (navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent)
-  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "aim", controlScheme: "aim", practiceBots: 0 }
+  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "keys", practiceBots: 0 }
 }
 
 function load(): Settings {
@@ -31,10 +31,10 @@ function load(): Settings {
     if (raw) Object.assign(base, JSON.parse(raw))
   } catch {}
   if (base.controlStyle !== "direct" && base.controlStyle !== "aim") base.controlStyle = "aim"
-  if (base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = "aim"
-  // Controls v2: mouse-aim became the default — move everyone onto it once (they can switch back).
-  const b = base as Settings & { controlsV2?: boolean }
-  if (!b.controlsV2) { b.controlsV2 = true; base.controlScheme = "aim"; base.controlStyle = "aim" }
+  if (base.controlScheme !== "keys" && base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = "keys"
+  // Controls v3: keyboard flight + mouse aim became the default — move everyone onto it once.
+  const b = base as Settings & { controlsV3?: boolean }
+  if (!b.controlsV3) { b.controlsV3 = true; base.controlScheme = "keys"; base.controlStyle = "direct" }
   base.practiceBots = Math.max(0, Math.min(10, Math.round(Number(base.practiceBots ?? 0)) || 0))
   if (base.quality !== "low" && base.quality !== "balanced" && base.quality !== "high") base.quality = "balanced"
   return base

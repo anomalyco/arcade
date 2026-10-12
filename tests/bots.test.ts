@@ -485,14 +485,15 @@ describe("difficulty & fairness", () => {
     const me = vehicle("fighter", 0, pos, vel, [0, 0, -1])
     const brain = createBotBrain(22, 0.5)
     let on = 0, toggles = 0, prev = false
-    for (let k = 0; k < 300; k++) {
+    const N = 600
+    for (let k = 0; k < N; k++) {
       const f = botInput(brain, player(0, 0), me, [me, enemy], 10 + k / 60, [], flat()).seat.firePrimary
       if (f) on++
       if (f !== prev) toggles++
       prev = f
     }
     expect(on).toBeGreaterThan(0)
-    expect(on / 300).toBeLessThan(0.6)
+    expect(on / N).toBeLessThan(0.6)
     expect(toggles).toBeGreaterThanOrEqual(4)
   })
 

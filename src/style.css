@@ -28,12 +28,35 @@
 .hud-bore::after { left: -.75px; top: 6px; width: 1.5px; height: 7px; }
 .hud.direct .hud-bore::before { left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; background: none; border: 1.5px solid rgba(236, 234, 228, .9); box-shadow: none; }
 .hud.direct .hud-bore::after { display: none; }
-.hud-hit { position: absolute; left: 0; top: 0; opacity: 0; }
-.hud-hit i { position: absolute; left: -.75px; top: -15px; width: 1.5px; height: 6px; background: var(--fg); transform-origin: .75px 15px; }
-.hud-hit i:nth-child(1) { transform: rotate(45deg); } .hud-hit i:nth-child(2) { transform: rotate(135deg); } .hud-hit i:nth-child(3) { transform: rotate(225deg); } .hud-hit i:nth-child(4) { transform: rotate(315deg); }
-.hud-hit.on { animation: hit .22s ease-out; }
-.hud-hit.kill i { height: 10px; width: 2px; }
-.hud-hit.kill.on { animation: hit .5s ease-out; }
+/* Hit marker: crisp X around the active reticle; kill = larger, orange-red, thicker, with "kill". */
+.hud-hitx { left: 0; top: 0; width: 0; height: 0; opacity: 0; will-change: transform, opacity; }
+.hud-hitx .hud-hit { position: absolute; left: 0; top: 0; }
+.hud-hitx .hud-hit i { position: absolute; left: -1px; top: -21px; width: 2px; height: 9px; background: #fff; box-shadow: 0 0 2px rgba(8, 12, 12, .8); transform-origin: 1px 21px; }
+.hud-hitx .hud-hit i:nth-child(1) { transform: rotate(45deg); } .hud-hitx .hud-hit i:nth-child(2) { transform: rotate(135deg); } .hud-hitx .hud-hit i:nth-child(3) { transform: rotate(225deg); } .hud-hitx .hud-hit i:nth-child(4) { transform: rotate(315deg); }
+.hud-hitx .kl { position: absolute; left: 22px; top: -32px; display: none; font: 700 20px var(--narrow); color: #ff5a3c; letter-spacing: -.01em; }
+.hud-hitx .dmg { position: absolute; left: 20px; top: 6px; font: 500 12px var(--mono); color: var(--fg); }
+.hud-hitx.on { animation: hitx .32s ease-out; }
+.hud-hitx.kill .hud-hit i { width: 3px; height: 14px; top: -28px; left: -1.5px; transform-origin: 1.5px 28px; background: #ff5a3c; }
+.hud-hitx.kill .kl { display: block; }
+.hud-hitx.kill.on { animation: hitk .9s ease-out; }
+@keyframes hitx { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes hitk { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
+.hud-hitx.on .hud-hit { animation: hitpop .32s ease-out; }
+.hud-hitx.kill.on .hud-hit { animation: hitpop .5s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes hitpop { 0% { transform: scale(.7); } 35% { transform: scale(1.1); } 100% { transform: scale(1); } }
+/* Gimbaled gun circle, nose cross and (near the edge) the gimbal limit. */
+.hud-gun, .hud-nose, .hud-gimbal { left: 0; top: 0; width: 0; height: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); }
+.hud-gun i { position: absolute; left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid rgba(236, 234, 228, .95); filter: drop-shadow(0 1px 1px rgba(8, 12, 12, .55)); }
+.hud-gun::after { content: ""; position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg); }
+.hud-nose::before, .hud-nose::after { content: ""; position: absolute; background: rgba(236, 234, 228, .75); filter: drop-shadow(0 1px 1px rgba(8, 12, 12, .5)); }
+.hud-nose::before { left: -6px; top: -.75px; width: 12px; height: 1.5px; }
+.hud-nose::after { left: -.75px; top: -6px; width: 1.5px; height: 12px; }
+.hud-gimbal i { position: absolute; left: calc(-1 * var(--r, 100px)); top: calc(-1 * var(--r, 100px)); width: calc(2 * var(--r, 100px)); height: calc(2 * var(--r, 100px)); border-radius: 50%; border: 1px dashed rgba(236, 234, 228, .25); }
+.hud:not(.flying) .hud-gun, .hud:not(.flying) .hud-nose, .hud:not(.flying) .hud-gimbal, .hud:not(.flying) .hud-hitx, .hud:not(.flying) .hud-radar { display: none; }
+/* Radar: bottom-left, forward = up. Chat sits above it. */
+.hud-radar { left: 24px; bottom: 24px; width: 168px; height: 168px; text-shadow: none; }
+.hud-radar canvas { display: block; width: 168px; height: 168px; }
+.hud-radar .rr { position: absolute; right: 2px; bottom: -2px; font: 500 11px var(--mono); color: var(--dim); text-shadow: var(--hsh); }
 @keyframes hit { 0% { opacity: 1; transform: scale(.85); } 100% { opacity: 0; transform: scale(1.15); } }
 /* Gun lead pipper: where to aim so the rounds meet the target. */
 .hud-lead::before { content: ""; position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border: 1.5px solid var(--fg); border-radius: 50%; filter: drop-shadow(0 1px 1px rgba(8, 12, 12, .6)); }
@@ -211,7 +234,7 @@
 .hud-feed div.out { opacity: 0; }
 @keyframes feedin { from { opacity: 0; transform: translateX(-6px); } }
 
-.hud-chat { left: 24px; bottom: 24px; width: 400px; font-size: 16px; font-weight: 500; }
+.hud-chat { left: 24px; bottom: 210px; width: 400px; font-size: 16px; font-weight: 500; }
 .hud-chat .log div { padding: 1px 0; transition: opacity 1s; }
 .hud-chat .log b { font-weight: 500; margin-right: 6px; }
 .hud-chat .log div.out { opacity: 0; }

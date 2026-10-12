@@ -1,15 +1,15 @@
 // Keyboard + mouse input.
-// Default scheme "aim" (arcade mouse-aim with manual mastery), same logic for every aircraft:
-//   mouse = moves a free aim direction (cursor); the instructor flies the aircraft toward it.
-//   Q/E roll (overrides the instructor's roll; barrel rolls, inverted) · ↑/↓ direct pitch override
-//   (↑ nose down) · ←/→ roll · A/D rudder (jets) / strafe (heli) · W/S throttle·collective ·
-//   Shift boost · X airbrake / auto-hover · hold Alt (or toggle M) = manual: mouse X roll, mouse Y pitch.
-// Optional schemes: "point" (mouse nudges the aim relative to the nose; let go and it flies straight)
-// and "battlefield" (always manual: mouse X roll, mouse Y pitch, A/D rudder).
-// In manual/battlefield the mouse acts like a spring-centred stick: deflection ∝ recent mouse velocity,
-// easing back to centre with a short time constant once the mouse stops.
+// Default scheme "keys" (keyboard flight + mouse aim), same logic for every aircraft:
+//   jets: W/S pitch (W = nose down) · A/D roll · Q/E rudder · Shift throttle up + boost · Z throttle down ·
+//   wheel fine throttle · X airbrake. Heli: W/S pitch (W = nose down → forward) · A/D strafe ·
+//   ←/→ full roll (flips) · Q/E pedals · Space/Z collective up/down · X auto-hover.
+//   The mouse moves a gun reticle that rides with the aircraft (body-relative), clamped to the gun gimbal
+//   cone; pushing it past ~70% of the cone gently steers toward it. Hold C = free-look.
+// Optional schemes: "aim" (War Thunder-style instructor flies toward a mouse cursor) and "battlefield"
+// (manual: mouse X roll, mouse Y pitch). In manual mouse modes the mouse acts like a spring-centred stick.
 import type { FlightInput, SeatInput, Vec3 } from "./sim/types"
 import { HELI_STRAFE_ROLL } from "./sim/flight"
+import { GUN_GIMBAL } from "./sim/combat"
 import { settings, updateSettings } from "./ui/settings"
 
 export { HELI_STRAFE_ROLL }
@@ -17,23 +17,24 @@ export type InputAction = "seat1" | "seat2" | "view" | "chat" | "menu"
 export type MouseMode = "direct" | "aim"
 
 /** Pilot control schemes (settings key `controlScheme`). */
-export const CONTROL_SCHEMES = ["aim", "point", "battlefield"] as const
+export const CONTROL_SCHEMES = ["keys", "aim", "point", "battlefield"] as const
 export type ControlScheme = (typeof CONTROL_SCHEMES)[number]
 export const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = {
-  aim: "Mouse-aim (default)",
+  keys: "Keyboard flight + mouse aim (default)",
+  aim: "Mouse-aim (instructor)",
   point: "Point & turn",
   battlefield: "Battlefield (mouse = roll)",
 }
 
-/** Current pilot scheme (default "aim"). */
+/** Current pilot scheme (default "keys"). */
 export function controlScheme(): ControlScheme {
   const s = (settings as unknown as { controlScheme?: string }).controlScheme
-  return s === "battlefield" || s === "point" ? s : "aim"
+  return s === "aim" || s === "battlefield" || s === "point" ? s : "keys"
 }
 
 /** Persist a scheme (keeps the legacy `controlStyle` flag in sync). */
 export function setControlScheme(scheme: ControlScheme): void {
-  updateSettings({ controlStyle: scheme === "battlefield" ? "direct" : "aim", controlScheme: scheme } as Partial<typeof settings>)
+  updateSettings({ controlStyle: scheme === "aim" || scheme === "point" ? "aim" : "direct", controlScheme: scheme } as Partial<typeof settings>)
 }
 
 const AIM_SENS = 0.0021
@@ -52,6 +53,14 @@ const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi 
 
 /** Held keys ramp a full deflection in over this long (s), and release twice as fast. */
 export const KEY_RAMP = 0.25
+/** Keyboard-flight scheme: snappier key ramp (s). */
+export const KEY_RAMP_FAST = 0.12
+/** Gun reticle gimbal half-angle (rad): combat's GUN_GIMBAL (pilot guns fire inside this cone). */
+export const RETICLE_LIMIT = GUN_GIMBAL
+/** Soft steering assist starts when the reticle is past this fraction of the cone. */
+export const RETICLE_ASSIST_START = 0.7
+/** Assist deflection at the cone edge (pitch / yaw, −1..1 units added to the keys). */
+const RETICLE_ASSIST = 0.6
 
 /**
  * Spring-centred virtual stick fed by mouse motion. Linear: deflection = mouse speed / full speed,
@@ -59,6 +68,8 @@ export const KEY_RAMP = 0.25
  */
 export class SteerStick {
   value = 0
+  /** Key ramp time (s). */
+  ramp = KEY_RAMP
   private mouse = 0
   private key = 0
   private px = 0
@@ -73,7 +84,7 @@ export class SteerStick {
     if (target === 0 && Math.abs(this.mouse) < 1e-3) this.mouse = 0
     const d = key - this.key
     const rampIn = key !== 0 && key * this.key >= 0 && Math.abs(key) > Math.abs(this.key)
-    const step = (rampIn ? 1 : 2) * dt / KEY_RAMP
+    const step = (rampIn ? 1 : 2) * dt / this.ramp
     this.key += d > step ? step : d < -step ? -step : d
     this.value = clamp(this.mouse + this.key, -1, 1)
     this.px = 0
@@ -112,6 +123,13 @@ export class Input {
   private noseYaw = 0
   private nosePitch = 0
   private pointActive = false
+  /** Keyboard-flight scheme: body-relative gun reticle (rad; x = right, y = up), clamped to the cone. */
+  reticleX = 0
+  reticleY = 0
+  private reticleActive = false
+  private heliPilot = false
+  /** Pilot orientation (for the body-relative reticle). */
+  private pose: [number, number, number, number] = [0, 0, 0, 1]
   private wheel = 0
   private keys = new Set<string>()
   /** Presses since the last seatInput() read, so taps shorter than one tick still register. */
@@ -200,6 +218,34 @@ export class Input {
     }
   }
 
+  /** Pilot orientation quaternion (call each frame while piloting; the reticle rides with it). */
+  setPose(q: readonly number[]): void {
+    this.pose[0] = q[0]; this.pose[1] = q[1]; this.pose[2] = q[2]; this.pose[3] = q[3]
+  }
+
+  /** World direction of the gun reticle (keyboard-flight scheme). */
+  reticleDir(out: Vec3): Vec3 {
+    // Body frame: nose −Z, right +X, up +Y.
+    const x = Math.sin(this.reticleX) * Math.cos(this.reticleY), y = Math.sin(this.reticleY)
+    const z = -Math.cos(this.reticleX) * Math.cos(this.reticleY)
+    const [qx, qy, qz, qw] = this.pose
+    const tx = 2 * (qy * z - qz * y), ty = 2 * (qz * x - qx * z), tz = 2 * (qx * y - qy * x)
+    out[0] = x + qw * tx + (qy * tz - qz * ty)
+    out[1] = y + qw * ty + (qz * tx - qx * tz)
+    out[2] = z + qw * tz + (qx * ty - qy * tx)
+    return out
+  }
+
+  /** Reticle offset as a fraction of the gimbal cone (0 = on the nose, 1 = at the edge). */
+  get reticleFrac(): number {
+    return Math.hypot(this.reticleX, this.reticleY) / RETICLE_LIMIT
+  }
+
+  /** True while the keyboard-flight reticle owns the mouse (pilot seat, keys scheme, not free-look). */
+  get reticleMode(): boolean {
+    return this.reticleActive
+  }
+
   /** True while flying manually (direct mouse pitch/roll) under the aim/point schemes. */
   get manual(): boolean {
     return this.manualToggle || this.held("AltLeft", "AltRight")
@@ -208,8 +254,9 @@ export class Input {
   /** Mouse role for the pilot seat: "direct" in Battlefield or while manual, else "aim". */
   pilotMouseMode(isPilot = true): MouseMode {
     const scheme = controlScheme()
-    const direct = isPilot && (scheme === "battlefield" || this.manual)
+    const direct = isPilot && (scheme === "battlefield" || scheme === "keys" || this.manual)
     this.pointActive = isPilot && !direct && scheme === "point"
+    this.reticleActive = isPilot && scheme === "keys" && !this.manual
     return direct ? "direct" : "aim"
   }
 
@@ -253,6 +300,8 @@ export class Input {
    */
   sampleSteering(seconds: number, heli = false): void {
     const sens = settings.sensitivity
+    if (this.reticleActive) { this.sampleKeyFlight(seconds, heli); return }
+    for (const st of [this.rollKeys, this.pitchKeys, this.yawKeys]) st.ramp = KEY_RAMP
     const ad = this.axis(["KeyA"], ["KeyD"]), qe = this.axis(["KeyQ"], ["KeyE"]), lr = this.axis(["ArrowLeft"], ["ArrowRight"])
     const roll = clamp(qe + lr, -1, 1)
     const mx = this.mouseXStick.sample(seconds, sens)
@@ -267,12 +316,39 @@ export class Input {
     this.steerYaw = y
   }
 
+  /** Keyboard flight: keys fly (fast ramp); the reticle past 70% of the cone adds a soft assist. */
+  private sampleKeyFlight(seconds: number, heli: boolean): void {
+    this.heliPilot = heli
+    for (const st of [this.rollKeys, this.pitchKeys, this.yawKeys]) st.ramp = KEY_RAMP_FAST
+    const ws = this.axis(["KeyW", "ArrowUp"], ["KeyS", "ArrowDown"]) // W = nose down (pitch −1)
+    const ad = this.axis(["KeyA"], ["KeyD"]), qe = this.axis(["KeyQ"], ["KeyE"]), lr = this.axis(["ArrowLeft"], ["ArrowRight"])
+    // Heli: A/D strafe (partial roll), ←/→ full roll (flips). Jets: A/D or ←/→ roll.
+    const rollKey = heli ? (lr !== 0 ? lr : ad * HELI_STRAFE_ROLL) : clamp(ad + lr, -1, 1)
+    const r = this.rollKeys.sample(seconds, 1, rollKey)
+    const p = this.pitchKeys.sample(seconds, 1, ws)
+    const y = this.yawKeys.sample(seconds, 1, qe)
+    // Soft assist toward the reticle once it's pushed past RETICLE_ASSIST_START of the cone.
+    const frac = this.reticleFrac
+    let ap = 0, ay = 0
+    if (frac > RETICLE_ASSIST_START && !this.freeLook) {
+      const k = Math.min(1, (frac - RETICLE_ASSIST_START) / (1 - RETICLE_ASSIST_START)) * RETICLE_ASSIST / frac / RETICLE_LIMIT
+      ay = this.reticleX * k
+      ap = heli ? 0 : this.reticleY * k
+    }
+    this.steerRoll = r
+    this.steerPitch = clamp(p + (ws === 0 ? ap : 0), -1, 1)
+    this.steerYaw = clamp(y + (qe === 0 ? ay : 0), -1, 1)
+  }
+
   /**
    * Piloting input for one tick. `aim` is only used in mouse-aim mode. `throttleAxis` overrides W/S
    * (e.g. wheel fine-throttle pulses) when non-null.
    */
   flightInput(aim: Vec3 | null, heli: boolean, throttleAxis: number | null, out: FlightInput): FlightInput {
-    const ws = this.axis(["KeyS"], ["KeyW"])
+    // Keyboard flight: Shift = throttle up (+ boost), Z = throttle down; heli collective Space up / Z down.
+    const ws = this.reticleActive
+      ? (heli ? this.axis(["KeyZ"], ["Space"]) : this.axis(["KeyZ"], ["ShiftLeft", "ShiftRight"]))
+      : this.axis(["KeyS"], ["KeyW"])
     out.throttle = ws !== 0 || throttleAxis === null ? ws : throttleAxis
     out.boost = this.held("ShiftLeft", "ShiftRight")
     out.brake = this.down("KeyX")
@@ -285,7 +361,8 @@ export class Input {
 
   seatInput(aim: Vec3 | null, out: SeatInput): SeatInput {
     out.aim = aim
-    out.firePrimary = this.mouseL || this.down("Space", "Mouse0")
+    // Space is the heli's collective in keyboard flight, so it doesn't fire there.
+    out.firePrimary = this.mouseL || this.down("Mouse0") || (!(this.reticleActive && this.heliPilot) && this.down("Space"))
     out.fireSecondary = this.mouseR || this.down("KeyV", "Mouse2")
     out.flares = this.down("KeyF")
     out.ability = this.down("KeyR")
@@ -318,7 +395,7 @@ export class Input {
     if (code === "Tab" && this.attached) { e.preventDefault(); this.scoreboard = down; return }
     if (!this.enabled) return
     if (code === "Space" || code.startsWith("Arrow") || code === "AltLeft" || code === "AltRight") e.preventDefault()
-    if (code === "KeyZ") { this.zoomHeld = down; return }
+    if (code === "KeyZ") this.zoomHeld = down // also a flight key (throttle / collective down)
     if (code === "KeyC") {
       // Hold to free-look.
       if (down !== this.freeLook) { this.freeLook = down; this.lookYaw = this.lookPitch = 0 }
@@ -350,6 +427,13 @@ export class Input {
       const s = AIM_SENS * settings.sensitivity
       this.lookYaw -= dx * s
       this.lookPitch = clamp(this.lookPitch - dy * s, -MAX_PITCH, MAX_PITCH)
+    } else if (this.reticleActive) {
+      // Gun reticle: body-relative, clamped to the gimbal cone (mouse away = up unless inverted).
+      const s = AIM_SENS * settings.sensitivity * 0.5
+      let x = this.reticleX + dx * s, y = this.reticleY - dy * s * (settings.invertY ? -1 : 1)
+      const r = Math.hypot(x, y)
+      if (r > RETICLE_LIMIT) { x *= RETICLE_LIMIT / r; y *= RETICLE_LIMIT / r }
+      this.reticleX = x; this.reticleY = y
     } else if (this.mouseMode === "aim" && !this.pointActive) {
       const s = AIM_SENS * settings.sensitivity
       const inv = settings.invertY ? -1 : 1

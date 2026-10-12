@@ -98,6 +98,9 @@ export const BULLET_IMPACT_EVERY = 3
 export const WATER_SPLASH_RADIUS = 4
 export const WATER_SPLASH_DAMAGE = 0.3
 
+/** Pilot guns/rockets are gimbaled: they fire toward the seat aim within this cone (rad) around the nose. */
+export const GUN_GIMBAL = (15 * Math.PI) / 180
+
 export const PROPORTIONAL_NAV_GAIN = 4
 export const MISSILE_MIN_SPEED = 120
 /** Seconds after launch before a missile's own gimbal limit applies (lets turret locks turn off the rail). */
@@ -353,10 +356,22 @@ export function damageFor(weapon: WeaponId, target: VehicleEntity, now: number):
   return WEAPONS[weapon].damage * WEAPON_DAMAGE_MULT[weapon] * ARMOR[target.kind] * bonus * spotted
 }
 
-/** Firing direction for a weapon: nose for fixed weapons, arc-clamped seat aim for turrets. */
+const _gim: Vec3 = [0, 0, 0]
+
+/**
+ * Firing direction for a weapon. Turret guns: seat aim clamped to the turret arc. Pilot guns and rockets
+ * (fixed, gimbaled): seat aim clamped to a GUN_GIMBAL cone around the nose ("mouse aims, keys fly").
+ * Missiles and null aim: along the nose.
+ */
 export function weaponDirection(vehicle: VehicleEntity, weapon: WeaponId, aim: Vec3 | null, out: Vec3): Vec3 {
   const q = vehicle.flight.orientation
   const spec = WEAPONS[weapon]
+  if (!spec.turret && aim && (spec.kind === "gun" || spec.kind === "rockets")) {
+    rotate(q, 0, 0, -1, out)
+    if (!normalizeInto(aim, _gim)) return out
+    turnToward(out, _gim, GUN_GIMBAL)
+    return out
+  }
   if (!spec.turret || !aim || spec.kind !== "gun") return rotate(q, 0, 0, -1, out)
   rotateInv(q, aim[0], aim[1], aim[2], out)
   if (!normalizeInto(out, out)) return rotate(q, 0, 0, -1, out)
@@ -984,6 +999,18 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
   list.length = w
 }
 
+/** True when a seat's gimbaled/turret gun can point at world point `p` (pilot guns: within GUN_GIMBAL of the nose). */
+export function gunCanReach(shooter: VehicleEntity, seat: SeatIndex, p: Vec3, weapon?: WeaponId): boolean {
+  const ids = VEHICLES[shooter.kind].seatWeapons[seat]
+  const id = weapon ?? (ids[0] && WEAPONS[ids[0]].kind === "gun" ? ids[0] : ids[1] && WEAPONS[ids[1]].kind === "gun" ? ids[1] : null)
+  if (!id) return false
+  muzzlePosition(shooter, seat, id, _muz)
+  _gim[0] = p[0] - _muz[0]; _gim[1] = p[1] - _muz[1]; _gim[2] = p[2] - _muz[2]
+  if (!normalizeInto(_gim, _gim)) return true
+  weaponDirection(shooter, id, _gim, _ls0)
+  return _ls0[0] * _gim[0] + _ls0[1] * _gim[1] + _ls0[2] * _gim[2] > Math.cos(1e-3)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Lag compensation & bullet hitboxes
 
@@ -1123,7 +1150,11 @@ function sweepRewound(
   return _sh
 }
 
-/** HUD lead pipper for a seat's gun against `target` (same ballistics and muzzle as the server). -1 = none. */
+/**
+ * HUD lead pipper for a seat's gun against `target` (same ballistics and muzzle as the server): writes the
+ * world point to aim the seat at and returns time to intercept, -1 = no gun / no solution. Bullets fire
+ * along the aim clamped to the gimbal; use `gunCanReach` to grey out a pipper outside it.
+ */
 export function gunLeadPoint(shooter: VehicleEntity, seat: SeatIndex, target: VehicleEntity, out: Vec3, weapon?: WeaponId): number {
   let id = weapon ?? null
   if (!id) {

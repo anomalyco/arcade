@@ -25,6 +25,9 @@ export const CAT_DECK_MIN_HEIGHT = 10
 /** Catapult end speed (× stall) and stroke time (s) from a standstill. */
 export const CAT_END_SPEED = 1.3
 export const CAT_STROKE_TIME = 2.2
+/** Direct mode: wing-leveling gain (1/s), active only below DIRECT_LEVEL_BANK of bank. */
+const DIRECT_LEVEL_GAIN = 0.5
+const DIRECT_LEVEL_BANK = 20 * Math.PI / 180
 /** Pitch-authority multiplier while the airbrake is out (airbrake + pull = tight reversal). */
 const AIRBRAKE_TURN_BONUS = 1.25
 /** Ground deceleration (m/s²) with the throttle at idle: parking brake / carrier hold-back. */
@@ -413,11 +416,16 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
       yRight = clamp(yRight, -yawMax, yawMax)
       rRight = clamp(rRight, -rollMax, rollMax)
     } else {
-      // Manual (direct) flying: stick deflections are pure body rates — pitch, roll, rudder. No assists:
-      // the aircraft holds whatever attitude you leave it in (inverted included).
+      // Manual (direct / keyboard) flying: stick deflections are pure body rates — pitch, roll, rudder.
+      // The aircraft holds whatever attitude you leave it in (inverted included); the only help is the
+      // bank-turn coordination below and a very mild wing-leveling when already nearly level.
       pUp = clamp(inPitch * pitchMax * (inPitch < 0 ? 0.75 : 1), -pitchMax, pitchMax)
       yRight = inYaw * yawMax
       rRight = inRoll * rollMax
+      // Very mild wing-leveling only when nearly level with no roll input (never in big banks/inverted).
+      if (inRoll === 0 && Math.cos(pitchAngle) > 0.7) {
+        rRight = -bank * DIRECT_LEVEL_GAIN * (1 - smoothstep(DIRECT_LEVEL_BANK * 0.6, DIRECT_LEVEL_BANK, Math.abs(bank)))
+      }
     }
   }
 

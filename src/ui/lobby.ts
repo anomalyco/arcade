@@ -53,15 +53,38 @@ export function escapeHtml(s: string): string {
 
 // Mirrors CONTROL_SCHEMES / CONTROL_SCHEME_LABELS / controlScheme() / setControlScheme() from input.ts.
 // Importing input.ts here would drag the whole Input module into the instant-paint entry chunk (+8 kB).
-const CONTROL_SCHEMES: readonly ControlScheme[] = ["aim", "point", "battlefield"]
-const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { aim: "Mouse-aim (default)", point: "Point & turn", battlefield: "Battlefield (mouse = roll)" }
-const controlScheme = (): ControlScheme => settings.controlScheme === "battlefield" || settings.controlScheme === "point" ? settings.controlScheme : "aim"
-const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "battlefield" ? "direct" : "aim", controlScheme: scheme })
+const CONTROL_SCHEMES: readonly ControlScheme[] = ["keys", "aim", "point", "battlefield"]
+const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { keys: "Keyboard flight + mouse aim (default)", aim: "Mouse-aim (instructor)", point: "Point & turn", battlefield: "Battlefield (mouse = roll)" }
+const controlScheme = (): ControlScheme => settings.controlScheme === "aim" || settings.controlScheme === "battlefield" || settings.controlScheme === "point" ? settings.controlScheme : "keys"
+const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "aim" || scheme === "point" ? "aim" : "direct", controlScheme: scheme })
 
 const kb = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
 
+/** Default scheme rows: keyboard flies, mouse aims the guns. */
+function keyFlightRows(): { title: string; rows: [string, string][] }[] {
+  return [
+    { title: "flight · keyboard + mouse aim", rows: [
+      ["Pitch", `${kb("w")} nose down · ${kb("s")} nose up`],
+      ["Roll · strafe (heli)", `${kb("a", "d")} · heli flips ${kb("←", "→")}`],
+      ["Rudder / pedals", kb("q", "e")],
+      ["Throttle", `${kb("shift")} up + boost · ${kb("z")} down · wheel`],
+      ["Collective (heli)", `${kb("space")} up · ${kb("z")} down`],
+      ["Airbrake · auto-hover", kb("x")],
+    ] },
+    { title: "combat", rows: [
+      ["Aim guns", "mouse moves the gun reticle (push it to the edge to steer)"],
+      ["Guns · missiles", `${kb("lmb")} · ${kb("rmb")} ${kb("v")}`], ["Flares · ability", `${kb("f")} · ${kb("r")}`],
+      ["Switch seat", `${kb("1")} ${kb("2")} · gunners aim with the mouse`],
+    ] },
+    { title: "view & comms", rows: [
+      ["Free-look · camera", `hold ${kb("c")} · ${kb("t")}`], ["Chat · scores · menu", `${kb("enter")} · ${kb("tab")} · ${kb("esc")}`],
+    ] },
+  ]
+}
+
 /** Control rows for a scheme, grouped into sections (help screen, pause menu). */
 export function controlRows(scheme: ControlScheme = controlScheme()): { title: string; rows: [string, string][] }[] {
+  if (scheme === "keys") return keyFlightRows()
   const flight: [string, string][] = scheme === "battlefield"
     ? [
         ["Nose up / down", `mouse ↑↓ (forward = down) · ${kb("↑")} down ${kb("↓")} up`],
@@ -313,7 +336,7 @@ export function settingsScreen(nav: MenuNav, onQuality: (q: Quality) => void, cr
         meta: () => ({ low: "1× resolution · no shadows or post", balanced: "soft shadows · anti-aliasing", high: "full resolution · sharper shadows" })[settings.quality] },
       { label: "Sound", value: () => (settings.muted ? "off" : "on"), adjust: () => updateSettings({ muted: !settings.muted }) },
       { label: "Steering", value: () => CONTROL_SCHEME_LABELS[controlScheme()].replace(/ \(.*\)$/, "").toLowerCase(), adjust: d => setControlScheme(cycle(CONTROL_SCHEMES, controlScheme(), d)),
-        meta: () => ({ point: "mouse turns and pitches the nose", battlefield: "mouse x rolls, a/d yaw", aim: "fly toward a mouse cursor" })[controlScheme()] },
+        meta: () => ({ keys: "keys fly, mouse aims the guns", point: "mouse turns and pitches the nose", battlefield: "mouse x rolls, a/d yaw", aim: "fly toward a mouse cursor" })[controlScheme()] },
       { label: "Mouse sensitivity", value: () => settings.sensitivity.toFixed(2), adjust: d => updateSettings({ sensitivity: Math.round(Math.max(0.2, Math.min(3, settings.sensitivity + d * 0.1)) * 100) / 100 }) },
       { label: "Invert mouse Y", value: () => (settings.invertY ? "on" : "off"), adjust: () => updateSettings({ invertY: !settings.invertY }), meta: "on = mouse away moves the nose down" },
       { label: "Controls", run: () => nav.push({ crumb: `${crumb} — controls`, html: controlsTable(), hints: [["esc", "back"]] }), meta: "full key reference" },

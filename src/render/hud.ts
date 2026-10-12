@@ -76,6 +76,12 @@ export interface HudFrame {
   cockpit?: boolean
   /** Gunner optical zoom (1 = none). */
   zoom?: number
+  /** Gimbaled gun aim point (world), drawn as the gun circle. */
+  gunAim?: Vec3 | null
+  /** Nose / boresight point (world), drawn as a small cross. */
+  nose?: Vec3 | null
+  /** Gun gimbal half-angle (rad) around the nose; drawn faintly when the gun circle nears it. */
+  gimbalLimit?: number
   /** Seconds of spawn protection left. */
   protectedLeft?: number
   /** Distance to the nearest enemy ship while inside its anti-air umbrella (null = clear). */
@@ -92,7 +98,8 @@ export interface Hud {
   spotted(by: string | null, byTeam: TeamId | null, target: string, targetTeam: TeamId, mine: boolean): void
   chat(name: string, team: TeamId | null, text: string): void
   banner(text: string, sub?: string, ms?: number): void
-  hitmarker(kill?: boolean): void
+  /** Confirmed hit by the local player (X around the reticle); kill = bigger red X + "kill". */
+  hitmarker(kill?: boolean, damage?: number): void
   /** Own aircraft was hit; `from` = attacker position (draws a directional arc). */
   damage(from?: Vec3 | null): void
   /** Victim death card: killer null = crashed. */
@@ -163,7 +170,12 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-msl"><i></i><span>msl</span></div>
     <div class="hud-lock"><i class="ring"></i><i class="br"></i><b>lock</b></div>
     <div class="hud-bore"><i></i></div>
-    <div class="hud-aim"><i></i><div class="hud-hit"><i></i><i></i><i></i><i></i></div></div>
+    <div class="hud-aim"><i></i></div>
+    <div class="hud-gun"><i></i></div>
+    <div class="hud-nose"></div>
+    <div class="hud-gimbal"><i></i></div>
+    <div class="hud-hitx"><div class="hud-hit"><i></i><i></i><i></i><i></i></div><b class="kl">kill</b><span class="dmg"></span></div>
+    <div class="hud-radar z"><canvas></canvas><span class="rr">3 km</span></div>
     <div class="hud-top z">
       <div class="hud-compass"><div class="strip"></div><i class="caret"></i><span class="hdg">000</span></div>
       <div class="hud-score"></div>
@@ -201,7 +213,19 @@ export function createHud(parent: HTMLElement): Hud {
   const guideT = new Slot(q(".hud-guide b"))
   const guideS = new Slot(q(".hud-guide span"))
   const hint = new Slot(q(".hud-hint"))
-  const hitEl = q(".hud-hit")
+  const hitX = new Slot(q(".hud-hitx"))
+  const hitDmg = q(".hud-hitx .dmg")
+  let killAt = 0
+  const gunEl = new Slot(q(".hud-gun"))
+  const noseEl = new Slot(q(".hud-nose"))
+  const gimbalEl = new Slot(q(".hud-gimbal"))
+  let gimbalR = -1
+  const radar = q<HTMLCanvasElement>(".hud-radar canvas")
+  const RADAR_CSS = 168
+  const radarDpr = Math.min(2, window.devicePixelRatio || 1)
+  radar.width = radar.height = Math.round(RADAR_CSS * radarDpr)
+  const rctx = radar.getContext("2d")!
+  const RADAR_RANGE = 3000
   const dmgEl = q(".hud-dmg")
   const dirEl = q(".hud-dir")
   const deathEl = q(".hud-death")
@@ -302,9 +326,15 @@ export function createHud(parent: HTMLElement): Hud {
   onResize()
   window.addEventListener("resize", onResize)
 
+  /**
+   * World → screen, only for points in FRONT of the camera. Projecting a point behind the camera mirrors it
+   * onto the screen, which made markers for aircraft behind you appear ahead — so test camera-space depth first.
+   */
   const project = (p: Vec3, cam: PerspectiveCamera): boolean => {
-    _v.set(p[0], p[1], p[2]).project(cam)
-    return _v.z < 1 && _v.z > -1
+    _v.set(p[0], p[1], p[2]).applyMatrix4(cam.matrixWorldInverse)
+    if (_v.z > -1) return false
+    _v.applyMatrix4(cam.projectionMatrix)
+    return true
   }
   const sx = () => (_v.x * 0.5 + 0.5) * w
   const sy = () => (-_v.y * 0.5 + 0.5) * h
@@ -420,6 +450,50 @@ export function createHud(parent: HTMLElement): Hud {
     }
   }
 
+  /** Rotating radar: forward = up, 3 km range, enemies by range (no LOS needed), spotted highlighted. */
+  function drawRadar(f: HudFrame) {
+    const S = RADAR_CSS, c = S / 2, R = S / 2 - 6
+    const ctx = rctx
+    ctx.setTransform(radarDpr, 0, 0, radarDpr, 0, 0)
+    ctx.clearRect(0, 0, S, S)
+    ctx.fillStyle = "rgba(12,16,16,.42)"
+    ctx.beginPath(); ctx.arc(c, c, R + 4, 0, Math.PI * 2); ctx.fill()
+    ctx.strokeStyle = "rgba(236,234,228,.22)"; ctx.lineWidth = 1
+    for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(c, c, (R * i) / 3, 0, Math.PI * 2); ctx.stroke() }
+    ctx.beginPath(); ctx.moveTo(c, c - R); ctx.lineTo(c, c + R); ctx.moveTo(c - R, c); ctx.lineTo(c + R, c); ctx.strokeStyle = "rgba(236,234,228,.1)"; ctx.stroke()
+    // View cone.
+    const fovH = Math.atan(Math.tan(((f.camera.fov * Math.PI) / 180) / 2) * f.camera.aspect)
+    ctx.fillStyle = "rgba(236,234,228,.06)"
+    ctx.beginPath(); ctx.moveTo(c, c); ctx.arc(c, c, R, -Math.PI / 2 - fovH, -Math.PI / 2 + fovH); ctx.closePath(); ctx.fill()
+    if (!f.vehicle) return
+    const me = f.vehicle.flight.position
+    const hd = (f.heading * Math.PI) / 180
+    const cs = Math.cos(hd), sn = Math.sin(hd)
+    const myTeam = f.me?.team ?? -1
+    const k = R / RADAR_RANGE
+    for (const v of f.vehicles) {
+      if (!v.alive || v.id === f.vehicle.id) continue
+      const dx = v.flight.position[0] - me[0], dz = v.flight.position[2] - me[2]
+      const d = Math.hypot(dx, dz)
+      const friend = v.team === myTeam
+      const spotted = !friend && v.spottedUntil > f.time
+      if (d > RADAR_RANGE && !spotted) continue
+      // Heading h: forward = (sin h, -cos h). Rotate so forward is up.
+      const fx = dx * cs + dz * sn, fy = -dx * sn + dz * cs
+      let x = fx * k, y = fy * k
+      const m = Math.hypot(x, y)
+      if (m > R) { x *= R / m; y *= R / m }
+      x += c; y += c
+      ctx.fillStyle = TEAM_TINTS[v.team]
+      if (friend) { ctx.globalAlpha = 0.7; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); ctx.globalAlpha = 1; continue }
+      ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = "rgba(8,12,12,.7)"; ctx.lineWidth = 1; ctx.stroke()
+      if (spotted) { ctx.strokeStyle = "#ff7a2e"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.stroke() }
+    }
+    ctx.fillStyle = "#eceae4"
+    ctx.beginPath(); ctx.moveTo(c, c - 6); ctx.lineTo(c + 4, c + 4); ctx.lineTo(c, c + 2); ctx.lineTo(c - 4, c + 4); ctx.closePath(); ctx.fill()
+  }
+
   function drawBoard(f: HudFrame) {
     const teams: PlayerInfo[][] = Array.from({ length: f.teams }, () => [])
     for (const p of f.players.values()) if (p.team < f.teams) teams[p.team].push(p)
@@ -441,11 +515,27 @@ export function createHud(parent: HTMLElement): Hud {
       const flying = !!f.vehicle && f.vehicle.alive
       if (f.direct !== isDirect) {
         isDirect = f.direct
-        ;(isDirect ? bore.el : aim.el).appendChild(hitEl)
       }
-      // Aim reticle + boresight
+      // Aim reticle + boresight; the gimbaled gun circle + nose cross replace the boresight when provided.
       if (flying && f.aimPoint && project(f.aimPoint, cam)) aim.setTransform(tf(sx(), sy())); else aim.setTransform(HIDDEN)
-      if (flying && f.borePoint && project(f.borePoint, cam)) bore.setTransform(tf(sx(), sy())); else bore.setTransform(HIDDEN)
+      const gimbaled = flying && !!f.gunAim
+      if (!gimbaled && flying && f.borePoint && project(f.borePoint, cam)) bore.setTransform(tf(sx(), sy())); else bore.setTransform(HIDDEN)
+      let rx = w / 2, ry = h / 2
+      if (gimbaled && project(f.gunAim!, cam)) { rx = sx(); ry = sy(); gunEl.setTransform(tf(rx, ry)) } else gunEl.setTransform(HIDDEN)
+      let nx = NaN, ny = NaN
+      if (gimbaled && f.nose && project(f.nose, cam)) { nx = sx(); ny = sy(); noseEl.setTransform(tf(nx, ny)) } else noseEl.setTransform(HIDDEN)
+      if (gimbaled && f.gimbalLimit && !Number.isNaN(nx)) {
+        const gr = Math.round(coneR(f.gimbalLimit, cam))
+        const near = Math.hypot(rx - nx, ry - ny) > gr * 0.7
+        if (gr !== gimbalR) { gimbalR = gr; gimbalEl.el.style.setProperty("--r", `${gr}px`) }
+        gimbalEl.setTransform(near ? tf(nx, ny) : HIDDEN)
+      } else gimbalEl.setTransform(HIDDEN)
+      if (!gimbaled && flying) {
+        // Hit marker follows whichever reticle is active.
+        if (f.aimPoint && !isDirect && project(f.aimPoint, cam)) { rx = sx(); ry = sy() }
+        else if (f.borePoint && project(f.borePoint, cam)) { rx = sx(); ry = sy() }
+      }
+      hitX.setTransform(tf(rx, ry))
       if (flying && f.lead && project(f.lead, cam)) lead.setTransform(tf(sx(), sy())); else lead.setTransform(HIDDEN)
       if (flying && f.lockTarget && f.lockProgress > 0 && project(f.lockTarget, cam)) {
         lockBox.setTransform(tf(sx(), sy()))
@@ -479,6 +569,7 @@ export function createHud(parent: HTMLElement): Hud {
       if (myTeam !== accentTeam) { accentTeam = myTeam; root.style.setProperty("--team", myTeam >= 0 ? TEAM_TINTS[myTeam] : "#5aa2ff") }
       let mi = 0
       const ownId = f.vehicle?.id
+      const tgt = f.lockTarget ?? f.lead
       const cx = w / 2, cy = h / 2, k = Number(root.style.getPropertyValue("--k")) || 1
       // Tape zones (speed left, altitude right): markers there fade so the numbers stay readable.
       const inTape = (x: number, y: number) => Math.abs(y - cy) < 46 * k && Math.abs(Math.abs(x - cx) - 360 * k) < 90 * k
@@ -540,7 +631,8 @@ export function createHud(parent: HTMLElement): Hud {
           let ex = _v.x, ey = _v.y
           if (_v.z > 0 && Math.abs(ex) < 1e-3 && Math.abs(ey) < 1e-3) ey = -1
           const ang = Math.atan2(ex, ey)
-          const mx = cx - 40, my = cy - 40
+          // Keep arrows clear of the bottom HUD (hull/weapons) when pointing down/behind.
+          const mx = cx - 40, my = Math.cos(ang) < 0 ? cy - 130 : cy - 40
           const sc = Math.min(mx / Math.max(1e-3, Math.abs(Math.sin(ang))), my / Math.max(1e-3, Math.abs(Math.cos(ang))))
           const e = edges[ei++]
           e.used = true
@@ -555,7 +647,9 @@ export function createHud(parent: HTMLElement): Hud {
         m.used = true
         const color = TEAM_TINTS[v.team]
         if (m.color !== color) { m.color = color; m.root.style.setProperty("--c", color) }
-        const near = dist < 1800
+        // Names only for close aircraft or the current target; everything else is a small bracket + distance.
+        const isTarget = !!tgt && Math.hypot(tgt[0] - p[0], tgt[1] - p[1], tgt[2] - p[2]) < 80
+        const near = dist < 1200 || isTarget
         m.slot.setClass(`mk ${friend ? "friend" : "enemy"}${spotted ? " spotted" : ""}${candidate ? " spotting" : ""}${!friend && !near && !spotted ? " far" : ""}${inTape(x, y) ? " tape" : ""}`)
         // Whole pixels: fractional translate3d blurs the label text on its compositor layer.
         m.tf.setTransform(`translate3d(${Math.round(x)}px,${Math.round(y)}px,0)`)
@@ -565,7 +659,7 @@ export function createHud(parent: HTMLElement): Hud {
         }
         if ((frame + mi) % 8 === 0 || m.label.el.textContent === "") {
           const pilot = v.seats[0] ? f.players.get(v.seats[0]) : null
-          m.label.setText(friend || near || spotted || candidate ? `${(pilot?.name ?? VEHICLES[v.kind].name).toLowerCase()}` : "")
+          m.label.setText(near || candidate ? `${(pilot?.name ?? VEHICLES[v.kind].name).toLowerCase()}` : "")
           m.dist.setText(dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist / 10) * 10} m`)
         }
       }
@@ -681,7 +775,7 @@ export function createHud(parent: HTMLElement): Hud {
         if (html !== scoreHtml) { scoreHtml = html; scoreEl.innerHTML = html }
       }
       const now = performance.now()
-      if (flying && now - lastMap > 120) { lastMap = now; drawMap(f) }
+      if (flying && now - lastMap > 120) { lastMap = now; drawMap(f); drawRadar(f) }
       const showBoard = root.classList.contains("board")
       if (showBoard && now - lastBoard > 500) { lastBoard = now; drawBoard(f) }
     },
@@ -724,10 +818,15 @@ export function createHud(parent: HTMLElement): Hud {
       ;(banner as unknown as { _t: number })._t = window.setTimeout(() => banner.classList.remove("show"), ms)
     },
 
-    hitmarker(kill = false) {
-      hitEl.className = kill ? "hud-hit kill" : "hud-hit"
-      void hitEl.offsetWidth
-      hitEl.classList.add("on")
+    hitmarker(kill = false, damage) {
+      const el = hitX.el
+      if (!kill && el.classList.contains("kill") && el.classList.contains("on") && performance.now() - killAt < 600) return
+      if (kill) killAt = performance.now()
+      el.classList.remove("on")
+      el.classList.toggle("kill", kill)
+      hitDmg.textContent = !kill && damage ? String(Math.round(damage)) : ""
+      void el.offsetWidth
+      el.classList.add("on")
     },
 
     deathCard(killer, killerTeam, weapon, distance) {
