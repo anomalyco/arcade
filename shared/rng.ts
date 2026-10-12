@@ -32,3 +32,9 @@ export function seedOf(text: string): number {
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
   return h >>> 0
 }
+
+/** Stateless hash to [0, 1). */
+export function hash1(n: number): number {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453
+  return x - Math.floor(x)
+}

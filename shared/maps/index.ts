@@ -1,13 +1,13 @@
 import type { MapId } from "../config"
-import { warehouse } from "./warehouse"
+import { office } from "./office"
 import type { MapDef } from "./types"
 
-export type { MapDef, Door, LampDef, NoisySurface } from "./types"
+export type * from "./types"
 
-const MAP_LIST: Record<MapId, MapDef> = { warehouse }
+const MAPS: Partial<Record<MapId, MapDef>> = { office }
 
 export function getMap(id: string): MapDef {
-  return (id in MAP_LIST ? MAP_LIST[id as MapId] : undefined) ?? warehouse
+  return MAPS[id as MapId] ?? office
 }
 
-export const MAP_IDS = Object.keys(MAP_LIST) as MapId[]
+export const AVAILABLE_MAPS: MapDef[] = Object.values(MAPS)

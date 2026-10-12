@@ -1,17 +1,7 @@
-import { FIRE_EXPOSE_SECONDS, MINE_ARM, WEAPONS, type Gadget, type Mode, type Stance, type Weapon } from "../config"
-import type { Award, Phase, Player, SimEvent, Stats, World } from "./world"
+import { MINE_ARM, type Gadget, type Mode, type Stance, type Weapon } from "../config"
+import type { Noise, Phase, Player, SimEvent, Stats, World } from "./world"
 
-export type RosterRow = {
-  id: string
-  name: string
-  team: number
-  key: string
-  human: boolean
-  connected: boolean
-  alive: boolean
-  inRound: boolean
-  stats: Stats
-}
+export type RosterRow = { id: string; name: string; team: number; key: string; human: boolean; connected: boolean; alive: boolean; inRound: boolean; look: number; stats: Stats }
 
 export type YouView = {
   id: string
@@ -21,27 +11,25 @@ export type YouView = {
   vy: number
   aim: number
   alive: boolean
-  spectator: boolean
+  inRound: boolean
   stance: Stance
   weapon: Weapon
   mag: number
   reserve: number
   reloadLeft: number
   windupLeft: number
-  cooldownLeft: number
-  gadgets: { kind: Gadget; left: number }[]
-  /** 0..1 exposure for the HUD meter. */
+  gadgets: [{ kind: Gadget; left: number }, { kind: Gadget; left: number }]
+  /** 0..1, for your visibility meter. */
   exposure: number
   lit: boolean
-  noise: Player["noise"]
+  seen: boolean
+  noise: Noise
   mines: { x: number; y: number; armed: boolean }[]
 }
 
-export type OtherView = { id: string; name: string; team: number; key: string; x: number; y: number; aim: number; fresh: boolean; moving: boolean }
+export type OtherView = { id: string; x: number; y: number; aim: number; stance: Stance; moving: boolean; windup: boolean; team: number; key: string; look: number; weapon: Weapon }
 
-export type LightView = { id: number; kind: "lamp" | "flare"; x: number; y: number; r: number; power: number; color: readonly [number, number, number]; failing: boolean; broken: boolean }
-
-export type ProjView = { kind: "flare" | "decoy"; x: number; y: number; left: number; landed: boolean }
+export type ThrownView = { id: number; kind: "flare" | "decoy"; sx: number; sy: number; x: number; y: number; thrownAt: number; landAt: number; endAt: number }
 
 export type Snapshot = {
   type: "snap"
@@ -49,7 +37,7 @@ export type Snapshot = {
   t: number
   ack: number
   phase: Phase
-  /** Seconds left in the phase; the round timer while live. */
+  /** Seconds left: the round clock while live, the phase timer otherwise. */
   left: number
   roundNo: number
   rounds: number
@@ -60,47 +48,50 @@ export type Snapshot = {
   lastWinner: string | null
   you: YouView | null
   others: OtherView[]
-  lights: LightView[]
-  doors: { id: number; open: boolean }[]
-  projectiles: ProjView[]
+  /** Per map light: [flags (1 broken, 2 off), dimUntil, failAt]. Power is derived from these and the clock. */
+  lamps: number[]
+  doors: number[]
+  glass: number[]
+  thrown: ThrownView[]
   bolts: { x: number; y: number }[]
-  roster: RosterRow[]
-  awards: Award[]
+  corpses: { id: string; x: number; y: number; team: number; key: string; aim: number }[]
 }
 
 /**
- * The visibility filter. Hidden players never leave the server: only the viewer's own state and the enemies (and
- * friends) the viewer can see are included. Dead viewers and spectators see no living players at all.
+ * The visibility filter. A snapshot carries your own state, teammates, and the enemies you can see under the rules
+ * in World.sees. Hidden enemies never leave the server, not even dimmed. The dead see their living teammates only.
  */
-export function buildSnapshot(world: World, viewerId: string, ack: number): Snapshot {
+export function buildSnapshot(world: World, viewerId: string): Snapshot {
   const me = world.players.get(viewerId) ?? null
   const others: OtherView[] = []
   if (me) {
     for (const q of world.players.values()) {
-      if (!world.canSee(me, q)) continue
-      others.push({ id: q.id, name: q.name, team: q.team, key: world.teamKey(q), x: q.x, y: q.y, aim: q.aim, fresh: world.time - q.lastFireAt < FIRE_EXPOSE_SECONDS, moving: Math.hypot(q.vx, q.vy) > 0.3 })
+      if (q.id === me.id || !q.alive) continue
+      const visible = me.alive ? world.sees(me, q) : world.mode === "tdm" && me.inRound && !world.enemy(me, q)
+      if (!visible) continue
+      others.push({
+        id: q.id,
+        x: q.x,
+        y: q.y,
+        aim: q.aim,
+        stance: q.stance,
+        moving: Math.hypot(q.vx, q.vy) > 0.3,
+        windup: q.windupUntil > 0,
+        team: q.team,
+        key: world.keyOf(q),
+        look: q.loadout.look,
+        weapon: q.loadout.weapon,
+      })
     }
   }
-  const lights: LightView[] = []
-  for (const l of world.lights()) {
-    const lamp = l.kind === "lamp" ? world.lamps.find((x) => x.id === l.id) : undefined
-    lights.push({ id: l.id, kind: l.kind, x: l.x, y: l.y, r: l.radius, power: l.power, color: l.color, failing: lamp ? lamp.failAt > 0 : false, broken: lamp ? lamp.broken : false })
-  }
-  const projectiles: ProjView[] = world.things
-    .filter((t) => t.kind !== "mine" && world.time < t.endAt)
-    .map((t) => ({ kind: t.kind === "flare" ? "flare" : "decoy", x: t.x, y: t.y, left: Math.max(0, t.landAt - world.time), landed: world.time >= t.landAt }))
-  const mines = world.things.filter((t) => t.kind === "mine" && t.owner === viewerId && t.pings === 0).map((t) => ({ x: t.x, y: t.y, armed: world.time >= t.landAt + MINE_ARM }))
-  const you = me ? youView(world, me, mines) : null
-  const roster: RosterRow[] = world.order.map((id) => {
-    const p = world.players.get(id)!
-    return { id: p.id, name: p.name, team: p.team, key: world.teamKey(p), human: p.human, connected: p.connected, alive: p.alive, inRound: p.inRound, stats: p.stats }
-  })
-  const left = world.phase === "live" ? world.roundEnd - world.time : world.phase === "lobby" ? 0 : Math.max(0, world.phaseEnd - world.time)
+  const lamps: number[] = []
+  for (const s of world.level.lamps) lamps.push((s.broken ? 1 : 0) | (s.off ? 2 : 0), s.dimUntil, s.failAt)
+  const left = world.phase === "live" ? world.roundEnd - world.time : world.phase === "lobby" ? 0 : world.phaseEnd - world.time
   return {
     type: "snap",
     tick: world.tick,
     t: world.time,
-    ack,
+    ack: me?.ack ?? 0,
     phase: world.phase,
     left: Math.max(0, left),
     roundNo: world.roundNo,
@@ -110,18 +101,20 @@ export function buildSnapshot(world: World, viewerId: string, ack: number): Snap
     wins: world.wins,
     host: world.host,
     lastWinner: world.lastWinner,
-    you,
+    you: me ? youView(world, me) : null,
     others,
-    lights,
-    doors: world.doors.map((d) => ({ id: d.id, open: d.open })),
-    projectiles,
+    lamps,
+    doors: world.level.doorsOpen.map((o) => (o ? 1 : 0)),
+    glass: world.level.glassBroken.map((b) => (b ? 1 : 0)),
+    thrown: world.things
+      .filter((t): t is typeof t & { kind: "flare" | "decoy" } => t.kind !== "mine")
+      .map((t) => ({ id: t.id, kind: t.kind, sx: t.sx, sy: t.sy, x: t.x, y: t.y, thrownAt: t.thrownAt, landAt: t.landAt, endAt: t.endAt })),
     bolts: world.bolts.map((b) => ({ x: b.x, y: b.y })),
-    roster,
-    awards: world.phase === "match" ? world.awards() : [],
+    corpses: world.corpses.map((c) => ({ ...c })),
   }
 }
 
-function youView(world: World, p: Player, mines: YouView["mines"]): YouView {
+function youView(world: World, p: Player): YouView {
   return {
     id: p.id,
     x: p.x,
@@ -130,26 +123,33 @@ function youView(world: World, p: Player, mines: YouView["mines"]): YouView {
     vy: p.vy,
     aim: p.aim,
     alive: p.alive,
-    spectator: p.spectator || (!p.inRound && world.phase === "live"),
+    inRound: p.inRound,
     stance: p.stance,
     weapon: p.loadout.weapon,
     mag: p.mag,
     reserve: p.reserve,
     reloadLeft: p.reloadUntil > 0 ? Math.max(0, p.reloadUntil - world.time) : 0,
-    windupLeft: p.windup ? Math.max(0, p.windup.until - world.time) : 0,
-    cooldownLeft: Math.max(0, p.cooldownUntil - world.time),
+    windupLeft: p.windupUntil > 0 ? Math.max(0, p.windupUntil - world.time) : 0,
     gadgets: [
       { kind: p.loadout.gadgets[0], left: p.gadgets[0] },
       { kind: p.loadout.gadgets[1], left: p.gadgets[1] },
     ],
     exposure: world.exposureOf(p),
     lit: p.lit,
+    seen: p.seen,
     noise: p.noise,
-    mines,
+    mines: world.things.filter((t) => t.kind === "mine" && t.key === world.keyOf(p)).map((t) => ({ x: t.x, y: t.y, armed: world.time >= t.landAt + MINE_ARM && world.time >= t.disabledUntil })),
   }
 }
 
-/** Events a viewer should hear. Ripples and kills are public. Tracers and killcams are addressed. */
+export function rosterOf(world: World): RosterRow[] {
+  return world.order.map((id) => {
+    const p = world.players.get(id)!
+    return { id: p.id, name: p.name, team: p.team, key: world.keyOf(p), human: p.human, connected: p.connected, alive: p.alive, inRound: p.inRound, look: p.loadout.look, stats: { ...p.stats } }
+  })
+}
+
+/** Events a viewer may receive. Rings, kills and round results are public; tracers and killcams are addressed. */
 export function eventsFor(events: readonly SimEvent[], viewerId: string): SimEvent[] {
   return events.filter((e) => !("to" in e) || e.to.includes(viewerId))
 }
