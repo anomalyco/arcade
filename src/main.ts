@@ -144,10 +144,8 @@ async function main() {
       const far = input.looking && alive
       const k = far ? 0.65 : 0.35
       const cap = far ? 11 : 5
-      // In cover at a corner it also slides around the corner, to see past it.
-      const peek = game.coverLook()
-      const lx = alive && body ? Math.max(-cap, Math.min(cap, (game.cursor.x - body.x) * k + peek.x)) : 0
-      const lz = alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k + peek.y)) : 0
+      const lx = alive && body ? Math.max(-cap, Math.min(cap, (game.cursor.x - body.x) * k)) : 0
+      const lz = alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
       cam.follow(fx, fz, lx, lz, dt, !body)
       renderer.render(game.build(cam, w, h, dt))
       hud.update(game, cam, w, h, input.mouse, session.status())

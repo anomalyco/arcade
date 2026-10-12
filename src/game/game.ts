@@ -2,7 +2,7 @@ import { CLAYMORE, DT, EQUIP_LOCK, FRAG, GUNS, SPEED, SPRINT_SPEED, SPRINT_TO_FI
 import { type Rect, raycast } from "../../shared/geom"
 import { type MapDef, getMap } from "../../shared/maps"
 import { type Grenade, type Obstacles, obstaclesOf, stepGrenade } from "../../shared/sim/gear"
-import { COVER, type CoverBody, coverGeo, coverView, moveTick, shotLane } from "../../shared/sim/cover"
+import { type Body, stepBody } from "../../shared/sim/move"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import { type Intent, type SimEvent, sprints } from "../../shared/sim/world"
 import type { Sound } from "../audio/sound"
@@ -18,7 +18,6 @@ import { FRAME_FLOATS } from "../render/shaders"
 import type { Input } from "./input"
 import type { Session } from "./session"
 import { Smoothed } from "./smooth"
-import { type CoverHint, coverHint, coverLook, coverMarks } from "./cover-fx"
 import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
 
 export type Rgb3 = [number, number, number]
@@ -69,9 +68,8 @@ export class Game {
   blockers: Rect[] = []
   solids: Rect[] = []
   obstacles: Obstacles = { rects: [], h: [] }
-  body: CoverBody | null = null
+  body: Body | null = null
   /** What Space would do right now, for the HUD prompt and the surface highlight. */
-  coverHint: CoverHint | null = null
   /** The predicted body as drawn, smooth between ticks and corrections; the camera follows this. */
   readonly drawn = new Smoothed()
   aim = 0
@@ -231,7 +229,6 @@ export class Game {
         a.aim = p.aim
         a.gun = p.gun
         a.alive = p.alive
-        a.cover = p.alive ? (p.cover ?? null) : null
       }
       for (const id of [...this.avatars.keys()]) if (!s.players.some((p) => p.id === id)) this.avatars.delete(id)
       const mine = s.players.find((p) => p.id === this.myId)
@@ -267,19 +264,18 @@ export class Game {
         this.equip = you.equip
         this.equipLeft = you.equipLeft
       }
-      this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0, cover: null })
+      this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0 })
       this.pending = []
       this.corpses = this.corpses.filter((c) => c.id !== this.myId)
     }
     this.wasAlive = mine.alive
     if (!mine.alive) {
-      this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0, cover: null })
+      this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0 })
       return
     }
     this.pending = this.pending.filter((p) => p.seq > s.ack)
-    const b: CoverBody = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy, cover: you?.cover ? { ...you.cover } : null }
-    const geo = coverGeo(this.map)
-    for (const p of this.pending) moveTick(b, p.i, sprints(p.i), geo, this.solids)
+    const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
+    for (const p of this.pending) stepBody(b, p.i.mx, p.i.my, sprints(p.i) ? SPRINT_SPEED : SPEED, this.solids, DT)
     // Adopt the replayed state exactly; a small correction is smoothed out of the drawn position, a big one snaps.
     if (this.body && Math.hypot(b.x - this.body.x, b.y - this.body.y) < 1.5) {
       this.drawn.correct(b.x - this.body.x, b.y - this.body.y)
@@ -295,7 +291,7 @@ export class Game {
     }
   }
 
-  private place(b: CoverBody): void {
+  private place(b: Body): void {
     this.body = b
     this.drawn.reset(b)
   }
@@ -491,35 +487,26 @@ export class Game {
       const fire = live && input.enabled && input.firing
       const equip = live && input.takeEquip()
       const use = live && input.enabled && (input.held("KeyF") || input.held("KeyE"))
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, cover: input.takeCover() && live, peek: live && input.enabled && input.looking }
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       const seq = ++this.seq
       this.session.send({ type: "intent", seq, i })
       if (!live || !this.body) {
         this.triggerHeld = fire
-        this.coverHint = null
         continue
       }
       this.pending.push({ seq, i })
       if (this.pending.length > 90) this.pending.shift()
       this.drawn.tick(this.body)
-      const geo = coverGeo(this.map)
-      const moved = moveTick(this.body, i, sprints(i), geo, this.solids)
-      const sprint = moved.sprint
-      if (moved.popped) this.readyAt = Math.max(this.readyAt, this.now + COVER.pop)
-      this.coverHint = coverHint(geo, this.body, i)
+      const sprint = sprints(i)
+      stepBody(this.body, i.mx, i.my, sprint ? SPRINT_SPEED : SPEED, this.solids, DT)
       if (equip && this.equipLeft > 0) this.localEquip()
       this.localGun(fire, reload, sprint)
     }
     if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
     this.bloom = Math.max(0, this.bloom - dt * 2.6)
     this.hurt = Math.max(0, this.hurt - dt * 0.9)
-  }
-
-  /** Where the camera should look past a corner you're in cover at, as an offset on the floor. */
-  coverLook(): { x: number; y: number } {
-    return this.alive && this.body ? coverLook(this.body) : { x: 0, y: 0 }
   }
 
   /** Your own throw or plant animates and sounds at once; the frag itself arrives with the server's throw event. */
@@ -561,8 +548,7 @@ export class Game {
       const a = this.aim + spread
       const dx = Math.cos(a)
       const dy = Math.sin(a)
-      const lane = shotLane(coverGeo(this.map), b, dx, dy, gun.range)
-      let stop = Math.min(lane.wall, gun.range)
+      let stop = Math.min(raycast(b.x, b.y, dx, dy, this.blockers, gun.range), gun.range)
       let nearest = gun.range
       let hit = false
       const myTeam = teamOf(this.snap, this.roster, this.myId)
@@ -570,7 +556,7 @@ export class Game {
         if (!o.alive || (myTeam >= 0 && teamOf(this.snap, this.roster, o.id) === myTeam)) continue
         const along = (o.x - b.x) * dx + (o.y - b.y) * dy
         const off = Math.abs(-(o.x - b.x) * dy + (o.y - b.y) * dx)
-        if (along > 0 && along < nearest && off < 0.4 && lane.reaches(o, along)) {
+        if (along > 0 && along < nearest && along < stop && off < 0.4) {
           nearest = along
           hit = true
         }
@@ -851,7 +837,6 @@ export class Game {
       const a = this.avatarMe
       a.gun = this.gun
       a.alive = true
-      a.cover = coverView(me.cover)
       a.reloadAt = this.reloadUntil > 0 ? this.reloadUntil - GUNS[this.gun].reload : -10
       a.reloadFor = GUNS[this.gun].reload
       const d = this.drawn
@@ -972,7 +957,6 @@ export class Game {
     }
 
     this.gearSprites(t)
-    if (me) coverMarks(this.coverHint, me, t, (x, y, z, size, r, g, b, a, kind, rot, stretch) => this.sprite(true, x, y, z, size, r, g, b, a, kind, rot, stretch))
     modeSprites(snap, t, (...a) => this.sprite(...a))
 
     this.particles = this.particles.filter((p) => t - p.t0 < p.life)

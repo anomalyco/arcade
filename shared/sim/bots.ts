@@ -28,7 +28,7 @@ export class BotBrain implements Brain {
 
   think(world: World, p: Player): Intent {
     const now = world.time
-    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false, cover: false, peek: false }
+    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
     let near: Player | null = null
     let nd = Infinity
     for (const q of world.players.values()) {

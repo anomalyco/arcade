@@ -1,13 +1,12 @@
 /**
- * Keyboard and mouse. WASD or arrows move on screen axes, the mouse aims, hold right click to look further ahead (and
- * lean out of cover), hold left click to fire, hold Shift to sprint, Space takes or leaves cover, R reloads, G or
+ * Keyboard and mouse. WASD or arrows move on screen axes, the mouse aims, hold right click to look further ahead,
+ * hold left click to fire, hold Shift to sprint, R reloads, G or
  * middle click throws or plants your equipment, 1/2/3 pick a gun and 4/5 frag or claymore for your next life, Tab shows the scores.
  */
 export class Input {
   private keys = new Set<string>()
   private reloadPressed = false
   private equipPressed = false
-  private coverPressed = false
   mouse = { x: innerWidth / 2, y: innerHeight / 2 }
   firing = false
   /** Right mouse held: push the camera further toward the cursor. */
@@ -24,7 +23,6 @@ export class Input {
       this.keys.add(e.code)
       if (e.code === "KeyR") this.reloadPressed = true
       if (e.code === "KeyG" && !e.repeat) this.equipPressed = true
-      if (e.code === "Space" && !e.repeat) this.coverPressed = true
     })
     addEventListener("keyup", (e) => this.keys.delete(e.code))
     addEventListener("blur", () => {
@@ -73,12 +71,6 @@ export class Input {
   takeEquip(): boolean {
     const r = this.equipPressed
     this.equipPressed = false
-    return r && this.enabled
-  }
-
-  takeCover(): boolean {
-    const r = this.coverPressed
-    this.coverPressed = false
     return r && this.enabled
   }
 
