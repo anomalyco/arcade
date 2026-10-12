@@ -1,0 +1,7 @@
+node_modules
+dist
+.wrangler
+*.tsbuildinfo
+.DS_Store
+.env*
+/shots
