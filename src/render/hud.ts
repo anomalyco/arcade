@@ -78,13 +78,15 @@ export interface HudFrame {
   /** Gunner optical zoom (1 = none). */
   zoom?: number
   /** Bombardier sight (bomber seat 1): predicted impact, time to impact, release cue. */
-  bombSight?: { impact: Vec3 | null; tti: number; alt: number; speed: number; overShip: string | null } | null
+  bombSight?: { impact: Vec3 | null; tti: number; alt: number; speed: number; overShip: string | null; bombs?: number; pilot?: boolean; peek?: boolean; falling?: boolean } | null
+  /** Steerable-bomb camera: cursor ground point, ballistic impact, bomb height/time, enemy ship under the cursor. */
+  bombCam?: { steering: boolean; cursor: Vec3 | null; impact: Vec3 | null; alt: number; tti: number; ship: string | null; shipHp: number | null; pilot: boolean } | null
   /** Stealth airframe status for the crew (above/below the fleet AA ceiling). */
   stealth?: { above: boolean; ceiling: number } | null
   /** Fleet Strike ship objectives (hp per ship). */
   ships?: ShipState[]
   /** Set while the local player mans a ship turret instead of flying. */
-  turret?: { name: string; kind: "ciws" | "gun"; heat: number; overheat: boolean; shipHp: number; turretHp: number | null; pos: Vec3 } | null
+  turret?: { hint?: string; name: string; kind: "ciws" | "gun"; heat: number; overheat: boolean; shipHp: number; turretHp: number | null; pos: Vec3 } | null
   /** Gimbaled gun aim point (world), drawn as the gun circle. */
   gunAim?: Vec3 | null
   /** Nose / boresight point (world), drawn as a small cross. */
@@ -178,6 +180,9 @@ export function createHud(parent: HTMLElement): Hud {
     <div class="hud-aa"><b>enemy fleet — anti-air</b><span></span></div>
     <div class="hud-prot"></div>
     <div class="hud-bimp"><i></i></div>
+    <div class="hud-bcur"><i></i></div>
+    <div class="hud-bcam z"><div class="st">steering</div><div class="sh"></div><div class="rd"></div></div>
+    <div class="hud-turhint z"></div>
     <div class="hud-bomb z"><div class="rel">release</div><div class="rd"></div></div>
     <div class="hud-stealth z"></div>
     <div class="hud-zoom"></div>
@@ -325,6 +330,11 @@ export function createHud(parent: HTMLElement): Hud {
   const aaTxt = new Slot(q(".hud-aa span"))
   const protEl = new Slot(q(".hud-prot"))
   const bimp = new Slot(q(".hud-bimp"))
+  const bcur = new Slot(q(".hud-bcur"))
+  const bcam = new Slot(q(".hud-bcam"))
+  const bcamSh = new Slot(q(".hud-bcam .sh"))
+  const bcamRd = new Slot(q(".hud-bcam .rd"))
+  const turHint = new Slot(q(".hud-turhint"))
   const bombEl = new Slot(q(".hud-bomb"))
   const bombRd = new Slot(q(".hud-bomb .rd"))
   const stealthEl = new Slot(q(".hud-stealth"))
@@ -733,11 +743,33 @@ export function createHud(parent: HTMLElement): Hud {
         if (pl > 0) protEl.setText(`protected · ${Math.ceil(pl)}s`)
       }
       // Bomb sight: predicted impact reticle + readout + release cue.
-      const bs = flying ? f.bombSight : null
-      if (bs?.impact && project(bs.impact, cam)) { bimp.setTransform(tf(sx(), sy())); bimp.setClass(bs.overShip ? "hud-bimp on" : "hud-bimp") } else bimp.setTransform(HIDDEN)
+      // Bomb camera (steerable bomb): cursor reticle + ballistic impact + readout; replaces the bomb sight.
+      const bc = flying ? f.bombCam : null
+      if (bc?.steering && bc.cursor && project(bc.cursor, cam)) { bcur.setTransform(tf(sx(), sy())); bcur.setClass(bc.ship ? "hud-bcur on" : "hud-bcur") } else bcur.setTransform(HIDDEN)
+      if (frame % 4 === 0) {
+        bcam.setClass(bc ? `hud-bcam z on${bc.steering ? " steer" : ""}${bc.ship ? " tgt" : ""}` : "hud-bcam z")
+        if (bc) {
+          bcamSh.setText(bc.ship ? `${bc.ship}${bc.shipHp !== null ? ` · ${Math.round(bc.shipHp * 100)}%` : ""}` : "")
+          bcamRd.setText(`bomb ${Math.round(bc.alt)} m · impact ${bc.tti > 0 ? `${bc.tti.toFixed(1)} s` : "—"}${bc.steering ? "" : bc.pilot ? " · hold rmb or press b to steer" : ""}${bc.steering && bc.pilot ? " · b / release rmb: stop steering" : ""}`)
+        }
+        turHint.setClass(f.turret?.hint ? "hud-turhint z on" : "hud-turhint z")
+        if (f.turret?.hint) turHint.setText(f.turret.hint)
+      }
+      const bs = flying && !bc?.steering ? f.bombSight : null
+      if (bs?.impact && project(bs.impact, cam) && Math.abs(_v.x) < 0.98 && Math.abs(_v.y) < 0.98) {
+        bimp.setTransform(tf(sx(), sy())); bimp.setClass(bs.overShip ? "hud-bimp on" : "hud-bimp")
+      } else if (bs?.impact) {
+        // Impact point off-screen: pin an arrow to the screen edge in its true direction (camera space).
+        _v.set(bs.impact[0], bs.impact[1], bs.impact[2]).applyMatrix4(cam.matrixWorldInverse)
+        const ang = Math.atan2(_v.x, _v.y)
+        const mx = w / 2 - 60, my = Math.cos(ang) < 0 ? h / 2 - 160 : h / 2 - 70
+        const sc = Math.min(mx / Math.max(1e-3, Math.abs(Math.sin(ang))), my / Math.max(1e-3, Math.abs(Math.cos(ang))))
+        bimp.setTransform(tf(w / 2 + Math.sin(ang) * sc, h / 2 - Math.cos(ang) * sc) + ` rotate(${(ang * 180 / Math.PI + 180).toFixed(0)}deg)`)
+        bimp.setClass(`hud-bimp off${bs.overShip ? " on" : ""}`)
+      } else bimp.setTransform(HIDDEN)
       if (frame % 4 === 0) {
         bombEl.setClass(bs ? `hud-bomb z on${bs.overShip ? " go" : ""}` : "hud-bomb z")
-        if (bs) bombRd.setText(`alt ${Math.round(bs.alt)} m · ${Math.round(bs.speed * 3.6)} km/h · impact ${bs.tti > 0 ? `${bs.tti.toFixed(1)} s` : "—"}${bs.overShip ? ` · ${bs.overShip.replace(/^t\d-/, "").replace(/(\D)(\d)$/, "$1 $2")}` : ""}`)
+        if (bs) bombRd.setText(`bombs ${bs.bombs ?? 0} · alt ${Math.round(bs.alt)} m · impact ${bs.tti > 0 ? `${bs.tti.toFixed(1)} s` : "—"}${bs.pilot && !bs.falling ? ` · ${bs.peek ? "b: exit sight" : "b: bomb sight"}` : ""}${bs.overShip ? ` · ${bs.overShip.replace(/^t\d-/, "").replace(/(\D)(\d)$/, "$1 $2")}` : ""}`)
         const stl = flying ? f.stealth : null
         stealthEl.setClass(stl ? `hud-stealth z on${stl.above ? "" : " low"}` : "hud-stealth z")
         if (stl) stealthEl.setText(stl.above ? `stealth · above aa ceiling` : `stealth · below aa ceiling (${stl.ceiling} m)`)
@@ -799,7 +831,7 @@ export function createHud(parent: HTMLElement): Hud {
           if (wr.wasRegen && !wpn.regen && !unlimited && wpn.ammo >= wpn.cap) wr.full = nowMs + 700
           wr.wasRegen = wpn.regen
           wr.row.setClass(`w${wpn.ready < 1 ? " reload" : ""}${wpn.locked ? " locked" : ""}${wpn.regen ? " regen" : ""}${empty ? " empty" : ""}${wr.full > nowMs ? " full" : ""}`)
-          wr.name.setText(spec.name.toLowerCase())
+          wr.name.setText(spec.kind === "bomb" ? "bombs" : spec.name.toLowerCase())
           wr.ammo.setText(spec.kind === "pulse" ? (wpn.ready >= 1 ? "ready" : `${Math.round(wpn.ready * 100)}%`) : unlimited ? "∞" : empty ? "reload" : String(wpn.ammo))
           const frac = spec.kind === "pulse" ? wpn.ready : unlimited ? 1 : wpn.ammo / Math.max(1, wpn.cap)
           wr.bar.setTransform(`scaleX(${Math.max(0, Math.min(1, frac)).toFixed(3)})`)

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
-  STEALTH_AA_CEILING, STEALTH_LOCK_TIME, SHIP_TARGET_PREFIX, applyTurretInput, damageShip, shipRuntime, segmentHitsShipEx, SHIP_SINK_COLLISION_TIME,
+  steerableBomb, STEALTH_AA_CEILING, STEALTH_LOCK_TIME, SHIP_TARGET_PREFIX, applyTurretInput, damageShip, shipRuntime, segmentHitsShipEx, SHIP_SINK_COLLISION_TIME,
   AA_ACQUIRE, AA_TURRETS, fleetAaDps, type AaTurret, isSpawnProtected, markSpawned, turretHasLOS,
   FLARE_TARGET_PREFIX, WEAPON_DAMAGE_MULT, GUN_FULL_RANGE, VIEW_DELAY_DEFAULT, gunLeadPoint, gunCanReach, GUN_GIMBAL, weaponDirection, gunRangeFactor, hitboxSweep, missileDirectDamage, muzzlePosition, rewoundPosition, viewDelayOf, RECON_KINDS, SPOT_COOLDOWN, SPOT_DURATION, SPOT_TIME, applySeatInput, createCombatState, createWeapons, damageFor, killVehicle, leadPoint,
   stepCombat, sweptSphere, type CombatState,
@@ -1240,5 +1240,96 @@ describe("B-2: bombs & stealth", () => {
     expect(hidden.w.events.some(e => e.type === "spotted" && e.target === hidden.b.id)).toBe(true)
     const seen = run(true)
     expect(seen.at).toBeLessThan(WEAPONS.aim9.lockTime! + 0.1)
+  })
+})
+
+describe("B-2 shared bomb load", () => {
+  test("the pilot can drop bombs; both seats share one load and one release cadence", () => {
+    const b = vehicle("bomber", 0, [0, 1800, 0], [150, 0, 0], [1, 0, 0])
+    expect(b.weapons[0][0]).toBe(b.weapons[1][0])
+    const w = world([b])
+    tick(w, [[b, 0, input({ firePrimary: true })], [b, 1, input({ firePrimary: true })]])
+    expect(w.cs.projectiles.filter(p => p.weapon === "bomb")).toHaveLength(1)
+    expect(b.weapons[0][0].ammo).toBe(WEAPONS.bomb.ammo - 1)
+    expect(b.weapons[1][0].ammo).toBe(WEAPONS.bomb.ammo - 1)
+    // Both seats holding the trigger still release at WEAPONS.bomb.rate, and the pool empties at 8.
+    for (let i = 0; i < 60 * 30; i++) tick(w, [[b, 0, input({ firePrimary: true })], [b, 1, input({ firePrimary: true })]])
+    const drops = w.events.filter(e => e.type === "fire" && e.weapon === "bomb").length
+    expect(drops).toBeLessThanOrEqual(WEAPONS.bomb.ammo + 1)
+    expect(drops).toBeGreaterThanOrEqual(WEAPONS.bomb.ammo)
+  })
+
+  test("the shared load regenerates at the normal rate (not doubled)", () => {
+    const b = vehicle("bomber", 0, [0, 1800, 0], [150, 0, 0], [1, 0, 0])
+    const w = world([b])
+    b.weapons[0][0].ammo = 0
+    for (let i = 0; i < Math.round((WEAPONS.bomb.refillDelay + WEAPONS.bomb.refill / 2) * 60); i++) tick(w)
+    expect(b.weapons[0][0].ammo).toBeGreaterThanOrEqual(WEAPONS.bomb.ammo / 2 - 1)
+    expect(b.weapons[0][0].ammo).toBeLessThanOrEqual(WEAPONS.bomb.ammo / 2 + 1)
+  })
+})
+
+describe("steerable bombs", () => {
+  /** Open water 3 km long (+x) and ±600 m wide, away from ships. */
+  const openSea = (): Vec3 => {
+    for (let z = -WORLD_HALF + 2000; z < WORLD_HALF - 2000; z += 700) {
+      for (let x = -WORLD_HALF + 1500; x < WORLD_HALF - 4500; x += 700) {
+        let ok = true
+        for (let dx = 0; dx <= 3500 && ok; dx += 250) for (const dz of [-600, 0, 600]) if (!isWater(x + dx, z + dz) || shipAt(x + dx, z + dz)) ok = false
+        if (ok) return [x, 1000, z]
+      }
+    }
+    throw new Error("no open sea")
+  }
+  /** Drop bombs from a bomber flying +x at 150 m/s; `steer(bombPos)` returns the aim per tick (or null). Returns impact points. */
+  const run = (drops: number[], steer: ((bomb: Vec3, now: number) => { aim: Vec3; flag: boolean } | null) | null) => {
+    const start = openSea()
+    const b = vehicle("bomber", 0, start, [150, 0, 0], [1, 0, 0])
+    b.hp = 1e9
+    const w = world([b])
+    const impacts: Vec3[] = []
+    for (let i = 0; i < 60 * 40; i++) {
+      const fire = drops.some(t => Math.abs(w.now - t) < TICK_DT / 2)
+      const latest = steerableBomb(w.cs, b, 1)
+      const s = latest && steer ? steer(latest.position, w.now) : null
+      const n = w.events.length
+      tick(w, [[b, 1, input({ firePrimary: fire, aim: s ? s.aim : [1, 0, 0], steerBomb: s?.flag ?? false })]])
+      for (let k = n; k < w.events.length; k++) {
+        const e = w.events[k]
+        if (e.type === "explosion" && e.surface === "water") impacts.push(e.position)
+      }
+      if (i > 60 * 3 && !w.cs.projectiles.some(p => p.weapon === "bomb")) break
+    }
+    return { impacts, start }
+  }
+
+  test("steering shifts the impact within the fins' authority (~150–250 m from 1 km)", () => {
+    const base = run([0.5], null).impacts[0]
+    const toward = (off: number) => (bomb: Vec3) => {
+      const t: Vec3 = [base[0], 0, base[2] + off]
+      const d = sub(t, bomb), l = Math.hypot(...d)
+      return { aim: [d[0] / l, d[1] / l, d[2] / l] as Vec3, flag: true }
+    }
+    const near = run([0.5], toward(100)).impacts[0]
+    expect(near[2] - base[2]).toBeGreaterThan(80)
+    expect(near[2] - base[2]).toBeLessThan(120)
+    expect(Math.abs(near[0] - base[0])).toBeLessThan(25)
+    const far = run([0.5], toward(1000)).impacts[0]
+    console.log(`bomb steer: max lateral shift from 1 km = ${(far[2] - base[2]).toFixed(0)} m`)
+    expect(far[2] - base[2]).toBeGreaterThan(150)
+    expect(far[2] - base[2]).toBeLessThan(260)
+  })
+
+  test("no steering without steerBomb; only the latest bomb is guided", () => {
+    const base = run([0.5, 2.5], null).impacts
+    expect(base).toHaveLength(2)
+    const aimAt = (bomb: Vec3): Vec3 => { const d = sub([bomb[0], 0, bomb[2] + 800], bomb), l = Math.hypot(...d); return [d[0] / l, d[1] / l, d[2] / l] }
+    const unflagged = run([0.5, 2.5], bomb => ({ aim: aimAt(bomb), flag: false })).impacts
+    for (let i = 0; i < 2; i++) expect(Math.hypot(unflagged[i][0] - base[i][0], unflagged[i][2] - base[i][2])).toBeLessThan(0.5)
+    // Steer from t = 3 s on (after the second drop): only the second bomb moves.
+    const fixed = (bomb: Vec3): Vec3 => { const d = sub([base[1][0], 0, base[1][2] + 800], bomb), l = Math.hypot(...d); return [d[0] / l, d[1] / l, d[2] / l] }
+    const steered = run([0.5, 2.5], (bomb, now) => (now > 3 ? { aim: fixed(bomb), flag: true } : null)).impacts
+    expect(Math.hypot(steered[0][0] - base[0][0], steered[0][2] - base[0][2])).toBeLessThan(0.5)
+    expect(steered[1][2] - base[1][2]).toBeGreaterThan(100)
   })
 })

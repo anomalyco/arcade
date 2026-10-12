@@ -115,7 +115,7 @@ export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
   bomber: {
     kind: "bomber", name: "B-2 Spirit", model: "models/b2.glb", flight: "jet",
     maxHp: 900, radius: 18, cruise: 150, boost: 180, stall: 70,
-    seatWeapons: [[null, null], ["bomb", null]], flares: 10,
+    seatWeapons: [["bomb", null], ["bomb", null]], flares: 10,
     seatNames: ["Pilot", "Bombardier"], stealth: true,
   },
 }

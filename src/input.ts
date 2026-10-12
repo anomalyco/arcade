@@ -1,12 +1,9 @@
 // Keyboard + mouse input.
-// Default scheme "keys" (keyboard flight + mouse aim), same logic for every aircraft:
-//   jets: W/S pitch (W = nose down) · A/D roll · Q/E rudder · Shift throttle up + boost · Z throttle down ·
-//   wheel fine throttle · X airbrake. Heli: W/S pitch (W = nose down → forward) · A/D strafe ·
-//   ←/→ full roll (flips) · Q/E pedals · Space/Z collective up/down · X auto-hover.
-//   The mouse moves a gun reticle that rides with the aircraft (body-relative), clamped to the gun gimbal
-//   cone; pushing it past ~70% of the cone gently steers toward it. Hold C = free-look.
-// Optional schemes: "aim" (War Thunder-style instructor flies toward a mouse cursor) and "battlefield"
-// (manual: mouse X roll, mouse Y pitch). In manual mouse modes the mouse acts like a spring-centred stick.
+// Default scheme "battlefield" (BF3/BF4-style): mouse Y pitch (away = nose up), mouse X roll, W/S throttle
+//   (S also airbrake for jets), A/D yaw, Q/E roll, Space flares, LMB/RMB fire, hold C free-look.
+//   Heli: W/S collective, A/D yaw (pedals), mouse pitch/roll. The mouse acts like a spring-centred stick.
+// Optional schemes: "aim" (instructor flies toward a mouse cursor), "keys" (keyboard flight + body-relative
+// gun reticle clamped to the gimbal cone) and "point" (point & turn).
 import type { FlightInput, SeatInput, Vec3 } from "./sim/types"
 import { HELI_STRAFE_ROLL } from "./sim/flight"
 import { GUN_GIMBAL } from "./sim/combat"
@@ -17,19 +14,19 @@ export type InputAction = "seat1" | "seat2" | "view" | "chat" | "menu"
 export type MouseMode = "direct" | "aim"
 
 /** Pilot control schemes (settings key `controlScheme`). */
-export const CONTROL_SCHEMES = ["aim", "keys", "point", "battlefield"] as const
+export const CONTROL_SCHEMES = ["battlefield", "aim", "keys", "point"] as const
 export type ControlScheme = (typeof CONTROL_SCHEMES)[number]
 export const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = {
-  keys: "Keyboard flight + mouse aim (default)",
+  battlefield: "Battlefield (default)",
   aim: "Mouse-aim (instructor)",
+  keys: "Keyboard flight + mouse aim",
   point: "Point & turn",
-  battlefield: "Battlefield (mouse = roll)",
 }
 
-/** Current pilot scheme (default "keys"). */
+/** Current pilot scheme (default "battlefield"). */
 export function controlScheme(): ControlScheme {
   const s = (settings as unknown as { controlScheme?: string }).controlScheme
-  return s === "aim" || s === "battlefield" || s === "point" ? s : s === "keys" ? "keys" : "aim"
+  return s === "aim" || s === "keys" || s === "point" ? s : "battlefield"
 }
 
 /** Persist a scheme (keeps the legacy `controlStyle` flag in sync). */
@@ -58,8 +55,10 @@ export const KEY_RAMP_FAST = 0.12
 /** Gun reticle gimbal half-angle (rad): combat's GUN_GIMBAL (pilot guns fire inside this cone). */
 export const RETICLE_LIMIT = GUN_GIMBAL
 /** Bomb sight cone half-angle around straight down (rad) and the initial forward lead. */
-export const BOMBSIGHT_CONE = 35 * Math.PI / 180
+export const BOMBSIGHT_CONE = 72 * Math.PI / 180
 const BOMBSIGHT_DEFAULT_FWD = 20 * Math.PI / 180
+/** Bomb camera cursor half-range (rad). */
+export const BOMBCAM_CURSOR_LIMIT = 0.45
 /** Soft steering assist starts when the reticle is past this fraction of the cone. */
 export const RETICLE_ASSIST_START = 0.7
 /** Assist deflection at the cone edge (pitch / yaw, −1..1 units added to the keys). */
@@ -134,6 +133,17 @@ export class Input {
   bombFwd = 0
   bombSide = 0
   private bombsightActive = false
+  /** Bomb steering (TV-guided style): cursor over the bomb camera (rad from its centre; x right, y up). */
+  bombCursorX = 0
+  bombCursorY = 0
+  /** Latest steering direction bomb → cursor ground point (set by the camera helper each frame). */
+  bombAim: Vec3 = [0, -1, 0]
+  private bombFalling = false
+  private bombardier = false
+  private bombToggle = false
+  private wasSteering = false
+  /** Pilot: level heading held by the instructor while steering a bomb. */
+  private holdHeading: Vec3 = [0, 0, -1]
   private heliPilot = false
   /** Pilot orientation (for the body-relative reticle). */
   private pose: [number, number, number, number] = [0, 0, 0, 1]
@@ -274,10 +284,39 @@ export class Input {
   }
 
   get bombsight(): boolean {
-    return this.bombsightActive
+    return this.bombsightActive && !this.steeringBomb
+  }
+
+  /**
+   * Call each frame with whether this seat has a falling (steerable) bomb. The bombardier steers it
+   * automatically until impact; a pilot steers while holding RMB (or after toggling with B).
+   */
+  setFallingBomb(falling: boolean, isBombardier: boolean): void {
+    if (!falling) this.bombToggle = false
+    this.bombFalling = falling
+    this.bombardier = isBombardier
+    const steering = this.steeringBomb
+    if (steering && !this.wasSteering) {
+      this.bombCursorX = this.bombCursorY = 0
+      // Pilot hands-off: hold wings level on the current heading (instructor on a level aim).
+      const h = Math.hypot(Math.sin(this.noseYaw), Math.cos(this.noseYaw))
+      this.holdHeading = [-Math.sin(this.noseYaw) / h, 0, -Math.cos(this.noseYaw) / h]
+    }
+    this.wasSteering = steering
+  }
+
+  /** True while this seat is steering a falling bomb (send SeatInput.steerBomb, use bombAim). */
+  get steeringBomb(): boolean {
+    return this.bombFalling && (this.bombardier || this.mouseR || this.bombToggle)
+  }
+
+  /** Bomb camera helper result: steering direction for SeatInput.aim. */
+  setBombAim(dir: Vec3): void {
+    this.bombAim[0] = dir[0]; this.bombAim[1] = dir[1]; this.bombAim[2] = dir[2]
   }
 
   aimDir(out: Vec3): Vec3 {
+    if (this.steeringBomb) { out[0] = this.bombAim[0]; out[1] = this.bombAim[1]; out[2] = this.bombAim[2]; return out }
     if (this.bombsightActive) return this.bombDir(out)
     return dirFromAngles(this.aimYaw, this.aimPitch, out)
   }
@@ -295,6 +334,7 @@ export class Input {
 
   /** Mouse-aim / gunner camera direction (aim + free-look offset). */
   lookDir(out: Vec3): Vec3 {
+    if (this.steeringBomb) { out[0] = this.bombAim[0]; out[1] = this.bombAim[1]; out[2] = this.bombAim[2]; return out }
     if (this.bombsightActive) return this.bombDir(out)
     return dirFromAngles(this.aimYaw + this.lookYaw, clamp(this.aimPitch + this.lookPitch, -MAX_PITCH, MAX_PITCH), out)
   }
@@ -375,13 +415,21 @@ export class Input {
    * (e.g. wheel fine-throttle pulses) when non-null.
    */
   flightInput(aim: Vec3 | null, heli: boolean, throttleAxis: number | null, out: FlightInput): FlightInput {
+    if (this.steeringBomb && !this.bombardier) {
+      // Pilot steering a bomb: hands off — the instructor holds wings level on the entry heading, throttle kept.
+      out.throttle = 0; out.boost = false; out.brake = false
+      out.aim = [this.holdHeading[0], this.holdHeading[1], this.holdHeading[2]]
+      out.pitch = out.yaw = out.roll = 0
+      return out
+    }
     // Keyboard flight: Shift = throttle up (+ boost), Z = throttle down; heli collective Space up / Z down.
     const ws = this.reticleActive
       ? (heli ? this.axis(["KeyZ"], ["Space"]) : this.axis(["KeyZ"], ["ShiftLeft", "ShiftRight"]))
       : this.axis(["KeyS"], ["KeyW"])
     out.throttle = ws !== 0 || throttleAxis === null ? ws : throttleAxis
     out.boost = this.held("ShiftLeft", "ShiftRight")
-    out.brake = this.down("KeyX")
+    // Battlefield: holding S (throttle down) also deploys the airbrake for jets.
+    out.brake = this.down("KeyX") || (!heli && !this.reticleActive && controlScheme() === "battlefield" && this.held("KeyS"))
     out.aim = this.mouseMode === "direct" ? null : aim
     out.pitch = this.steerPitch
     out.yaw = this.steerYaw
@@ -393,8 +441,15 @@ export class Input {
     out.aim = aim
     // Space is the heli's collective in keyboard flight, so it doesn't fire there.
     out.firePrimary = this.mouseL || this.down("Mouse0") || (!(this.reticleActive && this.heliPilot) && this.down("Space"))
-    out.fireSecondary = this.mouseR || this.down("KeyV", "Mouse2")
-    out.flares = this.down("KeyF")
+    // RMB steers a falling bomb for the pilot instead of firing.
+    const steer = this.steeringBomb
+    out.fireSecondary = steer && !this.bombardier ? false : this.mouseR || this.down("KeyV", "Mouse2")
+    ;(out as SeatInput & { steerBomb?: boolean }).steerBomb = steer
+    if (steer) out.aim = [this.bombAim[0], this.bombAim[1], this.bombAim[2]]
+    // Battlefield: Space = flares (and never fires); F always drops flares.
+    const bf = controlScheme() === "battlefield"
+    out.flares = this.down("KeyF") || (bf && this.down("Space"))
+    if (bf && !this.mouseL && !this.down("Mouse0")) out.firePrimary = false
     out.ability = this.down("KeyR")
     this.latched.clear()
     return out
@@ -440,6 +495,7 @@ export class Input {
         case "Digit2": this.actions.push("seat2"); break
         case "KeyT": this.actions.push("view"); break
         case "KeyM": this.manualToggle = !this.manualToggle; break
+        case "KeyB": if (this.bombFalling) this.bombToggle = !this.bombToggle; break
         case "Enter": e.preventDefault(); this.actions.push("chat"); break
         case "Escape": if (!this.locked) this.actions.push("menu"); break
       }
@@ -457,6 +513,11 @@ export class Input {
       const s = AIM_SENS * settings.sensitivity
       this.lookYaw -= dx * s
       this.lookPitch = clamp(this.lookPitch - dy * s, -MAX_PITCH, MAX_PITCH)
+    } else if (this.steeringBomb) {
+      // Bomb camera cursor (mouse away = up the screen), clamped to the view.
+      const s = AIM_SENS * settings.sensitivity * 0.5
+      this.bombCursorX = clamp(this.bombCursorX + dx * s, -BOMBCAM_CURSOR_LIMIT, BOMBCAM_CURSOR_LIMIT)
+      this.bombCursorY = clamp(this.bombCursorY - dy * s * (settings.invertY ? -1 : 1), -BOMBCAM_CURSOR_LIMIT, BOMBCAM_CURSOR_LIMIT)
     } else if (this.bombsightActive) {
       // Bomb sight: mouse away = aim further ahead; clamped to the sight cone.
       const s = AIM_SENS * settings.sensitivity * 0.6
@@ -478,10 +539,9 @@ export class Input {
       this.aimPitch = clamp(this.aimPitch - dy * inv * s, -MAX_PITCH, MAX_PITCH)
     } else {
       // Sticks: mouse X = roll (manual/battlefield) or aim lead (point). Mouse Y: mouse away (negative
-      // movementY) = nose up, except Battlefield (flight-sim: away = nose down). Invert flips either.
+      // movementY) = nose up, like Battlefield's default; "Invert mouse Y" flips it.
       this.mouseXStick.feed(dx)
-      const awayIsUp = controlScheme() !== "battlefield"
-      this.mouseYStick.feed((awayIsUp ? -dy : dy) * (settings.invertY ? -1 : 1))
+      this.mouseYStick.feed(-dy * (settings.invertY ? -1 : 1))
     }
   }
 

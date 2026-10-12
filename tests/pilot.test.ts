@@ -114,10 +114,10 @@ describe("stick (mouse → deflection)", () => {
     expect(Math.abs(spike.value)).toBeLessThan(0.01)
   })
 
-  test("default scheme is mouse-aim (instructor); schemes exported", () => {
+  test("default scheme is Battlefield; schemes exported", () => {
     scheme(undefined)
-    expect(inputMod.controlScheme()).toBe("aim")
-    expect(inputMod.CONTROL_SCHEMES).toEqual(["aim", "keys", "point", "battlefield"])
+    expect(inputMod.controlScheme()).toBe("battlefield")
+    expect(inputMod.CONTROL_SCHEMES).toEqual(["battlefield", "aim", "keys", "point"])
   })
 })
 
@@ -232,14 +232,14 @@ describe("optional schemes", () => {
     } finally { scheme(undefined) }
   })
 
-  test("battlefield: always manual — mouse X roll, A/D rudder, mouse away = nose down", () => {
+  test("battlefield: always manual — mouse X roll, A/D rudder, mouse away = nose up", () => {
     scheme("battlefield")
     try {
       const p = new Pilot("fighter")
       p.run(0.15, 400, -400)
       expect(p.buf.aim).toBeNull()
       expect(p.buf.roll).toBeGreaterThan(0.3)
-      expect(p.buf.pitch).toBeLessThan(-0.3)
+      expect(p.buf.pitch).toBeGreaterThan(0.3)
       p.key("KeyD", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); p.key("KeyD", false)
     } finally { scheme(undefined) }
   })
@@ -319,17 +319,17 @@ describe("keyboard flight + mouse aim", () => {
     const p = new Pilot("fighter", 2500)
     p.state.throttle = 1
     let pitched = 0
-    press(p, "KeyS", 8, () => { pitched += p.state.angularVelocity[0] * FRAME })
+    press(p, "KeyS", 10, () => { pitched += p.state.angularVelocity[0] * FRAME })
     expect(pitched).toBeGreaterThan(2 * Math.PI)
     expect(p.state.crashed).toBeNull()
     const r = new Pilot("fighter", 2500)
     r.state.throttle = 1
     let rolled = 0
-    press(r, "KeyD", 1.8, () => { rolled -= r.state.angularVelocity[2] * FRAME })
+    press(r, "KeyD", 2.1, () => { rolled -= r.state.angularVelocity[2] * FRAME })
     expect(rolled).toBeGreaterThan(2 * Math.PI)
     const t = new Pilot("fighter", 2500)
     t.state.throttle = 1
-    press(t, "KeyD", 0.3) // bank right
+    press(t, "KeyD", 0.33) // bank right
     expect(t.r.roll).toBeGreaterThan(45)
     press(t, "KeyS", 2.5) // pull
     expect(t.r.heading).toBeGreaterThan(60)
@@ -437,5 +437,131 @@ describe("bombardier bomb sight", () => {
     expect(d[0]).toBeGreaterThan(0.2)
     expect(Math.abs(d[2])).toBeLessThan(1e-9)
     input.setBombsight(false)
+  })
+})
+
+describe("bomb steering", () => {
+  test("cursorGroundAim: centre cursor aims where the view hits the ground; offsets move the point", async () => {
+    const { cursorGroundAim } = await import("../src/render/camera")
+    const eye: [number, number, number] = [0, 1000, 0], bomb: [number, number, number] = [0, 990, -10]
+    const fwd: [number, number, number] = [0, -1, 0], up: [number, number, number] = [0, 0, -1]
+    const out: [number, number, number] = [0, 0, 0]
+    expect(cursorGroundAim(eye, fwd, up, 0, 0, bomb, () => 0, out)).toBe(true)
+    // ground point (0,0,0): direction from the bomb
+    const n = Math.hypot(0, -990, 10)
+    expect(out[0]).toBeCloseTo(0, 6); expect(out[1]).toBeCloseTo(-990 / n, 6); expect(out[2]).toBeCloseTo(10 / n, 6)
+    cursorGroundAim(eye, fwd, up, 0.2, 0, bomb, () => 0, out) // right = fwd × up = +X
+    const gx = Math.tan(0.2) * 1000
+    const m = Math.hypot(gx, -990, 10)
+    expect(out[0]).toBeCloseTo(gx / m, 5)
+    cursorGroundAim(eye, fwd, up, 0, 0.2, bomb, () => 0, out) // up on screen = -Z
+    expect(out[2]).toBeLessThan(0)
+    cursorGroundAim(eye, fwd, up, 0, 0, bomb, () => 300, out) // terrain height respected
+    expect(out[1]).toBeCloseTo((300 - 990) / Math.hypot(0, 690, 10), 5)
+    expect(cursorGroundAim(eye, [0, 0.2, -1], up, 0, 0, bomb, () => 0, out)).toBe(false)
+  })
+
+  test("bombardier auto-steers a falling bomb (steerBomb + bombAim), back to the sight on impact", () => {
+    const input = new InputCls(canvas as any)
+    input.setEnabled(true)
+    docH.pointerlockchange?.({})
+    winH.mousemove?.({ movementX: 0, movementY: 0 })
+    input.mouseMode = "aim"
+    input.setNose([0, 0, -1])
+    input.setBombsight(true)
+    input.setFallingBomb(true, true)
+    expect(input.steeringBomb).toBe(true)
+    expect(input.bombsight).toBe(false)
+    winH.mousemove({ movementX: 40, movementY: -20 })
+    expect(input.bombCursorX).toBeGreaterThan(0)
+    expect(input.bombCursorY).toBeGreaterThan(0)
+    input.setBombAim([0.1, -0.99, 0])
+    const si = input.seatInput(null, { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false }) as any
+    expect(si.steerBomb).toBe(true)
+    expect(si.aim[0]).toBeCloseTo(0.1, 6)
+    input.setFallingBomb(false, true)
+    expect(input.steeringBomb).toBe(false)
+    expect(input.bombsight).toBe(true)
+    const si2 = input.seatInput([0, -1, 0], { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false }) as any
+    expect(si2.steerBomb).toBe(false)
+    input.setBombsight(false)
+  })
+
+  test("pilot: hold RMB (or B) steers; the aircraft holds wings level on its heading meanwhile", () => {
+    scheme(undefined)
+    const p = new Pilot("fighter", 2000)
+    p.state.throttle = 1
+    p.state.orientation = flight.quatFromYawPitchRoll(-0.5, 0.05, 0.5) // banked, heading ~29°
+    p.input.setNose(flight.forward(p.state.orientation))
+    p.input.setFallingBomb(true, false)
+    expect(p.input.steeringBomb).toBe(false)
+    winH.mousedown({ button: 2, target: canvas })
+    p.input.setFallingBomb(true, false)
+    expect(p.input.steeringBomb).toBe(true)
+    const alt0 = p.state.position[1]
+    p.run(8, 0, 0, () => p.input.setFallingBomb(true, false))
+    expect(p.buf.aim).not.toBeNull()
+    expect(p.buf.pitch).toBe(0); expect(p.buf.roll).toBe(0)
+    expect(Math.abs(p.r.roll)).toBeLessThan(3)
+    expect(Math.abs(((p.r.heading - 28.6 + 540) % 360) - 180)).toBeLessThan(8)
+    expect(Math.abs(p.state.position[1] - alt0)).toBeLessThan(80)
+    const si = p.input.seatInput(null, { aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false }) as any
+    expect(si.fireSecondary).toBe(false)
+    expect(si.steerBomb).toBe(true)
+    winH.mouseup({ button: 2, target: canvas })
+    p.input.setFallingBomb(true, false)
+    expect(p.input.steeringBomb).toBe(false)
+    p.key("KeyB", true); p.key("KeyB", false)
+    expect(p.input.steeringBomb).toBe(true)
+    p.input.setFallingBomb(false, false) // impact: clean exit, toggle cleared
+    expect(p.input.steeringBomb).toBe(false)
+    p.input.setFallingBomb(true, false)
+    expect(p.input.steeringBomb).toBe(false)
+  })
+})
+
+describe("Battlefield (default) mapping", () => {
+  const blank = () => ({ aim: null, firePrimary: false, fireSecondary: false, flares: false, ability: false })
+  test("jets: mouse Y pitch (away = up), mouse X roll, W/S throttle (S airbrake), A/D yaw, Q/E roll, Space flares", () => {
+    scheme(undefined)
+    const p = new Pilot("fighter", 2000)
+    p.state.throttle = 0.5
+    p.run(0.15, 400, -400)
+    expect(p.buf.aim).toBeNull()
+    expect(p.buf.roll).toBeGreaterThan(0.3)
+    expect(p.buf.pitch).toBeGreaterThan(0.3)
+    p.run(0.5)
+    p.key("KeyW", true); p.run(0.5); p.key("KeyW", false)
+    expect(p.state.throttle).toBeGreaterThan(0.7)
+    p.key("KeyS", true); p.run(0.1)
+    expect(p.buf.brake).toBe(true)
+    expect(p.buf.throttle).toBe(-1)
+    p.key("KeyS", false); p.run(0.1)
+    expect(p.buf.brake).toBe(false)
+    p.key("KeyD", true); p.run(0.4); expect(p.buf.yaw).toBeGreaterThan(0.9); expect(p.buf.roll).toBe(0); p.key("KeyD", false); p.run(0.4)
+    p.key("KeyE", true); p.run(0.4); expect(p.buf.roll).toBeGreaterThan(0.9); p.key("KeyE", false); p.run(0.4)
+    p.key("Space", true)
+    const si = p.input.seatInput(null, blank())
+    expect(si.flares).toBe(true)
+    expect(si.firePrimary).toBe(false)
+    p.key("Space", false)
+  })
+
+  test("heli: W/S collective, A/D yaw, mouse pitch/roll", () => {
+    scheme(undefined)
+    const p = new Pilot("apache", 1500)
+    const c0 = p.state.throttle
+    p.key("KeyW", true); p.run(0.3); p.key("KeyW", false)
+    expect(p.state.throttle).toBeGreaterThan(c0)
+    expect(p.buf.brake).toBe(false)
+    p.state.throttle = 0.5
+    p.key("KeyD", true); p.run(0.8); p.key("KeyD", false)
+    expect(p.r.heading).toBeGreaterThan(30)
+    expect(p.r.heading).toBeLessThan(120)
+    p.run(0.2, 0, 500) // mouse toward you = nose down
+    expect(p.buf.pitch).toBeLessThan(-0.3)
+    p.run(0.6)
+    p.run(0.2, 500, 0)
+    expect(p.buf.roll).toBeGreaterThan(0.3)
   })
 })

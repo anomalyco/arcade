@@ -239,6 +239,7 @@ function readSeat(v: unknown): SeatInput | undefined {
   const out: SeatInput = { aim, firePrimary: m.firePrimary === true, fireSecondary: m.fireSecondary === true, flares: m.flares === true, ability: m.ability === true }
   // Lag compensation: how far behind the server the shooter sees remote aircraft (seconds, capped).
   if (typeof m.viewDelay === "number" && Number.isFinite(m.viewDelay)) out.viewDelay = Math.min(MAX_VIEW_DELAY, Math.max(0, m.viewDelay))
+  if (m.steerBomb === true) out.steerBomb = true
   return out
 }
 
@@ -856,7 +857,7 @@ export class RoomEngine {
         const id = v.seats[i]
         const p = id ? this.players.get(id) : undefined
         if (!p || !p.brain) continue
-        const out = botInput(p.brain, p.info, v, vehicles, now, this.combat.missiles, worldQuery, this.combat.ships)
+        const out = botInput(p.brain, p.info, v, vehicles, now, this.combat.missiles, worldQuery, this.combat.ships, this.combat.projectiles)
         // botInput reuses its result objects per brain: copy what we keep.
         p.seat = { ...out.seat, aim: out.seat.aim && [out.seat.aim[0], out.seat.aim[1], out.seat.aim[2]] }
         if (i === 0) p.flight = out.flight ? { ...out.flight, aim: out.flight.aim && [out.flight.aim[0], out.flight.aim[1], out.flight.aim[2]] } : NEUTRAL_INPUT

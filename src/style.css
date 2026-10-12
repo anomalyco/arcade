@@ -388,3 +388,23 @@
 .hud-stealth.on { display: block; }
 .hud-stealth.low { color: var(--or); }
 .hud:not(.flying) .hud-bimp, .hud:not(.flying) .hud-bomb, .hud:not(.flying) .hud-stealth { display: none; }
+.hud-bimp.off i { transform: none; left: -8px; top: -4px; width: 16px; height: 10px; border: 0; background: var(--fg); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.hud-bimp.off.on i { background: var(--or); }
+.hud-bimp.off::after { display: none; }
+/* Steerable bomb camera */
+.hud-bcur { left: 0; top: 0; width: 0; height: 0; will-change: transform; transform: translate3d(-9999px, 0, 0); }
+.hud-bcur i { position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; border: 1.5px solid var(--fg); filter: drop-shadow(0 1px 1px rgba(8, 12, 12, .6));
+  clip-path: polygon(0 0, 30% 0, 30% 2px, 2px 2px, 2px 30%, 0 30%, 0 70%, 2px 70%, 2px calc(100% - 2px), 30% calc(100% - 2px), 30% 100%, 0 100%, 0 0, 100% 0, 100% 30%, calc(100% - 2px) 30%, calc(100% - 2px) 2px, 70% 2px, 70% 0, 100% 0, 100% 100%, 70% 100%, 70% calc(100% - 2px), calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) 70%, 100% 70%, 100% 100%, 0 100%); }
+.hud-bcur::after { content: ""; position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; background: var(--fg); }
+.hud-bcur.on i, .hud-bcur.on::after { border-color: var(--or); background-color: transparent; }
+.hud-bcur.on::after { background: var(--or); }
+.hud-bcam { left: 50%; top: calc(50% + 64px); transform: translateX(-50%); display: none; text-align: center; white-space: nowrap; }
+.hud-bcam.on { display: block; }
+.hud-bcam .st { display: none; font: 700 22px/1 var(--narrow); color: var(--fg); margin-bottom: 6px; }
+.hud-bcam.steer .st { display: block; }
+.hud-bcam .sh { font: 500 14px var(--narrow); color: var(--or); min-height: 0; }
+.hud-bcam .rd { font: 500 12px var(--mono); color: var(--fg); margin-top: 3px; }
+.hud:has(.hud-bcam.on) .hud-bomb { display: none; }
+.hud-turhint { left: 50%; bottom: 118px; transform: translateX(-50%); display: none; font: 500 12px var(--mono); color: var(--fg); white-space: nowrap; }
+.hud-turhint.on { display: block; }
+.hud:not(.flying) .hud-bcur, .hud:not(.flying) .hud-bcam, .hud:not(.flying) .hud-turhint { display: none; }

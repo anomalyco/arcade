@@ -6,7 +6,7 @@ import type { SceneHost } from "../render/scene"
 import type { GameAudio } from "../audio"
 import { createAircraftView, type AircraftView } from "../render/aircraft"
 import { createHud, setScoreboard, TEAM_COLORS, TEAM_NAMES, type HudFrame, type HudWeapon } from "../render/hud"
-import { Input, RETICLE_LIMIT } from "../input"
+import { BOMBSIGHT_CONE, Input, RETICLE_LIMIT } from "../input"
 import { getNet, type Connection } from "./net-adapter"
 import { createSpawnScreen } from "./spawn"
 import { createPauseMenu } from "./pause"
@@ -172,6 +172,7 @@ class GameSession implements GameHandle {
     this.pause = createPauseMenu(this.uiRoot, {
       resume: () => this.resume(),
       changeVehicle: () => {
+        if (this.state === "turret") { this.pause.hide(); this.paused = false; this.leaveTurretToHangar(); return }
         this.voluntaryLeave = true
         this.send({ type: "leave-vehicle" })
         this.pause.hide()
@@ -392,6 +393,8 @@ class GameSession implements GameHandle {
 
   private updateLifeState(): void {
     const manning = this.me?.turret ?? null
+    // Just left a turret: ignore the stale "manning" in snapshots until the server catches up.
+    if (manning && performance.now() / 1000 - this.leftTurretAt < 1.5) return
     if (manning && this.state !== "turret") { this.enterTurret(); return }
     if (manning) return
     if (!manning && this.state === "turret") { this.enterSpawn(); return }
@@ -424,6 +427,7 @@ class GameSession implements GameHandle {
     }
   }
 
+  private bombAimDir: Vec3 | null = null
   private turretZoom = 1
   private turretHeat = 0
   private turretOverheat = false
@@ -461,6 +465,7 @@ class GameSession implements GameHandle {
   }
 
   private enterSpawn(): void {
+    this.bombPeek = false
     this.state = "spawn"
     this.hud.setVisible(false)
     this.input.setEnabled(false)
@@ -473,13 +478,58 @@ class GameSession implements GameHandle {
   private resume(): void {
     this.pause.hide()
     this.paused = false
-    if (this.state === "flying") {
+    if (this.state === "flying" || this.state === "turret") {
       this.input.setEnabled(true)
       this.input.requestLock()
     }
   }
 
+  /** Bomber pilot: B toggles a look through the bomb sight while keeping the flight controls. */
+  private bombPeek = false
+  /** This seat's latest falling bomb (projectile id) and the result tracking for its impact. */
+  private bombFall: { id: number; pos: Vec3; vel: Vec3 } | null = null
+  private steeredBomb: number | null = null
+  private bombDropAt = 0
+  private lastMyShipHit: { ship: string; dmg: number; at: number } | null = null
+  private leftTurretAt = -Infinity
+
+  private leaveTurretToHangar(): void {
+    this.send({ type: "leave-vehicle" })
+    this.leftTurretAt = performance.now() / 1000
+    this.deps.audio?.ui("click")
+    this.enterSpawn()
+    this.spawn.showAir()
+  }
+
+  /** Track this seat's newest live bomb; extrapolate it to the estimated server time. */
+  private trackBomb(s: Snapshot, est: number): void {
+    let best: (typeof s.projectiles)[number] | null = null
+    for (const p of s.projectiles) if (p.weapon === "bomb" && p.owner === this.playerId && (!best || p.id > best.id)) best = p
+    if (!best) {
+      if (this.bombFall && this.steeredBomb === this.bombFall.id) { this.bombDropAt = performance.now() / 1000 }
+      this.bombFall = null
+      return
+    }
+    const t = Math.max(0, Math.min(0.3, est + this.rtt / 1000 - s.time))
+    const v = best.velocity
+    this.bombFall = {
+      id: best.id,
+      pos: [best.position[0] + v[0] * t, best.position[1] + v[1] * t - 4.9 * t * t, best.position[2] + v[2] * t],
+      vel: [v[0], v[1] - 9.8 * t, v[2]],
+    }
+  }
+
   private onKeyDown = (e: KeyboardEvent) => {
+    // F in a ship gun seat: back to the hangar (spawn screen on the aircraft tab).
+    if (e.code === "KeyF" && !e.repeat && this.state === "turret" && !this.paused && !this.hud.chatOpen()) {
+      this.leaveTurretToHangar()
+      return
+    }
+    // B: bomb-sight peek when no bomb is falling (while one falls, input.ts uses B to toggle steering).
+    if ((e.code === "KeyB") && !e.repeat && !this.bombFall && this.state === "flying" && this.me?.seat === 0 && this.myVehicle()?.kind === "bomber" && !this.hud.chatOpen()) {
+      this.bombPeek = !this.bombPeek
+      this.deps.audio?.ui("click")
+    }
     if (e.key === "Escape" && this.paused && !this.input.locked) {
       e.preventDefault()
       this.resume()
@@ -602,6 +652,7 @@ class GameSession implements GameHandle {
     f.heading = ((Math.atan2(aim[0], -aim[2]) * 180) / Math.PI + 360) % 360
     f.aimPoint = [t.pos[0] + aim[0] * 1500, t.pos[1] + aim[1] * 1500, t.pos[2] + aim[2] * 1500]
     f.turret = {
+      hint: "f → choose aircraft",
       name: `${shipName(t.ship.id)} · ${t.kind === "gun" ? "5-inch" : "ciws"}`, kind: t.kind,
       heat: this.turretHeat, overheat: this.turretOverheat,
       shipHp: st ? st.hp / st.maxHp : 1, turretHp: st?.turrets[t.id] ? st.turrets[t.id].hp : null, pos: t.pos,
@@ -806,7 +857,7 @@ class GameSession implements GameHandle {
           const ship = posedShip(e.ship)
           const by = e.by ? this.nameOf(e.by) : null
           if (by && (e.by === this.playerId || e.damage >= 150)) this.hud.feedLine(by.name, by.team, `hit ${shipName(e.ship)} −${Math.round(e.damage)}`, e.by === this.playerId)
-          if (e.by === this.playerId) this.hud.hitmarker(false, e.damage)
+          if (e.by === this.playerId) { this.hud.hitmarker(false, e.damage); this.lastMyShipHit = { ship: e.ship, dmg: e.damage, at: now } }
           if (ship && ship.team === this.me?.team && ship.kind === "carrier" && now - this.underAttackAt > 20) {
             this.underAttackAt = now
             this.hud.banner("Our carrier is under attack", shipName(e.ship), 2400)
@@ -868,7 +919,17 @@ class GameSession implements GameHandle {
     }
     // Bombardier: stabilized downward bomb sight (heading only).
     const bombsight = seat === 1 && myVehicle?.kind === "bomber"
+    const wasSight = input.bombsight
     input.setBombsight(bombsight)
+    if (bombsight && !wasSight && myVehicle) {
+      // Open the sight centred on the predicted impact point (bombs travel far ahead at release).
+      const out: Vec3 = [0, 0, 0]
+      const p0 = myVehicle.flight.position
+      if (bombImpactPoint(p0, myVehicle.flight.velocity, out, worldQuery) > 0) {
+        const fwdH = Math.hypot(out[0] - p0[0], out[2] - p0[2])
+        input.bombFwd = Math.min(BOMBSIGHT_CONE, Math.atan2(fwdH, Math.max(1, p0[1] - out[1])))
+      }
+    }
     if (bombsight && myVehicle) input.setNose(forward(myVehicle.flight.orientation))
     if (mode !== input.mouseMode) {
       if (mode === "aim") {
@@ -984,11 +1045,42 @@ class GameSession implements GameHandle {
     }
     this.updateTurrets(dt, now)
 
+    // Falling bomb (steerable): tracked before the camera so the bomb cam follows it this frame.
+    if (latest) this.trackBomb(latest, est)
+    else this.bombFall = null
+    const wasSteering = input.steeringBomb
+    input.setFallingBomb(!!this.bombFall && this.state === "flying", seat === 1)
+    if (wasSteering && !input.steeringBomb) host.rig.resetBombcam()
+    // Bomb result: a short line after a steered bomb lands (hit within ~1 s after impact, else miss).
+    if (this.bombDropAt && now - this.bombDropAt > 0.9) {
+      const h = this.lastMyShipHit
+      if (h && h.at > this.bombDropAt - 1.5) this.hud.banner(`Hit ${shipName(h.ship)}`, `−${Math.round(h.dmg)}`, 1800)
+      else this.hud.banner("Miss", "", 1200)
+      this.bombDropAt = 0
+      this.steeredBomb = null
+    }
+
     // Camera
     const rig = host.rig
     if (this.state === "flying" && ownVis) {
       this.lastOwnPos[0] = ownVis.pos[0]; this.lastOwnPos[1] = ownVis.pos[1]; this.lastOwnPos[2] = ownVis.pos[2]
-      if (seat === 1 && input.bombsight) {
+      if (input.steeringBomb && this.bombFall) {
+        rig.setMode("gunner")
+        rig.bombcam(dt, this.bombFall.pos, this.bombFall.vel, input.zoomHeld ? 3 : 1)
+        const out: Vec3 = [0, 0, 0]
+        rig.bombcamAim(input.bombCursorX, input.bombCursorY, this.bombFall.pos, out)
+        input.setBombAim(out)
+        this.bombAimDir = out
+        this.steeredBomb = this.bombFall.id
+      } else if (seat === 0 && this.bombPeek && ownVis.kind === "bomber") {
+        // Pilot peeking through the bomb sight: look ahead-and-down along the flight path, heading-stabilized.
+        // Look at the predicted impact point, so the pilot sees exactly where the bombs will land.
+        const imp: Vec3 = [0, 0, 0]
+        if (bombImpactPoint(ownVis.pos, ownVis.flight.velocity, imp, worldQuery) > 0) _v2.set(imp[0] - ownVis.pos[0], imp[1] - ownVis.pos[1], imp[2] - ownVis.pos[2]).normalize()
+        else { const fw = forward(ownVis.quat); const h = Math.hypot(fw[0], fw[2]) || 1; _v2.set(fw[0] / h * 0.35, -1, fw[2] / h * 0.35).normalize() }
+        rig.setMode("gunner")
+        rig.bombsight(dt, ownVis.kind, ownVis.pos, ownVis.quat, _v2, input.zoomHeld ? 4 : 1.6)
+      } else if (seat === 1 && input.bombsight) {
         rig.setMode("gunner")
         rig.bombsight(dt, ownVis.kind, ownVis.pos, ownVis.quat, this.lookV, input.zoomHeld ? Math.max(rig.gunZoom, 4) : rig.gunZoom)
       } else if (seat === 1) {
@@ -1065,7 +1157,7 @@ class GameSession implements GameHandle {
         if (!this.hud.chatOpen()) this.hud.openChat(t => { if (t) this.send({ type: "chat", text: t }) })
         break
       case "menu":
-        if (this.state === "flying" && !this.paused && !this.hud.chatOpen()) {
+        if ((this.state === "flying" || this.state === "turret") && !this.paused && !this.hud.chatOpen()) {
           this.paused = true
           this.input.setEnabled(false)
           const mv = this.myVehicle()
@@ -1348,6 +1440,7 @@ class GameSession implements GameHandle {
     const hb = f as HudFrame & { bombImpact?: Vec3 | null }
     f.bombSight = null
     f.stealth = null
+    f.bombCam = null
     if (v.kind === "bomber") {
       const out: Vec3 = [0, 0, 0]
       const vel = (this.pred?.state ?? v.flight).velocity
@@ -1362,8 +1455,35 @@ class GameSession implements GameHandle {
         const l = worldToShip(sh, out), sp = SHIP_SPECS[sh.kind]
         if (Math.abs(l[0]) < sp.halfWidth + 6 && Math.abs(l[2]) < sp.halfLength + 6) { over = sh.id; break }
       }
-      if (seat === 1) f.bombSight = { impact: tti > 0 ? out : null, tti, alt: pos[1] - Math.max(0, groundHeight(pos[0], pos[2])), speed: Math.hypot(vel[0], vel[1], vel[2]), overShip: over }
+      const bombs = v.weapons[seat]?.[0]?.ammo ?? v.weapons[0]?.[0]?.ammo ?? 0
+      f.bombSight = { impact: tti > 0 ? out : null, tti, alt: pos[1] - Math.max(0, groundHeight(pos[0], pos[2])), speed: Math.hypot(vel[0], vel[1], vel[2]), overShip: over, bombs, pilot: seat === 0, peek: seat === 0 && this.bombPeek, falling: !!this.bombFall }
       f.stealth = { above: pos[1] > STEALTH_AA_CEILING, ceiling: STEALTH_AA_CEILING }
+      f.bombCam = null
+      if (this.bombFall) {
+        const b = this.bombFall
+        const g = Math.max(0, groundHeight(b.pos[0], b.pos[2]))
+        const imp: Vec3 = [0, 0, 0]
+        const btti = bombImpactPoint(b.pos, b.vel, imp, worldQuery)
+        let cursor: Vec3 | null = null
+        const a = this.bombAimDir
+        if (this.input.steeringBomb && a && a[1] < -1e-3) {
+          const tt = (b.pos[1] - g) / -a[1]
+          cursor = [b.pos[0] + a[0] * tt, g, b.pos[2] + a[2] * tt]
+        }
+        const probe = cursor ?? (btti > 0 ? imp : null)
+        let under: { id: string; hp: number } | null = null
+        if (probe) for (const sh of posedFleet()) {
+          if (sh.team === v.team) continue
+          const st = this.shipStates.find(x => x.id === sh.id)
+          if (st?.sunk) continue
+          const l = worldToShip(sh, probe), sp = SHIP_SPECS[sh.kind]
+          if (Math.abs(l[0]) < sp.halfWidth + 8 && Math.abs(l[2]) < sp.halfLength + 8) { under = { id: sh.id, hp: st ? st.hp / st.maxHp : 1 }; break }
+        }
+        f.bombCam = {
+          steering: this.input.steeringBomb, cursor, impact: btti > 0 ? imp : null, alt: b.pos[1] - g, tti: btti,
+          ship: under ? shipName(under.id) : null, shipHp: under?.hp ?? null, pilot: seat === 0,
+        }
+      }
     } else hb.bombImpact = null
     const boreDir = seat === 0 ? fwd : (v.aim[1] ?? this.aim)
     let boreDist = aimDist

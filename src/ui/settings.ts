@@ -10,7 +10,7 @@ export interface Settings {
   /** Direct (Daxship-style rate steering, default) or War Thunder-style mouse-aim. */
   controlStyle: "direct" | "aim"
   /** Pilot control scheme (see input.ts CONTROL_SCHEMES); default "point". */
-  controlScheme?: "keys" | "point" | "battlefield" | "aim"
+  controlScheme?: "battlefield" | "keys" | "point" | "aim"
   /** Bots per team for offline practice (0 = free flight). */
   practiceBots?: number
 }
@@ -21,7 +21,7 @@ const listeners: Listener[] = []
 
 function defaults(): Settings {
   const lowEnd = (navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent)
-  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "aim", practiceBots: 0 }
+  return { name: "", quality: lowEnd ? "low" : "balanced", muted: false, volume: 0.8, sensitivity: 1, invertY: false, controlStyle: "direct", controlScheme: "battlefield", practiceBots: 0 }
 }
 
 function load(): Settings {
@@ -31,11 +31,12 @@ function load(): Settings {
     if (raw) Object.assign(base, JSON.parse(raw))
   } catch {}
   if (base.controlStyle !== "direct" && base.controlStyle !== "aim") base.controlStyle = "aim"
-  if (base.controlScheme !== "keys" && base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = "aim"
+  if (base.controlScheme !== "keys" && base.controlScheme !== "point" && base.controlScheme !== "battlefield" && base.controlScheme !== "aim") base.controlScheme = "battlefield"
   // Controls v3: keyboard flight + mouse aim became the default — move everyone onto it once.
-  const b = base as Settings & { controlsV3?: boolean; controlsV4?: boolean }
-  if (!b.controlsV3) { b.controlsV3 = true; base.controlScheme = "keys"; base.controlStyle = "direct" }
-  if (!b.controlsV4) { b.controlsV4 = true; base.controlScheme = "aim" }
+  const b = base as Settings & { controlsV3?: boolean; controlsV4?: boolean; controlsV5?: boolean }
+  b.controlsV3 = b.controlsV4 = true
+  // Controls v5: Battlefield-style flight became the default — move everyone onto it once.
+  if (!b.controlsV5) { b.controlsV5 = true; base.controlScheme = "battlefield"; base.controlStyle = "direct" }
   base.practiceBots = Math.max(0, Math.min(10, Math.round(Number(base.practiceBots ?? 0)) || 0))
   if (base.quality !== "low" && base.quality !== "balanced" && base.quality !== "high") base.quality = "balanced"
   return base

@@ -68,6 +68,10 @@ interface JetHandling {
   yawGain: number
   /** How fast velocity aligns with the nose (1/s). Lower = more drift / slide in hard turns. */
   grip: number
+  /** Speed (m/s) at which roll reaches full authority (roll fades below it). */
+  rollRef: number
+  /** Fraction of gravity felt along the flight path (1 = real climb/dive energy; BF-style < 1). */
+  pathGravity: number
   /** Induced drag (energy bleed) in turns: decel = induced · turnRate² · cornerSpeed² / g². Sets the
    *  sustained turn rate (where full thrust balances parasitic + induced drag). */
   induced: number
@@ -123,41 +127,53 @@ interface HeliHandling {
   gearHeight: number
 }
 
+// Battlefield-style arcade jets, each true to its real aircraft (speeds from VEHICLES):
+//
+//  kind       stall/cruise/boost  sweet spot (≈65% throttle)   inst. turn  roll    pitch   yaw   accel
+//  fighter    55 / 135 / 185      ~92 m/s, ~60°/s sustained    69°/s       230°/s  69°/s   25°/s  fast
+//  warthog    45 / 105 / 135      ~70 m/s, ~52°/s (r ≈ 75 m)   57°/s       150°/s  57°/s   25°/s  sluggish
+//  blackbird  75 / 190 / 260      ~140 m/s, ~24°/s (wide)      29°/s       110°/s* 29°/s   15°/s  huge
+//  bomber     70 / 150 / 180      ~110 m/s, ~14°/s             17°/s       46°/s   17°/s   5°/s   slow
+//  (* blackbird roll fades hard at low speed)
+//
+// The plane goes where the nose points (strong grip), speed is mostly set by the throttle (mild turn
+// bleed, softened gravity along the path), and the turn rate peaks at the sweet spot ("corner") speed
+// — throttle back to turn tighter.
 const JET: Record<Exclude<VehicleKind, "apache">, JetHandling> = {
   fighter: {
-    thrust: 18, throttleRate: 0.6,
-    cornerSpeed: 110, cornerRate: 1.22, minRateFrac: 0.3, pushFrac: 0.5, rollRate: 4.4, yawRate: 0.3,
-    pitchResponse: 9, rollResponse: 14, yawResponse: 9,
-    pitchGain: 2.6, rollGain: 4, yawGain: 1.8,
-    grip: 4.5, induced: 0.1,
-    airbrake: 3.5, wheelBrake: 10, sideLift: 0.55, bankTurn: 0.5,
+    thrust: 20, throttleRate: 0.7,
+    cornerSpeed: 92, cornerRate: 1.1, minRateFrac: 0.35, pushFrac: 0.6, rollRate: 4.0, yawRate: 0.44, rollRef: 70,
+    pitchResponse: 11, rollResponse: 15, yawResponse: 8,
+    pitchGain: 2.8, rollGain: 4, yawGain: 1.8,
+    grip: 8, induced: 0.035, pathGravity: 0.5,
+    airbrake: 3.5, wheelBrake: 10, sideLift: 0.6, bankTurn: 0.5,
     maxGroundPitch: 13 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   warthog: {
-    thrust: 12, throttleRate: 0.5,
-    cornerSpeed: 75, cornerRate: 1.0, minRateFrac: 0.35, pushFrac: 0.55, rollRate: 2.8, yawRate: 0.35,
-    pitchResponse: 7.5, rollResponse: 10, yawResponse: 7.5,
-    pitchGain: 2.1, rollGain: 3, yawGain: 1.7,
-    grip: 5, induced: 0.12,
-    airbrake: 3.5, wheelBrake: 9, sideLift: 0.6, bankTurn: 0.5,
+    thrust: 11, throttleRate: 0.55,
+    cornerSpeed: 70, cornerRate: 1.0, minRateFrac: 0.4, pushFrac: 0.6, rollRate: 2.6, yawRate: 0.44, rollRef: 50,
+    pitchResponse: 8, rollResponse: 11, yawResponse: 7,
+    pitchGain: 2.2, rollGain: 3, yawGain: 1.7,
+    grip: 8, induced: 0.04, pathGravity: 0.85,
+    airbrake: 3.5, wheelBrake: 9, sideLift: 0.65, bankTurn: 0.5,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   blackbird: {
-    thrust: 19, throttleRate: 0.45,
-    cornerSpeed: 170, cornerRate: 0.5, minRateFrac: 0.3, pushFrac: 0.5, rollRate: 1.9, yawRate: 0.12,
-    pitchResponse: 5, rollResponse: 7, yawResponse: 5,
-    pitchGain: 1.4, rollGain: 2, yawGain: 0.9,
-    grip: 3, induced: 0.25,
+    thrust: 28, throttleRate: 0.5,
+    cornerSpeed: 140, cornerRate: 0.46, minRateFrac: 0.35, pushFrac: 0.5, rollRate: 1.9, yawRate: 0.26, rollRef: 170,
+    pitchResponse: 6, rollResponse: 8, yawResponse: 5,
+    pitchGain: 1.5, rollGain: 2, yawGain: 0.9,
+    grip: 7, induced: 0.06, pathGravity: 0.4,
     airbrake: 3, wheelBrake: 9, sideLift: 0.5, bankTurn: 0.5,
     maxGroundPitch: 12 * DEG, gearHeight: 2, bellyHeight: 1,
   },
   // Bomber (B-2): heavy, stable, slow to pitch and roll, wide turns; high, efficient cruise; modest boost.
   bomber: {
     thrust: 9, throttleRate: 0.35,
-    cornerSpeed: 140, cornerRate: 0.3, minRateFrac: 0.35, pushFrac: 0.5, rollRate: 0.8, yawRate: 0.08,
-    pitchResponse: 2.8, rollResponse: 4, yawResponse: 2.8,
-    pitchGain: 0.8, rollGain: 1.1, yawGain: 0.6,
-    grip: 3.5, induced: 0.5,
+    cornerSpeed: 110, cornerRate: 0.23, minRateFrac: 0.4, pushFrac: 0.5, rollRate: 0.8, yawRate: 0.09, rollRef: 100,
+    pitchResponse: 3.5, rollResponse: 4.5, yawResponse: 3,
+    pitchGain: 0.9, rollGain: 1.1, yawGain: 0.6,
+    grip: 6, induced: 0.12, pathGravity: 0.7,
     airbrake: 2.5, wheelBrake: 8, sideLift: 0.5, bankTurn: 0.5,
     maxGroundPitch: 10 * DEG, gearHeight: 2.5, bellyHeight: 1.2,
   },
@@ -371,7 +387,7 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
   // Airbrake out: flaps/brakes let the jet pull harder for a moment (tight reversals) at the cost of speed.
   const pitchMax = h.cornerRate * Math.max(h.minRateFrac, vf <= corner ? slowFrac : corner / vf) * (inp.brake && !s.onGround ? AIRBRAKE_TURN_BONUS : 1)
   const yawMax = h.yawRate * Math.max(0.3, slowFrac)
-  const rollMax = h.rollRate * (0.45 + 0.55 * clamp(vf / (0.7 * corner), 0, 1))
+  const rollMax = h.rollRate * (0.35 + 0.65 * clamp(vf / h.rollRef, 0, 1))
 
   const bank = Math.atan2(-R[1], U[1])
   const pitchAngle = Math.asin(clamp(F[1], -1, 1))
@@ -493,9 +509,11 @@ function stepJet(s: FlightState, inp: FlightInput, hasAim: boolean, dt: number, 
   const inducedDecel = h.induced * turnRate * turnRate * (h.cornerSpeed * h.cornerSpeed) / (GRAVITY * GRAVITY)
   const resist = speed > 1e-6 ? (dragK * speed * speed + inducedDecel) / speed : 0
   const liftU = lift * GRAVITY * U[1], liftR = lift * GRAVITY * h.sideLift * R[1]
-  let ax = F[0] * thrust - v[0] * resist + U[0] * liftU + R[0] * liftR
-  let ay = F[1] * thrust - v[1] * resist + U[1] * liftU + R[1] * liftR - GRAVITY
-  let az = F[2] * thrust - v[2] * resist + U[2] * liftU + R[2] * liftR
+  // Softened energy: give back part of the along-path gravity so speed is mostly set by the throttle.
+  const pathG = GRAVITY * F[1] * (1 - h.pathGravity) * lift
+  let ax = F[0] * (thrust + pathG) - v[0] * resist + U[0] * liftU + R[0] * liftR
+  let ay = F[1] * (thrust + pathG) - v[1] * resist + U[1] * liftU + R[1] * liftR - GRAVITY
+  let az = F[2] * (thrust + pathG) - v[2] * resist + U[2] * liftU + R[2] * liftR
   if (p[1] > world.ceiling) ay -= (p[1] - world.ceiling) * 0.3
   v[0] += ax * dt; v[1] += ay * dt; v[2] += az * dt
 

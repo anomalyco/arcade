@@ -80,6 +80,11 @@ export interface SeatInput {
   ability: boolean
   /** Seconds the shooter sees remote aircraft behind the server (interp delay + RTT/2), for lag-compensated hits. */
   viewDelay?: number
+  /**
+   * Bomb-steer mode: while this seat's most recent bomb is falling, `aim` is the unit direction from that bomb
+   * toward the desired impact point and steers it (limited fin authority). Ignored when false/absent.
+   */
+  steerBomb?: boolean
 }
 
 export interface WeaponRuntime {
@@ -138,6 +143,10 @@ export interface PlayerInfo {
   turret?: { ship: string; turret: string } | null
 }
 
+/**
+ * Bombs are projectiles with weapon "bomb". The bomb a player can steer is their own most recent one:
+ * the highest-`id` "bomb" projectile whose `owner` is that player id (no extra wire field).
+ */
 export interface Projectile {
   id: number
   weapon: WeaponId

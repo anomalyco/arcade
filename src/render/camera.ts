@@ -59,6 +59,39 @@ function boostFov(kind: VehicleKind, speed: number): number {
   return BOOST_FOV * MathUtils.smoothstep(speed, v.cruise * 1.02, v.cruise + (v.boost - v.cruise) * 0.4)
 }
 
+/** Bomb camera: distance behind/above the bomb, downward tilt of the view vs the flight path, lag, zoom. */
+const BOMBCAM_DIST = 35
+const BOMBCAM_HEIGHT = 10
+const BOMBCAM_DOWN = 0.8
+const BOMBCAM_LAG = 0.12
+export const BOMBCAM_MAX_ZOOM = 4
+
+/**
+ * Pure helper: cast the cursor ray (angles from the view centre; x right, y up) from a camera pose onto
+ * the ground and write the unit direction from `bombPos` to that point. Falls back to the ray direction
+ * (returns false) when the ray doesn't reach the ground.
+ */
+export function cursorGroundAim(eye: Vec3, fwd: Vec3, up: Vec3, cx: number, cy: number, bombPos: Vec3,
+  groundAt: (x: number, z: number) => number, out: Vec3): boolean {
+  // right = fwd × up
+  const rx = fwd[1] * up[2] - fwd[2] * up[1], ry = fwd[2] * up[0] - fwd[0] * up[2], rz = fwd[0] * up[1] - fwd[1] * up[0]
+  const tx = Math.tan(cx), ty = Math.tan(cy)
+  let dx = fwd[0] + rx * tx + up[0] * ty, dy = fwd[1] + ry * tx + up[1] * ty, dz = fwd[2] + rz * tx + up[2] * ty
+  const n = Math.hypot(dx, dy, dz)
+  dx /= n; dy /= n; dz /= n
+  if (dy > -1e-3) { out[0] = dx; out[1] = dy; out[2] = dz; return false }
+  // Two passes: plane at the ground under the bomb, then refined at the first hit.
+  let g = groundAt(bombPos[0], bombPos[2]), px = 0, py = 0, pz = 0
+  for (let i = 0; i < 2; i++) {
+    const t = (eye[1] - g) / -dy
+    px = eye[0] + dx * t; py = g; pz = eye[2] + dz * t
+    g = groundAt(px, pz)
+  }
+  const ax = px - bombPos[0], ay = py - bombPos[1], az = pz - bombPos[2], an = Math.hypot(ax, ay, az) || 1
+  out[0] = ax / an; out[1] = ay / an; out[2] = az / an
+  return true
+}
+
 /** Mouse-aim chase: look-direction smoothing time constant (s). */
 const CHASE_LOOK_LAG = 0.06
 
@@ -113,6 +146,12 @@ export class CameraRig {
   private followInit = false
   private chaseLook = new Vector3(0, 0, -1)
   private chaseLookInit = false
+  private bombLook = new Vector3(0, -1, 0)
+  private bombHeading = new Vector3(0, 0, -1)
+  private bombInit = false
+  private bombEye = new Vector3()
+  private bombFwd = new Vector3(0, -1, 0)
+  private bombUp = new Vector3(0, 0, -1)
 
   constructor(readonly camera: PerspectiveCamera) {
     this.pos.copy(camera.position)
@@ -236,6 +275,44 @@ export class CameraRig {
     _v.copy(this.pos).add(look)
     this.lookAt(this.pos, _v, _v2)
     this.fov = 60 / Math.max(BOMBSIGHT_MIN_ZOOM, Math.min(BOMBSIGHT_MAX_ZOOM, zoom))
+  }
+
+  /**
+   * TV-guided bomb camera: chases the falling bomb from above and behind, looking down along its path
+   * toward the ground. Stabilized: screen-up is the bomb's direction of travel (never rolls).
+   * Use `bombcamAim()` afterwards to turn the bomb cursor into the steering direction.
+   */
+  bombcam(dt: number, bombPos: Vec3, bombVel: Vec3, zoom = 1): void {
+    _v.set(bombVel[0], bombVel[1], bombVel[2])
+    if (_v.lengthSq() < 1e-6) _v.set(0, -1, 0)
+    _v.normalize()
+    _v.y -= BOMBCAM_DOWN
+    _v.normalize()
+    if (!this.bombInit) { this.bombLook.copy(_v); this.bombInit = true }
+    else this.bombLook.lerp(_v, 1 - Math.exp(-dt / BOMBCAM_LAG)).normalize()
+    _v2.set(bombVel[0], 0, bombVel[2])
+    if (_v2.lengthSq() > 1e-4) this.bombHeading.copy(_v2.normalize())
+    this.pos.set(bombPos[0], bombPos[1], bombPos[2]).addScaledVector(this.bombLook, -BOMBCAM_DIST)
+    this.pos.y += BOMBCAM_HEIGHT
+    const floor = groundHeight(this.pos.x, this.pos.z) + GROUND_CLEARANCE
+    if (this.pos.y < floor) this.pos.y = floor
+    _v.set(bombPos[0], bombPos[1], bombPos[2]).addScaledVector(this.bombLook, 200)
+    this.lookAt(this.pos, _v, this.bombHeading)
+    // Keep the exact pose for cursor → aim conversion.
+    this.bombEye.copy(this.pos)
+    this.bombFwd.set(0, 0, -1).applyQuaternion(this.quat)
+    this.bombUp.set(0, 1, 0).applyQuaternion(this.quat)
+    this.fov = 55 / Math.max(1, Math.min(BOMBCAM_MAX_ZOOM, zoom))
+  }
+
+  /** Steering direction (bomb → ground point under the bomb-camera cursor). Returns false if off-ground. */
+  bombcamAim(cursorX: number, cursorY: number, bombPos: Vec3, out: Vec3): boolean {
+    const e = this.bombEye, f = this.bombFwd, u = this.bombUp
+    return cursorGroundAim([e.x, e.y, e.z], [f.x, f.y, f.z], [u.x, u.y, u.z], cursorX, cursorY, bombPos, groundHeight, out)
+  }
+
+  resetBombcam(): void {
+    this.bombInit = false
   }
 
   /** Gunner optics. `anchor` = world position of the turret / targeting pod when the model provides one. */

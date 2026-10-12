@@ -21,8 +21,8 @@ import type {
 import { TICK_DT } from "./types"
 import { STEALTH_AA_CEILING, STEALTH_LOCK_SPOT, STEALTH_LOCK_TIME, VEHICLES, WEAPONS, type WeaponSpec } from "./vehicles"
 export { STEALTH_AA_CEILING, STEALTH_LOCK_SPOT, STEALTH_LOCK_TIME }
-import { BOMB_STEP, stepBomb } from "./flight"
-import { deckVelocity, fleetState, groundHeight, isWater, posedFleet, posedShip, segmentHitsGround, shipAt } from "./geography"
+import { BOMB_STEP, bombImpactPoint, stepBomb } from "./flight"
+import { deckVelocity, fleetState, groundHeight, isWater, posedFleet, posedShip, segmentHitsGround, shipAt, worldQuery } from "./geography"
 import {
   AA_RANGE, FLEET, SHIP_DAMAGE_SCALE, SHIP_SPECS, SPAWN_PROTECTION, TURRET_HP, shipToWorld, worldToShip, type Ship, type TurretKind,
 } from "./fleet"
@@ -46,6 +46,11 @@ export const WEAPON_DAMAGE_MULT: Record<WeaponId, number> = {
   aim47: 1, radarpulse: 0, bomb: 1,
 }
 
+/** Bomb fins: max lateral acceleration (m/s²) and total steering delta-v budget per bomb (m/s). */
+export const BOMB_STEER_ACCEL = 25
+export const BOMB_STEER_DV = 15
+/** Steering input older than this (s) is ignored (bomb continues ballistic). */
+const BOMB_STEER_STALE = 0.25
 /** Bomb near-miss damage to ships (fraction of direct damage at the hull, falling to 0 at splash radius). */
 export const BOMB_NEAR_MISS = 0.5
 
@@ -192,6 +197,8 @@ interface VehicleExt extends VehicleEntity {
   spotCooldownUntil?: number
   /** Room time the vehicle (re)spawned; protected for SPAWN_PROTECTION s. */
   spawnedAt?: number
+  /** Id of the most recent bomb dropped from each seat (only that one is steerable). */
+  lastBomb?: [number, number]
   /** Lag-compensation ring buffer of recent positions (xyz per tick, newest at `histHead`). */
   hist?: Float64Array
   histHead?: number
@@ -204,6 +211,10 @@ interface ProjectileExt extends Projectile {
   rewind?: number
   /** Fired from a ship turret: that ship's id (its own hull never stops the round). */
   ship?: string
+  /** Bombs: desired impact point from the dropper's steering input, when it was last refreshed, and fin delta-v used. */
+  steerTo?: Vec3
+  steerAt?: number
+  steerDv?: number
 }
 
 /** Room engine: call when a vehicle (re)spawns so it gets SPAWN_PROTECTION seconds of immunity. */
@@ -236,7 +247,20 @@ export function createWeapons(kind: VehicleKind): [WeaponRuntime[], WeaponRuntim
     const rt: RuntimeExt = { ammo: Number.isFinite(ammo) ? ammo : -1, readyAt: 0, lockTarget: null, lock: 0, firedAt: -1e9, regen: 0 }
     return rt
   }
-  return [seats[0].map(mk), seats[1].map(mk)]
+  const out: [WeaponRuntime[], WeaponRuntime[]] = [seats[0].map(mk), seats[1].map(mk)]
+  // Bombs are one shared load (and one release cadence) for the whole crew: both seats hold the same runtime.
+  for (let a = 0; a < 2; a++) {
+    for (let b = 0; b < 2; b++) {
+      const id = seats[0][a]
+      if (id && seats[1][b] === id && WEAPONS[id].kind === "bomb") out[1][b] = out[0][a]
+    }
+  }
+  return out
+}
+
+/** True if this seat-1 runtime is shared with a pilot slot (counted once for regen). */
+function sharedWithPilot(v: VehicleEntity, rt: WeaponRuntime): boolean {
+  return v.weapons[0][0] === rt || v.weapons[0][1] === rt
 }
 
 /** Magazine size (-1 unlimited). */
@@ -623,6 +647,7 @@ export function applySeatInput(
     if (id && runtimes[slot] && isLockKind(WEAPONS[id])) updateLock(cs, vehicle, seat, WEAPONS[id], runtimes[slot], aim, vehicles, now, events)
   }
 
+  if (input.steerBomb && aim) steerBomb(cs, vehicle, seat, aim, now)
   if (seat === 0 && RECON_KINDS.has(vehicle.kind)) updateSpotting(vehicle, aim, vehicles, now, events)
   if (input.flares) deployFlares(cs, vehicle, vehicles, now, events)
   if (input.ability) triggerAbility(vehicle, seat, aim, vehicles, now, events)
@@ -792,10 +817,14 @@ function fireBomb(cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex, spec
   if (rt.readyAt > now || (rt.ammo >= 0 && rt.ammo < 1) || cs.projectiles.length >= MAX_PROJECTILES) return
   rotate(vehicle.flight.orientation, 0, -3, 0, _muz)
   const p = vehicle.flight.position, v = vehicle.flight.velocity
+  const id = cs.nextId++
   cs.projectiles.push({
-    id: cs.nextId++, weapon: spec.id, owner: ownerOf(vehicle, seat), vehicle: vehicle.id, team: vehicle.team,
+    id, weapon: spec.id, owner: ownerOf(vehicle, seat), vehicle: vehicle.id, team: vehicle.team,
     position: [p[0] + _muz[0], p[1] + _muz[1], p[2] + _muz[2]], velocity: [v[0], v[1], v[2]], age: 0, ttl: spec.ttl,
   })
+  const ext = vehicle as VehicleExt
+  if (!ext.lastBomb) ext.lastBomb = [-1, -1]
+  ext.lastBomb[seat] = id
   consumeAmmo(rt, now)
   rt.readyAt = now + 1 / spec.rate
   events.push({ type: "fire", vehicle: vehicle.id, seat, weapon: spec.id })
@@ -1018,7 +1047,7 @@ function regenAmmo(vehicles: VehicleEntity[], dt: number, now: number): void {
       for (let k = 0; k < 2; k++) {
         const id = kinds[s][k]
         const rt = v.weapons[s][k] as RuntimeExt | undefined
-        if (!id || !rt) continue
+        if (!id || !rt || (s === 1 && sharedWithPilot(v, rt))) continue
         const spec = WEAPONS[id]
         const max = magazine(id)
         if (max < 0 || spec.refill <= 0) continue
@@ -1102,6 +1131,55 @@ function stepProjectiles(cs: CombatState, vehicles: VehicleEntity[], dt: number,
   list.length = w
 }
 
+/** The seat's most recent bomb, if still falling. */
+export function steerableBomb(cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex): Projectile | null {
+  const id = (vehicle as VehicleExt).lastBomb?.[seat] ?? -1
+  if (id < 0) return null
+  for (let i = cs.projectiles.length - 1; i >= 0; i--) if (cs.projectiles[i].id === id) return cs.projectiles[i]
+  return null
+}
+
+const _sb: Vec3 = [0, 0, 0]
+const _bi: Vec3 = [0, 0, 0]
+
+/** Steering input: aim = unit direction from the bomb toward the desired impact point (ray → ground). */
+function steerBomb(cs: CombatState, vehicle: VehicleEntity, seat: SeatIndex, aim: Vec3, now: number): void {
+  const b = steerableBomb(cs, vehicle, seat) as ProjectileExt | null
+  if (!b || aim[1] >= -0.02) return
+  const p = b.position
+  _sb[0] = p[0] + aim[0] * 20000; _sb[1] = p[1] + aim[1] * 20000; _sb[2] = p[2] + aim[2] * 20000
+  const t = segmentHitsGround(p, _sb)
+  if (t === null) return
+  const target = b.steerTo ?? (b.steerTo = [0, 0, 0])
+  lerpInto(p, _sb, t, target)
+  b.steerAt = now
+}
+
+/**
+ * Fin guidance: estimate the ballistic impact (no drag, fall to the ground height under the target) and
+ * change the horizontal velocity by error / t_fall (over ~0.5 s), capped by BOMB_STEER_ACCEL and the
+ * BOMB_STEER_DV budget. Never adds lift (gravity unchanged, no climbing).
+ */
+function bombGuidance(b: ProjectileExt, h: number, now: number): void {
+  const to = b.steerTo
+  if (!to || b.steerAt === undefined || now - b.steerAt > BOMB_STEER_STALE) return
+  const used = b.steerDv ?? 0
+  if (used >= BOMB_STEER_DV) return
+  const p = b.position, v = b.velocity
+  // Drag-aware ballistic prediction (same model as flight's bombImpactPoint).
+  const tf = bombImpactPoint(p, v, _bi, worldQuery)
+  if (!(tf > 0.2)) return
+  const ex = to[0] - _bi[0], ez = to[2] - _bi[2]
+  // Correct the horizontal velocity by error/t over ~0.5 s (near-impulsive: the most shift per delta-v).
+  let ax = ex / tf / 0.5, az = ez / tf / 0.5
+  const a = Math.hypot(ax, az)
+  const cap = Math.min(BOMB_STEER_ACCEL, (BOMB_STEER_DV - used) / h)
+  if (a > cap) { ax *= cap / a; az *= cap / a }
+  v[0] += ax * h
+  v[2] += az * h
+  b.steerDv = used + Math.min(a, cap) * h
+}
+
 /** Advance a bomb (flight's bomb model); on impact applies effects and marks it spent (age = -1). */
 function stepBombProjectile(cs: CombatState, p: Projectile, vehicles: VehicleEntity[], dt: number, now: number, events: GameEvent[]): void {
   const pos = p.position
@@ -1109,6 +1187,7 @@ function stepBombProjectile(cs: CombatState, p: Projectile, vehicles: VehicleEnt
   let left = dt
   while (left > 1e-9) {
     const h = Math.min(BOMB_STEP, left)
+    bombGuidance(p as ProjectileExt, h, now)
     stepBomb(pos, p.velocity, h)
     left -= h
   }

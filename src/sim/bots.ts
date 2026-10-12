@@ -1,7 +1,7 @@
 // Bot AI — owned by the Bots agent.
 // Deterministic, dependency-free pilots and gunners. All randomness comes from the brain's seeded RNG.
 // Hot path is allocation-free: scratch vectors are module-level and outputs are reused per brain.
-import type { FlightInput, Missile, PlayerInfo, Quat, SeatInput, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "./types"
+import type { FlightInput, Missile, PlayerInfo, Projectile, Quat, SeatInput, Vec3, VehicleEntity, VehicleKind, WorldQuery } from "./types"
 import { LAUNCH_LANE_LENGTH, carrierOf, inSafeZone, posedFleet, worldQuery } from "./geography"
 import { bombImpactPoint } from "./flight"
 import { GUN_FULL_RANGE, GUN_GIMBAL, ROCKET_GRAVITY, SCANNER_FLARE_CLOSE, isSpawnProtected, weaponDirection } from "./combat"
@@ -665,6 +665,7 @@ function resetSeat(seat: SeatInput, aimBuf: Vec3, aim: Vec3 | null): SeatInput {
   seat.fireSecondary = false
   seat.flares = false
   seat.ability = false
+  seat.steerBomb = false
   return seat
 }
 
@@ -835,6 +836,7 @@ function bomberRun(brain: BotBrain, vehicle: VehicleEntity, ship: Ship, now: num
 export function botInput(
   brain: BotBrain, bot: PlayerInfo, vehicle: VehicleEntity, vehicles: VehicleEntity[], now: number,
   missiles?: readonly Missile[], world: WorldQuery = worldQuery, ships?: Readonly<Record<string, BotShipStatus>>,
+  projectiles?: readonly Projectile[],
 ): { flight?: FlightInput; seat: SeatInput } {
   const o = brain.out
   if (!vehicle.alive || vehicle.flight.crashed || (bot.seat !== 0 && bot.seat !== 1)) {
@@ -846,8 +848,14 @@ export function botInput(
   }
   if (brain.state.vehicleId !== vehicle.id) resetForVehicle(brain, vehicle)
   updateJitter(brain, now)
-  if (bot.seat === 0) return pilotInput(brain, bot, vehicle, vehicles, now, missiles, world, ships)
+  if (bot.seat === 0) {
+    const out = pilotInput(brain, bot, vehicle, vehicles, now, missiles, world, ships)
+    // Solo bomber pilot (no bombardier aboard) guides its own falling bomb.
+    if (!vehicle.seats[1]) steerOwnBomb(bot, out.seat, o.pilotAim, projectiles, ships)
+    return out
+  }
   gunnerInput(brain, bot, vehicle, vehicles, now, missiles, ships)
+  steerOwnBomb(bot, o.gunnerSeat, o.gunnerAim, projectiles, ships)
   return o.gunner
 }
 
@@ -961,6 +969,9 @@ function pilotInput(
     const ship = pickStrikeShip(vehicle.team, pos, ships, false)
     if (ship) desiredThrottle = bomberRun(brain, vehicle, ship, now, aim, world)
     else headingPitch(-pos[0], -pos[2], 0, aim)
+    // No bombardier aboard: the pilot releases (shared bomb load).
+    const pilotBomb = spec.seatWeapons[0][0]
+    if (!vehicle.seats[1] && pilotBomb && WEAPONS[pilotBomb].kind === "bomb") bombardier(vehicle, seat, null, ships, now, 0)
     flight.boost = false
     lookTarget = null
   } else if (striking) {
@@ -1160,11 +1171,13 @@ function engage(brain: BotBrain, vehicle: VehicleEntity, target: VehicleEntity, 
 // Gunner / weapons officer (seat 1)
 
 /** Bombardier: release when the predicted impact point lies on an enemy ship that's still afloat. */
-function bombardier(vehicle: VehicleEntity, seat: SeatInput, aim: Vec3, ships: Readonly<Record<string, BotShipStatus>> | undefined, now: number): void {
+function bombardier(
+  vehicle: VehicleEntity, seat: SeatInput, aim: Vec3 | null, ships: Readonly<Record<string, BotShipStatus>> | undefined, now: number, crewSeat: 0 | 1 = 1,
+): void {
   const fs = vehicle.flight, pos = fs.position
   if (bombImpactPoint(pos, fs.velocity, _bomb, worldQuery) < 0) return
-  norm(set3(aim, _bomb[0] - pos[0], _bomb[1] - pos[1], _bomb[2] - pos[2]))
-  if (!weaponReady(vehicle.weapons[1][0], now)) return
+  if (aim) norm(set3(aim, _bomb[0] - pos[0], _bomb[1] - pos[1], _bomb[2] - pos[2]))
+  if (!weaponReady(vehicle.weapons[crewSeat][0], now)) return
   const fleet = posedFleet()
   for (let i = 0; i < fleet.length; i++) {
     const sh = fleet[i]
@@ -1175,6 +1188,27 @@ function bombardier(vehicle: VehicleEntity, seat: SeatInput, aim: Vec3, ships: R
     const lx = dx * c - dz * sn, lz = dx * sn + dz * c
     if (Math.abs(lx) <= sp.halfWidth * 0.9 && Math.abs(lz) <= sp.halfLength * 0.9) { seat.firePrimary = true; return }
   }
+}
+
+/** Guide this bot's most recent falling bomb onto the enemy ship nearest its path (steerBomb + aim). */
+function steerOwnBomb(
+  bot: PlayerInfo, seat: SeatInput, aimBuf: Vec3, projectiles: readonly Projectile[] | undefined,
+  ships: Readonly<Record<string, BotShipStatus>> | undefined,
+): void {
+  if (!projectiles) return
+  let bomb: Projectile | null = null
+  for (let i = 0; i < projectiles.length; i++) {
+    const p = projectiles[i]
+    if (p.weapon === "bomb" && p.owner === bot.id && (!bomb || p.id > bomb.id)) bomb = p
+  }
+  if (!bomb) return
+  const bp = bomb.position
+  if (bombImpactPoint(bp, bomb.velocity, _bomb, worldQuery) < 0) return
+  const ship = pickStrikeShip(bot.team, _bomb, ships, false)
+  if (!ship || Math.hypot(ship.position[0] - _bomb[0], ship.position[2] - _bomb[2]) > 600) return
+  norm(set3(aimBuf, ship.position[0] - bp[0], SHIP_SPECS[ship.kind].deckHeight - bp[1], ship.position[2] - bp[2]))
+  seat.aim = aimBuf
+  seat.steerBomb = true
 }
 
 function myScannerMissile(bot: PlayerInfo, vehicle: VehicleEntity, missiles: readonly Missile[]): Missile | null {

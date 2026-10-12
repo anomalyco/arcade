@@ -43,6 +43,8 @@ export interface SpawnScreen {
   update(s: SpawnState): void
   /** Open directly on the "man the guns" tab. */
   showGuns(): void
+  /** Open on the aircraft tab. */
+  showAir(): void
   dispose(): void
 }
 
@@ -52,7 +54,7 @@ function detailHtml(k: VehicleKind, i: number): string {
   const v = VEHICLES[k], r = ROLES[k]
   const seats = [0, 1].map(s => {
     const ws = v.seatWeapons[s]
-    const list = ws[0] === null && ws[1] === null ? [] : (ws[0] !== null && ws[0] === ws[1] ? [ws[0]] : ws).filter(Boolean).map(id => WEAPONS[id!].name.toLowerCase())
+    const list = ws[0] === null && ws[1] === null ? [] : (ws[0] !== null && ws[0] === ws[1] ? [ws[0]] : ws).filter(Boolean).map(id => WEAPONS[id!].kind === "bomb" ? "bombs" : WEAPONS[id!].name.toLowerCase())
     if (s === 0) list.push("flares")
     return `<li><span class="n">${s + 1}</span><span class="s">${escapeHtml(v.seatNames[s])}</span><span class="w">${list.length ? list.join(" · ") : "flies only"}</span></li>`
   }).join("")
@@ -251,6 +253,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     root,
     show() { root.hidden = false },
     showGuns() { root.hidden = false; setTab("guns") },
+    showAir() { root.hidden = false; setTab("air") },
     hide() { root.hidden = true },
     visible: () => !root.hidden,
     update(s) {

@@ -663,3 +663,33 @@ describe("B-2 bots", () => {
     expect(brain.state.targetId).toBe(b2.id)
   })
 })
+
+describe("B-2 solo bot pilot", () => {
+  beforeEach(() => setFleetState(0, 2))
+  test("with no bombardier aboard the bot pilot releases over an enemy hull", () => {
+    const c = posedFleet().find(s => s.id === "t1-carrier")!
+    const b = vehicle("bomber", 0, [c.position[0], 1800, c.position[2]], [0, 0, 0])
+    b.seats = ["bot", null]
+    const out = snap(botInput(createBotBrain(4, 0.8), player(0, 0), b, [b], 10, [], worldQuery))
+    expect(out.seat.firePrimary).toBe(true)
+    b.seats = ["bot", "gunner"]
+    const out2 = snap(botInput(createBotBrain(4, 0.8), player(0, 0), b, [b], 10, [], worldQuery))
+    expect(out2.seat.firePrimary).toBe(false)
+  })
+})
+
+describe("bomb steering bots", () => {
+  beforeEach(() => setFleetState(0, 2))
+  test("bombardier bot steers its falling bomb toward the nearby enemy ship", () => {
+    const c = posedFleet().find(s => s.id === "t1-carrier")!
+    const b = vehicle("bomber", 0, [c.position[0] - 3000, 1800, c.position[2]], [150, 0, 0], [1, 0, 0])
+    const bomb = { id: 7, weapon: "bomb" as const, owner: "bot", vehicle: b.id, team: 0 as TeamId, position: [c.position[0] + 200, 600, c.position[2] + 150] as Vec3, velocity: [0, -80, 0] as Vec3, age: 5, ttl: 40 }
+    const out = snap(botInput(createBotBrain(9, 0.8), player(0, 1), b, [b], 10, [], worldQuery, undefined, [bomb]))
+    expect(out.seat.steerBomb).toBe(true)
+    const want: Vec3 = [c.position[0] - bomb.position[0], 20 - bomb.position[1], c.position[2] - bomb.position[2]]
+    expect(angle(out.seat.aim!, want)).toBeLessThan(0.05)
+    // Someone else's bomb isn't ours to steer.
+    const out2 = snap(botInput(createBotBrain(9, 0.8), player(0, 1), b, [b], 10, [], worldQuery, undefined, [{ ...bomb, owner: "other" }]))
+    expect(out2.seat.steerBomb).toBe(false)
+  })
+})

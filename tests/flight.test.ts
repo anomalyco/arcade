@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-  BOMB_DRAG, NEUTRAL_INPUT, bombImpactPoint, cloneFlight, createFlightState, directionFromHeading, flightReadout, forward, quatFromYawPitchRoll, stepFlight, up,
+  BOMB_DRAG, NEUTRAL_INPUT, bombImpactPoint, cloneFlight, right, createFlightState, directionFromHeading, flightReadout, forward, quatFromYawPitchRoll, stepFlight, up,
 } from "../src/sim/flight"
 import { TICK_DT, type FlightInput, type FlightState, type Vec3, type VehicleKind, type WorldQuery } from "../src/sim/types"
 import { VEHICLES } from "../src/sim/vehicles"
@@ -50,12 +50,13 @@ function turnTo(kind: VehicleKind, deltaDeg: number, seconds = 15): TurnResult {
   return { time, overshoot, finalErr: Math.abs(angDiff(heading(s), target)), altLoss: alt0 - minAlt }
 }
 
-function sustainedTurn(kind: VehicleKind) {
+function sustainedTurn(kind: VehicleKind, throttle = 1) {
   const s = airStart(kind)
   settleLevel(s, 20)
-  // Keep the aim 90° right of the current heading: max-performance level turn.
-  const step = () => input({ aim: directionFromHeading((heading(s) + 90) * Math.PI / 180, 0), throttle: 1 })
-  run(s, step, 6)
+  s.throttle = throttle
+  // Keep the aim 90° right of the current heading: max-performance level turn at a fixed throttle.
+  const step = () => input({ aim: directionFromHeading((heading(s) + 90) * Math.PI / 180, 0), throttle: 0 })
+  run(s, step, 8)
   const h0 = heading(s)
   let total = 0, prev = h0
   run(s, st => { const h = heading(st); total += angDiff(h, prev); prev = h; return step() }, 4)
@@ -123,17 +124,6 @@ function loopTime(kind: VehicleKind) {
 
 describe("jets: direct steering", () => {
   for (const kind of JETS) {
-    test(`${kind}: roll-then-pull makes a clean 90° turn`, () => {
-      const r = directTurn(kind)
-      const aim = turnTo(kind, 90)
-      expect(r.time).toBeGreaterThan(0)
-      expect(r.time).toBeLessThan(aim.time * 1.6)
-      expect(r.overshoot).toBeLessThan(6)
-      expect(r.finalErr).toBeLessThan(3)
-      expect(r.maxAltDev).toBeLessThan(60)
-      expect(Math.abs(r.finalRoll)).toBeLessThan(5)
-    })
-
     test(`${kind}: manual flying has no hidden assists (bank held, rudder doesn't roll)`, () => {
       const banked = airStart(kind)
       banked.orientation = quatFromYawPitchRoll(0, 0, 30 * Math.PI / 180)
@@ -645,7 +635,7 @@ describe("moving carrier deck", () => {
 // ---------------------------------------------------------------------------------------------
 // Energy dogfighting: corner speed, sustained turn, bleed, airbrake (printed as a table).
 // ---------------------------------------------------------------------------------------------
-const CORNER: Record<string, number> = { fighter: 110, warthog: 75, blackbird: 170 }
+const CORNER: Record<string, number> = { fighter: 92, warthog: 70, blackbird: 140, bomber: 110 }
 
 /** Instantaneous pull at a given speed (level start, full throttle, full manual pitch). */
 function pullAt(kind: VehicleKind, v: number) {
@@ -677,7 +667,8 @@ describe("energy dogfighting", () => {
       run(s, input({ pitch: 1, roll: 0, throttle: 1 }), 3) // loop-ish max pull
       run(s, st => input({ aim: directionFromHeading(heading(st) * Math.PI / 180 + Math.PI / 2, 0), throttle: 1 }), 5)
       const bled = flightReadout(s).speed
-      expect(bled).toBeLessThan(v0 * 0.85)
+      expect(bled).toBeLessThan(v0 * 0.97) // mild, BF-style bleed
+      expect(bled).toBeGreaterThan(v0 * 0.6)
       run(s, st => input({ aim: directionFromHeading(heading(st) * Math.PI / 180, 0), throttle: 1, boost: true }), 15)
       expect(flightReadout(s).speed).toBeGreaterThan(v0)
     })
@@ -686,10 +677,10 @@ describe("energy dogfighting", () => {
       const up = airStart(kind, 2000); settleLevel(up, 10)
       const v0 = flightReadout(up).speed
       run(up, input({ aim: directionFromHeading(0, 0.8), throttle: 1 }), 6)
-      expect(flightReadout(up).speed).toBeLessThan(v0 * 0.9)
+      expect(flightReadout(up).speed).toBeLessThan(v0 * 0.97)
       const dn = airStart(kind, 3500); settleLevel(dn, 10)
       run(dn, input({ aim: directionFromHeading(0, -0.6), throttle: 1 }), 6)
-      expect(flightReadout(dn).speed).toBeGreaterThan(v0 * 1.05)
+      expect(flightReadout(dn).speed).toBeGreaterThan(v0 * 1.02)
     })
 
     test(`${kind}: mouse-aim 180° turn converges without oscillation`, () => {
@@ -698,6 +689,30 @@ describe("energy dogfighting", () => {
       expect(r.time).toBeLessThan(kind === "blackbird" ? 16 : 7)
       expect(r.overshoot).toBeLessThan(10)
       expect(r.finalErr).toBeLessThan(3)
+    })
+  }
+
+  const BANDS: Record<string, [number, number]> = { fighter: [54, 68], warthog: [44, 58], blackbird: [18, 30], bomber: [10, 16] }
+  for (const kind of [...JETS, "bomber"] as VehicleKind[]) {
+    test(`${kind}: sweet spot — sustained turn at 65% throttle beats full throttle, within its band`, () => {
+      const sweet = sustainedTurn(kind, 0.65), full = sustainedTurn(kind, 1)
+      expect(sweet.rateDeg).toBeGreaterThan(full.rateDeg)
+      expect(sweet.rateDeg).toBeGreaterThan(BANDS[kind][0])
+      expect(sweet.rateDeg).toBeLessThan(BANDS[kind][1])
+    })
+
+    test(`${kind}: nose follows the velocity (sideslip < 3° in a steady turn)`, () => {
+      const s = airStart(kind, 3000)
+      settleLevel(s, 10)
+      let maxSlip = 0
+      run(s, st => input({ aim: directionFromHeading((heading(st) + 90) * Math.PI / 180, 0), throttle: 1 }), 4)
+      run(s, st => {
+        const v = st.velocity, r = right(st.orientation), f = forward(st.orientation)
+        const lat = v[0] * r[0] + v[1] * r[1] + v[2] * r[2], fwd = v[0] * f[0] + v[1] * f[1] + v[2] * f[2]
+        maxSlip = Math.max(maxSlip, Math.abs(Math.atan2(lat, fwd)) * 180 / Math.PI)
+        return input({ aim: directionFromHeading((heading(st) + 90) * Math.PI / 180, 0), throttle: 1 })
+      }, 4)
+      expect(maxSlip).toBeLessThan(3)
     })
   }
 
@@ -715,15 +730,16 @@ describe("energy dogfighting", () => {
 
   test("corner / turn-rate table", () => {
     const rows: Record<string, unknown>[] = []
-    for (const kind of JETS) {
+    for (const kind of [...JETS, "bomber"] as VehicleKind[]) {
       const c = CORNER[kind]
       const row: Record<string, unknown> = { kind, "corner m/s": c }
       for (const f of [0.6, 0.8, 1, 1.3, 1.7]) {
         const r = pullAt(kind, c * f)
         row[`${f}× corner: °/s (dv/dt)`] = `${r.rateDeg.toFixed(0)} (${r.dvdt.toFixed(0)}) @${Math.round(c * f)}`
       }
-      const st = sustainedTurn(kind)
-      row["sustained °/s @ m/s"] = `${st.rateDeg.toFixed(0)} @ ${st.speed.toFixed(0)}`
+      const st = sustainedTurn(kind), sw = sustainedTurn(kind, 0.65)
+      row["sustained full thr °/s @ m/s"] = `${st.rateDeg.toFixed(0)} @ ${st.speed.toFixed(0)}`
+      row["sustained 65% thr °/s @ m/s"] = `${sw.rateDeg.toFixed(0)} @ ${sw.speed.toFixed(0)}`
       rows.push(row)
     }
     console.table(rows)
@@ -764,7 +780,7 @@ describe("helicopter: mouse-aim", () => {
 
 describe("bomber (B-2)", () => {
   test("feel: sustained turn ~12–15°/s, roll ~45°/s, no practical loop", () => {
-    const st = sustainedTurn("bomber")
+    const st = sustainedTurn("bomber", 0.65)
     const rr = rollRate("bomber")
     const lp = loopTime("bomber")
     console.table([{ kind: "bomber", "sustained °/s": st.rateDeg.toFixed(1), "@ m/s": st.speed.toFixed(0), "roll °/s": rr.peakDeg.toFixed(0), "loop (s)": lp.done ? lp.time.toFixed(1) : "no" }])
