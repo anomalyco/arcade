@@ -1,77 +1,12 @@
+// Main menu (lobby) plus the shared typographic menu component used by the spawn screen and pause menu.
+// Design: numbered, stacked sentence-case items directly on the world; the selected item gets full opacity
+// and a short orange rule; tiny mono metadata under the selection; ↑↓ Enter Esc (and ←→ for values).
 import type { RoomConfig, RoomSummary } from "../sim/protocol"
 import { DEFAULT_ROOM_CONFIG } from "../sim/protocol"
 import type { Quality } from "../sim/types"
 import { callsign, randomCallsign, settings, updateSettings } from "./settings"
 import { getNet } from "./net-adapter"
 import type { ControlScheme } from "../input"
-
-// Mirrors CONTROL_SCHEMES / CONTROL_SCHEME_LABELS / controlScheme() / setControlScheme() from input.ts.
-// Importing input.ts here would drag the whole Input module into the instant-paint entry chunk (+8 kB).
-const CONTROL_SCHEMES: readonly ControlScheme[] = ["point", "battlefield", "aim"]
-const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { point: "Point & turn", battlefield: "Battlefield (mouse = roll)", aim: "Mouse-aim cursor" }
-const controlScheme = (): ControlScheme => settings.controlStyle === "aim" ? "aim" : settings.controlScheme === "battlefield" ? "battlefield" : "point"
-const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "aim" ? "aim" : "direct", controlScheme: scheme })
-
-const kb = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
-
-/** Control rows for a scheme, grouped into sections (shared by the help modal, spawn screen and pause menu). */
-export function controlRows(scheme: ControlScheme = controlScheme()): { title: string; rows: [string, string][] }[] {
-  const flight: [string, string][] = scheme === "battlefield"
-    ? [
-        ["Nose up / down", `Mouse ↑↓ (forward = nose down) · ${kb("↑")} down ${kb("↓")} up`],
-        ["Roll", `Mouse ←→ · ${kb("←", "→")}`],
-        ["Yaw / pedals", `${kb("A", "D")} · ${kb("Q", "E")}`],
-      ]
-    : scheme === "aim"
-    ? [
-        ["Steer", "Point the mouse cursor where you want to fly"],
-        ["Roll / strafe (heli)", kb("A", "D")],
-        ["Rudder / pedal", kb("Q", "E")],
-      ]
-    : [
-        ["Turn", `Mouse ←→ · ${kb("←", "→")}`],
-        ["Nose up / down", `Mouse ↑↓ · ${kb("↓")} up ${kb("↑")} down`],
-        ["Roll / strafe (heli)", kb("A", "D")],
-        ["Rudder / pedal", kb("Q", "E")],
-      ]
-  flight.push(["Throttle / collective", kb("W", "S")], ["Boost · brake / auto-hover", `${kb("Shift")} · ${kb("X")}`])
-  return [
-    { title: `Flight · ${CONTROL_SCHEME_LABELS[scheme]}`, rows: flight },
-    { title: "Combat", rows: [
-      ["Guns", kb("LMB", "Space")], ["Missiles", kb("RMB", "V")], ["Flares · ability", `${kb("F")} · ${kb("R")}`],
-      ["Switch seat", `${kb("1", "2")} · gunners aim with the mouse`],
-    ] },
-    { title: "View & chat", rows: [
-      ["Free-look · camera", `hold ${kb("C")} · ${kb("T")}`], ["Chat · scores · menu", `${kb("Enter")} · ${kb("Tab")} · ${kb("Esc")}`],
-    ] },
-  ]
-}
-
-/** 3-way steering selector markup (buttons carry data-scheme). */
-export function schemeSegHtml(): string {
-  return CONTROL_SCHEMES.map(s => `<button data-scheme="${s}">${CONTROL_SCHEME_LABELS[s].replace(/ \(.*\)$/, "")}</button>`).join("")
-}
-
-/** Wire a steering selector: paints the current scheme and persists clicks. */
-export function bindSchemeSeg(seg: HTMLElement, onChange?: () => void): () => void {
-  if (!seg.querySelector("[data-scheme]")) seg.innerHTML = schemeSegHtml()
-  const paint = () => {
-    const cur = controlScheme()
-    seg.querySelectorAll<HTMLElement>("[data-scheme]").forEach(b => {
-      b.setAttribute("aria-pressed", String(b.dataset.scheme === cur))
-      b.title = CONTROL_SCHEME_LABELS[b.dataset.scheme as ControlScheme]
-    })
-  }
-  seg.addEventListener("click", e => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-scheme]")
-    if (!b) return
-    setControlScheme(b.dataset.scheme as ControlScheme)
-    paint()
-    onChange?.()
-  })
-  paint()
-  return paint
-}
 
 export type StartRequest =
   | { mode: "quick" }
@@ -87,21 +22,23 @@ export interface LobbyApi {
   refreshRooms(): void
 }
 
-export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"]
+/** Muted team colours (mirrors TEAM_COLORS in render/aircraft.ts; not imported to keep three.js out of the entry chunk). */
+export const TEAM_COLORS = ["#3c6ea8", "#c98a2e", "#4e8a5a", "#b04a44"]
+/** Lighter tints of the team colours for text over the world. */
+export const TEAM_TINTS = ["#9fc0e6", "#e8b46a", "#9cc8a4", "#e09a92"]
 export const TEAM_NAMES = ["Cobalt", "Amber", "Emerald", "Crimson"]
 
-/** Colorblind-safe team glyph (circle / triangle / square / diamond) in the team colour. */
+/** Small square swatch in the team colour. */
 export function teamGlyph(team: number): string {
-  return `<i class="tg" style="--c:${TEAM_COLORS[team]}" aria-hidden="true"></i>`
+  return `<i class="sw" style="--c:${TEAM_COLORS[team]}" aria-hidden="true"></i>`
 }
-
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 
 export function toast(text: string, error = false): void {
   const host = $("toast")
   const el = document.createElement("div")
-  el.textContent = text
+  el.textContent = text.toLowerCase()
   if (error) el.className = "err"
   host.appendChild(el)
   setTimeout(() => el.remove(), 3300)
@@ -112,154 +49,412 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 }
 
+// ---------------------------------------------------------------------------------------------- controls
+
+// Mirrors CONTROL_SCHEMES / CONTROL_SCHEME_LABELS / controlScheme() / setControlScheme() from input.ts.
+// Importing input.ts here would drag the whole Input module into the instant-paint entry chunk (+8 kB).
+const CONTROL_SCHEMES: readonly ControlScheme[] = ["point", "battlefield", "aim"]
+const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = { point: "Point & turn", battlefield: "Battlefield (mouse = roll)", aim: "Mouse-aim cursor" }
+const controlScheme = (): ControlScheme => settings.controlStyle === "aim" ? "aim" : settings.controlScheme === "battlefield" ? "battlefield" : "point"
+const setControlScheme = (scheme: ControlScheme) => updateSettings({ controlStyle: scheme === "aim" ? "aim" : "direct", controlScheme: scheme })
+
+const kb = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
+
+/** Control rows for a scheme, grouped into sections (help screen, pause menu). */
+export function controlRows(scheme: ControlScheme = controlScheme()): { title: string; rows: [string, string][] }[] {
+  const flight: [string, string][] = scheme === "battlefield"
+    ? [
+        ["Nose up / down", `mouse ↑↓ (forward = down) · ${kb("↑")} down ${kb("↓")} up`],
+        ["Roll", `mouse ←→ · ${kb("←", "→")}`],
+        ["Yaw / pedals", `${kb("a", "d")} · ${kb("q", "e")}`],
+      ]
+    : scheme === "aim"
+    ? [
+        ["Steer", "point the mouse where you want to fly"],
+        ["Roll / strafe (heli)", kb("a", "d")],
+        ["Rudder / pedal", kb("q", "e")],
+      ]
+    : [
+        ["Turn", `mouse ←→ · ${kb("←", "→")}`],
+        ["Nose up / down", `mouse ↑↓ · ${kb("↓")} up ${kb("↑")} down`],
+        ["Roll / strafe (heli)", kb("a", "d")],
+        ["Rudder / pedal", kb("q", "e")],
+      ]
+  flight.push(["Throttle / collective", kb("w", "s")], ["Boost · brake / auto-hover", `${kb("shift")} · ${kb("x")}`])
+  return [
+    { title: `flight · ${CONTROL_SCHEME_LABELS[scheme].toLowerCase()}`, rows: flight },
+    { title: "combat", rows: [
+      ["Guns", `${kb("lmb")} ${kb("space")}`], ["Missiles", `${kb("rmb")} ${kb("v")}`], ["Flares · ability", `${kb("f")} · ${kb("r")}`],
+      ["Switch seat", `${kb("1")} ${kb("2")} · gunners aim with the mouse`],
+    ] },
+    { title: "view & comms", rows: [
+      ["Free-look · camera", `hold ${kb("c")} · ${kb("t")}`], ["Chat · scores · menu", `${kb("enter")} · ${kb("tab")} · ${kb("esc")}`],
+    ] },
+  ]
+}
+
+/** Controls reference table for the current scheme. */
+export function controlsTable(): string {
+  return `<table class="keys">${controlRows().map(sec =>
+    `<tr><th colspan="2">${escapeHtml(sec.title)}</th></tr>` + sec.rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("")).join("")}</table>`
+}
+
+// ---------------------------------------------------------------------------------------------- menu
+
+export interface MenuItem {
+  label: string
+  /** Mono line shown under the item while selected. */
+  meta?: string | (() => string)
+  /** Value shown at the end of the row (mono). */
+  value?: () => string
+  /** ←→ (and click) change the value. */
+  adjust?: (dir: 1 | -1) => void
+  /** Enter / click. */
+  run?: () => void
+  /** Inline text field: "value" sits at the row end, "label" replaces the label. */
+  input?: { el: HTMLInputElement; at: "value" | "label" }
+  disabled?: () => boolean
+  /** Smaller row (secondary actions). */
+  small?: boolean
+}
+
+export interface MenuScreen {
+  /** Crumb above the list, e.g. "03 — create a lobby". */
+  crumb?: string
+  items?: MenuItem[]
+  size?: "big" | "mid"
+  /** Static content instead of (or after) items. */
+  html?: string
+  note?: string
+  /** Key hints shown while this screen is on top. */
+  hints?: [string, string][]
+  /** Initial selection. */
+  sel?: number
+}
+
+/**
+ * A stack of typographic menu screens rendered into `host`. Keyboard: ↑↓ select, Enter run, ←→ adjust,
+ * Esc back (or `onEscape` at the root). Hover selects; click runs/adjusts.
+ */
+export class MenuNav {
+  private stack: { screen: MenuScreen; sel: number }[] = []
+  private els: HTMLElement[] = []
+  private metaEl: HTMLElement | null = null
+  onEscape: (() => void) | null = null
+  /** ←→ on an item without `adjust` (e.g. team switch on the spawn screen). */
+  onSide: ((dir: 1 | -1) => void) | null = null
+  onHints: ((hints: [string, string][]) => void) | null = null
+  onMove: ((i: number) => void) | null = null
+
+  constructor(readonly host: HTMLElement, private sound: (() => void) | null = null) {
+    host.addEventListener("pointermove", e => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>(".mi")
+      if (b?.dataset.i) this.select(Number(b.dataset.i), false)
+    })
+    host.addEventListener("click", e => {
+      const t = e.target as HTMLElement
+      const b = t.closest<HTMLElement>(".mi")
+      if (!b?.dataset.i || t.tagName === "INPUT") return
+      const i = Number(b.dataset.i)
+      this.select(i, false)
+      this.activate(i, t.closest(".v") && this.item(i)?.adjust && t.closest(".arr.l") ? -1 : 1)
+    })
+    host.addEventListener("focusin", e => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>(".mi")
+      if (b?.dataset.i) this.select(Number(b.dataset.i), false)
+    })
+  }
+
+  get depth(): number { return this.stack.length }
+  get top(): MenuScreen | null { return this.stack[this.stack.length - 1]?.screen ?? null }
+  get index(): number { return this.stack[this.stack.length - 1]?.sel ?? 0 }
+
+  private item(i: number): MenuItem | undefined { return this.top?.items?.[i] }
+
+  push(screen: MenuScreen): void { this.stack.push({ screen, sel: screen.sel ?? 0 }); this.render() }
+  replace(screen: MenuScreen): void { this.stack[this.stack.length - 1] = { screen, sel: Math.min(this.index, (screen.items?.length ?? 1) - 1) }; this.render() }
+  reset(screen: MenuScreen): void { this.stack = [{ screen, sel: screen.sel ?? 0 }]; this.render() }
+  pop(): boolean { if (this.stack.length <= 1) return false; this.stack.pop(); this.render(); return true }
+
+  /** Re-render values/meta without rebuilding (keeps input focus). */
+  refresh(): void {
+    const items = this.top?.items ?? []
+    items.forEach((it, i) => {
+      const el = this.els[i]
+      if (!el) return
+      el.classList.toggle("off", !!it.disabled?.())
+      const v = el.querySelector<HTMLElement>(".v")
+      if (v && it.value && !it.input) v.innerHTML = this.valueHtml(it)
+    })
+    this.paintMeta()
+  }
+
+  private valueHtml(it: MenuItem): string {
+    const v = escapeHtml(it.value?.() ?? "")
+    return it.adjust ? `<span class="arr l">‹</span>${v}<span class="arr">›</span>` : v
+  }
+
+  render(): void {
+    const s = this.top
+    if (!s) return
+    const items = s.items ?? []
+    this.host.innerHTML = `<div class="crumb">${s.crumb ?? ""}</div>` +
+      (items.length ? `<div class="menu ${s.size ?? "big"}">${items.map((it, i) => {
+        const label = it.input?.at === "label" ? "" : escapeHtml(it.label)
+        return `<div class="mi${it.small ? " sm" : ""}" data-i="${i}" role="button" tabindex="-1"><span class="ix">${String(i + 1).padStart(2, "0")}</span><span class="rule"></span><span class="t">${label}</span><span class="v">${it.value && !it.input ? this.valueHtml(it) : ""}</span></div>`
+      }).join("")}</div>` : "") + (s.html ?? "") + (s.note ? `<div class="note">${s.note}</div>` : "")
+    this.els = Array.from(this.host.querySelectorAll<HTMLElement>(".mi"))
+    items.forEach((it, i) => {
+      if (!it.input) return
+      const slot = this.els[i].querySelector(it.input.at === "label" ? ".t" : ".v")!
+      slot.appendChild(it.input.el)
+    })
+    this.metaEl = null
+    this.select(this.index, false, true)
+    this.refresh()
+    this.onHints?.(s.hints ?? (this.stack.length > 1 ? [["↑↓", "select"], ["enter", "confirm"], ["esc", "back"]] : [["↑↓", "select"], ["enter", "confirm"]]))
+  }
+
+  select(i: number, sound = true, force = false): void {
+    const entry = this.stack[this.stack.length - 1]
+    if (!entry) return
+    const n = this.els.length
+    if (!n) return
+    i = Math.max(0, Math.min(n - 1, i))
+    if (i === entry.sel && !force) return
+    entry.sel = i
+    this.els.forEach((el, k) => el.classList.toggle("sel", k === i))
+    if (sound) this.sound?.()
+    this.paintMeta()
+    this.onMove?.(i)
+  }
+
+  private paintMeta(): void {
+    const it = this.item(this.index)
+    const el = this.els[this.index]
+    const meta = typeof it?.meta === "function" ? it.meta() : it?.meta
+    if (!meta || !el) { this.metaEl?.remove(); this.metaEl = null; return }
+    if (!this.metaEl || this.metaEl.previousElementSibling !== el) {
+      this.metaEl?.remove()
+      this.metaEl = document.createElement("div")
+      this.metaEl.className = "meta"
+      el.after(this.metaEl)
+    }
+    if (this.metaEl.innerHTML !== meta) this.metaEl.innerHTML = meta
+  }
+
+  private activate(i: number, dir: 1 | -1 = 1): void {
+    const it = this.item(i)
+    if (!it || it.disabled?.()) return
+    if (it.input && !it.run) { it.input.el.focus(); return }
+    if (it.adjust) { it.adjust(dir); this.sound?.(); this.refresh(); return }
+    if (it.run) { this.sound?.(); it.run() }
+  }
+
+  /** Returns true when the key was handled. */
+  handleKey(e: KeyboardEvent): boolean {
+    if (!this.top) return false
+    const inInput = (e.target as HTMLElement)?.tagName === "INPUT"
+    const items = this.top.items ?? []
+    const step = (d: number) => {
+      let i = this.index
+      for (let k = 0; k < items.length; k++) {
+        i = (i + d + items.length) % items.length
+        if (!items[i].disabled?.()) break
+      }
+      this.select(i)
+    }
+    switch (e.key) {
+      case "ArrowDown": if (inInput) (e.target as HTMLElement).blur(); step(1); return true
+      case "ArrowUp": if (inInput) (e.target as HTMLElement).blur(); step(-1); return true
+      case "ArrowLeft": case "ArrowRight": {
+        if (inInput) return false
+        const it = this.item(this.index), d = e.key === "ArrowLeft" ? -1 : 1
+        if (it?.adjust) { it.adjust(d); this.sound?.(); this.refresh() } else this.onSide?.(d)
+        return true
+      }
+      case "Enter": {
+        if (inInput) {
+          const it = this.item(this.index)
+          ;(e.target as HTMLElement).blur()
+          if (it?.run) it.run()
+          return true
+        }
+        this.activate(this.index)
+        return true
+      }
+      case "Escape":
+        if (inInput) { (e.target as HTMLElement).blur(); return true }
+        if (!this.pop()) this.onEscape?.()
+        else this.sound?.()
+        return true
+    }
+    return false
+  }
+}
+
+/** Render key hints ("↑↓ select …") into a footer element. */
+export function hintsHtml(hints: [string, string][]): string {
+  return hints.map(([k, t]) => `<span><kbd>${escapeHtml(k)}</kbd> ${escapeHtml(t)}</span>`).join("")
+}
+
+const cycle = <T,>(list: readonly T[], cur: T, d: number): T => list[(list.indexOf(cur) + d + list.length) % list.length]
+
+/** Settings screen (shared by the lobby and pause menu). */
+export function settingsScreen(nav: MenuNav, onQuality: (q: Quality) => void, crumb = "settings"): MenuScreen {
+  const qualities: Quality[] = ["low", "balanced", "high"]
+  return {
+    crumb, size: "mid",
+    items: [
+      { label: "Graphics", value: () => settings.quality, adjust: d => { const q = cycle(qualities, settings.quality, d); updateSettings({ quality: q }); onQuality(q) },
+        meta: () => ({ low: "1× resolution · no shadows or post", balanced: "soft shadows · anti-aliasing", high: "full resolution · sharper shadows" })[settings.quality] },
+      { label: "Sound", value: () => (settings.muted ? "off" : "on"), adjust: () => updateSettings({ muted: !settings.muted }) },
+      { label: "Steering", value: () => CONTROL_SCHEME_LABELS[controlScheme()].replace(/ \(.*\)$/, "").toLowerCase(), adjust: d => setControlScheme(cycle(CONTROL_SCHEMES, controlScheme(), d)),
+        meta: () => ({ point: "mouse turns and pitches the nose", battlefield: "mouse x rolls, a/d yaw", aim: "fly toward a mouse cursor" })[controlScheme()] },
+      { label: "Mouse sensitivity", value: () => settings.sensitivity.toFixed(2), adjust: d => updateSettings({ sensitivity: Math.round(Math.max(0.2, Math.min(3, settings.sensitivity + d * 0.1)) * 100) / 100 }) },
+      { label: "Invert mouse Y", value: () => (settings.invertY ? "on" : "off"), adjust: () => updateSettings({ invertY: !settings.invertY }), meta: "on = mouse away moves the nose down" },
+      { label: "Controls", run: () => nav.push({ crumb: `${crumb} — controls`, html: controlsTable(), hints: [["esc", "back"]] }), meta: "full key reference" },
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- lobby
+
 export function initLobby(opts: { onStart(req: StartRequest): void; onQuality(q: Quality): void; onClick?(): void }): LobbyApi {
   const lobby = $("lobby")
   const name = $<HTMLInputElement>("callsign")
-  name.value = settings.name
-  name.placeholder = randomCallsign()
+  name.value = settings.name.toLowerCase()
+  name.placeholder = randomCallsign().toLowerCase()
   name.addEventListener("input", () => updateSettings({ name: name.value.toUpperCase().slice(0, 16) }))
-  name.addEventListener("blur", () => { name.value = settings.name })
+  name.addEventListener("blur", () => { name.value = settings.name.toLowerCase() })
+  name.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Escape") { e.stopPropagation(); name.blur() } })
 
-  const click = () => opts.onClick?.()
-  lobby.addEventListener("click", e => { if ((e.target as HTMLElement).closest("button")) click() })
+  const hints = $("hints")
+  const nav = new MenuNav($("screen"), () => opts.onClick?.())
+  nav.onHints = h => { hints.innerHTML = hintsHtml(h) }
 
-  // Settings bar
-  const seg = $("seg-quality")
-  const paintQuality = () => seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.q === settings.quality)))
-  paintQuality()
-  seg.addEventListener("click", e => {
-    const q = (e.target as HTMLElement).dataset.q as Quality | undefined
-    if (!q) return
-    updateSettings({ quality: q })
-    paintQuality()
-    opts.onQuality(q)
-  })
-  const sound = $("btn-sound")
-  const paintSound = () => { sound.textContent = settings.muted ? "Off" : "On"; sound.setAttribute("aria-pressed", String(!settings.muted)) }
-  paintSound()
-  sound.addEventListener("click", () => { updateSettings({ muted: !settings.muted }); paintSound() })
-  const paintScheme = bindSchemeSeg($("seg-style"), () => renderHelp())
-  const renderHelp = () => {
-    $("help-keys").innerHTML = controlRows().map(sec =>
-      `<tr class="sec"><td colspan="2">${escapeHtml(sec.title)}</td></tr>` + sec.rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("")).join("")
-  }
-  renderHelp()
-  const sens = $<HTMLInputElement>("sens")
-  sens.value = String(settings.sensitivity)
-  sens.addEventListener("input", () => updateSettings({ sensitivity: Number(sens.value) }))
+  let rooms: RoomSummary[] | null = null
+  let roomErr = false
+  const roomsMeta = () => roomErr ? "server unreachable · practice still works" : rooms === null ? "looking for lobbies…" : `online · ${rooms.length} ${rooms.length === 1 ? "lobby" : "lobbies"} open`
 
-  // Modals
-  const openModal = (id: string) => { $(id).hidden = false }
-  document.querySelectorAll<HTMLElement>(".modal").forEach(m => {
-    m.addEventListener("click", e => {
-      if (e.target === m || (e.target as HTMLElement).closest("[data-close]")) m.hidden = true
-    })
+  // Create lobby
+  const cfg = { ...DEFAULT_ROOM_CONFIG, timeLimit: DEFAULT_ROOM_CONFIG.timeLimit / 60 }
+  const nameIn = document.createElement("input")
+  nameIn.maxLength = 32
+  nameIn.value = cfg.name
+  nameIn.spellcheck = false
+  nameIn.addEventListener("input", () => { cfg.name = nameIn.value })
+  const readConfig = (): RoomConfig => ({
+    ...DEFAULT_ROOM_CONFIG, name: (cfg.name || DEFAULT_ROOM_CONFIG.name).slice(0, 32), teams: cfg.teams, bots: 0,
+    maxPerTeam: cfg.maxPerTeam, scoreLimit: cfg.scoreLimit, timeLimit: cfg.timeLimit * 60, listed: cfg.listed,
   })
-  window.addEventListener("keydown", e => {
-    if (e.key === "Escape") document.querySelectorAll<HTMLElement>(".modal").forEach(m => (m.hidden = true))
-  })
-  $("btn-help").addEventListener("click", () => { renderHelp(); openModal("help-modal") })
-  $("btn-create").addEventListener("click", () => openModal("create-modal"))
-
-  const form = $<HTMLFormElement>("create-form")
-  const readForm = (): RoomConfig => {
-    const f = new FormData(form)
-    const num = (k: string, lo: number, hi: number, d: number) => {
-      const v = Math.round(Number(f.get(k)))
-      return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d
-    }
-    return {
-      ...DEFAULT_ROOM_CONFIG,
-      name: String(f.get("name") || DEFAULT_ROOM_CONFIG.name).slice(0, 32),
-      teams: num("teams", 2, 4, 2),
-      bots: 0,
-      maxPerTeam: num("maxPerTeam", 1, 10, 10),
-      scoreLimit: num("scoreLimit", 5, 500, 50),
-      timeLimit: num("timeLimit", 2, 60, 15) * 60,
-      listed: f.get("listed") === "on",
-    }
-  }
-  form.addEventListener("submit", e => {
-    e.preventDefault()
-    $("create-modal").hidden = true
-    opts.onStart({ mode: "create", config: readForm() })
-  })
-  $("create-offline").addEventListener("click", () => {
-    $("create-modal").hidden = true
-    opts.onStart({ mode: "offline", config: readForm() })
+  const scoreSteps = [25, 50, 75, 100, 150, 200, 300], timeSteps = [5, 10, 15, 20, 30, 45, 60]
+  const createScreen = (): MenuScreen => ({
+    crumb: "03 — <b>create a lobby</b>", size: "mid",
+    hints: [["↑↓", "select"], ["←→", "change"], ["enter", "confirm"], ["esc", "back"]],
+    items: [
+      { label: "Name", input: { el: nameIn, at: "value" } },
+      { label: "Teams", value: () => String(cfg.teams), adjust: d => { cfg.teams = Math.max(2, Math.min(4, cfg.teams + d)) } },
+      { label: "Pilots per team", value: () => String(cfg.maxPerTeam), adjust: d => { cfg.maxPerTeam = Math.max(1, Math.min(10, cfg.maxPerTeam + d)) } },
+      { label: "Score limit", value: () => String(cfg.scoreLimit), adjust: d => { cfg.scoreLimit = cycle(scoreSteps, scoreSteps.includes(cfg.scoreLimit) ? cfg.scoreLimit : 50, d) } },
+      { label: "Time limit", value: () => `${cfg.timeLimit} min`, adjust: d => { cfg.timeLimit = cycle(timeSteps, timeSteps.includes(cfg.timeLimit) ? cfg.timeLimit : 15, d) } },
+      { label: "Visibility", value: () => (cfg.listed ? "public" : "invite only"), adjust: () => { cfg.listed = !cfg.listed }, meta: () => cfg.listed ? "listed in browse lobbies" : "only people with the link can join" },
+      { label: "Create online", run: () => opts.onStart({ mode: "create", config: readConfig() }), meta: "you get an invite link to share" },
+      { label: "Play offline", small: true, run: () => opts.onStart({ mode: "offline", config: readConfig() }), meta: "same settings, solo, no server" },
+    ],
   })
 
-  $("btn-quick").addEventListener("click", () => opts.onStart({ mode: "quick" }))
-  $("btn-practice").addEventListener("click", () =>
-    opts.onStart({ mode: "offline", config: { ...DEFAULT_ROOM_CONFIG, name: "Practice", teams: 2, bots: 0, listed: false } }))
-  const code = $<HTMLInputElement>("join-code")
+  // Join with code
+  const codeIn = document.createElement("input")
+  codeIn.maxLength = 8
+  codeIn.placeholder = "code"
+  codeIn.spellcheck = false
+  codeIn.autocomplete = "off"
+  codeIn.addEventListener("input", () => { codeIn.value = codeIn.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })
   const join = () => {
-    const c = code.value.trim().toUpperCase()
-    if (!c) { code.focus(); return }
+    const c = codeIn.value.trim().toUpperCase()
+    if (!c) { codeIn.focus(); return }
     opts.onStart({ mode: "join", code: c })
   }
-  $("btn-join").addEventListener("click", join)
-  code.addEventListener("keydown", e => { if (e.key === "Enter") join() })
+  const joinScreen = (): MenuScreen => ({
+    crumb: "04 — <b>join with a code</b>", size: "big",
+    items: [
+      { label: "Code", input: { el: codeIn, at: "label" }, run: join, meta: "type the 4–8 character room code" },
+      { label: "Join", run: join },
+    ],
+  })
+
+  // Browse
+  const browseScreen = (): MenuScreen => {
+    const items: MenuItem[] = (rooms ?? []).map(r => ({
+      label: r.name,
+      value: () => (r.players >= r.maxPlayers ? "full" : `${r.players}/${r.maxPlayers}`),
+      meta: `${escapeHtml(r.code.toLowerCase())} · ${r.teams} teams · ${r.humans} pilot${r.humans === 1 ? "" : "s"}`,
+      disabled: () => r.players >= r.maxPlayers,
+      run: () => opts.onStart({ mode: "join", code: r.code }),
+    }))
+    items.push({ label: "Refresh", small: true, run: () => refreshRooms(), meta: () => roomsMeta() })
+    return {
+      crumb: "05 — <b>browse lobbies</b>", size: "mid", items,
+      note: rooms === null ? "looking for lobbies…" : roomErr ? "can't reach the server right now. <b>practice</b> still works offline." : rooms.length ? "" : "no open lobbies. <b>quick play</b> starts one.",
+    }
+  }
 
   const invite = new URLSearchParams(location.search).get("join")
-  if (invite) {
-    const c = invite.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8)
-    code.value = c
-    $("invite-code").textContent = c
-    $("invite").hidden = false
-    $("invite-join").addEventListener("click", () => opts.onStart({ mode: "join", code: c }))
-  }
+  const inviteCode = invite ? invite.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) : ""
+  if (inviteCode) codeIn.value = inviteCode
 
-  // Room browser
-  const list = $("rooms")
+  const rootScreen = (): MenuScreen => ({
+    size: "big",
+    items: [
+      ...(inviteCode ? [{ label: `Join ${inviteCode}`, run: () => opts.onStart({ mode: "join", code: inviteCode }), meta: "you were invited to this room" }] : []),
+      { label: "Quick play", run: () => opts.onStart({ mode: "quick" }), meta: () => `join the fullest open lobby · ${roomsMeta()}` },
+      { label: "Practice", run: () => opts.onStart({ mode: "offline", config: { ...DEFAULT_ROOM_CONFIG, name: "Practice", teams: 2, bots: 0, listed: false } }), meta: "solo · offline · free flight" },
+      { label: "Create a lobby", run: () => nav.push(createScreen()), meta: "teams, limits and privacy" },
+      { label: "Join with a code", run: () => { nav.push(joinScreen()); codeIn.focus() }, meta: "a friend's room code" },
+      { label: "Browse lobbies", run: () => { nav.push(browseScreen()); refreshRooms() }, meta: () => roomsMeta() },
+      { label: "Settings", run: () => nav.push(settingsScreen(nav, opts.onQuality, "06 — <b>settings</b>")), meta: "graphics · sound · steering · controls" },
+    ],
+  })
+  nav.reset(rootScreen())
+
+  window.addEventListener("keydown", e => {
+    if (lobby.hidden || !$("busy").hidden) return
+    if (e.target === name) return
+    if (nav.handleKey(e)) e.preventDefault()
+  })
+
   let refreshing = false
-  const renderRooms = (rooms: RoomSummary[]) => {
-    if (!rooms.length) {
-      list.innerHTML = `<li class="empty">No open lobbies right now.<br>Hit <b>Play</b> or <b>Create Lobby</b> to start one.</li>`
-      return
-    }
-    list.innerHTML = rooms.map(r => `<li data-code="${escapeHtml(r.code)}" tabindex="0" class="${r.players >= r.maxPlayers ? "full" : ""}">
-      <div class="name">${escapeHtml(r.name)}</div>
-      <div class="right"><span class="meta">${r.players >= r.maxPlayers ? "FULL" : `${r.players}/${r.maxPlayers}`}</span><span class="cap"><i style="width:${Math.round(100 * Math.min(1, r.players / Math.max(1, r.maxPlayers)))}%"></i></span></div>
-      <div class="meta"><span class="code">${escapeHtml(r.code)}</span><span class="tgs">${Array.from({ length: r.teams }, (_, t) => teamGlyph(t)).join("")}</span><span>${r.humans} pilot${r.humans === 1 ? "" : "s"}</span><span class="go">JOIN</span></div></li>`).join("")
-  }
-  list.addEventListener("keydown", e => {
-    const li = (e.target as HTMLElement).closest<HTMLElement>("li[data-code]")
-    if (li && e.key === "Enter") opts.onStart({ mode: "join", code: li.dataset.code! })
-  })
-  list.addEventListener("click", e => {
-    const li = (e.target as HTMLElement).closest<HTMLElement>("li[data-code]")
-    if (li) opts.onStart({ mode: "join", code: li.dataset.code! })
-  })
   const refreshRooms = async () => {
     if (refreshing) return
     refreshing = true
-    list.innerHTML = `<li class="empty">Looking for lobbies…</li>`
     try {
       const net = await getNet()
-      renderRooms(await net.listRooms())
+      rooms = await net.listRooms()
+      roomErr = false
     } catch {
-      list.innerHTML = `<li class="empty">Can't reach the server right now.<br><b>Practice</b> still works offline.</li>`
+      rooms = []
+      roomErr = true
     } finally {
       refreshing = false
     }
+    if (nav.top?.crumb?.startsWith("05")) nav.replace(browseScreen())
+    else nav.refresh()
   }
-  $("btn-refresh").addEventListener("click", refreshRooms)
   refreshRooms()
 
+  const statusEl = $("load-status")
   const busyEl = $("busy")
   return {
-    show() { paintScheme(); renderHelp(); lobby.hidden = false; document.body.classList.add("in-lobby"); refreshRooms() },
+    show() { lobby.hidden = false; document.body.classList.add("in-lobby"); nav.reset(rootScreen()); refreshRooms() },
     hide() { lobby.hidden = true; document.body.classList.remove("in-lobby") },
     busy(text) {
       busyEl.hidden = text === null
-      if (text !== null) busyEl.querySelector("span")!.textContent = text
+      if (text !== null) busyEl.firstElementChild!.textContent = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase()
     },
     status(html) {
-      // Plain status only: hide once the world is up, show failures.
-      const el = $("load-status")
-      if (/unavailable|failed/i.test(html)) { el.hidden = false; el.textContent = "3D unavailable — WebGL failed to start" }
-      else el.hidden = /awake|ready/i.test(html)
+      if (/unavailable|failed/i.test(html)) { statusEl.hidden = false; statusEl.className = "status err"; statusEl.textContent = "3d unavailable — webgl failed to start" }
+      else statusEl.hidden = /awake|ready/i.test(html)
     },
     refreshRooms,
   }

@@ -211,7 +211,7 @@ function domes(): BufferGeometry {
     g.applyMatrix4(baseMatrix(base))
     g.translate(0, -5, 0)
     const n = pos.count
-    const col = new Color("#ffffff").lerp(new Color(TEAM_COLORS[base.team]), 0.55)
+    const col = new Color("#eef1f2").lerp(new Color(TEAM_COLORS[base.team]), 0.6)
     g.setAttribute("color", new Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => [col.r, col.g, col.b][i % 3]), 3))
     g.setAttribute("team", new Float32BufferAttribute(new Float32Array(n).fill(base.team), 1))
     parts.push(g)

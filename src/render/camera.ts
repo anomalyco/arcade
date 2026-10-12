@@ -45,8 +45,6 @@ const _qp = new Quaternion()
 const _x = new Vector3()
 const _up = new Vector3()
 
-/** Max chase-camera trailing time constant at high speed (s). */
-const SPEED_LAG = 0.08
 /** Extra FOV (deg) when flying above cruise (boosting), ramping in over the first 40% of the boost band. */
 const BOOST_FOV = 6
 function boostFov(kind: VehicleKind, speed: number): number {
@@ -104,8 +102,6 @@ export class CameraRig {
   private orbitAngle = 0
   private followQ = new Quaternion()
   private followInit = false
-  private anchor = new Vector3()
-  private anchorInit = false
 
   constructor(readonly camera: PerspectiveCamera) {
     this.pos.copy(camera.position)
@@ -169,13 +165,10 @@ export class CameraRig {
     const speed = Math.hypot(velocity[0], velocity[1], velocity[2])
     const dist = c.dist * this.zoom * (1 + Math.min(speed, 260) / 900)
     const height = c.height * this.zoom
-    // Sense of speed: the camera's anchor trails the aircraft slightly at high speed (≤ SPEED_LAG s).
+    // Position is locked to the (tick-interpolated) aircraft: any positional lag here makes the airframe
+    // surge back and forth relative to the camera at speed. Sense of speed comes from FOV only.
     _v.set(position[0], position[1], position[2])
-    const lag = SPEED_LAG * MathUtils.smoothstep(speed, 90, 200)
-    if (!this.anchorInit || lag <= 0) { this.anchor.copy(_v); this.anchorInit = true }
-    else this.anchor.lerp(_v, 1 - Math.exp(-dt / lag))
-    if (this.anchor.distanceToSquared(_v) > 400 * 400) this.anchor.copy(_v)
-    this.pos.set(0, height, dist).applyQuaternion(_q2).add(this.anchor)
+    this.pos.set(0, height, dist).applyQuaternion(_q2).add(_v)
     const floor = groundAt(this.pos.x, this.pos.z) + 3
     if (this.pos.y < floor) this.pos.y = floor
     _v2.set(0, height * 0.55, -80).applyQuaternion(_q2).add(_v)
@@ -196,7 +189,6 @@ export class CameraRig {
 
   resetFollow(): void {
     this.followInit = false
-    this.anchorInit = false
   }
 
   cockpit(dt: number, kind: VehicleKind, position: Vec3, orientation: Quat, look: Vector3): void {

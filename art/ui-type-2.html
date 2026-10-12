@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Wings — typography explorations (round 2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,300..800;1,62..125,300..800&family=Archivo+Narrow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { background: #15171a; color: #e9e7e1; font-family: "IBM Plex Sans", sans-serif; padding: 40px }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px }
+  .lead { color: #9a9b96; font-size: 14px; max-width: 860px; line-height: 1.55; margin-bottom: 34px }
+  .opt { margin-bottom: 52px }
+  .opt h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #f4f2ec }
+  .opt .note { color: #9a9b96; font-size: 13px; margin-bottom: 12px; max-width: 900px }
+  /* The stage: a stand-in for the live 3D world behind the menu (palette B) */
+  .stage { position: relative; height: 520px; overflow: hidden; color: #f4f2ec;
+    background:
+      radial-gradient(120% 70% at 70% 100%, rgba(47,93,120,.0), rgba(0,0,0,0)),
+      linear-gradient(180deg, #8fb3cc 0%, #c9d8e0 46%, #dde6ea 54%, #6fa6a8 56%, #3f7288 72%, #2f5d78 100%); }
+  .stage .isl { position: absolute; bottom: 30%; height: 90px; border-radius: 50% 50% 0 0; background: #7f9a5a }
+  .stage .isl.a { left: 52%; width: 38%; } .stage .isl.b { left: 8%; width: 18%; height: 50px; bottom: 34%; opacity: .85 }
+  .stage .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(18,20,23,.78) 0%, rgba(18,20,23,.5) 34%, rgba(18,20,23,0) 60%) }
+  .stage .shade.bottom { background: linear-gradient(0deg, rgba(18,20,23,.82) 0%, rgba(18,20,23,.45) 38%, rgba(18,20,23,0) 70%) }
+  .stage .shade.full { background: rgba(18,20,23,.55) }
+  .abs { position: absolute }
+  .mono { font-family: "IBM Plex Mono", monospace }
+  .dim { color: rgba(244,242,236,.55) }
+  .or { color: #ff7a2e }
+  .kbd { font-family: "IBM Plex Mono"; font-size: 11px; border: 1px solid rgba(244,242,236,.35); padding: 1px 5px; color: rgba(244,242,236,.8) }
+</style>
+</head>
+<body>
+<h1>Wings — typography round 2 (directions 2 + 4, pushed further)</h1>
+<p class="lead">No more boxed panels. The menu sits directly on the live world (striped area = stand-in for the 3D backdrop), with a soft darkening gradient for legibility. Each option changes the type pairing, capitalization, scale contrast and structure. Same palette B: off-white text, one orange accent, nothing else.</p>
+
+<!-- A -->
+<div class="opt">
+  <h2>A · Swiss mono — lowercase, numbered, tiny + huge</h2>
+  <p class="note">IBM Plex Mono only. Lowercase everything, numbered items, extreme scale contrast (tiny metadata, big selected item). Feels like a flight computer. Orange only on the selection index.</p>
+  <div class="stage">
+    <div class="isl a"></div><div class="isl b"></div><div class="shade"></div>
+    <div class="abs mono" style="left:56px;top:52px;font-size:13px;letter-spacing:.32em" >w i n g s</div>
+    <div class="abs mono dim" style="left:56px;top:76px;font-size:11px">v0.1 · 4 teams · 16 km theater</div>
+    <div class="abs mono" style="left:56px;top:170px;line-height:1">
+      <div style="font-size:12px" class="or">01</div>
+      <div style="font-size:44px;font-weight:400;margin:6px 0 4px">quick play</div>
+      <div class="dim" style="font-size:12px">join the fullest open lobby →</div>
+    </div>
+    <div class="abs mono" style="left:56px;top:300px;font-size:17px;line-height:2.1">
+      <div><span class="dim" style="font-size:12px;margin-right:18px">02</span>practice</div>
+      <div><span class="dim" style="font-size:12px;margin-right:18px">03</span>create lobby</div>
+      <div><span class="dim" style="font-size:12px;margin-right:18px">04</span>join by code <span class="dim">_ _ _ _ _</span></div>
+      <div><span class="dim" style="font-size:12px;margin-right:18px">05</span>settings</div>
+    </div>
+    <div class="abs mono dim" style="left:56px;bottom:34px;font-size:11px">callsign <span style="color:#f4f2ec">grey heron</span> · edit</div>
+  </div>
+</div>
+
+<!-- B -->
+<div class="opt">
+  <h2>B · Big narrow sentence case — Archivo Narrow + Plex Mono labels</h2>
+  <p class="note">Huge lowercase wordmark set tight, menu items as large sentence-case words stacked with no dividers. The selected item gets a short orange rule. Mono only for small labels and keys.</p>
+  <div class="stage">
+    <div class="isl a"></div><div class="isl b"></div><div class="shade"></div>
+    <div class="abs" style="left:52px;top:40px;font-family:'Archivo Narrow';font-weight:700;font-size:96px;letter-spacing:-.035em;line-height:.9">wings</div>
+    <div class="abs" style="left:56px;top:190px;font-family:'Archivo Narrow';font-weight:500;font-size:40px;letter-spacing:-.01em;line-height:1.22">
+      <div style="display:flex;align-items:center;gap:16px"><span style="display:inline-block;width:22px;height:2px;background:#ff7a2e"></span>Quick play</div>
+      <div class="dim" style="padding-left:38px">Practice</div>
+      <div class="dim" style="padding-left:38px">Create a lobby</div>
+      <div class="dim" style="padding-left:38px">Join with a code</div>
+    </div>
+    <div class="abs mono dim" style="left:94px;top:420px;font-size:11px;letter-spacing:.06em">ONLINE · 3 LOBBIES OPEN</div>
+    <div class="abs mono dim" style="left:56px;bottom:30px;font-size:11px"><span class="kbd">↑↓</span> select &nbsp; <span class="kbd">ENTER</span> confirm &nbsp; <span class="kbd">ESC</span> back</div>
+  </div>
+</div>
+
+<!-- C -->
+<div class="opt">
+  <h2>C · Serif wordmark + Plex Sans — editorial / film-poster</h2>
+  <p class="note">An elegant italic serif for the wordmark only (Instrument Serif), quiet Plex Sans for the menu in sentence case, Plex Mono for data. Unexpected for a combat game, which is what makes it feel designed rather than generated.</p>
+  <div class="stage">
+    <div class="isl a"></div><div class="isl b"></div><div class="shade bottom"></div>
+    <div class="abs" style="left:56px;bottom:200px;font-family:'Instrument Serif';font-style:italic;font-size:120px;line-height:.8;letter-spacing:-.01em">Wings</div>
+    <div class="abs" style="left:60px;bottom:150px;font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.14em" class="dim"><span class="dim">AERIAL COMBAT · 2 TO 4 TEAMS</span></div>
+    <div class="abs" style="left:60px;bottom:52px;display:flex;gap:40px;font-family:'IBM Plex Sans';font-size:17px;align-items:baseline">
+      <div style="border-bottom:2px solid #ff7a2e;padding-bottom:4px">Quick play</div>
+      <div class="dim">Practice</div>
+      <div class="dim">Create lobby</div>
+      <div class="dim">Join with code</div>
+      <div class="dim">Settings</div>
+    </div>
+    <div class="abs mono dim" style="right:52px;bottom:56px;font-size:11px">callsign · <span style="color:#f4f2ec">grey heron</span></div>
+  </div>
+</div>
+
+<!-- D -->
+<div class="opt">
+  <h2>D · Extended caps, centered, minimal — Archivo Expanded</h2>
+  <p class="note">Wide, small uppercase wordmark with generous tracking, everything centered, very few words. Menu items small extended caps; the world does the visual work. Calm, premium, like a car brand.</p>
+  <div class="stage">
+    <div class="isl a"></div><div class="isl b"></div><div class="shade full"></div>
+    <div class="abs" style="left:0;right:0;top:150px;text-align:center;font-family:'Archivo';font-stretch:125%;font-weight:600;font-size:46px;letter-spacing:.42em;padding-left:.42em">WINGS</div>
+    <div class="abs" style="left:0;right:0;top:214px;text-align:center;width:120px;margin:auto;height:1px;background:rgba(244,242,236,.35)"></div>
+    <div class="abs" style="left:0;right:0;top:260px;text-align:center;font-family:'Archivo';font-stretch:125%;font-weight:500;font-size:14px;letter-spacing:.28em;line-height:2.6">
+      <div class="or">QUICK PLAY</div>
+      <div class="dim">PRACTICE</div>
+      <div class="dim">CREATE LOBBY</div>
+      <div class="dim">JOIN WITH CODE</div>
+    </div>
+    <div class="abs mono dim" style="left:0;right:0;bottom:30px;text-align:center;font-size:11px">grey heron · online</div>
+  </div>
+</div>
+
+<!-- E -->
+<div class="opt">
+  <h2>E · Split layout — numbered list left, detail right (Plex Condensed + Mono)</h2>
+  <p class="note">Left: compact numbered list. Right: the hovered item explained in a large condensed headline with live data (players online, map, mode). More "game-like" and informative without boxes.</p>
+  <div class="stage">
+    <div class="isl a"></div><div class="isl b"></div><div class="shade full" style="background:linear-gradient(90deg,rgba(18,20,23,.8),rgba(18,20,23,.55))"></div>
+    <div class="abs mono" style="left:56px;top:48px;font-size:12px;letter-spacing:.3em">WINGS</div>
+    <div class="abs" style="left:56px;top:150px;font-family:'IBM Plex Sans Condensed';font-size:19px;line-height:2.3">
+      <div><span class="mono or" style="font-size:12px;margin-right:16px">01</span><b style="font-weight:600">Quick play</b></div>
+      <div class="dim"><span class="mono" style="font-size:12px;margin-right:16px">02</span>Practice</div>
+      <div class="dim"><span class="mono" style="font-size:12px;margin-right:16px">03</span>Create lobby</div>
+      <div class="dim"><span class="mono" style="font-size:12px;margin-right:16px">04</span>Join with code</div>
+      <div class="dim"><span class="mono" style="font-size:12px;margin-right:16px">05</span>Settings</div>
+    </div>
+    <div class="abs" style="left:46%;top:150px;width:46%">
+      <div class="mono dim" style="font-size:11px;letter-spacing:.14em;margin-bottom:10px">01 — QUICK PLAY</div>
+      <div style="font-family:'IBM Plex Sans Condensed';font-weight:500;font-size:46px;line-height:1.05;letter-spacing:-.01em">Drop into the fullest open sky.</div>
+      <div style="display:flex;gap:36px;margin-top:28px" class="mono">
+        <div><div class="dim" style="font-size:11px">PILOTS ONLINE</div><div style="font-size:24px;margin-top:4px">41</div></div>
+        <div><div class="dim" style="font-size:11px">LOBBIES</div><div style="font-size:24px;margin-top:4px">3</div></div>
+        <div><div class="dim" style="font-size:11px">MODE</div><div style="font-size:24px;margin-top:4px">TDM</div></div>
+      </div>
+      <div class="mono" style="margin-top:34px;font-size:12px"><span class="kbd">ENTER</span> <span class="dim">launch</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- F: HUD comparison -->
+<div class="opt">
+  <h2>HUD pairing (works with any option above) — Plex Mono numbers, Plex Sans Condensed labels, lowercase units</h2>
+  <p class="note">Numbers in mono so they don't jitter, labels small and quiet, no boxes behind numbers — just a soft text shadow. Orange only for lock / warnings.</p>
+  <div class="stage">
+    <div class="isl a"></div><div class="isl b"></div>
+    <div class="abs mono" style="left:50%;top:14px;transform:translateX(-50%);font-size:15px;display:flex;gap:18px;text-shadow:0 1px 2px rgba(0,0,0,.45)"><span style="color:#9fc0e6">12</span><span class="dim">—</span><span style="color:#e8b46a">09</span><span class="dim" style="margin-left:10px">08:43</span></div>
+    <div class="abs" style="left:50%;top:46%;width:30px;height:30px;margin:-15px;border:1.5px solid rgba(244,242,236,.9);border-radius:50%"></div>
+    <div class="abs" style="left:28%;top:44%;text-align:right;text-shadow:0 1px 2px rgba(0,0,0,.45)"><div class="mono" style="font-size:26px">619</div><div style="font-family:'IBM Plex Sans Condensed';font-size:12px" class="dim">km/h</div></div>
+    <div class="abs" style="right:28%;top:44%;text-shadow:0 1px 2px rgba(0,0,0,.45)"><div class="mono" style="font-size:26px">1012</div><div style="font-family:'IBM Plex Sans Condensed';font-size:12px" class="dim">m</div></div>
+    <div class="abs" style="left:64%;top:28%;width:30px;height:30px;border:1.5px solid #ff7a2e"></div>
+    <div class="abs mono or" style="left:64%;top:calc(28% + 36px);font-size:11px;text-shadow:0 1px 2px rgba(0,0,0,.45)">lock · 900m</div>
+    <div class="abs" style="left:24px;top:20px;font-family:'IBM Plex Sans Condensed';font-size:13px;line-height:1.8;text-shadow:0 1px 2px rgba(0,0,0,.5)"><div><span style="color:#9fc0e6">you</span> <span class="dim mono" style="font-size:11px">aim-9</span> <span style="color:#e8b46a">red fox</span></div><div><span style="color:#e8b46a">ash moth</span> <span class="dim mono" style="font-size:11px">20mm</span> <span style="color:#9fc0e6">iron vigil</span></div></div>
+    <div class="abs" style="left:50%;bottom:26px;transform:translateX(-50%);width:320px;text-shadow:0 1px 2px rgba(0,0,0,.45)"><div style="display:flex;justify-content:space-between;font-family:'IBM Plex Sans Condensed';font-size:12px"><span class="dim">hull</span><span class="mono">310</span></div><div style="height:3px;background:rgba(244,242,236,.25);margin-top:5px"><div style="width:68%;height:100%;background:#f4f2ec"></div></div></div>
+    <div class="abs" style="right:28px;bottom:24px;text-align:right;line-height:1.6;text-shadow:0 1px 2px rgba(0,0,0,.45)"><div><span style="font-family:'IBM Plex Sans Condensed';font-size:13px">20mm vulcan</span> <span class="mono" style="font-size:20px;margin-left:10px">412</span></div><div class="dim"><span style="font-family:'IBM Plex Sans Condensed';font-size:13px">heat-seeker</span> <span class="mono" style="font-size:20px;margin-left:10px">2</span></div></div>
+  </div>
+</div>
+</body>
+</html>

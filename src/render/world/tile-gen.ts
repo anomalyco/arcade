@@ -85,27 +85,21 @@ const step = (a: number, b: number, x: number) => { const t = x <= a ? 0 : x >= 
  * a little snow on the highest ground, with gentle large-scale variation so fields aren't flat.
  */
 function vertexColor(h: number, slope: number, ao: number, x: number, z: number): RGB {
-  if (h < -0.5) return mixRGB(C.sandWet, C.seabed, step(-0.5, -6, h))
+  if (h < -0.5) return C.seabed
   const v1 = noise2(x * 0.0011, z * 0.0011, 0x51a7) * 0.5 + 0.5
   const v2 = noise2(x * 0.0047, z * 0.0047, 0x51a8) * 0.5 + 0.5
-  // Grass: lighter on open lowland, deeper with height and in forest patches.
-  let grass = mixRGB(C.grassLight, C.grass, step(0.2, 0.8, v1))
-  grass = mixRGB(grass, C.grassDeep, step(0.55, 0.9, v2) * 0.35)
-  grass = mixRGB(grass, C.grassDeep, step(60, 320, h) * 0.7 + (v2 - 0.5) * 0.25)
-  const forest = forestCover(x, z, h, slope)
-  grass = mixRGB(grass, C.forestFloor, step(0.35, 0.8, forest) * 0.6)
-  // Beach band (wider on gentle slopes).
+  // Grass: small value steps only (light / base / deep), no hue shifts.
+  let col = mixRGB(C.grassLight, C.grass, step(0.25, 0.75, v1))
+  col = mixRGB(col, C.grassDeep, step(80, 360, h) * 0.6 + step(0.6, 0.9, v2) * 0.3)
+  col = mixRGB(col, C.forestFloor, step(0.35, 0.8, forestCover(x, z, h, slope)) * 0.5)
   const beach = 1 - step(2.5, 5.5 + (1 - Math.min(1, slope * 3)) * 3, h)
-  let col = mixRGB(grass, C.sand, beach)
+  col = mixRGB(col, C.sand, beach)
   col = mixRGB(col, C.sandWet, 1 - step(0.2, 1.4, h))
-  // Rock on steep slopes and high, exposed ground.
   const rockT = Math.max(step(0.55, 0.95, slope), step(380, 520, h) * step(0.25, 0.6, slope))
-  const rock = mixRGB(mixRGB(C.rockDark, C.rock, step(0.2, 0.8, v2)), C.rockLight, step(200, 500, h) * 0.6)
+  const rock = mixRGB(C.rockDark, C.rockLight, step(0.2, 0.8, v2))
   col = mixRGB(col, rock, rockT * (1 - beach * 0.7))
-  // A touch of snow only on the very top.
-  col = mixRGB(col, C.snow, step(400, 440, h + v2 * 20) * (1 - step(0.7, 1.0, slope)))
-  // Soft cavity darkening in valleys.
-  const shade = 1 - 0.18 * ao
+  col = mixRGB(col, C.snow, step(400, 440, h + v2 * 20) * (1 - step(0.7, 1.0, slope)) * 0.85)
+  const shade = 1 - 0.14 * ao
   return [col[0] * shade, col[1] * shade, col[2] * shade]
 }
 

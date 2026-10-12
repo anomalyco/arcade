@@ -76,24 +76,24 @@ export function createWater() {
         // Gentle waves, fading with distance so the far sea stays calm and clean.
         float detail = 1.0 - smoothstep(400.0, 4000.0, dist);
         vec2 g = waveGrad(p, time) * detail;
-        vec3 n = normalize(vec3(-g.x * 1.6, 1.0, -g.y * 1.6));
+        vec3 n = normalize(vec3(-g.x * 1.1, 1.0, -g.y * 1.1));
 
         // Smooth depth gradient.
         vec3 col = mix(shallow, water, smoothstep(0.5, 9.0, depth));
         col = mix(col, deep, smoothstep(10.0, 38.0, depth));
         // Soft diffuse response to the waves.
-        col *= 0.92 + 0.12 * dot(n, sunDir);
+        col *= 0.95 + 0.07 * dot(n, sunDir);
 
         // Fresnel toward the sky.
         float fres = pow(1.0 - max(dot(n, eye), 0.0), 5.0);
         vec3 refl = reflect(-eye, n);
         vec3 skyCol = mix(sky, zenith, clamp(refl.y * 1.6, 0.0, 1.0));
-        col = mix(col, skyCol, 0.06 + 0.5 * fres);
+        col = mix(col, skyCol, 0.04 + 0.35 * fres);
 
         // Clean sun specular.
         float spec = pow(max(dot(refl, sunDir), 0.0), 320.0);
-        col += sunCol * spec * 1.2;
-        col += sunCol * pow(max(dot(refl, sunDir), 0.0), 40.0) * 0.06;
+        col += sunCol * spec * 0.35;
+        col += sunCol * pow(max(dot(refl, sunDir), 0.0), 40.0) * 0.03;
 
         // Crisp white shore foam (with a thin second line that breathes).
         float w = fwidth(depth) + 1e-3;

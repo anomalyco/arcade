@@ -1,5 +1,5 @@
-// "Bright stylized" aircraft materials: clean smooth-shaded PBR-ish paint (MeshStandardMaterial) with a
-// cheap fake sky reflection (no env map needed), a gentle rim light and glossy dark-blue glass.
+// "Muted Tactical" aircraft materials: smooth-shaded matte paint (MeshStandardMaterial) with an optional
+// cheap fake sky reflection (used mostly on glass) and a faint rim light.
 // Also holds the paint remap applied to authored GLB colors.
 import {
   Color,
@@ -18,28 +18,32 @@ export type PaintKind = "hull" | "metal"
 const _hsl = { h: 0, s: 0, l: 0 }
 
 /**
- * Deterministic remap of an authored GLB color into clean military-toy paint: slightly brighter and more
- * saturated hulls, neutral clean grays, near-blacks lifted to a dark gunmetal that still shows shading.
+ * Deterministic remap of an authored GLB color into muted military paint: desaturated olive/slate hulls,
+ * neutral light grays, near-blacks lifted to gunmetal.
  */
 export function paintColor(src: Color, kind: PaintKind = "hull"): Color {
   const out = new Color()
   src.getHSL(_hsl, SRGBColorSpace)
   let { h, s, l } = _hsl
   if (l < 0.18) {
-    // Near-black -> dark gunmetal.
-    h = 0.6
-    s = 0.08
-    l = 0.2 + l * 0.5
+    // Near-black -> gunmetal.
+    h = 0.58
+    s = 0.06
+    l = 0.24 + l * 0.4
   } else if (s < 0.12) {
-    // Neutral grays stay neutral, a touch brighter.
-    s = Math.min(s, 0.06)
-    h = 0.6
-    l = Math.min(0.9, l + (1 - l) * 0.06)
+    // Neutral grays stay neutral and light-medium.
+    h = 0.12
+    s = Math.min(s, 0.04)
+    l = Math.min(0.8, l)
   } else {
-    s = Math.min(0.75, s * 1.12)
-    l = Math.min(0.85, l + (1 - l) * 0.05)
+    // Muted: desaturate toward the olive/slate family.
+    s = Math.min(0.35, s * 0.55)
+    l = Math.min(0.72, l)
   }
-  if (kind === "metal") l = Math.min(l, 0.6)
+  if (kind === "metal") {
+    s = Math.min(s, 0.06)
+    l = Math.min(l, 0.5)
+  }
   return out.setHSL(h, s, l, SRGBColorSpace)
 }
 

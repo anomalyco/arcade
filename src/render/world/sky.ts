@@ -39,7 +39,7 @@ export function createSky() {
         vec3 col = mix(horizon, zenith, pow(smoothstep(0.0, 1.0, up), 0.55));
         float s = max(dot(d, sunDir), 0.0);
         // Gentle glow + a soft bright disc.
-        col += sunCol * (pow(s, 8.0) * 0.12 + pow(s, 64.0) * 0.25);
+        col += sunCol * (pow(s, 8.0) * 0.06 + pow(s, 64.0) * 0.15);
         col = mix(col, vec3(1.0, 0.99, 0.95), smoothstep(0.9993, 0.9997, s));
         gl_FragColor = vec4(col, 1.0);
       }
@@ -60,7 +60,7 @@ export function createSky() {
 export function createClouds(clusters: number) {
   const geometry = new IcosahedronGeometry(1, 3)
   geometry.deleteAttribute("uv")
-  const material = new MeshLambertMaterial({ color: "#ffffff", emissive: new Color("#c7d8ea"), emissiveIntensity: 0.55, toneMapped: false })
+  const material = new MeshLambertMaterial({ color: "#eef1f2", emissive: new Color("#c9d2d8"), emissiveIntensity: 0.5, toneMapped: false })
   material.name = "World · clouds"
   material.onBeforeCompile = shader => {
     shader.vertexShader = shader.vertexShader

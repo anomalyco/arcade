@@ -1,30 +1,23 @@
-// Spawn / respawn screen: team picker, vehicle picker, open seats on teammates' aircraft.
+// Spawn / respawn screen: a numbered aircraft list (same menu language as the main menu) with the selected
+// aircraft's detail on the right, team switch, open seats on teammates' aircraft and the respawn timer.
 import type { RoomConfig } from "../sim/protocol"
 import type { PlayerInfo, SeatIndex, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { VEHICLES, VEHICLE_KINDS, WEAPONS } from "../sim/vehicles"
-import { TEAM_COLORS, TEAM_NAMES, controlRows, escapeHtml, teamGlyph } from "./lobby"
+import { MenuNav, TEAM_COLORS, TEAM_NAMES, controlsTable, escapeHtml, hintsHtml, type MenuItem } from "./lobby"
 
-interface RoleInfo { role: string; blurb: string; icon: string; agility: number; firepower: number }
+interface RoleInfo { role: string; blurb: string; agility: number; firepower: number }
 const ROLES: Record<VehicleKind, RoleInfo> = {
-  fighter: { role: "Strike Fighter", agility: 0.85, firepower: 0.7, blurb: "Fast, agile all-rounder. Guns and heat-seekers up front, lock-on radar missiles in the back.",
-    icon: "M50 4C52 10 53 18 53.5 26L56 34 60 40 88 54 89 60 60 58 58 70 72 80 72 86 56 84 54 90H46L44 84 28 86V80L42 70 40 58 11 60 12 54 40 40 44 34 46.5 26C47 18 48 10 50 4Z" },
-  apache: { role: "Attack Helicopter", agility: 0.95, firepower: 0.8, blurb: "Hovers, strafes and hides behind ridges. Rockets for the pilot, chain gun and Hellfires for the gunner.",
-    icon: "M50 10C54 10 55 16 55 22V40L66 42V47L55 48 54 62 52 92H48L46 62 45 48 34 47V42L45 40V22C45 16 46 10 50 10ZM40 84H60V88H40ZM13 19 86 57 85 59 12 21ZM87 19 14 59 13 57 86 17Z" },
-  warthog: { role: "Close Air Support", agility: 0.45, firepower: 1, blurb: "Slow, armoured, terrifying. The GAU-8 shreds anything it points at.",
-    icon: "M50 6C53 6 54 12 54 18V36L94 40V47L54 48V62H58V58H65V74H58V70H54L53 80H70V86H53L52 92H48L47 86H30V80H47L46 70H42V74H35V58H42V62H46V48L6 47V40L46 36V18C46 12 47 6 50 6Z" },
-  blackbird: { role: "Recon Interceptor", agility: 0.35, firepower: 0.55, blurb: "The fastest thing in the sky. The pilot flies; the radar officer paints enemies and guides long-range missiles.",
-    icon: "M50 2C52 10 53 22 54 34L58 50 62 52 64 46 66 52 82 74V80L66 78 64 92H60L58 82 54 86H46L42 82 40 92H36L34 78 18 80V74L34 52 36 46 38 52 42 50 46 34C47 22 48 10 50 2Z" },
+  fighter: { role: "strike fighter", agility: 0.85, firepower: 0.7, blurb: "Fast, agile all-rounder. Guns and heat-seekers up front, lock-on radar missiles in the back." },
+  apache: { role: "attack helicopter", agility: 0.95, firepower: 0.8, blurb: "Hovers, strafes and hides behind ridges. Rockets for the pilot, chain gun and Hellfires for the gunner." },
+  warthog: { role: "close air support", agility: 0.45, firepower: 1, blurb: "Slow, armoured, terrifying. The GAU-8 shreds anything it points at." },
+  blackbird: { role: "recon interceptor", agility: 0.35, firepower: 0.55, blurb: "The fastest thing in the sky. The pilot flies; the radar officer paints enemies and guides long-range missiles." },
 }
 const MAX_SPEED = Math.max(...VEHICLE_KINDS.map(k => VEHICLES[k].boost))
 const MAX_HP = Math.max(...VEHICLE_KINDS.map(k => VEHICLES[k].maxHp))
 
-const statBar = (label: string, v: number) =>
-  `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(Math.max(0.06, Math.min(1, v)) * 100)}%"></b></i></div>`
-
-/** Control scheme summary for the current steering scheme (shared by the spawn screen and the pause menu). */
+/** Controls reference for the current steering scheme (pause menu). */
 export function controlsHtml(_heli = false): string {
-  const rows = controlRows().flatMap(sec => sec.rows)
-  return `<div class="scheme-grid">${rows.map(([a, b]) => `<div><span>${a}</span><span>${b}</span></div>`).join("")}</div>`
+  return controlsTable()
 }
 
 export interface SpawnState {
@@ -46,6 +39,29 @@ export interface SpawnScreen {
   dispose(): void
 }
 
+const bar = (v: number) => `<i class="bar"><b style="width:${Math.round(Math.max(0.06, Math.min(1, v)) * 100)}%"></b></i>`
+
+function detailHtml(k: VehicleKind, i: number): string {
+  const v = VEHICLES[k], r = ROLES[k]
+  const seats = [0, 1].map(s => {
+    const ws = v.seatWeapons[s]
+    const list = ws[0] === null && ws[1] === null ? [] : (ws[0] !== null && ws[0] === ws[1] ? [ws[0]] : ws).filter(Boolean).map(id => WEAPONS[id!].name.toLowerCase())
+    if (s === 0) list.push("flares")
+    return `<li><span class="n">${s + 1}</span><span class="s">${escapeHtml(v.seatNames[s])}</span><span class="w">${list.length ? list.join(" · ") : "flies only"}</span></li>`
+  }).join("")
+  return `<div class="crumb">${String(i + 1).padStart(2, "0")} — ${r.role} · ${v.flight === "heli" ? "vtol" : "jet"}</div>
+    <h3 class="name">${escapeHtml(v.name)}</h3>
+    <p class="blurb">${r.blurb}</p>
+    <dl class="stats">
+      <div><dt>speed</dt><dd>${Math.round(v.boost * 3.6)}<small> km/h</small></dd>${bar(v.boost / MAX_SPEED)}</div>
+      <div><dt>hull</dt><dd>${v.maxHp}</dd>${bar(v.maxHp / MAX_HP)}</div>
+      <div><dt>agility</dt><dd>${Math.round(r.agility * 10)}<small>/10</small></dd>${bar(r.agility)}</div>
+      <div><dt>firepower</dt><dd>${Math.round(r.firepower * 10)}<small>/10</small></dd>${bar(r.firepower)}</div>
+      <div><dt>flares</dt><dd>${v.flares}</dd></div>
+    </dl>
+    <ol class="seats">${seats}</ol>`
+}
+
 export function createSpawnScreen(parent: HTMLElement, actions: {
   spawn(kind: VehicleKind): void
   board(vehicle: string, seat: SeatIndex): void
@@ -53,153 +69,158 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
   invite(): void
   leave(): void
   click(): void
-  /** Optional rendered aircraft thumbnail (team livery); the SVG silhouette shows until it resolves. */
+  /** Optional rendered aircraft thumbnail (team livery). */
   thumb?(kind: VehicleKind, team: TeamId): Promise<string | null>
 }): SpawnScreen {
   const root = document.createElement("div")
   root.className = "spawn"
   root.hidden = true
   root.innerHTML = `
-    <header>
-      <div class="head">
-        <div class="eyebrow"><span>Room <b class="code"></b></span><button class="iconbtn invite">Copy invite link</button></div>
-        <h2 class="title">Select Aircraft</h2>
-      </div>
-      <div class="head-right"><div class="countdown"></div><section class="teams" aria-label="Team"></section></div>
-    </header>
-    <section class="cards">${VEHICLE_KINDS.map((k, i) => {
-      const v = VEHICLES[k]
-      const r = ROLES[k]
-      return `<button class="card" data-kind="${k}" style="--i:${i}">
-        <div class="art"><svg viewBox="0 0 100 100" class="icon" aria-hidden="true"><path d="${r.icon}"/></svg><span class="kind">${v.flight === "heli" ? "VTOL" : "JET"}</span></div>
-        <div class="role">${r.role}</div>
-        <div class="name">${escapeHtml(v.name)}</div>
-        <div class="specs"><span><b>${Math.round(v.boost * 3.6)}</b> km/h</span><span><b>${v.maxHp}</b> hp</span><span><b>${v.flares}</b> flares</span></div>
-        <p>${r.blurb}</p>
-        <div class="stats">
-          ${statBar("Speed", v.boost / MAX_SPEED)}
-          ${statBar("Agility", r.agility)}
-          ${statBar("Armor", v.maxHp / MAX_HP)}
-          ${statBar("Firepower", r.firepower)}
-        </div>
-        <ol class="seats">${[0, 1].map(s => {
-          const ws = v.seatWeapons[s]
-          const list = ws[0] === null && ws[1] === null ? [] : (ws[0] !== null && ws[0] === ws[1] ? [ws[0]] : ws).filter(Boolean).map(id => WEAPONS[id!].name)
-          if (s === 0) list.push("Flares")
-          return `<li><span>${s + 1}</span><div><b>${v.seatNames[s]}</b><em>${list.length ? list.map(x => `<i>${x}</i>`).join("") : "<i class=none>Flies only</i>"}</em></div></li>`
-        }).join("")}</ol>
-        <div class="go"><span>Launch</span><kbd>${i + 1}</kbd></div>
-      </button>`
-    }).join("")}</section>
-    <section class="lower">
-      <div class="scheme panel"></div>
-      <div class="board-list panel"><h3>Join a teammate</h3><ul></ul></div>
-    </section>
-    <footer><button class="iconbtn leave">Leave match</button><span class="hint panel"><kbd>1</kbd>–<kbd>4</kbd> quick launch · <kbd>Esc</kbd> menu · <kbd>Tab</kbd> scores</span></footer>`
+    <div class="sp-head">
+      <div class="crumb">room <b class="code"></b> · <button class="link invite">copy invite link</button></div>
+      <h2 class="title">Choose aircraft</h2>
+      <div class="teams" aria-label="Team"></div>
+    </div>
+    <nav class="screen sp-list"></nav>
+    <section class="sp-detail"><img class="thumb" alt="" hidden /><div class="info"></div></section>
+    <div class="countdown"><span class="lbl">respawn in</span><span class="num"></span></div>
+    <footer class="foot"><div class="hints"></div></footer>`
   parent.appendChild(root)
 
   const $ = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector(s) as T
   const teamsEl = $(".teams")
-  const boardUl = $(".board-list ul")
-  const boardSec = $(".board-list")
-  const countdown = $(".countdown")
   const title = $(".title")
   const code = $(".code")
-  const scheme = $(".scheme")
-  let schemeKind: VehicleKind | null = null
-  const showScheme = (k: VehicleKind, force = false) => {
-    if (k === schemeKind && !force) return
-    schemeKind = k
-    scheme.innerHTML = `<h3>Controls <b>${escapeHtml(VEHICLES[k].name)}</b></h3>${controlsHtml(VEHICLES[k].flight === "heli")}`
-    root.querySelectorAll(".card").forEach(c => c.classList.toggle("sel", (c as HTMLElement).dataset.kind === k))
-  }
-  showScheme("fighter")
-  root.addEventListener("pointerover", e => {
-    const card = (e.target as HTMLElement).closest<HTMLElement>(".card")
-    if (card) showScheme(card.dataset.kind as VehicleKind)
-  })
-  root.addEventListener("focusin", e => {
-    const card = (e.target as HTMLElement).closest<HTMLElement>(".card")
-    if (card) showScheme(card.dataset.kind as VehicleKind)
-  })
+  const info = $(".sp-detail .info")
+  const thumbImg = $<HTMLImageElement>(".sp-detail .thumb")
+  const countdown = $(".countdown")
+  const cdNum = $(".countdown .num")
+  const hints = $(".foot .hints")
+  const nav = new MenuNav($(".sp-list"), actions.click)
+  nav.onHints = h => { hints.innerHTML = hintsHtml(h) }
+
   let canSpawn = false
+  let wait = 0
   let lastTeams = ""
-  let lastBoard = ""
-  let lastCd = "-"
-  let thumbTeam = -1
+  let boardKey = ""
+  let myTeam: TeamId = 0
+  let teamCount = 2
+  let shownKind: VehicleKind | null = null
+  const thumbs = new Map<string, string>()
+  const requested = new Set<string>()
+
+  const showDetail = (k: VehicleKind) => {
+    if (k === shownKind) return
+    shownKind = k
+    info.innerHTML = detailHtml(k, VEHICLE_KINDS.indexOf(k))
+    paintThumb()
+  }
+  const paintThumb = () => {
+    if (!shownKind) return
+    const url = thumbs.get(`${shownKind}:${myTeam}`)
+    thumbImg.hidden = !url
+    if (url && thumbImg.src !== url) thumbImg.src = url
+  }
+  const loadThumbs = (team: TeamId) => {
+    if (!actions.thumb) return
+    for (const k of VEHICLE_KINDS) {
+      const key = `${k}:${team}`
+      if (requested.has(key)) continue
+      requested.add(key)
+      actions.thumb(k, team).then(url => { if (url) { thumbs.set(key, url); paintThumb() } })
+    }
+  }
+
+  let boardItems: MenuItem[] = []
+  const launchMeta = () => (canSpawn ? "" : `respawn in ${Math.ceil(wait)} s · `)
+  const build = (keepSel = true) => {
+    const items: MenuItem[] = VEHICLE_KINDS.map(k => ({
+      label: VEHICLES[k].name,
+      value: () => (VEHICLES[k].flight === "heli" ? "vtol" : "jet"),
+      meta: () => (canSpawn ? "" : `respawn in ${Math.ceil(wait)} s`),
+      run: () => { if (canSpawn) actions.spawn(k) },
+    }))
+    items.push(...boardItems)
+    items.push({ label: "Leave match", small: true, run: () => actions.leave(), meta: "back to the main menu" })
+    const screen = {
+      size: "big" as const, items, sel: keepSel ? nav.index : 0,
+      hints: [["↑↓", "select"], ["enter", "launch"], ["←→", "team"], ["1–4", "quick launch"]] as [string, string][],
+    }
+    if (nav.depth) nav.replace(screen)
+    else nav.push(screen)
+  }
+  nav.onMove = i => { const k = VEHICLE_KINDS[i]; if (k) showDetail(k) }
+  nav.onSide = d => { if (teamCount > 1) actions.team(((myTeam + d + teamCount) % teamCount) as TeamId) }
+  build(false)
+  showDetail(VEHICLE_KINDS[0])
+
   const onKey = (e: KeyboardEvent) => {
-    if (root.hidden || !canSpawn || e.repeat || (e.target as HTMLElement)?.tagName === "INPUT") return
+    if (root.hidden || (e.target as HTMLElement)?.tagName === "INPUT") return
     const n = Number(e.key)
-    if (n >= 1 && n <= VEHICLE_KINDS.length) { actions.click(); actions.spawn(VEHICLE_KINDS[n - 1]) }
+    if (n >= 1 && n <= VEHICLE_KINDS.length && !e.repeat) {
+      if (canSpawn) { actions.click(); actions.spawn(VEHICLE_KINDS[n - 1]) }
+      return
+    }
+    if (e.key === "Escape") return
+    if (nav.handleKey(e)) e.preventDefault()
   }
   window.addEventListener("keydown", onKey)
 
   root.addEventListener("click", e => {
     const t = e.target as HTMLElement
-    const btn = t.closest("button")
-    if (btn) actions.click()
-    const card = t.closest<HTMLElement>(".card")
-    if (card && canSpawn) { actions.spawn(card.dataset.kind as VehicleKind); return }
     const team = t.closest<HTMLElement>("[data-team]")
-    if (team) { actions.team(Number(team.dataset.team) as TeamId); return }
-    const b = t.closest<HTMLElement>("[data-board]")
-    if (b && canSpawn) { actions.board(b.dataset.board!, Number(b.dataset.seat) as SeatIndex); return }
-    if (t.closest(".invite")) actions.invite()
-    if (t.closest(".leave")) actions.leave()
+    if (team) { actions.click(); actions.team(Number(team.dataset.team) as TeamId); return }
+    if (t.closest(".invite")) { actions.click(); actions.invite() }
   })
 
   return {
     root,
-    show() { root.hidden = false; if (schemeKind) showScheme(schemeKind, true) },
+    show() { root.hidden = false },
     hide() { root.hidden = true },
     visible: () => !root.hidden,
     update(s) {
-      code.textContent = s.room
+      code.textContent = s.room.toLowerCase()
       const me = s.me
-      const wait = me ? Math.max(0, me.respawnAt - s.time) : 0
+      wait = me ? Math.max(0, me.respawnAt - s.time) : 0
+      const could = canSpawn
       canSpawn = !!me && wait <= 0
       root.classList.toggle("waiting", !canSpawn)
-      const cd = canSpawn ? "" : `Respawn in <b>${Math.ceil(wait)}</b>`
-      if (cd !== lastCd) { countdown.innerHTML = cd; lastCd = cd; countdown.classList.toggle("on", !canSpawn) }
-      title.textContent = s.dead ? "Shot Down" : "Select Aircraft"
-      if (me) root.style.setProperty("--team", TEAM_COLORS[me.team])
-      if (me && me.team !== thumbTeam && actions.thumb) {
-        const team = me.team
-        thumbTeam = team
-        for (const k of VEHICLE_KINDS) actions.thumb(k, team).then(url => {
-          if (!url || thumbTeam !== team) return
-          const art = root.querySelector<HTMLElement>(`.card[data-kind="${k}"] .art`)
-          if (!art) return
-          let img = art.querySelector("img")
-          if (!img) { img = document.createElement("img"); img.className = "thumb"; img.alt = ""; art.appendChild(img) }
-          img.src = url
-          art.classList.add("has-thumb")
-        })
-      }
+      countdown.classList.toggle("on", !canSpawn)
+      const num = String(Math.ceil(wait)).padStart(2, "0")
+      if (cdNum.textContent !== num) cdNum.textContent = num
+      const t = s.dead ? "Shot down" : "Choose aircraft"
+      if (title.textContent !== t) title.textContent = t
+      if (me && me.team !== myTeam) { myTeam = me.team; paintThumb() }
+      loadThumbs(myTeam)
+      teamCount = s.config.teams
 
       const counts = new Array(s.config.teams).fill(0)
       for (const p of s.players.values()) if (p.team < counts.length) counts[p.team]++
-      const teamsHtml = counts.map((n, t) =>
-        `<button data-team="${t}" class="${me?.team === t ? "on" : ""}" style="--c:${TEAM_COLORS[t]}" aria-pressed="${me?.team === t}">${teamGlyph(t)}${TEAM_NAMES[t]}<span>${n}</span></button>`).join("")
+      const teamsHtml = `<span class="lbl">team</span>` + counts.map((n, t) =>
+        `<button data-team="${t}" class="${me?.team === t ? "on" : ""}" style="--c:${TEAM_COLORS[t]}" aria-pressed="${me?.team === t}"><i class="sw"></i>${TEAM_NAMES[t].toLowerCase()}<span>${n}</span></button>`).join("")
       if (teamsHtml !== lastTeams) { teamsEl.innerHTML = teamsHtml; lastTeams = teamsHtml }
 
-      const rows: string[] = []
+      const seats: { v: VehicleEntity; seat: SeatIndex; owner: string }[] = []
       if (me) for (const v of s.vehicles) {
         if (!v.alive || v.team !== me.team) continue
         for (const seat of [0, 1] as SeatIndex[]) {
           if (v.seats[seat] !== null) continue
           const owner = v.seats[seat === 0 ? 1 : 0]
-          const ownerName = owner ? s.players.get(owner)?.name ?? "?" : "Empty"
-          rows.push(`<li><div><b>${escapeHtml(ownerName)}</b><span>${escapeHtml(VEHICLES[v.kind].name)}</span></div><button class="iconbtn" data-board="${v.id}" data-seat="${seat}">Board as ${VEHICLES[v.kind].seatNames[seat]}</button></li>`)
+          seats.push({ v, seat, owner: owner ? s.players.get(owner)?.name ?? "?" : "" })
         }
       }
-      const boardHtml = rows.slice(0, 8).join("")
-      if (boardHtml !== lastBoard) { boardUl.innerHTML = boardHtml; lastBoard = boardHtml }
-      const boardEmpty = rows.length === 0
-      if (boardEmpty !== boardSec.classList.contains("empty")) {
-        boardSec.classList.toggle("empty", boardEmpty)
-        if (boardEmpty) { boardUl.innerHTML = `<li class="none">No open seats on your team yet — launch and a teammate can join you.</li>`; lastBoard = "" }
-      }
+      const key = seats.slice(0, 4).map(x => `${x.v.id}:${x.seat}:${x.owner}`).join("|")
+      if (key !== boardKey || could !== canSpawn) {
+        boardKey = key
+        boardItems = seats.slice(0, 4).map(x => ({
+          label: x.owner ? `Join ${x.owner.toLowerCase()}` : `Empty ${VEHICLES[x.v.kind].name}`,
+          small: true,
+          value: () => VEHICLES[x.v.kind].seatNames[x.seat].toLowerCase(),
+          meta: () => `${launchMeta()}board as ${VEHICLES[x.v.kind].seatNames[x.seat].toLowerCase()} · ${VEHICLES[x.v.kind].name}`,
+          run: () => { if (canSpawn) actions.board(x.v.id, x.seat) },
+        }))
+        build()
+      } else if (!canSpawn) nav.refresh()
     },
     dispose() { window.removeEventListener("keydown", onKey); root.remove() },
   }

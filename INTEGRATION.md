@@ -1,5 +1,10 @@
 # Integration TODO (orchestrator)
 
+## Pending for UI agent after current rebuild (user feedback)
+- Remove PULL UP warning entirely (HUD + sound).
+- Remove the giant circles around the crosshair (seeker/lock-cone ring, any large reticle rings). Keep only the small crosshair; lock indication = small box on the target.
+- Controls help: "Roll: Q E", "Rudder / Strafe (heli): A D" (controls agent swapping Q/E ↔ A/D).
+
 - Double FOV boost: camera.ts (+6° above cruise) AND scene.ts (+6° while boosting) — keep one (prefer camera.ts).
 - Client must call `view.setLocal(true)` on the local player's own AircraftView (prevents distance up-scaling).
 - Next style pass: "GOLDEN ELDRITCH" (see STYLE.md top) for world, aircraft, effects, UI once current fixes land.

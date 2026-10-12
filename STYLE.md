@@ -1,5 +1,20 @@
 # Art Style Guide
 
+## LOCKED PALETTE: Option B "Muted Tactical" (see art/stylesheets.html, option B) — overrides colors below
+- World: sky `#8fb3cc`→`#dde6ea`, deep sea `#2f5d78`, shallows `#6fa6a8`, grass `#7f9a5a`, sand `#d4c39a`, rock `#7a746b`, trees `#4f6a3e`, cloud/foam `#eef1f2`, concrete `#a9aca8`, aircraft base olive `#5e6658` (per-aircraft variations within this muted family).
+- Teams (muted): blue `#3c6ea8`, orange `#c98a2e`, green `#4e8a5a`, red `#b04a44`. Strong color only on team markings.
+- Materials matte (roughness 0.65–0.8), soft shadows, almost no bloom. Combat effects (fire, tracers) are the brightest things on screen.
+- UI: charcoal `#22262a` / off-white `#eceae4` / single accent safety orange `#ff7a2e`. Square corners, no pills, no glow, no gradients on buttons, no decorative elements.
+- **Typography (locked): blend of options A + B in art/ui-type-2.html.** Two families only: **Archivo Narrow** (wordmark + headings + menu items) and **IBM Plex Mono** (numbers, indices, metadata, keys, HUD numerics).
+  - Lowercase / sentence case everywhere; no all-caps shouting (mono metadata may use small caps-style uppercase at 11px with tracking, sparingly).
+  - Wordmark: huge lowercase "wings", Archivo Narrow 700, tight tracking (-0.035em).
+  - Menu: big stacked sentence-case items (Archivo Narrow 500, ~40px), no dividers, no boxes; A-style mono indices (01, 02…) in small Plex Mono; selected item = short orange rule + full-opacity text, others ~55% opacity. Small mono metadata lines under the selection. Key-hint footer in mono with outlined key caps.
+  - Extreme scale contrast: tiny mono metadata (11–12px) vs large type.
+  - No panels/cards over the world; legibility from a soft dark gradient on the menu side only.
+  - HUD: Plex Mono numbers (no boxes behind them, soft text shadow), small lowercase Archivo Narrow labels/units, orange only for lock/warnings.
+  - Fonts self-hosted (woff2, latin subset) from `public/fonts/`, `font-display: swap`, preloaded; first paint must stay instant.
+- Smooth shading from "Bright Stylized" stays; only colors/materials change to this palette.
+
 ## CURRENT LOOK (locked, supersedes everything below): "BRIGHT STYLIZED" — Fortnite-like, tasteful, restrained
 User feedback: previous looks were "vibing too hard" / "vibe coded". Goal: clean, polished, confident stylized realism like Fortnite. Less is more. No gimmicks.
 - **Daylight:** clear sunny afternoon, sun ~40–50° elevation, white-warm key light, soft blue sky fill. Real soft shadows (shadow map) near the camera. Subtle ambient occlusion on High.

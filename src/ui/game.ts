@@ -59,6 +59,10 @@ interface Prediction {
   history: { seq: number; input: FlightInput }[]
   errPos: Vector3
   errQuat: Quaternion
+  /** Pose before the latest predicted tick: the own aircraft renders blended prev→state by the tick
+   *  accumulator fraction, so motion is smooth at any display rate (120/144 Hz) instead of stepping. */
+  prevPos: Vec3
+  prevQuat: Quat
 }
 
 const _q1 = new Quaternion()
@@ -235,6 +239,9 @@ class GameSession implements GameHandle {
       others: this.renderList.filter(o => o.id !== v?.id).map(o => ({ id: o.id, team: o.team, kind: o.kind, alive: o.alive, hp: o.hp, pos: this.visuals.get(o.id)?.pos.map(Math.round) })),
       att: v ? (() => { const r = flightReadout(this.pred?.state ?? v.flight); return { pitch: Math.round(r.pitch), roll: Math.round(r.roll), hdg: Math.round(r.heading), thr: +r.throttle.toFixed(2) } })() : null,
       steer: [+this.input.steerPitch.toFixed(2), +this.input.steerYaw.toFixed(2), +this.input.steerRoll.toFixed(2)], seq: this.seq,
+      // Unrounded own-aircraft render position and camera position (jitter measurements).
+      ownRaw: vis ? [vis.pos[0], vis.pos[1], vis.pos[2]] : null,
+      camRaw: [this.deps.host.camera.position.x, this.deps.host.camera.position.y, this.deps.host.camera.position.z],
       aim: [+this.input.aimYaw.toFixed(3), +this.input.aimPitch.toFixed(3)], fwd: vis ? forward(vis.quat).map(n => +n.toFixed(2)) : null,
     }
   }
@@ -311,7 +318,9 @@ class GameSession implements GameHandle {
     if (!me || !sv || !sv.alive || me.seat !== 0) { this.pred = null; return }
     const p = this.pred
     if (!p || p.vehicleId !== sv.id) {
-      this.pred = { vehicleId: sv.id, state: cloneFlight(sv.flight), history: [], errPos: new Vector3(), errQuat: new Quaternion() }
+      const st = cloneFlight(sv.flight)
+      this.pred = { vehicleId: sv.id, state: st, history: [], errPos: new Vector3(), errQuat: new Quaternion(),
+        prevPos: [st.position[0], st.position[1], st.position[2]], prevQuat: [st.orientation[0], st.orientation[1], st.orientation[2], st.orientation[3]] }
       return
     }
     const h = p.history
@@ -330,7 +339,15 @@ class GameSession implements GameHandle {
     if (Math.hypot(dx, dy, dz) > SNAP_ERROR) {
       p.errPos.set(0, 0, 0)
       p.errQuat.identity()
+      p.prevPos[0] = next.position[0]; p.prevPos[1] = next.position[1]; p.prevPos[2] = next.position[2]
+      p.prevQuat[0] = next.orientation[0]; p.prevQuat[1] = next.orientation[1]; p.prevQuat[2] = next.orientation[2]; p.prevQuat[3] = next.orientation[3]
     } else {
+      // Keep the render blend continuous: move the previous pose into the corrected timeline too.
+      p.prevPos[0] -= dx; p.prevPos[1] -= dy; p.prevPos[2] -= dz
+      _q3.set(next.orientation[0], next.orientation[1], next.orientation[2], next.orientation[3])
+        .multiply(_q2.set(old.orientation[0], old.orientation[1], old.orientation[2], old.orientation[3]).invert())
+        .multiply(_q1.set(p.prevQuat[0], p.prevQuat[1], p.prevQuat[2], p.prevQuat[3])).normalize()
+      p.prevQuat[0] = _q3.x; p.prevQuat[1] = _q3.y; p.prevQuat[2] = _q3.z; p.prevQuat[3] = _q3.w
       p.errPos.x += dx; p.errPos.y += dy; p.errPos.z += dz
       // errQ' = errQ * oldQ * inv(newQ)
       _q1.set(old.orientation[0], old.orientation[1], old.orientation[2], old.orientation[3])
@@ -611,13 +628,26 @@ class GameSession implements GameHandle {
       this.lastSeat = seatIn
       this.send(fi ? { type: "input", seq, flight: fi, seat: seatIn } : { type: "input", seq, seat: seatIn })
       if (p && fi) {
+        const ps = p.state
+        p.prevPos[0] = ps.position[0]; p.prevPos[1] = ps.position[1]; p.prevPos[2] = ps.position[2]
+        p.prevQuat[0] = ps.orientation[0]; p.prevQuat[1] = ps.orientation[1]; p.prevQuat[2] = ps.orientation[2]; p.prevQuat[3] = ps.orientation[3]
         stepFlight(p.state, fi, TICK_DT, worldQuery)
         p.history.push({ seq, input: fi })
       }
     }
     if (p) {
       if (p.history.length > MAX_HISTORY) p.history.splice(0, p.history.length - MAX_HISTORY)
-      p.errPos.multiplyScalar(Math.exp(-dt * 7))
+      // Corrections along the flight path (server timeline shifts of a tick or two ≈ v·dt) bleed out
+      // slowly so they read as an imperceptible speed change, not a lurch; cross-track ones stay quick.
+      const sv = p.state.velocity, sp = Math.hypot(sv[0], sv[1], sv[2])
+      if (sp > 1) {
+        const ux = sv[0] / sp, uy = sv[1] / sp, uz = sv[2] / sp
+        const along = p.errPos.x * ux + p.errPos.y * uy + p.errPos.z * uz
+        const keepAlong = Math.exp(-dt * 1.5), keepCross = Math.exp(-dt * 7)
+        p.errPos.x = (p.errPos.x - along * ux) * keepCross + along * keepAlong * ux
+        p.errPos.y = (p.errPos.y - along * uy) * keepCross + along * keepAlong * uy
+        p.errPos.z = (p.errPos.z - along * uz) * keepCross + along * keepAlong * uz
+      } else p.errPos.multiplyScalar(Math.exp(-dt * 7))
       p.errQuat.slerp(_q3.identity(), 1 - Math.exp(-dt * 10))
     }
 
@@ -754,10 +784,12 @@ class GameSession implements GameHandle {
       const pr = this.pred
       if (pr && pr.vehicleId === lv.id) {
         const s = pr.state
-        vis.pos[0] = s.position[0] + pr.errPos.x
-        vis.pos[1] = s.position[1] + pr.errPos.y
-        vis.pos[2] = s.position[2] + pr.errPos.z
-        _q1.set(s.orientation[0], s.orientation[1], s.orientation[2], s.orientation[3]).premultiply(pr.errQuat)
+        const tickAlpha = Math.min(1, Math.max(0, this.tickAcc / TICK_DT))
+        const pp = pr.prevPos, pq = pr.prevQuat
+        vis.pos[0] = pp[0] + (s.position[0] - pp[0]) * tickAlpha + pr.errPos.x
+        vis.pos[1] = pp[1] + (s.position[1] - pp[1]) * tickAlpha + pr.errPos.y
+        vis.pos[2] = pp[2] + (s.position[2] - pp[2]) * tickAlpha + pr.errPos.z
+        _q1.set(pq[0], pq[1], pq[2], pq[3]).slerp(_q2.set(s.orientation[0], s.orientation[1], s.orientation[2], s.orientation[3]), tickAlpha).premultiply(pr.errQuat)
         vis.quat[0] = _q1.x; vis.quat[1] = _q1.y; vis.quat[2] = _q1.z; vis.quat[3] = _q1.w
         vis.flight.velocity = s.velocity
         vis.flight.angularVelocity = s.angularVelocity

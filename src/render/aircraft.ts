@@ -40,9 +40,10 @@ import { SUN_DIRECTION } from "./world/settings"
 import { createBlobShadow } from "./aircraft-shadow"
 import { createGlowMaterial, createPaintMaterial, paintColor } from "./toon"
 
-export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"] as const
-/** Bold team accent paint (fins, wingtips, nose stripe, rotor tips). */
-export const TEAM_LIVERY = ["#2f74e6", "#ffad1f", "#22b865", "#e83c3c"] as const
+/** Muted team colors ("Muted Tactical" palette): blue, orange, green, red. Used by HUD/UI too. */
+export const TEAM_COLORS = ["#3c6ea8", "#c98a2e", "#4e8a5a", "#b04a44"] as const
+/** Team marking paint (fins, wingtips, nose stripe only). */
+export const TEAM_LIVERY = TEAM_COLORS
 
 export interface AircraftView {
   root: Object3D
@@ -298,27 +299,27 @@ const TOP_PAINT = /^(fuselage|fuselage_top|fuselage_upper)$/
 
 /** Per-mesh color overrides (baked into vertex colors; free). */
 const PART_COLORS: [RegExp, string, VehicleKind[]?][] = [
-  [/^spine_band$/, "#e9edf1", ["fighter"]], // light dorsal spine band
-  [/^(flap|aileron|stab)_line_[LR]$/, "#c9d2dc", ["fighter"]],
-  [/^panel_band_(aft|tail)$|^engine_panel_band_[LR]$/, "#c8d0b0", ["warthog"]],
-  [/^tail_boom_band_(front|rear)$|^nacelle_band_[LR]$/, "#c8cf9e", ["apache"]],
-  [/^pilot_\d_helmet$/, "#f4f4f2"], // crisp white helmets
-  [/^pilot_\d_visor$/, "#20283a"],
+  [/^spine_band$/, "#8f979d", ["fighter"]],
+  [/^(flap|aileron|stab)_line_[LR]$/, "#5c656c", ["fighter"]],
+  [/^panel_band_(aft|tail)$|^engine_panel_band_[LR]$/, "#4f5649", ["warthog"]],
+  [/^tail_boom_band_(front|rear)$|^nacelle_band_[LR]$/, "#4a5040", ["apache"]],
+  [/^livery_rotor_tip_\d$/, "#c7c9c4", ["apache"]], // rotor tips: light gray, not team color
+  [/^pilot_\d_helmet$/, "#d9dbd7"],
+  [/^pilot_\d_visor$/, "#1e2124"],
 ]
 
-/** Group color overrides (recolor a whole deduped material group; free). */
+/** Group color overrides (recolor a whole deduped material group; free). "Muted Tactical" base colors. */
 const COLOR_OVERRIDES: [RegExp, string, VehicleKind[]?][] = [
-  [/^pilot_\d_torso$/, "#6f7f45", ["fighter", "apache", "warthog"]], // olive flight suit
-  [/^pilot_\d_torso$/, "#d8b04a", ["blackbird"]], // gold pressure suit
-  // Clean military-toy two-tone: confident tops, light bellies.
-  [/^fuselage$/, "#7a8fab", ["fighter"]], // navy gray
-  [/^fuselage_belly$/, "#e6eaee", ["fighter"]],
-  [/^fuselage_top$/, "#71864f", ["warthog"]], // olive green
-  [/^fuselage_belly$/, "#cfd6bd", ["warthog"]],
-  [/^fuselage_upper$/, "#5d7238", ["apache"]], // olive drab
-  [/^fuselage_belly$/, "#b4ba84", ["apache"]],
-  [/^fuselage$/, "#262b36", ["blackbird"]], // glossy near-black
-  [/^fuselage_belly$/, "#4b5363", ["blackbird"]],
+  [/^pilot_\d_torso$/, "#5c6448", ["fighter", "apache", "warthog"]], // flight suit
+  [/^pilot_\d_torso$/, "#9a8a5c", ["blackbird"]], // muted pressure suit
+  [/^fuselage$/, "#6b7782", ["fighter"]], // muted blue-gray
+  [/^fuselage_belly$/, "#c3c7c5", ["fighter"]],
+  [/^fuselage_top$/, "#5e6658", ["warthog"]], // base olive
+  [/^fuselage_belly$/, "#b5b9b0", ["warthog"]],
+  [/^fuselage_upper$/, "#565d47", ["apache"]], // darker olive drab
+  [/^fuselage_belly$/, "#8d927f", ["apache"]],
+  [/^fuselage$/, "#2e3135", ["blackbird"]], // charcoal
+  [/^fuselage_belly$/, "#4c5054", ["blackbird"]],
 ]
 
 /** Paint for painted parts vs bare metal (gunmetal, exhausts, gear), both baked into vertex colors. */
@@ -327,8 +328,8 @@ function bodyMaterial(metal: boolean): Material {
   let m = paintCache.get(key)
   if (!m) {
     m = metal
-      ? createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.42, metalness: 0.35, reflect: 0.45 })
-      : createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.5, metalness: 0.04, reflect: 0.3 })
+      ? createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.65, metalness: 0.2, reflect: 0.08, rim: 0.05 })
+      : createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.75, metalness: 0.0, reflect: 0.04, rim: 0.05 })
     paintCache.set(key, m)
   }
   return m
@@ -337,7 +338,7 @@ function bodyMaterial(metal: boolean): Material {
 function liveryMaterial(team: TeamId): Material {
   let m = liveryCache.get(team)
   if (!m) {
-    m = createPaintMaterial({ color: TEAM_LIVERY[team], roughness: 0.45, metalness: 0.05, reflect: 0.3 })
+    m = createPaintMaterial({ color: TEAM_LIVERY[team], roughness: 0.72, metalness: 0.0, reflect: 0.04, rim: 0.05 })
     liveryCache.set(team, m)
   }
   return m
@@ -516,7 +517,8 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     const override = attach[mesh.name]
     if (override && boneIndex.has(override)) bone = boneIndex.get(override)!
     const src = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as MeshStandardMaterial
-    const isLivery = chain.some((n) => n.startsWith("livery_"))
+    // Team markings on fins/wingtips/nose only; rotor tips are painted like the airframe.
+    const isLivery = chain.some((n) => n.startsWith("livery_")) && !/rotor_tip/.test(mesh.name)
     const emissive = src.emissive ? src.emissive.clone() : new Color(0)
     const isGlow = emissive.r + emissive.g + emissive.b > 0.05
     const isGlass = !isGlow && (src.transparent || src.opacity < 0.99)
@@ -596,7 +598,7 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     if (b.role !== "glass") continue
     let shared = paintCache.get("glass") ?? null
     if (!shared) {
-      shared = createPaintMaterial({ color: "#1c2f52", glass: true, opacity: 0.7, roughness: 0.06, metalness: 0.2 })
+      shared = createPaintMaterial({ color: "#26323d", glass: true, opacity: 0.72, roughness: 0.1, metalness: 0.1, reflect: 0.6 })
       paintCache.set("glass", shared)
     }
     b.shared = shared

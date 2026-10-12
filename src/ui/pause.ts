@@ -1,10 +1,8 @@
+// Pause menu: same typographic menu as the lobby (Resume / Change aircraft / Invite / Settings / Controls / Leave).
 import type { Quality } from "../sim/types"
-import { settings, updateSettings } from "./settings"
-import { controlsHtml } from "./spawn"
-import { bindSchemeSeg } from "./lobby"
+import { MenuNav, controlsTable, hintsHtml, settingsScreen, type MenuScreen } from "./lobby"
 
 export interface PauseMenu {
-  /** Show the control scheme for the current aircraft (heli vs jet). */
   show(heli?: boolean): void
   hide(): void
   visible(): boolean
@@ -22,59 +20,35 @@ export function createPauseMenu(parent: HTMLElement, actions: {
   const root = document.createElement("div")
   root.className = "pause"
   root.hidden = true
-  root.innerHTML = `
-    <div class="panel">
-      <h2><span class="title">Paused</span></h2>
-      <button class="btn primary" data-a="resume"><span class="lbl">Resume</span><span class="k">Esc</span></button>
-      <button class="btn" data-a="vehicle"><span class="lbl">Change aircraft / seat</span></button>
-      <button class="btn" data-a="invite"><span class="lbl">Copy invite link</span></button>
-      <div class="opts">
-        <label>Graphics <span class="seg q"><button data-q="low">Low</button><button data-q="balanced">Balanced</button><button data-q="high">High</button></span></label>
-        <label>Steering <span class="seg st"></span></label>
-        <label>Mouse <input type="range" class="sens" min="0.2" max="3" step="0.05" /></label>
-        <div class="checks"><label class="check"><input type="checkbox" class="inv" /> Invert mouse Y (mouse away = nose down)</label>
-        <label class="check"><input type="checkbox" class="mute" /> Mute</label></div>
-      </div>
-      <details><summary>Controls</summary><div class="ctl"></div></details>
-      <button class="btn danger" data-a="leave"><span class="lbl">Leave match</span></button>
-    </div>`
+  root.innerHTML = `<h2 class="wm">Paused</h2><nav class="screen"></nav><footer class="foot"><div class="hints"></div></footer>`
   parent.appendChild(root)
-  const q = <T extends HTMLElement>(s: string) => root.querySelector(s) as T
-  const seg = q<HTMLElement>(".seg.q")
-  const sens = q<HTMLInputElement>(".sens")
-  const st = q<HTMLElement>(".seg.st")
-  let heliShown = false
-  const paintScheme = bindSchemeSeg(st, () => { q<HTMLElement>(".ctl").innerHTML = controlsHtml(heliShown) })
-  const inv = q<HTMLInputElement>(".inv")
-  const mute = q<HTMLInputElement>(".mute")
-  const paint = () => {
-    seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.q === settings.quality)))
-    sens.value = String(settings.sensitivity)
-    paintScheme()
-    inv.checked = settings.invertY
-    mute.checked = settings.muted
-  }
-  root.addEventListener("click", e => {
-    const t = e.target as HTMLElement
-    if (t.closest("button")) actions.click()
-    if (t.closest("[data-scheme]")) return
-    const qb = t.closest<HTMLElement>("[data-q]")
-    if (qb) { updateSettings({ quality: qb.dataset.q as Quality }); actions.quality(qb.dataset.q as Quality); paint(); return }
-    switch (t.closest<HTMLElement>("[data-a]")?.dataset.a) {
-      case "resume": actions.resume(); break
-      case "vehicle": actions.changeVehicle(); break
-      case "invite": actions.invite(); break
-      case "leave": actions.leave(); break
-    }
-    if (t === root) actions.resume()
+  const hints = root.querySelector<HTMLElement>(".hints")!
+  const nav = new MenuNav(root.querySelector<HTMLElement>(".screen")!, actions.click)
+  nav.onHints = h => { hints.innerHTML = hintsHtml(h) }
+  nav.onEscape = () => actions.resume()
+  const rootScreen = (): MenuScreen => ({
+    size: "big",
+    hints: [["↑↓", "select"], ["enter", "confirm"], ["esc", "resume"]],
+    items: [
+      { label: "Resume", run: () => actions.resume() },
+      { label: "Change aircraft", run: () => actions.changeVehicle(), meta: "pick another aircraft or seat" },
+      { label: "Invite friends", run: () => actions.invite(), meta: "copies the room link" },
+      { label: "Settings", run: () => nav.push(settingsScreen(nav, actions.quality, "04 — <b>settings</b>")), meta: "graphics · sound · steering" },
+      { label: "Controls", run: () => nav.push({ crumb: "05 — <b>controls</b>", html: controlsTable(), hints: [["esc", "back"]] }) },
+      { label: "Leave match", small: true, run: () => actions.leave(), meta: "back to the main menu" },
+    ],
   })
-  sens.addEventListener("input", () => updateSettings({ sensitivity: Number(sens.value) }))
-  inv.addEventListener("change", () => updateSettings({ invertY: inv.checked }))
-  mute.addEventListener("change", () => updateSettings({ muted: mute.checked }))
+  // Registered before the game's own keydown listener, so Esc inside a sub-screen goes back instead of resuming.
+  const onKey = (e: KeyboardEvent) => {
+    if (root.hidden) return
+    if (nav.handleKey(e)) { e.preventDefault(); e.stopImmediatePropagation() }
+  }
+  window.addEventListener("keydown", onKey)
+  root.addEventListener("click", e => { if (e.target === root) actions.resume() })
   return {
-    show(heli = false) { heliShown = heli; paint(); q<HTMLElement>(".ctl").innerHTML = controlsHtml(heli); root.hidden = false },
+    show() { nav.reset(rootScreen()); root.hidden = false },
     hide() { root.hidden = true },
     visible: () => !root.hidden,
-    dispose() { root.remove() },
+    dispose() { window.removeEventListener("keydown", onKey); root.remove() },
   }
 }
