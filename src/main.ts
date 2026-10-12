@@ -3,6 +3,7 @@ import "@fontsource/ibm-plex-mono/400.css"
 import "@fontsource/ibm-plex-mono/500.css"
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "../shared/config"
 import { cleanName } from "../shared/protocol"
+import { MODE_IDS, type ModeId, modeOf } from "../shared/sim/modes"
 import { Sound } from "./audio/sound"
 import { Game } from "./game/game"
 import { Input } from "./game/input"
@@ -12,6 +13,7 @@ import { Camera } from "./render/camera"
 import { Renderer } from "./render/renderer"
 import { Hud } from "./ui/hud"
 import { Menus } from "./ui/menus"
+import { ModeHud } from "./ui/modes-hud"
 
 const MAX_DPR = 1.5
 const NAME_KEY = "blackout.name"
@@ -49,6 +51,7 @@ async function main() {
   const input = new Input(canvas)
   const cam = new Camera()
   const hud = new Hud(document.getElementById("hud")!)
+  const modeHud = new ModeHud(document.getElementById("hud")!)
   let session: Session | null = null
   let game: Game | null = null
 
@@ -71,15 +74,17 @@ async function main() {
   }
   const base = location.pathname.replace(/[^/]*$/, "")
   const api = (path: string) => fetch(`${base}api/${path}`, { method: "POST" }).then((r) => r.json() as Promise<{ room: string }>)
-  const enter = (name: string, room: string, priv = false) => {
+  const enter = (name: string, room: string, priv = false, mode: ModeId | null = null) => {
     history.replaceState(null, "", `?room=${room}`)
-    begin(name, (n) => new NetSession(room, n, gun, equip, fatal, priv))
+    begin(name, (n) => new NetSession(room, n, gun, equip, fatal, priv, mode))
   }
+  const vote = (mode: ModeId) => session?.send({ type: "vote", mode })
   const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
   const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
     quick: (name) => api("quick").then((r) => enter(name, r.room), failed),
-    create: (name) => api("create").then((r) => enter(name, r.room, true), failed),
+    create: (name, mode) => api("create").then((r) => enter(name, r.room, true, mode), failed),
     join: (name, room) => enter(name, room),
+    vote,
   })
   fetch(`${base}api/stats`)
     .then((r) => r.json() as Promise<{ players: number; games: number }>)
@@ -87,6 +92,12 @@ async function main() {
     .catch(() => {})
   input.onKey = (code) => {
     if (code === "KeyM") sound.setMuted(!sound.muted)
+    // Between floors the number keys vote for the next mode.
+    if (game?.snap?.phase === "end") {
+      const v = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(code)
+      if (v >= 0) vote(MODE_IDS[v]!)
+      return
+    }
     const i = ["Digit1", "Digit2", "Digit3"].indexOf(code)
     if (i >= 0 && session) {
       gun = GUN_IDS[i]!
@@ -102,7 +113,7 @@ async function main() {
   }
   menus.landing(roomParam)
   // Dev and screenshots: a local match against bots, no server.
-  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip))
+  if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip, modeOf(params.get("mode")) ?? "ffa"))
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
@@ -125,8 +136,10 @@ async function main() {
       game.update(dt, input, cam, w, h, now)
       const body = game.body ? game.drawn : null
       const alive = game.alive
-      const fx = body?.x ?? game.map.size[0] / 2
-      const fz = body?.y ?? game.map.size[1] / 2
+      // Out for the round in search and destroy: watch a teammate.
+      const spec = modeHud.spectate(game)
+      const fx = spec?.x ?? body?.x ?? game.map.size[0] / 2
+      const fz = spec?.y ?? body?.y ?? game.map.size[1] / 2
       // Look-ahead: the view leans toward the cursor; holding right click leans much further (scouting, sniping).
       const far = input.looking && alive
       const k = far ? 0.65 : 0.35
@@ -138,6 +151,7 @@ async function main() {
       cam.follow(fx, fz, lx, lz, dt, !body)
       renderer.render(game.build(cam, w, h, dt))
       hud.update(game, cam, w, h, input.mouse, session.status())
+      modeHud.update(game, cam, w, h)
       menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab"), (id) => game!.colorOf(id))
     }
     requestAnimationFrame(frame)

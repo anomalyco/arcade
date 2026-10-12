@@ -6,7 +6,10 @@ import type { Brain, Intent, Player, World } from "./world"
 
 const TURN = 4.5 / 30
 
-/** Hunts the nearest player: walks a path toward them, and shoots after a short reaction when it has a clear line. */
+/**
+ * Hunts the nearest enemy: walks a path toward them, and shoots after a short reaction when it has a clear line. With
+ * nobody in sight it plays the objective, when the mode has one.
+ */
 export class BotBrain implements Brain {
   private rng: Rng
   private path: Vec[] = []
@@ -17,6 +20,7 @@ export class BotBrain implements Brain {
   private error = 0
   private strafe = 1
   private strafeAt = 0
+  private goal: { x: number; y: number } | null = null
 
   constructor(seed: number) {
     this.rng = new Rng(seed)
@@ -24,21 +28,22 @@ export class BotBrain implements Brain {
 
   think(world: World, p: Player): Intent {
     const now = world.time
-    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, cover: false, peek: false }
+    const i: Intent = { mx: 0, my: 0, aim: this.aim, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false, cover: false, peek: false }
     let near: Player | null = null
     let nd = Infinity
     for (const q of world.players.values()) {
-      if (!q.alive || q.id === p.id) continue
+      if (!q.alive || q.id === p.id || world.allies(p, q)) continue
       const d = Math.hypot(q.x - p.x, q.y - p.y)
       if (d < nd) {
         nd = d
         near = q
       }
     }
-    if (!near) return i
     const gun = GUNS[p.gun]
-    const sees = nd <= Math.max(gun.range, 12) && clearLine(p.x, p.y, near.x, near.y, world.blockers)
-    if (sees) {
+    const sees = !!near && nd <= Math.max(gun.range, 12) && clearLine(p.x, p.y, near.x, near.y, world.blockers)
+    const obj = sees ? null : world.mode.botGoal(world, p)
+    if (!near && !obj) return i
+    if (near && sees) {
       if (this.target !== near.id) {
         this.target = near.id
         this.reactAt = now + 0.35 + this.rng.next() * 0.4
@@ -67,8 +72,18 @@ export class BotBrain implements Brain {
     }
     this.target = ""
     if (p.mag < gun.mag / 2) i.reload = true
-    if (now >= this.repathAt || !this.path.length) {
-      this.path = navFor(world.map).path(p, near) ?? []
+    const dest = obj ?? near!
+    if (obj && Math.hypot(obj.x - p.x, obj.y - p.y) < 0.8) {
+      // At the objective: hold still, and hold the key when there's something to plant or defuse.
+      i.use = obj.use
+      this.turn(this.aim + 0.02)
+      i.aim = this.aim
+      return i
+    }
+    const moved = !this.goal || Math.hypot(this.goal.x - dest.x, this.goal.y - dest.y) > 2
+    if (now >= this.repathAt || !this.path.length || moved) {
+      this.path = navFor(world.map).path(p, dest) ?? []
+      this.goal = { x: dest.x, y: dest.y }
       this.repathAt = now + 1 + this.rng.next()
     }
     while (this.path.length && Math.hypot(this.path[0]!.x - p.x, this.path[0]!.y - p.y) < 0.35) this.path.shift()
@@ -78,7 +93,7 @@ export class BotBrain implements Brain {
       i.mx = (next.x - p.x) / d
       i.my = (next.y - p.y) / d
       // Run when the hunt has a long way to go.
-      i.sprint = nd > 8
+      i.sprint = Math.hypot(dest.x - p.x, dest.y - p.y) > 8
       this.turn(Math.atan2(i.my, i.mx))
       i.aim = this.aim
     }

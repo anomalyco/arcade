@@ -1,9 +1,10 @@
-import { CLAYMORE, DT, END_SECONDS, EQUIPS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, MATCH_SECONDS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
+import { CLAYMORE, DT, END_SECONDS, EQUIPS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
 import { type Rect, angleDiff, clearLine } from "../geom"
 import { type MapDef, getMap } from "../maps"
 import { Rng } from "../rng"
 import { BotBrain } from "./bots"
 import { type Claymore, type Grenade, type Obstacles, launch, obstaclesOf, overlaps, stepGrenade } from "./gear"
+import { type Mode, type ModeId, createMode, modeOf, tally } from "./modes"
 import { COVER, type Cover, coverGeo, moveTick, shotLane } from "./cover"
 
 export type Phase = "play" | "end"
@@ -11,11 +12,11 @@ export type Phase = "play" | "end"
 /**
  * One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. `sprint`
  * holds Shift. `equip` is a press that throws or plants your equipment; (tx, ty) is the cursor on the floor, how far
- * to throw. `cover` is a press that takes, hops or leaves cover; `peek` holds right click, which pops you out of cover
- * like the trigger does (see shared/sim/cover.ts).
+ * to throw. `use` holds the plant/defuse key in search and destroy. `cover` is a press that takes, hops or leaves
+ * cover; `peek` holds right click, which pops you out of cover like the trigger does (see shared/sim/cover.ts).
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; cover: boolean; peek: boolean }
-export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, cover: false, peek: false }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; cover: boolean; peek: boolean }
+export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false, cover: false, peek: false }
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
 export const sprints = (i: Intent): boolean => i.sprint && !i.fire && Math.hypot(i.mx, i.my) > 0.1
@@ -55,6 +56,13 @@ export type Player = {
   ack: number
   kills: number
   deaths: number
+  /** 0 orange, 1 cyan, -1 none (free for all). */
+  team: number
+  /** Holding the plant/defuse key this tick. */
+  using: boolean
+  caps: number
+  plants: number
+  defuses: number
   /** The surface you're in cover against, or null. */
   cover: Cover | null
 }
@@ -68,13 +76,17 @@ export type SimEvent =
   | { k: "beep"; id: number; x: number; y: number }
   | { k: "explode"; kind: Equip; by: string; id: number; x: number; y: number; aim: number }
   | { k: "reload"; by: string }
-  | { k: "end"; winner: string }
+  | { k: "end"; winner: string; team: number }
+  | { k: "cap"; team: number; point: string }
+  | { k: "bomb"; what: "plant" | "defuse" | "explode"; by: string; x: number; y: number }
+  | { k: "round"; team: number; why: string }
 
 const BOT_NAMES = ["kade", "rei", "mako", "juno", "lexx", "ryn", "zen", "lee", "nox", "ivo", "sable", "wren"]
 
 /**
- * Free-for-all deathmatch on a procedural office floor. Everyone sees everyone. Four hits kill, health regenerates out
- * of combat, you respawn after a few seconds, and the most kills when the clock runs out wins. Then a new floor.
+ * A match on a procedural office floor. Everyone sees everyone. Four hits kill, health regenerates out of combat, and
+ * you respawn after a few seconds. The mode (shared/sim/modes.ts) sets teams, spawns, objectives and who wins. Then
+ * everyone votes on the next mode and it's a new floor.
  */
 export class World {
   map: MapDef
@@ -88,7 +100,10 @@ export class World {
   time = 0
   tick = 0
   phase: Phase = "play"
-  phaseEnd = MATCH_SECONDS
+  phaseEnd = 0
+  mode: Mode
+  /** End-screen votes for the next mode, by player. */
+  votes = new Map<string, ModeId>()
   players = new Map<string, Player>()
   order: string[] = []
   events: SimEvent[] = []
@@ -102,10 +117,33 @@ export class World {
   constructor(
     seed: number,
     private fixed: MapDef | null = null,
+    mode: ModeId = "ffa",
   ) {
     this.rng = new Rng(seed)
     this.map = fixed ?? getMap(this.rng.int(2 ** 31))
     this.setMap(this.map)
+    this.mode = createMode(mode)
+    this.phaseEnd = this.mode.seconds
+    this.mode.start(this)
+  }
+
+  /** Switches mode and restarts the match on the same floor: the room creator's pick, before anyone else is in. */
+  setMode(id: ModeId): void {
+    this.mode = createMode(id)
+    this.phase = "play"
+    this.phaseEnd = this.time + this.mode.seconds
+    this.resetPlayers()
+    this.mode.start(this)
+  }
+
+  /** Same team, or the same player, in a team mode. */
+  allies(a: Player, b: Player): boolean {
+    return this.mode.teams && a.team >= 0 && a.team === b.team
+  }
+
+  /** A vote for the next mode, during the end screen. */
+  vote(id: string, mode: ModeId): void {
+    if (this.phase === "end" && this.players.has(id) && modeOf(mode)) this.votes.set(id, mode)
   }
 
   private setMap(map: MapDef): void {
@@ -125,7 +163,7 @@ export class World {
     p.equipPick = equip
     this.players.set(id, p)
     this.order.push(id)
-    this.spawn(p)
+    if (this.mode.join(this, p)) this.spawn(p)
     this.fill()
     return p
   }
@@ -143,6 +181,9 @@ export class World {
   }
 
   remove(id: string): void {
+    const p = this.players.get(id)
+    if (p) this.mode.leave(this, p)
+    this.votes.delete(id)
     this.grenades = this.grenades.filter((g) => g.by !== id)
     this.claymores = this.claymores.filter((c) => c.by !== id)
     this.players.delete(id)
@@ -159,20 +200,21 @@ export class World {
       p.pick = this.rng.next() < 0.6 ? "rifle" : this.rng.pick(GUN_IDS)
       this.players.set(id, p)
       this.order.push(id)
-      this.spawn(p)
+      if (this.mode.join(this, p)) this.spawn(p)
     }
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, cover: null }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, using: false, caps: 0, plants: 0, defuses: 0, cover: null }
   }
 
-  /** Puts a player at the spawn farthest from everyone alive. */
+  /** Puts a player where the mode says, else at the spawn farthest from everyone alive. */
   spawn(p: Player): void {
     const others = [...this.players.values()].filter((q) => q.alive && q.id !== p.id)
-    let best = this.map.spawns[0]!
+    const at = this.mode.spawnAt(this, p)
+    let best = at ?? this.map.spawns[0]!
     let bd = -1
-    for (const s of this.map.spawns) {
+    for (const s of at ? [] : this.map.spawns) {
       const d = others.length ? Math.min(...others.map((q) => Math.hypot(q.x - s.x, q.y - s.y))) : this.rng.next()
       if (d > bd) {
         bd = d
@@ -230,9 +272,12 @@ export class World {
         }
       }
       if (!p.alive) {
+        p.using = false
         if (this.phase === "play" && this.time >= p.respawnAt) this.spawn(p)
         continue
       }
+      if (this.phase === "play") intent = this.mode.intent(this, p, intent)
+      p.using = intent.use
       p.aim = intent.aim
       if (this.phase !== "play") {
         p.vx = 0
@@ -258,6 +303,7 @@ export class World {
       if (p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
     }
     if (this.phase === "play") this.stepGear()
+    if (this.phase === "play") this.mode.step(this)
   }
 
   /** Throws the frag toward the cursor, or plants the claymore just ahead facing the aim. */
@@ -297,8 +343,9 @@ export class World {
         continue
       }
       if (this.time < c.armAt) continue
+      const owner = this.players.get(c.by)
       for (const q of this.players.values()) {
-        if (!q.alive || q.id === c.by) continue
+        if (!q.alive || q.id === c.by || (owner && this.allies(owner, q))) continue
         const d = Math.hypot(q.x - c.x, q.y - c.y)
         if (d > CLAYMORE.range || Math.abs(angleDiff(Math.atan2(q.y - c.y, q.x - c.x), c.aim)) > CLAYMORE.cone) continue
         if (!clearLine(c.x, c.y, q.x, q.y, this.blockers)) continue
@@ -342,7 +389,9 @@ export class World {
     }
   }
 
-  private damage(q: Player, dmg: number, by: Player, how: Weapon, fx: number, fy: number): void {
+  /** No friendly fire in team modes; your own frag still hurts you. */
+  damage(q: Player, dmg: number, by: Player, how: Weapon, fx: number, fy: number): void {
+    if (q !== by && this.allies(q, by)) return
     q.health -= dmg
     q.hurtAt = this.time
     if (q.health <= 0) this.kill(q, by, how, fx, fy)
@@ -376,7 +425,8 @@ export class World {
     let nearest = gun.range
     let victim: Player | null = null
     for (const q of this.players.values()) {
-      if (!q.alive || q.id === p.id) continue
+      // Rounds pass through teammates.
+      if (!q.alive || q.id === p.id || this.allies(p, q)) continue
       const t = (q.x - p.x) * dx + (q.y - p.y) * dy
       const off = Math.abs(-(q.x - p.x) * dy + (q.y - p.y) * dx)
       if (t > 0 && t < nearest && off <= HIT_RADIUS && lane.reaches(q, t)) {
@@ -388,7 +438,8 @@ export class World {
     // Someone else's claymore in the line of fire takes the round and blows.
     let mine: Claymore | null = null
     for (const c of this.claymores) {
-      if (c.by === p.id) continue
+      const owner = this.players.get(c.by)
+      if (c.by === p.id || (owner && this.allies(owner, p))) continue
       const t = (c.x - p.x) * dx + (c.y - p.y) * dy
       const off = Math.abs(-(c.x - p.x) * dy + (c.y - p.y) * dx)
       if (t > 0.5 && t < stop && off <= CLAYMORE.shot) {
@@ -402,35 +453,51 @@ export class World {
     if (victim) this.damage(victim, gun.damage, p, p.gun, p.x, p.y)
   }
 
-  /** `how` and the blast point (fx, fy) default to the killer's gun and position. Killing yourself scores nothing. */
+  /** `how` and the blast point (fx, fy) default to the killer's gun and position. Killing yourself or a teammate scores nothing. */
   kill(victim: Player, killer: Player, how: Weapon = killer.gun, fx = killer.x, fy = killer.y): void {
     victim.alive = false
     victim.health = 0
     victim.deaths++
     victim.respawnAt = this.time + RESPAWN_SECONDS
-    if (killer !== victim) killer.kills++
+    if (killer !== victim && !this.allies(killer, victim)) killer.kills++
     const d = Math.hypot(victim.x - fx, victim.y - fy) || 1
     this.events.push({ k: "kill", killer: killer.id, victim: victim.id, dx: (victim.x - fx) / d, dy: (victim.y - fy) / d, how })
+    this.mode.killed(this, victim, killer)
   }
 
-  private endMatch(): void {
+  /** The match is over: the end screen and the vote for the next mode. */
+  endMatch(): void {
+    if (this.phase === "end") return
     this.phase = "end"
     this.phaseEnd = this.time + END_SECONDS
     this.grenades = []
     this.claymores = []
-    const ranked = [...this.players.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-    this.events.push({ k: "end", winner: ranked[0]?.id ?? "" })
+    this.votes.clear()
+    const r = this.mode.result(this)
+    this.events.push({ k: "end", winner: r.winner, team: r.team })
   }
 
-  private newMatch(): void {
-    if (!this.fixed) this.setMap(getMap(this.rng.int(2 ** 31)))
-    this.phase = "play"
-    this.phaseEnd = this.time + MATCH_SECONDS
+  private resetPlayers(): void {
     for (const p of this.players.values()) {
       p.kills = 0
       p.deaths = 0
+      p.caps = 0
+      p.plants = 0
+      p.defuses = 0
       p.alive = false
+      p.respawnAt = 0
     }
-    for (const p of this.players.values()) this.spawn(p)
+  }
+
+  /** A new floor in the mode that won the vote. */
+  private newMatch(): void {
+    if (!this.fixed) this.setMap(getMap(this.rng.int(2 ** 31)))
+    const next = tally(this.votes.values(), this.mode.id, this.rng)
+    this.votes.clear()
+    if (next !== this.mode.id) this.mode = createMode(next)
+    this.phase = "play"
+    this.phaseEnd = this.time + this.mode.seconds
+    this.resetPlayers()
+    this.mode.start(this)
   }
 }

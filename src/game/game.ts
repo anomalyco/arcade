@@ -19,6 +19,7 @@ import type { Input } from "./input"
 import type { Session } from "./session"
 import { Smoothed } from "./smooth"
 import { type CoverHint, coverHint, coverLook, coverMarks } from "./cover-fx"
+import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -186,7 +187,10 @@ export class Game {
     return !!this.snap && this.snap.phase === "play" && !!this.snap.players.find((p) => p.id === this.myId)?.alive
   }
 
+  /** Team colour in team modes, else the palette by roster position. */
   colorOf(id: string): Rgb3 {
+    const team = teamOf(this.snap, this.roster, id)
+    if (team >= 0) return TEAM_COLORS[team]!
     const i = this.roster.findIndex((r) => r.id === id)
     return PALETTE[(i < 0 ? 0 : i) % PALETTE.length]!
   }
@@ -486,7 +490,10 @@ export class Game {
       const reload = input.takeReload()
       const fire = live && input.enabled && input.firing
       const equip = live && input.takeEquip()
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, cover: input.takeCover() && live, peek: live && input.enabled && input.looking }
+      const use = live && input.enabled && (input.held("KeyF") || input.held("KeyE"))
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, cover: input.takeCover() && live, peek: live && input.enabled && input.looking }
+      // Planting or defusing holds you still with the gun down, as on the server.
+      if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       const seq = ++this.seq
       this.session.send({ type: "intent", seq, i })
       if (!live || !this.body) {
@@ -558,8 +565,9 @@ export class Game {
       let stop = Math.min(lane.wall, gun.range)
       let nearest = gun.range
       let hit = false
+      const myTeam = teamOf(this.snap, this.roster, this.myId)
       for (const o of this.avatars.values()) {
-        if (!o.alive) continue
+        if (!o.alive || (myTeam >= 0 && teamOf(this.snap, this.roster, o.id) === myTeam)) continue
         const along = (o.x - b.x) * dx + (o.y - b.y) * dy
         const off = Math.abs(-(o.x - b.x) * dy + (o.y - b.y) * dx)
         if (along > 0 && along < nearest && off < 0.4 && lane.reaches(o, along)) {
@@ -963,6 +971,7 @@ export class Game {
 
     this.gearSprites(t)
     if (me) coverMarks(this.coverHint, me, t, (x, y, z, size, r, g, b, a, kind, rot, stretch) => this.sprite(true, x, y, z, size, r, g, b, a, kind, rot, stretch))
+    modeSprites(snap, t, (...a) => this.sprite(...a))
 
     this.particles = this.particles.filter((p) => t - p.t0 < p.life)
     for (const p of this.particles) {

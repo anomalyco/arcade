@@ -29,7 +29,7 @@ export class Hud {
       <div id="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><div id="hm"><i></i><i></i><i></i><i></i></div></div>
       <div id="status"></div>
       <div id="cover"></div>
-      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · SPACE cover · RIGHT CLICK look/peek · R reload · G equipment · 1 2 3 guns · 4 5 frag/claymore · TAB scores · M mute</div>`
+      <div id="help">WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · SPACE cover · RIGHT CLICK look/peek · R reload · G equipment · F plant/defuse · 1 2 3 guns · 4 5 frag/claymore · TAB scores · M mute</div>`
     for (const e of root.querySelectorAll<HTMLElement>("[id]")) this.el[e.id] = e
   }
 
@@ -83,7 +83,7 @@ export class Hud {
     const next = [pick !== g.gun ? GUNS[pick].label.toUpperCase() : "", epick !== g.equip ? equipLabel(epick) : ""].filter(Boolean).join(" · ")
     el.respawn!.innerHTML =
       s.phase === "play" && !alive && s.you
-        ? `<div class="rt">RESPAWN IN ${Math.ceil(s.you.respawnIn)}</div><div class="picks">${GUN_IDS.map((id, i) => `<span class="${id === pick ? "on" : ""}"><kbd>${i + 1}</kbd>${GUNS[id].label.toUpperCase()}</span>`).join("")}</div><div class="picks">${EQUIP_IDS.map((id, i) => `<span class="${id === epick ? "on" : ""}"><kbd>${i + 4}</kbd>${equipLabel(id)}</span>`).join("")}</div>`
+        ? `${s.you.respawnIn < 0 ? "" : `<div class="rt">RESPAWN IN ${Math.ceil(s.you.respawnIn)}</div>`}<div class="picks">${GUN_IDS.map((id, i) => `<span class="${id === pick ? "on" : ""}"><kbd>${i + 1}</kbd>${GUNS[id].label.toUpperCase()}</span>`).join("")}</div><div class="picks">${EQUIP_IDS.map((id, i) => `<span class="${id === epick ? "on" : ""}"><kbd>${i + 4}</kbd>${equipLabel(id)}</span>`).join("")}</div>`
         : alive && next
           ? `<div class="next">NEXT LIFE: ${next}</div>`
           : ""

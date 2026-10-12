@@ -1,4 +1,5 @@
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "./config"
+import { type ModeId, modeOf } from "./sim/modes"
 import type { RosterRow, Snapshot } from "./sim/view"
 import type { Intent, SimEvent } from "./sim/world"
 
@@ -7,6 +8,7 @@ export type ClientMsg =
   | { type: "intent"; seq: number; i: Intent }
   | { type: "gun"; gun: Gun }
   | { type: "equip"; equip: Equip }
+  | { type: "vote"; mode: ModeId }
   | { type: "ping"; t: number }
 
 export type ServerMsg =
@@ -64,12 +66,16 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null
       if (!i || typeof o.seq !== "number" || !Number.isInteger(o.seq) || o.seq < 0) return null
-      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), cover: i.cover === true, peek: i.peek === true } }
+      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), use: i.use === true, cover: i.cover === true, peek: i.peek === true } }
     }
     case "gun":
       return { type: "gun", gun: gunOf(o.gun) }
     case "equip":
       return { type: "equip", equip: equipOf(o.equip) }
+    case "vote": {
+      const mode = modeOf(o.mode)
+      return mode ? { type: "vote", mode } : null
+    }
     case "ping":
       return { type: "ping", t: num(o.t, 0, Number.MAX_SAFE_INTEGER) }
     default:
