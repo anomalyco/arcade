@@ -21,7 +21,7 @@ export class Nav {
     this.w = Math.ceil(map.size[0] / CELL)
     this.h = Math.ceil(map.size[1] / CELL)
     this.grid = new Uint8Array(this.w * this.h)
-    const pad = PLAYER_RADIUS + 0.06
+    const pad = PLAYER_RADIUS + 0.02
     const solid = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass.map((g) => g.rect), ...map.props.filter((p) => p.solid).map((p) => p.rect)]
     for (let cy = 0; cy < this.h; cy++)
       for (let cx = 0; cx < this.w; cx++) {
@@ -63,6 +63,39 @@ export class Nav {
       }
     }
     return this.center(best)
+  }
+
+  /** Cells reachable on foot from p (through doors), as a mask over the grid. */
+  reachable(p: Vec): Uint8Array {
+    const seen = new Uint8Array(this.w * this.h)
+    const start = this.idx(this.nearest(p))
+    const queue = [start]
+    seen[start] = 1
+    while (queue.length) {
+      const c = queue.pop()!
+      const cx = c % this.w
+      const cy = Math.floor(c / this.w)
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const nx = cx + dx
+        const ny = cy + dy
+        if (nx < 0 || ny < 0 || nx >= this.w || ny >= this.h) continue
+        const n = ny * this.w + nx
+        if (seen[n] || this.grid[n] === BLOCKED) continue
+        seen[n] = 1
+        queue.push(n)
+      }
+    }
+    return seen
+  }
+
+  /** Whether p is in a cell marked in a mask from reachable(). */
+  inMask(mask: Uint8Array, p: Vec): boolean {
+    return mask[this.idx(p)] === 1
   }
 
   randomFree(rng: Rng): Vec {
@@ -190,11 +223,13 @@ class Heap {
 }
 
 const cache = new Map<string, Nav>()
+/** Nav grids for the few most recent maps. */
 export function navFor(map: MapDef): Nav {
   let n = cache.get(map.id)
   if (!n) {
     n = new Nav(map)
     cache.set(map.id, n)
+    if (cache.size > 4) cache.delete(cache.keys().next().value!)
   }
   return n
 }

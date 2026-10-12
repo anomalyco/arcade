@@ -1,9 +1,8 @@
-import type { MapId } from "../config"
 import type { Rect, Vec } from "../geom"
 import type { LightDef } from "../sim/light"
 
 /** How a blocking wall is drawn. All styles block light, sight, bullets and movement. */
-export type WallStyle = "wall" | "partition" | "rack" | "shelf" | "mullion"
+export type WallStyle = "wall" | "partition" | "rack" | "shelf" | "pillar" | "stall" | "core"
 
 export type Wall = { rect: Rect; h: number; style: WallStyle }
 
@@ -33,6 +32,11 @@ export type PropKind =
   | "bench"
   | "exitdoor"
   | "lamp"
+  | "pillar"
+  | "printer"
+  | "whiteboard"
+  | "reception"
+  | "liftdoor"
 
 /** Furniture and clutter. Solid props block movement only. `rot` turns the model in quarter turns. */
 export type Prop = { kind: PropKind; rect: Rect; rot: 0 | 1 | 2 | 3; solid: boolean; light?: number }
@@ -45,7 +49,9 @@ export type Noisy = { rect: Rect; kind: "grate" | "puddle" }
 export type Breaker = { x: number; y: number; group: string }
 
 export type MapDef = {
-  id: MapId
+  /** Unique per layout, e.g. "office-1234". */
+  id: string
+  seed: number
   name: string
   blurb: string
   size: readonly [number, number]
@@ -62,6 +68,10 @@ export type MapDef = {
   breakers: readonly Breaker[]
   noisy: readonly Noisy[]
   spawns: readonly Vec[]
+  /** Mustard floor tape along aisles, drawn only. */
+  tape: readonly Rect[]
+  /** The lift and stair core: solid, drawn with lift doors. */
+  cores: readonly Rect[]
   /** Base ambient light, linear RGB. Kept tiny: darkness should be dark. */
   ambient: readonly [number, number, number]
 }

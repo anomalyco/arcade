@@ -42,7 +42,8 @@ export type Snapshot = {
   roundNo: number
   rounds: number
   mode: Mode
-  map: string
+  /** Seed of the current office floor; clients generate the same floor from it. */
+  map: number
   wins: Record<string, number>
   host: string
   lastWinner: string | null
@@ -97,7 +98,7 @@ export function buildSnapshot(world: World, viewerId: string): Snapshot {
     roundNo: world.roundNo,
     rounds: world.rounds,
     mode: world.mode,
-    map: world.map.id,
+    map: world.map.seed,
     wins: world.wins,
     host: world.host,
     lastWinner: world.lastWinner,

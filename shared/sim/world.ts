@@ -207,10 +207,14 @@ export class World {
   private sonarAt = 0
   private lightsNow: Light[] = []
 
-  constructor(seed: number, mapId = "office") {
-    this.map = getMap(mapId)
-    this.level = new Level(this.map)
+  /** A fixed map plays every round on it (tests); otherwise each round is a fresh procedural floor. */
+  constructor(
+    seed: number,
+    private fixed: MapDef | null = null,
+  ) {
     this.rng = new Rng(seed)
+    this.map = fixed ?? getMap(this.rng.int(2 ** 31))
+    this.level = new Level(this.map)
   }
 
   // Players ----------------------------------------------------------------------------------------------------------
@@ -277,7 +281,7 @@ export class World {
 
   label(key: string): string {
     if (this.mode === "ffa") return this.players.get(key)?.name ?? "?"
-    return key === "0" ? "Red" : "Blue"
+    return key === "0" ? "Orange" : "Cyan"
   }
 
   private newPlayer(id: string, name: string, human: boolean, brain: Brain | null): Player {
@@ -350,12 +354,8 @@ export class World {
   // Match flow -------------------------------------------------------------------------------------------------------
 
   /** Host action: start a match (or a rematch) from the lobby or the scoreboard. */
-  start(mode: Mode, rounds: number, mapId = this.map.id): boolean {
+  start(mode: Mode, rounds: number): boolean {
     if (this.phase !== "lobby" && this.phase !== "match") return false
-    if (mapId !== this.map.id) {
-      this.map = getMap(mapId)
-      this.level = new Level(this.map)
-    }
     this.mode = mode
     this.rounds = rounds
     this.wins = {}
@@ -376,7 +376,11 @@ export class World {
     this.things = []
     this.bolts = []
     this.corpses = []
-    this.level.reset()
+    if (this.fixed) this.level.reset()
+    else {
+      this.map = getMap(this.rng.int(2 ** 31))
+      this.level = new Level(this.map)
+    }
     const spawns = this.spawnOrder()
     let s = 0
     for (const id of this.order) {

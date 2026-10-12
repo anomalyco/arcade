@@ -1,6 +1,6 @@
 import { FLARE_POWER, FLARE_RADIUS, LAMP_FAIL_SECONDS, LIT_THRESHOLD } from "../config"
 import { type Rect, clearLine } from "../geom"
-import { hash1 } from "../rng"
+import { hash2 } from "../rng"
 
 export type LightKind = "desk" | "panel" | "pendant" | "exit" | "moon" | "vending" | "server" | "flood" | "bulb"
 
@@ -31,11 +31,10 @@ export type Light = { x: number; y: number; r: number; power: number; cone?: rea
 
 /** Deterministic flicker shared by the server rules and the client renderer, so a dip hides you on both. */
 export function flicker(id: number, level: number, t: number): number {
-  if (level === 1) return hash1(id * 31.7 + Math.floor(t * 8)) < 0.035 ? 0.3 : 1
+  if (level === 1) return hash2(id * 31 + 1, Math.floor(t * 8)) < 0.035 ? 0.3 : 1
   if (level === 2) {
-    const bad = hash1(id * 17.3 + Math.floor(t / 2.5)) < 0.55
-    if (!bad) return 1
-    return hash1(id * 7.1 + Math.floor(t * 15)) < 0.4 ? 0.08 : 1
+    if (hash2(id * 17 + 2, Math.floor(t / 2.5)) >= 0.55) return 1
+    return hash2(id * 7 + 3, Math.floor(t * 15)) < 0.4 ? 0.08 : 1
   }
   return 1
 }
@@ -46,7 +45,7 @@ export function lampPower(def: LightDef, s: LampState, t: number): number {
   let p = def.power * flicker(def.id, def.flicker ?? 0, t)
   if (s.failAt > 0) {
     const k = 1 - Math.max(0, s.failAt - t) / LAMP_FAIL_SECONDS
-    if (hash1(def.id * 3.3 + Math.floor(t * 20)) < 0.25 + 0.6 * k) p *= 0.05
+    if (hash2(def.id * 3 + 4, Math.floor(t * 20)) < 0.25 + 0.6 * k) p *= 0.05
   }
   return p
 }

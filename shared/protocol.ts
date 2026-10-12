@@ -1,4 +1,4 @@
-import { GADGET_IDS, LOOKS, MAP_IDS, MODES, WEAPON_IDS, type Gadget, type MapId, type Mode, type Stance } from "./config"
+import { GADGET_IDS, LOOKS, MODES, WEAPON_IDS, type Gadget, type Mode, type Stance } from "./config"
 import type { RosterRow, Snapshot } from "./sim/view"
 import type { Intent, Loadout, SimEvent } from "./sim/world"
 
@@ -6,7 +6,7 @@ export type ClientMsg =
   | { type: "hello"; name: string; id?: string; loadout: Loadout }
   | { type: "intent"; seq: number; i: Intent }
   | { type: "loadout"; loadout: Loadout }
-  | { type: "start"; mode: Mode; rounds: number; map: MapId }
+  | { type: "start"; mode: Mode; rounds: number }
   | { type: "ping"; t: number }
 
 export type ServerMsg =
@@ -95,7 +95,7 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     case "loadout":
       return { type: "loadout", loadout: decodeLoadout(o.loadout) }
     case "start":
-      return { type: "start", mode: oneOf(o.mode, MODES, "tdm"), rounds: o.rounds === 3 ? 3 : 5, map: oneOf(o.map, MAP_IDS, "office") }
+      return { type: "start", mode: oneOf(o.mode, MODES, "tdm"), rounds: o.rounds === 3 ? 3 : 5 }
     case "ping":
       return { type: "ping", t: num(o.t, 0, Number.MAX_SAFE_INTEGER) }
     default:

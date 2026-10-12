@@ -111,8 +111,6 @@ export const GADGETS: Record<Gadget, GadgetSpec> = {
 export const WEAPON_IDS = Object.keys(WEAPONS) as Weapon[]
 export const GADGET_IDS = Object.keys(GADGETS) as Gadget[]
 export const MODES: readonly Mode[] = ["tdm", "ffa"]
-export const MAP_IDS = ["office", "warehouse"] as const
-export type MapId = (typeof MAP_IDS)[number]
 
 /** Cosmetic heads, unlocked by level. Index is sent in the loadout. */
 export const LOOKS = [

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { clearLine, rayRect } from "../shared/geom"
 import { type LampState, flicker, intensityAt, lampPower, lightAt } from "../shared/sim/light"
-import { office } from "../shared/maps/office"
+import { testMap } from "./helpers"
 
 describe("light model", () => {
   const omni = { x: 0, y: 0, r: 9, power: 1 }
@@ -25,7 +25,7 @@ describe("light model", () => {
   })
 
   test("broken, switched-off and EMP-dimmed lamps give nothing", () => {
-    const def = office.lights[0]!
+    const def = testMap().lights[0]!
     const on: LampState = { broken: false, off: false, dimUntil: 0, failAt: 0 }
     expect(lampPower(def, on, 10)).toBeGreaterThan(0)
     expect(lampPower(def, { ...on, broken: true }, 10)).toBe(0)

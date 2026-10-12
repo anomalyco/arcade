@@ -1,145 +1,452 @@
-import { Builder, WALL_H } from "./builder"
+import type { Rect, Vec } from "../geom"
+import { Rng } from "../rng"
+import { lightAt } from "../sim/light"
+import { Nav } from "../sim/nav"
+import { Builder, type Gap, T, WALL_H } from "./builder"
+import type { MapDef, Prop } from "./types"
 
-const COLD = [0.82, 0.9, 1] as const
-const WARM = [1, 0.88, 0.72] as const
-const MOON = [0.42, 0.56, 1] as const
+/** Corridor width around the core. */
+const C = 2.4
+const COLD = [0.8, 0.88, 1] as const
+const WARM = [1, 0.72, 0.42] as const
+const SPAWNS_PER_SIDE = 5
 
-/**
- * Office Tower FL 12, after concept/iso-spooky-2.png. Open-plan cubicles in the middle; a glass meeting room, a
- * kitchen and a pitch-black storage room on the west; a server room, a moonlit lounge along the windows and the
- * manager's office on the east. Corridor panels are on one breaker in the server room.
- */
-function build() {
-  const b = new Builder()
-  const W = 48
-  const H = 32
+type Side = "n" | "s" | "e" | "w"
+type Rot = Prop["rot"]
+/** Rotation for something standing against wall `side`, facing into the room. */
+const FACE_IN: Record<Side, Rot> = { n: 0, s: 2, w: 3, e: 1 }
+const OPP: Record<Side, Side> = { n: "s", s: "n", e: "w", w: "e" }
 
-  b.floor("carpet", 0, 0, W, H)
-  b.floor("wood", 0.3, 0.3, 10.85, 9.85)
-  b.floor("tile", 0.3, 10.15, 10.85, 19.85)
-  b.floor("concrete", 0.3, 20.15, 10.85, 31.7)
-  b.floor("tile", 11.15, 0.3, 36.85, 4.4)
-  b.floor("grate", 37.15, 0.3, 47.7, 6.85)
-  b.floor("wood", 37.15, 25.15, 47.7, 31.7)
-  b.floor("tile", 27.15, 27.65, 33.85, 31.7)
-
-  // Shell. The east side is glass from the server room down; mullions throw the moonlight in stripes.
-  b.wall(0, 0, W, 0.3)
-  b.wall(0, H - 0.3, W, H)
-  b.wall(0, 0.3, 0.3, H - 0.3)
-  b.wall(W - 0.3, 0.3, W, 7.15)
-  b.windows.push([W - 0.3, 7.15, W, H - 0.3])
-  for (let y = 9; y < H - 1; y += 2) b.wall(W - 0.3, y, W, y + 0.18, WALL_H, "mullion")
-
-  // West rooms behind x = 11: meeting room (glass front), kitchen, storage.
-  b.pane(10.9, 0.3, 11.1, 2.8)
-  b.pane(10.9, 2.8, 11.1, 5.3)
-  b.pane(10.9, 5.3, 11.1, 7.8)
-  b.door([10.85, 7.8, 11.15, 9.0])
-  b.vwall(11, 9.0, H - 0.3, [
-    [14, 15.2],
-    [25, 26.2],
-  ])
-  b.openDoors.push(1)
-  b.hwall(10, 0.3, 10.85)
-  b.hwall(20, 0.3, 10.85)
-
-  b.prop("table", 3, 3.3, 8, 6.1)
-  for (const x of [3.8, 5.5, 7.2]) {
-    b.prop("chair", x - 0.25, 2.55, x + 0.25, 3.05, 0, false)
-    b.prop("chair", x - 0.25, 6.35, x + 0.25, 6.85, 2, false)
-  }
-  b.prop("plant", 0.6, 0.6, 1.3, 1.3)
-  b.prop("plant", 9.4, 0.6, 10.1, 1.3)
-  b.light({ kind: "pendant", x: 5.5, y: 4.7, h: 2.2, r: 6.5, power: 1.1, color: WARM, shootable: true })
-
-  b.prop("counter", 0.3, 10.15, 1.0, 16.8, 1)
-  b.prop("fridge", 0.3, 17.1, 1.15, 18.1, 1)
-  b.prop("table", 4.6, 13.4, 6.2, 15.0)
-  b.prop("chair", 4.15, 13.95, 4.6, 14.45, 1, false)
-  b.prop("chair", 6.2, 13.95, 6.65, 14.45, 3, false)
-  b.prop("cooler", 9.9, 10.4, 10.6, 11.0)
-  b.light({ kind: "panel", x: 5, y: 13, h: 2.6, r: 6.5, power: 0.95, color: COLD, shootable: true, flicker: 2 })
-  b.noisy.push({ rect: [1.4, 16.4, 3.6, 18.8], kind: "puddle" })
-
-  for (const x of [2.2, 5.2, 8.2]) b.wall(x, 22, x + 0.6, x === 8.2 ? 29 : 30, 2.0, "shelf")
-  b.prop("crate", 3.4, 30.6, 4.3, 31.5)
-  b.prop("crate", 0.6, 20.6, 1.5, 21.4)
-
-  // North corridor with the exit.
-  b.prop("exitdoor", 24, 0.3, 25.6, 0.5, 0, false)
-  b.light({ kind: "exit", x: 24.8, y: 0.6, h: 2.35, r: 4.5, power: 0.55, color: [0.3, 1, 0.5], cone: [0, 1, 0.15], shootable: false })
-  b.prop("plant", 11.5, 0.6, 12.2, 1.3)
-  b.prop("cooler", 35.9, 0.6, 36.6, 1.2)
-
-  // Open office.
-  b.cluster(18, 8, ["ne"])
-  b.cluster(24.5, 8)
-  b.cluster(31, 8, ["sw"])
-  b.cluster(18, 14.5)
-  b.cluster(24.5, 14.5, ["nw"])
-  b.cluster(31, 14.5)
-  b.cluster(18, 21, ["se"])
-  b.cluster(24.5, 21, ["sw"])
-  b.cluster(31, 21, ["ne"])
-  for (const [x, y, f] of [
-    [19.5, 2.4, 0],
-    [30, 2.4, 0],
-    [21.25, 11.25, 0],
-    [27.75, 17.75, 2],
-    [24.5, 24.6, 1],
-  ] as const) {
-    b.light({ kind: "panel", x, y, h: 2.6, r: 7.5, power: 1, color: COLD, shootable: true, group: "main", flicker: f })
-  }
-  b.prop("plant", 14.3, 4.8, 15, 5.5)
-  b.prop("plant", 34.2, 4.8, 34.9, 5.5)
-  b.prop("plant", 14.3, 24.8, 15, 25.5)
-
-  // Server room: grated floor, two rack rows, a cold light and the breaker for the corridor panels.
-  b.vwall(37, 0.3, 7.15, [[3.8, 5.0]])
-  b.hwall(7, 37.15, W - 0.3)
-  b.wall(39, 1.6, 46.4, 2.3, 2.1, "rack")
-  b.wall(39, 4.2, 46.4, 4.9, 2.1, "rack")
-  b.noisy.push({ rect: [37.15, 0.3, 47.7, 6.85], kind: "grate" })
-  b.light({ kind: "server", x: 42.6, y: 3.25, h: 2.4, r: 5.5, power: 0.8, color: [0.35, 0.55, 1], shootable: true, flicker: 1 })
-  b.breakers.push({ x: 37.55, y: 6.4, group: "main" })
-
-  // Lounge along the windows.
-  const vend = b.light({ kind: "vending", x: 45.4, y: 8.45, h: 1.2, r: 4.5, power: 0.9, color: [0.3, 0.85, 1], cone: [0, 1, -0.2], shootable: true })
-  b.prop("vending", 44.6, 7.15, 46.2, 8.05, 0, true, vend)
-  b.prop("sofa", 40, 10.9, 42.4, 11.8, 0)
-  b.prop("table", 40.5, 12.5, 41.9, 13.5)
-  b.prop("sofa", 40, 14.2, 42.4, 15.1, 2)
-  b.prop("sofa", 45, 16.8, 45.9, 19.6, 1)
-  b.prop("table", 43.4, 17.5, 44.4, 18.9)
-  b.prop("plant", 46.8, 9.4, 47.5, 10.1)
-  b.prop("plant", 46.8, 22.1, 47.5, 22.8)
-  b.prop("plant", 37.4, 23.9, 38.1, 24.6)
-  b.prop("copier", 35, 22.4, 36.2, 23.4)
-  b.prop("bench", 38.2, 19.4, 40.6, 20)
-
-  // Manager's office.
-  b.hwall(25, 37.15, W - 0.3, [[39, 40.2]])
-  b.vwall(37, 24.85, H - 0.3)
-  b.prop("desk", 42, 28, 44.6, 29.1, 2)
-  b.prop("chair", 43, 29.2, 43.6, 29.8, 2, false)
-  b.prop("bookshelf", 37.15, 26.6, 37.75, 30.2, 1)
-  b.prop("plant", 46.8, 30.8, 47.5, 31.5)
-  b.deskLamp(44.25, 28.3, 2)
-
-  // Copy room off the south corridor.
-  b.hwall(27.5, 27, 34, [[29, 30.2]], { openDoor: true })
-  b.vwall(27, 27.65, H - 0.3)
-  b.vwall(34, 27.65, H - 0.3)
-  b.prop("copier", 31.6, 30.5, 33.6, 31.55)
-  b.prop("cabinet", 27.2, 30.9, 29.2, 31.6)
-
-  for (let x = 15; x < 25; x += 1.25) b.prop("cabinet", x, 31.1, x + 1.2, 31.7)
-  b.prop("cooler", 13.2, 31, 13.9, 31.6)
-
-  b.spawns.push({ x: 12.5, y: 1.6 }, { x: 12.6, y: 30.4 }, { x: 35.6, y: 2.2 }, { x: 35.5, y: 26.4 }, { x: 7, y: 30.8 }, { x: 2.2, y: 12.4 }, { x: 42, y: 30.6 }, { x: 39, y: 9 })
-
-  return b.build({ id: "office", name: "Office Tower FL 12", blurb: "Cubicles, glass and moonlight", size: [W, H], ambient: [0.006, 0.008, 0.014] })
+/** The strip of `depth` along edge `side` of r, covering the fraction [from, to] of that edge. */
+function strip(r: Rect, side: Side, depth: number, from = 0, to = 1): Rect {
+  const [x0, y0, x1, y1] = r
+  const ax = x0 + (x1 - x0) * from
+  const bx = x0 + (x1 - x0) * to
+  const ay = y0 + (y1 - y0) * from
+  const by = y0 + (y1 - y0) * to
+  if (side === "n") return [ax, y0, bx, y0 + depth]
+  if (side === "s") return [ax, y1 - depth, bx, y1]
+  if (side === "w") return [x0, ay, x0 + depth, by]
+  return [x1 - depth, ay, x1, by]
 }
 
-export const office = build()
+/** Usable floor of a room whose walls run along `room`'s edges: clear of walls and of the strip inside the door. */
+function inner(room: Rect, door: Side): Rect {
+  const m = T / 2 + 0.25
+  const d = 1.8
+  return [room[0] + (door === "w" ? d : m), room[1] + (door === "n" ? d : m), room[2] - (door === "e" ? d : m), room[3] - (door === "s" ? d : m)]
+}
+
+const cx = (r: Rect) => (r[0] + r[2]) / 2
+const cy = (r: Rect) => (r[1] + r[3]) / 2
+
+/**
+ * Procedural office floor. Every floor shares the structure of concept/map-office-plan.png: a lift and service core in
+ * the middle, a corridor ring around it, open-plan cubicles north and south, a strip of rooms along the west and east
+ * windows. Sizes, room kinds and order, door placement, furniture, lights and spawns all come from the seed, so the
+ * server and every client build the identical floor from one number.
+ */
+export function generateOffice(seed: number): MapDef {
+  const r = new Rng(seed)
+  const b = new Builder()
+  const W = 46 + 2 * r.int(5)
+  const H = 30 + 2 * r.int(4)
+  const ws = 9 + r.int(3)
+  const xe = W - 8 - r.int(2)
+  const ch = 8 + r.int(3)
+  const cy0 = Math.round(H / 2 - ch / 2)
+  const cy1 = cy0 + ch
+
+  b.floor("carpet", 0, 0, W, H)
+  b.windows.push([0, 0, W, T], [0, H - T, W, H], [0, T, T, H - T], [W - T, T, W, H - T])
+
+  core(b, r, ws + C, cy0, xe - C, cy1)
+  westRooms(b, r, ws, H)
+  eastRooms(b, r, xe, W, H)
+  corridorLights(b, r, ws, xe, cy0, cy1)
+  openPlan(b, r, ws, xe, T, cy0 - C, "n")
+  openPlan(b, r, ws, xe, cy1 + C, H - T, "s")
+  for (const y of [cy0 - C, cy1 + C]) for (let x = ws + 0.6; x + 1.2 < xe - 0.4; x += 2.4) b.tape.push([x, y - 0.035, x + 1.2, y + 0.035])
+  for (const x of [ws + C, xe - C]) for (let y = cy0 - C + 0.6; y + 1.2 < cy1 + C - 0.4; y += 2.4) b.tape.push([x - 0.035, y, x + 0.035, y + 1.2])
+  if (r.next() < 0.45) {
+    const px = ws + C / 2
+    const py = cy0 + r.range(1, ch - 3)
+    b.noisy.push({ rect: [px - 0.9, py, px + 0.9, py + 2], kind: "puddle" })
+  }
+
+  const map = b.build({ id: `office-${seed}`, seed, name: `Office Tower · FL ${floorOf(seed)}`, blurb: "", size: [W, H], ambient: [0.012, 0.016, 0.03] })
+  b.spawns.push(...spawns(map, r, { x: (ws + xe) / 2, y: cy1 + C / 2 }))
+  return map
+}
+
+export const floorOf = (seed: number) => 3 + (seed % 57)
+
+// Core --------------------------------------------------------------------------------------------------------------
+
+type CoreCell = "lobby" | "stair" | "toilets" | "server" | "storage"
+
+function core(b: Builder, r: Rng, x0: number, y0: number, x1: number, y1: number): void {
+  const width = x1 - x0
+  const side1: CoreCell[] = r.next() < 0.5 ? ["stair", "toilets"] : ["toilets", "stair"]
+  const side2: CoreCell[] = r.next() < 0.5 ? ["server", "storage"] : ["storage", "server"]
+  const left = r.next() < 0.5
+  let cells: CoreCell[] = left ? [...side1, "lobby", ...side2] : [...side2, "lobby", ...side1]
+  const base: Record<CoreCell, number> = { stair: 3.6, toilets: 4.4, server: 5.2, storage: 4.6, lobby: 6.5 }
+  if (cells.reduce((s, c) => s + base[c], 0) > width) cells = cells.filter((c) => c !== "storage")
+  const extra = width - cells.reduce((s, c) => s + base[c], 0)
+  const share: Record<CoreCell, number> = { lobby: 0.45, storage: 0.25, server: 0.2, toilets: 0.1, stair: 0 }
+  const totalShare = cells.reduce((s, c) => s + share[c], 0)
+  const widths = cells.map((c) => base[c] + (extra * share[c]) / totalShare)
+
+  const north: Gap[] = []
+  const south: Gap[] = []
+  let x = x0
+  cells.forEach((kind, i) => {
+    const a = x
+    const z = x + widths[i]!
+    x = z
+    if (i > 0) b.vwall(a, y0 + T / 2, y1 - T / 2)
+    const room: Rect = [a, y0, z, y1]
+    const face: Side = r.next() < 0.5 ? "n" : "s"
+    if (kind === "lobby") {
+      ;(face === "n" ? north : south).push([a + 0.5, z - 0.5, "open"])
+      lobby(b, r, room, face)
+      return
+    }
+    const dc = a + (z - a) / 2 + r.range(-0.25, 0.25) * Math.max(0, z - a - 2.8)
+    ;(face === "n" ? north : south).push([dc - 0.7, dc + 0.7])
+    const door = { x: dc, y: face === "n" ? y0 : y1 }
+    if (kind === "stair") stair(b, room, face, door)
+    else if (kind === "toilets") toilets(b, r, room, face)
+    else if (kind === "server") server(b, r, room, face, door)
+    else storage(b, r, room, face)
+  })
+  b.hwall(y0, x0 - T / 2, x1 + T / 2, north)
+  b.hwall(y1, x0 - T / 2, x1 + T / 2, south)
+  b.vwall(x0, y0 + T / 2, y1 - T / 2)
+  b.vwall(x1, y0 + T / 2, y1 - T / 2)
+}
+
+function lobby(b: Builder, r: Rng, room: Rect, face: Side): void {
+  const back = OPP[face]
+  const lifts = strip([room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2], back, 2.4, 0.08, 0.92)
+  b.wall(lifts[0], lifts[1], lifts[2], lifts[3], WALL_H, "core")
+  b.cores.push(lifts)
+  b.floor("wood", room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2)
+  const desk = strip(inner(room, face), back, 0.8, 0.3, 0.7)
+  const d: Rect = face === "s" ? [desk[0], desk[1] + 2.6, desk[2], desk[3] + 2.6] : [desk[0], desk[1] - 2.6, desk[2], desk[3] - 2.6]
+  b.prop("reception", d[0], d[1], d[2], d[3], FACE_IN[back])
+  b.prop("plant", room[0] + 0.45, cy(d) - 0.35, room[0] + 1.15, cy(d) + 0.35)
+  b.prop("plant", room[2] - 1.15, cy(d) - 0.35, room[2] - 0.45, cy(d) + 0.35)
+  b.light({ kind: "bulb", x: cx(room), y: cy(d), h: 2.5, r: 5, power: 0.75, color: WARM, shootable: true, flicker: r.next() < 0.3 ? 1 : 0 })
+}
+
+function stair(b: Builder, room: Rect, face: Side, door: Vec): void {
+  const shaft = strip([room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2], OPP[face], (room[3] - room[1]) * 0.55)
+  b.wall(shaft[0], shaft[1], shaft[2], shaft[3], WALL_H, "core")
+  b.cores.push(shaft)
+  b.floor("concrete", room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2)
+  const out = face === "n" ? -1 : 1
+  b.prop("exitdoor", door.x - 0.7, door.y - 0.2, door.x + 0.7, door.y + 0.2, face === "n" ? 2 : 0, false)
+  b.light({ kind: "exit", x: door.x, y: door.y + out * 0.35, h: 2.4, r: 4.5, power: 0.7, color: [1, 0.16, 0.45], cone: [0, out, 0.1], shootable: false })
+}
+
+function toilets(b: Builder, r: Rng, room: Rect, face: Side): void {
+  b.floor("tile", room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2)
+  const back = OPP[face]
+  const by = back === "n" ? room[1] + T / 2 : room[3] - T / 2
+  const dir = back === "n" ? 1 : -1
+  const n = Math.max(2, Math.floor((room[2] - room[0] - 0.6) / 1.2))
+  const x0 = cx(room) - (n * 1.2) / 2
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + i * 1.2
+    b.wall(x - 0.04, Math.min(by, by + dir * 1.5), x + 0.04, Math.max(by, by + dir * 1.5), 2.0, "stall")
+  }
+  const sinks = strip(inner(room, face), "w", 0.55, 0.05, 0.6)
+  b.prop("counter", sinks[0], sinks[1], sinks[2], sinks[3], FACE_IN.w)
+  const p = inner(room, face)
+  b.noisy.push({ rect: [cx(p) - 0.7, cy(p) - 0.6, cx(p) + 0.7, cy(p) + 0.6], kind: "puddle" })
+  b.light({ kind: "panel", x: cx(room), y: cy(room), h: 2.6, r: 5.5, power: 0.85, color: COLD, shootable: true, flicker: r.next() < 0.7 ? 2 : 1 })
+}
+
+function server(b: Builder, r: Rng, room: Rect, face: Side, door: Vec): void {
+  const floor: Rect = [room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2]
+  b.floor("grate", ...floor)
+  b.noisy.push({ rect: floor, kind: "grate" })
+  const p = inner(room, face)
+  for (let x = p[0] + 0.1; x + 0.7 <= p[2]; x += 2.2) b.wall(x, p[1] + 0.2, x + 0.7, p[3] - 0.2, 2.1, "rack")
+  const bx = door.x + 0.9 < room[2] - 0.4 ? door.x + 0.9 : door.x - 0.9
+  b.breakers.push({ x: bx, y: door.y + (face === "n" ? 0.35 : -0.35), group: "main" })
+  b.light({ kind: "server", x: cx(p), y: cy(p), h: 2.4, r: 5.5, power: 0.8, color: [0.3, 0.5, 1], shootable: true, flicker: r.next() < 0.5 ? 1 : 0 })
+}
+
+function storage(b: Builder, r: Rng, room: Rect, face: Side): void {
+  b.floor("concrete", room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2)
+  const p = inner(room, face)
+  for (let x = p[0] + 0.05; x + 0.6 <= p[2]; x += 2.0) b.wall(x, p[1] + 0.2, x + 0.6, p[3] - 0.4 - r.next() * 1.2, 2.0, "shelf")
+}
+
+// Window rooms ------------------------------------------------------------------------------------------------------
+
+type RoomKind = "kitchen" | "manager" | "lounge" | "copy" | "boardroom" | "meeting"
+
+/** Splits [a, b] into n parts with random weights, each at least `min`. */
+function split(r: Rng, a: number, b: number, n: number, min: number): number[] {
+  const w = Array.from({ length: n }, () => 0.8 + r.next() * 0.6)
+  const total = w.reduce((s, x) => s + x, 0)
+  const free = b - a - n * min
+  const cuts = [a]
+  let acc = a
+  for (const x of w) {
+    acc += min + (free * x) / total
+    cuts.push(acc)
+  }
+  cuts[cuts.length - 1] = b
+  return cuts
+}
+
+function shuffle<T>(r: Rng, xs: T[]): T[] {
+  for (let i = xs.length - 1; i > 0; i--) {
+    const j = r.int(i + 1)
+    ;[xs[i], xs[j]] = [xs[j]!, xs[i]!]
+  }
+  return xs
+}
+
+function westRooms(b: Builder, r: Rng, ws: number, H: number): void {
+  const n = H >= 34 ? 4 : 3 + r.int(2)
+  const kinds: RoomKind[] = shuffle(r, ["kitchen", ...shuffle(r, ["manager", "lounge", "copy", "manager"] as RoomKind[]).slice(0, n - 1)])
+  const cuts = split(r, T, H - T, n, 6)
+  const gaps: Gap[] = []
+  kinds.forEach((kind, i) => {
+    const y0 = cuts[i]!
+    const y1 = cuts[i + 1]!
+    if (i > 0) b.hwall(y0, T, ws - T / 2)
+    const room: Rect = [T / 2, y0, ws, y1]
+    const dy = r.range(y0 + 1.4, y1 - 1.4)
+    gaps.push(kind === "kitchen" && r.next() < 0.5 ? [dy - 1.1, dy + 1.1, "open"] : [dy - 0.7, dy + 0.7])
+    furnish(b, r, kind, room, "e")
+  })
+  b.vwall(ws, T, H - T, gaps)
+}
+
+function eastRooms(b: Builder, r: Rng, xe: number, W: number, H: number): void {
+  const n = 3 + r.int(2)
+  const kinds: RoomKind[] = shuffle(r, ["boardroom", ...shuffle(r, ["meeting", "meeting", "manager", "lounge"] as RoomKind[]).slice(0, n - 1)])
+  const cuts = split(r, T, H - T, n, 5.5)
+  kinds.forEach((kind, i) => {
+    const y0 = cuts[i]!
+    const y1 = cuts[i + 1]!
+    if (i > 0) b.hwall(y0, xe + T / 2, W - T)
+    const room: Rect = [xe, y0, W - T / 2, y1]
+    const dy = r.range(y0 + 1.4, y1 - 1.4)
+    const glassy = kind === "boardroom" || kind === "meeting"
+    if (glassy) {
+      // Glass front: breakable panes either side of the door, posts between them.
+      const a0 = i === 0 ? y0 : y0 + T / 2
+      const a1 = i === n - 1 ? y1 : y1 - T / 2
+      for (const [s, e] of [
+        [a0, dy - 0.7],
+        [dy + 0.7, a1],
+      ] as const) {
+        const parts = Math.max(1, Math.round((e - s) / 2.4))
+        for (let k = 0; k < parts; k++) b.pane(xe - 0.06, s + ((e - s) * k) / parts, xe + 0.06, s + ((e - s) * (k + 1)) / parts)
+      }
+      b.door([xe - T / 2, dy - 0.7, xe + T / 2, dy + 0.7])
+    } else b.vwall(xe, i === 0 ? y0 : y0 + T / 2, i === n - 1 ? y1 : y1 - T / 2, [[dy - 0.7, dy + 0.7]])
+    furnish(b, r, kind, room, "w")
+  })
+}
+
+function furnish(b: Builder, r: Rng, kind: RoomKind, room: Rect, door: Side): void {
+  const p = inner(room, door)
+  const back = OPP[door]
+  const floorRect: Rect = [room[0] + T / 2, room[1] + T / 2, room[2] - T / 2, room[3] - T / 2]
+  const corners = () => {
+    b.prop("plant", p[0], p[1], p[0] + 0.7, p[1] + 0.7)
+    if (r.next() < 0.6) b.prop("plant", p[0], p[3] - 0.7, p[0] + 0.7, p[3])
+  }
+  switch (kind) {
+    case "kitchen": {
+      b.floor("tile", ...floorRect)
+      const counter = strip(p, "n", 0.65, 0, 0.62)
+      b.prop("counter", counter[0], counter[1], counter[2], counter[3], FACE_IN.n)
+      b.prop("fridge", counter[2] + 0.1, p[1], counter[2] + 0.95, p[1] + 0.8, FACE_IN.n)
+      const vx = back === "w" ? p[0] : p[2] - 1.5
+      const lid = b.light({ kind: "vending", x: vx + 0.75, y: p[3] - 1.1, h: 1.2, r: 4.8, power: 1, color: [0.25, 0.85, 1], cone: [0, -1, -0.25], shootable: true })
+      b.prop("vending", vx, p[3] - 0.85, vx + 1.5, p[3], FACE_IN.s, true, lid)
+      table(b, cx(p), cy(p) + 0.3, 1.6, 1.0)
+      b.prop("cooler", back === "w" ? p[2] - 0.6 : p[0], p[3] - 0.6, back === "w" ? p[2] : p[0] + 0.6, p[3])
+      if (r.next() < 0.5) b.noisy.push({ rect: [counter[0] + 0.4, counter[3] + 0.1, counter[0] + 2.2, counter[3] + 1.4], kind: "puddle" })
+      b.light({ kind: "panel", x: cx(p), y: cy(p) - 0.8, h: 2.6, r: 6, power: 0.9, color: COLD, shootable: true, flicker: r.next() < 0.5 ? 2 : 0 })
+      return
+    }
+    case "manager": {
+      b.floor("wood", ...floorRect)
+      // The desk faces the door; the chair sits between it and the back wall.
+      const d = strip(p, back, 0.8, 0.3, 0.7)
+      const off = { w: [0.9, 0], e: [-0.9, 0], n: [0, 0.9], s: [0, -0.9] }[back]
+      const desk: Rect = [d[0] + off[0]!, d[1] + off[1]!, d[2] + off[0]!, d[3] + off[1]!]
+      b.prop("desk", desk[0], desk[1], desk[2], desk[3], FACE_IN[door])
+      const chair = { x: cx(desk) - off[0]! / 1.8, y: cy(desk) - off[1]! / 1.8 }
+      b.prop("chair", chair.x - 0.25, chair.y - 0.25, chair.x + 0.25, chair.y + 0.25, FACE_IN[back], false)
+      if (r.next() < 0.85) b.deskLamp(cx(desk) + (off[1] ? 0.5 : 0), cy(desk) + (off[0] ? 0.25 : 0), FACE_IN[door])
+      const shelf = strip(p, "n", 0.45, 0.3, 0.9)
+      b.prop("bookshelf", shelf[0], shelf[1], shelf[2], shelf[3], FACE_IN.n)
+      corners()
+      return
+    }
+    case "lounge": {
+      b.floor("wood", ...floorRect)
+      const c = { x: cx(p), y: cy(p) }
+      b.prop("sofa", c.x - 1.2, c.y - 1.6, c.x + 1.2, c.y - 0.8, 0)
+      b.prop("table", c.x - 0.6, c.y - 0.4, c.x + 0.6, c.y + 0.4)
+      b.prop("sofa", c.x - 1.2, c.y + 0.8, c.x + 1.2, c.y + 1.6, 2)
+      corners()
+      b.light({ kind: "bulb", x: c.x + 1.8, y: c.y - 1.4, h: 1.6, r: 5, power: 0.9, color: WARM, shootable: true, flicker: r.next() < 0.3 ? 1 : 0 })
+      return
+    }
+    case "copy": {
+      b.floor("tile", ...floorRect)
+      const s = strip(p, back, 0.9)
+      const along = back === "w" || back === "e"
+      const len = along ? s[3] - s[1] : s[2] - s[0]
+      const k = Math.max(1, Math.min(3, Math.floor(len / 1.8)))
+      for (let i = 0; i < k; i++) {
+        const a = (along ? s[1] : s[0]) + ((i + 0.5) * len) / k
+        if (along) b.prop("copier", s[0], a - 0.6, s[2], a + 0.6, FACE_IN[back])
+        else b.prop("copier", a - 0.6, s[1], a + 0.6, s[3], FACE_IN[back])
+      }
+      const cab = strip(p, "n", 0.6, 0.1, 0.5)
+      b.prop("cabinet", cab[0], cab[1], cab[2], cab[3], FACE_IN.n)
+      b.light({ kind: "panel", x: cx(p), y: cy(p), h: 2.6, r: 5.5, power: 0.85, color: COLD, shootable: true, flicker: r.next() < 0.4 ? 2 : 0 })
+      return
+    }
+    case "boardroom": {
+      b.floor("wood", ...floorRect)
+      const tw = Math.min(1.3, (p[2] - p[0]) * 0.4)
+      const th = (p[3] - p[1]) * 0.62
+      const t: Rect = [cx(p) - tw / 2, cy(p) - th / 2, cx(p) + tw / 2, cy(p) + th / 2]
+      b.prop("table", ...t)
+      for (let y = t[1] + 0.45; y < t[3] - 0.3; y += 0.9) {
+        b.prop("chair", t[0] - 0.65, y - 0.25, t[0] - 0.15, y + 0.25, 3, false)
+        b.prop("chair", t[2] + 0.15, y - 0.25, t[2] + 0.65, y + 0.25, 1, false)
+      }
+      const wb = strip(p, back, 0.12, 0.25, 0.75)
+      b.prop("whiteboard", wb[0], wb[1], wb[2], wb[3], FACE_IN[back], false)
+      corners()
+      b.light({ kind: "pendant", x: cx(t), y: cy(t), h: 2.2, r: 6.5, power: 1, color: WARM, shootable: true })
+      return
+    }
+    case "meeting": {
+      b.floor("carpet", ...floorRect)
+      const c = { x: cx(p), y: cy(p) }
+      table(b, c.x, c.y, 1.3, 1.3)
+      b.prop("plant", p[2] - 0.7, p[1], p[2], p[1] + 0.7)
+      if (r.next() < 0.6) b.light({ kind: "pendant", x: c.x, y: c.y, h: 2.2, r: 5.5, power: 0.9, color: WARM, shootable: true, flicker: r.next() < 0.3 ? 1 : 0 })
+      return
+    }
+  }
+}
+
+/** A table with a chair on each side. */
+function table(b: Builder, x: number, y: number, w: number, h: number): void {
+  b.prop("table", x - w / 2, y - h / 2, x + w / 2, y + h / 2)
+  b.prop("chair", x - 0.25, y - h / 2 - 0.6, x + 0.25, y - h / 2 - 0.1, 0, false)
+  b.prop("chair", x - 0.25, y + h / 2 + 0.1, x + 0.25, y + h / 2 + 0.6, 2, false)
+  b.prop("chair", x - w / 2 - 0.6, y - 0.25, x - w / 2 - 0.1, y + 0.25, 3, false)
+  b.prop("chair", x + w / 2 + 0.1, y - 0.25, x + w / 2 + 0.6, y + 0.25, 1, false)
+}
+
+// Open plan ---------------------------------------------------------------------------------------------------------
+
+function corridorLights(b: Builder, r: Rng, ws: number, xe: number, cy0: number, cy1: number): void {
+  const x0 = ws + C / 2
+  const x1 = xe - C / 2
+  const n = Math.max(2, Math.round((x1 - x0) / 10))
+  const spots: Vec[] = []
+  for (const y of [cy0 - C / 2, cy1 + C / 2]) for (let i = 0; i < n; i++) spots.push({ x: x0 + ((i + 0.5) * (x1 - x0)) / n, y })
+  spots.push({ x: x0, y: (cy0 + cy1) / 2 }, { x: x1, y: (cy0 + cy1) / 2 })
+  for (const s of spots) {
+    // Not every panel works on this floor.
+    if (r.next() < 0.18) continue
+    const f = r.next()
+    b.light({ kind: "panel", x: s.x, y: s.y, h: 2.6, r: 7, power: 0.95, color: COLD, shootable: true, group: "main", flicker: f < 0.15 ? 2 : f < 0.4 ? 1 : 0 })
+  }
+}
+
+function openPlan(b: Builder, r: Rng, ws: number, xe: number, zy0: number, zy1: number, side: "n" | "s"): void {
+  const x0 = ws + C + 0.6
+  const x1 = xe - C - 0.6
+  const h = zy1 - zy0
+  const rows = h >= 10.5 ? [zy0 + h * 0.28, zy0 + h * 0.72] : [zy0 + h / 2]
+  for (const y of rows) {
+    const gap = 2.4 + r.next() * 1.2
+    const pitch = 3.48 + gap
+    const n = Math.floor((x1 - x0 + gap) / pitch)
+    const start = x0 + (x1 - x0 - (n * pitch - gap)) / 2 + 1.74
+    for (let i = 0; i < n; i++) {
+      const x = start + i * pitch
+      const roll = r.next()
+      if (roll < 0.8) {
+        const lamps = (["ne", "nw", "se", "sw"] as const).filter(() => r.next() < 0.22)
+        b.cluster(x, y, b.lightsLeft > 2 ? lamps.slice(0, 1) : [])
+      } else if (roll < 0.9) {
+        b.prop("printer", x - 0.6, y - 0.45, x + 0.6, y + 0.45, side === "n" ? 0 : 2)
+        b.prop("plant", x + 1.0, y - 0.35, x + 1.7, y + 0.35)
+      } else {
+        b.prop("sofa", x - 1.2, y - 0.9, x + 1.2, y - 0.1, 0)
+        b.prop("table", x - 0.5, y + 0.2, x + 0.5, y + 0.8)
+      }
+      if (i < n - 1 && r.next() < 0.35) {
+        const px = x + 1.74 + gap / 2
+        b.wall(px - 0.25, y - 0.25, px + 0.25, y + 0.25, WALL_H, "pillar")
+      }
+    }
+  }
+  // Clutter along the windows, clear of the walkway.
+  const wy = side === "n" ? zy0 + 0.1 : zy1 - 0.8
+  for (let x = ws + 1; x < xe - 1.5; x += 3 + r.next() * 4) {
+    if (r.next() < 0.5) b.prop("plant", x, wy, x + 0.7, wy + 0.7)
+    else if (r.next() < 0.5) b.prop("cabinet", x, wy, x + 1.2, wy + 0.6, side === "n" ? 0 : 2)
+  }
+}
+
+// Spawns ------------------------------------------------------------------------------------------------------------
+
+/** Dark, reachable spots spread across the floor: half in the west, half in the east, for team starts. */
+function spawns(map: MapDef, r: Rng, hub: Vec): Vec[] {
+  const nav = new Nav(map)
+  const reach = nav.reachable(hub)
+  const occluders = [...map.walls.map((w) => w.rect), ...map.doors.filter((d) => !map.openDoors.includes(d.id)).map((d) => d.rect)]
+  const lights = map.lights.map((l) => ({ x: l.x, y: l.y, r: l.r, power: l.power, cone: l.cone }))
+  const candidates: Vec[] = []
+  for (let y = 1.2; y < map.size[1] - 1; y += 1.25)
+    for (let x = 1.2; x < map.size[0] - 1; x += 1.25) {
+      const p = { x: x + r.range(-0.2, 0.2), y: y + r.range(-0.2, 0.2) }
+      if (!nav.walkable(p) || !nav.inMask(reach, p)) continue
+      if (map.doors.some((d) => Math.hypot(p.x - cx(d.rect), p.y - cy(d.rect)) < 1.4)) continue
+      if (lightAt(p.x, p.y, lights, occluders) > 0.12) continue
+      candidates.push(p)
+    }
+  const mid = map.size[0] / 2
+  const pick = (pool: Vec[], n: number) => {
+    const out: Vec[] = []
+    if (!pool.length) return out
+    out.push(pool[r.int(pool.length)]!)
+    while (out.length < n && out.length < pool.length) {
+      let best = pool[0]!
+      let bd = -1
+      for (const c of pool) {
+        const d = Math.min(...out.map((o) => Math.hypot(o.x - c.x, o.y - c.y)))
+        if (d > bd) {
+          bd = d
+          best = c
+        }
+      }
+      out.push(best)
+    }
+    return out
+  }
+  return [...pick(candidates.filter((c) => c.x < mid), SPAWNS_PER_SIDE), ...pick(candidates.filter((c) => c.x >= mid), SPAWNS_PER_SIDE)]
+}

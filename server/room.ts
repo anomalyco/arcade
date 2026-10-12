@@ -45,7 +45,7 @@ export class RoomCore {
     if (!id) return
     if (msg.type === "intent") this.world.push(id, msg.seq, msg.i)
     else if (msg.type === "loadout") this.world.setLoadout(id, msg.loadout)
-    else if (msg.type === "start" && this.world.host === id) this.world.start(msg.mode, msg.rounds, msg.map)
+    else if (msg.type === "start" && this.world.host === id) this.world.start(msg.mode, msg.rounds)
   }
 
   private hello(conn: Conn, msg: Extract<ClientMsg, { type: "hello" }>): void {

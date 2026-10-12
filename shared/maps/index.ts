@@ -1,13 +1,18 @@
-import type { MapId } from "../config"
-import { office } from "./office"
+import { generateOffice } from "./office"
 import type { MapDef } from "./types"
 
 export type * from "./types"
+export { floorOf } from "./office"
 
-const MAPS: Partial<Record<MapId, MapDef>> = { office }
+const cache = new Map<number, MapDef>()
 
-export function getMap(id: string): MapDef {
-  return MAPS[id as MapId] ?? office
+/** The office floor for a seed, generated once and kept for the few most recent seeds. */
+export function getMap(seed: number): MapDef {
+  let m = cache.get(seed)
+  if (!m) {
+    m = generateOffice(seed)
+    cache.set(seed, m)
+    if (cache.size > 4) cache.delete(cache.keys().next().value!)
+  }
+  return m
 }
-
-export const AVAILABLE_MAPS: MapDef[] = Object.values(MAPS)
