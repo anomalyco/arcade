@@ -18,9 +18,9 @@ export interface WorldQualitySettings {
 }
 
 export const WORLD_QUALITY: Record<Quality, WorldQualitySettings> = {
-  low: { far: 10_000, fogNear: 450, fogFar: 9_800, viewRadius: 10_000, lod: [800, 3_000, 6_500], treeRadius: 1_300, treesPerCluster: 1_800, clouds: 16, budgetMs: 1.5, inflight: 2 },
-  balanced: { far: 14_000, fogNear: 600, fogFar: 13_600, viewRadius: 14_000, lod: [1_400, 4_000, 8_000], treeRadius: 1_900, treesPerCluster: 3_200, clouds: 24, budgetMs: 2, inflight: 3 },
-  high: { far: 18_000, fogNear: 750, fogFar: 17_500, viewRadius: 18_000, lod: [2_200, 5_500, 10_000], treeRadius: 2_600, treesPerCluster: 4_800, clouds: 32, budgetMs: 2, inflight: 4 },
+  low: { far: 10_000, fogNear: 1_800, fogFar: 10_500, viewRadius: 10_000, lod: [800, 3_000, 6_500], treeRadius: 1_300, treesPerCluster: 1_800, clouds: 16, budgetMs: 1.5, inflight: 2 },
+  balanced: { far: 14_000, fogNear: 2_500, fogFar: 14_500, viewRadius: 14_000, lod: [1_400, 4_000, 8_000], treeRadius: 1_900, treesPerCluster: 2_600, clouds: 24, budgetMs: 2, inflight: 3 },
+  high: { far: 18_000, fogNear: 3_200, fogFar: 18_500, viewRadius: 18_000, lod: [2_200, 5_500, 10_000], treeRadius: 2_600, treesPerCluster: 4_000, clouds: 32, budgetMs: 2, inflight: 4 },
 }
 
 /** Direction toward the sun (unit) as a Vector3. */

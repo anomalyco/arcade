@@ -1,8 +1,7 @@
 // Pure cluster/tree/shore generators shared by the terrain worker and the main-thread fallback.
 // No three.js / DOM imports so it can run inside a Web Worker.
 //
-// Terrain is flat-shaded, non-indexed triangles with one colour per face (ISLANDERS-style):
-// bright terrace tops, warm sandstone cliffs, soft beaches, darker faces in valleys. LOD0 uses exactly the
+// Terrain is a smooth-shaded indexed mesh with soft vertex-colour gradients. LOD0 uses exactly the
 // baked jittered vertices + diagonals from geography.ts, i.e. the physics surface.
 import {
   AIRBASES, BASE_LAYOUT, MESH_CELL, SEA_FLOOR, WORLD_HALF, WORLD_SIZE, noise2, terrainMeshHeight, worldMesh,
@@ -18,12 +17,13 @@ export const LOD_STEPS = [1, 2, 4, 8]
 
 export interface ClusterData {
   cx: number; cz: number; lod: number
-  /** Non-indexed, world-space positions. */
+  /** World-space vertex positions. */
   positions: Float32Array
-  /** Per-vertex RGB (same for all three vertices of a face), linear bytes. */
+  /** Smooth vertex normals (normalized bytes). */
+  normals: Int8Array
+  /** Per-vertex RGB, linear bytes. */
   colors: Uint8Array
-  /** Ink line segments (pairs of world-space points) along terrace lips and ridges; LOD 0–1 only. */
-  lines: Float32Array
+  index: Uint16Array | Uint32Array
   minY: number; maxY: number
 }
 
@@ -80,148 +80,112 @@ const C = PALETTE_RGB
 const mixRGB = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 const step = (a: number, b: number, x: number) => { const t = x <= a ? 0 : x >= b ? 1 : (x - a) / (b - a); return t * t * (3 - 2 * t) }
 
-/** Top colour by height: soft palette steps from beach to high plateaus. */
-function topColor(h: number): RGB {
-  if (h < 3) return C.sand
-  if (h < 6) return mixRGB(C.sand, C.meadow, (h - 3) / 3)
-  if (h < 90) return mixRGB(C.meadow, C.grass, step(30, 90, h))
-  if (h < 260) return mixRGB(C.grass, C.highland, step(160, 260, h))
-  if (h < 520) return mixRGB(C.highland, C.ochre, step(380, 520, h))
-  return mixRGB(C.ochre, C.peak, step(560, 680, h))
+/**
+ * Smooth vertex colour: soft gradients from wet sand → beach → lush greens → rock on steep slopes →
+ * a little snow on the highest ground, with gentle large-scale variation so fields aren't flat.
+ */
+function vertexColor(h: number, slope: number, ao: number, x: number, z: number): RGB {
+  if (h < -0.5) return mixRGB(C.sandWet, C.seabed, step(-0.5, -6, h))
+  const v1 = noise2(x * 0.0011, z * 0.0011, 0x51a7) * 0.5 + 0.5
+  const v2 = noise2(x * 0.0047, z * 0.0047, 0x51a8) * 0.5 + 0.5
+  // Grass: lighter on open lowland, deeper with height and in forest patches.
+  let grass = mixRGB(C.grassLight, C.grass, step(0.2, 0.8, v1))
+  grass = mixRGB(grass, C.grassDeep, step(0.55, 0.9, v2) * 0.35)
+  grass = mixRGB(grass, C.grassDeep, step(60, 320, h) * 0.7 + (v2 - 0.5) * 0.25)
+  const forest = forestCover(x, z, h, slope)
+  grass = mixRGB(grass, C.forestFloor, step(0.35, 0.8, forest) * 0.6)
+  // Beach band (wider on gentle slopes).
+  const beach = 1 - step(2.5, 5.5 + (1 - Math.min(1, slope * 3)) * 3, h)
+  let col = mixRGB(grass, C.sand, beach)
+  col = mixRGB(col, C.sandWet, 1 - step(0.2, 1.4, h))
+  // Rock on steep slopes and high, exposed ground.
+  const rockT = Math.max(step(0.55, 0.95, slope), step(380, 520, h) * step(0.25, 0.6, slope))
+  const rock = mixRGB(mixRGB(C.rockDark, C.rock, step(0.2, 0.8, v2)), C.rockLight, step(200, 500, h) * 0.6)
+  col = mixRGB(col, rock, rockT * (1 - beach * 0.7))
+  // A touch of snow only on the very top.
+  col = mixRGB(col, C.snow, step(400, 440, h + v2 * 20) * (1 - step(0.7, 1.0, slope)))
+  // Soft cavity darkening in valleys.
+  const shade = 1 - 0.18 * ao
+  return [col[0] * shade, col[1] * shade, col[2] * shade]
 }
 
-/** Final face colour (linear 0..255). One colour per triangle — no per-pixel blending. */
-function faceColor(h: number, slope: number, ao: number, x: number, z: number, varSeed: number, forested: boolean): RGB {
-  let col: RGB
-  if (h < -1) col = C.seabed
-  else {
-    const top = forested ? mixRGB(topColor(h), C.forestFloor, 0.55) : topColor(h)
-    // Warm sandstone cliffs; darker in occluded valleys; cool wet rock only right at the coast.
-    let cliff = h > 400 ? C.cliffHigh : mixRGB(C.cliff, C.cliffShade, ao)
-    if (h < 14) cliff = mixRGB(C.wetRock, cliff, step(6, 14, h))
-    // Beach faces stay sandy even when steep-ish; moderate slopes keep grass on the ledges.
-    const t = h < 3.5 ? step(1.4, 2.2, slope) : step(0.8, 1.35, slope)
-    col = mixRGB(top, cliff, t)
-  }
-  // Valley occlusion tints toward lilac (never grey), plus slight per-face value variation.
-  col = mixRGB(col, [col[0] * C.lilacShade[0] / 255, col[1] * C.lilacShade[1] / 255, col[2] * C.lilacShade[2] / 255], ao * 0.6)
-  const shade = (1 - 0.12 * ao) * (0.965 + 0.07 * varSeed)
-  return [Math.min(255, col[0] * shade), Math.min(255, col[1] * shade), Math.min(255, col[2] * shade)]
-}
-
+/**
+ * Indexed, smooth-shaded cluster mesh. LOD0 uses exactly the baked vertices and diagonals from
+ * geography.ts (the physics surface); normals come from the surrounding grid for soft shading.
+ */
 export function generateCluster(cx: number, cz: number, lod: number): ClusterData {
   const m = worldMesh(), blur = blurField()
   const S = m.stride, s = LOD_STEPS[lod]
   const n = CLUSTER_CELLS / s
   const i0 = cx * CLUSTER_CELLS, j0 = cz * CLUSTER_CELLS
-  const deep = -8
-  const maxFaces = n * n * 2 + n * 8
-  const positions = new Float32Array(maxFaces * 9)
-  const colors = new Uint8Array(maxFaces * 9)
-  let v = 0, minY = Infinity, maxY = -Infinity
-  const put = (k: number, y: number, col: RGB) => {
-    const o = v * 3
+  const edge = n + 1
+  const core = edge * edge
+  const total = core + n * 4 + 4
+  const positions = new Float32Array(total * 3)
+  const normals = new Int8Array(total * 3)
+  const colors = new Uint8Array(total * 3)
+  let minY = Infinity, maxY = -Infinity
+  const vh = (i: number, j: number) => m.h[Math.min(m.n, Math.max(0, j)) * S + Math.min(m.n, Math.max(0, i))]
+  for (let J = 0; J <= n; J++) for (let I = 0; I <= n; I++) {
+    const i = i0 + I * s, j = j0 + J * s, k = j * S + i, o = (J * edge + I) * 3
+    const y = m.h[k]
     positions[o] = m.vx[k]; positions[o + 1] = y; positions[o + 2] = m.vz[k]
-    colors[o] = col[0]; colors[o + 1] = col[1]; colors[o + 2] = col[2]
+    // Normal from a ±1-step (LOD) central difference on the grid.
+    const span = 2 * s * m.cell
+    const dx = (vh(i + s, j) - vh(i - s, j)) / span, dz = (vh(i, j + s) - vh(i, j - s)) / span
+    const inv = 127 / Math.sqrt(dx * dx + dz * dz + 1)
+    normals[o] = Math.round(-dx * inv); normals[o + 1] = Math.round(inv); normals[o + 2] = Math.round(-dz * inv)
+    const slope = Math.sqrt(dx * dx + dz * dz)
+    const valley = (blur[k] - y) / 45
+    const col = vertexColor(y, slope, valley <= 0 ? 0 : valley >= 1 ? 1 : valley, m.vx[k], m.vz[k])
+    colors[o] = Math.min(255, col[0]); colors[o + 1] = Math.min(255, col[1]); colors[o + 2] = Math.min(255, col[2])
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+  const deep = -8
+  const idx: number[] = []
+  const hv = (I: number, J: number) => positions[(J * edge + I) * 3 + 1]
+  for (let J = 0; J < n; J++) for (let I = 0; I < n; I++) {
+    const a = J * edge + I, b = a + 1, c = a + edge, d = c + 1
+    const i = i0 + I * s, j = j0 + J * s
+    const dg = s === 1 ? m.diag[j * m.n + i] : (hash01(i, j, s) < 0.5 ? 0 : 1)
+    const ya = hv(I, J), yb = hv(I + 1, J), yc = hv(I, J + 1), yd = hv(I + 1, J + 1)
+    if (dg === 0) {
+      if (ya > deep || yb > deep || yc > deep) idx.push(a, c, b)
+      if (yb > deep || yc > deep || yd > deep) idx.push(b, c, d)
+    } else {
+      if (ya > deep || yc > deep || yd > deep) idx.push(a, c, d)
+      if (ya > deep || yd > deep || yb > deep) idx.push(a, d, b)
+    }
+  }
+  // Skirts: a duplicated, lowered copy of the border ring (same normal/colour) hides LOD cracks.
+  const ring: number[] = []
+  for (let I = 0; I < n; I++) ring.push(I)
+  for (let J = 0; J < n; J++) ring.push(J * edge + n)
+  for (let I = n; I > 0; I--) ring.push(n * edge + I)
+  for (let J = n; J > 0; J--) ring.push(J * edge)
+  let v = core
+  const skirtStart = v
+  for (const r of ring) {
+    const o = v * 3, src = r * 3
+    positions[o] = positions[src]; positions[o + 1] = Math.max(SEA_FLOOR - 10, positions[src + 1] - 120); positions[o + 2] = positions[src + 2]
+    normals[o] = normals[src]; normals[o + 1] = normals[src + 1]; normals[o + 2] = normals[src + 2]
+    colors[o] = colors[src]; colors[o + 1] = colors[src + 1]; colors[o + 2] = colors[src + 2]
     v++
   }
-  // Per cell triangle: unit normal (for ink creases).
-  const fn = new Float32Array(n * n * 2 * 3)
-  let curFace = 0
-  const face = (k0: number, k1: number, k2: number, seed: number) => {
-    const y0 = m.h[k0], y1 = m.h[k1], y2 = m.h[k2]
-    {
-      const ax = m.vx[k1] - m.vx[k0], ay = y1 - y0, az = m.vz[k1] - m.vz[k0]
-      const bx = m.vx[k2] - m.vx[k0], by = y2 - y0, bz = m.vz[k2] - m.vz[k0]
-      let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx
-      if (ny < 0) { nx = -nx; ny = -ny; nz = -nz }
-      const l = Math.hypot(nx, ny, nz) || 1
-      fn[curFace * 3] = nx / l; fn[curFace * 3 + 1] = ny / l; fn[curFace * 3 + 2] = nz / l
-    }
-    if (y0 < deep && y1 < deep && y2 < deep) return
-    const ux = m.vx[k1] - m.vx[k0], uy = y1 - y0, uz = m.vz[k1] - m.vz[k0]
-    const wx = m.vx[k2] - m.vx[k0], wy = y2 - y0, wz = m.vz[k2] - m.vz[k0]
-    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx
-    const slope = Math.sqrt(nx * nx + nz * nz) / Math.max(Math.abs(ny), 1e-6)
-    const h = (y0 + y1 + y2) / 3
-    const fx = (m.vx[k0] + m.vx[k1] + m.vx[k2]) / 3, fz = (m.vz[k0] + m.vz[k1] + m.vz[k2]) / 3
-    const valley = ((blur[k0] + blur[k1] + blur[k2]) / 3 - h) / 40
-    const ao = valley <= 0 ? 0 : valley >= 1 ? 1 : valley
-    const forested = forestCover(fx, fz, h, slope) > 0.55
-    const col = faceColor(h, slope, ao, fx, fz, hash01(seed, k0, 0x51ed), forested)
-    put(k0, y0, col); put(k1, y1, col); put(k2, y2, col)
-    if (y0 < minY) minY = y0; if (y1 < minY) minY = y1; if (y2 < minY) minY = y2
-    if (y0 > maxY) maxY = y0; if (y1 > maxY) maxY = y1; if (y2 > maxY) maxY = y2
-  }
-  for (let J = 0; J < n; J++) for (let I = 0; I < n; I++) {
-    const i = i0 + I * s, j = j0 + J * s
-    const a = j * S + i, b = a + s, c = a + s * S, d = c + s
-    const dg = s === 1 ? m.diag[j * m.n + i] : (hash01(i, j, s) < 0.5 ? 0 : 1)
-    curFace = (J * n + I) * 2
-    if (dg === 0) { face(a, c, b, 0); curFace++; face(b, c, d, 1) }
-    else { face(a, c, d, 0); curFace++; face(a, d, b, 1) }
-  }
-  const lines = lod <= 1 ? creaseLines(m, fn, n, s, i0, j0) : new Float32Array(0)
-  // Skirts below every border edge (hide cracks against neighbours at other LODs).
-  const border = (k: number): number => {
-    const side = Math.floor(k / n), t = k % n
-    const [I, J] = side === 0 ? [t, 0] : side === 1 ? [n, t] : side === 2 ? [n - t, n] : [0, n - t]
-    return (j0 + J * s) * S + (i0 + I * s)
-  }
-  for (let k = 0; k < n * 4; k++) {
-    const p = border(k), q = border(k + 1 === n * 4 ? 0 : k + 1)
-    if (m.h[p] < deep && m.h[q] < deep) continue
-    const col = faceColor((m.h[p] + m.h[q]) / 2, 0, 0, 0, 0, 0.5, false)
-    const pt = m.h[p] - 0.6, qt = m.h[q] - 0.6
-    const pb = Math.max(SEA_FLOOR - 10, m.h[p] - 120), qb = Math.max(SEA_FLOOR - 10, m.h[q] - 120)
-    put(p, pt, col); put(q, qt, col); put(p, pb, col)
-    put(q, qt, col); put(q, qb, col); put(p, pb, col)
+  for (let q = 0; q < ring.length; q++) {
+    const p0 = ring[q], p1 = ring[(q + 1) % ring.length]
+    if (positions[p0 * 3 + 1] < deep && positions[p1 * 3 + 1] < deep) continue
+    const s0 = skirtStart + q, s1 = skirtStart + (q + 1) % ring.length
+    idx.push(p0, p1, s0, p1, s1, s0)
   }
   if (!Number.isFinite(minY)) { minY = 0; maxY = 0 }
-  return { cx, cz, lod, positions: positions.subarray(0, v * 3), colors: colors.subarray(0, v * 3), lines, minY: minY - 120, maxY }
-}
-
-/**
- * Ink along terrain creases: terrace lips (flat ledge meeting a steep riser) and sharp ridges/valleys.
- * Edge ownership per cell (see generateCluster's triangulation): left → tri0, right → tri1,
- * top → diag0 ? tri0 : tri1, bottom → diag0 ? tri1 : tri0.
- */
-function creaseLines(m: ReturnType<typeof worldMesh>, fn: Float32Array, n: number, s: number, i0: number, j0: number): Float32Array {
-  const S = m.stride
-  const out: number[] = []
-  const slopeOf = (f: number) => Math.sqrt(Math.max(0, 1 - fn[f * 3 + 1] ** 2)) / Math.max(fn[f * 3 + 1], 1e-3)
-  const diagOf = (I: number, J: number) => {
-    const i = i0 + I * s, j = j0 + J * s
-    return s === 1 ? m.diag[j * m.n + i] : (hash01(i, j, s) < 0.5 ? 0 : 1)
+  const index = v > 65535 ? new Uint32Array(idx) : new Uint16Array(idx)
+  return {
+    cx, cz, lod,
+    positions: positions.subarray(0, v * 3), normals: normals.subarray(0, v * 3), colors: colors.subarray(0, v * 3), index,
+    minY: minY - 120, maxY,
   }
-  const test = (f1: number, f2: number, ka: number, kb: number) => {
-    if (m.h[ka] < 2 && m.h[kb] < 2) return
-    const dot = fn[f1 * 3] * fn[f2 * 3] + fn[f1 * 3 + 1] * fn[f2 * 3 + 1] + fn[f1 * 3 + 2] * fn[f2 * 3 + 2]
-    const s1 = slopeOf(f1), s2 = slopeOf(f2)
-    const lip = Math.min(s1, s2) < 0.32 && Math.max(s1, s2) > 1.0
-    const ridge = dot < 0.45
-    if (!lip && !ridge) return
-    out.push(m.vx[ka], m.h[ka], m.vz[ka], m.vx[kb], m.h[kb], m.vz[kb])
-  }
-  for (let J = 0; J < n; J++) for (let I = 0; I < n; I++) {
-    const i = i0 + I * s, j = j0 + J * s
-    const a = j * S + i, b = a + s, c = a + s * S, d = c + s
-    const dg = diagOf(I, J)
-    const t0 = (J * n + I) * 2, t1 = t0 + 1
-    // Diagonal (shared by both triangles of this cell).
-    if (dg === 0) test(t0, t1, b, c)
-    else test(t0, t1, a, d)
-    // Right edge b–d with the right neighbour's left edge (its tri0).
-    if (I + 1 < n) test(t1, (J * n + I + 1) * 2, b, d)
-    // Bottom edge c–d with the lower neighbour's top edge.
-    if (J + 1 < n) {
-      const mine = dg === 0 ? t1 : t0
-      const nd = diagOf(I, J + 1)
-      const theirs = (((J + 1) * n + I) * 2) + (nd === 0 ? 0 : 1)
-      test(mine, theirs, c, d)
-    }
-  }
-  return new Float32Array(out)
 }
 
 // ---------------------------------------------------------------------------------------------

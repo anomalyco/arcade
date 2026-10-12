@@ -19,8 +19,9 @@ ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
     const data = generateCluster(msg.cx, msg.cz, msg.lod)
     // Copy out of the oversized scratch buffers so only the used bytes are transferred.
     data.positions = data.positions.slice()
+    data.normals = data.normals.slice()
     data.colors = data.colors.slice()
-    ctx.postMessage({ type: "cluster", id: msg.id, data }, [data.positions.buffer, data.colors.buffer, data.lines.buffer])
+    ctx.postMessage({ type: "cluster", id: msg.id, data }, [data.positions.buffer, data.normals.buffer, data.colors.buffer, data.index.buffer])
   } else if (msg.type === "trees") {
     const data = generateTrees(msg.cx, msg.cz, msg.max)
     ctx.postMessage({ type: "trees", id: msg.id, data }, [...data.matrices.map(m => m.buffer), ...data.colors.map(c => c.buffer)])

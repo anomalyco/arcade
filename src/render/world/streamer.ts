@@ -1,5 +1,5 @@
 import {
-  BufferAttribute, BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, LineSegments, Mesh, Sphere, Vector3, type Material,
+  BufferAttribute, BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Mesh, Sphere, Vector3, type Material,
 } from "three"
 import type { WorldQualitySettings } from "./settings"
 import {
@@ -48,7 +48,6 @@ function createBackend(onResult: (r: WorkerResult) => void): Backend {
 interface Cluster {
   cx: number; cz: number
   mesh: Mesh | null
-  ink: LineSegments | null
   lod: number // -1 = none
   pending: number // lod requested, -1 = none
   wantLod: number
@@ -86,14 +85,13 @@ export class TerrainStreamer {
   constructor(
     private settings: WorldQualitySettings,
     private material: Material,
-    private inkMaterial: Material,
     private treeRes: TreeResources,
     private onShoreRows: (z0: number, z1: number, rows: Uint8Array) => void,
   ) {
     this.terrainRoot.name = "World · terrain clusters"
     this.treeRoot.name = "World · trees"
     for (let cz = 0; cz < CLUSTER_N; cz++) for (let cx = 0; cx < CLUSTER_N; cx++) {
-      this.clusters.push({ cx, cz, mesh: null, ink: null, lod: -1, pending: -1, wantLod: 3, visible: false, dist: Infinity, lastWanted: 0,
+      this.clusters.push({ cx, cz, mesh: null, lod: -1, pending: -1, wantLod: 3, visible: false, dist: Infinity, lastWanted: 0,
         trees: null, treesPending: false, wantTrees: false })
     }
     this.backend = createBackend(r => this.results.push(r))
@@ -156,8 +154,7 @@ export class TerrainStreamer {
       if (c.mesh) {
         resident++
         c.mesh.visible = c.visible
-        if (c.ink) c.ink.visible = c.visible && d < 3600
-        if (c.visible) { visible++; triangles += c.mesh.geometry.getAttribute("position").count / 3 }
+        if (c.visible) { visible++; triangles += (c.mesh.geometry.index?.count ?? 0) / 3 }
       }
       c.wantTrees = d < s.treeRadius && cam.y < 4500
       if (!c.wantTrees && c.trees && d > s.treeRadius + 400) this.dropTrees(c)
@@ -166,7 +163,6 @@ export class TerrainStreamer {
         this.terrainRoot.remove(c.mesh)
         c.mesh.geometry.dispose()
         c.mesh = null
-        this.dropInk(c)
         c.lod = -1
       }
     }
@@ -233,7 +229,9 @@ export class TerrainStreamer {
       const data = r.data
       const geometry = new BufferGeometry()
       geometry.setAttribute("position", new BufferAttribute(data.positions, 3))
+      geometry.setAttribute("normal", new BufferAttribute(data.normals, 3, true))
       geometry.setAttribute("color", new BufferAttribute(data.colors, 3, true))
+      geometry.setIndex(new BufferAttribute(data.index, 1))
       const half = CLUSTER_SIZE / 2, cy = (data.minY + data.maxY) / 2
       geometry.boundingSphere = new Sphere(new Vector3(x0 + half, cy, z0 + half), Math.hypot(half * Math.SQRT2, (data.maxY - data.minY) / 2))
       if (c.mesh) {
@@ -244,22 +242,11 @@ export class TerrainStreamer {
         c.mesh.name = `cluster ${c.cx},${c.cz}`
         c.mesh.matrixAutoUpdate = false
         c.mesh.updateMatrix()
+        c.mesh.receiveShadow = true
         this.terrainRoot.add(c.mesh)
       }
       c.mesh.visible = c.visible
       c.lod = data.lod
-      this.dropInk(c)
-      if (data.lines.length) {
-        const lg = new BufferGeometry()
-        lg.setAttribute("position", new BufferAttribute(data.lines, 3))
-        lg.boundingSphere = geometry.boundingSphere.clone()
-        c.ink = new LineSegments(lg, this.inkMaterial)
-        c.ink.name = `ink ${c.cx},${c.cz}`
-        c.ink.matrixAutoUpdate = false
-        c.ink.renderOrder = 2
-        c.ink.visible = c.visible && c.dist < 3600
-        this.terrainRoot.add(c.ink)
-      }
     } else {
       c.treesPending = false
       if (!c.wantTrees) return
@@ -276,18 +263,13 @@ export class TerrainStreamer {
         mesh.updateMatrix()
         mesh.computeBoundingSphere()
         if (mesh.boundingSphere) mesh.boundingSphere.radius += 20
+        mesh.castShadow = true
+        mesh.receiveShadow = true
         this.treeRoot.add(mesh)
         meshes.push(mesh)
       }
       c.trees = meshes
     }
-  }
-
-  private dropInk(c: Cluster) {
-    if (!c.ink) return
-    this.terrainRoot.remove(c.ink)
-    c.ink.geometry.dispose()
-    c.ink = null
   }
 
   private dropTrees(c: Cluster) {
@@ -305,7 +287,6 @@ export class TerrainStreamer {
     this.backend.dispose()
     for (const c of this.clusters) {
       if (c.mesh) { this.terrainRoot.remove(c.mesh); c.mesh.geometry.dispose() }
-      this.dropInk(c)
       this.dropTrees(c)
     }
     this.results.length = 0

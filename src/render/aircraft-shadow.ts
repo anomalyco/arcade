@@ -1,4 +1,4 @@
-// Soft blob "contact shadow" under low-flying aircraft: a height cue, not a real shadow.
+// Soft blob "contact shadow" under low-flying aircraft (Low quality fallback when shadow maps are off).
 import { DataTexture, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry, RGBAFormat, UnsignedByteType } from "three"
 
 let texture: DataTexture | null = null
@@ -16,10 +16,9 @@ function blobTexture(): DataTexture {
       // Soft falloff: solid-ish core, smooth fade to the rim.
       const a = r >= 1 ? 0 : Math.min(1, Math.pow(1 - r * r, 0.8) * 1.15)
       const i = (y * n + x) * 4
-      // Lilac, matching the world's violet shadows.
-      data[i] = 58
-      data[i + 1] = 44
-      data[i + 2] = 92
+      data[i] = 30
+      data[i + 1] = 36
+      data[i + 2] = 48
       data[i + 3] = Math.round(a * 255)
     }
   }

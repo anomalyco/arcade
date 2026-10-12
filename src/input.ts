@@ -1,22 +1,45 @@
 // Keyboard + mouse input.
-// One control scheme for every aircraft (Battlefield PC style, "direct" mode, aim = null):
-//   W/S throttle·collective · A/D and Q/E yaw · mouse X roll · mouse Y pitch (mouse forward = nose down
-//   unless "Invert mouse Y") · arrows: Up nose down, Down nose up, Left/Right roll · Shift boost · X brake.
-// The mouse acts like a spring-centred stick: deflection ∝ recent mouse velocity, easing back to centre
-// with a short time constant once the mouse stops. Mouse-aim (optional setting) steers a world-space aim
-// direction the autopilot follows. Gunner seats always aim the turret with the mouse.
+// Default "point & turn" scheme (same logic for every aircraft, aim = null):
+//   mouse ←/→ = turn (jets: coordinated auto-bank turn; heli: pedal turn) · mouse ↑/↓ = nose up/down
+//   (mouse away = nose up; "Invert mouse Y" flips) · arrows ↑ nose down, ↓ nose up, ←/→ turn ·
+//   A/D = roll (jets) / strafe (heli) · Q/E = rudder / extra pedal · W/S throttle·collective ·
+//   Shift boost · X brake / auto-hover.
+// Optional schemes: "battlefield" (mouse X = roll, A/D·Q/E = yaw, mouse forward = nose down) and
+// "aim" (War Thunder mouse-aim cursor). The mouse acts like a spring-centred stick: deflection ∝ recent
+// mouse velocity, easing back to centre with a short time constant once the mouse stops.
 import type { FlightInput, SeatInput, Vec3 } from "./sim/types"
-import { settings } from "./ui/settings"
+import { settings, updateSettings } from "./ui/settings"
 
 export type InputAction = "seat1" | "seat2" | "view" | "chat" | "menu"
 export type MouseMode = "direct" | "aim"
 
+/** Pilot control schemes (settings key `controlScheme`; "aim" also sets `controlStyle: "aim"`). */
+export const CONTROL_SCHEMES = ["point", "battlefield", "aim"] as const
+export type ControlScheme = (typeof CONTROL_SCHEMES)[number]
+export const CONTROL_SCHEME_LABELS: Record<ControlScheme, string> = {
+  point: "Point & turn",
+  battlefield: "Battlefield (mouse = roll)",
+  aim: "Mouse-aim cursor",
+}
+
+/** Current pilot scheme (default "point"). */
+export function controlScheme(): ControlScheme {
+  if (settings.controlStyle === "aim") return "aim"
+  const s = (settings as unknown as { controlScheme?: string }).controlScheme
+  return s === "battlefield" ? "battlefield" : "point"
+}
+
+/** Persist a scheme (keeps the legacy `controlStyle` flag in sync for game.ts). */
+export function setControlScheme(scheme: ControlScheme): void {
+  updateSettings({ controlStyle: scheme === "aim" ? "aim" : "direct", controlScheme: scheme } as Partial<typeof settings>)
+}
+
 const AIM_SENS = 0.0021
 const MAX_PITCH = 1.5
 /** Mouse speed (px/s at sensitivity 1) that gives full stick deflection. */
-export const STICK_FULL_SPEED = 900
+export const STICK_FULL_SPEED = 500
 /** Stick time constant (s): how fast deflection follows the mouse and re-centres when it stops. */
-export const STICK_TAU = 0.06
+export const STICK_TAU = 0.07
 /** Single mouse events larger than this (px) are clamped (pointer-lock spikes). */
 const STICK_EVENT_CLAMP = 120
 
@@ -73,9 +96,11 @@ export class Input {
   steerYaw = 0
   steerPitch = 0
   steerRoll = 0
-  private rollStick = new SteerStick()
+  /** Mouse X (+ its keys): turn in point & turn, roll in battlefield. */
+  private mouseXStick = new SteerStick()
   private pitchStick = new SteerStick()
-  private yawStick = new SteerStick()
+  /** Keyboard-only axis: roll/strafe (A/D) in point & turn, yaw in battlefield. */
+  private keyStick = new SteerStick()
   private wheel = 0
   private keys = new Set<string>()
   /** Presses since the last seatInput() read, so taps shorter than one tick still register. */
@@ -194,10 +219,16 @@ export class Input {
    */
   sampleSteering(seconds: number, heli = false): void {
     const sens = settings.sensitivity
-    this.steerRoll = this.rollStick.sample(seconds, sens, this.axis(["ArrowLeft"], ["ArrowRight"]))
-    // Arrows: Up = nose down, Down = nose up (pitch +1 = nose up).
-    this.steerPitch = this.pitchStick.sample(seconds, sens, this.axis(["ArrowUp"], ["ArrowDown"]))
-    this.steerYaw = this.yawStick.sample(seconds, sens, clamp(this.axis(["KeyA", "KeyQ"], ["KeyD", "KeyE"]), -1, 1))
+    const pitchKeys = this.axis(["ArrowUp"], ["ArrowDown"]) // ↑ = nose down, ↓ = nose up
+    const ad = this.axis(["KeyA"], ["KeyD"]), qe = this.axis(["KeyQ"], ["KeyE"]), lr = this.axis(["ArrowLeft"], ["ArrowRight"])
+    if (controlScheme() === "battlefield") {
+      this.steerRoll = this.mouseXStick.sample(seconds, sens, lr)
+      this.steerYaw = this.keyStick.sample(seconds, sens, clamp(ad + qe, -1, 1))
+    } else {
+      this.steerYaw = this.mouseXStick.sample(seconds, sens, clamp(lr + qe, -1, 1))
+      this.steerRoll = this.keyStick.sample(seconds, sens, ad)
+    }
+    this.steerPitch = this.pitchStick.sample(seconds, sens, pitchKeys)
   }
 
   /**
@@ -217,8 +248,8 @@ export class Input {
     } else {
       out.aim = aim
       out.pitch = this.axis(["ArrowUp"], ["ArrowDown"])
-      out.yaw = clamp(this.axis(["KeyA", "KeyQ"], ["KeyD", "KeyE"]), -1, 1)
-      out.roll = this.axis(["ArrowLeft"], ["ArrowRight"])
+      out.yaw = clamp(this.axis(["KeyQ", "ArrowLeft"], ["KeyE", "ArrowRight"]), -1, 1)
+      out.roll = this.axis(["KeyA"], ["KeyD"])
     }
     return out
   }
@@ -245,7 +276,7 @@ export class Input {
     this.mouseL = this.mouseR = false
     this.zoomHeld = false
     this.steerYaw = this.steerPitch = this.steerRoll = 0
-    this.rollStick.reset(); this.pitchStick.reset(); this.yawStick.reset()
+    this.mouseXStick.reset(); this.pitchStick.reset(); this.keyStick.reset()
     this.freeLook = false
     this.lookYaw = this.lookPitch = 0
   }
@@ -295,10 +326,12 @@ export class Input {
       this.aimYaw -= dx * s
       this.aimPitch = clamp(this.aimPitch - dy * inv * s, -MAX_PITCH, MAX_PITCH)
     } else {
-      // Stick: mouse X = roll; mouse Y = pitch, flight-sim style by default (mouse forward, i.e. negative
-      // movementY, = nose down); "Invert mouse Y" flips it.
-      this.rollStick.feed(dx)
-      this.pitchStick.feed(settings.invertY ? -dy : dy)
+      // Mouse X feeds the turn (point) or roll (battlefield) stick. Mouse Y: point & turn is shooter
+      // style (mouse away / negative movementY = nose up); battlefield is flight-sim style (away = nose
+      // down). "Invert mouse Y" flips either.
+      this.mouseXStick.feed(dx)
+      const awayIsUp = controlScheme() !== "battlefield"
+      this.pitchStick.feed((awayIsUp ? -dy : dy) * (settings.invertY ? -1 : 1))
     }
   }
 

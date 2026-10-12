@@ -2,14 +2,14 @@ import {
   DataTexture, LinearFilter, Mesh, PlaneGeometry, RedFormat, ShaderMaterial, UniformsLib, UniformsUtils, UnsignedByteType, Vector3,
 } from "three"
 import { WORLD_HALF, WORLD_SIZE } from "../../sim/geography"
-import { HAZE_GLSL, HAZE_UNIFORMS, srgbColor } from "./atmosphere"
-import { PALETTE, SUN_COLOR, SUN_DIRECTION } from "./palette"
+import { srgbColor } from "./atmosphere"
+import { PALETTE, SKY_HORIZON, SKY_ZENITH, SUN_COLOR, SUN_DIRECTION } from "./palette"
 import { SHORE_MAX, SHORE_MIN, SHORE_SIZE } from "./tile-gen"
 
 /**
- * Golden-hour stylised sea (sRGB): deep teal-indigo, turquoise shallows turning gold at the beach,
- * a soft glowing foam ring, a faceted golden glitter path toward the low sun, faint swells and rare
- * whitecaps near the camera, and the directional haze. Two triangles.
+ * Bright stylised ocean: turquoise shallows → clear blue → deep blue (smooth depth gradient),
+ * gentle analytic waves, soft fresnel toward the sky colour, a clean sun specular and crisp white
+ * shore foam. Uses the standard scene fog. Two triangles.
  */
 export function createWater() {
   const data = new Uint8Array(SHORE_SIZE * SHORE_SIZE) // 0 = deep until the worker fills it in
@@ -24,10 +24,10 @@ export function createWater() {
     fog: true,
     toneMapped: false,
     uniforms: {
-      ...UniformsUtils.clone(UniformsLib.fog), ...HAZE_UNIFORMS,
+      ...UniformsUtils.clone(UniformsLib.fog),
       shore: { value: shore }, time: { value: 0 },
-      deep: c(PALETTE.deep), water: c(PALETTE.water), shallow: c(PALETTE.shallow), gold: c(PALETTE.goldShallow),
-      foam: c(PALETTE.foam), glitter: c(PALETTE.glitter), sunCol: c(SUN_COLOR),
+      deep: c(PALETTE.deep), water: c(PALETTE.water), shallow: c(PALETTE.shallow), foam: c(PALETTE.foam),
+      sky: c(SKY_HORIZON), zenith: c(SKY_ZENITH), sunCol: c(SUN_COLOR),
       sunDir: { value: new Vector3(...SUN_DIRECTION).normalize() },
     },
     vertexShader: /* glsl */ `
@@ -50,11 +50,18 @@ export function createWater() {
       #include <logdepthbuf_pars_fragment>
       uniform sampler2D shore;
       uniform float time;
-      uniform vec3 deep, water, shallow, gold, foam, glitter, sunCol, sunDir;
+      uniform vec3 deep, water, shallow, foam, sky, zenith, sunCol, sunDir;
       varying vec3 vWorld;
-      ${HAZE_GLSL}
-      float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-      float band(float x, float edge) { float w = fwidth(x) * 0.75 + 1e-4; return smoothstep(edge - w, edge + w, x); }
+      vec2 waveGrad(vec2 p, float t) {
+        vec2 g = vec2(0.0);
+        vec4 dx = vec4(0.82, -0.41, 0.23, -0.88), dz = vec4(0.57, 0.91, -0.97, 0.47);
+        vec4 fr = vec4(0.018, 0.031, 0.054, 0.097), am = vec4(0.9, 0.55, 0.3, 0.16), sp = vec4(0.8, 1.05, 1.4, 1.9);
+        for (int i = 0; i < 4; i++) {
+          vec2 d = vec2(dx[i], dz[i]);
+          g += d * cos(dot(d, p) * fr[i] + t * sp[i]) * fr[i] * am[i];
+        }
+        return g;
+      }
       void main() {
         #include <logdepthbuf_fragment>
         vec2 p = vWorld.xz;
@@ -66,72 +73,40 @@ export function createWater() {
         float h = texture2D(shore, uv).r * ${(SHORE_MAX - SHORE_MIN).toFixed(1)} + ${SHORE_MIN.toFixed(1)};
         float depth = mix(60.0, max(0.0, -h), inside);
 
-        // Depth bands: gold at the beach → turquoise → teal → deep teal-indigo.
-        vec3 col = mix(gold, shallow, band(depth, 1.6));
-        col = mix(col, water, band(depth, 6.0));
-        col = mix(col, deep, band(depth, 20.0));
-        // Soft glowing foam ring: crisp core plus a faint halo.
-        float foamEdge = 0.75 + 0.3 * sin(time * 0.9 + p.x * 0.004 + p.y * 0.003);
-        col = mix(col, foam, (1.0 - band(depth, foamEdge)) * 0.95);
-        col = mix(col, foam, (1.0 - smoothstep(foamEdge, foamEdge + 1.6, depth)) * 0.22 * step(foamEdge, depth));
-        vec2 outside = max(abs(p) - ${WORLD_HALF.toFixed(1)}, 0.0);
-        col *= 1.0 - 0.15 * smoothstep(0.0, 1500.0, length(outside));
+        // Gentle waves, fading with distance so the far sea stays calm and clean.
+        float detail = 1.0 - smoothstep(400.0, 4000.0, dist);
+        vec2 g = waveGrad(p, time) * detail;
+        vec3 n = normalize(vec3(-g.x * 1.6, 1.0, -g.y * 1.6));
 
-        // Faceted lattice (60 m triangles) drives per-facet normals for shimmer and glitter.
-        vec2 q = p / 60.0;
-        q.x += q.y * 0.5;
-        vec2 cell = floor(q);
-        vec2 f = fract(q);
-        float tri = step(1.0, f.x + f.y);
-        float r = h21(cell * 2.0 + tri);
-        float r2 = h21(cell * 2.0 + tri + 7.3);
-        float wob = time * (0.4 + r * 0.5) + r * 6.283;
-        vec3 n = normalize(vec3(sin(wob) * 0.09 + (r2 - 0.5) * 0.12, 1.0, cos(wob * 0.8) * 0.09 + (r - 0.5) * 0.12));
-        float nearFade = 1.0 - smoothstep(600.0, 1500.0, dist);
-        float openSea = smoothstep(6.0, 20.0, depth);
+        // Smooth depth gradient.
+        vec3 col = mix(shallow, water, smoothstep(0.5, 9.0, depth));
+        col = mix(col, deep, smoothstep(10.0, 38.0, depth));
+        // Soft diffuse response to the waves.
+        col *= 0.92 + 0.12 * dot(n, sunDir);
 
-        // Gentle faceted swells (per triangle) near the camera.
-        vec2 centre = (cell + (tri > 0.5 ? vec2(0.6667) : vec2(0.3333))) * 60.0;
-        float swell = sin(dot(centre, vec2(0.0042, 0.0029)) - time * 0.55 + r * 0.6) * 0.7
-                    + sin(dot(centre, vec2(-0.0021, 0.0051)) - time * 0.37) * 0.3;
-        float bandsLit = step(0.55, swell);
-        col *= 1.0 + (bandsLit * 0.05 - 0.015) * nearFade * openSea + (r - 0.5) * 0.03 * nearFade;
-
-        // Warm sheen in the sun's direction, then a faceted golden glitter path.
+        // Fresnel toward the sky.
+        float fres = pow(1.0 - max(dot(n, eye), 0.0), 5.0);
         vec3 refl = reflect(-eye, n);
-        float sAlign = max(dot(refl, sunDir), 0.0);
-        float broad = pow(max(dot(reflect(-eye, vec3(0.0, 1.0, 0.0)), sunDir), 0.0), 6.0);
-        col = mix(col, sunCol, broad * 0.42);
-        // Glitter: small (12 m) facets with their own normals, only along the sun path.
-        vec2 gq = p / 8.0;
-        gq.x += gq.y * 0.5;
-        vec2 gc = floor(gq);
-        float gt = step(1.0, fract(gq).x + fract(gq).y);
-        float gr = h21(gc * 2.0 + gt + 3.1), gr2 = h21(gc * 2.0 + gt + 9.7);
-        float gw = time * (0.8 + gr) + gr * 6.283;
-        vec3 gn = normalize(vec3(sin(gw) * 0.12 + (gr2 - 0.5) * 0.18, 1.0, cos(gw * 0.9) * 0.12 + (gr - 0.5) * 0.18));
-        float gAlign = max(dot(reflect(-eye, gn), sunDir), 0.0);
-        float spark = smoothstep(0.988, 0.997, gAlign) * broad;
-        col = mix(col, glitter, min(1.0, spark * 1.2) * openSea * (1.0 - smoothstep(2500.0, 7000.0, dist) * 0.6));
+        vec3 skyCol = mix(sky, zenith, clamp(refl.y * 1.6, 0.0, 1.0));
+        col = mix(col, skyCol, 0.06 + 0.5 * fres);
 
-        // Very sparse whitecaps on swell crests.
-        vec2 wq = p / 14.0;
-        wq.x += wq.y * 0.5;
-        vec2 wc = floor(wq);
-        float wt = step(1.0, fract(wq).x + fract(wq).y);
-        float wr = h21(wc * 2.0 + wt + 17.0);
-        float pulse = smoothstep(0.75, 1.0, sin(time * (0.6 + wr) + wr * 40.0));
-        col = mix(col, foam, step(wr, 0.004) * pulse * bandsLit * 0.5 * nearFade * openSea);
+        // Clean sun specular.
+        float spec = pow(max(dot(refl, sunDir), 0.0), 320.0);
+        col += sunCol * spec * 1.2;
+        col += sunCol * pow(max(dot(refl, sunDir), 0.0), 40.0) * 0.06;
+
+        // Crisp white shore foam (with a thin second line that breathes).
+        float w = fwidth(depth) + 1e-3;
+        float foamLine = 1.0 - smoothstep(0.55 - w, 0.55 + w, depth);
+        float pulse = 1.2 + 0.4 * sin(time * 0.8 + p.x * 0.01 + p.y * 0.012);
+        float second = (1.0 - smoothstep(0.12, 0.12 + w * 2.0, abs(depth - pulse))) * (1.0 - smoothstep(0.0, 2.0, depth - 1.0));
+        col = mix(col, foam, max(foamLine, second * 0.6) * inside);
+
+        vec2 outside = max(abs(p) - ${WORLD_HALF.toFixed(1)}, 0.0);
+        col *= 1.0 - 0.08 * smoothstep(0.0, 1500.0, length(outside));
 
         gl_FragColor = vec4(col, 1.0);
-        #ifdef USE_FOG
-          float hazeFactor = smoothstep(fogNear, fogFar, vFogDepth);
-          hazeFactor = 1.0 - (1.0 - hazeFactor) * (1.0 - hazeFactor);
-          vec3 hz = goldenHaze(-eye);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, hz, hazeFactor);
-          // Melt the far sea fully into the horizon colour so there is no seam against the sky.
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, hz, smoothstep(fogFar * 0.6, fogFar * 0.97, vFogDepth));
-        #endif
+        #include <fog_fragment>
       }
     `,
   })

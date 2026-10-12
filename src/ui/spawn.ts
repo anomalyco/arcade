@@ -25,7 +25,7 @@ const statBar = (label: string, v: number) =>
 export function controlsHtml(_heli = false): string {
   const k = (...keys: string[]) => keys.map(x => `<kbd>${x}</kbd>`).join("")
   const rows: [string, string][] = [
-    ["Pitch", `Mouse Y (fwd = nose down) · ${k("↑")} down ${k("↓")} up`],
+    ["Pitch", `Mouse Y · ${k("↑")} down ${k("↓")} up`],
     ["Roll", `Mouse X · ${k("←", "→")}`],
     ["Yaw", `${k("A", "D")} · ${k("Q", "E")}`],
     ["Throttle / collective", k("W", "S")],
@@ -74,7 +74,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     <header>
       <div class="head">
         <div class="eyebrow"><span>Room <b class="code"></b></span><button class="iconbtn invite">Copy invite link</button></div>
-        <h2 class="title">Choose your wings</h2>
+        <h2 class="title">Select Aircraft</h2>
       </div>
       <div class="head-right"><div class="countdown"></div><section class="teams" aria-label="Team"></section></div>
     </header>
@@ -104,7 +104,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
     }).join("")}</section>
     <section class="lower">
       <div class="scheme panel"></div>
-      <div class="board-list panel"><h3>Crew a teammate's aircraft</h3><ul></ul></div>
+      <div class="board-list panel"><h3>Join a teammate</h3><ul></ul></div>
     </section>
     <footer><button class="iconbtn leave">Leave match</button><span class="hint panel"><kbd>1</kbd>–<kbd>4</kbd> quick launch · <kbd>Esc</kbd> menu · <kbd>Tab</kbd> scores</span></footer>`
   parent.appendChild(root)
@@ -172,7 +172,7 @@ export function createSpawnScreen(parent: HTMLElement, actions: {
       root.classList.toggle("waiting", !canSpawn)
       const cd = canSpawn ? "" : `Respawn in <b>${Math.ceil(wait)}</b>`
       if (cd !== lastCd) { countdown.innerHTML = cd; lastCd = cd; countdown.classList.toggle("on", !canSpawn) }
-      title.textContent = s.dead ? "Shot down. Again?" : "Choose your wings"
+      title.textContent = s.dead ? "Shot Down" : "Select Aircraft"
       if (me) root.style.setProperty("--team", TEAM_COLORS[me.team])
       if (me && me.team !== thumbTeam && actions.thumb) {
         const team = me.team

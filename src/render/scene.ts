@@ -2,7 +2,7 @@
 // Renderer + scene host. Loaded lazily after the lobby has painted.
 import {
   AmbientLight, Box3, BufferGeometry, Color, LineSegments, Vector3, DirectionalLight, Float32BufferAttribute, Fog, Group, HemisphereLight, Mesh, MeshLambertMaterial, OrthographicCamera, PerspectiveCamera,
-  PlaneGeometry, Scene, ShaderMaterial, DepthTexture, UnsignedIntType, HalfFloatType, SRGBColorSpace, UnsignedByteType, Vector2, WebGLRenderer, WebGLRenderTarget, type Camera,
+  PlaneGeometry, PCFShadowMap, Scene, ShaderMaterial, DepthTexture, UnsignedIntType, HalfFloatType, SRGBColorSpace, UnsignedByteType, Vector2, WebGLRenderer, WebGLRenderTarget, type Camera,
 } from "three"
 import type { Quality, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { AIRBASES, groundHeight } from "../sim/geography"
@@ -10,9 +10,13 @@ import { createWorldView, type WorldView } from "./world-view"
 import { aircraftReady, createAircraftView, preloadAircraft } from "./aircraft"
 import { createEffects, type Effects } from "./effects"
 import { CameraRig } from "./camera"
-import { INK_COLOR, INK_FADE, WATCHER_DIRECTION, WATCHER_RADIUS } from "./world/palette"
+import * as worldPalette from "./world/palette"
 
-const _watcher = new Vector3(...WATCHER_DIRECTION).normalize()
+/** Sun direction exported by the world palette (falls back to a mid-afternoon sun). */
+const SUN_DIR = (() => {
+  const d = (worldPalette as unknown as Record<string, unknown>).SUN_DIRECTION as readonly number[] | undefined
+  return d && d.length === 3 ? new Vector3(d[0], d[1], d[2]).normalize() : new Vector3(0.4, 0.75, 0.5).normalize()
+})()
 
 export interface FrameStats { fps: number; frameMs: number; drawCalls: number; triangles: number }
 
@@ -34,6 +38,8 @@ export interface SceneHost {
   thumbnail(kind: VehicleKind, team: TeamId): Promise<string | null>
   /** Sense of speed: +6° FOV while boosting, faint speed streaks above 600 km/h. Call each frame (0 when not flying). */
   setSpeedFx(kmh: number, boost: boolean): void
+  /** Point the sun shadow map at the player (call each frame while flying). */
+  setFocus(p: readonly number[] | null): void
 }
 
 const STREAKS_VS = /* glsl */ `
@@ -76,11 +82,9 @@ function makeStreaks(): { mesh: LineSegments; mat: ShaderMaterial } {
 }
 
 /**
- * Golden-hour finish (Balanced/High only; Low renders straight to the canvas):
- *  1. scene → multisampled target (+ resolved depth texture for the ink pass)
- *  2. bright-pass + blur at 1/4 res → bloom texture (one cheap pass)
- *  3. composite: split-tone grade (warm highlights / lilac shadows), bloom, ink edges from depth
- *     discontinuities (#3b2a3f, ~1 px, distance-faded), soft indigo vignette.
+ * Minimal finish (Balanced/High only; Low renders straight to the canvas):
+ * scene → multisampled target (MSAA = the anti-aliasing), a 1/4-res bright-pass for a light bloom on
+ * real highlights (sun, fire, glints), then a composite with a touch of saturation/contrast.
  */
 const FS_TRI_VS = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }"
 
@@ -91,10 +95,9 @@ varying vec2 vUv;
 vec3 bright(vec2 uv) {
   vec3 c = texture2D(tScene, uv).rgb;
   float l = max(c.r, max(c.g, c.b));
-  float warm = clamp((c.r - c.b) * 3.0, 0.0, 1.0);
-  // Only near-clipping, saturated warm pixels (fire, sun disc, glints) bloom; bright pale sky does not.
+  // Saturated highlights only (fire, sun, glints): white clouds and pale sky must not glow.
   float sat = l - min(c.r, min(c.g, c.b));
-  return c * smoothstep(0.9, 1.0, l) * warm * smoothstep(0.12, 0.4, sat);
+  return c * smoothstep(0.9, 1.0, l) * smoothstep(0.15, 0.45, sat);
 }
 void main() {
   vec3 acc = bright(vUv) * 0.2;
@@ -108,42 +111,16 @@ void main() {
 
 const POST_FS = /* glsl */ `
 uniform sampler2D tScene;
-uniform sampler2D tDepth;
 uniform sampler2D tBloom;
-uniform vec2 uTexel;
-uniform vec2 uAspect;
-uniform float uLogFar;
-uniform float uInk;
-uniform float uVignette;
 uniform float uSat;
+uniform float uContrast;
 uniform float uBloom;
-uniform vec3 uInkColor;
-uniform vec2 uInkFade;
 varying vec2 vUv;
-// Logarithmic depth buffer → view distance.
-float dist(vec2 uv) { return exp2(texture2D(tDepth, uv).x * uLogFar) - 1.0; }
 void main() {
-  vec3 c = texture2D(tScene, vUv).rgb;
-  if (uInk > 0.0) {
-    float d0 = dist(vUv);
-    float dx = dist(vUv + vec2(uTexel.x, 0.0)), dy = dist(vUv + vec2(0.0, uTexel.y));
-    // Relative depth jump (scale-free), only where the nearer surface is the centre pixel.
-    float jump = max(dx, dy) - d0;
-    float edge = smoothstep(0.06, 0.18, jump / max(d0, 1.0));
-    float fade = 1.0 - smoothstep(uInkFade.x, uInkFade.y, d0);
-    c = mix(c, uInkColor, edge * fade * uInk);
-  }
-  c += texture2D(tBloom, vUv).rgb * uBloom;
+  vec3 c = texture2D(tScene, vUv).rgb + texture2D(tBloom, vUv).rgb * uBloom;
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = max(mix(vec3(l), c, uSat), 0.0);
-  // Split tone: lilac into the shadows, apricot into the highlights.
-  vec3 shadowTint = vec3(0.95, 0.92, 1.05), highTint = vec3(1.02, 1.0, 0.95);
-  c *= mix(shadowTint, highTint, smoothstep(0.3, 0.85, l));
-  // Gentle S-curve around mid-grey (display space).
-  c = mix(c, c * c * (3.0 - 2.0 * c), 0.12);
-  vec2 d = (vUv - 0.5) * uAspect;
-  float v = smoothstep(0.45, 1.1, length(d));
-  c *= mix(vec3(1.0), vec3(0.82, 0.76, 0.92), v * uVignette);
+  c = mix(c, c * c * (3.0 - 2.0 * c), uContrast);
   // Input is already display-encoded (see PostPass), so no colour-space conversion here.
   gl_FragColor = vec4(c, 1.0);
 }`
@@ -158,18 +135,14 @@ class PostPass {
   private tri: Mesh
   private size = new Vector2()
 
-  constructor(renderer: WebGLRenderer, ink: boolean) {
+  constructor(renderer: WebGLRenderer) {
     renderer.getDrawingBufferSize(this.size)
-    // The ink pass needs an MSAA depth resolve: ~0.1 ms at 1080p but >1 ms on retina buffers, where
-    // the world/aircraft ink already reads fine. Only enable it up to ~2.6 MP.
-    ink = ink && this.size.x * this.size.y <= 2.6e6
     // At ≥2× pixel ratio aliasing is already small: 2× MSAA keeps the fill cost down on retina laptops.
     this.target = new WebGLRenderTarget(this.size.x, this.size.y, {
       samples: renderer.getPixelRatio() >= 2 ? 2 : 4, type: UnsignedByteType, colorSpace: SRGBColorSpace, depthBuffer: true,
-      ...(ink ? { depthTexture: new DepthTexture(this.size.x, this.size.y, UnsignedIntType) } : {}),
     })
-    // Render the scene exactly as it would land on the canvas (sRGB-encoded, world haze mixed after
-    // conversion): three only does that for "XR" targets, so flag it and force plain RGBA8 storage.
+    // Render the scene exactly as it would land on the canvas (tone mapping + sRGB encode applied, fog mixed
+    // after conversion): three only does that for "XR" targets, so flag it and force plain RGBA8 storage.
     this.target.texture.internalFormat = "RGBA8"
     ;(this.target as unknown as { isXRRenderTarget: boolean }).isXRRenderTarget = true
     this.bloomRT = new WebGLRenderTarget(1, 1, { type: HalfFloatType })
@@ -184,10 +157,8 @@ class PostPass {
       vertexShader: FS_TRI_VS,
       fragmentShader: POST_FS,
       uniforms: {
-        tScene: { value: this.target.texture }, tDepth: { value: this.target.depthTexture ?? null }, tBloom: { value: this.bloomRT.texture },
-        uTexel: { value: new Vector2() }, uAspect: { value: new Vector2(1, 1) }, uLogFar: { value: 1 }, uInk: { value: ink ? 0.85 : 0 },
-        uVignette: { value: 1 }, uSat: { value: 1.04 }, uBloom: { value: 0.35 },
-        uInkColor: { value: new Color(INK_COLOR) }, uInkFade: { value: new Vector2(INK_FADE[0], INK_FADE[1] * 1.3) },
+        tScene: { value: this.target.texture }, tBloom: { value: this.bloomRT.texture },
+        uSat: { value: 1.06 }, uContrast: { value: 0.08 }, uBloom: { value: 0.3 },
       },
       depthTest: false, depthWrite: false,
     })
@@ -202,19 +173,9 @@ class PostPass {
     const bw = Math.max(1, Math.round(this.size.x / 4)), bh = Math.max(1, Math.round(this.size.y / 4))
     this.bloomRT.setSize(bw, bh)
     this.bloomMat.uniforms.uTexel.value.set(1 / bw, 1 / bh)
-    // Ink is ~1 CSS px: sample at device pixels / pixel ratio.
-    const pr = Math.min(2, renderer.getPixelRatio())
-    this.mat.uniforms.uTexel.value.set(pr / this.size.x, pr / this.size.y)
-    const a = this.size.x / Math.max(1, this.size.y)
-    this.mat.uniforms.uAspect.value.set(a > 1 ? a : 1, a > 1 ? 1 : 1 / a)
-  }
-
-  set menu(on: boolean) {
-    this.mat.uniforms.uVignette.value = on ? 1.4 : 1
   }
 
   render(renderer: WebGLRenderer, scene: Scene, camera: PerspectiveCamera): void {
-    this.mat.uniforms.uLogFar.value = Math.log2(camera.far + 1)
     renderer.setRenderTarget(this.target)
     renderer.render(scene, camera)
     this.tri.material = this.bloomMat
@@ -226,7 +187,6 @@ class PostPass {
   }
 
   dispose(): void {
-    this.target.depthTexture?.dispose()
     this.target.dispose()
     this.bloomRT.dispose()
     this.mat.dispose()
@@ -251,8 +211,10 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
   renderer.setPixelRatio(pixelRatio(quality))
   renderer.setSize(window.innerWidth, window.innerHeight, false)
   renderer.info.autoReset = false
-  let inkOn = true
-  let post: PostPass | null = quality === "low" ? null : new PostPass(renderer, inkOn)
+  // Soft sun shadows on Balanced/High; the world positions the shadow camera (setShadowFocus).
+  renderer.shadowMap.type = PCFShadowMap
+  renderer.shadowMap.enabled = quality !== "low"
+  let post: PostPass | null = quality === "low" ? null : new PostPass(renderer)
   post?.resize(renderer)
 
   const scene = new Scene()
@@ -330,7 +292,11 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       post?.dispose()
       post = null
       renderer.setPixelRatio(pixelRatio(q))
-      if (q !== "low") post = new PostPass(renderer, inkOn)
+      if (q !== "low") post = new PostPass(renderer)
+      if (renderer.shadowMap.enabled !== (q !== "low")) {
+        renderer.shadowMap.enabled = q !== "low"
+        scene.traverse(o => { const m = (o as Mesh).material; if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.needsUpdate = true })
+      }
       resize()
       world.setQuality(q)
       effects.setQuality(q)
@@ -344,6 +310,11 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
       if (!p) { p = aircraftLoaded.then(() => renderThumb(kind, team)).catch(() => null); thumbs.set(key, p) }
       return p
     },
+    setFocus(p) {
+      if (!p) return
+      _focus.set(p[0], p[1], p[2])
+      ;(world as unknown as { setShadowFocus?: (v: Vector3) => void }).setShadowFocus?.(_focus)
+    },
     setSpeedFx(kmh, boost) {
       speedKmh = kmh
       boosting = boost
@@ -356,9 +327,9 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     if (!aircraftReady(kind)) return null
     const W = 480, H = 300
     const sc = new Scene()
-    sc.add(new HemisphereLight("#c9dcf2", "#d9cdb0", 1.3), new AmbientLight("#ffffff", 0.15))
-    const sun = new DirectionalLight("#ffe9cc", 2.6)
-    sun.position.set(0.55, 0.55, 0.62).multiplyScalar(100)
+    sc.add(new HemisphereLight("#cfe6ff", "#b8a98c", 1.4), new AmbientLight("#ffffff", 0.2))
+    const sun = new DirectionalLight("#fff6e8", 2.6)
+    sun.position.set(-0.6, 0.8, -0.5).multiplyScalar(100)
     sc.add(sun)
     const view = createAircraftView(kind, team, "high")
     sc.add(view.root)
@@ -400,8 +371,9 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     return cv.toDataURL("image/png")
   }
 
+  const _focus = new Vector3()
   let menuT = 0
-  const menuFov = 64
+  const menuFov = 60
   const _wd = new Vector3(), _side = new Vector3(), _look = new Vector3(), _target = new Vector3()
 
   // ---- sense of speed
@@ -419,21 +391,19 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     frame++
     if (frameFn) frameFn(dt, time)
     else {
-      // Menu: a slow drift low over the sea, looking at the Watcher so the moon sits above the horizon,
-      // centred between the lobby panels. Written to the camera directly; the rig blends from here later.
+      // Menu: a slow, sunny flyover of the islands with the sun behind the camera (front-lit terrain).
       rig.setMode("menu")
       menuT += dt
-      _wd.copy(_watcher)
-      _side.set(-_wd.z, 0, _wd.x).normalize()
-      const sway = Math.sin(menuT * 0.05) * 0.06
-      _look.set(_wd.x, 0, _wd.z).normalize().addScaledVector(_side, sway)
-      camera.position.set(0, 0, 0).addScaledVector(_look, -2600).addScaledVector(_side, menuT * 6 % 4000 - 2000)
-      camera.position.y = Math.max(groundHeight(camera.position.x, camera.position.z) + 240, 520 + Math.sin(menuT * 0.11) * 25)
-      const elev = Math.asin(Math.min(0.95, _wd.y))
-      // Pitch so the whole Watcher fits under the top edge with a little air, horizon in the lower third.
-      const half = (menuFov * Math.PI) / 360
-      const pitch = Math.max(0.04, elev + WATCHER_RADIUS * 1.08 - half * 0.94)
-      _target.copy(camera.position).add(_look.multiplyScalar(Math.cos(pitch)).setY(Math.sin(pitch)))
+      _look.set(-SUN_DIR.x, 0, -SUN_DIR.z)
+      if (_look.lengthSq() < 1e-4) _look.set(0, 0, -1)
+      _look.normalize()
+      _side.set(-_look.z, 0, _look.x)
+      const yaw = 0.35 + Math.sin(menuT * 0.03) * 0.12
+      _wd.copy(_look).multiplyScalar(Math.cos(yaw)).addScaledVector(_side, Math.sin(yaw))
+      camera.position.set(0, 0, 0).addScaledVector(_look, -3200).addScaledVector(_side, ((menuT * 14) % 5000) - 2500)
+      camera.position.y = Math.max(groundHeight(camera.position.x, camera.position.z) + 260, 620 + Math.sin(menuT * 0.1) * 30)
+      const pitch = -0.2
+      _target.copy(camera.position).add(_wd.multiplyScalar(Math.cos(pitch)).setY(Math.sin(pitch)))
       camera.up.set(0, 1, 0)
       camera.lookAt(_target)
       if (Math.abs(camera.fov - menuFov) > 0.01) { camera.fov = menuFov; camera.updateProjectionMatrix() }
@@ -449,7 +419,6 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
     effects.update(dt, time, camera)
     renderer.info.reset()
     if (post) {
-      post.menu = !frameFn
       post.render(renderer, scene, camera)
     } else renderer.render(scene, camera)
     const t1 = performance.now()
@@ -475,11 +444,10 @@ export async function createSceneHost(canvas: HTMLCanvasElement, quality: Qualit
   }
   renderer.setAnimationLoop(loop)
   if (import.meta.env.DEV) {
-    const w = window as unknown as { __wingsHost: SceneHost; __wingsPost: (on: boolean) => void; __wingsInk: (on: boolean) => void }
+    const w = window as unknown as { __wingsHost: SceneHost; __wingsPost: (on: boolean) => void }
     w.__wingsHost = host
     ;(window as unknown as { __wingsPostObj: () => unknown }).__wingsPostObj = () => post
-    w.__wingsInk = (on: boolean) => { inkOn = on; post?.dispose(); post = new PostPass(renderer, inkOn); post.resize(renderer) }
-    w.__wingsPost = on => { if (!on && post) { post.dispose(); post = null } else if (on && !post) { post = new PostPass(renderer, inkOn); post.resize(renderer) } }
+    w.__wingsPost = on => { if (!on && post) { post.dispose(); post = null } else if (on && !post) { post = new PostPass(renderer); post.resize(renderer) } }
   }
   return host
 }

@@ -1,11 +1,10 @@
 import {
-  AdditiveBlending, BoxGeometry, EdgesGeometry, FrontSide, LineSegments, type ShaderMaterial as InkMaterial, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute,
+  AdditiveBlending, BoxGeometry, FrontSide, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute,
   Group, IcosahedronGeometry, Matrix4, Mesh, MeshLambertMaterial, ShaderMaterial, SphereGeometry,
 } from "three"
 import { AIRBASES, BASE_LAYOUT, SAFE_ZONE_HEIGHT, type Airbase } from "../../sim/geography"
 import { PALETTE, TEAM_COLORS, TEAM_PASTELS } from "./palette"
 import { merge, painted } from "./trees"
-import { applyGoldenHaze } from "./atmosphere"
 
 // Base-local frame: local +X = right (c), local -Z = forward (a). Geometry is baked into world space.
 const L = (a: number, c: number): [number, number] => [c, -a]
@@ -40,6 +39,9 @@ class FlatBuilder {
     const g = new BufferGeometry()
     g.setAttribute("position", new Float32BufferAttribute(this.pos, 3))
     g.setAttribute("color", new Float32BufferAttribute(this.col, 3))
+    const nrm = new Float32Array(this.pos.length)
+    for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1
+    g.setAttribute("normal", new Float32BufferAttribute(nrm, 3))
     return g
   }
 }
@@ -49,7 +51,7 @@ function pavement(team: number): BufferGeometry {
   const rw = BASE_LAYOUT.runway
   const paint = PALETTE.marking
   // Runway slab + simple white markings.
-  b.quad(rw.a0, rw.a1, rw.c0, rw.c1, 0.06, PALETTE.paving)
+  b.quad(rw.a0, rw.a1, rw.c0, rw.c1, 0.06, PALETTE.concrete)
   b.quad(rw.a0 + 20, rw.a1 - 20, -28, -26.5, 0.12, paint)
   b.quad(rw.a0 + 20, rw.a1 - 20, 26.5, 28, 0.12, paint)
   for (let a = rw.a0 + 90; a < rw.a1 - 90; a += 60) b.quad(a, a + 30, -0.6, 0.6, 0.12, paint)
@@ -74,6 +76,13 @@ function pavement(team: number): BufferGeometry {
   return b.geometry()
 }
 
+/** Crisp face normals for deliberately angular shapes (hip/gable roofs). */
+function hard(g: BufferGeometry): BufferGeometry {
+  const h = g.index ? g.toNonIndexed() : g
+  h.computeVertexNormals()
+  return h
+}
+
 /** Chunky low-poly base buildings: off-white walls, team-coloured roofs. */
 function buildings(team: number): BufferGeometry {
   const parts: BufferGeometry[] = []
@@ -88,18 +97,18 @@ function buildings(team: number): BufferGeometry {
     const a = -360 + i * 140
     put(new BoxGeometry(56, 12, 58), a, 370, 6, PALETTE.offWhite)
     // Faceted barrel roof: a 6-sided half cylinder along the hangar depth.
-    const r = new CylinderGeometry(28, 28, 58, 6, 1, false, -Math.PI / 2, Math.PI)
-    r.rotateX(Math.PI / 2)
+    const r = new CylinderGeometry(28, 28, 58, 18, 1, false, -Math.PI / 2, Math.PI)
+    r.rotateX(-Math.PI / 2)
     r.scale(1, 0.55, 1)
     put(r, a, 370, 12, roof, Math.PI / 2)
     put(new BoxGeometry(1, 10, 40), a, 340.6, 6, PALETTE.glass)
   }
   // Control tower.
-  put(new CylinderGeometry(5, 6.5, 30, 6), 110, 380, 15, PALETTE.offWhite)
-  put(new CylinderGeometry(9.5, 7.5, 7, 6), 110, 380, 33.5, PALETTE.glass)
-  put(new ConeGeometry(11, 5, 6), 110, 380, 39.5, roof)
+  put(new CylinderGeometry(5, 6.5, 30, 16), 110, 380, 15, PALETTE.offWhite)
+  put(new CylinderGeometry(9.5, 7.5, 7, 16), 110, 380, 33.5, PALETTE.glass)
+  put(new ConeGeometry(11, 5, 16), 110, 380, 39.5, roof)
   put(new BoxGeometry(26, 9, 22), 110, 380, 4.5, PALETTE.offWhite)
-  put(new ConeGeometry(18, 6, 4), 110, 380, 12, roof, Math.PI / 4)
+  put(hard(new ConeGeometry(18, 6, 4)), 110, 380, 12, roof, Math.PI / 4)
   // Little crew houses.
   for (let i = 0; i < 4; i++) {
     const a = -640 + i * 40
@@ -107,19 +116,19 @@ function buildings(team: number): BufferGeometry {
     const gable = new CylinderGeometry(11, 11, 15, 3, 1)
     gable.rotateZ(Math.PI / 2)
     gable.scale(1, 0.5, 1)
-    put(gable, a, 390, 9.5, roof)
+    put(hard(gable), a, 390, 9.5, roof)
   }
   // Fuel tanks.
   for (let i = 0; i < 3; i++) {
-    put(new CylinderGeometry(8, 8, 10, 8), 560 + i * 22, 330, 5, PALETTE.offWhite)
-    put(new ConeGeometry(8.4, 3, 8), 560 + i * 22, 330, 11.5, roof)
+    put(new CylinderGeometry(8, 8, 10, 20), 560 + i * 22, 330, 5, PALETTE.offWhite)
+    put(new ConeGeometry(8.4, 3, 20), 560 + i * 22, 330, 11.5, roof)
   }
   // Radar dome.
-  put(new CylinderGeometry(2, 3, 12, 5), 760, 380, 6, PALETTE.paving)
-  put(new IcosahedronGeometry(7.5, 1), 760, 380, 17, PALETTE.offWhite)
+  put(new CylinderGeometry(2, 3, 12, 10), 760, 380, 6, PALETTE.paving)
+  put(new IcosahedronGeometry(7.5, 3), 760, 380, 17, PALETTE.offWhite)
   // Windsock.
-  put(new CylinderGeometry(0.3, 0.35, 9, 4), -650, -70, 4.5, PALETTE.offWhite)
-  const sock = new ConeGeometry(1.1, 5, 5, 1, true)
+  put(new CylinderGeometry(0.3, 0.35, 9, 8), -650, -70, 4.5, PALETTE.offWhite)
+  const sock = new ConeGeometry(1.1, 5, 10, 1, true)
   sock.rotateZ(Math.PI / 2)
   put(sock, -650, -67.5, 8.6, roof)
   return merge(parts)
@@ -202,7 +211,7 @@ function domes(): BufferGeometry {
     g.applyMatrix4(baseMatrix(base))
     g.translate(0, -5, 0)
     const n = pos.count
-    const col = new Color(PALETTE.gold).lerp(new Color(TEAM_COLORS[base.team]), 0.3)
+    const col = new Color("#ffffff").lerp(new Color(TEAM_COLORS[base.team]), 0.55)
     g.setAttribute("color", new Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => [col.r, col.g, col.b][i % 3]), 3))
     g.setAttribute("team", new Float32BufferAttribute(new Float32Array(n).fill(base.team), 1))
     parts.push(g)
@@ -218,12 +227,11 @@ export interface AirbaseViews {
 }
 
 /** All four airbases: 3 draw calls (pavement, buildings, domes). */
-export function createAirbases(ink: InkMaterial): AirbaseViews {
+export function createAirbases(): AirbaseViews {
   const root = new Group()
   root.name = "World · airbases"
-  const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true, toneMapped: false })
+  const material = new MeshLambertMaterial({ vertexColors: true, toneMapped: false })
   material.name = "World · base props"
-  applyGoldenHaze(material)
   const pave: BufferGeometry[] = [], build: BufferGeometry[] = []
   for (const base of AIRBASES) {
     const m = baseMatrix(base)
@@ -241,12 +249,10 @@ export function createAirbases(ink: InkMaterial): AirbaseViews {
   domeMesh.name = "Safe zones"
   domeMesh.renderOrder = 5
   domeMesh.frustumCulled = false
-  // Ink: crease edges of the buildings (one LineSegments draw call).
-  const edgeGeo = new EdgesGeometry(buildGeo, 35)
-  const edges = new LineSegments(edgeGeo, ink)
-  edges.name = "building ink"
-  edges.renderOrder = 3
-  root.add(paveMesh, buildMesh, edges, domeMesh)
+  paveMesh.receiveShadow = true
+  buildMesh.castShadow = true
+  buildMesh.receiveShadow = true
+  root.add(paveMesh, buildMesh, domeMesh)
   return {
     root,
     setHighlight(team) {
@@ -265,6 +271,6 @@ export function createAirbases(ink: InkMaterial): AirbaseViews {
         return Math.min(1, Math.max(0, (r - 0.95) / 0.25))
       })
     },
-    dispose() { paveGeo.dispose(); buildGeo.dispose(); edgeGeo.dispose(); domeGeo.dispose(); material.dispose(); dmat.dispose() },
+    dispose() { paveGeo.dispose(); buildGeo.dispose(); domeGeo.dispose(); material.dispose(); dmat.dispose() },
   }
 }

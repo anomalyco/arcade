@@ -134,25 +134,33 @@ describe("jets: direct steering", () => {
       expect(Math.abs(r.finalRoll)).toBeLessThan(5)
     })
 
-    test(`${kind}: rudder alone yaws gently and does not roll the aircraft`, () => {
+    test(`${kind}: yaw (mouse X) makes a level coordinated turn with auto-bank, then rolls out`, () => {
       const s = airStart(kind)
       settleLevel(s, 5)
-      run(s, input({ yaw: 1, throttle: 1 }), 2)
-      const r = flightReadout(s)
-      expect(Math.abs(angDiff(r.heading, 0))).toBeGreaterThan(5)
-      expect(Math.abs(angDiff(r.heading, 0))).toBeLessThan(60)
-      expect(Math.abs(r.roll)).toBeLessThan(3)
+      const alt0 = s.position[1]
+      let maxBank = 0, t90 = -1
+      for (let i = 0; i < 60 * 12 && t90 < 0; i++) {
+        stepFlight(s, input({ yaw: 1, throttle: 1 }), TICK_DT, world)
+        maxBank = Math.max(maxBank, flightReadout(s).roll)
+        if (angDiff(heading(s), 90) > -3) t90 = (i + 1) * TICK_DT
+      }
+      expect(t90).toBeGreaterThan(0)
+      expect(t90).toBeLessThan(kind === "blackbird" ? 9 : 4)
+      expect(maxBank).toBeGreaterThan(40) // banks right into a right turn
+      expect(Math.abs(s.position[1] - alt0)).toBeLessThan(40) // level
+      run(s, input({ throttle: 1 }), 4)
+      expect(Math.abs(flightReadout(s).roll)).toBeLessThan(5) // rolls out when released
     })
 
-    test(`${kind}: a released small bank is trimmed level; a big bank is held`, () => {
-      const small = airStart(kind)
-      small.orientation = quatFromYawPitchRoll(0, 0, 6 * Math.PI / 180)
-      run(small, input({ throttle: 1 }), 5)
-      expect(Math.abs(flightReadout(small).roll)).toBeLessThan(1)
-      const big = airStart(kind)
-      big.orientation = quatFromYawPitchRoll(0, 0, 45 * Math.PI / 180)
-      run(big, input({ throttle: 1 }), 3)
-      expect(Math.abs(flightReadout(big).roll - 45)).toBeLessThan(2)
+    test(`${kind}: roll (A/D) overrides auto-bank; inverted is held, moderate bank eases level`, () => {
+      const inv = airStart(kind)
+      inv.orientation = quatFromYawPitchRoll(0, 0, Math.PI)
+      run(inv, input({ throttle: 1 }), 4)
+      expect(Math.abs(flightReadout(inv).roll)).toBeGreaterThan(170)
+      const mid = airStart(kind)
+      mid.orientation = quatFromYawPitchRoll(0, 0, 30 * Math.PI / 180)
+      run(mid, input({ throttle: 1 }), 8)
+      expect(Math.abs(flightReadout(mid).roll)).toBeLessThan(3)
     })
 
     test(`${kind}: held pitch-up loops`, () => {
@@ -210,8 +218,8 @@ function heliFeel() {
   const topSpeed = flightReadout(top).speed
   let stop = 0
   while (fwdSpeed(top) > 2 && stop < 30) { stepFlight(top, input({ pitch: holdPitchInput(top, 55), throttle: top.throttle > 0.75 ? -1 : 0 }), TICK_DT, world); stop += TICK_DT }
-  const flip = heliAir(); let rolled = 0, flipTime = 0
-  while (rolled < 2 * Math.PI && flipTime < 6) { stepFlight(flip, input({ roll: 1, throttle: 1 }), TICK_DT, world); rolled -= flip.angularVelocity[2] * TICK_DT; flipTime += TICK_DT }
+  const flip = heliAir(); run(flip, input({ roll: 1 }), 4)
+  const strafeBank = flightReadout(flip).roll
   const loop = heliAir(); run(loop, st => input({ pitch: holdPitchInput(st, -40), throttle: 1 }), 10)
   let pitched = 0, loopTime = 0
   while (pitched < 2 * Math.PI && loopTime < 8) { stepFlight(loop, input({ pitch: 1, throttle: 1 }), TICK_DT, world); pitched += loop.angularVelocity[0] * TICK_DT; loopTime += TICK_DT }
@@ -221,12 +229,12 @@ function heliFeel() {
   return {
     hoverDrift: flightReadout(hover).speed, hoverAltErr: Math.abs(hover.position[1] - 1000),
     descent: -desc.velocity[1], climb: climb.velocity[1], descentCollective: desc.throttle,
-    backward: -fwdSpeed(back), topSpeed, stop, flipTime, flipped: rolled >= 2 * Math.PI, flipCrashed: flip.crashed,
+    backward: -fwdSpeed(back), topSpeed, stop, strafeBank, strafeSpeed: Math.abs(flip.velocity[0]), flipCrashed: flip.crashed,
     loopTime, looped: pitched >= 2 * Math.PI, brakeStop,
   }
 }
 
-describe("helicopter: direct (Battlefield) steering", () => {
+describe("helicopter: direct steering", () => {
   const f = heliFeel()
   test("neutral hover is truly stationary", () => {
     expect(f.hoverDrift).toBeLessThan(0.5)
@@ -242,10 +250,11 @@ describe("helicopter: direct (Battlefield) steering", () => {
     expect(Math.abs(f.topSpeed - 95) / 95).toBeLessThan(0.1)
   })
   test("pitching back stops it from top speed quickly", () => expect(f.stop).toBeLessThan(6))
-  test("full rolls and loops are possible", () => {
-    expect(f.flipped).toBe(true)
-    expect(f.flipCrashed).toBeNull()
+  test("loops are possible (pitch); strafe roll is a bank-angle command, not a flip", () => {
     expect(f.looped).toBe(true)
+    expect(f.strafeBank).toBeGreaterThan(20)
+    expect(f.strafeBank).toBeLessThan(35)
+    expect(f.flipCrashed).toBeNull()
   })
   test("brake auto-hover kills velocity and levels", () => expect(f.brakeStop).toBeLessThan(12))
 
@@ -496,6 +505,6 @@ test("feel table", () => {
   console.table([{
     kind: "apache (direct)", "hover drift m/s": f.hoverDrift.toFixed(3), "descent m/s": f.descent.toFixed(1), "climb m/s": f.climb.toFixed(1),
     "backward m/s": f.backward.toFixed(1), "top m/s": f.topSpeed.toFixed(1), "stop from top, pitch back (s)": f.stop.toFixed(1),
-    "brake stop (s)": f.brakeStop.toFixed(1), "360° roll (s)": f.flipTime.toFixed(2), "loop (s)": f.loopTime.toFixed(2),
+    "brake stop (s)": f.brakeStop.toFixed(1), "strafe bank°": f.strafeBank.toFixed(0), "strafe m/s (4 s)": f.strafeSpeed.toFixed(1), "loop (s)": f.loopTime.toFixed(2),
   }])
 })

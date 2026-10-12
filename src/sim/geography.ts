@@ -1,9 +1,9 @@
 // World geography — owned by the World agent. Pure, deterministic, dependency-free (server safe).
 //
-// A 16 × 16 km procedurally generated archipelago (ISLANDERS-style terraced islands). On first use
+// A 16 × 16 km procedurally generated archipelago of smooth, natural islands. On first use
 // the module bakes a heightmap on a jittered triangle grid (MESH_CELL spacing):
 //   seeded island masks (domain-warped) → fBm + ridged mountains + a couple of central peaks →
-//   carved canyons → droplet erosion + thermal smoothing → terracing → flat airbase plateaus.
+//   carved canyons → droplet erosion + thermal smoothing → flat airbase plateaus.
 // The rendered LOD0 mesh uses exactly these vertices and triangles, and every physics query
 // interpolates the same triangles, so collision always matches what players see.
 import type { TeamId, Vec3, VehicleKind, WorldQuery } from "./types"
@@ -298,21 +298,6 @@ function corridorOpen(x: number, z: number, seed: number): { t: number; floor: n
   return { t, floor }
 }
 
-const TERRACES = [3.5, 22, 52, 95, 150, 225, 320, 440, 590, 760]
-
-function terrace(h: number, wobble: number): number {
-  if (h <= TERRACES[0]) return h
-  const hh = h + wobble
-  for (let k = 0; k < TERRACES.length - 1; k++) {
-    const lo = TERRACES[k], hi = TERRACES[k + 1]
-    if (hh < hi) {
-      const f = (hh - lo) / (hi - lo)
-      // Mostly flat shelf, then a steep riser to the next level.
-      return Math.max(TERRACES[0], lo + (hi - lo) * (0.15 * f + 0.85 * smooth(0.55, 0.98, f)) - wobble * 0.1)
-    }
-  }
-  return hh
-}
 
 function bake(seed: number): Baked {
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now()
@@ -384,9 +369,9 @@ function bake(seed: number): Baked {
     const avg = (h[k - 1] + h[k + 1] + h[k - STRIDE] + h[k + STRIDE]) * 0.25
     if (h[k] - avg > talus) h[k] = avg + talus
   }
-  // 3b. Two smoothing passes on land so terrace edges come out as clean, sweeping contours.
+  // 3b. A few smoothing passes on land for soft, rounded forms.
   const tmp = new Float32Array(h.length)
-  for (let pass = 0; pass < 2; pass++) {
+  for (let pass = 0; pass < 3; pass++) {
     tmp.set(h)
     for (let j = 1; j < N; j++) for (let i = 1; i < N; i++) {
       const k = j * STRIDE + i
@@ -401,7 +386,6 @@ function bake(seed: number): Baked {
     let y = h[k]
     // Departure corridors: soft valley along each runway's extended centre-line.
     const lim = corridorLimit(x, z)
-    if (y > 0) y = terrace(y, noise2(x * 0.0009, z * 0.0009, seed + 77) * 9)
     if (y > lim.hard) y = lim.hard
     const bd = baseFlatDistance(x, z)
     if (bd < 420) {

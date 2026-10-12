@@ -44,7 +44,7 @@ export function createBoundary() {
         float near = 1.0 - smoothstep(0.0, 1500.0, wallDist);
         float height = 1.0 - smoothstep(0.0, 3500.0, vWorld.y);
         float a = near * height * height * 0.04;
-        gl_FragColor = vec4(vec3(0.72, 0.68, 0.92), 1.0);
+        gl_FragColor = vec4(vec3(0.85, 0.92, 1.0), 1.0);
         #include <colorspace_fragment>
         gl_FragColor.rgb *= a;
       }

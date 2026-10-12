@@ -127,7 +127,7 @@ class GameSession implements GameHandle {
     { id: "cannon20", ammo: 0, cap: 0, ready: 1, regen: false, lock: 0, locked: false },
     { id: "cannon20", ammo: 0, cap: 0, ready: 1, regen: false, lock: 0, locked: false },
   ]
-  private tracerColors = TEAM_COLORS.map(c => new Color(c).lerp(new Color("#ffe2a0"), 0.72))
+  private tracerColors = TEAM_COLORS.map(c => new Color(c).lerp(new Color("#fff4d6"), 0.78))
   private offSettings: () => void
   private ended = false
   private scoreboardShown = false
@@ -1017,6 +1017,7 @@ class GameSession implements GameHandle {
     if (f.missileWarning) audio?.ui("warning")
 
     this.deps.host.setSpeedFx(seat === 0 ? f.speed * 3.6 : 0, seat === 0 && f.boost)
+    this.deps.host.setFocus(pos)
     this.hud.update(f)
     if (this.hud.pullUp && !f.missileWarning) audio?.ui("warning")
   }

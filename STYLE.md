@@ -1,5 +1,18 @@
 # Art Style Guide
 
+## CURRENT LOOK (locked, supersedes everything below): "BRIGHT STYLIZED" — Fortnite-like, tasteful, restrained
+User feedback: previous looks were "vibing too hard" / "vibe coded". Goal: clean, polished, confident stylized realism like Fortnite. Less is more. No gimmicks.
+- **Daylight:** clear sunny afternoon, sun ~40–50° elevation, white-warm key light, soft blue sky fill. Real soft shadows (shadow map) near the camera. Subtle ambient occlusion on High.
+- **Sky:** clean blue gradient (deeper blue zenith → pale blue horizon), sun with a gentle glow, big soft white cumulus clouds with smooth shading (no faceted clouds, no pink/purple). **No Watcher moon, no aurora, no cosmic effects.**
+- **Smooth shading everywhere** (no flat facets, no low-poly look, no ink outlines). Rounded, chunky stylized forms.
+- **Terrain:** smooth-shaded hills with soft vertex-color gradients + subtle large-scale variation: lush saturated grass greens, warm sand beaches, gray-brown stylized rock on steep slopes, a little snow only on the highest peak. Natural, not terraced. Stylized round-canopy trees, smooth shaded, in clusters.
+- **Water:** bright stylized ocean: turquoise shallows → clear blue → deep blue, clean specular sun highlight, soft fresnel, gentle animated waves, crisp white foam at shores.
+- **Materials:** clean PBR-ish (roughness ~0.5–0.7), saturated but controlled colors, gentle rim light. Aircraft in clean military-toy paint with bold team color accents.
+- **Effects:** Fortnite-style stylized smoke/explosions (smooth puffy shapes, bright orange-yellow fire, white-gray smoke), clean tracers.
+- **UI:** clean, bold, confident: strong sans-serif (heavy weight, slight italic/condensed for titles), white panels or dark translucent panels with bright accent (e.g. electric blue/yellow), big readable HUD, minimal decoration. No lore taglines, no blinking eyes, no "something circles beneath the clouds".
+- **Post:** minimal — light bloom on highlights, slight saturation/contrast, FXAA/SMAA. No color grading gimmicks, no heavy vignette, no ink pass.
+- Performance budgets unchanged (≤ 60 world draw calls Balanced, 60 fps laptop).
+
 ## Signature look (locked, supersedes the Islanders section below): "GOLDEN ELDRITCH"
 A permanent, impossibly beautiful golden hour over a tropical archipelago — and something enormous watching from the sky.
 References for mood: Sable (flat color + fine ink line), Journey (warm glowing light), Outer Wilds (huge celestial bodies on the horizon), Studio Ghibli skies.

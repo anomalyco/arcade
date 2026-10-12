@@ -10,8 +10,9 @@ const quality = (params.get("q") ?? "balanced") as Quality
 const renderer = new WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, powerPreference: "high-performance" })
 renderer.setPixelRatio(Math.min(devicePixelRatio, Number(params.get("pr") ?? 1.5)))
 renderer.setSize(innerWidth, innerHeight)
-const tm = params.get("tm")
+const tm = params.get("tm") ?? "none"
 renderer.toneMapping = tm === "aces" ? ACESFilmicToneMapping : tm === "none" ? NoToneMapping : NeutralToneMapping
+renderer.shadowMap.enabled = params.get("shadows") !== "0"
 document.body.appendChild(renderer.domElement)
 
 const scene = new Scene()
@@ -62,10 +63,11 @@ const views: Record<string, () => [number[], number[]]> = {
   water: () => [[3000, 14, 5200], [1500, 30, 2500]],
   overview: () => [[0, 5500, 9500], [0, 0, 0]],
   top: () => [[0, 14000, 1], [0, 0, 0]],
+  close: () => { const b = AIRBASES[2]; const [x, z] = baseToWorld(b, -150, 440), [lx, lz] = baseToWorld(b, -330, 370); return [[x, 45, z], [lx, 15, lz]] },
   h30: () => [[3500, 30, 5600], [3500, 30, 0]],
   h300: () => [[3500, 300, 6500], [3500, 260, 0]],
   h1500: () => [[3500, 1500, 7000], [3500, 1300, 0]],
-  sun: () => [[3000, 120, -1500], [3000 - 892, 120 + 120, -1500 + 417]],
+  sun: () => [[3000, 200, -2000], [3000 - 500, 200 + 300, -2000 + 500]],
   watcher: () => [[-4500, 250, 2500], [-4500 + 840, 250 + 300, 2500 - 392]],
   watcherHigh: () => [[-5500, 1500, 3000], [-5500 + 840, 1500 + 150, 3000 - 392]],
   inside: () => { const b = AIRBASES[0]; return [[b.center[0] + 150, 60, b.center[2] - 400], [b.center[0] - 300, 40, b.center[2] - 2000]] },

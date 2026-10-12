@@ -32,17 +32,17 @@ import {
   type MeshStandardMaterial,
 } from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { mergeGeometries, toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js"
 import type { PlayerInfo, Quality, SeatIndex, TeamId, VehicleEntity, VehicleKind } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { groundHeight } from "../sim/geography"
 import { SUN_DIRECTION } from "./world/settings"
 import { createBlobShadow } from "./aircraft-shadow"
-import { createGlowMaterial, createOutlineMaterial, createToonMaterial, pastelize } from "./toon"
+import { createGlowMaterial, createPaintMaterial, paintColor } from "./toon"
 
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"] as const
-/** Golden-hour livery paint per team: pastel but saturated, readable at range. */
-export const TEAM_LIVERY = ["#5684da", "#eea44f", "#47b585", "#df6662"] as const
+/** Bold team accent paint (fins, wingtips, nose stripe, rotor tips). */
+export const TEAM_LIVERY = ["#2f74e6", "#ffad1f", "#22b865", "#e83c3c"] as const
 
 export interface AircraftView {
   root: Object3D
@@ -290,59 +290,54 @@ const loading = new Map<VehicleKind, Promise<Template | null>>()
 const readyListeners = new Map<VehicleKind, Set<(t: Template) => void>>()
 let baseUrlDefault = ((import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL) ?? "/"
 
-const toonCache = new Map<string, Material>()
+const paintCache = new Map<string, Material>()
 const liveryCache = new Map<number, Material>()
-let outlineMaterial: Material | null = null
-/** Fine warm-dark ink silhouettes (Golden Eldritch); one extra draw call, distance-faded, off on Low. */
-const OUTLINES = true
 
-/**
- * Per-name color overrides applied instead of the pastel remap. An override recolors the whole deduped
- * material group containing a matching node, so it never adds draw calls.
- */
-/** Group whose paint is the airframe's top color (darkened for countershading). */
+/** Group whose paint is the airframe's top color. */
 const TOP_PAINT = /^(fuselage|fuselage_top|fuselage_upper)$/
-const TOP_DARKEN = 0.88
-const _hslT = { h: 0, s: 0, l: 0 }
 
 /** Per-mesh color overrides (baked into vertex colors; free). */
 const PART_COLORS: [RegExp, string, VehicleKind[]?][] = [
-  [/^spine_band$/, "#eadfc8", ["fighter"]], // cream dorsal spine band
-  [/^(flap|aileron|stab)_line_[LR]$/, "#a3afbd", ["fighter"]], // light panel lines on the wings
-  [/^panel_band_(aft|tail)$|^engine_panel_band_[LR]$/, "#b9bea5", ["warthog"]],
-  [/^cockpit_spine_hump$/, "#5a6070", ["blackbird"]],
-  [/^tail_boom_band_(front|rear)$|^nacelle_band_[LR]$/, "#c9cfb0", ["apache"]],
+  [/^spine_band$/, "#e9edf1", ["fighter"]], // light dorsal spine band
+  [/^(flap|aileron|stab)_line_[LR]$/, "#c9d2dc", ["fighter"]],
+  [/^panel_band_(aft|tail)$|^engine_panel_band_[LR]$/, "#c8d0b0", ["warthog"]],
+  [/^tail_boom_band_(front|rear)$|^nacelle_band_[LR]$/, "#c8cf9e", ["apache"]],
+  [/^pilot_\d_helmet$/, "#f4f4f2"], // crisp white helmets
+  [/^pilot_\d_visor$/, "#20283a"],
 ]
 
-let bodyMat: Material | null = null
-function bodyMaterial(): Material {
-  bodyMat ??= createToonMaterial({ color: "#ffffff", vertexColors: true })
-  return bodyMat
-}
-
+/** Group color overrides (recolor a whole deduped material group; free). */
 const COLOR_OVERRIDES: [RegExp, string, VehicleKind[]?][] = [
-  [/^pilot_\d_torso$/, "#97a274", ["fighter", "apache", "warthog"]], // soft olive flight suit
-  [/^pilot_\d_torso$/, "#dcc48c", ["blackbird"]], // pale gold pressure suit
-  // Golden-hour two-tone: richer tops that hold their hue in warm light, cream/pale bellies.
-  [/^fuselage$/, "#6a82a8", ["fighter"]], // dusty navy-blue
-  [/^fuselage_belly$/, "#f1e4c9", ["fighter"]],
-  [/^fuselage_top$/, "#7d8a63", ["warthog"]], // sage
-  [/^fuselage_belly$/, "#e8dec2", ["warthog"]],
-  [/^fuselage_upper$/, "#74834a", ["apache"]], // olive
-  [/^fuselage_belly$/, "#d3ca9c", ["apache"]],
-  [/^fuselage$/, "#3c3855", ["blackbird"]], // indigo graphite
-  [/^fuselage_belly$/, "#9893b4", ["blackbird"]],
+  [/^pilot_\d_torso$/, "#6f7f45", ["fighter", "apache", "warthog"]], // olive flight suit
+  [/^pilot_\d_torso$/, "#d8b04a", ["blackbird"]], // gold pressure suit
+  // Clean military-toy two-tone: confident tops, light bellies.
+  [/^fuselage$/, "#7a8fab", ["fighter"]], // navy gray
+  [/^fuselage_belly$/, "#e6eaee", ["fighter"]],
+  [/^fuselage_top$/, "#71864f", ["warthog"]], // olive green
+  [/^fuselage_belly$/, "#cfd6bd", ["warthog"]],
+  [/^fuselage_upper$/, "#5d7238", ["apache"]], // olive drab
+  [/^fuselage_belly$/, "#b4ba84", ["apache"]],
+  [/^fuselage$/, "#262b36", ["blackbird"]], // glossy near-black
+  [/^fuselage_belly$/, "#4b5363", ["blackbird"]],
 ]
 
-function getOutlineMaterial(): Material {
-  if (!outlineMaterial) outlineMaterial = createOutlineMaterial()
-  return outlineMaterial
+/** Paint for painted parts vs bare metal (gunmetal, exhausts, gear), both baked into vertex colors. */
+function bodyMaterial(metal: boolean): Material {
+  const key = metal ? "body-metal" : "body-paint"
+  let m = paintCache.get(key)
+  if (!m) {
+    m = metal
+      ? createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.42, metalness: 0.35, reflect: 0.45 })
+      : createPaintMaterial({ color: "#ffffff", vertexColors: true, roughness: 0.5, metalness: 0.04, reflect: 0.3 })
+    paintCache.set(key, m)
+  }
+  return m
 }
 
 function liveryMaterial(team: TeamId): Material {
   let m = liveryCache.get(team)
   if (!m) {
-    m = createToonMaterial({ color: TEAM_LIVERY[team] })
+    m = createPaintMaterial({ color: TEAM_LIVERY[team], roughness: 0.45, metalness: 0.05, reflect: 0.3 })
     liveryCache.set(team, m)
   }
   return m
@@ -359,7 +354,9 @@ function nameChain(o: Object3D, stop: Object3D): string[] {
 }
 
 /** Copies position/normal into fresh non-interleaved arrays, bakes the matrix and adds rigid skin weights. */
-function prepGeometry(src: BufferGeometry, m: Matrix4, bone: number): BufferGeometry {
+function prepGeometry(source: BufferGeometry, m: Matrix4, bone: number, smooth = false): BufferGeometry {
+  // Smooth curved primitives (lathes, capsules) while keeping hard edges on boxes/wing edges.
+  const src = smooth ? toCreasedNormals(source.index ? source.toNonIndexed() : source, CREASE_ANGLE) : source
   const pos = src.getAttribute("position")
   const nrm = src.getAttribute("normal")
   const n = pos.count
@@ -411,33 +408,7 @@ function prepGeometry(src: BufferGeometry, m: Matrix4, bone: number): BufferGeom
   return g
 }
 
-/** Outline copy with normals averaged across coincident vertices so the inflated hull has no cracks. */
-function smoothOutlineGeometry(g: BufferGeometry): BufferGeometry {
-  const out = g.clone()
-  const pos = out.getAttribute("position")
-  const nrm = out.getAttribute("normal")
-  const si = out.getAttribute("skinIndex")
-  const acc = new Map<string, [number, number, number]>()
-  const keys: string[] = new Array(pos.count)
-  const q = 1e3
-  for (let i = 0; i < pos.count; i++) {
-    const k = `${Math.round(pos.getX(i) * q)},${Math.round(pos.getY(i) * q)},${Math.round(pos.getZ(i) * q)},${si.getX(i)}`
-    keys[i] = k
-    let a = acc.get(k)
-    if (!a) acc.set(k, (a = [0, 0, 0]))
-    a[0] += nrm.getX(i)
-    a[1] += nrm.getY(i)
-    a[2] += nrm.getZ(i)
-  }
-  for (let i = 0; i < pos.count; i++) {
-    const a = acc.get(keys[i])!
-    const l = Math.hypot(a[0], a[1], a[2]) || 1
-    nrm.setXYZ(i, a[0] / l, a[1] / l, a[2] / l)
-  }
-  return out
-}
-
-/** Nav lights / glows softened for the pastel world (no tone mapping, so keep them below 1.0). */
+/** Nav lights / glows: small and below 1.0 so they never bloom into big discs. */
 function softGlow(role: MatRole, c: Color): Color {
   if (role === "nav" || role === "strobe" || role === "glow") return c.lerp(new Color(1, 1, 1), 0.35).multiplyScalar(0.85)
   if (role === "afterburner" || role === "flame") return new Color("#ffbe80")
@@ -532,9 +503,9 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     names: string[]
     srcColor: Color
     key: string
+    metal?: boolean
   }
   const buckets = new Map<string, Bucket>()
-  const outlineGeoms: BufferGeometry[] = []
   const attach = cfg.attach ?? {}
 
   root.traverse((o) => {
@@ -571,10 +542,10 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     if (!bucket) {
       const shared: Material | null = null
       const glowColor = isGlow ? softGlow(role, emissive.clone().lerp(color, 0.25)) : color.clone()
-      bucket = { role, shared, glowColor, geoms: [], names: [], srcColor: color.clone(), key }
+      bucket = { role, shared, glowColor, geoms: [], names: [], srcColor: color.clone(), key, metal: metal >= 0.4 }
       buckets.set(key, bucket)
     }
-    const g = prepGeometry(mesh.geometry, toRoot(mesh), bone)
+    const g = prepGeometry(mesh.geometry, toRoot(mesh), bone, role === "toon" || role === "livery" || role === "glass")
     if (role === "nav") {
       // Red and green nav lights share one mesh: their color lives in vertex colors.
       const c = softGlow(role, emissive.clone().lerp(color, 0.25))
@@ -586,22 +557,19 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
     }
     bucket.geoms.push(g)
     bucket.names.push(mesh.name)
-    if (OUTLINES && (role === "toon" || role === "livery")) outlineGeoms.push(g)
   })
 
-  // Opaque paint: every deduped group gets its pastel color (or a group override), then all groups are
-  // baked into vertex colors of a single "body" mesh, so per-part recolors cost no draw calls.
-  const body: Bucket = { role: "toon", shared: bodyMaterial(), glowColor: new Color(1, 1, 1), geoms: [], names: [], srcColor: new Color(1, 1, 1), key: "body" }
+  // Opaque parts: every deduped group gets its paint color (or a group override) baked into vertex
+  // colors, then merged into two meshes: painted surfaces and bare metal. Per-part recolors are free.
+  const paint: Bucket = { role: "toon", shared: bodyMaterial(false), glowColor: new Color(1, 1, 1), geoms: [], names: [], srcColor: new Color(1, 1, 1), key: "paint", metal: false }
+  const metal: Bucket = { role: "toon", shared: bodyMaterial(true), glowColor: new Color(1, 1, 1), geoms: [], names: [], srcColor: new Color(1, 1, 1), key: "metal", metal: true }
   const kindMatch = (kinds?: VehicleKind[]) => !kinds || kinds.includes(kind)
   for (const [key, b] of [...buckets]) {
     if (b.role !== "toon") continue
     const override = COLOR_OVERRIDES.find(([re, , kinds]) => kindMatch(kinds) && b.names.some((n) => re.test(n)))?.[1]
-    const groupColor = override ? new Color(override) : pastelize(b.srcColor, "hull")
-    // Countershading: the top-paint group is darkened so the airframe reads against the light belly/terrain.
-    if (!override && b.names.some((n) => TOP_PAINT.test(n))) {
-      groupColor.getHSL(_hslT, SRGBColorSpace)
-      groupColor.setHSL(_hslT.h, _hslT.s, _hslT.l * TOP_DARKEN, SRGBColorSpace)
-    }
+    const isTop = b.names.some((n) => TOP_PAINT.test(n))
+    const target = b.metal && !isTop ? metal : paint
+    const groupColor = override ? new Color(override) : paintColor(b.srcColor, target === metal ? "metal" : "hull")
     b.geoms.forEach((g, i) => {
       const name = b.names[i]
       const partHex = PART_COLORS.find(([re, , kinds]) => kindMatch(kinds) && re.test(name))?.[1]
@@ -614,21 +582,22 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
         col[k * 3 + 2] = c.b
       }
       g.setAttribute("color", new Float32BufferAttribute(col, 3))
-      body.geoms.push(g)
-      body.names.push(name)
+      // Visors/helmets read best glossy: route them to the metal (glossier) mesh.
+      const dest = /visor/.test(name) ? metal : target
+      dest.geoms.push(g)
+      dest.names.push(name)
     })
     buckets.delete(key)
   }
-  if (body.geoms.length) buckets.set("body", body)
+  if (paint.geoms.length) buckets.set("paint", paint)
+  if (metal.geoms.length) buckets.set("metal", metal)
 
   for (const b of buckets.values()) {
     if (b.role !== "glass") continue
-    const color = pastelize(b.srcColor, "glass")
-    const cacheKey = `${b.role}:${color.getHexString()}`
-    let shared = toonCache.get(cacheKey) ?? null
+    let shared = paintCache.get("glass") ?? null
     if (!shared) {
-      shared = createToonMaterial({ color, opacity: b.role === "glass" ? 0.55 : 1, glass: b.role === "glass" })
-      toonCache.set(cacheKey, shared)
+      shared = createPaintMaterial({ color: "#1c2f52", glass: true, opacity: 0.7, roughness: 0.06, metalness: 0.2 })
+      paintCache.set("glass", shared)
     }
     b.shared = shared
   }
@@ -696,21 +665,6 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
   }
   sphere.radius += 1.5
 
-  let outline: BufferGeometry | null = null
-  if (outlineGeoms.length) {
-    // Only shape + skinning attributes (paint/vertex colors differ between groups).
-    const shapes = outlineGeoms.map((g) => {
-      const o = new BufferGeometry()
-      for (const a of ["position", "normal", "skinIndex", "skinWeight"]) o.setAttribute(a, g.getAttribute(a))
-      o.setIndex(g.index)
-      return o
-    })
-    const merged = mergeGeometries(shapes, false)
-    if (merged) {
-      outline = smoothOutlineGeometry(merged)
-      outline.deleteAttribute("uv")
-    }
-  }
   for (const b of buckets.values()) for (const g of b.geoms) if (!meshes.some((m) => m.geometry === g)) g.dispose()
 
   // Anchors.
@@ -750,16 +704,16 @@ function buildTemplate(kind: VehicleKind, scene: Object3D): Template {
   }
 
   const stats: AircraftStats = {
-    drawCalls: meshes.length + (outline ? 1 : 0),
+    drawCalls: meshes.length,
     triangles,
-    outlineTriangles: outline ? outline.index!.count / 3 : 0,
+    outlineTriangles: 0,
     bones: bones.length,
     materials: meshes.length,
     sourceNodes,
     sourceMeshes,
     sourceMaterials: sourceMats.size,
   }
-  return { kind, bones, boneIndex, boneInverses, meshes, outline, sphere, anchors, stats }
+  return { kind, bones, boneIndex, boneInverses, meshes, outline: null, sphere, anchors, stats }
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -889,8 +843,8 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 const FAR_DISTANCE = 1500
+const CREASE_ANGLE = (55 * Math.PI) / 180
 const SHADOW_MAX_AGL = 150
-const INK_MAX_DISTANCE = 950
 const _sn = new Vector3()
 const _sb = new Vector3()
 const _sr = new Vector3()
@@ -940,6 +894,7 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
   placeholder.name = "placeholder"
   root.add(placeholder)
   const shadow = createBlobShadow()
+  shadow.visible = false
   root.add(shadow)
   const shadowSize = CONFIG[kind].shadow
   let isLocal = false
@@ -957,7 +912,8 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
   let boostVis = 0
   let time = Math.random() * 10
   const blinkPhase = Math.random()
-  const outlinesEnabled = quality !== "low"
+  // Real shadow-map shadows come from the world; the blob is only a Low-quality fallback height cue.
+  const blobShadow = quality === "low"
 
   const build = (t: Template) => {
     if (disposed || rig) return
@@ -1029,19 +985,11 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       mesh.boundingSphere = t.sphere.clone()
       mesh.renderOrder = tm.role === "glass" || tm.role === "flame" ? 10 + renderOrder++ : 0
       mesh.name = tm.role
+      mesh.castShadow = tm.role === "toon" || tm.role === "livery"
       model.add(mesh)
       meshes.push(mesh)
     }
-    let outline: SkinnedMesh | null = null
-    if (t.outline) {
-      outline = new SkinnedMesh(t.outline, getOutlineMaterial())
-      outline.bindMode = DetachedBindMode
-      outline.bind(skeleton, identity)
-      outline.boundingSphere = t.sphere.clone()
-      outline.name = "outline"
-      outline.visible = outlinesEnabled
-      model.add(outline)
-    }
+    const outline: SkinnedMesh | null = null
     if (placeholder) {
       root.remove(placeholder)
       placeholder = null
@@ -1091,9 +1039,10 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
   }
 
   const updateShadow = () => {
+    if (!blobShadow) return
     // Cast along the world sun direction so the blob sits where the real shadow would.
     const agl0 = root.position.y - groundQuery(root.position.x, root.position.z)
-    // Low golden-hour sun: real shadows would land far away, so cap the cast to ~1.2x AGL.
+    // Cap the cast offset to ~1.2x AGL so the blob stays a useful height cue under a low sun.
     const off = clamp(agl0, 0, SHADOW_MAX_AGL) * Math.min(1.2, 1 / Math.max(0.05, SUN_DIRECTION.y)) / Math.max(1e-3, Math.hypot(SUN_DIRECTION.x, SUN_DIRECTION.z))
     const x = root.position.x - SUN_DIRECTION.x * off
     const z = root.position.z - SUN_DIRECTION.z * off
@@ -1192,7 +1141,6 @@ export function createAircraftView(kind: VehicleKind, team: TeamId, quality: Qua
       time += dt
 
       const far = dist > FAR_DISTANCE
-      if (r.outline) r.outline.visible = outlinesEnabled && dist < INK_MAX_DISTANCE
 
       const boost = boostHint ?? f.throttle > 0.95
       const heli = VEHICLES[vehicle.kind].flight === "heli"

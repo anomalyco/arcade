@@ -76,21 +76,22 @@ describe("heightfield", () => {
   })
 
   test("groundHeight matches the rendered LOD0 triangles", () => {
-    // Every rendered (non-skirt) LOD0 face of the central cluster must lie on the physics surface.
+    // Every rendered (non-skirt) LOD0 triangle of the central cluster must lie on the physics surface.
     const data = generateCluster(1, 1, 0)
     const r = rng(4)
-    const pos = data.positions
-    const faces = pos.length / 9
+    const pos = data.positions, idx = data.index
+    const tris = idx.length / 3
     let maxErr = 0, checked = 0
     for (let k = 0; k < 8000; k++) {
-      const f = Math.floor(r() * faces) * 9
-      const xs = [pos[f], pos[f + 3], pos[f + 6]], ys = [pos[f + 1], pos[f + 4], pos[f + 7]], zs = [pos[f + 2], pos[f + 5], pos[f + 8]]
+      const t = Math.floor(r() * tris) * 3
+      const v = [idx[t], idx[t + 1], idx[t + 2]]
+      const xs = v.map(i => pos[i * 3]), ys = v.map(i => pos[i * 3 + 1]), zs = v.map(i => pos[i * 3 + 2])
       const area = (xs[1] - xs[0]) * (zs[2] - zs[0]) - (xs[2] - xs[0]) * (zs[1] - zs[0])
       if (Math.abs(area) < 1) continue // skirt
-      let u = r(), v = r()
-      if (u + v > 1) { u = 1 - u; v = 1 - v }
-      const w = 1 - u - v
-      const lx = xs[0] * w + xs[1] * u + xs[2] * v, ly = ys[0] * w + ys[1] * u + ys[2] * v, lz = zs[0] * w + zs[1] * u + zs[2] * v
+      let u = r(), w2 = r()
+      if (u + w2 > 1) { u = 1 - u; w2 = 1 - w2 }
+      const w = 1 - u - w2
+      const lx = xs[0] * w + xs[1] * u + xs[2] * w2, ly = ys[0] * w + ys[1] * u + ys[2] * w2, lz = zs[0] * w + zs[1] * u + zs[2] * w2
       maxErr = Math.max(maxErr, Math.abs(terrainMeshHeight(lx, lz) - ly))
       checked++
     }

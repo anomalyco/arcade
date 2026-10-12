@@ -118,11 +118,11 @@ class Slot {
   setClass(c: string) { if (c !== this.cls) { this.cls = c; this.el.className = c } }
 }
 
-interface Marker { root: HTMLElement; label: Slot; glyph: Slot; dist: Slot; slot: Slot; tf: Slot; color: string; used: boolean }
+interface Marker { root: HTMLElement; label: Slot; dist: Slot; slot: Slot; tf: Slot; color: string; used: boolean }
 
 /** Brighter team tints for text/lines on top of the 3D scene (the raw team colours are too dark on sky). */
-const TEAM_TINTS = ["#8fb6ff", "#ffc06a", "#7fe0a0", "#ff8a80"]
-const glyph = (t: number) => `<i class="tg t${t}" style="--c:${TEAM_TINTS[t]}"></i>`
+const TEAM_TINTS = ["#5aa2ff", "#ffb340", "#4fd889", "#ff6b6b"]
+const glyph = (_t: number) => ""
 
 export function createHud(parent: HTMLElement): Hud {
   const root = el("div", "hud", parent)
@@ -221,6 +221,7 @@ export function createHud(parent: HTMLElement): Hud {
   let lastHpFrac = -1
   let rootCls = ""
   let shown = false
+  let accentTeam = -2
 
   // Compass strip: 3 turns of labels so wrap-around is seamless; minor ticks come from a CSS gradient.
   const PX_PER_DEG = 3
@@ -234,8 +235,8 @@ export function createHud(parent: HTMLElement): Hud {
 
   const markers: Marker[] = []
   for (let i = 0; i < MARKERS; i++) {
-    const m = el("div", "mk", markerHost, `<i class="br"></i><span class="lb"><i class="tg"></i><span class="nm"></span></span><span class="ds"></span>`)
-    markers.push({ root: m, label: new Slot(m.querySelector(".nm")!), glyph: new Slot(m.querySelector(".tg")!), dist: new Slot(m.querySelector(".ds")!), slot: new Slot(m), tf: new Slot(m), color: "", used: false })
+    const m = el("div", "mk", markerHost, `<i class="br"></i><span class="lb"><span class="nm"></span></span><span class="ds"></span>`)
+    markers.push({ root: m, label: new Slot(m.querySelector(".nm")!), dist: new Slot(m.querySelector(".ds")!), slot: new Slot(m), tf: new Slot(m), color: "", used: false })
   }
 
   const weaponRows: { name: Slot; ammo: Slot; bar: Slot; row: Slot; key: Slot; full: number; wasRegen: boolean }[] = []
@@ -285,8 +286,8 @@ export function createHud(parent: HTMLElement): Hud {
   // Terrain backdrop for the minimap in the world's pastel bands, sampled once off the critical path.
   let mapBg: HTMLCanvasElement | null = null
   const BANDS: [number, number, number, number][] = [
-    [-40, 0x2c, 0x4f, 0x78], [-8, 0x3f, 0x7f, 0x9a], [0, 0x7f, 0xd0, 0xc0], [14, 0xef, 0xcf, 0x98], [180, 0xb9, 0xb8, 0x66],
-    [380, 0x9a, 0xab, 0x68], [620, 0x6f, 0x8a, 0x55], [900, 0xc4, 0x9a, 0x74], [1300, 0xd6, 0xb4, 0x8e], [Infinity, 0xef, 0xd2, 0xa6],
+    [-40, 0x1f, 0x6f, 0xc4], [-8, 0x2f, 0x93, 0xdd], [0, 0x4f, 0xd6, 0xd8], [14, 0xf2, 0xdc, 0xa6], [180, 0x7c, 0xc4, 0x5a],
+    [380, 0x5f, 0xae, 0x4a], [620, 0x4c, 0x96, 0x42], [900, 0x9a, 0x92, 0x86], [1300, 0xb8, 0xb2, 0xa8], [Infinity, 0xf6, 0xf8, 0xfb],
   ]
 
   const buildMapBg = () => {
@@ -309,12 +310,9 @@ export function createHud(parent: HTMLElement): Hud {
   const idle = (window as unknown as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200))
   idle(buildMapBg)
 
-  const glyphPath = (ctx: CanvasRenderingContext2D, t: number, x: number, y: number, r: number) => {
+  const glyphPath = (ctx: CanvasRenderingContext2D, _t: number, x: number, y: number, r: number) => {
     ctx.beginPath()
-    if (t === 0) ctx.arc(x, y, r, 0, Math.PI * 2)
-    else if (t === 1) { ctx.moveTo(x, y - r * 1.15); ctx.lineTo(x + r * 1.1, y + r * 0.85); ctx.lineTo(x - r * 1.1, y + r * 0.85); ctx.closePath() }
-    else if (t === 2) ctx.rect(x - r * 0.88, y - r * 0.88, r * 1.76, r * 1.76)
-    else { ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r * 1.2, y); ctx.lineTo(x, y + r * 1.2); ctx.lineTo(x - r * 1.2, y); ctx.closePath() }
+    ctx.arc(x, y, r, 0, Math.PI * 2)
   }
 
   function drawMap(f: HudFrame) {
@@ -322,10 +320,10 @@ export function createHud(parent: HTMLElement): Hud {
     const k = S / (WORLD_HALF * 2)
     const ctx = mapCtx
     ctx.setTransform(mapDpr, 0, 0, mapDpr, 0, 0)
-    ctx.fillStyle = "#3f7f9a"
+    ctx.fillStyle = "#2f93dd"
     ctx.fillRect(0, 0, S, S)
     if (mapBg) { ctx.imageSmoothingEnabled = true; ctx.drawImage(mapBg, 0, 0, S, S) }
-    ctx.strokeStyle = "rgba(255,236,200,.16)"
+    ctx.strokeStyle = "rgba(255,255,255,.18)"
     ctx.lineWidth = 1
     ctx.beginPath()
     for (let i = 1; i < 4; i++) { const g = Math.round((i * S) / 4) + 0.5; ctx.moveTo(g, 0); ctx.lineTo(g, S); ctx.moveTo(0, g); ctx.lineTo(S, g) }
@@ -347,7 +345,7 @@ export function createHud(parent: HTMLElement): Hud {
       const spotted = v.spottedUntil > f.time
       if (v.team !== myTeam && !spotted) continue
       const x = (v.flight.position[0] + WORLD_HALF) * k, y = (v.flight.position[2] + WORLD_HALF) * k
-      if (spotted && v.team !== myTeam) { ctx.strokeStyle = "rgba(195,181,255,.9)"; ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.stroke() }
+      if (spotted && v.team !== myTeam) { ctx.strokeStyle = "rgba(255,90,80,.95)"; ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.stroke() }
       glyphPath(ctx, v.team, x, y, v.team === myTeam ? 2.6 : 3.2)
       ctx.fillStyle = TEAM_COLORS[v.team]
       ctx.fill()
@@ -366,7 +364,7 @@ export function createHud(parent: HTMLElement): Hud {
       ctx.fillStyle = cone
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 34, -Math.PI / 2 - 0.45, -Math.PI / 2 + 0.45); ctx.closePath(); ctx.fill()
       ctx.fillStyle = "#fff"
-      ctx.strokeStyle = "#26204a"
+      ctx.strokeStyle = "#0f1a2b"
       ctx.lineWidth = 1.5
       ctx.beginPath(); ctx.moveTo(0, -6.5); ctx.lineTo(4.5, 4.5); ctx.lineTo(0, 2.2); ctx.lineTo(-4.5, 4.5); ctx.closePath(); ctx.stroke(); ctx.fill()
       ctx.restore()
@@ -378,7 +376,7 @@ export function createHud(parent: HTMLElement): Hud {
     for (const p of f.players.values()) if (p.team < f.teams) teams[p.team].push(p)
     board.innerHTML = teams.map((list, t) => {
       list.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-      return `<div class="team${t === (f.me?.team ?? -1) ? " mine" : ""}" style="--c:${TEAM_COLORS[t]}"><h3><i class="tg t${t}"></i><span>${TEAM_NAMES[t]}</span><b>${f.scores[t] ?? 0}</b></h3>
+      return `<div class="team${t === (f.me?.team ?? -1) ? " mine" : ""}" style="--c:${TEAM_COLORS[t]}"><h3><span>${TEAM_NAMES[t]}</span><b>${f.scores[t] ?? 0}</b></h3>
         <table><tr><th>Pilot</th><th>K</th><th>D</th></tr>${list.map(p =>
           `<tr class="${p.id === f.myId ? "me" : ""}"><td>${esc(p.name)}${p.bot ? ' <em>BOT</em>' : ""}</td><td>${p.kills}</td><td>${p.deaths}</td></tr>`).join("") || `<tr><td class="none" colspan="3">No pilots</td></tr>`}</table></div>`
     }).join("")
@@ -434,6 +432,7 @@ export function createHud(parent: HTMLElement): Hud {
 
       // Target markers
       const myTeam = f.me?.team ?? -1
+      if (myTeam !== accentTeam) { accentTeam = myTeam; root.style.setProperty("--team", myTeam >= 0 ? TEAM_TINTS[myTeam] : "#5aa2ff") }
       let mi = 0
       const ownId = f.vehicle?.id
       for (const v of f.vehicles) {
@@ -458,7 +457,7 @@ export function createHud(parent: HTMLElement): Hud {
         const m = markers[mi++]
         m.used = true
         const color = TEAM_TINTS[v.team]
-        if (m.color !== color) { m.color = color; m.root.style.setProperty("--c", color); m.glyph.setClass(`tg t${v.team}`) }
+        if (m.color !== color) { m.color = color; m.root.style.setProperty("--c", color) }
         m.slot.setClass(`mk ${friend ? "friend" : "enemy"}${spotted ? " spotted" : ""}${!friend && dist > 1800 && !spotted ? " far" : ""}`)
         const s = friend ? 1 : Math.max(0.6, Math.min(1.5, 1040 / Math.max(1, dist)))
         m.tf.setTransform(tf(sx(), sy()) + ` scale(${s.toFixed(2)})`)
@@ -500,7 +499,7 @@ export function createHud(parent: HTMLElement): Hud {
             lastHpFrac = hp
           }
           hpTxt.setText(String(Math.ceil(Math.max(0, v.hp))))
-          flares.setText(f.seat === 0 ? `✦ ${v.flareCount}` : "")
+          flares.setText(f.seat === 0 ? `FLARES ${v.flareCount}` : "")
         }
         const nowMs = performance.now()
         for (let i = 0; i < 2; i++) {
@@ -544,7 +543,7 @@ export function createHud(parent: HTMLElement): Hud {
       }
       if (frame % 15 === 0) {
         let teams = ""
-        for (let t = 0; t < f.teams; t++) teams += `<span class="sc${t === myTeam ? " mine" : ""}" style="--c:${TEAM_TINTS[t]}">${glyph(t)}<b>${f.scores[t] ?? 0}</b></span>`
+        for (let t = 0; t < f.teams; t++) teams += `<span class="sc${t === myTeam ? " mine" : ""}" style="--c:${TEAM_TINTS[t]}"><b>${f.scores[t] ?? 0}</b></span>`
         let timer = ""
         if (f.remaining !== null) {
           const r = Math.max(0, Math.ceil(f.remaining))

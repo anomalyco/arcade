@@ -1,86 +1,82 @@
-// "GOLDEN ELDRITCH" — the world palette and the shared scene lighting/atmosphere constants.
+// "BRIGHT STYLIZED" — the world palette and the shared scene lighting/atmosphere constants.
 // Dependency-free so any module (aircraft, effects, UI) can import it.
-// Hex values are display (sRGB) colours; the game renders without tone mapping.
+// Hex values are display (sRGB) colours; the world renders without tone mapping.
 
 // ---------------------------------------------------------------------------------------------
 // Shared scene lighting (import these to match the world)
 
-/** Unit vector toward the sun: ~10° above the horizon, west-south-west. */
-export const SUN_DIRECTION: readonly [number, number, number] = [-0.8924, 0.1736, 0.4167]
-/** Warm apricot key light. */
-export const SUN_COLOR = "#ffc98f"
-export const SUN_INTENSITY = 2.9
-/** Hemisphere fill: rose-peach from above, cool lilac from below/shadow side. */
-export const HEMI_SKY_COLOR = "#f4cdb8"
-export const HEMI_GROUND_COLOR = "#7466ab"
-export const HEMI_INTENSITY = 2.3
-/** Directional haze: looking toward the sun the air is warm gold, away from it violet. */
-export const FOG_TOWARD_SUN = "#ffc896"
-export const FOG_AWAY_FROM_SUN = "#a493c6"
-/** Single colour for THREE.Fog (used by materials not patched with applyGoldenHaze). */
-export const FOG_COLOR = "#d6abb0"
+/** Unit vector toward the sun: ~45° above the horizon, from the south-west. */
+export const SUN_DIRECTION: readonly [number, number, number] = [-0.5, 0.7071, 0.5]
+/** White-warm key light. */
+export const SUN_COLOR = "#fff3e0"
+export const SUN_INTENSITY = 2.6
+/** Hemisphere fill: soft blue sky from above, warm green-gray bounce from below. */
+export const HEMI_SKY_COLOR = "#bcdcff"
+export const HEMI_GROUND_COLOR = "#8f9a78"
+export const HEMI_INTENSITY = 1.5
+/** Clear, light atmospheric perspective. One colour; matches the sky at the horizon. */
+export const FOG_COLOR = "#cfe5f6"
+/** Kept for compatibility: the haze is no longer directional (both equal FOG_COLOR). */
+export const FOG_TOWARD_SUN = FOG_COLOR
+export const FOG_AWAY_FROM_SUN = FOG_COLOR
 /** Balanced-quality fog range (m); other presets live in settings.ts WORLD_QUALITY. */
-export const FOG_NEAR = 600
-export const FOG_FAR = 13_600
-/** Warm-dark ink for outlines (~1–1.5 px, distance-faded). */
-export const INK_COLOR = "#3b2a3f"
-/** Distance (m) over which ink fades out: [start, end]. */
-export const INK_FADE: readonly [number, number] = [700, 3_200]
-/** Direction to the centre of the Watcher (opposite the sun, ~22° up) and its angular radius (rad). */
-export const WATCHER_DIRECTION: readonly [number, number, number] = [0.8402, 0.3746, -0.3923]
-export const WATCHER_RADIUS = 0.245
+export const FOG_NEAR = 2_500
+export const FOG_FAR = 15_000
+/** Sky gradient. */
+export const SKY_ZENITH = "#3f8ee0"
+export const SKY_HORIZON = FOG_COLOR
+/** Shadow map size per quality (0 = no shadows), and the half-extent (m) of the sun's shadow box. */
+export const SHADOW_MAP_SIZE = { low: 0, balanced: 1024, high: 2048 } as const
+export const SHADOW_RADIUS = { low: 0, balanced: 350, high: 500 } as const
+/** Outline colour for any (subtle) outline pass. The world itself draws no ink. */
+export const INK_COLOR = "#1f2a36"
+export const INK_FADE: readonly [number, number] = [400, 1_600]
+/** The Watcher was removed in the BRIGHT STYLIZED look; kept so old imports compile. Radius 0 = none. */
+export const WATCHER_DIRECTION: readonly [number, number, number] = [0, 1, 0]
+export const WATCHER_RADIUS = 0
 
 // ---------------------------------------------------------------------------------------------
 // World palette
 
 export const PALETTE = {
-  // land: warm sand, olive → sage greens, terracotta/ochre cliffs, lilac shade
-  sand: "#f7ddb0",
-  meadow: "#bad58c",
-  grass: "#94c194",
-  highland: "#8db8a0",
-  ochre: "#c8a777",
-  peak: "#efd2a6",
-  forestFloor: "#6f9c80",
-  cliff: "#b9806a",
-  cliffShade: "#8e6470",
-  wetRock: "#7d6f92",
-  cliffHigh: "#c99a78",
-  seabed: "#c6b98f",
-  lilacShade: "#8f7fbf",
+  // land
+  sand: "#efd9a2",
+  sandWet: "#d9c08a",
+  grass: "#6fba4a",
+  grassLight: "#94cc58",
+  grassDeep: "#4a9440",
+  forestFloor: "#4a8c35",
+  rock: "#8d8274",
+  rockLight: "#aaa092",
+  rockDark: "#6f665c",
+  snow: "#f6f8fb",
+  seabed: "#d6c48f",
   // trees
-  treeLight: "#a9bb6c",
-  treeMid: "#78985e",
-  treeDeep: "#4f6f4e",
-  trunk: "#8e5e48",
+  treeLight: "#7fc94a",
+  treeMid: "#57ad3c",
+  treeDeep: "#3c8d33",
+  trunk: "#8a5f3d",
+  palmLeaf: "#6cbc43",
   // water
-  shallow: "#43c6b8",
-  water: "#1d7489",
-  deep: "#21486e",
-  goldShallow: "#f2c77c",
-  foam: "#fff3dc",
-  glitter: "#ffe2a0",
+  shallow: "#3fe0d0",
+  water: "#1aa4d8",
+  deep: "#0f62b0",
+  foam: "#ffffff",
   // sky
-  skyPeach: "#ffcf9c",
-  skyRose: "#f3a7a6",
-  skyLavender: "#a995c9",
-  skyIndigo: "#3a3a78",
-  watcher: "#efe6ee",
-  watcherShade: "#8e86b8",
-  aurora: "#9fe8d0",
-  auroraLilac: "#c6a8ff",
+  zenith: SKY_ZENITH,
+  horizon: FOG_COLOR,
   // built
-  offWhite: "#f5e6cf",
-  paving: "#b3a598",
-  pavingDark: "#94877f",
-  marking: "#fff6e6",
-  glass: "#4d5f88",
-  gold: "#ffc86e",
-  // legacy aliases used by the scene lights
+  offWhite: "#f2f2ee",
+  concrete: "#b8bcbf",
+  paving: "#9da3a8",
+  pavingDark: "#7f868c",
+  marking: "#ffffff",
+  glass: "#5b7fa6",
+  roof: "#d8dde2",
+  // lights (legacy aliases)
   sunLight: SUN_COLOR,
   hemiSky: HEMI_SKY_COLOR,
   hemiGround: HEMI_GROUND_COLOR,
-  horizon: FOG_COLOR,
 } as const
 
 /** Linear-space bytes (three treats vertex/instance colours as linear working-space values). */
@@ -95,6 +91,6 @@ function rgb(hex: string): [number, number, number] {
 
 export const PALETTE_RGB = Object.fromEntries(Object.entries(PALETTE).map(([k, v]) => [k, rgb(v)])) as Record<keyof typeof PALETTE, [number, number, number]>
 
-/** Team accent colours softened toward the palette (roofs, runway band, domes). */
+/** Team colours (bold accents) and slightly softened variants for large surfaces. */
 export const TEAM_COLORS = ["#2f6fd1", "#e0902a", "#2fae5a", "#d13f3f"]
-export const TEAM_PASTELS = ["#7f8fd6", "#e8a35e", "#7dae7a", "#dc7b6c"]
+export const TEAM_PASTELS = ["#4d86e0", "#eea040", "#45bf6d", "#e05555"]

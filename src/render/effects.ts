@@ -11,8 +11,12 @@ import {
 } from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import type { Quality, Vec3 } from "../sim/types"
+import * as worldPalette from "./world/palette"
 
-const SUN = new Vector3(0.55, 0.55, 0.62).normalize()
+const SUN = (() => {
+  const d = (worldPalette as unknown as Record<string, unknown>).SUN_DIRECTION as readonly number[] | undefined
+  return d && d.length === 3 ? new Vector3(d[0], d[1], d[2]).normalize() : new Vector3(0.4, 0.75, 0.5).normalize()
+})()
 
 const GLOW_VS = /* glsl */ `
 #include <common>
@@ -75,6 +79,7 @@ attribute vec3 iPhys;  // drag, buoyancy, seed
 uniform float uTime;
 varying vec4 vColor;
 varying vec3 vViewPos;
+varying vec3 vNormalV;
 vec3 rotateAxis(vec3 v, vec3 k, float a) { float c = cos(a), s = sin(a); return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c); }
 void main() {
   float age = uTime - iT.x;
@@ -89,12 +94,14 @@ void main() {
   float grow = 1.0 - pow(1.0 - min(1.0, t * max(rate, 0.25)), 3.0);
   float size = mix(iT.z, iT.w, grow) * (1.0 - smoothstep(0.55, 1.0, t));
   vec3 axis = normalize(vec3(sin(sd * 12.9898), cos(sd * 78.233), sin(sd * 37.719) + 0.3));
-  vec3 lp = rotateAxis(position * vec3(1.0, 0.86, 1.0), axis, sd * 6.2831 + age * (sd - 0.5) * 1.6);
+  float ang = sd * 6.2831 + age * (sd - 0.5) * 1.6;
+  vec3 lp = rotateAxis(position * vec3(1.0, 0.9, 1.0), axis, ang);
   vec4 mvPosition = modelViewMatrix * vec4(c + lp * size, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   #include <logdepthbuf_vertex>
   #include <fog_vertex>
   vViewPos = mvPosition.xyz;
+  vNormalV = normalize(normalMatrix * rotateAxis(normalize(position), axis, ang));
   vColor = mix(iC0, iC1, t);
 }`
 
@@ -106,14 +113,22 @@ uniform vec3 uSun;
 uniform vec3 uSky;
 varying vec4 vColor;
 varying vec3 vViewPos;
+#ifdef SMOOTH
+varying vec3 vNormalV;
+#endif
 void main() {
   #include <logdepthbuf_fragment>
+  #ifdef SMOOTH
+  // Soft wrapped lighting + a gentle rim: smooth, puffy, cartoon smoke.
+  vec3 n = normalize(vNormalV);
+  float w = dot(n, uSun) * 0.5 + 0.5;
+  vec3 shade = mix(uSky, vec3(1.0), smoothstep(0.1, 0.85, w));
+  float rim = pow(1.0 - abs(dot(n, normalize(-vViewPos))), 3.0) * 0.18;
+  vec3 col = vColor.rgb * mix(shade, vec3(1.25), vColor.a) + rim;
+  #else
   vec3 n = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
-  float l = dot(n, uSun);
-  // Three soft bands, like the world's toon shading: lit, half, shade (cool sky-tinted).
-  // Warm apricot key, lilac half-tone, violet shade (golden-hour split).
-  vec3 band = l > 0.3 ? vec3(1.04, 0.99, 0.92) : l > -0.15 ? vec3(0.93, 0.89, 0.95) : mix(uSky, vec3(1.0), 0.3);
-  vec3 col = vColor.rgb * mix(band, vec3(1.25), vColor.a);
+  vec3 col = vColor.rgb * mix(mix(uSky, vec3(1.0), clamp(dot(n, uSun) * 0.6 + 0.5, 0.0, 1.0)), vec3(1.25), vColor.a);
+  #endif
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -169,7 +184,7 @@ void main() {
   vec4 mv = mix(tl, h, along);
   vec3 axis = h.xyz - tl.xyz;
   vec3 side = normalize(cross(axis, mv.xyz) + vec3(1e-6, 0.0, 0.0));
-  float w = max(0.35, -mv.z * 0.0016);
+  float w = max(0.3, -mv.z * 0.0013);
   mv.xyz += side * position.x * 2.0 * w;
   gl_Position = projectionMatrix * mv;
   #include <logdepthbuf_vertex>
@@ -188,8 +203,8 @@ void main() {
   float core = smoothstep(0.45, 0.95, f);
   float fade = smoothstep(0.0, 0.75, vUv.y);
   // Additive glow with a white-hot core; the warm halo is strong enough to read on bright sky.
-  vec3 col = mix(vColor * 1.4, vec3(1.0, 0.94, 0.78) * 2.0, core);
-  gl_FragColor = vec4(col * (f * f) * fade, 1.0);
+  vec3 col = mix(vColor, vec3(1.0, 0.97, 0.88) * 1.4, core);
+  gl_FragColor = vec4(col * (f * f * f) * fade, 1.0);
   #include <colorspace_fragment>
 }`
 
@@ -320,15 +335,15 @@ class Emitter {
 
 const c = (hex: string) => new Color(hex)
 // Pastel fire: butter → peach → coral, cooling to warm charcoal smoke that lightens as it dissipates.
-const FIRE_A = c("#fff1c2"), FIRE_B = c("#ffbf5e"), FIRE_C = c("#f07a5c")
-const BALL_A = c("#ffdb80"), BALL_B = c("#f58a5a"), SMOKE_WARM = c("#b9aea6"), SMOKE_WARM_PALE = c("#e9ded6")
-const SMOKE_DARK = c("#9a8e8c"), SMOKE_MID = c("#bcb0aa"), SMOKE_PALE = c("#ebe1da"), SMOKE_WHITE = c("#fbf5ee")
-const SPARK = c("#ffe4a3"), SPARK_B = c("#ff9a52")
+const FIRE_A = c("#fff4c2"), FIRE_B = c("#ffb52e"), FIRE_C = c("#ff6a1a")
+const BALL_A = c("#ffd447"), BALL_B = c("#ff9a1f"), SMOKE_WARM = c("#9da3ab"), SMOKE_WARM_PALE = c("#e8ebee")
+const SMOKE_DARK = c("#6f757d"), SMOKE_MID = c("#aab0b7"), SMOKE_PALE = c("#e9ecef"), SMOKE_WHITE = c("#ffffff")
+const SPARK = c("#ffe9a0"), SPARK_B = c("#ff9a2e")
 const FLARE_A = c("#fff8e2"), FLARE_B = c("#ffc070")
-const WHITE = c("#fff3d2")
-const TRAIL = c("#fff6e8"), TRAIL_END = c("#eadfe0")
-const DEBRIS_COLS = [c("#9a9096"), c("#b0a7a8"), c("#6f6470"), c("#d2c8c2")]
-const SKY_SHADE = c("#a596cf")
+const WHITE = c("#ffffff")
+const TRAIL = c("#ffffff"), TRAIL_END = c("#e6e9ed")
+const DEBRIS_COLS = [c("#8c939c"), c("#a8afb7"), c("#5f666f"), c("#d6dade")]
+const SKY_SHADE = c("#9fb0c6")
 const _tmp = new Color()
 const _sun = new Vector3()
 
@@ -354,8 +369,9 @@ export interface Effects {
   dispose(): void
 }
 
-function solidMaterial(vs: string): ShaderMaterial {
+function solidMaterial(vs: string, smooth = false): ShaderMaterial {
   return new ShaderMaterial({
+    defines: smooth ? { SMOOTH: "" } : {},
     vertexShader: vs,
     fragmentShader: SOLID_FS,
     uniforms: UniformsUtils.merge([UniformsLib.fog, { uTime: { value: 0 }, uSun: { value: new Vector3() }, uSky: { value: SKY_SHADE.clone() } }]),
@@ -394,8 +410,9 @@ export function createEffects(quality: Quality): Effects {
   const glow = new Emitter(glowPool)
 
   // Rounder 80-face puffs on Balanced/High; 20-face on Low.
-  const puffGeo = new IcosahedronGeometry(1, quality === "low" ? 0 : 1)
-  const puffPool = new InstancePool(quality === "low" ? 1536 : 3072, puffGeo, PARTICLE_LAYOUT, solidMaterial(PUFF_VS), 2)
+  // Smooth-shaded spheres (normals = position): 80 faces read as round puffs at effect sizes.
+  const puffGeo = new IcosahedronGeometry(1, quality === "low" ? 1 : 2)
+  const puffPool = new InstancePool(quality === "low" ? 1536 : 3072, puffGeo, PARTICLE_LAYOUT, solidMaterial(PUFF_VS, true), 2)
   const puffs = new Emitter(puffPool)
 
   const debrisGeo = new TetrahedronGeometry(1, 0)
@@ -530,7 +547,7 @@ export function createEffects(quality: Quality): Effects {
         w.last = now
         wreckPos(w, age, _wp)
         const burn = 1 - age / w.life
-        puffs.emit(now, _wp[0], _wp[1], _wp[2], rnd(0.6), 0.5, rnd(0.6), 0.35, 1.2 * burn + 0.4, 1.8 * burn + 0.5, BALL_A, 1, BALL_B, 1, 1, 0, 8)
+        puffs.emit(now, _wp[0], _wp[1], _wp[2], rnd(0.6), 0.5, rnd(0.6), 0.3, 1.0 * burn + 0.4, 1.4 * burn + 0.5, BALL_B, 0.8, FIRE_C, 0.6, 1, 0, 8)
         if (Math.random() < density) puffs.emit(now, _wp[0], _wp[1], _wp[2], rnd(0.8), 1.5, rnd(0.8), 1.8 + Math.random(), 0.8, 2.6, SMOKE_WARM, 0, SMOKE_WARM_PALE, 0, 0.8, 1.2, 1.5)
       }
       if (frame % 30 === 0) for (const [id, t] of trails) if (now - t.seen > 1) trails.delete(id)
@@ -548,10 +565,10 @@ export function createEffects(quality: Quality): Effects {
         puffs.emit(now, p[0] + rnd(s * 0.35), p[1] + rnd(s * 0.3), p[2] + rnd(s * 0.35), rnd(v), rnd(v) + s * 0.2, rnd(v),
           0.62 + Math.random() * 0.12, r * 0.85, r, i % 3 === 0 ? BALL_A : i % 3 === 1 ? BALL_B : FIRE_C, 1, i % 2 ? BALL_B : FIRE_C, 1, 4, 0, 12)
       }
-      const ns = Math.round((air ? 12 : 5 + s * 0.4) * density) + 3
+      const ns = Math.round((air ? 16 : 8 + s * 0.5) * density) + 3
       for (let i = 0; i < ns; i++) {
-        const v = s * 0.55
-        const r = s * (0.22 + Math.random() * 0.2)
+        const v = s * 0.6
+        const r = s * (0.16 + Math.random() * 0.14)
         puffs.emit(now + 0.3 + Math.random() * 0.12, p[0] + rnd(s * 0.45), p[1] + rnd(s * 0.35), p[2] + rnd(s * 0.45), rnd(v), rnd(v * 0.5) + s * 0.25, rnd(v),
           1.8 + Math.random() * 1.4, r * 0.6, r * 1.4, SMOKE_WARM, 0, SMOKE_WARM_PALE, 0, 1.2, 1.5, 1.2)
       }

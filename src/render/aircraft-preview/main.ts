@@ -7,6 +7,7 @@ import {
   HemisphereLight,
   Mesh,
   MeshLambertMaterial,
+  PCFSoftShadowMap,
   PerspectiveCamera,
   Quaternion,
   Scene,
@@ -17,8 +18,19 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import type { Quality, TeamId, Vec3, VehicleEntity, VehicleKind } from "../../sim/types"
 import { VEHICLES, WEAPONS } from "../../sim/vehicles"
-import { HEMI_GROUND_COLOR, HEMI_INTENSITY, HEMI_SKY_COLOR, PALETTE, SUN_COLOR, SUN_INTENSITY } from "../world/palette"
-import { SUN_DIRECTION } from "../world/settings"
+// Daylight preview lighting from the world's exported constants.
+const DAY = {
+  sunDir: new Vector3(...SUN_DIRECTION).normalize(),
+  sun: SUN_COLOR,
+  sunIntensity: SUN_INTENSITY,
+  hemiSky: HEMI_SKY_COLOR,
+  hemiGround: HEMI_GROUND_COLOR,
+  hemiIntensity: HEMI_INTENSITY,
+  sky: FOG_COLOR,
+  grass: PALETTE.grass,
+  paving: "#8e9398",
+}
+import { FOG_COLOR, HEMI_GROUND_COLOR, HEMI_INTENSITY, HEMI_SKY_COLOR, PALETTE, SUN_COLOR, SUN_DIRECTION, SUN_INTENSITY } from "../world/palette"
 import { aircraftStats, createAircraftView, preloadAircraft, setAircraftGroundQuery, type AircraftView } from "../aircraft"
 
 const params = new URLSearchParams(location.search)
@@ -39,24 +51,38 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.setSize(innerWidth, innerHeight)
 renderer.outputColorSpace = SRGBColorSpace
 // Match the world renderer: no tone mapping.
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = PCFSoftShadowMap
 document.body.appendChild(renderer.domElement)
 
 const scene = new Scene()
-scene.background = new Color(PALETTE.horizon)
-scene.fog = new Fog(PALETTE.horizon, 600, 5000)
-const hemi = new HemisphereLight(HEMI_SKY_COLOR, HEMI_GROUND_COLOR, HEMI_INTENSITY)
+scene.background = new Color(DAY.sky)
+scene.fog = new Fog(DAY.sky, 800, 6000)
+const hemi = new HemisphereLight(DAY.hemiSky, DAY.hemiGround, DAY.hemiIntensity)
 scene.add(hemi)
-const sun = new DirectionalLight(SUN_COLOR, SUN_INTENSITY)
-sun.position.copy(SUN_DIRECTION).multiplyScalar(100)
+const sun = new DirectionalLight(DAY.sun, DAY.sunIntensity)
+sun.position.copy(DAY.sunDir).multiplyScalar(100)
+sun.castShadow = true
+sun.shadow.mapSize.set(2048, 2048)
+sun.shadow.camera.left = -70
+sun.shadow.camera.right = 70
+sun.shadow.camera.top = 70
+sun.shadow.camera.bottom = -70
+sun.shadow.camera.far = 300
+sun.shadow.bias = -0.0005
+sun.shadow.normalBias = 0.03
+scene.add(sun.target)
 scene.add(sun)
-const ground = new Mesh(new CircleGeometry(3000, 48), new MeshLambertMaterial({ color: PALETTE.grass, flatShading: true, toneMapped: false }))
+const ground = new Mesh(new CircleGeometry(3000, 48), new MeshLambertMaterial({ color: DAY.grass }))
 ground.rotation.x = -Math.PI / 2
 ground.position.y = -4
+ground.receiveShadow = true
 scene.add(ground)
-const runway = new Mesh(new CircleGeometry(1, 4), new MeshLambertMaterial({ color: PALETTE.paving, flatShading: true, toneMapped: false }))
+const runway = new Mesh(new CircleGeometry(1, 4), new MeshLambertMaterial({ color: DAY.paving }))
 runway.scale.set(90, 30, 1)
 runway.rotation.x = -Math.PI / 2
 runway.position.y = -3.95
+runway.receiveShadow = true
 scene.add(runway)
 
 const camera = new PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20000)

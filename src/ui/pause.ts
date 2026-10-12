@@ -23,7 +23,7 @@ export function createPauseMenu(parent: HTMLElement, actions: {
   root.hidden = true
   root.innerHTML = `
     <div class="panel">
-      <h2><span class="title">Paused</span> <span class="sub">the sky keeps turning</span></h2>
+      <h2><span class="title">Paused</span></h2>
       <button class="btn primary" data-a="resume"><span class="lbl">Resume</span><span class="k">Esc</span></button>
       <button class="btn" data-a="vehicle"><span class="lbl">Change aircraft / seat</span></button>
       <button class="btn" data-a="invite"><span class="lbl">Copy invite link</span></button>
