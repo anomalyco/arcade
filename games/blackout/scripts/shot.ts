@@ -7,7 +7,7 @@ import { join } from "node:path"
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.split("=")[1] ?? d
-const base = args.find((a) => a.startsWith("http")) ?? "https://anoma.ly/labs/blackout/"
+const base = args.find((a) => a.startsWith("http")) ?? "https://anoma.ly/arcade/blackout/"
 const out = opt("out", "/tmp/opencode/shots")
 const wait = Number(opt("wait", "14"))
 mkdirSync(out, { recursive: true })

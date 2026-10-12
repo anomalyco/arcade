@@ -62,7 +62,7 @@ you how far the sound carries.
 ## Rounds and modes
 
 - **Lobby.** The host (first connected human) sets mode (`tdm` or `ffa`), rounds (3 or 5) and map, then starts. Bots fill
-  the room to four players. A room is `/labs/blackout/?room=<code>`, with no accounts; a name is the only input.
+  the room to four players. A room is `/arcade/blackout/?room=<code>`, with no accounts; a name is the only input.
 - **Loadout** (8 s). Pick a primary weapon and two gadgets.
 - **Live** (up to 180 s). The round ends when one team (or one player in FFA) has no one alive. Time running out is a
   draw.
@@ -98,7 +98,7 @@ participation, kills, round wins and awards. Per-match awards are computed on th
 
 ## Netcode
 
-- The Worker routes `/labs/blackout/ws/<room>` to a `Room` Durable Object, one per room code.
+- The Worker routes `/arcade/blackout/ws/<room>` to a `Room` Durable Object, one per room code.
 - The DO runs `World` (from `shared/`) at 30 Hz. Each human sends one intent per tick (`seq`, movement, stance, aim,
   fire, reload, gadget, use). The server applies one queued intent per tick.
 - **Visibility filtering.** For each viewer the server computes the visible set and sends only those players. Hidden

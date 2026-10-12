@@ -2,7 +2,7 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
   base: "./",
-  build: { target: "esnext", outDir: "dist/labs/blackout", emptyOutDir: true },
+  build: { target: "esnext", outDir: "dist/arcade/blackout", emptyOutDir: true },
   server: {
     allowedHosts: true,
     // Behind the opentunnel HTTPS route the browser reaches HMR on 443.
