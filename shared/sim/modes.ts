@@ -3,15 +3,19 @@ import { type Vec, clearLine } from "../geom"
 import type { Rng } from "../rng"
 import { placesFor } from "./places"
 import type { Intent, Player, World } from "./world"
+import type { FlagView, TagView, ZoneView } from "./modes-objective"
 
-export type ModeId = "ffa" | "tdm" | "dom" | "snd"
-export const MODE_IDS: readonly ModeId[] = ["ffa", "tdm", "dom", "snd"]
+export type ModeId = "ffa" | "tdm" | "dom" | "snd" | "kc" | "hp" | "ctf"
+export const MODE_IDS: readonly ModeId[] = ["ffa", "tdm", "dom", "snd", "kc", "hp", "ctf"]
 
 export const MODES: Record<ModeId, { label: string; short: string; blurb: string; teams: boolean }> = {
   ffa: { label: "Free for all", short: "FFA", blurb: "Everyone for themselves. Most kills wins.", teams: false },
   tdm: { label: "Team deathmatch", short: "TDM", blurb: "Orange vs cyan. First team to the kill target.", teams: true },
   dom: { label: "Domination", short: "DOM", blurb: "Hold A, B and C. Each point held scores.", teams: true },
   snd: { label: "Search & destroy", short: "S&D", blurb: "One life a round. Plant or defuse the bomb.", teams: true },
+  kc: { label: "Kill confirmed", short: "KC", blurb: "Kills drop dog tags. Grab enemy tags to score, deny your own.", teams: true },
+  hp: { label: "Hardpoint", short: "HP", blurb: "Hold the zone to score. It moves every minute.", teams: true },
+  ctf: { label: "Capture the flag", short: "CTF", blurb: "Take their flag home while yours is safe. Three caps wins.", teams: true },
 }
 
 export const modeOf = (v: unknown): ModeId | null => ((MODE_IDS as readonly unknown[]).includes(v) ? (v as ModeId) : null)
@@ -40,30 +44,54 @@ export type ModeView = {
   bomb: BombView | null
   /** S&D: round number, attacking team, alive per team, and the last round's winner while it's being shown. */
   round: { n: number; attack: number; alive: [number, number]; post: boolean; won: number; why: string } | null
-  /** End screen: votes per mode and yours. */
-  votes: { counts: Record<ModeId, number>; mine: ModeId | "" } | null
+  /** End screen: the modes on offer (the current one first), votes per mode and yours. */
+  votes: { counts: Record<ModeId, number>; mine: ModeId | ""; options: ModeId[] } | null
+  /** Kill confirmed: dog tags on the floor. */
+  tags?: TagView[]
+  /** Hardpoint: the zone, and where it goes next once that's announced. */
+  zone?: ZoneView | null
+  /** Capture the flag: both flags, orange's first. */
+  flags?: FlagView[]
 }
 
 /** A free-for-all view with nothing going on, for dev pages that fake a snapshot. */
 export const IDLE_VIEW: ModeView = { id: "ffa", score: [0, 0], target: 0, winner: -1, points: [], sites: [], bomb: null, round: null, votes: null }
 
 /** Something for a bot to do when nobody's in sight: walk to (x, y), and hold use once there. */
-export type Goal = { x: number; y: number; use: boolean }
+export type Goal = { x: number; y: number; use: boolean; rush?: boolean }
 
 /**
  * The next mode from the end-screen votes: the most votes wins, a tie is broken at random, and nobody voting keeps the
- * current mode.
+ * current mode. Only votes for the modes on offer count, when there's an offer.
  */
-export function tally(votes: Iterable<ModeId>, current: ModeId, rng: Rng): ModeId {
+export function tally(votes: Iterable<ModeId>, current: ModeId, rng: Rng, options?: readonly ModeId[]): ModeId {
   const counts = new Map<ModeId, number>()
-  for (const v of votes) counts.set(v, (counts.get(v) ?? 0) + 1)
+  for (const v of votes) if (!options || options.includes(v)) counts.set(v, (counts.get(v) ?? 0) + 1)
   if (!counts.size) return current
   const top = Math.max(...counts.values())
   const best = MODE_IDS.filter((m) => counts.get(m) === top)
   return best.length === 1 ? best[0]! : rng.pick(best)
 }
 
+/** What the end screen offers: the current mode ("same again"), then three others drawn at random. */
+export function voteOptions(current: ModeId, rng: Rng, count = 4): ModeId[] {
+  const rest = MODE_IDS.filter((m) => m !== current)
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = rng.int(i + 1)
+    ;[rest[i], rest[j]] = [rest[j]!, rest[i]!]
+  }
+  return [current, ...rest.slice(0, count - 1)]
+}
+
+/**
+ * Modes defined in other files register a constructor here. They extend Mode from this file, so this file can't
+ * import them without a cycle; World imports those files for their side effect.
+ */
+export const MODE_FACTORIES: Partial<Record<ModeId, () => Mode>> = {}
+
 export function createMode(id: ModeId): Mode {
+  const make = MODE_FACTORIES[id]
+  if (make) return make()
   if (id === "tdm") return new TeamDeathmatch()
   if (id === "dom") return new Domination()
   if (id === "snd") return new SearchAndDestroy()
@@ -142,7 +170,7 @@ export class Mode {
   }
 
   view(w: World, viewer: string): ModeView {
-    const counts = { ffa: 0, tdm: 0, dom: 0, snd: 0 }
+    const counts = Object.fromEntries(MODE_IDS.map((m) => [m, 0])) as Record<ModeId, number>
     for (const v of w.votes.values()) counts[v]++
     return {
       id: this.id,
@@ -153,7 +181,7 @@ export class Mode {
       sites: [],
       bomb: null,
       round: null,
-      votes: w.phase === "end" ? { counts, mine: w.votes.get(viewer) ?? "" } : null,
+      votes: w.phase === "end" ? { counts, mine: w.votes.get(viewer) ?? "", options: w.voteOptions } : null,
     }
   }
 

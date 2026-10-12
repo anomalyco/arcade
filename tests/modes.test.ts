@@ -307,6 +307,8 @@ describe("votes", () => {
     w.vote("a", "snd")
     expect(w.votes.size).toBe(0)
     w.endMatch()
+    // The end screen offers the current mode and three others at random; this test wants these.
+    w.voteOptions = ["ffa", "tdm", "dom", "snd"]
     w.vote("a", "dom")
     w.vote("b", "dom")
     w.vote("c", "tdm")
@@ -326,7 +328,7 @@ describe("votes", () => {
 describe("protocol", () => {
   test("votes and the use key are validated", () => {
     expect(decodeClient(JSON.stringify({ type: "vote", mode: "snd" }))).toEqual({ type: "vote", mode: "snd" })
-    expect(decodeClient(JSON.stringify({ type: "vote", mode: "ctf" }))).toBeNull()
+    expect(decodeClient(JSON.stringify({ type: "vote", mode: "nope" }))).toBeNull()
     const m = decodeClient(JSON.stringify({ type: "intent", seq: 1, i: { use: true } }))
     expect(m?.type === "intent" && m.i.use).toBe(true)
     const n = decodeClient(JSON.stringify({ type: "intent", seq: 1, i: { use: "yes" } }))

@@ -41,7 +41,8 @@ export class BotBrain implements Brain {
     }
     const gun = GUNS[p.gun]
     const sees = !!near && nd <= Math.max(gun.range, 12) && clearLine(p.x, p.y, near.x, near.y, world.blockers)
-    const obj = sees ? null : world.mode.botGoal(world, p)
+    const goal = world.mode.botGoal(world, p)
+    const obj = sees && !goal?.rush ? null : goal
     if (!near && !obj) return i
     if (near && sees) {
       if (this.target !== near.id) {
@@ -61,6 +62,12 @@ export class BotBrain implements Brain {
       }
       i.mx = Math.cos(want + (Math.PI / 2) * this.strafe) * 0.6
       i.my = Math.sin(want + (Math.PI / 2) * this.strafe) * 0.6
+      // A rushed objective (a flag run) keeps going while shooting.
+      const run = obj?.rush ? this.toward(world, p, obj) : null
+      if (run) {
+        i.mx = run.x
+        i.my = run.y
+      }
       // Now and then a frag at someone in throwing range.
       if (p.equip === "frag" && p.equipLeft > 0 && now >= this.reactAt && nd > 4 && nd < 11 && Math.abs(angleDiff(this.aim, want)) < 0.2 && this.rng.next() < 0.012) {
         i.equip = true
@@ -80,6 +87,21 @@ export class BotBrain implements Brain {
       i.aim = this.aim
       return i
     }
+    const dir = this.toward(world, p, dest)
+    if (dir) {
+      i.mx = dir.x
+      i.my = dir.y
+      // Run when the hunt has a long way to go.
+      i.sprint = Math.hypot(dest.x - p.x, dest.y - p.y) > 8
+      this.turn(Math.atan2(i.my, i.mx))
+      i.aim = this.aim
+    }
+    return i
+  }
+
+  /** The unit step along the path to `dest`, repathing now and then or when it moves; null once there. */
+  private toward(world: World, p: Player, dest: Vec): Vec | null {
+    const now = world.time
     const moved = !this.goal || Math.hypot(this.goal.x - dest.x, this.goal.y - dest.y) > 2
     if (now >= this.repathAt || !this.path.length || moved) {
       this.path = navFor(world.map).path(p, dest) ?? []
@@ -88,16 +110,9 @@ export class BotBrain implements Brain {
     }
     while (this.path.length && Math.hypot(this.path[0]!.x - p.x, this.path[0]!.y - p.y) < 0.35) this.path.shift()
     const next = this.path[0]
-    if (next) {
-      const d = Math.hypot(next.x - p.x, next.y - p.y)
-      i.mx = (next.x - p.x) / d
-      i.my = (next.y - p.y) / d
-      // Run when the hunt has a long way to go.
-      i.sprint = Math.hypot(dest.x - p.x, dest.y - p.y) > 8
-      this.turn(Math.atan2(i.my, i.mx))
-      i.aim = this.aim
-    }
-    return i
+    if (!next) return null
+    const d = Math.hypot(next.x - p.x, next.y - p.y)
+    return { x: (next.x - p.x) / d, y: (next.y - p.y) / d }
   }
 
   private turn(want: number): void {

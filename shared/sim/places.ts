@@ -18,6 +18,10 @@ export type Places = {
   points: [Vec, Vec, Vec]
   /** Bomb sites A and B, both on the high end's side. */
   sites: [Vec, Vec]
+  /** Hardpoint zones in the order they come up: the middle, then alternating ends and sides. */
+  hills: Vec[]
+  /** Capture the flag: each end's flag base, the low end first. */
+  bases: [Vec, Vec]
 }
 
 const cache = new Map<string, Places>()
@@ -65,7 +69,24 @@ function compute(map: MapDef): Places {
   taken.push(...slots[1].slice(0, 3))
   const sa = spot(0.68, 0.22, 4, 0.56, 0.9)
   const sb = spot(0.68, 0.78, Math.min(12, wide * 0.4), 0.56, 0.9)
-  return { ends, slots, halves, points: [a, b, c], sites: [sa, sb] }
+  taken.length = 0
+  const hills = (
+    [
+      [0.5, 0.5],
+      [0.27, 0.3],
+      [0.73, 0.7],
+      [0.33, 0.75],
+      [0.67, 0.25],
+    ] as const
+  ).map(([u, c]) => spot(u, c, Math.min(10, len * 0.15), u - 0.14, u + 0.14))
+  // Flag bases sit in the open near each end's spawns, a little in from the wall.
+  const base = (end: Vec[], lo: number, hi: number): Vec => {
+    const cx = end.reduce((s, v) => s + v.x, 0) / end.length
+    const cy = end.reduce((s, v) => s + v.y, 0) / end.length
+    return openSpot(nav, reach, { x: cx, y: cy }, Math.max(6, len * 0.12), [], 0, (v) => along(v) >= lo * len && along(v) <= hi * len)
+  }
+  const bases: [Vec, Vec] = [base(ends[0], 0, 0.22), base(ends[1], 0.78, 1)]
+  return { ends, slots, halves, points: [a, b, c], sites: [sa, sb], hills, bases }
 }
 
 /** Spots around each anchor (the anchor, then rings at 1.3 m and 2.6 m), walkable, reachable, in sight, 1.1 m apart. */

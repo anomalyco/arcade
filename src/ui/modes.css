@@ -210,19 +210,73 @@
   transition: opacity 0.2s;
 }
 
+#mtop .obj {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+#mtop .obj b {
+  font-weight: 500;
+}
+
+#mtop .obj em {
+  font-style: normal;
+  color: var(--dim);
+}
+
+#mtop .obj .hot {
+  animation: mblink 0.6s steps(2) infinite;
+}
+
+@keyframes mblink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Off-screen objective: an arrowhead at the screen edge pointing at it, with its name and distance. */
+.oarrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+.oarrow i {
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 14px solid currentColor;
+}
+
 /* ---- Menus: mode picker and the vote ---------------------------------------------------------- */
 
 .modepick {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
   margin-top: -6px;
 }
 
 .modepick button {
-  padding: 7px 0;
-  font-size: 12px;
+  padding: 6px 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   color: var(--dim);
+  white-space: nowrap;
 }
 
 .modepick button.on {
@@ -236,6 +290,15 @@
   font-size: 11px;
   letter-spacing: 0.06em;
   margin-top: -6px;
+  min-height: 2.8em;
+}
+
+.modeblurb b {
+  display: block;
+  color: var(--dim);
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  margin-bottom: 2px;
 }
 
 tr.team td {
@@ -290,6 +353,15 @@ tr.team td span {
 .vopts button b {
   flex: 1;
   font-weight: 500;
+}
+
+.vopts button b small {
+  display: block;
+  color: var(--faint);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  font-weight: 400;
+  margin-top: 2px;
 }
 
 .vopts button em {

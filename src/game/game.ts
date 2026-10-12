@@ -19,6 +19,8 @@ import type { Input } from "./input"
 import type { Session } from "./session"
 import { Smoothed } from "./smooth"
 import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
+import { objectiveBanner } from "./objective-fx"
+import { carries, slowCarrier } from "../../shared/sim/modes-objective"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -403,6 +405,12 @@ export class Game {
         return
       case "end":
         return
+      case "obj": {
+        const text = objectiveBanner(e, this.myId, teamOf(this.snap, this.roster, this.myId), (id) => this.nameOf(id))
+        if (text) this.banner = { text, t }
+        if (e.by === this.myId) this.sound.beep(0, 0)
+        return
+      }
     }
   }
 
@@ -490,6 +498,8 @@ export class Game {
       const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
+      // Carrying a flag you walk, as on the server.
+      if (this.snap && carries(this.snap.mode, this.myId)) Object.assign(i, slowCarrier(i))
       const seq = ++this.seq
       this.session.send({ type: "intent", seq, i })
       if (!live || !this.body) {
@@ -957,7 +967,12 @@ export class Game {
     }
 
     this.gearSprites(t)
-    modeSprites(snap, t, (...a) => this.sprite(...a))
+    modeSprites(
+      snap,
+      t,
+      (...a) => this.sprite(...a),
+      (id) => (id === this.myId ? (this.body && this.alive ? this.drawn : null) : (this.avatars.get(id) ?? null)),
+    )
 
     this.particles = this.particles.filter((p) => t - p.t0 < p.life)
     for (const p of this.particles) {

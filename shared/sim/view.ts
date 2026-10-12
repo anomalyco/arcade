@@ -5,7 +5,7 @@ import type { Phase, World } from "./world"
 export type PlayerView = { id: string; x: number; y: number; vx: number; vy: number; aim: number; alive: boolean; gun: Gun; health: number }
 export type GrenadeView = { id: number; by: string; x: number; y: number; z: number; vx: number; vy: number; vz: number; fuse: number }
 export type ClaymoreView = { id: number; by: string; x: number; y: number; aim: number; armed: boolean; tripped: boolean }
-export type RosterRow = { id: string; name: string; human: boolean; kills: number; deaths: number; team: number; caps: number; plants: number; defuses: number; host?: true }
+export type RosterRow = { id: string; name: string; human: boolean; kills: number; deaths: number; team: number; caps: number; plants: number; defuses: number; stats?: Record<string, number>; host?: true }
 
 export type Snapshot = {
   type: "snap"
@@ -51,6 +51,6 @@ export function buildSnapshot(world: World, viewerId: string): Snapshot {
 export function rosterOf(world: World): RosterRow[] {
   return world.order.map((id) => {
     const p = world.players.get(id)!
-    return { id, name: p.name, human: p.human, kills: p.kills, deaths: p.deaths, team: p.team, caps: p.caps, plants: p.plants, defuses: p.defuses, ...(world.host === id ? { host: true as const } : {}) }
+    return { id, name: p.name, human: p.human, kills: p.kills, deaths: p.deaths, team: p.team, caps: p.caps, plants: p.plants, defuses: p.defuses, stats: { ...p.stats }, ...(world.host === id ? { host: true as const } : {}) }
   })
 }

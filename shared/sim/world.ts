@@ -4,7 +4,8 @@ import { type MapDef, getMap } from "../maps"
 import { Rng } from "../rng"
 import { BotBrain } from "./bots"
 import { type Claymore, type Grenade, type Obstacles, launch, obstaclesOf, overlaps, stepGrenade } from "./gear"
-import { type Mode, type ModeId, createMode, modeOf, tally } from "./modes"
+import { type Mode, type ModeId, createMode, modeOf, tally, voteOptions } from "./modes"
+import "./modes-objective"
 import { stepBody } from "./move"
 import { nextHost } from "./host"
 
@@ -63,6 +64,8 @@ export type Player = {
   caps: number
   plants: number
   defuses: number
+  /** Per-mode scoreboard counts (confirms, denies, captures...), cleared every match. */
+  stats: Record<string, number>
   /** The team the room host put you on (shared/sim/host.ts), kept across matches; -1 for auto-balance. */
   hostTeam: number
 }
@@ -80,6 +83,7 @@ export type SimEvent =
   | { k: "cap"; team: number; point: string }
   | { k: "bomb"; what: "plant" | "defuse" | "explode"; by: string; x: number; y: number }
   | { k: "round"; team: number; why: string }
+  | { k: "obj"; what: string; team: number; by: string; x: number; y: number }
 
 const BOT_NAMES = ["kade", "rei", "mako", "juno", "lexx", "ryn", "zen", "lee", "nox", "ivo", "sable", "wren"]
 
@@ -104,6 +108,8 @@ export class World {
   mode: Mode
   /** End-screen votes for the next mode, by player. */
   votes = new Map<string, ModeId>()
+  /** The modes the end screen offers, the current one first. */
+  voteOptions: ModeId[] = []
   players = new Map<string, Player>()
   order: string[] = []
   events: SimEvent[] = []
@@ -145,7 +151,7 @@ export class World {
 
   /** A vote for the next mode, during the end screen. */
   vote(id: string, mode: ModeId): void {
-    if (this.phase === "end" && this.players.has(id) && modeOf(mode)) this.votes.set(id, mode)
+    if (this.phase === "end" && this.players.has(id) && modeOf(mode) && this.voteOptions.includes(mode)) this.votes.set(id, mode)
   }
 
   private setMap(map: MapDef): void {
@@ -209,7 +215,7 @@ export class World {
   }
 
   private newPlayer(id: string, name: string, brain: Brain | null): Player {
-    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, hostTeam: -1, using: false, caps: 0, plants: 0, defuses: 0 }
+    return { id, name, human: !brain, brain, x: 0, y: 0, vx: 0, vy: 0, aim: 0, alive: false, respawnAt: 0, cooldownUntil: 0, readyAt: 0, gun: "rifle", pick: "rifle", equip: "frag", equipLeft: 0, equipPick: "frag", triggerHeld: false, health: HEALTH, hurtAt: 0, mag: 0, reloadUntil: 0, queue: [], ack: 0, kills: 0, deaths: 0, team: -1, hostTeam: -1, using: false, caps: 0, plants: 0, defuses: 0, stats: {} }
   }
 
   /** Puts a player where the mode says, else at the spawn farthest from everyone alive. */
@@ -473,6 +479,7 @@ export class World {
     this.grenades = []
     this.claymores = []
     this.votes.clear()
+    this.voteOptions = voteOptions(this.mode.id, this.rng)
     const r = this.mode.result(this)
     this.events.push({ k: "end", winner: r.winner, team: r.team })
   }
@@ -484,6 +491,7 @@ export class World {
       p.caps = 0
       p.plants = 0
       p.defuses = 0
+      p.stats = {}
       p.alive = false
       p.respawnAt = 0
     }
@@ -492,7 +500,7 @@ export class World {
   /** A new floor in the mode that won the vote. */
   private newMatch(): void {
     if (!this.fixed) this.setMap(getMap(this.rng.int(2 ** 31)))
-    const next = tally(this.votes.values(), this.mode.id, this.rng)
+    const next = tally(this.votes.values(), this.mode.id, this.rng, this.voteOptions)
     this.votes.clear()
     if (next !== this.mode.id) this.mode = createMode(next)
     this.phase = "play"

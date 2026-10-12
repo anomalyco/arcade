@@ -100,7 +100,8 @@ async function main() {
     // Between floors the number keys vote for the next mode.
     if (game?.snap?.phase === "end") {
       const v = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(code)
-      if (v >= 0) vote(MODE_IDS[v]!)
+      const offer = game.snap.mode.votes?.options ?? MODE_IDS
+      if (v >= 0 && offer[v]) vote(offer[v])
       return
     }
     const i = ["Digit1", "Digit2", "Digit3"].indexOf(code)

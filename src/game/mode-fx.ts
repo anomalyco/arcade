@@ -1,5 +1,6 @@
 import { MODES, SND } from "../../shared/sim/modes"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
+import { type Where, objectiveSprites } from "./objective-fx"
 
 export type Rgb = [number, number, number]
 /** Orange and cyan, the first two colours of the free-for-all palette. */
@@ -32,8 +33,9 @@ type Sprite = (add: boolean, x: number, y: number, z: number, size: number, r: n
  * Objectives on the floor: domination rings in their owner's colour with a capture wedge filling in the capturer's,
  * bomb sites as dashed rings, and the bomb itself, blinking faster as the fuse runs down once planted.
  */
-export function modeSprites(s: Snapshot | null, t: number, sprite: Sprite): void {
+export function modeSprites(s: Snapshot | null, t: number, sprite: Sprite, where?: Where): void {
   if (!s) return
+  objectiveSprites(s, t, TEAM_COLORS, sprite, where)
   for (const p of s.mode.points) {
     const c = p.owner >= 0 ? TEAM_COLORS[p.owner] : NEUTRAL
     const pulse = p.contested ? 0.6 + 0.4 * Math.sin(t * 12) : 1

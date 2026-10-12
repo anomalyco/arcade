@@ -38,6 +38,11 @@ export class Menus {
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")
       if (t) this.act(t.dataset.act!, t.dataset.mode)
     })
+    // Hovering a mode chip shows its blurb; anywhere else, the picked mode's.
+    root.addEventListener("mouseover", (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>(".modepick [data-mode]")
+      this.blurb(modeOf(t?.dataset.mode) ?? this.mode)
+    })
     // Team picks act on press: the scoreboard re-renders as the match goes on, which can swallow a click.
     root.addEventListener("pointerdown", (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-host]")
@@ -76,14 +81,23 @@ export class Menus {
     this.mode = m
     localStorage.setItem(MODE_KEY, m)
     for (const b of this.root.querySelectorAll<HTMLElement>(".modepick [data-mode]")) b.classList.toggle("on", b.dataset.mode === m)
-    const blurb = this.root.querySelector(".modeblurb")
-    if (blurb) blurb.textContent = MODES[m].blurb
+    this.blurb(m)
   }
 
-  /** The mode chips under Create game. */
+  private blurb(m: ModeId): void {
+    const el = this.root.querySelector(".modeblurb")
+    const html = this.blurbHtml(m)
+    if (el && el.innerHTML !== html) el.innerHTML = html
+  }
+
+  private blurbHtml(m: ModeId): string {
+    return `<b>${esc(MODES[m].label.toUpperCase())}</b>${esc(MODES[m].blurb)}`
+  }
+
+  /** The mode chips under Create game: a compact grid of short names, the hovered or picked mode's blurb below. */
   private modePicker(): string {
     return `<div class="modepick">${MODE_IDS.map((m) => `<button class="${m === this.mode ? "on" : ""}" data-act="mode" data-mode="${m}" title="${esc(MODES[m].label)}">${esc(MODES[m].short)}</button>`).join("")}</div>
-      <div class="modeblurb">${esc(MODES[this.mode].blurb)}</div>`
+      <div class="modeblurb">${this.blurbHtml(this.mode)}</div>`
   }
 
   /** Name, then quick join, create game, or join a room by code. A shared link (?room=) offers just that room. */
@@ -144,6 +158,10 @@ export class Menus {
     ]
     if (m.id === "dom") cols.push(["CAPS", (r) => r.caps])
     if (m.id === "snd") cols.push(["PLANTS", (r) => r.plants], ["DEFUSES", (r) => r.defuses])
+    const stat = (k: string) => (r: RosterRow) => r.stats?.[k] ?? 0
+    if (m.id === "kc") cols.push(["CONFIRMS", stat("confirms")], ["DENIES", stat("denies")])
+    if (m.id === "hp") cols.push(["ZONE TIME", stat("hill")])
+    if (m.id === "ctf") cols.push(["CAPTURES", stat("captures")], ["RETURNS", stat("returns")])
     // The room host picks sides in team modes: a move button on every row, and shuffle.
     const picks = hostPicks(m.id)
     const amHost = picks && !!roster.find((r) => r.id === myId)?.host
@@ -183,11 +201,14 @@ export class Menus {
     </div>`
   }
 
-  /** Vote buttons for the next mode, with live counts. */
+  /** Vote buttons for the next mode: the current one ("same again") and the three on offer, with live counts. */
   private votes(v: NonNullable<Snapshot["mode"]["votes"]>, current: ModeId): string {
-    return `<div class="vote"><div class="vh">NEXT MODE <span>click or press 1–4 · no votes keeps ${esc(MODES[current].short)}</span></div><div class="vopts">${MODE_IDS.map(
-      (id, i) =>
-        `<button class="${v.mine === id ? "on" : ""}" data-act="vote" data-mode="${id}"><kbd>${i + 1}</kbd><b>${esc(MODES[id].label.toUpperCase())}</b><em>${v.counts[id] || ""}</em></button>`,
-    ).join("")}</div></div>`
+    const options = v.options?.length ? v.options : MODE_IDS.slice(0, 4)
+    return `<div class="vote"><div class="vh">NEXT MODE <span>click or press 1–${options.length} · no votes keeps ${esc(MODES[current].short)}</span></div><div class="vopts">${options
+      .map(
+        (id, i) =>
+          `<button class="${v.mine === id ? "on" : ""}" data-act="vote" data-mode="${id}" title="${esc(MODES[id].blurb)}"><kbd>${i + 1}</kbd><b>${esc(MODES[id].label.toUpperCase())}${id === current ? "<small>SAME AGAIN</small>" : ""}</b><em>${v.counts[id] || ""}</em></button>`,
+      )
+      .join("")}</div></div>`
   }
 }
