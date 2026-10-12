@@ -20,8 +20,9 @@ export const VERT_BYTES = 24
  * - cap: the top of a wall, lit by the night sky and a rim light so the plan reads in the dark
  * - shiny: lit, glossy (screens off, metal, whiteboards)
  * - haze: additive light cone under a fixture; aux is its map light
+ * - mote: a speck of dust drifting in a light; normal holds its quad corner and phase, aux its map light
  */
-export const MAT = { lit: 0, floor: 1, lamp: 2, glow: 3, wall: 4, tape: 5, glass: 6, city: 7, accent: 8, cap: 9, shiny: 10, haze: 11, actor: 12 } as const
+export const MAT = { lit: 0, floor: 1, lamp: 2, glow: 3, wall: 4, tape: 5, glass: 6, city: 7, accent: 8, cap: 9, shiny: 10, haze: 11, actor: 12, mote: 13 } as const
 export type Mat = (typeof MAT)[keyof typeof MAT]
 
 const f16buf = new Float32Array(1)

@@ -154,6 +154,28 @@ function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number)
       m.box(x0 - 0.012, 0, z0 - 0.012, x1 + 0.012, 0.1, z1 + 0.012, PAL.skirting, MAT.wall)
       // Cap: a slightly overhanging, bevelled slab that reads from above even in the dark.
       m.bevelBox(x0 - 0.015, w.h - capH, z0 - 0.015, x1 + 0.015, w.h, z1 + 0.015, 0.035, PAL.capSide, PAL.wallTop, MAT.wall, MAT.cap, PAL.capEdge)
+      if (w.style === "core" && x1 - x0 > 1.4 && z1 - z0 > 1.4) {
+        // The lift shaft's roof: plant boxes, a hatch, ducts, a blinking beacon.
+        const r = rng(seed + i * 53)
+        const top = w.h
+        const cx0 = x0 + 0.4
+        const cz0 = z0 + 0.4
+        const cw = x1 - x0 - 0.8
+        const cd = z1 - z0 - 0.8
+        m.box(x0 + 0.15, top, z0 + 0.15, x1 - 0.15, top + 0.02, z1 - 0.15, hex(0x262d40), MAT.cap)
+        for (let k = 0; k < 2; k++) {
+          const bw = Math.min(cw * 0.6, 0.5 + r() * 0.5)
+          const bd = Math.min(cd * 0.4, 0.45 + r() * 0.4)
+          const bx = cx0 + r() * Math.max(0, cw - bw)
+          const bz = cz0 + r() * Math.max(0, cd - bd)
+          m.bevelBox(bx, top, bz, bx + bw, top + 0.35 + r() * 0.3, bz + bd, 0.03, hex(0x3a4258), hex(0x4a5470))
+          m.prism(bx + bw / 2, bz + bd / 2, Math.min(bw, bd) * 0.3, Math.min(bw, bd) * 0.3, top + 0.35, top + 0.66, 10, hex(0x22283a), MAT.lit, 0, true)
+        }
+        m.box(cx0 + cw * 0.1, top, cz0 + cd * 0.7, cx0 + cw * 0.1 + 0.55, top + 0.12, cz0 + cd * 0.7 + 0.55, hex(0x4a4f5e), MAT.lit, 0, hex(0x5a6070))
+        m.box(cx0, top + 0.02, cz0 + cd * 0.45, cx0 + cw, top + 0.2, cz0 + cd * 0.45 + 0.25, hex(0x3a4050))
+        m.prism(x1 - 0.5, z0 + 0.5, 0.05, 0.04, top, top + 0.25, 6, hex(0x2a2e38))
+        m.prism(x1 - 0.5, z0 + 0.5, 0.04, 0.04, top + 0.25, top + 0.31, 6, hex(0xff2a2a), MAT.glow, 3)
+      }
       if (w.style === "core") {
         const n = Math.max(1, Math.floor((x1 - x0) / 1.8))
         for (let k = 0; k < n; k++) {
@@ -206,33 +228,41 @@ function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number)
       break
     }
     case "rack": {
-      m.box(x0, 0, z0, x1, w.h, z1, PAL.rack, MAT.wall, 0, hex(0x1d222d))
+      // A row of server cabinets: lighter vented tops so the aisles read from above, unit seams, and columns of status
+      // LEDs on both faces, some blinking.
+      m.box(x0, 0, z0, x1, w.h - 0.04, z1, PAL.rack, MAT.wall)
+      m.bevelBox(x0 - 0.01, w.h - 0.04, z0 - 0.01, x1 + 0.01, w.h, z1 + 0.01, 0.015, PAL.rack, hex(0x283048), MAT.wall, MAT.cap, hex(0x3c4870))
       const vertical = z1 - z0 > x1 - x0
       const len = vertical ? z1 - z0 : x1 - x0
       const r = rng(seed + i * 7)
-      // Unit seams and a blinking field of LEDs on both long faces.
-      for (let k = 0.3; k < len - 0.2; k += 0.6) {
-        if (vertical) {
-          m.box(x0 - 0.006, 0.05, z0 + k + 0.27, x1 + 0.006, w.h - 0.05, z0 + k + 0.3, hex(0x0b0d12), MAT.wall)
-        } else {
-          m.box(x0 + k + 0.27, 0.05, z0 - 0.006, x0 + k + 0.3, w.h - 0.05, z1 + 0.006, hex(0x0b0d12), MAT.wall)
+      const unit = 0.6
+      for (let k = 0; k + unit <= len + 0.01; k += unit) {
+        const seam = k + unit - 0.015
+        if (vertical) m.box(x0 - 0.006, 0.05, z0 + seam, x1 + 0.006, w.h - 0.02, z0 + seam + 0.03, hex(0x080a0e), MAT.wall)
+        else m.box(x0 + seam, 0.05, z0 - 0.006, x0 + seam + 0.03, w.h - 0.02, z1 + 0.006, hex(0x080a0e), MAT.wall)
+        // Vent grille on top.
+        for (let g = 0.1; g < unit - 0.1; g += 0.08) {
+          if (vertical) m.box(x0 + 0.08, w.h, z0 + k + g, x1 - 0.08, w.h + 0.004, z0 + k + g + 0.03, hex(0x161a24))
+          else m.box(x0 + k + g, w.h, z0 + 0.08, x0 + k + g + 0.03, w.h + 0.004, z1 - 0.08, hex(0x161a24))
         }
-        for (let y = 0.25; y < w.h - 0.2; y += 0.18) {
-          if (r() < 0.35) continue
-          const col = r() < 0.3 ? hex(0x40ff90) : r() < 0.85 ? hex(0x3a8aff) : hex(0xffa040)
-          const kk = k + r() * 0.3
-          if (vertical) {
-            m.box(x0 - 0.012, y, z0 + kk, x0, y + 0.025, z0 + kk + 0.05, col, MAT.glow, 3)
-            m.box(x1, y, z0 + kk, x1 + 0.012, y + 0.025, z0 + kk + 0.05, col, MAT.glow, 3)
-          } else {
-            m.box(x0 + kk, y, z0 - 0.012, x0 + kk + 0.05, y + 0.025, z0, col, MAT.glow, 3)
-            m.box(x0 + kk, y, z1, x0 + kk + 0.05, y + 0.025, z1 + 0.012, col, MAT.glow, 3)
+        for (const side of [-1, 1]) {
+          const cols = 1 + Math.floor(r() * 3)
+          for (let c = 0; c < cols; c++) {
+            const kk = k + 0.08 + c * 0.07
+            for (let y = 0.35 + r() * 0.1; y < w.h - 0.25; y += 0.09 + Math.floor(r() * 3) * 0.045) {
+              if (r() < 0.3) continue
+              const roll = r()
+              const col = roll < 0.55 ? hex(0x40ff90) : roll < 0.9 ? hex(0x3a8aff) : hex(0xffa040)
+              const aux = r() < 0.3 ? 10 + r() : 2.5
+              const face = side < 0 ? (vertical ? x0 : z0) : vertical ? x1 : z1
+              const f0 = side < 0 ? face - 0.012 : face
+              const f1 = side < 0 ? face : face + 0.012
+              if (vertical) m.box(f0, y, z0 + kk, f1, y + 0.022, z0 + kk + 0.035, col, MAT.glow, aux)
+              else m.box(x0 + kk, y, f0, x0 + kk + 0.035, y + 0.022, f1, col, MAT.glow, aux)
+            }
           }
         }
       }
-      // Vented top with a cable tray strip.
-      if (vertical) m.box(x0 + 0.15, w.h, z0 + 0.05, x1 - 0.15, w.h + 0.06, z1 - 0.05, hex(0x2a303c), MAT.lit)
-      else m.box(x0 + 0.05, w.h, z0 + 0.15, x1 - 0.05, w.h + 0.06, z1 - 0.15, hex(0x2a303c), MAT.lit)
       break
     }
     case "shelf": {
@@ -404,7 +434,7 @@ function haze(m: Mesh, l: LightDef): void {
   } else if (l.kind === "pendant" || (l.kind === "bulb" && l.h >= 2.2)) {
     const sides = 10
     const rt = l.kind === "pendant" ? 0.28 : 0.1
-    const rb = l.kind === "pendant" ? 1.4 : 1.6
+    const rb = l.kind === "pendant" ? 1.4 : 1.1
     const y1 = l.kind === "pendant" ? l.h - 0.22 : l.h
     for (let k = 0; k < sides; k++) {
       const a0 = (k / sides) * Math.PI * 2
@@ -419,6 +449,28 @@ function haze(m: Mesh, l: LightDef): void {
         l.id,
       )
     }
+  }
+}
+
+/** Dust specks hanging in a fixture's light; the vertex shader drifts them and turns each quad to face the camera. */
+function motes(m: Mesh, l: LightDef, r: () => number): void {
+  const n = l.kind === "panel" ? 26 : l.kind === "pendant" || l.kind === "desk" ? 16 : l.kind === "bulb" || l.kind === "vending" ? 12 : 0
+  const c = l.color as unknown as Rgb
+  for (let k = 0; k < n; k++) {
+    const y = 0.25 + r() * (l.h - 0.35)
+    // Wider near the floor, like the light itself.
+    const spread = 0.25 + (1 - y / Math.max(l.h, 0.5)) * (l.kind === "desk" ? 0.8 : 1.4)
+    const a = r() * Math.PI * 2
+    const d = Math.sqrt(r()) * spread
+    const p = [l.x + Math.cos(a) * d, y, l.y + Math.sin(a) * d]
+    const ph = r() * 2 - 1
+    const corner = (u: number, v: number) => m.vert(p, [u, v, ph], c, MAT.mote, l.id)
+    corner(-1, -1)
+    corner(1, -1)
+    corner(1, 1)
+    corner(-1, -1)
+    corner(1, 1)
+    corner(-1, 1)
   }
 }
 
@@ -578,6 +630,7 @@ export function buildLevel(map: MapDef): LevelData {
   for (const w of map.windows) glass.box(w[0] + 0.12, 0.35, w[1] + 0.12, w[2] - 0.12, 2.6, w[3] - 0.12, G, MAT.glass)
   for (const g of map.glass) glass.box(g[0], 0, g[1], g[2], 2.5, g[3], G, MAT.glass)
   for (const l of map.lights) haze(glass, l)
+  for (const l of map.lights) motes(glass, l, rng(seed + l.id * 7 + 3))
 
   return { chunks, glass: glass.pack(), floor: bakeFloor(map) }
 }

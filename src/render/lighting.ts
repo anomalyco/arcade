@@ -27,7 +27,7 @@ const SIZE: Record<LightKind, number> = { desk: 0.12, panel: 0.5, pendant: 0.3, 
 /** Visual reach relative to the rule's radius: lamps make tight pools, tubes wide ones. */
 const REACH: Record<LightKind, number> = { desk: 0.9, panel: 1, pendant: 0.9, exit: 1, vending: 1, server: 1, bulb: 0.9 }
 /** Practical lights read more saturated than their rule colours: warm goes amber, cold goes blue. */
-const SAT: Record<LightKind, number> = { desk: 1.7, panel: 1.3, pendant: 1.7, exit: 1.3, vending: 1, server: 0.8, bulb: 1.6 }
+const SAT: Record<LightKind, number> = { desk: 1.7, panel: 1.0, pendant: 1.7, exit: 1.3, vending: 1, server: 0.8, bulb: 1.6 }
 const sat = (c: readonly [number, number, number], k: number): [number, number, number] => {
   const m = Math.max(c[0], c[1], c[2])
   return [(c[0] / m) ** k * m, (c[1] / m) ** k * m, (c[2] / m) ** k * m]

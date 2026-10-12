@@ -171,8 +171,22 @@ struct VOut {
 @vertex fn vsStatic(v: VIn) -> VOut {
   var o: VOut;
   o.world = v.pos;
-  o.pos = F.viewProj * vec4f(v.pos, 1.0);
   o.normal = v.normal.xyz;
+  if (v.matAux.x > 12.5) {
+    // Dust mote: drift slowly around its anchor, then expand the quad toward the camera.
+    let ph = v.normal.z * 40.0;
+    let t = F.cam.w;
+    let drift = vec3f(sin(t * 0.21 + ph) + 0.4 * sin(t * 0.53 + ph * 1.7), 0.6 * sin(t * 0.17 + ph * 2.3), cos(t * 0.19 + ph * 0.7) + 0.4 * sin(t * 0.47 + ph)) * 0.22;
+    let c = v.pos + drift;
+    let toCam = normalize(F.cam.xyz - c);
+    let right = normalize(cross(vec3f(0.0, 1.0, 0.0), toCam));
+    let up = cross(toCam, right);
+    let size = 0.012 + 0.012 * fract(ph * 3.7);
+    o.world = c + (right * v.normal.x + up * v.normal.y) * size;
+    // Corner in the normal slot for the fragment's round falloff; phase rides in z.
+    o.normal = vec3f(v.normal.xy, ph);
+  }
+  o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.color = pow(v.color.rgb, vec3f(2.2));
   o.mat = v.matAux.x;
   o.aux = v.matAux.y;
@@ -329,9 +343,9 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
         let q = world.xz - pm;
         let along = dot(q, toEye);
         let across = dot(q, vec2f(-toEye.y, toEye.x));
-        let sz = 0.05 + L.extra.z * 0.45;
-        let r2 = across * across / (sz * sz) + along * along / (sz * sz * 9.0);
-        out.spec += L.color.rgb * power * exp(-r2) * shin * 0.002 * vis;
+        let sz = 0.03 + L.extra.z * 0.3;
+        let r2 = across * across / (sz * sz) + along * along / (sz * sz * 25.0);
+        out.spec += L.color.rgb * power * exp(-r2) * shin * 0.0016 * vis;
       }
     }
   }
@@ -425,7 +439,7 @@ fn city(p: vec2f) -> vec3f {
   let street = 1.0 - smoothstep(0.03, 0.07, edge);
   // Rooftops of different heights read as slightly different navy blocks; streets carry faint sodium light.
   var c = vec3f(0.006, 0.008, 0.016) * (0.6 + 0.8 * hash2(blk)) * (1.0 - street);
-  c += vec3f(0.9, 0.5, 0.18) * street * 0.035 * (0.6 + 0.4 * sin(p.x * 3.0 + p.y * 2.0));
+  c += vec3f(0.9, 0.5, 0.18) * street * 0.012;
   let w = floor(p / 0.3);
   let lit = step(0.975, hash2(w + blk * 7.0)) * (1.0 - street) * step(0.08, edge);
   c += mix(vec3f(1.0, 0.75, 0.4), vec3f(0.55, 0.75, 1.0), hash2(w * 1.7)) * lit * 0.05;
@@ -440,8 +454,15 @@ fn lampK(aux: f32) -> f32 {
 }
 
 @fragment fn fs(o: VOut) -> @location(0) vec4f {
-  let n = normalize(o.normal);
   let mat = i32(round(o.mat));
+  if (mat == 13) {
+    let r = length(o.normal.xy);
+    let k = lampK(o.aux);
+    let tw = 0.55 + 0.45 * sin(F.cam.w * 1.3 + o.normal.z * 5.0);
+    let a = (1.0 - smoothstep(0.2, 1.0, r)) * k * tw * 1.6;
+    return vec4f(o.color * a, 0.0);
+  }
+  let n = normalize(o.normal);
   let V = normalize(F.cam.xyz - o.world);
   var col: vec3f;
   var alpha = 1.0;
@@ -453,7 +474,7 @@ fn lampK(aux: f32) -> f32 {
     // Haze under a fixture: denser near the lamp and where you look through more of the cone.
     let k = lampK(o.aux);
     let thick = pow(abs(dot(n, V)), 1.6);
-    let fall = smoothstep(-0.2, 2.6, o.world.y);
+    let fall = smoothstep(-0.2, 2.6, o.world.y) * (1.0 - smoothstep(2.0, 2.7, o.world.y) * 0.5);
     let a = k * thick * fall * 0.11;
     return vec4f(o.color * a, 0.0);
   }
@@ -462,7 +483,13 @@ fn lampK(aux: f32) -> f32 {
     let k = lampK(o.aux);
     col = o.color * (0.05 + 3.6 * k);
   } else if (mat == 3) {
-    col = o.color * o.aux;
+    // aux >= 10 blinks, with its phase in the fraction.
+    var k = o.aux;
+    if (k >= 10.0) {
+      let ph = fract(k) * 37.0;
+      k = 3.0 * step(0.35, fract(F.cam.w * (0.6 + fract(ph) * 1.8) + ph));
+    }
+    col = o.color * k;
   } else if (mat == 9) {
     // Wall caps: the night sky and a cool rim on the bevels keep the plan readable in the dark.
     let rim = 1.0 - n.y;
@@ -691,7 +718,7 @@ fn hash(p: vec2f) -> f32 {
   var c = aces(hdr * G.w);
   let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   // Grade: navy in the shadows, a little warmth in the highlights, saturation up.
-  c = mix(vec3f(l), c, 1.15 - G.y);
+  c = mix(vec3f(l), c, 1.0 - G.y);
   c += vec3f(0.006, 0.011, 0.028) * (1.0 - smoothstep(0.0, 0.25, l));
   c *= mix(vec3f(0.93, 0.97, 1.06), vec3f(1.04, 1.0, 0.95), smoothstep(0.2, 0.8, l));
   let v = length(fromC * vec2f(1.0, 0.8));

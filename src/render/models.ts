@@ -14,16 +14,16 @@ export function rng(seed: number): () => number {
 }
 
 export const PAL = {
-  carpet: hex(0x2c3656),
+  carpet: hex(0x343a50),
   tile: hex(0x4e525a),
   wood: hex(0x5a4436),
   concrete: hex(0x43464c),
   grate: hex(0x3a4656),
   tape: hex(0xb08a2a),
   wallSide: hex(0x4a4f60),
-  wallTop: hex(0x34426a),
+  wallTop: hex(0x404a68),
   capSide: hex(0x1c243e),
-  capEdge: hex(0x6878a8),
+  capEdge: hex(0x6a7598),
   skirting: hex(0x161a24),
   doorFrame: hex(0x2a2e38),
   partition: hex(0x3e4862),
