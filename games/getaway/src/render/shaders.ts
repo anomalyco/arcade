@@ -32,7 +32,8 @@ fn hash2(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
 }
 
-fn shadow(world: vec3f, n: vec3f) -> f32 {
+fn shadow(world: vec3f, n: vec3f, ndl: f32) -> f32 {
+  if (ndl <= 0.0) { return 0.0; }
   let lp = F.lightViewProj * vec4f(world + n * 0.15, 1.0);
   let uv = lp.xy * vec2f(0.5, -0.5) + 0.5;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || lp.z > 1.0) { return 1.0; }
@@ -46,62 +47,69 @@ fn shadow(world: vec3f, n: vec3f) -> f32 {
   return s / 9.0;
 }
 
-fn lighting(albedo: vec3f, world: vec3f, n: vec3f) -> vec3f {
+/** Unified diffuse + Blinn-Phong specular shading in a single light loop. */
+fn shade(albedo: vec3f, world: vec3f, n: vec3f, specStrength: f32, diffScale: f32) -> vec3f {
   // Blue-hour night: a cool sky fill so the whole diorama reads, a dim warm bounce from the street.
   let sky = vec3f(0.12, 0.16, 0.34);
   let ground = vec3f(0.05, 0.045, 0.06);
-  var c = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.2;
+  var diff = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.2;
   let L = normalize(F.moonDir.xyz);
   let ndl = max(dot(n, L), 0.0);
-  c += albedo * vec3f(0.45, 0.55, 0.9) * F.moonDir.w * ndl * shadow(world, n);
+  let sh = shadow(world, n, ndl);
+  diff += albedo * vec3f(0.45, 0.55, 0.9) * (F.moonDir.w * ndl * sh);
+
+  let hasSpec = specStrength > 0.0;
+  let v = select(vec3f(0.0, 1.0, 0.0), normalize(F.cam.xyz - world), hasSpec);
+  var spec = vec3f(0.0);
+  if (hasSpec) {
+    let hm = normalize(L + v);
+    spec += vec3f(0.3, 0.38, 0.6) * pow(max(dot(n, hm), 0.0), 60.0) * 0.4;
+  }
+
   let count = u32(F.screen.z);
   for (var i = 0u; i < count; i++) {
     let li = lights[i];
     let d = li.pos.xyz - world;
-    let dist = length(d);
-    if (dist > li.pos.w) { continue; }
-    let l = d / max(dist, 0.001);
-    let x = dist / li.pos.w;
-    // Smooth windowed inverse-square: bright core, clean edge, so lamp pools read as crisp circles.
-    var att = (1.0 - x * x) * (1.0 - x * x) / (1.0 + 6.0 * x * x);
-    if (li.dir.w > -1.5) {
-      let cd = dot(-l, li.dir.xyz);
-      att *= smoothstep(li.dir.w, li.dir.w + 0.12, cd);
+    let d2 = dot(d, d);
+    let r = li.pos.w;
+    let maxR = select(r, r * 1.4, hasSpec);
+    if (d2 >= maxR * maxR) { continue; }
+    let invDist = inverseSqrt(max(d2, 1e-6));
+    let dist = d2 * invDist;
+    let l = d * invDist;
+    let isSpot = li.dir.w > -1.5;
+    let cd = select(1.0, dot(-l, li.dir.xyz), isSpot);
+    if (dist < r) {
+      let x = dist / r;
+      let t = 1.0 - x * x;
+      // Smooth windowed inverse-square: bright core, clean edge, so lamp pools read as crisp circles.
+      var att = (t * t) / (1.0 + 6.0 * x * x);
+      if (isSpot) {
+        att *= smoothstep(li.dir.w, li.dir.w + 0.12, cd);
+      }
+      let dTerm = max(dot(n, l), 0.0) * 0.85 + 0.15;
+      diff += albedo * li.color.rgb * (li.color.w * att * dTerm);
     }
-    let diff = max(dot(n, l), 0.0) * 0.85 + 0.15;
-    c += albedo * li.color.rgb * li.color.w * att * diff;
+    if (hasSpec) {
+      var sAtt = 1.0 - dist / maxR;
+      sAtt = sAtt * sAtt;
+      if (isSpot) {
+        sAtt *= smoothstep(li.dir.w - 0.1, li.dir.w + 0.12, cd);
+      }
+      let h = normalize(l + v);
+      spec += li.color.rgb * (li.color.w * sAtt * pow(max(dot(n, h), 0.0), 24.0) * 0.35);
+    }
   }
+
   if (F.spotPos.w > 0.5) {
     let d = world - F.spotPos.xyz;
     let dist = length(d);
     let cd = dot(d / dist, normalize(F.spotDir.xyz));
     let cone = smoothstep(F.spotDir.w, F.spotDir.w + 0.0025, cd);
     let ndl2 = max(dot(n, -d / dist), 0.0) * 0.8 + 0.2;
-    c += albedo * vec3f(0.92, 0.96, 1.0) * 3.2 * cone * ndl2;
+    diff += albedo * vec3f(0.92, 0.96, 1.0) * (3.2 * cone * ndl2);
   }
-  return c;
-}
-
-/** Blinn highlights from the dynamic lights and the moon; strength scales the result. */
-fn specular(world: vec3f, n: vec3f, strength: f32) -> vec3f {
-  let v = normalize(F.cam.xyz - world);
-  var s = vec3f(0.0);
-  let count = u32(F.screen.z);
-  for (var i = 0u; i < count; i++) {
-    let li = lights[i];
-    let d = li.pos.xyz - world;
-    let dist = length(d);
-    if (dist > li.pos.w * 1.4) { continue; }
-    let l = d / max(dist, 0.001);
-    var att = 1.0 - dist / (li.pos.w * 1.4);
-    att = att * att;
-    if (li.dir.w > -1.5) { att *= smoothstep(li.dir.w - 0.1, li.dir.w + 0.12, dot(-l, li.dir.xyz)); }
-    let h = normalize(l + v);
-    s += li.color.rgb * li.color.w * att * pow(max(dot(n, h), 0.0), 24.0) * 0.35;
-  }
-  let hm = normalize(normalize(F.moonDir.xyz) + v);
-  s += vec3f(0.3, 0.38, 0.6) * pow(max(dot(n, hm), 0.0), 60.0) * 0.4;
-  return s * strength;
+  return diff * diffScale + spec * specStrength;
 }
 
 /** Cheap ambient occlusion for walls: darker toward the street, a touch darker in corners near the ground. */
@@ -192,8 +200,15 @@ fn instWorld(p: vec3f, inst: Inst) -> vec3f {
 }
 
 fn instNormal(n: vec3f, inst: Inst) -> vec3f {
+  var q = n;
+  let roll = inst.params.x;
+  let pitch = inst.params.y;
+  let cr = cos(roll); let sr = sin(roll);
+  q = vec3f(q.x * cr - q.y * sr, q.x * sr + q.y * cr, q.z);
+  let cp = cos(pitch); let sp = sin(pitch);
+  q = vec3f(q.x, q.y * cp - q.z * sp, q.y * sp + q.z * cp);
   let c = cos(inst.posYaw.w); let s = sin(inst.posYaw.w);
-  return vec3f(n.x * c + n.z * s, n.y, -n.x * s + n.z * c);
+  return vec3f(q.x * c + q.z * s, q.y, -q.x * s + q.z * c);
 }
 
 @vertex fn vsInst(v: VIn, inst: Inst) -> VOut {
@@ -226,7 +241,8 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
 }
 
 @fragment fn fs(o: VOut) -> @location(0) vec4f {
-  let tex = textureSample(atlasTex, atlasSampler, o.uv);
+  let duvDx = dpdx(o.uv);
+  let duvDy = dpdy(o.uv);
   let n = normalize(o.normal);
   let mat = i32(round(o.mat));
   let cutHere = cutaway(o.world, o.pos, o.cut);
@@ -237,11 +253,16 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
     let off = o.extra.w < -0.5;
     col = o.color * select(select(2.2, 0.15, off), select(select(2.5, 0.25, off), 9.0, o.extra.w > 0.5), tail);
   } else if (mat == 8) {
+    let tex = textureSampleGrad(atlasTex, atlasSampler, o.uv, duvDx, duvDy);
     if (tex.a < 0.5) { discard; }
     col = o.color * tex.rgb * 3.0;
   } else if (mat == 7) {
+    var tex = vec4f(1.0);
+    if (o.uv.x > 0.002 || o.uv.y > 0.002) {
+      tex = textureSampleGrad(atlasTex, atlasSampler, o.uv, duvDx, duvDy);
+    }
     if (tex.a < 0.5 || cutHere) { discard; }
-    col = lighting(o.color * tex.rgb, o.world, n) + specular(o.world, n, 0.25);
+    col = shade(o.color * tex.rgb, o.world, n, 0.25, 1.0);
   } else if (mat == 5) {
     // Siren lamp: alternating red and blue strobes; dim when off.
     let phase = o.extra.z;
@@ -255,22 +276,20 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
     }
     col = o.color * (0.25 + on * 9.0);
   } else if (mat == 6) {
-    // Glass: dark, with a moonlit sheen and light reflections.
-    // Glass: near-black, picking up only highlights from nearby lights (no flat moon wash on vertical panes).
-    col = lighting(o.color, o.world, n) * 0.25 + specular(o.world, n, 0.9) + vec3f(0.006, 0.009, 0.016);
+    // Glass: near-black, picking up highlights from nearby lights and moonlight sheen.
+    col = shade(o.color, o.world, n, 0.9, 0.25) + vec3f(0.006, 0.009, 0.016);
   } else if (mat == 3) {
-    let lit = lighting(o.color, o.world, vec3f(0.0, 1.0, 0.0));
     let ripple = sin(o.world.x * 0.35 + F.cam.w * 1.3) * sin(o.world.z * 0.5 - F.cam.w * 0.9);
-    col = lit + vec3f(0.04, 0.07, 0.1) * (ripple * 0.5 + 0.5) + specular(o.world, vec3f(0.0, 1.0, 0.0), 1.5);
+    col = shade(o.color, o.world, vec3f(0.0, 1.0, 0.0), 1.5, 1.0) + vec3f(0.04, 0.07, 0.1) * (ripple * 0.5 + 0.5);
   } else if (mat == 1) {
     if (cutHere) { discard; }
     let f = facade(o.color, o.world, n);
-    col = lighting(f.rgb * (1.0 - f.a), o.world, n) * wallShade(o.world, n) + f.rgb * f.a;
+    col = shade(f.rgb * (1.0 - f.a), o.world, n, 0.0, wallShade(o.world, n)) + f.rgb * f.a;
   } else {
     if (mat == 0 && cutHere) { discard; }
-    col = lighting(o.color, o.world, n) * wallShade(o.world, n);
-    // Ground surfaces pick up a soft sheen from nearby lights (damp asphalt).
-    if (n.y > 0.9 && o.world.y < 0.3) { col += specular(o.world, n, 0.55); }
+    let isRoad = n.y > 0.9 && o.world.y < 0.3;
+    let specStr = select(0.0, 0.55, isRoad);
+    col = shade(o.color, o.world, n, specStr, wallShade(o.world, n));
   }
   return vec4f(applyFog(col, o.world), 1.0);
 }
@@ -314,9 +333,15 @@ struct Inst {
 }
 
 @vertex fn vsInst(@location(0) pos: vec3f, inst: Inst) -> @builtin(position) vec4f {
-  let p = pos * inst.tint.w;
+  var q = pos * inst.tint.w;
+  let roll = inst.params.x;
+  let pitch = inst.params.y;
+  let cr = cos(roll); let sr = sin(roll);
+  q = vec3f(q.x * cr - q.y * sr, q.x * sr + q.y * cr, q.z);
+  let cp = cos(pitch); let sp = sin(pitch);
+  q = vec3f(q.x, q.y * cp - q.z * sp, q.y * sp + q.z * cp);
   let c = cos(inst.posYaw.w); let s = sin(inst.posYaw.w);
-  let w = vec3f(p.x * c + p.z * s, p.y, -p.x * s + p.z * c) + inst.posYaw.xyz;
+  let w = vec3f(q.x * c + q.z * s, q.y, -q.x * s + q.z * c) + inst.posYaw.xyz;
   return F.lightViewProj * vec4f(w, 1.0);
 }
 `
@@ -348,7 +373,7 @@ struct SOut {
   let kind = s.misc.x;
   var world: vec3f;
   let size = s.posSize.w;
-  if (kind == 2.0 || kind == 3.0 || kind == 4.0) {
+  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || kind == 7.0) {
     let r = s.misc.y;
     let cr = cos(r); let sr = sin(r);
     let lc = vec2f(c.x * size, c.y * size * max(s.misc.z, 0.01));
@@ -398,6 +423,10 @@ struct SOut {
   } else if (k == 5.0) {
     let edge = 1.0 - abs(o.uv.x);
     a = pow(edge, 1.5) * (0.35 + 0.65 * (o.uv.y * 0.5 + 0.5));
+  } else if (k == 7.0) {
+    let q = abs(o.uv) - vec2f(0.58, 0.68);
+    let d = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - 0.18;
+    a = 1.0 - smoothstep(-0.22, 0.14, d);
   }
   if (a <= 0.002) { discard; }
   return vec4f(o.color.rgb * a * o.color.a, a * o.color.a);
@@ -508,14 +537,13 @@ struct BOut {
 }
 
 @fragment fn fs(o: BOut) -> @location(0) vec4f {
-  let tex = textureSample(atlasTex, atlasSampler, vec2f(0.001, 0.001));
   let v = normalize(F.cam.xyz - o.world);
   let facing = abs(dot(normalize(o.normal), v));
   // uv.x: 0 at the source, 1 at the far end. uv.y: overall strength.
   let along = o.uv.x;
   let core = pow(facing, 3.5);
   let fade = mix(0.9, 0.25, along) * smoothstep(0.0, 4.0, o.world.y);
-  let i = core * fade * o.uv.y * tex.a;
+  let i = core * fade * o.uv.y;
   return vec4f(o.color * i, i);
 }
 `

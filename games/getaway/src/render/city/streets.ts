@@ -17,7 +17,13 @@ const R = 3
 export function streets(m: Mesh, city: City, rng: () => number) {
   const lo = -ROAD_HALF
   const hi = GRID * CELL + ROAD_HALF
-  ground(m, lo, hi, lo, hi, 0, ASPHALT)
+  const step = 64
+  for (let x = lo; x < hi; x += step) {
+    const x1 = Math.min(hi, x + step)
+    for (let z = lo; z < hi; z += step) {
+      ground(m, x, x1, z, Math.min(hi, z + step), 0, ASPHALT)
+    }
+  }
 
   // Repair patches and manholes, so the asphalt is not one flat sheet.
   for (let k = 0; k <= GRID; k++)

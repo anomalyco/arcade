@@ -30,7 +30,7 @@ export interface Session {
 export class LocalSession implements Session {
   readonly myId = "me"
   readonly room = null
-  private world: World
+  readonly world: World
   private acc = 0
   private participants: Participant[]
   private prev: WorldView
@@ -90,5 +90,12 @@ export class LocalSession implements Session {
 
   status() {
     return "solo"
+  }
+
+  syncBench() {
+    this.stageInput = null
+    this.acc = 0
+    this.frozen = false
+    this.curr = this.prev = this.world.view(this.myId)
   }
 }

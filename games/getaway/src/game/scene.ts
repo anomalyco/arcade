@@ -49,9 +49,24 @@ export class Scene {
   private lights = new Float32Array(MAX_LIGHTS * 12)
   private alpha = new Float32Array(MAX_SPRITES_PER_LIST * SPRITE_FLOATS)
   private add = new Float32Array(MAX_SPRITES_PER_LIST * SPRITE_FLOATS)
+  private beams = new Mesh()
+  private beamBuf = new Float32Array<ArrayBuffer>(new ArrayBuffer(4096 * 4))
+  private batchMap = new Map<number, { data: Float32Array<ArrayBuffer>; count: number; ghostCount: number }>()
+  private batchOut: InstanceBatch[] = []
+  private nearLamps: { l: LampLight; d: number }[] = []
   private time = 0
   /** Camera shake requests from impacts on the followed car. */
   shake = 0
+
+  resetBench() {
+    this.fx.puffs.length = 0
+    this.fx.alpha.length = 0
+    this.fx.add.length = 0
+    this.fx.skids.length = 0
+    this.vis.clear()
+    this.time = 0
+    this.shake = 0
+  }
 
   constructor(
     private renderer: Renderer,
@@ -206,16 +221,56 @@ export class Scene {
       } else if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x, y, z, size, r, g, b, a, kind, rot, stretch, seed: extra })
     }
 
-    const beams = new Mesh()
-    const batches = new Map<number, number[]>()
-    const ghosts = new Map<number, number[]>()
-    const inst = (model: number, map: Map<number, number[]>, vals: number[]) => {
-      let arr = map.get(model)
-      if (!arr) map.set(model, (arr = []))
-      arr.push(...vals)
+    const beams = this.beams
+    beams.v.length = 0
+    for (const slot of this.batchMap.values()) {
+      slot.count = 0
+      slot.ghostCount = 0
+    }
+    const pushInst = (
+      model: number,
+      ghost: boolean,
+      x: number,
+      y: number,
+      z: number,
+      yaw: number,
+      roll: number,
+      pitch: number,
+      siren: number,
+      brake: number,
+      tr: number,
+      tg: number,
+      tb: number,
+      scale: number,
+    ) => {
+      let slot = this.batchMap.get(model)
+      if (!slot) {
+        slot = { data: new Float32Array(new ArrayBuffer(64 * INST_FLOATS * 4)), count: 0, ghostCount: 0 }
+        this.batchMap.set(model, slot)
+      }
+      if ((slot.count + 1) * INST_FLOATS > slot.data.length) {
+        const next = new Float32Array(new ArrayBuffer(slot.data.length * 2 * 4))
+        next.set(slot.data)
+        slot.data = next
+      }
+      const b = slot.data
+      const o = slot.count * INST_FLOATS
+      b[o] = x
+      b[o + 1] = y
+      b[o + 2] = z
+      b[o + 3] = yaw
+      b[o + 4] = roll
+      b[o + 5] = pitch
+      b[o + 6] = siren
+      b[o + 7] = brake
+      b[o + 8] = tr
+      b[o + 9] = tg
+      b[o + 10] = tb
+      b[o + 11] = scale
+      slot.count++
+      if (ghost) slot.ghostCount = slot.count
     }
 
-    const chasing = view.phase === "chase" || view.phase === "headstart" || view.phase === "end"
     for (const c of view.cars) {
       const spec = VEHICLE_BY_ID.get(c.vehicle)!
       const vs = this.variants.get(c.vehicle)!
@@ -228,6 +283,7 @@ export class Scene {
         sprite("d", c.x, 0.12, c.z, 5, 1, 0.2, 0.15, 0.4, 3)
         continue
       }
+
       const v = this.visOf(c)
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = c.speed > 2 && c.speed < v.speed - 0.05 ? 1 : 0
@@ -247,13 +303,11 @@ export class Scene {
       }
       if (c.engineOff) {
         // Engine off: exactly like a parked car (same instance params, no lights, glows or silhouette), so it blends in.
-        inst(model, batches, [c.x, sagY, c.z, c.h, sagRoll, sagPitch, -1, -1, 0, 0, 0, 1])
-        if (c.id === focus?.id) inst(model, ghosts, [c.x, sagY, c.z, c.h, sagRoll, sagPitch, -1, -1, tint[0], tint[1], tint[2], 1])
+        const isFocus = c.id === focus?.id
+        pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll, sagPitch, -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1)
         continue
       }
-      const vals = [c.x, sagY, c.z, c.h, v.roll + sagRoll, v.pitch + sagPitch, siren, braking, tint[0], tint[1], tint[2], 1]
-      inst(model, batches, vals)
-      inst(model, ghosts, vals)
+      pushInst(model, true, c.x, sagY, c.z, c.h, v.roll + sagRoll, v.pitch + sagPitch, siren, braking, tint[0], tint[1], tint[2], 1)
 
       const fx = Math.sin(c.h)
       const fz = Math.cos(c.h)
@@ -287,13 +341,13 @@ export class Scene {
     for (const p of this.city.parked) {
       if ((p.x - cam.fx) ** 2 + (p.z - cam.fz) ** 2 > 260 * 260) continue
       // Parked cars have their lamps off (brake param -1), the same as an engine-off player car.
-      inst(this.models.get(p.model)!, batches, [p.x, 0, p.z, p.h, 0, 0, -1, -1, 0, 0, 0, 1])
+      pushInst(this.models.get(p.model)!, false, p.x, 0, p.z, p.h, 0, 0, -1, -1, 0, 0, 0, 1)
     }
 
     // Deployed spike strips: the model plus blinking red end glows so they read at a glance.
     for (const p of view.props ?? []) {
       if (p.kind !== "spike") continue
-      inst(this.spikeModel, batches, [p.x, 0, p.z, p.h, 0, 0, -1, 0, 0, 0, 0, 1])
+      pushInst(this.spikeModel, false, p.x, 0, p.z, p.h, 0, 0, -1, 0, 0, 0, 0, 1)
       const blink = Math.floor(t * 3 + p.id) % 2 === 0 ? 1.8 : 0.6
       const ax = Math.cos(p.h) * p.r
       const az = -Math.sin(p.h) * p.r
@@ -303,9 +357,24 @@ export class Scene {
 
     // Helicopter with spinning rotor and its spotlight beam.
     if (heli.active) {
-      inst(this.heliModel, batches, [heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, HELI_SCALE])
-      inst(this.rotorModel, batches, [heli.x, heli.y + 3.1 * HELI_SCALE / 1.2, heli.z, t * 25, 0, 0, -1, 0, 1, 1, 1, HELI_SCALE])
-      inst(this.rotorModel, batches, [heli.x + Math.sin(heli.h) * -7.9 * HELI_SCALE / 1.2, heli.y + 2.3 * HELI_SCALE / 1.2, heli.z + Math.cos(heli.h) * -7.9 * HELI_SCALE / 1.2, t * 40, 0, 0, -1, 0, 1, 1, 1, 0.1])
+      pushInst(this.heliModel, false, heli.x, heli.y, heli.z, heli.h, 0.05, 0.08, -1, 0, 1, 1, 1, HELI_SCALE)
+      pushInst(this.rotorModel, false, heli.x, heli.y + (3.1 * HELI_SCALE) / 1.2, heli.z, t * 25, 0, 0, -1, 0, 1, 1, 1, HELI_SCALE)
+      pushInst(
+        this.rotorModel,
+        false,
+        heli.x + (Math.sin(heli.h) * -7.9 * HELI_SCALE) / 1.2,
+        heli.y + (2.3 * HELI_SCALE) / 1.2,
+        heli.z + (Math.cos(heli.h) * -7.9 * HELI_SCALE) / 1.2,
+        t * 40,
+        0,
+        0,
+        -1,
+        0,
+        1,
+        1,
+        1,
+        0.1,
+      )
       const sx = heli.x + Math.sin(heli.h) * 1.7
       const sz = heli.z + Math.cos(heli.h) * 1.7
       cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS, [0.75, 0.85, 1], 0.32)
@@ -332,28 +401,62 @@ export class Scene {
     }
 
     // Street lamps: glows for all nearby, real lights for the closest.
-    const near = this.lamps
-      .map((l) => ({ l, d: (l.x - cam.fx) ** 2 + (l.z - cam.fz) ** 2 }))
-      .filter((e) => e.d < 230 * 230)
-      .sort((a, b) => a.d - b.d)
-    for (const { l } of near) {
+    const near = this.nearLamps
+    near.length = 0
+    for (let i = 0; i < this.lamps.length; i++) {
+      const l = this.lamps[i]!
+      const d = (l.x - cam.fx) ** 2 + (l.z - cam.fz) ** 2
+      if (d < 230 * 230) near.push({ l, d })
+    }
+    near.sort((a, b) => a.d - b.d)
+    for (let i = 0; i < near.length; i++) {
+      const l = near[i]!.l
       sprite("d", l.x, l.y, l.z, l.small ? 0.6 : 0.9, 1, 0.75, 0.45, 1.6, 0)
     }
     // Real lights only for lamps that can light what's on screen; the rest just glow.
-    for (const { l, d } of near) if (d < 120 * 120) light(l.x, l.y, l.z, l.small ? 10 : 17, 1, 0.58, 0.26, l.small ? 3 : 5)
+    for (let i = 0; i < near.length; i++) {
+      const { l, d } = near[i]!
+      if (d < 120 * 120) light(l.x, l.y, l.z, l.small ? 10 : 17, 1, 0.58, 0.26, l.small ? 3 : 5)
+    }
     f[32 + 8 + 2] = n
 
     const puffs = this.fx.puffInstances()
-    if (puffs.length) batches.set(this.puffModel, puffs)
+    for (let i = 0; i < puffs.length; i += INST_FLOATS) {
+      pushInst(
+        this.puffModel,
+        false,
+        puffs[i]!,
+        puffs[i + 1]!,
+        puffs[i + 2]!,
+        puffs[i + 3]!,
+        puffs[i + 4]!,
+        puffs[i + 5]!,
+        puffs[i + 6]!,
+        puffs[i + 7]!,
+        puffs[i + 8]!,
+        puffs[i + 9]!,
+        puffs[i + 10]!,
+        puffs[i + 11]!,
+      )
+    }
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST)
-    const pack = (map: Map<number, number[]>): InstanceBatch[] => [...map].map(([model, arr]) => ({ model, data: new Float32Array(arr), count: arr.length / INST_FLOATS }))
-    const beamData = beams.toArray()
-    this.renderer.setBeams(beamData, beams.count)
+    const batches = this.batchOut
+    batches.length = 0
+    for (const [model, slot] of this.batchMap) {
+      if (slot.count > 0) {
+        batches.push({ model, data: slot.data, count: slot.count, ghostCount: slot.ghostCount })
+      }
+    }
+    if (beams.v.length > this.beamBuf.length) {
+      this.beamBuf = new Float32Array(new ArrayBuffer(beams.v.length * 2 * 4))
+    }
+    for (let i = 0; i < beams.v.length; i++) this.beamBuf[i] = beams.v[i]!
+    this.renderer.setBeams(this.beamBuf, beams.count)
     this.renderer.render({
       frame: f,
       lights: L,
-      batches: pack(batches),
-      ghosts: pack(ghosts).filter((b) => b.model !== this.heliModel && b.model !== this.rotorModel && b.model !== this.puffModel && b.model !== this.spikeModel),
+      batches,
+      ghosts: [],
       sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,
@@ -391,8 +494,11 @@ function lightMatrix(eye: number[], target: number[]) {
   const S = 150
   const near = 50
   const far = 600
+  const step = (2 * S) / 2048
+  const tx = Math.round(-dot(x, eye) / step) * step
+  const ty = Math.round(-dot(y, eye) / step) * step
   // Column-major ortho * lookAt, depth 0..1.
-  const view = [x[0], y[0]!, z[0], 0, x[1], y[1]!, z[1], 0, x[2], y[2]!, z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1]
+  const view = [x[0], y[0]!, z[0], 0, x[1], y[1]!, z[1], 0, x[2], y[2]!, z[2], 0, tx, ty, -dot(z, eye), 1]
   const proj = [1 / S, 0, 0, 0, 0, 1 / S, 0, 0, 0, 0, -1 / (far - near), 0, 0, 0, -near / (far - near), 1]
   return mul(proj, view)
 }
