@@ -140,7 +140,7 @@ export class Renderer {
 
     this.polarPipe = d.createComputePipeline({
       layout: d.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
-      compute: { module: d.createShaderModule({ code: polarShader }), entryPoint: "main" },
+      compute: { module: this.module(polarShader, "polar"), entryPoint: "main" },
     })
 
     const meshLayout: GPUVertexBufferLayout = {
@@ -173,8 +173,8 @@ export class Renderer {
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } }
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [sceneLayout] })
-    const scene = d.createShaderModule({ code: sceneShader })
-    const sprite = d.createShaderModule({ code: spriteShader })
+    const scene = this.module(sceneShader, "scene")
+    const sprite = this.module(spriteShader, "sprite")
     const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true) =>
       d.createRenderPipeline({
         layout,
@@ -191,7 +191,7 @@ export class Renderer {
     this.pipes.spriteAlpha = pipe(sprite, "vs", [spriteLayout], premul, false)
     this.pipes.spriteAdd = pipe(sprite, "vs", [spriteLayout], additive, false)
 
-    const post = d.createShaderModule({ code: postShader })
+    const post = this.module(postShader, "post")
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
     const postPipe = (fs: string, fmt: GPUTextureFormat, blend?: GPUBlendState) =>
       d.createRenderPipeline({ layout: postPipeLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module: post, entryPoint: fs, targets: [{ format: fmt, blend }] }, primitive: { topology: "triangle-list" } })
@@ -199,6 +199,15 @@ export class Renderer {
     this.pipes.up = postPipe("up", HDR, additive)
     this.pipes.composite = postPipe("composite", format)
     for (let i = 0; i < BLOOM_LEVELS; i++) this.postParams.push(d.createBuffer({ size: 16, usage: U.UNIFORM | U.COPY_DST }))
+  }
+
+  /** Compiles a shader module and reports any compile errors with their line. */
+  private module(code: string, label: string): GPUShaderModule {
+    const m = this.device.createShaderModule({ code, label })
+    void m.getCompilationInfo().then((info) => {
+      for (const msg of info.messages) if (msg.type === "error") console.error(`[wgsl ${label}:${msg.lineNum}:${msg.linePos}] ${msg.message}`)
+    })
+    return m
   }
 
   private makeSceneGroup(): void {
@@ -287,7 +296,38 @@ export class Renderer {
     this.postGroups = { down, up, composite: group(this.hdr, this.postParams[0]!, this.bloom[0]!) }
   }
 
+  private pending: FrameInput | null = null
+  private scheduled = false
+  private inflight = 0
+
+  /**
+   * Queues a frame. Calls within one task collapse to the last (Game reuses its arrays, so the latest input is always
+   * consistent), and at most two frames are in flight: a slow GPU (SwiftShader) drops frames instead of building an
+   * unbounded backlog. A dropped frame is drawn once the GPU catches up, so the latest state always reaches the screen.
+   */
   render(f: FrameInput): void {
+    this.pending = f
+    this.schedule()
+  }
+
+  private schedule(): void {
+    if (this.scheduled) return
+    this.scheduled = true
+    queueMicrotask(() => {
+      this.scheduled = false
+      const f = this.pending
+      if (!f || this.inflight >= 2) return
+      this.pending = null
+      this.draw(f)
+      this.inflight++
+      void this.device.queue.onSubmittedWorkDone().then(() => {
+        this.inflight--
+        if (this.pending) this.schedule()
+      })
+    })
+  }
+
+  private draw(f: FrameInput): void {
     const d = this.device
     d.queue.writeBuffer(this.frameBuf, 0, f.frame)
     if (f.lightCount) d.queue.writeBuffer(this.lightBuf, 0, f.lights.buffer, f.lights.byteOffset, f.lightCount * LIGHT_FLOATS * 4)

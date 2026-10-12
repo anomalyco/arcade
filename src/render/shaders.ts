@@ -276,11 +276,11 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
   let f = a / TAU * f32(RAYS) - 0.5;
   let base = slot * RAYS;
   let stepR = max(size * 0.22 / max(d, 0.4) * f32(RAYS) / TAU, 0.35);
-  var acc = tapVis(base, f, d, y, hl, size) * 0.3;
-  acc += tapVis(base, f - stepR, d, y, hl, size) * 0.2;
-  acc += tapVis(base, f + stepR, d, y, hl, size) * 0.2;
-  acc += tapVis(base, f - stepR * 2.0, d, y, hl, size) * 0.15;
-  acc += tapVis(base, f + stepR * 2.0, d, y, hl, size) * 0.15;
+  var acc = 0.0;
+  for (var k = -2; k <= 2; k++) {
+    let w = select(select(0.15, 0.2, abs(k) == 1), 0.3, k == 0);
+    acc += tapVis(base, f + f32(k) * stepR, d, y, hl, size) * w;
+  }
   return acc;
 }
 
@@ -496,8 +496,7 @@ fn lampK(aux: f32) -> f32 {
     let sp = spill(o.world);
     col = o.color * (vec3f(0.42, 0.48, 0.62) + mix(vec3f(dot(sp, vec3f(0.33))), sp, 0.5) * 0.2) + vec3f(0.03, 0.045, 0.085) * rim;
   } else if (mat == 6) {
-    let lit = lightSum(o.world, vec3f(0.0, 1.0, 0.0), V, 0.0, 1.0);
-    col = vec3f(0.006, 0.01, 0.02) + lit.diff * 0.2 + vec3f(0.03, 0.05, 0.09) * pow(1.0 - abs(n.y), 3.0);
+    col = vec3f(0.006, 0.01, 0.02) + spill(o.world) * 0.12 + vec3f(0.03, 0.05, 0.09) * pow(1.0 - abs(n.y), 3.0);
     alpha = 0.22;
   } else {
     var albedo = o.color;

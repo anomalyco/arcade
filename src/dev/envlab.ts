@@ -1,6 +1,7 @@
 // Dev-only environment viewer (envlab.html): a generated office floor through the real Game and Renderer, with a few
 // soldiers standing about. ?seed=N picks the floor, ?x=&y= centre the camera, ?light=K centres on the K-th light of
-// ?kind=panel|desk|exit|..., ?zoom=17 sets the distance, ?big=1 builds a 160 m stress floor. window.goto(x, y) moves.
+// ?kind=panel|desk|exit|..., ?zoom=17 sets the distance, ?big=N tiles the floor NxN to stress culling, ?stress=N
+// renders every frame N times. window.goto(x, y) moves.
 import type { MapDef } from "../../shared/maps"
 import { getMap } from "../../shared/maps"
 import type { ClientMsg } from "../../shared/protocol"
@@ -62,6 +63,7 @@ async function main() {
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
   const device = await adapter!.requestDevice()
   device.addEventListener("uncapturederror", (e) => console.error(`[gpu] ${e.error.message}`))
+  void device.lost.then((i) => console.error(`[gpu lost] ${i.reason} ${i.message}`))
   const context = canvas.getContext("webgpu")!
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
@@ -92,6 +94,7 @@ async function main() {
   const cam = new Camera()
   cam.snap(fx, fy)
   const zoom = Number(params.get("zoom") ?? "17")
+  const stress = Math.max(1, Number(params.get("stress") ?? "1"))
   cam.dist = zoom
   const resize = () => {
     canvas.width = Math.floor(innerWidth * Math.min(devicePixelRatio, 1.5))
@@ -107,6 +110,11 @@ async function main() {
     cam.snap(x, y)
   }
   w.lights = map.lights
+  ;(window as unknown as { gpuIdle(): Promise<number> }).gpuIdle = async () => {
+    const t0 = performance.now()
+    await device.queue.onSubmittedWorkDone()
+    return performance.now() - t0
+  }
   w.stats = () => ({ chunks: renderer.drawnChunks, lights: map.lights.length, walls: map.walls.length, size: map.size })
   const info = document.getElementById("info")!
   let last = performance.now()
@@ -121,7 +129,9 @@ async function main() {
     game.update(dt, input, cam, innerWidth, innerHeight, clock)
     cam.follow(fx, fy, 0, 0, dt, false)
     cam.dist = zoom
-    renderer.render(game.build(cam, innerWidth, innerHeight, dt))
+    const f = game.build(cam, innerWidth, innerHeight, dt)
+    // ?stress=N renders each frame N times, to see how much headroom is left under vsync.
+    for (let k = 0; k < stress; k++) renderer.render(f)
     requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)
