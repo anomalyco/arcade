@@ -211,7 +211,7 @@ and `games/blackout/scripts/prove-shared-motion.ts`. Raw evidence and limits: `p
 Lab tunables, tyre heat/emissions, skids, pops, and procedural engine/gearbox/tyre voices. See its README for the
 coordinate and renderer contracts. Each game supplies terrain, interpolated controls, meshes and renderer/audio
 sinks. Blackout's adapter converts its +X-forward mesh convention and kilograms; simulation and human rigs remain
-game-owned. Consolidating the exact shipped smoke pool with `fx-kit` is still pending.
+game-owned. The smoke pool and GPU pipeline are canonical in `kit/fx`; vehicle smoke paths are compatibility adapters.
 
 ### Outbreak M1 extractions
 
@@ -220,8 +220,8 @@ Blackout and Outbreak now consume `@arcade/kit/gpu/{mesh,renderer,shaders,limits
 Blackout's original paths re-export the shared implementations. The renderer owns packed vertices/instances,
 polar-light compute, cutaway chunks, MSAA/HDR targets and the five-level bloom/post chain. `makeSceneShader`
 accepts pure WGSL surface and directional-light hooks, with Blackout's shader behavior as its default.
-An optional exploration texture is available at binding 8; Blackout never samples it. Binding 7 retains PR5's motion
-uniform. The shipped Blackout look/motion variants were reconciled into the shared engine on this branch.
+An optional exploration texture is available at binding 9; Blackout never samples it. Binding 7 retains the motion
+uniform, and binding 8 holds the separate fine moon mask. The shipped Blackout look/motion variants share this engine.
 `gpu/surface-materials.ts` supplies opt-in matte outdoor finishes and footprint-filtered detail. Outbreak selects
 the existing dense shadow kernel and custom post constants through shared shader options; default Blackout output
 is preserved. House and terrain generation remain game-owned. See `docs/outbreak-look.md` for measured cost and gaps.

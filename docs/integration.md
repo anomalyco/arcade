@@ -44,4 +44,35 @@ Wizards' latest committed change is immediate click casting (`2e3177a`), after t
 - The first remote package check saw stale `kit/playground` files from Hivemind's reused checkout seed, which are
   absent from this branch. Subsequent checks use a clean archive export.
 
-Pending combined-tree checks and browser proof. Source-branch results do not establish integration correctness.
+## Local review
+
+Run `bun install --frozen-lockfile` at the root. Start each client from its game directory with
+`bunx --no-install vite --host 127.0.0.1`; Blackout also needs `bun scripts/build-id.ts` first.
+For the full game server use the existing `bun run dev` script from Getaway or Blackout.
+
+The integration worktree has these named client previews:
+
+- Getaway: <http://arcade-review-getaway.localhost:1355/?peaceful=1&seed=7>
+- Blackout: <http://arcade-review-blackout.localhost:1355/?sandbox=1&seed=1>
+- Wizards: <http://arcade-review-blackout.localhost:1355/?sandbox=1&mode=wizards&seed=1>
+- Shared Lab: <http://arcade-review-blackout.localhost:1355/lab.html>
+- Outbreak: <http://arcade-review-outbreak.localhost:1355/?solo&seed=7>
+
+These client previews support local play. The sniper network proof uses a mocked socket feeding the real shared World.
+
+## Combined-tree evidence
+
+- Package check: 30 tests passed. Getaway: 188 passed, 12 existing skips. Blackout: 342 passed. Outbreak: 14 passed.
+  All game typechecks and builds passed, with the normal Blackout chunk-size warning.
+- Metal on the local named previews: sniper taps passed local and mocked-network paths, each with 12 predicted and
+  12 authoritative shots. Click-casting passed independent cooldowns, wheel/1/2 selection, caster-targeting skeletons,
+  Moon Ball capture/pop, Dvorak movement and Lab input isolation.
+- `scripts/prove-integration.ts` drove the combined Getaway capture hook, observed 33 smoke particles, checked all
+  approved light defaults, and crossed the tunnel at 32.43 m/s. Outbreak's closed-door sample changed from unexplored
+  to visible after interaction. Blackout retained reflections/default-off motion and absent ring/lamp toggles; a
+  forced tyre-smoke fixture also rendered with motion enabled. Spawn, fire/water and splatter Lab sections rendered.
+- The GPU proof caught and repaired the shared vehicle-sprite return type in the MRT motion shader and added a
+  compatible tyre-smoke pipeline for that attachment layout. No browser/GPU errors remained in the cited proofs.
+- Cited local evidence: `~/code/home/artifacts/2026-10-13-arcade-integration/` (screenshots and JSON reports).
+
+Final clean-archive production smokes and Worker dry-runs are pending. No deployment or main-branch push has run.

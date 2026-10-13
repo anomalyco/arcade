@@ -45,7 +45,7 @@ try {
       })
     })
     // Patch only the proof page's bootstrap: keep the actual renderer, Input, Game and session code.
-    await page.route("**/src/main.ts", async (route) => {
+    await page.route(/\/src\/main\.ts(?:\?.*)?$/, async (route) => {
       const response = await route.fetch()
       const hook = `
         import { Game as ProofGame } from '/src/game/game.ts';
@@ -77,14 +77,17 @@ try {
           if(e.target.id === 'view') proof.events.push({type, trusted:e.isTrusted, detail:e.detail, at:Date.now()});
         },true);
       `
-      await route.fulfill({ response, body: hook + await response.text() })
+      // Vite HMR timestamps must not create a second Game class beside the patched import.
+      await route.fulfill({ response, body: hook + (await response.text()).replace(/\?t=\d+/g, "") })
     })
     await page.addInitScript((mode) => {
       localStorage.setItem("blackout.gun", "sniper")
       if (mode === "network") sessionStorage.setItem("blackout.rejoin", "proof")
     }, mode)
     await page.goto(`${opt("base", "http://blackout-fire.localhost:1355")}/${mode === "local" ? "?practice&map=lot" : "?room=proof"}`)
-    await page.waitForFunction(() => (window as any).__fire?.paused, null, { timeout: 30000 })
+    await page.waitForFunction(() => (window as any).__fire?.paused, null, { timeout: 30000 }).catch(async error => {
+      throw new Error(`${mode} startup: ${error.message}\n${errors.join("\n")}\n${await page.locator("body").innerText()}`)
+    })
     if (mode === "local") await page.evaluate(() => {
       const w = (window as any).practice
       for (const p of [...w.players.values()] as any[]) if (!p.human) w.remove(p.id)

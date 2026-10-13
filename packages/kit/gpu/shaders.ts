@@ -758,7 +758,10 @@ struct SOut {
 @fragment fn fs(o: SOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
   let r = length(o.uv);
   let kind = i32(o.misc.x);
-  if (kind >= 32) { return vehicleSpriteColor(o.uv, o.color, vec4f(o.misc.x - 32.0, o.misc.yzw), o.world.y); }
+  if (kind >= 32) {
+    let color = vehicleSpriteColor(o.uv, o.color, vec4f(o.misc.x - 32.0, o.misc.yzw), o.world.y);
+    return ${motion ? "motionOutput(color, o.pos, o.previous, o.world)" : "color"};
+  }
   var a = 0.0;
   var rgb = o.color.rgb;
   if (kind == 0) {

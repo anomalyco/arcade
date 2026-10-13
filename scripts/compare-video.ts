@@ -141,15 +141,16 @@ try {
     worktrees.push(dir)
     const game = join(dir, "games", values.game!)
     const current = join(root, "games", values.game!)
+    const workspace = existsSync(join(dir, "bun.lock")) && existsSync(join(dir, "package.json"))
     const lock = ["bun.lock", "bun.lockb"].find((f) => existsSync(join(game, f)))
     if (
-      lock &&
+      !workspace && lock &&
       existsSync(join(current, lock)) &&
       readFileSync(join(game, lock)).equals(readFileSync(join(current, lock))) &&
       existsSync(join(current, "node_modules"))
     )
       symlinkSync(join(current, "node_modules"), join(game, "node_modules"))
-    else await run(["bun", "install", "--frozen-lockfile"], game)
+    else await run(["bun", "install", "--frozen-lockfile"], workspace ? dir : game)
     const name = `compare-${values.game}-${basename(work).slice(-6).toLowerCase()}-${i}`
     const entries = JSON.parse(await run(["nexus", "list", "--json"], root, true))
     if (entries.data.some((entry: { name: string }) => entry.name === name)) throw new Error(`Preview name already exists: ${name}`)
@@ -166,7 +167,7 @@ try {
             "--",
             "sh",
             "-c",
-            'exec bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$PORT" --strictPort',
+            'exec bunx --no-install vite --host 127.0.0.1 --port "$PORT" --strictPort',
           ],
           root,
           true,

@@ -652,7 +652,7 @@ export class Renderer {
       if (motion) pass.setVertexBuffer(1, this.previousSprites, 0)
       pass.draw(6, alphaCount)
     }
-    this.vehicleSmoke.draw(pass)
+    this.vehicleSmoke.draw(pass, motion)
     if (addCount) {
       pass.setPipeline((motion ? this.motionPipes : this.pipes).spriteAdd!)
       pass.setVertexBuffer(0, this.sprites, addOffset)
