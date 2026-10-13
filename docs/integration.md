@@ -155,4 +155,17 @@ regression tests cover the distinction. The Outbreak R8 compatibility texture is
 
 The source branch reduced static vertices from 299,238 to 196,722 (about 34%). Its paired queue-completion spans
 support broadly unchanged frame cost, not a measured GPU speedup. Those measurements have not been repeated on
-the combined renderer. Fresh combined clean-export checks and visual/input proofs are pending for this follow-up.
+the combined renderer.
+
+A clean archive of `5365942` passed frozen install, package checks (41 tests), Getaway (199 tests, 12 existing skips),
+Blackout (355 tests), Outbreak (15 tests), all production smokes and all Worker dry-runs on the Studio through
+Hivemind. The production Audio Lab proof also passed again, including all three asset prefixes.
+
+The merged Outbreak build passed native Metal door/LOS, F/WASD/Dvorak, Lab input-isolation and contribution-selector
+checks without browser/GPU errors. Its seed-7 1000×680 street and interior beauty captures match the refinement
+source's corresponding captures pixel-for-pixel (zero differing RGB pixels in both). Both report 196,722 static
+vertices. This verifies those two integrated views against the source revision, not against the paintover or all
+possible views. Timing was disabled for these captures.
+
+Cited merged-build images and reports are in `2026-10-13-arcade-integration/outbreak-refinement/`, relative to the
+local artifact root. Visual gaps remain as described above and in `docs/outbreak-look-v2.md`; local review is needed.
