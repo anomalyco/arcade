@@ -45,7 +45,7 @@ checks, both game checks, and `bunx --no-install wrangler deploy --dry-run` from
 ## Candidates
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
-both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
+both GPU devices and their historical counterparts.
 `getaway-main-hook.ts` supplies both games' historical Getaway instrumentation without a cross-game script import.
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
 It also accepts numeric range controls (`min`, `max`, `step`), selects (`options` with numeric or string values),

@@ -56,7 +56,6 @@ type BenchReport = {
 
 const BENCH_DIR = process.env.BENCH_DIR ?? join(import.meta.dir, "../../../captures/bench")
 const PREVIEW_DIR = process.env.PREVIEW_DIR ?? join(import.meta.dir, "../../../captures/preview")
-const DESKTOP_DIR = PREVIEW_DIR
 const KEYFRAMES = [12, 60, 135] as const
 const TOTAL_FRAMES = 180
 
@@ -107,10 +106,6 @@ async function ensureViteServer(preferredPort = 5190): Promise<{ port: number; s
   throw new Error(`No preview on port ${preferredPort}; pass the existing Nexus preview port with --port.`)
 }
 
-async function runFfmpeg(args: string[]) {
-  await encode(args)
-}
-
 async function main() {
   const args = process.argv.slice(2)
   const phaseArg = args.find((a) => a.startsWith("--phase="))?.split("=")[1] ?? "before"
@@ -122,7 +117,6 @@ async function main() {
 
   mkdirSync(BENCH_DIR, { recursive: true })
   mkdirSync(PREVIEW_DIR, { recursive: true })
-  mkdirSync(DESKTOP_DIR, { recursive: true })
 
   const vite = await ensureViteServer(portArg)
   const exe = findChromeExecutable()
@@ -280,10 +274,8 @@ async function main() {
       const beforeReport = JSON.parse(readFileSync(beforeJsonPath, "utf8")) as BenchReport
 
       const comparable = beforeReport.machine !== undefined && beforeReport.machine === report.machine
-      const metric = (name: string) => args.includes("--final-metrics") ? JSON.parse(readFileSync(join(import.meta.dir, `../../../perf/getaway-final-${name}.json`), "utf8")).metrics : null
-      const beforeMetrics = metric("main"), afterMetrics = metric("integrated")
-      const beforeLabel = comparable ? beforeMetrics ? `BEFORE · GPU ${beforeMetrics.gpu_hw_ms.median.toFixed(2)} ms · frame ${beforeMetrics.frame_ms.median.toFixed(2)} ms` : `BEFORE (${beforeReport.frame_ms.mean.toFixed(2)} ms | ${Math.round(beforeReport.city_verts_drawn.mean / 1000)}k verts)` : `BEFORE (archived | ${Math.round(beforeReport.city_verts_drawn.mean / 1000)}k verts)`
-      const afterLabel = afterMetrics ? `AFTER · GPU ${afterMetrics.gpu_hw_ms.median.toFixed(2)} ms · frame ${afterMetrics.frame_ms.median.toFixed(2)} ms` : `AFTER (${report.frame_ms.mean.toFixed(2)} ms | ${Math.round(report.city_verts_drawn.mean / 1000)}k verts)`
+      const beforeLabel = comparable ? `BEFORE (${beforeReport.frame_ms.mean.toFixed(2)} ms | ${Math.round(beforeReport.city_verts_drawn.mean / 1000)}k verts)` : `BEFORE (archived | ${Math.round(beforeReport.city_verts_drawn.mean / 1000)}k verts)`
+      const afterLabel = `AFTER (${report.frame_ms.mean.toFixed(2)} ms | ${Math.round(report.city_verts_drawn.mean / 1000)}k verts)`
 
       // Render crisp transparent PNG overlays in browser canvas (since Homebrew ffmpeg lacks drawtext).
       const { videoOverlayB64, rowOverlayB64 } = await page.evaluate(
@@ -328,8 +320,7 @@ async function main() {
       writeFileSync(rowOverlayPath, Buffer.from(rowOverlayB64, "base64"))
 
       const previewMp4 = join(PREVIEW_DIR, "getaway-before-after.mp4")
-      const desktopMp4 = join(DESKTOP_DIR, "getaway-before-after.mp4")
-      await runFfmpeg([
+      await encode([
         "-i",
         beforeMp4Path,
         "-i",
@@ -350,7 +341,7 @@ async function main() {
         "+faststart",
         previewMp4,
       ])
-      console.log(`[compare:after] Stitched side-by-side video -> ${previewMp4} & ${desktopMp4}`)
+      console.log(`[compare:after] Stitched side-by-side video -> ${previewMp4}`)
 
       // Build 3-frame side-by-side contact sheet (1440x1215 <= 1500x1500).
       const rowPaths: string[] = []
@@ -359,7 +350,7 @@ async function main() {
         const bPng = join(BENCH_DIR, `getaway-before-f${tag}.png`)
         const aPng = join(BENCH_DIR, `getaway-after-f${tag}.png`)
         const rowPng = join(BENCH_DIR, `getaway-row-f${tag}.png`)
-        await runFfmpeg([
+        await encode([
           "-i",
           bPng,
           "-i",
@@ -375,8 +366,7 @@ async function main() {
         rowPaths.push(rowPng)
       }
       const previewSheet = join(PREVIEW_DIR, "getaway-before-after-sheet.jpg")
-      const desktopSheet = join(DESKTOP_DIR, "getaway-before-after-sheet.jpg")
-      await runFfmpeg([
+      await encode([
         "-i",
         rowPaths[0]!,
         "-i",
@@ -389,7 +379,7 @@ async function main() {
         "2",
         previewSheet,
       ])
-      console.log(`[compare:after] Stitched 3-frame contact sheet (1440x1215) -> ${previewSheet} & ${desktopSheet}`)
+      console.log(`[compare:after] Stitched 3-frame contact sheet (1440x1215) -> ${previewSheet}`)
     }
   } finally {
     await browser.close()
