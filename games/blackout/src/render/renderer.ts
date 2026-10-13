@@ -7,7 +7,7 @@ import { mat4 } from "wgpu-matrix"
 import { VolumeRenderer } from "../../../../packages/kit/fx/volume-renderer"
 import type { SmokeVolumes } from "../../../../packages/kit/fx/volume"
 import { FrameTimer } from "../../../../packages/kit/fx/frame-timer"
-import { MotionHistory, type MotionKey } from "./motion"
+import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
@@ -484,7 +484,7 @@ export class Renderer {
     if (motion) {
       this.motionData.set((continuous ? old! : f.frame).subarray(0, 16))
       // A 1/60 s exposure. The shader suppresses subpixel camera drift and caps fast trails.
-      this.motionData[16] = continuous ? Math.min(2, 1 / (60 * elapsed)) : 0
+      this.motionData[16] = continuous ? Math.min(2, 1 / (60 * elapsed)) * motionSettings.strength * motionSettings.shutter : 0
       d.queue.writeBuffer(this.motionBuf, 0, this.motionData)
     }
     this.previousFrame = motion ? f.frame.slice() : null

@@ -1,4 +1,5 @@
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { motionSettings } from "../render/motion"
 
 export const JUICE_LABELS = {
   volumes: "Volume Smoke",
@@ -35,6 +36,10 @@ export class DebugOverlay extends LabPanel {
   private lastReport = 0
   constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}) {
     super(settings, controls, params, release)
+    this.addControls(motionSettings,[
+      {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
+      {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},
+    ])
   }
   sample(now: number, elapsed: number, gpu: Pick<Perf, "gpuMs" | "gpuKind" | "draws" | "verts">, chunks: number, lights: number): Perf | null {
     if (elapsed > 0 && Number.isFinite(elapsed)) this.samples.push(elapsed)

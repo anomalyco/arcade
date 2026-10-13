@@ -2,7 +2,7 @@
 export const motionBlurDefaults = () => ({ enabled: true, strength: 0.65, shutter: 0.5 })
 export type MotionBlurSettings = ReturnType<typeof motionBlurDefaults>
 export type MotionIdentity=string|number|object
-export type MotionKey=object
+export type MotionKey={initial?:readonly [number,number,number];maxTravel?:number}
 
 /** Rig owners keep stable per-model part identities while their draw arrays are rebuilt. */
 export class MotionKeys {
@@ -10,7 +10,10 @@ export class MotionKeys {
   private arrays=new WeakMap<number[],(MotionKey|undefined)[]>()
   private counts=new Map<number,number>()
   private parts:Map<number,MotionKey[]>|undefined
-  begin(owner?:object){
+  private initial:MotionKey["initial"]
+  private maxTravel=4
+  begin(owner?:object,initial?:MotionKey["initial"],maxTravel=4){
+    this.initial=initial;this.maxTravel=maxTravel
     this.counts.clear();this.parts=owner?this.owners.get(owner):undefined
     if(owner&&!this.parts)this.owners.set(owner,this.parts=new Map())
   }
@@ -18,7 +21,7 @@ export class MotionKeys {
     if(!this.parts)return
     const i=this.counts.get(model)??0;this.counts.set(model,i+1)
     let parts=this.parts.get(model);if(!parts)this.parts.set(model,parts=[])
-    return parts[i]??(parts[i]={})
+    return parts[i]??(parts[i]={initial:this.initial,maxTravel:this.maxTravel})
   }
   record(array:number[],model:number){
     const key=this.key(model)
@@ -51,11 +54,19 @@ export class PreviousTransforms {
 
 /** Packed-rig adapter for callers that mark continuity once at the beginning of a frame. */
 export class MotionHistory {
-  private history=new PreviousTransforms(12,4)
-  begin(valid:boolean){if(!valid)this.history.reset();this.history.begin()}
+  private entries=new WeakMap<MotionKey,{frame:number;pose:Float32Array}>()
+  private frame=0
+  private valid=false
+  begin(valid:boolean){this.frame++;this.valid=valid}
   write(dst:Float32Array,offset:number,current:Float32Array,start:number,key?:MotionKey){
-    if(key)this.history.write(key,current,start,dst,offset)
-    else for(let i=0;i<12;i++)dst[offset+i]=current[start+i]!
+    let old=key?this.entries.get(key):undefined
+    const continuous=this.valid&&old?.frame===this.frame-1&&Math.hypot(current[start]!-old.pose[0]!,current[start+1]!-old.pose[1]!,current[start+2]!-old.pose[2]!)<(key?.maxTravel??4)
+    for(let i=0;i<12;i++)dst[offset+i]=continuous?old!.pose[i]!:current[start+i]!
+    if(this.valid&&!old&&key?.initial)dst.set(key.initial,offset)
+    if(!key)return
+    if(!old){old={frame:this.frame,pose:new Float32Array(12)};this.entries.set(key,old)}
+    old.frame=this.frame
+    for(let i=0;i<12;i++)old.pose[i]=current[start+i]!
   }
 }
 
