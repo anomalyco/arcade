@@ -11,7 +11,7 @@ export type Picks = Record<string, SlotPick>
 const PICKS_KEY = "carrier.sfx.picks"
 /** One-shot slots that play a random take each time (variation): the user's rated-up takes, or every take not rated
  *  down. Everything else plays its picked take. */
-const POOLED = new Set(["boom-air", "boom-missile", "boom-bomb-land", "boom-bomb-water", "boom-crash-sea", "boom-crash-land", "boom-far", "impact-water", "impact-metal", "thunder-near", "thunder-far", "hull-slam", "gun-distant", "flares", "tracer-zip"])
+const POOLED = new Set(["boom-air", "boom-missile", "boom-bomb-land", "boom-bomb-water", "boom-crash-sea", "boom-crash-land", "boom-far", "impact-water", "impact-metal", "thunder-near", "thunder-far", "hull-slam", "flares"])
 /** Default reverb send per category (open air is most of what makes it sound big). */
 const REVERB: Record<SlotCategory, number> = { carrier: 0.25, gun: 0.3, missile: 0.35, bomb: 0.3, boom: 0.5, ship: 0.15, sea: 0, ui: 0, hooks: 0.35 }
 /** Default bus per category. */

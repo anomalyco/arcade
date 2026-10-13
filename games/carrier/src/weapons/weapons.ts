@@ -657,6 +657,8 @@ export class Weapons {
       }
       this.others.step(step, t, this.targets, this.world.ground, (_o, _t, kind, x, y, z) => this.fx.impact(kind, x, y, z))
     }
+    // Rounds cracking past the camera (src/audio/weapon-audio.ts, from each round's live path).
+    this.audio.zips(this.others, dt)
 
     // Effects.
     const fx = this.fx

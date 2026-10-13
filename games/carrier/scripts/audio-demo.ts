@@ -313,6 +313,24 @@ function gun(): Scene {
   }
 }
 
+/** The M61 alone: `bursts` as [start, end] seconds the gun fires; `far` metres away (another jet's gun) or 0 (yours). */
+function gunScene(dur: number, bursts: readonly (readonly [number, number])[], far = 0, cockpit = false): Scene {
+  return {
+    dur,
+    setup: (s) => {
+      s.arm()
+      if (cockpit) {
+        mixer().forceCockpit = 1
+        mixer().setCockpit(1)
+      }
+    },
+    step: (s, t, dt) => {
+      const on = bursts.some(([a, b]) => t >= a && t < b)
+      s.weapons!.update(dt, !far && on, far && on ? 1 / (1 + far / 300) : 0, 0, 0)
+    },
+  }
+}
+
 /** Weather at a preset, alone. */
 function weather(kind: WeatherKind): Scene {
   return { dur: 6, setup: (s) => s.sky(kind), step: (s, _t, dt) => s.weather!.update(s.wx, dt) }
@@ -531,6 +549,11 @@ const SCENES: Record<string, () => Scene> = {
   trap,
   calib,
   gun,
+  "gun-short": () => gunScene(6, [[0.4, 0.7], [1.3, 1.55], [2.2, 2.6], [3.2, 3.4], [4.0, 4.5]]),
+  // Held for 4.5 s: the gun overheats after 3.2 s of fire (shared/weapons.ts heatTime) and falls silent.
+  "gun-overheat": () => gunScene(7, [[0.5, 3.7]]),
+  "gun-distant": () => gunScene(7, [[0.5, 2], [3, 4.2]], 600),
+  "gun-cockpit": () => gunScene(6, [[0.4, 1.4], [2.2, 3.6]], 0, true),
   "weather-medium": () => weather("medium"),
   "weather-heavy": () => weather("heavy"),
   "mix-chase": mixChase,
@@ -547,6 +570,8 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
   mx.samplesOn = scene.samples !== false
   mx.rain = 0
   mx.sea = 0
+  mx.forceCockpit = null
+  mx.cockpit = 0
   const bank = sfx(mx)
   mx.use(ctx)
   // The sound bank's picked takes (decoded once; buffers are reused across renders).

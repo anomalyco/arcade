@@ -24,21 +24,6 @@
   "trim": 0,
   "ratings": []
  },
- "gun-loop": {
-  "take": 3,
-  "trim": 0,
-  "ratings": []
- },
- "gun-tail": {
-  "take": 2,
-  "trim": 0,
-  "ratings": []
- },
- "gun-distant": {
-  "take": 2,
-  "trim": 0,
-  "ratings": []
- },
  "impact-water": {
   "take": 3,
   "trim": 0,
@@ -46,11 +31,6 @@
  },
  "impact-metal": {
   "take": 1,
-  "trim": 0,
-  "ratings": []
- },
- "tracer-zip": {
-  "take": 2,
   "trim": 0,
   "ratings": []
  },

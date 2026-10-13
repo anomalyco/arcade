@@ -1,17 +1,19 @@
 import { type BoomKind, boomsFor } from "./jet-boom"
 import { mixer } from "./mixer"
-import { type LoopHandle, sfx } from "./sfx-bank"
+import type { Bullets } from "../../shared/combat"
+import { GunAudio } from "./gun-audio"
+import { clamp } from "./jet-math"
+import { sfx } from "./sfx-bank"
 
 /**
- * Weapon sounds. The recorded cinematic slots (sfx-bank.ts) once loaded: the M61 as a seamless firing loop that cuts in
- * on the trigger with a recorded spin-down tail on release, distant bursts, the missile launch, bomb release, flares,
- * impacts and the explosions (jet-boom.ts); the procedural voices below are the placeholders until then. The cockpit
- * tones stay synthesized, smooth sines with proper envelopes, on the dry UI bus:
+ * Weapon sounds. Anything tied to live, trigger-driven state is procedural: the M61 (gun-audio.ts, locked to the gun's
+ * real cadence, yours and the loudest other jet's) and rounds cracking past the camera (`zips`, from each round's live
+ * path). Discrete events use the recorded cinematic slots (sfx-bank.ts) once loaded: the missile launch, bomb release,
+ * flares, impacts and the explosions (jet-boom.ts), with the procedural voices below as placeholders until then. The
+ * cockpit tones are synthesized, smooth sines with proper envelopes, on the dry UI bus:
  * - the seeker: an AIM-9 growl (a sine warbled by a slow FM) while searching, a pure high tone when locked;
  * - warnings: a soft two-tone chime while an enemy locks us, a fast urgent one while a missile is inbound.
  * The procedural placeholders, started on the first user gesture:
- * - the own cannon: a buzz-saw at the rate of fire (a 50 Hz pulse train through a distortion and a band-pass, over a
- *   noise bed) while the trigger is held, a short spin-down when it stops; other jets' guns as a duller, distant layer;
  * - missile launch (a rushing noise sweep), bomb release (a clunk), explosions (a low boom, duller and later the
  *   further it is), flare pops, hit ticks on the target and thuds when we are hit;
  * - the seeker: an AIM-9 growl (a warbling low tone) while searching and a high steady tone when locked;
@@ -24,20 +26,17 @@ export class WeaponAudio {
   private master!: GainNode
   private white!: AudioBuffer
   private brown!: AudioBuffer
-  private gunGain!: GainNode
-  private farGunGain!: GainNode
+  private gun!: GunAudio
+  private zipAt = 0
   private seekGain!: GainNode
   private seekBase!: ConstantSourceNode
   private seekLfo!: OscillatorNode
   private seekLfoGain!: GainNode
   private warnGain!: GainNode
   private warnBase!: ConstantSourceNode
-  private firing = false
   private seek: 0 | 1 | 2 = 0
   private warn: 0 | 1 | 2 = 0
   private warnPhase = 0
-  private gunLoop: LoopHandle | null = null
-  private farIn = 0
 
   constructor() {
     const start = () => {
@@ -76,40 +75,8 @@ export class WeaponAudio {
     this.master.gain.value = this.volume
     this.master.connect(mixer().bus.weapons)
 
-    // Cannon: a pulse train at the rate of fire, clipped and band-passed, over a noise bed.
-    const shaper = ctx.createWaveShaper()
-    const curve = new Float32Array(1024)
-    for (let i = 0; i < curve.length; i++) {
-      const x = (i / (curve.length - 1)) * 2 - 1
-      curve[i] = Math.tanh(x * 6)
-    }
-    shaper.curve = curve
-    const pulse = ctx.createOscillator()
-    pulse.type = "sawtooth"
-    pulse.frequency.value = 50
-    const body = ctx.createBiquadFilter()
-    body.type = "bandpass"
-    body.frequency.value = 420
-    body.Q.value = 0.8
-    this.gunGain = ctx.createGain()
-    this.gunGain.gain.value = 0
-    pulse.connect(shaper).connect(body).connect(this.gunGain).connect(this.master)
-    const noise = this.loop(this.white)
-    const nf = ctx.createBiquadFilter()
-    nf.type = "bandpass"
-    nf.frequency.value = 1800
-    nf.Q.value = 0.6
-    const ng = ctx.createGain()
-    ng.gain.value = 0.35
-    noise.connect(nf).connect(ng).connect(this.gunGain)
-    pulse.start()
-    // Distant guns: the same buzz, muffled.
-    this.farGunGain = ctx.createGain()
-    this.farGunGain.gain.value = 0
-    const far = ctx.createBiquadFilter()
-    far.type = "lowpass"
-    far.frequency.value = 500
-    shaper.connect(far).connect(this.farGunGain).connect(this.master)
+    // The M61 (gun-audio.ts): procedural, locked to the gun's cadence.
+    this.gun = new GunAudio(mixer())
 
     // Cockpit tones on the dry UI bus: a sine with a quiet second harmonic for presence, both driven by one frequency
     // source (a ConstantSourceNode: `.offset` is the pitch), soft envelopes.
@@ -159,14 +126,6 @@ export class WeaponAudio {
     this.warnBase = tone(988, this.warnGain)
   }
 
-  private loop(buf: AudioBuffer): AudioBufferSourceNode {
-    const s = this.ctx!.createBufferSource()
-    s.buffer = buf
-    s.loop = true
-    s.start(0, Math.random() * 1.5)
-    return s
-  }
-
   private att(dist: number): number {
     return 1 / (1 + Math.max(0, dist) / 350)
   }
@@ -200,21 +159,8 @@ export class WeaponAudio {
     if (!ctx) return
     const now = ctx.currentTime
     this.master.gain.setTargetAtTime(this.volume, now, 0.1)
-    // The M61: the recorded firing loop (kept running silent, so the trigger cuts it in instantly) and its spin-down tail.
-    const bank = sfx(mixer())
-    if (!this.gunLoop && bank.ready("gun-loop")) this.gunLoop = bank.loop("gun-loop", { bus: "weapons", reverb: 0.25 })
-    if (gun !== this.firing) {
-      this.firing = gun
-      if (this.gunLoop) {
-        this.gunLoop.set({ gain: gun ? 1.1 : 0, tc: gun ? 0.004 : 0.03 })
-        if (!gun) bank.play("gun-tail", { bus: "weapons", gain: 0.9 })
-      }
-      this.gunGain.gain.setTargetAtTime(gun && !this.gunLoop ? 0.5 : 0, now, gun ? 0.005 : 0.04)
-    }
-    // Other jets' guns: recorded distant bursts while they fire, the procedural buzz until loaded.
-    this.farIn -= dt
-    if (farGun > 0.04 && this.farIn <= 0 && bank.play("gun-distant", { dist: 300 / Math.max(0.05, farGun) - 300, ref: 80, gain: 0.8 })) this.farIn = 1.1
-    this.farGunGain.gain.setTargetAtTime(bank.ready("gun-distant") ? 0 : farGun * 0.25, now, 0.03)
+    // The M61: your gun (trigger, selected, not overheated) and the loudest other one.
+    this.gun.update(gun, farGun)
     if (seek !== this.seek) {
       this.seek = seek
       this.seekGain.gain.setTargetAtTime(seek ? 0.05 : 0, now, 0.03)
@@ -235,6 +181,77 @@ export class WeaponAudio {
       this.warnBase.offset.setTargetAtTime(warn === 2 ? (hi ? 1319 : 988) : hi ? 988 : 784, now, 0.002)
       this.warnGain.gain.setTargetAtTime(on ? (warn === 2 ? 0.07 : 0.045) : 0, now, on ? 0.008 : 0.025)
     } else this.warnGain.gain.setTargetAtTime(0, now, 0.02)
+  }
+
+  /**
+   * Rounds cracking past the camera: every live round in `b` (other jets' cosmetic rounds) whose straight path comes
+   * within 14 m of the listener during the next `dt` seconds gets a supersonic crack and a short whiz at exactly that
+   * moment, panned to its side. At most three a frame, 25 ms apart.
+   */
+  zips(b: Bullets, dt: number): void {
+    const ctx = this.ctx
+    if (!ctx || !b.live) return
+    const L = mixer().listener
+    const now = ctx.currentTime
+    let n = 0
+    for (let i = 0; i < b.cap && n < 3; i++) {
+      if (!b.state[i]) continue
+      const rx = b.x[i]! - L.eye[0]
+      const ry = b.y[i]! - L.eye[1]
+      const rz = b.z[i]! - L.eye[2]
+      const vx = b.vx[i]! - L.vel[0]
+      const vy = b.vy[i]! - L.vel[1]
+      const vz = b.vz[i]! - L.vel[2]
+      const v2 = vx * vx + vy * vy + vz * vz
+      if (v2 < 1) continue
+      const t = -(rx * vx + ry * vy + rz * vz) / v2
+      if (t < 0 || t >= dt) continue
+      const mx = rx + vx * t
+      const my = ry + vy * t
+      const mz = rz + vz * t
+      const miss = Math.hypot(mx, my, mz)
+      if (miss > 14) continue
+      const at = Math.max(now + t, this.zipAt + 0.025)
+      if (at > now + dt + 0.05) continue
+      this.zipAt = at
+      const side = clamp((mx * L.right[0] + my * L.right[1] + mz * L.right[2]) / Math.max(1, miss), -1, 1)
+      this.zip(at, 1 - miss / 14, side)
+      n++
+    }
+  }
+
+  /** One round going past: a crack (the shock wave) and a whiz falling in pitch. */
+  private zip(at: number, near: number, side: number): void {
+    const ctx = this.ctx!
+    const pan = ctx.createStereoPanner()
+    pan.pan.value = side * 0.8
+    pan.connect(this.master)
+    const crack = ctx.createBufferSource()
+    crack.buffer = this.white
+    const hp = ctx.createBiquadFilter()
+    hp.type = "highpass"
+    hp.frequency.value = 2500
+    const cg = ctx.createGain()
+    cg.gain.setValueAtTime(0.0001, at)
+    cg.gain.linearRampToValueAtTime(0.5 * near, at + 0.0008)
+    cg.gain.exponentialRampToValueAtTime(0.0001, at + 0.012)
+    crack.connect(hp).connect(cg).connect(pan)
+    crack.start(at, Math.random())
+    crack.stop(at + 0.02)
+    const whiz = ctx.createBufferSource()
+    whiz.buffer = this.white
+    const bp = ctx.createBiquadFilter()
+    bp.type = "bandpass"
+    bp.Q.value = 5
+    bp.frequency.setValueAtTime(4200, at)
+    bp.frequency.exponentialRampToValueAtTime(1500, at + 0.08)
+    const wg = ctx.createGain()
+    wg.gain.setValueAtTime(0.0001, at - 0.02)
+    wg.gain.linearRampToValueAtTime(0.3 * near, at)
+    wg.gain.exponentialRampToValueAtTime(0.0001, at + 0.09)
+    whiz.connect(bp).connect(wg).connect(pan)
+    whiz.start(Math.max(ctx.currentTime, at - 0.02), Math.random())
+    whiz.stop(at + 0.1)
   }
 
   /** A missile leaving a rail `dist` metres away. */

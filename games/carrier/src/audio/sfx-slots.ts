@@ -1,5 +1,6 @@
-// Every recorded sound slot in the game (discrete one-shots and ambience beds; nothing that follows a jet's live state:
-// engines, afterburners, cockpit, wind, flybys and the sonic crack are procedural, see jet-engine.ts): what it is, its category (loaded together), whether it loops, how many
+// Every recorded sound slot in the game (discrete one-shots and ambience beds; nothing that follows live state: jet
+// engines, afterburners, cockpit, wind, flybys, the sonic crack, the M61 and rounds zipping past are procedural, see
+// jet-engine.ts and gun-audio.ts): what it is, its category (loaded together), whether it loops, how many
 // candidate takes it has in public/sfx/v3/<id>-<n>.ogg, and the ElevenLabs prompt each take came from
 // (scripts/sfx-cinematic.ts generates and transcodes them). Which take plays is the user's pick (sfx-bank.ts: picks.json,
 // overridden in localStorage from the SOUNDS tab). DOM-free data.
@@ -29,13 +30,9 @@ const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, nu
   ["trap", "carrier", "Arrested landing", false, 4, 5, `Fighter jet arrested landing on an aircraft carrier: heavy tyre thud and chirp on the steel deck, the arresting cable screaming as it pays out, engines spooling down, deep metallic thump, ${C}`],
   ["gear", "carrier", "Landing gear", false, 4, 3, `Fighter jet landing gear retracting: smooth hydraulic whine, mechanical motion, heavy solid clunk as it locks, close, ${C}`],
   ["tailhook", "carrier", "Tailhook", false, 4, 2, `Fighter jet tailhook dropping and locking: heavy metallic clunk with a short hydraulic hiss, close, ${C}`],
-  // Gun.
-  ["gun-loop", "gun", "M61 gun (loop)", true, 4, 5, `M61 Vulcan rotary cannon firing continuously: ferocious tearing buzzsaw roar at 6000 rounds per minute, punchy, deep body, ${L}`],
-  ["gun-tail", "gun", "Gun burst tail", false, 4, 3, `Rotary cannon burst ending: barrel spin-down whir and a rolling echo tail across the open sky, ${C}`],
-  ["gun-distant", "gun", "Gun distant", false, 3, 3, `Distant rotary cannon burst far across the sea: muffled tearing rumble with rolling echo, ${C}`],
+  // Gun impacts (the M61 itself is procedural: gun-audio.ts).
   ["impact-water", "gun", "Rounds into water", false, 3, 2, `Bullets ripping into the ocean surface: rapid sharp water splashes and spray, ${C}`],
   ["impact-metal", "gun", "Rounds into metal", false, 3, 2, `Cannon rounds hitting a metal aircraft: sharp metallic impacts, sparks, ringing debris, ${C}`],
-  ["tracer-zip", "gun", "Rounds zipping past", false, 3, 2, `Supersonic bullets cracking and whizzing past very close: sharp snaps and zips, ${C}`],
   // Missiles and countermeasures.
   ["missile-launch", "missile", "Missile launch", false, 4, 4, `Air-to-air missile launching from a fighter jet rail: ignition pop, ferocious rocket motor whoosh tearing away into the distance, deep sub, ${C}`],
   ["missile-motor", "missile", "Missile motor (loop)", true, 3, 4, `Rocket motor of a missile in flight, ferocious hissing roar, ${L}`],

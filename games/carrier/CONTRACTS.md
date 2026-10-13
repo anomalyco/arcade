@@ -657,20 +657,31 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   an output trim (loudness: the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()`
   dips engines, flybys and ambience under explosions and passes. `mixer.listener` (camera pose, set by jet-audio.ts each
   frame) lets anything place a sound in the world. Levels and mute persist (`carrier.audio.v3`); **M mutes**.
-- **Jet sounds are procedural, by design** (user decision): everything that follows a jet's live state (engines,
-  afterburner, cockpit engine, canopy wind, buffet, breathing, creaks, wind rush, flybys, the sonic crack, the stall
-  warning) is synthesized every frame from rpm, throttle, afterburner, speed, g, stall and the listener's geometry, so
-  it never drifts from the jet. Only discrete events are recorded.
-- **The sound bank** (`sfx-bank.ts`, `sfx()`): 51 slots (`sfx-slots.ts`: carrier, gun, missile, bomb, boom, ship, sea,
-  ui, hooks) with 3-4 ElevenLabs candidate takes each, 178 takes in `public/sfx/v3/<slot>-<n>.ogg` (48 kHz stereo Ogg
-  Opus 96-112 kb/s, 9.5 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
+- **Live, state-driven sounds are procedural, by design** (user decision): everything that follows a jet's live state
+  (engines, afterburner, cockpit engine, canopy wind, buffet, breathing, creaks, wind rush, flybys, the sonic crack, the
+  stall warning) or the trigger (the M61, rounds cracking past) is synthesized every frame from rpm, throttle,
+  afterburner, speed, g, stall, the gun's fire state and the listener's geometry, so it never drifts. Only discrete
+  events are recorded.
+- **The M61** (`gun-audio.ts`, driven by `weapon-audio.ts` `update(dt, firing, farGun, …)`): a loop of 24 synthesized
+  rounds, each exactly 1 / `WEAPONS.gun.rate` long (a low thump, a saturated mid rip, a high crackle, the feed's
+  metallic tick at mid-period, small per-round variation), gated on round boundaries the frame the fire state changes
+  (trigger, weapon, overheat), with a low rumble under it, the barrels' spin-up and spin-down whine, and an airy tail on
+  release. Outside: weapons bus, reverb and water slapback; in the cockpit: muffled through the airframe (own bus, cockpit
+  room). The loudest other jet's gun (`farGun` → distance) plays the same train darker, wetter, and late by d / 343 s.
+  Rounds passing within 14 m of the camera (`weapon-audio.ts` `zips(bullets, dt)`, from `weapons.ts`' cosmetic rounds)
+  get a supersonic crack and a falling whiz at the closest-approach moment, panned to their side. Levels: a burst -14
+  dBFS RMS (the recorded loop was -15), cockpit -17, another jet's gun at 600 m -34. The boat's 25 mm and the CIWS were
+  already procedural (boat-audio.ts, turret-audio.ts).
+- **The sound bank** (`sfx-bank.ts`, `sfx()`): 47 slots (`sfx-slots.ts`: carrier, gun impacts, missile, bomb, boom,
+  ship, sea, ui, hooks) with 3-4 ElevenLabs candidate takes each, 164 takes in `public/sfx/v3/<slot>-<n>.ogg` (48 kHz
+  stereo Ogg Opus 96-112 kb/s, 9.0 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
   dBTP; loops crossfade-looped; `manifest.json` has each take's length, loop length, loudest moment, loudness).
   Prompts in `sfx-slots.ts`, processing in `scripts/sfx-cinematic.ts`. After the first gesture the bank loads every
   slot's playing takes category by category (~90 takes, ~4.5 MB); `play`/`loop` return null until a slot has loaded and
   callers play their procedural placeholder. API for every module (gunnery and boat audio included):
   `sfx().play(slot, { at: worldXYZ | local | dist, gain, rate, delay, travel, reverb, echo, ref, rolloff, bus })` and
   `sfx().loop(slot, …)` → `{ set({ gain, rate, at, tc }), stop(fade) }`. Pooled one-shots (explosions, impacts, thunder,
-  hull slams, flares, distant guns) play a random 4-5★ take (else any not rated down).
+  hull slams, flares) play a random 4-5★ take (else any not rated down).
 - **Picks**: `public/sfx/picks.json` (shipped defaults: take, trim dB, ratings per slot), overridden live by the SOUNDS
   tab in localStorage (`carrier.sfx.picks`). The dev server's `POST /__sfx/picks` (`scripts/sfx-picks-plugin.ts`)
   writes picks.json; the SOUNDS tab's SAVE does that, COPY PICKS exports the JSON anywhere.
@@ -689,8 +700,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   and panned with the jet, on top of the engine's own Doppler; head-on merges above 300 m/s get a procedural N-wave
   crack. Levels (offline, 0.5 s RMS): your Hornet in chase idle -38, military -33, afterburner -28 dBFS against a gun
   burst at -15 and medium weather at -21; a close pass peaks at -20, a distant one at -27.
-- **Where each recorded slot plays**: carrier ops (catapult, shuttle slam, trap, gear, tailhook). Weapons (`weapon-audio.ts`): the M61 loop cut in on the trigger with its tail, distant
-  bursts, missile launch, flares, bomb release (+ whistle), impacts; cockpit tones synthesized (sine seeker growl and
+- **Where each recorded slot plays**: carrier ops (catapult, shuttle slam, trap, gear, tailhook). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
+  impacts (metal when we are hit); cockpit tones synthesized (sine seeker growl and
   lock, two-tone warning chimes) on the UI bus. Explosions (`jet-boom.ts`, `boomsFor().play(kind, dist, size)`): the
   scenario's take crossfading into `boom-far` from 400 m to 2.2 km, travel delay, heavy reverb and slapback, a water
   geyser for bombs in the sea. Sea and weather (`weather-audio.ts`): ocean beds by sea state (fading with altitude),
@@ -698,8 +709,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `seam.ts` `audio.ships(...)`): the deck bed near a hull, hull slams (`Ship.slams`), creaks in heavy seas, a rare horn.
   Interface (`ui-audio.ts`): clicks and hovers on any button, a soft open on E / Tab / `, the kill confirm and the
   landing-capture cue. Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
-  `tracer-zip`, `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
+  `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
   60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel) on hailmary into
-  `captures/audio/v4-*` (engines and flybys) and `v3-*` (recorded slots); `captures/audio/v3-candidates-<category>.mp3` are every take back to back (index in
+  `captures/audio/v5-gun-*` (the M61), `v4-*` (engines and flybys) and `v3-*` (recorded slots); `captures/audio/v3-candidates-<category>.mp3` are every take back to back (index in
   `v3-candidates.md`). `public/sfx/boom/{far-1,bomb-water-2}.mp3` stay only for `scripts/video-epic.ts`.

@@ -1045,3 +1045,10 @@ Candidates from the code audits; measure and playtest before moving any into the
   flybys and the sonic crack (`games/carrier/src/audio/jet-engine.ts`, `jet-sfx.ts`, `jet-cockpit.ts`) and records only
   discrete events (catapult, trap, gear, guns, missiles, explosions, ambience, UI). Sending the procedural voice into
   the same convolution reverb and water slapback as the recorded one-shots makes them sit in one space.
+- **A gun locked to its rate of fire: a looped round train, gated on round boundaries.** Carrier's M61
+  (`games/carrier/src/audio/gun-audio.ts`) synthesizes 24 rounds into one loop, each exactly 1 / rate long (50 rps: 960
+  samples at 48 kHz), so the cadence is sample-accurate with a single buffer source; the trigger opens and closes a gain
+  on the next round boundary, so bursts start on a clean transient and the overheat cut is exact. Offline: a burst at
+  -14 dBFS RMS, rounds visibly 20 ms apart in the spectrogram. Rounds zipping past are found by each live round's
+  closest approach to the camera within the frame and scheduled at that instant.
+

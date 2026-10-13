@@ -119,80 +119,6 @@
   "lufs": -15.9,
   "tp": -7.3
  },
- "gun-loop-1": {
-  "dur": 4.85,
-  "loop": 4.6,
-  "peak": 2.33,
-  "lufs": -20,
-  "tp": -9.5,
-  "seam": 3.9
- },
- "gun-loop-2": {
-  "dur": 4.85,
-  "loop": 4.6,
-  "peak": 2.98,
-  "lufs": -20,
-  "tp": -10.9,
-  "seam": 4.5
- },
- "gun-loop-3": {
-  "dur": 4.85,
-  "loop": 4.6,
-  "peak": 3.55,
-  "lufs": -19.8,
-  "tp": -10.9,
-  "seam": 2.4
- },
- "gun-loop-4": {
-  "dur": 4.85,
-  "loop": 4.6,
-  "peak": 2.75,
-  "lufs": -20,
-  "tp": -13.5,
-  "seam": 24.4
- },
- "gun-tail-1": {
-  "dur": 3,
-  "peak": 0.1,
-  "lufs": -16,
-  "tp": -5.6
- },
- "gun-tail-2": {
-  "dur": 3,
-  "peak": 0.05,
-  "lufs": -16,
-  "tp": -3.8
- },
- "gun-tail-3": {
-  "dur": 3,
-  "peak": 0.38,
-  "lufs": -16,
-  "tp": -4.1
- },
- "gun-tail-4": {
-  "dur": 3,
-  "peak": 0.15,
-  "lufs": -16,
-  "tp": -6.9
- },
- "gun-distant-1": {
-  "dur": 3,
-  "peak": 0.18,
-  "lufs": -16.8,
-  "tp": -0.4
- },
- "gun-distant-2": {
-  "dur": 3,
-  "peak": 0.05,
-  "lufs": -17.8,
-  "tp": -0.1
- },
- "gun-distant-3": {
-  "dur": 2.996,
-  "peak": 0.15,
-  "lufs": -15.9,
-  "tp": -3.1
- },
  "impact-water-1": {
   "dur": 2,
   "peak": 0.05,
@@ -228,24 +154,6 @@
   "peak": 0.08,
   "lufs": -16,
   "tp": -5.9
- },
- "tracer-zip-1": {
-  "dur": 1.367,
-  "peak": 0.75,
-  "lufs": -20.4,
-  "tp": -1.5
- },
- "tracer-zip-2": {
-  "dur": 1.388,
-  "peak": 1.3,
-  "lufs": -33.4,
-  "tp": -5.3
- },
- "tracer-zip-3": {
-  "dur": 1.252,
-  "peak": 1.2,
-  "lufs": -29.6,
-  "tp": -3.4
  },
  "missile-launch-1": {
   "dur": 4,
