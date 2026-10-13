@@ -15,7 +15,11 @@ export const shaders = {
     shadowTaps: 5,
     lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
     material: surfaceMaterial + `
-      if (mat == 4 && interior(o.world.xz+n.xz*.3)) { albedo = vec3f(.36,.33,.27); }
+      if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
+        let s = evalPlasterWall(o.world, n, vec3f(.38, .34, .28), defaultMaterialRecipe(2));
+        albedo = s.albedo;
+        gloss = s.gloss;
+      }
     `,
     fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
     declarations: /* wgsl */ `

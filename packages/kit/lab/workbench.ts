@@ -669,14 +669,38 @@ export function createWorkbench(opts: WorkbenchOptions) {
         run: () => selectSection("physics"),
       })
     }
-    if (sections.some(s => s.id === "materials")) {
+    const materialsSec = sections.find(s => s.id === "materials")
+    if (materialsSec) {
+      const recipeCtrl = materialsSec.controls.find(c => c.key === "recipe" && "options" in c)
+      if (recipeCtrl && "options" in recipeCtrl) {
+        for (const opt of recipeCtrl.options) {
+          const id = `material-recipe:${opt.value}`
+          entries.push({
+            id,
+            label: opt.label,
+            group: "Material Recipes",
+            category: "objects",
+            collection: "shared",
+            tag: "Material",
+            sectionId: "materials",
+            isActive: () => globalSettings.section === "materials" && materialsSec.settings.recipe === opt.value,
+            run: () => {
+              activeCatalogId = id
+              if (globalSettings.section !== "materials") selectSection("materials")
+              const c = materialsSec.controls.find(ctrl => ctrl.key === "recipe")
+              if (c) panel.navigation.set(c, opt.value)
+              frameActiveTarget()
+            },
+          })
+        }
+      }
       entries.push({
         id: "section:materials",
-        label: "Material Catalog (25)",
+        label: "Material Swatch Stage",
         group: "Calibration & Solvers",
         category: "objects",
         collection: "shared",
-        tag: "Stub",
+        tag: "Swatch",
         sectionId: "materials",
         isActive: () => globalSettings.section === "materials",
         run: () => selectSection("materials"),
@@ -962,6 +986,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const effCtrl = sec.controls.find(c => c.key === "effect" && "options" in c)
       const effLabel = effCtrl && "options" in effCtrl ? effCtrl.options.find(o => o.value === sec.settings.effect)?.label : String(sec.settings.effect)
       inspectorTitle.textContent = effLabel || sec.label
+      inspectorSub.textContent = sec.label
+    } else if ("recipe" in sec.settings) {
+      const recCtrl = sec.controls.find(c => c.key === "recipe" && "options" in c)
+      const recLabel = recCtrl && "options" in recCtrl ? recCtrl.options.find(o => o.value === sec.settings.recipe)?.label : String(sec.settings.recipe)
+      inspectorTitle.textContent = recLabel || sec.label
       inspectorSub.textContent = sec.label
     } else {
       inspectorTitle.textContent = sec.label
