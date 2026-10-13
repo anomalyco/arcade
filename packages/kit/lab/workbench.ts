@@ -527,7 +527,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
       if (wasPlay) {
         if (restoreCheckpoint && prePlayCheckpoint) {
           lastPlayAftermath = captureSnapshot()
-          spawn?.resetScene()
           restoreSnapshot(prePlayCheckpoint)
           const aftermath = lastPlayAftermath
           const checkpoint = prePlayCheckpoint
@@ -3078,10 +3077,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
       event.preventDefault()
       const count = event.shiftKey ? 5 : 1
       for (let i = 0; i < count; i++) stepBtn.click()
-    } else if (event.key === "," && !event.repeat) {
+    } else if (event.key === "," && !event.repeat && sec.id !== "spawn" && "playing" in sec.settings && !sec.settings.playing) {
       event.preventDefault()
-      const sec = activeSection()
-      if ("playing" in sec.settings) sec.settings.playing = false
       const targetFrames = Math.max(0, frames - (event.shiftKey ? 5 : 1))
       sec.retrigger?.()
       stepSimulationDeterministic(targetFrames)
@@ -3122,7 +3119,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
           void renderNow()
         }
       }
-    } else if ((key === "q" || key === "e") && !event.repeat) {
+    } else if ((key === "q" || key === "e") && !event.repeat && !input.enabled) {
       event.preventDefault()
       const primaryCtrl = sec.controls.find(c => (c.key === "effect" || c.key === "preset" || c.key === "material" || c.key === "item" || c.key === "source") && "options" in c)
       if (primaryCtrl && "options" in primaryCtrl && primaryCtrl.options.length > 0) {
