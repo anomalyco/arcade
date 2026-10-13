@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"
 import { join } from "node:path"
 import { encode } from "../../../scripts/encode"
-import { installMainHook } from "./main-hook"
+import { installMainHook } from "@arcade/kit/getaway-main-hook"
 
 type BenchStepResult = {
   cpuMs: number

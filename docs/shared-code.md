@@ -5,9 +5,38 @@ both games and has a current consumer in each. Game rules, maps, meshes and the 
 
 ## Where it goes
 
-`packages/kit/`: plain TypeScript source, no build step. Games import it by relative path. Each game's tsconfig must
-include it, and each game's workflow must also trigger on `packages/kit/**`, because a change there ships every game
-that uses it.
+`packages/kit/` is the private, versionless `@arcade/kit` Bun workspace package: plain TypeScript source, no build
+step. Getaway and Blackout declare `"@arcade/kit": "workspace:*"` and import subpaths, for example:
+
+```ts
+import { LabPanel } from "@arcade/kit/lab-panel"
+import "@arcade/kit/compare.css"
+```
+
+Its exports resolve directly to `.ts` source (and `.css` assets); Vite and Wrangler bundle them in each game.
+`packages/kit/tsconfig.json` checks every shared TypeScript file independently, including files no game imports yet.
+Existing navigation tests run with `bun run --cwd packages/kit check` or root `bun run check:packages` and remain
+part of both games' checks.
+
+## Install, check and ship
+
+Run `bun install --frozen-lockfile` at the repository root. The workspace explicitly includes `games/getaway`,
+`games/blackout` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
+Wings, landing and redirects retain their independent installs, lockfiles and workflows.
+
+Run each game's `bun run check`, dev, build and deploy commands from its own directory as before. Keep Vite,
+Wrangler, TypeScript and Playwright versions aligned in the game manifests. Root scripts declare their own tooling
+dependencies in the root manifest and use normal package imports rather than reaching into a game's `node_modules`.
+
+Both game workflows install at the root, then check and smoke-load the game's production bundle. Their paths include
+`packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml`, so shared changes check and deploy both
+consumers. Blackout also watches `games/getaway/shared/**` for its cross-game benchmark typecheck. A separate
+`packages.yml` workflow runs the shared package's typecheck and tests. Deploy jobs stay per game.
+
+For Cloudflare Builds, use the repository root for installation (`bun install --frozen-lockfile`) and then target the
+game (`bun run --cwd games/blackout build` / `bun run --cwd games/blackout deploy`). A game-only source upload omits
+the workspace package. Verify packaging from a clean `git archive` export with the root frozen install, package
+checks, both game checks, and `bunx --no-install wrangler deploy --dry-run` from each game.
 
 ## Lab panel
 
@@ -17,6 +46,7 @@ that uses it.
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
+`getaway-main-hook.ts` supplies both games' historical Getaway instrumentation without a cross-game script import.
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
 It also accepts numeric range controls (`min`, `max`, `step`), selects (`options` with numeric or string values),
 and an `enabled(settings)` predicate. Groups containing sliders or selects get Copy JSON.

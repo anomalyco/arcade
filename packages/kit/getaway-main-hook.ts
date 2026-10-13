@@ -1,4 +1,4 @@
-/** The part of a Playwright page this hook uses; typed locally so other games can import it without Playwright. */
+/** The part of a Playwright page this hook uses; shared tooling has no game-local dependencies. */
 type Page = { route(url: string, handler: (route: { fulfill(response: { contentType: string; body: string }): Promise<void> }) => unknown): Promise<unknown> }
 import { readFileSync } from "node:fs"
 import { join } from "node:path"

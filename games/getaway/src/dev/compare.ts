@@ -1,2 +1,2 @@
-import "../../../../packages/kit/compare.css"
-import "../../../../packages/kit/compare"
+import "@arcade/kit/compare.css"
+import "@arcade/kit/compare"
