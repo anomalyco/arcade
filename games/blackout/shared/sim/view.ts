@@ -41,19 +41,9 @@ export type Snapshot = {
   you: { health: number; mag: number; reloading: number; respawnIn: number; pick: Gun; equip: Equip; equipLeft: number; equipPick: Equip; kit: Kit } | null
 }
 
-export function buildSnapshot(world: World, viewerId: string): Snapshot {
-  const me = world.players.get(viewerId)
+/** One broadcast's public entity lists. Keep viewer-specific mode/kit data out of this object. */
+export function snapshotEntities(world: World): Pick<Snapshot, "players" | "grenades" | "claymores" | "vehicles"> {
   return {
-    type: "snap",
-    tick: world.tick,
-    t: world.time,
-    ack: me?.ack ?? 0,
-    phase: world.phase,
-    left: Math.max(0, (world.phase === "play" ? world.mode.left(world) : null) ?? world.phaseEnd - world.time),
-    map: world.map.seed,
-    mapKind: world.map.kind,
-    maps: world.maps,
-    match: world.match,
     players: world.order.map((id) => {
       const p = world.players.get(id)!
       return { id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, aim: p.aim, alive: p.alive, gun: p.gun, health: p.health, ...(p.kit.gun ? {} : { bare: true }), ...(p.veh ? { veh: p.veh, seat: p.seat } : {}) }
@@ -67,6 +57,26 @@ export function buildSnapshot(world: World, viewerId: string): Snapshot {
             .map((v) => ({ id: v.id, kind: v.kind, x: v.x, y: v.y, h: v.h, vx: v.vx, vy: v.vy, w: v.w, hp: Math.max(0, v.hp), seats: [...v.seats], steer: v.drive.steer, thr: v.drive.throttle, ...(v.state === "wreck" ? { wreck: 1 as const } : {}), ...(v.horn ? { horn: 1 as const } : {}), ...(v.drive.handbrake && v.seats[0] ? { hb: 1 as const } : {}) })),
         }
       : {}),
+  }
+}
+
+export function buildSnapshot(world: World, viewerId: string, entities = snapshotEntities(world)): Snapshot {
+  const me = world.players.get(viewerId)
+  return {
+    type: "snap",
+    tick: world.tick,
+    t: world.time,
+    ack: me?.ack ?? 0,
+    phase: world.phase,
+    left: Math.max(0, (world.phase === "play" ? world.mode.left(world) : null) ?? world.phaseEnd - world.time),
+    map: world.map.seed,
+    mapKind: world.map.kind,
+    maps: world.maps,
+    match: world.match,
+    players: entities.players,
+    grenades: entities.grenades,
+    claymores: entities.claymores,
+    ...(entities.vehicles ? { vehicles: entities.vehicles } : {}),
     mode: world.mode.view(world, viewerId),
     you: me ? { health: me.health, mag: me.mag, reloading: me.reloadUntil > 0 ? Math.max(0, me.reloadUntil - world.time) : 0, respawnIn: me.alive ? 0 : Number.isFinite(me.respawnAt) ? Math.max(0, me.respawnAt - world.time) : -1, pick: me.pick, equip: me.equip, equipLeft: me.equipLeft, equipPick: me.equipPick, kit: me.kit } : null,
   }

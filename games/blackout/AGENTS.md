@@ -26,3 +26,4 @@
   cars, cover) and floor kinds 5-9 in `shaders.ts`; ambient per kind in `lighting.ts` `AMBIENT`. Viewers:
   `envlab.html?kind=downtown&seed=N`, `?practice&map=downtown`, `KIND=downtown bun scripts/plan.ts`. Concepts: `concept/dt-*.png`.
 - Client/server version: `scripts/build-id.ts` hashes `shared/` into `shared/build.gen.ts` (gitignored; check, test, build, deploy and dev generate it). The client sends it in `hello`; a server with a different hash replies `reload` and the client reloads into the same room (old clients without a build get an error asking them to reload).
+- Cross-game techniques and lessons: `../../docs/game-notes.md`. Shared code plans: `../../docs/shared-code.md`.

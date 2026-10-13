@@ -1,16 +1,16 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
     "moduleResolution": "bundler",
-    "types": ["bun"],
+    "types": ["bun", "@webgpu/types"],
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/bench-render.ts", "scripts/bench-worker.ts", "scripts/bench-monitor-cost.ts", "scripts/prove-compare.ts", "scripts/prove-lab-worker.ts", "../../scripts/bench-multiplayer.ts"]
 }

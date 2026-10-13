@@ -10,6 +10,8 @@ export class Camera {
   x = 0
   z = 0
   dist = 24
+  traumaSquared = true
+  zoomOffset = 0
   private lx = 0
   private lz = 0
   private shake = 0
@@ -48,6 +50,11 @@ export class Camera {
     this.rv += rollBy * 40
   }
 
+  killPunch(): void {
+    this.zoom = -0.35
+    this.zv = 0
+  }
+
   /** Follows a point, leaning slightly toward where you aim; pulled back a little in a vehicle (`ride`). */
   follow(x: number, z: number, aimX: number, aimZ: number, dt: number, wide: boolean, ride = false): void {
     this.t += dt
@@ -57,7 +64,7 @@ export class Camera {
     const f = 1 - Math.exp(-dt * 6)
     this.x += (x + this.lx - this.x) * f
     this.z += (z + this.lz - this.z) * f
-    const want = wide ? 42 : ride ? 31 : 24
+    const want = (wide ? 42 : ride ? 31 : 24) + this.zoomOffset
     this.dist += (want - this.dist) * (1 - Math.exp(-dt * 2))
     this.shake *= Math.exp(-dt * 9)
     // Critically damped spring back to centre; substepped so a long frame can't make it diverge.
@@ -86,7 +93,7 @@ export class Camera {
   }
 
   update(aspect: number): Float32Array {
-    const s = this.shake
+    const s = this.traumaSquared ? this.shake * this.shake : this.shake
     const jx = s * (Math.sin(this.t * 71) + Math.sin(this.t * 43) * 0.5) * 0.12 + this.kx
     const jz = s * (Math.cos(this.t * 59) + Math.cos(this.t * 37) * 0.5) * 0.12 + this.kz
     const target = [this.x + jx, 0, this.z + jz]

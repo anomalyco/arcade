@@ -4,15 +4,110 @@ import type { AtlasRegion } from "./atlas"
 import { BigMesh } from "./city/big-mesh"
 import { building, type BuildingCtx } from "./city/building"
 import { container, crane, waterfront } from "./city/harbor"
-import { MAT, type Mesh } from "./mesh"
+import { FLOATS_PER_VERT, MAT, type Mesh } from "./mesh"
 import { outskirts } from "./city/outskirts"
 import { parks } from "./city/parks"
 import { cornerBeds, streetFurniture, trees, yards } from "./city/props"
 import { shop } from "./city/shop"
 import { streets } from "./city/streets"
+import { ramps } from "./city/ramps"
 import type { LampLight } from "./city/types"
 
 export type { LampLight }
+
+export type CityChunk = {
+  first: number
+  count: number
+  minX: number
+  minY: number
+  minZ: number
+  maxX: number
+  maxY: number
+  maxZ: number
+}
+
+/** Partitions the static city mesh into ~64m x 64m spatial AABB chunks packed in one contiguous buffer. */
+export function partitionCityMesh(mesh: Mesh, cellSize = 64): { data: Float32Array<ArrayBuffer>; chunks: CityChunk[]; count: number } {
+  const src = mesh.toArray()
+  const triFloats = FLOATS_PER_VERT * 3
+  const numTris = Math.floor(src.length / triFloats)
+  const buckets = new Map<
+    number,
+    {
+      tris: number[]
+      minX: number
+      minY: number
+      minZ: number
+      maxX: number
+      maxY: number
+      maxZ: number
+    }
+  >()
+  const LARGE_KEY = 0x7fffffff
+
+  for (let t = 0; t < numTris; t++) {
+    const o = t * triFloats
+    const x0 = src[o]!,
+      y0 = src[o + 1]!,
+      z0 = src[o + 2]!
+    const x1 = src[o + 12]!,
+      y1 = src[o + 13]!,
+      z1 = src[o + 14]!
+    const x2 = src[o + 24]!,
+      y2 = src[o + 25]!,
+      z2 = src[o + 26]!
+    const tx0 = Math.min(x0, x1, x2),
+      tx1 = Math.max(x0, x1, x2)
+    const ty0 = Math.min(y0, y1, y2),
+      ty1 = Math.max(y0, y1, y2)
+    const tz0 = Math.min(z0, z1, z2),
+      tz1 = Math.max(z0, z1, z2)
+    const isLarge = tx1 - tx0 > cellSize * 2 || tz1 - tz0 > cellSize * 2
+    const cx = Math.floor((x0 + x1 + x2) / (3 * cellSize)) + 64
+    const cz = Math.floor((z0 + z1 + z2) / (3 * cellSize)) + 64
+    const key = isLarge ? LARGE_KEY : (cx << 8) | (cz & 0xff)
+    let b = buckets.get(key)
+    if (!b) {
+      b = { tris: [], minX: tx0, minY: ty0, minZ: tz0, maxX: tx1, maxY: ty1, maxZ: tz1 }
+      buckets.set(key, b)
+    } else {
+      if (tx0 < b.minX) b.minX = tx0
+      if (ty0 < b.minY) b.minY = ty0
+      if (tz0 < b.minZ) b.minZ = tz0
+      if (tx1 > b.maxX) b.maxX = tx1
+      if (ty1 > b.maxY) b.maxY = ty1
+      if (tz1 > b.maxZ) b.maxZ = tz1
+    }
+    b.tris.push(t)
+  }
+
+  const data = new Float32Array(src.length)
+  const chunks: CityChunk[] = []
+  let writeFloat = 0
+  const sortedKeys = [...buckets.keys()].sort((a, b) => a - b)
+  for (const key of sortedKeys) {
+    const b = buckets.get(key)!
+    const first = writeFloat / FLOATS_PER_VERT
+    for (let i = 0; i < b.tris.length; i++) {
+      const srcOff = b.tris[i]! * triFloats
+      for (let k = 0; k < triFloats; k++) {
+        data[writeFloat + k] = src[srcOff + k]!
+      }
+      writeFloat += triFloats
+    }
+    chunks.push({
+      first,
+      count: b.tris.length * 3,
+      minX: b.minX,
+      minY: b.minY,
+      minZ: b.minZ,
+      maxX: b.maxX,
+      maxY: b.maxY,
+      maxZ: b.maxZ,
+    })
+  }
+  return { data, chunks, count: numTris * 3 }
+}
 
 /** Spots that always get the mockup's signature art, near the staged chase intersection at (228, 152). */
 const HOTEL_AT = [
@@ -38,6 +133,7 @@ export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[] } {
   const lamps: LampLight[] = []
 
   streets(m, city, rng)
+  ramps(m, city.ramps)
   yards(m, city)
   parks(m, city, rng, lamps)
 

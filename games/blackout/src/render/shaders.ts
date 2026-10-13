@@ -1,7 +1,7 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../shared/config"
 
 /** Frame uniform layout, in floats. Keep in step with Game.build. */
-export const FRAME_FLOATS = 16 + 4 * 7
+export const FRAME_FLOATS = 16 + 4 * 8
 
 const common = /* wgsl */ `
 const MAX_LIGHTS: u32 = ${MAX_LIGHTS}u;
@@ -18,9 +18,10 @@ struct Frame {
   screen: vec4f,     // width, height, light count, map light count
   eye: vec4f,        // local player plan x, plan y, cutaway on (0/1), cutaway radius (NDC)
   ambient: vec4f,    // sky rgb, moonlight strength
-  focus: vec4f,      // local player clip x, y, world height of the cut, 0
-  grade: vec4f,      // unused
+  focus: vec4f,      // local player clip x, y, world height of the cut, first monitor light
+  monitorBounds: vec4f, // plan min x/y, max x/y enclosing every direct monitor pool
   map: vec4f,        // 1 / map width, 1 / map height, map width, map height
+  effects: vec4f,    // multi-bounce AO strength
 }
 
 struct Light {
@@ -91,7 +92,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let r = occluders[(first + i) * 2u];
     let m = occluders[(first + i) * 2u + 1u];
     var t0 = 0.0;
-    var t1 = full;
+    var t1 = 1e6;
     var hit = false;
     var h = m.x;
     if (m.y > 0.5) {
@@ -108,14 +109,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
       h = min(h, hl - 0.25);
     } else {
-      hit = slab(o.x, dir.x, r.x, r.z, &t0, &t1) && slab(o.y, dir.y, r.y, r.w, &t0, &t1);
+      hit = slab(o.x, dir.x, r.x, r.z, &t0, &t1) && slab(o.y, dir.y, r.y, r.w, &t0, &t1) && t0 < full;
       t1 = max(t1, t0);
-      // Exit through the far side even when capped by the current full distance.
-      if (hit) {
-        var e0 = 0.0;
-        var e1 = 1e6;
-        if (slab(o.x, dir.x, r.x, r.z, &e0, &e1) && slab(o.y, dir.y, r.y, r.w, &e0, &e1)) { t1 = e1; }
-      }
     }
     if (!hit) { continue; }
     if (h >= hl - 0.02) {
@@ -123,7 +118,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     } else if (t0 < a.x) {
       if (b.x < FAR) { b = vec3f(min(b.x, a.x), max(b.y, a.y), max(b.z, a.z)); } else { b = a; }
       a = vec3f(t0, t1, h);
-    } else if (t0 < b.x && b.x >= FAR) {
+    } else if (t0 < b.x) {
       b = vec3f(t0, t1, h);
     } else {
       b = vec3f(min(b.x, t0), max(b.y, t1), max(b.z, h));
@@ -258,10 +253,12 @@ fn partialShadow(t0: f32, t1: f32, h: f32, d: f32, y: f32, hl: f32, size: f32) -
 fn tapVis(base: u32, fi: f32, d: f32, y: f32, hl: f32, size: f32) -> f32 {
   let i = u32(i32(round(fi)) + i32(RAYS) * 4) % RAYS;
   let p0 = polar[(base + i) * 2u];
-  let p1 = polar[(base + i) * 2u + 1u];
   let full = p0.x;
   let ef = 0.03 + size * 0.45 * max(d - full, 0.0) / max(full, 0.3);
+  if (d >= full + ef) { return 0.0; }
   var v = 1.0 - smoothstep(full - 0.02, full + ef, d);
+  if (d <= p0.y - 0.04) { return v; }
+  let p1 = polar[(base + i) * 2u + 1u];
   v *= partialShadow(p0.y, p0.z, p0.w, d, y, hl, size);
   v *= partialShadow(p1.x, p1.y, p1.z, d, y, hl, size);
   return v;
@@ -296,17 +293,24 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
   var out: Lit;
   out.diff = vec3f(0.0);
   out.spec = vec3f(0.0);
-  let count = u32(F.screen.z);
+  var count = u32(F.screen.z);
+  // Outside the union's conservative bounds, skip the entire shadowless monitor suffix.
+  if (u32(F.focus.w) < count && (any(world.xz < F.monitorBounds.xy) || any(world.xz > F.monitorBounds.zw))) {
+    count = u32(F.focus.w);
+  }
   let plan = world.xz + n.xz * 0.04;
   for (var i = 0u; i < count; i++) {
+    // Most pixels are outside the small monitor pools. Reject using just the position/radius cache line.
+    let pos = lights[i].pos;
+    let lp = pos.xz;
+    let r = pos.w;
+    let dv = world.xz - lp;
+    let dPlan2 = dot(dv, dv);
+    if (dPlan2 >= r * r) { continue; }
     let L = lights[i];
     let power = L.color.w;
     if (power <= 0.001) { continue; }
-    let lp = L.pos.xz;
-    let r = L.pos.w;
-    let dv = world.xz - lp;
-    let dPlan = length(dv);
-    if (dPlan >= r) { continue; }
+    let dPlan = sqrt(dPlan2);
     let hl = L.pos.y;
     let l3 = vec3f(lp.x, hl, lp.y) - world;
     let d3 = max(length(l3), 0.05);
@@ -328,7 +332,8 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     // Tops of furniture and partitions sit inside their own footprint: test the point nudged toward the light.
     var sp = plan;
     if (n.y > 0.5 && world.y > 0.15) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
-    let vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y);
+    var vis = 1.0;
+    if (L.extra.y > 0.5) { vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y); }
     out.diff += L.color.rgb * att * (diffuse * vis + 0.035);
     if (shin > 0.0) {
       let h = normalize(ldir + V);
@@ -494,7 +499,7 @@ fn lampK(aux: f32) -> f32 {
   return lampPower[u32(aux)];
 }
 
-@fragment fn fs(o: VOut) -> @location(0) vec4f {
+fn shadeScene(o: VOut) -> vec4f {
   let mat = i32(round(o.mat));
   if (mat == 13) {
     let r = length(o.normal.xy);
@@ -510,7 +515,6 @@ fn lampK(aux: f32) -> f32 {
   if (mat == 7) {
     return vec4f(city(o.world.xz), 1.0);
   }
-  if ((mat == 4 || mat == 9 || mat == 2 || mat == 11) && cutaway(o.world, o.pos)) { discard; }
   if (mat == 11) {
     // Haze under a fixture: denser near the lamp and where you look through more of the cone.
     let k = lampK(o.aux);
@@ -557,7 +561,11 @@ fn lampK(aux: f32) -> f32 {
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
     let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);
     let ao = mix(1.0, 1.0 - fd.r * 0.85, low);
-    amb *= ao;
+    // Multi-bounce AO: coloured surfaces return some occluded ambient light instead of turning black.
+    let a = 2.0404 * albedo - vec3f(0.3324);
+    let b = -4.7951 * albedo + vec3f(0.6417);
+    let c = 2.7552 * albedo + vec3f(0.6903);
+    amb *= mix(vec3f(ao), max(vec3f(ao), ((ao * a + b) * ao + c) * ao), F.effects.x);
     var direct = lit.diff * GAIN * mix(1.0, ao, 0.5);
     if (abs(n.y) < 0.5 && mat != 12) {
       let base = mix(0.55, 1.0, smoothstep(0.0, 0.8, o.world.y));
@@ -581,6 +589,16 @@ fn lampK(aux: f32) -> f32 {
   col = mix(col, vec3f(2.5), o.extra.w);
   let a = alpha * o.extra.z;
   return vec4f(col * a, a);
+}
+
+@fragment fn fs(o: VOut) -> @location(0) vec4f {
+  let mat = i32(round(o.mat));
+  if ((mat == 4 || mat == 9 || mat == 2 || mat == 11) && cutaway(o.world, o.pos)) { discard; }
+  return shadeScene(o);
+}
+
+@fragment fn fsSolid(o: VOut) -> @location(0) vec4f {
+  return shadeScene(o);
 }
 `
 

@@ -1,5 +1,5 @@
 import { FLAT_ACCEL, FLAT_GRIP, FLAT_SPEED, type Vehicle } from "../config"
-import type { Box } from "./city"
+import { rampSurface, type Box, type Ramp } from "./city"
 import { type Contact, CARS, type Mass, STATIC, WALL, boxShape, carHalf, carMass, carShape, collideShapes, resolve, separate } from "./collide"
 
 export type Input = {
@@ -17,6 +17,15 @@ export type Input = {
 export const NO_INPUT: Input = { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false }
 
 export type Body = {
+  y: number
+  vy: number
+  airborne: boolean
+  /** Strongest vertical contact this tick; landing count survives snapshot gaps. */
+  landing: number
+  landings: number
+  landGrip: number
+  braking: boolean
+  boosting: boolean
   x: number
   z: number
   h: number
@@ -81,7 +90,7 @@ export const DRIVE = {
 export const RAM_STUN_DV = 9
 
 export function newBody(x: number, z: number, h: number): Body {
-  return { x, z, h, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, wheels: 0, engineOff: false, crank: 0, spin: 0 }
+  return { x, z, h, y: 0, vy: 0, airborne: false, landing: 0, landings: 0, landGrip: 0, braking: false, boosting: false, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, wheels: 0, engineOff: false, crank: 0, spin: 0 }
 }
 
 /** Tires in Body.wheels order. */
@@ -135,6 +144,17 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   const dead = !!b.engineOff || crank > 0
   if (dead && (input.throttle > 0 || input.boost)) input = { ...input, throttle: Math.min(0, input.throttle), boost: false }
   const boosting = input.boost && b.boostFuel > 0 && b.stun <= 0
+  b.braking = input.brake > 0.1 || input.handbrake || (input.throttle < 0 && b.vx * Math.sin(b.h) + b.vz * Math.cos(b.h) > 0.5)
+  b.boosting = boosting && !b.airborne
+  b.landGrip = Math.max(0, b.landGrip - dt)
+  if (b.airborne) {
+    // No tire forces in flight. Tiny yaw damping keeps the launch's angular momentum.
+    b.yaw *= Math.exp(-dt * 0.8)
+    b.h += b.yaw * dt
+    b.x += b.vx * dt
+    b.z += b.vz * dt
+    return
+  }
   if (boosting) b.boostFuel = Math.max(0, b.boostFuel - dt / DRIVE.boostDrain)
   else b.boostFuel = Math.min(1, b.boostFuel + dt / DRIVE.boostRefill)
 
@@ -208,6 +228,7 @@ export function stepBody(b: Body, input: Input, spec: Vehicle, dt: number) {
   // Knocked loose: the tires skid, so the grip assists above don't apply either.
   if (loose > 0) gripMul += (1 - DRIVE.spinGrip - gripMul) * loose
   if (slip > 0) gripMul = DRIVE.oilGrip
+  if (b.landGrip > 0) gripMul *= 0.45
   const lat0 = vl
   vl *= Math.exp(-spec.grip * gripMul * dt)
   // Some of the scrubbed sideways speed carries into forward speed, so a held slide keeps its pace.
@@ -250,6 +271,7 @@ export function collideBoxes(b: Body, spec: Vehicle, boxes: Box[], out?: Impact)
   const mass = carMass(spec)
   let impact = 0
   for (const box of boxes) {
+    if (b.y > box.h + 0.1) continue
     if (b.x < box.x0 - r || b.x > box.x1 + r || b.z < box.z0 - r || b.z > box.z1 + r) continue
     const c = collideShapes(boxShape(box), carShape(b, spec))
     if (!c) continue
@@ -279,7 +301,8 @@ export function substeps(b: Body, spec: Vehicle, dt: number) {
  * stepBody plus collideBoxes, split into substeps so a fast or spinning car cannot tunnel through thin boxes
  * (roadblocks, parked cars). Returns the largest impact speed and fills `out` with that contact.
  */
-export function stepAndCollide(b: Body, input: Input, spec: Vehicle, dt: number, boxes: Box[], out?: Impact): number {
+export function stepAndCollide(b: Body, input: Input, spec: Vehicle, dt: number, boxes: Box[], out?: Impact, ramps: readonly Ramp[] = []): number {
+  b.landing = 0
   const n = substeps(b, spec, dt)
   // Only boxes this car could reach during the tick are worth testing in every substep.
   const [hl, hw] = carHalf(spec)
@@ -289,6 +312,7 @@ export function stepAndCollide(b: Body, input: Input, spec: Vehicle, dt: number,
   const hit: Impact = { impact: 0, x: 0, z: 0, nx: 0, nz: 0 }
   for (let i = 0; i < n; i++) {
     stepBody(b, input, spec, dt / n)
+    stepHeight(b, ramps, dt / n)
     const k = near.length ? collideBoxes(b, spec, near, hit) : 0
     if (k > impact) {
       impact = k
@@ -297,6 +321,33 @@ export function stepAndCollide(b: Body, input: Input, spec: Vehicle, dt: number,
   }
   if (out && impact === 0) out.impact = 0
   return impact
+}
+
+export const GRAVITY = 18
+
+/** Shared by the world, prediction and coasting proxies; no presentation state. */
+export function stepHeight(b: Body, ramps: readonly Ramp[], dt: number) {
+  let ground = 0, slopeVelocity = 0
+  for (const r of ramps) {
+    const s = rampSurface(r, b.x, b.z)
+    if (!s || s.y < ground) continue
+    ground = s.y
+    slopeVelocity = s.slope * (b.vx * Math.sin(r.h) + b.vz * Math.cos(r.h))
+  }
+  if (!b.airborne && b.vy > 2 && slopeVelocity < b.vy - 1 && ground < b.y + b.vy * dt) b.airborne = true
+  if (!b.airborne && b.y > ground + 0.3) b.airborne = true
+  if (b.airborne) {
+    b.y += b.vy * dt - 0.5 * GRAVITY * dt * dt
+    b.vy -= GRAVITY * dt
+    if (b.y <= ground && b.vy <= slopeVelocity) {
+      b.landing = Math.max(b.landing, slopeVelocity - b.vy)
+      b.landings++
+      b.landGrip = 0.22
+      b.airborne = false
+    } else return
+  }
+  b.y = ground
+  b.vy = Math.max(-12, Math.min(12, slopeVelocity))
 }
 
 /** Sets the knocked-loose timer from how much a hit changed a body's sideways speed and yaw rate. */
@@ -318,6 +369,7 @@ const CAR_SLOP = 0.01
  * still gets its mass. Hard hits stun and knock loose. Returns null when they don't touch.
  */
 export function collideCars(a: Body, va: Vehicle, b: Body, vb: Vehicle, dt: number, fixedA = false, fixedB = false): CarHit | null {
+  if (Math.abs(a.y - b.y) > 1.6) return null
   if (fixedA && fixedB) return null
   const [la, wa] = carHalf(va)
   const [lb, wb] = carHalf(vb)

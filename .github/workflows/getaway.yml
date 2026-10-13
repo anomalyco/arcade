@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "games/getaway/**"
+      - "packages/kit/**"
       - ".github/workflows/getaway.yml"
   pull_request:
     paths:
       - "games/getaway/**"
+      - "packages/kit/**"
       - ".github/workflows/getaway.yml"
   workflow_dispatch:
 

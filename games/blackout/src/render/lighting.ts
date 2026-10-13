@@ -1,5 +1,6 @@
 import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS } from "../../shared/config"
 import type { LightDef, LightKind, MapDef, MapKind, PropKind } from "../../shared/maps"
+import { deskMonitorLights } from "./models"
 
 export const LIGHT_FLOATS = 16
 export const OCC_FLOATS = 8
@@ -22,6 +23,7 @@ const PROP_H: Partial<Record<PropKind, number>> = {
   bin: 0.9,
   newsbox: 1.05,
   bench: 0.5,
+  chair: 0.9,
 }
 
 /** Apparent size of each fixture, which sets how soft its shadows are. */
@@ -87,6 +89,10 @@ export class LightCuller {
   readonly occ = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   readonly power = new Float32Array(MAX_MAP_LIGHTS)
   lightCount = 0
+  /** Contiguous prefix with occluders; later lights never read the polar buffer. */
+  shadowLightCount = 0
+  monitorStart = 0
+  readonly monitorBounds = new Float32Array(4)
   occCount = 0
   private map: MapDef | null = null
   private rects: Float32Array = new Float32Array(0)
@@ -96,16 +102,22 @@ export class LightCuller {
   private cache = new Map<number, Float32Array>()
   private flick: number[] = []
   private order: { l: LightDef; d: number }[] = []
+  private monitorLights: LightDef[] = []
+  private chairs = true
+  monitorIntensity = 1
   private static CELL = 4
 
-  setMap(map: MapDef): void {
+  setMap(map: MapDef, chairs = this.chairs): void {
+    this.chairs = chairs
     this.map = map
+    this.monitorLights = deskMonitorLights(map)
     this.cache.clear()
     this.grid.clear()
     const list: number[] = []
     for (const w of map.walls) list.push(...w.rect, w.h)
     for (const p of map.props) {
-      const h = p.solid ? PROP_H[p.kind] : undefined
+      if (p.kind === "chair" && !chairs) continue
+      const h = p.solid || p.kind === "chair" ? PROP_H[p.kind] : undefined
       if (h !== undefined) list.push(...p.rect, p.kind === "crate" ? Math.min(p.rect[2] - p.rect[0], p.rect[3] - p.rect[1]) * 0.9 : h)
     }
     this.rects = new Float32Array(list)
@@ -127,6 +139,10 @@ export class LightCuller {
         }
     }
     this.flick = map.lights.map(flickers)
+  }
+
+  setChairShadows(enabled: boolean): void {
+    if (enabled !== this.chairs && this.map) this.setMap(this.map, enabled)
   }
 
   /** Occluders within reach of a light at (x, y), radius r, packed. */
@@ -153,7 +169,7 @@ export class LightCuller {
   }
 
   /** Builds this frame's light and occluder buffers and the per-map-light fixture brightness. */
-  update(view: ViewRect, t: number, dyn: readonly DynLight[], casters: readonly Caster[]): void {
+  update(view: ViewRect, t: number, dyn: readonly DynLight[], casters: readonly Caster[], monitors = true, broken: readonly Caster[] = []): void {
     const map = this.map
     if (!map) return
     const [vx0, vy0, vx1, vy1] = view
@@ -207,6 +223,34 @@ export class LightCuller {
       if (nl >= MAX_LIGHTS) break
       const [off, cnt] = pushOcc(f.x, f.y, f.r, this.gather(f.x, f.y, f.r), f.near ?? 1.1)
       L.set([f.x, f.h, f.y, f.r, f.color[0], f.color[1], f.color[2], f.power, f.cone?.[0] ?? 0, f.cone?.[1] ?? 0, f.cone?.[2] ?? 0, f.cone ? 1 : 0, off, cnt, f.size, -1], nl * LIGHT_FLOATS)
+      nl++
+    }
+    // Partition in-place: polar rows and light indices stay identical for every shadowed light.
+    let shadowed = 0
+    for (let i = 0; i < nl; i++) if (L[i * LIGHT_FLOATS + 13]! > 0) {
+      if (i !== shadowed) for (let k = 0; k < LIGHT_FLOATS; k++) {
+        const a = shadowed * LIGHT_FLOATS + k, b = i * LIGHT_FLOATS + k
+        const value = L[a]!
+        L[a] = L[b]!
+        L[b] = value
+      }
+      shadowed++
+    }
+    this.shadowLightCount = shadowed
+    this.monitorStart = nl
+    this.monitorBounds.set([1e9, 1e9, -1e9, -1e9])
+    // Tight unshadowed pools: no occluder gathering, polar rays, or shadow-map reads.
+    if (monitors && this.monitorIntensity > 0) for (const l of this.monitorLights) {
+      if (nl >= MAX_LIGHTS) break
+      const radius = 1.65
+      const dx = Math.max(vx0 - l.x, 0, l.x - vx1), dy = Math.max(vy0 - l.y, 0, l.y - vy1)
+      if (dx * dx + dy * dy > radius * radius || broken.some((b) => b.x === l.x && b.y === l.y)) continue
+      L.set([l.x, l.h, l.y, radius, ...l.color, l.power * this.monitorIntensity, ...(l.cone ?? [0, 0, 0]), 1, 0, 0, SIZE.desk, l.id], nl * LIGHT_FLOATS)
+      const bound = radius + 0.001 // Outward pad covers float32 position/radius rounding on the GPU.
+      this.monitorBounds[0] = Math.min(this.monitorBounds[0]!, l.x - bound)
+      this.monitorBounds[1] = Math.min(this.monitorBounds[1]!, l.y - bound)
+      this.monitorBounds[2] = Math.max(this.monitorBounds[2]!, l.x + bound)
+      this.monitorBounds[3] = Math.max(this.monitorBounds[3]!, l.y + bound)
       nl++
     }
     this.lightCount = nl

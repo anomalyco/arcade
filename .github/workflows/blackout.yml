@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "games/blackout/**"
+      - "packages/kit/**"
       - ".github/workflows/blackout.yml"
   pull_request:
     paths:
       - "games/blackout/**"
+      - "packages/kit/**"
       - ".github/workflows/blackout.yml"
   workflow_dispatch:
 

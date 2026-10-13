@@ -1,47 +1,138 @@
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
+import { type CityChunk, partitionCityMesh } from "./city-mesh"
 import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
 
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
 const HDR: GPUTextureFormat = "rgba16float"
-export const FRAME_FLOATS = 16 * 2 + 4 * 8
+export const FRAME_FLOATS = 16 * 2 + 4 * 9
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
 const MAX_SPRITES = 6000
 const BLOOM_LEVELS = 5
 
 type Model = { vbuf: GPUBuffer; count: number }
+type CityModel = { vbuf: GPUBuffer; count: number; chunks: CityChunk[] }
 
 /** One instanced draw: a model and its packed instance data. */
-export type InstanceBatch = { model: number; data: Float32Array; count: number; ghost?: boolean }
+export type InstanceBatch = { model: number; data: Float32Array; count: number; ghost?: boolean; ghostCount?: number }
+
+/** Extracts the 6 clip-space frustum planes (Left, Right, Bottom, Top, Near, Far) from a column-major 4x4 matrix at `mOff`. */
+function extractFrustumPlanes(m: Float32Array, mOff: number, out: Float32Array) {
+  const m0 = m[mOff]!,
+    m1 = m[mOff + 1]!,
+    m2 = m[mOff + 2]!,
+    m3 = m[mOff + 3]!
+  const m4 = m[mOff + 4]!,
+    m5 = m[mOff + 5]!,
+    m6 = m[mOff + 6]!,
+    m7 = m[mOff + 7]!
+  const m8 = m[mOff + 8]!,
+    m9 = m[mOff + 9]!,
+    m10 = m[mOff + 10]!,
+    m11 = m[mOff + 11]!
+  const m12 = m[mOff + 12]!,
+    m13 = m[mOff + 13]!,
+    m14 = m[mOff + 14]!,
+    m15 = m[mOff + 15]!
+  // Left
+  out[0] = m3 + m0
+  out[1] = m7 + m4
+  out[2] = m11 + m8
+  out[3] = m15 + m12
+  // Right
+  out[4] = m3 - m0
+  out[5] = m7 - m4
+  out[6] = m11 - m8
+  out[7] = m15 - m12
+  // Bottom
+  out[8] = m3 + m1
+  out[9] = m7 + m5
+  out[10] = m11 + m9
+  out[11] = m15 + m13
+  // Top
+  out[12] = m3 - m1
+  out[13] = m7 - m5
+  out[14] = m11 - m9
+  out[15] = m15 - m13
+  // Near (WebGPU 0..1 depth)
+  out[16] = m2
+  out[17] = m6
+  out[18] = m10
+  out[19] = m14
+  // Far
+  out[20] = m3 - m2
+  out[21] = m7 - m6
+  out[22] = m11 - m10
+  out[23] = m15 - m14
+}
+
+function aabbInFrustum(
+  planes: Float32Array,
+  minX: number,
+  minY: number,
+  minZ: number,
+  maxX: number,
+  maxY: number,
+  maxZ: number,
+): boolean {
+  for (let i = 0; i < 24; i += 4) {
+    const px = planes[i]!,
+      py = planes[i + 1]!,
+      pz = planes[i + 2]!,
+      pw = planes[i + 3]!
+    const vx = px >= 0 ? maxX : minX
+    const vy = py >= 0 ? maxY : minY
+    const vz = pz >= 0 ? maxZ : minZ
+    if (px * vx + py * vy + pz * vz + pw < 0) return false
+  }
+  return true
+}
 
 export class Renderer {
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private instBuf: GPUBuffer
-  private ghostBuf: GPUBuffer
   private spriteBuf: GPUBuffer
   private shadowTex: GPUTexture
+  private shadowView: GPUTextureView
   private mainGroup: GPUBindGroup
   private shadowGroup: GPUBindGroup
   private pipes: Record<string, GPURenderPipeline> = {}
-  private city: Model | null = null
+  private city: CityModel | null = null
   private beams: { buf: GPUBuffer; count: number; cap: number } | null = null
   private atlas: GPUTexture
   private models: Model[] = []
   private msaa!: GPUTexture
+  private msaaView!: GPUTextureView
   private depth!: GPUTexture
+  private depthView!: GPUTextureView
   private hdr!: GPUTexture
+  private hdrView!: GPUTextureView
   private bloom: GPUTexture[] = []
+  private bloomViews: GPUTextureView[] = []
   private postGroups: { down: GPUBindGroup[]; up: GPUBindGroup[]; composite: GPUBindGroup } | null = null
   private postParams: GPUBuffer[] = []
+  private upParams: GPUBuffer[] = []
   private compositeParams: GPUBuffer
+  private compositeData = new Float32Array(4)
+  private camPlanes = new Float32Array(24)
+  private shadowPlanes = new Float32Array(24)
   private postLayout: GPUBindGroupLayout
   private sampler: GPUSampler
   private width = 1
   private height = 1
   private maxInst = 512
+  stats = {
+    cityVertsDrawn: 0,
+    mainCityVertsDrawn: 0,
+    shadowCityVertsDrawn: 0,
+    chunksDrawn: 0,
+    mainChunksDrawn: 0,
+    shadowChunksDrawn: 0,
+    totalChunks: 1,
+  }
 
   constructor(
     private device: GPUDevice,
@@ -52,10 +143,10 @@ export class Renderer {
     this.frameBuf = d.createBuffer({ size: FRAME_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     this.lightBuf = d.createBuffer({ size: MAX_LIGHTS * 12 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
     this.instBuf = d.createBuffer({ size: this.maxInst * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
-    this.ghostBuf = d.createBuffer({ size: this.maxInst * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     this.spriteBuf = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     this.compositeParams = d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     this.shadowTex = d.createTexture({ size: [SHADOW_SIZE, SHADOW_SIZE], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+    this.shadowView = this.shadowTex.createView()
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
 
     this.atlas = d.createTexture({
@@ -69,7 +160,7 @@ export class Renderer {
     const mainLayout = d.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: vis, buffer: { type: "uniform" } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" } },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -81,7 +172,7 @@ export class Renderer {
       entries: [
         { binding: 0, resource: { buffer: this.frameBuf } },
         { binding: 1, resource: { buffer: this.lightBuf } },
-        { binding: 2, resource: this.shadowTex.createView() },
+        { binding: 2, resource: this.shadowView },
         { binding: 3, resource: d.createSampler({ compare: "less", magFilter: "linear", minFilter: "linear" }) },
         { binding: 4, resource: this.atlas.createView() },
         { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 8 }) },
@@ -164,7 +255,7 @@ export class Renderer {
         layout: d.createPipelineLayout({ bindGroupLayouts: [shadowLayout] }),
         vertex: { module: shadowMod, entryPoint: vs, buffers },
         primitive: { topology: "triangle-list", cullMode: "none" },
-        depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 2, depthBiasSlopeScale: 2 },
+        depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1.2 },
       })
     const post = d.createShaderModule({ code: postShader })
     const postLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
@@ -184,6 +275,7 @@ export class Renderer {
       composite: postPipe("composite", format),
     }
     for (let i = 0; i < BLOOM_LEVELS; i++) this.postParams.push(d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }))
+    for (let i = 0; i < BLOOM_LEVELS - 1; i++) this.upParams.push(d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }))
   }
 
   private upload(data: Float32Array) {
@@ -194,7 +286,8 @@ export class Renderer {
   }
 
   setCity(mesh: Mesh) {
-    this.city = { vbuf: this.upload(mesh.toArray()), count: mesh.count }
+    const part = partitionCityMesh(mesh, 64)
+    this.city = { vbuf: this.upload(part.data), count: part.count, chunks: part.chunks }
   }
 
   /** Uploads the decal atlas and builds its mip chain on the CPU (box filter, alpha-weighted). */
@@ -255,41 +348,51 @@ export class Renderer {
     const d = this.device
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
     this.msaa = d.createTexture({ size: [w, h], format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
+    this.msaaView = this.msaa.createView()
     this.depth = d.createTexture({ size: [w, h], format: "depth24plus-stencil8", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
+    this.depthView = this.depth.createView()
     this.hdr = d.createTexture({ size: [w, h], format: HDR, usage })
+    this.hdrView = this.hdr.createView()
     this.bloom = []
+    this.bloomViews = []
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       const s = 2 ** (i + 1)
-      this.bloom.push(d.createTexture({ size: [Math.max(1, Math.floor(w / s)), Math.max(1, Math.floor(h / s))], format: HDR, usage }))
+      const tex = d.createTexture({ size: [Math.max(1, Math.floor(w / s)), Math.max(1, Math.floor(h / s))], format: HDR, usage })
+      this.bloom.push(tex)
+      this.bloomViews.push(tex.createView())
     }
-    const group = (src: GPUTexture, params: GPUBuffer, extra: GPUTexture = src) =>
+    const group = (srcView: GPUTextureView, params: GPUBuffer, extraView: GPUTextureView = srcView) =>
       d.createBindGroup({
         layout: this.postLayout,
         entries: [
-          { binding: 0, resource: src.createView() },
+          { binding: 0, resource: srcView },
           { binding: 1, resource: this.sampler },
           { binding: 2, resource: { buffer: params } },
-          { binding: 3, resource: extra.createView() },
+          { binding: 3, resource: extraView },
         ],
       })
     const down: GPUBindGroup[] = []
     const up: GPUBindGroup[] = []
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       const src = i === 0 ? this.hdr : this.bloom[i - 1]!
-      down.push(group(src, this.postParams[i]!))
+      const srcView = i === 0 ? this.hdrView : this.bloomViews[i - 1]!
+      down.push(group(srcView, this.postParams[i]!))
       d.queue.writeBuffer(this.postParams[i]!, 0, new Float32Array([1 / src.width, 1 / src.height, i === 0 ? 1 : 0, 0]))
     }
-    for (let i = BLOOM_LEVELS - 1; i > 0; i--) up.push(group(this.bloom[i]!, this.postParams[i]!))
-    this.postGroups = { down, up, composite: group(this.hdr, this.compositeParams, this.bloom[0]!) }
+    for (let i = BLOOM_LEVELS - 1; i > 0; i--) {
+      const bTex = this.bloom[i]!
+      const upBuf = this.upParams[i - 1]!
+      d.queue.writeBuffer(upBuf, 0, new Float32Array([1 / bTex.width, 1 / bTex.height, 0, 0]))
+      up.push(group(this.bloomViews[i]!, upBuf))
+    }
+    this.postGroups = { down, up, composite: group(this.hdrView, this.compositeParams, this.bloomViews[0]!) }
   }
 
   private ensureInstances(n: number) {
     if (n <= this.maxInst) return
     this.maxInst = Math.ceil(n * 1.5)
     this.instBuf.destroy()
-    this.ghostBuf.destroy()
     this.instBuf = this.device.createBuffer({ size: this.maxInst * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
-    this.ghostBuf = this.device.createBuffer({ size: this.maxInst * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
   }
 
   render(opts: {
@@ -304,25 +407,34 @@ export class Renderer {
     const d = this.device
     d.queue.writeBuffer(this.frameBuf, 0, opts.frame)
     d.queue.writeBuffer(this.lightBuf, 0, opts.lights)
-    d.queue.writeBuffer(this.compositeParams, 0, new Float32Array([0, 0, opts.bloom, opts.flash]))
+    this.compositeData[2] = opts.bloom
+    this.compositeData[3] = opts.flash
+    d.queue.writeBuffer(this.compositeParams, 0, this.compositeData)
 
-    // Pack all instance batches into one buffer.
-    const total = opts.batches.reduce((s, b) => s + b.count, 0)
-    const ghostTotal = opts.ghosts.reduce((s, b) => s + b.count, 0)
-    this.ensureInstances(Math.max(total, ghostTotal))
+    // Pack all instance batches into one buffer (reusing instBuf for ghost silhouettes).
+    let total = 0
+    for (let i = 0; i < opts.batches.length; i++) total += opts.batches[i]!.count
+    let extraGhostTotal = 0
+    for (let i = 0; i < opts.ghosts.length; i++) extraGhostTotal += opts.ghosts[i]!.count
+    this.ensureInstances(total + extraGhostTotal)
+
     const ranges: { model: number; first: number; count: number }[] = []
+    const ghostRanges: { model: number; first: number; count: number }[] = []
     let off = 0
-    for (const b of opts.batches) {
+    for (let i = 0; i < opts.batches.length; i++) {
+      const b = opts.batches[i]!
       if (!b.count) continue
       d.queue.writeBuffer(this.instBuf, off * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
       ranges.push({ model: b.model, first: off, count: b.count })
+      if (b.ghostCount && b.ghostCount > 0) {
+        ghostRanges.push({ model: b.model, first: off, count: b.ghostCount })
+      }
       off += b.count
     }
-    const ghostRanges: { model: number; first: number; count: number }[] = []
-    off = 0
-    for (const b of opts.ghosts) {
+    for (let i = 0; i < opts.ghosts.length; i++) {
+      const b = opts.ghosts[i]!
       if (!b.count) continue
-      d.queue.writeBuffer(this.ghostBuf, off * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
+      d.queue.writeBuffer(this.instBuf, off * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
       ghostRanges.push({ model: b.model, first: off, count: b.count })
       off += b.count
     }
@@ -332,20 +444,49 @@ export class Renderer {
     const addOffset = (MAX_SPRITES / 2) * SPRITE_FLOATS * 4
     if (addCount) d.queue.writeBuffer(this.spriteBuf, addOffset, opts.sprites.add.buffer, 0, addCount * SPRITE_FLOATS * 4)
 
+    extractFrustumPlanes(opts.frame, 0, this.camPlanes)
+    extractFrustumPlanes(opts.frame, 16, this.shadowPlanes)
+
     const enc = d.createCommandEncoder()
     const sp = enc.beginRenderPass({
       colorAttachments: [],
-      depthStencilAttachment: { view: this.shadowTex.createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
+      depthStencilAttachment: { view: this.shadowView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
     })
     sp.setBindGroup(0, this.shadowGroup)
+    let shadowCityVerts = 0
+    let shadowChunks = 0
     if (this.city) {
       sp.setPipeline(this.pipes.shadowCity!)
       sp.setVertexBuffer(0, this.city.vbuf)
-      sp.draw(this.city.count)
+      const chunks = this.city.chunks
+      let runFirst = -1
+      let runCount = 0
+      for (let i = 0; i < chunks.length; i++) {
+        const c = chunks[i]!
+        // Only cast shadows above ground level, and only if the chunk or its moon shadow intersects the camera frustum.
+        const sweep = Math.max(0, c.maxY) * 0.92
+        const vis =
+          c.maxY > 0.05 &&
+          aabbInFrustum(this.shadowPlanes, c.minX, c.minY, c.minZ, c.maxX, c.maxY, c.maxZ) &&
+          aabbInFrustum(this.camPlanes, c.minX, 0, c.minZ, c.maxX + sweep, c.maxY, c.maxZ + sweep)
+        if (vis) {
+          shadowCityVerts += c.count
+          shadowChunks++
+          if (runFirst >= 0 && runFirst + runCount === c.first) {
+            runCount += c.count
+          } else {
+            if (runCount > 0) sp.draw(runCount, 1, runFirst, 0)
+            runFirst = c.first
+            runCount = c.count
+          }
+        }
+      }
+      if (runCount > 0) sp.draw(runCount, 1, runFirst, 0)
     }
     sp.setPipeline(this.pipes.shadowInst!)
     sp.setVertexBuffer(1, this.instBuf)
-    for (const r of ranges) {
+    for (let i = 0; i < ranges.length; i++) {
+      const r = ranges[i]!
       const m = this.models[r.model]!
       sp.setVertexBuffer(0, m.vbuf)
       sp.draw(m.count, r.count, 0, r.first)
@@ -353,9 +494,9 @@ export class Renderer {
     sp.end()
 
     const pass = enc.beginRenderPass({
-      colorAttachments: [{ view: this.msaa.createView(), resolveTarget: this.hdr.createView(), clearValue: { r: 0.02, g: 0.025, b: 0.04, a: 1 }, loadOp: "clear", storeOp: "discard" }],
+      colorAttachments: [{ view: this.msaaView, resolveTarget: this.hdrView, clearValue: { r: 0.02, g: 0.025, b: 0.04, a: 1 }, loadOp: "clear", storeOp: "discard" }],
       depthStencilAttachment: {
-        view: this.depth.createView(),
+        view: this.depthView,
         depthClearValue: 1,
         depthLoadOp: "clear",
         depthStoreOp: "discard",
@@ -366,14 +507,43 @@ export class Renderer {
     })
     pass.setBindGroup(0, this.mainGroup)
     pass.setStencilReference(1)
+    let mainCityVerts = 0
+    let mainChunks = 0
     if (this.city) {
       pass.setPipeline(this.pipes.city!)
       pass.setVertexBuffer(0, this.city.vbuf)
-      pass.draw(this.city.count)
+      const chunks = this.city.chunks
+      let runFirst = -1
+      let runCount = 0
+      for (let i = 0; i < chunks.length; i++) {
+        const c = chunks[i]!
+        if (aabbInFrustum(this.camPlanes, c.minX, c.minY, c.minZ, c.maxX, c.maxY, c.maxZ)) {
+          mainCityVerts += c.count
+          mainChunks++
+          if (runFirst >= 0 && runFirst + runCount === c.first) {
+            runCount += c.count
+          } else {
+            if (runCount > 0) pass.draw(runCount, 1, runFirst, 0)
+            runFirst = c.first
+            runCount = c.count
+          }
+        }
+      }
+      if (runCount > 0) pass.draw(runCount, 1, runFirst, 0)
+    }
+    this.stats = {
+      cityVertsDrawn: shadowCityVerts + mainCityVerts,
+      mainCityVertsDrawn: mainCityVerts,
+      shadowCityVertsDrawn: shadowCityVerts,
+      chunksDrawn: shadowChunks + mainChunks,
+      mainChunksDrawn: mainChunks,
+      shadowChunksDrawn: shadowChunks,
+      totalChunks: this.city?.chunks.length ?? 1,
     }
     pass.setPipeline(this.pipes.inst!)
     pass.setVertexBuffer(1, this.instBuf)
-    for (const r of ranges) {
+    for (let i = 0; i < ranges.length; i++) {
+      const r = ranges[i]!
       const m = this.models[r.model]!
       pass.setVertexBuffer(0, m.vbuf)
       pass.draw(m.count, r.count, 0, r.first)
@@ -395,8 +565,9 @@ export class Renderer {
     }
     if (ghostRanges.length) {
       pass.setPipeline(this.pipes.ghost!)
-      pass.setVertexBuffer(1, this.ghostBuf)
-      for (const r of ghostRanges) {
+      pass.setVertexBuffer(1, this.instBuf)
+      for (let i = 0; i < ghostRanges.length; i++) {
+        const r = ghostRanges[i]!
         const m = this.models[r.model]!
         pass.setVertexBuffer(0, m.vbuf)
         pass.draw(m.count, r.count, 0, r.first)
@@ -407,15 +578,15 @@ export class Renderer {
     // Bloom: threshold + downsample chain, then additive upsample back to half resolution.
     const g = this.postGroups!
     for (let i = 0; i < BLOOM_LEVELS; i++) {
-      const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloom[i]!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+      const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[i]!, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
       p.setPipeline(this.pipes.down!)
       p.setBindGroup(0, g.down[i]!)
       p.draw(3)
       p.end()
     }
     for (let k = 0; k < BLOOM_LEVELS - 1; k++) {
-      const target = this.bloom[BLOOM_LEVELS - 2 - k]!
-      const p = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: "load", storeOp: "store" }] })
+      const targetView = this.bloomViews[BLOOM_LEVELS - 2 - k]!
+      const p = enc.beginRenderPass({ colorAttachments: [{ view: targetView, loadOp: "load", storeOp: "store" }] })
       p.setPipeline(this.pipes.up!)
       p.setBindGroup(0, g.up[k]!)
       p.draw(3)

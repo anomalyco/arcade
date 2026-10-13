@@ -103,9 +103,17 @@ export type Car = {
 }
 
 /** `to`: deliver only to this player (owner id); everyone gets the rest. */
-export type SimEvent = { t: number; kind: string; text: string; carId?: number; to?: string }
+export type SimEvent = { t: number; kind: string; text: string; carId?: number; to?: string; impact?: number }
 
 export type CarView = {
+  /** Optional for older snapshots; current worlds always supply vertical/control state. */
+  y?: number
+  vy?: number
+  airborne?: boolean
+  landing?: number
+  landings?: number
+  braking?: boolean
+  boosting?: boolean
   id: number
   ownerId: string
   name: string
@@ -565,7 +573,8 @@ export class World {
       c.pendingGadget = null
       if (slot !== null) this.useGadget(c, slot)
       prev.set(c.id, { x: c.body.x, z: c.body.z, h: c.body.h })
-      c.impact = stepAndCollide(c.body, input, c.vehicle, dt, boxes, wall)
+      c.impact = stepAndCollide(c.body, input, c.vehicle, dt, boxes, wall, this.city.ramps)
+      if (c.body.landing > 0) this.events.push({ t: this.t, kind: "landing", text: "", carId: c.id, impact: c.body.landing, to: c.role === "robber" && !this.seen ? c.ownerId : undefined })
       if (c.impact >= IMPACT_EVENT) this.impactEvent(c, wall)
     }
     // Every car is solid; one that isn't moving this phase (frozen at the precinct) is an immovable obstacle.
@@ -976,44 +985,41 @@ export class World {
     }
   }
 
+  /** Public fields prepared once per broadcast. Visibility and private gadgets are applied separately for each viewer. */
+  viewBase(): { cars: CarView[]; standings: Standing[] } {
+    return {
+      cars: this.cars.map((c) => {
+        const b = c.body
+        return {
+          id: c.id, ownerId: c.ownerId, name: c.name, role: c.role, vehicle: c.vehicle.id,
+          x: b.x, z: b.z, h: b.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b),
+          y: b.y, vy: b.vy, airborne: b.airborne, landing: b.landing, landings: b.landings, braking: b.braking, boosting: b.boosting,
+          stun: b.stun, boost: b.boostFuel, human: c.human, impact: c.impact, ghost: false,
+          gadgets: undefined, yaw: b.yaw, slide: b.drift ?? 0, slip: b.slip ?? 0, wheels: b.wheels ?? 0,
+          engineOff: !!b.engineOff, radar: c.role === "robber" ? true : undefined,
+        }
+      }),
+      standings: [...this.standings.values()].filter((s) => this.participants.some((p) => p.id === s.id)).sort((a, b) => b.score - a.score),
+    }
+  }
+
   /** What a given viewer is allowed to know. Cops get the robber's last-seen ping instead of the live car when it is out of sight. */
-  view(viewerId?: string): WorldView {
+  view(viewerId?: string, base = this.viewBase()): WorldView {
     const robberView = viewerId === undefined || viewerId === this.robberId || !this.cars.some((c) => c.ownerId === viewerId)
     const showRobber = robberView || this.seen || this.phase === "waiting" || this.phase === "intro" || this.phase === "end"
     const viewer = viewerId === undefined ? undefined : this.carOf(viewerId)
     const cars: CarView[] = []
-    for (const c of this.cars) {
+    for (let index = 0; index < this.cars.length; index++) {
+      const c = this.cars[index]!
       // A cop who has the robber on their own screen sees the car with their own eyes, even when it's dark to radar.
       const ownSight = !showRobber && c.role === "robber" && viewer?.role === "cop" && this.inView(viewer, c)
       const hidden = c.role === "robber" && !showRobber && !ownSight
       if (hidden && !this.lastSeen) continue
-      const b = c.body
-      cars.push({
-        id: c.id,
-        ownerId: c.ownerId,
-        name: c.name,
-        role: c.role,
-        vehicle: c.vehicle.id,
-        x: hidden ? this.lastSeen!.x : b.x,
-        z: hidden ? this.lastSeen!.z : b.z,
-        h: hidden ? this.lastSeenH : b.h,
-        vx: hidden ? 0 : b.vx,
-        vz: hidden ? 0 : b.vz,
-        speed: hidden ? 0 : speedOf(b),
-        drift: hidden ? 0 : lateralSpeed(b),
-        stun: hidden ? 0 : b.stun,
-        boost: hidden ? 0 : b.boostFuel,
-        human: c.human,
-        impact: hidden ? 0 : c.impact,
-        ghost: hidden,
-        gadgets: viewerId === undefined || viewerId === c.ownerId ? c.gadgets.map((g, i) => ({ ...g, ready: this.gadgetReady(c, i as 0 | 1) })) : undefined,
-        yaw: hidden ? 0 : b.yaw,
-        slide: hidden ? 0 : (b.drift ?? 0),
-        slip: hidden ? 0 : (b.slip ?? 0),
-        wheels: hidden ? 0 : (b.wheels ?? 0),
-        engineOff: hidden ? false : !!b.engineOff,
-        radar: c.role === "robber" ? !hidden && !ownSight : undefined,
-      })
+      let view = base.cars[index]!
+      if (hidden) view = { ...view, x: this.lastSeen!.x, z: this.lastSeen!.z, h: this.lastSeenH, y: 0, vy: 0, airborne: false, landing: 0, landings: 0, braking: false, boosting: false, vx: 0, vz: 0, speed: 0, drift: 0, stun: 0, boost: 0, impact: 0, ghost: true, yaw: 0, slide: 0, slip: 0, wheels: 0, engineOff: false, radar: false }
+      else if (ownSight) view = { ...view, radar: false }
+      if (viewerId === undefined || viewerId === c.ownerId) view = { ...view, gadgets: c.gadgets.map((g, i) => ({ ...g, ready: this.gadgetReady(c, i as 0 | 1) })) }
+      cars.push(view)
     }
     const props: PropView[] = []
     for (const p of this.props) {
@@ -1021,7 +1027,7 @@ export class World {
       if (viewer?.role === "cop" && !p.revealed) continue
       props.push({ id: p.id, kind: p.kind, x: p.x, z: p.z, h: p.h, r: p.r, life: p.life, ttl: p.ttl })
     }
-    const standings = [...this.standings.values()].filter((s) => this.participants.some((p) => p.id === s.id)).sort((a, b) => b.score - a.score)
+    const standings = base.standings
     return {
       t: this.t,
       round: this.round,
@@ -1076,4 +1082,3 @@ export class World {
 /** Hits at least this hard (m/s at the contact) raise an "impact" event, at most once per IMPACT_COOLDOWN seconds per car. */
 export const IMPACT_EVENT = 6
 const IMPACT_COOLDOWN = 0.3
-

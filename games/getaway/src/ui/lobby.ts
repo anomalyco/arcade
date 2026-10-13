@@ -46,6 +46,7 @@ export async function lobby(root: HTMLElement, notice: string | null = null): Pr
       ${urlRoom ? `<button class="btn primary" data-act="join">JOIN ROOM ${esc(urlRoom)}</button>` : ""}
       <button class="btn ${urlRoom ? "strong" : "primary"}" data-act="quick">QUICK JOIN</button>
       <button class="btn" data-act="create">CREATE GAME</button>
+      <button class="btn" data-act="solo">SOLO PRACTICE</button>
       <div class="lb-join"><input class="lb-code" maxlength="4" placeholder="ROOM CODE" autocomplete="off" spellcheck="false"/><button class="btn" data-act="code">JOIN</button></div>
       <p class="lb-stats"></p>
     </div>`
@@ -84,6 +85,18 @@ export async function lobby(root: HTMLElement, notice: string | null = null): Pr
       setTimeout(() => el.remove(), 450)
       resolve({ mode: "room", room, name, picks: { ...PICKS }, via })
     }
+    const finishSolo = () => {
+      clearInterval(statsTimer)
+      const name = nameInput.value.trim().slice(0, 16) || "Dax"
+      if (nameInput.value.trim()) localStorage.setItem(NAME_KEY, name)
+      const url = new URL(location.href)
+      url.searchParams.delete("r")
+      url.searchParams.set("solo", "")
+      history.pushState(null, "", url)
+      el.classList.add("out")
+      setTimeout(() => el.remove(), 450)
+      resolve({ mode: "solo", room: null, name, picks: { ...PICKS } })
+    }
     const ask = async (path: "quick" | "create", label: string) => {
       busy = true
       el.classList.add("busy")
@@ -105,7 +118,12 @@ export async function lobby(root: HTMLElement, notice: string | null = null): Pr
     nameInput.addEventListener("input", () => nameInput.classList.remove("bad"))
     el.addEventListener("click", (ev) => {
       const act = (ev.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act
-      if (busy || !act || !named()) return
+      if (busy || !act) return
+      if (act === "solo") {
+        finishSolo()
+        return
+      }
+      if (!named()) return
       if (act === "join" && urlRoom) finish(urlRoom, "code")
       else if (act === "quick") void ask("quick", "FINDING A GAME…")
       else if (act === "create") void ask("create", "CREATING…")
