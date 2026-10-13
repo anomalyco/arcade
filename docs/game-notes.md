@@ -49,6 +49,33 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   hook (`flight.frame`), not after `game.update`, so weapon effects, lights and the listener all see the video camera.
   Cuts are free time skips: setups run muted and their sample ranges are dropped. 1,920 frames plus ~60 s of unseen
   setup in ~6 min on the M4 Max.
+- **Encode frame-stepped video inside the page, on the GPU's media engine: 18× faster.** Carrier's `scripts/video/`
+  (`page.ts` clock and recorder, `core.ts` host, `remote.ts` sync/build/run/fetch on hailmary, `bench.ts`) drives
+  `scripts/video-epic-fast.ts`. The old per-frame cost was overhead: a DevTools round trip per step, 8 MB of BGRA as
+  base64 through the protocol and a CPU master encode. On the M4 Max at 1080p, `bench.ts` measured 5.7 fps for that
+  path, against 830–885 steps/s for an in-page loop and 820 fps for `new VideoFrame(canvas)` alone. One
+  `page.evaluate` runs a whole setup, preroll or shot. After the renderer's draw microtask, the page hands the canvas
+  to a WebCodecs `VideoEncoder` (`prefer-hardware`: VideoToolbox, H.264 or HEVC Annex B, `quantizer` mode supported).
+  Only the bitstream leaves, over a local WebSocket. Fetch POST uploads crawl: 3.8 fps raw and 147 fps H.264 at 80 Mb/s.
+  The socket reaches 21 fps raw, 333 fps at 80 Mb/s and 409 fps at 40 Mb/s. The host tees each shot into ffmpeg
+  (`-hwaccel videotoolbox`, title overlay, libx264 medium, one pass with VBV) while the page renders. The CPU encode
+  is the floor: 1,920 frames take 14.7 s at medium, 20 s at slow and 47 s for the old two-pass slower. Splitting
+  libx264 by shot gained nothing; two pages encoding at once reached 422 fps.
+  The offline audio lockstep costs about half of each frame. Three extra audio pages run it with
+  `renderer.render` stubbed, since nothing reads the GPU back. They replay earlier shots silently, start the mixer 1.5 s
+  before their run and keep their own samples. Muted setup steps sync audio every 8 steps. Every page must report the
+  same ship and jet state at each shot end, so the audio stays on the picture's steps. Runs repeat exactly: the clock
+  stays frozen during load, start-up takes 60 fixed steps and `Math.random` is seeded. Decoded frames matched
+  bit-for-bit across runs; audio differed by −130 dB. Each shot gets a fresh encoder, so `--only=<shot>` splices
+  bit-identically after an undrawn replay.
+  Measured on one build: the old script took 415 s; the fast one takes 23 s on hailmary (26 s from here with
+  sync and fetch), 12.7 s for `--preview` (540p30) and 6–7 s for `--only`. A lossless readback reference
+  (`--truth`) scored the old chain at Y-PSNR 42.43 dB, average 42.01 dB and SSIM 0.9762. The new default (HEVC
+  40 Mb/s, then x264 medium) scored 42.15 dB, 42.23 dB and 0.9768. Both outputs were compared after conversion to the
+  same BT.709 4:4:4 form, because old masters are untagged BT.601. Traps: Chrome writes a 240 Hz VUI clock (force
+  ffmpeg's input `-r`) and tags transfer sRGB (retag BT.709). On macOS, Bun stops reporting child-process exits once a
+  Playwright browser closes, so close browsers last. About one audio page in ten has Chrome's `OfflineAudioContext`
+  stuck at its last suspend point while "running"; `resume()` does not revive it, so a 1.5 s timeout reruns that page.
 - **Score a trailer to generated music, then cut to the music.** Carrier's `scripts/video-ship.ts` generates four
   ElevenLabs Music takes from one prompt. It uses none of the prompt's timeline: it picks the take whose structure fits
   (0.1 s band-energy curves and onset spacing from ffmpeg show a light intro, a boom and silence, a riser, a drop, then a

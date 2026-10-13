@@ -6,6 +6,8 @@
 //   cdp        the old path: one page.evaluate per frame, BGRA readback, base64 over the DevTools protocol, ffmpeg x264
 //   step       in-page frame loop, no capture (the floor)
 //   h264       in-page loop + WebCodecs H.264 (VideoToolbox), Annex B posted to the host
+//   frame      in-page loop + VideoFrame(canvas) only, no encoder (capture cost)
+//   kbpsK      h264 at K kbit/s, bytes discarded
 //   raw-null   in-page loop + BGRA readback posted to the host and discarded (transfer cost)
 //   raw-x264   in-page loop + BGRA posted straight into ffmpeg libx264 (single generation, CPU encode)
 //   h264-x264  h264 streamed into ffmpeg (decode, libx264 delivery encode) while rendering
@@ -13,7 +15,7 @@
 import { mkdirSync, rmSync, statSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawn } from "node:child_process"
-import { launch, requireGpu, h264, fileSink, procSink, muxH264, ffmpeg, sec, type Session, type Sink } from "./core"
+import { launch, requireGpu, h264, h264In, fileSink, procSink, muxH264, ffmpeg, sec, type Session, type Sink } from "./core"
 import type { Clock, EncoderSpec, Recorder } from "./page"
 
 const args = process.argv.slice(2)
@@ -102,7 +104,33 @@ let shared = null as Session | null
 const one = async () => (shared ??= await open())
 
 for (const c of cases) {
-  if (c === "step") {
+  if (c === "probe") {
+    // Which WebCodecs encoder configurations this Chrome supports in hardware.
+    const s = await one()
+    const r = await s.page.evaluate(async ([W, H]) => {
+      const base = { width: W, height: H, framerate: 60, bitrate: 40e6, hardwareAcceleration: "prefer-hardware" as const }
+      const tries: [string, VideoEncoderConfig][] = [
+        ["h264 vbr", { ...base, codec: "avc1.640033", bitrateMode: "variable" }],
+        ["h264 cbr", { ...base, codec: "avc1.640033", bitrateMode: "constant" }],
+        ["h264 quantizer", { ...base, codec: "avc1.640033", bitrateMode: "quantizer" }],
+        ["h264 444", { ...base, codec: "avc1.F40033" }],
+        ["hevc main", { ...base, codec: "hvc1.1.6.L153.B0" }],
+        ["hevc quantizer", { ...base, codec: "hvc1.1.6.L153.B0", bitrateMode: "quantizer" }],
+        ["av1", { ...base, codec: "av01.0.12M.08" }],
+        ["vp9", { ...base, codec: "vp09.00.51.08" }],
+      ]
+      const out: string[] = []
+      for (const [n, cfg] of tries) {
+        try {
+          out.push(`${n}: ${(await VideoEncoder.isConfigSupported(cfg)).supported}`)
+        } catch (e) {
+          out.push(`${n}: ${e}`)
+        }
+      }
+      return out
+    }, [W, H] as const)
+    console.log(r.join("\n"))
+  } else if (c === "step") {
     const s = await one()
     const t0 = performance.now()
     const d = await loop(s, N, false)
@@ -115,6 +143,16 @@ for (const c of cases) {
     report(c, t0, r.frames, `${(r.bytes / 1e6).toFixed(1)} MB`)
     await muxH264(file, join(out, "h264.mp4"), 60)
     rmSync(file)
+  } else if (c === "frame") {
+    const s = await one()
+    const t0 = performance.now()
+    const r = await capture(s, { mode: "frame", codec: "", width: W, height: H, fps: 60, bitrate: 0, stream: "v" }, nullSink)
+    report(c, t0, r.frames)
+  } else if (c.startsWith("kbps")) {
+    const s = await one()
+    const t0 = performance.now()
+    const r = await capture(s, h264("v", W, H, 60, Number(c.slice(4))), nullSink)
+    report(c, t0, r.frames, `${(r.bytes / 1e6).toFixed(1)} MB`)
   } else if (c === "raw-null") {
     const s = await one()
     const t0 = performance.now()
@@ -131,7 +169,7 @@ for (const c of cases) {
     const s = await one()
     const file = join(out, "h264-x264.mp4")
     const t0 = performance.now()
-    const p = x264(["-f", "h264", "-framerate", "60", "-i", "-"], file)
+    const p = x264(h264In("-", 60), file)
     const r = await capture(s, h264("v", W, H, 60, kbps), procSink(p))
     report(c, t0, r.frames, `${(statSync(file).size / 1e6).toFixed(1)} MB`)
   } else if (c.startsWith("par")) {

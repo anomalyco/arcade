@@ -1054,7 +1054,7 @@ if (withAudio) {
     const c = g.carrier
     const m = c.flight.audio.mixer
     const ctx = new OfflineAudioContext(2, 48000 * 300, 48000)
-    m.levels = { master: 0.7, engines: 0.35, flyby: 0.5, sfx: 0.9, weapons: 1, weather: 1 }
+    m.levels = { ...m.levels, master: 0.7, engines: 0.35, flyby: 0.5, sfx: 0.9, weapons: 1, weather: 1 }
     m.muted = true
     m.explosionSamples = true
     m.use(ctx)
