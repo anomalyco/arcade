@@ -16,6 +16,8 @@ home and current positions are outside the camera frustum. Chunks shrink away at
 
 ## Measurements
 
+These measurements describe the initial implementation at `c905717`, before the furniture scale correction.
+
 All figures below use one warmup and seven measured runs. Raw runs are in `cpu.json` and `gpu-paired.json`.
 
 | Workload | CPU ms per 60 Hz frame, median of run medians | Range of run medians |
@@ -53,6 +55,50 @@ bytes, with faststart and no audio. Both requested artifacts were sent to Kit.
 fixed-step agreement, bounce and sleeping, wake propagation, wall contacts, deterministic placement and complete road
 clearance, bounded particle lifetimes, ghost/airborne rejection, explosion disabling, chain reactions, unchanged car
 views and off-screen-only recovery.
+
+## Scale audit
+
+The follow-up uses metres throughout. `src/game/props/dimensions.ts` supplies collider sizes; mesh bounds tests check
+every vertex against those sizes, including feet, lids and handles. Legacy and interactive benches/hydrants share
+the same mesh helpers. Debris size and spawn offsets now follow the source prop dimensions.
+
+| Prop | Width × height × depth (m) |
+| --- | --- |
+| Cone | 0.40 × 0.70 × 0.40 |
+| Barrier | 2.00 × 1.10 × 0.70 |
+| Sawhorse | 1.20 × 0.80 × 0.60 |
+| Bin | 0.60 × 1.00 × 0.65 |
+| Dumpster | 1.80 × 1.20 × 1.20 |
+| Newspaper box | 0.50 × 1.00 × 0.45 |
+| Bench | 1.80 × 0.85 × 0.55, seat at 0.45 |
+| Small planter, including foliage | 0.60 × 0.60 × 0.60 |
+| Crate | 0.80 × 0.80 × 0.80 |
+| Pallet | 1.20 × 0.15 × 1.00 |
+| Portable sign | 0.60 × 1.20 × 0.60 |
+| Hydrant | 0.30 × 0.75 × 0.30 |
+| Meter | 0.24 × 1.30 × 0.20 |
+| Mailbox | 0.50 × 1.10 × 0.45 |
+| Propane cylinder | 0.32 × 0.50 × 0.32 |
+| Fuel canister | 0.35 × 0.47 × 0.18 |
+| Fuel drum | 0.60 × 0.90 × 0.60 |
+
+The audit also covered `render/city/props.ts`, `parks.ts`, `shop.ts`, `streets.ts`, `outskirts.ts`, `building.ts` and
+`harbor.ts`. Legacy roadwork drums are 0.90 m tall; garage oil drums are 0.60 m wide and 0.90 m tall. Garage tyres
+are 0.72 m in diameter and 0.23 m wide, matching the muscle car's wheel radius. Tree planters and raised planting
+beds now have 0.60 m walls; their wider footprints accommodate trees and shrubs. Wheel stops (0.13 m high), fences
+(about 1.2 m), harbour railings and the 1.1 m workshop chest fit the existing car scale. Streetlamps retain the current
+6.05 m head-height reference. Buildings, monuments and harbour structures retain their architectural dimensions.
+
+The scale-check frame puts an unscaled muscle car beside a bench, hydrant and cone on the same pavement elevation.
+Its mesh is 5.00 m long, 2.05 m wide including mirrors, with a roof at 1.30 m above its origin. The compact is 4.06 m
+long and 1.84 m wide. These bracket the brief's roughly 4.5 × 1.8 m sedan reference. Vehicle art and authoritative
+physics are unchanged. `prop-scale.test.ts` also checks the bench's upward-facing seat surface at 0.45 m.
+
+The scale correction passed 117 tests with 12 existing skips, TypeScript checks and the production build. Fresh Metal
+captures retain all four reaction scenarios and add `proof/scale.png` to the 1440 × 836 contact sheet. The refreshed
+720 × 1100 portrait clip is 14 seconds, H.264 Main/yuv420p, 4,000,808 bytes, faststart and silent. Both refreshed
+artifacts were sent to Kit. `scale-reactions.json` records the corrected-size reaction counts; the earlier
+`reactions.json` and performance runs remain as the initial implementation's evidence.
 
 From `games/getaway`:
 

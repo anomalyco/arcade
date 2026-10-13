@@ -1,28 +1,29 @@
 import { CELL, GRID, ROAD_HALF } from "../../../shared/config"
 import type { City } from "../../../shared/sim/city"
 import { mulberry32 } from "../../../shared/sim/rng"
+import { PROP_SIZE } from "./dimensions"
 
 export const PROP_KINDS = ["cone", "barrier", "sawhorse", "bin", "dumpster", "newspaper", "bench", "planter", "crate", "pallet", "sign", "hydrant", "meter", "mailbox", "propane", "canister", "fuel"] as const
 export type PropKind = typeof PROP_KINDS[number]
-export type PropSpec = { size: [number, number, number]; mass: number; breakSpeed: number; color: [number, number, number]; explosive?: boolean }
+export type PropSpec = { size: readonly [number, number, number]; mass: number; breakSpeed: number; color: [number, number, number]; explosive?: boolean }
 export const SPECS: Record<PropKind, PropSpec> = {
-  cone: { size: [.65, .95, .65], mass: 3, breakSpeed: 35, color: [.95, .3, .045] },
-  barrier: { size: [2.6, 1.45, .8], mass: 16, breakSpeed: 18, color: [.92, .56, .16] },
-  sawhorse: { size: [2, 1.05, .7], mass: 10, breakSpeed: 15, color: [.55, .35, .15] },
-  bin: { size: [.8, 1.15, .8], mass: 12, breakSpeed: 26, color: [.16, .35, .25] },
-  dumpster: { size: [2.2, 1.6, 1.25], mass: 110, breakSpeed: 40, color: [.15, .31, .24] },
-  newspaper: { size: [.7, 1.25, .7], mass: 18, breakSpeed: 22, color: [.64, .2, .12] },
-  bench: { size: [2.4, 1, .8], mass: 35, breakSpeed: 23, color: [.48, .3, .16] },
-  planter: { size: [1, 1.15, 1], mass: 45, breakSpeed: 18, color: [.55, .43, .34] },
-  crate: { size: [1.1, 1.1, 1.1], mass: 14, breakSpeed: 14, color: [.58, .38, .18] },
-  pallet: { size: [1.3, .22, 1.2], mass: 12, breakSpeed: 13, color: [.48, .32, .17] },
-  sign: { size: [.9, 1.65, .7], mass: 9, breakSpeed: 22, color: [.93, .58, .08] },
-  hydrant: { size: [.6, .95, .45], mass: 28, breakSpeed: 40, color: [.73, .16, .1] },
-  meter: { size: [.32, 1.6, .32], mass: 12, breakSpeed: 24, color: [.35, .39, .4] },
-  mailbox: { size: [.7, 1.4, .65], mass: 18, breakSpeed: 24, color: [.16, .32, .65] },
-  propane: { size: [.65, 1.1, .65], mass: 22, breakSpeed: 12, color: [.75, .76, .72], explosive: true },
-  canister: { size: [.55, .7, .36], mass: 10, breakSpeed: 14, color: [.68, .19, .09], explosive: true },
-  fuel: { size: [.85, 1.25, .85], mass: 45, breakSpeed: 15, color: [.67, .27, .08], explosive: true },
+  cone: { size: PROP_SIZE.cone, mass: 3, breakSpeed: 35, color: [.95, .3, .045] },
+  barrier: { size: PROP_SIZE.barrier, mass: 16, breakSpeed: 18, color: [.92, .56, .16] },
+  sawhorse: { size: PROP_SIZE.sawhorse, mass: 10, breakSpeed: 15, color: [.55, .35, .15] },
+  bin: { size: PROP_SIZE.bin, mass: 12, breakSpeed: 26, color: [.16, .35, .25] },
+  dumpster: { size: PROP_SIZE.dumpster, mass: 110, breakSpeed: 40, color: [.15, .31, .24] },
+  newspaper: { size: PROP_SIZE.newspaper, mass: 18, breakSpeed: 22, color: [.64, .2, .12] },
+  bench: { size: PROP_SIZE.bench, mass: 35, breakSpeed: 23, color: [.48, .3, .16] },
+  planter: { size: PROP_SIZE.planter, mass: 45, breakSpeed: 18, color: [.55, .43, .34] },
+  crate: { size: PROP_SIZE.crate, mass: 14, breakSpeed: 14, color: [.58, .38, .18] },
+  pallet: { size: PROP_SIZE.pallet, mass: 12, breakSpeed: 13, color: [.48, .32, .17] },
+  sign: { size: PROP_SIZE.sign, mass: 9, breakSpeed: 22, color: [.93, .58, .08] },
+  hydrant: { size: PROP_SIZE.hydrant, mass: 28, breakSpeed: 40, color: [.73, .16, .1] },
+  meter: { size: PROP_SIZE.meter, mass: 12, breakSpeed: 24, color: [.35, .39, .4] },
+  mailbox: { size: PROP_SIZE.mailbox, mass: 18, breakSpeed: 24, color: [.16, .32, .65] },
+  propane: { size: PROP_SIZE.propane, mass: 22, breakSpeed: 12, color: [.75, .76, .72], explosive: true },
+  canister: { size: PROP_SIZE.canister, mass: 10, breakSpeed: 14, color: [.68, .19, .09], explosive: true },
+  fuel: { size: PROP_SIZE.fuel, mass: 45, breakSpeed: 15, color: [.67, .27, .08], explosive: true },
 }
 export type Placement = { kind: PropKind; x: number; z: number; y: number; yaw: number }
 

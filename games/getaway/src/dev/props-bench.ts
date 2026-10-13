@@ -6,17 +6,19 @@ import { juice } from "../ui/debug-overlay"
 
 /** Only installed for ?bench. Drives a cloned rendered view, leaving shared simulation untouched. */
 export function propsBench(scene: Scene, template: WorldView, canvas: HTMLCanvasElement, device: GPUDevice) {
-  let view = structuredClone(template), cam = new Camera(), speed = 20, frame = 0
+  let view = structuredClone(template), cam = new Camera(), speed = 20, frame = 0, scaleCheck = false
   const x = 318.5, z = 400
   const setups: Record<string, PropKind[]> = {
     cones: ["cone", "cone", "barrier", "cone", "sawhorse", "cone"],
     furniture: ["bin", "bench", "newspaper", "mailbox", "dumpster"],
     hydrant: ["hydrant", "cone", "bin"],
     explosion: ["propane", "fuel", "canister", "crate", "pallet", "propane"],
+    scale: ["bench", "hydrant", "cone"],
   }
   return {
     setup(name: string) {
       scene.resetBench(); cam = new Camera(); frame = 0
+      scaleCheck = name === "scale"
       view = structuredClone(template)
       view.cars = [view.cars.find(c => !c.ghost)!]
       view.heli.active = false; view.phase = "chase"; view.props = []
@@ -36,13 +38,25 @@ export function propsBench(scene: Scene, template: WorldView, canvas: HTMLCanvas
       }
       cam.snap(x, z + 4)
       cam.dist = 52
+      if (scaleCheck) {
+        Object.assign(car, { x, z: z + 4, y: .16, vx: 0, vz: 0, speed: 0, engineOff: true })
+        const positions = [[x - 1.75, z + 5], [x - 1.75, z + 2.5], [x - 1.75, z + 1.4]]
+        for (const [i, p] of scene.clutter.props.entries()) {
+          const [px, pz] = positions[i]!
+          p.home.x = p.body.x = px!; p.home.z = p.body.z = pz!
+          p.home.y = .16; p.body.y = .16 + p.body.hy
+          scene.clutter.physics.move(p.body)
+        }
+        cam.snap(x - .5, z + 4)
+        cam.dist = 19
+      }
       juice.clutter = juice.explosions = true
       juice.physicsDebug = false
       return scene.clutter.props.map(p => ({ kind: p.home.kind, x: p.body.x, z: p.body.z }))
     },
     async step(dt = 1 / 30) {
       const car = view.cars[0]!
-      if (dt > 0) {
+      if (dt > 0 && !scaleCheck) {
         frame++
         car.z = z - 13 + Math.min(frame / 30, 1.9) * speed
         car.vz = frame < 57 ? speed : 0; car.speed = car.vz

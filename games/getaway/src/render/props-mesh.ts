@@ -1,6 +1,6 @@
 import { Mesh, MAT, FLOATS_PER_VERT, type Rgb } from "./mesh"
 import { beam, cylinder } from "./city/kit"
-import { barrier } from "./city/props"
+import { barrier, bench, hydrant } from "./city/props"
 import { SPECS, type PropKind } from "../game/props/placement"
 
 const iron: Rgb = [.12, .15, .17], white: Rgb = [.83, .81, .7], wood: Rgb = [.49, .31, .15]
@@ -12,100 +12,99 @@ export function propMesh(kind: PropKind) {
   const box = (x: number, y: number, z: number, sx: number, sy: number, sz: number, color: Rgb = c) => m.box(x - sx / 2, x + sx / 2, y - sy / 2, y + sy / 2, z - sz / 2, z + sz / 2, color)
   switch (kind) {
     case "cone":
-      box(0, .05, 0, w, .1, d, iron)
-      m.prism(0, 0, .27, .06, .1, .95, 7, c)
-      m.prism(0, 0, .19, .15, .43, .6, 7, white)
+      box(0, .025, 0, w, .05, d, iron)
+      m.prism(0, 0, .175, .025, .05, h, 8, c)
+      m.prism(0, 0, .118, .091, .3, .42, 8, white)
       break
     case "barrier": barrier(m, 0, 0, true, w, 0); break
     case "sawhorse":
-      box(0, .88, 0, w, .25, .16, wood)
-      for (const x of [-.75, .75]) for (const s of [-1, 1]) beam(m, [x, .05, s * .34], [x, 1, 0], .075, wood)
-      break
-    case "bench":
-      for (const z of [-.25, 0, .25]) box(0, .48, z, w, .09, .19, wood)
-      for (const y of [.7, .91]) box(0, y, .34, w, .16, .08, wood)
-      for (const x of [-.9, .9]) {
-        for (const z of [-.25, .28]) box(x, .24, z, .09, .48, .09, iron)
-        box(x, .73, .32, .07, .5, .07, iron)
+      box(0, h - .08, 0, w, .16, .12, wood)
+      for (const x of [-.44, .44]) for (const s of [-1, 1]) {
+        beam(m, [x, .025, s * .27], [x, h - .08, 0], .055, wood)
+        box(x, .0125, s * .27, .07, .025, .06, wood)
       }
       break
+    case "bench":
+      bench(m, 0, 0, true, 0)
+      break
     case "planter":
-      m.prism(0, 0, .35, .5, 0, .7, 6, c)
-      cylinder(m, 0, 0, .43, .7, .72, 6, [.16, .12, .07])
-      for (const x of [-.22, .17]) m.prism(x, 0, .28, .06, .7, 1.15, 5, [.19, .34, .15])
+      m.prism(0, 0, .22, w / 2, 0, .45, 8, c)
+      cylinder(m, 0, 0, .26, .45, .46, 8, [.16, .12, .07])
+      for (const x of [-.1, .09]) m.prism(x, 0, .15, .025, .46, h, 5, [.19, .34, .15])
       break
     case "hydrant":
-      cylinder(m, 0, 0, .25, 0, .12, 7, iron)
-      cylinder(m, 0, 0, .18, .12, .75, 7, c)
-      m.prism(0, 0, .23, .06, .75, .95, 7, c)
-      box(0, .52, 0, .6, .16, .17, c)
+      hydrant(m, 0, 0, 0)
       break
     case "meter":
-      cylinder(m, 0, 0, .055, 0, 1.12, 5, iron)
-      box(0, 1.36, 0, .32, .48, .25)
-      box(0, 1.44, -.132, .22, .14, .02, [.08, .13, .13])
-      box(0, 1.25, -.132, .12, .025, .02, iron)
+      cylinder(m, 0, 0, .04, 0, h - .28, 6, iron)
+      box(0, h - .16, .01, w, .32, d - .02)
+      box(0, h - .105, -.0875, .17, .1, .025, [.08, .13, .13])
+      box(0, h - .245, -.0875, .08, .015, .025, iron)
       break
     case "sign":
-      for (const s of [-1, 1]) beam(m, [0, .02, s * .34], [0, 1.3, 0], .05, iron)
-      box(0, 1.2, 0, .9, .9, .06)
-      box(0, 1.24, -.04, .09, .4, .02, iron)
-      box(0, .94, -.04, .1, .1, .02, iron)
+      for (const s of [-1, 1]) {
+        beam(m, [0, .025, s * .27], [0, 1, 0], .045, iron)
+        box(0, .0125, s * .27, .12, .025, .06, iron)
+      }
+      box(0, h - .3, 0, w, .6, .05)
+      box(0, h - .26, -.03, .06, .25, .01, iron)
+      box(0, h - .47, -.03, .065, .065, .01, iron)
       break
     case "crate":
-      box(0, h / 2, 0, w, h, d, wood)
-      for (const s of [-1, 1]) for (const x of [-.4, .4]) box(x, h / 2, s * .56, .1, h, .055, c)
-      for (const y of [.15, .95]) box(0, y, -.59, w, .1, .06, c)
+      box(0, h / 2, 0, w - .04, h, d - .08, wood)
+      for (const s of [-1, 1]) for (const x of [-w / 2 + .05, w / 2 - .05]) box(x, h / 2, s * (d / 2 - .02), .1, h, .04, c)
+      for (const y of [.1, h - .1]) box(0, y, -d / 2 + .02, w, .075, .04, c)
       break
     case "pallet":
-      for (const x of [-.5, 0, .5]) box(x, .07, 0, .15, .14, d, wood)
-      for (let z = -.48; z <= .5; z += .24) box(0, .18, z, w, .08, .17, c)
+      for (const x of [-.48, 0, .48]) box(x, .05, 0, .12, .1, d, wood)
+      for (let i = 0; i < 5; i++) box(0, .125, -.42 + i * .21, w, .05, .16, c)
       break
     case "propane":
-      cylinder(m, 0, 0, .27, .06, .15, 8, iron)
-      m.prism(0, 0, .22, .32, .15, .3, 8, c)
-      cylinder(m, 0, 0, .32, .3, .79, 8, c)
-      m.prism(0, 0, .32, .13, .79, .95, 8, c)
-      box(0, 1.02, 0, .2, .16, .15, iron)
-      box(0, .55, -.325, .22, .22, .015, [.8, .16, .03])
+      cylinder(m, 0, 0, .125, 0, .06, 8, iron)
+      m.prism(0, 0, .11, .16, .06, .12, 8, c)
+      cylinder(m, 0, 0, .16, .12, .37, 8, c)
+      m.prism(0, 0, .16, .06, .37, .43, 8, c)
+      box(0, .465, 0, .1, .07, .07, iron)
+      box(0, .24, -.155, .1, .11, .01, [.8, .16, .03])
       break
     case "fuel":
-      cylinder(m, 0, 0, .4, 0, h, 10, c)
-      for (const y of [.1, .38, .92, 1.16]) cylinder(m, 0, 0, .43, y, y + .06, 10, iron)
-      box(0, .67, -.405, .3, .3, .03, white)
-      box(0, .67, -.425, .12, .17, .02, c)
+      cylinder(m, 0, 0, .28, 0, h, 12, c)
+      for (const y of [.03, .25, .65, .84]) cylinder(m, 0, 0, .3, y, y + .035, 12, iron)
+      box(0, .46, -.285, .2, .22, .02, white)
+      box(0, .46, -.2975, .08, .12, .005, c)
       break
     case "canister":
-      box(0, .28, 0, w, .56, d)
-      box(-.15, .62, 0, .13, .16, .15, iron)
-      beam(m, [.08, .52, 0], [.08, .68, 0], .055, c)
-      beam(m, [.08, .68, 0], [.23, .53, 0], .055, c)
+      box(0, .19, 0, w, .38, d)
+      box(-.1, .415, 0, .08, .07, .09, iron)
+      box(.02, .4175, 0, .035, .075, .06)
+      box(.13, .4175, 0, .035, .075, .06)
+      box(.075, .4525, 0, .145, .035, .06)
       break
     case "bin":
-      box(0, .54, 0, .7, 1.02, .7)
-      box(0, 1.08, 0, .8, .13, .8, iron)
-      for (const x of [-.3, .3]) box(x, .11, .32, .12, .22, .16, iron)
-      for (const x of [-.24, 0, .24]) box(x, .55, -.355, .035, .65, .03, [.12, .26, .19])
+      box(0, .5, 0, w - .05, .88, d - .05)
+      box(0, h - .04, 0, w, .08, d, iron)
+      for (const x of [-.24, .24]) box(x, .085, .245, .1, .17, .15, iron)
+      for (const x of [-.2, 0, .2]) box(x, .49, -.31, .025, .6, .025, [.12, .26, .19])
       break
     case "dumpster":
-      box(0, .85, 0, w, 1.3, d)
-      box(0, 1.53, 0, w + .05, .14, d + .05, iron)
-      for (const x of [-.85, .85]) for (const z of [-.45, .45]) box(x, .12, z, .2, .24, .18, iron)
-      for (const x of [-.85, -.42, 0, .42, .85]) box(x, .8, -.64, .06, 1.05, .05)
+      box(0, .65, 0, w - .05, .98, d - .07)
+      box(0, h - .03, 0, w, .06, d, iron)
+      for (const x of [-.72, .72]) for (const z of [-.45, .45]) box(x, .09, z, .15, .18, .14, iron)
+      for (const x of [-.7, -.35, 0, .35, .7]) box(x, .66, -.5775, .045, .8, .025)
       break
     case "newspaper":
-      box(0, .64, 0, w, 1.22, d)
-      box(0, .87, -.36, .51, .48, .025, iron)
-      box(0, .87, -.38, .41, .36, .025, white)
-      for (const y of [.79, .84, .9]) box(0, y, -.4, .3, .016, .015, iron)
-      box(0, 1.22, 0, w + .05, .06, d + .05, white)
+      box(0, .48, .01, w - .02, .96, d - .04)
+      box(0, .7, -.205, .39, .37, .02, iron)
+      box(0, .7, -.2175, .32, .28, .005, white)
+      for (const y of [.64, .69, .74]) box(0, y, -.223, .24, .012, .004, iron)
+      box(0, h - .02, 0, w, .04, d, white)
       break
     case "mailbox":
-      for (const x of [-.22, .22]) box(x, .22, 0, .07, .44, .38, iron)
-      box(0, .85, 0, w, .9, d)
-      m.prism(0, 0, .36, .22, 1.3, 1.4, 6, c)
-      box(0, 1.06, -.34, .5, .06, .04, iron)
-      box(0, .78, -.34, .29, .23, .015, white)
+      for (const x of [-.17, .17]) box(x, .17, 0, .06, .34, .3, iron)
+      box(0, .695, .01, w, .71, d - .02)
+      box(0, h - .025, 0, w, .05, d)
+      box(0, .89, -.213, .36, .04, .024, iron)
+      box(0, .66, -.213, .22, .18, .024, white)
       break
   }
   for (let i = 1; i < m.v.length; i += FLOATS_PER_VERT) m.v[i] -= h / 2

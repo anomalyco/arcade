@@ -70,6 +70,14 @@ try {
   } else {
     let videoFrame = 0
     if (mode === "stills") {
+      await page.evaluate(async () => { const b = (window as any).__getawayBench.clutter; b.setup("scale"); await b.step(0) })
+      await page.evaluate(() => {
+        const label = document.body.appendChild(Object.assign(document.createElement("div"), { id: "scale-label" }))
+        label.textContent = "Car 5.0 m · Bench 1.8 m · Hydrant 0.75 m · Cone 0.70 m"
+        label.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);white-space:nowrap;color:#eee;background:#101521d9;padding:8px 12px;font:500 20px system-ui;border-radius:8px;z-index:1000"
+      })
+      await page.screenshot({ path: join(out, "scale.png") })
+      await page.evaluate(() => document.getElementById("scale-label")?.remove())
       await page.evaluate(async () => { const b = (window as any).__getawayBench.clutter; b.setup("city"); await b.step(0) })
       await page.screenshot({ path: join(out, "city.png") })
     }

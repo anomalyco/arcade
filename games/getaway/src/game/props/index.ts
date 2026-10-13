@@ -148,8 +148,8 @@ export class StreetProps {
     const board = ["bench", "pallet", "crate", "barrier", "sawhorse"].includes(p.home.kind)
     const n = p.home.kind === "dumpster" ? 12 : 8
     for (let i = 0; i < n && this.chunks.length < MAX_CHUNKS; i++) {
-      const rand = this.rng, scale = .3 + rand() * .55
-      const b = body(this.nextId++, p.body.x + (rand() - .5) * .8, p.body.y + rand() * .7, p.body.z + (rand() - .5) * .8, .5 * scale, (board ? .07 : .3) * scale, .22 * scale, 1.5)
+      const rand = this.rng, scale = (.3 + rand() * .55) * Math.min(1, Math.max(...SPECS[p.home.kind].size) * .65)
+      const b = body(this.nextId++, p.body.x + (rand() - .5) * p.body.hx * 1.6, p.body.y + (rand() - .5) * p.body.hy, p.body.z + (rand() - .5) * p.body.hz * 1.6, .5 * scale, (board ? .07 : .3) * scale, .22 * scale, 1.5)
       this.physics.add(b)
       this.physics.impulse(b, (vx * .35 + (rand() - .5) * 12) * b.mass, (3 + rand() * 6) * b.mass, (vz * .35 + (rand() - .5) * 12) * b.mass, 1)
       this.chunks.push({ body: b, model: this.chunkModels.get(p.home.kind)!, scale, life: 10 + rand() * 5 })
