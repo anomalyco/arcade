@@ -519,12 +519,13 @@ struct SOut {
     // Short rectangular shop spill / grounding strip, feathered on both axes.
     a = (1.0 - smoothstep(0.55, 1.0, abs(o.uv.x))) * pow(max(0.0, 1.0 - o.uv.y * o.uv.y), 2.0);
   } else if (k == 9.0) {
-    // Wider than the body; four stronger contact patches at the wheel tracks.
+    // Rounded footprint, continuously feathered to zero before the quad boundary.
     let q = abs(o.uv);
     let lift = clamp(o.extra / 5.0, 0.0, 1.0);
-    let body = (1.0 - smoothstep(mix(0.58, 0.12, lift), 1.0, q.x)) * (1.0 - smoothstep(mix(0.68, 0.18, lift), 1.0, q.y));
-    let wheel = 1.0 - smoothstep(0.04, 0.27, length((q - vec2f(0.57, 0.53)) * vec2f(1.0, 1.3)));
-    a = min(1.0, body * 0.88 + wheel * 0.55 * (1.0 - lift));
+    let rounded = length(max(q - vec2f(0.24, 0.34), vec2f(0.0)));
+    let body = 1.0 - smoothstep(mix(0.12, 0.0, lift), 0.62, rounded);
+    let wheel = 1.0 - smoothstep(0.02, 0.21, length((q - vec2f(0.70, 0.57)) * vec2f(1.0, 1.3)));
+    a = min(1.0, body * 0.84 + wheel * 0.36 * (1.0 - lift));
   }
   if (k == 14.0) {
     let t = o.uv.y * 0.5 + 0.5;

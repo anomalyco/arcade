@@ -129,7 +129,7 @@ try {
       if (!samples.some((s, i) => i > 0 && samples[i - 1].cars[0].x > TUNNEL.eastMouth && s.cars[0].x < TUNNEL.westMouth)) throw new Error("No east-to-west transfer")
       if (!samples.some(s => !s.seen && s.cars[0].x > TUNNEL.eastMouth)) throw new Error("No sight break")
     } else if (highest < 2.5) throw new Error(`Jump too low: ${highest}`)
-    if (scenario === "jump-after" && !samples.some(s => s.cars[0].airborne && s.cars[0].y > 2.5 && s.shadow?.[11] > 2 && s.shadow[7] > 0.5)) throw new Error("Missing airborne contact shadow")
+    if (scenario === "jump-after" && !samples.some(s => s.cars[0].airborne && s.cars[0].y > 2.5 && s.shadow?.[11] > 2 && s.shadow[7] > 0.3 && s.shadow[7] < 0.82)) throw new Error("Missing faded airborne contact shadow")
     results.push({ scenario, adapter, highest, samples })
     await page.close()
   }

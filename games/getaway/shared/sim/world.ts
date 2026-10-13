@@ -52,7 +52,7 @@ import {
   stripWheels,
 } from "./gadgets"
 import { mulberry32, type Rng } from "./rng"
-import { carShape, shapeGap } from "./collide"
+import { carShape, collideShapes, shapeGap } from "./collide"
 import { type Body, type Impact, type Input, NO_INPUT, WHEEL_NAMES, collideBoxes, collideCars, flatCount, forward, isDark, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "./vehicle"
 import { TUNNEL, inTunnel, tunnelLink } from "./tunnel"
 
@@ -586,10 +586,19 @@ export class World {
       for (let j = i + 1; j < this.cars.length; j++) {
         const a = this.cars[i]!
         const b = this.cars[j]!
-        // Cops pass through each other; only the driver is solid to them.
-        if (a.role === "cop" && b.role === "cop") continue
         const ma = this.moving(a)
         const mb = this.moving(b)
+        if (a.role === "cop" && b.role === "cop") {
+          // Gentle positional separation only: no collision impulse, damage, stun,
+          // heat or crash event. Frozen units stay put, and airborne cars pass above.
+          if ((!ma && !mb) || Math.abs(a.body.y - b.body.y) > 1.5) continue
+          const contact = collideShapes(carShape(a.body, a.vehicle), carShape(b.body, b.vehicle))
+          if (!contact) continue
+          const shift = Math.min(6 * dt, contact.depth * (1 - Math.exp(-dt * 12))) / (Number(ma) + Number(mb))
+          if (ma) { a.body.x -= contact.nx * shift; a.body.z -= contact.nz * shift; touched.add(a) }
+          if (mb) { b.body.x += contact.nx * shift; b.body.z += contact.nz * shift; touched.add(b) }
+          continue
+        }
         const hit = collideCars(a.body, a.vehicle, b.body, b.vehicle, dt, !ma, !mb)
         if (!hit) continue
         if (ma) touched.add(a)
