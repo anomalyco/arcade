@@ -16,6 +16,9 @@ import { Camera } from "../render/camera"
 import { Renderer } from "../render/renderer"
 import { mat4 } from "wgpu-matrix"
 import { IDLE_VIEW } from "../../shared/sim/modes"
+import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
+import { animation } from "../game/anim-settings"
+import { Rng } from "../../shared/rng"
 
 const SEED = 990001
 const W = 30
@@ -61,6 +64,26 @@ const loop = (t: number, p: number) => ((t % p) + p) % p
 const ease = (u: number) => u * u * (3 - 2 * u)
 
 const ACTORS: Actor[] = [
+  // Automation choreography: 2 seconds per beat, fixed root/aim and camera for both A/B paths.
+  {
+    id: "proof", gun: "rifle",
+    at: (t) => {
+      const beat = Math.min(8, Math.floor(t / 2)), u = t % 2
+      const travel = Math.max(0, u - 0.15)
+      let x = 12, y = 10, aim = 0
+      if (beat === 0) x += travel * 1.4
+      if (beat === 1) x += travel * SPRINT_SPEED
+      if (beat === 2) y -= travel * 2
+      if (beat === 3) y += travel * 2
+      if (beat === 4) x -= travel * 1.5
+      if (beat === 5) aim = travel * 2.5
+      if (beat === 6) x += Math.min(travel, 0.85) * SPEED
+      if (beat === 7) aim = Math.sin(u * 2) * 0.3
+      if (beat === 8) x += Math.min(travel, 0.85) * 1.4
+      return { x, y, aim, alive: beat !== 8 || u < 1.05 }
+    },
+    shots: (t) => t >= 14.25 && t < 15.25 ? Math.floor((t - 14.25) / 0.1) + 1 : 0,
+  },
   // Runs a circle while aiming east: forward, strafe, backpedal.
   { id: "a", gun: "rifle", at: (t) => ({ x: 9 + Math.cos(t * 1.1) * 3, y: 10 + Math.sin(t * 1.1) * 3, aim: 0, alive: true }) },
   // Sprints east and west with hard stops, aiming where it runs.
@@ -147,7 +170,7 @@ class ScriptSession implements Session {
   private kills = 0
 
   constructor(only: string[] | null) {
-    this.actors = ACTORS.filter((a) => !only || only.includes(a.id))
+    this.actors = ACTORS.filter((a) => only ? only.includes(a.id) : a.id !== "proof")
   }
 
   latest() {
@@ -174,8 +197,9 @@ class ScriptSession implements Session {
     for (const a of this.actors) {
       const s = a.at(t)
       const p = this.prev.get(a.id) ?? { x: s.x, y: s.y, shots: 0, reloads: 0, alive: s.alive }
-      const vx = dt > 0 ? (s.x - p.x) / dt : 0
-      const vy = dt > 0 ? (s.y - p.y) / dt : 0
+      const cut = a.id === "proof" && Math.floor(t / 2) !== Math.floor((t - dt) / 2)
+      const vx = dt > 0 && !cut ? (s.x - p.x) / dt : 0
+      const vy = dt > 0 && !cut ? (s.y - p.y) / dt : 0
       const shots = a.shots?.(t) ?? 0
       const reloads = a.reloads?.(t) ?? 0
       if (shots > p.shots) {
@@ -195,13 +219,13 @@ class ScriptSession implements Session {
       if (p.alive && !s.alive) {
         const killer = this.actors.find((k) => k.id !== a.id && ["c", "d", "e"][this.kills % 3] === k.id) ?? this.actors.find((k) => k.id !== a.id)
         this.kills++
-        if (killer) {
-          const ks = killer.at(t)
+        if (killer || a.id === "proof") {
+          const ks = killer?.at(t) ?? { x: s.x - 4, y: s.y - 2 }
           const d = Math.hypot(s.x - ks.x, s.y - ks.y) || 1
           const dx = (s.x - ks.x) / d
           const dy = (s.y - ks.y) / d
-          this.events.push({ k: "shot", by: killer.id, x0: ks.x, y0: ks.y, x1: s.x, y1: s.y, hit: a.id })
-          this.events.push({ k: "kill", killer: killer.id, victim: a.id, dx, dy, how: killer.gun })
+          this.events.push({ k: "shot", by: killer?.id ?? "fixture", x0: ks.x, y0: ks.y, x1: s.x, y1: s.y, hit: a.id })
+          this.events.push({ k: "kill", killer: killer?.id ?? "fixture", victim: a.id, dx, dy, how: killer?.gun ?? "rifle" })
         }
       }
       this.prev.set(a.id, { x: s.x, y: s.y, shots, reloads, alive: s.alive })
@@ -225,13 +249,14 @@ async function main() {
   const slow = Number(params.get("slow") ?? "1")
   const zoom = Number(params.get("zoom") ?? "15")
   const manual = params.has("manual")
+  if (manual) { const rng = new Rng(7); Math.random = () => rng.next() }
   const session = new ScriptSession(only)
   const sound = new Sound()
-  addEventListener("pointerdown", () => sound.start())
-  const { juiceSettings } = await import("../ui/debug-overlay")
-  const game = new Game(renderer, session, sound, juiceSettings(!params.has("vanilla")))
+  const settings = juiceSettings(!params.has("vanilla"))
+  const game = new Game(renderer, session, sound, settings)
   ;(game as unknown as { load(m: MapDef): void }).load(MAP)
   const input = new Input(canvas)
+  new DebugOverlay(settings, params, () => input.release())
   const side = params.get("side")
   const cam = new Camera()
   if (side !== null) {
@@ -260,6 +285,7 @@ async function main() {
   let clock = 0
   const info = document.getElementById("info")!
   const frame = (dt: number) => {
+    if (only?.includes("proof") && Math.floor((session.t + dt) / 2) !== Math.floor(session.t / 2)) game.avatars.delete("proof")
     clock += dt * 1000
     game.update(dt, input, cam, innerWidth, innerHeight, clock)
     const fid = params.get("follow") ?? (only?.length === 1 ? only[0] : null)
@@ -268,6 +294,8 @@ async function main() {
     else cam.follow(focus.x, focus.y, 0, 0, dt, false)
     cam.dist = zoom
     renderer.render(game.build(cam, innerWidth, innerHeight, dt))
+    const beats = ["Walk", "Run", "Strafe left", "Strafe right", "Backpedal", "Turn in place", "Hard stop", "Recoil", "Death"]
+    if (only?.includes("proof")) info.textContent = `${animation.animationMode === "old" ? "Old" : "New"} · ${beats[Math.min(8, Math.floor(session.t / 2))]}`
   }
   const w = window as unknown as { advance(ms: number): Promise<void>; ready: boolean }
   w.advance = async (ms: number) => {
@@ -304,6 +332,7 @@ async function main() {
     return out.toDataURL("image/jpeg", 0.9)
   }
   w.ready = true
+  Object.assign(window, { animProof: { game, session, animation, adapter: adapter!.info } })
   if (manual) return
   let last = performance.now()
   let fps = 60

@@ -1,4 +1,5 @@
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { animationControls, animationLab } from "../game/anim-settings"
 
 export const JUICE_LABELS = {
   monitors: "Monitor Lights", chairs: "Chair Shadows", ao: "Multi-Bounce AO",
@@ -33,7 +34,7 @@ export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastReport = 0
   constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}) {
-    super(settings, controls, params, release)
+    super(animationLab(settings, params), [...controls, ...animationControls], params, release)
   }
   sample(now: number, elapsed: number, gpu: Pick<Perf, "gpuMs" | "gpuKind" | "draws" | "verts">, chunks: number, lights: number): Perf | null {
     if (elapsed > 0 && Number.isFinite(elapsed)) this.samples.push(elapsed)
