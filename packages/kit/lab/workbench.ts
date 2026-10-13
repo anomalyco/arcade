@@ -1,5 +1,5 @@
 import { LabPanel, type LabSettings, type LabValue } from "../lab-panel"
-import { LabCommandRegistry, type LabCommandContext } from "./commands"
+import { LabCommandRegistry, type LabCommandContext, type LabSceneState } from "./commands"
 import { computeSnapshotDiffs, createCompareWipeDOM } from "./compare-ab"
 import { effectOptions } from "./effects"
 import { lightingDefaults } from "./lighting"
@@ -1312,10 +1312,151 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortLabel: "Step",
       category: "Transport",
       shortcut: ".",
+      args: {
+        frames: { type: "number", required: false, min: 1, max: 120, description: "Number of 1/60s ticks to step" },
+      },
       enabled: () => true,
-      run: () => stepBtn.click(),
+      run: (_ctx, args) => {
+        const count = typeof args?.frames === "number" ? Math.max(1, Math.min(120, Math.round(args.frames))) : 1
+        for (let i = 0; i < count; i++) stepBtn.click()
+      },
+    },
+    {
+      id: "scene.select-section",
+      label: "Switch Lab Section",
+      shortLabel: "Section",
+      category: "Scene",
+      undoable: true,
+      args: {
+        section: { type: "string", required: true, enum: sections.map(s => s.id), description: "Target section ID" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const secId = String(args?.section ?? "")
+        if (sections.some(s => s.id === secId)) {
+          selectSection(secId)
+          syncChrome()
+          void renderNow()
+        }
+      },
+    },
+    {
+      id: "scene.set-param",
+      label: "Set Inspector Parameter",
+      shortLabel: "Set Param",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        key: { type: "string", required: true, description: "Parameter key on active section or lighting" },
+        value: { type: "number", required: true, description: "Numeric parameter value" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const key = String(args?.key ?? "")
+        const val = args?.value
+        if (val === undefined) return
+        const sec = activeSection()
+        const ctrl = sec.controls.find(c => c.key === key)
+        if (ctrl) {
+          panel.navigation.set(ctrl, val)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else if (key in sec.settings) {
+          sec.settings[key] = val
+          resimulateFrozenFrame()
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else if (key in stage.lighting && (typeof val === "number" || typeof val === "boolean")) {
+          ;(stage.lighting as Record<string, LabValue>)[key] = val
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        }
+      },
+    },
+    {
+      id: "object.select",
+      label: "Select Scene Object",
+      shortLabel: "Select",
+      category: "Object",
+      args: {
+        id: { type: "string", required: true, description: "Scene object ID (e.g. prop:0, character:active)" },
+        additive: { type: "boolean", required: false, description: "Add/toggle in multi-selection" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const id = String(args?.id ?? "")
+        const obj = allSceneObjects().find(o => o.id === id) ?? null
+        selectWorldObject(obj, Boolean(args?.additive))
+      },
     },
   ])
+
+  function buildSceneState(): Omit<LabSceneState, "commands"> {
+    const sec = activeSection()
+    const envOwner = resolveEnvOwner()
+    const cleanSettings: Record<string, LabValue> = {}
+    for (const k of Object.keys(sec.settings)) {
+      const v = sec.settings[k]
+      if (typeof v === "boolean" || typeof v === "number" || typeof v === "string") {
+        cleanSettings[k] = v
+      }
+    }
+    return {
+      mode,
+      section: sec.id,
+      environment: String(envOwner.settings.environment ?? envOwner.settings.room ?? "default"),
+      seed: Number(envOwner.settings.seed ?? envOwner.settings.roomSeed ?? 7),
+      effectSeed: "effectSeed" in sec.settings ? Number(sec.settings.effectSeed) : undefined,
+      transport: {
+        playing: "playing" in sec.settings ? Boolean(sec.settings.playing) : true,
+        loop: "loop" in sec.settings ? Boolean(sec.settings.loop) : false,
+        speed: simSpeed,
+        elapsed: Number(elapsed.toFixed(3)),
+        frames,
+      },
+      camera: {
+        focus: [Number(stage.focus[0]!.toFixed(3)), Number(stage.focus[1]!.toFixed(3)), Number(stage.focus[2]!.toFixed(3))],
+        yaw: Number(stage.camYaw.toFixed(4)),
+        pitch: Number(stage.camPitch.toFixed(4)),
+        distance: Number(stage.camDist.toFixed(3)),
+      },
+      selection: {
+        selectedIds: currentSelectedIds(),
+        hoveredId: hoveredObjectId,
+        boxSelectMode,
+      },
+      objects: allSceneObjects(),
+      settings: cleanSettings,
+      lighting: { ...stage.lighting },
+      compare: {
+        activeSlot,
+        hasSlotA: Boolean(slotA),
+        wipeEnabled: compareWipeEnabled,
+        frames,
+        diffs: slotA ? computeSnapshotDiffs(slotA.snapshot, slotB?.snapshot ?? captureSnapshot()) : [],
+      },
+      history: {
+        canUndo: undoStack.length > 0,
+        canRedo: redoStack.length > 0,
+        undoLabel: undoStack.at(-1)?.label ?? null,
+        redoLabel: redoStack.at(-1)?.label ?? null,
+        undoDepth: undoStack.length,
+        redoDepth: redoStack.length,
+      },
+    }
+  }
+
+  commands.configure({
+    getState: buildSceneState,
+    transact: (label, fn) => {
+      const before = captureSnapshot()
+      fn()
+      recordHistory(label, before)
+    },
+  })
 
   function buildCatalog(): CatalogEntry[] {
     const entries: CatalogEntry[] = []
@@ -3440,6 +3581,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
     frameActiveTarget,
     syncChrome,
     commands,
+    state: () => commands.state()!,
+    invoke: (id: string, args?: Record<string, unknown>, ctx?: LabCommandContext) => commands.invoke(id, args, ctx),
     getSelectedIds: currentSelectedIds,
     setBoxSelectMode: (enabled: boolean) => {
       boxSelectMode = enabled

@@ -1,3 +1,4 @@
+import type { LabValue } from "../lab-panel"
 import type { LabWorldObject } from "./types"
 
 export type RadialSlot = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -15,25 +16,104 @@ export const RADIAL_COMPASS: readonly { slot: RadialSlot; compass: string; angle
   { slot: 7, compass: "NW", angle: 315 },
 ]
 
+export type LabCommandArgField = {
+  type: "string" | "number" | "boolean"
+  required?: boolean
+  description?: string
+  min?: number
+  max?: number
+  enum?: readonly (string | number)[]
+}
+
+export type LabCommandArgSchema = Readonly<Record<string, LabCommandArgField>>
+export type LabCommandArgs = Readonly<Record<string, LabValue>>
+
 export type LabCommandContext = {
   pickedObject: LabWorldObject | null
   groundHit: { x: number; y: number; z: number } | null
   screenX?: number
   screenY?: number
+  args?: LabCommandArgs
 }
 
-export type LabCommand = {
+export type LabCommandDescriptor = {
+  id: string
+  label: string
+  shortLabel: string
+  category: LabCommandCategory
+  shortcut?: string
+  undoable: boolean
+  available: boolean
+  disabledReason?: string
+  args?: LabCommandArgSchema
+  radial?: { context: RadialContext; slot: RadialSlot }
+}
+
+export type LabSceneState = {
+  mode: "edit" | "play"
+  section: string
+  environment: string
+  seed: number
+  effectSeed?: number
+  transport: {
+    playing: boolean
+    loop: boolean
+    speed: number
+    elapsed: number
+    frames: number
+  }
+  camera: {
+    focus: [number, number, number]
+    yaw: number
+    pitch: number
+    distance: number
+  }
+  selection: {
+    selectedIds: string[]
+    hoveredId: string | null
+    boxSelectMode: boolean
+  }
+  objects: LabWorldObject[]
+  settings: Record<string, LabValue>
+  lighting: Record<string, LabValue>
+  compare: {
+    activeSlot: "A" | "B"
+    hasSlotA: boolean
+    wipeEnabled: boolean
+    frames: number
+    diffs: { key: string; before: LabValue; after: LabValue; deltaText: string }[]
+  }
+  history: {
+    canUndo: boolean
+    canRedo: boolean
+    undoLabel: string | null
+    redoLabel: string | null
+    undoDepth: number
+    redoDepth: number
+  }
+  commands: LabCommandDescriptor[]
+}
+
+export type LabCommand<TArgs extends LabCommandArgs = LabCommandArgs> = {
   id: string
   label: string
   shortLabel: string
   category: LabCommandCategory
   shortcut?: string
   accelerators?: readonly string[]
+  args?: LabCommandArgSchema
+  /** Whether invoking this command should record an authored undo transaction when state mutates. */
+  undoable?: boolean
   radial?: { context: RadialContext; slot: RadialSlot }
   enabled: (ctx?: LabCommandContext) => boolean
+  available?: (state: LabSceneState, ctx?: LabCommandContext) => boolean
   disabledReason?: (ctx?: LabCommandContext) => string
-  run: (ctx?: LabCommandContext) => void
+  run: (ctx?: LabCommandContext, args?: TArgs) => void
 }
+
+export type LabCommandInvokeResult =
+  | { ok: true; id: string; label: string; undoable: boolean; state: LabSceneState | null }
+  | { ok: false; id: string; error: string }
 
 export type ResolvedRadialSector = {
   slot: RadialSlot
@@ -44,9 +124,65 @@ export type ResolvedRadialSector = {
   disabledReason?: string
 }
 
+export function validateCommandArgs(
+  schema: LabCommandArgSchema | undefined,
+  args: Record<string, unknown> | undefined,
+): { ok: true; value: LabCommandArgs } | { ok: false; error: string } {
+  if (!schema) return { ok: true, value: (args ?? {}) as LabCommandArgs }
+  const input = args ?? {}
+  const out: Record<string, LabValue> = {}
+  for (const [key, field] of Object.entries(schema)) {
+    const raw = input[key]
+    if (raw === undefined || raw === null) {
+      if (field.required) return { ok: false, error: `Missing required argument "${key}".` }
+      continue
+    }
+    if (field.type === "number") {
+      if (typeof raw !== "number" || !Number.isFinite(raw)) {
+        return { ok: false, error: `Argument "${key}" must be a finite number.` }
+      }
+      if (field.min !== undefined && raw < field.min) {
+        return { ok: false, error: `Argument "${key}" must be >= ${field.min}.` }
+      }
+      if (field.max !== undefined && raw > field.max) {
+        return { ok: false, error: `Argument "${key}" must be <= ${field.max}.` }
+      }
+      out[key] = raw
+    } else if (field.type === "boolean") {
+      if (typeof raw !== "boolean") return { ok: false, error: `Argument "${key}" must be a boolean.` }
+      out[key] = raw
+    } else if (field.type === "string") {
+      if (typeof raw !== "string") return { ok: false, error: `Argument "${key}" must be a string.` }
+      out[key] = raw
+    }
+    if (field.enum && !field.enum.includes(out[key] as string | number)) {
+      return { ok: false, error: `Argument "${key}" must be one of: ${field.enum.join(", ")}.` }
+    }
+  }
+  return { ok: true, value: out }
+}
+
 export class LabCommandRegistry {
   private readonly map = new Map<string, LabCommand>()
   private readonly list: LabCommand[] = []
+  private stateReader?: () => Omit<LabSceneState, "commands">
+  private historyTransactor?: (label: string, run: () => void) => void
+
+  constructor(options?: {
+    getState?: () => Omit<LabSceneState, "commands">
+    transact?: (label: string, run: () => void) => void
+  }) {
+    this.stateReader = options?.getState
+    this.historyTransactor = options?.transact
+  }
+
+  configure(options: {
+    getState?: () => Omit<LabSceneState, "commands">
+    transact?: (label: string, run: () => void) => void
+  }): void {
+    if (options.getState) this.stateReader = options.getState
+    if (options.transact) this.historyTransactor = options.transact
+  }
 
   register(command: LabCommand): LabCommand {
     this.map.set(command.id, command)
@@ -68,11 +204,69 @@ export class LabCommandRegistry {
     return this.list
   }
 
-  execute(id: string, ctx?: LabCommandContext): boolean {
+  describe(ctx?: LabCommandContext): LabCommandDescriptor[] {
+    return this.list.map(cmd => {
+      const available = cmd.enabled(ctx)
+      return {
+        id: cmd.id,
+        label: cmd.label,
+        shortLabel: cmd.shortLabel,
+        category: cmd.category,
+        shortcut: cmd.shortcut,
+        undoable: Boolean(cmd.undoable),
+        available,
+        disabledReason: available ? undefined : cmd.disabledReason?.(ctx) ?? "Unavailable in current state",
+        args: cmd.args,
+        radial: cmd.radial,
+      }
+    })
+  }
+
+  state(ctx?: LabCommandContext): LabSceneState | null {
+    if (!this.stateReader) return null
+    const base = this.stateReader()
+    return {
+      ...base,
+      commands: this.describe(ctx),
+    }
+  }
+
+  execute(id: string, ctx?: LabCommandContext, args?: Record<string, unknown>): boolean {
+    return this.invoke(id, args, ctx).ok
+  }
+
+  invoke(id: string, args?: Record<string, unknown>, ctx?: LabCommandContext): LabCommandInvokeResult {
     const cmd = this.map.get(id)
-    if (!cmd || !cmd.enabled(ctx)) return false
-    cmd.run(ctx)
-    return true
+    if (!cmd) {
+      return { ok: false, id, error: `Unknown command "${id}".` }
+    }
+    const validated = validateCommandArgs(cmd.args, args)
+    if (!validated.ok) {
+      return { ok: false, id, error: validated.error }
+    }
+    const mergedCtx: LabCommandContext = {
+      pickedObject: ctx?.pickedObject ?? null,
+      groundHit: ctx?.groundHit ?? null,
+      screenX: ctx?.screenX,
+      screenY: ctx?.screenY,
+      args: validated.value,
+    }
+    if (!cmd.enabled(mergedCtx)) {
+      return { ok: false, id, error: cmd.disabledReason?.(mergedCtx) ?? `Command "${id}" is currently unavailable.` }
+    }
+    const runFn = () => cmd.run(mergedCtx, validated.value)
+    if (cmd.undoable && this.historyTransactor) {
+      this.historyTransactor(cmd.label, runFn)
+    } else {
+      runFn()
+    }
+    return {
+      ok: true,
+      id: cmd.id,
+      label: cmd.label,
+      undoable: Boolean(cmd.undoable),
+      state: this.state(mergedCtx),
+    }
   }
 
   search(query: string): LabCommand[] {

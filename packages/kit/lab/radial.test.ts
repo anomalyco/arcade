@@ -282,3 +282,69 @@ test("tap (<180ms, <8px) latches open; hold (>180ms) in dead zone cancels with 0
   // 4. Clamping near viewport edges preserves off-screen margin
   expect(clampRadialCenter(10, 15, 740, 720)).toEqual({ x: 116, y: 116 })
 })
+
+test("LabCommandRegistry invoke validates args schema, records undoable transactions, and returns serializable state()", () => {
+  const log: string[] = []
+  const transactions: string[] = []
+  let sizeValue = 1
+  const reg = createTestRegistry(log)
+  reg.register({
+    id: "scene.set-param",
+    label: "Set Inspector Parameter",
+    shortLabel: "Set Param",
+    category: "Inspector",
+    undoable: true,
+    args: {
+      key: { type: "string", required: true },
+      value: { type: "number", required: true, min: 0.1, max: 10 },
+    },
+    enabled: () => true,
+    run: (_ctx, args) => {
+      if (args?.key === "size") sizeValue = Number(args.value)
+    },
+  })
+  reg.configure({
+    transact: (label, fn) => {
+      transactions.push(label)
+      fn()
+    },
+    getState: () => ({
+      mode: "edit",
+      section: "effects",
+      environment: "yard",
+      seed: 7,
+      transport: { playing: false, loop: true, speed: 1, elapsed: 0.58, frames: 35 },
+      camera: { focus: [0, 0, 0], yaw: 0, pitch: 0.75, distance: 15 },
+      selection: { selectedIds: [], hoveredId: null, boxSelectMode: false },
+      objects: [],
+      settings: { size: sizeValue },
+      lighting: {},
+      compare: { activeSlot: "B", hasSlotA: true, wipeEnabled: false, frames: 35, diffs: [] },
+      history: {
+        canUndo: transactions.length > 0,
+        canRedo: false,
+        undoLabel: transactions.at(-1) ?? null,
+        redoLabel: null,
+        undoDepth: transactions.length,
+        redoDepth: 0,
+      },
+    }),
+  })
+
+  // Missing or invalid args rejected cleanly without running command
+  const bad = reg.invoke("scene.set-param", { key: "size", value: 99 })
+  expect(bad.ok).toBe(false)
+  expect(transactions).toEqual([])
+
+  // Valid invocation runs through shared history transactor and returns updated state()
+  const good = reg.invoke("scene.set-param", { key: "size", value: 2.5 })
+  expect(good.ok).toBe(true)
+  if (good.ok) {
+    expect(good.undoable).toBe(true)
+    expect(good.state?.settings.size).toBe(2.5)
+    expect(good.state?.history.canUndo).toBe(true)
+    expect(good.state?.history.undoLabel).toBe("Set Inspector Parameter")
+    expect(good.state?.commands.some(c => c.id === "scene.set-param")).toBe(true)
+  }
+})
+

@@ -328,6 +328,8 @@ export async function lab(options:LabOptions) {
       getMode:()=>workbench!.mode,
       frame:()=>workbench!.frameActiveTarget(),
       commands:workbench!.commands,
+      state:()=>workbench!.state(),
+      invoke:(id:string,args?:Record<string,unknown>)=>workbench!.invoke(id,args),
       radial:workbench!.radial,
       getSelectedIds:()=>workbench!.getSelectedIds(),
       setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
