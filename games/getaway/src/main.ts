@@ -17,6 +17,7 @@ import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 import { DebugOverlay } from "./ui/debug-overlay"
 import { GpuPerf } from "../../../packages/kit/gpu-perf"
 import type { WorldView } from "../shared/sim/world"
+import { lightStyle } from "./render/car-lights"
 
 /** A message for the next lobby (an idle kick reloads the page back to it). */
 const NOTICE_KEY = "getaway.notice"
@@ -74,7 +75,7 @@ async function main() {
   }
   if (q.has("nohud")) document.getElementById("hud")!.style.display = "none"
   let activeSession: Session = session
-  const scene = new Scene(renderer, activeSession.city)
+  const scene = new Scene(renderer, activeSession.city, lightStyle(q))
   const hud = new Hud(document.getElementById("hud")!, activeSession.city)
   const sound = new GameAudio(document.getElementById("hud")!)
   const radio = new Radio()

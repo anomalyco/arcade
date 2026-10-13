@@ -14,6 +14,7 @@ import { Fx } from "./fx"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
+import { lampMounts, type LightStyle } from "../render/car-lights"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -88,13 +89,14 @@ export class Scene {
   constructor(
     private renderer: Renderer,
     readonly city: City,
+    private lightStyle: LightStyle = 1,
   ) {
     const built = buildCityMesh(city)
     renderer.setCity(built.mesh)
     this.lamps = built.lamps
     this.spills = built.spills
     for (const v of VEHICLES) {
-      const ids = buildCarVariants(v).map((m) => renderer.addModel(m))
+      const ids = buildCarVariants(v, lightStyle).map((m) => renderer.addModel(m))
       this.variants.set(v.id, ids)
       this.models.set(v.id, ids[0]!)
     }
@@ -442,16 +444,61 @@ export class Scene {
       const half = spec.length / 2
       if (v.crash > 0) light(c.x + fx * half, 0.7 + v.height, c.z + fz * half, 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
       if (v.backfire > 0) light(c.x - fx * (half + 0.3), 0.65 + v.height, c.z - fz * (half + 0.3), 4, 0.45, 0.55, 1, 3 * v.backfire / 0.07)
-      // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
-      light(c.x + fx * (half + 0.5), 1.3 + sagY, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
-      const hw = spec.width / 2 - 0.25
-      for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75 + sagY, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
-        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75 + sagY, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
+      if (this.lightStyle === 0) {
+        // Original reference for the light study.
+        light(c.x + fx * (half + 0.5), 1.3 + sagY, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
+        const hw = spec.width / 2 - 0.25
+        for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
+          sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75 + sagY, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
+          sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75 + sagY, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
+        }
+        sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
+        light(c.x - fx * (half + 0.6), 0.9 + sagY, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
+      } else {
+        const style = this.lightStyle
+        const mount = lampMounts(spec)
+        const cool = style === 2
+        const green = cool ? 0.94 : 0.84, blue = cool ? 1 : 0.6
+        // Match the body's lean before placing lenses; suspension and jumps cannot leave them behind.
+        const point = (x: number, y: number, z: number) => {
+          const roll = v.roll + sagRoll, pitch = v.pitch + sagPitch + jumpPitch
+          const xx = x * Math.cos(roll) - y * Math.sin(roll)
+          const yy = x * Math.sin(roll) + y * Math.cos(roll)
+          const py = yy * Math.cos(pitch) - z * Math.sin(pitch)
+          const pz = yy * Math.sin(pitch) + z * Math.cos(pitch)
+          return { x: c.x + rx * xx + fx * pz, y: sagY + py, z: c.z + rz * xx + fz * pz }
+        }
+        const front = point(0, mount.frontY, half + 0.08)
+        const rear = point(0, mount.rearY, -half - 0.08)
+        light(front.x, front.y, front.z, style === 3 ? 22 : 18, 1, green, blue, 2.1, fx, -0.28, fz, 0.82)
+        light(rear.x - fx * 0.2, rear.y, rear.z - fz * 0.2, 4, 1, 0.055, 0.025, braking ? 1.8 : 0.65)
+        // Low, local fill catches the bevels around the lamp, rather than washing the whole body red.
+        light(front.x + fx * 0.08, front.y + 0.5, front.z + fz * 0.08, 1.8, 1, green, blue, 0.65)
+        light(rear.x - fx * 0.06, rear.y + 0.4, rear.z - fz * 0.06, 1.6, 1, 0.08, 0.035, braking ? 0.9 : 0.35)
+        for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
+          const head = point(mount.frontX * s, mount.frontY + 0.02, half + 0.065)
+          const tail = point(mount.rearX * s, mount.rearY + 0.02, -half - 0.075)
+          sprite("d", head.x, head.y, head.z, 0.25, 1, green, blue, 0.8, 11, c.h, 0.3)
+          sprite("d", tail.x, tail.y, tail.z, 0.23, 1, 0.055, 0.02, braking ? 1.9 : 0.75, 11, c.h, 0.3)
+          const reach = style === 3 ? 12 : cool ? 10 : 8
+          const spread = cool ? 2.4 : 1.9
+          // Kind 10 is an origin-anchored trapezoid, not a centred ellipse six metres away.
+          // Fade its ground footprint in flight; real spots and mounted lenses still follow the car.
+          sprite("d", head.x, 0.035 + v.ground, head.z, spread, 1, green, blue, (style === 3 ? 0.15 : 0.11) * Math.max(0, 1 - altitude / 1.2), 10, c.h, reach / spread)
+          if (style === 3) {
+            const toCam = Math.hypot(cam.eye[0] - head.x, cam.eye[2] - head.z) || 1
+            const facing = Math.max(0.15, ((cam.eye[0] - head.x) * fx + (cam.eye[2] - head.z) * fz) / toCam)
+            sprite("d", head.x, head.y, head.z, 0.85, 1, green, blue, 0.18 * facing, 12, 0, 0.045)
+            sprite("d", tail.x, tail.y, tail.z, braking ? 0.9 : 0.5, 1, 0.07, 0.03, braking ? 0.3 : 0.13, 12, 0, 0.05)
+            if (braking && c.speed > 4) {
+              const length = Math.min(2.5, c.speed * 0.07)
+              const yaw = Math.atan2(-c.vx, -c.vz)
+              sprite("d", tail.x, tail.y, tail.z, 0.08, 1, 0.04, 0.015, 0.32, 13, yaw, length / 0.08)
+            }
+          }
+        }
+        if (style === 2 && spec.id !== "bike") sprite("d", rear.x, rear.y + 0.03, rear.z, spec.width * 0.42, 1, 0.045, 0.015, braking ? 1.25 : 0.55, 11, c.h, 0.045)
       }
-      // No beam geometry: the spot light lights the road, plus a faint soft pool ahead of the car.
-      sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
-      light(c.x - fx * (half + 0.6), 0.9 + sagY, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
         const blue = sirenOn(siren, false)

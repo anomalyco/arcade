@@ -52,16 +52,25 @@ try {
     await page.close()
   }
   const page = await browser.newPage({ viewport: { width: 1280, height: 600 } })
+  const resetDraws: any[] = []
+  page.on("console", msg => { if (msg.text().startsWith("RESET ")) resetDraws.push(JSON.parse(msg.text().slice(6))) })
+  await page.route("**/src/game/scene.ts", async route => {
+    const response = await route.fetch()
+    const body = (await response.text()).replace("this.animate(view, dt, focus?.id ?? null);", "this.animate(view, dt, focus?.id ?? null); if(this.time < 0.5) console.log('RESET '+JSON.stringify({dt,crash:[...this.vis.values()].map(v=>v.crash),hitStop:this.hitStop}));")
+    await route.fulfill({ response, body })
+  })
   await page.goto(`${base}/compare.html?before=${encodeURIComponent(base)}&after=${encodeURIComponent(base)}&seed=7`)
   await page.waitForFunction(() => document.querySelectorAll("iframe").length === 2)
   await page.waitForTimeout(3000)
+  resetDraws.length = 0
   await page.getByRole("button", { name: /reset seed/i }).click()
-  await page.waitForTimeout(300)
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("iframe")).every(f => (f.contentWindow as any)?.__view))
   for (let i = 0; i < 10; i++) {
     await page.screenshot({ path: join(out, `reset-${String(i).padStart(2, "0")}.png`) })
     await page.waitForTimeout(60)
   }
-  results.push({ reset: await Promise.all(page.frames().slice(1).map(f => f.evaluate(() => (window as any).__view?.cars))) })
+  if (!resetDraws.length || resetDraws.some(d => d.dt < 0 || d.hitStop !== 0 || d.crash.some((v: number) => v !== 0))) throw new Error("False effect after Reset Seed")
+  results.push({ resetDraws, reset: await Promise.all(page.frames().slice(1).map(f => f.evaluate(() => (window as any).__view?.cars))) })
   writeFileSync(join(out, "proof.json"), JSON.stringify(results, null, 2))
   console.log("Startup and Reset Seed captured", results.map((r: any) => ({ cfg: r.cfg, adapter: r.adapter, maxImpact: r.impacts ? Math.max(...r.impacts.flat().map((c: any) => c.impact)) : undefined, reset: r.reset })))
 } finally {

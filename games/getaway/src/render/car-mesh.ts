@@ -1,6 +1,7 @@
 import { VEHICLES, type Vehicle } from "../../shared/config"
 import { type AtlasRegion, regionAspect } from "./atlas"
 import { MAT, type Mat, Mesh, type Rgb } from "./mesh"
+import type { LightStyle } from "./car-lights"
 
 /**
  * Vehicle models: faceted low-poly bodies lofted from cross-sections (chamfered hull with real wheel arches, a
@@ -331,7 +332,7 @@ function topAt(body: Body, z: number) {
   return interpKey(body.hull, z).t
 }
 
-function frontFascia(m: Mesh, body: Body, opts: { bumper: Rgb; grille: Rgb; lampW?: number; lampY?: number; lampH?: number; pushBar?: boolean; grilleH?: number }) {
+function frontFascia(m: Mesh, body: Body, opts: { bumper: Rgb; grille: Rgb; lampW?: number; lampY?: number; lampH?: number; pushBar?: boolean; grilleH?: number }, lights: LightStyle) {
   const k = body.hull[0]!
   const z = k.z
   const w = k.w
@@ -342,6 +343,12 @@ function frontFascia(m: Mesh, body: Body, opts: { bumper: Rgb; grille: Rgb; lamp
   for (const s of [-1, 1]) {
     const xo = s * (w - 0.04)
     const xi = s * (w - 0.04 - lw)
+    if (lights) {
+      const x0 = Math.min(xi, xo), x1 = Math.max(xi, xo)
+      block(m, x0 - 0.035, x1 + 0.035, ly - lh / 2 - 0.025, ly + lh / 2 + 0.035, z - 0.045, z + 0.032, TRIM, PAINT, 0.015)
+      // A bevelled lens has a top edge, so it remains shaped at the gameplay angle.
+      block(m, x0 + 0.015, x1 - 0.015, ly - lh / 2 + 0.008, ly + lh / 2 + 0.008, z + 0.032, z + 0.048, lights === 2 ? [0.82, 0.94, 1] : HEAD, MAT.emissive, 0.008)
+    }
     poly(m, [[xi, ly - lh / 2, z + 0.012], [xo, ly - lh / 2, z + 0.012], [xo, ly + lh / 2, z + 0.012], [xi + s * 0.04, ly + lh / 2, z + 0.012]], HEAD, MAT.emissive, [0, ly, 0])
     poly(m, [[xi - s * 0.04, ly - lh / 2 - 0.03, z + 0.008], [xi, ly - lh / 2 - 0.03, z + 0.008], [xi, ly - lh / 2 - 0.005, z + 0.008], [xi - s * 0.04, ly - lh / 2 - 0.005, z + 0.008]], AMBER, MAT.emissive, [0, ly, 0])
   }
@@ -361,7 +368,7 @@ function frontFascia(m: Mesh, body: Body, opts: { bumper: Rgb; grille: Rgb; lamp
   }
 }
 
-function rearFascia(m: Mesh, body: Body, opts: { bumper: Rgb; lampW?: number; lampY?: number; lampH?: number; bar?: boolean }) {
+function rearFascia(m: Mesh, body: Body, opts: { bumper: Rgb; lampW?: number; lampY?: number; lampH?: number; bar?: boolean }, lights: LightStyle) {
   const k = body.hull[body.hull.length - 1]!
   const z = k.z
   const w = k.w
@@ -371,9 +378,18 @@ function rearFascia(m: Mesh, body: Body, opts: { bumper: Rgb; lampW?: number; la
   for (const s of [-1, 1]) {
     const xo = s * (w - 0.03)
     const xi = s * (w - 0.03 - lw)
+    if (lights) {
+      const x0 = Math.min(xi, xo), x1 = Math.max(xi, xo)
+      block(m, x0 - 0.025, x1 + 0.025, ly - lh / 2 - 0.02, ly + lh / 2 + 0.03, z - 0.04, z + 0.035, TRIM, PAINT, 0.012)
+      block(m, x0 + 0.01, x1 - 0.01, ly - lh / 2 + 0.005, ly + lh / 2 + 0.01, z - 0.055, z - 0.04, TAIL, MAT.emissive, 0.006)
+    }
     poly(m, [[xi, ly - lh / 2, z - 0.012], [xo, ly - lh / 2, z - 0.012], [xo, ly + lh / 2, z - 0.012], [xi, ly + lh / 2, z - 0.012]], TAIL, MAT.emissive, [0, ly, 0])
   }
   // A light bar between the tail lamps.
+  if (lights === 2) {
+    block(m, -w + 0.03, w - 0.03, ly - 0.065, ly + 0.065, z - 0.045, z + 0.015, TRIM, PAINT, 0.01)
+    block(m, -w + 0.055, w - 0.055, ly - 0.023, ly + 0.028, z - 0.065, z - 0.045, TAIL, MAT.emissive, 0.006)
+  }
   if (opts.bar) poly(m, [[-(w - 0.03 - lw), ly - 0.02, z - 0.01], [w - 0.03 - lw, ly - 0.02, z - 0.01], [w - 0.03 - lw, ly + 0.02, z - 0.01], [-(w - 0.03 - lw), ly + 0.02, z - 0.01]], [0.6, 0.04, 0.03], MAT.emissive, [0, ly, 0])
   const bw = w + 0.03
   const by = k.b - 0.06
@@ -439,7 +455,7 @@ function policeHull(white: Rgb, black: Rgb, doorF: number, doorR: number): HullP
   return (band, z) => ({ col: z < doorF && z > doorR && band < 4 ? white : black })
 }
 
-function cruiser(m: Mesh, v: Vehicle, unit: number) {
+function cruiser(m: Mesh, v: Vehicle, unit: number, lights: LightStyle) {
   const zf = v.length / 2
   const zr = -zf
   const hw = v.width / 2
@@ -474,8 +490,8 @@ function cruiser(m: Mesh, v: Vehicle, unit: number) {
   }
   hull(m, body, policeHull(white, black, doorF, doorR), { col: black }, { col: black })
   cab(m, body.cab, sedanCab(white, white, 2))
-  frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true })
-  rearFascia(m, body, { bumper: TRIM })
+  frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true }, lights)
+  rearFascia(m, body, { bumper: TRIM }, lights)
   mirrors(m, 0.85, hw - 0.12, 0.98, black)
   seam(m, hw, doorF - 0.02, 0.36, 0.95)
   handles(m, hw, [0.55, -0.62], 0.84, TRIM)
@@ -486,7 +502,7 @@ function cruiser(m: Mesh, v: Vehicle, unit: number) {
   m.box(-0.08, 0.08, 1.05, 1.12, 0.62, 0.74, CHROME)
 }
 
-function interceptor(m: Mesh, v: Vehicle, unit: number) {
+function interceptor(m: Mesh, v: Vehicle, unit: number, lights: LightStyle) {
   const zf = v.length / 2
   const zr = -zf
   const hw = v.width / 2
@@ -521,8 +537,8 @@ function interceptor(m: Mesh, v: Vehicle, unit: number) {
   }
   hull(m, body, policeHull(white, black, doorF, doorR), { col: black }, { col: black })
   cab(m, body.cab, sedanCab(white, white, 2))
-  frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true, lampW: 0.4, lampH: 0.08 })
-  rearFascia(m, body, { bumper: TRIM, lampW: 0.42, lampH: 0.08, bar: true })
+  frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true, lampW: 0.4, lampH: 0.08 }, lights)
+  rearFascia(m, body, { bumper: TRIM, lampW: 0.42, lampH: 0.08, bar: true }, lights)
   mirrors(m, 0.66, hw - 0.12, 0.96, black)
   seam(m, hw, doorF - 0.02, 0.36, 0.95)
   handles(m, hw, [0.35, -0.72], 0.84, TRIM)
@@ -534,7 +550,7 @@ function interceptor(m: Mesh, v: Vehicle, unit: number) {
   extrudeX(m, [[zr + 0.1, 1.0], [zr + 0.32, 1.0], [zr + 0.3, 1.04], [zr + 0.06, 1.08]], -hw + 0.08, hw - 0.08, black)
 }
 
-function muscle(m: Mesh, v: Vehicle) {
+function muscle(m: Mesh, v: Vehicle, lights: LightStyle) {
   const zf = v.length / 2
   const zr = -zf
   const hw = v.width / 2
@@ -564,8 +580,8 @@ function muscle(m: Mesh, v: Vehicle) {
   }
   hull(m, body, () => ({ col: red }), { col: red }, { col: red })
   cab(m, body.cab, sedanCab(red, red))
-  frontFascia(m, body, { bumper: red, grille: INK, lampW: 0.32, lampH: 0.08, grilleH: 0.18 })
-  rearFascia(m, body, { bumper: red, lampW: 0.36, lampH: 0.1 })
+  frontFascia(m, body, { bumper: red, grille: INK, lampW: 0.32, lampH: 0.08, grilleH: 0.18 }, lights)
+  rearFascia(m, body, { bumper: red, lampW: 0.36, lampH: 0.1 }, lights)
   mirrors(m, 0.45, hw - 0.12, 0.93, red)
   seam(m, hw, 0.52, 0.36, 0.9)
   handles(m, hw, [-0.45], 0.8, TRIM)
@@ -582,7 +598,7 @@ function muscle(m: Mesh, v: Vehicle) {
   }
 }
 
-function compact(m: Mesh, v: Vehicle) {
+function compact(m: Mesh, v: Vehicle, lights: LightStyle) {
   const zf = v.length / 2
   const zr = -zf
   const hw = v.width / 2
@@ -617,8 +633,8 @@ function compact(m: Mesh, v: Vehicle) {
     if (band === 1) return { col: seg === 0 || seg === segs - 1 ? trim : paint }
     return seg === 0 || seg === segs - 1 ? screen : { col: paint }
   })
-  frontFascia(m, body, { bumper: trim, grille: INK, lampW: 0.3, lampH: 0.1, grilleH: 0.12 })
-  rearFascia(m, body, { bumper: trim, lampW: 0.2, lampH: 0.18, lampY: 0.8 })
+  frontFascia(m, body, { bumper: trim, grille: INK, lampW: 0.3, lampH: 0.1, grilleH: 0.12 }, lights)
+  rearFascia(m, body, { bumper: trim, lampW: 0.2, lampH: 0.18, lampY: 0.8 }, lights)
   mirrors(m, 0.82, hw - 0.1, 0.94, paint)
   seam(m, hw, -0.41, 0.36, 0.92)
   handles(m, hw, [0.45, -0.6], 0.8, trim)
@@ -626,7 +642,7 @@ function compact(m: Mesh, v: Vehicle) {
   for (const s of [-1, 1]) m.box(s * (hw - 0.3) - 0.03, s * (hw - 0.3) + 0.03, 1.52, 1.57, -1.3, 0.1, trim)
 }
 
-function van(m: Mesh, v: Vehicle) {
+function van(m: Mesh, v: Vehicle, lights: LightStyle) {
   const zf = v.length / 2
   const zr = -zf
   const hw = v.width / 2
@@ -662,8 +678,8 @@ function van(m: Mesh, v: Vehicle) {
     },
     { col: paint },
   )
-  frontFascia(m, body, { bumper: trim, grille: INK, lampW: 0.32, lampH: 0.14, grilleH: 0.18 })
-  rearFascia(m, body, { bumper: trim, lampW: 0.14, lampH: 0.42, lampY: 1.0 })
+  frontFascia(m, body, { bumper: trim, grille: INK, lampW: 0.32, lampH: 0.14, grilleH: 0.18 }, lights)
+  rearFascia(m, body, { bumper: trim, lampW: 0.14, lampH: 0.42, lampY: 1.0 }, lights)
   mirrors(m, zf - 0.75, hw - 0.04, 1.3, trim)
   // Sliding door, rear doors and a roof rack.
   seam(m, hw, zf - 2.2, 0.36, 2.1)
@@ -679,7 +695,7 @@ function van(m: Mesh, v: Vehicle) {
   }
 }
 
-function swat(m: Mesh, v: Vehicle, unit: number) {
+function swat(m: Mesh, v: Vehicle, unit: number, lights: LightStyle) {
   const zf = v.length / 2
   const zr = -zf
   const hw = v.width / 2
@@ -720,8 +736,8 @@ function swat(m: Mesh, v: Vehicle, unit: number) {
     poly(m, [[x, 1.55, zf - 1.9], [x, 1.55, zf - 2.5], [x, 1.98, zf - 2.5], [x, 1.98, zf - 1.9]], GLASS, MAT.glass, [0, 1.7, zf - 2.2])
     for (const z of [-0.6, -1.6]) poly(m, [[x, 1.75, z + 0.3], [x, 1.75, z - 0.3], [x, 1.95, z - 0.3], [x, 1.95, z + 0.3]], GLASS, MAT.glass, [0, 1.85, z])
   }
-  frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true, lampW: 0.3, lampH: 0.12, grilleH: 0.24 })
-  rearFascia(m, body, { bumper: TRIM, lampW: 0.18, lampH: 0.24, lampY: 1.0 })
+  frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true, lampW: 0.3, lampH: 0.12, grilleH: 0.24 }, lights)
+  rearFascia(m, body, { bumper: TRIM, lampW: 0.18, lampH: 0.24, lampY: 1.0 }, lights)
   mirrors(m, zf - 1.35, hw - 0.04, 1.6, TRIM)
   seam(m, hw - 0.04, zf - 2.6, 0.5, 2.4)
   seam(m, hw, zf - 1.25, 0.5, 1.2)
@@ -776,40 +792,40 @@ function bike(m: Mesh, v: Vehicle) {
 }
 
 /** The model for one vehicle; police vehicles carry a roof unit number. */
-export function buildCar(v: Vehicle, unit = UNIT_NUMBERS[v.id]?.[0] ?? 0): Mesh {
+export function buildCar(v: Vehicle, unit = UNIT_NUMBERS[v.id]?.[0] ?? 0, lights: LightStyle = 0): Mesh {
   const m = new Mesh()
   switch (v.id) {
     case "cruiser":
-      cruiser(m, v, unit)
+      cruiser(m, v, unit, lights)
       break
     case "interceptor":
-      interceptor(m, v, unit)
+      interceptor(m, v, unit, lights)
       break
     case "swat":
-      swat(m, v, unit)
+      swat(m, v, unit, lights)
       break
     case "muscle":
-      muscle(m, v)
+      muscle(m, v, lights)
       break
     case "compact":
-      compact(m, v)
+      compact(m, v, lights)
       break
     case "van":
-      van(m, v)
+      van(m, v, lights)
       break
     case "bike":
       bike(m, v)
       break
     default:
-      cruiser(m, v, unit)
+      cruiser(m, v, unit, lights)
   }
   return m
 }
 
 /** Every roof-number variant of a vehicle (one for civilian models). */
-export function buildCarVariants(v: Vehicle): Mesh[] {
+export function buildCarVariants(v: Vehicle, lights: LightStyle = 0): Mesh[] {
   const units = UNIT_NUMBERS[v.id]
-  return units ? units.map((u) => buildCar(v, u)) : [buildCar(v)]
+  return units ? units.map((u) => buildCar(v, u, lights)) : [buildCar(v, 0, lights)]
 }
 
 // ---------------------------------------------------------------------------------------------------------------

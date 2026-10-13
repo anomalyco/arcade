@@ -126,6 +126,24 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Art direction
 
+- **Car-light studies (`?lights=0..3`).** `src/render/car-lights.ts`, `car-mesh.ts`, `game/scene.ts` and the sprite
+  shader keep an original reference (0), warm recessed lamps (1, preview default), cool headlamps/full rear bar (2),
+  and longer warm fans with subtle lens and braking streaks (3). All candidates replace oversized round sprites with
+  bevelled housings and tight rectangular lens glows. Lens positions follow body roll, pitch and jump height. Two
+  short-range lights let the adjacent body bevels catch the lamp colour; the ground fans fade out in flight.
+  The concept images show small rectangular rear lamps, compact red spill and beams connected to the nose. The
+  [Precinct Steam screenshots](https://store.steampowered.com/app/490110/The_Precinct/) show small practical sources
+  with road wash; [Art of Rally's Light Trails mod](https://mikematthews.itch.io/light-trails-mod) demonstrates
+  brake-only trails (a mod reference, not a claim about the base game). Our streak candidate is much shorter.
+  A physically elevated spotlight can leave a gap on the road; the old extra ellipse at bumper +6 m made that gap
+  read as a detached pool. Candidates use an 8/10/12 m fan starting at the bumper, plus the real spotlight.
+  Shape the fan **in fragment space on a rectangular quad**: a tapered vertex quad distorted affine UV interpolation
+  into two bright diagonal lines. The corrected fan is continuous in the inspected close and gameplay Metal views.
+  `scripts/prove-car-lights.ts --video` captures all four at identical poses, verifies real app startup for each URL,
+  and makes a silent 720×1280, 30 fps, 24 s H.264 Main/yuv420p phone clip (6.72 MB). Twelve stills and 720 video frames
+  completed without page or GPU errors. Light count rises from 98 to 100 in the seeded one-car scene; the extra
+  geometry and sprite/light work have no measured GPU-time claim. Kit's choice among the candidates is pending.
+
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and
