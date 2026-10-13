@@ -162,6 +162,13 @@ export async function lab(options:LabOptions) {
     trail,
     input,
     sync:()=>{panel?.sync();workbench?.syncChrome()},
+    transact:(label,run)=>{
+      const before=workbench?.captureSnapshot()
+      run()
+      if(before)workbench?.recordHistory(label,before)
+      panel?.sync()
+      workbench?.syncChrome()
+    },
     activeWalls:()=>spawn?.activeWalls()??[],
     activeGround:(x,z)=>spawn?spawn.activeGround(x,z):0,
     hasPlaygroundScene:()=>Boolean(spawn?.hasActiveScene()),
@@ -322,6 +329,17 @@ export async function lab(options:LabOptions) {
       setMode:(m:"edit"|"play")=>workbench!.setPlayMode(m),
       getMode:()=>workbench!.mode,
       frame:()=>workbench!.frameActiveTarget(),
+      commands:workbench!.commands,
+      state:()=>workbench!.state(),
+      invoke:(id:string,args?:Record<string,unknown>)=>workbench!.invoke(id,args),
+      radial:workbench!.radial,
+      getSelectedIds:()=>workbench!.getSelectedIds(),
+      setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
+      transform:workbench!.transform,
+      compare:workbench!.compare,
+      cursor:workbench!.cursor,
+      exportGameRecipe:()=>workbench!.exportGameRecipe(),
+      applyGameRecipe:(raw:unknown)=>workbench!.applyGameRecipe(raw),
     },
   }
   let last=0

@@ -1,0 +1,17 @@
+export {
+  LabCommandRegistry,
+  RADIAL_COMPASS,
+  validateCommandArgs,
+  type LabCommand,
+  type LabCommandArgField,
+  type LabCommandArgs,
+  type LabCommandArgSchema,
+  type LabCommandCategory,
+  type LabCommandContext,
+  type LabCommandDescriptor,
+  type LabCommandInvokeResult,
+  type LabSceneState,
+  type RadialContext,
+  type RadialSlot,
+  type ResolvedRadialSector,
+} from "./lab/commands"

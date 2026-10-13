@@ -1,9 +1,34 @@
 import { LabPanel, type LabSettings, type LabValue } from "../lab-panel"
+import { LabCommandRegistry, type LabCommandContext, type LabSceneState } from "./commands"
+import { computeSnapshotDiffs, createCompareWipeDOM } from "./compare-ab"
 import { effectOptions } from "./effects"
 import { lightingDefaults } from "./lighting"
+import { createRadialMenuDOM, RadialMenuStateMachine, type RadialReleaseResult } from "./radial"
+import { applyGameRecipe, buildGameRecipe, type GameRecipePayload } from "./recipe"
+import {
+  applyClickSelection,
+  applyMarqueeSelection,
+  computeSelectionCentroid,
+  normalizeMarqueeRect,
+  pickObjectsInMarquee,
+} from "./selection"
 import type { createSpawn, SpawnSceneSnapshot } from "./spawn"
 import type { StageMarker } from "./stage"
+import {
+  applyNumericTransformKey,
+  createTransformGizmoDOM,
+  createTransformState,
+  createViewportCursorDOM,
+  sampleGroundNormal,
+  snapGroundCoord,
+  snapYawRad,
+  type ActiveTransformState,
+  type GroundSurfaceSample,
+  type NumericAxis,
+  type TransformMode,
+} from "./transform"
 import type { LabContext, LabSection, LabWorldObject } from "./types"
+import { bindSafariTrackpadGestures, classifyWheelGesture } from "./viewport-input"
 import { yardGround } from "./yard"
 
 export type CatalogCategory = "effects" | "objects" | "lighting" | "audio"
@@ -97,12 +122,26 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let elapsed = 0
   let frames = 0
   let hoveredObjectId: string | null = null
-  let movingObject: { id: string; origX: number; origZ: number; origYaw?: number; before: FullSnapshot } | null = null
+  let hoveredGroundSample: GroundSurfaceSample | null = null
+  let hoveredGizmoHandle: TransformMode | null = null
+  let activeTransform: (ActiveTransformState & { before: FullSnapshot }) | null = null
+  let boxSelectMode = false
+  let lastPointerViewport: { x: number; y: number } | null = null
+  let prePlayCheckpoint: FullSnapshot | null = null
+  let lastPlayAftermath: FullSnapshot | null = null
+  let slotA: { snapshot: FullSnapshot; frames: number; elapsed: number } | null = null
+  let slotB: { snapshot: FullSnapshot; frames: number; elapsed: number } | null = null
+  let activeSlot: "A" | "B" = "B"
+  let compareWipeEnabled = false
+  let compareWipeSplit = 0.5
+  let isCapturingWipe = false
   let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" = "canvas"
   let toastTimer = 0
 
   const undoStack: HistoryEntry[] = []
   const redoStack: HistoryEntry[] = []
+  const commands = new LabCommandRegistry()
+  const radialState = new RadialMenuStateMachine(commands)
 
   // Top bar elements
   const topbar = root.querySelector<HTMLElement>(".lab-topbar")!
@@ -113,6 +152,22 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   const editModeBtn = topbar.querySelector<HTMLButtonElement>('[data-action="mode-edit"]')!
   const playModeBtn = topbar.querySelector<HTMLButtonElement>('[data-action="mode-play"]')!
+  const boxModeBtn = document.createElement("button")
+  boxModeBtn.type = "button"
+  boxModeBtn.className = "lab-btn"
+  boxModeBtn.dataset.action = "mode-box"
+  boxModeBtn.setAttribute("aria-label", "Box select mode")
+  boxModeBtn.setAttribute("aria-pressed", "false")
+  boxModeBtn.title = "Marquee Box Select mode (or Alt+Drag in Orbit mode)"
+  boxModeBtn.textContent = "Box"
+  editModeBtn.parentElement?.append(boxModeBtn)
+
+  const viewportHud = viewportEl.querySelector<HTMLElement>(".lab-viewport-hud")!
+  const marqueeEl = document.createElement("div")
+  marqueeEl.className = "lab-marquee"
+  marqueeEl.dataset.labMarquee = ""
+  marqueeEl.hidden = true
+  viewportHud.append(marqueeEl)
   const sectionSelect = topbar.querySelector<HTMLSelectElement>('[data-control="section"]')!
   const envSelect = topbar.querySelector<HTMLSelectElement>('[data-control="environment"]')!
   const seedBadge = topbar.querySelector<HTMLElement>('[data-readout="seed"]')!
@@ -125,6 +180,50 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const redoBtn = topbar.querySelector<HTMLButtonElement>('[data-action="redo"]')!
   const exportBtn = topbar.querySelector<HTMLButtonElement>('[data-action="export"]')!
   const importBtn = topbar.querySelector<HTMLButtonElement>('[data-action="import"]')!
+
+  // Top-bar A/B Compare cluster and Copy Game Recipe button
+  const topbarRight = topbar.querySelector<HTMLElement>(".lab-topbar-right")!
+  const compareGroup = document.createElement("div")
+  compareGroup.className = "lab-mode-seg"
+  compareGroup.setAttribute("role", "group")
+  compareGroup.setAttribute("aria-label", "A/B Comparison")
+  const pinABtn = document.createElement("button")
+  pinABtn.type = "button"
+  pinABtn.className = "lab-btn"
+  pinABtn.dataset.action = "compare-pin-a"
+  pinABtn.title = "Pin Baseline Slot A (B)"
+  pinABtn.textContent = "A"
+  const flipBtn = document.createElement("button")
+  flipBtn.type = "button"
+  flipBtn.className = "lab-btn"
+  flipBtn.dataset.action = "compare-flip"
+  flipBtn.title = "Flip Slot A / Slot B (V)"
+  flipBtn.textContent = "V"
+  const wipeBtn = document.createElement("button")
+  wipeBtn.type = "button"
+  wipeBtn.className = "lab-btn"
+  wipeBtn.dataset.action = "compare-wipe"
+  wipeBtn.title = "Toggle Split-Screen A/B Wipe (⇧V)"
+  wipeBtn.textContent = "Wipe"
+  compareGroup.append(pinABtn, flipBtn, wipeBtn)
+  const compareDivider = document.createElement("div")
+  compareDivider.className = "lab-divider"
+  topbarRight.insertBefore(compareDivider, frameBtn)
+  topbarRight.insertBefore(compareGroup, compareDivider)
+
+  const recipeBtn = document.createElement("button")
+  recipeBtn.type = "button"
+  recipeBtn.className = "lab-btn"
+  recipeBtn.dataset.action = "copy-recipe"
+  recipeBtn.setAttribute("aria-label", "Copy recipe for game")
+  recipeBtn.title = "Copy typed settings recipe for game source (no URL params)"
+  recipeBtn.textContent = "Recipe"
+  topbarRight.insertBefore(recipeBtn, exportBtn)
+
+  const wipeDOM = createCompareWipeDOM(viewportEl, split => {
+    compareWipeSplit = split
+    syncCompareWipeOverlay()
+  })
 
   // Library elements
   const searchInput = libraryEl.querySelector<HTMLInputElement>('[data-control="library-search"]')!
@@ -163,14 +262,29 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return sections.find(s => s.id === globalSettings.section) ?? sections[0]!
   }
 
-  function showToast(message: string, isError = false) {
-    hudToast.textContent = message
+  function showToast(message: string, isError = false, action?: { label: string; run: () => void }) {
+    hudToast.replaceChildren()
+    const span = document.createElement("span")
+    span.textContent = message
+    hudToast.append(span)
+    if (action) {
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "lab-toast-btn"
+      btn.dataset.action = "toast-action"
+      btn.textContent = action.label
+      btn.onclick = () => {
+        hudToast.hidden = true
+        action.run()
+      }
+      hudToast.append(btn)
+    }
     hudToast.dataset.error = String(isError)
     hudToast.hidden = false
     if (toastTimer) window.clearTimeout(toastTimer)
     toastTimer = window.setTimeout(() => {
       hudToast.hidden = true
-    }, 2800)
+    }, action ? 5000 : 2800)
   }
 
   function captureSnapshot(): FullSnapshot {
@@ -188,7 +302,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
-  function restoreSnapshot(snap: FullSnapshot) {
+  function restoreSnapshot(snap: FullSnapshot, preserveTransport = false) {
+    const prevFrames = frames
+    const prevElapsed = elapsed
+    const secBefore = activeSection()
+    const prevPlaying = "playing" in secBefore.settings ? Boolean(secBefore.settings.playing) : true
     if (snap.sectionId !== globalSettings.section) {
       selectSection(snap.sectionId)
     }
@@ -196,6 +314,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const saved = snap.sections[s.id]
       if (!saved) continue
       for (const [k, v] of Object.entries(saved)) {
+        if (preserveTransport && k === "playing") continue
         if (k in s.settings) s.settings[k] = v
       }
     }
@@ -204,15 +323,162 @@ export function createWorkbench(opts: WorkbenchOptions) {
       spawn.restore(snap.spawn)
     }
     const sec = activeSection()
+    if (preserveTransport && "playing" in sec.settings) {
+      sec.settings.playing = prevPlaying
+      frames = prevFrames
+      elapsed = prevElapsed
+    }
     if (sec.id === "blackout-effects" || sec.id === "getaway-effects") {
       sec.enter?.()
       sec.retrigger?.()
     } else if (sec.id === "effects" || sec.id === "fire-water" || sec.id === "splatter") {
       sec.retrigger?.()
     }
+    if (preserveTransport && !prevPlaying && frames > 0) {
+      stepSimulationDeterministic(frames)
+    }
+    if (mode === "edit") {
+      input.enabled = false
+      input.release()
+    }
     panel.sync()
     syncChrome()
     void renderNow()
+  }
+
+  function stepSimulationDeterministic(targetFrames: number) {
+    const sec = activeSection()
+    const capped = Math.max(0, Math.min(360, Math.round(targetFrames)))
+    const wasPlaying = "playing" in sec.settings ? sec.settings.playing : true
+    if ("playing" in sec.settings) sec.settings.playing = true
+    for (let i = 0; i < capped; i++) {
+      advanceSim(1 / 60)
+    }
+    if ("playing" in sec.settings) sec.settings.playing = wasPlaying
+    frames = capped
+    elapsed = capped / 60
+    timeReadout.textContent = `${elapsed.toFixed(2)}s · f${frames}`
+  }
+
+  function resimulateFrozenFrame() {
+    const sec = activeSection()
+    const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
+    if (playing || frames <= 0) return false
+    if (!["effects", "blackout-effects", "getaway-effects", "fire-water", "splatter"].includes(sec.id)) return false
+    const targetFrames = frames
+    sec.retrigger?.()
+    stepSimulationDeterministic(targetFrames)
+    return true
+  }
+
+  function syncCompareWipeOverlay() {
+    if (!compareWipeEnabled || !slotA) {
+      wipeDOM.sync({ enabled: false, split: compareWipeSplit, frames, diffs: [] })
+      return
+    }
+    const snapB = slotB?.snapshot ?? captureSnapshot()
+    const diffs = computeSnapshotDiffs(slotA.snapshot, snapB)
+    wipeDOM.sync({
+      enabled: true,
+      split: compareWipeSplit,
+      frames,
+      diffs,
+    })
+  }
+
+  async function captureSlotAToWipeCanvas() {
+    if (!slotA || isCapturingWipe) return
+    isCapturingWipe = true
+    try {
+      const currentLive = captureSnapshot()
+      const currentFrames = frames
+      const currentElapsed = elapsed
+      const sec = activeSection()
+      const wasPlaying = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
+
+      // 1. Evaluate Slot A at current frame and copy rendered WebGPU canvas to wipe overlay
+      for (const s of sections) {
+        const saved = slotA.snapshot.sections[s.id]
+        if (!saved) continue
+        for (const [k, v] of Object.entries(saved)) {
+          if (k === "playing") continue
+          if (k in s.settings) s.settings[k] = v
+        }
+      }
+      Object.assign(stage.lighting, slotA.snapshot.lighting)
+      sec.retrigger?.()
+      if (currentFrames > 0) stepSimulationDeterministic(currentFrames)
+
+      await renderNow()
+      await stage.captureToCanvas(wipeDOM.offscreenCanvas)
+      wipeDOM.imageA.src = wipeDOM.offscreenCanvas.toDataURL("image/png")
+
+      // 2. Restore live Candidate B at the exact same frame
+      for (const s of sections) {
+        const saved = currentLive.sections[s.id]
+        if (!saved) continue
+        for (const [k, v] of Object.entries(saved)) {
+          if (k in s.settings) s.settings[k] = v
+        }
+      }
+      if ("playing" in sec.settings) sec.settings.playing = wasPlaying
+      Object.assign(stage.lighting, currentLive.lighting)
+      sec.retrigger?.()
+      if (currentFrames > 0) stepSimulationDeterministic(currentFrames)
+      frames = currentFrames
+      elapsed = currentElapsed
+      await renderNow()
+      syncCompareWipeOverlay()
+    } finally {
+      isCapturingWipe = false
+    }
+  }
+
+  function pinBaselineSlotA() {
+    const snap = captureSnapshot()
+    slotA = { snapshot: snap, frames, elapsed }
+    slotB = { snapshot: captureSnapshot(), frames, elapsed }
+    activeSlot = "B"
+    syncChrome()
+    if (compareWipeEnabled) void captureSlotAToWipeCanvas()
+    showToast(`Pinned Baseline Slot A at f${frames}`)
+  }
+
+  function flipCompareSlot() {
+    if (!slotA) {
+      pinBaselineSlotA()
+      return
+    }
+    if (activeSlot === "B") {
+      slotB = { snapshot: captureSnapshot(), frames, elapsed }
+      activeSlot = "A"
+      restoreSnapshot(slotA.snapshot, true)
+      showToast(`Viewing Slot A (Baseline) at f${frames}`)
+    } else {
+      activeSlot = "B"
+      if (slotB) restoreSnapshot(slotB.snapshot, true)
+      showToast(`Viewing Slot B (Candidate) at f${frames}`)
+    }
+    syncCompareWipeOverlay()
+  }
+
+  function toggleCompareWipe() {
+    if (!slotA) {
+      pinBaselineSlotA()
+    }
+    compareWipeEnabled = !compareWipeEnabled
+    if (compareWipeEnabled && activeSlot === "A" && slotB) {
+      activeSlot = "B"
+      restoreSnapshot(slotB.snapshot, true)
+    }
+    syncChrome()
+    if (compareWipeEnabled) {
+      void captureSlotAToWipeCanvas()
+      showToast("Split-screen A/B wipe enabled · Drag divider to compare")
+    } else {
+      syncCompareWipeOverlay()
+      showToast("Split-screen A/B wipe off")
+    }
   }
 
   function recordHistory(label: string, before: FullSnapshot) {
@@ -242,7 +508,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return true
   }
 
-  function setPlayMode(next: "edit" | "play") {
+  function setPlayMode(next: "edit" | "play", restoreCheckpoint = true) {
     if (next === "play") {
       if (globalSettings.section !== "spawn") selectSection("spawn")
       if (spawn && !spawn.hasCharacter()) {
@@ -253,18 +519,39 @@ export function createWorkbench(opts: WorkbenchOptions) {
         return
       }
       spawn.setGhost(null)
-      movingObject = null
+      activeTransform = null
+      prePlayCheckpoint = captureSnapshot()
       mode = "play"
       input.enabled = true
       focusZone = "canvas"
+      viewportCursor.update({ state: "hidden" })
       canvas.focus({ preventScroll: true })
-      showToast(`Playing ${spawn.characterLabel() ?? "Character"} · Esc to return to Edit`)
+      showToast(`Playing ${spawn.characterLabel() ?? "Character"} · Esc to return & restore checkpoint`)
     } else {
       const wasPlay = mode === "play"
       mode = "edit"
       input.enabled = false
       input.release()
-      if (wasPlay) showToast("Edit mode")
+      if (wasPlay) {
+        if (restoreCheckpoint && prePlayCheckpoint) {
+          lastPlayAftermath = captureSnapshot()
+          restoreSnapshot(prePlayCheckpoint)
+          const aftermath = lastPlayAftermath
+          const checkpoint = prePlayCheckpoint
+          showToast("Restored pre-Play checkpoint", false, {
+            label: "Keep Play State",
+            run: () => {
+              if (aftermath && checkpoint) {
+                restoreSnapshot(aftermath)
+                recordHistory("Play session state", checkpoint)
+                showToast("Kept Play state")
+              }
+            },
+          })
+        } else {
+          showToast("Edit mode")
+        }
+      }
     }
     syncChrome()
   }
@@ -279,6 +566,897 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
     void renderNow()
   }
+
+  function allSceneObjects(): LabWorldObject[] {
+    const sec = activeSection()
+    const objects = [...(sec.objects?.() ?? [])]
+    if (spawn && sec.id !== "spawn" && ["effects", "lighting", "physics"].includes(sec.id)) {
+      for (const spObj of spawn.section.objects?.() ?? []) {
+        if (!objects.some(o => o.id === spObj.id)) objects.push(spObj)
+      }
+    }
+    return objects
+  }
+
+  function resolveObjectOwner(objId: string): LabSection {
+    const sec = activeSection()
+    if (sec.objects?.().some(o => o.id === objId)) return sec
+    if (spawn && spawn.section.objects?.().some(o => o.id === objId)) return spawn.section
+    return sec
+  }
+
+  function activeTargetObject(ctx?: LabCommandContext): LabWorldObject | null {
+    if (ctx?.pickedObject) return ctx.pickedObject
+    const objs = allSceneObjects()
+    const sec = activeSection()
+    const selId = sec.selectedObjectId ?? spawn?.section.selectedObjectId
+    if (selId) {
+      const found = objs.find(o => o.id === selId)
+      if (found) return found
+    }
+    if (hoveredObjectId) {
+      const hov = objs.find(o => o.id === hoveredObjectId)
+      if (hov) return hov
+    }
+    return objs[0] ?? null
+  }
+
+  function currentSelectedIds(): string[] {
+    const sec = activeSection()
+    if (sec.selectedObjectIds?.length) return [...sec.selectedObjectIds]
+    if (sec.selectedObjectId) return [sec.selectedObjectId]
+    if (spawn && ["effects", "lighting", "physics"].includes(sec.id)) {
+      if (spawn.section.selectedObjectIds?.length) return [...spawn.section.selectedObjectIds]
+      if (spawn.section.selectedObjectId) return [spawn.section.selectedObjectId]
+    }
+    return []
+  }
+
+  function currentSelectedObjects(): LabWorldObject[] {
+    const objs = allSceneObjects()
+    const ids = currentSelectedIds()
+    return ids.map(id => objs.find(o => o.id === id)).filter((o): o is LabWorldObject => Boolean(o))
+  }
+
+  function selectWorldObject(obj: LabWorldObject | null, shiftKey = false) {
+    if (!obj) {
+      if (!shiftKey) {
+        activeSection().selectObjects ? activeSection().selectObjects!([]) : activeSection().selectObject?.(null)
+        if (spawn) spawn.section.selectObjects?.([])
+      }
+      panel.sync()
+      syncChrome()
+      void renderNow()
+      return
+    }
+    const isSpawnObj = Boolean(spawn?.section.objects?.()?.some(o => o.id === obj.id))
+    if (isSpawnObj && globalSettings.section !== "spawn") {
+      selectSection("spawn")
+    }
+    const targetSec = activeSection()
+    if (targetSec.selectObjects) {
+      const next = applyClickSelection(targetSec.selectedObjectIds ?? (targetSec.selectedObjectId ? [targetSec.selectedObjectId] : []), obj.id, shiftKey)
+      targetSec.selectObjects(next.ids)
+    } else {
+      targetSec.selectObject?.(obj.id)
+    }
+    if (targetSec.id === "blackout-effects" && obj.id.startsWith("specimen:")) {
+      targetSec.retrigger?.()
+    }
+    panel.sync()
+    syncChrome()
+    void renderNow()
+  }
+
+  function applyActiveTransformToWorld(st: ActiveTransformState) {
+    const owner = resolveObjectOwner(st.primaryId)
+    const dyaw = st.currentYaw - st.origYaw
+    for (const off of st.offsets) {
+      owner.moveObject?.(off.id, st.currentX + off.dx, st.currentZ + off.dz, off.origYaw + dyaw)
+    }
+  }
+
+  function restoreTransformToOrig(st: ActiveTransformState) {
+    const owner = resolveObjectOwner(st.primaryId)
+    for (const off of st.offsets) {
+      owner.moveObject?.(off.id, off.origX, off.origZ, off.origYaw)
+    }
+  }
+
+  function startTransformSelection(tMode: TransformMode, primaryObj?: LabWorldObject, viaHandle = false) {
+    const selList = currentSelectedObjects().filter(o => o.movable)
+    const primary = primaryObj ?? selList.at(-1) ?? activeTargetObject()
+    if (!primary || !primary.movable) return
+    const st = createTransformState(tMode, primary, selList, viaHandle)
+    activeTransform = { ...st, before: captureSnapshot() }
+    syncChrome()
+  }
+
+  function commitActiveTransform() {
+    if (!activeTransform) return
+    const count = activeTransform.offsets.length
+    const verb = activeTransform.mode === "rotate" ? "Rotate" : "Move"
+    recordHistory(count > 1 ? `${verb} ${count} objects` : `${verb} ${activeTransform.primaryId}`, activeTransform.before)
+    activeTransform = null
+    panel.sync()
+    syncChrome()
+    void renderNow()
+  }
+
+  const viewportCursor = createViewportCursorDOM(viewportHud, { canvas, hoverDelayMs: 180 })
+  const transformGizmo = createTransformGizmoDOM(viewportHud, {
+    onHoverHandle: (tMode, clientX, clientY) => {
+      if (mode === "play" || radialState.phase !== "closed" || activeTransform) return
+      hoveredGizmoHandle = tMode
+      const vRect = viewportEl.getBoundingClientRect()
+      const lx = clientX - vRect.left
+      const ly = clientY - vRect.top
+      if (tMode) {
+        viewportCursor.update({ state: tMode, x: lx, y: ly })
+      } else {
+        viewportCursor.update({ state: "default", x: lx, y: ly })
+      }
+    },
+    onStartHandleDrag: (tMode, pointerId, clientX, clientY) => {
+      if (mode === "play") return
+      startTransformSelection(tMode, undefined, true)
+      const vRect = viewportEl.getBoundingClientRect()
+      viewportCursor.update({ state: tMode, x: clientX - vRect.left, y: clientY - vRect.top })
+      canvas.focus({ preventScroll: true })
+      try {
+        canvas.setPointerCapture(pointerId)
+      } catch {
+        // Synthetic pointer events in tests may not have an active pointerId
+      }
+    },
+    onCommitNumeric: (axis: NumericAxis, value: number) => {
+      const selList = currentSelectedObjects().filter(o => o.movable)
+      const primary = selList.at(-1) ?? activeTargetObject()
+      if (!primary || !primary.movable) return
+      const owner = resolveObjectOwner(primary.id)
+      const before = captureSnapshot()
+      const targets = selList.length > 0 ? selList : [primary]
+      if (axis === "x") {
+        const cx = targets.reduce((a, o) => a + o.x, 0) / targets.length
+        const dx = value - cx
+        for (const o of targets) owner.moveObject?.(o.id, o.x + dx, o.z, o.yaw)
+        recordHistory(`Set X = ${value}m`, before)
+      } else if (axis === "z") {
+        const cz = targets.reduce((a, o) => a + o.z, 0) / targets.length
+        const dz = value - cz
+        for (const o of targets) owner.moveObject?.(o.id, o.x, o.z + dz, o.yaw)
+        recordHistory(`Set Z = ${value}m`, before)
+      } else if (axis === "yaw") {
+        const nextRad = (value * Math.PI) / 180
+        const dyaw = nextRad - (primary.yaw ?? 0)
+        for (const o of targets) owner.moveObject?.(o.id, o.x, o.z, (o.yaw ?? 0) + dyaw)
+        recordHistory(`Set Yaw = ${value}°`, before)
+      }
+      panel.sync()
+      syncChrome()
+      void renderNow()
+    },
+  })
+
+  transformGizmo.root.addEventListener("contextmenu", event => event.preventDefault())
+  transformGizmo.root.addEventListener("pointerdown", event => {
+    if (mode === "play") return
+    if (event.button === 2 || (event.button === 0 && event.ctrlKey && !event.metaKey)) {
+      event.preventDefault()
+      event.stopPropagation()
+      hoveredGizmoHandle = null
+      openRadialAtScreen(event.clientX, event.clientY, false)
+      try {
+        canvas.setPointerCapture(event.pointerId)
+      } catch {}
+    }
+  })
+
+  const radialDOM = createRadialMenuDOM(viewportEl, radialState, handleRadialResult)
+  const origNavSet = panel.navigation.set.bind(panel.navigation)
+  panel.navigation.set = (control, value) => {
+    origNavSet(control, value)
+    if (isCapturingWipe) return
+    const didResim = resimulateFrozenFrame()
+    if (slotA && activeSlot === "B") {
+      slotB = { snapshot: captureSnapshot(), frames, elapsed }
+    }
+    if (compareWipeEnabled && slotA) {
+      syncCompareWipeOverlay()
+    }
+    if (didResim) {
+      void renderNow()
+    }
+  }
+
+  function handleRadialResult(res: RadialReleaseResult) {
+    if (res.outcome === "execute") {
+      res.sector.command.run(radialState.commandContext)
+      canvas.focus({ preventScroll: true })
+    } else if (res.outcome === "disabled") {
+      showToast(res.sector.disabledReason ?? "Unavailable in this context", true)
+      canvas.focus({ preventScroll: true })
+    } else if (res.outcome === "cancel") {
+      canvas.focus({ preventScroll: true })
+    }
+    syncChrome()
+  }
+
+  commands.registerAll([
+    // Object Ring (Slots 0..7: N, NE, E, SE, S, SW, W, NW)
+    {
+      id: "object.trigger",
+      label: "Trigger / Wake Object",
+      shortLabel: "Trigger",
+      category: "Object",
+      shortcut: "Space",
+      accelerators: ["space"],
+      radial: { context: "object", slot: 0 },
+      enabled: ctx => Boolean(activeTargetObject(ctx)),
+      disabledReason: () => "No target object",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (!obj) return
+        selectWorldObject(obj)
+        const owner = resolveObjectOwner(obj.id)
+        if (obj.category === "prop" && spawn) {
+          spawn.physics.wakeAll?.()
+          showToast(`Woke ${obj.label}`)
+        } else {
+          elapsed = 0
+          frames = 0
+          owner.retrigger?.()
+          showToast(`Triggered ${obj.label}`)
+        }
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      },
+    },
+    {
+      id: "object.possess",
+      label: "Possess Character",
+      shortLabel: "Possess",
+      category: "Mode",
+      shortcut: "P",
+      accelerators: ["p"],
+      radial: { context: "object", slot: 1 },
+      enabled: ctx => activeTargetObject(ctx)?.category === "character",
+      disabledReason: () => "Only characters can be possessed",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (obj) selectWorldObject(obj)
+        setPlayMode("play")
+      },
+    },
+    {
+      id: "object.duplicate",
+      label: "Duplicate Object",
+      shortLabel: "Duplicate",
+      category: "Object",
+      shortcut: "D",
+      accelerators: ["d"],
+      radial: { context: "object", slot: 2 },
+      enabled: ctx => {
+        const obj = activeTargetObject(ctx)
+        return Boolean(obj?.deletable && resolveObjectOwner(obj.id).duplicateObject)
+      },
+      disabledReason: () => "Fixed scene object cannot be duplicated",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (!obj) return
+        const owner = resolveObjectOwner(obj.id)
+        if (!owner.duplicateObject) return
+        const before = captureSnapshot()
+        if (owner.id === "spawn" && globalSettings.section !== "spawn") selectSection("spawn")
+        const selIds = owner.selectedObjectIds?.length ? [...owner.selectedObjectIds] : [obj.id]
+        const targetIds = selIds.includes(obj.id) ? selIds : [obj.id]
+        if (targetIds.length > 1 && owner.duplicateObjects) {
+          const created = owner.duplicateObjects(targetIds)
+          if (created.length > 0) {
+            recordHistory(`Duplicate ${created.length} objects`, before)
+            panel.sync()
+            syncChrome()
+            void renderNow()
+            showToast(`Duplicated ${created.length} objects`)
+          }
+          return
+        }
+        const dupId = owner.duplicateObject(obj.id)
+        if (dupId) {
+          recordHistory(`Duplicate ${obj.label}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          showToast(`Duplicated ${obj.label}`)
+        }
+      },
+    },
+    {
+      id: "object.inspect",
+      label: "Inspect Object",
+      shortLabel: "Inspect",
+      category: "Inspector",
+      shortcut: "I",
+      accelerators: ["i"],
+      radial: { context: "object", slot: 3 },
+      enabled: ctx => Boolean(activeTargetObject(ctx)),
+      disabledReason: () => "No object to inspect",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (obj && !currentSelectedIds().includes(obj.id)) selectWorldObject(obj)
+        if (root.dataset.closed === "true") panel.toggle()
+        panel.setReturnFocus(canvas)
+        focusZone = "inspector"
+        panel.focusFirst()
+        syncTransportAndHints()
+      },
+    },
+    {
+      id: "object.delete",
+      label: "Delete Object",
+      shortLabel: "Delete",
+      category: "Object",
+      shortcut: "⌫",
+      accelerators: ["backspace", "delete"],
+      radial: { context: "object", slot: 4 },
+      enabled: ctx => {
+        const obj = activeTargetObject(ctx)
+        return Boolean(obj?.deletable && resolveObjectOwner(obj.id).deleteObject)
+      },
+      disabledReason: () => "Fixed scene object cannot be deleted",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (!obj || !obj.deletable) return
+        const owner = resolveObjectOwner(obj.id)
+        if (!owner.deleteObject) return
+        const before = captureSnapshot()
+        const selIds = owner.selectedObjectIds?.length ? [...owner.selectedObjectIds] : [obj.id]
+        const targetIds = selIds.includes(obj.id) ? selIds : [obj.id]
+        if (targetIds.length > 1 && owner.deleteObjects) {
+          const removed = owner.deleteObjects(targetIds)
+          if (removed > 0) {
+            recordHistory(`Delete ${removed} objects`, before)
+            panel.sync()
+            syncChrome()
+            void renderNow()
+            showToast(`Deleted ${removed} objects`)
+          }
+          return
+        }
+        if (owner.deleteObject(obj.id)) {
+          recordHistory(`Delete ${obj.label}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          showToast(`Deleted ${obj.label}`)
+        }
+      },
+    },
+    {
+      id: "object.reset",
+      label: "Reset Object Transform",
+      shortLabel: "Reset",
+      category: "Object",
+      shortcut: "0",
+      accelerators: ["0"],
+      radial: { context: "object", slot: 5 },
+      enabled: ctx => Boolean(activeTargetObject(ctx)?.movable),
+      disabledReason: () => "Fixed room specimen",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (!obj || !obj.movable) return
+        const owner = resolveObjectOwner(obj.id)
+        const before = captureSnapshot()
+        if (obj.category === "emitter") {
+          owner.moveObject?.(obj.id, 0, 0, 0)
+        } else {
+          for (const target of currentSelectedObjects().filter(o => o.movable)) {
+            owner.moveObject?.(target.id, target.x, target.z, 0)
+          }
+          if (!currentSelectedIds().includes(obj.id)) {
+            owner.moveObject?.(obj.id, obj.x, obj.z, 0)
+          }
+        }
+        recordHistory(`Reset ${obj.label}`, before)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      },
+    },
+    {
+      id: "object.move",
+      label: "Move Object",
+      shortLabel: "Move",
+      category: "Object",
+      shortcut: "G",
+      accelerators: ["g"],
+      radial: { context: "object", slot: 6 },
+      enabled: ctx => Boolean(activeTargetObject(ctx)?.movable),
+      disabledReason: () => "Fixed room specimen",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (!obj || !obj.movable) return
+        if (!currentSelectedIds().includes(obj.id)) selectWorldObject(obj)
+        startTransformSelection("move", obj, false)
+        showToast(`Moving ${obj.label} · Click/Enter commit, R rotate, type number, Esc cancel`)
+      },
+    },
+    {
+      id: "object.rotate",
+      label: "Rotate Object",
+      shortLabel: "Rotate",
+      category: "Object",
+      shortcut: "⇧R",
+      enabled: ctx => Boolean(activeTargetObject(ctx)?.movable),
+      disabledReason: () => "Fixed room specimen",
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (!obj || !obj.movable) return
+        if (!currentSelectedIds().includes(obj.id)) selectWorldObject(obj)
+        startTransformSelection("rotate", obj, false)
+        showToast(`Rotating ${obj.label} · Move mouse or type degrees, Enter commit, Esc cancel`)
+      },
+    },
+    {
+      id: "object.frame",
+      label: "Frame Object",
+      shortLabel: "Frame",
+      category: "Scene",
+      shortcut: "F",
+      accelerators: ["f"],
+      radial: { context: "object", slot: 7 },
+      enabled: () => true,
+      run: ctx => {
+        const obj = activeTargetObject(ctx)
+        if (obj) {
+          selectWorldObject(obj)
+          stage.frameTarget(obj.x, obj.y, obj.z, 14)
+          void renderNow()
+        } else {
+          frameActiveTarget()
+        }
+      },
+    },
+
+    // Empty-Ground Ring (Slots 0..7: N, NE, E, SE, S, SW, W, NW)
+    {
+      id: "ground.trigger-here",
+      label: "Trigger FX Here",
+      shortLabel: "Trigger",
+      category: "Scene",
+      shortcut: "Space",
+      accelerators: ["space"],
+      radial: { context: "ground", slot: 0 },
+      enabled: () => true,
+      run: ctx => {
+        const sec = activeSection()
+        const hit = ctx?.groundHit
+        const before = captureSnapshot()
+        if (hit) {
+          if (sec.id === "spawn" && spawn) {
+            spawn.effectAt({ x: hit.x, y: hit.y, z: hit.z, yaw: 0 })
+          } else {
+            const emitter = sec.objects?.().find(o => o.category === "emitter")
+            if (emitter && sec.moveObject) {
+              sec.moveObject(emitter.id, hit.x, hit.z, emitter.yaw)
+            }
+            elapsed = 0
+            frames = 0
+            sec.retrigger?.()
+          }
+          recordHistory("Trigger FX at cursor", before)
+        } else {
+          elapsed = 0
+          frames = 0
+          sec.retrigger?.()
+        }
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      },
+    },
+    {
+      id: "ground.spawn-char",
+      label: "Spawn Character Here",
+      shortLabel: "Possess",
+      category: "Scene",
+      shortcut: "P",
+      accelerators: ["p"],
+      radial: { context: "ground", slot: 1 },
+      enabled: () => Boolean(spawn),
+      disabledReason: () => "No character adapter available",
+      run: ctx => {
+        if (!spawn) return
+        const before = captureSnapshot()
+        if (globalSettings.section !== "spawn") selectSection("spawn")
+        const hit = ctx?.groundHit
+        const chId = String(spawn.section.settings.character || spawn.adapters.characters[0]?.id || "getaway:muscle")
+        if (hit) {
+          spawn.spawnCharacterAt(chId, { x: hit.x, y: hit.y, z: hit.z, yaw: Math.PI })
+        } else {
+          spawn.spawnCharacterAt(chId)
+        }
+        recordHistory("Spawn character", before)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      },
+    },
+    {
+      id: "ground.spawn-here",
+      label: "Spawn Prop Here",
+      shortLabel: "Spawn Here",
+      category: "Scene",
+      shortcut: "A",
+      accelerators: ["a", "e"],
+      radial: { context: "ground", slot: 2 },
+      enabled: () => Boolean(spawn),
+      disabledReason: () => "No prop adapter available",
+      run: ctx => {
+        if (!spawn) return
+        const before = captureSnapshot()
+        if (globalSettings.section !== "spawn") selectSection("spawn")
+        const hit = ctx?.groundHit
+        if (hit) {
+          spawn.spawnItems("one", { x: hit.x, y: hit.y, z: hit.z, yaw: 0 })
+          recordHistory(`Place ${spawn.section.settings.item}`, before)
+          showToast(`Placed ${spawn.section.settings.item} at (${hit.x.toFixed(1)}, ${hit.z.toFixed(1)})`)
+        } else {
+          const item = String(spawn.section.settings.item || "cone")
+          spawn.setGhost({ category: "prop", kind: item, x: 0, y: yardGround(0, 2), z: 2, yaw: 0, shape: "one", valid: true })
+        }
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      },
+    },
+    {
+      id: "ground.drop-light",
+      label: "Drop Light / Inspect",
+      shortLabel: "Inspect",
+      category: "Scene",
+      shortcut: "L",
+      accelerators: ["l", "i"],
+      radial: { context: "ground", slot: 3 },
+      enabled: () => true,
+      run: ctx => {
+        const hit = ctx?.groundHit
+        if (spawn && hit) {
+          const before = captureSnapshot()
+          if (globalSettings.section !== "spawn") selectSection("spawn")
+          spawn.lightAt({ x: hit.x, y: hit.y, z: hit.z, yaw: 0 })
+          recordHistory(`Place ${spawn.section.settings.light}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else {
+          if (root.dataset.closed === "true") panel.toggle()
+          panel.setReturnFocus(canvas)
+          focusZone = "inspector"
+          panel.focusFirst()
+          syncTransportAndHints()
+        }
+      },
+    },
+    {
+      id: "ground.clear",
+      label: "Clear Transients",
+      shortLabel: "Delete",
+      category: "Scene",
+      shortcut: "⌫",
+      accelerators: ["backspace", "delete"],
+      radial: { context: "ground", slot: 4 },
+      enabled: () => true,
+      run: () => {
+        context.particles.reset()
+        context.trail.reset()
+        context.volume.reset(context.activeWalls?.() ?? [])
+        spawn?.adapters.items.clearSkids?.()
+        showToast("Cleared transient particles, volumes, and skids")
+        syncChrome()
+        void renderNow()
+      },
+    },
+    {
+      id: "ground.reroll",
+      label: "Reroll Room Seed",
+      shortLabel: "Reroll",
+      category: "Scene",
+      shortcut: "R",
+      accelerators: ["r", "0"],
+      radial: { context: "ground", slot: 5 },
+      enabled: () => Boolean(activeSection().reroll || resolveEnvOwner().reroll),
+      disabledReason: () => "Current section has no room seed",
+      run: () => {
+        const owner = activeSection().reroll ? activeSection() : resolveEnvOwner()
+        if (!owner.reroll) return
+        const before = captureSnapshot()
+        owner.reroll()
+        recordHistory("Reroll room seed", before)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      },
+    },
+    {
+      id: "ground.move-here",
+      label: "Move Selected Here",
+      shortLabel: "Move",
+      category: "Object",
+      shortcut: "G",
+      accelerators: ["g"],
+      radial: { context: "ground", slot: 6 },
+      enabled: () => Boolean(activeTargetObject()?.movable),
+      disabledReason: () => "No movable object selected",
+      run: ctx => {
+        const sel = activeTargetObject()
+        if (!sel || !sel.movable) return
+        const owner = resolveObjectOwner(sel.id)
+        const hit = ctx?.groundHit
+        if (hit && owner.moveObject) {
+          const before = captureSnapshot()
+          owner.moveObject(sel.id, hit.x, hit.z, sel.yaw)
+          recordHistory(`Move ${sel.label}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else {
+          startTransformSelection("move", sel, false)
+        }
+      },
+    },
+    {
+      id: "ground.frame",
+      label: "Frame Scene",
+      shortLabel: "Frame",
+      category: "Scene",
+      shortcut: "F",
+      accelerators: ["f"],
+      radial: { context: "ground", slot: 7 },
+      enabled: () => true,
+      run: () => frameActiveTarget(),
+    },
+
+    // Non-radial palette/toolbar commands
+    {
+      id: "mode.play",
+      label: "Enter Play Mode",
+      shortLabel: "Play",
+      category: "Mode",
+      shortcut: "P",
+      enabled: () => Boolean(spawn),
+      run: () => setPlayMode(mode === "play" ? "edit" : "play"),
+    },
+    {
+      id: "edit.undo",
+      label: "Undo Last Edit",
+      shortLabel: "Undo",
+      category: "Preset",
+      shortcut: "⌘Z",
+      enabled: () => undoStack.length > 0,
+      run: () => { undo() },
+    },
+    {
+      id: "edit.redo",
+      label: "Redo Last Edit",
+      shortLabel: "Redo",
+      category: "Preset",
+      shortcut: "⇧⌘Z",
+      enabled: () => redoStack.length > 0,
+      run: () => { redo() },
+    },
+    {
+      id: "preset.export",
+      label: "Export Preset JSON",
+      shortLabel: "Export",
+      category: "Preset",
+      enabled: () => true,
+      run: () => openPresetModal("export"),
+    },
+    {
+      id: "preset.import",
+      label: "Import Preset JSON",
+      shortLabel: "Import",
+      category: "Preset",
+      enabled: () => true,
+      run: () => openPresetModal("import"),
+    },
+    {
+      id: "preset.copy-recipe",
+      label: "Copy Recipe for Game",
+      shortLabel: "Copy Recipe",
+      category: "Preset",
+      enabled: () => true,
+      run: () => openRecipeModal(),
+    },
+    {
+      id: "compare.pin-a",
+      label: "Pin Baseline Slot A",
+      shortLabel: "Pin A",
+      category: "Compare",
+      shortcut: "B",
+      enabled: () => true,
+      run: () => pinBaselineSlotA(),
+    },
+    {
+      id: "compare.flip",
+      label: "Flip Compare Slot A / B",
+      shortLabel: "Flip A/B",
+      category: "Compare",
+      shortcut: "V",
+      enabled: () => true,
+      run: () => flipCompareSlot(),
+    },
+    {
+      id: "compare.wipe",
+      label: "Toggle Split-Screen A/B Wipe",
+      shortLabel: "Wipe A/B",
+      category: "Compare",
+      shortcut: "⇧V",
+      enabled: () => true,
+      run: () => toggleCompareWipe(),
+    },
+    {
+      id: "transport.toggle",
+      label: "Pause / Resume Simulation",
+      shortLabel: "Pause",
+      category: "Transport",
+      shortcut: "K",
+      enabled: () => "playing" in activeSection().settings,
+      run: () => playPauseBtn.click(),
+    },
+    {
+      id: "transport.step",
+      label: "Step Forward 1 Frame (1/60s)",
+      shortLabel: "Step",
+      category: "Transport",
+      shortcut: ".",
+      args: {
+        frames: { type: "number", required: false, min: 1, max: 120, description: "Number of 1/60s ticks to step" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const count = typeof args?.frames === "number" ? Math.max(1, Math.min(120, Math.round(args.frames))) : 1
+        for (let i = 0; i < count; i++) stepBtn.click()
+      },
+    },
+    {
+      id: "scene.select-section",
+      label: "Switch Lab Section",
+      shortLabel: "Section",
+      category: "Scene",
+      undoable: true,
+      args: {
+        section: { type: "string", required: true, enum: sections.map(s => s.id), description: "Target section ID" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const secId = String(args?.section ?? "")
+        if (sections.some(s => s.id === secId)) {
+          selectSection(secId)
+          syncChrome()
+          void renderNow()
+        }
+      },
+    },
+    {
+      id: "scene.set-param",
+      label: "Set Inspector Parameter",
+      shortLabel: "Set Param",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        key: { type: "string", required: true, description: "Parameter key on active section or lighting" },
+        value: { type: "number", required: true, description: "Numeric parameter value" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const key = String(args?.key ?? "")
+        const val = args?.value
+        if (val === undefined) return
+        const sec = activeSection()
+        const ctrl = sec.controls.find(c => c.key === key)
+        if (ctrl) {
+          panel.navigation.set(ctrl, val)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else if (key in sec.settings) {
+          sec.settings[key] = val
+          resimulateFrozenFrame()
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else if (key in stage.lighting && (typeof val === "number" || typeof val === "boolean")) {
+          ;(stage.lighting as Record<string, LabValue>)[key] = val
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        }
+      },
+    },
+    {
+      id: "object.select",
+      label: "Select Scene Object",
+      shortLabel: "Select",
+      category: "Object",
+      args: {
+        id: { type: "string", required: true, description: "Scene object ID (e.g. prop:0, character:active)" },
+        additive: { type: "boolean", required: false, description: "Add/toggle in multi-selection" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const id = String(args?.id ?? "")
+        const obj = allSceneObjects().find(o => o.id === id) ?? null
+        selectWorldObject(obj, Boolean(args?.additive))
+      },
+    },
+  ])
+
+  function buildSceneState(): Omit<LabSceneState, "commands"> {
+    const sec = activeSection()
+    const envOwner = resolveEnvOwner()
+    const cleanSettings: Record<string, LabValue> = {}
+    for (const k of Object.keys(sec.settings)) {
+      const v = sec.settings[k]
+      if (typeof v === "boolean" || typeof v === "number" || typeof v === "string") {
+        cleanSettings[k] = v
+      }
+    }
+    return {
+      mode,
+      section: sec.id,
+      environment: String(envOwner.settings.environment ?? envOwner.settings.room ?? "default"),
+      seed: Number(envOwner.settings.seed ?? envOwner.settings.roomSeed ?? 7),
+      effectSeed: "effectSeed" in sec.settings ? Number(sec.settings.effectSeed) : undefined,
+      transport: {
+        playing: "playing" in sec.settings ? Boolean(sec.settings.playing) : true,
+        loop: "loop" in sec.settings ? Boolean(sec.settings.loop) : false,
+        speed: simSpeed,
+        elapsed: Number(elapsed.toFixed(3)),
+        frames,
+      },
+      camera: {
+        focus: [Number(stage.focus[0]!.toFixed(3)), Number(stage.focus[1]!.toFixed(3)), Number(stage.focus[2]!.toFixed(3))],
+        yaw: Number(stage.camYaw.toFixed(4)),
+        pitch: Number(stage.camPitch.toFixed(4)),
+        distance: Number(stage.camDist.toFixed(3)),
+      },
+      selection: {
+        selectedIds: currentSelectedIds(),
+        hoveredId: hoveredObjectId,
+        boxSelectMode,
+      },
+      objects: allSceneObjects(),
+      settings: cleanSettings,
+      lighting: { ...stage.lighting },
+      compare: {
+        activeSlot,
+        hasSlotA: Boolean(slotA),
+        wipeEnabled: compareWipeEnabled,
+        frames,
+        diffs: slotA ? computeSnapshotDiffs(slotA.snapshot, slotB?.snapshot ?? captureSnapshot()) : [],
+      },
+      history: {
+        canUndo: undoStack.length > 0,
+        canRedo: redoStack.length > 0,
+        undoLabel: undoStack.at(-1)?.label ?? null,
+        redoLabel: redoStack.at(-1)?.label ?? null,
+        undoDepth: undoStack.length,
+        redoDepth: redoStack.length,
+      },
+    }
+  }
+
+  commands.configure({
+    getState: buildSceneState,
+    transact: (label, fn) => {
+      const before = captureSnapshot()
+      fn()
+      recordHistory(label, before)
+    },
+  })
 
   function buildCatalog(): CatalogEntry[] {
     const entries: CatalogEntry[] = []
@@ -777,6 +1955,29 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
     }
 
+    // 10. Registered LabCommands (when searching with ⌘K / /)
+    if (searchQuery.trim()) {
+      for (const cmd of commands.all()) {
+        entries.push({
+          id: `cmd:${cmd.id}`,
+          label: cmd.label,
+          group: "Commands",
+          category: activeCategory,
+          collection: "shared",
+          tag: cmd.shortcut ?? cmd.category,
+          sectionId: globalSettings.section,
+          isActive: () => false,
+          run: () => {
+            if (cmd.enabled()) {
+              cmd.run()
+            } else {
+              showToast(cmd.disabledReason?.() ?? "Command unavailable", true)
+            }
+          },
+        })
+      }
+    }
+
     return entries
   }
 
@@ -884,9 +2085,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
     } else if (ghost) {
       focusPill.textContent = `Place · ${ghost.kind}`
       hintText.textContent = "Click/Enter Place · ⇧Click Repeat · [ ] Rotate · Arrows Nudge · Esc Cancel"
-    } else if (movingObject) {
-      focusPill.textContent = `Move · ${movingObject.id}`
-      hintText.textContent = "Click/Enter Commit · Arrows Nudge · Esc Cancel"
+    } else if (activeTransform) {
+      const verb = activeTransform.mode === "rotate" ? "Rotate" : "Move"
+      focusPill.textContent = `${verb} · ${activeTransform.primaryId}`
+      hintText.textContent = "Click/Enter Commit · R/G Mode · [ ] Rotate · Type Number (Tab X/Z) · Esc Cancel"
     } else if (focusZone === "inspector") {
       const activeCtrl = panel.navigation.active?.control
       focusPill.textContent = `Inspector · ${activeCtrl?.label ?? panel.navigation.active?.group ?? "Controls"}`
@@ -907,22 +2109,27 @@ export function createWorkbench(opts: WorkbenchOptions) {
   function syncStageMarkers() {
     stage.markers.length = 0
     stage.showMarkers = root.dataset.closed !== "true"
-    const sec = activeSection()
-    const objects = sec.objects?.() ?? []
-    const selId = sec.selectedObjectId
-    const showSelectionRing = Boolean(selId) || activeCategory === "objects" || Boolean(movingObject)
-    const selObj = selId ? objects.find(o => o.id === selId) : showSelectionRing ? objects[0] : null
-    if (selObj && mode === "edit" && showSelectionRing) {
-      stage.markers.push({
-        x: selObj.x,
-        y: selObj.y,
-        z: selObj.z,
-        yaw: selObj.yaw ?? 0,
-        radius: selObj.radius ?? 0.75,
-        kind: "select",
-      })
+    const objects = allSceneObjects()
+    const selIds = currentSelectedIds()
+    const showSelectionRing = selIds.length > 0 || activeCategory === "objects" || Boolean(activeTransform)
+    const selectedList = selIds.length > 0
+      ? objects.filter(o => selIds.includes(o.id))
+      : showSelectionRing && objects[0]
+        ? [objects[0]]
+        : []
+    if (mode === "edit" && showSelectionRing) {
+      for (const selObj of selectedList) {
+        stage.markers.push({
+          x: selObj.x,
+          y: selObj.y,
+          z: selObj.z,
+          yaw: selObj.yaw ?? 0,
+          radius: selObj.radius ?? 0.75,
+          kind: "select",
+        })
+      }
     }
-    if (hoveredObjectId && hoveredObjectId !== selObj?.id && mode === "edit") {
+    if (hoveredObjectId && !selIds.includes(hoveredObjectId) && mode === "edit") {
       const hov = objects.find(o => o.id === hoveredObjectId)
       if (hov) {
         stage.markers.push({
@@ -937,14 +2144,70 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
     const ghost = spawn?.getGhost()
     if (ghost && globalSettings.section === "spawn") {
+      const groundFn = activeSection().groundHeight ?? (() => 0)
+      const gs = sampleGroundNormal(ghost.x, ghost.z, groundFn)
       stage.markers.push({
         x: ghost.x,
         y: ghost.y,
         z: ghost.z,
         yaw: ghost.yaw,
+        pitch: gs.pitch,
+        roll: gs.roll,
         radius: 0.8,
         kind: ghost.valid ? "ghost" : "invalid",
       })
+    } else if (
+      mode === "edit" &&
+      hoveredGroundSample &&
+      !hoveredObjectId &&
+      !activeTransform &&
+      radialState.phase === "closed" &&
+      marqueeEl.hidden &&
+      !compareWipeEnabled
+    ) {
+      stage.markers.push({
+        x: hoveredGroundSample.x,
+        y: hoveredGroundSample.y,
+        z: hoveredGroundSample.z,
+        yaw: 0,
+        pitch: hoveredGroundSample.pitch,
+        roll: hoveredGroundSample.roll,
+        radius: 0.42,
+        kind: "reticle",
+      })
+    }
+
+    // Sync in-viewport Transform Gizmo position
+    const movableSelected = selectedList.filter(o => o.movable)
+    const showGizmo =
+      mode === "edit" &&
+      globalSettings.section === "spawn" &&
+      root.dataset.closed !== "true" &&
+      !ghost &&
+      !compareWipeEnabled &&
+      marqueeEl.hidden &&
+      radialState.phase === "closed" &&
+      movableSelected.length > 0 &&
+      (selIds.length > 0 || Boolean(activeTransform))
+    if (showGizmo) {
+      const c = computeSelectionCentroid(movableSelected)
+      const proj = stage.projectWorld(c.x, c.y + 0.25, c.z)
+      const rect = viewportEl.getBoundingClientRect()
+      if (proj.visible && rect.width > 0 && rect.height > 0) {
+        transformGizmo.sync({
+          visible: true,
+          screenX: proj.u * rect.width,
+          screenY: proj.v * rect.height,
+          x: c.x,
+          z: c.z,
+          yawRad: c.yaw,
+          activeMode: activeTransform?.mode ?? null,
+        })
+      } else {
+        transformGizmo.sync({ visible: false, screenX: 0, screenY: 0, x: 0, z: 0, yawRad: 0, activeMode: null })
+      }
+    } else {
+      transformGizmo.sync({ visible: false, screenX: 0, screenY: 0, x: 0, z: 0, yawRad: 0, activeMode: null })
     }
   }
 
@@ -952,9 +2215,16 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const sec = activeSection()
     sectionSelect.value = sec.id
     debugSelect.value = String(globalSettings.debug)
-    editModeBtn.setAttribute("aria-pressed", String(mode === "edit"))
+    editModeBtn.setAttribute("aria-pressed", String(mode === "edit" && !boxSelectMode))
     playModeBtn.setAttribute("aria-pressed", String(mode === "play"))
     playModeBtn.dataset.playActive = String(mode === "play")
+    boxModeBtn.setAttribute("aria-pressed", String(mode === "edit" && boxSelectMode))
+    pinABtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
+    pinABtn.textContent = slotA ? `A·f${slotA.frames}` : "A"
+    flipBtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
+    flipBtn.textContent = slotA ? `${activeSlot}·V` : "V"
+    wipeBtn.setAttribute("aria-pressed", String(compareWipeEnabled))
+    syncCompareWipeOverlay()
 
     undoBtn.disabled = undoStack.length === 0
     undoBtn.title = undoStack.length ? `Undo ${undoStack.at(-1)!.label} (⌘Z)` : "Undo (⌘Z)"
@@ -969,9 +2239,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
 
     // Inspector header title
-    const objs = sec.objects?.() ?? []
-    const selObj = sec.selectedObjectId ? objs.find(o => o.id === sec.selectedObjectId) : null
-    if (selObj && sec.id === "spawn") {
+    const objs = allSceneObjects()
+    const selList = currentSelectedObjects()
+    const selObj = selList.at(-1) ?? null
+    if (selList.length > 1 && sec.id === "spawn") {
+      const c = computeSelectionCentroid(selList)
+      inspectorTitle.textContent = `${selList.length} Objects Selected`
+      inspectorSub.textContent = `${sec.label} · Centroid (${c.x.toFixed(1)}, ${c.z.toFixed(1)})`
+    } else if (selObj && sec.id === "spawn") {
       inspectorTitle.textContent = selObj.label
       inspectorSub.textContent = `${sec.label} · (${selObj.x.toFixed(1)}, ${selObj.z.toFixed(1)})`
     } else if ("effect" in sec.settings) {
@@ -991,11 +2266,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
     } else if (spawn?.getGhost()) {
       const g = spawn.getGhost()!
       hudBadge.textContent = `Place ${g.kind} · (${g.x.toFixed(1)}, ${g.z.toFixed(1)}) · ${Math.round((g.yaw * 180) / Math.PI)}°`
-    } else if (movingObject) {
-      hudBadge.textContent = `Move ${movingObject.id} · Click/Enter to commit`
+    } else if (activeTransform) {
+      const count = activeTransform.offsets.length
+      const verb = activeTransform.mode === "rotate" ? "Rotate" : "Move"
+      const targetName = count > 1 ? `${count} objects` : activeTransform.primaryId
+      const numText = activeTransform.numericBuffer
+        ? ` · ${activeTransform.numericAxis.toUpperCase()}=${activeTransform.numericBuffer}`
+        : ` · (${activeTransform.currentX.toFixed(2)}, ${activeTransform.currentZ.toFixed(2)}) ${Math.round((activeTransform.currentYaw * 180) / Math.PI)}°`
+      hudBadge.textContent = `${verb} ${targetName}${numText} · Click/Enter commit`
     } else if (hoveredObjectId) {
       const hov = objs.find(o => o.id === hoveredObjectId)
-      hudBadge.textContent = hov ? `${hov.label} · Click to select` : `${sec.label}`
+      hudBadge.textContent = hov ? `${hov.label} · Click to select (⇧+Click add)` : `${sec.label}`
+    } else if (selList.length > 1) {
+      hudBadge.textContent = `${sec.label} · ${selList.length} selected`
     } else {
       hudBadge.textContent = `${sec.label}${selObj ? ` · ${selObj.label}` : ""}`
     }
@@ -1120,6 +2403,29 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return { ok: true }
   }
 
+  function buildCurrentGameRecipe(): GameRecipePayload {
+    const sec = activeSection()
+    return buildGameRecipe({
+      sectionId: sec.id,
+      settings: sec.settings,
+      lighting: stage.lighting,
+    })
+  }
+
+  function openRecipeModal() {
+    const recipe = buildCurrentGameRecipe()
+    const payload = JSON.stringify(recipe, null, 2)
+    focusZone = "modal"
+    modalBackdrop.hidden = false
+    modalError.hidden = true
+    modalTitle.textContent = `Game Recipe · ${recipe.modulePath}`
+    modalTextarea.value = `${recipe.codeSnippet}\n\n${payload}`
+    modalTextarea.focus()
+    modalTextarea.select()
+    void navigator.clipboard?.writeText(payload).catch(() => {})
+    showToast(`Copied game recipe for ${recipe.modulePath}`)
+  }
+
   function openPresetModal(mode: "export" | "import") {
     focusZone = "modal"
     modalBackdrop.hidden = false
@@ -1140,8 +2446,17 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   // Wire topbar events
-  editModeBtn.onclick = () => setPlayMode("edit")
+  editModeBtn.onclick = () => {
+    boxSelectMode = false
+    setPlayMode("edit")
+  }
   playModeBtn.onclick = () => setPlayMode(mode === "play" ? "edit" : "play")
+  boxModeBtn.onclick = () => {
+    if (mode === "play") setPlayMode("edit")
+    boxSelectMode = !boxSelectMode
+    syncChrome()
+    showToast(boxSelectMode ? "Box Select mode · Drag on canvas to marquee select" : "Orbit mode · Drag to orbit, Alt+Drag to marquee select")
+  }
 
   sectionSelect.onchange = () => {
     const before = captureSnapshot()
@@ -1202,6 +2517,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   frameBtn.onclick = () => frameActiveTarget()
+  pinABtn.onclick = () => pinBaselineSlotA()
+  flipBtn.onclick = () => flipCompareSlot()
+  wipeBtn.onclick = () => toggleCompareWipe()
+  recipeBtn.onclick = () => openRecipeModal()
   undoBtn.onclick = () => undo()
   redoBtn.onclick = () => redo()
   exportBtn.onclick = () => openPresetModal("export")
@@ -1342,18 +2661,35 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
-  // Exiting Play mode automatically whenever user focuses UI outside canvas
-  for (const zone of [topbar, libraryEl, inspectorEl, bottombar]) {
+  // Exiting Play mode and hiding custom viewport cursor whenever user interacts with UI panels outside canvas
+  for (const zone of [topbar, libraryEl, inspectorEl, bottombar, modalBackdrop]) {
+    zone.addEventListener("pointerenter", () => {
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hidden" })
+    })
     zone.addEventListener("pointerdown", () => {
       if (mode === "play") setPlayMode("edit")
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hidden" })
     })
     zone.addEventListener("focusin", () => {
       if (mode === "play") setPlayMode("edit")
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hidden" })
     })
   }
 
   // Canvas pointer & camera & world picking
-  let dragState: { button: number; shift: boolean; startX: number; startY: number; lastX: number; lastY: number; moved: boolean } | null = null
+  let dragState: {
+    button: number
+    shift: boolean
+    marquee: boolean
+    startX: number
+    startY: number
+    lastX: number
+    lastY: number
+    moved: boolean
+  } | null = null
 
   function canvasUV(event: { clientX: number; clientY: number }): [number, number] {
     const rect = canvas.getBoundingClientRect()
@@ -1364,27 +2700,96 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   function pickObjectAt(u: number, v: number): LabWorldObject | null {
     const sec = activeSection()
-    const objects = [...(sec.objects?.() ?? [])]
-    if (spawn && sec.id !== "spawn" && ["effects", "lighting", "physics"].includes(sec.id)) {
-      for (const spObj of spawn.section.objects?.() ?? []) {
-        if (!objects.some(o => o.id === spObj.id)) objects.push(spObj)
-      }
-    }
+    const objects = allSceneObjects()
     if (!objects.length) return null
     const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
     const hit = stage.pickGround(u, v, groundFn)
-    if (!hit) return null
     let best: LabWorldObject | null = null
-    let bestDist = Infinity
+    let bestScore = Infinity
+    const rect = canvas.getBoundingClientRect()
+    const w = Math.max(1, rect.width)
+    const h = Math.max(1, rect.height)
     for (const obj of objects) {
       const r = Math.max(0.85, (obj.radius ?? 0.85) * 1.25)
-      const d = Math.hypot(hit.x - obj.x, hit.z - obj.z)
-      if (d <= r && d < bestDist) {
-        best = obj
-        bestDist = d
+      if (hit) {
+        const d = Math.hypot(hit.x - obj.x, hit.z - obj.z)
+        if (d <= r && d < bestScore) {
+          best = obj
+          bestScore = d
+        }
+      }
+      const proj = stage.projectWorld(obj.x, obj.y + 0.35, obj.z)
+      if (proj.visible) {
+        const pxDist = Math.hypot((proj.u - u) * w, (proj.v - v) * h)
+        if (pxDist <= 34) {
+          const equivDist = (pxDist / 34) * r
+          if (equivDist < bestScore) {
+            best = obj
+            bestScore = equivDist
+          }
+        }
       }
     }
     return best
+  }
+
+  function openRadialAtScreen(clientX: number, clientY: number, viaKeyboard = false) {
+    const rect = viewportEl.getBoundingClientRect()
+    const [u, v] = canvasUV({ clientX, clientY })
+    const sec = activeSection()
+    const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
+    const pickedObject = pickObjectAt(u, v)
+    const groundHit = stage.pickGround(u, v, groundFn)
+    const localX = clientX - rect.left
+    const localY = clientY - rect.top
+    const ctx: LabCommandContext = { pickedObject, groundHit, screenX: localX, screenY: localY }
+    if (viaKeyboard) {
+      radialState.openKeyboard(localX, localY, rect.width, rect.height, performance.now(), ctx)
+    } else {
+      radialState.openPointer(localX, localY, rect.width, rect.height, performance.now(), ctx)
+    }
+    radialDOM.sync()
+    viewportCursor.update({
+      state: "radial",
+      x: localX,
+      y: localY,
+      radialVec: { dx: 0, dy: -8 },
+    })
+    syncTransportAndHints()
+  }
+
+  function openRadialFromKeyboard(targetObj?: LabWorldObject | null) {
+    const rect = viewportEl.getBoundingClientRect()
+    const obj = targetObj !== undefined ? targetObj : activeTargetObject()
+    if (obj) {
+      const proj = stage.projectWorld(obj.x, obj.y + 0.3, obj.z)
+      const localX = proj.visible ? proj.u * rect.width : rect.width * 0.5
+      const localY = proj.visible ? proj.v * rect.height : rect.height * 0.5
+      radialState.openKeyboard(localX, localY, rect.width, rect.height, performance.now(), {
+        pickedObject: obj,
+        groundHit: { x: obj.x, y: obj.y, z: obj.z },
+        screenX: localX,
+        screenY: localY,
+      })
+    } else {
+      const sec = activeSection()
+      const groundFn = sec.groundHeight ?? (() => 0)
+      const groundHit = stage.pickGround(0.5, 0.5, groundFn) ?? { x: 0, y: 0, z: 0 }
+      radialState.openKeyboard(rect.width * 0.5, rect.height * 0.5, rect.width, rect.height, performance.now(), {
+        pickedObject: null,
+        groundHit,
+        screenX: rect.width * 0.5,
+        screenY: rect.height * 0.5,
+      })
+    }
+    radialDOM.sync()
+    viewportCursor.update({
+      state: "radial",
+      x: radialState.visualX,
+      y: radialState.visualY,
+      radialVec: { dx: 0, dy: -8 },
+    })
+    syncTransportAndHints()
   }
 
   canvas.addEventListener("focus", () => {
@@ -1396,9 +2801,28 @@ export function createWorkbench(opts: WorkbenchOptions) {
     canvas.focus({ preventScroll: true })
     focusZone = "canvas"
     if (mode === "play") return
+
+    // If radial menu is already latched open, clicking canvas resolves or cancels it
+    if (radialState.phase === "latched") {
+      const rect = viewportEl.getBoundingClientRect()
+      const res = radialState.releasePointer(event.clientX - rect.left, event.clientY - rect.top, performance.now())
+      radialDOM.sync()
+      handleRadialResult(res)
+      return
+    }
+
+    // RMB or Ctrl+LMB opens the contextual radial marking menu (no camera pan)
+    if (event.button === 2 || (event.button === 0 && event.ctrlKey && !event.metaKey)) {
+      event.preventDefault()
+      openRadialAtScreen(event.clientX, event.clientY, false)
+      canvas.setPointerCapture(event.pointerId)
+      return
+    }
+
     dragState = {
       button: event.button,
       shift: event.shiftKey,
+      marquee: event.button === 0 && (event.altKey || boxSelectMode) && !spawn?.getGhost() && !activeTransform,
       startX: event.clientX,
       startY: event.clientY,
       lastX: event.clientX,
@@ -1408,11 +2832,108 @@ export function createWorkbench(opts: WorkbenchOptions) {
     canvas.setPointerCapture(event.pointerId)
   })
 
+  viewportEl.addEventListener("pointermove", event => {
+    if (radialState.phase === "closed" || event.target === canvas) return
+    const vRect = viewportEl.getBoundingClientRect()
+    const localX = event.clientX - vRect.left
+    const localY = event.clientY - vRect.top
+    radialState.movePointer(localX, localY)
+    radialDOM.sync()
+    const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
+    if (activeSector && !activeSector.enabled) {
+      viewportCursor.update({ state: "disabled", x: localX, y: localY })
+    } else {
+      viewportCursor.update({
+        state: "radial",
+        x: localX,
+        y: localY,
+        radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
+      })
+    }
+  })
+
+  viewportEl.addEventListener("pointerup", event => {
+    if (radialState.phase !== "holding" || event.target === canvas) return
+    const vRect = viewportEl.getBoundingClientRect()
+    const res = radialState.releasePointer(event.clientX - vRect.left, event.clientY - vRect.top, performance.now())
+    radialDOM.sync()
+    handleRadialResult(res)
+  })
+
+  viewportEl.addEventListener("pointerleave", () => {
+    hoveredGroundSample = null
+    hoveredGizmoHandle = null
+    viewportCursor.update({ state: "hidden" })
+    syncStageMarkers()
+    void renderNow()
+  })
+
   canvas.addEventListener("pointermove", event => {
-    if (mode === "play") return
+    if (mode === "play") {
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hidden" })
+      return
+    }
+    const vRect = viewportEl.getBoundingClientRect()
+    const localX = event.clientX - vRect.left
+    const localY = event.clientY - vRect.top
+    lastPointerViewport = { x: localX, y: localY }
+
+    if (radialState.phase !== "closed") {
+      radialState.movePointer(localX, localY)
+      radialDOM.sync()
+      const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
+      if (activeSector && !activeSector.enabled) {
+        viewportCursor.update({ state: "disabled", x: localX, y: localY })
+      } else {
+        viewportCursor.update({
+          state: "radial",
+          x: localX,
+          y: localY,
+          radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
+        })
+      }
+      return
+    }
     const [u, v] = canvasUV(event)
     const sec = activeSection()
-    const groundFn = sec.groundHeight ?? (() => 0)
+    const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
+
+    if (activeTransform) {
+      hoveredGroundSample = null
+      if (activeTransform.mode === "move") {
+        const hit = stage.pickGround(u, v, groundFn)
+        if (hit) {
+          activeTransform.currentX = snapGroundCoord(hit.x, event.altKey)
+          activeTransform.currentZ = snapGroundCoord(hit.z, event.altKey)
+          applyActiveTransformToWorld(activeTransform)
+          viewportCursor.update({
+            state: "move",
+            x: localX,
+            y: localY,
+          })
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        }
+      } else {
+        const proj = stage.projectWorld(activeTransform.currentX, groundFn(activeTransform.currentX, activeTransform.currentZ) + 0.25, activeTransform.currentZ)
+        const cx = proj.u * vRect.width
+        const cy = proj.v * vRect.height
+        const rawRad = Math.atan2(localX - cx, -(localY - cy))
+        activeTransform.currentYaw = snapYawRad(rawRad, event.shiftKey, event.altKey)
+        applyActiveTransformToWorld(activeTransform)
+        viewportCursor.update({
+          state: "rotate",
+          x: localX,
+          y: localY,
+        })
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      }
+      return
+    }
 
     if (dragState) {
       const dx = event.clientX - dragState.lastX
@@ -1423,11 +2944,36 @@ export function createWorkbench(opts: WorkbenchOptions) {
       dragState.lastX = event.clientX
       dragState.lastY = event.clientY
       if (dragState.moved) {
-        if (dragState.button === 2 || dragState.button === 1 || dragState.shift) {
-          stage.pan(-dx, -dy)
-        } else {
-          stage.orbit(-dx * 0.0065, dy * 0.0055)
+        hoveredGroundSample = null
+        if (dragState.marquee) {
+          const rect = canvas.getBoundingClientRect()
+          const mRect = normalizeMarqueeRect(
+            dragState.startX - rect.left,
+            dragState.startY - rect.top,
+            event.clientX - rect.left,
+            event.clientY - rect.top,
+            rect.width,
+            rect.height,
+          )
+          marqueeEl.hidden = false
+          marqueeEl.style.left = `${mRect.left}px`
+          marqueeEl.style.top = `${mRect.top}px`
+          marqueeEl.style.width = `${mRect.width}px`
+          marqueeEl.style.height = `${mRect.height}px`
+          const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
+          marqueeEl.textContent = hits.length ? `${hits.length}` : ""
+          viewportCursor.update({ state: "marquee", x: localX, y: localY })
+          syncStageMarkers()
+          return
         }
+        if (dragState.button === 1 || dragState.shift) {
+          stage.pan(-dx, -dy, true)
+          viewportCursor.update({ state: "pan", x: localX, y: localY })
+        } else if (dragState.button === 0) {
+          stage.orbit(-dx * 0.0065, dy * 0.0055, true)
+          viewportCursor.update({ state: "orbit", x: localX, y: localY })
+        }
+        syncStageMarkers()
         void renderNow()
         return
       }
@@ -1435,55 +2981,131 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
     const ghost = spawn?.getGhost()
     if (ghost && globalSettings.section === "spawn") {
+      hoveredGroundSample = null
       const hit = stage.pickGround(u, v, groundFn)
       if (hit) {
-        const snap = event.altKey ? 0.05 : 0.25
-        const gx = Math.round(hit.x / snap) * snap
-        const gz = Math.round(hit.z / snap) * snap
+        const gx = snapGroundCoord(hit.x, event.altKey)
+        const gz = snapGroundCoord(hit.z, event.altKey)
+        const isValid = spawn!.isValidYardPoint(gx, gz)
+        const gs = sampleGroundNormal(gx, gz, groundFn)
         spawn!.setGhost({
           ...ghost,
           x: gx,
-          y: groundFn(gx, gz),
+          y: gs.y,
           z: gz,
-          valid: spawn!.isValidYardPoint(gx, gz),
+          valid: isValid,
+        })
+        viewportCursor.update({
+          state: isValid ? "place" : "disabled",
+          x: localX,
+          y: localY,
+          normal: { nx: gs.nx, ny: gs.ny, nz: gs.nz },
         })
         syncChrome()
         void renderNow()
+      } else {
+        viewportCursor.update({ state: "disabled", x: localX, y: localY })
       }
       return
     }
 
-    if (movingObject) {
-      const hit = stage.pickGround(u, v, groundFn)
-      if (hit) {
-        const snap = event.altKey ? 0.05 : 0.25
-        const gx = Math.round(hit.x / snap) * snap
-        const gz = Math.round(hit.z / snap) * snap
-        sec.moveObject?.(movingObject.id, gx, gz, movingObject.origYaw)
-        syncChrome()
-        void renderNow()
-      }
+    if (hoveredGizmoHandle) {
+      viewportCursor.update({ state: hoveredGizmoHandle, x: localX, y: localY })
       return
     }
 
     const picked = pickObjectAt(u, v)
     const nextHover = picked?.id ?? null
+    if (picked) {
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hover", x: localX, y: localY, label: picked.label })
+    } else {
+      const hit = stage.pickGround(u, v, groundFn)
+      if (!hit || (sec.id === "spawn" && spawn && !spawn.isValidYardPoint(hit.x, hit.z))) {
+        hoveredGroundSample = null
+        viewportCursor.update({ state: "disabled", x: localX, y: localY })
+      } else {
+        hoveredGroundSample = sampleGroundNormal(hit.x, hit.z, groundFn)
+        viewportCursor.update({
+          state: boxSelectMode ? "marquee" : "default",
+          x: localX,
+          y: localY,
+          normal: {
+            nx: hoveredGroundSample.nx,
+            ny: hoveredGroundSample.ny,
+            nz: hoveredGroundSample.nz,
+          },
+        })
+      }
+    }
     if (nextHover !== hoveredObjectId) {
       hoveredObjectId = nextHover
-      canvas.style.cursor = hoveredObjectId ? "pointer" : "grab"
       syncChrome()
+      void renderNow()
+    } else if (hoveredGroundSample) {
+      syncStageMarkers()
       void renderNow()
     }
   })
 
   canvas.addEventListener("pointerup", event => {
+    if (radialState.phase === "holding") {
+      const rect = viewportEl.getBoundingClientRect()
+      const res = radialState.releasePointer(event.clientX - rect.left, event.clientY - rect.top, performance.now())
+      radialDOM.sync()
+      handleRadialResult(res)
+      return
+    }
+    if (activeTransform?.viaHandle) {
+      dragState = null
+      commitActiveTransform()
+      return
+    }
     if (!dragState) return
     const wasMoved = dragState.moved
+    const wasMarquee = dragState.marquee
+    const startX = dragState.startX
+    const startY = dragState.startY
     dragState = null
+
+    if (wasMarquee && wasMoved) {
+      marqueeEl.hidden = true
+      const rect = canvas.getBoundingClientRect()
+      const mRect = normalizeMarqueeRect(
+        startX - rect.left,
+        startY - rect.top,
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+        rect.width,
+        rect.height,
+      )
+      const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
+      if (hits.length > 0) {
+        const hasSpawnHits = Boolean(spawn && hits.some(h => spawn.section.objects?.().some(o => o.id === h.id)))
+        if (hasSpawnHits && globalSettings.section !== "spawn") {
+          selectSection("spawn")
+        }
+        const targetSec = activeSection()
+        const next = applyMarqueeSelection(currentSelectedIds(), hits.map(h => h.id), event.shiftKey)
+        if (targetSec.selectObjects) {
+          targetSec.selectObjects(next.ids)
+        } else if (next.primaryId) {
+          targetSec.selectObject?.(next.primaryId)
+        }
+        showToast(`Selected ${next.ids.length} object${next.ids.length === 1 ? "" : "s"}`)
+      } else if (!event.shiftKey) {
+        selectWorldObject(null, false)
+      }
+      panel.sync()
+      syncChrome()
+      void renderNow()
+      return
+    }
+    marqueeEl.hidden = true
+
     if (mode === "play" || wasMoved || event.button !== 0) return
 
     const [u, v] = canvasUV(event)
-    const sec = activeSection()
     const ghost = spawn?.getGhost()
     if (ghost && globalSettings.section === "spawn") {
       const before = captureSnapshot()
@@ -1497,39 +3119,45 @@ export function createWorkbench(opts: WorkbenchOptions) {
       return
     }
 
-    if (movingObject) {
-      recordHistory(`Move ${movingObject.id}`, movingObject.before)
-      movingObject = null
-      panel.sync()
-      syncChrome()
-      void renderNow()
+    if (activeTransform) {
+      commitActiveTransform()
       return
     }
 
     const picked = pickObjectAt(u, v)
-    if (picked) {
-      const isSpawnObj = Boolean(spawn?.section.objects?.()?.some(o => o.id === picked.id))
-      if (isSpawnObj && globalSettings.section !== "spawn") {
-        selectSection("spawn")
-      }
-      const targetSec = activeSection()
-      targetSec.selectObject?.(picked.id)
-      if (targetSec.id === "blackout-effects" && picked.id.startsWith("specimen:")) {
-        targetSec.retrigger?.()
-      }
-      panel.sync()
-      syncChrome()
-      void renderNow()
-    }
+    selectWorldObject(picked, event.shiftKey)
   })
 
   canvas.addEventListener("contextmenu", event => event.preventDefault())
 
   canvas.addEventListener("wheel", event => {
+    const action = classifyWheelGesture(event, { pinchZoom: true, twoFingerScroll: "orbit" })
+    if (action.kind === "ignore") return
     event.preventDefault()
-    stage.zoomBy(Math.exp(event.deltaY * 0.0012))
+    if (action.kind === "zoom") {
+      stage.zoomBy(action.factor, true)
+    } else if (action.kind === "pan") {
+      stage.pan(action.dx, action.dy, true)
+    } else if (action.kind === "orbit") {
+      stage.orbit(action.dyaw, action.dpitch, true)
+    }
+    syncStageMarkers()
     void renderNow()
   }, { passive: false })
+
+  bindSafariTrackpadGestures(canvas, {
+    isEnabled: () => mode === "edit",
+    onPinchZoom: factor => {
+      stage.zoomBy(factor, true)
+      syncStageMarkers()
+      void renderNow()
+    },
+    onRotateYaw: dyaw => {
+      stage.orbit(dyaw, 0, true)
+      syncStageMarkers()
+      void renderNow()
+    },
+  })
 
   // Global Workbench Keyboard Controller
   window.addEventListener("keydown", event => {
@@ -1573,6 +3201,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
     if (cmd && key !== "d") return
 
     if (inText) return
+
+    // Level 2: Open Radial Menu owns 1-8, accelerators, arrows, Enter, and Escape
+    if (radialState.phase !== "closed") {
+      const res = radialState.handleKey(event.key)
+      if (res) {
+        event.preventDefault()
+        radialDOM.sync()
+        if (res.outcome !== "navigate") {
+          handleRadialResult(res)
+        }
+      }
+      return
+    }
 
     // Play Mode: Only Escape exits Play and releases held input; all other keys belong to gameplay
     if (mode === "play") {
@@ -1629,13 +3270,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
     }
 
-    if (movingObject) {
-      const sec = activeSection()
+    if (activeTransform) {
       const step = event.shiftKey ? 2 : event.altKey ? 0.1 : 0.5
       if (event.key === "Escape") {
         event.preventDefault()
-        sec.moveObject?.(movingObject.id, movingObject.origX, movingObject.origZ, movingObject.origYaw)
-        movingObject = null
+        restoreTransformToOrig(activeTransform)
+        activeTransform = null
         panel.sync()
         syncChrome()
         void renderNow()
@@ -1643,8 +3283,30 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
       if (event.key === "Enter") {
         event.preventDefault()
-        recordHistory(`Move ${movingObject.id}`, movingObject.before)
-        movingObject = null
+        commitActiveTransform()
+        return
+      }
+      if (key === "r" && activeTransform.mode === "move") {
+        event.preventDefault()
+        activeTransform.mode = "rotate"
+        activeTransform.numericAxis = "yaw"
+        activeTransform.numericBuffer = ""
+        syncChrome()
+        return
+      }
+      if (key === "g" && activeTransform.mode === "rotate") {
+        event.preventDefault()
+        activeTransform.mode = "move"
+        activeTransform.numericAxis = "x"
+        activeTransform.numericBuffer = ""
+        syncChrome()
+        return
+      }
+      if (event.key === "[" || event.key === "]") {
+        event.preventDefault()
+        const deg = (event.shiftKey ? 1 : 15) * (event.key === "]" ? 1 : -1)
+        activeTransform.currentYaw += (deg * Math.PI) / 180
+        applyActiveTransformToWorld(activeTransform)
         panel.sync()
         syncChrome()
         void renderNow()
@@ -1652,15 +3314,30 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         event.preventDefault()
-        const obj = sec.objects?.().find(o => o.id === movingObject!.id)
-        if (obj) {
-          const nx = obj.x + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0)
-          const nz = obj.z + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0)
-          sec.moveObject?.(obj.id, nx, nz, obj.yaw)
+        if (activeTransform.mode === "rotate") {
+          const deg = (event.shiftKey ? 15 : event.altKey ? 1 : 5) * (event.key === "ArrowRight" || event.key === "ArrowUp" ? 1 : -1)
+          activeTransform.currentYaw += (deg * Math.PI) / 180
+        } else {
+          const dx = event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0
+          const dz = event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0
+          activeTransform.currentX += dx
+          activeTransform.currentZ += dz
+        }
+        applyActiveTransformToWorld(activeTransform)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return
+      }
+      const numRes = applyNumericTransformKey(activeTransform, event.key)
+      if (numRes.handled) {
+        event.preventDefault()
+        if (numRes.updated) {
+          applyActiveTransformToWorld(activeTransform)
           panel.sync()
-          syncChrome()
           void renderNow()
         }
+        syncChrome()
         return
       }
     }
@@ -1685,23 +3362,56 @@ export function createWorkbench(opts: WorkbenchOptions) {
       panel.sync()
       syncChrome()
       void renderNow()
+    } else if (key === "k" && !event.repeat) {
+      event.preventDefault()
+      playPauseBtn.click()
+    } else if (event.key === "." && !event.repeat) {
+      event.preventDefault()
+      const count = event.shiftKey ? 5 : 1
+      for (let i = 0; i < count; i++) stepBtn.click()
+    } else if (event.key === "," && !event.repeat && sec.id !== "spawn" && "playing" in sec.settings && !sec.settings.playing) {
+      event.preventDefault()
+      const targetFrames = Math.max(0, frames - (event.shiftKey ? 5 : 1))
+      sec.retrigger?.()
+      stepSimulationDeterministic(targetFrames)
+      panel.sync()
+      syncChrome()
+      void renderNow()
+    } else if (key === "b" && !event.repeat) {
+      event.preventDefault()
+      pinBaselineSlotA()
+    } else if (key === "v" && !event.repeat) {
+      event.preventDefault()
+      if (event.shiftKey) toggleCompareWipe()
+      else flipCompareSlot()
     } else if (key === "p" && !event.repeat) {
       event.preventDefault()
       setPlayMode("play")
+    } else if ((key === "m" || event.key === "ContextMenu") && !event.repeat) {
+      event.preventDefault()
+      openRadialFromKeyboard()
+    } else if (key === "i" && !event.repeat) {
+      event.preventDefault()
+      commands.execute("object.inspect")
     } else if (key === "f" && !event.repeat) {
       event.preventDefault()
       frameActiveTarget()
     } else if (key === "r" && !event.repeat) {
-      event.preventDefault()
-      if (sec.reroll) {
-        const before = captureSnapshot()
-        sec.reroll()
-        recordHistory("Reroll room seed", before)
-        panel.sync()
-        syncChrome()
-        void renderNow()
+      if (event.shiftKey && commands.get("object.rotate")?.enabled()) {
+        event.preventDefault()
+        commands.execute("object.rotate")
+      } else {
+        event.preventDefault()
+        if (sec.reroll) {
+          const before = captureSnapshot()
+          sec.reroll()
+          recordHistory("Reroll room seed", before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        }
       }
-    } else if ((key === "q" || key === "e") && !event.repeat) {
+    } else if ((key === "q" || key === "e") && !event.repeat && !input.enabled) {
       event.preventDefault()
       const primaryCtrl = sec.controls.find(c => (c.key === "effect" || c.key === "preset" || c.key === "material" || c.key === "item" || c.key === "source") && "options" in c)
       if (primaryCtrl && "options" in primaryCtrl && primaryCtrl.options.length > 0) {
@@ -1728,38 +3438,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
       syncChrome()
       void renderNow()
     } else if (key === "g" && !event.repeat) {
-      const objs = sec.objects?.() ?? []
-      const sel = (sec.selectedObjectId ? objs.find(o => o.id === sec.selectedObjectId) : objs[0])
-      if (sel && sel.movable) {
+      if (commands.get("object.move")?.enabled()) {
         event.preventDefault()
-        movingObject = { id: sel.id, origX: sel.x, origZ: sel.z, origYaw: sel.yaw, before: captureSnapshot() }
-        syncChrome()
+        commands.execute("object.move")
       }
     } else if ((event.key === "Delete" || event.key === "Backspace") && !event.repeat) {
-      const selId = sec.selectedObjectId
-      const sel = selId ? sec.objects?.().find(o => o.id === selId) : null
-      if (sel && sel.deletable && sec.deleteObject) {
+      if (commands.get("object.delete")?.enabled()) {
         event.preventDefault()
-        const before = captureSnapshot()
-        if (sec.deleteObject(sel.id)) {
-          recordHistory(`Delete ${sel.label}`, before)
-          panel.sync()
-          syncChrome()
-          void renderNow()
-        }
+        commands.execute("object.delete")
       }
-    } else if (cmd && key === "d" && !event.repeat) {
-      const selId = sec.selectedObjectId
-      if (selId && sec.duplicateObject) {
+    } else if ((cmd && key === "d" || (!cmd && key === "d")) && !event.repeat) {
+      if (commands.get("object.duplicate")?.enabled()) {
         event.preventDefault()
-        const before = captureSnapshot()
-        const dupId = sec.duplicateObject(selId)
-        if (dupId) {
-          recordHistory("Duplicate object", before)
-          panel.sync()
-          syncChrome()
-          void renderNow()
-        }
+        commands.execute("object.duplicate")
       }
     } else if (["1", "2", "3", "4"].includes(event.key) && !event.repeat) {
       event.preventDefault()
@@ -1777,6 +3468,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       return simSpeed
     },
     onTick(dt: number) {
+      stage.stepCamera(dt)
       const sec = activeSection()
       const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
       if (playing) {
@@ -1790,7 +3482,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       elapsed = 0
       frames = 0
       hoveredObjectId = null
-      movingObject = null
+      activeTransform = null
       if (mode === "play" && globalSettings.section !== "spawn") {
         setPlayMode("edit")
       }
@@ -1816,11 +3508,21 @@ export function createWorkbench(opts: WorkbenchOptions) {
         redoStack.length = 0
       }
       const sec = activeSection()
-      if (!isBench && (sec.id === "blackout-effects" || sec.id === "getaway-effects")) {
+      const isPaused = "playing" in sec.settings && !sec.settings.playing
+      if (isPaused && frames > 0) {
+        resimulateFrozenFrame()
+      } else if (!isBench && (sec.id === "blackout-effects" || sec.id === "getaway-effects")) {
         sec.retrigger?.()
       }
-      syncChrome()
-      void renderNow()
+      if (slotA && activeSlot === "B") {
+        slotB = { snapshot: captureSnapshot(), frames, elapsed }
+      }
+      if (compareWipeEnabled && slotA) {
+        void captureSlotAToWipeCanvas()
+      } else {
+        syncChrome()
+        void renderNow()
+      }
     },
     onPanelFocusChange(focused: boolean) {
       if (focused) {
@@ -1841,8 +3543,78 @@ export function createWorkbench(opts: WorkbenchOptions) {
     redo,
     applyPresetJson,
     exportPresetJson: () => JSON.stringify(buildPresetPayload(), null, 2),
+    exportGameRecipe: buildCurrentGameRecipe,
+    applyGameRecipe: (raw: unknown) => {
+      const sec = activeSection()
+      const res = applyGameRecipe(raw, {
+        lighting: stage.lighting,
+        sectionSettings: sec.settings,
+      })
+      if (res.ok) {
+        const isPaused = "playing" in sec.settings && !sec.settings.playing
+        if (isPaused && frames > 0) resimulateFrozenFrame()
+        else sec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      }
+      return res
+    },
+    compare: {
+      pinA: pinBaselineSlotA,
+      flip: flipCompareSlot,
+      toggleWipe: toggleCompareWipe,
+      get activeSlot() {
+        return activeSlot
+      },
+      get wipeEnabled() {
+        return compareWipeEnabled
+      },
+      get frames() {
+        return frames
+      },
+      get diffs() {
+        return slotA ? computeSnapshotDiffs(slotA.snapshot, slotB?.snapshot ?? captureSnapshot()) : []
+      },
+    },
     setPlayMode,
     frameActiveTarget,
     syncChrome,
+    commands,
+    state: () => commands.state()!,
+    invoke: (id: string, args?: Record<string, unknown>, ctx?: LabCommandContext) => commands.invoke(id, args, ctx),
+    getSelectedIds: currentSelectedIds,
+    setBoxSelectMode: (enabled: boolean) => {
+      boxSelectMode = enabled
+      syncChrome()
+    },
+    transform: {
+      get active() {
+        return activeTransform
+      },
+      start: (tMode: TransformMode) => startTransformSelection(tMode),
+      commit: commitActiveTransform,
+    },
+    cursor: {
+      get state() {
+        return viewportCursor.el.dataset.cursorState ?? "hidden"
+      },
+      get labelVisible() {
+        return viewportCursor.tag.dataset.visible === "true" && !viewportCursor.tag.hidden
+      },
+      get groundSample() {
+        return hoveredGroundSample
+      },
+      update: viewportCursor.update,
+    },
+    radial: {
+      state: radialState,
+      openAtScreen: openRadialAtScreen,
+      openForObject: openRadialFromKeyboard,
+      close: () => {
+        radialState.close()
+        radialDOM.sync()
+      },
+    },
   }
 }

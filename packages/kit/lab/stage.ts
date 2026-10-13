@@ -19,7 +19,7 @@ struct Light {pos:vec4f,color:vec4f,dir:vec4f}
 `
 export type LabLight={x:number;y:number;z:number;radius:number;r:number;g:number;b:number;power:number;dx?:number;dy?:number;dz?:number;cone?:number}
 export type CameraWriter=(width:number,height:number,vp:Float32Array,inverse:Float32Array,eye:Float32Array,focus:readonly number[])=>void
-export type StageMarker={x:number;y:number;z:number;radius?:number;yaw?:number;kind?:"select"|"hover"|"ghost"|"invalid"}
+export type StageMarker={x:number;y:number;z:number;radius?:number;yaw?:number;pitch?:number;roll?:number;kind?:"select"|"hover"|"ghost"|"invalid"|"reticle"}
 
 const DEFAULT_PITCH = Math.atan2(22, 23)
 const DEFAULT_DIST = Math.hypot(22, 23)
@@ -107,9 +107,14 @@ export class Stage {
   readonly transients=new Particles()
   private readonly transientRenderer:ParticleRenderer
   readonly focus=[0,0,0]
+  readonly targetFocus=[0,0,0]
   camYaw=0
   camPitch=DEFAULT_PITCH
   camDist=DEFAULT_DIST
+  targetYaw=0
+  targetPitch=DEFAULT_PITCH
+  targetDist=DEFAULT_DIST
+  hasDampedTarget=false
   camCustom=false
   showMarkers=false
   readonly markers:StageMarker[]=[]
@@ -118,6 +123,7 @@ export class Stage {
   /** Optional effect-study camera and post-HDR distortion; cleared when that section leaves. */
   cameraOverride?:CameraWriter
   afterScene?:(encoder:GPUCommandEncoder,hdr:GPUTexture,depth:GPUTextureView,width:number,height:number)=>void
+  onFrameSubmitted?:()=>void
   private readonly tyre:SmokeRenderer
   private readonly tyreBuffer:GPUBuffer
   private readonly tyreLights:GPUBuffer
@@ -193,26 +199,99 @@ export class Stage {
   }
   frameTarget(x:number,y:number,z:number,dist=17){
     this.focus[0]=x;this.focus[1]=y;this.focus[2]=z
+    this.targetFocus[0]=x;this.targetFocus[1]=y;this.targetFocus[2]=z
     this.camDist=Math.max(4,Math.min(75,dist))
+    this.targetDist=this.camDist
+    this.targetYaw=this.camYaw
+    this.targetPitch=this.camPitch
+    this.hasDampedTarget=false
     this.camCustom=true
   }
   resetCamera(){
-    this.camYaw=0;this.camPitch=DEFAULT_PITCH;this.camDist=DEFAULT_DIST;this.camCustom=false
+    this.camYaw=0;this.camPitch=DEFAULT_PITCH;this.camDist=DEFAULT_DIST
+    this.targetYaw=0;this.targetPitch=DEFAULT_PITCH;this.targetDist=DEFAULT_DIST
+    this.hasDampedTarget=false;this.camCustom=false
   }
-  orbit(dyaw:number,dpitch:number){
-    this.camYaw+=dyaw
-    this.camPitch=Math.max(0.18,Math.min(1.45,this.camPitch+dpitch))
+  private ensureDampedTargets(){
+    if(!this.hasDampedTarget){
+      this.targetYaw=this.camYaw
+      this.targetPitch=this.camPitch
+      this.targetDist=this.camDist
+      this.targetFocus[0]=this.focus[0]!
+      this.targetFocus[1]=this.focus[1]!
+      this.targetFocus[2]=this.focus[2]!
+      this.hasDampedTarget=true
+    }
+  }
+  orbit(dyaw:number,dpitch:number,smooth=false){
     this.camCustom=true
+    if(!smooth){
+      this.camYaw+=dyaw
+      this.camPitch=Math.max(0.18,Math.min(1.45,this.camPitch+dpitch))
+      this.targetYaw=this.camYaw
+      this.targetPitch=this.camPitch
+      return
+    }
+    this.ensureDampedTargets()
+    this.targetYaw+=dyaw
+    this.targetPitch=Math.max(0.18,Math.min(1.45,this.targetPitch+dpitch))
+    this.camYaw+=(this.targetYaw-this.camYaw)*0.45
+    this.camPitch+=(this.targetPitch-this.camPitch)*0.45
   }
-  pan(dx:number,dz:number){
+  pan(dx:number,dz:number,smooth=false){
+    this.camCustom=true
     const cy=Math.cos(this.camYaw),sy=Math.sin(this.camYaw),scale=this.camDist*0.0016
-    this.focus[0]+=(cy*dx+sy*dz)*scale
-    this.focus[2]+=(-sy*dx+cy*dz)*scale
-    this.camCustom=true
+    const wx=(cy*dx+sy*dz)*scale
+    const wz=(-sy*dx+cy*dz)*scale
+    if(!smooth){
+      this.focus[0]+=wx
+      this.focus[2]+=wz
+      this.targetFocus[0]=this.focus[0]!
+      this.targetFocus[1]=this.focus[1]!
+      this.targetFocus[2]=this.focus[2]!
+      return
+    }
+    this.ensureDampedTargets()
+    this.targetFocus[0]+=wx
+    this.targetFocus[2]+=wz
+    this.focus[0]+=(this.targetFocus[0]!-this.focus[0]!)*0.45
+    this.focus[2]+=(this.targetFocus[2]!-this.focus[2]!)*0.45
   }
-  zoomBy(factor:number){
-    this.camDist=Math.max(4,Math.min(75,this.camDist*factor))
+  zoomBy(factor:number,smooth=false){
     this.camCustom=true
+    if(!smooth){
+      this.camDist=Math.max(4,Math.min(75,this.camDist*factor))
+      this.targetDist=this.camDist
+      return
+    }
+    this.ensureDampedTargets()
+    this.targetDist=Math.max(4,Math.min(75,this.targetDist*factor))
+    this.camDist+=(this.targetDist-this.camDist)*0.45
+  }
+  stepCamera(dt:number):boolean{
+    if(!this.hasDampedTarget)return false
+    const k=1-Math.exp(-Math.max(0.001,dt)*18)
+    this.camYaw+=(this.targetYaw-this.camYaw)*k
+    this.camPitch+=(this.targetPitch-this.camPitch)*k
+    this.camDist+=(this.targetDist-this.camDist)*k
+    this.focus[0]+=(this.targetFocus[0]!-this.focus[0]!)*k
+    this.focus[1]+=(this.targetFocus[1]!-this.focus[1]!)*k
+    this.focus[2]+=(this.targetFocus[2]!-this.focus[2]!)*k
+    const err=
+      Math.abs(this.targetYaw-this.camYaw)+
+      Math.abs(this.targetPitch-this.camPitch)+
+      Math.abs(this.targetDist-this.camDist)+
+      Math.hypot(this.targetFocus[0]!-this.focus[0]!,this.targetFocus[1]!-this.focus[1]!,this.targetFocus[2]!-this.focus[2]!)
+    if(err<1e-4){
+      this.camYaw=this.targetYaw
+      this.camPitch=this.targetPitch
+      this.camDist=this.targetDist
+      this.focus[0]=this.targetFocus[0]!
+      this.focus[1]=this.targetFocus[1]!
+      this.focus[2]=this.targetFocus[2]!
+      this.hasDampedTarget=false
+    }
+    return this.hasDampedTarget
   }
   screenRay(u:number,v:number):{origin:[number,number,number];dir:[number,number,number]}{
     const nx=u*2-1,ny=1-v*2,inv=this.inverse
@@ -242,6 +321,16 @@ export class Stage {
     }
     const fx=ox+dx*tFlat,fz=oz+dz*tFlat
     return {x:fx,y:ground(fx,fz),z:fz}
+  }
+  projectWorld(x:number,y:number,z:number):{u:number;v:number;visible:boolean}{
+    const m=this.viewProj
+    const cx=m[0]!*x+m[4]!*y+m[8]!*z+m[12]!
+    const cy=m[1]!*x+m[5]!*y+m[9]!*z+m[13]!
+    const cw=m[3]!*x+m[7]!*y+m[11]!*z+m[15]!
+    if(cw<=0.001)return {u:0.5,v:0.5,visible:false}
+    const u=(cx/cw+1)*0.5
+    const v=(1-cy/cw)*0.5
+    return {u,v,visible:u>=0&&u<=1&&v>=0&&v<=1}
   }
   updateCamera(){
     if(this.cameraOverride&&!this.camCustom){
@@ -288,8 +377,8 @@ export class Stage {
     this.uploadLighting(debug)
     if(this.showMarkers){
       for(const m of this.markers){
-        const tint=m.kind==="invalid"?[1,0.32,0.32]:m.kind==="ghost"?[0.52,0.92,0.72]:m.kind==="hover"?[0.75,0.86,0.95]:[0.38,0.84,0.96]
-        this.meshes.instance(this.ringModel,m.x,m.y+0.02,m.z,m.yaw??0,0,0,m.radius??0.85,tint)
+        const tint=m.kind==="invalid"?[1,0.32,0.32]:m.kind==="ghost"?[0.52,0.92,0.72]:m.kind==="reticle"?[0.62,0.88,0.96]:m.kind==="hover"?[0.75,0.86,0.95]:[0.38,0.84,0.96]
+        this.meshes.instance(this.ringModel,m.x,m.y+0.02,m.z,m.yaw??0,m.roll??0,m.pitch??0,m.radius??0.85,tint)
       }
     }
     this.meshes.upload(this.frame)
@@ -313,7 +402,42 @@ export class Stage {
     if(timed)this.timer!.finish(enc,output)
     enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.width,this.height])
     this.device.queue.submit([enc.finish()])
+    this.onFrameSubmitted?.()
     if(timed){this.measuring=true;try{this.gpuMs=await this.timer!.collect()}finally{this.measuring=false}}
     return timed?this.gpuMs:null
+  }
+  async captureToCanvas(target:HTMLCanvasElement):Promise<void>{
+    const w=this.width,h=this.height
+    if(w<=0||h<=0||!this.output)return
+    const bytesPerRow=Math.ceil((w*4)/256)*256
+    const readBuf=this.device.createBuffer({
+      size:bytesPerRow*h,
+      usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ,
+    })
+    const enc=this.device.createCommandEncoder()
+    enc.copyTextureToBuffer({texture:this.output},{buffer:readBuf,bytesPerRow,rowsPerImage:h},[w,h])
+    this.device.queue.submit([enc.finish()])
+    await readBuf.mapAsync(GPUMapMode.READ)
+    const src=new Uint8Array(readBuf.getMappedRange())
+    target.width=w;target.height=h
+    const ctx2d=target.getContext("2d")
+    if(ctx2d){
+      const img=ctx2d.createImageData(w,h)
+      const dst=img.data
+      const isBGRA=this.format==="bgra8unorm"
+      for(let y=0;y<h;y++){
+        const rowOff=y*bytesPerRow,dstOff=y*w*4
+        for(let x=0;x<w;x++){
+          const si=rowOff+x*4,di=dstOff+x*4
+          dst[di]=isBGRA?src[si+2]!:src[si]!
+          dst[di+1]=src[si+1]!
+          dst[di+2]=isBGRA?src[si]!:src[si+2]!
+          dst[di+3]=255
+        }
+      }
+      ctx2d.putImageData(img,0,0)
+    }
+    readBuf.unmap()
+    readBuf.destroy()
   }
 }
