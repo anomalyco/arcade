@@ -387,6 +387,7 @@ struct Inst {
  * helicopter beam. kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 5 beam, 6 spark,
  * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow,
  * 10 volumetric smoke, 11 cel smoke, 12 connected ribbon, 13 attached exhaust flame.
+ * 14 fluttering paper, 15 water droplets, 16 fire lobes.
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -432,9 +433,15 @@ struct SOut {
     let toCam = normalize(F.cam.xyz - s.posSize.xyz);
     let right = normalize(cross(vec3f(0.0, 1.0, 0.0), toCam));
     let up = cross(toCam, right);
-    world = s.posSize.xyz + (right * c.x + up * c.y) * size;
+    var corner = c;
+    if (kind == 14.0) {
+      let cr = cos(s.misc.y); let sr = sin(s.misc.y);
+      corner = vec2f(c.x * cr - c.y * sr, (c.x * sr + c.y * cr) * max(0.08, abs(s.misc.z)));
+    }
+    if (kind == 15.0) { corner.y *= s.misc.z; }
+    world = s.posSize.xyz + (right * corner.x + up * corner.y) * size;
     // Nudge glows toward the camera so they are not swallowed by their own lamp geometry.
-    world += toCam * size * select(0.5, 0.0, kind == 10.0 || kind == 11.0);
+    world += toCam * size * select(0.5, 0.0, kind >= 10.0);
   }
   var o: SOut;
   o.pos = F.viewProj * vec4f(world, 1.0);
@@ -469,7 +476,14 @@ struct SOut {
   var a = 0.0;
   let k = o.kind;
   var col = o.color.rgb;
-  if (k == 0.0 || k == 6.0) {
+  if (k == 14.0) {
+    a = (1.0 - smoothstep(0.8, 1.0, abs(o.uv.x))) * (1.0 - smoothstep(0.8, 1.0, abs(o.uv.y)));
+  } else if (k == 15.0) {
+    a = pow(max(0.0, 1.0 - r * r), 1.2);
+  } else if (k == 16.0) {
+    let edge = r + 0.08 * sin(o.uv.x * 16.0) * sin(o.uv.y * 13.0);
+    a = pow(max(0.0, 1.0 - edge), 1.3);
+  } else if (k == 0.0 || k == 6.0) {
     a = pow(max(0.0, 1.0 - r), 2.2);
   } else if (k == 1.0) {
     let billow = 0.88 + 0.12 * sin(o.uv.x * 5.0 + o.extra * 17.0) * sin(o.uv.y * 4.0 - o.extra * 11.0);

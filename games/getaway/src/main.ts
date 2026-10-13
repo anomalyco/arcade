@@ -155,7 +155,9 @@ async function main() {
   let emissionStudy: EmissionStudy | null = null
   let studyDistance = 38
   let studyHoldX = 0, studyHoldZ = 0
+  const clutterBench = benchMode ? (await import("./dev/props-bench")).propsBench(scene, activeSession.update(0, controls.read(0)), canvas, device) : null
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
+    clutter: clutterBench,
     ready: atlasReady.then(() => true),
     smoke(style: number, visible = true) { smoke.style = style; smoke.visible = visible },
     distance(value: number) { studyDistance = value },

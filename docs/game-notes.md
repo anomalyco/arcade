@@ -218,6 +218,18 @@ The prior connected-study report describes its historical offscreen-target measu
 Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, silent 720×1280 H.264 Main/yuv420p clip
 (31.6 s, 7,435,113 bytes), original stills, motion inspection, matching still/video route poses and paired GPU data.
 
+- **Check street furniture in metres beside an unscaled car.** Getaway's `src/game/props/dimensions.ts` sets shared
+  dimensions for all 17 clutter kinds. Mesh-bound tests catch lids and feet extending beyond colliders; a separate
+  seat-surface check fixes benches at 0.45 m seat height. The Metal scale fixture shows a 5.0 m muscle car beside a
+  1.8 m bench, 0.75 m hydrant and 0.70 m cone. Legacy mesh helpers share these dimensions. See `perf/clutter/README.md`
+  for the full audit; this visual correction has no new performance claim.
+- **Sleep on a supporting face, not a bounding-box axis.** Getaway's `src/game/props/contact-shape.ts` compiles contact
+  points into faces whose polygons support the mass centre with a tipping margin. Cone tips and narrow sign edges
+  cannot become resting faces. The solver preserves the mass centre during rotation and waits for stable orientation
+  before sleep. Tests settled 256 random cone drops, five inverted cases and 448 other prop drops; Metal proof shows
+  four tip-first/tilted cones resting on their sloping sides. Evidence: `perf/clutter/rest-proof.json`. Runtime cost
+  has not been remeasured; body-pair contacts still use decorative rounded proxies.
+
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and
@@ -335,6 +347,40 @@ operation counts and memory, not measured milliseconds.
   both identify transparent overdraw as the main expense. Keep noise coherent across overlapping elements, convert
   optical depth with `1-exp(-density*distance)`, reduce density as the cloud expands, and bound screen coverage before adding resolution.
 
+### Getaway street destruction research (2026-10-12)
+
+- **Use cheap collision shapes and sleep.** [Rapier's sleeping guide](https://rapier.rs/docs/user_guides/javascript/rigid_body_sleeping/)
+  explicitly removes stationary bodies from simulation until contact wakes them. Boxes give good ground support;
+  spheres/capsules make inexpensive pair contacts but cannot reproduce flat stacks. A small fixed-step impulse solver
+  with oriented box ground support, conservative rounded pair proxies and a spatial hash fits disposable street clutter.
+  Rapier WASM is the stronger choice for stable piles, joints and precise convex contacts; those are not required here.
+  No Rapier bundle-size or performance advantage is claimed without a measured comparison.
+- **PBD/XPBD are alternatives, not automatic upgrades.** [Small Steps](https://www.physicsbasedanimation.com/2019/08/01/small-steps-in-physics-simulation/)
+  reports that smaller substeps outperform spending the same iterations on a large XPBD step. XPBD's compliance is
+  useful for constrained/deformable systems; isolated props primarily need impulses, gravity, friction and restitution.
+  [Spatial hashing](https://carmencincotti.com/2022-10-31/spatial-hash-maps-part-one/) avoids testing all object pairs.
+  Keep sleeping entries in the hash; move only awake entries and query locally around swept car boxes.
+- **Break into authored pieces, not a voxel world.** GTA's [YFT fragment workflow](https://www.youtube.com/watch?v=LI_eCB2JVgo)
+  is evidence for pre-fractured props, not a claim about Rockstar's internal solver. Valve's
+  [breakable-prop documentation](https://developer.valvesoftware.com/wiki/Half-Life:_Alyx_Workshop_Tools/Modeling/Breakable_Props)
+  likewise separates render pieces and collision shapes. [Teardown's developer interview](https://www.gamedeveloper.com/design/combining-bombastic-heists-with-a-fully-destructible-voxel-world-in-i-teardown-i-)
+  describes whole-world voxel destruction. Getaway needs only a few material-coloured boards/chunks per prop, with
+  bounded lifetimes; procedural chunks preserve the chunky art without voxel meshing or fragment assets.
+- **Batch the pieces.** Reuse one instanced draw per prop/chunk mesh, no small-debris shadow pass, and the existing
+  alpha/additive sprite batches for water, sparks, fire, smoke and paper. The official
+  [WebGPU compute-particle sample](https://webgpu.github.io/webgpu-samples/?sample=particles) demonstrates GPU simulation
+  and instanced billboards. Compute pays at large independent particle counts; at a few thousand, a bounded CPU pool
+  avoids another pipeline, readback for gameplay-adjacent contacts and worker messaging. Measure the CPU path first.
+- **Separate the beats.** [Burnout's retrospective](https://www.gamedeveloper.com/design/devs-reflect-on-the-impact-and-legacy-of-i-burnout-paradise-i-)
+  makes spectacle and close-up crash feedback central to the game's identity. Our timing is an art-direction choice:
+  a brief bright core/light, expanding ground ring, fast ballistic chunks, then slower rising smoke and a lasting scorch.
+  Short distance-attenuated camera punch sells nearby impacts. Delay neighbouring fuel detonations slightly so a chain
+  reads as separate impacts. GTA/Burnout are visual references; no proprietary implementation is inferred.
+
+**Initial choice:** a local TypeScript solver and CPU particle pool, fixed 120 Hz with capped catch-up, sleeping active
+set, spatial hash, and the existing instanced renderer. Keep the solver free of game/DOM imports for later extraction
+only when another game has a consumer. Performance and appearance remain unverified until the clutter proof below.
+
 Candidates from the code audits; measure and playtest before moving any into the sections above.
 
 - Full AgX-style tone mapping remains a candidate; Getaway now has a simpler peak-preserving shoulder under Colour
@@ -403,6 +449,15 @@ Candidates from the code audits; measure and playtest before moving any into the
   the panel. Runtime cost is unmeasured.
 
 ## Feel
+
+- **Sleeping street props with bounded local debris.** Getaway's `src/game/props/` places 1,281 props from seed 7,
+  independently of the authoritative city RNG. Rendered car boxes wake a 120 Hz impulse solver; a spatial hash and
+  awake set skip resting bodies. Rotated box ground support and rounded pair proxies suit disposable furniture, but
+  do not provide precision stacks. Crashes produce instanced chunks and pooled sprites, with hydrant water, paper,
+  fuel chains and off-screen recovery. On the M2 Max, seven-run CPU medians were 0.00254 ms asleep, 1.0203 ms for 512
+  awake bodies, and 0.07073 ms for 2,400 particles. Valid paired total-frame GPU intervals on M5 Max Metal measured
+  +0.01554 ms for resting visible clutter (inside noise) and +0.13239 ms for 320 props plus a particle burst. Metal
+  captures verified all four reaction scenarios; playtest approval is pending. Details and raw runs: `perf/clutter/`.
 
 - **Start elapsed time on the animation-frame clock.** Getaway's first RAF timestamp can precede completion of
   synchronous scene construction. Subtracting `performance.now()` produced a first delta of -0.463 s on Metal.

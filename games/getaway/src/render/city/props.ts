@@ -4,6 +4,7 @@ import { MAT, type Mesh, type Rgb } from "../mesh"
 import { beam, cylinder, facetCone, ground, jitter, shade, SKIP, slab, type V3 } from "./kit"
 import { CURB, KERB_H, SIDEWALK } from "./streets"
 import type { LampLight } from "./types"
+import { BENCH_SEAT_HEIGHT, PROP_SIZE } from "../../game/props/dimensions"
 
 export const LEAF: Rgb[] = [
   [0.16, 0.26, 0.16],
@@ -56,7 +57,7 @@ export function tree(m: Mesh, rng: () => number, x: number, z: number, s: number
 /** Square stone planter with a tree. */
 function plantedTree(m: Mesh, rng: () => number, t: Tree, base: number) {
   const s = 0.85
-  const top = base + 0.55
+  const top = base + PROP_SIZE.planter[1]
   slab(m, t.x - s, t.x + s, base, top, t.z - s, t.z + s, PLANTER, MAT.lit, SKIP.bottom, shade(PLANTER, 1.15))
   ground(m, t.x - s + 0.15, t.x + s - 0.15, t.z - s + 0.15, t.z + s - 0.15, top + 0.005, SOIL)
   tree(m, rng, t.x, t.z, t.s, top - 0.1)
@@ -70,56 +71,66 @@ export function trees(m: Mesh, rng: () => number, city: City) {
 }
 
 export function bench(m: Mesh, x: number, z: number, alongX: boolean, y = KERB_H) {
-  const hx = alongX ? 0.9 : 0.25
-  const hz = alongX ? 0.25 : 0.9
-  slab(m, x - hx, x + hx, y + 0.42, y + 0.5, z - hz, z + hz, WOOD)
-  for (const s of [-0.75, 0.75]) {
+  const [width, height, depth] = PROP_SIZE.bench
+  const hx = alongX ? width / 2 : depth / 2
+  const hz = alongX ? depth / 2 : width / 2
+  const seat = BENCH_SEAT_HEIGHT
+  slab(m, x - hx, x + hx, y + seat - .07, y + seat, z - hz, z + hz, WOOD)
+  for (const s of [-.65, .65]) {
     const lx = alongX ? x + s : x
     const lz = alongX ? z : z + s
-    slab(m, lx - 0.05, lx + 0.05, y, y + 0.42, lz - 0.05, lz + 0.05, POLE)
+    slab(m, lx - 0.04, lx + 0.04, y, y + seat - .07, lz - 0.04, lz + 0.04, POLE)
+    const bx = alongX ? lx : x + hx - .075, bz = alongX ? z + hz - .075 : lz
+    slab(m, bx - .025, bx + .025, y + seat - .05, y + height - .05, bz - .025, bz + .025, POLE)
   }
   // Backrest on the building side.
-  if (alongX) slab(m, x - hx, x + hx, y + 0.55, y + 0.85, z + 0.18, z + 0.25, WOOD)
-  else slab(m, x + 0.18, x + 0.25, y + 0.55, y + 0.85, z - hz, z + hz, WOOD)
+  if (alongX) slab(m, x - hx, x + hx, y + seat + .06, y + height, z + hz - .07, z + hz, WOOD)
+  else slab(m, x + hx - .07, x + hx, y + seat + .06, y + height, z - hz, z + hz, WOOD)
 }
 
 function bin(m: Mesh, x: number, z: number, y = KERB_H) {
-  cylinder(m, x, z, 0.3, y, y + 0.9, 7, [0.18, 0.24, 0.2], MAT.lit, [0.1, 0.1, 0.1])
+  cylinder(m, x, z, PROP_SIZE.bin[0] / 2, y, y + PROP_SIZE.bin[1], 7, [0.18, 0.24, 0.2], MAT.lit, [0.1, 0.1, 0.1])
 }
 
-function hydrant(m: Mesh, x: number, z: number, y = KERB_H) {
-  cylinder(m, x, z, 0.16, y, y + 0.6, 6, [0.62, 0.14, 0.12])
-  m.prism(x, z, 0.18, 0.05, y + 0.6, y + 0.78, 6, [0.62, 0.14, 0.12])
-  slab(m, x - 0.25, x + 0.25, y + 0.32, y + 0.42, z - 0.07, z + 0.07, [0.55, 0.12, 0.1])
+export function hydrant(m: Mesh, x: number, z: number, y = KERB_H) {
+  const [width, height] = PROP_SIZE.hydrant
+  const red: Rgb = [.73, .16, .1]
+  cylinder(m, x, z, width / 2, y, y + .08, 8, POLE)
+  cylinder(m, x, z, .09, y + .08, y + .6, 8, red)
+  m.prism(x, z, .115, .025, y + .6, y + height, 8, red)
+  slab(m, x - width / 2, x + width / 2, y + .39, y + .49, z - .065, z + .065, red)
 }
 
 export function barrel(m: Mesh, x: number, z: number, y = 0) {
   const orange: Rgb = [0.85, 0.36, 0.1]
   const white: Rgb = [0.85, 0.85, 0.82]
-  cylinder(m, x, z, 0.32, y, y + 0.12, 8, [0.1, 0.1, 0.1])
+  cylinder(m, x, z, 0.3, y, y + 0.1, 8, [0.1, 0.1, 0.1])
   const bands = [orange, white, orange, white, orange]
-  for (let k = 0; k < bands.length; k++) cylinder(m, x, z, 0.29, y + 0.12 + k * 0.17, y + 0.29 + k * 0.17, 8, bands[k]!)
+  for (let k = 0; k < bands.length; k++) cylinder(m, x, z, 0.27, y + 0.1 + k * 0.16, y + 0.26 + k * 0.16, 8, bands[k]!)
 }
 
 /** Striped A-frame barrier. */
-export function barrier(m: Mesh, x: number, z: number, alongX: boolean, len = 2.6, y = 0) {
+export function barrier(m: Mesh, x: number, z: number, alongX: boolean, len: number = PROP_SIZE.barrier[0], y = 0) {
   const h = len / 2
   const a: V3 = alongX ? [x - h, 0, z] : [x, 0, z - h]
   const t: V3 = alongX ? [1, 0, 0] : [0, 0, 1]
   const n: V3 = alongX ? [0, 0, -1] : [-1, 0, 0]
-  for (const yy of [0.55, 0.95]) {
+  for (const yy of [.38, .72]) {
     const p = (u: number, v: number): V3 => [a[0] + t[0] * u + n[0] * 0.04, y + v, a[2] + t[2] * u + n[2] * 0.04]
-    m.decal(p(0, yy), p(len, yy), p(len, yy + 0.25), p(0, yy + 0.25), n, "hazard", [0.9, 0.9, 0.9], MAT.decal)
+    m.decal(p(0, yy), p(len, yy), p(len, yy + .18), p(0, yy + .18), n, "hazard", [0.9, 0.9, 0.9], MAT.decal)
     const q = (u: number, v: number): V3 => [a[0] + t[0] * u - n[0] * 0.04, y + v, a[2] + t[2] * u - n[2] * 0.04]
-    m.decal(q(len, yy), q(0, yy), q(0, yy + 0.25), q(len, yy + 0.25), [-n[0], 0, -n[2]], "hazard", [0.9, 0.9, 0.9], MAT.decal)
+    m.decal(q(len, yy), q(0, yy), q(0, yy + .18), q(len, yy + .18), [-n[0], 0, -n[2]], "hazard", [0.9, 0.9, 0.9], MAT.decal)
   }
   for (const u of [0.15, len - 0.15]) {
     const px = a[0] + t[0] * u
     const pz = a[2] + t[2] * u
-    beam(m, [px - n[0] * 0.4, y, pz - n[2] * 0.4], [px, y + 1.25, pz], 0.07, [0.8, 0.8, 0.78])
-    beam(m, [px + n[0] * 0.4, y, pz + n[2] * 0.4], [px, y + 1.25, pz], 0.07, [0.8, 0.8, 0.78])
+    for (const side of [-1, 1]) {
+      const fx = px + n[0] * .31 * side, fz = pz + n[2] * .31 * side
+      beam(m, [fx, y + .025, fz], [px, y + .98, pz], .06, [.8, .8, .78])
+      slab(m, fx - .04, fx + .04, y, y + .025, fz - .04, fz + .04, POLE)
+    }
   }
-  m.box(a[0] + t[0] * 0.15 - 0.08, a[0] + t[0] * 0.15 + 0.08, y + 1.25, y + 1.42, a[2] + t[2] * 0.15 - 0.08, a[2] + t[2] * 0.15 + 0.08, [1, 0.55, 0.15], MAT.emissive)
+  m.box(a[0] + t[0] * .15 - .06, a[0] + t[0] * .15 + .06, y + .98, y + PROP_SIZE.barrier[1], a[2] + t[2] * .15 - .06, a[2] + t[2] * .15 + .06, [1, .55, .15], MAT.emissive)
 }
 
 /** Lamps along every sidewalk, plus small street furniture beside some of them. */
@@ -128,15 +139,9 @@ export function streetFurniture(m: Mesh, rng: () => number, city: City, lamps: L
     const px = l.px ?? l.x
     const pz = l.pz ?? l.z
     streetLamp(m, lamps, l.x, l.z, px, pz)
-    // Inward direction (from the curb toward the buildings).
-    const ix = Math.sign(px - l.x)
-    const iz = Math.sign(pz - l.z)
-    const tx = iz !== 0 ? 1 : 0
-    const tz = ix !== 0 ? 1 : 0
-    const roll = rng()
-    if (roll < 0.3) bench(m, px + ix * 1.6 + tx * 2.2, pz + iz * 1.6 + tz * 2.2, tx === 1)
-    else if (roll < 0.5) bin(m, px + tx * 1.0 + ix * 0.2, pz + tz * 1.0 + iz * 0.2)
-    else if (roll < 0.6) hydrant(m, px - tx * 1.5, pz - tz * 1.5)
+    // Furniture is now instanced and breakable in StreetProps. Consume the old stream
+    // so later static scenery retains exactly the same seed layout.
+    rng()
   }
 }
 
@@ -159,7 +164,7 @@ export function yards(m: Mesh, city: City) {
       slab(m, y.x0, y.x1, 0, KERB_H, y.z0, y.z1, CURB, MAT.lit, SKIP.bottom, SIDEWALK)
       for (let x = y.x0 + 2; x < y.x1 - 0.5; x += 2) ground(m, x, x + 0.05, y.z0, y.z1, KERB_H + 0.003, shade(SIDEWALK, 0.82))
       for (let z = y.z0 + 2; z < y.z1 - 0.5; z += 2) ground(m, y.x0, y.x1, z, z + 0.05, KERB_H + 0.003, shade(SIDEWALK, 0.82))
-      bench(m, (y.x0 + y.x1) / 2, y.z0 + 1.2, true)
+      // Movable benches use StreetProps rather than the baked city mesh.
     } else {
       ground(m, y.x0, y.x1, y.z0, y.z1, 0.012, [0.27, 0.28, 0.3])
       const yellow: Rgb = [0.8, 0.62, 0.18]
@@ -192,10 +197,11 @@ export function cornerBeds(m: Mesh, rng: () => number, city: City) {
           const c = cz + sz * 2.1
           const d = cz + sz * 4.7
           const x0 = Math.min(a, b), x1 = Math.max(a, b), z0 = Math.min(c, d), z1 = Math.max(c, d)
-          slab(m, x0, x1, KERB_H, KERB_H + 0.75, z0, z1, PLANTER, MAT.lit, SKIP.bottom, shade(PLANTER, 1.15))
-          ground(m, x0 + 0.18, x1 - 0.18, z0 + 0.18, z1 - 0.18, KERB_H + 0.755, SOIL)
-          tree(m, rng, (x0 + x1) / 2 + (rng() - 0.5) * 0.6, (z0 + z1) / 2 + (rng() - 0.5) * 0.6, 0.9 + rng() * 0.25, KERB_H + 0.7)
-          for (let k = 0; k < 3; k++) m.prism(x0 + 0.5 + rng() * (x1 - x0 - 1), z0 + 0.5 + rng() * (z1 - z0 - 1), 0.45, 0.15, KERB_H + 0.75, KERB_H + 1.3, 5, shade(LEAF[k]!, 0.9))
+          const top = KERB_H + PROP_SIZE.planter[1]
+          slab(m, x0, x1, KERB_H, top, z0, z1, PLANTER, MAT.lit, SKIP.bottom, shade(PLANTER, 1.15))
+          ground(m, x0 + 0.18, x1 - 0.18, z0 + 0.18, z1 - 0.18, top + .005, SOIL)
+          tree(m, rng, (x0 + x1) / 2 + (rng() - 0.5) * 0.6, (z0 + z1) / 2 + (rng() - 0.5) * 0.6, 0.9 + rng() * 0.25, top - .05)
+          for (let k = 0; k < 3; k++) m.prism(x0 + 0.5 + rng() * (x1 - x0 - 1), z0 + 0.5 + rng() * (z1 - z0 - 1), 0.45, 0.15, top, top + .55, 5, shade(LEAF[k]!, 0.9))
         }
     }
 }

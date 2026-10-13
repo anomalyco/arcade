@@ -2,15 +2,20 @@ import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
 import { chassisSettings } from "../game/chassis"
 
 /** Presentation only; these values never enter shared vehicle physics. */
-export const juice = chassisSettings(true)
+export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }
 export const smokeStyles = ["Current", "Faceted puffs", "Soft volume", "Cel smoke", "Flame & wisps", "Ribbon trails", "Advected billows", "Directional billows", "Raymarched cloud"] as const
 export const smoke = { style: 6, visible: true }
-const controls: LabControl[] = ([
-  ["suspension", "Suspension springs"],
-  ["wheelContact", "Per-wheel contact"],
-  ["visibleWheels", "Steer & spin wheels"],
-  ["vehicleFeel", "Vehicle-specific feel"],
-] as const).map(([key, label]) => ({ key, label, group: "Chassis" }))
+const controls: LabControl[] = [
+  ...([
+    ["suspension", "Suspension springs"],
+    ["wheelContact", "Per-wheel contact"],
+    ["visibleWheels", "Steer & spin wheels"],
+    ["vehicleFeel", "Vehicle-specific feel"],
+  ] as const).map(([key, label]) => ({ key, label, group: "Chassis" })),
+  { key: "clutter", label: "Street clutter", group: "Props" },
+  { key: "explosions", label: "Explosions" },
+  { key: "physicsDebug", label: "Physics debug" },
+]
 export type PerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
