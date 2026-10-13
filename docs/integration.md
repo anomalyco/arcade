@@ -46,6 +46,13 @@ Wizards' latest committed change is immediate click casting (`2e3177a`), after t
 
 ## Local review
 
+Outbreak's visual quality is still under review. The current `e5554a7` version is too bright, reflective and sparse
+relative to the paintover; the functional proofs below do not establish visual approval or a target match.
+An additive art revision is being developed separately on `outbreak-look-refinement`, starting from `e5554a7`.
+It focuses on one house and its frontage, lighting/material calibration, furnishing and planting within the rendering
+budget. That revision is not yet included. Any shared-renderer changes must remain opt-in and preserve Blackout and
+Getaway defaults. This PR stays draft pending review; no deployment is authorized.
+
 Run `bun install --frozen-lockfile` at the root. Start each client from its game directory with
 `bunx --no-install vite --host 127.0.0.1`; Blackout also needs `bun scripts/build-id.ts` first.
 For the full game server use the existing `bun run dev` script from Getaway or Blackout.
