@@ -1,11 +1,27 @@
-import { LabPanel } from "../../../../packages/kit/lab-panel"
+import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
+import type { LightSettings } from "../render/car-lights"
+
+const lightControls: (LabControl & { key: keyof LightSettings })[] = [
+  { key: "beamLength", label: "Beam length", min: 2, max: 24, step: 0.5, group: "Lights" },
+  { key: "beamWidth", label: "Beam width", min: 0.05, max: 1, step: 0.01, group: "Lights" },
+  { key: "beamSpread", label: "Beam spread", min: 0, max: 6, step: 0.1, group: "Lights" },
+  { key: "beamIntensity", label: "Beam intensity", min: 0, max: 0.5, step: 0.01, group: "Lights" },
+  { key: "poolSize", label: "Pool size", min: 0.5, max: 8, step: 0.1, group: "Lights" },
+  { key: "poolIntensity", label: "Pool intensity", min: 0, max: 0.5, step: 0.01, group: "Lights" },
+  { key: "poolAhead", label: "Pool ahead", min: 1, max: 14, step: 0.25, group: "Lights" },
+  { key: "glowSize", label: "Lamp glow size", min: 0.1, max: 0.8, step: 0.01, group: "Lights" },
+  { key: "glowIntensity", label: "Lamp glow intensity", min: 0, max: 2, step: 0.05, group: "Lights" },
+  { key: "flareStrength", label: "Flare strength", min: 0, max: 0.4, step: 0.01, group: "Lights" },
+  { key: "tailGlow", label: "Taillight glow", min: 0, max: 2, step: 0.05, group: "Lights" },
+  { key: "brakeIntensity", label: "Brake intensity", min: 0, max: 4, step: 0.1, group: "Lights" },
+]
 export type PerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastUpdate = 0
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
-  constructor(q: URLSearchParams, release: () => void) {
-    super({}, [], q, release)
+  constructor(q: URLSearchParams, release: () => void, lights?: LightSettings) {
+    super(lights ?? {}, lights ? lightControls : [], q, release)
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return

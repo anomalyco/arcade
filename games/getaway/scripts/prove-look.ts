@@ -26,12 +26,13 @@ try {
     bench.reset()
     for (let i = 0; i < 12; i++) await bench.step(i, 1 / 30, true)
     const root = document.querySelector("[data-lab]")!.shadowRoot!
-    if (root.querySelector("input") || !root.querySelector<HTMLElement>("nav")!.hidden) throw new Error("Retired controls still visible")
+    if (root.querySelector('input[type="checkbox"]') || !root.querySelector<HTMLElement>("nav")!.hidden) throw new Error("Retired controls still visible")
+    if (root.querySelectorAll('input[type="range"]').length !== 12) throw new Error("Missing Lights controls")
     if (!root.querySelector("header")) throw new Error("Missing performance readout")
   })
   await page.screenshot({ path: join(out, "locked-look.png") })
   if (errors.length) throw new Error(errors.join("\n"))
-  console.log("Metal look and telemetry-only Lab passed")
+  console.log("Metal look, telemetry and Lights Lab passed")
 } finally {
   await browser.close()
   await fixture.close()

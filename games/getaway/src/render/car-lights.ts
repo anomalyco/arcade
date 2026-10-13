@@ -1,11 +1,29 @@
 import type { Vehicle } from "../../shared/config"
 
-/** 0 is the original reference; 1–3 are presentation studies selected by ?lights=N. */
-export type LightStyle = 0 | 1 | 2 | 3
+/** 0 is the original reference; 4 is the tunable default. */
+export type LightStyle = 0 | 1 | 2 | 3 | 4
 export function lightStyle(params: URLSearchParams): LightStyle {
-  const n = Number(params.get("lights") ?? 1)
-  return n === 0 || n === 2 || n === 3 ? n : 1
+  const n = Number(params.get("lights") ?? 4)
+  return n === 0 || n === 1 || n === 2 || n === 3 ? n : 4
 }
+
+/** Shared by the emissive lens, spotlight, beam, road pool and flare. */
+export const HEADLIGHT: [number, number, number] = [1, 0.93, 0.78]
+export const LIGHT_DEFAULTS = {
+  beamLength: 12,
+  beamWidth: 0.28,
+  beamSpread: 2.4,
+  beamIntensity: 0.13,
+  poolSize: 3.2,
+  poolIntensity: 0.1,
+  poolAhead: 5,
+  glowSize: 0.32,
+  glowIntensity: 0.85,
+  flareStrength: 0.09,
+  tailGlow: 0.75,
+  brakeIntensity: 1.9,
+}
+export type LightSettings = typeof LIGHT_DEFAULTS
 
 /** Lens centres match the front/rear fascia geometry (local +z is forward). */
 export function lampMounts(v: Vehicle) {

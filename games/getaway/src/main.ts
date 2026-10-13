@@ -85,7 +85,7 @@ async function main() {
   const debug = new DebugOverlay(q, () => {
     controls.release()
     controls.forward({ type: "mux-release" })
-  })
+  }, lightStyle(q) === 4 ? scene.lightSettings : undefined)
   const chat = activeSession.chat ? new Chat(document.getElementById("hud")!, controls, activeSession) : null
   let snapped = false
   let freeze = 0

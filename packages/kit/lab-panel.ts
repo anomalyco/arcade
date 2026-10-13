@@ -1,6 +1,8 @@
-export type LabControl = { key: string; label: string; on?: number; off?: number; group?: string }
+export type LabControl = { key: string; label: string; group?: string } & (
+  { min: number; max: number; step: number } | { on?: number; off?: number }
+)
 
-/** Presentation-only switches. No gameplay input leaves this host. */
+/** Presentation-only controls. No gameplay input leaves this host. */
 export class LabPanel {
   readonly host = document.createElement("aside")
   readonly header: HTMLElement
@@ -21,10 +23,13 @@ export class LabPanel {
       nav{display:flex;gap:5px;margin-bottom:6px}
       label{display:flex;align-items:center;gap:7px;padding:4px 0;cursor:pointer}
        input{accent-color:#a4dce7;margin:0}
-       h3{font:inherit;font-weight:600;margin:8px 0 3px;color:#a4b1bc}
+       label.range{display:grid;grid-template-columns:1fr 42px;gap:2px 7px}
+       input[type=range]{grid-column:1 / -1;width:100%;cursor:ew-resize}
+       output{text-align:right;font-variant-numeric:tabular-nums}
+       h3{display:flex;align-items:center;justify-content:space-between;font:inherit;font-weight:600;margin:8px 0 3px;color:#a4b1bc}
     </style><button class="pill" type="button" aria-expanded="false">~ Lab</button><section aria-label="Debug controls"><header>FPS — · Frame ms — / —\nGPU ms —</header><nav><button data-preset="on">All On</button><button data-preset="off">All Off</button></nav><div data-controls></div></section>`
     this.panel = root.querySelector("section")!
-    root.querySelector<HTMLElement>("nav")!.hidden = controls.length === 0
+    root.querySelector<HTMLElement>("nav")!.hidden = !controls.some(c => !("min" in c))
     this.header = root.querySelector("header")!
     this.pill = root.querySelector(".pill")!
     const rows = root.querySelector("[data-controls]")!
@@ -33,17 +38,46 @@ export class LabPanel {
       if (control.group && control.group !== group) {
         const heading = document.createElement("h3")
         heading.textContent = control.group
+        if (controls.some(c => c.group === control.group && "min" in c)) {
+          const copy = document.createElement("button")
+          copy.type = "button"
+          copy.textContent = "Copy"
+          copy.setAttribute("aria-label", `Copy ${control.group} JSON`)
+          copy.onclick = async () => {
+            const values = Object.fromEntries(controls.filter(c => c.group === control.group).map(c => [c.key, this.settings[c.key]]))
+            try {
+              await navigator.clipboard.writeText(JSON.stringify(values, null, 2))
+              copy.textContent = "Copied"
+            } catch { copy.textContent = "Copy failed" }
+          }
+          heading.append(copy)
+        }
         rows.append(heading)
       }
       group = control.group
       const label = document.createElement("label")
       const input = document.createElement("input")
-      input.type = "checkbox"
       input.dataset.key = control.key
       input.setAttribute("aria-label", control.label)
-      input.onchange = () => this.set(control, input.checked)
+      if ("min" in control) {
+        label.className = "range"
+        input.type = "range"
+        input.min = String(control.min)
+        input.max = String(control.max)
+        input.step = String(control.step)
+        const output = document.createElement("output")
+        input.oninput = () => {
+          this.settings[control.key] = input.valueAsNumber
+          output.value = input.value
+          rows.querySelectorAll("h3 button").forEach(button => { button.textContent = "Copy" })
+        }
+        label.append(control.label, output, input)
+      } else {
+        input.type = "checkbox"
+        input.onchange = () => this.set(control, input.checked)
+        label.append(input, control.label)
+      }
       this.inputs.set(control, input)
-      label.append(input, control.label)
       rows.append(label)
     }
     root.querySelectorAll<HTMLButtonElement>("[data-preset]").forEach((button) => {
@@ -72,11 +106,17 @@ export class LabPanel {
   }
 
   private set(control: LabControl, enabled: boolean) {
+    if ("min" in control) return
     this.settings[control.key] = enabled ? control.on ?? true : control.off ?? false
   }
   private sync() {
     this.pill.setAttribute("aria-expanded", String(this.visible))
-    for (const [control, input] of this.inputs) input.checked = this.settings[control.key] === (control.on ?? true)
+    for (const [control, input] of this.inputs) {
+      if ("min" in control) {
+        input.value = String(this.settings[control.key])
+        input.parentElement!.querySelector("output")!.value = input.value
+      } else input.checked = this.settings[control.key] === (control.on ?? true)
+    }
   }
   toggle() { this.panel.hidden = !this.panel.hidden; this.sync() }
   get visible() { return !this.panel.hidden }

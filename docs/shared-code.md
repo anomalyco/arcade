@@ -14,6 +14,8 @@ that uses it.
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
+It also accepts numeric range controls (`min`, `max`, `step`) and adds Copy JSON to groups containing sliders.
+All On / All Off affect switches only and are hidden for slider-only panels. Getaway's Lights group uses the sliders.
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
 `?perf=1` / `?lab=1`; the always-available `~ Lab` pill and Backquote toggle it.
 

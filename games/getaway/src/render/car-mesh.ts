@@ -1,7 +1,7 @@
 import { VEHICLES, type Vehicle } from "../../shared/config"
 import { type AtlasRegion, regionAspect } from "./atlas"
 import { MAT, type Mat, Mesh, type Rgb } from "./mesh"
-import type { LightStyle } from "./car-lights"
+import { HEADLIGHT, type LightStyle } from "./car-lights"
 
 /**
  * Vehicle models: faceted low-poly bodies lofted from cross-sections (chamfered hull with real wheel arches, a
@@ -16,7 +16,7 @@ const TIRE: Rgb = [0.045, 0.045, 0.05]
 const RIM: Rgb = [0.34, 0.35, 0.38]
 const HUB: Rgb = [0.16, 0.16, 0.18]
 const GLASS: Rgb = [0.05, 0.06, 0.085]
-const HEAD: Rgb = [1.0, 0.93, 0.78]
+const HEAD: Rgb = HEADLIGHT
 const TAIL: Rgb = [1.0, 0.07, 0.05]
 const AMBER: Rgb = [1.0, 0.55, 0.12]
 const CHROME: Rgb = [0.62, 0.64, 0.68]
