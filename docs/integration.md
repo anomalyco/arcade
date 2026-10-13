@@ -258,30 +258,43 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | smoke-volume-refinement | `52142be34971ce75f03e75f22fbd3550a6b73c41` | #14 |
 | docs/lab-authoring-guide | `a53508f743f543b99df692fe1c46f822ebdc9556` | — |
 | shared-human-rig | `5a55cb394ea1f01de6a3bddc809ba13e565f27af` | — |
+| lab-interaction | `a91975bfaf3355daa4064379cfedfc54cb391ff8` | — |
 
 ### Resolution log
 
 - `packages/kit/lab/main.ts`: preserved both the `hubCommands` import and the top-bar `Hub` link from `#16/#17`
-  alongside `#15`'s persistent playground world, switchable yard environments and camera framing hooks.
+  alongside `#15`'s persistent playground world, switchable yard environments and camera framing hooks, and
+  `lab-interaction`'s `commandRegistry` export and GPU output readback (`readbackOutputPixels`).
 - `packages/kit/lab/effects.ts`: combined `#15`'s `activeWalls`/`activeGround` environment queries and playground
   tyre-trail retention with `#14`'s seeded `volume.reset(activeWalls, seed)` and `growthTime + hold + fade + 1`
   smoke loop duration.
 - `shared-human-rig`: merged cleanly onto the combined branch. Exact 900-frame SHA-256 soldier parity against
   `822303310da0bd95901879570e27c5b942ca4aa9` passed in both `old` (`00bde28a…`) and `new` (`f6efd0e3…`) modes.
-- Pending additions (`perf/outbreak-autoresearch`, materials library, shadow/edge fixes, and Lab
-  interaction/comparison) enter as separate merge commits once their committed branch tips are finalized;
-  uncommitted worktree changes are never copied.
+- `lab-interaction` + Catalogue camera grammar: wired `packages/kit/dev-hub-viewer.ts` to the shared
+  `classifyWheelGesture(event, { pinchZoom: false, twoFingerScroll: "zoom" })` from `packages/kit/lab/viewport-input.ts`
+  so Catalogue shares Shift+scroll pan and wheel zoom with the Lab while preserving browser Ctrl-wheel/pinch and
+  Meta shortcut passthrough (`Stage.orbit/pan/zoomBy` keep `smooth = false` by default for demand-driven Catalogue rendering).
+  Updated `packages/kit/lab/prove-workbench.ts` step 10 (`fixture:smoke-room` A/B scrub) to adjust `#14`'s `Radius`
+  (`radius`) and `Extinction` (`extinction`) sliders rather than the pre-`#14` generic `Size`/`Density` sliders.
+- Pending additions (`perf/outbreak-autoresearch`, materials library, shadow/edge fixes, rig-page, dev-control, and
+  soldier-run) enter as separate merge commits once their committed branch tips are finalized; uncommitted worktree
+  changes are never copied.
 
 ### Verification
 
 A clean `git archive` export passed on the Studio via Hivemind:
 
 - `bun install --frozen-lockfile`
-- `bun run check:packages`: 64 passed
-- `games/getaway`: 222 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
-- `games/blackout`: 385 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun run check:packages`: 76 passed
+- `games/getaway`: 234 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 397 passed, typechecks, production build, smoke, and Worker dry-run
 - `games/outbreak`: 16 passed, typechecks, production build, smoke, and Worker dry-run
 - `games/carrier`: 371 passed, typechecks, production build, smoke, and Worker dry-run
 - `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity against `8223033` in both `old` and `new` modes
 - `bun scripts/prove-dev-hub.ts`: single-origin redirect, all four game prefixes, Vite HMR across all four games,
   Catalogue 25-asset rotation/pause/reload persistence, and `--workers` health + WebSocket forwarding passed on Metal.
+- `bun packages/kit/lab/prove-workbench.ts`: radial menu (8 fixed compass sectors, dead-zone cancel, Spawn Here),
+  marquee multi-select + single-keystroke group undo, transform gizmo + `G`/`R` numeric entry, context-aware viewport
+  cursor + sloped ground reticle, trackpad gestures (`Ctrl+wheel` pinch zoom, two-finger orbit, `Shift+scroll` pan),
+  pre-Play checkpoint restore on `Escape`, and frozen-frame A/B flip (`V`) + GPU readback split wipe (`Shift+V`) on
+  both Lab hosts (`getaway` and `blackout`) on Metal.

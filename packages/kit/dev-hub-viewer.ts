@@ -1,4 +1,5 @@
 import { Stage } from "./lab/stage"
+import { classifyWheelGesture } from "./lab/viewport-input"
 import { LabInput } from "./lab/input"
 import { Particles } from "./fx/particles"
 import { SmokeVolumes } from "./fx/volume"
@@ -152,8 +153,14 @@ export async function catalogueViewer(options: DevHubOptions) {
   for (const name of ["pointercancel", "lostpointercapture"] as const) canvas.addEventListener(name, () => { drag = undefined })
   canvas.addEventListener("contextmenu", event => event.preventDefault())
   canvas.addEventListener("wheel", event => {
-    if (event.metaKey || event.ctrlKey) return // Browser zoom, including trackpad pinch delivered as Ctrl-wheel.
-    event.preventDefault(); change(() => stage.zoomBy(Math.exp(Math.max(-100, Math.min(100, event.deltaY)) * .003)))
+    const action = classifyWheelGesture(event, { pinchZoom: false, twoFingerScroll: "zoom" })
+    if (action.kind === "ignore") return
+    event.preventDefault()
+    change(() => {
+      if (action.kind === "zoom") stage.zoomBy(action.factor)
+      else if (action.kind === "pan") stage.pan(action.dx, action.dy)
+      else stage.orbit(action.dyaw, action.dpitch)
+    })
   }, { passive: false })
   canvas.addEventListener("keydown", event => {
     if (event.metaKey || event.ctrlKey || event.altKey) return

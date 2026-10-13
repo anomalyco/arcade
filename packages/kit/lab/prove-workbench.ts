@@ -443,19 +443,19 @@ try {
       const s = (window as any).lab.sections.find((x: any) => x.id === "effects")
       s.settings.targetX = 0
       s.settings.targetZ = 0
-      s.settings.size = 0.35
-      s.settings.density = 0.25
+      s.settings.radius = 2.0
+      s.settings.extinction = 0.5
       s.retrigger()
     })
     await step(35)
     await page.locator("canvas").focus()
     await page.keyboard.press("k") // Pause at f35
-    await page.keyboard.press("b") // Pin Slot A at f35 (size=0.35, density=0.25)
-    const sizeSlider = page.getByRole("slider", { name: "Size", exact: true })
-    await sizeSlider.focus()
+    await page.keyboard.press("b") // Pin Slot A at f35 (radius=2.0, extinction=0.5)
+    const radiusSlider = page.getByRole("slider", { name: "Radius", exact: true })
+    await radiusSlider.focus()
     for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+ArrowRight")
-    const densitySlider = page.getByRole("slider", { name: "Density", exact: true })
-    await densitySlider.focus()
+    const extinctionSlider = page.getByRole("slider", { name: "Extinction", exact: true })
+    await extinctionSlider.focus()
     for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+ArrowRight")
     await page.locator("canvas").focus()
     const abAfterScrub = await page.evaluate(() => ({
@@ -464,7 +464,7 @@ try {
       activeSlot: (window as any).lab.workbench.compare.activeSlot,
     }))
     assert.equal(abAfterScrub.frames, 35, "Scrubbing while paused kept frame locked at f35")
-    assert(abAfterScrub.diffs.some((d: any) => d.key === "size"), "Slot B recorded parameter delta vs Slot A")
+    assert(abAfterScrub.diffs.some((d: any) => d.key === "radius"), "Slot B recorded parameter delta vs Slot A")
 
     await page.keyboard.press("v") // Flip to Slot A
     assert.equal(await page.evaluate(() => (window as any).lab.workbench.compare.activeSlot), "A")
