@@ -2,6 +2,32 @@
 export const motionBlurDefaults = () => ({ enabled: true, strength: 0.65, shutter: 0.5 })
 export type MotionBlurSettings = ReturnType<typeof motionBlurDefaults>
 export type MotionIdentity=string|number|object
+export type MotionKey=object
+
+/** Rig owners keep stable per-model part identities while their draw arrays are rebuilt. */
+export class MotionKeys {
+  private owners=new WeakMap<object,Map<number,MotionKey[]>>()
+  private arrays=new WeakMap<number[],(MotionKey|undefined)[]>()
+  private counts=new Map<number,number>()
+  private parts:Map<number,MotionKey[]>|undefined
+  begin(owner?:object){
+    this.counts.clear();this.parts=owner?this.owners.get(owner):undefined
+    if(owner&&!this.parts)this.owners.set(owner,this.parts=new Map())
+  }
+  key(model:number){
+    if(!this.parts)return
+    const i=this.counts.get(model)??0;this.counts.set(model,i+1)
+    let parts=this.parts.get(model);if(!parts)this.parts.set(model,parts=[])
+    return parts[i]??(parts[i]={})
+  }
+  record(array:number[],model:number){
+    const key=this.key(model)
+    let keys=this.arrays.get(array)
+    if(!keys)this.arrays.set(array,keys=[])
+    keys[array.length/12-1]=key
+  }
+  of(array:number[]){return this.arrays.get(array)}
+}
 
 /** Stable identities, not draw-order indices. Missing frames/spawns/teleports use the current transform. */
 export class PreviousTransforms {
@@ -20,6 +46,16 @@ export class PreviousTransforms {
     if (!entry) { entry = { frame: this.frame, value: new Float32Array(this.stride) }; this.entries.set(key, entry) }
     for (let i=0;i<this.stride;i++) entry.value[i] = current[offset+i]!
     entry.frame = this.frame
+  }
+}
+
+/** Packed-rig adapter for callers that mark continuity once at the beginning of a frame. */
+export class MotionHistory {
+  private history=new PreviousTransforms(12,4)
+  begin(valid:boolean){if(!valid)this.history.reset();this.history.begin()}
+  write(dst:Float32Array,offset:number,current:Float32Array,start:number,key?:MotionKey){
+    if(key)this.history.write(key,current,start,dst,offset)
+    else for(let i=0;i<12;i++)dst[offset+i]=current[start+i]!
   }
 }
 
