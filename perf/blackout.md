@@ -12,6 +12,10 @@ Use the live port from `nexus list --json`; the runner never starts or stops a p
 
 ## Final timing
 
+The table below predates Kit's subsequent approval to restore cyan monitor pools, chair shadows and multi-bounce AO.
+That follow-up is measured separately in [monitor-lights.md](monitor-lights.md); its Studio measurements must not be
+mixed with this MacBook Pro baseline.
+
 Hardware GPU, median / MAD / p95 in milliseconds. p95 across seven runs is their maximum.
 
 | View | Main median | Final median | Final MAD | Final p95 |

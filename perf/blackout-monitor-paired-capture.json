@@ -1,0 +1,64 @@
+{
+  "phase": "after",
+  "timestamp": "2026-10-12T23:21:10.800Z",
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false,
+    "hasTimestampQuery": true
+  },
+  "viewpoints": [
+    {
+      "id": "openplan_east",
+      "label": "Open-Plan Cubicles, Desk Lamp & Monitors",
+      "x": 45.2,
+      "y": 4.2,
+      "chunks": 5,
+      "visibleLights": 6,
+      "shadowLights": 3,
+      "monitorLights": 3,
+      "frame_ms": 87.628,
+      "frame_p95_ms": 126,
+      "gpu_idle_ms": 3.012,
+      "gpu_hw_ms": 1.536,
+      "scene_pass_ms": 1.083,
+      "polar_pass_ms": 0.04,
+      "post_pass_ms": 0.445
+    },
+    {
+      "id": "openplan_south",
+      "label": "Open-Plan Foyer, Lab & Cubicle Aisles",
+      "x": 46.8,
+      "y": 12.8,
+      "chunks": 6,
+      "visibleLights": 5,
+      "shadowLights": 4,
+      "monitorLights": 1,
+      "frame_ms": 86.872,
+      "frame_p95_ms": 125.6,
+      "gpu_idle_ms": 2.708,
+      "gpu_hw_ms": 1.379,
+      "scene_pass_ms": 0.927,
+      "polar_pass_ms": 0.041,
+      "post_pass_ms": 0.445
+    }
+  ],
+  "averages": {
+    "frame_ms": 87.25,
+    "gpu_idle_ms": 2.86,
+    "gpu_hw_ms": 1.458,
+    "scene_pass_ms": 1.005,
+    "polar_pass_ms": 0.041,
+    "post_pass_ms": 0.445
+  },
+  "stress4": {
+    "frame_ms": 109.1,
+    "gpu_idle_ms": 7.471,
+    "gpu_hw_ms": 5.896,
+    "scene_pass_ms": 4.23,
+    "polar_pass_ms": 0.167,
+    "post_pass_ms": 1.647
+  }
+}
