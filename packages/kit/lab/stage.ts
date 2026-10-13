@@ -19,7 +19,7 @@ struct Light {pos:vec4f,color:vec4f,dir:vec4f}
 `
 export type LabLight={x:number;y:number;z:number;radius:number;r:number;g:number;b:number;power:number;dx?:number;dy?:number;dz?:number;cone?:number}
 export type CameraWriter=(width:number,height:number,vp:Float32Array,inverse:Float32Array,eye:Float32Array,focus:readonly number[])=>void
-export type StageMarker={x:number;y:number;z:number;radius?:number;yaw?:number;kind?:"select"|"hover"|"ghost"|"invalid"}
+export type StageMarker={x:number;y:number;z:number;radius?:number;yaw?:number;pitch?:number;roll?:number;kind?:"select"|"hover"|"ghost"|"invalid"|"reticle"}
 
 const DEFAULT_PITCH = Math.atan2(22, 23)
 const DEFAULT_DIST = Math.hypot(22, 23)
@@ -377,8 +377,8 @@ export class Stage {
     this.uploadLighting(debug)
     if(this.showMarkers){
       for(const m of this.markers){
-        const tint=m.kind==="invalid"?[1,0.32,0.32]:m.kind==="ghost"?[0.52,0.92,0.72]:m.kind==="hover"?[0.75,0.86,0.95]:[0.38,0.84,0.96]
-        this.meshes.instance(this.ringModel,m.x,m.y+0.02,m.z,m.yaw??0,0,0,m.radius??0.85,tint)
+        const tint=m.kind==="invalid"?[1,0.32,0.32]:m.kind==="ghost"?[0.52,0.92,0.72]:m.kind==="reticle"?[0.62,0.88,0.96]:m.kind==="hover"?[0.75,0.86,0.95]:[0.38,0.84,0.96]
+        this.meshes.instance(this.ringModel,m.x,m.y+0.02,m.z,m.yaw??0,m.roll??0,m.pitch??0,m.radius??0.85,tint)
       }
     }
     this.meshes.upload(this.frame)

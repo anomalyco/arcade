@@ -1,3 +1,13 @@
+export {
+  createViewportCursorDOM,
+  ensureViewportCursorStyles,
+  isInteractiveFormElement,
+  sampleGroundNormal,
+  type GroundSurfaceSample,
+  type ViewportCursorState,
+  type ViewportCursorUpdate,
+} from "./viewport-cursor"
+
 export type WheelGestureAction =
   | { kind: "ignore" }
   | { kind: "zoom"; factor: number; source: "pinch" | "wheel" }

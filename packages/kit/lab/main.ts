@@ -333,6 +333,7 @@ export async function lab(options:LabOptions) {
       setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
       transform:workbench!.transform,
       compare:workbench!.compare,
+      cursor:workbench!.cursor,
       exportGameRecipe:()=>workbench!.exportGameRecipe(),
       applyGameRecipe:(raw:unknown)=>workbench!.applyGameRecipe(raw),
     },

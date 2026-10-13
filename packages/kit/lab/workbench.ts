@@ -19,9 +19,11 @@ import {
   createTransformGizmoDOM,
   createTransformState,
   createViewportCursorDOM,
+  sampleGroundNormal,
   snapGroundCoord,
   snapYawRad,
   type ActiveTransformState,
+  type GroundSurfaceSample,
   type NumericAxis,
   type TransformMode,
 } from "./transform"
@@ -120,6 +122,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let elapsed = 0
   let frames = 0
   let hoveredObjectId: string | null = null
+  let hoveredGroundSample: GroundSurfaceSample | null = null
+  let hoveredGizmoHandle: TransformMode | null = null
   let activeTransform: (ActiveTransformState & { before: FullSnapshot }) | null = null
   let boxSelectMode = false
   let lastPointerViewport: { x: number; y: number } | null = null
@@ -332,6 +336,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
     if (preserveTransport && !prevPlaying && frames > 0) {
       stepSimulationDeterministic(frames)
+    }
+    if (mode === "edit") {
+      input.enabled = false
+      input.release()
     }
     panel.sync()
     syncChrome()
@@ -675,11 +683,25 @@ export function createWorkbench(opts: WorkbenchOptions) {
     void renderNow()
   }
 
-  const viewportCursor = createViewportCursorDOM(viewportHud)
+  const viewportCursor = createViewportCursorDOM(viewportHud, { canvas, hoverDelayMs: 180 })
   const transformGizmo = createTransformGizmoDOM(viewportHud, {
-    onStartHandleDrag: (tMode, pointerId) => {
+    onHoverHandle: (tMode, clientX, clientY) => {
+      if (mode === "play" || radialState.phase !== "closed" || activeTransform) return
+      hoveredGizmoHandle = tMode
+      const vRect = viewportEl.getBoundingClientRect()
+      const lx = clientX - vRect.left
+      const ly = clientY - vRect.top
+      if (tMode) {
+        viewportCursor.update({ state: tMode, x: lx, y: ly })
+      } else {
+        viewportCursor.update({ state: "default", x: lx, y: ly })
+      }
+    },
+    onStartHandleDrag: (tMode, pointerId, clientX, clientY) => {
       if (mode === "play") return
       startTransformSelection(tMode, undefined, true)
+      const vRect = viewportEl.getBoundingClientRect()
+      viewportCursor.update({ state: tMode, x: clientX - vRect.left, y: clientY - vRect.top })
       canvas.focus({ preventScroll: true })
       try {
         canvas.setPointerCapture(pointerId)
@@ -714,6 +736,20 @@ export function createWorkbench(opts: WorkbenchOptions) {
       syncChrome()
       void renderNow()
     },
+  })
+
+  transformGizmo.root.addEventListener("contextmenu", event => event.preventDefault())
+  transformGizmo.root.addEventListener("pointerdown", event => {
+    if (mode === "play") return
+    if (event.button === 2 || (event.button === 0 && event.ctrlKey && !event.metaKey)) {
+      event.preventDefault()
+      event.stopPropagation()
+      hoveredGizmoHandle = null
+      openRadialAtScreen(event.clientX, event.clientY, false)
+      try {
+        canvas.setPointerCapture(event.pointerId)
+      } catch {}
+    }
   })
 
   const radialDOM = createRadialMenuDOM(viewportEl, radialState, handleRadialResult)
@@ -1967,13 +2003,36 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
     const ghost = spawn?.getGhost()
     if (ghost && globalSettings.section === "spawn") {
+      const groundFn = activeSection().groundHeight ?? (() => 0)
+      const gs = sampleGroundNormal(ghost.x, ghost.z, groundFn)
       stage.markers.push({
         x: ghost.x,
         y: ghost.y,
         z: ghost.z,
         yaw: ghost.yaw,
+        pitch: gs.pitch,
+        roll: gs.roll,
         radius: 0.8,
         kind: ghost.valid ? "ghost" : "invalid",
+      })
+    } else if (
+      mode === "edit" &&
+      hoveredGroundSample &&
+      !hoveredObjectId &&
+      !activeTransform &&
+      radialState.phase === "closed" &&
+      marqueeEl.hidden &&
+      !compareWipeEnabled
+    ) {
+      stage.markers.push({
+        x: hoveredGroundSample.x,
+        y: hoveredGroundSample.y,
+        z: hoveredGroundSample.z,
+        yaw: 0,
+        pitch: hoveredGroundSample.pitch,
+        roll: hoveredGroundSample.roll,
+        radius: 0.42,
+        kind: "reticle",
       })
     }
 
@@ -2461,13 +2520,21 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
-  // Exiting Play mode automatically whenever user focuses UI outside canvas
-  for (const zone of [topbar, libraryEl, inspectorEl, bottombar]) {
+  // Exiting Play mode and hiding custom viewport cursor whenever user interacts with UI panels outside canvas
+  for (const zone of [topbar, libraryEl, inspectorEl, bottombar, modalBackdrop]) {
+    zone.addEventListener("pointerenter", () => {
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hidden" })
+    })
     zone.addEventListener("pointerdown", () => {
       if (mode === "play") setPlayMode("edit")
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hidden" })
     })
     zone.addEventListener("focusin", () => {
       if (mode === "play") setPlayMode("edit")
+      hoveredGroundSample = null
+      viewportCursor.update({ state: "hidden" })
     })
   }
 
@@ -2541,6 +2608,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
       radialState.openPointer(localX, localY, rect.width, rect.height, performance.now(), ctx)
     }
     radialDOM.sync()
+    viewportCursor.update({
+      state: "radial",
+      x: localX,
+      y: localY,
+      radialVec: { dx: 0, dy: -8 },
+    })
     syncTransportAndHints()
   }
 
@@ -2569,6 +2642,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
       })
     }
     radialDOM.sync()
+    viewportCursor.update({
+      state: "radial",
+      x: radialState.visualX,
+      y: radialState.visualY,
+      radialVec: { dx: 0, dy: -8 },
+    })
     syncTransportAndHints()
   }
 
@@ -2612,12 +2691,45 @@ export function createWorkbench(opts: WorkbenchOptions) {
     canvas.setPointerCapture(event.pointerId)
   })
 
-  canvas.addEventListener("pointerleave", () => {
+  viewportEl.addEventListener("pointermove", event => {
+    if (radialState.phase === "closed" || event.target === canvas) return
+    const vRect = viewportEl.getBoundingClientRect()
+    const localX = event.clientX - vRect.left
+    const localY = event.clientY - vRect.top
+    radialState.movePointer(localX, localY)
+    radialDOM.sync()
+    const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
+    if (activeSector && !activeSector.enabled) {
+      viewportCursor.update({ state: "disabled", x: localX, y: localY })
+    } else {
+      viewportCursor.update({
+        state: "radial",
+        x: localX,
+        y: localY,
+        radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
+      })
+    }
+  })
+
+  viewportEl.addEventListener("pointerup", event => {
+    if (radialState.phase !== "holding" || event.target === canvas) return
+    const vRect = viewportEl.getBoundingClientRect()
+    const res = radialState.releasePointer(event.clientX - vRect.left, event.clientY - vRect.top, performance.now())
+    radialDOM.sync()
+    handleRadialResult(res)
+  })
+
+  viewportEl.addEventListener("pointerleave", () => {
+    hoveredGroundSample = null
+    hoveredGizmoHandle = null
     viewportCursor.update({ state: "hidden" })
+    syncStageMarkers()
+    void renderNow()
   })
 
   canvas.addEventListener("pointermove", event => {
     if (mode === "play") {
+      hoveredGroundSample = null
       viewportCursor.update({ state: "hidden" })
       return
     }
@@ -2629,7 +2741,17 @@ export function createWorkbench(opts: WorkbenchOptions) {
     if (radialState.phase !== "closed") {
       radialState.movePointer(localX, localY)
       radialDOM.sync()
-      viewportCursor.update({ state: "hidden" })
+      const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
+      if (activeSector && !activeSector.enabled) {
+        viewportCursor.update({ state: "disabled", x: localX, y: localY })
+      } else {
+        viewportCursor.update({
+          state: "radial",
+          x: localX,
+          y: localY,
+          radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
+        })
+      }
       return
     }
     const [u, v] = canvasUV(event)
@@ -2637,6 +2759,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
 
     if (activeTransform) {
+      hoveredGroundSample = null
       if (activeTransform.mode === "move") {
         const hit = stage.pickGround(u, v, groundFn)
         if (hit) {
@@ -2647,7 +2770,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
             state: "move",
             x: localX,
             y: localY,
-            label: `(${activeTransform.currentX.toFixed(2)}, ${activeTransform.currentZ.toFixed(2)})`,
           })
           panel.sync()
           syncChrome()
@@ -2660,12 +2782,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
         const rawRad = Math.atan2(localX - cx, -(localY - cy))
         activeTransform.currentYaw = snapYawRad(rawRad, event.shiftKey, event.altKey)
         applyActiveTransformToWorld(activeTransform)
-        const deg = Math.round((activeTransform.currentYaw * 180) / Math.PI)
         viewportCursor.update({
           state: "rotate",
           x: localX,
           y: localY,
-          label: `${deg}°`,
         })
         panel.sync()
         syncChrome()
@@ -2683,6 +2803,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       dragState.lastX = event.clientX
       dragState.lastY = event.clientY
       if (dragState.moved) {
+        hoveredGroundSample = null
         if (dragState.marquee) {
           const rect = canvas.getBoundingClientRect()
           const mRect = normalizeMarqueeRect(
@@ -2700,15 +2821,16 @@ export function createWorkbench(opts: WorkbenchOptions) {
           marqueeEl.style.height = `${mRect.height}px`
           const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
           marqueeEl.textContent = hits.length ? `${hits.length}` : ""
-          viewportCursor.update({ state: "marquee", x: localX, y: localY, label: `${hits.length} selected` })
+          viewportCursor.update({ state: "marquee", x: localX, y: localY })
+          syncStageMarkers()
           return
         }
         if (dragState.button === 1 || dragState.shift) {
           stage.pan(-dx, -dy, true)
-          viewportCursor.update({ state: "pan", x: localX, y: localY, label: "Pan" })
+          viewportCursor.update({ state: "pan", x: localX, y: localY })
         } else if (dragState.button === 0) {
           stage.orbit(-dx * 0.0065, dy * 0.0055, true)
-          viewportCursor.update({ state: "orbit", x: localX, y: localY, label: "Orbit" })
+          viewportCursor.update({ state: "orbit", x: localX, y: localY })
         }
         syncStageMarkers()
         void renderNow()
@@ -2718,40 +2840,69 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
     const ghost = spawn?.getGhost()
     if (ghost && globalSettings.section === "spawn") {
+      hoveredGroundSample = null
       const hit = stage.pickGround(u, v, groundFn)
       if (hit) {
         const gx = snapGroundCoord(hit.x, event.altKey)
         const gz = snapGroundCoord(hit.z, event.altKey)
+        const isValid = spawn!.isValidYardPoint(gx, gz)
+        const gs = sampleGroundNormal(gx, gz, groundFn)
         spawn!.setGhost({
           ...ghost,
           x: gx,
-          y: groundFn(gx, gz),
+          y: gs.y,
           z: gz,
-          valid: spawn!.isValidYardPoint(gx, gz),
+          valid: isValid,
         })
         viewportCursor.update({
-          state: "place",
+          state: isValid ? "place" : "disabled",
           x: localX,
           y: localY,
-          label: `${ghost.kind} (${gx.toFixed(1)}, ${gz.toFixed(1)})`,
+          normal: { nx: gs.nx, ny: gs.ny, nz: gs.nz },
         })
         syncChrome()
         void renderNow()
+      } else {
+        viewportCursor.update({ state: "disabled", x: localX, y: localY })
       }
+      return
+    }
+
+    if (hoveredGizmoHandle) {
+      viewportCursor.update({ state: hoveredGizmoHandle, x: localX, y: localY })
       return
     }
 
     const picked = pickObjectAt(u, v)
     const nextHover = picked?.id ?? null
     if (picked) {
+      hoveredGroundSample = null
       viewportCursor.update({ state: "hover", x: localX, y: localY, label: picked.label })
     } else {
-      viewportCursor.update({ state: boxSelectMode ? "marquee" : "idle", x: localX, y: localY })
+      const hit = stage.pickGround(u, v, groundFn)
+      if (!hit || (sec.id === "spawn" && spawn && !spawn.isValidYardPoint(hit.x, hit.z))) {
+        hoveredGroundSample = null
+        viewportCursor.update({ state: "disabled", x: localX, y: localY })
+      } else {
+        hoveredGroundSample = sampleGroundNormal(hit.x, hit.z, groundFn)
+        viewportCursor.update({
+          state: boxSelectMode ? "marquee" : "default",
+          x: localX,
+          y: localY,
+          normal: {
+            nx: hoveredGroundSample.nx,
+            ny: hoveredGroundSample.ny,
+            nz: hoveredGroundSample.nz,
+          },
+        })
+      }
     }
     if (nextHover !== hoveredObjectId) {
       hoveredObjectId = nextHover
-      canvas.style.cursor = hoveredObjectId ? "pointer" : boxSelectMode ? "crosshair" : "grab"
       syncChrome()
+      void renderNow()
+    } else if (hoveredGroundSample) {
+      syncStageMarkers()
       void renderNow()
     }
   })
@@ -3300,6 +3451,18 @@ export function createWorkbench(opts: WorkbenchOptions) {
       },
       start: (tMode: TransformMode) => startTransformSelection(tMode),
       commit: commitActiveTransform,
+    },
+    cursor: {
+      get state() {
+        return viewportCursor.el.dataset.cursorState ?? "hidden"
+      },
+      get labelVisible() {
+        return viewportCursor.tag.dataset.visible === "true" && !viewportCursor.tag.hidden
+      },
+      get groundSample() {
+        return hoveredGroundSample
+      },
+      update: viewportCursor.update,
     },
     radial: {
       state: radialState,

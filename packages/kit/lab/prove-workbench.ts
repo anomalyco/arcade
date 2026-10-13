@@ -325,14 +325,84 @@ try {
       "Single Meta+Z restored entire deleted group",
     )
 
-    // 8. Transform Gizmo & Modal (G move + numeric entry + Shift+R rotate)
+    // 8. Transform Gizmo & Modal (G move + numeric entry + Shift+R rotate) + Context-Aware Viewport Cursor States
     await page.evaluate(() => {
       const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
       const firstProp = s.objects().find((o: any) => o.category === "prop")
       if (firstProp) s.selectObject(firstProp.id)
     })
     await step(2)
+    // Hover Rotate gizmo handle -> cursor state "rotate"
+    const rotateHandleBox = (await page.locator('[data-gizmo-handle="rotate"]').boundingBox())!
+    await page.mouse.move(rotateHandleBox.x + rotateHandleBox.width / 2, rotateHandleBox.y + rotateHandleBox.height / 2)
+    assert.equal(await page.evaluate(() => (window as any).lab.workbench.cursor.state), "rotate", "Cursor adapts to rotate handle")
     if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-transform-gizmo.png") })
+
+    // Hover selectable car -> cursor state "hover" + delayed target label after 200ms
+    const carScreen = await page.evaluate(() => {
+      const st = (window as any).lab.context.stage
+      const vp = document.querySelector("[data-lab-viewport]")!.getBoundingClientRect()
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      const car = s.objects().find((o: any) => o.id === "character:active")!
+      const p = st.projectWorld(car.x, car.y + 0.35, car.z)
+      return { x: vp.left + p.u * vp.width, y: vp.top + p.v * vp.height }
+    })
+    await page.mouse.move(carScreen.x, carScreen.y)
+    assert.equal(await page.evaluate(() => (window as any).lab.workbench.cursor.state), "hover", "Cursor state is hover over selectable object")
+    await page.waitForFunction(() => (window as any).lab.workbench.cursor.labelVisible, undefined, { timeout: 2000 })
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "cursor-hover-object.png") })
+
+    // Hover empty sloped ramp (x=10, z=-3) -> cursor state "default" with surface normal + 3D reticle marker
+    const rampScreen = await page.evaluate(async () => {
+      const st = (window as any).lab.context.stage
+      st.frameTarget(10, 0.4, -3, 16)
+      await (window as any).lab.render()
+      const vp = document.querySelector("[data-lab-viewport]")!.getBoundingClientRect()
+      const p = st.projectWorld(10, 0.5, -3)
+      return { x: vp.left + p.u * vp.width, y: vp.top + p.v * vp.height }
+    })
+    await page.mouse.move(rampScreen.x, rampScreen.y)
+    await step(1)
+    const rampCursor = await page.evaluate(() => ({
+      state: (window as any).lab.workbench.cursor.state,
+      sample: (window as any).lab.workbench.cursor.groundSample,
+      pointerLock: document.pointerLockElement,
+    }))
+    assert.equal(rampCursor.state, "default", "Cursor state is default reticle over empty ground")
+    assert(rampCursor.sample && rampCursor.sample.slopeDeg > 4, "Ground reticle sampled sloped ramp surface normal")
+    assert.equal(rampCursor.pointerLock, null, "Never uses pointer lock in Edit mode")
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "cursor-ground-reticle.png") })
+
+    await page.evaluate(async () => {
+      const st = (window as any).lab.context.stage
+      st.frameTarget(0, 0.4, 2, 18)
+      await (window as any).lab.render()
+    })
+
+    // Hover disabled radial sector (Possess on a prop) -> cursor state "disabled"
+    const propScreen = await page.evaluate(() => {
+      const st = (window as any).lab.context.stage
+      const vp = document.querySelector("[data-lab-viewport]")!.getBoundingClientRect()
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      const prop = s.objects().find((o: any) => o.category === "prop")!
+      const p = st.projectWorld(prop.x, prop.y + 0.35, prop.z)
+      return { x: vp.left + p.u * vp.width, y: vp.top + p.v * vp.height }
+    })
+    await page.mouse.move(propScreen.x, propScreen.y)
+    await page.mouse.down({ button: "right" })
+    // Move NE (slot 1 = Possess, disabled on prop)
+    await page.mouse.move(propScreen.x + 55, propScreen.y - 55)
+    assert.equal(await page.evaluate(() => (window as any).lab.workbench.cursor.state), "disabled", "Cursor state is disabled over unavailable radial sector")
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "cursor-disabled-radial.png") })
+    await page.mouse.move(propScreen.x, propScreen.y)
+    await page.waitForTimeout(200)
+    await page.mouse.up({ button: "right" })
+
+    // Hover text input / sidebar -> cursor state "hidden" (native OS cursor)
+    const searchBoxRect = (await page.getByRole("searchbox", { name: "Search library" }).boundingBox())!
+    await page.mouse.move(searchBoxRect.x + 20, searchBoxRect.y + 10)
+    assert.equal(await page.evaluate(() => (window as any).lab.workbench.cursor.state), "hidden", "Custom cursor hides over UI panels and text inputs")
+
     await page.locator("canvas").focus()
     await page.keyboard.press("g")
     for (const ch of ["3", ".", "5"]) await page.keyboard.press(ch)

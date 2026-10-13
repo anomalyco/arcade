@@ -132,6 +132,7 @@ function applyNumericBufferValue(state: ActiveTransformState): boolean {
 export type TransformGizmoCallbacks = {
   onStartHandleDrag: (mode: TransformMode, pointerId: number, clientX: number, clientY: number) => void
   onCommitNumeric: (axis: NumericAxis, value: number) => void
+  onHoverHandle?: (mode: TransformMode | null, clientX: number, clientY: number) => void
 }
 
 export function createTransformGizmoDOM(host: HTMLElement, callbacks: TransformGizmoCallbacks) {
@@ -200,6 +201,15 @@ export function createTransformGizmoDOM(host: HTMLElement, callbacks: TransformG
   const fieldYaw = makeNumericField("yaw", "°", "5")
   numBar.append(fieldX.wrap, fieldZ.wrap, fieldYaw.wrap)
 
+  moveBtn.addEventListener("pointerenter", event => {
+    callbacks.onHoverHandle?.("move", event.clientX, event.clientY)
+  })
+  moveBtn.addEventListener("pointermove", event => {
+    callbacks.onHoverHandle?.("move", event.clientX, event.clientY)
+  })
+  moveBtn.addEventListener("pointerleave", event => {
+    callbacks.onHoverHandle?.(null, event.clientX, event.clientY)
+  })
   moveBtn.addEventListener("pointerdown", event => {
     if (event.button !== 0) return
     event.preventDefault()
@@ -207,6 +217,15 @@ export function createTransformGizmoDOM(host: HTMLElement, callbacks: TransformG
     callbacks.onStartHandleDrag("move", event.pointerId, event.clientX, event.clientY)
   })
 
+  rotateBtn.addEventListener("pointerenter", event => {
+    callbacks.onHoverHandle?.("rotate", event.clientX, event.clientY)
+  })
+  rotateBtn.addEventListener("pointermove", event => {
+    callbacks.onHoverHandle?.("rotate", event.clientX, event.clientY)
+  })
+  rotateBtn.addEventListener("pointerleave", event => {
+    callbacks.onHoverHandle?.(null, event.clientX, event.clientY)
+  })
   rotateBtn.addEventListener("pointerdown", event => {
     if (event.button !== 0) return
     event.preventDefault()
@@ -261,55 +280,14 @@ export function createTransformGizmoDOM(host: HTMLElement, callbacks: TransformG
   }
 }
 
-export type ViewportCursorState =
-  | "hidden"
-  | "idle"
-  | "hover"
-  | "place"
-  | "move"
-  | "rotate"
-  | "marquee"
-  | "pan"
-  | "orbit"
+export {
+  createViewportCursorDOM,
+  ensureViewportCursorStyles,
+  isInteractiveFormElement,
+  sampleGroundNormal,
+  type GroundSurfaceSample,
+  type ViewportCursorState,
+  type ViewportCursorUpdate,
+} from "./viewport-cursor"
 
-export function createViewportCursorDOM(host: HTMLElement) {
-  const el = document.createElement("div")
-  el.className = "lab-viewport-cursor"
-  el.dataset.viewportCursor = ""
-  el.dataset.cursorState = "hidden"
-  el.hidden = true
-
-  const ring = document.createElement("span")
-  ring.className = "lab-viewport-cursor-ring"
-  const tag = document.createElement("span")
-  tag.className = "lab-viewport-cursor-tag"
-  tag.dataset.cursorTag = ""
-  el.append(ring, tag)
-  host.append(el)
-
-  function update(opts: {
-    state: ViewportCursorState
-    x?: number
-    y?: number
-    label?: string
-  }) {
-    el.dataset.cursorState = opts.state
-    if (opts.state === "hidden") {
-      el.hidden = true
-      return
-    }
-    el.hidden = false
-    if (opts.x !== undefined && opts.y !== undefined) {
-      el.style.left = `${Math.round(opts.x)}px`
-      el.style.top = `${Math.round(opts.y)}px`
-    }
-    tag.textContent = opts.label ?? ""
-    tag.hidden = !opts.label
-  }
-
-  return {
-    el,
-    update,
-  }
-}
 
