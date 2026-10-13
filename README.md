@@ -18,6 +18,9 @@ Getaway, Blackout, Outbreak and `packages/*` share a Bun workspace and the root 
 checks and development commands in the game you are changing. Shared code is the private `@arcade/kit` source package.
 Wings, landing and redirects keep their own installs and lockfiles.
 
+Record matching Getaway runs: `bun scripts/compare-video.ts --version Before=ref:4495277 --version Now=url:http://getaway-smoke.localhost:1355 --layout stack --out captures/compare/night.mp4`.
+Use `--also-side captures/compare/night-side.mp4` for both layouts; high quality is the default (2× capture, 1080-wide stack / 2560-wide side). Add `--zoom 1.35` for closer framing or `--quality draft` for smaller files; see `--help` for all options.
+
 ```sh
 bun install --frozen-lockfile
 bun run check:packages
