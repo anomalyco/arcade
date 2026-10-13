@@ -39,6 +39,7 @@ export function swingTarget(w: World, p: Player): Player | null {
 export function stepSwing(w: World, p: Player): void {
   if (p.swingAt === 0 || w.time < p.swingAt) return
   p.swingAt = 0
+  if (w.spells) w.spells.bonk(w, p)
   const q = swingTarget(w, p)
-  if (q) w.damage(q, q.health + 1000, p, "melee", p.x, p.y)
+  if (q) w.damage(q, w.spells ? p.kit.damage : q.health + 1000, p, "melee", p.x, p.y)
 }

@@ -1,4 +1,5 @@
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { SPELL_CONTROLS, spellDefaults, type SpellConfig } from "../../shared/sim/spell-config"
 
 export const JUICE_LABELS = {
   wizards: "Wizards",
@@ -6,10 +7,10 @@ export const JUICE_LABELS = {
   rings: "Sound Rings", paper: "Fluttering Paper", glass: "Glass Shards",
   sparks: "Monitor Sparks", casings: "Shell Casings", lamps: "Lamp Flicker", trauma: "Shake & Kill Punch",
 } as const
-export type Juice = Record<keyof typeof JUICE_LABELS, boolean> & { monitorIntensity: number; aoStrength: number }
-export const juiceSettings = (enabled = true): Juice => ({ wizards: false, monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: false, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: false, trauma: enabled })
+export type Juice = Record<keyof typeof JUICE_LABELS, boolean> & SpellConfig & { showRunes: boolean; monitorIntensity: number; aoStrength: number }
+export const juiceSettings = (enabled = true): Juice => ({ ...spellDefaults(), showRunes: false, wizards: false, monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: false, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: false, trauma: enabled })
 export type Perf = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
-const controls: LabControl[] = Object.entries(JUICE_LABELS).map(([key, label]) => ({ key, label }))
+const controls: LabControl[] = [...Object.entries(JUICE_LABELS).map(([key, label]) => ({ key, label })), { key: "showRunes", label: "Show runes", group: "Spells" }, ...Object.entries(SPELL_CONTROLS).map(([key,c]) => ({ key, label: c.label, min: c.min, max: c.max, step: c.step, group: "Spells" }))]
 
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []

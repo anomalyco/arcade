@@ -76,7 +76,7 @@ export class RoomCore {
     if (msg.type === "intent") {
       const i = msg.i
       const a = this.active.get(id)
-      if (a && (i.mx || i.my || i.fire || i.reload || i.equip || i.use || Math.abs(i.aim - a.aim) > AIM_ACTIVE)) a.at = this.clock()
+      if (a && (i.mx || i.my || i.fire || i.reload || i.equip || i.use || i.cast || i.enter || Math.abs(i.aim - a.aim) > AIM_ACTIVE)) a.at = this.clock()
       if (a) a.aim = i.aim
       this.world.push(id, msg.seq, i)
       return
@@ -87,6 +87,7 @@ export class RoomCore {
     else if (msg.type === "vote") this.world.vote(id, msg.mode)
     else if (msg.type === "team") moveTeam(this.world, id, msg.id, msg.team)
     else if (msg.type === "shuffle") shuffleTeams(this.world, id)
+    else if (msg.type === "spells" && id === this.world.host && this.world.spells) this.world.spells.config = msg.config
     else if (msg.type === "host" && msg.action === "maps") hostMaps(this.world, id, msg.maps)
     else if (msg.type === "host") hostRestart(this.world, id, msg.action === "mode" ? msg.mode : this.world.mode.id, msg.newFloor)
   }

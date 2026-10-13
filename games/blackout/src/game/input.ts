@@ -9,6 +9,10 @@ export type MuxKey = { type: "mux-key"; kind: "keydown" | "keyup"; code: string;
 export type MuxMouse = { type: "mux-mouse"; nx: number; ny: number; buttons?: number; down?: number; up?: number; wheel?: number }
 
 export class Input {
+  runeMode = false
+  stroke: { x: number; y: number }[] = []
+  private completedStroke: { x: number; y: number }[] | null = null
+  takeStroke() { const stroke = this.completedStroke; this.completedStroke = null; return stroke }
   private keys = new Set<string>()
   /** The character each held key produced when it went down. */
   private chars = new Map<string, string>()
@@ -30,7 +34,7 @@ export class Input {
 
   constructor(canvas: HTMLElement) {
     canvas.tabIndex = -1
-    addEventListener("keydown", (e) => {
+    window.addEventListener("keydown", (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.code === "Tab") e.preventDefault()
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
@@ -38,16 +42,16 @@ export class Input {
       if (this.mux) { if (!e.repeat) this.forward(msg) }
       else this.key(msg)
     })
-    addEventListener("keyup", (e) => {
+    window.addEventListener("keyup", (e) => {
       const msg: MuxKey = { type: "mux-key", kind: "keyup", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey }
       if (this.mux) this.forward(msg)
       else this.key(msg)
     })
-    addEventListener("blur", () => {
+    window.addEventListener("blur", () => {
       if (this.mux) this.forward({ type: "mux-release" })
       this.release()
     })
-    addEventListener("mousemove", (e) => {
+    window.addEventListener("mousemove", (e) => {
       this.mouseEvent(e)
     })
     canvas.addEventListener("mousedown", (e) => {
@@ -55,7 +59,7 @@ export class Input {
       canvas.focus({ preventScroll: true })
       this.mouseEvent(e, { down: e.button })
     })
-    addEventListener("mouseup", (e) => {
+    window.addEventListener("mouseup", (e) => {
       this.mouseEvent(e, { up: e.button })
     })
     canvas.addEventListener("wheel", (e) => {
@@ -63,7 +67,7 @@ export class Input {
       this.mouseEvent(e, { wheel: e.deltaY })
     }, { passive: false })
     canvas.addEventListener("contextmenu", (e) => e.preventDefault())
-    addEventListener("message", (e) => {
+    window.addEventListener("message", (e) => {
       if (!this.accepts(e)) return
       const m = e.data
       if (m?.type === "mux-key" && (m.kind === "keydown" || m.kind === "keyup") && typeof m.code === "string" && typeof m.key === "string") this.key(m)
@@ -77,6 +81,7 @@ export class Input {
   forward(message: object): void { if (this.mux) parent.postMessage({ ...message, run: this.muxRun }, this.parentOrigin) }
 
   release(): void {
+    this.stroke = []; this.completedStroke = null
     this.keys.clear()
     this.chars.clear()
     this.firing = this.looking = this.reloadPressed = this.equipPressed = this.meleePressed = this.enterPressed = this.seatPressed = false
@@ -104,7 +109,7 @@ export class Input {
     if (e.code === "KeyR" || k === "r") this.reloadPressed = true
     if ((e.code === "KeyG" || k === "g") && !repeat) this.equipPressed = true
     if ((e.code === "KeyV" || k === "v") && !repeat) this.meleePressed = true
-    if ((e.code === "KeyF" || e.code === "KeyE") && !repeat) this.enterPressed = true
+    if ((e.code === "KeyF" || k === "f" || (!this.runeMode && e.code === "KeyE")) && !repeat) this.enterPressed = true
     if (e.code === "KeyC" && !repeat) this.seatPressed = true
   }
 
@@ -117,6 +122,14 @@ export class Input {
   private pointer(m: MuxMouse): void {
     this.mouse.x = Math.max(0, Math.min(1, m.nx)) * innerWidth
     this.mouse.y = Math.max(0, Math.min(1, m.ny)) * innerHeight
+    if (this.runeMode && this.enabled) {
+      if (m.down === 2) this.stroke = [{ ...this.mouse }]
+      else if (this.looking && this.stroke.length < 2048) {
+        const last = this.stroke.at(-1)
+        if (!last || Math.hypot(last.x-this.mouse.x,last.y-this.mouse.y)>2) this.stroke.push({ ...this.mouse })
+      }
+      if (m.up === 2) { this.completedStroke = this.stroke; this.stroke = [] }
+    }
     if (Number.isInteger(m.buttons)) {
       this.firing = (m.buttons! & 1) !== 0
       this.looking = (m.buttons! & 2) !== 0

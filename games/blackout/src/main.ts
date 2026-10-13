@@ -18,6 +18,7 @@ import { ModeHud } from "./ui/modes-hud"
 import { DebugOverlay, juiceSettings } from "./ui/debug-overlay"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { Rng } from "../shared/rng"
+import { SpellHud } from "./ui/spell-hud"
 
 const MAX_DPR = 1.5
 const NAME_KEY = "blackout.name"
@@ -61,6 +62,7 @@ async function main() {
   const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) })
   input.onWheel = (delta) => { cam.zoomOffset = Math.max(-10, Math.min(24, cam.zoomOffset + Math.sign(delta))) }
   const hud = new Hud(document.getElementById("hud")!)
+  const spellHud = new SpellHud()
   const modeHud = new ModeHud(document.getElementById("hud")!)
   let session: Session | null = null
   let game: Game | null = null
@@ -96,7 +98,8 @@ async function main() {
   const sandbox = (name: string) => {
     const random = new Rng(seed)
     Math.random = () => random.next()
-    begin(name, (n) => new SandboxSession(n, input.mux ? "rifle" : gun, input.mux ? "frag" : equip, seed))
+    begin(name, (n) => new SandboxSession(n, input.mux ? "rifle" : gun, input.mux ? "frag" : equip, seed, modeOf(params.get("mode")) ?? "ffa"))
+    if (session instanceof SandboxSession) (globalThis as { practice?: unknown }).practice = session.world
     cam.zoomOffset = 0
     game!.update(0, input, cam, innerWidth, innerHeight, 0)
     if (game!.body) cam.snap(game!.body.x, game!.body.y)
@@ -192,8 +195,26 @@ async function main() {
     } else if (m?.type === "mux-sync" && validState(m)) game.sync(m)
   })
   ready()
+  // Automation clock: scripted mouse paths still use real Input and shared simulation.
+  const manual = params.has("manual") && params.get("sandbox") === "1"
+  let manualNow = 0
+  let manualRenderDt = 0
+  if (params.has("bench")) Object.assign(globalThis, { wizardProof: { get game() { return game }, cam, input } })
+  if (manual) Object.assign(globalThis, { advance: async (ms: number) => {
+    for (let i=0;i<Math.ceil(ms/(1000/60));i++) {
+      manualNow+=1000/60
+      manualRenderDt+=1/60
+      input.enabled=game?.snap?.phase==="play"
+      game?.update(1/60,input,cam,innerWidth,innerHeight,manualNow)
+      if (game?.body) cam.snap(game.body.x,game.body.y)
+      if (i%3===2) await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))
+    }
+    if (game?.body) cam.snap(game.body.x,game.body.y)
+    await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))
+  } })
   const frame = (now: number) => {
-    const elapsed = now - last
+    if (manual) now=manualNow
+    const elapsed = manual ? 0 : now - last
     const dt = Math.min(0.1, elapsed / 1000)
     last = now
     const w = innerWidth
@@ -208,17 +229,19 @@ async function main() {
       const fx = spec?.x ?? body?.x ?? game.map.size[0] / 2
       const fz = spec?.y ?? body?.y ?? game.map.size[1] / 2
       // Look-ahead: the view leans toward the cursor; holding right click leans much further (scouting, sniping).
-      const far = input.looking && alive
+      const far = input.looking && alive && !input.runeMode
       const k = far ? 0.65 : 0.35
       const cap = far ? 11 : 5
       // Driving, it leads ahead along the road instead.
       const lead = alive && !far ? game.vehicleLead() : null
       const lx = lead ? lead.x : alive && body ? Math.max(-cap, Math.min(cap, (game.cursor.x - body.x) * k)) : 0
       const lz = lead ? lead.y : alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
-      cam.follow(fx, fz, input.mux ? 0 : lx, input.mux ? 0 : lz, dt, !body, alive && !!game.riding)
+      cam.follow(fx, fz, input.mux || input.runeMode ? 0 : lx, input.mux || input.runeMode ? 0 : lz, dt, !body, alive && !!game.riding)
       if (input.mux && body) { cam.snap(body.x, body.y); cam.dist = 24 + cam.zoomOffset }
-      renderer.render(game.build(cam, w, h, dt))
+      renderer.render(game.build(cam, w, h, manual ? manualRenderDt : dt))
+      manualRenderDt=0
       hud.update(game, cam, w, h, input.mouse, session.status())
+      spellHud.draw(game,input,cam,w,h)
       modeHud.update(game, cam, w, h)
       menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab") || scores, (id) => game!.colorOf(id))
       telemetry.enabled = debug.visible || input.mux

@@ -6,6 +6,14 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Proving a change
 
+- **Keep spell proof on the real input path.** Blackout's `scripts/prove-wizards-spells.ts` reads scrolls with F and
+  draws through Chromium mouse events. Its manual sandbox clock advances both simulation and animation between
+  captures; advancing simulation alone left the rig's planted feet behind. The inspected Metal proof captured a
+  dummy in a growing moon, its moving polar shadow and damaging pop, a rising skeleton pursuing its caster, and
+  a 71.6%-confidence degraded moon. Dvorak movement continued while drawing; there were no browser errors.
+  `shared/sim/spells.ts` owns the authoritative entities and `tests/spells.test.ts` verifies deterministic replay
+  and two room connections receiving the same cast. Runtime cost and live two-browser room play are unmeasured.
+
 - **Measure before you edit.** Record a baseline on the unchanged code, then make one change at a time. Use one warmup
   and seven or more measured runs, and compare medians with their spread. Results go in `perf/results.jsonl`.
 - **Separate GPU time from frame time.** Frame time is capped by vsync. Use `timestamp-query` where the adapter has it,

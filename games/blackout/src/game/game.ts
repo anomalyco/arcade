@@ -36,6 +36,12 @@ import { VehicleSound } from "../audio/vehicle-sound"
 import { FLOOR } from "../render/vehicle-mesh"
 import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
 import { mapFires } from "./map-fx"
+import { castleHall } from "../../shared/maps/castle-hall"
+import { spellConfig, SPELL_NAMES, type CastIntent } from "../../shared/sim/spell-config"
+import { recognize } from "./runes"
+import { SpellFx } from "./spell-fx"
+import { skeletonModels } from "../render/skeleton"
+import type { ModeId } from "../../shared/sim/modes"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -90,8 +96,8 @@ export class SandboxSession implements Session {
   private dummySpawns = new Map<string, { x: number; y: number; aim: number }>()
   private snapshot!: { snap: Snapshot; at: number }
 
-  constructor(name: string, gun: Gun, equip: Equip, seed: number) {
-    this.world = new World(seed, getMap("office", seed), "ffa")
+  constructor(name: string, gun: Gun, equip: Equip, seed: number, mode: ModeId = "ffa") {
+    this.world = new World(seed, getMap("office", seed), mode)
     this.world.botFill = 4
     this.world.addHuman(this.myId, name, gun, equip)
     this.world.fill()
@@ -126,6 +132,8 @@ export class SandboxSession implements Session {
   close(): void {}
 
   send(msg: ClientMsg): void {
+    if (msg.type === "spells" && this.world.spells) this.world.spells.config = spellConfig(msg.config)
+    if (this.world.spells && (msg.type === "gun" || msg.type === "equip")) return
     if (msg.type === "intent") this.world.push(this.myId, msg.seq, { ...msg.i, reload: false })
     if (msg.type === "gun") {
       this.world.pickGun(this.myId, msg.gun)
@@ -147,9 +155,9 @@ export class SandboxSession implements Session {
       const me = this.world.players.get(this.myId)!
       me.mag = me.kit.mag
       me.reloadUntil = 0
-      me.equipLeft = 99
+      if (!this.world.spells) me.equipLeft = 99
       this.world.step()
-      if (this.passive) for (const [id, spawn] of this.dummySpawns) {
+      if (this.passive && !this.world.spells) for (const [id, spawn] of this.dummySpawns) {
         const p = this.world.players.get(id)
         if (p?.alive) Object.assign(p, spawn, { vx: 0, vy: 0 })
       }
@@ -249,6 +257,10 @@ export class Game {
   private models: PartModels
   private soldierParts: PartModels
   private wizardParts: PartModels
+  private spellFx: SpellFx
+  private spellTuning = ""
+  private pendingCast: CastIntent | undefined
+  runeResult: { at: number; text: string } | null = null
   private sourceMap!: MapDef
   private wizardLook = false
   private gear: { frag: number; claymore: number; led: number }
@@ -306,6 +318,7 @@ export class Game {
     })
     this.soldierParts = register(personModels())
     this.wizardParts = register(wizardModels())
+    this.spellFx = new SpellFx(renderer, register(skeletonModels()))
     this.models = this.soldierParts
     const gm = gearModels()
     this.gear = { frag: reg(gm.frag), claymore: reg(gm.claymore), led: reg(gm.led) }
@@ -326,16 +339,19 @@ export class Game {
 
   /** Rebuild static presentation only when the lab switch changes; preserve live actors and simulation. */
   private applyLook(): void {
-    this.wizardLook = this.juice.wizards
+    this.wizardLook = this.juice.wizards || this.sourceMap.id === "castle-hall"
     this.models = this.wizardLook ? this.wizardParts : this.soldierParts
     const castle = this.wizardLook && this.sourceMap.kind === "office"
     const map = this.map = castle ? castleMap(this.sourceMap) : this.sourceMap
-    const level = buildLevel(map, castle)
+    const dynamic = map.id === "castle-hall"
+    if (dynamic) this.spellFx.setMap(map)
+    const staticMap = dynamic ? { ...map, props: [] } : map
+    const level = buildLevel(staticMap, castle)
     this.bounceFull = level.bounce
     this.bounceBase = bakeBounce(map, 0)
     this.bounceIntensity = -1
     this.renderer.setLevel(level)
-    this.culler.setMap(map)
+    this.culler.setMap(staticMap)
     this.culler.torchFlicker = castle
     this.monitors = deskMonitorLights(map).map(({ x, y, yaw }) => ({ x, y, yaw, broken: false }))
   }
@@ -415,7 +431,7 @@ export class Game {
       // Practice on a fixed test map (?practice&map=lot): load that rather than generating one from the seed.
       const fixed = this.session.fixedMap?.()
       if (fixed && fixed !== this.sourceMap) this.load(fixed)
-      if (s.map !== this.map.seed || s.mapKind !== this.map.kind) this.load(getMap(s.mapKind ?? "office", s.map))
+      if (s.map !== this.map.seed || s.mapKind !== this.map.kind || (s.mode.id === "wizards") !== (this.sourceMap.id === "castle-hall")) this.load(s.mode.id === "wizards" ? castleHall(s.map) : getMap(s.mapKind ?? "office", s.map))
       else if (this.snap && s.match !== this.snap.match) this.clearScene()
       for (const p of s.players) {
         if (p.id === this.myId) continue
@@ -437,13 +453,14 @@ export class Game {
         a.tvy = p.vy
         a.aim = p.aim
         a.gun = p.gun
-        a.bare = !!p.bare
+        a.bare = !!p.bare && !s.spells
         a.alive = p.alive
       }
       for (const id of [...this.avatars.keys()]) if (!s.players.some((p) => p.id === id)) this.avatars.delete(id)
       this.veh.ingest(s, this.now)
       const mine = s.players.find((p) => p.id === this.myId)
       if (mine) this.reconcile(s, mine)
+      if (s.spells) this.solids = [...this.blockers, ...s.spells.props.filter(p => this.sourceMap.props[p.id]?.solid && p.h < 0.2).map(p => { const r=this.sourceMap.props[p.id]!.rect, hw=(r[2]-r[0])/2,hd=(r[3]-r[1])/2; return [p.x-hw,p.y-hd,p.x+hw,p.y+hd] as Rect })]
       this.syncGrenades(s)
       this.snap = s
     }
@@ -501,6 +518,7 @@ export class Game {
       if (was) this.veh.pred = null
       const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
       for (const p of this.pending) {
+        if (s.spells?.forced.includes(this.myId)) break
         stepBody(b, p.i.mx, p.i.my, kitSprints(p.i, this.kit) ? this.kit.run : this.kit.walk, this.solids, DT)
         this.veh.pushOut(b)
       }
@@ -747,6 +765,19 @@ export class Game {
     cam.traumaSquared = this.juice.trauma
     this.session.update(dt)
     this.ingest()
+    input.runeMode = !!this.snap?.spells
+    if (this.snap?.spells) {
+      const config=spellConfig(this.juice), key=JSON.stringify(config)
+      if (this.roster.some(p=>p.id===this.myId && p.host) && key!==this.spellTuning) { this.session.send({type:"spells",config});this.spellTuning=key }
+      const stroke=input.takeStroke()
+      if (stroke && this.alive) {
+        const result=recognize(stroke,config)
+        const centre=stroke.reduce((v,p)=>({x:v.x+p.x/Math.max(1,stroke.length),y:v.y+p.y/Math.max(1,stroke.length)}),{x:0,y:0})
+        const target=cam.unproject(centre.x,centre.y,w,h,0)
+        this.pendingCast={spell:result.spell,quality:result.quality,x:target.x,y:target.y}
+        this.runeResult={at:performance.now(),text:result.spell?`${SPELL_NAMES[result.spell]} · ${Math.round(result.confidence*100)}%${result.quality<1?" · unstable":""}`:"Fizzle"}
+      }
+    }
     const c = cam.unproject(input.mouse.x, input.mouse.y, w, h, SHOULDER - 0.2)
     this.cursor = c
     this.ground = cam.unproject(input.mouse.x, input.mouse.y, w, h, 0)
@@ -775,6 +806,7 @@ export class Game {
       const driving = this.riding?.seat === 0
       const horn = live && driving && input.held("KeyH")
       const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
+      if (live && this.pendingCast) { i.cast=this.pendingCast; this.pendingCast=undefined }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.
@@ -792,7 +824,7 @@ export class Game {
         if (driving) this.veh.tick(i, this.solids)
       } else {
         this.drawn.tick(this.body)
-        stepBody(this.body, i.mx, i.my, sprint ? this.kit.run : this.kit.walk, this.solids, DT)
+        if (!this.snap?.spells?.forced.includes(this.myId)) stepBody(this.body, i.mx, i.my, sprint ? this.kit.run : this.kit.walk, this.solids, DT)
         this.veh.pushOut(this.body)
       }
       // At the wheel you drive: no shooting, throwing or swinging.
@@ -1283,7 +1315,7 @@ export class Game {
   }
 
   build(cam: Camera, w: number, h: number, dt: number): FrameInput {
-    if (this.wizardLook !== this.juice.wizards) this.applyLook()
+    if (this.wizardLook !== (this.juice.wizards || this.sourceMap.id === "castle-hall")) this.applyLook()
     const t = this.now
     const intensity = this.juice.monitors ? this.juice.monitorIntensity : 0
     if (intensity !== this.bounceIntensity) {
@@ -1338,6 +1370,7 @@ export class Game {
     )
     if (this.alive && this.body) casters.push({ x: this.drawn.x, y: this.drawn.y })
     mapFires(this.map, view, t, dt, (...a) => this.sprite(...a), this.fxv)
+    if (snap?.spells) this.spellFx.lights(snap.spells,dyn,casters)
     this.culler.update(view, t, dyn, casters, this.juice.monitors, this.juice.sparks ? this.monitors.filter((m) => m.broken) : [])
     if (this.juice.lamps) for (const [id, at] of this.lampJolts) {
       const age = t - at
@@ -1362,6 +1395,7 @@ export class Game {
       arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
     }
     const k = 1 - Math.exp(-dt * 16)
+    if (snap?.spells) this.spellFx.draw(snap.spells,snap.t,dt,parts,(...args)=>this.sprite(...args))
     if (this.juice.sparks) for (const m of this.monitors) if (m.broken) push(this.sheetModels.screen, m.x, 0, m.y, m.yaw, [1, 1, 1], 0, 0, 0)
     for (const a of this.avatars.values()) {
       if (!a.alive) continue
@@ -1384,7 +1418,7 @@ export class Game {
     if (me) {
       const a = this.avatarMe
       a.gun = this.gun
-      a.bare = !this.kit.gun
+      a.bare = !this.kit.gun && !snap?.spells
       a.alive = true
       a.reloadAt = this.reloadUntil > 0 ? this.reloadUntil - GUNS[this.gun].reload : -10
       a.reloadFor = GUNS[this.gun].reload
