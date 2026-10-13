@@ -23,7 +23,7 @@ const BLOOM_LEVELS = 5
 const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
-type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[] }
+type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean }
 
 /** Conservative screen bounds of cuttable geometry. The cutaway is screen-space, not a fixed world-space box. */
 function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array): boolean {
@@ -360,7 +360,7 @@ export class Renderer {
       let off = 0
       for (const c of list) {
         all.set(new Uint8Array(c.data), off)
-        out.push({ first: off / VERT_BYTES, count: c.data.byteLength / VERT_BYTES, box: c.box, cutBox: c.cutBox })
+        out.push({ first: off / VERT_BYTES, count: c.data.byteLength / VERT_BYTES, box: c.box, cutBox: c.cutBox, customCutaway: c.customCutaway })
         off += c.data.byteLength
       }
       return [all.buffer, out]
@@ -617,7 +617,7 @@ export class Renderer {
       for (const c of this.chunks) {
         if (c.box[0] > vx1 || c.box[2] < vx0 || c.box[1] > vy1 || c.box[3] < vy0) continue
         drawn++
-        const next = intersectsCutaway(c.cutBox, f.frame)
+        const next = !!c.customCutaway || intersectsCutaway(c.cutBox, f.frame)
         if (cut !== next) {
           cut = next
           pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!)

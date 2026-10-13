@@ -54,6 +54,8 @@ fn eyeVisible(p: vec2f) -> f32 {
         for(var i=0;i<4;i++) { if(roofCut(o.world,i)){discard;} }
       }
     `,
+    // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
+    solidCutaway: "",
     surface: /* wgsl */ `
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, o.world.xz * F.map.xy, 0.0).r;

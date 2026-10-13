@@ -213,13 +213,22 @@ function compileLevel(town: Town): LevelData {
     m.box(p.x - .08, 3.65, p.y - .08, p.x + .7, 3.8, p.y + .08, hex(0x353d3c))
     m.box(p.x + .3, 3.55, p.y - .18, p.x + .8, 3.65, p.y + .18, hex(0xffc980), MAT.lamp, id)
   }
-  const chunks = (list: Mesh[]): LevelChunk[] => list.filter(m => m.count).map(m => {
-    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, top = 0
-    for (let i = 0; i < m.v.length; i += 11) {
-      x0 = Math.min(x0, m.v[i]!); x1 = Math.max(x1, m.v[i]!)
-      z0 = Math.min(z0, m.v[i + 2]!); z1 = Math.max(z1, m.v[i + 2]!); top = Math.max(top, m.v[i + 1]!)
+  const chunks = (list: Mesh[], split = false): LevelChunk[] => list.filter(m => m.count).flatMap(source => {
+    const groups = split ? [new Mesh(), new Mesh(), new Mesh()] : [source]
+    if (split) for (let i = 0; i < source.v.length; i += 33) {
+      const custom = [0,11,22].some(j => source.v[i+j+1]! > 2.8 || Math.round(source.v[i+j+9]!) === 21)
+      const screen = [0,11,22].some(j => [4,9,2,11].includes(Math.round(source.v[i+j+9]!)))
+      groups[custom ? 2 : screen ? 1 : 0]!.v.push(...source.v.slice(i, i+33))
     }
-    return { data: m.pack(), box: [x0, z0, x1, z1], cutBox: [x0, 0, z0, x1, top, z1] }
+    return groups.flatMap((m, group) => {
+      if (!m.count) return []
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, top = 0
+      for (let i = 0; i < m.v.length; i += 11) {
+        x0 = Math.min(x0, m.v[i]!); x1 = Math.max(x1, m.v[i]!)
+        z0 = Math.min(z0, m.v[i + 2]!); z1 = Math.max(z1, m.v[i + 2]!); top = Math.max(top, m.v[i + 1]!)
+      }
+      return [{ data: m.pack(), box: [x0, z0, x1, z1] as const, cutBox: !split || group !== 0 ? [x0, 0, z0, x1, top, z1] : undefined, customCutaway: split && group === 2 }]
+    })
   })
   // Indoor sky mask: roofs are cut away, but rooms still receive only subdued daylight.
   const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)
@@ -236,5 +245,5 @@ function compileLevel(town: Town): LevelData {
     data[(z * resolution + x) * 2] = Math.round(contact*255)
     data[(z * resolution + x) * 2 + 1] = indoor ? 32 : 255
   }
-  return { chunks: chunks([...meshes,...props]), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
+  return { chunks: chunks([...meshes,...props],true), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
 }

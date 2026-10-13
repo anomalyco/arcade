@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9 }
+export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9 }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -695,7 +695,7 @@ fn shadeScene(o: VOut) -> vec4f {
 
 @fragment fn fsSolid(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
   ${hooks.fragmentStart ?? ""}
-  ${hooks.cutaway ?? ""}
+  ${hooks.solidCutaway ?? hooks.cutaway ?? ""}
   return ${motion ? "motionOutput(shadeScene(o), o.pos, o.previous, o.world)" : "shadeScene(o)"};
 }
 `
