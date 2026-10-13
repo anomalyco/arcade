@@ -68,6 +68,7 @@ export class Scene {
   /** Camera shake requests from impacts on the followed car. */
   shake = 0
   hitStop = 0
+  private hitStopCool = 0
   punch = 0
   lightCount = 0
   input: Input | null = null
@@ -81,6 +82,7 @@ export class Scene {
     this.time = 0
     this.shake = 0
     this.hitStop = 0
+    this.hitStopCool = 0
     this.punch = 0
   }
 
@@ -106,7 +108,7 @@ export class Scene {
   private visOf(c: CarView) {
     let v = this.vis.get(c.id)
     if (!v) {
-      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 0, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
+      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
       this.vis.set(c.id, v)
     }
     return v
@@ -148,6 +150,7 @@ export class Scene {
   /** Per-car visual dynamics (body roll, pitch) and particle emission. */
   private animate(view: WorldView, dt: number, focusId: number | null) {
     this.fx.update(dt)
+    this.hitStopCool = Math.max(0, this.hitStopCool - dt)
     if (!juice.skids) this.fx.skids.length = 0
     for (const c of view.cars) {
       if (c.ghost) continue
@@ -268,7 +271,10 @@ export class Scene {
         this.fx.sparks(c.x + (c.vx / sp) * spec.length * 0.45, c.z + (c.vz / sp) * spec.length * 0.45, -c.vx / sp, -c.vz / sp, Math.min(24, Math.floor(c.impact)))
         if (c.id === focusId && juice.trauma) {
           this.shake = Math.max(this.shake, Math.min(1, c.impact / 18))
-          if (c.impact > 9) this.hitStop = 0.045
+          if (c.impact > 9 && this.hitStopCool === 0) {
+            this.hitStop = 0.045
+            this.hitStopCool = 1
+          }
         }
       }
     }

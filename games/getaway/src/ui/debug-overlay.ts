@@ -34,6 +34,9 @@ export class DebugOverlay extends LabPanel {
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
   constructor(q: URLSearchParams, release: () => void) {
     if (q.get("vanilla") === "1") Object.assign(juice, juiceSettings(false))
+    // ?off=landing,trauma turns individual switches off from the URL.
+    const defaults = juiceSettings(false) as Record<string, boolean | number>
+    for (const key of q.get("off")?.split(",") ?? []) if (key in juice) (juice as Record<string, boolean | number>)[key] = defaults[key]!
     super(juice, controls, q, release)
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return

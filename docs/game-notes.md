@@ -202,6 +202,17 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Start elapsed time on the animation-frame clock.** Getaway's first RAF timestamp can precede completion of
+  synchronous scene construction. Subtracting `performance.now()` produced a first delta of -0.463 s on Metal.
+  Subtracting that negative delta raised crash, brake, boost and freeze timers from zero: orange light and a frozen
+  camera, despite **zero simulation impact**. `src/main.ts` now starts with a null timestamp and a zero first delta,
+  then clamps elapsed time nonnegative. `Scene` also starts car impact grace at 1 s and decrements its hit-stop cooldown
+  once per rendered frame, clearing it on reset. `scripts/prove-startup.ts` uses the original 640×480 / 30-capture /
+  60 ms probe and checks the actual timer values. On headless Metal, the 100×100 centre-crop red mean changed from
+  152.9 → 46.5 during startup before the clock fix to 47.2 → 47.0 after it; `off=trauma` starts at 47.0.
+  Reset Seed in `compare.html` also retained the same stationary spawn without the flash. This supersedes the earlier
+  unreproduced-startup note below. Runtime cost is unmeasured.
+
 - **Hit-stop is presentation only.** Freeze or slow what is drawn, never the simulation clock, so prediction and the
   server stay in step.
 - **Scale shake with trauma squared** so small hits stay subtle and big ones land hard.

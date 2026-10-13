@@ -232,7 +232,9 @@ async function main() {
     },
   }
 
-  let last = performance.now()
+  // RAF's timestamp can predate synchronous startup work. Start on its clock,
+  // otherwise a negative first delta creates crash/brake/boost and freeze timers.
+  let last: number | null = null
   const frame = (now: number) => {
     if (!rafActive) return
     const kicked = activeSession.kicked?.()
@@ -241,7 +243,7 @@ async function main() {
       location.replace(location.pathname)
       return
     }
-    const frameMs = now - last
+    const frameMs = last === null ? 0 : Math.max(0, now - last)
     const dt = Math.min(0.1, frameMs / 1000)
     last = now
     const input = controls.read(mux ? 0 : dt)
