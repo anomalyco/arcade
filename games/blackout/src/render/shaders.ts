@@ -1,4 +1,5 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../shared/config"
+import { motionGather, motionOutput } from "./motion"
 
 /** Frame uniform layout, in floats. Keep in step with Game.build. */
 export const FRAME_FLOATS = 16 + 4 * 8
@@ -134,8 +135,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export const sceneShader = (looks = true) => /* wgsl */ `
+export const sceneShader = (looks = true, motion = false) => /* wgsl */ `
 ${common}
+${motion ? motionOutput : ""}
 ${looks ? `// Office material changes stay off downtown roads, buildings and vehicle lighting.
 fn look(bit: u32) -> bool { return F.effects.z > 0.5 && (u32(F.effects.y) & bit) != 0u; }` : ""}
 @group(0) @binding(3) var<storage, read> lampPower: array<f32>;
@@ -164,6 +166,7 @@ struct VOut {
   @location(3) @interpolate(flat) mat: f32,
   @location(4) @interpolate(flat) aux: f32,
   @location(5) @interpolate(flat) extra: vec4f,
+  ${motion ? "@location(6) previous: vec4f," : ""}
 }
 
 @vertex fn vsStatic(v: VIn) -> VOut {
@@ -189,6 +192,7 @@ struct VOut {
   o.mat = v.matAux.x;
   o.aux = v.matAux.y;
   o.extra = vec4f(0.0, 0.0, 1.0, 0.0);
+  ${motion ? "o.previous = M.previous * vec4f(o.world, 1.0);" : ""}
   return o;
 }
 
@@ -213,7 +217,7 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   return partRotate(n, inst);
 }
 
-@vertex fn vsInst(v: VIn, inst: Inst) -> VOut {
+@vertex fn vsInst(v: VIn, inst: Inst${motion ? ", @location(8) oldPos: vec4f, @location(9) oldTint: vec4f, @location(10) oldExtra: vec4f" : ""}) -> VOut {
   var o: VOut;
   o.world = instWorld(v.pos, inst);
   o.pos = F.viewProj * vec4f(o.world, 1.0);
@@ -224,6 +228,7 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.mat = select(v.matAux.x, 3.0, accent);
   o.aux = select(v.matAux.y, 0.85, accent);
   o.extra = inst.extra;
+  ${motion ? "o.previous = M.previous * vec4f(instWorld(v.pos, Inst(oldPos, oldTint, oldExtra)), 1.0);" : ""}
   return o;
 }
 
@@ -650,14 +655,14 @@ fn shadeScene(o: VOut) -> vec4f {
   return vec4f(col * a, a);
 }
 
-@fragment fn fs(o: VOut) -> @location(0) vec4f {
+@fragment fn fs(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
   let mat = i32(round(o.mat));
   if ((mat == 4 || mat == 9 || mat == 2 || mat == 11) && cutaway(o.world, o.pos)) { discard; }
-  return shadeScene(o);
+  return ${motion ? "motionOutput(shadeScene(o), o.pos, o.previous, o.world)" : "shadeScene(o)"};
 }
 
-@fragment fn fsSolid(o: VOut) -> @location(0) vec4f {
-  return shadeScene(o);
+@fragment fn fsSolid(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
+  return ${motion ? "motionOutput(shadeScene(o), o.pos, o.previous, o.world)" : "shadeScene(o)"};
 }
 `
 
@@ -665,8 +670,9 @@ fn shadeScene(o: VOut) -> vec4f {
  * Sprites. kind: 0 glow (camera facing), 1 faceted smoke puff, 2 ground ring, 3 jagged ground ring, 4 ground line
  * (tracer, throw arc), 5 dashed ground ring, 6 ground disc, 7 marker "!", 8 ground wedge (claymore cone; extra = half-angle).
  */
-export const spriteShader = /* wgsl */ `
+export const spriteShader = (motion = false) => /* wgsl */ `
 ${common}
+${motion ? motionOutput : ""}
 
 struct SIn {
   @location(0) posSize: vec4f,
@@ -680,9 +686,10 @@ struct SOut {
   @location(1) color: vec4f,
   @location(2) @interpolate(flat) misc: vec4f,
   @location(3) world: vec3f,
+  ${motion ? "@location(4) previous: vec4f," : ""}
 }
 
-@vertex fn vs(@builtin(vertex_index) vi: u32, s: SIn) -> SOut {
+@vertex fn vs(@builtin(vertex_index) vi: u32, s: SIn${motion ? ", @location(3) previousCenter: vec4f" : ""}) -> SOut {
   var corners = array<vec2f, 6>(vec2f(-1, -1), vec2f(1, -1), vec2f(1, 1), vec2f(-1, -1), vec2f(1, 1), vec2f(-1, 1));
   let c = corners[vi];
   let kind = i32(s.misc.x);
@@ -704,10 +711,11 @@ struct SOut {
   o.color = s.color;
   o.misc = s.misc;
   o.world = world;
+  ${motion ? "o.previous = M.previous * vec4f(world + previousCenter.xyz - s.posSize.xyz, 1.0);" : ""}
   return o;
 }
 
-@fragment fn fs(o: SOut) -> @location(0) vec4f {
+@fragment fn fs(o: SOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
   let r = length(o.uv);
   let kind = i32(o.misc.x);
   var a = 0.0;
@@ -753,12 +761,13 @@ struct SOut {
     a = inside * (0.1 + 0.08 * scan + 0.8 * edge + 0.35 * smoothstep(0.86, 0.96, r));
   }
   if (a <= 0.002) { discard; }
-  return vec4f(rgb * a * o.color.a, a * o.color.a);
+  ${motion ? "return motionOutput(vec4f(rgb * a * o.color.a, a * o.color.a), o.pos, o.previous, o.world);" : "return vec4f(rgb * a * o.color.a, a * o.color.a);"}
 }
 `
 
 /** Fullscreen passes: bloom downsample and upsample, then the tone-mapped, graded composite. */
-export const postShader = (looks = true) => /* wgsl */ `
+export const postShader = (looks = true, motion = false) => /* wgsl */ `
+${motion ? motionGather : ""}
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> P: vec4f;
@@ -841,6 +850,7 @@ fn hash(p: vec2f) -> f32 {
     clean(textureSample(src, samp, uv)).g,
     clean(textureSample(src, samp, uv - ca)).b,
   );
+  ${motion ? "hdr += motionColour(uv) - clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;" : ""}
   let bloom = textureSample(bloomTex, samp, uv).rgb;
   hdr = hdr + bloom * 0.32;
   var c = aces(hdr * G.w);
