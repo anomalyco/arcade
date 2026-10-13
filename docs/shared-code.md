@@ -44,6 +44,11 @@ checks, both game checks, and `bunx --no-install wrangler deploy --dry-run` from
 
 ## Candidates
 
+Shared human presentation lives in `human-locomotion.ts`, `human-profile.ts` and `human-pose.ts`, on the canonical
+`rig.ts` foundation. Blackout's animation adapter supplies weapon clips; soldier/wizard/zombie profiles share
+contacts and IK. See [Human rig](human-rig.md) for semantic attachment IDs, detach velocity spaces and consumer
+migration. This layer owns no health, damage, movement authority or terrain policy.
+
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
 `getaway-main-hook.ts` supplies both games' historical Getaway instrumentation without a cross-game script import.

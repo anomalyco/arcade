@@ -19,6 +19,7 @@ import { IDLE_VIEW } from "../../shared/sim/modes"
 import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
 import { animation } from "../game/anim-settings"
 import { Rng } from "../../shared/rng"
+import { RigDemo, rigDemoControls } from "./rig-demo"
 
 const SEED = 990001
 const W = 30
@@ -160,6 +161,7 @@ const ACTORS: Actor[] = [
 ]
 
 class ScriptSession implements Session {
+  demo = false
   readonly room = null
   readonly myId = "viewer"
   t = 0
@@ -194,7 +196,7 @@ class ScriptSession implements Session {
     this.t += dt
     const t = this.t
     const players: Snapshot["players"] = []
-    for (const a of this.actors) {
+    for (const a of this.demo ? [] : this.actors) {
       const s = a.at(t)
       const p = this.prev.get(a.id) ?? { x: s.x, y: s.y, shots: 0, reloads: 0, alive: s.alive }
       const cut = a.id === "proof" && Math.floor(t / 2) !== Math.floor((t - dt) / 2)
@@ -252,11 +254,12 @@ async function main() {
   if (manual) { const rng = new Rng(7); Math.random = () => rng.next() }
   const session = new ScriptSession(only)
   const sound = new Sound()
-  const settings = juiceSettings(!params.has("vanilla"))
+  const settings = { ...juiceSettings(!params.has("vanilla")), rigDemo: "off", rigDemoSpeed: 1.1 }
   const game = new Game(renderer, session, sound, settings)
   ;(game as unknown as { load(m: MapDef): void }).load(MAP)
   const input = new Input(canvas)
-  new DebugOverlay(settings, params, () => input.release())
+  new DebugOverlay(settings, params, () => input.release(), rigDemoControls)
+  const rigDemo = new RigDemo(renderer)
   const side = params.get("side")
   const cam = new Camera()
   if (side !== null) {
@@ -287,15 +290,22 @@ async function main() {
   const frame = (dt: number) => {
     if (only?.includes("proof") && Math.floor((session.t + dt) / 2) !== Math.floor(session.t / 2)) game.avatars.delete("proof")
     clock += dt * 1000
+    session.demo = settings.rigDemo !== "off"
+    if (session.demo) game.avatars.clear()
     game.update(dt, input, cam, innerWidth, innerHeight, clock)
     const fid = params.get("follow") ?? (only?.length === 1 ? only[0] : null)
     const lead = fid ? session.latest()?.snap.players.find((p) => p.id === fid) : undefined
     if (lead && !params.has("x")) cam.snap(lead.x, lead.y)
     else cam.follow(focus.x, focus.y, 0, 0, dt, false)
     cam.dist = zoom
-    renderer.render(game.build(cam, innerWidth, innerHeight, dt))
+    const demoBatches = rigDemo.build(dt, settings.rigDemo, settings.rigDemoSpeed)
+    if (session.demo) cam.snap(rigDemo.avatar.x, rigDemo.avatar.y)
+    const scene = game.build(cam, innerWidth, innerHeight, dt)
+    scene.batches.push(...demoBatches)
+    renderer.render(scene)
     const beats = ["Walk", "Run", "Strafe left", "Strafe right", "Backpedal", "Turn in place", "Hard stop", "Recoil", "Death"]
-    if (only?.includes("proof")) info.textContent = `${animation.animationMode === "old" ? "Old" : "New"} · ${beats[Math.min(8, Math.floor(session.t / 2))]}`
+    if (session.demo) info.textContent = ""
+    else if (only?.includes("proof")) info.textContent = `${animation.animationMode === "old" ? "Old" : "New"} · ${beats[Math.min(8, Math.floor(session.t / 2))]}`
   }
   const w = window as unknown as { advance(ms: number): Promise<void>; ready: boolean }
   w.advance = async (ms: number) => {
@@ -332,7 +342,7 @@ async function main() {
     return out.toDataURL("image/jpeg", 0.9)
   }
   w.ready = true
-  Object.assign(window, { animProof: { game, session, animation, adapter: adapter!.info } })
+  Object.assign(window, { animProof: { game, session, animation, settings, rigDemo, adapter: adapter!.info } })
   if (manual) return
   let last = performance.now()
   let fps = 60

@@ -105,11 +105,17 @@ export class LabPanel {
     random.type = "button"; random.textContent = "Randomize"; random.setAttribute("aria-label", `Randomize ${group}`)
     random.disabled = !this.navigation.rows.some(row => row.group === group && row.control && ("min" in row.control || "options" in row.control && row.control.options.length > 0))
     random.onclick = () => { this.navigation.randomize(group); this.sync() }
+    const reset = document.createElement("button")
+    reset.type = "button"; reset.textContent = "Reset"; reset.setAttribute("aria-label", `Reset ${group}`)
+    reset.onclick = () => {
+      this.navigation.active = this.navigation.rows.find(row => !row.control && row.group === group)
+      this.navigation.reset(true); this.sync()
+    }
     const copy = document.createElement("button")
     copy.type = "button"; copy.textContent = "Copy"; copy.dataset.copy = ""; copy.setAttribute("aria-label", `Copy ${group} JSON`)
     copy.onclick = () => { void this.copy(group) }
     this.copies.set(group, copy)
-    actions.className = "actions"; actions.append(random, copy); heading.append(fold, actions)
+    actions.className = "actions"; actions.append(random, reset, copy); heading.append(fold, actions)
     return heading
   }
   private control(c: LabControl) {
