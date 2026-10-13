@@ -36,10 +36,10 @@ function normalizeV(v: number[]): [number, number, number] {
 type Vis = {
   emissions: EmissionState
   chassis: Chassis
-  roll: number; pitch: number; speed: number; h: number; fuel: number; sparkAcc: number
+  roll: number; pitch: number; speed: number; h: number; sparkAcc: number
   scrapeAcc: number; wheels: { x: number; z: number }[]; height: number; springV: number; ground: number
   backfire: number; crash: number; impactCool: number; braking: boolean
-  boostHold: number; brakeHold: number; landings: number; landY: number; landV: number; vy: number
+  brakeHold: number; landings: number; landY: number; landV: number; vy: number
 }
 
 /** Matches the shader's siren strobe so glows and lights flash in sync with the lamp geometry. */
@@ -156,7 +156,7 @@ export class Scene {
     let v = this.vis.get(c.id)
     if (v && v.chassis.axles !== this.chassisModels.get(c.vehicle)!.wheels) v.chassis = new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels)
     if (!v) {
-      v = { chassis: new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels), emissions: new EmissionState(), roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, sparkAcc: 0, scrapeAcc: 0, wheels: Array.from({length:4},()=>({x:0,z:0})), height: 0, springV: 0, ground: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, boostHold: 0, brakeHold: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0 }
+      v = { chassis: new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels), emissions: new EmissionState(), roll: 0, pitch: 0, speed: c.speed, h: c.h, sparkAcc: 0, scrapeAcc: 0, wheels: Array.from({length:4},()=>({x:0,z:0})), height: 0, springV: 0, ground: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, brakeHold: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0 }
       v.emissions.speed = c.speed
       this.vis.set(c.id, v)
     }
@@ -176,24 +176,9 @@ export class Scene {
     return park || Math.min(a, b, width - a, width - b) <= this.city.sidewalk ? KERB_H : 0
   }
 
-  /** Presentation-only lab probes; never mutate the authoritative vehicle. */
-  testEffect(key: string, car: CarView): void {
-    const v = this.visOf(car), spec = VEHICLE_BY_ID.get(car.vehicle)!
-    const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = Math.cos(car.h), rz = -Math.sin(car.h)
-    if (key === "sparks" || key === "scrape") {
-      this.fx.sparks(car.x + fx * spec.length * 0.45, car.z + fz * spec.length * 0.45, -fx * 8, -fz * 8, 24, 0.3)
-      v.crash = 0.06
-    } else if (key === "backfire") {
-      v.emissions.pop = 0.11
-      this.onBackfire?.(car)
-    } else if (key === "curb") { v.springV = 2.5; if (juice.wheelContact) v.chassis.lift.v = 2.5 }
-    else if (key === "landing") { v.landV = -2.5; if (juice.suspension) v.chassis.lift.v = -2.5; this.punch = 0.8 }
-    else if (key === "trauma") { this.shake = 1; this.hitStop = 0.045 }
-    else if (key === "skids") for (const a of [-1, 1]) for (const s of [-1, 1]) {
-      const x = car.x + fx * spec.length * 0.32 * a + rx * spec.width * 0.4 * s
-      const z = car.z + fz * spec.length * 0.32 * a + rz * spec.width * 0.4 * s
-      this.fx.skidSegment(x - fx * 1.5, z - fz * 1.5, x, z, 0.6)
-    }
+  backfire(car: CarView): void {
+    this.visOf(car).emissions.pop = 0.11
+    this.onBackfire?.(car)
   }
 
   /** Per-car visual dynamics (body roll, pitch) and particle emission. */
@@ -220,8 +205,6 @@ export class Scene {
       const brake = input ? input.brake > 0.1 || input.handbrake || input.throttle < 0 && c.vx * Math.sin(c.h) + c.vz * Math.cos(c.h) > 0.5 : !!c.braking
       v.brakeHold = brake ? 0.1 : Math.max(0, v.brakeHold - dt)
       v.braking = v.brakeHold > 0
-      const boost = input ? input.boost && c.boost > 0 && c.stun <= 0 && !c.engineOff && !c.airborne : c.boosting ?? c.boost < v.fuel - 1e-4
-      v.boostHold = boost ? 0.1 : Math.max(0, v.boostHold - dt)
       if ((c.landings ?? 0) > v.landings) {
         const impact = Math.max(c.landing ?? 0, Math.abs(v.vy))
         v.landV = -Math.min(2.8, impact * 0.22)
@@ -266,7 +249,6 @@ export class Scene {
       this.emissions.car(c, spec, v.emissions, input, dt, v.height, true, true)
       if (this.emissions.pops > pops) this.onBackfire?.(c)
       v.backfire = v.emissions.pop
-      v.fuel = c.boost
       if (c.impact > 0.35 && c.speed > 4) {
         v.scrapeAcc += dt * (12 + Math.min(c.speed, 40))
         const count = Math.floor(v.scrapeAcc)
@@ -715,7 +697,6 @@ export class Scene {
       frame: f,
       lights: L,
       batches,
-      ghosts: [],
       sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,

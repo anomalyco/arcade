@@ -28,10 +28,6 @@ struct Light {
 @group(0) @binding(4) var atlasTex: texture_2d<f32>;
 @group(0) @binding(5) var atlasSampler: sampler;
 
-fn hash2(p: vec2f) -> f32 {
-  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
-}
-
 // Single-scattering approximation. No shadow map: the small puffs receive coloured practical light
 // without behaving like solid moon-shadow casters. Bounded to the nearest practical-light prefix.
 fn smokeLight(world: vec3f, n: vec3f) -> vec3f {
@@ -139,26 +135,6 @@ fn applyFog(c: vec3f, world: vec3f) -> vec3f {
   let dist = length(world - F.cam.xyz);
   let f = 1.0 - exp(-max(dist - 120.0, 0.0) * F.fog.w);
   return mix(c, F.fog.rgb, clamp(f, 0.0, 0.85));
-}
-
-/** Procedural windows on building facades: a grid of glass panes, some lit warm. */
-fn facade(base: vec3f, world: vec3f, n: vec3f) -> vec4f {
-  if (abs(n.y) > 0.5) { return vec4f(base, 0.0); }
-  let t = normalize(vec3f(-n.z, 0.0, n.x));
-  let u = dot(world, t);
-  let v = world.y;
-  let cell = vec2f(u / 3.4, (v - 1.2) / 3.6);
-  let id = floor(cell);
-  let f = fract(cell);
-  if (v < 1.4) { return vec4f(base, 0.0); }
-  let pane = step(0.22, f.x) * step(f.x, 0.78) * step(0.25, f.y) * step(f.y, 0.8);
-  if (pane < 0.5) { return vec4f(base, 0.0); }
-  let h = hash2(id + floor(world.xz / 97.0) * 13.0 + n.xz * 7.0);
-  let ground = select(0.0, 1.0, v < 4.8);
-  let lit = step(0.72 - ground * 0.2, h);
-  let warm = mix(vec3f(1.0, 0.55, 0.18), vec3f(1.0, 0.75, 0.4), hash2(id * 3.1));
-  let glass = vec3f(0.012, 0.016, 0.03);
-  return vec4f(select(glass, warm * (0.9 + 0.5 * hash2(id * 1.7) + ground * 0.5), lit > 0.5), lit);
 }
 `
 
@@ -304,10 +280,6 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
   } else if (mat == 3) {
     let ripple = sin(o.world.x * 0.35 + F.cam.w * 1.3) * sin(o.world.z * 0.5 - F.cam.w * 0.9);
     col = shade(o.color, o.world, vec3f(0.0, 1.0, 0.0), 1.5, 1.0) + vec3f(0.04, 0.07, 0.1) * (ripple * 0.5 + 0.5);
-  } else if (mat == 1) {
-    if (cutHere) { discard; }
-    let f = facade(o.color, o.world, n);
-    col = shade(f.rgb * (1.0 - f.a), o.world, n, 0.0, wallShade(o.world, n)) + f.rgb * f.a;
   } else {
     if (mat == 0 && cutHere) { discard; }
     let isRoad = n.y > 0.9 && o.world.y < 0.3;
@@ -380,9 +352,9 @@ struct Inst {
 `
 
 /**
- * Sprites: camera-facing glows and smoke, ground-aligned decals (rings, skid marks, light pools) and the
- * helicopter beam. kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 5 beam, 6 spark,
- * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow,
+ * Sprites: camera-facing glows and smoke, and ground-aligned decals (rings, skid marks, light pools).
+ * kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 6 spark,
+ * 8 rectangular spill/grounding, 9 wheel-weighted contact shadow,
  * 10 cold condensation, 13 attached exhaust flame,
  * 14 bumper-anchored beam footprint, 15 mounted lens, 16 lens streak, 17 brake streak,
  * 18 tunable soft beam, 19 soft road pool,
@@ -421,22 +393,11 @@ struct SOut {
   } else if (kind == 15.0) {
     let cr = cos(s.misc.y); let sr = sin(s.misc.y);
     world = s.posSize.xyz + vec3f(c.x * size * cr, c.y * size * s.misc.z, -c.x * size * sr);
-  } else if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 13.0 || kind == 19.0) {
+  } else if (kind == 2.0 || kind == 3.0 || kind == 4.0 || kind == 8.0 || kind == 9.0 || kind == 13.0 || kind == 19.0) {
     let r = s.misc.y;
     let cr = cos(r); let sr = sin(r);
-    let taper = 1.0;
-    let lc = vec2f(c.x * size * taper, c.y * size * max(s.misc.z, 0.01));
+    let lc = vec2f(c.x * size, c.y * size * max(s.misc.z, 0.01));
     world = s.posSize.xyz + vec3f(lc.x * cr + lc.y * sr, 0.0, -lc.x * sr + lc.y * cr);
-  } else if (kind == 5.0) {
-    // Beam: a camera-facing quad stretched from the origin (pos) to the ground target (misc.yzw is target).
-    let a = s.posSize.xyz;
-    let b = s.misc.yzw;
-    let axis = b - a;
-    let toCam = normalize(F.cam.xyz - (a + b) * 0.5);
-    let side = normalize(cross(axis, toCam));
-    let t = c.y * 0.5 + 0.5;
-    let w = mix(0.3, size, t);
-    world = mix(a, b, t) + side * c.x * w;
   } else {
     let toCam = normalize(F.cam.xyz - s.posSize.xyz);
     let right = normalize(cross(vec3f(0.0, 1.0, 0.0), toCam));
@@ -522,14 +483,6 @@ struct SOut {
     a = pow(max(0.0, 1.0 - r), 1.6);
   } else if (k == 4.0) {
     a = smoothstep(1.0, 0.4, abs(o.uv.x)) * smoothstep(1.0, 0.7, abs(o.uv.y));
-  } else if (k == 5.0) {
-    let edge = 1.0 - abs(o.uv.x);
-    a = pow(edge, 1.5) * (0.35 + 0.65 * (o.uv.y * 0.5 + 0.5));
-  } else if (k == 7.0) {
-    let q = abs(o.uv) - vec2f(0.58, 0.68);
-    let d = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - 0.18;
-    let softness = min(0.35, o.extra * 0.05);
-    a = 1.0 - smoothstep(-0.22 - softness, 0.14 + softness, d);
   } else if (k == 8.0) {
     // Short rectangular shop spill / grounding strip, feathered on both axes.
     a = (1.0 - smoothstep(0.55, 1.0, abs(o.uv.x))) * pow(max(0.0, 1.0 - o.uv.y * o.uv.y), 2.0);

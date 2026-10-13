@@ -77,7 +77,7 @@ async function main() {
   const scene = new Scene(renderer, session.city)
   const hud = new Hud(document.getElementById("hud")!, session.city)
   const sound = new GameAudio(document.getElementById("hud")!, session.city)
-  sound.onShift = car => scene.testEffect("backfire", car)
+  sound.onShift = car => scene.backfire(car)
   const backfires: SimEvent[] = []
   scene.onBackfire = car => backfires.push({ kind: "backfire", carId: car.id, text: "", t: 0 })
   addEventListener("blur", () => sound.suspend())

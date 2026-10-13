@@ -18,7 +18,7 @@ type Model = { vbuf: GPUBuffer; count: number; castsShadow: boolean }
 type CityModel = { vbuf: GPUBuffer; count: number; chunks: CityChunk[] }
 
 /** One instanced draw: a model and its packed instance data. */
-export type InstanceBatch = { model: number; data: Float32Array; count: number; ghost?: boolean; ghostCount?: number; noShadow?: boolean }
+export type InstanceBatch = { model: number; data: Float32Array; count: number; ghostCount?: number; noShadow?: boolean }
 
 /** Extracts the 6 clip-space frustum planes (Left, Right, Bottom, Top, Near, Far) from a column-major 4x4 matrix at `mOff`. */
 function extractFrustumPlanes(m: Float32Array, mOff: number, out: Float32Array) {
@@ -140,7 +140,7 @@ export class Renderer {
   constructor(
     private device: GPUDevice,
     private context: GPUCanvasContext,
-    private format: GPUTextureFormat,
+    format: GPUTextureFormat,
   ) {
     const d = device
     this.frameBuf = d.createBuffer({ size: FRAME_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
@@ -413,7 +413,6 @@ export class Renderer {
     frame: Float32Array<ArrayBuffer>
     lights: Float32Array<ArrayBuffer>
     batches: InstanceBatch[]
-    ghosts: InstanceBatch[]
     sprites: { alpha: Float32Array<ArrayBuffer>; alphaCount: number; add: Float32Array<ArrayBuffer>; addCount: number }
     bloom: number
     flash: number
@@ -428,9 +427,7 @@ export class Renderer {
     // Pack all instance batches into one buffer (reusing instBuf for ghost silhouettes).
     let total = 0
     for (let i = 0; i < opts.batches.length; i++) total += opts.batches[i]!.count
-    let extraGhostTotal = 0
-    for (let i = 0; i < opts.ghosts.length; i++) extraGhostTotal += opts.ghosts[i]!.count
-    this.ensureInstances(total + extraGhostTotal)
+    this.ensureInstances(total)
 
     const ranges: { model: number; first: number; count: number; noShadow?: boolean }[] = []
     const ghostRanges: { model: number; first: number; count: number }[] = []
@@ -443,13 +440,6 @@ export class Renderer {
       if (b.ghostCount && b.ghostCount > 0) {
         ghostRanges.push({ model: b.model, first: off, count: b.ghostCount })
       }
-      off += b.count
-    }
-    for (let i = 0; i < opts.ghosts.length; i++) {
-      const b = opts.ghosts[i]!
-      if (!b.count) continue
-      d.queue.writeBuffer(this.instBuf, off * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
-      ghostRanges.push({ model: b.model, first: off, count: b.count })
       off += b.count
     }
     const alphaCount = Math.min(opts.sprites.alphaCount, MAX_SPRITES / 2)
