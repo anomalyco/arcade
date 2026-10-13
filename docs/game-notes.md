@@ -387,6 +387,51 @@ operation counts and memory, not measured milliseconds.
   both identify transparent overdraw as the main expense. Keep noise coherent across overlapping elements, convert
   optical depth with `1-exp(-density*distance)`, reduce density as the cloud expands, and bound screen coverage before adding resolution.
 
+### Getaway sound pass: research and choice
+
+- **Engine sources.** Crossfaded RPM/load recordings preserve a real engine's character; pitch-synchronous
+  granular playback follows RPM with fewer obvious layer boundaries. The [Project CARS / Forza Motorsport 5
+  interview](https://designingsound.org/2014/08/11/vehicle-engine-design-project-cars-forza-motorsport-5-and-rev/)
+  compares these approaches; [Audiokinetic's sample-to-granular guide](https://www.audiokinetic.com/en/community/blog/engine-sound-modeling-from-sampling-to-granular-synthesis-in-wwise)
+  describes RPM and load blending. This is the relevant racing-game pattern, not a claim that every Codemasters or
+  Forza release uses one implementation. Good recordings and loop authoring are the expensive part.
+- **Procedural alternative.** [Antonio-R1's WebAudio engine generator](https://github.com/Antonio-R1/engine-sound-generator)
+  separates intake, block and outlet, with waveguides and an AudioWorklet (and a faster WASM implementation).
+  [AngeTheGreat's engine-sim](https://github.com/ange-yaghi/engine-sim) simulates combustion and engine response to
+  generate audio. Both explain why firing pulses and resonances matter; full combustion simulation is excessive here.
+- **Chosen candidate:** native, band-limited periodic-wave firing harmonics over a 720-degree cycle, low exhaust
+  and brighter load-dependent intake, with crank rumble and filtered air. Automatic class-specific gear ratios,
+  hysteresis and 160 ms torque cuts give RPM drops and short clunks. One detailed player voice, four cheap world
+  engines. Native DSP avoids per-sample JS work. This is an arcade approximation, not a physical engine simulator.
+- **Tyres and transients:** lateral slip angle plus estimated launch slip ratio feeds quiet scrub, then resonant
+  band-limited noise whose centre frequency rises with slip. Airborne tyres are silent; grass reduces squeal and
+  kerbs brighten scrub. Nitro gets a noise ignition, sustained roar and release/blow-off with exhaust pops.
+  Existing crash layers follow speed and vehicle mass; contact speed drives the scrape loops and landings use thuds.
+- **Mix:** keep wail/yelp recordings with bounded Doppler and distance attenuation; street-height segment/AABB
+  occlusion closes their low-pass behind buildings. Nearby facades vary the synthetic street impulse send.
+  Eighteen sample one-shots, eight synthetic bursts, four remote engines and four remote sirens bound work.
+  Exponential parameter smoothing, event ducking and a final compressor/limiter follow the
+  [Web Audio API](https://www.w3.org/TR/webaudio/). A compressor is not a guaranteed true-peak brick wall: measure
+  rendered peaks and leave headroom. Hearing preference and mobile-device cost still need playtesting.
+- **Offline result:** 450 seed-7 chase frames, 30 Hz, captured on Chromium/Metal on the Studio. The new raw mixer
+  measured −16.04 LUFS integrated and −4.28 dBTP; legacy voices through the same protected bus measured −15.66 LUFS
+  and −4.20 dBTP. Neither clipped. Six shifts were scheduled; the actual M handler and Lab old/new switch passed.
+  New control scheduling was 0.10 ms median / 0.20 ms p95 in this single render (browser clock granularity; not a
+  runtime speedup or audio-thread CPU benchmark). Spectrograms show RPM harmonic movement and shift drops.
+  Maximum isolated-sample deviation was 0.144 new / 0.175 old; new control-boundary delta 0.167 was below its
+  overall 0.314 maximum. These are discontinuity diagnostics, not an assertion that no audible click exists.
+  No listening took place. Six focused gearbox/slip/occlusion tests passed; full check passed 112 tests, 12 skips.
+  Reproduction and provenance: `games/getaway/src/audio/SOURCES.md`; raw reports remain beside the private captures.
+- **Nitro retrigger correction:** the first player synth preferred snapshot `boosting` to local input, remote
+  bursts watched successive fuel decreases, and holding boost at empty fuel alternates depletion/refill in the sim.
+  `audio/nitro.ts` now latches one ignition per local press, locks out refill while held after exhaustion, and
+  debounces only remote boost-state releases. Interruption stops native sources and requires a fresh press.
+  The replacement noise/turbine voice sits under the engine; exhaust pops follow actual scene backfire events.
+  The 12-second peaceful proof recorded exactly four ignitions for four presses including a hold through empty,
+  zero voices afterward, −18.64 LUFS / −4.46 dBTP and zero clipped samples. A separate unfaded offline regression
+  checked eight ignitions and six exactly silent tail windows after exhaustion/release/interruption. Full check:
+  115 passed, 12 skips. Subjective improvement awaits Kit's listening; no audio was played during verification.
+
 Candidates from the code audits; measure and playtest before moving any into the sections above.
 
 - Full AgX-style tone mapping remains a candidate; Getaway now has a simpler peak-preserving shoulder under Colour

@@ -16,7 +16,7 @@ import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 import { DebugOverlay } from "./ui/debug-overlay"
 import { GpuPerf } from "../../../packages/kit/gpu-perf"
-import type { WorldView } from "../shared/sim/world"
+import type { WorldView, SimEvent } from "../shared/sim/world"
 import { vehicleEffects } from "./game/vehicle-emissions"
 import { emissionInput, startEmissionStudy, type EmissionStudy } from "./game/emission-study"
 import { lightStyle } from "./render/car-lights"
@@ -80,7 +80,17 @@ async function main() {
   let activeSession: Session = session
   const scene = new Scene(renderer, activeSession.city, lightStyle(q))
   const hud = new Hud(document.getElementById("hud")!, activeSession.city)
-  const sound = new GameAudio(document.getElementById("hud")!)
+  const sound = new GameAudio(document.getElementById("hud")!, activeSession.city)
+  sound.onShift = car => scene.testEffect("backfire", car)
+  const backfires: SimEvent[] = []
+  scene.onBackfire = car => backfires.push({ kind: "backfire", carId: car.id, text: "", t: 0 })
+  addEventListener("blur", () => sound.suspend())
+  addEventListener("focus", () => { if (!document.hidden) sound.resume() })
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) sound.suspend()
+    else if (document.hasFocus()) sound.resume()
+  })
+  addEventListener("pagehide", () => sound.suspend())
   const radio = new Radio()
   let cam = new Camera()
   const controls = new Controls()
@@ -88,7 +98,7 @@ async function main() {
   const debug = new DebugOverlay(q, () => {
     controls.release()
     controls.forward({ type: "mux-release" })
-  }, scene)
+  }, scene, sound)
   const chat = activeSession.chat ? new Chat(document.getElementById("hud")!, controls, activeSession) : null
   let snapped = false
   let freeze = 0
@@ -157,6 +167,8 @@ async function main() {
   let studyDistance = 38
   let studyHoldX = 0, studyHoldZ = 0
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
+    soundMode: () => sound.procedural,
+    nitroState: () => sound.nitroState,
     ready: atlasReady.then(() => true),
     emissions(visible: boolean) { scene.emissions.visible = visible },
     distance(value: number) { studyDistance = value },
@@ -169,6 +181,8 @@ async function main() {
     },
     reset(study = false) {
       smokeStudy = study
+      sound.reset()
+      backfires.length = 0
       rafActive = false
       const prng = mulberry32(1337)
       Math.random = () => prng()
@@ -196,7 +210,7 @@ async function main() {
       cam = new Camera()
       snapped = false
     },
-    async step(frameIndex: number, dt = 1 / 30, waitGpu = false) {
+    async step(frameIndex: number, dt = 1 / 30, waitGpu = false, drive?: { boost: boolean; throttle: number; steer: number; handbrake: boolean }) {
       const t0 = performance.now()
       const local = activeSession as LocalSession
       const r = local.world?.robber()?.body
@@ -207,7 +221,7 @@ async function main() {
       const steer = smokeStudy ? (frameIndex < 32 ? 0 : Math.max(-1, Math.min(1, (Math.PI / 2 - rh) * 1.8 - ryaw * 0.45))) : Math.max(-1, Math.min(1, (targetX - rx) * 0.18 - rh * 2.2 - ryaw * 0.35))
       const handbrake = smokeStudy ? frameIndex >= 35 && frameIndex < 44 : frameIndex >= 3 && frameIndex < 9
       const boost = smokeStudy ? frameIndex >= 6 && frameIndex < 100 : (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
-      const input = { throttle: smokeStudy && frameIndex >= 100 ? 0 : 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false }
+      const input = { throttle: smokeStudy && frameIndex >= 100 ? 0 : 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false, ...drive }
       if (emissionStudy && r) emissionInput(emissionStudy, frameIndex, r, input)
       const view = activeSession.update(dt, input)
       const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
@@ -234,6 +248,8 @@ async function main() {
       const drawFocus = emissionStudy && frameIndex >= holdFrame && focus ? { ...focus, x: studyHoldX, z: studyHoldZ } : focus
       scene.draw(view, cam, canvas.width, canvas.height, dt, drawFocus)
       const events = activeSession.drainEvents()
+      events.push(...backfires.splice(0))
+      sound.update(view, { myId: activeSession.myId, cam, dt, events, input })
       hud.update(view, {
         myId: activeSession.myId,
         cam,
@@ -254,7 +270,7 @@ async function main() {
         gpuMs = performance.now() - g0
       }
       const totalGpuMs = q.has("smoketiming") ? await renderer.totalGpuMs() : null
-      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { skids: scene.fx.skidCount, connected: scene.trail.count, wisps: scene.emissions.wispCount, flames: scene.emissions.flameCount, pops: scene.emissions.pops } }
+      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { skids: scene.fx.skidCount, connected: scene.trail.count, wisps: scene.emissions.wispCount, flames: scene.emissions.flameCount, pops: scene.emissions.pops }, audio: { view, input, events, myId: activeSession.myId, camera: { fx: cam.fx, fz: cam.fz } } }
     },
   }
 
@@ -308,9 +324,10 @@ async function main() {
       if (report) parent.postMessage({ type: "arcade-perf", ...debug.sample, ...pose, y: mine?.z, tick: muxTick, run: controls.muxRun }, controls.parentOrigin)
     }
     const events = activeSession.drainEvents()
+    events.push(...backfires.splice(0))
     hud.update(view, { myId: activeSession.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: activeSession.players(), room: activeSession.room, status: activeSession.status(), idleIn: activeSession.idleIn?.() })
     chat?.update()
-    sound.update(view, { myId: activeSession.myId, cam, dt, events, input })
+    sound.update(view, { myId: activeSession.myId, cam, dt, events, input, paused: controls.paused })
     radio.update(view, activeSession.myId, events)
     ;(window as unknown as { __view: unknown }).__view = view
     requestAnimationFrame(frame)

@@ -52,6 +52,7 @@ export function sirenOn(phase: number, red: boolean) {
 
 export class Scene {
   readonly lightSettings: LightSettings = { ...LIGHT_DEFAULTS, style: 4 }
+  onBackfire?: (car: CarView) => void
   readonly fx = new Fx()
   readonly emissions = new VehicleEmissions()
   readonly trail = this.emissions.trail
@@ -180,6 +181,7 @@ export class Scene {
       v.crash = 0.06
     } else if (key === "backfire") {
       v.emissions.pop = 0.11
+      this.onBackfire?.(car)
     } else if (key === "curb") { v.springV = 2.5; if (juice.wheelContact) v.chassis.lift.v = 2.5 }
     else if (key === "landing") { v.landV = -2.5; if (juice.suspension) v.chassis.lift.v = -2.5; this.punch = 0.8 }
     else if (key === "trauma") { this.shake = 1; this.hitStop = 0.045 }
@@ -256,7 +258,9 @@ export class Scene {
         left -= step
       }
       v.ground = ground
+      const pops = this.emissions.pops
       this.emissions.car(c, spec, v.emissions, input, dt, v.height, true, true)
+      if (this.emissions.pops > pops) this.onBackfire?.(c)
       v.backfire = v.emissions.pop
       v.fuel = c.boost
       if (c.impact > 0.35 && c.speed > 4) {

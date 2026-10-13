@@ -2,6 +2,7 @@ import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
 import { chassisSettings } from "../game/chassis"
 import { vehicleEffects } from "../game/vehicle-emissions"
 import type { Scene } from "../game/scene"
+import type { GameAudio } from "../audio/game-audio"
 import type { LightSettings, LightStyle } from "../render/car-lights"
 
 /** Presentation only; these values never enter shared vehicle physics. */
@@ -43,15 +44,17 @@ export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastUpdate = 0
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
-  constructor(q: URLSearchParams, release: () => void, scene: Scene) {
-    super({ ...juice, ...scene.lightSettings, emissions: scene.emissions.visible, coldExhaust: vehicleEffects.coldExhaust }, [
+  constructor(q: URLSearchParams, release: () => void, scene: Scene, sound?: GameAudio) {
+    super({ ...juice, ...scene.lightSettings, emissions: scene.emissions.visible, coldExhaust: vehicleEffects.coldExhaust, proceduralAudio: sound?.procedural ?? true }, [
       ...lightControls.map(control => "min" in control ? { ...control, enabled: (settings: Readonly<Record<string, boolean | number | string>>) => settings.style === 4 } : control),
       ...controls,
+      ...(sound ? [{ key: "proceduralAudio", label: "Procedural audio", group: "Audio" }] : []),
     ], q, release, (key, value) => {
       if (key === "style") scene.setLightStyle(value as LightStyle)
       else if (key in scene.lightSettings) Object.assign(scene.lightSettings, { [key]: value })
       else if (key === "emissions") scene.emissions.visible = Boolean(value)
       else if (key === "coldExhaust") vehicleEffects.coldExhaust = Boolean(value)
+      else if (key === "proceduralAudio" && sound) { sound.reset(); sound.procedural = Boolean(value) }
       else Object.assign(juice, { [key]: value })
     })
     addEventListener("keydown", (event) => {
