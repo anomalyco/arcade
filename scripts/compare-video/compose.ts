@@ -2,12 +2,23 @@ import { mkdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
 export type Job = {
+  quality: "draft" | "high"
   frames: number
   fps: number
   width: number
   height: number
   panes: { label: string; dir: string }[]
   outputs: { layout: "stack" | "side"; path: string }[]
+}
+
+export const qualities = {
+  draft: { dpr: 1, stackWidth: 720, sideWidth: 1920, stackBitrate: "6M", sideBitrate: "9M", labelHeight: 42, fontSize: 20 },
+  high: { dpr: 2, stackWidth: 1080, sideWidth: 2560, stackBitrate: "16M", sideBitrate: "28M", labelHeight: 60, fontSize: 30 },
+} as const
+
+function paneWidth(job: Job, layout: "stack" | "side") {
+  const quality = qualities[job.quality]
+  return layout === "stack" ? quality.stackWidth : Math.floor(quality.sideWidth / job.panes.length / 2) * 2
 }
 
 async function run(args: string[]) {
@@ -17,8 +28,9 @@ async function run(args: string[]) {
 
 // Tiny local images; the fleet worker only needs ffmpeg.
 export async function prepareLabels(job: Job) {
+  const quality = qualities[job.quality]
   for (const output of job.outputs) {
-    const width = output.layout === "stack" ? 720 : Math.floor(1920 / job.panes.length / 2) * 2
+    const width = paneWidth(job, output.layout)
     for (const pane of job.panes) {
       const label = join(pane.dir, `label-${width}.png`)
       // label: interprets '%' expansions and '@' reads, so use a text file with annotate instead.
@@ -27,18 +39,18 @@ export async function prepareLabels(job: Job) {
       await run([
         "magick",
         "-size",
-        `${width}x42`,
+        `${width}x${quality.labelHeight}`,
         "xc:#10131cdd",
         "-font",
         process.env.COMPARE_FONT ?? "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
         "-pointsize",
-        "20",
+        String(quality.fontSize),
         "-fill",
         "white",
         "-gravity",
         "West",
         "-annotate",
-        "+14+0",
+        `+${Math.round(quality.fontSize * 0.7)}+0`,
         `@${text}`,
         label,
       ])
@@ -47,15 +59,16 @@ export async function prepareLabels(job: Job) {
 }
 
 export async function compose(job: Job) {
+  const quality = qualities[job.quality]
   for (const output of job.outputs) {
     mkdirSync(dirname(output.path), { recursive: true })
-    const width = output.layout === "stack" ? 720 : Math.floor(1920 / job.panes.length / 2) * 2
+    const width = paneWidth(job, output.layout)
     const height = Math.round((width * job.height) / job.width / 2) * 2
     const inputs: string[] = []
     const filters: string[] = []
     for (const [i, pane] of job.panes.entries()) {
       inputs.push("-framerate", String(job.fps), "-i", join(pane.dir, "%05d.png"))
-      filters.push(`[${i}:v]scale=${width}:${height},setsar=1[v${i}]`)
+      filters.push(`[${i}:v]scale=${width}:${height}:flags=lanczos,setsar=1[v${i}]`)
     }
     for (const pane of job.panes) inputs.push("-i", join(pane.dir, `label-${width}.png`))
     for (let i = 0; i < job.panes.length; i++) filters.push(`[v${i}][${i + job.panes.length}:v]overlay=0:0[p${i}]`)
@@ -82,9 +95,9 @@ export async function compose(job: Job) {
       "-c:v",
       "h264_videotoolbox",
       "-profile:v",
-      output.layout === "stack" ? "main" : "high",
+      "high",
       "-b:v",
-      output.layout === "stack" ? "6M" : "9M",
+      output.layout === "stack" ? quality.stackBitrate : quality.sideBitrate,
       "-pix_fmt",
       "yuv420p",
       "-movflags",

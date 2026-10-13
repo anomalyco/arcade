@@ -103,7 +103,7 @@ export function instrumentGetaway(source: string): string {
   const keys = JSON.stringify(["fx", "fz", "dist", "fov", "lx", "lz", "t", "shake", "landing"])
   replace(
     draw,
-    `(window.__compareVideo.camera && Object.assign(${camera},window.__compareVideo.camera), window.__compareVideo.lastCamera = Object.fromEntries(${keys}.map(k=>[k,${camera}[k] ?? 0])), ${draw.getText(file)})`,
+    `(window.__compareVideo.camera && Object.assign(${camera},window.__compareVideo.camera), window.__compareVideo.lastCamera = Object.fromEntries(${keys}.map(k=>[k,${camera}[k] ?? 0])), window.__compareVideo.draw(${camera}, () => ${draw.getText(file)}))`,
   )
   edits.sort((a, b) => b.start - a.start)
   for (let i = 0; i < edits.length; i++) {
@@ -115,10 +115,22 @@ export function instrumentGetaway(source: string): string {
 }
 
 export const getaway = {
-  async install(page: Page, seed: number) {
+  async install(page: Page, seed: number, zoom = 1) {
     await page.addInitScript(
-      ({ seed }) => {
-        ;(window as any).__compareVideo = { seed }
+      ({ seed, zoom }) => {
+        ;(window as any).__compareVideo = {
+          seed,
+          // Change projection only while drawing. Replay and camera smoothing retain the unzoomed state.
+          draw(camera: { fov: number }, draw: () => unknown) {
+            const fov = camera.fov
+            camera.fov = 2 * Math.atan(Math.tan(fov / 2) / zoom)
+            try {
+              return draw()
+            } finally {
+              camera.fov = fov
+            }
+          },
+        }
         // Seed atlas/scene creation too, not just the session reset.
         let s = seed
         Math.random = () => {
@@ -129,7 +141,7 @@ export const getaway = {
           return ((t ^ (t >>> 14)) >>> 0) / 4294967296
         }
       },
-      { seed },
+      { seed, zoom },
     )
     let patched = false
     let hookSourceSha256 = ""

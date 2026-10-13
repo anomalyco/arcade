@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import { createHash } from "node:crypto"
-import { prepareLabels, type Job } from "./compare-video/compose"
+import { prepareLabels, qualities, type Job } from "./compare-video/compose"
 
 const root = resolve(import.meta.dir, "..")
 const { values } = parseArgs({
@@ -17,6 +17,8 @@ const { values } = parseArgs({
     fps: { type: "string", default: "30" },
     seed: { type: "string", default: "7" },
     size: { type: "string", default: "900x800" },
+    quality: { type: "string", default: "high" },
+    zoom: { type: "string", default: "1" },
     scenario: { type: "string", default: "chase" },
     out: { type: "string" },
     "also-side": { type: "string" },
@@ -27,7 +29,10 @@ const { values } = parseArgs({
 })
 if (values.help) {
   console.log(`bun scripts/compare-video.ts --game getaway --version 'Before=ref:4495277' --version 'Now=url:http://getaway-smoke.localhost:1355' --layout stack --frames 360 --seed 7 --size 900x800 --out captures/compare/night.mp4
-  --also-side PATH.mp4  Compose a 1920-wide version from the same frames.
+  --quality high|draft High (default): 2× capture, 1080-wide stack / 2560-wide side, 16 / 28 Mbps.
+                       Draft: 1× capture, 720-wide stack / 1920-wide side, 6 / 9 Mbps.
+  --zoom NUMBER        Camera magnification, 1–3 (default 1); try 1.35 for closer car detail.
+  --also-side PATH.mp4 Compose a side-by-side version from the same frames.
   --scenario chase     Or a path to a module exporting {name,input(frame,fps,car)}.
   --input-only         Replay inputs only; by default the last version also supplies poses/camera.
   --keep               Keep captured frames, manifest and temporary ref worktrees (previews stop).
@@ -38,6 +43,11 @@ Production URLs need a supported __getawayBench hook; otherwise use the deployed
 }
 if (values.game !== "getaway") throw new Error(`No adapter for ${values.game}; add one beside compare-video/getaway.ts`)
 if (!["stack", "side"].includes(values.layout!)) throw new Error("--layout must be stack or side")
+if (values.quality !== "draft" && values.quality !== "high") throw new Error("--quality must be draft or high")
+const quality = values.quality
+const deviceScaleFactor = qualities[quality].dpr
+const zoom = Number(values.zoom)
+if (!Number.isFinite(zoom) || zoom < 1 || zoom > 3) throw new Error("--zoom must be a number from 1 to 3")
 const frames = Number(values.frames),
   fps = Number(values.fps),
   seed = Number(values.seed)
@@ -185,15 +195,22 @@ try {
   const order = [versions.length - 1, ...versions.slice(0, -1).map((_, i) => i)]
   for (const index of order) {
     const v = versions[index]!
-    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, serviceWorkers: "block" })
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor, serviceWorkers: "block" })
     const errors: string[] = []
     page.on("pageerror", (error) => errors.push(error.message))
-    const ready = await adapter.install(page, seed)
+    const ready = await adapter.install(page, seed, zoom)
     const url = new URL(v.url)
     for (const key of ["stage", "freeze", "peaceful", "mux", "lab", "perf"]) url.searchParams.delete(key)
     for (const [key, value] of Object.entries({ solo: "1", bench: "1", seed: String(seed), nohud: "1" })) url.searchParams.set(key, value)
     await page.goto(url.href, { waitUntil: "networkidle", timeout: 60_000 })
     const { adapter: gpu, hookSourceSha256 } = await ready()
+    const canvasSize = await page
+      .locator(adapter.canvas)
+      .evaluate((canvas: HTMLCanvasElement) => ({ width: canvas.width, height: canvas.height }))
+    if (canvasSize.width !== width * deviceScaleFactor || canvasSize.height !== height * deviceScaleFactor)
+      throw new Error(
+        `Unexpected capture canvas: ${JSON.stringify(canvasSize)}; expected ${width * deviceScaleFactor}x${height * deviceScaleFactor}`,
+      )
     if (!gpu || !/apple/i.test(JSON.stringify(gpu)) || /swiftshader|llvmpipe|software/i.test(JSON.stringify(gpu)))
       throw new Error(`Expected Apple Metal hardware adapter: ${JSON.stringify(gpu)}`)
     console.log(`${v.label}: ${JSON.stringify(gpu)}`)
@@ -212,7 +229,7 @@ try {
         throw new Error(`Replay mismatch: ${v.label} frame ${frame}`)
       await page
         .locator(adapter.canvas)
-        .screenshot({ path: join(dir, `${String(frame).padStart(5, "0")}.png`), animations: "disabled", timeout: 30_000 })
+        .screenshot({ path: join(dir, `${String(frame).padStart(5, "0")}.png`), scale: "device", animations: "disabled", timeout: 30_000 })
       if (errors.length) throw new Error(`${v.label}: ${errors.join("\n")}`)
       if (frame % 60 === 0) console.log(`${v.label}: ${frame + 1}/${frames}`)
     }
@@ -222,6 +239,7 @@ try {
   await browser.close()
   browser = undefined
   const job: Job = {
+    quality,
     frames,
     fps,
     width,
@@ -230,6 +248,9 @@ try {
     outputs: outputs.map((o, i) => ({ layout: o.layout, path: relative(root, join(work, "result", `${i}.mp4`)) })),
   }
   const manifest = {
+    quality,
+    deviceScaleFactor,
+    zoom,
     game: values.game,
     scenario: scenario.name,
     seed,

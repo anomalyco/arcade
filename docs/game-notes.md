@@ -13,7 +13,11 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   each version's simulation instead. The seed-7 historical/smoke pair matched all 360 world/camera snapshots at 30 Hz;
   a four-pane seed-11 check also covered the deployed bundle and temporary-worktree cleanup. Two independent seed-11
   deployed runs produced byte-identical PNGs for all 30 frames in input-only mode. Captures are canvas-only,
-  with PNG labels, 720-wide stacked or 1920-wide side output, a contact sheet and a JSON manifest. Capture timing
+  with PNG labels, a contact sheet and a JSON manifest. High quality defaults to 2× capture, Lanczos downsampling,
+  1080-wide stacked / 2560-wide side output, and 16 / 28 Mbps H.264 High. `--quality draft` retains 720 / 1920-wide
+  output at 1× capture. `--zoom` changes the projection only during drawing, leaving the replay camera state intact.
+  The 12-second seed-7 example at 1.35× zoom matched all 360 snapshots and produced 24.28 / 42.40 MB videos; full
+  decoding and full-resolution frame inspection passed. Capture timing
   includes screenshot readback and is not a performance benchmark.
 
 - **Measure before you edit.** Record a baseline on the unchanged code, then make one change at a time. Use one warmup

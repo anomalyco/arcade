@@ -14,7 +14,7 @@ Each folder is an independent Bun project with its own `package.json`, lockfile,
 There is no root workspace.
 
 Record matching Getaway runs: `bun scripts/compare-video.ts --version Before=ref:4495277 --version Now=url:http://getaway-smoke.localhost:1355 --layout stack --out captures/compare/night.mp4`.
-Use `--also-side captures/compare/night-side.mp4` for both layouts; `--help` lists scenarios, seed, frame count, prerequisites and historical-hook limits.
+Use `--also-side captures/compare/night-side.mp4` for both layouts; high quality is the default (2× capture, 1080-wide stack / 2560-wide side). Add `--zoom 1.35` for closer framing or `--quality draft` for smaller files; see `--help` for all options.
 
 ```sh
 cd games/blackout
