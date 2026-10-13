@@ -70,7 +70,8 @@ try {
   assert.equal(after.x, before.x); assert.equal(after.y, before.y)
   await page.keyboard.press("Backquote")
   // Real F key edge toggles exactly once; Dvorak E moves right without opening a door.
-  await pose(27.7, 39, -Math.PI / 2)
+  const entrance=await page.evaluate(()=>(window as any).__arcadeHarness.state().town.doors[0].rect[3])
+  await pose(27.7, entrance+1, -Math.PI / 2)
   await page.evaluate(() => (window as any).__arcadeHarness.freeze(false))
   await page.keyboard.press("f")
   await page.waitForFunction(() => (window as any).__arcadeHarness.state().town.doors[0].open)

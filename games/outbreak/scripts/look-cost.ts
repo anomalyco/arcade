@@ -4,11 +4,12 @@ import { resolve } from "node:path"
 import { cpus } from "node:os"
 import { chromium } from "playwright-core"
 
-const root=resolve(import.meta.dir,"../../.."), out=resolve(root,"captures/outbreak-look/cost")
+const root=resolve(import.meta.dir,"../../.."), out=resolve(root,process.env.COST_PATH??"captures/outbreak-look/cost")
+const baselineRef=process.env.BASELINE_REF??"cd77303", scene=process.env.COST_SCENE??"street"
 const baseline=resolve(out,"baseline")
 mkdirSync(baseline,{recursive:true})
 const run=(args:string[],cwd:string) => assert.equal(Bun.spawnSync(args,{cwd,stdout:"inherit",stderr:"inherit"}).exitCode,0,args.join(" "))
-run(["tar","-xf",resolve(import.meta.dir,".baseline.tar"),"-C",baseline],root)
+run(["tar","-xf",resolve(root,process.env.BASELINE_ARCHIVE??"games/outbreak/scripts/.baseline.tar"),"-C",baseline],root)
 run(["bun","install","--frozen-lockfile"],baseline)
 const sources={before:baseline,after:root}
 const fixtures:ReturnType<typeof Bun.serve>[]=[]
@@ -37,7 +38,7 @@ try {
     await page.waitForFunction(()=>(window as any).__arcadeHarness?.ready)
     const adapter=await page.evaluate(()=>(window as any).__arcadeHarness.adapterInfo)
     assert.match(adapter.architecture,/metal/)
-    await page.evaluate(async()=>{const h=(window as any).__arcadeHarness;h.setLab("timeScale",0);h.setLab("hour",18);h.setLab("zoom",42);h.pose(30,41,-Math.PI/2);for(let i=0;i<30;i++)await h.step()})
+    await page.evaluate(async scene=>{const h=(window as any).__arcadeHarness;h.setLab("timeScale",0);h.setLab("hour",scene==="street"?18:19);h.setLab("zoom",scene==="street"?42:34);h.pose(scene==="street"?30:27.7,scene==="street"?41:31,-Math.PI/2);if(scene!=="street")await h.step(1/60,{interact:true});for(let i=0;i<30;i++)await h.step()},scene)
     const cdp=await page.context().newCDPSession(page)
     await cdp.send("HeapProfiler.startSampling",{samplingInterval:4096,includeObjectsCollectedByMajorGC:true,includeObjectsCollectedByMinorGC:true})
     const measurement=await page.evaluate(async()=>{
@@ -58,6 +59,6 @@ try {
   const summary=Object.fromEntries(["before","after"].map(name=>{const r=measured.filter(r=>r.name===name),ms=r.map(r=>r.medianMs);return [name,{medianMs:median(ms),minMs:Math.min(...ms),maxMs:Math.max(...ms),sampledBytesPerStep:median(r.map(r=>r.sampledBytesPerStep)),vertices:vertices[name]}]}))
   for(let pair=0;pair<7;pair++) assert.deepEqual(measured.find(r=>r.pair===pair&&r.name==="before").player,measured.find(r=>r.pair===pair&&r.name==="after").player)
   const deltas=Array.from({length:7},(_,pair)=>measured.find(r=>r.pair===pair&&r.name==="after").medianMs-measured.find(r=>r.pair===pair&&r.name==="before").medianMs)
-  await Bun.write(resolve(out,"paired.json"),JSON.stringify({baseline:"cd77303",hardware:cpus()[0]?.model,viewport:[1000,680],frames:120,warmupPairs:1,measuredPairs:7,description:"Awaited production harness steps (CPU + GPU queue completion, not pure GPU time). CDP 4KiB sampled allocations include collected objects and harness state snapshots; not an exact allocation count.",summary,pairedDeltaMs:{median:median(deltas),min:Math.min(...deltas),max:Math.max(...deltas)},runs},null,2))
+  await Bun.write(resolve(out,"paired.json"),JSON.stringify({baseline:baselineRef,scene,hardware:cpus()[0]?.model,viewport:[1000,680],frames:120,warmupPairs:1,measuredPairs:7,description:"Awaited production harness steps (CPU + GPU queue completion, not pure GPU time). CDP 4KiB sampled allocations include collected objects and harness state snapshots; not an exact allocation count.",summary,pairedDeltaMs:{median:median(deltas),min:Math.min(...deltas),max:Math.max(...deltas)},runs},null,2))
   console.log(JSON.stringify(summary,null,2))
 } finally {await browser.close();for(const fixture of fixtures)fixture.stop(true)}

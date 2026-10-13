@@ -71,6 +71,18 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   The failure reproduced in headless Chromium 1248 on Linux; all three production smokes passed with these flags.
   Keep errors fatal: accepting adapter creation alone would miss this failure.
 
+- **Diagnose washed-out surfaces before changing specular.** Outbreak's ground specular was already zero.
+  `games/outbreak/scripts/refine-proof.ts` captures the shared shader's albedo/direct/ambient/specular/bloom
+  contributions through the Lab. Smaller practical pools, sheltered ambient and removal of additive blue shadow
+  lift corrected the main wash. Room lamps are excluded above the roof underside. Default shared WGSL remains
+  equivalent across twelve outputs. See `docs/outbreak-look-v2.md` for aligned evidence and limitations.
+- **Cull and simplify generated planting before adding density.** The second Outbreak pass removes covered
+  terrain and excess grass/gravel, replaces sphere crowns with fewer folded-leaf sprays, and gives props their
+  own render bounds. Static vertices fall 299,238→196,722; street submitted vertices fall 164,820→97,014.
+  Seven M5 Max/Metal pairs at 1000×680 have mixed frame results: street aggregate medians 10.0→9.6 ms,
+  interior 9.9→10.7 ms. Keep those queue-completed spans distinct from GPU time. The measured Metal render-pass
+  timestamp intervals overlap; summing them would falsely attribute cost. Generation uses a three-entry cache,
+  and the determinism test explicitly evicts it before comparing independently compiled meshes.
 - **Separate scenery memory from actor LOS.** Outbreak's initial cone blacked out most of its neighbourhood.
   Static room discovery now supplies the scenery texture while `Vision.visible` retains strict occlusion for actors.
   A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.

@@ -4,102 +4,115 @@ import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
 
 const rgb = (v:number):Rgb => [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]
+type Point = [number,number,number]
 
-/** Layered, irregular crowns with little leaf clusters, all world-seeded and static. */
-export function plant(m:Mesh, x:number, z:number, h:number, radius:number, seed:number, ground:number) {
-  const rng=new Rng(seed), bark=rgb(0x514333)
-  if(h>2) {
-    m.prism(x,z,.18,.08,ground,ground+h*.65,7,bark,MAT.timber)
-    for(let i=0;i<3;i++) { const a=i*2.1+rng.next(); m.yawBox(x+Math.cos(a)*.3,z+Math.sin(a)*.3,.8,.09,ground+h*.45,ground+h*.45+.13,a,bark,MAT.timber) }
-  }
-  const cluster=(cx:number,cy:number,cz:number,rx:number,ry:number,rz:number,col:Rgb) => {
-    const rings=4,sides=9
-    const point=(r:number,s:number) => { const a=r/rings*Math.PI, b=s/sides*Math.PI*2; return [cx+Math.sin(a)*Math.cos(b)*rx,cy+Math.cos(a)*ry,cz+Math.sin(a)*Math.sin(b)*rz] }
-    for(let r=0;r<rings;r++) for(let s=0;s<sides;s++) {
-      const a=point(r,s+1),b=point(r+1,s+1),c=point(r+1,s),d=point(r,s)
-      for(const p of [a,b,c,a,c,d]) {
-        const n=[(p[0]!-cx)/rx**2,(p[1]!-cy)/ry**2,(p[2]!-cz)/rz**2],length=Math.hypot(...n)
-        m.vert(p,n.map(v=>v/length),col,MAT.foliage)
+function branch(m:Mesh,a:Point,b:Point,r:number) {
+  const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],len=Math.hypot(dx,dy,dz)
+  const axis=[dx/len,dy/len,dz/len],side=Math.hypot(dx,dz)
+  const u=side<.001?[1,0,0]:[-dz/side,0,dx/side]
+  const v=[axis[1]!*u[2]!-axis[2]!*u[1]!,axis[2]!*u[0]!-axis[0]!*u[2]!,axis[0]!*u[1]!-axis[1]!*u[0]!]
+  const p=(end:number,i:number)=>{const q=end?b:a,s=r*(end?.4:1),c=Math.cos(i*6.283/5),n=Math.sin(i*6.283/5);return q.map((x,j)=>x+s*(u[j]!*c+v[j]!*n))}
+  for(let i=0;i<5;i++)m.quadAuto(p(0,i),p(1,i),p(1,i+1),p(0,i+1),rgb(0x484332),MAT.timber)
+}
+
+/** Broadleaf scaffold: exposed forks, separated shoots and folded leaf sprays. No opaque crown spheres. */
+export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number) {
+  const rng=new Rng(seed),tree=h>2,tiers=tree?3:2,branches=3
+  if(tree)branch(m,[x,ground,z],[x+.12,ground+h*.85,z-.15],.16)
+  for(let tier=0;tier<tiers;tier++)for(let j=0;j<branches;j++){
+    const angle=j*6.283/branches+tier*1.1+rng.next()*.5
+    const reach=radius*(.7+rng.next()*.3)*(1-tier*.12)
+    const start:Point=[x,ground+h*(tree?.3+tier*.17:.12),z]
+    const tip:Point=[x+Math.cos(angle)*reach,ground+h*(.6+tier*.14),z+Math.sin(angle)*reach]
+    branch(m,start,tip,tree?.07:.018)
+    // Each shoot carries an offset pair of sprays; empty branch intervals preserve crown gaps.
+    for(let shoot=0;shoot<2;shoot++){
+      const t=.63+shoot*.36,cx=start[0]+(tip[0]-start[0])*t,cy=start[1]+(tip[1]-start[1])*t,cz=start[2]+(tip[2]-start[2])*t
+      for(let leaf=0;leaf<6;leaf++){
+        const a=angle+leaf*2.4,spread=radius*.29*Math.sqrt((leaf+1)/6)
+        const px=cx+Math.cos(a)*spread,pz=cz+Math.sin(a)*spread,py=cy+(rng.next()-.45)*h*.13
+        const size=(tree?.3:.11)+rng.next()*(tree?.28:.09),width=size*.64
+        const f=[Math.cos(a)*size,Math.sin(a)*size],s=[-Math.sin(a)*width,Math.cos(a)*width]
+        const center=[px,py+.05,pz],a0=[px-f[0]!,py,pz-f[1]!],a1=[px+s[0]!,py-.03,pz+s[1]!],a2=[px+f[0]!,py-.02,pz+f[1]!],a3=[px-s[0]!,py-.04,pz-s[1]!]
+        const k=.75+rng.next()*.35,col:Rgb=[.28*k,.34*k,.18*k]
+        for(const [a,b] of [[a0,a1],[a1,a2],[a2,a3],[a3,a0]])m.facet(center,a!,b!,col,MAT.foliage)
       }
-    }
-  }
-  for(let i=0;i<8;i++) {
-    const a=i*2.4, spread=i===0?0:radius*.65
-    const cx=x+Math.cos(a)*spread, cz=z+Math.sin(a)*spread, cy=ground+h*(.65+rng.next()*.16)
-    const tint=.8+rng.next()*.35
-    const col:Rgb=[.34*tint,.42*tint,.22*tint]
-    cluster(cx,cy,cz,radius*(.5+rng.next()*.2),h*.24,radius*.58,col)
-    for(let j=0;j<32;j++) {
-      const u=rng.next()*6.28, v=rng.next()*2.3, scale=.14+rng.next()*.10
-      const px=cx+Math.cos(u)*radius*.6*Math.sin(v), pz=cz+Math.sin(u)*radius*.6*Math.sin(v), py=cy+Math.cos(v)*h*.24
-      m.quad([px-scale,py,pz],[px,py+.07,pz+scale],[px+scale,py,pz],[px,py-.03,pz-scale],[0,1,0],[col[0]*1.1,col[1]*1.1,col[2]],MAT.foliage)
     }
   }
 }
 
-/** House-specific form over the authoritative footprint. Material recipes live in kit. */
+/** Procedural bungalow over authoritative room and opening boundaries. */
 export function house(m:Mesh,b:Building,id:number,town:Town) {
-  const [x,z,r,e]=b.rect, mid=(z+e)/2, ridge=4.35+(town.houseSeed%3)*.12
-  const trim=rgb(0xbcb9a9), roof=rgb(0x3c4246), brick=rgb(0x755044)
-  if(b.kind==="house") {
-    m.quadAuto([x-.4,2.87,e+.4],[r+.4,2.87,e+.4],[r+.4,ridge,mid],[x-.4,ridge,mid],roof,MAT.roof,id)
-    m.quadAuto([x-.4,ridge,mid],[r+.4,ridge,mid],[r+.4,2.87,z-.4],[x-.4,2.87,z-.4],roof,MAT.roof,id)
-    for(const px of [x-.01,r+.01]) m.facet([px,2.8,z-.05],[px,ridge,mid],[px,2.8,e+.05],rgb(b.color),MAT.roof,id)
-    m.box(x-.45,2.72,z-.4,r+.45,2.89,z-.27,trim,MAT.roof,id)
-    m.box(x-.45,2.72,e+.27,r+.45,2.89,e+.4,trim,MAT.roof,id)
-    m.box(r-2.4,3.5,z+3,r-1.5,5.3,z+3.75,brick,MAT.brick)
-    m.box(r-2.5,5.25,z+2.9,r-1.4,5.4,z+3.85,rgb(0x77766b))
-    m.box(r-2.29,5.4,z+3.1,r-1.61,5.41,z+3.65,rgb(0x252c2c))
-    m.box(x-.42,ridge-.04,mid-.1,r+.42,ridge+.04,mid+.1,roof,MAT.roof,id)
-    // Small pitched porch; the existing threshold stays at 13cm, with no blocking stair.
-    const cx=x+5.7
-    m.quadAuto([cx-1.5,2.5,e+1.6],[cx,3.15,e+1.6],[cx,3.15,e-.1],[cx-1.5,2.5,e-.1],roof,MAT.roof,id)
-    m.quadAuto([cx,3.15,e+1.6],[cx+1.5,2.5,e+1.6],[cx+1.5,2.5,e-.1],[cx,3.15,e-.1],roof,MAT.roof,id)
-    for(const px of [cx-1.3,cx+1.3]) m.box(px-.07,.13,e+1.35,px+.07,2.5,e+1.49,trim,MAT.wall)
-    // Side-drive gravel and porch planting leave the approach clear.
-    for(const px of [x+.65,x+2.4,r-2.7,r-.7]) plant(m,px,e+.55,.9,.55,town.houseSeed+Math.floor(px*91),supportHeight(town,px,e+.55))
-    for(const px of [x+.08,r-.14]) {
-      m.box(px,.25,e+.07,px+.07,2.76,e+.15,trim,MAT.timber)
-      m.box(px,.12,e+.1,px+.07,.22,e+.6,trim,MAT.timber)
-    }
-    // Restrained domestic furniture and fixtures, not a new floor plan.
-    m.box(r-1.05,.13,z+6.9,r-.3,.94,z+9.5,rgb(0x857963),MAT.timber)
-    m.box(r-1.1,.94,z+6.85,r-.25,1.01,z+9.55,rgb(0xb7b6a7))
-    m.box(r-1.12,1.015,z+7.2,r-.3,1.025,z+7.8,rgb(0x515e5d))
-    for(let d=0;d<3;d++) m.box(r-1.07,.2,z+7+d*.8,r-1.06,.87,z+7.7+d*.8,rgb(0xaaa18b))
-    m.box(r-1.1,.13,z+10,r-.25,1.9,z+11,rgb(0xb0b4a9))
-    m.box(r-4.5,.142,e-5.7,r-1.2,.15,e-2.7,rgb(0x6d5140))
-    for(let k=0;k<4;k++) m.box(r-4.4+k*.13,.151,e-5.6,r-4.35+k*.13,.154,e-2.8,rgb(0xa88e62))
-    // Dining corner, wall prints and a bedroom dresser, away from both door approaches.
-    const wood=rgb(0x88714f)
-    m.box(x+1.7,.72,e-5,x+3.7,.83,e-3.7,wood,MAT.timber)
-    for(const px of [x+1.8,x+3.6]) for(const pz of [e-4.9,e-3.8]) m.box(px-.04,.13,pz-.04,px+.04,.73,pz+.04,wood,MAT.timber)
-    for(const pz of [e-5.4,e-3.3]) for(const px of [x+2.1,x+3.3]) {
-      m.box(px-.24,.48,pz-.24,px+.24,.56,pz+.24,wood,MAT.timber)
-      m.box(px-.24,.5,pz-.25,px+.24,1.12,pz-.19,wood,MAT.timber)
-      for(const dx of [-.19,.19]) m.box(px+dx-.025,.13,pz-.18,px+dx+.025,.48,pz+.18,wood,MAT.timber)
-    }
-    m.box(r-4,.13,z+.3,r-1.5,1.15,z+1,wood,MAT.timber)
-    for(let d=0;d<3;d++) {
-      m.box(r-3.95,.22+d*.29,z+1.01,r-1.55,.45+d*.29,z+1.04,rgb(0x9a8361),MAT.timber)
-      m.box(r-2.9,.3+d*.29,z+1.04,r-2.6,.34+d*.29,z+1.08,rgb(0xc1b080))
-    }
-    for(const px of [x+2,r-3]) {
-      m.box(px-.55,1.3,z+.225,px+.55,2.1,z+.28,wood,MAT.wall)
-      m.box(px-.47,1.38,z+.285,px+.47,2.02,z+.3,rgb(0x7a8c7a),MAT.wall)
-    }
-    // Border-woven rugs have broad, stable details rather than tiny noisy textures.
-    m.box(x+5,.135,z+1.1,x+8,.145,z+4.4,rgb(0x745047))
-    m.box(x+5.15,.146,z+1.25,x+7.85,.15,z+4.25,rgb(0x9d865f))
-    m.box(x+5.22,.151,z+1.32,x+7.78,.155,z+4.18,rgb(0x645449))
-  } else {
-    m.box(x-.15,2.8,z-.15,r+.15,2.94,e+.15,rgb(0x555a54),MAT.roof,id)
+  const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
+  const trim=rgb(0x96978b),roof=rgb(0x495260),brick=rgb(0x624b40)
+  if(b.kind!=="house"){m.box(x-.15,2.8,z-.15,r+.15,2.94,e+.15,rgb(0x555a54),MAT.roof,id);return}
+  m.quadAuto([x-.42,2.88,e+.42],[r+.42,2.88,e+.42],[r+.42,ridge,mid],[x-.42,ridge,mid],roof,MAT.roof,id)
+  m.quadAuto([x-.42,ridge,mid],[r+.42,ridge,mid],[r+.42,2.88,z-.42],[x-.42,2.88,z-.42],roof,MAT.roof,id)
+  for(const px of [x-.01,r+.01])m.facet([px,2.8,z],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
+  m.box(x-.45,2.68,z-.42,r+.45,2.86,z-.31,trim,MAT.roof,id)
+  m.box(x-.45,2.68,e+.31,r+.45,2.86,e+.42,trim,MAT.roof,id)
+  // Dark soffit and half-round gutter read as a thin sheltered edge, not a white outline.
+  m.box(x-.42,2.65,e+.03,r+.42,2.7,e+.4,rgb(0x555b55),MAT.roof,id)
+  m.box(x-.48,2.74,e+.4,r+.48,2.80,e+.49,rgb(0x686f6b),MAT.roof,id)
+  m.box(x-.42,ridge-.04,mid-.1,r+.42,ridge+.04,mid+.1,roof,MAT.roof,id)
+  m.box(r-1.8,3.25,mid+1.1,r-1.15,4.7,mid+1.75,brick,MAT.brick)
+  m.box(r-1.88,4.67,mid+1.02,r-1.07,4.78,mid+1.83,rgb(0x79796e))
+  m.box(r-1.68,4.78,mid+1.22,r-1.27,4.79,mid+1.63,rgb(0x1e2427))
+  const cx=x+5.7
+  m.quadAuto([cx-1.5,2.5,e+1.6],[cx,3.15,e+1.6],[cx,3.15,e-.15],[cx-1.5,2.5,e-.15],roof,MAT.roof,id)
+  m.quadAuto([cx,3.15,e+1.6],[cx+1.5,2.5,e+1.6],[cx+1.5,2.5,e-.15],[cx,3.15,e-.15],roof,MAT.roof,id)
+  for(const px of [cx-1.3,cx+1.3]){
+    m.box(px-.075,.13,e+1.22,px+.075,2.5,e+1.37,trim,MAT.wall)
+    m.box(px-.12,.13,e+1.17,px+.12,.3,e+1.42,brick,MAT.brick)
   }
-  // Foundation is visible only beneath solid walls, so openings remain usable.
-  for(const barrier of town.barriers) {
+  // Door casing, lintel, sill and supported coir mat share the real 1.4m opening.
+  for(const px of [x+4.94,x+6.4])m.box(px,.13,e-.24,px+.08,2.36,e+.06,trim,MAT.wall)
+  m.box(x+4.94,2.3,e-.24,x+6.48,2.4,e+.06,trim,MAT.wall)
+  m.box(x+5,.13,e-.28,x+6.4,.15,e+.18,rgb(0x7f7865))
+  m.box(cx-.48,.132,e+.22,cx+.48,.155,e+.7,rgb(0x655740),MAT.timber)
+  // Grouped foundation planting: dark soil, irregular species-scale clusters, intentional gaps.
+  const rng=new Rng(town.houseSeed+id*71)
+  for(const [a,d] of [[x+.3,x+4.4],[x+7.2,r-.3]]){
+    m.quad([a!,.025,e+1.05],[d!,.025,e+1.05],[d!,.025,e+.1],[a!,.025,e+.1],[0,1,0],rgb(0x37352b),MAT.ground,5)
+    let px=a!+.35
+    while(px<d!-.25){const h=.42+rng.next()*.43;plant(m,px,e+.48+(rng.next()-.5)*.32,h,.38+rng.next()*.18,Math.floor(rng.next()*1e6),supportHeight(town,px,e+.5));px+=.65+rng.next()*.6}
+    for(let px=a!;px<d!;px+=.5)m.box(px,.015,e+1.01,px+.42,.055,e+1.12,rgb(0x555c4b),MAT.brick)
+  }
+  for(const px of [x+.08,r-.14]){
+    m.box(px,.12,e+.1,px+.07,2.77,e+.17,trim,MAT.timber)
+    m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
+  }
+  for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,trim,MAT.wall)
+  // Narrow side-yard planting follows the gravel edge and leaves the drive/passages open.
+  for(const [px,pz] of [[x-3.4,e-.9],[x-3.5,e-3.2],[r+.45,z+2.8],[r+.4,z+5.4]])plant(m,px!,pz!,1.1,.5,town.houseSeed+Math.floor(pz!*43),supportHeight(town,px!,pz!))
+  for(let i=0;i<9;i++){
+    const a=i*2.4,px=r-.85+Math.cos(a)*.35,pz=e+.62+Math.sin(a)*.25
+    m.prism(px,pz,.055,.04,.6+(i%3)*.06,.68+(i%3)*.06,5,rgb(0xa9af92))
+  }
+  // Two furnished zones, with the 1.4m entrance-to-bedroom circulation lane kept empty.
+  const rug=(a:number,c:number,d:number,f:number,color:number)=>{
+    m.box(a,.132,c,d,.14,f,rgb(0x796449));m.box(a+.10,.141,c+.10,d-.10,.145,f-.10,rgb(color))
+    for(let t=0;t<3;t++)m.box(a+.16+t*.08,.146,c+.15,a+.20+t*.08,.15,f-.15,rgb(0x8f7956))
+  }
+  rug(x+.45,e-3.7,x+4.5,e-.5,0x514d3f)
+  rug(x+3.05,z+.65,x+5.05,z+4.2,0x6c5545)
+  // Upper kitchen cupboards and a tiled splashback, supported by the east wall.
+  m.box(r-.245,1.02,e-3.2,r-.23,1.67,e-.85,rgb(0x727d70),MAT.wall)
+  m.box(r-.65,1.78,e-3.2,r-.25,2.37,e-1.2,rgb(0x85785e),MAT.wall)
+  for(let i=0;i<3;i++)m.box(r-.67,1.82,e-3.15+i*.64,r-.65,2.33,e-2.56+i*.64,rgb(0x998769),MAT.wall)
+  // A modest wood bench beside the porch, leaving the entrance and swing clear.
+  m.box(x+7.7,.53,e+.2,x+9.3,.61,e+.63,rgb(0x6f6248),MAT.timber)
+  for(const px of [x+7.85,x+9.15])m.box(px,.03,e+.27,px+.08,.53,e+.55,rgb(0x424737),MAT.timber)
+  // Radiator and framed print occupy a wall, rather than adding another partition.
+  for(let i=0;i<8;i++)m.box(r-3.7+i*.13,.3,z+.25,r-3.62+i*.13,.85,z+.42,rgb(0x87877a),MAT.wall)
+  for(const [px,pz] of [[x+3,z+.23],[r-3,e-.27]]){
+    m.box(px!-.55,1.25,pz!,px!+.55,2,pz!+.055,rgb(0x534838),MAT.wall)
+    m.box(px!-.46,1.34,pz!+.056,px!+.46,1.91,pz!+.062,rgb(0x81856f),MAT.wall)
+  }
+  for(const barrier of town.barriers){
     const [a,c,d,f]=barrier.rect
-    if(a<x || d>r || c<z || f>e || barrier.kind==="fence") continue
-    m.box(a-.025,.08,c-.025,d+.025,.34,f+.025,brick,MAT.brick)
-    m.box(a+.03,.34,c+.03,d-.03,.4,f-.03,trim,MAT.wall)
+    if(a<x||d>r||c<z||f>e||barrier.kind==="fence")continue
+    m.box(a-.018,.025,c-.018,d+.018,.28,f+.018,brick,MAT.brick)
+    m.box(a,.28,c,d,.32,f,trim,MAT.wall)
   }
 }
