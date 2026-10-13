@@ -7,9 +7,8 @@ const seed = query.get("seed") ?? (game === "blackout" ? "1" : "7")
 const urls = panes.map((pane, i) => {
   const url = new URL(query.get(i ? "after" : "before") ?? pane.dataset.src!, location.href)
   for (const [key, value] of Object.entries({ peaceful: "1", perf: "1", mux: "1", seed })) url.searchParams.set(key, value)
-  if (i === 0) {
-    if (pane.dataset.vanilla !== "false") url.searchParams.set("vanilla", "1")
-  } else { url.searchParams.delete("vanilla"); url.searchParams.set("lab", "1") }
+  if (i === 0) { if (pane.dataset.vanilla !== "false") url.searchParams.set("vanilla", "1") }
+  else { url.searchParams.delete("vanilla"); url.searchParams.set("lab", "1") }
   return url
 })
 const origins = urls.map((url) => url.origin)
@@ -92,10 +91,10 @@ header.addEventListener("pointerdown", (event) => {
   activate(-1)
   if (!(event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement)) header.focus({ preventScroll: true })
 })
-for (const kind of ["keydown", "keyup"] as const) addEventListener(kind, (event) => {
+for (const kind of ["keydown", "keyup"] as const) window.addEventListener(kind, (event) => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLButtonElement && ["Enter", "Space"].includes(event.code)) return
   event.preventDefault()
-  if (!event.repeat) enqueue({ type: "mux-key", kind, code: event.code, key: event.key })
+  if (!event.repeat) enqueue({ type: "mux-key", kind, code: event.code, key: event.key, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey, ctrlKey: event.ctrlKey })
 })
 addEventListener("blur", () => enqueue({ type: "mux-release" }))
 document.addEventListener("visibilitychange", () => {

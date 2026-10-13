@@ -1,32 +1,65 @@
-import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
+import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { chassisSettings } from "../game/chassis"
+import { vehicleEffects } from "../game/vehicle-emissions"
+import type { Scene } from "../game/scene"
+import type { GameAudio } from "../audio/game-audio"
+import type { LightSettings, LightStyle } from "../render/car-lights"
 
-export const juiceSettings = (enabled = true) => ({ sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, contactShadow: false, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55, contactOpacity: 0.55 })
 /** Presentation only; these values never enter shared vehicle physics. */
-export const juice = juiceSettings()
+export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }
 const controls: LabControl[] = [
-  { key: "spotlightRadius", label: "Wide Spotlight", off: 1, on: 1.4 },
-  { key: "spotlightSoftness", label: "Soft Spotlight", off: 1, on: 1.4 },
-  { key: "roadSheen", label: "Wet Road Sheen", off: 0.55, on: 1.2 },
-  { key: "contactShadow", label: "Car Contact Shadow" },
+  { key: "emissions", label: "Vehicle emissions", group: "Emissions" },
+  { key: "coldExhaust", label: "Cold exhaust", group: "Emissions" },
+  { key: "clutter", label: "Street clutter", group: "Props" },
+  { key: "explosions", label: "Explosions", group: "Props" },
+  { key: "physicsDebug", label: "Physics debug", group: "Props" },
   ...([
-    ["sparks", "Bouncing Sparks"],
-    ["scrape", "Scrape Sparks"],
-    ["skids", "Skid Ribbons"],
-    ["backfire", "Backfire"],
-    ["rush", "Nitro Camera Rush"],
-    ["curb", "Curb-Hop Spring"],
-    ["trauma", "Shake & PIT Hit-Stop"],
-    ["landing", "Landing Effects"],
-  ] as const).map(([key, label]) => ({ key, label })),
+    ["suspension", "Suspension springs"],
+    ["wheelContact", "Per-wheel contact"],
+    ["visibleWheels", "Steer & spin wheels"],
+    ["vehicleFeel", "Vehicle-specific feel"],
+  ] as const).map(([key, label]) => ({ key, label, group: "Chassis" })),
+]
+
+const lightControls: (LabControl & { key: keyof LightSettings })[] = [
+  { key: "style", label: "Style", group: "Lights", options: [
+    { value: 0, label: "Reference" },
+    { value: 1, label: "Recessed" },
+    { value: 2, label: "Light bar" },
+    { value: 3, label: "Cinematic" },
+    { value: 4, label: "Soft pool" },
+  ] },
+  { key: "beamLength", label: "Beam length", min: 2, max: 24, step: 0.5, group: "Lights" },
+  { key: "beamWidth", label: "Beam width", min: 0.05, max: 1, step: 0.01, group: "Lights" },
+  { key: "beamSpread", label: "Beam spread", min: 0, max: 6, step: 0.1, group: "Lights" },
+  { key: "beamIntensity", label: "Beam intensity", min: 0, max: 0.5, step: 0.01, group: "Lights" },
+  { key: "poolSize", label: "Pool size", min: 0.5, max: 8, step: 0.1, group: "Lights" },
+  { key: "poolIntensity", label: "Pool intensity", min: 0, max: 0.5, step: 0.01, group: "Lights" },
+  { key: "poolAhead", label: "Pool ahead", min: 1, max: 14, step: 0.25, group: "Lights" },
+  { key: "glowSize", label: "Lamp glow size", min: 0.1, max: 0.8, step: 0.01, group: "Lights" },
+  { key: "glowIntensity", label: "Lamp glow intensity", min: 0, max: 2, step: 0.05, group: "Lights" },
+  { key: "flareStrength", label: "Flare strength", min: 0, max: 0.4, step: 0.01, group: "Lights" },
+  { key: "tailGlow", label: "Taillight glow", min: 0, max: 2, step: 0.05, group: "Lights" },
+  { key: "brakeIntensity", label: "Brake intensity", min: 0, max: 4, step: 0.1, group: "Lights" },
 ]
 export type PerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastUpdate = 0
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
-  constructor(q: URLSearchParams, release: () => void) {
-    if (q.get("vanilla") === "1") Object.assign(juice, juiceSettings(false))
-    super(juice, controls, q, release)
+  constructor(q: URLSearchParams, release: () => void, scene: Scene, sound?: GameAudio) {
+    super({ ...juice, ...scene.lightSettings, emissions: scene.emissions.visible, coldExhaust: vehicleEffects.coldExhaust, proceduralAudio: sound?.procedural ?? true }, [
+      ...lightControls.map(control => "min" in control ? { ...control, enabled: (settings: Readonly<Record<string, boolean | number | string>>) => settings.style === 4 } : control),
+      ...controls,
+      ...(sound ? [{ key: "proceduralAudio", label: "Procedural audio", group: "Audio" }] : []),
+    ], q, release, (key, value) => {
+      if (key === "style") scene.setLightStyle(value as LightStyle)
+      else if (key in scene.lightSettings) Object.assign(scene.lightSettings, { [key]: value })
+      else if (key === "emissions") scene.emissions.visible = Boolean(value)
+      else if (key === "coldExhaust") vehicleEffects.coldExhaust = Boolean(value)
+      else if (key === "proceduralAudio" && sound) { sound.reset(); sound.procedural = Boolean(value) }
+      else Object.assign(juice, { [key]: value })
+    })
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return

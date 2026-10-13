@@ -50,6 +50,9 @@ The final paired report is `blackout-motion-paired.json`; raw timestamp ranges r
 The final live-input checks found populated motion histories in all three maps, with 10/12/12 sprite identities and
 60/79/102 part identities at peak. Resize cleared the exposure for the next submitted frame. All Look off remained
 RGB-identical to main at 1280×800 in office, downtown and lot. `bun run check` passed 260 tests, typechecks and build.
+After merging main's workspace conversion (`1bac7ef`, including `8dff834`), root frozen install and
+`bun run check:packages` passed; Blackout's `bun run check` passed 266 tests, typechecks and build. The merged Lab
+comparison passed all 11 Look switches and All On/Off, with 180 paired ticks and zero pose mismatches.
 
 ## Reproduce
 

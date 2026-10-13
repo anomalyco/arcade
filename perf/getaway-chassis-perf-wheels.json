@@ -1,0 +1,187 @@
+{
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": ""
+  },
+  "errors": [],
+  "reports": [
+    {
+      "pair": 0,
+      "enabled": false,
+      "cpuMs": 0.775,
+      "gpuMs": 2.29110935,
+      "chassisMs": 0.088,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    },
+    {
+      "pair": 0,
+      "enabled": true,
+      "cpuMs": 0.5150000020861626,
+      "gpuMs": 3.0248866,
+      "chassisMs": 0.08560000000894069,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 1,
+      "enabled": true,
+      "cpuMs": 0.4450000002980232,
+      "gpuMs": 3.25518835,
+      "chassisMs": 0.08820000000298023,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 1,
+      "enabled": false,
+      "cpuMs": 0.48499999940395355,
+      "gpuMs": 2.09752545,
+      "chassisMs": 0.08659999999403954,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    },
+    {
+      "pair": 2,
+      "enabled": false,
+      "cpuMs": 0.4400000013411045,
+      "gpuMs": 3.105609500000001,
+      "chassisMs": 0.08440000000596047,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    },
+    {
+      "pair": 2,
+      "enabled": true,
+      "cpuMs": 0.4899999998509884,
+      "gpuMs": 2.2191766,
+      "chassisMs": 0.08029999999701977,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 3,
+      "enabled": true,
+      "cpuMs": 0.4849999979138374,
+      "gpuMs": 2.5283635999999996,
+      "chassisMs": 0.07909999999403954,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 3,
+      "enabled": false,
+      "cpuMs": 0.425,
+      "gpuMs": 4.053121249999999,
+      "chassisMs": 0.0768999999910593,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    },
+    {
+      "pair": 4,
+      "enabled": false,
+      "cpuMs": 0.4900000013411045,
+      "gpuMs": 2.31365425,
+      "chassisMs": 0.0855,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    },
+    {
+      "pair": 4,
+      "enabled": true,
+      "cpuMs": 0.4899999998509884,
+      "gpuMs": 3.5425878000000006,
+      "chassisMs": 0.08180000001192093,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 5,
+      "enabled": true,
+      "cpuMs": 0.44999999925494194,
+      "gpuMs": 1.1205868000000003,
+      "chassisMs": 0.076,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 5,
+      "enabled": false,
+      "cpuMs": 0.3799999997019768,
+      "gpuMs": 2.3573432,
+      "chassisMs": 0.0771000000089407,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    },
+    {
+      "pair": 6,
+      "enabled": false,
+      "cpuMs": 0.4699999995529652,
+      "gpuMs": 2.123097,
+      "chassisMs": 0.07470000000298023,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    },
+    {
+      "pair": 6,
+      "enabled": true,
+      "cpuMs": 0.4699999995529652,
+      "gpuMs": 3.4524930999999994,
+      "chassisMs": 0.07729999999701977,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 7,
+      "enabled": true,
+      "cpuMs": 0.41499999910593033,
+      "gpuMs": 2.7212147499999997,
+      "chassisMs": 0.07540000000596046,
+      "draws": 110,
+      "instances": 1345,
+      "modelInstances": 152,
+      "cars": 28
+    },
+    {
+      "pair": 7,
+      "enabled": false,
+      "cpuMs": 0.3049999997019768,
+      "gpuMs": 2.11989875,
+      "chassisMs": 0.07219999998807908,
+      "draws": 63,
+      "instances": 1033,
+      "modelInstances": 48,
+      "cars": 28
+    }
+  ]
+}

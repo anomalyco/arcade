@@ -5,7 +5,7 @@
  * (H honks at the wheel), 1/2/3 pick a gun and 4/5 frag or claymore for your next life, Tab shows the scores.
  */
 export type MuxState = { x: number; y: number; vx: number; vy: number; aim: number; tx: number; ty: number }
-export type MuxKey = { type: "mux-key"; kind: "keydown" | "keyup"; code: string; key: string }
+export type MuxKey = { type: "mux-key"; kind: "keydown" | "keyup"; code: string; key: string; shiftKey?: boolean; altKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }
 export type MuxMouse = { type: "mux-mouse"; nx: number; ny: number; buttons?: number; down?: number; up?: number; wheel?: number }
 
 export class Input {
@@ -34,12 +34,12 @@ export class Input {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.code === "Tab") e.preventDefault()
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
-      const msg: MuxKey = { type: "mux-key", kind: "keydown", code: e.code, key: e.key }
+      const msg: MuxKey = { type: "mux-key", kind: "keydown", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey }
       if (this.mux) { if (!e.repeat) this.forward(msg) }
       else this.key(msg)
     })
     addEventListener("keyup", (e) => {
-      const msg: MuxKey = { type: "mux-key", kind: "keyup", code: e.code, key: e.key }
+      const msg: MuxKey = { type: "mux-key", kind: "keyup", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey }
       if (this.mux) this.forward(msg)
       else this.key(msg)
     })

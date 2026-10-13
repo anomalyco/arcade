@@ -177,7 +177,7 @@ export class Radio {
     src.start()
   }
 
-  private build(ctx: AudioContext) {
+  private build(ctx: BaseAudioContext) {
     this.clean = ctx.createGain()
     this.clean.gain.value = 0.85
     this.clean.connect(this.a.master)
@@ -198,7 +198,7 @@ export class Radio {
     this.scanner.connect(hp)
   }
 
-  private async decode(ctx: AudioContext) {
+  private async decode(ctx: BaseAudioContext) {
     await Promise.all(
       LINES.map(async (name) => {
         const bytes = await this.raw.get(name)

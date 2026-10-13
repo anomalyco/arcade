@@ -16,7 +16,7 @@ import { Hud } from "./ui/hud"
 import { Menus } from "./ui/menus"
 import { ModeHud } from "./ui/modes-hud"
 import { DebugOverlay, juiceSettings, LOOK_LABELS } from "./ui/debug-overlay"
-import { GpuPerf } from "../../../packages/kit/gpu-perf"
+import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { Rng } from "../shared/rng"
 
 const MAX_DPR = 1.5
