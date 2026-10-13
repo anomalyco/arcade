@@ -12,12 +12,13 @@ import { bakeBounce, buildLevel, type FloorMap } from "../render/level-mesh"
 import { AMBIENT, type Caster, type DynLight, LIGHT_FLOATS, LightCuller } from "../render/lighting"
 import { MAT, Mesh } from "../render/mesh"
 import { PAL, deskMonitorLights, hex, rng } from "../render/models"
-import { juiceSettings, type Juice } from "../ui/debug-overlay"
+import { juiceSettings, lookMask, type Juice } from "../ui/debug-overlay"
 import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
 import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, swing, useGear } from "./anim"
 import { type Corpse, type DeathStyle, type Debris, deathStyle, emitRagdoll, ragdoll, ragdollCentre, stepDebris, stepRagdoll } from "./ragdoll"
 import { type Batch, type FrameInput, INST_FLOATS, type Renderer, SPRITE_FLOATS } from "../render/renderer"
+import { MotionKeys, type MotionKey } from "../render/motion"
 import { FRAME_FLOATS } from "../render/shaders"
 import type { Input, MuxState } from "./input"
 import type { Session } from "./session"
@@ -249,6 +250,9 @@ export class Game {
   private frame = new Float32Array(FRAME_FLOATS)
   private culler = new LightCuller()
   private inst = new Float32Array(2048 * INST_FLOATS)
+  private motionKeys = new MotionKeys()
+  private spriteKeys = new MotionKeys()
+  private addMotionKeys: (MotionKey | undefined)[] = []
   private add = new Float32Array(4096 * SPRITE_FLOATS)
   private alpha = new Float32Array(2048 * SPRITE_FLOATS)
   private nAdd = 0
@@ -1089,8 +1093,10 @@ export class Game {
       let arr = parts.get(model)
       if (!arr) parts.set(model, (arr = []))
       arr.push(x, y, z, yaw, tint[0]!, tint[1]!, tint[2]!, scale, pitch, roll, 1, 0)
+      this.motionKeys.record(arr, model)
     }
     for (const g of this.grenades.values()) {
+      this.motionKeys.begin(g)
       if (t > g.at + 0.3) {
         this.grenades.delete(g.id)
         continue
@@ -1101,6 +1107,7 @@ export class Game {
       put(this.gear.frag, g.x, g.z, g.y, g.yaw, [1, 1, 1], g.spin, g.spin * 0.37, 1.35)
     }
     // Low and dull so they sink into the floor: only the owner gets a dim accent strip, everyone else sees case-dark.
+    this.motionKeys.begin()
     for (const c of this.snap?.claymores ?? []) {
       const strip = this.friendlyMine(c.by) ? glow(this.colorOf(c.by), 0.22) : [0.012, 0.013, 0.01]
       put(this.gear.claymore, c.x, 0, c.y, c.aim, strip, 0, 0, CLAY_SCALE)
@@ -1176,7 +1183,7 @@ export class Game {
     const n = add ? this.nAdd : this.nAlpha
     if ((n + 1) * SPRITE_FLOATS > buf.length) return
     buf.set([x, y, z, size, r, g, b, a, kind, rot, stretch, extra], n * SPRITE_FLOATS)
-    if (add) this.nAdd++
+    if (add) { this.addMotionKeys[n] = this.spriteKeys.key(kind); this.nAdd++ }
     else this.nAlpha++
   }
 
@@ -1284,6 +1291,9 @@ export class Game {
     const snap = this.snap
     this.nAdd = 0
     this.nAlpha = 0
+    this.addMotionKeys = []
+    this.motionKeys.begin()
+    this.spriteKeys.begin()
 
     // Map lights near the view (culled to the GPU budget), then muzzle flashes as short-lived point lights that cast
     // shadows like any other. Soldiers cast round shadows.
@@ -1311,15 +1321,20 @@ export class Game {
         let arr = vparts.get(model)
         if (!arr) vparts.set(model, (arr = []))
         arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
+        this.motionKeys.record(arr, model)
       },
       (...a) => this.sprite(...a),
       this.fxv,
       dyn,
       casters,
       (d) => this.vehicleTeam(d),
+      (d) => { this.motionKeys.begin(d); this.spriteKeys.begin(d) },
     )
+    this.motionKeys.begin()
+    this.spriteKeys.begin()
     if (this.alive && this.body) casters.push({ x: this.drawn.x, y: this.drawn.y })
     mapFires(this.map, view, t, dt, (...a) => this.sprite(...a), this.fxv)
+    this.culler.warmPracticals = this.map.kind === "office" && this.juice.lookPractical
     this.culler.update(view, t, dyn, casters, this.juice.monitors, this.juice.sparks ? this.monitors.filter((m) => m.broken) : [])
     if (this.juice.lamps) for (const [id, at] of this.lampJolts) {
       const age = t - at
@@ -1342,11 +1357,14 @@ export class Game {
       let arr = parts.get(model)
       if (!arr) parts.set(model, (arr = []))
       arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
+      this.motionKeys.record(arr, model)
     }
     const k = 1 - Math.exp(-dt * 16)
     if (this.juice.sparks) for (const m of this.monitors) if (m.broken) push(this.sheetModels.screen, m.x, 0, m.y, m.yaw, [1, 1, 1], 0, 0, 0)
     for (const a of this.avatars.values()) {
       if (!a.alive) continue
+      this.motionKeys.begin(a)
+      this.spriteKeys.begin(a)
       // Chase the server position, extrapolated a little along its velocity.
       const tx = a.tx + a.tvx * 0.05
       const ty = a.ty + a.tvy * 0.05
@@ -1365,6 +1383,8 @@ export class Game {
     const me = this.alive ? this.body : null
     if (me) {
       const a = this.avatarMe
+      this.motionKeys.begin(a)
+      this.spriteKeys.begin(a)
       a.gun = this.gun
       a.bare = !this.kit.gun
       a.alive = true
@@ -1382,6 +1402,8 @@ export class Game {
     }
 
     // Casings and magazines on the floor.
+    this.motionKeys.begin()
+    this.spriteKeys.begin()
     this.debris = this.debris.filter((d) => t - d.t0 < d.life)
     for (const d of this.debris) {
       if (d.model === this.sheetModels.brass && !this.juice.casings) continue
@@ -1424,7 +1446,7 @@ export class Game {
         this.inst = bigger
       }
       this.inst.set(data, n * INST_FLOATS)
-      batches.push({ model, data: this.inst.subarray(n * INST_FLOATS, (n + count) * INST_FLOATS) as Float32Array<ArrayBuffer>, count, alpha })
+      batches.push({ model, data: this.inst.subarray(n * INST_FLOATS, (n + count) * INST_FLOATS) as Float32Array<ArrayBuffer>, count, alpha, motionKeys: this.motionKeys.of(data) })
       n += count
     }
     for (const [model, data] of parts) emit(model, data)
@@ -1435,9 +1457,11 @@ export class Game {
       let arr = bodies.get(model)
       if (!arr) bodies.set(model, (arr = []))
       arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
+      this.motionKeys.record(arr, model)
     }
     this.corpses = this.corpses.filter((c) => t - c.t0 < 3.4)
     for (const c of this.corpses) {
+      this.motionKeys.begin(c)
       const age = t - c.t0
       stepRagdoll(c.rd, adt)
       const col = this.colorOf(c.id)
@@ -1467,6 +1491,7 @@ export class Game {
     // Muzzle flashes: a hot core, petals along the barrel and, for the sniper, the brake's side jets.
     this.flashFx = this.flashFx.filter((f) => t - f.t0 < (f.gun === "rifle" ? 0.05 : 0.075))
     for (const f of this.flashFx) {
+      this.spriteKeys.begin(f)
       const life = f.gun === "rifle" ? 0.05 : 0.075
       const p = (t - f.t0) / life
       const fa = 1 - p
@@ -1492,6 +1517,7 @@ export class Game {
     // Tracers: rifle and shotgun rounds are short streaks flying down the line; the sniper leaves a lingering beam.
     this.tracers = this.tracers.filter((tr) => t - tr.t0 < tr.life)
     for (const tr of this.tracers) {
+      this.spriteKeys.begin(tr)
       const len = Math.hypot(tr.x1 - tr.x0, tr.y1 - tr.y0)
       if (len < 0.05) continue
       const rot = Math.atan2(tr.y1 - tr.y0, tr.x1 - tr.x0)
@@ -1515,6 +1541,7 @@ export class Game {
       }
     }
 
+    this.spriteKeys.begin()
     this.gearSprites(t)
     this.rings = this.rings.filter((r) => t - r.t0 < 0.5)
     if (this.juice.rings) for (const r of this.rings) {
@@ -1586,7 +1613,7 @@ export class Game {
     F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, this.culler.monitorStart], 32)
     F.set(this.culler.monitorBounds, 36)
     F.set([1 / this.map.size[0], 1 / this.map.size[1], this.map.size[0], this.map.size[1]], 40)
-    F.set([this.juice.ao ? this.juice.aoStrength : 0, 0, 0, 0], 44)
+    F.set([this.juice.ao ? this.juice.aoStrength : 0, lookMask(this.juice), this.map.kind === "office" ? 1 : 0, 0], 44)
     const dead = !!snap && snap.phase === "play" && !this.alive
     const C = this.culler
     return {
@@ -1604,6 +1631,7 @@ export class Game {
       alphaCount: this.nAlpha,
       addSprites: this.add,
       addCount: this.nAdd,
+      addMotionKeys: this.addMotionKeys,
       grade: [t, dead ? 0.7 : 0, this.hurt * 0.9, 1.15 * (1 + (this.juice.trauma ? 0.15 * Math.max(0, 1 - (t - this.killAt) / 0.16) : 0))],
     }
   }

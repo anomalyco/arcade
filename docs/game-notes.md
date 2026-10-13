@@ -64,6 +64,17 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
+  silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
+  world-anchored sub-stratum offsets remove the coherent bands without a fullscreen blur. Never interpolate blocker
+  distances across silhouettes. `src/render/shaders.ts`, `perf/blackout-shadows.md`; all-off remains RGB-identical to main.
+  This is a quality/cost tradeoff: the 1440p office paired delta was +1.341 ms (MAD 0.282).
+- **Motion history belongs to submitted frames and stable owners.** Blackout's opt-in MRT velocity path tracks actor,
+  projectile and vehicle parts by weak owner/model/part identities. Coalesced builds do not advance history; gaps,
+  teleports and resize reset it. Eight depth-aware samples run in the existing composite, before the DOM HUD. The
+  1440p M5 Max paired deltas were +0.060 / -0.312 / +0.237 ms for office/downtown/lot, with MAD
+  0.345 / 0.896 / 0.273. The sub-0.5 ms target is unproven under that variance. See `perf/blackout-motion.md`.
+
 - **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
   selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then
   refreshes enablement and readouts. Metal checks covered minimum/midpoint/maximum draws, all 12 light sliders and the
@@ -155,6 +166,27 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   38.254 → 37.308 ms (inside MAD), with increased CPU submission cost; reverted (`perf/autoresearch.md`).
 
 ## Art direction
+
+- **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
+  A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
+  stronger baked contact AO, blue cap bevels and more visible floor pattern move the seeded office frame toward C.
+  The city material uses warm/cool window variation and soft window footprints to suggest distant defocus. This costs
+  shader terms rather than a fullscreen depth/blur pass; it does not add building geometry. All seven default on.
+  Tile gloss and longer furniture shadows remain separate opt-ins because their benefit in this view is small.
+  Office material changes are gated by map kind; downtown receives only the grade. Smoke and particle logic are unchanged.
+  At 1280×800 on M5 Max Metal, one warmup plus seven alternating pairs measured all-on total GPU deltas of
+  +0.071 ms office (MAD 0.077), -0.009 ms downtown (MAD 0.034), and +0.024 ms vehicle lot (MAD 0.020).
+  These are noisy cost estimates, not speedups. Each switch's paired samples and added work are in
+  `perf/blackout-look-paired.json` and `perf/blackout-look.md`; CPU and pipeline-creation costs remain unmeasured.
+- **Exact Look-off needs the original shader arithmetic.** Blackout's first uniform-disabled shader still differed
+  from main by a few one-code-value pixels. Shader overrides reduced the error but did not eliminate it. The shader
+  factories now omit Look terms entirely for the baseline pipelines. Main and Look-off stills match every RGB pixel
+  in the office, downtown and vehicle lot at the same seeded frame. Baseline normalized WGSL also matches main.
+  `games/blackout/scripts/look-proof.ts` captures those frames and rejects invalid hardware timestamps; the benchmark
+  uses first-pass start to composite end, awaits readback, and never sums overlapping pass intervals.
+  The production/current comparison completed 181 paired ticks with zero pose mismatches and passed the nine Look
+  switches and All On/Off controls. Its left pane preserves main's existing presentation defaults rather than forcing
+  the older vanilla preset.
 
 ### Shipped tyre smoke and launch wheelspin (v2)
 
