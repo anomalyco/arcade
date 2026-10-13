@@ -6,6 +6,9 @@ and F opens or closes a nearby door. Backquote opens the shared Lab.
 The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
 shared-material work, actual comparison captures, seven paired cost runs and remaining visual gaps.
 
+The [zombie profile adapter](../../docs/outbreak-zombie-profile.md) prepares lurch/asymmetry/drag/reach tuning for
+the shared human rig in flight, with shared-Lab descriptors and the server/client limb-state boundary.
+
 ## Milestone 1
 
 The 96 × 96 m neighbourhood has nine 32 m chunks, two houses with separate rooms, a hardware store, a pharmacy,
