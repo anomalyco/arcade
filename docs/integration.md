@@ -118,3 +118,28 @@ A fresh archive passed Blackout's full check (344 tests) and production smoke on
 confirmed the real menu output and direct wizard sandbox with both spells ready and no browser errors.
 
 Public reports use paths relative to an artifact root; the original local evidence files were preserved.
+
+### Audio Lab integration
+
+The exact `audio-lab` source tip `778b8a1` was merged with a separate merge commit. Its copied panel files already
+matched the integrated changes; the existing Lab panel/navigation code was preserved. Integration then registered
+Audio in both hosts, added per-host sample routes/build assets, removed the test-context production import, and
+reconciled emitter/voice ownership. The four generated stems retain the source commit's bytes and provenance.
+
+A clean archive of `d688c7f` passed frozen install, package checks (39 tests), Getaway (197 tests, 12 existing skips),
+Blackout (353 tests), Outbreak (14 tests), all production smokes and all Worker dry-runs through Hivemind on the Studio.
+`scripts/prove-audio-integration.mjs --production` then exercised the actual built Lab pages under their deployed
+prefixes. Both decoded all 20 MP3 assets, and the Outbreak-prefixed asset route independently decoded the same 20.
+The build rejects imports of the deterministic test context into any game bundle.
+
+Local named-preview checks and the production proof used native browser `OfflineAudioContext`, with live contexts
+deliberately blocked and browser output muted. Entering Audio created neither live nor offline contexts; only clicking
+Audition attempted live unlock, which the proof blocked. Render offline produced nonzero PCM with no clipped samples.
+The one-shot fixture disconnected all 18 owned nodes. The vehicle/spell fixture stayed below full scale, reset and
+suspended its emitters, had a silent final tail, disposed cleanly, and retained exactly one nitro ignition through
+exhaustion/refill while held. Both hosts had no browser/GPU errors, and leaving/re-entering Audio did not resume playback.
+
+These proofs establish decoding, graph scheduling, cleanup and gating in a browser, not subjective sound approval
+or successful audible playback. Existing in-game vehicle voices remain in use. Outbreak's pending art revision is
+still excluded. Cited audio screenshots, check logs and JSON reports are in `2026-10-13-arcade-integration/audio/`,
+relative to the local artifact root.
