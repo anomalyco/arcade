@@ -6,6 +6,7 @@ import { propBox } from "../../shared/sim/gadgets"
 import { type Body, type Input, collideBoxes, collideCars, lateralSpeed, newBody, speedOf, stepAndCollide, stepHeight, toggleEngine } from "../../shared/sim/vehicle"
 import type { CarView, Phase, SimEvent, WorldView } from "../../shared/sim/world"
 import { lerpView } from "./interp"
+import { crossTunnel } from "../../shared/sim/tunnel"
 
 /** Other cars are drawn this far in the past so there are always two snapshots to blend between. */
 export const INTERP_TICKS = Math.round(0.1 * TICK_HZ)
@@ -27,7 +28,7 @@ const HIT_HOLD = 0.5
 
 type Snap = { tick: number; view: WorldView }
 type Pending = { seq: number; input: Input }
-type Pose = { x: number; z: number; h: number; y?: number }
+type Pose = { x: number; z: number; h: number; y?: number; tunnels?: number }
 
 /**
  * Another car as a collision obstacle for prediction: rebuilt from each snapshot and extrapolated tick by tick in step
@@ -145,7 +146,7 @@ export class NetClient {
     for (const c of view.cars) {
       const s = VEHICLE_BY_ID.get(c.vehicle)
       if (c.id === car.id || c.ghost || c.ownerId === this.myId || !s) continue
-      const body: Body = { ...newBody(c.x, c.z, c.h), y: c.y ?? 0, vy: c.vy ?? 0, airborne: c.airborne ?? false, vx: c.vx, vz: c.vz, yaw: c.yaw ?? 0 }
+      const body: Body = { ...newBody(c.x, c.z, c.h), tunnels: c.tunnels ?? 0, y: c.y ?? 0, vy: c.vy ?? 0, airborne: c.airborne ?? false, vx: c.vx, vz: c.vz, yaw: c.yaw ?? 0 }
       this.proxies.push({ id: c.id, role: c.role, spec: s, body, prev: { x: c.x, z: c.z, h: c.h, y: c.y ?? 0 }, age: 0, impact: 0 })
     }
     this.proxies.sort((a, b) => a.id - b.id)
@@ -198,6 +199,10 @@ export class NetClient {
     }
     if (press) toggleEngine(b)
     let impact = stepAndCollide(b, input, this.vehicle, DT, this.boxes, undefined, this.city.ramps)
+    if (b.tunnels !== this.prevBody.tunnels) {
+      this.prevBody = clone(b)
+      this.err = { x: 0, z: 0, h: 0 }
+    }
     // Same order as World.stepCars: cars pair up by id, then anything shoved gets settled against the city.
     let touched = false
     for (const p of this.proxies) {
@@ -240,6 +245,10 @@ export class NetClient {
     k.x += k.vx * DT
     k.z += k.vz * DT
     stepHeight(k, this.city.ramps, DT)
+    if (crossTunnel(k)) {
+      p.prev = { ...k }
+      this.proxyErr.delete(p.id)
+    }
   }
 
   /** A proxy's pose blended between its last two ticks like your car, plus its decaying correction. */
@@ -311,7 +320,7 @@ export class NetClient {
     const p = this.visual()
     const impact = Math.max(this.impactNow, this.impactPrev)
     const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, wheels: b.wheels ?? 0, ghost: false, impact }
-    Object.assign(mine, { y: Math.max(0, p.y), vy: b.vy, airborne: b.airborne, landing: b.landing, landings: b.landings, braking: b.braking, boosting: b.boosting })
+    Object.assign(mine, { tunnels: b.tunnels, y: Math.max(0, p.y), vy: b.vy, airborne: b.airborne, landing: b.landing, landings: b.landings, braking: b.braking, boosting: b.boosting })
     mine.engineOff = !!b.engineOff
     const proxies = new Map(this.proxies.map((q) => [q.id, q]))
     const cars = view.cars.filter((c) => c.ownerId !== this.myId || c.id === this.carId).map((c) => (c.id === this.carId ? mine : this.near(c, p, proxies.get(c.id))))
@@ -328,6 +337,7 @@ export class NetClient {
     const hit = this.localHits.get(c.id)
     const held = hit && this.clock - hit.at < HIT_HOLD
     const q = this.proxyVisual(proxy)
+    if ((c.tunnels ?? 0) !== proxy.body.tunnels || Math.hypot(q.x - c.x, q.z - c.z) > 100) return { ...c, ...q, tunnels: proxy.body.tunnels }
     const w = Math.max(0, Math.min(1, (FAR - Math.hypot(q.x - me.x, q.z - me.z)) / (FAR - NEAR)))
     if (w <= 0 && !held) return c
     const out = { ...c, x: c.x + (q.x - c.x) * w, z: c.z + (q.z - c.z) * w, h: c.h + wrap(q.h - c.h) * w }

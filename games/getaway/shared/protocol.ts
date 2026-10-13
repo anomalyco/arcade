@@ -22,7 +22,8 @@ export type ServerMsg =
   | { type: "welcome"; id: string; room: string; seed: number; tick: number }
   /**
    * `ack` is the last input seq the server applied for you; `you` is your car's authoritative body after that input.
-   * `you` includes exact y/vy, airborne and landing state for deterministic replay; the view carries interpolated height.
+   * `you` includes exact y/vy, airborne, landing and tunnel-crossing state for deterministic replay; the view carries
+   * interpolated height and the tunnel counter so discontinuities snap rather than blend across the city.
    * `idleIn` is the seconds until you're kicked for idling, only while that warning is up.
    */
   | { type: "snapshot"; tick: number; ack: number; view: WorldView; you: Body | null; idleIn?: number }

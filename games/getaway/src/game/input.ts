@@ -19,7 +19,7 @@ export class Controls {
     addEventListener("keydown", (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.code === "Escape") return
       if (mux) {
-        if (!e.repeat) this.forward({ type: "mux-key", kind: "keydown", code: e.code, key: e.key })
+        if (!e.repeat) this.forward({ type: "mux-key", kind: "keydown", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey })
         e.preventDefault()
         return
       }
@@ -28,7 +28,7 @@ export class Controls {
     })
     addEventListener("keyup", (e) => {
       if (mux) {
-        this.forward({ type: "mux-key", kind: "keyup", code: e.code, key: e.key })
+        this.forward({ type: "mux-key", kind: "keyup", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey })
         return
       }
       this.key("keyup", e.code, e.key)

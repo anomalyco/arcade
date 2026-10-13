@@ -1,0 +1,17 @@
+{
+  "adapter": { "vendor": "apple", "architecture": "metal-3" },
+  "errors": [],
+  "scenarios": [
+    { "name": "cones", "hits": 9, "explosions": 0, "peakAwake": 20, "peakParticles": 5 },
+    { "name": "furniture", "hits": 7, "explosions": 0, "peakAwake": 5, "peakParticles": 132 },
+    { "name": "hydrant", "hits": 6, "explosions": 0, "peakAwake": 3, "peakParticles": 149 },
+    { "name": "explosion", "hits": 2, "explosions": 4, "peakAwake": 34, "peakParticles": 280 }
+  ],
+  "sheet": { "file": "getaway-clutter-scale-sheet.jpg", "width": 1440, "height": 836 },
+  "video": {
+    "file": "getaway-clutter-scale-phone.mp4",
+    "width": 720, "height": 1100, "duration": 14,
+    "codec": "h264", "profile": "Main", "pixelFormat": "yuv420p", "bytes": 4000808,
+    "audio": false
+  }
+}
