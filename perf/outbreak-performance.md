@@ -62,10 +62,35 @@ Private evidence lives under `~/code/home/artifacts/2026-10-13-outbreak-performa
 The Studio proof transfer stalled for ten minutes and was canceled without restarting shared services;
 the first whole-tree Mini transfer also stalled and was canceled. A small clean archive excluding unrelated
 concept art is the follow-up hardware/check fixture; no shared services were restarted.
+Hivemind requires a Git worktree, so the exported 23 MiB fixture is initialized as a private scratch repository
+after export, recording the original source revision separately. It is not the working branch or a release checkout.
+The first archive check omitted Getaway's 20 KiB `perf/fx-baseline` test fixture; adding that archived directory
+fixed the fixture setup. Shared package checks, Outbreak and Blackout checks/builds and dry-runs passed on Mini.
+Mini's headless Chrome then crashed before creating a page (`CVDisplayLinkCreateWithCGDisplay` failure and
+SIGSEGV); no GPU result is claimed from that host. The small hardware fixture is routed to Studio's existing
+logged-in graphics session, without opening a window on Kit's Mac or changing a service.
 The first active-building browser run was invalidated by our own Vite HMR during a flag rename and is not
 a measurement. Keep the subsequent frozen-source result distinct.
 
-Full hardware, visual and workspace validation results belong here before opening a follow-up PR.
-Focused Outbreak tests (17) and its TypeScript check pass; seed-7 geometry retains all 196,722 vertices,
-and the new test checks every opaque vertex plus the genuinely discard-free shader entry point.
+## Final verification and handoff
+
+The clean archive passes root frozen install, shared package checks (42 tests), and each game's complete
+typecheck/test/build: Outbreak 17 tests, Blackout 356, Getaway 200 with its 12 existing skips, Carrier 359.
+All four Wrangler dry-runs pass; none deploy. Carrier's optional Naga validation was skipped because Naga
+is absent. Seed-7 geometry retains all 196,722 vertices, and the new test checks every opaque vertex plus
+the genuinely discard-free shader entry point.
+
+Verified Metal GPU intervals remain blocked. Studio fails its SSH/rsync transport; Mini's Chrome crashes
+before creating a page. One attempt with `--disable-gpu-vsync` produced the same display-init failure and
+SIGBUS, so that unhelpful flag was discarded. No software-renderer benchmark is substituted. The complete
+check log and hardware failure are saved as `clean-checks-and-metal-failure.log` beside the runtime proof.
+Native production smoke/Metal runtime validation still needs Studio recovery; no services were restarted.
+
+The real-browser runtime win and exact visual/pose agreement are established, but 60–85 ms Retina spans
+remain too slow for a 60 FPS target. Any further pass should profile fragment/material/light costs on a
+working Metal host before choosing tiled light culling or another larger change. Resolution and appearance
+were not reduced. The owned benchmark tab and preview are closed; the shared review preview is untouched.
+
+The source change is committed on `followup/outbreak-performance`, based on `846a9f6`. PR13 is untouched;
+open/rebase the follow-up only after release/main, with the hardware limit explicit until it is verified.
 No deployment, public sharing, Slack or audio is part of this task. Release PR13 must not wait for it.

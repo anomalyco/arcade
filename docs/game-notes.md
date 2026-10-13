@@ -209,6 +209,15 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 
 ## Rendering (WebGPU)
 
+- **Keep game-owned roof discard out of the opaque entry point.** Outbreak used its roof hook in `fsSolid`,
+  and mixed floors with screen-cuttable walls. Its level writer now partitions whole triangles into opaque,
+  screen-cuttable and custom-cuttable chunks; `solidCutaway` and `LevelChunk.customCutaway` retain the shared
+  shader's old defaults for other games. All 196,722 seed-7 vertices remain. Seven alternating real-browser
+  pairs at 3456×1894 measured queue-completed street spans 103.25→60.65 ms and interior 135.40→84.90 ms.
+  Poses and gameplay RGB matched exactly. Browser privacy masked the adapter identity, so these are runtime
+  measurements, not verified Metal GPU intervals. See `perf/outbreak-performance.md` for hardware-proof status,
+  discarded blocker/active-building experiments and remaining Retina cost.
+
 - **Bake fine window coverage separately from soft AO.** Blackout's 12.5 cm moon mask, 18.75 cm blocker march and
   box blur created stepped diagonals and cloudy mullion bands. Exact world-space segment/rectangle intersections and
   2×2 coverage samples in a separate 3.125 cm R8 moon mask fix those edges without changing AO bytes. This costs
