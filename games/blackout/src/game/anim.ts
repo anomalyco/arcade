@@ -1,6 +1,10 @@
 import { SPEED, type Gun } from "../../shared/config"
 import { angleDiff } from "../../shared/geom"
+import { Rng, seedOf } from "../../shared/rng"
 import { GUNPTS, HIP, HOLD, RIG } from "../render/person"
+import { animation } from "./anim-settings"
+import { angleSpring, locomotion, newMotion, pelvisPoint, plantedFoot, stiffness } from "./anim-locomotion"
+import { bodyJoints } from "./anim-pose"
 import {
   type Frame,
   type PushPart,
@@ -63,6 +67,8 @@ export const EV = {
 
 /** Every posed part of one soldier, as world frames. */
 export type Body = {
+  /** Joint velocities from consecutive presentation frames; never networked. */
+  velocities?: V3[]
   pelvis: Frame
   torso: Frame
   head: Frame
@@ -100,6 +106,8 @@ export type Avatar = {
   // Locomotion.
   t: number
   seed: number
+  rng: Rng
+  motion: ReturnType<typeof newMotion>
   svx: number
   svy: number
   acx: number
@@ -146,6 +154,7 @@ export type Avatar = {
 }
 
 export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gun): Avatar {
+  const seed = seedOf(id)
   const foot = (side: number): Foot => {
     const p: V3 = [x + Math.cos(aim + side * 1.2) * 0.15, 0, y + Math.sin(aim + side * 1.2) * 0.15]
     return { p, yaw: aim, pitch: 0, planted: true, lift: [...p], liftYaw: aim }
@@ -167,7 +176,9 @@ export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gu
     reloadAt: -10,
     reloadFor: 1,
     t: 0,
-    seed: Math.random() * 100,
+    seed: seed / 4294967296 * 100,
+    rng: new Rng(seed),
+    motion: newMotion(x, y, aim),
     svx: 0,
     svy: 0,
     acx: 0,
@@ -228,12 +239,13 @@ const RAISE = 0.42
 /** A shot: snaps the gun back and up, the shoulders back, and starts the pump or bolt cycle. */
 export function fire(a: Avatar, now: number): void {
   const r = RECOIL[a.gun]
-  const j = () => Math.random() * 2 - 1
-  kick(a.recBack, r.back * (0.9 + Math.random() * 0.2), r.k)
-  kick(a.recPitch, r.pitch * (0.8 + Math.random() * 0.4) * (1 + a.heat * 0.4), r.k)
-  kick(a.recYaw, j() * r.yaw * (1 + a.heat), r.k)
-  kick(a.recRoll, j() * r.roll, r.k)
-  kick(a.torsoKick, r.torso, 260)
+  const scale = animation.animationMode === "new" ? animation.recoilScale : 1
+  const j = () => random(a) * 2 - 1
+  kick(a.recBack, scale * r.back * (0.9 + random(a) * 0.2), r.k)
+  kick(a.recPitch, scale * r.pitch * (0.8 + random(a) * 0.4) * (1 + a.heat * 0.4), r.k)
+  kick(a.recYaw, scale * j() * r.yaw * (1 + a.heat), r.k)
+  kick(a.recRoll, scale * j() * r.roll, r.k)
+  kick(a.torsoKick, scale * r.torso, 260)
   a.heat = Math.min(1, a.heat + r.heat)
   a.firedAt = now
   const c = CYCLE[a.gun]
@@ -261,6 +273,10 @@ const SWING = 0.4
 const WINDUP = 0.15 / SWING
 const STRIKE = 0.6
 
+function random(a: Avatar): number {
+  return a.rng.next()
+}
+
 /** Where a swing is: how far into the wind-up (0..1), the strike (0..1) and the recovery (1 back to 0), and the torso twist. */
 function swingPhase(a: Avatar, now: number): { wind: number; strike: number; back: number; twist: number } | null {
   const u = (now - a.swingAt) / SWING
@@ -276,8 +292,9 @@ export function hit(a: Avatar, dx: number, dy: number, power = 1): void {
   const l = Math.hypot(dx, dy) || 1
   kick(a.hitX, (dx / l) * 0.2 * power, 160)
   kick(a.hitY, (dy / l) * 0.2 * power, 160)
-  kick(a.hitTwist, (Math.random() < 0.5 ? -1 : 1) * 0.25 * power, 160)
-  kick(a.recYaw, (Math.random() - 0.5) * 0.25 * power, 600)
+  const side = -dx * Math.sin(a.aim) + dy * Math.cos(a.aim)
+  kick(a.hitTwist, (side < 0 ? -1 : 1) * 0.25 * power, 160)
+  kick(a.recYaw, (random(a) - 0.5) * 0.25 * power, 600)
   kick(a.recPitch, -0.12 * power, 600)
   a.flash = 0.07
 }
@@ -399,6 +416,8 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   let ev = 0
   dt = Math.max(1e-4, Math.min(0.05, dt))
   a.t += dt
+  const enhanced = animation.animationMode === "new"
+  const distance = Math.hypot(x - a.x, y - a.y)
   const teleport = Math.hypot(x - a.x, y - a.y) > 2.5 || !a.body
   a.x = x
   a.y = y
@@ -448,103 +467,116 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   a.sprint += ((sprinting ? 1 : 0) - a.sprint) * Math.min(1, dt * 9)
   const s = smooth(a.sprint)
 
-  // Legs face the travel direction, but never more than ~60 degrees off the aim: strafing crosses the feet,
-  // and moving away from the aim walks backwards.
-  const blade = a.bare ? 0 : BLADE[a.gun]
-  if (sp > 0.4) {
-    a.turning = false
-    let mv = Math.atan2(nvy, nvx)
-    const dAim = Math.abs(angleDiff(mv, aim))
-    if (a.back ? dAim < 1.72 : dAim > 2.05) a.back = !a.back
-    if (a.back) mv += Math.PI
-    const want = aim + clamp(angleDiff(mv, aim), -1.05, 1.05)
-    a.legYaw += angleDiff(want, a.legYaw) * Math.min(1, dt * 9)
+  if (enhanced) {
+    if (locomotion(a, dt, distance, teleport)) ev |= EV.step
   } else {
-    a.back = false
-    const rest = aim + blade * 0.55
-    const d = angleDiff(rest, a.legYaw)
-    if (Math.abs(d) > 0.8) a.turning = true
-    if (a.turning) {
-      a.legYaw += d * Math.min(1, dt * 9)
-      if (Math.abs(d) < 0.08) a.turning = false
+    a.motion.enabled = false
+    // Retained gait for the Lab's Old comparison.
+    const blade = a.bare ? 0 : BLADE[a.gun]
+    if (sp > 0.4) {
+      a.turning = false
+      let mv = Math.atan2(nvy, nvx)
+      const dAim = Math.abs(angleDiff(mv, aim))
+      if (a.back ? dAim < 1.72 : dAim > 2.05) a.back = !a.back
+      if (a.back) mv += Math.PI
+      const want = aim + clamp(angleDiff(mv, aim), -1.05, 1.05)
+      a.legYaw += angleDiff(want, a.legYaw) * Math.min(1, dt * 9)
+    } else {
+      a.back = false
+      const rest = aim + blade * 0.55
+      const d = angleDiff(rest, a.legYaw)
+      if (Math.abs(d) > 0.8) a.turning = true
+      if (a.turning) {
+        a.legYaw += d * Math.min(1, dt * 9)
+        if (Math.abs(d) < 0.08) a.turning = false
+      }
     }
-  }
 
-  // Gait: a phase-driven stride with stance feet locked to the floor. When slow, keep stepping only while a foot is
-  // in the air or out of place, so the soldier settles into a stance and steps when turning on the spot.
-  const strideLen = 0.7 + 0.22 * sp + 0.3 * s
-  a.duty += ((0.62 - 0.22 * k - 0.06 * s) - a.duty) * Math.min(1, dt * 5)
-  const duty = a.duty
-  const cl = Math.cos(a.legYaw)
-  const sl = Math.sin(a.legYaw)
-  const rest = (i: number): [number, number] => {
-    const [f, s] = restOffset(i, a.gait)
-    return [x + cl * f - sl * s, y + sl * f + cl * s]
-  }
-  let rate = sp > 0.35 ? sp / strideLen : 0
-  if (rate < 1.7) {
-    const air = !a.feet[0].planted || !a.feet[1].planted
-    let need = false
+    // Keep stepping while a foot is airborne or out of place, including turns on the spot.
+    const strideLen = 0.7 + 0.22 * sp + 0.3 * s
+    a.duty += ((0.62 - 0.22 * k - 0.06 * s) - a.duty) * Math.min(1, dt * 5)
+    const duty = a.duty
+    const cl = Math.cos(a.legYaw)
+    const sl = Math.sin(a.legYaw)
+    const rest = (i: number): [number, number] => {
+      const [f, s] = restOffset(i, a.gait)
+      return [x + cl * f - sl * s, y + sl * f + cl * s]
+    }
+    let rate = sp > 0.35 ? sp / strideLen : 0
+    if (rate < 1.7) {
+      const air = !a.feet[0].planted || !a.feet[1].planted
+      let need = false
+      for (let i = 0; i < 2; i++) {
+        const f = a.feet[i]!
+        const [rx, ry] = rest(i)
+        if (plan(f.p, rx, ry) > 0.2 || Math.abs(angleDiff(f.yaw, a.legYaw)) > 0.55) need = true
+      }
+      if (air || need) rate = Math.max(rate, 1.7)
+    }
+    a.phase = frac(a.phase + rate * dt)
     for (let i = 0; i < 2; i++) {
       const f = a.feet[i]!
-      const [rx, ry] = rest(i)
-      if (plan(f.p, rx, ry) > 0.2 || Math.abs(angleDiff(f.yaw, a.legYaw)) > 0.55) need = true
-    }
-    if (air || need) rate = Math.max(rate, 1.7)
-  }
-  a.phase = frac(a.phase + rate * dt)
-  for (let i = 0; i < 2; i++) {
-    const f = a.feet[i]!
-    const p = frac(a.phase + i * 0.5)
-    const swing = rate > 0 && p >= duty
-    if (swing) {
-      if (f.planted) {
-        f.planted = false
-        f.lift = [f.p[0], 0, f.p[2]]
-        f.liftYaw = f.yaw
+      const p = frac(a.phase + i * 0.5)
+      const swing = rate > 0 && p >= duty
+      if (swing) {
+        if (f.planted) {
+          f.planted = false
+          f.lift = [f.p[0], 0, f.p[2]]
+          f.liftYaw = f.yaw
+        }
+        const u = (p - duty) / (1 - duty)
+        const left = (1 - p) / rate
+        const stance = duty / rate
+        const [rx, ry] = rest(i)
+        const lead = left + stance * 0.5
+        let tx = rx + nvx * lead
+        let ty = ry + nvy * lead
+        // Keep the swing foot on its own side of the planted one in aim space.
+        const o = a.feet[1 - i]!
+        const side = i === 0 ? -1 : 1
+        const ca = Math.cos(aim)
+        const sa = Math.sin(aim)
+        const lat = (-(tx - o.p[0]) * sa + (ty - o.p[2]) * ca) * side
+        if (lat < 0.16) {
+          tx += -sa * side * (0.16 - lat)
+          ty += ca * side * (0.16 - lat)
+        }
+        const e = smoother(u)
+        f.p = [f.lift[0] + (tx - f.lift[0]) * e, Math.sin(Math.PI * u) * (0.06 + 0.09 * k + 0.07 * s), f.lift[2] + (ty - f.lift[2]) * e]
+        f.yaw = f.liftYaw + angleDiff(a.legYaw + (i === 0 ? -0.12 : 0.12), f.liftYaw) * e
+        f.pitch = -Math.sin(Math.PI * 2 * u) * (0.45 + 0.25 * s) * k
+      } else if (!f.planted) {
+        f.planted = true
+        f.p = [f.p[0], 0, f.p[2]]
+        f.pitch = 0
+        ev |= EV.step
       }
-      const u = (p - duty) / (1 - duty)
-      const left = (1 - p) / rate
-      const stance = duty / rate
-      const [rx, ry] = rest(i)
-      const lead = left + stance * 0.5
-      let tx = rx + nvx * lead
-      let ty = ry + nvy * lead
-      // Side-steps shuffle rather than cross: keep the swing foot on its own side of the planted one in aim space.
-      const o = a.feet[1 - i]!
-      const side = i === 0 ? -1 : 1
-      const ca = Math.cos(aim)
-      const sa = Math.sin(aim)
-      const lat = (-(tx - o.p[0]) * sa + (ty - o.p[2]) * ca) * side
-      if (lat < 0.16) {
-        tx += -sa * side * (0.16 - lat)
-        ty += ca * side * (0.16 - lat)
-      }
-      const e = smoother(u)
-      f.p = [f.lift[0] + (tx - f.lift[0]) * e, Math.sin(Math.PI * u) * (0.06 + 0.09 * k + 0.07 * s), f.lift[2] + (ty - f.lift[2]) * e]
-      f.yaw = f.liftYaw + angleDiff(a.legYaw + (i === 0 ? -0.12 : 0.12), f.liftYaw) * e
-      f.pitch = -Math.sin(Math.PI * 2 * u) * (0.45 + 0.25 * s) * k
-    } else if (!f.planted) {
-      f.planted = true
-      f.p = [f.p[0], 0, f.p[2]]
-      f.pitch = 0
-      ev |= EV.step
     }
-  }
 
-  // Lean into motion; decelerating throws the upper body forward and dips the knees, so stops land with weight.
-  const along = a.acx * nvx + a.acy * nvy
-  const brake = along < 0 ? 0.0065 : -0.0025
-  stepSpring(a.leanX, 90, 0.38, dt, nvx * 0.035 - a.acx * brake)
-  stepSpring(a.leanY, 90, 0.38, dt, nvy * 0.035 - a.acy * brake)
-  stepSpring(a.dip, 140, 0.35, dt, -Math.min(0.06, Math.hypot(a.acx, a.acy) * 0.0016))
-  for (const s of [a.recBack, a.recPitch, a.recYaw, a.recRoll]) stepSpring(s, RECOIL[a.gun].k, RECOIL[a.gun].z, dt)
+    const along = a.acx * nvx + a.acy * nvy
+    const brake = along < 0 ? 0.0065 : -0.0025
+    stepSpring(a.leanX, 90, 0.38, dt, nvx * 0.035 - a.acx * brake)
+    stepSpring(a.leanY, 90, 0.38, dt, nvy * 0.035 - a.acy * brake)
+    stepSpring(a.dip, 140, 0.35, dt, -Math.min(0.06, Math.hypot(a.acx, a.acy) * 0.0016))
+  }
+  if (!enhanced || now - a.firedAt >= animation.recoilHold / 60) {
+    for (const s of [a.recBack, a.recPitch, a.recYaw, a.recRoll]) stepSpring(s, RECOIL[a.gun].k, RECOIL[a.gun].z, dt)
+  }
   stepSpring(a.torsoKick, 260, 0.45, dt)
   stepSpring(a.hitX, 160, 0.35, dt)
   stepSpring(a.hitY, 160, 0.35, dt)
   stepSpring(a.hitTwist, 160, 0.35, dt)
   a.heat *= Math.exp(-dt * (now - a.firedAt < 0.2 ? 0.8 : 4))
   a.flash *= Math.exp(-dt * 22)
+  if (enhanced) {
+    angleSpring(a.motion.chest, aim + (a.bare ? 0 : BLADE[a.gun]) - a.motion.twist.x * 0.65, animation.chestHz, dt)
+    angleSpring(a.motion.head, aim, animation.headHz, dt)
+    const ergonomics = animation[`${a.gun}Ergonomics`]
+    angleSpring(a.motion.weapon, aim, animation.weaponHz * ergonomics, dt)
+    const c = Math.cos(a.motion.weapon.x), sn = Math.sin(a.motion.weapon.x), hold = HOLD[a.gun]
+    const target = [a.x + c * hold.fwd - sn * hold.side, hold.up, a.y + sn * hold.fwd + c * hold.side]
+    a.motion.gun.forEach((s, i) => stepSpring(s, stiffness(animation.weaponHz * ergonomics), 1, dt, target[i]!))
+  }
 
   // Clips: reload first, then the pump or bolt cycle.
   let clip: Clip | null = null
@@ -568,7 +600,9 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   }
 
   const prevHand = a.body ? at(a.body.fa[0], 0, -RIG.fore, 0) : null
+  const previous = enhanced && !teleport && a.body ? bodyJoints(a.body, a.gun) : null
   a.body = build(a, now, k, clip, ct)
+  if (previous) a.body.velocities = bodyJoints(a.body, a.gun).map((p, i) => p.map((v, axis) => clamp((v - previous[i]![axis]!) / dt, -15, 15)) as V3)
   if (prevHand) {
     const h = at(a.body.fa[0], 0, -RIG.fore, 0)
     a.handVel = [(h[0] - prevHand[0]) / dt, (h[1] - prevHand[1]) / dt, (h[2] - prevHand[2]) / dt]
@@ -578,6 +612,8 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 
 /** Builds the pose: pelvis over the feet, a twisting torso aiming the gun, IK arms on the gun and IK legs to the feet. */
 function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number): Body {
+  const enhanced = animation.animationMode === "new"
+  const m = a.motion
   const t = a.t
   const g = a.gun
   const duty = a.duty
@@ -588,6 +624,9 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   const sprint = smooth(a.sprint)
   const port = sprint * (clip ? 0.35 : 1)
   const breath = Math.sin(t * 1.7 + a.seed)
+  const speed = Math.max(0.1, Math.hypot(a.svx, a.svy))
+  const postureX = enhanced ? m.posture.x * a.svx / speed : 0
+  const postureY = enhanced ? m.posture.x * a.svy / speed : 0
 
   // Pelvis: low and bobbing when running, swaying its weight when standing, kept within reach of both feet.
   const legLen = RIG.thigh + RIG.shin - 0.015
@@ -597,7 +636,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   const sl = Math.sin(a.legYaw)
   const px = a.x - sl * sway + a.hitX.x * 0.5
   const pz = a.y + cl * sway + a.hitY.x * 0.5
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; !enhanced && i < 2; i++) {
     const f = a.feet[i]!
     const side = i === 0 ? -1 : 1
     const hx = px - sl * side * RIG.hipW
@@ -610,12 +649,19 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   let pelvis = yawFrame([px, h, pz], a.legYaw + twist)
   pelvis = pitch(pelvis, -0.12 * moving - 0.05)
   pelvis = roll(pelvis, 0.06 * moving * Math.cos(th) + sway * 1.4)
+  if (enhanced) {
+    pelvis = yawFrame(pelvisPoint(a), a.aim + clamp(angleDiff(m.pelvis.x + m.twist.x, a.aim), -1.05, 1.05))
+    pelvis = roll(pelvis, m.drop.x)
+    // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
+    // both leg reaches remain identical. The waist, shoulders and head lean together.
+    pelvis = pitch(pelvis, -0.7 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
+  }
 
   // Lean in the torso's own axes: travel lean and hit pushes come in plan space.
   const ca = Math.cos(a.aim)
   const sa = Math.sin(a.aim)
-  const lx = a.leanX.x + a.hitX.x * 1.4
-  const ly = a.leanY.x + a.hitY.x * 1.4
+  const lx = a.leanX.x + a.hitX.x * 1.4 + postureX
+  const ly = a.leanY.x + a.hitY.x * 1.4 + postureY
   const leanFwd = lx * ca + ly * sa
   const leanSide = -lx * sa + ly * ca
   let gunPitch = 0
@@ -639,13 +685,13 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   // Sprinting squares the chest up to the run and carries the gun with it.
   const run = angleDiff(a.legYaw, a.aim) * port * 0.7
   const sw = swingPhase(a, now)
-  const torsoYaw = (sw?.twist ?? 0) + a.aim + run + (a.bare ? 0 : BLADE[g]) * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving + a.hitTwist.x + a.recYaw.x * 0.4
+  const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x : a.aim + run + (a.bare ? 0 : BLADE[g]) * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
-  const fwd = (a.bare ? 0.2 : 0) + 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2 - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
-  const side = leanSide * 2.2 + Math.sin(2 * th) * 0.02 * moving
+  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? 0.06 + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const side = leanSide * (enhanced ? 1 : 2.2) + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
   torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * 0.4)
 
@@ -657,7 +703,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   gunRoll += 0.35 * port
   gunPull += 0.1 * port
   gunDrop += 0.12 * port
-  const gy = a.aim + run
+  const gy = enhanced ? m.weapon.x : a.aim + run
   const ga = Math.cos(gy)
   const gs = Math.sin(gy)
   const shoulderC = at(torso, 0, RIG.shoulderY, 0)
@@ -672,7 +718,8 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
     a.hitTwist.x * 0.3 -
     gunYaw
   let gunF = yawFrame([shoulderC[0] + ga * hold.fwd - gs * hold.side, shoulderC[1] + hold.up - rest - gunDrop - raise * 0.22, shoulderC[2] + gs * hold.fwd + ga * hold.side], yaw)
-  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
+  if (enhanced) gunF = moved(gunF, [m.gun[0].x, m.gun[1].x - gunDrop - raise * 0.22, m.gun[2].x])
+  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (enhanced ? 0.008 : 0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
   gunF = roll(gunF, a.recRoll.x + gunRoll + clamp(-a.aimVel * 0.03, -0.3, 0.3) + raise * 0.5)
   // A swing with a gun in hand: a bash, the gun driven forward.
   const bash = sw && !a.bare ? Math.sin(Math.PI * sw.strike) * sw.back : 0
@@ -728,7 +775,9 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
 
   // Head follows the aim, looks down at the gun while reloading.
   let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), a.aim + a.hitTwist.x * 1.6 + clamp(a.aimVel * 0.02, -0.25, 0.25))
-  head = pitch(head, -0.1 - look * 1.1 - a.torsoKick.x * 0.6 - fwd * 0.3 + Math.sin(2 * th) * 0.03 * moving)
+  if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + a.hitTwist.x)
+  const headLean = fwd - (postureX * ca + postureY * sa)
+  head = pitch(head, -0.1 - look * 1.1 - a.torsoKick.x * 0.6 - headLean * 0.3 + Math.sin(2 * th) * 0.03 * moving)
   head = roll(head, side * 0.5 - a.hitTwist.x * 0.5)
 
   // Legs.
@@ -739,12 +788,25 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
     const s = i === 0 ? -1 : 1
     const hip = at(pelvis, 0, 0, s * RIG.hipW)
     const f = a.feet[i]!
-    const ankle: V3 = [f.p[0], f.p[1] + RIG.ankle, f.p[2]]
+    const contact = enhanced && f.planted ? plantedFoot(a, i) : null
+    const ankle: V3 = contact?.p ?? [f.p[0], f.p[1] + RIG.ankle, f.p[2]]
     const pole = dirIn(pelvis, 1, 0, s * 0.3)
     const [knee, ank] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
     th2.push(limb(hip, knee, pole, pelvis.x))
     sh2.push(limb(knee, ank, pole, pelvis.x))
-    ft2.push(pitch(yawFrame(ank, f.yaw), f.pitch))
+    // Contact owns the rendered boot too: IK's clamped endpoint must not drag it.
+    const swingReach = enhanced && !f.planted ? smooth(m.swings[i]! / 0.22) * (1 - smooth((m.swings[i]! - 0.75) / 0.25)) : 0
+    let foot = contact ?? pitch(yawFrame(enhanced ? lerp3(ankle, ank, swingReach) : ank, f.yaw), f.pitch)
+    if (enhanced && !f.planted) {
+      const u = m.swings[i]!
+      const relaxed = smooth(u / 0.22) * (1 - smooth((u - 0.68) / 0.32))
+      const shinPitch = Math.atan2(sh2[i]!.x[1], Math.hypot(sh2[i]!.x[0], sh2[i]!.x[2]))
+      foot = pitch(foot, (shinPitch - 0.12 - f.pitch) * relaxed)
+      // Heel and toe cannot penetrate the bind sole, even while the ankle relaxes.
+      const low = Math.min(at(foot, -0.08, -RIG.ankle, 0)[1], at(foot, 0.19, -RIG.ankle, 0)[1])
+      if (low < 0) foot = moved(foot, [foot.p[0], foot.p[1] - low, foot.p[2]])
+    }
+    ft2.push(foot)
   }
 
   let mag: Frame | null = null
@@ -791,4 +853,3 @@ export function gunPoints(a: Avatar): { muzzle: V3; port: V3; dir: V3; right: V3
   const p = GUNPTS[a.gun]
   return { muzzle: at(g, p.muzzle, 0.03, 0), port: at(g, p.port[0], p.port[1], p.port[2]), dir: g.x, right: g.z, magwell: at(g, p.mag[0], p.mag[1] - 0.05, p.mag[2]) }
 }
-
