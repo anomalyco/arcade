@@ -752,7 +752,8 @@ export class Game {
       // Screen-relative movement, as in most top-down shooters: WASD move up/left/down/right; the mouse only aims.
       const mv = live ? input.move() : { mx: 0, my: 0 }
       const reload = input.takeReload()
-      const fire = live && input.enabled && input.firing
+      const firePressed = input.takeFirePress() && live
+      const fire = live && input.enabled && (input.firing || firePressed)
       const equip = live && input.takeEquip()
       const use = live && input.enabled && input.held("KeyF")
       const melee = live && input.takeMelee() && this.kit.melee
@@ -761,7 +762,7 @@ export class Game {
       const seat = live && input.takeSeat() && !!this.riding
       const driving = this.riding?.seat === 0
       const horn = live && driving && input.held("KeyH")
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, ...(firePressed ? { firePressed: true } : {}), reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.
@@ -788,7 +789,7 @@ export class Game {
         continue
       }
       if (equip && this.equipLeft > 0) this.localEquip()
-      this.localGun(fire, reload, sprint, melee && !this.riding)
+      this.localGun(i.fire, reload, sprint, melee && !this.riding, firePressed)
     }
     if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
     this.veh.frame(dt, this.acc / DT, this.now)
@@ -810,7 +811,7 @@ export class Game {
   }
 
   /** Mirrors the server's trigger and melee rules (from the kit) so your own shots and swings go on the frame you click. */
-  private localGun(fire: boolean, reload: boolean, sprint: boolean, melee: boolean): void {
+  private localGun(fire: boolean, reload: boolean, sprint: boolean, melee: boolean, firePressed: boolean): void {
     const t = this.now
     const kit = this.kit
     if ((melee || (!kit.gun && fire)) && kit.melee && t >= this.swingReady) {
@@ -838,7 +839,7 @@ export class Game {
       this.reloadUntil = t + gun.reload
     }
     const ready = t >= this.readyAt
-    const pressed = fire && ready && (kit.auto || !this.triggerHeld)
+    const pressed = fire && ready && (kit.auto || firePressed || !this.triggerHeld)
     if (ready || !fire) this.triggerHeld = fire
     if (!pressed || this.reloadUntil > 0 || this.mag <= 0 || t < this.cooldownUntil || t < this.swingLand) return
     this.cooldownUntil = t + kit.cooldown

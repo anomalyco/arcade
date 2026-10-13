@@ -19,9 +19,19 @@ export class Input {
   private seatPressed = false
   mouse = { x: innerWidth / 2, y: innerHeight / 2 }
   firing = false
+  /** One pending edge, never a queue of shots. Expire it across stalls or focus changes. */
+  private firePressedAt = -Infinity
   /** Right mouse held: push the camera further toward the cursor. */
   looking = false
-  enabled = false
+  private gameplayEnabled = false
+  get enabled(): boolean { return this.gameplayEnabled }
+  set enabled(value: boolean) {
+    if (!value) {
+      this.firing = false
+      this.firePressedAt = -Infinity
+    }
+    this.gameplayEnabled = value
+  }
   onKey: ((code: string) => void) | null = null
   onWheel: ((delta: number) => void) | null = null
   readonly mux = new URLSearchParams(location.search).has("mux") && parent !== window
@@ -79,6 +89,7 @@ export class Input {
   release(): void {
     this.keys.clear()
     this.chars.clear()
+    this.firePressedAt = -Infinity
     this.firing = this.looking = this.reloadPressed = this.equipPressed = this.meleePressed = this.enterPressed = this.seatPressed = false
   }
 
@@ -118,15 +129,27 @@ export class Input {
     this.mouse.x = Math.max(0, Math.min(1, m.nx)) * innerWidth
     this.mouse.y = Math.max(0, Math.min(1, m.ny)) * innerHeight
     if (Number.isInteger(m.buttons)) {
-      this.firing = (m.buttons! & 1) !== 0
+      this.setFire((m.buttons! & 1) !== 0)
       this.looking = (m.buttons! & 2) !== 0
     }
-    if (m.down === 0) this.firing = true
+    if (m.down === 0) this.setFire(true)
     if (m.down === 2) this.looking = true
     if (m.down === 1) this.equipPressed = true
-    if (m.up === 0) this.firing = false
+    if (m.up === 0) this.setFire(false)
     if (m.up === 2) this.looking = false
     if (Number.isFinite(m.wheel)) this.onWheel?.(m.wheel!)
+  }
+
+  private setFire(down: boolean): void {
+    if (down && !this.firing && this.enabled) this.firePressedAt = performance.now()
+    this.firing = down && this.enabled
+  }
+
+  /** Consume on every input tick, even when dead. Weapon gates decide this tick; they never retain the edge. */
+  takeFirePress(): boolean {
+    const pressed = this.enabled && performance.now() - this.firePressedAt <= 100
+    this.firePressedAt = -Infinity
+    return pressed
   }
 
   held(code: string): boolean {

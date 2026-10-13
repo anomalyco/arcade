@@ -17,13 +17,14 @@ import { type Vehicle, armorOf, blastVehicles, damageVehicle, leaveSeat, pushOut
 export type Phase = "play" | "end"
 
 /**
- * One tick of input. `fire` holds the trigger; automatic guns keep firing, the others need a fresh press. `sprint`
+ * One tick of input. `fire` holds the trigger (or a tap for one tick); `firePressed` preserves a fresh press even
+ * without an intervening released tick. Automatic guns keep firing, the others need a fresh press. `sprint`
  * holds Shift. `equip` is a press that throws or plants your equipment; (tx, ty) is the cursor on the floor, how far
  * to throw. `use` holds the plant/defuse key in search and destroy. `melee` is a press of the melee key (V), when the
  * kit has one; bare-handed, the trigger swings too. `enter` is a press of F that gets in or out of a vehicle; driving,
  * (mx, my) are the throttle and steering and `sprint` the handbrake; `horn` holds H.
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; firePressed?: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
@@ -377,7 +378,7 @@ export class World {
       stepSwing(this, p)
       // A press during the sprint-to-fire delay is held over until the gun is up.
       const ready = this.time >= p.readyAt
-      const pressed = !!kit.gun && intent.fire && ready && (kit.auto || !p.triggerHeld)
+      const pressed = !!kit.gun && intent.fire && ready && (kit.auto || intent.firePressed || !p.triggerHeld)
       if (pressed && p.reloadUntil === 0 && p.swingAt === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p)
       if (ready || !intent.fire) p.triggerHeld = intent.fire
       if (kit.regen && p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
