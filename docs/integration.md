@@ -53,6 +53,11 @@ It focuses on one house and its frontage, lighting/material calibration, furnish
 budget. That revision is not yet included. Any shared-renderer changes must remain opt-in and preserve Blackout and
 Getaway defaults. This PR stays draft pending review; no deployment is authorized.
 
+Shared hybrid audio runtime and Audio Lab work is also pending on the separate `audio-lab` branch. Its tested
+additive commit will be integrated into this same PR when available. The planned `packages/kit/audio` runtime and
+Lab adapter must reuse the shared vehicle/Getaway synth and preserve the approved vehicle sound. This follow-up
+is not included in the current integration or its verification results.
+
 Run `bun install --frozen-lockfile` at the root. Start each client from its game directory with
 `bunx --no-install vite --host 127.0.0.1`; Blackout also needs `bun scripts/build-id.ts` first.
 For the full game server use the existing `bun run dev` script from Getaway or Blackout.
