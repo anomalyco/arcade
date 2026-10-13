@@ -13,6 +13,9 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 Each folder is an independent Bun project with its own `package.json`, lockfile, `check` script and `wrangler.jsonc`.
 There is no root workspace.
 
+Record matching Getaway runs: `bun scripts/compare-video.ts --version Before=ref:4495277 --version Now=url:http://getaway-smoke.localhost:1355 --layout stack --out captures/compare/night.mp4`.
+Use `--also-side captures/compare/night-side.mp4` for both layouts; `--help` lists scenarios, seed, frame count, prerequisites and historical-hook limits.
+
 ```sh
 cd games/blackout
 bun install

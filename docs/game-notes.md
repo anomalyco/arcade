@@ -6,6 +6,16 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Proving a change
 
+- **Record one motion tape across snapshots.** `scripts/compare-video.ts` captures headless Chromium on Metal and
+  sends encoding to the fleet. Its Getaway adapter patches HTTP responses for legacy, current and minified deployed
+  hooks without editing game files. Named scenarios supply frame-indexed inputs; the last pane supplies full world
+  views and camera state by default, so physics changes cannot move the cars between panes. `--input-only` compares
+  each version's simulation instead. The seed-7 historical/smoke pair matched all 360 world/camera snapshots at 30 Hz;
+  a four-pane seed-11 check also covered the deployed bundle and temporary-worktree cleanup. Two independent seed-11
+  deployed runs produced byte-identical PNGs for all 30 frames in input-only mode. Captures are canvas-only,
+  with PNG labels, 720-wide stacked or 1920-wide side output, a contact sheet and a JSON manifest. Capture timing
+  includes screenshot readback and is not a performance benchmark.
+
 - **Measure before you edit.** Record a baseline on the unchanged code, then make one change at a time. Use one warmup
   and seven or more measured runs, and compare medians with their spread. Results go in `perf/results.jsonl`.
 - **Separate GPU time from frame time.** Frame time is capped by vsync. Use `timestamp-query` where the adapter has it,
