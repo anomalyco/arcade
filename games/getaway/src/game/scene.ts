@@ -552,9 +552,13 @@ export class Scene {
           if (tuned) {
             // Project the posed lamp's aim onto the road. Brake dive brings the pool closer;
             // the broad, zero-slope edge overlaps the beam's long fade instead of capping it.
-            if (dir[1] < -0.03) {
-              const distance = Math.min(24, Math.max(0, (head[1] - this.groundAt(head[0], head[2])) / -dir[1]))
-              const x = head[0] + dir[0] * distance, z = head[2] + dir[2] * distance
+            {
+              // Body pitch only nudges the pool: squat under throttle flattens the beam, and projecting it
+              // exactly would fling the pool tens of metres ahead.
+              const flat = Math.hypot(dir[0], dir[2]) || 1
+              const exact = dir[1] < -0.01 ? ((head[1] - this.groundAt(head[0], head[2])) / -dir[1]) * flat : Infinity
+              const distance = Math.min(settings.poolAhead * 1.15, Math.max(settings.poolAhead * 0.85, exact))
+              const x = head[0] + (dir[0] / flat) * distance, z = head[2] + (dir[2] / flat) * distance
               sprite("d", x, this.groundAt(x, z) + 0.045, z, settings.poolSize, 1, green, blue, settings.poolIntensity * grounded, 19, beamYaw, 1.65)
             }
             sprite("d", ...head, settings.glowSize, 1, green, blue, settings.glowIntensity * 0.24, 0)
