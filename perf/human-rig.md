@@ -1,6 +1,6 @@
 # Shared human rig proof
 
-Status: core checkpoint tests pass; visual proof, release-main integration and splatter hookup pending.
+Status: core checkpoint tests and first Metal visual proof pass; release-main integration and splatter hookup pending.
 
 Hivemind run `20261013-130146-98650` passed on the Mini: frozen root install, ten shared-package tests,
 Blackout client/server/script typechecks, all 288 tests (including 18 animation cases) and production build.
@@ -34,6 +34,12 @@ Profiles, speed and individual parameters live in the shared Lab. The scripted f
 
 `scripts/prove-human.ts --video` captures the three presets, their comparison and six seconds of detachment,
 then exercises Randomize, Reset, exact Copy and keyboard profile selection. Headless Chromium must report Metal.
+
+The first run on Studio reported `apple / metal-3`, three profiles, one detached forearm, exact copied spawn frame,
+180 captured frames, passing keyboard/Copy controls and zero page/GPU errors. The comparison, individual profiles,
+and detach samples before/at/after release were inspected. The sample shows staff attachment, an asymmetric
+reaching zombie, and the detached forearm falling behind the moving actor. It does not establish continuous
+playback quality. Captures are in `captures/shared-human/`; `proof.json` includes profile poses and copied settings.
 
 ## Limits
 

@@ -106,6 +106,24 @@ a death frame strip. Stills and encoded run/death frames were inspected. Continu
 cost have not been measured. Reproduce encoding with `bash scripts/animation-film.sh` and the sheet with
 `python3 scripts/animation-sheet.py` (Pillow required).
 
+### Shared human presentation checkpoint
+
+The canonical rig now supports `human-profile`, `human-locomotion` and `human-pose` consumers. Soldier defaults
+match the refined `8223033` body exactly over 900 frames per mode, including running posture, recoil and hits.
+Wizard rest hands support a staff; zombie timing asymmetry and swing-foot drag retain the same toe-lock owner.
+Hidden subtrees retain their posed frames so remaining IK stays finite. Semantic bone IDs map to explicit numeric
+cosmetic IDs, independent of mesh registration.
+
+Detach samples the displayed frame before hiding its subtree. It copies frames and differences consecutive
+poses for origin linear velocity and world angular velocity. Offset emitter/centre-of-mass velocity includes
+`angular × offset`. The fixture integrates debris starting on the next tick, preserving the first displayed pose.
+Corpse adapters copy the visibility mask and sample the current ragdoll pose when removing another limb.
+
+The checkpoint passed ten shared tests and 288 Blackout tests/typechecks/build on Hivemind, including dt spikes
+and missing limbs. Its first Metal fixture passed three profiles, one exact detach handoff and Lab keyboard/Copy
+checks with no page/GPU errors. Sampled images were inspected; continuous playback and performance remain unmeasured.
+See `human-rig.md` for ownership and `../perf/human-rig.md` for proof and release-integration status.
+
 ## Rendering (WebGPU)
 
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
