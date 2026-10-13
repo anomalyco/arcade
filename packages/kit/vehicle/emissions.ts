@@ -89,7 +89,7 @@ export class VehicleEmissions<Terrain = null> {
     this.wispCount = n
   }
 
-  car(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number, height: number, smokeEnabled: boolean, popsEnabled: boolean) {
+  car(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number, height: number, smokeEnabled = true, popsEnabled = true) {
     const fx = Math.sin(c.h), fz = Math.cos(c.h), rx = fz, rz = -fx
     const throttle = c.engineOff ? 0 : input?.throttle ?? (c.boosting ? 1 : 0)
     const spin = launchSlip(c, spec, s, input, dt)
@@ -159,7 +159,7 @@ export class VehicleEmissions<Terrain = null> {
     out[i + 4] = r; out[i + 5] = g; out[i + 6] = b; out[i + 7] = a
     out[i + 8] = kind; out[i + 9] = rot; out[i + 10] = stretch; out[i + 11] = seed
   }
-  emit(alpha: Float32Array, ai: number, add: Float32Array, di: number, max: number, visible: boolean) {
+  emit(alpha: Float32Array, ai: number, add: Float32Array, di: number, max: number, visible = this.visible) {
     if (visible) {
       for (let n = 0; n < this.wispCount && ai < max; n++) {
         const i = n * 8, p = this.wisps, t = p[i + 3]! / p[i + 7]!
@@ -168,5 +168,6 @@ export class VehicleEmissions<Terrain = null> {
       for (let n = 0; n < this.flameCount && di < max; n++, di++) for (let j = 0; j < 12; j++) add[di * 12 + j] = this.flames[n * 12 + j]!
     }
     this.alphaCount = ai; this.addCount = di
+    return { alpha: ai, add: di }
   }
 }

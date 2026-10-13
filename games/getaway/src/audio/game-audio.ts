@@ -384,7 +384,7 @@ export class GameAudio {
         view.phase !== "end" && !c.ghost && !c.engineOff && c.stun <= 0, !local)
     }
     this.interrupted = false
-    this.phases(view, mine)
+    this.phases(view)
     this.events(view, ctx.events, mine)
     this.ownCar(view, mine, robber, ctx.input, dt)
     this.otherEngines(view, mine, dt)
@@ -504,16 +504,6 @@ export class GameAudio {
     // Boost lifts the note and opens the tone a little on top of the extra load.
     const rate = this.rpmFor(s, mine.speed, s.load, dt) * (1 + 0.05 * s.boostAmt)
     this.engDuck *= Math.exp(-dt / 0.35)
-    const engGain = (off ? 0 : 0.34 + 0.26 * s.load + 0.12 * Math.min(1, mine.speed / 40) + 0.05 * s.boostAmt) * (1 - this.engDuck)
-    const engCut = (1400 + 9000 * (0.25 + 0.75 * s.load) * (0.6 + 0.4 * s.rpm)) * (1 + 0.4 * s.boostAmt)
-    this.engine.set(engGain, rate, 0, engCut, 0.05, off ? 0.25 : 0.05)
-
-    // The rush under the kick: its low-pass opens over the first moments, it thins as the fuel runs dry, and it
-    // fades (darkening) over a few hundred ms when the boost stops.
-    const open = Math.min(1, s.boostT / 0.35)
-    const dry = Math.min(1, 0.7 + (0.3 * mine.boost) / 0.12)
-    this.rush.set(boosting ? 0.4 * dry : 0, 0.94 + 0.12 * Math.min(1, mine.speed / 45), 0, boosting ? 1600 + 8400 * open : 1600, 0.06, boosting ? 0.09 : 0.14)
-
     // Tires. Ordinary cornering only gets a faint, untonal rubber scrub. The squeal is reserved for real slides (the
     // handbrake, the drift state, or a lot of sideways speed), with hysteresis so it can't flicker at the threshold.
     const state = mine.slide ?? 0
@@ -522,28 +512,40 @@ export class GameAudio {
     s.sliding = was
       ? mine.speed > 4 && (handbrake || (state > 0.15 && mine.drift > 2.5) || mine.drift > 4)
       : mine.speed > 6 && (handbrake || (state > 0.3 && mine.drift > 3) || mine.drift > 6)
-    const k = Math.max(0, Math.min(1, (mine.drift - 3) / 9))
-    const attack = 0.055
-    const release = 0.07
-    if (s.sliding) {
-      // Low scrub leads at small angles; the squeal grows in with the slide, rising in pitch and opening up.
-      this.screech.set(0.3 * (0.3 + 0.7 * k), 0.94 + 0.08 * k + 0.05 * Math.min(1, mine.speed / 40), 0, 2600 + 7400 * k, 0.06, attack)
-      this.scrub.set(0.16 * (1 - 0.5 * k), 0.9 + 0.15 * Math.min(1, mine.speed / 35), 0, 1200 + 1800 * k, 0.04, attack)
-    } else {
-      const corner = mine.speed > 5 ? Math.max(0, Math.min(1, (mine.drift - 2) / 4)) : 0
-      this.screech.set(0, 0.94, 0, 2600, 0.06, release)
-      this.scrub.set(0.07 * corner * corner, 0.9 + 0.15 * Math.min(1, mine.speed / 35), 0, 900 + 600 * corner, 0.04, corner > 0 ? attack : release)
-    }
-    // A chirp only when a hard slide breaks loose, and never more than once every ~1.6 s.
-    if (!this.procedural && s.sliding && !was && mine.speed > 10 && (handbrake || state > 0.5 || mine.drift > 8) && s.skidCool <= 0) {
-      a.play("skid_short", { gain: 0.28, rate: 0.95 + Math.random() * 0.1, wet: 0.08 })
-      s.skidCool = 1.6
-    }
 
     if (this.procedural) {
       this.engine.silence(); this.screech.silence(); this.scrub.silence(); this.rush.silence()
       this.driver.update(mine, input, dt, this.acoustics.surface(mine.x, mine.z), s.nitro)
-    } else this.driver.silence()
+    } else {
+      this.driver.silence()
+      const engGain = (off ? 0 : 0.34 + 0.26 * s.load + 0.12 * Math.min(1, mine.speed / 40) + 0.05 * s.boostAmt) * (1 - this.engDuck)
+      const engCut = (1400 + 9000 * (0.25 + 0.75 * s.load) * (0.6 + 0.4 * s.rpm)) * (1 + 0.4 * s.boostAmt)
+      this.engine.set(engGain, rate, 0, engCut, 0.05, off ? 0.25 : 0.05)
+
+      // The rush under the kick: its low-pass opens over the first moments, it thins as the fuel runs dry, and it
+      // fades (darkening) over a few hundred ms when the boost stops.
+      const open = Math.min(1, s.boostT / 0.35)
+      const dry = Math.min(1, 0.7 + (0.3 * mine.boost) / 0.12)
+      this.rush.set(boosting ? 0.4 * dry : 0, 0.94 + 0.12 * Math.min(1, mine.speed / 45), 0, boosting ? 1600 + 8400 * open : 1600, 0.06, boosting ? 0.09 : 0.14)
+
+      const k = Math.max(0, Math.min(1, (mine.drift - 3) / 9))
+      const attack = 0.055
+      const release = 0.07
+      if (s.sliding) {
+        // Low scrub leads at small angles; the squeal grows in with the slide, rising in pitch and opening up.
+        this.screech.set(0.3 * (0.3 + 0.7 * k), 0.94 + 0.08 * k + 0.05 * Math.min(1, mine.speed / 40), 0, 2600 + 7400 * k, 0.06, attack)
+        this.scrub.set(0.16 * (1 - 0.5 * k), 0.9 + 0.15 * Math.min(1, mine.speed / 35), 0, 1200 + 1800 * k, 0.04, attack)
+      } else {
+        const corner = mine.speed > 5 ? Math.max(0, Math.min(1, (mine.drift - 2) / 4)) : 0
+        this.screech.set(0, 0.94, 0, 2600, 0.06, release)
+        this.scrub.set(0.07 * corner * corner, 0.9 + 0.15 * Math.min(1, mine.speed / 35), 0, 900 + 600 * corner, 0.04, corner > 0 ? attack : release)
+      }
+      // A chirp only when a hard slide breaks loose, and never more than once every ~1.6 s.
+      if (s.sliding && !was && mine.speed > 10 && (handbrake || state > 0.5 || mine.drift > 8) && s.skidCool <= 0) {
+        a.play("skid_short", { gain: 0.28, rate: 0.95 + Math.random() * 0.1, wet: 0.08 })
+        s.skidCool = 1.6
+      }
+    }
 
     // Flapping rubber, louder and grittier with every popped tire; on the rims it grinds even at a crawl.
     const flats = flatCount(mine.wheels)
@@ -870,7 +872,7 @@ export class GameAudio {
     } else this.worldScrape.silence(0.15)
   }
 
-  private phases(view: WorldView, mine: Car | null) {
+  private phases(view: WorldView) {
     const a = this.a
     if (view.round !== this.round) {
       this.round = view.round

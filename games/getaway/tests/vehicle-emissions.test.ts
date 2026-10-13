@@ -9,14 +9,13 @@ const spec = VEHICLE_BY_ID.get("muscle")!
 const car = (): CarView => ({ id: 1, ownerId: "test", name: "Driver", role: "robber", vehicle: "muscle", x: 0, z: 0, h: 0, vx: 0, vz: 25, speed: 25, drift: 0, stun: 0, boost: 1, human: true, impact: 0, ghost: false })
 test("gripping nitro emits attached flames but no tyre smoke; ordinary braking does not imply lock", () => {
   const e = new VehicleEmissions(), s = new EmissionState(), c = car()
-  s.speed = c.speed
   for (let i = 0; i < 120; i++) {
     e.update(1/60); c.z += c.speed/60
-    e.car(c, spec, s, { ...NO_INPUT, throttle: 1, boost: true }, 1/60, 0, true, true)
+    e.car(c, spec, s, { ...NO_INPUT, throttle: 1, boost: true }, 1/60, 0)
   }
   expect(e.trail.count).toBe(0); expect(e.flameCount).toBe(4)
   e.update(1/60)
-  e.car(c,spec,s,{ ...NO_INPUT, brake: 1 },1/60,0,true,true)
+  e.car(c, spec, s, { ...NO_INPUT, brake: 1 }, 1/60, 0)
   expect(e.trail.count).toBe(0)
 })
 test("two rear plumes warm over one second, stop on grip, remain in world, and fully dissipate", () => {
@@ -24,7 +23,7 @@ test("two rear plumes warm over one second, stop on grip, remain in world, and f
   let early = 0
   for (let i = 0; i < 60; i++) {
     e.update(1/60); c.z += c.speed/60
-    e.car(c,spec,s,{ ...NO_INPUT, throttle: 1 },1/60,0,true,true)
+    e.car(c, spec, s, { ...NO_INPUT, throttle: 1 }, 1/60, 0)
     if (i === 5) early = s.intensity
   }
   expect(s.emittingWheels).toBe(2)
@@ -32,7 +31,7 @@ test("two rear plumes warm over one second, stop on grip, remain in world, and f
   expect(s.intensity).toBeGreaterThan(early * 3)
   const count = e.trail.count, oldZ = e.trail.particles[2]!
   c.drift = 0; c.z += 30
-  e.update(1/60); e.car(c,spec,s,NO_INPUT,1/60,0,true,true)
+  e.update(1/60); e.car(c, spec, s, NO_INPUT, 1/60, 0)
   expect(s.emittingWheels).toBe(0); expect(e.trail.count).toBe(count)
   expect(Math.abs(e.trail.particles[2]! - oldZ)).toBeLessThan(0.05)
   e.update(3); expect(e.trail.count).toBeGreaterThan(0)
@@ -42,23 +41,23 @@ test("stationary burnout emits from driven tyres, airborne and popped wheels do 
   const e = new VehicleEmissions(), s = new EmissionState(), c = car()
   c.speed = c.vz = 0
   const input = { ...NO_INPUT, throttle: 1, brake: 1 }
-  for(let i=0;i<90;i++) { e.update(1/60); e.car(c,spec,s,input,1/60,0,true,true) }
+  for(let i=0;i<90;i++) { e.update(1/60); e.car(c, spec, s, input, 1/60, 0) }
   expect(e.trail.count).toBeGreaterThan(30); expect(s.emittingWheels).toBe(2)
-  c.airborne = true; e.car(c,spec,s,input,1/60,0,true,true); expect(s.emittingWheels).toBe(0)
-  c.airborne = false; c.wheels = 4; e.car(c,spec,s,input,1/60,0,true,true); expect(s.emittingWheels).toBe(1)
+  c.airborne = true; e.car(c, spec, s, input, 1/60, 0); expect(s.emittingWheels).toBe(0)
+  c.airborne = false; c.wheels = 4; e.car(c, spec, s, input, 1/60, 0); expect(s.emittingWheels).toBe(1)
   expect(drivenMask({...spec,drivetrain:"fwd"})).toBe(3)
   expect(drivenMask({...spec,drivetrain:"awd"})).toBe(15)
 })
 test("pops are short, occasional and rate limited; cold wisps can be disabled independently", () => {
-  const e = new VehicleEmissions(), s = new EmissionState(), c = car(); s.speed = c.speed
-  for(let i=0;i<60;i++) { e.update(1/60); e.car(c,spec,s,{...NO_INPUT,throttle:1},1/60,0,true,true) }
-  e.car(c,spec,s,NO_INPUT,1/60,0,true,true)
+  const e = new VehicleEmissions(), s = new EmissionState(), c = car()
+  for(let i=0;i<60;i++) { e.update(1/60); e.car(c, spec, s, {...NO_INPUT, throttle: 1}, 1/60, 0) }
+  e.car(c, spec, s, NO_INPUT, 1/60, 0)
   expect(e.pops).toBe(1); expect(s.pop).toBe(0.11)
-  for(let i=0;i<30;i++) { e.update(1/60); e.car(c,spec,s,{...NO_INPUT,throttle:i%2},1/60,0,true,true) }
+  for(let i=0;i<30;i++) { e.update(1/60); e.car(c, spec, s, {...NO_INPUT, throttle: i % 2}, 1/60, 0) }
   expect(e.pops).toBe(1); expect(s.pop).toBe(0)
   vehicleEffects.coldExhaust = true
   c.speed = c.vz = 0
-  for(let i=0;i<60;i++) { e.update(1/60); e.car(c,spec,s,NO_INPUT,1/60,0,true,true) }
+  for(let i=0;i<60;i++) { e.update(1/60); e.car(c, spec, s, NO_INPUT, 1/60, 0) }
   expect(e.wispCount).toBeGreaterThan(0)
   expect(e.trail.count).toBe(0)
   vehicleEffects.coldExhaust = false
@@ -86,7 +85,7 @@ test("standing nitro makes rear smoke and connected marks; grip and grass termin
   const input={...NO_INPUT,throttle:1,boost:true}
   for(let i=0;i<30;i++) {
     e.update(1/60); c.speed=i/3; c.vz=c.speed; c.z+=c.speed/60
-    e.car(c,spec,s,input,1/60,0,true,true)
+    e.car(c,spec,s,input,1/60,0)
   }
   expect(e.trail.count).toBeGreaterThan(4); expect(marks.skidCount).toBeGreaterThan(4)
   expect(s.wheels[0]!.slip).toBe(0); expect(s.wheels[1]!.slip).toBe(0)
@@ -98,11 +97,11 @@ test("standing nitro makes rear smoke and connected marks; grip and grass termin
   expect(out[12]).toBeCloseTo(spec.width*0.4)
   const n=marks.skidCount, particles=e.trail.count
   c.speed=30; c.z+=1
-  e.car(c,spec,s,input,1/60,0,true,true)
+  e.car(c,spec,s,input,1/60,0)
   expect(marks.skidCount).toBe(n); expect(e.trail.count).toBe(particles)
   e.city={parks:[{x0:-40,x1:40,z0:-40,z1:40}]}
   c.x=20;c.z=20;c.drift=8
-  e.car(c,spec,s,input,1/60,0,true,true)
+  e.car(c,spec,s,input,1/60,0)
   expect(s.emittingWheels).toBe(0);expect(marks.skidCount).toBe(n)
   expect(tyreSurface(e.city,20,20)).toBe(0)
   expect(tyreSurface(e.city,0,20)).toBe(1)

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { PROP_KINDS, SPECS } from "../src/game/props/placement"
 import { propMesh } from "../src/render/props-mesh"
 import { FLOATS_PER_VERT, Mesh } from "../src/render/mesh"
-import { bench, hydrant, barrel, barrier } from "../src/render/city/props"
+import { bench, hydrant, barrier } from "../src/render/city/props"
 
 function bounds(mesh: Mesh) {
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity]
@@ -33,8 +33,6 @@ test("bench seating and legacy city furniture have human-scale dimensions", () =
   expect(Math.max(...seat) - Math.min(...seat)).toBeCloseTo(1.8, 6)
   const h = new Mesh(); hydrant(h, 0, 0, 0)
   expect(bounds(h).size).toEqual([.3, .75, .3])
-  const b = new Mesh(); barrel(b, 0, 0, 0)
-  expect(bounds(b).size[1]).toBeCloseTo(.9, 6)
   const a = new Mesh(); barrier(a, 0, 0, true)
   expect(bounds(a).size).toEqual([2, 1.1, .7])
 })

@@ -5,7 +5,6 @@ import { MAT, type Mesh, type Rgb } from "../mesh"
 import { beam, cylinder, jitter, mix, shade, SKIP, slab, Wall } from "./kit"
 import type { LampLight, ShopSpill } from "./types"
 
-const ROOF: Rgb = [0.2, 0.22, 0.28]
 const ROOF_TRIM: Rgb = [0.33, 0.32, 0.32]
 const ROOFS: Rgb[] = [
   [0.24, 0.23, 0.24],
@@ -143,8 +142,8 @@ export function building(ctx: BuildingCtx, b: Box) {
     // Ground floor.
     const shop = f.street && !special && rng() < 0.75
     if (special) groundSpecial(ctx, f, b, body, trim)
-    else if (shop) shopfront(ctx, f, g, trim, body)
-    else groundPlain(ctx, f, g, body, trim, bw, nb, margin, winW, winH)
+    else if (shop) shopfront(ctx, f, g, trim)
+    else groundPlain(ctx, f, g, trim, bw, nb, margin, winW, winH)
 
     // Upper floors.
     const darkFloor = Math.floor(rng() * (floors + 3))
@@ -302,7 +301,7 @@ function window(ctx: BuildingCtx, W: Wall, a: number, b: number, y0: number, y1:
 }
 
 /** Shopfronts along a street face: lit display glass, a door, fascia band with a sign, sometimes an awning. */
-function shopfront(ctx: BuildingCtx, f: Face, g: number, trim: Rgb, body: Rgb) {
+function shopfront(ctx: BuildingCtx, f: Face, g: number, trim: Rgb) {
   const { m, rng } = ctx
   const W = f.wall
   const w = W.w
@@ -357,11 +356,10 @@ function shopfront(ctx: BuildingCtx, f: Face, g: number, trim: Rgb, body: Rgb) {
       ctx.lamps.push({ x: p[0], y: p[1] + 1.2, z: p[2], small: true })
     }
   }
-  void body
 }
 
 /** Ground floor without shops: rusticated base, smaller windows and a lit entrance on street faces. */
-function groundPlain(ctx: BuildingCtx, f: Face, g: number, body: Rgb, trim: Rgb, bw: number, nb: number, margin: number, winW: number, winH: number) {
+function groundPlain(ctx: BuildingCtx, f: Face, g: number, trim: Rgb, bw: number, nb: number, margin: number, winW: number, winH: number) {
   const { m, rng } = ctx
   const W = f.wall
   const w = W.w
@@ -408,7 +406,6 @@ function groundPlain(ctx: BuildingCtx, f: Face, g: number, body: Rgb, trim: Rgb,
       W.ledge(m, a - 0.12, b + 0.12, wy0 - 0.14, wy0, 0.14, trim)
     }
   }
-  void body
 }
 
 /** Job sites and the precinct: a stone base with tall openings and the name over the door. */

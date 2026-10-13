@@ -2,7 +2,7 @@ import type { City, Park } from "../../../shared/sim/city"
 import { MAT, type Mesh, type Rgb } from "../mesh"
 import { beam, cylinder, ground, shade, SKIP, slab } from "./kit"
 import { streetLamp, tree } from "./props"
-import { CURB, KERB_H, SIDEWALK } from "./streets"
+import { CURB, KERB_H } from "./streets"
 import type { LampLight } from "./types"
 import { PROP_SIZE } from "../../game/props/dimensions"
 
@@ -14,12 +14,12 @@ const HEDGE: Rgb = [0.13, 0.24, 0.15]
 export function parks(m: Mesh, city: City, rng: () => number, lamps: LampLight[]) {
   for (const p of city.parks) {
     if (p.kind === "plaza") plaza(m, p, rng, lamps)
-    else park(m, p, rng, lamps)
+    else park(m, p, lamps)
   }
 }
 
 /** Riverside Park: raised lawn, crossing paths, a fountain, benches and path lamps. */
-function park(m: Mesh, p: Park, rng: () => number, lamps: LampLight[]) {
+function park(m: Mesh, p: Park, lamps: LampLight[]) {
   const e = 3.2
   const x0 = p.x0 + e
   const x1 = p.x1 - e
@@ -60,7 +60,6 @@ function park(m: Mesh, p: Park, rng: () => number, lamps: LampLight[]) {
     const lz = cz + Math.sin(a) * 9
     if (k % 2 === 0) streetLamp(m, lamps, lx, lz, lx, lz, top)
   }
-  void rng
 }
 
 /** Riverdale Plaza: stepped terrace, statue in a round planter, banners, the plaza sign and roadworks. */
@@ -136,5 +135,4 @@ function plaza(m: Mesh, p: Park, rng: () => number, lamps: LampLight[]) {
   for (let k = 0; k < 6; k++) m.prism(wx0 + 1 + k * 2, wz0 - 1.3, 0.75, 0.2, base + 0.6, base + 1.4, 6, shade(HEDGE, 1.2))
   lamps.push({ x: wx0 + 6, y: base + 0.6, z: wz0 - 3, small: true })
   // Movable furniture and roadworks are instanced by StreetProps on the lower pavement.
-  void SIDEWALK
 }

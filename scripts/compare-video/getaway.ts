@@ -1,5 +1,5 @@
-import ts from "../../games/getaway/node_modules/typescript"
-import type { Page } from "../../games/getaway/node_modules/playwright-core"
+import ts from "typescript"
+import type { Page } from "playwright-core"
 import { createHash } from "node:crypto"
 
 // These hooks are patched in HTTP responses only. No renderer or checkout is edited.

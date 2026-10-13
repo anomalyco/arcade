@@ -90,7 +90,7 @@ async function run(args: string[], cwd = root, quiet = false) {
   if (await p.exited) throw new Error(`Command failed: ${args.join(" ")}\n${text}`)
   return text.trim()
 }
-const { chromium } = await import("../games/getaway/node_modules/playwright-core")
+const { chromium } = await import("playwright-core")
 const { getaway: adapter } = await import("./compare-video/getaway")
 const scenarioPath = values.scenario!.includes("/")
   ? resolve(values.scenario!)

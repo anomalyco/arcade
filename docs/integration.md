@@ -31,4 +31,17 @@ Wizards' latest committed change is immediate click casting (`2e3177a`), after t
 
 ## Resolution and verification log
 
+- Look/FX: retained tile reflections, separate fine moon mask, and removed sound rings/shot lamp brownouts.
+  Explicit Lab lamp sparks remain available without reviving shot-triggered light changes.
+- Vehicle/FX: one canonical tyre solver and GPU pipeline in `kit/fx`; `kit/vehicle` holds compatible adapters.
+  Moved live effect settings and sprite identities into kit so Lab tuning reaches shared vehicle emitters.
+- Outbreak extraction: forward-ported current renderer, input and camera changes into the canonical kit modules.
+  Motion stays at binding 7, fine moon mask at 8, exploration at 9. Blackout paths are adapters/re-exports.
+- Wizards: immediate click capture and gun tap capture both survive; animation adds wizard pose to the latest gait.
+- Simplify: retained `testEffect`, shared motion and dependent GPU timing, and the benchmark emission-study methods
+  used by current FX/Lab proof runners. Retained the corresponding smoke proof script; removed obsolete proof
+  scripts and unused ghost submission path. Kept shared implementations rather than reviving per-game copies.
+- The first remote package check saw stale `kit/playground` files from Hivemind's reused checkout seed, which are
+  absent from this branch. Subsequent checks use a clean archive export.
+
 Pending combined-tree checks and browser proof. Source-branch results do not establish integration correctness.

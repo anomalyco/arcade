@@ -239,7 +239,7 @@ monitor/bounce caches. The Outbreak map/lighting writer and gameplay Session sta
 Getaway's renderer and input are not migrated in this milestone. See `games/outbreak/README.md` for proof and limits.
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
-both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
+both GPU devices and their historical counterparts.
 `getaway-main-hook.ts` supplies both games' historical Getaway instrumentation without a cross-game script import.
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
 It also accepts numeric range controls (`min`, `max`, `step`), selects (`options` with numeric or string values),
@@ -263,8 +263,7 @@ write path. Keep action rows in navigation rather than treating them as switches
 package scripts. For comparison panes, also adopt modifier forwarding in `packages/kit/compare.ts` and both games'
 `src/game/input.ts`. The proof runner and Getaway script typecheck entry provide the browser regression check.
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
-Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel. Getaway only
-accepts `lights` and `coldExhaust` URL overrides in `bench` or `mux` automation; ordinary play uses the panel.
+Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel.
 
 In rough order of value against risk.
 
