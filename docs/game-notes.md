@@ -566,6 +566,16 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
+- **Latch fire presses across input ticks.** Blackout's `src/game/input.ts` keeps one press edge for at most 100 ms,
+  consumed by the next 30 Hz input tick. `Intent.firePressed` carries that edge through prediction and the wire so
+  consecutive taps remain distinct even without a sampled release. Weapon cooldown/reload gates consume rejected
+  presses; disabling play, Lab capture and blur clear pending input. `tests/fire-input.test.ts` covers taps, holds,
+  expiry, focus release and server queue delivery. `scripts/prove-fire-input.ts` drives trusted mouse down/up events
+  against the real game with manual ticks, silent audio and a mocked room socket. The original build lost the
+  between-tick tap in both paths (0 predicted/authoritative shots); the fix produced 1/1. Each fixed path completed
+  the consecutive-tap, sniper-hold, double-click, cooldown, Lab and rifle-hold checks with 12/12 shots. Physical
+  trackpad gesture recognition and GPU cost were not measured.
+
 - **Ignore blur releases from the previous input owner.** On an iframe focus change, the old window's blur message can
   arrive after the new window's keydown or mousedown and cancel the new input. `games/blackout/compare.html` releases
   held input when ownership changes, then accepts release messages only from the current owner. The parent header is
