@@ -6,9 +6,19 @@ export const SIZE = CHUNK * 3
 export type Barrier = { rect: Rect; kind: "wall" | "window" | "fence"; color: number }
 export type Door = { id: string; rect: Rect; open: boolean }
 export type Building = { id: string; kind: "house" | "hardware" | "pharmacy"; rect: Rect; color: number }
-export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree"; variant: number }
-export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" }
+export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove"; variant: number }
+export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
 export type Town = { seed: number; houseSeed: number; terrain: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; props: Prop[]; lamps: Lamp[] }
+
+/** One footprint source for geometry, collision, roof cutaways and room memory. */
+export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
+export const frontageEnd = (b: Building) => b.kind === "house" ? b.rect[3] + 2.5 : b.rect[3]
+export function propShape(p: Prop): { rect: Rect; height: number } | undefined {
+  const shapes = {bed:[1.72,2.6,1],sofa:[1.2,2.6,1.1],table:[1.5,1,.82],shelf:[1.7,.8,1.8],coffee:[1.1,1.5,.52],counter:[.8,2.4,1.02],fridge:[.8,.9,1.9],dresser:[2.2,.7,1.1],chair:[.55,.55,1.05],nightstand:[.55,.55,.65],stove:[.75,.8,.95]} as const
+  if(p.kind==="tree") return undefined
+  const [w,d,h]=shapes[p.kind]
+  return {rect:[p.x-w/2,p.y-d/2,p.x+w/2,p.y+d/2],height:h}
+}
 
 /** Fixed street topology; seeded house palettes, trees and shelf stock. All dimensions are metres. */
 export function makeTown(seed: number, houseSeed = seed, terrain = .22): Town {
@@ -42,15 +52,21 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22): Town {
     wall([doorX + 1.4, split, r, split + .2], color)
     const prop = (px: number, py: number, type: Prop["kind"]) => town.props.push({ x: px, y: py, kind: type, variant: rng.next() })
     if (kind === "house") {
-      prop(x + 4, y + 2, "bed"); prop(r - 2, b - 2, "sofa"); prop(r - 3, b - 4, "table")
+      prop(x+4,y+2,"bed");prop(r-2.3,y+1.1,"dresser")
+      prop(x+2.7,y+2,"nightstand");prop(x+7.7,y+.7,"shelf")
+      prop(r-4,y+3,"table");prop(r-4,y+3.9,"chair")
+      prop(x+1.1,b-2.2,"sofa");prop(x+2.7,b-2.2,"coffee");prop(x+4.2,b-1.1,"chair")
+      prop(r-.8,b-2,"counter");prop(r-.8,b-4,"fridge")
+      prop(r-.8,b-.65,"stove")
+      prop(r-3.2,b-2.8,"table");prop(r-3.2,b-1.8,"chair");prop(r-3.2,b-3.7,"chair")
     } else {
       for (let px = x + 2; px < r - 1; px += 3) { prop(px, y + 2, "shelf"); prop(px, b - 4, "shelf") }
     }
   }
-  building("ash", "house", [22, 24, 37, 38])
-  building("elm", "house", [21, 54, 36, 68])
-  building("hardware", "hardware", [53, 23, 73, 38])
-  building("pharmacy", "pharmacy", [53, 54, 72, 68])
+  building("ash", "house", BUILDING_RECTS[0])
+  building("elm", "house", BUILDING_RECTS[1])
+  building("hardware", "hardware", BUILDING_RECTS[2])
+  building("pharmacy", "pharmacy", BUILDING_RECTS[3])
   for (const y of [20, 71]) wall([18, y, 39, y + .12], 0x756b51, "fence")
   wall([18, 20, 18.12, 39], 0x756b51, "fence")
   wall([18, 52, 18.12, 71], 0x756b51, "fence")
@@ -60,19 +76,23 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22): Town {
     town.props.push({ x, y, kind: "tree", variant: rng.next() })
   }
   for(const [x,y] of [[12,27],[14.7,30],[11,33],[14,59],[12,63]]) town.props.push({x:x!,y:y!,kind:"tree",variant:rng.next()})
-  for (const p of [12, 29, 58, 80]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:10,power:.7,kind:"street"})
+  town.props.push({x:16.1,y:32.8,kind:"tree",variant:.36})
+  for (const p of [12, 34, 58, 80]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:6.3,power:.38,kind:"street"})
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect
-    town.lamps.push({x:x+6.7,y:e+.35,h:2.2,radius:6,power:.45,kind:"porch"})
-    town.lamps.push({x:x+2.7,y:z+2,h:1.55,radius:7,power:.32,kind:"room"})
-    town.lamps.push({x:r-2.5,y:e-2,h:1.65,radius:9,power:.4,kind:"room"})
+    town.lamps.push({x:x+5.7,y:e+.65,h:2.4,radius:4,power:.32,kind:"porch"})
+    town.lamps.push({x:x+2.7,y:z+2,h:1.12,radius:4.8,power:.26,kind:"room"})
+    town.lamps.push({x:x+1.25,y:e-3.7,h:1.55,radius:5.2,power:.38,kind:"room"})
+    town.lamps.push({x:r-3.2,y:e-2.8,h:2.25,radius:5.2,power:.3,kind:"room"})
+    town.lamps.push({x:r-3,y:z+2.7,h:1.55,radius:4.5,power:.22,kind:"room"})
+    if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.05,h:1.4,radius:2.4,power:.13,kind:"window"})
   }
   return town
 }
 
 /** Windows/fences remain movement blockers but never eye-height sight blockers. */
 export const sightRects = (town: Town): Rect[] => [...town.barriers.filter(b => b.kind === "wall").map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect)]
-export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect)]
+export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})]
 
 export function nearbyDoor(town: Town, x: number, y: number): Door | undefined {
   return town.doors.filter(d => distToRect(x, y, d.rect) <= 1.8).sort((a, b) => distToRect(x, y, a.rect) - distToRect(x, y, b.rect))[0]

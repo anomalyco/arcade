@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; fragmentStart?: string; smoothShadows?: boolean }
+export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9 }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -297,8 +297,8 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
     var weights = 0.0;
     // World-anchored sub-stratum rotation breaks coherent PCF contours without time-varying noise.
     let phase = ${hooks.smoothShadows ? "0.0" : "hash2(floor(p * 64.0)) - 0.5"};
-    for (var k = -4; k <= 4; k++) {
-      let ray = f + (f32(k) + phase) * max(stepR * 0.5, 0.5);
+    for (var k = ${hooks.shadowTaps===5?"-2":"-4"}; k <= ${hooks.shadowTaps===5?"2":"4"}; k++) {
+      let ray = f + (f32(k) + phase) * max(stepR * ${hooks.shadowTaps===5?"1.0":"0.5"}, 0.5);
       let lo = floor(ray);
       let a = tapVis(base, lo, d, y, hl, size);
       let b = tapVis(base, lo + 1.0, d, y, hl, size);
@@ -343,6 +343,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     if (dPlan2 >= r * r) { continue; }
     let L = lights[i];
     let power = L.color.w;
+    ${hooks.lightMask ?? ""}
     if (power <= 0.001) { continue; }
     let dPlan = sqrt(dPlan2);
     let hl = L.pos.y;
@@ -368,7 +369,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     if (n.y > 0.5 && world.y > 0.15) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
     var vis = 1.0;
     if (L.extra.y > 0.5) { vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y); }
-    out.diff += L.color.rgb * att * (diffuse * vis + 0.035);
+    out.diff += L.color.rgb * att * (diffuse * vis + ${hooks.lightLeak ?? "0.035"});
     if (shin > 0.0) {
       let h = normalize(ldir + V);
       let s = pow(max(dot(n, h), 0.0), shin) * (shin + 2.0) * 0.004;
@@ -628,7 +629,7 @@ fn shadeScene(o: VOut) -> vec4f {
     let floorish = n.y > 0.5 && o.world.y < 0.15;
     let wrap = select(0.35, 0.0, floorish);
     let lit = lightSum(o.world, n, V, gloss.x, wrap);
-    var amb = ambientAt(n);
+    var amb = ${hooks.ambient ?? "ambientAt(n)"};
     let fd = floorData(o.world.xz);
     amb += bounceAt(o.world.xz + n.xz * 0.3) * 0.32;
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
@@ -651,6 +652,12 @@ fn shadeScene(o: VOut) -> vec4f {
     ${looks ? "var" : "let"} moon = ${hooks.directional ?? "vec3f(0.62, 0.78, 1.25) * fd.g * F.ambient.w * low * max(n.y, 0.2)"};
     ${looks ? "if (look(2u)) { moon *= 0.68; }" : ""}
     col = albedo * (amb + direct + moon) + lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25);
+    ${hooks.diagnostics ? `let contribution = i32(${hooks.diagnostics});
+    if (contribution == 1) { return vec4f(albedo, 1.0); }
+    if (contribution == 2) { return vec4f(albedo * direct, 1.0); }
+    if (contribution == 3) { return vec4f(albedo * (amb + moon), 1.0); }
+    if (contribution == 4) { return vec4f(lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25), 1.0); }
+    if (contribution == 6) { return vec4f(col, 1.0); }` : ""}
     ${looks ? `if (look(8u)) {
       var contact = fd.r * low;
       if (mat == 4) {
@@ -670,6 +677,9 @@ fn shadeScene(o: VOut) -> vec4f {
     }
   }
   col = mix(col, vec3f(2.5), o.extra.w);
+  ${hooks.diagnostics ? `if (${hooks.diagnostics} > 0.5 && ${hooks.diagnostics} < 4.5) {
+    return vec4f(select(vec3f(0.0), o.color, i32(${hooks.diagnostics}) == 1), alpha);
+  }` : ""}
   let a = alpha * o.extra.z;
   ${hooks.surface ?? ""}
   return vec4f(col * a, a);
@@ -810,7 +820,7 @@ struct SOut {
 `
 
 /** Fullscreen passes: bloom downsample and upsample, then the tone-mapped, graded composite. */
-export const postShader = (looks = true, motion = false, finish?: { chromatic: number; bloom: number; grain: number; vignette: number }) => /* wgsl */ `
+export const postShader = (looks = true, motion = false, finish?: { chromatic: number; bloom: number; grain: number; vignette: number; diagnostics?: boolean; shadowLift?: number; huePreserve?: number }) => /* wgsl */ `
 ${motion ? motionGather : ""}
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
@@ -896,8 +906,15 @@ fn hash(p: vec2f) -> f32 {
   );
   ${motion ? "hdr += motionColour(uv) - clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;" : ""}
   let bloom = textureSample(bloomTex, samp, uv).rgb;
+  ${finish?.diagnostics ? `if (G.y > 0.5) {
+    if (i32(G.y) == 5) { hdr = bloom * ${finish.bloom.toFixed(4)}; }
+    return vec4f(pow(max(hdr, vec3f(0.0)), vec3f(1.0/2.2)), 1.0);
+  }` : ""}
   hdr = hdr + bloom * ${finish ? finish.bloom.toFixed(4) : "0.32"};
   var c = aces(hdr * G.w);
+  ${finish?.huePreserve ? `let exposed=max(hdr*G.w,vec3f(0.0));
+  let peak=max(exposed.r,max(exposed.g,exposed.b));
+  c=mix(c,exposed*(aces(vec3f(peak)).r/max(peak,0.0001)),${finish.huePreserve.toFixed(4)});` : ""}
   ${looks ? `if (enhanced) {
     // Partially hue-preserving shoulder keeps warm pools and cyan monitors saturated.
     let x = max(hdr * G.w, vec3f(0.0));
@@ -912,7 +929,7 @@ fn hash(p: vec2f) -> f32 {
     c *= mix(vec3f(0.72, 1.0, 1.04), vec3f(1.08, 1.01, 0.89), smoothstep(0.05, 0.65, l));
   } else {` : ""}
     c = mix(vec3f(l), c, 1.0 - G.y);
-    c += vec3f(0.006, 0.011, 0.028) * (1.0 - smoothstep(0.0, 0.25, l));
+    c += vec3f(0.006, 0.011, 0.028) * ${finish?.shadowLift === undefined ? "" : `${finish.shadowLift.toFixed(4)} * `}(1.0 - smoothstep(0.0, 0.25, l));
     c *= mix(vec3f(0.93, 0.97, 1.06), vec3f(1.04, 1.0, 0.95), smoothstep(0.2, 0.8, l));
   ${looks ? "}" : ""}
   let v = length(fromC * vec2f(1.0, 0.8));

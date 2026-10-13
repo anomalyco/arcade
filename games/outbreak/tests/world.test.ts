@@ -31,23 +31,25 @@ describe("neighbourhood", () => {
   })
   test("nearby door toggles sight and movement, distant doors cannot toggle", () => {
     const town = makeTown(7)
-    expect(clearLine(27.7, 39, 27.7, 35, sightRects(town))).toBe(false)
+    const front=town.doors[0]!.rect[3],outside=front+1,inside=front-1
+    expect(clearLine(27.7, outside, 27.7, inside, sightRects(town))).toBe(false)
     expect(toggleDoor(town, 0, 0)).toBeUndefined()
-    expect(toggleDoor(town, 27.7, 39)?.open).toBe(true)
-    expect(clearLine(27.7, 39, 27.7, 35, sightRects(town))).toBe(true)
-    expect(clearLine(27.7, 39, 27.7, 35, solidRects(town))).toBe(true)
-    expect(toggleDoor(town, 27.7, 37.9)).toBeUndefined()
-    expect(toggleDoor(town, 27.7, 39)?.open).toBe(false)
+    expect(toggleDoor(town, 27.7, outside)?.open).toBe(true)
+    expect(clearLine(27.7, outside, 27.7, inside, sightRects(town))).toBe(true)
+    expect(clearLine(27.7, outside, 27.7, inside, solidRects(town))).toBe(true)
+    expect(toggleDoor(town, 27.7, front-.1)).toBeUndefined()
+    expect(toggleDoor(town, 27.7, outside)?.open).toBe(false)
   })
   test("session can walk through an open door, but not a closed one", () => {
     const session = new LocalSession(7), p = session.view.player
-    Object.assign(p, { x: 27.7, y: 39 })
+    const front=session.view.town.doors[0]!.rect[3]
+    Object.assign(p, { x: 27.7, y: front+1 })
     const cmd = { mx: 0, my: -1, aim: -Math.PI / 2, interact: false }
     for (let i = 0; i < 60; i++) session.update(1 / 60, cmd, 0)
-    expect(p.y).toBeGreaterThan(38)
+    expect(p.y).toBeGreaterThan(front)
     session.update(1 / 60, { ...cmd, interact: true }, 0)
     for (let i = 0; i < 60; i++) session.update(1 / 60, cmd, 0)
-    expect(p.y).toBeLessThan(36)
+    expect(p.y).toBeLessThan(front-1)
     expect(session.view.revision).toBe(1)
   })
 })

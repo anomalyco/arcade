@@ -14,7 +14,7 @@ export function rayRect(ox: number, oy: number, dx: number, dy: number, r: Rect,
   } else {
     let a = (r[0] - ox) / dx
     let b = (r[2] - ox) / dx
-    if (a > b) [a, b] = [b, a]
+    if (a > b) { const t = a; a = b; b = t }
     t0 = Math.max(t0, a)
     t1 = Math.min(t1, b)
     if (t0 > t1) return Infinity
@@ -24,7 +24,7 @@ export function rayRect(ox: number, oy: number, dx: number, dy: number, r: Rect,
   } else {
     let a = (r[1] - oy) / dy
     let b = (r[3] - oy) / dy
-    if (a > b) [a, b] = [b, a]
+    if (a > b) { const t = a; a = b; b = t }
     t0 = Math.max(t0, a)
     t1 = Math.min(t1, b)
     if (t0 > t1) return Infinity

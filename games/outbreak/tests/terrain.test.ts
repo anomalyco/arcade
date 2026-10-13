@@ -1,12 +1,18 @@
 import { expect, test } from "bun:test"
-import { makeTown, sightRects } from "../shared/map"
+import { makeTown, sightRects, solidRects, propShape, frontageEnd } from "../shared/map"
+import { clearLine, distToRect } from "@arcade/kit/sim/geom"
 import { groundHeight, supportHeight } from "../shared/terrain"
 import { buildLevel } from "../src/level"
 import { Vision } from "../shared/vision"
 import { SceneryMemory } from "../shared/scenery-memory"
 
 test("procedural mesh and masks repeat, while house palette and relief keep topology and door paths", () => {
-  const town=makeTown(7),a=buildLevel(town),b=buildLevel(makeTown(7))
+  const town=makeTown(7),a=buildLevel(town)
+  expect(buildLevel(makeTown(7))).toBe(a)
+  // Evict the bounded cache so repeatability checks a fresh compilation, not the same object.
+  for(const seed of [40,41,42])buildLevel(makeTown(seed))
+  const b=buildLevel(makeTown(7))
+  expect(b).not.toBe(a)
   expect(a).toEqual(b)
   const variant=makeTown(7,12,.4)
   expect(variant.doors).toEqual(town.doors)
@@ -53,4 +59,18 @@ test("room scenery discovery does not grant actor visibility through a closed do
   v.update(27.7,31,Math.PI/2,sightRects(town)); memory.update(town,v)
   expect(v.visible(27.7,27)).toBe(false)
   expect(memory.mask[54*192+55]).toBe(255)
+})
+
+test("furnished houses retain a clear entrance-to-room lane and supported setback paths", () => {
+  for(const seed of [1,7,19,31]) {
+    const town=makeTown(seed)
+    town.doors.forEach(d=>{d.open=true})
+    for(const house of town.buildings.filter(b=>b.kind==="house")) {
+      const x=house.rect[0]+5.7,z=house.rect[3]
+      expect(frontageEnd(house)-z).toBe(2.5)
+      for(const side of [-.3,0,.3])expect(clearLine(x+side,z+2,x+side,house.rect[1]+3,solidRects(town))).toBe(true)
+      for(let pz=z;pz<frontageEnd(house);pz+=.2)expect(supportHeight(town,x,pz)).toBeCloseTo(.13)
+      for(const p of town.props){const shape=propShape(p);if(shape)expect(distToRect(x,z-.4,shape.rect)).toBeGreaterThan(.35)}
+    }
+  }
 })

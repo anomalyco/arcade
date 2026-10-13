@@ -6,7 +6,7 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { LocalSession, type Command } from "../shared/session"
-import { nearbyDoor, sightRects, SIZE } from "../shared/map"
+import { nearbyDoor, sightRects, propShape, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
@@ -17,20 +17,22 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.15, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1 }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1 }
 const controls: LabControl[] = [
+  { key: "diagnostic", label: "Contribution", group: "Diagnostics", options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory"].map((label,value)=>({label,value})) },
   { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: .05 },
   { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
   { key: "cone", label: "Vision cone", group: "Vision", min: 60, max: 180, step: 1 },
   { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: .1 },
   { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
   { key: "shroud", label: "Explored shroud", group: "Vision", min: .02, max: .4, step: .01 },
-  { key: "exposure", label: "Exposure", group: "View", min: .5, max: 2, step: .05 },
+  { key: "exposure", label: "Exposure", group: "Look", min: .5, max: 2, step: .05 },
+  { key: "skyFill", label: "Sky fill", group: "Look", min: 0, max: 1.5, step: .05 },
   { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
   { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
   { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: .4, step: .02 },
   { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: .05 },
-  { key: "lighting", label: "Practical lights", group: "Day cycle", min: .3, max: 1.5, step: .05 },
+  { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: .05 },
 ]
 
 async function main() {
@@ -58,13 +60,17 @@ async function main() {
   doorMesh.box(0, .13, -.1, 1.4, 2.3, .1, hex(0x796045), MAT.wall)
   doorMesh.box(.08, .35, -.11, 1.32, 2.1, -.105, hex(0x8b7253), MAT.wall)
   doorMesh.box(1.15, 1.1, .1, 1.24, 1.17, .17, hex(0xb9a071))
+  for(const x of [.15,.75])for(const y of [.42,1.36]){
+    doorMesh.box(x,y,.101,x+.48,y+.70,.125,hex(0x91754e))
+    doorMesh.box(x+.035,y+.04,.126,x+.445,y+.66,.132,hex(0x70583d))
+  }
   const doorModel = renderer.addModel(doorMesh)
   const doorData = new Float32Array(8 * 12)
   const doorBatch: Batch = { model: doorModel, data: doorData, count: 0 }
   const frame = new Float32Array(FRAME_FLOATS), lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS), occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
-  const lampPower = new Float32Array(32), empty = new Float32Array(0)
+  const lampPower = new Float32Array(MAX_LIGHTS), empty = new Float32Array(0)
   const render: FrameInput = { frame, lights, lightCount: 0, shadowLightCount: 0, occluders, occluderCount: 0, lampPower, lampCount: 0, view: [0, 0, SIZE, SIZE], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, 1] }
-  let blockers = sightRects(session.view.town), revision = -1
+  let blockers = sightRects(session.view.town), revision = -1, lightOccluders=0
   let frozen = params.has("bench"), last = performance.now(), frames = 0, elapsed = 0
   const lab = new LabPanel(settings, controls, params, () => input.release(), key => {
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
@@ -111,6 +117,9 @@ async function main() {
       revision = session.view.revision; blockers = sightRects(town)
       occluders.fill(0)
       blockers.forEach((r, i) => occluders.set([...r, 2.8, 0, 0, 0], i * OCC_FLOATS))
+      lightOccluders=blockers.length
+      for(const b of town.barriers)if(b.kind==="window")occluders.set([...b.rect,.85,0,0,0],lightOccluders++*OCC_FLOATS)
+      for(const p of town.props){const s=propShape(p);if(s)occluders.set([...s.rect,s.height,0,0,0],lightOccluders++*OCC_FLOATS)}
     }
     vision.update(p.x, p.y, p.aim, blockers, settings)
     if (scenery.update(town,vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -121,20 +130,22 @@ async function main() {
     for (const [i, lamp] of town.lamps.entries()) {
       lampPower[i] = day.lamps * settings.lighting
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
-      lights.set([lamp.x+(lamp.kind==="street"?.55:0), lamp.h, lamp.y, lamp.radius, 1, .62, .28, day.lamps * lamp.power * settings.lighting, 0, 0, 0, 0, 0, blockers.length, lamp.kind==="room"?.38:.5, i], count++ * LIGHT_FLOATS)
+      const color=lamp.kind==="street"?[1,.76,.52]:lamp.kind==="porch"?[1,.60,.30]:[1,.54,.24]
+      const cone=lamp.kind==="window"?[0,1,-.3,1]:[0,0,0,lamp.kind==="room"?-1:0]
+      lights.set([lamp.x+(lamp.kind==="street"?.55:0), lamp.h, lamp.y, lamp.radius, ...color, day.lamps * lamp.power * settings.lighting, ...cone, 0, lightOccluders, lamp.kind==="room"?.18:.22, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
-    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
+    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
     const focus = cam.project(p.x, 1, p.y, w, h)
     frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, 1.0, count], 32)
-    frame.set([...day.direction, day.sun], 36); frame.set([1 / SIZE, 1 / SIZE, SIZE, SIZE], 40)
+    frame.set([...day.direction, day.sun], 36); frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
     frame.set([p.aim, Math.cos(settings.cone * Math.PI / 360), settings.awareness, settings.shroud], 44)
     town.doors.forEach((door, i) => doorData.set([door.rect[0], 0, (door.rect[1] + door.rect[3]) / 2, door.open ? -Math.PI / 2 : 0, 1, 1, 1, 1, 0, 0, 1, 0], i * 12))
     doorBatch.count = town.doors.length
     render.batches = [...avatar.draw(p, dt, time, (x,z)=>supportHeight(town,x,z)), doorBatch]
-    render.lightCount = render.shadowLightCount = count; render.occluderCount = blockers.length; render.lampCount = town.lamps.length
-    render.view = cam.groundRect(5.5); render.grade = [time, 0, 0, settings.exposure]
+    render.lightCount = render.shadowLightCount = count; render.occluderCount = lightOccluders; render.lampCount = town.lamps.length
+    render.view = cam.groundRect(5.5); render.grade = [time, settings.diagnostic, 0, settings.exposure]
     renderer.render(render)
     const door = nearbyDoor(town, p.x, p.y)
     status.textContent = `${clockText(hour)}${door ? ` · F ${door.open ? "Close" : "Open"} door` : ""}`
@@ -165,7 +176,7 @@ async function main() {
     freeze: (value = true) => { frozen = value; input.release() },
     setLab(key: keyof typeof settings, value: number) {
       const control = controls.find(c => c.key === key)
-      if (!control || !("min" in control) || !Number.isFinite(value) || value < control.min || value > control.max) throw new Error(`Invalid lab value: ${key}`)
+      if (!control || !Number.isFinite(value) || ("min" in control ? value < control.min || value > control.max : !("options" in control) || !control.options.some(o=>o.value===value))) throw new Error(`Invalid lab value: ${key}`)
       settings[key] = value
       if (key === "hour") session.view.hour = wrapHour(value)
       if (key === "houseSeed" || key === "terrain") regenerate()

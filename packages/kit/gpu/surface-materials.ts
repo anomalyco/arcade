@@ -12,7 +12,7 @@ fn surfaceFbm(p:vec2f) -> f32 {
 fn seam(q: f32, width: f32, frequency: f32) -> f32 {
   let d = abs(fract(q + 0.5) - 0.5);
   let aa = max(surfaceFootprint * frequency, 0.002);
-  return smoothstep(width - aa, width + aa, d);
+  return mix(smoothstep(width - aa, width + aa, d), 1.0 - 2.0*width, smoothstep(.2,.7,aa));
 }
 fn grain(p: vec2f, frequency: f32) -> f32 {
   let fade = 1.0 - smoothstep(0.35, 1.0, surfaceFootprint * frequency);
@@ -26,7 +26,7 @@ export const surfaceMaterial = /* wgsl */ `
       if (kind == 0) {
         let patches = smoothstep(0.35, 0.7, surfaceFbm(p * 0.7));
         albedo = mix(albedo * vec3f(0.83,0.91,0.65), vec3f(0.19,0.155,0.10), patches * 0.6);
-        albedo *= 0.90 + 0.16 * surfaceNoise(p*2.0) + grain(p, 12.0)*0.45;
+        albedo *= 0.84 + 0.28 * surfaceNoise(p*.7) + grain(p, 12.0)*0.16;
       } else if (kind == 1) {
         albedo *= 0.90 + grain(p, 14.0)*0.28 + surfaceNoise(p*2.0)*.10;
       } else if (kind == 2) {
@@ -34,11 +34,13 @@ export const surfaceMaterial = /* wgsl */ `
         albedo *= mix(.67,1.0,seam(p.x/1.6,.004,.625)*seam(p.y/1.6,.004,.625));
       } else if (kind == 3) {
         albedo *= .7 + grain(p,18.0)*.7 + surfaceNoise(p*3.0)*.4;
-      } else {
+      } else if (kind == 4) {
         let row=floor(p.y/.18);
         albedo *= .93 + .12*hash2(vec2f(row,floor((p.x+row*.37)/1.8)));
         albedo *= mix(.86,1.0,seam(p.y/.18,.018,5.55));
         albedo *= 1.0 + grain(vec2f(p.x*.15,p.y),65.0)*.18;
+      } else {
+        albedo *= .9 + grain(p, 8.0)*.3;
       }
       gloss = vec2f(0.0);
     }
@@ -49,7 +51,7 @@ export const surfaceMaterial = /* wgsl */ `
     if (mat == 21) {
       let row=floor(o.world.z/.24);
       let q=vec2f(o.world.x/.36+fract(row*.5),o.world.z/.24);
-      albedo *= .82+.3*hash2(floor(q));
+      albedo *= .97 + (hash2(floor(q))-.5)*.3*(1.0-smoothstep(.12,.5,surfaceFootprint*4.16));
       albedo *= mix(.55,1.0,seam(q.x,.018,2.77)*seam(q.y,.035,4.16));
       albedo *= 1.0+grain(o.world.xz,70.0)*.12;
     }

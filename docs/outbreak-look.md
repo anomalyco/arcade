@@ -1,5 +1,8 @@
 # Outbreak look study, 2026-10-13
 
+This records the first pass, which Kit rejected as too flat and washed out. The follow-up against
+`e5554a7`, including the changed house footprints, is in [Outbreak look refinement](outbreak-look-v2.md).
+
 ## Working baseline
 
 Late-20th-century US small-town housing is an **assumption, not an approved era**. These are older,

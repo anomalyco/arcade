@@ -1,15 +1,21 @@
 import { makeSceneShader, spriteShader, postShader } from "@arcade/kit/gpu/shaders"
 import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
+import { BUILDING_RECTS } from "../shared/map"
 
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
 export const shaders = {
   sprite: spriteShader(),
-  post: postShader(false,false,{chromatic:0,bloom:.10,grain:.003,vignette:.85}),
+  post: postShader(false,false,{chromatic:0,bloom:.045,grain:.002,vignette:.92,diagnostics:true,shadowLift:0,huePreserve:.35}),
   scene: makeSceneShader({
     ao: "0.35",
+    lightLeak: "0.004 * vis",
+    ambient: "ambientAt(n) * mix(0.25, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8))",
+    diagnostics: "F.map.z",
     smoothShadows: true,
+    shadowTaps: 5,
+    lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
     material: surfaceMaterial + `
-      if (mat == 4 && interior(o.world.xz+n.xz*.3)) { albedo = vec3f(.48,.43,.34); }
+      if (mat == 4 && interior(o.world.xz+n.xz*.3)) { albedo = vec3f(.36,.33,.27); }
     `,
     fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
     declarations: /* wgsl */ `
@@ -17,10 +23,7 @@ export const shaders = {
 ${surfaceMaterialDeclarations}
 fn houseRect(id: i32) -> vec4f {
   switch id {
-    case 0: {return vec4f(22.0,24.0,37.0,38.0);}
-    case 1: {return vec4f(21.0,54.0,36.0,68.0);}
-    case 2: {return vec4f(53.0,23.0,73.0,38.0);}
-    default: {return vec4f(53.0,54.0,72.0,68.0);}
+    ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
   }
 }
 fn interior(p:vec2f) -> bool {
@@ -55,16 +58,16 @@ fn eyeVisible(p: vec2f) -> f32 {
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, o.world.xz * F.map.xy, 0.0).r;
   if(mat == 2) { col *= .38; }
+  if(mat == 4 && !interior(o.world.xz+n.xz*.3)) { col *= mix(1.0,.66,smoothstep(2.25,2.8,o.world.y)); }
   // Scenery and illumination are not an enemy-visibility mask. Exterior form remains readable.
   // Dynamic entities use the authoritative CPU Vision before submitting a draw (the local survivor is exempt).
-  if (mat != 12 && mat != 21) {
+  if (mat != 12 && mat != 21 && mat != 2) {
     let luminance=dot(col,vec3f(.2126,.7152,.0722));
     let peripheral=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.55);
     if (interior(o.world.xz) && o.world.y < 2.8) {
-      let memory=vec3f(dot(o.color,vec3f(.2126,.7152,.0722)))*F.effects.w*vec3f(.55,.66,.78);
       // Room discovery is deliberately coarser than actor LOS. No view-cone-shaped blackout.
-      let room=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.45+.55*visible);
-      col=mix(o.color*.025, mix(memory,room,.85), explored);
+      let room=mix(vec3f(luminance)*vec3f(.90,.96,1.0),col,.86+.14*visible);
+      col=mix(o.color*.008, room * mix(F.effects.w, 1.0, .82), explored);
     } else {
       col=mix(peripheral*(.72+.18*explored),col,.7+.3*visible);
     }

@@ -14,7 +14,7 @@ export function dayCycle(hour: number) {
   const raw = [Math.cos(arc) * sign, Math.max(.12, Math.abs(elevation)), .35]
   const length = Math.hypot(...raw)
   return {
-    ambient: [.055 + daylight * .48 + dusk * .12, .072 + daylight * .48 + dusk * .035, .12 + daylight * .43] as const,
+    ambient: [.035 + daylight * .32 + dusk * .015, .055 + daylight * .34, .095 + daylight * .36] as const,
     direction: raw.map(v => v / length) as [number, number, number],
     sun: daylight,
     strength: .045 + daylight * .65,

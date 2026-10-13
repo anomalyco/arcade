@@ -1,6 +1,6 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
-import { CHUNK, SIZE, type Town, type Prop } from "../shared/map"
+import { CHUNK, SIZE, frontageEnd, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
@@ -22,9 +22,46 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.box(x - .65, .66, z - 1.0, x + .65, .77, z - .6, hex(0xc0baab))
     m.box(x - .86, .15, z - 1.3, x + .86, 1, z - 1.17, wood)
   } else if (kind === "sofa") {
-    m.box(x - .55, .15, z - 1.25, x + .55, .62, z + 1.25, hex(0x705c49))
-    m.box(x + .35, .5, z - 1.3, x + .65, 1.1, z + 1.3, hex(0x82715e))
-    for (const s of [-1, 1]) m.box(x - .55, .4, z + s * 1.17 - .12, x + .55, .88, z + s * 1.17 + .12, hex(0x82715e))
+    m.box(x-.55,.22,z-1.25,x+.55,.46,z+1.25,hex(0x555d50))
+    m.bevelBox(x-.6,.35,z-1.3,x-.36,1.0,z+1.3,.055,hex(0x5d6557),hex(0x6a7160))
+    for(const dz of [-.72,0,.72])m.bevelBox(x-.32,.45,z+dz-.33,x+.51,.61,z+dz+.33,.06,hex(0x626b5b),hex(0x747b68))
+    for(const s of [-1,1])m.box(x-.55,.4,z+s*1.17-.12,x+.55,.83,z+s*1.17+.12,hex(0x5d6557))
+    for(const dx of [-.4,.4])for(const dz of [-1,1])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.23,z+dz+.04,legs)
+    m.bevelBox(x-.27,.63,z+.65,x+.23,.82,z+1.02,.045,hex(0x9b8360),hex(0x9b8360))
+  } else if(kind==="coffee") {
+    m.bevelBox(x-.55,.43,z-.75,x+.55,.52,z+.75,.035,wood,hex(0x887554))
+    for(const dx of [-.43,.43])for(const dz of [-.63,.63])m.box(x+dx-.035,.13,z+dz-.035,x+dx+.035,.43,z+dz+.035,legs)
+    m.box(x-.2,.52,z+.1,x+.19,.56,z+.48,hex(0x9e987f))
+    m.prism(x+.2,z-.32,.09,.085,.52,.65,8,hex(0xb2aa8e))
+  } else if(kind==="nightstand") {
+    m.box(x-.275,.15,z-.275,x+.275,.65,z+.275,wood,MAT.timber)
+    m.box(x-.23,.36,z+.276,x+.23,.6,z+.29,hex(0x927957),MAT.timber)
+    m.box(x-.055,.48,z+.29,x+.055,.51,z+.32,hex(0xab9c77))
+  } else if(kind==="stove") {
+    m.box(x-.375,.13,z-.4,x+.375,.94,z+.4,hex(0x878b7e))
+    m.box(x-.39,.94,z-.41,x+.39,.95,z+.41,hex(0x424a44))
+    for(const dx of [-.17,.17])for(const dz of [-.2,.2])m.prism(x+dx,z+dz,.11,.11,.951,.965,8,hex(0x242c2b))
+    m.box(x-.38,.3,z-.3,x-.376,.76,z+.3,hex(0x343c39))
+  } else if(kind==="counter"||kind==="dresser"||kind==="fridge") {
+    const {rect:[a,c,r,e],height}=propShape(p)!
+    const pale=kind==="fridge"?0x8a9187:0x82765f
+    m.box(a,.13,c,r,height-.06,e,hex(pale),MAT.timber)
+    m.box(a-.02,height-.06,c-.02,r+.02,height,e+.02,hex(kind==="counter"?0x929387:0x7e7460))
+    if(kind==="counter"){
+      m.box(a+.1,height+.002,z-.65,r-.1,height+.008,z-.05,hex(0x353f3d))
+      m.box(a+.18,height+.009,z-.57,r-.18,height+.015,z-.13,hex(0x616e68))
+      m.box(r-.15,height,z-.4,r-.10,height+.25,z-.35,hex(0x858d85))
+      for(const dz of [-.85,.0,.85])m.box(a-.01,.2,z+dz-.32,a-.005,.88,z+dz+.32,hex(0x94856a),MAT.timber)
+    }else if(kind==="fridge"){
+      m.box(a-.015,1.35,c+.03,a,1.37,e-.03,hex(0x3d4541));m.box(a-.055,.88,e-.15,a,1.2,e-.11,hex(0x565f59))
+    }else for(let i=0;i<3;i++){
+      m.box(a+.04,.22+i*.26,e+.002,r-.04,.44+i*.26,e+.02,hex(0x988366),MAT.timber)
+      m.box(x-.12,.3+i*.26,e+.02,x+.12,.34+i*.26,e+.065,hex(0xaea079))
+    }
+  } else if(kind==="chair") {
+    m.box(x-.27,.52,z-.27,x+.27,.60,z+.27,wood,MAT.timber)
+    m.box(x-.27,.6,z+.20,x+.27,1.05,z+.27,wood,MAT.timber)
+    for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.52,z+dz+.025,legs)
   } else if (kind === "table") {
     m.box(x - .75, .7, z - .5, x + .75, .82, z + .5, wood)
     for (const dx of [-.65, .65]) for (const dz of [-.4, .4]) m.box(x + dx - .05, .1, z + dz - .05, x + dx + .05, .7, z + dz + .05, legs)
@@ -41,19 +78,31 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
   }
 }
 
-/** Nine logical 32m chunks; each render chunk retains real bounds for overhanging geometry. */
+/** Cache immutable static generation; doors and actors stay in dynamic batches. */
+const levelCache = new Map<string, LevelData>()
 export function buildLevel(town: Town): LevelData {
-  const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh())
+  const key=`${town.seed}/${town.houseSeed}/${town.terrain}`
+  const cached=levelCache.get(key)
+  if(cached)return cached
+  const level=compileLevel(town)
+  if(levelCache.size>=3)levelCache.delete(levelCache.keys().next().value!)
+  levelCache.set(key,level)
+  return level
+}
+
+function compileLevel(town: Town): LevelData {
+  const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
   for (let z=0;z<SIZE;z++) for(let x=0;x<SIZE;x++) {
+    if((x>=40&&x<48)||(z>=40&&z<48)||town.buildings.some(b=>x>=b.rect[0]&&x+1<=b.rect[2]&&z>=b.rect[1]&&z+1<=b.rect[3]))continue
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
     m.facet(a,c,b,hex(0x586044),MAT.ground,0); m.facet(a,d,c,hex(0x586044),MAT.ground,0)
   }
   const foliage=new Rng(town.seed^0x453a)
-  for(let i=0;i<14000;i++) {
+  for(let i=0;i<3500;i++) {
     const x=foliage.next()*SIZE,z=foliage.next()*SIZE
     if((x>37.8&&x<50.2)||(z>37.8&&z<50.2)||town.buildings.some(b=>x>b.rect[0]-3.2&&x<b.rect[2]+.4&&z>b.rect[1]-.5&&z<b.rect[3]+2.2)) continue
-    if(Math.sin(x*1.3+z*.9)+Math.cos(z*.6-x*.7)<-.1) continue
+    if(Math.sin(x*.7+z*.4)+Math.cos(z*.3-x*.5)<.8) continue
     const y=supportHeight(town,x,z),m=at(x,z),h=.08+foliage.next()*.17,c=hex(foliage.pick([0x707851,0x626f49,0x8a895a]))
     m.facet([x-.025,y,z],[x+.015,y+h,z+.02],[x+.035,y,z],c,MAT.foliage)
     m.facet([x,y,z-.035],[x-.04,y+h*.8,z],[x,y,z+.025],c,MAT.foliage)
@@ -90,11 +139,12 @@ export function buildLevel(town: Town): LevelData {
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
     floor(m, x, z, r, end, .13, b.kind === "house" ? 0x8d7760 : 0x89968b, b.kind === "house" ? 2 : 1)
-    floor(m, x + 4.5, end, x + 7, end + 2, .13, 0x777b74, 3)
-    floor(m,x-3,z,x-.35,end+2,.035,0x747166,7)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x727768, 3)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x76796c,3)
+    floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x646659,7)
     const gravel=new Rng(town.seed+id*177)
-    for(let k=0;k<160;k++) {
-      const px=x-3+gravel.next()*2.65,pz=z+gravel.next()*(end+2-z),size=.025+gravel.next()*.045
+    for(let k=0;k<45;k++) {
+      const px=x-3+gravel.next()*2.65,pz=z+gravel.next()*(frontageEnd(b)+2-z),size=.025+gravel.next()*.045
       m.prism(px,pz,size,size*.5,.036,.055,5,hex(gravel.pick([0x949084,0x65685f,0x79776a])))
     }
     house(m,b,id,town)
@@ -116,19 +166,23 @@ export function buildLevel(town: Town): LevelData {
     } else if (b.kind === "window") {
       m.box(x, .13, z, r, .85, end, color, MAT.wall,20)
       m.box(x, 2.15, z, r, 2.8, end, color, MAT.wall,20)
-      m.box(x-.08,.8,z-.08,r+.08,.88,end+.08,hex(0xc4bfab),MAT.wall)
-      m.box(x-.07,2.13,z-.07,r+.07,2.23,end+.07,hex(0xc4bfab),MAT.wall)
+      m.box(x-.08,.8,z-.08,r+.08,.88,end+.08,hex(0x96978b),MAT.wall)
+      m.box(x-.07,2.13,z-.07,r+.07,2.23,end+.07,hex(0x96978b),MAT.wall)
       const g = at(x, z, true)
       g.box(x + .025, .87, z + .025, r - .025, 2.14, end - .025, hex(0x809c9e), MAT.glass)
       const owner=town.buildings.findIndex(h=>x>=h.rect[0]-.01&&r<=h.rect[2]+.01&&z>=h.rect[1]&&end<=h.rect[3])
-      const lamp=12+owner*3+2
+      const house=town.buildings[owner]!
+      const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])
       // A warm recessed curtain, behind the glass and frame, with open gaps for sight.
-      if(r-x>1) for(const px of [x+.1,r-.45]) m.box(px,.9,z+.07,px+.35,2.1,z+.10,hex(0xcbaa76),MAT.lamp,lamp)
-      else for(const pz of [z+.1,end-.45]) m.box(x+.07,.9,pz,x+.10,2.1,pz+.35,hex(0xcbaa76),MAT.lamp,lamp)
+      if(r-x>1) {
+        m.box(x+.07,.89,z-.10,r-.07,2.11,z-.075,hex(0xb68c51),MAT.lamp,lamp)
+        for(const px of [x+.1,r-.45])for(let i=0;i<4;i++)m.box(px+i*.075,.9,z-.06,px+i*.075+.065,2.1,z-.015,hex(i%2?0x938462:0x786b50),MAT.lamp,lamp)
+        m.box(x+.1,1.44,z-.01,r-.1,1.49,end+.02,hex(0x89897a),MAT.wall)
+      }else for(const pz of [z+.1,end-.45])m.box(x+.07,.9,pz,x+.10,2.1,pz+.35,hex(0x938462),MAT.lamp,lamp)
       if (r - x > 1) {
-        for (const px of [x, (x + r) / 2, r - .06]) m.box(px, .85, z - .03, px + .06, 2.2, end + .03, hex(0xc4bfab), MAT.wall)
+        for (const px of [x, (x + r) / 2, r - .06]) m.box(px, .85, z - .03, px + .06, 2.2, end + .03, hex(0x96978b), MAT.wall)
       } else {
-        for (const pz of [z, (z + end) / 2, end - .06]) m.box(x - .03, .85, pz, r + .03, 2.2, pz + .06, hex(0xc4bfab), MAT.wall)
+        for (const pz of [z, (z + end) / 2, end - .06]) m.box(x - .03, .85, pz, r + .03, 2.2, pz + .06, hex(0x96978b), MAT.wall)
       }
     } else {
       const horizontal = r - x > end - z, length = horizontal ? r - x : end - z
@@ -139,13 +193,16 @@ export function buildLevel(town: Town): LevelData {
       for (const h of [.35, .8]) m.box(x, h, z, r, h + .08, end, color)
     }
   }
-  for (const p of town.props) furniture(at(p.x, p.y), p,town)
+  for (const p of town.props) { const mesh=new Mesh(); furniture(mesh,p,town); props.push(mesh) }
   for (const [id, p] of town.lamps.entries()) {
+    if(p.kind==="window")continue
     const m = at(p.x, p.y)
     if(p.kind!=="street") {
       if(p.kind==="room") {
-        m.prism(p.x,p.y,.04,.035,.13,p.h-.15,8,hex(0x5a4b35))
-        m.prism(p.x,p.y,.3,.17,p.h-.2,p.h+.17,10,hex(0xf4d394),MAT.lamp,id)
+        if(p.h>2)m.prism(p.x,p.y,.012,.012,p.h,2.75,5,hex(0x4f5047))
+        else m.prism(p.x,p.y,.027,.025,p.h<1.2?.65:.13,p.h-.15,6,hex(0x5a4b35))
+        m.prism(p.x,p.y,.23,.125,p.h-.13,p.h+.16,9,hex(0x9d7949),MAT.lamp,id)
+        m.prism(p.x,p.y,.19,.19,p.h-.14,p.h-.13,9,hex(0xd1ad6a),MAT.lamp,id)
       } else {
         m.box(p.x-.1,p.h-.18,p.y-.08,p.x+.1,p.h+.18,p.y+.08,hex(0xffd49a),MAT.lamp,id)
         m.box(p.x-.15,p.h+.18,p.y-.12,p.x+.15,p.h+.24,p.y+.12,hex(0x343b38))
@@ -166,14 +223,18 @@ export function buildLevel(town: Town): LevelData {
   })
   // Indoor sky mask: roofs are cut away, but rooms still receive only subdued daylight.
   const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)
+  const furnitureContacts=town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})
   for (let z = 0; z < resolution; z++) for (let x = 0; x < resolution; x++) {
     const px=(x+.5)*scale,pz=(z+.5)*scale
     const indoor = town.buildings.some(b => px >= b.rect[0] && px < b.rect[2] && pz >= b.rect[1] && pz < b.rect[3])
     let contact=0
     for(const wall of town.barriers) if(wall.kind!=="fence") contact=Math.max(contact,Math.exp(-distToRect(px,pz,wall.rect)*4)*.8)
-    for(const p of town.props) if(p.kind==="tree") contact=Math.max(contact,Math.exp(-((px-p.x)**2+(pz-p.y)**2)/1.5)*.65)
+    for(const p of town.props) {
+      if(p.kind==="tree") contact=Math.max(contact,Math.exp(-((px-p.x)**2+(pz-p.y)**2)/1.5)*.65)
+    }
+    for(const rect of furnitureContacts)contact=Math.max(contact,Math.exp(-distToRect(px,pz,rect)*5)*.85)
     data[(z * resolution + x) * 2] = Math.round(contact*255)
     data[(z * resolution + x) * 2 + 1] = indoor ? 32 : 255
   }
-  return { chunks: chunks(meshes), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
+  return { chunks: chunks([...meshes,...props]), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
 }
