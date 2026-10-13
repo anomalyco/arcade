@@ -11,6 +11,7 @@ import { WEATHER_KINDS, type WeatherKind } from "../shared/weather"
 import { WeatherAudio } from "./audio/weather-audio"
 import { DebugMenu } from "./dev/debug-menu"
 import { MixerLab } from "./audio/mixer-lab"
+import { mixer } from "./audio/mixer"
 import { SoundsLab } from "./audio/sounds-lab"
 import { WeatherLab } from "./dev/weather-lab"
 import { FlightView } from "./flight/camera"
@@ -49,7 +50,6 @@ async function gpu(canvas: HTMLCanvasElement): Promise<Renderer | string> {
   if (!adapter) return "No WebGPU adapter is available on this device."
   const device = await adapter.requestDevice()
   device.addEventListener("uncapturederror", (e) => console.error(`[gpu] ${e.error.message}`))
-  void device.lost.then((info) => console.error(`[gpu] device lost (${info.reason}): ${info.message}`))
   const context = canvas.getContext("webgpu")
   if (!context) return "WebGPU could not start on this canvas."
   const format = navigator.gpu.getPreferredCanvasFormat()
@@ -57,14 +57,28 @@ async function gpu(canvas: HTMLCanvasElement): Promise<Renderer | string> {
   return new Renderer(device, context, format)
 }
 
+/** A full-screen message over everything else (the menus included): no WebGPU, or the GPU gave out. */
+function showNotice(hudEl: HTMLElement, message: string): void {
+  document.body.classList.remove("mn-open")
+  hudEl.style.zIndex = "2000"
+  hudEl.innerHTML = `<div class="notice"><div class="brand">CARRIER</div><div>${message}</div></div>`
+}
+
 async function main() {
   const canvas = document.getElementById("view") as HTMLCanvasElement
   const hudEl = document.getElementById("hud")!
   const renderer = await gpu(canvas)
-  if (typeof renderer === "string") {
-    hudEl.innerHTML = `<div class="notice"><div class="brand">CARRIER</div><div>${renderer}</div></div>`
-    return
-  }
+  if (typeof renderer === "string") return showNotice(hudEl, renderer)
+  // A lost device (driver reset, GPU process crash) ends the session: stop the frame loop and say so.
+  let lost = false
+  void renderer.context.device.lost.then((info) => {
+    lost = true
+    console.error(`[gpu] device lost (${info.reason}): ${info.message}`)
+    document.exitPointerLock()
+    const audio = mixer().ctx
+    if (audio instanceof AudioContext) void audio.suspend().catch(() => undefined)
+    showNotice(hudEl, "The GPU stopped responding. Reload to try again.")
+  })
   const params = new URLSearchParams(location.search)
   const tParam = params.get("t")
   const frozen = tParam !== null && Number.isFinite(Number(tParam)) ? Number(tParam) : null
@@ -194,6 +208,7 @@ async function main() {
   }
   let menuOpen = false
   const menu = (notice?: string) => {
+    if (lost) return
     menuOpen = true
     teams.enabled = false
     ops.enabled = false
@@ -249,6 +264,7 @@ async function main() {
 
   let last = performance.now()
   const tick = (now: number) => {
+    if (lost) return
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
     const t = lab.time(frozen ?? net.seaTime(), dt)

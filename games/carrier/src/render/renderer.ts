@@ -82,9 +82,10 @@ export class Renderer {
   /** Compiles a shader module and reports any compile errors with their line. */
   module(code: string, label: string): GPUShaderModule {
     const m = this.device.createShaderModule({ code, label })
-    void m.getCompilationInfo().then((info) => {
+    // Rejects only once the device is gone, which `device.lost` already reports.
+    m.getCompilationInfo().then((info) => {
       for (const msg of info.messages) if (msg.type === "error") console.error(`[wgsl ${label}:${msg.lineNum}:${msg.linePos}] ${msg.message}`)
-    })
+    }, () => undefined)
     return m
   }
 
@@ -170,7 +171,8 @@ export class Renderer {
     this.pendingGrade = null
     this.draw(f, g)
     this.inflight++
-    void this.device.queue.onSubmittedWorkDone().then(this.done)
+    // A lost device rejects and stays in flight, so drawing stops.
+    this.device.queue.onSubmittedWorkDone().then(this.done, () => undefined)
   }
 
   private done = (): void => {

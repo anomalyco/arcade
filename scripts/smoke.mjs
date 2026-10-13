@@ -31,7 +31,9 @@ try {
   browser = await chromium.launch({
     headless: true,
     timeout: 10_000,
-    args: ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+    // SwiftShader Vulkan for the compositor too: with only GL SwiftShader, Chrome cannot create the shared image behind
+    // a WebGPU canvas, so the first presented frame destroys the device. Games that draw behind their menu need this.
+    args: ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--use-vulkan=swiftshader", "--enable-features=Vulkan"],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
   const errors = []
