@@ -94,6 +94,58 @@ try {
         await page.screenshot({ path: join(out, `phone-${String(style * 180 + frame).padStart(4, "0")}.png`) })
       }
     }
+    if (process.argv.includes("--pose")) {
+      for (const [name, height, roll, pitch] of [["lift", 0.8, 0, 0], ["roll", 0.4, 0.22, 0], ["brake", 0.3, 0, 0.16], ["combined", 0.9, -0.2, -0.18]] as const) {
+        const result = await page.evaluate(async ({ style, height, roll, pitch }) => {
+          const load = (path: string) => import(/* @vite-ignore */ path)
+          const { bodyPoint } = await load("/src/game/car-pose.ts")
+          const { lampMounts } = await load("/src/render/car-lights.ts")
+          const w = window as any, { car, scene, renderer, world } = w.__lights
+          Object.assign(car.body, { x: 152, z: 180, h: 3.5, vx: 0, vz: 0, y: 0, vy: 0, wheels: 0 })
+          scene.resetBench()
+          Object.assign(scene.visOf(world.view("me").cars[0]), { height, roll, pitch })
+          const render = renderer.render.bind(renderer)
+          let checked = false
+          renderer.render = (options: any) => {
+            // Use the actual instance pose sent to the body shader, not the injected input.
+            const instance = options.batches[0].data
+            const c = { x: instance[0], z: instance[2], h: instance[3] }
+            const pose = { height: instance[1], roll: instance[4], pitch: instance[5] }
+            const near = (a: number[], b: number[], label: string) => {
+              if (a.some((v, i) => Math.abs(v - b[i]!) > 0.00003)) throw new Error(`${label}: ${a} != ${b}`)
+            }
+            near([pose.height, pose.roll, pose.pitch], [height, roll, pitch], "body pose")
+            const mount = lampMounts(car.vehicle), half = car.vehicle.length / 2
+            const source = style === 0 ? [0, 1.3, half + 0.5] : [0, mount.frontY, half + 0.08]
+            const target = style === 0 ? [0, 1, half + 1.45] : [0, mount.frontY - 0.28, half + 1.08]
+            const head = bodyPoint(c, pose, source), aim = bodyPoint(c, pose, target)
+            near(Array.from(options.lights.slice(0, 3)), head, "headlight source")
+            const dir = aim.map((v: number, i: number) => v - head[i])
+            const length = Math.hypot(...dir)
+            near(Array.from(options.lights.slice(8, 11)), dir.map((v: number) => v / length), "headlight aim")
+            const sources = style === 0 ? [[0, 0.9, -half - 0.6]] : [[0, mount.rearY, -half - 0.28], [0, mount.frontY + 0.5, half + 0.16], [0, mount.rearY + 0.4, -half - 0.14]]
+            sources.forEach((local, i) => near(Array.from(options.lights.slice((i + 1) * 12, (i + 1) * 12 + 3)), bodyPoint(c, pose, local), "tail/body light"))
+            const hw = car.vehicle.width / 2 - 0.25
+            const lens = style === 0 ? [-hw, 0.75, half + 0.1] : [-mount.frontX, mount.frontY + 0.02, half + 0.065]
+            const tail = style === 0 ? [-hw, 0.75, -half - 0.05] : [-mount.rearX, mount.rearY + 0.02, -half - 0.075]
+            near(Array.from(options.sprites.add.slice(0, 3)), bodyPoint(c, pose, lens), "head glow")
+            near(Array.from(options.sprites.add.slice(12, 15)), bodyPoint(c, pose, tail), "tail glow")
+            if (style !== 0) {
+              const head = bodyPoint(c, pose, lens)
+              near([options.sprites.add[24], options.sprites.add[26]], [head[0], head[2]], "beam footprint origin")
+              if (options.sprites.add[8] !== 11 || options.sprites.add[20] !== 11) throw new Error("Round glow returned")
+            }
+            checked = true
+            render(options)
+          }
+          try { await w.__drawLights(24, 0, true) } finally { renderer.render = render }
+          if (!checked) throw new Error("Missing posed render")
+          return { style, height, roll, pitch, passed: true }
+        }, { style, height, roll, pitch })
+        results.push({ name: `pose-${name}`, ...result })
+        await page.screenshot({ path: join(out, `${style}-pose-${name}.png`) })
+      }
+    }
     await page.close()
     const live = await browser.newPage({ viewport: { width: 640, height: 480 } })
     live.on("pageerror", e => errors.push(e.message))

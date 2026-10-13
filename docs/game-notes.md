@@ -126,6 +126,18 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Art direction
 
+- **One body pose for the mesh and its lamps.** `src/game/car-pose.ts` uses the chassis branch's
+  `bodyPoint(car, pose, local)` interface and the instance shader's roll → pitch → yaw order. Omitted height,
+  roll and pitch default to zero; supplied height includes ground, flight and springs. `scene.ts` sends the same
+  `pose` to the body instance and every car lamp glow/light, including the reference style, sirens, crash and backfire.
+  Headlight direction comes from two transformed local points, so brake dive changes the aim too. Ground footprints
+  use the posed lamp's horizontal origin and road height rather than floating with the body. Keep the chassis branch's
+  sprung `pose` calculation when integrating; lamp code needs no separate suspension calculation.
+  Four transform tests pass, and `scripts/prove-car-lights.ts --pose` checked lift, roll, brake dive and combined motion
+  for all four light styles on Metal. It compares actual submitted light/glow positions and beam directions with the
+  body instance pose (16 cases, tolerance 0.00003 m), and retains shaped lens glows in candidates 1–3. No GPU-time
+  claim is made for the extra transforms.
+
 - **Car-light studies (`?lights=0..3`).** `src/render/car-lights.ts`, `car-mesh.ts`, `game/scene.ts` and the sprite
   shader keep an original reference (0), warm recessed lamps (1, preview default), cool headlamps/full rear bar (2),
   and longer warm fans with subtle lens and braking streaks (3). All candidates replace oversized round sprites with
