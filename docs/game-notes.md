@@ -175,6 +175,15 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   overall 0.314 maximum. These are discontinuity diagnostics, not an assertion that no audible click exists.
   No listening took place. Six focused gearbox/slip/occlusion tests passed; full check passed 112 tests, 12 skips.
   Reproduction and provenance: `games/getaway/src/audio/SOURCES.md`; raw reports remain beside the private captures.
+- **Nitro retrigger correction:** the first player synth preferred snapshot `boosting` to local input, remote
+  bursts watched successive fuel decreases, and holding boost at empty fuel alternates depletion/refill in the sim.
+  `audio/nitro.ts` now latches one ignition per local press, locks out refill while held after exhaustion, and
+  debounces only remote boost-state releases. Interruption stops native sources and requires a fresh press.
+  The replacement noise/turbine voice sits under the engine; exhaust pops follow actual scene backfire events.
+  The 12-second peaceful proof recorded exactly four ignitions for four presses including a hold through empty,
+  zero voices afterward, −18.64 LUFS / −4.46 dBTP and zero clipped samples. A separate unfaded offline regression
+  checked eight ignitions and six exactly silent tail windows after exhaustion/release/interruption. Full check:
+  115 passed, 12 skips. Subjective improvement awaits Kit's listening; no audio was played during verification.
 
 Candidates from the code audits; measure and playtest before moving any into the sections above.
 

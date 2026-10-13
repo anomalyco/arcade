@@ -45,6 +45,7 @@ export function sirenOn(phase: number, red: boolean) {
 }
 
 export class Scene {
+  onBackfire?: (car: CarView) => void
   readonly fx = new Fx()
   private lamps: LampLight[]
   private spills: ShopSpill[]
@@ -135,6 +136,7 @@ export class Scene {
       this.fx.sparks(car.x + fx * spec.length * 0.45, car.z + fz * spec.length * 0.45, -fx * 8, -fz * 8, 24, 0.3)
       v.crash = 0.06
     } else if (key === "backfire") {
+      this.onBackfire?.(car)
       v.backfire = 0.07
       this.fx.backfire(car.x - fx * (spec.length / 2 + 0.3), 0.5 + v.height, car.z - fz * (spec.length / 2 + 0.3), -fx * 7, -fz * 7)
     } else if (key === "curb") v.springV = 2.5
@@ -232,6 +234,7 @@ export class Scene {
         }
       }
       if (juice.backfire && ((boosting && !v.boosting) || (input && v.throttle > 0.9 && input.throttle < 0.2 && c.speed > 22))) {
+        this.onBackfire?.(c)
         v.backfire = 0.07
         this.fx.backfire(c.x - fx * (spec.length / 2 + 0.3), 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.3), -fx * 7, -fz * 7)
       }

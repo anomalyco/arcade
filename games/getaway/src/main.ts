@@ -16,7 +16,7 @@ import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 import { DebugOverlay, juice } from "./ui/debug-overlay"
 import { GpuPerf } from "../../../packages/kit/gpu-perf"
-import type { WorldView } from "../shared/sim/world"
+import type { WorldView, SimEvent } from "../shared/sim/world"
 
 /** A message for the next lobby (an idle kick reloads the page back to it). */
 const NOTICE_KEY = "getaway.notice"
@@ -79,6 +79,15 @@ async function main() {
   const sound = new GameAudio(document.getElementById("hud")!, activeSession.city)
   sound.procedural = q.get("audio") !== "old"
   sound.onShift = car => { if (juice.backfire) scene.testEffect("backfire", car) }
+  const backfires: SimEvent[] = []
+  scene.onBackfire = car => backfires.push({ kind: "backfire", carId: car.id, text: "", t: 0 })
+  addEventListener("blur", () => sound.suspend())
+  addEventListener("focus", () => { if (!document.hidden) sound.resume() })
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) sound.suspend()
+    else if (document.hasFocus()) sound.resume()
+  })
+  addEventListener("pagehide", () => sound.suspend())
   const radio = new Radio()
   let cam = new Camera()
   const controls = new Controls()
@@ -152,6 +161,7 @@ async function main() {
   let rafActive = !benchMode
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
     soundMode: () => sound.procedural,
+    nitroState: () => sound.nitroState,
     ready: atlasReady.then(() => true),
     adapterInfo: {
       vendor: adapter.info.vendor,
@@ -160,6 +170,8 @@ async function main() {
       description: adapter.info.description,
     },
     reset() {
+      sound.reset()
+      backfires.length = 0
       rafActive = false
       const prng = mulberry32(1337)
       Math.random = () => prng()
@@ -181,7 +193,7 @@ async function main() {
       cam = new Camera()
       snapped = false
     },
-    async step(frameIndex: number, dt = 1 / 30, waitGpu = false) {
+    async step(frameIndex: number, dt = 1 / 30, waitGpu = false, drive?: { boost: boolean; throttle: number; steer: number; handbrake: boolean }) {
       const t0 = performance.now()
       const local = activeSession as LocalSession
       const r = local.world?.robber()?.body
@@ -192,7 +204,7 @@ async function main() {
       const steer = Math.max(-1, Math.min(1, (targetX - rx) * 0.18 - rh * 2.2 - ryaw * 0.35))
       const handbrake = frameIndex >= 3 && frameIndex < 9
       const boost = (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
-      const input = { throttle: 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false }
+      const input = { throttle: 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false, ...drive }
       const view = activeSession.update(dt, input)
       const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
       const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
@@ -212,6 +224,7 @@ async function main() {
       if (scene.punch > 0) { cam.land(scene.punch); scene.punch = 0 }
       scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
       const events = activeSession.drainEvents()
+      events.push(...backfires.splice(0))
       sound.update(view, { myId: activeSession.myId, cam, dt, events, input })
       hud.update(view, {
         myId: activeSession.myId,
@@ -286,9 +299,10 @@ async function main() {
       if (report) parent.postMessage({ type: "arcade-perf", ...debug.sample, ...pose, y: mine?.z, tick: muxTick, run: controls.muxRun }, controls.parentOrigin)
     }
     const events = activeSession.drainEvents()
+    events.push(...backfires.splice(0))
     hud.update(view, { myId: activeSession.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: activeSession.players(), room: activeSession.room, status: activeSession.status(), idleIn: activeSession.idleIn?.() })
     chat?.update()
-    sound.update(view, { myId: activeSession.myId, cam, dt, events, input })
+    sound.update(view, { myId: activeSession.myId, cam, dt, events, input, paused: controls.paused })
     radio.update(view, activeSession.myId, events)
     ;(window as unknown as { __view: unknown }).__view = view
     requestAnimationFrame(frame)

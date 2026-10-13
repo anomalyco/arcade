@@ -8,6 +8,7 @@ import { character, Gearbox } from "./drivetrain"
 import { StreetAcoustics } from "./environment"
 import type { City } from "../../shared/sim/city"
 import { VEHICLE_BY_ID } from "../../shared/config"
+import { NitroGate } from "./nitro"
 
 export type AudioContextInfo = {
   myId: string
@@ -16,6 +17,7 @@ export type AudioContextInfo = {
   events: SimEvent[]
   /** The local player's controls this frame (throttle drives the engine load). */
   input?: Input
+  paused?: boolean
 }
 
 type Car = CarView
@@ -54,10 +56,10 @@ const CHIRPS: SfxName[] = ["shove_chirp_1", "shove_chirp_2"]
 const ramp = (v: number, a: number, b: number) => Math.max(0, Math.min(1, (v - a) / (b - a)))
 
 type CarState = {
+  nitro: NitroGate
   gearbox: Gearbox
   seen: number
   speed: number
-  boost: number
   drift: number
   rpm: number
   load: number
@@ -69,12 +71,10 @@ type CarState = {
   /** Seconds of scrape left after the last frame in contact, and the sliding speed along whatever it touches. */
   contactT: number
   contactV: number
-  nitroCool: number
   skidCool: number
   /** Own car: the tires are in a real slide (hysteresis, so the squeal doesn't flicker at the threshold). */
   sliding: boolean
-  /** Own car: nitro firing, seconds since it lit, and a smoothed 0..1 amount for the engine lift. */
-  boosting: boolean
+  /** Own car: seconds since ignition and a smoothed 0..1 amount for the engine lift. */
   boostT: number
   boostAmt: number
   yelp: boolean
@@ -291,6 +291,22 @@ export class GameAudio {
   private lz = 0
   private lvx = 0
   private lvz = 0
+  private suspended = false
+  private wasPaused = false
+  private lastTime = -1
+  private interrupted = false
+
+  get nitroState() { return { ignitions: this.driver?.nitro.ignitions ?? 0, active: this.driver?.nitro.active ?? false, voices: this.driver?.nitro.voices ?? 0 } }
+
+  /** Also called synchronously on blur, when no subsequent animation frame is guaranteed. */
+  suspend() { this.suspended = true; this.reset() }
+  resume() { this.suspended = false }
+  reset() {
+    this.interrupted = true
+    for (const s of this.states.values()) { s.nitro.cancel(); s.boostAmt = 0 }
+    if (this.built) { this.driver.silence(); this.rush.silence(0.025) }
+    this.a.stopNitro()
+  }
 
   constructor(hudRoot?: HTMLElement, city?: City, private a: AudioEngine = audio) {
     this.acoustics = new StreetAcoustics(city)
@@ -301,7 +317,7 @@ export class GameAudio {
   mountLab(root: ShadowRoot) {
     const label = document.createElement("label"), input = document.createElement("input")
     input.type = "checkbox"; input.checked = this.procedural; input.dataset.key = "proceduralAudio"
-    input.onchange = () => { this.procedural = input.checked }
+    input.onchange = () => { this.reset(); this.procedural = input.checked }
     label.append(input, "Procedural audio")
     root.querySelector("[data-controls]")?.append(label)
   }
@@ -340,6 +356,14 @@ export class GameAudio {
   update(view: WorldView, ctx: AudioContextInfo) {
     this.build()
     if (!this.built) return
+    if (this.suspended || ctx.paused) {
+      if (!this.wasPaused) this.reset()
+      this.wasPaused = true
+      return
+    }
+    this.wasPaused = false
+    if (view.t < this.lastTime || this.round !== -1 && view.round !== this.round || view.phase === "end" && this.phase !== "end") this.reset()
+    this.lastTime = view.t
     this.frame++
     const dt = Math.max(1e-3, ctx.dt)
     const cam = ctx.cam
@@ -362,7 +386,14 @@ export class GameAudio {
     this.acoustics.update(this.lx, this.lz, this.a.now)
     this.a.verb.gain.setTargetAtTime(this.procedural ? 0.35 + this.acoustics.density * 0.9 : 1, this.a.now, 0.4)
 
-    for (const c of view.cars) this.track(c, dt)
+    for (const c of view.cars) {
+      this.track(c, dt)
+      if (this.interrupted) this.states.get(c.id)!.nitro.cancel()
+      const local = c === mine && ctx.input !== undefined
+      this.states.get(c.id)!.nitro.update(local ? !!ctx.input?.boost : !!c.boosting, c.boost, dt,
+        view.phase !== "end" && !c.ghost && !c.engineOff && c.stun <= 0, !local)
+    }
+    this.interrupted = false
     this.phases(view, mine)
     this.events(view, ctx.events, mine)
     this.ownCar(view, mine, robber, ctx.input, dt)
@@ -380,10 +411,10 @@ export class GameAudio {
     let s = this.states.get(c.id)
     if (!s) {
       s = {
+        nitro: new NitroGate(),
         gearbox: new Gearbox(character(c.vehicle)),
         seen: 0,
         speed: c.speed,
-        boost: c.boost,
         drift: 0,
         rpm: 0,
         load: 0,
@@ -393,10 +424,8 @@ export class GameAudio {
         lastHit: 0,
         contactT: 0,
         contactV: 0,
-        nitroCool: 0,
         skidCool: 0,
         sliding: false,
-        boosting: false,
         boostT: 0,
         boostAmt: 0,
         yelp: false,
@@ -407,7 +436,6 @@ export class GameAudio {
     s.seen = this.frame
     s.impactCool = Math.max(0, s.impactCool - dt)
     s.contactT = Math.max(0, s.contactT - dt)
-    s.nitroCool = Math.max(0, s.nitroCool - dt)
     s.skidCool = Math.max(0, s.skidCool - dt)
   }
 
@@ -470,14 +498,13 @@ export class GameAudio {
     const a = this.a
     this.engine.use(a.buffer(mine.role === "cop" ? "engine_cop_loop" : "engine_robber_loop"))
     const off = !!mine.engineOff
-    // Nitro fires while you hold boost with fuel left (mirrors the sim); without input, while the fuel drains.
-    const boosting = !off && mine.stun <= 0 && mine.boost > 0.005 && (input ? input.boost : mine.boost < s.boost - 1e-5)
-    if (boosting && !s.boosting) {
+    // Exact local control edges; remote cars use debounced explicit boost state, never fuel deltas.
+    const boosting = s.nitro.active
+    if (s.nitro.released && mine.boost <= 0.005) a.stopNitro()
+    if (s.nitro.ignited) {
       s.boostT = 0
-      if (!this.procedural && s.nitroCool <= 0) a.play("nitro_burst", { gain: 0.75, wet: 0.08 })
-      s.nitroCool = 0.4
+      if (!this.procedural) a.play("nitro_burst", { gain: 0.75, wet: 0.08 })
     }
-    s.boosting = boosting
     s.boostT += dt
     s.boostAmt += ((boosting ? 1 : 0) - s.boostAmt) * (1 - Math.exp(-dt * (boosting ? 10 : 4)))
 
@@ -525,7 +552,7 @@ export class GameAudio {
 
     if (this.procedural) {
       this.engine.silence(); this.screech.silence(); this.scrub.silence(); this.rush.silence()
-      this.driver.update(mine, input, dt, this.acoustics.surface(mine.x, mine.z))
+      this.driver.update(mine, input, dt, this.acoustics.surface(mine.x, mine.z), s.nitro)
     } else this.driver.silence()
 
     // Flapping rubber, louder and grittier with every popped tire; on the rims it grinds even at a crawl.
@@ -688,12 +715,10 @@ export class GameAudio {
           const cutoff = own ? 18000 : sp!.cutoff
           // Your own nitro and tires are driven from your controls in ownCar.
           if (!own) {
-            // Nitro: fuel starts draining.
-            if (c.boost < s.boost - 1e-4 && s.nitroCool <= 0 && c.speed > 3) {
+            // Legacy comparison only. Snapshot fuel stair-steps must never retrigger bursts.
+            if (!this.procedural && s.nitro.ignited && c.speed > 3) {
               this.a.play("nitro_burst", { gain: g * 0.55, pan, wet, cutoff })
-              s.nitroCool = 1.2
             }
-            if (c.boost >= s.boost) s.nitroCool = Math.min(s.nitroCool, 0.25)
             // A hard slide breaking loose; ordinary cornering never chirps.
             if (!c.airborne && c.drift > 8 && s.drift <= 8 && c.speed > 10 && s.skidCool <= 0) {
               this.a.play("skid_short", { gain: g * 0.3, rate: 0.95 + Math.random() * 0.1, pan, wet, cutoff })
@@ -703,7 +728,6 @@ export class GameAudio {
         }
       }
       s.speed = c.speed
-      s.boost = c.boost
       s.drift = c.drift
     }
   }
@@ -909,6 +933,9 @@ export class GameAudio {
       const pan = sp?.pan ?? 0
       const wet = sp ? sp.wet : 0.1
       switch (e.kind) {
+        case "backfire":
+          if (this.procedural && own) this.driver.transients.burst("pop", 0.45)
+          break
         case "landing":
           if (juice.landing && c && !c.ghost) a.play("crash_thump_1", { gain: Math.min(0.85, (e.impact ?? 0) / 15) * g, pan, wet, rate: 0.85, cutoff: 1800 })
           break

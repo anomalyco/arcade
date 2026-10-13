@@ -76,6 +76,7 @@ export class AudioEngine {
   private buffers = new Map<SfxName, AudioBuffer>()
   private raw = new Map<SfxName, Promise<ArrayBuffer | null>>()
   private oneShots: number[] = []
+  private nitroShots = new Map<AudioBufferSourceNode, GainNode>()
   private readyFns: (() => void)[] = []
   private muteFns: ((muted: boolean) => void)[] = []
 
@@ -221,10 +222,21 @@ export class AudioEngine {
     }
     this.oneShots.push(this.now + (o.delay ?? 0) + buf.duration / (o.rate ?? 1))
     src.onended = () => {
+      this.nitroShots.delete(src)
       for (const node of nodes) node.disconnect()
     }
+    if (name === "nitro_burst") this.nitroShots.set(src, g)
     src.start(this.now + (o.delay ?? 0))
     return true
+  }
+
+  stopNitro() {
+    for (const [source, gain] of this.nitroShots) {
+      gain.gain.cancelAndHoldAtTime(this.now)
+      gain.gain.linearRampToValueAtTime(0, this.now + 0.025)
+      source.stop(this.now + 0.03)
+    }
+    this.nitroShots.clear()
   }
 
   private start() {
