@@ -835,6 +835,12 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
+- **Render a read-only catalogue on demand.** `packages/kit/dev-hub-viewer.ts` reuses the shipped Lab spawn
+  adapters and stage with one canvas. The first headless Metal proof on both hosts registered 25 assets,
+  opened no AudioContexts, and submitted no additional frames after switching to Games or dispatching
+  a synthetic hidden-document event. `scripts/prove-dev-hub.ts` checks filtering, lighting/feedback identity
+  and focus as well. This is a lifecycle check, not a GPU-performance measurement or a physical-trackpad test.
+
 - **Latch fire presses across input ticks.** Blackout's `src/game/input.ts` keeps one press edge for at most 100 ms,
   consumed by the next 30 Hz input tick. `Intent.firePressed` carries that edge through prediction and the wire so
   consecutive taps remain distinct even without a sampled release. Weapon cooldown/reload gates consume rejected
