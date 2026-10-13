@@ -11,7 +11,16 @@
 - Read `docs/game-notes.md` before rendering, performance, input, multiplayer or feel work, and add techniques there
   once they are proven in a game, with where they live and what they measured. `docs/shared-code.md` lists code both
   games duplicate and what to extract into `packages/kit/`; check it before writing something a game already has.
-- Anything you can tune or compare (effects, looks, styles, rendering options) goes in the shared lab panel (`packages/kit/lab-panel.ts`, opened with Backquote), never behind a query parameter. Query parameters are only for automation (seeds, benchmarks, comparisons). Improve the shared panel rather than building a game-specific one.
+- Read [docs/lab.md](docs/lab.md) before adding or tuning effects, materials, physics, audio or rendering options.
+  All tunable values belong in typed settings bound to the shared `LabPanel` (Backquote), with meaningful labels,
+  explicit units/ranges/steps, approved defaults and Reset. Query parameters are for automation only.
+  Use the production effect/material/physics implementation through adapters, never a Lab-only facsimile; label
+  unintegrated candidates and renderer stubs honestly. Improve the shared panel rather than adding game-specific UI.
+  New authoring paths must keep parameter Randomize reproducible and separate from room/effect seeds, validate
+  versioned preset imports, declare live-edit/retrigger boundaries, and preserve environment state across tool changes.
+  Preserve text-field input ownership and explicit Edit/Play, require explicit audio audition, and keep gameplay
+  authoritative while presentation/clutter stays local. Follow the guide's deterministic comparison and timing rules;
+  its planned UX and existing API gaps are not shipped features or additional release gates.
 - Everything is served under https://anoma.ly/arcade/. A game owns `/arcade/<name>` and `/arcade/<name>/*`. The landing
   owns only `/arcade`, `/arcade/` and `/arcade/assets/*`. Never add a wildcard `/arcade/*` route.
 - Pushing to `main` deploys affected projects (`.github/workflows/`). All workspace games also check and deploy on
