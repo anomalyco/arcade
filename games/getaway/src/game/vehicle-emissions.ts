@@ -1,6 +1,6 @@
 import type { City } from "../../shared/sim/city"
-import { VehicleEmissions as SharedEmissions } from "../../../../packages/kit/vehicle/emissions"
-export { EmissionState, drivenMask, tyreSlip, launchSlip, vehicleEffects } from "../../../../packages/kit/vehicle/emissions"
+import { VehicleEmissions as SharedEmissions } from "@arcade/kit/vehicle/emissions"
+export { EmissionState, drivenMask, tyreSlip, launchSlip, vehicleEffects } from "@arcade/kit/vehicle/emissions"
 
 /** Match the lawn inset, crossing paths and fountain paving in render/city/parks.ts. */
 export function tyreSurface(city: Pick<City, "parks"> | null, x: number, z: number) {

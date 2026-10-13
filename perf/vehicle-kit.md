@@ -47,15 +47,18 @@ bun scripts/prove-vehicle-kit.mjs blackout before
 bun scripts/prove-vehicle-kit.mjs blackout after
 ```
 
-For remote checks, generate the manifest before syncing so unrelated files in the remote cache cannot enter
-the test tree:
+For remote checks after the workspace rebase, export the committed tree so unrelated files in the remote cache
+cannot enter the test tree. The check installs at the root, checks the package and games, dry-runs both Worker
+bundles and smoke-loads both production builds:
 
 ```sh
-git ls-files -co --exclude-standard | while IFS= read -r file; do
-  test -f "$file" && printf '%s\n' "$file"
-done > vehicle-check-files.txt
-hivemind run --kind render -- sh scripts/check-vehicle.sh
-rm vehicle-check-files.txt
+git archive HEAD -o captures/vehicle-kit-workspace.tar
+hivemind run --kind render -- sh -c '
+  clean=$(mktemp -d)
+  trap '\''rm -rf "$clean"'\'' EXIT
+  tar -xf captures/vehicle-kit-workspace.tar -C "$clean"
+  sh "$clean/scripts/check-vehicle.sh"
+'
 ```
 
 Raw JSON results are in `perf/vehicle-kit/`. Ignored PNG/WAV originals are in `captures/vehicle-kit/` and the

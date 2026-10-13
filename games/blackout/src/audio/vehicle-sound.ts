@@ -1,6 +1,6 @@
-import { DriverVoice } from "../../../../packages/kit/vehicle/audio/synth"
-import { NitroGate } from "../../../../packages/kit/vehicle/audio/nitro"
-import type { VehicleView } from "../../../../packages/kit/vehicle/types"
+import { DriverVoice } from "@arcade/kit/vehicle/audio/synth"
+import { NitroGate } from "@arcade/kit/vehicle/audio/nitro"
+import type { VehicleView } from "@arcade/kit/vehicle/types"
 import type { VehicleKind } from "../../shared/sim/vehicle"
 import type { Sound } from "./sound"
 

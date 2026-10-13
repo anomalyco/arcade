@@ -4,7 +4,7 @@ import { vehicleEffects } from "../game/vehicle-emissions"
 import type { Scene } from "../game/scene"
 import type { GameAudio } from "../audio/game-audio"
 import type { LightStyle } from "../render/car-lights"
-import { lightControls } from "../../../../packages/kit/vehicle/lab"
+import { lightControls } from "@arcade/kit/vehicle/lab"
 
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }

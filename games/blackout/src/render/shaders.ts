@@ -1,5 +1,5 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../shared/config"
-import { vehicleSprites } from "../../../../packages/kit/vehicle/sprites"
+import { vehicleSprites } from "@arcade/kit/vehicle/sprites"
 
 /** Frame uniform layout, in floats. Keep in step with Game.build. */
 export const FRAME_FLOATS = 16 + 4 * 8

@@ -3,8 +3,8 @@ import type { LevelData } from "./level-mesh"
 import { LIGHT_FLOATS, OCC_FLOATS } from "./lighting"
 import { VERT_BYTES, type Mesh } from "./mesh"
 import { FRAME_FLOATS, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
-import { SmokeRenderer } from "../../../../packages/kit/vehicle/smoke-renderer"
-import type { SmokeTrail } from "../../../../packages/kit/vehicle/smoke-trail"
+import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
+import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"

@@ -2,8 +2,8 @@ import { CELL, GRID, ROAD_HALF } from "../../shared/config"
 import { rampSurface, type City } from "../../shared/sim/city"
 import type { CarView } from "../../shared/sim/world"
 import { KERB_H } from "../render/city/streets"
-import { Chassis as SharedChassis, type AxlePoint } from "../../../../packages/kit/vehicle/chassis"
-export { chassisSettings, springStep, wheelRotation, type ChassisSettings, type Spring, type AxlePoint, type WheelRotation } from "../../../../packages/kit/vehicle/chassis"
+import { Chassis as SharedChassis, type AxlePoint } from "@arcade/kit/vehicle/chassis"
+export { chassisSettings, springStep, wheelRotation, type ChassisSettings, type Spring, type AxlePoint, type WheelRotation } from "@arcade/kit/vehicle/chassis"
 
 /** Same rounded sidewalk footprint as the city mesh, plus the shared ramp profile. */
 export function contactHeight(city: City, x: number, z: number) {

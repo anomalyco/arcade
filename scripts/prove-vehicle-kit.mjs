@@ -1,6 +1,6 @@
 // Sequential, muted Metal proof. Run from the repository root against the two Nexus previews.
-import { chromium } from "../games/getaway/node_modules/playwright-core/index.mjs"
-import ts from "../games/getaway/node_modules/typescript/lib/typescript.js"
+import { chromium } from "playwright-core"
+import ts from "typescript"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve, join, dirname } from "node:path"
 import { execFileSync } from "node:child_process"

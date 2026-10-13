@@ -1,1 +1,1 @@
-export * from "../../../../packages/kit/vehicle/fx"
+export * from "@arcade/kit/vehicle/fx"

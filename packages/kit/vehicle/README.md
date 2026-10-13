@@ -2,6 +2,9 @@
 
 Getaway and Blackout use these modules for suspension, wheel contacts, lamps, tyre emissions and procedural sound. The package reads interpolated views and never writes a game's simulation state.
 
+Import the source subpaths through the workspace package, for example `@arcade/kit/vehicle/chassis` or
+`@arcade/kit/vehicle/audio/synth`. Install dependencies once at the repository root with `bun install --frozen-lockfile`.
+
 ## Adapt the view and renderer
 
 `types.ts` defines the input contracts. Positions use metres, velocity uses metres per second, mass uses tonnes, and angles use radians. World Y is up; local Z is forward and X is right. Heading zero faces +Z. `VehicleSpec` supplies dimensions, drivetrain, power, lamp mounts and optional authored wheel positions. `Controls` carries throttle, brake, steer, handbrake and boost.

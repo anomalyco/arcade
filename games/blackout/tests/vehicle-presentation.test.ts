@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { instanceRotation, presentationSpec } from "../src/game/vehicle-presentation"
-import { bodyPoint } from "../../../packages/kit/vehicle/body-pose"
+import { bodyPoint } from "@arcade/kit/vehicle/body-pose"
 
 test("Blackout instance adapter matches bodyPoint through combined roll, pitch and yaw", () => {
   for (let i = 0; i < 40; i++) {
