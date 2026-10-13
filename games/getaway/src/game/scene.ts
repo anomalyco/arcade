@@ -1,5 +1,5 @@
 import { vec4 } from "wgpu-matrix"
-import { VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
+import { CELL, GRID, ROAD_HALF, VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
 import type { City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
@@ -11,6 +11,9 @@ import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FL
 import { MAX_LIGHTS } from "../render/shaders"
 import type { Camera } from "./camera"
 import { Fx } from "./fx"
+import { juice } from "../ui/debug-overlay"
+import { KERB_H } from "../render/city/streets"
+import type { Input } from "../../shared/sim/vehicle"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -24,7 +27,12 @@ function normalizeV(v: number[]): [number, number, number] {
   return [v[0]! / l, v[1]! / l, v[2]! / l]
 }
 
-type Vis = { roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number; sparkAcc: number }
+type Vis = {
+  roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number; sparkAcc: number
+  scrapeAcc: number; wheels: { x: number; z: number }[]; height: number; springV: number; ground: number
+  boosting: boolean; throttle: number; backfire: number; crash: number; impactCool: number; braking: boolean
+  boostHold: number; brakeHold: number; launch: number; landings: number; landY: number; landV: number; vy: number; flameAcc: number
+}
 
 /** Matches the shader's siren strobe so glows and lights flash in sync with the lamp geometry. */
 export function sirenOn(phase: number, red: boolean) {
@@ -57,6 +65,10 @@ export class Scene {
   private time = 0
   /** Camera shake requests from impacts on the followed car. */
   shake = 0
+  hitStop = 0
+  punch = 0
+  lightCount = 0
+  input: Input | null = null
 
   resetBench() {
     this.fx.puffs.length = 0
@@ -66,6 +78,8 @@ export class Scene {
     this.vis.clear()
     this.time = 0
     this.shake = 0
+    this.hitStop = 0
+    this.punch = 0
   }
 
   constructor(
@@ -89,14 +103,49 @@ export class Scene {
   private visOf(c: CarView) {
     let v = this.vis.get(c.id)
     if (!v) {
-      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0 }
+      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 0, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
       this.vis.set(c.id, v)
     }
     return v
   }
 
+  private groundAt(x: number, z: number) {
+    const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL)
+    if (ix < 0 || iz < 0 || ix >= GRID || iz >= GRID) return 0
+    const a = x - ix * CELL - ROAD_HALF, b = z - iz * CELL - ROAD_HALF
+    const width = CELL - ROAD_HALF * 2
+    if (a < 0 || b < 0 || a > width || b > width) return 0
+    const dx = Math.max(3 - a, a - (width - 3), 0), dz = Math.max(3 - b, b - (width - 3), 0)
+    if (dx * dx + dz * dz > 9) return 0
+    if (this.city.alleys.some((g) => x > g.x0 && x < g.x1 && z > g.z0 && z < g.z1)) return 0
+    const park = this.city.parks.some((p) => x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1)
+    return park || Math.min(a, b, width - a, width - b) <= this.city.sidewalk ? KERB_H : 0
+  }
+
+  /** Presentation-only lab probes; never mutate the authoritative vehicle. */
+  testEffect(key: string, car: CarView): void {
+    const v = this.visOf(car), spec = VEHICLE_BY_ID.get(car.vehicle)!
+    const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = Math.cos(car.h), rz = -Math.sin(car.h)
+    if (key === "sparks" || key === "scrape") {
+      this.fx.sparks(car.x + fx * spec.length * 0.45, car.z + fz * spec.length * 0.45, -fx * 8, -fz * 8, 24, 0.3)
+      v.crash = 0.06
+    } else if (key === "backfire") {
+      v.backfire = 0.07
+      this.fx.backfire(car.x - fx * (spec.length / 2 + 0.3), 0.5 + v.height, car.z - fz * (spec.length / 2 + 0.3), -fx * 7, -fz * 7)
+    } else if (key === "curb") v.springV = 2.5
+    else if (key === "landing") { v.landV = -2.5; this.punch = 0.8 }
+    else if (key === "trauma") { this.shake = 1; this.hitStop = 0.045 }
+    else if (key === "skids") for (const a of [-1, 1]) for (const s of [-1, 1]) {
+      const x = car.x + fx * spec.length * 0.32 * a + rx * spec.width * 0.4 * s
+      const z = car.z + fz * spec.length * 0.32 * a + rz * spec.width * 0.4 * s
+      this.fx.skidSegment(x - fx * 1.5, z - fz * 1.5, x, z, 0.6)
+    }
+  }
+
   /** Per-car visual dynamics (body roll, pitch) and particle emission. */
   private animate(view: WorldView, dt: number, focusId: number | null) {
+    this.fx.update(dt)
+    if (!juice.skids) this.fx.skids.length = 0
     for (const c of view.cars) {
       if (c.ghost) continue
       const v = this.visOf(c)
@@ -105,6 +154,34 @@ export class Scene {
       dh = Math.atan2(Math.sin(dh), Math.cos(dh))
       const yawRate = dt > 0 ? dh / dt : 0
       const accel = dt > 0 ? (c.speed - v.speed) / dt : 0
+      v.backfire = Math.max(0, v.backfire - dt)
+      v.crash = Math.max(0, v.crash - dt)
+      v.impactCool = Math.max(0, v.impactCool - dt)
+      const input = c.id === focusId ? this.input : null
+      // Snapshot speed derivatives alternate between zero and spikes. Lights follow controls, never that derivative.
+      const brake = input ? input.brake > 0.1 || input.handbrake || input.throttle < 0 && c.vx * Math.sin(c.h) + c.vz * Math.cos(c.h) > 0.5 : !!c.braking
+      v.brakeHold = brake ? 0.1 : Math.max(0, v.brakeHold - dt)
+      v.braking = v.brakeHold > 0
+      const boost = input ? input.boost && c.boost > 0 && c.stun <= 0 && !c.engineOff && !c.airborne : c.boosting ?? c.boost < v.fuel - 1e-4
+      v.boostHold = boost ? 0.1 : Math.max(0, v.boostHold - dt)
+      const boosting = v.boostHold > 0 && !c.engineOff
+      if (boosting && !v.boosting && c.speed < 24 && !c.airborne) v.launch = 0.45
+      else v.launch = Math.max(0, v.launch - dt)
+      if ((c.landings ?? 0) > v.landings && juice.landing) {
+        const impact = Math.max(c.landing ?? 0, Math.abs(v.vy))
+        v.landV = -Math.min(2.8, impact * 0.22)
+        if (impact > 8) this.fx.sparks(c.x, c.z, -c.vx, -c.vz, Math.min(10, Math.floor(impact * 0.6)), 0.08)
+        if (c.id === focusId) this.punch = Math.min(1, impact / 14)
+      }
+      v.landings = c.landings ?? 0
+      v.vy = c.vy ?? 0
+      for (let left = dt; left > 0;) {
+        const step = Math.min(left, 1 / 120)
+        v.landV += (-v.landY * 180 - v.landV * 12) * step
+        v.landY += v.landV * step
+        left -= step
+      }
+      if (!juice.landing) v.landY = v.landV = 0
       const k = 1 - Math.exp(-dt * 8)
       v.roll += (Math.max(-0.11, Math.min(0.11, yawRate * c.speed * 0.0035)) - v.roll) * k
       v.pitch += (Math.max(-0.06, Math.min(0.06, -accel * 0.004)) - v.pitch) * k
@@ -116,9 +193,31 @@ export class Scene {
       const rz = -Math.sin(c.h)
       const back = spec.length * 0.36
       const side = spec.width * 0.4
-      if (c.drift > 4 && c.speed > 7) {
-        const intensity = Math.min(1, (c.drift - 3) / 8)
-        for (const s of [-1, 1]) this.fx.skid(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, Math.atan2(c.vx, c.vz), 0.45 * intensity + 0.15)
+      const wheels = [-1, 1].flatMap((a) => [-1, 1].map((s) => ({ x: c.x + fx * spec.length * 0.32 * a + rx * side * s, z: c.z + fz * spec.length * 0.32 * a + rz * side * s })))
+      const drift = c.drift > 4 && c.speed > 7
+      const spin = !!input && input.throttle > 0.9 && c.speed < 9 && accel > 3
+      if (juice.skids && !c.airborne && (c.y ?? 0) < 0.1 && (drift || v.braking || spin || v.launch > 0)) {
+        wheels.forEach((wheel, i) => {
+          if (v.launch > 0 && !drift && !v.braking && i >= 2) return
+          const prev = v.wheels[i]
+          if (prev) this.fx.skidSegment(prev.x, prev.z, wheel.x, wheel.z, drift ? 0.5 : v.launch > 0 ? 0.62 : 0.38, this.groundAt(wheel.x, wheel.z) + 0.025)
+        })
+      }
+      v.wheels = wheels
+      const ground = wheels.reduce((sum, p) => sum + this.groundAt(p.x, p.z), 0) / wheels.length
+      if (juice.curb) {
+        if (ground !== v.ground && c.speed > 2) v.springV += Math.min(1.6, c.speed * 0.06) * Math.abs(ground - v.ground) / KERB_H
+        // Substep the damped second-order suspension; stable even on a slow render frame.
+        for (let left = dt; left > 0;) {
+          const step = Math.min(left, 1 / 120)
+          v.springV += ((ground - v.height) * 180 - v.springV * 15) * step
+          v.height += v.springV * step
+          left -= step
+        }
+      } else { v.height = 0; v.springV = 0 }
+      v.ground = ground
+      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || juice.skids && v.launch > 0)) {
+        const intensity = drift ? Math.min(1, (c.drift - 3) / 8) : 0.7
         v.smokeAcc += dt * 16 * intensity
         while (v.smokeAcc > 1) {
           v.smokeAcc -= 1
@@ -126,12 +225,28 @@ export class Scene {
           this.fx.smoke(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, c.vx, c.vz, intensity)
         }
       }
-      if (c.boost < v.fuel - 1e-4 && c.speed > 4 && !c.engineOff) {
-        for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5, c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8)
+      if (juice.backfire && ((boosting && !v.boosting) || (input && v.throttle > 0.9 && input.throttle < 0.2 && c.speed > 22))) {
+        v.backfire = 0.07
+        this.fx.backfire(c.x - fx * (spec.length / 2 + 0.3), 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.3), -fx * 7, -fz * 7)
       }
+      v.boosting = boosting
+      v.throttle = input?.throttle ?? 0
+      if (boosting) {
+        v.flameAcc += dt * 30
+        while (v.flameAcc >= 1) {
+          v.flameAcc--
+          for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8)
+        }
+      } else v.flameAcc = 0
       v.fuel = c.boost
+      if (juice.scrape && c.impact > 0.35 && c.speed > 4) {
+        v.scrapeAcc += dt * (12 + Math.min(c.speed, 40))
+        const count = Math.floor(v.scrapeAcc)
+        v.scrapeAcc -= count
+        if (count) this.fx.sparks(c.x + fx * spec.length * 0.4, c.z + fz * spec.length * 0.4, -c.vx, -c.vz, count, 0.18)
+      } else v.scrapeAcc = 0
       // On the rims: sparks trail off the bare wheels.
-      if (c.wheels === 15 && c.speed > 2) {
+      if (!c.airborne && c.wheels === 15 && c.speed > 2) {
         v.sparkAcc += dt * (4 + c.speed * 1.5)
         const along = spec.length * 0.32
         const side = spec.width * 0.4
@@ -143,13 +258,17 @@ export class Scene {
           this.fx.sparks(c.x + fx * a + rx * s, c.z + fz * a + rz * s, -fx, -fz, 2, 0.1)
         }
       }
-      if (c.impact > 5) {
+      if (c.impact > 5 && v.impactCool === 0) {
+        v.impactCool = 0.15
+        if (juice.sparks) v.crash = 0.06
         const sp = Math.hypot(c.vx, c.vz) || 1
         this.fx.sparks(c.x + (c.vx / sp) * spec.length * 0.45, c.z + (c.vz / sp) * spec.length * 0.45, -c.vx / sp, -c.vz / sp, Math.min(24, Math.floor(c.impact)))
-        if (c.id === focusId) this.shake = Math.max(this.shake, Math.min(1, c.impact / 18))
+        if (c.id === focusId && juice.trauma) {
+          this.shake = Math.max(this.shake, Math.min(1, c.impact / 18))
+          if (c.impact > 9) this.hitStop = 0.045
+        }
       }
     }
-    this.fx.update(dt)
   }
 
   draw(view: WorldView, cam: Camera, w: number, h: number, dt: number, focus: CarView | null, opts: { bloom?: number; flash?: number } = {}) {
@@ -181,7 +300,7 @@ export class Scene {
       const dir = normalizeV([heli.sx - ox, -heli.y - 0.4, heli.sz - oz])
       put(ox, heli.y + 0.4, oz, 1)
       const reach = Math.hypot(heli.sx - ox, heli.y, heli.sz - oz)
-      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS / reach)) - 0.003)
+      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS * juice.spotlightRadius / reach)) - 0.003)
     } else {
       put(0, 0, 0, 0)
       put(0, -1, 0, 1)
@@ -189,6 +308,7 @@ export class Scene {
     put(0.035, 0.045, 0.085, 0.0035)
     const clip = vec4.transformMat4([fp[0]!, fp[1]!, fp[2]!, 1], vp)
     put(clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0)
+    put(juice.spotlightSoftness, juice.roadSheen, 0, 0)
 
     // Lights: cars first (they matter most), then the street lamps nearest to the camera focus.
     const L = this.lights
@@ -286,12 +406,14 @@ export class Scene {
 
       const v = this.visOf(c)
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
-      const braking = c.speed > 2 && c.speed < v.speed - 0.05 ? 1 : 0
+      const braking = v.braking ? 1 : 0
+      const altitude = c.y ?? 0
+      if (juice.contactShadow || altitude > 0.1) sprite("a", c.x, v.ground + 0.018, c.z, spec.width * 0.55 / (1 + altitude * 0.06), 0, 0, 0, (juice.contactShadow ? juice.contactOpacity : 0.55) / (1 + altitude * 0.45), 7, c.h, spec.length / spec.width, altitude)
       // Popped tires: the body sags at those corners (roll toward the flat side, nose or tail down) and shimmies a little.
       const wm = c.wheels ?? 0
       let sagRoll = 0
       let sagPitch = 0
-      let sagY = 0
+      let sagY = v.height + altitude + v.landY
       if (wm) {
         const left = (wm & 1) + ((wm >> 2) & 1)
         const right = ((wm >> 1) & 1) + ((wm >> 3) & 1)
@@ -299,35 +421,38 @@ export class Scene {
         const rear = ((wm >> 2) & 1) + ((wm >> 3) & 1)
         sagRoll = -0.06 * (right - left) + 0.012 * Math.sin(t * (6 + c.speed * 0.8) + c.id) * Math.min(1, c.speed / 8)
         sagPitch = 0.025 * (front - rear)
-        sagY = -0.045 * (left + right)
+        sagY -= 0.045 * (left + right)
       }
       if (c.engineOff) {
         // Engine off: exactly like a parked car (same instance params, no lights, glows or silhouette), so it blends in.
         const isFocus = c.id === focus?.id
-        pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll, sagPitch, -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1)
+        pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll, sagPitch + Math.max(-0.2, Math.min(0.2, -(c.vy ?? 0) / Math.max(15, c.speed))), -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1)
         continue
       }
-      pushInst(model, true, c.x, sagY, c.z, c.h, v.roll + sagRoll, v.pitch + sagPitch, siren, braking, tint[0], tint[1], tint[2], 1)
+      const jumpPitch = Math.max(-0.2, Math.min(0.2, -(c.vy ?? 0) / Math.max(15, c.speed)))
+      pushInst(model, true, c.x, sagY, c.z, c.h, v.roll + sagRoll, v.pitch + sagPitch + jumpPitch, siren, braking, tint[0], tint[1], tint[2], 1)
 
       const fx = Math.sin(c.h)
       const fz = Math.cos(c.h)
       const rx = Math.cos(c.h)
       const rz = -Math.sin(c.h)
       const half = spec.length / 2
+      if (juice.sparks && v.crash > 0) light(c.x + fx * half, 0.7 + v.height, c.z + fz * half, 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
+      if (juice.backfire && v.backfire > 0) light(c.x - fx * (half + 0.3), 0.65 + v.height, c.z - fz * (half + 0.3), 4, 0.45, 0.55, 1, 3 * v.backfire / 0.07)
       // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
-      light(c.x + fx * (half + 0.5), 1.3, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
+      light(c.x + fx * (half + 0.5), 1.3 + sagY, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
       const hw = spec.width / 2 - 0.25
       for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
-        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
+        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75 + sagY, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
+        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75 + sagY, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
       }
       // No beam geometry: the spot light lights the road, plus a faint soft pool ahead of the car.
       sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
-      light(c.x - fx * (half + 0.6), 0.9, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
+      light(c.x - fx * (half + 0.6), 0.9 + sagY, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
         const blue = sirenOn(siren, false)
-        const y = spec.id === "swat" ? 2.9 : 1.9
+        const y = (spec.id === "swat" ? 2.9 : 1.9) + sagY
         // Siren light sits low and to the sides so it paints the road and walls, not the car's own livery.
         light(c.x - rx * 2.2, y - 1.2, c.z - rz * 2.2, 14, 1, 0.08, 0.08, 3 * red)
         light(c.x + rx * 2.2, y - 1.2, c.z + rz * 2.2, 14, 0.15, 0.3, 1, 3.6 * blue)
@@ -377,8 +502,8 @@ export class Scene {
       )
       const sx = heli.x + Math.sin(heli.h) * 1.7
       const sz = heli.z + Math.cos(heli.h) * 1.7
-      cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS, [0.75, 0.85, 1], 0.32)
-      sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * 1.3, 0.85, 0.92, 1, 0.1, 3)
+      cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS * juice.spotlightRadius, [0.75, 0.85, 1], 0.32)
+      sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * juice.spotlightRadius * 1.3, 0.85, 0.92, 1, 0.1, 3)
       sprite("d", heli.x, heli.y - 0.5, heli.z, 1.6, 1, 1, 1, 2.5, 0)
       if (Math.floor(t * 1.5) % 2 === 0) sprite("d", heli.x, heli.y + 1.6, heli.z, 1.2, 1, 0.1, 0.1, 2, 0)
     }
@@ -419,6 +544,7 @@ export class Scene {
       if (d < 120 * 120) light(l.x, l.y, l.z, l.small ? 10 : 17, 1, 0.58, 0.26, l.small ? 3 : 5)
     }
     f[32 + 8 + 2] = n
+    this.lightCount = n
 
     const puffs = this.fx.puffInstances()
     for (let i = 0; i < puffs.length; i += INST_FLOATS) {

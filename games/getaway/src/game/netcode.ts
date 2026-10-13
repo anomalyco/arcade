@@ -3,7 +3,7 @@ import type { ClientMsg, ServerMsg } from "../../shared/protocol"
 import { quantizeInput } from "../../shared/protocol"
 import type { Box, City } from "../../shared/sim/city"
 import { propBox } from "../../shared/sim/gadgets"
-import { type Body, type Input, collideBoxes, collideCars, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "../../shared/sim/vehicle"
+import { type Body, type Input, collideBoxes, collideCars, lateralSpeed, newBody, speedOf, stepAndCollide, stepHeight, toggleEngine } from "../../shared/sim/vehicle"
 import type { CarView, Phase, SimEvent, WorldView } from "../../shared/sim/world"
 import { lerpView } from "./interp"
 
@@ -27,7 +27,7 @@ const HIT_HOLD = 0.5
 
 type Snap = { tick: number; view: WorldView }
 type Pending = { seq: number; input: Input }
-type Pose = { x: number; z: number; h: number }
+type Pose = { x: number; z: number; h: number; y?: number }
 
 /**
  * Another car as a collision obstacle for prediction: rebuilt from each snapshot and extrapolated tick by tick in step
@@ -44,6 +44,7 @@ function ease(e: Pose, dt: number) {
   e.x *= k
   e.z *= k
   e.h *= k
+  e.y = (e.y ?? 0) * k
 }
 
 /**
@@ -144,8 +145,8 @@ export class NetClient {
     for (const c of view.cars) {
       const s = VEHICLE_BY_ID.get(c.vehicle)
       if (c.id === car.id || c.ghost || c.ownerId === this.myId || !s) continue
-      const body: Body = { ...newBody(c.x, c.z, c.h), vx: c.vx, vz: c.vz, yaw: c.yaw ?? 0 }
-      this.proxies.push({ id: c.id, role: c.role, spec: s, body, prev: { x: c.x, z: c.z, h: c.h }, age: 0, impact: 0 })
+      const body: Body = { ...newBody(c.x, c.z, c.h), y: c.y ?? 0, vy: c.vy ?? 0, airborne: c.airborne ?? false, vx: c.vx, vz: c.vz, yaw: c.yaw ?? 0 }
+      this.proxies.push({ id: c.id, role: c.role, spec: s, body, prev: { x: c.x, z: c.z, h: c.h, y: c.y ?? 0 }, age: 0, impact: 0 })
     }
     this.proxies.sort((a, b) => a.id - b.id)
     this.replaying = true
@@ -157,7 +158,7 @@ export class NetClient {
         const was = beforeProxies.get(p.id)
         if (!was) continue
         const now = this.proxyVisual(p, false)
-        const e = { x: was.x - now.x, z: was.z - now.z, h: wrap(was.h - now.h) }
+        const e = { x: was.x - now.x, z: was.z - now.z, h: wrap(was.h - now.h), y: (was.y ?? 0) - (now.y ?? 0) }
         if (Math.hypot(e.x, e.z) < SNAP_DIST) errs.set(p.id, e)
       }
     this.proxyErr = errs
@@ -169,7 +170,7 @@ export class NetClient {
     const ex = before.x - after.x
     const ez = before.z - after.z
     if (Math.hypot(ex, ez) > SNAP_DIST) this.err = { x: 0, z: 0, h: 0 }
-    else this.err = { x: ex, z: ez, h: wrap(before.h - after.h) }
+    else this.err = { x: ex, z: ez, h: wrap(before.h - after.h), y: before.y - after.y }
   }
 
   /** One predicted tick, following World.step: phase clock first, then drive or hold still. Waiting never advances on its own. */
@@ -196,7 +197,7 @@ export class NetClient {
       return
     }
     if (press) toggleEngine(b)
-    let impact = stepAndCollide(b, input, this.vehicle, DT, this.boxes)
+    let impact = stepAndCollide(b, input, this.vehicle, DT, this.boxes, undefined, this.city.ramps)
     // Same order as World.stepCars: cars pair up by id, then anything shoved gets settled against the city.
     let touched = false
     for (const p of this.proxies) {
@@ -224,7 +225,7 @@ export class NetClient {
   /** One tick of a proxy: it keeps its speed and yaw rate (its velocity turning with it) while it is moving this phase. */
   private coast(p: Proxy) {
     const k = p.body
-    p.prev = { x: k.x, z: k.z, h: k.h }
+    p.prev = { x: k.x, z: k.z, h: k.h, y: k.y }
     if (!this.moves(p.role) || ++p.age > PROXY_TICKS) {
       k.vx = k.vz = k.yaw = 0
       return
@@ -238,6 +239,7 @@ export class NetClient {
     k.h += dh
     k.x += k.vx * DT
     k.z += k.vz * DT
+    stepHeight(k, this.city.ramps, DT)
   }
 
   /** A proxy's pose blended between its last two ticks like your car, plus its decaying correction. */
@@ -246,6 +248,7 @@ export class NetClient {
     const e = withErr ? this.proxyErr.get(p.id) : undefined
     return {
       x: p.prev.x + (p.body.x - p.prev.x) * t + (e?.x ?? 0),
+      y: (p.prev.y ?? 0) + (p.body.y - (p.prev.y ?? 0)) * t + (e?.y ?? 0),
       z: p.prev.z + (p.body.z - p.prev.z) * t + (e?.z ?? 0),
       h: p.prev.h + wrap(p.body.h - p.prev.h) * t + (e?.h ?? 0),
     }
@@ -258,6 +261,7 @@ export class NetClient {
     const t = this.acc / DT
     return {
       x: a.x + (b.x - a.x) * t + this.err.x,
+      y: a.y + (b.y - a.y) * t + (this.err.y ?? 0),
       z: a.z + (b.z - a.z) * t + this.err.z,
       h: a.h + wrap(b.h - a.h) * t + this.err.h,
     }
@@ -307,6 +311,7 @@ export class NetClient {
     const p = this.visual()
     const impact = Math.max(this.impactNow, this.impactPrev)
     const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, wheels: b.wheels ?? 0, ghost: false, impact }
+    Object.assign(mine, { y: Math.max(0, p.y), vy: b.vy, airborne: b.airborne, landing: b.landing, landings: b.landings, braking: b.braking, boosting: b.boosting })
     mine.engineOff = !!b.engineOff
     const proxies = new Map(this.proxies.map((q) => [q.id, q]))
     const cars = view.cars.filter((c) => c.ownerId !== this.myId || c.id === this.carId).map((c) => (c.id === this.carId ? mine : this.near(c, p, proxies.get(c.id))))
@@ -326,6 +331,7 @@ export class NetClient {
     const w = Math.max(0, Math.min(1, (FAR - Math.hypot(q.x - me.x, q.z - me.z)) / (FAR - NEAR)))
     if (w <= 0 && !held) return c
     const out = { ...c, x: c.x + (q.x - c.x) * w, z: c.z + (q.z - c.z) * w, h: c.h + wrap(q.h - c.h) * w }
+    out.y = Math.max(0, (c.y ?? 0) + ((q.y ?? 0) - (c.y ?? 0)) * w)
     if (held) out.impact = this.clock - hit.at < 2 * DT ? hit.impact : 0
     return out
   }

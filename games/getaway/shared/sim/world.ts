@@ -103,9 +103,17 @@ export type Car = {
 }
 
 /** `to`: deliver only to this player (owner id); everyone gets the rest. */
-export type SimEvent = { t: number; kind: string; text: string; carId?: number; to?: string }
+export type SimEvent = { t: number; kind: string; text: string; carId?: number; to?: string; impact?: number }
 
 export type CarView = {
+  /** Optional for older snapshots; current worlds always supply vertical/control state. */
+  y?: number
+  vy?: number
+  airborne?: boolean
+  landing?: number
+  landings?: number
+  braking?: boolean
+  boosting?: boolean
   id: number
   ownerId: string
   name: string
@@ -565,7 +573,8 @@ export class World {
       c.pendingGadget = null
       if (slot !== null) this.useGadget(c, slot)
       prev.set(c.id, { x: c.body.x, z: c.body.z, h: c.body.h })
-      c.impact = stepAndCollide(c.body, input, c.vehicle, dt, boxes, wall)
+      c.impact = stepAndCollide(c.body, input, c.vehicle, dt, boxes, wall, this.city.ramps)
+      if (c.body.landing > 0) this.events.push({ t: this.t, kind: "landing", text: "", carId: c.id, impact: c.body.landing, to: c.role === "robber" && !this.seen ? c.ownerId : undefined })
       if (c.impact >= IMPACT_EVENT) this.impactEvent(c, wall)
     }
     // Every car is solid; one that isn't moving this phase (frozen at the precinct) is an immovable obstacle.
@@ -984,6 +993,7 @@ export class World {
         return {
           id: c.id, ownerId: c.ownerId, name: c.name, role: c.role, vehicle: c.vehicle.id,
           x: b.x, z: b.z, h: b.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b),
+          y: b.y, vy: b.vy, airborne: b.airborne, landing: b.landing, landings: b.landings, braking: b.braking, boosting: b.boosting,
           stun: b.stun, boost: b.boostFuel, human: c.human, impact: c.impact, ghost: false,
           gadgets: undefined, yaw: b.yaw, slide: b.drift ?? 0, slip: b.slip ?? 0, wheels: b.wheels ?? 0,
           engineOff: !!b.engineOff, radar: c.role === "robber" ? true : undefined,
@@ -1006,7 +1016,7 @@ export class World {
       const hidden = c.role === "robber" && !showRobber && !ownSight
       if (hidden && !this.lastSeen) continue
       let view = base.cars[index]!
-      if (hidden) view = { ...view, x: this.lastSeen!.x, z: this.lastSeen!.z, h: this.lastSeenH, vx: 0, vz: 0, speed: 0, drift: 0, stun: 0, boost: 0, impact: 0, ghost: true, yaw: 0, slide: 0, slip: 0, wheels: 0, engineOff: false, radar: false }
+      if (hidden) view = { ...view, x: this.lastSeen!.x, z: this.lastSeen!.z, h: this.lastSeenH, y: 0, vy: 0, airborne: false, landing: 0, landings: 0, braking: false, boosting: false, vx: 0, vz: 0, speed: 0, drift: 0, stun: 0, boost: 0, impact: 0, ghost: true, yaw: 0, slide: 0, slip: 0, wheels: 0, engineOff: false, radar: false }
       else if (ownSight) view = { ...view, radar: false }
       if (viewerId === undefined || viewerId === c.ownerId) view = { ...view, gadgets: c.gadgets.map((g, i) => ({ ...g, ready: this.gadgetReady(c, i as 0 | 1) })) }
       cars.push(view)
@@ -1072,4 +1082,3 @@ export class World {
 /** Hits at least this hard (m/s at the contact) raise an "impact" event, at most once per IMPACT_COOLDOWN seconds per car. */
 export const IMPACT_EVENT = 6
 const IMPACT_COOLDOWN = 0.3
-

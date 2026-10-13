@@ -1,4 +1,5 @@
 import { SPRITE_FLOATS } from "../render/renderer"
+import { juice } from "../ui/debug-overlay"
 
 type Particle = {
   x: number
@@ -25,14 +26,14 @@ type Particle = {
 
 /** Pooled particles split into alpha-blended (smoke, skids) and additive (sparks, flames) lists. */
 export class Fx {
-  /** Smoke puffs render as instanced low-poly blobs, not sprites. */
+  /** Reserved for solid debris; tire smoke uses the soft lit sprite path. */
   puffs: Particle[] = []
   alpha: Particle[] = []
   add: Particle[] = []
   skids: Particle[] = []
 
   smoke(x: number, z: number, vx: number, vz: number, intensity: number) {
-    this.puffs.push({
+    this.alpha.push({
       x: x + (Math.random() - 0.5) * 0.6,
       y: 0.5,
       z: z + (Math.random() - 0.5) * 0.6,
@@ -46,7 +47,7 @@ export class Fx {
       r: 0.62,
       g: 0.63,
       b: 0.68,
-      a: 0.32 * intensity,
+      a: 0.42 * intensity,
       kind: 1,
       rot: Math.random() * Math.PI * 2,
       stretch: 1,
@@ -59,6 +60,18 @@ export class Fx {
   skid(x: number, z: number, h: number, alpha: number) {
     this.skids.push({ x, y: 0.03, z, vx: 0, vy: 0, vz: 0, life: 0, max: 9, size: 0.18, grow: 0, r: 0.02, g: 0.02, b: 0.025, a: alpha, kind: 4, rot: h + Math.PI / 2, stretch: 5, seed: 0, gravity: 0, drag: 0 })
     if (this.skids.length > 1600) this.skids.splice(0, this.skids.length - 1600)
+  }
+
+  skidSegment(ax: number, az: number, bx: number, bz: number, alpha: number, y = 0.03) {
+    const length = Math.hypot(bx - ax, bz - az)
+    // Teleports and resets must not leave a streak across town.
+    if (length < 0.015 || length > 8) return
+    this.skids.push({ x: (ax + bx) / 2, y, z: (az + bz) / 2, vx: 0, vy: 0, vz: 0, life: 0, max: 9, size: 0.16, grow: 0, r: 0.02, g: 0.02, b: 0.025, a: alpha, kind: 4, rot: Math.atan2(bx - ax, bz - az), stretch: (length / 2 + 0.025) / 0.16, seed: 0, gravity: 0, drag: 0 })
+    if (this.skids.length > 1600) this.skids.splice(0, this.skids.length - 1600)
+  }
+
+  backfire(x: number, y: number, z: number, vx: number, vz: number) {
+    for (const blue of [false, true]) this.add.push({ x, y, z, vx, vy: 0, vz, life: 0, max: 0.07, size: blue ? 0.25 : 0.5, grow: -2, r: blue ? 0.2 : 1, g: blue ? 0.55 : 0.5, b: blue ? 1 : 0.08, a: 2.8, kind: 0, rot: 0, stretch: 1, seed: 0, gravity: 0, drag: 2 })
   }
 
   /** A burst of sparks flying out along (nx, nz); `y` is how high they start (a bare rim on the road: low). */
@@ -106,8 +119,16 @@ export class Fx {
         p.vz *= d
         p.vy = p.vy * d - p.gravity * dt
         p.x += p.vx * dt
-        p.y = Math.max(0.05, p.y + p.vy * dt)
+        p.y += p.vy * dt
+        if (p.gravity && p.y < 0.05) {
+          p.y = 0.05
+          p.vy = juice.sparks && p.kind === 6 ? -p.vy * 0.48 : 0
+        }
         p.z += p.vz * dt
+        if (p.kind === 6) {
+          p.rot = juice.sparks ? Math.atan2(p.vz, p.vx) : 0
+          p.stretch = juice.sparks ? 1 + Math.min(7, Math.hypot(p.vx, p.vz) * 0.28) : 1
+        }
         p.size = Math.max(0.02, p.size + p.grow * dt)
         list[w++] = p
       }
@@ -159,6 +180,16 @@ export class Fx {
     for (const p of this.add) {
       if (di >= max) break
       Fx.write(addOut, di++, p, 1 - p.life / p.max)
+      // Kind 6 uses the existing glow shader. A short velocity-aligned ribbon of overlapping
+      // instances makes its stretch visible without changing the renderer's sprite contract.
+      if (juice.sparks && p.kind === 6) {
+        const speed = Math.hypot(p.vx, p.vz) || 1
+        const length = p.size * (p.stretch - 1)
+        for (let j = 1; j <= 4 && di < max; j++) {
+          const t = j / 4
+          Fx.write(addOut, di++, { ...p, x: p.x - p.vx / speed * length * t, z: p.z - p.vz / speed * length * t, size: p.size * (1 - t * 0.6) }, (1 - p.life / p.max) * (1 - t * 0.75))
+        }
+      }
     }
     return { alpha: ai, add: di }
   }

@@ -14,6 +14,9 @@ import { Renderer } from "./render/renderer"
 import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
+import { DebugOverlay, juice } from "./ui/debug-overlay"
+import { GpuPerf } from "../../../packages/kit/gpu-perf"
+import type { WorldView } from "../shared/sim/world"
 
 /** A message for the next lobby (an idle kick reloads the page back to it). */
 const NOTICE_KEY = "getaway.notice"
@@ -44,7 +47,8 @@ async function main() {
   if (!navigator.gpu) return fail("Getaway needs WebGPU. Use a recent Chrome, Edge or Safari, over https or localhost.")
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
   if (!adapter) return fail("No WebGPU adapter is available on this device.")
-  const device = await adapter.requestDevice()
+  const device = await adapter.requestDevice({ requiredFeatures: adapter.features.has("timestamp-query") ? ["timestamp-query"] : [] })
+  const telemetry = new GpuPerf(device)
   const context = canvas.getContext("webgpu")!
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
@@ -52,7 +56,7 @@ async function main() {
   const atlasReady = paintAtlas().then((img) => renderer.setAtlas(img))
 
   const q = new URLSearchParams(location.search)
-  const staged = (import.meta.env.DEV && q.has("stage")) || q.has("solo")
+  const staged = (import.meta.env.DEV && q.has("stage")) || q.has("solo") || q.get("peaceful") === "1" || q.has("mux")
   const benchMode = q.has("bench")
   let session: Session | null = null
   let choice: Awaited<ReturnType<typeof lobby>> = { mode: "solo", room: null, name: "Dax", picks: { robber: "muscle", cop: "cruiser" } }
@@ -76,8 +80,62 @@ async function main() {
   const radio = new Radio()
   let cam = new Camera()
   const controls = new Controls()
+  const mux = controls.mux
+  const debug = new DebugOverlay(q, () => {
+    controls.release()
+    controls.forward({ type: "mux-release" })
+  })
   const chat = activeSession.chat ? new Chat(document.getElementById("hud")!, controls, activeSession) : null
   let snapped = false
+  let freeze = 0
+  let previousFuel = 1
+  let boostingUntil = 0
+  let muxTick = 0
+  let muxView: WorldView | null = null
+  const cameraKeys = ["fx", "fz", "dist", "fov", "lx", "lz", "t", "shake", "landing"] as const
+  const cameraState = () => Object.fromEntries(cameraKeys.map((key) => [key, (cam as unknown as Record<string, number>)[key] ?? 0]))
+  const ready = () => {
+    if (!(activeSession instanceof LocalSession)) return
+    muxView = activeSession.update(0, controls.read(0))
+    const mine = muxView.cars.find((c) => c.ownerId === activeSession.myId)!
+    cam.snap(mine.x, mine.z)
+    snapped = true
+    controls.forward({ type: "mux-ready", protocol: 1, map: activeSession.city.seed, mode: "peaceful", x: mine.x, y: mine.z, vx: mine.vx, vy: mine.vz, h: mine.h })
+  }
+  if (mux) addEventListener("message", (event) => {
+    if (!controls.accepts(event)) return
+    const message = event.data
+    if (message.type === "mux-key" && (message.kind === "keydown" || message.kind === "keyup") && typeof message.code === "string" && typeof message.key === "string") {
+      if (message.code === "Backquote") {
+        if (message.kind === "keydown" && !controls.pressed("Backquote")) debug.toggle()
+      }
+      controls.key(message.kind, message.code, message.key)
+    } else if (message.type === "mux-mouse" && Number.isFinite(message.nx) && Number.isFinite(message.ny)) controls.pointer(message)
+    else if (message.type === "mux-release") controls.release()
+    else if (message.type === "mux-reset") location.reload()
+    else if (message.type === "mux-hello") ready()
+    else if ((message.type === "mux-step" || message.type === "mux-sync") && Number.isFinite(message.dt) && Number.isInteger(message.tick) && message.tick === muxTick + 1 && activeSession instanceof LocalSession) {
+      const dt = Math.max(0, Math.min(0.1, message.dt))
+      if (message.type === "mux-step") {
+        muxView = activeSession.update(dt, controls.read(dt))
+        const mine = muxView.cars.find((c) => c.ownerId === activeSession.myId)!
+        cam.update(mine.x, mine.z, mine.vx, mine.vz, dt)
+      } else {
+        if (!message.view || !Number.isFinite(message.view.t) || !Array.isArray(message.view.cars) || !cameraKeys.every((key) => Number.isFinite(message.camera?.[key]))) return
+        muxView = message.view as WorldView
+        activeSession.syncView(muxView)
+        Object.assign(cam, message.camera)
+      }
+      muxTick = message.tick
+      const mine = muxView!.cars.find((c) => c.ownerId === activeSession.myId)!
+      controls.forward({ type: message.type === "mux-step" ? "mux-state" : "mux-done", tick: muxTick, view: muxView, camera: cameraState(), x: mine.x, y: mine.z, vx: mine.vx, vy: mine.vz, h: mine.h })
+    }
+    else if (message.type === "mux-sync" && activeSession instanceof LocalSession) {
+      const { x, vx, h } = message
+      const z = message.z ?? message.y, vz = message.vz ?? message.vy, yaw = message.yaw ?? 0, speed = message.speed ?? Math.hypot(vx, vz)
+      if ([x, z, vx, vz, h, yaw, speed].every((v) => typeof v === "number" && Number.isFinite(v))) activeSession.syncCar({ x, z, vx, vz, h, yaw, speed })
+    }
+  })
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio, 2)
@@ -87,6 +145,7 @@ async function main() {
   }
   resize()
   addEventListener("resize", resize)
+  if (mux) ready()
 
   let rafActive = !benchMode
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
@@ -140,12 +199,14 @@ async function main() {
           cam.snap(focus.x, focus.z)
           snapped = true
         }
-        cam.update(focus.x, focus.z, focus.vx, focus.vz, dt)
+        cam.update(focus.x, focus.z, focus.vx, focus.vz, dt, 0, input.boost && focus.boost > 0 && focus.speed > 4)
       }
       if (scene.shake > 0) {
         cam.bump(scene.shake)
         scene.shake = 0
       }
+      scene.input = input
+      if (scene.punch > 0) { cam.land(scene.punch); scene.punch = 0 }
       scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
       const events = activeSession.drainEvents()
       hud.update(view, {
@@ -180,25 +241,44 @@ async function main() {
       location.replace(location.pathname)
       return
     }
-    const dt = Math.min(0.1, (now - last) / 1000)
+    const frameMs = now - last
+    const dt = Math.min(0.1, frameMs / 1000)
     last = now
-    const input = controls.read(dt)
-    const view = activeSession.update(dt, input)
+    const input = controls.read(mux ? 0 : dt)
+    const view = mux && muxView ? muxView : activeSession.update(dt, input)
     const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
     const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
     const focus = (view.phase === "intro" ? robber : mine) ?? robber ?? view.cars[0] ?? null
-    if (focus) {
+    if (focus && focus.boost < previousFuel - 1e-4) boostingUntil = now + 80
+    previousFuel = focus?.boost ?? 1
+    freeze = juice.trauma ? Math.max(freeze, scene.hitStop) : 0
+    scene.hitStop = 0
+    const held = freeze > 0
+    freeze = Math.max(0, freeze - dt)
+    if (focus && !held && !mux) {
       if (!snapped) {
         cam.snap(focus.x, focus.z)
         snapped = true
       }
-      cam.update(focus.x, focus.z, focus.vx, focus.vz, dt)
+      cam.update(focus.x, focus.z, focus.vx, focus.vz, dt, 0, now < boostingUntil)
     }
-    if (scene.shake > 0) {
+    if (scene.shake > 0 && !mux) {
       cam.bump(scene.shake)
       scene.shake = 0
     }
-    scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
+    scene.input = input
+    if (mux) {
+      cam.present(dt, now < boostingUntil, scene.shake, scene.punch)
+      scene.shake = scene.punch = 0
+    }
+    if (scene.punch > 0 && !mux) { cam.land(scene.punch); scene.punch = 0 }
+    if (!held) scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
+    telemetry.enabled = debug.visible || mux
+    const report = debug.update(now, frameMs, { gpuMs: telemetry.gpuMs, gpuKind: telemetry.gpuKind, draws: telemetry.draws, verts: telemetry.verts, chunks: renderer.stats.chunksDrawn, lights: scene.lightCount })
+    if (parent !== window) {
+      const pose = mine ? { x: mine.x, z: mine.z, vx: mine.vx, vz: mine.vz, h: mine.h, yaw: mine.yaw ?? 0, speed: mine.speed } : {}
+      if (report) parent.postMessage({ type: "arcade-perf", ...debug.sample, ...pose, y: mine?.z, tick: muxTick, run: controls.muxRun }, controls.parentOrigin)
+    }
     const events = activeSession.drainEvents()
     hud.update(view, { myId: activeSession.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: activeSession.players(), room: activeSession.room, status: activeSession.status(), idleIn: activeSession.idleIn?.() })
     chat?.update()

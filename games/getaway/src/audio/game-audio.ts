@@ -2,6 +2,7 @@ import { flatCount, type Input } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
 import { audio, type AudioEngine, type SfxName } from "./audio"
+import { juice } from "../ui/debug-overlay"
 
 export type AudioContextInfo = {
   myId: string
@@ -857,6 +858,9 @@ export class GameAudio {
       const pan = sp?.pan ?? 0
       const wet = sp ? sp.wet : 0.1
       switch (e.kind) {
+        case "landing":
+          if (juice.landing && c && !c.ghost) a.play("crash_thump_1", { gain: Math.min(0.85, (e.impact ?? 0) / 15) * g, pan, wet, rate: 0.85, cutoff: 1800 })
+          break
         case "go":
           this.roundSting()
           break

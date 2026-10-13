@@ -13,6 +13,7 @@ struct Frame {
   spotDir: vec4f,      // xyz direction, w cos(cone)
   fog: vec4f,          // rgb fog color, w density
   focusClip: vec4f,    // focus position in NDC (xy), depth (z)
+  effects: vec4f,      // spotlight softness multiplier, road specular strength
 }
 
 struct Light {
@@ -105,7 +106,7 @@ fn shade(albedo: vec3f, world: vec3f, n: vec3f, specStrength: f32, diffScale: f3
     let d = world - F.spotPos.xyz;
     let dist = length(d);
     let cd = dot(d / dist, normalize(F.spotDir.xyz));
-    let cone = smoothstep(F.spotDir.w, F.spotDir.w + 0.0025, cd);
+    let cone = smoothstep(F.spotDir.w, F.spotDir.w + 0.0025 * F.effects.x, cd);
     let ndl2 = max(dot(n, -d / dist), 0.0) * 0.8 + 0.2;
     diff += albedo * vec3f(0.92, 0.96, 1.0) * (3.2 * cone * ndl2);
   }
@@ -288,7 +289,7 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
   } else {
     if (mat == 0 && cutHere) { discard; }
     let isRoad = n.y > 0.9 && o.world.y < 0.3;
-    let specStr = select(0.0, 0.55, isRoad);
+    let specStr = select(0.0, F.effects.y, isRoad);
     col = shade(o.color, o.world, n, specStr, wallShade(o.world, n));
   }
   return vec4f(applyFog(col, o.world), 1.0);
@@ -400,6 +401,21 @@ struct SOut {
   o.pos = F.viewProj * vec4f(world, 1.0);
   o.uv = c;
   o.color = s.color;
+  if (kind == 1.0) {
+    // Per-vertex smoke lighting: soft volume, no moon shadow-map sampling or casting.
+    var illumination = vec3f(0.24, 0.29, 0.42);
+    for (var i = 0u; i < min(u32(F.screen.z), 48u); i++) {
+      let li = lights[i];
+      let delta = s.posSize.xyz - li.pos.xyz;
+      let d2 = dot(delta, delta);
+      if (d2 >= li.pos.w * li.pos.w) { continue; }
+      let distance = sqrt(max(d2, 0.001));
+      var attenuation = pow(1.0 - distance / li.pos.w, 2.0);
+      if (li.dir.w > -1.0) { attenuation *= smoothstep(li.dir.w, min(1.0, li.dir.w + 0.08), dot(delta / distance, normalize(li.dir.xyz))); }
+      illumination += li.color.rgb * li.color.w * attenuation * 0.3;
+    }
+    o.color = vec4f(s.color.rgb * min(illumination, vec3f(2.0)), s.color.a);
+  }
   o.kind = kind;
   o.extra = s.misc.w;
   return o;
@@ -412,8 +428,8 @@ struct SOut {
   if (k == 0.0 || k == 6.0) {
     a = pow(max(0.0, 1.0 - r), 2.2);
   } else if (k == 1.0) {
-    let n = hash2(floor(o.uv * 3.0 + o.extra * 10.0)) * 0.25;
-    a = smoothstep(1.0, 0.45 - n, r);
+    let billow = 0.88 + 0.12 * sin(o.uv.x * 5.0 + o.extra * 17.0) * sin(o.uv.y * 4.0 - o.extra * 11.0);
+    a = pow(max(0.0, 1.0 - r * r), 2.0) * billow;
   } else if (k == 2.0) {
     a = smoothstep(0.08, 0.0, abs(r - 0.88)) + 0.12 * smoothstep(0.9, 0.0, r);
   } else if (k == 3.0) {
@@ -426,7 +442,8 @@ struct SOut {
   } else if (k == 7.0) {
     let q = abs(o.uv) - vec2f(0.58, 0.68);
     let d = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - 0.18;
-    a = 1.0 - smoothstep(-0.22, 0.14, d);
+    let softness = min(0.35, o.extra * 0.05);
+    a = 1.0 - smoothstep(-0.22 - softness, 0.14 + softness, d);
   }
   if (a <= 0.002) { discard; }
   return vec4f(o.color.rgb * a * o.color.a, a * o.color.a);

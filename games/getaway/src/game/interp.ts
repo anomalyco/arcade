@@ -12,7 +12,7 @@ export function lerpView(a: WorldView, b: WorldView, t: number): WorldView {
   const cars: CarView[] = b.cars.map((c) => {
     const p = prev.get(c.id)
     if (!p || p.ghost !== c.ghost || Math.hypot(p.x - c.x, p.z - c.z) > 25) return c
-    return { ...c, x: p.x + (c.x - p.x) * t, z: p.z + (c.z - p.z) * t, h: lerpAngle(p.h, c.h, t), vx: p.vx + (c.vx - p.vx) * t, vz: p.vz + (c.vz - p.vz) * t }
+    return { ...c, y: (p.y ?? 0) + ((c.y ?? 0) - (p.y ?? 0)) * t, vy: (p.vy ?? 0) + ((c.vy ?? 0) - (p.vy ?? 0)) * t, x: p.x + (c.x - p.x) * t, z: p.z + (c.z - p.z) * t, h: lerpAngle(p.h, c.h, t), vx: p.vx + (c.vx - p.vx) * t, vz: p.vz + (c.vz - p.vz) * t }
   })
   const h = b.heli
   const ph = a.heli

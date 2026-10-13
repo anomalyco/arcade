@@ -10,6 +10,7 @@ import { parks } from "./city/parks"
 import { cornerBeds, streetFurniture, trees, yards } from "./city/props"
 import { shop } from "./city/shop"
 import { streets } from "./city/streets"
+import { ramps } from "./city/ramps"
 import type { LampLight } from "./city/types"
 
 export type { LampLight }
@@ -132,6 +133,7 @@ export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[] } {
   const lamps: LampLight[] = []
 
   streets(m, city, rng)
+  ramps(m, city.ramps)
   yards(m, city)
   parks(m, city, rng, lamps)
 

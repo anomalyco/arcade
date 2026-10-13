@@ -38,6 +38,19 @@ export type Tree = { x: number; z: number; s: number; planter?: boolean }
 /** Open lots inside blocks: parking lots, small paved courtyards, the container yard. */
 export type Yard = { x0: number; x1: number; z0: number; z1: number; kind: "lot" | "court" | "containers" }
 
+/** Driveable profile: local z runs from the low approach to the short run-out. */
+export type Ramp = { x: number; z: number; h: number; width: number; length: number; height: number; peak: number; kind: "plate" | "loading" | "crest" }
+
+export function rampSurface(r: Ramp, x: number, z: number) {
+  const dx = x - r.x, dz = z - r.z
+  const along = dx * Math.sin(r.h) + dz * Math.cos(r.h) + r.length / 2
+  const across = dx * Math.cos(r.h) - dz * Math.sin(r.h)
+  if (Math.abs(across) > r.width / 2 || along < 0 || along > r.length) return null
+  const crest = r.length * r.peak
+  const slope = along < crest ? r.height / crest : -r.height / (r.length - crest)
+  return { y: along < crest ? along * slope : (along - r.length) * slope, slope }
+}
+
 export type City = {
   seed: number
   boxes: Box[]
@@ -59,6 +72,7 @@ export type City = {
   /** Sidewalk width between the curb and the building line. */
   sidewalk: number
   shops: Shop[]
+  ramps: Ramp[]
 }
 
 export const NODE_COUNT = (GRID + 1) * (GRID + 1)
@@ -383,7 +397,32 @@ export function generateCity(seed: number): City {
     yards,
     sidewalk: SIDEWALK,
     shops,
+    ramps: placeRamps(seed, alleys, boxes),
   }
+}
+
+/** Separate random stream preserves every existing building, tree and lamp. Mid-block only. */
+function placeRamps(seed: number, alleys: Alley[], boxes: Box[]): Ramp[] {
+  const rng = mulberry32(seed ^ 0x72a4b9)
+  const ramps: Ramp[] = []
+  for (let i = 0; i < 8; i++) {
+    const axis = i % 2 === 0
+    const road = (1 + Math.floor(rng() * (GRID - 1))) * CELL
+    const mid = (Math.floor(rng() * GRID) + 0.5) * CELL
+    const x = axis ? road : mid, z = axis ? mid : road
+    if (ramps.some(r => Math.hypot(r.x - x, r.z - z) < 35)) continue
+    const crest = i % 3 === 0
+    ramps.push({ x, z, h: axis ? 0 : Math.PI / 2, width: 5.5, length: crest ? 16 : 12, height: crest ? 1.3 : 1.8, peak: crest ? 0.5 : 0.72, kind: crest ? "crest" : "plate" })
+  }
+  for (let i = 0; i < 3 && alleys.length; i++) {
+    const a = alleys[Math.floor(rng() * alleys.length)]!
+    const x = (a.x0 + a.x1) / 2, z = (a.z0 + a.z1) / 2
+    if (ramps.some(r => Math.hypot(r.x - x, r.z - z) < 35)) continue
+    ramps.push({ x, z, h: a.z1 - a.z0 > a.x1 - a.x0 ? 0 : Math.PI / 2, width: 4, length: 10, height: 1.2, peak: 0.7, kind: "loading" })
+  }
+  // Harbor road, away from the water boundary and container rows.
+  ramps.push({ x: CELL * 6.5, z: CELL * GRID, h: Math.PI / 2, width: 5, length: 14, height: 1.7, peak: 0.7, kind: "loading" })
+  return ramps.filter(r => !boxes.some(b => r.x > b.x0 - 3 && r.x < b.x1 + 3 && r.z > b.z0 - 3 && r.z < b.z1 + 3))
 }
 
 const SHOP_NAMES = ["Lou's Auto Repair", "Quick Fix Tires", "Mel's Garage", "Eastside Auto"]

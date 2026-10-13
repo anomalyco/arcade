@@ -3,29 +3,77 @@ import type { Input } from "../../shared/sim/vehicle"
 /** Keyboard and gamepad driving controls. Steering is relative to the car, so A always turns the car to its left. */
 export class Controls {
   private keys = new Set<string>()
+  /** The character each held key produced when it went down. */
+  private chars = new Map<string, string>()
   private dvorak = false
   private steer = 0
+  readonly mux = new URLSearchParams(location.search).has("mux") && parent !== window
+  readonly muxRun = new URLSearchParams(location.search).get("muxRun") ?? ""
+  readonly parentOrigin = document.referrer ? new URL(document.referrer).origin : location.origin
   /** While true (chat open) the car gets neutral input. */
   paused = false
+  mouse = { nx: 0.5, ny: 0.5, buttons: 0 }
 
   constructor() {
+    const mux = this.mux
     addEventListener("keydown", (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.code === "Escape") return
-      const lower = e.key.toLowerCase()
-      if (lower === "," || lower === "<" || lower === "o" || lower === "'" || lower === '"' || (e.code === "KeyD" && lower === "e")) {
-        this.dvorak = true
-      } else if (lower === "w" || lower === "s") {
-        this.dvorak = false
+      if (mux) {
+        if (!e.repeat) this.forward({ type: "mux-key", kind: "keydown", code: e.code, key: e.key })
+        e.preventDefault()
+        return
       }
-      this.keys.add(e.code)
-      this.keys.add(lower)
+      this.key("keydown", e.code, e.key)
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
     })
     addEventListener("keyup", (e) => {
-      this.keys.delete(e.code)
-      this.keys.delete(e.key.toLowerCase())
+      if (mux) {
+        this.forward({ type: "mux-key", kind: "keyup", code: e.code, key: e.key })
+        return
+      }
+      this.key("keyup", e.code, e.key)
     })
-    addEventListener("blur", () => this.keys.clear())
+    addEventListener("blur", () => {
+      this.release()
+      if (mux) this.forward({ type: "mux-release" })
+    })
+    const canvas = document.getElementById("view")
+    if (canvas) {
+      canvas.tabIndex = -1
+      for (const type of ["mousemove", "mousedown", "mouseup"] as const) canvas.addEventListener(type, (event) => {
+        if (type === "mousedown") canvas.focus({ preventScroll: true })
+        const message = { type: "mux-mouse", nx: event.clientX / innerWidth, ny: event.clientY / innerHeight, buttons: event.buttons }
+        if (mux) this.forward(message)
+        else this.pointer(message)
+      })
+    }
+  }
+
+  pointer(message: { nx: number; ny: number; buttons?: number }) {
+    this.mouse = { nx: Math.max(0, Math.min(1, message.nx)), ny: Math.max(0, Math.min(1, message.ny)), buttons: message.buttons ?? 0 }
+  }
+
+  accepts(event: MessageEvent) { return this.mux && event.source === parent && event.origin === this.parentOrigin && event.data?.run === this.muxRun }
+  forward(message: object) { if (this.mux) parent.postMessage({ ...message, run: this.muxRun }, this.parentOrigin) }
+
+  key(kind: "keydown" | "keyup", code: string, key: string) {
+    const lower = key.toLowerCase()
+    if (kind === "keyup") {
+      // Release the character seen on press: Shift or Option can change e.key before the key comes up (Dvorak "," -> "<").
+      this.keys.delete(code)
+      const down = this.chars.get(code)
+      if (down !== undefined) this.keys.delete(down)
+      this.chars.delete(code)
+      // macOS drops keyups for other keys while Cmd is held.
+      if (code === "MetaLeft" || code === "MetaRight") this.release()
+      return
+    }
+    if (this.keys.has(code)) return
+    if (lower === "," || lower === "<" || lower === "o" || lower === "'" || lower === '"' || (code === "KeyD" && lower === "e")) this.dvorak = true
+    else if (lower === "w" || lower === "s") this.dvorak = false
+    this.keys.add(code)
+    this.keys.add(lower)
+    this.chars.set(code, lower)
   }
 
   pressed(code: string) {
@@ -35,6 +83,9 @@ export class Controls {
   /** Lets go of every held key, e.g. when a text field takes focus. */
   release() {
     this.keys.clear()
+    this.chars.clear()
+    this.steer = 0
+    this.mouse.buttons = 0
   }
 
   read(dt: number): Input {

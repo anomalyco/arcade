@@ -1,8 +1,9 @@
 import { chromium } from "playwright-core"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
+import { homedir, hostname } from "node:os"
 import { join } from "node:path"
 import { encode } from "../../../scripts/encode"
+import { installMainHook } from "./main-hook"
 
 type BenchStepResult = {
   cpuMs: number
@@ -27,6 +28,7 @@ type StatSummary = {
 }
 
 type BenchReport = {
+  machine?: string
   phase: "before" | "after"
   timestamp: string
   adapter: {
@@ -53,7 +55,7 @@ type BenchReport = {
 }
 
 const BENCH_DIR = process.env.BENCH_DIR ?? join(import.meta.dir, "../../../captures/bench")
-const PREVIEW_DIR = join(import.meta.dir, "../../../captures/preview")
+const PREVIEW_DIR = process.env.PREVIEW_DIR ?? join(import.meta.dir, "../../../captures/preview")
 const DESKTOP_DIR = PREVIEW_DIR
 const KEYFRAMES = [12, 60, 135] as const
 const TOTAL_FRAMES = 180
@@ -139,6 +141,8 @@ async function main() {
 
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 })
+    const sourceRoot = args.find((a) => a.startsWith("--source-root="))?.slice(14)
+    if (sourceRoot) await installMainHook(page, sourceRoot)
     await page.routeWebSocket("**", (socket) => {
       const server = socket.connectToServer()
       server.onMessage((message) => {
@@ -214,6 +218,7 @@ async function main() {
     const report: BenchReport = {
       phase,
       timestamp: new Date().toISOString(),
+      machine: hostname(),
       adapter,
       frames: TOTAL_FRAMES,
       frame_ms: summarize(frameList),
@@ -274,8 +279,11 @@ async function main() {
       }
       const beforeReport = JSON.parse(readFileSync(beforeJsonPath, "utf8")) as BenchReport
 
-      const beforeLabel = `BEFORE (${beforeReport.frame_ms.mean.toFixed(2)} ms | ${Math.round(beforeReport.city_verts_drawn.mean / 1000)}k verts)`
-      const afterLabel = `AFTER (${report.frame_ms.mean.toFixed(2)} ms | ${Math.round(report.city_verts_drawn.mean / 1000)}k verts)`
+      const comparable = beforeReport.machine !== undefined && beforeReport.machine === report.machine
+      const metric = (name: string) => args.includes("--final-metrics") ? JSON.parse(readFileSync(join(import.meta.dir, `../../../perf/getaway-final-${name}.json`), "utf8")).metrics : null
+      const beforeMetrics = metric("main"), afterMetrics = metric("integrated")
+      const beforeLabel = comparable ? beforeMetrics ? `BEFORE · GPU ${beforeMetrics.gpu_hw_ms.median.toFixed(2)} ms · frame ${beforeMetrics.frame_ms.median.toFixed(2)} ms` : `BEFORE (${beforeReport.frame_ms.mean.toFixed(2)} ms | ${Math.round(beforeReport.city_verts_drawn.mean / 1000)}k verts)` : `BEFORE (archived | ${Math.round(beforeReport.city_verts_drawn.mean / 1000)}k verts)`
+      const afterLabel = afterMetrics ? `AFTER · GPU ${afterMetrics.gpu_hw_ms.median.toFixed(2)} ms · frame ${afterMetrics.frame_ms.median.toFixed(2)} ms` : `AFTER (${report.frame_ms.mean.toFixed(2)} ms | ${Math.round(report.city_verts_drawn.mean / 1000)}k verts)`
 
       // Render crisp transparent PNG overlays in browser canvas (since Homebrew ffmpeg lacks drawtext).
       const { videoOverlayB64, rowOverlayB64 } = await page.evaluate(

@@ -6,7 +6,7 @@ import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShad
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
 const HDR: GPUTextureFormat = "rgba16float"
-export const FRAME_FLOATS = 16 * 2 + 4 * 8
+export const FRAME_FLOATS = 16 * 2 + 4 * 9
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
 const MAX_SPRITES = 6000
@@ -160,7 +160,7 @@ export class Renderer {
     const mainLayout = d.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: vis, buffer: { type: "uniform" } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" } },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Getaway · Compare</title>
+</head>
+<body data-game="getaway">
+  <header tabindex="-1">
+    <output id="before-stats">BEFORE · connecting</output>
+    <nav><output id="speedup">— speedup</output><button id="split" aria-pressed="true">Split 50/50</button><button id="overlay" aria-pressed="false">Overlay Wipe</button><input id="wipe" type="range" min="0" max="100" value="50" aria-label="Wipe position" hidden /><button id="reset">Reset Seed</button></nav>
+    <output id="after-stats">AFTER · connecting</output>
+  </header>
+  <main>
+    <iframe id="before" title="Before" data-src="http://getaway-before.localhost:1355/?solo&amp;vanilla=1" allow="autoplay"></iframe>
+    <iframe id="after" title="After" data-src="./?solo&amp;lab=1" allow="autoplay"></iframe>
+  </main>
+  <script type="module" src="./src/dev/compare.ts"></script>
+</body>
+</html>
