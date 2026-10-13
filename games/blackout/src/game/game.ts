@@ -12,7 +12,7 @@ import { bakeBounce, buildLevel, type FloorMap } from "../render/level-mesh"
 import { AMBIENT, type Caster, type DynLight, LIGHT_FLOATS, LightCuller } from "../render/lighting"
 import { MAT, Mesh } from "../render/mesh"
 import { PAL, deskMonitorLights, hex, rng } from "../render/models"
-import { juiceSettings, type Juice } from "../ui/debug-overlay"
+import { juiceSettings, lookMask, type Juice } from "../ui/debug-overlay"
 import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
 import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, swing, useGear } from "./anim"
@@ -1320,6 +1320,7 @@ export class Game {
     )
     if (this.alive && this.body) casters.push({ x: this.drawn.x, y: this.drawn.y })
     mapFires(this.map, view, t, dt, (...a) => this.sprite(...a), this.fxv)
+    this.culler.warmPracticals = this.map.kind === "office" && this.juice.lookPractical
     this.culler.update(view, t, dyn, casters, this.juice.monitors, this.juice.sparks ? this.monitors.filter((m) => m.broken) : [])
     if (this.juice.lamps) for (const [id, at] of this.lampJolts) {
       const age = t - at
@@ -1586,7 +1587,7 @@ export class Game {
     F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, this.culler.monitorStart], 32)
     F.set(this.culler.monitorBounds, 36)
     F.set([1 / this.map.size[0], 1 / this.map.size[1], this.map.size[0], this.map.size[1]], 40)
-    F.set([this.juice.ao ? this.juice.aoStrength : 0, 0, 0, 0], 44)
+    F.set([this.juice.ao ? this.juice.aoStrength : 0, lookMask(this.juice), this.map.kind === "office" ? 1 : 0, 0], 44)
     const dead = !!snap && snap.phase === "play" && !this.alive
     const C = this.culler
     return {

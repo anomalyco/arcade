@@ -82,6 +82,7 @@ export class Renderer {
   private computeGroup: GPUBindGroup
   private polarPipe: GPUComputePipeline
   private pipes: Record<string, GPURenderPipeline> = {}
+  private baselinePipes: Record<string, GPURenderPipeline> = {}
   private level: Buf | null = null
   private glass: Buf | null = null
   private models: Buf[] = []
@@ -95,7 +96,7 @@ export class Renderer {
   private hdrView!: GPUTextureView
   private bloom: GPUTexture[] = []
   private bloomViews: GPUTextureView[] = []
-  private gradeData = new Float32Array(4)
+  private gradeData = new Float32Array(8)
   private postLayout: GPUBindGroupLayout
   private postGroups: { down: GPUBindGroup[]; up: GPUBindGroup[]; composite: GPUBindGroup } | null = null
   private postParams: GPUBuffer[] = []
@@ -120,7 +121,7 @@ export class Renderer {
     this.floorTex = d.createTexture({ size: [1, 1], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
-    this.gradeBuf = d.createBuffer({ size: 16, usage: U.UNIFORM | U.COPY_DST })
+    this.gradeBuf = d.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST })
     this.inst = { buf: d.createBuffer({ size: 4096 * INST_FLOATS * 4, usage: U.VERTEX | U.COPY_DST }), count: 0, cap: 4096 }
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -201,7 +202,8 @@ export class Renderer {
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } }
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [sceneLayout] })
-    const scene = this.module(sceneShader, "scene")
+    const scene = this.module(sceneShader(), "scene")
+    const baselineScene = this.module(sceneShader(false), "scene baseline")
     const sprite = this.module(spriteShader, "sprite")
     const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs") =>
       d.createRenderPipeline({
@@ -217,16 +219,24 @@ export class Renderer {
     this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", "fs")
     this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
     this.pipes.instAlpha = pipe(scene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
+    // Keep the all-off shader's arithmetic identical, including compiler rounding.
+    this.baselinePipes.level = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
+    this.baselinePipes.levelCut = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
+    this.baselinePipes.glass = pipe(baselineScene, "vsStatic", [meshLayout], premul, false, "none", "fs")
+    this.baselinePipes.inst = pipe(baselineScene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
+    this.baselinePipes.instAlpha = pipe(baselineScene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
     this.pipes.spriteAlpha = pipe(sprite, "vs", [spriteLayout], premul, false, "none")
     this.pipes.spriteAdd = pipe(sprite, "vs", [spriteLayout], additive, false, "none")
 
-    const post = this.module(postShader, "post")
+    const post = this.module(postShader(), "post")
+    const baselinePost = this.module(postShader(false), "post baseline")
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
-    const postPipe = (fs: string, fmt: GPUTextureFormat, blend?: GPUBlendState) =>
-      d.createRenderPipeline({ layout: postPipeLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module: post, entryPoint: fs, targets: [{ format: fmt, blend }] }, primitive: { topology: "triangle-list" } })
+    const postPipe = (fs: string, fmt: GPUTextureFormat, blend?: GPUBlendState, baseline = false) =>
+      d.createRenderPipeline({ layout: postPipeLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module: baseline ? baselinePost : post, entryPoint: fs, targets: [{ format: fmt, blend }] }, primitive: { topology: "triangle-list" } })
     this.pipes.down = postPipe("down", HDR)
     this.pipes.up = postPipe("up", HDR, additive)
     this.pipes.composite = postPipe("composite", format)
+    this.baselinePipes.composite = postPipe("composite", format, undefined, true)
     for (let i = 0; i < BLOOM_LEVELS; i++) this.postParams.push(d.createBuffer({ size: 16, usage: U.UNIFORM | U.COPY_DST }))
   }
 
@@ -381,11 +391,13 @@ export class Renderer {
 
   private draw(f: FrameInput): void {
     const d = this.device
+    const scenePipes = (f.frame[45]! & ~1) && f.frame[46]! ? this.pipes : this.baselinePipes
     d.queue.writeBuffer(this.frameBuf, 0, f.frame)
     if (f.lightCount) d.queue.writeBuffer(this.lightBuf, 0, f.lights.buffer, f.lights.byteOffset, f.lightCount * LIGHT_FLOATS * 4)
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
+    this.gradeData[4] = f.frame[45]! & 1
     d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
 
     const total = f.batches.reduce((s, b) => s + b.count, 0)
@@ -445,7 +457,7 @@ export class Renderer {
     pass.setBindGroup(0, this.sceneGroup)
     const [vx0, vy0, vx1, vy1] = f.view
     if (this.level?.count) {
-      pass.setPipeline(this.pipes.level!)
+      pass.setPipeline(scenePipes.level!)
       pass.setVertexBuffer(0, this.level.buf)
       let drawn = 0
       let cut = false
@@ -455,7 +467,7 @@ export class Renderer {
         const next = intersectsCutaway(c.cutBox, f.frame)
         if (cut !== next) {
           cut = next
-          pass.setPipeline(cut ? this.pipes.levelCut! : this.pipes.level!)
+          pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!)
         }
         pass.draw(c.count, 1, c.first)
       }
@@ -463,7 +475,7 @@ export class Renderer {
     }
     pass.setVertexBuffer(1, this.inst.buf)
     for (const alpha of [false, true]) {
-      pass.setPipeline(alpha ? this.pipes.instAlpha! : this.pipes.inst!)
+      pass.setPipeline(alpha ? scenePipes.instAlpha! : scenePipes.inst!)
       for (const r of ranges) {
         if (r.alpha !== alpha) continue
         const m = this.models[r.model]!
@@ -471,7 +483,7 @@ export class Renderer {
         pass.draw(m.count, r.count, 0, r.first)
       }
       if (!alpha && this.glass?.count) {
-        pass.setPipeline(this.pipes.glass!)
+        pass.setPipeline(scenePipes.glass!)
         pass.setVertexBuffer(0, this.glass.buf)
         for (const c of this.glassChunks) {
           if (c.box[0] > vx1 || c.box[2] < vx0 || c.box[1] > vy1 || c.box[3] < vy0) continue
@@ -508,7 +520,7 @@ export class Renderer {
       p.end()
     }
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-    fp.setPipeline(this.pipes.composite!)
+    fp.setPipeline((f.frame[45]! & 1 ? this.pipes : this.baselinePipes).composite!)
     fp.setBindGroup(0, g.composite)
     fp.draw(3)
     fp.end()

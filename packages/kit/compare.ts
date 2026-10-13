@@ -7,8 +7,9 @@ const seed = query.get("seed") ?? (game === "blackout" ? "1" : "7")
 const urls = panes.map((pane, i) => {
   const url = new URL(query.get(i ? "after" : "before") ?? pane.dataset.src!, location.href)
   for (const [key, value] of Object.entries({ peaceful: "1", perf: "1", mux: "1", seed })) url.searchParams.set(key, value)
-  if (i === 0) url.searchParams.set("vanilla", "1")
-  else { url.searchParams.delete("vanilla"); url.searchParams.set("lab", "1") }
+  if (i === 0) {
+    if (pane.dataset.vanilla !== "false") url.searchParams.set("vanilla", "1")
+  } else { url.searchParams.delete("vanilla"); url.searchParams.set("lab", "1") }
   return url
 })
 const origins = urls.map((url) => url.origin)
