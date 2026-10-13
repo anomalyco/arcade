@@ -29,6 +29,7 @@ export class LabPanel {
       input[type=range]{grid-column:1 / -1;width:100%;cursor:ew-resize}
       output{text-align:right;font-variant-numeric:tabular-nums}
       h3{display:flex;align-items:center;justify-content:space-between;font:inherit;font-weight:600;margin:8px 0 3px;color:#a4b1bc}
+      .actions{display:flex;gap:5px} button:disabled{opacity:.4;cursor:default}
     </style><button class="pill" type="button" aria-expanded="false">~ Lab</button><section aria-label="Debug controls"><header>FPS — · Frame ms — / —\nGPU ms —</header><nav><button data-preset="on">All On</button><button data-preset="off">All Off</button></nav><div data-controls></div></section>`
     this.panel = root.querySelector("section")!
     root.querySelector<HTMLElement>("nav")!.hidden = !controls.some(c => !("min" in c) && !("options" in c))
@@ -40,21 +41,43 @@ export class LabPanel {
       if (control.group && control.group !== group) {
         const heading = document.createElement("h3")
         heading.textContent = control.group
-        if (controls.some(c => c.group === control.group && ("min" in c || "options" in c))) {
+        const grouped = controls.filter(c => c.group === control.group)
+        const actions = document.createElement("span")
+        actions.className = "actions"
+        const randomize = document.createElement("button")
+        randomize.type = "button"
+        randomize.textContent = "Randomize"
+        randomize.setAttribute("aria-label", `Randomize ${control.group}`)
+        randomize.disabled = !grouped.some(c => "min" in c || "options" in c && c.options.length > 0)
+        randomize.onclick = () => {
+          for (const c of grouped) {
+            if ("min" in c) {
+              const steps = Math.floor((c.max - c.min) / c.step + 1e-9)
+              const value = c.min + Math.floor(Math.random() * (steps + 1)) * c.step
+              this.set(c, Number(value.toPrecision(12)))
+            } else if ("options" in c && c.options.length) {
+              this.set(c, c.options[Math.floor(Math.random() * c.options.length)]!.value)
+            }
+          }
+          this.sync()
+        }
+        actions.append(randomize)
+        if (grouped.some(c => "min" in c || "options" in c)) {
           const copy = document.createElement("button")
           copy.type = "button"
           copy.dataset.copy = ""
           copy.textContent = "Copy"
           copy.setAttribute("aria-label", `Copy ${control.group} JSON`)
           copy.onclick = async () => {
-            const values = Object.fromEntries(controls.filter(c => c.group === control.group).map(c => [c.key, this.settings[c.key]]))
+            const values = Object.fromEntries(grouped.map(c => [c.key, this.settings[c.key]]))
             try {
               await navigator.clipboard.writeText(JSON.stringify(values, null, 2))
               copy.textContent = "Copied"
             } catch { copy.textContent = "Copy failed" }
           }
-          heading.append(copy)
+          actions.append(copy)
         }
+        heading.append(actions)
         rows.append(heading)
       }
       group = control.group

@@ -16,6 +16,9 @@ both GPU devices and their historical counterparts. `perf-overlay.ts` supplies t
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
 It also accepts numeric range controls (`min`, `max`, `step`), selects (`options` with numeric or string values),
 and an `enabled(settings)` predicate. Groups containing sliders or selects get Copy JSON.
+Each named group gets Randomize: it chooses step-aligned slider values and select options through the same change
+callback as manual edits, then refreshes dependent controls. Disabled sliders are randomized too, so changing styles
+later reveals the new values. Switches are untouched; groups containing only switches have a disabled Randomize button.
 All On / All Off affect switches only and are hidden when there are none. Getaway's Lights group uses both types:
 its Style select switches the live renderer, and its sliders are enabled for the Soft pool style.
 An optional change callback applies settings requiring resource updates, such as Getaway's live car-light meshes.

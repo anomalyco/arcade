@@ -64,6 +64,12 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
+  selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then
+  refreshes enablement and readouts. Metal checks covered minimum/midpoint/maximum draws, all 12 light sliders and the
+  five-style select, exact Copy JSON, input isolation and unchanged switches/other groups. A generic fixture checked
+  string options and a non-divisible range (0.05–1, step 0.1 → maximum valid 0.95). Approved defaults remain unchanged.
+
 - **Presentation comparisons belong in the Lab.** Getaway exposes car-light styles, vehicle-emission visibility and
   cold exhaust through the shared `packages/kit/lab-panel.ts`, alongside its chassis controls. The panel's generic
   select leaves All On/Off restricted to toggles and keeps keyboard/pointer input out of the game. Switching light style
