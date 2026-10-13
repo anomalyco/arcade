@@ -64,6 +64,26 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Give small fire and water effects a continuous silhouette.** The Lab's `Fire and water` section compares current
+  emitters with Flowing and Graphic styles in the generated downtown, office and Getaway alley. The shared
+  `packages/kit/fx/fire-water.ts` renderer uses three overlapping upright flame quads, a small additive core,
+  alpha smoke and rising embers. Upward-scrolling procedural noise erodes the tapered silhouette; the same flicker
+  signal changes flame height and light power. A depth-gated post-HDR distortion adds heat shimmer. Water combines
+  a continuous pressure sheet with velocity-aligned droplets, impact spray, expanding rings and a growing puddle.
+  The puddle perturbs its normal for ripples and samples up to eight scene lights for warm streetlamp and siren sheen.
+  Foam stays near the irregular boundary. These are shared Lab candidates; game renderer adoption is still separate.
+  Matched Metal captures and paired whole-frame costs are documented in `perf/lab-fire-water.md`.
+  - [Febucci's procedural fire breakdown](https://blog.febucci.com/2019/05/fire-shader) combines scrolling noise with
+    a gradient mask. The Lab uses that shape/erosion approach with textureless fBm and a hot yellow-white core fading
+    through orange to red tips. [Epic's Niagara smoke guide](https://docs.unrealengine.com/4.27/en-US/RenderingAndGraphics/Niagara/HowTo/RecreateSmoke/)
+    shows the flipbook alternative; authored frames can give richer billows at a texture-fetch cost, but this study
+    keeps all shapes procedural. Ember drift uses a helical path as a cheap curl-like approximation.
+  - [Nimue's stylized-water breakdown](https://80.lv/articles/how-to-build-stylized-water-shader-design-implementation-for-nimue)
+    separates moving normals, reflections, foam and interactive ripples, and reuses noise for foam. At gameplay zoom,
+    the Lab keeps the jet sheet, stretched drops and puddle separate so the jet remains readable between particles.
+    The sheen is direct-light specular, not reflected scene geometry. No water simulation or screen-space reflection
+    buffer is required. Heat shimmer does require an HDR copy and one extra pass, included in the timing.
+
 - **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`, sharing one device,
   test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
   Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:

@@ -6,8 +6,9 @@ import { getawaySpawn } from "../../getaway/src/lab/spawn"
 import { blackoutSpawn } from "./lab/spawn"
 import { blackoutEffectSection } from "./lab/effects"
 import { getawayEffectSection } from "../../getaway/src/lab/effects"
+import { fireWaterSection } from "./lab/fire-water"
 
-void lab({sections:[blackoutEffectSection,getawayEffectSection],spawn:context=>{const g=getawaySpawn(context);return {...g,characters:[...g.characters,blackoutSpawn(context)]}},materials:[{game:"Getaway",codes:{...getaway,smoke:SMOKE_MATERIAL}},{game:"Blackout",codes:MAT}],camera:(width,height,vp,inverse,eye,focus)=>{
+void lab({sections:[blackoutEffectSection,getawayEffectSection,fireWaterSection],spawn:context=>{const g=getawaySpawn(context);return {...g,characters:[...g.characters,blackoutSpawn(context)]}},materials:[{game:"Getaway",codes:{...getaway,smoke:SMOKE_MATERIAL}},{game:"Blackout",codes:MAT}],camera:(width,height,vp,inverse,eye,focus)=>{
   eye.set([focus[0],focus[1]+22,focus[2]+23])
   mat4.multiply(mat4.perspective(0.65,width/height,0.1,150),mat4.lookAt(eye,focus,[0,1,0]),vp)
   mat4.inverse(vp,inverse)

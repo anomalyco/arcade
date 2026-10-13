@@ -29,6 +29,9 @@ export class Stage {
   private readonly transientRenderer:ParticleRenderer
   readonly focus=[0,0,0]
   dynamicLights:LabLight[]|null=null
+  /** Optional effect-study camera and post-HDR distortion; cleared when that section leaves. */
+  cameraOverride?:CameraWriter
+  afterScene?:(encoder:GPUCommandEncoder,hdr:GPUTexture,depth:GPUTextureView,width:number,height:number)=>void
   private readonly tyre:SmokeRenderer
   private readonly tyreBuffer:GPUBuffer
   private readonly tyreLights:GPUBuffer
@@ -49,6 +52,8 @@ export class Stage {
   private postGroup!:GPUBindGroup
   private textures:GPUTexture[]=[]
   private hdr!:GPUTextureView
+  private hdrTexture!:GPUTexture
+  private depthView!:GPUTextureView
   private output!:GPUTexture
   private outputView!:GPUTextureView
   private scenePass!:GPURenderPassDescriptor
@@ -87,19 +92,20 @@ export class Stage {
     this.width=width;this.height=height
     for(const t of this.textures)t.destroy()
     const d=this.device,usage=GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING
-    const hdr=d.createTexture({size:[width,height],format:"rgba16float",usage})
+    const hdr=d.createTexture({size:[width,height],format:"rgba16float",usage:usage|GPUTextureUsage.COPY_SRC})
     const msaa=d.createTexture({size:[width,height],format:"rgba16float",sampleCount:4,usage:GPUTextureUsage.RENDER_ATTACHMENT})
     const depth=d.createTexture({size:[width,height],format:"depth24plus",sampleCount:4,usage})
     this.output=d.createTexture({size:[width,height],format:this.format,usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC})
     this.outputView=this.output.createView()
     this.textures=[hdr,msaa,depth,this.output];this.hdr=hdr.createView();const depthView=depth.createView()
+    this.hdrTexture=hdr;this.depthView=depthView
     this.scenePass={colorAttachments:[{view:msaa.createView(),resolveTarget:this.hdr,loadOp:"clear",storeOp:"discard",clearValue:{r:0,g:0,b:0,a:1}}],depthStencilAttachment:{view:depthView,depthLoadOp:"clear",depthStoreOp:"store",depthClearValue:1}}
     this.volume.resize(width,height,depthView)
     this.postGroup=d.createBindGroup({layout:this.postLayout,entries:[{binding:0,resource:this.hdr}]})
     this.updateCamera()
   }
   updateCamera(){
-    this.camera(this.width,this.height,this.viewProj,this.inverse,this.eye,this.focus)
+    ;(this.cameraOverride??this.camera)(this.width,this.height,this.viewProj,this.inverse,this.eye,this.focus)
     this.volume.uniforms.set(this.inverse);this.volume.uniforms.set(this.eye,16)
     this.particles.uniforms.set(this.viewProj);this.particles.uniforms.set(this.eye,16)
     this.tyreFrame.set(this.viewProj);this.tyreFrame.set(this.eye,16);this.tyreFrame[20]=this.width;this.tyreFrame[21]=this.height
@@ -148,6 +154,7 @@ export class Stage {
     if(debug!==5){pass.setBindGroup(0,this.tyreGroup);this.tyre.draw(pass)}
     this.particles.draw(pass);this.transientRenderer.draw(pass);draw?.(pass);pass.end()
     if(debug!==5)this.volume.render(enc,this.hdr,volumes)
+    this.afterScene?.(enc,this.hdrTexture,this.depthView,this.width,this.height)
     const output=this.outputView
     const post=enc.beginRenderPass({colorAttachments:[{view:output,loadOp:"clear",storeOp:"store",clearValue:{r:0,g:0,b:0,a:1}}]})
     post.setPipeline(this.post);post.setBindGroup(0,this.group);post.setBindGroup(1,this.postGroup);post.draw(3);post.end()
