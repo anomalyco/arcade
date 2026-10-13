@@ -64,6 +64,14 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Presentation comparisons belong in the Lab.** Getaway exposes car-light styles, vehicle-emission visibility and
+  cold exhaust through the shared `packages/kit/lab-panel.ts`, alongside its chassis controls. The panel's generic
+  select leaves All On/Off restricted to toggles and keeps keyboard/pointer input out of the game. Switching light style
+  replaces the existing model buffers, retaining wheel contacts and spring state. A Metal check switched eight times
+  with 42 model slots throughout, unchanged chassis identity and no page/console errors; cold exhaust emitted wisps,
+  bulk toggles preserved the light choice, and regular URL style overrides had no effect. `bench`/`mux` overrides remain
+  for automation. This supersedes the query-selected light study instructions below; switching cost is unmeasured.
+
 - **Keep sprite kinds distinct when combining studies.** The integrated car-light and exhaust paths both originally
   used kinds 10 and 13. Exhaust retains 10 (cold condensation) and 13 (attached flame); car-light footprints, lenses,
   lens streaks and brake streaks use 14–17 in `game/scene.ts` and `render/shaders.ts`. On the combined Metal preview,

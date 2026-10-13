@@ -20,7 +20,7 @@ try {
     page.on("console", m => { if (m.type() === "error" && !m.text().includes("404")) errors.push(m.text()) })
     // Reuse the exact renderer/scene with a fixed clock and camera. No app RAF or audio.
     await page.route("**/src/main.ts*", route => route.fulfill({ contentType: "application/javascript", body: "export {}" }))
-    await page.goto(`${host}?solo&peaceful=1&seed=7&nohud&lights=${style}`)
+    await page.goto(`${host}?solo&peaceful=1&seed=7&nohud`)
     await page.evaluate(async style => {
       const load = (path: string) => import(/* @vite-ignore */ path)
       const css = document.createElement("style")
@@ -155,8 +155,11 @@ try {
     await page.close()
     const live = await browser.newPage({ viewport: { width: 640, height: 480 } })
     live.on("pageerror", e => errors.push(e.message))
-    await live.goto(`${host}?solo&peaceful=1&seed=7&nohud&lights=${style}`)
+    await live.goto(`${host}?solo&peaceful=1&seed=7&nohud`)
     await live.waitForFunction(() => (window as any).__view)
+    await live.keyboard.press("Backquote")
+    await live.getByRole("combobox", { name: "Car lights" }).selectOption(String(style))
+    await live.keyboard.press("Backquote")
     await live.screenshot({ path: join(out, `${style}-live.png`) })
     await live.close()
   }

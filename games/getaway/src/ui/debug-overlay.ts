@@ -1,21 +1,34 @@
 import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
 import { chassisSettings } from "../game/chassis"
+import { vehicleEffects } from "../game/vehicle-emissions"
+import type { Scene } from "../game/scene"
+import { lightStyles, type LightStyle } from "../render/car-lights"
 
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = chassisSettings(true)
-const controls: LabControl[] = ([
-  ["suspension", "Suspension springs"],
-  ["wheelContact", "Per-wheel contact"],
-  ["visibleWheels", "Steer & spin wheels"],
-  ["vehicleFeel", "Vehicle-specific feel"],
-] as const).map(([key, label]) => ({ key, label, group: "Chassis" }))
+const controls: LabControl[] = [
+  { key: "lightStyle", label: "Car lights", group: "Lighting", type: "select", options: lightStyles },
+  { key: "emissions", label: "Vehicle emissions", group: "Emissions" },
+  { key: "coldExhaust", label: "Cold exhaust" },
+  ...([
+    ["suspension", "Suspension springs"],
+    ["wheelContact", "Per-wheel contact"],
+    ["visibleWheels", "Steer & spin wheels"],
+    ["vehicleFeel", "Vehicle-specific feel"],
+  ] as const).map(([key, label]) => ({ key, label, group: "Chassis" })),
+]
 export type PerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastUpdate = 0
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
-  constructor(q: URLSearchParams, release: () => void) {
-    super(juice, controls, q, release)
+  constructor(q: URLSearchParams, release: () => void, scene: Scene) {
+    super({ ...juice, lightStyle: scene.lightStyle, emissions: scene.emissions.visible, coldExhaust: vehicleEffects.coldExhaust }, controls, q, release, (key, value) => {
+      if (key === "lightStyle") scene.setLightStyle(value as LightStyle)
+      else if (key === "emissions") scene.emissions.visible = Boolean(value)
+      else if (key === "coldExhaust") vehicleEffects.coldExhaust = Boolean(value)
+      else Object.assign(juice, { [key]: value })
+    })
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return

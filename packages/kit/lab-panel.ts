@@ -1,14 +1,17 @@
-export type LabControl = { key: string; label: string; on?: number; off?: number; group?: string }
+export type LabControl = { key: string; label: string; group?: string } & (
+  | { type?: "toggle"; on?: number; off?: number }
+  | { type: "select"; options: readonly { value: number; label: string }[] }
+)
 
-/** Presentation-only switches. No gameplay input leaves this host. */
+/** Presentation-only controls. No gameplay input leaves this host. */
 export class LabPanel {
   readonly host = document.createElement("aside")
   readonly header: HTMLElement
   private panel: HTMLElement
   private pill: HTMLButtonElement
-  private inputs = new Map<LabControl, HTMLInputElement>()
+  private inputs = new Map<LabControl, HTMLInputElement | HTMLSelectElement>()
 
-  constructor(private settings: Record<string, boolean | number>, controls: LabControl[], params: URLSearchParams, release: () => void) {
+  constructor(private settings: Record<string, boolean | number>, controls: LabControl[], params: URLSearchParams, release: () => void, private change?: (key: string, value: boolean | number) => void) {
     this.host.dataset.lab = ""
     const root = this.host.attachShadow({ mode: "open" })
     root.innerHTML = `<style>
@@ -22,9 +25,10 @@ export class LabPanel {
       label{display:flex;align-items:center;gap:7px;padding:4px 0;cursor:pointer}
        input{accent-color:#a4dce7;margin:0}
        h3{font:inherit;font-weight:600;margin:8px 0 3px;color:#a4b1bc}
+      select{font:inherit;color:inherit;background:#263039;border:1px solid #ffffff30;border-radius:4px;padding:3px;margin-left:auto;max-width:165px}
     </style><button class="pill" type="button" aria-expanded="false">~ Lab</button><section aria-label="Debug controls"><header>FPS — · Frame ms — / —\nGPU ms —</header><nav><button data-preset="on">All On</button><button data-preset="off">All Off</button></nav><div data-controls></div></section>`
     this.panel = root.querySelector("section")!
-    root.querySelector<HTMLElement>("nav")!.hidden = controls.length === 0
+    root.querySelector<HTMLElement>("nav")!.hidden = !controls.some(control => control.type !== "select")
     this.header = root.querySelector("header")!
     this.pill = root.querySelector(".pill")!
     const rows = root.querySelector("[data-controls]")!
@@ -37,18 +41,31 @@ export class LabPanel {
       }
       group = control.group
       const label = document.createElement("label")
-      const input = document.createElement("input")
-      input.type = "checkbox"
+      let input: HTMLInputElement | HTMLSelectElement
+      if (control.type === "select") {
+        const select = document.createElement("select")
+        for (const option of control.options) select.add(new Option(option.label, String(option.value)))
+        select.onchange = () => this.set(control, Number(select.value))
+        label.append(control.label, select)
+        input = select
+      } else {
+        const checkbox = document.createElement("input")
+        checkbox.type = "checkbox"
+        checkbox.onchange = () => this.set(control, checkbox.checked ? control.on ?? true : control.off ?? false)
+        label.append(checkbox, control.label)
+        input = checkbox
+      }
       input.dataset.key = control.key
       input.setAttribute("aria-label", control.label)
-      input.onchange = () => this.set(control, input.checked)
       this.inputs.set(control, input)
-      label.append(input, control.label)
       rows.append(label)
     }
     root.querySelectorAll<HTMLButtonElement>("[data-preset]").forEach((button) => {
       button.onclick = () => {
-        for (const control of controls) this.set(control, button.dataset.preset === "on")
+        for (const control of controls) {
+          if (control.type === "select") continue
+          this.set(control, button.dataset.preset === "on" ? control.on ?? true : control.off ?? false)
+        }
         this.sync()
       }
     })
@@ -71,12 +88,16 @@ export class LabPanel {
     document.body.append(this.host)
   }
 
-  private set(control: LabControl, enabled: boolean) {
-    this.settings[control.key] = enabled ? control.on ?? true : control.off ?? false
+  private set(control: LabControl, value: boolean | number) {
+    this.change?.(control.key, value)
+    this.settings[control.key] = value
   }
   private sync() {
     this.pill.setAttribute("aria-expanded", String(this.visible))
-    for (const [control, input] of this.inputs) input.checked = this.settings[control.key] === (control.on ?? true)
+    for (const [control, input] of this.inputs) {
+      if (input instanceof HTMLSelectElement) input.value = String(this.settings[control.key])
+      else if (control.type !== "select") input.checked = this.settings[control.key] === (control.on ?? true)
+    }
   }
   toggle() { this.panel.hidden = !this.panel.hidden; this.sync() }
   get visible() { return !this.panel.hidden }

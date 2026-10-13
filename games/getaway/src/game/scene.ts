@@ -96,8 +96,9 @@ export class Scene {
   constructor(
     private renderer: Renderer,
     readonly city: City,
-    private lightStyle: LightStyle = 1,
+    lightStyle: LightStyle = 1,
   ) {
+    this.lightStyle = lightStyle
     const built = buildCityMesh(city)
     this.trail.seedWind(city.seed)
     renderer.setCity(built.mesh)
@@ -120,6 +121,22 @@ export class Scene {
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
     this.spikeModel = renderer.addModel(buildSpikeStrip())
+  }
+
+  lightStyle: LightStyle
+
+  setLightStyle(style: LightStyle) {
+    if (style === this.lightStyle) return
+    // Lamp geometry changes; keep the existing wheel models, contacts and spring state.
+    for (const vehicle of VEHICLES) {
+      const variants = this.variants.get(vehicle.id)!
+      const bodies = this.chassisModels.get(vehicle.id)!.bodies
+      buildCarVariants(vehicle, style).forEach((mesh, i) => {
+        this.renderer.replaceModel(variants[i]!, mesh)
+        this.renderer.replaceModel(bodies[i]!, splitChassis(mesh).body)
+      })
+    }
+    this.lightStyle = style
   }
 
   private visOf(c: CarView) {

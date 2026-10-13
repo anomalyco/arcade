@@ -350,6 +350,14 @@ export class Renderer {
     return this.models.length - 1
   }
 
+  replaceModel(id: number, mesh: Mesh) {
+    const model = this.models[id]!
+    const vbuf = this.upload(mesh.toArray())
+    model.vbuf.destroy()
+    model.vbuf = vbuf
+    model.count = mesh.count
+  }
+
   setSmoke(trail: SmokeTrail, visible: boolean) { this.smoke.upload(trail, visible) }
 
   resize(w: number, h: number) {

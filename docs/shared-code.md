@@ -13,9 +13,12 @@ that uses it.
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
-`lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
+`lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, numeric-valued selects, All On / All Off,
+and input isolation. Selects declare labelled `options`; bulk toggles leave selections alone. An optional change callback
+lets adapters apply settings that also require resource updates, such as Getaway's live car-light meshes.
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
-`?perf=1` / `?lab=1`; the always-available `~ Lab` pill and Backquote toggle it.
+Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel. Getaway only
+accepts `lights` and `coldExhaust` URL overrides in `bench` or `mux` automation; ordinary play uses the panel.
 
 In rough order of value against risk.
 

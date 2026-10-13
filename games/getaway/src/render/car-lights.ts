@@ -1,8 +1,15 @@
 import type { Vehicle } from "../../shared/config"
 
-/** 0 is the original reference; 1–3 are presentation studies selected by ?lights=N. */
+/** Selectable in the Lab; URL overrides are reserved for automated captures. */
 export type LightStyle = 0 | 1 | 2 | 3
+export const lightStyles = [
+  { value: 0, label: "Original" },
+  { value: 1, label: "Recessed" },
+  { value: 2, label: "Light bar" },
+  { value: 3, label: "Cinematic" },
+] as const
 export function lightStyle(params: URLSearchParams): LightStyle {
+  if (!params.has("bench") && !params.has("mux")) return 1
   const n = Number(params.get("lights") ?? 1)
   return n === 0 || n === 2 || n === 3 ? n : 1
 }

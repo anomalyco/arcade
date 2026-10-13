@@ -59,7 +59,7 @@ async function main() {
   const atlasReady = paintAtlas().then((img) => renderer.setAtlas(img))
 
   const q = new URLSearchParams(location.search)
-  if (q.has("coldExhaust")) vehicleEffects.coldExhaust = q.get("coldExhaust") === "1"
+  if ((q.has("bench") || q.has("mux")) && q.has("coldExhaust")) vehicleEffects.coldExhaust = q.get("coldExhaust") === "1"
   const staged = (import.meta.env.DEV && q.has("stage")) || q.has("solo") || q.get("peaceful") === "1" || q.has("mux")
   const benchMode = q.has("bench")
   let session: Session | null = null
@@ -88,7 +88,7 @@ async function main() {
   const debug = new DebugOverlay(q, () => {
     controls.release()
     controls.forward({ type: "mux-release" })
-  })
+  }, scene)
   const chat = activeSession.chat ? new Chat(document.getElementById("hud")!, controls, activeSession) : null
   let snapped = false
   let freeze = 0
