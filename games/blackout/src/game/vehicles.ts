@@ -10,6 +10,7 @@ import type { Renderer } from "../render/renderer"
 import { LAMPS, vehicleModels } from "../render/vehicle-mesh"
 import type { Avatar } from "./anim"
 import { VehiclePresentation, groundHeight } from "./vehicle-presentation"
+import { blackoutEffects } from "../lab/settings"
 import { VehicleEmissions } from "@arcade/kit/vehicle/emissions"
 import { Fx } from "@arcade/kit/vehicle/fx"
 import { drawLamps } from "@arcade/kit/vehicle/lights"
@@ -71,7 +72,7 @@ export class VehicleFx {
   onPop?: (d: VehDraw) => void
   private now = 0
 
-  constructor(private readonly renderer: Renderer) {
+  constructor(private readonly renderer: Pick<Renderer, "addModel"> & Partial<Pick<Renderer, "setSmoke">>) {
     const m = vehicleModels()
     const reg = (x: Parameters<Renderer["addModel"]>[0]) => renderer.addModel(x)
     const out = {} as typeof this.models
@@ -336,7 +337,7 @@ export class VehicleFx {
       }
     }
     this.emissions.trail.prepare()
-    this.renderer.setSmoke(this.emissions.trail, juice.tyreSmoke)
+    this.renderer.setSmoke?.(this.emissions.trail, juice.tyreSmoke)
   }
 
   private draw(d: VehDraw, t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], team: Rgb3 | null, juice: Juice, solids: readonly Rect[], eye: ArrayLike<number>, sharedSprite: SpriteSink): void {

@@ -61,8 +61,7 @@ export class VehicleEmissions<Terrain = null> {
   visible = true
   city: Terrain | null = null
   skids: SkidSink | null = null
-  constructor(private readonly surface: (terrain: Terrain | null, x: number, z: number) => number = () => 1) {}
-  readonly trail = new SmokeTrail()
+  constructor(private readonly surface: (terrain: Terrain | null, x: number, z: number) => number = () => 1, readonly trail = new SmokeTrail()) {}
   private readonly wisps = new Float32Array(256 * 8)
   private readonly flames = new Float32Array(128 * 12)
   wispCount = 0

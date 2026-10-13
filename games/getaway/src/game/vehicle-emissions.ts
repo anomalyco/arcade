@@ -1,4 +1,5 @@
 import type { City } from "../../shared/sim/city"
+import { SmokeTrail } from "@arcade/kit/fx/smoke-trail"
 import { VehicleEmissions as SharedEmissions } from "@arcade/kit/vehicle/emissions"
 export { EmissionState, drivenMask, tyreSlip, launchSlip, vehicleEffects } from "@arcade/kit/vehicle/emissions"
 
@@ -12,5 +13,5 @@ export function tyreSurface(city: Pick<City, "parks"> | null, x: number, z: numb
   return 1
 }
 export class VehicleEmissions extends SharedEmissions<Pick<City, "parks">> {
-  constructor() { super(tyreSurface) }
+  constructor(trail = new SmokeTrail()) { super(tyreSurface, trail) }
 }

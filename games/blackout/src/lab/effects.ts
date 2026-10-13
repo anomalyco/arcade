@@ -36,7 +36,7 @@ export const blackoutEffectSection:SectionFactory=context=>gameEffects(context,"
       const map=blackoutEnvironment(kind,seed)
       if(!game){
         // Sound stays locked: no AudioContext, fetch, listeners or production session are started.
-        game=seeded(1,()=>new Game({addModel:m=>meshes.add(m.v,11,c=>c===8?-1.5:[2,3].includes(c)?1.5:0),setLevel,updateBounce:()=>{},width:1100,height:760},{myId:"lab",room:null,latest:()=>null,roster:()=>[],drainEvents:()=>[],send:()=>{},status:()=>null,update:()=>{},close:()=>{}},new Sound(),{...juiceSettings(),lamps:true,volumes:false},map))
+        game=seeded(1,()=>new Game({addModel:m=>meshes.add(m.v,11,c=>c===8?-1.5:[2,3].includes(c)?1.5:0),setLevel,updateBounce:()=>{},width:1100,height:760},{myId:"lab",room:null,latest:()=>null,roster:()=>[],drainEvents:()=>[],send:()=>{},status:()=>null,update:()=>{},close:()=>{}},new Sound(),{...juiceSettings(),volumes:false},map))
       }else game.labLoad(map)
       dt=0;frame=undefined;stage.sceneMode=4;stage.focus[0]=12;stage.focus[1]=0;stage.focus[2]=10;camera.snap(12,10);camera.dist=40
       seeded(seed,()=>{stage.lighting.moonPower=.2+Math.random()*.6;stage.lighting.temperature=Math.random()*.8-.4;stage.lighting.exposure=Math.random()*.7})

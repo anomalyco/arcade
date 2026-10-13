@@ -12,7 +12,7 @@ export class SpellFx {
   private scroll: number
   private props: number[] = []
   private actors=new Map<number,Avatar>()
-  constructor(private renderer: Renderer, private bones: PartModels) {
+  constructor(private renderer: Pick<Renderer, "addModel">, private bones: PartModels) {
     const m=new Mesh(), point=(a:number,b:number) => [Math.cos(a)*Math.cos(b),Math.sin(b),Math.sin(a)*Math.cos(b)]
     for(let j=0;j<10;j++) for(let i=0;i<16;i++) {
       const a=i*Math.PI/8,b=(j/10-0.5)*Math.PI,A=a+Math.PI/8,B=b+Math.PI/10
