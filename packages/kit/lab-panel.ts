@@ -54,7 +54,10 @@ export class LabPanel {
         }
       })
     }
-    this.panel.hidden = !(params.get("perf") === "1" || params.get("lab") === "1")
+    // Players never see the lab: Backquote opens it, and ?lab=1 or ?perf=1 shows it with its button.
+    const lab = params.get("perf") === "1" || params.get("lab") === "1"
+    this.panel.hidden = !lab
+    this.pill.hidden = !lab
     this.sync()
     document.body.append(this.host)
   }
