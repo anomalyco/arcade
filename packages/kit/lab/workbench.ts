@@ -1,8 +1,10 @@
 import { LabPanel, type LabSettings, type LabValue } from "../lab-panel"
 import { LabCommandRegistry, type LabCommandContext } from "./commands"
+import { computeSnapshotDiffs, createCompareWipeDOM } from "./compare-ab"
 import { effectOptions } from "./effects"
 import { lightingDefaults } from "./lighting"
 import { createRadialMenuDOM, RadialMenuStateMachine, type RadialReleaseResult } from "./radial"
+import { applyGameRecipe, buildGameRecipe, type GameRecipePayload } from "./recipe"
 import {
   applyClickSelection,
   applyMarqueeSelection,
@@ -121,6 +123,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let activeTransform: (ActiveTransformState & { before: FullSnapshot }) | null = null
   let boxSelectMode = false
   let lastPointerViewport: { x: number; y: number } | null = null
+  let prePlayCheckpoint: FullSnapshot | null = null
+  let lastPlayAftermath: FullSnapshot | null = null
+  let slotA: { snapshot: FullSnapshot; frames: number; elapsed: number } | null = null
+  let slotB: { snapshot: FullSnapshot; frames: number; elapsed: number } | null = null
+  let activeSlot: "A" | "B" = "B"
+  let compareWipeEnabled = false
+  let compareWipeSplit = 0.5
+  let isCapturingWipe = false
   let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" = "canvas"
   let toastTimer = 0
 
@@ -167,6 +177,50 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const exportBtn = topbar.querySelector<HTMLButtonElement>('[data-action="export"]')!
   const importBtn = topbar.querySelector<HTMLButtonElement>('[data-action="import"]')!
 
+  // Top-bar A/B Compare cluster and Copy Game Recipe button
+  const topbarRight = topbar.querySelector<HTMLElement>(".lab-topbar-right")!
+  const compareGroup = document.createElement("div")
+  compareGroup.className = "lab-mode-seg"
+  compareGroup.setAttribute("role", "group")
+  compareGroup.setAttribute("aria-label", "A/B Comparison")
+  const pinABtn = document.createElement("button")
+  pinABtn.type = "button"
+  pinABtn.className = "lab-btn"
+  pinABtn.dataset.action = "compare-pin-a"
+  pinABtn.title = "Pin Baseline Slot A (B)"
+  pinABtn.textContent = "A"
+  const flipBtn = document.createElement("button")
+  flipBtn.type = "button"
+  flipBtn.className = "lab-btn"
+  flipBtn.dataset.action = "compare-flip"
+  flipBtn.title = "Flip Slot A / Slot B (V)"
+  flipBtn.textContent = "Flip · V"
+  const wipeBtn = document.createElement("button")
+  wipeBtn.type = "button"
+  wipeBtn.className = "lab-btn"
+  wipeBtn.dataset.action = "compare-wipe"
+  wipeBtn.title = "Toggle Split-Screen A/B Wipe (⇧V)"
+  wipeBtn.textContent = "Wipe"
+  compareGroup.append(pinABtn, flipBtn, wipeBtn)
+  const compareDivider = document.createElement("div")
+  compareDivider.className = "lab-divider"
+  topbarRight.insertBefore(compareDivider, frameBtn)
+  topbarRight.insertBefore(compareGroup, compareDivider)
+
+  const recipeBtn = document.createElement("button")
+  recipeBtn.type = "button"
+  recipeBtn.className = "lab-btn"
+  recipeBtn.dataset.action = "copy-recipe"
+  recipeBtn.setAttribute("aria-label", "Copy recipe for game")
+  recipeBtn.title = "Copy typed settings recipe for game source (no URL params)"
+  recipeBtn.textContent = "Copy Recipe"
+  topbarRight.insertBefore(recipeBtn, exportBtn)
+
+  const wipeDOM = createCompareWipeDOM(viewportEl, split => {
+    compareWipeSplit = split
+    syncCompareWipeOverlay()
+  })
+
   // Library elements
   const searchInput = libraryEl.querySelector<HTMLInputElement>('[data-control="library-search"]')!
   const catTabs = [...libraryEl.querySelectorAll<HTMLButtonElement>("[data-cat]")]
@@ -204,14 +258,29 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return sections.find(s => s.id === globalSettings.section) ?? sections[0]!
   }
 
-  function showToast(message: string, isError = false) {
-    hudToast.textContent = message
+  function showToast(message: string, isError = false, action?: { label: string; run: () => void }) {
+    hudToast.replaceChildren()
+    const span = document.createElement("span")
+    span.textContent = message
+    hudToast.append(span)
+    if (action) {
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "lab-toast-btn"
+      btn.dataset.action = "toast-action"
+      btn.textContent = action.label
+      btn.onclick = () => {
+        hudToast.hidden = true
+        action.run()
+      }
+      hudToast.append(btn)
+    }
     hudToast.dataset.error = String(isError)
     hudToast.hidden = false
     if (toastTimer) window.clearTimeout(toastTimer)
     toastTimer = window.setTimeout(() => {
       hudToast.hidden = true
-    }, 2800)
+    }, action ? 5000 : 2800)
   }
 
   function captureSnapshot(): FullSnapshot {
@@ -229,7 +298,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
-  function restoreSnapshot(snap: FullSnapshot) {
+  function restoreSnapshot(snap: FullSnapshot, preserveTransport = false) {
+    const prevFrames = frames
+    const prevElapsed = elapsed
+    const secBefore = activeSection()
+    const prevPlaying = "playing" in secBefore.settings ? Boolean(secBefore.settings.playing) : true
     if (snap.sectionId !== globalSettings.section) {
       selectSection(snap.sectionId)
     }
@@ -237,6 +310,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const saved = snap.sections[s.id]
       if (!saved) continue
       for (const [k, v] of Object.entries(saved)) {
+        if (preserveTransport && k === "playing") continue
         if (k in s.settings) s.settings[k] = v
       }
     }
@@ -245,15 +319,169 @@ export function createWorkbench(opts: WorkbenchOptions) {
       spawn.restore(snap.spawn)
     }
     const sec = activeSection()
+    if (preserveTransport && "playing" in sec.settings) {
+      sec.settings.playing = prevPlaying
+      frames = prevFrames
+      elapsed = prevElapsed
+    }
     if (sec.id === "blackout-effects" || sec.id === "getaway-effects") {
       sec.enter?.()
       sec.retrigger?.()
     } else if (sec.id === "effects" || sec.id === "fire-water" || sec.id === "splatter") {
       sec.retrigger?.()
     }
+    if (preserveTransport && !prevPlaying && frames > 0) {
+      stepSimulationDeterministic(frames)
+    }
     panel.sync()
     syncChrome()
     void renderNow()
+  }
+
+  function stepSimulationDeterministic(targetFrames: number) {
+    const sec = activeSection()
+    const capped = Math.max(0, Math.min(360, Math.round(targetFrames)))
+    const wasPlaying = "playing" in sec.settings ? sec.settings.playing : true
+    if ("playing" in sec.settings) sec.settings.playing = true
+    for (let i = 0; i < capped; i++) {
+      advanceSim(1 / 60)
+    }
+    if ("playing" in sec.settings) sec.settings.playing = wasPlaying
+    frames = capped
+    elapsed = capped / 60
+    timeReadout.textContent = `${elapsed.toFixed(2)}s · f${frames}`
+  }
+
+  function resimulateFrozenFrame() {
+    const sec = activeSection()
+    const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
+    if (playing || frames <= 0) return false
+    if (!["effects", "blackout-effects", "getaway-effects", "fire-water", "splatter"].includes(sec.id)) return false
+    const targetFrames = frames
+    sec.retrigger?.()
+    stepSimulationDeterministic(targetFrames)
+    return true
+  }
+
+  function syncCompareWipeOverlay() {
+    if (!compareWipeEnabled || !slotA) {
+      wipeDOM.sync({ enabled: false, split: compareWipeSplit, frames, diffs: [] })
+      return
+    }
+    const snapB = slotB?.snapshot ?? captureSnapshot()
+    const diffs = computeSnapshotDiffs(slotA.snapshot, snapB)
+    wipeDOM.sync({
+      enabled: true,
+      split: compareWipeSplit,
+      frames,
+      diffs,
+    })
+  }
+
+  async function captureSlotAToWipeCanvas() {
+    if (!slotA || isCapturingWipe) return
+    isCapturingWipe = true
+    try {
+      const currentLive = captureSnapshot()
+      const currentFrames = frames
+      const currentElapsed = elapsed
+      const sec = activeSection()
+      const wasPlaying = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
+
+      // 1. Evaluate Slot A at current frame and copy rendered WebGPU canvas to wipe overlay
+      for (const s of sections) {
+        const saved = slotA.snapshot.sections[s.id]
+        if (!saved) continue
+        for (const [k, v] of Object.entries(saved)) {
+          if (k === "playing") continue
+          if (k in s.settings) s.settings[k] = v
+        }
+      }
+      Object.assign(stage.lighting, slotA.snapshot.lighting)
+      sec.retrigger?.()
+      if (currentFrames > 0) stepSimulationDeterministic(currentFrames)
+
+      const w = Math.max(1, canvas.width)
+      const h = Math.max(1, canvas.height)
+      if (wipeDOM.canvasA.width !== w || wipeDOM.canvasA.height !== h) {
+        wipeDOM.canvasA.width = w
+        wipeDOM.canvasA.height = h
+      }
+      stage.onFrameSubmitted = () => {
+        const ctx2d = wipeDOM.canvasA.getContext("2d")
+        ctx2d?.clearRect(0, 0, w, h)
+        ctx2d?.drawImage(canvas, 0, 0, w, h)
+        stage.onFrameSubmitted = undefined
+      }
+      await renderNow()
+      stage.onFrameSubmitted = undefined
+
+      // 2. Restore live Candidate B at the exact same frame
+      for (const s of sections) {
+        const saved = currentLive.sections[s.id]
+        if (!saved) continue
+        for (const [k, v] of Object.entries(saved)) {
+          if (k in s.settings) s.settings[k] = v
+        }
+      }
+      if ("playing" in sec.settings) sec.settings.playing = wasPlaying
+      Object.assign(stage.lighting, currentLive.lighting)
+      sec.retrigger?.()
+      if (currentFrames > 0) stepSimulationDeterministic(currentFrames)
+      frames = currentFrames
+      elapsed = currentElapsed
+      await renderNow()
+      syncCompareWipeOverlay()
+    } finally {
+      isCapturingWipe = false
+    }
+  }
+
+  function pinBaselineSlotA() {
+    const snap = captureSnapshot()
+    slotA = { snapshot: snap, frames, elapsed }
+    slotB = { snapshot: captureSnapshot(), frames, elapsed }
+    activeSlot = "B"
+    syncChrome()
+    if (compareWipeEnabled) void captureSlotAToWipeCanvas()
+    showToast(`Pinned Baseline Slot A at f${frames}`)
+  }
+
+  function flipCompareSlot() {
+    if (!slotA) {
+      pinBaselineSlotA()
+      return
+    }
+    if (activeSlot === "B") {
+      slotB = { snapshot: captureSnapshot(), frames, elapsed }
+      activeSlot = "A"
+      restoreSnapshot(slotA.snapshot, true)
+      showToast(`Viewing Slot A (Baseline) at f${frames}`)
+    } else {
+      activeSlot = "B"
+      if (slotB) restoreSnapshot(slotB.snapshot, true)
+      showToast(`Viewing Slot B (Candidate) at f${frames}`)
+    }
+    syncCompareWipeOverlay()
+  }
+
+  function toggleCompareWipe() {
+    if (!slotA) {
+      pinBaselineSlotA()
+    }
+    compareWipeEnabled = !compareWipeEnabled
+    if (compareWipeEnabled && activeSlot === "A" && slotB) {
+      activeSlot = "B"
+      restoreSnapshot(slotB.snapshot, true)
+    }
+    syncChrome()
+    if (compareWipeEnabled) {
+      void captureSlotAToWipeCanvas()
+      showToast("Split-screen A/B wipe enabled · Drag divider to compare")
+    } else {
+      syncCompareWipeOverlay()
+      showToast("Split-screen A/B wipe off")
+    }
   }
 
   function recordHistory(label: string, before: FullSnapshot) {
@@ -283,7 +511,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return true
   }
 
-  function setPlayMode(next: "edit" | "play") {
+  function setPlayMode(next: "edit" | "play", restoreCheckpoint = true) {
     if (next === "play") {
       if (globalSettings.section !== "spawn") selectSection("spawn")
       if (spawn && !spawn.hasCharacter()) {
@@ -295,18 +523,39 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
       spawn.setGhost(null)
       activeTransform = null
+      prePlayCheckpoint = captureSnapshot()
       mode = "play"
       input.enabled = true
       focusZone = "canvas"
       viewportCursor.update({ state: "hidden" })
       canvas.focus({ preventScroll: true })
-      showToast(`Playing ${spawn.characterLabel() ?? "Character"} · Esc to return to Edit`)
+      showToast(`Playing ${spawn.characterLabel() ?? "Character"} · Esc to return & restore checkpoint`)
     } else {
       const wasPlay = mode === "play"
       mode = "edit"
       input.enabled = false
       input.release()
-      if (wasPlay) showToast("Edit mode")
+      if (wasPlay) {
+        if (restoreCheckpoint && prePlayCheckpoint) {
+          lastPlayAftermath = captureSnapshot()
+          spawn?.resetScene()
+          restoreSnapshot(prePlayCheckpoint)
+          const aftermath = lastPlayAftermath
+          const checkpoint = prePlayCheckpoint
+          showToast("Restored pre-Play checkpoint", false, {
+            label: "Keep Play State",
+            run: () => {
+              if (aftermath && checkpoint) {
+                restoreSnapshot(aftermath)
+                recordHistory("Play session state", checkpoint)
+                showToast("Kept Play state")
+              }
+            },
+          })
+        } else {
+          showToast("Edit mode")
+        }
+      }
     }
     syncChrome()
   }
@@ -480,6 +729,21 @@ export function createWorkbench(opts: WorkbenchOptions) {
   })
 
   const radialDOM = createRadialMenuDOM(viewportEl, radialState, handleRadialResult)
+  const origNavSet = panel.navigation.set.bind(panel.navigation)
+  panel.navigation.set = (control, value) => {
+    origNavSet(control, value)
+    if (isCapturingWipe) return
+    const didResim = resimulateFrozenFrame()
+    if (slotA && activeSlot === "B") {
+      slotB = { snapshot: captureSnapshot(), frames, elapsed }
+    }
+    if (compareWipeEnabled && slotA) {
+      syncCompareWipeOverlay()
+    }
+    if (didResim) {
+      void renderNow()
+    }
+  }
 
   function handleRadialResult(res: RadialReleaseResult) {
     if (res.outcome === "execute") {
@@ -973,6 +1237,59 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Preset",
       enabled: () => true,
       run: () => openPresetModal("import"),
+    },
+    {
+      id: "preset.copy-recipe",
+      label: "Copy Recipe for Game",
+      shortLabel: "Copy Recipe",
+      category: "Preset",
+      enabled: () => true,
+      run: () => openRecipeModal(),
+    },
+    {
+      id: "compare.pin-a",
+      label: "Pin Baseline Slot A",
+      shortLabel: "Pin A",
+      category: "Compare",
+      shortcut: "B",
+      enabled: () => true,
+      run: () => pinBaselineSlotA(),
+    },
+    {
+      id: "compare.flip",
+      label: "Flip Compare Slot A / B",
+      shortLabel: "Flip A/B",
+      category: "Compare",
+      shortcut: "V",
+      enabled: () => true,
+      run: () => flipCompareSlot(),
+    },
+    {
+      id: "compare.wipe",
+      label: "Toggle Split-Screen A/B Wipe",
+      shortLabel: "Wipe A/B",
+      category: "Compare",
+      shortcut: "⇧V",
+      enabled: () => true,
+      run: () => toggleCompareWipe(),
+    },
+    {
+      id: "transport.toggle",
+      label: "Pause / Resume Simulation",
+      shortLabel: "Pause",
+      category: "Transport",
+      shortcut: "K",
+      enabled: () => "playing" in activeSection().settings,
+      run: () => playPauseBtn.click(),
+    },
+    {
+      id: "transport.step",
+      label: "Step Forward 1 Frame (1/60s)",
+      shortLabel: "Step",
+      category: "Transport",
+      shortcut: ".",
+      enabled: () => true,
+      run: () => stepBtn.click(),
     },
   ])
 
@@ -1711,6 +2028,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
     playModeBtn.setAttribute("aria-pressed", String(mode === "play"))
     playModeBtn.dataset.playActive = String(mode === "play")
     boxModeBtn.setAttribute("aria-pressed", String(mode === "edit" && boxSelectMode))
+    pinABtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
+    pinABtn.textContent = slotA ? `A (f${slotA.frames})` : "Pin A · B"
+    flipBtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
+    flipBtn.textContent = slotA ? `Slot ${activeSlot} · V` : "Flip · V"
+    wipeBtn.setAttribute("aria-pressed", String(compareWipeEnabled))
+    syncCompareWipeOverlay()
 
     undoBtn.disabled = undoStack.length === 0
     undoBtn.title = undoStack.length ? `Undo ${undoStack.at(-1)!.label} (⌘Z)` : "Undo (⌘Z)"
@@ -1889,6 +2212,29 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return { ok: true }
   }
 
+  function buildCurrentGameRecipe(): GameRecipePayload {
+    const sec = activeSection()
+    return buildGameRecipe({
+      sectionId: sec.id,
+      settings: sec.settings,
+      lighting: stage.lighting,
+    })
+  }
+
+  function openRecipeModal() {
+    const recipe = buildCurrentGameRecipe()
+    const payload = JSON.stringify(recipe, null, 2)
+    focusZone = "modal"
+    modalBackdrop.hidden = false
+    modalError.hidden = true
+    modalTitle.textContent = `Game Recipe · ${recipe.modulePath}`
+    modalTextarea.value = `${recipe.codeSnippet}\n\n${payload}`
+    modalTextarea.focus()
+    modalTextarea.select()
+    void navigator.clipboard?.writeText(payload).catch(() => {})
+    showToast(`Copied game recipe for ${recipe.modulePath}`)
+  }
+
   function openPresetModal(mode: "export" | "import") {
     focusZone = "modal"
     modalBackdrop.hidden = false
@@ -1980,6 +2326,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   frameBtn.onclick = () => frameActiveTarget()
+  pinABtn.onclick = () => pinBaselineSlotA()
+  flipBtn.onclick = () => flipCompareSlot()
+  wipeBtn.onclick = () => toggleCompareWipe()
+  recipeBtn.onclick = () => openRecipeModal()
   undoBtn.onclick = () => undo()
   redoBtn.onclick = () => redo()
   exportBtn.onclick = () => openPresetModal("export")
@@ -2729,6 +3079,30 @@ export function createWorkbench(opts: WorkbenchOptions) {
       panel.sync()
       syncChrome()
       void renderNow()
+    } else if (key === "k" && !event.repeat) {
+      event.preventDefault()
+      playPauseBtn.click()
+    } else if (event.key === "." && !event.repeat) {
+      event.preventDefault()
+      const count = event.shiftKey ? 5 : 1
+      for (let i = 0; i < count; i++) stepBtn.click()
+    } else if (event.key === "," && !event.repeat) {
+      event.preventDefault()
+      const sec = activeSection()
+      if ("playing" in sec.settings) sec.settings.playing = false
+      const targetFrames = Math.max(0, frames - (event.shiftKey ? 5 : 1))
+      sec.retrigger?.()
+      stepSimulationDeterministic(targetFrames)
+      panel.sync()
+      syncChrome()
+      void renderNow()
+    } else if (key === "b" && !event.repeat) {
+      event.preventDefault()
+      pinBaselineSlotA()
+    } else if (key === "v" && !event.repeat) {
+      event.preventDefault()
+      if (event.shiftKey) toggleCompareWipe()
+      else flipCompareSlot()
     } else if (key === "p" && !event.repeat) {
       event.preventDefault()
       setPlayMode("play")
@@ -2853,11 +3227,21 @@ export function createWorkbench(opts: WorkbenchOptions) {
         redoStack.length = 0
       }
       const sec = activeSection()
-      if (!isBench && (sec.id === "blackout-effects" || sec.id === "getaway-effects")) {
+      const isPaused = "playing" in sec.settings && !sec.settings.playing
+      if (isPaused && frames > 0) {
+        resimulateFrozenFrame()
+      } else if (!isBench && (sec.id === "blackout-effects" || sec.id === "getaway-effects")) {
         sec.retrigger?.()
       }
-      syncChrome()
-      void renderNow()
+      if (slotA && activeSlot === "B") {
+        slotB = { snapshot: captureSnapshot(), frames, elapsed }
+      }
+      if (compareWipeEnabled && slotA) {
+        void captureSlotAToWipeCanvas()
+      } else {
+        syncChrome()
+        void renderNow()
+      }
     },
     onPanelFocusChange(focused: boolean) {
       if (focused) {
@@ -2878,6 +3262,40 @@ export function createWorkbench(opts: WorkbenchOptions) {
     redo,
     applyPresetJson,
     exportPresetJson: () => JSON.stringify(buildPresetPayload(), null, 2),
+    exportGameRecipe: buildCurrentGameRecipe,
+    applyGameRecipe: (raw: unknown) => {
+      const sec = activeSection()
+      const res = applyGameRecipe(raw, {
+        lighting: stage.lighting,
+        sectionSettings: sec.settings,
+      })
+      if (res.ok) {
+        const isPaused = "playing" in sec.settings && !sec.settings.playing
+        if (isPaused && frames > 0) resimulateFrozenFrame()
+        else sec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+      }
+      return res
+    },
+    compare: {
+      pinA: pinBaselineSlotA,
+      flip: flipCompareSlot,
+      toggleWipe: toggleCompareWipe,
+      get activeSlot() {
+        return activeSlot
+      },
+      get wipeEnabled() {
+        return compareWipeEnabled
+      },
+      get frames() {
+        return frames
+      },
+      get diffs() {
+        return slotA ? computeSnapshotDiffs(slotA.snapshot, slotB?.snapshot ?? captureSnapshot()) : []
+      },
+    },
     setPlayMode,
     frameActiveTarget,
     syncChrome,

@@ -332,6 +332,9 @@ export async function lab(options:LabOptions) {
       getSelectedIds:()=>workbench!.getSelectedIds(),
       setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
       transform:workbench!.transform,
+      compare:workbench!.compare,
+      exportGameRecipe:()=>workbench!.exportGameRecipe(),
+      applyGameRecipe:(raw:unknown)=>workbench!.applyGameRecipe(raw),
     },
   }
   let last=0

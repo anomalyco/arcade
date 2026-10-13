@@ -227,7 +227,179 @@ try {
     const validRes = await page.evaluate((json: string) => (window as any).lab.workbench.importPreset(json), exported)
     assert.equal(validRes.ok, true, "Valid preset imported")
 
-    // 6. Responsive 1920x1080 check
+    // 6. Radial Menu: 8 fixed compass sectors, disabled-in-place slots, <14px dead zone cancel, tap-to-latch + accelerator
+    await page.locator('[data-catalog-id="fixture:car-cones"]').click()
+    await step(4)
+    await page.locator("canvas").focus()
+    await page.keyboard.press("m")
+    const radialAudit = await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>("[data-lab-radial]")!
+      const sectors = [...root.querySelectorAll<HTMLElement>(".lab-radial-sector")].map(el => ({
+        slot: Number(el.dataset.sector),
+        compass: el.dataset.compass,
+        angle: Number(el.dataset.angle),
+        disabled: el.getAttribute("aria-disabled") === "true",
+      }))
+      return { visible: !root.hidden, phase: root.dataset.phase, sectors }
+    })
+    assert.equal(radialAudit.visible, true, "Radial menu opened via M key")
+    assert.equal(radialAudit.phase, "latched", "Keyboard M opens radial menu in latched state")
+    assert.deepEqual(
+      radialAudit.sectors.map(s => s.angle),
+      [0, 45, 90, 135, 180, 225, 270, 315],
+      "8 fixed compass angles never shift",
+    )
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-radial-menu.png") })
+    await page.keyboard.press("Escape")
+    assert.equal(await page.evaluate(() => document.querySelector<HTMLElement>("[data-lab-radial]")!.hidden), true)
+
+    // Hold RMB > 180ms inside <14px dead zone cancels with 0 actions
+    const canvasBox = (await page.locator("canvas").boundingBox())!
+    const cx = canvasBox.x + canvasBox.width * 0.5
+    const cy = canvasBox.y + canvasBox.height * 0.5
+    const propsBeforeDeadZone = await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length)
+    await page.mouse.move(cx, cy)
+    await page.mouse.down({ button: "right" })
+    await page.mouse.move(cx + 5, cy - 4)
+    await page.waitForTimeout(210)
+    await page.mouse.up({ button: "right" })
+    assert.equal(await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length), propsBeforeDeadZone, "Dead zone cancel executed 0 mutations")
+
+    // Action-count acceptance test: RMB on ground -> 'a' (Spawn Here) places hydrant, P + W drives into it, Esc restores unbroken prePlayCheckpoint
+    await page.evaluate(() => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      s.settings.item = "hydrant"
+      s.selectObjects?.([])
+    })
+    await page.mouse.click(cx, cy - 20, { button: "right" })
+    await page.keyboard.press("a")
+    await step(2)
+    const propsAfterRadialSpawn = await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length)
+    assert.equal(propsAfterRadialSpawn, propsBeforeDeadZone + 1, "Radial Spawn Here placed hydrant in 1 gesture")
+
+    await page.keyboard.press("p")
+    await page.keyboard.down("w")
+    await step(38)
+    await page.keyboard.press("Escape")
+    await page.keyboard.up("w")
+    await step(2)
+    const postEscCheckpoint = await page.evaluate(() => {
+      const insp = (window as any).lab.spawn.inspect()
+      return {
+        mode: (window as any).lab.workbench.getMode(),
+        speed: insp.character.speed,
+        brokenCount: insp.items.props.filter((p: any) => p.broken).length,
+        totalProps: insp.items.props.length,
+      }
+    })
+    assert.equal(postEscCheckpoint.mode, "edit")
+    assert.equal(postEscCheckpoint.speed, 0, "Car velocity restored to 0 from pre-Play checkpoint")
+    assert.equal(postEscCheckpoint.brokenCount, 0, "All props restored unbroken from pre-Play checkpoint")
+    assert.equal(postEscCheckpoint.totalProps, propsAfterRadialSpawn, "Placed hydrant retained across Play/Esc checkpoint restore")
+
+    // 7. Marquee Box Select (Alt+Drag) + Multi-Select Inspector + Group Duplicate/Delete + Single-Transaction Undo
+    await page.mouse.move(canvasBox.x + 80, canvasBox.y + 80)
+    await page.keyboard.down("Alt")
+    await page.mouse.down({ button: "left" })
+    await page.mouse.move(canvasBox.x + canvasBox.width - 80, canvasBox.y + canvasBox.height - 80, { steps: 5 })
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-marquee-multiselect.png") })
+    await page.mouse.up({ button: "left" })
+    await page.keyboard.up("Alt")
+    await step(1)
+    const marqueeSelectedIds = await page.evaluate(() => (window as any).lab.workbench.getSelectedIds())
+    assert(marqueeSelectedIds.length >= 3, `Expected marquee to select >=3 props, got ${marqueeSelectedIds.length}`)
+
+    // Group delete in 1 transaction and Undo in 1 keystroke
+    const countBeforeGroupDelete = await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length)
+    await page.locator("canvas").focus()
+    await page.keyboard.press("Backspace")
+    await step(1)
+    const countAfterGroupDelete = await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length)
+    assert(countAfterGroupDelete < countBeforeGroupDelete, "Group delete removed selected props")
+    await page.keyboard.press("Meta+z")
+    await step(1)
+    assert.equal(
+      await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length),
+      countBeforeGroupDelete,
+      "Single Meta+Z restored entire deleted group",
+    )
+
+    // 8. Transform Gizmo & Modal (G move + numeric entry + Shift+R rotate)
+    await page.evaluate(() => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      const firstProp = s.objects().find((o: any) => o.category === "prop")
+      if (firstProp) s.selectObject(firstProp.id)
+    })
+    await step(2)
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-transform-gizmo.png") })
+    await page.locator("canvas").focus()
+    await page.keyboard.press("g")
+    for (const ch of ["3", ".", "5"]) await page.keyboard.press(ch)
+    await page.keyboard.press("Enter")
+    await step(1)
+    const movedX = await page.evaluate(() => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      return s.settings.selectedX
+    })
+    assert.equal(movedX, 3.5, "Modal G + numeric entry set exact X = 3.5m")
+
+    // 9. Trackpad gestures: Ctrl+wheel pinch zoom, two-finger scroll orbit, Shift+scroll pan, Meta+wheel ignored
+    const camBeforeWheel = await page.evaluate(() => {
+      const st = (window as any).lab.context.stage
+      return { yaw: st.camYaw, dist: st.camDist, focusX: st.focus[0] }
+    })
+    const metaNotPrevented = await page.locator("canvas").evaluate(el =>
+      el.dispatchEvent(new WheelEvent("wheel", { deltaY: 60, metaKey: true, cancelable: true })),
+    )
+    assert.equal(metaNotPrevented, true, "Meta+wheel is never hijacked")
+    await page.locator("canvas").evaluate(el => {
+      el.dispatchEvent(new WheelEvent("wheel", { deltaY: -50, ctrlKey: true, cancelable: true }))
+      el.dispatchEvent(new WheelEvent("wheel", { deltaX: 40, deltaY: -20, cancelable: true }))
+      el.dispatchEvent(new WheelEvent("wheel", { deltaX: 30, deltaY: 30, shiftKey: true, cancelable: true }))
+    })
+    await step(6)
+    const camAfterWheel = await page.evaluate(() => {
+      const st = (window as any).lab.context.stage
+      return { yaw: st.camYaw, dist: st.camDist, focusX: st.focus[0] }
+    })
+    assert(camAfterWheel.dist < camBeforeWheel.dist, "Ctrl+wheel pinch zoomed camera in")
+    assert.notEqual(camAfterWheel.yaw, camBeforeWheel.yaw, "Two-finger scroll orbited camera")
+    assert.notEqual(camAfterWheel.focusX, camBeforeWheel.focusX, "Shift + two-finger scroll panned camera")
+
+    // 10. Frozen-frame deterministic re-simulation + A/B Slot Flip (V) & Split Wipe (Shift+V) + Copy Game Recipe
+    await page.locator('[data-catalog-id="fixture:smoke-room"]').click()
+    await step(35)
+    await page.locator("canvas").focus()
+    await page.keyboard.press("k") // Pause at f35
+    await page.keyboard.press("b") // Pin Slot A at f35
+    const sizeSlider = page.getByRole("slider", { name: "Size", exact: true })
+    await sizeSlider.focus()
+    for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight")
+    await page.locator("canvas").focus()
+    const abAfterScrub = await page.evaluate(() => ({
+      frames: (window as any).lab.workbench.compare.frames,
+      diffs: (window as any).lab.workbench.compare.diffs,
+      activeSlot: (window as any).lab.workbench.compare.activeSlot,
+    }))
+    assert.equal(abAfterScrub.frames, 35, "Scrubbing while paused kept frame locked at f35")
+    assert(abAfterScrub.diffs.some((d: any) => d.key === "size"), "Slot B recorded parameter delta vs Slot A")
+
+    await page.keyboard.press("v") // Flip to Slot A
+    assert.equal(await page.evaluate(() => (window as any).lab.workbench.compare.activeSlot), "A")
+    await page.keyboard.press("v") // Flip back to Slot B
+    assert.equal(await page.evaluate(() => (window as any).lab.workbench.compare.activeSlot), "B")
+
+    await page.keyboard.press("Shift+V") // Toggle Split-Screen Wipe
+    await page.waitForTimeout(80)
+    assert.equal(await page.evaluate(() => (window as any).lab.workbench.compare.wipeEnabled), true)
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-compare-ab-wipe.png") })
+    await page.keyboard.press("Shift+V") // Turn off wipe before 1920x1080 capture
+
+    const recipePayload = await page.evaluate(() => (window as any).lab.workbench.exportGameRecipe())
+    assert.equal(recipePayload.schema, "arcade-game-recipe/v1")
+    assert(!recipePayload.codeSnippet.includes("?"), "Game recipe exports typed settings with zero URL params")
+
+    // 11. Responsive 1920x1080 check
     await page.setViewportSize({ width: 1920, height: 1080 })
     await page.getByRole("button", { name: "Category Effects", exact: true }).click()
     await page.locator('[data-catalog-id="fixture:flame-hydrant"]').click()
@@ -253,6 +425,15 @@ try {
       throttleAfterEsc: editState.throttle,
       audioSilent: audioInitial,
       presetValidation: { invalidRejected: !invalidRes.ok, validAccepted: validRes.ok },
+      radialAngles: radialAudit.sectors.map(s => s.angle),
+      postEscCheckpoint,
+      marqueeSelectedCount: marqueeSelectedIds.length,
+      transformNumericX: movedX,
+      compareAB: {
+        frozenFrame: abAfterScrub.frames,
+        diffs: abAfterScrub.diffs,
+        recipeTarget: recipePayload.target,
+      },
     }
     await page.close()
   }

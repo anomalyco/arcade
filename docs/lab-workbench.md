@@ -105,32 +105,34 @@ Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.
 
 Priority order:
 
-1. **Text editing / modal dialog** (`Search library`, `Search controls`, `Exact <control>`, Preset JSON modal): owns
+1. **Text editing / modal dialog** (`Search library`, `Search controls`, `Exact <control>`, Gizmo numeric `X`/`Z`/`°` inputs, Preset/Recipe JSON modal): owns
    printable keys, `Space`, arrows and clipboard shortcuts; `Escape` closes the active editor or clears search.
-2. **Active placement ghost or move ghost** (`Place <item>`, `Move <object>`): `Click` or `Enter` commits (`Shift+Click`
-   stamps and stays armed), `[` / `]` rotates yaw by 15° (`Shift` 1°), arrow keys nudge on the ground plane, `Escape`
-   cancels without recording history.
-3. **Focused Inspector (`LabPanel`)**: `↑`/`↓` rows, `←`/`→` adjust (`Shift` ×10, `Alt` ×0.1), `Tab`/`Shift+Tab` groups,
+2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or `M` / `ContextMenu`)**:
+   - Uses 8 fixed compass sectors (`0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°`), a `14 px` center dead zone, `96 px` ring radius, and `180 ms` tap-to-latch vs. hold-flick-release threshold.
+   - Unavailable commands stay dimmed (`aria-disabled="true"`) in their fixed compass slot so neighbor angles never shift.
+   - Object ring (`N` Trigger `Space`, `NE` Possess `P`, `E` Duplicate `D`, `SE` Inspect `I`, `S` Delete `⌫`, `SW` Reset `0`, `W` Move `G`, `NW` Frame `F`) vs. Empty-Ground ring (`N` Trigger FX `Space`, `NE` Spawn Char `P`, `E` Spawn Here `A`/`E`, `SE` Drop Light `L`, `S` Clear FX `⌫`, `SW` Reroll `R`, `W` Move Here `G`, `NW` Frame `F`).
+   - When latched open, owns `1`–`8`, sector accelerator keys, `Arrows`, `Enter` and `Escape`.
+3. **Active placement ghost or modal transform** (`Place <item>`, `Move <object>` `G`, `Rotate <object>` `⇧R` or `G`→`R`):
+   - `Click` or `Enter` commits as 1 undo transaction (`Shift+Click` stamps and stays armed for ghosts), `[` / `]` rotates yaw by 15° (`Shift` 1°), arrow keys nudge on the ground plane, typing digits (`0–9`, `-`, `.`, `Tab` for `X`/`Z`) enters exact coordinate/angle values live, and `Escape` cancels and restores pre-gesture state with 0 history entries.
+   - Selected movable objects also display an in-viewport **Transform Gizmo** (`packages/kit/lab/transform.ts`) with draggable Move (`✥`) and Rotate (`↻`) handles and inline numeric `X` / `Z` / `°` inputs, plus a context-aware viewport reticle (`[data-viewport-cursor]`) that hides in `Play` mode.
+4. **Focused Inspector (`LabPanel`)**: `↑`/`↓` rows, `←`/`→` adjust (`Shift` ×10, `Alt` ×0.1), `Tab`/`Shift+Tab` groups,
    `Enter`/`Space` edit or toggle, `0` reset control, `Shift+0` reset group, `R` randomize group, `C` copy group JSON,
    `Escape` returns focus to the canvas.
-4. **Play mode (`mode === "play"`)**: Entered explicitly with `P` (or the top-bar `Play · P` button) when a character
-   exists (`?bench` auto-enables `input.enabled` on `Spawn character` for non-interactive regression scripts). Owns
-   `WASD`, Dvorak `, o a e`, arrows, `Space` (handbrake) and `Shift` (boost/sprint). Pressing `Escape` or focusing any
-   sidebar/toolbar control immediately exits `Play` to `Edit` and calls `input.release()`.
-5. **Edit canvas (`mode === "edit"`)**: `Space` retriggers with the same seed, `F` frames the active target/object, `R`
-   rerolls the room seed while respecting `Lock FX`/`Lock Env`, `Q`/`E` cycles the active effect/item, `1`–`4` switches
-   library categories, `A` arms prop placement, `G` moves the selected object, `Backspace`/`Delete` removes a deletable
-   placed object, `⌘D` duplicates it, `⌘Z`/`⇧⌘Z` undoes/redoes authored edits, `Tab` focuses the Inspector, `⌘K` or `/`
-   focuses library search, and `Backquote` hides/shows the workbench chrome. Browser shortcuts (`⌘R`, `⌘L`, etc.) are
-   never swallowed.
+5. **Play mode (`mode === "play"`)**: Entered explicitly with `P` (or `Play · P` / Radial `Possess`) when a character
+   exists (`?bench` auto-enables `input.enabled` on `Spawn character` for non-interactive regression scripts). Captures a
+   `prePlayCheckpoint` on entry. Owns `WASD`, Dvorak `, o a e`, arrows, `Space` (handbrake) and `Shift` (boost/sprint).
+   Pressing `Escape` or focusing any sidebar/toolbar control immediately exits `Play` to `Edit`, calls `input.release()`,
+   and restores `prePlayCheckpoint` (with a `[Keep Play State]` toast action if the user wants to keep the aftermath).
+6. **Edit canvas (`mode === "edit"`)**:
+   - **Pointer & Selection**: `Click` selects, `Shift+Click` toggles/adds to multi-selection, `LMB Drag` orbits, `Shift+LMB` / `MMB Drag` pans, and `Alt+LMB Drag` (or `LMB Drag` when the top-bar `Box` mode toggle is active) draws a marquee selection box without fighting camera orbit. Multi-selection exposes shared Inspector fields (`Position X`, `Position Z`, `Yaw`, `Light power`, `Light radius`) and commits group move, duplicate (`D` / `⌘D`) and delete (`⌫` / `Delete`) as single undo transactions.
+   - **Trackpad & Wheel (`packages/kit/lab/viewport-input.ts`)**: Shared classifier across Lab and Catalogue viewports. In the Lab viewport, two-finger scroll orbits (`twoFingerScroll: "orbit"`), `Shift` + two-finger scroll pans, and two-finger pinch (`Ctrl+wheel` or Safari `gesturestart`/`gesturechange`) zooms the 3D camera inside the canvas (`preventDefault()` scoped strictly to `canvas`), with smooth exponential camera damping (`stage.stepCamera(dt)`). `Meta+wheel` and browser `Cmd` shortcuts are never intercepted. Automated Playwright proofs dispatch synthetic `WheelEvent`s; physical multi-finger trackpad hardware feel is not established by synthetic events.
+   - **Transport, Frozen-Frame Scrub & A/B Compare (`packages/kit/lab/compare-ab.ts`, `recipe.ts`)**: `Space` retriggers with the locked seed, `K` toggles transport Pause/Play, `.` steps forward 1 frame (`Shift+.` 5 frames), `,` steps backward 1 frame (`Shift+,` 5 frames). Scrubbing any parameter while paused at frame `fN` deterministically re-simulates `fN` ticks of the locked seed in place. `B` pins Baseline `Slot A`, `V` flips between `Slot A` and Candidate `Slot B` at the same frame, `Shift+V` toggles the draggable split-screen A/B wipe, and `Copy Recipe` exports typed game settings (`arcade-game-recipe/v1`) with zero URL parameters.
 
 ## Limits
 
 - Undo/redo tracks authored state (parameter gestures, group randomize/reset, room seed rerolls, preset imports, and
-  placed props/lights/characters in `Spawn`). It does not rewind live particle or rigid-body simulation ticks.
-- Full 3D transform gizmo handles and autonomous object behavior presets (`Patrol`, `Chase`, `Orbit` from the proposal)
-  are not included in this pass; object placement and movement use cursor ground-raycast ghosts (`yardGround` including
-  the ramp) plus keyboard nudging and Inspector `Position X` / `Position Z` / `Yaw` sliders.
+  placed props/lights/characters in `Spawn`). It does not rewind live particle or rigid-body simulation ticks; exiting `Play` restores `prePlayCheckpoint`.
+- Autonomous object behavior presets (`Patrol`, `Chase`, `Orbit` from the proposal) are not included in this pass; object placement and transforms use cursor ground-raycast ghosts (`yardGround` including ramps), in-viewport 2D projected Move/Rotate handles, modal `G`/`⇧R` numeric entry, and Inspector sliders.
 - `Audio` never creates or unlocks a live `AudioContext` on section entry or catalog selection; waveform and spectrogram
   previews render through `OfflineAudioContext`, and live playback occurs only after clicking `Audition`.
 
@@ -154,14 +156,12 @@ hivemind run -- bun games/getaway/scripts/prove-lab-effects.ts
 hivemind run -- bun games/getaway/scripts/prove-lab-spawn.ts
 ```
 
-<<<<<<< HEAD
-Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, relative to the local
-artifact root. Combined-branch results are recorded separately in `docs/integration.md`:
-||||||| parent of 0ae6f7f (feat(lab): add connected car skids, persistent playground world, and switchable yard environments)
-Saved before/after screenshots and proof JSON live under `~/code/home/artifacts/2026-10-13-lab-workbench/`:
-=======
-Saved car playground and skid proofs live under `~/code/home/artifacts/2026-10-13-lab-car-playground/`:
+Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, `2026-10-13-lab-car-playground/`, and `2026-10-13-lab-interaction/`, relative to the local artifact root:
 
+- `after-radial-menu.png` — 8-sector fixed-compass Radial Marking Menu opened over the scene with disabled-in-place slots and shortcut badges.
+- `after-marquee-multiselect.png` — `Alt+Drag` marquee box selection across multiple props with live count badge and multi-select Inspector.
+- `after-transform-gizmo.png` — in-viewport Move (`✥`) and Rotate (`↻`) handles with inline `X` / `Z` / `°` numeric entry.
+- `after-compare-ab-wipe.png` — frozen-frame `f35` split-screen A/B wipe comparing `Slot A (Baseline)` vs. `Slot B (Candidate)` with parameter delta readout.
 - `before-car-skids-1280x800.png` and `after-car-skids-1280x800.png` — matched 1280×800 workbench pair on the identical
   keyboard launch + drift + handbrake trajectory (`0/1600` vs `188/1600` connected rear-wheel skid segments).
 - `before-canvas-native-1280x800.png` and `after-canvas-native-1280x800.png` — full-bleed native game scale canvas pair.
@@ -177,10 +177,6 @@ Saved car playground and skid proofs live under `~/code/home/artifacts/2026-10-1
   headlight arcs, and `bodyPoint`-locked lamps through throttle squat (`pitch = -0.0707 rad`, `headY = 0.6818 m`),
   brake dive (`pitch = +0.0899 rad`, `headY = 0.2880 m`) and kerb roll (`roll = -0.0805 rad`).
 - `car-playground-proof.json` — verified counts, budgets and `lampPoseProof` across both `getaway` and `blackout` hosts.
-
-Saved before/after screenshots and proof JSON live under `~/code/home/artifacts/2026-10-13-lab-workbench/`:
->>>>>>> 0ae6f7f (feat(lab): add connected car skids, persistent playground world, and switchable yard environments)
-
 - `before-default.png` and `before-blackout-effects.png` — prior floating panel with duplicate `Controls` headers and
   all 20 effect groups exposed.
 - `after-default-1280x800.png` — workbench layout at 1280×800 with Left Library, framed smoke room, Right Inspector and
