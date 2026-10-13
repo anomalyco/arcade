@@ -257,6 +257,7 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | lab-workbench | `806d4f50b56ea089244fa014fce08bd61be322ad` | #15 |
 | smoke-volume-refinement | `52142be34971ce75f03e75f22fbd3550a6b73c41` | #14 |
 | docs/lab-authoring-guide | `a53508f743f543b99df692fe1c46f822ebdc9556` | — |
+| shared-human-rig | `5a55cb394ea1f01de6a3bddc809ba13e565f27af` | — |
 
 ### Resolution log
 
@@ -265,19 +266,22 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 - `packages/kit/lab/effects.ts`: combined `#15`'s `activeWalls`/`activeGround` environment queries and playground
   tyre-trail retention with `#14`'s seeded `volume.reset(activeWalls, seed)` and `growthTime + hold + fade + 1`
   smoke loop duration.
-- Pending additions (`followup/outbreak-performance` / `perf/outbreak-autoresearch`, `shared-human-rig`, materials
-  library, shadow/edge fixes, and Lab interaction/comparison) enter as separate merge commits once their committed
-  branch tips are finalized; uncommitted worktree changes are never copied.
+- `shared-human-rig`: merged cleanly onto the combined branch. Exact 900-frame SHA-256 soldier parity against
+  `822303310da0bd95901879570e27c5b942ca4aa9` passed in both `old` (`00bde28a…`) and `new` (`f6efd0e3…`) modes.
+- Pending additions (`perf/outbreak-autoresearch`, materials library, shadow/edge fixes, and Lab
+  interaction/comparison) enter as separate merge commits once their committed branch tips are finalized;
+  uncommitted worktree changes are never copied.
 
 ### Verification
 
 A clean `git archive` export passed on the Studio via Hivemind:
 
 - `bun install --frozen-lockfile`
-- `bun run check:packages`: 60 passed
-- `games/getaway`: 218 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
-- `games/blackout`: 374 passed, typechecks, production build, smoke, and Worker dry-run
-- `games/outbreak`: 15 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun run check:packages`: 64 passed
+- `games/getaway`: 222 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 385 passed, typechecks, production build, smoke, and Worker dry-run
+- `games/outbreak`: 16 passed, typechecks, production build, smoke, and Worker dry-run
 - `games/carrier`: 371 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity against `8223033` in both `old` and `new` modes
 - `bun scripts/prove-dev-hub.ts`: single-origin redirect, all four game prefixes, Vite HMR across all four games,
   Catalogue 25-asset rotation/pause/reload persistence, and `--workers` health + WebSocket forwarding passed on Metal.
