@@ -74,6 +74,12 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   teleports and resize reset it. Eight depth-aware samples run in the existing composite, before the DOM HUD. The
   1440p M5 Max paired deltas were +0.060 / -0.312 / +0.237 ms for office/downtown/lot, with MAD
   0.345 / 0.896 / 0.273. The sub-0.5 ms target is unproven under that variance. See `perf/blackout-motion.md`.
+- **Fast projectiles need a flight-aware continuity threshold.** Blackout's 240 m/s tracers crossed the original
+  4-metre actor teleport threshold at 60 Hz, suppressing their velocity. Transient keys now carry an emission point
+  and 32-metre threshold; casings and sheets also get stable keys. A 1/60 shutter, 1.25-pixel dead zone and 32-pixel cap
+  make fast motion visible while slow camera following stays sharp. Tracked flash/tracer quads sweep their trailing
+  edge so their narrow silhouettes can streak. `scripts/motion-demo.ts` matches vehicle, camera and effect states for
+  an actual passing car and close-zoom shotgun kill/throw. Cost of this tuning is unmeasured; blur stays default off.
 
 - **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
   selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then

@@ -13,11 +13,15 @@ owner, so reordering model batches or removing another actor cannot transfer vel
 in `Renderer.draw`, after frame coalescing. First frames, missing identities, level changes, resizes, long frame gaps,
 large camera cuts and teleports reset velocity.
 
-The exposure is 1/120 second, capped at one frame, and the maximum blur length is 24 pixels. The velocity attachment
+After sandbox review, exposure is 1/60 second, capped at two frames, and the maximum blur length is 32 pixels.
+The first 1.25 pixels of displacement are suppressed so slow camera following stays sharp. The velocity attachment
 stores pixel displacement and distance from the camera in RGBA16F, with the scene's four-sample MSAA resolve. Transparent
 surfaces blend their motion by opacity; a single blended field approximates overlapping transparent layers. Sprite
-motion tracks centres, while mesh parts include rotation and scale. There is no temporal colour feedback or tile-max
-silhouette expansion. Velocity targets allocate on first enable and are recreated on resize.
+motion tracks centres, while mesh parts include rotation and scale. Tracked flash/tracer quads extend their trailing
+edge by the same bounded shutter displacement, so thin effects can streak beyond their original silhouette. New
+transients start from their emission point. Tracers use a 32-metre continuity threshold because normal flight at
+240 m/s exceeds the actor teleport threshold of 4 metres per frame. Flying casings and sheets now have stable keys.
+There is no temporal colour feedback or tile-max expansion. Velocity targets allocate on first enable and are recreated on resize.
 
 ## Whole-frame GPU measurement
 
@@ -26,7 +30,8 @@ It separately captures camera-only and object-only motion. This is a determinist
 gameplay benchmark. A separate live-input proof turns the Lab switch on, moves and fires, checks populated sprite/part
 histories, and verifies that resize resets motion.
 
-M5 Max, headless Chromium/Metal, 2560×1440. Each effect has one discarded warmup pair followed by seven alternating
+The measurements below predate the stronger shutter and transient-silhouette tuning. They do not establish the tuned
+implementation's cost. M5 Max, headless Chromium/Metal, 2560×1440. Each effect has one discarded warmup pair followed by seven alternating
 OFF/ON pairs. Each block settles for 32 frames and averages 96 frames. Hardware timestamp readback is awaited; total
 time spans the first compute start through the final composite end. The final composite uses an offscreen attachment
 with the canvas's size and format to exclude presentation contention. Overlapping pass timings are never summed.
@@ -55,6 +60,26 @@ After merging main's workspace conversion (`1bac7ef`, including `8dff834`), root
 comparison passed all 11 Look switches and All On/Off, with 180 paired ticks and zero pose mismatches.
 
 ## Reproduce
+
+### Sandbox review
+
+Motion blur remains default off. It now reads on the passing vehicle, shotgun recoil and ragdoll, but offers little
+during ordinary slow, top-down movement. Sound Rings and Lamp Flicker have been removed, including their settings,
+Lab controls and emission paths; tile reflections are approved and default on.
+
+`scripts/motion-demo.ts` drives the actual practice simulation with seeded randomness and identical input on both sides.
+The vehicle starts at 15 m/s and runs through the normal vehicle physics. The close-zoom shotgun shot kills a passive
+target, ejects a casing and is followed by a grenade throw. The four captures matched all recorded player, vehicle,
+camera and effect-count states. The shot contains eight tracers, one muzzle flash, one casing, one grenade and one
+ragdoll. Frame crops confirm sharper still scenery beside the moving vehicle, with HUD/crosshair outside the blur.
+The output is a silent 1080×600 side-by-side clip: vehicle at real time, shotgun at labelled quarter speed.
+
+```sh
+hivemind run --kind browser --fetch captures/blackout-motion-demo -- sh -c \
+  'cd games/blackout && bun scripts/motion-demo.ts'
+```
+
+### Original performance fixture
 
 ```sh
 hivemind run --kind browser --fetch captures/blackout-motion -- sh -c \
