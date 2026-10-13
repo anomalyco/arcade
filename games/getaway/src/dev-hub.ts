@@ -9,7 +9,7 @@ devHub({
     const g = getawaySpawn(context)
     return { ...g, characters: [...g.characters, blackoutSpawn(context)] }
   },
-  metrics(id) {
+  metrics(id): Readonly<Record<string, string>> {
     const vehicle = VEHICLES.find(v => `getaway:${v.id}` === id)
     if (vehicle) return { Length: `${vehicle.length} m`, Width: `${vehicle.width} m`, Mass: `${vehicle.mass} t` }
     const prop = Object.entries(SPECS).find(([kind]) => `getaway:prop:${kind}` === id)?.[1]
