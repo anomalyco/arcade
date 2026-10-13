@@ -95,6 +95,9 @@ effects, low-end performance or high-DPR performance is made.
 
 ## Verification and reproduction
 
+The measurements and check totals below describe the refinement source branch. Combined-branch checks and captures
+are recorded in [integration.md](integration.md); they do not imply a new GPU-speedup measurement.
+
 Outbreak tests cover independently regenerated packed meshes, exact terrain/support contacts, furniture-free
 circulation across four seeds, doors and actor LOS after scenery discovery. The Metal proof exercises F,
 WASD/Dvorak input and Lab input isolation. The refinement proof also changes the real contribution selector.
@@ -103,7 +106,7 @@ The clean staged-tree archive passed its frozen install, package checks, all thr
 Worker dry-runs and production smokes on the M5 Max. Test totals: Outbreak 15, Getaway 173 with 12 existing
 skips, Blackout 266, shared Lab 6. Metal scene/input proofs reported zero page/WebGPU errors.
 
-Private evidence: `~/code/home/artifacts/2026-10-13-outbreak-look-v2/`. `baseline/` and `refined/` contain the
+Local evidence archive: `2026-10-13-outbreak-look-v2/`, relative to the artifact root. `baseline/` and `refined/` contain the
 full frames and camera/hardware reports; `target/` contains the original generated targets. Contribution
 sheets, the baseline source archive, input proof and shared-default equivalence report are alongside them.
 
@@ -122,3 +125,5 @@ hivemind run --fetch captures/outbreak-look-v2/cost-interior/paired.json -- \
 Run `games/outbreak/scripts/check-workspace.sh` from a clean archive through hivemind for the frozen install,
 package checks, all three game checks/builds, production smokes and Worker dry-runs. The baseline archive is
 scratch input and must not be committed. No deployment is part of this procedure.
+Set `CAPTURE_ONLY=1` for the refinement proof when only current-build screenshots and the contribution-selector
+check are needed; that mode performs no timing run.

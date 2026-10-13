@@ -6,6 +6,7 @@ import { chromium } from "playwright-core"
 
 const game=resolve(process.env.GAME_ROOT??resolve(import.meta.dir,"..")), phase=process.env.PHASE??"refined"
 const baseline=!!process.env.GAME_ROOT
+const captureOnly=process.env.CAPTURE_ONLY==="1"
 const out=resolve(import.meta.dir,"../../../captures/outbreak-look-v2",phase)
 mkdirSync(out,{recursive:true})
 assert.equal(Bun.spawnSync(["bun","run","build"],{cwd:game,stdout:"inherit",stderr:"inherit"}).exitCode,0)
@@ -19,7 +20,7 @@ try {
   const page=await browser.newPage({viewport:{width:1000,height:680},deviceScaleFactor:1})
   const errors:string[]=[]
   page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error")errors.push(m.text())})
-  await page.addInitScript(()=>{
+  if(!captureOnly)await page.addInitScript(()=>{
     const w=window as any, request=GPUAdapter.prototype.requestDevice
     GPUAdapter.prototype.requestDevice=async function(desc={}) {
       const d=await request.call(this,{...desc,requiredFeatures:this.features.has("timestamp-query")?["timestamp-query"]:[]})
@@ -66,6 +67,7 @@ try {
       await page.evaluate(async ({mode,baseline})=>{const h=(window as any).__arcadeHarness;if(!baseline)h.setLab("diagnostic",mode);await h.step(0)},{mode,baseline})
       await page.screenshot({path:resolve(out,`${scene.name}-${label}.png`)})
     }
+    if(captureOnly){reports.push({scene,state:await page.evaluate(()=>(window as any).__arcadeHarness.state())});continue}
     const perf=await page.evaluate(async baseline=>{const w=window as any,h=w.__arcadeHarness;if(!baseline)h.setLab("diagnostic",0)
       for(let i=0;i<30;i++)await h.step(0)
       const samples=[];w.__measure=true
@@ -93,5 +95,5 @@ try {
   await page.keyboard.press("Backquote")
   }
   assert.deepEqual(errors,[])
-  await Bun.write(resolve(out,"proof.json"),JSON.stringify({phase,source:baseline?"e5554a7":"working tree",timing:"queueCompletedMs includes CPU and queue completion; pass timestamp intervals overlap on Metal and must not be summed or treated as isolated pass costs",adapter,hardware:cpus()[0]?.model,viewport:[1000,680],dpr:1,crop:[0,0,1000,680],reports,errors},null,2))
+  await Bun.write(resolve(out,"proof.json"),JSON.stringify({phase,source:baseline?"e5554a7":"working tree",timing:captureOnly?"not measured":"queueCompletedMs includes CPU and queue completion; pass timestamp intervals overlap on Metal and must not be summed or treated as isolated pass costs",adapter,hardware:cpus()[0]?.model,viewport:[1000,680],dpr:1,crop:[0,0,1000,680],reports,errors},null,2))
 }finally{await browser.close();fixture.stop(true)}

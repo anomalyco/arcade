@@ -16,6 +16,7 @@ Sources were snapshotted before merging on 2026-10-13. Each source is merged sep
 | architecture-plan | `f05630039bf2ee28f1b142144c0318a7473f4398` | — |
 | simplify-review | `81e9a4b94e08a76494dccbdf0dc0cd832813e013` | #10 |
 | audio-lab (additive follow-up) | `778b8a157ae7c5b46092d6ce9030638e0b3458d6` | — |
+| outbreak-look-refinement (additive follow-up) | `5805f66ab08a4a9e2ffbd8a17de27dd2be6bdd0e` | — |
 
 The local Look tip includes the window moonlight coverage fix missing from its remote PR.
 The local FX tip includes surface splatter and the completed fire/water work.
@@ -47,12 +48,11 @@ Wizards' latest committed change is immediate click casting (`2e3177a`), after t
 
 ## Local review
 
-Outbreak's visual quality is still under review. The current `e5554a7` version is too bright, reflective and sparse
-relative to the paintover; the functional proofs below do not establish visual approval or a target match.
-An additive art revision is being developed separately on `outbreak-look-refinement`, starting from `e5554a7`.
-It focuses on one house and its frontage, lighting/material calibration, furnishing and planting within the rendering
-budget. That revision is not yet included. Any shared-renderer changes must remain opt-in and preserve Blackout and
-Getaway defaults. This PR stays draft pending review; no deployment is authorized.
+Outbreak's `5805f66` art refinement is included and needs local visual review. It reduces the washed-out look and
+adds house setbacks, frontage planting and usable furniture groups. It remains darker and less textured than the
+paintover; foliage is angular, some corners are too dark, and the interior still feels sparse. Neither the source
+comparison nor functional proofs establish visual approval or a target match. Shared-renderer hooks stay opt-in,
+preserving Blackout/Getaway defaults and the fine Blackout window mask. This PR stays draft; no deployment is authorized.
 
 The shared hybrid audio runtime and Audio Lab are included. In either existing Lab host, choose **Audio**.
 **Audition** is the only live unlock action; entering the section or changing controls does not start playback.
@@ -140,6 +140,19 @@ suspended its emitters, had a silent final tail, disposed cleanly, and retained 
 exhaustion/refill while held. Both hosts had no browser/GPU errors, and leaving/re-entering Audio did not resume playback.
 
 These proofs establish decoding, graph scheduling, cleanup and gating in a browser, not subjective sound approval
-or successful audible playback. Existing in-game vehicle voices remain in use. Outbreak's pending art revision is
-still excluded. Cited audio screenshots, check logs and JSON reports are in `2026-10-13-arcade-integration/audio/`,
+or successful audible playback. Existing in-game vehicle voices remain in use. Cited audio screenshots, check logs
+and JSON reports are in `2026-10-13-arcade-integration/audio/`,
 relative to the local artifact root.
+
+### Outbreak art integration
+
+The exact `5805f66` refinement tip was merged after Audio Lab. All 12 default shared shader outputs match the
+pre-merge integration (`dcd0272`) after whitespace normalization, including Blackout's look/motion combinations.
+Bindings remain motion 7, fine moon mask 8, and exploration 9. A compatibility adapter extracts legacy directional
+coverage from the packed floor map when a level supplies no separate mask. This preserves Outbreak's indoor sky
+mask instead of replacing it with white; explicit Blackout window masks retain their finer resolution. Two focused
+regression tests cover the distinction. The Outbreak R8 compatibility texture is 144 KiB at its 384² mask size.
+
+The source branch reduced static vertices from 299,238 to 196,722 (about 34%). Its paired queue-completion spans
+support broadly unchanged frame cost, not a measured GPU speedup. Those measurements have not been repeated on
+the combined renderer. Fresh combined clean-export checks and visual/input proofs are pending for this follow-up.

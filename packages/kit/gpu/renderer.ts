@@ -1,5 +1,5 @@
 import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS, LIGHT_FLOATS, OCC_FLOATS } from "./limits"
-import type { LevelData } from "./level"
+import { directionalMask, type LevelData } from "./level"
 import { VERT_BYTES, type Mesh } from "./mesh"
 import { mat4 } from "wgpu-matrix"
 import { VolumeRenderer } from "@arcade/kit/fx/volume-renderer"
@@ -375,7 +375,7 @@ export class Renderer {
     this.floorTex.destroy()
     this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.device.queue.writeTexture({ texture: this.floorTex }, f.data, { bytesPerRow: f.w * 2 }, [f.w, f.h])
-    const moon = f.moon ?? { w: 1, h: 1, data: new Uint8Array([255]) }
+    const moon = directionalMask(f)
     this.moonTex.destroy()
     this.moonTex = this.device.createTexture({ size: [moon.w, moon.h], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.device.queue.writeTexture({ texture: this.moonTex }, moon.data, { bytesPerRow: moon.w }, [moon.w, moon.h])
