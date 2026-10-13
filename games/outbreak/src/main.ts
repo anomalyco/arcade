@@ -71,7 +71,7 @@ async function main() {
   const lampPower = new Float32Array(MAX_LIGHTS), empty = new Float32Array(0)
   const render: FrameInput = { frame, lights, lightCount: 0, shadowLightCount: 0, occluders, occluderCount: 0, lampPower, lampCount: 0, view: [0, 0, SIZE, SIZE], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, 1] }
   let blockers = sightRects(session.view.town), revision = -1, lightOccluders=0
-  let frozen = params.has("bench"), last = performance.now(), frames = 0, elapsed = 0
+  let frozen = params.has("bench"), last = performance.now(), frames = 0, meterAt = last, meterSubmits = renderer.submittedFrames
   const lab = new LabPanel(settings, controls, params, () => input.release(), key => {
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
     if (key === "houseSeed" || key === "terrain") regenerate()
@@ -149,11 +149,12 @@ async function main() {
     renderer.render(render)
     const door = nearbyDoor(town, p.x, p.y)
     status.textContent = `${clockText(hour)}${door ? ` · F ${door.open ? "Close" : "Open"} door` : ""}`
-    frames++; elapsed += dt
+    frames++
+    const meterNow = performance.now(), elapsed = (meterNow - meterAt) / 1000
     if (elapsed > .25) {
-      lab.header.textContent = `${Math.round(frames / elapsed)} FPS · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
+      lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
       if (lab.visible) lab.refresh()
-      frames = 0; elapsed = 0
+      frames = 0; meterAt = meterNow; meterSubmits = renderer.submittedFrames
     }
   }
   function tick(now: number) {

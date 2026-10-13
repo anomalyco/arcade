@@ -142,6 +142,8 @@ export class Renderer {
   private sampler: GPUSampler
   /** Level chunks drawn last frame, for diagnostics. */
   drawnChunks = 0
+  /** Successfully submitted frames, not draw requests or confirmed screen presentations. */
+  submittedFrames = 0
   width = 0
   height = 0
 
@@ -705,6 +707,7 @@ export class Renderer {
     fp.end()
     if(this.timing) this.timer!.finish(enc,output)
     d.queue.submit([enc.finish()])
+    this.submittedFrames++
   }
 
   /** Isolated proof caller owns scheduling. One complete dependent GPU interval, never pass sums. */

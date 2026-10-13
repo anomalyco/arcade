@@ -80,11 +80,11 @@ All four Wrangler dry-runs pass; none deploy. Carrier's optional Naga validation
 is absent. Seed-7 geometry retains all 196,722 vertices, and the new test checks every opaque vertex plus
 the genuinely discard-free shader entry point.
 
-Verified Metal GPU intervals remain blocked. Studio fails its SSH/rsync transport; Mini's Chrome crashes
+Metal verification was initially blocked (superseded by the recovered Studio results below). Studio failed its SSH/rsync transport; Mini's Chrome crashed
 before creating a page. One attempt with `--disable-gpu-vsync` produced the same display-init failure and
 SIGBUS, so that unhelpful flag was discarded. No software-renderer benchmark is substituted. The complete
 check log and hardware failure are saved as `clean-checks-and-metal-failure.log` beside the runtime proof.
-Native production smoke/Metal runtime validation still needs Studio recovery; no services were restarted.
+No services were restarted to recover access.
 
 The real-browser runtime win and exact visual/pose agreement are established, but 60–85 ms Retina spans
 remain too slow for a 60 FPS target. Any further pass should profile fragment/material/light costs on a
@@ -93,4 +93,76 @@ were not reduced. The owned benchmark tab and preview are closed; the shared rev
 
 The source change is committed on `followup/outbreak-performance`, based on `846a9f6`. PR13 is untouched;
 open/rebase the follow-up only after release/main, with the hardware limit explicit until it is verified.
+
+## Live pacing audit: the FPS counter is misleading
+
+Studio recovered for `pacing-proof.ts`, which verified an Apple `metal-3` adapter at 3456×1894. This fixture
+uses actual rAF, real keyboard down/up, the normal Session/Input path and a two-second held-input interval.
+It records callbacks, simulation dt/position, accepted GPU submissions and queue completion. One warmup
+and seven alternating pairs cover the street and interior. Raw data is in the private artifacts' `pacing/`.
+The Studio is shared; tail outliers cannot be assigned to a competing app from this evidence.
+
+The old HUD divides attempted draws by **clamped simulation dt**, not elapsed wall time or submitted frames.
+The renderer allows two in-flight frames and replaces a pending request with the latest state. In one measured
+interior run the HUD read **49 FPS**, but only **14.5 new states/s** were submitted. The specific reported 60 FPS
+was not reproduced on Studio; the counter mechanism explains how it can happen. No submitted simulation
+timestamps repeated, but intermediate states were skipped and the display can hold its previous image.
+
+Seven-pair median live results (submission rates, not confirmed screen presentation):
+
+| Metric | Street before → after | Interior before → after |
+| --- | --- | --- |
+| New GPU submissions/s | 21.19 → 28.75 | 15.81 → 25.96 |
+| Simulation/wall-time ratio | .925 → .958 | .895 → .973 |
+| Held-input speed, m/s | 3.147 → 3.257 | 3.044 → 3.310 |
+| Keydown → simulation, ms | 29.0 → 29.5 | 31.0 → 30.3 |
+| Keydown → observed completion callback for first moved GPU frame, ms | 86.9 → 52.9 | 120.1 → 63.0 |
+
+Pooled submission gap p50/p95/p99/max, milliseconds:
+
+- Street before: 45.4 / 73.4 / 79.6 / 84.7; after: 33.4 / 71.6 / 75.8 / 78.2.
+- Interior before: 62.1 / 93.4 / 99.1 / 432.0; after: 36.4 / 66.8 / 75.8 / 79.0.
+- Interior GPU queue latency p50/p95/p99/max: 118.1 / 184.5 / 266.8 / 500.2 before,
+  47.3 / 99.2 / 104.3 / 113.2 after. These are completion delays, not isolated GPU timestamp intervals.
+  Promise callback delivery can itself be delayed by main-thread scheduling; these observations are not
+  precise hardware completion timestamps or a bound on physical screen-presentation latency.
+
+Movement is exactly 3.4 m per **simulated** second on these unobstructed routes; the distance always agrees
+with 3.4 × simulation dt. There is no sprint command, render interpolation, adaptive resolution or motion-blur
+path in Outbreak. DPR is capped at 2, which still creates four backing pixels per CSS pixel. Camera following
+has a 1/6-second time constant and survivor velocity smoothing has a 1/14-second time constant; these affect
+presentation, not the authoritative movement speed.
+
+There is a second clock problem: every visible callback gap above 50 ms loses the remainder, with no
+accumulator/catch-up. One interior run advanced just 1.283 simulated seconds over 2.028 wall seconds,
+travelling 4.363 m instead of roughly 6.8 m. A deterministic check of the real LocalSession at synthetic 10 Hz
+callbacks yields half-speed movement and a HUD of 20 FPS. Hidden tabs intentionally skip simulation/drawing;
+that intentional pause is separate from visible lost time.
+
+The follow-up HUD now reports wall-clock **draws/s** from successful GPU submissions and **updates/s** from
+simulation/draw attempts. Neither label claims screen presentation. A visible-time catch-up policy would
+also need input-history and animation decisions; it has not been changed in this small rendering pass.
+True keydown-to-screen-presentation latency remains unmeasured; GPU completion is only the captured boundary.
+
+### Hardware confirmation and telemetry verification
+
+The recovered Studio also completed dependent whole-frame timestamp measurements on its M5 Max/Metal,
+at 3456×2006. Seven-pair median GPU intervals are street **26.434→15.161 ms (42.6%)**, interior
+**40.320→23.562 ms (41.6%)**. Paired GPU savings are 11.296 ms (MAD .053) and 16.780 ms (MAD .375).
+Queue-completed spans are 29.65→17.75 ms and 43.25→26.15 ms. Both full-resolution before/after screenshots
+match every RGB pixel. The artifact directory `metal/` contains raw intervals, the ANGLE device receipt
+(`Apple M5 Max`, Metal), and the inspected stills. This supersedes the earlier hardware block; no software
+renderer was used for any performance claim.
+
+Shared package checks and Outbreak's full check/build passed again with the corrected meter. A second live
+pacing run verified the `draws/s · updates/s` labels, but had much worse scheduling tails in both variants,
+including a 1.166 s submission gap before and .819 s after. Preserve that run in `pacing-counter-fixed/`;
+do not combine it with the first run or use it to claim a stable live-FPS gain. Its severe visible-time loss
+reinforces the clock-policy issue, while the stall's originating app/task remains unassigned. Lower measured
+shader cost does not eliminate occasional callback starvation. Production browser smoke is still outstanding.
+
+The shared Lab is keyboard-modal by default: while open it captures gameplay keys and releases Input,
+even if the canvas has focus. This is verified from the actual wiring, not attributed to Kit's symptoms.
+The normal held-input pacing runs kept the Lab closed. If Kit is viewing the in-game FPS panel while pressing
+movement keys, that interaction should be checked separately; opening the panel is not a gameplay speed test.
 No deployment, public sharing, Slack or audio is part of this task. Release PR13 must not wait for it.
