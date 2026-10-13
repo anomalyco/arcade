@@ -10,11 +10,11 @@ export class Fx {
   private nextSkid = 0
   clearSkids() { this.skidCount = this.nextSkid = 0 }
 
-  static write(out: Float32Array, n: number, p: { x: number; y: number; z: number; size: number; r: number; g: number; b: number; a: number; kind: number; rot: number; stretch: number; seed: number }) {
+  static write(out: Float32Array, n: number, x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot = 0, stretch = 1, seed = 0) {
     const i = n * SPRITE_FLOATS
-    out[i] = p.x; out[i + 1] = p.y; out[i + 2] = p.z; out[i + 3] = p.size
-    out[i + 4] = p.r; out[i + 5] = p.g; out[i + 6] = p.b; out[i + 7] = p.a
-    out[i + 8] = p.kind; out[i + 9] = p.rot; out[i + 10] = p.stretch; out[i + 11] = p.seed
+    out[i] = x; out[i + 1] = y; out[i + 2] = z; out[i + 3] = size
+    out[i + 4] = r; out[i + 5] = g; out[i + 6] = b; out[i + 7] = a
+    out[i + 8] = kind; out[i + 9] = rot; out[i + 10] = stretch; out[i + 11] = seed
   }
 
   skidSegment(ax: number, az: number, bx: number, bz: number, alpha: number, y = 0.03) {
@@ -56,19 +56,16 @@ export class Fx {
   }
 
   private writeSpark(out: Float32Array, n: number, p: Particle, tail = 0) {
-    const i = n * SPRITE_FLOATS, speed = Math.hypot(p.vx, p.vz) || 1, length = p.size * (p.stretch - 1)
-    out[i] = p.x - p.vx / speed * length * tail; out[i + 1] = p.y; out[i + 2] = p.z - p.vz / speed * length * tail
-    out[i + 3] = p.size * (1 - tail * 0.6)
-    out[i + 4] = p.r; out[i + 5] = p.g; out[i + 6] = p.b; out[i + 7] = 3 * (1 - p.life / p.max) * (1 - tail * 0.75)
-    out[i + 8] = 6; out[i + 9] = p.rot; out[i + 10] = p.stretch; out[i + 11] = 0
+    const speed = Math.hypot(p.vx, p.vz) || 1, length = p.size * (p.stretch - 1)
+    Fx.write(out, n, p.x - p.vx / speed * length * tail, p.y, p.z - p.vz / speed * length * tail, p.size * (1 - tail * 0.6), p.r, p.g, p.b, 3 * (1 - p.life / p.max) * (1 - tail * 0.75), 6, p.rot, p.stretch, 0)
   }
 
   emit(alpha: Float32Array, ai: number, add: Float32Array, di: number, max: number, skidsVisible = true) {
     for (let n = 0; skidsVisible && n < this.skidCount && ai < max; n++) {
       const i = n * 13, remaining = this.skids[i + 12]!
       if (remaining <= 0) continue
-      for (let j = 0; j < 12; j++) alpha[ai * 12 + j] = this.skids[i + j]!
-      alpha[ai * 12 + 7] *= Math.min(1, remaining / 2.5)
+      for (let j = 0; j < SPRITE_FLOATS; j++) alpha[ai * SPRITE_FLOATS + j] = this.skids[i + j]!
+      alpha[ai * SPRITE_FLOATS + 7] *= Math.min(1, remaining / 2.5)
       ai++
     }
     for (const p of this.add) {

@@ -1,5 +1,5 @@
 import { vec4 } from "wgpu-matrix"
-import { CELL, GRID, ROAD_HALF, VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
+import { VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
 import { rampSurface, type City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
@@ -15,7 +15,7 @@ import { juice } from "../ui/debug-overlay"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
-import { Chassis, wheelRotation, type AxlePoint } from "./chassis"
+import { Chassis, curbHeight, wheelRotation, type AxlePoint } from "./chassis"
 import { splitChassis } from "../render/chassis-mesh"
 import { HEADLIGHT, LIGHT_DEFAULTS, lampMounts, type LightSettings, type LightStyle } from "../render/car-lights"
 import { bodyPoint } from "./car-pose"
@@ -109,6 +109,8 @@ export class Scene {
     this.meshStyle = lightStyle
     const built = buildCityMesh(city)
     this.trail.seedWind(city.seed)
+    this.emissions.city = city
+    this.emissions.skids = this.fx
     renderer.setCity(built.mesh)
     this.lamps = built.lamps
     this.spills = built.spills
@@ -157,23 +159,13 @@ export class Scene {
     if (v && v.chassis.axles !== this.chassisModels.get(c.vehicle)!.wheels) v.chassis = new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels)
     if (!v) {
       v = { chassis: new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels), emissions: new EmissionState(), roll: 0, pitch: 0, speed: c.speed, h: c.h, sparkAcc: 0, scrapeAcc: 0, wheels: Array.from({length:4},()=>({x:0,z:0})), height: 0, springV: 0, ground: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, brakeHold: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0 }
-      v.emissions.speed = c.speed
       this.vis.set(c.id, v)
     }
     return v
   }
 
   private groundAt(x: number, z: number) {
-    const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL)
-    if (ix < 0 || iz < 0 || ix >= GRID || iz >= GRID) return 0
-    const a = x - ix * CELL - ROAD_HALF, b = z - iz * CELL - ROAD_HALF
-    const width = CELL - ROAD_HALF * 2
-    if (a < 0 || b < 0 || a > width || b > width) return 0
-    const dx = Math.max(3 - a, a - (width - 3), 0), dz = Math.max(3 - b, b - (width - 3), 0)
-    if (dx * dx + dz * dz > 9) return 0
-    if (this.city.alleys.some((g) => x > g.x0 && x < g.x1 && z > g.z0 && z < g.z1)) return 0
-    const park = this.city.parks.some((p) => x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1)
-    return park || Math.min(a, b, width - a, width - b) <= this.city.sidewalk ? KERB_H : 0
+    return curbHeight(this.city, x, z)
   }
 
   backfire(car: CarView): void {
@@ -186,8 +178,6 @@ export class Scene {
     this.fx.update(dt)
     this.hitStopCool = Math.max(0, this.hitStopCool - dt)
     this.emissions.update(dt)
-    this.emissions.city = this.city
-    this.emissions.skids = this.fx
     for (const c of view.cars) {
       if (c.ghost) continue
       const v = this.visOf(c)
@@ -246,7 +236,7 @@ export class Scene {
       }
       v.ground = ground
       const pops = this.emissions.pops
-      this.emissions.car(c, spec, v.emissions, input, dt, v.height, true, true)
+      this.emissions.car(c, spec, v.emissions, input, dt, v.height)
       if (this.emissions.pops > pops) this.onBackfire?.(c)
       v.backfire = v.emissions.pop
       if (c.impact > 0.35 && c.speed > 4) {
@@ -358,8 +348,8 @@ export class Scene {
     let di = 0
     const sprite = (list: "a" | "d", x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot = 0, stretch = 1, extra = 0) => {
       if (list === "a") {
-        if (ai < MAX_SPRITES_PER_LIST) Fx.write(alpha, ai++, { x, y, z, size, r, g, b, a, kind, rot, stretch, seed: extra })
-      } else if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, { x, y, z, size, r, g, b, a, kind, rot, stretch, seed: extra })
+        if (ai < MAX_SPRITES_PER_LIST) Fx.write(alpha, ai++, x, y, z, size, r, g, b, a, kind, rot, stretch, extra)
+      } else if (di < MAX_SPRITES_PER_LIST) Fx.write(add, di++, x, y, z, size, r, g, b, a, kind, rot, stretch, extra)
     }
 
     const beams = this.beams
@@ -677,8 +667,7 @@ export class Scene {
     this.lightCount = n
 
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST, this.emissions.visible)
-    this.emissions.emit(alpha, fxc.alpha, add, fxc.add, MAX_SPRITES_PER_LIST, this.emissions.visible)
-    fxc.alpha = this.emissions.alphaCount; fxc.add = this.emissions.addCount
+    const counts = this.emissions.emit(alpha, fxc.alpha, add, fxc.add, MAX_SPRITES_PER_LIST)
     const batches = this.batchOut
     batches.length = 0
     for (const [model, slot] of this.batchMap) {
@@ -691,13 +680,13 @@ export class Scene {
     }
     for (let i = 0; i < beams.v.length; i++) this.beamBuf[i] = beams.v[i]!
     this.renderer.setBeams(this.beamBuf, beams.count)
-    this.trail.prepare()
+    if (this.emissions.visible) this.trail.prepare()
     this.renderer.setSmoke(this.trail, this.emissions.visible)
     this.renderer.render({
       frame: f,
       lights: L,
       batches,
-      sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
+      sprites: { alpha, alphaCount: counts.alpha, add, addCount: counts.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,
     })

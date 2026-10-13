@@ -3,7 +3,8 @@ import type { CarView } from "../../shared/sim/world"
 import type { Input } from "../../shared/sim/vehicle"
 import { SmokeTrail, type SmokeSource } from "./smoke-trail"
 import type { City } from "../../shared/sim/city"
-import type { Fx } from "./fx"
+import { Fx } from "./fx"
+import { SPRITE_FLOATS } from "../render/renderer"
 
 /** Preset integration seam. Cold presets can set this without owning the smoke renderer or Lab. */
 export const vehicleEffects = { coldExhaust: false }
@@ -15,7 +16,6 @@ export class EmissionState {
   boosting = false
   brake = 0
   throttle = 0
-  speed = 0
   gear = 0
   load = 0
   pop = 0
@@ -70,19 +70,17 @@ export function launchSlip(c: CarView, spec: Vehicle, s: EmissionState, input: I
 
 /** Persistent wisps plus direct attached flames. Packs into the existing sprite batches, without particle objects. */
 export class VehicleEmissions {
-  /** Benchmark-only render visibility; never a player-facing style or emission switch. */
+  /** Toggled from the Lab panel's Emissions group. */
   visible = true
   city: Pick<City, "parks"> | null = null
   skids: Fx | null = null
   readonly trail = new SmokeTrail()
   private readonly wisps = new Float32Array(256 * 8)
-  private readonly flames = new Float32Array(128 * 12)
+  private readonly flames = new Float32Array(128 * SPRITE_FLOATS)
   wispCount = 0
   flameCount = 0
   pops = 0
   time = 0
-  alphaCount = 0
-  addCount = 0
 
   reset() { this.trail.reset(); this.wispCount = this.flameCount = this.pops = this.time = 0 }
   update(dt: number) {
@@ -101,7 +99,7 @@ export class VehicleEmissions {
     this.wispCount = n
   }
 
-  car(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number, height: number, smokeEnabled: boolean, popsEnabled: boolean) {
+  car(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number, height: number) {
     const fx = Math.sin(c.h), fz = Math.cos(c.h), rx = fz, rz = -fx
     const throttle = c.engineOff ? 0 : input?.throttle ?? (c.boosting ? 1 : 0)
     const spin = launchSlip(c, spec, s, input, dt)
@@ -121,7 +119,7 @@ export class VehicleEmissions {
       wheel.slip = activeSlip
       wheel.heat += ((activeSlip > 0.05 ? 1 : 0) - wheel.heat) * (1 - Math.exp(-dt * (activeSlip > 0.05 ? spin > 0 ? 6 : 2 : 1.3)))
       const strength = activeSlip * clamp(rubbingSpeed / 18) * (0.05 + 0.95 * wheel.heat)
-      const enabled = smokeEnabled && !(spec.id === "bike" && w === 3)
+      const enabled = !(spec.id === "bike" && w === 3)
       const marking = enabled && activeSlip > 0.08 && this.skids !== null
       if (dt > 0 && marking && wheel.marking) this.skids!.skidSegment(wheel.smokeX, wheel.smokeZ, x, z, 0.25 + 0.4 * activeSlip, 0.03 + height)
       wheel.marking = marking
@@ -134,12 +132,12 @@ export class VehicleEmissions {
     const gear = Math.floor(Math.max(0, c.speed - 4) / 12)
     const lift = s.throttle > 0.7 && throttle < 0.2 && c.speed > 12
     const shift = gear > s.gear && throttle > 0.8 && c.speed > 17
-    if (dt > 0 && popsEnabled && !c.engineOff && s.cooldown === 0 && s.load > 0.45 && (lift || shift)) {
+    if (dt > 0 && !c.engineOff && s.cooldown === 0 && s.load > 0.45 && (lift || shift)) {
       s.events++
       if (s.events % 3 !== 0) { s.pop = 0.11; this.pops++ }
       s.cooldown = 1.8
     }
-    s.gear = gear; s.speed = c.speed; s.throttle = throttle
+    s.gear = gear; s.throttle = throttle
     const boost = !c.engineOff && (input ? input.boost && c.boost > 0 && c.stun <= 0 : !!c.boosting) && throttle > 0.1
     const x = c.x - fx * (spec.length / 2 + 0.12), z = c.z - fz * (spec.length / 2 + 0.12), y = 0.42 + height + (c.y ?? 0)
     const flicker = 0.82 + 0.18 * Math.sin(this.time * 47 + c.id * 2.1)
@@ -147,9 +145,9 @@ export class VehicleEmissions {
       const side = spec.id === "bike" ? 0 : pipe ? 0.34 : -0.34
       const orange = s.pop > 0 && !boost, power = orange ? s.pop / 0.11 : clamp(throttle) * flicker
       const size = 0.15 + power * 0.035, length = 0.32 + power * 0.28
-      this.pack(this.flames, this.flameCount++, x + rx * side - fx * length * 0.5, y, z + rz * side - fz * length * 0.5, size,
+      Fx.write(this.flames, this.flameCount++, x + rx * side - fx * length * 0.5, y, z + rz * side - fz * length * 0.5, size,
         orange ? 1 : 0.12, orange ? 0.3 : 0.4, orange ? 0.035 : 1, 1.8 * power, 13, Math.atan2(-fx, -fz), length / size, this.time)
-      this.pack(this.flames, this.flameCount++, x + rx * side, y, z + rz * side, 0.3, orange ? 1 : 0.15, orange ? 0.25 : 0.35, orange ? 0.03 : 1, 0.35 * power, 0, 0, 1, 0)
+      Fx.write(this.flames, this.flameCount++, x + rx * side, y, z + rz * side, 0.3, orange ? 1 : 0.15, orange ? 0.25 : 0.35, orange ? 0.03 : 1, 0.35 * power, 0, 0, 1, 0)
       this.flameCount = Math.min(124, this.flameCount)
     }
     if (vehicleEffects.coldExhaust && !c.engineOff) {
@@ -165,20 +163,14 @@ export class VehicleEmissions {
     } else s.cold = 0
   }
 
-  private pack(out: Float32Array, n: number, x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot: number, stretch: number, seed: number) {
-    const i = n * 12
-    out[i] = x; out[i + 1] = y; out[i + 2] = z; out[i + 3] = size
-    out[i + 4] = r; out[i + 5] = g; out[i + 6] = b; out[i + 7] = a
-    out[i + 8] = kind; out[i + 9] = rot; out[i + 10] = stretch; out[i + 11] = seed
-  }
-  emit(alpha: Float32Array, ai: number, add: Float32Array, di: number, max: number, visible: boolean) {
-    if (visible) {
+  emit(alpha: Float32Array, ai: number, add: Float32Array, di: number, max: number) {
+    if (this.visible) {
       for (let n = 0; n < this.wispCount && ai < max; n++) {
         const i = n * 8, p = this.wisps, t = p[i + 3]! / p[i + 7]!
-        this.pack(alpha, ai++, p[i]!, p[i + 1]!, p[i + 2]!, 0.15 + t * 0.25, 0.7, 0.76, 0.82, p[i + 6]! * (1 - t), 10, 0, 1, n * 0.17)
+        Fx.write(alpha, ai++, p[i]!, p[i + 1]!, p[i + 2]!, 0.15 + t * 0.25, 0.7, 0.76, 0.82, p[i + 6]! * (1 - t), 10, 0, 1, n * 0.17)
       }
-      for (let n = 0; n < this.flameCount && di < max; n++, di++) for (let j = 0; j < 12; j++) add[di * 12 + j] = this.flames[n * 12 + j]!
+      for (let n = 0; n < this.flameCount && di < max; n++, di++) for (let j = 0; j < SPRITE_FLOATS; j++) add[di * SPRITE_FLOATS + j] = this.flames[n * SPRITE_FLOATS + j]!
     }
-    this.alphaCount = ai; this.addCount = di
+    return { alpha: ai, add: di }
   }
 }

@@ -15,6 +15,7 @@ type Reaction = { x: number; y: number; z: number; age: number; water: boolean; 
 export type PropInstanceWriter = (model: number, x: number, y: number, z: number, yaw: number, roll: number, pitch: number, scale: number) => void
 export type PropLightWriter = (x: number, y: number, z: number, radius: number, r: number, g: number, b: number, intensity: number) => void
 const MAX_CHUNKS = 384
+const isBoard = (kind: PropKind) => ["bench", "pallet", "crate", "barrier", "sawhorse"].includes(kind)
 
 export class StreetProps {
   readonly physics: PropPhysics
@@ -38,7 +39,7 @@ export class StreetProps {
   constructor(city: City, renderer: Pick<Renderer, "addModel">, readonly ground: (x: number, z: number) => number) {
     this.physics = new PropPhysics(ground, city.boxes)
     for (const kind of PROP_KINDS) {
-      const model = renderer.addModel(propMesh(kind)), chunk = renderer.addModel(chunkMesh(SPECS[kind].color, ["bench", "pallet", "crate", "barrier", "sawhorse"].includes(kind)))
+      const model = renderer.addModel(propMesh(kind)), chunk = renderer.addModel(chunkMesh(SPECS[kind].color, isBoard(kind)))
       this.models.set(kind, model); this.chunkModels.set(kind, chunk)
       this.shadowless.add(model); this.shadowless.add(chunk)
     }
@@ -146,7 +147,7 @@ export class StreetProps {
   private shatter(p: Prop, vx: number, vz: number) {
     if (p.broken) return
     p.broken = true; this.touch(p); this.physics.remove(p.body)
-    const board = ["bench", "pallet", "crate", "barrier", "sawhorse"].includes(p.home.kind)
+    const board = isBoard(p.home.kind)
     const n = p.home.kind === "dumpster" ? 12 : 8
     for (let i = 0; i < n && this.chunks.length < MAX_CHUNKS; i++) {
       const rand = this.rng, scale = (.3 + rand() * .55) * Math.min(1, Math.max(...SPECS[p.home.kind].size) * .65)
