@@ -7,6 +7,7 @@ import { body, PropPhysics, type Body } from "./physics"
 import { placeProps, PROP_KINDS, SPECS, type Placement, type PropKind } from "./placement"
 import { PropParticles, type SpriteWriter } from "./particles"
 import { mulberry32 } from "../../../shared/sim/rng"
+import { propGroundShape } from "./contact-shape"
 
 type Prop = { body: Body; home: Placement; model: number; broken: boolean; touched: number; hitAt: number; fuse: number }
 type Chunk = { body: Body; model: number; scale: number; life: number }
@@ -46,7 +47,7 @@ export class StreetProps {
   }
   private add(p: Placement) {
     const s = SPECS[p.kind], [w, h, d] = s.size
-    const b = body(this.nextId++, p.x, p.y + h / 2, p.z, w / 2, h / 2, d / 2, s.mass, p.yaw)
+    const b = body(this.nextId++, p.x, p.y + h / 2, p.z, w / 2, h / 2, d / 2, s.mass, p.yaw, propGroundShape(p.kind))
     const prop = { body: b, home: p, model: this.models.get(p.kind)!, broken: false, touched: -1, hitAt: -1, fuse: -1 }
     this.props.push(prop); this.byId.set(b.id, prop); this.physics.add(b)
     return prop

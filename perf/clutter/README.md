@@ -5,7 +5,7 @@ authoritative simulation. Cars hit props through their rendered position, headin
 view is never modified. The three Lab controls are Street clutter, Explosions and Physics debug.
 
 `src/game/props/physics.ts` uses 120 Hz substeps, a persistent spatial hash and an awake set. Ground support comes from
-the rotated box; body pairs use rounded proxies and static city boxes stop pieces at walls. This is a decorative solver,
+rotated boxes or authored convex/compound points; body pairs use rounded proxies and static city boxes stop pieces at walls. This is a decorative solver,
 not a precision stacking or joint solver. The measured cost fits the main thread, so this version adds neither a worker
 nor Rapier. It does not claim to outperform Rapier or GPU compute.
 
@@ -99,6 +99,30 @@ captures retain all four reaction scenarios and add `proof/scale.png` to the 144
 720 × 1100 portrait clip is 14 seconds, H.264 Main/yuv420p, 4,000,808 bytes, faststart and silent. Both refreshed
 artifacts were sent to Kit. `scale-reactions.json` records the corrected-size reaction counts; the earlier
 `reactions.json` and performance runs remain as the initial implementation's evidence.
+
+## Resting-shape correction
+
+The old ground solver treated a cone as a box and snapped slow contacts to quarter turns, including upside down.
+`contact-shape.ts` now gives cones a tapered hull with a square rubber foot and a mass centre 0.105 m above the base.
+Barriers, sawhorses, bins, hydrants, signs, meters and propane cylinders also have authored contact points and mass centres.
+The convex envelope of a compound has the same support against a flat ground plane. Body-pair and wall contacts still
+use the inexpensive rounded proxies; this is not a general convex stacking solver.
+
+Supporting faces are compiled once per prop kind. A resting face must contain the projected mass centre with at least
+12 mm clearance and a margin of 12% of its height above that face, excluding fragile tip/edge balances. Low-speed ground
+contacts relax toward these supported faces instead of arbitrary box axes. Rotation preserves the world mass centre,
+and sleep waits for the shape to reach its resting orientation. Exactly tip-first cones fall onto a side.
+
+`prop-rest.test.ts` drops 256 seeded cone orientations, five exact/near-inverted cones, and 64 orientations for each of
+the seven other shaped props. Every body must actually sleep, clear the ground, and resist small tilts that would lower
+its mass centre. Tests also cover tapered support and matching results at 30/60 Hz. `bun run check` passed 122 tests,
+12 existing skips, TypeScript checks and the build.
+
+The new Metal clip opens with six seconds of close-up cone drops, then runs all four impact scenarios. The four dropped
+cones sleep on their sloping sides with local-up Y = -0.2941, rather than inverted at -1. The file
+`getaway-clutter-rest.mp4` is 720 × 1100, 20 seconds, H.264 Main/yuv420p, 4,269,972 bytes, faststart and silent.
+`getaway-clutter-rest-sheet.jpg` is 1440 × 836. Both remain local for browser review. `rest-proof.json` records the result.
+No new performance claim is made for this correction.
 
 From `games/getaway`:
 

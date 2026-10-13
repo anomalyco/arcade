@@ -81,22 +81,24 @@ try {
       await page.evaluate(async () => { const b = (window as any).__getawayBench.clutter; b.setup("city"); await b.step(0) })
       await page.screenshot({ path: join(out, "city.png") })
     }
-    for (const name of ["cones", "furniture", "hydrant", "explosion"]) {
+    for (const name of ["rest", "cones", "furniture", "hydrant", "explosion"]) {
       const placement = await page.evaluate(name => (window as any).__getawayBench.clutter.setup(name), name)
       if (mode === "video") await page.evaluate(name => {
         const label = document.getElementById("clutter-label") ?? document.body.appendChild(Object.assign(document.createElement("div"), { id: "clutter-label" }))
-        label.textContent = ({ cones: "Cones & barriers", furniture: "Bins & benches", hydrant: "Hydrant", explosion: "Chain reaction" } as Record<string, string>)[name]!
+        label.textContent = ({ rest: "Tip-first cone drops", cones: "Cones & barriers", furniture: "Bins & benches", hydrant: "Hydrant", explosion: "Chain reaction" } as Record<string, string>)[name]!
         label.style.cssText = "position:fixed;top:24px;left:24px;color:#eee;background:#101521c9;padding:8px 12px;font:500 20px system-ui;border-radius:8px;z-index:1000"
       }, name)
       const states = []
-      for (let frame = 0; frame < (mode === "video" ? 105 : 85); frame++) {
+      for (let frame = 0; frame < (name === "rest" ? 180 : mode === "video" ? 105 : 85); frame++) {
         const state = await page.evaluate(() => (window as any).__getawayBench.clutter.step())
         states.push(state)
         if (mode === "video") await page.screenshot({ path: join(out, `phone-${String(videoFrame++).padStart(4, "0")}.png`) })
-        else if ([0, 15, 22, 30, 45, 75].includes(frame)) await page.screenshot({ path: join(out, `${name}-${frame}.png`) })
+        else if ([0, 15, 22, 30, 45, 75, 179].includes(frame)) await page.screenshot({ path: join(out, `${name}-${frame}.png`) })
       }
       const hits = Math.max(...states.map(s => s.hits)), explosions = Math.max(...states.map(s => s.explosions))
-      if (!hits || name === "explosion" && explosions < 2) throw new Error(`Missing ${name} reactions: hits=${hits}, explosions=${explosions}`)
+      if (name === "rest") {
+        if (states.at(-1)!.bodies.some((b: any) => b.awake || b.upY < -.6)) throw new Error("Cone drop failed to settle on base or side")
+      } else if (!hits || name === "explosion" && explosions < 2) throw new Error(`Missing ${name} reactions: hits=${hits}, explosions=${explosions}`)
       evidence.push({ name, placement, states })
       console.log(name, { hits, explosions, maxParticles: Math.max(...states.map(s => s.particles)), maxAwake: Math.max(...states.map(s => s.awake)) })
     }

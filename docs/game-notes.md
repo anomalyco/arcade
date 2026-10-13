@@ -124,6 +124,12 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   seat-surface check fixes benches at 0.45 m seat height. The Metal scale fixture shows a 5.0 m muscle car beside a
   1.8 m bench, 0.75 m hydrant and 0.70 m cone. Legacy mesh helpers share these dimensions. See `perf/clutter/README.md`
   for the full audit; this visual correction has no new performance claim.
+- **Sleep on a supporting face, not a bounding-box axis.** Getaway's `src/game/props/contact-shape.ts` compiles contact
+  points into faces whose polygons support the mass centre with a tipping margin. Cone tips and narrow sign edges
+  cannot become resting faces. The solver preserves the mass centre during rotation and waits for stable orientation
+  before sleep. Tests settled 256 random cone drops, five inverted cases and 448 other prop drops; Metal proof shows
+  four tip-first/tilted cones resting on their sloping sides. Evidence: `perf/clutter/rest-proof.json`. Runtime cost
+  has not been remeasured; body-pair contacts still use decorative rounded proxies.
 
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte

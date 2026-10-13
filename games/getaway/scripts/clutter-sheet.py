@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 root, target = Path(sys.argv[1]), Path(sys.argv[2])
 images = [
     ("scale.png", "Scale check beside the car"),
-    ("city.png", "Seeded street furniture"),
+    ("rest-179.png", "Cones settled after tip-first drops"),
     ("cones-30.png", "Cones & barriers"),
     ("furniture-30.png", "Bins, benches & papers"),
     ("hydrant-75.png", "Hydrant & puddle"),

@@ -6,7 +6,7 @@ import { juice } from "../ui/debug-overlay"
 
 /** Only installed for ?bench. Drives a cloned rendered view, leaving shared simulation untouched. */
 export function propsBench(scene: Scene, template: WorldView, canvas: HTMLCanvasElement, device: GPUDevice) {
-  let view = structuredClone(template), cam = new Camera(), speed = 20, frame = 0, scaleCheck = false
+  let view = structuredClone(template), cam = new Camera(), speed = 20, frame = 0, scaleCheck = false, restCheck = false
   const x = 318.5, z = 400
   const setups: Record<string, PropKind[]> = {
     cones: ["cone", "cone", "barrier", "cone", "sawhorse", "cone"],
@@ -14,11 +14,13 @@ export function propsBench(scene: Scene, template: WorldView, canvas: HTMLCanvas
     hydrant: ["hydrant", "cone", "bin"],
     explosion: ["propane", "fuel", "canister", "crate", "pallet", "propane"],
     scale: ["bench", "hydrant", "cone"],
+    rest: ["cone", "cone", "cone", "cone"],
   }
   return {
     setup(name: string) {
       scene.resetBench(); cam = new Camera(); frame = 0
       scaleCheck = name === "scale"
+      restCheck = name === "rest"
       view = structuredClone(template)
       view.cars = [view.cars.find(c => !c.ghost)!]
       view.heli.active = false; view.phase = "chase"; view.props = []
@@ -38,6 +40,18 @@ export function propsBench(scene: Scene, template: WorldView, canvas: HTMLCanvas
       }
       cam.snap(x, z + 4)
       cam.dist = 52
+      if (restCheck) {
+        Object.assign(car, { x: x + 12, z: z - 10, vx: 0, vz: 0, speed: 0, engineOff: true, ghost: true })
+        for (const [i, p] of scene.clutter.props.entries()) {
+          const b = p.body
+          b.x = x - 1.5 + i % 2 * 2; b.z = z + 2 + Math.floor(i / 2) * 2
+          b.y = scene.clutter.ground(b.x, b.z) + 2
+          b.roll = [Math.PI, Math.PI - .1, 2.2, .6][i]!; b.pitch = [0, .2, -.4, .2][i]!
+          b.wx = i === 0 ? 0 : i - 2; b.wz = i === 0 ? 0 : .5
+          scene.clutter.physics.move(b); scene.clutter.physics.wake(b)
+        }
+        cam.snap(x - .5, z + 3); cam.dist = 15
+      }
       if (scaleCheck) {
         Object.assign(car, { x, z: z + 4, y: .16, vx: 0, vz: 0, speed: 0, engineOff: true })
         const positions = [[x - 1.75, z + 5], [x - 1.75, z + 2.5], [x - 1.75, z + 1.4]]
@@ -56,7 +70,7 @@ export function propsBench(scene: Scene, template: WorldView, canvas: HTMLCanvas
     },
     async step(dt = 1 / 30) {
       const car = view.cars[0]!
-      if (dt > 0 && !scaleCheck) {
+      if (dt > 0 && !scaleCheck && !restCheck) {
         frame++
         car.z = z - 13 + Math.min(frame / 30, 1.9) * speed
         car.vz = frame < 57 ? speed : 0; car.speed = car.vz
@@ -65,7 +79,7 @@ export function propsBench(scene: Scene, template: WorldView, canvas: HTMLCanvas
       }
       scene.draw(view, cam, canvas.width, canvas.height, dt, car)
       await device.queue.onSubmittedWorkDone()
-      return { ...scene.clutter.stats, bodies: scene.clutter.props.map(p => ({ kind: p.home.kind, x: p.body.x, y: p.body.y, z: p.body.z, roll: p.body.roll, pitch: p.body.pitch, broken: p.broken })) }
+      return { ...scene.clutter.stats, bodies: scene.clutter.props.map(p => ({ kind: p.home.kind, x: p.body.x, y: p.body.y, z: p.body.z, roll: p.body.roll, pitch: p.body.pitch, awake: p.body.awake, upY: Math.cos(p.body.roll) * Math.cos(p.body.pitch), broken: p.broken })) }
     },
     enabled(on: boolean) { juice.clutter = on },
   }

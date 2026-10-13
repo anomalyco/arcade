@@ -1,9 +1,12 @@
-/** Decorative rigid bodies. No renderer, browser, or authoritative simulation dependencies. */
+import type { GroundShape } from "./contact-shape"
+
+/** Decorative rigid bodies. Positions are mesh origins; velocities and rotation use the mass centre. */
 export type Body = {
   id: number; x: number; y: number; z: number; vx: number; vy: number; vz: number
   yaw: number; roll: number; pitch: number; wx: number; wy: number; wz: number
   hx: number; hy: number; hz: number; mass: number; radius: number
   sleep: number; awake: boolean; enabled: boolean; cell: number
+  shape?: GroundShape
 }
 export type Solid = { x0: number; x1: number; z0: number; z1: number; h: number }
 
@@ -34,13 +37,67 @@ export class SpatialHash<T extends { x: number; z: number }> {
   }
 }
 
-export function body(id: number, x: number, y: number, z: number, hx: number, hy: number, hz: number, mass: number, yaw = 0): Body {
-  return { id, x, y, z, hx, hy, hz, mass, yaw, radius: Math.hypot(hx, hy, hz), vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0, roll: 0, pitch: 0, sleep: 0, awake: false, enabled: true, cell: 0 }
+export function body(id: number, x: number, y: number, z: number, hx: number, hy: number, hz: number, mass: number, yaw = 0, shape?: GroundShape): Body {
+  return { id, x, y, z, hx, hy, hz, mass, yaw, shape, radius: Math.hypot(hx, hy, hz), vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0, roll: 0, pitch: 0, sleep: 0, awake: false, enabled: true, cell: 0 }
 }
 
-/** Exact vertical support of the rotated box (same yaw * pitch * roll convention as the mesh shader). */
+/** World up in mesh coordinates, matching yaw * pitch * roll in the shader. */
+export function groundNormal(b: Body): readonly [number, number, number] {
+  return [Math.sin(b.roll) * Math.cos(b.pitch), Math.cos(b.roll) * Math.cos(b.pitch), -Math.sin(b.pitch)]
+}
+
+/** Exact ground support of the convex/compound points, or the default box. */
 export function support(b: Body) {
+  if (b.shape) {
+    const [x, y, z] = groundNormal(b)
+    let height = -Infinity
+    for (const p of b.shape.points) height = Math.max(height, -x * p[0] - y * p[1] - z * p[2])
+    return height
+  }
   return Math.abs(Math.sin(b.roll) * Math.cos(b.pitch)) * b.hx + Math.abs(Math.cos(b.roll) * Math.cos(b.pitch)) * b.hy + Math.abs(Math.sin(b.pitch)) * b.hz
+}
+
+function centerOffset(b: Body) {
+  const y = b.shape?.centerY ?? 0, x = -Math.sin(b.roll) * y, z = Math.cos(b.roll) * Math.sin(b.pitch) * y
+  return [x * Math.cos(b.yaw) + z * Math.sin(b.yaw), Math.cos(b.roll) * Math.cos(b.pitch) * y, -x * Math.sin(b.yaw) + z * Math.cos(b.yaw)] as const
+}
+
+/** Keep world COM fixed when rotating a mesh whose heavy base is below its geometric centre. */
+function rotate(b: Body, roll: number, pitch: number, yaw: number) {
+  const before = b.shape ? centerOffset(b) : null
+  b.roll = roll; b.pitch = pitch; b.yaw = yaw
+  if (before) {
+    const after = centerOffset(b)
+    b.x += before[0] - after[0]; b.y += before[1] - after[1]; b.z += before[2] - after[2]
+  }
+}
+
+const angle = (n: number) => Math.atan2(Math.sin(n), Math.cos(n))
+
+/** Low-speed contact relaxation onto an actual supporting face, never a box face through empty space.
+ * The compiled face polygon must contain the projected COM with a finite tipping margin. */
+function settle(b: Body) {
+  if (!b.shape) {
+    const quarter = Math.PI / 2
+    b.roll += (Math.round(b.roll / quarter) * quarter - b.roll) * .16
+    b.pitch += (Math.round(b.pitch / quarter) * quarter - b.pitch) * .16
+    return true
+  }
+  const up = groundNormal(b)
+  let best = b.shape.rests[0]!, score = -Infinity
+  for (const face of b.shape.rests) {
+    const dot = up[0] * face[0] + up[1] * face[1] + up[2] * face[2]
+    if (dot > score) { score = dot; best = face }
+  }
+  let r = Math.hypot(best[0], best[1]) < 1e-7 ? b.roll : Math.atan2(best[0], best[1])
+  let p = Math.atan2(-best[2], Math.hypot(best[0], best[1]))
+  // Both Euler representations have the same ground normal. Choose the continuous, nearby one.
+  if (angle(r + Math.PI - b.roll) ** 2 + angle(Math.PI - p - b.pitch) ** 2 < angle(r - b.roll) ** 2 + angle(p - b.pitch) ** 2) {
+    r += Math.PI; p = Math.PI - p
+  }
+  const dr = angle(r - b.roll), dp = angle(p - b.pitch), stable = Math.hypot(dr, dp) < .001
+  rotate(b, b.roll + dr * (stable ? 1 : .08), b.pitch + dp * (stable ? 1 : .08), b.yaw)
+  return stable
 }
 
 export class PropPhysics {
@@ -82,7 +139,7 @@ export class PropPhysics {
       b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt
       // Angular speed is bounded: small fragments cannot explode numerically at contact.
       b.wx = Math.max(-18, Math.min(18, b.wx)); b.wz = Math.max(-18, Math.min(18, b.wz))
-      b.pitch += b.wx * dt; b.yaw += b.wy * dt; b.roll += b.wz * dt
+      rotate(b, b.roll + b.wz * dt, b.pitch + b.wx * dt, b.yaw + b.wy * dt)
       const floor = this.ground(b.x, b.z) + support(b)
       if (b.y <= floor + 0.015) {
         b.y = floor
@@ -91,14 +148,12 @@ export class PropPhysics {
         const friction = Math.max(0, 1 - 8 * dt)
         b.vx *= friction; b.vz *= friction
         b.wx *= 0.91; b.wy *= 0.94; b.wz *= 0.91
-        // Settle onto a box face rather than freezing balanced on a corner.
+        let stable = false
         if (Math.abs(b.wx) + Math.abs(b.wz) < 2 && impact < 2) {
-          const quarter = Math.PI / 2
-          b.roll += (Math.round(b.roll / quarter) * quarter - b.roll) * 0.16
-          b.pitch += (Math.round(b.pitch / quarter) * quarter - b.pitch) * 0.16
+          stable = settle(b)
           b.y = this.ground(b.x, b.z) + support(b)
         }
-        if (b.vx ** 2 + b.vy ** 2 + b.vz ** 2 + b.wx ** 2 + b.wy ** 2 + b.wz ** 2 < 0.055) b.sleep += dt
+        if (stable && b.vx ** 2 + b.vy ** 2 + b.vz ** 2 + b.wx ** 2 + b.wy ** 2 + b.wz ** 2 < 0.055) b.sleep += dt
         else b.sleep = 0
       } else b.sleep = 0
       this.collideWalls(b)
