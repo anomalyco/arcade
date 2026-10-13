@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PreviousTransforms } from '../../../packages/kit/gpu/motion-blur'
+import { PreviousTransforms } from '@arcade/kit/gpu/motion-blur'
 
 test('motion histories follow identity across batching and reject missing frames and teleports',()=>{
   const history=new PreviousTransforms(4,10),out=new Float32Array(8)

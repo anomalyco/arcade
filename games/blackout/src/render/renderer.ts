@@ -4,9 +4,9 @@ import { LIGHT_FLOATS, OCC_FLOATS } from "./lighting"
 import { VERT_BYTES, type Mesh } from "./mesh"
 import { FRAME_FLOATS, polarShader, postShader, sceneShader, spriteShader } from "./shaders"
 import { mat4 } from "wgpu-matrix"
-import { VolumeRenderer } from "../../../../packages/kit/fx/volume-renderer"
-import type { SmokeVolumes } from "../../../../packages/kit/fx/volume"
-import { FrameTimer } from "../../../../packages/kit/fx/frame-timer"
+import { VolumeRenderer } from "@arcade/kit/fx/volume-renderer"
+import type { SmokeVolumes } from "@arcade/kit/fx/volume"
+import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 
 const SAMPLES = 4

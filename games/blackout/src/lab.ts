@@ -1,5 +1,5 @@
 import { mat4 } from "wgpu-matrix"
-import { lab } from "../../../packages/kit/lab/main"
+import { lab } from "@arcade/kit/lab/main"
 import { MAT } from "./render/mesh"
 import { MAT as getaway, SMOKE_MATERIAL } from "../../getaway/src/render/mesh"
 import { getawaySpawn } from "../../getaway/src/lab/spawn"

@@ -5,7 +5,7 @@ import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
 import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
-import { MotionBlur, PreviousTransforms } from '../../../../packages/kit/gpu/motion-blur'
+import { MotionBlur, PreviousTransforms } from '@arcade/kit/gpu/motion-blur'
 import { motionBlur, vehicleVelocityPipeline, particleVelocityPipeline, spriteMotionKeys } from './motion'
 import { mat4 } from 'wgpu-matrix'
 

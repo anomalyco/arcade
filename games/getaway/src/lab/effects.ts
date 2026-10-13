@@ -1,7 +1,7 @@
-import { gameEffects, seeded, type EffectGroup } from "../../../../packages/kit/lab/game-effects"
-import { GameSprites } from "../../../../packages/kit/lab/game-sprites"
-import type { SectionFactory } from "../../../../packages/kit/lab/types"
-import type { LabLight } from "../../../../packages/kit/lab/stage"
+import { gameEffects, seeded, type EffectGroup } from "@arcade/kit/lab/game-effects"
+import { GameSprites } from "@arcade/kit/lab/game-sprites"
+import type { SectionFactory } from "@arcade/kit/lab/types"
+import type { LabLight } from "@arcade/kit/lab/stage"
 import { getawayEffects } from "./settings"
 import { getawayEnvironment, getawayRooms } from "./environment"
 import { Fx } from "../game/fx"
@@ -14,7 +14,7 @@ import { buildCar } from "../render/car-mesh"
 import { splitChassis } from "../render/chassis-mesh"
 import { Chassis, chassisSettings } from "../game/chassis"
 import type { SpriteWriter } from "../game/props/particles"
-import { tyreSettings } from "../../../../packages/kit/lab/tyre-settings"
+import { tyreSettings } from "@arcade/kit/lab/tyre-settings"
 
 const labels:Record<keyof typeof getawayEffects,string>={sparks:"Sparks",scrape:"Scrape",skids:"Skids",nitro:"Nitro flame",pops:"Exhaust pops",cold:"Cold exhaust",landing:"Landing",debris:"Clutter debris",hydrant:"Hydrant water",explosion:"Explosion",plumes:"Smoke plumes",headlights:"Headlights"}
 

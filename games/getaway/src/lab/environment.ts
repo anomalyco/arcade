@@ -1,7 +1,7 @@
 import { generateCity } from "../../shared/sim/city"
 import { buildCityMesh, partitionCityMesh } from "../render/city-mesh"
 import { mulberry32 } from "../../shared/sim/rng"
-import type { LabLight } from "../../../../packages/kit/lab/stage"
+import type { LabLight } from "@arcade/kit/lab/stage"
 
 export const getawayRooms=[{value:"street",label:"Street"},{value:"alley",label:"Alley"},{value:"plaza",label:"Plaza"}]
 

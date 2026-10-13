@@ -35,7 +35,7 @@ import { VehicleSound } from "../audio/vehicle-sound"
 import { FLOOR } from "../render/vehicle-mesh"
 import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
 import { mapFires } from "./map-fx"
-import { SmokeVolumes } from "../../../../packages/kit/fx/volume"
+import { SmokeVolumes } from "@arcade/kit/fx/volume"
 import { blackoutEffects as fxSettings } from "../lab/settings"
 
 export type Rgb3 = [number, number, number]

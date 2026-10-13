@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test"
-import { SmokeVolumes, GRID } from "../../../packages/kit/fx/volume"
-import { Emitter, Particles, PARTICLE_CAPACITY, type ParticleSpec } from "../../../packages/kit/fx/particles"
+import { SmokeVolumes, GRID } from "@arcade/kit/fx/volume"
+import { Emitter, Particles, PARTICLE_CAPACITY, type ParticleSpec } from "@arcade/kit/fx/particles"
 
 function at(v:SmokeVolumes,x:number,z:number){return v.density[Math.floor((z-v.bounds[1])*2)*GRID+Math.floor((x-v.bounds[0])*2)]}
 test("smoke cannot cross a thin sealed wall; an open door admits a delayed wave",()=>{

@@ -1,4 +1,4 @@
-import { motionUniformWGSL, MotionBlur, motionBlurDefaults } from '../../../../packages/kit/gpu/motion-blur'
+import { motionUniformWGSL, MotionBlur, motionBlurDefaults } from '@arcade/kit/gpu/motion-blur'
 export const motionBlur = motionBlurDefaults()
 /** The producer records persistent particle identities alongside packed colour instances. */
 export const spriteMotionKeys=new WeakMap<Float32Array,(object|undefined)[]>()
