@@ -13,7 +13,7 @@ export const rigDemoControls: LabControl[] = [
     { label: "Actors", value: "off" }, { label: "Profile walk", value: "walk" }, { label: "Detached forearm", value: "detach" },
     { label: "Three profiles", value: "compare" },
   ] },
-  { key: "rigDemoSpeed", label: "Demo speed · m/s", group: "Animation", min: 0, max: 6.3, step: 0.1 },
+  { key: "rigDemoSpeed", label: "Demo speed · m/s", group: "Animation", min: 0, max: 6.3, step: 0.1, unit: "m/s" },
 ]
 
 /** Viewer-only visual debris. No world events, damage, movement or attack policy. */

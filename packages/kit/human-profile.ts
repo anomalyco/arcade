@@ -37,18 +37,19 @@ export function profileHands(torso: Frame, profile: HumanProfile): [V3, V3] | nu
   return null
 }
 
-const range = (key: keyof HumanProfile, label: string, min: number, max: number, step: number): LabControl => ({ key, label, group: "Animation", min, max, step })
+/** Live presentation controls; edits update the next animation step without resetting the scene. */
+const range = (key: keyof HumanProfile, label: string, min: number, max: number, step: number, unit: string): LabControl => ({ key, label, group: "Animation", min, max, step, unit })
 export const humanProfileControls: LabControl[] = [
-  range("strideScale", "Stride", 0.6, 1.4, 0.05),
-  range("swayScale", "Sway", 0, 2, 0.1), range("twistScale", "Twist", 0, 2, 0.1),
-  range("leanScale", "Lean", 0, 1.5, 0.1), range("bodyHz", "Pelvis spring · Hz", 1, 8, 0.25),
-  range("runPosture", "Run posture · rad", 0, 0.3, 0.01),
-  range("footCentreHz", "Foot centre · Hz", 2, 8, 0.25), range("chestHz", "Chest spring · Hz", 1, 10, 0.25),
-  range("headHz", "Head spring · Hz", 1, 12, 0.25),
-  range("timingBias", "Uneven timing", -0.3, 0.3, 0.02), range("footDrag", "Right foot drag", 0, 0.95, 0.05),
-  range("torsoLean", "Hunch", -0.15, 0.35, 0.02), range("torsoRoll", "Torso cant", -0.2, 0.2, 0.02),
-  range("headTilt", "Head tilt", -0.3, 0.3, 0.02), range("armAsymmetry", "Arm asymmetry", -0.18, 0.18, 0.02),
-  range("armReach", "Reach", 0.2, 0.52, 0.02),
+  range("strideScale", "Stride", 0.6, 1.4, 0.05, "×"),
+  range("swayScale", "Sway", 0, 2, 0.1, "×"), range("twistScale", "Twist", 0, 2, 0.1, "×"),
+  range("leanScale", "Lean", 0, 1.5, 0.1, "×"), range("bodyHz", "Pelvis spring · Hz", 1, 8, 0.25, "Hz"),
+  range("runPosture", "Run posture · rad", 0, 0.3, 0.01, "rad"),
+  range("footCentreHz", "Foot centre · Hz", 2, 8, 0.25, "Hz"), range("chestHz", "Chest spring · Hz", 1, 10, 0.25, "Hz"),
+  range("headHz", "Head spring · Hz", 1, 12, 0.25, "Hz"),
+  range("timingBias", "Uneven timing", -0.3, 0.3, 0.02, ""), range("footDrag", "Right foot drag", 0, 0.95, 0.05, ""),
+  range("torsoLean", "Hunch", -0.15, 0.35, 0.02, "rad"), range("torsoRoll", "Torso cant", -0.2, 0.2, 0.02, "rad"),
+  range("headTilt", "Head tilt", -0.3, 0.3, 0.02, "rad"), range("armAsymmetry", "Arm asymmetry", -0.18, 0.18, 0.02, "m"),
+  range("armReach", "Reach", 0.2, 0.52, 0.02, "m"),
   { key: "handPose", label: "Hands", group: "Animation", options: [
     { label: "Weapon", value: "weapon" }, { label: "Staff", value: "staff" }, { label: "Reach", value: "reach" },
   ] },

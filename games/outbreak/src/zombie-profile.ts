@@ -6,12 +6,12 @@ import { humanProfiles, type HumanProfile } from "@arcade/kit/human-profile"
 export const zombieTuning = { zombieLurch: .8, zombieAsymmetry: .8, zombieDrag: .85, zombieReach: .7 }
 export type ZombieTuning = typeof zombieTuning
 
-/** Presentation-only controls, shared by the terrain adapter and the Lab. */
+/** Presentation-only live controls, shared by the terrain adapter and the Lab. */
 export const zombieControls: LabControl[] = [
-  { key: "zombieLurch", label: "Lurch", group: "Zombie", min: 0, max: 1, step: .05 },
-  { key: "zombieAsymmetry", label: "Asymmetry", group: "Zombie", min: 0, max: 1, step: .05 },
-  { key: "zombieDrag", label: "Foot drag", group: "Zombie", min: 0, max: 1, step: .05 },
-  { key: "zombieReach", label: "Reach", group: "Zombie", min: 0, max: 1, step: .05 },
+  { key: "zombieLurch", label: "Lurch", group: "Zombie", min: 0, max: 1, step: .05, unit: "" },
+  { key: "zombieAsymmetry", label: "Asymmetry", group: "Zombie", min: 0, max: 1, step: .05, unit: "" },
+  { key: "zombieDrag", label: "Foot drag", group: "Zombie", min: 0, max: 1, step: .05, unit: "" },
+  { key: "zombieReach", label: "Reach", group: "Zombie", min: 0, max: 1, step: .05, unit: "" },
 ]
 
 /**

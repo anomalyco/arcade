@@ -14,19 +14,19 @@ export const animation = {
   sniperErgonomics: 0.65,
 }
 
-const range = (key: keyof typeof animation, label: string, min: number, max: number, step: number): LabControl => ({ key, label, group: "Animation", min, max, step })
+const range = (key: keyof typeof animation, label: string, min: number, max: number, step: number, unit: string): LabControl => ({ key, label, group: "Animation", min, max, step, unit })
 export const animationControls: LabControl[] = [
   { key: "animationMode", label: "Animation", group: "Animation", options: [{ label: "Old", value: "old" }, { label: "New", value: "new" }] },
   { key: "profilePreset", label: "Profile", group: "Animation", options: [
     { label: "Soldier", value: "soldier" }, { label: "Wizard", value: "wizard" }, { label: "Zombie", value: "zombie" },
   ] },
   ...humanProfileControls,
-  range("weaponHz", "Weapon spring · Hz", 2, 12, 0.25),
-  range("recoilScale", "Recoil", 0, 2, 0.1),
-  range("recoilHold", "Recoil hold · frames", 1, 3, 1),
-  range("rifleErgonomics", "Rifle ergonomics", 0.4, 1.5, 0.05),
-  range("shotgunErgonomics", "Shotgun ergonomics", 0.4, 1.5, 0.05),
-  range("sniperErgonomics", "Sniper ergonomics", 0.4, 1.5, 0.05),
+  range("weaponHz", "Weapon spring · Hz", 2, 12, 0.25, "Hz"),
+  range("recoilScale", "Recoil", 0, 2, 0.1, "×"),
+  range("recoilHold", "Recoil hold · frames", 1, 3, 1, ""),
+  range("rifleErgonomics", "Rifle ergonomics", 0.4, 1.5, 0.05, "×"),
+  range("shotgunErgonomics", "Shotgun ergonomics", 0.4, 1.5, 0.05, "×"),
+  range("sniperErgonomics", "Sniper ergonomics", 0.4, 1.5, 0.05, "×"),
 ]
 
 /** Accessors keep the existing effects settings and animation singleton live in one Lab. */

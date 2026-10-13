@@ -85,9 +85,11 @@ Actual gameplay detach events still need a server-owned damage policy and caller
 
 ## Lab and proof
 
-Open `anim.html?lab=1`. Animation contains Profile and all profile parameters, plus exact keyboard editing,
-Randomize, Reset and Copy. Demo offers Profile walk, Three profiles and Detached forearm; Demo speed is in m/s.
-The scripted fixtures loop and use the real Game/Renderer. Production defaults remain the soldier profile.
+Open `anim.html?lab=1`. Animation contains Profile and all profile parameters with explicit units, plus exact
+keyboard editing, Randomize, Reset and Copy. Profile and zombie sliders are live presentation values that update
+on the next animation step without resetting the scene; Demo mode is a structural fixture select (`Profile walk`,
+`Three profiles`, `Detached forearm`), and Demo speed is in m/s. The scripted fixtures loop and use the real
+Game/Renderer. Production defaults remain the soldier profile.
 
 `games/blackout/scripts/prove-human.ts` exercises profiles, attachments, detach handoff and Lab input on headless
 Metal. Run through Hivemind; `--video` captures 180 frames. Shared tests cover contact locking, asymmetry bounds,
