@@ -362,7 +362,10 @@ Candidates from the code audits; measure and playtest before moving any into the
   original mesh/transform path when all four are off. Metal captures matched 432 simulation poses across six off/on
   fixtures, including a 3.155 m jump and landing. For 28 cars, chassis updates cost 0.085 ms/frame median (+0.063 ms
   paired); split wheels add 104 instances and 47 submitted draws. Wheel-only GPU timing was too noisy to isolate
-  overhead (paired deltas −1.525…+1.329 ms). See `perf/getaway-chassis.md`; live driving feel awaits Kit's review.
+  overhead (paired deltas −1.525…+1.329 ms). See `perf/getaway-chassis.md`. Kit approved the chassis; all four switches
+  default on in the integrated build. A combined smoke/chassis Metal check emitted 312 connected smoke points on a drift,
+  with body roll reaching 0.144 rad and pitch 0.148 rad. No page or console errors occurred. The startup centre-crop red
+  mean stayed within 46.54–47.21 (46.64–47.22 with `off=trauma`, which is now ignored because trauma is baked in).
 
 - **Hit-stop is presentation only.** Freeze or slow what is drawn, never the simulation clock, so prediction and the
   server stay in step.
