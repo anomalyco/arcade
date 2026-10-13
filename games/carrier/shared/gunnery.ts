@@ -103,8 +103,9 @@ export const GUNNERY = {
     gimbal: 55 * DEG,
     fuse: 15,
     arm: 0.6,
-    damage: 90,
-    edge: 45,
+    /** A heavier warhead than the AIM-9's: a burst within a few metres kills outright. */
+    damage: 110,
+    edge: 50,
     /** Flares: a burst seduces a SAM only by chance (`decoy`, hashed per missile and flare; AIM-9s are always fooled),
      *  within its first `seduce` s and `seduceRange` m. */
     decoy: 0.35,

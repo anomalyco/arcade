@@ -23,10 +23,11 @@ export type Level = "master" | "engines" | "flyby" | "sfx" | "weapons" | "weathe
 export type Levels = Record<Level, number>
 export type Bus = "engines" | "own" | "flyby" | "sfx" | "weapons" | "weather" | "ui"
 
-export const DEFAULT_LEVELS: Readonly<Levels> = { master: 0.8, engines: 0.7, flyby: 0.8, sfx: 0.9, weapons: 0.9, weather: 0.8, ui: 0.7 }
+export const DEFAULT_LEVELS: Readonly<Levels> = { master: 1, engines: 0.7, flyby: 0.8, sfx: 0.9, weapons: 0.9, weather: 0.8, ui: 0.7 }
 const STORE = "carrier.audio.v3"
-/** 1 / the glue and limiter's automatic makeup gain (measured: scripts/audio-demo.ts "calib", unity below threshold). */
-const MAKEUP_TRIM = 0.6
+/** Output trim after the glue and limiter (which add their own makeup gain): sets the integrated loudness of a typical
+ *  dogfight near -16 LUFS (scripts/audio-demo.ts "montage") with peaks under -1 dBFS. */
+const MAKEUP_TRIM = 0.9
 /** Cockpit canopy: the world bus low-pass at full muffle (Hz). */
 const CANOPY_HZ = 1300
 
@@ -133,8 +134,8 @@ export class Mixer {
     glue.attack.value = 0.02
     glue.release.value = 0.3
     const limiter = ctx.createDynamicsCompressor()
-    limiter.threshold.value = -6
-    limiter.knee.value = 2
+    limiter.threshold.value = -3
+    limiter.knee.value = 1
     limiter.ratio.value = 20
     limiter.attack.value = 0.001
     limiter.release.value = 0.15

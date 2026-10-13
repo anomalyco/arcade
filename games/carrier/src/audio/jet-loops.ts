@@ -11,11 +11,11 @@ const COCKPIT = "cockpit-engine"
 /** Per aircraft: the loops' pitch (the F-35's one big engine sits lower), low-shelf weight (dB), level. */
 const KIND: Readonly<Record<VehicleKind, { rate: number; shelf: number; level: number }>> = {
   hornet: { rate: 1, shelf: 0, level: 1 },
-  f35: { rate: 0.86, shelf: 4, level: 1.05 },
+  f35: { rate: 0.86, shelf: 4, level: 0.8 },
 }
 
 /** Overall trim before the bus (scripts/audio-demo.ts levels: your jet in chase about 18 dB under a gun burst). */
-const TRIM = 0.42
+const TRIM = 0.17
 
 /**
  * A jet engine from recorded loops: idle, cruise, military and afterburner (each a seamless take) playing together,
@@ -151,7 +151,7 @@ export class JetLoopVoice {
     set(this.panner.positionY, s.y, 0.02)
     set(this.panner.positionZ, s.z, 0.02)
     if (this.int) {
-      set(this.int.gain, s.interior * TRIM * 1.6 * (0.55 + 0.45 * p + 0.25 * b), 0.08)
+      set(this.int.gain, s.interior * TRIM * 0.7 * (0.55 + 0.45 * p + 0.25 * b), 0.08)
       set(this.ext.gain, 1 - s.interior, 0.08)
       if (this.cockpit) set(this.cockpit.playbackRate, (0.85 + 0.25 * p + 0.06 * b) * k.rate, 0.1)
     }

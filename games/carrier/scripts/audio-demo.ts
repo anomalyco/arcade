@@ -5,7 +5,9 @@ import type { PlaneTuple } from "../shared/protocol"
 import type { VehicleKind } from "../shared/vehicles"
 import { WEATHER_PRESETS, type WeatherKind, makeWeather } from "../shared/weather"
 import { JetAudio, type OwnJet } from "../src/audio/jet-audio"
-import { BOOM_KINDS, BOOM_TAKES, boomsFor } from "../src/audio/jet-boom"
+import { BOOM_KINDS, boomsFor } from "../src/audio/jet-boom"
+import { sfx } from "../src/audio/sfx-bank"
+import type { ShipLike } from "../src/audio/ship-audio"
 import { DEFAULT_LEVELS, mixer } from "../src/audio/mixer"
 import { WeaponAudio } from "../src/audio/weapon-audio"
 import { WeatherAudio } from "../src/audio/weather-audio"
@@ -16,7 +18,6 @@ const STEP = 1024 / RATE
 
 type Scene = { dur: number; samples?: boolean; setup?: (s: Sim) => void; step: (s: Sim, t: number, dt: number) => void }
 
-const BOOM_COUNT = Object.values(BOOM_TAKES).reduce((a, b) => a + b, 0)
 
 /** Mutable scene state the steps write and the renderer feeds to JetAudio. */
 class Sim {
@@ -26,6 +27,8 @@ class Sim {
   weapons: WeaponAudio | null = null
   weather: WeatherAudio | null = null
   wx = makeWeather()
+  /** Carriers for the ship ambience (none unless a scene adds one). */
+  ships: [number, ShipLike][] = []
 
   /** The game's weapon sounds on this render's context. */
   arm(): WeaponAudio {
@@ -353,13 +356,180 @@ function explosions(): Scene {
   }
 }
 
+/**
+ * The 60 s montage: the deck at dawn over a calm sea → your catapult shot → the climb to military and afterburner → a
+ * head-on pass with a crack → gun bursts → a missile → the kill → the weather turns to a storm with thunder → the trap.
+ * Each segment is one of the scenes above (re-set at its start); the weapons and weather persist across them.
+ */
+function montage(): Scene {
+  const segs: [start: number, make: () => Scene][] = [
+    [0, () => deck()],
+    [6, catapult],
+    [15, () => climb()],
+    [23, () => headOn()],
+    [29, () => combat()],
+    [38, () => storm()],
+    [50, trap],
+  ]
+  let cur: Scene | null = null
+  let idx = -1
+  return {
+    dur: 60,
+    setup: (s) => {
+      s.arm()
+      s.sky("clear")
+      s.ships = [[1, { x: 0, z: 0, heave: 0, slams: 0, slam: 0 }]]
+    },
+    step: (s, t, dt) => {
+      let i = 0
+      while (i + 1 < segs.length && t >= segs[i + 1]![0]) i++
+      if (i !== idx) {
+        idx = i
+        s.own = null
+        s.remotes = []
+        s.pose.gear = 1
+        s.pose.hook = 0
+        cur = segs[i]![1]()
+        cur.setup?.(s)
+      }
+      cur!.step(s, t - segs[i]![0], dt)
+      s.weather!.update(s.wx, dt)
+      if (i < 4) s.weapons!.update(dt, false, 0, 0, 0)
+    },
+  }
+}
+
+/** Standing on deck over a calm sea at dawn. */
+function deck(): Scene {
+  return {
+    dur: 6,
+    setup: (s) => {
+      s.eye = [-20, 22, 40]
+      s.fwd = [0.3, 0, -0.95]
+      s.wx = makeWeather(WEATHER_PRESETS.clear)
+    },
+    step: () => {},
+  }
+}
+
+/** The climb: military power, then the afterburner, in the chase view. */
+function climb(): Scene {
+  let thr = 0.8
+  return {
+    dur: 8,
+    setup: (s) => {
+      const o = s.makeOwn("hornet", "chase")
+      o.draw.y = 120
+      yawQ(o.draw, Math.PI)
+      s.pose.gear = 0
+    },
+    step: (s, t, dt) => {
+      const d = s.own!.draw
+      thr = Math.min(1, thr + 0.7 * dt)
+      d.throttle = thr
+      d.boosting = t > 2.5 && t < 6.5 ? 1 : 0
+      d.vz = -(150 + 70 * smooth(2.5, 6.5, t))
+      d.vy = 20
+      d.z += d.vz * dt
+      d.y += d.vy * dt
+      s.chase()
+    },
+  }
+}
+
+/** A remote jet head-on past your chase camera (closing at ~450 m/s: a crack). */
+function headOn(): Scene {
+  let rt = 0
+  return {
+    dur: 6,
+    setup: (s) => {
+      const o = s.makeOwn("hornet", "chase")
+      o.draw.y = 280
+      o.draw.throttle = 0.85
+      yawQ(o.draw, Math.PI)
+      s.pose.gear = 0
+      const r = s.makeRemote(4, "hornet")
+      r.pose.x = 25
+      r.pose.y = 300
+      r.pose.z = -1500
+      yawQ(r.pose, 0)
+    },
+    step: (s, _t, dt) => {
+      const d = s.own!.draw
+      d.vz = -200
+      d.z += d.vz * dt
+      s.chase()
+      const r = s.remotes[0]!
+      r.pose.z += 240 * dt
+      r.pose.throttle = 1
+      r.pose.burner = 1
+      rt += dt
+      r.tuple[0] = Math.round(rt * 20) / 20
+      r.tuple[1] = 1
+      r.tuple[11] = 240
+    },
+  }
+}
+
+/** Gun bursts, a missile, and the kill 600 m ahead. */
+function combat(): Scene {
+  return {
+    dur: 9,
+    setup: (s) => {
+      const o = s.makeOwn("hornet", "chase")
+      o.draw.y = 300
+      o.draw.throttle = 0.85
+      yawQ(o.draw, Math.PI)
+      s.pose.gear = 0
+    },
+    step: (s, t, dt) => {
+      const d = s.own!.draw
+      d.vz = -190
+      d.z += d.vz * dt
+      s.chase()
+      const w = s.weapons!
+      w.update(dt, (t > 0.4 && t < 1.6) || (t > 2.2 && t < 2.9), 0, t > 3 && t < 4.5 ? (t > 3.8 ? 2 : 1) : 0, 0)
+      if (Math.abs(t - 4.6) < dt / 2) w.missile(0)
+      if (Math.abs(t - 6) < dt / 2) w.explosion(600, 1.5, "air-kill")
+    },
+  }
+}
+
+/** The weather turns: a storm over the sea, the jet low, thunder near and far. */
+function storm(): Scene {
+  let mix = 0
+  return {
+    dur: 12,
+    setup: (s) => {
+      const o = s.makeOwn("hornet", "chase")
+      o.draw.y = 90
+      o.draw.throttle = 0.7
+      yawQ(o.draw, Math.PI)
+      s.pose.gear = 0
+    },
+    step: (s, t, dt) => {
+      const d = s.own!.draw
+      d.vz = -130
+      d.z += d.vz * dt
+      s.chase()
+      mix = Math.min(1, mix + dt / 3)
+      const a = WEATHER_PRESETS.clear
+      const b = WEATHER_PRESETS.heavy
+      for (const k of Object.keys(b) as (keyof typeof b)[]) (s.wx as Record<string, number>)[k] = a[k] + (b[k] - a[k]) * mix
+      if (Math.abs(t - 3.5) < dt / 2) s.weather!.strike({ t: 0, power: 1, bearing: 0.7, dist: 700, seed: 1 }, 700 / 343)
+      if (Math.abs(t - 8) < dt / 2) s.weather!.strike({ t: 0, power: 0.9, bearing: -1.2, dist: 5000, seed: 2 }, 1.2)
+    },
+  }
+}
+
 const SCENES: Record<string, () => Scene> = {
+  montage,
   "exterior-ramp": () => ramp("hornet", "chase"),
   "cockpit-ramp": () => ramp("hornet", "cockpit"),
   "f35-exterior-ramp": () => ramp("f35", "chase"),
-  flyby: () => flyby(false, false),
-  "flyby-burner": () => flyby(true, false),
-  "flyby-recorded": () => flyby(false, true),
+  flyby: () => flyby(false, true),
+  "flyby-burner": () => flyby(true, true),
+  "flyby-procedural": () => flyby(false, false),
   catapult,
   "catapult-deck": catapultDeck,
   trap,
@@ -378,14 +548,13 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
   const mx = mixer()
   mx.levels = { ...DEFAULT_LEVELS }
   mx.muted = false
-  mx.samplesOn = scene.samples === true
-  mx.explosionSamples = true
+  mx.samplesOn = scene.samples !== false
+  mx.rain = 0
+  mx.sea = 0
+  const bank = sfx(mx)
   mx.use(ctx)
-  if (mx.samplesOn) mx.preload(base)
-  const booms = boomsFor(mx)
-  booms.load(base)
-  // Wait for the takes to decode.
-  for (let i = 0; i < 100 && ((mx.samplesOn && mx.loaded < 12) || booms.loaded < BOOM_COUNT); i++) await new Promise((r) => setTimeout(r, 50))
+  // The sound bank's picked takes (decoded once; buffers are reused across renders).
+  await bank.boot(base)
   const jets = new JetAudio(mx, false)
   const sim = new Sim()
   scene.setup?.(sim)
@@ -394,6 +563,7 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
     scene.step(sim, t, STEP)
     jets.own(sim.own, sim.pose)
     for (const r of sim.remotes) jets.remote(r.id, r.pose, r.tuple)
+    jets.ships(sim.ships)
     jets.frame(STEP, sim.eye, sim.fwd, sim.up)
   }
   feed()
@@ -437,7 +607,7 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
   const bytes = new Uint8Array(out.buffer)
   let bin = ""
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return { wav: btoa(bin), peak, rms: Math.sqrt(sum / (2 * n)), loaded: mx.loaded + booms.loaded }
+  return { wav: btoa(bin), peak, rms: Math.sqrt(sum / (2 * n)), loaded: bank.loaded }
 }
 
 Object.assign(globalThis, { renderScene, scenes: Object.keys(SCENES) })

@@ -266,14 +266,21 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   public room, else a shared fresh code), `POST /api/create` (fresh private code; quick join never hands it out),
   `GET /api/room/:code`, `GET /api/stats`. Rooms report `{ code, players, private }` (1 s throttle, 10 s heartbeat,
   30 s stale). Codes are 4 characters of `CODE_CHARS`. `/ws?room=CODE[&private=1]`.
-- Crew rules (`shared/crew.ts` header): two teams, up to 4 ships each. Two roles only: one HELM per ship, and PILOTs;
-  a ship holds `CREW.capacity` (5) players. No passenger seats. Joining a ship gives you its helm if free, else you
-  join as a pilot waiting on deck (`role: "pilot"`, `plane: -1`). Joining the room puts you on the most crewed
-  unlocked ship with room (a team may lead by at most 2); team switches must keep the teams within one (or improve
-  them); an empty ship sinks after 60 s; a vacated helm holds the throttle and centres the rudder; a reconnecting helm
-  gets the helm back if free, else is a pilot on deck (a locked ship still takes a reconnecting member back).
-- Ship operations (`shared/ops.ts`, data): `OPS` lists `{ id, label, name, kind: "helm" | "vehicle", vehicle?, cap,
-  recharge (s) }`. Today TAKE HELM (`helm`, cap 1, only while free), LAUNCH HORNET (`hornet`, cap 2 per ship,
+- Crew rules (`shared/crew.ts` header): a room holds `CREW.roomMax` (32) players: two teams of `CREW.shipsPerTeam` (2)
+  ships, `CREW.capacity` (8) people per ship whatever their roles (helm, pilots, gunners; the op caps still apply). The
+  room keeps both teams at two ships (`ensureFleet`: all four come out on the first join, crewed or not; empty ones stay
+  afloat; a ship sunk in battle is replaced after `CREW.refitMs` 15 s, at once if its crew overflows the team's other
+  ship). Roles: one HELM per ship, PILOTs (flying or waiting on deck, `plane: -1`) and GUNNERs (`role: "gunner"`,
+  `CrewPlayer.mount` = the `WEAPON_MOUNTS` index, -1 otherwise; gunners sit in `CrewShip.pilots`, which lists everyone
+  but the helm). Joining the room puts you on the team with fewer players (ties: team 0), aboard its most crewed
+  unlocked ship with room, at the helm if free, else as a pilot on deck. Team switches must keep the teams within one
+  (or improve them). CREATE SHIP only while a team is short of ships (`fleet-full` otherwise; the Tab button shows
+  FLEET FULL, disabled). A vacated helm holds the throttle and centres the rudder; a reconnecting helm gets the helm back
+  if free, else is a pilot on deck (a reconnecting gunner too; a locked ship still takes a reconnecting member back).
+- Ship operations (`shared/ops.ts`, data): `OPS` lists `{ id, label, name, kind: "helm" | "vehicle" | "gun", vehicle?,
+  mount?, cap, recharge (s) }`. The guns (see "Gunnery"): CIWS PORT, CIWS STBD, SAM PORT, SAM STBD, 5-INCH GUN
+  (`ciws-port` … `gun-5in`), cap 1 per mount, no recharge; taking one frees the helm or another gun, launching or taking
+  the helm leaves it (`at-gun` when it is yours, `in-use` when someone else's). Today TAKE HELM (`helm`, cap 1, only while free), LAUNCH HORNET (`hornet`, cap 2 per ship,
   recharge 30 s) and LAUNCH F-35C (`f35`, cap 1 per ship, recharge 45 s: the scarcer strike jet costs more to lose).
   Each vehicle op gives every ship `cap` slots (`CrewShip.aircraft`, each `{ op, pilot, readyAt }`,
   room-clock ms; `CREW.aircraft`/`CREW.recharge` are derived from the Hornet entry). A destroyed jet
@@ -512,6 +519,34 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   Params: `?drone=N`, `?hostile`, `?flares`, `?air`, `?f35`. Real-GPU checks: `scripts/weapons-shot.ts`; captures go
   to `captures/weapons/`.
 
+## Gunnery (`shared/gunnery.ts`, `src/gunnery/**`, `src/render/turret-*.ts`, `src/audio/turret-audio.ts`)
+
+- Crewed from SHIP OPERATIONS (`gun` ops above). The game's role `gunner` hands the camera to `Gunnery.update` (first
+  person at the weapon's sight, `TURRET_GEOMETRY`, on the ship's live settled pose: heave, pitch, roll and the sink
+  offset come through; up = the deck's up). The mouse (the game's Pointer Lock) moves a world-stabilised aim, clamped to
+  the mount's `yawArc`/`pitchArc` as the ship turns (the view stops at a limit; the arc gauge's end and a soft screen-edge
+  glow light up); the turret slews toward it at its own rates (`slewTurret`: CIWS 2.3/1.8 rad/s, SAM 1.2/1.0, gun
+  0.65/0.5), the amber ring is where the barrel points. LMB/Space fires, RMB zooms (CIWS 30°, SAM 24°, gun 16°).
+- CIWS: 75 rps, 1,100 m/s, ~1.6 km, 1.6 dmg/round on jets (5 m sphere), heat 2.6 s. Rounds passing within 3 m of a
+  missile, bomb, SAM or shell shoot it down. SAM: 8 cells (each reloads 3 s, starting 2 s after a launch), seeker 9°
+  cone / 5.8 km / 2.2 s lock, PN (N 4, 30 g from 380 m/s), 15 m fuse, 110→50 damage; a flare burst fools it by a fixed
+  coin per missile and burst (35%). 5-inch: one round per 1.5 s, 800 m/s with drag (~8.4 km flat), 16 m proximity
+  burst on jets (75→25), 35 hp on a carrier (a fire), near misses within 14 m 28→6 hp; HUD splash marker
+  (`predictImpact`, the world's own steps). Friendly fire off everywhere; kills credit the gunner (`KillWeapon`
+  `ciws`/`sam`/`shell` in kill feed and stats).
+- Authority: CIWS rounds are shooter-authoritative (`TurretRounds`): the client reports `thits` (jets), `tshiphits`
+  (enemy hulls) and `intercept` claims; the room's `GunneryWorld` checks a manned CIWS, the round budget, range from
+  the mount and (intercepts) the claim within 22° of the reported aim and a fired trigger. SAMs and shells are events
+  (`gfire`, `GunFireTuple`) the room validates (manned mount, budget, starts at the mount) and simulates; bursts go out
+  as `gboom` (`GunBoomTuple`); damage lands in `CombatWorld.hurt` (jets) and `Fleet.hit` (`shipHitOf`). Gunners send
+  `aim` (`AimTuple`, mrad) ~10 Hz; the room sends every manned turret as `turrets` (`TurretTuple`) every 100 ms and
+  everyone draws them (`TurretPass`, slewing to the reports at their rates, unmanned ones easing back to rest) with
+  cosmetic rounds, muzzle flashes, SAM smoke and trails, shell tracers and bursts (`Gunnery.frame`, its own WeaponFx).
+  The hull buffer bakes only the pedestals (`turretMountVerts`).
+- Dev harness (not built): `gunnery.html?gunner=ciws|ciws-stbd|sam|sam-port|gun` (offline, drones, an enemy carrier;
+  keys 1-5 switch mounts). Real-GPU checks: `scripts/gunnery-shot.ts` (views, ciws, intercept, sam, gun, mp); captures
+  in `captures/gunnery/`.
+
 ## Ship damage (`shared/fleet.ts`, `server/core.ts`, `src/weapons/{ship-fx,ship-hud}.ts`)
 
 - The room is authoritative. `RoomCore` holds one `Fleet`: a `Hull` per carrier, added on `new` and removed on `sink`.
@@ -573,43 +608,48 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - Real-GPU check: `scripts/ships-shot.ts`. Three pages: A's F-35C bombs B's carrier (direct hit, near miss), C's Hornet
   strafes it and fires dumbfires, A's bombs finish it, B is reassigned. Captures go to `captures/ships/damage/`.
 
-## Jet audio (`src/audio/{mixer,mixer-lab,jet-*}.ts`, `public/sfx/{jet,boom}/`, `scripts/{sfx-jet,sfx-boom,audio-demo,audio-render}.ts`)
+## Sound (`src/audio/{mixer,mixer-lab,sfx-*,sounds-lab,jet-*,ship-audio,ui-audio,weapon-audio,weather-audio}.ts`, `public/sfx/`, `scripts/{sfx-cinematic,sfx-picks-plugin,audio-demo,audio-render}.ts`)
 
-- One AudioContext for the whole game (`mixer()` in `src/audio/mixer.ts`), started on the first gesture, suspended in
-  hidden tabs. Buses: `engines` (other jets), `flyby` and `weather` go through a canopy low-pass that closes to 1.3 kHz
-  in the cockpit; `own` (your engine and cockpit, already muffled), `sfx` (catapult, trap, gear, crashes), `weapons`
-  (`weapon-audio.ts`, explosions) and `ui` (stall warning) do not. Then a peak limiter (-8 dB, 14:1) with its automatic
-  makeup gain trimmed back out (`MAKEUP_TRIM`, measured: unity below the threshold), the master volume and a soft clip.
-  `mixer().duck(depth, hold, delay)` dips engines, flybys and weather (close explosions, flybys). Levels and mute
-  persist in localStorage `carrier.audio.v2`. **M mutes** (not while typing).
-- Engines are fully procedural, after Wings' fighter voice (`jet-engine.ts`): a soft triangle whine rising with core
-  speed (Hornet 420-1320 Hz, F-35 330-1000 Hz) with a ×2.76 sine overtone, pink-noise roar behind a low-pass opening
-  with throttle, brown-noise body, and only with the afterburner a brown rumble under ~280 Hz, a sub tone and a faint
-  high-passed crackle. Hornet: a second engine a few cents off, quieter. F-35: one deeper, heavier engine.
-- `FlightModule.audio` (`JetAudio`, `src/audio/jet-audio.ts`) is fed by `src/flight/seam.ts` every frame: `own(flight,
-  pose)`, `remote(id, pose, tuple)` per relayed jet, `crash(...)` per remote crash, then `frame(dt, eye, forward, up)`.
-  Voices for your jet plus the 5 loudest others (HRTF), placed in listener space with distance gain (full inside 60 m,
-  rolloff 0.7), air absorption, smoothed Doppler (exponent 0.7) and the engine cone (`jet-math.ts`). Your engine is
-  exterior in the chase view, an interior mix in the cockpit, plus `jet-cockpit.ts` (wind, canopy whistle, air
-  conditioning, buffet, breathing under g, creaks, the stall warble).
-- Levels (offline renders, 0.5 s RMS): gun burst -23 dBFS; your Hornet in chase at idle -47, military -41, afterburner
-  -37 (18 dB under the gun at military); cockpit -36 / -31; medium weather -28; a remote pass 40 m off peaks at -33.
-- Flybys: each remote jet's closest approach to the camera is predicted every frame; within 2.4 s, closer than 170 m and
-  faster than 75 m/s relative, a procedural air rush swells to the pass (its low-pass sweeping up then down) on top of
-  the engine's own Doppler; head-on merges above 300 m/s within 60 m add a crack. One-shots (procedural by default):
-  your catapult (hold-back clank, the shot, the water brake), remote catapults (full throttle on deck), traps, gear,
-  hook.
-- Explosions are recorded (`jet-boom.ts`, ON by default, `mixer.explosionSamples`): 3 takes per scenario in
-  `public/sfx/boom/` (871 KB, prompts and picks in `scripts/sfx-boom.ts`): `air-kill` (jet shot down), `missile`
-  (missile airburst), `bomb-water`, `bomb-land`, `crash-sea`, `crash-land`, plus 3 `far` rumbles. A random take (never
-  the same twice running), ±4% pitch, ±1.5 dB; the close take loses its top end with distance and crossfades into a far
-  rumble between 350 m and 1.8 km; travel time d / 343 (≤ 3 s); close ones duck the world. Mapping: `weapons.ts` boom
-  (bomb by surface, else missile), kill (`air-kill`), falling wreck hitting sea/land; your own and remote crashes by
-  surface (`jet-audio.ts`). Until decoded (or with the toggle off) the procedural blasts play.
-- The recorded engine/flyby/catapult/trap takes in `public/sfx/jet/` (`mixer.samplesOn`) are OFF by default and only
-  load if switched on in the AUDIO tab, for comparison.
-- AUDIO tab (`mixer-lab.ts`): levels, tuning (Doppler, pass duck, whine, roar, afterburner, wind, breathing, cockpit
-  bed), recorded takes and recorded explosions toggles, test buttons (flyby, burner pass, crack, catapult, trap, gear,
-  crash, one per explosion scenario, Far 2.5 km), readouts. Offline renders: `scripts/audio-render.ts` (instructions at
-  its top) renders `scripts/audio-demo.ts` scenes (engines, flybys, catapult, trap, gun, weather, a mix, the explosion
-  reel, a calibration tone) on hailmary into `captures/audio/v2-*` (MP3 + spectrogram).
+- **One mix** (`mixer()` in `src/audio/mixer.ts`), started on the first gesture: buses `engines` (other jets), `flyby`,
+  `weather` (sea, weather, ship ambience) behind a canopy low-pass that closes in the cockpit; `own` (your engine and
+  cockpit), `sfx`, `weapons`, `ui` (dry). Sends: `reverb` (a synthesized 3.4 s open-air ocean impulse), `echo` (a dark
+  140 ms slapback off the water), `room` (a small metal cockpit). Then a gentle glue compressor, a -3 dB peak limiter,
+  an output trim (loudness: the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()`
+  dips engines, flybys and ambience under explosions and passes. `mixer.listener` (camera pose, set by jet-audio.ts each
+  frame) lets anything place a sound in the world. Levels and mute persist (`carrier.audio.v3`); **M mutes**.
+- **The sound bank** (`sfx-bank.ts`, `sfx()`): 62 slots (`sfx-slots.ts`: engine, flyby, carrier, gun, missile, bomb,
+  boom, ship, sea, ui, hooks) with 3-4 ElevenLabs candidate takes each, 222 takes in `public/sfx/v3/<slot>-<n>.ogg`
+  (48 kHz stereo Ogg Opus 96-112 kb/s, 11.8 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
+  dBTP; loops crossfade-looped; `manifest.json` has each take's length, loop length, loudest moment, loudness).
+  Prompts in `sfx-slots.ts`, processing in `scripts/sfx-cinematic.ts`. After the first gesture the bank loads every
+  slot's playing takes category by category (~100 takes, ~5 MB); `play`/`loop` return null until a slot has loaded and
+  callers play their procedural placeholder. API for every module (gunnery and boat audio included):
+  `sfx().play(slot, { at: worldXYZ | local | dist, gain, rate, delay, travel, reverb, echo, ref, rolloff, bus })` and
+  `sfx().loop(slot, …)` → `{ set({ gain, rate, at, tc }), stop(fade) }`. Pooled one-shots (explosions, impacts, thunder,
+  hull slams, flares, distant guns) play a random 4-5★ take (else any not rated down).
+- **Picks**: `public/sfx/picks.json` (shipped defaults: take, trim dB, ratings per slot), overridden live by the SOUNDS
+  tab in localStorage (`carrier.sfx.picks`). The dev server's `POST /__sfx/picks` (`scripts/sfx-picks-plugin.ts`)
+  writes picks.json; the SOUNDS tab's SAVE does that, COPY PICKS exports the JSON anywhere.
+- **SOUNDS tab** (`sounds-lab.ts`, ` menu, `?sounds=1` opens it): every slot, its takes (▶ dry or in context at 40 m,
+  300 m, 1.5 km with the reverb, from the chase view or behind the canopy; ★ pick, live; level trim; 1-5 rating),
+  category filter, COPY / SAVE / RESET. The AUDIO tab keeps the bus levels, engine/cockpit tuning, a recorded on/off
+  switch and test buttons.
+- **Where each slot plays**: jet engines (`jet-loops.ts`): idle/cruise/military/afterburner loops crossfaded by throttle,
+  re-pitched within their band and by Doppler, the engine cone as a high shelf, the F-35 a lower heavier variant; in the
+  cockpit the `cockpit-engine` loop plus `cockpit-wind` and `rain-canopy` (`jet-cockpit.ts`); the procedural turbofan
+  (`jet-engine.ts`) until loaded. Flybys (`jet-sfx.ts`, timing from `jet-math.ts`): the take's loudest moment lands on
+  the predicted closest approach and follows the jet; `sonic-crack` on head-on merges. Carrier ops: catapult, shuttle
+  slam, trap, gear, tailhook. Weapons (`weapon-audio.ts`): the M61 loop cut in on the trigger with its tail, distant
+  bursts, missile launch, flares, bomb release (+ whistle), impacts; cockpit tones synthesized (sine seeker growl and
+  lock, two-tone warning chimes) on the UI bus. Explosions (`jet-boom.ts`, `boomsFor().play(kind, dist, size)`): the
+  scenario's take crossfading into `boom-far` from 400 m to 2.2 km, travel delay, heavy reverb and slapback, a water
+  geyser for bombs in the sea. Sea and weather (`weather-audio.ts`): ocean beds by sea state (fading with altitude),
+  wind light/gale, rain light/heavy, thunder near/far with the lightning crack. Ships (`ship-audio.ts`, fed by
+  `seam.ts` `audio.ships(...)`): the deck bed near a hull, hull slams (`Ship.slams`), creaks in heavy seas, a rare horn.
+  Interface (`ui-audio.ts`): clicks and hovers on any button, a soft open on E / Tab / `, the kill confirm and the
+  landing-capture cue. Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
+  `tracer-zip`, `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
+- Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
+  60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel) on hailmary into
+  `captures/audio/v3-*`; `captures/audio/v3-candidates-<category>.mp3` are every take back to back (index in
+  `v3-candidates.md`). `public/sfx/boom/{far-1,bomb-water-2}.mp3` stay only for `scripts/video-epic.ts`.

@@ -75,7 +75,7 @@ export class MixerLab {
       <h2>Explosions</h2>
       <div class="row">${BOOM_KINDS.map((k) => `<button data-boom="${k}">${k.replace("-", " ")}</button>`).join("")}</div>
       <div class="row"><button data-act="far">Far (2.5 km)</button></div>
-      <div class="note">Flybys go 40 m past the camera at 210-250 m/s. Everything is synthesised; "Recorded takes" swaps in the ElevenLabs one-shots (public/sfx/jet) for comparison.</div>`
+      <div class="note">Flybys go 40 m past the camera at 210-250 m/s. Recorded sounds come from the SOUNDS tab's picks; switch them off to hear the procedural placeholders.</div>`
     this.el.querySelectorAll<HTMLElement>("[data-s]").forEach((e) => (this.status[e.dataset.s!] = e))
     this.meter = this.el.querySelector(".meter i")!
     const knob = (key: string) => KNOBS.find(([, k]) => `tune:${k}` === key)

@@ -25,7 +25,7 @@ import {
 } from "./jet-math"
 import { type FlybyHandle, JetSfx, type Where } from "./jet-sfx"
 import { type Mixer, mixer as sharedMixer } from "./mixer"
-import { sfx } from "./sfx-bank"
+import { type SfxBank, sfx } from "./sfx-bank"
 import { ShipAudio, type ShipLike } from "./ship-audio"
 import { UiAudio } from "./ui-audio"
 
@@ -110,6 +110,8 @@ type JetEvent = { type: "catapult" | "holdback" | "brake" | "trap" | "gear-up" |
  */
 export class JetAudio {
   readonly sfx: JetSfx
+  /** The sound bank (sfx-bank.ts), for scripts and the console. */
+  readonly bank: SfxBank
   private bed: CockpitBed | null = null
   private tracks = new Map<number, Track>()
   private order: Track[] = []
@@ -151,7 +153,7 @@ export class JetAudio {
   ) {
     this.sfx = new JetSfx(this.mixer)
     // The sound bank loads its picked takes once the context starts.
-    sfx(this.mixer)
+    this.bank = sfx(this.mixer)
     this.shipAudio = new ShipAudio(this.mixer)
     if (watchdog) new UiAudio(this.mixer)
     // Registers the recorded explosions to load when the context starts.

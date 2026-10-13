@@ -19,14 +19,17 @@
   `debugMenu.addTab({ id, label, mount, unmount?, frame?, css? })`. WEATHER tab: timeline/manual, presets, every
   weather parameter, strike now, sea-time pause/speed, readouts, copy/paste JSON, BROADCAST TO ROOM. TIME tab: clock,
   sun/moon readouts, local hour scrub, presets, speed/freeze, BROADCAST TO ROOM (see CONTRACTS.md "Day-night").
-- Roles: a ship's HELM or one of its PILOTs (no other seats). E: SHIP OPERATIONS (hold, tap to pin; physical key only), the only way to
-  take the helm or launch a Hornet (2 out per ship; a destroyed jet's slot recharges 30 s) or the F-35C strike jet (1 per
-  ship, 45 s; no gun, bay and wing bombs); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
+- Rooms: up to 32 players, two teams of two carriers, 8 aboard each. Roles: a ship's HELM, a PILOT or a GUNNER (one per
+  weapon mount). E: SHIP OPERATIONS (hold, tap to pin; physical key only), the only way to
+  take the helm, launch a Hornet (2 out per ship; a destroyed jet's slot recharges 30 s) or the F-35C strike jet (1 per
+  ship, 45 s; no gun, bay and wing bombs), or man a gun (CIWS PORT/STBD, SAM PORT/STBD, 5-INCH GUN: first person, mouse
+  aims, LMB/Space fires, RMB zooms; pick another operation to leave); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
   flight); Esc frees it, menus free it and give it back. Controls: at the helm W/S throttle, 1-9/0/= presets, A/D rudder; as a pilot the flight keys plus
   Space/LMB fire, 1/2/3 or wheel/V weapons, F flares (a flight ends only by landing aboard, a crash or being shot down); Tab players and ships (hold, tap to pin: JOIN switches ship or team, CREATE SHIP, captains LOCK, KICK,
   promote); C free camera (WASD pan, drag orbit, wheel zoom); M mute; ` debug menu. Shared rules: `shared/{crew,squad,ops}.ts`.
-- Sound: one mix in `src/audio/mixer.ts` (weather, weapons, jets); procedural jet engines, flybys and cockpit in
-  `src/audio/jet-*.ts`, recorded explosions in `public/sfx/boom/`; AUDIO tab in the debug menu (see CONTRACTS.md "Jet audio").
+- Sound: one mix in `src/audio/mixer.ts`; every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
+  `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`). SOUNDS tab in the
+  debug menu (or `?sounds=1`): audition every take and pick by ear; AUDIO tab: levels. See CONTRACTS.md "Sound".
 - Renderer (`src/render/`): raw WebGPU, HDR rgba16float, MSAA x4, depth32float with reversed Z (clear 0,
   `greater-equal`), bloom and an ACES-graded composite (`post.ts`). Static world via `renderer.setStatic` (packed
   `Mesh` chunks, `lit.ts`); everything else is a `ScenePass` in the sky/opaque/alpha slots. Sun, sky and fog live in

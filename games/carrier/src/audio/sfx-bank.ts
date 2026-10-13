@@ -77,6 +77,8 @@ export class SfxBank {
   private base = ""
   private started = false
   private last = new Map<string, number>()
+  /** Resolves once boot has loaded every category's playing takes. */
+  booted: Promise<void> = Promise.resolve()
 
   constructor(readonly mixer: Mixer) {
     this.picks = this.restore()
@@ -84,9 +86,14 @@ export class SfxBank {
   }
 
   /** Fetches the manifest and shipped picks, then every slot's picked takes, category by category. */
-  async boot(base?: string): Promise<void> {
-    if (this.started) return
+  boot(base?: string): Promise<void> {
+    if (this.started) return this.booted
     this.started = true
+    this.booted = this.load(base)
+    return this.booted
+  }
+
+  private async load(base?: string): Promise<void> {
     this.base = base ?? (typeof document !== "undefined" ? document.baseURI : "")
     try {
       this.manifest = await (await fetch(new URL("sfx/v3/manifest.json", this.base))).json()

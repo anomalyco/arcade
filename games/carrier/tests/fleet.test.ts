@@ -213,7 +213,7 @@ describe("sinking and the crew", () => {
     ship(1, 1, 1, [2, 3])
     ship(2, 1, 4, [])
     ship(3, 0, 5, [])
-    const player = (id: number, team: number, shipId: number, role: "helm" | "pilot") => c.players.push({ id, name: `p${id}`, team, ship: shipId, role, plane: -1, sortie: 0, waitSince: 0, since: 0 })
+    const player = (id: number, team: number, shipId: number, role: "helm" | "pilot") => c.players.push({ id, name: `p${id}`, team, ship: shipId, role, plane: -1, mount: -1, sortie: 0, waitSince: 0, since: 0 })
     player(1, 1, 1, "helm")
     player(2, 1, 1, "pilot")
     player(3, 1, 1, "pilot")

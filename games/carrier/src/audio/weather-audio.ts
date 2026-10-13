@@ -13,6 +13,9 @@ import { type LoopHandle, sfx } from "./sfx-bank"
  * (brown noise through a gusting low-pass), and thunder after each lightning strike, delayed by its distance at the
  * speed of sound and duller the further away it is. Starts on the first user gesture (browsers require one).
  */
+/** Bed level under the action (scripts/audio-demo.ts: medium weather well under a gun burst). */
+const BED = 0.55
+
 export class WeatherAudio implements WeatherSound {
   /** Master volume 0..1. */
   volume = 0.7
@@ -130,7 +133,7 @@ export class WeatherAudio implements WeatherSound {
       if (!h && level > 0.005 && bank.ready(slot)) h = this.beds[slot] = bank.loop(slot, { bus: "weather", reverb: 0 })
       if (h && !h.playing) h = this.beds[slot] = null
       if (!bank.ready(slot)) recorded = false
-      h?.set({ gain: level, tc: 0.4 })
+      h?.set({ gain: level * BED, tc: 0.4 })
     }
     const proc = recorded ? 0 : 1
     ramp(this.rain.gain, proc * 0.32 * w.rain ** 1.2)

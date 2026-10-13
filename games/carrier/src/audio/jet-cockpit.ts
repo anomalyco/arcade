@@ -106,7 +106,7 @@ export class CockpitBed {
     if (!this.windLoop && bank.ready("cockpit-wind")) this.windLoop = bank.loop("cockpit-wind", { bus: "own", reverb: 0 })
     if (this.windLoop && !this.windLoop.playing) this.windLoop = null
     const windLevel = s ? q * (0.06 + 0.26 * k) * tw : 0
-    this.windLoop?.set({ gain: windLevel * 2.2, rate: 0.85 + 0.25 * Math.min(1, q) })
+    this.windLoop?.set({ gain: windLevel * 0.9, rate: 0.85 + 0.25 * Math.min(1, q) })
     set(this.wind.filter.frequency, 380 + 3.2 * (s?.speed ?? 0))
     set(this.wind.src.playbackRate, 0.9 + 0.2 * Math.min(1, q))
     set(this.wind.gain.gain, this.windLoop ? 0 : windLevel)

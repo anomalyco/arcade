@@ -9,6 +9,7 @@ import {
   TURRET_GEOMETRY,
   TURRET_SCALE,
   TurretRounds,
+  type TurretHit,
   type GunneryEvent,
   type Interceptable,
   asInterceptable,
@@ -223,7 +224,7 @@ function ciwsAt(rounds: TurretRounds, ship: GroundShip, i: number, aim: () => Ve
     rounds.step(DT, t, jets, stores(), AIR, hitFn)
   }
 }
-let hitFn: Parameters<TurretRounds["step"]>[4] = () => {}
+let hitFn: TurretHit = () => {}
 
 describe("CIWS", () => {
   test("heats up and locks out like the jets' cannon, then cools", () => {

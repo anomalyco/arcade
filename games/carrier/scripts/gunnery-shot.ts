@@ -187,8 +187,8 @@ async function shot(page: Page, name: string, log = true): Promise<void> {
     document.getElementById("view")!.style.visibility = ""
   })
   if (log) {
-    const harness = await page.evaluate(() => !!(globalThis as unknown as { carrier: { gunnery?: unknown } }).carrier.gunnery)
-    console.log(`${name}: ${harness ? fmt(await state(page)) : ""}`)
+    const harness = await page.evaluate(() => !!(globalThis as unknown as { carrier: { own?: unknown } }).carrier.own)
+    console.log(`${name}: ${harness ? fmt(await state(page)) : gfmt(await gstate(page))}`)
   }
 }
 
@@ -415,6 +415,7 @@ async function mp(): Promise<void> {
   await a.waitForTimeout(300)
   await shot(a, "mp/00-a-ops-menu", false)
   await run(a, 'carrier.net.op("ciws-port")')
+  await run(a, "carrier.ops.close()")
   ga = await guntil(a, (m) => m.role === "gunner", 5000)
   check(ga.role === "gunner", `A is a gunner: ${gfmt(ga)}`)
   await run(a, aimLocal(0.3, 0.1))
@@ -431,7 +432,7 @@ async function mp(): Promise<void> {
         const s = c.flight.carriers.find((q) => q.id === ship)
         if (!s) return
         const a = Math.PI - s.heading
-        c.camera.set({ x: s.x + x! * Math.cos(a) + z! * Math.sin(a), z: s.z - x! * Math.sin(a) + z! * Math.cos(a), yaw: s.heading - Math.PI / 2 - 0.5, pitch: 0.2, dist: 70 })
+        c.camera.set({ x: s.x + x! * Math.cos(a) + z! * Math.sin(a), z: s.z - x! * Math.sin(a) + z! * Math.cos(a), yaw: s.heading + Math.PI / 2 + 0.7, pitch: 0.3, dist: 55 })
       }, 30) as unknown as number
       void y
     },
