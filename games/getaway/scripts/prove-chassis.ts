@@ -45,6 +45,7 @@ try {
     Object.assign(p.cam, { pitch: 0.6, dist: lamps ? 16 : 20, fov: 0.6 })
     p.device = p.scene.renderer.device
     const { bodyPoint } = await load("/src/game/car-pose.ts")
+    const { lampMounts } = await load("/src/render/car-lights.ts")
     if (lamps) {
       const render = p.scene.renderer.render.bind(p.scene.renderer)
       p.scene.renderer.render = (frame: any) => { p.renderFrame = frame; return render(frame) }
@@ -93,17 +94,22 @@ try {
         const half = p.spec.length / 2, hw = p.spec.width / 2 - 0.25
         const check = (actual: number[], expected: number[]) => { lampError = Math.max(lampError, Math.hypot(...expected.map((n, i) => n - actual[i]))) }
         const lights = Array.from({ length: p.scene.lightCount }, (_, i) => [...p.renderFrame.lights.slice(i * 12, i * 12 + 12)])
-        const head = lights.find(l => l[3] === 36)!
-        check(head, point([0, 1.3, half + 0.5]))
-        const from = point([0, 1.3, half + 0.5]), to = point([0, 1, half + 1.45])
+        const reference = p.scene.lightStyle === 0, mount = lampMounts(p.spec)
+        const head = lights.find(l => l[3] === (reference ? 36 : p.scene.lightStyle === 3 ? 22 : 18))!
+        const from = point(reference ? [0, 1.3, half + 0.5] : [0, mount.frontY, half + 0.08])
+        check(head, from)
+        const to = point(reference ? [0, 1, half + 1.45] : [0, mount.frontY - 0.28, half + 1.08])
         const direction = to.map((n, i) => n - from[i]), length = Math.hypot(...direction)
         check(head.slice(8, 11), direction.map(n => n / length))
-        check(lights.find(l => l[3] === 7 && Math.abs(l[5] - 0.1) < 1e-5)!, point([0, 0.9, -(half + 0.6)]))
+        check(lights.find(l => l[3] === (reference ? 7 : 4) && Math.abs(l[5] - (reference ? 0.1 : 0.055)) < 1e-5)!, point(reference ? [0, 0.9, -(half + 0.6)] : [0, mount.rearY, -half - 0.28]))
         const sprites = Array.from({ length: p.renderFrame.sprites.addCount }, (_, i) => [...p.renderFrame.sprites.add.slice(i * 12, i * 12 + 12)])
         for (const front of [true, false]) {
-          const glows = sprites.filter(l => l[8] === 0 && Math.abs(l[5] - (front ? 0.95 : 0.12)) < 1e-5)
+          const green = front ? (reference ? 0.95 : p.scene.lightStyle === 2 ? 0.94 : 0.84) : reference ? 0.12 : 0.055
+          const glows = sprites.filter(l => l[8] === (reference ? 0 : 15) && Math.abs(l[5] - green) < 1e-5)
           if (glows.length !== 2) throw new Error(`Missing ${front ? "head" : "tail"} glows`)
-          glows.forEach((g, j) => check(g, point([hw * (j ? 1 : -1), 0.75, front ? half + 0.1 : -(half + 0.05)])))
+          glows.forEach((g, j) => check(g, point(reference
+            ? [hw * (j ? 1 : -1), 0.75, front ? half + 0.1 : -(half + 0.05)]
+            : [(front ? mount.frontX : mount.rearX) * (j ? 1 : -1), (front ? mount.frontY : mount.rearY) + 0.02, front ? half + 0.065 : -half - 0.075])))
         }
         if (c.role === "cop") {
           const y = c.vehicle === "swat" ? 2.9 : 1.9

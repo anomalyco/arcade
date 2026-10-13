@@ -64,6 +64,13 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Keep sprite kinds distinct when combining studies.** The integrated car-light and exhaust paths both originally
+  used kinds 10 and 13. Exhaust retains 10 (cold condensation) and 13 (attached flame); car-light footprints, lenses,
+  lens streaks and brake streaks use 14–17 in `game/scene.ts` and `render/shaders.ts`. On the combined Metal preview,
+  drift and standing nitro emitted 312 and 74 smoke samples, and the 16 posed light-style cases passed their packed
+  position/direction checks. Moving brake/kerb fixtures and cruiser/SWAT sirens also passed. Startup red stayed within
+  42.45–42.83, with no page or console errors. Runtime cost of this integration has not been measured.
+
 - **Getaway's approved presentation is permanent.** The six Look effects and eight driving effects now run without
   switches or `vanilla`/`off` overrides. The Lab retains its frame/GPU readout and input isolation, with no empty preset
   buttons. Spotlight radius is the original 7.5 m with 0.0025 cone feather. The removed Wet Road setting stored 0.55,
@@ -224,6 +231,36 @@ The prior connected-study report describes its historical offscreen-target measu
 
 Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, silent 720×1280 H.264 Main/yuv420p clip
 (31.6 s, 7,435,113 bytes), original stills, motion inspection, matching still/video route poses and paired GPU data.
+
+- **One body pose for the mesh and its lamps.** `src/game/car-pose.ts` uses the chassis branch's
+  `bodyPoint(car, pose, local)` interface and the instance shader's roll → pitch → yaw order. Omitted height,
+  roll and pitch default to zero; supplied height includes ground, flight and springs. `scene.ts` sends the same
+  `pose` to the body instance and every car lamp glow/light, including the reference style, sirens, crash and backfire.
+  Headlight direction comes from two transformed local points, so brake dive changes the aim too. Ground footprints
+  use the posed lamp's horizontal origin and road height rather than floating with the body. Keep the chassis branch's
+  sprung `pose` calculation when integrating; lamp code needs no separate suspension calculation.
+  Four transform tests pass, and `scripts/prove-car-lights.ts --pose` checked lift, roll, brake dive and combined motion
+  for all four light styles on Metal. It compares actual submitted light/glow positions and beam directions with the
+  body instance pose (16 cases, tolerance 0.00003 m), and retains shaped lens glows in candidates 1–3. No GPU-time
+  claim is made for the extra transforms.
+
+- **Car-light studies (`?lights=0..3`).** `src/render/car-lights.ts`, `car-mesh.ts`, `game/scene.ts` and the sprite
+  shader keep an original reference (0), warm recessed lamps (1, preview default), cool headlamps/full rear bar (2),
+  and longer warm fans with subtle lens and braking streaks (3). All candidates replace oversized round sprites with
+  bevelled housings and tight rectangular lens glows. Lens positions follow body roll, pitch and jump height. Two
+  short-range lights let the adjacent body bevels catch the lamp colour; the ground fans fade out in flight.
+  The concept images show small rectangular rear lamps, compact red spill and beams connected to the nose. The
+  [Precinct Steam screenshots](https://store.steampowered.com/app/490110/The_Precinct/) show small practical sources
+  with road wash; [Art of Rally's Light Trails mod](https://mikematthews.itch.io/light-trails-mod) demonstrates
+  brake-only trails (a mod reference, not a claim about the base game). Our streak candidate is much shorter.
+  A physically elevated spotlight can leave a gap on the road; the old extra ellipse at bumper +6 m made that gap
+  read as a detached pool. Candidates use an 8/10/12 m fan starting at the bumper, plus the real spotlight.
+  Shape the fan **in fragment space on a rectangular quad**: a tapered vertex quad distorted affine UV interpolation
+  into two bright diagonal lines. The corrected fan is continuous in the inspected close and gameplay Metal views.
+  `scripts/prove-car-lights.ts --video` captures all four at identical poses, verifies real app startup for each URL,
+  and makes a silent 720×1280, 30 fps, 24 s H.264 Main/yuv420p phone clip (6.72 MB). Twelve stills and 720 video frames
+  completed without page or GPU errors. Light count rises from 98 to 100 in the seeded one-car scene; the extra
+  geometry and sprite/light work have no measured GPU-time claim. Kit's choice among the candidates is pending.
 
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte

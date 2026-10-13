@@ -383,7 +383,8 @@ struct Inst {
  * Sprites: camera-facing glows and smoke, ground-aligned decals (rings, skid marks, light pools) and the
  * helicopter beam. kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 5 beam, 6 spark,
  * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow,
- * 10 cold condensation, 13 attached exhaust flame.
+ * 10 cold condensation, 13 attached exhaust flame,
+ * 14 bumper-anchored beam footprint, 15 mounted lens, 16 lens streak, 17 brake streak.
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -409,7 +410,16 @@ struct SOut {
   let kind = s.misc.x;
   var world: vec3f;
   let size = s.posSize.w;
-  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 13.0) {
+  if (kind == 14.0 || kind == 17.0) {
+    let t = c.y * 0.5 + 0.5;
+    // Shape the fan in fragment space: a trapezoid quad distorts interpolated UVs.
+    let lc = vec2f(c.x * size, t * size * s.misc.z);
+    let cr = cos(s.misc.y); let sr = sin(s.misc.y);
+    world = s.posSize.xyz + vec3f(lc.x * cr + lc.y * sr, 0.0, -lc.x * sr + lc.y * cr);
+  } else if (kind == 15.0) {
+    let cr = cos(s.misc.y); let sr = sin(s.misc.y);
+    world = s.posSize.xyz + vec3f(c.x * size * cr, c.y * size * s.misc.z, -c.x * size * sr);
+  } else if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 13.0) {
     let r = s.misc.y;
     let cr = cos(r); let sr = sin(r);
     let taper = 1.0;
@@ -429,7 +439,7 @@ struct SOut {
     let toCam = normalize(F.cam.xyz - s.posSize.xyz);
     let right = normalize(cross(vec3f(0.0, 1.0, 0.0), toCam));
     let up = cross(toCam, right);
-    world = s.posSize.xyz + (right * c.x + up * c.y) * size;
+    world = s.posSize.xyz + (right * c.x + up * c.y * select(1.0, s.misc.z, kind == 16.0)) * size;
     // Nudge glows toward the camera so they are not swallowed by their own lamp geometry.
     world += toCam * size * select(0.5, 0.0, kind == 10.0);
   }
@@ -514,6 +524,18 @@ struct SOut {
     let body = (1.0 - smoothstep(0.48, 1.0, q.x)) * (1.0 - smoothstep(0.58, 1.0, q.y));
     let wheel = 1.0 - smoothstep(0.04, 0.27, length((q - vec2f(0.57, 0.53)) * vec2f(1.0, 1.3)));
     a = min(1.0, body * 0.78 + wheel * 0.55);
+  }
+  if (k == 14.0) {
+    let t = o.uv.y * 0.5 + 0.5;
+    let width = mix(0.16, 1.0, t);
+    a = pow(max(0.0, 1.0 - abs(o.uv.x) / width), 1.3) * pow(1.0 - t, 0.8) * smoothstep(0.0, 0.025, t);
+  } else if (k == 17.0) {
+    let t = o.uv.y * 0.5 + 0.5;
+    a = pow(max(0.0, 1.0 - abs(o.uv.x)), 1.6) * pow(1.0 - t, 1.4) * smoothstep(0.0, 0.035, t);
+  } else if (k == 15.0) {
+    a = (1.0 - smoothstep(0.55, 1.0, abs(o.uv.x))) * (1.0 - smoothstep(0.3, 1.0, abs(o.uv.y)));
+  } else if (k == 16.0) {
+    a = pow(max(0.0, 1.0 - abs(o.uv.x)), 2.0) * pow(max(0.0, 1.0 - abs(o.uv.y)), 2.0);
   }
   if (a <= 0.002) { discard; }
   return vec4f(col * a * o.color.a, a * o.color.a);

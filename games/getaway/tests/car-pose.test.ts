@@ -20,8 +20,14 @@ test("lamp spacing and beam direction remain rigid through combined body motion"
   for (let i = 0; i < 30; i++) {
     const c = { x: 100, z: 25, h: i * 0.7 }, pose = { height: i * 0.1, roll: Math.sin(i) * 0.3, pitch: Math.cos(i) * 0.2 }
     const a = bodyPoint(c, pose, [-0.45, 1.9, 0]), b = bodyPoint(c, pose, [0.45, 1.9, 0])
-    expect(Math.hypot(...a.map((n, k) => n - b[k]))).toBeCloseTo(0.9, 10)
+    expect(Math.hypot(...a.map((n, k) => n - b[k]!))).toBeCloseTo(0.9, 10)
     const head = bodyPoint(c, pose, [0, 1.3, 3]), aim = bodyPoint(c, pose, [0, 1, 3.95])
-    expect(Math.hypot(...head.map((n, k) => n - aim[k]))).toBeCloseTo(Math.hypot(0.3, 0.95), 10)
+    expect(Math.hypot(...head.map((n, k) => n - aim[k]!))).toBeCloseTo(Math.hypot(0.3, 0.95), 10)
   }
+})
+
+test("omitted spring fields default to zero without losing yaw or translation", () => {
+  const c = { x: 10, z: 20, h: Math.PI / 2 }
+  expect(bodyPoint(c, {}, [0, 1, 2])).toEqual([12, 1, 20])
+  expect(bodyPoint(c, { height: 3 }, [0, 1, 2])).toEqual([12, 4, 20])
 })
