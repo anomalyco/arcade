@@ -11,6 +11,15 @@ that uses it.
 
 ## Candidates
 
+Shared FX now lives in `packages/kit/fx/` ([API](../packages/kit/fx/README.md)). Getaway's two small adapters
+use the extracted tyre simulation and shader/pipeline without changing the image. Blackout supplies camera,
+culled lights, readable depth and wall rectangles to the bounded volume path. The same package supplies fixed
+particle storage, rate/distance emitters, lit billboards, bouncing/stretched sparks and instanced debris.
+The particle renderer's current consumer is the shared playground (`games/getaway/fx.html`); existing game debris
+remains game-owned. Both workflows already trigger on `packages/kit/**`, and both client typechecks include the
+FX source. `packages/kit/playground/` owns the controls, presets and small night scene; its Getaway entry only
+supplies camera matrices. Proof and GPU-cost limitations are in `perf/fx-kit.md`.
+
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.

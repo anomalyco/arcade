@@ -34,6 +34,7 @@ import { VehicleSound } from "../audio/vehicle-sound"
 import { FLOOR } from "../render/vehicle-mesh"
 import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
 import { mapFires } from "./map-fx"
+import { SmokeVolumes } from "../../../../packages/kit/fx/volume"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -172,6 +173,7 @@ type LooseSheet = Debris & { kind: "paper" | "glass"; phase: number }
  * and the per-frame GPU data.
  */
 export class Game {
+  readonly smokeVolumes = new SmokeVolumes()
   readonly juice: Juice
   private bounceBase!: FloorMap
   private bounceFull!: FloorMap
@@ -325,6 +327,7 @@ export class Game {
 
   /** Drops everything left over from the last match: bodies, tracers, frags, blasts. */
   private clearScene(): void {
+    this.smokeVolumes.reset([...this.map.walls.filter(w => w.h >= 1.8).map(w => w.rect), ...this.map.windows, ...this.map.glass])
     this.corpses = []
     this.tracers = []
     this.particles = []
@@ -673,6 +676,8 @@ export class Game {
     this.trips.delete(e.id)
     const x = e.x
     const y = e.y
+    this.smokeVolumes.carve(x,y,x,y,3)
+    this.smokeVolumes.spawn(x,y,clay ? 2.8 : 4.5,clay ? 5 : 7,0.9,0.45)
     const z0 = clay ? 0.15 : (f?.z ?? FRAG.size)
     this.booms.push({ x, y, t0: t, kind: e.kind, aim: e.aim })
     this.scorches.push({ x: x + (clay ? Math.cos(e.aim) * 0.4 : 0), y: y + (clay ? Math.sin(e.aim) * 0.4 : 0), t0: t, r: clay ? 1.1 : 1.6, rot: Math.random() * 6.28 })
@@ -984,10 +989,12 @@ export class Game {
   }
 
   private fx(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, size: number, kind: Particle["kind"]): void {
+    if (kind === "char") this.smokeVolumes.sustain(x,y)
     this.particles.push({ x, y, z, vx, vy, vz, t0: this.now, life, size, kind, bounced: false })
   }
 
   private tracer(x0: number, y0: number, z0: number, x1: number, y1: number, gun: Gun): void {
+    this.smokeVolumes.carve(x0,y0,x1,y1,gun === "shotgun" ? 0.6 : 0.3)
     this.environmentHit(x0, y0, x1, y1)
     this.tracers.push({ x0, y0, z0, x1, y1, t0: this.now, life: gun === "sniper" ? 0.55 : (Math.hypot(x1 - x0, y1 - y0) + TRACER_LEN) / TRACER_SPEED, w: gun === "sniper" ? 0.045 : gun === "shotgun" ? 0.018 : 0.026, gun })
     if (gun === "sniper") {
@@ -1266,6 +1273,7 @@ export class Game {
   }
 
   build(cam: Camera, w: number, h: number, dt: number): FrameInput {
+    this.smokeVolumes.update(dt)
     const t = this.now
     const intensity = this.juice.monitors ? this.juice.monitorIntensity : 0
     if (intensity !== this.bounceIntensity) {
@@ -1559,6 +1567,7 @@ export class Game {
           p.vy *= 0.7
         }
       }
+      if (this.juice.volumes && (p.kind === "soot" || p.kind === "char")) continue
       if (p.kind === "electric") { if (this.juice.sparks) this.sprite(true, p.x, p.z, p.y, p.size * (1 + a), 0.5, 0.85, 1.4, a, 0) }
       else if (p.kind === "spark") this.sprite(true, p.x, p.z, p.y, p.size * (p.life < 0.1 ? 1 : 1 + a), 1, 0.72, 0.3, a, 0)
       else if (p.kind === "dust") this.sprite(false, p.x, p.z, p.y, p.size * (1.2 + age * 3), 0.5, 0.48, 0.46, a * a * 0.5, 0)
@@ -1591,6 +1600,8 @@ export class Game {
     const C = this.culler
     return {
       frame: F,
+      smoke: this.smokeVolumes,
+      smokeEnabled: this.juice.volumes,
       lights: C.lights,
       lightCount: C.lightCount,
       shadowLightCount: C.shadowLightCount,

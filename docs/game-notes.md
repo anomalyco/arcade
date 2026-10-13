@@ -64,6 +64,28 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes four-connected arrival
+  distances through 48² wall-clipped fields. The fragment shader adds a shallow height envelope, moving 3D billows,
+  approximate self-extinction and eight nearby lights. Blackout has frag and claymore equipment, so their post-blast
+  soot and burning-wreck plumes use this path; Volume Smoke in the Lab restores the legacy sprites for comparison.
+  Rays stop at stored MSAA depth, render at no more than 480×320 with 24 steps, then depth-aware upsampling places
+  them in HDR before bloom. Four volume slots cap work. Shots and explosions carve temporary cylinders; walls stay
+  closed as holes refill. This affects visual sight only. Blackout supplies walls at least 1.8 m high, windows and
+  glass as sealed columns. Low wrecks remain depth occluders, so they can emit smoke. Fluid pressure and vertical
+  flow over furniture remain unimplemented.
+- **Keep a shader extraction visually exact.** The Getaway tyre simulation and WGSL moved to `packages/kit/fx/`
+  behind two game adapters. The original modules from `94c62b9` and the shared path produced identical 960×640
+  pixels at seed 7's drift frame 64 on Metal. The playground uses that same tyre shader, alongside bounded general
+  particles and the grenade volume. All eight effects and density, optical-depth, lighting and bounds views compiled
+  and rendered without GPU errors. The separate particle heatmap adds fragment contributions; the volume heatmap
+  displays integrated optical depth rather than claiming to count transparent draw overlap.
+- **Measure the two volume passes with retained depth on both sides.** Blackout's final nine paired, frozen-pose
+  total-GPU measurements added 0.947 ms median, MAD 0.016 ms, on M5 Max/Metal at 960×640; pair deltas ranged from
+  0.872 to 0.979 ms. This isolates the raymarch and upsample with legacy sprites
+  suppressed on both sides; it excludes the historical depth discard-to-store change. The timer spans first polar
+  compute to a dependent final-composite marker, using an offscreen target and no pass sums. See `perf/fx-kit.json`
+  and `.md`; the result is a single-room measurement, not a four-cloud bound or a CS2-quality equivalence claim.
+
 - **Getaway's approved presentation is permanent.** The six Look effects and eight driving effects now run without
   switches or `vanilla`/`off` overrides. The Lab retains its frame/GPU readout and input isolation, with no empty preset
   buttons. Spotlight radius is the original 7.5 m with 0.0025 cone feather. The removed Wet Road setting stored 0.55,
@@ -239,6 +261,26 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   reference. No new per-frame JS storage is allocated by the smoke simulation, preparation or upload path.
 
 ## Researched, not yet adopted
+
+### Responsive smoke research and the shared implementation (2026-10-12)
+
+[Valve's Responsive Smokes](https://www.youtube.com/watch?v=_y9MpNcAitQ) shows volumes filling spaces, reacting
+to lighting, opening under bullet fire and dispersing under explosions. Valve's public demonstration establishes
+the behavior, but does not publish the full solver or shader. [Garrett Gunnell's reconstruction](https://github.com/GarrettGunnell/CS2-Smoke-Grenades)
+documents limited voxel flood fill, mesh voxelization, tiled Worley noise, a generalized raymarcher and SDF-based
+deformation. These implementation details belong to the reconstruction, not verified Valve source. Solid voxels
+stop propagation; open cells let a connected front travel around corners. Density noise shapes the filled volume,
+light transmittance shades its interior, and temporary distance-field holes explain the shot/explosion response.
+
+For top-down WebGPU, the adopted version uses four bounded 2D arrival grids with analytic vertical density rather
+than a full 3D solver. It follows room walls and doors at 0.5 m resolution, drifts noise through the density, and
+integrates a low-resolution image with fixed spatial blue-noise-like farthest-point jitter. Scene-depth stopping and
+depth-aware upsampling follow the low-resolution-volume tradeoff described in
+[GPU Gems 3, chapter 23](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-23-high-speed-screen-particles)
+and [chapter 30](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-30-real-time-simulation-and-rendering-3d-fluids).
+The package reuses persistent field, particle and upload arrays. Its smoke target costs at most 1.17 MiB, plus
+the small noise and density textures and the host's retained depth. Full 3D flood propagation, obstacle-aware
+light transport, pressure advection and temporal reconstruction remain research candidates.
 
 ### Connected smoke research (2026-10-12)
 

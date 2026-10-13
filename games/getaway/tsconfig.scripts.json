@@ -1,5 +1,5 @@
 {
-  "files": ["scripts/prove-smoke.ts", "scripts/prove-smoke-real.ts", "scripts/prove-smoke-realistic.ts"],
+  "files": ["scripts/prove-smoke.ts", "scripts/prove-smoke-real.ts", "scripts/prove-smoke-realistic.ts", "scripts/prove-fx-playwright.ts"],
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
