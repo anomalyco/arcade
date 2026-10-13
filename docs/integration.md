@@ -169,3 +169,5 @@ possible views. Timing was disabled for these captures.
 
 Cited merged-build images and reports are in `2026-10-13-arcade-integration/outbreak-refinement/`, relative to the
 local artifact root. Visual gaps remain as described above and in `docs/outbreak-look-v2.md`; local review is needed.
+Linux CI took 6.0 seconds for the six-generation reproducibility test, exceeding Bun's default five-second timeout.
+That test alone now has a 20-second allowance; its mesh/mask assertions are unchanged, and this is not a frame-cost budget.

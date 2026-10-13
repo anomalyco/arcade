@@ -18,7 +18,8 @@ test("procedural mesh and masks repeat, while house palette and relief keep topo
   expect(variant.doors).toEqual(town.doors)
   expect(variant.buildings.map(b=>b.rect)).toEqual(town.buildings.map(b=>b.rect))
   expect(buildLevel(variant).chunks).not.toEqual(a.chunks)
-})
+  // Six full mesh/mask generations exceed Bun's default 5s on the shared Linux runner.
+}, 20_000)
 
 test("foot support agrees with actual packed terrain and paved triangles, including curb ramps", () => {
   const town=makeTown(7), level=buildLevel(town)
