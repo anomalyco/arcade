@@ -10,6 +10,8 @@
     { "pattern": "anoma.ly/labs/blackout", "zone_name": "anoma.ly" },
     { "pattern": "anoma.ly/labs/blackout/*", "zone_name": "anoma.ly" },
     { "pattern": "anoma.ly/labs/getaway", "zone_name": "anoma.ly" },
-    { "pattern": "anoma.ly/labs/getaway/*", "zone_name": "anoma.ly" }
+    { "pattern": "anoma.ly/labs/getaway/*", "zone_name": "anoma.ly" },
+    { "pattern": "anoma.ly/labs/wings", "zone_name": "anoma.ly" },
+    { "pattern": "anoma.ly/labs/wings/*", "zone_name": "anoma.ly" }
   ]
 }

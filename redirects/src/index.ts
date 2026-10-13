@@ -1,6 +1,6 @@
 // Permanently redirects the old anoma.ly/labs/<game> URLs to anoma.ly/arcade/<game>, keeping the rest of the path and
 // the query string so room links still land in the same room.
-const GAMES = ["blackout", "getaway"]
+const GAMES = ["blackout", "getaway", "wings"]
 const OLD = new RegExp(`^/labs/(${GAMES.join("|")})(?=/|$)`)
 
 export default {
