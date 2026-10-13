@@ -148,6 +148,7 @@ async function main() {
   if (mux) ready()
 
   let rafActive = !benchMode
+  let smokeStudy = false
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
     ready: atlasReady.then(() => true),
     adapterInfo: {
@@ -156,7 +157,8 @@ async function main() {
       device: adapter.info.device,
       description: adapter.info.description,
     },
-    reset() {
+    reset(study = false) {
+      smokeStudy = study
       rafActive = false
       const prng = mulberry32(1337)
       Math.random = () => prng()
@@ -172,6 +174,11 @@ async function main() {
       local.world.seen = true
       local.world.lastSeen = { x: 226, z: 150, t: local.world.t }
       Object.assign(local.world.heli, { active: true, x: 246, y: 18, z: 162, h: -1.6, sx: 229, sz: 174 })
+      if (smokeStudy) {
+        const body = local.world.robber()!.body
+        Object.assign(body, { x: 228, z: 197, h: 0, vx: 0, vz: 0, yaw: 0 })
+        local.world.heli.active = false
+      }
       local.syncBench()
       activeSession = local
       scene.resetBench()
@@ -186,9 +193,9 @@ async function main() {
       const rh = r?.h ?? 0
       const ryaw = r?.yaw ?? 0
       const targetX = 228 + Math.sin(frameIndex * 0.085) * 3.4
-      const steer = Math.max(-1, Math.min(1, (targetX - rx) * 0.18 - rh * 2.2 - ryaw * 0.35))
-      const handbrake = frameIndex >= 3 && frameIndex < 9
-      const boost = (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
+      const steer = smokeStudy ? (frameIndex < 32 ? 0 : Math.max(-1, Math.min(1, (Math.PI / 2 - rh) * 1.8 - ryaw * 0.45))) : Math.max(-1, Math.min(1, (targetX - rx) * 0.18 - rh * 2.2 - ryaw * 0.35))
+      const handbrake = smokeStudy ? frameIndex >= 35 && frameIndex < 44 : frameIndex >= 3 && frameIndex < 9
+      const boost = smokeStudy ? frameIndex >= 6 && frameIndex < 100 : (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
       const input = { throttle: 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false }
       const view = activeSession.update(dt, input)
       const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
@@ -200,6 +207,7 @@ async function main() {
           snapped = true
         }
         cam.update(focus.x, focus.z, focus.vx, focus.vz, dt, 0, input.boost && focus.boost > 0 && focus.speed > 4)
+        if (smokeStudy) { cam.dist = 38; cam.fx = focus.x; cam.fz = focus.z }
       }
       if (scene.shake > 0) {
         cam.bump(scene.shake)
@@ -228,7 +236,7 @@ async function main() {
         await device.queue.onSubmittedWorkDone()
         gpuMs = performance.now() - g0
       }
-      return { cpuMs, gpuMs, stats: { ...renderer.stats } }
+      return { cpuMs, gpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { puffs: scene.fx.puffs.length, sprites: scene.fx.alpha.length } }
     },
   }
 

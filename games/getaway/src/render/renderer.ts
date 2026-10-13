@@ -12,7 +12,7 @@ export const SPRITE_FLOATS = 12
 const MAX_SPRITES = 6000
 const BLOOM_LEVELS = 5
 
-type Model = { vbuf: GPUBuffer; count: number }
+type Model = { vbuf: GPUBuffer; count: number; castsShadow: boolean }
 type CityModel = { vbuf: GPUBuffer; count: number; chunks: CityChunk[] }
 
 /** One instanced draw: a model and its packed instance data. */
@@ -332,8 +332,8 @@ export class Renderer {
     this.beams.count = count
   }
 
-  addModel(mesh: Mesh) {
-    this.models.push({ vbuf: this.upload(mesh.toArray()), count: mesh.count })
+  addModel(mesh: Mesh, castsShadow = true) {
+    this.models.push({ vbuf: this.upload(mesh.toArray()), count: mesh.count, castsShadow })
     return this.models.length - 1
   }
 
@@ -490,6 +490,7 @@ export class Renderer {
     for (let i = 0; i < ranges.length; i++) {
       const r = ranges[i]!
       const m = this.models[r.model]!
+      if (!m.castsShadow) continue
       sp.setVertexBuffer(0, m.vbuf)
       sp.draw(m.count, r.count, 0, r.first)
     }

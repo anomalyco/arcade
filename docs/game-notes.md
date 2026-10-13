@@ -137,6 +137,17 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   playtest. Wall darkening and cool roof-top shading also default on. Costs remain unverified; see `perf/getaway-look.md`.
 - **Soft smoke can overshoot.** Replacing Getaway's hard faceted puffs with soft sprites fixed the hard look but made
   the trail barely visible; the concept's smoke is full and opaque. Aim for readable volume first, softness second.
+- **Smoke needs a dense core, a shaded underside and deliberate spacing.** Getaway's `fx.ts` and `shaders.ts` now
+  offer five presentation styles (`?smoke=1..5`, compact Smoke selector; `0` retains the previous sprites). Faceted
+  puffs use a shadowless model and vertex-lit scattering; soft/cel sprites shade three overlapping spherical lobes.
+  Soft smoke fades analytically at the ground plane, without a depth-texture pass. Flames stay attached to the
+  exhaust for one render frame rather than depositing blue beads, and ribbon segments join the previous rear-wheel
+  positions. Boost emission has a density floor and scales with speed so mild drifting cannot open large gaps.
+  All reuse existing passes. The 110-frame Metal study peaked at 40 faceted instances, 43 soft/cel sprites, 9 wisps,
+  or 61 ribbon/wisp sprites. All six runs had identical poses and no browser/GPU errors; live selector changes passed.
+  `scripts/prove-smoke.ts` captures the launch, turn and streetlamp frames; `scripts/smoke-sheet.py` assembles them.
+  Faceted puffs best match the concept; flame/wisps keep the road clearest. GPU-time cost and playtest verdict remain
+  unmeasured. Evidence: `captures/getaway-smoke/` (sheet, labelled portrait clip and proof JSON).
 
 ## Researched, not yet adopted
 

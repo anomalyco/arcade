@@ -11,7 +11,7 @@ import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FL
 import { MAX_LIGHTS } from "../render/shaders"
 import type { Camera } from "./camera"
 import { Fx } from "./fx"
-import { juice } from "../ui/debug-overlay"
+import { juice, smoke } from "../ui/debug-overlay"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
@@ -101,7 +101,7 @@ export class Scene {
     }
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
-    this.puffModel = renderer.addModel(buildPuff())
+    this.puffModel = renderer.addModel(buildPuff(), false)
     this.spikeModel = renderer.addModel(buildSpikeStrip())
   }
 
@@ -209,6 +209,12 @@ export class Scene {
           if (prev) this.fx.skidSegment(prev.x, prev.z, wheel.x, wheel.z, drift ? 0.5 : v.launch > 0 ? 0.62 : 0.38, this.groundAt(wheel.x, wheel.z) + 0.025)
         })
       }
+      if (smoke.style === 5 && boosting) {
+        wheels.slice(0, 2).forEach((wheel, i) => {
+          const prev = v.wheels[i]
+          if (prev) this.fx.ribbon(prev.x, prev.z, wheel.x, wheel.z, 0.55 + (c.y ?? 0))
+        })
+      }
       v.wheels = wheels
       const ground = wheels.reduce((sum, p) => sum + this.groundAt(p.x, p.z), 0) / wheels.length
       if (juice.curb) {
@@ -222,9 +228,9 @@ export class Scene {
         }
       } else { v.height = 0; v.springV = 0 }
       v.ground = ground
-      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || juice.skids && v.launch > 0)) {
-        const intensity = drift ? Math.min(1, (c.drift - 3) / 8) : 0.7
-        v.smokeAcc += dt * 16 * intensity
+      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || juice.skids && v.launch > 0 || smoke.style > 0 && boosting)) {
+        const intensity = Math.max(smoke.style > 0 && boosting ? 0.8 : 0, drift ? Math.min(1, (c.drift - 3) / 8) : 0.7)
+        v.smokeAcc += dt * (smoke.style === 0 ? 16 : Math.max(28, c.speed * 0.9)) * intensity
         while (v.smokeAcc > 1) {
           v.smokeAcc -= 1
           const s = Math.random() < 0.5 ? -1 : 1
@@ -238,10 +244,10 @@ export class Scene {
       v.boosting = boosting
       v.throttle = input?.throttle ?? 0
       if (boosting) {
-        v.flameAcc += dt * 30
+        v.flameAcc += smoke.style > 0 ? 1 : dt * 30
         while (v.flameAcc >= 1) {
           v.flameAcc--
-          for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8)
+          for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8, dt)
         }
       } else v.flameAcc = 0
       v.fuel = c.boost

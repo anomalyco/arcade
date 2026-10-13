@@ -4,6 +4,8 @@ export const lookSettings = (enabled = true) => ({ tightPools: enabled, flatGrou
 export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = juiceSettings()
+export const smokeStyles = ["Current", "Faceted puffs", "Soft volume", "Cel smoke", "Flame & wisps", "Ribbon trails"] as const
+export const smoke = { style: 1 }
 const controls: LabControl[] = [
   ...([
     ["tightPools", "Tighter lamp pools"],
@@ -38,6 +40,23 @@ export class DebugOverlay extends LabPanel {
     const defaults = juiceSettings(false) as Record<string, boolean | number>
     for (const key of q.get("off")?.split(",") ?? []) if (key in juice) (juice as Record<string, boolean | number>)[key] = defaults[key]!
     super(juice, controls, q, release)
+    const requested = Number(q.get("smoke") ?? 1)
+    smoke.style = Number.isInteger(requested) && requested >= 0 && requested <= 5 ? requested : 1
+    const label = document.createElement("label")
+    label.textContent = "Smoke"
+    const select = document.createElement("select")
+    select.setAttribute("aria-label", "Smoke style")
+    smokeStyles.forEach((name, i) => select.add(new Option(`${i} · ${name}`, String(i))))
+    select.value = String(smoke.style)
+    select.style.cssText = "margin-left:auto;max-width:195px;background:#263039;color:inherit;border:1px solid #ffffff30;border-radius:4px;font:inherit;padding:3px"
+    select.onchange = () => {
+      smoke.style = Number(select.value)
+      const url = new URL(location.href)
+      url.searchParams.set("smoke", select.value)
+      history.replaceState(null, "", url)
+    }
+    label.append(select)
+    this.header.after(label)
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return

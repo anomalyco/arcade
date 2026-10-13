@@ -17,8 +17,9 @@ export const FLOATS_PER_VERT = 12
  * - decal: alpha-tested atlas texture multiplied by color, lit
  * - neon: alpha-tested atlas texture, emissive (signs, backlit billboards)
  * - window: self-lit pane, with optional room colour variation
+ * - smoke: faceted scattering, coloured practical lights without receiving solid moon shadows
  */
-export const MAT = { lit: 0, facade: 1, emissive: 2, water: 3, flat: 4, siren: 5, glass: 6, decal: 7, neon: 8, window: 9 } as const
+export const MAT = { lit: 0, facade: 1, emissive: 2, water: 3, flat: 4, siren: 5, glass: 6, decal: 7, neon: 8, window: 9, smoke: 10 } as const
 export type Mat = (typeof MAT)[keyof typeof MAT]
 
 /** The atlas texel that is pure white; untextured geometry samples it. */

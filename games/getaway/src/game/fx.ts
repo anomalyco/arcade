@@ -1,5 +1,5 @@
 import { SPRITE_FLOATS } from "../render/renderer"
-import { juice } from "../ui/debug-overlay"
+import { juice, smoke } from "../ui/debug-overlay"
 
 type Particle = {
   x: number
@@ -26,14 +26,15 @@ type Particle = {
 
 /** Pooled particles split into alpha-blended (smoke, skids) and additive (sparks, flames) lists. */
 export class Fx {
-  /** Reserved for solid debris; tire smoke uses the soft lit sprite path. */
+  /** Shadowless, faceted smoke. Other styles share the existing sprite batches. */
   puffs: Particle[] = []
   alpha: Particle[] = []
   add: Particle[] = []
   skids: Particle[] = []
 
   smoke(x: number, z: number, vx: number, vz: number, intensity: number) {
-    this.alpha.push({
+    const style = smoke.style
+    const p: Particle = {
       x: x + (Math.random() - 0.5) * 0.6,
       y: 0.5,
       z: z + (Math.random() - 0.5) * 0.6,
@@ -54,7 +55,35 @@ export class Fx {
       seed: Math.random(),
       gravity: 0,
       drag: 1.6,
-    })
+    }
+    if (style === 0) { this.alpha.push(p); return }
+    p.r = 0.92; p.g = 0.95; p.b = 1
+    p.a = 0.92
+    p.vx *= 0.35; p.vz *= 0.35
+    p.y = 0.7
+    p.vy = 0.65
+    p.max = 1.25 + p.seed * 0.35
+    p.size = 0.48 + p.seed * 0.32
+    p.grow = 1.1
+    if (style === 1) {
+      p.max = 1.35; p.grow = 0.95
+      this.puffs.push(p)
+    } else if (style === 4 || style === 5) {
+      if (p.seed > 0.32) return
+      p.kind = 10; p.size = 0.3; p.grow = 0.65; p.a = 0.5; p.max = 0.8
+      this.alpha.push(p)
+    } else {
+      p.kind = style === 2 ? 10 : 11
+      p.grow = style === 2 ? 1.05 : 0.7
+      this.alpha.push(p)
+    }
+  }
+
+  /** Connected world-space strips: one segment per rear wheel per frame, no extra pass. */
+  ribbon(ax: number, az: number, bx: number, bz: number, y: number) {
+    const length = Math.hypot(bx - ax, bz - az)
+    if (length < 0.02 || length > 8) return
+    this.alpha.push({ x: (ax + bx) / 2, y, z: (az + bz) / 2, vx: 0, vy: 0.1, vz: 0, life: 0, max: 0.85, size: 0.32, grow: 0, r: 0.52, g: 0.78, b: 1, a: 0.85, kind: 12, rot: Math.atan2(bx - ax, bz - az), stretch: (length / 2 + 0.025) / 0.32, seed: bz + bx, gravity: 0, drag: 0 })
   }
 
   skid(x: number, z: number, h: number, alpha: number) {
@@ -104,7 +133,12 @@ export class Fx {
     }
   }
 
-  flame(x: number, y: number, z: number, vx: number, vz: number) {
+  flame(x: number, y: number, z: number, vx: number, vz: number, dt = 1 / 30) {
+    if (smoke.style > 0) {
+      const hot = smoke.style === 4
+      this.add.push({ x: x + vx * (hot ? 0.07 : 0.025), y, z: z + vz * (hot ? 0.07 : 0.025), vx: 0, vy: 0, vz: 0, life: 0, max: dt * 0.9, size: hot ? 0.38 : 0.2, grow: 0, r: 0.18, g: 0.45, b: 1, a: hot ? 3 : 1.8, kind: 13, rot: Math.atan2(vx, vz), stretch: hot ? 3.3 : 2, seed: Math.random(), gravity: 0, drag: 0 })
+      return
+    }
     this.add.push({ x, y, z, vx: vx * 0.4, vy: 0.2, vz: vz * 0.4, life: 0, max: 0.18, size: 0.55, grow: -1.5, r: 0.35, g: 0.6, b: 1, a: 2.2, kind: 0, rot: 0, stretch: 1, seed: 0, gravity: 0, drag: 2 })
   }
 
@@ -112,6 +146,8 @@ export class Fx {
     for (const list of [this.puffs, this.alpha, this.add, this.skids]) {
       let w = 0
       for (const p of list) {
+        // Rebuilt from the exhaust each draw; variable frame times must not leave detached flames.
+        if (p.kind === 13) continue
         p.life += dt
         if (p.life >= p.max) continue
         const d = Math.exp(-p.drag * dt)
@@ -157,7 +193,7 @@ export class Fx {
     const out: number[] = []
     for (const p of this.puffs) {
       const t = p.life / p.max
-      const scale = p.size * Math.min(1, t * 8) * (1 - t * t)
+      const scale = p.size * Math.min(1, 0.45 + t * 8) * (1 - Math.pow(t, 3))
       if (scale < 0.03) continue
       out.push(p.x, p.y, p.z, p.rot + t * 1.5, 0.3 * t, 0.2, -1, 0, 1, 1, 1, scale)
     }
@@ -174,7 +210,8 @@ export class Fx {
     for (const p of this.alpha) {
       if (ai >= max) break
       const t = p.life / p.max
-      Fx.write(alphaOut, ai++, p, Math.min(1, t * 6) * (1 - t))
+      const fade = p.kind === 1 ? Math.min(1, t * 6) * (1 - t) : p.kind === 12 ? Math.pow(1 - t, 0.65) : Math.min(1, 0.6 + t * 10) * (1 - Math.pow(t, 3))
+      Fx.write(alphaOut, ai++, p, fade)
     }
     let di = addStart
     for (const p of this.add) {
