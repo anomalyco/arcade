@@ -877,6 +877,12 @@ Candidates from the code audits; measure and playtest before moving any into the
   a synthetic hidden-document event. `scripts/prove-dev-hub.ts` checks filtering, lighting/feedback identity
   and focus as well. This is a lifecycle check, not a GPU-performance measurement or a physical-trackpad test.
 
+- **Serve every game from one local origin at its production path.** `scripts/dev.ts` mounts each workspace game's
+  unchanged Vite config in middleware mode with base `/arcade/<id>/`, strips the prefix before Vite's middleware so
+  root-relative plugin routes still match, and shares one HTTP server for every game's HMR socket. Worker `api/` and
+  `ws` traffic is forwarded unchanged to an on-demand `wrangler dev` child. The Studio proof loaded all four games,
+  connected HMR for each, hot-updated CSS without a reload and opened a Worker WebSocket through the origin.
+
 - **Latch fire presses across input ticks.** Blackout's `src/game/input.ts` keeps one press edge for at most 100 ms,
   consumed by the next 30 Hz input tick. `Intent.firePressed` carries that edge through prediction and the wire so
   consecutive taps remain distinct even without a sampled release. Weapon cooldown/reload gates consume rejected
