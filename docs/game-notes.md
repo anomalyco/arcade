@@ -15,6 +15,12 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 - **A performance pass must not change the look.** Compare before/after stills of the same seeded frame. If they differ,
   the change is a look change and needs its own review. (Getaway: a widened helicopter spotlight slipped into a perf
   pass; the tight original read better.)
+- **Expect machine noise as large as the win.** On a shared machine, one Blackout run measured 10.0 ms against a real
+  5–6 ms; a confirmation round without code changes came back at 5.8 ms. Alternate the variants in pairs, keep raw
+  runs and outliers, and never claim a win inside the spread.
+- **Read timestamps only after they resolve.** Queue completion does not mean the timestamp readback finished; await
+  the readback before clearing samples. Render-pass timestamp ranges can overlap, so don't sum per-pass times into a
+  total.
 - **Seeded, enemy-free play for comparisons.** `?peaceful=1&seed=N` gives a fixed world with no enemies acting, so two
   builds can be played side by side with the same input. Getaway's `games/getaway/src/game/session.ts` keeps the
   simulation in its free-driving phase and supplies a chase HUD view. Two scripted 3,600-frame runs at 60 Hz with
@@ -96,6 +102,38 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   without avoiding a pass on this path (`perf/getaway.md`).
 - **Getaway early-Z split was not a clear win.** Opaque/cutaway pipelines with separate alpha chunks measured
   38.254 → 37.308 ms (inside MAD), with increased CPU submission cost; reverted (`perf/autoresearch.md`).
+
+## Art direction
+
+- **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
+  2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
+  ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and
+  trees; walls and roofs with tonal gradients and lit edges rather than one flat colour; dense set dressing on
+  sidewalks and plazas; warm shop-window light spilling onto the sidewalk; a clear cool-fill, warm-pool, saturated
+  siren colour split; and chunky white smoke. Kit agreed on the pools, the ground and the shop light. Being built as
+  separate Look switches; record what each costs and whether it stays.
+- **Soft smoke can overshoot.** Replacing Getaway's hard faceted puffs with soft sprites fixed the hard look but made
+  the trail barely visible; the concept's smoke is full and opaque. Aim for readable volume first, softness second.
+
+## Researched, not yet adopted
+
+Candidates from the code audits; measure and playtest before moving any into the sections above.
+
+- A hue-preserving tone curve (AgX-style) so red/blue sirens and warm lamps keep their colour instead of skewing
+  orange or cyan; brightness-weighted first bloom downsample to stop specular fireflies; one-code-value dither before
+  8-bit output to remove banding in dark gradients.
+- Blackout: shadow-occluded light haze and dust motes (they currently glow through walls), framed glass meeting
+  rooms, and bounce light that follows a flickering lamp's power.
+- Getaway: lamps aimed downward so upper facades stay in cool shadow; window interiors with depth and blinds.
+- Rendering with less MSAA cost: weight the multisample resolve by brightness so emissive edges stay antialiased.
+
+## Working on these games
+
+- **One branch per change, one owner per file.** Parallel work on the same files overwrote fixes and committed other
+  work half-done. Give each parallel task its own worktree and branch, and say which files it owns.
+- **A game's check must pass from a clean clone with only its own dependencies,** as CI runs it. Blackout's deploy
+  failed because a Blackout script imported a Getaway helper that needed Getaway's Playwright install, and a fix to
+  that Getaway file didn't trigger Blackout's workflow at all.
 
 ## Multiplayer
 
