@@ -1,4 +1,6 @@
 import type { SynthLayerSpec, SurfaceTag } from "./types"
+import { character, tyreSlip, type Character } from "../vehicle/audio/drivetrain"
+export { character, characters, Gearbox, tyreSlip, type Character } from "../vehicle/audio/drivetrain"
 
 export const clamp = (x: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x))
 
@@ -19,145 +21,9 @@ export function holdParam(p: AudioParam, t: number, fallback?: number): void {
 /** Time constant tau for a 60 dB exponential decay over `decaySeconds`. */
 export const fallTime = (decaySeconds: number) => Math.max(0.003, decaySeconds / ((60 / 20) * Math.LN10))
 
-const noiseBuffers = new WeakMap<BaseAudioContext, AudioBuffer>()
-
-/**
- * Shared 3-second deterministic noise buffer (seed 1729) with 128-sample endpoint fades
- * so looping noise voices have zero seam discontinuity.
- */
-export function getNoiseBuffer(ctx: BaseAudioContext): AudioBuffer {
-  const cached = noiseBuffers.get(ctx)
-  if (cached) return cached
-  const b = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate)
-  const d = b.getChannelData(0)
-  let seed = 1729
-  for (let i = 0; i < d.length; i++) {
-    seed = (Math.imul(seed, 1664525) + 1013904223) | 0
-    d[i] = (seed >>> 0) / 2147483648 - 1
-  }
-  for (let i = 0; i < 128; i++) {
-    d[i]! *= i / 127
-    d[d.length - 1 - i]! *= i / 127
-  }
-  noiseBuffers.set(ctx, b)
-  return b
-}
-
-export type Character = {
-  cylinders: number
-  idle: number
-  redline: number
-  ratios: number[]
-  final: number
-  exhaust: number
-  intake: number
-  uneven: number
-}
-
-const muscle: Character = {
-  cylinders: 8,
-  idle: 780,
-  redline: 6200,
-  ratios: [3.2, 2.05, 1.42, 1.05, 0.82],
-  final: 3.7,
-  exhaust: 700,
-  intake: 1500,
-  uneven: 0.32,
-}
-
-const van: Character = {
-  cylinders: 6,
-  idle: 680,
-  redline: 4600,
-  ratios: [3.5, 2.15, 1.45, 1],
-  final: 3.6,
-  exhaust: 480,
-  intake: 950,
-  uneven: 0.2,
-}
-
-export const characters: Record<string, Character> = {
-  muscle,
-  jeep: { ...muscle, cylinders: 6, redline: 5400, final: 4.6, exhaust: 620, uneven: 0.22 },
-  scooter: { cylinders: 1, idle: 1600, redline: 9000, ratios: [3.2, 2.3, 1.7, 1.25], final: 5.5, exhaust: 1700, intake: 2800, uneven: 0.12 },
-  compact: { cylinders: 4, idle: 950, redline: 7200, ratios: [3.6, 2.25, 1.6, 1.2, 0.94], final: 4.3, exhaust: 1100, intake: 2100, uneven: 0.07 },
-  van,
-  swat: van,
-  bike: { cylinders: 4, idle: 1400, redline: 11500, ratios: [3.1, 2.3, 1.85, 1.5, 1.25, 1.05], final: 6.1, exhaust: 1900, intake: 3100, uneven: 0.04 },
-  cruiser: { ...muscle, redline: 5700, final: 3.35, exhaust: 570, uneven: 0.19 },
-  interceptor: { ...muscle, cylinders: 6, redline: 7000, exhaust: 1000, uneven: 0.1 },
-}
-
-export const character = (id: string): Character => characters[id] ?? muscle
-
-export class Gearbox {
-  gear = 0
-  rpm: number
-  shift = 0
-  shifted = false
-  private cooldown = 0.5
-
-  constructor(readonly spec: Character) {
-    this.rpm = spec.idle
-  }
-
-  update(speed: number, throttle: number, boost: boolean, dt: number): number {
-    dt = clamp(dt, 0, 0.1)
-    const s = this.spec
-    const wheel = (Math.abs(speed) * 60) / (2 * Math.PI * 0.34) * s.final
-    this.shifted = false
-    this.cooldown = Math.max(0, this.cooldown - dt)
-    this.shift = Math.max(0, this.shift - dt)
-    const coupled = wheel * s.ratios[this.gear]!
-    if (!this.cooldown && speed >= 0) {
-      if (coupled > s.redline * (throttle > 0.7 || boost ? 0.88 : 0.72) && this.gear < s.ratios.length - 1) {
-        this.gear++
-        this.shifted = true
-      } else if (this.gear > 0 && wheel * s.ratios[this.gear - 1]! < s.redline * 0.57) {
-        this.gear--
-        this.shifted = true
-      }
-      if (this.shifted) {
-        this.shift = 0.16
-        this.cooldown = 0.65
-      }
-    }
-    if (speed < 0) this.gear = 0
-    const clutch = s.idle + clamp(throttle) * (boost ? 2400 : 1600)
-    const target = clamp(Math.max(clutch, wheel * s.ratios[this.gear]!) * (this.shift > 0 ? 0.85 : 1), s.idle, s.redline)
-    this.rpm += (target - this.rpm) * (1 - Math.exp(-dt * (target < this.rpm ? 18 : 9)))
-    return this.rpm
-  }
-
-  reset(): void {
-    this.gear = 0
-    this.rpm = this.spec.idle
-    this.shift = 0
-    this.shifted = false
-    this.cooldown = 0.5
-  }
-}
-
-export function tyreSlip(
-  speed: number,
-  lateral: number,
-  ratio: number,
-  handbrake: boolean,
-  airborne = false,
-  surface: SurfaceTag = "road",
-) {
-  const v = Math.abs(speed)
-  const angle = Math.atan2(Math.abs(lateral), Math.max(3, v))
-  const slip = clamp(Math.max((angle - 0.055) / 0.42, Math.abs(ratio) * 0.85, handbrake ? v / 28 : 0))
-  const movement = airborne ? 0 : clamp(v / 5 + Math.abs(ratio) * 0.65)
-  const squeal = Math.pow(clamp((slip - 0.22) / 0.65), 1.35) * movement * (surface === "grass" ? 0.08 : 1)
-  return {
-    slip,
-    squeal,
-    scrub: movement * clamp(slip * 1.8 + (surface !== "road" ? v / 70 : 0)) * (1 - squeal * 0.55),
-    hz: 900 + 1350 * slip + 200 * clamp(v / 45),
-  }
-}
+// Reuse the approved vehicle synth's deterministic noise and context cache verbatim.
+import { noise as getNoiseBuffer } from "../vehicle/audio/synth"
+export { noise as getNoiseBuffer } from "../vehicle/audio/synth"
 
 class ContinuousNoiseNode {
   readonly source: AudioBufferSourceNode
@@ -531,6 +397,7 @@ export function scheduleSynthLayer(
   forceFactor: number,
   cutoffLimitHz: number,
   noiseOffsetSeconds = 0,
+  onEnded?: () => void,
 ): ScheduledLayerNodes {
   const attack = Math.max(0.001, layer.envelope.attack)
   const hold = Math.max(0, layer.envelope.hold ?? 0)
@@ -630,14 +497,16 @@ export function scheduleSynthLayer(
     nodes.push(osc)
   }
 
-  const lastSource = sources[0]
-  if (lastSource) {
-    lastSource.onended = () => {
+  let remaining = sources.length
+  for (const source of sources) {
+    source.onended = () => {
+      if (--remaining !== 0) return
       for (const n of nodes) {
         try {
           n.disconnect()
         } catch {}
       }
+      onEnded?.()
     }
   }
 

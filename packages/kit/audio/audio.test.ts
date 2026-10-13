@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { LabNavigation } from "../lab-navigation"
+import { DeterministicOfflineAudioContext } from "./test-context"
 import {
   ActivationGate,
   AudioRuntime,
   blocked,
   createAudioLabController,
   createBoxOcclusionQuery,
-  DeterministicOfflineAudioContext,
   Gearbox,
   character,
   renderOcclusionReverbAb,
@@ -14,7 +14,7 @@ import {
   SpellAudioEmitter,
   tyreSlip,
   VehicleAudioEmitter,
-} from "./index"
+} from "@arcade/kit/audio"
 
 function createTestRuntime(seed = 7, maxVoices = 12) {
   const ctx = new DeterministicOfflineAudioContext(2, 48000 * 4, 48000) as unknown as OfflineAudioContext
@@ -205,7 +205,7 @@ describe("voice budget, cooldowns, stealing policies, and listener cleanup", () 
 
 describe("offline deterministic rendering, clip protection, silence windows, and A/B proof", () => {
   test("occlusion and reverb A/B render is clip-free, darkens occluded spectrum, and extends reverb tail", async () => {
-    const ab = await renderOcclusionReverbAb(7)
+    const ab = await renderOcclusionReverbAb(7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
     expect(ab.dryOpen.stats.clippedSamples).toBe(0)
     expect(ab.reverbOccluded.stats.clippedSamples).toBe(0)
     expect(ab.dryOpen.stats.peak).toBeGreaterThan(0.05)
@@ -221,8 +221,8 @@ describe("offline deterministic rendering, clip protection, silence windows, and
   })
 
   test("world-signal chase and spell-cycle replays are deterministic, clip-free, and silent after stop", async () => {
-    const run1 = await renderWorldSignalReplayOffline("chase", 7)
-    const run2 = await renderWorldSignalReplayOffline("chase", 7)
+    const run1 = await renderWorldSignalReplayOffline("chase", 7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
+    const run2 = await renderWorldSignalReplayOffline("chase", 7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
 
     expect(run1.events).toEqual(run2.events)
     expect(run1.events.nitroIgnitions).toBe(2)
@@ -234,7 +234,7 @@ describe("offline deterministic rendering, clip protection, silence windows, and
     // Quiet window [5.25s, 5.92s] after stop() at 5.0s must be silent
     expect(run1.stats.quietWindowRms[0]).toBeLessThan(1e-4)
 
-    const spellRun = await renderWorldSignalReplayOffline("spell_cycle", 7)
+    const spellRun = await renderWorldSignalReplayOffline("spell_cycle", 7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
     expect(spellRun.events.spellActivations).toBe(2)
     // First charge released normally -> 1 cast; second charge depleted mana mid-hold -> no cast!
     expect(spellRun.events.spellCasts).toBe(1)
@@ -243,7 +243,7 @@ describe("offline deterministic rendering, clip protection, silence windows, and
   })
 
   test("Audio Lab controller registers compatible LabSection and supports group randomize/reset/copy", async () => {
-    const lab = createAudioLabController()
+    const lab = createAudioLabController(undefined, { offlineContext: DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext })
     expect(lab.section.id).toBe("audio")
     const nav = new LabNavigation(lab.section.settings, [...lab.section.controls])
     expect(nav.search("reverb")[0]?.control?.key).toBe("reverbWet")

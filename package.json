@@ -8,6 +8,7 @@
     "check:packages": "bun run --filter '@arcade/*' check"
   },
   "devDependencies": {
+    "vite": "^8.3.4",
     "playwright-core": "^1.64.0",
     "typescript": "^5.9.3"
   }

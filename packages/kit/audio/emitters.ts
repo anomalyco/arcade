@@ -1,3 +1,4 @@
+import { NitroGate as VehicleNitroGate } from "../vehicle/audio/nitro"
 import type { AudioRuntime } from "./runtime"
 import {
   character,
@@ -17,48 +18,12 @@ import type { MaterialTag, SourcePose, SurfaceTag, VoiceHandle } from "./types"
  * Guarantees at most one start per held activation press.
  * Resource/fuel exhaustion or lifecycle interruption (`cancel()`) latches off until a fresh release + press.
  */
-export class ActivationGate {
-  active = false
-  ignited = false
-  released = false
+export class ActivationGate extends VehicleNitroGate {
   activations = 0
-  private armed = true
-  private hold = 0
-  private upTime = 0
-
-  update(held: boolean, resource = 1, dt = 1 / 60, available = true, remote = false): boolean {
-    const was = this.active
-    this.ignited = false
-    this.upTime = held ? 0 : this.upTime + Math.max(0, dt)
-    if (!held && (!remote || this.upTime >= 0.1)) this.armed = true
-    if (!available || resource <= 0.005) {
-      this.active = false
-      this.hold = 0
-      if (held) this.armed = false
-    } else if (held) {
-      if (this.armed) {
-        this.active = true
-        this.ignited = true
-        this.armed = false
-        this.activations++
-      }
-      this.hold = 0.1
-    } else if (this.active) {
-      this.hold -= Math.max(0, dt)
-      if (this.hold <= 1e-6) this.active = false
-    }
-    this.released = was && !this.active
-    return this.active
-  }
-
-  /** Interruption (blur, pause, reset, dispose) requires a fresh release before re-arming. */
-  cancel(): void {
-    this.active = false
-    this.ignited = false
-    this.released = false
-    this.armed = false
-    this.hold = 0
-    this.upTime = 0
+  override update(held: boolean, resource = 1, dt = 1 / 60, available = true, remote = false): boolean {
+    const active = super.update(held, resource, dt, available, remote)
+    if (this.ignited) this.activations++
+    return active
   }
 }
 
@@ -229,6 +194,7 @@ export type VehicleEmitterState = {
  * tyre scrub/squeal, gated nitro boost, and velocity-layered collision impacts.
  */
 export class VehicleAudioEmitter {
+  private readonly unsubscribe: () => void
   readonly id: string
   vehicleClass: string
   gearbox: Gearbox
@@ -261,6 +227,7 @@ export class VehicleAudioEmitter {
     this.cheap = options.cheap ?? false
     this.gearbox = new Gearbox(character(this.vehicleClass))
     this.nitro = new NitroPressureVoice(runtime)
+    this.unsubscribe = runtime.onInterrupt(dispose => dispose ? this.dispose() : this.stop(true))
   }
 
   get isActive(): boolean {
@@ -449,7 +416,7 @@ export class VehicleAudioEmitter {
 
   reset(): void {
     this.stop(true)
-    this.gearbox.reset()
+    this.gearbox = new Gearbox(character(this.vehicleClass))
     this.smoothedLoad = 0
     this.impactCooldown = 0
     this.impactArmed = true
@@ -460,6 +427,7 @@ export class VehicleAudioEmitter {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.unsubscribe()
     this.stop(true)
     this.engineVoice?.dispose()
     this.tyreVoice?.dispose()
@@ -484,6 +452,7 @@ export type SpellEmitterState = {
  * continuous harmonic/air charge modulation, and release burst.
  */
 export class SpellAudioEmitter {
+  private readonly unsubscribe: () => void
   readonly id: string
   readonly gate = new ActivationGate()
   charge = 0
@@ -500,6 +469,7 @@ export class SpellAudioEmitter {
     options: { id?: string } = {},
   ) {
     this.id = options.id ?? "spell"
+    this.unsubscribe = runtime.onInterrupt(dispose => dispose ? this.dispose() : this.stop(true))
   }
 
   get isActive(): boolean {
@@ -624,6 +594,7 @@ export class SpellAudioEmitter {
     this.disposed = true
     this.stop(true)
     this.voice?.dispose()
+    this.unsubscribe()
     this.voice = null
   }
 }

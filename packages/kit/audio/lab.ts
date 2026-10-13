@@ -11,7 +11,7 @@ import {
 } from "./offline"
 import { AudioRuntime, createBoxOcclusionQuery } from "./runtime"
 import { clamp } from "./synth"
-import { getOfflineAudioContextConstructor } from "./test-context"
+import { getOfflineAudioContextConstructor } from "./browser-context"
 import type { AudioLabSection, MaterialTag, MixCategory, SurfaceTag } from "./types"
 
 export type AudioLabSettings = {
@@ -103,11 +103,12 @@ const MATERIAL_OPTIONS = [
 
 const WALL_BOX = [{ x0: 4, x1: 12, z0: -30, z1: 30, h: 10 }] as const
 
-export function createAudioLabController(context?: AudioLabContextLike): AudioLabController {
+export function createAudioLabController(context?: AudioLabContextLike, options: { baseUrl?: string; offlineContext?: typeof OfflineAudioContext } = {}): AudioLabController {
+  const offlineContext = () => options.offlineContext ?? getOfflineAudioContextConstructor()
   const settings: AudioLabSettings = {
     source: "impact_crash_layered",
     replay: "manual",
-    playing: true,
+    playing: false,
     speed: 24,
     rpm: 0,
     throttle: 0.75,
@@ -134,6 +135,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
 
   const boxQuery = createBoxOcclusionQuery(WALL_BOX)
   const runtime = new AudioRuntime({
+    baseUrl: options.baseUrl,
     seed: settings.seed,
     maxVoices: settings.voiceBudget,
     reverbWet: settings.reverbWet,
@@ -146,6 +148,8 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
   const spellEmitter = new SpellAudioEmitter(runtime, { id: "lab-spell" })
 
   let replayTime = 0
+  let auditionActive = false
+  const events = new AbortController()
   let hudCanvas: HTMLCanvasElement | null = null
   let lastStats: AudioAnalysisStats | null = null
   let lastWav: Uint8Array | null = null
@@ -166,7 +170,8 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
   })
 
   const renderPreviewOffline = async (): Promise<AudioAnalysisStats | null> => {
-    const OfflineCtx = getOfflineAudioContextConstructor()
+    const OfflineCtx = offlineContext()
+    await runtime.sampleBank.loadAll(new OfflineCtx(2, 1, 48000))
     if (settings.replay === "occlusion_ab") {
       const ab = await renderOcclusionReverbAb(settings.seed, OfflineCtx, runtime.sampleBank)
       lastAb = ab
@@ -185,6 +190,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
     const dur = 1.6
     const sr = 48000
     const offCtx = new OfflineCtx(2, Math.ceil(dur * sr), sr)
+    await runtime.sampleBank.loadAll(offCtx)
     const offRuntime = new AudioRuntime({
       context: offCtx,
       seed: settings.seed,
@@ -251,6 +257,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
     }
 
     const buf = await offCtx.startRendering()
+    offRuntime.dispose()
     lastStats = analyzeAudioBuffer(buf, { fps: 60, tailWindow: [0.85, 1.45] })
     lastWav = encodeWavPcm16(buf)
     return lastStats
@@ -260,7 +267,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
     applyRuntimeSettings()
     runtime.setSeed(settings.seed)
     const pose = currentSourcePose()
-    if (runtime.ctx && runtime.ctx.state === "running" && !settings.muted) {
+    if (auditionActive && runtime.ctx && runtime.ctx.state === "running" && !settings.muted) {
       if (settings.source !== "emitter_vehicle" && settings.source !== "emitter_spell") {
         runtime.playCue(settings.source, {
           intensity: settings.impactForce,
@@ -284,7 +291,9 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
   }
 
   const renderAbComparison = async (): Promise<AbComparisonResult> => {
-    const ab = await renderOcclusionReverbAb(settings.seed, getOfflineAudioContextConstructor(), runtime.sampleBank)
+    const OfflineCtx = offlineContext()
+    await runtime.sampleBank.loadAll(new OfflineCtx(2, 1, 48000))
+    const ab = await renderOcclusionReverbAb(settings.seed, offlineContext(), runtime.sampleBank)
     lastAb = ab
     lastStats = settings.occluded ? ab.reverbOccluded.stats : ab.dryOpen.stats
     lastWav = settings.occluded ? ab.reverbOccluded.wav : ab.dryOpen.wav
@@ -296,7 +305,9 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
   const renderReplay = async (
     mode: "chase" | "slalom" | "spell_cycle" = "chase",
   ): Promise<ReplayScenarioResult> => {
-    const rep = await renderWorldSignalReplayOffline(mode, settings.seed, getOfflineAudioContextConstructor(), runtime.sampleBank)
+    const OfflineCtx = offlineContext()
+    await runtime.sampleBank.loadAll(new OfflineCtx(2, 1, 48000))
+    const rep = await renderWorldSignalReplayOffline(mode, settings.seed, offlineContext(), runtime.sampleBank)
     lastReplay = rep
     lastStats = rep.stats
     lastWav = rep.wav
@@ -306,10 +317,12 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
   }
 
   const stopAll = () => {
+    auditionActive = false
     settings.playing = false
     vehicleEmitter.stop(true)
     spellEmitter.stop(true)
     runtime.stopAllVoices(0.015)
+    runtime.suspend()
     if (hudCanvas) drawVisualizer(hudCanvas)
     context?.sync?.()
   }
@@ -322,7 +335,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       group: "Playback",
       type: "select",
       options: SOURCE_OPTIONS,
-      change: () => void triggerCurrent(),
+      change: () => stopAll(),
     },
     {
       key: "replay",
@@ -332,7 +345,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       options: REPLAY_OPTIONS,
       change: () => {
         replayTime = 0
-        void triggerCurrent()
+        stopAll()
       },
     },
     {
@@ -350,18 +363,21 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       type: "action",
       run: async button => {
         const ok = await runtime.unlock()
-        button.textContent = ok ? "Audition Active" : "Audition Blocked"
+        auditionActive = ok
+        settings.playing = ok
+        button.textContent = ok ? "Audition" : "Audition Blocked"
         if (ok) await triggerCurrent()
       },
     },
     {
       key: "retrigger",
-      label: "Retrigger",
+      label: "Render offline",
       group: "Playback",
       type: "action",
       run: async () => {
-        settings.playing = true
-        await triggerCurrent()
+        await renderPreviewOffline()
+        if (hudCanvas) drawVisualizer(hudCanvas)
+        context?.sync?.()
       },
     },
     {
@@ -391,7 +407,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 55,
       step: 0.5,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "rpm",
@@ -401,7 +417,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 9000,
       step: 100,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "throttle",
@@ -411,7 +427,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 1,
       step: 0.05,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "slip",
@@ -421,7 +437,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 1,
       step: 0.02,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "impactForce",
@@ -431,7 +447,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 1,
       step: 0.05,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "spellCharge",
@@ -441,7 +457,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 1,
       step: 0.05,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "surface",
@@ -449,7 +465,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       group: "World",
       type: "select",
       options: SURFACE_OPTIONS,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "material",
@@ -457,13 +473,13 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       group: "World",
       type: "select",
       options: MATERIAL_OPTIONS,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "boost",
       label: "Boost",
       group: "World",
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "fuel",
@@ -473,7 +489,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 1,
       step: 0.05,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
 
     // Group: Variation
@@ -487,7 +503,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       step: 1,
       change: value => {
         runtime.setSeed(Number(value))
-        void renderPreviewOffline()
+        lastStats = null
       },
     },
     {
@@ -498,7 +514,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 0.25,
       step: 0.01,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "gainVar",
@@ -508,7 +524,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 0.35,
       step: 0.01,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "attackMs",
@@ -518,7 +534,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 1,
       max: 200,
       step: 1,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "decayMs",
@@ -528,7 +544,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 20,
       max: 1500,
       step: 10,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "rate",
@@ -538,7 +554,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0.5,
       max: 2,
       step: 0.02,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
 
     // Group: Mix
@@ -550,7 +566,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: 0,
       max: 140,
       step: 1,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "pan",
@@ -560,7 +576,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       min: -1,
       max: 1,
       step: 0.05,
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "reverbWet",
@@ -572,14 +588,14 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       step: 0.02,
       change: value => {
         runtime.setReverbWet(Number(value))
-        void renderPreviewOffline()
+        lastStats = null
       },
     },
     {
       key: "occluded",
       label: "Occluded",
       group: "Mix",
-      change: () => void renderPreviewOffline(),
+      change: () => lastStats = null,
     },
     {
       key: "muted",
@@ -613,7 +629,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
     replayTime += dt
     const pose = currentSourcePose()
 
-    if (runtime.ctx && runtime.ctx.state === "running" && !settings.muted) {
+    if (auditionActive && runtime.ctx && runtime.ctx.state === "running" && !settings.muted) {
       if (settings.source === "emitter_vehicle" || settings.replay === "chase" || settings.replay === "slalom") {
         const cyc = replayTime % 6
         const spd = settings.replay === "manual" ? settings.speed : 10 + 28 * Math.abs(Math.sin(cyc * 0.7))
@@ -762,7 +778,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
     ]
     if (lastStats) {
       lines.push(
-        `Peak / RMS  ${lastStats.peakDb.toFixed(2)} dBFS / ${lastStats.approxLufs.toFixed(2)} LUFS`,
+        `Peak / est. ${lastStats.peakDb.toFixed(2)} dBFS / ${lastStats.approxLufs.toFixed(2)} LUFS`,
         `Clipped     ${lastStats.clippedSamples} samples`,
         `Centroid    ${Math.round(lastStats.spectralCentroidHz)} Hz · HighBand ${(lastStats.highBandRatio * 100).toFixed(1)}%`,
         `Reverb Tail ${(lastStats.tailRms * 1000).toFixed(2)} mRMS`,
@@ -814,15 +830,21 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
     controls,
     enter() {
       replayTime = 0
-      void renderPreviewOffline().then(() => {
-        if (hudCanvas) drawVisualizer(hudCanvas)
-      })
+      // Entering a section never creates an audio context or starts a render.
     },
     leave() {
       stopAll()
     },
     update,
     telemetry,
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("blur", stopAll, { signal: events.signal })
+    document.addEventListener("visibilitychange", () => { if (document.hidden) stopAll() }, { signal: events.signal })
+    window.addEventListener("pagehide", () => {
+      vehicleEmitter.dispose(); spellEmitter.dispose(); runtime.dispose(); events.abort()
+    }, { signal: events.signal })
   }
 
   return {
@@ -852,6 +874,7 @@ export function createAudioLabController(context?: AudioLabContextLike): AudioLa
       drawVisualizer(canvas)
     },
     dispose() {
+      events.abort()
       vehicleEmitter.dispose()
       spellEmitter.dispose()
       runtime.dispose()
@@ -874,7 +897,21 @@ function drawPanelBox(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
  * Factory compatible with `fx-kit` / `@arcade/kit/lab` `SectionFactory`.
  */
 export function createAudioLab(context?: AudioLabContextLike): AudioLabSection {
-  return createAudioLabController(context).section
+  const controller = createAudioLabController(context, { baseUrl: new URL("./audio-assets/", document.baseURI).href })
+  if (new URLSearchParams(location.search).has("bench")) Object.assign(window, { audioLab: controller })
+  const canvas = document.createElement("canvas")
+  canvas.setAttribute("aria-label", "Audio waveform and spectrum")
+  canvas.style.cssText = "position:fixed;inset:0;z-index:1;pointer-events:none;width:100%;height:100%;background:#0b1014"
+  const draw = () => {
+    canvas.width = innerWidth; canvas.height = innerHeight
+    controller.drawVisualizer(canvas)
+  }
+  return {
+    ...controller.section,
+    enter() { controller.section.enter?.(); document.body.append(canvas); draw() },
+    leave() { controller.section.leave?.(); canvas.remove() },
+    update(dt) { controller.section.update?.(dt); draw() },
+  }
 }
 
 /**

@@ -16,8 +16,10 @@
   owns only `/arcade`, `/arcade/` and `/arcade/assets/*`. Never add a wildcard `/arcade/*` route.
 - Pushing to `main` deploys affected projects (`.github/workflows/`). All workspace games also check and deploy on
   `packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml` changes. Blackout additionally watches
-  `games/getaway/shared/**` because its script typecheck includes the cross-game benchmark. Keep installs at the root
-  in both check and deploy jobs; checks build and smoke-load each production bundle before deployment.
+  `games/getaway/shared/**` because its script typecheck includes the cross-game benchmark.
+  Blackout and Outbreak also watch `games/getaway/public/sfx/**`: the shared audio asset plugin copies the manifest's
+  samples into each game's own `audio-assets/` route for prefix-safe Lab loading.
+  Keep installs at the root in both check and deploy jobs; checks build and smoke-load each production bundle before deployment.
   Local `bun run deploy` still runs inside a game. Cloudflare Builds must install from the repository root before
   running the game's build/deploy command (for example `bun run --cwd games/getaway build`).
 - Verify workspace changes from a clean `git archive` export: root frozen install and package checks, each game's

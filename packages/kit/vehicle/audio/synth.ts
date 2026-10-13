@@ -4,7 +4,7 @@ import type { NitroGate } from "./nitro"
 
 const smooth = (p: AudioParam, value: number, t: number, tau = 0.04) => p.setTargetAtTime(value, t, tau)
 const noiseBuffers = new WeakMap<BaseAudioContext, AudioBuffer>()
-function noise(ctx: BaseAudioContext) {
+export function noise(ctx: BaseAudioContext) {
   const cached = noiseBuffers.get(ctx)
   if (cached) return cached
   const b = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate)

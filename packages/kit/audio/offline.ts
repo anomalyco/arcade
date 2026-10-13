@@ -2,7 +2,7 @@ import { SpellAudioEmitter, VehicleAudioEmitter } from "./emitters"
 import type { SampleBank } from "./manifest"
 import { AudioRuntime, createBoxOcclusionQuery } from "./runtime"
 import { clamp } from "./synth"
-import { getOfflineAudioContextConstructor } from "./test-context"
+import { getOfflineAudioContextConstructor } from "./browser-context"
 
 export type AudioAnalysisStats = {
   durationSeconds: number
@@ -368,6 +368,7 @@ export async function renderOcclusionReverbAb(
     })
 
     const rendered = await ctx.startRendering()
+    runtime.dispose()
     const stats = analyzeAudioBuffer(rendered, {
       fps: 60,
       tailWindow: [1.95, 2.75],
@@ -511,6 +512,7 @@ export async function renderWorldSignalReplayOffline(
   }
 
   const rendered = await ctx.startRendering()
+  runtime.dispose()
   const stats = analyzeAudioBuffer(rendered, {
     fps,
     quietWindows: [[5.25, 5.92]],

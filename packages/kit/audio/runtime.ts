@@ -176,6 +176,7 @@ export class AudioRuntime {
   private muteListeners: ((muted: boolean) => void)[] = []
   private domEvents = new AbortController()
   private disposed = false
+  private interruptListeners = new Set<(dispose: boolean) => void>()
 
   listener: ListenerState = {
     x: 0,
@@ -275,7 +276,7 @@ export class AudioRuntime {
       try {
         const ctx = new AudioContext({ latencyHint: "interactive" })
         this.attachContext(ctx)
-        void this.sampleBank.loadAll(ctx)
+        await this.sampleBank.loadAll(ctx)
       } catch {
         return false
       }
@@ -415,7 +416,14 @@ export class AudioRuntime {
     }
   }
 
+  /** Continuous emitter ownership follows the same stop/reset/dispose lifecycle as cue voices. */
+  onInterrupt(fn: (dispose: boolean) => void): () => void {
+    this.interruptListeners.add(fn)
+    return () => { this.interruptListeners.delete(fn) }
+  }
+
   setMuted(muted: boolean): void {
+    if (this.muted === muted) return
     this.muted = muted
     if (this.storageKey && typeof localStorage !== "undefined") {
       try {
@@ -725,6 +733,13 @@ export class AudioRuntime {
     const samplesPicked: string[] = []
     const sampleSources: { src: AudioBufferSourceNode; baseRate: number }[] = []
     const synthLayers: ScheduledLayerNodes[] = []
+    let remainingLayers = 0
+    const layerEnded = () => {
+      if (--remainingLayers !== 0) return
+      for (const node of [voiceFilter, voiceGain, voicePan, voiceSend]) node.disconnect()
+      voice.active = false
+      this.voices.delete(id)
+    }
     let maxEndTime = t + 0.05
 
     for (let idx = 0; idx < cue.layers.length; idx++) {
@@ -758,6 +773,9 @@ export class AudioRuntime {
           options.decaySeconds,
         )
         if (scheduled) {
+          remainingLayers++
+          const cleanup = scheduled.source.onended
+          scheduled.source.onended = event => { cleanup?.call(scheduled.source, event); layerEnded() }
           samplesPicked.push(scheduled.sampleId)
           sampleSources.push({ src: scheduled.source, baseRate: scheduled.baseRate })
           maxEndTime = Math.max(maxEndTime, scheduled.endTime)
@@ -774,6 +792,7 @@ export class AudioRuntime {
                 },
               }
             : layer
+        remainingLayers++
         const scheduled = scheduleSynthLayer(
           ctx,
           voiceFilter,
@@ -784,6 +803,7 @@ export class AudioRuntime {
           strikeForce,
           initialCutoff,
           this.rng() * 2.5,
+          layerEnded,
         )
         synthLayers.push(scheduled)
         maxEndTime = Math.max(maxEndTime, scheduled.endTime)
@@ -848,6 +868,7 @@ export class AudioRuntime {
       },
     }
 
+    if (remainingLayers === 0) { remainingLayers = 1; layerEnded(); return null }
     this.voices.set(id, voice)
     return voice
   }
@@ -945,6 +966,7 @@ export class AudioRuntime {
   }
 
   stopAllVoices(fadeSeconds = 0.02): void {
+    for (const fn of [...this.interruptListeners]) fn(false)
     for (const voice of [...this.voices.values()]) {
       voice.stop(fadeSeconds)
     }
@@ -953,7 +975,7 @@ export class AudioRuntime {
 
   suspend(): void {
     this.stopAllVoices(0.02)
-    if (this.ctx && "suspend" in this.ctx && !(this.ctx instanceof OfflineAudioContext)) {
+    if (typeof AudioContext !== "undefined" && this.ctx instanceof AudioContext) {
       void this.ctx.suspend()
     }
   }
@@ -1022,10 +1044,12 @@ export class AudioRuntime {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    for (const fn of [...this.interruptListeners]) fn(true)
+    this.interruptListeners.clear()
     this.stopAllVoices(0.01)
     this.domEvents.abort()
     this.muteListeners.length = 0
-    if (this.ctx && "close" in this.ctx && !(this.ctx instanceof OfflineAudioContext)) {
+    if (this.ctx && "close" in this.ctx && !this.isOffline) {
       void this.ctx.close().catch(() => {})
     }
     this.ctx = null

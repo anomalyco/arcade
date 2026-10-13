@@ -328,14 +328,15 @@ export function synthesizeFallbackPcm(meta: SampleAssetMeta, sampleRate = 48000)
 
 export function defaultSfxBaseUrl(): string {
   const metaEnv = (import.meta as unknown as { env?: { BASE_URL?: string } }).env
-  const base = metaEnv?.BASE_URL ?? "/"
-  return `${base.endsWith("/") ? base : `${base}/`}sfx/`
+  const base = metaEnv?.BASE_URL ?? "./"
+  return `${base.endsWith("/") ? base : `${base}/`}audio-assets/`
 }
 
 export class SampleBank {
   readonly manifest = new Map<string, SampleAssetMeta>()
   private rawBytes = new Map<string, Promise<ArrayBuffer | null>>()
   private decodedPcm = new Map<string, DecodedPcm>()
+  private decodedAssets = new Set<string>()
   private contextCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>()
   private baseUrl = defaultSfxBaseUrl()
 
@@ -361,6 +362,7 @@ export class SampleBank {
 
   /** Registers an already-decoded AudioBuffer or raw PCM channels under `id`. */
   setDecoded(id: string, buffer: AudioBuffer | DecodedPcm): void {
+    this.contextCache = new WeakMap()
     if ("getChannelData" in buffer) {
       const channels: Float32Array[] = []
       for (let c = 0; c < buffer.numberOfChannels; c++) {
@@ -378,6 +380,7 @@ export class SampleBank {
     for (const [id, meta] of this.manifest) {
       tasks.push(
         (async () => {
+          if (this.decodedAssets.has(id)) return
           if (fetchImpl) {
             let rawPromise = this.rawBytes.get(id)
             if (!rawPromise) {
@@ -393,6 +396,7 @@ export class SampleBank {
                 const decoded = await ctx.decodeAudioData(bytes.slice(0))
                 const trimmed = meta.loop || meta.trimSilence ? trimLoopPadding(ctx, decoded) : decoded
                 this.setDecoded(id, trimmed)
+                this.decodedAssets.add(id)
                 this.cacheForContext(ctx).set(id, trimmed)
                 return
               } catch {}
@@ -412,6 +416,9 @@ export class SampleBank {
     return this.decodedPcm.size
   }
 
+  /** Successfully fetched and browser-decoded assets, excluding procedural fallbacks. */
+  get decodedAssetCount(): number { return this.decodedAssets.size }
+
   cloneDecodedTo(target: SampleBank): void {
     for (const [id, meta] of this.manifest) {
       target.manifest.set(id, meta)
@@ -419,6 +426,7 @@ export class SampleBank {
     for (const [id, pcm] of this.decodedPcm) {
       target.decodedPcm.set(id, pcm)
     }
+    for (const id of this.decodedAssets) target.decodedAssets.add(id)
   }
 
   getBuffer(ctx: BaseAudioContext, id: string): AudioBuffer | undefined {

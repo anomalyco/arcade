@@ -15,6 +15,7 @@ Sources were snapshotted before merging on 2026-10-13. Each source is merged sep
 | compare-video | `716b5cdc074038b845a5713905735a3e581b3116` | — |
 | architecture-plan | `f05630039bf2ee28f1b142144c0318a7473f4398` | — |
 | simplify-review | `81e9a4b94e08a76494dccbdf0dc0cd832813e013` | #10 |
+| audio-lab (additive follow-up) | `778b8a157ae7c5b46092d6ce9030638e0b3458d6` | — |
 
 The local Look tip includes the window moonlight coverage fix missing from its remote PR.
 The local FX tip includes surface splatter and the completed fire/water work.
@@ -53,10 +54,10 @@ It focuses on one house and its frontage, lighting/material calibration, furnish
 budget. That revision is not yet included. Any shared-renderer changes must remain opt-in and preserve Blackout and
 Getaway defaults. This PR stays draft pending review; no deployment is authorized.
 
-Shared hybrid audio runtime and Audio Lab work is also pending on the separate `audio-lab` branch. Its tested
-additive commit will be integrated into this same PR when available. The planned `packages/kit/audio` runtime and
-Lab adapter must reuse the shared vehicle/Getaway synth and preserve the approved vehicle sound. This follow-up
-is not included in the current integration or its verification results.
+The shared hybrid audio runtime and Audio Lab are included. In either existing Lab host, choose **Audio**.
+**Audition** is the only live unlock action; entering the section or changing controls does not start playback.
+**Render offline** renders the selected recipe without playing it. Approved in-game vehicle audio stays in use;
+the new candidate voice graphs are for review, with their reuse/parity boundary in `docs/audio-design.md`.
 
 Run `bun install --frozen-lockfile` at the root. Start each client from its game directory with
 `bunx --no-install vite --host 127.0.0.1`; Blackout also needs `bun scripts/build-id.ts` first.

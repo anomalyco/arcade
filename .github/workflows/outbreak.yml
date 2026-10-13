@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "games/outbreak/**"
+      - "games/getaway/public/sfx/**"
       - "packages/**"
       - "scripts/**"
       - "package.json"
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - "games/outbreak/**"
+      - "games/getaway/public/sfx/**"
       - "packages/**"
       - "scripts/**"
       - "package.json"
