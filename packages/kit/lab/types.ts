@@ -52,6 +52,9 @@ export type LabContext = {
   trail:SmokeTrail
   sync():void
   input:LabInput
+  activeWalls?:()=>readonly (readonly [number,number,number,number])[]
+  activeGround?:(x:number,z:number)=>number
+  hasPlaygroundScene?:()=>boolean
 }
 export type SectionFactory = (context:LabContext)=>LabSection
 /** Shape is compatible with getaway-clutter's Body; no dependency on that worktree's solver. */

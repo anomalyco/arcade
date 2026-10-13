@@ -302,8 +302,9 @@ export class Stage {
     this.scenePass.timestampWrites=timed&&!shadow?this.timer!.start:undefined
     const pass=enc.beginRenderPass(this.scenePass);pass.setPipeline(this.scene);pass.setBindGroup(0,this.group);pass.draw(3)
     this.meshes.draw(pass)
+    draw?.(pass)
     if(debug!==5){pass.setBindGroup(0,this.tyreGroup);this.tyre.draw(pass)}
-    this.particles.draw(pass);this.transientRenderer.draw(pass);draw?.(pass);pass.end()
+    this.particles.draw(pass);this.transientRenderer.draw(pass);pass.end()
     if(debug!==5)this.volume.render(enc,this.hdr,volumes)
     this.afterScene?.(enc,this.hdrTexture,this.depthView,this.width,this.height)
     const output=this.outputView

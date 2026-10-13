@@ -62,8 +62,29 @@ Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.
   `Getaway effects` only mount the active effect's parameter group(s) (for example, `▾ Emitter`, `▾ Glass shards` and
   `▾ Environment` when `Glass shards` is selected).
 - `ItemWorld` (`packages/kit/lab/spawn-types.ts` and `games/getaway/src/lab/spawn.ts`) adds `entries()`, `move(id, at)`,
-  `remove(id)`, `drawGhost(kind, at)`, `snapshot()` and `restore(placements)` using `StreetProps` body IDs and models
-  without modifying game physics or default constants.
+  `remove(id)`, `drawGhost(kind, at)`, `snapshot()`, `restore(placements)`, `environments`, `setEnvironment(kind, seed)`,
+  `clearSkids()`, `setSkidsEnabled(enabled)`, `setSmokeEnabled(enabled)` and `skidStats()` using `StreetProps` body IDs
+  and models without modifying game physics or default constants.
+- **Car skid marks and ground decals (`games/getaway/src/lab/spawn.ts`, `packages/kit/lab/game-sprites.ts`):**
+  - Wires `emissions.skids = fx` (`Fx` from `@arcade/kit/vehicle/fx`) and advances `fx.update(dt)` + `emissions.update(dt)`
+    once per simulation tick (`update(dt)`), never inside `prepare()`.
+  - Fixes planar decal orientation in `GameSprites` (`right = (cos(r), 0, -sin(r))`, `up = (sin(r), 0, cos(r))`) to match
+    `games/getaway/src/render/shaders.ts` so consecutive skid ribbon segments (`kind = 4`, up to 1,600 segments) join
+    end-to-end along curves and diagonals, and adds car contact shadow (`kind = 9`, `shape = 5`) and forward headlight
+    fan support (`shape = 6`).
+  - Exposes `Vehicle & Skids` in the car inspector (`Skid marks`, `Skid width` `0.04–0.45 m`, `Skid life` `1–30 s`,
+    `Tyre smoke`, `Clear skids`, `Reset scene`) with exact value entry.
+- **Persistent Playground and switchable environments (`packages/kit/lab/yard.ts`, `spawn.ts`, `main.ts`, `workbench.ts`):**
+  - Expands the default `Proving Yard` (`72 m × 76 m`) with a central 60 m acceleration/braking lane and 10 m scale ticks,
+    a west skid pad with painted drift rings, three ramps/suspension steps (`yardRamps`), and a walled/glass effect test
+    alcove (`yardWalls` + `yardBoxes` in `stage-shader.ts` so rendering, polar shadows, smoke volumes, particles and
+    vehicle/prop collisions agree).
+  - Switching between `Effects`, `Objects` (`Spawn`), `Lighting` and `Physics` while a Playground scene is active keeps
+    the car, placed props, skid marks, smoke trails and camera in the same persistent 3D world instead of resetting pools.
+  - The top-bar `Env` picker switches the Playground between `Proving Yard` and real seeded `Getaway · Street`,
+    `Getaway · Alley` and `Getaway · Plaza` chunks (rebuilding `PropPhysics` wall hashes, relocating the car to a
+    validated collision-free spawn with a fresh `EmissionState` so teleports never bridge long segments, and clearing
+    incompatible transient trails while preserving effect/lighting settings and seed locks).
 
 ## Input ownership and modes
 
@@ -113,12 +134,32 @@ Run the headless Metal browser proofs through `hivemind`:
 
 ```sh
 hivemind run --fetch captures/lab-workbench -- bun packages/kit/lab/prove-workbench.ts
+hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
 hivemind run -- bun games/getaway/scripts/prove-lab-effects.ts
 hivemind run -- bun games/getaway/scripts/prove-lab-spawn.ts
 ```
 
+<<<<<<< HEAD
 Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, relative to the local
 artifact root. Combined-branch results are recorded separately in `docs/integration.md`:
+||||||| parent of 0ae6f7f (feat(lab): add connected car skids, persistent playground world, and switchable yard environments)
+Saved before/after screenshots and proof JSON live under `~/code/home/artifacts/2026-10-13-lab-workbench/`:
+=======
+Saved car playground and skid proofs live under `~/code/home/artifacts/2026-10-13-lab-car-playground/`:
+
+- `before-car-skids-1280x800.png` and `after-car-skids-1280x800.png` — matched 1280×800 workbench pair on the identical
+  keyboard launch + drift + handbrake trajectory (`0/1600` vs `188/1600` connected rear-wheel skid segments).
+- `before-canvas-native-1280x800.png` and `after-canvas-native-1280x800.png` — full-bleed native game scale canvas pair.
+- `after-shared-playground-effects.png` and `after-select-car-inspector.png` — switching `Effects` (`Grenade smoke`),
+  `Lighting` and `Objects` (`Getaway · Muscle`) in the same persistent Playground while retaining the car, 6 props and
+  `73/1600` skid segments.
+- `after-street-environment-skids.png` — switching `Env` to `Getaway · Street`, relocating to a validated street spawn,
+  and painting `86/1600` skid segments across the crosswalk.
+- `car-playground-proof.json` — verified counts and budgets (`1600` skids, `1024` smoke billows, `4096` particles,
+  `0` straight-cruise skids, `0` airborne skids, `0` teleport-bridged skids) across both `getaway` and `blackout` hosts.
+
+Saved before/after screenshots and proof JSON live under `~/code/home/artifacts/2026-10-13-lab-workbench/`:
+>>>>>>> 0ae6f7f (feat(lab): add connected car skids, persistent playground world, and switchable yard environments)
 
 - `before-default.png` and `before-blackout-effects.png` — prior floating panel with duplicate `Controls` headers and
   all 20 effect groups exposed.
