@@ -24,6 +24,7 @@ import {
   type TransformMode,
 } from "./transform"
 import type { LabContext, LabSection, LabWorldObject } from "./types"
+import { bindSafariTrackpadGestures, classifyWheelGesture } from "./viewport-input"
 import { yardGround } from "./yard"
 
 export type CatalogCategory = "effects" | "objects" | "lighting" | "audio"
@@ -2362,10 +2363,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
           return
         }
         if (dragState.button === 1 || dragState.shift) {
-          stage.pan(-dx, -dy)
+          stage.pan(-dx, -dy, true)
           viewportCursor.update({ state: "pan", x: localX, y: localY, label: "Pan" })
         } else if (dragState.button === 0) {
-          stage.orbit(-dx * 0.0065, dy * 0.0055)
+          stage.orbit(-dx * 0.0065, dy * 0.0055, true)
           viewportCursor.update({ state: "orbit", x: localX, y: localY, label: "Orbit" })
         }
         syncStageMarkers()
@@ -2497,10 +2498,33 @@ export function createWorkbench(opts: WorkbenchOptions) {
   canvas.addEventListener("contextmenu", event => event.preventDefault())
 
   canvas.addEventListener("wheel", event => {
+    const action = classifyWheelGesture(event, { pinchZoom: true, twoFingerScroll: "orbit" })
+    if (action.kind === "ignore") return
     event.preventDefault()
-    stage.zoomBy(Math.exp(event.deltaY * 0.0012))
+    if (action.kind === "zoom") {
+      stage.zoomBy(action.factor, true)
+    } else if (action.kind === "pan") {
+      stage.pan(action.dx, action.dy, true)
+    } else if (action.kind === "orbit") {
+      stage.orbit(action.dyaw, action.dpitch, true)
+    }
+    syncStageMarkers()
     void renderNow()
   }, { passive: false })
+
+  bindSafariTrackpadGestures(canvas, {
+    isEnabled: () => mode === "edit",
+    onPinchZoom: factor => {
+      stage.zoomBy(factor, true)
+      syncStageMarkers()
+      void renderNow()
+    },
+    onRotateYaw: dyaw => {
+      stage.orbit(dyaw, 0, true)
+      syncStageMarkers()
+      void renderNow()
+    },
+  })
 
   // Global Workbench Keyboard Controller
   window.addEventListener("keydown", event => {
@@ -2789,6 +2813,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       return simSpeed
     },
     onTick(dt: number) {
+      stage.stepCamera(dt)
       const sec = activeSection()
       const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
       if (playing) {
