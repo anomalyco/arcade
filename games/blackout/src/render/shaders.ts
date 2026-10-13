@@ -144,6 +144,7 @@ fn look(bit: u32) -> bool { return F.effects.z > 0.5 && (u32(F.effects.y) & bit)
 @group(0) @binding(4) var floorTex: texture_2d<f32>;
 @group(0) @binding(5) var floorSamp: sampler;
 @group(0) @binding(6) var bounceTex: texture_2d<f32>;
+@group(0) @binding(8) var moonTex: texture_2d<f32>;
 
 struct VIn {
   @location(0) pos: vec3f,
@@ -400,7 +401,8 @@ fn spill(world: vec3f) -> vec3f {
 
 /** Baked floor data: r = ambient occlusion from walls and furniture, g = moonlight through the windows. */
 fn floorData(p: vec2f) -> vec2f {
-  return textureSampleLevel(floorTex, floorSamp, p * F.map.xy, 0.0).rg;
+  return vec2f(textureSampleLevel(floorTex, floorSamp, p * F.map.xy, 0.0).r,
+    textureSampleLevel(moonTex, floorSamp, p * F.map.xy, 0.0).r);
 }
 
 /** Baked indirect light at a plan point, nudged off walls along the normal. */

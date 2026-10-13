@@ -64,6 +64,13 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Bake fine window coverage separately from soft AO.** Blackout's 12.5 cm moon mask, 18.75 cm blocker march and
+  box blur created stepped diagonals and cloudy mullion bands. Exact world-space segment/rectangle intersections and
+  2×2 coverage samples in a separate 3.125 cm R8 moon mask fix those edges without changing AO bytes. This costs
+  1.60–1.85 MiB and an extra 31–56 ms once per level for the two office seeds tested. One extra filtered sample added
+  no measurable GPU cost in the 1440p M5 Max wood-room fixture (median −0.00048 ms, MAD 0.00249). See
+  `perf/blackout-window-light.md` and `scripts/window-proof.ts`; motion/Look toggles produced identical movement poses.
+
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
   silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
   world-anchored sub-stratum offsets remove the coherent bands without a fullscreen blur. Never interpolate blocker

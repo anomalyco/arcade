@@ -15,8 +15,10 @@ const CHUNK = 12
 const CELL = 0.125
 
 export type LevelChunk = { data: ArrayBuffer; box: readonly [number, number, number, number]; cutBox?: readonly number[] }
-export type FloorMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number; linear?: Float32Array }
-export type LevelData = { chunks: LevelChunk[]; glass: LevelChunk[]; floor: FloorMap; bounce: FloorMap }
+type BakedMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number }
+export type FloorMap = BakedMap & { linear?: Float32Array }
+export type FloorLighting = FloorMap & { moon: BakedMap }
+export type LevelData = { chunks: LevelChunk[]; glass: LevelChunk[]; floor: FloorLighting; bounce: FloorMap }
 /** Bounce map resolution, metres per texel. */
 const BOUNCE_CELL = 0.5
 
@@ -491,10 +493,10 @@ function motes(m: Mesh, l: LightDef, r: () => number): void {
 }
 
 /**
- * Bakes the floor map: r = ambient occlusion from walls and furniture (blurred footprint coverage), g = moonlight
- * falling through the outer windows, striped by mullions and stopped by walls.
+ * Bakes soft floor AO and a finer moonlight mask. The RG map retains coarse moon coverage in g; rendering samples
+ * the separate R8 moon mask to resolve window mullions and wall edges without changing the AO footprint.
  */
-export function bakeFloor(map: MapDef): FloorMap {
+export function bakeFloor(map: MapDef): FloorLighting {
   const [W, H] = map.size
   const w = Math.max(1, Math.ceil(W / CELL))
   const h = Math.max(1, Math.ceil(H / CELL))
@@ -512,8 +514,6 @@ export function bakeFloor(map: MapDef): FloorMap {
   for (const r of map.windows) fill(r, 0.6)
   const PROP_AO: Record<string, number> = { tree: 0.3, bench: 0.3, bin: 0.4, newsbox: 0.45, desk: 0.55, table: 0.35, cabinet: 0.9, sofa: 0.8, vending: 1, copier: 0.85, printer: 0.8, counter: 0.9, fridge: 1, cooler: 0.6, bookshelf: 1, crate: 0.85, reception: 0.9, plant: 0.4, chair: 0.2 }
   for (const p of map.props) fill(p.rect, PROP_AO[p.kind] ?? 0)
-  const walls = new Uint8Array(w * h)
-  for (let i = 0; i < w * h; i++) walls[i] = occ[i]! >= 0.95 ? 1 : 0
   // Two box blurs of ~0.5 m make a soft tent falloff.
   const tmp = new Float32Array(w * h)
   const blur = (src: Float32Array, dst: Float32Array, rad: number) => {
@@ -539,9 +539,15 @@ export function bakeFloor(map: MapDef): FloorMap {
   blur(occ, ao, 3)
   blur(ao, ao, 3)
 
-  const moon = new Float32Array(w * h)
+  // Window edges need finer coverage than soft AO. A separate R8 mask preserves AO texels exactly.
+  const scale = map.kind === "office" ? 4 : 1
+  const mw = w * scale, mh = h * scale, mcw = cx / scale, mch = cy / scale
+  const moon = new Float32Array(mw * mh)
   if (map.kind === "downtown") skyMoon(map, moon, w, h, cx, cy)
-  // Moonlight: trace each texel near a window back along the moon direction to the glass.
+  // Integrate window visibility over the texel, rather than box-blurring a single binary centre sample.
+  // Keep occluders in world space: marching a quantised occupancy grid made diagonal edges stair-step.
+  const blockers = [...map.walls.filter(w => w.h >= 2).map(w => w.rect), ...map.props.filter(p => (PROP_AO[p.kind] ?? 0) >= 0.95).map(p => p.rect)]
+  const samples = 2
   const tanE = 0.62
   const [mcx, mcy] = [W / 2, H / 2]
   for (const win of map.windows) {
@@ -560,45 +566,48 @@ export function bakeFloor(map: MapDef): FloorMap {
     const bx1 = Math.max(win[2], win[2] + mx * reach) + 1
     const by0 = Math.min(win[1], win[1] + my * reach) - 1
     const by1 = Math.max(win[3], win[3] + my * reach) + 1
-    for (let ty = Math.max(0, Math.floor(by0 / cy)); ty <= Math.min(h - 1, Math.ceil(by1 / cy)); ty++)
-      for (let tx = Math.max(0, Math.floor(bx0 / cx)); tx <= Math.min(w - 1, Math.ceil(bx1 / cx)); tx++) {
-        const px = (tx + 0.5) * cx
-        const py = (ty + 0.5) * cy
-        // Distance back along -moon to the window line.
-        const dist = horizontal ? (py - line) / my : (px - line) / mx
-        if (!(dist > 0)) continue
-        const hy = dist * tanE
-        if (hy < 0.35 || hy > 2.6) continue
-        const hx = horizontal ? px - mx * dist : py - my * dist
-        const a0 = horizontal ? win[0] : win[1]
-        const a1 = horizontal ? win[2] : win[3]
-        if (hx < a0 || hx > a1) continue
-        const mull = (hx - a0) % 2.4
-        if (mull < 0.08 || mull > 2.32) continue
-        // Stopped by walls on the way.
-        let blocked = false
-        for (let k = 0.3; k < dist - 0.2; k += CELL * 1.5) {
-          const qx = Math.floor((px - mx * k) / cx)
-          const qy = Math.floor((py - my * k) / cy)
-          if (qx >= 0 && qy >= 0 && qx < w && qy < h && walls[qy * w + qx]) {
-            blocked = true
-            break
+    const nearby = blockers.filter(r => r[0] < bx1 && r[2] > bx0 && r[1] < by1 && r[3] > by0)
+    const a0 = horizontal ? win[0] : win[1]
+    const a1 = horizontal ? win[2] : win[3]
+    for (let ty = Math.max(0, Math.floor(by0 / mch)); ty <= Math.min(mh - 1, Math.ceil(by1 / mch)); ty++)
+      for (let tx = Math.max(0, Math.floor(bx0 / mcw)); tx <= Math.min(mw - 1, Math.ceil(bx1 / mcw)); tx++) {
+        let coverage = 0
+        for (let sy = 0; sy < samples; sy++) for (let sx = 0; sx < samples; sx++) {
+          const px = (tx + (sx + 0.5) / samples) * mcw
+          const py = (ty + (sy + 0.5) / samples) * mch
+          const dist = horizontal ? (py - line) / my : (px - line) / mx
+          const hy = dist * tanE
+          if (hy < 0.35 || hy > 2.6) continue
+          const hx = horizontal ? px - mx * dist : py - my * dist
+          if (hx < a0 || hx > a1) continue
+          const mull = (hx - a0) % 2.4
+          if (mull < 0.08 || mull > 2.32) continue
+          let blocked = false
+          for (const r of nearby) {
+            const x0 = (px - r[0]) / mx, x1 = (px - r[2]) / mx
+            const y0 = (py - r[1]) / my, y1 = (py - r[3]) / my
+            // Exact segment/rectangle slabs; retain the old receiver/window clearances.
+            if (Math.max(0.3, Math.min(x0, x1), Math.min(y0, y1)) < Math.min(dist - 0.2, Math.max(x0, x1), Math.max(y0, y1))) {
+              blocked = true
+              break
+            }
           }
+          if (!blocked) coverage += Math.min(1, (hy - 0.35) / 0.2, (2.6 - hy) / 0.3)
         }
-        if (blocked) continue
-        // Soft at the sill and head edges.
-        const edge = Math.min(1, (hy - 0.35) / 0.2, (2.6 - hy) / 0.3)
-        moon[ty * w + tx] = Math.max(moon[ty * w + tx]!, edge)
+        moon[ty * mw + tx] = Math.max(moon[ty * mw + tx]!, coverage / (samples * samples))
       }
   }
-  blur(moon, moon, 1)
+  // Downtown's coarse sky bake still needs its original reconstruction filter.
+  if (map.kind === "downtown") blur(moon, moon, 1)
 
   const data = new Uint8Array(w * h * 2)
+  const moonData = new Uint8Array(mw * mh)
+  for (let i = 0; i < moon.length; i++) moonData[i] = Math.round(Math.min(1, moon[i]!) * 255)
   for (let i = 0; i < w * h; i++) {
     data[i * 2] = Math.min(255, Math.round(Math.min(1, ao[i]! * 1.25) * 255))
-    data[i * 2 + 1] = Math.round(Math.min(1, moon[i]!) * 255)
+    data[i * 2 + 1] = moonData[Math.floor(i / w) * scale * mw + (i % w) * scale]!
   }
-  return { data, w, h }
+  return { data, w, h, moon: { data: moonData, w: mw, h: mh } }
 }
 
 /**

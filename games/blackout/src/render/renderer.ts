@@ -76,6 +76,7 @@ export class Renderer {
   private gradeBuf: GPUBuffer
   private sceneLayout: GPUBindGroupLayout
   private floorTex: GPUTexture
+  private moonTex: GPUTexture
   private bounceTex: GPUTexture
   private floorSampler: GPUSampler
   private chunks: Chunk[] = []
@@ -139,6 +140,7 @@ export class Renderer {
     this.polarBuf = d.createBuffer({ size: SLOTS * POLAR_RAYS * 32, usage: U.STORAGE })
     this.lampBuf = d.createBuffer({ size: MAX_MAP_LIGHTS * 4, usage: U.STORAGE | U.COPY_DST })
     this.floorTex = d.createTexture({ size: [1, 1], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.moonTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     this.gradeBuf = d.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST })
@@ -165,6 +167,7 @@ export class Renderer {
         { binding: 5, visibility: S.FRAGMENT, sampler: {} },
         { binding: 6, visibility: S.FRAGMENT, texture: {} },
         { binding: 7, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 8, visibility: S.FRAGMENT, texture: {} },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -307,6 +310,7 @@ export class Renderer {
         { binding: 5, resource: this.floorSampler },
         { binding: 6, resource: this.bounceTex.createView() },
         { binding: 7, resource: { buffer: this.motionBuf } },
+        { binding: 8, resource: this.moonTex.createView() },
       ],
     })
   }
@@ -343,6 +347,10 @@ export class Renderer {
     this.floorTex.destroy()
     this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.device.queue.writeTexture({ texture: this.floorTex }, f.data, { bytesPerRow: f.w * 2 }, [f.w, f.h])
+    const moon = f.moon
+    this.moonTex.destroy()
+    this.moonTex = this.device.createTexture({ size: [moon.w, moon.h], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.device.queue.writeTexture({ texture: this.moonTex }, moon.data, { bytesPerRow: moon.w }, [moon.w, moon.h])
     const b = level.bounce
     this.bounceTex.destroy()
     this.bounceTex = this.device.createTexture({ size: [b.w, b.h], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
