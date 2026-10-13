@@ -1,4 +1,4 @@
-import { VEHICLES, type Vehicle } from "../../shared/config"
+import type { Vehicle } from "../../shared/config"
 import { type AtlasRegion, regionAspect } from "./atlas"
 import { MAT, type Mat, Mesh, type Rgb } from "./mesh"
 import { HEADLIGHT, type LightStyle } from "./car-lights"
