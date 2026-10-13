@@ -209,17 +209,21 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 
 ## Rendering (WebGPU)
 
-- **Keep game-owned roof discard out of the opaque entry point.** Outbreak used its roof hook in `fsSolid`,
-  and mixed floors with screen-cuttable walls. Its level writer now partitions whole triangles into opaque,
-  screen-cuttable and custom-cuttable chunks; `solidCutaway` and `LevelChunk.customCutaway` retain the shared
-  shader's old defaults for other games. All 196,722 seed-7 vertices remain. Seven alternating real-browser
-  pairs at 3456×1894 measured queue-completed street spans 103.25→60.65 ms and interior 135.40→84.90 ms.
-  Poses and gameplay RGB matched exactly. A later M5 Max/Metal proof at 3456×2006 measured dependent total GPU
-  intervals 26.434→15.161 ms street and 40.320→23.562 ms interior, with every captured RGB pixel unchanged.
-  The live FPS counter counted attempts against clamped simulation time; it now reports wall-clock GPU submissions
-  and updates separately. Live pacing still exposes dropped visible time above the 50 ms simulation clamp.
-  See `perf/outbreak-performance.md` for hardware and pacing proof,
-  discarded blocker/active-building experiments and remaining Retina cost.
+- **Keep game-owned roof discard out of the opaque entry point, cull off-screen lamps, and pace fixed ticks.**
+  Outbreak used its roof hook in `fsSolid`, mixed floors with screen-cuttable walls, routed exterior tree canopies into
+  the `discard` pipeline, and clamped visible frame deltas at 50 ms without an accumulator. Its level writer now keeps
+  exterior trees and streetlamps in `fsSolid`, gates building roof/chimney `customCutaway` chunks on the player's
+  building footprint, and skips completely interior chimney/roof-cap triangles while inside that building. `main.ts`
+  culls lamps against the camera ground frustum, skips the zero-power sight slot in `lightSum`, reuses shared adjacent
+  rays across `shadowAt` taps, discards the 4× MSAA depth attachment when volumetric smoke is inactive, and paces
+  single-in-flight submissions through `FrameClock` (`shared/clock.ts`, 60 Hz fixed ticks, 12-substep frame cap, 0.5 s
+  hitch debt cap, timestamped input transitions, pause/hidden anchor reset). All 196,722 seed-7 vertices and every
+  captured RGB pixel at 3456×2006 match `main` (`diffPixels = 0` in both street and interior). On M5 Max/Metal at
+  3456×2006, dependent whole-frame GPU intervals fall **26.434→11.623 ms (56.0%)** on the street and
+  **40.320→17.759 ms (56.0%)** in the interior. Across seven 2-second live traversal runs at 3456×1894, fresh-state
+  submission `p95` drops **109.6→32.4 ms** (street) and **138.3→24.4 ms** (interior), fresh states/s rise
+  **15.41→48.26** and **13.29→45.23**, and simulated/wall-time ratios recover from **.623/.546** to **.995/.994**
+  (3.38 m/s out of 3.40 m/s). See `perf/outbreak-performance.md`.
 
 - **Bake fine window coverage separately from soft AO.** Blackout's 12.5 cm moon mask, 18.75 cm blocker march and
   box blur created stepped diagonals and cloudy mullion bands. Exact world-space segment/rectangle intersections and

@@ -23,10 +23,14 @@ const BLOOM_LEVELS = 5
 const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
-type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean }
+type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" }
 
 /** Conservative screen bounds of cuttable geometry. The cutaway is screen-space, not a fixed world-space box. */
-function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array): boolean {
+function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, custom = false): boolean {
+  if (custom) {
+    if (!box) return true
+    return f[24]! > box[0]! && f[24]! < box[3]! && f[25]! > box[2]! && f[25]! < box[5]!
+  }
   if (!box || f[26]! < 0.5 || box[4]! < f[34]! || box[5]! < f[25]! + 0.25) return false
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
   for (let i = 0; i < 8; i++) {
@@ -476,7 +480,8 @@ export class Renderer {
 
   private pending: FrameInput | null = null
   private scheduled = false
-  private inflight = 0
+  inflight = 0
+  onIdle: (() => void) | null = null
 
   /**
    * Queues a frame. Calls within one task collapse to the last (Game reuses its arrays, so the latest input is always
@@ -496,13 +501,14 @@ export class Renderer {
     queueMicrotask(() => {
       this.scheduled = false
       const f = this.pending
-      if (!f || this.inflight >= 2) return
+      if (!f || this.inflight >= 1) return
       this.pending = null
       this.draw(f)
       this.inflight++
       void this.device.queue.onSubmittedWorkDone().then(() => {
         this.inflight--
         if (this.pending) this.schedule()
+        else this.onIdle?.()
       })
     })
   }
@@ -604,10 +610,11 @@ export class Renderer {
       cp.end()
     }
 
+    const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
     const pass = enc.beginRenderPass({
       timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
       colorAttachments: [{ view: this.msaaView, resolveTarget: this.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
+      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke ? "store" : "discard" },
     })
     pass.setBindGroup(0, this.sceneGroup)
     const [vx0, vy0, vx1, vy1] = f.view
@@ -618,8 +625,10 @@ export class Renderer {
       let cut = false
       for (const c of this.chunks) {
         if (c.box[0] > vx1 || c.box[2] < vx0 || c.box[1] > vy1 || c.box[3] < vy0) continue
+        const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
+        if (c.customCutaway === "outside" && insideCustom) continue
         drawn++
-        const next = !!c.customCutaway || intersectsCutaway(c.cutBox, f.frame)
+        const next = c.customCutaway ? (c.customCutaway === true && insideCustom) : intersectsCutaway(c.cutBox, f.frame)
         if (cut !== next) {
           cut = next
           pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!)

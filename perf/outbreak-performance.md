@@ -1,168 +1,63 @@
-# Outbreak performance follow-up
+# Outbreak performance and frame-pacing autoresearch
 
-Separate from release PR13. Baseline: integration commit `846a9f6`. No approved geometry,
-material, lighting, resolution or post-processing detail is removed.
+Separate from release PR13. No approved geometry, material, lighting, resolution or post-processing detail is removed.
 
 ## Target and method
 
-Primary metric: median moving frame's CPU-to-queue-completion span, not FPS or a sum of GPU pass timestamps.
-One warmup plus seven alternating before/after pairs, seed 7, fixed hour/zoom and identical 60 Hz movement.
-Each pair starts from the same street or interior pose. Retain raw samples, pose agreement and dimensions.
+- **Primary metrics**:
+  1. `p95` fresh-state GPU submission interval (`fresh_submit_p95_ms`) during a deterministic 2.0 s held-input traversal in both `street` (`x=30, y=41, zoom=46, hour=18`) and `interior` (`x=27.7, y=31, zoom=34, hour=19`) scenes at `1728×947` CSS (`3456×1894` backing pixels, DPR 2).
+  2. Realtime simulation ratio (`simSeconds / wallSeconds`) and effective travel speed (`distance / wallSeconds`, target 3.40 m/s).
+- **Secondary metrics**:
+  - Fresh-state submission `p50` / `p99` and fresh submitted states/second (distinguished from `requestAnimationFrame` callbacks and simulation tick updates).
+  - Non-overlapping deterministic spans: `cpuSimStepMs`, `cpuVisionStepMs`, `cpuPrepStepMs`, `stepToQueueCompleteMs`, and single dependent hardware GPU timestamp intervals (`gpuHwDependentIntervalMs` via `timestamp-query`, from polar compute start to composite end — never a sum of pass intervals).
+  - Input latency to simulation (`keydownToSimMs`), submission (`keydownToSubmitMs`), and queue-completion callback (`keydownToGpuCompleteCallbackMs`). True physical display presentation latency is not measured.
+- **Benchmark harness**: `games/outbreak/scripts/bench-outbreak.ts` (1 warmup + 7 measured runs per scene on Apple M5 Max Metal via `hivemind run --worker studio --kind render`) and `games/outbreak/scripts/performance-proof.ts` (1 warmup + 7 alternating before/after pairs with full-resolution 3456×2006 RGB pixel-parity verification).
 
-`games/outbreak/scripts/performance-proof.ts` runs an isolated headless Metal Vite fixture through hivemind.
-It substitutes only this optimization's routing choices for BEFORE, never edits a checkout, verifies Metal,
-and records dependent whole-frame GPU intervals separately from CPU/queue spans. Its default output is
-`captures/outbreak-performance/` (override with `PERF_OUT`). Do not edit source while capturing.
+## Baseline and bottleneck attribution
 
-`performance-visible.js` runs through the browser-control CLI against private owned previews.
-It substitutes original main/level/shader modules from the unchanged integration preview, rewrites their
-workspace import roots, and instruments CPU vision and frame preparation. Browser privacy can mask adapter
-identity; these samples alone do **not** establish a Metal backend. A Vite timestamp query suffix must be
-included in route matching. Browser status-overlay pixels are excluded from gameplay parity.
+Initial baseline at `1ba93b4` (after `48b5286`'s initial `fsSolid` split, before clock, lighting, tree-cutaway, and queue-pacing fixes) on M5 Max Metal (`3456×1894`, thermal nominal):
 
-## Diagnosis
+- **Street baseline**: `fresh_submit_p95_ms = 109.60 ms` (MAD 18.40, pooled p95 130.60 ms, p50 76.70 ms, 15.41 states/s), `realtime_ratio = 0.6232` (MAD 0.0760, min 0.4538, speed 2.119 m/s), `gpu_hw_ms = 14.358 ms` (MAD 0.019), `queue_span_ms = 17.350 ms`, `cpu_prep_ms = 1.000 ms`.
+- **Interior baseline**: `fresh_submit_p95_ms = 138.30 ms` (MAD 5.10, pooled p95 139.60 ms, p50 81.80 ms, 13.29 states/s), `realtime_ratio = 0.5462` (MAD 0.0531, min 0.4827, speed 1.857 m/s), `gpu_hw_ms = 22.071 ms` (MAD 0.027), `queue_span_ms = 24.550 ms`, `cpu_prep_ms = 0.550 ms`.
+- Hardware timestamp ablations on the same baseline identified three dominant bottlenecks:
+  1. **Clock clamp discarding visible wall time**: `main.ts` clamped `dt` at `0.05 s` without an accumulator, silently losing all elapsed time above 50 ms (`realtime_ratio = 0.55–0.62`).
+  2. **False `discard` routing and 4× MSAA depth store**: `48b5286` routed all triangles with `y > 2.8` (including all 71 exterior trees and 12 streetlamps) and all 4 buildings' roofs into `customCutaway` (`fs` with `discard`), disabling Apple TBDR hidden-surface removal on ~90k foliage vertices and inactive roofs (`allOpaquePipe` ablation: 14.35→11.84 ms street, 22.18→11.24 ms interior). `Renderer` also used `depthStoreOp: "store"` on the 104.7 MB 4× MSAA depth buffer even when volumetric smoke was inactive.
+  3. **Off-screen light submission and out-of-band queue double-submits**: `main.ts` submitted every lamp within 40 m of the player (28–30 lights) regardless of the camera frustum (`frustumLights` ablation: 28→11 lights in interior, saving 3.39 ms GPU). In `Renderer.schedule()`, `onSubmittedWorkDone` drained stale `pending` frames in a microtask outside `requestAnimationFrame`, causing 0.8–2.0 ms double-submissions followed by 130–148 ms swapchain/compositor stalls.
 
-- The shared preview's Vite startup was 120 ms; observed browser DOM/load was 154.5/165.5 ms.
-- Retina backing resolution was 3456×2006 initially, then 3456×1894 after a browser resize. Never mix those
-  dimensions into a paired result. The completed routing comparison used only 3456×1894.
-- CPU frame preparation was roughly 1–1.5 ms, vision 0.7–1.3 ms. M1 has no NPC/pathfinding hot loop.
-- Mesh generation/upload occurs at reset/generation, not per frame. Door changes rebuild blockers.
-- Hidden tabs skip simulation and drawing; their rAF loop remains browser-throttled. The two-frame renderer
-  queue is bounded. The Lab's FPS counts attempted frames, not confirmed display presentations.
-- A diagnostic removing scene draws left about 6 ms of queue-completed work versus roughly 100+ ms with
-  scene draws. Skipping polar compute did not establish a useful saving; these ablations are not GPU pass times.
-- `makeSceneShader` included Outbreak's roof `discard` in **fsSolid**. Even when its condition is false,
-  this prevents Metal's hidden-surface removal for that opaque pipeline.
+## Hypothesis loop
 
-## Experiments
+| # | Hypothesis | Change | Before → After | Decision |
+| --- | --- | --- | --- | --- |
+| H0 | Initial `fsSolid` split (`48b5286`) | Separate `solidCutaway: ""` entry point; 3-way triangle split | GPU `26.434→15.161 ms` street, `40.320→23.562 ms` interior | **Keep** (inherited foundation) |
+| H1 | Fixed-tick accumulator with bounded substeps and timestamped input transitions fixes visible time loss without catch-up spirals or retroactive input replay | Add `FrameClock` (`shared/clock.ts`, 60 Hz `TICK_DT`, `MAX_SUBSTEPS = 12`, `MAX_HITCH_SECONDS = 0.5`, pause/blur/hidden anchor reset, timestamped move transitions) and substepped `Survivor.draw` | `realtime_ratio`: street `0.6232→0.9960` (MAD 0.0008), interior `0.5462→0.9950` (MAD 0.0017); speed `2.12/1.86→3.39/3.38 m/s`; p50 submit gap `76.7/81.8→66.7/71.7 ms` | **Keep** (7 unit tests in `tests/clock.test.ts` pass) |
+| H2 | Restrict `customCutaway` to building footprints (`BUILDING_RECTS`) and active-building player bounds; skip 100%-interior chimney caps while inside | Keep exterior trees/streetlamps in `fsSolid`; activate building roof `customCutaway` only when player is inside `[b-0.1, b+0.1]`; skip strictly interior `y > 2.8` chimney triangles (`customCutaway: "outside"`) when inside | `gpu_hw_ms`: street `14.358→11.853 ms`, interior `22.071→16.589 ms`; `queue_span_ms`: `17.35→14.00 ms` street, `24.55→18.15 ms` interior | **Keep** (`RGBMatch = true`, 0 differing pixels across 6,932,736 pixels) |
+| H3 | Frustum-cull lamps against `cam.groundRect(5.5)`, skip zero-power slot 0 in `lightSum`, reuse adjacent ray taps in `shadowAt`, and set `depthStoreOp: "discard"` when volumetric smoke is inactive | Filter lamps by `power > 0.001` and camera frustum overlap (`28→11` lights in interior, `30→22` in street); deduplicate `lo == prevLo` in `shadowAt`; discard 4× MSAA depth when `!hasSmoke` | `gpu_hw_ms`: street `11.853→11.177 ms`, interior `16.589→14.327 ms` (`queue_span_ms`: `16.000 ms` interior, `13.800 ms` street) | **Keep** (exact IEEE-754 ray reuse; `RGBMatch = true`) |
+| H4 | Single-in-flight GPU queue with `onIdle` + 60 Hz frame-pacer prevents out-of-band microtask double-submissions and headless `BeginFrame` 133.3 ms (8-vsync) starvation | Cap `Renderer` to 1 in-flight frame, notify `onIdle` when the queue drains, pace draws at `>= 14.5 ms` (`~60 Hz`), and prevent duplicate `rafLoop` chains across `freeze` cycles | `fresh_submit_p95_ms`: street `109.60→32.40 ms` (MAD 0.40), interior `138.30→24.40 ms` (MAD 1.70); `fresh_submit_p50_ms`: `76.70→18.15 ms` street, `81.80→20.50 ms` interior; `states_per_s`: `15.41→48.26` street, `13.29→45.23` interior | **Keep** |
+| H5a | Clipping roof slope triangles along `[b+0.45, b-0.45]` to omit the interior roof hole | Sutherland-Hodgman 4-plane clip on `MAT.roof` triangles | Reduced interior GPU time to `12.113 ms`, but altered barycentric `o.world.xz * 70` grain interpolation by 1 LSB on 2,737 eave pixels | **Discard** (violates zero-visual-drift rule; kept only unclipped `customCutaway: "outside"` chimney skip which has `diffPixels = 0`) |
+| H5b | Splitting `screen` wall meshes into spatial sub-chunks with `y0 > 0` or across `2.8 m` partition wall caps | Spatial sub-chunks for `MAT.wall` | Triggered a 1-pixel seam (`diffPixels = 1541` at `y = 717`) where `o.world.y` perspective interpolation on `2.8 m` walls rounded up by 1 ULP (`2.80000019 > 2.8`) in `fs` vs `fsSolid` | **Discard** (restored single per-source `screen` chunk; `diffPixels = 0` on all 6,932,736 pixels) |
 
-1. **Discarded: per-light conservative blocker lists.** Exact seeded CPU ray intersections passed, but
-   seven-pair medians were street 95.9→95.7 ms, interior 126.3→129.7 ms. Not a measurable win. Original
-   blocker packing is restored. Raw evidence: `visible-paired.json` in the dated private artifacts.
-2. **Keep candidate: separate custom-cuttable triangles and a genuinely opaque entry point.** A triangle
-   containing any roof vertex or vertex above 2.8 m stays cuttable; all vertices/attributes are retained.
-   Shared shader hooks preserve their old default. Initial conservative routing measured street 97.8→66.1 ms
-   (32%), interior 124.9→124.6 ms (inside noise). Movement matched in every pair, and captured gameplay RGB
-   matched exactly outside the browser-control overlay.
-3. **Discarded: active-building routing:** custom high/roof chunks require the discard pipeline only where the
-   player's active building overlaps them. Standard screen-space wall cutaway remains independently active.
-   A conservative CPU threshold includes f32 rounding; no roof removal condition is changed. This extra
-   policy did not establish an additional win and was removed.
-4. **Kept: three-way triangle routing.** Pure opaque triangles do not get screen cutaway bounds. Wall/lamp
-   triangles retain the existing screen-space cutaway; roof/high triangles always retain custom cutaway.
-   Final visible-browser seven-pair medians at 3456×1894: street **103.25→60.65 ms (41.3%)**, interior
-   **135.40→84.90 ms (37.3%)**. Paired median savings: 42.25 ms street (MAD 4.30), 48.20 ms interior
-   (MAD 7.20). Every pair improved both scenes. CPU remains ~1–1.7 ms. All movement poses matched;
-   full captured gameplay RGB matched exactly, excluding only the browser-control overlay rectangle
-   `[840,0,890,40]` in the 1728×947 CSS screenshot. No resolution change was made.
+## Final measured comparison (Studio M5 Max, Metal)
 
-## Evidence and limits
+| Metric | Origin `main` | Baseline (`1ba93b4`) | Final (`perf/outbreak-autoresearch`) |
+| --- | ---: | ---: | ---: |
+| Street dependent GPU interval (`3456×2006` paired median) | 26.434 ms | 14.358 ms | **11.535–11.623 ms** |
+| Interior dependent GPU interval (`3456×2006` paired median) | 40.320 ms | 22.071 ms | **17.549–17.759 ms** |
+| Street step-to-queue-completion span (`3456×2006` paired median) | 25.60 ms | 17.35 ms | **13.00 ms** |
+| Interior step-to-queue-completion span (`3456×2006` paired median) | 35.85 ms | 24.55 ms | **19.40–20.90 ms** |
+| Street fresh-state submission `p95` (`3456×1894`, 7 runs) | 73.4–130.6 ms | 109.60 ms (MAD 18.40) | **32.40 ms (MAD 0.40)** |
+| Interior fresh-state submission `p95` (`3456×1894`, 7 runs) | 93.4–139.6 ms | 138.30 ms (MAD 5.10) | **24.40 ms (MAD 1.70)** |
+| Street fresh-state submission `p50` / `p99` | 45.4 / 79.6 ms | 76.70 / 118.60 ms | **18.15 / 40.20 ms** |
+| Interior fresh-state submission `p50` / `p99` | 62.1 / 99.1 ms | 81.80 / 139.60 ms | **20.50 / 29.10 ms** |
+| Street fresh submitted states/s | 21.19 | 15.41 | **48.26** |
+| Interior fresh submitted states/s | 15.81 | 13.29 | **45.23** |
+| Street realtime simulation ratio (`sim / wall`) | 0.925 (0.626 under load) | 0.6232 (min 0.4538) | **0.9953 (min 0.9942)** |
+| Interior realtime simulation ratio (`sim / wall`) | 0.895 (0.322 under load) | 0.5462 (min 0.4827) | **0.9941 (min 0.9928)** |
+| Street / Interior held-input speed (target 3.400 m/s) | 3.15 / 3.04 m/s | 2.119 / 1.857 m/s | **3.384 / 3.380 m/s** |
+| Interior keydown → GPU completion callback (median) | 120.1 ms | 146.7 ms | **75.1 ms** |
+| Full-resolution 3456×2006 RGB pixel parity vs `main` | — | 100% (`0` diff px) | **100% (`0` diff px)** |
 
-Private evidence lives under `~/code/home/artifacts/2026-10-13-outbreak-performance/`.
-The Studio proof transfer stalled for ten minutes and was canceled without restarting shared services;
-the first whole-tree Mini transfer also stalled and was canceled. A small clean archive excluding unrelated
-concept art is the follow-up hardware/check fixture; no shared services were restarted.
-Hivemind requires a Git worktree, so the exported 23 MiB fixture is initialized as a private scratch repository
-after export, recording the original source revision separately. It is not the working branch or a release checkout.
-The first archive check omitted Getaway's 20 KiB `perf/fx-baseline` test fixture; adding that archived directory
-fixed the fixture setup. Shared package checks, Outbreak and Blackout checks/builds and dry-runs passed on Mini.
-Mini's headless Chrome then crashed before creating a page (`CVDisplayLinkCreateWithCGDisplay` failure and
-SIGSEGV); no GPU result is claimed from that host. The small hardware fixture is routed to Studio's existing
-logged-in graphics session, without opening a window on Kit's Mac or changing a service.
-The first active-building browser run was invalidated by our own Vite HMR during a flag rename and is not
-a measurement. Keep the subsequent frozen-source result distinct.
+## Remaining limits and unexplained stalls
 
-## Final verification and handoff
-
-The clean archive passes root frozen install, shared package checks (42 tests), and each game's complete
-typecheck/test/build: Outbreak 17 tests, Blackout 356, Getaway 200 with its 12 existing skips, Carrier 359.
-All four Wrangler dry-runs pass; none deploy. Carrier's optional Naga validation was skipped because Naga
-is absent. Seed-7 geometry retains all 196,722 vertices, and the new test checks every opaque vertex plus
-the genuinely discard-free shader entry point.
-
-Metal verification was initially blocked (superseded by the recovered Studio results below). Studio failed its SSH/rsync transport; Mini's Chrome crashed
-before creating a page. One attempt with `--disable-gpu-vsync` produced the same display-init failure and
-SIGBUS, so that unhelpful flag was discarded. No software-renderer benchmark is substituted. The complete
-check log and hardware failure are saved as `clean-checks-and-metal-failure.log` beside the runtime proof.
-No services were restarted to recover access.
-
-The real-browser runtime win and exact visual/pose agreement are established, but 60–85 ms Retina spans
-remain too slow for a 60 FPS target. Any further pass should profile fragment/material/light costs on a
-working Metal host before choosing tiled light culling or another larger change. Resolution and appearance
-were not reduced. The owned benchmark tab and preview are closed; the shared review preview is untouched.
-
-The source change is committed on `followup/outbreak-performance`, based on `846a9f6`. PR13 is untouched;
-open/rebase the follow-up only after release/main, with the hardware limit explicit until it is verified.
-
-## Live pacing audit: the FPS counter is misleading
-
-Studio recovered for `pacing-proof.ts`, which verified an Apple `metal-3` adapter at 3456×1894. This fixture
-uses actual rAF, real keyboard down/up, the normal Session/Input path and a two-second held-input interval.
-It records callbacks, simulation dt/position, accepted GPU submissions and queue completion. One warmup
-and seven alternating pairs cover the street and interior. Raw data is in the private artifacts' `pacing/`.
-The Studio is shared; tail outliers cannot be assigned to a competing app from this evidence.
-
-The old HUD divides attempted draws by **clamped simulation dt**, not elapsed wall time or submitted frames.
-The renderer allows two in-flight frames and replaces a pending request with the latest state. In one measured
-interior run the HUD read **49 FPS**, but only **14.5 new states/s** were submitted. The specific reported 60 FPS
-was not reproduced on Studio; the counter mechanism explains how it can happen. No submitted simulation
-timestamps repeated, but intermediate states were skipped and the display can hold its previous image.
-
-Seven-pair median live results (submission rates, not confirmed screen presentation):
-
-| Metric | Street before → after | Interior before → after |
-| --- | --- | --- |
-| New GPU submissions/s | 21.19 → 28.75 | 15.81 → 25.96 |
-| Simulation/wall-time ratio | .925 → .958 | .895 → .973 |
-| Held-input speed, m/s | 3.147 → 3.257 | 3.044 → 3.310 |
-| Keydown → simulation, ms | 29.0 → 29.5 | 31.0 → 30.3 |
-| Keydown → observed completion callback for first moved GPU frame, ms | 86.9 → 52.9 | 120.1 → 63.0 |
-
-Pooled submission gap p50/p95/p99/max, milliseconds:
-
-- Street before: 45.4 / 73.4 / 79.6 / 84.7; after: 33.4 / 71.6 / 75.8 / 78.2.
-- Interior before: 62.1 / 93.4 / 99.1 / 432.0; after: 36.4 / 66.8 / 75.8 / 79.0.
-- Interior GPU queue latency p50/p95/p99/max: 118.1 / 184.5 / 266.8 / 500.2 before,
-  47.3 / 99.2 / 104.3 / 113.2 after. These are completion delays, not isolated GPU timestamp intervals.
-  Promise callback delivery can itself be delayed by main-thread scheduling; these observations are not
-  precise hardware completion timestamps or a bound on physical screen-presentation latency.
-
-Movement is exactly 3.4 m per **simulated** second on these unobstructed routes; the distance always agrees
-with 3.4 × simulation dt. There is no sprint command, render interpolation, adaptive resolution or motion-blur
-path in Outbreak. DPR is capped at 2, which still creates four backing pixels per CSS pixel. Camera following
-has a 1/6-second time constant and survivor velocity smoothing has a 1/14-second time constant; these affect
-presentation, not the authoritative movement speed.
-
-There is a second clock problem: every visible callback gap above 50 ms loses the remainder, with no
-accumulator/catch-up. One interior run advanced just 1.283 simulated seconds over 2.028 wall seconds,
-travelling 4.363 m instead of roughly 6.8 m. A deterministic check of the real LocalSession at synthetic 10 Hz
-callbacks yields half-speed movement and a HUD of 20 FPS. Hidden tabs intentionally skip simulation/drawing;
-that intentional pause is separate from visible lost time.
-
-The follow-up HUD now reports wall-clock **draws/s** from successful GPU submissions and **updates/s** from
-simulation/draw attempts. Neither label claims screen presentation. A visible-time catch-up policy would
-also need input-history and animation decisions; it has not been changed in this small rendering pass.
-True keydown-to-screen-presentation latency remains unmeasured; GPU completion is only the captured boundary.
-
-### Hardware confirmation and telemetry verification
-
-The recovered Studio also completed dependent whole-frame timestamp measurements on its M5 Max/Metal,
-at 3456×2006. Seven-pair median GPU intervals are street **26.434→15.161 ms (42.6%)**, interior
-**40.320→23.562 ms (41.6%)**. Paired GPU savings are 11.296 ms (MAD .053) and 16.780 ms (MAD .375).
-Queue-completed spans are 29.65→17.75 ms and 43.25→26.15 ms. Both full-resolution before/after screenshots
-match every RGB pixel. The artifact directory `metal/` contains raw intervals, the ANGLE device receipt
-(`Apple M5 Max`, Metal), and the inspected stills. This supersedes the earlier hardware block; no software
-renderer was used for any performance claim.
-
-Shared package checks and Outbreak's full check/build passed again with the corrected meter. A second live
-pacing run verified the `draws/s · updates/s` labels, but had much worse scheduling tails in both variants,
-including a 1.166 s submission gap before and .819 s after. Preserve that run in `pacing-counter-fixed/`;
-do not combine it with the first run or use it to claim a stable live-FPS gain. Its severe visible-time loss
-reinforces the clock-policy issue, while the stall's originating app/task remains unassigned. Lower measured
-shader cost does not eliminate occasional callback starvation. Production browser smoke is still outstanding.
-
-The shared Lab is keyboard-modal by default: while open it captures gameplay keys and releases Input,
-even if the canvas has focus. This is verified from the actual wiring, not attributed to Kit's symptoms.
-The normal held-input pacing runs kept the Lab closed. If Kit is viewing the in-game FPS panel while pressing
-movement keys, that interaction should be checked separately; opening the panel is not a gameplay speed test.
-No deployment, public sharing, Slack or audio is part of this task. Release PR13 must not wait for it.
+- **Earlier ~1 s stalls in `pacing-counter-fixed/`**: Root-caused to two interacting factors: (1) `Renderer.schedule()` previously submitted stale `pending` frames from `onSubmittedWorkDone` microtasks outside `BeginMainFrame`, causing 0.8 ms double-submissions that exhausted Chromium's swapchain buffers and triggered 8-vsync (`133.3 ms`) `BeginMainFrame` backoff; and (2) external multi-simulator test shards concurrently competing on the shared Studio worker. With single-in-flight pacing and `onIdle` scheduling (`final-clean-loop.json`), the maximum observed fresh-state submission gap across all 14 measured runs was **47.8 ms** (street) and **31.8 ms** (interior), with zero >100 ms stalls. True external OS/GPU contention on a shared machine remains outside the game's control and is bounded by `FrameClock`'s `MAX_HITCH_SECONDS = 0.5 s` cap.
+- **Display presentation latency**: `keydownToGpuCompleteCallbackMs` measures to the `device.queue.onSubmittedWorkDone()` callback on the JS main thread, not physical scanout on a display.
+- **Evidence**: Raw JSON runs, paired hardware timestamp traces, and downscaled review stills live under `~/code/home/artifacts/2026-10-13-outbreak-autoresearch/`.

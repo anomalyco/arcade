@@ -2,8 +2,11 @@ export type LevelChunk = {
   data: ArrayBuffer
   box: readonly [number, number, number, number]
   cutBox?: readonly number[]
-  /** Needs the custom discard entry point regardless of screen-space cutaway bounds. */
-  customCutaway?: boolean
+  /**
+   * true: uses the discard entry point while the player is inside cutBox (and opaque outside).
+   * "outside": drawn with the opaque entry point only while the player is outside cutBox (100% discarded inside).
+   */
+  customCutaway?: boolean | "outside"
 }
 export type BakedMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number }
 export type FloorMap = BakedMap & { linear?: Float32Array; moon?: BakedMap }
