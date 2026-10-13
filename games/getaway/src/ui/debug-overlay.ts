@@ -40,6 +40,12 @@ export class DebugOverlay extends LabPanel {
     const defaults = juiceSettings(false) as Record<string, boolean | number>
     for (const key of q.get("off")?.split(",") ?? []) if (key in juice) (juice as Record<string, boolean | number>)[key] = defaults[key]!
     super(juice, controls, q, release)
+    addEventListener("keydown", (event) => {
+      if (q.has("mux") && parent !== window) return
+      if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+      event.preventDefault()
+      this.toggle()
+    })
     const requested = Number(q.get("smoke") ?? 6)
     smoke.style = Number.isInteger(requested) && requested >= 0 && requested < smokeStyles.length ? requested : 6
     const label = document.createElement("label")
@@ -57,12 +63,6 @@ export class DebugOverlay extends LabPanel {
     }
     label.append(select)
     this.header.after(label)
-    addEventListener("keydown", (event) => {
-      if (q.has("mux") && parent !== window) return
-      if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
-      event.preventDefault()
-      this.toggle()
-    })
   }
   reset() { this.samples.length = 0; this.lastUpdate = 0 }
   update(now: number, frameMs: number, stats: Pick<PerfSample, "gpuMs" | "gpuKind" | "draws" | "verts" | "chunks" | "lights">) {

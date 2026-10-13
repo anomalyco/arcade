@@ -1,4 +1,4 @@
-/** Whole-command-buffer interval, from first shadow pass start to final composite end. Never sums passes. */
+/** Whole-frame interval, first shadow start through a dependent completion marker after the composite. Never sums passes. */
 export class FrameTimer {
   readonly start: GPURenderPassTimestampWrites
   readonly end: GPURenderPassTimestampWrites
@@ -12,7 +12,12 @@ export class FrameTimer {
     this.start = { querySet: this.query, beginningOfPassWriteIndex: 0 }
     this.end = { querySet: this.query, endOfPassWriteIndex: 1 }
   }
-  finish(encoder: GPUCommandEncoder) {
+  finish(encoder: GPUCommandEncoder, compositeTarget: GPUTextureView) {
+    // Benchmark-only marker keeps instrumentation independent of the selectable look composites.
+    // Its fixed overhead is present in both members of every pair. Normal frames add no pass.
+    // Load/store the SAME target: an independent 1px attachment may execute before the composite
+    // on a tiler, producing invalid negative intervals. This dependency joins the entire frame.
+    encoder.beginRenderPass({ timestampWrites: this.end, colorAttachments: [{ view: compositeTarget, loadOp: "load", storeOp: "store" }] }).end()
     encoder.resolveQuerySet(this.query, 0, 2, this.resolve, 0)
     encoder.copyBufferToBuffer(this.resolve, 0, this.read, 0, 16)
   }

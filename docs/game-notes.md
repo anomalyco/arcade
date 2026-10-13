@@ -119,6 +119,64 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Art direction
 
+### Tyres, nitro and cold exhaust
+
+The connected study's boost cloud has been replaced by wheel-driven emission in
+`games/getaway/src/game/vehicle-emissions.ts`. The default remains style 6; style 8 uses the same wheel sources
+through its raymarched field. The look and preset code has no dependency on this policy.
+
+- **Two wheel sources, then one cloud.** Each rear wheel has independent position, distance remainder and heat.
+  Current vehicle specs have no drivetrain; the presentation defaults to rear drive (one rear source for bikes).
+  `drivenMask` also understands optional `fwd`/`awd` specs. Popped and airborne wheels emit nothing. Heat reaches
+  86% after one second of sustained slip, then decays when slip ends. Optical density scales with slip, rubbing
+  speed and heat; fixed 0.36 m samples preserve continuity instead of making weak emission open spatial gaps.
+  A stationary burnout uses a 14 Hz temporal top-up. The top-up subtracts the distance rate to avoid double emission.
+- **Smoke stays where the tyre made it.** `smoke-trail.ts` inherits just 0.8% of car velocity, with drag, a
+  city-seeded 0.45 m/s wind, analytic curl drift and gentle lift. Radius grows from 0.55 m to roughly 2.5 m;
+  density falls as it grows. Lifetime is 4.5–5.3 s. The inspected drift has separate young bands, a merged older
+  cloud, and an empty road by 8.2 s; the burnout leaves a cloud behind rather than dragging it along with the car.
+- **Telemetry limits are explicit.** `CarView.drift` is measured lateral speed, not wheel RPM; `CarView.slip` is an
+  oil timer and must not be used as tyre slip. Launch smoke uses high throttle, low speed and acceleration; burnout
+  uses high throttle plus brake at low speed. Only the handbrake explicitly represents locked wheels. Ordinary
+  straight-line braking does not smoke. Remote snapshots lack throttle/brake amount, so their drift/boost is visible
+  but stationary burnout and lift-off cannot be inferred reliably. These are presentation proxies, not tyre physics.
+- **Nitro is an attached flame.** A gripping boost run produced zero tyre-smoke particles across the entire capture.
+  Short blue cores and a restrained glow follow the exhaust every frame and flicker with throttle. There is no
+  persistent flame trail or boost cloud; the optional purge was omitted. Orange lift-off/shift pops last 0.11 s,
+  have a 1.8 s cooldown, require prior load and skip every third eligible event. Shifts use speed bands because the
+  simulation has no gearbox. The pops capture shows two events, with clear intervals between them.
+- **Cold exhaust has one integration setting.** Import `vehicleEffects` from `game/vehicle-emissions` and set
+  `vehicleEffects.coldExhaust = true` for a cold preset, false for warm presets. Default false; standalone preview
+  also accepts `?coldExhaust=1`. Low-opacity tailpipe wisps live at most 0.85 s, shortened with speed to disappear
+  within about 1–2 m. This is condensation, not tyre smoke or snow spray; snow appearance stays with the looks work.
+- **Cheap and shadowless.** New simulation, instance and wisp storage is persistent. Flames/wisps reuse the existing
+  additive/alpha batches; style 6 adds one smoke draw, with no normal-frame extra pass or smoke shadow draw.
+  Peak counts were 312 tyre elements for the drift and 96 for burnout. On M5 Max/Metal at 960×640, paired
+  whole-GPU deltas at the densest drift pose were 0.177 ms (MAD 0.0016); the active pop was 0.018 ms (MAD 0.0038),
+  cold wisps about 0.008 ms, and nitro below reliable resolution. Other poses had substantial shared-machine noise.
+  Raw pairs, total intervals and limitations: `perf/getaway-smoke-realistic.json` / `.md`.
+
+Real tyre smoke includes condensed tyre-derived compounds and fine rubber particles; it is not simply water
+vapour ([Street Machine](https://www.streetmachine.com.au/features/diy/how-to-make-coloured-burnout-smoke)).
+The [BeamNG volumetric-smoke mod](https://www.beamng.com/resources/volumetric-smoke.38775/) is a useful reference
+for heat-dependent wheel emission and restrained exhaust, but has richer wheel telemetry than Getaway.
+[NIOSH](https://www.cdc.gov/niosh/npg/npgd0465.html) identifies nitrous oxide as colourless; the short blue flame
+is a game readability convention, not a claim that nitrous itself burns blue. The selected warm-up, lifetime and
+spread values are tuned visual targets, not universal measurements for every tyre, wind or snowy road.
+
+Compatibility was checked with a three-way scratch merge against the current `getaway-looks` edits, followed by
+the combined check. Smoke's legacy faceted material now reserves ID 12 so it cannot collide with windows/buildings
+at 10–11. Smoke UI initialization and script entries are placed away from the preset additions. The other worktree
+was read only. Snapshot hashes: `perf/getaway-smoke-merge.json`.
+
+The GPU timer now joins the frame with a load/store of the same composite target before its ending timestamp.
+An independent 1px marker was rejected: Metal scheduled it early and returned a negative interval. The dependent
+marker's overhead is present on both sides of every pair; it exists only while benchmarking. No pass times are summed.
+The prior connected-study report describes its historical offscreen-target measurement, not this newer timer.
+
+Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, silent 720×1280 H.264 Main/yuv420p clip
+(31.6 s, 7,435,113 bytes), original stills, motion inspection, matching still/video route poses and paired GPU data.
+
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and

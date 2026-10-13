@@ -4,6 +4,9 @@ export type Rgb = [number, number, number]
 
 /** Vertex: position (3), normal (3), color (3), material code (1), atlas uv (2). */
 export const FLOATS_PER_VERT = 12
+/** Reserved effect material; 10–11 belong to the independently developed building/window styles. */
+export const SMOKE_MATERIAL = 12
+type MeshMaterial = Mat | typeof SMOKE_MATERIAL
 
 /**
  * Material codes understood by the lit shader.
@@ -17,9 +20,8 @@ export const FLOATS_PER_VERT = 12
  * - decal: alpha-tested atlas texture multiplied by color, lit
  * - neon: alpha-tested atlas texture, emissive (signs, backlit billboards)
  * - window: self-lit pane, with optional room colour variation
- * - smoke: faceted scattering, coloured practical lights without receiving solid moon shadows
  */
-export const MAT = { lit: 0, facade: 1, emissive: 2, water: 3, flat: 4, siren: 5, glass: 6, decal: 7, neon: 8, window: 9, smoke: 10 } as const
+export const MAT = { lit: 0, facade: 1, emissive: 2, water: 3, flat: 4, siren: 5, glass: 6, decal: 7, neon: 8, window: 9 } as const
 export type Mat = (typeof MAT)[keyof typeof MAT]
 
 /** The atlas texel that is pure white; untextured geometry samples it. */
@@ -29,7 +31,7 @@ const WHITE_V = 2 / 2048
 export class Mesh {
   readonly v: number[] = []
 
-  vert(x: number, y: number, z: number, nx: number, ny: number, nz: number, c: Rgb, mat: Mat, u = WHITE_U, w = WHITE_V) {
+  vert(x: number, y: number, z: number, nx: number, ny: number, nz: number, c: Rgb, mat: MeshMaterial, u = WHITE_U, w = WHITE_V) {
     this.v.push(x, y, z, nx, ny, nz, c[0], c[1], c[2], mat, u, w)
   }
 
@@ -41,12 +43,12 @@ export class Mesh {
   }
 
   /** Triangle, counter-clockwise from the normal side. */
-  tri(a: number[], b: number[], c: number[], n: number[], col: Rgb, mat: Mat = MAT.lit) {
+  tri(a: number[], b: number[], c: number[], n: number[], col: Rgb, mat: MeshMaterial = MAT.lit) {
     for (const p of [a, b, c]) this.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, col, mat)
   }
 
   /** Triangle with its normal computed from the winding (flat shading for faceted shapes). */
-  facet(a: number[], b: number[], c: number[], col: Rgb, mat: Mat = MAT.lit) {
+  facet(a: number[], b: number[], c: number[], col: Rgb, mat: MeshMaterial = MAT.lit) {
     const ux = b[0]! - a[0]!, uy = b[1]! - a[1]!, uz = b[2]! - a[2]!
     const vx = c[0]! - a[0]!, vy = c[1]! - a[1]!, vz = c[2]! - a[2]!
     let nx = uy * vz - uz * vy

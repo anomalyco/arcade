@@ -1,4 +1,5 @@
 {
+  "files": ["scripts/prove-smoke.ts", "scripts/prove-smoke-real.ts", "scripts/prove-smoke-realistic.ts"],
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
@@ -12,5 +13,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/prove-feel.ts", "scripts/prove-look.ts", "scripts/prove-smoke.ts", "scripts/prove-smoke-real.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/prove-feel.ts", "scripts/prove-look.ts"]
 }

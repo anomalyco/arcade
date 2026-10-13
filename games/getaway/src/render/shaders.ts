@@ -242,7 +242,7 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal, inst);
   o.color = pow(v.color, vec3f(2.2));
-  if (v.mat == 10.0) { o.color *= smokeLight(o.world, o.normal); }
+  if (v.mat == 12.0) { o.color *= smokeLight(o.world, o.normal); }
   o.mat = v.mat;
   o.extra = inst.params;
   o.cut = 0.0;
@@ -278,8 +278,6 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
     let tail = o.color.r > 0.9 && o.color.g < 0.2;
     let off = o.extra.w < -0.5;
     col = o.color * select(select(2.2, 0.15, off), select(select(2.5, 0.25, off), 9.0, o.extra.w > 0.5), tail);
-  } else if (mat == 10) {
-    col = o.color;
   } else if (mat == 8) {
     let tex = textureSampleGrad(atlasTex, atlasSampler, o.uv, duvDx, duvDy);
     if (tex.a < 0.5) { discard; }
@@ -303,6 +301,8 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
       on = a * (0.5 + 0.5 * strobe);
     }
     col = o.color * (0.25 + on * 9.0);
+  } else if (mat == 12) {
+    col = o.color;
   } else if (mat == 6) {
     // Glass: near-black, picking up highlights from nearby lights and moonlight sheen.
     col = shade(o.color, o.world, n, 0.9, 0.25) + vec3f(0.006, 0.009, 0.016);

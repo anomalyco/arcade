@@ -2,7 +2,7 @@
 export const SMOKE_CAPACITY = 768
 export const SMOKE_STRIDE = 8
 export const FIELD_SIZE = 128
-export type SmokeSource = { smokeDistance: number; smokeX: number; smokeZ: number; smokeActive: boolean }
+export type SmokeSource = { smokeDistance: number; smokeX: number; smokeZ: number; smokeActive: boolean; idle: number }
 export class SmokeTrail {
   readonly particles = new Float32Array(SMOKE_CAPACITY * SMOKE_STRIDE)
   readonly instances = new Float32Array(SMOKE_CAPACITY * SMOKE_STRIDE)
@@ -13,26 +13,36 @@ export class SmokeTrail {
   drawn = 0
   time = 0
   private sequence = 0
+  private windX = 0.35
+  private windZ = -0.16
 
   reset() { this.count = this.drawn = this.time = this.sequence = 0 }
 
-  follow(source: SmokeSource, x: number, z: number, sideX: number, sideZ: number, vx: number, vz: number, dt: number, active: boolean) {
+  seedWind(seed: number) {
+    const angle = ((Math.imul(seed, 16807) >>> 0) % 997) / 997 * Math.PI * 2
+    this.windX = Math.cos(angle) * 0.45; this.windZ = Math.sin(angle) * 0.45
+  }
+
+  follow(source: SmokeSource, x: number, z: number, vx: number, vz: number, dt: number, strength: number) {
     const dx = x - source.smokeX, dz = z - source.smokeZ, distance = Math.hypot(dx, dz)
+    const active = strength > 0.008
     if (active) {
       if (source.smokeActive && distance < 8) {
-        const spacing = 0.42
+        const spacing = 0.36
         for (let at = spacing - source.smokeDistance; at <= distance; at += spacing) {
           const t = at / distance, px = source.smokeX + dx * t, pz = source.smokeZ + dz * t
-          this.spawn(px + sideX * 0.48, 0.65, pz + sideZ * 0.48, vx, vz, (1 - t) * dt)
-          this.spawn(px - sideX * 0.48, 0.65, pz - sideZ * 0.48, vx, vz, (1 - t) * dt)
+          this.spawn(px, 0.3, pz, vx, vz, (1 - t) * dt, strength)
         }
         source.smokeDistance = (source.smokeDistance + distance) % spacing
-      } else { source.smokeDistance = 0; this.spawn(x, 0.65, z, vx, vz) }
-    } else source.smokeDistance = 0
+        // A stationary burnout still emits. Only top up the distance-based rate, never double it.
+        source.idle += Math.max(0, dt * 14 - distance / spacing)
+        while (source.idle >= 1) { source.idle--; this.spawn(x, 0.3, z, vx, vz, 0, strength) }
+      } else { source.smokeDistance = source.idle = 0; this.spawn(x, 0.3, z, vx, vz, 0, strength) }
+    } else source.smokeDistance = source.idle = 0
     source.smokeX = x; source.smokeZ = z; source.smokeActive = active
   }
 
-  spawn(x: number, y: number, z: number, vx: number, vz: number, age = 0) {
+  spawn(x: number, y: number, z: number, vx: number, vz: number, age = 0, strength = 1) {
     if (this.count === SMOKE_CAPACITY) return
     const i = this.count++ * SMOKE_STRIDE
     const seed = (Math.imul(++this.sequence, 16807) >>> 0) % 997 / 997
@@ -40,10 +50,10 @@ export class SmokeTrail {
     this.particles[i + 1] = y
     this.particles[i + 2] = z
     this.particles[i + 3] = age
-    this.particles[i + 4] = vx * 0.035
-    this.particles[i + 5] = vz * 0.035
-    this.particles[i + 6] = seed
-    this.particles[i + 7] = 2.35
+    this.particles[i + 4] = vx * 0.008
+    this.particles[i + 5] = vz * 0.008
+    this.particles[i + 6] = strength
+    this.particles[i + 7] = 4.5 + seed * 0.8
   }
 
   update(dt: number) {
@@ -63,9 +73,9 @@ export class SmokeTrail {
       const curlX = Math.sin(a) * Math.cos(b) * 0.6 + Math.sin(c) * Math.cos(d) * 0.18
       const curlZ = -Math.cos(a) * Math.sin(b) * 0.6 - Math.cos(c) * Math.sin(d) * 0.18
       const o = count++ * SMOKE_STRIDE
-      p[o] = x + (p[i + 4]! + 0.28 + curlX) * dt
-      p[o + 1] = p[i + 1]! + dt * (0.32 + 0.12 * Math.sin(a + b))
-      p[o + 2] = z + (p[i + 5]! + curlZ) * dt
+      p[o] = x + (p[i + 4]! + this.windX + curlX * 0.6) * dt
+      p[o + 1] = p[i + 1]! + dt * (0.23 + 0.06 * Math.sin(a + b))
+      p[o + 2] = z + (p[i + 5]! + this.windZ + curlZ * 0.6) * dt
       p[o + 3] = age
       p[o + 4] = p[i + 4]! * drag
       p[o + 5] = p[i + 5]! * drag
@@ -82,8 +92,8 @@ export class SmokeTrail {
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity
     for (let n = 0; n < this.count; n++) {
       const i = n * SMOKE_STRIDE, age = p[i + 3]!, t = age / p[i + 7]!
-      const radius = 0.85 + age * 0.95
-      const density = Math.pow(1 - t, 1.3) / (1 + age * 0.7)
+      const radius = 0.55 + age * 0.43
+      const density = p[i + 6]! * Math.pow(1 - t, 1.1) / (1 + age * 0.45)
       out[i] = p[i]!; out[i + 1] = p[i + 1]!; out[i + 2] = p[i + 2]!; out[i + 3] = radius
       out[i + 4] = density; out[i + 5] = age; out[i + 6] = p[i + 6]!; out[i + 7] = style
       minX = Math.min(minX, p[i]! - radius * 1.5); maxX = Math.max(maxX, p[i]! + radius * 1.5)

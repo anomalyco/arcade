@@ -1,10 +1,10 @@
+import { SmokeRenderer } from "./smoke"
+import type { SmokeTrail } from "../game/smoke-trail"
+import { FrameTimer } from "./frame-timer"
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
 import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
-import { SmokeRenderer } from "./smoke"
-import type { SmokeTrail } from "../game/smoke-trail"
-import { FrameTimer } from "./frame-timer"
 
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
@@ -96,16 +96,10 @@ function aabbInFrustum(
 export class Renderer {
   private readonly smoke: SmokeRenderer
   private timer: FrameTimer | null = null
-  private timingTarget: GPUTexture | null = null
-  private timingView: GPUTextureView | null = null
   measure = false
   measureNextFrame() {
     if (!this.device.features.has("timestamp-query")) throw new Error("Total GPU timing requires timestamp-query")
     this.timer ??= new FrameTimer(this.device)
-    if (!this.timingTarget) {
-      this.timingTarget = this.device.createTexture({ size: [this.width, this.height], format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT })
-      this.timingView = this.timingTarget.createView()
-    }
     this.measure = true
   }
   totalGpuMs() { return this.timer!.collect() }
@@ -362,7 +356,6 @@ export class Renderer {
     if (w === this.width && h === this.height && this.hdr) return
     this.width = w
     this.height = h
-    this.timingTarget?.destroy(); this.timingTarget = null; this.timingView = null
     this.msaa?.destroy()
     this.depth?.destroy()
     this.hdr?.destroy()
@@ -619,14 +612,12 @@ export class Renderer {
       p.draw(3)
       p.end()
     }
-    // Benchmark the same final composite into an equal-format/size target, excluding swapchain
-    // presentation fences. Real screenshots continue through the normal canvas path.
-    const fp = enc.beginRenderPass({ timestampWrites: this.measure ? this.timer!.end : undefined, colorAttachments: [{ view: this.measure ? this.timingView! : this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+    const fp = enc.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     fp.setPipeline(this.pipes.composite!)
     fp.setBindGroup(0, g.composite)
     fp.draw(3)
     fp.end()
-    if (this.measure) this.timer!.finish(enc)
+    if (this.measure) this.timer!.finish(enc, this.context.getCurrentTexture().createView())
     this.measure = false
     d.queue.submit([enc.finish()])
   }

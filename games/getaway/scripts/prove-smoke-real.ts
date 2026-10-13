@@ -91,6 +91,6 @@ try {
     proof.push({ style, poses, samples })
     console.log("Captured",style,"max",Math.max(...samples.map(s=>s.connected)))
   }
-  writeFileSync(join(out,timing?"timings.json":video?"phone-proof.json":"proof.json"),JSON.stringify({ adapter, errors, method: "first-shadow-begin to final-composite-end hardware timestamps; equal-format offscreen final target excludes presentation fences; no pass summation; 960x640; nine alternating pairs of eight frozen GPU frames at each of 18/64/92 after warmup", runs:proof },null,2))
+  writeFileSync(join(out,timing?"timings.json":video?"phone-proof.json":"proof.json"),JSON.stringify({ adapter, errors, method: "first-shadow-begin through dependent load/store of the same composite target; marker overhead in both members; no pass summation; 960x640; nine alternating pairs of eight frozen GPU frames at each of 18/64/92 after warmup", runs:proof },null,2))
   if (errors.length) throw new Error(errors.slice(0,5).join("\n"))
 } finally { await browser.close(); await fixture?.close() }

@@ -1,0 +1,65 @@
+{
+  "base": "d662db8aeadbad36541f4419fe236ebda0075d1b",
+  "files": [
+    {
+      "file": "games/getaway/src/game/scene.ts",
+      "theirsSha256": "956fc7c3f4173c9f0cbcf35bd5564c654ec37a8ff3273e94dbafb161de52b091",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/src/render/city/building.ts",
+      "theirsSha256": "420cbe4cea3be2d563541af5b80856cbd2dc96e7a249c37cae13385b61eea072",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/src/render/mesh.ts",
+      "theirsSha256": "0c186ae7b78479be691c98a2ba9b4ea6e922d4a1918f5d869409c10aba5e93ec",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/src/render/renderer.ts",
+      "theirsSha256": "1c26c4f556d4d4220141479ca3315c523daf9e16b0408ebd9f0c98fd575db9e9",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/src/render/shaders.ts",
+      "theirsSha256": "0932721417b2c1a5d0482831217e5297fd1c74d04c4d9382692ef3f5aac03e72",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/src/ui/debug-overlay.ts",
+      "theirsSha256": "ff97ab857e8124a3460f28e60356d92dbdd193a707edc55c97fb2b1c63da07a2",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/tsconfig.scripts.json",
+      "theirsSha256": "224cb5d187fe35bf88021afa626e9ec71c87ca7763942501458c91df595130a7",
+      "conflicts": 0
+    },
+    {
+      "file": "packages/kit/lab-panel.ts",
+      "theirsSha256": "ca64271a7a9c9cc3ca0794838cdc9006d5082d9b6e5eee1aa6e4a0932652f3d9",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/src/render/look.ts",
+      "theirsSha256": "df5fd9ce3d178150e7b58b52cb0aa16fe6323ad9e852dce2cb00a6ff923d1fb2",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/src/ui/look-controls.ts",
+      "theirsSha256": "f609716b009d4283301c7f60405d017bd3b1441a2c9c8c7c0e68521ed77ecfb7",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/scripts/prove-looks.ts",
+      "theirsSha256": "3e424e9d2778443044aa78a0e60833ac11a4256755bcfbbe5933692c51476c15",
+      "conflicts": 0
+    },
+    {
+      "file": "games/getaway/tests/look.test.ts",
+      "theirsSha256": "ff638b305ea2a599934875f3dbd8afdced23b79136b672c952b8dfa5ab27ac48",
+      "conflicts": 0
+    }
+  ]
+}
