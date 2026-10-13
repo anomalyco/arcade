@@ -711,7 +711,18 @@ struct SOut {
   o.color = s.color;
   o.misc = s.misc;
   o.world = world;
-  ${motion ? "o.previous = M.previous * vec4f(world + previousCenter.xyz - s.posSize.xyz, 1.0);" : ""}
+  ${motion ? `o.previous = M.previous * vec4f(world + previousCenter.xyz - s.posSize.xyz, 1.0);
+  // Sweep only tracked transient emission. A gather alone cannot extend a thin flash/tracer silhouette.
+  if (previousCenter.w > 0.5 && (kind == 0 || kind == 4)) {
+    let center = F.viewProj * vec4f(s.posSize.xyz, 1.0);
+    let oldCenter = M.previous * vec4f(previousCenter.xyz, 1.0);
+    let uv = center.xy / center.w * vec2f(0.5, -0.5) + 0.5;
+    let velocity = shutterVelocity(uv, oldCenter);
+    let corner = (o.pos.xy / o.pos.w - center.xy / center.w) * vec2f(0.5, -0.5) * F.screen.xy;
+    if (dot(corner, velocity) < 0.0) {
+      o.pos = vec4f(o.pos.xy - velocity / F.screen.xy * vec2f(2.0, -2.0) * o.pos.w, o.pos.zw);
+    }
+  }` : ""}
   return o;
 }
 

@@ -483,8 +483,8 @@ export class Renderer {
     this.history.begin(continuous)
     if (motion) {
       this.motionData.set((continuous ? old! : f.frame).subarray(0, 16))
-      // A fixed 1/120 s exposure, bounded for high refresh rates and paused captures.
-      this.motionData[16] = continuous ? Math.min(1, 1 / (120 * elapsed)) : 0
+      // A 1/60 s exposure. The shader suppresses subpixel camera drift and caps fast trails.
+      this.motionData[16] = continuous ? Math.min(2, 1 / (60 * elapsed)) : 0
       d.queue.writeBuffer(this.motionBuf, 0, this.motionData)
     }
     this.previousFrame = motion ? f.frame.slice() : null
@@ -545,7 +545,13 @@ export class Renderer {
     if (addCount) d.queue.writeBuffer(this.sprites, addOffset, f.addSprites.buffer, 0, addCount * SPRITE_FLOATS * 4)
     if (motion) {
       this.spriteHistory.set(f.alphaSprites.subarray(0, alphaCount * SPRITE_FLOATS))
-      for (let i = 0; i < addCount; i++) this.history.write(this.spriteHistory, (half + i) * SPRITE_FLOATS, f.addSprites, i * SPRITE_FLOATS, f.addMotionKeys?.[i])
+      for (let i = 0; i < alphaCount; i++) this.spriteHistory[i * SPRITE_FLOATS + 3] = 0
+      for (let i = 0; i < addCount; i++) {
+        const key = f.addMotionKeys?.[i]
+        const at = (half + i) * SPRITE_FLOATS
+        this.history.write(this.spriteHistory, at, f.addSprites, i * SPRITE_FLOATS, key)
+        this.spriteHistory[at + 3] = key?.initial ? 1 : 0
+      }
       d.queue.writeBuffer(this.previousSprites, 0, this.spriteHistory)
     }
 

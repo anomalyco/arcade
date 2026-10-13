@@ -1150,7 +1150,7 @@ export class Game {
       this.motionKeys.record(arr, model)
     }
     for (const g of this.grenades.values()) {
-      this.motionKeys.begin(g)
+      this.motionKeys.begin(g, [g.x, g.z, g.y])
       if (t > g.at + 0.3) {
         this.grenades.delete(g.id)
         continue
@@ -1463,6 +1463,7 @@ export class Game {
     this.debris = this.debris.filter((d) => t - d.t0 < d.life)
     for (const d of this.debris) {
       if (d.model === this.sheetModels.brass && !this.juice.casings) continue
+      this.motionKeys.begin(d, [d.p[0], d.p[1], d.p[2]])
       if (stepDebris(d, adt, this.solids) && me && Math.hypot(d.p[0] - me.x, d.p[2] - me.y) < 10) this.sound.clink(d.p[0] - me.x, d.p[2] - me.y, d.model === this.models.mag.rifle || d.model === this.models.mag.sniper)
       const sink = Math.max(0, t - d.t0 - (d.life - 0.5)) * 0.12
       push(d.model, d.p[0], d.p[1] - sink, d.p[2], d.yaw, [1, 1, 1], d.pitch, d.roll, 0)
@@ -1471,6 +1472,7 @@ export class Game {
     this.sheets = this.sheets.filter((d) => t - d.t0 < d.life)
     for (const d of this.sheets) {
       if (!this.juice[d.kind]) continue
+      this.motionKeys.begin(d, [d.p[0], d.p[1], d.p[2]])
       const age = t - d.t0
       if (d.kind === "paper") {
         if (d.p[1] > 0.02) {
@@ -1547,7 +1549,7 @@ export class Game {
     // Muzzle flashes: a hot core, petals along the barrel and, for the sniper, the brake's side jets.
     this.flashFx = this.flashFx.filter((f) => t - f.t0 < (f.gun === "rifle" ? fxSettings.muzzle.rifleLife : fxSettings.muzzle.heavyLife))
     for (const f of this.flashFx) {
-      this.spriteKeys.begin(f)
+      this.spriteKeys.begin(f, [f.x, f.z, f.y])
       const life = f.gun === "rifle" ? fxSettings.muzzle.rifleLife : fxSettings.muzzle.heavyLife
       const p = (t - f.t0) / life
       const fa = 1 - p
@@ -1573,7 +1575,8 @@ export class Game {
     // Tracers: rifle and shotgun rounds are short streaks flying down the line; the sniper leaves a lingering beam.
     this.tracers = this.tracers.filter((tr) => t - tr.t0 < tr.life)
     for (const tr of this.tracers) {
-      this.spriteKeys.begin(tr)
+      // A 240 m/s tracer moves 4 m per 60 Hz frame; that is flight, not an actor teleport.
+      this.spriteKeys.begin(tr, [tr.x0, tr.z0, tr.y0], 32)
       const len = Math.hypot(tr.x1 - tr.x0, tr.y1 - tr.y0)
       if (len < 0.05) continue
       const rot = Math.atan2(tr.y1 - tr.y0, tr.x1 - tr.x0)
