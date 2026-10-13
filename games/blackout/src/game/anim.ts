@@ -624,6 +624,9 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   const sprint = smooth(a.sprint)
   const port = sprint * (clip ? 0.35 : 1)
   const breath = Math.sin(t * 1.7 + a.seed)
+  const speed = Math.max(0.1, Math.hypot(a.svx, a.svy))
+  const postureX = enhanced ? m.posture.x * a.svx / speed : 0
+  const postureY = enhanced ? m.posture.x * a.svy / speed : 0
 
   // Pelvis: low and bobbing when running, swaying its weight when standing, kept within reach of both feet.
   const legLen = RIG.thigh + RIG.shin - 0.015
@@ -649,13 +652,16 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   if (enhanced) {
     pelvis = yawFrame(pelvisPoint(a), a.aim + clamp(angleDiff(m.pelvis.x + m.twist.x, a.aim), -1.05, 1.05))
     pelvis = roll(pelvis, m.drop.x)
+    // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
+    // both leg reaches remain identical. The waist, shoulders and head lean together.
+    pelvis = pitch(pelvis, -0.7 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
   }
 
   // Lean in the torso's own axes: travel lean and hit pushes come in plan space.
   const ca = Math.cos(a.aim)
   const sa = Math.sin(a.aim)
-  const lx = a.leanX.x + a.hitX.x * 1.4
-  const ly = a.leanY.x + a.hitY.x * 1.4
+  const lx = a.leanX.x + a.hitX.x * 1.4 + postureX
+  const ly = a.leanY.x + a.hitY.x * 1.4 + postureY
   const leanFwd = lx * ca + ly * sa
   const leanSide = -lx * sa + ly * ca
   let gunPitch = 0
@@ -770,7 +776,8 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   // Head follows the aim, looks down at the gun while reloading.
   let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), a.aim + a.hitTwist.x * 1.6 + clamp(a.aimVel * 0.02, -0.25, 0.25))
   if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + a.hitTwist.x)
-  head = pitch(head, -0.1 - look * 1.1 - a.torsoKick.x * 0.6 - fwd * 0.3 + Math.sin(2 * th) * 0.03 * moving)
+  const headLean = fwd - (postureX * ca + postureY * sa)
+  head = pitch(head, -0.1 - look * 1.1 - a.torsoKick.x * 0.6 - headLean * 0.3 + Math.sin(2 * th) * 0.03 * moving)
   head = roll(head, side * 0.5 - a.hitTwist.x * 0.5)
 
   // Legs.

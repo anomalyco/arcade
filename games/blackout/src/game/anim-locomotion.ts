@@ -15,7 +15,7 @@ export function newMotion(x: number, y: number, aim: number) {
     enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
-    bob: spring(), sway: spring(), drop: spring(), twist: spring(),
+    bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(),
     gun: [spring(), spring(), spring()] as [Spring, Spring, Spring],
     swings: [0, 0], durations: [0.2, 0.2], contacts: [1, 1],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
@@ -57,7 +57,7 @@ function reset(a: Avatar): void {
   m.centreX = { x: a.x, v: a.vx }
   m.centreY = { x: a.y, v: a.vy }
   for (const s of [m.pelvis, m.chest, m.head, m.weapon]) { s.x = a.aim; s.v = 0 }
-  for (const s of [m.bob, m.sway, m.drop, m.twist]) { s.x = 0; s.v = 0 }
+  for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture]) { s.x = 0; s.v = 0 }
   m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
@@ -186,6 +186,11 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   stepSpring(m.sway, k, 0.85, dt, support * (0.055 - gait.run * 0.02) * animation.swayScale)
   stepSpring(m.drop, k, 0.85, dt, -support * 0.087 * animation.swayScale)
   stepSpring(m.bob, k, 0.85, dt, (1 - 2 * gait.run) * 0.035 * Math.cos(theta * 2) * a.gait)
+  // Running attitude is separate from root acceleration and contact timing. Spring it through
+  // the walk/run threshold and stopping; no phase oscillator or deeper reach crouch.
+  const forward = (a.svx * Math.cos(a.aim) + a.svy * Math.sin(a.aim)) / Math.max(speed, 0.1)
+  const posture = clamp(animation.runPosture, 0, 0.3) * gait.run * a.gait * smooth(forward) * (1 + 0.25 * smooth((speed - 4.2) / 2.1))
+  stepSpring(m.posture, k, 1, dt, posture)
   const lean = (v: number, accel: number) => clamp((v * 0.025 + accel * 0.007) * animation.leanScale, -0.22, 0.22)
   stepSpring(a.leanX, stiffness(2.5), 1, dt, lean(a.svx, a.acx))
   stepSpring(a.leanY, stiffness(2.5), 1, dt, lean(a.svy, a.acy))

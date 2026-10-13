@@ -119,3 +119,51 @@ test("sprint has flight instead of stretching a locked leg or crouching to reach
   }
   expect(flight).toBeGreaterThan(30)
 })
+
+test("running posture changes the trunk, not cadence, contacts, root height or gun aim", () => {
+  const before = newAvatar("attitude", 0, 0, 0, "rifle"), after = newAvatar("attitude", 0, 0, 0, "rifle")
+  let x = 0, y = 0
+  for (let n = 0; n < 600; n++) {
+    const speed = n < 120 ? n / 120 * 6.3 : n < 360 ? 6.3 : Math.max(0, 6.3 - (n - 360) * 0.06)
+    const direction = n < 240 ? 0 : Math.PI / 4
+    const vx = Math.cos(direction) * speed, vy = Math.sin(direction) * speed
+    x += vx * dt; y += vy * dt
+    animation.runPosture = 0
+    animate(before, dt, n * dt, x, y, vx, vy, 0)
+    animation.runPosture = 0.18
+    animate(after, dt, n * dt, x, y, vx, vy, 0)
+    expect(after.phase).toBe(before.phase)
+    expect(after.feet).toEqual(before.feet)
+    expect(after.motion.swings).toEqual(before.motion.swings)
+    expect(after.motion.toes).toEqual(before.motion.toes)
+    expect(after.body!.pelvis.p).toEqual(before.body!.pelvis.p)
+    expect(after.body!.gun).toEqual(before.body!.gun)
+    expect(after.body!.head.p).toEqual(at(after.body!.torso, 0.02, RIG.neckY, 0))
+    for (let i = 0; i < 2; i++) if (after.feet[i]!.planted) expect(after.body!.ft[i]).toEqual(before.body!.ft[i])
+    if (n === 220) {
+      expect(after.body!.pelvis.x[1]).toBeLessThan(-0.12)
+      expect(after.body!.torso.x[1]).toBeLessThan(before.body!.torso.x[1] - 0.12)
+    }
+  }
+})
+
+test("run lean stays bounded and continuous across acceleration, braking and reversal", () => {
+  for (const posture of [0, 0.18, 0.3]) {
+    animation.runPosture = posture
+    const a = newAvatar("lean-bounds", 0, 0, 0, "rifle")
+    let x = 0, y = 0, previous = 0
+    for (let n = 0; n < 720; n++) {
+      const t = n * dt, speed = t < 2 ? t * 3.15 : t < 4 ? 6.3 : t < 6 ? (6 - t) * 3.15 : t < 8 ? -(t - 6) * 2.1 : t < 10 ? -4.2 : 0
+      const vx = speed * Math.cos(t * 0.12), vy = speed * Math.sin(t * 0.12)
+      x += vx * dt; y += vy * dt
+      animate(a, dt, t, x, y, vx, vy, 0)
+      expect(Number.isFinite(a.motion.posture.x)).toBe(true)
+      expect(a.motion.posture.x).toBeGreaterThanOrEqual(0)
+      expect(a.motion.posture.x).toBeLessThanOrEqual(posture * 1.25 + 1e-9)
+      expect(Math.abs(a.motion.posture.x - previous)).toBeLessThan(0.035)
+      expect(Math.abs(Math.asin(a.body!.torso.x[1]))).toBeLessThan(0.75)
+      expect(bodyJoints(a.body!, a.gun).flat().every(Number.isFinite)).toBe(true)
+      previous = a.motion.posture.x
+    }
+  }
+})

@@ -7,6 +7,7 @@ export const animation = {
   swayScale: 1.6,
   twistScale: 1.6,
   leanScale: 1,
+  runPosture: 0.18,
   bodyHz: 3,
   footCentreHz: 4,
   chestHz: 5,
@@ -26,6 +27,7 @@ export const animationControls: LabControl[] = [
   range("swayScale", "Sway", 0, 2, 0.1),
   range("twistScale", "Twist", 0, 2, 0.1),
   range("leanScale", "Lean", 0, 1.5, 0.1),
+  range("runPosture", "Run posture · rad", 0, 0.3, 0.01),
   range("bodyHz", "Pelvis spring · Hz", 1, 8, 0.25),
   range("footCentreHz", "Foot centre · Hz", 2, 8, 0.25),
   range("chestHz", "Chest spring · Hz", 2, 10, 0.25),
@@ -43,6 +45,8 @@ export function animationLab<T extends Record<string, boolean | number | string>
   if (params.has("manual") || params.has("mux") || params.has("bench")) {
     const mode = params.get("animation")
     if (mode === "old" || mode === "new") animation.animationMode = mode
+    const posture = Number(params.get("runPosture"))
+    if (params.has("runPosture") && Number.isFinite(posture)) animation.runPosture = Math.max(0, Math.min(0.3, posture))
   }
   for (const key of Object.keys(animation) as (keyof typeof animation)[]) Object.defineProperty(settings, key, {
     enumerable: true, configurable: true,

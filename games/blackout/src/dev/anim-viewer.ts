@@ -19,6 +19,8 @@ import { IDLE_VIEW } from "../../shared/sim/modes"
 import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
 import { animation } from "../game/anim-settings"
 import { Rng } from "../../shared/rng"
+import { at } from "../game/rig"
+import { RIG } from "../render/person"
 
 const SEED = 990001
 const W = 30
@@ -64,6 +66,23 @@ const loop = (t: number, p: number) => ((t % p) + p) % p
 const ease = (u: number) => u * u * (3 - 2 * u)
 
 const ACTORS: Actor[] = [
+  // Fixed-tick running study. Route is an automation input, not a presentation setting.
+  { id: "running", gun: "rifle", at: (t) => {
+    t = loop(t, 3)
+    const route = new URLSearchParams(location.search).get("runRoute") ?? "run"
+    const speed = route === "sprint" ? SPRINT_SPEED : SPEED
+    let distance = speed * t
+    if (route === "acceleration") {
+      const u = Math.max(0, t - 0.3), ramp = Math.min(u, 0.7)
+      distance = SPEED * (ramp * ramp / 1.4 + Math.max(0, u - 0.7))
+    }
+    if (route === "braking") {
+      const u = Math.max(0, t - 1), ramp = Math.min(u, 0.7)
+      distance = SPEED * (Math.min(t, 1) + ramp - ramp * ramp / 1.4)
+    }
+    const direction = route === "diagonal" ? Math.PI / 4 : 0
+    return { x: 8 + Math.cos(direction) * distance, y: 10 + Math.sin(direction) * distance, aim: 0, alive: true }
+  } },
   // Automation choreography: 2 seconds per beat, fixed root/aim and camera for both A/B paths.
   {
     id: "proof", gun: "rifle",
@@ -170,7 +189,7 @@ class ScriptSession implements Session {
   private kills = 0
 
   constructor(only: string[] | null) {
-    this.actors = ACTORS.filter((a) => only ? only.includes(a.id) : a.id !== "proof")
+    this.actors = ACTORS.filter((a) => only ? only.includes(a.id) : a.id !== "proof" && a.id !== "running")
   }
 
   latest() {
@@ -198,6 +217,7 @@ class ScriptSession implements Session {
       const s = a.at(t)
       const p = this.prev.get(a.id) ?? { x: s.x, y: s.y, shots: 0, reloads: 0, alive: s.alive }
       const cut = a.id === "proof" && Math.floor(t / 2) !== Math.floor((t - dt) / 2)
+        || a.id === "running" && Math.floor(t / 3) !== Math.floor((t - dt) / 3)
       const vx = dt > 0 && !cut ? (s.x - p.x) / dt : 0
       const vy = dt > 0 && !cut ? (s.y - p.y) / dt : 0
       const shots = a.shots?.(t) ?? 0
@@ -286,6 +306,7 @@ async function main() {
   const info = document.getElementById("info")!
   const frame = (dt: number) => {
     if (only?.includes("proof") && Math.floor((session.t + dt) / 2) !== Math.floor(session.t / 2)) game.avatars.delete("proof")
+    if (only?.includes("running") && Math.floor((session.t + dt) / 3) !== Math.floor(session.t / 3)) game.avatars.delete("running")
     clock += dt * 1000
     game.update(dt, input, cam, innerWidth, innerHeight, clock)
     const fid = params.get("follow") ?? (only?.length === 1 ? only[0] : null)
@@ -332,7 +353,18 @@ async function main() {
     return out.toDataURL("image/jpeg", 0.9)
   }
   w.ready = true
-  Object.assign(window, { animProof: { game, session, animation, adapter: adapter!.info } })
+  Object.assign(window, { animProof: { game, session, animation, adapter: adapter!.info, step: frame,
+    sample: () => {
+      const a = game.avatars.get("running")
+      if (!a?.body) return null
+      const b = a.body
+      const angles = (f: typeof b.pelvis) => ({ pitch: Math.atan2(f.x[1], Math.hypot(f.x[0], f.x[2])), roll: Math.asin(Math.max(-1, Math.min(1, -f.z[1]))), yaw: Math.atan2(f.x[2], f.x[0]) })
+      return { time: session.t, root: [a.x, a.y], velocity: [a.vx, a.vy], aim: a.aim, phase: a.phase, duty: a.duty,
+        feet: a.feet, motion: a.motion, pelvis: angles(b.pelvis), chest: angles(b.torso), head: angles(b.head),
+        pelvisPosition: b.pelvis.p, headPosition: b.head.p, shoulders: [at(b.torso, 0, RIG.shoulderY, -RIG.shoulderW), at(b.torso, 0, RIG.shoulderY, RIG.shoulderW)],
+        boots: b.ft, gun: b.gun, lean: [a.leanX.x, a.leanY.x], seed: a.seed }
+    },
+  } })
   if (manual) return
   let last = performance.now()
   let fps = 60

@@ -106,6 +106,36 @@ a death frame strip. Stills and encoded run/death frames were inspected. Continu
 cost have not been measured. Reproduce encoding with `bash scripts/animation-film.sh` and the sheet with
 `python3 scripts/animation-sheet.py` (Pillow required).
 
+### Running attitude revision
+
+The first New gait lost the old run's forward attitude. A fixed-speed, 60-frame steady sample measured chest pitch
+at about 26°/47° in Old versus 9°/11° in New at 4.2/6.3 m/s. New also removed the pelvis's 9.7° forward pitch and
+moved its hips backward enough to keep the head nearly over the root. This was a pose change, not only a camera effect.
+
+`anim-locomotion.ts` now springs a separate running-posture value through the existing walk/run transition, with
+25% more at sprint speed and a forward-travel weight. `anim.ts` pitches the pelvis about its rolled hip-to-hip axis,
+then gives the chest the same travel-directed attitude. The hip joints retain their exact positions; the head stays
+attached and compensates its pitch, and the weapon keeps its independent world frame. Root acceleration lean,
+support drop, pelvis yaw and chest counter-rotation keep their existing roles.
+
+Animation → Run posture defaults to 0.18 rad. Zero reproduces the pre-revision New pose: 720-frame sequences of
+Old and zero-posture New matched the saved `39ef8bf` bodies exactly, including seeded fire and hit events. The new
+default measures roughly 7°/18° pelvis/chest pitch at run and 9°/23° at sprint. Fifteen animation cases include exact
+current/refined agreement on cadence, contact state, toe locks, pelvis position and weapon pose, plus finite joints
+and bounded, continuous posture through acceleration, braking and reversal. The earlier cadence limitation remains.
+
+`scripts/prove-running.ts` captures the real viewer/Game/Renderer on headless Metal. Its three-way comparison uses
+Old, current New (`runPosture=0`) and refined New, with five matched routes and gameplay, side and three-quarter
+cameras. The film uses identical ticks, root trajectories, aims and seeds. New/refined phases are exactly equal;
+Old's different gait clock is shown honestly. Separate ten-phase strips normalize successive left-foot touchdowns
+to the nearest 60 Hz frame, with actual fractions printed. `running-sheet.py` checks the pair's captured state;
+`running-film.py` adds labels and quarter-speed repeats without changing the simulation or scaling its pixels.
+
+Four screenshot-anchored paintovers under the dated running artifacts informed trunk attitude. Their minor weapon
+placement/free-leg deviations are not reproduced: contacts and weapon transforms are tested against the actual
+current pose. Paintovers are art targets, not biomechanical measurements. Continuous playback still needs visual
+review; sampled images and numerical checks do not establish it. Runtime CPU/GPU cost is unmeasured.
+
 ## Rendering (WebGPU)
 
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
