@@ -25,8 +25,10 @@ import type { CombatWorld } from "../../shared/combat"
 import { playerVehicle } from "../../shared/ops"
 import { type VehicleKind, vehicleCode, vehicleOfCode } from "../../shared/vehicles"
 import { Flight } from "./flight"
+import { landTarget } from "../../shared/landing"
+import { landingVehicle } from "../../shared/vehicles"
 import type { DrawnShip } from "../game/game"
-import { type Hull, deckOpen } from "../../shared/fleet"
+import type { Hull } from "../../shared/fleet"
 import { ShipHud } from "../weapons/ship-hud"
 import { FlightHud } from "./hud"
 import { FlightInput } from "./input"
@@ -93,19 +95,21 @@ export class FlightModule {
   private tuple: PlaneTuple = [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]
   private models: PlaneModels | null = null
   private world = { sea: null as Sea | null, arch: null as Archipelago | null, ships: [] as readonly Ship[] }
-  /** Friendly carriers with an open deck, as drawn last frame: where the jet may land. */
-  private landables: DrawnShip[] = []
+  /** Every carrier as drawn last frame (with its team) and every hull: where the jet may land (shared/landing.ts). */
+  private drawnShips: readonly DrawnShip[] = []
+  private hulls: ReadonlyMap<number, Hull> | null = null
+  private seaT = 0
   /** Own ship health, the damage flash and enemy ship health in the air (src/weapons/ship-hud.ts). */
   readonly shipHud = new ShipHud()
   private recovering = false
   /** Granted before the hull was drawn: place the jet on the first deck seen. */
   private unplaced = false
-  private time = 0
   /** Guns, missiles, flares and everyone's weapon effects (src/weapons/weapons.ts). */
   readonly weapons: Weapons
   /** Every jet's engine, flybys, catapult, trap and cockpit sound (src/audio/jet-audio.ts). */
   readonly audio = new JetAudio()
   private weaponsNet: WeaponsNet
+  private weaponInput: WeaponInput
   private wasArmed = false
   private crew: Crew | null = null
   /** Each other pilot's last seen sortie: a new one is a fresh jet with full health and stores. */
@@ -135,7 +139,8 @@ export class FlightModule {
       lock: (target, locked) => this.net.sendSeek(target, locked),
       shipHits: (ship, n) => this.net.sendShipHits(ship, n),
     }
-    this.weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), new WeaponInput(canvas), null)
+    this.weaponInput = new WeaponInput(canvas)
+    this.weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), this.weaponInput, null)
     this.boom = new Explosions(renderer)
     // Shot-down jets break apart (seeded by pilot and sortie, so every client sees the same pieces).
     this.weapons.breakup = {
@@ -196,10 +201,9 @@ export class FlightModule {
     f.onRespawn = () => this.recover("crashed")
     // Landed on another friendly carrier: the room moves the pilot aboard it if it has room.
     f.onLanded = () => {
-      const on = f.landingShip && "id" in f.landingShip ? f.landingShip.id : undefined
+      const on = f.landingShip?.id
       this.recover("landed", on !== undefined && on !== this.ctx?.ship ? on : undefined)
     }
-    f.landables = this.landables
     this.unplaced = !ship
     if (ship) f.toDeck(ship)
     else {
@@ -218,6 +222,7 @@ export class FlightModule {
     this.ctx = null
     this.pose = null
     this.recovering = false
+    this.weaponInput.flaresBlocked = false
     this.flight.idle()
     this.weapons.land()
     this.wasArmed = false
@@ -236,6 +241,12 @@ export class FlightModule {
     if (!ctx || f.phase === "idle") return false
     const deck = ctx.deck()
     f.readInput(dt, paused)
+    // "F LAND": near a friendly carrier with an open deck, F lands (and drops no flares).
+    const me = this.crew && playerOf(this.crew, this.net.id)
+    const target = f.phase === "flying" && me ? landTarget(f.plane, f.airborne, this.drawnShips, me.team, this.hulls, this.seaT, landingVehicle(f.vehicle)) : null
+    f.landPrompt = !!target
+    this.weaponInput.flaresBlocked = !!target
+    if (target && !paused && this.input.land) f.land(target)
     if (deck) {
       // The first sight of the deck places the jet (start may have come before the hull was drawn).
       if (this.unplaced) {
@@ -245,8 +256,6 @@ export class FlightModule {
       }
       if (t - f.plane.t > 2 || t < f.plane.t - 1) f.plane.t = t - PLANE.tick
       this.world.ships = ctx.ships?.() ?? [deck]
-      // The landing autopilot captures on any friendly carrier with an open deck (own first).
-      this.landables.sort((a, b) => (a.id === ctx.ship ? -1 : b.id === ctx.ship ? 1 : 0))
       while (f.plane.t + PLANE.tick <= t) {
         f.tick(deck, this.world)
         // Weapons ride along while the jet flies (and while it lands: a target, but nothing fires).
@@ -308,7 +317,7 @@ export class FlightModule {
       s[6] = r(l.pitch, 1e4)
       s[7] = r(l.bank, 1e4)
       // qw carries the carrier it lands on when that isn't its own (0: own), so others place it on the right hull.
-      const on = f.landingShip && "id" in f.landingShip ? (f.landingShip.id ?? 0) : 0
+      const on = f.landingShip?.id ?? 0
       s[8] = on !== this.ctx?.ship ? on : 0
     } else {
       s[2] = r(mode === 0 ? (f.launch?.z ?? 0) : p.x, 1e2)
@@ -334,7 +343,6 @@ export class FlightModule {
 
   /** Every frame, after the camera is placed: every jet drawn. (Launching is the SHIP OPERATIONS menu's job.) */
   frame(v: FlightFrame): void {
-    this.time += v.dt
     const airborne = this.ctx !== null && this.flight.phase !== "idle"
     if (!airborne) this.hud.update(null)
 
@@ -344,10 +352,11 @@ export class FlightModule {
     // A jet rescued from a sunk carrier flies on as a pilot of the ship it was moved to.
     if (this.ctx && me && me.ship !== this.ctx.ship && me.plane >= 0) this.ctx.ship = me.ship
     const hulls = v.hulls
+    this.hulls = hulls ?? null
+    this.seaT = v.t
     if (v.ships) {
       this.world.ships = v.ships
-      this.landables.length = 0
-      for (const s of v.ships) if (me && s.team === me.team && deckOpen(hulls?.get(s.id), v.t)) this.landables.push(s)
+      this.drawnShips = v.ships
     }
     if (v.crew)
       for (const p of v.crew.players) {

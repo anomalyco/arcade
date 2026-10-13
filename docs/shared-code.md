@@ -240,6 +240,11 @@ Remaining migration targets: split material-specific
 scene shading from the shared WGSL contract; generalize the map-aware LightCuller when another game needs its
 monitor/bounce caches. The Outbreak map/lighting writer and gameplay Session stay game-owned.
 
+Custom discard routing is separate from appearance hooks. `solidCutaway` defaults to the old `cutaway` hook;
+Outbreak explicitly leaves it empty and marks roof/high chunks with `LevelChunk.customCutaway`. Pure opaque
+triangles have no screen cutaway bounds, while walls retain the existing screen test. Other consumers retain
+their existing shader and routing behavior. Measurement and limits: `perf/outbreak-performance.md`.
+
 Getaway's renderer and input are not migrated in this milestone. See `games/outbreak/README.md` for proof and limits.
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments

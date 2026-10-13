@@ -1,3 +1,4 @@
+import { catapultTime } from "../shared/launch"
 import { describe, expect, test } from "bun:test"
 import {
   CAPACITY,
@@ -156,9 +157,12 @@ describe("helm and pilots", () => {
     const s = c.ships[0]!
     for (let i = 2; i <= 5; i++) add(c, i, s.id)
     expect(runOp(c, 2, "hornet", 10).events).toEqual([{ k: "launch", player: 2, ship: s.id, slot: 0 }])
-    expect(runOp(c, 3, "hornet", 10).events).toEqual([{ k: "launch", player: 3, ship: s.id, slot: 1 }])
-    expect(runOp(c, 2, "hornet", 10).error).toBe("flying")
-    expect(runOp(c, 4, "hornet", 10).error).toBe("in-use")
+    // One catapult per ship: the next jet goes once the first has left the bow.
+    expect(runOp(c, 3, "hornet", 20).error).toBe("catapult-busy")
+    const cat = 10 + catapultTime("hornet") * 1000
+    expect(runOp(c, 3, "hornet", cat).events).toEqual([{ k: "launch", player: 3, ship: s.id, slot: 1 }])
+    expect(runOp(c, 2, "hornet", cat).error).toBe("flying")
+    expect(runOp(c, 4, "hornet", cat).error).toBe("in-use")
     expect(playerOf(c, 3)).toMatchObject({ plane: 1, sortie: 1 })
     check(c)
     const out = recover(c, 2, "crashed", 1000)
@@ -168,7 +172,7 @@ describe("helm and pilots", () => {
     expect(runOp(c, 4, "hornet", 1000 + CREW.recharge).events).toEqual([{ k: "launch", player: 4, ship: s.id, slot: 0 }])
     expect(recover(c, 3, "landed", 30_000).events).toEqual([{ k: "recover", player: 3, ship: s.id, slot: 1, how: "landed", readyAt: 30_000 }])
     expect(recover(c, 3, "landed", 30_000).error).toBe("not-flying")
-    expect(runOp(c, 5, "hornet", 30_000).error).toBeUndefined()
+    expect(runOp(c, 5, "hornet", 40_000).error).toBeUndefined()
     check(c)
   })
 

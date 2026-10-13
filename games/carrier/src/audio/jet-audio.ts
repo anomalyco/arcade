@@ -1,8 +1,10 @@
 import { LANDING } from "../../shared/landing"
+import { LAUNCH, STROKE } from "../../shared/launch"
 import type { PlaneTuple } from "../../shared/protocol"
 import type { VehicleKind } from "../../shared/vehicles"
 import type { PlaneDrawPose } from "../render/plane-pass"
 import { type BoomKind, boomsFor } from "./jet-boom"
+import { CatapultVoice } from "./jet-catapult"
 import { CockpitBed } from "./jet-cockpit"
 import { JetVoice, makeVoiceInput } from "./jet-engine"
 import {
@@ -35,7 +37,7 @@ export type OwnJet = {
   readonly vehicle: VehicleKind
   readonly draw: { x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number; vx: number; vy: number; vz: number; throttle: number; boosting: number; stall: number; g: number; brake: number }
   readonly plane: { crashed: string }
-  readonly launch: { phase: string } | null
+  readonly launch: { phase: string; progress?: number } | null
   readonly landing: { phase: string } | null
   readonly cam: { mode: string }
 }
@@ -87,6 +89,14 @@ type Track = {
   rpm: number
   doppler: number
   fresh: boolean
+  /** The throttle as heard: the sim's, smoothed (no filter jumps when it changes). */
+  thrA: number
+  /** Seconds since launchStart (-1: not launching), progress 0..1 along the stroke, and its catapult voice. */
+  launchT: number
+  progress: number
+  catStart: boolean
+  catEnd: boolean
+  cat: CatapultVoice | null
   score: number
   voice: JetVoice | null
   watch: FlybyWatch
@@ -100,7 +110,7 @@ type Track = {
   crashKey: number
 }
 
-type JetEvent = { type: "burner" | "catapult" | "trap" | "gear-up" | "crash"; own: boolean; x: number; y: number; z: number; water: boolean }
+type JetEvent = { type: "burner" | "trap" | "gear-up" | "crash"; own: boolean; x: number; y: number; z: number; water: boolean }
 
 /**
  * Every jet's sound. The flight module feeds it each frame (`own`, `remote`, `crash`, then `frame` with the camera):
@@ -118,6 +128,8 @@ export class JetAudio {
   private tracks = new Map<number, Track>()
   private order: Track[] = []
   private dying: JetVoice[] = []
+  private cats: CatapultVoice[] = []
+  private testCat: { voice: CatapultVoice; t: number } | null = null
   /** The carriers near the camera (fed by `ships`), and the interface sounds. */
   readonly shipAudio: ShipAudio
   private shipList: [number, ShipLike][] = []
@@ -198,6 +210,12 @@ export class JetAudio {
         rpm: 0.64,
         doppler: 1,
         fresh: true,
+        thrA: 0,
+        launchT: -1,
+        progress: 0,
+        catStart: false,
+        catEnd: false,
+        cat: null,
         score: 0,
         voice: null,
         watch: new FlybyWatch(),
@@ -265,9 +283,11 @@ export class JetAudio {
 
     // Events from phase changes.
     const lp = f.launch?.phase ?? ""
-    if (phase === "launching" && lp !== this.ownLaunch) {
-      if (lp === "stroke") this.event("catapult", true, p.x, p.y, p.z)
-    }
+    // launchStart (shared/launch.ts: ready → stroke): the engine surges from idle and the catapult voice starts;
+    // launchEnd (stroke → off the bow): the catapult's rush lets go.
+    if (phase === "launching" && lp === "stroke" && this.ownLaunch !== "stroke") this.launchStart(t)
+    t.progress = f.launch?.progress ?? t.progress
+    if (this.ownLaunch === "stroke" && lp !== "stroke") t.catEnd = true
     const ld = f.landing?.phase ?? ""
     if (phase === "landing" && this.ownLanding === "approach" && ld === "trap") this.event("trap", true, p.x, p.y, p.z)
     if (crashed && this.ownPhase !== "crashed" && this.ownPhase !== "" && f.plane.crashed !== "shot" && f.plane.crashed !== "lost") this.event("crash", true, p.x, p.y, p.z, f.plane.crashed === "sea")
@@ -294,6 +314,13 @@ export class JetAudio {
     c.brake = p.brake
   }
 
+  /** launchStart: the engine surges (a fast launch spool, the afterburner lighting 0.3 s in) and the catapult starts. */
+  private launchStart(t: Track): void {
+    t.launchT = 0
+    t.progress = 0
+    t.catStart = true
+  }
+
   /** Another player's jet this frame: its draw pose and newest relayed tuple (shared/protocol.ts PlaneTuple). */
   remote(id: number, pose: PlaneDrawPose, tuple: PlaneTuple): void {
     const t = this.track(id, pose.kind ?? "hornet")
@@ -311,11 +338,13 @@ export class JetAudio {
     t.throttle = pose.throttle
     t.boost = pose.burner > 0.5 ? 1 : 0
     const mode = tuple[1]
-    // The catapult fires the moment the spool reaches full throttle on the deck (shared/launch.ts), as drawn.
+    // launchStart as drawn: on the deck the throttle jumps from idle to full the instant the stroke begins.
     if (mode === 0 && pose.throttle >= 0.985 && !t.launched) {
       t.launched = true
-      this.event("catapult", false, pose.x, pose.y, pose.z)
+      this.launchStart(t)
     }
+    if (t.launched && mode === 0) t.progress = clamp((tuple[2] - LAUNCH.startZ) / STROKE, 0, 1)
+    if (t.cat && mode !== 0) t.catEnd = true
     // A new relayed sample: traps (mode 3 crossing the wires).
     if (tuple[0] !== t.snapT) {
       const z = mode === 0 ? tuple[2] : mode === 3 ? tuple[4] : 0
@@ -374,6 +403,14 @@ export class JetAudio {
   }
 
   /** Plays an event in front of the camera (the debug tab). */
+  /** A catapult stroke in front of the camera (the debug tab): 4.2 s, then released. */
+  testLaunch(): void {
+    if (!this.mixer.ctx) return
+    const voice = new CatapultVoice(this.mixer, null, 0)
+    this.cats.push(voice)
+    this.testCat = { voice, t: 0 }
+  }
+
   testEvent(type: JetEvent["type"]): void {
     const [ex, ey, ez] = this.eye as [number, number, number]
     const f = this.fwd
@@ -439,7 +476,7 @@ export class JetAudio {
     const inCockpit = this.ownSeen && this.ownCockpit.interior > 0.5
     // A fresh jet starts in its view; switching views crossfades.
     const fresh = this.tracks.get(OWN)?.fresh ?? false
-    this.interior += ((inCockpit ? 1 : 0) - this.interior) * (fresh ? 1 : ease(dt, 0.08))
+    this.interior += ((inCockpit ? 1 : 0) - this.interior) * (fresh ? 1 : ease(dt, 0.2))
     m.setCockpit(this.interior)
 
     // The test jet.
@@ -486,8 +523,21 @@ export class JetAudio {
     for (const t of this.tracks.values()) {
       if (t.seen !== frame) continue
       const own = t.id === OWN
-      t.rpm = t.fresh ? rpmFor(t.throttle) : spoolStep(t.rpm, rpmFor(t.throttle), dt)
-      t.burner += (t.boost - t.burner) * ease(dt, t.boost > t.burner ? 0.18 : 0.4)
+      // The launch surge: idle to full in ~0.7 s with the afterburner lighting 0.3 s in; otherwise the normal spool.
+      const launching = t.launchT >= 0
+      if (launching) t.launchT = t.launchT + dt > 2 ? -1 : t.launchT + dt
+      const boost = launching && t.launchT < 0.3 ? 0 : t.boost
+      if (t.fresh) {
+        t.rpm = rpmFor(t.throttle)
+        t.thrA = t.throttle
+      } else if (launching) {
+        t.rpm += (rpmFor(t.throttle) - t.rpm) * ease(dt, 0.25)
+        t.thrA += (t.throttle - t.thrA) * ease(dt, 0.22)
+      } else {
+        t.rpm = spoolStep(t.rpm, rpmFor(t.throttle), dt)
+        t.thrA += (t.throttle - t.thrA) * ease(dt, 0.3)
+      }
+      t.burner += (boost - t.burner) * ease(dt, boost > t.burner ? 0.18 : 0.4)
       // The afterburner lighting: a soft thump and a swell of roar.
       if (t.boost > 0.5 && t.lit < 0.5 && !t.fresh && t.mode === 1) this.event("burner", own, t.x, t.y, t.z)
       t.lit = t.boost
@@ -498,11 +548,27 @@ export class JetAudio {
       const rvx = t.vx - lv.x
       const rvy = t.vy - lv.y
       const rvz = t.vz - lv.z
-      const dop = own && inCockpit ? 1 : dopplerRatio(dx, dy, dz, rvx, rvy, rvz, JET_TUNE.doppler)
+      // Your own jet never shifts: the camera rides with it (chase or cockpit), so its perspective stays steady.
+      const dop = own ? 1 : dopplerRatio(dx, dy, dz, rvx, rvy, rvz, JET_TUNE.doppler)
       t.doppler = t.fresh ? dop : t.doppler + (dop - t.doppler) * ease(dt, 0.12)
       t.fresh = false
       t.score = own ? Number.POSITIVE_INFINITY : distanceGain(d, ENGINE_REF, ENGINE_ROLLOFF) * (0.45 + 0.55 * t.throttle + 0.5 * t.burner) * (t.voice ? 1.3 : 1)
       if (!muted && (own || t.score > 0.01)) order.push(t)
+      // The catapult: one live voice from launchStart, following the stroke, released at launchEnd.
+      if (t.catStart && !muted) {
+        t.catStart = false
+        t.cat?.release()
+        const head = own && inCockpit
+        t.cat = new CatapultVoice(m, head ? null : { ...local(t.x, t.y, t.z)! }, head ? 0 : d)
+        this.cats.push(t.cat)
+      }
+      if (t.cat) {
+        if (t.catEnd || t.progress >= 1) {
+          t.cat.release()
+          t.cat = null
+        } else t.cat.update(t.progress, own && inCockpit ? null : local(t.x, t.y, t.z), d)
+      }
+      t.catEnd = false
       // A close pass coming up: line a flyby take up with it.
       if (!own && (t.mode === 1 || t.mode === 3)) {
         const a = closestApproach(dx, dy, dz, rvx, rvy, rvz, this.approach)
@@ -518,6 +584,21 @@ export class JetAudio {
           }
           if (plan.boom) this.sfx.boom(0.7 * JET_TUNE.sfx, { at: local(t.x, t.y, t.z), delay: plan.t, bus: "flyby" })
         }
+      }
+    }
+
+    for (let i = this.cats.length - 1; i >= 0; i--) {
+      const c = this.cats[i]!
+      c.tick()
+      if (c.done) this.cats.splice(i, 1)
+    }
+    if (this.testCat) {
+      this.testCat.t += dt
+      const p = Math.min(1, (this.testCat.t / 4.2) ** 2)
+      this.testCat.voice.update(p, null, 0)
+      if (p >= 1) {
+        this.testCat.voice.release()
+        this.testCat = null
       }
     }
 
@@ -539,6 +620,11 @@ export class JetAudio {
     }
     for (const t of this.tracks.values()) {
       if (t.seen !== frame || muted) this.drop(t)
+      // A jet gone mid-stroke (crashed, left): its catapult lets go.
+      if (t.seen !== frame && t.cat) {
+        t.cat.release()
+        t.cat = null
+      }
       if (frame - t.seen > 120 && t.id !== OWN) this.tracks.delete(t.id)
     }
     for (let i = this.dying.length - 1; i >= 0; i--) {
@@ -590,18 +676,20 @@ export class JetAudio {
     jetCone(nx, ny, nz, (this.eye[0]! - t.x) * inv, (this.eye[1]! - t.y) * inv, (this.eye[2]! - t.z) * inv, this.cone)
     const interior = own ? this.interior : 0
     s.rpm = t.rpm
-    s.throttle = t.throttle
+    s.throttle = t.thrA
     s.burner = t.burner
     s.doppler = t.doppler
     // Inside, the cone means nothing: both ends of the engine reach you through the airframe.
-    s.front = interior > 0.5 ? 0.7 : this.cone.front
-    s.rear = interior > 0.5 ? 1 : this.cone.rear
-    s.level = interior > 0.5 ? 1 : this.cone.level
+    // Your own jet keeps one steady perspective (from behind, as the chase camera hears it; through the airframe in
+    // the cockpit) whatever the camera's angle; other jets get the cone.
+    s.front = own ? (interior > 0.5 ? 0.3 : 0.35) : this.cone.front
+    s.rear = own ? 1 : this.cone.rear
+    s.level = own ? 1 : this.cone.level
     // The engine voice dips under its flyby take around the pass.
     const pass = now - t.passAt
     const duck = 1 - (1 - JET_TUNE.flybyDuck) * Math.exp(-((pass / 1.3) ** 2))
     s.gain = (interior > 0.5 ? 1 : distanceGain(d, ENGINE_REF, ENGINE_ROLLOFF)) * duck
-    s.cutoff = airCutoff(d)
+    s.cutoff = own ? 20000 : airCutoff(d)
     s.x = w.x
     s.y = w.y
     s.z = w.z
@@ -629,14 +717,11 @@ export class JetAudio {
       case "burner":
         s.burnerLight(g * 0.15, o)
         break
-      case "catapult":
-        s.catapult(g, o)
-        break
       case "trap":
         s.trap(g, o)
         break
       case "gear-up":
-        s.gear(true, g * (head ? 0.45 : 0.2), o)
+        s.gear(true, g * 0.2, o)
         break
       case "crash": {
         // The recorded crash for the surface (jet-boom.ts), else the procedural one.

@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9 }
+export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9 }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -297,11 +297,16 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
     var weights = 0.0;
     // World-anchored sub-stratum rotation breaks coherent PCF contours without time-varying noise.
     let phase = ${hooks.smoothShadows ? "0.0" : "hash2(floor(p * 64.0)) - 0.5"};
+    let step = max(stepR * ${hooks.shadowTaps===5?"1.0":"0.5"}, 0.5);
+    var prevLo = -1e9;
+    var prevVis = 0.0;
     for (var k = ${hooks.shadowTaps===5?"-2":"-4"}; k <= ${hooks.shadowTaps===5?"2":"4"}; k++) {
-      let ray = f + (f32(k) + phase) * max(stepR * ${hooks.shadowTaps===5?"1.0":"0.5"}, 0.5);
+      let ray = f + (f32(k) + phase) * step;
       let lo = floor(ray);
-      let a = tapVis(base, lo, d, y, hl, size);
+      let a = select(tapVis(base, lo, d, y, hl, size), prevVis, lo == prevLo);
       let b = tapVis(base, lo + 1.0, d, y, hl, size);
+      prevLo = lo + 1.0;
+      prevVis = b;
       let w = exp(-f32(k * k) * 0.16);
       sum += mix(a, b, fract(ray)) * w;
       weights += w;
@@ -333,7 +338,8 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     count = u32(F.focus.w);
   }
   let plan = world.xz + n.xz * 0.04;
-  for (var i = 0u; i < count; i++) {
+  let firstLight = select(0u, 1u, count > 0u && lights[0].color.w <= 0.001);
+  for (var i = firstLight; i < count; i++) {
     // Most pixels are outside the small monitor pools. Reject using just the position/radius cache line.
     let pos = lights[i].pos;
     let lp = pos.xz;
@@ -695,7 +701,7 @@ fn shadeScene(o: VOut) -> vec4f {
 
 @fragment fn fsSolid(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
   ${hooks.fragmentStart ?? ""}
-  ${hooks.cutaway ?? ""}
+  ${hooks.solidCutaway ?? hooks.cutaway ?? ""}
   return ${motion ? "motionOutput(shadeScene(o), o.pos, o.previous, o.world)" : "shadeScene(o)"};
 }
 `

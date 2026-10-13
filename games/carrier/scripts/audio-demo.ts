@@ -3,6 +3,7 @@
 // 16-bit WAV bytes (base64) plus peak and RMS. Exposed as `globalThis.renderScene(name, base)`.
 import type { PlaneTuple } from "../shared/protocol"
 import type { VehicleKind } from "../shared/vehicles"
+import { LAUNCH } from "../shared/launch"
 import { WEATHER_PRESETS, type WeatherKind, makeWeather } from "../shared/weather"
 import { JetAudio, type OwnJet } from "../src/audio/jet-audio"
 import { BOOM_KINDS, boomsFor } from "../src/audio/jet-boom"
@@ -163,13 +164,20 @@ function flyby(burner: boolean, off = 40, up = burner ? 18 : 28): Scene {
   }
 }
 
-/** Your own catapult launch from the chase camera: line-up, spool (burner lit at the end), the stroke, gear up. */
-function catapult(): Scene {
+/**
+ * Your own launch (shared/launch.ts): parked at idle on the shuttle for 1 s, then launchStart: full throttle and
+ * afterburner with the stroke, eased in over 0.3 s then ~3.5 g down 285 m (`progress`) in 4.2 s, off the bow
+ * (launchEnd) at ~140 m/s, then the climb-out and the gear.
+ */
+function catapult(view: "chase" | "cockpit" = "chase"): Scene {
   const DECK = 20
+  const STROKE_M = 285
+  let run = 0
+  let off = -1
   return {
-    dur: 9,
+    dur: 10,
     setup: (s) => {
-      const o = s.makeOwn("hornet", "chase")
+      const o = s.makeOwn("hornet", view)
       o.phase = "deck"
       o.draw.y = DECK
       yawQ(o.draw, Math.PI)
@@ -179,36 +187,64 @@ function catapult(): Scene {
       const o = s.own!
       const d = o.draw
       let speed = 0
-      if (t < 0.4) {
-        o.phase = "deck"
-        d.throttle = 0.15
-      } else if (t < 1.5) {
+      if (t < 1) {
         o.phase = "launching"
-        o.launch = { phase: "lineup" }
+        o.launch = { phase: "ready", progress: 0 }
         d.throttle = 0.15
-        speed = 14 * Math.sin(((t - 0.4) / 1.1) * Math.PI)
-      } else if (t < 2.5) {
-        o.launch = { phase: "spool" }
-        d.throttle = 0.15 + 0.85 * (t - 1.5)
-        d.boosting = t > 2.05 ? 1 : 0
-      } else if (t < 4.9) {
-        o.launch = { phase: "stroke" }
+        d.boosting = 0
+      } else if (run < STROKE_M) {
+        o.phase = "launching"
         d.throttle = 1
         d.boosting = 1
-        speed = 38.2 * (t - 2.5)
+        const u = t - 1
+        speed = u < 0.3 ? (34.7 * u * u) / 0.6 : 34.7 * (u - 0.15)
+        run += speed * dt
+        o.launch = { phase: "stroke", progress: Math.min(1, run / STROKE_M) }
       } else {
+        if (off < 0) off = t
         o.phase = "flying"
-        o.launch = { phase: "airborne" }
+        o.launch = { phase: "airborne", progress: 1 }
         d.boosting = 0
-        speed = 92 + 4 * (t - 4.9)
+        speed = 141 + 4 * (t - off)
         d.vy = 6
         d.y += d.vy * dt
         // Gear up after 0.8 s, over 2.2 s.
-        s.pose.gear = 1 - Math.max(0, Math.min(1, (t - 5.7) / 2.2))
+        s.pose.gear = 1 - Math.max(0, Math.min(1, (t - off - 0.8) / 2.2))
       }
       d.vz = -speed
       d.z += d.vz * dt
-      s.chase()
+      if (view === "chase") s.chase()
+      else s.cockpit()
+    },
+  }
+}
+
+/**
+ * Cruising after the launch, the engine's character: cruise, to military, a burst of afterburner, back to cruise, then
+ * into the cockpit and back out to the chase camera.
+ */
+function cruise(): Scene {
+  let thr = 0.77
+  return {
+    dur: 20,
+    setup: (s) => {
+      const o = s.makeOwn("hornet", "chase")
+      o.draw.y = 400
+      o.draw.throttle = thr
+      yawQ(o.draw, Math.PI)
+    },
+    step: (s, t, dt) => {
+      const o = s.own!
+      const d = o.draw
+      const want = t < 3 ? 0.77 : t < 9 ? 1 : 0.77
+      thr += Math.max(-0.7 * dt, Math.min(0.7 * dt, want - thr))
+      d.throttle = thr
+      d.boosting = t > 6 && t < 9 ? 1 : 0
+      d.vz = -(140 + 40 * smooth(3, 6, t) + 50 * smooth(6, 9, t) - 90 * smooth(9, 14, t))
+      d.z += d.vz * dt
+      o.cam.mode = t > 12 && t < 16 ? "cockpit" : "chase"
+      if (o.cam.mode === "chase") s.chase()
+      else s.cockpit()
     },
   }
 }
@@ -264,34 +300,42 @@ function landing(): Scene {
 
 /** Another player's catapult launch heard from the deck beside the track. */
 function catapultDeck(): Scene {
-  let z = -80
+  // The jet starts at the stern end of the runway (world z = 120 here) and runs north (-z) 285 m to the bow.
+  let run = 0
   let speed = 0
+  let off = -1
   return {
-    dur: 8,
+    dur: 9,
     setup: (s) => {
-      s.eye = [-30, 22, -100]
+      s.eye = [-30, 22, -20]
       s.fwd = [0.6, 0, -0.8]
       const r = s.makeRemote(9, "f35")
       r.pose.x = 0
       r.pose.y = 22
-      r.pose.z = z
+      r.pose.z = 120
       yawQ(r.pose, Math.PI)
       r.pose.gear = 1
     },
     step: (s, t, dt) => {
       const r = s.remotes[0]!
-      r.pose.throttle = t < 1 ? 0.15 : t < 2 ? 0.15 + 0.85 * (t - 1) : 1
-      r.pose.burner = t > 1.55 && t < 4.4 ? 1 : 0
-      const flying = t > 4.4
-      if (t > 2) speed = flying ? speed + 3 * dt : 38 * (t - 2)
-      z -= speed * dt
-      r.pose.z = z
-      if (flying) r.pose.y += 6 * dt
+      const stroke = t >= 1 && run < 285
+      if (stroke) {
+        const u = t - 1
+        speed = u < 0.3 ? (34.7 * u * u) / 0.6 : 34.7 * (u - 0.15)
+        run += speed * dt
+      } else if (t >= 1) {
+        if (off < 0) off = t
+        speed += 3 * dt
+        r.pose.y += 6 * dt
+      }
+      r.pose.throttle = t < 1 ? 0.15 : 1
+      r.pose.burner = t >= 1 && (stroke || t - off < 0.2) ? 1 : 0
+      r.pose.z -= speed * dt
       const tp = r.tuple
       tp[0] = Math.round(t * 20) / 20
-      tp[1] = flying ? 1 : 0
-      // Mode 0 carries the ship-local catapult z (bow = -z world here, so negate).
-      tp[2] = -z
+      tp[1] = off >= 0 ? 1 : 0
+      // Mode 0 carries the ship-local catapult z (the stroke's progress from LAUNCH.startZ).
+      tp[2] = LAUNCH.startZ + run
       tp[11] = -speed
     },
   }
@@ -599,7 +643,9 @@ const SCENES: Record<string, () => Scene> = {
   "flyby-burner": () => flyby(true),
   "flyby-crack": headOn,
   "flyby-distant": () => flyby(false, 120, 90),
-  catapult,
+  catapult: () => catapult(),
+  "launch-cockpit": () => catapult("cockpit"),
+  cruise,
   "catapult-deck": catapultDeck,
   trap,
   calib,

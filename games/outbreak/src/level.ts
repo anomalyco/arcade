@@ -1,6 +1,6 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
-import { CHUNK, SIZE, frontageEnd, propShape, type Town, type Prop } from "../shared/map"
+import { CHUNK, SIZE, BUILDING_RECTS, frontageEnd, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
@@ -213,13 +213,84 @@ function compileLevel(town: Town): LevelData {
     m.box(p.x - .08, 3.65, p.y - .08, p.x + .7, 3.8, p.y + .08, hex(0x353d3c))
     m.box(p.x + .3, 3.55, p.y - .18, p.x + .8, 3.65, p.y + .18, hex(0xffc980), MAT.lamp, id)
   }
-  const chunks = (list: Mesh[]): LevelChunk[] => list.filter(m => m.count).map(m => {
-    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, top = 0
-    for (let i = 0; i < m.v.length; i += 11) {
-      x0 = Math.min(x0, m.v[i]!); x1 = Math.max(x1, m.v[i]!)
-      z0 = Math.min(z0, m.v[i + 2]!); z1 = Math.max(z1, m.v[i + 2]!); top = Math.max(top, m.v[i + 1]!)
+  const chunks = (list: Mesh[], split = false): LevelChunk[] => list.filter(m => m.count).flatMap(source => {
+    if (!split) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, top = 0
+      for (let i = 0; i < source.v.length; i += 11) {
+        x0 = Math.min(x0, source.v[i]!); x1 = Math.max(x1, source.v[i]!)
+        z0 = Math.min(z0, source.v[i + 2]!); z1 = Math.max(z1, source.v[i + 2]!); top = Math.max(top, source.v[i + 1]!)
+      }
+      return [{ data: source.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
     }
-    return { data: m.pack(), box: [x0, z0, x1, z1], cutBox: [x0, 0, z0, x1, top, z1] }
+    const opaque = new Mesh()
+    const screen = new Mesh()
+    const customByBuilding = BUILDING_RECTS.map(() => new Mesh())
+    const interiorCapByBuilding = BUILDING_RECTS.map(() => new Mesh())
+    for (let i = 0; i < source.v.length; i += 33) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
+      let hasRoof = false, hasScreen = false
+      for (const j of [0, 11, 22]) {
+        const vx = source.v[i + j]!, vy = source.v[i + j + 1]!, vz = source.v[i + j + 2]!
+        const mat = Math.round(source.v[i + j + 9]!)
+        minX = Math.min(minX, vx); maxX = Math.max(maxX, vx)
+        minY = Math.min(minY, vy); maxY = Math.max(maxY, vy)
+        minZ = Math.min(minZ, vz); maxZ = Math.max(maxZ, vz)
+        if (mat === 21) hasRoof = true
+        if (mat === 4 || mat === 9 || mat === 2 || mat === 11) hasScreen = true
+      }
+      let customId = -1
+      let strictlyInsideCutout = false
+      if (hasRoof) {
+        const id = Math.max(0, Math.min(BUILDING_RECTS.length - 1, Math.round(source.v[i + 10]!)))
+        const b = BUILDING_RECTS[id]!
+        customId = id
+        strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] - .35
+      } else if (maxY > 2.8) {
+        for (let id = 0; id < BUILDING_RECTS.length; id++) {
+          const b = BUILDING_RECTS[id]!
+          if (maxX > b[0] + .25 && minX < b[2] - .25 && maxZ > b[1] + .25 && minZ < b[3] - .25) {
+            customId = id
+            strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] - .35 && minY > 2.801
+            break
+          }
+        }
+      }
+      if (customId >= 0) {
+        ;(strictlyInsideCutout ? interiorCapByBuilding[customId]! : customByBuilding[customId]!).v.push(...source.v.slice(i, i + 33))
+      } else if (hasScreen) {
+        screen.v.push(...source.v.slice(i, i + 33))
+      } else {
+        opaque.v.push(...source.v.slice(i, i + 33))
+      }
+    }
+    const pack = (m: Mesh, cutBox?: readonly number[], customCutaway?: boolean | "outside"): LevelChunk[] => {
+      if (!m.count) return []
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, top = 0, z1 = -Infinity
+      for (let i = 0; i < m.v.length; i += 11) {
+        x0 = Math.min(x0, m.v[i]!); x1 = Math.max(x1, m.v[i]!)
+        top = Math.max(top, m.v[i + 1]!)
+        z0 = Math.min(z0, m.v[i + 2]!); z1 = Math.max(z1, m.v[i + 2]!)
+      }
+      return [{ data: m.pack(), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
+    }
+    const screenChunk = (): LevelChunk[] => {
+      if (!screen.count) return []
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, top = 0, z1 = -Infinity
+      for (let i = 0; i < screen.v.length; i += 11) {
+        x0 = Math.min(x0, screen.v[i]!); x1 = Math.max(x1, screen.v[i]!)
+        top = Math.max(top, screen.v[i + 1]!)
+        z0 = Math.min(z0, screen.v[i + 2]!); z1 = Math.max(z1, screen.v[i + 2]!)
+      }
+      return [{ data: screen.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
+    }
+    const customChunks = BUILDING_RECTS.flatMap((b, id) => {
+      const bounds = [b[0] - .1, 0, b[1] - .1, b[2] + .1, 5, b[3] + .1] as const
+      return [
+        ...pack(interiorCapByBuilding[id]!, bounds, "outside"),
+        ...pack(customByBuilding[id]!, bounds, true),
+      ]
+    })
+    return [...pack(opaque), ...screenChunk(), ...customChunks]
   })
   // Indoor sky mask: roofs are cut away, but rooms still receive only subdued daylight.
   const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)
@@ -236,5 +307,5 @@ function compileLevel(town: Town): LevelData {
     data[(z * resolution + x) * 2] = Math.round(contact*255)
     data[(z * resolution + x) * 2 + 1] = indoor ? 32 : 255
   }
-  return { chunks: chunks([...meshes,...props]), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
+  return { chunks: chunks([...meshes,...props],true), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
 }

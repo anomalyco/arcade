@@ -19,6 +19,8 @@ export class WeaponInput {
   private mouseFire = false
   private wheel = 0
   private wheelAt = 0
+  /** F lands instead while the flight HUD offers "F LAND" (src/flight/seam.ts sets this every frame). */
+  flaresBlocked = false
   /** Test hook: when set, overrides the trigger. */
   trigger: boolean | null = null
 
@@ -107,7 +109,7 @@ export class WeaponInput {
 
   /** Flares asked for this frame. */
   get flares(): boolean {
-    return this.enabled && this.pressed("KeyF", "f")
+    return this.enabled && !this.flaresBlocked && this.pressed("KeyF", "f")
   }
 
   endFrame(): void {

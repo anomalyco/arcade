@@ -223,6 +223,22 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 
 ## Rendering (WebGPU)
 
+- **Keep game-owned roof discard out of the opaque entry point, cull off-screen lamps, and pace fixed ticks.**
+  Outbreak used its roof hook in `fsSolid`, mixed floors with screen-cuttable walls, routed exterior tree canopies into
+  the `discard` pipeline, and clamped visible frame deltas at 50 ms without an accumulator. Its level writer now keeps
+  exterior trees and streetlamps in `fsSolid`, gates building roof/chimney `customCutaway` chunks on the player's
+  building footprint, and skips completely interior chimney/roof-cap triangles while inside that building. `main.ts`
+  culls lamps against the camera ground frustum, skips the zero-power sight slot in `lightSum`, reuses shared adjacent
+  rays across `shadowAt` taps, discards the 4× MSAA depth attachment when volumetric smoke is inactive, and paces
+  single-in-flight submissions through `FrameClock` (`shared/clock.ts`, 60 Hz fixed ticks, 12-substep frame cap, 0.5 s
+  hitch debt cap, timestamped input transitions, pause/hidden anchor reset). All 196,722 seed-7 vertices and every
+  captured RGB pixel at 3456×2006 match `main` (`diffPixels = 0` in both street and interior). On M5 Max/Metal at
+  3456×2006, dependent whole-frame GPU intervals fall **26.434→11.623 ms (56.0%)** on the street and
+  **40.320→17.759 ms (56.0%)** in the interior. Across seven 2-second live traversal runs at 3456×1894, fresh-state
+  submission `p95` drops **109.6→32.4 ms** (street) and **138.3→24.4 ms** (interior), fresh states/s rise
+  **15.41→48.26** and **13.29→45.23**, and simulated/wall-time ratios recover from **.623/.546** to **.995/.994**
+  (3.38 m/s out of 3.40 m/s). See `perf/outbreak-performance.md`.
+
 - **Bake fine window coverage separately from soft AO.** Blackout's 12.5 cm moon mask, 18.75 cm blocker march and
   box blur created stepped diagonals and cloudy mullion bands. Exact world-space segment/rectangle intersections and
   2×2 coverage samples in a separate 3.125 cm R8 moon mask fix those edges without changing AO bytes. This costs
@@ -1128,4 +1144,10 @@ Candidates from the code audits; measure and playtest before moving any into the
   cluttered. Each moment now gets one sound (`games/carrier/captures/audio/v6-sounds.md`), and the bank
   (`games/carrier/src/audio/sfx-bank.ts`) caps recorded one-shots at 6 with per-slot cooldowns and priorities:
   explosions duck and outrank weapons, which outrank deck events, thunder, then accents and UI.
+- **Measure amplitude wobble, not just level.** "Feels weird" on carrier's procedural engine (v4) was a 7 dB
+  envelope wobble at 1.5-6 Hz (the std of a 20 ms RMS envelope after removing a 1 s moving average, on offline
+  renders from `games/carrier/scripts/audio-demo.ts`). Removing Doppler and the angle-dependent cone from your own jet (the camera
+  rides with it), slowing the twin-engine beat from 4 cents (≈3 Hz) to 0.6 cents, and halving the afterburner's level
+  drift brought it to 1.3-2 dB. Smoothing the heard throttle (0.3 s) removes filter jumps; matching the cockpit
+  interior's level to the chase view makes a camera switch change colour, not loudness.
 

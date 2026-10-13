@@ -44,6 +44,7 @@
 // Room codes for the lobby live here too, since the server and the client both need them.
 
 import { gunnerAt, makeSlots, opById, opError, readySlot } from "./ops"
+import { catapultTime } from "./launch"
 import { Rng } from "./rng"
 
 export { slotReady } from "./ops"
@@ -107,6 +108,8 @@ export type CrewShip = {
   locked: boolean
   /** Players kicked from it and until when they can't come back (room ms). */
   bans: { player: number; until: number }[]
+  /** Its one catapult is busy with a launch until then (room ms; shared/launch.ts catapultTime). */
+  catapultUntil: number
 }
 
 export type Role = "helm" | "pilot" | "gunner"
@@ -180,6 +183,7 @@ export type CrewError =
   | "flying"
   | "in-use"
   | "recharging"
+  | "catapult-busy"
   | "locked"
   | "kicked"
   | "not-captain"
@@ -364,7 +368,7 @@ function newShip(c: Crew, team: number, by: number | null, now: number, ev: Crew
   let slot = 0
   while (used.has(slot)) slot++
   const { name, hull } = shipName(c.seed, c.made++)
-  const s: CrewShip = { id: c.nextShip++, name, hull, team, slot, helm: null, pilots: [], aircraft: makeSlots(), emptySince: now, captain: null, locked: false, bans: [] }
+  const s: CrewShip = { id: c.nextShip++, name, hull, team, slot, helm: null, pilots: [], aircraft: makeSlots(), emptySince: now, captain: null, locked: false, bans: [], catapultUntil: 0 }
   c.ships.push(s)
   ev.push({ k: "new", ship: s.id, team, by })
   return s
@@ -623,6 +627,8 @@ export function runOp(c: Crew, id: number, opId: string, now: number): Outcome {
   s.aircraft[slot]!.pilot = p.id
   p.plane = slot
   p.sortie++
+  // A jet takes the ship's one catapult until it has left the bow (the boat goes over the side).
+  if (!op.boat) s.catapultUntil = now + catapultTime(op.vehicle ?? "hornet") * 1000
   ev.push({ k: "launch", player: p.id, ship: s.id, slot })
   return done(ev)
 }

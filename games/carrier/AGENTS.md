@@ -28,7 +28,7 @@
   slowly or sunk, 40 s recharge, and you return to the role you launched from; dev harness `boat.html`, see CONTRACTS.md
   "Boat"); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
   flight); Esc frees it, menus free it and give it back. Controls: at the helm W/S throttle, 1-9/0/= presets, A/D rudder; as a pilot the flight keys plus
-  Space/LMB fire, 1/2/3 or wheel/V weapons, F flares (a flight ends only by landing aboard, a crash or being shot down); Tab players and ships (hold, tap to pin: JOIN switches ship or team, CREATE SHIP, captains LOCK, KICK,
+  Space/LMB fire, 1/2/3 or wheel/V weapons, F flares, or near a friendly deck F LAND (a scripted landing; a flight ends only by landing aboard, a crash or being shot down); Tab players and ships (hold, tap to pin: JOIN switches ship or team, CREATE SHIP, captains LOCK, KICK,
   promote); C free camera (WASD pan, drag orbit, wheel zoom); M mute; ` debug menu. Shared rules: `shared/{crew,squad,ops}.ts`.
 - Sound: one mix in `src/audio/mixer.ts`; every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
   `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`). SOUNDS tab in the

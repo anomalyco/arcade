@@ -1,15 +1,16 @@
 // Flight test harness (flight.html): the real sea, sky, islands and the sailing carrier, with a jet on its catapult.
-// Enter runs the takeoff, then you fly; a crash (or landing back aboard) puts you back on the deck. Offline, no
+// Enter runs the takeoff, then you fly; a crash (or F near the carrier, the landing) puts you back on the deck. Offline, no
 // network. URL: ?seed=N (world, default 7), ?ship=0.6 (carrier throttle), ?rudder=0 (carrier rudder -1..1),
 // ?invert (mouse pitch), ?cockpit, ?team=0|1 (accent colour of the jet and the carrier), ?f35 (fly the F-35C). `globalThis.carrier.flight` exposes everything for scripts/flight-shot.ts.
 import "../style.css"
 import "@fontsource/ibm-plex-mono/300.css"
 import { makeArchipelago, type Archipelago } from "../../shared/islands"
+import { landTarget } from "../../shared/landing"
 import { copyPlane, makePlane, quatAxis, quatMul, setPlaneQuat } from "../../shared/plane"
 import { makeSea, seaHeight, type Sea } from "../../shared/sea"
 import { bakeSeabed } from "../../shared/seabed"
 import { SHIP, type Ship, copyShip, headingTo, lerpShip, makeShip, shipStep } from "../../shared/ship"
-import { VEHICLES, type VehicleKind } from "../../shared/vehicles"
+import { VEHICLES, type VehicleKind, landingVehicle } from "../../shared/vehicles"
 import { Wake } from "../game/wake"
 import { ATMOSPHERE, fillAtmosphere } from "../render/atmosphere"
 import { buildCarrier } from "../render/carrier-mesh"
@@ -102,12 +103,12 @@ async function main() {
   const t0 = num("t0", 0)
   const seaTime = () => t0 + (performance.now() - start) / 1000
   const goal = arch.islands[0]
-  const ship: Ship = makeShip(0, 0, goal ? headingTo(0, 0, goal.x, goal.z) : 0, seaTime())
+  const ship: Ship & { id: number; team: number } = Object.assign(makeShip(0, 0, goal ? headingTo(0, 0, goal.x, goal.z) : 0, seaTime()), { id: 0, team: num("team", 0) })
   const shipPrev: Ship = makeShip(0, 0, 0)
   copyShip(ship, shipPrev)
   const shipDraw: Ship = makeShip(0, 0, 0)
   const shipControls = { throttle: shipThrottle, rudder: shipRudder }
-  const team = num("team", 0)
+  const team = ship.team
   // Let the carrier work up speed and settle on the swell before the jet appears.
   for (let i = 0; i < num("warmup", 40) / SHIP.tick; i++) shipStep(ship, shipControls, sea, arch, SHIP.tick)
   ship.t = seaTime()
@@ -172,6 +173,9 @@ async function main() {
     const target = debug.paused ? simT : seaTime()
     if (target - ship.t > 4) ship.t = target - SHIP.tick
     flight.readInput(dt)
+    // "F LAND" near the carrier, as in the game (src/flight/seam.ts).
+    flight.landPrompt = flight.phase === "flying" && !!landTarget(flight.plane, flight.airborne, [ship], team, null, target, landingVehicle(flight.vehicle))
+    if (flight.landPrompt && input.land) flight.land(ship)
     while (ship.t + SHIP.tick <= target) {
       copyShip(ship, shipPrev)
       shipStep(ship, shipControls, sea, arch, SHIP.tick)

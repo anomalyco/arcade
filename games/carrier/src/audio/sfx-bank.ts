@@ -94,6 +94,7 @@ export class SfxBank {
   private started = false
   private last = new Map<string, number>()
   private voices: Voice[] = []
+  private budgetCtx: BaseAudioContext | null = null
   private lastPlayed = new Map<string, number>()
   /** One-shots the budget turned away (readout). */
   dropped = 0
@@ -370,6 +371,12 @@ export class SfxBank {
 
   /** Whether the budget lets `slot` (priority `prio`) start now; makes room by stopping a lesser voice if it must. */
   private admit(slot: string, prio: number, now: number): boolean {
+    // A new context (scripted renders) starts a fresh budget.
+    if (this.budgetCtx !== this.mixer.ctx) {
+      this.budgetCtx = this.mixer.ctx
+      this.voices = []
+      this.lastPlayed.clear()
+    }
     this.voices = this.voices.filter((v) => v.end > now)
     if (now - (this.lastPlayed.get(slot) ?? -1e9) < (SLOT_COOLDOWN[slot] ?? COOLDOWN)) return false
     if (prio <= 1 && this.voices.some((v) => v.prio >= 3 && now - v.start < 0.5)) return false

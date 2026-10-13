@@ -1,28 +1,4 @@
 {
- "catapult-1": {
-  "dur": 6,
-  "peak": 0.48,
-  "lufs": -16.1,
-  "tp": -4.2
- },
- "catapult-2": {
-  "dur": 6,
-  "peak": 0.13,
-  "lufs": -16,
-  "tp": -1.8
- },
- "catapult-3": {
-  "dur": 4.666,
-  "peak": 0.53,
-  "lufs": -15.9,
-  "tp": -6.4
- },
- "catapult-4": {
-  "dur": 5.473,
-  "peak": 1.93,
-  "lufs": -15.9,
-  "tp": -4.9
- },
  "trap-1": {
   "dur": 5,
   "peak": 1.23,

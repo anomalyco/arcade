@@ -1,9 +1,12 @@
+import { catapultTime } from "../shared/launch"
 import { describe, expect, test } from "bun:test"
 import { CREW, type Crew, joinCrew, makeCrew, playerOf, recover, runOp, shipOf } from "../shared/crew"
 import { add } from "./crew-helpers"
 import { OPS, isOpId, makeSlots, opById, opError, playerVehicle, readySlot, shipOps, slotVehicle, slotsOf } from "../shared/ops"
 
 const T = 1_000_000
+/** The ship's one catapult is free again after this long (ms). */
+const G = catapultTime("f35") * 1000
 const HORNET = opById("hornet")!
 const F35 = opById("f35")!
 
@@ -62,7 +65,7 @@ describe("the menu's view", () => {
 
   test("in use, recharging with a countdown, then available again", () => {
     const c = ship()
-    runOp(c, 2, "hornet", T)
+    runOp(c, 2, "hornet", T - G)
     runOp(c, 4, "hornet", T)
     expect(state(c, 6, "hornet", T)).toMatchObject({ state: "in-use", reason: "in-use", slots: [{ player: 2 }, { player: 4 }] })
     // A pilot in the air sees their slot as theirs and everything read-only.
@@ -80,8 +83,8 @@ describe("the menu's view", () => {
 
   test("a jet that lands frees its slot without a recharge", () => {
     const c = ship()
-    runOp(c, 2, "hornet", T)
-    runOp(c, 4, "hornet", T)
+    runOp(c, 2, "hornet", T - 2 * G)
+    runOp(c, 4, "hornet", T - G)
     recover(c, 4, "landed", T + 5)
     expect(state(c, 6, "hornet", T + 5).state).toBe("available")
   })
@@ -102,7 +105,7 @@ describe("Hornets and the F-35C", () => {
     expect(slotVehicle(s, 0)).toBe("hornet")
     expect(slotVehicle(s, 2)).toBe("f35")
     expect(slotVehicle(s, 9)).toBe("hornet")
-    runOp(c, 2, "f35", T)
+    runOp(c, 2, "f35", T - G)
     runOp(c, 4, "hornet", T)
     expect(playerOf(c, 2)!.plane).toBe(2)
     expect(playerVehicle(c, 2)).toBe("f35")
@@ -114,12 +117,12 @@ describe("Hornets and the F-35C", () => {
 
   test("they recharge independently: a lost F-35C leaves the Hornets ready, and a lost Hornet the F-35C", () => {
     const c = ship()
-    runOp(c, 2, "f35", T)
+    runOp(c, 2, "f35", T - 2 * G)
     recover(c, 2, "crashed", T + 1000)
     const f35Ready = T + 1000 + F35.recharge * 1000
     expect(state(c, 6, "f35", T + 1000)).toMatchObject({ state: "recharging", readyIn: F35.recharge * 1000 })
     expect(state(c, 6, "hornet", T + 1000).state).toBe("available")
-    runOp(c, 4, "hornet", T + 2000)
+    runOp(c, 4, "hornet", T + 2000 - G)
     recover(c, 4, "crashed", T + 3000)
     const s = shipOf(c, playerOf(c, 1)!.ship)!
     expect(slotsOf(s, "hornet").map(({ a }) => a.readyAt)).toEqual([T + 3000 + HORNET.recharge * 1000, 0])

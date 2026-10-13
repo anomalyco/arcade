@@ -291,8 +291,10 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   is ready (`runOp`, a `launch` event, `sortie` + 1: a fresh jet on the catapult). Slots are tagged with their op, so
   Hornets and the F-35C recharge independently; `slotVehicle(ship, slot)` / `playerVehicle(crew, id)` give the type a
   slot flies (the room uses it for the combat sim and to stamp relayed jets, the client for the model). The room validates with `opError`
-  (member of the ship, not already flying, helm free / a ready slot; errors `flying`, `in-use`, `recharging`,
-  `helm-taken`, `at-helm`, `bad-op`). `shipOps(crew, me, now)` is the menu's view (state AVAILABLE / active / IN USE /
+  (member of the ship, not already flying, helm free / a ready slot, the ship's one catapult free; errors `flying`,
+  `in-use`, `recharging`, `catapult-busy`, `helm-taken`, `at-helm`, `bad-op`). One catapult per ship: `runOp` sets
+  `CrewShip.catapultUntil` (room ms) to `catapultTime(kind)` (shared/launch.ts: parked, the stroke, 1 s slack) after a
+  jet launch and `opError` refuses further jet launches until then (CATAPULT BUSY). `shipOps(crew, me, now)` is the menu's view (state AVAILABLE / active / IN USE /
   RECHARGING with `readyIn` / unavailable with a reason, and per-slot who / countdown). A new vehicle type = one `OPS`
   entry plus its client module keyed on the slot's `op`.
 - Squads (`shared/squad.ts`): every crewed ship has a `captain`: its creator (CREATE SHIP), or on a room-made ship the
@@ -427,18 +429,25 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `VEHICLE_KINDS`): flight tuning, collision probes, engines, gear height, catapult stroke, approach speed, missile
   rails and bomb stations (body frame from the centre, release order; the first `bay` are inside the weapons bay).
   The Hornet is `PLANE` unchanged. The F-35C: centre 1.2 m, gear 1.05 m, stall 58, blue zone 134, top 180 (230 with
-  the burner) m/s, thrust 14.5, pitch 0.86 / roll 3.0 / yaw 0.36 rad/s, one engine; stroke 2.45 s (89.8 m/s).
+  the burner) m/s, thrust 14.5, pitch 0.86 / roll 3.0 / yaw 0.36 rad/s, one engine; stroke 4.3 s (137 m/s).
   `deckCentreY(kind)` and `landingVehicle(kind)` (shared/landing.ts `LandingVehicle`) carry the geometry into the
   launch and the landing. `LandingVehicle.touch` moves a type's touchdown point (`Landing.touchZ`) so its hook tip
   (`VEHICLES[kind].hookZ`) meets the wires where the Hornet's does: the F-35C's centre touches down ~2 m further aft.
   `shipQuat`/`shipToWorld`/`worldToShip` map ship-local carrier-spec points exactly as `ShipPass` does.
-- `shared/launch.ts` (`startLaunch(ship, plane, kind)`, `launchPose(z, ship, plane, kind)`, `catapult(kind)`):
-  line-up, spool and a 110 m / 2.4 s (Hornet) catapult stroke on `CENTERLINE_X` ending at the bow, glued
-  to the hull pose every step; leaves with the ship's plan velocity plus 92 m/s, nose up, then a 0.5 s autopilot blend.
+- `shared/launch.ts` (`startLaunch(ship, plane, kind)`, `launchPose(z, ship, plane, kind)`, `catapult(kind)`,
+  `catapultTime(kind)`): parked at idle on the shuttle at the stern end of the runway for `LAUNCH.hold` 1 s, then on
+  one step full thrust, the burner and the stroke: `STROKE` 285 m (87% of the runway) on `CENTERLINE_X` to the bow in
+  `VEHICLES[kind].strokeTime` (Hornet 4.2 s, ~141 m/s; `catapult(kind)` derives the acceleration), glued to the hull
+  pose every step; leaves with the ship's plan velocity plus the launch speed, nose up.
+- `shared/landing.ts`: `landTarget(plane, airborne, ships, team, hulls, t, vehicle)` is the "F LAND" prompt (the
+  nearest friendly carrier with an open deck within `LANDING.range` 2 km, under `ceiling`, above stall, `cooldown` 5 s
+  after launch); `startLanding` / `landingStep` fly a scripted landing in the carrier's ship-local frame (curves to a
+  join point behind the stern, a 3.5° glideslope, the trap, a hold) that always ends on the deck (`LANDING.timeout`
+  hard stop) and reports done exactly once. Input is ignored meanwhile; F is flares whenever the prompt is not up.
 - `src/flight/seam.ts` (`FlightModule`) is the game's `FlightSeam`: LAUNCH HORNET in SHIP OPERATIONS → the room gives
-  a ready aircraft slot → `start` → deck → catapult → flight; the auto-landing on its carrier (`recover("landed")`), or
-  2.5 s after a crash, a shoot-down or the edge timeout (`recover("crashed")`) → on deck until the pilot launches again
-  (a destroyed jet's slot recharges for 30 s). Nothing else ends a flight. The seam's `frame` runs every frame for every role
+  a ready aircraft slot → `start` → deck → catapult → flight; F at the prompt lands it (`Flight.land`,
+  `recover("landed")`), or 2.5 s after a crash, a shoot-down or the edge timeout (`recover("crashed")`) → on deck until
+  the pilot launches again (a destroyed jet's slot recharges for 30 s). Nothing else ends a flight. The seam's `frame` runs every frame for every role
   (every jet drawn). No LAUNCH button and no launch key in the game; the offline harness launches with Enter. Camera handoffs ease over ~1.2 s (`flight/blend.ts`);
   `Camera.lookAlong` takes a free up vector and FOV and `main.ts` feeds them to the sea/sky through `FlightView`.
 - Models (`src/render/plane-glb.ts`): `loadPlaneModels()` builds every type's `PlaneModel` (registry `MODEL_SPECS`):
@@ -473,8 +482,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - Controls in flight (`src/weapons/input.ts`), as in Battlefield 3/4 (fire on Space + LMB, 1/2 select). Space or LMB
   under Pointer Lock fires the selected weapon; 1/2/3 select (only weapons the aircraft has); the mouse wheel or V
   cycles; F drops flares (F launches nothing anywhere). Space is no longer nose-up (`src/flight/input.ts`). None of
-  these keys is a movement key on QWERTY, AZERTY or Dvorak. Weapons stay hot while the landing autopilot has the jet:
-  it can be shot and locked, and can flare, but cannot fire.
+  these keys is a movement key on QWERTY, AZERTY or Dvorak. While the HUD offers "F LAND", F lands instead of flaring
+  (`WeaponInput.flaresBlocked`, set by the flight seam). Weapons stay hot while the scripted landing has the jet: it can
+  be shot and locked, but cannot fire or flare.
 - Tuning is in `WEAPONS`:
   - Gun: 50 rps, 1,050 m/s muzzle speed plus the jet's velocity, gravity, 0.32° dispersion hashed from (owner, round),
     a tracer every 3rd round, about 1.4 km range. 2 damage per round within a 6.5 m hit sphere. Overheats after 3.2 s
@@ -621,7 +631,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`
     scales top speed (to 55%) and rudder (to 60%). The room's sim and the helm's prediction both apply it.
   - DECK hits by bombs, missiles or crashes start a 15 s deck fire (the HUD counts it down: "DECK FIRE 12S"). While the deck burns (or the ship sinks),
-    `deckOpen` is false: launching is refused (`deck-fire`, `sinking`) and the landing autopilot won't capture on it.
+    `deckOpen` is false: launching is refused (`deck-fire`, `sinking`) and the "F LAND" prompt skips it.
   - Anything else is the HULL side.
 - Fires: each bomb, missile or crash hit leaves a fire at its ship-local point (at most 8). A fire burns for 45 s,
   and all of them stay lit below 60% health.
@@ -689,9 +699,13 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   get a supersonic crack and a falling whiz at the closest-approach moment, panned to their side. Levels: a burst -14
   dBFS RMS (the recorded loop was -15), cockpit -17, another jet's gun at 600 m -34. The boat's 25 mm and the CIWS were
   already procedural (boat-audio.ts, turret-audio.ts).
-- **One clear sound per moment** (user decision): a moment gets one sound, not layers. The launch is the engine
-  spooling to afterburner, one catapult take at the stroke, then engine and wind (a subtle gear retract; no hold-back
-  clank, shuttle slam, burner whump on deck or extra thud). The landing is one trap take (no tailhook, gear-down or
+- **One clear sound per moment** (user decision): a moment gets one sound, not layers. The launch is one continuous
+  event (shared/launch.ts hooks): parked, a quiet steady idle; at `launchStart` the engine surges from idle to full over
+  ~0.7 s with the afterburner lighting 0.3 s in, and one live catapult voice (`jet-catapult.ts`: a strong shove, then a
+  steam-and-shuttle rush whose low-pass and level follow `launch.progress`) runs the stroke; at `launchEnd` the rush lets
+  go over about a second; then engine and wind and a subtle gear retract. Remote launches play the same voice at their
+  jet (progress from the relayed catapult z), distance-attenuated. Your own jet keeps a steady perspective: no Doppler,
+  a fixed from-behind cone, no air absorption, no flyby or crack. The landing is one trap take (no tailhook, gear-down or
   capture chime). Interface: one very quiet tick per button click, nothing on hover or when panels open. A kill is one
   confirm. The bank's voice budget enforces it: at most 6 recorded one-shots at once, a per-slot cooldown (150 ms by
   default, hull slams 2 s, creaks 6 s), and priority (explosions 5 > weapons 4 > deck events 3 > thunder 2 > ship
@@ -699,9 +713,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   important when the budget is full, and keeps accents from starting for half a second. Decorative levels are low by
   default (interface bus 0.45, deck bed 0.45, a rare quiet horn). `captures/audio/v6-*` and `v6-sounds.md` compare the
   launch and the landing before and after.
-- **The sound bank** (`sfx-bank.ts`, `sfx()`): 41 slots (`sfx-slots.ts`: carrier, gun impacts, missile, bomb, boom,
-  ship, sea, ui, hooks) with 3-4 ElevenLabs candidate takes each, 144 takes in `public/sfx/v3/<slot>-<n>.ogg` (48 kHz
-  stereo Ogg Opus 96-112 kb/s, 8.6 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
+- **The sound bank** (`sfx-bank.ts`, `sfx()`): 40 slots (`sfx-slots.ts`: carrier, gun impacts, missile, bomb, boom,
+  ship, sea, ui, hooks) with 3-4 ElevenLabs candidate takes each, 140 takes in `public/sfx/v3/<slot>-<n>.ogg` (48 kHz
+  stereo Ogg Opus 96-112 kb/s, 8.4 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
   dBTP; loops crossfade-looped; `manifest.json` has each take's length, loop length, loudest moment, loudness).
   Prompts in `sfx-slots.ts`, processing in `scripts/sfx-cinematic.ts`. After the first gesture the bank loads every
   slot's playing takes category by category (~90 takes, ~4.5 MB); `play`/`loop` return null until a slot has loaded and
@@ -727,7 +741,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   and panned with the jet, on top of the engine's own Doppler; head-on merges above 300 m/s get a procedural N-wave
   crack. Levels (offline, 0.5 s RMS): your Hornet in chase idle -38, military -33, afterburner -28 dBFS against a gun
   burst at -15 and medium weather at -21; a close pass peaks at -20, a distant one at -27.
-- **Where each recorded slot plays**: carrier ops (the catapult shot, the trap, the gear retract). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
+- **Where each recorded slot plays**: carrier ops (the trap, the gear retract). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
   impacts (metal when we are hit); cockpit tones synthesized (sine seeker growl and
   lock, two-tone warning chimes) on the UI bus. Explosions (`jet-boom.ts`, `boomsFor().play(kind, dist, size)`): the
   scenario's take crossfading into `boom-far` from 400 m to 2.2 km, travel delay, heavy reverb and slapback, a water

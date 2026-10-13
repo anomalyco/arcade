@@ -285,6 +285,7 @@ function crewShipOf(v: unknown): CrewShip | null {
     captain: o.captain as number | null,
     locked: o.locked,
     bans: bans as { player: number; until: number }[],
+    catapultUntil: isTime(o.catapultUntil) ? o.catapultUntil : 0,
   }
 }
 

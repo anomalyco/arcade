@@ -49,46 +49,56 @@ export class Survivor {
   }
 
   draw(p: Pose, dt: number, time: number, support: (x:number,z:number)=>number): Batch[] {
-    dt = Math.max(.0001, Math.min(.05, dt))
-    const teleport = Math.hypot(p.x - this.last[0], p.y - this.last[1]) > 2.5
+    dt = Math.max(.0001, Math.min(.2, dt))
+    const prevX = this.last[0], prevY = this.last[1]
+    const teleport = Math.hypot(p.x - prevX, p.y - prevY) > 2.5
     this.last = [p.x, p.y]
     if (teleport) { this.yaw = p.aim; this.svx = p.vx; this.svy = p.vy; this.phase = 0; this.chest = { x: p.aim, v: 0 }; this.head = { x: p.aim, v: 0 } }
     const profile = this.profile
-    const k = 1 - Math.exp(-dt * 14)
-    const vx = this.svx + (p.vx - this.svx) * k, vy = this.svy + (p.vy - this.svy) * k
-    stepSpring(this.leanX, 90, .38, dt, vx * .035 + (vx - this.svx) / dt * .003)
-    stepSpring(this.leanY, 90, .38, dt, vy * .035 + (vy - this.svy) / dt * .003)
-    this.svx = vx; this.svy = vy
-    const speed = Math.hypot(vx, vy), moving = Math.min(1, speed / 3.4)
-    let travel = speed > .35 ? Math.atan2(vy, vx) : p.aim
-    if (Math.abs(angleDiff(travel, p.aim)) > 2.05) travel += Math.PI
-    const want = p.aim + Math.max(-1.05, Math.min(1.05, angleDiff(travel, p.aim)))
-    this.yaw += angleDiff(want, this.yaw) * Math.min(1, dt * 9)
-    const c = Math.cos(this.yaw), s = Math.sin(this.yaw)
-    const rest = (i: number): V3 => { const x=p.x-s*(i?.13:-.13),z=p.y+c*(i?.13:-.13); return [x,support(x,z),z] }
-    if (teleport) this.feet.forEach((f, i) => { f.p = rest(i); f.lift = [...f.p]; f.planted = true; f.yaw = this.yaw })
-    const needsStep = this.feet.some((f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > .2 || !f.planted)
-    const rate = Math.max(speed / ((.7 + .22 * speed) * (profile?.strideScale ?? 1)), needsStep ? 1.7 : 0)
-    this.phase = (this.phase + rate * dt) % 1
-    const duty = .62 - .22 * moving
-    this.feet.forEach((f, i) => {
-      const phase = (this.phase + i * (.5 + (profile?.timingBias ?? 0) * .25)) % 1
-      if (rate > 0 && phase >= duty) {
-        if (f.planted) { f.planted = false; f.lift = [...f.p] }
-        const u = (phase - duty) / (1 - duty), e = smoother(u)
-        const lead = (1 - phase) / rate + duty / rate * .5
-        const target = rest(i)
-        target[0] += vx * lead; target[2] += vy * lead
-        // Preserve Blackout's minimum side-step separation.
-        const other = this.feet[1 - i]!, side = i ? 1 : -1
-        const lat = (-(target[0] - other.p[0]) * s + (target[2] - other.p[2]) * c) * side
-        if (lat < .16) { target[0] -= s * side * (.16 - lat); target[2] += c * side * (.16 - lat) }
-        target[1]=support(target[0],target[2])
-        const clearance = i === 1 ? 1 - (profile?.footDrag ?? 0) : 1
-        f.p = [f.lift[0] + (target[0] - f.lift[0]) * e, f.lift[1]+(target[1]-f.lift[1])*e+Math.sin(Math.PI * u) * (.06 + .09 * moving) * clearance, f.lift[2] + (target[2] - f.lift[2]) * e]
-        f.yaw += angleDiff(this.yaw, f.yaw) * e
-      } else if (!f.planted) { f.planted = true; f.p[1] = support(f.p[0],f.p[2]) }
-    })
+    const steps = teleport ? 1 : Math.max(1, Math.ceil(dt / (1 / 60) - 1e-4))
+    const h = dt / steps
+    let moving = 0
+    for (let step = 1; step <= steps; step++) {
+      const uStep = step / steps
+      const sx = teleport ? p.x : prevX + (p.x - prevX) * uStep
+      const sy = teleport ? p.y : prevY + (p.y - prevY) * uStep
+      const k = 1 - Math.exp(-h * 14)
+      const vx = this.svx + (p.vx - this.svx) * k, vy = this.svy + (p.vy - this.svy) * k
+      stepSpring(this.leanX, 90, .38, h, vx * .035 + (vx - this.svx) / h * .003)
+      stepSpring(this.leanY, 90, .38, h, vy * .035 + (vy - this.svy) / h * .003)
+      this.svx = vx; this.svy = vy
+      const speed = Math.hypot(vx, vy)
+      moving = Math.min(1, speed / 3.4)
+      let travel = speed > .35 ? Math.atan2(vy, vx) : p.aim
+      if (Math.abs(angleDiff(travel, p.aim)) > 2.05) travel += Math.PI
+      const want = p.aim + Math.max(-1.05, Math.min(1.05, angleDiff(travel, p.aim)))
+      this.yaw += angleDiff(want, this.yaw) * Math.min(1, h * 9)
+      const c = Math.cos(this.yaw), s = Math.sin(this.yaw)
+      const rest = (i: number): V3 => { const x=sx-s*(i?.13:-.13),z=sy+c*(i?.13:-.13); return [x,support(x,z),z] }
+      if (teleport && step === 1) this.feet.forEach((f, i) => { f.p = rest(i); f.lift = [...f.p]; f.planted = true; f.yaw = this.yaw })
+      const needsStep = this.feet.some((f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > .2 || !f.planted)
+      const rate = Math.max(speed / ((.7 + .22 * speed) * (profile?.strideScale ?? 1)), needsStep ? 1.7 : 0)
+      this.phase = (this.phase + rate * h) % 1
+      const duty = .62 - .22 * moving
+      this.feet.forEach((f, i) => {
+        const phase = (this.phase + i * (.5 + (profile?.timingBias ?? 0) * .25)) % 1
+        if (rate > 0 && phase >= duty) {
+          if (f.planted) { f.planted = false; f.lift = [...f.p] }
+          const u = (phase - duty) / (1 - duty), e = smoother(u)
+          const lead = (1 - phase) / rate + duty / rate * .5
+          const target = rest(i)
+          target[0] += vx * lead; target[2] += vy * lead
+          // Preserve Blackout's minimum side-step separation.
+          const other = this.feet[1 - i]!, side = i ? 1 : -1
+          const lat = (-(target[0] - other.p[0]) * s + (target[2] - other.p[2]) * c) * side
+          if (lat < .16) { target[0] -= s * side * (.16 - lat); target[2] += c * side * (.16 - lat) }
+          target[1]=support(target[0],target[2])
+          const clearance = i === 1 ? 1 - (profile?.footDrag ?? 0) : 1
+          f.p = [f.lift[0] + (target[0] - f.lift[0]) * e, f.lift[1]+(target[1]-f.lift[1])*e+Math.sin(Math.PI * u) * (.06 + .09 * moving) * clearance, f.lift[2] + (target[2] - f.lift[2]) * e]
+          f.yaw += angleDiff(this.yaw, f.yaw) * e
+        } else if (!f.planted) { f.planted = true; f.p[1] = support(f.p[0],f.p[2]) }
+      })
+    }
     let height = support(p.x,p.y)+HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
     for (const f of this.feet) {
       const distance = Math.hypot(f.p[0] - p.x, f.p[2] - p.y)

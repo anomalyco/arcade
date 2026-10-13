@@ -7,11 +7,11 @@ import type { Mixer } from "./mixer"
  * (games/wings/src/audio/engines.ts), richer but still smooth:
  *
  *   whine     a soft triangle turbine tone rising with core speed (through a gentle low-pass), an inharmonic ×2.76
- *             sine overtone; the Hornet's second engine a few cents off, quieter (a slow, faint beat)
+ *             sine overtone; the Hornet's second engine 0.6 cents off, quieter (a beat slower than a second)
  *   roar      pink noise behind a low-pass that opens with throttle; for your own Hornet two decorrelated roars, one
  *             per engine, slightly left and right (stereo width without moving the image)
  *   body      brown noise, low and warm, and a deep sub tone that grows with throttle
- *   burner    afterburner only: a brown-noise rumble under ~280 Hz that breathes (slow, soft amplitude drift), a sub,
+ *   burner    afterburner only: a brown-noise rumble under ~280 Hz that breathes (a slow ±5% drift), a sub,
  *             and a soft band-passed crackle
  *
  * Whine is weighted by the cone's front, roar and body by its rear (softened, so no angle is ever empty), then level ×
@@ -195,14 +195,10 @@ export class JetVoice {
     this.whineLp = filter("lowpass", 2400, 0.5)
     this.whineLp.connect(this.front)
     for (let i = 0; i < c.engines; i++) {
+      // The second engine sits 0.6 cents off: a beat slower than a second, felt rather than heard (a few cents beat at
+      // 2-3 Hz, an audible wobble).
       const w = osc("triangle", c.whine[0], this.whineLp)
-      w.osc.detune.value = i ? 4 : (Math.random() - 0.5) * 10
-      if (i) {
-        const lfo = ctx.createOscillator()
-        lfo.frequency.value = 0.07 + Math.random() * 0.05
-        lfo.connect(gain(3, w.osc.detune))
-        this.sources.push(lfo)
-      }
+      w.osc.detune.value = i ? 0.6 : 0
       this.whines.push(w)
     }
     this.overtone = osc("sine", c.whine[0] * 2.76, this.front)
@@ -216,8 +212,8 @@ export class JetVoice {
         const r = noise(n.pink, "lowpass", c.roar[0], 0.5, merge)
         r.gain.disconnect()
         r.gain.connect(merge, 0, i)
-        // A quarter of each side bleeds into the other: width, not two separate jets.
-        r.gain.connect(gain(0.25)).connect(merge, 0, 1 - i)
+        // Half of each side bleeds into the other: a little width, not two separate jets.
+        r.gain.connect(gain(0.5)).connect(merge, 0, 1 - i)
         this.roars.push(r)
       }
     } else this.roars.push(noise(n.pink, "lowpass", c.roar[0], 0.5, this.rear))
@@ -226,7 +222,7 @@ export class JetVoice {
     // Afterburner: a rumble that breathes (its level drifts with slow, low-passed brown noise), and a soft crackle.
     this.breathe = gain(1, this.rear)
     this.burn = noise(n.brown, "lowpass", c.burnLp, 0.6, this.breathe)
-    noise(n.brown, "lowpass", 3, 0.5, this.breathe.gain, 3)
+    noise(n.brown, "lowpass", 3, 0.5, this.breathe.gain, 1.2)
     const crackleBp = filter("bandpass", 1800, 0.6)
     crackleBp.connect(this.rear)
     this.crackle = noise(n.crackle, "highpass", 600, 0.5, crackleBp)
@@ -259,7 +255,7 @@ export class JetVoice {
     for (let i = 0; i < this.whines.length; i++) {
       const w = this.whines[i]!
       set(w.osc.frequency, wf)
-      set(w.gain.gain, wg * (i ? 0.35 : 1))
+      set(w.gain.gain, wg * (i ? 0.25 : 1))
     }
     set(this.whineLp.frequency, 2400 * d)
     set(this.overtone.osc.frequency, wf * 2.76)
@@ -303,7 +299,8 @@ export class JetVoice {
     set(pn.positionY, s.y, 0.02)
     set(pn.positionZ, s.z, 0.02)
     if (this.int) {
-      set(this.int.gain, s.interior, 0.08)
+      // About the chase view's loudness, so a camera switch changes the colour, not the level.
+      set(this.int.gain, s.interior * 0.55, 0.08)
       set(this.ext.gain, ext, 0.08)
     }
   }

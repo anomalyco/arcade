@@ -6,6 +6,7 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { LocalSession, type Command } from "../shared/session"
+import { FrameClock, TICK_DT } from "../shared/clock"
 import { nearbyDoor, sightRects, propShape, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
@@ -75,8 +76,39 @@ async function main() {
   const lampPower = new Float32Array(MAX_LIGHTS), empty = new Float32Array(0)
   const render: FrameInput = { frame, lights, lightCount: 0, shadowLightCount: 0, occluders, occluderCount: 0, lampPower, lampCount: 0, view: [0, 0, SIZE, SIZE], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, 1] }
   let blockers = sightRects(session.view.town), revision = -1, lightOccluders=0
-  let frozen = params.has("bench"), last = performance.now(), frames = 0, elapsed = 0
-  const lab = new LabPanel(settings, controls, params, () => input.release(), key => {
+  let frozen = params.has("bench"), frames = 0, meterAt = performance.now(), meterSubmits = renderer.submittedFrames, pendingDrawDt = 0, lastDrawAt = -Infinity
+  const clock = new FrameClock()
+  const stepSimulation = (wallNow: number) => {
+    if (frozen || document.hidden) {
+      clock.pause(wallNow)
+      return 0
+    }
+    const substeps = clock.frame(wallNow, input.move(), () => input.takeEnter())
+    if (!substeps.length) return 0
+    const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
+    let stepped = 0
+    for (const step of substeps) {
+      const p = session.view.player
+      session.update(step.dt, { mx: step.mx, my: step.my, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact }, settings.timeScale)
+      stepped += step.dt
+      frames++
+    }
+    pendingDrawDt += stepped
+    return substeps.length
+  }
+  window.addEventListener("keydown", () => {
+    const now = performance.now()
+    if (!frozen && !document.hidden) stepSimulation(now)
+  }, true)
+  window.addEventListener("keyup", () => {
+    const now = performance.now()
+    if (!frozen && !document.hidden) stepSimulation(now)
+  }, true)
+  window.addEventListener("keydown", () => { clock.recordMove(performance.now(), input.move()); scheduleFrame() })
+  window.addEventListener("keyup", () => { clock.recordMove(performance.now(), input.move()); scheduleFrame() })
+  document.addEventListener("visibilitychange", () => { if (document.hidden) clock.pause(performance.now()); else scheduleFrame() })
+  window.addEventListener("blur", () => clock.pause(performance.now()))
+  const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
     if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
     if (key === "houseSeed" || key === "terrain") regenerate()
@@ -105,6 +137,8 @@ async function main() {
     renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.zoom
+    pendingDrawDt = 0
+    clock.reset(performance.now(), input.move())
   }
   reset()
   function draw(dt: number) {
@@ -128,16 +162,23 @@ async function main() {
     }
     vision.update(p.x, p.y, p.aim, blockers, settings)
     if (scenery.update(town,vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
+    const view = cam.groundRect(5.5)
+    const [vx0, vy0, vx1, vy1] = view
     const day = dayCycle(hour)
     lights.fill(0)
     lights.set([p.x, 1.65+supportHeight(town,p.x,p.y), p.y, settings.range, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, .01, -1])
     let count = 1
     for (const [i, lamp] of town.lamps.entries()) {
-      lampPower[i] = day.lamps * settings.lighting
+      const lampScale = day.lamps * settings.lighting
+      lampPower[i] = lampScale
+      const power = lampScale * lamp.power
+      if (power <= .001) continue
+      const lx = lamp.x + (lamp.kind === "street" ? .55 : 0), ly = lamp.y, r = lamp.radius
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
+      if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
       const color=lamp.kind==="street"?[1,.76,.52]:lamp.kind==="porch"?[1,.60,.30]:[1,.54,.24]
       const cone=lamp.kind==="window"?[0,1,-.3,1]:[0,0,0,lamp.kind==="room"?-1:0]
-      lights.set([lamp.x+(lamp.kind==="street"?.55:0), lamp.h, lamp.y, lamp.radius, ...color, day.lamps * lamp.power * settings.lighting, ...cone, 0, lightOccluders, lamp.kind==="room"?.18:.22, i], count++ * LIGHT_FLOATS)
+      lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.18:.22, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
@@ -150,28 +191,90 @@ async function main() {
     doorBatch.count = town.doors.length
     render.batches = [...avatar.draw(p, dt, time, (x,z)=>supportHeight(town,x,z)), doorBatch]
     render.lightCount = render.shadowLightCount = count; render.occluderCount = lightOccluders; render.lampCount = town.lamps.length
-    render.view = cam.groundRect(5.5); render.grade = [time, settings.diagnostic, 0, settings.exposure]
+    render.view = view; render.grade = [time, settings.diagnostic, 0, settings.exposure]
     renderer.render(render)
     const door = nearbyDoor(town, p.x, p.y)
     status.textContent = `${clockText(hour)}${door ? ` · F ${door.open ? "Close" : "Open"} door` : ""}`
-    frames++; elapsed += dt
+    const meterNow = performance.now(), elapsed = (meterNow - meterAt) / 1000
     if (elapsed > .25) {
-      lab.header.textContent = `${Math.round(frames / elapsed)} FPS · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
+      lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
       if (lab.visible) lab.refresh()
-      frames = 0; elapsed = 0
+      frames = 0; meterAt = meterNow; meterSubmits = renderer.submittedFrames
+    }
+  }
+  let pacerTimer = 0, rafScheduled = false
+  const canDrawNow = (nowMs: number) =>
+    renderer.inflight === 0 &&
+    nowMs - lastDrawAt >= TICK_DT * 1000 - 2.2 &&
+    (pendingDrawDt > 0 || clock.readyForStep(nowMs))
+  const msUntilNextDraw = (nowMs: number) => {
+    const stepWait = pendingDrawDt > 0 ? 0 : clock.msUntilNextStep(nowMs)
+    const paceWait = Math.max(0, TICK_DT * 1000 - 2.0 - (nowMs - lastDrawAt))
+    return Math.max(stepWait, paceWait)
+  }
+  const scheduleFrame = () => {
+    if (frozen || document.hidden) return
+    if (!rafScheduled) {
+      rafScheduled = true
+      requestAnimationFrame(rafLoop)
+    }
+    if (!pacerTimer) {
+      const waitMs = Math.max(1, Math.ceil(msUntilNextDraw(performance.now())))
+      pacerTimer = window.setTimeout(() => {
+        pacerTimer = 0
+        const now = performance.now()
+        if (!frozen && !document.hidden && canDrawNow(now)) {
+          tick(now)
+        } else if (!frozen && !document.hidden) {
+          scheduleFrame()
+        }
+      }, waitMs)
+    }
+  }
+  const rafLoop = (now: number) => {
+    rafScheduled = false
+    const wallNow = performance.now()
+    if (frozen) {
+      clock.pause(wallNow)
+      return
+    }
+    if (document.hidden) {
+      clock.pause(wallNow)
+      rafScheduled = true
+      requestAnimationFrame(rafLoop)
+      return
+    }
+    if (canDrawNow(wallNow)) {
+      tick(now)
+    } else {
+      scheduleFrame()
     }
   }
   function tick(now: number) {
-    const dt = Math.min(.05, Math.max(.001, (now - last) / 1000)); last = now
-    if (!frozen && !document.hidden) {
-      const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
-      const p = session.view.player
-      session.update(dt, { ...input.move(), aim: Math.atan2(target.y - p.y, target.x - p.x), interact: input.takeEnter() }, settings.timeScale)
-      draw(dt)
+    void now
+    if (pacerTimer) { clearTimeout(pacerTimer); pacerTimer = 0 }
+    const wallNow = performance.now()
+    if (frozen || document.hidden) {
+      clock.pause(wallNow)
+    } else {
+      stepSimulation(wallNow)
+      if (pendingDrawDt > 0 && renderer.inflight === 0) {
+        const dt = pendingDrawDt
+        pendingDrawDt = 0
+        lastDrawAt = wallNow
+        draw(dt)
+      }
     }
-    requestAnimationFrame(tick)
+    scheduleFrame()
   }
-  draw(1 / 60)
+  renderer.onIdle = () => {
+    const now = performance.now()
+    if (!frozen && !document.hidden && renderer.inflight === 0) {
+      if (canDrawNow(now)) tick(now)
+      else scheduleFrame()
+    }
+  }
+  draw(TICK_DT)
   const harness = {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
@@ -179,7 +282,15 @@ async function main() {
     state: () => ({ ...session.view, explored: vision.explored.filter(v => v > 0).length, vertices }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
-    freeze: (value = true) => { frozen = value; input.release() },
+    freeze: (value = true) => {
+      frozen = value
+      if (pacerTimer) { clearTimeout(pacerTimer); pacerTimer = 0 }
+      pendingDrawDt = 0
+      lastDrawAt = -Infinity
+      input.release()
+      clock.reset(performance.now(), input.move())
+      if (!frozen) scheduleFrame()
+    },
     setLab(key: keyof typeof settings, value: number) {
       const control = controls.find(c => c.key === key)
       if (!control || !Number.isFinite(value) || ("min" in control ? value < control.min || value > control.max : !("options" in control) || !control.options.some(o=>o.value===value))) throw new Error(`Invalid lab value: ${key}`)
@@ -191,13 +302,14 @@ async function main() {
     pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
     async step(dt = 1 / 60, command?: Partial<Command>) {
       session.update(dt, { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }, settings.timeScale)
+      frames++
       draw(dt)
       await Promise.resolve(); await device.queue.onSubmittedWorkDone()
       return harness.state()
     },
   }
   Object.assign(window, { __arcadeHarness: harness })
-  requestAnimationFrame(tick)
+  scheduleFrame()
 }
 
 main().catch(error => { console.error(error); document.querySelector("#status")!.textContent = `Outbreak could not start: ${error.message}` })

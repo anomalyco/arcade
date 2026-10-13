@@ -2,34 +2,37 @@
 //
 // The jet lives in ship-local coordinates (carrier-spec: +Z bow, +Y up, origin at the waterline amidships) for the
 // whole deck run and is placed in the world through the carrier's current pose every step, so it stays glued to a
-// deck that heaves, pitches, rolls and turns. Sequence: line up (roll the last few metres onto the shuttle), spool
-// (engines to full, afterburner lit), stroke (constant acceleration down the catapult track to the bow), then airborne:
-// the jet keeps the carrier's plan velocity plus the launch speed, gets a slight nose-up and a short autopilot blend.
+// deck that heaves, pitches, rolls and turns.
 //
-// Why the shuttle is not at the stern: reaching flying speed over the whole 325 m runway in 2-2.5 s means leaving at
-// ~290 m/s. A 3.8 g, 2.4 s stroke (real catapults pull 3-4 g) needs ~110 m, so the shuttle sits that far from the bow.
+// One continuous launch: the jet waits parked on the shuttle at the stern end of the runway, stationary, engines at
+// idle (`ready`, LAUNCH.hold s). Then everything starts on the same instant (`launchStart`): full throttle and the
+// afterburner, the catapult and the motion, one acceleration curve from rest that eases in over LAUNCH.easeIn s and
+// then pulls a near-constant ~3.5 g down nearly the whole runway (`stroke`, `progress` 0..1) to the bow, where the jet
+// leaves (`launchEnd`: phase `airborne`) with the carrier's plan velocity plus the launch speed and a slight nose-up.
+//
+// Audio and effects key off these: `launchStart` = the step `phase` goes ready → stroke, `progress` along the stroke,
+// `launchEnd` = the step it goes stroke → airborne (launchStep returns true).
+//
+// One catapult per ship: the room refuses another launch on the same ship for `catapultTime(kind)` after granting one
+// (shared/ops.ts, "catapult-busy").
 
-import { BOW_Z, CENTERLINE_X, DECK_Y } from "./carrier-spec"
+import { BOW_Z, CENTERLINE_X, DECK_Y, RUNWAY } from "./carrier-spec"
 import { PLANE, type Plane, type Quat, type ShipPoseLike, quatAxis, quatMul, setPlaneQuat, shipQuat, shipToWorld, type Vec3, makePlane } from "./plane"
 import { VEHICLES, type VehicleKind, deckCentreY } from "./vehicles"
 
 const DEG = Math.PI / 180
 
 export const LAUNCH = {
-  /** Catapult track on the runway centreline: the shuttle's start, and where the jet leaves the deck. */
+  /** Catapult track on the runway centreline. */
   x: CENTERLINE_X,
-  /** The jet's nose wheel leaves the deck edge here (ship z): the bow minus a little for the notch. */
+  /** The shuttle (the jet's centre) at the stern end of the runway, and where the jet leaves the deck: ~87% of the
+   *  runway's length between them. */
+  startZ: RUNWAY.z0 + 43,
   endZ: BOW_Z - 1,
-  /** The Hornet's stroke length (m) and time (s): the jet's deck-relative speed at the end is 2 · stroke / strokeTime
-   *  (each type's own: VEHICLES[kind].stroke / strokeTime). */
-  stroke: 110,
-  strokeTime: 2.4,
-  /** Line-up: the jet rolls this far forward onto the shuttle over `lineupTime` s. */
-  lineupFrom: 16,
-  lineupTime: 1.1,
-  /** Engines to full before the shot (s); the afterburner lights for the last `burnLead` s. */
-  spoolTime: 1,
-  burnLead: 0.45,
+  /** Parked on the shuttle at idle before the launch (s). */
+  hold: 1,
+  /** The acceleration eases in from zero over this long (s), then holds (each type's from its `strokeTime`). */
+  easeIn: 0.3,
   /** Height of the Hornet's model origin (lowest belly point) above the deck with the gear down (VEHICLES[kind].gear). */
   gear: 1.35,
   /** Nose-up kneel on the catapult (rad), and the extra nose-up and flight-path climb given at the bow. */
@@ -40,37 +43,61 @@ export const LAUNCH = {
   respawnDelay: 2.5,
 } as const
 
-export type LaunchPhase = "lineup" | "spool" | "stroke" | "airborne"
+/** The stroke's length (m): shuttle to bow. */
+export const STROKE = LAUNCH.endZ - LAUNCH.startZ
+
+export type LaunchPhase = "ready" | "stroke" | "airborne"
 
 export type Launch = {
-  /** The aircraft type on the catapult (its gear height and stroke). */
+  /** The aircraft type on the catapult (its gear height and stroke time). */
   kind: VehicleKind
   phase: LaunchPhase
-  /** Seconds in the current phase. */
+  /** Seconds in the current phase (in `stroke`: since launchStart). */
   time: number
-  /** Ship-local z of the jet's centre, and its deck-relative speed (m/s). */
+  /** Ship-local z of the jet's centre, its deck-relative speed (m/s), and how far along the stroke it is (0..1). */
   z: number
   speed: number
-  /** Throttle shown during the deck run (0..1), and the afterburner. */
+  progress: number
+  /** Throttle shown on the deck (0..1), and the afterburner. */
   throttle: number
   burner: number
   /** Catapult trauma for the camera: rises through the stroke, peaks at the shot. */
   shake: number
 }
 
-/** Catapult geometry of an aircraft type: shuttle start (ship z), stroke acceleration and speed at the bow. */
-export function catapult(kind: VehicleKind): { startZ: number; accel: number; speed: number } {
-  const v = VEHICLES[kind]
-  const accel = (2 * v.stroke) / (v.strokeTime * v.strokeTime)
-  return { startZ: LAUNCH.endZ - v.stroke, accel, speed: accel * v.strokeTime }
+/** The stroke's distance from rest after t seconds with acceleration a (eased in over LAUNCH.easeIn), and its speed. */
+function strokeAt(a: number, t: number, out: { s: number; v: number }): { s: number; v: number } {
+  const e = LAUNCH.easeIn
+  if (t <= e) {
+    out.s = (a * t * t * t) / (6 * e)
+    out.v = (a * t * t) / (2 * e)
+  } else {
+    const u = t - e
+    out.s = (a * e * e) / 6 + ((a * e) / 2) * u + (a * u * u) / 2
+    out.v = a * (t - e / 2)
+  }
+  return out
 }
+
+/** Catapult of an aircraft type: its acceleration (m/s², after the ease-in), time (s) and deck-relative speed at the
+ *  bow (m/s). The time is VEHICLES[kind].strokeTime, the distance STROKE. */
+export function catapult(kind: VehicleKind): { accel: number; time: number; speed: number } {
+  const T = VEHICLES[kind].strokeTime
+  const accel = STROKE / strokeAt(1, T, { s: 0, v: 0 }).s
+  return { accel, time: T, speed: strokeAt(accel, T, { s: 0, v: 0 }).v }
+}
+
+/** How long a launch of `kind` holds the ship's catapult (s): parked, then the stroke, plus a little slack for the
+ *  client starting after the room grants it. */
+export const catapultTime = (kind: VehicleKind): number => LAUNCH.hold + VEHICLES[kind].strokeTime + 1
+
 /** Deck-relative speed at the bow (the Hornet's; `catapult(kind).speed` for others). */
 export const LAUNCH_SPEED = catapult("hornet").speed
 /** Ship-local height of the Hornet's centre on deck (`deckCentreY(kind)` for others). */
 export const DECK_CENTRE_Y = DECK_Y + LAUNCH.gear + PLANE.centre
 
 export function makeLaunch(kind: VehicleKind = "hornet"): Launch {
-  return { kind, phase: "lineup", time: 0, z: catapult(kind).startZ - LAUNCH.lineupFrom, speed: 0, throttle: 0.15, burner: 0, shake: 0 }
+  return { kind, phase: "ready", time: 0, z: LAUNCH.startZ, speed: 0, progress: 0, throttle: 0.15, burner: 0, shake: 0 }
 }
 
 /** A jet of type `kind` on the deck at the start of the launch sequence, placed on `ship`. */
@@ -136,52 +163,48 @@ export function launchPose(z: number, ship: ShipPoseLike, plane: Plane, kind: Ve
   return plane
 }
 
+const run = { s: 0, v: 0 }
+
 /**
  * One fixed step of the takeoff on the carrier `ship` (already stepped to this tick). While on deck the jet's pose is
- * rebuilt from the ship's; at the bow it is released into free flight. Returns true on the step it leaves the deck;
- * from then on drive it with planeStep.
+ * rebuilt from the ship's; at the bow it is released into free flight. Returns true on the step it leaves the deck
+ * (`launchEnd`); from then on drive it with planeStep.
  */
 export function launchStep(l: Launch, plane: Plane, ship: ShipLike, dt: number): boolean {
   if (l.phase === "airborne") return false
   l.time += dt
   plane.t += dt
   l.shake *= Math.exp(-dt * 3)
-  const cat = catapult(l.kind)
-  if (l.phase === "lineup") {
-    const k = Math.min(1, l.time / LAUNCH.lineupTime)
-    l.z = cat.startZ - LAUNCH.lineupFrom * (1 - k * k * (3 - 2 * k))
-    l.throttle = 0.15
-    if (k >= 1) next(l, "spool")
-  } else if (l.phase === "spool") {
-    const k = Math.min(1, l.time / LAUNCH.spoolTime)
-    l.throttle = 0.15 + 0.85 * k
-    l.burner = l.time > LAUNCH.spoolTime - LAUNCH.burnLead ? 1 : 0
-    l.shake = Math.max(l.shake, 0.25 * k)
-    if (k >= 1) next(l, "stroke")
-  } else {
-    l.speed += cat.accel * dt
-    l.z += l.speed * dt
-    l.throttle = 1
-    l.burner = 1
-    l.shake = Math.max(l.shake, 0.35 + 0.4 * (l.speed / cat.speed))
-    if (l.z >= LAUNCH.endZ) {
-      release(l, plane, ship)
-      return true
+  if (l.phase === "ready") {
+    // Parked at idle, not moving. At the end of the hold: launchStart, from this very step.
+    if (l.time < LAUNCH.hold) {
+      place(l, plane, ship, dt)
+      return false
     }
+    l.phase = "stroke"
+    l.time = 0
+  }
+  const cat = catapult(l.kind)
+  strokeAt(cat.accel, l.time, run)
+  l.z = LAUNCH.startZ + run.s
+  l.speed = run.v
+  l.progress = Math.min(1, run.s / STROKE)
+  l.throttle = 1
+  l.burner = 1
+  l.shake = Math.max(l.shake, 0.3 + 0.45 * l.progress)
+  if (l.z >= LAUNCH.endZ) {
+    release(l, plane, ship)
+    return true
   }
   place(l, plane, ship, dt)
   return false
-}
-
-function next(l: Launch, phase: LaunchPhase): void {
-  l.phase = phase
-  l.time = 0
 }
 
 /** Leaves the bow: heading and roll of the deck, nose-up, deck plan velocity plus launch speed slightly climbing. */
 function release(l: Launch, plane: Plane, ship: ShipLike): void {
   l.phase = "airborne"
   l.time = 0
+  l.progress = 1
   l.shake = 1
   const p = shipToWorld(ship, LAUNCH.x, deckCentreY(l.kind), LAUNCH.endZ, p0)
   const speed = catapult(l.kind).speed
