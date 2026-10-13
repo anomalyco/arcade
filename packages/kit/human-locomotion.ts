@@ -151,15 +151,18 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     }
     let target = m.targets[i]!
     if (strafe > 0.2) target = separate(a, i, target)
+    const drag = i === 1 ? clamp(animation.footDrag, 0, 0.95) : 0
     const e = smoother(u)
-    f.p = [f.lift[0] + (target[0] - f.lift[0]) * e,
-      (0.08 + 0.12 * gait.run) * (i === 1 ? 1 - clamp(animation.footDrag, 0, 0.95) : 1) * 9.48 * (1 - u) ** 3 * u,
-      f.lift[2] + (target[2] - f.lift[2]) * e]
+    const eHoriz = drag > 0 ? e * (1 - 0.38 * drag * (1 - u)) : e
+    f.p = [f.lift[0] + (target[0] - f.lift[0]) * eHoriz,
+      (0.08 + 0.12 * gait.run) * (i === 1 ? 1 - drag : 1) * 9.48 * (1 - u) ** 3 * u,
+      f.lift[2] + (target[2] - f.lift[2]) * eHoriz]
     if (strafe > 0.2) f.p = separate(a, i, f.p)
     const side = i === 0 ? -1 : 1
     const opening = strafe * Math.sign(lateral) * (side * lateral > 0 ? 0.6 : 0.12)
     f.yaw = f.liftYaw + angleDiff(a.legYaw + opening + side * 0.06, f.liftYaw) * e
-    f.pitch = -0.4 * Math.sin(Math.PI * u) + (a.back ? -0.16 : 0.12) * smooth((u - 0.7) / 0.3)
+    f.pitch = (drag > 0 ? (-0.4 * (1 - drag * 0.85) + 0.16 * drag) * Math.sin(Math.PI * u) + (a.back ? -0.16 : 0.12) * smooth((u - 0.7) / 0.3) * (1 - drag * 0.7)
+      : -0.4 * Math.sin(Math.PI * u) + (a.back ? -0.16 : 0.12) * smooth((u - 0.7) / 0.3))
     if (u === 1) {
       f.planted = true; f.p[1] = 0; f.pitch = 0
       lockToe(a, i)
@@ -201,10 +204,13 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const support = a.feet[0].planted === a.feet[1].planted ? 0 : a.feet[0].planted ? -1 : 1
   const theta = TAU * (a.phase - a.duty / 2)
   const k = stiffness(animation.bodyHz)
+  const dropGoal = -support * 0.087 * animation.swayScale
+  const bobGoal = (1 - 2 * gait.run) * 0.035 * Math.cos(theta * 2) * a.gait
+  const limp = animation.footDrag > 0 ? clamp(animation.footDrag, 0, 0.95) * a.gait : 0
   stepSpring(m.twist, k, 0.85, dt, twist * animation.twistScale)
   stepSpring(m.sway, k, 0.85, dt, support * (0.055 - gait.run * 0.02) * animation.swayScale)
-  stepSpring(m.drop, k, 0.85, dt, -support * 0.087 * animation.swayScale)
-  stepSpring(m.bob, k, 0.85, dt, (1 - 2 * gait.run) * 0.035 * Math.cos(theta * 2) * a.gait)
+  stepSpring(m.drop, k, 0.85, dt, limp > 0 ? dropGoal + limp * 0.055 * Math.sin(theta) : dropGoal)
+  stepSpring(m.bob, k, 0.85, dt, limp > 0 ? bobGoal - limp * 0.032 * Math.sin(theta) : bobGoal)
   // Keep PR #9's running attitude separate from root acceleration and contact timing.
   const forward = (a.svx * Math.cos(a.aim) + a.svy * Math.sin(a.aim)) / Math.max(speed, 0.1)
   const posture = clamp(animation.runPosture, 0, 0.3) * gait.run * a.gait * smooth(forward) * (1 + 0.25 * smooth((speed - 4.2) / 2.1))

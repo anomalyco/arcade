@@ -26,7 +26,8 @@ export function devHub(options: DevHubOptions) {
   const nav = document.querySelector("nav")!
   for (const command of hubCommands) {
     const link = document.createElement("a")
-    link.href = command.href; link.textContent = command.label; link.dataset.page = command.id
+    link.href = command.id === "characters" && !location.pathname.startsWith("/arcade/blackout/") ? `${gameLink("blackout", targets).href}characters.html` : command.href
+    link.textContent = command.label; link.dataset.page = command.id
     nav.append(link)
   }
   for (const game of hubGames) {

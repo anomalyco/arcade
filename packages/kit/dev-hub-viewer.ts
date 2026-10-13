@@ -7,6 +7,7 @@ import { LabPanel } from "./lab-panel"
 import type { LabContext } from "./lab/types"
 import type { LabCharacter } from "./lab/spawn-types"
 import { catalogueHash, catalogueLights, filterAssets, parseHubHash, type CatalogueAsset } from "./dev-hub-model"
+import { bindOrbitGestures } from "./orbit-gestures"
 import type { DevHubOptions } from "./dev-hub"
 
 const assetKey = "arcade.catalogue.asset.v1", lightingKey = "arcade.catalogue.lighting.v1"
@@ -129,37 +130,16 @@ export async function catalogueViewer(options: DevHubOptions) {
   tools.querySelector("[data-far]")!.addEventListener("click", () => change(() => stage.zoomBy(1.15)))
 
   // Same camera grammar as the Lab: drag orbits; Shift, middle or right drag pans. A right/Control click opens actions.
-  let drag: { id: number; x: number; y: number; startX: number; startY: number; pan: boolean; context: boolean; moved: boolean } | undefined
-  canvas.addEventListener("pointerdown", event => {
-    canvas.focus({ preventScroll: true })
-    const context = event.button === 2 || (event.button === 0 && event.ctrlKey)
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, pan: event.shiftKey || event.button === 1 || event.button === 2, context, moved: false }
-    if (event.button === 1) event.preventDefault()
-    canvas.setPointerCapture(event.pointerId)
+  const gestures = bindOrbitGestures(canvas, {
+    target: stage,
+    onChange: () => { dirty = true; schedule() },
+    onContextClick: (x, y) => openMenu(x, y),
   })
-  canvas.addEventListener("pointermove", event => {
-    if (!drag || drag.id !== event.pointerId) return
-    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= 4) return
-    const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.x = event.clientX; drag.y = event.clientY; drag.moved = true
-    const pan = drag.pan
-    change(() => { if (pan) stage.pan(-dx, -dy); else stage.orbit(-dx * .0065, dy * .0055) })
-  })
-  canvas.addEventListener("pointerup", event => {
-    if (!drag || drag.id !== event.pointerId) return
-    const { context, moved } = drag; drag = undefined
-    if (context && !moved) openMenu(event.clientX, event.clientY)
-  })
-  for (const name of ["pointercancel", "lostpointercapture"] as const) canvas.addEventListener(name, () => { drag = undefined })
-  canvas.addEventListener("contextmenu", event => event.preventDefault())
-  canvas.addEventListener("wheel", event => {
-    if (event.metaKey || event.ctrlKey) return // Browser zoom, including trackpad pinch delivered as Ctrl-wheel.
-    event.preventDefault(); change(() => stage.zoomBy(Math.exp(Math.max(-100, Math.min(100, event.deltaY)) * .003)))
-  }, { passive: false })
   canvas.addEventListener("keydown", event => {
     if (event.metaKey || event.ctrlKey || event.altKey) return
     const key = event.key
     if (key.toLowerCase() === "f") { event.preventDefault(); frame() }
-    else if (key === "Escape") { drag = undefined; search.focus() }
+    else if (key === "Escape") { gestures.cancelDrag(); search.focus() }
     else if (key === "ContextMenu") { event.preventDefault(); const box = canvas.getBoundingClientRect(); openMenu(box.left + box.width / 2, box.top + box.height / 2) }
     else if (key === "+" || key === "=" || key === "-") { event.preventDefault(); change(() => stage.zoomBy(key === "-" ? 1.15 : .85)) }
     else if (key.startsWith("Arrow")) {
@@ -192,16 +172,16 @@ export async function catalogueViewer(options: DevHubOptions) {
   menu.addEventListener("toggle", event => { if ((event as ToggleEvent).newState === "closed" && menu.contains(document.activeElement)) canvas.focus({ preventScroll: true }) })
 
   const resize = new ResizeObserver(() => change(() => {})); resize.observe(canvas)
-  document.addEventListener("visibilitychange", () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; drag = undefined } else change(() => {}) })
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; gestures.cancelDrag() } else change(() => {}) })
   window.addEventListener("hashchange", () => {
-    drag = undefined
+    gestures.cancelDrag()
     const asset = byId(parseHubHash(location.hash).assetId)
     if (asset && asset.id !== selected.id) select(asset, "none")
     else if (parseHubHash(location.hash).page === "catalogue" && !parseHubHash(location.hash).assetId) window.history.replaceState(null, "", catalogueHash(selected.id))
     change(() => {})
   })
   window.addEventListener("pagehide", event => {
-    cancelAnimationFrame(raf); raf = 0; drag = undefined; input.release()
+    cancelAnimationFrame(raf); raf = 0; gestures.cancelDrag(); input.release()
     if (!event.persisted) { disposed = true; resize.disconnect(); character?.leave?.(); device.destroy() }
   })
   window.addEventListener("pageshow", () => change(() => {}))

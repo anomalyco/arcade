@@ -83,15 +83,14 @@ The Detached forearm fixture exercises this adapter. Enable Blood → Surface sp
 the burst. The hook retains its style gate and event/limb deduplication; production blood defaults are unchanged.
 Actual gameplay detach events still need a server-owned damage policy and caller-owned event identity.
 
-## Lab and proof
+## Interactive Characters page, Lab and proof
 
-Open `anim.html?lab=1`. Animation contains Profile and all profile parameters with explicit units, plus exact
-keyboard editing, Randomize, Reset and Copy. Profile and zombie sliders are live presentation values that update
-on the next animation step without resetting the scene; Demo mode is a structural fixture select (`Profile walk`,
-`Three profiles`, `Detached forearm`), and Demo speed is in m/s. The scripted fixtures loop and use the real
-Game/Renderer. Production defaults remain the soldier profile.
+Open `/arcade/blackout/characters.html` (reachable from the Dev Hub top bar under `Characters`, with deep-link hashes `#soldier`, `#wizard`, `#zombie`, `#survivor` and `#outbreak-zombie`). It renders Blackout's soldier, wizard and zombie alongside Outbreak's survivor and zombie on a lit tile stage through the real `Game`/`Renderer` and shared `@arcade/kit` rig:
+- Orbit, pan, zoom and frame (`F`) share `@arcade/kit/orbit-gestures` with the Catalogue viewer.
+- Click an actor (or its tab) to select it; press `P` (or `Possess · P`) to possess and drive it with normal game keys (QWERTY `WASD`, Dvorak `, o a e`, arrows, `Shift` sprint), and `Escape` to release back to Edit mode.
+- Switch profiles per actor, trigger `Walk loop`, `Run loop`, `Stop`, `Detach limb` (any bone subtree, with surface blood splatter) or `Reset`, and control transport with `Pause`, `Step` (`1/60 s`) and `Speed`.
+- The `Lab ~` button (`Backquote`) toggles the shared `LabPanel` scoped to the selected actor's `Profile` controls.
 
-`games/blackout/scripts/prove-human.ts` exercises profiles, attachments, detach handoff and Lab input on headless
-Metal. Run through Hivemind; `--video` captures 180 frames. Shared tests cover contact locking, asymmetry bounds,
-semantic IDs, attachment visibility and origin/offset motion. Blackout tests cover default/profile parity, dt spikes,
-missing limbs, weapon stability and corpse detachment. Visual proof and release-base results belong in `perf/human-rig.md`.
+For scripted A/B fixtures, `anim.html?lab=1` retains `Profile walk`, `Three profiles` and `Detached forearm`. Production defaults remain the neutral soldier profile (`8223033` parity).
+
+`games/blackout/scripts/prove-characters.ts` and `games/blackout/scripts/prove-human.ts` exercise interactive possession, camera gestures, per-actor profiles, attachments, detach handoff and Lab input on headless Metal through Hivemind. Shared tests cover contact locking, asymmetry bounds, semantic IDs, attachment visibility and origin/offset motion. Blackout tests cover default/profile parity, dt spikes, missing limbs, weapon stability and corpse detachment. Visual proof and release-base results belong in `perf/human-rig.md`.
