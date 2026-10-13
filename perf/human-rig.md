@@ -1,14 +1,17 @@
 # Shared human rig proof
 
 Status: PR #13's released main is merged; runtime wizard/terrain-zombie adapters and the splatter hook are wired.
-Final release-base workspace and Metal checks are in progress.
+Final release-base clean-archive checks and Studio Metal proofs passed.
 
-Hivemind run `20261013-130146-98650` passed on the Mini: frozen root install, ten shared-package tests,
-Blackout client/server/script typechecks, all 288 tests (including 18 animation cases) and production build.
-The subsequent clean `git archive` export of `03aea689a966c88f8de6a651cb983a9dc3fed170` also passed frozen
-installation and package checks, both games' typechecks/builds, 288 Blackout tests and 177 Getaway tests
-(12 existing skips), both production lobby smokes and both Worker dry-runs. No deployment occurred.
-That pre-release archive did not contain Outbreak. Release-base results below supersede it for consumer integration.
+The release-base clean `git archive` export passed on Studio (`apple / metal-3`): frozen root install,
+46 shared-package tests across 10 files (`bun run check:packages`), 367 Blackout tests across 32 files
+(including 19 animation cases and `human-splatter.test.ts`), 216 Getaway tests across 33 files (12 existing
+skips), 16 Outbreak tests across 3 files, 371 Carrier tests across 31 files, all four production builds,
+all four production bundle smokes (`scripts/smoke.mjs`), and all four Worker dry-runs (`wrangler deploy --dry-run`).
+No deployment occurred.
+
+Earlier pre-release Hivemind run `20261013-130146-98650` on the Mini and clean export of `03aea68` are
+retained in `~/code/home/artifacts/2026-10-13-shared-human-rig/` alongside the release-base captures and logs.
 
 The first Hivemind check reached the new Mini after a cold sync but failed before running tests: its non-login
 shell PATH omitted `/opt/homebrew/bin`, where Bun 1.4.2 is already installed. The corrected invocation explicitly
@@ -44,11 +47,17 @@ Profiles, speed and individual parameters live in the shared Lab. The scripted f
 `scripts/prove-human.ts --video` captures the three presets, their comparison and six seconds of detachment,
 then exercises Randomize, Reset, exact Copy and keyboard profile selection. Headless Chromium must report Metal.
 
-The first run on Studio reported `apple / metal-3`, three profiles, one detached forearm, exact copied spawn frame,
-180 captured frames, passing keyboard/Copy controls and zero page/GPU errors. The comparison, individual profiles,
-and detach samples before/at/after release were inspected. The sample shows staff attachment, an asymmetric
-reaching zombie, and the detached forearm falling behind the moving actor. It does not establish continuous
-playback quality. Captures are in `captures/shared-human/`; `proof.json` includes profile poses and copied settings.
+The Studio Metal runs (`apple / metal-3`) verified:
+- `games/blackout/scripts/prove-human.ts`: three profiles (`soldier`, `wizard`, `zombie`), side-by-side comparison,
+  one detached right forearm (`noPop: true`), blood emission through `detachedSplatter` → `Game.cosmeticSplatter`
+  (`splatter: true`), runtime wizard with its released staff mesh and casting clip (`runtime-wizard.png`),
+  Randomize/Reset/Copy and keyboard profile controls, and zero page/GPU errors.
+- `games/outbreak/scripts/prove-human.ts`: built-bundle terrain Survivor (`survivor.png`) versus Zombie (`zombie.png`)
+  poses (`handPose: "reach"`), live `Foot drag` slider and `Reset Zombie` in the shared Lab, and zero page/GPU errors.
+
+The comparison, individual profiles, runtime wizard, Outbreak survivor/zombie poses, and detach samples before/at/after
+release with surface splatter were inspected. It does not establish continuous playback quality. Captures and logs are
+saved in `~/code/home/artifacts/2026-10-13-shared-human-rig/`.
 
 ## Limits
 
