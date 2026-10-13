@@ -1,0 +1,26 @@
+{
+  "target": "getaway-multiplayer",
+  "experiment": "proposals-baseline",
+  "machine": "kits-Mac-Studio.local",
+  "timestamp": "2026-10-13T04:13:54.457Z",
+  "ticks": 1000,
+  "connections": 8,
+  "warmup": 1,
+  "measured": 9,
+  "median_ms": 69.01428699999917,
+  "mad_ms": 5.445372999998369,
+  "p95_ms": 84.9984579999981,
+  "runs": [
+    69.10740500000026,
+    61.598543999999805,
+    59.742936000000725,
+    67.18670600000081,
+    63.5689140000008,
+    69.01428699999917,
+    74.49217699999872,
+    84.9984579999981,
+    70.48343899999816
+  ],
+  "digest": "f216124853f4c1fc64d0fc5c5568579f5ef8c7f73b44662afdf5f0afc899c1af",
+  "serializedBytes": 52168063
+}

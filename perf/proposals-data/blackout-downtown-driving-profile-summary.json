@@ -1,0 +1,340 @@
+{
+  "frames": 1200,
+  "hottest": [
+    {
+      "name": "(idle)",
+      "line": -1,
+      "self_ms": 1436.742
+    },
+    {
+      "name": "(program)",
+      "line": -1,
+      "self_ms": 1422.231
+    },
+    {
+      "name": "getCurrentTexture",
+      "line": -1,
+      "self_ms": 22.141
+    },
+    {
+      "name": "(garbage collector)",
+      "line": -1,
+      "self_ms": 18.713
+    },
+    {
+      "name": "beginRenderPass",
+      "line": -1,
+      "self_ms": 17.624
+    },
+    {
+      "name": "draw",
+      "line": 20844,
+      "self_ms": 16.729
+    },
+    {
+      "name": "writeBuffer",
+      "line": -1,
+      "self_ms": 14.299
+    },
+    {
+      "name": "submit",
+      "line": -1,
+      "self_ms": 12.595
+    },
+    {
+      "name": "enc.beginRenderPass",
+      "line": 61,
+      "self_ms": 8.558
+    },
+    {
+      "name": "",
+      "line": 20831,
+      "self_ms": 8.371
+    },
+    {
+      "name": "",
+      "line": 0,
+      "self_ms": 6.489
+    },
+    {
+      "name": "onSubmittedWorkDone",
+      "line": -1,
+      "self_ms": 6.417
+    },
+    {
+      "name": "",
+      "line": 20838,
+      "self_ms": 5.63
+    },
+    {
+      "name": "createCommandEncoder",
+      "line": -1,
+      "self_ms": 4.899
+    },
+    {
+      "name": "setBindGroup",
+      "line": -1,
+      "self_ms": 3.593
+    },
+    {
+      "name": "path",
+      "line": 503,
+      "self_ms": 3.303
+    },
+    {
+      "name": "createView",
+      "line": -1,
+      "self_ms": 3.081
+    },
+    {
+      "name": "object.<computed>",
+      "line": 6,
+      "self_ms": 2.814
+    },
+    {
+      "name": "beginComputePass",
+      "line": -1,
+      "self_ms": 2.591
+    },
+    {
+      "name": "setPipeline",
+      "line": -1,
+      "self_ms": 2.565
+    },
+    {
+      "name": "setVertexBuffer",
+      "line": -1,
+      "self_ms": 2.554
+    },
+    {
+      "name": "onSubmittedWorkDone",
+      "line": -1,
+      "self_ms": 2.547
+    },
+    {
+      "name": "GpuPerf.device.createCommandEncoder",
+      "line": 31692,
+      "self_ms": 2.517
+    },
+    {
+      "name": "stepDebris",
+      "line": 19378,
+      "self_ms": 2.093
+    },
+    {
+      "name": "encoder.beginRenderPass",
+      "line": 31715,
+      "self_ms": 1.89
+    },
+    {
+      "name": "update",
+      "line": 18623,
+      "self_ms": 1.882
+    },
+    {
+      "name": "event",
+      "line": 23243,
+      "self_ms": 1.853
+    },
+    {
+      "name": "rider",
+      "line": 24243,
+      "self_ms": 1.75
+    },
+    {
+      "name": "encoder.beginComputePass",
+      "line": 31736,
+      "self_ms": 1.713
+    },
+    {
+      "name": "pass.draw",
+      "line": 31722,
+      "self_ms": 1.611
+    }
+  ],
+  "sampled_allocations_bytes": [
+    [
+      "build",
+      30398520
+    ],
+    [
+      "pop",
+      29259048
+    ],
+    [
+      "draw",
+      19977400
+    ],
+    [
+      "push",
+      18862504
+    ],
+    [
+      "path",
+      16239112
+    ],
+    [
+      "sprite",
+      14063520
+    ],
+    [
+      "straight",
+      12754492
+    ],
+    [
+      "(anonymous)",
+      12704872
+    ],
+    [
+      "update",
+      12054788
+    ],
+    [
+      "limb",
+      11659832
+    ],
+    [
+      "solve",
+      11292964
+    ],
+    [
+      "ik",
+      7907812
+    ],
+    [
+      "emit",
+      6819848
+    ],
+    [
+      "animate",
+      6327504
+    ],
+    [
+      "hypot",
+      6277452
+    ],
+    [
+      "next",
+      5754972
+    ],
+    [
+      "stepDebris",
+      5609136
+    ],
+    [
+      "rot",
+      5167792
+    ],
+    [
+      "boxOf",
+      5136804
+    ],
+    [
+      "turn",
+      4974600
+    ],
+    [
+      "yawFrame",
+      4391656
+    ],
+    [
+      "pushOcc",
+      3954180
+    ],
+    [
+      "at",
+      3445776
+    ],
+    [
+      "collide",
+      3442636
+    ],
+    [
+      "norm",
+      3395100
+    ],
+    [
+      "vel",
+      2885612
+    ],
+    [
+      "stepRagdoll",
+      2705432
+    ],
+    [
+      "transformMat4",
+      2363664
+    ],
+    [
+      "apply",
+      2163928
+    ],
+    [
+      "groundRect",
+      2115772
+    ]
+  ],
+  "gc": [
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.616
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.579
+    },
+    {
+      "name": "MajorGC",
+      "duration_ms": 1.572
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.703
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.532
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.819
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.801
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 1.035
+    },
+    {
+      "name": "MajorGC",
+      "duration_ms": 4.947
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.687
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.959
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.729
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.771
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.766
+    },
+    {
+      "name": "MajorGC",
+      "duration_ms": 2.383
+    }
+  ],
+  "note": "Separate 1200-frame diagnostic after final measured block, per-pass instrumentation disabled; CPU sampling includes GPU waits. Heap sampling includes collected objects; byte estimates are sampled, not exact."
+}

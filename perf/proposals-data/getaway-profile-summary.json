@@ -1,0 +1,344 @@
+{
+  "frames": 1200,
+  "hottest": [
+    {
+      "name": "(idle)",
+      "line": -1,
+      "self_ms": 2397.537
+    },
+    {
+      "name": "(program)",
+      "line": -1,
+      "self_ms": 125.852
+    },
+    {
+      "name": "draw",
+      "line": 16717,
+      "self_ms": 68.655
+    },
+    {
+      "name": "writeBuffer",
+      "line": -1,
+      "self_ms": 27.951
+    },
+    {
+      "name": "update",
+      "line": 16338,
+      "self_ms": 24.544
+    },
+    {
+      "name": "render",
+      "line": 15944,
+      "self_ms": 21.88
+    },
+    {
+      "name": "",
+      "line": 0,
+      "self_ms": 21.312
+    },
+    {
+      "name": "beginRenderPass",
+      "line": -1,
+      "self_ms": 19.206
+    },
+    {
+      "name": "getCurrentTexture",
+      "line": -1,
+      "self_ms": 17.58
+    },
+    {
+      "name": "step",
+      "line": 22195,
+      "self_ms": 16.2
+    },
+    {
+      "name": "update",
+      "line": 21111,
+      "self_ms": 15.02
+    },
+    {
+      "name": "(garbage collector)",
+      "line": -1,
+      "self_ms": 14.667
+    },
+    {
+      "name": "submit",
+      "line": -1,
+      "self_ms": 13.672
+    },
+    {
+      "name": "animate",
+      "line": 16591,
+      "self_ms": 10.426
+    },
+    {
+      "name": "enc.beginRenderPass",
+      "line": 61,
+      "self_ms": 10.37
+    },
+    {
+      "name": "write",
+      "line": 16370,
+      "self_ms": 10.35
+    },
+    {
+      "name": "stepAndCollide",
+      "line": 17749,
+      "self_ms": 9.582
+    },
+    {
+      "name": "object.<computed>",
+      "line": 6,
+      "self_ms": 9.542
+    },
+    {
+      "name": "drawImage",
+      "line": -1,
+      "self_ms": 9.504
+    },
+    {
+      "name": "rampSurface",
+      "line": 9612,
+      "self_ms": 9.356
+    },
+    {
+      "name": "stepCars",
+      "line": 18565,
+      "self_ms": 9.206
+    },
+    {
+      "name": "stepBody",
+      "line": 17580,
+      "self_ms": 8.691
+    },
+    {
+      "name": "view",
+      "line": 19034,
+      "self_ms": 8.508
+    },
+    {
+      "name": "createCommandEncoder",
+      "line": -1,
+      "self_ms": 7.494
+    },
+    {
+      "name": "viewBase",
+      "line": 18992,
+      "self_ms": 6.388
+    },
+    {
+      "name": "encoder.beginRenderPass",
+      "line": 21772,
+      "self_ms": 6.053
+    },
+    {
+      "name": "sprite",
+      "line": 16802,
+      "self_ms": 6.025
+    },
+    {
+      "name": "",
+      "line": 17754,
+      "self_ms": 5.796
+    },
+    {
+      "name": "aabbInFrustum",
+      "line": 15343,
+      "self_ms": 5.69
+    },
+    {
+      "name": "update",
+      "line": 21418,
+      "self_ms": 5.336
+    }
+  ],
+  "sampled_allocations_bytes": [
+    [
+      "draw",
+      41529360
+    ],
+    [
+      "(anonymous)",
+      32269524
+    ],
+    [
+      "render",
+      14495128
+    ],
+    [
+      "emit",
+      13955024
+    ],
+    [
+      "push",
+      11595072
+    ],
+    [
+      "animate",
+      6491412
+    ],
+    [
+      "cone",
+      4820068
+    ],
+    [
+      "stepHeight",
+      4409488
+    ],
+    [
+      "stepBody",
+      4130928
+    ],
+    [
+      "update",
+      3852212
+    ],
+    [
+      "sprite",
+      3180432
+    ],
+    [
+      "next",
+      3164112
+    ],
+    [
+      "ring",
+      3136552
+    ],
+    [
+      "sort",
+      3079764
+    ],
+    [
+      "vel",
+      2541384
+    ],
+    [
+      "resolve",
+      2279748
+    ],
+    [
+      "apply",
+      2081964
+    ],
+    [
+      "collideBoxes",
+      1525972
+    ],
+    [
+      "view",
+      1493320
+    ],
+    [
+      "skidSegment",
+      1409416
+    ],
+    [
+      "collideShapes",
+      1360948
+    ],
+    [
+      "encoder.beginRenderPass",
+      1246148
+    ],
+    [
+      "hypot",
+      1229292
+    ],
+    [
+      "stepAndCollide",
+      1131972
+    ],
+    [
+      "values",
+      1114928
+    ],
+    [
+      "collideCars",
+      1114728
+    ],
+    [
+      "lateralSpeed",
+      1082104
+    ],
+    [
+      "step",
+      969296
+    ],
+    [
+      "lightMatrix",
+      903180
+    ],
+    [
+      "groundAt",
+      885380
+    ]
+  ],
+  "gc": [
+    {
+      "name": "MajorGC",
+      "duration_ms": 1.823
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.795
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.522
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.489
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.451
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.658
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.441
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.512
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.499
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.612
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.431
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.813
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.986
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.775
+    },
+    {
+      "name": "MinorGC",
+      "duration_ms": 0.714
+    },
+    {
+      "name": "MajorGC",
+      "duration_ms": 2.72
+    }
+  ],
+  "note": "Separate 1200-frame diagnostic after final measured block, per-pass instrumentation disabled; CPU sampling includes GPU waits. Heap sampling includes collected objects; byte estimates are sampled, not exact."
+}

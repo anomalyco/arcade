@@ -1,0 +1,26 @@
+{
+  "target": "blackout-multiplayer",
+  "experiment": "proposals-baseline",
+  "machine": "kits-Mac-Studio.local",
+  "timestamp": "2026-10-13T04:13:55.232Z",
+  "ticks": 1000,
+  "connections": 10,
+  "warmup": 1,
+  "measured": 9,
+  "median_ms": 54.21478599999995,
+  "mad_ms": 1.8249969999998257,
+  "p95_ms": 92.7689559999992,
+  "runs": [
+    53.269512999999776,
+    52.58199400000021,
+    53.851938999998765,
+    50.678570000000434,
+    54.21478599999995,
+    56.03978299999977,
+    63.71838299999928,
+    63.48032300000284,
+    92.7689559999992
+  ],
+  "digest": "a3ac5eef01b82bb11a2a6a0f75f821cc3f2f9cb8f9c96c38db039bbfdce362c4",
+  "serializedBytes": 29477078
+}

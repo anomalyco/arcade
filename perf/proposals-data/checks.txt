@@ -1,0 +1,553 @@
+$ tsc --noEmit && bun run typecheck:server && bun test && vite build
+$ tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.scripts.json
+bun test v1.4.2 (744846f84)
+
+tests/sim.test.ts:
+(pass) fog of war > cops never get the robber's true position while unseen [11.07ms]
+(pass) fog of war > in plain sight the cops see the live car [2.54ms]
+(skip) fog of war > buildings block line of sight beyond hearing range
+(skip) fog of war > smoke breaks line of sight, through the cloud and inside it
+(skip) gadgets > presses are edge-triggered and limited by cooldown and charges
+(skip) gadgets > cop gadgets wait for the chase; only the viewer's own car carries gadget state
+(skip) gadgets > oil spins out cops that drive through it, once each; the robber is immune
+(skip) gadgets > a spike strip ahead of a cop flattens the robber's tires
+(skip) gadgets > a roadblock is a solid barrier across the road for everyone, then expires
+(skip) gadgets > robber props dropped out of sight stay hidden from cops until one gets close
+(pass) cars > ramming: the heavier car shoves the lighter one and knocks it silly [4.27ms]
+(pass) car contact > cars side by side settle touching, about their widths apart (no circle-sized gap) [4.15ms]
+(pass) car contact > a T-bone pushes the struck car across and a rear-quarter hit spins it, with an impact event at the contact [6.40ms]
+(pass) car contact > an unseen driver's impact events carry no position [2.38ms]
+(pass) rounds > phases cycle intro -> headstart -> chase -> end -> next round, and the robber rotates between humans [97.09ms]
+(pass) rounds > a lone human alternates with a bot robber [0.62ms]
+(skip) rounds > survival: bots-only rounds end in a bust, with survival time and room best recorded
+(pass) rounds > the simulation is deterministic [50.01ms]
+(pass) rounds > heat rises over the chase; no backup units in PvP [7.44ms]
+(pass) waiting > a lone player free-drives, a second join starts the round, and the robber leaving drops back to waiting [3.61ms]
+(pass) waiting > a cop leaving keeps the round going while two players remain [0.69ms]
+(pass) survival sighting > the driver is live for every cop while any cop has them on screen, a last-seen ping otherwise [0.71ms]
+(pass) radio calls > reacquiring the driver after a while unseen calls one sighting, with a map heading [1.05ms]
+(pass) radio calls > a continuous sighting or a quick blink out of view doesn't repeat the call; losing them does [3.72ms]
+(pass) radio calls > a spotlight sighting is called in by the helicopter [1.57ms]
+(pass) survival spike strip > a cop drops a strip behind them; the driver crossing it loses a tire and slows down [4.63ms]
+(pass) going dark > a dark driver on a cop's screen is not seen: no radar for anyone, but that cop still sees the car [2.33ms]
+(pass) going dark > a rolling engine-off car or a running engine is seen as before [4.25ms]
+(pass) going dark > the helicopter's spotlight passes over a dark car without finding it [2.02ms]
+(pass) going dark > cops can still bust a dark driver they get close to [2.09ms]
+(pass) going dark > throttle does nothing with the engine off, and works again after the crank delay [2.25ms]
+(pass) permanent spike strips > strips never expire and pop another tire on every new pass [24.65ms]
+(pass) spike strip limit > a cop keeps at most MAX_STRIPS down; placing another picks up their oldest [0.99ms]
+(pass) dispatch tip > after a minute unseen, everyone gets a broad area that contains the driver, not centered on them [9.34ms]
+
+tests/idle.test.ts:
+(pass) idle kick > an idle player is warned from 100 s and kicked at 120 s, seat freed at once [63.25ms]
+(pass) idle kick > input activity resets the timer; repeating a neutral input does not [121.90ms]
+(pass) idle kick > the driver sitting dark gets 240 s [191.01ms]
+(pass) idle kick > nobody is kicked during the end card; the timer keeps running [94.22ms]
+(pass) idle kick > kicking the robber sends the round back to the start [116.81ms]
+
+tests/flats.test.ts:
+(pass) spike strips pop one tire at a time > each pass pops exactly one tire, the first intact one to go over; four passes put the car on its rims [2.75ms]
+(pass) spike strips pop one tire at a time > a car crossing at the strip's end only loses a tire that goes over it [2.31ms]
+(pass) spike strips pop one tire at a time > a hit marks the last known position [1.11ms]
+(pass) driving on flats > top speed drops with every flat; on the rims it's about a fifth, but the car still moves [1.13ms]
+(pass) driving on flats > a flat on one side pulls the car that way; flats on both sides don't [0.12ms]
+(pass) driving on flats > four flats cap the driver at about 20% speed, and they can still limp into a shop and get fixed [2.67ms]
+(pass) repair shops > there are a few shops spread over the district, each bay open and reachable from a road [7.81ms]
+(pass) repair shops > stopping in a bay fixes every tire after REPAIR_SECONDS; driving out resets the progress [1.88ms]
+(pass) repair shops > rolling through a bay doesn't count [2.12ms]
+(pass) repair shops > a shop that just did a repair can't do another for SHOP_COOLDOWN seconds; other shops can [8.04ms]
+(pass) repair shops > cops can't get repairs [1.59ms]
+(pass) repair shops > an unseen driver's repair is private: cops get no event, no progress and no shop timers [2.08ms]
+(pass) repair shops > a seen driver's repair goes out to everyone [1.65ms]
+
+tests/cop-view.test.ts:
+(pass) cop's own screen > the driver stays drawn for a cop whose screen still shows them, even after radar loses them [1.28ms]
+
+tests/net.test.ts:
+(pass) prediction > a lone player's free driving is predicted exactly while waiting [26.59ms]
+(pass) prediction > predicted car matches the server body for every acked input [15.79ms]
+(pass) prediction > reconciles after a server-side correction and the drawn car converges [18.62ms]
+(pass) prediction > other cars are interpolated between snapshots [17.86ms]
+(pass) prediction with contact > ramming another car is predicted locally: the server agrees closely and the drawn car never jumps [64.96ms]
+(pass) room > a lone player waits and free-drives; a second player starts the round; the room caps at MAX_PLAYERS humans [18.83ms]
+(pass) room > the round falls back to waiting when the robber's seat expires [11.79ms]
+(pass) room > mid-round joiners drop straight in as cops with their own car [1.74ms]
+(pass) room > a reconnect within the grace period resumes the same seat and car [1.26ms]
+(pass) spike strip > a cop's Q press travels through the protocol and the room and deploys a strip [13.10ms]
+(pass) spike strip > the driver's prediction carries server-side flat tires (pull and wobble included) without diverging [11.87ms]
+(pass) repair shops > an unseen driver's repair reaches only the driver, and the prediction follows it [12.92ms]
+(pass) fog of war > cop and spectator snapshots never carry the robber's live position while unseen [94.48ms]
+(pass) engine > an H press travels through the protocol and the room, and the prediction follows it without diverging [6.10ms]
+
+tests/vehicle.test.ts:
+(pass) straight line > every car reaches 90% of its top speed within 6 s and tops out near maxSpeed [0.67ms]
+(pass) straight line > nitro lifts top speed above maxSpeed, drains in a few seconds and refills [0.08ms]
+(pass) straight line > reverse: throttle -1 brakes first, then backs up to a capped reverse speed [0.04ms]
+(pass) straight line > coasting slows down and stops [0.18ms]
+(pass) drifting > a handbrake turn at speed slides sideways and turns 90 degrees in under a second [0.07ms]
+(pass) drifting > after the handbrake, throttle and light counter-steer hold the slide angle [0.06ms]
+(pass) drifting > letting go of everything recovers grip quickly [0.02ms]
+(pass) drifting > over-steering into the slide never spins the car past ~70 degrees [0.11ms]
+(pass) modifiers > a flat tire lowers top speed [0.06ms]
+(pass) modifiers > oil: almost no grip, the car keeps sliding and spinning [0.06ms]
+(pass) collisions > a head-on wall hit stops the car at its bumper with a small bounce, without spinning it [0.08ms]
+(pass) collisions > a glancing wall hit keeps most of the speed and slides along the wall [0.06ms]
+(pass) collisions > a car whose center ends up inside a box is pushed fully outside
+(pass) collisions > a car held against a wall on full throttle rests there without vibrating [0.86ms]
+(pass) collisions > no tunneling through a thin roadblock at max boost speed [0.65ms]
+(pass) collisions > no tunneling through a building corner at speed from any angle, spinning or not [5.62ms]
+(pass) car to car > overlapping side by side, cars are pushed apart to touch at about their widths, not a circle's [0.12ms]
+(pass) car to car > a car leaning into another alongside stays pressed against it without bouncing off [0.34ms]
+(pass) car to car > a T-bone shoves the struck car sideways; hitting the rear quarter spins it [0.28ms]
+(pass) car to car > a fast head-on doesn't sink in: the cars meet bumper to bumper [0.16ms]
+(pass) car to car > contacts are deterministic [0.69ms]
+(pass) random inputs and wall hits never produce NaN [19.21ms]
+
+tests/jumps.test.ts:
+(pass) car jumps > ramp gives airtime, preserves horizontal momentum in flight, then lands with short grip loss [0.19ms]
+(pass) car jumps > seeded city ramps and two full world runs agree tick for tick [2.62ms]
+(pass) car jumps > bot steering crosses a ramp in either direction without getting stuck [0.92ms]
+(pass) car jumps > slow cars roll over; airborne cars clear lower cars but hit tall walls [0.19ms]
+(pass) car jumps > height interpolates and roundtrips through the snapshot protocol [0.40ms]
+(pass) car jumps > prediction and delayed reconciliation keep the same launch and landing as the server [3.09ms]
+(pass) car jumps > brake and boost state follow controls, including steady ticks at rest [0.10ms]
+
+tests/chat.test.ts:
+(pass) chat is cleaned, broadcast and rate limited [1.83ms]
+
+tests/bust.test.ts:
+(pass) bust > a robber pinned by two cops at low speed is busted in about BUST_SECONDS [2.71ms]
+(pass) bust > one cop alone (pinning against a wall) is slower [2.68ms]
+(pass) bust > a fast-moving robber is never boxed, even with cops alongside [3.12ms]
+(pass) bust > bust progress drains once the robber breaks free [1.36ms]
+(skip) extraction > the extraction point is closed until EXTRACT_OPEN_SECONDS into the chase
+(skip) extraction > holding inside the zone for EXTRACT_SECONDS wins; leaving early does not
+(skip) extraction > cops pressed against the car slow the loading down
+(pass) near miss > +500 once per cooldown for threading past a cop at speed [2.05ms]
+(pass) near miss > no near miss for contact or low speed [1.76ms]
+
+tests/peaceful.test.ts:
+(pass) peaceful seed 7 gives identical five-minute drives without cops or round endings [96.39ms]
+
+tests/matchmaking.test.ts:
+(pass) pickRoom > picks the fullest public room that still has space [0.06ms]
+(pass) pickRoom > skips private, full and empty rooms [0.02ms]
+(pass) pickRoom > prefers a waiting room on a tie
+(pass) Matchmaker > quick join returns the fullest open room [0.07ms]
+(pass) Matchmaker > creates and reserves a new code when nothing is open [0.19ms]
+(pass) Matchmaker > concurrent quick joins share the reserved code, until it expires [0.07ms]
+(pass) Matchmaker > the reserved room takes over once it reports in [0.05ms]
+(pass) Matchmaker > create game is private and never handed out by quick join [0.08ms]
+(pass) Matchmaker > stale rooms expire and empty rooms drop out [0.05ms]
+(pass) Matchmaker > stats count players everywhere and open public games [0.10ms]
+
+tests/cop-overlap.test.ts:
+(pass) cop cars > cops drive through each other, but still hit the driver [1.03ms]
+
+12 tests skipped:
+(skip) fog of war > buildings block line of sight beyond hearing range
+(skip) fog of war > smoke breaks line of sight, through the cloud and inside it
+(skip) gadgets > presses are edge-triggered and limited by cooldown and charges
+(skip) gadgets > cop gadgets wait for the chase; only the viewer's own car carries gadget state
+(skip) gadgets > oil spins out cops that drive through it, once each; the robber is immune
+(skip) gadgets > a spike strip ahead of a cop flattens the robber's tires
+(skip) gadgets > a roadblock is a solid barrier across the road for everyone, then expires
+(skip) gadgets > robber props dropped out of sight stay hidden from cops until one gets close
+(skip) rounds > survival: bots-only rounds end in a bust, with survival time and room best recorded
+(skip) extraction > the extraction point is closed until EXTRACT_OPEN_SECONDS into the chase
+(skip) extraction > holding inside the zone for EXTRACT_SECONDS wins; leaving early does not
+(skip) extraction > cops pressed against the car slow the loading down
+
+ 106 pass
+ 12 skip
+ 0 fail
+ 148916 expect() calls
+Ran 118 tests across 12 files. [1362.00ms]
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 61 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/arcade/getaway/index.html                                                      0.54 kB │ gzip:  0.31 kB
+dist/arcade/getaway/compare.html                                                    1.18 kB │ gzip:  0.62 kB
+dist/arcade/getaway/assets/inter-vietnamese-400-normal-DMkecbls.woff2               4.97 kB
+dist/arcade/getaway/assets/inter-greek-ext-400-normal-DGGRlc-M.woff2                5.26 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-500-normal-CsrJDWc5.woff     6.04 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-300-normal-Bu3vnVSs.woff     6.05 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-600-normal-CNlPk46_.woff     6.07 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-800-normal-BZxKbt5V.woff     6.18 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-800-italic-aDhyDJMT.woff     6.35 kB
+dist/arcade/getaway/assets/inter-vietnamese-400-normal-Bbgyi5SW.woff                6.50 kB
+dist/arcade/getaway/assets/inter-greek-ext-400-normal-KugGGMne.woff                 7.06 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-500-normal-DjeaNLFD.woff2    7.52 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-300-normal-xnqTSUBZ.woff2    7.53 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-600-normal-A5AYRdjN.woff2    7.69 kB
+dist/arcade/getaway/assets/inter-cyrillic-400-normal-obahsSVq.woff2                 7.71 kB
+dist/arcade/getaway/assets/inter-greek-400-normal-B4URO6DV.woff2                    7.77 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-800-normal-CpjukuLw.woff2    7.80 kB
+dist/arcade/getaway/assets/barlow-condensed-vietnamese-800-italic-DdsBx9lY.woff2    7.88 kB
+dist/arcade/getaway/assets/inter-cyrillic-400-normal-HOLc17fK.woff                  9.78 kB
+dist/arcade/getaway/assets/inter-greek-400-normal-q2sYcFCs.woff                     9.92 kB
+dist/arcade/getaway/assets/inter-cyrillic-ext-400-normal-BQZuk6qB.woff2            10.23 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-300-normal-CkEF04xU.woff     11.80 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-500-normal-B1RE8WP7.woff     11.86 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-800-normal-gY_0Gifi.woff     11.91 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-600-normal-Clv9cIcR.woff     11.97 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-800-italic-Ca7Cun8E.woff     12.75 kB
+dist/arcade/getaway/assets/inter-cyrillic-ext-400-normal-DQukG94-.woff             13.33 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-300-normal-CvbRRNuI.woff2    13.81 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-500-normal-yA5ONLQ9.woff2    14.18 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-600-normal-18ESti3H.woff2    14.51 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-800-normal-DGNyg4u8.woff2    14.54 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-ext-800-italic-BbzArEj4.woff2    15.19 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-300-normal-C2BQdy7F.woff         18.45 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-500-normal-HIEiP5Ov.woff         18.60 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-800-normal-e9GbPXiK.woff         18.72 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-600-normal-BFJEwTuo.woff         18.89 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-800-italic-B5BpsPSY.woff         20.56 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-300-normal-Cnd1AN-G.woff2        21.08 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-500-normal-BgYH2mbd.woff2        21.42 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-600-normal-DepVgxBB.woff2        22.30 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-800-normal-BKzMuPgK.woff2        22.46 kB
+dist/arcade/getaway/assets/inter-latin-400-normal-C38fXH4l.woff2                   23.66 kB
+dist/arcade/getaway/assets/barlow-condensed-latin-800-italic-Cnej2eWp.woff2        23.78 kB
+dist/arcade/getaway/assets/inter-latin-400-normal-CyCys3Eg.woff                    30.69 kB
+dist/arcade/getaway/assets/inter-latin-ext-400-normal-C1nco2VV.woff2               35.00 kB
+dist/arcade/getaway/assets/inter-latin-ext-400-normal-77YHD8bZ.woff                47.56 kB
+dist/arcade/getaway/assets/compare-B96yxND6.css                                     1.31 kB │ gzip:  0.64 kB
+dist/arcade/getaway/assets/main-DGjfM0K0.css                                       21.32 kB │ gzip:  4.64 kB
+dist/arcade/getaway/assets/modulepreload-polyfill-P2Xu9kJm.js                       0.67 kB │ gzip:  0.38 kB
+dist/arcade/getaway/assets/compare-BTfsFUR5.js                                      4.47 kB │ gzip:  2.06 kB
+dist/arcade/getaway/assets/net-CTVGuoQ9.js                                          9.28 kB │ gzip:  3.76 kB
+dist/arcade/getaway/assets/main-CoNyVUyL.js                                       278.98 kB │ gzip: 98.71 kB
+
+✓ built in 154ms
+$ bun scripts/build-id.ts && tsc --noEmit && bun run typecheck:server && bun test && vite build
+build 38c04407dd6e
+$ tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.scripts.json
+bun test v1.4.2 (744846f84)
+
+tests/modes-objective.test.ts:
+(pass) kill confirmed > a kill scores nothing by itself and drops the victim's tag where they died [2.75ms]
+(pass) kill confirmed > an enemy walking over the tag confirms it; a teammate denies it [0.81ms]
+(pass) kill confirmed > tags vanish after a while [3.53ms]
+(pass) kill confirmed > the first team to the confirm target wins [0.51ms]
+(pass) kill confirmed > the target scales with the room [0.03ms]
+(pass) hardpoint > the zones are spread over the floor [6.55ms]
+(pass) hardpoint > holding the zone alone scores a point a second [0.73ms]
+(pass) hardpoint > a contested zone scores for nobody [0.38ms]
+(pass) hardpoint > the zone moves every minute, announced beforehand [12.29ms]
+(pass) hardpoint > the first team to the target wins [0.36ms]
+(pass) capture the flag > the flags start at bases at opposite ends [0.77ms]
+(pass) capture the flag > walk over the enemy flag to take it; the carrier walks slower and can't sprint [0.75ms]
+(pass) capture the flag > bringing it home while your flag is home scores [0.26ms]
+(pass) capture the flag > no capture while your own flag is away; returning it lets the carrier score [0.60ms]
+(pass) capture the flag > enemies pick a dropped flag up [0.15ms]
+(pass) capture the flag > a dropped flag goes home by itself [1.45ms]
+(pass) capture the flag > three captures win; level captures go to kills [0.24ms]
+(pass) the vote > four options: the current mode first, three others, the same for the same seed [0.28ms]
+(pass) the vote > the tally counts only offered modes [0.10ms]
+(pass) the vote > the end screen offers four modes in the snapshot; votes outside them are ignored [0.78ms]
+(pass) bots > bots play each objective mode for a minute without errors [145.30ms]
+
+tests/modes-rules.test.ts:
+(pass) melee > a swing lands after the wind-up and kills in one hit [0.44ms]
+(pass) melee > misses out of range or behind you [0.22ms]
+(pass) melee > no swing through a wall [0.07ms]
+(pass) melee > cooldown between swings [0.15ms]
+(pass) melee > modes without melee ignore the key, and the protocol carries it [0.20ms]
+(pass) infected > everyone starts a survivor with a rifle or shotgun and one frag, then one turns [0.86ms]
+(pass) infected > two patient zeros in a room of eight [0.97ms]
+(pass) infected > a swipe infects: the survivor comes back infected, the infected scores [0.46ms]
+(pass) infected > the infected win when the last survivor turns [0.26ms]
+(pass) infected > survivors win if any make it to the end, and score for staying alive and for kills [5.06ms]
+(pass) infected > survivors can't hurt each other; infected can't swipe infected [0.80ms]
+(pass) gun game > every kill moves you up the ladder and swaps the gun at once [0.10ms]
+(pass) gun game > picks are ignored [0.08ms]
+(pass) gun game > a melee death knocks you down a tier [0.05ms]
+(pass) gun game > a kill on the last tier wins [0.15ms]
+(pass) one in the chamber > one bullet that kills, no reload, a kill gives another, a miss wastes it [0.28ms]
+(pass) one in the chamber > bullets cap at three; a swing kill counts too [0.18ms]
+(pass) one in the chamber > three lives, then you're out; the last one standing wins [0.34ms]
+(pass) bots > play inf for a minute [30.68ms]
+(pass) bots > play gun for a minute [22.87ms]
+(pass) bots > play oitc for a minute [17.30ms]
+
+tests/idle.test.ts:
+(pass) idle kick > no input for the limit kicks you, with a countdown first [3.72ms]
+(pass) idle kick > moving keeps you in [2.06ms]
+(pass) idle kick > turning the aim counts; holding still with the same aim does not [2.60ms]
+(pass) idle kick > time dead doesn't count [1.32ms]
+(pass) client version > a client with a different build is told to reload; one without a build gets an error [4.42ms]
+
+tests/sandbox.test.ts:
+(pass) peaceful dummies stay at their seeded spawn for five minutes [49.37ms]
+(pass) a killed dummy respawns at exactly the same position and aim [0.60ms]
+
+tests/downtown.test.ts:
+(pass) procedural downtown > is deterministic, and getMap builds it by kind and seed [24.71ms]
+(pass) procedural downtown > generates quickly [41.44ms]
+(pass) procedural downtown > varies: grid sizes, superblocks, stubs, parks and parking lots all turn up [1.01ms]
+(pass) procedural downtown > bots path across the whole map quickly [26.92ms]
+(pass) procedural downtown > downtown 13: connected streets for cars and people, spread spawns, sparse lights, valid places [19.03ms]
+(pass) procedural downtown > downtown 7932: connected streets for cars and people, spread spawns, sparse lights, valid places [11.03ms]
+(pass) procedural downtown > downtown 15851: connected streets for cars and people, spread spawns, sparse lights, valid places [10.41ms]
+(pass) procedural downtown > downtown 23770: connected streets for cars and people, spread spawns, sparse lights, valid places [13.62ms]
+(pass) procedural downtown > downtown 31689: connected streets for cars and people, spread spawns, sparse lights, valid places [11.61ms]
+(pass) procedural downtown > downtown 39608: connected streets for cars and people, spread spawns, sparse lights, valid places [7.37ms]
+(pass) procedural downtown > downtown 47527: connected streets for cars and people, spread spawns, sparse lights, valid places [5.94ms]
+(pass) procedural downtown > downtown 55446: connected streets for cars and people, spread spawns, sparse lights, valid places [5.99ms]
+(pass) procedural downtown > downtown 63365: connected streets for cars and people, spread spawns, sparse lights, valid places [4.76ms]
+(pass) procedural downtown > downtown 71284: connected streets for cars and people, spread spawns, sparse lights, valid places [7.70ms]
+(pass) procedural downtown > downtown 79203: connected streets for cars and people, spread spawns, sparse lights, valid places [6.58ms]
+(pass) procedural downtown > downtown 87122: connected streets for cars and people, spread spawns, sparse lights, valid places [6.16ms]
+(pass) procedural downtown > downtown 95041: connected streets for cars and people, spread spawns, sparse lights, valid places [4.80ms]
+(pass) procedural downtown > downtown 102960: connected streets for cars and people, spread spawns, sparse lights, valid places [6.37ms]
+(pass) procedural downtown > downtown 110879: connected streets for cars and people, spread spawns, sparse lights, valid places [7.57ms]
+(pass) procedural downtown > downtown 118798: connected streets for cars and people, spread spawns, sparse lights, valid places [6.91ms]
+(pass) procedural downtown > downtown 126717: connected streets for cars and people, spread spawns, sparse lights, valid places [5.56ms]
+(pass) procedural downtown > downtown 134636: connected streets for cars and people, spread spawns, sparse lights, valid places [6.80ms]
+(pass) procedural downtown > downtown 142555: connected streets for cars and people, spread spawns, sparse lights, valid places [6.49ms]
+(pass) procedural downtown > downtown 150474: connected streets for cars and people, spread spawns, sparse lights, valid places [5.44ms]
+(pass) procedural downtown > downtown 158393: connected streets for cars and people, spread spawns, sparse lights, valid places [6.33ms]
+(pass) procedural downtown > downtown 166312: connected streets for cars and people, spread spawns, sparse lights, valid places [7.64ms]
+(pass) procedural downtown > downtown 174231: connected streets for cars and people, spread spawns, sparse lights, valid places [6.79ms]
+(pass) procedural downtown > downtown 182150: connected streets for cars and people, spread spawns, sparse lights, valid places [7.30ms]
+(pass) procedural downtown > downtown 190069: connected streets for cars and people, spread spawns, sparse lights, valid places [6.55ms]
+(pass) procedural downtown > downtown 197988: connected streets for cars and people, spread spawns, sparse lights, valid places [6.64ms]
+(pass) procedural downtown > downtown 205907: connected streets for cars and people, spread spawns, sparse lights, valid places [6.51ms]
+(pass) procedural downtown > downtown 213826: connected streets for cars and people, spread spawns, sparse lights, valid places [6.21ms]
+(pass) procedural downtown > downtown 221745: connected streets for cars and people, spread spawns, sparse lights, valid places [8.17ms]
+(pass) procedural downtown > downtown 229664: connected streets for cars and people, spread spawns, sparse lights, valid places [6.62ms]
+(pass) procedural downtown > downtown 237583: connected streets for cars and people, spread spawns, sparse lights, valid places [12.77ms]
+(pass) procedural downtown > downtown 245502: connected streets for cars and people, spread spawns, sparse lights, valid places [5.01ms]
+(pass) procedural downtown > downtown 253421: connected streets for cars and people, spread spawns, sparse lights, valid places [19.86ms]
+(pass) procedural downtown > downtown 261340: connected streets for cars and people, spread spawns, sparse lights, valid places [6.32ms]
+(pass) procedural downtown > downtown 269259: connected streets for cars and people, spread spawns, sparse lights, valid places [7.00ms]
+(pass) procedural downtown > downtown 277178: connected streets for cars and people, spread spawns, sparse lights, valid places [4.74ms]
+(pass) procedural downtown > downtown 285097: connected streets for cars and people, spread spawns, sparse lights, valid places [9.77ms]
+(pass) procedural downtown > downtown 293016: connected streets for cars and people, spread spawns, sparse lights, valid places [6.66ms]
+(pass) procedural downtown > downtown 300935: connected streets for cars and people, spread spawns, sparse lights, valid places [12.56ms]
+(pass) procedural downtown > downtown 308854: connected streets for cars and people, spread spawns, sparse lights, valid places [6.44ms]
+(pass) map kind in the room > the world plays the room's setting, random picks both, and the snapshot carries kind and seed [52.12ms]
+(pass) map kind in the room > the host's map setting applies from the next new floor; others are ignored [20.16ms]
+(pass) map kind in the room > protocol validates the map setting [0.05ms]
+(pass) map kind in the room > Create game's map is the first map, taken only while the room is empty [5.67ms]
+(pass) map kind in the room > bots play downtown in every kind of mode [465.12ms]
+
+tests/lighting.test.ts:
+(pass) every monitor light matches an emissive screen in the generated desk geometry [11.79ms]
+(pass) monitors add no occluders or polar rows, including with dynamic lights [1.87ms]
+(pass) monitor layout is seeded, bounded and broken monitors drop only their direct light [1.06ms]
+(pass) live chair shadows and monitor intensity do not leak into the shadowless suffix [1.58ms]
+
+tests/office.test.ts:
+(pass) procedural office > is deterministic [7.21ms]
+(pass) procedural office > generates quickly [14.59ms]
+(pass) procedural office > makes many kinds of floor [0.23ms]
+(pass) procedural office > floors look different from each other, even mirrored [9.45ms]
+(pass) procedural office > rooms flow into each other: nearly all have two ways in [1.28ms]
+(pass) procedural office > bots path across the whole floor quickly [8.73ms]
+(pass) procedural office > floor 13: a believable connected office with spread spawns and sparse lights [3.85ms]
+(pass) procedural office > floor 7932: a believable connected office with spread spawns and sparse lights [2.98ms]
+(pass) procedural office > floor 15851: a believable connected office with spread spawns and sparse lights [3.37ms]
+(pass) procedural office > floor 23770: a believable connected office with spread spawns and sparse lights [2.72ms]
+(pass) procedural office > floor 31689: a believable connected office with spread spawns and sparse lights [2.30ms]
+(pass) procedural office > floor 39608: a believable connected office with spread spawns and sparse lights [2.93ms]
+(pass) procedural office > floor 47527: a believable connected office with spread spawns and sparse lights [4.15ms]
+(pass) procedural office > floor 55446: a believable connected office with spread spawns and sparse lights [2.94ms]
+(pass) procedural office > floor 63365: a believable connected office with spread spawns and sparse lights [2.44ms]
+(pass) procedural office > floor 71284: a believable connected office with spread spawns and sparse lights [1.86ms]
+(pass) procedural office > floor 79203: a believable connected office with spread spawns and sparse lights [2.26ms]
+(pass) procedural office > floor 87122: a believable connected office with spread spawns and sparse lights [2.13ms]
+(pass) procedural office > floor 95041: a believable connected office with spread spawns and sparse lights [2.05ms]
+(pass) procedural office > floor 102960: a believable connected office with spread spawns and sparse lights [1.92ms]
+(pass) procedural office > floor 110879: a believable connected office with spread spawns and sparse lights [3.87ms]
+(pass) procedural office > floor 118798: a believable connected office with spread spawns and sparse lights [2.06ms]
+(pass) procedural office > floor 126717: a believable connected office with spread spawns and sparse lights [2.35ms]
+(pass) procedural office > floor 134636: a believable connected office with spread spawns and sparse lights [2.17ms]
+(pass) procedural office > floor 142555: a believable connected office with spread spawns and sparse lights [1.98ms]
+(pass) procedural office > floor 150474: a believable connected office with spread spawns and sparse lights [2.00ms]
+(pass) procedural office > floor 158393: a believable connected office with spread spawns and sparse lights [1.87ms]
+(pass) procedural office > floor 166312: a believable connected office with spread spawns and sparse lights [2.18ms]
+(pass) procedural office > floor 174231: a believable connected office with spread spawns and sparse lights [1.71ms]
+(pass) procedural office > floor 182150: a believable connected office with spread spawns and sparse lights [4.07ms]
+(pass) procedural office > floor 190069: a believable connected office with spread spawns and sparse lights [3.24ms]
+(pass) procedural office > floor 197988: a believable connected office with spread spawns and sparse lights [2.39ms]
+(pass) procedural office > floor 205907: a believable connected office with spread spawns and sparse lights [2.26ms]
+(pass) procedural office > floor 213826: a believable connected office with spread spawns and sparse lights [2.70ms]
+(pass) procedural office > floor 221745: a believable connected office with spread spawns and sparse lights [2.79ms]
+(pass) procedural office > floor 229664: a believable connected office with spread spawns and sparse lights [2.79ms]
+(pass) procedural office > floor 237583: a believable connected office with spread spawns and sparse lights [2.38ms]
+(pass) procedural office > floor 245502: a believable connected office with spread spawns and sparse lights [3.46ms]
+(pass) procedural office > floor 253421: a believable connected office with spread spawns and sparse lights [2.22ms]
+(pass) procedural office > floor 261340: a believable connected office with spread spawns and sparse lights [2.17ms]
+(pass) procedural office > floor 269259: a believable connected office with spread spawns and sparse lights [1.90ms]
+(pass) procedural office > floor 277178: a believable connected office with spread spawns and sparse lights [2.04ms]
+(pass) procedural office > floor 285097: a believable connected office with spread spawns and sparse lights [2.50ms]
+(pass) procedural office > floor 293016: a believable connected office with spread spawns and sparse lights [1.63ms]
+(pass) procedural office > floor 300935: a believable connected office with spread spawns and sparse lights [2.74ms]
+(pass) procedural office > floor 308854: a believable connected office with spread spawns and sparse lights [1.90ms]
+
+tests/world.test.ts:
+(pass) shooting > four hits kill and the killer scores [0.28ms]
+(pass) shooting > the sniper kills in one shot and the shotgun in one pump up close [0.14ms]
+(pass) shooting > semi-automatic guns need a fresh trigger press [0.10ms]
+(pass) shooting > walls stop bullets [0.06ms]
+(pass) shooting > the magazine empties and reloads [0.10ms]
+(pass) shooting > health regenerates out of combat [1.67ms]
+(pass) sprint > sprinting moves faster than walking [0.25ms]
+(pass) sprint > pulling the trigger cancels the sprint, and the first shot waits for the gun to come up [0.16ms]
+(pass) sprint > a semi-automatic press during the delay still fires once the gun is up [0.06ms]
+(pass) deathmatch > the dead respawn [0.07ms]
+(pass) deathmatch > everyone is in every snapshot [0.05ms]
+(pass) deathmatch > rooms have no bots unless asked; bots leave as humans join [1.12ms]
+(pass) deathmatch > the match ends on time, then a new floor starts with scores reset [7.75ms]
+(pass) deathmatch > bots hunt and kill each other without getting stuck in walls [67.13ms]
+(pass) broadphase > grid raycasts match a linear scan [95.23ms]
+(pass) broadphase > pushOut through the grid matches a linear scan [109.91ms]
+(pass) equipment > a frag kills a player near where it lands once the fuse burns down, and only then [0.59ms]
+(pass) equipment > walls stop the blast [0.20ms]
+(pass) equipment > a frag hurts its thrower, and dying to your own scores nothing [0.46ms]
+(pass) equipment > one piece of equipment per life [0.14ms]
+(pass) equipment > the equipment pick applies on respawn [0.14ms]
+(pass) equipment > a claymore arms, then trips on someone walking into its cone and kills them [0.34ms]
+(pass) equipment > a claymore does nothing before it arms, or to someone beside or behind it [0.24ms]
+(pass) equipment > shooting a claymore sets it off [0.22ms]
+(pass) equipment > a frag sets off claymores in its blast [0.30ms]
+(pass) equipment > a new claymore replaces your last one, and it outlives you [0.22ms]
+(pass) frag flight > it comes to rest about where you aimed [0.31ms]
+(pass) frag flight > it sails over low partitions but bounces off walls [0.31ms]
+(pass) frag flight > it can land on a desk and rest on top [0.10ms]
+
+tests/vehicles.test.ts:
+(pass) getting in and out > F next to a vehicle takes the wheel; the next player gets the nearest free seat; F again gets out to the side [1.02ms]
+(pass) getting in and out > C moves to the next free seat, skipping taken ones; leaving the wheel parks the vehicle; the protocol carries it [0.28ms]
+(pass) getting in and out > too far away, nothing happens; a full vehicle takes nobody else [0.09ms]
+(pass) getting in and out > walkers can't go through a parked vehicle [0.15ms]
+(pass) getting in and out > the infected can't get in [0.08ms]
+(pass) getting in and out > office floors have no vehicles, maps with spawns do [1.19ms]
+(pass) driving > W drives forward, A and D steer, S brakes [0.91ms]
+(pass) driving > a wall stops a vehicle without letting it through, and a hard crash hurts it [1.28ms]
+(pass) driving > vehicles bump each other instead of overlapping [0.90ms]
+(pass) driving > driving into an enemy fast runs them over; slow or a teammate just gets shoved [0.53ms]
+(pass) shooting > rounds stop on a vehicle and wear it down [0.10ms]
+(pass) shooting > a destroyed vehicle explodes: riders die, people close by are hurt, the shooter gets the kills [0.12ms]
+(pass) shooting > riders can be shot, behind armour [0.06ms]
+(pass) shooting > passengers shoot, the driver can't [0.11ms]
+(pass) shooting > a wreck burns as cover, then the vehicle is back at its spot [1.67ms]
+(pass) shooting > a frag next to a vehicle damages it [0.30ms]
+(pass) prediction and the wire > replaying the driver's inputs from a snapshot lands exactly where the server does [0.38ms]
+(pass) prediction and the wire > the snapshot carries vehicles and who rides where [2.54ms]
+(pass) prediction and the wire > enter and horn are validated presses [0.08ms]
+(pass) geometry > boxes: distance, push-out and rays respect the heading [0.08ms]
+(pass) geometry > an empty vehicle rolls to a stop on its own [0.07ms]
+
+tests/modes.test.ts:
+(pass) team deathmatch > joiners are balanced across two teams [0.18ms]
+(pass) team deathmatch > teams spawn at opposite ends [0.51ms]
+(pass) team deathmatch > no friendly fire: rounds pass through teammates and hit the enemy behind [0.15ms]
+(pass) team deathmatch > frags don't hurt teammates [0.04ms]
+(pass) team deathmatch > the first team to the kill target wins [0.05ms]
+(pass) team deathmatch > the kill target scales with the room
+(pass) domination > three points spread along the floor [0.09ms]
+(pass) domination > standing alone on a point captures it in about five seconds, and it scores every second [0.55ms]
+(pass) domination > two teammates capture faster [0.24ms]
+(pass) domination > a contested point pauses [0.32ms]
+(pass) domination > the first team to the target wins [0.13ms]
+(pass) search and destroy > one attacker spawns with the bomb; attackers and defenders start at opposite ends [0.10ms]
+(pass) search and destroy > planting holds you still and arms the bomb; defusing wins the round for the defenders [0.69ms]
+(pass) search and destroy > letting go resets the plant [0.35ms]
+(pass) search and destroy > the bomb detonates after the fuse: attackers win and defenders nearby die [2.56ms]
+(pass) search and destroy > eliminating the defenders wins; the dead stay dead until the next round [0.61ms]
+(pass) search and destroy > the bomb drops when its carrier dies and another attacker picks it up [0.10ms]
+(pass) search and destroy > running out the clock without a plant is a defender win [7.08ms]
+(pass) search and destroy > sides swap at half and the first team to four rounds wins the match [5.35ms]
+(pass) search and destroy > a late joiner waits for the next round [0.74ms]
+(pass) votes > no votes keeps the mode; the most votes wins; ties break at random [0.11ms]
+(pass) votes > votes count only on the end screen and pick the next match's mode [0.20ms]
+(pass) protocol > votes and the use key are validated [0.05ms]
+(pass) rooms > Create game's mode is the first match's mode, taken only while the room is empty [5.06ms]
+(pass) places on generated floors > points, sites and team ends are reachable and spread out [8.07ms]
+(pass) places on generated floors > bots play every mode without errors and score [112.38ms]
+
+tests/host-controls.test.ts:
+(pass) host controls > only the host can reset or switch the mode [0.55ms]
+(pass) host controls > a reset starts a fresh match on a new floor: scores zeroed, everyone respawned, gear gone [3.70ms]
+(pass) host controls > a reset can keep the floor [0.29ms]
+(pass) host controls > switching mode starts play in the new mode on a new floor [3.75ms]
+(pass) host controls > host-picked teams stand through a switch between team modes [4.33ms]
+(pass) host controls > works from the end screen and clears the vote [3.49ms]
+(pass) host controls > at most one restart every few seconds [6.55ms]
+(pass) host controls > the protocol takes resets and valid mode switches only [0.14ms]
+(pass) host controls > rooms take restarts only from the host [4.26ms]
+
+tests/smooth.test.ts:
+(pass) drawing the predicted body > the raw 30 Hz body flips between two spots on screen at 60 Hz [1.22ms]
+(pass) drawing the predicted body > interpolated between ticks it holds steady on screen at 60 Hz [0.35ms]
+(pass) drawing the predicted body > interpolated between ticks it holds steady on screen at 120 Hz [0.61ms]
+(pass) drawing the predicted body > interpolated between ticks it holds steady on screen at 144 Hz [0.39ms]
+(pass) drawing the predicted body > a correction keeps the drawn position, then blends out [0.11ms]
+
+tests/host-teams.test.ts:
+(pass) room host > the first human in hosts; when they leave, the longest-connected human takes over [0.23ms]
+(pass) room host > only the host can move people [0.17ms]
+(pass) room host > a living player moved mid-match sits out without a score and respawns on the new side [0.12ms]
+(pass) room host > moves persist across matches, through a free for all, and auto-balance doesn't undo them [0.84ms]
+(pass) room host > shuffle deals even teams and sticks [0.20ms]
+(pass) room host > free for all ignores team moves [0.03ms]
+(pass) room host > the protocol accepts team moves and shuffles, and rejects bad ones [0.06ms]
+(pass) room host > rooms take team moves only from the host [1.64ms]
+
+tests/matchmaking.test.ts:
+(pass) pickRoom > picks the fullest public room that still has space [0.07ms]
+(pass) pickRoom > skips full and empty rooms, but not ones made with Create game [0.04ms]
+(pass) pickRoom > phase and mode don't matter: the most players wins [0.04ms]
+(pass) pickRoom > ties go to the room that reported last [0.01ms]
+(pass) Matchmaker > quick join returns the fullest open room [0.19ms]
+(pass) Matchmaker > creates and reserves a new code when nothing is open [0.12ms]
+(pass) Matchmaker > concurrent quick joins share the reserved code, until it expires [0.04ms]
+(pass) Matchmaker > the reserved room takes over once it reports in [0.01ms]
+(pass) Matchmaker > an empty Create game code isn't handed out, but once people are in it quick join finds it [0.02ms]
+(pass) Matchmaker > stale rooms expire and empty rooms drop out [0.02ms]
+(pass) Matchmaker > stats count players everywhere and games with a free seat [0.03ms]
+(pass) quick join under churn > always the room with the most players, as rooms grow, shrink, change phase and mode [4.02ms]
+
+ 258 pass
+ 0 fail
+ 186537 expect() calls
+Ran 258 tests across 14 files. [2.14s]
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 83 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/arcade/blackout/index.html                                                     0.58 kB │ gzip:   0.33 kB
+dist/arcade/blackout/compare.html                                                   1.19 kB │ gzip:   0.62 kB
+dist/arcade/blackout/assets/ibm-plex-mono-vietnamese-500-normal-C8zxqsMH.woff       5.61 kB
+dist/arcade/blackout/assets/ibm-plex-mono-vietnamese-400-normal-DDuiU_S-.woff       5.62 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-ext-500-normal-BIfNGwUT.woff     5.77 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-ext-400-normal-DMdlQ8Kv.woff     5.82 kB
+dist/arcade/blackout/assets/ibm-plex-mono-vietnamese-400-normal-BulugwFq.woff2      5.86 kB
+dist/arcade/blackout/assets/ibm-plex-mono-vietnamese-500-normal-DZ4AoWbu.woff2      6.04 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-ext-400-normal-xuaO2J-f.woff2    6.91 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-ext-500-normal-BqneJy0T.woff2    6.97 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-400-normal-CEL4l2ZJ.woff         7.20 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-500-normal-Ael50iVv.woff         7.20 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-400-normal-BSMlKf0J.woff2        8.35 kB
+dist/arcade/blackout/assets/ibm-plex-mono-cyrillic-500-normal-Bq9vWWag.woff2        8.46 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-ext-400-normal-D3D2R8hC.woff       11.76 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-ext-500-normal-CZ70TYgx.woff       11.76 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-400-normal-CvHOgSBP.woff           13.14 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-500-normal-CB9ihrfo.woff           13.15 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-ext-400-normal-BmRBH3aV.woff2      13.34 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-ext-500-normal-CAhNIIs5.woff2      13.43 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2          14.70 kB
+dist/arcade/blackout/assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2          14.88 kB
+dist/arcade/blackout/assets/compare-B96yxND6.css                                    1.31 kB │ gzip:   0.64 kB
+dist/arcade/blackout/assets/main-LjROKH3J.css                                      16.53 kB │ gzip:   3.93 kB
+dist/arcade/blackout/assets/modulepreload-polyfill-P2Xu9kJm.js                      0.67 kB │ gzip:   0.38 kB
+dist/arcade/blackout/assets/compare-BTfsFUR5.js                                     4.47 kB │ gzip:   2.06 kB
+dist/arcade/blackout/assets/main-DxdF4AUo.js                                      455.66 kB │ gzip: 163.83 kB
+
+✓ built in 208ms

@@ -148,6 +148,8 @@ async function main() {
   if (mux) ready()
 
   let rafActive = !benchMode
+  // Proposal-only instrumentation; ordinary play does not expose scene internals.
+  if (q.has("proposalBench")) Object.assign(window, { __proposal: { scene, renderer, telemetry } })
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
     ready: atlasReady.then(() => true),
     adapterInfo: {

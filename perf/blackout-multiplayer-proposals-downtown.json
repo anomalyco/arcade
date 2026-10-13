@@ -1,0 +1,27 @@
+{
+  "target": "blackout-multiplayer",
+  "experiment": "proposals-downtown",
+  "map": "downtown",
+  "machine": "kits-Mac-Studio.local",
+  "timestamp": "2026-10-13T04:35:28.228Z",
+  "ticks": 1000,
+  "connections": 10,
+  "warmup": 1,
+  "measured": 9,
+  "median_ms": 83.99799999999959,
+  "mad_ms": 7.677605999998491,
+  "p95_ms": 104.68895100000077,
+  "runs": [
+    79.31706400000013,
+    83.99799999999959,
+    69.13320700000162,
+    104.68895100000077,
+    92.23047500000064,
+    88.19599300000084,
+    76.3203940000011,
+    94.48141099999862,
+    81.92266199999642
+  ],
+  "digest": "9b41cfa24675ec91aee8f07132f6b380b4dfb67c52bf29ebd034c2930257c953",
+  "serializedBytes": 35272955
+}

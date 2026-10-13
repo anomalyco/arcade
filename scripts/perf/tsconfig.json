@@ -1,0 +1,5 @@
+{
+  "extends": "../../games/blackout/tsconfig.scripts.json",
+  "compilerOptions": { "types": ["bun"], "typeRoots": ["../../games/blackout/node_modules/@types"] },
+  "include": ["./*.ts", "../../games/blackout/node_modules/@webgpu/types/dist/index.d.ts"]
+}

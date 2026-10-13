@@ -8,6 +8,9 @@ import { buildSnapshot, snapshotEntities } from "../games/blackout/shared/sim/vi
 const opt = (key: string, fallback: string) => process.argv.find((s) => s.startsWith(`--${key}=`))?.slice(key.length + 3) ?? fallback
 const target = opt("game", "getaway")
 const experiment = opt("experiment", "baseline")
+const mapOption = opt("map", "office")
+if (mapOption !== "office" && mapOption !== "downtown") throw new Error("Unknown map")
+const map: "office" | "downtown" = mapOption
 const ids = Array.from({ length: target === "getaway" ? 8 : 10 }, (_, i) => `human${i}`)
 const median = (a: number[]) => [...a].sort((a, b) => a - b)[Math.floor(a.length / 2)]!
 const runs: number[] = []
@@ -19,7 +22,7 @@ let serializedBytes = 0
 function measure(shared: boolean) {
   const world = target === "getaway"
     ? new Getaway(7123, [...ids.map((id) => ({ id, name: id, human: true, picks: { robber: "muscle", cop: "cruiser" } })), ...[0, 1].map((i) => ({ id: `bot${i}`, name: `bot${i}`, human: false, picks: { robber: "compact", cop: "interceptor" } }))])
-    : new Blackout(7123)
+    : new Blackout(7123, null, "ffa", map)
   if (world instanceof Blackout) {
     for (const id of ids) world.addHuman(id, id)
     world.botFill = 14
@@ -70,7 +73,7 @@ for (let run = 0; run < 10; run++) {
 }
 const value = median(runs)
 const summarize = (values: number[]) => ({ median_ms: median(values), mad_ms: median(values.map((x) => Math.abs(x - median(values)))), p95_ms: Math.max(...values), runs: values })
-const record = { target: `${target}-multiplayer`, experiment, machine: hostname(), timestamp: new Date().toISOString(), ticks: 1000, connections: ids.length, warmup: 1, measured: 9, ...summarize(runs), digest: expected, serializedBytes, ...(paired ? { control: summarize(controls), paired_delta: summarize(deltas), identicalOutput: true } : {}) }
+const record = { target: `${target}-multiplayer`, experiment, map: target === "blackout" ? map : undefined, machine: hostname(), timestamp: new Date().toISOString(), ticks: 1000, connections: ids.length, warmup: 1, measured: 9, ...summarize(runs), digest: expected, serializedBytes, ...(paired ? { control: summarize(controls), paired_delta: summarize(deltas), identicalOutput: true } : {}) }
 mkdirSync(new URL("../perf/", import.meta.url), { recursive: true })
 appendFileSync(new URL("../perf/results.jsonl", import.meta.url), JSON.stringify(record) + "\n")
 writeFileSync(new URL(`../perf/${target}-multiplayer-${experiment}.json`, import.meta.url), JSON.stringify(record, null, 2) + "\n")

@@ -1,0 +1,46 @@
+[
+  {
+    "experiment": "proposals-network-candidates-per-recipient",
+    "game": "getaway",
+    "packets": 4000,
+    "quantized_json_bytes_per_snapshot": 6106.75075,
+    "position_velocity_max_error": 0.00499958393826061,
+    "angle_max_error_rad": 0.0007669864737001042,
+    "radius60_json_bytes_per_snapshot": 4089.0725,
+    "entities_kept_fraction": 0.46974764366068716,
+    "note": "Quantization and radius filtering are byte estimates only; reconstructed views are not identical. Radius estimate uses each recipient across already viewer-filtered snapshots; does not implement spectator/visibility/interaction guarantees."
+  },
+  {
+    "experiment": "proposals-network-candidates-per-recipient",
+    "game": "blackout-office",
+    "packets": 5000,
+    "quantized_json_bytes_per_snapshot": 2329.5612,
+    "position_velocity_max_error": 0.005000000000002558,
+    "angle_max_error_rad": 0.0007657852035993784,
+    "radius60_json_bytes_per_snapshot": 2922.4372,
+    "entities_kept_fraction": 0.9990142857142857,
+    "note": "Quantization and radius filtering are byte estimates only; reconstructed views are not identical. Radius estimate uses each recipient across already viewer-filtered snapshots; does not implement spectator/visibility/interaction guarantees."
+  },
+  {
+    "experiment": "proposals-network-candidates-per-recipient",
+    "game": "blackout-downtown",
+    "packets": 5000,
+    "quantized_json_bytes_per_snapshot": 2849.266,
+    "position_velocity_max_error": 0.004999067527833745,
+    "angle_max_error_rad": 0.0007667014637635639,
+    "radius60_json_bytes_per_snapshot": 2562.4576,
+    "entities_kept_fraction": 0.6417857142857143,
+    "note": "Quantization and radius filtering are byte estimates only; reconstructed views are not identical. Radius estimate uses each recipient across already viewer-filtered snapshots; does not implement spectator/visibility/interaction guarantees."
+  },
+  {
+    "experiment": "proposals-network-candidates-per-recipient",
+    "game": "blackout-downtown-driving",
+    "packets": 5000,
+    "quantized_json_bytes_per_snapshot": 2883.9818,
+    "position_velocity_max_error": 0.004999557951840927,
+    "angle_max_error_rad": 0.0007667334747187837,
+    "radius60_json_bytes_per_snapshot": 2623.9132,
+    "entities_kept_fraction": 0.6592142857142858,
+    "note": "Quantization and radius filtering are byte estimates only; reconstructed views are not identical. Radius estimate uses each recipient across already viewer-filtered snapshots; does not implement spectator/visibility/interaction guarantees."
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "experiment": "proposals-compression-negotiation",
+  "runtime": "local Miniflare/workerd",
+  "compatibilityDate": "2026-09-08",
+  "results": [
+    {
+      "enabled": true,
+      "extension": "permessage-deflate",
+      "echoBytes": 9000,
+      "echoMatches": true
+    },
+    {
+      "enabled": false,
+      "extension": "permessage-deflate",
+      "echoBytes": 9000,
+      "echoMatches": true
+    }
+  ],
+  "note": "Local front-door negotiation only. Both enabled and disabled cases advertise permessage-deflate, so the Miniflare proxy masks the workerd flag; this does NOT validate production negotiation or distinguish runtime compression settings. Corpus byte counts are separately modeled."
+}

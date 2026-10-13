@@ -1,0 +1,4394 @@
+[
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 0,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 0,
+        "mad": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.10608744480913894,
+        "mad": 0,
+        "min": 0.10608744480913894,
+        "max": 0.10608744480913894,
+        "runs": [
+          0.10608744480913894,
+          0.10608744480913894,
+          0.10608744480913894,
+          0.10608744480913894,
+          0.10608744480913894,
+          0.10608744480913894,
+          0.10608744480913894
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 0.8555999112285534,
+        "mad": 0,
+        "min": 0.8555999112285534,
+        "max": 0.8555999112285534,
+        "runs": [
+          0.8555999112285534,
+          0.8555999112285534,
+          0.8555999112285534,
+          0.8555999112285534,
+          0.8555999112285534,
+          0.8555999112285534,
+          0.8555999112285534
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.1942779356149755,
+        "mad": 0,
+        "min": 1.1942779356149755,
+        "max": 1.1942779356149755,
+        "runs": [
+          1.1942779356149755,
+          1.1942779356149755,
+          1.1942779356149755,
+          1.1942779356149755,
+          1.1942779356149755,
+          1.1942779356149755,
+          1.1942779356149755
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 0.017496625979764223,
+        "mad": 0,
+        "min": 0.017496625979764223,
+        "max": 0.017496625979764223,
+        "runs": [
+          0.017496625979764223,
+          0.017496625979764223,
+          0.017496625979764223,
+          0.017496625979764223,
+          0.017496625979764223,
+          0.017496625979764223,
+          0.017496625979764223
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 2.606864679395928,
+        "mad": 0,
+        "min": 2.606864679395928,
+        "max": 2.606864679395928,
+        "runs": [
+          2.606864679395928,
+          2.606864679395928,
+          2.606864679395928,
+          2.606864679395928,
+          2.606864679395928,
+          2.606864679395928,
+          2.606864679395928
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.10608744480913894,
+        "blackout_avatar_error_m": 0.8555999112285534,
+        "blackout_vehicle_error_m": 1.1942779356149755,
+        "getaway_speed_error_mps": 0.017496625979764223,
+        "blackout_avatar_speed_error_mps": 2.606864679395928
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 0,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 5.25,
+        "mad": 0,
+        "min": 5.25,
+        "max": 5.25,
+        "runs": [
+          5.25,
+          5.25,
+          5.25,
+          5.25,
+          5.25,
+          5.25,
+          5.25
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.1160170647792871,
+        "mad": 0,
+        "min": 0.1160170647792871,
+        "max": 0.1160170647792871,
+        "runs": [
+          0.1160170647792871,
+          0.1160170647792871,
+          0.1160170647792871,
+          0.1160170647792871,
+          0.1160170647792871,
+          0.1160170647792871,
+          0.1160170647792871
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 0.9345472911569659,
+        "mad": 0,
+        "min": 0.9345472911569659,
+        "max": 0.9345472911569659,
+        "runs": [
+          0.9345472911569659,
+          0.9345472911569659,
+          0.9345472911569659,
+          0.9345472911569659,
+          0.9345472911569659,
+          0.9345472911569659,
+          0.9345472911569659
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.1980791627081413,
+        "mad": 0,
+        "min": 1.1980791627081413,
+        "max": 1.1980791627081413,
+        "runs": [
+          1.1980791627081413,
+          1.1980791627081413,
+          1.1980791627081413,
+          1.1980791627081413,
+          1.1980791627081413,
+          1.1980791627081413,
+          1.1980791627081413
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.112563673084577,
+        "mad": 0,
+        "min": 1.112563673084577,
+        "max": 1.112563673084577,
+        "runs": [
+          1.112563673084577,
+          1.112563673084577,
+          1.112563673084577,
+          1.112563673084577,
+          1.112563673084577,
+          1.112563673084577,
+          1.112563673084577
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 3.338106489551002,
+        "mad": 0,
+        "min": 3.338106489551002,
+        "max": 3.338106489551002,
+        "runs": [
+          3.338106489551002,
+          3.338106489551002,
+          3.338106489551002,
+          3.338106489551002,
+          3.338106489551002,
+          3.338106489551002,
+          3.338106489551002
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 5.25,
+        "getaway_error_m": 0.1160170647792871,
+        "blackout_avatar_error_m": 0.9345472911569659,
+        "blackout_vehicle_error_m": 1.1980791627081413,
+        "getaway_speed_error_mps": 1.112563673084577,
+        "blackout_avatar_speed_error_mps": 3.338106489551002
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 30,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 0,
+        "mad": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.0704102153508739,
+        "mad": 0.0024882464244433966,
+        "min": 0.06716433103817819,
+        "max": 0.08142319804637731,
+        "runs": [
+          0.06716433103817819,
+          0.06966373334527068,
+          0.08142319804637731,
+          0.07639061088021398,
+          0.07004159523145581,
+          0.0704102153508739,
+          0.0728984617753173
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.0344650759659,
+        "mad": 0.001425150028363964,
+        "min": 1.031360986016837,
+        "max": 1.0456273099611886,
+        "runs": [
+          1.031360986016837,
+          1.0335707605743192,
+          1.0456273099611886,
+          1.0394350999598527,
+          1.0333016387029794,
+          1.0344650759659,
+          1.035890225994264
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.363369060120962,
+        "mad": 0.0011469169611799668,
+        "min": 1.3603540325561438,
+        "max": 1.3743282276748927,
+        "runs": [
+          1.3603540325561438,
+          1.362222143159782,
+          1.3743282276748927,
+          1.3673943832833644,
+          1.3630703198732932,
+          1.363369060120962,
+          1.3643841531046994
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 0.1218560060181967,
+        "mad": 0.0010254481736086812,
+        "min": 0.12063793261153365,
+        "max": 0.12606987064836742,
+        "runs": [
+          0.1218560060181967,
+          0.12103435139405037,
+          0.12206338607141956,
+          0.12606987064836742,
+          0.12083055784458802,
+          0.12063793261153365,
+          0.12477360982867312
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 2.6803167079969135,
+        "mad": 0.003248159080151858,
+        "min": 2.673856027302443,
+        "max": 2.685485625018439,
+        "runs": [
+          2.676324600223132,
+          2.6805256587624258,
+          2.6803167079969135,
+          2.685485625018439,
+          2.673856027302443,
+          2.6781543215350077,
+          2.6835648670770653
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.07375653450264151,
+        "blackout_avatar_error_m": 1.0397052767249364,
+        "blackout_vehicle_error_m": 1.3678918771292814,
+        "getaway_speed_error_mps": 0.12353176207557774,
+        "blackout_avatar_speed_error_mps": 2.6839694405016106
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.06716433103817819,
+        "blackout_avatar_error_m": 1.031360986016837,
+        "blackout_vehicle_error_m": 1.3603540325561438,
+        "getaway_speed_error_mps": 0.1218560060181967,
+        "blackout_avatar_speed_error_mps": 2.676324600223132
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.06966373334527068,
+        "blackout_avatar_error_m": 1.0335707605743192,
+        "blackout_vehicle_error_m": 1.362222143159782,
+        "getaway_speed_error_mps": 0.12103435139405037,
+        "blackout_avatar_speed_error_mps": 2.6805256587624258
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.08142319804637731,
+        "blackout_avatar_error_m": 1.0456273099611886,
+        "blackout_vehicle_error_m": 1.3743282276748927,
+        "getaway_speed_error_mps": 0.12206338607141956,
+        "blackout_avatar_speed_error_mps": 2.6803167079969135
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.07639061088021398,
+        "blackout_avatar_error_m": 1.0394350999598527,
+        "blackout_vehicle_error_m": 1.3673943832833644,
+        "getaway_speed_error_mps": 0.12606987064836742,
+        "blackout_avatar_speed_error_mps": 2.685485625018439
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.07004159523145581,
+        "blackout_avatar_error_m": 1.0333016387029794,
+        "blackout_vehicle_error_m": 1.3630703198732932,
+        "getaway_speed_error_mps": 0.12083055784458802,
+        "blackout_avatar_speed_error_mps": 2.673856027302443
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.0704102153508739,
+        "blackout_avatar_error_m": 1.0344650759659,
+        "blackout_vehicle_error_m": 1.363369060120962,
+        "getaway_speed_error_mps": 0.12063793261153365,
+        "blackout_avatar_speed_error_mps": 2.6781543215350077
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 0,
+        "getaway_error_m": 0.0728984617753173,
+        "blackout_avatar_error_m": 1.035890225994264,
+        "blackout_vehicle_error_m": 1.3643841531046994,
+        "getaway_speed_error_mps": 0.12477360982867312,
+        "blackout_avatar_speed_error_mps": 2.6835648670770653
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 30,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 5.583333333333333,
+        "mad": 0.08333333333333304,
+        "min": 5.416666666666667,
+        "max": 5.75,
+        "runs": [
+          5.583333333333333,
+          5.666666666666666,
+          5.583333333333333,
+          5.666666666666666,
+          5.416666666666667,
+          5.75,
+          5.583333333333333
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.18701914205872291,
+        "mad": 0.004266266068479685,
+        "min": 0.18158189386092152,
+        "max": 0.19648010168730135,
+        "runs": [
+          0.18275287599024323,
+          0.18494076619006883,
+          0.19648010168730135,
+          0.19356772534002537,
+          0.18158189386092152,
+          0.18903557321607095,
+          0.18701914205872291
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.114837605257202,
+        "mad": 0.003758179549048002,
+        "min": 1.1108931595425595,
+        "max": 1.125159484545764,
+        "runs": [
+          1.1108931595425595,
+          1.1125181387783982,
+          1.125159484545764,
+          1.1201368651876995,
+          1.111079425708154,
+          1.1163364318370186,
+          1.114837605257202
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.3695094679398738,
+        "mad": 0.004184629200671974,
+        "min": 1.3625145867697774,
+        "max": 1.381784419883726,
+        "runs": [
+          1.3653248387392019,
+          1.3625145867697774,
+          1.381784419883726,
+          1.373827183679321,
+          1.3693569097013814,
+          1.3695094679398738,
+          1.370524560923634
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.1551931835788447,
+        "mad": 0.00912853294777527,
+        "min": 1.1126470098308607,
+        "max": 1.1814120514682906,
+        "runs": [
+          1.1551931835788447,
+          1.1694467829363893,
+          1.1468713081051907,
+          1.16432171652662,
+          1.1126470098308607,
+          1.1814120514682906,
+          1.147071323902114
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 3.401145029917206,
+        "mad": 0.005078465864671866,
+        "min": 3.3660804522257295,
+        "max": 3.4257914502871274,
+        "runs": [
+          3.401145029917206,
+          3.4257914502871274,
+          3.3960665640525343,
+          3.4047501049086413,
+          3.3660804522257295,
+          3.4186763528397552,
+          3.4008055772185686
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 5.583333333333333,
+        "getaway_error_m": 0.18872078133793524,
+        "blackout_avatar_error_m": 1.1192374518651405,
+        "blackout_vehicle_error_m": 1.3721316988985992,
+        "getaway_speed_error_mps": 1.1395223270549293,
+        "blackout_avatar_speed_error_mps": 3.3958479915611854
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 5.583333333333333,
+        "getaway_error_m": 0.18275287599024323,
+        "blackout_avatar_error_m": 1.1108931595425595,
+        "blackout_vehicle_error_m": 1.3653248387392019,
+        "getaway_speed_error_mps": 1.1551931835788447,
+        "blackout_avatar_speed_error_mps": 3.401145029917206
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 5.666666666666666,
+        "getaway_error_m": 0.18494076619006883,
+        "blackout_avatar_error_m": 1.1125181387783982,
+        "blackout_vehicle_error_m": 1.3625145867697774,
+        "getaway_speed_error_mps": 1.1694467829363893,
+        "blackout_avatar_speed_error_mps": 3.4257914502871274
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 5.583333333333333,
+        "getaway_error_m": 0.19648010168730135,
+        "blackout_avatar_error_m": 1.125159484545764,
+        "blackout_vehicle_error_m": 1.381784419883726,
+        "getaway_speed_error_mps": 1.1468713081051907,
+        "blackout_avatar_speed_error_mps": 3.3960665640525343
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 5.666666666666666,
+        "getaway_error_m": 0.19356772534002537,
+        "blackout_avatar_error_m": 1.1201368651876995,
+        "blackout_vehicle_error_m": 1.373827183679321,
+        "getaway_speed_error_mps": 1.16432171652662,
+        "blackout_avatar_speed_error_mps": 3.4047501049086413
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 5.416666666666667,
+        "getaway_error_m": 0.18158189386092152,
+        "blackout_avatar_error_m": 1.111079425708154,
+        "blackout_vehicle_error_m": 1.3693569097013814,
+        "getaway_speed_error_mps": 1.1126470098308607,
+        "blackout_avatar_speed_error_mps": 3.3660804522257295
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 5.75,
+        "getaway_error_m": 0.18903557321607095,
+        "blackout_avatar_error_m": 1.1163364318370186,
+        "blackout_vehicle_error_m": 1.3695094679398738,
+        "getaway_speed_error_mps": 1.1814120514682906,
+        "blackout_avatar_speed_error_mps": 3.4186763528397552
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 5.583333333333333,
+        "getaway_error_m": 0.18701914205872291,
+        "blackout_avatar_error_m": 1.114837605257202,
+        "blackout_vehicle_error_m": 1.370524560923634,
+        "getaway_speed_error_mps": 1.147071323902114,
+        "blackout_avatar_speed_error_mps": 3.4008055772185686
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 60,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 0.5833333333333334,
+        "mad": 0.16666666666666663,
+        "min": 0.16666666666666669,
+        "max": 0.75,
+        "runs": [
+          0.75,
+          0.75,
+          0.25,
+          0.16666666666666669,
+          0.4166666666666667,
+          0.75,
+          0.5833333333333334
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.2140353738934452,
+        "mad": 0.0074694197199142165,
+        "min": 0.20396007144980693,
+        "max": 0.2344996546736166,
+        "runs": [
+          0.206565954173531,
+          0.20396007144980693,
+          0.2344996546736166,
+          0.22696826862724306,
+          0.2140353738934452,
+          0.21256396182598888,
+          0.21478981749563306
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.1811690163988449,
+        "mad": 0.006256762727138154,
+        "min": 1.1732664818803888,
+        "max": 1.2032514538865935,
+        "runs": [
+          1.1749122536717067,
+          1.1732664818803888,
+          1.2032514538865935,
+          1.1925371952648205,
+          1.1808227911535116,
+          1.1811690163988449,
+          1.1816572607581899
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.476375013563271,
+        "mad": 0.00535462757601346,
+        "min": 1.4619387080147321,
+        "max": 1.4961593857214117,
+        "runs": [
+          1.4710203859872575,
+          1.4619387080147321,
+          1.4961593857214117,
+          1.4874687085546874,
+          1.4809018653625514,
+          1.476375013563271,
+          1.4752933915266842
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 0.22737098911930737,
+        "mad": 0.007222472575454497,
+        "min": 0.21203412391340182,
+        "max": 0.23909153896222615,
+        "runs": [
+          0.22314405879825722,
+          0.23909153896222615,
+          0.23057593800104084,
+          0.22737098911930737,
+          0.21203412391340182,
+          0.22014851654385287,
+          0.23486736914581666
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 3.0034604631020185,
+        "mad": 0.016288377737241788,
+        "min": 2.9636175068682196,
+        "max": 3.071613919970395,
+        "runs": [
+          3.0022881365852045,
+          3.071613919970395,
+          3.0320056383081764,
+          2.9885244717115027,
+          2.9636175068682196,
+          3.0034604631020185,
+          3.0197488408392603
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 0.16666666666666669,
+        "getaway_error_m": 0.22341843452562118,
+        "blackout_avatar_error_m": 1.19566303403664,
+        "blackout_vehicle_error_m": 1.483539207785736,
+        "getaway_speed_error_mps": 0.23715126820396137,
+        "blackout_avatar_speed_error_mps": 3.0868597369418023
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 0.75,
+        "getaway_error_m": 0.206565954173531,
+        "blackout_avatar_error_m": 1.1749122536717067,
+        "blackout_vehicle_error_m": 1.4710203859872575,
+        "getaway_speed_error_mps": 0.22314405879825722,
+        "blackout_avatar_speed_error_mps": 3.0022881365852045
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 0.75,
+        "getaway_error_m": 0.20396007144980693,
+        "blackout_avatar_error_m": 1.1732664818803888,
+        "blackout_vehicle_error_m": 1.4619387080147321,
+        "getaway_speed_error_mps": 0.23909153896222615,
+        "blackout_avatar_speed_error_mps": 3.071613919970395
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 0.25,
+        "getaway_error_m": 0.2344996546736166,
+        "blackout_avatar_error_m": 1.2032514538865935,
+        "blackout_vehicle_error_m": 1.4961593857214117,
+        "getaway_speed_error_mps": 0.23057593800104084,
+        "blackout_avatar_speed_error_mps": 3.0320056383081764
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 0.16666666666666669,
+        "getaway_error_m": 0.22696826862724306,
+        "blackout_avatar_error_m": 1.1925371952648205,
+        "blackout_vehicle_error_m": 1.4874687085546874,
+        "getaway_speed_error_mps": 0.22737098911930737,
+        "blackout_avatar_speed_error_mps": 2.9885244717115027
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 0.4166666666666667,
+        "getaway_error_m": 0.2140353738934452,
+        "blackout_avatar_error_m": 1.1808227911535116,
+        "blackout_vehicle_error_m": 1.4809018653625514,
+        "getaway_speed_error_mps": 0.21203412391340182,
+        "blackout_avatar_speed_error_mps": 2.9636175068682196
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 0.75,
+        "getaway_error_m": 0.21256396182598888,
+        "blackout_avatar_error_m": 1.1811690163988449,
+        "blackout_vehicle_error_m": 1.476375013563271,
+        "getaway_speed_error_mps": 0.22014851654385287,
+        "blackout_avatar_speed_error_mps": 3.0034604631020185
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 0.5833333333333334,
+        "getaway_error_m": 0.21478981749563306,
+        "blackout_avatar_error_m": 1.1816572607581899,
+        "blackout_vehicle_error_m": 1.4752933915266842,
+        "getaway_speed_error_mps": 0.23486736914581666,
+        "blackout_avatar_speed_error_mps": 3.0197488408392603
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 60,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 5.75,
+        "mad": 0.08333333333333393,
+        "min": 5.333333333333334,
+        "max": 5.916666666666667,
+        "runs": [
+          5.75,
+          5.833333333333333,
+          5.666666666666666,
+          5.75,
+          5.333333333333334,
+          5.916666666666667,
+          5.583333333333333
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.3303224134548761,
+        "mad": 0.0071375492418288,
+        "min": 0.3225291738210911,
+        "max": 0.35391455691601253,
+        "runs": [
+          0.3303224134548761,
+          0.3225291738210911,
+          0.35391455691601253,
+          0.3473280973180739,
+          0.3267311529174951,
+          0.3374599626967049,
+          0.32949403271517747
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.2617742289918301,
+        "mad": 0.005944502564178666,
+        "min": 1.2533834501721066,
+        "max": 1.2851228074177934,
+        "runs": [
+          1.2602923798581644,
+          1.2533834501721066,
+          1.2851228074177934,
+          1.2738237550888607,
+          1.2597701680765234,
+          1.2677187315560088,
+          1.2617742289918301
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.489474740518152,
+        "mad": 0.0038419763506820637,
+        "min": 1.4626697523855041,
+        "max": 1.5080015272618819,
+        "runs": [
+          1.4800847764431706,
+          1.4626697523855041,
+          1.5080015272618819,
+          1.4933167168688342,
+          1.4911358273420658,
+          1.4874861598766964,
+          1.489474740518152
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.2652194083314665,
+        "mad": 0.019096592333905926,
+        "min": 1.1627608615813652,
+        "max": 1.2858534875757317,
+        "runs": [
+          1.2635572319591182,
+          1.2858534875757317,
+          1.2652194083314665,
+          1.2695880034214808,
+          1.1627608615813652,
+          1.2843160006653724,
+          1.2161278103320565
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 3.7127242437057255,
+        "mad": 0.030239062688934837,
+        "min": 3.590490968263286,
+        "max": 3.7875958922191915,
+        "runs": [
+          3.7127242437057255,
+          3.7875958922191915,
+          3.733312718251172,
+          3.6824851810167907,
+          3.590490968263286,
+          3.7168077765710734,
+          3.661099072742973
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 5.583333333333333,
+        "getaway_error_m": 0.34160103987593193,
+        "blackout_avatar_error_m": 1.27753438829328,
+        "blackout_vehicle_error_m": 1.4871942186664586,
+        "getaway_speed_error_mps": 1.225734081209051,
+        "blackout_avatar_speed_error_mps": 3.768217191014541
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 5.75,
+        "getaway_error_m": 0.3303224134548761,
+        "blackout_avatar_error_m": 1.2602923798581644,
+        "blackout_vehicle_error_m": 1.4800847764431706,
+        "getaway_speed_error_mps": 1.2635572319591182,
+        "blackout_avatar_speed_error_mps": 3.7127242437057255
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 5.833333333333333,
+        "getaway_error_m": 0.3225291738210911,
+        "blackout_avatar_error_m": 1.2533834501721066,
+        "blackout_vehicle_error_m": 1.4626697523855041,
+        "getaway_speed_error_mps": 1.2858534875757317,
+        "blackout_avatar_speed_error_mps": 3.7875958922191915
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 5.666666666666666,
+        "getaway_error_m": 0.35391455691601253,
+        "blackout_avatar_error_m": 1.2851228074177934,
+        "blackout_vehicle_error_m": 1.5080015272618819,
+        "getaway_speed_error_mps": 1.2652194083314665,
+        "blackout_avatar_speed_error_mps": 3.733312718251172
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 5.75,
+        "getaway_error_m": 0.3473280973180739,
+        "blackout_avatar_error_m": 1.2738237550888607,
+        "blackout_vehicle_error_m": 1.4933167168688342,
+        "getaway_speed_error_mps": 1.2695880034214808,
+        "blackout_avatar_speed_error_mps": 3.6824851810167907
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 5.333333333333334,
+        "getaway_error_m": 0.3267311529174951,
+        "blackout_avatar_error_m": 1.2597701680765234,
+        "blackout_vehicle_error_m": 1.4911358273420658,
+        "getaway_speed_error_mps": 1.1627608615813652,
+        "blackout_avatar_speed_error_mps": 3.590490968263286
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 5.916666666666667,
+        "getaway_error_m": 0.3374599626967049,
+        "blackout_avatar_error_m": 1.2677187315560088,
+        "blackout_vehicle_error_m": 1.4874861598766964,
+        "getaway_speed_error_mps": 1.2843160006653724,
+        "blackout_avatar_speed_error_mps": 3.7168077765710734
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 5.583333333333333,
+        "getaway_error_m": 0.32949403271517747,
+        "blackout_avatar_error_m": 1.2617742289918301,
+        "blackout_vehicle_error_m": 1.489474740518152,
+        "getaway_speed_error_mps": 1.2161278103320565,
+        "blackout_avatar_speed_error_mps": 3.661099072742973
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 100,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 4.583333333333333,
+        "mad": 0.41666666666666696,
+        "min": 3.833333333333333,
+        "max": 5,
+        "runs": [
+          4.583333333333333,
+          5,
+          3.916666666666667,
+          4.083333333333333,
+          3.833333333333333,
+          4.75,
+          4.833333333333333
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.40816954072516326,
+        "mad": 0.005052261393669766,
+        "min": 0.3951804860068975,
+        "max": 0.438127223637213,
+        "runs": [
+          0.4031172793314935,
+          0.3951804860068975,
+          0.438127223637213,
+          0.42531067296654956,
+          0.4060268336387593,
+          0.40816954072516326,
+          0.40975645884930517
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.3804928650976607,
+        "mad": 0.005747262648627904,
+        "min": 1.3687698379702589,
+        "max": 1.4110436616120043,
+        "runs": [
+          1.3747456024490328,
+          1.3687698379702589,
+          1.4110436616120043,
+          1.3934339956176514,
+          1.3768005102814944,
+          1.3808597588937563,
+          1.3804928650976607
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.612586673274952,
+        "mad": 0.005758997676488686,
+        "min": 1.5902677083194878,
+        "max": 1.6383165001855833,
+        "runs": [
+          1.6068276755984634,
+          1.5902677083194878,
+          1.6383165001855833,
+          1.6168717920902165,
+          1.612586673274952,
+          1.6164809368715327,
+          1.599910476564043
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 0.5939330514656005,
+        "mad": 0.05659689164453685,
+        "min": 0.515922419170734,
+        "max": 0.6639711572737222,
+        "runs": [
+          0.5996388510363782,
+          0.6639711572737222,
+          0.5373361598210636,
+          0.515922419170734,
+          0.5200620008015098,
+          0.5939330514656005,
+          0.595899446399506
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 3.6672064986165505,
+        "mad": 0.0380364952566814,
+        "min": 3.5810587716851923,
+        "max": 3.7230012739716356,
+        "runs": [
+          3.629170003359869,
+          3.692067527248948,
+          3.6672064986165505,
+          3.6785259785017788,
+          3.5924832541215785,
+          3.5810587716851923,
+          3.7230012739716356
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 4.75,
+        "getaway_error_m": 0.42830804692462854,
+        "blackout_avatar_error_m": 1.4073378707036028,
+        "blackout_vehicle_error_m": 1.6227379992038569,
+        "getaway_speed_error_mps": 0.569547634938516,
+        "blackout_avatar_speed_error_mps": 3.7586384779292037
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 4.583333333333333,
+        "getaway_error_m": 0.4031172793314935,
+        "blackout_avatar_error_m": 1.3747456024490328,
+        "blackout_vehicle_error_m": 1.6068276755984634,
+        "getaway_speed_error_mps": 0.5996388510363782,
+        "blackout_avatar_speed_error_mps": 3.629170003359869
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 5,
+        "getaway_error_m": 0.3951804860068975,
+        "blackout_avatar_error_m": 1.3687698379702589,
+        "blackout_vehicle_error_m": 1.5902677083194878,
+        "getaway_speed_error_mps": 0.6639711572737222,
+        "blackout_avatar_speed_error_mps": 3.692067527248948
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 3.916666666666667,
+        "getaway_error_m": 0.438127223637213,
+        "blackout_avatar_error_m": 1.4110436616120043,
+        "blackout_vehicle_error_m": 1.6383165001855833,
+        "getaway_speed_error_mps": 0.5373361598210636,
+        "blackout_avatar_speed_error_mps": 3.6672064986165505
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 4.083333333333333,
+        "getaway_error_m": 0.42531067296654956,
+        "blackout_avatar_error_m": 1.3934339956176514,
+        "blackout_vehicle_error_m": 1.6168717920902165,
+        "getaway_speed_error_mps": 0.515922419170734,
+        "blackout_avatar_speed_error_mps": 3.6785259785017788
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 3.833333333333333,
+        "getaway_error_m": 0.4060268336387593,
+        "blackout_avatar_error_m": 1.3768005102814944,
+        "blackout_vehicle_error_m": 1.612586673274952,
+        "getaway_speed_error_mps": 0.5200620008015098,
+        "blackout_avatar_speed_error_mps": 3.5924832541215785
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 4.75,
+        "getaway_error_m": 0.40816954072516326,
+        "blackout_avatar_error_m": 1.3808597588937563,
+        "blackout_vehicle_error_m": 1.6164809368715327,
+        "getaway_speed_error_mps": 0.5939330514656005,
+        "blackout_avatar_speed_error_mps": 3.5810587716851923
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 4.833333333333333,
+        "getaway_error_m": 0.40975645884930517,
+        "blackout_avatar_error_m": 1.3804928650976607,
+        "blackout_vehicle_error_m": 1.599910476564043,
+        "getaway_speed_error_mps": 0.595899446399506,
+        "blackout_avatar_speed_error_mps": 3.7230012739716356
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 15,
+    "jitter_ms": 100,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 7.249999999999999,
+        "mad": 0.33333333333333215,
+        "min": 6.833333333333333,
+        "max": 8,
+        "runs": [
+          7.166666666666667,
+          7.75,
+          7.249999999999999,
+          6.916666666666667,
+          6.833333333333333,
+          8,
+          7.5
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.5363310838791457,
+        "mad": 0.014659326368951175,
+        "min": 0.5157005314009078,
+        "max": 0.561101943477299,
+        "runs": [
+          0.5363310838791457,
+          0.5171778010375657,
+          0.561101943477299,
+          0.5509904102480969,
+          0.5157005314009078,
+          0.5449129179352005,
+          0.525415424500767
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.4677280706367153,
+        "mad": 0.012255646169247347,
+        "min": 1.4518107847429615,
+        "max": 1.4964237896712742,
+        "runs": [
+          1.4677280706367153,
+          1.4518107847429615,
+          1.4964237896712742,
+          1.4799837168059626,
+          1.4551630932445352,
+          1.477935790534697,
+          1.4629490158055622
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.6348089543782152,
+        "mad": 0.009459796473901383,
+        "min": 1.5939227344547227,
+        "max": 1.6608311658795802,
+        "runs": [
+          1.623202044458799,
+          1.5939227344547227,
+          1.6608311658795802,
+          1.6364625515617064,
+          1.6348089543782152,
+          1.6391418035113838,
+          1.6253491579043138
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.4130070291959247,
+        "mad": 0.039227840054246066,
+        "min": 1.2418012319194152,
+        "max": 1.4979721135019162,
+        "runs": [
+          1.4522348692501708,
+          1.4705009042484634,
+          1.4130070291959247,
+          1.3925358791109717,
+          1.2418012319194152,
+          1.4979721135019162,
+          1.3981344289561113
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 4.2674884489765175,
+        "mad": 0.010126003480121604,
+        "min": 4.074102496607985,
+        "max": 4.356993112453406,
+        "runs": [
+          4.277614452456639,
+          4.356993112453406,
+          4.2674884489765175,
+          4.259096454086656,
+          4.074102496607985,
+          4.233229279870512,
+          4.273780188590806
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 7.5,
+        "getaway_error_m": 0.5434550110832629,
+        "blackout_avatar_error_m": 1.4880396392447897,
+        "blackout_vehicle_error_m": 1.6373579541509136,
+        "getaway_speed_error_mps": 1.3114474401238168,
+        "blackout_avatar_speed_error_mps": 4.285096324085663
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 7.166666666666667,
+        "getaway_error_m": 0.5363310838791457,
+        "blackout_avatar_error_m": 1.4677280706367153,
+        "blackout_vehicle_error_m": 1.623202044458799,
+        "getaway_speed_error_mps": 1.4522348692501708,
+        "blackout_avatar_speed_error_mps": 4.277614452456639
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 7.75,
+        "getaway_error_m": 0.5171778010375657,
+        "blackout_avatar_error_m": 1.4518107847429615,
+        "blackout_vehicle_error_m": 1.5939227344547227,
+        "getaway_speed_error_mps": 1.4705009042484634,
+        "blackout_avatar_speed_error_mps": 4.356993112453406
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 7.249999999999999,
+        "getaway_error_m": 0.561101943477299,
+        "blackout_avatar_error_m": 1.4964237896712742,
+        "blackout_vehicle_error_m": 1.6608311658795802,
+        "getaway_speed_error_mps": 1.4130070291959247,
+        "blackout_avatar_speed_error_mps": 4.2674884489765175
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 6.916666666666667,
+        "getaway_error_m": 0.5509904102480969,
+        "blackout_avatar_error_m": 1.4799837168059626,
+        "blackout_vehicle_error_m": 1.6364625515617064,
+        "getaway_speed_error_mps": 1.3925358791109717,
+        "blackout_avatar_speed_error_mps": 4.259096454086656
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 6.833333333333333,
+        "getaway_error_m": 0.5157005314009078,
+        "blackout_avatar_error_m": 1.4551630932445352,
+        "blackout_vehicle_error_m": 1.6348089543782152,
+        "getaway_speed_error_mps": 1.2418012319194152,
+        "blackout_avatar_speed_error_mps": 4.074102496607985
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 8,
+        "getaway_error_m": 0.5449129179352005,
+        "blackout_avatar_error_m": 1.477935790534697,
+        "blackout_vehicle_error_m": 1.6391418035113838,
+        "getaway_speed_error_mps": 1.4979721135019162,
+        "blackout_avatar_speed_error_mps": 4.233229279870512
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 7.5,
+        "getaway_error_m": 0.525415424500767,
+        "blackout_avatar_error_m": 1.4629490158055622,
+        "blackout_vehicle_error_m": 1.6253491579043138,
+        "getaway_speed_error_mps": 1.3981344289561113,
+        "blackout_avatar_speed_error_mps": 4.273780188590806
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 0,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 6,
+        "mad": 0,
+        "min": 6,
+        "max": 6,
+        "runs": [
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.10418573165545113,
+        "mad": 0,
+        "min": 0.10418573165545113,
+        "max": 0.10418573165545113,
+        "runs": [
+          0.10418573165545113,
+          0.10418573165545113,
+          0.10418573165545113,
+          0.10418573165545113,
+          0.10418573165545113,
+          0.10418573165545113,
+          0.10418573165545113
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.0216819425432628,
+        "mad": 0,
+        "min": 1.0216819425432628,
+        "max": 1.0216819425432628,
+        "runs": [
+          1.0216819425432628,
+          1.0216819425432628,
+          1.0216819425432628,
+          1.0216819425432628,
+          1.0216819425432628,
+          1.0216819425432628,
+          1.0216819425432628
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.1936941211088623,
+        "mad": 0,
+        "min": 1.1936941211088623,
+        "max": 1.1936941211088623,
+        "runs": [
+          1.1936941211088623,
+          1.1936941211088623,
+          1.1936941211088623,
+          1.1936941211088623,
+          1.1936941211088623,
+          1.1936941211088623,
+          1.1936941211088623
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 0.15372787364850438,
+        "mad": 0,
+        "min": 0.15372787364850438,
+        "max": 0.15372787364850438,
+        "runs": [
+          0.15372787364850438,
+          0.15372787364850438,
+          0.15372787364850438,
+          0.15372787364850438,
+          0.15372787364850438,
+          0.15372787364850438,
+          0.15372787364850438
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 3.8010915138333563,
+        "mad": 0,
+        "min": 3.8010915138333563,
+        "max": 3.8010915138333563,
+        "runs": [
+          3.8010915138333563,
+          3.8010915138333563,
+          3.8010915138333563,
+          3.8010915138333563,
+          3.8010915138333563,
+          3.8010915138333563,
+          3.8010915138333563
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 6,
+        "getaway_error_m": 0.10418573165545113,
+        "blackout_avatar_error_m": 1.0216819425432628,
+        "blackout_vehicle_error_m": 1.1936941211088623,
+        "getaway_speed_error_mps": 0.15372787364850438,
+        "blackout_avatar_speed_error_mps": 3.8010915138333563
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 0,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 6.666666666666667,
+        "mad": 0,
+        "min": 6.666666666666667,
+        "max": 6.666666666666667,
+        "runs": [
+          6.666666666666667,
+          6.666666666666667,
+          6.666666666666667,
+          6.666666666666667,
+          6.666666666666667,
+          6.666666666666667,
+          6.666666666666667
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.14372774419977777,
+        "mad": 0,
+        "min": 0.14372774419977777,
+        "max": 0.14372774419977777,
+        "runs": [
+          0.14372774419977777,
+          0.14372774419977777,
+          0.14372774419977777,
+          0.14372774419977777,
+          0.14372774419977777,
+          0.14372774419977777,
+          0.14372774419977777
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.115541602176976,
+        "mad": 0,
+        "min": 1.115541602176976,
+        "max": 1.115541602176976,
+        "runs": [
+          1.115541602176976,
+          1.115541602176976,
+          1.115541602176976,
+          1.115541602176976,
+          1.115541602176976,
+          1.115541602176976,
+          1.115541602176976
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.2059749016212313,
+        "mad": 0,
+        "min": 1.2059749016212313,
+        "max": 1.2059749016212313,
+        "runs": [
+          1.2059749016212313,
+          1.2059749016212313,
+          1.2059749016212313,
+          1.2059749016212313,
+          1.2059749016212313,
+          1.2059749016212313,
+          1.2059749016212313
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.391693637486464,
+        "mad": 0,
+        "min": 1.391693637486464,
+        "max": 1.391693637486464,
+        "runs": [
+          1.391693637486464,
+          1.391693637486464,
+          1.391693637486464,
+          1.391693637486464,
+          1.391693637486464,
+          1.391693637486464,
+          1.391693637486464
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 4.478974930131817,
+        "mad": 0,
+        "min": 4.478974930131817,
+        "max": 4.478974930131817,
+        "runs": [
+          4.478974930131817,
+          4.478974930131817,
+          4.478974930131817,
+          4.478974930131817,
+          4.478974930131817,
+          4.478974930131817,
+          4.478974930131817
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 6.666666666666667,
+        "getaway_error_m": 0.14372774419977777,
+        "blackout_avatar_error_m": 1.115541602176976,
+        "blackout_vehicle_error_m": 1.2059749016212313,
+        "getaway_speed_error_mps": 1.391693637486464,
+        "blackout_avatar_speed_error_mps": 4.478974930131817
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 30,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 7.166666666666667,
+        "mad": 0.3333333333333339,
+        "min": 6.833333333333333,
+        "max": 8.583333333333334,
+        "runs": [
+          7.000000000000001,
+          6.833333333333333,
+          8.583333333333334,
+          7.916666666666666,
+          7.166666666666667,
+          6.833333333333333,
+          7.416666666666667
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.0769878623788839,
+        "mad": 0.003523187764686464,
+        "min": 0.07172217915671902,
+        "max": 0.09212878297488099,
+        "runs": [
+          0.07443447311610009,
+          0.07346467461419744,
+          0.09212878297488099,
+          0.08504369303453843,
+          0.0769878623788839,
+          0.07172217915671902,
+          0.07907907689006234
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.199514068385753,
+        "mad": 0.0017512008357232212,
+        "min": 1.196135898530506,
+        "max": 1.2156285811228524,
+        "runs": [
+          1.198878275725491,
+          1.1983390085527965,
+          1.2156285811228524,
+          1.208441101397224,
+          1.199514068385753,
+          1.196135898530506,
+          1.2012652692214763
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.3658647933782329,
+        "mad": 0.002172489762679586,
+        "min": 1.36188920521492,
+        "max": 1.3817555643455122,
+        "runs": [
+          1.3643187728468664,
+          1.3636923036155533,
+          1.3817555643455122,
+          1.3732456847981092,
+          1.3658647933782329,
+          1.36188920521492,
+          1.3674578306311584
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 0.8133485522880696,
+        "mad": 0.008742521906888623,
+        "min": 0.8007651986109814,
+        "max": 0.8514008315809575,
+        "runs": [
+          0.8329207385760392,
+          0.8133485522880696,
+          0.804606030381181,
+          0.8514008315809575,
+          0.8007651986109814,
+          0.8163299445465386,
+          0.8068029553707182
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 3.8549137069367947,
+        "mad": 0.0017079026013857579,
+        "min": 3.853195161792959,
+        "max": 3.8596984586765117,
+        "runs": [
+          3.8573245407039236,
+          3.856252493363753,
+          3.853205804335409,
+          3.8596984586765117,
+          3.854791349881126,
+          3.853195161792959,
+          3.8549137069367947
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 6.75,
+        "getaway_error_m": 0.07468100204086453,
+        "blackout_avatar_error_m": 1.1997509177120036,
+        "blackout_vehicle_error_m": 1.3651794476020525,
+        "getaway_speed_error_mps": 0.8176182503573574,
+        "blackout_avatar_speed_error_mps": 3.8588314812385116
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 7.000000000000001,
+        "getaway_error_m": 0.07443447311610009,
+        "blackout_avatar_error_m": 1.198878275725491,
+        "blackout_vehicle_error_m": 1.3643187728468664,
+        "getaway_speed_error_mps": 0.8329207385760392,
+        "blackout_avatar_speed_error_mps": 3.8573245407039236
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 6.833333333333333,
+        "getaway_error_m": 0.07346467461419744,
+        "blackout_avatar_error_m": 1.1983390085527965,
+        "blackout_vehicle_error_m": 1.3636923036155533,
+        "getaway_speed_error_mps": 0.8133485522880696,
+        "blackout_avatar_speed_error_mps": 3.856252493363753
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 8.583333333333334,
+        "getaway_error_m": 0.09212878297488099,
+        "blackout_avatar_error_m": 1.2156285811228524,
+        "blackout_vehicle_error_m": 1.3817555643455122,
+        "getaway_speed_error_mps": 0.804606030381181,
+        "blackout_avatar_speed_error_mps": 3.853205804335409
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 7.916666666666666,
+        "getaway_error_m": 0.08504369303453843,
+        "blackout_avatar_error_m": 1.208441101397224,
+        "blackout_vehicle_error_m": 1.3732456847981092,
+        "getaway_speed_error_mps": 0.8514008315809575,
+        "blackout_avatar_speed_error_mps": 3.8596984586765117
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 7.166666666666667,
+        "getaway_error_m": 0.0769878623788839,
+        "blackout_avatar_error_m": 1.199514068385753,
+        "blackout_vehicle_error_m": 1.3658647933782329,
+        "getaway_speed_error_mps": 0.8007651986109814,
+        "blackout_avatar_speed_error_mps": 3.854791349881126
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 6.833333333333333,
+        "getaway_error_m": 0.07172217915671902,
+        "blackout_avatar_error_m": 1.196135898530506,
+        "blackout_vehicle_error_m": 1.36188920521492,
+        "getaway_speed_error_mps": 0.8163299445465386,
+        "blackout_avatar_speed_error_mps": 3.853195161792959
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 7.416666666666667,
+        "getaway_error_m": 0.07907907689006234,
+        "blackout_avatar_error_m": 1.2012652692214763,
+        "blackout_vehicle_error_m": 1.3674578306311584,
+        "getaway_speed_error_mps": 0.8068029553707182,
+        "blackout_avatar_speed_error_mps": 3.8549137069367947
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 30,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 9.916666666666666,
+        "mad": 0,
+        "min": 9.333333333333334,
+        "max": 10.083333333333332,
+        "runs": [
+          9.333333333333334,
+          9.916666666666666,
+          9.916666666666666,
+          9.916666666666666,
+          9.75,
+          9.916666666666666,
+          10.083333333333332
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.23920778599489084,
+        "mad": 0.0031334670141678067,
+        "min": 0.23607431898072304,
+        "max": 0.25321203721952945,
+        "runs": [
+          0.23619198938828162,
+          0.23865567520804942,
+          0.25321203721952945,
+          0.24904560813887947,
+          0.23607431898072304,
+          0.23920778599489084,
+          0.24442714388382655
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.2944923212142623,
+        "mad": 0.0019957877078045083,
+        "min": 1.2924965335064578,
+        "max": 1.3094882392260128,
+        "runs": [
+          1.2944923212142623,
+          1.293953054041572,
+          1.3094882392260128,
+          1.3040551454652975,
+          1.2924965335064578,
+          1.2943815215459538,
+          1.2977565062720111
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.3785559337249411,
+        "mad": 0.002659808857302881,
+        "min": 1.3749497039724694,
+        "max": 1.3909661525047636,
+        "runs": [
+          1.3782077521510345,
+          1.3749497039724694,
+          1.3909661525047636,
+          1.385965044887062,
+          1.381215742582244,
+          1.3785559337249411,
+          1.3778380094335756
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.5501545039763733,
+        "mad": 0.03097411681627027,
+        "min": 1.4969604759445503,
+        "max": 1.5811286207926436,
+        "runs": [
+          1.4969604759445503,
+          1.575004918291291,
+          1.5002808249541573,
+          1.5501545039763733,
+          1.5157984553721588,
+          1.5811286207926436,
+          1.555087540939942
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 4.521873512082497,
+        "mad": 0.011101313526281409,
+        "min": 4.493419729899361,
+        "max": 4.553746822644886,
+        "runs": [
+          4.515043611737794,
+          4.532974825608778,
+          4.553746822644886,
+          4.521873512082497,
+          4.493419729899361,
+          4.514682414894599,
+          4.546488675818931
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 10.666666666666668,
+        "getaway_error_m": 0.23647847880187334,
+        "blackout_avatar_error_m": 1.2936105772358648,
+        "blackout_vehicle_error_m": 1.3754134408947474,
+        "getaway_speed_error_mps": 1.5509245384701,
+        "blackout_avatar_speed_error_mps": 4.55163948730058
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 9.333333333333334,
+        "getaway_error_m": 0.23619198938828162,
+        "blackout_avatar_error_m": 1.2944923212142623,
+        "blackout_vehicle_error_m": 1.3782077521510345,
+        "getaway_speed_error_mps": 1.4969604759445503,
+        "blackout_avatar_speed_error_mps": 4.515043611737794
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 9.916666666666666,
+        "getaway_error_m": 0.23865567520804942,
+        "blackout_avatar_error_m": 1.293953054041572,
+        "blackout_vehicle_error_m": 1.3749497039724694,
+        "getaway_speed_error_mps": 1.575004918291291,
+        "blackout_avatar_speed_error_mps": 4.532974825608778
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 9.916666666666666,
+        "getaway_error_m": 0.25321203721952945,
+        "blackout_avatar_error_m": 1.3094882392260128,
+        "blackout_vehicle_error_m": 1.3909661525047636,
+        "getaway_speed_error_mps": 1.5002808249541573,
+        "blackout_avatar_speed_error_mps": 4.553746822644886
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 9.916666666666666,
+        "getaway_error_m": 0.24904560813887947,
+        "blackout_avatar_error_m": 1.3040551454652975,
+        "blackout_vehicle_error_m": 1.385965044887062,
+        "getaway_speed_error_mps": 1.5501545039763733,
+        "blackout_avatar_speed_error_mps": 4.521873512082497
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 9.75,
+        "getaway_error_m": 0.23607431898072304,
+        "blackout_avatar_error_m": 1.2924965335064578,
+        "blackout_vehicle_error_m": 1.381215742582244,
+        "getaway_speed_error_mps": 1.5157984553721588,
+        "blackout_avatar_speed_error_mps": 4.493419729899361
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 9.916666666666666,
+        "getaway_error_m": 0.23920778599489084,
+        "blackout_avatar_error_m": 1.2943815215459538,
+        "blackout_vehicle_error_m": 1.3785559337249411,
+        "getaway_speed_error_mps": 1.5811286207926436,
+        "blackout_avatar_speed_error_mps": 4.514682414894599
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 10.083333333333332,
+        "getaway_error_m": 0.24442714388382655,
+        "blackout_avatar_error_m": 1.2977565062720111,
+        "blackout_vehicle_error_m": 1.3778380094335756,
+        "getaway_speed_error_mps": 1.555087540939942,
+        "blackout_avatar_speed_error_mps": 4.546488675818931
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 60,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 12.25,
+        "mad": 0.6666666666666679,
+        "min": 10.333333333333334,
+        "max": 12.916666666666668,
+        "runs": [
+          11.5,
+          12.916666666666668,
+          12.416666666666666,
+          11.416666666666666,
+          10.333333333333334,
+          12.25,
+          12.416666666666666
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.2287134988489602,
+        "mad": 0.013397598829354262,
+        "min": 0.21136848941206646,
+        "max": 0.2596940104842313,
+        "runs": [
+          0.22638340777238694,
+          0.21531590001960593,
+          0.2596940104842313,
+          0.2453347132501065,
+          0.2287134988489602,
+          0.21136848941206646,
+          0.23320711318038145
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.3461749645470027,
+        "mad": 0.012090010873310186,
+        "min": 1.331187986743754,
+        "max": 1.3787105419291854,
+        "runs": [
+          1.3450187709823285,
+          1.3340849536736925,
+          1.3787105419291854,
+          1.3654648031772572,
+          1.3461749645470027,
+          1.331187986743754,
+          1.3503969735168329
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.494391667850763,
+        "mad": 0.013889515675867159,
+        "min": 1.4736046933132814,
+        "max": 1.522286144356113,
+        "runs": [
+          1.487386022664503,
+          1.473739401825087,
+          1.522286144356113,
+          1.50828118352663,
+          1.494391667850763,
+          1.4736046933132814,
+          1.4949390063071764
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.5620552307044149,
+        "mad": 0.009723965139528667,
+        "min": 1.3873546344810779,
+        "max": 1.6109382433791029,
+        "runs": [
+          1.562286337384228,
+          1.6109382433791029,
+          1.5302147070985275,
+          1.5679398439915788,
+          1.3873546344810779,
+          1.5620552307044149,
+          1.5523312655648862
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 4.047103320175669,
+        "mad": 0.004211894146893158,
+        "min": 4.023636347599176,
+        "max": 4.072912247551508,
+        "runs": [
+          4.060664227186179,
+          4.072912247551508,
+          4.047103320175669,
+          4.042891426028776,
+          4.023636347599176,
+          4.047451733095042,
+          4.046222643637775
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 11.333333333333332,
+        "getaway_error_m": 0.23149626451367727,
+        "blackout_avatar_error_m": 1.3532407316934767,
+        "blackout_vehicle_error_m": 1.4914242771862756,
+        "getaway_speed_error_mps": 1.5529073400117794,
+        "blackout_avatar_speed_error_mps": 4.085711453506601
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 11.5,
+        "getaway_error_m": 0.22638340777238694,
+        "blackout_avatar_error_m": 1.3450187709823285,
+        "blackout_vehicle_error_m": 1.487386022664503,
+        "getaway_speed_error_mps": 1.562286337384228,
+        "blackout_avatar_speed_error_mps": 4.060664227186179
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 12.916666666666668,
+        "getaway_error_m": 0.21531590001960593,
+        "blackout_avatar_error_m": 1.3340849536736925,
+        "blackout_vehicle_error_m": 1.473739401825087,
+        "getaway_speed_error_mps": 1.6109382433791029,
+        "blackout_avatar_speed_error_mps": 4.072912247551508
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 12.416666666666666,
+        "getaway_error_m": 0.2596940104842313,
+        "blackout_avatar_error_m": 1.3787105419291854,
+        "blackout_vehicle_error_m": 1.522286144356113,
+        "getaway_speed_error_mps": 1.5302147070985275,
+        "blackout_avatar_speed_error_mps": 4.047103320175669
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 11.416666666666666,
+        "getaway_error_m": 0.2453347132501065,
+        "blackout_avatar_error_m": 1.3654648031772572,
+        "blackout_vehicle_error_m": 1.50828118352663,
+        "getaway_speed_error_mps": 1.5679398439915788,
+        "blackout_avatar_speed_error_mps": 4.042891426028776
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 10.333333333333334,
+        "getaway_error_m": 0.2287134988489602,
+        "blackout_avatar_error_m": 1.3461749645470027,
+        "blackout_vehicle_error_m": 1.494391667850763,
+        "getaway_speed_error_mps": 1.3873546344810779,
+        "blackout_avatar_speed_error_mps": 4.023636347599176
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 12.25,
+        "getaway_error_m": 0.21136848941206646,
+        "blackout_avatar_error_m": 1.331187986743754,
+        "blackout_vehicle_error_m": 1.4736046933132814,
+        "getaway_speed_error_mps": 1.5620552307044149,
+        "blackout_avatar_speed_error_mps": 4.047451733095042
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 12.416666666666666,
+        "getaway_error_m": 0.23320711318038145,
+        "blackout_avatar_error_m": 1.3503969735168329,
+        "blackout_vehicle_error_m": 1.4949390063071764,
+        "getaway_speed_error_mps": 1.5523312655648862,
+        "blackout_avatar_speed_error_mps": 4.046222643637775
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 60,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 12.166666666666668,
+        "mad": 0.16666666666666785,
+        "min": 11.833333333333334,
+        "max": 13.416666666666666,
+        "runs": [
+          12.25,
+          12.166666666666668,
+          12.916666666666668,
+          12,
+          11.833333333333334,
+          12.083333333333334,
+          13.416666666666666
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.3864687811460065,
+        "mad": 0.00753127571338752,
+        "min": 0.378937505432619,
+        "max": 0.4125693239847014,
+        "runs": [
+          0.3864687811460065,
+          0.378937505432619,
+          0.4125693239847014,
+          0.4074688605498965,
+          0.3797457608787942,
+          0.38321113942626434,
+          0.3967639003327746
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.4432643939977592,
+        "mad": 0.006813244655518025,
+        "min": 1.4314533837066714,
+        "max": 1.469061426247652,
+        "runs": [
+          1.4432643939977592,
+          1.4314533837066714,
+          1.469061426247652,
+          1.4628332313553711,
+          1.4365258488654693,
+          1.4364511493422412,
+          1.4486425922556767
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.5059039645367314,
+        "mad": 0.009784605391561563,
+        "min": 1.4866049837518067,
+        "max": 1.5293037449886784,
+        "runs": [
+          1.5049299833779581,
+          1.4866049837518067,
+          1.5293037449886784,
+          1.522316322934752,
+          1.5129589825054848,
+          1.4961193591451698,
+          1.5059039645367314
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 1.9926006597200117,
+        "mad": 0.05877975113502165,
+        "min": 1.8719969454848684,
+        "max": 2.118239883824801,
+        "runs": [
+          1.956759193348939,
+          2.070255717480123,
+          1.9926006597200117,
+          1.93382090858499,
+          1.8719969454848684,
+          2.006437603352779,
+          2.118239883824801
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 4.689723453894868,
+        "mad": 0.033090490873579625,
+        "min": 4.595150469643726,
+        "max": 4.734637404736813,
+        "runs": [
+          4.689723453894868,
+          4.722813944768448,
+          4.734637404736813,
+          4.681027317196909,
+          4.595150469643726,
+          4.6756147201783405,
+          4.729541406117094
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 13.333333333333334,
+        "getaway_error_m": 0.3908505772347378,
+        "blackout_avatar_error_m": 1.447977582779088,
+        "blackout_vehicle_error_m": 1.5041436474429422,
+        "getaway_speed_error_mps": 2.086116257755117,
+        "blackout_avatar_speed_error_mps": 4.769130515225542
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 12.25,
+        "getaway_error_m": 0.3864687811460065,
+        "blackout_avatar_error_m": 1.4432643939977592,
+        "blackout_vehicle_error_m": 1.5049299833779581,
+        "getaway_speed_error_mps": 1.956759193348939,
+        "blackout_avatar_speed_error_mps": 4.689723453894868
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 12.166666666666668,
+        "getaway_error_m": 0.378937505432619,
+        "blackout_avatar_error_m": 1.4314533837066714,
+        "blackout_vehicle_error_m": 1.4866049837518067,
+        "getaway_speed_error_mps": 2.070255717480123,
+        "blackout_avatar_speed_error_mps": 4.722813944768448
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 12.916666666666668,
+        "getaway_error_m": 0.4125693239847014,
+        "blackout_avatar_error_m": 1.469061426247652,
+        "blackout_vehicle_error_m": 1.5293037449886784,
+        "getaway_speed_error_mps": 1.9926006597200117,
+        "blackout_avatar_speed_error_mps": 4.734637404736813
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 12,
+        "getaway_error_m": 0.4074688605498965,
+        "blackout_avatar_error_m": 1.4628332313553711,
+        "blackout_vehicle_error_m": 1.522316322934752,
+        "getaway_speed_error_mps": 1.93382090858499,
+        "blackout_avatar_speed_error_mps": 4.681027317196909
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 11.833333333333334,
+        "getaway_error_m": 0.3797457608787942,
+        "blackout_avatar_error_m": 1.4365258488654693,
+        "blackout_vehicle_error_m": 1.5129589825054848,
+        "getaway_speed_error_mps": 1.8719969454848684,
+        "blackout_avatar_speed_error_mps": 4.595150469643726
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 12.083333333333334,
+        "getaway_error_m": 0.38321113942626434,
+        "blackout_avatar_error_m": 1.4364511493422412,
+        "blackout_vehicle_error_m": 1.4961193591451698,
+        "getaway_speed_error_mps": 2.006437603352779,
+        "blackout_avatar_speed_error_mps": 4.6756147201783405
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 13.416666666666666,
+        "getaway_error_m": 0.3967639003327746,
+        "blackout_avatar_error_m": 1.4486425922556767,
+        "blackout_vehicle_error_m": 1.5059039645367314,
+        "getaway_speed_error_mps": 2.118239883824801,
+        "blackout_avatar_speed_error_mps": 4.729541406117094
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 100,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 17.333333333333336,
+        "mad": 0.5000000000000036,
+        "min": 16.166666666666664,
+        "max": 18.25,
+        "runs": [
+          17.333333333333336,
+          17.416666666666668,
+          16.833333333333332,
+          16.75,
+          16.166666666666664,
+          17.666666666666668,
+          18.25
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.4367323809086276,
+        "mad": 0.022548819608408044,
+        "min": 0.4041374556994665,
+        "max": 0.4870412159656746,
+        "runs": [
+          0.4367323809086276,
+          0.4128094045813821,
+          0.4870412159656746,
+          0.45928120051703564,
+          0.4355984484595775,
+          0.4041374556994665,
+          0.44095965719505925
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.5448280766365312,
+        "mad": 0.02330473083329654,
+        "min": 1.5124899939102696,
+        "max": 1.5956802962930523,
+        "runs": [
+          1.5448280766365312,
+          1.520438002888069,
+          1.5956802962930523,
+          1.5681328074698277,
+          1.5409325775941602,
+          1.5124899939102696,
+          1.5459396343755243
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.6406899692748926,
+        "mad": 0.020013817767039255,
+        "min": 1.609523441746391,
+        "max": 1.6949410567037408,
+        "runs": [
+          1.641091373575856,
+          1.6121072361433957,
+          1.6949410567037408,
+          1.660703787041932,
+          1.6406899692748926,
+          1.609523441746391,
+          1.6377628031937275
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 2.5535889652603982,
+        "mad": 0.022112289597774115,
+        "min": 2.345490169156952,
+        "max": 2.5757012548581724,
+        "runs": [
+          2.5535889652603982,
+          2.570552652274751,
+          2.448352570320333,
+          2.4763570583760766,
+          2.345490169156952,
+          2.5715593211895498,
+          2.5757012548581724
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 4.451743904787997,
+        "mad": 0.012360884038231212,
+        "min": 4.425012467746103,
+        "max": 4.499789090652741,
+        "runs": [
+          4.464104788826228,
+          4.48579313990917,
+          4.425012467746103,
+          4.451743904787997,
+          4.449409568564862,
+          4.442928986632846,
+          4.499789090652741
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 16.5,
+        "getaway_error_m": 0.43775017643217373,
+        "blackout_avatar_error_m": 1.5481778717470687,
+        "blackout_vehicle_error_m": 1.628743731014607,
+        "getaway_speed_error_mps": 2.5421099089493193,
+        "blackout_avatar_speed_error_mps": 4.56833889021189
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 17.333333333333336,
+        "getaway_error_m": 0.4367323809086276,
+        "blackout_avatar_error_m": 1.5448280766365312,
+        "blackout_vehicle_error_m": 1.641091373575856,
+        "getaway_speed_error_mps": 2.5535889652603982,
+        "blackout_avatar_speed_error_mps": 4.464104788826228
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 17.416666666666668,
+        "getaway_error_m": 0.4128094045813821,
+        "blackout_avatar_error_m": 1.520438002888069,
+        "blackout_vehicle_error_m": 1.6121072361433957,
+        "getaway_speed_error_mps": 2.570552652274751,
+        "blackout_avatar_speed_error_mps": 4.48579313990917
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 16.833333333333332,
+        "getaway_error_m": 0.4870412159656746,
+        "blackout_avatar_error_m": 1.5956802962930523,
+        "blackout_vehicle_error_m": 1.6949410567037408,
+        "getaway_speed_error_mps": 2.448352570320333,
+        "blackout_avatar_speed_error_mps": 4.425012467746103
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 16.75,
+        "getaway_error_m": 0.45928120051703564,
+        "blackout_avatar_error_m": 1.5681328074698277,
+        "blackout_vehicle_error_m": 1.660703787041932,
+        "getaway_speed_error_mps": 2.4763570583760766,
+        "blackout_avatar_speed_error_mps": 4.451743904787997
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 16.166666666666664,
+        "getaway_error_m": 0.4355984484595775,
+        "blackout_avatar_error_m": 1.5409325775941602,
+        "blackout_vehicle_error_m": 1.6406899692748926,
+        "getaway_speed_error_mps": 2.345490169156952,
+        "blackout_avatar_speed_error_mps": 4.449409568564862
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 17.666666666666668,
+        "getaway_error_m": 0.4041374556994665,
+        "blackout_avatar_error_m": 1.5124899939102696,
+        "blackout_vehicle_error_m": 1.609523441746391,
+        "getaway_speed_error_mps": 2.5715593211895498,
+        "blackout_avatar_speed_error_mps": 4.442928986632846
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 18.25,
+        "getaway_error_m": 0.44095965719505925,
+        "blackout_avatar_error_m": 1.5459396343755243,
+        "blackout_vehicle_error_m": 1.6377628031937275,
+        "getaway_speed_error_mps": 2.5757012548581724,
+        "blackout_avatar_speed_error_mps": 4.499789090652741
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 10,
+    "jitter_ms": 100,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 16.166666666666664,
+        "mad": 0.33333333333333215,
+        "min": 15.833333333333332,
+        "max": 17.583333333333336,
+        "runs": [
+          15.916666666666668,
+          16.583333333333332,
+          16.083333333333332,
+          16.166666666666664,
+          15.833333333333332,
+          16.916666666666664,
+          17.583333333333336
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.5933465552375077,
+        "mad": 0.015592673223382536,
+        "min": 0.5756140535975401,
+        "max": 0.6360265446165032,
+        "runs": [
+          0.5933465552375077,
+          0.57787542707093,
+          0.6360265446165032,
+          0.6204579729184777,
+          0.5756140535975401,
+          0.5777538820141251,
+          0.6023581891133021
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.6465824743262154,
+        "mad": 0.021811772520322403,
+        "min": 1.6239467841209434,
+        "max": 1.6860311827890946,
+        "runs": [
+          1.6465824743262154,
+          1.6239467841209434,
+          1.6860311827890946,
+          1.6707643925584328,
+          1.6286518819810196,
+          1.624770701805893,
+          1.646816833499225
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.6678830097556754,
+        "mad": 0.017089841158050678,
+        "min": 1.6369611171121015,
+        "max": 1.7034206605604951,
+        "runs": [
+          1.6726704744241305,
+          1.6369611171121015,
+          1.7034206605604951,
+          1.684972850913726,
+          1.6678830097556754,
+          1.6437340547781651,
+          1.6548681530676432
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 2.7023717026165253,
+        "mad": 0.09696386882463859,
+        "min": 2.5630563551911734,
+        "max": 2.9254839460378688,
+        "runs": [
+          2.7023717026165253,
+          2.799335571441164,
+          2.701729695079487,
+          2.5728281669612993,
+          2.5630563551911734,
+          2.7582562202469796,
+          2.9254839460378688
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.012439429043481,
+        "mad": 0.06434021803650758,
+        "min": 4.91047846788675,
+        "max": 5.134775780615858,
+        "runs": [
+          4.991015016774148,
+          5.076779647079989,
+          5.098576426394553,
+          5.012439429043481,
+          4.91047846788675,
+          4.996219200534644,
+          5.134775780615858
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 17.166666666666668,
+        "getaway_error_m": 0.5906667866902644,
+        "blackout_avatar_error_m": 1.6420375325946532,
+        "blackout_vehicle_error_m": 1.6454104757774617,
+        "getaway_speed_error_mps": 2.9216212428539157,
+        "blackout_avatar_speed_error_mps": 5.1927586734107045
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 15.916666666666668,
+        "getaway_error_m": 0.5933465552375077,
+        "blackout_avatar_error_m": 1.6465824743262154,
+        "blackout_vehicle_error_m": 1.6726704744241305,
+        "getaway_speed_error_mps": 2.7023717026165253,
+        "blackout_avatar_speed_error_mps": 4.991015016774148
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 16.583333333333332,
+        "getaway_error_m": 0.57787542707093,
+        "blackout_avatar_error_m": 1.6239467841209434,
+        "blackout_vehicle_error_m": 1.6369611171121015,
+        "getaway_speed_error_mps": 2.799335571441164,
+        "blackout_avatar_speed_error_mps": 5.076779647079989
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 16.083333333333332,
+        "getaway_error_m": 0.6360265446165032,
+        "blackout_avatar_error_m": 1.6860311827890946,
+        "blackout_vehicle_error_m": 1.7034206605604951,
+        "getaway_speed_error_mps": 2.701729695079487,
+        "blackout_avatar_speed_error_mps": 5.098576426394553
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 16.166666666666664,
+        "getaway_error_m": 0.6204579729184777,
+        "blackout_avatar_error_m": 1.6707643925584328,
+        "blackout_vehicle_error_m": 1.684972850913726,
+        "getaway_speed_error_mps": 2.5728281669612993,
+        "blackout_avatar_speed_error_mps": 5.012439429043481
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 15.833333333333332,
+        "getaway_error_m": 0.5756140535975401,
+        "blackout_avatar_error_m": 1.6286518819810196,
+        "blackout_vehicle_error_m": 1.6678830097556754,
+        "getaway_speed_error_mps": 2.5630563551911734,
+        "blackout_avatar_speed_error_mps": 4.91047846788675
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 16.916666666666664,
+        "getaway_error_m": 0.5777538820141251,
+        "blackout_avatar_error_m": 1.624770701805893,
+        "blackout_vehicle_error_m": 1.6437340547781651,
+        "getaway_speed_error_mps": 2.7582562202469796,
+        "blackout_avatar_speed_error_mps": 4.996219200534644
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 17.583333333333336,
+        "getaway_error_m": 0.6023581891133021,
+        "blackout_avatar_error_m": 1.646816833499225,
+        "blackout_vehicle_error_m": 1.6548681530676432,
+        "getaway_speed_error_mps": 2.9254839460378688,
+        "blackout_avatar_speed_error_mps": 5.134775780615858
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 0,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 29.5,
+        "mad": 0,
+        "min": 29.5,
+        "max": 29.5,
+        "runs": [
+          29.5,
+          29.5,
+          29.5,
+          29.5,
+          29.5,
+          29.5,
+          29.5
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.11210636332547556,
+        "mad": 0,
+        "min": 0.11210636332547556,
+        "max": 0.11210636332547556,
+        "runs": [
+          0.11210636332547556,
+          0.11210636332547556,
+          0.11210636332547556,
+          0.11210636332547556,
+          0.11210636332547556,
+          0.11210636332547556,
+          0.11210636332547556
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.1915398166854483,
+        "mad": 0,
+        "min": 1.1915398166854483,
+        "max": 1.1915398166854483,
+        "runs": [
+          1.1915398166854483,
+          1.1915398166854483,
+          1.1915398166854483,
+          1.1915398166854483,
+          1.1915398166854483,
+          1.1915398166854483,
+          1.1915398166854483
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.1972032185277062,
+        "mad": 0,
+        "min": 1.1972032185277062,
+        "max": 1.1972032185277062,
+        "runs": [
+          1.1972032185277062,
+          1.1972032185277062,
+          1.1972032185277062,
+          1.1972032185277062,
+          1.1972032185277062,
+          1.1972032185277062,
+          1.1972032185277062
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 4.9626852251095785,
+        "mad": 0,
+        "min": 4.9626852251095785,
+        "max": 4.9626852251095785,
+        "runs": [
+          4.9626852251095785,
+          4.9626852251095785,
+          4.9626852251095785,
+          4.9626852251095785,
+          4.9626852251095785,
+          4.9626852251095785,
+          4.9626852251095785
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 4.986870340374135,
+        "mad": 0,
+        "min": 4.986870340374135,
+        "max": 4.986870340374135,
+        "runs": [
+          4.986870340374135,
+          4.986870340374135,
+          4.986870340374135,
+          4.986870340374135,
+          4.986870340374135,
+          4.986870340374135,
+          4.986870340374135
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 29.5,
+        "getaway_error_m": 0.11210636332547556,
+        "blackout_avatar_error_m": 1.1915398166854483,
+        "blackout_vehicle_error_m": 1.1972032185277062,
+        "getaway_speed_error_mps": 4.9626852251095785,
+        "blackout_avatar_speed_error_mps": 4.986870340374135
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 0,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 24.75,
+        "mad": 0,
+        "min": 24.75,
+        "max": 24.75,
+        "runs": [
+          24.75,
+          24.75,
+          24.75,
+          24.75,
+          24.75,
+          24.75,
+          24.75
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.17952606985511127,
+        "mad": 0,
+        "min": 0.17952606985511127,
+        "max": 0.17952606985511127,
+        "runs": [
+          0.17952606985511127,
+          0.17952606985511127,
+          0.17952606985511127,
+          0.17952606985511127,
+          0.17952606985511127,
+          0.17952606985511127,
+          0.17952606985511127
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.2851070761900085,
+        "mad": 0,
+        "min": 1.2851070761900085,
+        "max": 1.2851070761900085,
+        "runs": [
+          1.2851070761900085,
+          1.2851070761900085,
+          1.2851070761900085,
+          1.2851070761900085,
+          1.2851070761900085,
+          1.2851070761900085,
+          1.2851070761900085
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.2065600254024769,
+        "mad": 0,
+        "min": 1.2065600254024769,
+        "max": 1.2065600254024769,
+        "runs": [
+          1.2065600254024769,
+          1.2065600254024769,
+          1.2065600254024769,
+          1.2065600254024769,
+          1.2065600254024769,
+          1.2065600254024769,
+          1.2065600254024769
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 4.109278302387337,
+        "mad": 0,
+        "min": 4.109278302387337,
+        "max": 4.109278302387337,
+        "runs": [
+          4.109278302387337,
+          4.109278302387337,
+          4.109278302387337,
+          4.109278302387337,
+          4.109278302387337,
+          4.109278302387337,
+          4.109278302387337
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.526738548162755,
+        "mad": 0,
+        "min": 5.526738548162755,
+        "max": 5.526738548162755,
+        "runs": [
+          5.526738548162755,
+          5.526738548162755,
+          5.526738548162755,
+          5.526738548162755,
+          5.526738548162755,
+          5.526738548162755,
+          5.526738548162755
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.17952606985511127,
+        "blackout_avatar_error_m": 1.2851070761900085,
+        "blackout_vehicle_error_m": 1.2065600254024769,
+        "getaway_speed_error_mps": 4.109278302387337,
+        "blackout_avatar_speed_error_mps": 5.526738548162755
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 30,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 30.25,
+        "mad": 0.33333333333333215,
+        "min": 29.666666666666668,
+        "max": 31.166666666666664,
+        "runs": [
+          29.916666666666668,
+          30.25,
+          31.166666666666664,
+          31,
+          30.333333333333336,
+          29.666666666666668,
+          30.25
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.13941535362609228,
+        "mad": 0.005269025026094359,
+        "min": 0.12976359057540826,
+        "max": 0.14999709510126286,
+        "runs": [
+          0.13414632859999792,
+          0.13941535362609228,
+          0.14999709510126286,
+          0.148186219323882,
+          0.14007853061681824,
+          0.12976359057540826,
+          0.1384284178967226
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.3688307086962426,
+        "mad": 0.005724628733289494,
+        "min": 1.3590239944393623,
+        "max": 1.3802092785545959,
+        "runs": [
+          1.363106079962953,
+          1.3688307086962426,
+          1.3802092785545959,
+          1.3793361496237015,
+          1.368952094175877,
+          1.3590239944393623,
+          1.3664460111834116
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.3699320764068672,
+        "mad": 0.005609989461979437,
+        "min": 1.3596245854710962,
+        "max": 1.381109747277365,
+        "runs": [
+          1.3643220869448878,
+          1.3699320764068672,
+          1.381109747277365,
+          1.3794888715146512,
+          1.3704518006476374,
+          1.3596245854710962,
+          1.3674331335549141
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 5.022861039387022,
+        "mad": 0.011031497515132216,
+        "min": 4.99486766760775,
+        "max": 5.068716272627988,
+        "runs": [
+          5.012034869043518,
+          5.022861039387022,
+          5.047756694565987,
+          5.068716272627988,
+          5.01182954187189,
+          5.028575042225287,
+          4.99486766760775
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.018603271797789,
+        "mad": 0.0010893312956978818,
+        "min": 5.017513940502091,
+        "max": 5.022351040019173,
+        "runs": [
+          5.018603271797789,
+          5.017513940502091,
+          5.022351040019173,
+          5.021321422280001,
+          5.017601537312037,
+          5.021597699062052,
+          5.0181158584116465
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 29.666666666666668,
+        "getaway_error_m": 0.13050438263082534,
+        "blackout_avatar_error_m": 1.3625153878720948,
+        "blackout_vehicle_error_m": 1.3623264888350595,
+        "getaway_speed_error_mps": 5.087479793735942,
+        "blackout_avatar_speed_error_mps": 5.0251525522191
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 29.916666666666668,
+        "getaway_error_m": 0.13414632859999792,
+        "blackout_avatar_error_m": 1.363106079962953,
+        "blackout_vehicle_error_m": 1.3643220869448878,
+        "getaway_speed_error_mps": 5.012034869043518,
+        "blackout_avatar_speed_error_mps": 5.018603271797789
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 30.25,
+        "getaway_error_m": 0.13941535362609228,
+        "blackout_avatar_error_m": 1.3688307086962426,
+        "blackout_vehicle_error_m": 1.3699320764068672,
+        "getaway_speed_error_mps": 5.022861039387022,
+        "blackout_avatar_speed_error_mps": 5.017513940502091
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 31.166666666666664,
+        "getaway_error_m": 0.14999709510126286,
+        "blackout_avatar_error_m": 1.3802092785545959,
+        "blackout_vehicle_error_m": 1.381109747277365,
+        "getaway_speed_error_mps": 5.047756694565987,
+        "blackout_avatar_speed_error_mps": 5.022351040019173
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 31,
+        "getaway_error_m": 0.148186219323882,
+        "blackout_avatar_error_m": 1.3793361496237015,
+        "blackout_vehicle_error_m": 1.3794888715146512,
+        "getaway_speed_error_mps": 5.068716272627988,
+        "blackout_avatar_speed_error_mps": 5.021321422280001
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 30.333333333333336,
+        "getaway_error_m": 0.14007853061681824,
+        "blackout_avatar_error_m": 1.368952094175877,
+        "blackout_vehicle_error_m": 1.3704518006476374,
+        "getaway_speed_error_mps": 5.01182954187189,
+        "blackout_avatar_speed_error_mps": 5.017601537312037
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 29.666666666666668,
+        "getaway_error_m": 0.12976359057540826,
+        "blackout_avatar_error_m": 1.3590239944393623,
+        "blackout_vehicle_error_m": 1.3596245854710962,
+        "getaway_speed_error_mps": 5.028575042225287,
+        "blackout_avatar_speed_error_mps": 5.021597699062052
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 30.25,
+        "getaway_error_m": 0.1384284178967226,
+        "blackout_avatar_error_m": 1.3664460111834116,
+        "blackout_vehicle_error_m": 1.3674331335549141,
+        "getaway_speed_error_mps": 4.99486766760775,
+        "blackout_avatar_speed_error_mps": 5.0181158584116465
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 30,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 25.666666666666664,
+        "mad": 0.25,
+        "min": 24.666666666666668,
+        "max": 26.083333333333332,
+        "runs": [
+          25.666666666666664,
+          24.666666666666668,
+          25.583333333333336,
+          25.333333333333336,
+          25.75,
+          26.083333333333332,
+          25.916666666666664
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.30382963126609813,
+        "mad": 0.00357599935399866,
+        "min": 0.297944260439517,
+        "max": 0.31227972396562853,
+        "runs": [
+          0.3002536319120995,
+          0.30382963126609813,
+          0.3116487966394539,
+          0.31227972396562853,
+          0.3020318750269049,
+          0.297944260439517,
+          0.3069881650201492
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.4601801690550678,
+        "mad": 0.004676420340680165,
+        "min": 1.4537608412483745,
+        "max": 1.471733815146156,
+        "runs": [
+          1.4555037487143876,
+          1.4588891961611248,
+          1.4702677627905083,
+          1.471733815146156,
+          1.4601801690550678,
+          1.4537608412483745,
+          1.4611828579924153
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.3779079869474549,
+        "mad": 0.005106269375599881,
+        "min": 1.3721977308354498,
+        "max": 1.3898817230507952,
+        "runs": [
+          1.372801717571855,
+          1.3753415315951782,
+          1.3898817230507952,
+          1.3892842391010267,
+          1.3779079869474549,
+          1.3721977308354498,
+          1.38015247774911
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 4.221810689344548,
+        "mad": 0.00622159961963753,
+        "min": 4.206006805724753,
+        "max": 4.304552125839153,
+        "runs": [
+          4.221810689344548,
+          4.219537385197961,
+          4.304552125839153,
+          4.2420046138129095,
+          4.228032288964186,
+          4.218229070366562,
+          4.206006805724753
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.553687543341959,
+        "mad": 0.006713015918649923,
+        "min": 5.54633299412078,
+        "max": 5.564272416178747,
+        "runs": [
+          5.555322210767665,
+          5.564272416178747,
+          5.54633299412078,
+          5.561474248004965,
+          5.553687543341959,
+          5.5482452019164255,
+          5.546974527423309
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 26.333333333333332,
+        "getaway_error_m": 0.29531114527670166,
+        "blackout_avatar_error_m": 1.4537434659802506,
+        "blackout_vehicle_error_m": 1.3697827147212431,
+        "getaway_speed_error_mps": 4.298823782521981,
+        "blackout_avatar_speed_error_mps": 5.57028459409552
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 25.666666666666664,
+        "getaway_error_m": 0.3002536319120995,
+        "blackout_avatar_error_m": 1.4555037487143876,
+        "blackout_vehicle_error_m": 1.372801717571855,
+        "getaway_speed_error_mps": 4.221810689344548,
+        "blackout_avatar_speed_error_mps": 5.555322210767665
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 24.666666666666668,
+        "getaway_error_m": 0.30382963126609813,
+        "blackout_avatar_error_m": 1.4588891961611248,
+        "blackout_vehicle_error_m": 1.3753415315951782,
+        "getaway_speed_error_mps": 4.219537385197961,
+        "blackout_avatar_speed_error_mps": 5.564272416178747
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 25.583333333333336,
+        "getaway_error_m": 0.3116487966394539,
+        "blackout_avatar_error_m": 1.4702677627905083,
+        "blackout_vehicle_error_m": 1.3898817230507952,
+        "getaway_speed_error_mps": 4.304552125839153,
+        "blackout_avatar_speed_error_mps": 5.54633299412078
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 25.333333333333336,
+        "getaway_error_m": 0.31227972396562853,
+        "blackout_avatar_error_m": 1.471733815146156,
+        "blackout_vehicle_error_m": 1.3892842391010267,
+        "getaway_speed_error_mps": 4.2420046138129095,
+        "blackout_avatar_speed_error_mps": 5.561474248004965
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 25.75,
+        "getaway_error_m": 0.3020318750269049,
+        "blackout_avatar_error_m": 1.4601801690550678,
+        "blackout_vehicle_error_m": 1.3779079869474549,
+        "getaway_speed_error_mps": 4.228032288964186,
+        "blackout_avatar_speed_error_mps": 5.553687543341959
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 26.083333333333332,
+        "getaway_error_m": 0.297944260439517,
+        "blackout_avatar_error_m": 1.4537608412483745,
+        "blackout_vehicle_error_m": 1.3721977308354498,
+        "getaway_speed_error_mps": 4.218229070366562,
+        "blackout_avatar_speed_error_mps": 5.5482452019164255
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 25.916666666666664,
+        "getaway_error_m": 0.3069881650201492,
+        "blackout_avatar_error_m": 1.4611828579924153,
+        "blackout_vehicle_error_m": 1.38015247774911,
+        "getaway_speed_error_mps": 4.206006805724753,
+        "blackout_avatar_speed_error_mps": 5.546974527423309
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 60,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 31.166666666666664,
+        "mad": 0.3333333333333357,
+        "min": 30.5,
+        "max": 31.583333333333336,
+        "runs": [
+          30.666666666666664,
+          31.083333333333336,
+          31.166666666666664,
+          31.416666666666664,
+          30.5,
+          31.5,
+          31.583333333333336
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.2924850611991946,
+        "mad": 0.009377043992980394,
+        "min": 0.2684007990013569,
+        "max": 0.3175390181621081,
+        "runs": [
+          0.2831080172062142,
+          0.2924850611991946,
+          0.3175390181621081,
+          0.31310078251491574,
+          0.2944341831916625,
+          0.2684007990013569,
+          0.2893126373901345
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.5151712347267348,
+        "mad": 0.008194806571313551,
+        "min": 1.4929824618613534,
+        "max": 1.5435497121367892,
+        "runs": [
+          1.5069764281554212,
+          1.5151712347267348,
+          1.5435497121367892,
+          1.5426858721866272,
+          1.521127645509099,
+          1.4929824618613534,
+          1.5122616082113873
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.497400054698208,
+        "mad": 0.011685888519000764,
+        "min": 1.47512562545631,
+        "max": 1.524770475598631,
+        "runs": [
+          1.4905985613773163,
+          1.4962788271588954,
+          1.524770475598631,
+          1.5245773222991494,
+          1.5090859432172088,
+          1.47512562545631,
+          1.497400054698208
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 5.089594894558015,
+        "mad": 0.04112590094832935,
+        "min": 5.0422779927613774,
+        "max": 5.20505500682745,
+        "runs": [
+          5.06245623042583,
+          5.048468993609686,
+          5.143204456893538,
+          5.20505500682745,
+          5.093007872066921,
+          5.089594894558015,
+          5.0422779927613774
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.132413569922332,
+        "mad": 0.009452376380961525,
+        "min": 5.104852294418429,
+        "max": 5.149008766262295,
+        "runs": [
+          5.132080767330973,
+          5.149008766262295,
+          5.141865946303294,
+          5.132413569922332,
+          5.104852294418429,
+          5.132496522096815,
+          5.114824555513883
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 30.833333333333336,
+        "getaway_error_m": 0.2823481833293174,
+        "blackout_avatar_error_m": 1.5128708348467854,
+        "blackout_vehicle_error_m": 1.491873569455621,
+        "getaway_speed_error_mps": 5.221111858117646,
+        "blackout_avatar_speed_error_mps": 5.15223098826963
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 30.666666666666664,
+        "getaway_error_m": 0.2831080172062142,
+        "blackout_avatar_error_m": 1.5069764281554212,
+        "blackout_vehicle_error_m": 1.4905985613773163,
+        "getaway_speed_error_mps": 5.06245623042583,
+        "blackout_avatar_speed_error_mps": 5.132080767330973
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 31.083333333333336,
+        "getaway_error_m": 0.2924850611991946,
+        "blackout_avatar_error_m": 1.5151712347267348,
+        "blackout_vehicle_error_m": 1.4962788271588954,
+        "getaway_speed_error_mps": 5.048468993609686,
+        "blackout_avatar_speed_error_mps": 5.149008766262295
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 31.166666666666664,
+        "getaway_error_m": 0.3175390181621081,
+        "blackout_avatar_error_m": 1.5435497121367892,
+        "blackout_vehicle_error_m": 1.524770475598631,
+        "getaway_speed_error_mps": 5.143204456893538,
+        "blackout_avatar_speed_error_mps": 5.141865946303294
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 31.416666666666664,
+        "getaway_error_m": 0.31310078251491574,
+        "blackout_avatar_error_m": 1.5426858721866272,
+        "blackout_vehicle_error_m": 1.5245773222991494,
+        "getaway_speed_error_mps": 5.20505500682745,
+        "blackout_avatar_speed_error_mps": 5.132413569922332
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 30.5,
+        "getaway_error_m": 0.2944341831916625,
+        "blackout_avatar_error_m": 1.521127645509099,
+        "blackout_vehicle_error_m": 1.5090859432172088,
+        "getaway_speed_error_mps": 5.093007872066921,
+        "blackout_avatar_speed_error_mps": 5.104852294418429
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 31.5,
+        "getaway_error_m": 0.2684007990013569,
+        "blackout_avatar_error_m": 1.4929824618613534,
+        "blackout_vehicle_error_m": 1.47512562545631,
+        "getaway_speed_error_mps": 5.089594894558015,
+        "blackout_avatar_speed_error_mps": 5.132496522096815
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 31.583333333333336,
+        "getaway_error_m": 0.2893126373901345,
+        "blackout_avatar_error_m": 1.5122616082113873,
+        "blackout_vehicle_error_m": 1.497400054698208,
+        "getaway_speed_error_mps": 5.0422779927613774,
+        "blackout_avatar_speed_error_mps": 5.114824555513883
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 60,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 25.666666666666664,
+        "mad": 0.3333333333333286,
+        "min": 24.75,
+        "max": 26.5,
+        "runs": [
+          25.833333333333336,
+          24.75,
+          26.5,
+          26.083333333333332,
+          25.666666666666664,
+          25.583333333333336,
+          25.333333333333336
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.4569898100578036,
+        "mad": 0.006450928953058599,
+        "min": 0.44063112204020294,
+        "max": 0.47808784844638064,
+        "runs": [
+          0.450538881104745,
+          0.4569898100578036,
+          0.47808784844638064,
+          0.47323754662379125,
+          0.45399231179281513,
+          0.44063112204020294,
+          0.46048189373808585
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.6105072269502096,
+        "mad": 0.007624361342499997,
+        "min": 1.593567261886741,
+        "max": 1.6359473776592426,
+        "runs": [
+          1.6028828656077097,
+          1.6063993096059124,
+          1.6359473776592426,
+          1.6339139470657877,
+          1.612355720388279,
+          1.593567261886741,
+          1.6105072269502096
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.5159573569161249,
+        "mad": 0.013078047835487494,
+        "min": 1.5005643193090874,
+        "max": 1.5478699594725196,
+        "runs": [
+          1.5028793090806374,
+          1.5101677619964755,
+          1.5478699594725196,
+          1.538612478687886,
+          1.5159573569161249,
+          1.5005643193090874,
+          1.5193299766204995
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 4.31557872640323,
+        "mad": 0.03710474622361293,
+        "min": 4.274356805764152,
+        "max": 4.4634017587546095,
+        "runs": [
+          4.352683472626843,
+          4.308002608031951,
+          4.4634017587546095,
+          4.410624871697659,
+          4.3125343974285,
+          4.31557872640323,
+          4.274356805764152
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.653103768683269,
+        "mad": 0.012749580782734249,
+        "min": 5.60898398887725,
+        "max": 5.665853349466003,
+        "runs": [
+          5.6574932801771025,
+          5.665853349466003,
+          5.60898398887725,
+          5.664134939692605,
+          5.653103768683269,
+          5.615262073558334,
+          5.624251122479723
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 27.333333333333332,
+        "getaway_error_m": 0.4460223699185392,
+        "blackout_avatar_error_m": 1.6040989097259621,
+        "blackout_vehicle_error_m": 1.500060749907435,
+        "getaway_speed_error_mps": 4.519627293872512,
+        "blackout_avatar_speed_error_mps": 5.706580893172276
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 25.833333333333336,
+        "getaway_error_m": 0.450538881104745,
+        "blackout_avatar_error_m": 1.6028828656077097,
+        "blackout_vehicle_error_m": 1.5028793090806374,
+        "getaway_speed_error_mps": 4.352683472626843,
+        "blackout_avatar_speed_error_mps": 5.6574932801771025
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 24.75,
+        "getaway_error_m": 0.4569898100578036,
+        "blackout_avatar_error_m": 1.6063993096059124,
+        "blackout_vehicle_error_m": 1.5101677619964755,
+        "getaway_speed_error_mps": 4.308002608031951,
+        "blackout_avatar_speed_error_mps": 5.665853349466003
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 26.5,
+        "getaway_error_m": 0.47808784844638064,
+        "blackout_avatar_error_m": 1.6359473776592426,
+        "blackout_vehicle_error_m": 1.5478699594725196,
+        "getaway_speed_error_mps": 4.4634017587546095,
+        "blackout_avatar_speed_error_mps": 5.60898398887725
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 26.083333333333332,
+        "getaway_error_m": 0.47323754662379125,
+        "blackout_avatar_error_m": 1.6339139470657877,
+        "blackout_vehicle_error_m": 1.538612478687886,
+        "getaway_speed_error_mps": 4.410624871697659,
+        "blackout_avatar_speed_error_mps": 5.664134939692605
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 25.666666666666664,
+        "getaway_error_m": 0.45399231179281513,
+        "blackout_avatar_error_m": 1.612355720388279,
+        "blackout_vehicle_error_m": 1.5159573569161249,
+        "getaway_speed_error_mps": 4.3125343974285,
+        "blackout_avatar_speed_error_mps": 5.653103768683269
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 25.583333333333336,
+        "getaway_error_m": 0.44063112204020294,
+        "blackout_avatar_error_m": 1.593567261886741,
+        "blackout_vehicle_error_m": 1.5005643193090874,
+        "getaway_speed_error_mps": 4.31557872640323,
+        "blackout_avatar_speed_error_mps": 5.615262073558334
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 25.333333333333336,
+        "getaway_error_m": 0.46048189373808585,
+        "blackout_avatar_error_m": 1.6105072269502096,
+        "blackout_vehicle_error_m": 1.5193299766204995,
+        "getaway_speed_error_mps": 4.274356805764152,
+        "blackout_avatar_speed_error_mps": 5.624251122479723
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 100,
+    "stall_ms": 0,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 32.083333333333336,
+        "mad": 0.3333333333333357,
+        "min": 31.75,
+        "max": 32.916666666666664,
+        "runs": [
+          31.75,
+          31.916666666666664,
+          32.916666666666664,
+          32.666666666666664,
+          31.833333333333336,
+          32.5,
+          32.083333333333336
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.5015437807464267,
+        "mad": 0.008054006673344327,
+        "min": 0.45888683691946947,
+        "max": 0.5501701146672172,
+        "runs": [
+          0.49348977407308237,
+          0.5015437807464267,
+          0.5501701146672172,
+          0.5350961049365617,
+          0.5078201676038453,
+          0.45888683691946947,
+          0.498603528187853
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.7070079267345628,
+        "mad": 0.011938005180235578,
+        "min": 1.6668340776566506,
+        "max": 1.7633759875086594,
+        "runs": [
+          1.701271214590026,
+          1.7070079267345628,
+          1.7633759875086594,
+          1.7516593138977465,
+          1.7189459319147984,
+          1.6668340776566506,
+          1.7035205211360729
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.6510793175694611,
+        "mad": 0.018439995928458908,
+        "min": 1.6130743640915377,
+        "max": 1.7088758651470266,
+        "runs": [
+          1.6510793175694611,
+          1.6500639189104274,
+          1.7088758651470266,
+          1.6951472499246396,
+          1.66951931349792,
+          1.6130743640915377,
+          1.6490442218630736
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 5.303476516936945,
+        "mad": 0.04867059133877838,
+        "min": 5.21248454053564,
+        "max": 5.483073667406859,
+        "runs": [
+          5.2635859107106056,
+          5.303476516936945,
+          5.483073667406859,
+          5.473313274980452,
+          5.352147108275723,
+          5.21248454053564,
+          5.2661572805461265
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.368502052356251,
+        "mad": 0.010274426394570213,
+        "min": 5.358227625961681,
+        "max": 5.4220609249331995,
+        "runs": [
+          5.358227625961681,
+          5.4220609249331995,
+          5.365146758864065,
+          5.390464568340104,
+          5.36786217834963,
+          5.368502052356251,
+          5.381823371842587
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 32.083333333333336,
+        "getaway_error_m": 0.48247053540697804,
+        "blackout_avatar_error_m": 1.6995397175926694,
+        "blackout_vehicle_error_m": 1.6336625373424136,
+        "getaway_speed_error_mps": 5.4343549599377345,
+        "blackout_avatar_speed_error_mps": 5.435496458805113
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 31.75,
+        "getaway_error_m": 0.49348977407308237,
+        "blackout_avatar_error_m": 1.701271214590026,
+        "blackout_vehicle_error_m": 1.6510793175694611,
+        "getaway_speed_error_mps": 5.2635859107106056,
+        "blackout_avatar_speed_error_mps": 5.358227625961681
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 31.916666666666664,
+        "getaway_error_m": 0.5015437807464267,
+        "blackout_avatar_error_m": 1.7070079267345628,
+        "blackout_vehicle_error_m": 1.6500639189104274,
+        "getaway_speed_error_mps": 5.303476516936945,
+        "blackout_avatar_speed_error_mps": 5.4220609249331995
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 32.916666666666664,
+        "getaway_error_m": 0.5501701146672172,
+        "blackout_avatar_error_m": 1.7633759875086594,
+        "blackout_vehicle_error_m": 1.7088758651470266,
+        "getaway_speed_error_mps": 5.483073667406859,
+        "blackout_avatar_speed_error_mps": 5.365146758864065
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 32.666666666666664,
+        "getaway_error_m": 0.5350961049365617,
+        "blackout_avatar_error_m": 1.7516593138977465,
+        "blackout_vehicle_error_m": 1.6951472499246396,
+        "getaway_speed_error_mps": 5.473313274980452,
+        "blackout_avatar_speed_error_mps": 5.390464568340104
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 31.833333333333336,
+        "getaway_error_m": 0.5078201676038453,
+        "blackout_avatar_error_m": 1.7189459319147984,
+        "blackout_vehicle_error_m": 1.66951931349792,
+        "getaway_speed_error_mps": 5.352147108275723,
+        "blackout_avatar_speed_error_mps": 5.36786217834963
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 32.5,
+        "getaway_error_m": 0.45888683691946947,
+        "blackout_avatar_error_m": 1.6668340776566506,
+        "blackout_vehicle_error_m": 1.6130743640915377,
+        "getaway_speed_error_mps": 5.21248454053564,
+        "blackout_avatar_speed_error_mps": 5.368502052356251
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 32.083333333333336,
+        "getaway_error_m": 0.498603528187853,
+        "blackout_avatar_error_m": 1.7035205211360729,
+        "blackout_vehicle_error_m": 1.6490442218630736,
+        "getaway_speed_error_mps": 5.2661572805461265,
+        "blackout_avatar_speed_error_mps": 5.381823371842587
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  },
+  {
+    "experiment": "proposals-jitter",
+    "hz": 7.5,
+    "jitter_ms": 100,
+    "stall_ms": 150,
+    "warmup": 1,
+    "measured": 7,
+    "metrics": {
+      "unbracketed_pct": {
+        "median": 27.416666666666668,
+        "mad": 0.5,
+        "min": 26.166666666666664,
+        "max": 28.166666666666668,
+        "runs": [
+          27.416666666666668,
+          26.916666666666668,
+          28.166666666666668,
+          27.750000000000004,
+          27.833333333333332,
+          26.166666666666664,
+          26.583333333333332
+        ]
+      },
+      "getaway_error_m": {
+        "median": 0.6655645023493634,
+        "mad": 0.006821792693558426,
+        "min": 0.6313235409854083,
+        "max": 0.7091922181986591,
+        "runs": [
+          0.6610282845287262,
+          0.6650123627682798,
+          0.7091922181986591,
+          0.696625465118058,
+          0.6655645023493634,
+          0.6313235409854083,
+          0.6723862950429218
+        ]
+      },
+      "blackout_avatar_error_m": {
+        "median": 1.8064445038854644,
+        "mad": 0.007238276275811417,
+        "min": 1.7709276510493595,
+        "max": 1.8581128357551542,
+        "runs": [
+          1.7995168347663493,
+          1.7994055936944944,
+          1.8581128357551542,
+          1.846396162144204,
+          1.8136827801612758,
+          1.7709276510493595,
+          1.8064445038854644
+        ]
+      },
+      "blackout_vehicle_error_m": {
+        "median": 1.6854478993355144,
+        "mad": 0.01623986877079764,
+        "min": 1.647138860279014,
+        "max": 1.7411858933828521,
+        "runs": [
+          1.6692080305647168,
+          1.6746254091350397,
+          1.7411858933828521,
+          1.7198549752119712,
+          1.6877942902470275,
+          1.647138860279014,
+          1.6854478993355144
+        ]
+      },
+      "getaway_speed_error_mps": {
+        "median": 4.80120264195039,
+        "mad": 0.04431387000361564,
+        "min": 4.701922250107195,
+        "max": 4.985445761933206,
+        "runs": [
+          4.80120264195039,
+          4.832123417710159,
+          4.985445761933206,
+          4.845516511954005,
+          4.742810224320402,
+          4.701922250107195,
+          4.794957411418366
+        ]
+      },
+      "blackout_avatar_speed_error_mps": {
+        "median": 5.872455073905135,
+        "mad": 0.011545414511451746,
+        "min": 5.792033628461527,
+        "max": 5.884000488416587,
+        "runs": [
+          5.874287403739355,
+          5.872455073905135,
+          5.792033628461527,
+          5.884000488416587,
+          5.8838667804305524,
+          5.8052104806804,
+          5.8410606014513435
+        ]
+      }
+    },
+    "runs": [
+      {
+        "run": 0,
+        "warmup": true,
+        "unbracketed_pct": 28.499999999999996,
+        "getaway_error_m": 0.6460554379600445,
+        "blackout_avatar_error_m": 1.7919373845526048,
+        "blackout_vehicle_error_m": 1.647259086594943,
+        "getaway_speed_error_mps": 4.978984247739858,
+        "blackout_avatar_speed_error_mps": 5.960708825376902
+      },
+      {
+        "run": 1,
+        "warmup": false,
+        "unbracketed_pct": 27.416666666666668,
+        "getaway_error_m": 0.6610282845287262,
+        "blackout_avatar_error_m": 1.7995168347663493,
+        "blackout_vehicle_error_m": 1.6692080305647168,
+        "getaway_speed_error_mps": 4.80120264195039,
+        "blackout_avatar_speed_error_mps": 5.874287403739355
+      },
+      {
+        "run": 2,
+        "warmup": false,
+        "unbracketed_pct": 26.916666666666668,
+        "getaway_error_m": 0.6650123627682798,
+        "blackout_avatar_error_m": 1.7994055936944944,
+        "blackout_vehicle_error_m": 1.6746254091350397,
+        "getaway_speed_error_mps": 4.832123417710159,
+        "blackout_avatar_speed_error_mps": 5.872455073905135
+      },
+      {
+        "run": 3,
+        "warmup": false,
+        "unbracketed_pct": 28.166666666666668,
+        "getaway_error_m": 0.7091922181986591,
+        "blackout_avatar_error_m": 1.8581128357551542,
+        "blackout_vehicle_error_m": 1.7411858933828521,
+        "getaway_speed_error_mps": 4.985445761933206,
+        "blackout_avatar_speed_error_mps": 5.792033628461527
+      },
+      {
+        "run": 4,
+        "warmup": false,
+        "unbracketed_pct": 27.750000000000004,
+        "getaway_error_m": 0.696625465118058,
+        "blackout_avatar_error_m": 1.846396162144204,
+        "blackout_vehicle_error_m": 1.7198549752119712,
+        "getaway_speed_error_mps": 4.845516511954005,
+        "blackout_avatar_speed_error_mps": 5.884000488416587
+      },
+      {
+        "run": 5,
+        "warmup": false,
+        "unbracketed_pct": 27.833333333333332,
+        "getaway_error_m": 0.6655645023493634,
+        "blackout_avatar_error_m": 1.8136827801612758,
+        "blackout_vehicle_error_m": 1.6877942902470275,
+        "getaway_speed_error_mps": 4.742810224320402,
+        "blackout_avatar_speed_error_mps": 5.8838667804305524
+      },
+      {
+        "run": 6,
+        "warmup": false,
+        "unbracketed_pct": 26.166666666666664,
+        "getaway_error_m": 0.6313235409854083,
+        "blackout_avatar_error_m": 1.7709276510493595,
+        "blackout_vehicle_error_m": 1.647138860279014,
+        "getaway_speed_error_mps": 4.701922250107195,
+        "blackout_avatar_speed_error_mps": 5.8052104806804
+      },
+      {
+        "run": 7,
+        "warmup": false,
+        "unbracketed_pct": 26.583333333333332,
+        "getaway_error_m": 0.6723862950429218,
+        "blackout_avatar_error_m": 1.8064445038854644,
+        "blackout_vehicle_error_m": 1.6854478993355144,
+        "getaway_speed_error_mps": 4.794957411418366,
+        "blackout_avatar_speed_error_mps": 5.8410606014513435
+      }
+    ],
+    "note": "20s constant-speed 10m/s synthetic trajectory; one-way base latency 50ms; uniform positive jitter; optional 150ms ordered stall every 2s. Getaway uses NetClient with you:null to isolate remote interpolation; Blackout reproduces avatar/vehicle smoothing formulas, not full Game integration. Error for Getaway is against nominal 150ms delayed truth; Blackout against current truth. Not comparable cross-game accuracy scores."
+  }
+]

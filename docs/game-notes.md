@@ -21,6 +21,11 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 - **Read timestamps only after they resolve.** Queue completion does not mean the timestamp readback finished; await
   the readback before clearing samples. Render-pass timestamp ranges can overlap, so don't sum per-pass times into a
   total.
+- **Separate native timing from serialized attribution.** `scripts/perf/gpu-browser.js` retains every Metal interval
+  and partitions their union. Waiting for queue completion between individual pass command buffers produced zero
+  overlap in 1,890 measured frame sets across both games. Use a persistent final target: a canvas texture can expire
+  across the waits. The extra submissions/waits change scheduling, so their pass costs are diagnostic, not a native
+  frame decomposition. MSAA resolve remains part of the main pass (`perf/proposals.md`).
 - **Seeded, enemy-free play for comparisons.** `?peaceful=1&seed=N` gives a fixed world with no enemies acting, so two
   builds can be played side by side with the same input. Getaway's `games/getaway/src/game/session.ts` keeps the
   simulation in its free-driving phase and supplies a chase HUD view. Two scripted 3,600-frame runs at 60 Hz with
@@ -136,6 +141,12 @@ Candidates from the code audits; measure and playtest before moving any into the
   that Getaway file didn't trigger Blackout's workflow at all.
 
 ## Multiplayer
+
+- **Compare codecs after compression as well as before it.** The offline exact Float64/dictionary prototype in
+  `scripts/perf/codecs.ts` reduced raw Getaway/Blackout-office/downtown snapshots by 71%/63%/62%, but modeled DEFLATE
+  with history reduced that advantage to 24%/31%/20%. Adding deltas to compressed binary helped downtown by another
+  17% and made office 1% larger. All reconstructed snapshots matched exactly over the seeded corpus. These are wire
+  proposals, not deployed codecs; the edge's negotiated compression parameters remain unmeasured (`perf/proposals.md`).
 
 - **Pair snapshot benchmarks on the same source.** `scripts/bench-multiplayer.ts --paired` alternates shared and
   per-recipient preparation order, runs one warmup plus nine measured pairs of 1,000 ticks, and checks serialized

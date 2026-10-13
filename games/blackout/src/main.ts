@@ -164,6 +164,8 @@ async function main() {
   }
   resize()
   addEventListener("resize", resize)
+  // Proposal-only instrumentation; ordinary play does not expose game internals.
+  if (params.has("proposalBench")) Object.assign(window, { __proposal: { game: () => game, renderer, telemetry, cam } })
 
   let last = performance.now()
   let muxTick = 0
