@@ -80,7 +80,7 @@ export function wizardWeapon(gun: Gun): Mesh {
 export function wizardModels(): PersonModels {
   const p = personModels()
   p.pelvis = new Mesh()
-  rings(p.pelvis, [[0, -0.54, 0.43], [0, -0.27, 0.31], [0, 0.1, 0.2]], CLOTH)
+  rings(p.pelvis, [[0, -0.54, 0.49], [0, -0.27, 0.34], [0, 0.1, 0.22]], CLOTH)
   // The two forward panels form a dark inner robe beneath the open coloured coat.
   for (let i = 0; i < p.pelvis.v.length; i += 11) if (p.pelvis.v[i + 3]! > 0.8) {
     p.pelvis.v.splice(i + 6, 3, ...DARK)
@@ -97,7 +97,7 @@ export function wizardModels(): PersonModels {
   p.head = new Mesh()
   p.head.prism(0, 0, 0.15, 0.19, 0.015, 0.25, 8, DARK, MAT.actor)
   for (const z of [-0.078, 0.078]) p.head.box(0.154, 0.1, z - 0.024, 0.18, 0.15, z + 0.024, [1, 1, 1], MAT.accent)
-  rings(p.head, [[0, 0.2, 0.16], [0, 0.215, 0.43], [-0.02, 0.265, 0.4], [-0.02, 0.29, 0.23], [-0.04, 0.5, 0.18], [-0.12, 0.74, 0.11], [-0.32, 0.81, 0.075], [-0.46, 0.62, 0]], CLOTH)
+  rings(p.head, [[0, 0.2, 0.16], [0, 0.215, 0.51], [-0.02, 0.265, 0.48], [-0.02, 0.29, 0.25], [-0.04, 0.55, 0.19], [-0.12, 0.87, 0.11], [-0.32, 0.94, 0.075], [-0.46, 0.77, 0]], CLOTH)
   rings(p.head, [[-0.02, 0.28, 0.24], [-0.035, 0.38, 0.216]], LEATHER, MAT.actor)
   buckle(p.head, 0.2, 0.28, 0.025)
   p.upperArm = new Mesh()

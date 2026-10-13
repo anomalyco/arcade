@@ -10,7 +10,6 @@ class Wizards extends Mode {
   override spawnAt(w: World,p: Player) { return w.map.spawns[Math.max(0,w.order.indexOf(p.id)) % w.map.spawns.length]! }
   override loadout(w: World,p: Player) { w.spells?.spawn(p); return bareKit({id:"staff",label:"STAFF BONK",damage:18,regen:false}) }
   override intent(w: World,p: Player,i: Intent) { return w.spells?.intent(w,p,i) ?? i }
-  override killed(w: World,p: Player) { w.spells?.death(w,p) }
   override leave(w: World,p: Player) { w.spells?.remove(p.id) }
   override step(w: World) { w.spells?.step(w) }
   override canRide() { return false }

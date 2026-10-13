@@ -16,8 +16,10 @@ export class SpellFx {
     const m=new Mesh(), point=(a:number,b:number) => [Math.cos(a)*Math.cos(b),Math.sin(b),Math.sin(a)*Math.cos(b)]
     for(let j=0;j<10;j++) for(let i=0;i<16;i++) {
       const a=i*Math.PI/8,b=(j/10-0.5)*Math.PI,A=a+Math.PI/8,B=b+Math.PI/10
-      const c=(i*7+j*13)%11<3 ? [0.46,0.55,0.68] as const : [0.78,0.86,1] as const
-      m.quadAuto(point(a,b),point(a,B),point(A,B),point(A,b),c,MAT.glow,0.75)
+      const n=point((a+A)/2,(b+B)/2)
+      const crater = [[0.3,0.65,0.7],[-0.6,0.6,0.5],[0.75,0.1,0.6]].some(p=>Math.hypot(n[0]!-p[0]!,n[1]!-p[1]!,n[2]!-p[2]!)<0.25)
+      const shade = (0.6+0.32*Math.max(0,-n[0]!*0.4+n[1]!*0.8+n[2]!*0.4))*(crater?0.72:1)
+      m.quadAuto(point(a,b),point(a,B),point(A,B),point(A,b),[shade*0.87,shade*0.91,shade],MAT.glow,0.8)
     }
     this.moon=renderer.addModel(m)
     const s=new Mesh()
@@ -36,7 +38,7 @@ export class SpellFx {
     }
   }
   lights(s:SpellView,dyn:DynLight[],casters:Caster[]) {
-    for(const m of s.moons) dyn.push({x:m.x,y:m.y,h:1.5,r:m.tiny?3:8+m.radius,color:[0.55,0.7,1],power:m.tiny?0.3:1.3,size:m.radius*0.35})
+    for(const m of s.moons) dyn.push({x:m.x,y:m.y,h:1.5,r:5.5,color:[0.72,0.8,1],power:0.5,size:m.radius*0.6})
     for(const p of s.skeletons) casters.push({x:p.x,y:p.y,r:0.3,h:1.55})
     for(const p of s.props) casters.push({x:p.x,y:p.y,r:0.45,h:0.85+p.h})
   }
@@ -51,16 +53,23 @@ export class SpellFx {
       fx(true,scroll.x,scroll.h+0.15,scroll.y,0.45,1,0.65,0.25,0.25,0)
     }
     for(const m of s.moons) {
-      push(this.moon,m.x,1.5,m.y,(t-m.born)*0.35,m.radius)
-      fx(true,m.x,1.5,m.y,m.radius*2,0.5,0.7,1,0.3,0)
-      fx(true,m.x,0.03,m.y,m.radius+0.65,0.5,0.7,1,0.35,2,0,0.03)
+      const age=t-m.born, grow=Math.min(1,age/s.config.moonAnticipation)
+      const warn=Math.max(0,1-(m.end-t)/0.38), size=m.radius*(0.4+0.6*grow)*(1-0.12*warn)
+      push(this.moon,m.x,1.5,m.y,age*0.2,size)
+      fx(true,m.x,1.5,m.y,size*1.3,0.7,0.8,1,0.1+warn*0.1,0)
+      fx(true,m.x,0.03,m.y,m.radius+0.65,0.6,0.7,0.9,0.2+warn*0.35,2,0,0.025)
+      // A few travelling points describe the orbit without a bloom cloud.
+      for(let i=0;i<6;i++) {const a=age*2.4+i*Math.PI/3,r=m.radius+0.65;fx(true,m.x+Math.cos(a)*r,0.1,m.y+Math.sin(a)*r,0.045,0.65,0.8,1,0.6,0)}
     }
     for(const id of this.actors.keys()) if(!s.skeletons.some(v=>v.id===id)) this.actors.delete(id)
     for(const sk of s.skeletons) {
       let a=this.actors.get(sk.id)
       if(!a) {a=newAvatar(`skeleton${sk.id}`,sk.x,sk.y,sk.aim,"rifle");this.actors.set(sk.id,a)}
       a.bare=true
-      a.swingAt=sk.readyAt?sk.readyAt-1.3:-10
+      a.shambler=true
+      a.swingAt=sk.attackAt?sk.attackAt-0.35:sk.struckAt-0.35
+      // Hit recoil is driven by the authoritative timestamp, including retarget hits.
+      a.torsoKick.x=Math.max(0,1-(t-sk.hitAt)/0.3)*0.35-Math.max(0,1-(t-sk.struckAt)/0.25)*0.12
       animate(a,dt,t,sk.x,sk.y,sk.vx,sk.vy,sk.aim)
       const rise=Math.min(1,(t-sk.born)/s.config.skeletonRise), low=-(1-rise)*1.45-(sk.crawl?0.7:0)
       pose((model,x,y,z,yaw,_tint,pitch,roll,_flash,alpha) => {

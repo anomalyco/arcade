@@ -6,39 +6,43 @@ Choose **Wizards** when creating a room or starting practice. The local fixture 
 `http://wizards.localhost:1355/?sandbox=1&mode=wizards&seed=1&peaceful=1`.
 It starts in the castle hall with passive dummies and the Frog Fountain staff.
 
-- Move with WASD, arrows, or the existing Dvorak bindings. Left-click or V bonks for 18 damage.
-- Approach a scroll on a table and press F. Stay nearby for two seconds to watch its rune, then the scroll burns.
-- Hold right-click to draw on screen, then release to cast toward the stroke's centre. Movement remains available.
-- Moon Ball is a circle followed by a stroke inward to a centre dot, all while holding right-click.
-  Either direction and any starting point on the circle work.
-- Necromancy is a downward zigzag ending in a leftward hook. Watch the scroll for the shape.
-- Open the Lab with Backquote. **Spells → Show runes** displays practice hints; it defaults off.
-  The same group holds spell speeds, sizes, lifetimes, skeleton stats, and recognition thresholds.
-  Simulation tuning applies to the room host; the assist and recognition thresholds are local.
+- Move with WASD, arrows, or the existing Dvorak bindings. Shift sprints; V bonks for 18 damage.
+- Left-click casts toward the cursor. Keys 1/2 or the wheel select Moon Ball / Necromancy.
+  Quick taps are latched until the next tick; holding the button does not repeatedly cast.
+- Both spells are ready on every spawn. The two HUD slots show selection, cooldown and when a spell's active cap is full.
+- Backquote opens the shared Lab. **Spells** holds cooldowns, moon anticipation/speed/size/lifetime and skeleton stats.
+  Only the host changes authoritative room tuning. Camera angle is client-local.
 
-Each life starts without spells. Death drops one randomly selected known spell as a scroll.
-The ordinary HUD lists learned spell names and icons. Other players can see a cast rune above its caster for 1.1 seconds.
+The click prototype has no scroll gate or rune interaction. The recognizer and its sampling tests remain in
+`src/game/runes.ts` as isolated research.
 
-Moon Ball grows as it drifts, captures players, furniture and skeletons, then pops after four seconds.
-The pop deals 45 damage and flings its captives. A low-confidence moon is small, harmless and drifts sideways.
-Necromancy raises a 60-health skeleton after a 1.5-second climb. It pursues the nearest living player, including its
-caster, hits for 28, and lasts 20 seconds. Bonking it draws its attention for four seconds. A degraded skeleton crawls
-and only pursues its caster. An unknown or unmatched rune fizzles.
+Moon Ball forms for 0.18 seconds, travels at 2.3 m/s, captures players, furniture and skeletons, then pops at 3.2 seconds.
+The pop deals 45 damage and flings its captives. Its cooldown is 0.85 seconds, with two active moons per caster and
+eight per room. Necromancy has a 1.4-second cooldown and caps of three per caster and twelve per room. It raises a
+45-health skeleton in 0.6 seconds, at least 2.5 m from the caster. Blocked or occupied placements are rejected without
+consuming cooldown. The skeleton pursues the nearest living player, including its caster, winds up for 0.35 seconds,
+hits for 18, and lasts twelve seconds. Bonking it interrupts the swing and draws its attention for four seconds.
 
-`shared/sim/spells.ts` owns the fixed-tick simulation. Cast intents carry the recognized spell ID, quality and target;
-the server validates the wire data, known spell and cooldown. Snapshots carry spell entities and moved furniture.
-`src/game/runes.ts` uses 64 arc-length samples and normalized template distances, with circle start/direction variants.
+`shared/sim/spells.ts` owns the fixed-tick simulation. Cast intents carry the spell ID and target. The legacy quality
+field is accepted on the wire but ignored by these rules; all click casts have full power. The server controls cooldowns,
+placement and entity limits. Snapshots carry cooldown deadlines, spell entities and moved furniture.
 The client suppresses movement prediction while an authoritative moon orbit or fling carries its player.
 `src/game/spell-fx.ts` reuses the polar-shadow light path and the human rig for skeletons.
 
-`OUT=<capture-directory> bun scripts/prove-wizards-spells.ts` runs real scripted mouse and keyboard input against the
-Nexus preview using headless Metal Chromium. It reads both scrolls, draws runes, checks Dvorak movement during a stroke,
-captures a dummy in a moon, verifies pop damage and caster pursuit, and checks a degraded cast.
+From the repository root, run `hivemind run --kind browser --fetch captures/wizards-click -- bun games/blackout/scripts/prove-wizards-spells.ts`.
+It starts an isolated loopback Vite fixture on the worker and uses muted headless Metal Chromium. `URL` selects an
+existing preview; `OUT` overrides the output directory. It exercises quick taps, rapid clicks, independent cooldowns,
+keys/wheel, Dvorak movement, active limits and Lab click isolation, then captures moon pickup/pop and a skeleton attacking
+its caster. The output includes an eight-second hardware-encoded clip, gameplay stills and `proof.json`.
 `manual` and `bench` parameters expose the automation clock and inspection handle; gameplay tuning uses the Lab.
-The inspected proof used Apple's `metal-3` adapter with no browser errors. Unit tests cover clean/noisy recognition,
-orbit math, learning/drop/reset, nearest-target and aggro rules, degraded spells, protocol validation and deterministic replay.
-Two simulated room connections verify server-side learning, broadcast casts, and host-only tuning. A live two-browser
-room has not been exercised. Performance is unbenchmarked.
+Unit tests cover orbit math, spawn readiness, cooldowns/limits, placement, targeting/aggro, protocol validation and
+deterministic replay. Two simulated room connections verify broadcast casts, ignored quality claims and host-only tuning.
+A live two-browser room has not been exercised. Performance is unbenchmarked.
+
+The click proof passed on Apple's `metal-3` adapter with zero browser errors. Blackout's full check passed 284 tests.
+The 1100×800 captures and eight-second clip show the gameplay camera, with the rune-era capture retained for comparison.
+The room is still a simple arena: materials and architecture remain much plainer than the great-hall concept, and the
+skeleton's thin limbs need more shape work. The lower camera angle makes its skull and open ribs easier to see.
 
 ## Model study
 

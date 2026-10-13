@@ -142,6 +142,8 @@ export type Avatar = {
   plantAt: number
   /** No gun, just hands (infected claws, the gun game knife); and the last melee swing, on the animation clock. */
   bare: boolean
+  /** Slower, readable wind-up for the skeleton's rake. */
+  shambler?: boolean
   swingAt: number
 }
 
@@ -263,11 +265,14 @@ const STRIKE = 0.6
 
 /** Where a swing is: how far into the wind-up (0..1), the strike (0..1) and the recovery (1 back to 0), and the torso twist. */
 function swingPhase(a: Avatar, now: number): { wind: number; strike: number; back: number; twist: number } | null {
-  const u = (now - a.swingAt) / SWING
+  const duration = a.shambler ? 0.65 : SWING
+  const windup = a.shambler ? 0.23 / duration : WINDUP
+  const contact = a.shambler ? 0.35 / duration : STRIKE
+  const u = (now - a.swingAt) / duration
   if (u < 0 || u >= 1) return null
-  const wind = smooth(Math.min(1, u / WINDUP))
-  const strike = u < WINDUP ? 0 : smooth(Math.min(1, (u - WINDUP) / (STRIKE - WINDUP)))
-  const back = u < STRIKE ? 1 : 1 - smooth((u - STRIKE) / (1 - STRIKE))
+  const wind = smooth(Math.min(1, u / windup))
+  const strike = u < windup ? 0 : smooth(Math.min(1, (u - windup) / (contact - windup)))
+  const back = u < contact ? 1 : 1 - smooth((u - contact) / (1 - contact))
   return { wind, strike, back, twist: (0.45 * wind - 0.95 * strike) * back }
 }
 

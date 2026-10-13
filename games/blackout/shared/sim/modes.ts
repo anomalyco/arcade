@@ -11,7 +11,7 @@ export type ModeId = "ffa" | "tdm" | "dom" | "snd" | "kc" | "hp" | "ctf" | "inf"
 export const MODE_IDS: readonly ModeId[] = ["ffa", "tdm", "dom", "snd", "kc", "hp", "ctf", "inf", "gun", "oitc", "wizards"]
 
 export const MODES: Record<ModeId, { label: string; short: string; blurb: string; teams: boolean }> = {
-  wizards: { label: "Wizards", short: "WIZ", blurb: "Read scrolls with F. Hold right-click to draw; release to cast.", teams: false },
+  wizards: { label: "Wizards", short: "WIZ", blurb: "Click to cast. 1 / 2 or wheel selects a spell.", teams: false },
   ffa: { label: "Free for all", short: "FFA", blurb: "Everyone for themselves. Most kills wins.", teams: false },
   tdm: { label: "Team deathmatch", short: "TDM", blurb: "Orange vs cyan. First team to the kill target.", teams: true },
   dom: { label: "Domination", short: "DOM", blurb: "Hold A, B and C. Each point held scores.", teams: true },

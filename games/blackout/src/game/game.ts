@@ -37,8 +37,7 @@ import { FLOOR } from "../render/vehicle-mesh"
 import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
 import { mapFires } from "./map-fx"
 import { castleHall } from "../../shared/maps/castle-hall"
-import { spellConfig, SPELL_NAMES, type CastIntent } from "../../shared/sim/spell-config"
-import { recognize } from "./runes"
+import { spellConfig, type SpellId } from "../../shared/sim/spell-config"
 import { SpellFx } from "./spell-fx"
 import { skeletonModels } from "../render/skeleton"
 import type { ModeId } from "../../shared/sim/modes"
@@ -259,8 +258,7 @@ export class Game {
   private wizardParts: PartModels
   private spellFx: SpellFx
   private spellTuning = ""
-  private pendingCast: CastIntent | undefined
-  runeResult: { at: number; text: string } | null = null
+  selectedSpell: SpellId = "moon"
   private sourceMap!: MapDef
   private wizardLook = false
   private gear: { frag: number; claymore: number; led: number }
@@ -765,18 +763,10 @@ export class Game {
     cam.traumaSquared = this.juice.trauma
     this.session.update(dt)
     this.ingest()
-    input.runeMode = !!this.snap?.spells
+    input.spellMode = !!this.snap?.spells
     if (this.snap?.spells) {
       const config=spellConfig(this.juice), key=JSON.stringify(config)
       if (this.roster.some(p=>p.id===this.myId && p.host) && key!==this.spellTuning) { this.session.send({type:"spells",config});this.spellTuning=key }
-      const stroke=input.takeStroke()
-      if (stroke && this.alive) {
-        const result=recognize(stroke,config)
-        const centre=stroke.reduce((v,p)=>({x:v.x+p.x/Math.max(1,stroke.length),y:v.y+p.y/Math.max(1,stroke.length)}),{x:0,y:0})
-        const target=cam.unproject(centre.x,centre.y,w,h,0)
-        this.pendingCast={spell:result.spell,quality:result.quality,x:target.x,y:target.y}
-        this.runeResult={at:performance.now(),text:result.spell?`${SPELL_NAMES[result.spell]} · ${Math.round(result.confidence*100)}%${result.quality<1?" · unstable":""}`:"Fizzle"}
-      }
     }
     const c = cam.unproject(input.mouse.x, input.mouse.y, w, h, SHOULDER - 0.2)
     this.cursor = c
@@ -796,7 +786,7 @@ export class Game {
       // Screen-relative movement, as in most top-down shooters: WASD move up/left/down/right; the mouse only aims.
       const mv = live ? input.move() : { mx: 0, my: 0 }
       const reload = input.takeReload()
-      const fire = live && input.enabled && input.firing
+      const fire = live && input.enabled && input.firing && !this.snap?.spells
       const equip = live && input.takeEquip()
       const use = live && input.enabled && input.held("KeyF")
       const melee = live && input.takeMelee() && this.kit.melee
@@ -806,7 +796,11 @@ export class Game {
       const driving = this.riding?.seat === 0
       const horn = live && driving && input.held("KeyH")
       const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
-      if (live && this.pendingCast) { i.cast=this.pendingCast; this.pendingCast=undefined }
+      const click = input.takeCast()
+      if (live && this.snap?.spells && click) {
+        const target = cam.unproject(click.x, click.y, w, h, 0)
+        i.cast = { spell: click.spell, quality: 1, x: target.x, y: target.y }
+      }
       // Planting or defusing holds you still with the gun down, as on the server.
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.

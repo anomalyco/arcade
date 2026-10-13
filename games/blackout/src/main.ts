@@ -60,12 +60,16 @@ async function main() {
   const settings = juiceSettings(params.get("vanilla") !== "1")
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
   const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) })
-  input.onWheel = (delta) => { cam.zoomOffset = Math.max(-10, Math.min(24, cam.zoomOffset + Math.sign(delta))) }
+  input.onWheel = (delta) => {
+    if (game?.snap?.spells) { if (delta) game.selectedSpell = game.selectedSpell === "moon" ? "necromancy" : "moon"; return }
+    cam.zoomOffset = Math.max(-10, Math.min(24, cam.zoomOffset + Math.sign(delta)))
+  }
   const hud = new Hud(document.getElementById("hud")!)
-  const spellHud = new SpellHud()
+  const spellHud = new SpellHud(document.getElementById("hud")!)
   const modeHud = new ModeHud(document.getElementById("hud")!)
   let session: Session | null = null
   let game: Game | null = null
+  input.castSpell = () => game?.selectedSpell ?? "moon"
 
   const begin = (name: string, s: (name: string) => Session) => {
     const clean = cleanName(name)
@@ -137,6 +141,10 @@ async function main() {
       return
     }
     const i = ["Digit1", "Digit2", "Digit3"].indexOf(code)
+    if (game?.snap?.spells && code.startsWith("Digit")) {
+      if (i === 0 || i === 1) game.selectedSpell = i === 0 ? "moon" : "necromancy"
+      return
+    }
     if (i >= 0 && session) {
       gun = GUN_IDS[i]!
       localStorage.setItem(GUN_KEY, gun)
@@ -220,6 +228,7 @@ async function main() {
     const w = innerWidth
     const h = innerHeight
     if (game && session) {
+      cam.pitch = game.snap?.spells ? settings.wizardPitch : 1.1
       input.enabled = game.snap?.phase === "play"
       if (!input.mux) game.update(dt, input, cam, w, h, now)
       const body = game.body ? game.drawn : null
@@ -229,19 +238,19 @@ async function main() {
       const fx = spec?.x ?? body?.x ?? game.map.size[0] / 2
       const fz = spec?.y ?? body?.y ?? game.map.size[1] / 2
       // Look-ahead: the view leans toward the cursor; holding right click leans much further (scouting, sniping).
-      const far = input.looking && alive && !input.runeMode
+      const far = input.looking && alive
       const k = far ? 0.65 : 0.35
       const cap = far ? 11 : 5
       // Driving, it leads ahead along the road instead.
       const lead = alive && !far ? game.vehicleLead() : null
       const lx = lead ? lead.x : alive && body ? Math.max(-cap, Math.min(cap, (game.cursor.x - body.x) * k)) : 0
       const lz = lead ? lead.y : alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
-      cam.follow(fx, fz, input.mux || input.runeMode ? 0 : lx, input.mux || input.runeMode ? 0 : lz, dt, !body, alive && !!game.riding)
+      cam.follow(fx, fz, input.mux ? 0 : lx, input.mux ? 0 : lz, dt, !body, alive && !!game.riding)
       if (input.mux && body) { cam.snap(body.x, body.y); cam.dist = 24 + cam.zoomOffset }
       renderer.render(game.build(cam, w, h, manual ? manualRenderDt : dt))
       manualRenderDt=0
       hud.update(game, cam, w, h, input.mouse, session.status())
-      spellHud.draw(game,input,cam,w,h)
+      spellHud.draw(game)
       modeHud.update(game, cam, w, h)
       menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab") || scores, (id) => game!.colorOf(id))
       telemetry.enabled = debug.visible || input.mux

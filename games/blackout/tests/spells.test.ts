@@ -13,7 +13,7 @@ const config=spellDefaults()
 const world=()=>{const w=new World(17,null,"wizards");w.addHuman("caster","Caster");w.addHuman("other","Other");return w}
 const tick=(w:World,n:number)=>{for(let i=0;i<n;i++)w.step()}
 function intent(w:World,i:Partial<Intent>,id="caster") {const p=w.players.get(id)!;w.push(id,p.ack+1,{...NO_INTENT,...i});w.step()}
-function cast(w:World,spell:SpellId,quality=1,x=10,y=10) {w.spells!.learned.caster=[spell];intent(w,{cast:{spell,quality,x,y}})}
+function cast(w:World,spell:SpellId,quality=1,x=12,y=11) {intent(w,{cast:{spell,quality,x,y}})}
 
 describe("rune recognition",()=>{
   for(const spell of ["moon","necromancy"] as const) {
@@ -41,7 +41,7 @@ describe("rune recognition",()=>{
 })
 
 describe("shared wizard simulation",()=>{
-  test("two room connections receive learned casts; only the host can tune",async()=>{
+  test("two room connections receive click casts, server cooldowns and host-only tuning",async()=>{
     mock.module("cloudflare:workers",()=>({DurableObject:class{}}))
     const {RoomCore}=await import("../server/room"),core=new RoomCore("rune","wizards")
     const join=(name:string)=>{
@@ -56,33 +56,81 @@ describe("shared wizard simulation",()=>{
     expect(core.world.spells!.config.moonSpeed).toBe(config.moonSpeed)
     core.message(a.conn,encodeClient({type:"spells",config:{...config,moonSpeed:4}}))
     expect(core.world.spells!.config.moonSpeed).toBe(4)
-    core.message(a.conn,encodeClient({type:"intent",seq:1,i:{...NO_INTENT,enter:true}}))
-    for(let i=0;i<65;i++)core.step()
-    expect(core.world.spells!.learned[a.id]).toEqual(["moon"])
-    core.message(a.conn,encodeClient({type:"intent",seq:2,i:{...NO_INTENT,cast:{spell:"moon",quality:1,x:12,y:10}}}))
+    expect(core.world.spells!.learned[a.id]).toEqual(["moon","necromancy"])
+    core.message(a.conn,encodeClient({type:"intent",seq:1,i:{...NO_INTENT,fire:true,cast:{spell:"moon",quality:0,x:12,y:11}}}))
     for(let i=0;i<4;i++)core.step()
     const snap=b.sent.map(decodeServer).filter(m=>m?.type==="snap").at(-1)!
     expect(snap.spells!.moons[0]!.by).toBe(a.id)
     expect(snap.spells!.config.moonSpeed).toBe(4)
     expect(snap.spells!.flashes.some(f=>f.kind==="cast")).toBe(true)
+    expect(snap.spells!.moons[0]!.tiny).toBe(false)
+    expect(snap.spells!.ready[a.id]!.moon).toBeGreaterThan(snap.t)
+    expect(core.world.players.get(a.id)!.meleeReadyAt).toBe(0)
+    for(let seq=2;seq<8;seq++) core.message(a.conn,encodeClient({type:"intent",seq,i:{...NO_INTENT,cast:{spell:"moon",quality:1,x:12,y:11}}}))
+    for(let i=0;i<8;i++)core.step()
+    expect(core.world.spells!.moons).toHaveLength(1)
   })
-  test("reading takes two seconds, consumes the scroll, drops learned spell on death, resets on spawn",()=>{
-    const w=world(),p=w.players.get("caster")!,s=w.spells!,scroll=s.scrolls[0]!
-    expect(s.learned.caster).toEqual([])
-    intent(w,{enter:true});expect(scroll.reader).toBe(p.id)
-    tick(w,Math.floor(1.8/DT));expect(s.learned.caster).toEqual([])
-    tick(w,Math.ceil(0.3/DT));expect(s.learned.caster).toEqual([scroll.spell]);expect(s.scrolls).not.toContain(scroll)
-    const before=s.scrolls.length
+  test("both spells are ready every life, with no scroll gate or drops",()=>{
+    const w=world(),p=w.players.get("caster")!,s=w.spells!
+    expect(s.learned.caster).toEqual(["moon","necromancy"])
+    cast(w,"moon");expect(s.moons).toHaveLength(1)
     w.damage(p,200,w.players.get("other")!,"melee",p.x+1,p.y)
-    expect(s.scrolls.length).toBe(before+1);expect(s.scrolls.at(-1)!.spell).toBe(scroll.spell)
-    w.spawn(p);expect(s.learned.caster).toEqual([])
+    expect(s.scrolls).toHaveLength(0)
+    w.spawn(p);expect(s.learned.caster).toEqual(["moon","necromancy"])
+    expect(s.snapshot().ready.caster).toEqual({moon:0,necromancy:0})
   })
-  test("unlearned casts fizzle and reading is exclusive and cancelled by distance",()=>{
-    const w=world(),s=w.spells!,p=w.players.get("caster")!,q=w.players.get("other")!
-    intent(w,{cast:{spell:"moon",quality:1,x:10,y:10}});expect(s.moons).toHaveLength(0);expect(s.flashes[0]!.kind).toBe("fizzle")
-    intent(w,{enter:true});Object.assign(q,{x:p.x,y:p.y});intent(w,{enter:true},q.id)
-    expect(s.scrolls[0]!.reader).toBe(p.id)
-    p.x=20;tick(w,2);expect(s.scrolls[0]!.reader).toBe("")
+  test("rapid requests respect independent cooldowns and do not queue delayed casts",()=>{
+    const w=world(),s=w.spells!
+    cast(w,"moon");const x=s.moons[0]!.x
+    tick(w,2);expect(s.moons[0]!.x).toBe(x)
+    cast(w,"moon");expect(s.moons).toHaveLength(1)
+    cast(w,"necromancy",1,6,8);expect(s.skeletons).toHaveLength(1)
+    tick(w,Math.ceil(config.moonCooldown/DT));expect(s.moons).toHaveLength(1)
+    cast(w,"moon");expect(s.moons).toHaveLength(2)
+    tick(w,Math.ceil(config.moonCooldown/DT));cast(w,"moon");expect(s.moons).toHaveLength(2)
+  })
+  test("summons are separated, stay away from caster and reject blocked close placement",()=>{
+    const w=world(),s=w.spells!,p=w.players.get("caster")!
+    cast(w,"necromancy",1,p.x,p.y-0.01);expect(s.skeletons).toHaveLength(1)
+    expect(Math.hypot(s.skeletons[0]!.x-p.x,s.skeletons[0]!.y-p.y)).toBeGreaterThanOrEqual(2.5)
+    p.x=0.7;p.y=12
+    tick(w,Math.ceil(config.skeletonCooldown/DT));cast(w,"necromancy",1,-10,12)
+    expect(s.skeletons).toHaveLength(1)
+  })
+  test("a summon can reach over furniture; attacks stop on death or end phase",()=>{
+    const w=world(),s=w.spells!,p=w.players.get("caster")!
+    cast(w,"necromancy",1,11,11);expect(s.skeletons).toHaveLength(1)
+    p.alive=false;s.intent(w,p,{...NO_INTENT,cast:{spell:"moon",quality:1,x:12,y:11}})
+    expect(s.moons).toHaveLength(0)
+    p.alive=true;w.phase="end";s.intent(w,p,{...NO_INTENT,cast:{spell:"moon",quality:1,x:12,y:11}})
+    expect(s.moons).toHaveLength(0)
+  })
+  test("hitting a skeleton interrupts its wind-up and overrides a nearer target",()=>{
+    const w=world(),p=w.players.get("caster")!,q=w.players.get("other")!
+    cast(w,"necromancy",1,6,8);const sk=w.spells!.skeletons[0]!
+    Object.assign(p,{x:sk.x+0.4,y:sk.y});Object.assign(q,{x:sk.x-0.8,y:sk.y,aim:0})
+    tick(w,Math.ceil(config.skeletonRise/DT)+1)
+    expect(sk.target).toBe(p.id);expect(sk.attackAt).toBeGreaterThan(w.time)
+    w.spells!.bonk(w,q);expect(sk.attackAt).toBe(0)
+    tick(w,1);expect(sk.target).toBe(q.id);expect(p.health).toBe(100)
+  })
+  test("per-caster and room-wide caps hold even with repeated lives and minimum cooldown",()=>{
+    const w=world(),s=w.spells!
+    s.config.moonLife=8;s.config.skeletonLife=40;s.config.skeletonRise=3
+    for(let i=0;i<8;i++) {
+      const p=w.addHuman(`p${i}`,`P${i}`)
+      for(let n=0;n<4;n++) {
+        w.spawn(p);Object.assign(p,{x:5+n*4,y:3+i*1.5})
+        intent(w,{cast:{spell:"moon",quality:1,x:p.x+6,y:p.y}},p.id)
+        intent(w,{cast:{spell:"necromancy",quality:1,x:p.x+3,y:p.y}},p.id)
+      }
+    }
+    expect(s.moons).toHaveLength(8)
+    expect(s.skeletons).toHaveLength(12)
+    for(const p of w.players.values()) {
+      expect(s.moons.filter(m=>m.by===p.id).length).toBeLessThanOrEqual(2)
+      expect(s.skeletons.filter(m=>m.by===p.id).length).toBeLessThanOrEqual(3)
+    }
   })
   test("orbit radius, tangent and full turn",()=>{
     const m={x:10,y:12,radius:1,born:3},a=orbitPoint(m,0,3),b=orbitPoint(m,0,3+Math.PI*2/2.4)
@@ -91,10 +139,10 @@ describe("shared wizard simulation",()=>{
   })
   test("moon captures people, props and skeletons; pop damages and flings",()=>{
     const w=world(),s=w.spells!,q=w.players.get("other")!
-    cast(w,"necromancy",1,7,10);tick(w,40);cast(w,"moon")
+    cast(w,"necromancy",1,6,8);tick(w,25);cast(w,"moon")
     const m=s.moons[0]!,sk=s.skeletons[0]!,prop=s.props[5]!
     Object.assign(q,{x:m.x+0.5,y:m.y});Object.assign(sk,{x:m.x+0.5,y:m.y});Object.assign(prop,{x:m.x+0.5,y:m.y})
-    tick(w,1);expect(m.orbiters.map(o=>o.kind).sort()).toEqual(["player","prop","skeleton"])
+    tick(w,7);expect(m.orbiters.map(o=>o.kind)).toEqual(expect.arrayContaining(["player","prop","skeleton"]))
     tick(w,Math.ceil(config.moonLife/DT));expect(s.moons).toHaveLength(0);expect(q.health).toBeLessThan(100)
     expect(s.flashes.some(f=>f.kind==="pop")).toBe(true)
     expect(s.snapshot().forced).toContain(q.id)
@@ -102,22 +150,24 @@ describe("shared wizard simulation",()=>{
   })
   test("skeleton chooses nearest including caster, winds up, hits hard and responds to aggro",()=>{
     const w=world(),p=w.players.get("caster")!,q=w.players.get("other")!
-    cast(w,"necromancy",1,5,10)
+    cast(w,"necromancy",1,6,8)
     const s=w.spells!.skeletons[0]!
     expect(skeletonTarget(s,w.players.values(),w.time)?.id).toBe(p.id)
-    const initial=s.x;tick(w,20);expect(s.x).toBe(initial)
+    const initial=s.y;tick(w,8);expect(s.y).toBe(initial)
     s.aggro=q.id;s.aggroUntil=w.time+4;expect(skeletonTarget(s,w.players.values(),w.time)?.id).toBe(q.id)
     s.aggroUntil=0;tick(w,100);expect(p.health).toBeLessThan(100)
     s.x=p.x+0.8;s.y=p.y;p.aim=0
     w.spells!.bonk(w,p);expect(s.health).toBe(config.skeletonHealth-18);expect(s.aggro).toBe(p.id)
+    expect(s.hitAt).toBe(w.time)
+    tick(w,1);expect(s.target).toBe(p.id)
     tick(w,Math.ceil(config.skeletonLife/DT));expect(w.spells!.skeletons).toHaveLength(0)
   })
-  test("degraded spells are tiny sideways moons and caster-only crawlers",()=>{
+  test("legacy quality claims never change click spell power or unlocks",()=>{
     const w=world();cast(w,"moon",0.7)
-    expect(w.spells!.moons[0]!.tiny).toBe(true);expect(w.spells!.moons[0]!.vy).toBeGreaterThan(0)
-    tick(w,40);cast(w,"necromancy",0.7)
+    expect(w.spells!.moons[0]!.tiny).toBe(false);expect(w.spells!.moons[0]!.vy).toBeCloseTo(0)
+    cast(w,"necromancy",0.7,6,8)
     const s=w.spells!.skeletons[0]!,q=w.players.get("other")!;Object.assign(q,{x:s.x,y:s.y})
-    expect(s.crawl).toBe(true);expect(skeletonTarget(s,w.players.values(),w.time)?.id).toBe("caster")
+    expect(s.crawl).toBe(false);expect(skeletonTarget(s,w.players.values(),w.time)?.id).toBe("other")
   })
   test("cast protocol rejects nonfinite values; snapshots detach and two decoded runs agree",()=>{
     const a=world(),b=world()

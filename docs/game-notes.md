@@ -550,6 +550,13 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
+- **Latch click edges with their selection.** Blackout's wizard prototype stores canvas mousedown position and spell
+  choice until a fixed tick consumes them (`src/game/input.ts`, `game.ts`). Mouseup cannot erase a quick tap, and a
+  number-key/wheel change cannot change a pending cast. Blur and Lab interaction clear the bounded queue. A Metal
+  browser proof put down/up and a selection change between ticks, exercised five rapid clicks, Dvorak movement and
+  a Lab slider click, and checked separate server cooldowns and active caps. `scripts/prove-wizards-spells.ts` also
+  captured player/furniture orbit, pop damage, and a skeleton's wind-up and hit on its caster. Runtime cost is unmeasured.
+
 - **Ignore blur releases from the previous input owner.** On an iframe focus change, the old window's blur message can
   arrive after the new window's keydown or mousedown and cancel the new input. `games/blackout/compare.html` releases
   held input when ownership changes, then accepts release messages only from the current owner. The parent header is

@@ -6,6 +6,7 @@ const STONE = hex(0x424958), EDGE = hex(0x626977), WOOD = hex(0x563822), IRON = 
 
 /** Presentation copy: the office's footprints, collisions and light IDs stay intact. */
 export function castleMap(map: MapDef): MapDef {
+  if (map.id === "castle-hall") return map
   if (map.kind !== "office") return map
   return { ...map, tape: [], props: map.props.map((p) => ({ ...p, kind: p.kind === "desk" || p.kind === "reception" || p.kind === "counter" ? "table" : p.kind === "chair" ? "sofa" : ["cabinet", "vending", "fridge", "copier", "printer"].includes(p.kind) ? "bookshelf" : p.kind })), lights: map.lights.map((l, i) => {
     // Every third ceiling fixture becomes a chandelier; the rest mount on the nearest wall face.

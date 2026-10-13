@@ -742,6 +742,11 @@ export function buildLevel(map: MapDef, castle = false): LevelData {
       }
   })
   for (const t of map.tape) jobs.push({ x: (t[0] + t[2]) / 2, z: (t[1] + t[3]) / 2, build: (m) => floorQuad(m, t, 0.012, PAL.tape, MAT.tape) })
+  if (map.id === "castle-hall") jobs.push({ x: 11, z: 10.5, build: (m) => {
+    floorQuad(m,[4.5,8.2,17.5,13],0.014,hex(0x85623a),MAT.lit)
+    floorQuad(m,[4.6,8.3,17.4,12.9],0.016,hex(0x4c2932),MAT.lit)
+    for (const z of [8.5,12.65]) floorQuad(m,[4.8,z,17.2,z+0.045],0.018,hex(0x9a7745),MAT.lit)
+  } })
   if (downtown) {
     const raised = map.floors.filter((f) => !LOW_FLOORS.has(f.kind)).map((f) => f.rect)
     for (const p of map.paint ?? []) {
