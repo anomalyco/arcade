@@ -4,7 +4,7 @@
 //   bun scripts/compare.ts --phase=after
 import { chromium, type Page } from "playwright-core"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
+import { homedir, hostname } from "node:os"
 import { join } from "node:path"
 import { encode } from "../../../scripts/encode"
 
@@ -17,8 +17,9 @@ if (phase !== "before" && phase !== "after") {
 
 const PORT = 5191
 const BASE_URL = opt("base", `http://localhost:${PORT}`)
+const MONITORS = opt("monitors", "0")
 const BENCH_DIR = process.env.BENCH_DIR ?? join(import.meta.dir, "../../../captures/bench")
-const PREVIEW_DIR = join(import.meta.dir, "../../../captures/preview")
+const PREVIEW_DIR = process.env.PREVIEW_DIR ?? join(import.meta.dir, "../../../captures/preview")
 
 mkdirSync(BENCH_DIR, { recursive: true })
 mkdirSync(PREVIEW_DIR, { recursive: true })
@@ -45,6 +46,7 @@ type ViewMetric = {
   x: number
   y: number
   chunks: number
+  vertices: number
   frame_ms: number
   frame_p95_ms: number
   gpu_idle_ms: number
@@ -52,9 +54,13 @@ type ViewMetric = {
   scene_pass_ms: number
   polar_pass_ms: number
   post_pass_ms: number
+  visibleLights?: number
+  shadowLights?: number
+  monitorLights?: number
 }
 
 type BenchResult = {
+  machine?: string
   phase: "before" | "after"
   timestamp: string
   adapter: {
@@ -174,6 +180,8 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
       const rbuf = hasTs ? dev.createBuffer({ size: MAX_Q * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }) : null
       let qIdx = 0
       let busy = false
+      let pending = Promise.resolve()
+      ;(window as unknown as Record<string, unknown>).__gpuDrain = () => pending
       let lastFrameAt = performance.now()
 
       const samples: {
@@ -183,6 +191,9 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
         sceneMs: number
         polarMs: number
         postMs: number
+        passes: number[]
+        ranges: number[][]
+        vertices: number
       }[] = []
       ;(window as unknown as Record<string, unknown>).__gpuSamples = samples
       ;(window as unknown as Record<string, unknown>).__clearGpuSamples = () => {
@@ -199,6 +210,7 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
         const enc = origCreateEnc(d)
         qIdx = 0
         let hasCompute = false
+        let vertices = 0
         const log: { kind: "cp" | "rp"; desc: unknown; ops: [string, unknown[]][] }[] = []
 
         const origCP = enc.beginComputePass.bind(enc)
@@ -236,6 +248,11 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
                   timestampWrites: { querySet: qs, beginningOfPassWriteIndex: qIdx++, endOfPassWriteIndex: qIdx++ },
                 })
               : origRP(rd)
+          const draw = pass.draw.bind(pass)
+          pass.draw = (count, instances = 1, first = 0, firstInstance = 0) => {
+            vertices += count * instances
+            draw(count, instances, first, firstInstance)
+          }
           if (stress > 1) {
             for (const m of ["setPipeline", "setBindGroup", "setVertexBuffer", "draw", "end"] as const) {
               const orig = (pass as unknown as Record<string, (...a: unknown[]) => unknown>)[m]!.bind(pass)
@@ -275,7 +292,7 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
             rEnc.resolveQuerySet(qs, 0, count, qbuf, 0)
             rEnc.copyBufferToBuffer(qbuf, 0, rbuf, 0, count * 8)
             extraCmdBufs.push(rEnc.finish())
-            queueMicrotask(() => {
+            pending = Promise.resolve().then(() => {
               const w = window as unknown as { gpuIdle?: () => Promise<number> }
               const idlePromise =
                 typeof w.gpuIdle === "function"
@@ -285,7 +302,7 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
                       await dev.queue.onSubmittedWorkDone()
                       return performance.now() - t0
                     })()
-              idlePromise
+              return idlePromise
                 .then(async (gpuIdleMs: number) => {
                   await rbuf.mapAsync(GPUMapMode.READ)
                   const u64 = new BigUint64Array(rbuf.getMappedRange(0, count * 8))
@@ -295,6 +312,8 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
                   const sceneMs = Number(BigInt.asIntN(64, u64[sIdx + 1]! - u64[sIdx]!)) / 1e6
                   const postMs = Number(BigInt.asIntN(64, u64[count - 1]! - u64[sIdx + 1]!)) / 1e6
                   const gpuHwMs = Number(BigInt.asIntN(64, u64[count - 1]! - t0)) / 1e6
+                  const passes = Array.from({ length: count / 2 }, (_, i) => Number(BigInt.asIntN(64, u64[i * 2 + 1]! - u64[i * 2]!)) / 1e6)
+                  const ranges = Array.from({ length: count / 2 }, (_, i) => [Number(u64[i * 2]! - t0) / 1e6, Number(u64[i * 2 + 1]! - t0) / 1e6])
                   rbuf.unmap()
                   samples.push({
                     frameMs,
@@ -303,11 +322,15 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
                     sceneMs: sceneMs * stress,
                     polarMs: polarMs * stress,
                     postMs: postMs * stress,
+                    passes,
+                    ranges,
+                    vertices,
                   })
                   busy = false
                 })
-                .catch(() => {
+                .catch((error) => {
                   busy = false
+                  throw error
                 })
             })
           }
@@ -327,6 +350,32 @@ export async function installGpuInstrumentation(page: Page): Promise<void> {
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000
+
+/** The bounds shortcut must produce exactly the same pixels as evaluating every monitor. */
+export async function verifyMonitorBounds(page: Page): Promise<void> {
+  const images = new Map<string, Buffer>()
+  for (const bounds of [true, false]) {
+    if (!bounds) await page.route("**/src/render/shaders.ts*", async (route) => {
+      const response = await route.fetch()
+      const body = await response.text()
+      if (!body.includes("u32(F.focus.w) < count")) throw new Error("Monitor bounds shader not found")
+      await route.fulfill({ response, body: body.replace("u32(F.focus.w) < count", "false") })
+    })
+    for (const view of VIEWPORTS.filter((v) => v.id.startsWith("openplan"))) {
+      await page.goto(`${BASE_URL}/envlab.html?vanilla=1&monitors=1&seed=1&zoom=17&x=${view.x}&y=${view.y}&manualVideo=1`, { waitUntil: "networkidle" })
+      await page.waitForFunction('typeof window.gpuIdle === "function" && typeof window.__stepManualVideo === "function"')
+      await page.evaluate(async ([x, y]) => {
+        document.getElementById("info")!.style.display = "none"
+        const w = window as unknown as { __stepManualVideo(dt: number, x: number, y: number): Promise<void> }
+        for (let i = 0; i < 60; i++) await w.__stepManualVideo(1000 / 30, x!, y!)
+      }, [view.x, view.y])
+      const image = await page.screenshot({ path: join(PREVIEW_DIR, `monitor-bounds-${bounds ? "on" : "off"}-${view.id}.png`) })
+      if (bounds) images.set(view.id, image)
+      else if (!images.get(view.id)!.equals(image)) throw new Error(`Monitor bounds changed pixels: ${view.id}`)
+    }
+  }
+  console.log("Monitor bounds pixel parity: both open-plan views identical")
+}
 const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0)
 const p95 = (arr: number[]) => {
   if (!arr.length) return 0
@@ -334,10 +383,10 @@ const p95 = (arr: number[]) => {
   return s[Math.min(s.length - 1, Math.floor(s.length * 0.95))]!
 }
 
-export async function runSceneABenchmark(page: Page): Promise<BenchResult> {
+export async function runSceneABenchmark(page: Page, monitors = MONITORS): Promise<BenchResult> {
   console.log(`[compare:${phase}] Running Scene A (envlab.html?seed=1&zoom=17) across 6 office viewpoints...`)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto(`${BASE_URL}/envlab.html?vanilla=1&seed=1&zoom=17&x=45.2&y=4.2`, { waitUntil: "networkidle" })
+  await page.goto(`${BASE_URL}/envlab.html?vanilla=1&monitors=${monitors}&seed=1&zoom=17&x=45.2&y=4.2`, { waitUntil: "networkidle" })
   await page.waitForFunction('typeof window.gpuIdle === "function" && typeof window.goto === "function"')
 
   const adapter = await page.evaluate(() => {
@@ -362,6 +411,7 @@ export async function runSceneABenchmark(page: Page): Promise<BenchResult> {
 
   const viewpoints: ViewMetric[] = []
   for (const vp of VIEWPORTS) {
+    if (opt("views", "") && !opt("views", "").split(",").includes(vp.id)) continue
     await page.evaluate(
       ([x, y]) => {
         ;(window as unknown as { goto(x: number, y: number): void }).goto(x!, y!)
@@ -380,9 +430,10 @@ export async function runSceneABenchmark(page: Page): Promise<BenchResult> {
         sceneMs: number
         polarMs: number
         postMs: number
+        vertices: number
       }[]).slice(-25)
-      const st = (window as unknown as { stats(): { chunks: number } }).stats()
-      return { samples: s, chunks: st.chunks }
+      const st = (window as unknown as { stats(): { chunks: number; visibleLights?: number; shadowLights?: number; monitorLights?: number } }).stats()
+      return { samples: s, ...st }
     })
     const m: ViewMetric = {
       id: vp.id,
@@ -390,6 +441,10 @@ export async function runSceneABenchmark(page: Page): Promise<BenchResult> {
       x: vp.x,
       y: vp.y,
       chunks: raw.chunks,
+      vertices: round3(avg(raw.samples.map((s) => s.vertices))),
+      visibleLights: raw.visibleLights,
+      shadowLights: raw.shadowLights,
+      monitorLights: raw.monitorLights,
       frame_ms: round3(avg(raw.samples.map((s) => s.frameMs))),
       frame_p95_ms: round3(p95(raw.samples.map((s) => s.frameMs))),
       gpu_idle_ms: round3(avg(raw.samples.map((s) => s.gpuIdleMs))),
@@ -399,13 +454,14 @@ export async function runSceneABenchmark(page: Page): Promise<BenchResult> {
       post_pass_ms: round3(avg(raw.samples.map((s) => s.postMs))),
     }
     viewpoints.push(m)
+    if (process.argv.includes("--capture-views")) await page.screenshot({ path: join(PREVIEW_DIR, `monitor-${monitors === "1" ? "on" : "off"}-${vp.id}.png`) })
     console.log(
       `  - ${vp.id.padEnd(18)} chunks=${String(m.chunks).padStart(2)} | frame=${m.frame_ms.toFixed(2)}ms | gpuIdle=${m.gpu_idle_ms.toFixed(2)}ms | gpuHw=${m.gpu_hw_ms.toFixed(2)}ms (scene=${m.scene_pass_ms.toFixed(2)}ms, polar=${m.polar_pass_ms.toFixed(3)}ms, post=${m.post_pass_ms.toFixed(2)}ms)`,
     )
   }
 
   console.log(`[compare:${phase}] Running Scene A stress=4 GPU timing (envlab.html?seed=1&zoom=17&stress=4)...`)
-  await page.goto(`${BASE_URL}/envlab.html?vanilla=1&seed=1&zoom=17&x=45.2&y=4.2&stress=4`, { waitUntil: "networkidle" })
+  await page.goto(`${BASE_URL}/envlab.html?vanilla=1&monitors=${monitors}&seed=1&zoom=17&x=45.2&y=4.2&stress=4`, { waitUntil: "networkidle" })
   await page.waitForFunction('typeof window.gpuIdle === "function"')
   await page.waitForTimeout(300)
   await page.evaluate(() => (window as unknown as { __clearGpuSamples(): void }).__clearGpuSamples())
@@ -435,6 +491,7 @@ export async function runSceneABenchmark(page: Page): Promise<BenchResult> {
   return {
     phase,
     timestamp: new Date().toISOString(),
+    machine: hostname(),
     adapter,
     viewpoints,
     averages: {
@@ -457,7 +514,7 @@ async function captureSheetViews(page: Page): Promise<void> {
 
   for (const v of SHEET_VIEWS) {
     if (v.scene === "envlab") {
-      await page.goto(`${BASE_URL}/envlab.html?vanilla=1&seed=1&zoom=${v.zoom}&x=${v.x}&y=${v.y}&manualVideo=1`, {
+      await page.goto(`${BASE_URL}/envlab.html?vanilla=1&monitors=${MONITORS}&seed=1&zoom=${v.zoom}&x=${v.x}&y=${v.y}&manualVideo=1`, {
         waitUntil: "networkidle",
       })
       await page.waitForFunction('typeof window.__stepManualVideo === "function" && typeof window.gpuIdle === "function"')
@@ -496,7 +553,7 @@ async function recordSceneBVideo(page: Page, outMp4: string): Promise<void> {
   await page.setViewportSize({ width: 960, height: 600 })
 
   // Part 1 (Frames 0..89, 3.0s): Deterministic camera pan across open-plan cubicles, glowing monitors, chairs & lamp in envlab.html
-  await page.goto(`${BASE_URL}/envlab.html?vanilla=1&seed=1&zoom=14.0&x=41.0&y=3.8&manualVideo=1`, { waitUntil: "networkidle" })
+  await page.goto(`${BASE_URL}/envlab.html?vanilla=1&monitors=${MONITORS}&seed=1&zoom=14.0&x=41.0&y=3.8&manualVideo=1`, { waitUntil: "networkidle" })
   await page.waitForFunction('typeof window.__stepManualVideo === "function" && typeof window.gpuIdle === "function"')
   await page.evaluate(() => {
     const info = document.getElementById("info")
@@ -575,12 +632,15 @@ async function stitchBeforeAfter(page: Page, beforeJson: BenchResult, afterJson:
 
   // 1. Render transparent 1920x600 overlay PNG with BEFORE / AFTER labels and benchmark summary
   const overlayPng = join(BENCH_DIR, "overlay-1920x600.png")
-  const bGpu = beforeJson.averages.gpu_hw_ms.toFixed(2)
-  const aGpu = afterJson.averages.gpu_hw_ms.toFixed(2)
-  const bIdle = beforeJson.averages.gpu_idle_ms.toFixed(2)
-  const aIdle = afterJson.averages.gpu_idle_ms.toFixed(2)
-  const bStress = beforeJson.stress4.gpu_hw_ms.toFixed(2)
-  const aStress = afterJson.stress4.gpu_hw_ms.toFixed(2)
+  const comparable = beforeJson.machine !== undefined && beforeJson.machine === afterJson.machine
+  const metrics = (name: string) => args.includes("--final-metrics") ? JSON.parse(readFileSync(join(import.meta.dir, `../../../perf/blackout-final-${name}.json`), "utf8")).metrics : null
+  const beforeMetrics = metrics("main"), afterMetrics = metrics("integrated")
+  const bGpu = comparable ? (beforeMetrics?.gpu_hw_ms.median ?? beforeJson.averages.gpu_hw_ms).toFixed(2) : "n/a"
+  const aGpu = (afterMetrics?.gpu_hw_ms.median ?? afterJson.averages.gpu_hw_ms).toFixed(2)
+  const bIdle = comparable ? (beforeMetrics?.gpu_idle_ms.median ?? beforeJson.averages.gpu_idle_ms).toFixed(2) : "n/a"
+  const aIdle = (afterMetrics?.gpu_idle_ms.median ?? afterJson.averages.gpu_idle_ms).toFixed(2)
+  const bStress = comparable ? (beforeMetrics?.stress4_gpu_estimated_ms.median ?? beforeJson.stress4.gpu_hw_ms).toFixed(2) : "n/a"
+  const aStress = (afterMetrics?.stress4_gpu_estimated_ms.median ?? afterJson.stress4.gpu_hw_ms).toFixed(2)
 
   const overlayDataUrl = await page.evaluate(
     ({ bGpu, aGpu, bIdle, aIdle, bStress, aStress }) => {
@@ -792,6 +852,11 @@ async function main(): Promise<void> {
       }
       const beforeJson = JSON.parse(readFileSync(beforeJsonPath, "utf8")) as BenchResult
       await stitchBeforeAfter(page, beforeJson, benchResult)
+
+      if (!beforeJson.machine || beforeJson.machine !== benchResult.machine) {
+        console.log("[compare:summary] Archived BEFORE hardware is different or unrecorded; visual comparison only. AFTER timing is recorded in JSON.")
+        return
+      }
 
       const speedupHw = ((1 - benchResult.averages.gpu_hw_ms / beforeJson.averages.gpu_hw_ms) * 100).toFixed(1)
       const speedupScene = ((1 - benchResult.averages.scene_pass_ms / beforeJson.averages.scene_pass_ms) * 100).toFixed(1)

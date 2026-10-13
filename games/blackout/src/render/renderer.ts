@@ -42,6 +42,7 @@ export type FrameInput = {
   frame: Float32Array<ArrayBuffer>
   lights: Float32Array<ArrayBuffer>
   lightCount: number
+  shadowLightCount: number
   occluders: Float32Array<ArrayBuffer>
   occluderCount: number
   /** Brightness of every map light's fixture (0..1), indexed by map light id. */
@@ -296,6 +297,10 @@ export class Renderer {
     return this.models.length - 1
   }
 
+  updateBounce(data: Uint8Array<ArrayBuffer>, w: number, h: number): void {
+    this.device.queue.writeTexture({ texture: this.bounceTex }, data, { bytesPerRow: w * 4 }, [w, h])
+  }
+
   resize(w: number, h: number): void {
     if (w === this.width && h === this.height) return
     this.width = w
@@ -425,11 +430,11 @@ export class Renderer {
     if (addCount) d.queue.writeBuffer(this.sprites, addOffset, f.addSprites.buffer, 0, addCount * SPRITE_FLOATS * 4)
 
     const enc = d.createCommandEncoder()
-    if (f.lightCount) {
+    if (f.shadowLightCount) {
       const cp = enc.beginComputePass()
       cp.setPipeline(this.polarPipe)
       cp.setBindGroup(0, this.computeGroup)
-      cp.dispatchWorkgroups(Math.ceil((Math.min(f.lightCount, SLOTS) * POLAR_RAYS) / 64))
+      cp.dispatchWorkgroups(Math.ceil((Math.min(f.shadowLightCount, SLOTS) * POLAR_RAYS) / 64))
       cp.end()
     }
 

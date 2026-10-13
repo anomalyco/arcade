@@ -1,7 +1,7 @@
 import type { LightDef, MapDef, Wall } from "../../shared/maps"
 import { SHOP_H as SHOP_TOP } from "../../shared/maps/downtown-town"
 import { MAT, Mesh, type Rgb } from "./mesh"
-import { PAL, buildProp, hex, rng } from "./models"
+import { PAL, buildProp, deskMonitorLights, hex, rng } from "./models"
 import { STREET_PROPS, STREET_WALLS, streetProp, streetWall } from "./street-models"
 
 const FLOOR_KIND = { carpet: 0, tile: 1, wood: 2, concrete: 3, grate: 4, asphalt: 5, sidewalk: 6, plaza: 7, grass: 8, parking: 9 } as const
@@ -15,7 +15,7 @@ const CHUNK = 12
 const CELL = 0.125
 
 export type LevelChunk = { data: ArrayBuffer; box: readonly [number, number, number, number]; cutBox?: readonly number[] }
-export type FloorMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number }
+export type FloorMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number; linear?: Float32Array }
 export type LevelData = { chunks: LevelChunk[]; glass: LevelChunk[]; floor: FloorMap; bounce: FloorMap }
 /** Bounce map resolution, metres per texel. */
 const BOUNCE_CELL = 0.5
@@ -606,7 +606,7 @@ export function bakeFloor(map: MapDef): FloorMap {
  * falloff by path length, so a lit room glows faintly into the corridor through its door and around corners. Stored as
  * sqrt(rgb) for precision in the dark.
  */
-export function bakeBounce(map: MapDef): FloorMap {
+export function bakeBounce(map: MapDef, monitorIntensity = 1): FloorMap {
   const [W, H] = map.size
   const w = Math.max(1, Math.ceil(W / BOUNCE_CELL))
   const h = Math.max(1, Math.ceil(H / BOUNCE_CELL))
@@ -637,8 +637,9 @@ export function bakeBounce(map: MapDef): FloorMap {
     [-1, -1, Math.SQRT2],
   ] as const
   const STRENGTH: Record<string, number> = { desk: 0.6, panel: 1, pendant: 1, exit: 0.8, vending: 1.2, server: 0.7, bulb: 0.9, street: 0.8, signal: 0.5, neon: 1.1, fire: 1.2, flood: 0.8, glow: 0.9 }
-  for (const l of map.lights) {
-    const reach = l.r * 1.5
+  for (const l of [...map.lights, ...deskMonitorLights(map)]) {
+    // The wider cyan spill is baked once; only the tight 1.35 m pool is evaluated at runtime.
+    const reach = (l.id >= map.lights.length ? 2.1 : l.r) * 1.5
     const sx = Math.min(w - 1, Math.max(0, Math.floor(l.x / cx)))
     const sy = Math.min(h - 1, Math.max(0, Math.floor(l.y / cy)))
     // Dijkstra over the grid with a simple binary heap.
@@ -702,7 +703,7 @@ export function bakeBounce(map: MapDef): FloorMap {
         push(j, nd)
       }
     }
-    const k = l.power * (STRENGTH[l.kind] ?? 1)
+    const k = l.power * (STRENGTH[l.kind] ?? 1) * (l.id >= map.lights.length ? monitorIntensity : 1)
     for (const i of touched) {
       const t = 1 - dist[i]! / reach
       const f = t * t * k
@@ -718,7 +719,7 @@ export function bakeBounce(map: MapDef): FloorMap {
     for (let c = 0; c < 3; c++) data[i * 4 + c] = Math.round(Math.sqrt(Math.min(1, acc[i * 3 + c]! * 0.5)) * 255)
     data[i * 4 + 3] = solid[i] ? 0 : 255
   }
-  return { data, w, h }
+  return { data, w, h, linear: acc }
 }
 
 /** Static geometry for a floor, chunked: floors, walls and their fittings, windows' frames, furniture, light fixtures. */

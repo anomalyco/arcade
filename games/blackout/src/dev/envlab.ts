@@ -90,7 +90,11 @@ async function main() {
     { x: fx - 2.5, y: fy - 1.5, aim: 0.4 },
   ]
   const session = new StillSession(map, people)
-  const game = new Game(renderer, session, new Sound())
+  const { juiceSettings } = await import("../ui/debug-overlay")
+  const settings = juiceSettings(!params.has("vanilla"))
+  if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
+  const game = new Game(renderer, session, new Sound(), settings)
+  ;(window as unknown as { setMonitors(on: boolean): void }).setMonitors = (on) => { settings.monitors = on }
   ;(game as unknown as { load(m: MapDef): void }).load(map)
   const input = new Input(canvas)
   const cam = new Camera()
@@ -117,7 +121,8 @@ async function main() {
     await device.queue.onSubmittedWorkDone()
     return performance.now() - t0
   }
-  w.stats = () => ({ chunks: renderer.drawnChunks, lights: map.lights.length, walls: map.walls.length, size: map.size })
+  let visibleLights = 0, shadowLights = 0, monitorLights = 0
+  w.stats = () => ({ chunks: renderer.drawnChunks, lights: map.lights.length, walls: map.walls.length, size: map.size, visibleLights, shadowLights, monitorLights })
   const info = document.getElementById("info")!
   let last = performance.now()
   let clock = 0
@@ -132,6 +137,10 @@ async function main() {
     cam.follow(fx, fy, 0, 0, dt, false)
     cam.dist = zoom
     const f = game.build(cam, innerWidth, innerHeight, dt)
+    visibleLights = f.lightCount
+    shadowLights = f.shadowLightCount
+    monitorLights = 0
+    for (let i = 0; i < f.lightCount; i++) if (f.lights[i * 16 + 15]! >= map.lights.length) monitorLights++
     // ?stress=N renders each frame N times, to see how much headroom is left under vsync.
     for (let k = 0; k < stress; k++) renderer.render(f)
     requestAnimationFrame(tick)

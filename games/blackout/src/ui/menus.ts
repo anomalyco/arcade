@@ -13,6 +13,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 export type MenuActions = {
   quick(name: string): void
   practice(name: string, mode: ModeId): void
+  sandbox(name: string): void
   /** A private room whose first match is `mode`, playing on `maps`. */
   create(name: string, mode: ModeId, maps: MapChoice): void
   join(name: string, room: string): void
@@ -90,6 +91,7 @@ export class Menus {
     const name = this.root.querySelector<HTMLInputElement>("#name")?.value ?? this.name
     if (act === "quick") this.a.quick(name)
     else if (act === "practice") this.a.practice(name, this.mode)
+    else if (act === "sandbox") this.a.sandbox(name)
     else if (act === "create") this.a.create(name, this.mode, this.maps)
     else if (act === "join") {
       const fixed = this.root.querySelector<HTMLElement>("[data-room]")?.dataset.room
@@ -166,6 +168,7 @@ export class Menus {
           : `<button class="primary" data-act="quick" data-primary>QUICK JOIN</button>
              <button data-act="create">CREATE GAME</button>
              <button data-act="practice">BOT PRACTICE</button>
+             <button data-act="sandbox">SOLO SANDBOX</button>
              ${this.modePicker()}
              ${this.mapPicker()}
              <div class="row"><input id="code" maxlength="8" placeholder="room code" autocapitalize="off" /><button data-act="join">JOIN</button></div>`

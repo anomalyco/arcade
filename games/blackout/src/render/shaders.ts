@@ -1,7 +1,7 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../shared/config"
 
 /** Frame uniform layout, in floats. Keep in step with Game.build. */
-export const FRAME_FLOATS = 16 + 4 * 7
+export const FRAME_FLOATS = 16 + 4 * 8
 
 const common = /* wgsl */ `
 const MAX_LIGHTS: u32 = ${MAX_LIGHTS}u;
@@ -18,9 +18,10 @@ struct Frame {
   screen: vec4f,     // width, height, light count, map light count
   eye: vec4f,        // local player plan x, plan y, cutaway on (0/1), cutaway radius (NDC)
   ambient: vec4f,    // sky rgb, moonlight strength
-  focus: vec4f,      // local player clip x, y, world height of the cut, 0
-  grade: vec4f,      // unused
+  focus: vec4f,      // local player clip x, y, world height of the cut, first monitor light
+  monitorBounds: vec4f, // plan min x/y, max x/y enclosing every direct monitor pool
   map: vec4f,        // 1 / map width, 1 / map height, map width, map height
+  effects: vec4f,    // multi-bounce AO strength
 }
 
 struct Light {
@@ -292,17 +293,23 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
   var out: Lit;
   out.diff = vec3f(0.0);
   out.spec = vec3f(0.0);
-  let count = u32(F.screen.z);
+  var count = u32(F.screen.z);
+  // Outside the union's conservative bounds, skip the entire shadowless monitor suffix.
+  if (u32(F.focus.w) < count && (any(world.xz < F.monitorBounds.xy) || any(world.xz > F.monitorBounds.zw))) {
+    count = u32(F.focus.w);
+  }
   let plan = world.xz + n.xz * 0.04;
   for (var i = 0u; i < count; i++) {
-    let L = lights[i];
-    let power = L.color.w;
-    if (power <= 0.001) { continue; }
-    let lp = L.pos.xz;
-    let r = L.pos.w;
+    // Most pixels are outside the small monitor pools. Reject using just the position/radius cache line.
+    let pos = lights[i].pos;
+    let lp = pos.xz;
+    let r = pos.w;
     let dv = world.xz - lp;
     let dPlan2 = dot(dv, dv);
     if (dPlan2 >= r * r) { continue; }
+    let L = lights[i];
+    let power = L.color.w;
+    if (power <= 0.001) { continue; }
     let dPlan = sqrt(dPlan2);
     let hl = L.pos.y;
     let l3 = vec3f(lp.x, hl, lp.y) - world;
@@ -325,7 +332,8 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     // Tops of furniture and partitions sit inside their own footprint: test the point nudged toward the light.
     var sp = plan;
     if (n.y > 0.5 && world.y > 0.15) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
-    let vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y);
+    var vis = 1.0;
+    if (L.extra.y > 0.5) { vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y); }
     out.diff += L.color.rgb * att * (diffuse * vis + 0.035);
     if (shin > 0.0) {
       let h = normalize(ldir + V);
@@ -553,7 +561,11 @@ fn shadeScene(o: VOut) -> vec4f {
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
     let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);
     let ao = mix(1.0, 1.0 - fd.r * 0.85, low);
-    amb *= ao;
+    // Multi-bounce AO: coloured surfaces return some occluded ambient light instead of turning black.
+    let a = 2.0404 * albedo - vec3f(0.3324);
+    let b = -4.7951 * albedo + vec3f(0.6417);
+    let c = 2.7552 * albedo + vec3f(0.6903);
+    amb *= mix(vec3f(ao), max(vec3f(ao), ((ao * a + b) * ao + c) * ao), F.effects.x);
     var direct = lit.diff * GAIN * mix(1.0, ao, 0.5);
     if (abs(n.y) < 0.5 && mat != 12) {
       let base = mix(0.55, 1.0, smoothstep(0.0, 0.8, o.world.y));

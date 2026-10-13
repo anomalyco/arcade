@@ -4,8 +4,14 @@
  * middle click throws or plants your equipment, V swings melee (where the mode allows), F gets in or out of a vehicle
  * (H honks at the wheel), 1/2/3 pick a gun and 4/5 frag or claymore for your next life, Tab shows the scores.
  */
+export type MuxState = { x: number; y: number; vx: number; vy: number; aim: number; tx: number; ty: number }
+export type MuxKey = { type: "mux-key"; kind: "keydown" | "keyup"; code: string; key: string }
+export type MuxMouse = { type: "mux-mouse"; nx: number; ny: number; buttons?: number; down?: number; up?: number; wheel?: number }
+
 export class Input {
   private keys = new Set<string>()
+  /** The character each held key produced when it went down. */
+  private chars = new Map<string, string>()
   private reloadPressed = false
   private equipPressed = false
   private meleePressed = false
@@ -17,57 +23,124 @@ export class Input {
   looking = false
   enabled = false
   onKey: ((code: string) => void) | null = null
+  onWheel: ((delta: number) => void) | null = null
+  readonly mux = new URLSearchParams(location.search).has("mux") && parent !== window
+  readonly parentOrigin = document.referrer ? new URL(document.referrer).origin : location.origin
+  readonly muxRun = new URLSearchParams(location.search).get("muxRun") ?? ""
 
   constructor(canvas: HTMLElement) {
+    canvas.tabIndex = -1
     addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.code === "Tab") e.preventDefault()
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
-      if (!e.repeat) this.onKey?.(e.code)
-      this.keys.add(e.code)
-      if (e.code === "KeyR") this.reloadPressed = true
-      if (e.code === "KeyG" && !e.repeat) this.equipPressed = true
-      if (e.code === "KeyV" && !e.repeat) this.meleePressed = true
-      if ((e.code === "KeyF" || e.code === "KeyE") && !e.repeat) this.enterPressed = true
-      if (e.code === "KeyC" && !e.repeat) this.seatPressed = true
+      const msg: MuxKey = { type: "mux-key", kind: "keydown", code: e.code, key: e.key }
+      if (this.mux) { if (!e.repeat) this.forward(msg) }
+      else this.key(msg)
     })
-    addEventListener("keyup", (e) => this.keys.delete(e.code))
+    addEventListener("keyup", (e) => {
+      const msg: MuxKey = { type: "mux-key", kind: "keyup", code: e.code, key: e.key }
+      if (this.mux) this.forward(msg)
+      else this.key(msg)
+    })
     addEventListener("blur", () => {
-      this.keys.clear()
-      this.firing = false
-      this.looking = false
+      if (this.mux) this.forward({ type: "mux-release" })
+      this.release()
     })
     addEventListener("mousemove", (e) => {
-      this.mouse.x = e.clientX
-      this.mouse.y = e.clientY
+      this.mouseEvent(e)
     })
     canvas.addEventListener("mousedown", (e) => {
-      if (e.button === 0) this.firing = true
-      if (e.button === 2) this.looking = true
-      if (e.button === 1) {
-        e.preventDefault()
-        this.equipPressed = true
-      }
+      e.preventDefault()
+      canvas.focus({ preventScroll: true })
+      this.mouseEvent(e, { down: e.button })
     })
     addEventListener("mouseup", (e) => {
-      if (e.button === 0) this.firing = false
-      if (e.button === 2) this.looking = false
+      this.mouseEvent(e, { up: e.button })
     })
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault()
+      this.mouseEvent(e, { wheel: e.deltaY })
+    }, { passive: false })
     canvas.addEventListener("contextmenu", (e) => e.preventDefault())
+    addEventListener("message", (e) => {
+      if (!this.accepts(e)) return
+      const m = e.data
+      if (m?.type === "mux-key" && (m.kind === "keydown" || m.kind === "keyup") && typeof m.code === "string" && typeof m.key === "string") this.key(m)
+      if (m?.type === "mux-mouse" && Number.isFinite(m.nx) && Number.isFinite(m.ny)) this.pointer(m)
+      if (m?.type === "mux-release" || m?.type === "mux-reset") this.release()
+    })
+  }
+
+  accepts(e: MessageEvent): boolean { return this.mux && e.source === parent && e.origin === this.parentOrigin && e.data?.run === this.muxRun }
+
+  forward(message: object): void { if (this.mux) parent.postMessage({ ...message, run: this.muxRun }, this.parentOrigin) }
+
+  release(): void {
+    this.keys.clear()
+    this.chars.clear()
+    this.firing = this.looking = this.reloadPressed = this.equipPressed = this.meleePressed = this.enterPressed = this.seatPressed = false
+  }
+
+  private key(e: MuxKey): void {
+    const k = e.key.toLowerCase()
+    if (e.kind === "keyup") {
+      // Release the character seen on press: Shift or Option can change e.key before the key comes up (Dvorak "," -> "<").
+      this.keys.delete(e.code)
+      const down = this.chars.get(e.code)
+      if (down !== undefined) this.keys.delete(down)
+      this.chars.delete(e.code)
+      // macOS drops keyups for other keys while Cmd is held.
+      if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
+      return
+    }
+    const repeat = this.keys.has(e.code)
+    this.keys.add(e.code)
+    if (!repeat) {
+      this.keys.add(k)
+      this.chars.set(e.code, k)
+    }
+    if (!repeat) this.onKey?.(k === "t" ? "KeyT" : k === "m" ? "KeyM" : k === "b" ? "KeyB" : e.code)
+    if (e.code === "KeyR" || k === "r") this.reloadPressed = true
+    if ((e.code === "KeyG" || k === "g") && !repeat) this.equipPressed = true
+    if ((e.code === "KeyV" || k === "v") && !repeat) this.meleePressed = true
+    if ((e.code === "KeyF" || e.code === "KeyE") && !repeat) this.enterPressed = true
+    if (e.code === "KeyC" && !repeat) this.seatPressed = true
+  }
+
+  private mouseEvent(e: MouseEvent, buttons: Partial<MuxMouse> = {}): void {
+    const msg: MuxMouse = { type: "mux-mouse", nx: e.clientX / innerWidth, ny: e.clientY / innerHeight, ...buttons }
+    if (this.mux) this.forward(msg)
+    else this.pointer(msg)
+  }
+
+  private pointer(m: MuxMouse): void {
+    this.mouse.x = Math.max(0, Math.min(1, m.nx)) * innerWidth
+    this.mouse.y = Math.max(0, Math.min(1, m.ny)) * innerHeight
+    if (Number.isInteger(m.buttons)) {
+      this.firing = (m.buttons! & 1) !== 0
+      this.looking = (m.buttons! & 2) !== 0
+    }
+    if (m.down === 0) this.firing = true
+    if (m.down === 2) this.looking = true
+    if (m.down === 1) this.equipPressed = true
+    if (m.up === 0) this.firing = false
+    if (m.up === 2) this.looking = false
+    if (Number.isFinite(m.wheel)) this.onWheel?.(m.wheel!)
   }
 
   held(code: string): boolean {
-    return this.keys.has(code)
+    return this.keys.has(code) || (code === "KeyF" && this.keys.has("f"))
   }
 
   move(): { mx: number; my: number } {
     if (!this.enabled) return { mx: 0, my: 0 }
     let mx = 0
     let my = 0
-    if (this.held("KeyW") || this.held("ArrowUp")) my -= 1
-    if (this.held("KeyS") || this.held("ArrowDown")) my += 1
-    if (this.held("KeyA") || this.held("ArrowLeft")) mx -= 1
-    if (this.held("KeyD") || this.held("ArrowRight")) mx += 1
+    if (this.held("KeyW") || this.held("Comma") || this.held(",") || this.held("ArrowUp")) my -= 1
+    if (this.held("KeyS") || this.held("KeyO") || this.held("o") || this.held("ArrowDown")) my += 1
+    if (this.held("KeyA") || this.held("a") || this.held("ArrowLeft")) mx -= 1
+    if (this.held("KeyD") || this.held("KeyE") || this.held("e") || this.held("ArrowRight")) mx += 1
     return { mx, my }
   }
 

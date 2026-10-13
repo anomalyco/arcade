@@ -3,19 +3,23 @@ import { type Rect, raycast } from "../../shared/geom"
 import { type MapDef, getMap } from "../../shared/maps"
 import { type Grenade, type Obstacles, obstaclesOf, stepGrenade } from "../../shared/sim/gear"
 import { type Body, stepBody } from "../../shared/sim/move"
-import type { RosterRow, Snapshot } from "../../shared/sim/view"
-import type { Intent, SimEvent } from "../../shared/sim/world"
+import { buildSnapshot, rosterOf, type RosterRow, type Snapshot } from "../../shared/sim/view"
+import { NO_INTENT, World, type Brain, type Intent, type SimEvent } from "../../shared/sim/world"
+import type { ClientMsg } from "../../shared/protocol"
 import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
-import { buildLevel } from "../render/level-mesh"
-import { AMBIENT, type Caster, type DynLight, LightCuller } from "../render/lighting"
+import { bakeBounce, buildLevel, type FloorMap } from "../render/level-mesh"
+import { AMBIENT, type Caster, type DynLight, LIGHT_FLOATS, LightCuller } from "../render/lighting"
+import { MAT, Mesh } from "../render/mesh"
+import { PAL, deskMonitorLights, hex, rng } from "../render/models"
+import { juiceSettings, type Juice } from "../ui/debug-overlay"
 import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
 import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, swing, useGear } from "./anim"
 import { type Corpse, type DeathStyle, type Debris, deathStyle, emitRagdoll, ragdoll, ragdollCentre, stepDebris, stepRagdoll } from "./ragdoll"
 import { type Batch, type FrameInput, INST_FLOATS, type Renderer, SPRITE_FLOATS } from "../render/renderer"
 import { FRAME_FLOATS } from "../render/shaders"
-import type { Input } from "./input"
+import type { Input, MuxState } from "./input"
 import type { Session } from "./session"
 import { Smoothed } from "./smooth"
 import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
@@ -50,12 +54,14 @@ export const css = (c: Rgb3) => `rgb(${c.map((v) => Math.round(Math.min(1, v) * 
 
 type Tracer = { x0: number; y0: number; z0: number; x1: number; y1: number; t0: number; life: number; w: number; gun: Gun }
 type FlashFx = { x: number; y: number; z: number; aim: number; gun: Gun; t0: number; seed: number }
-type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; t0: number; life: number; size: number; kind: "spark" | "dust" | "blood" | "splat" | "smoke" | "chip" | "fire" | "soot" | "char"; bounced: boolean }
+type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; t0: number; life: number; size: number; kind: "spark" | "dust" | "blood" | "splat" | "smoke" | "chip" | "fire" | "soot" | "char" | "electric"; bounced: boolean }
 type Flash = { x: number; y: number; t0: number; life: number; power: number }
 /** Rifle and shotgun tracers fly at this speed (m/s) as a streak this long. */
 const TRACER_SPEED = 240
 const TRACER_LEN = 3.2
 const CLAY_SCALE = 1.15
+const LAMP_BROWNOUT_SECONDS = 2.5
+const LAMP_RETRIGGER_SECONDS = 2.5
 const HIT_POWER: Record<Gun, number> = { rifle: 0.8, shotgun: 0.3, sniper: 1.8 }
 /** Camera recoil per gun: shove along the aim, shake, zoom punch and a little roll. */
 const CAM_RECOIL: Record<Gun, { kick: number; shake: number; punch: number; roll: number }> = {
@@ -70,11 +76,113 @@ type Boom = { x: number; y: number; t0: number; kind: Equip; aim: number }
 /** Blasts throw bodies hard, up and away. */
 const blastStyle = (): DeathStyle => ({ push: 7 + Math.random() * 2, lift: 2.6 + Math.random(), spin: (Math.random() - 0.5) * 3, buckle: 0.2 })
 
+/** Local-only sandbox controls belong here rather than in the multiplayer simulation. */
+export class SandboxSession implements Session {
+  readonly room = null
+  readonly myId = "you"
+  readonly world: World
+  passive = true
+  private acc = 0
+  private events: SimEvent[] = []
+  private brains = new Map<string, Brain>()
+  private dummySpawns = new Map<string, { x: number; y: number; aim: number }>()
+  private snapshot!: { snap: Snapshot; at: number }
+
+  constructor(name: string, gun: Gun, equip: Equip, seed: number) {
+    this.world = new World(seed, getMap("office", seed), "ffa")
+    this.world.botFill = 4
+    this.world.addHuman(this.myId, name, gun, equip)
+    this.world.fill()
+    for (const p of this.world.players.values()) if (p.brain) {
+      this.brains.set(p.id, p.brain)
+      this.dummySpawns.set(p.id, { x: p.x, y: p.y, aim: p.aim })
+      p.brain = { think: () => ({ ...NO_INTENT, aim: p.aim }) }
+    }
+    this.publish()
+  }
+
+  toggleBots(): void {
+    this.passive = !this.passive
+    for (const [id, brain] of this.brains) {
+      const p = this.world.players.get(id)
+      if (!p) continue
+      p.vx = p.vy = 0
+      p.brain = this.passive ? { think: () => ({ ...NO_INTENT, aim: p.aim }) } : brain
+    }
+  }
+
+  sync(state: MuxState): void {
+    const p = this.world.players.get(this.myId)
+    if (p) Object.assign(p, { x: state.x, y: state.y, vx: state.vx, vy: state.vy, aim: state.aim })
+    this.publish()
+  }
+
+  latest() { return this.snapshot }
+  roster(): RosterRow[] { return rosterOf(this.world) }
+  drainEvents(): SimEvent[] { const e = this.events; this.events = []; return e }
+  status(): string { return this.passive ? "PASSIVE DUMMIES · B" : "LIVE BOTS · B" }
+  close(): void {}
+
+  send(msg: ClientMsg): void {
+    if (msg.type === "intent") this.world.push(this.myId, msg.seq, { ...msg.i, reload: false })
+    if (msg.type === "gun") {
+      this.world.pickGun(this.myId, msg.gun)
+      const p = this.world.players.get(this.myId)
+      if (p) this.world.arm(p, gunKit(msg.gun))
+      this.publish()
+    }
+    if (msg.type === "equip") {
+      const p = this.world.players.get(this.myId)
+      if (p) { p.equip = p.equipPick = msg.equip; p.equipLeft = 99 }
+    }
+  }
+
+  update(dt: number): void {
+    this.acc = Math.min(this.acc + dt, DT * 6)
+    while (this.acc >= DT) {
+      this.acc -= DT
+      this.world.phaseEnd = this.world.time + 3600
+      const me = this.world.players.get(this.myId)!
+      me.mag = me.kit.mag
+      me.reloadUntil = 0
+      me.equipLeft = 99
+      this.world.step()
+      if (this.passive) for (const [id, spawn] of this.dummySpawns) {
+        const p = this.world.players.get(id)
+        if (p?.alive) Object.assign(p, spawn, { vx: 0, vy: 0 })
+      }
+      const events = this.world.takeEvents()
+      for (const e of events) if (e.k === "kill") {
+        const victim = this.world.players.get(e.victim)
+        if (victim) victim.respawnAt = this.world.time + 2
+      }
+      this.events.push(...events)
+    }
+    this.publish()
+  }
+
+  private publish(): void { this.snapshot = { snap: buildSnapshot(this.world, this.myId), at: performance.now() } }
+}
+
+type Monitor = { x: number; y: number; yaw: number; broken: boolean }
+type LooseSheet = Debris & { kind: "paper" | "glass"; phase: number }
+
 /**
  * The match as this client sees it: predicted own body and own gunfire, smoothed and animated soldiers, effects,
  * and the per-frame GPU data.
  */
 export class Game {
+  readonly juice: Juice
+  private bounceBase!: FloorMap
+  private bounceFull!: FloorMap
+  private bounceIntensity = -1
+  private monitors: Monitor[] = []
+  private lampJolts = new Map<number, number>()
+  private propHitAt = new Map<number, number>()
+  private sheets: LooseSheet[] = []
+  private rings: { x: number; y: number; t0: number; sprint: boolean }[] = []
+  private electric: { x: number; y: number; t0: number }[] = []
+  private sheetModels: { paper: number; glass: number; brass: number; screen: number }
   map: MapDef
   blockers: Rect[] = []
   solids: Rect[] = []
@@ -160,9 +268,21 @@ export class Game {
     private renderer: Renderer,
     private session: Session,
     private sound: Sound,
+    settings: Juice = juiceSettings(),
   ) {
+    this.juice = settings
     const p = personModels()
     const reg = (m: Parameters<Renderer["addModel"]>[0]) => renderer.addModel(m)
+    const paper = new Mesh()
+    paper.box(-0.1, -0.003, -0.14, 0.1, 0.003, 0.14, PAL.paper, MAT.lit, 0, undefined, true)
+    const glass = new Mesh()
+    glass.facet([-0.035, 0, -0.1], [0.07, 0, 0.025], [-0.035, 0.007, 0.1], hex(0xb4f4ff), MAT.shiny)
+    glass.facet([-0.035, 0.007, 0.1], [0.07, 0, 0.025], [-0.035, 0, -0.1], hex(0xd7ffff), MAT.shiny)
+    const brass = new Mesh()
+    brass.prism(0, 0, 0.018, 0.018, -0.035, 0.035, 6, hex(0xe8b84e), MAT.shiny)
+    const screen = new Mesh()
+    screen.box(-0.252, 0.86, 0.023, 0.252, 1.142, 0.028, PAL.screenOff)
+    this.sheetModels = { paper: reg(paper), glass: reg(glass), brass: reg(brass), screen: reg(screen) }
     const regGuns = (r: typeof p.gun) => ({ rifle: reg(r.rifle), shotgun: reg(r.shotgun), sniper: reg(r.sniper) })
     this.models = {
       pelvis: reg(p.pelvis),
@@ -192,9 +312,15 @@ export class Game {
     this.blockers = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass]
     this.solids = [...this.blockers, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
     this.obstacles = obstaclesOf(map)
-    this.renderer.setLevel(buildLevel(map))
+    const level = buildLevel(map)
+    this.bounceFull = level.bounce
+    this.bounceBase = bakeBounce(map, 0)
+    this.bounceIntensity = -1
+    this.renderer.setLevel(level)
     this.culler.setMap(map)
+    this.monitors = []
     this.clearScene()
+    this.monitors = deskMonitorLights(map).map(({ x, y, yaw }) => ({ x, y, yaw, broken: false }))
   }
 
   /** Drops everything left over from the last match: bodies, tracers, frags, blasts. */
@@ -212,6 +338,15 @@ export class Game {
     this.veh?.clear()
     this.riding = null
     this.seatPose.clear()
+    this.debris = []
+    this.sheets = []
+    this.rings = []
+    this.electric = []
+    for (const monitor of this.monitors) monitor.broken = false
+    this.lampJolts.clear()
+    this.propHitAt.clear()
+    this.flashFx = []
+    this.holes = []
   }
 
   get myId(): string {
@@ -237,6 +372,21 @@ export class Game {
 
   get health(): number {
     return this.snap?.you?.health ?? 0
+  }
+
+  get lightCount(): number { return this.culler.lightCount }
+
+  muxState(): MuxState | null {
+    return this.body ? { ...this.body, aim: this.aim, tx: this.ground.x, ty: this.ground.y } : null
+  }
+
+  sync(state: MuxState, reconcileWorld = true): void {
+    this.place({ x: state.x, y: state.y, vx: state.vx, vy: state.vy })
+    this.aim = state.aim
+    this.ground = { x: state.tx, y: state.ty }
+    this.cursor = { x: state.tx, y: state.ty }
+    this.pending = []
+    if (reconcileWorld && this.session instanceof SandboxSession) this.session.sync(state)
   }
 
   // Network ----------------------------------------------------------------------------------------------------
@@ -410,7 +560,8 @@ export class Game {
         }
         if (first) {
           this.soundAt.set(e.by, t)
-          if (a && gun === "rifle") this.casing(a)
+          if (a) this.casing(a)
+          if (this.juice.rings) this.rings.push({ x: e.x0, y: e.y0, t0: t, sprint: false })
           this.muzzleFlash(m.x, m.y, m.z, a?.aim ?? dir, gun)
           if (me) this.sound.shot(gun, e.x0 - me.x, e.y0 - me.y, false)
         }
@@ -433,6 +584,7 @@ export class Game {
           this.freezeUntil = t + 0.07
           this.sound.hit(true)
           this.cam?.bump(0.25)
+          if (this.juice.trauma) this.cam?.killPunch()
           this.banner = { text: `ELIMINATED ${this.nameOf(e.victim).toUpperCase()}`, t }
         }
         if (mine) {
@@ -570,9 +722,10 @@ export class Game {
 
   private cam: Camera | null = null
 
-  update(dt: number, input: Input, cam: Camera, w: number, h: number, nowMs: number): void {
+  update(dt: number, input: Input, cam: Camera, w: number, h: number, nowMs: number, locked?: MuxState): void {
     this.now = nowMs / 1000
     this.cam = cam
+    cam.traumaSquared = this.juice.trauma
     this.session.update(dt)
     this.ingest()
     const c = cam.unproject(input.mouse.x, input.mouse.y, w, h, SHOULDER - 0.2)
@@ -581,6 +734,11 @@ export class Game {
     const origin = this.body ? this.drawn : { x: this.map.size[0] / 2, y: this.map.size[1] / 2 }
     // Keep the last aim while the cursor sits right on top of you so it doesn't jitter.
     if (Math.hypot(c.x - origin.x, c.y - origin.y) > 0.6) this.aim = Math.atan2(c.y - origin.y, c.x - origin.x)
+    if (locked) {
+      this.aim = locked.aim
+      this.ground = { x: locked.tx, y: locked.ty }
+      this.cursor = { ...this.ground }
+    }
     this.acc = Math.min(this.acc + dt, DT * 5)
     while (this.acc >= DT) {
       this.acc -= DT
@@ -590,7 +748,7 @@ export class Game {
       const reload = input.takeReload()
       const fire = live && input.enabled && input.firing
       const equip = live && input.takeEquip()
-      const use = live && input.enabled && (input.held("KeyF") || input.held("KeyE"))
+      const use = live && input.enabled && input.held("KeyF")
       const melee = live && input.takeMelee() && this.kit.melee
       // F gets in or out of a vehicle, unless it plants or defuses here; H is the horn at the wheel.
       const enter = live && input.takeEnter() && !(this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y))
@@ -661,6 +819,11 @@ export class Game {
     }
     if (sprint) this.readyAt = t + SPRINT_TO_FIRE
     const gun = GUNS[this.gun]
+    if (this.session instanceof SandboxSession) {
+      this.mag = kit.mag
+      this.reloadUntil = 0
+      reload = false
+    }
     if (this.reloadUntil > 0 && t >= this.reloadUntil) {
       this.reloadUntil = 0
       this.mag = kit.mag
@@ -708,7 +871,8 @@ export class Game {
       else if (!hit && stop < gun.range) this.impact(x1, y1, a, this.gun)
     }
     this.muzzleFlash(muzzle.x, muzzle.y, muzzle.z, this.aim, this.gun)
-    if (this.gun === "rifle") this.casing(me)
+    this.casing(me)
+    if (this.juice.rings) this.rings.push({ x: b.x, y: b.y, t0: t, sprint: false })
     this.bloom = Math.min(1, this.bloom + (this.gun === "rifle" ? 0.34 : 0.9))
     const cr = CAM_RECOIL[this.gun]
     this.cam?.kick(-Math.cos(this.aim), -Math.sin(this.aim), cr.kick)
@@ -731,11 +895,98 @@ export class Game {
 
   // Effects -----------------------------------------------------------------------------------------------------
 
+  /** Lab triggers use the real presentation emitters without firing a gameplay shot. */
+  testEffect(key: string): void {
+    const b = this.body
+    if (!b) return
+    const aim = this.avatarMe.aim
+    const x = b.x + Math.cos(aim) * 1.5, y = b.y + Math.sin(aim) * 1.5
+    if (key === "rings") {
+      this.rings.push({ x: b.x, y: b.y, t0: this.now, sprint: false }, { x, y, t0: this.now, sprint: true })
+    } else if (key === "paper" || key === "glass") this.looseSheets(x, y, 1.1, key)
+    else if (key === "sparks") {
+      const monitor = [...this.monitors].sort((a, c) => Math.hypot(a.x - x, a.y - y) - Math.hypot(c.x - x, c.y - y))[0]
+      if (monitor) {
+        monitor.broken = true
+        this.electric.push({ x: monitor.x, y: monitor.y, t0: this.now })
+        this.sparkBurst(monitor.x, monitor.y, 1.1, true)
+      }
+      this.sparkBurst(x, y, 1.1, true)
+    } else if (key === "lamps") {
+      const lamp = [...this.map.lights].sort((a, c) => Math.hypot(a.x - x, a.y - y) - Math.hypot(c.x - x, c.y - y))[0]
+      if (lamp) { this.lampJolts.set(lamp.id, this.now); this.sparkBurst(lamp.x, lamp.y, lamp.h, false) }
+    } else if (key === "casings") this.casing(this.avatarMe)
+    else if (key === "trauma") {
+      this.killAt = this.now
+      this.freezeUntil = this.now + 0.045
+      this.cam?.killPunch()
+      this.cam?.bump(0.65)
+    }
+  }
+
+  /** Furniture is bullet-transparent in the game rules, but a passing round can disturb it visually. */
+  private environmentHit(x0: number, y0: number, x1: number, y1: number): void {
+    const len = Math.hypot(x1 - x0, y1 - y0)
+    if (len < 0.01) return
+    const dx = (x1 - x0) / len
+    const dy = (y1 - y0) / len
+    const near = (x: number, y: number, radius: number) => {
+      const along = (x - x0) * dx + (y - y0) * dy
+      return along > 0 && along <= len + radius && Math.abs((x - x0) * dy - (y - y0) * dx) < radius
+    }
+    if (this.juice.paper) {
+      let closest = Infinity
+      let found = -1
+      this.map.props.forEach((p, i) => {
+        if (!["desk", "copier", "printer", "table"].includes(p.kind) || this.now - (this.propHitAt.get(i) ?? -10) < 0.18) return
+        const r: Rect = [p.rect[0] - 0.15, p.rect[1] - 0.15, p.rect[2] + 0.15, p.rect[3] + 0.15]
+        const d = raycast(x0, y0, dx, dy, [r], len + 0.01)
+        if (d < closest && d < len + 0.01) { closest = d; found = i }
+      })
+      if (found >= 0) {
+        this.propHitAt.set(found, this.now)
+        this.looseSheets(x0 + dx * closest, y0 + dy * closest, 0.85, "paper")
+      }
+    }
+    if (this.juice.sparks) for (const m of this.monitors) {
+      if (m.broken || !near(m.x, m.y, 0.4)) continue
+      m.broken = true
+      this.electric.push({ x: m.x, y: m.y, t0: this.now })
+      this.sparkBurst(m.x, m.y, 1.1, true)
+    }
+    if (this.juice.lamps) for (const l of this.map.lights) {
+      if (!["desk", "panel", "pendant", "bulb"].includes(l.kind) || !near(l.x, l.y, 0.35)) continue
+      // Let the full dip recover before another hit can restart it.
+      if (this.now - (this.lampJolts.get(l.id) ?? -10) < LAMP_RETRIGGER_SECONDS) continue
+      this.lampJolts.set(l.id, this.now)
+      this.sparkBurst(l.x, l.y, l.h, false)
+    }
+  }
+
+  private sparkBurst(x: number, y: number, z: number, electric: boolean): void {
+    for (let i = 0; i < (electric ? 14 : 3); i++) {
+      const a = Math.random() * Math.PI * 2
+      const s = electric ? 1 + Math.random() * 3 : 0.2 + Math.random() * 0.45
+      this.fx(x, y, z, Math.cos(a) * s, Math.sin(a) * s, electric ? 1 + Math.random() * 2 : 0.2 + Math.random() * 0.5, electric ? 0.25 + Math.random() * 0.3 : 0.18 + Math.random() * 0.16, electric ? 0.035 : 0.018, electric ? "electric" : "spark")
+    }
+  }
+
+  private looseSheets(x: number, y: number, z: number, kind: LooseSheet["kind"]): void {
+    const count = kind === "paper" ? 4 + Math.floor(Math.random() * 3) : 10 + Math.floor(Math.random() * 5)
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2
+      const speed = kind === "paper" ? 0.4 + Math.random() : 1 + Math.random() * 3
+      this.sheets.push({ kind, phase: Math.random() * 6.28, model: this.sheetModels[kind], p: [x, z, y], v: [Math.cos(a) * speed, 1 + Math.random() * 2, Math.sin(a) * speed], yaw: a, pitch: Math.random(), roll: Math.random(), w: [5, 8, 12], t0: this.now, life: kind === "paper" ? 4 : 2.5, bounces: 0 })
+    }
+    if (this.sheets.length > 200) this.sheets.splice(0, this.sheets.length - 200)
+  }
+
   private fx(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, size: number, kind: Particle["kind"]): void {
     this.particles.push({ x, y, z, vx, vy, vz, t0: this.now, life, size, kind, bounced: false })
   }
 
   private tracer(x0: number, y0: number, z0: number, x1: number, y1: number, gun: Gun): void {
+    this.environmentHit(x0, y0, x1, y1)
     this.tracers.push({ x0, y0, z0, x1, y1, t0: this.now, life: gun === "sniper" ? 0.55 : (Math.hypot(x1 - x0, y1 - y0) + TRACER_LEN) / TRACER_SPEED, w: gun === "sniper" ? 0.045 : gun === "shotgun" ? 0.018 : 0.026, gun })
     if (gun === "sniper") {
       // A smoke trail that hangs in the air along the shot.
@@ -760,6 +1011,10 @@ export class Game {
   }
 
   private impact(x: number, y: number, dir: number, gun: Gun): void {
+    if (this.juice.glass && [...this.map.glass, ...this.map.windows].some((r) => Math.hypot(Math.max(r[0] - x, 0, x - r[2]), Math.max(r[1] - y, 0, y - r[3])) < 0.25)) {
+      this.looseSheets(x - Math.cos(dir) * 0.06, y - Math.sin(dir) * 0.06, 1.1, "glass")
+      return
+    }
     const z = 0.9 + Math.random() * 0.5
     const n = gun === "shotgun" ? 3 : gun === "sniper" ? 12 : 7
     for (let i = 0; i < n; i++) {
@@ -796,11 +1051,12 @@ export class Game {
 
   /** Spent brass or a shotgun hull out of the ejection port, flung right and back, tumbling. */
   private casing(a: Avatar): void {
+    if (!this.juice.casings) return
     const g = gunPoints(a)
     if (!g) return
     const s = 1.6 + Math.random() * 1.2
     const v: [number, number, number] = [g.right[0] * s - g.dir[0] * 0.6 + a.svx * 0.8, 1.6 + Math.random() * 1.2, g.right[2] * s - g.dir[2] * 0.6 + a.svy * 0.8]
-    this.debris.push({ model: this.models.casing[a.gun], p: g.port, v, yaw: a.aim + Math.PI / 2, pitch: 0, roll: 0, w: [(Math.random() - 0.5) * 30, 15 + Math.random() * 20, (Math.random() - 0.5) * 20], t0: this.now, life: a.gun === "rifle" ? 2.5 : 4, bounces: 0 })
+    this.debris.push({ model: this.sheetModels.brass, p: [...g.port], v, yaw: a.aim + Math.PI / 2, pitch: 0, roll: 0, w: [(Math.random() - 0.5) * 30, 15 + Math.random() * 20, (Math.random() - 0.5) * 20], t0: this.now, life: a.gun === "rifle" ? 2.5 : 4, bounces: 0 })
     if (this.debris.length > 220) this.debris.splice(0, this.debris.length - 220)
   }
 
@@ -818,7 +1074,7 @@ export class Game {
     const dx = me ? a.x - me.x : 0
     const dy = me ? a.y - me.y : 0
     if (ev & EV.step && me && Math.hypot(dx, dy) < 16) this.sound.step(dx, dy, mine, Math.min(SPRINT_SPEED, Math.hypot(a.svx, a.svy)) / SPEED)
-    if (ev & EV.eject) this.casing(a)
+    if ((ev & EV.step) && this.juice.rings && Math.hypot(a.svx, a.svy) > SPEED * 1.1) this.rings.push({ x: a.x, y: a.y, t0: this.now, sprint: true })
     if (ev & EV.magDrop) this.dropMag(a)
     if (Math.hypot(dx, dy) < 22) this.sound.cue(ev, a.gun, dx, dy, mine)
   }
@@ -1009,6 +1265,20 @@ export class Game {
 
   build(cam: Camera, w: number, h: number, dt: number): FrameInput {
     const t = this.now
+    const intensity = this.juice.monitors ? this.juice.monitorIntensity : 0
+    if (intensity !== this.bounceIntensity) {
+      // Recombine pre-baked linear irradiance only on a control change; no per-frame texture/shader work.
+      const base = this.bounceBase, full = this.bounceFull
+      for (let i = 0; i < base.w * base.h; i++) for (let c = 0; c < 3; c++) {
+        const k = i * 3 + c
+        const light = base.linear![k]! + (full.linear![k]! - base.linear![k]!) * intensity
+        full.data[i * 4 + c] = Math.round(Math.sqrt(Math.min(1, Math.max(0, light * 0.5))) * 255)
+      }
+      this.renderer.updateBounce(full.data, full.w, full.h)
+      this.bounceIntensity = intensity
+    }
+    this.culler.setChairShadows(this.juice.chairs)
+    this.culler.monitorIntensity = intensity
     const snap = this.snap
     this.nAdd = 0
     this.nAlpha = 0
@@ -1019,6 +1289,8 @@ export class Game {
     const view = cam.groundRect()
     this.flashes = this.flashes.filter((f) => t - f.t0 < f.life)
     const dyn: DynLight[] = this.flashes.map((f) => ({ x: f.x, y: f.y, h: 1.2, r: 7, color: [1, 0.72, 0.38], power: f.power * (1 - (t - f.t0) / f.life), size: 0.05 }))
+    this.electric = this.electric.filter((f) => t - f.t0 < 0.18)
+    if (this.juice.sparks) for (const f of this.electric) dyn.push({ x: f.x, y: f.y, h: 1.1, r: 3, color: [0.4, 0.8, 1], power: 2 * (1 - (t - f.t0) / 0.18), size: 0.1 })
     // Blasts: a blinding flash, then the fireball's glow dying away.
     this.booms = this.booms.filter((b) => t - b.t0 < 1.2)
     for (const b of this.booms) {
@@ -1046,7 +1318,19 @@ export class Game {
     )
     if (this.alive && this.body) casters.push({ x: this.drawn.x, y: this.drawn.y })
     mapFires(this.map, view, t, dt, (...a) => this.sprite(...a), this.fxv)
-    this.culler.update(view, t, dyn, casters)
+    this.culler.update(view, t, dyn, casters, this.juice.monitors, this.juice.sparks ? this.monitors.filter((m) => m.broken) : [])
+    if (this.juice.lamps) for (const [id, at] of this.lampJolts) {
+      const age = t - at
+      if (age >= LAMP_RETRIGGER_SECONDS) { this.lampJolts.delete(id); continue }
+      if (age >= LAMP_BROWNOUT_SECONDS) continue
+      // One smooth dip and recovery, no flashing.
+      const power = 1 - 0.6 * Math.sin((Math.PI * age) / LAMP_BROWNOUT_SECONDS) ** 2
+      this.culler.power[id] = this.culler.power[id]! * power
+      for (let i = 0; i < this.culler.lightCount; i++) {
+        const o = i * LIGHT_FLOATS
+        if (this.culler.lights[o + 15] === id) this.culler.lights[o + 7] = this.culler.lights[o + 7]! * power
+      }
+    }
     const nl = this.culler.lightCount
 
     // Soldiers. A kill freezes animation and effects for a few frames (hit-stop).
@@ -1058,6 +1342,7 @@ export class Game {
       arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
     }
     const k = 1 - Math.exp(-dt * 16)
+    if (this.juice.sparks) for (const m of this.monitors) if (m.broken) push(this.sheetModels.screen, m.x, 0, m.y, m.yaw, [1, 1, 1], 0, 0, 0)
     for (const a of this.avatars.values()) {
       if (!a.alive) continue
       // Chase the server position, extrapolated a little along its velocity.
@@ -1097,9 +1382,31 @@ export class Game {
     // Casings and magazines on the floor.
     this.debris = this.debris.filter((d) => t - d.t0 < d.life)
     for (const d of this.debris) {
+      if (d.model === this.sheetModels.brass && !this.juice.casings) continue
       if (stepDebris(d, adt, this.solids) && me && Math.hypot(d.p[0] - me.x, d.p[2] - me.y) < 10) this.sound.clink(d.p[0] - me.x, d.p[2] - me.y, d.model === this.models.mag.rifle || d.model === this.models.mag.sniper)
       const sink = Math.max(0, t - d.t0 - (d.life - 0.5)) * 0.12
       push(d.model, d.p[0], d.p[1] - sink, d.p[2], d.yaw, [1, 1, 1], d.pitch, d.roll, 0)
+    }
+
+    this.sheets = this.sheets.filter((d) => t - d.t0 < d.life)
+    for (const d of this.sheets) {
+      if (!this.juice[d.kind]) continue
+      const age = t - d.t0
+      if (d.kind === "paper") {
+        if (d.p[1] > 0.02) {
+          d.v[1] -= 1.8 * adt
+          const drag = Math.exp(-adt * 1.2)
+          d.v[0] *= drag
+          d.v[2] *= drag
+          d.p[0] += (d.v[0] + Math.sin(age * 5 + d.phase) * 0.25) * adt
+          d.p[1] = Math.max(0.016, d.p[1] + d.v[1] * adt)
+          d.p[2] += (d.v[2] + Math.cos(age * 4 + d.phase) * 0.25) * adt
+          d.yaw += adt * 0.7
+          d.pitch = Math.sin(age * 7 + d.phase) * 0.65
+          d.roll = Math.sin(age * 5 + d.phase) * 0.85
+        } else { d.pitch *= Math.exp(-adt * 12); d.roll *= Math.exp(-adt * 12) }
+      } else stepDebris(d, adt, this.blockers)
+      push(d.model, d.p[0], d.p[1], d.p[2], d.yaw, [1, 1, 1], d.pitch, d.roll, 0)
     }
 
     this.gearParts(parts, t, dt)
@@ -1207,6 +1514,11 @@ export class Game {
     }
 
     this.gearSprites(t)
+    this.rings = this.rings.filter((r) => t - r.t0 < 0.5)
+    if (this.juice.rings) for (const r of this.rings) {
+      const u = (t - r.t0) / 0.5
+      this.sprite(true, r.x, 0.025, r.y, 0.2 + u * (r.sprint ? 1.4 : 3.6), 1, 1, 1, (1 - u) ** 2 * (r.sprint ? 0.45 : 0.8), r.sprint ? 5 : 2, 0, 0.018)
+    }
     modeSprites(
       snap,
       t,
@@ -1245,7 +1557,8 @@ export class Game {
           p.vy *= 0.7
         }
       }
-      if (p.kind === "spark") this.sprite(true, p.x, p.z, p.y, p.size * (p.life < 0.1 ? 1 : 1 + a), 1, 0.72, 0.3, a, 0)
+      if (p.kind === "electric") { if (this.juice.sparks) this.sprite(true, p.x, p.z, p.y, p.size * (1 + a), 0.5, 0.85, 1.4, a, 0) }
+      else if (p.kind === "spark") this.sprite(true, p.x, p.z, p.y, p.size * (p.life < 0.1 ? 1 : 1 + a), 1, 0.72, 0.3, a, 0)
       else if (p.kind === "dust") this.sprite(false, p.x, p.z, p.y, p.size * (1.2 + age * 3), 0.5, 0.48, 0.46, a * a * 0.5, 0)
       else if (p.kind === "smoke") this.sprite(false, p.x, p.z, p.y, p.size * (1.5 + age * 4), 0.55, 0.55, 0.58, a * a * 0.25, 0)
       else if (p.kind === "fire") {
@@ -1268,15 +1581,17 @@ export class Game {
     const focus = me ? cam.project(this.drawn.x, 0.9, this.drawn.y, w, h) : { x: 0, y: 0 }
     F.set([me ? this.drawn.x : 0, me ? this.drawn.y : 0, me ? 1 : 0, 0.24], 24)
     F.set(AMBIENT[this.map.kind], 28)
-    F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, 0], 32)
-    F.set([0, 1, 0, 0], 36)
+    F.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 0.7, this.culler.monitorStart], 32)
+    F.set(this.culler.monitorBounds, 36)
     F.set([1 / this.map.size[0], 1 / this.map.size[1], this.map.size[0], this.map.size[1]], 40)
+    F.set([this.juice.ao ? this.juice.aoStrength : 0, 0, 0, 0], 44)
     const dead = !!snap && snap.phase === "play" && !this.alive
     const C = this.culler
     return {
       frame: F,
       lights: C.lights,
       lightCount: C.lightCount,
+      shadowLightCount: C.shadowLightCount,
       occluders: C.occ,
       occluderCount: C.occCount,
       lampPower: C.power,
@@ -1287,7 +1602,7 @@ export class Game {
       alphaCount: this.nAlpha,
       addSprites: this.add,
       addCount: this.nAdd,
-      grade: [t, dead ? 0.7 : 0, this.hurt * 0.9, 1.15],
+      grade: [t, dead ? 0.7 : 0, this.hurt * 0.9, 1.15 * (1 + (this.juice.trauma ? 0.15 * Math.max(0, 1 - (t - this.killAt) / 0.16) : 0))],
     }
   }
 }

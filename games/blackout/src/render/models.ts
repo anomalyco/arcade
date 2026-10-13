@@ -1,4 +1,4 @@
-import type { Prop } from "../../shared/maps"
+import type { LightDef, MapDef, Prop } from "../../shared/maps"
 import { FLOATS_PER_VERT, MAT, Mesh, type Rgb } from "./mesh"
 
 /** sRGB hex to a 0..1 triple (the shader linearises). */
@@ -61,6 +61,30 @@ function local(p: Prop): { w: number; d: number } {
   const rw = p.rect[2] - p.rect[0]
   const rd = p.rect[3] - p.rect[1]
   return p.rot % 2 === 0 ? { w: rw, d: rd } : { w: rd, d: rw }
+}
+
+/** Match buildProp's exact desk RNG sequence, including the optional second monitor. */
+export function deskMonitorLights(map: MapDef): (LightDef & { yaw: number })[] {
+  const lights: (LightDef & { yaw: number })[] = []
+  map.props.forEach((p, i) => {
+    if (p.kind !== "desk") return
+    const r = rng(map.seed + i * 17)
+    r(); r() // pedestal and PC tower
+    const { w, d } = local(p)
+    const mx = (r() - 0.5) * Math.max(0, w - 0.9) * 0.6
+    const yaw = p.rot * Math.PI / 2
+    const c = Math.cos(yaw), s = Math.sin(yaw)
+    const add = (x: number, z: number) => lights.push({
+      id: map.lights.length + lights.length, kind: "desk", yaw,
+      x: (p.rect[0] + p.rect[2]) / 2 + x * c - z * s,
+      y: (p.rect[1] + p.rect[3]) / 2 + x * s + z * c,
+      h: 1, r: 1.65, color: [0.12, 0.65, 1], power: 0.35, flicker: 0,
+      cone: [-s, c, -0.3],
+    })
+    if (r() < 0.28) add(mx, -d / 2 + 0.2)
+    if (r() < 0.25 && r() < 0.3) add(mx + (mx > 0 ? -0.58 : 0.58), -d / 2 + 0.22)
+  })
+  return lights
 }
 
 /** Rotates every vertex added since `from` by `yaw` around (cx, cz). */
