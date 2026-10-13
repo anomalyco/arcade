@@ -9,10 +9,12 @@ export const LOOK_LABELS = {
   lookGrade: "Teal & Warm Grade", lookPractical: "Warm Practicals", lookWalls: "Warm Wall Faces",
   lookAO: "Corner & Contact AO", lookCaps: "Blue Cap Rims", lookFloors: "Floor Weave & Tile",
   lookCity: "City Depth", lookGloss: "Tile Reflections", lookShadows: "Long Furniture Shadows",
+  lookShadowFilter: "Smooth Polar Shadows",
 } as const
 export type Juice = Record<keyof typeof JUICE_LABELS | keyof typeof LOOK_LABELS, boolean> & { monitorIntensity: number; aoStrength: number }
 export const juiceSettings = (enabled = true): Juice => ({ monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: false, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: false, trauma: enabled,
   lookGrade: enabled, lookPractical: enabled, lookWalls: enabled, lookAO: enabled, lookCaps: enabled, lookFloors: enabled, lookCity: enabled, lookGloss: false, lookShadows: false,
+  lookShadowFilter: enabled,
 })
 /** Bit layout shared with sceneShader; grade also uses bit zero in the composite. */
 const LOOK_KEYS = Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]

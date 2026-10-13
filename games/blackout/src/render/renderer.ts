@@ -391,7 +391,7 @@ export class Renderer {
 
   private draw(f: FrameInput): void {
     const d = this.device
-    const scenePipes = (f.frame[45]! & ~1) && f.frame[46]! ? this.pipes : this.baselinePipes
+    const scenePipes = ((f.frame[45]! & ~1) && f.frame[46]!) || (f.frame[45]! & 512) ? this.pipes : this.baselinePipes
     d.queue.writeBuffer(this.frameBuf, 0, f.frame)
     if (f.lightCount) d.queue.writeBuffer(this.lightBuf, 0, f.lights.buffer, f.lights.byteOffset, f.lightCount * LIGHT_FLOATS * 4)
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)

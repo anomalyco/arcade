@@ -266,7 +266,7 @@ fn tapVis(base: u32, fi: f32, d: f32, y: f32, hl: f32, size: f32) -> f32 {
   return v;
 }
 
-/** Soft visibility of plan point p at height y from light slot: five taps across the penumbra. */
+/** Soft visibility of plan point p at height y from a light slot. */
 fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
   let dv = p - lp;
   let d = length(dv);
@@ -276,6 +276,24 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
   let f = a / TAU * f32(RAYS) - 0.5;
   let base = slot * RAYS;
   let stepR = max(size * 0.22 / max(d, 0.4) * f32(RAYS) / TAU, 0.35);
+  ${looks ? `if ((u32(F.effects.y) & 512u) != 0u) {
+    // Interpolate visibility, not blocker distance: interpolating distances leaks across silhouettes.
+    // A denser angular kernel removes the five repeated hard silhouettes of the old sparse PCF.
+    var sum = 0.0;
+    var weights = 0.0;
+    // World-anchored sub-stratum rotation breaks coherent PCF contours without time-varying noise.
+    let phase = hash2(floor(p * 64.0)) - 0.5;
+    for (var k = -4; k <= 4; k++) {
+      let ray = f + (f32(k) + phase) * max(stepR * 0.5, 0.5);
+      let lo = floor(ray);
+      let a = tapVis(base, lo, d, y, hl, size);
+      let b = tapVis(base, lo + 1.0, d, y, hl, size);
+      let w = exp(-f32(k * k) * 0.16);
+      sum += mix(a, b, fract(ray)) * w;
+      weights += w;
+    }
+    return sum / weights;
+  }` : ""}
   var acc = 0.0;
   for (var k = -2; k <= 2; k++) {
     let w = select(select(0.15, 0.2, abs(k) == 1), 0.3, k == 0);
