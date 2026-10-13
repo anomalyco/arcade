@@ -38,7 +38,18 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
   const pending:number[][]=[]
   const clear=()=>{fx.add.length=0;fx.clearSkids();props?.clear();emissions.reset();state=new EmissionState();active="";remaining=0;scrape=0;time=0}
   return {settings,groups,effects:[...Object.entries(labels).map(([value,label])=>({value,label})),{value:"tyre",label:"Connected tyre smoke"}],environments:getawayRooms,
-    controls:[{key:"targetX",label:"Target X",type:"range",min:-12,max:12,step:.25},{key:"targetZ",label:"Target Z",type:"range",min:-12,max:12,step:.25}],
+    controls:[{key:"targetX",label:"Target X",type:"range",min:-12,max:12,step:.25,unit:"m"},{key:"targetZ",label:"Target Z",type:"range",min:-12,max:12,step:.25,unit:"m"}],
+    relevantGroups(s){
+      const eff=String(s.effect)
+      if(eff==="scrape")return{primary:["scrape"],advanced:["sparks"]}
+      return{primary:[eff]}
+    },
+    frameTarget(s){
+      return{x:Number(s.targetX),y:0.5,z:Number(s.targetZ),dist:15}
+    },
+    objects(s){
+      return[{id:"emitter:target",label:`${s.effect} Origin`,category:"emitter",x:Number(s.targetX),y:0.15,z:Number(s.targetZ),radius:1.1,movable:true}]
+    },
     environment(kind,seed){
       clear();const env=environment=getawayEnvironment(kind,seed)
       if(envModel<0)envModel=meshes.add(env.vertices,12,c=>[2,5,8,9].includes(c)?1.5:0)

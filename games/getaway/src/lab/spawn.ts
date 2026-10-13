@@ -33,7 +33,56 @@ export function getawaySpawn(context:LabContext){
     items:PROP_KINDS.map(id=>({id,label:id==="propane"?"Propane tank":id[0].toUpperCase()+id.slice(1)})),
     get bodies(){return [...props.props.map(p=>p.body),...props.chunks.map(c=>c.body)]},
     lights,
-    spawn(id,at){const kind=PROP_KINDS.find(k=>k===id);if(kind)props.spawn({kind,x:at.x,y:yardGround(at.x,at.z),z:at.z,yaw:at.yaw})},
+    spawn(id,at){
+      const kind=PROP_KINDS.find(k=>k===id)
+      if(!kind)return
+      props.spawn({kind,x:at.x,y:yardGround(at.x,at.z),z:at.z,yaw:at.yaw})
+      const added=props.props.at(-1)
+      return added?`prop:${added.body.id}`:undefined
+    },
+    entries:()=>props.props.filter(p=>p.body.enabled).map(p=>({
+      id:`prop:${p.body.id}`,
+      kind:p.home.kind,
+      label:`${p.home.kind==="propane"?"Propane tank":p.home.kind[0].toUpperCase()+p.home.kind.slice(1)} #${p.body.id+1}`,
+      x:p.body.x,
+      y:p.body.y-p.body.hy,
+      z:p.body.z,
+      yaw:p.body.yaw,
+      radius:Math.max(0.65,Math.hypot(p.body.hx,p.body.hz)),
+      broken:p.broken,
+    })),
+    move(id,at){
+      const p=props.props.find(item=>`prop:${item.body.id}`===id)
+      if(!p)return false
+      const gy=yardGround(at.x,at.z)
+      p.home.x=at.x;p.home.y=gy;p.home.z=at.z;p.home.yaw=at.yaw
+      props.physics.remove(p.body)
+      Object.assign(p.body,{x:at.x,y:gy+p.body.hy,z:at.z,yaw:at.yaw,roll:0,pitch:0,vx:0,vy:0,vz:0,wx:0,wy:0,wz:0,sleep:0,awake:false,enabled:true})
+      p.broken=false;p.touched=p.hitAt=p.fuse=-1
+      props.physics.add(p.body)
+      return true
+    },
+    remove(id){
+      const idx=props.props.findIndex(item=>`prop:${item.body.id}`===id)
+      if(idx<0)return false
+      const [removed]=props.props.splice(idx,1)
+      if(removed)props.physics.remove(removed.body)
+      return true
+    },
+    drawGhost(kind,at){
+      const found=PROP_KINDS.find(k=>k===kind)
+      if(!found)return
+      const model=props.models.get(found)
+      if(model!==undefined)meshes.instance(model,at.x,yardGround(at.x,at.z),at.z,at.yaw,0,0,1.02,[0.45,0.95,0.8])
+    },
+    snapshot:()=>props.props.filter(p=>p.body.enabled&&!p.broken).map(p=>({kind:p.home.kind,x:p.body.x,y:yardGround(p.body.x,p.body.z),z:p.body.z,yaw:p.body.yaw})),
+    restore(placements){
+      props.clear()
+      for(const p of placements){
+        const kind=PROP_KINDS.find(k=>k===p.kind)
+        if(kind)props.spawn({kind,x:p.x,y:yardGround(p.x,p.z),z:p.z,yaw:p.yaw})
+      }
+    },
     clear:()=>props.clear(),reset:()=>props.reset(),wakeAll:()=>{for(const p of props.props)props.physics.wake(p.body);for(const c of props.chunks)props.physics.wake(c.body)},
     update:dt=>props.update(cars,dt,{x:context.stage.focus[0],z:context.stage.focus[2]},true,()=>true),
     prepare(){

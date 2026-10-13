@@ -407,6 +407,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       min: 0,
       max: 55,
       step: 0.5,
+      visible: s => s.source === "emitter_vehicle" || s.replay === "chase" || s.replay === "slalom",
       change: () => lastStats = null,
     },
     {
@@ -417,6 +418,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       min: 0,
       max: 9000,
       step: 100,
+      visible: s => s.source === "emitter_vehicle" || s.replay === "chase" || s.replay === "slalom",
       change: () => lastStats = null,
     },
     {
@@ -427,6 +429,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       min: 0,
       max: 1,
       step: 0.05,
+      visible: s => s.source === "emitter_vehicle" || s.replay === "chase" || s.replay === "slalom",
       change: () => lastStats = null,
     },
     {
@@ -437,6 +440,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       min: 0,
       max: 1,
       step: 0.02,
+      visible: s => s.source === "emitter_vehicle" || s.replay === "chase" || s.replay === "slalom" || s.source === "tyre_slide_bark",
       change: () => lastStats = null,
     },
     {
@@ -447,6 +451,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       min: 0,
       max: 1,
       step: 0.05,
+      visible: s => s.source !== "emitter_vehicle" && s.source !== "emitter_spell",
       change: () => lastStats = null,
     },
     {
@@ -457,6 +462,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       min: 0,
       max: 1,
       step: 0.05,
+      visible: s => s.source === "emitter_spell" || s.source === "spell_arcane_cast" || s.replay === "spell_cycle",
       change: () => lastStats = null,
     },
     {
@@ -465,6 +471,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       group: "World",
       type: "select",
       options: SURFACE_OPTIONS,
+      visible: s => s.source === "emitter_vehicle" || s.source === "tyre_slide_bark" || s.replay === "chase" || s.replay === "slalom",
       change: () => lastStats = null,
     },
     {
@@ -473,12 +480,14 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       group: "World",
       type: "select",
       options: MATERIAL_OPTIONS,
+      visible: s => s.source !== "emitter_vehicle" && s.source !== "emitter_spell",
       change: () => lastStats = null,
     },
     {
       key: "boost",
       label: "Boost",
       group: "World",
+      visible: s => s.source === "emitter_vehicle" || s.replay === "chase" || s.replay === "slalom",
       change: () => lastStats = null,
     },
     {
@@ -489,6 +498,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       min: 0,
       max: 1,
       step: 0.05,
+      visible: s => s.source === "emitter_vehicle" || s.source === "emitter_spell" || s.replay !== "manual",
       change: () => lastStats = null,
     },
 
@@ -684,7 +694,8 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
     ctx2d.fillRect(0, 0, w, h)
 
     const pad = 20
-    const panelReserve = Math.min(310, Math.floor(w * 0.28))
+    const inWorkbench = canvas.dataset.workbench === "1"
+    const panelReserve = inWorkbench ? 0 : Math.min(310, Math.floor(w * 0.28))
     const usableW = Math.max(420, w - panelReserve)
     const leftW = Math.floor((usableW - pad * 3) * 0.56)
     const rightW = usableW - pad * 3 - leftW
@@ -901,14 +912,26 @@ export function createAudioLab(context?: AudioLabContextLike): AudioLabSection {
   if (new URLSearchParams(location.search).has("bench")) Object.assign(window, { audioLab: controller })
   const canvas = document.createElement("canvas")
   canvas.setAttribute("aria-label", "Audio waveform and spectrum")
-  canvas.style.cssText = "position:fixed;inset:0;z-index:1;pointer-events:none;width:100%;height:100%;background:#0b1014"
   const draw = () => {
-    canvas.width = innerWidth; canvas.height = innerHeight
+    const parent = canvas.parentElement
+    const inViewport = parent?.hasAttribute("data-lab-viewport") ?? false
+    canvas.dataset.workbench = inViewport ? "1" : "0"
+    canvas.style.cssText = inViewport
+      ? "position:absolute;inset:0;z-index:2;pointer-events:none;width:100%;height:100%;background:#0b1014"
+      : "position:fixed;inset:0;z-index:1;pointer-events:none;width:100%;height:100%;background:#0b1014"
+    canvas.width = Math.max(320, parent?.clientWidth || innerWidth)
+    canvas.height = Math.max(240, parent?.clientHeight || innerHeight)
     controller.drawVisualizer(canvas)
   }
   return {
     ...controller.section,
-    enter() { controller.section.enter?.(); document.body.append(canvas); draw() },
+    retrigger() { void controller.triggerCurrent() },
+    enter() {
+      controller.section.enter?.()
+      const container = document.querySelector<HTMLElement>("[data-lab-viewport]") ?? document.body
+      container.append(canvas)
+      draw()
+    },
     leave() { controller.section.leave?.(); canvas.remove() },
     update(dt) { controller.section.update?.(dt); draw() },
   }

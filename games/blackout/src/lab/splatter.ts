@@ -50,22 +50,42 @@ export const splatterSection:SectionFactory=context=>{
   }
   const advance=(delta:number)=>{time+=delta;dt+=delta;game?.labAdvance(delta)}
   const controls:LabControl[]=[
-    {key:"style",label:"Style",type:"select",options:[{value:0,label:"Current blood"},{value:1,label:"Surface splatter"}]},
-    {key:"preset",label:"Preset",type:"select",options:Object.keys(splatterPresets).map(value=>({value,label:value[0].toUpperCase()+value.slice(1)})),change:()=>{Object.assign(s,splatterPresets[s.preset as keyof typeof splatterPresets]);trigger();context.sync()}},
-    {key:"target",label:"Target",type:"select",options:[{value:"floor",label:"Floor"},{value:"wall",label:"Wall"},{value:"grazing",label:"Grazing wall"},{value:"desk",label:"Desk top"},{value:"glass",label:"Glass blocker"}],change:trigger},
-    {key:"environment",label:"Room",type:"select",options:[{value:"office",label:"Pale tile"},{value:"downtown",label:"Dark street"}],change:load},
-    {key:"roomSeed",label:"Room seed",type:"range",min:1,max:999,step:1,change:load},
-    {key:"seed",label:"Impact seed",type:"range",min:1,max:999,step:1,change:trigger},
-    {key:"zoom",label:"Zoom",type:"range",min:1,max:3,step:.1},
-    {key:"playing",label:"Play"},{key:"loop",label:"Loop"},{key:"slowMotion",label:"Speed",type:"range",min:.05,max:1,step:.05},
-    {key:"trigger",label:"Retrigger",type:"action",run:trigger},
-    {key:"step",label:"Step frame",type:"action",run:()=>{s.playing=false;advance(1/60);context.sync()}},
-    {key:"copy",label:"Copy JSON",type:"action",run:async()=>navigator.clipboard.writeText(JSON.stringify(s,null,2))},
+    {key:"style",label:"Style",group:"Emitter",type:"select",options:[{value:0,label:"Current blood"},{value:1,label:"Surface splatter"}],change:()=>context.sync()},
+    {key:"preset",label:"Preset",group:"Emitter",type:"select",options:Object.keys(splatterPresets).map(value=>({value,label:value[0].toUpperCase()+value.slice(1)})),change:()=>{Object.assign(s,splatterPresets[s.preset as keyof typeof splatterPresets]);trigger();context.sync()}},
+    {key:"target",label:"Target",group:"Emitter",type:"select",options:[{value:"floor",label:"Floor"},{value:"wall",label:"Wall"},{value:"grazing",label:"Grazing wall"},{value:"desk",label:"Desk top"},{value:"glass",label:"Glass blocker"}],change:trigger},
+    {key:"environment",label:"Room",group:"Emitter",type:"select",options:[{value:"office",label:"Pale tile"},{value:"downtown",label:"Dark street"}],change:load},
+    {key:"roomSeed",label:"Room seed",group:"Emitter",type:"range",min:1,max:999,step:1,unit:"",change:load},
+    {key:"seed",label:"Impact seed",group:"Emitter",type:"range",min:1,max:999,step:1,unit:"",change:trigger},
+    {key:"zoom",label:"Zoom",group:"Emitter",type:"range",min:1,max:3,step:.1,unit:"×"},
+    {key:"playing",label:"Play",group:"Emitter"},{key:"loop",label:"Loop",group:"Emitter"},{key:"slowMotion",label:"Speed",group:"Emitter",type:"range",min:.05,max:1,step:.05,unit:"×"},
+    {key:"trigger",label:"Retrigger",group:"Emitter",type:"action",run:trigger},
+    {key:"step",label:"Step frame",group:"Emitter",type:"action",run:()=>{s.playing=false;advance(1/60);context.sync()}},
+    {key:"copy",label:"Copy JSON",group:"Emitter",type:"action",run:async()=>navigator.clipboard.writeText(JSON.stringify(s,null,2))},
   ]
   const ranges:Record<keyof typeof splatterPresets.blood,readonly [number,number,number]>={amount:[1,128,1],impulse:[.1,15,.1],spread:[0,2,.05],sizeMin:[.01,.1,.005],sizeMax:[.03,.2,.005],drag:[0,5,.1],gravity:[0,20,.1],r:[0,1,.01],g:[0,1,.01],b:[0,1,.01],opacity:[.1,1,.05],decalSize:[1,8,.1],persistence:[1,60,1],pooling:[0,1,.05],budget:[16,256,16]}
   const labels:Record<string,string>={r:"Red",g:"Green",b:"Blue",sizeMin:"Small drops",sizeMax:"Large drops",decalSize:"Decal size"}
-  for(const [key,range] of Object.entries(ranges))controls.push({key,label:labels[key]??key[0].toUpperCase()+key.slice(1),group:"Splatter",type:"range",min:range[0],max:range[1],step:range[2],enabled:()=>s.style===1,change:trigger})
+  const primaryKeys=new Set(["amount","impulse","spread","decalSize","opacity","pooling"])
+  for(const [key,range] of Object.entries(ranges)){
+    const adv=!primaryKeys.has(key)
+    controls.push({key,label:labels[key]??key[0].toUpperCase()+key.slice(1),group:adv?"Advanced Splatter":"Splatter",folded:adv,type:"range",min:range[0],max:range[1],step:range[2],enabled:()=>s.style===1,change:trigger})
+  }
+  const targets:Record<string,{label:string;x:number;y:number;z:number}>={
+    floor:{label:"Floor Target",x:13.5,y:0.2,z:11.5},
+    wall:{label:"Wall Target",x:12,y:1.05,z:6.7},
+    grazing:{label:"Grazing Wall",x:11.3,y:1.05,z:6.1},
+    desk:{label:"Desk Top",x:12,y:0.9,z:9},
+    glass:{label:"Glass Blocker",x:8.5,y:1.05,z:9.7},
+  }
   return{id:"splatter",label:"Splatter",settings:s,controls,
+    retrigger:trigger,
+    reroll:()=>{s.roomSeed=(s.roomSeed*1664525+1013904223>>>0)%999+1;load();context.sync()},
+    frameTarget:()=>({x:impact.x,y:0.4,z:impact.z,dist:13}),
+    objects:()=>Object.entries(targets).map(([k,t])=>({id:`target:${k}`,label:t.label,category:"specimen" as const,x:t.x,y:t.y,z:t.z,radius:0.9})),
+    selectObject:(id)=>{
+      if(!id?.startsWith("target:"))return
+      const k=id.slice("target:".length)
+      if(k in targets){s.target=k;trigger();context.sync()}
+    },
     enter(){previousLighting={...stage.lighting};stage.cameraOverride=(w,h,vp,inverse,eye,focus)=>{eye.set([focus[0]+3/s.zoom,focus[1]+25/s.zoom,focus[2]+12/s.zoom]);mat4.multiply(mat4.perspective(.65,w/h,.1,150),mat4.lookAt(eye,focus,[0,1,0]),vp);mat4.inverse(vp,inverse)};load()},
     leave(){stage.cameraOverride=undefined;Object.assign(stage.lighting,previousLighting)},
     update(delta){if(s.playing){advance(delta*s.slowMotion);if(s.loop&&time>4)trigger()}},

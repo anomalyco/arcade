@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { LabNavigation, type LabControl } from "./lab-navigation"
+import { LabNavigation, formatLabValue, inferControlUnit, type LabControl } from "./lab-navigation"
 
 const controls: LabControl[] = [
   { key: "style", label: "Style", group: "Lights", options: [{ value: "soft", label: "Soft" }, { value: "hard", label: "Hard" }] },
@@ -82,4 +82,27 @@ test("randomize stays scoped and step-aligned, including disabled controls", () 
     expect(settings.pool / 0.1).toBeCloseTo(Math.round(settings.pool / 0.1))
     expect(settings.spring).toBe(true)
   }
+})
+
+test("append merges existing groups without duplicate headers and respects visible predicates", () => {
+  const settings = { effect: "glass", shardSize: 1, paperCount: 4 }
+  const nav = new LabNavigation(settings, [
+    { key: "effect", label: "Effect", group: "Emitter", options: [{ value: "glass", label: "Glass" }, { value: "paper", label: "Paper" }] },
+  ])
+  nav.append([
+    { key: "shardSize", label: "Shard size", group: "Glass", min: 0.1, max: 2, step: 0.1, visible: s => s.effect === "glass" },
+    { key: "paperCount", label: "Paper count", group: "Paper", min: 1, max: 10, step: 1, visible: s => s.effect === "paper", folded: true },
+  ])
+  nav.append([
+    { key: "extra", label: "Extra", group: "Emitter" },
+  ])
+  const headers = nav.rows.filter(r => !r.control).map(r => r.group)
+  expect(headers).toEqual(["Emitter", "Glass", "Paper"])
+  expect(nav.folded.has("Paper")).toBe(true)
+  expect(nav.visibleRows.map(r => r.control?.key ?? r.group)).toEqual(["Emitter", "effect", "extra", "Glass", "shardSize"])
+  expect(nav.search("paper")).toEqual([])
+  settings.effect = "paper"
+  expect(nav.visibleRows.map(r => r.control?.key ?? r.group)).toEqual(["Emitter", "effect", "extra", "Paper"])
+  expect(nav.search("paper")[0]?.control?.key).toBe("paperCount")
+  expect(formatLabValue(1.2000000000000002, 0.1, inferControlUnit("shardSize", "Shard size"))).toBe("1.2 m")
 })

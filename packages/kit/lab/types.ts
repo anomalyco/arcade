@@ -5,6 +5,19 @@ import type { SmokeVolumes } from "../fx/volume"
 import type { Stage } from "./stage"
 import type { LabInput } from "./input"
 
+export type LabWorldObject = {
+  id: string
+  label: string
+  category: "emitter" | "specimen" | "character" | "prop" | "light"
+  x: number
+  y: number
+  z: number
+  yaw?: number
+  radius?: number
+  movable?: boolean
+  deletable?: boolean
+}
+
 /** All hooks execute on the client. Section-owned simulations never change multiplayer state. */
 export type LabSection = {
   id:string
@@ -19,6 +32,17 @@ export type LabSection = {
   /** Optional instanced meshes/debug geometry inside the Lab's 4x MSAA RGBA16F/depth24plus pass. */
   draw?(pass:GPURenderPassEncoder):void
   telemetry?():string
+  /** Workbench hooks for transport, framing, environment reroll and world object manipulation. */
+  retrigger?():void
+  reroll?():void
+  frameTarget?():{x:number;y:number;z:number;dist?:number}
+  objects?():readonly LabWorldObject[]
+  selectedObjectId?:string
+  selectObject?(id:string|null):void
+  moveObject?(id:string,x:number,z:number,yaw?:number):boolean
+  deleteObject?(id:string):boolean
+  duplicateObject?(id:string):string|null
+  groundHeight?(x:number,z:number):number
 }
 export type LabContext = {
   device:GPUDevice

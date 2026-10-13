@@ -30,9 +30,9 @@ export function createPhysics(context:LabContext,initial?:PhysicsAdapter) {
     for(const i of edges){const at=count++*6;vertices[at]=corners[i*3];vertices[at+1]=corners[i*3+1];vertices[at+2]=corners[i*3+2];vertices[at+3]=body.awake?1:0.2;vertices[at+4]=body.awake?0.45:0.75;vertices[at+5]=body.awake?0.12:1}
   }
   const section:LabSection={id:"physics",label:"Physics",settings,controls:[
-    {key:"playing",label:"Play"},{key:"colliders",label:"Colliders"},{key:"sleeping",label:"Sleeping bodies"},
-    {key:"reset",label:"Reset",type:"action",run:()=>adapter?.reset()},
-    {key:"wake",label:"Wake all",type:"action",run:()=>adapter?.wakeAll?.()},
+    {key:"playing",label:"Play",group:"Solver"},{key:"colliders",label:"Colliders",group:"Solver"},{key:"sleeping",label:"Sleeping bodies",group:"Solver"},
+    {key:"reset",label:"Reset",group:"Solver",type:"action",run:()=>adapter?.reset()},
+    {key:"wake",label:"Wake all",group:"Solver",type:"action",run:()=>adapter?.wakeAll?.()},
   ],update:dt=>{if(settings.playing)adapter?.update(dt)},prepare:()=>{
     adapter?.prepare?.()
     count=0;total=0;awake=0
