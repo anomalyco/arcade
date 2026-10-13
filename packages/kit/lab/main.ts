@@ -152,8 +152,21 @@ export async function lab(options:LabOptions) {
   const particles=new Particles(),volume=new SmokeVolumes(),trail=new SmokeTrail()
   const input=new LabInput(canvas)
   let panel:LabPanel|undefined,active:LabSection,workbench:ReturnType<typeof createWorkbench>|undefined
-  const context:LabContext={device,stage,particles,volume,trail,input,sync:()=>{panel?.sync();workbench?.syncChrome()}}
-  const spawn=options.spawn?createSpawn(context,options.spawn(context)):undefined
+  let spawn:ReturnType<typeof createSpawn>|undefined
+  const isPlaygroundSection=(id:string)=>id==="spawn"||id==="effects"||id==="lighting"||id==="physics"
+  const context:LabContext={
+    device,
+    stage,
+    particles,
+    volume,
+    trail,
+    input,
+    sync:()=>{panel?.sync();workbench?.syncChrome()},
+    activeWalls:()=>spawn?.activeWalls()??[],
+    activeGround:(x,z)=>spawn?spawn.activeGround(x,z):0,
+    hasPlaygroundScene:()=>Boolean(spawn?.hasActiveScene()),
+  }
+  spawn=options.spawn?createSpawn(context,options.spawn(context)):undefined
   const effects=createEffects(context),physics=createPhysics(context,spawn?.physics??options.physics?.(context))
   const sections=[effects.section,createLighting(context),createMaterials(context,options.materials??[]),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
   const ids=new Set<string>()
@@ -174,17 +187,23 @@ export async function lab(options:LabOptions) {
   function select(id:string) {
     const next=sections.find(s=>s.id===id)
     if(!next)throw new Error(`Unknown Lab section: ${id}`)
+    const keepPlayground=Boolean(spawn?.hasActiveScene()&&active&&isPlaygroundSection(active.id)&&isPlaygroundSection(id))
     active?.leave?.()
-    input.enabled=false;input.release();stage.dynamicLights=null
-    stage.resetCamera()
-    if(id!=="spawn"&&id!=="physics")stage.focus.fill(0)
-    particles.reset();volume.reset();trail.reset()
+    input.enabled=false;input.release()
+    if(!keepPlayground){
+      stage.dynamicLights=null
+      stage.resetCamera()
+      if(id!=="spawn"&&id!=="physics")stage.focus.fill(0)
+      particles.reset();volume.reset();trail.reset()
+    }
     active=next;settings.section=id
     sectionSelect.value=id
     syncDebugOptions(id)
-    stage.sceneMode=id==="spawn"||id==="physics"&&spawn?3:id==="lighting"?1:id==="materials"?2:0
+    const inPlayground=Boolean(spawn?.hasActiveScene()&&isPlaygroundSection(id))
+    stage.sceneMode=inPlayground||(id==="spawn"||id==="physics"&&spawn)?(spawn?.section.settings.environment==="yard"?3:4):id==="lighting"?1:id==="materials"?2:0
     panel?.clearControls();panel?.addControls(active.settings,active.controls)
-    active.enter?.()
+    if(!keepPlayground||id==="effects")active.enter?.()
+    else if(id==="spawn")spawn?.section.enter?.()
     workbench?.onSectionChanged()
   }
   panel=new LabPanel(settings,[],new URLSearchParams(),()=>input.release(),{
@@ -224,13 +243,25 @@ export async function lab(options:LabOptions) {
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height}
     stage.resize(width,height)
     stage.updateCamera();stage.meshes.reset();stage.transients.reset()
+    const sharePlayground=Boolean(spawn?.hasActiveScene()&&(active.id==="effects"||active.id==="lighting"))
+    if(sharePlayground){
+      stage.sceneMode=spawn!.section.settings.environment==="yard"?3:4
+      spawn!.section.prepare?.()
+      if(active.id==="lighting")stage.dynamicLights=null
+    }
     active.prepare?.()
-    const ms=await stage.render(particles,volume,trail,settings.debug,measure,active.draw)
+    const drawPass=sharePlayground
+      ?(pass:GPURenderPassEncoder)=>{spawn!.section.draw?.(pass);active.draw?.(pass)}
+      :active.draw
+    const ms=await stage.render(particles,volume,trail,settings.debug,measure,drawPass)
     panel!.header.textContent=`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGPU ${stage.gpuMs?.toFixed(2)??"—"} ms${stage.gpuMs===null?" (unavailable)":""}`
     return ms
   }
   const advance=(dt:number)=>{
     const step=Math.max(0,Math.min(dt,1/15))*(workbench?.speed??1)
+    if(spawn?.hasActiveScene()&&(active.id==="effects"||active.id==="lighting")){
+      spawn.section.update?.(step)
+    }
     active.update?.(step)
     workbench?.onTick(dt)
   }
@@ -245,15 +276,33 @@ export async function lab(options:LabOptions) {
     globalSettings:settings,
     selectSection:select,
     renderNow:()=>render(false),
-    advanceSim:dt=>active.update?.(Math.max(0,Math.min(dt,1/15))),
+    advanceSim:dt=>{
+      const s=Math.max(0,Math.min(dt,1/15))
+      if(spawn?.hasActiveScene()&&(active.id==="effects"||active.id==="lighting"))spawn.section.update?.(s)
+      active.update?.(s)
+    },
     spawn,
   })
 
   select("effects")
   const bench=new URLSearchParams(location.search).has("bench")
   if(!bench){
-    // Frame the initial smoke room at a readable scale for interactive workbench sessions.
-    stage.frameTarget(-1,0.5,0,15)
+    if(spawn){
+      select("spawn")
+      spawn.section.settings.character="getaway:muscle"
+      spawn.spawnCharacterAt("getaway:muscle",{x:0,y:0,z:8,yaw:Math.PI})
+      spawn.section.settings.item="cone"
+      spawn.section.settings.count=5
+      spawn.section.settings.spacing=2
+      spawn.spawnItems("row",{x:0,y:0,z:2,yaw:Math.PI})
+      spawn.section.settings.item="propane"
+      spawn.spawnItems("one",{x:0,y:0,z:-10,yaw:Math.PI})
+      spawn.section.settings.item="hydrant"
+      spawn.spawnItems("one",{x:-13,y:0,z:-7,yaw:0})
+      stage.frameTarget(0,0.4,2,20)
+    }else{
+      stage.frameTarget(-1,0.5,0,15)
+    }
   }
   const api={
     adapter:adapter.info,

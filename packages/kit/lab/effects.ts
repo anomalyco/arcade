@@ -34,7 +34,11 @@ export function createEffects(context:LabContext) {
     particles.spawn(current,x,y,z,vx,vy,vz,random()*6.28)
   }
   const reset=(name=effect)=>{
-    effect=name;time=0;seed=Math.max(1,Math.round(params.seed));particles.reset();trail.reset();trail.seedWind(seed);emitter.reset();volume.reset(walls)
+    effect=name;time=0;seed=Math.max(1,Math.round(params.seed))
+    const activeWalls=context.activeWalls?.()??walls
+    particles.reset()
+    if(!context.hasPlaygroundScene?.()||effect==="tyre"){trail.reset();trail.seedWind(seed)}
+    emitter.reset();volume.reset(activeWalls)
     Object.assign(source,{smokeDistance:0,smokeX:0,smokeZ:0,smokeActive:false,idle:0})
     const tx=params.targetX,tz=params.targetZ
     if(effect==="smoke"||effect==="explosion")volume.spawn(tx,tz,5.5*params.size,effect==="smoke"?9:5,params.density,effect==="explosion"?0.45:0)
@@ -52,9 +56,11 @@ export function createEffects(context:LabContext) {
   const advance=(dt:number)=>{
     time+=dt
     const tx=params.targetX,tz=params.targetZ
+    const activeWalls=context.activeWalls?.()??walls
+    const groundFn=context.activeGround
     if(effect==="tyre"&&time<3.5){trail.follow(source,tx+Math.sin(time*1.8)*2,tz+Math.cos(time*1.8)*1.5,0,0,dt,params.density)}
     if(effect==="water"||effect==="fire"||effect==="nitro")emitter.step(tx,0.3,tz,dt,params.rate,"rate",emit)
-    particles.update(dt,walls);volume.update(dt);trail.update(dt)
+    particles.update(dt,activeWalls,groundFn);volume.update(dt);trail.update(dt)
     if(params.loop&&time>(effect==="smoke"?10:effect==="tyre"?8:5))reset()
   }
   const controls:LabControl[]=[

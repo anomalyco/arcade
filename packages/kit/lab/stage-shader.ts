@@ -13,13 +13,16 @@ const fixtures=array<Box,9>(
   Box(vec3f(5.6,0,-4),vec3f(6,2.2,-1)),Box(vec3f(5.6,0,1),vec3f(6,2.2,5)),Box(vec3f(-6,0,4.6),vec3f(6,0.65,5)),
   Box(vec3f(-3.5,0.2,-0.8),vec3f(-0.5,0.85,0.8)),Box(vec3f(-2.7,0.85,-0.65),vec3f(-1.1,1.4,0.65)),
   Box(vec3f(2.5,0,0.7),vec3f(3,1.3,1.2)),Box(vec3f(2.55,1.3,0.75),vec3f(2.95,1.7,1.15)));
+const yardBoxes=array<Box,9>(
+  Box(vec3f(-36,0,-42),vec3f(36,2.2,-41)),Box(vec3f(-36,0,-42),vec3f(-35,2.2,34)),
+  Box(vec3f(35,0,-42),vec3f(36,2.2,34)),Box(vec3f(-36,0,33),vec3f(36,2.2,34)),
+  Box(vec3f(-22,0,-14),vec3f(-10,2.4,-13.4)),Box(vec3f(-22,0,-14),vec3f(-21.4,2.4,-4)),
+  Box(vec3f(-22,0,-4.6),vec3f(-16.5,2.4,-4)),Box(vec3f(-6.5,0,-24),vec3f(-5.7,1.6,-20)),
+  Box(vec3f(-6.5,0,2),vec3f(-5.7,1.6,6)));
 fn boxAt(i:u32)->Box {
   if(F.options.w>=4.0){return Box(vec3f(1000),vec3f(1000.01));}
   if(F.options.w<3.0){return fixtures[i];}
-  if(i==0u){return Box(vec3f(-18,0,-28),vec3f(18,2,-27));}
-  if(i==1u){return Box(vec3f(-18,0,-28),vec3f(-17,2,12));}
-  if(i==2u){return Box(vec3f(17,0,-28),vec3f(18,2,12));}
-  return Box(vec3f(1000),vec3f(1000.01));
+  return yardBoxes[i];
 }
 fn intersect(origin:vec3f,ray:vec3f,b:Box)->f32 {
   let safe=select(vec3f(0.000001),ray,abs(ray)>vec3f(0.000001));
@@ -105,10 +108,12 @@ struct Pixel {@location(0) color:vec4f,@builtin(frag_depth) depth:f32}
   let lines=1.0-smoothstep(vec2f(0.015),vec2f(0.015)+aa,cell);
   let grid=select(1.0,1.0-0.28*max(lines.x,lines.y),index<0);
   var rgb=albedo*light*grid+specular;
-  // Visible fixture cores locate the adjustable lights in world space.
-  for(var l=0;l<min(8,i32(F.options.x));l++){
-    let pos=F.lights[l*3];let color=F.lights[l*3+1];let lamp=sphere(F.eye.xyz,ray,pos.xyz,0.12);
-    if(lamp<hit){rgb=color.rgb*color.w;hit=lamp;normal=normalize(F.eye.xyz+ray*hit-pos.xyz);}
+  // Visible fixture cores locate the adjustable lights in the Lighting calibration stage only.
+  if(F.options.w<2.0){
+    for(var l=0;l<min(8,i32(F.options.x));l++){
+      let pos=F.lights[l*3];let color=F.lights[l*3+1];let lamp=sphere(F.eye.xyz,ray,pos.xyz,0.12);
+      if(lamp<hit){rgb=color.rgb*color.w;hit=lamp;normal=normalize(F.eye.xyz+ray*hit-pos.xyz);}
+    }
   }
   if(F.options.z==3.0){rgb=light;}
   if(F.options.z==5.0){rgb=normal*0.5+0.5;}

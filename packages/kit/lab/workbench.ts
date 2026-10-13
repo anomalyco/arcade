@@ -550,9 +550,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
 
     // 7. Objects Category: In-Scene Objects + Spawn Catalog + Calibration
-    const currentObjects = activeSection().objects?.() ?? []
+    const currentObjects = [...(activeSection().objects?.() ?? [])]
+    if (spawn && globalSettings.section !== "spawn" && ["effects", "lighting", "physics"].includes(globalSettings.section)) {
+      for (const spObj of spawn.section.objects?.() ?? []) {
+        if (!currentObjects.some(o => o.id === spObj.id)) currentObjects.push(spObj)
+      }
+    }
     for (const obj of currentObjects) {
       const id = `scene-obj:${obj.id}`
+      const isSpawnObj = Boolean(spawn?.section.objects?.()?.some(o => o.id === obj.id))
       entries.push({
         id,
         label: obj.label,
@@ -560,9 +566,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
         category: "objects",
         collection: "shared",
         tag: obj.category,
-        sectionId: globalSettings.section,
-        isActive: () => activeSection().selectedObjectId === obj.id,
+        sectionId: isSpawnObj ? "spawn" : globalSettings.section,
+        isActive: () => (isSpawnObj ? spawn?.section.selectedObjectId === obj.id && globalSettings.section === "spawn" : activeSection().selectedObjectId === obj.id),
         run: () => {
+          if (isSpawnObj && globalSettings.section !== "spawn") {
+            selectSection("spawn")
+          }
           const sec = activeSection()
           sec.selectObject?.(obj.id)
           if (sec.id === "blackout-effects" && obj.id.startsWith("specimen:")) {
@@ -821,8 +830,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
     })
   }
 
-  function syncEnvironmentSelector() {
+  function resolveEnvOwner(): LabSection {
     const sec = activeSection()
+    if (sec.controls.some(c => (c.key === "environment" || c.key === "room") && "options" in c)) return sec
+    if (spawn && ["effects", "lighting", "physics"].includes(sec.id)) return spawn.section
+    return sec
+  }
+
+  function syncEnvironmentSelector() {
+    const sec = resolveEnvOwner()
     const envControl = sec.controls.find(c => (c.key === "environment" || c.key === "room") && "options" in c)
     envSelect.replaceChildren()
     if (envControl && "options" in envControl) {
@@ -837,7 +853,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
     const seedVal = sec.settings.seed ?? sec.settings.roomSeed ?? 7
     seedBadge.textContent = `Seed ${seedVal}`
-    rerollBtn.disabled = !sec.reroll
+    rerollBtn.disabled = !activeSection().reroll && !sec.reroll
     const hasLocks = "lockEffect" in sec.settings && "lockEnvironment" in sec.settings
     lockEffectBtn.hidden = !hasLocks
     lockEnvBtn.hidden = !hasLocks
@@ -1086,6 +1102,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const sp = obj.spawn as { characterId?: string | null; props?: { kind: string; x: number; y: number; z: number; yaw: number }[] }
       const curSnap = spawn.snapshot()
       spawn.restore({
+        environment: curSnap.environment,
+        seed: curSnap.seed,
         characterId: sp.characterId ?? curSnap.characterId,
         characterAt: curSnap.characterAt ?? { x: 0, y: 0, z: 8, yaw: Math.PI },
         props: sp.props ?? curSnap.props,
@@ -1134,11 +1152,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   envSelect.onchange = () => {
-    const sec = activeSection()
-    const envControl = sec.controls.find(c => (c.key === "environment" || c.key === "room") && "options" in c)
+    const owner = resolveEnvOwner()
+    const envControl = owner.controls.find(c => (c.key === "environment" || c.key === "room") && "options" in c)
     if (envControl) {
       const before = captureSnapshot()
-      panel.navigation.set(envControl, envSelect.value)
+      owner.settings[envControl.key] = envSelect.value
+      envControl.change?.(envSelect.value)
       recordHistory(`Environment ${envSelect.value}`, before)
       panel.sync()
       syncChrome()
@@ -1345,9 +1364,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   function pickObjectAt(u: number, v: number): LabWorldObject | null {
     const sec = activeSection()
-    const objects = sec.objects?.() ?? []
+    const objects = [...(sec.objects?.() ?? [])]
+    if (spawn && sec.id !== "spawn" && ["effects", "lighting", "physics"].includes(sec.id)) {
+      for (const spObj of spawn.section.objects?.() ?? []) {
+        if (!objects.some(o => o.id === spObj.id)) objects.push(spObj)
+      }
+    }
     if (!objects.length) return null
-    const hit = stage.pickGround(u, v, sec.groundHeight ?? (() => 0))
+    const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
+    const hit = stage.pickGround(u, v, groundFn)
     if (!hit) return null
     let best: LabWorldObject | null = null
     let bestDist = Infinity
@@ -1483,9 +1508,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
     const picked = pickObjectAt(u, v)
     if (picked) {
-      sec.selectObject?.(picked.id)
-      if (sec.id === "blackout-effects" && picked.id.startsWith("specimen:")) {
-        sec.retrigger?.()
+      const isSpawnObj = Boolean(spawn?.section.objects?.()?.some(o => o.id === picked.id))
+      if (isSpawnObj && globalSettings.section !== "spawn") {
+        selectSection("spawn")
+      }
+      const targetSec = activeSection()
+      targetSec.selectObject?.(picked.id)
+      if (targetSec.id === "blackout-effects" && picked.id.startsWith("specimen:")) {
+        targetSec.retrigger?.()
       }
       panel.sync()
       syncChrome()
