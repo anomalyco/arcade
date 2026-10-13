@@ -212,3 +212,25 @@ the workbench appeared, canvas dimensions matched, and Audio selection stayed si
 
 Cited combined screenshots and reports are in `2026-10-13-arcade-integration/workbench/`, relative to the local
 artifact root. Source-branch screenshots remain separate. The unfinished shared-human-rig work is still excluded.
+
+### Upstream Carrier reconciliation
+
+Upstream `main` at `6da4c3e993d4584b3c75b1bee9e3d25a7d5dffb5` was merged into this branch as `846a9f6`.
+The three content conflicts were resolved semantically:
+
+- `AGENTS.md` retains the unlisted-prototype policy and upstream guidance, and lists all four workspace games.
+- `package.json` includes both Outbreak and upstream Carrier. The root lockfile merged their workspace records
+  without changing toolchain versions and passed frozen installation. Wings, landing and redirects remain independent.
+- `scripts/smoke.mjs` supports all four production prefixes and each game's readiness UI. It retains Vulkan-backed
+  SwiftShader presentation, Linux's `--disable-vulkan-surface`, strict browser-error checks and muted output.
+
+Carrier's complete game tree and workflow match that upstream snapshot; no Carrier code was rewritten. Audio Lab's
+per-host asset routing is retained. This is an upstream merge into the PR branch, not a merge or push to `main`.
+
+A clean archive of `846a9f6` passed package checks (42 tests), Getaway (200 tests, 12 existing skips), Blackout (356),
+Outbreak (15) and Carrier (359), including typechecks, production builds, all four production smokes and all four
+Worker dry-runs. The production Audio Lab decode/lifecycle proof passed again. Verification ran through Hivemind
+on the Studio. The archive and runner hashes were checked after a transport timeout before executing the clean export.
+Evidence is under `2026-10-13-arcade-integration/upstream-reconciliation/`, relative to the local artifact root.
+
+The next `smoke-volume-refinement` and `lab-workbench` follow-up commits remain pending independently.

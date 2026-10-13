@@ -21,22 +21,22 @@ part of both games' checks.
 ## Install, check and ship
 
 Run `bun install --frozen-lockfile` at the repository root. The workspace explicitly includes `games/getaway`,
-`games/blackout`, `games/outbreak` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
+`games/blackout`, `games/outbreak`, `games/carrier` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
 Wings, landing and redirects retain their independent installs, lockfiles and workflows.
 
 Run each game's `bun run check`, dev, build and deploy commands from its own directory as before. Keep Vite,
 Wrangler, TypeScript and Playwright versions aligned in the game manifests. Root scripts declare their own tooling
 dependencies in the root manifest and use normal package imports rather than reaching into a game's `node_modules`.
 
-Both game workflows install at the root, then check and smoke-load the game's production bundle. Their paths include
-`packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml`, so shared changes check and deploy both
-consumers. Blackout also watches `games/getaway/shared/**` for its cross-game benchmark typecheck. A separate
+All four workspace game workflows install at the root, then check and smoke-load the game's production bundle. Their paths include
+`packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml`, so shared changes check all consumers.
+Blackout also watches `games/getaway/shared/**` for its cross-game benchmark typecheck. A separate
 `packages.yml` workflow runs the shared package's typecheck and tests. Deploy jobs stay per game.
 
 For Cloudflare Builds, use the repository root for installation (`bun install --frozen-lockfile`) and then target the
 game (`bun run --cwd games/blackout build` / `bun run --cwd games/blackout deploy`). A game-only source upload omits
 the workspace package. Verify packaging from a clean `git archive` export with the root frozen install, package
-checks, both game checks, and `bunx --no-install wrangler deploy --dry-run` from each game.
+checks, all affected game checks, and `bunx --no-install wrangler deploy --dry-run` from each game.
 
 ## Lab panel
 
