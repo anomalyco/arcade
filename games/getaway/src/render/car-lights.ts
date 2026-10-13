@@ -15,13 +15,13 @@ export const LIGHT_DEFAULTS = {
   beamWidth: 0.28,
   beamSpread: 2.4,
   beamIntensity: 0.13,
-  poolSize: 3.2,
-  poolIntensity: 0.1,
+  poolSize: 3.4,
+  poolIntensity: 0.04,
   poolAhead: 5,
   glowSize: 0.32,
   glowIntensity: 0.85,
   flareStrength: 0.09,
-  tailGlow: 0.75,
+  tailGlow: 2,
   brakeIntensity: 1.9,
 }
 export type LightSettings = typeof LIGHT_DEFAULTS & { style: LightStyle }
