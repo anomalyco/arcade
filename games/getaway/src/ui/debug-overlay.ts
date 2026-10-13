@@ -1,10 +1,17 @@
 import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
+import { chassisSettings } from "../game/chassis"
 
 export const lookSettings = (enabled = true) => ({ tightPools: enabled, flatGround: enabled, shopSpill: enabled, grounding: enabled, wallGradients: enabled, colourGrade: enabled })
-export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
+export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), ...chassisSettings(enabled), sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = juiceSettings()
 const controls: LabControl[] = [
+  ...([
+    ["suspension", "Suspension springs"],
+    ["wheelContact", "Per-wheel contact"],
+    ["visibleWheels", "Steer & spin wheels"],
+    ["vehicleFeel", "Vehicle-specific feel"],
+  ] as const).map(([key, label]) => ({ key, label, group: "Chassis" })),
   ...([
     ["tightPools", "Tighter lamp pools"],
     ["flatGround", "Flatter ground"],

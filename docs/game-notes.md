@@ -202,6 +202,16 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Filter acceleration before springing the body.** Getaway's `src/game/chassis.ts` filters interpolated velocity
+  over 85 ms and acceleration over 65 ms, then uses exact underdamped springs (12–16 rad/s, damping ratio 0.52).
+  Tests cover 10 Hz repeated snapshots, large-dt stability, settling and one-shot impact/landing impulses. Real wheel
+  hubs sample rounded sidewalks and shared ramps; subtract centre-ramp height before adding the four-contact lift.
+  Compose wheel spin before steer and bank to keep a leaning bike's axle fixed. The Chassis switches preserve the
+  original mesh/transform path when all four are off. Metal captures matched 432 simulation poses across six off/on
+  fixtures, including a 3.155 m jump and landing. For 28 cars, chassis updates cost 0.085 ms/frame median (+0.063 ms
+  paired); split wheels add 104 instances and 47 submitted draws. Wheel-only GPU timing was too noisy to isolate
+  overhead (paired deltas −1.525…+1.329 ms). See `perf/getaway-chassis.md`; live driving feel awaits Kit's review.
+
 - **Hit-stop is presentation only.** Freeze or slow what is drawn, never the simulation clock, so prediction and the
   server stay in step.
 - **Scale shake with trauma squared** so small hits stay subtle and big ones land hard.

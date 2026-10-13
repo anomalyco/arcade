@@ -14,6 +14,8 @@ type P2 = [number, number]
 const TIRE: Rgb = [0.045, 0.045, 0.05]
 const RIM: Rgb = [0.34, 0.35, 0.38]
 const HUB: Rgb = [0.16, 0.16, 0.18]
+/** Construction metadata: preserves the complete original mesh for the comparison switch. */
+export const wheelParts = new WeakMap<Mesh, { start: number; end: number; x: number; y: number; z: number; side: number }[]>()
 const GLASS: Rgb = [0.05, 0.06, 0.085]
 const HEAD: Rgb = [1.0, 0.93, 0.78]
 const TAIL: Rgb = [1.0, 0.07, 0.05]
@@ -144,6 +146,7 @@ function block(m: Mesh, x0: number, x1: number, y0: number, y1: number, z0: numb
 
 /** Octagonal wheel on the axis x, outer face toward `side`. */
 function wheel(m: Mesh, side: number, xOuter: number, z: number, r: number, w: number, rim: Rgb = RIM) {
+  const start = m.v.length
   const oct = (rr: number, x: number): V3[] =>
     Array.from({ length: 8 }, (_, i) => {
       const a = ((i + 0.5) / 8) * Math.PI * 2
@@ -156,6 +159,9 @@ function wheel(m: Mesh, side: number, xOuter: number, z: number, r: number, w: n
   prism(m, oct(r * 0.93, xo), oct(r * 0.78, xo + side * 0.025), TIRE, MAT.lit)
   prism(m, oct(r * 0.62, xo + side * 0.02), oct(r * 0.56, xo + side * 0.035), rim, PAINT)
   prism(m, oct(r * 0.2, xo + side * 0.035), oct(r * 0.16, xo + side * 0.05), HUB, MAT.lit)
+  const parts = wheelParts.get(m) ?? []
+  parts.push({ start, end: m.v.length, x: side * (xOuter - w / 2), y: r, z, side })
+  wheelParts.set(m, parts)
 }
 
 // ---------------------------------------------------------------------------------------------------------------

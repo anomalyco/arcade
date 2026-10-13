@@ -15,6 +15,8 @@ import { juice } from "../ui/debug-overlay"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
+import { Chassis, wheelRotation, type AxlePoint } from "./chassis"
+import { splitChassis } from "../render/chassis-mesh"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -29,6 +31,7 @@ function normalizeV(v: number[]): [number, number, number] {
 }
 
 type Vis = {
+  chassis: Chassis
   roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number; sparkAcc: number
   scrapeAcc: number; wheels: { x: number; z: number }[]; height: number; springV: number; ground: number
   boosting: boolean; throttle: number; backfire: number; crash: number; impactCool: number; braking: boolean
@@ -50,6 +53,7 @@ export class Scene {
   private spills: ShopSpill[]
   private models = new Map<string, number>()
   private variants = new Map<string, number[]>()
+  private chassisModels = new Map<string, { bodies: number[]; wheels: (AxlePoint & { model: number })[] }>()
   private heliModel: number
   private rotorModel: number
   private puffModel: number
@@ -93,7 +97,16 @@ export class Scene {
     this.lamps = built.lamps
     this.spills = built.spills
     for (const v of VEHICLES) {
-      const ids = buildCarVariants(v).map((m) => renderer.addModel(m))
+      const meshes = buildCarVariants(v)
+      const ids = meshes.map((m) => renderer.addModel(m))
+      const parts = meshes.map(splitChassis)
+      const wheelModels = new Map<number, number>()
+      const wheels = parts[0]!.wheels.map(p => {
+        let model = wheelModels.get(p.side)
+        if (model === undefined) { model = renderer.addModel(p.mesh); wheelModels.set(p.side, model) }
+        return { x: p.x, y: p.y, z: p.z, model }
+      })
+      this.chassisModels.set(v.id, { bodies: parts.map(p => renderer.addModel(p.body)), wheels })
       this.variants.set(v.id, ids)
       this.models.set(v.id, ids[0]!)
     }
@@ -105,8 +118,9 @@ export class Scene {
 
   private visOf(c: CarView) {
     let v = this.vis.get(c.id)
+    if (v && v.chassis.axles !== this.chassisModels.get(c.vehicle)!.wheels) v.chassis = new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels)
     if (!v) {
-      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 0, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
+      v = { chassis: new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels), roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 0, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
       this.vis.set(c.id, v)
     }
     return v
@@ -135,8 +149,8 @@ export class Scene {
     } else if (key === "backfire") {
       v.backfire = 0.07
       this.fx.backfire(car.x - fx * (spec.length / 2 + 0.3), 0.5 + v.height, car.z - fz * (spec.length / 2 + 0.3), -fx * 7, -fz * 7)
-    } else if (key === "curb") v.springV = 2.5
-    else if (key === "landing") { v.landV = -2.5; this.punch = 0.8 }
+    } else if (key === "curb") { v.springV = 2.5; if (juice.wheelContact) v.chassis.lift.v = 2.5 }
+    else if (key === "landing") { v.landV = -2.5; if (juice.suspension) v.chassis.lift.v = -2.5; this.punch = 0.8 }
     else if (key === "trauma") { this.shake = 1; this.hitStop = 0.045 }
     else if (key === "skids") for (const a of [-1, 1]) for (const s of [-1, 1]) {
       const x = car.x + fx * spec.length * 0.32 * a + rx * spec.width * 0.4 * s
@@ -161,6 +175,7 @@ export class Scene {
       v.crash = Math.max(0, v.crash - dt)
       v.impactCool = Math.max(0, v.impactCool - dt)
       const input = c.id === focusId ? this.input : null
+      v.chassis.update(c, spec, this.city, dt, juice, input)
       // Snapshot speed derivatives alternate between zero and spikes. Lights follow controls, never that derivative.
       const brake = input ? input.brake > 0.1 || input.handbrake || input.throttle < 0 && c.vx * Math.sin(c.h) + c.vz * Math.cos(c.h) > 0.5 : !!c.braking
       v.brakeHold = brake ? 0.1 : Math.max(0, v.brakeHold - dt)
@@ -398,7 +413,8 @@ export class Scene {
     for (const c of view.cars) {
       const spec = VEHICLE_BY_ID.get(c.vehicle)!
       const vs = this.variants.get(c.vehicle)!
-      const model = vs[c.id % vs.length]!
+      const parts = this.chassisModels.get(c.vehicle)!
+      const model = juice.visibleWheels ? parts.bodies[c.id % parts.bodies.length]! : vs[c.id % vs.length]!
       const tint = c.role === "robber" ? ROBBER_TINT : COP_TINT
       if (c.ghost) {
         // Last-seen ping for cops: a pulsing ring and a faint silhouette where the suspect was.
@@ -410,6 +426,10 @@ export class Scene {
 
       const v = this.visOf(c)
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
+      const ch = v.chassis
+      const springBody = juice.suspension || juice.vehicleFeel
+      const bodyRoll = (springBody ? 0 : v.roll) + (springBody || juice.wheelContact ? ch.roll.x : 0)
+      const bodyPitch = (springBody ? 0 : v.pitch) + (springBody || juice.wheelContact ? ch.pitch.x : 0)
       const braking = v.braking ? 1 : 0
       const altitude = c.y ?? 0
       if (juice.grounding || altitude > 0.1) sprite("a", c.x, v.ground + 0.018, c.z, spec.width * (juice.grounding ? 0.85 : 0.55) / (1 + altitude * 0.06), 0, 0, 0, (juice.grounding ? 0.7 : 0.55) / (1 + altitude * 0.45), juice.grounding ? 9 : 7, c.h, spec.length / spec.width * (juice.grounding ? 0.85 : 1), altitude)
@@ -417,7 +437,7 @@ export class Scene {
       const wm = c.wheels ?? 0
       let sagRoll = 0
       let sagPitch = 0
-      let sagY = v.height + altitude + v.landY
+      let sagY = (juice.wheelContact ? ch.lift.x : v.height + (juice.suspension ? ch.lift.x : 0)) + altitude + (juice.suspension ? 0 : v.landY)
       if (wm) {
         const left = (wm & 1) + ((wm >> 2) & 1)
         const right = ((wm >> 1) & 1) + ((wm >> 3) & 1)
@@ -427,14 +447,32 @@ export class Scene {
         sagPitch = 0.025 * (front - rear)
         sagY -= 0.045 * (left + right)
       }
+      const jumpPitch = juice.wheelContact && !c.airborne ? 0 : Math.max(-0.2, Math.min(0.2, -(c.vy ?? 0) / Math.max(15, c.speed)))
+      if (juice.visibleWheels) for (let i = 0; i < parts.wheels.length; i++) {
+        const p = parts.wheels[i], wheel = ch.contacts[i]
+        const flatBit = (p.z > 0 ? 0 : 2) + (p.x > 0 ? 1 : 0)
+        let x = wheel.x, y = wheel.y - (wm & (1 << flatBit) ? 0.08 : 0), z = wheel.z
+        const roll = c.airborne ? bodyRoll + sagRoll : spec.id === "bike" && juice.vehicleFeel ? bodyRoll : 0
+        const pitch = c.airborne ? bodyPitch + sagPitch + jumpPitch : 0
+        if (c.airborne) {
+          const xx = p.x * Math.cos(roll) - p.y * Math.sin(roll)
+          const yy = p.x * Math.sin(roll) + p.y * Math.cos(roll)
+          const zz = yy * Math.sin(pitch) + p.z * Math.cos(pitch)
+          x = c.x + xx * Math.cos(c.h) + zz * Math.sin(c.h)
+          z = c.z - xx * Math.sin(c.h) + zz * Math.cos(c.h)
+          y = sagY + yy * Math.cos(pitch) - p.z * Math.sin(pitch)
+        }
+        const silhouette = !c.engineOff || c.id === focus?.id
+        wheelRotation(wheel, c.h, roll, pitch, p.z > 0 ? ch.steer : 0, wheel.spin)
+        pushInst(p.model, silhouette, x, y, z, wheel.yaw, wheel.roll, wheel.pitch, -1, -1, silhouette ? tint[0] : 0, silhouette ? tint[1] : 0, silhouette ? tint[2] : 0, 1)
+      }
       if (c.engineOff) {
         // Engine off: exactly like a parked car (same instance params, no lights, glows or silhouette), so it blends in.
         const isFocus = c.id === focus?.id
-        pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll, sagPitch + Math.max(-0.2, Math.min(0.2, -(c.vy ?? 0) / Math.max(15, c.speed))), -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1)
+        pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll + (springBody || juice.wheelContact ? bodyRoll : 0), sagPitch + (springBody || juice.wheelContact ? bodyPitch : 0) + jumpPitch, -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1)
         continue
       }
-      const jumpPitch = Math.max(-0.2, Math.min(0.2, -(c.vy ?? 0) / Math.max(15, c.speed)))
-      pushInst(model, true, c.x, sagY, c.z, c.h, v.roll + sagRoll, v.pitch + sagPitch + jumpPitch, siren, braking, tint[0], tint[1], tint[2], 1)
+      pushInst(model, true, c.x, sagY, c.z, c.h, bodyRoll + sagRoll, bodyPitch + sagPitch + jumpPitch, siren, braking, tint[0], tint[1], tint[2], 1)
 
       const fx = Math.sin(c.h)
       const fz = Math.cos(c.h)
