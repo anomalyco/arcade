@@ -22,6 +22,7 @@ struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f, @locati
     if(axis==2){p=vec3f(c.x,sign,c.y);normal=vec3f(0,sign,0);}
     let angle=s.misc.x;let cs=cos(angle);let sn=sin(angle);
     p=vec3f(p.x*cs-p.z*sn,p.y,p.x*sn+p.z*cs);world=s.pos.xyz+p*s.pos.w;
+    if(F.eye.w==5.0){normal=vec3f(normal.x*cs-normal.z*sn,normal.y,normal.x*sn+normal.z*cs);}
   } else if(i>=6){world=s.pos.xyz;}
   var light=F.ambient.rgb;
   for(var l=0;l<min(8,i32(F.ambient.w));l++){
@@ -30,7 +31,9 @@ struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f, @locati
   }
   if(s.velocity.w==1.0||s.velocity.w==4.0){light=vec3f(2.2);}
   if(F.eye.w==3.0){light=vec3f(dot(light,vec3f(0.333)));}
-  var o:Out;o.position=F.vp*vec4f(world,1);o.uv=c;o.color=vec4f(s.color.rgb*light,s.color.a);o.world=world;o.kind=s.velocity.w;return o;
+  var o:Out;o.position=F.vp*vec4f(world,1);o.uv=c;o.color=vec4f(s.color.rgb*light,s.color.a);o.world=world;o.kind=s.velocity.w;
+  if(F.eye.w==5.0){o.color=vec4f(normal*0.5+0.5,s.color.a);}
+  return o;
 }
 @fragment fn fs(o:Out)->@location(0) vec4f {
   var alpha=o.color.a;

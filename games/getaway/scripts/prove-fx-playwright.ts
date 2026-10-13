@@ -3,6 +3,7 @@ import { chromium } from "playwright-core"
 import { createServer } from "vite"
 import { mkdirSync, readdirSync, existsSync, writeFileSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { createHash } from "node:crypto"
 
 const root=resolve(import.meta.dir,"../../.."),out=join(root,"captures/fx-kit")
 mkdirSync(out,{recursive:true})
@@ -30,7 +31,7 @@ try{
   page.on("pageerror",e=>{errors.push(e.message);console.error(e.message)})
   page.on("console",m=>{if(m.type()==="error"&&!m.text().includes("404")){errors.push(m.text());console.error(m.text().slice(0,1500))}})
   const getaway=await fixture("getaway");fixtures.push(getaway)
-  await page.goto(`${getaway.url}/fx.html?bench`)
+  await page.goto(`${getaway.url}/lab.html?bench`)
   await page.waitForFunction(()=>(window as any).fx,{},{timeout:30000})
   results.adapter=await page.evaluate(()=>{const a=(window as any).fx.adapter;return {architecture:a.architecture,vendor:a.vendor,device:a.device,description:a.description}})
   if(!/metal/i.test(JSON.stringify(results.adapter))||/swiftshader/i.test(JSON.stringify(results.adapter)))throw new Error(`Not Metal: ${JSON.stringify(results.adapter)}`)
@@ -67,6 +68,72 @@ try{
     await page.locator("canvas").focus();await page.keyboard.press("Backquote")
     if(!await effect.isVisible())throw new Error("Canvas Backquote did not open Lab")
     if(page.url()!==originalUrl)throw new Error("Playground UI rewrote the URL")
+    // Exercise lighting through the shared controls, compare only scene pixels (exclude the panel).
+    const section=page.getByRole("combobox",{name:"Section",exact:true})
+    const debugView=page.getByRole("combobox",{name:"Debug view",exact:true})
+    await section.selectOption("lighting");await debugView.selectOption("0")
+    const draw=()=>page.evaluate(async()=>await(window as any).lab.render(true))
+    const hash=async()=>createHash("sha256").update(await page.screenshot({clip:{x:0,y:0,width:640,height:640}})).digest("hex")
+    const range=async(name:string,value:number)=>page.getByRole("slider",{name,exact:true}).evaluate((el,value)=>{const input=el as HTMLInputElement;input.value=String(value);input.dispatchEvent(new Event("input",{bubbles:true}))},value)
+    const defaults=await page.evaluate(()=>({...((window as any).lab.context.stage.lighting)}))
+    await draw();const baseline=await hash()
+    await page.screenshot({path:join(out,"lab-lighting.png")})
+    const mutations=[
+      ["toggle","Lamps",false],["toggle","Spotlight",false],["toggle","Polar shadows",false],["toggle","Moon",false],
+      ["range","Light count",8],["range","Light count",0],["range","Power",5],["range","Radius",5],["range","Height",1.5],
+      ["range","Spot power",9],["range","Cone angle",65],["range","Yaw",-30],["range","Pitch",75],
+      ["range","Moon power",1.5],["range","Azimuth",90],["range","Elevation",15],
+      ["range","Exposure",1],["range","Temperature",1],["range","Saturation",0],["select","Tone",1],["select","Tone",2],
+    ] as const
+    results.lighting=[]
+    for(const [kind,name,value] of mutations){
+      await page.evaluate(defaults=>{Object.assign((window as any).lab.context.stage.lighting,defaults);(window as any).lab.context.sync()},defaults)
+      if(kind==="toggle")await page.getByRole("checkbox",{name,exact:true}).setChecked(value)
+      else if(kind==="range")await range(name,value)
+      else await page.getByRole("combobox",{name,exact:true}).selectOption(String(value))
+      const ms=await draw(),pixels=await hash()
+      if(pixels===baseline)throw new Error(`Lighting control did not change scene pixels: ${name}=${value}`)
+      results.lighting.push({name,value,gpuMs:ms,changed:true})
+      if(name==="Polar shadows")await page.screenshot({path:join(out,"lab-lighting-no-shadows.png")})
+    }
+    await page.evaluate(defaults=>{Object.assign((window as any).lab.context.stage.lighting,defaults);(window as any).lab.context.sync()},defaults)
+    for(const mode of [3,5]){await debugView.selectOption(String(mode));await draw();if(await hash()===baseline)throw new Error(`Debug ${mode} unchanged`);await page.screenshot({path:join(out,`lab-lighting-${mode}.png`)})}
+    await debugView.selectOption("0")
+    await range("Exposure",0.5)
+    await section.selectOption("effects")
+    if(await page.evaluate(()=>(window as any).lab.context.stage.lighting.exposure)!==0.5)throw new Error("Lighting settings lost on section switch")
+    await section.selectOption("materials")
+    const materials=page.getByRole("combobox",{name:"Material",exact:true})
+    const catalog=await materials.locator("option").allTextContents()
+    if(!catalog.some(s=>s==="Getaway · 12 smoke")||!catalog.some(s=>s==="Blackout · 13 mote")||catalog.length!==25)throw new Error("Material catalogs incomplete")
+    await materials.selectOption({label:"Blackout · 13 mote"});await draw()
+    if(!await page.getByText("Materials · renderer pending",{exact:false}).isVisible())throw new Error("Material stub not labelled")
+    await page.screenshot({path:join(out,"lab-materials.png")})
+    await section.selectOption("physics");await draw()
+    if(!await page.getByText("Physics · adapter pending",{exact:false}).isVisible())throw new Error("Physics stub not labelled")
+    await page.evaluate(()=>{
+      const bodies=[{x:0,y:0.7,z:2,hx:0.7,hy:0.7,hz:0.7,yaw:0.6,pitch:0.2,roll:0.4,awake:true,enabled:true},{x:2,y:0.4,z:3,hx:0.6,hy:0.4,hz:0.4,yaw:0,pitch:0,roll:0,awake:false,enabled:true}]
+      const state={ticks:0,resets:0};Object.assign(window,{physicsFixture:state})
+      ;(window as any).lab.attachPhysics({bodies,update:()=>state.ticks++,reset:()=>state.resets++,wakeAll:()=>bodies.forEach(b=>b.awake=true)})
+    })
+    await page.evaluate(()=>(window as any).lab.advance(1/60));await draw()
+    if(!await page.getByText("2 bodies · 1 awake · 1 sleeping",{exact:false}).isVisible())throw new Error("Physics counts failed")
+    const colliders=await hash();await page.screenshot({path:join(out,"lab-physics-adapter.png")})
+    await page.getByRole("checkbox",{name:"Sleeping bodies",exact:true}).uncheck();await draw()
+    if(await hash()===colliders)throw new Error("Sleeping collider toggle did not change pixels")
+    await page.getByRole("checkbox",{name:"Colliders",exact:true}).uncheck();await draw()
+    const bare=await hash();if(bare===colliders)throw new Error("Collider toggle did not change pixels")
+    await page.getByRole("checkbox",{name:"Play",exact:true}).uncheck()
+    await page.evaluate(()=>(window as any).lab.advance(1/60))
+    if(await page.evaluate(()=>(window as any).physicsFixture.ticks)!==1)throw new Error("Physics pause failed")
+    await page.getByRole("button",{name:"Reset",exact:true}).click()
+    if(await page.evaluate(()=>(window as any).physicsFixture.resets)!==1)throw new Error("Physics reset failed")
+    await page.getByRole("button",{name:"Wake all",exact:true}).click();await draw()
+    if(!await page.getByText("2 bodies · 2 awake · 0 sleeping",{exact:false}).isVisible())throw new Error("Physics wake failed")
+    await section.selectOption("effects");await page.evaluate(()=>(window as any).lab.advance(1/60))
+    if(await page.evaluate(()=>(window as any).physicsFixture.ticks)!==1)throw new Error("Inactive physics continued ticking")
+    if(page.url()!==originalUrl)throw new Error("Section controls rewrote URL")
+    results.sections={materials:catalog,physicsAdapter:true,sectionIsolation:true,lightingPreserved:true,debugViews:[3,5]}
     await page.goto(`${getaway.url}/?solo&peaceful=1&seed=7&bench&nohud&lab=1&smoke=6`)
     await page.waitForFunction(()=>(window as any).__getawayBench)
     await page.evaluate(async()=>{await(window as any).__getawayBench.ready})
@@ -77,6 +144,12 @@ try{
     await page.getByRole("button",{name:"All On",exact:true}).click()
     if(page.url()!==gameUrl)throw new Error("Smoke selector rewrote the URL")
     const blackout=await fixture("blackout");fixtures.push(blackout)
+    await page.goto(`${blackout.url}/lab.html?bench`)
+    await page.waitForFunction(()=>(window as any).lab)
+    await page.getByRole("combobox",{name:"Section",exact:true}).selectOption("lighting")
+    await page.evaluate(async()=>await(window as any).lab.render(true))
+    await page.screenshot({path:join(out,"lab-blackout.png")})
+    if(await page.title()!=="Lab")throw new Error("Blackout Lab entry failed")
     await page.goto(`${blackout.url}/envlab.html?fxproof&bench&lab=1&seed=1`)
     await page.waitForFunction(()=>(window as any).fxProof)
     await page.getByRole("checkbox",{name:"Volume Smoke",exact:true}).uncheck()

@@ -64,6 +64,18 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`. Sections share
+  one GPU device, test scene and panel; only the active section ticks. Its Metal proof changed 21 lighting settings
+  through panel controls and verified changed scene pixels, excluding the panel itself. Both game entries compiled
+  and rendered without GPU errors. Material codes come from the game catalogs; their shader adapters are pending.
+  A fixture adapter verified Physics collider bounds, sleeping visibility, counts, pause/reset/wake and inactive
+  section isolation. The client prop solver is still an extension point. Evidence: `perf/lab.json`.
+- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle shadow table stores each box's
+  near/far interval and height per light. Quantized neighboring rays can hit the receiving wall itself and stripe its
+  face. Skipping that convex receiver removes the stripes while retaining other blockers. This is a bounded test
+  scene implementation, not a replacement for either game's renderer. Its sphere receives shadows; only boxes cast
+  them. The Lab's sampled GPU ms is diagnostic, not a paired performance claim.
+
 - **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes four-connected arrival
   distances through 48² wall-clipped fields. The fragment shader adds a shallow height envelope, moving 3D billows,
   approximate self-extinction and eight nearby lights. Blackout has frag and claymore equipment, so their post-blast

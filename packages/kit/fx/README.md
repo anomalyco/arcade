@@ -1,9 +1,9 @@
 # Shared FX
 
 Getaway uses `SmokeTrail` and `TyreRenderer`; Blackout uses `SmokeVolumes` and `VolumeRenderer` for frag,
-claymore and wreck smoke. `games/getaway/fx.html` runs both paths and the general particle renderer.
+claymore and wreck smoke. Both games serve `/lab.html`, which runs both paths and the general particle renderer.
 All positions use world X/Z with Y up. Simulation and upload storage is allocated at construction.
-The playground's effect picker, parameter sliders, playback actions and debug views live in the shared Lab panel.
+The Lab's effect picker, parameter sliders, playback actions and debug views live in the shared Lab panel.
 Backquote toggles it. Getaway's smoke styles also use the shared select control; `?bench&smoke=N` is an automation
 override rather than the user-facing selector.
 
@@ -53,7 +53,7 @@ target capped at 480×320, then composites with depth-aware four-tap upsampling.
 The low-resolution pass stops at scene depth, uses a fixed progressive farthest-point jitter texture, animated
 3D noise, approximate upward extinction, and local lamp scattering. `debug` selects shaded (0), density (1),
 optical depth (2), lighting (3), or field bounds (4). Particle mode 2 instead adds fragment contributions as an
-overdraw heatmap. The playground reports whole-stage GPU timestamps separately from those debug views.
+overdraw heatmap. The Lab reports whole-stage GPU timestamps separately from those debug views.
 
 This shallow model treats every supplied rectangle as a sealed column. Blackout supplies walls at least 1.8 m
 high, windows and glass; low wrecks and cover remain depth occluders without sealing the smoke field. The model
@@ -64,7 +64,7 @@ and `perf/fx-kit.md` for the measured cost and noise.
 ## The tyre port preserves Getaway's image
 
 `tyreShader(commonWGSL)` accepts a host frame/light declaration. `TyreRenderer` uses the host bind group at index 0
-and its own noise/field bindings at index 1. The Getaway adapter supplies its original `common`; the playground
+and its own noise/field bindings at index 1. The Getaway adapter supplies its original `common`; the Lab
 supplies the smaller declaration it needs. The simulation, density field, shader expressions, blend and sample
 counts are unchanged. The matched drift-frame proof has zero differing pixels.
 

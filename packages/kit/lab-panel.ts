@@ -81,6 +81,13 @@ export class LabPanel {
     document.body.append(this.host)
   }
 
+  /** Replace section controls while preserving the shell, shortcut and telemetry. */
+  clearControls() {
+    this.bindings.length = 0
+    this.rows.replaceChildren()
+    this.presets.hidden = true
+  }
+
   /** Bind additional game-owned settings without copying them into another state object. */
   addControls(settings: LabSettings, controls: readonly LabControl[]) {
     let group: string | undefined
