@@ -2,8 +2,8 @@ import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 
 export const JUICE_LABELS = {
   monitors: "Monitor Lights", chairs: "Chair Shadows", ao: "Multi-Bounce AO",
-  rings: "Sound Rings", paper: "Fluttering Paper", glass: "Glass Shards",
-  sparks: "Monitor Sparks", casings: "Shell Casings", lamps: "Lamp Flicker", trauma: "Shake & Kill Punch",
+  paper: "Fluttering Paper", glass: "Glass Shards",
+  sparks: "Monitor Sparks", casings: "Shell Casings", trauma: "Shake & Kill Punch",
 } as const
 export const LOOK_LABELS = {
   lookGrade: "Teal & Warm Grade", lookPractical: "Warm Practicals", lookWalls: "Warm Wall Faces",
@@ -12,8 +12,8 @@ export const LOOK_LABELS = {
   lookShadowFilter: "Smooth Polar Shadows", lookMotion: "Motion Blur",
 } as const
 export type Juice = Record<keyof typeof JUICE_LABELS | keyof typeof LOOK_LABELS, boolean> & { monitorIntensity: number; aoStrength: number }
-export const juiceSettings = (enabled = true): Juice => ({ monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: false, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: false, trauma: enabled,
-  lookGrade: enabled, lookPractical: enabled, lookWalls: enabled, lookAO: enabled, lookCaps: enabled, lookFloors: enabled, lookCity: enabled, lookGloss: false, lookShadows: false,
+export const juiceSettings = (enabled = true): Juice => ({ monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, trauma: enabled,
+  lookGrade: enabled, lookPractical: enabled, lookWalls: enabled, lookAO: enabled, lookCaps: enabled, lookFloors: enabled, lookCity: enabled, lookGloss: enabled, lookShadows: false,
   lookShadowFilter: enabled, lookMotion: false,
 })
 /** Bit layout shared with sceneShader; grade also uses bit zero in the composite. */

@@ -9,7 +9,7 @@ import type { ClientMsg } from "../../shared/protocol"
 import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
 import { bakeBounce, buildLevel, type FloorMap } from "../render/level-mesh"
-import { AMBIENT, type Caster, type DynLight, LIGHT_FLOATS, LightCuller } from "../render/lighting"
+import { AMBIENT, type Caster, type DynLight, LightCuller } from "../render/lighting"
 import { MAT, Mesh } from "../render/mesh"
 import { PAL, deskMonitorLights, hex, rng } from "../render/models"
 import { juiceSettings, lookMask, type Juice } from "../ui/debug-overlay"
@@ -61,8 +61,6 @@ type Flash = { x: number; y: number; t0: number; life: number; power: number }
 const TRACER_SPEED = 240
 const TRACER_LEN = 3.2
 const CLAY_SCALE = 1.15
-const LAMP_BROWNOUT_SECONDS = 2.5
-const LAMP_RETRIGGER_SECONDS = 2.5
 const HIT_POWER: Record<Gun, number> = { rifle: 0.8, shotgun: 0.3, sniper: 1.8 }
 /** Camera recoil per gun: shove along the aim, shake, zoom punch and a little roll. */
 const CAM_RECOIL: Record<Gun, { kick: number; shake: number; punch: number; roll: number }> = {
@@ -178,10 +176,8 @@ export class Game {
   private bounceFull!: FloorMap
   private bounceIntensity = -1
   private monitors: Monitor[] = []
-  private lampJolts = new Map<number, number>()
   private propHitAt = new Map<number, number>()
   private sheets: LooseSheet[] = []
-  private rings: { x: number; y: number; t0: number; sprint: boolean }[] = []
   private electric: { x: number; y: number; t0: number }[] = []
   private sheetModels: { paper: number; glass: number; brass: number; screen: number }
   map: MapDef
@@ -344,10 +340,8 @@ export class Game {
     this.seatPose.clear()
     this.debris = []
     this.sheets = []
-    this.rings = []
     this.electric = []
     for (const monitor of this.monitors) monitor.broken = false
-    this.lampJolts.clear()
     this.propHitAt.clear()
     this.flashFx = []
     this.holes = []
@@ -565,7 +559,6 @@ export class Game {
         if (first) {
           this.soundAt.set(e.by, t)
           if (a) this.casing(a)
-          if (this.juice.rings) this.rings.push({ x: e.x0, y: e.y0, t0: t, sprint: false })
           this.muzzleFlash(m.x, m.y, m.z, a?.aim ?? dir, gun)
           if (me) this.sound.shot(gun, e.x0 - me.x, e.y0 - me.y, false)
         }
@@ -878,7 +871,6 @@ export class Game {
     }
     this.muzzleFlash(muzzle.x, muzzle.y, muzzle.z, this.aim, this.gun)
     this.casing(me)
-    if (this.juice.rings) this.rings.push({ x: b.x, y: b.y, t0: t, sprint: false })
     this.bloom = Math.min(1, this.bloom + (this.gun === "rifle" ? 0.34 : 0.9))
     const cr = CAM_RECOIL[this.gun]
     this.cam?.kick(-Math.cos(this.aim), -Math.sin(this.aim), cr.kick)
@@ -907,20 +899,15 @@ export class Game {
     if (!b) return
     const aim = this.avatarMe.aim
     const x = b.x + Math.cos(aim) * 1.5, y = b.y + Math.sin(aim) * 1.5
-    if (key === "rings") {
-      this.rings.push({ x: b.x, y: b.y, t0: this.now, sprint: false }, { x, y, t0: this.now, sprint: true })
-    } else if (key === "paper" || key === "glass") this.looseSheets(x, y, 1.1, key)
+    if (key === "paper" || key === "glass") this.looseSheets(x, y, 1.1, key)
     else if (key === "sparks") {
       const monitor = [...this.monitors].sort((a, c) => Math.hypot(a.x - x, a.y - y) - Math.hypot(c.x - x, c.y - y))[0]
       if (monitor) {
         monitor.broken = true
         this.electric.push({ x: monitor.x, y: monitor.y, t0: this.now })
-        this.sparkBurst(monitor.x, monitor.y, 1.1, true)
+        this.sparkBurst(monitor.x, monitor.y, 1.1)
       }
-      this.sparkBurst(x, y, 1.1, true)
-    } else if (key === "lamps") {
-      const lamp = [...this.map.lights].sort((a, c) => Math.hypot(a.x - x, a.y - y) - Math.hypot(c.x - x, c.y - y))[0]
-      if (lamp) { this.lampJolts.set(lamp.id, this.now); this.sparkBurst(lamp.x, lamp.y, lamp.h, false) }
+      this.sparkBurst(x, y, 1.1)
     } else if (key === "casings") this.casing(this.avatarMe)
     else if (key === "trauma") {
       this.killAt = this.now
@@ -958,22 +945,15 @@ export class Game {
       if (m.broken || !near(m.x, m.y, 0.4)) continue
       m.broken = true
       this.electric.push({ x: m.x, y: m.y, t0: this.now })
-      this.sparkBurst(m.x, m.y, 1.1, true)
-    }
-    if (this.juice.lamps) for (const l of this.map.lights) {
-      if (!["desk", "panel", "pendant", "bulb"].includes(l.kind) || !near(l.x, l.y, 0.35)) continue
-      // Let the full dip recover before another hit can restart it.
-      if (this.now - (this.lampJolts.get(l.id) ?? -10) < LAMP_RETRIGGER_SECONDS) continue
-      this.lampJolts.set(l.id, this.now)
-      this.sparkBurst(l.x, l.y, l.h, false)
+      this.sparkBurst(m.x, m.y, 1.1)
     }
   }
 
-  private sparkBurst(x: number, y: number, z: number, electric: boolean): void {
-    for (let i = 0; i < (electric ? 14 : 3); i++) {
+  private sparkBurst(x: number, y: number, z: number): void {
+    for (let i = 0; i < 14; i++) {
       const a = Math.random() * Math.PI * 2
-      const s = electric ? 1 + Math.random() * 3 : 0.2 + Math.random() * 0.45
-      this.fx(x, y, z, Math.cos(a) * s, Math.sin(a) * s, electric ? 1 + Math.random() * 2 : 0.2 + Math.random() * 0.5, electric ? 0.25 + Math.random() * 0.3 : 0.18 + Math.random() * 0.16, electric ? 0.035 : 0.018, electric ? "electric" : "spark")
+      const s = 1 + Math.random() * 3
+      this.fx(x, y, z, Math.cos(a) * s, Math.sin(a) * s, 1 + Math.random() * 2, 0.25 + Math.random() * 0.3, 0.035, "electric")
     }
   }
 
@@ -1080,7 +1060,6 @@ export class Game {
     const dx = me ? a.x - me.x : 0
     const dy = me ? a.y - me.y : 0
     if (ev & EV.step && me && Math.hypot(dx, dy) < 16) this.sound.step(dx, dy, mine, Math.min(SPRINT_SPEED, Math.hypot(a.svx, a.svy)) / SPEED)
-    if ((ev & EV.step) && this.juice.rings && Math.hypot(a.svx, a.svy) > SPEED * 1.1) this.rings.push({ x: a.x, y: a.y, t0: this.now, sprint: true })
     if (ev & EV.magDrop) this.dropMag(a)
     if (Math.hypot(dx, dy) < 22) this.sound.cue(ev, a.gun, dx, dy, mine)
   }
@@ -1336,18 +1315,6 @@ export class Game {
     mapFires(this.map, view, t, dt, (...a) => this.sprite(...a), this.fxv)
     this.culler.warmPracticals = this.map.kind === "office" && this.juice.lookPractical
     this.culler.update(view, t, dyn, casters, this.juice.monitors, this.juice.sparks ? this.monitors.filter((m) => m.broken) : [])
-    if (this.juice.lamps) for (const [id, at] of this.lampJolts) {
-      const age = t - at
-      if (age >= LAMP_RETRIGGER_SECONDS) { this.lampJolts.delete(id); continue }
-      if (age >= LAMP_BROWNOUT_SECONDS) continue
-      // One smooth dip and recovery, no flashing.
-      const power = 1 - 0.6 * Math.sin((Math.PI * age) / LAMP_BROWNOUT_SECONDS) ** 2
-      this.culler.power[id] = this.culler.power[id]! * power
-      for (let i = 0; i < this.culler.lightCount; i++) {
-        const o = i * LIGHT_FLOATS
-        if (this.culler.lights[o + 15] === id) this.culler.lights[o + 7] = this.culler.lights[o + 7]! * power
-      }
-    }
     const nl = this.culler.lightCount
 
     // Soldiers. A kill freezes animation and effects for a few frames (hit-stop).
@@ -1543,11 +1510,6 @@ export class Game {
 
     this.spriteKeys.begin()
     this.gearSprites(t)
-    this.rings = this.rings.filter((r) => t - r.t0 < 0.5)
-    if (this.juice.rings) for (const r of this.rings) {
-      const u = (t - r.t0) / 0.5
-      this.sprite(true, r.x, 0.025, r.y, 0.2 + u * (r.sprint ? 1.4 : 3.6), 1, 1, 1, (1 - u) ** 2 * (r.sprint ? 0.45 : 0.8), r.sprint ? 5 : 2, 0, 0.018)
-    }
     modeSprites(
       snap,
       t,
