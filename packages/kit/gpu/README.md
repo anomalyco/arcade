@@ -17,3 +17,9 @@ Getaway uses camera reprojection plus car body/wheel transforms and persistent F
 strength using the existing camera-rush envelope. Ground-anchored tyre smoke inherits camera motion; no second
 smoke simulation is used. Defaults: enabled, strength 0.65, shutter 0.5. Backquote exposes all three settings.
 The HUD is DOM-rendered after the canvas and stays sharp.
+
+Blackout uses `MotionKeys` and `MotionHistory` with weak owner identities, optional transient emission points and
+per-key travel bounds (4 m actors / 32 m tracers). Its adapter converts exposed pixel velocity and linear camera
+depth to `motionField()` for the same gather in its composite. Full-resolution four-sample RGBA16F MRT avoids a
+second geometry pass, but its bandwidth misses the 0.5 ms target downtown. It stays opt-in, strength 1 / shutter 1,
+with a 1.25 px dead zone, 32 px cap and swept transient edges. See `perf/shared-motion.md` for paired costs.

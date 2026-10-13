@@ -31,9 +31,10 @@ struct Out {@builtin(position) pos:vec4f,@location(0) now:vec4f,@location(1) old
  let right=normalize(M.inverse[0].xyz);let up=normalize(M.inverse[1].xyz);
  var local=(right*corner.x+up*corner.y)*center.w;
  if(misc.x==6.0){let axis=vec3f(sin(misc.y),0,cos(misc.y));local=(axis*corner.x*misc.z+normalize(cross(axis,cross(right,up)))*corner.y)*center.w;}
- if(misc.x==15.0){local=(right*corner.x+up*corner.y*misc.z)*center.w;}
+ if(misc.x==20.0){let c=cos(misc.y);let s=sin(misc.y);local=(right*(corner.x*c-corner.y*s)+up*(corner.x*s+corner.y*c)*max(.08,abs(misc.z)))*center.w;}
+ if(misc.x==21.0){local=(right*corner.x+up*corner.y*misc.z)*center.w;}
  var o:Out;o.now=M.current*vec4f(center.xyz+local,1);o.old=M.previous*vec4f(previous.xyz+local,1);o.pos=o.now;o.uv=corner;
- o.alpha=color.a*select(0.0,1.0,misc.x==6.0||misc.x==14.0||misc.x==15.0||misc.x==16.0||misc.x==1.0);return o;
+ o.alpha=color.a*select(0.0,1.0,misc.x==6.0||misc.x==20.0||misc.x==21.0||misc.x==22.0||misc.x==1.0);return o;
 }
 @fragment fn fs(o:Out)->@location(0) vec4f {
  let a=o.alpha*max(0.0,1.0-dot(o.uv,o.uv));if(a<.15){discard;}

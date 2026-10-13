@@ -26,7 +26,7 @@ export function getawaySpawn(context:LabContext){
   const spriteSpec:ParticleSpec={kind:"soft",life:1,size:1,growth:0,gravity:0,drag:0,bounce:0,r:1,g:1,b:1,alpha:1}
   const sprite:SpriteWriter=(_list,x,y,z,size,r,g,b,alpha,kind,rot=0,stretch=1)=>{
     if([2,3,4,9].includes(kind))return
-    Object.assign(spriteSpec,{kind:kind===6?"spark":kind===14?"debris":kind===15?"water":[0,13,16].includes(kind)?"fire":"soft",size,r,g,b,alpha})
+    Object.assign(spriteSpec,{kind:kind===6?"spark":kind===20?"debris":kind===21?"water":[0,13,22].includes(kind)?"fire":"soft",size,r,g,b,alpha})
     context.stage.transients.spawn(spriteSpec,x,y,z,0,kind===6?stretch:0,0,rot)
   }
   const items:ItemWorld={

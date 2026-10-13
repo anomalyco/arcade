@@ -514,7 +514,7 @@ export class Scene {
         const head = bodyPoint(c, pose, [0, 1.3, half + 0.5])
         const aim = bodyPoint(c, pose, [0, 1, half + 1.45])
         const dir = normalizeV([aim[0] - head[0], aim[1] - head[1], aim[2] - head[2]])
-        light(...head, 36, 1, 0.92, 0.78, 3.2, ...dir, 0.8)
+        light(...head, effectSettings.headlights.radius, 1, 0.92, 0.78, effectSettings.headlights.power, ...dir, 0.8)
         const hw = spec.width / 2 - 0.25
         for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
           sprite("d", ...bodyPoint(c, pose, [hw * s, 0.75, half + 0.1]), 0.55, 1, 0.95, 0.85, 1.4, 0)

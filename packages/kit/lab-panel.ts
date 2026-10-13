@@ -1,6 +1,6 @@
 import { LabNavigation, type LabControl, type LabRow, type LabSettings, type LabValue } from "./lab-navigation"
 export type { LabControl, LabSettings, LabValue } from "./lab-navigation"
-export type LabOptions = { open?: boolean; presets?: boolean; shortcut?: boolean }
+export type LabOptions = { open?: boolean; presets?: boolean; shortcut?: boolean; capture?: "open" | "focus" }
 
 /** Presentation controls. Open panels capture keys before the game's bubble listeners. */
 export class LabPanel {
@@ -21,12 +21,14 @@ export class LabPanel {
   private held = new Set<string>()
   private events = new AbortController()
   private allowPresets = true
+  private focusOnly = false
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const change = typeof options === "function" ? options : undefined
     this.allowPresets = typeof options === "object" ? options.presets !== false : true
+    this.focusOnly = typeof options === "object" && options.capture === "focus"
     this.navigation = new LabNavigation({}, [], (key, value) => {
-      change?.(key, value)
+      if (controls.some(control => control.key === key)) change?.(key, value)
       for (const copy of this.copies.values()) copy.textContent = "Copy"
     })
     this.host.dataset.lab = ""
@@ -126,6 +128,7 @@ export class LabPanel {
     fold.onclick = () => { this.navigation.active = this.navigation.rows.find(row => !row.control && row.group === group); this.navigation.fold(); this.focus() }
     const random = document.createElement("button")
     random.type = "button"; random.textContent = "Randomize"; random.setAttribute("aria-label", `Randomize ${group}`)
+    random.hidden = this.navigation.rows.some(row => row.group === group && row.control?.type === "action" && row.control.label === `Randomize ${group}`)
     random.disabled = !this.navigation.rows.some(row => row.group === group && row.control && ("min" in row.control || "options" in row.control && row.control.options.length > 0))
     random.onclick = () => { this.navigation.randomize(group); this.sync() }
     const copy = document.createElement("button")
@@ -273,6 +276,7 @@ export class LabPanel {
     const toggle = event.code === "Backquote"
     const target = event.composedPath()[0]
     const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLElement && target.isContentEditable
+    if (this.focusOnly && document.activeElement !== this.host && !this.held.has(event.code) && !(toggle && !typing)) return false
     if (!this.visible && !this.held.has(event.code) && !(toggle && !typing)) return false
     event.stopImmediatePropagation()
     if (event.type === "keyup") { this.held.delete(event.code); event.preventDefault(); return true }
@@ -321,7 +325,11 @@ export class LabPanel {
       else if ("min" in this.navigation.active.control) this.edit()
       else { this.navigation.adjust(1); this.focus() }
     } else if (!event.metaKey && !event.ctrlKey && !event.altKey && !repeat) {
-      if (key === "r") this.navigation.randomize()
+      if (key === "r") {
+        const row=this.navigation.rows.find(row=>row.group===this.navigation.active?.group&&row.control?.type==="action"&&row.control.label===`Randomize ${row.group}`)
+        if(row)(this.elements.get(row) as HTMLButtonElement).click()
+        else this.navigation.randomize()
+      }
       else if (key === "0" || event.shiftKey && (key === ")" || event.code === "Digit0")) this.navigation.reset(event.shiftKey)
       else if (key === "c") void this.copy()
       this.sync()

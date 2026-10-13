@@ -47,9 +47,9 @@ export class PropParticles {
     for (let i = 0; i < this.count; i++) {
       const p = this.pool[i]!, t = p.age / p.life, fade = Math.min(1, (1 - t) * 3)
       if (p.kind === 1) sprite("a", p.x, p.y, p.z, p.size * (1 + t * settings.plumes.growth), .48, .45, .4, fade * settings.plumes.opacity, 1, 0, 1, p.seed)
-      else if (p.kind === 10) sprite("a", p.x, p.y, p.z, p.size, .78, .76, .64, fade, 14, p.age * 3 + p.seed * 6, .5 + .45 * Math.sin(p.age * 10 + p.seed * 20), p.seed)
-      else if (p.kind === 11) sprite("a", p.x, p.y, p.z, p.size, .42, .73, .88, fade * .78, 15, 0, 1.7)
-      else if (p.kind === 12) sprite("d", p.x, p.y, p.z, p.size * (1 + t * 1.8), 1, .16 + (1 - t) * .3, .015, (1 - t) ** 2 * 1.3, 16)
+      else if (p.kind === 10) sprite("a", p.x, p.y, p.z, p.size, .78, .76, .64, fade, 20, p.age * 3 + p.seed * 6, .5 + .45 * Math.sin(p.age * 10 + p.seed * 20), p.seed)
+      else if (p.kind === 11) sprite("a", p.x, p.y, p.z, p.size, .42, .73, .88, fade * .78, 21, 0, 1.7)
+      else if (p.kind === 12) sprite("d", p.x, p.y, p.z, p.size * (1 + t * 1.8), 1, .16 + (1 - t) * .3, .015, (1 - t) ** 2 * 1.3, 22)
       else sprite("d", p.x, p.y, p.z, p.size, 1, .55, .12, fade * 2, 6)
     }
   }

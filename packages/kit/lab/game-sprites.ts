@@ -49,7 +49,7 @@ export class GameSprites {
     for(let i=0;i<count;i++){
       const o=i*12,k=data[o+8],planar=game==="blackout"?[2,5,6,7].includes(k):[2,3,4,9].includes(k)
       const beam=game==="blackout"?k===4:k===4||k===12||k===13
-      const shape=beam?3:planar?(k===2||game==="blackout"&&k===5?2:1):k===14?4:0
+      const shape=beam?3:planar?(k===2||game==="blackout"&&k===5?2:1):game==="getaway"&&k===20?4:0
       this.push(data[o],data[o+1],data[o+2],data[o+3],data[o+4],data[o+5],data[o+6],data[o+7],shape,data[o+9],data[o+10]||1)
     }
   }

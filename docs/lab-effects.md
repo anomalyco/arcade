@@ -42,18 +42,16 @@ Wall, rack and partition hits leave holes. Glass hits shed shards.
 | Getaway group | Production path | Live controls |
 | --- | --- | --- |
 | Sparks / scrape | `Fx.sparks`, `Scene` scrape accumulation | Speed/life/size/spreads, gravity/drag/bounce, scrape rate |
-| Skids | `Fx.skidSegment` | Life, width, capacity |
+| Skids | `Fx.skidSegment` | Life, width (fixed 1,600 ribbon capacity) |
 | Connected tyre smoke | Shared `SmokeTrail`, used by `VehicleEmissions` | Spacing, idle rate, inherited velocity, life, drag, radius/growth/lift/curl |
-| Smoke | Existing `Fx.smoke` sprite study | Life/size/spreads, growth, opacity, drag |
 | Nitro / pops / cold | `VehicleEmissions.car` / `emit` | Flame size/length/power, pop life/cooldown, cold rate/life/opacity/speed |
 | Landing | Production `Chassis.update` landing-counter impulse | Lift/pitch limits and speed scaling; existing in-game test spring/punch |
 | Clutter / hydrant | `StreetProps.hit` and particle updates | Debris counts/life, water rate/duration/lift/life/size |
 | Explosion / plumes | Propane reaction and prop particles | Burst counts, flash/light parameters, plume life/size/growth/opacity |
-| Headlights | `Scene` headlights | Radius and power |
+| Headlights | `Scene` reference headlights | Radius and power; the approved soft-pool style retains its separate game Lab controls |
 
-The older smoke study follows this branch's pre-cleanup `Fx` API. When integrating the approved main
-cleanup, retain its single production smoke path and adapt this study to that API; do not restore old
-game smoke switches or styles.
+The main integration uses packed skid storage and the approved single production tyre path. The removed
+`Fx.smoke` study and old smoke switches are not restored. Clutter's paper/water/fire IDs use main's 20–22 slots.
 
 ## Rooms come from the game generators
 

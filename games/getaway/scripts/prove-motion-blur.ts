@@ -29,7 +29,8 @@ try{
    const members:any={}
    for(const enabled of pair%2?[true,false]:[false,true]){
      await toggle(enabled);const frames:number[]=[],poses:any[]=[]
-     for(let n=0;n<8;n++){const r=await step(64,0);frames.push(r.totalGpuMs);poses.push(r.pose)}
+     for(let n=0;n<4;n++)await step(64,0)
+     for(let n=0;n<32;n++){const r=await step(64,0);frames.push(r.totalGpuMs);poses.push(r.pose)}
      members[enabled?'on':'off']={frames,median:median(frames),poses}
    }
    if(JSON.stringify(members.on.poses)!==JSON.stringify(members.off.poses))throw Error('Pose mismatch')
@@ -40,7 +41,7 @@ try{
  await toggle(true);await step(0,1/60);const resetOn=await page.screenshot()
  await toggle(false);await step(0,0);const resetOff=await page.screenshot()
  if(!resetOn.equals(resetOff))throw Error('Camera cut must have zero blur')
- const result={info,width:2560,height:1440,delta,mad,pairs,errors,checks:{movingPixelsChanged:true,resetPixelsIdentical:true},method:'Whole GPU interval, first shadow through dependent offscreen final composite marker, excluding presentation copy. Nine alternating pairs of eight frozen nitro-drift frames, one warmup pair. Includes depth retention, velocity and gather.'}
+ const result={info,width:2560,height:1440,delta,mad,pairs,errors,checks:{movingPixelsChanged:true,resetPixelsIdentical:true},method:'Whole GPU interval, first shadow through dependent offscreen final composite marker, excluding presentation copy. Nine alternating pairs of 32 frozen nitro-drift frames, four settling frames per member, one warmup pair. Includes depth retention, velocity and gather.'}
  writeFileSync(join(out,'proof.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({delta,mad,errors}))
  if(errors.length)throw Error(errors.slice(0,4).join('\n'))
 }finally{await browser.close();await server.close()}

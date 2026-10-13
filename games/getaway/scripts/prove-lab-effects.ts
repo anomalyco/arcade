@@ -2,6 +2,7 @@
 import { chromium } from "playwright-core"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { createServer, type ViteDevServer } from "vite"
 
 const root=resolve(import.meta.dir,"../../.."),out=resolve(root,"captures/lab-effects")
 mkdirSync(out,{recursive:true})
@@ -9,8 +10,15 @@ const cache=`${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath=readdirSync(cache).filter(n=>/^chromium-\d+$/.test(n)).reverse().map(n=>`${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
 const browser=await chromium.launch({executablePath,headless:true,args:["--enable-unsafe-webgpu","--use-angle=metal","--ignore-gpu-blocklist","--mute-audio"]})
 const errors:string[]=[],results:unknown[]=[]
+const servers:ViteDevServer[]=[]
 try {
-  const hosts=process.env.LAB_URL?[process.env.LAB_URL]:["http://fx-kit-playground.localhost:1355","http://fx-kit-blackout.localhost:1355"]
+  const hosts=process.env.LAB_URL?[process.env.LAB_URL]:[]
+  if(!hosts.length)for(const game of ["getaway","blackout"]){
+    const dir=resolve(root,"games",game),server=await createServer({root:dir,configFile:resolve(dir,"vite.config.ts"),server:{host:"127.0.0.1",port:0}})
+    servers.push(server);await server.listen();const address=server.httpServer!.address()
+    if(!address||typeof address==="string")throw new Error("No fixture port")
+    hosts.push(`http://localhost:${address.port}`)
+  }
   for(const [hostIndex,host] of hosts.entries()){
     const page=await browser.newPage({viewport:{width:1000,height:720}})
     page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error"&&!m.text().includes("404"))errors.push(m.text())})
@@ -56,7 +64,7 @@ try {
     if(!hostIndex)await shot("sparks-default")
     await page.evaluate(()=>{const l=(window as any).lab,s=l.sections.find((s:any)=>s.id==="getaway-effects");s.settings["sparks.size"]=.5;s.settings["sparks.speed"]=2;s.settings["sparks.life"]=1.2;l.context.sync()})
     await click("Clear effects");await click("Trigger effect");await step(8);if(!hostIndex)await shot("sparks-tweaked")
-    for(const effect of ["scrape","skids","smoke","nitro","pops","cold","landing","debris","plumes","headlights","tyre"]){await select("Effect",effect);await click("Trigger effect");await step(12)}
+    for(const effect of ["scrape","skids","nitro","pops","cold","landing","debris","plumes","headlights","tyre"]){await select("Effect",effect);await click("Trigger effect");await step(12)}
     await page.getByRole("checkbox",{name:"Lock environment",exact:true}).check()
     const before=await page.evaluate(()=>(window as any).lab.sections.find((s:any)=>s.id==="getaway-effects").settings.seed)
     await click("Randomize environment")
@@ -80,4 +88,4 @@ try {
   if(errors.length)throw new Error(errors.join("\n"))
   mkdirSync(resolve(root,"perf"),{recursive:true});writeFileSync(resolve(root,"perf/lab-effects.json"),JSON.stringify({results,errors},null,2))
   console.log(JSON.stringify({results,errors}))
-}finally{await browser.close()}
+}finally{await browser.close();for(const server of servers)await server.close()}

@@ -67,7 +67,7 @@ export async function lab(options:LabOptions) {
     panel?.clearControls();panel?.addControls(settings,controls);panel?.addControls(active.settings,active.controls)
     active.enter?.()
   }
-  panel=new LabPanel(settings,[],new URLSearchParams(),()=>input.release(), {open:true,presets:false,shortcut:true})
+  panel=new LabPanel(settings,[],new URLSearchParams(),()=>input.release(), {open:true,presets:false,shortcut:true,capture:"focus"})
   select("effects")
   const render=async(measure=false)=>{
     const width=Math.max(1,innerWidth),height=Math.max(1,innerHeight)

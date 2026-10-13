@@ -32,7 +32,7 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
   const addModel=(m:{v:number[]})=>meshes.add(m.v,12,c=>[2,5,8,9].includes(c)?1.5:0)
   const sprite:SpriteWriter=(list,x,y,z,size,r,g,b,a,kind,rot=0,stretch=1)=>{
     // Prop sprites keep the production counts, positions, lifetimes and color; only their Lab shader is shared.
-    if(list==="a")sprites.push(x,y,z,size,r,g,b,a,kind===3?1:kind===14?4:0,rot,stretch)
+    if(list==="a")sprites.push(x,y,z,size,r,g,b,a,kind===3?1:kind===20?4:0,rot,stretch)
     else pending.push([x,y,z,size,r,g,b,a,kind===2?2:0,rot,stretch])
   }
   const pending:number[][]=[]

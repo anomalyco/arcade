@@ -98,7 +98,7 @@
       "speed": 20.50200949528696,
       "roll": -1.104754209781895e-32,
       "pitch": -0.07118437401887977,
-      "tyreParticles": 20,
+      "tyreParticles": 68,
       "airborne": false,
       "input": {
         "throttle": 1,
@@ -183,7 +183,7 @@
       "speed": 22.286723003442244,
       "roll": 3.648835334596213e-33,
       "pitch": -0.06721911414364758,
-      "tyreParticles": 20,
+      "tyreParticles": 68,
       "airborne": false,
       "input": {
         "throttle": 1,
@@ -195,7 +195,7 @@
     },
     "items": {
       "stats": {
-        "cpuMs": 0.10000000894069672,
+        "cpuMs": 0,
         "awake": 13,
         "particles": 77,
         "chunks": 8,
@@ -258,7 +258,7 @@
     "effects": 0,
     "particles": 0
   },
-  "physics": "13 bodies · 13 awake · 0 sleeping\n13/512 colliders · orange awake / cyan sleeping\nGPU 0.81 ms",
+  "physics": "13 bodies · 13 awake · 0 sleeping\n13/512 colliders · orange awake / cyan sleeping\nGPU 2.42 ms",
   "spawned": {
     "character": {
       "vehicle": "swat",

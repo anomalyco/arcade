@@ -4,8 +4,7 @@ Getaway uses `SmokeTrail` and `TyreRenderer`; Blackout uses `SmokeVolumes` and `
 claymore and wreck smoke. Both games serve `/lab.html`, which runs both paths and the general particle renderer.
 All positions use world X/Z with Y up. Simulation and upload storage is allocated at construction.
 The Lab's effect picker, parameter sliders, playback actions and debug views live in the shared Lab panel.
-Backquote toggles it. Getaway's smoke styles also use the shared select control; `?bench&smoke=N` is an automation
-override rather than the user-facing selector.
+Backquote toggles it. Getaway retains the approved single tyre-smoke path; all experiments use Lab controls.
 
 ## Particles draw inside the game's HDR pass
 
@@ -64,13 +63,14 @@ and `perf/fx-kit.md` for the measured cost and noise.
 ## The tyre port preserves Getaway's image
 
 `tyreShader(commonWGSL)` accepts a host frame/light declaration. `TyreRenderer` uses the host bind group at index 0
-and its own noise/field bindings at index 1. The Getaway adapter supplies its original `common`; the Lab
-supplies the smaller declaration it needs. The simulation, density field, shader expressions, blend and sample
-counts are unchanged. The matched drift-frame proof has zero differing pixels.
+and its own noise bindings at index 1. The Getaway adapter supplies its original `common`; the Lab
+supplies the smaller declaration it needs. The approved main billows use vertex-evaluated lighting and no density
+field. Live solver constants retain shipped defaults. `prepare()` and `upload(trail, visible)` replace the old
+style argument. The matched main/shared drift-frame proof has zero differing pixels.
 
 ## Run the proof
 
-From the repository root, run `bun games/getaway/scripts/prove-fx-playwright.ts` on a Metal-capable Mac with both
-games' dependencies installed. It launches private, headless Vite fixtures and closes them when done.
-`python3 games/getaway/scripts/fx-sheet.py [output.jpg]` checks exact tyre pixels and assembles the contact sheet.
-The two `perf/fx-baseline/*.txt` files preserve the original Getaway modules for this comparison.
+From the repository root, run `bun games/getaway/scripts/prove-fx-integration.ts` on a Metal-capable Mac after the
+root frozen install. It launches private, headless Vite fixtures and closes them when done. It verifies shipped tyre
+parity, default grenade volumes and live Blackout motion. The two `perf/fx-baseline/*.txt` files preserve the approved
+main Getaway modules for this comparison. `prove-lab-spawn.ts` and `prove-lab-effects.ts` exercise both Lab hosts.

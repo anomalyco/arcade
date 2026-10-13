@@ -1,5 +1,5 @@
 {
-  "files": ["scripts/prove-smoke-realistic.ts", "scripts/prove-fx-playwright.ts", "scripts/prove-motion-blur.ts", "scripts/prove-lab-spawn.ts", "scripts/prove-lab-effects.ts", "scripts/prove-effects-defaults.ts"],
+  "files": ["scripts/prove-smoke-realistic.ts", "scripts/prove-fx-playwright.ts", "scripts/prove-fx-integration.ts", "scripts/prove-motion-blur.ts", "scripts/prove-lab-spawn.ts", "scripts/prove-lab-effects.ts", "scripts/prove-effects-defaults.ts", "scripts/prove-fire-water.ts"],
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",

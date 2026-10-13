@@ -41,7 +41,7 @@ export class LabNavigation {
   }
   jump(row: LabRow) { this.folded.delete(row.group); this.active = row }
   set(control: LabControl, value: LabValue) {
-    if (control.type === "action" || control.enabled?.(this.settings) === false) return
+    if (control.type === "action") return
     this.settings[control.key] = value
     control.change?.(value)
     this.change?.(control.key, value)
@@ -71,7 +71,7 @@ export class LabNavigation {
   }
   randomize(group = this.active?.group) {
     for (const { control: c, group: name } of this.rows) {
-      if (!c || name !== group || c.enabled?.(this.settings) === false) continue
+      if (!c || name !== group) continue
       if ("min" in c) {
         const step = c.step ?? .01
         const steps = Math.floor((c.max - c.min) / step + 1e-9)

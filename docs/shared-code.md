@@ -56,9 +56,9 @@ matrices and material catalogs. FX proof and GPU-cost limitations are in `perf/f
 All Lab tuning uses `LabPanel`, including the section/effect/debug selects, parameter sliders and playback,
 copy and carve actions. `LabControl` supports toggles, typed selects, ranges and actions; `addControls(settings,
 controls)` binds another game-owned settings object without copying it. Toggle presets leave selects and ranges
-alone. Standalone consumers opt into the shared Backquote listener, while games keep their existing input routing.
-Getaway's smoke selector uses this same control type. Its query override is restricted to benchmark/comparison
-automation, and changing styles in the panel leaves the URL alone.
+alone. The panel captures game keys while open, preserving main's keyboard navigation/search/exact editing.
+The standalone sandbox uses `capture: "focus"`, so clicking the canvas enables its playable character while keeping
+the panel visible. Getaway retains the approved single tyre-smoke look; study variants do not return to gameplay.
 
 ## Add an isolation experiment to the Lab
 
@@ -185,8 +185,25 @@ input release. Evidence is in `perf/lab-spawn.json`; stills are in `captures/lab
 For a new game, add `lab.html` with a module script for its `src/lab.ts`, call `lab({ camera })`, and add the HTML
 to Vite's build inputs. Additional catalogs and sections are optional. Game-specific assets/dependencies belong
 in the entry's adapters. Query parameters never select sections or looks; `?bench` only stops the live loop and
-exposes `window.lab` for deterministic automation. Proof: `perf/lab.json`; run
-`bun games/getaway/scripts/prove-fx-playwright.ts --lab` on headless Metal.
+exposes `window.lab` for deterministic automation. Current merged-host proofs:
+`bun games/getaway/scripts/prove-lab-spawn.ts`, `prove-lab-effects.ts`, `prove-fire-water.ts` and
+`prove-fx-integration.ts` on headless Metal. Earlier `prove-fx-playwright.ts` records the pre-cleanup study protocol.
+
+## Shared motion blur
+
+`packages/kit/gpu/motion-blur.ts` owns the bounded eight-tap, depth-aware shutter gather, camera reprojection,
+stable transform history and transient part identities. Getaway supplies half-resolution camera/car/wheel/particle
+velocities before bloom. Blackout supplies full-resolution MSAA MRT velocities and embeds the shared gather in its
+existing composite. Both accept current/previous VP transforms, elapsed time, colour/depth and strength/shutter.
+Transient keys preserve emission points and allow fast tracer travel without weakening actor teleport rejection.
+Neither path feeds colour history back into the next frame. DOM HUDs stay outside the blur.
+
+Getaway defaults on at strength 0.65 / shutter 0.5, with stronger blur under the existing nitro envelope. Blackout
+remains off by default at strength 1 / shutter 1 when enabled. All settings live in Backquote Lab controls.
+The final M5 Max 1440p whole-GPU paired deltas are Getaway +0.233 ms (MAD .002), Blackout office +0.229 ms
+(MAD .004), downtown +0.813 ms (MAD .212). The downtown MRT path misses the 0.5 ms target. There is no tile-max;
+foreground expansion and layered transparent velocity remain conservative. Reproduce with `prove-motion-blur.ts`
+and `games/blackout/scripts/prove-shared-motion.ts`. Raw evidence and limits: `perf/shared-motion.md`.
 
 ## Other shared code and candidates
 
