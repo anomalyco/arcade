@@ -39,7 +39,7 @@ export function tyreSlip(c: CarView, input: Input | null, acceleration: number) 
 
 /** Persistent wisps plus direct attached flames. Packs into the existing sprite batches, without particle objects. */
 export class VehicleEmissions {
-  readonly trail = new SmokeTrail()
+  constructor(readonly trail = new SmokeTrail()) {}
   private readonly wisps = new Float32Array(256 * 8)
   private readonly flames = new Float32Array(128 * 12)
   wispCount = 0

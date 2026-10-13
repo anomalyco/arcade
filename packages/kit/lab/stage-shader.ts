@@ -1,16 +1,25 @@
-const common = /* wgsl */ `
+export const frameShader = /* wgsl */ `
 struct Frame {
   inverse:mat4x4f, vp:mat4x4f, eye:vec4f,
   options:vec4f, moon:vec4f, grade:vec4f, ambient:vec4f,
   lights:array<vec4f,24>
 }
 @group(0) @binding(0) var<uniform> F:Frame;
+`
+const common = frameShader + /* wgsl */ `
 struct Box { lo:vec3f, hi:vec3f }
-const boxes=array<Box,9>(
+const fixtures=array<Box,9>(
   Box(vec3f(-6,0,-4),vec3f(6,2.2,-3.6)),Box(vec3f(-6,0,-4),vec3f(-5.6,2.2,5)),
   Box(vec3f(5.6,0,-4),vec3f(6,2.2,-1)),Box(vec3f(5.6,0,1),vec3f(6,2.2,5)),Box(vec3f(-6,0,4.6),vec3f(6,0.65,5)),
   Box(vec3f(-3.5,0.2,-0.8),vec3f(-0.5,0.85,0.8)),Box(vec3f(-2.7,0.85,-0.65),vec3f(-1.1,1.4,0.65)),
   Box(vec3f(2.5,0,0.7),vec3f(3,1.3,1.2)),Box(vec3f(2.55,1.3,0.75),vec3f(2.95,1.7,1.15)));
+fn boxAt(i:u32)->Box {
+  if(F.options.w<3.0){return fixtures[i];}
+  if(i==0u){return Box(vec3f(-18,0,-28),vec3f(18,2,-27));}
+  if(i==1u){return Box(vec3f(-18,0,-28),vec3f(-17,2,12));}
+  if(i==2u){return Box(vec3f(17,0,-28),vec3f(18,2,12));}
+  return Box(vec3f(1000),vec3f(1000.01));
+}
 fn intersect(origin:vec3f,ray:vec3f,b:Box)->f32 {
   let safe=select(vec3f(0.000001),ray,abs(ray)>vec3f(0.000001));
   let a=(b.lo-origin)/safe;let c=(b.hi-origin)/safe;let lo=min(a,c);let hi=max(a,c);
@@ -35,7 +44,7 @@ fn cs(@builtin(global_invocation_id) gid:vec3u){
   let direction=vec2f(cos(angle),sin(angle));let safe=select(vec2f(0.000001),direction,abs(direction)>vec2f(0.000001));
   let origin=F.lights[light*3u].xz;
   for(var b=0u;b<9u;b++){
-    let box=boxes[b];let a=(box.lo.xz-origin)/safe;let c=(box.hi.xz-origin)/safe;
+    let box=boxAt(b);let a=(box.lo.xz-origin)/safe;let c=(box.hi.xz-origin)/safe;
     let lo=min(a,c);let hi=max(a,c);let near=max(0.0,max(lo.x,lo.y));let far=min(hi.x,hi.y);
     polar[(light*256u+bin)*9u+b]=select(vec4f(10000,10000,0,0),vec4f(near,far,box.lo.y,box.hi.y),near<far&&far>0.0);
   }
@@ -69,16 +78,16 @@ struct Pixel {@location(0) color:vec4f,@builtin(frag_depth) depth:f32}
 @fragment fn fs(o:Out)->Pixel {
   let q=F.inverse*vec4f(o.uv*vec2f(2,-2)+vec2f(-1,1),1,1);let ray=normalize(q.xyz/q.w-F.eye.xyz);
   var hit=-F.eye.y/ray.y;var index=-1;
-  for(var i=0;i<9;i++){let d=intersect(F.eye.xyz,ray,boxes[i]);if(d<hit){hit=d;index=i;}}
+  for(var i=0;i<9;i++){let d=intersect(F.eye.xyz,ray,boxAt(u32(i)));if(d<hit){hit=d;index=i;}}
   // Neutral calibration sphere in Lighting/Materials. Material adapters replace the latter with their own meshes.
   if(F.options.w==1.0||F.options.w==2.0){let d=sphere(F.eye.xyz,ray,vec3f(1.3,0.85,-1.8),0.85);if(d<hit){hit=d;index=9;}}
   let p=F.eye.xyz+ray*hit;var normal=vec3f(0,1,0);var albedo=vec3f(0.18,0.21,0.26);
-  if(index>=0&&index<9){let b=boxes[index];let mid=(b.lo+b.hi)*0.5;let r=(p-mid)/((b.hi-b.lo)*0.5);let m=max(max(abs(r.x),abs(r.y)),abs(r.z));normal=normalize(select(vec3f(0),sign(r),abs(r)>=vec3f(m-0.002)));albedo=vec3f(0.3,0.34,0.38);if(index==5){albedo=vec3f(0.06,0.22,0.26);}if(index==6){albedo=vec3f(0.035,0.08,0.11);}if(index>=7){albedo=vec3f(0.42,0.32,0.17);}}
+  if(index>=0&&index<9){let b=boxAt(u32(index));let mid=(b.lo+b.hi)*0.5;let r=(p-mid)/((b.hi-b.lo)*0.5);let m=max(max(abs(r.x),abs(r.y)),abs(r.z));normal=normalize(select(vec3f(0),sign(r),abs(r)>=vec3f(m-0.002)));albedo=vec3f(0.3,0.34,0.38);if(index==5){albedo=vec3f(0.06,0.22,0.26);}if(index==6){albedo=vec3f(0.035,0.08,0.11);}if(index>=7){albedo=vec3f(0.42,0.32,0.17);}}
   if(index==9){normal=normalize(p-vec3f(1.3,0.85,-1.8));albedo=vec3f(0.5);}
   var light=F.ambient.rgb*(0.5+0.5*max(normal.y,0.0));
   var specular=vec3f(0);
   let moon=normalize(F.moon.xyz);var moonVisibility=1.0;
-  if(F.options.y>0.5){for(var b=0;b<9;b++){if(intersect(p+normal*0.04,moon,boxes[b])<1000.0){moonVisibility=0.1;break;}}}
+  if(F.options.y>0.5){for(var b=0;b<9;b++){if(intersect(p+normal*0.04,moon,boxAt(u32(b)))<1000.0){moonVisibility=0.1;break;}}}
   light+=vec3f(0.48,0.61,0.9)*F.moon.w*max(0.0,dot(normal,moon))*moonVisibility;
   for(var l=0;l<min(8,i32(F.options.x));l++){
     let pos=F.lights[l*3];let color=F.lights[l*3+1];let cone=F.lights[l*3+2];

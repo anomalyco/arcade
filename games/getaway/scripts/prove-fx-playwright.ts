@@ -110,7 +110,7 @@ try{
     if(!await page.getByText("Materials · renderer pending",{exact:false}).isVisible())throw new Error("Material stub not labelled")
     await page.screenshot({path:join(out,"lab-materials.png")})
     await section.selectOption("physics");await draw()
-    if(!await page.getByText("Physics · adapter pending",{exact:false}).isVisible())throw new Error("Physics stub not labelled")
+    if(!await page.getByText("0 bodies",{exact:false}).isVisible())throw new Error("Physics adapter did not start empty")
     await page.evaluate(()=>{
       const bodies=[{x:0,y:0.7,z:2,hx:0.7,hy:0.7,hz:0.7,yaw:0.6,pitch:0.2,roll:0.4,awake:true,enabled:true},{x:2,y:0.4,z:3,hx:0.6,hy:0.4,hz:0.4,yaw:0,pitch:0,roll:0,awake:false,enabled:true}]
       const state={ticks:0,resets:0};Object.assign(window,{physicsFixture:state})

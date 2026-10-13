@@ -34,6 +34,7 @@ export function createPhysics(context:LabContext,initial?:PhysicsAdapter) {
     {key:"reset",label:"Reset",type:"action",run:()=>adapter?.reset()},
     {key:"wake",label:"Wake all",type:"action",run:()=>adapter?.wakeAll?.()},
   ],update:dt=>{if(settings.playing)adapter?.update(dt)},prepare:()=>{
+    adapter?.prepare?.()
     count=0;total=0;awake=0
     for(const body of adapter?.bodies??[]){if(!body.enabled)continue;total++;if(body.awake)awake++;if(settings.colliders&&(body.awake||settings.sleeping)&&count<capacity*24)box(body)}
     d.queue.writeBuffer(uniform,0,context.stage.viewProj)

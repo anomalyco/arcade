@@ -3,13 +3,19 @@ import { walls } from "./stage"
 import type { LabControl } from "../lab-panel"
 import type { LabContext, LabSection } from "./types"
 
-const specs:Record<string,ParticleSpec>={
+export const effectSpecs:Record<string,ParticleSpec>={
   sparks:{kind:"spark",life:1.8,size:0.07,growth:-0.02,gravity:12,drag:0.4,bounce:0.5,r:1,g:0.55,b:0.12,alpha:1},
   debris:{kind:"debris",life:5,size:0.14,growth:0,gravity:12,drag:0.3,bounce:0.35,r:0.5,g:0.42,b:0.3,alpha:1},
   water:{kind:"water",life:2.2,size:0.09,growth:-0.015,gravity:10,drag:0.4,bounce:0.2,r:0.3,g:0.7,b:1,alpha:0.75},
   fire:{kind:"fire",life:0.8,size:0.3,growth:0.2,gravity:-3,drag:3,bounce:0,r:1.3,g:0.28,b:0.025,alpha:0.8},
   nitro:{kind:"fire",life:0.10,size:0.22,growth:-1,gravity:0,drag:0,bounce:0,r:0.1,g:0.55,b:1.5,alpha:0.9},
 }
+export const effectOptions=[
+  {value:"smoke",label:"Grenade smoke"},{value:"tyre",label:"Tyre smoke"},{value:"nitro",label:"Nitro flame"},
+  {value:"sparks",label:"Sparks"},{value:"explosion",label:"Explosion"},{value:"water",label:"Hydrant water"},
+  {value:"debris",label:"Debris"},{value:"fire",label:"Fire"},
+]
+const specs=effectSpecs
 export function createEffects(context:LabContext) {
   const {particles,volume,trail}=context,emitter=new Emitter()
   const params={rate:75,size:1,speed:1,density:1,effect:"smoke",playing:true,loop:true}
@@ -42,11 +48,7 @@ export function createEffects(context:LabContext) {
     if(params.loop&&time>(effect==="smoke"?10:effect==="tyre"?8:5))reset()
   }
   const controls:LabControl[]=[
-    {key:"effect",label:"Effect",type:"select",options:[
-      {value:"smoke",label:"Grenade smoke"},{value:"tyre",label:"Tyre smoke"},{value:"nitro",label:"Nitro flame"},
-      {value:"sparks",label:"Sparks"},{value:"explosion",label:"Explosion"},{value:"water",label:"Hydrant water"},
-      {value:"debris",label:"Debris"},{value:"fire",label:"Fire"},
-    ],change:value=>reset(String(value))},
+    {key:"effect",label:"Effect",type:"select",options:effectOptions,change:value=>reset(String(value))},
     {key:"playing",label:"Play"},{key:"loop",label:"Loop"},
     {key:"trigger",label:"Retrigger",type:"action",run:()=>reset()},
     {key:"rate",label:"Rate",type:"range",min:5,max:180},

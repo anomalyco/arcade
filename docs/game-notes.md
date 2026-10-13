@@ -422,6 +422,18 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
+- **Keep Lab spawning behind game adapters.** `packages/kit/lab/spawn.ts` owns placement, effects, lights and the
+  shared panel controls. Getaway's `src/lab/spawn.ts` supplies the production vehicle step, chassis, tyre emissions
+  and `StreetProps`; Blackout's supplies its movement and soldier rig. On headless Metal, actual keyboard input
+  drove a Muscle through five cones and a propane tank, triggering contact impulses, breakup and explosion
+  particles. The soldier walked 4.08 m in one second and sprinted 6.24 m with Dvorak comma + Shift. Panel focus
+  released throttle, all seven vehicles rendered, and row/grid/clear plus all eight effects and three light types
+  passed. `perf/lab-spawn.json` records the proof. Spawn and Physics share bodies; gameplay input is disabled in
+  Physics. Whole-scene sampled GPU time is diagnostic, not a performance comparison.
+- **Reserve separate sprite IDs when merging effects.** The clutter merge used 10–12 for paper/water/fire, which
+  collided with the existing smoke/ribbon shader IDs. Keep clutter's simulation kinds and map its output to
+  14–16; smoke/flames retain 10–13. Both game checks and the combined Metal shader/control proof passed.
+
 - **Use one Lab for tuning.** The shared `LabPanel` supports typed selects, live ranges and actions alongside
   toggles. The FX playground and Getaway smoke selector use those controls instead of creating their own DOM.
   Selects preserve numeric option values; All On/Off changes only toggles. The Metal `--lab` proof exercised

@@ -1,12 +1,13 @@
 import { FrameTimer } from "../fx/frame-timer"
 import { ParticleRenderer } from "../fx/particle-renderer"
-import type { Particles } from "../fx/particles"
+import { Particles } from "../fx/particles"
 import { SmokeRenderer } from "../fx/tyre-renderer"
 import type { SmokeTrail } from "../fx/smoke-trail"
 import { VolumeRenderer } from "../fx/volume-renderer"
 import type { SmokeVolumes, Wall } from "../fx/volume"
 import { polarShader, stageShader } from "./stage-shader"
 import { lightingDefaults } from "./lighting"
+import { LabMeshes } from "./meshes"
 
 export const walls:readonly Wall[]=[[-6,-4,6,-3.6],[-6,-4,-5.6,5],[5.6,-4,6,-1],[5.6,1,6,5],[-6,4.6,6,5]]
 const lightX=[-4,4,-4,4,0,0,-7,7],lightZ=[-2,2,3,-3,-6,6,0,0]
@@ -16,12 +17,18 @@ struct Light {pos:vec4f,color:vec4f,dir:vec4f}
 @group(0) @binding(0) var<uniform> F:Frame;
 @group(0) @binding(1) var<storage,read> lights:array<Light>;
 `
-export type CameraWriter=(width:number,height:number,vp:Float32Array,inverse:Float32Array,eye:Float32Array)=>void
+export type LabLight={x:number;y:number;z:number;radius:number;r:number;g:number;b:number;power:number;dx?:number;dy?:number;dz?:number;cone?:number}
+export type CameraWriter=(width:number,height:number,vp:Float32Array,inverse:Float32Array,eye:Float32Array,focus:readonly number[])=>void
 export class Stage {
   readonly lighting=lightingDefaults()
   readonly particles:ParticleRenderer
   readonly volume:VolumeRenderer
   readonly device:GPUDevice
+  readonly meshes:LabMeshes
+  readonly transients=new Particles()
+  private readonly transientRenderer:ParticleRenderer
+  readonly focus=[0,0,0]
+  dynamicLights:LabLight[]|null=null
   private readonly tyre:SmokeRenderer
   private readonly tyreBuffer:GPUBuffer
   private readonly tyreLights:GPUBuffer
@@ -54,7 +61,9 @@ export class Stage {
   private frames=0
   constructor(device:GPUDevice,private readonly context:GPUCanvasContext,private readonly format:GPUTextureFormat,private readonly camera:CameraWriter){
     const d=this.device=device
+    this.meshes=new LabMeshes(d)
     this.particles=new ParticleRenderer(d);this.volume=new VolumeRenderer(d)
+    this.transientRenderer=new ParticleRenderer(d)
     this.buffer=d.createBuffer({size:this.frame.byteLength,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST})
     const polarBuffer=d.createBuffer({size:8*256*9*16,usage:GPUBufferUsage.STORAGE})
     const layout=d.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},{binding:1,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"read-only-storage"}}]})
@@ -87,13 +96,16 @@ export class Stage {
     this.scenePass={colorAttachments:[{view:msaa.createView(),resolveTarget:this.hdr,loadOp:"clear",storeOp:"discard",clearValue:{r:0,g:0,b:0,a:1}}],depthStencilAttachment:{view:depthView,depthLoadOp:"clear",depthStoreOp:"store",depthClearValue:1}}
     this.volume.resize(width,height,depthView)
     this.postGroup=d.createBindGroup({layout:this.postLayout,entries:[{binding:0,resource:this.hdr}]})
-    this.camera(width,height,this.viewProj,this.inverse,this.eye)
+    this.updateCamera()
+  }
+  updateCamera(){
+    this.camera(this.width,this.height,this.viewProj,this.inverse,this.eye,this.focus)
     this.volume.uniforms.set(this.inverse);this.volume.uniforms.set(this.eye,16)
     this.particles.uniforms.set(this.viewProj);this.particles.uniforms.set(this.eye,16)
-    this.tyreFrame.set(this.viewProj);this.tyreFrame.set(this.eye,16);this.tyreFrame[20]=width;this.tyreFrame[21]=height
+    this.tyreFrame.set(this.viewProj);this.tyreFrame.set(this.eye,16);this.tyreFrame[20]=this.width;this.tyreFrame[21]=this.height
   }
   private uploadLighting(debug:number){
-    const s=this.lighting,f=this.frame,deg=Math.PI/180,count=Math.max(0,Math.min(8,Math.round(s.count)))
+    const s=this.lighting,f=this.frame,deg=Math.PI/180,count=this.dynamicLights?Math.min(8,this.dynamicLights.length):Math.max(0,Math.min(8,Math.round(s.count)))
     f[36]=count;f[37]=Number(s.shadows);f[38]=debug;f[39]=this.sceneMode
     f[40]=Math.cos(s.moonAzimuth*deg)*Math.cos(s.moonElevation*deg);f[41]=Math.sin(s.moonElevation*deg);f[42]=Math.sin(s.moonAzimuth*deg)*Math.cos(s.moonElevation*deg);f[43]=s.moon?s.moonPower:0
     f[44]=s.exposure;f[45]=s.tone;f[46]=s.saturation;f[47]=s.temperature
@@ -106,7 +118,12 @@ export class Stage {
       const power=spot?(s.spot?s.spotPower:0):(s.lamps?s.lampPower:0)
       this.lightData[o+7]=i<count?power:0
       this.lightData[o+8]=Math.sin(s.spotYaw*deg)*Math.cos(s.spotPitch*deg);this.lightData[o+9]=-Math.sin(s.spotPitch*deg);this.lightData[o+10]=Math.cos(s.spotYaw*deg)*Math.cos(s.spotPitch*deg);this.lightData[o+11]=spot?Math.cos(s.spotAngle*deg):-2
-      if(i<count&&power>0)this.lightCount++
+      if(this.dynamicLights){
+        const l=this.dynamicLights[i]
+        this.lightData.fill(0,o,o+12)
+        if(l){this.lightData.set([l.x,l.y,l.z,l.radius,l.r,l.g,l.b,l.power,l.dx??0,l.dy??-1,l.dz??0,l.cone??-2],o)}
+      }
+      if(i<count&&this.lightData[o+7]>0)this.lightCount++
       for(let j=0;j<8;j++){this.volume.uniforms[60+i*8+j]=this.lightData[o+j]!;this.particles.uniforms[24+i*8+j]=this.lightData[o+j]!}
     }
     this.volume.uniforms[22]=count;this.volume.uniforms[24]=0.08;this.volume.uniforms[25]=0.10;this.volume.uniforms[26]=0.15
@@ -118,15 +135,18 @@ export class Stage {
     if(this.measuring)return null
     const timed=!!this.timer&&(measure||this.frames++%45===0)
     this.uploadLighting(debug)
+    this.meshes.upload(this.frame)
     this.particles.uniforms[19]=debug;this.volume.debug=debug
+    this.transientRenderer.uniforms.set(this.particles.uniforms);this.transientRenderer.upload(this.transients)
     this.particles.upload(particles);trail.prepare(6);this.tyre.upload(trail,6,true)
     this.tyreFrame[19]=volumes.time;this.device.queue.writeBuffer(this.tyreBuffer,0,this.tyreFrame)
-    const enc=this.device.createCommandEncoder(),shadow=this.lighting.shadows&&this.lighting.count>0
-    if(shadow){const p=enc.beginComputePass({timestampWrites:timed?this.timer!.start:undefined});p.setPipeline(this.polar);p.setBindGroup(0,this.computeGroup);p.dispatchWorkgroups(Math.ceil(Math.min(8,this.lighting.count)*256/64));p.end()}
+    const enc=this.device.createCommandEncoder(),shadow=this.lighting.shadows&&this.frame[36]>0
+    if(shadow){const p=enc.beginComputePass({timestampWrites:timed?this.timer!.start:undefined});p.setPipeline(this.polar);p.setBindGroup(0,this.computeGroup);p.dispatchWorkgroups(Math.ceil(this.frame[36]*256/64));p.end()}
     this.scenePass.timestampWrites=timed&&!shadow?this.timer!.start:undefined
     const pass=enc.beginRenderPass(this.scenePass);pass.setPipeline(this.scene);pass.setBindGroup(0,this.group);pass.draw(3)
+    this.meshes.draw(pass)
     if(debug!==5){pass.setBindGroup(0,this.tyreGroup);this.tyre.draw(pass)}
-    this.particles.draw(pass);draw?.(pass);pass.end()
+    this.particles.draw(pass);this.transientRenderer.draw(pass);draw?.(pass);pass.end()
     if(debug!==5)this.volume.render(enc,this.hdr,volumes)
     const output=this.outputView
     const post=enc.beginRenderPass({colorAttachments:[{view:output,loadOp:"clear",storeOp:"store",clearValue:{r:0,g:0,b:0,a:1}}]})

@@ -3,6 +3,7 @@ import type { Particles } from "../fx/particles"
 import type { SmokeTrail } from "../fx/smoke-trail"
 import type { SmokeVolumes } from "../fx/volume"
 import type { Stage } from "./stage"
+import type { LabInput } from "./input"
 
 /** All hooks execute on the client. Section-owned simulations never change multiplayer state. */
 export type LabSection = {
@@ -26,6 +27,7 @@ export type LabContext = {
   volume:SmokeVolumes
   trail:SmokeTrail
   sync():void
+  input:LabInput
 }
 export type SectionFactory = (context:LabContext)=>LabSection
 /** Shape is compatible with getaway-clutter's Body; no dependency on that worktree's solver. */
@@ -38,6 +40,7 @@ export type PhysicsAdapter = {
   update(dt:number):void
   reset():void
   wakeAll?():void
+  prepare?():void
 }
 export type MaterialAdapter = {
   game:string

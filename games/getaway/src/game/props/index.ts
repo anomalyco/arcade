@@ -35,14 +35,14 @@ export class StreetProps {
   stats = { cpuMs: 0, awake: 0, particles: 0, chunks: 0, hits: 0, explosions: 0 }
   shake = 0
 
-  constructor(city: City, renderer: Pick<Renderer, "addModel">, readonly ground: (x: number, z: number) => number) {
+  constructor(city: City | { boxes: City["boxes"]; placements: Placement[] }, renderer: Pick<Renderer, "addModel">, readonly ground: (x: number, z: number) => number) {
     this.physics = new PropPhysics(ground, city.boxes)
     for (const kind of PROP_KINDS) {
       const model = renderer.addModel(propMesh(kind)), chunk = renderer.addModel(chunkMesh(SPECS[kind].color, ["bench", "pallet", "crate", "barrier", "sawhorse"].includes(kind)))
       this.models.set(kind, model); this.chunkModels.set(kind, chunk)
       this.shadowless.add(model); this.shadowless.add(chunk)
     }
-    this.layout = placeProps(city)
+    this.layout = "placements" in city ? city.placements : placeProps(city)
     for (const p of this.layout) this.add(p)
   }
   private add(p: Placement) {
@@ -51,6 +51,13 @@ export class StreetProps {
     const prop = { body: b, home: p, model: this.models.get(p.kind)!, broken: false, touched: -1, hitAt: -1, fuse: -1 }
     this.props.push(prop); this.byId.set(b.id, prop); this.physics.add(b)
     return prop
+  }
+  /** Client isolation tools add props through the same body, mesh and reaction path as the street. */
+  spawn(p: Placement) { if(this.props.length<512)this.add(p) }
+  clear() {
+    this.reset()
+    for(const p of this.props)this.physics.remove(p.body)
+    this.props.length=0;this.byId.clear();this.changed.clear();this.layout=[]
   }
   reset() {
     for (const c of this.chunks) this.physics.remove(c.body)
