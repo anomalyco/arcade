@@ -20,17 +20,21 @@ colour in bright lamps and reduces the blue shadow lift. The helicopter radius a
 All switches affect presentation only. Disabling them restores the original constants and skips the added decals.
 The original airborne-car shadow remains available when Grounding is off.
 
-## GPU measurement
+## GPU diagnostics (total-cost claim withdrawn)
+
+The original report incorrectly described a sum of per-pass durations as total GPU time. Pass ranges can overlap,
+so the -0.154 ms figure below does not establish a total GPU saving or a per-feature budget. Valid total and
+per-feature GPU costs remain unverified. Raw samples are retained for provenance.
 
 Apple M5 Max, headless Chromium, Apple `metal-3` adapter, 960 × 600, seed 7, frozen route frame 12.
-Hardware timestamps sum the render passes, including shadows and post-processing. Queue-completion waits only
-pace submission; they are not the reported GPU time.
+These diagnostics sum hardware timestamps across render passes, including shadows and post-processing.
+Queue-completion waits pace submission; they are not the metric below.
 
 Each feature and the complete pass received one warmup pair and seven measured runs. Each run contains 24
 adjacent on/off hardware samples in alternating AB/BA order. The table reports the median of each run's median
 paired difference. The range covers all seven run medians. Raw samples are in `getaway-look-paired.json`.
 
-| Switch | Paired GPU delta, ms | Range, ms |
+| Switch | Paired pass-sum delta, ms | Range, ms |
 | --- | ---: | ---: |
 | All six | -0.154 | -0.221 to -0.038 |
 | Tighter lamp pools | -0.115 | -0.185 to -0.071 |
@@ -40,10 +44,9 @@ paired difference. The range covers all seven run medians. Raw samples are in `g
 | Wall and roof gradients | -0.016 | -0.149 to +0.260 |
 | Colour grade | +0.066 | -0.012 to +0.179 |
 
-For the full pass, the median off/on GPU times were 5.249 / 5.141 ms, and the paired-delta MAD was 0.055 ms.
-Every feature's measured median addition is below 0.1 ms. Concurrent simulator/build activity caused wide
-individual-feature spreads, so these results do not establish a reliable sub-0.1 ms bound for every feature.
-The full pass was cheaper in all seven paired run medians.
+For all six switches, the median off/on pass sums were 5.249 / 5.141 ms, and the paired-delta MAD was 0.055 ms.
+Concurrent simulator/build activity caused wide individual-feature spreads. A corrected measurement must await
+the timestamp readback and account for overlapping pass ranges before making any total-cost or sub-0.1 ms claim.
 
 ## Visual and functional proof
 

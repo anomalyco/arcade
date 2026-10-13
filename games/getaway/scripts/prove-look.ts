@@ -185,7 +185,8 @@ try {
       runs.push(await measure(`${target}-${i < 0 ? "warmup" : i}-${on ? "on" : "off"}`, on ? target === "all" ? keys : [target] : []))
     }
   }
-  writeFileSync(join(out, `${mode}.json`), JSON.stringify({ adapter, errors, runs }, null, 2))
+  // Pass ranges can overlap: retain this diagnostic, but never call the sum total GPU time.
+  writeFileSync(join(out, `${mode}.json`), JSON.stringify({ adapter, metric: "render-pass timestamp sum", validForTotalGpuCost: false, errors, runs }, null, 2))
   if (errors.length) throw new Error(errors.join("\n"))
 } finally {
   await browser.close()

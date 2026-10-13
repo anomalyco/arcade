@@ -1,4 +1,6 @@
 {
+  "validForTotalGpuCost": false,
+  "status": "Diagnostic pass sums only. Total-cost and per-feature-budget claims withdrawn because pass timestamp ranges can overlap.",
   "adapter": {
     "vendor": "apple",
     "architecture": "metal-3",

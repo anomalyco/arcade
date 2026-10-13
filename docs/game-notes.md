@@ -21,6 +21,11 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 - **Read timestamps only after they resolve.** Queue completion does not mean the timestamp readback finished; await
   the readback before clearing samples. Render-pass timestamp ranges can overlap, so don't sum per-pass times into a
   total.
+- **Keep invalid measurements as labelled diagnostics.** Getaway's initial Look report called a -0.154 ms paired
+  pass-sum delta a total GPU saving. That claim is withdrawn: overlapping pass ranges invalidate the total, and
+  individual-feature spreads also exceeded several apparent changes. `perf/getaway-look-paired.json` retains the
+  raw runs; valid total and per-feature GPU costs remain unverified. The 180 matching route poses and visual captures
+  still establish the comparison's simulation agreement and appearance.
 - **Seeded, enemy-free play for comparisons.** `?peaceful=1&seed=N` gives a fixed world with no enemies acting, so two
   builds can be played side by side with the same input. Getaway's `games/getaway/src/game/session.ts` keeps the
   simulation in its free-driving phase and supplies a chase HUD view. Two scripted 3,600-frame runs at 60 Hz with
@@ -59,16 +64,14 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
-- **Compact practical lights need a diffuse core when the ground becomes matte.** Getaway's six-switch Look pass
-  reduces lamp radii and sky fill, lowers ground specular from 0.55 to 0.035, and raises only the compact lamp cores.
-  Lit shopfronts bake footprint records into the city mesh build and reuse the additive sprite batch for sidewalk
-  spill; room colours use otherwise-unused window UVs. Building-foot strips, tree discs and a grid-based curb term
-  reuse existing passes, and the car shadow extends beyond the body with stronger wheel patches. The wall/roof
-  gradients and hue-preserving shoulder also stay in existing shaders. All six default on after matched-frame
-  review against the concept images; the helicopter cone is unchanged. On the M5 Max at 960 × 600, one warmup and
-  seven paired runs measured a total median delta of -0.154 ms (run medians -0.221 to -0.038 ms). Individual feature
-  median additions were below 0.1 ms, but shared-machine noise prevents a firm per-feature bound. The pristine-main
-  and look-pass videos matched all 180 car poses. See `perf/getaway-look.md` and `perf/getaway-look-paired.json`.
+- **Bake shop-spill footprints and room colours.** Getaway's `render/city/building.ts` records footprints only for
+  lit street-facing shops; `game/scene.ts` draws nearby footprints in the existing additive batch. `render/mesh.ts`
+  stores room tint in unused window UVs for vertex shading. Metal stills show sidewalk spill and window variety
+  without added dynamic lights or texture fetches. Default on for visual review; valid GPU cost is unverified.
+- **Reuse ground decals for contact.** Getaway's `game/scene.ts` and `render/shaders.ts` draw building-foot strips,
+  tree-base discs and a car shadow wider than the body with stronger wheel patches. A grid-distance term darkens curb
+  feet. The matched-frame sheet shows the result; Grounding defaults on pending Kit's playtest. Valid GPU cost is
+  unverified. Both techniques and the diagnostic pass-sum timings are documented in `perf/getaway-look.md`.
 
 - **Live presentation labs.** `packages/kit/lab-panel.ts` stops pointer, mouse, wheel, touch, and keyboard bubbling
   and releases gameplay input on pointer down. The two `src/ui/debug-overlay.ts` adapters expose only enable/disable
@@ -121,8 +124,17 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and
   trees; walls and roofs with tonal gradients and lit edges rather than one flat colour; dense set dressing on
   sidewalks and plazas; warm shop-window light spilling onto the sidewalk; a clear cool-fill, warm-pool, saturated
-  siren colour split; and chunky white smoke. Kit agreed on the pools, the ground and the shop light. Being built as
-  separate Look switches; record what each costs and whether it stays.
+  siren colour split; and chunky white smoke. Kit agreed on the pools, the ground and the shop light. Six independent
+  Look switches now implement the lighting, material, grounding and grading changes in `src/ui/debug-overlay.ts`.
+  They default on after matched-frame concept review, pending Kit's playtest; valid GPU costs remain unverified.
+- **Tune compact lamp cores together with matte ground.** In Getaway's `src/game/scene.ts`, reducing lamp radii and
+  sky fill alone left the diffuse pools too dim after ground specular dropped from 0.55 to 0.035. Raising only the
+  compact cores restored warm pools while retaining dark gaps. Keep both switches on for review; the original tight
+  helicopter cone is unchanged. Cost awaits valid total-GPU measurement.
+- **Grade shadows and bright colours in the existing composite.** Getaway's `src/render/shaders.ts` mixes a
+  peak-preserving shoulder with ACES, reduces blue shadow lift and lightens the vignette. The inspected frames moved
+  closer to the concept, so Colour grade defaults on. This is not AgX, and siren appearance still needs a chase
+  playtest. Wall darkening and cool roof-top shading also default on. Costs remain unverified; see `perf/getaway-look.md`.
 - **Soft smoke can overshoot.** Replacing Getaway's hard faceted puffs with soft sprites fixed the hard look but made
   the trail barely visible; the concept's smoke is full and opaque. Aim for readable volume first, softness second.
 
@@ -130,9 +142,9 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 Candidates from the code audits; measure and playtest before moving any into the sections above.
 
-- A hue-preserving tone curve (AgX-style) so red/blue sirens and warm lamps keep their colour instead of skewing
-  orange or cyan; brightness-weighted first bloom downsample to stop specular fireflies; one-code-value dither before
-  8-bit output to remove banding in dark gradients.
+- Full AgX-style tone mapping remains a candidate; Getaway now has a simpler peak-preserving shoulder under Colour
+  grade. Compare both on a siren-heavy chase before adopting AgX. Brightness-weighted first bloom downsample to stop
+  specular fireflies and one-code-value dither before 8-bit output remain unimplemented, unmeasured candidates.
 - Blackout: shadow-occluded light haze and dust motes (they currently glow through walls), framed glass meeting
   rooms, and bounce light that follows a flickering lamp's power.
 - Getaway: lamps aimed downward so upper facades stay in cool shadow; window interiors with depth and blinds.
@@ -145,6 +157,9 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **A game's check must pass from a clean clone with only its own dependencies,** as CI runs it. Blackout's deploy
   failed because a Blackout script imported a Getaway helper that needed Getaway's Playwright install, and a fix to
   that Getaway file didn't trigger Blackout's workflow at all.
+- **Give historical proof fixtures separate Vite caches.** Getaway's `scripts/prove-look.ts` serves an archived
+  baseline with its own `cacheDir`; sharing the dependency cache caused `504 Outdated Optimize Dep` failures.
+  The isolated fixture completed the 180-frame before/after capture. This is a tooling fix, not a measured game-speed win.
 
 ## Multiplayer
 
