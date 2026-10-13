@@ -1,7 +1,7 @@
 import type { City, Park } from "../../../shared/sim/city"
 import { MAT, type Mesh, type Rgb } from "../mesh"
 import { beam, cylinder, ground, shade, SKIP, slab } from "./kit"
-import { barrel, barrier, bench, streetLamp, tree } from "./props"
+import { streetLamp, tree } from "./props"
 import { CURB, KERB_H, SIDEWALK } from "./streets"
 import type { LampLight } from "./types"
 
@@ -58,7 +58,6 @@ function park(m: Mesh, p: Park, rng: () => number, lamps: LampLight[]) {
     const lx = cx + Math.cos(a) * 9
     const lz = cz + Math.sin(a) * 9
     if (k % 2 === 0) streetLamp(m, lamps, lx, lz, lx, lz, top)
-    else bench(m, cx + Math.cos(a) * 8, cz + Math.sin(a) * 8, Math.abs(Math.sin(a)) > 0.7, top)
   }
   void rng
 }
@@ -113,8 +112,6 @@ function plaza(m: Mesh, p: Park, rng: () => number, lamps: LampLight[]) {
       tree(m, rng, px - 1.2, pz - 1, 1.05, top + 0.75)
       tree(m, rng, px + 1.3, pz + 1.1, 0.9, top + 0.75)
       tree(m, rng, px + 1, pz - 1.4, 0.8, top + 0.75)
-      bench(m, px - sx * 5.5, pz, false, top)
-      bench(m, px, pz - sz * 5.5, true, top)
       streetLamp(m, lamps, cx + sx * (ih - 1), cz + sz * 9, cx + sx * (ih - 1), cz + sz * 9, top)
     }
   // Banners on tall poles at the front steps.
@@ -136,9 +133,6 @@ function plaza(m: Mesh, p: Park, rng: () => number, lamps: LampLight[]) {
   slab(m, wx0 - 0.4, wx0 + 12.4, base, base + 0.6, wz0 - 2.6, wz0, STONE, MAT.lit, SKIP.bottom, [0.12, 0.1, 0.09])
   for (let k = 0; k < 6; k++) m.prism(wx0 + 1 + k * 2, wz0 - 1.3, 0.75, 0.2, base + 0.6, base + 1.4, 6, shade(HEDGE, 1.2))
   lamps.push({ x: wx0 + 6, y: base + 0.6, z: wz0 - 3, small: true })
-  // Roadworks on the west sidewalk: barrels and a striped barrier.
-  const rx = p.x0 + 1.4
-  for (let k = 0; k < 4; k++) barrel(m, rx + (k % 2) * 0.6, cz - 12 + k * 1.5, base)
-  barrier(m, rx + 0.4, cz - 6, false, 3, base)
+  // Movable furniture and roadworks are instanced by StreetProps on the lower pavement.
   void SIDEWALK
 }

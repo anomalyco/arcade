@@ -148,7 +148,9 @@ async function main() {
   if (mux) ready()
 
   let rafActive = !benchMode
+  const clutterBench = benchMode ? (await import("./dev/props-bench")).propsBench(scene, activeSession.update(0, controls.read(0)), canvas, device) : null
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
+    clutter: clutterBench,
     ready: atlasReady.then(() => true),
     adapterInfo: {
       vendor: adapter.info.vendor,

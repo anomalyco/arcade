@@ -128,15 +128,9 @@ export function streetFurniture(m: Mesh, rng: () => number, city: City, lamps: L
     const px = l.px ?? l.x
     const pz = l.pz ?? l.z
     streetLamp(m, lamps, l.x, l.z, px, pz)
-    // Inward direction (from the curb toward the buildings).
-    const ix = Math.sign(px - l.x)
-    const iz = Math.sign(pz - l.z)
-    const tx = iz !== 0 ? 1 : 0
-    const tz = ix !== 0 ? 1 : 0
-    const roll = rng()
-    if (roll < 0.3) bench(m, px + ix * 1.6 + tx * 2.2, pz + iz * 1.6 + tz * 2.2, tx === 1)
-    else if (roll < 0.5) bin(m, px + tx * 1.0 + ix * 0.2, pz + tz * 1.0 + iz * 0.2)
-    else if (roll < 0.6) hydrant(m, px - tx * 1.5, pz - tz * 1.5)
+    // Furniture is now instanced and breakable in StreetProps. Consume the old stream
+    // so later static scenery retains exactly the same seed layout.
+    rng()
   }
 }
 
@@ -159,7 +153,7 @@ export function yards(m: Mesh, city: City) {
       slab(m, y.x0, y.x1, 0, KERB_H, y.z0, y.z1, CURB, MAT.lit, SKIP.bottom, SIDEWALK)
       for (let x = y.x0 + 2; x < y.x1 - 0.5; x += 2) ground(m, x, x + 0.05, y.z0, y.z1, KERB_H + 0.003, shade(SIDEWALK, 0.82))
       for (let z = y.z0 + 2; z < y.z1 - 0.5; z += 2) ground(m, y.x0, y.x1, z, z + 0.05, KERB_H + 0.003, shade(SIDEWALK, 0.82))
-      bench(m, (y.x0 + y.x1) / 2, y.z0 + 1.2, true)
+      // Movable benches use StreetProps rather than the baked city mesh.
     } else {
       ground(m, y.x0, y.x1, y.z0, y.z1, 0.012, [0.27, 0.28, 0.3])
       const yellow: Rgb = [0.8, 0.62, 0.18]

@@ -12,5 +12,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/prove-feel.ts", "scripts/prove-look.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/prove-feel.ts", "scripts/prove-look.ts", "scripts/prove-clutter.ts", "scripts/bench-clutter-cpu.ts"]
 }

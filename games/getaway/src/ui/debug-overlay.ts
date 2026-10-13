@@ -1,10 +1,13 @@
 import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
 
 export const lookSettings = (enabled = true) => ({ tightPools: enabled, flatGround: enabled, shopSpill: enabled, grounding: enabled, wallGradients: enabled, colourGrade: enabled })
-export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
+export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), clutter: enabled, explosions: enabled, physicsDebug: false, sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = juiceSettings()
 const controls: LabControl[] = [
+  { key: "clutter", label: "Street clutter", group: "Props" },
+  { key: "explosions", label: "Explosions" },
+  { key: "physicsDebug", label: "Physics debug" },
   ...([
     ["tightPools", "Tighter lamp pools"],
     ["flatGround", "Flatter ground"],
