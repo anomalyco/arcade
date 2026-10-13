@@ -173,7 +173,10 @@ export class Radio {
     g.gain.value = gain
     src.connect(g)
     g.connect(out)
-    src.onended = () => g.disconnect()
+    src.onended = () => {
+      src.disconnect()
+      g.disconnect()
+    }
     src.start()
   }
 

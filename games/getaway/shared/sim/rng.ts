@@ -10,7 +10,3 @@ export function mulberry32(seed: number): Rng {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-
-export function pick<T>(rng: Rng, items: readonly T[]): T {
-  return items[Math.floor(rng() * items.length)]!
-}

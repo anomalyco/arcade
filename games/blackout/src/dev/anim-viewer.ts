@@ -20,6 +20,9 @@ import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
 import { animation } from "../game/anim-settings"
 import { Rng } from "../../shared/rng"
 import { RigDemo, rigDemoControls } from "./rig-demo"
+import { at } from "../game/rig"
+import { RIG } from "../render/person"
+import { wizardWeapon } from "../render/wizard"
 
 const SEED = 990001
 const W = 30
@@ -65,6 +68,23 @@ const loop = (t: number, p: number) => ((t % p) + p) % p
 const ease = (u: number) => u * u * (3 - 2 * u)
 
 const ACTORS: Actor[] = [
+  // Fixed-tick running study. Route is an automation input, not a presentation setting.
+  { id: "running", gun: "rifle", at: (t) => {
+    t = loop(t, 3)
+    const route = new URLSearchParams(location.search).get("runRoute") ?? "run"
+    const speed = route === "sprint" ? SPRINT_SPEED : SPEED
+    let distance = speed * t
+    if (route === "acceleration") {
+      const u = Math.max(0, t - 0.3), ramp = Math.min(u, 0.7)
+      distance = SPEED * (ramp * ramp / 1.4 + Math.max(0, u - 0.7))
+    }
+    if (route === "braking") {
+      const u = Math.max(0, t - 1), ramp = Math.min(u, 0.7)
+      distance = SPEED * (Math.min(t, 1) + ramp - ramp * ramp / 1.4)
+    }
+    const direction = route === "diagonal" ? Math.PI / 4 : 0
+    return { x: 8 + Math.cos(direction) * distance, y: 10 + Math.sin(direction) * distance, aim: 0, alive: true }
+  } },
   // Automation choreography: 2 seconds per beat, fixed root/aim and camera for both A/B paths.
   {
     id: "proof", gun: "rifle",
@@ -158,6 +178,7 @@ const ACTORS: Actor[] = [
       return { x: 21 + Math.cos(t * 1.6) * 1.2, y: 14 + Math.sin(t * 1.6) * 1.2, aim: t * 1.6 + Math.PI / 2, alive: c < 1.5 }
     },
   },
+  { id: "cast", gun: "rifle", at: () => ({ x: 16, y: 11, aim: 0, alive: true }) },
 ]
 
 class ScriptSession implements Session {
@@ -172,14 +193,14 @@ class ScriptSession implements Session {
   private kills = 0
 
   constructor(only: string[] | null) {
-    this.actors = ACTORS.filter((a) => only ? only.includes(a.id) : a.id !== "proof")
+    this.actors = ACTORS.filter((a) => only ? only.includes(a.id) : a.id !== "proof" && a.id !== "running")
   }
 
   latest() {
     return this.snap
   }
   roster(): RosterRow[] {
-    return this.actors.map((a) => ({ id: a.id, name: a.id, human: false, kills: 0, deaths: 0, team: -1, caps: 0, plants: 0, defuses: 0 }))
+    return ACTORS.map((a) => ({ id: a.id, name: a.id, human: false, kills: 0, deaths: 0, team: -1, caps: 0, plants: 0, defuses: 0 }))
   }
   drainEvents(): SimEvent[] {
     const e = this.events
@@ -200,6 +221,7 @@ class ScriptSession implements Session {
       const s = a.at(t)
       const p = this.prev.get(a.id) ?? { x: s.x, y: s.y, shots: 0, reloads: 0, alive: s.alive }
       const cut = a.id === "proof" && Math.floor(t / 2) !== Math.floor((t - dt) / 2)
+        || a.id === "running" && Math.floor(t / 3) !== Math.floor((t - dt) / 3)
       const vx = dt > 0 && !cut ? (s.x - p.x) / dt : 0
       const vy = dt > 0 && !cut ? (s.y - p.y) / dt : 0
       const shots = a.shots?.(t) ?? 0
@@ -252,6 +274,7 @@ async function main() {
   const zoom = Number(params.get("zoom") ?? "15")
   const manual = params.has("manual")
   if (manual) { const rng = new Rng(7); Math.random = () => rng.next() }
+  const weapons = only?.[0] === "weapons" ? (["rifle", "shotgun", "sniper"] as const).map((gun) => renderer.addModel(wizardWeapon(gun))) : []
   const session = new ScriptSession(only)
   const sound = new Sound()
   const settings = { ...juiceSettings(!params.has("vanilla")), rigDemo: "off", rigDemoSpeed: 1.1 }
@@ -267,9 +290,9 @@ async function main() {
     const yaw = (Number(side) * Math.PI) / 180
     const elev = (Number(params.get("elev") ?? "12") * Math.PI) / 180
     cam.update = (aspect: number) => {
-      const target = [cam.x, 0.8, cam.z]
+      const target = [cam.x, 1.15, cam.z]
       const d = cam.dist
-      cam.eye = [target[0]! + Math.sin(yaw) * Math.cos(elev) * d, 0.8 + Math.sin(elev) * d, target[2]! + Math.cos(yaw) * Math.cos(elev) * d]
+      cam.eye = [target[0]! + Math.sin(yaw) * Math.cos(elev) * d, 1.15 + Math.sin(elev) * d, target[2]! + Math.cos(yaw) * Math.cos(elev) * d]
       const view = mat4.lookAt(cam.eye, target, [0, 1, 0])
       cam.viewProj = mat4.multiply(mat4.perspective(0.5, aspect, 0.5, 200), view)
       return cam.viewProj as Float32Array
@@ -289,6 +312,7 @@ async function main() {
   const info = document.getElementById("info")!
   const frame = (dt: number) => {
     if (only?.includes("proof") && Math.floor((session.t + dt) / 2) !== Math.floor(session.t / 2)) game.avatars.delete("proof")
+    if (only?.includes("running") && Math.floor((session.t + dt) / 3) !== Math.floor(session.t / 3)) game.avatars.delete("running")
     clock += dt * 1000
     session.demo = settings.rigDemo !== "off"
     if (session.demo) game.avatars.clear()
@@ -300,9 +324,14 @@ async function main() {
     cam.dist = zoom
     const demoBatches = rigDemo.build(dt, settings.rigDemo, settings.rigDemoSpeed)
     if (session.demo) cam.snap(rigDemo.avatar.x, rigDemo.avatar.y)
-    const scene = game.build(cam, innerWidth, innerHeight, dt)
-    scene.batches.push(...demoBatches)
-    renderer.render(scene)
+    // Reuse the rig's existing free-hand throw for a casting pose study.
+    const caster = game.avatars.get("cast")
+    if (settings.wizards && caster) caster.throwAt = Math.floor(session.t / 3) * 3 + 0.2
+    const f = game.build(cam, innerWidth, innerHeight, dt)
+    f.batches.push(...demoBatches)
+    f.grade[1] = 0 // The viewer is a spectator, not a dead player; inspect the actual team colours.
+    for (const [i, model] of weapons.entries()) f.batches.push({ model, count: 1, data: new Float32Array([focus.x + (i - 1) * 1.5, 1.2, focus.y, 0, 1, 1, 1, 1, 0, 0, 1, 0]) })
+    renderer.render(f)
     const beats = ["Walk", "Run", "Strafe left", "Strafe right", "Backpedal", "Turn in place", "Hard stop", "Recoil", "Death"]
     if (session.demo) info.textContent = ""
     else if (only?.includes("proof")) info.textContent = `${animation.animationMode === "old" ? "Old" : "New"} · ${beats[Math.min(8, Math.floor(session.t / 2))]}`
@@ -342,7 +371,18 @@ async function main() {
     return out.toDataURL("image/jpeg", 0.9)
   }
   w.ready = true
-  Object.assign(window, { animProof: { game, session, animation, settings, rigDemo, adapter: adapter!.info } })
+  Object.assign(window, { animProof: { game, session, animation, settings, rigDemo, adapter: adapter!.info, step: frame,
+    sample: () => {
+      const a = game.avatars.get("running")
+      if (!a?.body) return null
+      const b = a.body
+      const angles = (f: typeof b.pelvis) => ({ pitch: Math.atan2(f.x[1], Math.hypot(f.x[0], f.x[2])), roll: Math.asin(Math.max(-1, Math.min(1, -f.z[1]))), yaw: Math.atan2(f.x[2], f.x[0]) })
+      return { time: session.t, root: [a.x, a.y], velocity: [a.vx, a.vy], aim: a.aim, phase: a.phase, duty: a.duty,
+        feet: a.feet, motion: a.motion, pelvis: angles(b.pelvis), chest: angles(b.torso), head: angles(b.head),
+        pelvisPosition: b.pelvis.p, headPosition: b.head.p, shoulders: [at(b.torso, 0, RIG.shoulderY, -RIG.shoulderW), at(b.torso, 0, RIG.shoulderY, RIG.shoulderW)],
+        boots: b.ft, gun: b.gun, lean: [a.leanX.x, a.leanY.x], seed: a.seed }
+    },
+  } })
   if (manual) return
   let last = performance.now()
   let fps = 60

@@ -4,6 +4,7 @@ import type { Kit } from "./kit"
 import type { ModeView } from "./modes"
 import type { VehicleKind } from "./vehicle"
 import type { Phase, World } from "./world"
+import type { SpellView } from "./spells"
 
 /** `veh` and `seat` while riding a vehicle. */
 export type PlayerView = { id: string; x: number; y: number; vx: number; vy: number; aim: number; alive: boolean; gun: Gun; health: number; bare?: boolean; veh?: number; seat?: number }
@@ -17,6 +18,7 @@ export type ClaymoreView = { id: number; by: string; x: number; y: number; aim: 
 export type RosterRow = { id: string; name: string; human: boolean; kills: number; deaths: number; team: number; caps: number; plants: number; defuses: number; stats?: Record<string, number>; host?: true }
 
 export type Snapshot = {
+  spells?: SpellView
   type: "snap"
   tick: number
   t: number
@@ -42,8 +44,9 @@ export type Snapshot = {
 }
 
 /** One broadcast's public entity lists. Keep viewer-specific mode/kit data out of this object. */
-export function snapshotEntities(world: World): Pick<Snapshot, "players" | "grenades" | "claymores" | "vehicles"> {
+export function snapshotEntities(world: World): Pick<Snapshot, "players" | "grenades" | "claymores" | "vehicles" | "spells"> {
   return {
+    ...(world.spells ? { spells: world.spells.snapshot() } : {}),
     players: world.order.map((id) => {
       const p = world.players.get(id)!
       return { id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, aim: p.aim, alive: p.alive, gun: p.gun, health: p.health, ...(p.kit.gun ? {} : { bare: true }), ...(p.veh ? { veh: p.veh, seat: p.seat } : {}) }
@@ -74,6 +77,7 @@ export function buildSnapshot(world: World, viewerId: string, entities = snapsho
     maps: world.maps,
     match: world.match,
     players: entities.players,
+    ...(entities.spells ? { spells: entities.spells } : {}),
     grenades: entities.grenades,
     claymores: entities.claymores,
     ...(entities.vehicles ? { vehicles: entities.vehicles } : {}),

@@ -1,0 +1,1168 @@
+{
+ "catapult-1": {
+  "dur": 6,
+  "peak": 0.48,
+  "lufs": -16.1,
+  "tp": -4.2
+ },
+ "catapult-2": {
+  "dur": 6,
+  "peak": 0.13,
+  "lufs": -16,
+  "tp": -1.8
+ },
+ "catapult-3": {
+  "dur": 4.666,
+  "peak": 0.53,
+  "lufs": -15.9,
+  "tp": -6.4
+ },
+ "catapult-4": {
+  "dur": 5.473,
+  "peak": 1.93,
+  "lufs": -15.9,
+  "tp": -4.9
+ },
+ "tailhook-1": {
+  "dur": 2,
+  "peak": 0.45,
+  "lufs": -16,
+  "tp": -5.4
+ },
+ "tailhook-2": {
+  "dur": 2,
+  "peak": 0.25,
+  "lufs": -16,
+  "tp": -3.1
+ },
+ "tailhook-3": {
+  "dur": 2,
+  "peak": 0.65,
+  "lufs": -16,
+  "tp": -6.1
+ },
+ "tailhook-4": {
+  "dur": 1.624,
+  "peak": 1.15,
+  "lufs": -16,
+  "tp": -3.7
+ },
+ "shuttle-slam-1": {
+  "dur": 3,
+  "peak": 0.08,
+  "lufs": -16.1,
+  "tp": 0
+ },
+ "shuttle-slam-2": {
+  "dur": 2.629,
+  "peak": 0.08,
+  "lufs": -16.1,
+  "tp": -3.9
+ },
+ "shuttle-slam-3": {
+  "dur": 3,
+  "peak": 0.08,
+  "lufs": -16,
+  "tp": -2.2
+ },
+ "shuttle-slam-4": {
+  "dur": 3,
+  "peak": 0.13,
+  "lufs": -16,
+  "tp": -4
+ },
+ "trap-1": {
+  "dur": 5,
+  "peak": 1.23,
+  "lufs": -15.6,
+  "tp": -8.9
+ },
+ "trap-2": {
+  "dur": 5,
+  "peak": 1.45,
+  "lufs": -15.9,
+  "tp": -10
+ },
+ "trap-3": {
+  "dur": 4.761,
+  "peak": 2.08,
+  "lufs": -16,
+  "tp": -4.8
+ },
+ "trap-4": {
+  "dur": 4.713,
+  "peak": 1.73,
+  "lufs": -16,
+  "tp": -4.4
+ },
+ "gear-1": {
+  "dur": 3,
+  "peak": 0.15,
+  "lufs": -16,
+  "tp": -8
+ },
+ "gear-2": {
+  "dur": 3,
+  "peak": 0.08,
+  "lufs": -16,
+  "tp": -6.8
+ },
+ "gear-3": {
+  "dur": 3,
+  "peak": 1.18,
+  "lufs": -16,
+  "tp": -8.3
+ },
+ "gear-4": {
+  "dur": 3,
+  "peak": 0.57,
+  "lufs": -15.9,
+  "tp": -7.3
+ },
+ "gun-loop-1": {
+  "dur": 4.85,
+  "loop": 4.6,
+  "peak": 2.33,
+  "lufs": -20,
+  "tp": -9.5,
+  "seam": 3.9
+ },
+ "gun-loop-2": {
+  "dur": 4.85,
+  "loop": 4.6,
+  "peak": 2.98,
+  "lufs": -20,
+  "tp": -10.9,
+  "seam": 4.5
+ },
+ "gun-loop-3": {
+  "dur": 4.85,
+  "loop": 4.6,
+  "peak": 3.55,
+  "lufs": -19.8,
+  "tp": -10.9,
+  "seam": 2.4
+ },
+ "gun-loop-4": {
+  "dur": 4.85,
+  "loop": 4.6,
+  "peak": 2.75,
+  "lufs": -20,
+  "tp": -13.5,
+  "seam": 24.4
+ },
+ "gun-tail-1": {
+  "dur": 3,
+  "peak": 0.1,
+  "lufs": -16,
+  "tp": -5.6
+ },
+ "gun-tail-2": {
+  "dur": 3,
+  "peak": 0.05,
+  "lufs": -16,
+  "tp": -3.8
+ },
+ "gun-tail-3": {
+  "dur": 3,
+  "peak": 0.38,
+  "lufs": -16,
+  "tp": -4.1
+ },
+ "gun-tail-4": {
+  "dur": 3,
+  "peak": 0.15,
+  "lufs": -16,
+  "tp": -6.9
+ },
+ "gun-distant-1": {
+  "dur": 3,
+  "peak": 0.18,
+  "lufs": -16.8,
+  "tp": -0.4
+ },
+ "gun-distant-2": {
+  "dur": 3,
+  "peak": 0.05,
+  "lufs": -17.8,
+  "tp": -0.1
+ },
+ "gun-distant-3": {
+  "dur": 2.996,
+  "peak": 0.15,
+  "lufs": -15.9,
+  "tp": -3.1
+ },
+ "impact-water-1": {
+  "dur": 2,
+  "peak": 0.05,
+  "lufs": -16.1,
+  "tp": -0.7
+ },
+ "impact-water-2": {
+  "dur": 1.842,
+  "peak": 0.5,
+  "lufs": -16,
+  "tp": -1
+ },
+ "impact-water-3": {
+  "dur": 2,
+  "peak": 0.05,
+  "lufs": -19.3,
+  "tp": 0.3
+ },
+ "impact-metal-1": {
+  "dur": 2,
+  "peak": 0.05,
+  "lufs": -16.1,
+  "tp": -1.1
+ },
+ "impact-metal-2": {
+  "dur": 1.568,
+  "peak": 0.08,
+  "lufs": -15.9,
+  "tp": -1.4
+ },
+ "impact-metal-3": {
+  "dur": 1.822,
+  "peak": 0.08,
+  "lufs": -16,
+  "tp": -5.9
+ },
+ "tracer-zip-1": {
+  "dur": 1.367,
+  "peak": 0.75,
+  "lufs": -20.4,
+  "tp": -1.5
+ },
+ "tracer-zip-2": {
+  "dur": 1.388,
+  "peak": 1.3,
+  "lufs": -33.4,
+  "tp": -5.3
+ },
+ "tracer-zip-3": {
+  "dur": 1.252,
+  "peak": 1.2,
+  "lufs": -29.6,
+  "tp": -3.4
+ },
+ "missile-launch-1": {
+  "dur": 4,
+  "peak": 0.2,
+  "lufs": -15.6,
+  "tp": -3.3
+ },
+ "missile-launch-2": {
+  "dur": 3.959,
+  "peak": 1.38,
+  "lufs": -16,
+  "tp": -4.4
+ },
+ "missile-launch-3": {
+  "dur": 4,
+  "peak": 0.3,
+  "lufs": -16,
+  "tp": -5.6
+ },
+ "missile-launch-4": {
+  "dur": 4,
+  "peak": 0.45,
+  "lufs": -16,
+  "tp": -6.1
+ },
+ "missile-motor-1": {
+  "dur": 3.85,
+  "loop": 3.6,
+  "peak": 2.75,
+  "lufs": -20,
+  "tp": -10.6,
+  "seam": 0.5
+ },
+ "missile-motor-2": {
+  "dur": 3.85,
+  "loop": 3.6,
+  "peak": 2.6,
+  "lufs": -20,
+  "tp": -11.7,
+  "seam": 0.3
+ },
+ "missile-motor-3": {
+  "dur": 3.85,
+  "loop": 3.6,
+  "peak": 2.88,
+  "lufs": -19.9,
+  "tp": -11.1,
+  "seam": 0.4
+ },
+ "flares-1": {
+  "dur": 3,
+  "peak": 0.7,
+  "lufs": -16,
+  "tp": -9.1
+ },
+ "flares-2": {
+  "dur": 2.991,
+  "peak": 2.58,
+  "lufs": -16,
+  "tp": -8.4
+ },
+ "flares-3": {
+  "dur": 3,
+  "peak": 0.18,
+  "lufs": -16,
+  "tp": -6.8
+ },
+ "flares-4": {
+  "dur": 2.956,
+  "peak": 0.35,
+  "lufs": -16,
+  "tp": -9.2
+ },
+ "bomb-release-1": {
+  "dur": 1.48,
+  "peak": 0.05,
+  "lufs": -18.2,
+  "tp": -1.5
+ },
+ "bomb-release-2": {
+  "dur": 1.48,
+  "peak": 0.05,
+  "lufs": -16,
+  "tp": -0.8
+ },
+ "bomb-release-3": {
+  "dur": 1.48,
+  "peak": 0.08,
+  "lufs": -17.6,
+  "tp": -1
+ },
+ "bomb-whistle-1": {
+  "dur": 4,
+  "peak": 1.55,
+  "lufs": -16,
+  "tp": -12.7
+ },
+ "bomb-whistle-2": {
+  "dur": 4,
+  "peak": 1.18,
+  "lufs": -16,
+  "tp": -10.9
+ },
+ "bomb-whistle-3": {
+  "dur": 4,
+  "peak": 2.5,
+  "lufs": -16,
+  "tp": -13.3
+ },
+ "water-geyser-1": {
+  "dur": 5,
+  "peak": 0.1,
+  "lufs": -16,
+  "tp": -4.7
+ },
+ "water-geyser-2": {
+  "dur": 5,
+  "peak": 0.13,
+  "lufs": -16,
+  "tp": -5.9
+ },
+ "water-geyser-3": {
+  "dur": 4.941,
+  "peak": 0.6,
+  "lufs": -16,
+  "tp": -6.2
+ },
+ "boom-air-1": {
+  "dur": 6,
+  "peak": 0.28,
+  "lufs": -16,
+  "tp": -5.3
+ },
+ "boom-air-2": {
+  "dur": 5.789,
+  "peak": 0.65,
+  "lufs": -16,
+  "tp": -3.7
+ },
+ "boom-air-3": {
+  "dur": 6,
+  "peak": 0.25,
+  "lufs": -16,
+  "tp": -5.9
+ },
+ "boom-air-4": {
+  "dur": 6,
+  "peak": 0.25,
+  "lufs": -16,
+  "tp": -4.2
+ },
+ "boom-missile-1": {
+  "dur": 4,
+  "peak": 0.45,
+  "lufs": -16,
+  "tp": -6.8
+ },
+ "boom-missile-2": {
+  "dur": 4,
+  "peak": 0.8,
+  "lufs": -16.1,
+  "tp": -8.7
+ },
+ "boom-missile-3": {
+  "dur": 4,
+  "peak": 0.73,
+  "lufs": -16,
+  "tp": -5.4
+ },
+ "boom-missile-4": {
+  "dur": 3.582,
+  "peak": 0.6,
+  "lufs": -16,
+  "tp": -8.1
+ },
+ "boom-bomb-land-1": {
+  "dur": 6,
+  "peak": 2.2,
+  "lufs": -16,
+  "tp": -0.7
+ },
+ "boom-bomb-land-2": {
+  "dur": 6,
+  "peak": 0.38,
+  "lufs": -16,
+  "tp": -4.9
+ },
+ "boom-bomb-land-3": {
+  "dur": 6,
+  "peak": 0.6,
+  "lufs": -16,
+  "tp": -4.1
+ },
+ "boom-bomb-land-4": {
+  "dur": 6,
+  "peak": 0.05,
+  "lufs": -16,
+  "tp": -2.6
+ },
+ "boom-bomb-water-1": {
+  "dur": 5.999,
+  "peak": 0.08,
+  "lufs": -16,
+  "tp": -2.3
+ },
+ "boom-bomb-water-2": {
+  "dur": 6,
+  "peak": 0.53,
+  "lufs": -16.1,
+  "tp": -2.2
+ },
+ "boom-bomb-water-3": {
+  "dur": 6,
+  "peak": 0.05,
+  "lufs": -16.1,
+  "tp": -1.8
+ },
+ "boom-bomb-water-4": {
+  "dur": 6,
+  "peak": 0.1,
+  "lufs": -16,
+  "tp": -2.7
+ },
+ "boom-crash-sea-1": {
+  "dur": 5,
+  "peak": 0.05,
+  "lufs": -15.7,
+  "tp": -7.4
+ },
+ "boom-crash-sea-2": {
+  "dur": 5,
+  "peak": 0.08,
+  "lufs": -16,
+  "tp": -8.1
+ },
+ "boom-crash-sea-3": {
+  "dur": 4.999,
+  "peak": 1.08,
+  "lufs": -16,
+  "tp": -5.1
+ },
+ "boom-crash-sea-4": {
+  "dur": 5,
+  "peak": 0.05,
+  "lufs": -15.8,
+  "tp": -6.2
+ },
+ "boom-crash-land-1": {
+  "dur": 6,
+  "peak": 0.28,
+  "lufs": -16,
+  "tp": -6.2
+ },
+ "boom-crash-land-2": {
+  "dur": 6,
+  "peak": 0.25,
+  "lufs": -15.9,
+  "tp": -4.3
+ },
+ "boom-crash-land-3": {
+  "dur": 5.481,
+  "peak": 0.63,
+  "lufs": -16.1,
+  "tp": -3
+ },
+ "boom-crash-land-4": {
+  "dur": 6,
+  "peak": 0.93,
+  "lufs": -16,
+  "tp": -5.5
+ },
+ "boom-far-1": {
+  "dur": 6,
+  "peak": 0.08,
+  "lufs": -16.7,
+  "tp": -1.2
+ },
+ "boom-far-2": {
+  "dur": 6,
+  "peak": 0.88,
+  "lufs": -15.9,
+  "tp": -3.6
+ },
+ "boom-far-3": {
+  "dur": 6,
+  "peak": 0.05,
+  "lufs": -16.3,
+  "tp": -1.3
+ },
+ "boom-far-4": {
+  "dur": 6,
+  "peak": 0.25,
+  "lufs": -16,
+  "tp": -1.5
+ },
+ "carrier-bed-1": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 5.03,
+  "lufs": -20,
+  "tp": -7.9,
+  "seam": 2.7
+ },
+ "carrier-bed-2": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 1.5,
+  "lufs": -20,
+  "tp": -6.9,
+  "seam": 2.1
+ },
+ "carrier-bed-3": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 1.4,
+  "lufs": -20,
+  "tp": -8,
+  "seam": 0.8
+ },
+ "carrier-bed-4": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 3.68,
+  "lufs": -20,
+  "tp": -10,
+  "seam": 0.2
+ },
+ "ship-horn-1": {
+  "dur": 5,
+  "peak": 2.55,
+  "lufs": -16,
+  "tp": -10.4
+ },
+ "ship-horn-2": {
+  "dur": 5,
+  "peak": 0.05,
+  "lufs": -16,
+  "tp": -10.9
+ },
+ "ship-horn-3": {
+  "dur": 5,
+  "peak": 1.68,
+  "lufs": -16,
+  "tp": -10.9
+ },
+ "hull-slam-1": {
+  "dur": 4,
+  "peak": 0.1,
+  "lufs": -17.1,
+  "tp": -0.4
+ },
+ "hull-slam-2": {
+  "dur": 2.874,
+  "peak": 0.15,
+  "lufs": -16.7,
+  "tp": -0.1
+ },
+ "hull-slam-3": {
+  "dur": 4,
+  "peak": 0.15,
+  "lufs": -15.9,
+  "tp": -1.2
+ },
+ "hull-slam-4": {
+  "dur": 4,
+  "peak": 0.1,
+  "lufs": -17.6,
+  "tp": 0.2
+ },
+ "hull-creak-1": {
+  "dur": 5,
+  "peak": 0.45,
+  "lufs": -15.7,
+  "tp": -3
+ },
+ "hull-creak-2": {
+  "dur": 4.914,
+  "peak": 0.53,
+  "lufs": -16,
+  "tp": -1.8
+ },
+ "hull-creak-3": {
+  "dur": 4.57,
+  "peak": 0.5,
+  "lufs": -15.9,
+  "tp": -2.9
+ },
+ "deck-fire-1": {
+  "dur": 5.85,
+  "loop": 5.6,
+  "peak": 4.3,
+  "lufs": -20,
+  "tp": -9.7,
+  "seam": 2.1
+ },
+ "deck-fire-2": {
+  "dur": 5.85,
+  "loop": 5.6,
+  "peak": 5.25,
+  "lufs": -19.9,
+  "tp": -7.3,
+  "seam": 1.4
+ },
+ "deck-fire-3": {
+  "dur": 5.85,
+  "loop": 5.6,
+  "peak": 5.15,
+  "lufs": -20.1,
+  "tp": -0.6,
+  "seam": 5
+ },
+ "sinking-1": {
+  "dur": 5.723,
+  "peak": 0.85,
+  "lufs": -17.1,
+  "tp": -1
+ },
+ "sinking-2": {
+  "dur": 5.297,
+  "peak": 1.73,
+  "lufs": -15.9,
+  "tp": -2.9
+ },
+ "sinking-3": {
+  "dur": 6,
+  "peak": 1.1,
+  "lufs": -17.5,
+  "tp": -0.9
+ },
+ "ocean-calm-1": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 7.58,
+  "lufs": -20,
+  "tp": -4.4,
+  "seam": 0.4
+ },
+ "ocean-calm-2": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 7,
+  "lufs": -20,
+  "tp": -6.4,
+  "seam": 1.8
+ },
+ "ocean-calm-3": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 2.53,
+  "lufs": -19.9,
+  "tp": -3.1,
+  "seam": 4
+ },
+ "ocean-calm-4": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 5.93,
+  "lufs": -20,
+  "tp": -2.3,
+  "seam": 2.3
+ },
+ "ocean-rough-1": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 6.68,
+  "lufs": -20,
+  "tp": -5.7,
+  "seam": 2.4
+ },
+ "ocean-rough-2": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 6.9,
+  "lufs": -19.9,
+  "tp": -4.3,
+  "seam": 2.3
+ },
+ "ocean-rough-3": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 7.28,
+  "lufs": -20,
+  "tp": -6.5,
+  "seam": 2.4
+ },
+ "ocean-rough-4": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 7.4,
+  "lufs": -20,
+  "tp": -3.9,
+  "seam": 1.2
+ },
+ "ocean-storm-1": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 1.48,
+  "lufs": -20,
+  "tp": -7.1,
+  "seam": 1.7
+ },
+ "ocean-storm-2": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 4.03,
+  "lufs": -20,
+  "tp": -8.4,
+  "seam": 2.9
+ },
+ "ocean-storm-3": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 7.55,
+  "lufs": -20,
+  "tp": -5.5,
+  "seam": 1.1
+ },
+ "ocean-storm-4": {
+  "dur": 7.85,
+  "loop": 7.6,
+  "peak": 3.53,
+  "lufs": -19.9,
+  "tp": -8,
+  "seam": 1.3
+ },
+ "wind-light-1": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 5.95,
+  "lufs": -20,
+  "tp": -8.8,
+  "seam": 1.2
+ },
+ "wind-light-2": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 5.8,
+  "lufs": -19.9,
+  "tp": -8.9,
+  "seam": 1.2
+ },
+ "wind-light-3": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 0.05,
+  "lufs": -20,
+  "tp": -10.2,
+  "seam": 1.5
+ },
+ "wind-gale-1": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 5.58,
+  "lufs": -20,
+  "tp": -8.6,
+  "seam": 0.4
+ },
+ "wind-gale-2": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 6.5,
+  "lufs": -20,
+  "tp": -9.4,
+  "seam": 1.8
+ },
+ "wind-gale-3": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 0.53,
+  "lufs": -20,
+  "tp": -8.8,
+  "seam": 3.2
+ },
+ "wind-gale-4": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 0.5,
+  "lufs": -20,
+  "tp": -7.9,
+  "seam": 0.7
+ },
+ "rain-light-1": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 1.53,
+  "lufs": -22.4,
+  "tp": -1.4,
+  "seam": 0.6
+ },
+ "rain-light-2": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 4.97,
+  "lufs": -22,
+  "tp": -0.9,
+  "seam": 2
+ },
+ "rain-light-3": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 1.1,
+  "lufs": -20.8,
+  "tp": -1,
+  "seam": 2.5
+ },
+ "rain-heavy-1": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 0.75,
+  "lufs": -20,
+  "tp": -10.8,
+  "seam": 0.4
+ },
+ "rain-heavy-2": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 5.6,
+  "lufs": -20,
+  "tp": -10.8,
+  "seam": 0.6
+ },
+ "rain-heavy-3": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 5.65,
+  "lufs": -20,
+  "tp": -11.6,
+  "seam": 0.2
+ },
+ "rain-heavy-4": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 3.75,
+  "lufs": -20,
+  "tp": -10.6,
+  "seam": 1.1
+ },
+ "rain-canopy-1": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 5.15,
+  "lufs": -20,
+  "tp": -2.2,
+  "seam": 1
+ },
+ "rain-canopy-2": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 3.98,
+  "lufs": -20,
+  "tp": -2.1,
+  "seam": 3.5
+ },
+ "rain-canopy-3": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 0.73,
+  "lufs": -20,
+  "tp": -2.4,
+  "seam": 4.8
+ },
+ "thunder-near-1": {
+  "dur": 5.931,
+  "peak": 0.53,
+  "lufs": -16,
+  "tp": -3.1
+ },
+ "thunder-near-2": {
+  "dur": 6.999,
+  "peak": 0.18,
+  "lufs": -16,
+  "tp": -2.4
+ },
+ "thunder-near-3": {
+  "dur": 6.324,
+  "peak": 0.48,
+  "lufs": -16,
+  "tp": -0.7
+ },
+ "thunder-near-4": {
+  "dur": 5.468,
+  "peak": 0.43,
+  "lufs": -16,
+  "tp": -2.2
+ },
+ "thunder-far-1": {
+  "dur": 7.829,
+  "peak": 2.63,
+  "lufs": -18.7,
+  "tp": -0.5
+ },
+ "thunder-far-2": {
+  "dur": 7.626,
+  "peak": 3.23,
+  "lufs": -16.1,
+  "tp": -1.9
+ },
+ "thunder-far-3": {
+  "dur": 7.801,
+  "peak": 2.03,
+  "lufs": -18.2,
+  "tp": -0.8
+ },
+ "thunder-far-4": {
+  "dur": 7.55,
+  "peak": 1.75,
+  "lufs": -16,
+  "tp": -2.2
+ },
+ "lightning-crack-1": {
+  "dur": 1.953,
+  "peak": 0.8,
+  "lufs": -16.2,
+  "tp": -1.3
+ },
+ "lightning-crack-2": {
+  "dur": 2.445,
+  "peak": 1.23,
+  "lufs": -16,
+  "tp": -5
+ },
+ "lightning-crack-3": {
+  "dur": 2.42,
+  "peak": 1.9,
+  "lufs": -16,
+  "tp": -2.8
+ },
+ "ui-click-1": {
+  "dur": 0.48,
+  "peak": 0.13,
+  "lufs": -26,
+  "tp": -5.3
+ },
+ "ui-click-2": {
+  "dur": 0.181,
+  "peak": 0.05,
+  "lufs": -70,
+  "tp": -14.3
+ },
+ "ui-click-3": {
+  "dur": 0.322,
+  "peak": 0.18,
+  "lufs": -70,
+  "tp": -14
+ },
+ "ui-hover-1": {
+  "dur": 0.202,
+  "peak": 0.13,
+  "lufs": -70,
+  "tp": -24.2
+ },
+ "ui-hover-2": {
+  "dur": 0.48,
+  "peak": 0.08,
+  "lufs": -26,
+  "tp": -8.7
+ },
+ "ui-hover-3": {
+  "dur": 0.48,
+  "peak": 0.18,
+  "lufs": -26.2,
+  "tp": -12.4
+ },
+ "ui-confirm-1": {
+  "dur": 1,
+  "peak": 0.05,
+  "lufs": -26,
+  "tp": -10.5
+ },
+ "ui-confirm-2": {
+  "dur": 1,
+  "peak": 0.08,
+  "lufs": -26.1,
+  "tp": -15
+ },
+ "ui-confirm-3": {
+  "dur": 1,
+  "peak": 0.05,
+  "lufs": -26.1,
+  "tp": -9.6
+ },
+ "ui-open-1": {
+  "dur": 1,
+  "peak": 0.23,
+  "lufs": -26,
+  "tp": -8.2
+ },
+ "ui-open-2": {
+  "dur": 0.666,
+  "peak": 0.1,
+  "lufs": -26,
+  "tp": -8.1
+ },
+ "ui-open-3": {
+  "dur": 0.654,
+  "peak": 0.3,
+  "lufs": -26,
+  "tp": -13.6
+ },
+ "ui-kill-1": {
+  "dur": 1.48,
+  "peak": 0.05,
+  "lufs": -27.1,
+  "tp": -7.6
+ },
+ "ui-kill-2": {
+  "dur": 1.48,
+  "peak": 0.08,
+  "lufs": -24.3,
+  "tp": -6.7
+ },
+ "ui-kill-3": {
+  "dur": 1.48,
+  "peak": 0.05,
+  "lufs": -26.1,
+  "tp": -9
+ },
+ "ui-capture-1": {
+  "dur": 1.814,
+  "peak": 0.8,
+  "lufs": -26,
+  "tp": -19.6
+ },
+ "ui-capture-2": {
+  "dur": 2,
+  "peak": 0.08,
+  "lufs": -26,
+  "tp": -16.1
+ },
+ "ui-capture-3": {
+  "dur": 2,
+  "peak": 0.78,
+  "lufs": -26,
+  "tp": -16.6
+ },
+ "ciws-1": {
+  "dur": 4.85,
+  "loop": 4.6,
+  "peak": 3.28,
+  "lufs": -20,
+  "tp": -11.6,
+  "seam": 1.2
+ },
+ "ciws-2": {
+  "dur": 4.85,
+  "loop": 4.6,
+  "peak": 4.55,
+  "lufs": -19.9,
+  "tp": -9,
+  "seam": 7.6
+ },
+ "ciws-3": {
+  "dur": 4.85,
+  "loop": 4.6,
+  "peak": 0.73,
+  "lufs": -20,
+  "tp": -11.5,
+  "seam": 6.3
+ },
+ "sam-launch-1": {
+  "dur": 5,
+  "peak": 0.08,
+  "lufs": -16,
+  "tp": -6.4
+ },
+ "sam-launch-2": {
+  "dur": 5,
+  "peak": 0.95,
+  "lufs": -15.8,
+  "tp": -5.8
+ },
+ "sam-launch-3": {
+  "dur": 5,
+  "peak": 0.3,
+  "lufs": -16,
+  "tp": -7
+ },
+ "naval-gun-1": {
+  "dur": 4,
+  "peak": 0.1,
+  "lufs": -16,
+  "tp": -1.6
+ },
+ "naval-gun-2": {
+  "dur": 4,
+  "peak": 0.9,
+  "lufs": -16.1,
+  "tp": -7.2
+ },
+ "naval-gun-3": {
+  "dur": 4,
+  "peak": 1.58,
+  "lufs": -16,
+  "tp": -8.4
+ },
+ "boat-engine-1": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 5.43,
+  "lufs": -20,
+  "tp": -11.8,
+  "seam": 0.4
+ },
+ "boat-engine-2": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 6.3,
+  "lufs": -20,
+  "tp": -12.5,
+  "seam": 0.6
+ },
+ "boat-engine-3": {
+  "dur": 6.85,
+  "loop": 6.6,
+  "peak": 6,
+  "lufs": -20,
+  "tp": -12.2,
+  "seam": 0.3
+ }
+}

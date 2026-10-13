@@ -88,10 +88,6 @@ export function bench(m: Mesh, x: number, z: number, alongX: boolean, y = KERB_H
   else slab(m, x + hx - .07, x + hx, y + seat + .06, y + height, z - hz, z + hz, WOOD)
 }
 
-function bin(m: Mesh, x: number, z: number, y = KERB_H) {
-  cylinder(m, x, z, PROP_SIZE.bin[0] / 2, y, y + PROP_SIZE.bin[1], 7, [0.18, 0.24, 0.2], MAT.lit, [0.1, 0.1, 0.1])
-}
-
 export function hydrant(m: Mesh, x: number, z: number, y = KERB_H) {
   const [width, height] = PROP_SIZE.hydrant
   const red: Rgb = [.73, .16, .1]
@@ -99,14 +95,6 @@ export function hydrant(m: Mesh, x: number, z: number, y = KERB_H) {
   cylinder(m, x, z, .09, y + .08, y + .6, 8, red)
   m.prism(x, z, .115, .025, y + .6, y + height, 8, red)
   slab(m, x - width / 2, x + width / 2, y + .39, y + .49, z - .065, z + .065, red)
-}
-
-export function barrel(m: Mesh, x: number, z: number, y = 0) {
-  const orange: Rgb = [0.85, 0.36, 0.1]
-  const white: Rgb = [0.85, 0.85, 0.82]
-  cylinder(m, x, z, 0.3, y, y + 0.1, 8, [0.1, 0.1, 0.1])
-  const bands = [orange, white, orange, white, orange]
-  for (let k = 0; k < bands.length; k++) cylinder(m, x, z, 0.27, y + 0.1 + k * 0.16, y + 0.26 + k * 0.16, 8, bands[k]!)
 }
 
 /** Striped A-frame barrier. */

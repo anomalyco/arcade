@@ -6,12 +6,56 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Proving a change
 
+- **Keep spell proof on the real input path.** Blackout's `scripts/prove-wizards-spells.ts` reads scrolls with F and
+  draws through Chromium mouse events. Its manual sandbox clock advances both simulation and animation between
+  captures; advancing simulation alone left the rig's planted feet behind. The inspected Metal proof captured a
+  dummy in a growing moon, its moving polar shadow and damaging pop, a rising skeleton pursuing its caster, and
+  a 71.6%-confidence degraded moon. Dvorak movement continued while drawing; there were no browser errors.
+  `shared/sim/spells.ts` owns the authoritative entities and `tests/spells.test.ts` verifies deterministic replay
+  and two room connections receiving the same cast. Runtime cost and live two-browser room play are unmeasured.
+
+- **Record one motion tape across snapshots.** `scripts/compare-video.ts` captures headless Chromium on Metal and
+  sends encoding to the fleet. Its Getaway adapter patches HTTP responses for legacy, current and minified deployed
+  hooks without editing game files. Named scenarios supply frame-indexed inputs; the last pane supplies full world
+  views and camera state by default, so physics changes cannot move the cars between panes. `--input-only` compares
+  each version's simulation instead. The seed-7 historical/smoke pair matched all 360 world/camera snapshots at 30 Hz;
+  a four-pane seed-11 check also covered the deployed bundle and temporary-worktree cleanup. Two independent seed-11
+  deployed runs produced byte-identical PNGs for all 30 frames in input-only mode. Captures are canvas-only,
+  with PNG labels, a contact sheet and a JSON manifest. High quality defaults to 2× capture, Lanczos downsampling,
+  1080-wide stacked / 2560-wide side output, and 16 / 28 Mbps H.264 High. `--quality draft` retains 720 / 1920-wide
+  output at 1× capture. `--zoom` changes the projection only during drawing, leaving the replay camera state intact.
+  The 12-second seed-7 example at 1.35× zoom matched all 360 snapshots and produced 24.28 / 42.40 MB videos; full
+  decoding and full-resolution frame inspection passed. Capture timing
+  includes screenshot readback and is not a performance benchmark.
+
 - **Measure before you edit.** Record a baseline on the unchanged code, then make one change at a time. Use one warmup
   and seven or more measured runs, and compare medians with their spread. Results go in `perf/results.jsonl`.
 - **Separate GPU time from frame time.** Frame time is capped by vsync. Use `timestamp-query` where the adapter has it,
   and `device.queue.onSubmittedWorkDone()` otherwise.
 - **Headless Chromium on a Mac can use Metal.** Launch it with `--enable-unsafe-webgpu --use-angle=metal` and check that
   `adapter.info.architecture` is not SwiftShader before trusting a number. Linux headless only has SwiftShader.
+- **Deterministic video from the real game, no source changes.** Carrier's `scripts/video-weather.ts` replaces
+  `performance.now`, `Date.now` and `requestAnimationFrame` with a virtual clock in a Playwright init script, wraps
+  `game.update` from `page.evaluate` to place the camera, and steps exactly 1/60 s per frame. Two traps: the renderer
+  draws in a microtask and drops frames while two are in flight, so drain the queue before each step; and offset the
+  clock half a sim tick from the 60 Hz ship grid, or float drift gives 0- or 2-step frames. Raw BGRA readback through
+  the game's device piped into ffmpeg: 1,800 1080p frames in ~5.5 min on the M4 Max; frame-difference spikes only at
+  cuts and lightning.
+- **Capture the game's own audio in lockstep with a frame-stepped video.** Carrier's `scripts/video-epic.ts` moves the
+  game's mixer onto one `OfflineAudioContext` (`mixer.use`, then a synthetic `pointerdown` so the weather and weapon
+  sounds start on it) and, after every 1/60 s step, schedules `ctx.suspend` at that step's sample, resumes and awaits it:
+  engines, flybys, rain, thunder, guns and recorded explosions render in sync. Copy the swapchain texture before that
+  await, or the page yields, presents and destroys it (black frames). The camera goes in the flight module's per-frame
+  hook (`flight.frame`), not after `game.update`, so weapon effects, lights and the listener all see the video camera.
+  Cuts are free time skips: setups run muted and their sample ranges are dropped. 1,920 frames plus ~60 s of unseen
+  setup in ~6 min on the M4 Max.
+- **Score a trailer to generated music, then cut to the music.** Carrier's `scripts/video-ship.ts` generates four
+  ElevenLabs Music takes from one prompt. It uses none of the prompt's timeline: it picks the take whose structure fits
+  (0.1 s band-energy curves and onset spacing from ffmpeg show a light intro, a boom and silence, a riser, a drop, then a
+  final hit). Shot boundaries, the storm drop, lightning strikes and the title land on those onsets. The night breakdown
+  crossfades to a low-passed copy, and the game's own audio sits 10-18 dB under. Night lightning in the game is graded
+  down to almost nothing, so the script adds ambient and cloud glow during a strike after `weather.update`. Forced
+  strikes peak about 0.1 s after they fire, so fire them that much early.
 - **A performance pass must not change the look.** Compare before/after stills of the same seeded frame. If they differ,
   the change is a look change and needs its own review. (Getaway: a widened helicopter spotlight slipped into a perf
   pass; the tight original read better.)
@@ -106,25 +150,145 @@ a death frame strip. Stills and encoded run/death frames were inspected. Continu
 cost have not been measured. Reproduce encoding with `bash scripts/animation-film.sh` and the sheet with
 `python3 scripts/animation-sheet.py` (Pillow required).
 
-### Shared human presentation checkpoint
+### Running attitude revision
 
-The canonical rig now supports `human-profile`, `human-locomotion` and `human-pose` consumers. Soldier defaults
-match the refined `8223033` body exactly over 900 frames per mode, including running posture, recoil and hits.
-Wizard rest hands support a staff; zombie timing asymmetry and swing-foot drag retain the same toe-lock owner.
-Hidden subtrees retain their posed frames so remaining IK stays finite. Semantic bone IDs map to explicit numeric
-cosmetic IDs, independent of mesh registration.
+The first New gait lost the old run's forward attitude. A fixed-speed, 60-frame steady sample measured chest pitch
+at about 26°/47° in Old versus 9°/11° in New at 4.2/6.3 m/s. New also removed the pelvis's 9.7° forward pitch and
+moved its hips backward enough to keep the head nearly over the root. This was a pose change, not only a camera effect.
 
-Detach samples the displayed frame before hiding its subtree. It copies frames and differences consecutive
-poses for origin linear velocity and world angular velocity. Offset emitter/centre-of-mass velocity includes
-`angular × offset`. The fixture integrates debris starting on the next tick, preserving the first displayed pose.
-Corpse adapters copy the visibility mask and sample the current ragdoll pose when removing another limb.
+`anim-locomotion.ts` now springs a separate running-posture value through the existing walk/run transition, with
+25% more at sprint speed and a forward-travel weight. `anim.ts` pitches the pelvis about its rolled hip-to-hip axis,
+then gives the chest the same travel-directed attitude. The hip joints retain their exact positions; the head stays
+attached and compensates its pitch, and the weapon keeps its independent world frame. Root acceleration lean,
+support drop, pelvis yaw and chest counter-rotation keep their existing roles.
 
-The checkpoint passed ten shared tests and 288 Blackout tests/typechecks/build on Hivemind, including dt spikes
-and missing limbs. Its first Metal fixture passed three profiles, one exact detach handoff and Lab keyboard/Copy
-checks with no page/GPU errors. Sampled images were inspected; continuous playback and performance remain unmeasured.
-See `human-rig.md` for ownership and `../perf/human-rig.md` for proof and release-integration status.
+Animation → Run posture defaults to 0.18 rad. Zero reproduces the pre-revision New pose: 720-frame sequences of
+Old and zero-posture New matched the saved `39ef8bf` bodies exactly, including seeded fire and hit events. The new
+default measures roughly 7°/18° pelvis/chest pitch at run and 9°/23° at sprint. Fifteen animation cases include exact
+current/refined agreement on cadence, contact state, toe locks, pelvis position and weapon pose, plus finite joints
+and bounded, continuous posture through acceleration, braking and reversal. The earlier cadence limitation remains.
+
+`scripts/prove-running.ts` captures the real viewer/Game/Renderer on headless Metal. Its three-way comparison uses
+Old, current New (`runPosture=0`) and refined New, with five matched routes and gameplay, side and three-quarter
+cameras. The film uses identical ticks, root trajectories, aims and seeds. New/refined phases are exactly equal;
+Old's different gait clock is shown honestly. Separate ten-phase strips normalize successive left-foot touchdowns
+to the nearest 60 Hz frame, with actual fractions printed. `running-sheet.py` checks the pair's captured state;
+`running-film.py` adds labels and quarter-speed repeats without changing the simulation or scaling its pixels.
+
+Four screenshot-anchored paintovers under the dated running artifacts informed trunk attitude. Their minor weapon
+placement/free-leg deviations are not reproduced: contacts and weapon transforms are tested against the actual
+current pose. Paintovers are art targets, not biomechanical measurements. Continuous playback still needs visual
+review; sampled images and numerical checks do not establish it. Runtime CPU/GPU cost is unmeasured.
 
 ## Rendering (WebGPU)
+
+- **Bake fine window coverage separately from soft AO.** Blackout's 12.5 cm moon mask, 18.75 cm blocker march and
+  box blur created stepped diagonals and cloudy mullion bands. Exact world-space segment/rectangle intersections and
+  2×2 coverage samples in a separate 3.125 cm R8 moon mask fix those edges without changing AO bytes. This costs
+  1.60–1.85 MiB and an extra 31–56 ms once per level for the two office seeds tested. One extra filtered sample added
+  no measurable GPU cost in the 1440p M5 Max wood-room fixture (median −0.00048 ms, MAD 0.00249). See
+  `perf/blackout-window-light.md` and `scripts/window-proof.ts`; motion/Look toggles produced identical movement poses.
+
+- **Attach splatter to the hit triangle.** `packages/kit/fx/splatter.ts`, `splatter-surfaces.ts` and
+  `splatter-renderer.ts` share a seeded ballistic spray and matte deposits across blood, ink, slime, oil and potion
+  presets. Blackout supplies packed visible receiver geometry; Outbreak can supply its own triangle/material list.
+  Swept-point collision catches thin walls and desk tops before the floor. A surface tangent from impact velocity
+  gives grazing elongation, and fragment clipping confines each deposit to up to 12 coplanar receiver triangles.
+  Glass stops spray without receiving a stain. At most 256 drops and 256 deposits recycle in fixed arrays.
+  - [Godot's decal guide](https://docs.godotengine.org/en/stable/tutorials/3d/using_decals.html) describes normal fade,
+    receiver masks, overlap limits and decal overdraw. This small system uses exact receiver triangles and material
+    classes instead of a projection volume. Reusing the hit normal prevents a wall hit from becoming a floor decal.
+  - The Lab compares the shipped blood against the candidate on pale tile, walls, desk tops and a dark street.
+    An inspected 1280×1260 sheet includes the actual Blackout renderer. The Lab's analytic grid initially competed
+    with the supplied y=0 floor; scene mode 5 now lets an adapter own its floor. A steeper camera clears foreground
+    roofs while keeping the target visible. Existing Lab scene modes retain their behavior.
+  - Paired whole-frame GPU deltas at 1000×720 on M2 Max/Metal were +0.050 ms office (MAD 0.078) and +0.043 ms
+    downtown (MAD 0.058). Both are smaller than their noise, so cost remains inconclusive. See `perf/lab-splatter.md`
+    and its raw JSON. The Blackout style stays opt-in; gameplay damage and detachment remain caller-owned.
+
+- **Give small fire and water effects a continuous silhouette.** The Lab's `Fire and water` section compares current
+  emitters with Flowing and Graphic styles in the generated downtown, office and Getaway alley. The shared
+  `packages/kit/fx/fire-water.ts` renderer uses three overlapping upright flame quads, a small additive core,
+  alpha smoke and rising embers. Upward-scrolling procedural noise erodes the tapered silhouette; the same flicker
+  signal changes flame height and light power. A depth-gated post-HDR distortion adds heat shimmer. Water combines
+  a continuous pressure sheet with velocity-aligned droplets, impact spray, expanding rings and a growing puddle.
+  The puddle perturbs its normal for ripples and samples up to eight scene lights for warm streetlamp and siren sheen.
+  Foam stays near the irregular boundary. These are shared Lab candidates; game renderer adoption is still separate.
+  Matched Metal captures and paired whole-frame costs are documented in `perf/lab-fire-water.md`.
+  - [Febucci's procedural fire breakdown](https://blog.febucci.com/2019/05/fire-shader) combines scrolling noise with
+    a gradient mask. The Lab uses that shape/erosion approach with textureless fBm and a hot yellow-white core fading
+    through orange to red tips. [Epic's Niagara smoke guide](https://docs.unrealengine.com/4.27/en-US/RenderingAndGraphics/Niagara/HowTo/RecreateSmoke/)
+    shows the flipbook alternative; authored frames can give richer billows at a texture-fetch cost, but this study
+    keeps all shapes procedural. Ember drift uses a helical path as a cheap curl-like approximation.
+  - [Nimue's stylized-water breakdown](https://80.lv/articles/how-to-build-stylized-water-shader-design-implementation-for-nimue)
+    separates moving normals, reflections, foam and interactive ripples, and reuses noise for foam. At gameplay zoom,
+    the Lab keeps the jet sheet, stretched drops and puddle separate so the jet remains readable between particles.
+    The sheen is direct-light specular, not reflected scene geometry. No water simulation or screen-space reflection
+    buffer is required. Heat shimmer does require an HDR copy and one extra pass, included in the timing.
+
+- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`, sharing one device,
+  test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
+  Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
+  `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`; the Materials shader calibration remains a stub.
+- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
+  and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
+  bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.
+- **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes four-connected arrival
+  distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
+  restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and
+  eight nearby lights. Rays stop at stored MSAA depth, render at at most 480×320 with 24 steps, then depth-aware
+  upsampling places them before bloom. Shots carve temporary cylinders. Walls ≥1.8 m and glass seal the field;
+  low wrecks remain depth occluders. This is visual only; fluid pressure and vertical furniture flow are unimplemented.
+- **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
+  `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
+  vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.
+- **Measure the two volume passes with retained depth on both sides.** The earlier Blackout nine-pair frozen-room
+  measurement added 0.947 ms median, MAD 0.016 ms, at 960×640 on M5 Max/Metal (`perf/fx-kit.json`). It excludes the
+  depth discard-to-store change and is not a four-cloud bound. The interval covers first polar compute through a
+  dependent offscreen final composite; no pass sums.
+
+- **Linux software WebGPU needs presentation support too.** The production smoke browser's ANGLE SwiftShader
+  adapter initialized, then lost its instance at the first Outbreak canvas presentation with
+  `Could not find SharedImageBackingFactory` / `Instance dropped error in getCompilationInfo`.
+  `scripts/smoke.mjs` now enables Vulkan with SwiftShader and disables the native Vulkan surface on Linux.
+  The failure reproduced in headless Chromium 1248 on Linux; all three production smokes passed with these flags.
+  Keep errors fatal: accepting adapter creation alone would miss this failure.
+
+- **Diagnose washed-out surfaces before changing specular.** Outbreak's ground specular was already zero.
+  `games/outbreak/scripts/refine-proof.ts` captures the shared shader's albedo/direct/ambient/specular/bloom
+  contributions through the Lab. Smaller practical pools, sheltered ambient and removal of additive blue shadow
+  lift corrected the main wash. Room lamps are excluded above the roof underside. Default shared WGSL remains
+  equivalent across twelve outputs. See `docs/outbreak-look-v2.md` for aligned evidence and limitations.
+- **Cull and simplify generated planting before adding density.** The second Outbreak pass removes covered
+  terrain and excess grass/gravel, replaces sphere crowns with fewer folded-leaf sprays, and gives props their
+  own render bounds. Static vertices fall 299,238→196,722; street submitted vertices fall 164,820→97,014.
+  Seven M5 Max/Metal pairs at 1000×680 have mixed frame results: street aggregate medians 10.0→9.6 ms,
+  interior 9.9→10.7 ms. Keep those queue-completed spans distinct from GPU time. The measured Metal render-pass
+  timestamp intervals overlap; summing them would falsely attribute cost. Generation uses a three-entry cache,
+  and the determinism test explicitly evicts it before comparing independently compiled meshes.
+- **Separate scenery memory from actor LOS.** Outbreak's initial cone blacked out most of its neighbourhood.
+  Static room discovery now supplies the scenery texture while `Vision.visible` retains strict occlusion for actors.
+  A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
+  Exterior scenery remains lit, and remembered interior scenery is desaturated instead of hidden behind wedges.
+  `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
+- **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
+  pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
+  those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
+  New material IDs also need exclusion from the old dust-expansion branch. Outdoor finishes use four-corner value
+  noise while legacy Blackout noise is retained. These hooks add no changes to default Blackout WGSL.
+- **Test contact against packed geometry.** Outbreak uses the same seeded terrain vertices and triangle diagonal
+  in rendering and support queries. Tests intersect actual packed ground triangles at yard, threshold, interior,
+  driveway and curb samples. This caught driveway support returning 3.5 cm beneath a 10 cm sidewalk overlay.
+  Final look cost on M5 Max at 1000×680: median queue-completed spans 2.5→9.5 ms, 37,014→299,238 static vertices,
+  and sampled allocations 565,965→574,627 bytes/step including the proof harness. Pure GPU time is unmeasured.
+
+- **Reserve a polar row for eye sight.** Outbreak M1 uses row zero at 1.65 m, with zero radiance, in the same
+  compute pass as its streetlights. Walls/closed doors feed that row; windows/fences remain collision-only.
+  The fragment shader combines its nearest hit with a 110° cone and occluded 2.5 m awareness. A CPU polar pass
+  marks a persistent 192² exploration mask with the same ray centres and shared slab tests, without GPU readback.
+  The mask is uploaded only after newly explored cells appear. Headless Chromium on Apple Metal checked a closed
+  room, opening its door, and turning away into an explored shroud, plus live Lab/input handling, without GPU errors.
+  `games/outbreak/scripts/prove.ts` reproduces the six views. The mask is 36 KiB; runtime/GPU cost is unmeasured.
 
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
   silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
@@ -136,6 +300,12 @@ See `human-rig.md` for ownership and `../perf/human-rig.md` for proof and releas
   teleports and resize reset it. Eight depth-aware samples run in the existing composite, before the DOM HUD. The
   1440p M5 Max paired deltas were +0.060 / -0.312 / +0.237 ms for office/downtown/lot, with MAD
   0.345 / 0.896 / 0.273. The sub-0.5 ms target is unproven under that variance. See `perf/blackout-motion.md`.
+- **Fast projectiles need a flight-aware continuity threshold.** Blackout's 240 m/s tracers crossed the original
+  4-metre actor teleport threshold at 60 Hz, suppressing their velocity. Transient keys now carry an emission point
+  and 32-metre threshold; casings and sheets also get stable keys. A 1/60 shutter, 1.25-pixel dead zone and 32-pixel cap
+  make fast motion visible while slow camera following stays sharp. Tracked flash/tracer quads sweep their trailing
+  edge so their narrow silhouettes can streak. `scripts/motion-demo.ts` matches vehicle, camera and effect states for
+  an actual passing car and close-zoom shotgun kill/throw. Cost of this tuning is unmeasured; blur stays default off.
 
 - **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
   selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then
@@ -205,6 +375,21 @@ See `human-rig.md` for ownership and `../perf/human-rig.md` for proof and releas
   conservative bounds that skip the monitor suffix outside its footprint reduced those medians to 0.037 / 0.021 ms
   on the M5 Max, with considerable run-to-run noise. See `perf/monitor-lights.md` for the fixed-frame confirmation.
 
+- **Day-night as a palette over the sunny base.** Carrier (`games/carrier/src/render/daynight.ts`) keys sky, light,
+  grade and water on the true sun elevation, with separate evening and morning rows. The day key reads the live base,
+  so noon is the old look exactly. The result becomes the weather's base, and a `daylight` factor turns storm greys
+  navy at night. Shader terms read one Frame vec4 (night, twilight, lights, moon as key light), all 0 by day. Practical
+  lights are additive sprites with a minimum pixel size, so a distant carrier still reads as a cluster of points.
+  Throughput at 1536×1024 on the M4 Max: chase view 0.74 ms by day, 0.77 ms at night; jet view 0.60 ms by day,
+  0.65 ms at night.
+- **Per-pass timestamps lie on an idle Apple GPU.** At a light vsync'd load the M4 Max clocks down, so carrier's
+  per-pass timestamps read 5–30 ms for a frame that costs 0.9 ms flat out. Measure throughput instead: encode about
+  60 frames back to back through the renderer and divide the wall time (`games/carrier/scripts/ocean-shot.ts --bench`).
+- **Branch expensive fragment work behind cheap masks once all derivatives are taken.** On the carrier ocean, gating
+  foam noise, coral, glitter and shallows on their coverage, and moving cloud shadows to the vertex shader, cut the
+  sea's frame from 29 ms to 6–11 ms under the same (clocked-down) timestamp setup; a normals-only shader read 5 ms.
+  Flat-out throughput afterwards is 0.87 ms per frame, against 0.48 ms with no sea (1536×1024, MSAA ×4). Throughput
+  before the change was not measured.
 - **Keep `discard` out of the main opaque pipeline.** Apple GPUs lose hidden-surface removal for any pipeline whose
   fragment shader can discard. Draw opaque geometry with a variant without `discard`, and use the cutaway variant only
   for the chunks that touch the cutaway region. Blackout: GPU time 12.7 ms → 5.0 ms median across six views.
@@ -410,6 +595,14 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   before sleep. Tests settled 256 random cone drops, five inverted cases and 448 other prop drops; Metal proof shows
   four tip-first/tilted cones resting on their sloping sides. Evidence: `perf/clutter/rest-proof.json`. Runtime cost
   has not been remeasured; body-pair contacts still use decorative rounded proxies.
+
+- **Swap presentation while retaining the rig and map.** Blackout's opt-in Wizards lab study registers a second set
+  of meshes against the existing bones, uses a matte team-tinted cloth material, and rebuilds static geometry only
+  when the switch changes. `src/render/castle.ts` retains collision footprints and light IDs while replacing office
+  furniture and fittings; the existing lamp-power buffer drives smooth torch flicker. `scripts/prove-wizards.ts`
+  captured walking, aiming, casting, ragdoll, the furniture fixture and sandbox on Apple's Metal adapter with no
+  browser errors, including a live off/on toggle. Two tests check source-map preservation and finite model normals.
+  CPU/GPU cost has not been measured. Viewer links and weapon mappings are in `games/blackout/docs/wizards.md`.
 
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
@@ -625,8 +818,39 @@ Candidates from the code audits; measure and playtest before moving any into the
   to reload into the same room (Blackout `scripts/build-id.ts`).
 - **Persist lobby room reports** in Durable Object storage so a restarted lobby knows every live room at once instead of
   waiting for heartbeats (Blackout `server/lobby.ts`).
+- **Slow vehicles: server sim plus soft-reconciled prediction, no input replay.** Carrier's room runs every ship on the
+  shared fixed-step sim; the helm's client predicts its own ship and eases it onto the room's pose (dead-reckoned to its
+  own time, 1.5 s lag, snap past 60 m). With orders arriving one trip late, the predicted and room ships stayed 0.6 m
+  apart after 6 s of throttle and rudder on hailmary (`games/carrier/src/game/game.ts`, `scripts/mp-shot.ts`).
+- **Hybrid combat authority for fast jets.** Carrier lets each shooter decide its own cannon hits, against the jets
+  as it draws them, 120 ms behind. The room only checks they are plausible: alive enemies, a round budget refilled at
+  the gun's rate, and range between the relayed jets. Missiles, bombs and flares are events (pose, velocity, target,
+  sea time). The room flies them in a shared deterministic `CombatWorld` against the latest relayed jets,
+  dead-reckoned, and decides detonation and damage. Clients run the same world without authority to draw them, and
+  snap to the room's burst. On hailmary, two pages in one room produced: a gun kill, a missile flared by the target,
+  a missile hit, a kill feed and K/D tallies on both pages (`games/carrier/shared/combat.ts`, `server/core.ts`,
+  `scripts/weapons-shot.ts --only=mp`). Bandwidth and room CPU are unmeasured.
+- **Capture DOM UI over WebGPU** by reading the frame back through the game's device, laying it under the page as an
+  `<img>` (canvas hidden) and taking a page screenshot (`games/carrier/scripts/mp-shot.ts`).
 
 ## Input
+
+- **Latch fire presses across input ticks.** Blackout's `src/game/input.ts` keeps one press edge for at most 100 ms,
+  consumed by the next 30 Hz input tick. `Intent.firePressed` carries that edge through prediction and the wire so
+  consecutive taps remain distinct even without a sampled release. Weapon cooldown/reload gates consume rejected
+  presses; disabling play, Lab capture and blur clear pending input. `tests/fire-input.test.ts` covers taps, holds,
+  expiry, focus release and server queue delivery. `scripts/prove-fire-input.ts` drives trusted mouse down/up events
+  against the real game with manual ticks, silent audio and a mocked room socket. The original build lost the
+  between-tick tap in both paths (0 predicted/authoritative shots); the fix produced 1/1. Each fixed path completed
+  the consecutive-tap, sniper-hold, double-click, cooldown, Lab and rifle-hold checks with 12/12 shots. Physical
+  trackpad gesture recognition and GPU cost were not measured.
+
+- **Latch click edges with their selection.** Blackout's wizard prototype stores canvas mousedown position and spell
+  choice until a fixed tick consumes them (`src/game/input.ts`, `game.ts`). Mouseup cannot erase a quick tap, and a
+  number-key/wheel change cannot change a pending cast. Blur and Lab interaction clear the bounded queue. A Metal
+  browser proof put down/up and a selection change between ticks, exercised five rapid clicks, Dvorak movement and
+  a Lab slider click, and checked separate server cooldowns and active caps. `scripts/prove-wizards-spells.ts` also
+  captured player/furniture orbit, pop damage, and a skeleton's wind-up and hit on its caster. Runtime cost is unmeasured.
 
 - **Ignore blur releases from the previous input owner.** On an iframe focus change, the old window's blur message can
   arrive after the new window's keydown or mousedown and cancel the new input. `games/blackout/compare.html` releases
@@ -637,6 +861,20 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Support any keyboard layout.** Match both `e.code` (physical position) and `e.key` (character), so QWERTY and
   Dvorak both work without settings. Don't bind an action to a key that is a movement key on another layout (Blackout
   used `E` for plant/defuse, which is Dvorak's right strafe).
+- **A menu that takes number keys listens in the capture phase.** Carrier's SHIP OPERATIONS
+  (`games/carrier/src/ui/ops-menu.ts`) runs its rows on 1-9, the same keys as the helm's throttle presets, and both
+  listen on `window`. Registering the menu's keydown with `capture: true` and calling `stopImmediatePropagation()` on
+  the keys it uses means the game's input never records them, so closing the menu on that key can't leak a press into
+  the next frame. `scripts/ui-shot.ts` checks the throttle stays at 0 after picking a row by number at the helm. Its
+  toggle key, G, is matched by `e.code` and `e.key` and is a movement key on no common layout (QWERTY, AZERTY, Dvorak,
+  Colemak); B was rejected because Dvorak's physical B types `x`, the flight's free-look key.
+- **Menus take Pointer Lock away and give it back without a click.** Carrier's `games/carrier/src/input.ts` owns one
+  lock for the ship's chase camera and the flight stick. Menus call `suspend()` (remember whether it was held, then
+  `exitPointerLock()`); when the last menu closes, `resume()` calls `requestPointerLock()` from the frame loop. Chrome
+  allows that without a user gesture because the page, not the user, released the lock; after the user's own Esc it
+  isn't resumed. Track the held state from `pointerlockchange` rather than `document.pointerLockElement`, so a menu
+  that already called `exitPointerLock()` still reads as "was held". `scripts/ui-shot.ts --only=mouse` checks it on
+  Metal for Tab, the ops menu and the debug menu, and through a catapult launch and recovery.
 - **Release the character a key produced when it went down.** Shift and Option change `e.key` while a key is held
   (Dvorak `,` becomes `<`), so releasing by the keyup's `e.key` leaves the key stuck and the player keeps moving.
   Record the character per `e.code` on keydown and clear it on keyup. Release everything when Cmd comes up, because
@@ -648,6 +886,16 @@ Candidates from the code audits; measure and playtest before moving any into the
   the panel. Runtime cost is unmeasured.
 
 ## Feel
+
+- **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
+  games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and
+  tonnes. Blackout converts its +X-forward mesh basis and kilograms; converting the complete rotation basis keeps
+  combined roll/pitch attachments aligned. The noise-lit smoke pipeline accepts each game's depth format
+  (`depth24plus` in Blackout, `depth24plus-stencil8` in Getaway). Matched Metal proof kept Getaway's two PNGs
+  byte-identical and Blackout's four sampled simulation poses identical. Blackout's drift produced 49 smoke samples
+  and 110 skid segments; its bounded four-voice offline mix peaked at 0.852 without clipping and became silent after
+  disabling vehicle audio. Full checks passed 177 tests (12 existing skips) in Getaway and 285 in Blackout.
+  Reproduction and audio comparison are in `perf/vehicle-kit.md`; runtime CPU/GPU cost has not been measured.
 
 - **Lab navigation captures keys, not just focus.** The shared panel captures keyboard events at the window before
   game bubble listeners, releases held input on open, and retains consumed keyups after close. This follows
@@ -752,3 +1000,48 @@ Candidates from the code audits; measure and playtest before moving any into the
   faceted blobs replaced by soft smoke. Nitro onset below 24 m/s adds a 0.45 s rear-wheel skid/smoke burst under the
   existing skid switch; the capture recorded exactly 26 connected segments (two per frame) and five smoke sprites,
   then no further segments while boost stayed held. CPU/GPU cost and Kit's playtest verdict remain unmeasured.
+
+## Audio
+
+- **Render Web Audio offline to check a mix without ears.** Carrier's `scripts/audio-demo.ts` drives the real mixer and
+  jet audio on an `OfflineAudioContext`, stepping the scripted scene every 1024 frames with `ctx.suspend(t).then(...)`
+  and `resume()`; `scripts/audio-render.ts` runs it in headless Chrome on hailmary (a 15 s scene renders in about
+  0.5 s) and writes WAVs. Band levels per second and ffmpeg `showspectrumpic` spectrograms caught a sub-heavy engine
+  (lows 8-10 dB over the mids), an afterburner only 1.5 dB louder than military, a whine gliding in from the
+  constructor's default frequency, and a far jet 10 dB quieter than intended. Peaks stayed at -3 dBFS behind the
+  limiter in every scene.
+- **Jet engines: few smooth layers, and quiet.** Carrier's first engine (whine partials, buzz-saw rasp, intake howl,
+  noise-torn roar, crackle at military power, recorded flyby takes on top) was called "terrible and loud" in play. Its
+  replacement ports Wings' fighter voice (`games/carrier/src/audio/jet-engine.ts`): a soft triangle whine plus a ×2.76
+  overtone, pink roar behind a throttle-opened low-pass, brown body, an afterburner-only rumble/sub/crackle, all
+  procedural. Offline 0.5 s RMS: your jet in chase at military sits 18 dB under a gun burst, 13 dB under medium weather.
+- **Web Audio's compressor adds makeup gain.** A `DynamicsCompressorNode` raises everything by roughly 0.6 × its
+  full-scale gain reduction, so a "limiter" quietly made carrier's whole mix 3.7-7 dB louder. Carrier measures it with a
+  calibration tone (`scripts/audio-demo.ts` "calib") and trims it back (`MAKEUP_TRIM` in `src/audio/mixer.ts`).
+- **Recorded explosions, per scenario, crossfaded by distance.** Carrier's `src/audio/jet-boom.ts`: 3 ElevenLabs takes
+  per scenario (air kill, missile, bomb on water/land, crash into sea/land) and 3 distant rumbles; the close take is
+  low-passed by air absorption and crossfades into a rumble from 350 m to 1.8 km, after the travel time.
+- **Line flybys up with the predicted closest approach.** Carrier predicts each jet's straight-line closest approach
+  every frame and swells a procedural air rush to land on the pass, panned with the jet (recorded takes lined up the
+  same way by their loudest 100 ms are behind a toggle: they sounded worse than the procedural engine in play). Unit tests in `games/carrier/tests/audio.test.ts` check
+  the trigger fires once, at most 2.4 s ahead, landing on the pass. Live feel is unplaytested.
+
+- **When nobody on the team can listen, let the user's ears pick.** Carrier's v1 and v2 sounds were chosen from
+  spectrograms and called "cheap" in play. v3 ships 3-4 candidate takes for each of 51 slots and an audition board (the
+  SOUNDS tab, `games/carrier/src/audio/sounds-lab.ts`): play each take dry or placed in the world with the reverb, pick,
+  trim, rate; picks apply live, persist in localStorage, and a dev-server endpoint (`scripts/sfx-picks-plugin.ts`)
+  writes `public/sfx/picks.json`, the shipped defaults. Takes load lazily: only the picks (~4.5 MB of 9.5 MB).
+- **Seamless loops through lossy codecs.** `scripts/sfx-cinematic.ts` crossfade-loops each take, appends its first
+  0.25 s after the loop point and records the loop length in a manifest; the game loops `[start, start + length)` where
+  start skips any leading decoder padding (Safari's Opus pre-skip). Ogg Opus decodes in Chrome, Firefox and Safari
+  18.4+ (Safari 26 is the WebGPU floor anyway).
+- **Measure loudness with a montage, not per sound.** Carrier's 60 s offline montage (`scripts/audio-demo.ts`, ocean →
+  catapult → climb → pass → gun → missile → kill → storm → trap) measures -16.1 LUFS integrated and -1.7 dBTP through
+  the real mix; individual scenes put your engine in the chase view 16-18 dB under a gun burst and medium weather ~5 dB.
+  Unit-scene levels alone hid a sub-heavy bed (a ship ambience left playing in every scene) and rain carried over.
+- **Keep anything that follows a vehicle's live state procedural.** Carrier tried recorded engine loops crossfaded by
+  throttle and recorded flybys aligned to the predicted pass; the user ruled them out: throttle, spool, afterburner,
+  Doppler and geometry change every frame, and a take can't stay locked to them. v4 synthesizes engines, cockpit, wind,
+  flybys and the sonic crack (`games/carrier/src/audio/jet-engine.ts`, `jet-sfx.ts`, `jet-cockpit.ts`) and records only
+  discrete events (catapult, trap, gear, guns, missiles, explosions, ambience, UI). Sending the procedural voice into
+  the same convolution reverb and water slapback as the recorded one-shots makes them sit in one space.

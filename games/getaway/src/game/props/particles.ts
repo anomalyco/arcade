@@ -1,4 +1,5 @@
 import { mulberry32 } from "../../../shared/sim/rng"
+import { getawayEffects as settings } from "../../lab/settings"
 
 export type SpriteWriter = (list: "a" | "d", x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot?: number, stretch?: number, extra?: number) => void
 type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number; age: number; life: number; size: number; kind: number; seed: number }
@@ -15,10 +16,10 @@ export class PropParticles {
       p.x = x; p.y = y; p.z = z; p.age = 0; p.kind = kind; p.seed = rand()
       p.vx = Math.cos(angle) * speed + vx * .35; p.vz = Math.sin(angle) * speed + vz * .35
       p.vy = (2 + rand() * 7) * strength
-      p.life = kind === 1 ? 2 + rand() * 2 : kind === 10 ? 3 + rand() * 3 : kind === 11 ? 1.6 : kind === 12 ? .22 + rand() * .3 : .35 + rand() * .65
-      p.size = kind === 1 ? .8 + rand() * .8 : kind === 10 ? .1 + rand() * .13 : kind === 11 ? .06 + rand() * .07 : .1 + rand() * .22
+      p.life = kind === 1 ? settings.plumes.life + rand() * settings.plumes.lifeSpread : kind === 10 ? 3 + rand() * 3 : kind === 11 ? settings.hydrant.life : kind === 12 ? .22 + rand() * .3 : .35 + rand() * .65
+      p.size = kind === 1 ? settings.plumes.size + rand() * settings.plumes.sizeSpread : kind === 10 ? .1 + rand() * .13 : kind === 11 ? settings.hydrant.size + rand() * settings.hydrant.sizeSpread : .1 + rand() * .22
       if (kind === 1) { p.vy = 2 + rand() * 2; p.vx *= .3; p.vz *= .3 }
-      if (kind === 11) { p.vx *= .24; p.vz *= .24; p.vy = 8 + rand() * 5 }
+      if (kind === 11) { p.vx *= .24; p.vz *= .24; p.vy = settings.hydrant.lift + rand() * settings.hydrant.liftSpread }
       if (kind === 12) p.size = .45 + rand() * .8
     }
   }
@@ -43,10 +44,9 @@ export class PropParticles {
     }
   }
   draw(sprite: SpriteWriter) {
-    // Local particle kinds 10–12 map to shared shader slots 20–22; 10 is exhaust condensation there.
     for (let i = 0; i < this.count; i++) {
       const p = this.pool[i]!, t = p.age / p.life, fade = Math.min(1, (1 - t) * 3)
-      if (p.kind === 1) sprite("a", p.x, p.y, p.z, p.size * (1 + t * 2.6), .48, .45, .4, fade * .8, 1, 0, 1, p.seed)
+      if (p.kind === 1) sprite("a", p.x, p.y, p.z, p.size * (1 + t * settings.plumes.growth), .48, .45, .4, fade * settings.plumes.opacity, 1, 0, 1, p.seed)
       else if (p.kind === 10) sprite("a", p.x, p.y, p.z, p.size, .78, .76, .64, fade, 20, p.age * 3 + p.seed * 6, .5 + .45 * Math.sin(p.age * 10 + p.seed * 20), p.seed)
       else if (p.kind === 11) sprite("a", p.x, p.y, p.z, p.size, .42, .73, .88, fade * .78, 21, 0, 1.7)
       else if (p.kind === 12) sprite("d", p.x, p.y, p.z, p.size * (1 + t * 1.8), 1, .16 + (1 - t) * .3, .015, (1 - t) ** 2 * 1.3, 22)

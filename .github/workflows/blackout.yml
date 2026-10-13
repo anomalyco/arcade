@@ -12,6 +12,7 @@ on:
       - "bunfig.toml"
       # tsconfig.scripts.json includes the cross-game multiplayer benchmark.
       - "games/getaway/shared/**"
+      - "games/getaway/public/sfx/**"
       - ".github/workflows/blackout.yml"
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - "bun.lock"
       - "bunfig.toml"
       - "games/getaway/shared/**"
+      - "games/getaway/public/sfx/**"
       - ".github/workflows/blackout.yml"
   workflow_dispatch:
 

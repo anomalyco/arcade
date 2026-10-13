@@ -1,0 +1,191 @@
+{
+  "adapter": {
+    "architecture": "metal-3",
+    "vendor": "apple",
+    "device": "",
+    "description": ""
+  },
+  "lighting": [
+    {
+      "name": "Lamps",
+      "value": false,
+      "gpuMs": 0.530076,
+      "changed": true
+    },
+    {
+      "name": "Spotlight",
+      "value": false,
+      "gpuMs": 0.450743,
+      "changed": true
+    },
+    {
+      "name": "Polar shadows",
+      "value": false,
+      "gpuMs": 0.278454,
+      "changed": true
+    },
+    {
+      "name": "Moon",
+      "value": false,
+      "gpuMs": 0.634365,
+      "changed": true
+    },
+    {
+      "name": "Light count",
+      "value": 8,
+      "gpuMs": 1.662765,
+      "changed": true
+    },
+    {
+      "name": "Light count",
+      "value": 0,
+      "gpuMs": 0.254204,
+      "changed": true
+    },
+    {
+      "name": "Power",
+      "value": 5,
+      "gpuMs": 0.624948,
+      "changed": true
+    },
+    {
+      "name": "Radius",
+      "value": 5,
+      "gpuMs": 0.404369,
+      "changed": true
+    },
+    {
+      "name": "Height",
+      "value": 1.5,
+      "gpuMs": 0.618616,
+      "changed": true
+    },
+    {
+      "name": "Spot power",
+      "value": 9,
+      "gpuMs": 0.629866,
+      "changed": true
+    },
+    {
+      "name": "Cone angle",
+      "value": 65,
+      "gpuMs": 0.697281,
+      "changed": true
+    },
+    {
+      "name": "Yaw",
+      "value": -30,
+      "gpuMs": 0.62324,
+      "changed": true
+    },
+    {
+      "name": "Pitch",
+      "value": 75,
+      "gpuMs": 0.616824,
+      "changed": true
+    },
+    {
+      "name": "Moon power",
+      "value": 1.5,
+      "gpuMs": 0.613325,
+      "changed": true
+    },
+    {
+      "name": "Azimuth",
+      "value": 90,
+      "gpuMs": 0.622365,
+      "changed": true
+    },
+    {
+      "name": "Elevation",
+      "value": 15,
+      "gpuMs": 0.608198,
+      "changed": true
+    },
+    {
+      "name": "Exposure",
+      "value": 1,
+      "gpuMs": 0.625282,
+      "changed": true
+    },
+    {
+      "name": "Temperature",
+      "value": 1,
+      "gpuMs": 0.643407,
+      "changed": true
+    },
+    {
+      "name": "Saturation",
+      "value": 0,
+      "gpuMs": 0.619657,
+      "changed": true
+    },
+    {
+      "name": "Tone",
+      "value": 1,
+      "gpuMs": 0.62999,
+      "changed": true
+    },
+    {
+      "name": "Tone",
+      "value": 2,
+      "gpuMs": 0.638573,
+      "changed": true
+    }
+  ],
+  "sections": {
+    "materials": [
+      "Getaway · 0 lit",
+      "Getaway · 1 facade",
+      "Getaway · 2 emissive",
+      "Getaway · 3 water",
+      "Getaway · 4 flat",
+      "Getaway · 5 siren",
+      "Getaway · 6 glass",
+      "Getaway · 7 decal",
+      "Getaway · 8 neon",
+      "Getaway · 9 window",
+      "Getaway · 12 smoke",
+      "Blackout · 0 lit",
+      "Blackout · 1 floor",
+      "Blackout · 2 lamp",
+      "Blackout · 3 glow",
+      "Blackout · 4 wall",
+      "Blackout · 5 tape",
+      "Blackout · 6 glass",
+      "Blackout · 7 city",
+      "Blackout · 8 accent",
+      "Blackout · 9 cap",
+      "Blackout · 10 shiny",
+      "Blackout · 11 haze",
+      "Blackout · 12 actor",
+      "Blackout · 13 mote"
+    ],
+    "physicsAdapter": true,
+    "sectionIsolation": true,
+    "lightingPreserved": true,
+    "debugViews": [
+      3,
+      5
+    ]
+  },
+  "controls": {
+    "select": true,
+    "slider": true,
+    "play": true,
+    "loop": true,
+    "retrigger": true,
+    "copy": {
+      "effect": "sparks",
+      "rate": 75,
+      "size": 1,
+      "speed": 1,
+      "density": 1
+    },
+    "backquote": true,
+    "urlUnchanged": true,
+    "presetsPreserveSelect": true,
+    "blackoutToggle": true
+  },
+  "errors": []
+}

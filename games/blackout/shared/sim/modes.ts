@@ -7,10 +7,14 @@ import type { FlagView, TagView, ZoneView } from "./modes-objective"
 import type { RulesView } from "./modes-rules"
 import { type Kit, gunKit } from "./kit"
 
-export type ModeId = "ffa" | "tdm" | "dom" | "snd" | "kc" | "hp" | "ctf" | "inf" | "gun" | "oitc"
-export const MODE_IDS: readonly ModeId[] = ["ffa", "tdm", "dom", "snd", "kc", "hp", "ctf", "inf", "gun", "oitc"]
+export type ModeId = "ffa" | "tdm" | "dom" | "snd" | "kc" | "hp" | "ctf" | "inf" | "gun" | "oitc" | "wizards"
+export const MODE_IDS: readonly ModeId[] = ["ffa", "tdm", "dom", "snd", "kc", "hp", "ctf", "inf", "gun", "oitc", "wizards"]
+const PUBLIC_MODES = MODE_IDS.filter((id) => id !== "wizards")
+/** Prototype modes stay out of discovery; an explicitly wizard room can keep playing its current mode. */
+export const modeChoices = (current?: ModeId): readonly ModeId[] => current === "wizards" ? MODE_IDS : PUBLIC_MODES
 
 export const MODES: Record<ModeId, { label: string; short: string; blurb: string; teams: boolean }> = {
+  wizards: { label: "Wizards", short: "WIZ", blurb: "Click to cast. 1 / 2 or wheel selects a spell.", teams: false },
   ffa: { label: "Free for all", short: "FFA", blurb: "Everyone for themselves. Most kills wins.", teams: false },
   tdm: { label: "Team deathmatch", short: "TDM", blurb: "Orange vs cyan. First team to the kill target.", teams: true },
   dom: { label: "Domination", short: "DOM", blurb: "Hold A, B and C. Each point held scores.", teams: true },
@@ -72,17 +76,18 @@ export type Goal = { x: number; y: number; use: boolean; rush?: boolean }
  * current mode. Only votes for the modes on offer count, when there's an offer.
  */
 export function tally(votes: Iterable<ModeId>, current: ModeId, rng: Rng, options?: readonly ModeId[]): ModeId {
+  const candidates = modeChoices(current)
   const counts = new Map<ModeId, number>()
-  for (const v of votes) if (!options || options.includes(v)) counts.set(v, (counts.get(v) ?? 0) + 1)
+  for (const v of votes) if (candidates.includes(v) && (!options || options.includes(v))) counts.set(v, (counts.get(v) ?? 0) + 1)
   if (!counts.size) return current
   const top = Math.max(...counts.values())
-  const best = MODE_IDS.filter((m) => counts.get(m) === top)
+  const best = candidates.filter((m) => counts.get(m) === top)
   return best.length === 1 ? best[0]! : rng.pick(best)
 }
 
 /** What the end screen offers: the current mode ("same again"), then three others drawn at random. */
 export function voteOptions(current: ModeId, rng: Rng, count = 4): ModeId[] {
-  const rest = MODE_IDS.filter((m) => m !== current)
+  const rest = modeChoices(current).filter((m) => m !== current)
   for (let i = rest.length - 1; i > 0; i--) {
     const j = rng.int(i + 1)
     ;[rest[i], rest[j]] = [rest[j]!, rest[i]!]

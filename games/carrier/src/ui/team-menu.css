@@ -1,0 +1,397 @@
+/* Tab menu (team-menu.ts): both teams side by side, a card per ship, a row per player. */
+.tm {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  color: var(--ink);
+  font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  font-weight: 300;
+  text-transform: uppercase;
+  background: radial-gradient(ellipse 80% 80% at 50% 50%, rgba(5, 14, 28, 0.42), rgba(5, 14, 28, 0.18));
+  /* The HUD shrinks with the window; a menu full of names stops shrinking sooner and stacks its teams instead. */
+  zoom: max(var(--hud, 1), 0.9);
+}
+
+.tm[hidden] {
+  display: none;
+}
+
+.tm-panel {
+  width: min(1080px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  scrollbar-width: thin;
+  padding: 22px 26px 24px;
+  background: rgba(7, 17, 32, 0.78);
+  border: 1px solid rgba(244, 247, 251, 0.14);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 60px rgba(2, 8, 18, 0.5);
+}
+
+.tm button {
+  font: inherit;
+  color: inherit;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid rgba(244, 247, 251, 0.42);
+  padding: 5px 10px 5px calc(10px + 0.26em);
+  font-size: 9.5px;
+  letter-spacing: 0.26em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.tm button:hover:not([disabled]) {
+  border-color: var(--ink);
+  background: rgba(244, 247, 251, 0.1);
+}
+
+.tm button[disabled] {
+  cursor: default;
+  border-color: rgba(244, 247, 251, 0.14);
+  color: rgba(244, 247, 251, 0.38);
+}
+
+.tm-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+  font-size: 10px;
+  letter-spacing: 0.32em;
+}
+
+.tm-logo {
+  font-size: 15px;
+  letter-spacing: 0.6em;
+}
+
+.tm-room {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(244, 247, 251, 0.7);
+}
+
+.tm-room b {
+  color: var(--ink);
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: 0.42em;
+}
+
+.tm-pin.on {
+  background: var(--ink) !important;
+  border-color: var(--ink) !important;
+  color: #0b1d36 !important;
+}
+
+.tm-teams {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 28px;
+}
+
+.tm-team {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.tm-th {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--tc);
+  font-size: 9.5px;
+  letter-spacing: 0.3em;
+  color: rgba(244, 247, 251, 0.6);
+}
+
+.tm-th b {
+  margin-right: auto;
+  color: var(--tc);
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.5em;
+}
+
+.tm-team.mine .tm-th {
+  border-bottom-width: 2px;
+}
+
+.tm-ship {
+  padding: 10px 12px 8px;
+  background: rgba(244, 247, 251, 0.025);
+  border: 1px solid rgba(244, 247, 251, 0.08);
+  border-left: 2px solid color-mix(in srgb, var(--tc) 70%, transparent);
+}
+
+.tm-ship.mine {
+  background: color-mix(in srgb, var(--tc) 8%, transparent);
+  border-color: color-mix(in srgb, var(--tc) 35%, transparent);
+  border-left-color: var(--tc);
+}
+
+.tm-sh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+  font-size: 9.5px;
+  letter-spacing: 0.26em;
+}
+
+.tm-sh b {
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tm-n {
+  color: rgba(244, 247, 251, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+.tm-warn {
+  color: #ffd34a;
+}
+
+.tm-sh > button,
+.tm-you {
+  margin-left: auto;
+}
+
+.tm-you {
+  color: var(--tc);
+}
+
+.tm-join:not([disabled]) {
+  border-color: color-mix(in srgb, var(--tc) 75%, transparent) !important;
+}
+
+.tm-join:hover:not([disabled]) {
+  background: var(--tc) !important;
+  color: #0b1d36;
+}
+
+/* A small drawn padlock: shackle and body. */
+.tm-padlock {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 7px;
+  margin-top: 5px;
+  background: currentColor;
+  border-radius: 1px;
+  opacity: 0.85;
+}
+
+.tm-padlock::before {
+  content: "";
+  position: absolute;
+  left: 1.5px;
+  bottom: 6px;
+  width: 6px;
+  height: 5px;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+
+.tm-ship.locked .tm-sh > .tm-padlock {
+  color: #ffd34a;
+}
+
+.tm-lockbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tm-lockbtn .tm-padlock {
+  margin-top: 4px;
+}
+
+.tm-lockbtn.on {
+  color: #ffd34a !important;
+  border-color: rgba(255, 211, 74, 0.7) !important;
+}
+
+.tm-lockbtn:not(.on) .tm-padlock::before {
+  left: 4px;
+}
+
+.tm-crew {
+  list-style: none;
+  margin: 7px 0 0;
+  padding: 0;
+  display: grid;
+}
+
+.tm-crew li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 26px;
+  padding: 0 6px 0 2px;
+  border-top: 1px solid rgba(244, 247, 251, 0.06);
+  font-size: 9px;
+  letter-spacing: 0.24em;
+}
+
+.tm-crew li.me {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tc) 22%, transparent), transparent 85%);
+}
+
+.tm-cap {
+  flex: 0 0 12px;
+  color: #ffd34a;
+  font-style: normal;
+  font-size: 11px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.tm-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tm-crew li.me .tm-name {
+  color: var(--tc);
+}
+
+.tm-role {
+  flex: 0 0 72px;
+  color: rgba(244, 247, 251, 0.5);
+}
+
+.tm-role.helm {
+  color: #ffd34a;
+}
+
+.tm-role.air {
+  color: #8be8ad;
+}
+
+.tm-role.boat {
+  color: #7fe3e0;
+}
+
+.tm-role.down {
+  color: #ff8f7a;
+}
+
+.tm-role.gun {
+  color: #9fd3ff;
+  white-space: nowrap;
+}
+
+.tm-kd {
+  flex: 0 0 44px;
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tm-kd i {
+  font-style: normal;
+  margin: 0 2px;
+  opacity: 0.4;
+}
+
+.tm-acts {
+  flex: 0 0 142px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.tm-acts button {
+  padding: 3px 7px 3px calc(7px + 0.22em);
+  font-size: 8.5px;
+  letter-spacing: 0.22em;
+  border-color: rgba(244, 247, 251, 0.22);
+  color: rgba(244, 247, 251, 0.75);
+}
+
+.tm-acts button.armed {
+  color: #0b1d36;
+  background: #ffd34a !important;
+  border-color: #ffd34a !important;
+}
+
+.tm-new {
+  justify-self: start;
+  border-style: dashed !important;
+  border-color: color-mix(in srgb, var(--tc) 55%, transparent) !important;
+  color: color-mix(in srgb, var(--tc) 85%, white) !important;
+}
+
+.tm-new[disabled] {
+  border-color: rgba(244, 247, 251, 0.12) !important;
+  color: rgba(244, 247, 251, 0.35) !important;
+}
+
+.tm-empty,
+.tm-wait {
+  padding: 16px 0;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: rgba(244, 247, 251, 0.45);
+}
+
+@media (max-width: 700px) {
+  .tm {
+    padding: 10px;
+  }
+  .tm-panel {
+    padding: 16px 14px;
+  }
+  .tm-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .tm-room {
+    margin-left: 0;
+  }
+  .tm-teams {
+    grid-template-columns: 1fr;
+  }
+  .tm-acts {
+    flex-basis: 118px;
+  }
+  .tm-acts button {
+    padding: 3px 5px;
+    letter-spacing: 0.12em;
+  }
+}
+
+/* Ship health (shared/fleet.ts): a hairline under the ship's name. */
+.tm-hull { position: relative; height: 2px; margin: 6px 0 2px; background: rgba(244, 247, 251, 0.18); }
+.tm-hull i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink, #f4f7fb); }
+.tm-hull.mid i { background: #ffc861; }
+.tm-hull.low i { background: #ff5a3a; }

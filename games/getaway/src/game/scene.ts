@@ -1,5 +1,5 @@
 import { vec4 } from "wgpu-matrix"
-import { CELL, GRID, ROAD_HALF, VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
+import { VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
 import { rampSurface, type City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
@@ -15,11 +15,13 @@ import { juice } from "../ui/debug-overlay"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
-import { Chassis, wheelRotation, type AxlePoint } from "./chassis"
+import { Chassis, curbHeight, wheelRotation, type AxlePoint } from "./chassis"
 import { splitChassis } from "../render/chassis-mesh"
-import { HEADLIGHT, LIGHT_DEFAULTS, lampMounts, type LightSettings, type LightStyle } from "../render/car-lights"
+import { drawLamps, LIGHT_DEFAULTS, type LightSettings, type LightStyle } from "../render/car-lights"
 import { bodyPoint } from "./car-pose"
 import { StreetProps } from "./props"
+import { spriteMotionKeys } from "../render/motion"
+import { getawayEffects as effectSettings } from "../lab/settings"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -36,10 +38,10 @@ function normalizeV(v: number[]): [number, number, number] {
 type Vis = {
   emissions: EmissionState
   chassis: Chassis
-  roll: number; pitch: number; speed: number; h: number; fuel: number; sparkAcc: number
+  roll: number; pitch: number; speed: number; h: number; sparkAcc: number
   scrapeAcc: number; wheels: { x: number; z: number }[]; height: number; springV: number; ground: number
   backfire: number; crash: number; impactCool: number; braking: boolean
-  boostHold: number; brakeHold: number; landings: number; landY: number; landV: number; vy: number
+  brakeHold: number; landings: number; landY: number; landV: number; vy: number
 }
 
 /** Matches the shader's siren strobe so glows and lights flash in sync with the lamp geometry. */
@@ -75,7 +77,7 @@ export class Scene {
   private add = new Float32Array(MAX_SPRITES_PER_LIST * SPRITE_FLOATS)
   private beams = new Mesh()
   private beamBuf = new Float32Array<ArrayBuffer>(new ArrayBuffer(4096 * 4))
-  private batchMap = new Map<number, { data: Float32Array<ArrayBuffer>; count: number; ghostCount: number }>()
+  private batchMap = new Map<number, { data: Float32Array<ArrayBuffer>; keys:(string|number|undefined)[]; count: number; ghostCount: number }>()
   private batchOut: InstanceBatch[] = []
   private nearLamps: { l: LampLight; d: number }[] = []
   private time = 0
@@ -88,6 +90,7 @@ export class Scene {
   input: Input | null = null
 
   resetBench() {
+    this.renderer.resetMotion()
     this.emissions.reset()
     this.clutter.reset()
     this.fx.add.length = 0
@@ -109,6 +112,8 @@ export class Scene {
     this.meshStyle = lightStyle
     const built = buildCityMesh(city)
     this.trail.seedWind(city.seed)
+    this.emissions.city = city
+    this.emissions.skids = this.fx
     renderer.setCity(built.mesh)
     this.lamps = built.lamps
     this.spills = built.spills
@@ -156,27 +161,19 @@ export class Scene {
     let v = this.vis.get(c.id)
     if (v && v.chassis.axles !== this.chassisModels.get(c.vehicle)!.wheels) v.chassis = new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels)
     if (!v) {
-      v = { chassis: new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels), emissions: new EmissionState(), roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, sparkAcc: 0, scrapeAcc: 0, wheels: Array.from({length:4},()=>({x:0,z:0})), height: 0, springV: 0, ground: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, boostHold: 0, brakeHold: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0 }
-      v.emissions.speed = c.speed
+      v = { chassis: new Chassis(c, this.chassisModels.get(c.vehicle)!.wheels), emissions: new EmissionState(), roll: 0, pitch: 0, speed: c.speed, h: c.h, sparkAcc: 0, scrapeAcc: 0, wheels: Array.from({length:4},()=>({x:0,z:0})), height: 0, springV: 0, ground: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, brakeHold: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0 }
       this.vis.set(c.id, v)
     }
     return v
   }
 
   private groundAt(x: number, z: number) {
-    const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL)
-    if (ix < 0 || iz < 0 || ix >= GRID || iz >= GRID) return 0
-    const a = x - ix * CELL - ROAD_HALF, b = z - iz * CELL - ROAD_HALF
-    const width = CELL - ROAD_HALF * 2
-    if (a < 0 || b < 0 || a > width || b > width) return 0
-    const dx = Math.max(3 - a, a - (width - 3), 0), dz = Math.max(3 - b, b - (width - 3), 0)
-    if (dx * dx + dz * dz > 9) return 0
-    if (this.city.alleys.some((g) => x > g.x0 && x < g.x1 && z > g.z0 && z < g.z1)) return 0
-    const park = this.city.parks.some((p) => x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1)
-    return park || Math.min(a, b, width - a, width - b) <= this.city.sidewalk ? KERB_H : 0
+    return curbHeight(this.city, x, z)
   }
 
   /** Presentation-only lab probes; never mutate the authoritative vehicle. */
+  backfire(car: CarView): void { this.testEffect("backfire", car) }
+
   testEffect(key: string, car: CarView): void {
     const v = this.visOf(car), spec = VEHICLE_BY_ID.get(car.vehicle)!
     const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = Math.cos(car.h), rz = -Math.sin(car.h)
@@ -187,7 +184,7 @@ export class Scene {
       v.emissions.pop = 0.11
       this.onBackfire?.(car)
     } else if (key === "curb") { v.springV = 2.5; if (juice.wheelContact) v.chassis.lift.v = 2.5 }
-    else if (key === "landing") { v.landV = -2.5; if (juice.suspension) v.chassis.lift.v = -2.5; this.punch = 0.8 }
+    else if (key === "landing") { v.landV = effectSettings.landing.spring; if (juice.suspension) v.chassis.lift.v = effectSettings.landing.spring; this.punch = effectSettings.landing.punch }
     else if (key === "trauma") { this.shake = 1; this.hitStop = 0.045 }
     else if (key === "skids") for (const a of [-1, 1]) for (const s of [-1, 1]) {
       const x = car.x + fx * spec.length * 0.32 * a + rx * spec.width * 0.4 * s
@@ -201,8 +198,6 @@ export class Scene {
     this.fx.update(dt)
     this.hitStopCool = Math.max(0, this.hitStopCool - dt)
     this.emissions.update(dt)
-    this.emissions.city = this.city
-    this.emissions.skids = this.fx
     for (const c of view.cars) {
       if (c.ghost) continue
       const v = this.visOf(c)
@@ -220,8 +215,6 @@ export class Scene {
       const brake = input ? input.brake > 0.1 || input.handbrake || input.throttle < 0 && c.vx * Math.sin(c.h) + c.vz * Math.cos(c.h) > 0.5 : !!c.braking
       v.brakeHold = brake ? 0.1 : Math.max(0, v.brakeHold - dt)
       v.braking = v.brakeHold > 0
-      const boost = input ? input.boost && c.boost > 0 && c.stun <= 0 && !c.engineOff && !c.airborne : c.boosting ?? c.boost < v.fuel - 1e-4
-      v.boostHold = boost ? 0.1 : Math.max(0, v.boostHold - dt)
       if ((c.landings ?? 0) > v.landings) {
         const impact = Math.max(c.landing ?? 0, Math.abs(v.vy))
         v.landV = -Math.min(2.8, impact * 0.22)
@@ -263,12 +256,11 @@ export class Scene {
       }
       v.ground = ground
       const pops = this.emissions.pops
-      this.emissions.car(c, spec, v.emissions, input, dt, v.height, true, true)
+      this.emissions.car(c, spec, v.emissions, input, dt, v.height)
       if (this.emissions.pops > pops) this.onBackfire?.(c)
       v.backfire = v.emissions.pop
-      v.fuel = c.boost
       if (c.impact > 0.35 && c.speed > 4) {
-        v.scrapeAcc += dt * (12 + Math.min(c.speed, 40))
+        v.scrapeAcc += dt * (effectSettings.scrape.rate + Math.min(c.speed, effectSettings.scrape.speedRate))
         const count = Math.floor(v.scrapeAcc)
         v.scrapeAcc -= count
         if (count) this.fx.sparks(c.x + fx * spec.length * 0.4, c.z + fz * spec.length * 0.4, -c.vx, -c.vz, count, 0.18)
@@ -372,6 +364,9 @@ export class Scene {
 
     const alpha = this.alpha
     const add = this.add
+    const alphaKeys=spriteMotionKeys.get(alpha),addKeys=spriteMotionKeys.get(add)
+    if(alphaKeys)alphaKeys.length=0
+    if(addKeys)addKeys.length=0
     let ai = 0
     let di = 0
     const sprite = (list: "a" | "d", x: number, y: number, z: number, size: number, r: number, g: number, b: number, a: number, kind: number, rot = 0, stretch = 1, extra = 0) => {
@@ -401,10 +396,11 @@ export class Scene {
       tg: number,
       tb: number,
       scale: number,
+      key?:string,
     ) => {
       let slot = this.batchMap.get(model)
       if (!slot) {
-        slot = { data: new Float32Array(new ArrayBuffer(64 * INST_FLOATS * 4)), count: 0, ghostCount: 0 }
+        slot = { data: new Float32Array(new ArrayBuffer(64 * INST_FLOATS * 4)), keys:[], count: 0, ghostCount: 0 }
         this.batchMap.set(model, slot)
       }
       if ((slot.count + 1) * INST_FLOATS > slot.data.length) {
@@ -426,6 +422,7 @@ export class Scene {
       b[o + 9] = tg
       b[o + 10] = tb
       b[o + 11] = scale
+      slot.keys[slot.count]=key
       slot.count++
       if (ghost) slot.ghostCount = slot.count
     }
@@ -488,95 +485,20 @@ export class Scene {
         }
         const silhouette = !c.engineOff || c.id === focus?.id
         wheelRotation(wheel, c.h, roll, pitch, p.z > 0 ? ch.steer : 0, wheel.spin)
-        pushInst(p.model, silhouette, x, y, z, wheel.yaw, wheel.roll, wheel.pitch, -1, -1, silhouette ? tint[0] : 0, silhouette ? tint[1] : 0, silhouette ? tint[2] : 0, 1)
+        pushInst(p.model, silhouette, x, y, z, wheel.yaw, wheel.roll, wheel.pitch, -1, -1, silhouette ? tint[0] : 0, silhouette ? tint[1] : 0, silhouette ? tint[2] : 0, 1,`car:${c.id}:wheel:${i}`)
       }
       if (c.engineOff) {
         // Engine off: exactly like a parked car (same instance params, no lights, glows or silhouette), so it blends in.
         const isFocus = c.id === focus?.id
-        pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll + (springBody || juice.wheelContact ? bodyRoll : 0), sagPitch + (springBody || juice.wheelContact ? bodyPitch : 0) + jumpPitch, -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1)
+        pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll + (springBody || juice.wheelContact ? bodyRoll : 0), sagPitch + (springBody || juice.wheelContact ? bodyPitch : 0) + jumpPitch, -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1,`car:${c.id}:body`)
         continue
       }
-      pushInst(model, true, c.x, pose.height, c.z, c.h, pose.roll, pose.pitch, siren, braking, tint[0], tint[1], tint[2], 1)
+      pushInst(model, true, c.x, pose.height, c.z, c.h, pose.roll, pose.pitch, siren, braking, tint[0], tint[1], tint[2], 1,`car:${c.id}:body`)
 
       const half = spec.length / 2
       if (v.crash > 0) light(...bodyPoint(c, pose, [0, 0.7, half]), 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
       if (this.emissions.visible && v.backfire > 0) light(...bodyPoint(c, pose, [0, 0.65, -(half + 0.3)]), 2, 1, 0.3, 0.04, v.backfire / 0.11)
-      if (this.lightStyle === 0) {
-        // Original reference: one spot per car, plus lens glows and a soft pool on the road ahead.
-        const head = bodyPoint(c, pose, [0, 1.3, half + 0.5])
-        const aim = bodyPoint(c, pose, [0, 1, half + 1.45])
-        const dir = normalizeV([aim[0] - head[0], aim[1] - head[1], aim[2] - head[2]])
-        light(...head, 36, 1, 0.92, 0.78, 3.2, ...dir, 0.8)
-        const hw = spec.width / 2 - 0.25
-        for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-          sprite("d", ...bodyPoint(c, pose, [hw * s, 0.75, half + 0.1]), 0.55, 1, 0.95, 0.85, 1.4, 0)
-          sprite("d", ...bodyPoint(c, pose, [hw * s, 0.75, -(half + 0.05)]), braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
-        }
-        // Ground decals project from the moving lamp; they are not rigid attachments floating above the road.
-        if (dir[1] < -0.03) {
-          const reach = Math.min(18, Math.max(0, (head[1] - v.ground) / -dir[1]))
-          const x = head[0] + dir[0] * reach, z = head[2] + dir[2] * reach
-          sprite("d", x, this.groundAt(x, z) + 0.06, z, 2.6 + clearance * 0.65, 1, 0.9, 0.72, 0.1 / (1 + clearance * 0.12), 3, Math.atan2(dir[0], dir[2]), 2.2)
-        }
-        const tail = bodyPoint(c, pose, [0, 0.9, -(half + 0.6)])
-        light(...tail, 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
-      } else {
-        const style = this.lightStyle
-        const tuned = style === 4
-        const settings = this.lightSettings
-        const mount = lampMounts(spec)
-        const cool = style === 2
-        const green = tuned ? HEADLIGHT[1] : cool ? 0.94 : 0.84, blue = tuned ? HEADLIGHT[2] : cool ? 1 : 0.6
-        const front = bodyPoint(c, pose, [0, mount.frontY, half + 0.08])
-        const drop = tuned ? mount.frontY / settings.poolAhead : 0.28
-        const aim = bodyPoint(c, pose, [0, mount.frontY - drop, half + 1.08])
-        const dir = normalizeV([aim[0] - front[0], aim[1] - front[1], aim[2] - front[2]])
-        const beamYaw = Math.atan2(dir[0], dir[2])
-        const rearIntensity = tuned ? (braking ? settings.brakeIntensity : settings.tailGlow) : (braking ? 1.9 : 0.75)
-        light(...front, tuned ? settings.beamLength + settings.poolSize * 2 : style === 3 ? 22 : 18, 1, green, blue, tuned ? settings.poolIntensity * 21 : 2.1, ...dir, 0.82)
-        light(...bodyPoint(c, pose, [0, mount.rearY, -half - 0.28]), 4, 1, 0.055, 0.025, tuned ? rearIntensity * 0.9 : braking ? 1.8 : 0.65)
-        // Low, local fill catches the bevels around the lamp, rather than washing the whole body red.
-        light(...bodyPoint(c, pose, [0, mount.frontY + 0.5, half + 0.16]), 1.8, 1, green, blue, 0.65)
-        light(...bodyPoint(c, pose, [0, mount.rearY + 0.4, -half - 0.14]), 1.6, 1, 0.08, 0.035, tuned ? rearIntensity * 0.45 : braking ? 0.9 : 0.35)
-        for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-          const head = bodyPoint(c, pose, [mount.frontX * s, mount.frontY + 0.02, half + 0.065])
-          const tail = bodyPoint(c, pose, [mount.rearX * s, mount.rearY + 0.02, -half - 0.075])
-          sprite("d", ...head, tuned ? settings.glowSize : 0.25, 1, green, blue, tuned ? settings.glowIntensity : 0.8, 15, c.h, 0.3)
-          sprite("d", ...tail, 0.23, 1, 0.055, 0.02, rearIntensity, 15, c.h, 0.3)
-          const reach = tuned ? settings.beamLength : style === 3 ? 12 : cool ? 10 : 8
-          const spread = tuned ? settings.beamWidth + settings.beamSpread : cool ? 2.4 : 1.9
-          // Kind 14 is an origin-anchored trapezoid, not a centred ellipse six metres away.
-          // Fade its ground footprint in flight; real spots and mounted lenses still follow the car.
-          const grounded = Math.max(0, 1 - altitude / 1.2)
-          sprite("d", head[0], 0.035 + this.groundAt(head[0], head[2]), head[2], spread, 1, green, blue, (tuned ? settings.beamIntensity : style === 3 ? 0.15 : 0.11) * grounded, tuned ? 18 : 14, beamYaw, reach / spread, tuned ? settings.beamWidth / spread : 0)
-          if (tuned) {
-            // Project the posed lamp's aim onto the road. Brake dive brings the pool closer;
-            // the broad, zero-slope edge overlaps the beam's long fade instead of capping it.
-            {
-              // Body pitch only nudges the pool: squat under throttle flattens the beam, and projecting it
-              // exactly would fling the pool tens of metres ahead.
-              const flat = Math.hypot(dir[0], dir[2]) || 1
-              const exact = dir[1] < -0.01 ? ((head[1] - this.groundAt(head[0], head[2])) / -dir[1]) * flat : Infinity
-              const distance = Math.min(settings.poolAhead * 1.15, Math.max(settings.poolAhead * 0.85, exact))
-              const x = head[0] + (dir[0] / flat) * distance, z = head[2] + (dir[2] / flat) * distance
-              sprite("d", x, this.groundAt(x, z) + 0.045, z, settings.poolSize, 1, green, blue, settings.poolIntensity * grounded, 19, beamYaw, 1.65)
-            }
-            sprite("d", ...head, settings.glowSize, 1, green, blue, settings.glowIntensity * 0.24, 0)
-          }
-          if (style === 3 || tuned) {
-            const toCam = Math.hypot(cam.eye[0] - head[0], cam.eye[2] - head[2]) || 1
-            const facing = Math.max(0.15, ((cam.eye[0] - head[0]) * dir[0] + (cam.eye[2] - head[2]) * dir[2]) / toCam)
-            sprite("d", ...head, tuned ? 0.65 : 0.85, 1, green, blue, (tuned ? settings.flareStrength : 0.18) * facing, 16, 0, 0.045)
-            sprite("d", ...tail, braking ? 0.9 : 0.5, 1, 0.07, 0.03, tuned ? rearIntensity * 0.08 : braking ? 0.3 : 0.13, 16, 0, 0.05)
-            if (style === 3 && braking && c.speed > 4) {
-              const length = Math.min(2.5, c.speed * 0.07)
-              const yaw = Math.atan2(-c.vx, -c.vz)
-              sprite("d", ...tail, 0.08, 1, 0.04, 0.015, 0.32, 17, yaw, length / 0.08)
-            }
-          }
-        }
-        if (style === 2 && spec.id !== "bike") sprite("d", ...bodyPoint(c, pose, [0, mount.rearY + 0.03, -half - 0.08]), spec.width * 0.42, 1, 0.045, 0.015, braking ? 1.25 : 0.55, 15, c.h, 0.045)
-      }
+      drawLamps(c, pose, spec, this.lightSettings, braking, v.ground, clearance, cam.eye, (x, z) => this.groundAt(x, z), sprite, light)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
         const blue = sirenOn(siren, false)
@@ -695,13 +617,12 @@ export class Scene {
     this.lightCount = n
 
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST, this.emissions.visible)
-    this.emissions.emit(alpha, fxc.alpha, add, fxc.add, MAX_SPRITES_PER_LIST, this.emissions.visible)
-    fxc.alpha = this.emissions.alphaCount; fxc.add = this.emissions.addCount
+    const counts = this.emissions.emit(alpha, fxc.alpha, add, fxc.add, MAX_SPRITES_PER_LIST)
     const batches = this.batchOut
     batches.length = 0
     for (const [model, slot] of this.batchMap) {
       if (slot.count > 0) {
-        batches.push({ model, data: slot.data, count: slot.count, ghostCount: slot.ghostCount, noShadow: this.clutter.shadowless.has(model) })
+        batches.push({ model, data: slot.data, keys:slot.keys, count: slot.count, ghostCount: slot.ghostCount, noShadow: this.clutter.shadowless.has(model) })
       }
     }
     if (beams.v.length > this.beamBuf.length) {
@@ -709,16 +630,16 @@ export class Scene {
     }
     for (let i = 0; i < beams.v.length; i++) this.beamBuf[i] = beams.v[i]!
     this.renderer.setBeams(this.beamBuf, beams.count)
-    this.trail.prepare()
+    if (this.emissions.visible) this.trail.prepare()
     this.renderer.setSmoke(this.trail, this.emissions.visible)
     this.renderer.render({
       frame: f,
       lights: L,
       batches,
-      ghosts: [],
-      sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
+      sprites: { alpha, alphaCount: counts.alpha, add, addCount: counts.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,
+      dt,rush:cam.nitroRush,
     })
   }
 }

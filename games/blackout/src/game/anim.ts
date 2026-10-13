@@ -147,6 +147,8 @@ export type Avatar = {
   plantAt: number
   /** No gun, just hands (infected claws, the gun game knife); and the last melee swing, on the animation clock. */
   bare: boolean
+  /** Slower, readable wind-up for the skeleton's rake. */
+  shambler?: boolean
   swingAt: number
 }
 
@@ -276,11 +278,14 @@ function random(a: Avatar): number {
 
 /** Where a swing is: how far into the wind-up (0..1), the strike (0..1) and the recovery (1 back to 0), and the torso twist. */
 function swingPhase(a: Avatar, now: number): { wind: number; strike: number; back: number; twist: number } | null {
-  const u = (now - a.swingAt) / SWING
+  const duration = a.shambler ? 0.65 : SWING
+  const windup = a.shambler ? 0.23 / duration : WINDUP
+  const contact = a.shambler ? 0.35 / duration : STRIKE
+  const u = (now - a.swingAt) / duration
   if (u < 0 || u >= 1) return null
-  const wind = smooth(Math.min(1, u / WINDUP))
-  const strike = u < WINDUP ? 0 : smooth(Math.min(1, (u - WINDUP) / (STRIKE - WINDUP)))
-  const back = u < STRIKE ? 1 : 1 - smooth((u - STRIKE) / (1 - STRIKE))
+  const wind = smooth(Math.min(1, u / windup))
+  const strike = u < windup ? 0 : smooth(Math.min(1, (u - windup) / (contact - windup)))
+  const back = u < contact ? 1 : 1 - smooth((u - contact) / (1 - contact))
   return { wind, strike, back, twist: (0.45 * wind - 0.95 * strike) * back }
 }
 
@@ -409,7 +414,7 @@ function restOffset(i: number, gait: number): [number, number] {
  * Advances one soldier's animation and poses it. `now` is seconds on the same clock as reloadAt and fire().
  * Returns EV cue bits for sounds and effects.
  */
-export function animate(a: Avatar, dt: number, now: number, x: number, y: number, vx: number, vy: number, aim: number): number {
+export function animate(a: Avatar, dt: number, now: number, x: number, y: number, vx: number, vy: number, aim: number, wizard = false): number {
   let ev = 0
   dt = Math.max(1e-4, Math.min(0.05, dt))
   a.t += dt
@@ -599,7 +604,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 
   const prevHand = a.body ? at(a.body.fa[0], 0, -RIG.fore, 0) : null
   const previous = enhanced && !teleport && a.body ? bodyJoints(a.body, a.gun) : null
-  a.body = build(a, now, k, clip, ct)
+  a.body = build(a, now, k, clip, ct, wizard)
   if (previous) a.body.velocities = jointVelocities(bodyJoints(a.body, a.gun), previous, dt)
   if (prevHand) {
     const h = at(a.body.fa[0], 0, -RIG.fore, 0)
@@ -609,7 +614,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 }
 
 /** Builds the pose: pelvis over the feet, a twisting torso aiming the gun, IK arms on the gun and IK legs to the feet. */
-function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number): Body {
+function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number, wizard: boolean): Body {
   const enhanced = animation.animationMode === "new"
   const profile = a.profile ?? animation
   const m = a.motion
@@ -651,7 +656,8 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   if (enhanced) {
     pelvis = yawFrame(pelvisPoint(a), a.aim + clamp(angleDiff(m.pelvis.x + m.twist.x, a.aim), -1.05, 1.05))
     pelvis = roll(pelvis, m.drop.x)
-    // Rotate about the rolled hip-to-hip axis, preserving both hip joints and contact reach.
+    // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
+    // both leg reaches remain identical. The waist, shoulders and head lean together.
     pelvis = pitch(pelvis, -0.7 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
   }
 
@@ -695,7 +701,8 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   if (enhanced) torso = profileTorso(torso, profile)
 
   // Gun: hung off the shoulder line along the exact aim, then recoil, sway, clip tilt and the raise.
-  const hold = HOLD[g]
+  const staff = wizard && g === "rifle"
+  const hold = staff ? { fwd: 0.2, up: 1.12, side: 0.27 } : HOLD[g]
   // Port arms: muzzle swung left across the chest, down and pulled in.
   gunYaw += 0.75 * port
   gunPitch -= 0.4 * port
@@ -727,7 +734,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number)
   // Hands.
   const pumpBack = g === "shotgun" ? scalarAt(clip?.pump, ct) : 0
   const pts = GUNPTS[g]
-  const home = (right: boolean): V3 => (right ? at(gunF, 0, -0.035, 0) : at(gunF, pts.fore - pumpBack, -0.04, 0))
+  const home = (right: boolean): V3 => (right ? at(gunF, 0, -0.035, 0) : staff ? at(torso, 0.3, 0.23, -0.25) : at(gunF, pts.fore - pumpBack, -0.04, 0))
   const handAt = (keys: HandKey[] | undefined, right: boolean): V3 => {
     if (!keys) return home(right)
     const [k0, k1, u] = keyed(keys, ct)

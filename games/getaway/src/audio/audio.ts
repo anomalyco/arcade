@@ -91,13 +91,7 @@ export class AudioEngine {
     } catch {}
     if (typeof window === "undefined") return
     // Fetch the bytes straight away; decoding waits for the context, which needs a user gesture.
-    for (const name of SFX)
-      this.raw.set(
-        name,
-        fetch(`${import.meta.env.BASE_URL}sfx/${name}.mp3`)
-          .then((r) => (r.ok ? r.arrayBuffer() : null))
-          .catch(() => null),
-      )
+    this.fetchAll()
     const unlock = () => {
       this.start()
       if (this.ctx?.state === "running") {
@@ -149,7 +143,7 @@ export class AudioEngine {
     try {
       localStorage.setItem(MUTE_KEY, m ? "1" : "0")
     } catch {}
-    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 1, this.ctx.currentTime, 0.04)
+    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 1, this.now, 0.04)
     if (!m) this.play("ui_click", { bus: "sting", gain: 0.5 })
     for (const fn of this.muteFns) fn(m)
   }
@@ -295,17 +289,19 @@ export class AudioEngine {
     verbOut.connect(this.duck)
   }
 
-  /** Uses the same samples and graph as the live mixer, never opens an output device. */
-  async attachOffline(ctx: OfflineAudioContext) {
-    if (this.ctx) throw new Error("Audio context already initialized")
-    this.ctx = ctx
-    this.buildGraph(ctx)
-    await this.loadOffline()
+  private fetchAll() {
+    for (const name of SFX)
+      this.raw.set(
+        name,
+        fetch(`${import.meta.env.BASE_URL}sfx/${name}.mp3`)
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
+          .catch(() => null),
+      )
   }
 
   async loadOffline() {
     if (!(this.ctx instanceof OfflineAudioContext)) throw new Error("Offline context required")
-    for (const name of SFX) this.raw.set(name, fetch(`${import.meta.env.BASE_URL}sfx/${name}.mp3`).then(r => r.ok ? r.arrayBuffer() : null))
+    this.fetchAll()
     await this.decodeAll(this.ctx)
     if (!this.ready) throw new Error("No comparison samples loaded")
   }

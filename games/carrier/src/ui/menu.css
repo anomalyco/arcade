@@ -1,0 +1,202 @@
+/* Load screen (menu.ts): thin spaced caps over the live sea, like the HUD. */
+body.mn-open #hud {
+  display: none;
+}
+
+.mn {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  font-weight: 300;
+  text-transform: uppercase;
+  text-shadow: 0 1px 10px rgba(10, 30, 60, 0.5);
+  background: radial-gradient(ellipse 60% 70% at 50% 50%, rgba(8, 24, 48, 0.5), rgba(8, 24, 48, 0.1) 70%, transparent);
+  transition: opacity 0.45s ease;
+  zoom: var(--hud, 1);
+}
+
+.mn.out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mn-col {
+  width: min(440px, 90vw);
+  display: grid;
+  gap: 12px;
+  text-align: center;
+}
+
+.mn-logo {
+  margin: 0 -0.62em 4px 0;
+  font-size: 54px;
+  font-weight: 300;
+  letter-spacing: 0.62em;
+}
+
+.mn-tag {
+  margin: 0 0 22px;
+  font-size: 12px;
+  line-height: 1.8;
+  letter-spacing: 0.2em;
+  text-transform: none;
+  opacity: 0.85;
+}
+
+.mn-note {
+  margin: 0 0 6px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 190, 120, 0.7);
+  color: #ffe1c2;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+}
+
+.mn-field {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 8px;
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  opacity: 0.95;
+}
+
+.mn input,
+.mn-btn {
+  font: inherit;
+  color: inherit;
+  text-transform: uppercase;
+  border: 1px solid rgba(244, 247, 251, 0.6);
+  background: rgba(10, 30, 60, 0.28);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 14px rgba(10, 30, 60, 0.18);
+}
+
+.mn input {
+  height: 44px;
+  padding: 0 14px;
+  font-size: 15px;
+  letter-spacing: 0.24em;
+  outline: none;
+  user-select: text;
+}
+
+.mn input::placeholder {
+  color: rgba(244, 247, 251, 0.5);
+}
+
+.mn input:focus {
+  border-color: var(--ink);
+  background: rgba(10, 30, 60, 0.4);
+}
+
+.mn-btn {
+  height: 50px;
+  padding: 0 18px;
+  font-size: 14px;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  cursor: pointer;
+  text-shadow: inherit;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.mn-btn:hover {
+  border-color: var(--ink);
+  background: rgba(10, 30, 60, 0.45);
+}
+
+.mn-btn.primary {
+  background: rgba(244, 247, 251, 0.92);
+  border-color: rgba(244, 247, 251, 0.92);
+  color: #0d2442;
+  text-shadow: none;
+}
+
+.mn-btn.primary:hover {
+  background: #fff;
+}
+
+.mn.busy .mn-btn:not(.going) {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.mn-btn.going {
+  animation: mn-pulse 1s ease-in-out infinite;
+}
+
+.mn-join {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.mn-join input {
+  height: 50px;
+  text-align: center;
+  letter-spacing: 0.5em;
+}
+
+.mn-join .mn-btn {
+  font-size: 12px;
+  letter-spacing: 0.32em;
+  text-indent: 0.32em;
+}
+
+.mn-stats {
+  min-height: 1em;
+  margin: 10px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  opacity: 0.8;
+}
+
+.mn-foot {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  background: rgba(8, 24, 48, 0.45);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+}
+
+.mn kbd {
+  font: inherit;
+  padding: 1px 6px;
+  border: 1px solid rgba(244, 247, 251, 0.6);
+}
+
+.mn input.bad {
+  border-color: #ffb08a;
+  animation: mn-shake 0.35s;
+}
+
+@keyframes mn-pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes mn-shake {
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}

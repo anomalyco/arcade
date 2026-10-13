@@ -1,5 +1,5 @@
 {
-  "files": ["scripts/prove-smoke-realistic.ts"],
+  "files": ["scripts/prove-smoke-realistic.ts", "scripts/prove-fx-playwright.ts", "scripts/prove-fx-integration.ts", "scripts/prove-motion-blur.ts", "scripts/prove-lab-spawn.ts", "scripts/prove-lab-effects.ts", "scripts/prove-effects-defaults.ts", "scripts/prove-fire-water.ts"],
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
@@ -13,5 +13,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/prove-feel.ts", "scripts/prove-look.ts", "scripts/prove-chassis.ts", "scripts/prove-tunnel.ts", "scripts/prove-clutter.ts", "scripts/bench-clutter-cpu.ts", "scripts/prove-lab-keyboard.ts", "scripts/prove-fixes.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/sim-smoke.ts", "scripts/prove-lab-keyboard.ts"]
 }

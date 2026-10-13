@@ -1,3 +1,5 @@
+import { vehicleEffects } from "./game/vehicle-emissions"
+import { emissionInput, startEmissionStudy, type EmissionStudy } from "./game/emission-study"
 import "./style.css"
 import "@fontsource/barlow-condensed/800.css"
 import "@fontsource/barlow-condensed/800-italic.css"
@@ -17,9 +19,6 @@ import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 import { DebugOverlay } from "./ui/debug-overlay"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import type { WorldView, SimEvent } from "../shared/sim/world"
-import { vehicleEffects } from "./game/vehicle-emissions"
-import { emissionInput, startEmissionStudy, type EmissionStudy } from "./game/emission-study"
-import { lightStyle } from "./render/car-lights"
 
 /** A message for the next lobby (an idle kick reloads the page back to it). */
 const NOTICE_KEY = "getaway.notice"
@@ -59,17 +58,17 @@ async function main() {
   const atlasReady = paintAtlas().then((img) => renderer.setAtlas(img))
 
   const q = new URLSearchParams(location.search)
-  if ((q.has("bench") || q.has("mux")) && q.has("coldExhaust")) vehicleEffects.coldExhaust = q.get("coldExhaust") === "1"
   const staged = (import.meta.env.DEV && q.has("stage")) || q.has("solo") || q.get("peaceful") === "1" || q.has("mux")
   const benchMode = q.has("bench")
-  let session: Session | null = null
   let choice: Awaited<ReturnType<typeof lobby>> = { mode: "solo", room: null, name: "Dax", picks: { robber: "muscle", cop: "cruiser" } }
   let notice = sessionStorage.getItem(NOTICE_KEY)
   sessionStorage.removeItem(NOTICE_KEY)
-  while (!session) {
+  let session: Session
+  for (;;) {
     if (!staged) choice = await lobby(document.getElementById("overlay")!, notice)
     try {
       session = await connect(choice)
+      break
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e)
       notice = /room .* is full|could not reach/i.test(why) ? why : `Could not join room ${choice.room}: ${why}`
@@ -77,11 +76,10 @@ async function main() {
     }
   }
   if (q.has("nohud")) document.getElementById("hud")!.style.display = "none"
-  let activeSession: Session = session
-  const scene = new Scene(renderer, activeSession.city, lightStyle(q))
-  const hud = new Hud(document.getElementById("hud")!, activeSession.city)
-  const sound = new GameAudio(document.getElementById("hud")!, activeSession.city)
-  sound.onShift = car => scene.testEffect("backfire", car)
+  const scene = new Scene(renderer, session.city)
+  const hud = new Hud(document.getElementById("hud")!, session.city)
+  const sound = new GameAudio(document.getElementById("hud")!, session.city)
+  sound.onShift = car => scene.backfire(car)
   const backfires: SimEvent[] = []
   scene.onBackfire = car => backfires.push({ kind: "backfire", carId: car.id, text: "", t: 0 })
   addEventListener("blur", () => sound.suspend())
@@ -99,7 +97,7 @@ async function main() {
     controls.release()
     controls.forward({ type: "mux-release" })
   }, scene, sound)
-  const chat = activeSession.chat ? new Chat(document.getElementById("hud")!, controls, activeSession) : null
+  const chat = session.chat ? new Chat(document.getElementById("hud")!, controls, session) : null
   let snapped = false
   let freeze = 0
   let previousFuel = 1
@@ -108,46 +106,43 @@ async function main() {
   let muxView: WorldView | null = null
   const cameraKeys = ["fx", "fz", "dist", "fov", "lx", "lz", "t", "shake", "landing"] as const
   const cameraState = () => Object.fromEntries(cameraKeys.map((key) => [key, (cam as unknown as Record<string, number>)[key] ?? 0]))
+  const focusOf = (view: WorldView, myId: string) => {
+    const mine = view.cars.find((c) => c.ownerId === myId && !c.ghost)
+    const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
+    return { mine, focus: (view.phase === "intro" ? robber : mine) ?? robber ?? view.cars[0] ?? null }
+  }
   const ready = () => {
-    if (!(activeSession instanceof LocalSession)) return
-    muxView = activeSession.update(0, controls.read(0))
-    const mine = muxView.cars.find((c) => c.ownerId === activeSession.myId)!
+    if (!(session instanceof LocalSession)) return
+    muxView = session.update(0, controls.read(0))
+    const mine = muxView.cars.find((c) => c.ownerId === session.myId)!
     cam.snap(mine.x, mine.z)
     snapped = true
-    controls.forward({ type: "mux-ready", protocol: 1, map: activeSession.city.seed, mode: "peaceful", x: mine.x, y: mine.z, vx: mine.vx, vy: mine.vz, h: mine.h })
+    controls.forward({ type: "mux-ready", protocol: 1, map: session.city.seed, mode: "peaceful", x: mine.x, y: mine.z, vx: mine.vx, vy: mine.vz, h: mine.h })
   }
   if (mux) addEventListener("message", (event) => {
     if (!controls.accepts(event)) return
     const message = event.data
     if (message.type === "mux-key" && (message.kind === "keydown" || message.kind === "keyup") && typeof message.code === "string" && typeof message.key === "string") {
-      if (message.code === "Backquote") {
-        if (message.kind === "keydown" && !controls.pressed("Backquote")) debug.toggle()
-      }
       controls.key(message.kind, message.code, message.key)
     } else if (message.type === "mux-mouse" && Number.isFinite(message.nx) && Number.isFinite(message.ny)) controls.pointer(message)
     else if (message.type === "mux-release") controls.release()
     else if (message.type === "mux-reset") location.reload()
     else if (message.type === "mux-hello") ready()
-    else if ((message.type === "mux-step" || message.type === "mux-sync") && Number.isFinite(message.dt) && Number.isInteger(message.tick) && message.tick === muxTick + 1 && activeSession instanceof LocalSession) {
+    else if ((message.type === "mux-step" || message.type === "mux-sync") && Number.isFinite(message.dt) && Number.isInteger(message.tick) && message.tick === muxTick + 1 && session instanceof LocalSession) {
       const dt = Math.max(0, Math.min(0.1, message.dt))
       if (message.type === "mux-step") {
-        muxView = activeSession.update(dt, controls.read(dt))
-        const mine = muxView.cars.find((c) => c.ownerId === activeSession.myId)!
+        muxView = session.update(dt, controls.read(dt))
+        const mine = muxView.cars.find((c) => c.ownerId === session.myId)!
         cam.update(mine.x, mine.z, mine.vx, mine.vz, dt)
       } else {
         if (!message.view || !Number.isFinite(message.view.t) || !Array.isArray(message.view.cars) || !cameraKeys.every((key) => Number.isFinite(message.camera?.[key]))) return
         muxView = message.view as WorldView
-        activeSession.syncView(muxView)
+        session.syncView(muxView)
         Object.assign(cam, message.camera)
       }
       muxTick = message.tick
-      const mine = muxView!.cars.find((c) => c.ownerId === activeSession.myId)!
+      const mine = muxView!.cars.find((c) => c.ownerId === session.myId)!
       controls.forward({ type: message.type === "mux-step" ? "mux-state" : "mux-done", tick: muxTick, view: muxView, camera: cameraState(), x: mine.x, y: mine.z, vx: mine.vx, vy: mine.vz, h: mine.h })
-    }
-    else if (message.type === "mux-sync" && activeSession instanceof LocalSession) {
-      const { x, vx, h } = message
-      const z = message.z ?? message.y, vz = message.vz ?? message.vy, yaw = message.yaw ?? 0, speed = message.speed ?? Math.hypot(vx, vz)
-      if ([x, z, vx, vz, h, yaw, speed].every((v) => typeof v === "number" && Number.isFinite(v))) activeSession.syncCar({ x, z, vx, vz, h, yaw, speed })
     }
   })
 
@@ -166,11 +161,7 @@ async function main() {
   let emissionStudy: EmissionStudy | null = null
   let studyDistance = 38
   let studyHoldX = 0, studyHoldZ = 0
-  const clutterBench = benchMode ? (await import("./dev/props-bench")).propsBench(scene, activeSession.update(0, controls.read(0)), canvas, device) : null
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
-    soundMode: () => sound.procedural,
-    nitroState: () => sound.nitroState,
-    clutter: clutterBench,
     ready: atlasReady.then(() => true),
     emissions(visible: boolean) { scene.emissions.visible = visible },
     distance(value: number) { studyDistance = value },
@@ -207,14 +198,14 @@ async function main() {
         local.world.heli.active = false
       }
       local.syncBench()
-      activeSession = local
+      session = local
       scene.resetBench()
       cam = new Camera()
       snapped = false
     },
     async step(frameIndex: number, dt = 1 / 30, waitGpu = false, drive?: { boost: boolean; throttle: number; steer: number; handbrake: boolean }) {
       const t0 = performance.now()
-      const local = activeSession as LocalSession
+      const local = session as LocalSession
       const r = local.world?.robber()?.body
       const rx = r?.x ?? 228
       const rh = r?.h ?? 0
@@ -225,8 +216,8 @@ async function main() {
       const boost = smokeStudy ? frameIndex >= 6 && frameIndex < 100 : (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
       const input = { throttle: smokeStudy && frameIndex >= 100 ? 0 : 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false, ...drive }
       if (emissionStudy && r) emissionInput(emissionStudy, frameIndex, r, input)
-      const view = activeSession.update(dt, input)
-      const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
+      const view = session.update(dt, input)
+      const mine = view.cars.find((c) => c.ownerId === session.myId && !c.ghost)
       const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
       const focus = (view.phase === "intro" ? robber : mine) ?? robber ?? view.cars[0] ?? null
       const holdFrame = emissionStudy === "drift" ? 64 : emissionStudy === "burnout" ? 85 : emissionStudy === "launch" ? 25 : emissionStudy ? Infinity : 100
@@ -249,20 +240,20 @@ async function main() {
       if (q.has("smoketiming")) { telemetry.enabled = false; renderer.measureNextFrame() }
       const drawFocus = emissionStudy && frameIndex >= holdFrame && focus ? { ...focus, x: studyHoldX, z: studyHoldZ } : focus
       scene.draw(view, cam, canvas.width, canvas.height, dt, drawFocus)
-      const events = activeSession.drainEvents()
+      const events = session.drainEvents()
       events.push(...backfires.splice(0))
-      sound.update(view, { myId: activeSession.myId, cam, dt, events, input })
+      sound.update(view, { myId: session.myId, cam, dt, events, input })
       hud.update(view, {
-        myId: activeSession.myId,
+        myId: session.myId,
         cam,
         width: innerWidth,
         height: innerHeight,
         dt,
         events,
-        players: activeSession.players(),
-        room: activeSession.room,
-        status: activeSession.status(),
-        idleIn: activeSession.idleIn?.(),
+        players: session.players(),
+        room: session.room,
+        status: session.status(),
+        idleIn: session.idleIn?.(),
       })
       const cpuMs = performance.now() - t0
       let gpuMs = cpuMs
@@ -272,7 +263,7 @@ async function main() {
         gpuMs = performance.now() - g0
       }
       const totalGpuMs = q.has("smoketiming") ? await renderer.totalGpuMs() : null
-      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { skids: scene.fx.skidCount, connected: scene.trail.count, wisps: scene.emissions.wispCount, flames: scene.emissions.flameCount, pops: scene.emissions.pops }, audio: { view, input, events, myId: activeSession.myId, camera: { fx: cam.fx, fz: cam.fz } } }
+      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { skids: scene.fx.skidCount, connected: scene.trail.count, wisps: scene.emissions.wispCount, flames: scene.emissions.flameCount, pops: scene.emissions.pops }, audio: { view, input, events, myId: session.myId, camera: { fx: cam.fx, fz: cam.fz } } }
     },
   }
 
@@ -281,7 +272,7 @@ async function main() {
   let last: number | null = null
   const frame = (now: number) => {
     if (!rafActive) return
-    const kicked = activeSession.kicked?.()
+    const kicked = session.kicked?.()
     if (kicked) {
       sessionStorage.setItem(NOTICE_KEY, /idle/i.test(kicked) ? "You were kicked for being idle" : kicked)
       location.replace(location.pathname)
@@ -291,10 +282,8 @@ async function main() {
     const dt = Math.min(0.1, frameMs / 1000)
     last = now
     const input = controls.read(mux ? 0 : dt)
-    const view = mux && muxView ? muxView : activeSession.update(dt, input)
-    const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
-    const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
-    const focus = (view.phase === "intro" ? robber : mine) ?? robber ?? view.cars[0] ?? null
+    const view = mux && muxView ? muxView : session.update(dt, input)
+    const { mine, focus } = focusOf(view, session.myId)
     if (focus && focus.boost < previousFuel - 1e-4) boostingUntil = now + 80
     previousFuel = focus?.boost ?? 1
     freeze = Math.max(freeze, scene.hitStop)
@@ -325,12 +314,12 @@ async function main() {
       const pose = mine ? { x: mine.x, z: mine.z, vx: mine.vx, vz: mine.vz, h: mine.h, yaw: mine.yaw ?? 0, speed: mine.speed } : {}
       if (report) parent.postMessage({ type: "arcade-perf", ...debug.sample, ...pose, y: mine?.z, tick: muxTick, run: controls.muxRun }, controls.parentOrigin)
     }
-    const events = activeSession.drainEvents()
+    const events = session.drainEvents()
     events.push(...backfires.splice(0))
-    hud.update(view, { myId: activeSession.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: activeSession.players(), room: activeSession.room, status: activeSession.status(), idleIn: activeSession.idleIn?.() })
+    hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status: session.status(), idleIn: session.idleIn?.() })
     chat?.update()
-    sound.update(view, { myId: activeSession.myId, cam, dt, events, input, paused: controls.paused })
-    radio.update(view, activeSession.myId, events)
+    sound.update(view, { myId: session.myId, cam, dt, events, input, paused: controls.paused })
+    radio.update(view, session.myId, events)
     ;(window as unknown as { __view: unknown }).__view = view
     requestAnimationFrame(frame)
   }

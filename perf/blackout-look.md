@@ -4,7 +4,7 @@ This report covers the original nine switches. The later [polar-shadow fix](blac
 [motion-blur prototype](blackout-motion.md) have separate verification and 1440p GPU measurements.
 
 The C paint-over is the target. Grade, practical lighting, wall faces, contact AO, cap rims, floor pattern and city
-depth default on. Tile reflections and longer furniture shadows are opt-in candidates from A.
+depth default on. Tile reflections now also default on after sandbox review; longer furniture shadows remain opt-in.
 
 ## What changes
 

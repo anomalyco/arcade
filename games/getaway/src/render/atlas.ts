@@ -231,8 +231,6 @@ function banner(bg: string, fg: string): Paint {
 
 export type AtlasRegion = keyof typeof TABLE
 
-export const ATLAS_REGIONS = Object.keys(TABLE) as AtlasRegion[]
-
 /** UV rect [u0, v0, u1, v1] for a region, inset half a texel to avoid bleeding. */
 export function regionUv(name: AtlasRegion): [number, number, number, number] {
   const r = TABLE[name]
