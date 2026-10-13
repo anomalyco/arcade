@@ -18,6 +18,7 @@ import {
   teamShips,
   tickCrew,
 } from "../shared/crew"
+import { fleetSpawn } from "../shared/spawn"
 import { kick, promote, setLock } from "../shared/squad"
 import { type Archipelago, makeArchipelago } from "../shared/islands"
 import { CombatWorld, type CombatEvent, type GroundShip } from "../shared/combat"
@@ -695,7 +696,7 @@ export class RoomCore {
     const friend = teamShips(crew, s.team)
       .filter((o) => o.id !== id && this.sims.has(o.id))
       .sort((a, b) => a.slot - b.slot)[0]
-    const at = spawnAt(s.team, s.slot, this.heading, friend && this.sims.get(friend.id)!.ship)
+    const at = this.arch ? fleetSpawn(this.arch, s.team, s.slot) : spawnAt(s.team, s.slot, this.heading, friend && this.sims.get(friend.id)!.ship)
     const t = (this.clock() - this.world.epoch) / 1000
     this.sims.set(id, { ship: makeShip(at.x, at.z, at.heading, t), controls: { throttle: 0, rudder: 0 } })
     this.fleet.add(id, s.team)

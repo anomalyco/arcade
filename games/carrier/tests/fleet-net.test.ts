@@ -4,7 +4,7 @@ import { BUILD } from "../shared/build.gen"
 import { DECK_Y } from "../shared/carrier-spec"
 import { playerOf, shipOf } from "../shared/crew"
 import { FLEET, unpackHull } from "../shared/fleet"
-import { shipToWorld } from "../shared/plane"
+import { shipQuat, shipToWorld } from "../shared/plane"
 import { type ClientMsg, type PlaneTuple, type ServerMsg, decodeClient, decodeServer, encode } from "../shared/protocol"
 
 class FakeConn implements Conn {
@@ -58,9 +58,12 @@ function battle() {
   /** A's jet over a point `up` m above ship-local (x, z) of B's carrier, flying with it. */
   const over = (x: number, z: number, up: number, mode = 1): PlaneTuple => {
     const s = ship()
-    const p = shipToWorld(s, x, DECK_Y + up, z, [0, 0, 0])
+    // Straight above the point: level the ship first, or a rolled hull tilts a 120 m drop line by metres.
+    const p = shipToWorld({ ...s, pitch: 0, roll: 0 }, x, DECK_Y + up, z, [0, 0, 0])
     const f = [Math.sin(s.heading), -Math.cos(s.heading)]
-    return [seaT(), mode, p[0], p[1], p[2], 0, 1, 0, 0, f[0]! * s.u, 0, f[1]! * s.u, 0.8, 0, 0, 0, 0, 1, 0]
+    // Flying the ship's heading, so stations off the jet's centreline sit the same way in ship-local terms.
+    const q = shipQuat({ ...s, pitch: 0, roll: 0 }, [0, 0, 0, 1])
+    return [seaT(), mode, p[0], p[1], p[2], q[0], q[1], q[2], q[3], f[0]! * s.u, 0, f[1]! * s.u, 0.8, 0, 0, 0, 0, 1, 0]
   }
   return { core, a, b, say, run, seaT, ship, bShip, over, join, now: () => now }
 }
@@ -109,9 +112,10 @@ describe("ships take damage over the network", () => {
     // Launching from a burning deck is refused.
     w.say(w.b, { type: "op", op: "hornet" })
     expect(w.b.last("nope")!.error).toBe("deck-fire")
-    // A near miss 12 m off the starboard waterline.
+    // A near miss in the water 6 m outboard of the starboard deck edge (18.5 m off the waterline). 12 m off the
+    // waterline is still under the 76 m deck's overhang, so it only missed by luck of drift.
     const before = hull.hp
-    bombAt(w, 1, -(51 / 2 + 12), 0)
+    bombAt(w, 1, -(76 / 2 + 6), 0)
     w.run(7000)
     expect(hull.hp).toBeLessThan(before)
     expect(before - hull.hp).toBeLessThan(FLEET.nearMax)

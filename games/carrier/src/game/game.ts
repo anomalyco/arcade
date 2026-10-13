@@ -1,4 +1,5 @@
 import { type Crew, type CrewPlayer, type RecoverHow, TEAMS, playerOf, shipOf, spawnAt } from "../../shared/crew"
+import { fleetSpawn } from "../../shared/spawn"
 import type { Archipelago } from "../../shared/islands"
 import { hullLimits, settled } from "../../shared/fleet"
 import { gunOp, playerVehicle } from "../../shared/ops"
@@ -179,7 +180,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
       Object.assign(cur, makeShip(p.x, p.z, p.heading, t), { u: p.u, v: p.v, r: p.r, order: p.order, rudder: p.rudder, power: tuple[10] })
     } else {
       const s = shipOf(crew, id)!
-      const at = spawnAt(s.team, s.slot, heading0)
+      const at = arch ? fleetSpawn(arch, s.team, s.slot) : spawnAt(s.team, s.slot, heading0)
       Object.assign(cur, makeShip(at.x, at.z, at.heading, t))
     }
     cur.t = t
