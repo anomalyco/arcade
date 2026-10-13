@@ -59,6 +59,12 @@ The shared hybrid audio runtime and Audio Lab are included. In either existing L
 **Render offline** renders the selected recipe without playing it. Approved in-game vehicle audio stays in use;
 the new candidate voice graphs are for review, with their reuse/parity boundary in `docs/audio-design.md`.
 
+Standalone Lab UI refinement is pending on the isolated `lab-workbench` branch, based on `4d2d571`.
+The current Lab still exposes long, irrelevant control lists. The follow-up focuses on direct selection,
+clear Edit/Play behavior and keyboard use in `packages/kit/lab` and shared panel layout adapters. Its tested
+additive commit will join this same PR; game rendering and approved defaults are outside that UI revision.
+The current Audio/Outbreak verification does not establish approval of the Lab's usability.
+
 Run `bun install --frozen-lockfile` at the root. Start each client from its game directory with
 `bunx --no-install vite --host 127.0.0.1`; Blackout also needs `bun scripts/build-id.ts` first.
 For the full game server use the existing `bun run dev` script from Getaway or Blackout.
