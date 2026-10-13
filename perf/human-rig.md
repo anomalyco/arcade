@@ -4,7 +4,10 @@ Status: core checkpoint tests and first Metal visual proof pass; release-main in
 
 Hivemind run `20261013-130146-98650` passed on the Mini: frozen root install, ten shared-package tests,
 Blackout client/server/script typechecks, all 288 tests (including 18 animation cases) and production build.
-This checkpoint is not yet the final clean-archive, cross-consumer or visual verification.
+The subsequent clean `git archive` export of `03aea689a966c88f8de6a651cb983a9dc3fed170` also passed frozen
+installation and package checks, both games' typechecks/builds, 288 Blackout tests and 177 Getaway tests
+(12 existing skips), both production lobby smokes and both Worker dry-runs. No deployment occurred.
+Outbreak is absent from this pre-release base; its checks and the final consumer integrations await released main.
 
 The first Hivemind check reached the new Mini after a cold sync but failed before running tests: its non-login
 shell PATH omitted `/opt/homebrew/bin`, where Bun 1.4.2 is already installed. The corrected invocation explicitly
