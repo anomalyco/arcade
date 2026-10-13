@@ -45,7 +45,7 @@ export const FLEET = {
   islandSpeed: 0.55,
   islandTurn: 0.6,
   /** A deck fire burns this long after the last bomb or missile on the deck (s). */
-  deckFire: 30,
+  deckFire: 15,
   fires: 8,
   fireLife: 45,
   /** Fires stay lit below this share of health. */

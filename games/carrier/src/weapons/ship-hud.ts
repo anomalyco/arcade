@@ -87,7 +87,7 @@ export class ShipHud {
     if (mine) {
       const pct = Math.max(0, mine.hp / FLEET.hp)
       const sinking = mine.sinkAt !== -1
-      const tag = sinking ? "SINKING" : !deckOpen(mine, t) ? "DECK FIRE" : ""
+      const tag = sinking ? "SINKING" : !deckOpen(mine, t) ? `DECK FIRE ${Math.max(1, Math.ceil(mine.deckFire - t))}S` : ""
       const key = `${Math.round(pct * 200)}|${tag}`
       if (key !== this.key) {
         this.key = key

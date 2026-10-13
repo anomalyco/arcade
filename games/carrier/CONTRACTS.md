@@ -563,7 +563,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - Zones (`hullZone`, ship-local):
   - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`
     scales top speed (to 55%) and rudder (to 60%). The room's sim and the helm's prediction both apply it.
-  - DECK hits by bombs, missiles or crashes start a 30 s deck fire. While the deck burns (or the ship sinks),
+  - DECK hits by bombs, missiles or crashes start a 15 s deck fire (the HUD counts it down: "DECK FIRE 12S"). While the deck burns (or the ship sinks),
     `deckOpen` is false: launching is refused (`deck-fire`, `sinking`) and the landing autopilot won't capture on it.
   - Anything else is the HULL side.
 - Fires: each bomb, missile or crash hit leaves a fire at its ship-local point (at most 8). A fire burns for 45 s,
