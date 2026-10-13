@@ -95,3 +95,13 @@ done
 Run the checks through the fleet in this environment. The smoke runner requires an installed Playwright Chromium.
 The repair commits after source integration contain the adapter and GPU fixes; this document records their
 combined verification rather than relying on any source PR's checks.
+
+### Release-scope follow-up
+
+`48430d9` separates recognized mode IDs from public choices. Wizards stays playable through explicit routing and
+existing wizard rooms, but ordinary Create/Host menus and next-round voting omit it. Stale stored wizard selections
+fall back to a public mode. Two regression tests cover public discovery, vote rejection and continued wizard rounds.
+A fresh archive passed Blackout's full check (344 tests) and production smoke on the Studio. A separate Metal check
+confirmed the real menu output and direct wizard sandbox with both spells ready and no browser errors.
+
+Public reports use paths relative to an artifact root; the original local evidence files were preserved.
