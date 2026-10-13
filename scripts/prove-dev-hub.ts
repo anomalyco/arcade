@@ -26,8 +26,8 @@ try {
         window.AudioContext = class extends OriginalAudio { constructor(...args: ConstructorParameters<typeof AudioContext>) { super(...args); state.audio++ } }
       })
       await page.goto(`http://localhost:${address.port}/dev.html`)
-      if (await page.locator("[data-games] a").count() !== 4 || await page.locator("[data-prototypes] a").count() !== 1) throw new Error("Game/prototype grouping")
-      if (await page.locator('[data-prototypes] a').isVisible()) throw new Error("Prototype promoted")
+      if (await page.locator("[data-games] a").count() !== 3 || await page.locator("[data-prototypes] a").count() !== 2) throw new Error("Game/prototype grouping")
+      for (const link of await page.locator('[data-prototypes] a').all()) if (await link.isVisible()) throw new Error("Prototype promoted")
       await page.getByText("Local previews", { exact: true }).click()
       await page.getByLabel("Getaway", { exact: true }).fill("http://explicit-preview.localhost:1355/")
       await page.getByRole("button", { name: "Save", exact: true }).click()

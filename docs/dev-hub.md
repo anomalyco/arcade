@@ -4,7 +4,8 @@ Getaway and Blackout serve the unlisted developer entry at `dev.html`, next to `
 For example, the production path is `/arcade/getaway/dev.html`. The page has `noindex,nofollow` and
 has no public landing link. Each game keeps its existing Worker routes.
 
-Games lists Getaway, Blackout, Wings and Carrier. Outbreak stays inside a closed Prototypes disclosure.
+Games lists Getaway, Blackout and Wings. Carrier and Outbreak stay inside a closed Prototypes disclosure,
+since neither has a public landing card in the shipped release.
 Local previews accepts explicit `http://name.localhost:1355/` Nexus URLs and stores them in this browser's
 localStorage. Empty entries use production links. The hub never discovers ports or starts services.
 Wings remains an independent project; its link does not import its dependencies.

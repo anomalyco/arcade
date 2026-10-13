@@ -9,7 +9,7 @@ describe("developer hub", () => {
   })
   test("all installed games have production links, prototypes remain separate", () => {
     expect(hubGames.map(game => game.id).sort()).toEqual(["blackout", "carrier", "getaway", "outbreak", "wings"])
-    expect(hubGames.filter(game => game.prototype).map(game => game.id)).toEqual(["outbreak"])
+    expect(hubGames.filter(game => game.prototype).map(game => game.id)).toEqual(["carrier", "outbreak"])
     expect(gameHref("wings")).toBe("https://anoma.ly/arcade/wings/")
   })
   test("only explicitly configured named Nexus previews override production", () => {
