@@ -6,19 +6,27 @@ import { SmokeTrail } from "./fx/smoke-trail"
 import { LabPanel } from "./lab-panel"
 import type { LabContext } from "./lab/types"
 import type { LabCharacter } from "./lab/spawn-types"
-import { catalogueLights, filterAssets, type CatalogueAsset } from "./dev-hub-model"
+import { catalogueHash, catalogueLights, filterAssets, parseHubHash, type CatalogueAsset } from "./dev-hub-model"
 import type { DevHubOptions } from "./dev-hub"
+
+const assetKey = "arcade.catalogue.asset.v1", lightingKey = "arcade.catalogue.lighting.v1"
+const categoryLabel = { vehicle: "Vehicle", prop: "Prop", character: "Character" } as const
+const read = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
+const write = (key: string, value: string) => { try { localStorage.setItem(key, value); return true } catch { return false } }
 
 export async function catalogueViewer(options: DevHubOptions) {
   const canvas = document.querySelector<HTMLCanvasElement>(".viewer canvas")!
   const status = document.querySelector<HTMLElement>("[data-viewer-status]")!
-  const controls = document.querySelector<HTMLElement>("[data-viewer-controls]")!
+  const tools = document.querySelector<HTMLElement>("[data-viewer-tools]")!
+  const inspector = document.querySelector<HTMLElement>("[data-inspector]")!
+  const list = document.querySelector<HTMLElement>(".asset-list")!
+  const search = document.querySelector<HTMLInputElement>('[aria-label="Search assets"]')!
+  const category = document.querySelector<HTMLSelectElement>('[aria-label="Asset category"]')!
   const adapter = await navigator.gpu?.requestAdapter({ powerPreference: "low-power" })
-  if (!adapter) throw new Error("WebGPU unavailable. Games and Sandbox links remain available.")
+  if (!adapter) throw new Error("WebGPU unavailable")
   const device = await adapter.requestDevice()
   const gpu = canvas.getContext("webgpu")!, format = navigator.gpu.getPreferredCanvasFormat()
   gpu.configure({ device, format, alphaMode: "opaque", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST })
-  // Stage's real orbit camera is enabled before the first draw.
   const stage = new Stage(device, gpu, format, () => {})
   stage.sceneMode = 3
   const input = new LabInput(canvas), particles = new Particles(), volume = new SmokeVolumes(), trail = new SmokeTrail()
@@ -29,100 +37,169 @@ export async function catalogueViewer(options: DevHubOptions) {
     ...registry.items.items.map(item => ({ id: `getaway:prop:${item.id}`, label: item.label, category: "prop" as const })),
   ]
   if (new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error("Duplicate catalogue ID")
-  let selected = assets[0]!, character: LabCharacter | undefined, disposed = false, dirty = true, raf = 0
-  const grid = document.querySelector<HTMLElement>(".asset-grid")!
-  const search = document.querySelector<HTMLInputElement>('[aria-label="Search assets"]')!
-  const category = document.querySelector<HTMLSelectElement>('[aria-label="Asset category"]')!
-  controls.innerHTML = `<div class="viewer-tools"><button data-frame>Frame · F</button><button data-left aria-label="Orbit left">↶</button><button data-right aria-label="Orbit right">↷</button><button data-near aria-label="Zoom in">+</button><button data-far aria-label="Zoom out">−</button></div>
-    <p class="gesture-hint">Option-drag orbit · Shift-drag / middle-drag pan · Scroll zoom</p>
-    <code data-asset-id></code><dl data-metrics></dl><div data-light-panel></div>
-    <div class="feedback"><label>Feedback<textarea aria-label="Asset feedback" maxlength="10000"></textarea></label><button data-export>Export feedback</button><button data-copy>Copy feedback</button></div>
-    <dialog aria-label="Feedback JSON"><textarea aria-label="Feedback JSON content" readonly></textarea><button data-close>Close</button></dialog>
-    <dialog aria-label="Asset actions" data-actions><button data-context-frame>Frame · F</button><button data-context-export>Export feedback</button><button data-context-close>Close · Esc</button></dialog>`
-  const note = controls.querySelector<HTMLTextAreaElement>('[aria-label="Asset feedback"]')!
-  function draftKey() { return `arcade.asset-feedback.v1:${selected.id}` }
-  const lightingSettings = { setup: "neutral" }
-  function lights() { Object.assign(stage.lighting, catalogueLights[lightingSettings.setup as keyof typeof catalogueLights]); dirty = true; schedule() }
-  const panel = new LabPanel(lightingSettings, [{ key: "setup", label: "Setup", group: "Lighting", type: "select", options: Object.keys(catalogueLights).map(value => ({ value, label: value[0]!.toUpperCase() + value.slice(1) })), change: lights }], new URLSearchParams(), () => {}, { open: true, presets: false, shortcut: false, capture: "focus", layout: "inspector" })
-  panel.header.hidden = true // No frame-rate/perf sampling in a demand-driven viewer.
-  controls.querySelector("[data-light-panel]")!.append(panel.host)
+  const byId = (id: string | null | undefined) => assets.find(asset => asset.id === id)
+  let selected = byId(parseHubHash(location.hash).assetId) ?? byId(read(assetKey)) ?? assets[0]!
+  let character: LabCharacter | undefined, disposed = false, dirty = true, raf = 0
+
+  tools.innerHTML = `<button type="button" data-frame aria-label="Frame" title="Frame · F">Frame</button><span class="tool-sep"></span><button type="button" data-left aria-label="Orbit left" title="Orbit left · ←">↺</button><button type="button" data-right aria-label="Orbit right" title="Orbit right · →">↻</button><span class="tool-sep"></span><button type="button" data-near aria-label="Zoom in" title="Zoom in · +">+</button><button type="button" data-far aria-label="Zoom out" title="Zoom out · −">−</button>`
+  inspector.innerHTML = `<div class="inspector-head"><h2 data-asset-label></h2><code data-asset-id></code></div>
+    <dl class="facts" data-metrics></dl>
+    <div class="inspector-panel" data-light-panel></div>
+    <label class="field">Feedback<textarea aria-label="Asset feedback" maxlength="10000" rows="4"></textarea></label>
+    <div class="row"><button type="button" data-copy>Copy feedback</button><button type="button" data-export>Export feedback</button></div>
+    <p class="legend"><kbd>Drag</kbd><span>Orbit</span><kbd>⇧ Drag</kbd><span>Pan</span><kbd>Scroll</kbd><span>Zoom</span><kbd>F</kbd><span>Frame</span></p>
+    <dialog aria-label="Feedback JSON"><textarea aria-label="Feedback JSON content" readonly></textarea><div class="row"><button type="button" data-close>Close</button></div></dialog>`
+  const menu = document.createElement("div")
+  menu.className = "context-menu"; menu.popover = "auto"; menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Asset actions")
+  menu.innerHTML = `<button type="button" role="menuitem" data-menu-frame>Frame<kbd>F</kbd></button><button type="button" role="menuitem" data-menu-copy>Copy feedback</button><button type="button" role="menuitem" data-menu-export>Export feedback</button>`
+  document.body.append(menu)
+  const note = inspector.querySelector<HTMLTextAreaElement>('[aria-label="Asset feedback"]')!
+  const draftKey = () => `arcade.asset-feedback.v1:${selected.id}`
+
+  const stored = read(lightingKey)
+  const lightingSettings = { setup: stored && stored in catalogueLights ? stored : "neutral" }
+  function lights() { Object.assign(stage.lighting, catalogueLights[lightingSettings.setup as keyof typeof catalogueLights]); write(lightingKey, lightingSettings.setup); dirty = true; schedule() }
+  const panel = new LabPanel(lightingSettings, [{ key: "setup", label: "Setup", group: "Lighting", type: "select", options: Object.keys(catalogueLights).map(value => ({ value, label: value[0]!.toUpperCase() + value.slice(1) })), change: lights }], new URLSearchParams(), () => {}, { open: true, presets: false, shortcut: false, capture: "focus", layout: "inspector", groupActions: false })
+  panel.header.hidden = true // A demand-driven viewer has no frame-rate sampling.
+  inspector.querySelector("[data-light-panel]")!.append(panel.host)
+
   function frame() { stage.frameTarget(0, .8, 0, selected.category === "vehicle" ? 11 : 6); dirty = true; schedule() }
-  function select(asset: CatalogueAsset) {
+  function select(asset: CatalogueAsset, history: "replace" | "none" = "replace") {
     character?.leave?.(); character = undefined; registry.items.clear(); selected = asset
     if (asset.category === "prop") registry.items.spawn(asset.id.slice("getaway:prop:".length), { x: 0, y: 0, z: 0, yaw: 0 })
     else character = registry.characters.find(item => item.id === asset.id)!.create(context, { x: 0, y: 0, z: 0, yaw: 0 })
-    controls.querySelector("[data-asset-id]")!.textContent = asset.id
-    const metrics = controls.querySelector("[data-metrics]")!; metrics.replaceChildren()
-    for (const [label, value] of Object.entries(options.metrics?.(asset.id) ?? {})) { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = label; dd.textContent = value; metrics.append(dt, dd) }
-    try { note.value = localStorage.getItem(draftKey()) ?? "" } catch { note.value = "" }
-    status.textContent = "Real game geometry · shared Lab shading"
-    stage.showMarkers = false; stage.markers.splice(0, stage.markers.length, { x: 0, y: 0, z: 0, radius: asset.category === "vehicle" ? 3 : 1 })
-    frame(); list()
+    inspector.querySelector("[data-asset-label]")!.textContent = asset.label
+    inspector.querySelector("[data-asset-id]")!.textContent = asset.id
+    const metrics = inspector.querySelector("[data-metrics]")!; metrics.replaceChildren()
+    const facts: Record<string, string> = { Type: categoryLabel[asset.category], ...options.metrics?.(asset.id), Geometry: "Production", Shading: "Shared Lab" }
+    for (const [label, value] of Object.entries(facts)) { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = label; dd.textContent = value; metrics.append(dt, dd) }
+    note.value = read(draftKey()) ?? ""
+    write(assetKey, asset.id)
+    if (history === "replace" && parseHubHash(location.hash).assetId !== asset.id) window.history.replaceState(null, "", catalogueHash(asset.id))
+    status.textContent = ""
+    stage.showMarkers = false
+    frame(); renderList()
   }
-  function list() {
-    grid.replaceChildren()
+  function renderList() {
     const filtered = filterAssets(assets, search.value, category.value)
+    list.replaceChildren()
     for (const asset of filtered) {
-      const button = document.createElement("button"), label = document.createElement("span"), id = document.createElement("small")
-      label.textContent = asset.label; id.textContent = asset.id; button.append(label, id); button.setAttribute("aria-pressed", String(asset.id === selected.id)); button.dataset.assetId = asset.id
-      button.addEventListener("click", () => { select(asset); grid.querySelector<HTMLButtonElement>(`[data-asset-id="${asset.id}"]`)?.focus() }); grid.append(button)
+      const option = document.createElement("button"), label = document.createElement("span"), kind = document.createElement("small")
+      option.type = "button"; option.setAttribute("role", "option"); option.dataset.assetId = asset.id; option.title = asset.id
+      option.setAttribute("aria-selected", String(asset.id === selected.id)); option.tabIndex = asset.id === selected.id ? 0 : -1
+      label.textContent = asset.label; kind.textContent = categoryLabel[asset.category]
+      option.append(label, kind); list.append(option)
     }
-    if (!filtered.length) { const empty = document.createElement("p"); empty.textContent = "No assets"; grid.append(empty) }
+    if (filtered.length && !filtered.some(asset => asset.id === selected.id)) (list.firstElementChild as HTMLElement).tabIndex = 0
+    if (!filtered.length) { const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "No assets"; list.append(empty) }
   }
-  search.addEventListener("input", list); category.addEventListener("change", list)
+  list.addEventListener("click", event => {
+    const option = (event.target as Element).closest<HTMLElement>("[data-asset-id]"); const asset = byId(option?.dataset.assetId)
+    if (asset) { select(asset); list.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(asset.id)}"]`)?.focus() }
+  })
+  list.addEventListener("keydown", event => {
+    const options = [...list.querySelectorAll<HTMLElement>("[data-asset-id]")], index = options.indexOf(document.activeElement as HTMLElement)
+    const next = event.key === "ArrowDown" ? index + 1 : event.key === "ArrowUp" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : -2
+    if (next === -2 || !options.length) return
+    event.preventDefault()
+    const option = options[Math.max(0, Math.min(options.length - 1, next))]!, asset = byId(option.dataset.assetId)!
+    select(asset); list.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(asset.id)}"]`)?.focus()
+  })
+  search.addEventListener("input", renderList); category.addEventListener("change", renderList)
+  search.addEventListener("keydown", event => { if (event.key === "ArrowDown") { event.preventDefault(); list.querySelector<HTMLElement>("[data-asset-id]")?.focus() } })
+
+  const visible = () => !disposed && !document.hidden && parseHubHash(location.hash).page === "catalogue"
   async function render() {
-    if (disposed || document.hidden || location.hash !== "#catalogue") return
-    canvas.width = Math.max(1, Math.round(canvas.clientWidth)); canvas.height = Math.max(1, Math.round(canvas.clientHeight))
+    if (!visible()) return
+    canvas.width = Math.max(1, Math.round(canvas.clientWidth)); canvas.height = Math.max(1, Math.round(canvas.clientHeight)) // 1× like the Lab.
     stage.resize(canvas.width, canvas.height); stage.updateCamera(); stage.meshes.reset(); stage.transients.reset()
     character?.prepare(); registry.items.prepare()
     await stage.render(particles, volume, trail, 0)
   }
-  // Demand-driven: zero ongoing simulation, no RAF loop in hidden pages or Games.
+  // Demand-driven: no simulation and no frames while hidden or on another hub page.
   function schedule() {
-    if (raf || disposed || document.hidden || location.hash !== "#catalogue") return
+    if (raf || !visible()) return
     raf = requestAnimationFrame(() => { raf = 0; if (dirty) { dirty = false; void render().catch(error => { status.textContent = String(error) }) } })
   }
   function change(action: () => void) { action(); dirty = true; schedule() }
-  controls.querySelector("[data-frame]")!.addEventListener("click", frame)
-  controls.querySelector("[data-left]")!.addEventListener("click", () => change(() => stage.orbit(-.25, 0)))
-  controls.querySelector("[data-right]")!.addEventListener("click", () => change(() => stage.orbit(.25, 0)))
-  controls.querySelector("[data-near]")!.addEventListener("click", () => change(() => stage.zoomBy(.85)))
-  controls.querySelector("[data-far]")!.addEventListener("click", () => change(() => stage.zoomBy(1.15)))
-  let drag: { id: number; x: number; y: number; pan: boolean } | undefined
+  tools.querySelector("[data-frame]")!.addEventListener("click", frame)
+  tools.querySelector("[data-left]")!.addEventListener("click", () => change(() => stage.orbit(-.25, 0)))
+  tools.querySelector("[data-right]")!.addEventListener("click", () => change(() => stage.orbit(.25, 0)))
+  tools.querySelector("[data-near]")!.addEventListener("click", () => change(() => stage.zoomBy(.85)))
+  tools.querySelector("[data-far]")!.addEventListener("click", () => change(() => stage.zoomBy(1.15)))
+
+  // Same camera grammar as the Lab: drag orbits; Shift, middle or right drag pans. A right/Control click opens actions.
+  let drag: { id: number; x: number; y: number; startX: number; startY: number; pan: boolean; context: boolean; moved: boolean } | undefined
   canvas.addEventListener("pointerdown", event => {
-    if (event.ctrlKey || event.button === 2) return
-    if (event.button !== 1 && !event.altKey && !event.shiftKey) { change(() => { stage.showMarkers = true }); return } // Single focused asset; orbit is explicit.
-    event.preventDefault(); canvas.setPointerCapture(event.pointerId)
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 1 }
+    canvas.focus({ preventScroll: true })
+    const context = event.button === 2 || (event.button === 0 && event.ctrlKey)
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, pan: event.shiftKey || event.button === 1 || event.button === 2, context, moved: false }
+    if (event.button === 1) event.preventDefault()
+    canvas.setPointerCapture(event.pointerId)
   })
   canvas.addEventListener("pointermove", event => {
     if (!drag || drag.id !== event.pointerId) return
-    const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.x = event.clientX; drag.y = event.clientY
-    change(() => { if (drag!.pan) stage.pan(-dx, -dy); else stage.orbit(-dx * .008, dy * .008) })
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= 4) return
+    const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.x = event.clientX; drag.y = event.clientY; drag.moved = true
+    const pan = drag.pan
+    change(() => { if (pan) stage.pan(-dx, -dy); else stage.orbit(-dx * .0065, dy * .0055) })
   })
-  for (const name of ["pointerup", "pointercancel", "lostpointercapture"] as const) canvas.addEventListener(name, () => { drag = undefined })
-  canvas.addEventListener("wheel", event => { if (event.metaKey || event.ctrlKey) return; event.preventDefault(); change(() => stage.zoomBy(Math.exp(Math.max(-100, Math.min(100, event.deltaY)) * .003))) }, { passive: false })
+  canvas.addEventListener("pointerup", event => {
+    if (!drag || drag.id !== event.pointerId) return
+    const { context, moved } = drag; drag = undefined
+    if (context && !moved) openMenu(event.clientX, event.clientY)
+  })
+  for (const name of ["pointercancel", "lostpointercapture"] as const) canvas.addEventListener(name, () => { drag = undefined })
+  canvas.addEventListener("contextmenu", event => event.preventDefault())
+  canvas.addEventListener("wheel", event => {
+    if (event.metaKey || event.ctrlKey) return // Browser zoom, including trackpad pinch delivered as Ctrl-wheel.
+    event.preventDefault(); change(() => stage.zoomBy(Math.exp(Math.max(-100, Math.min(100, event.deltaY)) * .003)))
+  }, { passive: false })
   canvas.addEventListener("keydown", event => {
     if (event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.key.toLowerCase() === "f") { event.preventDefault(); frame() }
-    if (event.key === "Escape") { drag = undefined; change(() => { stage.showMarkers = false }); search.focus() }
-    if (["ArrowLeft", "ArrowRight", "+", "-"].includes(event.key)) { event.preventDefault(); change(() => event.key === "+" || event.key === "-" ? stage.zoomBy(event.key === "+" ? .85 : 1.15) : stage.orbit(event.key === "ArrowLeft" ? -.25 : .25, 0)) }
+    const key = event.key
+    if (key.toLowerCase() === "f") { event.preventDefault(); frame() }
+    else if (key === "Escape") { drag = undefined; search.focus() }
+    else if (key === "ContextMenu") { event.preventDefault(); const box = canvas.getBoundingClientRect(); openMenu(box.left + box.width / 2, box.top + box.height / 2) }
+    else if (key === "+" || key === "=" || key === "-") { event.preventDefault(); change(() => stage.zoomBy(key === "-" ? 1.15 : .85)) }
+    else if (key.startsWith("Arrow")) {
+      event.preventDefault()
+      const sign = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1, vertical = key === "ArrowUp" || key === "ArrowDown"
+      change(() => event.shiftKey ? stage.pan(vertical ? 0 : sign * 40, vertical ? sign * 40 : 0) : stage.orbit(vertical ? 0 : sign * .25, vertical ? sign * -.12 : 0))
+    }
   })
-  note.addEventListener("input", () => { try { localStorage.setItem(draftKey(), note.value) } catch { status.textContent = "Draft storage unavailable; export to keep feedback" } })
+
+  note.addEventListener("input", () => { if (!write(draftKey(), note.value)) status.textContent = "Draft storage unavailable; export to keep feedback" })
   function feedback() { return JSON.stringify({ version: 1, assetId: selected.id, feedback: note.value, seed: 7, camera: { focus: [...stage.focus], yaw: stage.camYaw, pitch: stage.camPitch, distance: stage.camDist }, lighting: { setup: lightingSettings.setup, ...stage.lighting }, geometry: "production-adapter", shading: "shared-lab" }, null, 2) }
-  const dialog = controls.querySelector<HTMLDialogElement>('[aria-label="Feedback JSON"]')!
+  const dialog = inspector.querySelector<HTMLDialogElement>('[aria-label="Feedback JSON"]')!
   function exportFeedback() { dialog.querySelector("textarea")!.value = feedback(); dialog.showModal() }
-  controls.querySelector("[data-export]")!.addEventListener("click", exportFeedback)
-  controls.querySelector("[data-close]")!.addEventListener("click", () => dialog.close())
-  controls.querySelector("[data-copy]")!.addEventListener("click", () => { void Promise.resolve().then(() => navigator.clipboard.writeText(feedback())).then(() => { status.textContent = "Feedback copied" }).catch(exportFeedback) })
-  const actions = controls.querySelector<HTMLDialogElement>("[data-actions]")!
-  canvas.addEventListener("contextmenu", event => { event.preventDefault(); drag = undefined; actions.showModal() })
-  controls.querySelector("[data-context-frame]")!.addEventListener("click", () => { actions.close(); frame(); canvas.focus() })
-  controls.querySelector("[data-context-export]")!.addEventListener("click", () => { actions.close(); exportFeedback() })
-  controls.querySelector("[data-context-close]")!.addEventListener("click", () => { actions.close(); canvas.focus() })
+  function copyFeedback() { void Promise.resolve().then(() => navigator.clipboard.writeText(feedback())).then(() => { status.textContent = "Feedback copied" }).catch(exportFeedback) }
+  inspector.querySelector("[data-export]")!.addEventListener("click", exportFeedback)
+  inspector.querySelector("[data-copy]")!.addEventListener("click", copyFeedback)
+  inspector.querySelector("[data-close]")!.addEventListener("click", () => dialog.close())
+  function openMenu(x: number, y: number) {
+    menu.style.left = `${Math.min(x, innerWidth - 200)}px`; menu.style.top = `${Math.min(y, innerHeight - 140)}px`
+    menu.showPopover(); menu.querySelector<HTMLElement>("button")!.focus()
+  }
+  function fromMenu(action: () => void) { menu.hidePopover(); action(); canvas.focus({ preventScroll: true }) }
+  menu.querySelector("[data-menu-frame]")!.addEventListener("click", () => fromMenu(frame))
+  menu.querySelector("[data-menu-copy]")!.addEventListener("click", () => fromMenu(copyFeedback))
+  menu.querySelector("[data-menu-export]")!.addEventListener("click", () => { menu.hidePopover(); exportFeedback() })
+  menu.addEventListener("keydown", event => {
+    const items = [...menu.querySelectorAll<HTMLElement>("button")], index = items.indexOf(document.activeElement as HTMLElement)
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); items[(index + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]!.focus() }
+  })
+  menu.addEventListener("toggle", event => { if ((event as ToggleEvent).newState === "closed" && menu.contains(document.activeElement)) canvas.focus({ preventScroll: true }) })
+
   const resize = new ResizeObserver(() => change(() => {})); resize.observe(canvas)
   document.addEventListener("visibilitychange", () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; drag = undefined } else change(() => {}) })
-  window.addEventListener("hashchange", () => { drag = undefined; change(() => {}) })
+  window.addEventListener("hashchange", () => {
+    drag = undefined
+    const asset = byId(parseHubHash(location.hash).assetId)
+    if (asset && asset.id !== selected.id) select(asset, "none")
+    else if (parseHubHash(location.hash).page === "catalogue" && !parseHubHash(location.hash).assetId) window.history.replaceState(null, "", catalogueHash(selected.id))
+    change(() => {})
+  })
   window.addEventListener("pagehide", event => {
     cancelAnimationFrame(raf); raf = 0; drag = undefined; input.release()
     if (!event.persisted) { disposed = true; resize.disconnect(); character?.leave?.(); device.destroy() }

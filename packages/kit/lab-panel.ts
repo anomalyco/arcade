@@ -15,6 +15,8 @@ export type LabOptions = {
   shortcut?: boolean
   capture?: "open" | "focus"
   layout?: "floating" | "inspector"
+  /** Group header Randomize/Reset/Copy buttons; keyboard shortcuts stay available. */
+  groupActions?: boolean
   onTransaction?: (label: string, before: LabSettings, after: LabSettings) => void
   onToggle?: (visible: boolean) => void
   onFocusChange?: (focused: boolean, activeRow?: LabRow) => void
@@ -39,6 +41,7 @@ export class LabPanel {
   private held = new Set<string>()
   private events = new AbortController()
   private allowPresets = true
+  private groupActions = true
   private focusOnly = false
   private layoutMode: "floating" | "inspector" = "floating"
   private onTransaction?: (label: string, before: LabSettings, after: LabSettings) => void
@@ -52,6 +55,7 @@ export class LabPanel {
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const change = typeof options === "function" ? options : undefined
     this.allowPresets = typeof options === "object" ? options.presets !== false : true
+    this.groupActions = typeof options === "object" ? options.groupActions !== false : true
     this.focusOnly = typeof options === "object" && options.capture === "focus"
     this.layoutMode = typeof options === "object" && options.layout ? options.layout : "floating"
     this.onTransaction = typeof options === "object" ? options.onTransaction : undefined
@@ -63,6 +67,7 @@ export class LabPanel {
     })
     this.host.dataset.lab = ""
     this.host.dataset.layout = this.layoutMode
+    this.host.dataset.capture = this.focusOnly ? "focus" : "open"
     const root = this.host.attachShadow({ mode: "open" })
     root.innerHTML = `<style>
       :host{position:fixed;z-index:1000;right:10px;top:10px;color:#e4e9ed;font:11px/1.45 system-ui,-apple-system,sans-serif;max-width:calc(100vw - 20px)}
@@ -94,6 +99,7 @@ export class LabPanel {
       button[data-key]{width:100%;margin:3px 0;padding:5px 8px;text-align:center;font-weight:500;background:#202932}
       button:disabled{opacity:.38;cursor:default}
       [data-active=true],button:focus-visible,select:focus-visible{outline:1.5px solid #7cc5d6;outline-offset:1px;border-radius:4px;background:#1a232b}
+      :host([data-capture=focus]:not(:focus-within)) [data-active=true]{outline-color:transparent;background:none}
       .search{position:sticky;top:0;background:#12161b;z-index:2;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #ffffff1a}
       .search input{width:100%}
       [role=listbox]{max-height:180px;overflow:auto;margin-top:4px;display:flex;flex-direction:column;gap:2px}
@@ -238,7 +244,7 @@ export class LabPanel {
     copy.type = "button"; copy.textContent = "Copy"; copy.dataset.copy = ""; copy.setAttribute("aria-label", `Copy ${group} JSON`)
     copy.onclick = () => { void this.copy(group) }
     this.copies.set(group, copy)
-    actions.className = "actions"; actions.append(random, reset, copy); heading.append(fold, actions)
+    actions.className = "actions"; actions.hidden = !this.groupActions; actions.append(random, reset, copy); heading.append(fold, actions)
     return heading
   }
   private control(c: LabControl) {
