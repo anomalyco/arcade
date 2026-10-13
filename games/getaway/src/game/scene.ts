@@ -460,7 +460,7 @@ export class Scene {
       let shadowGround = v.ground
       for (const ramp of this.city.ramps) shadowGround = Math.max(shadowGround, rampSurface(ramp, c.x, c.z)?.y ?? 0)
       const clearance = Math.max(0, altitude - shadowGround)
-      sprite("a", c.x, shadowGround + 0.035, c.z, spec.width * (0.92 + clearance * 0.14), 0, 0, 0, 0.92 / (1 + clearance * 0.10), 9, c.h, spec.length / spec.width * 0.85, clearance)
+      sprite("a", c.x, shadowGround + 0.035, c.z, spec.width * (0.76 + clearance * 0.14), 0, 0, 0, 0.82 / (1 + clearance * 0.24), 9, c.h, spec.length / spec.width * 0.92, clearance)
       // Popped tires: the body sags at those corners (roll toward the flat side, nose or tail down) and shimmies a little.
       const wm = c.wheels ?? 0
       let sagRoll = 0
@@ -734,7 +734,12 @@ function cone(m: Mesh, apex: number[], base: number[], radius: number, color: [n
   const ring = (a: number) => {
     const c = Math.cos(a), s = Math.sin(a)
     const off = [u[0] * c + w[0]! * s, u[1] * c + w[1]! * s, u[2] * c + w[2]! * s]
-    return { p: [base[0]! + off[0]! * radius, base[1]! + off[1]! * radius, base[2]! + off[2]! * radius], n: off }
+    // The perpendicular rim straddles the road when the beam tilts. Its raised half
+    // ended visibly across the pool. Continue each cone ray below the road instead;
+    // the shader's world-height fade now reaches zero before any triangle ends.
+    const rx = ax + off[0]! * radius, ry = ay + off[1]! * radius, rz = az + off[2]! * radius
+    const t = (base[1]! - 0.5 - apex[1]!) / Math.min(-0.01, ry)
+    return { p: [apex[0]! + rx * t, base[1]! - 0.5, apex[2]! + rz * t], n: off }
   }
   for (let i = 0; i < sides; i++) {
     const a = ring((i / sides) * Math.PI * 2)

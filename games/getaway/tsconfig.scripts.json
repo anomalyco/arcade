@@ -13,5 +13,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/prove-feel.ts", "scripts/prove-look.ts", "scripts/prove-chassis.ts", "scripts/prove-tunnel.ts", "scripts/prove-clutter.ts", "scripts/bench-clutter-cpu.ts", "scripts/prove-lab-keyboard.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/prove-feel.ts", "scripts/prove-look.ts", "scripts/prove-chassis.ts", "scripts/prove-tunnel.ts", "scripts/prove-clutter.ts", "scripts/bench-clutter-cpu.ts", "scripts/prove-lab-keyboard.ts", "scripts/prove-fixes.ts"]
 }

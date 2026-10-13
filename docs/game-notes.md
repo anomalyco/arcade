@@ -70,6 +70,15 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   five-style select, exact Copy JSON, input isolation and unchanged switches/other groups. A generic fixture checked
   string options and a non-divisible range (0.05–1, step 0.1 → maximum valid 0.95). Approved defaults remain unchanged.
 
+- **End tilted beams below the receiver.** Getaway's perpendicular cone rim had a raised half that ended across
+  the spotlight pool. Removing the beam in a Metal capture removed the seam. `game/scene.ts` now extends each rim ray
+  below the road, so the existing world-height fade reaches zero before the geometry ends. The 7.5 m pool and 0.0025
+  cone feather are unchanged. The contact shadow also has a smaller rounded footprint, a lower peak opacity and
+  stronger clearance fading in `render/shaders.ts`; its half-width grows from 1.482 to 2.372 m at the captured 3.26 m
+  jump, while opacity falls from 0.82 to 0.46. `scripts/prove-fixes.ts` captures the exact `b0a9446` module bodies and
+  current code with matching static/jump poses and spotlight uniforms. No passes or draws were added; runtime cost
+  is unmeasured. Stills and the no-beam diagnostic are in `captures/getaway-fixes/`.
+
 - **Presentation comparisons belong in the Lab.** Getaway exposes car-light styles, vehicle-emission visibility and
   cold exhaust through the shared `packages/kit/lab-panel.ts`, alongside its chassis controls. The panel's generic
   select leaves All On/Off restricted to toggles and keeps keyboard/pointer input out of the game. Switching light style
@@ -553,6 +562,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   DOM-free tests cover focus, adjustment, search, exact values and default resets. Metal preview proof exercised both
   games' input adapters, Dvorak letter keys, coarse/fine steps, edit cancellation, Copy JSON, search/unfolding, presets,
   and comparison-message typing/modifiers with zero leaked keys or page errors. Rendering performance was not measured.
+
+- **Separate pursuing cops without crash impulses.** Getaway's `shared/sim/bots.ts` blends pursuit with distance- and
+  closing-speed-weighted separation steering and braking. `world.ts` gently corrects remaining cop/cop overlaps using
+  their oriented footprints, with no velocity impulse or crash event; it preserves frozen cars and vertical separation.
+  The 100-tick Metal chase's minimum centre spacing rose from 0.003 m to 4.001 m with zero impacts. The deterministic
+  eight-second sim test requires more than 2 m centre spacing and less than 0.4 m soft bumper overlap, plus zero stun
+  and impact events. All three new regression tests fail on the original simulation and pass after the change.
+  Neighbour checks are quadratic in the cop count; runtime cost is unmeasured.
 
 - **Tunnel crossings carry a snapshot counter.** Getaway's `shared/sim/tunnel.ts` mirrors lateral pose and velocity
   between two bores on one street. The shared substepped driver and client proxies use the same transfer; interpolation

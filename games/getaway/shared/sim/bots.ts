@@ -166,6 +166,32 @@ function copGadget(world: World, car: Car, visible: boolean, guard: boolean): 0 
 }
 
 export function copBrain(world: World, car: Car): Input {
+  const input = pursue(world, car)
+  const b = car.body, fx = Math.sin(b.h), fz = Math.cos(b.h)
+  let lateral = 0, brake = 0
+  for (const other of world.cars) {
+    if (other === car || other.role !== "cop" || Math.abs(other.body.y - b.y) > 1.5) continue
+    const dx = b.x - other.body.x, dz = b.z - other.body.z
+    const distance = Math.hypot(dx, dz)
+    const nx = distance > 0.01 ? dx / distance : (car.id < other.id ? -fz : fz)
+    const nz = distance > 0.01 ? dz / distance : (car.id < other.id ? fx : -fx)
+    const closing = Math.max(0, -(b.vx - other.body.vx) * nx - (b.vz - other.body.vz) * nz)
+    const range = (car.vehicle.length + other.vehicle.length) * 0.5 + 4 + Math.min(closing, 20) * 0.35
+    if (distance >= range) continue
+    const weight = (1 - distance / range) ** 2 * (1 + Math.min(closing, 20) * 0.12)
+    // Repulsion is blended with pursuit, not a new target that can reverse the car.
+    lateral += (nx * fz - nz * fx) * weight
+    if (nx * fx + nz * fz < -0.25) brake = Math.max(brake, Math.min(0.85, weight * 1.8))
+  }
+  const avoid = Math.min(0.85, Math.abs(lateral) * 1.5)
+  input.steer = Math.max(-1, Math.min(1, input.steer * (1 - avoid) + Math.max(-0.85, Math.min(0.85, lateral * 2))))
+  input.throttle *= 1 - brake
+  input.brake = Math.max(input.brake, brake)
+  if (brake > 0.1 || Math.abs(lateral) > 0.1) input.boost = false
+  return input
+}
+
+function pursue(world: World, car: Car): Input {
   if (inTunnel(car.body)) return followRoute(world, car, car.body.x < 0 ? 0 : world.city.max - 8, TUNNEL.z, car.vehicle.maxSpeed)
   const target = world.copTarget(car)
   if (!target) return driveToward(car, car.homeX, car.homeZ, car.vehicle.maxSpeed * 0.4)
