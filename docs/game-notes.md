@@ -126,7 +126,48 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Art direction
 
+### Shipped tyre smoke and launch wheelspin (v2)
+
+Getaway now has one tyre/exhaust path. The shipped renderer is the former **6, advected billows**; its soft wheel
+sources read better in the inspected motion than the shallow raymarched alternative. The style selector, URL
+selection, faceted puffs, cel sprites, ribbons, directional variant, density field and volume pipeline were removed.
+Historical study reports below describe earlier commits; their experimental capture scripts are no longer shipped.
+
+`game/vehicle-emissions.ts` owns wheel-local heat and emission. A low-speed nitro press or high-throttle launch
+starts at most 1.25 s of wheelspin. Releasing a held brake under full throttle also starts a launch burst. Strength
+uses `accel / grip`, nitro strength, drivetrain and a speed envelope that reaches zero at 24 m/s. RWD uses full
+strength, FWD 0.75 and AWD 0.45. Compact is FWD, Interceptor AWD, and unspecified cars retain rear drive.
+Launch heat rises faster (6/s, about 95% in half a second), while normal drift heat still rises at 2/s.
+The smoke and skid ribbons consume the same per-wheel slip value; straight braking alone makes neither.
+The shared simulation still lacks wheel RPM/torque, so this is a presentation traction proxy, not a new handling model.
+
+Two small realism changes are shipped:
+
+- Smoke and skid emission stop on lawn. `tyreSurface` follows the park's 3.2 m grass inset and preserves its crossing
+  paths, central paving and plazas. Wheel histories continue updating while inactive so road re-entry cannot bridge
+  a track across the grass. Existing clouds can drift over a lawn. No dust/snow effect is implied.
+- Practical-light tint is stronger, sampled at billboard corners for a gradual colour change across each puff.
+  The bounded 32-light loop runs in the vertex stage, with cars and sirens packed before nearby street lamps.
+  The captures show red tail/brake tint fading into warm lamp light. This adds no lights, shadow pass or fragment loop.
+
+Skid ribbons use a fixed 1,600-slot buffer instead of per-segment objects. Per-car wheel positions are also reused.
+The six capture routes peaked at 312 smoke samples for drift, 144 for burnout/launch and 74 for standing nitro.
+Standing nitro produced 56 connected skid segments; the rolling nitro route produced zero smoke samples or skid
+segments. All three cloud routes dispersed completely, and still/phone simulations matched on every recorded frame.
+
+Paired whole-GPU measurements on M5 Max/Metal at 960×640 include tyre smoke, skid ribbons, exhaust sprites and pop
+lights. The largest pose-median increment was 0.0846 ms (dispersing drift, MAD 0.0092 ms). Some other poses had
+outliers over 1 ms; this is a median budget result, not a worst-frame or phone-GPU guarantee. Raw paired intervals,
+coverage and reproduction are in `perf/getaway-smoke-realistic-v2.json` and `.md`.
+
+The branch was rebased onto `getaway-look` at `5f9b839`, preserving its startup-clock fix and baked effects.
+`vehicleEffects.coldExhaust` remains the single cold-preset integration setting. Evidence is in
+`captures/getaway-smoke-realistic-v2/`: a 1440×1440 sheet and a silent 720×1280, 40.13 s, 8,001,888-byte
+H.264 Main/yuv420p fast-start clip. Both were inspected, copied to Lamplight's preview folder and sent to Kit.
+
 ### Tyres, nitro and cold exhaust
+
+Historical v1 study; the v2 section above describes the shipped path.
 
 The connected study's boost cloud has been replaced by wheel-driven emission in
 `games/getaway/src/game/vehicle-emissions.ts`. The default remains style 6; style 8 uses the same wheel sources

@@ -1,7 +1,7 @@
 import type { Body, Input } from "../../shared/sim/vehicle"
 
 /** Input-driven, seeded capture routes. Only initial pose is staged; effects use normal vehicle state. */
-export type EmissionStudy = "drift" | "burnout" | "nitro" | "pops" | "cold"
+export type EmissionStudy = "drift" | "burnout" | "launch" | "nitro" | "pops" | "cold"
 export function startEmissionStudy(body: Body, study: EmissionStudy) {
   const drift = study === "drift", speed = drift ? 18 : study === "nitro" ? 25 : study === "pops" ? 18 : 0
   Object.assign(body, { x: drift ? 228 : 220, z: drift ? 192 : 228, h: drift ? 0 : Math.PI / 2,
@@ -14,6 +14,7 @@ export function emissionInput(study: EmissionStudy, frame: number, body: Body, i
   if (study === "drift") { input.handbrake = frame >= 16 && frame < 65; if (frame >= 100) input.throttle = 0 }
   if (study === "burnout") { input.brake = frame < 80 ? 1 : 0; if (frame >= 140) input.throttle = 0 }
   if (study === "nitro") input.boost = frame >= 10 && frame < 85
+  if (study === "launch") { input.throttle = frame >= 10 && frame < 80 ? 1 : 0; input.boost = frame >= 10 && frame < 60 }
   if (study === "pops") input.throttle = frame < 100 ? 1 : 0
   if (study === "cold") { input.throttle = 0; input.steer = 0 }
 }

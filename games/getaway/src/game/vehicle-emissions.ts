@@ -2,13 +2,18 @@ import type { Vehicle } from "../../shared/config"
 import type { CarView } from "../../shared/sim/world"
 import type { Input } from "../../shared/sim/vehicle"
 import { SmokeTrail, type SmokeSource } from "./smoke-trail"
+import type { City } from "../../shared/sim/city"
+import type { Fx } from "./fx"
 
 /** Preset integration seam. Cold presets can set this without owning the smoke renderer or Lab. */
 export const vehicleEffects = { coldExhaust: false }
 
-type Wheel = SmokeSource & { heat: number }
+type Wheel = SmokeSource & { heat: number; marking: boolean; slip: number }
 export class EmissionState {
-  readonly wheels: Wheel[] = Array.from({ length: 4 }, () => ({ smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0, heat: 0 }))
+  readonly wheels: Wheel[] = Array.from({ length: 4 }, () => ({ smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0, heat: 0, marking: false, slip: 0 }))
+  spin = 0
+  boosting = false
+  brake = 0
   throttle = 0
   speed = 0
   gear = 0
@@ -22,23 +27,53 @@ export class EmissionState {
 }
 
 const clamp = (x: number) => Math.max(0, Math.min(1, x))
-/** Current specs have no drivetrain. Default to rear drive; a future spec can supply its real layout. */
-export function drivenMask(spec: Vehicle & { drivetrain?: "rwd" | "fwd" | "awd" }) {
+/** Unspecified layouts retain the game's rear-drive default. */
+export function drivenMask(spec: Vehicle) {
   return spec.drivetrain === "awd" ? 15 : spec.drivetrain === "fwd" ? 3 : 12
 }
 
 /** Presentation-only proxies: the simulation has lateral slip, but no wheel RPM, lock or gearbox telemetry. */
-export function tyreSlip(c: CarView, input: Input | null, acceleration: number) {
+export function tyreSlip(c: CarView, input: Input | null) {
   if (c.airborne || (c.y ?? 0) > 0.15) return 0
   const slide = clamp((c.drift - 1.2) / 6) * clamp((c.speed - 3) / 7)
   const burnout = !c.engineOff && input && input.throttle > 0.8 && input.brake > 0.5 && c.speed < 3 ? 1 : 0
-  const launch = !c.engineOff && input && input.throttle > 0.8 && input.brake < 0.1 && acceleration > 6 && c.speed < 10 ? clamp((10 - c.speed) / 10) * 0.7 : 0
   // Handbrake is the only explicit wheel-lock control. Ordinary braking alone never emits.
-  return Math.max(slide, burnout, launch)
+  return Math.max(slide, burnout)
+}
+
+/** Match the lawn inset, crossing paths and fountain paving in render/city/parks.ts. */
+export function tyreSurface(city: Pick<City, "parks"> | null, x: number, z: number) {
+  if (city) for (const p of city.parks) {
+    if (p.kind === "plaza" || x <= p.x0 + 3.2 || x >= p.x1 - 3.2 || z <= p.z0 + 3.2 || z >= p.z1 - 3.2) continue
+    const dx = x - (p.x0 + p.x1) / 2, dz = z - (p.z0 + p.z1) / 2
+    if (Math.abs(dx) > 1.8 && Math.abs(dz) > 1.8 && dx * dx + dz * dz > 10.5 ** 2) return 0
+  }
+  return 1
+}
+
+/** Brief traction-envelope proxy until shared physics has wheel RPM/torque telemetry. */
+export function launchSlip(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number) {
+  const boost = !c.engineOff && c.stun <= 0 && c.boost > 0 && (input ? input.boost && input.throttle > 0.8 : !!c.boosting)
+  const throttle = !c.engineOff && (input ? input.throttle > 0.9 : boost)
+  const grounded = !c.airborne && (c.y ?? 0) < 0.15
+  const power = clamp((spec.accel / spec.grip - 1.25) / 1.2)
+  const traction = spec.drivetrain === "awd" ? 0.45 : spec.drivetrain === "fwd" ? 0.75 : 1
+  const brake = input?.brake ?? 0
+  if (dt > 0 && grounded && c.stun <= 0 && brake < 0.1 && c.speed < (boost ? 18 : 8) && throttle && (boost && !s.boosting || s.throttle <= 0.9 || s.brake > 0.5)) s.spin = 1.25
+  s.brake = brake
+  s.boosting = boost
+  const envelope = clamp(s.spin / 0.45) * clamp((24 - c.speed) / 14)
+  const slip = grounded && throttle && c.stun <= 0 ? envelope * traction * clamp(power + (boost ? spec.boost * 0.65 : 0)) : 0
+  s.spin = Math.max(0, s.spin - dt)
+  return slip
 }
 
 /** Persistent wisps plus direct attached flames. Packs into the existing sprite batches, without particle objects. */
 export class VehicleEmissions {
+  /** Benchmark-only render visibility; never a player-facing style or emission switch. */
+  visible = true
+  city: Pick<City, "parks"> | null = null
+  skids: Fx | null = null
   readonly trail = new SmokeTrail()
   private readonly wisps = new Float32Array(256 * 8)
   private readonly flames = new Float32Array(128 * 12)
@@ -69,23 +104,28 @@ export class VehicleEmissions {
   car(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number, height: number, smokeEnabled: boolean, popsEnabled: boolean) {
     const fx = Math.sin(c.h), fz = Math.cos(c.h), rx = fz, rz = -fx
     const throttle = c.engineOff ? 0 : input?.throttle ?? (c.boosting ? 1 : 0)
-    const accel = dt > 0 ? (c.speed - s.speed) / dt : 0
-    const slip = tyreSlip(c, input, accel), mask = drivenMask(spec)
+    const spin = launchSlip(c, spec, s, input, dt)
+    const slip = Math.max(tyreSlip(c, input), spin), mask = drivenMask(spec)
     const burnout = !!input && input.throttle > 0.8 && input.brake > 0.5 && c.speed < 3
-    const rubbingSpeed = Math.max(c.speed, burnout ? 18 : 0)
+    const rubbingSpeed = Math.max(c.speed, burnout ? 18 : spin * 22)
     s.intensity = 0; s.emittingWheels = 0
     for (let w = 0; w < 4; w++) {
       const wheel = s.wheels[w]!, rear = w >= 2
       const driven = (mask & (1 << w)) !== 0
       const locked = rear && !!input?.handbrake && c.speed > 5
       const grounded = !c.airborne && (c.y ?? 0) < 0.15
-      const activeSlip = grounded && !((c.wheels ?? 0) & (1 << w)) ? Math.max(driven ? slip : 0, locked ? 0.8 : 0) : 0
-      wheel.heat += ((activeSlip > 0.05 ? 1 : 0) - wheel.heat) * (1 - Math.exp(-dt * (activeSlip > 0.05 ? 2 : 1.3)))
-      const strength = activeSlip * clamp(rubbingSpeed / 18) * (0.05 + 0.95 * wheel.heat)
       const side = spec.id === "bike" ? 0 : (w % 2 ? 1 : -1) * spec.width * 0.4
       const along = (rear ? -1 : 1) * spec.length * 0.32
+      const x = c.x + fx * along + rx * side, z = c.z + fz * along + rz * side
+      const activeSlip = grounded && tyreSurface(this.city, x, z) && !((c.wheels ?? 0) & (1 << w)) ? Math.max(driven ? slip : 0, locked ? 0.8 : 0) : 0
+      wheel.slip = activeSlip
+      wheel.heat += ((activeSlip > 0.05 ? 1 : 0) - wheel.heat) * (1 - Math.exp(-dt * (activeSlip > 0.05 ? spin > 0 ? 6 : 2 : 1.3)))
+      const strength = activeSlip * clamp(rubbingSpeed / 18) * (0.05 + 0.95 * wheel.heat)
       const enabled = smokeEnabled && !(spec.id === "bike" && w === 3)
-      this.trail.follow(wheel, c.x + fx * along + rx * side, c.z + fz * along + rz * side, c.vx, c.vz, dt, enabled ? strength : 0)
+      const marking = enabled && activeSlip > 0.08 && this.skids !== null
+      if (dt > 0 && marking && wheel.marking) this.skids!.skidSegment(wheel.smokeX, wheel.smokeZ, x, z, 0.25 + 0.4 * activeSlip, 0.03 + height)
+      wheel.marking = marking
+      this.trail.follow(wheel, x, z, c.vx, c.vz, dt, enabled ? strength : 0)
       if (enabled && strength > 0.008) s.emittingWheels++
       s.intensity = Math.max(s.intensity, strength)
     }

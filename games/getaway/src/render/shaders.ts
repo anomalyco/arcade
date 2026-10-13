@@ -240,7 +240,6 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal, inst);
   o.color = pow(v.color, vec3f(2.2));
-  if (v.mat == 12.0) { o.color *= smokeLight(o.world, o.normal); }
   o.mat = v.mat;
   o.extra = inst.params;
   o.cut = 0.0;
@@ -299,8 +298,6 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
       on = a * (0.5 + 0.5 * strobe);
     }
     col = o.color * (0.25 + on * 9.0);
-  } else if (mat == 12) {
-    col = o.color;
   } else if (mat == 6) {
     // Glass: near-black, picking up highlights from nearby lights and moonlight sheen.
     col = shade(o.color, o.world, n, 0.9, 0.25) + vec3f(0.006, 0.009, 0.016);
@@ -386,7 +383,7 @@ struct Inst {
  * Sprites: camera-facing glows and smoke, ground-aligned decals (rings, skid marks, light pools) and the
  * helicopter beam. kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 5 beam, 6 spark,
  * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow,
- * 10 volumetric smoke, 11 cel smoke, 12 connected ribbon, 13 attached exhaust flame.
+ * 10 cold condensation, 13 attached exhaust flame.
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -412,10 +409,10 @@ struct SOut {
   let kind = s.misc.x;
   var world: vec3f;
   let size = s.posSize.w;
-  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 12.0 || kind == 13.0) {
+  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 13.0) {
     let r = s.misc.y;
     let cr = cos(r); let sr = sin(r);
-    let taper = select(1.0, s.color.a, kind == 12.0);
+    let taper = 1.0;
     let lc = vec2f(c.x * size * taper, c.y * size * max(s.misc.z, 0.01));
     world = s.posSize.xyz + vec3f(lc.x * cr + lc.y * sr, 0.0, -lc.x * sr + lc.y * cr);
   } else if (kind == 5.0) {
@@ -434,14 +431,14 @@ struct SOut {
     let up = cross(toCam, right);
     world = s.posSize.xyz + (right * c.x + up * c.y) * size;
     // Nudge glows toward the camera so they are not swallowed by their own lamp geometry.
-    world += toCam * size * select(0.5, 0.0, kind == 10.0 || kind == 11.0);
+    world += toCam * size * select(0.5, 0.0, kind == 10.0);
   }
   var o: SOut;
   o.pos = F.viewProj * vec4f(world, 1.0);
   o.uv = c;
   o.color = s.color;
   o.height = world.y;
-  if (kind == 10.0 || kind == 11.0) {
+  if (kind == 10.0) {
     o.color = vec4f(s.color.rgb * smokeLight(s.posSize.xyz, vec3f(0.0, 0.7, 0.0)), s.color.a);
   }
   if (kind == 1.0) {
@@ -474,7 +471,7 @@ struct SOut {
   } else if (k == 1.0) {
     let billow = 0.88 + 0.12 * sin(o.uv.x * 5.0 + o.extra * 17.0) * sin(o.uv.y * 4.0 - o.extra * 11.0);
     a = pow(max(0.0, 1.0 - r * r), 2.0) * billow;
-  } else if (k == 10.0 || k == 11.0) {
+  } else if (k == 10.0) {
     // Three overlapping lobes, with a coherent shaded underside rather than radial grey haze.
     let angle = (o.extra - 0.5) * 1.6;
     let q = vec2f(o.uv.x * cos(angle) - o.uv.y * sin(angle), o.uv.x * sin(angle) + o.uv.y * cos(angle));
@@ -486,19 +483,9 @@ struct SOut {
     let lobes = min(d0, min(d1, d2)) - 1.0;
     let normal = vec3f(sphere, sqrt(max(0.0, 1.0 - dot(sphere, sphere))));
     let light = max(0.0, dot(normal, normalize(vec3f(-0.45, 0.7, 0.55))));
-    if (k == 10.0) {
-      a = 1.0 - smoothstep(-0.15, 0.10, lobes);
-      col *= mix(vec3f(0.16, 0.22, 0.36), vec3f(1.3, 1.25, 1.16), light);
-      a *= smoothstep(-0.12, 0.3, o.height);
-    } else {
-      a = 1.0 - smoothstep(-0.015, 0.015, lobes);
-      let tone = select(select(0.3, 0.73, light > 0.35), 1.18, light > 0.73);
-      col *= tone;
-      col *= select(1.0, 0.45, lobes > -0.06);
-    }
-  } else if (k == 12.0) {
-    let noise = 0.83 + 0.17 * sin(o.extra * 3.0 + o.uv.y * 7.0 - F.cam.w * 12.0);
-    a = pow(max(0.0, 1.0 - abs(o.uv.x)), 0.7) * noise;
+    a = 1.0 - smoothstep(-0.15, 0.10, lobes);
+    col *= mix(vec3f(0.16, 0.22, 0.36), vec3f(1.3, 1.25, 1.16), light);
+    a *= smoothstep(-0.12, 0.3, o.height);
   } else if (k == 13.0) {
     let along = o.uv.y * 0.5 + 0.5;
     let width = (1.0 - along) * (0.65 + 0.14 * sin(along * 15.0 + o.extra * 17.0));

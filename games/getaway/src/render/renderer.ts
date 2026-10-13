@@ -350,7 +350,7 @@ export class Renderer {
     return this.models.length - 1
   }
 
-  setSmoke(trail: SmokeTrail, style: number, visible: boolean) { this.smoke.upload(trail, style, visible) }
+  setSmoke(trail: SmokeTrail, visible: boolean) { this.smoke.upload(trail, visible) }
 
   resize(w: number, h: number) {
     if (w === this.width && h === this.height && this.hdr) return

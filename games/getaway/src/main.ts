@@ -14,7 +14,7 @@ import { Renderer } from "./render/renderer"
 import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
-import { DebugOverlay, smoke } from "./ui/debug-overlay"
+import { DebugOverlay } from "./ui/debug-overlay"
 import { GpuPerf } from "../../../packages/kit/gpu-perf"
 import type { WorldView } from "../shared/sim/world"
 import { vehicleEffects } from "./game/vehicle-emissions"
@@ -157,7 +157,7 @@ async function main() {
   let studyHoldX = 0, studyHoldZ = 0
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
     ready: atlasReady.then(() => true),
-    smoke(style: number, visible = true) { smoke.style = style; smoke.visible = visible },
+    emissions(visible: boolean) { scene.emissions.visible = visible },
     distance(value: number) { studyDistance = value },
     emissionStudy(value: EmissionStudy | null) { emissionStudy = value; vehicleEffects.coldExhaust = value === "cold" },
     adapterInfo: {
@@ -212,7 +212,7 @@ async function main() {
       const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
       const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
       const focus = (view.phase === "intro" ? robber : mine) ?? robber ?? view.cars[0] ?? null
-      const holdFrame = emissionStudy === "drift" ? 64 : emissionStudy === "burnout" ? 85 : emissionStudy ? Infinity : 100
+      const holdFrame = emissionStudy === "drift" ? 64 : emissionStudy === "burnout" ? 85 : emissionStudy === "launch" ? 25 : emissionStudy ? Infinity : 100
       if (focus) {
         if (!snapped) {
           cam.snap(focus.x, focus.z)
@@ -253,7 +253,7 @@ async function main() {
         gpuMs = performance.now() - g0
       }
       const totalGpuMs = q.has("smoketiming") ? await renderer.totalGpuMs() : null
-      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { puffs: scene.fx.puffs.length, sprites: scene.fx.alpha.length, connected: scene.trail.count, wisps: scene.emissions.wispCount, flames: scene.emissions.flameCount, pops: scene.emissions.pops } }
+      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { skids: scene.fx.skidCount, connected: scene.trail.count, wisps: scene.emissions.wispCount, flames: scene.emissions.flameCount, pops: scene.emissions.pops } }
     },
   }
 
