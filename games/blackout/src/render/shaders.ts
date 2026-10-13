@@ -1,9 +1,10 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../shared/config"
+import { vehicleSprites } from "../../../../packages/kit/vehicle/sprites"
 
 /** Frame uniform layout, in floats. Keep in step with Game.build. */
 export const FRAME_FLOATS = 16 + 4 * 8
 
-const common = /* wgsl */ `
+export const common = /* wgsl */ `
 const MAX_LIGHTS: u32 = ${MAX_LIGHTS}u;
 const RAYS: u32 = ${POLAR_RAYS}u;
 const TAU: f32 = 6.2831853;
@@ -609,6 +610,7 @@ fn shadeScene(o: VOut) -> vec4f {
 export const spriteShader = /* wgsl */ `
 ${common}
 
+${vehicleSprites}
 struct SIn {
   @location(0) posSize: vec4f,
   @location(1) color: vec4f,
@@ -629,7 +631,9 @@ struct SOut {
   let kind = i32(s.misc.x);
   let size = s.posSize.w;
   var world: vec3f;
-  if ((kind >= 2 && kind <= 6) || kind == 8) {
+  if (kind >= 32) {
+    world = vehicleSpritePosition(c, s.posSize, vec4f(s.misc.x - 32.0, s.misc.yzw), F.cam.xyz);
+  } else if ((kind >= 2 && kind <= 6) || kind == 8) {
     let r = s.misc.y;
     let lc = vec2f(c.x * size, c.y * size * select(1.0, max(s.misc.z, 0.001), kind == 4));
     world = s.posSize.xyz + vec3f(lc.x * cos(r) - lc.y * sin(r), 0.0, lc.x * sin(r) + lc.y * cos(r));
@@ -651,6 +655,7 @@ struct SOut {
 @fragment fn fs(o: SOut) -> @location(0) vec4f {
   let r = length(o.uv);
   let kind = i32(o.misc.x);
+  if (kind >= 32) { return vehicleSpriteColor(o.uv, o.color, vec4f(o.misc.x - 32.0, o.misc.yzw), o.world.y); }
   var a = 0.0;
   var rgb = o.color.rgb;
   if (kind == 0) {

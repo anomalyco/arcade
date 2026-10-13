@@ -2,7 +2,9 @@ import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../../sha
 import type { LevelData } from "./level-mesh"
 import { LIGHT_FLOATS, OCC_FLOATS } from "./lighting"
 import { VERT_BYTES, type Mesh } from "./mesh"
-import { FRAME_FLOATS, polarShader, postShader, sceneShader, spriteShader } from "./shaders"
+import { FRAME_FLOATS, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
+import { SmokeRenderer } from "../../../../packages/kit/vehicle/smoke-renderer"
+import type { SmokeTrail } from "../../../../packages/kit/vehicle/smoke-trail"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
@@ -66,6 +68,7 @@ export type FrameInput = {
  * tone-mapped composite with grade, vignette and grain.
  */
 export class Renderer {
+  private readonly vehicleSmoke: SmokeRenderer
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private occBuf: GPUBuffer
@@ -137,7 +140,7 @@ export class Renderer {
     const sceneLayout = d.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
-        { binding: 1, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 1, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 2, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 3, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 4, visibility: S.FRAGMENT, texture: {} },
@@ -146,6 +149,8 @@ export class Renderer {
       ],
     })
     this.sceneLayout = sceneLayout
+    this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
+      "if (li.cone.w > 0.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus")
     this.postLayout = d.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: S.FRAGMENT, texture: {} },
@@ -357,6 +362,8 @@ export class Renderer {
    * consistent), and at most two frames are in flight: a slow GPU (SwiftShader) drops frames instead of building an
    * unbounded backlog. A dropped frame is drawn once the GPU catches up, so the latest state always reaches the screen.
    */
+  setSmoke(trail: SmokeTrail, visible: boolean): void { this.vehicleSmoke.upload(trail, visible) }
+
   render(f: FrameInput): void {
     this.pending = f
     this.schedule()
@@ -485,6 +492,7 @@ export class Renderer {
       pass.setVertexBuffer(0, this.sprites, 0)
       pass.draw(6, alphaCount)
     }
+    this.vehicleSmoke.draw(pass)
     if (addCount) {
       pass.setPipeline(this.pipes.spriteAdd!)
       pass.setVertexBuffer(0, this.sprites, addOffset)

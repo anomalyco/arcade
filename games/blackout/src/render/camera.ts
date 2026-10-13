@@ -15,6 +15,7 @@ export class Camera {
   private lx = 0
   private lz = 0
   private shake = 0
+  private impactShake = 0
   /** Recoil push: a spring offset on the ground plane. */
   private kx = 0
   private kz = 0
@@ -36,6 +37,14 @@ export class Camera {
 
   bump(amount: number): void {
     this.shake = Math.min(1, this.shake + amount)
+  }
+
+  /** Shoves the view along (dx, dz), springing back. */
+  impact(speed: number): void {
+    if (speed < 4) return
+    const k = Math.min(1, (speed - 3) / 12)
+    this.impactShake = Math.min(1, this.impactShake + k)
+    this.punch(0.85 * k, 0.008 * k)
   }
 
   /** Shoves the view along (dx, dz), springing back. */
@@ -67,6 +76,7 @@ export class Camera {
     const want = (wide ? 42 : ride ? 31 : 24) + this.zoomOffset
     this.dist += (want - this.dist) * (1 - Math.exp(-dt * 2))
     this.shake *= Math.exp(-dt * 9)
+    this.impactShake *= Math.exp(-dt * 9)
     // Critically damped spring back to centre; substepped so a long frame can't make it diverge.
     const kSpring = 220
     const damp = 2 * Math.sqrt(kSpring)
@@ -93,7 +103,7 @@ export class Camera {
   }
 
   update(aspect: number): Float32Array {
-    const s = this.traumaSquared ? this.shake * this.shake : this.shake
+    const s = (this.traumaSquared ? this.shake * this.shake : this.shake) + this.impactShake * this.impactShake
     const jx = s * (Math.sin(this.t * 71) + Math.sin(this.t * 43) * 0.5) * 0.12 + this.kx
     const jz = s * (Math.cos(this.t * 59) + Math.cos(this.t * 37) * 0.5) * 0.12 + this.kz
     const target = [this.x + jx, 0, this.z + jz]

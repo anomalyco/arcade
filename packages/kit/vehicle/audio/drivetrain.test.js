@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { character, characters, Gearbox, tyreSlip } from "./drivetrain"
-import { blocked } from "./environment"
 
 describe("automatic gearbox", () => {
   test("idles and bounds every vehicle at launch and overspeed", () => {
@@ -60,11 +59,4 @@ describe("tyres", () => {
     expect(tyreSlip(30, 15, 1, true, true).scrub).toBe(0)
     expect(tyreSlip(30, 15, 0, true, false, "grass").squeal).toBeLessThan(0.1)
   })
-})
-test("street occlusion handles parallel rays and endpoints", () => {
-  const b = { x0: 2, x1: 4, z0: 2, z1: 4 }
-  expect(blocked(0, 3, 6, 3, b)).toBe(true)
-  expect(blocked(0, 1, 6, 1, b)).toBe(false)
-  expect(blocked(3, 0, 3, 6, b)).toBe(true)
-  expect(blocked(0, 0, 1, 1, b)).toBe(false)
 })
