@@ -3,6 +3,17 @@
 One review branch, based on `origin/main` at `bf5f6277e38ee52e9bfa4ae4a01337b46175c181`.
 Sources were snapshotted before merging on 2026-10-13. Each source is merged separately in this order.
 
+## Release scope frozen
+
+PR #13 ships the currently integrated and verified features. No additional feature commits enter this release.
+The parent session owns the authorized merge and deployment after final CI is green.
+These are separate follow-up PRs, not release blockers:
+
+- `smoke-volume-refinement`: further smoke-volume visual polish.
+- Lab workbench follow-up: car skids and lamps.
+- Radial UX.
+- The unfinished shared human rig.
+
 | Source | Exact committed tip | Original PR |
 | --- | --- | --- |
 | fix/blackout-quick-taps | `7519dcc67be91e0077f23c253dc3320d198ba88f` | #11 |
@@ -26,8 +37,7 @@ Wizards' latest committed change is immediate click casting (`2e3177a`), after t
 ## Excluded
 
 The unfinished `shared-human-rig` work remains excluded. The initial Lab workbench, Audio Lab and Outbreak refinement
-are included. Additional smoke-volume and workbench refinements are pending as described below; the other items here
-are intentional scope exclusions.
+are included. The polish listed above belongs to follow-up PRs; the other items here are intentional scope exclusions.
 
 - Rejected experimental Getaway look presets; existing approved Night presentation stays.
 - Historical branches already squashed into main.
@@ -53,20 +63,19 @@ are intentional scope exclusions.
 
 ## Local review
 
-Outbreak's `5805f66` art refinement is included and needs local visual review. It reduces the washed-out look and
+Outbreak's verified `5805f66` art refinement is included in this release. It reduces the washed-out look and
 adds house setbacks, frontage planting and usable furniture groups. It remains darker and less textured than the
 paintover; foliage is angular, some corners are too dark, and the interior still feels sparse. Neither the source
 comparison nor functional proofs establish visual approval or a target match. Shared-renderer hooks stay opt-in,
-preserving Blackout/Getaway defaults and the fine Blackout window mask. This PR stays draft; no deployment is authorized.
+preserving Blackout/Getaway defaults and the fine Blackout window mask. Further art polish is follow-up scope.
 
 The shared hybrid audio runtime and Audio Lab are included. In either existing Lab host, choose **Audio**.
 **Audition** is the only live unlock action; entering the section or changing controls does not start playback.
 **Render offline** renders the selected recipe without playing it. Approved in-game vehicle audio stays in use;
 the new candidate voice graphs are for review, with their reuse/parity boundary in `docs/audio-design.md`.
 
-Further `smoke-volume-refinement` and `lab-workbench` follow-up work remains in independent branches. Their next tested
-commits are not yet inputs to this PR and do not block upstream reconciliation. The workbench revision already listed
-in the source manifest remains included.
+Further `smoke-volume-refinement` and workbench car-skid/lamp changes remain in independent branches for follow-up PRs.
+They will not be added to PR #13. The workbench revision already listed in the source manifest remains included.
 
 The standalone Lab workbench is included. Its Library selects effects, objects, lighting and audio directly;
 the Inspector shows the selected item's controls beside a correctly sized central viewport. Edit/Play, transport,
@@ -182,7 +191,7 @@ vertices. This verifies those two integrated views against the source revision, 
 possible views. Timing was disabled for these captures.
 
 Cited merged-build images and reports are in `2026-10-13-arcade-integration/outbreak-refinement/`, relative to the
-local artifact root. Visual gaps remain as described above and in `docs/outbreak-look-v2.md`; local review is needed.
+local artifact root. Further visual polish is described above and in `docs/outbreak-look-v2.md`.
 Linux CI took 6.0 seconds for the six-generation reproducibility test, exceeding Bun's default five-second timeout.
 That test alone now has a 20-second allowance; its mesh/mask assertions are unchanged, and this is not a frame-cost budget.
 
@@ -233,4 +242,5 @@ Worker dry-runs. The production Audio Lab decode/lifecycle proof passed again. V
 on the Studio. The archive and runner hashes were checked after a transport timeout before executing the clean export.
 Evidence is under `2026-10-13-arcade-integration/upstream-reconciliation/`, relative to the local artifact root.
 
-The next `smoke-volume-refinement` and `lab-workbench` follow-up commits remain pending independently.
+Smoke-volume refinement, workbench car-skid/lamp changes, radial UX and the unfinished human rig remain separate
+follow-up PRs. The verified base release does not wait for them.
