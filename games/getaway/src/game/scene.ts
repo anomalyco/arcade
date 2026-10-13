@@ -4,6 +4,7 @@ import type { City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
 import { buildPuff } from "../render/puff"
+import { SmokeTrail } from "./smoke-trail"
 import { buildSpikeStrip } from "../render/spike"
 import { buildCityMesh, type LampLight } from "../render/city-mesh"
 import { MAT, Mesh } from "../render/mesh"
@@ -29,6 +30,7 @@ function normalizeV(v: number[]): [number, number, number] {
 }
 
 type Vis = {
+  smokeDistance: number; smokeX: number; smokeZ: number; smokeActive: boolean
   roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number; sparkAcc: number
   scrapeAcc: number; wheels: { x: number; z: number }[]; height: number; springV: number; ground: number
   boosting: boolean; throttle: number; backfire: number; crash: number; impactCool: number; braking: boolean
@@ -46,6 +48,7 @@ export function sirenOn(phase: number, red: boolean) {
 
 export class Scene {
   readonly fx = new Fx()
+  readonly trail = new SmokeTrail()
   private lamps: LampLight[]
   private spills: ShopSpill[]
   private models = new Map<string, number>()
@@ -74,6 +77,7 @@ export class Scene {
   input: Input | null = null
 
   resetBench() {
+    this.trail.reset()
     this.fx.puffs.length = 0
     this.fx.alpha.length = 0
     this.fx.add.length = 0
@@ -108,7 +112,7 @@ export class Scene {
   private visOf(c: CarView) {
     let v = this.vis.get(c.id)
     if (!v) {
-      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
+      v = { smokeDistance: 0, smokeX: c.x, smokeZ: c.z, smokeActive: false, roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
       this.vis.set(c.id, v)
     }
     return v
@@ -151,6 +155,7 @@ export class Scene {
   private animate(view: WorldView, dt: number, focusId: number | null) {
     this.fx.update(dt)
     this.hitStopCool = Math.max(0, this.hitStopCool - dt)
+    this.trail.update(dt)
     if (!juice.skids) this.fx.skids.length = 0
     for (const c of view.cars) {
       if (c.ghost) continue
@@ -228,7 +233,10 @@ export class Scene {
         }
       } else { v.height = 0; v.springV = 0 }
       v.ground = ground
-      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || juice.skids && v.launch > 0 || smoke.style > 0 && boosting)) {
+      const smoking = !c.airborne && (c.y ?? 0) < 0.1 && (drift || juice.skids && v.launch > 0 || smoke.style > 0 && boosting)
+      const smokeX = c.x - fx * back, smokeZ = c.z - fz * back
+      this.trail.follow(v, smokeX, smokeZ, rx, rz, c.vx, c.vz, dt, smoking && smoke.style >= 6)
+      if (smoke.style < 6 && smoking) {
         const intensity = Math.max(smoke.style > 0 && boosting ? 0.8 : 0, drift ? Math.min(1, (c.drift - 3) / 8) : 0.7)
         v.smokeAcc += dt * (smoke.style === 0 ? 16 : Math.max(28, c.speed * 0.9)) * intensity
         while (v.smokeAcc > 1) {
@@ -243,7 +251,7 @@ export class Scene {
       }
       v.boosting = boosting
       v.throttle = input?.throttle ?? 0
-      if (boosting) {
+      if (boosting && smoke.style < 6) {
         v.flameAcc += smoke.style > 0 ? 1 : dt * 30
         while (v.flameAcc >= 1) {
           v.flameAcc--
@@ -613,6 +621,8 @@ export class Scene {
     }
     for (let i = 0; i < beams.v.length; i++) this.beamBuf[i] = beams.v[i]!
     this.renderer.setBeams(this.beamBuf, beams.count)
+    if (smoke.style >= 6) this.trail.prepare(smoke.style)
+    this.renderer.setSmoke(this.trail, smoke.style, smoke.visible)
     this.renderer.render({
       frame: f,
       lights: L,

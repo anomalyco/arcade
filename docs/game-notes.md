@@ -146,10 +146,75 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   All reuse existing passes. The 110-frame Metal study peaked at 40 faceted instances, 43 soft/cel sprites, 9 wisps,
   or 61 ribbon/wisp sprites. All six runs had identical poses and no browser/GPU errors; live selector changes passed.
   `scripts/prove-smoke.ts` captures the launch, turn and streetlamp frames; `scripts/smoke-sheet.py` assembles them.
-  Faceted puffs best match the concept; flame/wisps keep the road clearest. GPU-time cost and playtest verdict remain
-  unmeasured. Evidence: `captures/getaway-smoke/` (sheet, labelled portrait clip and proof JSON).
+  Kit rejected these silhouettes as separate beads; the connected study below supersedes that recommendation.
+  Their GPU-time cost remains unmeasured. Evidence: `captures/getaway-smoke/` (sheet, labelled portrait clip and proof JSON).
+
+- **Connected smoke needs shared density, not just more puffs.** Getaway's `game/smoke-trail.ts` carries unused
+  emission distance, interpolates births every 0.42 m, and advects a fixed particle pool with the curl of an analytic
+  stream function, drag and buoyancy. `render/smoke.ts` samples shared animated 3D noise so overlapping particles
+  agree on billow structure. Styles 6 and 7 draw in the existing main pass with ground-plane fading; 7 adds a
+  low-frequency scattering-gradient approximation, not a baked six-way lightmap. No smoke enters the shadow pass.
+  On the M5 Max at 960×640, highest pose-median whole-frame GPU deltas were 0.132 ms (6) and 0.147 ms (7).
+- **A shallow density field can make one raymarched trail.** Style 8 splats density, height and radius into a reusable
+  128² RGBA8 field, then integrates twelve samples through the combined volume in one bounded draw. A conservative
+  footprint rejects empty pixels before lighting/noise work. Highest measured pose-median delta was 0.099 ms;
+  whole-frame CPU submission was about 0.3–0.5 ms, including CPU field construction. The cloud has approximate
+  vertical self-shading and nearby-light scattering, not a CS2 voxel simulation or obstacle-filling fluid solver.
+- **Measure the complete GPU interval and retain noise.** `render/frame-timer.ts` measures first-shadow-pass start
+  to final-composite end, never a sum of passes. `scripts/prove-smoke-real.ts --timing --fixture` alternates smoke
+  on/off at identical frozen poses, with nine measured pairs of eight frames after warmup. The final composite uses
+  an equal-size/format offscreen target to exclude presentation fences. One style-7 pair had a 1.502 ms delta;
+  retained raw results and per-pose medians/MAD are in `perf/getaway-smoke-real.json` and `perf/getaway-smoke-real.md`.
+  These numbers establish the single-trail study, not a many-car budget or a bound on every frame.
+- **Hold the camera after emission stops.** The connected-smoke capture holds after boost release so the car can
+  leave while the smoke expands and fades. Matched Metal captures show continuity through the sharp turn and
+  dissipation by 5.9 s. The inspected sheet and motion frames favour 8 for volume and 6 for softer edges; 7 is more
+  contrasty. Default 6 remains a review candidate. Peak live count was 388/768; the pool drops new births if full.
+  Evidence: `captures/getaway-smoke-real/`, including the original, faceted reference, concept crop and cited Valve
+  reference. No new per-frame JS storage is allocated by the smoke simulation, preparation or upload path.
 
 ## Researched, not yet adopted
+
+### Connected smoke research (2026-10-12)
+
+Kit rejected styles 1–5 because their separate silhouettes read as beads. The next study must maintain overlapping
+density through fast movement and sharp turns, then let that density drift and dissipate. Cost estimates below are
+operation counts and memory, not measured milliseconds.
+
+- **CS2 volumes.** [Valve's Responsive Smokes](https://www.youtube.com/watch?v=_y9MpNcAitQ) establishes connected,
+  world-space smoke that fills spaces and reacts to lighting and gunfire. [Gunnell's reconstruction](https://github.com/GarrettGunnell/CS2-Smoke-Grenades)
+  uses voxel flood fill, raymarching and tiled Worley density; this is a reconstruction, not Valve's shader source.
+  Shared density avoids sprite seams; light-ray transmittance gives internal shading. A full voxel solver is excessive
+  for tire smoke: a 64³ R8 density field is 256 KiB, before velocity, obstacles and lighting, plus repeated grid passes.
+- **Soft particles.** [NVIDIA's soft-particle paper](https://developer.download.nvidia.com/whitepapers/2007/SDK10/SoftParticles_hi.pdf)
+  fades opacity by the difference between scene and particle depth. Getaway can fade against y=0 for a few ALU operations;
+  full obstacle fade needs readable MSAA depth and a separate pass or resolve. The planar approximation does not soften building intersections.
+- **Distance emission.** [Unity's emission guide](https://docs.unity3d.com/Manual/particle-emissions-emitters.html)
+  specifically recommends emission per unit travelled for vehicle dust. Carry unused distance and interpolate births
+  along each segment; 0.35–0.5 m spacing with a radius above 0.7 m guarantees overlap, even across uneven frame times.
+  Cost is O(distance/spacing), with fixed-capacity storage and a teleport cutoff.
+- **Curl advection.** [Bridson, Hourihan and Nordenstam (SIGGRAPH 2007)](https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph2007-curlnoise.pdf)
+  take the curl of a noise potential to obtain divergence-free turbulence instead of random velocity sinks. A shallow
+  trail can use a 2D stream function plus buoyancy and drag, evaluated once per live element; this is much cheaper than a fluid solve.
+- **Billow textures and flipbooks.** [Epic's Niagara smoke guide](https://docs.unrealengine.com/4.27/en-US/RenderingAndGraphics/Niagara/HowTo/RecreateSmoke/)
+  uses sub-UV smoke, growth, acceleration and drag. Flipbooks preserve simulated billows at one or two texture reads;
+  procedural world-space fBm avoids repeating round sprites and texture animation assets, but costs several noise reads.
+  A small periodic 3D noise texture can be generated once and shared by all trail fragments.
+- **Six-way lighting.** [Unity's six-way documentation](https://docs.unity3d.com/Packages/com.unity.visualeffectgraph@17.7/manual/six-way-lighting.html)
+  packs six directional scattering responses into two RGBA textures. [The workflow](https://unity.com/blog/engine-platform/realistic-smoke-with-6-way-lighting-in-vfx-graph)
+  supports baked Houdini/Blender smoke and describes EmberGen's six-point export. It fits the sprite pipeline at two
+  fetches plus lighting; a procedural density-gradient approximation is cheaper to author but is not a baked six-way lightmap.
+- **Merged half-resolution cloud.** [GPU Gems 3, chapter 23](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-23-high-speed-screen-particles)
+  renders particles into a smaller target and composites with downsampled depth. Half width/height cuts fill to one
+  quarter; a small blur can hide seams but cannot repair separated density. Two half-resolution RGBA16F targets cost
+  about 2.34 MiB at 960×640, plus 2–3 passes; depth-aware upsampling is needed to prevent halos around cars and buildings.
+- **Bounded analytic volumes.** [GPU Gems 3, chapter 30](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-30-real-time-simulation-and-rendering-3d-fluids)
+  explains ray integration, transmittance, early exit and low-resolution volume rendering. For Getaway, overlap small
+  ellipsoid/capsule fields along the path and integrate their combined density in 8–16 samples, with shared 3D fBm.
+  One bounded draw avoids a voxel solver; cost scales with covered pixels × steps × density contributors, so cull contributors first.
+- **Overdraw and extinction.** GPU Gems 23 and Unity's [six-way discussion](https://discussions.unity.com/t/vfx-graph-introducing-six-way-lighting-for-smoke-dust-and-clouds-vfx/906564)
+  both identify transparent overdraw as the main expense. Keep noise coherent across overlapping elements, convert
+  optical depth with `1-exp(-density*distance)`, reduce density as the cloud expands, and bound screen coverage before adding resolution.
 
 Candidates from the code audits; measure and playtest before moving any into the sections above.
 

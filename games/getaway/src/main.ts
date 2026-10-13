@@ -14,7 +14,7 @@ import { Renderer } from "./render/renderer"
 import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
-import { DebugOverlay, juice } from "./ui/debug-overlay"
+import { DebugOverlay, juice, smoke } from "./ui/debug-overlay"
 import { GpuPerf } from "../../../packages/kit/gpu-perf"
 import type { WorldView } from "../shared/sim/world"
 
@@ -149,8 +149,12 @@ async function main() {
 
   let rafActive = !benchMode
   let smokeStudy = false
+  let studyDistance = 38
+  let studyHoldX = 0, studyHoldZ = 0
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
     ready: atlasReady.then(() => true),
+    smoke(style: number, visible = true) { smoke.style = style; smoke.visible = visible },
+    distance(value: number) { studyDistance = value },
     adapterInfo: {
       vendor: adapter.info.vendor,
       architecture: adapter.info.architecture,
@@ -196,7 +200,7 @@ async function main() {
       const steer = smokeStudy ? (frameIndex < 32 ? 0 : Math.max(-1, Math.min(1, (Math.PI / 2 - rh) * 1.8 - ryaw * 0.45))) : Math.max(-1, Math.min(1, (targetX - rx) * 0.18 - rh * 2.2 - ryaw * 0.35))
       const handbrake = smokeStudy ? frameIndex >= 35 && frameIndex < 44 : frameIndex >= 3 && frameIndex < 9
       const boost = smokeStudy ? frameIndex >= 6 && frameIndex < 100 : (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
-      const input = { throttle: 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false }
+      const input = { throttle: smokeStudy && frameIndex >= 100 ? 0 : 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false }
       const view = activeSession.update(dt, input)
       const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
       const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
@@ -206,8 +210,10 @@ async function main() {
           cam.snap(focus.x, focus.z)
           snapped = true
         }
+        if (smokeStudy && frameIndex === 100) { studyHoldX = cam.fx; studyHoldZ = cam.fz }
         cam.update(focus.x, focus.z, focus.vx, focus.vz, dt, 0, input.boost && focus.boost > 0 && focus.speed > 4)
-        if (smokeStudy) { cam.dist = 38; cam.fx = focus.x; cam.fz = focus.z }
+        // Hold the study camera at release so the car can leave while the cloud drifts and fades.
+        if (smokeStudy) { cam.dist = studyDistance; cam.fx = frameIndex < 100 ? focus.x : studyHoldX; cam.fz = frameIndex < 100 ? focus.z : studyHoldZ }
       }
       if (scene.shake > 0) {
         cam.bump(scene.shake)
@@ -215,6 +221,7 @@ async function main() {
       }
       scene.input = input
       if (scene.punch > 0) { cam.land(scene.punch); scene.punch = 0 }
+      if (q.has("smoketiming")) { telemetry.enabled = false; renderer.measureNextFrame() }
       scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
       const events = activeSession.drainEvents()
       hud.update(view, {
@@ -236,7 +243,8 @@ async function main() {
         await device.queue.onSubmittedWorkDone()
         gpuMs = performance.now() - g0
       }
-      return { cpuMs, gpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { puffs: scene.fx.puffs.length, sprites: scene.fx.alpha.length } }
+      const totalGpuMs = q.has("smoketiming") ? await renderer.totalGpuMs() : null
+      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { puffs: scene.fx.puffs.length, sprites: scene.fx.alpha.length, connected: scene.trail.count } }
     },
   }
 

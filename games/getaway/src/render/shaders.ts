@@ -1,7 +1,7 @@
 export const MAX_LIGHTS = 128
 
 /** Shared frame uniforms, lights and lighting model for every lit pipeline. */
-const common = /* wgsl */ `
+export const common = /* wgsl */ `
 struct Frame {
   viewProj: mat4x4f,
   lightViewProj: mat4x4f,

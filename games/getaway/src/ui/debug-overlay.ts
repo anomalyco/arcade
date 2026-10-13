@@ -4,8 +4,8 @@ export const lookSettings = (enabled = true) => ({ tightPools: enabled, flatGrou
 export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = juiceSettings()
-export const smokeStyles = ["Current", "Faceted puffs", "Soft volume", "Cel smoke", "Flame & wisps", "Ribbon trails"] as const
-export const smoke = { style: 1 }
+export const smokeStyles = ["Current", "Faceted puffs", "Soft volume", "Cel smoke", "Flame & wisps", "Ribbon trails", "Advected billows", "Directional billows", "Raymarched cloud"] as const
+export const smoke = { style: 6, visible: true }
 const controls: LabControl[] = [
   ...([
     ["tightPools", "Tighter lamp pools"],
@@ -40,8 +40,8 @@ export class DebugOverlay extends LabPanel {
     const defaults = juiceSettings(false) as Record<string, boolean | number>
     for (const key of q.get("off")?.split(",") ?? []) if (key in juice) (juice as Record<string, boolean | number>)[key] = defaults[key]!
     super(juice, controls, q, release)
-    const requested = Number(q.get("smoke") ?? 1)
-    smoke.style = Number.isInteger(requested) && requested >= 0 && requested <= 5 ? requested : 1
+    const requested = Number(q.get("smoke") ?? 6)
+    smoke.style = Number.isInteger(requested) && requested >= 0 && requested < smokeStyles.length ? requested : 6
     const label = document.createElement("label")
     label.textContent = "Smoke"
     const select = document.createElement("select")

@@ -2,6 +2,9 @@ import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
 import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
+import { SmokeRenderer } from "./smoke"
+import type { SmokeTrail } from "../game/smoke-trail"
+import { FrameTimer } from "./frame-timer"
 
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
@@ -91,6 +94,21 @@ function aabbInFrustum(
 }
 
 export class Renderer {
+  private readonly smoke: SmokeRenderer
+  private timer: FrameTimer | null = null
+  private timingTarget: GPUTexture | null = null
+  private timingView: GPUTextureView | null = null
+  measure = false
+  measureNextFrame() {
+    if (!this.device.features.has("timestamp-query")) throw new Error("Total GPU timing requires timestamp-query")
+    this.timer ??= new FrameTimer(this.device)
+    if (!this.timingTarget) {
+      this.timingTarget = this.device.createTexture({ size: [this.width, this.height], format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT })
+      this.timingView = this.timingTarget.createView()
+    }
+    this.measure = true
+  }
+  totalGpuMs() { return this.timer!.collect() }
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private instBuf: GPUBuffer
@@ -178,6 +196,7 @@ export class Renderer {
         { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 8 }) },
       ],
     })
+    this.smoke = new SmokeRenderer(d, mainLayout)
     const shadowLayout = d.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }] })
     this.shadowGroup = d.createBindGroup({ layout: shadowLayout, entries: [{ binding: 0, resource: { buffer: this.frameBuf } }] })
     this.postLayout = d.createBindGroupLayout({
@@ -337,10 +356,13 @@ export class Renderer {
     return this.models.length - 1
   }
 
+  setSmoke(trail: SmokeTrail, style: number, visible: boolean) { this.smoke.upload(trail, style, visible) }
+
   resize(w: number, h: number) {
     if (w === this.width && h === this.height && this.hdr) return
     this.width = w
     this.height = h
+    this.timingTarget?.destroy(); this.timingTarget = null; this.timingView = null
     this.msaa?.destroy()
     this.depth?.destroy()
     this.hdr?.destroy()
@@ -451,6 +473,7 @@ export class Renderer {
 
     const enc = d.createCommandEncoder()
     const sp = enc.beginRenderPass({
+      timestampWrites: this.measure ? this.timer!.start : undefined,
       colorAttachments: [],
       depthStencilAttachment: { view: this.shadowView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
     })
@@ -556,6 +579,7 @@ export class Renderer {
       pass.setVertexBuffer(0, this.spriteBuf, 0)
       pass.draw(6, alphaCount)
     }
+    this.smoke.draw(pass)
     if (addCount) {
       pass.setPipeline(this.pipes.spriteAdd!)
       pass.setVertexBuffer(0, this.spriteBuf, addOffset)
@@ -595,11 +619,15 @@ export class Renderer {
       p.draw(3)
       p.end()
     }
-    const fp = enc.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+    // Benchmark the same final composite into an equal-format/size target, excluding swapchain
+    // presentation fences. Real screenshots continue through the normal canvas path.
+    const fp = enc.beginRenderPass({ timestampWrites: this.measure ? this.timer!.end : undefined, colorAttachments: [{ view: this.measure ? this.timingView! : this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     fp.setPipeline(this.pipes.composite!)
     fp.setBindGroup(0, g.composite)
     fp.draw(3)
     fp.end()
+    if (this.measure) this.timer!.finish(enc)
+    this.measure = false
     d.queue.submit([enc.finish()])
   }
 }
