@@ -60,7 +60,9 @@ const MAX_ONE_SHOTS = 18
 export type PlayOpts = { bus?: Bus; gain?: number; rate?: number; pan?: number; wet?: number; cutoff?: number; delay?: number }
 
 export class AudioEngine {
-  ctx: AudioContext | null = null
+  ctx: AudioContext | OfflineAudioContext | null = null
+  /** Offline proof supplies a scheduling clock; live playback always uses currentTime. */
+  scheduleTime: number | null = null
   master!: GainNode
   sfx!: GainNode
   amb!: GainNode
@@ -73,11 +75,16 @@ export class AudioEngine {
   private daze!: BiquadFilterNode
   private buffers = new Map<SfxName, AudioBuffer>()
   private raw = new Map<SfxName, Promise<ArrayBuffer | null>>()
-  private oneShots = 0
+  private oneShots: number[] = []
   private readyFns: (() => void)[] = []
   private muteFns: ((muted: boolean) => void)[] = []
 
-  constructor() {
+  constructor(offline?: OfflineAudioContext) {
+    if (offline) {
+      this.ctx = offline
+      this.buildGraph(offline)
+      return
+    }
     try {
       this.muted = localStorage.getItem(MUTE_KEY) === "1"
     } catch {}
@@ -108,7 +115,7 @@ export class AudioEngine {
       this.setMuted(!this.muted)
     })
     document.addEventListener("visibilitychange", () => {
-      if (!this.ctx) return
+      if (!(this.ctx instanceof AudioContext)) return
       if (document.hidden) void this.ctx.suspend()
       else void this.ctx.resume()
     })
@@ -119,7 +126,7 @@ export class AudioEngine {
   }
 
   get now() {
-    return this.ctx?.currentTime ?? 0
+    return this.scheduleTime ?? this.ctx?.currentTime ?? 0
   }
 
   onReady(fn: () => void) {
@@ -150,14 +157,14 @@ export class AudioEngine {
   fadeBus(bus: Bus, level: number, tau: number) {
     if (!this.ctx) return
     const g = bus === "sfx" ? this.sfx : bus === "amb" ? this.amb : this.sting
-    g.gain.setTargetAtTime(level, this.ctx.currentTime, tau)
+    g.gain.setTargetAtTime(level, this.now, tau)
   }
 
   /** Pulls the sfx and ambience buses down under a stinger, then lets them back up. */
   duckFor(seconds: number, depth = 0.4) {
     if (!this.ctx) return
     const g = this.duck.gain
-    const t = this.ctx.currentTime
+    const t = this.now
     g.cancelScheduledValues(t)
     g.setTargetAtTime(depth, t, 0.03)
     g.setTargetAtTime(1, t + seconds, 0.5)
@@ -167,7 +174,7 @@ export class AudioEngine {
   dazeFor(seconds: number, cutoff = 650) {
     if (!this.ctx) return
     const f = this.daze.frequency
-    const t = this.ctx.currentTime
+    const t = this.now
     f.cancelScheduledValues(t)
     f.setValueAtTime(f.value, t)
     f.exponentialRampToValueAtTime(cutoff, t + 0.04)
@@ -178,15 +185,18 @@ export class AudioEngine {
   play(name: SfxName, o: PlayOpts = {}): boolean {
     const ctx = this.ctx
     const buf = this.buffers.get(name)
-    if (!ctx || !buf || this.oneShots >= MAX_ONE_SHOTS) return false
+    this.oneShots = this.oneShots.filter(end => end > this.now)
+    if (!ctx || !buf || this.oneShots.length >= MAX_ONE_SHOTS) return false
     const src = ctx.createBufferSource()
     src.buffer = buf
     src.playbackRate.value = o.rate ?? 1
     const g = ctx.createGain()
     g.gain.value = o.gain ?? 1
+    const nodes: AudioNode[] = [src, g]
     let tail: AudioNode = src
     if (o.cutoff !== undefined && o.cutoff < 18000) {
       const f = ctx.createBiquadFilter()
+      nodes.push(f)
       f.type = "lowpass"
       f.frequency.value = o.cutoff
       tail.connect(f)
@@ -196,6 +206,7 @@ export class AudioEngine {
     let out: AudioNode = g
     if (o.pan) {
       const p = ctx.createStereoPanner()
+      nodes.push(p)
       p.pan.value = Math.max(-1, Math.min(1, o.pan))
       g.connect(p)
       out = p
@@ -203,17 +214,16 @@ export class AudioEngine {
     out.connect(o.bus === "amb" ? this.amb : o.bus === "sting" ? this.sting : this.sfx)
     if (o.wet) {
       const s = ctx.createGain()
+      nodes.push(s)
       s.gain.value = o.wet
       out.connect(s)
       s.connect(this.verb)
     }
-    this.oneShots++
+    this.oneShots.push(this.now + (o.delay ?? 0) + buf.duration / (o.rate ?? 1))
     src.onended = () => {
-      this.oneShots--
-      src.disconnect()
-      out.disconnect()
+      for (const node of nodes) node.disconnect()
     }
-    src.start(ctx.currentTime + (o.delay ?? 0))
+    src.start(this.now + (o.delay ?? 0))
     return true
   }
 
@@ -224,13 +234,28 @@ export class AudioEngine {
     }
     const ctx = new AudioContext({ latencyHint: "interactive" })
     this.ctx = ctx
+    this.buildGraph(ctx)
+    void ctx.resume()
+    void this.decodeAll(ctx)
+  }
+
+  private buildGraph(ctx: BaseAudioContext) {
     const comp = ctx.createDynamicsCompressor()
     comp.threshold.value = -14
     comp.knee.value = 12
     comp.ratio.value = 3
     comp.attack.value = 0.006
     comp.release.value = 0.25
-    comp.connect(ctx.destination)
+    const limiter = ctx.createDynamicsCompressor()
+    limiter.threshold.value = -3
+    limiter.knee.value = 0
+    limiter.ratio.value = 20
+    limiter.attack.value = 0.001
+    limiter.release.value = 0.09
+    // Measured chase target ~-16 LUFS; fixed output headroom also protects sample transients.
+    const output = ctx.createGain()
+    output.gain.value = 0.66
+    comp.connect(limiter).connect(output).connect(ctx.destination)
     this.master = ctx.createGain()
     this.master.gain.value = this.muted ? 0 : 1
     this.master.connect(comp)
@@ -256,11 +281,24 @@ export class AudioEngine {
     this.verb.connect(conv)
     conv.connect(verbOut)
     verbOut.connect(this.duck)
-    void ctx.resume()
-    void this.decodeAll(ctx)
   }
 
-  private async decodeAll(ctx: AudioContext) {
+  /** Uses the same samples and graph as the live mixer, never opens an output device. */
+  async attachOffline(ctx: OfflineAudioContext) {
+    if (this.ctx) throw new Error("Audio context already initialized")
+    this.ctx = ctx
+    this.buildGraph(ctx)
+    await this.loadOffline()
+  }
+
+  async loadOffline() {
+    if (!(this.ctx instanceof OfflineAudioContext)) throw new Error("Offline context required")
+    for (const name of SFX) this.raw.set(name, fetch(`${import.meta.env.BASE_URL}sfx/${name}.mp3`).then(r => r.ok ? r.arrayBuffer() : null))
+    await this.decodeAll(this.ctx)
+    if (!this.ready) throw new Error("No comparison samples loaded")
+  }
+
+  private async decodeAll(ctx: BaseAudioContext) {
     await Promise.all(
       SFX.map(async (name) => {
         const bytes = await this.raw.get(name)
@@ -281,7 +319,7 @@ export class AudioEngine {
  * Some decoders keep the mp3 encoder delay and padding as digital silence at the ends, which would click once per loop.
  * The loops are continuous sound, so exact zeros at either end can only be padding.
  */
-function trimPadding(ctx: AudioContext, buf: AudioBuffer): AudioBuffer {
+function trimPadding(ctx: BaseAudioContext, buf: AudioBuffer): AudioBuffer {
   const d = buf.getChannelData(0)
   let a = 0
   let b = d.length
@@ -293,7 +331,7 @@ function trimPadding(ctx: AudioContext, buf: AudioBuffer): AudioBuffer {
   return out
 }
 
-function impulse(ctx: AudioContext, seconds: number): AudioBuffer {
+function impulse(ctx: BaseAudioContext, seconds: number): AudioBuffer {
   const n = Math.floor(ctx.sampleRate * seconds)
   const buf = ctx.createBuffer(2, n, ctx.sampleRate)
   let seed = 1234567

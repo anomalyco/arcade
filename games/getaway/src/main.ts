@@ -76,7 +76,9 @@ async function main() {
   let activeSession: Session = session
   const scene = new Scene(renderer, activeSession.city)
   const hud = new Hud(document.getElementById("hud")!, activeSession.city)
-  const sound = new GameAudio(document.getElementById("hud")!)
+  const sound = new GameAudio(document.getElementById("hud")!, activeSession.city)
+  sound.procedural = q.get("audio") !== "old"
+  sound.onShift = car => { if (juice.backfire) scene.testEffect("backfire", car) }
   const radio = new Radio()
   let cam = new Camera()
   const controls = new Controls()
@@ -149,6 +151,7 @@ async function main() {
 
   let rafActive = !benchMode
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
+    soundMode: () => sound.procedural,
     ready: atlasReady.then(() => true),
     adapterInfo: {
       vendor: adapter.info.vendor,
@@ -209,6 +212,7 @@ async function main() {
       if (scene.punch > 0) { cam.land(scene.punch); scene.punch = 0 }
       scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
       const events = activeSession.drainEvents()
+      sound.update(view, { myId: activeSession.myId, cam, dt, events, input })
       hud.update(view, {
         myId: activeSession.myId,
         cam,
@@ -228,7 +232,7 @@ async function main() {
         await device.queue.onSubmittedWorkDone()
         gpuMs = performance.now() - g0
       }
-      return { cpuMs, gpuMs, stats: { ...renderer.stats } }
+      return { cpuMs, gpuMs, stats: { ...renderer.stats }, audio: { view, input, events, myId: activeSession.myId, camera: { fx: cam.fx, fz: cam.fz } } }
     },
   }
 
@@ -289,6 +293,7 @@ async function main() {
     ;(window as unknown as { __view: unknown }).__view = view
     requestAnimationFrame(frame)
   }
+  sound.mountLab(debug.host.shadowRoot!)
   if (rafActive) requestAnimationFrame(frame)
 }
 

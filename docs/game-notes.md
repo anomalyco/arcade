@@ -140,6 +140,42 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Researched, not yet adopted
 
+### Getaway sound pass: research and choice
+
+- **Engine sources.** Crossfaded RPM/load recordings preserve a real engine's character; pitch-synchronous
+  granular playback follows RPM with fewer obvious layer boundaries. The [Project CARS / Forza Motorsport 5
+  interview](https://designingsound.org/2014/08/11/vehicle-engine-design-project-cars-forza-motorsport-5-and-rev/)
+  compares these approaches; [Audiokinetic's sample-to-granular guide](https://www.audiokinetic.com/en/community/blog/engine-sound-modeling-from-sampling-to-granular-synthesis-in-wwise)
+  describes RPM and load blending. This is the relevant racing-game pattern, not a claim that every Codemasters or
+  Forza release uses one implementation. Good recordings and loop authoring are the expensive part.
+- **Procedural alternative.** [Antonio-R1's WebAudio engine generator](https://github.com/Antonio-R1/engine-sound-generator)
+  separates intake, block and outlet, with waveguides and an AudioWorklet (and a faster WASM implementation).
+  [AngeTheGreat's engine-sim](https://github.com/ange-yaghi/engine-sim) simulates combustion and engine response to
+  generate audio. Both explain why firing pulses and resonances matter; full combustion simulation is excessive here.
+- **Chosen candidate:** native, band-limited periodic-wave firing harmonics over a 720-degree cycle, low exhaust
+  and brighter load-dependent intake, with crank rumble and filtered air. Automatic class-specific gear ratios,
+  hysteresis and 160 ms torque cuts give RPM drops and short clunks. One detailed player voice, four cheap world
+  engines. Native DSP avoids per-sample JS work. This is an arcade approximation, not a physical engine simulator.
+- **Tyres and transients:** lateral slip angle plus estimated launch slip ratio feeds quiet scrub, then resonant
+  band-limited noise whose centre frequency rises with slip. Airborne tyres are silent; grass reduces squeal and
+  kerbs brighten scrub. Nitro gets a noise ignition, sustained roar and release/blow-off with exhaust pops.
+  Existing crash layers follow speed and vehicle mass; contact speed drives the scrape loops and landings use thuds.
+- **Mix:** keep wail/yelp recordings with bounded Doppler and distance attenuation; street-height segment/AABB
+  occlusion closes their low-pass behind buildings. Nearby facades vary the synthetic street impulse send.
+  Eighteen sample one-shots, eight synthetic bursts, four remote engines and four remote sirens bound work.
+  Exponential parameter smoothing, event ducking and a final compressor/limiter follow the
+  [Web Audio API](https://www.w3.org/TR/webaudio/). A compressor is not a guaranteed true-peak brick wall: measure
+  rendered peaks and leave headroom. Hearing preference and mobile-device cost still need playtesting.
+- **Offline result:** 450 seed-7 chase frames, 30 Hz, captured on Chromium/Metal on the Studio. The new raw mixer
+  measured −16.04 LUFS integrated and −4.28 dBTP; legacy voices through the same protected bus measured −15.66 LUFS
+  and −4.20 dBTP. Neither clipped. Six shifts were scheduled; the actual M handler and Lab old/new switch passed.
+  New control scheduling was 0.10 ms median / 0.20 ms p95 in this single render (browser clock granularity; not a
+  runtime speedup or audio-thread CPU benchmark). Spectrograms show RPM harmonic movement and shift drops.
+  Maximum isolated-sample deviation was 0.144 new / 0.175 old; new control-boundary delta 0.167 was below its
+  overall 0.314 maximum. These are discontinuity diagnostics, not an assertion that no audible click exists.
+  No listening took place. Six focused gearbox/slip/occlusion tests passed; full check passed 112 tests, 12 skips.
+  Reproduction and provenance: `games/getaway/src/audio/SOURCES.md`; raw reports remain beside the private captures.
+
 Candidates from the code audits; measure and playtest before moving any into the sections above.
 
 - Full AgX-style tone mapping remains a candidate; Getaway now has a simpler peak-preserving shoulder under Colour

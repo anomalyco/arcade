@@ -3,6 +3,11 @@ import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
 import { audio, type AudioEngine, type SfxName } from "./audio"
 import { juice } from "../ui/debug-overlay"
+import { DriverVoice, EngineVoice } from "./synth"
+import { character, Gearbox } from "./drivetrain"
+import { StreetAcoustics } from "./environment"
+import type { City } from "../../shared/sim/city"
+import { VEHICLE_BY_ID } from "../../shared/config"
 
 export type AudioContextInfo = {
   myId: string
@@ -49,6 +54,7 @@ const CHIRPS: SfxName[] = ["shove_chirp_1", "shove_chirp_2"]
 const ramp = (v: number, a: number, b: number) => Math.max(0, Math.min(1, (v - a) / (b - a)))
 
 type CarState = {
+  gearbox: Gearbox
   seen: number
   speed: number
   boost: number
@@ -88,6 +94,7 @@ class LoopVoice {
   active = false
   /** Where sources connect: the low-pass, or the head of an EQ chain set with `eq`. */
   private input: AudioNode
+  private sourceGain: GainNode | null = null
 
   constructor(
     private a: AudioEngine,
@@ -132,14 +139,20 @@ class LoopVoice {
     const ctx = this.a.ctx!
     if (this.src) {
       const old = this.src
-      old.stop(ctx.currentTime + 0.05)
-      old.onended = () => old.disconnect()
+      const oldGain = this.sourceGain!
+      oldGain.gain.setTargetAtTime(0, this.a.now, 0.012)
+      old.stop(this.a.now + 0.08)
+      old.onended = () => { old.disconnect(); oldGain.disconnect() }
     }
     const s = ctx.createBufferSource()
     s.buffer = buf
     s.loop = true
-    s.connect(this.input)
-    s.start(ctx.currentTime, offset * buf.duration)
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0, this.a.now)
+    gain.gain.setTargetAtTime(1, this.a.now, 0.015)
+    s.connect(gain).connect(this.input)
+    s.start(this.a.now, offset * buf.duration)
+    this.sourceGain = gain
     this.src = s
     this.buf = buf
   }
@@ -224,7 +237,11 @@ type Spatial = { gain: number; pan: number; cutoff: number; wet: number; dist: n
  * helicopter placed around the camera focus, the city bed underneath, and stingers on round events.
  */
 export class GameAudio {
-  private a = audio
+  procedural = true
+  onShift?: (car: CarView) => void
+  private driver!: DriverVoice
+  private synthEngines: EngineVoice[] = []
+  private acoustics: StreetAcoustics
   private built = false
   private states = new Map<number, CarState>()
   private frame = 0
@@ -275,14 +292,27 @@ export class GameAudio {
   private lvx = 0
   private lvz = 0
 
-  constructor(hudRoot?: HTMLElement) {
+  constructor(hudRoot?: HTMLElement, city?: City, private a: AudioEngine = audio) {
+    this.acoustics = new StreetAcoustics(city)
     if (hudRoot) this.mountHint(hudRoot)
+  }
+
+  /** Append to the existing lab without changing its visual settings or presets. */
+  mountLab(root: ShadowRoot) {
+    const label = document.createElement("label"), input = document.createElement("input")
+    input.type = "checkbox"; input.checked = this.procedural; input.dataset.key = "proceduralAudio"
+    input.onchange = () => { this.procedural = input.checked }
+    label.append(input, "Procedural audio")
+    root.querySelector("[data-controls]")?.append(label)
   }
 
   private build() {
     const a = this.a
     if (this.built || !a.ctx || !a.ready) return
     this.built = true
+    this.driver = new DriverVoice(a)
+    this.driver.onShift = c => this.onShift?.(c)
+    for (let i = 0; i < ENGINE_VOICES; i++) this.synthEngines.push(new EngineVoice(a, true))
     this.engine = new LoopVoice(a, a.sfx)
     // The squeal's bite lives at 2-5 kHz: scoop it so the slide sits under the engine instead of whistling over it.
     this.screech = new LoopVoice(a, a.sfx).eq(["peaking", 3200, -6, 0.8], ["highshelf", 6000, -4, 0.7])
@@ -329,6 +359,8 @@ export class GameAudio {
     this.lz = cam.fz
     this.lvx = mine ? mine.vx : 0
     this.lvz = mine ? mine.vz : 0
+    this.acoustics.update(this.lx, this.lz, this.a.now)
+    this.a.verb.gain.setTargetAtTime(this.procedural ? 0.35 + this.acoustics.density * 0.9 : 1, this.a.now, 0.4)
 
     for (const c of view.cars) this.track(c, dt)
     this.phases(view, mine)
@@ -348,6 +380,7 @@ export class GameAudio {
     let s = this.states.get(c.id)
     if (!s) {
       s = {
+        gearbox: new Gearbox(character(c.vehicle)),
         seen: 0,
         speed: c.speed,
         boost: c.boost,
@@ -424,6 +457,7 @@ export class GameAudio {
   private ownCar(view: WorldView, mine: Car | null, robber: Car | null, input: Input | undefined, dt: number) {
     const live = !!mine && view.phase !== "end"
     if (!mine || !live) {
+      this.driver.silence()
       this.engine.silence(0.3)
       this.screech.silence()
       this.scrub.silence()
@@ -440,7 +474,7 @@ export class GameAudio {
     const boosting = !off && mine.stun <= 0 && mine.boost > 0.005 && (input ? input.boost : mine.boost < s.boost - 1e-5)
     if (boosting && !s.boosting) {
       s.boostT = 0
-      if (s.nitroCool <= 0) a.play("nitro_burst", { gain: 0.75, wet: 0.08 })
+      if (!this.procedural && s.nitroCool <= 0) a.play("nitro_burst", { gain: 0.75, wet: 0.08 })
       s.nitroCool = 0.4
     }
     s.boosting = boosting
@@ -484,10 +518,15 @@ export class GameAudio {
       this.scrub.set(0.07 * corner * corner, 0.9 + 0.15 * Math.min(1, mine.speed / 35), 0, 900 + 600 * corner, 0.04, corner > 0 ? attack : release)
     }
     // A chirp only when a hard slide breaks loose, and never more than once every ~1.6 s.
-    if (s.sliding && !was && mine.speed > 10 && (handbrake || state > 0.5 || mine.drift > 8) && s.skidCool <= 0) {
+    if (!this.procedural && s.sliding && !was && mine.speed > 10 && (handbrake || state > 0.5 || mine.drift > 8) && s.skidCool <= 0) {
       a.play("skid_short", { gain: 0.28, rate: 0.95 + Math.random() * 0.1, wet: 0.08 })
       s.skidCool = 1.6
     }
+
+    if (this.procedural) {
+      this.engine.silence(); this.screech.silence(); this.scrub.silence(); this.rush.silence()
+      this.driver.update(mine, input, dt, this.acoustics.surface(mine.x, mine.z))
+    } else this.driver.silence()
 
     // Flapping rubber, louder and grittier with every popped tire; on the rims it grinds even at a crawl.
     const flats = flatCount(mine.wheels)
@@ -518,6 +557,7 @@ export class GameAudio {
     cands.sort(this.byDist)
     if (cands.length > ENGINE_VOICES) cands.length = ENGINE_VOICES
     this.assign(this.engines, cands)
+    this.assign(this.synthEngines, cands)
     for (const v of this.engines) {
       if (v.carId < 0) continue
       const c = byId(cands, v.carId)
@@ -529,15 +569,23 @@ export class GameAudio {
       v.use(this.a.buffer(c.role === "cop" ? "engine_cop_loop" : "engine_robber_loop"))
       const sp = this.spatial(c.x, c.z)
       const dop = this.doppler(c.x, c.z, c.vx, c.vz)
-      v.set(sp.gain * (0.3 + 0.25 * s.load), rpmRate * dop, sp.pan, Math.min(sp.cutoff, 1800 + 7000 * s.load), sp.wet)
+      const synth = this.synthEngines.find(e => e.carId === c.id)!
+      if (this.procedural) {
+        v.gain.gain.setTargetAtTime(0, this.a.now, 0.06)
+        s.gearbox.update(c.speed, s.load, !!c.boosting, dt)
+        synth.set(c.vehicle, s.gearbox.rpm, s.load, sp.gain * (0.07 + 0.06 * s.load), sp.pan, dop, sp.cutoff)
+      } else {
+        synth.silence(); synth.carId = c.id
+        v.set(sp.gain * (0.3 + 0.25 * s.load), rpmRate * dop, sp.pan, Math.min(sp.cutoff, 1800 + 7000 * s.load), sp.wet)
+      }
     }
   }
 
   /** Keeps voices on the same car across frames; frees voices whose car dropped out and hands them to newcomers. */
-  private assign(voices: (LoopVoice | SirenVoice)[], want: Car[]) {
+  private assign(voices: (LoopVoice | SirenVoice | EngineVoice)[], want: Car[]) {
     for (const v of voices) {
       if (v.carId < 0 || byId(want, v.carId)) continue
-      if (v instanceof LoopVoice) v.silence()
+      if (v instanceof LoopVoice || v instanceof EngineVoice) v.silence()
       else {
         v.out.silence(0.25)
         v.carId = -1
@@ -579,7 +627,8 @@ export class GameAudio {
       const sp = this.spatial(c.x, c.z, 0, SIREN_HEAR)
       const g = Math.min(1, Math.sqrt(sp.gain) * 0.9)
       const dop = this.doppler(c.x, c.z, c.vx, c.vz)
-      v.set(0.36 * g, dop * (0.985 + 0.03 * s.sirenOffset), sp.pan, Math.max(1500, sp.cutoff), sp.wet + 0.1, s.yelp)
+      const occluded = this.procedural && this.acoustics.occluded(this.lx, this.lz, c.x, c.z)
+      v.set((this.procedural ? 0.24 : 0.36) * g * (occluded ? 0.65 : 1), dop * (0.985 + 0.03 * s.sirenOffset), sp.pan, occluded ? 1200 : Math.max(1500, sp.cutoff), sp.wet + 0.1, s.yelp)
     }
   }
 
@@ -646,7 +695,7 @@ export class GameAudio {
             }
             if (c.boost >= s.boost) s.nitroCool = Math.min(s.nitroCool, 0.25)
             // A hard slide breaking loose; ordinary cornering never chirps.
-            if (c.drift > 8 && s.drift <= 8 && c.speed > 10 && s.skidCool <= 0) {
+            if (!c.airborne && c.drift > 8 && s.drift <= 8 && c.speed > 10 && s.skidCool <= 0) {
               this.a.play("skid_short", { gain: g * 0.3, rate: 0.95 + Math.random() * 0.1, pan, wet, cutoff })
               s.skidCool = 1.6
             }
@@ -741,13 +790,14 @@ export class GameAudio {
     }
     // Your own hits skip the sfx bus so the daze muffle below doesn't swallow them.
     const bus = own ? "sting" : "sfx"
-    const level = g * (0.4 + 0.6 * Math.pow(ramp(v, HIT_MIN, 20), 0.7))
+    const mass = this.procedural ? VEHICLE_BY_ID.get(c.vehicle)?.mass ?? 1 : 1
+    const level = g * Math.min(1.2, Math.sqrt(mass)) * (0.4 + 0.6 * Math.pow(ramp(v, HIT_MIN, 20), 0.7))
     const layer = (list: SfxName[], gain: number, rate = 1, delay = 0) => {
       if (gain * level < 0.015) return
       this.a.play(this.pick(list), { bus, gain: gain * level * (0.9 + 0.2 * Math.random()), rate: rate * (0.94 + 0.12 * Math.random()), pan, wet, cutoff, delay })
     }
     // Heavier hits sit a little lower.
-    const low = 1.04 - 0.1 * ramp(v, 4, 20)
+    const low = (1.04 - 0.1 * ramp(v, 4, 20)) / Math.pow(mass, 0.12)
     layer(THUMPS, 0.6 + 0.4 * ramp(v, 3, 16), low)
     if (!partner) {
       layer(WALLS, 0.85, low)
@@ -763,6 +813,7 @@ export class GameAudio {
     const heavy = ramp(v, 10, 20)
     if (heavy > 0) this.engDuck = Math.max(this.engDuck, 0.4 * heavy * Math.min(1, g * 1.5))
     if (own && v >= 13) this.a.dazeFor(0.35 + 0.15 * ramp(v, 13, 24))
+    if (this.procedural && own && v >= 13) this.a.duckFor(0.15, 0.55)
   }
 
   private pick(list: SfxName[]): SfxName {
