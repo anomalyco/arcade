@@ -546,6 +546,14 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Lab navigation captures keys, not just focus.** The shared panel captures keyboard events at the window before
+  game bubble listeners, releases held input on open, and retains consumed keyups after close. This follows
+  [Dear ImGui's keyboard capture guidance](https://github.com/ocornut/imgui/blob/master/docs/FAQ.md#q-how-can-i-tell-whether-to-dispatch-mousekeyboard-to-dear-imgui-or-my-application).
+  Contextual row/group commands keep edits local; command-palette-style fuzzy search jumps through folded groups.
+  DOM-free tests cover focus, adjustment, search, exact values and default resets. Metal preview proof exercised both
+  games' input adapters, Dvorak letter keys, coarse/fine steps, edit cancellation, Copy JSON, search/unfolding, presets,
+  and comparison-message typing/modifiers with zero leaked keys or page errors. Rendering performance was not measured.
+
 - **Tunnel crossings carry a snapshot counter.** Getaway's `shared/sim/tunnel.ts` mirrors lateral pose and velocity
   between two bores on one street. The shared substepped driver and client proxies use the same transfer; interpolation
   snaps on the counter and the camera cuts on the position jump. Seven tests cover both directions, velocity preservation,

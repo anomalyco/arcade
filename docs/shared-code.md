@@ -26,6 +26,18 @@ later reveals the new values. Switches are untouched; groups containing only swi
 All On / All Off affect switches only and are hidden when there are none. Getaway's Lights group uses both types:
 its Style select switches the live renderer, and its sliders are enabled for the Soft pool style.
 An optional change callback applies settings requiring resource updates, such as Getaway's live car-light meshes.
+`lab-navigation.ts` owns row/group focus, folds, fuzzy matches, value changes and constructor-default resets without DOM
+dependencies. The panel captures keyboard events while open, including matching keyups after closing; exact edits are
+committed on Enter and cancelled on Escape. A compact hint lists navigation/search/group shortcuts. Comparison key
+messages carry modifiers too. Both games run `lab-navigation.test.ts` in their normal check; Getaway's
+`scripts/prove-lab-keyboard.ts` verifies real keyboard capture against Getaway and Blackout input adapters on a preview.
+
+For `fx-kit` adoption: merge `packages/kit/lab-panel.ts`, add `lab-navigation.ts` and `lab-navigation.test.ts`, and retain
+fx-kit's dynamic `addControls`, action controls and `LabOptions` when adapting its bindings to the navigation model.
+Its `type: "range"` optional step needs a concrete step; per-control `change` callbacks must still run through the shared
+write path. Keep action rows in navigation rather than treating them as switches. Include the shared tests in both games'
+package scripts. For comparison panes, also adopt modifier forwarding in `packages/kit/compare.ts` and both games'
+`src/game/input.ts`. The proof runner and Getaway script typecheck entry provide the browser regression check.
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
 Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel. Getaway only
 accepts `lights` and `coldExhaust` URL overrides in `bench` or `mux` automation; ordinary play uses the panel.
