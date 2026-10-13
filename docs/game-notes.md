@@ -4,6 +4,20 @@ Techniques that have worked in one arcade game and should carry to the others. A
 what it does, where it lives, and what it measured. Mark candidates that have not been measured or playtested yet.
 Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
+## Shared human presentation
+
+`human-locomotion`, `human-profile` and `human-pose` share the canonical rig's contacts, IK, posture and semantic
+attachments. The soldier adapter reproduces `8223033` exactly over 900 seeded body frames per animation mode,
+including running posture, recoil and hits. Runtime wizards keep game-owned weapon frames and casting clips;
+Outbreak's zombie preview keeps game-owned terrain support. See [Human rig](human-rig.md) for the API boundary.
+
+Detach samples the displayed pose before hiding the subtree. Copy the frames, seed origin linear and world
+angular velocity from consecutive samples, and start debris integration on the next tick. An offset wound or
+centre of mass needs `linear + angular × offset`. Keep numeric cosmetic limb IDs independent of mesh order and
+emit one selected wound through the existing splatter hook. Corpse detaches sample the current ragdoll, not its
+last living frame. Tests and first Metal proof are recorded in `../perf/human-rig.md`; playback and cost limits
+remain explicit there.
+
 ## Proving a change
 
 - **Keep spell proof on the real input path.** Blackout's `scripts/prove-wizards-spells.ts` reads scrolls with F and

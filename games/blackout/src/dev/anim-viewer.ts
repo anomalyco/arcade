@@ -20,6 +20,7 @@ import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
 import { animation } from "../game/anim-settings"
 import { Rng } from "../../shared/rng"
 import { RigDemo, rigDemoControls } from "./rig-demo"
+import { detachedSplatter } from "../game/human-splatter"
 import { at } from "../game/rig"
 import { RIG } from "../render/person"
 import { wizardWeapon } from "../render/wizard"
@@ -282,7 +283,9 @@ async function main() {
   ;(game as unknown as { load(m: MapDef): void }).load(MAP)
   const input = new Input(canvas)
   new DebugOverlay(settings, params, () => input.release(), rigDemoControls)
-  const rigDemo = new RigDemo(renderer)
+  let detachId = 0x60000000
+  const rigDemo = new RigDemo(renderer, part => detachedSplatter(event => game.cosmeticSplatter(event), part,
+    { id: detachId++, seed: SEED, direction: [1, 0.2, 0], amount: 1 }))
   const side = params.get("side")
   const cam = new Camera()
   if (side !== null) {

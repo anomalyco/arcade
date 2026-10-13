@@ -46,24 +46,29 @@ try {
   await page.evaluate(() => (window as any).advance(1800))
   await page.screenshot({ path: join(out, "comparison.png") })
   await page.keyboard.press("Backquote")
+  // Exercise the existing Blood Lab switch and Game hook, not a second particle implementation.
+  await page.locator('[data-lab] select[data-key="style"]').filter({ has: page.locator('option[value="1"]') }).last().selectOption("1")
   await select("rigDemo").selectOption("detach")
   await page.keyboard.press("Backquote")
   const frames = process.argv.includes("--video")
   if (frames) mkdirSync(join(out, "frames"), { recursive: true })
-  let noPop = false, detached = 0
+  let noPop = false, detached = 0, splatter = false
   for (let n = 0; n < 180; n++) {
     await page.evaluate(() => (window as any).advance(1000 / 30))
     // time 2.0 is reached on the first of two 60 Hz steps at n=60 on some clocks;
     // retain the first detachment pose directly in the demo for exact spawn verification.
     const state = await page.evaluate(() => {
-      const p = (window as any).animProof.rigDemo
-      return { hidden: [...(p.avatar.hiddenBones ?? [])], count: p.pieces.length, noPop: p.noPop, time: p.time }
+      const proof = (window as any).animProof, p = proof.rigDemo
+      return { hidden: [...(p.avatar.hiddenBones ?? [])], count: p.pieces.length, noPop: p.noPop, time: p.time,
+        splatter: !!proof.game.splatterFx?.particles.some((v: number) => v !== 0) }
     })
     detached = Math.max(detached, state.count); noPop ||= state.noPop === true
+    splatter ||= state.splatter
     if (frames) await page.screenshot({ path: join(out, "frames", `${String(n).padStart(4, "0")}.png`) })
     if ([54, 60, 66, 78, 105, 165].includes(n)) await page.screenshot({ path: join(out, `detach-${n}.png`) })
   }
   if (detached !== 1 || !noPop) throw new Error(`Detach failed: ${JSON.stringify({ detached, noPop })}`)
+  if (!splatter) throw new Error("Detached wound did not reach Game.cosmeticSplatter")
   await page.keyboard.press("Backquote")
   await page.getByRole("button", { name: "Randomize Animation", exact: true }).click()
   const random = await page.evaluate(() => ({ ...(window as any).animProof.animation }))
@@ -84,9 +89,16 @@ try {
   await page.keyboard.press("Shift+Digit0")
   if (await select("profilePreset").inputValue() !== "soldier") throw new Error("Keyboard group reset failed")
   await page.screenshot({ path: join(out, "lab.png") })
-  writeFileSync(join(out, "proof.json"), JSON.stringify({ gpu, samples, detached, noPop, random, reset, copied, errors }, null, 2))
+  await page.goto(`${base}/anim.html?manual&only=cast&zoom=7&side=35&elev=18`)
+  await page.waitForFunction(() => (window as any).ready)
+  await page.evaluate(() => { (window as any).animProof.settings.wizards = true })
+  await page.evaluate(() => (window as any).advance(1800))
+  const runtimeWizard = await page.evaluate(() => (window as any).animProof.game.avatars.get("cast")?.body)
+  if (!runtimeWizard?.gun) throw new Error("Runtime wizard lost its staff frame")
+  await page.screenshot({ path: join(out, "runtime-wizard.png") })
+  writeFileSync(join(out, "proof.json"), JSON.stringify({ gpu, samples, detached, noPop, splatter, runtimeWizard, random, reset, copied, errors }, null, 2))
   if (errors.length) throw new Error(errors.join("\n"))
-  console.log(JSON.stringify({ gpu, profiles: 3, detached, noPop, keyboard: true, frames: frames ? 180 : 0, errors }))
+  console.log(JSON.stringify({ gpu, profiles: 3, detached, noPop, splatter, keyboard: true, frames: frames ? 180 : 0, errors }))
 } finally {
   await browser.close()
   await server.close()

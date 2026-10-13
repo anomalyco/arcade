@@ -16,6 +16,26 @@ const defaults = { ...animation }
 afterEach(() => Object.assign(animation, defaults))
 const dt = 1 / 60
 
+test("runtime wizards consume shared posture while retaining all weapon frames and casting clips", () => {
+  for (const gun of ["rifle", "shotgun", "sniper"] as const) {
+    const wizard = newAvatar("wizard", 0, 0, 0, gun), soldier = newAvatar("wizard", 0, 0, 0, gun)
+    for (let n = 0; n < 180; n++) {
+      animate(wizard, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, 0.2, true)
+      animate(soldier, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, 0.2)
+      expect(wizard.body!.gun).not.toBeNull()
+      // Different stride phases may change the small authored weapon sway, not its aim ownership.
+      expect(wizard.body!.gun!.x.reduce((dot, value, axis) => dot + value * soldier.body!.gun!.x[axis]!, 0)).toBeGreaterThan(.999)
+    }
+    expect(wizard.profile).toBeUndefined()
+    expect(wizard.motion.stride / soldier.motion.stride).toBeCloseTo(humanProfiles.wizard.strideScale, 10)
+    const freeHand = wizard.body!.fa[0]
+    wizard.throwAt = 3
+    animate(wizard, dt, 3.15, 3.3, 0, 0, 0, 0.2, true)
+    expect(wizard.body!.fa[0]).not.toEqual(freeHand)
+    expect(wizard.body!.gun).not.toBeNull()
+  }
+})
+
 for (const [name, vx, vy, spin] of [["walk", 1.4, 0, 0], ["run", 4.2, 0, 0], ["sprint", 6.3, 0, 0], ["backpedal", -1.5, 0, 0], ["strafe left", 0, -2, 0], ["strafe right", 0, 2, 0], ["turn", 0, 0, 1.4]] as const) {
   test(`${name}: both the lock and rendered toe have zero planted slip`, () => {
     const a = newAvatar("lock", 0, 0, 0, "rifle")

@@ -13,12 +13,15 @@ import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
 import { buildLevel, hex } from "./level"
 import { Survivor } from "./survivor"
+import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
 import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1 }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...zombieTuning }
 const controls: LabControl[] = [
+  { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
+  ...zombieControls,
   { key: "diagnostic", label: "Contribution", group: "Diagnostics", options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory"].map((label,value)=>({label,value})) },
   { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: .05 },
   { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
@@ -56,6 +59,7 @@ async function main() {
   input.mouse.y = innerHeight / 2 - 150
   const cam = new Camera()
   const avatar = new Survivor(renderer)
+  const updateProfile = () => { avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined }
   const doorMesh = new Mesh()
   doorMesh.box(0, .13, -.1, 1.4, 2.3, .1, hex(0x796045), MAT.wall)
   doorMesh.box(.08, .35, -.11, 1.32, 2.1, -.105, hex(0x8b7253), MAT.wall)
@@ -73,6 +77,7 @@ async function main() {
   let blockers = sightRects(session.view.town), revision = -1, lightOccluders=0
   let frozen = params.has("bench"), last = performance.now(), frames = 0, elapsed = 0
   const lab = new LabPanel(settings, controls, params, () => input.release(), key => {
+    if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
     if (key === "houseSeed" || key === "terrain") regenerate()
   })
@@ -170,6 +175,7 @@ async function main() {
   const harness = {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
+    human: () => ({ profile: avatar.profile, bones: avatar.bones }),
     state: () => ({ ...session.view, explored: vision.explored.filter(v => v > 0).length, vertices }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
@@ -178,6 +184,7 @@ async function main() {
       const control = controls.find(c => c.key === key)
       if (!control || !Number.isFinite(value) || ("min" in control ? value < control.min || value > control.max : !("options" in control) || !control.options.some(o=>o.value===value))) throw new Error(`Invalid lab value: ${key}`)
       settings[key] = value
+      if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
       if (key === "hour") session.view.hour = wrapHour(value)
       if (key === "houseSeed" || key === "terrain") regenerate()
     },

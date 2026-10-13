@@ -8,8 +8,7 @@ import { hex } from "./models"
  * bones that src/game/anim.ts poses one by one. Every part faces +x with +y up and +z to its right, pivot at its joint:
  * limbs hang down -y from the joint, the torso stands up +y from the waist, feet and guns reach forward +x.
  */
-import { RIG, HIP, SHOULDER } from "@arcade/kit/rig"
-export { RIG, HIP, SHOULDER }
+export { RIG, HIP, SHOULDER } from "@arcade/kit/rig"
 
 /** Where each gun sits, in the aim frame from the body centre on the floor: grip forward, height, to the right. */
 export const HOLD: Record<Gun, { fwd: number; up: number; side: number }> = {

@@ -33,9 +33,14 @@ Presets are immutable. Spread a preset to tune an individual actor; it will not 
 The neutral soldier preserves PR #9's restored forward posture: `runPosture=0.18`. Weapon clips can replace rest
 hand targets before IK. Profile hand poses do not implement spells, attacks, pathfinding or new zombie AI.
 
-The wizard fixture uses the existing test mesh and a hand-attached staff, not a new robe asset. Outbreak's
-`zombieProfileOverrides` adapter maps its lurch/asymmetry/drag/reach controls onto the zombie vocabulary. An
-Outbreak terrain-aware walker must retain its terrain support adapter; do not silently flatten it to Y=0.
+The comparison fixture uses the test mesh and a hand-attached staff. Runtime Blackout wizards use the released
+wizard meshes and the shared wizard posture, with `handPose="weapon"` so their staff/wand/orb aim frames and
+casting clips retain ownership of the hands. An explicit per-actor profile takes precedence.
+
+Outbreak's `zombieProfile` maps its lurch/asymmetry/drag/reach controls onto the shared preset. Lab → Zombie → Pose
+switches the existing survivor's presentation to Zombie. The terrain adapter retains its height sampling and
+existing contact schedule; it consumes shared posture, hand IK and angular springs plus profile stride, timing
+and drag values. Survivor remains the default. This is a local pose preview, not an NPC or a gameplay mode.
 
 Consumers with a different avatar shape implement the structural `Locomotion` state, smooth their root inputs,
 then call `locomotion(state, dt, distance, teleport, profile)`. `poseLegs(state, pelvis)` preserves the rendered toe
@@ -66,6 +71,17 @@ Semantic IDs are `pelvis`, `torso`, `head`, and `left`/`right` `.upperArm`, `.fo
 Attachments are `left.hand`, `right.hand`, `head.top`. `limbIds` gives explicit stable numeric cosmetic IDs; never
 derive IDs from model registration order. Blackout's corpse adapter copies the visibility mask on death. Detaching
 from a corpse samples `bodyBones(ragdollBody(...))`, not its last living pose; hidden constraints remain visual-only.
+
+## Cosmetic splatter
+
+Blackout's `human-splatter.ts` adapter calls the released `Game.cosmeticSplatter` hook. Pass one selected detached
+part, a caller-owned event ID and seed, and a world-space impact direction. An optional world-space wound point
+uses offset velocity; otherwise the part's origin is used. The adapter maps `BoneId` through `limbIds` and forwards
+sampled linear motion. It does not infer impact direction from angular velocity or emit for every descendant.
+
+The Detached forearm fixture exercises this adapter. Enable Blood → Surface splatter in the shared Lab to see
+the burst. The hook retains its style gate and event/limb deduplication; production blood defaults are unchanged.
+Actual gameplay detach events still need a server-owned damage policy and caller-owned event identity.
 
 ## Lab and proof
 

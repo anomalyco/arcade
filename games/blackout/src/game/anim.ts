@@ -5,7 +5,7 @@ import { GUNPTS, HIP, HOLD, RIG } from "../render/person"
 import { animation } from "./anim-settings"
 import { angleSpring, locomotion, newMotion, pelvisPoint, stiffness } from "./anim-locomotion"
 import { bodyJoints } from "./anim-pose"
-import { profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
+import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
 import { boneVisible, jointVelocities, poseArms, poseLegs, type BoneId, type HumanBody, type HiddenBones } from "@arcade/kit/human-pose"
 import {
   type Frame,
@@ -414,12 +414,16 @@ function restOffset(i: number, gait: number): [number, number] {
  * Advances one soldier's animation and poses it. `now` is seconds on the same clock as reloadAt and fire().
  * Returns EV cue bits for sounds and effects.
  */
+// The game's staff/wand/orb use the weapon frame and action clips. Only their body posture is shared.
+const wizardProfile: HumanProfile = { ...humanProfiles.wizard, handPose: "weapon" }
+const actorProfile = (a: Avatar, wizard: boolean) => a.profile ?? (wizard ? wizardProfile : animation)
+
 export function animate(a: Avatar, dt: number, now: number, x: number, y: number, vx: number, vy: number, aim: number, wizard = false): number {
   let ev = 0
   dt = Math.max(1e-4, Math.min(0.05, dt))
   a.t += dt
   const enhanced = animation.animationMode === "new"
-  const profile = a.profile ?? animation
+  const profile = actorProfile(a, wizard)
   const distance = Math.hypot(x - a.x, y - a.y)
   const teleport = Math.hypot(x - a.x, y - a.y) > 2.5 || !a.body
   a.x = x
@@ -471,7 +475,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   const s = smooth(a.sprint)
 
   if (enhanced) {
-    if (locomotion(a, dt, distance, teleport)) ev |= EV.step
+    if (locomotion(a, dt, distance, teleport, profile)) ev |= EV.step
   } else {
     a.motion.enabled = false
     // Retained gait for the Lab's Old comparison.
@@ -616,7 +620,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 /** Builds the pose: pelvis over the feet, a twisting torso aiming the gun, IK arms on the gun and IK legs to the feet. */
 function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number, wizard: boolean): Body {
   const enhanced = animation.animationMode === "new"
-  const profile = a.profile ?? animation
+  const profile = actorProfile(a, wizard)
   const m = a.motion
   const t = a.t
   const g = a.gun

@@ -1,13 +1,14 @@
 # Shared human rig proof
 
-Status: core checkpoint tests and first Metal visual proof pass; release-main integration and splatter hookup pending.
+Status: PR #13's released main is merged; runtime wizard/terrain-zombie adapters and the splatter hook are wired.
+Final release-base workspace and Metal checks are in progress.
 
 Hivemind run `20261013-130146-98650` passed on the Mini: frozen root install, ten shared-package tests,
 Blackout client/server/script typechecks, all 288 tests (including 18 animation cases) and production build.
 The subsequent clean `git archive` export of `03aea689a966c88f8de6a651cb983a9dc3fed170` also passed frozen
 installation and package checks, both games' typechecks/builds, 288 Blackout tests and 177 Getaway tests
 (12 existing skips), both production lobby smokes and both Worker dry-runs. No deployment occurred.
-Outbreak is absent from this pre-release base; its checks and the final consumer integrations await released main.
+That pre-release archive did not contain Outbreak. Release-base results below supersede it for consumer integration.
 
 The first Hivemind check reached the new Mini after a cold sync but failed before running tests: its non-login
 shell PATH omitted `/opt/homebrew/bin`, where Bun 1.4.2 is already installed. The corrected invocation explicitly
@@ -29,6 +30,11 @@ Walk/run/sprint, turning, seeded recoil and hit events produced exact JSON body 
 Reproduce with `scripts/prove-human-parity.ts <exported-baseline-repository>` from Blackout. This verifies the
 refined soldier pose, not identical GPU pixels across graphics implementations.
 
+After merging released main, both soldier hashes still match. Outbreak's default survivor also matches its
+released-main adapter exactly over 600 frames: a curved path, turning aim and sloped support, comparing every
+emitted instance byte. Both SHA-256 hashes were `9a41bbb8e1eea9d8ed3c38aeed32e721220ed87f22841cd7fa031a988c115c10`.
+The zombie override is opt-in; default terrain motion is preserved.
+
 ## Fixtures
 
 Animation Lab → Three profiles presents a soldier, wizard with a hand-attached staff, and asymmetric zombie.
@@ -46,8 +52,9 @@ playback quality. Captures are in `captures/shared-human/`; `proof.json` include
 
 ## Limits
 
-The wizard uses the test soldier mesh; no robe mesh or spell AI is included. The zombie is a pose/gait profile,
-not a new NPC simulation. The shared contact solver is flat-ground; Outbreak's terrain support is not replaced.
+The three-profile fixture uses the test soldier mesh. Runtime wizards retain the released wizard meshes and
+weapon/casting adapters. The zombie is a pose/gait profile, not a new NPC simulation. The shared contact solver
+is flat-ground; Outbreak retains its terrain contact schedule and consumes shared posture/hand IK and springs.
 Detached debris uses simple local gravity/floor response. Hidden corpse joints retain constraints; this is not
 physical dismemberment or a server movement/damage rule. Continuous playback and CPU/GPU cost are unmeasured.
 Existing Blackout cadence remains unchanged and higher than the research reference targets.
