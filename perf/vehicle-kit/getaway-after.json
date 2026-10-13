@@ -1,0 +1,69 @@
+{
+  "game": "getaway",
+  "label": "after",
+  "base": "8dff83439c254a6a70daaf2f934c12e918941f5c",
+  "frames": [
+    {
+      "name": "chase-60",
+      "sha256": "fe4ad27110cfcbe62452d1909d71eae4abd90bc5e7daf65f3de12eed13ca84ba",
+      "pose": {
+        "x": 228.18673287577053,
+        "z": 210.84707019138747,
+        "h": -0.4151145155722869,
+        "speed": 39.11895115360791
+      },
+      "smoke": {
+        "skids": 162,
+        "connected": 473,
+        "wisps": 0,
+        "flames": 4,
+        "pops": 4
+      }
+    },
+    {
+      "name": "chase-119",
+      "sha256": "c6662afd7e7f31c66fd128bd60556f162c26ec643becd9b81b2a0fbc7a593b9c",
+      "pose": {
+        "x": 235.64225455382828,
+        "z": 281.29383163569605,
+        "h": -0.176378129024467,
+        "speed": 37.53668661097153
+      },
+      "smoke": {
+        "skids": 444,
+        "connected": 768,
+        "wisps": 0,
+        "flames": 12,
+        "pops": 4
+      }
+    }
+  ],
+  "errors": [],
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3"
+  },
+  "audio": {
+    "peak": 0.5305206775665283,
+    "peakDb": -5.505953687541783,
+    "maxAdjacentDelta": 0.06672438327223063,
+    "maxControlBoundaryDelta": 0.03244732320308685,
+    "maxIsolatedSpike": 0.01251949742436409,
+    "dc": 0.00009883080911815239,
+    "clipped": 0,
+    "updateMedianMs": 0.10000002384185791,
+    "updateP95Ms": 0.20000004768371582,
+    "shifts": [
+      0.5,
+      1.1666666666666667,
+      1.8333333333333333
+    ],
+    "nitro": {
+      "ignitions": 2,
+      "active": false,
+      "voices": 0
+    },
+    "sha256": "f025062a2c072c07512eb4107f7f9ccc3646bd761308167cd9b4fa730e462afe",
+    "bytes": 1344044
+  }
+}

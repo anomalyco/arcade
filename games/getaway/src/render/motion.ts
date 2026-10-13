@@ -1,7 +1,7 @@
 import { motionUniformWGSL, MotionBlur, motionBlurDefaults } from '@arcade/kit/gpu/motion-blur'
 export const motionBlur = motionBlurDefaults()
 /** The producer records persistent particle identities alongside packed colour instances. */
-export const spriteMotionKeys=new WeakMap<Float32Array,(object|undefined)[]>()
+export { spriteMotionKeys } from "@arcade/kit/gpu/sprite-motion"
 
 const transform=/* wgsl */`
 fn world(p:vec3f,a:vec4f,b:vec4f,scale:f32)->vec3f {

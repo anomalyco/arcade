@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { bodyPoint } from "../src/game/car-pose"
+import { bodyPoint } from "./body-pose"
 
 test("bodyPoint uses the instance shader's roll, pitch, yaw order and full body height", () => {
   const p = bodyPoint({ x: 10, z: 20, h: Math.PI / 2 }, { height: 4, roll: Math.PI / 2, pitch: Math.PI / 2 }, [1, 2, 3])

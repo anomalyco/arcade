@@ -742,6 +742,16 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
+  games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and
+  tonnes. Blackout converts its +X-forward mesh basis and kilograms; converting the complete rotation basis keeps
+  combined roll/pitch attachments aligned. The noise-lit smoke pipeline accepts each game's depth format
+  (`depth24plus` in Blackout, `depth24plus-stencil8` in Getaway). Matched Metal proof kept Getaway's two PNGs
+  byte-identical and Blackout's four sampled simulation poses identical. Blackout's drift produced 49 smoke samples
+  and 110 skid segments; its bounded four-voice offline mix peaked at 0.852 without clipping and became silent after
+  disabling vehicle audio. Full checks passed 177 tests (12 existing skips) in Getaway and 285 in Blackout.
+  Reproduction and audio comparison are in `perf/vehicle-kit.md`; runtime CPU/GPU cost has not been measured.
+
 - **Lab navigation captures keys, not just focus.** The shared panel captures keyboard events at the window before
   game bubble listeners, releases held input on open, and retains consumed keyups after close. This follows
   [Dear ImGui's keyboard capture guidance](https://github.com/ocornut/imgui/blob/master/docs/FAQ.md#q-how-can-i-tell-whether-to-dispatch-mousekeyboard-to-dear-imgui-or-my-application).

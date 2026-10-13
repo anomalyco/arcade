@@ -317,6 +317,7 @@ export class Game {
     this.gear = { frag: reg(gm.frag), claymore: reg(gm.claymore), led: reg(gm.led) }
     this.veh = new VehicleFx(renderer)
     this.vsound = new VehicleSound(sound)
+    this.veh.onPop = d => { if (this.juice.vehicleAudio) this.vsound.pop(d.id) }
     this.map = initialMap
     this.load(this.map)
   }
@@ -664,8 +665,8 @@ export class Game {
         return
       case "crash":
         if (me && Math.hypot(e.x - me.x, e.y - me.y) < 30) this.vsound.crash(e.x - me.x, e.y - me.y, e.v)
-        if (e.v > 5) for (let i = 0; i < Math.min(14, e.v); i++) this.fx(e.x, e.y, 0.5, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 1 + Math.random() * 3, 0.2 + Math.random() * 0.2, 0.03, "spark")
-        if (this.riding && this.riding.veh === e.id) this.cam?.bump(Math.min(0.8, e.v / 15))
+        if (e.v > 5 && this.juice.vehicleSparks) this.veh.crash(e.id, e.x, e.y, e.v, this.solids)
+        if (this.riding && this.riding.veh === e.id && this.juice.vehicleImpact) this.cam?.impact(e.v)
         return
       case "host":
         this.banner = { text: e.what === "reset" ? "HOST RESET THE MATCH" : `HOST SWITCHED TO ${MODES[e.mode].label.toUpperCase()}`, t }
@@ -1269,8 +1270,9 @@ export class Game {
     const list = []
     for (const d of this.veh.draws.values()) {
       if (d.s.wreck || !d.s.seats[0]) continue
-      list.push({ id: d.id, kind: d.kind, dx: d.x - me.x, dy: d.y - me.y, speed: forwardSpeed(d), thr: d.s.thr, slip: Math.abs(lateralSpeed(d)) + (d.s.hb && Math.hypot(d.vx, d.vy) > 4 ? 4 : 0), horn: !!d.s.horn, mine: d.id === this.riding?.veh })
+      list.push({ id: d.id, kind: d.kind, dx: d.x - me.x, dy: d.y - me.y, speed: forwardSpeed(d), thr: d.s.thr, slip: Math.abs(lateralSpeed(d)), handbrake: !!d.s.hb, horn: !!d.s.horn, mine: d.id === this.riding?.veh })
     }
+    this.vsound.enabled = this.juice.vehicleAudio
     this.vsound.update(list)
   }
 
@@ -1386,6 +1388,9 @@ export class Game {
       casters,
       (d) => this.vehicleTeam(d),
       (d) => { this.motionKeys.begin(d); this.spriteKeys.begin(d) },
+      this.juice,
+      this.solids,
+      this.cam?.eye ?? [0, 24, 0],
     )
     this.motionKeys.begin()
     this.spriteKeys.begin()

@@ -207,6 +207,12 @@ and `games/blackout/scripts/prove-shared-motion.ts`. Raw evidence and limits: `p
 
 ## Other shared code and candidates
 
+`packages/kit/vehicle/` now owns Getaway and Blackout's presentation chassis, body transforms, lamp submission and
+Lab tunables, tyre heat/emissions, skids, pops, and procedural engine/gearbox/tyre voices. See its README for the
+coordinate and renderer contracts. Each game supplies terrain, interpolated controls, meshes and renderer/audio
+sinks. Blackout's adapter converts its +X-forward mesh convention and kilograms; simulation and human rigs remain
+game-owned. Consolidating the exact shipped smoke pool with `fx-kit` is still pending.
+
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
 `getaway-main-hook.ts` supplies both games' historical Getaway instrumentation without a cross-game script import.

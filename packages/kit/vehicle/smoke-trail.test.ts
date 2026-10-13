@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { SMOKE_CAPACITY, SmokeTrail, type SmokeSource } from "../src/game/smoke-trail"
+import { SMOKE_CAPACITY, SmokeTrail, type SmokeSource } from "./smoke-trail"
 
 const source = (): SmokeSource => ({ smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0 })
 

@@ -1,6 +1,6 @@
 import { SMOKE_CAPACITY, SMOKE_STRIDE, type SmokeTrail } from "./smoke-trail"
 
-export const tyreShader = (common: string) => /* wgsl */ `
+export const tyreShader = (common: string, cone = "if (li.dir.w > -1.0) { a *= smoothstep(li.dir.w, min(1.0, li.dir.w + 0.08), dot(-d / dist, normalize(li.dir.xyz))); }") => /* wgsl */ `
 ${common}
 @group(1) @binding(0) var noiseTex: texture_3d<f32>;
 @group(1) @binding(1) var noiseSampler: sampler;
@@ -22,7 +22,7 @@ fn practical(world: vec3f) -> vec3f {
     if (d2 >= li.pos.w * li.pos.w) { continue; }
     let dist = sqrt(max(d2, 0.001));
     var a = pow(1.0 - dist / li.pos.w, 2.0) * li.color.w * 0.27;
-    if (li.dir.w > -1.0) { a *= smoothstep(li.dir.w, min(1.0, li.dir.w + 0.08), dot(-d / dist, normalize(li.dir.xyz))); }
+    ${cone}
     color += li.color.rgb * a;
   }
   return min(color, vec3f(1.1));
@@ -66,7 +66,7 @@ export class SmokeRenderer {
   private readonly pipeline: GPURenderPipeline
   private readonly noise: GPUTexture
   private count = 0
-  constructor(private readonly device: GPUDevice, main: GPUBindGroupLayout, common: string, depthFormat: GPUTextureFormat = "depth24plus-stencil8") {
+  constructor(private readonly device: GPUDevice, main: GPUBindGroupLayout, common: string, depthFormat: GPUTextureFormat = "depth24plus-stencil8", cone?: string) {
     const d = device
     this.instances = d.createBuffer({ size: SMOKE_CAPACITY * SMOKE_STRIDE * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     const noise = this.noise = d.createTexture({ size: [32,32,32], dimension: "3d", format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
@@ -82,7 +82,7 @@ export class SmokeRenderer {
       { binding: 0, resource: noise.createView() },
       { binding: 1, resource: d.createSampler({ minFilter: "linear", magFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", addressModeW: "repeat" }) },
     ] })
-    const module = d.createShaderModule({ code: tyreShader(common) })
+    const module = d.createShaderModule({ code: tyreShader(common, cone) })
     this.pipeline = d.createRenderPipeline({
       layout: d.createPipelineLayout({ bindGroupLayouts: [main, layout] }),
       vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 32, stepMode: "instance", attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }, { shaderLocation: 1, offset: 16, format: "float32x4" }] }] },
