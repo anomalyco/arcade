@@ -154,7 +154,9 @@ export class OpsMenu {
     const info = this.info
     if (!views || !info) return
     const secs = (ms: number) => Math.ceil(ms / 1000)
-    const key = JSON.stringify([info.ship, info.color, this.atSea, views.map((v) => [v.state, v.reason, secs(v.readyIn), v.slots.map((s) => [s.player === null ? "" : info.name(s.player), secs(s.readyIn)])])])
+    // Structure only: countdowns change every second and are patched in place below, so the panel (and the hover and
+    // click under the pointer) isn't rebuilt while it's open. Ready slots have a negative readyIn that keeps falling.
+    const key = JSON.stringify([info.ship, info.color, this.atSea, views.map((v) => [v.state, v.reason, v.slots.map((s) => [s.player === null ? "" : info.name(s.player), s.player === null && s.readyIn > 0])])])
     if (key !== this.key) {
       this.key = key
       this.el.style.setProperty("--tc", info.color)
@@ -163,22 +165,31 @@ export class OpsMenu {
         ${views.map((v, i) => this.row(v, i, info)).join("")}
       </div>`
     }
-    // The recharge rings sweep every frame; the text only changes each second.
+    // The recharge rings sweep and the countdowns tick in place.
     const rings = this.el.querySelectorAll<HTMLElement>(".om-slot.charging")
+    const states = this.el.querySelectorAll<HTMLElement>(".om-op")
     let k = 0
-    for (const v of views)
+    views.forEach((v, i) => {
       for (const s of v.slots) {
         if (s.player !== null || s.readyIn <= 0) continue
         const el = rings[k++]
-        if (el) el.style.setProperty("--p", (1 - s.readyIn / (v.op.recharge * 1000 || 1)).toFixed(3))
+        if (!el) continue
+        el.style.setProperty("--p", (1 - s.readyIn / (v.op.recharge * 1000 || 1)).toFixed(3))
+        const t = el.querySelector("b")
+        if (t) t.textContent = `${secs(s.readyIn)}S`
       }
+      if (v.state === "recharging") {
+        const t = states[i]?.querySelector(".om-state b")
+        if (t) t.textContent = `${secs(v.readyIn)}S`
+      }
+    })
   }
 
   private row(v: OpView, i: number, info: OpsInfo): string {
     const slots = v.slots
       .map((s) => {
         if (s.player !== null) return `<span class="om-slot used"><i></i>${esc(info.name(s.player))}</span>`
-        if (s.readyIn > 0) return `<span class="om-slot charging"><i></i>${Math.ceil(s.readyIn / 1000)}S</span>`
+        if (s.readyIn > 0) return `<span class="om-slot charging"><i></i><b>${Math.ceil(s.readyIn / 1000)}S</b></span>`
         return `<span class="om-slot ready"><i></i>${v.op.kind === "vehicle" ? "READY" : "FREE"}</span>`
       })
       .join("")
@@ -190,7 +201,7 @@ export class OpsMenu {
             ? "YOU HAVE IT"
             : "YOU'RE UP"
           : v.state === "recharging"
-            ? `RECHARGING ${Math.ceil(v.readyIn / 1000)}S`
+            ? `RECHARGING <b>${Math.ceil(v.readyIn / 1000)}S</b>`
             : v.state === "in-use"
               ? "IN USE"
               : v.reason === "flying" && this.atSea

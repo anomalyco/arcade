@@ -185,3 +185,9 @@
   }
 }
 .om-op.sep { border-top: 1px solid rgba(244, 247, 251, 0.22); margin-top: 8px; }
+
+/* Countdown text patched in place each second (ops-menu.ts render). */
+.om-slot b,
+.om-state b {
+  font: inherit;
+}
