@@ -1,4 +1,4 @@
-export type LabControl = { key: string; label: string; on?: number; off?: number }
+export type LabControl = { key: string; label: string; on?: number; off?: number; group?: string }
 
 /** Presentation-only switches. No gameplay input leaves this host. */
 export class LabPanel {
@@ -20,13 +20,21 @@ export class LabPanel {
       header{font:10px/1.6 ui-monospace,monospace;white-space:pre-line;font-variant-numeric:tabular-nums;margin-bottom:8px}
       nav{display:flex;gap:5px;margin-bottom:6px}
       label{display:flex;align-items:center;gap:7px;padding:4px 0;cursor:pointer}
-      input{accent-color:#a4dce7;margin:0}
+       input{accent-color:#a4dce7;margin:0}
+       h3{font:inherit;font-weight:600;margin:8px 0 3px;color:#a4b1bc}
     </style><button class="pill" type="button" aria-expanded="false">~ Lab</button><section aria-label="Debug controls"><header>FPS — · Frame ms — / —\nGPU ms —</header><nav><button data-preset="on">All On</button><button data-preset="off">All Off</button></nav><div data-controls></div></section>`
     this.panel = root.querySelector("section")!
     this.header = root.querySelector("header")!
     this.pill = root.querySelector(".pill")!
     const rows = root.querySelector("[data-controls]")!
+    let group: string | undefined
     for (const control of controls) {
+      if (control.group && control.group !== group) {
+        const heading = document.createElement("h3")
+        heading.textContent = control.group
+        rows.append(heading)
+      }
+      group = control.group
       const label = document.createElement("label")
       const input = document.createElement("input")
       input.type = "checkbox"

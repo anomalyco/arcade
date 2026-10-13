@@ -59,6 +59,17 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Compact practical lights need a diffuse core when the ground becomes matte.** Getaway's six-switch Look pass
+  reduces lamp radii and sky fill, lowers ground specular from 0.55 to 0.035, and raises only the compact lamp cores.
+  Lit shopfronts bake footprint records into the city mesh build and reuse the additive sprite batch for sidewalk
+  spill; room colours use otherwise-unused window UVs. Building-foot strips, tree discs and a grid-based curb term
+  reuse existing passes, and the car shadow extends beyond the body with stronger wheel patches. The wall/roof
+  gradients and hue-preserving shoulder also stay in existing shaders. All six default on after matched-frame
+  review against the concept images; the helicopter cone is unchanged. On the M5 Max at 960 × 600, one warmup and
+  seven paired runs measured a total median delta of -0.154 ms (run medians -0.221 to -0.038 ms). Individual feature
+  median additions were below 0.1 ms, but shared-machine noise prevents a firm per-feature bound. The pristine-main
+  and look-pass videos matched all 180 car poses. See `perf/getaway-look.md` and `perf/getaway-look-paired.json`.
+
 - **Live presentation labs.** `packages/kit/lab-panel.ts` stops pointer, mouse, wheel, touch, and keyboard bubbling
   and releases gameplay input on pointer down. The two `src/ui/debug-overlay.ts` adapters expose only enable/disable
   rows, All On / All Off, and compact FPS/frame/GPU telemetry. Getaway's rendering switches select baseline or enhanced

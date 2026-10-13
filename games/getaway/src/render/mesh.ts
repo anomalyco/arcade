@@ -16,8 +16,9 @@ export const FLOATS_PER_VERT = 12
  * - glass: dark glossy glass with a moonlight sheen
  * - decal: alpha-tested atlas texture multiplied by color, lit
  * - neon: alpha-tested atlas texture, emissive (signs, backlit billboards)
+ * - window: self-lit pane, with optional room colour variation
  */
-export const MAT = { lit: 0, facade: 1, emissive: 2, water: 3, flat: 4, siren: 5, glass: 6, decal: 7, neon: 8 } as const
+export const MAT = { lit: 0, facade: 1, emissive: 2, water: 3, flat: 4, siren: 5, glass: 6, decal: 7, neon: 8, window: 9 } as const
 export type Mat = (typeof MAT)[keyof typeof MAT]
 
 /** The atlas texel that is pure white; untextured geometry samples it. */
@@ -33,7 +34,9 @@ export class Mesh {
 
   /** Quad from four corners in counter-clockwise order (as seen from the normal side). */
   quad(a: number[], b: number[], c: number[], d: number[], n: number[], col: Rgb, mat: Mat = MAT.lit) {
-    for (const p of [a, b, c, a, c, d]) this.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, col, mat)
+    // Window panes do not sample the atlas. Bake their stable room tint into the unused U channel.
+    const u = mat === MAT.window ? (col[0] * 17 + col[1] * 41) % 1 : WHITE_U
+    for (const p of [a, b, c, a, c, d]) this.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, col, mat, u)
   }
 
   /** Triangle, counter-clockwise from the normal side. */

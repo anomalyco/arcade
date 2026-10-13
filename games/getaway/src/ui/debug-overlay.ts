@@ -1,13 +1,21 @@
 import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
 
-export const juiceSettings = (enabled = true) => ({ sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, contactShadow: false, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55, contactOpacity: 0.55 })
+export const lookSettings = (enabled = true) => ({ tightPools: enabled, flatGround: enabled, shopSpill: enabled, grounding: enabled, wallGradients: enabled, colourGrade: enabled })
+export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = juiceSettings()
 const controls: LabControl[] = [
-  { key: "spotlightRadius", label: "Wide Spotlight", off: 1, on: 1.4 },
+  ...([
+    ["tightPools", "Tighter lamp pools"],
+    ["flatGround", "Flatter ground"],
+    ["shopSpill", "Shop-window spill"],
+    ["grounding", "Grounding"],
+    ["wallGradients", "Wall & roof gradients"],
+    ["colourGrade", "Colour grade"],
+  ] as const).map(([key, label]) => ({ key, label, group: "Look" })),
+  { key: "spotlightRadius", label: "Wide Spotlight", off: 1, on: 1.4, group: "Effects" },
   { key: "spotlightSoftness", label: "Soft Spotlight", off: 1, on: 1.4 },
   { key: "roadSheen", label: "Wet Road Sheen", off: 0.55, on: 1.2 },
-  { key: "contactShadow", label: "Car Contact Shadow" },
   ...([
     ["sparks", "Bouncing Sparks"],
     ["scrape", "Scrape Sparks"],

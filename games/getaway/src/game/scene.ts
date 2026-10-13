@@ -14,6 +14,7 @@ import { Fx } from "./fx"
 import { juice } from "../ui/debug-overlay"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
+import type { ShopSpill } from "../render/city/types"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -46,6 +47,7 @@ export function sirenOn(phase: number, red: boolean) {
 export class Scene {
   readonly fx = new Fx()
   private lamps: LampLight[]
+  private spills: ShopSpill[]
   private models = new Map<string, number>()
   private variants = new Map<string, number[]>()
   private heliModel: number
@@ -89,6 +91,7 @@ export class Scene {
     const built = buildCityMesh(city)
     renderer.setCity(built.mesh)
     this.lamps = built.lamps
+    this.spills = built.spills
     for (const v of VEHICLES) {
       const ids = buildCarVariants(v).map((m) => renderer.addModel(m))
       this.variants.set(v.id, ids)
@@ -292,7 +295,7 @@ export class Scene {
     const fp = focus ? [focus.x, 1, focus.z] : [cam.fx, 1, cam.fz]
     put(fp[0]!, fp[1]!, fp[2]!, focus ? 0.24 : 0)
     put(w, h, 0, t)
-    put(MOON[0], MOON[1], MOON[2], 0.6)
+    put(MOON[0], MOON[1], MOON[2], juice.tightPools ? 0.36 : 0.6)
     const heli = view.heli
     if (heli.active) {
       const ox = heli.x + Math.sin(heli.h) * 1.7
@@ -308,7 +311,8 @@ export class Scene {
     put(0.035, 0.045, 0.085, 0.0035)
     const clip = vec4.transformMat4([fp[0]!, fp[1]!, fp[2]!, 1], vp)
     put(clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0)
-    put(juice.spotlightSoftness, juice.roadSheen, 0, 0)
+    put(juice.spotlightSoftness, juice.flatGround ? 0.035 : juice.roadSheen, +juice.tightPools, +juice.wallGradients)
+    put(+juice.shopSpill, +juice.grounding, 0, 0)
 
     // Lights: cars first (they matter most), then the street lamps nearest to the camera focus.
     const L = this.lights
@@ -408,7 +412,7 @@ export class Scene {
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = v.braking ? 1 : 0
       const altitude = c.y ?? 0
-      if (juice.contactShadow || altitude > 0.1) sprite("a", c.x, v.ground + 0.018, c.z, spec.width * 0.55 / (1 + altitude * 0.06), 0, 0, 0, (juice.contactShadow ? juice.contactOpacity : 0.55) / (1 + altitude * 0.45), 7, c.h, spec.length / spec.width, altitude)
+      if (juice.grounding || altitude > 0.1) sprite("a", c.x, v.ground + 0.018, c.z, spec.width * (juice.grounding ? 0.85 : 0.55) / (1 + altitude * 0.06), 0, 0, 0, (juice.grounding ? 0.7 : 0.55) / (1 + altitude * 0.45), juice.grounding ? 9 : 7, c.h, spec.length / spec.width * (juice.grounding ? 0.85 : 1), altitude)
       // Popped tires: the body sags at those corners (roll toward the flat side, nose or tail down) and shimmies a little.
       const wm = c.wheels ?? 0
       let sagRoll = 0
@@ -525,6 +529,25 @@ export class Scene {
       sprite("d", robber.x, 0.15, robber.z, 5.5, 0.25, 0.55, 1, 1 + view.bust * 2, 2, -t * 2)
     }
 
+    if (juice.shopSpill) for (const s of this.spills) {
+      if ((s.x - cam.fx) ** 2 + (s.z - cam.fz) ** 2 > 125 ** 2) continue
+      sprite("d", s.x, KERB_H + 0.014, s.z, s.width + 0.4, 1, 0.39, 0.085, 0.14, 8, s.yaw, 2.5 / (s.width + 0.4))
+    }
+    if (juice.grounding) {
+      for (const b of this.city.boxes) {
+        const x = (b.x0 + b.x1) / 2, z = (b.z0 + b.z1) / 2
+        if ((x - cam.fx) ** 2 + (z - cam.fz) ** 2 > 125 ** 2) continue
+        const hx = (b.x1 - b.x0) / 2, hz = (b.z1 - b.z0) / 2
+        for (const side of [-1, 1]) {
+          sprite("a", x, KERB_H + 0.012, z + side * hz, hx + 0.6, 0, 0, 0, 0.42, 8, 0, 0.95 / (hx + 0.6))
+          sprite("a", x + side * hx, KERB_H + 0.012, z, 0.95, 0, 0, 0, 0.42, 8, 0, (hz + 0.6) / 0.95)
+        }
+      }
+      for (const t of this.city.trees) {
+        if ((t.x - cam.fx) ** 2 + (t.z - cam.fz) ** 2 > 125 ** 2) continue
+        sprite("a", t.x, t.planter ? KERB_H + 0.556 : 0.425, t.z, 1.15 * t.s, 0, 0, 0, 0.55, 3)
+      }
+    }
     // Street lamps: glows for all nearby, real lights for the closest.
     const near = this.nearLamps
     near.length = 0
@@ -541,7 +564,7 @@ export class Scene {
     // Real lights only for lamps that can light what's on screen; the rest just glow.
     for (let i = 0; i < near.length; i++) {
       const { l, d } = near[i]!
-      if (d < 120 * 120) light(l.x, l.y, l.z, l.small ? 10 : 17, 1, 0.58, 0.26, l.small ? 3 : 5)
+      if (d < 120 * 120) light(l.x, l.y, l.z, juice.tightPools ? (l.small ? 6 : 10.5) : (l.small ? 10 : 17), 1, juice.tightPools ? 0.48 : 0.58, juice.tightPools ? 0.15 : 0.26, juice.tightPools ? (l.small ? 5 : 18) : (l.small ? 3 : 5))
     }
     f[32 + 8 + 2] = n
     this.lightCount = n
@@ -586,6 +609,7 @@ export class Scene {
       sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,
+      colourGrade: juice.colourGrade,
     })
   }
 }

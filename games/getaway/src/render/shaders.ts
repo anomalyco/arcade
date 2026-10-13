@@ -13,7 +13,8 @@ struct Frame {
   spotDir: vec4f,      // xyz direction, w cos(cone)
   fog: vec4f,          // rgb fog color, w density
   focusClip: vec4f,    // focus position in NDC (xy), depth (z)
-  effects: vec4f,      // spotlight softness multiplier, road specular strength
+  effects: vec4f,      // spotlight softness, road specular, tight pools, wall gradients
+  look: vec4f,         // shop/window colour, grounding, reserved
 }
 
 struct Light {
@@ -53,7 +54,7 @@ fn shade(albedo: vec3f, world: vec3f, n: vec3f, specStrength: f32, diffScale: f3
   // Blue-hour night: a cool sky fill so the whole diorama reads, a dim warm bounce from the street.
   let sky = vec3f(0.12, 0.16, 0.34);
   let ground = vec3f(0.05, 0.045, 0.06);
-  var diff = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * 1.2;
+  var diff = albedo * mix(ground, sky, n.y * 0.5 + 0.5) * mix(1.2, 0.72, F.effects.z);
   let L = normalize(F.moonDir.xyz);
   let ndl = max(dot(n, L), 0.0);
   let sh = shadow(world, n, ndl);
@@ -116,7 +117,7 @@ fn shade(albedo: vec3f, world: vec3f, n: vec3f, specStrength: f32, diffScale: f3
 /** Cheap ambient occlusion for walls: darker toward the street, a touch darker in corners near the ground. */
 fn wallShade(world: vec3f, n: vec3f) -> f32 {
   if (abs(n.y) > 0.5) { return 1.0; }
-  return mix(0.55, 1.0, smoothstep(0.0, 7.0, world.y));
+  return mix(mix(0.55, 1.0, smoothstep(0.0, 7.0, world.y)), mix(0.38, 1.0, smoothstep(0.0, 14.0, world.y)), F.effects.w);
 }
 
 fn applyFog(c: vec3f, world: vec3f) -> vec3f {
@@ -174,6 +175,12 @@ struct VIn {
   o.pos = F.viewProj * vec4f(v.pos, 1.0);
   o.normal = v.normal;
   o.color = pow(v.color, vec3f(2.2));
+  if (F.look.x > 0.5 && v.mat == 9.0) {
+    // Constant per pane, evaluated at vertices rather than once per lit pixel.
+    let room = v.uv.x;
+    let tint = select(vec3f(1.0, 0.83 + room * 0.3, 0.76 + room * 0.6), vec3f(0.4, 1.3, 3.0), room > 0.92);
+    o.color *= tint;
+  }
   o.mat = v.mat;
   o.extra = vec4f(0.0);
   o.cut = 1.0;
@@ -248,7 +255,7 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
   let mat = i32(round(o.mat));
   let cutHere = cutaway(o.world, o.pos, o.cut);
   var col: vec3f;
-  if (mat == 2) {
+  if (mat == 2 || mat == 9) {
     // Lamps. params.w: 1 braking, -1 engine off (headlamps dark, taillights dim).
     let tail = o.color.r > 0.9 && o.color.g < 0.2;
     let off = o.extra.w < -0.5;
@@ -291,6 +298,15 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
     let isRoad = n.y > 0.9 && o.world.y < 0.3;
     let specStr = select(0.0, F.effects.y, isRoad);
     col = shade(o.color, o.world, n, specStr, wallShade(o.world, n));
+  }
+  if (F.effects.w > 0.5 && o.cut > 0.5 && mat != 2 && mat != 8 && mat != 9 && o.world.y > 4.5) {
+    col += o.color * vec3f(0.015, 0.025, 0.06) * max(n.y, 0.0);
+  }
+  if (F.look.y > 0.5 && o.world.y < 0.03 && n.y > 0.9 && all(o.world.xz > vec2f(0.0)) && all(o.world.xz < vec2f(532.0))) {
+    // Analytic curb foot, in the same 76 m grid as the street mesh.
+    let cell = abs(fract(o.world.xz / 76.0 + 0.5) - 0.5) * 76.0;
+    let edge = min(cell.x, cell.y);
+    col *= 1.0 - 0.32 * smoothstep(7.2, 8.0, edge) * (1.0 - smoothstep(8.0, 8.35, edge));
   }
   return vec4f(applyFog(col, o.world), 1.0);
 }
@@ -349,7 +365,8 @@ struct Inst {
 
 /**
  * Sprites: camera-facing glows and smoke, ground-aligned decals (rings, skid marks, light pools) and the
- * helicopter beam. kind: 0 soft glow, 1 smoke puff, 2 ground ring, 3 ground soft disc, 4 skid streak, 5 beam, 6 spark.
+ * helicopter beam. kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 5 beam, 6 spark,
+ * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow.
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -374,7 +391,7 @@ struct SOut {
   let kind = s.misc.x;
   var world: vec3f;
   let size = s.posSize.w;
-  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || kind == 7.0) {
+  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || kind >= 7.0) {
     let r = s.misc.y;
     let cr = cos(r); let sr = sin(r);
     let lc = vec2f(c.x * size, c.y * size * max(s.misc.z, 0.01));
@@ -444,6 +461,15 @@ struct SOut {
     let d = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - 0.18;
     let softness = min(0.35, o.extra * 0.05);
     a = 1.0 - smoothstep(-0.22 - softness, 0.14 + softness, d);
+  } else if (k == 8.0) {
+    // Short rectangular shop spill / grounding strip, feathered on both axes.
+    a = (1.0 - smoothstep(0.55, 1.0, abs(o.uv.x))) * pow(max(0.0, 1.0 - o.uv.y * o.uv.y), 2.0);
+  } else if (k == 9.0) {
+    // Wider than the body; four stronger contact patches at the wheel tracks.
+    let q = abs(o.uv);
+    let body = (1.0 - smoothstep(0.48, 1.0, q.x)) * (1.0 - smoothstep(0.58, 1.0, q.y));
+    let wheel = 1.0 - smoothstep(0.04, 0.27, length((q - vec2f(0.57, 0.53)) * vec2f(1.0, 1.3)));
+    a = min(1.0, body * 0.78 + wheel * 0.55);
   }
   if (a <= 0.002) { discard; }
   return vec4f(o.color.rgb * a * o.color.a, a * o.color.a);
@@ -508,14 +534,21 @@ fn aces(x: vec3f) -> vec3f {
   if (any(raw != raw)) { return vec4f(1.0, 0.0, 1.0, 1.0); }
   let hdr = raw.rgb;
   var c = hdr + bloom * P.z;
-  c = aces(c * 1.25);
+  if (P.x > 0.5) {
+    // Luminance-preserving shoulder keeps saturated emergency lights coloured.
+    let peak = max(c.r, max(c.g, c.b));
+    let hue = c / max(peak, 0.0001);
+    c = mix(aces(c * 1.12), hue * aces(vec3f(peak * 1.12)), 0.38);
+  } else {
+    c = aces(c * 1.25);
+  }
   // Grade: richer saturation, navy shadows, warm highlights.
   let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   c = mix(vec3f(l), c, 1.22);
   c = c * mix(vec3f(0.86, 0.94, 1.18), vec3f(1.06, 1.0, 0.92), smoothstep(0.05, 0.6, l));
-  c += vec3f(0.006, 0.009, 0.022) * (1.0 - smoothstep(0.0, 0.25, l));
+  c += select(vec3f(0.006, 0.009, 0.022), vec3f(0.0015, 0.003, 0.007), P.x > 0.5) * (1.0 - smoothstep(0.0, 0.25, l));
   let v = length((o.uv - 0.5) * vec2f(1.0, 0.8));
-  c *= mix(1.0, 0.6, smoothstep(0.38, 0.82, v));
+  c *= mix(1.0, select(0.6, 0.78, P.x > 0.5), smoothstep(0.38, 0.82, v));
   c = max(c, vec3f(0.0));
   // Damage / bust flash tint.
   c = mix(c, vec3f(0.9, 0.1, 0.12), P.w * smoothstep(0.3, 0.8, v));

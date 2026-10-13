@@ -3,7 +3,7 @@ import { type Box, GROUND_FLOOR } from "../../../shared/sim/city"
 import type { AtlasRegion } from "../atlas"
 import { MAT, type Mesh, type Rgb } from "../mesh"
 import { beam, cylinder, jitter, mix, shade, SKIP, slab, Wall } from "./kit"
-import type { LampLight } from "./types"
+import type { LampLight, ShopSpill } from "./types"
 
 const ROOF: Rgb = [0.2, 0.22, 0.28]
 const ROOF_TRIM: Rgb = [0.33, 0.32, 0.32]
@@ -47,6 +47,7 @@ export type BuildingCtx = {
   m: Mesh
   rng: () => number
   lamps: LampLight[]
+  spills: ShopSpill[]
   /** Other buildings touching this one, for blank party walls. */
   touching: Box[]
   sidewalk: number
@@ -285,8 +286,8 @@ function window(ctx: BuildingCtx, W: Wall, a: number, b: number, y0: number, y1:
     const c = shade(LIT[Math.floor(rng() * LIT.length)]!, 0.66 + rng() * 0.3)
     // Lower pane brighter than the top (a drawn blind or the lamp inside).
     const split = y0 + (y1 - y0) * (0.55 + rng() * 0.2)
-    W.rect(m, a, b, y0, split, -r, c, MAT.emissive)
-    W.rect(m, a, b, split, y1, -r, shade(c, 0.72), MAT.emissive)
+    W.rect(m, a, b, y0, split, -r, c, MAT.window)
+    W.rect(m, a, b, split, y1, -r, shade(c, 0.72), MAT.window)
     const mid = (a + b) / 2
     W.rect(m, mid - 0.045, mid + 0.045, y0, y1, -r + 0.02, FRAME)
     W.rect(m, a, b, split - 0.04, split + 0.04, -r + 0.02, FRAME)
@@ -320,16 +321,21 @@ function shopfront(ctx: BuildingCtx, f: Face, g: number, trim: Rgb, body: Rgb) {
     const gb = b - (k === units - 1 ? 0 : 0.3)
     if (k > 0) W.rect(m, a - 0.3, a + 0.3, 0.55, glassTop, 0, trim)
     const lit = rng() < 0.7
+    if (lit && f.street) {
+      const p = W.p((ga + gb) / 2, 0, 1.1)
+      const a = W.p(ga, 0, 0), b = W.p(gb, 0, 0)
+      ctx.spills.push({ x: p[0], z: p[2], width: (gb - ga) / 2, yaw: Math.atan2(-(b[2] - a[2]), b[0] - a[0]) })
+    }
     const col = lit ? shade(SHOP_LIT[Math.floor(rng() * SHOP_LIT.length)]!, 0.45 + rng() * 0.15) : [0.06, 0.07, 0.1]
     // Stall riser, display glass and the door.
     W.rect(m, ga, gb, 0.55, 0.95, 0, shade(trim, 0.6))
     if (f.detail) W.reveal(m, ga, gb, 0.95, glassTop, r, shade(trim, 0.7))
     const d = f.detail ? -r : 0.03
     const door = ga + (gb - ga) * (0.15 + rng() * 0.6)
-    W.rect(m, ga, door - 0.6, 0.95, glassTop, d, col as Rgb, lit ? MAT.emissive : MAT.glass)
-    W.rect(m, door + 0.6, gb, 0.95, glassTop, d, col as Rgb, lit ? MAT.emissive : MAT.glass)
+    W.rect(m, ga, door - 0.6, 0.95, glassTop, d, col as Rgb, lit ? MAT.window : MAT.glass)
+    W.rect(m, door + 0.6, gb, 0.95, glassTop, d, col as Rgb, lit ? MAT.window : MAT.glass)
     W.rect(m, door - 0.6, door + 0.6, 0.95, glassTop - 0.45, d, DOOR)
-    W.rect(m, door - 0.6, door + 0.6, glassTop - 0.45, glassTop, d, shade(col as Rgb, 0.8), lit ? MAT.emissive : MAT.glass)
+    W.rect(m, door - 0.6, door + 0.6, glassTop - 0.45, glassTop, d, shade(col as Rgb, 0.8), lit ? MAT.window : MAT.glass)
     if (f.detail) {
       // Mullions.
       for (let u = ga + 1.6; u < gb - 0.8; u += 1.6) if (Math.abs(u - door) > 0.8) W.rect(m, u - 0.05, u + 0.05, 0.95, glassTop, d + 0.02, FRAME)

@@ -11,7 +11,7 @@ import { cornerBeds, streetFurniture, trees, yards } from "./city/props"
 import { shop } from "./city/shop"
 import { streets } from "./city/streets"
 import { ramps } from "./city/ramps"
-import type { LampLight } from "./city/types"
+import type { LampLight, ShopSpill } from "./city/types"
 
 export type { LampLight }
 
@@ -127,7 +127,7 @@ const LETTERING_AT = [
 ] as const
 
 /** Builds the whole static district in one vertex buffer: ground, roads, buildings, props. */
-export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[] } {
+export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[]; spills: ShopSpill[] } {
   const m = new BigMesh()
   const rng = mulberry32(city.seed * 7 + 3)
   const lamps: LampLight[] = []
@@ -137,6 +137,7 @@ export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[] } {
   yards(m, city)
   parks(m, city, rng, lamps)
 
+  const spills: ShopSpill[] = []
   const buildings = city.boxes.filter((b) => b.kind === "building" && !b.use)
   const nearest = (x: number, z: number, ok: (b: Box) => boolean) => {
     let best: Box | null = null
@@ -170,7 +171,7 @@ export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[] } {
 
   const touchingOf = (b: Box, pool: Box[]) => pool.filter((o) => o !== b && touches(o, b))
   const draw = (b: Box, touching: Box[]) => {
-    const ctx: BuildingCtx = { m, rng, lamps, touching, sidewalk: city.sidewalk, blade: blades.get(b) ?? null, billboard: boards.get(b) ?? null, lettering: letters.has(b) }
+    const ctx: BuildingCtx = { m, rng, lamps, spills, touching, sidewalk: city.sidewalk, blade: blades.get(b) ?? null, billboard: boards.get(b) ?? null, lettering: letters.has(b) }
     building(ctx, b)
   }
   for (const b of buildings) draw(b, touchingOf(b, buildings))
@@ -185,7 +186,7 @@ export function buildCityMesh(city: City): { mesh: Mesh; lamps: LampLight[] } {
   helipad(m, city)
   waterfront(m, city, rng, lamps)
   outskirts(m, rng, lamps, city.waterZ, draw)
-  return { mesh: m, lamps }
+  return { mesh: m, lamps, spills }
 }
 
 function touches(a: Box, b: Box) {
