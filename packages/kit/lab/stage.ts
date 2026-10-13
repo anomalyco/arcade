@@ -138,7 +138,7 @@ export class Stage {
     this.meshes.upload(this.frame)
     this.particles.uniforms[19]=debug;this.volume.debug=debug
     this.transientRenderer.uniforms.set(this.particles.uniforms);this.transientRenderer.upload(this.transients)
-    this.particles.upload(particles);trail.prepare(6);this.tyre.upload(trail,6,true)
+    this.particles.upload(particles);trail.prepare();this.tyre.upload(trail,true)
     this.tyreFrame[19]=volumes.time;this.device.queue.writeBuffer(this.tyreBuffer,0,this.tyreFrame)
     const enc=this.device.createCommandEncoder(),shadow=this.lighting.shadows&&this.frame[36]>0
     if(shadow){const p=enc.beginComputePass({timestampWrites:timed?this.timer!.start:undefined});p.setPipeline(this.polar);p.setBindGroup(0,this.computeGroup);p.dispatchWorkgroups(Math.ceil(this.frame[36]*256/64));p.end()}
