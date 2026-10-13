@@ -6,7 +6,7 @@ export const JUICE_LABELS = {
   sparks: "Monitor Sparks", casings: "Shell Casings", lamps: "Lamp Flicker", trauma: "Shake & Kill Punch",
 } as const
 export type Juice = Record<keyof typeof JUICE_LABELS, boolean> & { monitorIntensity: number; aoStrength: number }
-export const juiceSettings = (enabled = true): Juice => ({ monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: enabled, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: enabled, trauma: enabled })
+export const juiceSettings = (enabled = true): Juice => ({ monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: false, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: false, trauma: enabled })
 export type Perf = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 const controls: LabControl[] = Object.entries(JUICE_LABELS).map(([key, label]) => ({ key, label }))
 
