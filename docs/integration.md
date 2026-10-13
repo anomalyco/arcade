@@ -244,3 +244,40 @@ Evidence is under `2026-10-13-arcade-integration/upstream-reconciliation/`, rela
 
 Smoke-volume refinement, workbench car-skid/lamp changes, radial UX and the unfinished human rig remain separate
 follow-up PRs. The verified base release does not wait for them.
+
+## Release 2 integration
+
+`release-2` is based on `origin/main` at `6cad7da45004c1cb2a7a7a4388aa799ee10489ee` (after PR #13 `076fb7c` and
+subsequent Carrier merges on `main`). Each follow-up source is merged separately in order:
+
+| Source | Exact committed tip | Original PR |
+| --- | --- | --- |
+| feat/dev-hub | `c13993f224d539a6489048c04a854f839cb68d0f` | #16 |
+| feat/dev-hub-single-origin | `e4d06b8acf3a80b51a3fca2e9c6e0993c705d18a` | #17 |
+| lab-workbench | `806d4f50b56ea089244fa014fce08bd61be322ad` | #15 |
+| smoke-volume-refinement | `52142be34971ce75f03e75f22fbd3550a6b73c41` | #14 |
+| docs/lab-authoring-guide | `a53508f743f543b99df692fe1c46f822ebdc9556` | — |
+
+### Resolution log
+
+- `packages/kit/lab/main.ts`: preserved both the `hubCommands` import and the top-bar `Hub` link from `#16/#17`
+  alongside `#15`'s persistent playground world, switchable yard environments and camera framing hooks.
+- `packages/kit/lab/effects.ts`: combined `#15`'s `activeWalls`/`activeGround` environment queries and playground
+  tyre-trail retention with `#14`'s seeded `volume.reset(activeWalls, seed)` and `growthTime + hold + fade + 1`
+  smoke loop duration.
+- Pending additions (`followup/outbreak-performance` / `perf/outbreak-autoresearch`, `shared-human-rig`, materials
+  library, shadow/edge fixes, and Lab interaction/comparison) enter as separate merge commits once their committed
+  branch tips are finalized; uncommitted worktree changes are never copied.
+
+### Verification
+
+A clean `git archive` export passed on the Studio via Hivemind:
+
+- `bun install --frozen-lockfile`
+- `bun run check:packages`: 60 passed
+- `games/getaway`: 218 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 374 passed, typechecks, production build, smoke, and Worker dry-run
+- `games/outbreak`: 15 passed, typechecks, production build, smoke, and Worker dry-run
+- `games/carrier`: 371 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun scripts/prove-dev-hub.ts`: single-origin redirect, all four game prefixes, Vite HMR across all four games,
+  Catalogue 25-asset rotation/pause/reload persistence, and `--workers` health + WebSocket forwarding passed on Metal.
