@@ -1,9 +1,10 @@
 """Real fixed-camera frames beside generated targets; targets are references, not game output."""
 from pathlib import Path
+import os
 from PIL import Image, ImageDraw
 
 root = Path(__file__).resolve().parents[3] / "captures/outbreak-look"
-targets = Path.home() / "code/home/artifacts/2026-10-13-outbreak-look"
+targets = Path(os.environ.get("OUTBREAK_TARGETS", str(root / "targets")))
 rows = [("street", "Dusk street"), ("open", "Open bedroom door"), ("yard", "Night yard")]
 sheet = Image.new("RGB", (1260, 936), "#151c20")
 draw = ImageDraw.Draw(sheet)

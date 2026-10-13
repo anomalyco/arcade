@@ -4,7 +4,7 @@ import "@fontsource/ibm-plex-mono/500.css"
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "../shared/config"
 import type { MapChoice } from "../shared/maps"
 import { cleanName } from "../shared/protocol"
-import { MODE_IDS, type ModeId, modeOf } from "../shared/sim/modes"
+import { modeChoices, type ModeId, modeOf } from "../shared/sim/modes"
 import { Sound } from "./audio/sound"
 import { Game, SandboxSession } from "./game/game"
 import { Input, type MuxState } from "./game/input"
@@ -139,7 +139,8 @@ async function main() {
     // Between floors the number keys vote for the next mode.
     if (game?.snap?.phase === "end") {
       const v = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(code)
-      const offer = game.snap.mode.votes?.options ?? MODE_IDS
+      const choices = modeChoices(game.snap.mode.id)
+      const offer = (game.snap.mode.votes?.options ?? choices).filter((id) => choices.includes(id))
       if (v >= 0 && offer[v]) vote(offer[v])
       return
     }

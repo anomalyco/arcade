@@ -14,8 +14,8 @@ Fire/water studies remain available in their existing section.
   floor-only behavior. The candidate additionally accepts height, vertical direction and inherited velocity.
 - The cropped generated scene retains production wall, glass and desk specimens. The Lab substitutes a uniform tile
   or asphalt floor and uses neutral material shading. Blackout renderer captures retain the generated floor materials.
-- Inspected sheet: `/Users/kit/code/home/artifacts/2026-10-13-lab-splatter.jpg` (1280×1260).
-  A copy is at `/Users/kit/code/open-source/lamplight/captures/preview/lab-splatter-sheet.jpg`.
+- Inspected sheet: `2026-10-13-lab-splatter.jpg` (1280×1260), relative to the local artifact root.
+  The local preview archive also holds `lab-splatter-sheet.jpg`.
 
 The candidate produces 32 deposits in the floor, wall and desk cases. The straight wall case has 32 wall-normal
 deposits; the grazing case has 13. Glass catches all 32 drops and leaves zero deposits. Frame stepping advances
@@ -69,7 +69,7 @@ From `games/blackout`, with the named Nexus Lab preview running:
 ```sh
 LAB_URL=http://fx-kit-blackout.localhost:1355 hivemind run --kind browser --worker pro -- bun scripts/prove-splatter.ts
 SPLATTER_QUICK=1 LAB_URL=http://fx-kit-playground.localhost:1355 hivemind run --kind browser --worker pro -- bun scripts/prove-splatter.ts
-python3 scripts/splatter-sheet.py /Users/kit/code/home/artifacts/2026-10-13-lab-splatter.jpg
+python3 scripts/splatter-sheet.py "${ARTIFACTS:-captures}/2026-10-13-lab-splatter.jpg"
 ```
 
 The worker is pinned only because this proof connects to the Pro's named localhost preview. `SPLATTER_OUT` changes

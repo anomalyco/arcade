@@ -38,7 +38,7 @@ The generated targets are **not exact geometry contracts**: the street target ad
 the interior target moved a partition. A corrective interior pass still changed the cutaway. Those layout changes
 were rejected. The comparison retains the first targets and the actual unchanged footprints, so the mismatch is visible.
 
-Private evidence directory: `~/code/home/artifacts/2026-10-13-outbreak-look/`.
+Local evidence archive: `2026-10-13-outbreak-look/`, relative to the local artifact root.
 Tracked review sheets: [before / target / after](assets/outbreak-look/comparison.jpg) and
 [closed door](assets/outbreak-look/closed-comparison.jpg).
 `comparison.jpg` is BEFORE / PAINTOVER TARGET / ACTUAL AFTER (1260 × 936); `closed-comparison.jpg` compares the
@@ -108,6 +108,8 @@ git archive cd77303 games/outbreak packages/kit package.json bun.lock bunfig.tom
 hivemind run --fetch captures/outbreak-look/cost/paired.json -- bun games/outbreak/scripts/look-cost.ts
 python3 games/outbreak/scripts/look-sheet.py
 ```
+The sheet reads generated targets from `captures/outbreak-look/targets` by default. Set `OUTBREAK_TARGETS` to an
+existing artifact directory to reuse archived targets and write the comparison sheets alongside them.
 
 Outbreak's 12 tests include mesh repeatability, packed-triangle versus support-height contacts, and strict actor LOS
 after static-room discovery. Metal proof exercises actual F/WASD/Dvorak input, Lab input isolation, real regeneration

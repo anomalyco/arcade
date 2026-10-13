@@ -77,5 +77,5 @@ rm vehicle-kit-workspace.tar
 ```
 
 Raw JSON results are in `perf/vehicle-kit/`. Ignored PNG/WAV originals are in `captures/vehicle-kit/` and the
-retained local evidence is under `~/code/home/artifacts/2026-10-12-vehicle-kit/`. The inspected 1352×1476 contact
-sheet is also at `~/code/open-source/lamplight/captures/preview/vehicle-kit-sheet.jpg`.
+retained local evidence is under `2026-10-12-vehicle-kit/`, relative to the local artifact root. The inspected
+1352×1476 contact sheet is also stored as `vehicle-kit-sheet.jpg` in the local preview archive.

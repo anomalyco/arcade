@@ -63,5 +63,6 @@ A clean `git archive` export of `ee9e25a` plus this source patch passed a frozen
 `bun run check:packages`, both games' `bun run check`, and both Wrangler `deploy --dry-run` commands on the Studio.
 Blackout passed 267 tests; Getaway passed 178 with 12 existing skips. No deployment was performed.
 
-The contact sheet is `/Users/kit/code/open-source/lamplight/captures/preview/lab-fire-water-sheet.jpg` (1440×1280).
-Its inspected 1280-pixel copy is `/Users/kit/code/home/artifacts/2026-10-13-lab-fire-water.jpg`.
+The original contact sheet is `lab-fire-water-sheet.jpg` (1440×1280) in the local preview archive.
+Its inspected 1280-pixel copy is `2026-10-13-lab-fire-water.jpg`, relative to the local artifact root.
+The repository copy is [media/lab-fire-water.jpg](media/lab-fire-water.jpg).

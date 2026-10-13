@@ -70,6 +70,6 @@ that diagnostic; `cost.json` contains the more tightly paired result with preall
 
 ### Evidence
 
-`~/code/home/artifacts/2026-10-13-blackout-window/` contains reviewed, native-size matched crops:
+The local artifact directory `2026-10-13-blackout-window/` contains reviewed, native-size matched crops:
 `wood-before-after.jpg`, `blue-before-after.jpg`, `moon-ablation.jpg`, `movement-settings.jpg`, raw state/timing reports
 `proof.json` and `cost.json`, and `blackout-window-check.log`. All review sheets are at most 1200 pixels wide.

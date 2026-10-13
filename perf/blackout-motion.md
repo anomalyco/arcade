@@ -75,7 +75,7 @@ ragdoll. Frame crops confirm sharper still scenery beside the moving vehicle, wi
 The output is a silent eight-second 1080×600, 60 fps side-by-side clip: vehicle at real time, shotgun at labelled quarter
 speed. Both settled frames are RGB-identical below the OFF/ON label (zero differing pixels). The final package checks,
 267 Blackout tests, typechecks and build pass. Current main's PR #5 squash was merged with an identical source tree.
-Reviewed clip and raw state proof: `~/code/home/artifacts/2026-10-13-blackout-feedback/blackout-motion-blur.mp4`
+Reviewed clip and raw state proof: `2026-10-13-blackout-feedback/blackout-motion-blur.mp4`, relative to the local artifact root.
 and `proof.json`.
 
 ```sh

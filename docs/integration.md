@@ -73,7 +73,7 @@ These client previews support local play. The sniper network proof uses a mocked
   forced tyre-smoke fixture also rendered with motion enabled. Spawn, fire/water and splatter Lab sections rendered.
 - The GPU proof caught and repaired the shared vehicle-sprite return type in the MRT motion shader and added a
   compatible tyre-smoke pipeline for that attachment layout. No browser/GPU errors remained in the cited proofs.
-- Cited local evidence: `~/code/home/artifacts/2026-10-13-arcade-integration/` (screenshots and JSON reports).
+- Cited local evidence: `2026-10-13-arcade-integration/`, relative to the local artifact root (screenshots and JSON reports).
 
 Final verification used a clean `git archive` of `c61876d` on the Studio through Hivemind. Frozen install, the package
 check, all three game checks, all three production smokes, and all three `wrangler deploy --dry-run` commands passed.

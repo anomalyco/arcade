@@ -1,5 +1,5 @@
 import { MAP_CHOICES, type MapChoice, mapChoiceOf, mapLabel } from "../../shared/maps"
-import { MODES, MODE_IDS, type ModeId, TEAM_NAMES, modeOf } from "../../shared/sim/modes"
+import { MODES, modeChoices, type ModeId, TEAM_NAMES, modeOf } from "../../shared/sim/modes"
 import { hostPicks } from "../../shared/sim/host"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
 import "./teams.css"
@@ -41,7 +41,7 @@ export class Menus {
   private key = ""
   private busy = false
   /** The mode Create game will use. */
-  private mode: ModeId = modeOf(localStorage.getItem(MODE_KEY)) ?? "tdm"
+  private mode: ModeId = modeChoices().find((id) => id === localStorage.getItem(MODE_KEY)) ?? "tdm"
   /** What Create game plays on. */
   private maps: MapChoice = mapChoiceOf(localStorage.getItem(MAP_KEY)) ?? "random"
   /** Host controls: the restart waiting on its confirming click ("reset" or a mode), and whether it's a new floor. */
@@ -148,7 +148,7 @@ export class Menus {
 
   /** The mode chips under Create game: a compact grid of short names, the hovered or picked mode's blurb below. */
   private modePicker(): string {
-    return `<div class="modepick">${MODE_IDS.map((m) => `<button class="${m === this.mode ? "on" : ""}" data-act="mode" data-mode="${m}" title="${esc(MODES[m].label)}">${esc(MODES[m].short)}</button>`).join("")}</div>
+    return `<div class="modepick">${modeChoices().map((m) => `<button class="${m === this.mode ? "on" : ""}" data-act="mode" data-mode="${m}" title="${esc(MODES[m].label)}">${esc(MODES[m].short)}</button>`).join("")}</div>
       <div class="modeblurb">${this.blurbHtml(this.mode)}</div>`
   }
 
@@ -267,7 +267,7 @@ export class Menus {
     const armed = this.armed?.what ?? ""
     const target = modeOf(armed)
     const hint = armed === "reset" ? "click again to reset the match" : target ? `click again to switch to ${esc(MODES[target].label.toLowerCase())}` : `restarts for everyone · click twice${picks ? "" : " · <kbd>T</kbd> keeps this open"}`
-    const chips = MODE_IDS.map((id) => {
+    const chips = modeChoices(current).map((id) => {
       const cls = [id === current ? "on" : "", id === armed ? "armed" : ""].join(" ").trim()
       const label = id === armed ? "SURE?" : esc(MODES[id].short)
       return `<button class="${cls}" data-host="${id === current ? "reset" : "mode"}" data-mode="${id}" title="${esc(MODES[id].label)}${id === current ? " (current: reset)" : ""}">${label}</button>`
@@ -282,7 +282,8 @@ export class Menus {
 
   /** Vote buttons for the next mode: the current one ("same again") and the three on offer, with live counts. */
   private votes(v: NonNullable<Snapshot["mode"]["votes"]>, current: ModeId): string {
-    const options = v.options?.length ? v.options : MODE_IDS.slice(0, 4)
+    const choices = modeChoices(current)
+    const options = (v.options?.length ? v.options : choices.slice(0, 4)).filter((id) => choices.includes(id))
     return `<div class="vote"><div class="vh">NEXT MODE <span>click or press 1–${options.length} · no votes keeps ${esc(MODES[current].short)}</span></div><div class="vopts">${options
       .map(
         (id, i) =>

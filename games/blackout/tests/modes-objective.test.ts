@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { END_SECONDS, SPEED } from "../shared/config"
 import { Rng } from "../shared/rng"
-import { MODE_IDS, type ModeId, tally, voteOptions } from "../shared/sim/modes"
+import { MODE_IDS, modeChoices, modeOf, type ModeId, tally, voteOptions } from "../shared/sim/modes"
 import { CTF, type CaptureTheFlag, HP, type Hardpoint, KC, type KillConfirmed, kcTarget } from "../shared/sim/modes-objective"
 import { placesFor } from "../shared/sim/places"
 import { buildSnapshot, rosterOf } from "../shared/sim/view"
@@ -270,6 +270,32 @@ describe("capture the flag", () => {
 })
 
 describe("the vote", () => {
+  test("wizard routing stays explicit while public pickers and every public vote omit it", () => {
+    expect(modeOf("wizards")).toBe("wizards")
+    expect(modeChoices()).not.toContain("wizards")
+    for (const mode of modeChoices()) {
+      expect(modeChoices(mode)).not.toContain("wizards")
+      for (let seed = 0; seed < 100; seed++) expect(voteOptions(mode, new Rng(seed))).not.toContain("wizards")
+      expect(tally(["wizards", "wizards"], mode, new Rng(1))).toBe(mode)
+    }
+    const publicRoom = modeWorld("ffa", ["a", "b"])
+    publicRoom.endMatch()
+    publicRoom.vote("a", "wizards")
+    expect(publicRoom.votes.size).toBe(0)
+    expect(buildSnapshot(publicRoom, "a").mode.votes!.options).not.toContain("wizards")
+  })
+
+  test("an explicitly wizard room can reset and vote for another wizard round", () => {
+    expect(modeChoices("wizards")).toContain("wizards")
+    const w = modeWorld("wizards", ["a", "b"])
+    w.endMatch()
+    const votes = buildSnapshot(w, "a").mode.votes!
+    expect(votes.options[0]).toBe("wizards")
+    w.vote("a", "wizards")
+    expect(tally(w.votes.values(), w.mode.id, w.rng, votes.options)).toBe("wizards")
+    expect(buildSnapshot(w, "a").mode.votes!.counts.wizards).toBe(1)
+  })
+
   test("four options: the current mode first, three others, the same for the same seed", () => {
     for (const cur of MODE_IDS) {
       const o = voteOptions(cur, new Rng(5))
