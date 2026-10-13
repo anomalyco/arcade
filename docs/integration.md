@@ -259,6 +259,7 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | docs/lab-authoring-guide | `a53508f743f543b99df692fe1c46f822ebdc9556` | — |
 | shared-human-rig | `5a55cb394ea1f01de6a3bddc809ba13e565f27af` | — |
 | lab-interaction | `a91975bfaf3355daa4064379cfedfc54cb391ff8` | — |
+| perf/outbreak-autoresearch | `2fbba0994aa5d4f82d473dbddcfa4d2b619bf9aa` | #19 |
 
 ### Resolution log
 
@@ -276,9 +277,16 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
   Meta shortcut passthrough (`Stage.orbit/pan/zoomBy` keep `smooth = false` by default for demand-driven Catalogue rendering).
   Updated `packages/kit/lab/prove-workbench.ts` step 10 (`fixture:smoke-room` A/B scrub) to adjust `#14`'s `Radius`
   (`radius`) and `Extinction` (`extinction`) sliders rather than the pre-`#14` generic `Size`/`Density` sliders.
-- Pending additions (`perf/outbreak-autoresearch`, materials library, shadow/edge fixes, rig-page, dev-control, and
-  soldier-run) enter as separate merge commits once their committed branch tips are finalized; uncommitted worktree
-  changes are never copied.
+- `perf/outbreak-autoresearch` (#19) vs `shared-human-rig`: resolved `games/outbreak/src/main.ts` and
+  `games/outbreak/src/survivor.ts` semantically so `FrameClock` fixed-tick pacing, camera-frustum lamp culling,
+  active-building cutaway routing, and substepped `Survivor.draw` preserve `shared-human-rig`'s Zombie pose preview
+  (`strideScale`, `timingBias`, `footDrag`, `chest`/`head` springs, and `human()` harness query) while keeping
+  default Survivor behavior unchanged. Shared `@arcade/kit/gpu/renderer.ts` single-in-flight pacing (`inflight >= 1`,
+  `onIdle`) and `depthStoreOp: hasSmoke ? "store" : "discard"` leave Getaway, Carrier, and Lab `Stage` untouched and
+  preserve Blackout's `requestAnimationFrame` coalescing (`this.pending` is immediately scheduled when `onSubmittedWorkDone`
+  completes).
+- Pending additions (materials library, shadow/edge fixes, rig-page, dev-control, and soldier-run) enter as separate
+  merge commits once their committed branch tips are finalized; uncommitted worktree changes are never copied.
 
 ### Verification
 
@@ -288,8 +296,8 @@ A clean `git archive` export passed on the Studio via Hivemind:
 - `bun run check:packages`: 76 passed
 - `games/getaway`: 234 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
 - `games/blackout`: 397 passed, typechecks, production build, smoke, and Worker dry-run
-- `games/outbreak`: 16 passed, typechecks, production build, smoke, and Worker dry-run
-- `games/carrier`: 371 passed, typechecks, production build, smoke, and Worker dry-run
+- `games/outbreak`: 25 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove.ts`, and `scripts/prove-human.ts`
+- `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
 - `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity against `8223033` in both `old` and `new` modes
 - `bun scripts/prove-dev-hub.ts`: single-origin redirect, all four game prefixes, Vite HMR across all four games,
   Catalogue 25-asset rotation/pause/reload persistence, and `--workers` health + WebSocket forwarding passed on Metal.
