@@ -31,7 +31,11 @@ try {
   browser = await chromium.launch({
     headless: true,
     timeout: 10_000,
-    args: ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+    args: [
+      "--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+      // Linux needs a Vulkan-backed compositor to present WebGPU swapchain images.
+      ...(process.platform === "linux" ? ["--enable-features=Vulkan", "--use-vulkan=swiftshader", "--disable-vulkan-surface"] : []),
+    ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
   const errors = []

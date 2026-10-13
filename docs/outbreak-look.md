@@ -113,3 +113,7 @@ Outbreak's 12 tests include mesh repeatability, packed-triangle versus support-h
 after static-room discovery. Metal proof exercises actual F/WASD/Dvorak input, Lab input isolation, real regeneration
 sliders and a second 720 × 900 viewport, with zero page/WebGPU errors. Getaway: 173 passed, 12 existing skips;
 Blackout: 266 passed; shared Lab: 6 passed. All three builds, Worker dry-runs and production smoke gates passed.
+
+The first GitHub Outbreak smoke failed on Linux canvas presentation, despite passing Metal. An isolated Linux
+reproduction traced `Instance dropped` to the software compositor's missing WebGPU swapchain backing. The smoke
+launcher now enables Vulkan/SwiftShader presentation on Linux; all three production smokes then passed there.

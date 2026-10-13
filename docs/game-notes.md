@@ -64,6 +64,13 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Linux software WebGPU needs presentation support too.** The production smoke browser's ANGLE SwiftShader
+  adapter initialized, then lost its instance at the first Outbreak canvas presentation with
+  `Could not find SharedImageBackingFactory` / `Instance dropped error in getCompilationInfo`.
+  `scripts/smoke.mjs` now enables Vulkan with SwiftShader and disables the native Vulkan surface on Linux.
+  The failure reproduced in headless Chromium 1248 on Linux; all three production smokes passed with these flags.
+  Keep errors fatal: accepting adapter creation alone would miss this failure.
+
 - **Separate scenery memory from actor LOS.** Outbreak's initial cone blacked out most of its neighbourhood.
   Static room discovery now supplies the scenery texture while `Vision.visible` retains strict occlusion for actors.
   A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
