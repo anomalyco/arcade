@@ -6,7 +6,7 @@ export function createMaterials(context:LabContext,adapters:readonly MaterialAda
   const settings={material:0}
   const current=()=>entries[settings.material]
   return {id:"materials",label:"Materials",settings,
-    controls:entries.length?[{key:"material",label:"Material",type:"select",options:entries.map((e,value)=>({value,label:`${e.adapter.game} · ${e.code} ${e.name}`}))}]:[],
+    controls:entries.length?[{key:"material",label:"Material",group:"Calibration",type:"select",options:entries.map((e,value)=>({value,label:`${e.adapter.game} · ${e.code} ${e.name}`}))}]:[],
     prepare:()=>current()?.adapter.prepare?.(current()!.code,context),
     draw:pass=>{const e=current();e?.adapter.draw?.(pass,e.code)},
     telemetry:()=>current()?.adapter.draw?`${current()!.adapter.game} · ${current()!.name}`:"Materials · renderer pending",

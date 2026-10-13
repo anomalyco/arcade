@@ -33,7 +33,7 @@ function alleyCutaway(p:readonly number[]){
 export const fireWaterSection:SectionFactory=context=>{
   const {stage}=context,meshes=stage.meshes,fx=new FireWater(context.device),legacy=new GameSprites(context)
   let previousLighting={...stage.lighting}
-  const settings={effect:"fire",style:1,environment:"downtown",zoom:1,playing:true,loop:true,sirens:true,age:0}
+  const settings={effect:"fire",style:1,environment:"downtown",seed:7,zoom:1,playing:true,loop:true,sirens:true,age:0}
   let environmentModel=-1,game:Game|undefined,props:StreetProps|undefined,time=0,dt=0,lights:LabLight[]=[]
   const camera=new Camera();camera.snap(12,10);camera.dist=40
   const addModel=(m:{v:number[]})=>meshes.add(m.v,12,c=>[2,5,8,9].includes(c)?1.5:0)
@@ -42,14 +42,16 @@ export const fireWaterSection:SectionFactory=context=>{
     if(settings.effect==="water")props?.trigger("hydrant",0,0)
     else if(settings.effect==="fireball")props?.trigger("propane",0,0)
     else game?.labTrigger(settings.effect,"rifle","wall",12,10)
+    context.sync()
   }
   const load=()=>{
     let vertices:number[]=[]
+    const envSeed=Math.max(1,Math.round(settings.seed))
     if(settings.environment==="alley"){
-      const env=getawayEnvironment("alley",7);lights=env.lights.slice(0,4)
+      const env=getawayEnvironment("alley",envSeed);lights=env.lights.slice(0,4)
       vertices=alleyCutaway(env.vertices)
     }else{
-      const generated=blackoutEnvironment(settings.environment==="office"?"office":"downtown",7)
+      const generated=blackoutEnvironment(settings.environment==="office"?"office":"downtown",envSeed)
       const map={...generated,walls:generated.walls.slice(3),props:generated.props.slice(1),glass:generated.glass.slice(1)}
       // The same production builder as the Blackout effects environment, centered for shared FX.
       levelSink=(level:LevelData)=>{for(const chunk of level.chunks){const p=unpackLevel(chunk.data);for(let i=0;i<p.length;i+=10){p[i]-=12;p[i+2]-=10}for(const value of p)vertices.push(value)}}
@@ -65,23 +67,31 @@ export const fireWaterSection:SectionFactory=context=>{
   }
   let levelSink:(level:LevelData)=>void=()=>{}
   const controls:LabControl[]=[
-    {key:"effect",label:"Effect",type:"select",options:[{value:"fire",label:"Fire"},{value:"wreck",label:"Burning wreck"},{value:"explosion",label:"Grenade fire"},{value:"fireball",label:"Getaway fireball"},{value:"water",label:"Hydrant water"}],change:trigger},
-    {key:"style",label:"Style",type:"select",options:fireStyles,change:()=>context.sync()},
-    {key:"environment",label:"Environment",type:"select",options:[{value:"downtown",label:"Downtown night"},{value:"office",label:"Office"},{value:"alley",label:"Getaway alley"}],change:load},
-    {key:"zoom",label:"Zoom",type:"range",min:1,max:2.8,step:.1},
-    {key:"playing",label:"Play"},{key:"loop",label:"Loop"},{key:"sirens",label:"Siren lights"},
-    {key:"trigger",label:"Retrigger",type:"action",run:trigger},
+    {key:"effect",label:"Effect",group:"Emitter",type:"select",options:[{value:"fire",label:"Fire"},{value:"wreck",label:"Burning wreck"},{value:"explosion",label:"Grenade fire"},{value:"fireball",label:"Getaway fireball"},{value:"water",label:"Hydrant water"}],change:trigger},
+    {key:"style",label:"Style",group:"Emitter",type:"select",options:fireStyles,change:()=>context.sync()},
+    {key:"environment",label:"Environment",group:"Emitter",type:"select",options:[{value:"downtown",label:"Downtown night"},{value:"office",label:"Office"},{value:"alley",label:"Getaway alley"}],change:load},
+    {key:"zoom",label:"Zoom",group:"Emitter",type:"range",min:1,max:2.8,step:.1,unit:"×"},
+    {key:"playing",label:"Play",group:"Emitter"},{key:"loop",label:"Loop",group:"Emitter"},{key:"sirens",label:"Siren lights",group:"Emitter"},
+    {key:"trigger",label:"Retrigger",group:"Emitter",type:"action",run:trigger},
   ]
   const ranges:Record<string,[number,number,number]>={height:[1,7,.1],width:[.2,2,.05],speed:[.2,5,.1],erosion:[.05,1.2,.05],embers:[0,100,1],smoke:[0,1,.05],light:[0,8,.1],shimmer:[0,4,.1],spray:[0,220,1],mist:[0,1,.05],puddle:[1,6,.1],sheen:[0,6,.1],roughness:[0,1,.05],foam:[0,2,.05]}
   for(const [family,variants] of [["fire",fx.fire],["water",fx.water]] as const){
     for(const key of Object.keys(variants[1])){
       const name=`${family}.${key}`,[min,max,step]=ranges[key]
       Object.defineProperty(settings,name,{enumerable:true,get:()=>Reflect.get(variants[Math.max(1,settings.style)],key),set:(value:number)=>Reflect.set(variants[Math.max(1,settings.style)],key,value)})
-      controls.push({key:name,label:key[0].toUpperCase()+key.slice(1),group:family==="fire"?"Flame":"Water",type:"range",min,max,step,enabled:()=>settings.style>0&&(settings.effect==="water")===(family==="water")})
+      controls.push({
+        key:name,label:key[0].toUpperCase()+key.slice(1),group:family==="fire"?"Flame":"Water",type:"range",min,max,step,
+        visible:s=>(s.effect==="water")===(family==="water"),
+        enabled:()=>settings.style>0&&(settings.effect==="water")===(family==="water"),
+      })
     }
   }
-  controls.push({key:"copy",label:"Copy JSON",type:"action",run:async()=>navigator.clipboard.writeText(JSON.stringify({settings,fire:fx.fire,water:fx.water},null,2))})
+  controls.push({key:"copy",label:"Copy JSON",group:"Emitter",type:"action",run:async()=>navigator.clipboard.writeText(JSON.stringify({settings,fire:fx.fire,water:fx.water},null,2))})
   return {id:"fire-water",label:"Fire and water",settings,controls,
+    retrigger:trigger,
+    reroll:()=>{settings.seed=(settings.seed*1664525+1013904223>>>0)%999+1;load()},
+    frameTarget:()=>({x:0,y:1,z:0,dist:14}),
+    objects:()=>[{id:"emitter:fire-water",label:`${settings.effect} Emitter`,category:"emitter",x:0,y:0.2,z:0,radius:1.1}],
     enter(){
       previousLighting={...stage.lighting}
       // The wrapper keeps subsequent environment rebuilds bound to the current geometry sink.

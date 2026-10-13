@@ -1,10 +1,41 @@
 export type LabValue = boolean | number | string
 export type LabSettings = Record<string, LabValue>
-export type LabControl = { key: string; label: string; group?: string; change?: (value: LabValue) => void; enabled?: (settings: Readonly<LabSettings>) => boolean } & (
-  { type?: "range"; min: number; max: number; step?: number } | { type?: "select"; options: readonly { value: number | string; label: string }[] } | { type?: "toggle"; on?: number; off?: number } | { type: "action"; run: (button: HTMLButtonElement) => void | Promise<void> }
+export type LabControl = {
+  key: string
+  label: string
+  group?: string
+  unit?: string
+  folded?: boolean
+  visible?: (settings: Readonly<LabSettings>) => boolean
+  change?: (value: LabValue) => void
+  enabled?: (settings: Readonly<LabSettings>) => boolean
+} & (
+  | { type?: "range"; min: number; max: number; step?: number }
+  | { type?: "select"; options: readonly { value: number | string; label: string }[] }
+  | { type?: "toggle"; on?: number; off?: number }
+  | { type: "action"; run: (button: HTMLButtonElement) => void | Promise<void> }
 )
 export type LabRow = { group: string; control?: LabControl }
 const wrap = (index: number, length: number) => (index % length + length) % length
+
+export function inferControlUnit(key: string, label: string, explicit?: string): string {
+  if (explicit !== undefined) return explicit
+  if (/\b(ms)\b/i.test(label) || /Ms$/.test(key)) return "ms"
+  if (/\b(m\/s)\b/i.test(label) || /(speed|lift)/i.test(key) && !/rate|anim|slow/i.test(key)) return "m/s"
+  if (/(life|duration|interval|fade|delay|time|persistence|retrigger)/i.test(key) && !/rate/i.test(key)) return "s"
+  if (/(radius|size|width|length|height|distance|spacing|targetX|targetZ|ahead|puddle|depth)/i.test(key)) return "m"
+  if (/(angle|azimuth|elevation|yaw|pitch)$/i.test(key)) return "°"
+  if (/^rate$/i.test(key)) return "/s"
+  return ""
+}
+
+export function formatLabValue(value: LabValue, step = 0.01, unit = ""): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return String(value)
+  const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3
+  const rounded = Number(value.toFixed(Math.min(4, decimals + 1)))
+  const text = Number.isInteger(rounded) ? String(rounded) : String(rounded)
+  return unit ? `${text} ${unit}` : text
+}
 
 /** DOM-free navigation and edits, shared by pointer, keyboard and search. */
 export class LabNavigation {
@@ -15,19 +46,54 @@ export class LabNavigation {
 
   constructor(readonly settings: LabSettings, controls: LabControl[], private change?: (key: string, value: LabValue) => void) {
     this.defaults = { ...settings }
+    this.append(controls)
+  }
+
+  append(controls: readonly LabControl[]): LabRow[] {
     const groups = new Map<string, LabControl[]>()
     for (const control of controls) {
       const group = control.group ?? "Controls"
       if (!groups.has(group)) groups.set(group, [])
       groups.get(group)!.push(control)
+      if (control.folded) this.folded.add(group)
     }
-    for (const [group, controls] of groups) this.rows.push({ group }, ...controls.map(control => ({ group, control })))
-    this.active = this.rows[0]
+    const created: LabRow[] = []
+    for (const [group, items] of groups) {
+      const existingHeader = this.rows.some(row => !row.control && row.group === group)
+      const newRows: LabRow[] = [
+        ...(existingHeader ? [] : [{ group }]),
+        ...items.map(control => ({ group, control })),
+      ]
+      if (existingHeader) {
+        let lastIdx = -1
+        for (let i = 0; i < this.rows.length; i++) if (this.rows[i]!.group === group) lastIdx = i
+        this.rows.splice(lastIdx + 1, 0, ...newRows)
+      } else {
+        this.rows.push(...newRows)
+      }
+      created.push(...newRows)
+    }
+    this.active ??= this.visibleRows[0] ?? this.rows[0]
+    return created
   }
 
-  get visibleRows() { return this.rows.filter(row => !row.control || !this.folded.has(row.group)) }
+  isRowVisible(row: LabRow): boolean {
+    if (row.control) {
+      return row.control.visible ? row.control.visible(this.settings) : true
+    }
+    const groupControls = this.rows.filter(r => r.control && r.group === row.group)
+    if (!groupControls.length) return true
+    return groupControls.some(r => (r.control!.visible ? r.control!.visible(this.settings) : true))
+  }
+
+  get visibleRows() {
+    return this.rows.filter(row => {
+      if (!this.isRowVisible(row)) return false
+      return !row.control || !this.folded.has(row.group)
+    })
+  }
   move(direction: number, groups = false) {
-    const rows = groups ? this.rows.filter(row => !row.control) : this.visibleRows
+    const rows = groups ? this.rows.filter(row => !row.control && this.isRowVisible(row)) : this.visibleRows
     if (!rows.length) return
     const index = groups ? rows.findIndex(row => row.group === this.active?.group) : rows.indexOf(this.active!)
     this.active = rows[wrap(index + direction, rows.length)]
@@ -64,9 +130,9 @@ export class LabNavigation {
     this.set(c, Math.max(c.min, Math.min(c.max, value)))
     return true
   }
-  reset(group = false) {
-    for (const row of this.rows) if (row.control && (group ? row.group === this.active?.group : row === this.active)) {
-      this.set(row.control, this.defaults[row.control.key]!)
+  reset(group = false, targetGroup = this.active?.group) {
+    for (const row of this.rows) if (row.control && (group ? row.group === targetGroup : row === this.active)) {
+      if (row.control.key in this.defaults) this.set(row.control, this.defaults[row.control.key]!)
     }
   }
   randomize(group = this.active?.group) {
@@ -85,7 +151,7 @@ export class LabNavigation {
   search(query: string) {
     const needle = query.toLowerCase().replace(/\s/g, "")
     return this.rows.flatMap(row => {
-      if (!row.control) return []
+      if (!row.control || !this.isRowVisible(row)) return []
       const text = `${row.control.label} ${row.group} ${row.control.key}`.toLowerCase()
       let end = -1, score = 0
       for (const char of needle) {

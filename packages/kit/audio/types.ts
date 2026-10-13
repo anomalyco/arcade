@@ -265,4 +265,5 @@ export type AudioLabSection = {
   prepare?(): void
   draw?(pass: GPURenderPassEncoder): void
   telemetry?(): string
+  retrigger?(): void
 }
