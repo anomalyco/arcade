@@ -1,3 +1,6 @@
+import { SmokeRenderer } from "./smoke"
+import type { SmokeTrail } from "../game/smoke-trail"
+import { FrameTimer } from "./frame-timer"
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
@@ -12,7 +15,7 @@ export const SPRITE_FLOATS = 12
 const MAX_SPRITES = 6000
 const BLOOM_LEVELS = 5
 
-type Model = { vbuf: GPUBuffer; count: number }
+type Model = { vbuf: GPUBuffer; count: number; castsShadow: boolean }
 type CityModel = { vbuf: GPUBuffer; count: number; chunks: CityChunk[] }
 
 /** One instanced draw: a model and its packed instance data. */
@@ -91,6 +94,15 @@ function aabbInFrustum(
 }
 
 export class Renderer {
+  private readonly smoke: SmokeRenderer
+  private timer: FrameTimer | null = null
+  measure = false
+  measureNextFrame() {
+    if (!this.device.features.has("timestamp-query")) throw new Error("Total GPU timing requires timestamp-query")
+    this.timer ??= new FrameTimer(this.device)
+    this.measure = true
+  }
+  totalGpuMs() { return this.timer!.collect() }
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private instBuf: GPUBuffer
@@ -178,6 +190,7 @@ export class Renderer {
         { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 8 }) },
       ],
     })
+    this.smoke = new SmokeRenderer(d, mainLayout)
     const shadowLayout = d.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }] })
     this.shadowGroup = d.createBindGroup({ layout: shadowLayout, entries: [{ binding: 0, resource: { buffer: this.frameBuf } }] })
     this.postLayout = d.createBindGroupLayout({
@@ -332,10 +345,12 @@ export class Renderer {
     this.beams.count = count
   }
 
-  addModel(mesh: Mesh) {
-    this.models.push({ vbuf: this.upload(mesh.toArray()), count: mesh.count })
+  addModel(mesh: Mesh, castsShadow = true) {
+    this.models.push({ vbuf: this.upload(mesh.toArray()), count: mesh.count, castsShadow })
     return this.models.length - 1
   }
+
+  setSmoke(trail: SmokeTrail, visible: boolean) { this.smoke.upload(trail, visible) }
 
   resize(w: number, h: number) {
     if (w === this.width && h === this.height && this.hdr) return
@@ -449,6 +464,7 @@ export class Renderer {
 
     const enc = d.createCommandEncoder()
     const sp = enc.beginRenderPass({
+      timestampWrites: this.measure ? this.timer!.start : undefined,
       colorAttachments: [],
       depthStencilAttachment: { view: this.shadowView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
     })
@@ -488,6 +504,7 @@ export class Renderer {
     for (let i = 0; i < ranges.length; i++) {
       const r = ranges[i]!
       const m = this.models[r.model]!
+      if (!m.castsShadow) continue
       sp.setVertexBuffer(0, m.vbuf)
       sp.draw(m.count, r.count, 0, r.first)
     }
@@ -553,6 +570,7 @@ export class Renderer {
       pass.setVertexBuffer(0, this.spriteBuf, 0)
       pass.draw(6, alphaCount)
     }
+    this.smoke.draw(pass)
     if (addCount) {
       pass.setPipeline(this.pipes.spriteAdd!)
       pass.setVertexBuffer(0, this.spriteBuf, addOffset)
@@ -597,6 +615,8 @@ export class Renderer {
     fp.setBindGroup(0, g.composite)
     fp.draw(3)
     fp.end()
+    if (this.measure) this.timer!.finish(enc, this.context.getCurrentTexture().createView())
+    this.measure = false
     d.queue.submit([enc.finish()])
   }
 }

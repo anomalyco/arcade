@@ -1,7 +1,7 @@
 export const MAX_LIGHTS = 128
 
 /** Shared frame uniforms, lights and lighting model for every lit pipeline. */
-const common = /* wgsl */ `
+export const common = /* wgsl */ `
 struct Frame {
   viewProj: mat4x4f,
   lightViewProj: mat4x4f,
@@ -30,6 +30,23 @@ struct Light {
 
 fn hash2(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
+}
+
+// Single-scattering approximation. No shadow map: the small puffs receive coloured practical light
+// without behaving like solid moon-shadow casters. Bounded to the nearest practical-light prefix.
+fn smokeLight(world: vec3f, n: vec3f) -> vec3f {
+  var c = mix(vec3f(0.07, 0.09, 0.15), vec3f(0.40, 0.46, 0.61), n.y * 0.5 + 0.5);
+  for (var i = 0u; i < min(u32(F.screen.z), 48u); i++) {
+    let li = lights[i];
+    let d = li.pos.xyz - world;
+    let d2 = dot(d, d);
+    if (d2 >= li.pos.w * li.pos.w) { continue; }
+    let dist = sqrt(max(d2, 0.001));
+    var att = pow(1.0 - dist / li.pos.w, 2.0);
+    if (li.dir.w > -1.0) { att *= smoothstep(li.dir.w, min(1.0, li.dir.w + 0.08), dot(-d / dist, normalize(li.dir.xyz))); }
+    c += li.color.rgb * li.color.w * att * (0.12 + 0.22 * max(0.0, dot(n, d / dist)));
+  }
+  return min(c / (vec3f(1.0) + c * 0.45), vec3f(0.95));
 }
 
 fn shadow(world: vec3f, n: vec3f, ndl: f32) -> f32 {
@@ -365,7 +382,8 @@ struct Inst {
 /**
  * Sprites: camera-facing glows and smoke, ground-aligned decals (rings, skid marks, light pools) and the
  * helicopter beam. kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 5 beam, 6 spark,
- * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow.
+ * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow,
+ * 10 cold condensation, 13 attached exhaust flame.
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -382,6 +400,7 @@ struct SOut {
   @location(1) color: vec4f,
   @location(2) @interpolate(flat) kind: f32,
   @location(3) @interpolate(flat) extra: f32,
+  @location(4) height: f32,
 }
 
 @vertex fn vs(@builtin(vertex_index) vi: u32, s: SIn) -> SOut {
@@ -390,10 +409,11 @@ struct SOut {
   let kind = s.misc.x;
   var world: vec3f;
   let size = s.posSize.w;
-  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || kind >= 7.0) {
+  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 13.0) {
     let r = s.misc.y;
     let cr = cos(r); let sr = sin(r);
-    let lc = vec2f(c.x * size, c.y * size * max(s.misc.z, 0.01));
+    let taper = 1.0;
+    let lc = vec2f(c.x * size * taper, c.y * size * max(s.misc.z, 0.01));
     world = s.posSize.xyz + vec3f(lc.x * cr + lc.y * sr, 0.0, -lc.x * sr + lc.y * cr);
   } else if (kind == 5.0) {
     // Beam: a camera-facing quad stretched from the origin (pos) to the ground target (misc.yzw is target).
@@ -411,12 +431,16 @@ struct SOut {
     let up = cross(toCam, right);
     world = s.posSize.xyz + (right * c.x + up * c.y) * size;
     // Nudge glows toward the camera so they are not swallowed by their own lamp geometry.
-    world += toCam * size * 0.5;
+    world += toCam * size * select(0.5, 0.0, kind == 10.0);
   }
   var o: SOut;
   o.pos = F.viewProj * vec4f(world, 1.0);
   o.uv = c;
   o.color = s.color;
+  o.height = world.y;
+  if (kind == 10.0) {
+    o.color = vec4f(s.color.rgb * smokeLight(s.posSize.xyz, vec3f(0.0, 0.7, 0.0)), s.color.a);
+  }
   if (kind == 1.0) {
     // Per-vertex smoke lighting: soft volume, no moon shadow-map sampling or casting.
     var illumination = vec3f(0.24, 0.29, 0.42);
@@ -441,11 +465,32 @@ struct SOut {
   let r = length(o.uv);
   var a = 0.0;
   let k = o.kind;
+  var col = o.color.rgb;
   if (k == 0.0 || k == 6.0) {
     a = pow(max(0.0, 1.0 - r), 2.2);
   } else if (k == 1.0) {
     let billow = 0.88 + 0.12 * sin(o.uv.x * 5.0 + o.extra * 17.0) * sin(o.uv.y * 4.0 - o.extra * 11.0);
     a = pow(max(0.0, 1.0 - r * r), 2.0) * billow;
+  } else if (k == 10.0) {
+    // Three overlapping lobes, with a coherent shaded underside rather than radial grey haze.
+    let angle = (o.extra - 0.5) * 1.6;
+    let q = vec2f(o.uv.x * cos(angle) - o.uv.y * sin(angle), o.uv.x * sin(angle) + o.uv.y * cos(angle));
+    let l0 = (q * vec2f(1.05, 1.18) + vec2f(0.2, 0.02)) / 0.69;
+    let l1 = (q + vec2f(-0.32, -0.1)) / 0.51;
+    let l2 = (q + vec2f(0.04, -0.38)) / 0.47;
+    let d0 = length(l0); let d1 = length(l1); let d2 = length(l2);
+    let sphere = select(select(l0, l1, d1 < d0), l2, d2 < min(d0, d1));
+    let lobes = min(d0, min(d1, d2)) - 1.0;
+    let normal = vec3f(sphere, sqrt(max(0.0, 1.0 - dot(sphere, sphere))));
+    let light = max(0.0, dot(normal, normalize(vec3f(-0.45, 0.7, 0.55))));
+    a = 1.0 - smoothstep(-0.15, 0.10, lobes);
+    col *= mix(vec3f(0.16, 0.22, 0.36), vec3f(1.3, 1.25, 1.16), light);
+    a *= smoothstep(-0.12, 0.3, o.height);
+  } else if (k == 13.0) {
+    let along = o.uv.y * 0.5 + 0.5;
+    let width = (1.0 - along) * (0.65 + 0.14 * sin(along * 15.0 + o.extra * 17.0));
+    a = (1.0 - smoothstep(width * 0.55, width, abs(o.uv.x))) * (1.0 - along);
+    col = mix(vec3f(1.0, 0.85, 0.52), col, smoothstep(0.05, 0.55, along));
   } else if (k == 2.0) {
     a = smoothstep(0.08, 0.0, abs(r - 0.88)) + 0.12 * smoothstep(0.9, 0.0, r);
   } else if (k == 3.0) {
@@ -471,7 +516,7 @@ struct SOut {
     a = min(1.0, body * 0.78 + wheel * 0.55);
   }
   if (a <= 0.002) { discard; }
-  return vec4f(o.color.rgb * a * o.color.a, a * o.color.a);
+  return vec4f(col * a * o.color.a, a * o.color.a);
 }
 `
 
