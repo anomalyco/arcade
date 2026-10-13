@@ -1,4 +1,4 @@
-// Dev-only audition page: http://localhost:5173/labs/wings/src/audio/preview.html
+// Dev-only audition page: http://localhost:5173/arcade/wings/src/audio/preview.html
 import type { GameEvent, Vec3, VehicleEntity, VehicleKind, WeaponId } from "../sim/types"
 import { VEHICLES, WEAPONS } from "../sim/vehicles"
 import { createAudio } from "../audio"

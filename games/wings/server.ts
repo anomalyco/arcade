@@ -1,4 +1,4 @@
-// Cloudflare Worker entry: static assets under /labs/wings/, REST API, and the Room / RoomDirectory Durable Objects.
+// Cloudflare Worker entry: static assets under /arcade/wings/, REST API, and the Room / RoomDirectory Durable Objects.
 import { DEFAULT_ROOM_CONFIG, EMPTY_ROOM_TTL_MS } from "./src/sim/protocol"
 import type { ClientMessage, RoomSummary, ServerMessage } from "./src/sim/protocol"
 import { RoomEngine, sanitizeConfig } from "./src/sim/room-engine"
@@ -12,7 +12,7 @@ type Env = {
   EMPTY_ROOM_TTL_MS?: string
 }
 
-const BASE = "/labs/wings"
+const BASE = "/arcade/wings"
 const CODE_RE = /^[a-z0-9]{3,16}$/
 const CODE_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 const DIRECTORY_STALE_MS = 30_000
@@ -82,7 +82,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     const prefixed = url.pathname === BASE || url.pathname.startsWith(BASE + "/")
-    // The route's trailing wildcard also matches e.g. /labs/wingsuit; leave those to the origin.
+    // Only /arcade/wings and /arcade/wings/* are routed here; anything else goes to the origin.
     if (url.hostname === "anoma.ly" && !prefixed) return fetch(request)
     if (url.pathname === BASE) {
       url.pathname = BASE + "/"

@@ -10,7 +10,7 @@ All sound is procedural Web Audio, so it ships zero audio bytes and doesn't bloc
 | `engines.ts` | Per-vehicle `EngineVoice` (jets and the rotor) plus the shared own-vehicle `Wind`. |
 | `sfx.ts` | Weapons, impacts, explosions, flares, the radar pulse, stings, UI blips, and cockpit tones. |
 | `engine.ts` | `createAudio()`: voice selection, event routing, lifecycle. |
-| `preview.html/.ts` | Audition page: `/labs/wings/src/audio/preview.html`. |
+| `preview.html/.ts` | Audition page: `/arcade/wings/src/audio/preview.html`. |
 
 ## Signal flow
 

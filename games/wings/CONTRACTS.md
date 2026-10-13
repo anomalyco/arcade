@@ -39,7 +39,7 @@ You may add private helper types/functions inside your own files.
 - Shared lighting/fog constants stay in `src/render/world/palette.ts`.
 
 ## Integration points
-- `src/net.ts` (Server agent) exports `connectRoom(code, name, handlers)` returning `{ send(msg), close() }`, and `createLocalRoom(config, name, handlers)` using `RoomEngine` in-browser for offline play. Handlers: `onMessage(ServerMessage)`, `onStatus("connecting"|"open"|"closed")`. Also `listRooms()`, `createRoom(config)`, `quickPlay()` REST helpers. Base path for all HTTP/WS: `${import.meta.env.BASE_URL}api/...` (i.e. `/labs/wings/api/...`).
-- Server HTTP API (Worker, after stripping the `/labs/wings` prefix): `GET /api/rooms`, `POST /api/rooms` (body: Partial<RoomConfig>) → `{ code }`, `GET /api/quickplay` → `{ code }`, `GET /api/room?code=XXXX` (WebSocket upgrade), `GET /api/health`.
+- `src/net.ts` (Server agent) exports `connectRoom(code, name, handlers)` returning `{ send(msg), close() }`, and `createLocalRoom(config, name, handlers)` using `RoomEngine` in-browser for offline play. Handlers: `onMessage(ServerMessage)`, `onStatus("connecting"|"open"|"closed")`. Also `listRooms()`, `createRoom(config)`, `quickPlay()` REST helpers. Base path for all HTTP/WS: `${import.meta.env.BASE_URL}api/...` (i.e. `/arcade/wings/api/...`).
+- Server HTTP API (Worker, after stripping the `/arcade/wings` prefix): `GET /api/rooms`, `POST /api/rooms` (body: Partial<RoomConfig>) → `{ code }`, `GET /api/quickplay` → `{ code }`, `GET /api/room?code=XXXX` (WebSocket upgrade), `GET /api/health`.
 - Client prediction: the client runs `stepFlight` locally for its own vehicle (pilot seat) using the same inputs it sends, and reconciles to snapshots using `ack`.
 - Rendering reads `VehicleEntity` from interpolated snapshots and passes it to `AircraftView.update`.

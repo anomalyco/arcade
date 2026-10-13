@@ -1,4 +1,4 @@
-// Dev-only world preview: http://localhost:5173/labs/wings/src/render/world/preview.html
+// Dev-only world preview: http://localhost:5173/arcade/wings/src/render/world/preview.html
 // Query: ?view=base|canyon|volcano|water|spires|overview|edge  &q=low|balanced|high  &markers=1
 import { ACESFilmicToneMapping, BoxGeometry, Mesh, PerspectiveCamera, Scene, Vector3 } from "three"
 import { MeshStandardNodeMaterial, RenderPipeline, WebGPURenderer } from "three/webgpu"

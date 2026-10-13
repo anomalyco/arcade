@@ -6,9 +6,11 @@
     "dev": "vite --host 0.0.0.0",
     "dev:worker": "wrangler dev --port 8787",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
+    "test": "bun test",
     "build": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit && vite build",
+    "check": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit && bun test && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "deploy": "bun run build && wrangler deploy"
+    "deploy": "rm -rf dist && vite build && wrangler deploy"
   },
   "dependencies": {
     "three": "0.186.0"

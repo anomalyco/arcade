@@ -1,6 +1,6 @@
 # Wings — Design & Architecture
 
-Live URL (planned): `https://anoma.ly/labs/wings/` (Cloudflare Worker `wings`).
+Live URL: `https://anoma.ly/arcade/wings/` (Cloudflare Worker `arcade-wings`, in the `anomalyco/arcade` monorepo).
 
 ## Overview
 A high-performance, browser-based 3D multiplayer aerial combat game featuring planes and helicopters across up to **4 symmetrical teams**. Players launch from protected team runways/airbases and battle over a large island-and-canyon combat theater.
