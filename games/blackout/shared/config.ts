@@ -6,10 +6,7 @@ export const MAX_PLAYERS = 16
 
 /** GPU sizing for the renderer. */
 /** Lights shaded per frame (the culled set near the view), occluders across their shadow casts, and lights per map. */
-export const MAX_LIGHTS = 64
-export const MAX_OCCLUDERS = 16384
-export const MAX_MAP_LIGHTS = 2048
-export const POLAR_RAYS = 1024
+export { MAX_LIGHTS, MAX_OCCLUDERS, MAX_MAP_LIGHTS, POLAR_RAYS } from "@arcade/kit/gpu/limits"
 
 export const PLAYER_RADIUS = 0.32
 export const SPEED = 4.2

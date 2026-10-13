@@ -203,6 +203,37 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   depth discard-to-store change and is not a four-cloud bound. The interval covers first polar compute through a
   dependent offscreen final composite; no pass sums.
 
+- **Linux software WebGPU needs presentation support too.** The production smoke browser's ANGLE SwiftShader
+  adapter initialized, then lost its instance at the first Outbreak canvas presentation with
+  `Could not find SharedImageBackingFactory` / `Instance dropped error in getCompilationInfo`.
+  `scripts/smoke.mjs` now enables Vulkan with SwiftShader and disables the native Vulkan surface on Linux.
+  The failure reproduced in headless Chromium 1248 on Linux; all three production smokes passed with these flags.
+  Keep errors fatal: accepting adapter creation alone would miss this failure.
+
+- **Separate scenery memory from actor LOS.** Outbreak's initial cone blacked out most of its neighbourhood.
+  Static room discovery now supplies the scenery texture while `Vision.visible` retains strict occlusion for actors.
+  A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
+  Exterior scenery remains lit, and remembered interior scenery is desaturated instead of hidden behind wedges.
+  `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
+- **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
+  pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
+  those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
+  New material IDs also need exclusion from the old dust-expansion branch. Outdoor finishes use four-corner value
+  noise while legacy Blackout noise is retained. These hooks add no changes to default Blackout WGSL.
+- **Test contact against packed geometry.** Outbreak uses the same seeded terrain vertices and triangle diagonal
+  in rendering and support queries. Tests intersect actual packed ground triangles at yard, threshold, interior,
+  driveway and curb samples. This caught driveway support returning 3.5 cm beneath a 10 cm sidewalk overlay.
+  Final look cost on M5 Max at 1000×680: median queue-completed spans 2.5→9.5 ms, 37,014→299,238 static vertices,
+  and sampled allocations 565,965→574,627 bytes/step including the proof harness. Pure GPU time is unmeasured.
+
+- **Reserve a polar row for eye sight.** Outbreak M1 uses row zero at 1.65 m, with zero radiance, in the same
+  compute pass as its streetlights. Walls/closed doors feed that row; windows/fences remain collision-only.
+  The fragment shader combines its nearest hit with a 110° cone and occluded 2.5 m awareness. A CPU polar pass
+  marks a persistent 192² exploration mask with the same ray centres and shared slab tests, without GPU readback.
+  The mask is uploaded only after newly explored cells appear. Headless Chromium on Apple Metal checked a closed
+  room, opening its door, and turning away into an explored shroud, plus live Lab/input handling, without GPU errors.
+  `games/outbreak/scripts/prove.ts` reproduces the six views. The mask is 36 KiB; runtime/GPU cost is unmeasured.
+
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
   silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
   world-anchored sub-stratum offsets remove the coherent bands without a fullscreen blur. Never interpolate blocker

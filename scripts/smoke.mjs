@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -31,7 +31,11 @@ try {
   browser = await chromium.launch({
     headless: true,
     timeout: 10_000,
-    args: ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+    args: [
+      "--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+      // Linux needs a Vulkan-backed compositor to present WebGPU swapchain images.
+      ...(process.platform === "linux" ? ["--enable-features=Vulkan", "--use-vulkan=swiftshader", "--disable-vulkan-surface"] : []),
+    ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
   const errors = []
@@ -44,6 +48,11 @@ try {
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver.
   const ready = await page.waitForFunction(game => {
+    if (game === "outbreak") {
+      const status = document.querySelector("#status")?.textContent
+      if (status && /needs WebGPU|No WebGPU adapter is available/.test(status)) return status
+      return window.__arcadeHarness?.ready ? "local session ready" : false
+    }
     const failure = document.querySelector(game === "blackout" ? "#menu .notice" : "#overlay .nogpu p")?.textContent
     if (failure && /needs WebGPU|No WebGPU adapter is available/.test(failure)) return failure
     return document.querySelector(game === "blackout" ? '#menu [data-act="practice"]' : '#overlay [data-act="solo"]') ? "lobby ready" : false

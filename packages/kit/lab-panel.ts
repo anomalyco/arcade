@@ -180,6 +180,9 @@ export class LabPanel {
     this.inputs.set(c, input)
     return label
   }
+  /** Refresh values advanced by the game outside panel input. */
+  refresh(): void { this.sync() }
+
   sync() {
     this.pill.setAttribute("aria-expanded", String(this.visible))
     for (const [row, element] of this.elements) {

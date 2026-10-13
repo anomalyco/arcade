@@ -21,7 +21,7 @@ part of both games' checks.
 ## Install, check and ship
 
 Run `bun install --frozen-lockfile` at the repository root. The workspace explicitly includes `games/getaway`,
-`games/blackout` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
+`games/blackout`, `games/outbreak` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
 Wings, landing and redirects retain their independent installs, lockfiles and workflows.
 
 Run each game's `bun run check`, dev, build and deploy commands from its own directory as before. Keep Vite,
@@ -212,6 +212,31 @@ Lab tunables, tyre heat/emissions, skids, pops, and procedural engine/gearbox/ty
 coordinate and renderer contracts. Each game supplies terrain, interpolated controls, meshes and renderer/audio
 sinks. Blackout's adapter converts its +X-forward mesh convention and kilograms; simulation and human rigs remain
 game-owned. Consolidating the exact shipped smoke pool with `fx-kit` is still pending.
+
+### Outbreak M1 extractions
+
+Blackout and Outbreak now consume `@arcade/kit/gpu/{mesh,renderer,shaders,limits,level}`,
+`@arcade/kit/client/{camera,input}`, `@arcade/kit/rig`, and `@arcade/kit/sim/{geom,rng}`.
+Blackout's original paths re-export the shared implementations. The renderer owns packed vertices/instances,
+polar-light compute, cutaway chunks, MSAA/HDR targets and the five-level bloom/post chain. `makeSceneShader`
+accepts pure WGSL surface and directional-light hooks, with Blackout's shader behavior as its default.
+An optional exploration texture is available at binding 8; Blackout never samples it. Binding 7 retains PR5's motion
+uniform. The shipped Blackout look/motion variants were reconciled into the shared engine on this branch.
+`gpu/surface-materials.ts` supplies opt-in matte outdoor finishes and footprint-filtered detail. Outbreak selects
+the existing dense shadow kernel and custom post constants through shared shader options; default Blackout output
+is preserved. House and terrain generation remain game-owned. See `docs/outbreak-look.md` for measured cost and gaps.
+
+Outbreak reserves polar slot zero for eye-height sight with zero light power. Its CPU exploration mask uses the
+same ray angles and slab geometry. The shared Input retains its existing action methods for compatibility;
+Outbreak configures F-only interaction to avoid the Dvorak E movement binding. Rig math, IK, springs and human
+dimensions are shared. Outbreak's civilian meshes and unarmed planted-foot gait adapt only the needed parts of
+Blackout's soldier code.
+
+Remaining migration targets: separate locomotion from Blackout's gun/reload/melee animation; split material-specific
+scene shading from the shared WGSL contract; generalize the map-aware LightCuller when another game needs its
+monitor/bounce caches. The Outbreak map/lighting writer and gameplay Session stay game-owned.
+
+Getaway's renderer and input are not migrated in this milestone. See `games/outbreak/README.md` for proof and limits.
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.

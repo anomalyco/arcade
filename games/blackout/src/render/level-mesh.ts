@@ -14,11 +14,8 @@ const CHUNK = 12
 /** Baked floor map resolution, metres per texel. */
 const CELL = 0.125
 
-export type LevelChunk = { data: ArrayBuffer; box: readonly [number, number, number, number]; cutBox?: readonly number[] }
-type BakedMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number }
-export type FloorMap = BakedMap & { linear?: Float32Array }
-export type FloorLighting = FloorMap & { moon: BakedMap }
-export type LevelData = { chunks: LevelChunk[]; glass: LevelChunk[]; floor: FloorLighting; bounce: FloorMap }
+import type { BakedMap, LevelChunk, FloorMap, FloorLighting, LevelData } from "@arcade/kit/gpu/level"
+export type { LevelChunk, FloorMap, FloorLighting, LevelData } from "@arcade/kit/gpu/level"
 /** Bounce map resolution, metres per texel. */
 const BOUNCE_CELL = 0.5
 
