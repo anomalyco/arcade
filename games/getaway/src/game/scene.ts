@@ -17,6 +17,7 @@ import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
 import { Chassis, wheelRotation, type AxlePoint } from "./chassis"
 import { splitChassis } from "../render/chassis-mesh"
+import { bodyPoint } from "./car-pose"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -423,6 +424,7 @@ export class Scene {
         sagY -= 0.045 * (left + right)
       }
       const jumpPitch = juice.wheelContact && !c.airborne ? 0 : Math.max(-0.2, Math.min(0.2, -(c.vy ?? 0) / Math.max(15, c.speed)))
+      const pose = { height: sagY, roll: bodyRoll + sagRoll, pitch: bodyPitch + sagPitch + jumpPitch }
       if (juice.visibleWheels) for (let i = 0; i < parts.wheels.length; i++) {
         const p = parts.wheels[i], wheel = ch.contacts[i]
         const flatBit = (p.z > 0 ? 0 : 2) + (p.x > 0 ? 1 : 0)
@@ -430,12 +432,7 @@ export class Scene {
         const roll = c.airborne ? bodyRoll + sagRoll : spec.id === "bike" && juice.vehicleFeel ? bodyRoll : 0
         const pitch = c.airborne ? bodyPitch + sagPitch + jumpPitch : 0
         if (c.airborne) {
-          const xx = p.x * Math.cos(roll) - p.y * Math.sin(roll)
-          const yy = p.x * Math.sin(roll) + p.y * Math.cos(roll)
-          const zz = yy * Math.sin(pitch) + p.z * Math.cos(pitch)
-          x = c.x + xx * Math.cos(c.h) + zz * Math.sin(c.h)
-          z = c.z - xx * Math.sin(c.h) + zz * Math.cos(c.h)
-          y = sagY + yy * Math.cos(pitch) - p.z * Math.sin(pitch)
+          ;[x, y, z] = bodyPoint(c, pose, [p.x, p.y, p.z])
         }
         const silhouette = !c.engineOff || c.id === focus?.id
         wheelRotation(wheel, c.h, roll, pitch, p.z > 0 ? ch.steer : 0, wheel.spin)
@@ -447,36 +444,41 @@ export class Scene {
         pushInst(model, isFocus, c.x, sagY, c.z, c.h, sagRoll + (springBody || juice.wheelContact ? bodyRoll : 0), sagPitch + (springBody || juice.wheelContact ? bodyPitch : 0) + jumpPitch, -1, -1, isFocus ? tint[0] : 0, isFocus ? tint[1] : 0, isFocus ? tint[2] : 0, 1)
         continue
       }
-      pushInst(model, true, c.x, sagY, c.z, c.h, bodyRoll + sagRoll, bodyPitch + sagPitch + jumpPitch, siren, braking, tint[0], tint[1], tint[2], 1)
+      pushInst(model, true, c.x, pose.height, c.z, c.h, pose.roll, pose.pitch, siren, braking, tint[0], tint[1], tint[2], 1)
 
-      const fx = Math.sin(c.h)
-      const fz = Math.cos(c.h)
-      const rx = Math.cos(c.h)
-      const rz = -Math.sin(c.h)
       const half = spec.length / 2
-      if (v.crash > 0) light(c.x + fx * half, 0.7 + v.height, c.z + fz * half, 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
-      if (this.emissions.visible && v.backfire > 0) light(c.x - fx * (half + 0.3), 0.65 + v.height, c.z - fz * (half + 0.3), 2, 1, 0.3, 0.04, v.backfire / 0.11)
+      if (v.crash > 0) light(...bodyPoint(c, pose, [0, 0.7, half]), 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
+      if (this.emissions.visible && v.backfire > 0) light(...bodyPoint(c, pose, [0, 0.65, -(half + 0.3)]), 2, 1, 0.3, 0.04, v.backfire / 0.11)
       // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
-      light(c.x + fx * (half + 0.5), 1.3 + sagY, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
+      const head = bodyPoint(c, pose, [0, 1.3, half + 0.5])
+      const aim = bodyPoint(c, pose, [0, 1, half + 1.45])
+      const dir = normalizeV([aim[0] - head[0], aim[1] - head[1], aim[2] - head[2]])
+      light(...head, 36, 1, 0.92, 0.78, 3.2, ...dir, 0.8)
       const hw = spec.width / 2 - 0.25
       for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
-        sprite("d", c.x + fx * (half + 0.1) + rx * hw * s, 0.75 + sagY, c.z + fz * (half + 0.1) + rz * hw * s, 0.55, 1, 0.95, 0.85, 1.4, 0)
-        sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75 + sagY, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
+        sprite("d", ...bodyPoint(c, pose, [hw * s, 0.75, half + 0.1]), 0.55, 1, 0.95, 0.85, 1.4, 0)
+        sprite("d", ...bodyPoint(c, pose, [hw * s, 0.75, -(half + 0.05)]), braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
       }
-      // No beam geometry: the spot light lights the road, plus a faint soft pool ahead of the car.
-      sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
-      light(c.x - fx * (half + 0.6), 0.9 + sagY, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
+      // Ground decals project from the moving lamp; they are not rigid attachments floating above the road.
+      if (dir[1] < -0.03) {
+        const reach = Math.max(0, Math.min(36, (head[1] - this.groundAt(head[0], head[2])) / -dir[1]))
+        const x = head[0] + dir[0] * reach, z = head[2] + dir[2] * reach
+        sprite("d", x, this.groundAt(x, z) + 0.06, z, 2.6, 1, 0.9, 0.72, 0.1, 3, Math.atan2(dir[0], dir[2]), 2.2)
+      }
+      const tail = bodyPoint(c, pose, [0, 0.9, -(half + 0.6)])
+      light(...tail, 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
         const blue = sirenOn(siren, false)
-        const y = (spec.id === "swat" ? 2.9 : 1.9) + sagY
+        const y = spec.id === "swat" ? 2.9 : 1.9
         // Siren light sits low and to the sides so it paints the road and walls, not the car's own livery.
-        light(c.x - rx * 2.2, y - 1.2, c.z - rz * 2.2, 14, 1, 0.08, 0.08, 3 * red)
-        light(c.x + rx * 2.2, y - 1.2, c.z + rz * 2.2, 14, 0.15, 0.3, 1, 3.6 * blue)
-        if (red > 0) sprite("d", c.x - rx * 0.45, y, c.z - rz * 0.45, 0.9, 1, 0.1, 0.1, 1.5 * red, 0)
-        if (blue > 0) sprite("d", c.x + rx * 0.45, y, c.z + rz * 0.45, 0.9, 0.2, 0.35, 1, 1.7 * blue, 0)
+        light(...bodyPoint(c, pose, [-2.2, y - 1.2, 0]), 14, 1, 0.08, 0.08, 3 * red)
+        light(...bodyPoint(c, pose, [2.2, y - 1.2, 0]), 14, 0.15, 0.3, 1, 3.6 * blue)
+        if (red > 0) sprite("d", ...bodyPoint(c, pose, [-0.45, y, 0]), 0.9, 1, 0.1, 0.1, 1.5 * red, 0)
+        if (blue > 0) sprite("d", ...bodyPoint(c, pose, [0.45, y, 0]), 0.9, 0.2, 0.35, 1, 1.7 * blue, 0)
         // Colored wash on the road around the cruiser.
-        sprite("d", c.x, 0.08, c.z, 7, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue), 3)
+        const roof = bodyPoint(c, pose, [0, y, 0])
+        sprite("d", roof[0], this.groundAt(roof[0], roof[2]) + 0.08, roof[2], 7, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue), 3)
       }
     }
 

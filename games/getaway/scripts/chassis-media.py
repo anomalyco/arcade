@@ -3,9 +3,12 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import json
 import subprocess
+import sys
 
 root = Path(__file__).resolve().parents[3]
-source = root / "captures/getaway-chassis"
+lamps = "--lamps" in sys.argv
+stem = "getaway-chassis-lamps" if lamps else "getaway-chassis"
+source = root / "captures" / stem
 dest = root / "captures/preview"
 dest.mkdir(parents=True, exist_ok=True)
 frames = source / "phone"
@@ -14,12 +17,14 @@ font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 22)
 small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 17)
 scenarios = [("launch", "Hard launch", 19), ("braking", "Hard braking", 19), ("corner", "Fast corner", 29),
              ("kerb", "Kerb", 37), ("landing", "Ramp landing", 51), ("countersteer", "Countersteer", 31)]
+if lamps:
+    scenarios = [s for s in scenarios if s[0] in ["braking", "kerb"]]
 reports = json.loads((source / "clip.json").read_text())["reports"]
 for name, _, _ in scenarios:
     off, on = [next(r for r in reports if r["scenario"] == name and r["enabled"] == enabled) for enabled in [False, True]]
     assert [s["car"] for s in off["states"]] == [s["car"] for s in on["states"]], name
 
-sheet = Image.new("RGB", (1350, 1300), "#11151c")
+sheet = Image.new("RGB", (900, 650) if lamps else (1350, 1300), "#11151c")
 for index, (name, label, still) in enumerate(scenarios):
     x, y = (index % 3) * 450, (index // 3) * 650
     draw = ImageDraw.Draw(sheet)
@@ -37,11 +42,11 @@ for index, (name, label, still) in enumerate(scenarios):
             draw.text((18, row * 640 + 9), f"CHASSIS {variant.upper()}", font=font, fill="white")
             draw.text((720 - draw.textlength(label, font=font) - 18, row * 640 + 9), label, font=font, fill="white")
         image.save(frames / f"{index * 72 + frame:04}.jpg", quality=91)
-sheet.save(dest / "getaway-chassis-sheet.jpg", quality=93)
+sheet.save(dest / f"{stem}-sheet.jpg", quality=93)
 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", str(frames / "%04d.jpg"),
                 "-vf", "scale=in_range=full:out_range=tv,format=yuv420p", "-color_range", "tv",
                 "-c:v", "h264_videotoolbox", "-b:v", "2800k", "-profile:v", "main", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", str(dest / "getaway-chassis-phone.mp4")], check=True)
-assert (dest / "getaway-chassis-phone.mp4").stat().st_size < 10_000_000
-print(dest / "getaway-chassis-sheet.jpg")
-print(dest / "getaway-chassis-phone.mp4")
+                "-movflags", "+faststart", str(dest / f"{stem}-phone.mp4")], check=True)
+assert (dest / f"{stem}-phone.mp4").stat().st_size < 10_000_000
+print(dest / f"{stem}-sheet.jpg")
+print(dest / f"{stem}-phone.mp4")

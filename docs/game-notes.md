@@ -395,6 +395,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   Reset Seed in `compare.html` also retained the same stationary spawn without the flash. This supersedes the earlier
   unreproduced-startup note below. Runtime cost is unmeasured.
 
+- **Attach car lamps with the same transform as the body mesh.** Getaway's `src/game/car-pose.ts` exports
+  `bodyPoint(car, { height, roll, pitch }, [x, y, z])`, which applies roll, pitch, yaw, then translation like the
+  instance shader. Headlight/taillight glows, point/spot origins and sirens share it; the headlight direction uses two
+  transformed points. Ground-light pools project onto the road instead of floating with the body. Close-up Metal
+  braking/kerb captures and packed-buffer checks covered 288 off/on frames; maximum attachment error was 0.000007 m.
+  Cruiser and SWAT sirens also passed. `captures/preview/getaway-chassis-lamps-phone.mp4` has the stacked proof.
+  The extra CPU cost of the attachment transforms has not been measured.
+
 - **Filter acceleration before springing the body.** Getaway's `src/game/chassis.ts` filters interpolated velocity
   over 85 ms and acceleration over 65 ms, then uses exact underdamped springs (12–16 rad/s, damping ratio 0.52).
   Tests cover 10 Hz repeated snapshots, large-dt stability, settling and one-shot impact/landing impulses. Real wheel
