@@ -5,8 +5,9 @@ The three-second deterministic noise buffer and periodic-wave coefficients are g
 no recording, downloaded sample, external code or paid generation service was used for them.
 
 Existing `public/sfx/` files remain the source of impact, scrape, siren, city, flat-tyre and UI sounds.
-This change adds no sample files and does not change their provenance. `audio=old` keeps the existing
-engine/tyre/nitro recordings for comparison through the common protected master bus.
+This change adds no sample files and does not change their provenance. Open the shared Lab panel
+with Backquote and uncheck **Procedural audio** to compare the existing engine/tyre/nitro recordings
+through the common protected master bus. Audio comparison has no query-parameter selector.
 
 Design references (not copied implementations):
 - Antonio-R1, [Engine Sound Generator](https://github.com/Antonio-R1/engine-sound-generator), MIT.

@@ -77,7 +77,6 @@ async function main() {
   const scene = new Scene(renderer, activeSession.city)
   const hud = new Hud(document.getElementById("hud")!, activeSession.city)
   const sound = new GameAudio(document.getElementById("hud")!, activeSession.city)
-  sound.procedural = q.get("audio") !== "old"
   sound.onShift = car => { if (juice.backfire) scene.testEffect("backfire", car) }
   const backfires: SimEvent[] = []
   scene.onBackfire = car => backfires.push({ kind: "backfire", carId: car.id, text: "", t: 0 })
