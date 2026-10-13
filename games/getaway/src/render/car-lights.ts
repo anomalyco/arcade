@@ -1,18 +1,31 @@
 import type { Vehicle } from "../../shared/config"
 
-/** Selectable in the Lab; URL overrides are reserved for automated captures. */
-export type LightStyle = 0 | 1 | 2 | 3
-export const lightStyles = [
-  { value: 0, label: "Original" },
-  { value: 1, label: "Recessed" },
-  { value: 2, label: "Light bar" },
-  { value: 3, label: "Cinematic" },
-] as const
+/** 0 is the original reference; 4 is the tunable default. */
+export type LightStyle = 0 | 1 | 2 | 3 | 4
+/** Automation override. Players choose styles in the Lab. */
 export function lightStyle(params: URLSearchParams): LightStyle {
-  if (!params.has("bench") && !params.has("mux")) return 1
-  const n = Number(params.get("lights") ?? 1)
-  return n === 0 || n === 2 || n === 3 ? n : 1
+  if (!params.has("bench") && !params.has("mux")) return 4
+  const n = Number(params.get("lights") ?? 4)
+  return n === 0 || n === 1 || n === 2 || n === 3 ? n : 4
 }
+
+/** Shared by the emissive lens, spotlight, beam, road pool and flare. */
+export const HEADLIGHT: [number, number, number] = [1, 0.93, 0.78]
+export const LIGHT_DEFAULTS = {
+  beamLength: 12,
+  beamWidth: 0.28,
+  beamSpread: 2.4,
+  beamIntensity: 0.13,
+  poolSize: 3.4,
+  poolIntensity: 0.04,
+  poolAhead: 5,
+  glowSize: 0.32,
+  glowIntensity: 0.85,
+  flareStrength: 0.09,
+  tailGlow: 2,
+  brakeIntensity: 1.9,
+}
+export type LightSettings = typeof LIGHT_DEFAULTS & { style: LightStyle }
 
 /** Lens centres match the front/rear fascia geometry (local +z is forward). */
 export function lampMounts(v: Vehicle) {

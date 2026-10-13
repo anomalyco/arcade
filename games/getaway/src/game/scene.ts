@@ -17,8 +17,8 @@ import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
 import { Chassis, wheelRotation, type AxlePoint } from "./chassis"
 import { splitChassis } from "../render/chassis-mesh"
+import { HEADLIGHT, LIGHT_DEFAULTS, lampMounts, type LightSettings, type LightStyle } from "../render/car-lights"
 import { bodyPoint } from "./car-pose"
-import { lampMounts, type LightStyle } from "../render/car-lights"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -51,6 +51,7 @@ export function sirenOn(phase: number, red: boolean) {
 }
 
 export class Scene {
+  readonly lightSettings: LightSettings = { ...LIGHT_DEFAULTS, style: 4 }
   readonly fx = new Fx()
   readonly emissions = new VehicleEmissions()
   readonly trail = this.emissions.trail
@@ -59,6 +60,8 @@ export class Scene {
   private models = new Map<string, number>()
   private variants = new Map<string, number[]>()
   private chassisModels = new Map<string, { bodies: number[]; wheels: (AxlePoint & { model: number })[] }>()
+  get lightStyle() { return this.lightSettings.style }
+  private meshStyle: LightStyle
   private heliModel: number
   private rotorModel: number
   private spikeModel: number
@@ -96,9 +99,10 @@ export class Scene {
   constructor(
     private renderer: Renderer,
     readonly city: City,
-    lightStyle: LightStyle = 1,
+    lightStyle: LightStyle = 4,
   ) {
-    this.lightStyle = lightStyle
+    this.lightSettings.style = lightStyle
+    this.meshStyle = lightStyle
     const built = buildCityMesh(city)
     this.trail.seedWind(city.seed)
     renderer.setCity(built.mesh)
@@ -123,10 +127,14 @@ export class Scene {
     this.spikeModel = renderer.addModel(buildSpikeStrip())
   }
 
-  lightStyle: LightStyle
-
   setLightStyle(style: LightStyle) {
-    if (style === this.lightStyle) return
+    this.lightSettings.style = style
+    this.useCarStyle()
+  }
+
+  private useCarStyle() {
+    const style = this.lightStyle
+    if (style === this.meshStyle) return
     // Lamp geometry changes; keep the existing wheel models, contacts and spring state.
     for (const vehicle of VEHICLES) {
       const variants = this.variants.get(vehicle.id)!
@@ -136,7 +144,7 @@ export class Scene {
         this.renderer.replaceModel(bodies[i]!, splitChassis(mesh).body)
       })
     }
-    this.lightStyle = style
+    this.meshStyle = style
   }
 
   private visOf(c: CarView) {
@@ -287,6 +295,7 @@ export class Scene {
   }
 
   draw(view: WorldView, cam: Camera, w: number, h: number, dt: number, focus: CarView | null, opts: { bloom?: number; flash?: number } = {}) {
+    this.useCarStyle()
     this.time += dt
     this.animate(view, dt, focus?.id ?? null)
     const t = this.time
@@ -492,34 +501,49 @@ export class Scene {
         light(...tail, 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       } else {
         const style = this.lightStyle
+        const tuned = style === 4
+        const settings = this.lightSettings
         const mount = lampMounts(spec)
         const cool = style === 2
-        const green = cool ? 0.94 : 0.84, blue = cool ? 1 : 0.6
+        const green = tuned ? HEADLIGHT[1] : cool ? 0.94 : 0.84, blue = tuned ? HEADLIGHT[2] : cool ? 1 : 0.6
         const front = bodyPoint(c, pose, [0, mount.frontY, half + 0.08])
-        const aim = bodyPoint(c, pose, [0, mount.frontY - 0.28, half + 1.08])
+        const drop = tuned ? mount.frontY / settings.poolAhead : 0.28
+        const aim = bodyPoint(c, pose, [0, mount.frontY - drop, half + 1.08])
         const dir = normalizeV([aim[0] - front[0], aim[1] - front[1], aim[2] - front[2]])
         const beamYaw = Math.atan2(dir[0], dir[2])
-        light(...front, style === 3 ? 22 : 18, 1, green, blue, 2.1, ...dir, 0.82)
-        light(...bodyPoint(c, pose, [0, mount.rearY, -half - 0.28]), 4, 1, 0.055, 0.025, braking ? 1.8 : 0.65)
+        const rearIntensity = tuned ? (braking ? settings.brakeIntensity : settings.tailGlow) : (braking ? 1.9 : 0.75)
+        light(...front, tuned ? settings.beamLength + settings.poolSize * 2 : style === 3 ? 22 : 18, 1, green, blue, tuned ? settings.poolIntensity * 21 : 2.1, ...dir, 0.82)
+        light(...bodyPoint(c, pose, [0, mount.rearY, -half - 0.28]), 4, 1, 0.055, 0.025, tuned ? rearIntensity * 0.9 : braking ? 1.8 : 0.65)
         // Low, local fill catches the bevels around the lamp, rather than washing the whole body red.
         light(...bodyPoint(c, pose, [0, mount.frontY + 0.5, half + 0.16]), 1.8, 1, green, blue, 0.65)
-        light(...bodyPoint(c, pose, [0, mount.rearY + 0.4, -half - 0.14]), 1.6, 1, 0.08, 0.035, braking ? 0.9 : 0.35)
+        light(...bodyPoint(c, pose, [0, mount.rearY + 0.4, -half - 0.14]), 1.6, 1, 0.08, 0.035, tuned ? rearIntensity * 0.45 : braking ? 0.9 : 0.35)
         for (const s of spec.id === "bike" ? [0] : [-1, 1]) {
           const head = bodyPoint(c, pose, [mount.frontX * s, mount.frontY + 0.02, half + 0.065])
           const tail = bodyPoint(c, pose, [mount.rearX * s, mount.rearY + 0.02, -half - 0.075])
-          sprite("d", ...head, 0.25, 1, green, blue, 0.8, 15, c.h, 0.3)
-          sprite("d", ...tail, 0.23, 1, 0.055, 0.02, braking ? 1.9 : 0.75, 15, c.h, 0.3)
-          const reach = style === 3 ? 12 : cool ? 10 : 8
-          const spread = cool ? 2.4 : 1.9
+          sprite("d", ...head, tuned ? settings.glowSize : 0.25, 1, green, blue, tuned ? settings.glowIntensity : 0.8, 15, c.h, 0.3)
+          sprite("d", ...tail, 0.23, 1, 0.055, 0.02, rearIntensity, 15, c.h, 0.3)
+          const reach = tuned ? settings.beamLength : style === 3 ? 12 : cool ? 10 : 8
+          const spread = tuned ? settings.beamWidth + settings.beamSpread : cool ? 2.4 : 1.9
           // Kind 14 is an origin-anchored trapezoid, not a centred ellipse six metres away.
           // Fade its ground footprint in flight; real spots and mounted lenses still follow the car.
-          sprite("d", head[0], 0.035 + this.groundAt(head[0], head[2]), head[2], spread, 1, green, blue, (style === 3 ? 0.15 : 0.11) * Math.max(0, 1 - altitude / 1.2), 14, beamYaw, reach / spread)
-          if (style === 3) {
+          const grounded = Math.max(0, 1 - altitude / 1.2)
+          sprite("d", head[0], 0.035 + this.groundAt(head[0], head[2]), head[2], spread, 1, green, blue, (tuned ? settings.beamIntensity : style === 3 ? 0.15 : 0.11) * grounded, tuned ? 18 : 14, beamYaw, reach / spread, tuned ? settings.beamWidth / spread : 0)
+          if (tuned) {
+            // Project the posed lamp's aim onto the road. Brake dive brings the pool closer;
+            // the broad, zero-slope edge overlaps the beam's long fade instead of capping it.
+            if (dir[1] < -0.03) {
+              const distance = Math.min(24, Math.max(0, (head[1] - this.groundAt(head[0], head[2])) / -dir[1]))
+              const x = head[0] + dir[0] * distance, z = head[2] + dir[2] * distance
+              sprite("d", x, this.groundAt(x, z) + 0.045, z, settings.poolSize, 1, green, blue, settings.poolIntensity * grounded, 19, beamYaw, 1.65)
+            }
+            sprite("d", ...head, settings.glowSize, 1, green, blue, settings.glowIntensity * 0.24, 0)
+          }
+          if (style === 3 || tuned) {
             const toCam = Math.hypot(cam.eye[0] - head[0], cam.eye[2] - head[2]) || 1
             const facing = Math.max(0.15, ((cam.eye[0] - head[0]) * dir[0] + (cam.eye[2] - head[2]) * dir[2]) / toCam)
-            sprite("d", ...head, 0.85, 1, green, blue, 0.18 * facing, 16, 0, 0.045)
-            sprite("d", ...tail, braking ? 0.9 : 0.5, 1, 0.07, 0.03, braking ? 0.3 : 0.13, 16, 0, 0.05)
-            if (braking && c.speed > 4) {
+            sprite("d", ...head, tuned ? 0.65 : 0.85, 1, green, blue, (tuned ? settings.flareStrength : 0.18) * facing, 16, 0, 0.045)
+            sprite("d", ...tail, braking ? 0.9 : 0.5, 1, 0.07, 0.03, tuned ? rearIntensity * 0.08 : braking ? 0.3 : 0.13, 16, 0, 0.05)
+            if (style === 3 && braking && c.speed > 4) {
               const length = Math.min(2.5, c.speed * 0.07)
               const yaw = Math.atan2(-c.vx, -c.vz)
               sprite("d", ...tail, 0.08, 1, 0.04, 0.015, 0.32, 17, yaw, length / 0.08)

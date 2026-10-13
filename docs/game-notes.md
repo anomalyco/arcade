@@ -240,6 +240,26 @@ The prior connected-study report describes its historical offscreen-target measu
 Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, silent 720×1280 H.264 Main/yuv420p clip
 (31.6 s, 7,435,113 bytes), original stills, motion inspection, matching still/video route poses and paired GPU data.
 
+- **Choose lighting in the Lab.** Backquote → Lights → Style switches between Reference, Recessed, Light bar,
+  Cinematic and Soft pool while driving. Soft pool enables the 12 tuning sliders, and Copy JSON includes the style.
+  The shared Lab supplies selects and dependent-control enablement. `Scene` replaces existing mesh buffers and changes
+  both moving and parked cars without resetting the world. The Metal proof cycled all five styles, checked that
+  repeated selections reused meshes, and confirmed that the car state survived every change. `lights=N` remains
+  an automation override for repeatable captures; interactive comparisons use the panel.
+
+- **Blend bumper beams into a tunable road pool.** Getaway's new default, Soft pool, shares one warm-white
+  `HEADLIGHT` colour between mesh lenses, lights, glows, beams and pools. Sprite kinds 14 and 15 use smooth fades
+  with zero-slope edges and no alpha discard threshold. The pool projects the posed lamp's aim onto road height;
+  brake dive brings it closer. All mounted origins still use `bodyPoint`. The Lab's Lights group has 12 live sliders
+  and a Copy JSON button; settings last for the current page session. Styles 0–3 retain their comparison values.
+  `scripts/prove-car-lights.ts --v2 --pose` passed on Metal (`metal-3`): matched front/braking/gameplay stills for
+  0, 1 and 4, three 180-frame straight drives of 56.94 m with no lateral drift, and 12 submitted body-pose cases.
+  Every slider changed submitted lighting, its minimum remained finite, all 12 pointer interactions released game
+  input, keyboard events stayed in the panel, and clipboard JSON matched the settings. No page/GPU errors occurred.
+  `scripts/car-lights-sheet.py --v2` assembles the 1480×1190 sheet at `captures/preview/getaway-car-lights-v2.jpg`;
+  raw frames and proof are in `captures/preview/lights-v2/`. The seeded one-car light count stays at 100, as in style 1.
+  GPU-time cost remains unmeasured.
+
 - **One body pose for the mesh and its lamps.** `src/game/car-pose.ts` uses the chassis branch's
   `bodyPoint(car, pose, local)` interface and the instance shader's roll → pitch → yaw order. Omitted height,
   roll and pitch default to zero; supplied height includes ground, flight and springs. `scene.ts` sends the same

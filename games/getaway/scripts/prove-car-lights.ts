@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { createServer } from "vite"
 
-const out = process.env.PROOF_OUT ?? resolve("../../captures/preview/lights")
+const v2 = process.argv.includes("--v2")
+const out = process.env.PROOF_OUT ?? resolve(`../../captures/preview/lights${v2 ? "-v2" : ""}`)
 mkdirSync(out, { recursive: true })
 const server = process.env.PROOF_URL ? null : await createServer({ server: { host: "127.0.0.1", port: 0 }, configFile: false })
 await server?.listen()
@@ -14,7 +15,7 @@ const browser = await chromium.launch({ executablePath: exe, headless: true, arg
 const errors: string[] = []
 const results: unknown[] = []
 try {
-  for (const style of [0, 1, 2, 3]) {
+  for (const style of v2 ? [0, 1, 4] : [0, 1, 2, 3]) {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 }, deviceScaleFactor: 1 })
     page.on("pageerror", e => errors.push(e.message))
     page.on("console", m => { if (m.type() === "error" && !m.text().includes("404")) errors.push(m.text()) })
@@ -58,7 +59,7 @@ try {
         scene.input = input
         scene.draw(view, camera, canvas.width, canvas.height, dt, focus)
         await device.queue.onSubmittedWorkDone()
-        return { lights: scene.lightCount, stats: renderer.stats, x: focus.x, z: focus.z }
+        return { lights: scene.lightCount, stats: renderer.stats, x: focus.x, z: focus.z, adapter: w.__lights.adapter }
       }
       document.querySelector<HTMLElement>("#hud")!.style.display = "none"
     }, style)
@@ -71,6 +72,19 @@ try {
       }, { distance, brake, heading })
       await page.screenshot({ path: join(out, `${style}-${name}.png`) })
       results.push({ style, name, ...result })
+    }
+    if (v2) {
+      const drive = await page.evaluate(async () => {
+        const w = window as any
+        Object.assign(w.__lights.car.body, { x: 152, z: 180, h: 0, vx: 0, vz: 0, yaw: 0 })
+        w.__lights.scene.resetBench()
+        const samples = []
+        for (let frame = 0; frame < 180; frame++) samples.push(await w.__drawLights(72, 1 / 60, false, true))
+        if (samples[179].z - samples[0].z < 10 || Math.abs(samples[179].x - samples[0].x) > 0.1) throw new Error("Straight drive did not advance")
+        return { start: samples[0], end: samples[179], frames: samples.length }
+      })
+      results.push({ style, name: "straight-drive", ...drive })
+      await page.screenshot({ path: join(out, `${style}-drive.png`) })
     }
     // Portrait, simulated at 30Hz: near framing, rear/brake view, then driving framing.
     if (process.argv.includes("--video")) {
@@ -123,7 +137,7 @@ try {
             near([pose.height, pose.roll, pose.pitch], [height, roll, pitch], "body pose")
             const mount = lampMounts(car.vehicle), half = car.vehicle.length / 2
             const source = style === 0 ? [0, 1.3, half + 0.5] : [0, mount.frontY, half + 0.08]
-            const target = style === 0 ? [0, 1, half + 1.45] : [0, mount.frontY - 0.28, half + 1.08]
+            const target = style === 0 ? [0, 1, half + 1.45] : [0, mount.frontY - (style === 4 ? mount.frontY / scene.lightSettings.poolAhead : 0.28), half + 1.08]
             const head = bodyPoint(c, pose, source), aim = bodyPoint(c, pose, target)
             near(Array.from(options.lights.slice(0, 3)), head, "headlight source")
             const dir = aim.map((v: number, i: number) => v - head[i])
@@ -152,13 +166,97 @@ try {
         await page.screenshot({ path: join(out, `${style}-pose-${name}.png`) })
       }
     }
+    if (style === 4) {
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"])
+      const controls = await page.evaluate(async () => {
+        const load = (path: string) => import(/* @vite-ignore */ path)
+        const { DebugOverlay } = await load("/src/ui/debug-overlay.ts")
+        const { LIGHT_DEFAULTS } = await load("/src/render/car-lights.ts")
+        const w = window as any, { scene, car, renderer } = w.__lights
+        Object.assign(car.body, { x: 152, z: 180, h: 3.5, vx: 0, vz: 0, yaw: 0 })
+        scene.resetBench()
+        let releases = 0, leaked = 0
+        const panel = new DebugOverlay(new URLSearchParams("lab=1"), () => releases++, scene)
+        const root = panel.host.shadowRoot
+        const select = root.querySelector('select[data-key="style"]') as HTMLSelectElement
+        if (!select || select.options.length !== 5 || select.value !== "4") throw new Error("Missing style selector")
+        const initial = JSON.stringify(car.body)
+        const models = new Map<number, number>()
+        const geometry = new Map<number, string>()
+        let allocated = 0
+        const addModel = renderer.addModel.bind(renderer)
+        renderer.addModel = (mesh: any) => { allocated++; return addModel(mesh) }
+        try {
+          for (const style of [0, 1, 2, 3, 4, 0, 2, 4]) {
+            const previousAllocations = allocated
+            const cached = models.has(style)
+            select.value = String(style)
+            select.dispatchEvent(new Event("change", { bubbles: true }))
+            await w.__drawLights(24)
+            if (scene.lightSettings.style !== style) throw new Error("Style did not reach scene")
+            const model = scene.variants.get(car.vehicle.id)[0]
+            geometry.set(style, scene.variants.get(car.vehicle.id).map((id: number) => renderer.models[id].count).join(","))
+            if (cached && (model !== models.get(style) || allocated !== previousAllocations)) throw new Error("Style meshes were not reused")
+            models.set(style, model)
+            const disabled = root.querySelector('input[type="range"]').disabled
+            if (disabled !== (style !== 4)) throw new Error("Tuning enabled for a fixed reference style")
+            if (JSON.stringify(car.body) !== initial) throw new Error("Style change reset the car")
+          }
+          if (allocated !== 0 || new Set(geometry.values()).size < 2) throw new Error("Mesh replacement failed")
+        } finally { renderer.addModel = addModel }
+        const inputs = [...root.querySelectorAll('input[type="range"]')] as HTMLInputElement[]
+        if (inputs.length !== 12 || root.querySelector("nav").hidden) throw new Error("Incorrect integrated controls")
+        const onKey = () => leaked++
+        window.addEventListener("keydown", onKey)
+        const original = renderer.render.bind(renderer)
+        let submitted = ""
+        renderer.render = (options: any) => {
+          const values = [...options.lights.slice(0, 48), ...options.sprites.add.slice(0, 192)]
+          if (!values.every(Number.isFinite)) throw new Error("Non-finite tuned light")
+          submitted = JSON.stringify(values)
+          original(options)
+        }
+        try {
+          for (const input of inputs) {
+            const key = input.dataset.key!
+            // An approved default may already equal this slider's maximum.
+            input.value = input.min
+            input.dispatchEvent(new Event("input", { bubbles: true }))
+            await w.__drawLights(24, 0, key === "brakeIntensity")
+            const before = submitted
+            input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }))
+            input.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowRight", bubbles: true, composed: true }))
+            input.value = input.max
+            input.dispatchEvent(new Event("input", { bubbles: true, composed: true }))
+            await w.__drawLights(24, 0, key === "brakeIntensity")
+            if (before === submitted || scene.lightSettings[key] !== Number(input.max)) throw new Error(`Ineffective slider ${key}`)
+            input.value = input.min
+            input.dispatchEvent(new Event("input", { bubbles: true }))
+            await w.__drawLights(24, 0, key === "brakeIntensity")
+            input.value = String(LIGHT_DEFAULTS[key])
+            input.dispatchEvent(new Event("input", { bubbles: true }))
+          }
+        } finally { renderer.render = original; window.removeEventListener("keydown", onKey) }
+        if (leaked || releases !== 12) throw new Error("Lab input isolation failed")
+        await w.__drawLights(24)
+        return { count: inputs.length, releases, leaked, settings: scene.lightSettings, styles: select.options.length, meshesReused: true, carPreserved: true }
+      })
+      await page.getByRole("button", { name: "Copy Lights JSON" }).click()
+      await page.getByRole("button", { name: "Copy Lights JSON" }).filter({ hasText: "Copied" }).waitFor()
+      const copied = await page.evaluate(() => navigator.clipboard.readText())
+      const values = JSON.parse(copied)
+      if (Object.keys(values).length !== Object.keys(controls.settings).length || Object.entries(controls.settings).some(([key, value]) => values[key] !== value)) throw new Error("Clipboard settings differ")
+      await page.screenshot({ path: join(out, "4-lab.png") })
+      results.push({ style, name: "lab", ...controls, clipboard: true })
+    }
     await page.close()
     const live = await browser.newPage({ viewport: { width: 640, height: 480 } })
     live.on("pageerror", e => errors.push(e.message))
     await live.goto(`${host}?solo&peaceful=1&seed=7&nohud`)
     await live.waitForFunction(() => (window as any).__view)
     await live.keyboard.press("Backquote")
-    await live.getByRole("combobox", { name: "Car lights" }).selectOption(String(style))
+    await live.getByRole("combobox", { name: "Style", exact: true }).selectOption(String(style))
+    if (style === 4 && await live.locator('input[type="range"]').count() !== 12) throw new Error("Default app has no Lights controls")
     await live.keyboard.press("Backquote")
     await live.screenshot({ path: join(out, `${style}-live.png`) })
     await live.close()
