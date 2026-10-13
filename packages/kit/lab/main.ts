@@ -13,6 +13,7 @@ import { LabInput } from "./input"
 import { createSpawn } from "./spawn"
 import type { SpawnFactory } from "./spawn-types"
 import { createWorkbench } from "./workbench"
+import { hubCommands } from "../dev-hub-model"
 
 export type { LabContext, LabSection, LabWorldObject, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
 export type { SpawnFactory, SpawnAdapters, CharacterSpawnable, LabCharacter, ItemWorld, SpawnPoint } from "./spawn-types"
@@ -29,6 +30,7 @@ export async function lab(options:LabOptions) {
   document.body.innerHTML=`
     <div class="lab-workbench" data-lab-workbench>
       <header class="lab-topbar" aria-label="Workbench toolbar">
+        <a class="lab-btn" href="${hubCommands[0].href}" aria-label="Dev Hub">Hub</a>
         <div class="lab-topbar-group">
           <div class="lab-mode-seg" role="group" aria-label="Interaction mode">
             <button type="button" class="lab-btn" data-action="mode-edit" aria-label="Edit mode" aria-pressed="true">Edit</button>
