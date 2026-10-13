@@ -79,4 +79,5 @@ python3 games/blackout/scripts/look-sheet.py --references <paintover-directory> 
 
 The proof runner uses its own loopback Vite process, a headless browser and muted audio, and closes both afterward.
 The Nexus review stays at `http://blackout-look.localhost:1355`; use `?sandbox=1&seed=4&lab=1`, or
-`compare.html?seed=4` for production on the left. `?look=0` disables only the new Look switches.
+`compare.html?seed=4` for production on the left. Use the shared Lab panel (Backquote) to change the look.
+The comparison's `look=0` override is accepted only with `mux=1`, `bench`, or `manualVideo` automation.

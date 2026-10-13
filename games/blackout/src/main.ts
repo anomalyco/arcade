@@ -57,7 +57,9 @@ async function main() {
   const input = new Input(canvas)
   const cam = new Camera()
   const settings = juiceSettings(params.get("vanilla") !== "1")
-  if (params.get("look") === "0") for (const key of Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]) settings[key] = false
+  // The panel owns presentation controls; comparison/capture automation can request the baseline.
+  const automatedLook = params.get("mux") === "1" || params.has("bench") || params.has("manualVideo")
+  if (automatedLook && params.get("look") === "0") for (const key of Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]) settings[key] = false
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
   const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) })
   input.onWheel = (delta) => { cam.zoomOffset = Math.max(-10, Math.min(24, cam.zoomOffset + Math.sign(delta))) }
