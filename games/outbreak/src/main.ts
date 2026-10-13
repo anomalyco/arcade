@@ -9,13 +9,15 @@ import { LocalSession, type Command } from "../shared/session"
 import { nearbyDoor, sightRects, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
+import { supportHeight } from "../shared/terrain"
+import { SceneryMemory } from "../shared/scenery-memory"
 import { buildLevel, hex } from "./level"
 import { Survivor } from "./survivor"
 import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .18, exposure: 1.15, zoom: 46 }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.15, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1 }
 const controls: LabControl[] = [
   { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: .05 },
   { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
@@ -25,6 +27,10 @@ const controls: LabControl[] = [
   { key: "shroud", label: "Explored shroud", group: "Vision", min: .02, max: .4, step: .01 },
   { key: "exposure", label: "Exposure", group: "View", min: .5, max: 2, step: .05 },
   { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
+  { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
+  { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: .4, step: .02 },
+  { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: .05 },
+  { key: "lighting", label: "Practical lights", group: "Day cycle", min: .3, max: 1.5, step: .05 },
 ]
 
 async function main() {
@@ -42,6 +48,7 @@ async function main() {
   const renderer = new Renderer(device, context, format, shaders)
   const seed = Number(params.get("seed") ?? 7) >>> 0
   let session = new LocalSession(seed), vision = new Vision()
+  let scenery = new SceneryMemory()
   const input = new Input(canvas, ["KeyF"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
@@ -61,12 +68,30 @@ async function main() {
   let frozen = params.has("bench"), last = performance.now(), frames = 0, elapsed = 0
   const lab = new LabPanel(settings, controls, params, () => input.release(), key => {
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
+    if (key === "houseSeed" || key === "terrain") regenerate()
   })
+  let vertices = 0
+  function level() {
+    const data=buildLevel(session.view.town)
+    vertices=[...data.chunks,...data.glass].reduce((n,c)=>n+c.data.byteLength/24,0)
+    renderer.setLevel(data)
+  }
+  function regenerate() {
+    const previous=session.view
+    session=new LocalSession(previous.town.seed,settings.houseSeed,settings.terrain)
+    Object.assign(session.view.player,previous.player)
+    session.view.hour=previous.hour; session.view.time=previous.time
+    session.view.revision=previous.revision+1
+    session.view.town.doors.forEach((d,i)=>{d.open=previous.town.doors[i]!.open})
+    session.rebuildCollision()
+    revision=-1; level(); avatar.reset()
+  }
   function reset(nextSeed = seed) {
-    session.close(); session = new LocalSession(nextSeed); vision = new Vision(); revision = -1
+    session.close(); session = new LocalSession(nextSeed,settings.houseSeed,settings.terrain); vision = new Vision(); revision = -1
     avatar.reset()
-    renderer.setLevel(buildLevel(session.view.town))
-    renderer.setVisibility(vision.explored, FOG_SIZE, FOG_SIZE)
+    level()
+    scenery=new SceneryMemory()
+    renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.zoom
   }
@@ -87,26 +112,27 @@ async function main() {
       occluders.fill(0)
       blockers.forEach((r, i) => occluders.set([...r, 2.8, 0, 0, 0], i * OCC_FLOATS))
     }
-    if (vision.update(p.x, p.y, p.aim, blockers, settings)) renderer.setVisibility(vision.explored, FOG_SIZE, FOG_SIZE)
+    vision.update(p.x, p.y, p.aim, blockers, settings)
+    if (scenery.update(town,vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
     const day = dayCycle(hour)
     lights.fill(0)
-    lights.set([p.x, 1.65, p.y, settings.range, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, .01, -1])
+    lights.set([p.x, 1.65+supportHeight(town,p.x,p.y), p.y, settings.range, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, .01, -1])
     let count = 1
     for (const [i, lamp] of town.lamps.entries()) {
-      lampPower[i] = day.lamps
+      lampPower[i] = day.lamps * settings.lighting
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
-      lights.set([lamp.x + .55, 3.55, lamp.y, 9, 1, .64, .29, day.lamps * 2.2, 0, 0, 0, 0, 0, blockers.length, .28, i], count++ * LIGHT_FLOATS)
+      lights.set([lamp.x+(lamp.kind==="street"?.55:0), lamp.h, lamp.y, lamp.radius, 1, .62, .28, day.lamps * lamp.power * settings.lighting, 0, 0, 0, 0, 0, blockers.length, lamp.kind==="room"?.38:.5, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
-    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient, day.strength], 28)
+    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
     const focus = cam.project(p.x, 1, p.y, w, h)
     frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, 1.0, count], 32)
     frame.set([...day.direction, day.sun], 36); frame.set([1 / SIZE, 1 / SIZE, SIZE, SIZE], 40)
     frame.set([p.aim, Math.cos(settings.cone * Math.PI / 360), settings.awareness, settings.shroud], 44)
     town.doors.forEach((door, i) => doorData.set([door.rect[0], 0, (door.rect[1] + door.rect[3]) / 2, door.open ? -Math.PI / 2 : 0, 1, 1, 1, 1, 0, 0, 1, 0], i * 12))
     doorBatch.count = town.doors.length
-    render.batches = [...avatar.draw(p, dt, time), doorBatch]
+    render.batches = [...avatar.draw(p, dt, time, (x,z)=>supportHeight(town,x,z)), doorBatch]
     render.lightCount = render.shadowLightCount = count; render.occluderCount = blockers.length; render.lampCount = town.lamps.length
     render.view = cam.groundRect(5.5); render.grade = [time, 0, 0, settings.exposure]
     renderer.render(render)
@@ -133,7 +159,7 @@ async function main() {
   const harness = {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
-    state: () => ({ ...session.view, explored: vision.explored.filter(v => v > 0).length }),
+    state: () => ({ ...session.view, explored: vision.explored.filter(v => v > 0).length, vertices }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
     freeze: (value = true) => { frozen = value; input.release() },
@@ -142,6 +168,7 @@ async function main() {
       if (!control || !("min" in control) || !Number.isFinite(value) || value < control.min || value > control.max) throw new Error(`Invalid lab value: ${key}`)
       settings[key] = value
       if (key === "hour") session.view.hour = wrapHour(value)
+      if (key === "houseSeed" || key === "terrain") regenerate()
     },
     pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
     async step(dt = 1 / 60, command?: Partial<Command>) {

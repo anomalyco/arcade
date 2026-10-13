@@ -135,7 +135,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; smoothShadows?: boolean }
+export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; fragmentStart?: string; smoothShadows?: boolean }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -175,7 +175,7 @@ struct VOut {
   var o: VOut;
   o.world = v.pos;
   o.normal = v.normal.xyz;
-  if (v.matAux.x > 12.5) {
+  if (${hooks.material ? "v.matAux.x > 12.5 && v.matAux.x < 13.5" : "v.matAux.x > 12.5"}) {
     // Dust mote: drift slowly around its anchor, then expand the quad toward the camera.
     let ph = v.normal.z * 40.0;
     let t = F.cam.w;
@@ -289,7 +289,7 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
     var sum = 0.0;
     var weights = 0.0;
     // World-anchored sub-stratum rotation breaks coherent PCF contours without time-varying noise.
-    let phase = hash2(floor(p * 64.0)) - 0.5;
+    let phase = ${hooks.smoothShadows ? "0.0" : "hash2(floor(p * 64.0)) - 0.5"};
     for (var k = -4; k <= 4; k++) {
       let ray = f + (f32(k) + phase) * max(stepR * 0.5, 0.5);
       let lo = floor(ray);
@@ -660,6 +660,7 @@ fn shadeScene(o: VOut) -> vec4f {
 }
 
 @fragment fn fs(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
+  ${hooks.fragmentStart ?? ""}
   let mat = i32(round(o.mat));
   if ((mat == 4 || mat == 9 || mat == 2 || mat == 11) && cutaway(o.world, o.pos)) { discard; }
   ${hooks.cutaway ?? ""}
@@ -667,6 +668,7 @@ fn shadeScene(o: VOut) -> vec4f {
 }
 
 @fragment fn fsSolid(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
+  ${hooks.fragmentStart ?? ""}
   ${hooks.cutaway ?? ""}
   return ${motion ? "motionOutput(shadeScene(o), o.pos, o.previous, o.world)" : "shadeScene(o)"};
 }
@@ -774,7 +776,7 @@ struct SOut {
 `
 
 /** Fullscreen passes: bloom downsample and upsample, then the tone-mapped, graded composite. */
-export const postShader = (looks = true, motion = false) => /* wgsl */ `
+export const postShader = (looks = true, motion = false, finish?: { chromatic: number; bloom: number; grain: number; vignette: number }) => /* wgsl */ `
 ${motion ? motionGather : ""}
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
@@ -852,7 +854,7 @@ fn hash(p: vec2f) -> f32 {
   let uv = o.uv;
   let fromC = uv - 0.5;
   // A touch of chromatic fringing toward the corners.
-  let ca = fromC * dot(fromC, fromC) * ${looks ? "select(0.012, 0.0015, enhanced)" : "0.012"};
+  let ca = fromC * dot(fromC, fromC) * ${finish ? finish.chromatic.toFixed(4) : looks ? "select(0.012, 0.0015, enhanced)" : "0.012"};
   var hdr = vec3f(
     clean(textureSample(src, samp, uv + ca)).r,
     clean(textureSample(src, samp, uv)).g,
@@ -860,7 +862,7 @@ fn hash(p: vec2f) -> f32 {
   );
   ${motion ? "hdr += motionColour(uv) - clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;" : ""}
   let bloom = textureSample(bloomTex, samp, uv).rgb;
-  hdr = hdr + bloom * 0.32;
+  hdr = hdr + bloom * ${finish ? finish.bloom.toFixed(4) : "0.32"};
   var c = aces(hdr * G.w);
   ${looks ? `if (enhanced) {
     // Partially hue-preserving shoulder keeps warm pools and cyan monitors saturated.
@@ -880,12 +882,12 @@ fn hash(p: vec2f) -> f32 {
     c *= mix(vec3f(0.93, 0.97, 1.06), vec3f(1.04, 1.0, 0.95), smoothstep(0.2, 0.8, l));
   ${looks ? "}" : ""}
   let v = length(fromC * vec2f(1.0, 0.8));
-  c *= mix(1.0, 0.45, smoothstep(0.32, 0.85, v));
+  c *= mix(1.0, ${finish ? finish.vignette.toFixed(4) : "0.45"}, smoothstep(0.32, 0.85, v));
   c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
   let px = o.pos.xy;
   let grain = hash(px + fract(G.x * 13.7) * 1000.0) + hash(px * 1.37 + fract(G.x * 7.3) * 500.0) - 1.0;
-  c += grain * ${looks ? "select(0.022, 0.009, enhanced)" : "0.022"} * (1.0 - l * 0.6);
+  c += grain * ${finish ? finish.grain.toFixed(4) : looks ? "select(0.022, 0.009, enhanced)" : "0.022"} * (1.0 - l * 0.6);
   return vec4f(c, 1.0);
 }
 `

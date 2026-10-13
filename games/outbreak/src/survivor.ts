@@ -39,7 +39,7 @@ export class Survivor {
     this.leanX = spring(); this.leanY = spring()
   }
 
-  draw(p: Pose, dt: number, time: number): Batch[] {
+  draw(p: Pose, dt: number, time: number, support: (x:number,z:number)=>number): Batch[] {
     dt = Math.max(.0001, Math.min(.05, dt))
     const teleport = Math.hypot(p.x - this.last[0], p.y - this.last[1]) > 2.5
     this.last = [p.x, p.y]
@@ -55,7 +55,7 @@ export class Survivor {
     const want = p.aim + Math.max(-1.05, Math.min(1.05, angleDiff(travel, p.aim)))
     this.yaw += angleDiff(want, this.yaw) * Math.min(1, dt * 9)
     const c = Math.cos(this.yaw), s = Math.sin(this.yaw)
-    const rest = (i: number): V3 => [p.x - s * (i ? .13 : -.13), 0, p.y + c * (i ? .13 : -.13)]
+    const rest = (i: number): V3 => { const x=p.x-s*(i?.13:-.13),z=p.y+c*(i?.13:-.13); return [x,support(x,z),z] }
     if (teleport) this.feet.forEach((f, i) => { f.p = rest(i); f.lift = [...f.p]; f.planted = true; f.yaw = this.yaw })
     const needsStep = this.feet.some((f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > .2 || !f.planted)
     const rate = Math.max(speed / (.7 + .22 * speed), needsStep ? 1.7 : 0)
@@ -73,16 +73,17 @@ export class Survivor {
         const other = this.feet[1 - i]!, side = i ? 1 : -1
         const lat = (-(target[0] - other.p[0]) * s + (target[2] - other.p[2]) * c) * side
         if (lat < .16) { target[0] -= s * side * (.16 - lat); target[2] += c * side * (.16 - lat) }
-        f.p = [f.lift[0] + (target[0] - f.lift[0]) * e, Math.sin(Math.PI * u) * (.06 + .09 * moving), f.lift[2] + (target[2] - f.lift[2]) * e]
+        target[1]=support(target[0],target[2])
+        f.p = [f.lift[0] + (target[0] - f.lift[0]) * e, f.lift[1]+(target[1]-f.lift[1])*e+Math.sin(Math.PI * u) * (.06 + .09 * moving), f.lift[2] + (target[2] - f.lift[2]) * e]
         f.yaw += angleDiff(this.yaw, f.yaw) * e
-      } else if (!f.planted) { f.planted = true; f.p[1] = 0 }
+      } else if (!f.planted) { f.planted = true; f.p[1] = support(f.p[0],f.p[2]) }
     })
-    let height = HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
+    let height = support(p.x,p.y)+HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
     for (const f of this.feet) {
       const distance = Math.hypot(f.p[0] - p.x, f.p[2] - p.y)
       height = Math.min(height, Math.sqrt(Math.max(0, .815 ** 2 - distance ** 2)) + RIG.ankle + f.p[1])
     }
-    const pelvis = yawFrame([p.x, height + .13, p.y], this.yaw)
+    const pelvis = yawFrame([p.x, height, p.y], this.yaw)
     const lean = this.leanX.x * Math.cos(p.aim) + this.leanY.x * Math.sin(p.aim)
     const torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), p.aim), -.05 - lean)
     const head = yawFrame(at(torso, .02, RIG.neckY, 0), p.aim)
@@ -98,7 +99,7 @@ export class Survivor {
     for (let i = 0; i < 2; i++) {
       const side = i ? 1 : -1, foot = this.feet[i]!
       const hip = at(pelvis, 0, 0, side * RIG.hipW)
-      const ankle: V3 = [foot.p[0], foot.p[1] + RIG.ankle + .13, foot.p[2]]
+      const ankle: V3 = [foot.p[0], foot.p[1] + RIG.ankle, foot.p[2]]
       const pole = dirIn(pelvis, 1, 0, side * .3)
       const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
       draw(5, limb(hip, knee, pole, pelvis.x)); draw(6, limb(knee, end, pole, pelvis.x)); draw(7, yawFrame(end, foot.yaw))

@@ -1,12 +1,36 @@
-import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
+import { makeSceneShader, spriteShader, postShader } from "@arcade/kit/gpu/shaders"
+import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
 export const shaders = {
   sprite: spriteShader(),
+  post: postShader(false,false,{chromatic:0,bloom:.10,grain:.003,vignette:.85}),
   scene: makeSceneShader({
-    ao: "0.0",
+    ao: "0.35",
+    smoothShadows: true,
+    material: surfaceMaterial + `
+      if (mat == 4 && interior(o.world.xz+n.xz*.3)) { albedo = vec3f(.48,.43,.34); }
+    `,
+    fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
     declarations: /* wgsl */ `
 @group(0) @binding(8) var exploredTex: texture_2d<f32>;
+${surfaceMaterialDeclarations}
+fn houseRect(id: i32) -> vec4f {
+  switch id {
+    case 0: {return vec4f(22.0,24.0,37.0,38.0);}
+    case 1: {return vec4f(21.0,54.0,36.0,68.0);}
+    case 2: {return vec4f(53.0,23.0,73.0,38.0);}
+    default: {return vec4f(53.0,54.0,72.0,68.0);}
+  }
+}
+fn interior(p:vec2f) -> bool {
+  for(var i=0;i<4;i++) { let b=houseRect(i); if(all(p>b.xy+0.25)&&all(p<b.zw-0.25)){return true;} }
+  return false;
+}
+fn roofCut(p:vec3f, id:i32) -> bool {
+  let b=houseRect(id);
+  return all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy+0.35)&&all(p.xz<b.zw-0.35);
+}
 fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - F.eye.xy;
   let distance = length(delta);
@@ -20,13 +44,31 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
   return los * max(cone, near) * range;
 }`,
-    directional: "mix(vec3f(0.52, 0.68, 1.0), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * fd.g * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
+    directional: "mix(vec3f(0.52, 0.68, 1.0), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g, 1.0, o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
+    cutaway: `
+      if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)))) { discard; }
+      if (o.world.y > 2.8 && interior(o.world.xz)) {
+        for(var i=0;i<4;i++) { if(roofCut(o.world,i)){discard;} }
+      }
+    `,
     surface: /* wgsl */ `
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, o.world.xz * F.map.xy, 0.0).r;
-  // Memory is unlit and desaturated: switching lamps cannot reveal a room through its wall.
-  let memory = vec3f(dot(o.color, vec3f(0.2126, 0.7152, 0.0722))) * F.effects.w * vec3f(0.67, 0.76, 0.88);
-  col = mix(mix(vec3f(0.002, 0.003, 0.005), memory, explored), col, visible);
+  if(mat == 2) { col *= .38; }
+  // Scenery and illumination are not an enemy-visibility mask. Exterior form remains readable.
+  // Dynamic entities use the authoritative CPU Vision before submitting a draw (the local survivor is exempt).
+  if (mat != 12 && mat != 21) {
+    let luminance=dot(col,vec3f(.2126,.7152,.0722));
+    let peripheral=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.55);
+    if (interior(o.world.xz) && o.world.y < 2.8) {
+      let memory=vec3f(dot(o.color,vec3f(.2126,.7152,.0722)))*F.effects.w*vec3f(.55,.66,.78);
+      // Room discovery is deliberately coarser than actor LOS. No view-cone-shaped blackout.
+      let room=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.45+.55*visible);
+      col=mix(o.color*.025, mix(memory,room,.85), explored);
+    } else {
+      col=mix(peripheral*(.72+.18*explored),col,.7+.3*visible);
+    }
+  }
 `,
   }),
 }

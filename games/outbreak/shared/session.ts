@@ -11,8 +11,8 @@ export interface Session { readonly view: SessionView; update(dt: number, comman
 export class LocalSession implements Session {
   readonly view: SessionView
   private solids
-  constructor(seed: number) {
-    const town = makeTown(seed)
+  constructor(seed: number, houseSeed = seed, terrain = .22) {
+    const town = makeTown(seed, houseSeed, terrain)
     this.view = { town, player: { x: 27.7, y: 41, vx: 0, vy: 0, aim: -Math.PI / 2 }, hour: 18, time: 0, revision: 0 }
     this.solids = solidRects(town)
   }
@@ -35,4 +35,5 @@ export class LocalSession implements Session {
     view.hour = advanceHour(view.hour, dt, timeScale)
   }
   close(): void {}
+  rebuildCollision(): void { this.solids = solidRects(this.view.town) }
 }

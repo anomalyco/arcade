@@ -64,6 +64,22 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Separate scenery memory from actor LOS.** Outbreak's initial cone blacked out most of its neighbourhood.
+  Static room discovery now supplies the scenery texture while `Vision.visible` retains strict occlusion for actors.
+  A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
+  Exterior scenery remains lit, and remembered interior scenery is desaturated instead of hidden behind wedges.
+  `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
+- **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
+  pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
+  those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
+  New material IDs also need exclusion from the old dust-expansion branch. Outdoor finishes use four-corner value
+  noise while legacy Blackout noise is retained. These hooks add no changes to default Blackout WGSL.
+- **Test contact against packed geometry.** Outbreak uses the same seeded terrain vertices and triangle diagonal
+  in rendering and support queries. Tests intersect actual packed ground triangles at yard, threshold, interior,
+  driveway and curb samples. This caught driveway support returning 3.5 cm beneath a 10 cm sidewalk overlay.
+  Final look cost on M5 Max at 1000×680: median queue-completed spans 2.5→9.5 ms, 37,014→299,238 static vertices,
+  and sampled allocations 565,965→574,627 bytes/step including the proof harness. Pure GPU time is unmeasured.
+
 - **Reserve a polar row for eye sight.** Outbreak M1 uses row zero at 1.65 m, with zero radiance, in the same
   compute pass as its streetlights. Walls/closed doors feed that row; windows/fences remain collision-only.
   The fragment shader combines its nearest hit with a 110° cone and occluded 2.5 m awareness. A CPU polar pass

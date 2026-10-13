@@ -51,7 +51,11 @@ Blackout and Outbreak now consume `@arcade/kit/gpu/{mesh,renderer,shaders,limits
 Blackout's original paths re-export the shared implementations. The renderer owns packed vertices/instances,
 polar-light compute, cutaway chunks, MSAA/HDR targets and the five-level bloom/post chain. `makeSceneShader`
 accepts pure WGSL surface and directional-light hooks, with Blackout's shader behavior as its default.
-An optional exploration texture is available at binding 7; Blackout never samples it.
+An optional exploration texture is available at binding 8; Blackout never samples it. Binding 7 retains PR5's motion
+uniform. The shipped Blackout look/motion variants were reconciled into the shared engine on this branch.
+`gpu/surface-materials.ts` supplies opt-in matte outdoor finishes and footprint-filtered detail. Outbreak selects
+the existing dense shadow kernel and custom post constants through shared shader options; default Blackout output
+is preserved. House and terrain generation remain game-owned. See `docs/outbreak-look.md` for measured cost and gaps.
 
 Outbreak reserves polar slot zero for eye-height sight with zero light power. Its CPU exploration mask uses the
 same ray angles and slab geometry. The shared Input retains its existing action methods for compatibility;
