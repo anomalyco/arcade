@@ -4,7 +4,8 @@ import { join } from "node:path"
 import { findChromeExecutable, installGpuInstrumentation } from "./compare"
 
 const root = join(import.meta.dir, "../../..")
-const out = join(root, "captures/blackout-look")
+const diagnostic = process.argv.find(a => a.startsWith("--shadow="))?.slice(9)
+const out = join(root, diagnostic ? `captures/blackout-shadow/${diagnostic}` : "captures/blackout-look")
 mkdirSync(out, { recursive: true })
 const baseline = process.argv.includes("--baseline")
 const bench = process.argv.includes("--bench")
@@ -38,6 +39,15 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   page.on("pageerror", e => { errors.push(e.message); console.error(e.message) })
   page.on("console", m => { if (m.type() === "error" && !m.location().url.endsWith("favicon.ico")) { errors.push(`${m.text()} ${m.location().url}`); console.error(m.text(), m.location().url) } })
+  if (diagnostic && diagnostic !== "before" && diagnostic !== "after") await page.route("**/src/render/shaders.ts*", async route => {
+    const response = await route.fetch()
+    const source = await response.text()
+    const [from, to] = diagnostic === "no-shadow"
+      ? ["if (L.extra.y > 0.5) { vis = shadowAt", "if (false) { vis = shadowAt"]
+      : ["if (shin > 0.0) {", "if (false) {"]
+    if (!source.includes(from)) throw new Error("Missing shadow diagnostic anchor")
+    await route.fulfill({ response, body: source.replace(from, to) })
+  })
   if (compare) {
     await page.addInitScript(() => {
       if (parent !== window) return
@@ -59,7 +69,7 @@ try {
     const after = page.frames().find(f => f !== page.mainFrame() && f.url().startsWith(base))!
     const panel = after.locator("[data-lab]")
     await panel.getByRole("heading", { name: "Look", exact: true }).waitFor()
-    if (await panel.locator('input[data-key^="look"]').count() !== 9) throw new Error("Missing Look switches")
+    if (await panel.locator('input[data-key^="look"]').count() !== 11) throw new Error("Missing Look switches")
     await panel.getByRole("button", { name: "All Off", exact: true }).click()
     if (await panel.locator("input:checked").count()) throw new Error("All Off failed")
     await panel.getByRole("button", { name: "All On", exact: true }).click()
@@ -77,7 +87,7 @@ try {
     const w = window as any
     for (let i = 0; i < n; i++) { await w.__stepManualVideo(dt); await w.__gpuDevice.queue.onSubmittedWorkDone(); await w.__gpuDrain() }
   }, { n, dt })
-  const keys = ["lookGrade", "lookPractical", "lookWalls", "lookAO", "lookCaps", "lookFloors", "lookCity", "lookGloss", "lookShadows"]
+  const keys = ["lookGrade", "lookPractical", "lookWalls", "lookAO", "lookCaps", "lookFloors", "lookCity", "lookGloss", "lookShadows", "lookShadowFilter", "lookMotion"]
   const set = async (key: string) => {
     await page.evaluate(({ keys, key }) => {
       const root = document.querySelector("[data-lab]")!.shadowRoot!
@@ -91,7 +101,7 @@ try {
     await step(4, 0)
   }
   const report: any = { baseline, timestamp: new Date().toISOString(), warmup: 1, measured: 7, samplesPerBlock: 24, views: [] }
-  for (const view of ["office", "downtown", "lot"]) {
+  for (const view of diagnostic ? ["office"] : ["office", "downtown", "lot"]) {
     await page.goto(`${base}/?${view === "office" ? "sandbox=1&seed=4" : `practice&map=${view}&seed=4`}&manualVideo=1`, { waitUntil: "networkidle" })
     await page.waitForFunction("window.__gpuDevice && window.__stepManualVideo && document.querySelector('[data-lab]')", undefined, { polling: 100 })
     report.adapter = await page.evaluate(() => (window as any).__gpuAdapterInfo)

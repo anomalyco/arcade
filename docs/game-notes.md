@@ -59,6 +59,17 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
+  silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
+  world-anchored sub-stratum offsets remove the coherent bands without a fullscreen blur. Never interpolate blocker
+  distances across silhouettes. `src/render/shaders.ts`, `perf/blackout-shadows.md`; all-off remains RGB-identical to main.
+  This is a quality/cost tradeoff: the 1440p office paired delta was +1.341 ms (MAD 0.282).
+- **Motion history belongs to submitted frames and stable owners.** Blackout's opt-in MRT velocity path tracks actor,
+  projectile and vehicle parts by weak owner/model/part identities. Coalesced builds do not advance history; gaps,
+  teleports and resize reset it. Eight depth-aware samples run in the existing composite, before the DOM HUD. The
+  1440p M5 Max paired deltas were +0.060 / -0.312 / +0.237 ms for office/downtown/lot, with MAD
+  0.345 / 0.896 / 0.273. The sub-0.5 ms target is unproven under that variance. See `perf/blackout-motion.md`.
+
 - **Live presentation labs.** `packages/kit/lab-panel.ts` stops pointer, mouse, wheel, touch, and keyboard bubbling
   and releases gameplay input on pointer down. The two `src/ui/debug-overlay.ts` adapters expose only enable/disable
   rows, All On / All Off, and compact FPS/frame/GPU telemetry. Getaway's rendering switches select baseline or enhanced

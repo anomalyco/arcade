@@ -1,0 +1,70 @@
+# Blackout motion blur
+
+`Motion Blur` is a default-off Look switch in the shared Lab panel. The prototype writes per-pixel velocity alongside
+scene colour, then gathers eight depth-weighted samples plus the centre in the existing composite. Camera movement
+and moving actors, ragdolls, grenades and vehicle parts use the previous submitted view-projection matrix and transforms.
+Tracers and muzzle flashes carry stable sprite identities and previous centres. The DOM HUD and crosshair stay sharp.
+The sub-0.5 ms GPU target is not established: paired timings on this machine remain too variable to certify that budget.
+
+## History follows submitted frames
+
+`src/render/motion.ts` holds weak owner/part identities and previous transforms. Each model's ordinal is scoped to its
+owner, so reordering model batches or removing another actor cannot transfer velocity between actors. History advances
+in `Renderer.draw`, after frame coalescing. First frames, missing identities, level changes, resizes, long frame gaps,
+large camera cuts and teleports reset velocity.
+
+The exposure is 1/120 second, capped at one frame, and the maximum blur length is 24 pixels. The velocity attachment
+stores pixel displacement and distance from the camera in RGBA16F, with the scene's four-sample MSAA resolve. Transparent
+surfaces blend their motion by opacity; a single blended field approximates overlapping transparent layers. Sprite
+motion tracks centres, while mesh parts include rotation and scale. There is no temporal colour feedback or tile-max
+silhouette expansion. Velocity targets allocate on first enable and are recreated on resize.
+
+## Whole-frame GPU measurement
+
+The fixture replays the same camera pan and per-owner transforms over real office, downtown and vehicle-lot geometry.
+It separately captures camera-only and object-only motion. This is a deterministic rendering fixture, not a timed
+gameplay benchmark. A separate live-input proof turns the Lab switch on, moves and fires, checks populated sprite/part
+histories, and verifies that resize resets motion.
+
+M5 Max, headless Chromium/Metal, 2560×1440. Each effect has one discarded warmup pair followed by seven alternating
+OFF/ON pairs. Each block settles for 32 frames and averages 96 frames. Hardware timestamp readback is awaited; total
+time spans the first compute start through the final composite end. The final composite uses an offscreen attachment
+with the canvas's size and format to exclude presentation contention. Overlapping pass timings are never summed.
+Motion is compared with the recommended look and shadow filter enabled on both sides; shadow filtering is compared
+with motion disabled on both sides.
+
+| View | Motion delta, ms | Motion MAD, ms | Shadow-filter delta, ms | Shadow MAD, ms |
+| --- | ---: | ---: | ---: | ---: |
+| Office | +0.060 | 0.345 | +1.341 | 0.282 |
+| Downtown | -0.312 | 0.896 | -0.101 | 0.338 |
+| Vehicle lot | +0.237 | 0.273 | +0.410 | 0.134 |
+
+These are medians of paired differences, with median absolute deviation (MAD). Negative values indicate noise, not a
+speedup. Earlier 96-frame blocks measured motion medians of +0.691 / +0.622 / +0.626 ms; the repeatability problem
+persists with the offscreen target. The prototype therefore remains opt-in, and a stable budget needs a quiet GPU run
+or comparison with the shared half-resolution velocity implementation.
+
+The final paired report is `blackout-motion-paired.json`; raw timestamp ranges remain in
+`captures/blackout-motion/paired.json`.
+
+The final live-input checks found populated motion histories in all three maps, with 10/12/12 sprite identities and
+60/79/102 part identities at peak. Resize cleared the exposure for the next submitted frame. All Look off remained
+RGB-identical to main at 1280×800 in office, downtown and lot. `bun run check` passed 260 tests, typechecks and build.
+
+## Reproduce
+
+```sh
+hivemind run --kind browser --fetch captures/blackout-motion -- sh -c \
+  'cd games/blackout && bun scripts/motion-proof.ts'
+python3 games/blackout/scripts/motion-sheet.py --output captures/blackout-motion
+```
+
+The preview is `http://blackout-look.localhost:1355/?sandbox=1&seed=4&lab=1`. Toggle Motion Blur under Look, or use
+Backquote to open the Lab. `tests/motion.test.ts` covers identity reordering, gaps, new objects, cuts and teleports.
+
+## Shared-module follow-up
+
+The separate `fx-kit` branch owns `packages/kit/gpu/motion-blur.ts`. Its gather supports callbacks for colour and velocity,
+so Blackout can keep the full-resolution scene velocity attachment and replace its local gather with a thin adapter.
+The prototype's history helpers are also candidates for that shared module. This branch retains its standalone
+implementation until those changes land, so neither PR needs the other branch's visual or particle changes.
