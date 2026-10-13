@@ -160,6 +160,13 @@ export async function lab(options:LabOptions) {
     trail,
     input,
     sync:()=>{panel?.sync();workbench?.syncChrome()},
+    transact:(label,run)=>{
+      const before=workbench?.captureSnapshot()
+      run()
+      if(before)workbench?.recordHistory(label,before)
+      panel?.sync()
+      workbench?.syncChrome()
+    },
     activeWalls:()=>spawn?.activeWalls()??[],
     activeGround:(x,z)=>spawn?spawn.activeGround(x,z):0,
     hasPlaygroundScene:()=>Boolean(spawn?.hasActiveScene()),
@@ -322,6 +329,8 @@ export async function lab(options:LabOptions) {
       frame:()=>workbench!.frameActiveTarget(),
       commands:workbench!.commands,
       radial:workbench!.radial,
+      getSelectedIds:()=>workbench!.getSelectedIds(),
+      setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
     },
   }
   let last=0

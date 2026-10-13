@@ -82,6 +82,7 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
   let activeGround:(x:number,z:number)=>number=yardGround
   let seed=7,time=0,nextLightId=1,nextEmitterId=1
   let selectedId:string|null=null
+  let selectedIds:string[]=[]
   let ghost:SpawnGhostState|null=null
   const dropped:{id:string;kind:string;at:SpawnPoint;light:LabLight}[]=[]
   const sources:{uid:string;id:string;at:SpawnPoint;life:number;acc:number}[]=[]
@@ -89,15 +90,35 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
   const origin=():SpawnPoint=>({...authoredCharacterSpawn})
   const isValidYardPoint=(x:number,z:number)=>x>-34.5&&x<34.5&&z>-40.5&&z<32.5
 
+  function selectedObjects():LabWorldObject[]{
+    const all=listObjects()
+    const valid=selectedIds.map(id=>all.find(o=>o.id===id)).filter((o):o is LabWorldObject=>Boolean(o))
+    if(valid.length!==selectedIds.length){
+      selectedIds=valid.map(o=>o.id)
+      selectedId=selectedIds.at(-1)??null
+      section.selectedObjectId=selectedId??undefined
+      section.selectedObjectIds=selectedIds
+    }
+    return valid
+  }
+
   function syncSelectedFields(){
-    if(!selectedId)return
-    const obj=listObjects().find(o=>o.id===selectedId)
-    if(!obj){selectedId=null;section.selectedObjectId=undefined;return}
-    settings.selectedX=Number(obj.x.toFixed(2))
-    settings.selectedZ=Number(obj.z.toFixed(2))
-    settings.selectedYaw=Math.round(((obj.yaw??0)*180)/Math.PI)
-    const d=dropped.find(l=>l.id===selectedId)
-    if(d){settings.selectedPower=Number(d.light.power.toFixed(2));settings.selectedRadius=Number(d.light.radius.toFixed(1))}
+    const sel=selectedObjects()
+    if(!sel.length){selectedId=null;section.selectedObjectId=undefined;section.selectedObjectIds=[];return}
+    let sx=0,sz=0
+    for(const o of sel){sx+=o.x;sz+=o.z}
+    const cx=sx/sel.length,cz=sz/sel.length
+    const primary=sel.at(-1)!
+    settings.selectedX=Number(cx.toFixed(2))
+    settings.selectedZ=Number(cz.toFixed(2))
+    settings.selectedYaw=Math.round(((primary.yaw??0)*180)/Math.PI)
+    const selLights=dropped.filter(l=>selectedIds.includes(l.id))
+    if(selLights.length){
+      const avgPower=selLights.reduce((a,l)=>a+l.light.power,0)/selLights.length
+      const avgRadius=selLights.reduce((a,l)=>a+l.light.radius,0)/selLights.length
+      settings.selectedPower=Number(avgPower.toFixed(2))
+      settings.selectedRadius=Number(avgRadius.toFixed(1))
+    }
   }
 
   function applyEnvironment(){
@@ -254,13 +275,25 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
   }
 
   function selectObject(id:string|null){
+    selectedIds=id?[id]:[]
     selectedId=id
     section.selectedObjectId=id??undefined
+    section.selectedObjectIds=selectedIds
     syncSelectedFields()
     context.sync()
   }
 
-  function moveObject(id:string,x:number,z:number,yaw?:number):boolean{
+  function selectObjects(ids:readonly string[]){
+    const allIds=new Set(listObjects().map(o=>o.id))
+    selectedIds=ids.filter((id,idx)=>allIds.has(id)&&ids.indexOf(id)===idx)
+    selectedId=selectedIds.at(-1)??null
+    section.selectedObjectId=selectedId??undefined
+    section.selectedObjectIds=selectedIds
+    syncSelectedFields()
+    context.sync()
+  }
+
+  function moveObjectSilent(id:string,x:number,z:number,yaw?:number):boolean{
     if(!isValidYardPoint(x,z))return false
     const gy=activeGround(x,z)
     if(id==="character:active"&&character&&characterId){
@@ -269,14 +302,11 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
       authoredCharacterSpawn={...nextAt}
       if(character.setPoint)character.setPoint(nextAt)
       else spawnCharacterAt(characterId,nextAt)
-      syncSelectedFields();context.sync()
       return true
     }
     if(id.startsWith("prop:")){
       const existing=items.entries?.().find(e=>e.id===id)
-      const ok=items.move?.(id,{x,y:gy,z,yaw:yaw??existing?.yaw??0})??false
-      if(ok){syncSelectedFields();context.sync()}
-      return ok
+      return items.move?.(id,{x,y:gy,z,yaw:yaw??existing?.yaw??0})??false
     }
     const d=dropped.find(l=>l.id===id)
     if(d){
@@ -284,32 +314,64 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
       d.at={x,y:gy,z,yaw:nextYaw}
       d.light.x=x;d.light.y=gy+(d.kind==="torch"?1.2:3);d.light.z=z
       d.light.dx=Math.sin(nextYaw)*.8;d.light.dz=Math.cos(nextYaw)*.8
-      syncSelectedFields();context.sync()
       return true
     }
     const s=sources.find(e=>e.uid===id)
     if(s){
       s.at={x,y:gy,z,yaw:yaw??s.at.yaw}
-      syncSelectedFields();context.sync()
       return true
     }
     return false
   }
 
-  function deleteObject(id:string):boolean{
+  function moveObject(id:string,x:number,z:number,yaw?:number):boolean{
+    const ok=moveObjectSilent(id,x,z,yaw)
+    if(ok){syncSelectedFields();context.sync()}
+    return ok
+  }
+
+  function deleteObjectSilent(id:string):boolean{
     if(id.startsWith("prop:")){
-      const ok=items.remove?.(id)??false
-      if(ok){if(selectedId===id)selectObject(null);context.sync()}
-      return ok
+      return items.remove?.(id)??false
     }
     const li=dropped.findIndex(l=>l.id===id)
-    if(li>=0){dropped.splice(li,1);if(selectedId===id)selectObject(null);context.sync();return true}
+    if(li>=0){dropped.splice(li,1);return true}
     const si=sources.findIndex(s=>s.uid===id)
-    if(si>=0){sources.splice(si,1);if(selectedId===id)selectObject(null);context.sync();return true}
+    if(si>=0){sources.splice(si,1);return true}
     return false
   }
 
-  function duplicateObject(id:string):string|null{
+  function deleteObject(id:string):boolean{
+    const ok=deleteObjectSilent(id)
+    if(ok){
+      selectedIds=selectedIds.filter(x=>x!==id)
+      selectedId=selectedIds.at(-1)??null
+      section.selectedObjectId=selectedId??undefined
+      section.selectedObjectIds=selectedIds
+      syncSelectedFields()
+      context.sync()
+    }
+    return ok
+  }
+
+  function deleteObjects(ids:readonly string[]=selectedIds):number{
+    const targets=[...ids]
+    let count=0
+    for(const id of targets){
+      if(deleteObjectSilent(id))count++
+    }
+    if(count>0){
+      selectedIds=selectedIds.filter(x=>!targets.includes(x))
+      selectedId=selectedIds.at(-1)??null
+      section.selectedObjectId=selectedId??undefined
+      section.selectedObjectIds=selectedIds
+      syncSelectedFields()
+      context.sync()
+    }
+    return count
+  }
+
+  function duplicateObjectSilent(id:string):string|null{
     const obj=listObjects().find(o=>o.id===id)
     if(!obj)return null
     const nx=Math.max(-32,Math.min(32,obj.x+1.5)),nz=Math.max(-38,Math.min(30,obj.z+1.2)),ny=activeGround(nx,nz),nyaw=obj.yaw??0
@@ -317,11 +379,35 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
       const entry=items.entries?.().find(e=>e.id===id)
       if(!entry)return null
       const newId=items.spawn(entry.kind,{x:nx,y:ny,z:nz,yaw:nyaw})
-      if(typeof newId==="string"){selectObject(newId);context.sync();return newId}
+      return typeof newId==="string"?newId:null
     }
     const d=dropped.find(l=>l.id===id)
-    if(d)return lightAt({x:nx,y:ny,z:nz,yaw:nyaw},d.kind)
+    if(d){
+      if(dropped.length>=4)return null
+      const spot=d.kind==="spotlight",newId=`light:${nextLightId++}`
+      dropped.push({id:newId,kind:d.kind,at:{x:nx,y:ny,z:nz,yaw:nyaw},light:{...d.light,x:nx,y:ny+(d.kind==="torch"?1.2:3),z:nz,dx:Math.sin(nyaw)*.8,dy:-.6,dz:Math.cos(nyaw)*.8,cone:spot?.8:-2}})
+      return newId
+    }
     return null
+  }
+
+  function duplicateObject(id:string):string|null{
+    const newId=duplicateObjectSilent(id)
+    if(newId){selectObject(newId);return newId}
+    return null
+  }
+
+  function duplicateObjects(ids:readonly string[]=selectedIds):string[]{
+    const targets=[...ids]
+    const created:string[]=[]
+    for(const id of targets){
+      const newId=duplicateObjectSilent(id)
+      if(newId)created.push(newId)
+    }
+    if(created.length>0){
+      selectObjects(created)
+    }
+    return created
   }
 
   function prepare(){
@@ -400,13 +486,49 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
     {key:"smokeEnabled",label:"Tyre smoke",group:"Vehicle & Skids",change:v=>items.setSmokeEnabled?.(Boolean(v))},
     {key:"clearSkids",label:"Clear skids",group:"Vehicle & Skids",type:"action",run:()=>{items.clearSkids?.();context.sync()}},
     {key:"resetScene",label:"Reset scene",group:"Vehicle & Skids",type:"action",run:resetScene},
-    {key:"selectedX",label:"Position X",group:"Selected Object",type:"range",min:-34,max:34,step:0.25,unit:"m",visible:()=>selectedId!==null,change:v=>{const o=listObjects().find(x=>x.id===selectedId);if(o)moveObject(o.id,Number(v),o.z,o.yaw)}},
-    {key:"selectedZ",label:"Position Z",group:"Selected Object",type:"range",min:-40,max:32,step:0.25,unit:"m",visible:()=>selectedId!==null,change:v=>{const o=listObjects().find(x=>x.id===selectedId);if(o)moveObject(o.id,o.x,Number(v),o.yaw)}},
-    {key:"selectedYaw",label:"Yaw",group:"Selected Object",type:"range",min:-180,max:180,step:5,unit:"°",visible:()=>selectedId!==null,change:v=>{const o=listObjects().find(x=>x.id===selectedId);if(o)moveObject(o.id,o.x,o.z,Number(v)*Math.PI/180)}},
-    {key:"selectedPower",label:"Light power",group:"Selected Object",type:"range",min:0.2,max:10,step:0.2,visible:()=>Boolean(selectedId?.startsWith("light:")),change:v=>{const d=dropped.find(l=>l.id===selectedId);if(d)d.light.power=Number(v)}},
-    {key:"selectedRadius",label:"Light radius",group:"Selected Object",type:"range",min:2,max:28,step:0.5,unit:"m",visible:()=>Boolean(selectedId?.startsWith("light:")),change:v=>{const d=dropped.find(l=>l.id===selectedId);if(d)d.light.radius=Number(v)}},
-    {key:"duplicateSelected",label:"Duplicate selected",group:"Selected Object",type:"action",visible:()=>Boolean(selectedId&&selectedId!=="character:active"),run:()=>{if(selectedId)duplicateObject(selectedId)}},
-    {key:"deleteSelected",label:"Delete selected",group:"Selected Object",type:"action",visible:()=>Boolean(selectedId&&selectedId!=="character:active"),run:()=>{if(selectedId)deleteObject(selectedId)}},
+    {key:"selectedX",label:"Position X",group:"Selected Object",type:"range",min:-34,max:34,step:0.25,unit:"m",visible:()=>selectedIds.length>0,change:v=>{
+      const sel=selectedObjects().filter(o=>o.movable)
+      if(!sel.length)return
+      const cx=sel.reduce((a,o)=>a+o.x,0)/sel.length
+      const dx=Number(v)-cx
+      for(const o of sel)moveObjectSilent(o.id,o.x+dx,o.z,o.yaw)
+      syncSelectedFields();context.sync()
+    }},
+    {key:"selectedZ",label:"Position Z",group:"Selected Object",type:"range",min:-40,max:32,step:0.25,unit:"m",visible:()=>selectedIds.length>0,change:v=>{
+      const sel=selectedObjects().filter(o=>o.movable)
+      if(!sel.length)return
+      const cz=sel.reduce((a,o)=>a+o.z,0)/sel.length
+      const dz=Number(v)-cz
+      for(const o of sel)moveObjectSilent(o.id,o.x,o.z+dz,o.yaw)
+      syncSelectedFields();context.sync()
+    }},
+    {key:"selectedYaw",label:"Yaw",group:"Selected Object",type:"range",min:-180,max:180,step:5,unit:"°",visible:()=>selectedIds.length>0,change:v=>{
+      const sel=selectedObjects().filter(o=>o.movable)
+      if(!sel.length)return
+      const primary=sel.at(-1)!
+      const nextRad=(Number(v)*Math.PI)/180
+      const dyaw=nextRad-(primary.yaw??0)
+      for(const o of sel)moveObjectSilent(o.id,o.x,o.z,(o.yaw??0)+dyaw)
+      syncSelectedFields();context.sync()
+    }},
+    {key:"selectedPower",label:"Light power",group:"Selected Object",type:"range",min:0.2,max:10,step:0.2,visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
+      for(const d of dropped)if(selectedIds.includes(d.id))d.light.power=Number(v)
+    }},
+    {key:"selectedRadius",label:"Light radius",group:"Selected Object",type:"range",min:2,max:28,step:0.5,unit:"m",visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
+      for(const d of dropped)if(selectedIds.includes(d.id))d.light.radius=Number(v)
+    }},
+    {key:"duplicateSelected",label:"Duplicate selected",group:"Selected Object",type:"action",visible:()=>selectedIds.some(id=>id!=="character:active"),run:()=>{
+      const n=selectedIds.filter(id=>id!=="character:active").length
+      const label=n>1?`Duplicate ${n} objects`:"Duplicate object"
+      if(context.transact)context.transact(label,()=>{duplicateObjects()})
+      else duplicateObjects()
+    }},
+    {key:"deleteSelected",label:"Delete selected",group:"Selected Object",type:"action",visible:()=>selectedIds.some(id=>id!=="character:active"),run:()=>{
+      const n=selectedIds.filter(id=>id!=="character:active").length
+      const label=n>1?`Delete ${n} objects`:"Delete object"
+      if(context.transact)context.transact(label,()=>{deleteObjects()})
+      else deleteObjects()
+    }},
     {key:"item",label:"Item",type:"select",group:"Items",options:items.items.map(i=>({value:i.id,label:i.label}))},
     {key:"spawnItem",label:"Spawn item",group:"Items",type:"action",run:()=>spawnItems("one")},
     {key:"count",label:"Count",group:"Items",type:"range",min:1,max:8,step:1},
@@ -445,10 +567,15 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
     return{x:0,y:0,z:4,dist:22}
   },
   objects:listObjects,
+  selectedObjectId:undefined,
+  selectedObjectIds:[],
   selectObject,
+  selectObjects,
   moveObject,
   deleteObject,
+  deleteObjects,
   duplicateObject,
+  duplicateObjects,
   groundHeight:(x,z)=>activeGround(x,z),
   update(dt){
     if(!settings.playing)return

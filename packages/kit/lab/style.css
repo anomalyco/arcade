@@ -610,3 +610,20 @@ body {
   padding: 1px 3px;
 }
 
+/* Marquee Box Selection Overlay */
+.lab-marquee {
+  position: absolute;
+  border: 1.5px dashed #7cc5d6;
+  background: #7cc5d624;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 45;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 2px 5px;
+  font: 600 9.5px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #d8f4fc;
+}
+
+
