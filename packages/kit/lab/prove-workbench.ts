@@ -46,15 +46,14 @@ try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
     page.on("pageerror", e => errors.push(`${game}: ${e.message}`))
     page.on("console", m => {
-      if (m.type() === "error" && !m.text().includes("404")) errors.push(`${game}: ${m.text()}`)
+      if (m.type() === "error") errors.push(`${game}: ${m.text()}`)
     })
     await page.addInitScript(() => {
       ;(window as any).__audioAttempts = 0
-      const OrigAudio = window.AudioContext
-      window.AudioContext = class extends OrigAudio {
-        constructor(...args: any[]) {
+      window.AudioContext = class {
+        constructor() {
           ;(window as any).__audioAttempts++
-          super(...args)
+          throw new Error("Live audio is disabled in this proof")
         }
       } as any
     })

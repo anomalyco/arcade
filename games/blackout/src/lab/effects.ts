@@ -26,7 +26,7 @@ const specimenTargets:Record<string,{label:string;x:number;y:number;z:number;rad
 export const blackoutEffectSection:SectionFactory=context=>gameEffects(context,"blackout-effects","Blackout effects",()=>{
   const {stage}=context,meshes=stage.meshes,sprites=new GameSprites(context),camera=new Camera()
   const settings={weapon:"rifle",surface:"glass",targetX:12,targetZ:11}
-  const groups=Object.fromEntries(Object.entries(blackoutEffects).map(([id,settings])=>[id,{label:labels[id as keyof typeof labels],settings}])) satisfies Record<string,EffectGroup>
+  const groups=Object.fromEntries(Object.entries(blackoutEffects).map(([id,settings])=>[id,{label:labels[id as keyof typeof labels],settings,units:id==="glass"||id==="paper"?{size:"×"}:undefined}])) satisfies Record<string,EffectGroup>
   let game:Game|undefined,environmentModel=-1,glassModel=-1,paperSheetModel=-1,glassSheetModel=-1,modelCount=0,frame:FrameInput|undefined,dt=0
   const lights:LabLight[]=[]
   const setLevel=(level:LevelData)=>{

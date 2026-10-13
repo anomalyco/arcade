@@ -1,7 +1,7 @@
 import type { LabControl, LabSettings } from "../lab-panel"
 import type { LabContext, LabSection, LabWorldObject } from "./types"
 
-export type EffectGroup = { label:string; settings:Record<string,number>; ranges?:Record<string,readonly [number,number,number?]> }
+export type EffectGroup = { label:string; settings:Record<string,number>; ranges?:Record<string,readonly [number,number,number?]>; units?:Record<string,string> }
 export type EffectAdapter = {
   effects:readonly {value:string;label:string}[]
   environments:readonly {value:string;label:string}[]
@@ -69,6 +69,7 @@ export function gameEffects(context:LabContext,id:string,label:string,create:()=
         const humanLabel=key==="size"&&group==="glass"?"Shard size":key.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase())
         groupControls.push({
           key:name,label:humanLabel,group:g.label,type:"range",min:range[0],max:range[1],step:range[2]??.01,
+          unit:g.units?.[key],
           visible:isVisible,
         })
       }

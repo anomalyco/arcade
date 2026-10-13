@@ -17,12 +17,16 @@ Sources were snapshotted before merging on 2026-10-13. Each source is merged sep
 | simplify-review | `81e9a4b94e08a76494dccbdf0dc0cd832813e013` | #10 |
 | audio-lab (additive follow-up) | `778b8a157ae7c5b46092d6ce9030638e0b3458d6` | — |
 | outbreak-look-refinement (additive follow-up) | `5805f66ab08a4a9e2ffbd8a17de27dd2be6bdd0e` | — |
+| lab-workbench (additive follow-up) | `bb0eca486375a0044e515cc950b263bc484fa7d4` | — |
 
 The local Look tip includes the window moonlight coverage fix missing from its remote PR.
 The local FX tip includes surface splatter and the completed fire/water work.
 Wizards' latest committed change is immediate click casting (`2e3177a`), after the older rune-casting study.
 
 ## Excluded
+
+The only unfinished follow-up excluded from this PR is `shared-human-rig`. The Lab workbench, Audio Lab and Outbreak
+refinement are included; the other items below are intentional scope exclusions.
 
 - Rejected experimental Getaway look presets; existing approved Night presentation stays.
 - Historical branches already squashed into main.
@@ -59,11 +63,10 @@ The shared hybrid audio runtime and Audio Lab are included. In either existing L
 **Render offline** renders the selected recipe without playing it. Approved in-game vehicle audio stays in use;
 the new candidate voice graphs are for review, with their reuse/parity boundary in `docs/audio-design.md`.
 
-Standalone Lab UI refinement is pending on the isolated `lab-workbench` branch, based on `4d2d571`.
-The current Lab still exposes long, irrelevant control lists. The follow-up focuses on direct selection,
-clear Edit/Play behavior and keyboard use in `packages/kit/lab` and shared panel layout adapters. Its tested
-additive commit will join this same PR; game rendering and approved defaults are outside that UI revision.
-The current Audio/Outbreak verification does not establish approval of the Lab's usability.
+The standalone Lab workbench is included. Its Library selects effects, objects, lighting and audio directly;
+the Inspector shows the selected item's controls beside a correctly sized central viewport. Edit/Play, transport,
+room-seed reroll and keyboard interaction replace the prior long all-effects control list. Embedded game debug
+overlays remain floating panels. Audio still requires an explicit Audition click before live playback.
 
 Run `bun install --frozen-lockfile` at the root. Start each client from its game directory with
 `bunx --no-install vite --host 127.0.0.1`; Blackout also needs `bun scripts/build-id.ts` first.

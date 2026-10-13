@@ -7,9 +7,9 @@ with `LabPanel` in `layout: "inspector"` and `capture: "focus"`.
 
 ## Pain points in the previous Lab UI
 
-Before captures: `~/code/home/artifacts/2026-10-13-lab-ux-before.png`,
-`~/code/home/artifacts/2026-10-13-lab-workbench/before-default.png`, and
-`~/code/home/artifacts/2026-10-13-lab-workbench/before-blackout-effects.png`.
+Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.png`,
+`2026-10-13-lab-workbench/before-default.png`, and
+`2026-10-13-lab-workbench/before-blackout-effects.png`.
 
 1. **Floating 285 px overlay over a full-window grid:** A single narrow `<section>` in the top-right corner covered the
    right side of the scene and scrolled through every control in one column.
@@ -100,7 +100,7 @@ Priority order:
 
 ## Reproduction and verification
 
-Run package and game checks from `/Users/kit/worktrees/arcade/lab-workbench`:
+Run package and game checks from the repository root:
 
 ```sh
 bun run check:packages
@@ -117,7 +117,8 @@ hivemind run -- bun games/getaway/scripts/prove-lab-effects.ts
 hivemind run -- bun games/getaway/scripts/prove-lab-spawn.ts
 ```
 
-Saved before/after screenshots and proof JSON live under `~/code/home/artifacts/2026-10-13-lab-workbench/`:
+Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, relative to the local
+artifact root. Combined-branch results are recorded separately in `docs/integration.md`:
 
 - `before-default.png` and `before-blackout-effects.png` — prior floating panel with duplicate `Controls` headers and
   all 20 effect groups exposed.
@@ -125,7 +126,8 @@ Saved before/after screenshots and proof JSON live under `~/code/home/artifacts/
   Bottom Transport.
 - `after-glass-default.png`, `after-glass-shard-size.png`, `after-glass-rerolled.png` — keyboard-selected `Glass shards`
   in the meeting room (`▾ Emitter`, `▾ Glass shards`, `▾ Environment` only), framed at the glass pane, shard size
-  adjusted to `2.2 m`, and room seed rerolled with the effect locked.
+  adjusted to a `2.2×` scale factor, and room seed rerolled with the effect locked. Integration labels the new
+  glass/paper size controls as multipliers rather than metres.
 - `after-spawn-play.png` and `after-spawn-edit.png` — `Car into cones` fixture driven in `Play` mode (`10.92 m/s`),
   exited with `Esc` (`throttle: 0`), and inspected in `Edit` mode without stuck input.
 - `after-audio-silent.png` — Audio Lab selected and rendered offline with `0` live `AudioContext` attempts.
