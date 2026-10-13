@@ -85,6 +85,7 @@ export function flicker(id: number, t: number, bad: number): number {
  * round casters.
  */
 export class LightCuller {
+  warmPracticals = false
   readonly lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   readonly occ = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   readonly power = new Float32Array(MAX_MAP_LIGHTS)
@@ -216,6 +217,17 @@ export class LightCuller {
       const [off, cnt] = pushOcc(l.x, l.y, l.r, list, 0.3)
       const pw = l.power * GAIN[l.kind] * (l.id < n ? P[l.id]! : 1)
       const c = sat(l.color, SAT[l.kind])
+      if (this.warmPracticals) {
+        if (l.kind === "panel") {
+          // Warm-white tubes, with a stable per-fixture temperature rather than blue-white wash.
+          const warm = hash(l.id * 7.3) * 0.08
+          c[0] = 1; c[1] = 0.85 + warm; c[2] = 0.64 + warm
+        } else if (l.kind === "desk" || l.kind === "pendant" || l.kind === "bulb") {
+          c[0] = 1; c[1] = 0.43 + hash(l.id) * 0.08; c[2] = 0.13
+        } else if (l.kind === "exit") {
+          c[0] = 1; c[1] = 0.035; c[2] = 0.018
+        }
+      }
       L.set([l.x, l.h, l.y, l.r * REACH[l.kind], c[0], c[1], c[2], pw, l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0, off, cnt, SIZE[l.kind], l.id], nl * LIGHT_FLOATS)
       nl++
     }

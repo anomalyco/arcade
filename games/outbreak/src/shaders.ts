@@ -2,11 +2,11 @@ import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
 
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
 export const shaders = {
-  sprite: spriteShader,
+  sprite: spriteShader(),
   scene: makeSceneShader({
     ao: "0.0",
     declarations: /* wgsl */ `
-@group(0) @binding(7) var exploredTex: texture_2d<f32>;
+@group(0) @binding(8) var exploredTex: texture_2d<f32>;
 fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - F.eye.xy;
   let distance = length(delta);

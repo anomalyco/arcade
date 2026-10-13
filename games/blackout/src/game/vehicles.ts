@@ -289,13 +289,13 @@ export class VehicleFx {
    * Draws them: bodies, wheels, lamps and light bars as parts; their lights, round shadow casters, a soft contact
    * shadow, skid marks, exhaust, smoke and fire. `teamColor` is the colour of the team holding a vehicle, or null.
    */
-  emit(t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], teamColor: (d: VehDraw) => Rgb3 | null): void {
+  emit(t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], teamColor: (d: VehDraw) => Rgb3 | null, begin?: (d: VehDraw) => void): void {
     this.marks = this.marks.filter((m) => t - m.t0 < SKID_LIFE)
     for (const m of this.marks) {
       const a = Math.min(1, (SKID_LIFE - (t - m.t0)) / 3) * 0.55
       sprite(false, m.x, 0.008, m.y, m.len, 0.015, 0.015, 0.018, a, 4, m.rot, 0.16 / Math.max(0.05, m.len))
     }
-    for (const d of this.draws.values()) this.draw(d, t, dt, push, sprite, fx, dyn, casters, teamColor(d))
+    for (const d of this.draws.values()) { begin?.(d); this.draw(d, t, dt, push, sprite, fx, dyn, casters, teamColor(d)) }
   }
 
   private draw(d: VehDraw, t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], team: Rgb3 | null): void {
