@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { BOW_Z, CENTERLINE_X, DECK_Y, STERN_Z } from "../shared/carrier-spec"
-import { LANDING, captureMiss, landingStep, startLanding } from "../shared/landing"
+import { LANDING, landingStep, startLanding } from "../shared/landing"
 import { DECK_CENTRE_Y, LAUNCH, LAUNCH_SPEED, catapult, launchPose, launchStep, startLaunch } from "../shared/launch"
 import { LOADOUTS } from "../shared/weapons"
 import { PLANE, type Plane, type PlaneControls, type PlaneTuning, makePlane, planeSpeed, planeStep, quatAxis, setPlaneQuat, worldToShip } from "../shared/plane"
@@ -97,7 +97,7 @@ describe("the F-35C on the carrier", () => {
     expect(worldToShip(ship, drawn.x, drawn.y, drawn.z)[1]).toBeCloseTo(deckCentreY("f35"), 6)
   })
 
-  test("auto-lands: captured behind the stern, trapped, stopped on the deck on its own gear", () => {
+  test("lands (F at the prompt): trapped, stopped on the deck on its own gear", () => {
     const sea = makeSea(7)
     const ship = Object.assign(makeShip(0, 0, 0.2, 0), { u: 0 })
     for (let i = 0; i < 600; i++) shipStep(ship, { throttle: 0.6, rudder: 0 }, sea, null)
@@ -116,7 +116,6 @@ describe("the F-35C on the carrier", () => {
     p.vx = f[0]! * (120 + ship.u)
     p.vz = f[1]! * (120 + ship.u)
     p.throttle = F35.cruise
-    expect(captureMiss(p, ship, v)).toBe("")
     const l = startLanding(p, ship, v)
     // Its hook meets the wires where the Hornet's does: the centre touches down ~2 m further aft.
     expect(l.touchZ + VEHICLES.f35.hookZ).toBeCloseTo(LANDING.touchZ + VEHICLES.hornet.hookZ, 6)

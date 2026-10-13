@@ -1,4 +1,4 @@
-import { type Landing, LANDING, captureMiss, landingPose, landingStep, startLanding, wantsWaveOff, waveOff } from "../../shared/landing"
+import { type Landing, landingPose, landingStep, startLanding } from "../../shared/landing"
 import { DECK_Y } from "../../shared/carrier-spec"
 import { LAUNCH, type Launch, launchPose, launchStep, startLaunch, type ShipLike } from "../../shared/launch"
 import { PLANE, type Plane, type PlaneControls, type PlaneWorld, copyPlane, lerpPlane, makePlane, planeAttitude, planeSpeed, planeStep } from "../../shared/plane"
@@ -36,17 +36,15 @@ export class Flight {
   onRespawn: (() => void) | null = null
   /** Called once when a landing has stopped on the deck (default: back on the catapult). */
   onLanded: (() => void) | null = null
-  /** The landing autopilot's state while it has the jet (and the previous step's, to draw between steps). */
+  /** The scripted landing's state while it has the jet (and the previous step's, to draw between steps). */
   landing: Landing | null = null
-  /**
-   * Carriers the jet may land on (the host's friendly ships with an open deck, as drawn this frame), or null for just
-   * the deck passed to `tick`. The one it was captured by is `landingShip` until the landing ends.
-   */
-  landables: readonly (ShipLike & { t: number; id: number })[] | null = null
+  /** The carrier being landed on (until the flight ends). */
   landingShip: (ShipLike & { t: number; id?: number }) | null = null
+  /** The host shows "F LAND" this frame (shared/landing.ts landTarget found a carrier). */
+  landPrompt = false
   private prevLanding: Landing | null = null
-  /** No landing capture until this many seconds have passed (after a launch or a wave-off). */
-  private noCapture = 0
+  /** `onLanded` has been called for this landing. */
+  private landedSent = false
   /** Gear 0 (up) .. 1 (down), and the tailhook. */
   private gear = 1
   private hook = 0
@@ -75,6 +73,7 @@ export class Flight {
     this.crashTime = 0
     this.landing = this.prevLanding = null
     this.landingShip = null
+    this.landPrompt = false
     this.gear = 1
     this.hook = 0
     this.cam.reset()
@@ -102,6 +101,17 @@ export class Flight {
     if (this.phase === "deck") this.wantLaunch = true
   }
 
+  /** F at the prompt: the scripted landing on `ship` takes the jet (from the next step on, input is ignored). */
+  land(ship: ShipLike & { t: number; id?: number }): void {
+    if (this.phase !== "flying") return
+    this.landingShip = ship
+    this.landing = startLanding(this.plane, ship, landingVehicle(this.vehicle))
+    this.prevLanding = { ...this.landing, capQ: [...this.landing.capQ] }
+    this.landedSent = false
+    this.landPrompt = false
+    this.phase = "landing"
+  }
+
   /** One fixed step (PLANE.tick), after the carrier has been stepped to the same sea time. */
   tick(ship: ShipLike & { t: number }, world: PlaneWorld): void {
     copyPlane(this.plane, this.prev)
@@ -126,52 +136,33 @@ export class Flight {
       if (launchStep(this.launch, this.plane, ship, dt)) {
         this.phase = "flying"
         this.airborne = 0
-        this.noCapture = LANDING.cooldown
       }
       this.trauma = Math.max(this.trauma, this.launch.shake)
       return
     }
     if (this.phase === "flying") {
       this.airborne += dt
-      this.noCapture = Math.max(0, this.noCapture - dt)
       const v = VEHICLES[this.vehicle]
       planeStep(this.plane, this.controls, dt, world, v.flight, v.probes)
       if (this.plane.crashed) {
         this.phase = "crashed"
         this.crashTime = 0
         this.trauma = 1
-      } else if (this.noCapture <= 0) {
-        // Up the stern of a friendly carrier, lined up and low: the landing autopilot takes over.
-        const lv = landingVehicle(this.vehicle)
-        const on = (this.landables ?? [ship]).find((c) => !captureMiss(this.plane, c, lv))
-        if (on) {
-          this.landingShip = on
-          this.landing = startLanding(this.plane, on, lv)
-          this.prevLanding = { ...this.landing, capQ: [...this.landing.capQ] }
-          this.phase = "landing"
-        }
       }
       return
     }
     if (this.phase === "landing" && this.landing) {
+      // The scripted landing: no input, it always advances the clock and always ends; the jet then rides the deck
+      // until the host ends the flight (onLanded, once).
       ship = this.landingShip ?? ship
       const l = this.landing
       Object.assign(this.prevLanding!, l)
-      if (wantsWaveOff(l, this.controls)) {
-        // Wave-off: the pilot takes the jet back; gear comes up again.
-        waveOff(this.plane)
-        this.landing = this.prevLanding = null
-        this.landingShip = null
-        this.phase = "flying"
-        this.airborne = 0
-        this.noCapture = LANDING.cooldown
-        return
-      }
       const touched = l.phase === "approach"
       const done = landingStep(l, this.plane, ship, dt)
       if (touched && l.phase !== "approach") this.trauma = Math.max(this.trauma, 0.7)
       this.trauma = Math.max(this.trauma, l.shake)
-      if (done) {
+      if (done && !this.landedSent) {
+        this.landedSent = true
         if (this.onLanded) this.onLanded()
         else this.toDeck(ship)
       }
@@ -190,7 +181,7 @@ export class Flight {
   /** Per rendered frame, before the fixed steps: reads the keys and stick into `controls` (none while `paused`). */
   readInput(dt: number, paused = false): void {
     const i = this.input
-    const flying = this.phase === "flying" || (this.phase === "landing" && (this.landing?.phase === "approach" || this.landing?.phase === "pattern"))
+    const flying = this.phase === "flying"
     i.enabled = flying && !paused
     i.controls(dt, this.controls)
     if (!flying || paused) {
@@ -240,10 +231,10 @@ export class Flight {
     }
     this.trauma = Math.max(this.trauma * Math.exp(-dt * 2.2), this.phase === "flying" ? p.stall * 0.45 + Math.max(0, p.g - 7) * 0.05 : 0)
     const look = this.input.freeLook ? this.input.look : null
-    // The landing: on final and in the trap the chase camera swings out to a high three-quarter view that frames the
-    // jet coming down onto the deck, and settles back afterwards.
+    // The landing: on the glideslope and in the trap the chase camera swings out to a high three-quarter view that
+    // frames the jet coming down onto the deck.
     const lp = this.phase === "landing" ? this.landing?.phase : undefined
-    const showDeck = lp === "trap" || lp === "stopped" || lp === "done" || (lp === "approach" && (this.landing?.z ?? -1e9) > -1100)
+    const showDeck = lp === "trap" || lp === "stopped" || lp === "done" || (lp === "approach" && !!this.landing && this.landing.seg === this.landing.segs.length - 1)
     this.cam.framing.yaw = showDeck ? 0.5 : 0
     this.cam.framing.pitch = showDeck ? -0.32 : 0
     this.cam.framing.dist = showDeck ? 1.6 : 1
@@ -292,6 +283,7 @@ export class Flight {
         path,
         cockpit: this.cam.mode === "cockpit",
         landing: this.phase === "landing",
+        prompt: this.phase === "flying" && this.landPrompt,
         home: ship ? this.home(ship, size) : null,
       })
     } else this.hud.update(null)

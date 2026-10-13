@@ -223,16 +223,16 @@ async function solo(): Promise<void> {
   await shot(page, "01-ops-menu")
   await js(page, "c.ops.pin(false); c.net.op('f35')")
   check(await until(page, "f.phase !== 'idle' && f.vehicle === 'f35'", 5000), "LAUNCH F-35C starts an F-35C sortie")
-  // Hold it on the catapult for the deck shots: keep restarting the spool (engines at idle, on the shuttle).
-  await until(page, "f.launch && f.launch.phase === 'spool'", 4000)
-  await js(page, "globalThis.__hold = setInterval(() => { if (f.launch && f.launch.phase === 'spool') f.launch.time = 0 }, 10)")
+  // Hold it on the catapult for the deck shots: keep restarting the hold (engines at idle, on the shuttle).
+  await until(page, "f.launch && f.launch.phase === 'ready'", 4000)
+  await js(page, "globalThis.__hold = setInterval(() => { if (f.launch && f.launch.phase === 'ready') f.launch.time = 0 }, 10)")
   await page.waitForTimeout(600)
   await shot(page, "02-deck-chase")
   await inspect(page, { yaw: 2.2, pitch: 0.28, dist: 28 })
   await shot(page, "03-deck-side")
   await inspect(page, { yaw: 0.6, pitch: 0.12, dist: 22 })
   await shot(page, "03b-deck-front")
-  // The catapult: line-up, spool, then the stroke.
+  // The catapult: parked, then the stroke.
   await inspect(page, null)
   await js(page, "clearInterval(globalThis.__hold)")
   await until(page, "f.launch && f.launch.phase === 'stroke'", 6000)
@@ -298,11 +298,12 @@ async function solo(): Promise<void> {
   await bombImpact(page, "13-bomb-ground")
   await inspect(page, null)
   await js(page, "w.loadout.slot = 0")
-  // Auto-landing: behind the stern, lined up and low; the autopilot traps it.
+  // Landing: near the carrier the HUD offers F LAND; F flies the scripted landing and the hook traps it.
   const s2 = await sternPoint(page, 1400, 20)
   await warp(page, s2.x, 26 + 90, s2.z, s2.h, 120 + s2.u)
-  await js(page, "f.noCapture = 0")
-  check(await until(page, "f.phase === 'landing'", 3000), "the landing autopilot captures the F-35C")
+  await page.waitForTimeout(300)
+  await page.keyboard.press("f")
+  check(await until(page, "f.phase === 'landing'", 3000), "F lands the F-35C")
   await page.waitForTimeout(3500)
   await shot(page, "14-landing-approach")
   await until(page, "f.landing && f.landing.z > -175", 30000)
@@ -375,8 +376,8 @@ async function mp(): Promise<void> {
   // A (the helm) launches the F-35C; B (a pilot on deck) sees it in use, then launches a Hornet.
   await js(a, "c.net.op('f35')")
   check(await until(a, "f.phase !== 'idle' && f.vehicle === 'f35'", 6000), "A flies an F-35C")
-  await until(a, "f.launch && f.launch.phase === 'spool'", 4000)
-  await js(a, "globalThis.__hold = setInterval(() => { if (f.launch && f.launch.phase === 'spool') f.launch.time = 0 }, 10)")
+  await until(a, "f.launch && f.launch.phase === 'ready'", 4000)
+  await js(a, "globalThis.__hold = setInterval(() => { if (f.launch && f.launch.phase === 'ready') f.launch.time = 0 }, 10)")
   await b.waitForTimeout(1500)
   await js(b, "c.ops.pin(true)")
   await b.waitForTimeout(400)
@@ -439,7 +440,8 @@ async function polish(): Promise<void> {
   const touchdown = async (name: string, hookZ: number) => {
     const s = await sternPoint(page, 1400, 0)
     await warp(page, s.x, 26 + 90, s.z, s.h, 120 + s.u)
-    await js(page, "f.noCapture = 0")
+    await page.waitForTimeout(300)
+    await page.keyboard.press("f")
     check(await until(page, "f.phase === 'landing'", 3000), `${name}: captured`)
     await until(page, "f.landing && f.landing.z > f.landing.touchZ - 30", 40000)
     await inspect(page, { yaw: Math.PI / 2, pitch: 0.06, dist: 34 })

@@ -210,7 +210,7 @@ describe("sinking and the crew", () => {
   function fleet(): { c: Crew; sunk: number; other: number } {
     const c: Crew = { seed: 1, made: 3, nextShip: 4, ships: [], players: [] }
     const ship = (id: number, team: number, helm: number, pilots: number[]) =>
-      c.ships.push({ id, name: `CV-0${id}`, hull: id, team, slot: id, helm, pilots, aircraft: [{ op: "hornet", pilot: null, readyAt: 0 }, { op: "hornet", pilot: null, readyAt: 0 }, { op: "f35", pilot: null, readyAt: 0 }], emptySince: null, captain: helm, locked: false, bans: [] })
+      c.ships.push({ id, name: `CV-0${id}`, hull: id, team, slot: id, helm, pilots, aircraft: [{ op: "hornet", pilot: null, readyAt: 0 }, { op: "hornet", pilot: null, readyAt: 0 }, { op: "f35", pilot: null, readyAt: 0 }], emptySince: null, captain: helm, locked: false, bans: [], catapultUntil: 0 })
     ship(1, 1, 1, [2, 3])
     ship(2, 1, 4, [])
     ship(3, 0, 5, [])

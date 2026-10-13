@@ -1,3 +1,4 @@
+import { catapultTime } from "../shared/launch"
 import { describe, expect, test } from "bun:test"
 import { type Conn, RoomCore, SHIPS_EVERY_MS } from "../server/core"
 import { BUILD } from "../shared/build.gen"
@@ -153,7 +154,8 @@ describe("room ships", () => {
     say(a, { type: "recover", how: "crashed" })
     // Shot down: on deck, nothing launches by itself; slot 0 recharges but slot 1 is ready.
     expect(playerOf(core.crew!, a.id)).toMatchObject({ role: "pilot", plane: -1, sortie: 1 })
-    run(500)
+    // The ship's one catapult is free again once that jet has left the bow.
+    run(catapultTime("hornet") * 1000)
     expect(playerOf(core.crew!, a.id)!.plane).toBe(-1)
     say(a, { type: "op", op: "hornet" })
     expect(playerOf(core.crew!, a.id)).toMatchObject({ plane: 1, sortie: 2 })
@@ -173,7 +175,7 @@ describe("room ships", () => {
   })
 
   test("two pilots launch, a third waits for a slot", () => {
-    const { core, join, say } = room()
+    const { core, join, say, run } = room()
     const a = join("ada")
     join("x1") // the other team
     const b = join("bo")
@@ -181,6 +183,10 @@ describe("room ships", () => {
     const d = join("di")
     expect(playerOf(core.crew!, d.id)!.ship).toBe(playerOf(core.crew!, a.id)!.ship)
     say(b, { type: "op", op: "hornet" })
+    // One catapult: the second jet waits until the first has left the bow.
+    say(d, { type: "op", op: "hornet" })
+    expect(d.last("nope")!.error).toBe("catapult-busy")
+    run(catapultTime("hornet") * 1000)
     say(d, { type: "op", op: "hornet" })
     say(a, { type: "op", op: "hornet" })
     expect(a.last("nope")!.error).toBe("in-use")

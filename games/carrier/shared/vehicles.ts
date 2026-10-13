@@ -29,8 +29,7 @@ export type VehicleSpec = {
   readonly engines: number
   /** Height of the model origin (lowest belly point) above the deck with the gear down (m). */
   readonly gear: number
-  /** Catapult stroke (m) and time (s): deck-relative speed at the bow = 2 · stroke / strokeTime. */
-  readonly stroke: number
+  /** Catapult time (s) over the ship's one stroke (shared/launch.ts STROKE): sets its acceleration and launch speed. */
   readonly strokeTime: number
   /** Deck-relative landing approach speed (m/s). */
   readonly approachSpeed: number
@@ -56,8 +55,7 @@ export const VEHICLES: Readonly<Record<VehicleKind, VehicleSpec>> = {
     probes: PROBES,
     engines: 2,
     gear: 1.35,
-    stroke: 110,
-    strokeTime: 2.4,
+    strokeTime: 4.2,
     approachSpeed: 70,
     hookZ: -6.35 - 1.9 * Math.cos(0.7),
     rails: [
@@ -98,8 +96,7 @@ export const VEHICLES: Readonly<Record<VehicleKind, VehicleSpec>> = {
     ],
     engines: 1,
     gear: 1.05,
-    stroke: 110,
-    strokeTime: 2.45,
+    strokeTime: 4.3,
     approachSpeed: 72,
     hookZ: -4.41 - 1.75 * Math.cos(0.7),
     // AIM-9X on the outboard wing stations.

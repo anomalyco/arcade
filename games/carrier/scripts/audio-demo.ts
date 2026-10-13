@@ -163,11 +163,11 @@ function flyby(burner: boolean, off = 40, up = burner ? 18 : 28): Scene {
   }
 }
 
-/** Your own catapult launch from the chase camera: line-up, spool (burner lit at the end), the stroke, gear up. */
+/** Your own catapult launch from the chase camera: parked at idle, then one continuous stroke on full afterburner, gear up. */
 function catapult(): Scene {
   const DECK = 20
   return {
-    dur: 9,
+    dur: 10,
     setup: (s) => {
       const o = s.makeOwn("hornet", "chase")
       o.phase = "deck"
@@ -179,32 +179,28 @@ function catapult(): Scene {
       const o = s.own!
       const d = o.draw
       let speed = 0
-      if (t < 0.4) {
-        o.phase = "deck"
-        d.throttle = 0.15
-      } else if (t < 1.5) {
+      // One continuous launch (shared/launch.ts): parked at idle, then launchStart: full afterburner, the catapult
+      // and the motion together, ~3.5 g down the runway to the bow.
+      if (t < 1) {
         o.phase = "launching"
-        o.launch = { phase: "lineup" }
+        o.launch = { phase: "ready" }
         d.throttle = 0.15
-        speed = 14 * Math.sin(((t - 0.4) / 1.1) * Math.PI)
-      } else if (t < 2.5) {
-        o.launch = { phase: "spool" }
-        d.throttle = 0.15 + 0.85 * (t - 1.5)
-        d.boosting = t > 2.05 ? 1 : 0
-      } else if (t < 4.9) {
+        d.boosting = 0
+      } else if (t < 5.2) {
         o.launch = { phase: "stroke" }
         d.throttle = 1
         d.boosting = 1
-        speed = 38.2 * (t - 2.5)
+        const u = t - 1
+        speed = u < 0.3 ? (34.7 * u * u) / 0.6 : 34.7 * (u - 0.15)
       } else {
         o.phase = "flying"
         o.launch = { phase: "airborne" }
         d.boosting = 0
-        speed = 92 + 4 * (t - 4.9)
+        speed = 141 + 4 * (t - 5.2)
         d.vy = 6
         d.y += d.vy * dt
         // Gear up after 0.8 s, over 2.2 s.
-        s.pose.gear = 1 - Math.max(0, Math.min(1, (t - 5.7) / 2.2))
+        s.pose.gear = 1 - Math.max(0, Math.min(1, (t - 6) / 2.2))
       }
       d.vz = -speed
       d.z += d.vz * dt

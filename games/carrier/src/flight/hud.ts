@@ -16,8 +16,10 @@ export type FlightHudView = {
   nose: { x: number; y: number } | null
   path: { x: number; y: number } | null
   cockpit: boolean
-  /** The landing autopilot has the jet. */
+  /** The scripted landing has the jet. */
   landing?: boolean
+  /** Near a friendly carrier: show "F LAND". */
+  prompt?: boolean
   /** Your carrier: a tiny tick under it at (x, y) when in view (`on`), else a small edge chevron pointing along `angle`
    *  (screen radians, 0 = right, y down); distance in km. Null hides it. */
   home?: { x: number; y: number; size: number; on: boolean; angle: number; km: number } | null
@@ -54,6 +56,9 @@ const CSS = `
 #fl .home .chev::before { content: ""; position: absolute; left: 2px; top: 3px; width: 6px; height: 6px; border: solid currentColor; border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); filter: drop-shadow(0 0 2px rgba(10, 30, 60, 0.5)); }
 #fl .home .km { position: absolute; left: 0; top: 0; transform: translate(-50%, 0); font-size: 9px; letter-spacing: 0.22em; white-space: nowrap; opacity: 0.8; font-variant-numeric: tabular-nums; }
 #fl .warn.cue { color: var(--ink); opacity: 0.9; }
+#fl .land { position: absolute; left: 50%; top: 68%; transform: translateX(-50%); zoom: var(--hud, 1); font-size: 13px; letter-spacing: 0.32em;
+  padding: 5px calc(10px - 0.32em) 5px 10px; background: rgba(6, 16, 30, 0.62); text-shadow: none; white-space: nowrap; }
+#fl .land b { font-weight: 300; border: 1px solid currentColor; padding: 0 0.35em; margin-right: 0.9em; letter-spacing: 0; }
 #fl .warn.pulse { animation: fl-pulse 0.7s ease-in-out infinite alternate; }
 @keyframes fl-pulse { from { opacity: 0.35 } to { opacity: 1 } }
 #fl .center { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); text-align: center; display: grid; gap: 10px; zoom: var(--hud, 1); }
@@ -82,6 +87,7 @@ export class FlightHud {
   private nose: HTMLElement
   private fpm: HTMLElement
   private warn: HTMLElement
+  private land: HTMLElement
   private card: HTMLElement
   private cardTitle: HTMLElement
   private cardSub: HTMLElement
@@ -101,7 +107,7 @@ export class FlightHud {
     }
     const root = document.createElement("div")
     root.id = "fl"
-    root.innerHTML = `<div class="mark nose"></div><div class="mark fpm"></div><div class="warn"></div>
+    root.innerHTML = `<div class="mark nose"></div><div class="mark fpm"></div><div class="warn"></div><div class="land" hidden><b>F</b>LAND</div>
 <div class="home" hidden><div class="tick"></div><div class="chev"></div><div class="km"></div></div>
 <div class="read"><div class="row"><span class="big spd"></span><span class="sep"></span><span class="big alt"></span></div>
 <div class="row small"><span class="bar"><i></i><b></b></span><span class="thr"></span><span class="boost"><i></i></span><span class="hdg"></span></div></div>
@@ -121,6 +127,7 @@ export class FlightHud {
     this.nose = q(".nose")
     this.fpm = q(".fpm")
     this.warn = q(".warn")
+    this.land = q(".land")
     this.card = q(".center")
     this.cardTitle = q(".center .title")
     this.cardSub = q(".center .sub")
@@ -176,6 +183,7 @@ export class FlightHud {
     this.home(v?.home ?? null)
     if (!v) {
       this.warn.textContent = ""
+      this.land.hidden = true
       return
     }
     if (v.nose) this.nose.style.transform = `translate(${v.nose.x.toFixed(1)}px, ${v.nose.y.toFixed(1)}px)`
@@ -192,6 +200,7 @@ export class FlightHud {
       this.boostFill.style.width = `${(v.boost * 100).toFixed(1)}%`
       this.boost.classList.toggle("lit", v.boosting)
     }
+    this.land.hidden = !v.prompt
     let warn = ""
     if (v.edgeLeft !== null) warn = `RETURN  ${Math.ceil(v.edgeLeft)}`
     else if (v.landing) warn = "LANDING"

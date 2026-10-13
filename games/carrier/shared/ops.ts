@@ -133,6 +133,8 @@ export function opError(c: Crew, id: number, opId: string, now: number): CrewErr
     const at = gunnerAt(c, s, op.mount ?? -1)
     return at === null ? null : at === id ? "at-gun" : "in-use"
   }
+  // One catapult per ship: a jet waits until the last one has left the bow (shared/launch.ts).
+  if (!op.boat && s.catapultUntil > now && readySlot(s, op.id, now) >= 0) return "catapult-busy"
   if (readySlot(s, op.id, now) >= 0) return null
   return slotsOf(s, op.id).some(({ a }) => a.pilot === null) ? "recharging" : "in-use"
 }

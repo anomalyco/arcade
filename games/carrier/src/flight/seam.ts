@@ -25,8 +25,10 @@ import type { CombatWorld } from "../../shared/combat"
 import { playerVehicle } from "../../shared/ops"
 import { type VehicleKind, vehicleCode, vehicleOfCode } from "../../shared/vehicles"
 import { Flight } from "./flight"
+import { landTarget } from "../../shared/landing"
+import { landingVehicle } from "../../shared/vehicles"
 import type { DrawnShip } from "../game/game"
-import { type Hull, deckOpen } from "../../shared/fleet"
+import type { Hull } from "../../shared/fleet"
 import { ShipHud } from "../weapons/ship-hud"
 import { FlightHud } from "./hud"
 import { FlightInput } from "./input"
@@ -93,8 +95,13 @@ export class FlightModule {
   private tuple: PlaneTuple = [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]
   private models: PlaneModels | null = null
   private world = { sea: null as Sea | null, arch: null as Archipelago | null, ships: [] as readonly Ship[] }
-  /** Friendly carriers with an open deck, as drawn last frame: where the jet may land. */
-  private landables: DrawnShip[] = []
+  /** Every carrier as drawn last frame (with its team) and every hull: where the jet may land (shared/landing.ts). */
+  private drawnShips: readonly DrawnShip[] = []
+  private hulls: ReadonlyMap<number, Hull> | null = null
+  private seaT = 0
+  /** The pending recover (to resend until the room has freed the slot), and when it was last sent (frame clock). */
+  private recoverArgs: [RecoverHow, number | undefined] | null = null
+  private recoverAt = 0
   /** Own ship health, the damage flash and enemy ship health in the air (src/weapons/ship-hud.ts). */
   readonly shipHud = new ShipHud()
   private recovering = false
@@ -106,6 +113,7 @@ export class FlightModule {
   /** Every jet's engine, flybys, catapult, trap and cockpit sound (src/audio/jet-audio.ts). */
   readonly audio = new JetAudio()
   private weaponsNet: WeaponsNet
+  private weaponInput: WeaponInput
   private wasArmed = false
   private crew: Crew | null = null
   /** Each other pilot's last seen sortie: a new one is a fresh jet with full health and stores. */
@@ -135,7 +143,8 @@ export class FlightModule {
       lock: (target, locked) => this.net.sendSeek(target, locked),
       shipHits: (ship, n) => this.net.sendShipHits(ship, n),
     }
-    this.weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), new WeaponInput(canvas), null)
+    this.weaponInput = new WeaponInput(canvas)
+    this.weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), this.weaponInput, null)
     this.boom = new Explosions(renderer)
     // Shot-down jets break apart (seeded by pilot and sortie, so every client sees the same pieces).
     this.weapons.breakup = {
@@ -199,7 +208,7 @@ export class FlightModule {
       const on = f.landingShip && "id" in f.landingShip ? f.landingShip.id : undefined
       this.recover("landed", on !== undefined && on !== this.ctx?.ship ? on : undefined)
     }
-    f.landables = this.landables
+    this.recoverArgs = null
     this.unplaced = !ship
     if (ship) f.toDeck(ship)
     else {
@@ -218,6 +227,8 @@ export class FlightModule {
     this.ctx = null
     this.pose = null
     this.recovering = false
+    this.recoverArgs = null
+    this.weaponInput.flaresBlocked = false
     this.flight.idle()
     this.weapons.land()
     this.wasArmed = false
@@ -226,6 +237,8 @@ export class FlightModule {
   private recover(how: RecoverHow, ship?: number): void {
     if (!this.ctx || this.recovering) return
     this.recovering = true
+    this.recoverArgs = [how, ship]
+    this.recoverAt = this.time
     this.ctx.recover(how, ship)
   }
 
@@ -236,6 +249,12 @@ export class FlightModule {
     if (!ctx || f.phase === "idle") return false
     const deck = ctx.deck()
     f.readInput(dt, paused)
+    // "F LAND": near a friendly carrier with an open deck, F lands (and drops no flares).
+    const me = this.crew && playerOf(this.crew, this.net.id)
+    const target = f.phase === "flying" && me ? landTarget(f.plane, f.airborne, this.drawnShips, me.team, this.hulls, this.seaT, landingVehicle(f.vehicle)) : null
+    f.landPrompt = !!target
+    this.weaponInput.flaresBlocked = !!target
+    if (target && !paused && this.input.land) f.land(target)
     if (deck) {
       // The first sight of the deck places the jet (start may have come before the hull was drawn).
       if (this.unplaced) {
@@ -245,9 +264,12 @@ export class FlightModule {
       }
       if (t - f.plane.t > 2 || t < f.plane.t - 1) f.plane.t = t - PLANE.tick
       this.world.ships = ctx.ships?.() ?? [deck]
-      // The landing autopilot captures on any friendly carrier with an open deck (own first).
-      this.landables.sort((a, b) => (a.id === ctx.ship ? -1 : b.id === ctx.ship ? 1 : 0))
-      while (f.plane.t + PLANE.tick <= t) {
+      // Every step advances the jet's clock; the cap is a last guard against a stalled clock freezing the page.
+      for (let n = 0; f.plane.t + PLANE.tick <= t; n++) {
+        if (n > 600) {
+          f.plane.t = t
+          break
+        }
         f.tick(deck, this.world)
         // Weapons ride along while the jet flies (and while it lands: a target, but nothing fires).
         const live = f.phase === "flying" || f.phase === "landing"
@@ -344,10 +366,16 @@ export class FlightModule {
     // A jet rescued from a sunk carrier flies on as a pilot of the ship it was moved to.
     if (this.ctx && me && me.ship !== this.ctx.ship && me.plane >= 0) this.ctx.ship = me.ship
     const hulls = v.hulls
+    this.hulls = hulls ?? null
+    this.seaT = v.t
     if (v.ships) {
       this.world.ships = v.ships
-      this.landables.length = 0
-      for (const s of v.ships) if (me && s.team === me.team && deckOpen(hulls?.get(s.id), v.t)) this.landables.push(s)
+      this.drawnShips = v.ships
+    }
+    // The flight ended but the room has not freed the slot yet (a lost message, a reconnect): ask again.
+    if (this.ctx && this.recoverArgs && me && me.plane >= 0 && this.time - this.recoverAt > 1.5) {
+      this.recoverAt = this.time
+      this.ctx.recover(...this.recoverArgs)
     }
     if (v.crew)
       for (const p of v.crew.players) {

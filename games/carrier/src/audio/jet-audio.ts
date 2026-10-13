@@ -265,8 +265,11 @@ export class JetAudio {
 
     // Events from phase changes.
     const lp = f.launch?.phase ?? ""
-    if (phase === "launching" && lp !== this.ownLaunch) {
-      if (lp === "stroke") this.event("catapult", true, p.x, p.y, p.z)
+    // launchStart (shared/launch.ts: ready → stroke): the catapult shot and the engine straight from idle to full
+    // afterburner, on the same instant (no spool-up before it).
+    if (phase === "launching" && lp === "stroke" && this.ownLaunch !== "stroke") {
+      this.event("catapult", true, p.x, p.y, p.z)
+      this.launchStart(t)
     }
     const ld = f.landing?.phase ?? ""
     if (phase === "landing" && this.ownLanding === "approach" && ld === "trap") this.event("trap", true, p.x, p.y, p.z)
@@ -294,6 +297,14 @@ export class JetAudio {
     c.brake = p.brake
   }
 
+  /** launchStart: the engine is at full afterburner at once (no spool from idle). */
+  private launchStart(t: { rpm: number; burner: number; throttle: number; boost: number }): void {
+    t.throttle = 1
+    t.boost = 1
+    t.rpm = rpmFor(1)
+    t.burner = 1
+  }
+
   /** Another player's jet this frame: its draw pose and newest relayed tuple (shared/protocol.ts PlaneTuple). */
   remote(id: number, pose: PlaneDrawPose, tuple: PlaneTuple): void {
     const t = this.track(id, pose.kind ?? "hornet")
@@ -311,10 +322,11 @@ export class JetAudio {
     t.throttle = pose.throttle
     t.boost = pose.burner > 0.5 ? 1 : 0
     const mode = tuple[1]
-    // The catapult fires the moment the spool reaches full throttle on the deck (shared/launch.ts), as drawn.
+    // launchStart as drawn: on the deck the throttle jumps from idle to full the instant the stroke begins.
     if (mode === 0 && pose.throttle >= 0.985 && !t.launched) {
       t.launched = true
       this.event("catapult", false, pose.x, pose.y, pose.z)
+      this.launchStart(t)
     }
     // A new relayed sample: traps (mode 3 crossing the wires).
     if (tuple[0] !== t.snapT) {

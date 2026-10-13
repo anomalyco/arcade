@@ -142,6 +142,11 @@ export class FlightInput {
     return this.pressed("KeyC", "c")
   }
 
+  /** F: land, while the HUD offers it (otherwise F is flares, src/weapons/input.ts). */
+  get land(): boolean {
+    return this.pressed("KeyF", "f")
+  }
+
   /** Launch from the deck in the offline harness (flight.html): Enter. The game launches from SHIP OPERATIONS. */
   get launch(): boolean {
     return this.pressed("Enter", "NumpadEnter")

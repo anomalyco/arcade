@@ -17,6 +17,7 @@ const REASON: Partial<Record<CrewError, string>> = {
   flying: "AIRBORNE",
   "in-use": "IN USE",
   "helm-taken": "IN USE",
+  "catapult-busy": "CATAPULT BUSY",
 }
 
 export type OpsInfo = { ship: string; color: string; name: (id: number) => string }

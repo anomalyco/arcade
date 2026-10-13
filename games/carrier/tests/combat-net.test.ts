@@ -1,3 +1,4 @@
+import { catapultTime } from "../shared/launch"
 import { describe, expect, test } from "bun:test"
 import { type Conn, RoomCore } from "../server/core"
 import { BUILD } from "../shared/build.gen"
@@ -179,9 +180,11 @@ describe("weapons over the network", () => {
   })
 
   test("an F-35C has no gun: the room takes no hits from it, but its bombs up to its load", () => {
-    const { core, a, b, say, seaT, join } = dogfight()
+    const { core, a, b, say, seaT, join, run } = dogfight()
     const c = join("cy")
     expect(playerOf(core.crew!, c.id)!.team).toBe(playerOf(core.crew!, a.id)!.team)
+    // A's Hornet has left the ship's one catapult.
+    run(catapultTime("hornet") * 1000)
     say(c, { type: "op", op: "f35" })
     expect(core.fighters.get(c.id)?.vehicle).toBe("f35")
     say(c, { type: "plane", p: [seaT(), 1, 0, 1000, -580, 0, 1, 0, 0, 0, 0, -140, 0.77, 0, 0, 0, 0] })
