@@ -10,12 +10,14 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 | `games/wings/` | Multiplayer aerial combat with carrier strike groups (WebGPU, Durable Objects) | https://anoma.ly/arcade/wings/ | `arcade-wings` |
 | `redirects/` | 301s from the old `anoma.ly/labs/<game>` URLs to `/arcade/<game>` | — | `arcade-labs-redirects` |
 
-Each folder is an independent Bun project with its own `package.json`, lockfile, `check` script and `wrangler.jsonc`.
-There is no root workspace.
+Getaway, Blackout and `packages/*` share a Bun workspace and the root `bun.lock`. Install at the root, then run
+checks and development commands in the game you are changing. Shared code is the private `@arcade/kit` source package.
+Wings, landing and redirects keep their own installs and lockfiles.
 
 ```sh
+bun install --frozen-lockfile
+bun run check:packages
 cd games/blackout
-bun install
 bun run check
 bun run deploy
 ```
@@ -28,8 +30,10 @@ strips the `/arcade/<name>` prefix in its Worker. The landing owns only the exac
 
 ## CI
 
-`.github/workflows/<project>.yml` runs when files in that project change, or on manual dispatch. It installs with
-`bun install --frozen-lockfile` and runs `bun run check`. On `main` it then runs `bun run deploy`. Deploys use the
+`.github/workflows/<project>.yml` runs when files in that project change, or on manual dispatch. Getaway and Blackout
+also watch shared packages, root scripts and workspace configuration. Their workflows install at the root with
+`bun install --frozen-lockfile`, then run the game's `bun run check` and production-bundle smoke load. The packages
+workflow checks shared code independently. On `main`, each affected game runs its own `bun run deploy`. Deploys use the
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
 
 ## History

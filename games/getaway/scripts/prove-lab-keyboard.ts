@@ -106,7 +106,7 @@ try {
   // Serve only these two fixtures through Playwright; don't widen Vite's filesystem allow-list.
   const root = resolve(import.meta.dir, "../../.."), transpiler = new Bun.Transpiler({ loader: "ts" })
   for (const file of ["game/input", "ui/debug-overlay"]) {
-    const source = readFileSync(`${root}/games/blackout/src/${file}.ts`, "utf8").replace('"../../../../packages/kit/lab-panel"', `"/@fs${root}/packages/kit/lab-panel.ts"`)
+    const source = readFileSync(`${root}/games/blackout/src/${file}.ts`, "utf8").replace('"@arcade/kit/lab-panel"', `"/@fs${root}/packages/kit/lab-panel.ts"`)
     await blackout.route(`**/blackout-fixture/${file}.js`, route => route.fulfill({ contentType: "application/javascript", body: transpiler.transformSync(source) }))
   }
   await blackout.route("**/src/main.ts*", route => route.fulfill({ contentType: "application/javascript", body: "export {}" }))

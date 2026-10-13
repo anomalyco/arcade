@@ -1,6 +1,7 @@
 import { chromium } from "playwright-core"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
-import { basename, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { execFileSync } from "node:child_process"
 import ts from "typescript"
 
@@ -31,7 +32,8 @@ try {
     await route.fulfill({ response, body: current.slice(0, current.indexOf(anchor!)) + original.slice(original.indexOf(anchor!)) })
   })
   // Vite's symlinked dependencies can serve CSS but reject font URLs outside its root.
-  await page.route("**/barlow-condensed-*.woff*", route => route.fulfill({ path: join("node_modules/@fontsource/barlow-condensed/files", basename(new URL(route.request().url()).pathname)) }))
+  const fontRoot = dirname(fileURLToPath(import.meta.resolve("@fontsource/barlow-condensed/package.json")))
+  await page.route("**/barlow-condensed-*.woff*", route => route.fulfill({ path: join(fontRoot, "files", basename(new URL(route.request().url()).pathname)) }))
   if (process.env.NO_BEAM) await page.route("**/src/game/scene.ts*", async route => {
     const response = await route.fetch()
     await route.fulfill({ response, body: (await response.text()).replace("this.renderer.setBeams(this.beamBuf, beams.count)", "this.renderer.setBeams(this.beamBuf, 0)") })

@@ -1,4 +1,4 @@
-import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
+import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 
 export const JUICE_LABELS = {
   monitors: "Monitor Lights", chairs: "Chair Shadows", ao: "Multi-Bounce AO",

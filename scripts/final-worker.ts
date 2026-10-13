@@ -32,7 +32,9 @@ try {
   const current = currentHashes()
   await run(["tar","-xf",join(root,"captures/bench/main-source.tar"),"-C",baseline])
   const original = hashes(baseline)
-  for (const game of ["blackout","getaway"]) symlinkSync(join(root,`games/${game}/node_modules`),join(baseline,`games/${game}/node_modules`))
+  symlinkSync(join(root, "node_modules"), join(baseline, "node_modules"))
+  // Historical Vite hooks use /node_modules URLs relative to each game.
+  for (const game of ["blackout", "getaway"]) symlinkSync(join(root, "node_modules"), join(baseline, "games", game, "node_modules"))
   // Same benchmark inputs on main's simulation. The old API has no shared preparation functions.
   let mp = readFileSync(join(root,"scripts/bench-multiplayer.ts"),"utf8")
     .replaceAll('"../games/', `"${baseline}/games/`)

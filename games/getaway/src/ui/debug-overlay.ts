@@ -1,4 +1,4 @@
-import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
+import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { chassisSettings } from "../game/chassis"
 import { vehicleEffects } from "../game/vehicle-emissions"
 import type { Scene } from "../game/scene"

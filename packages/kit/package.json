@@ -1,0 +1,19 @@
+{
+  "name": "@arcade/kit",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*.css": "./*.css",
+    "./*": "./*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@webgpu/types": "^0.1.74",
+    "typescript": "^5.9.3"
+  }
+}
