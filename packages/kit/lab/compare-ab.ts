@@ -78,9 +78,12 @@ export function createCompareWipeDOM(
   wrap.dataset.compareWipe = ""
   wrap.hidden = true
 
-  const canvasA = document.createElement("canvas")
-  canvasA.className = "lab-wipe-canvas"
-  canvasA.dataset.wipeCanvas = ""
+  // Unmounted offscreen canvas so `page.locator("canvas")` always resolves uniquely to the WebGPU scene canvas.
+  const offscreenCanvas = document.createElement("canvas")
+  const imageA = document.createElement("img")
+  imageA.className = "lab-wipe-canvas"
+  imageA.dataset.wipeImage = ""
+  imageA.alt = "Baseline Slot A comparison frame"
 
   const badgeA = document.createElement("div")
   badgeA.className = "lab-wipe-badge lab-wipe-badge-a"
@@ -136,7 +139,7 @@ export function createCompareWipeDOM(
     }
   })
 
-  wrap.append(canvasA, badgeA, badgeB, divider)
+  wrap.append(imageA, badgeA, badgeB, divider)
   viewportEl.append(wrap)
 
   function sync(opts: {
@@ -152,7 +155,7 @@ export function createCompareWipeDOM(
     wrap.hidden = false
     wrap.dataset.split = String(opts.split)
     const pct = opts.split * 100
-    canvasA.style.clipPath = `inset(0 ${(100 - pct).toFixed(2)}% 0 0)`
+    imageA.style.clipPath = `inset(0 ${(100 - pct).toFixed(2)}% 0 0)`
     divider.style.left = `${pct.toFixed(2)}%`
 
     const diffSummaryA = opts.diffs.slice(0, 3).map(d => `${d.key}: ${d.before}`).join(" · ")
@@ -163,7 +166,8 @@ export function createCompareWipeDOM(
 
   return {
     wrap,
-    canvasA,
+    offscreenCanvas,
+    imageA,
     divider,
     sync,
   }

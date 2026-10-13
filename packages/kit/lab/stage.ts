@@ -406,4 +406,38 @@ export class Stage {
     if(timed){this.measuring=true;try{this.gpuMs=await this.timer!.collect()}finally{this.measuring=false}}
     return timed?this.gpuMs:null
   }
+  async captureToCanvas(target:HTMLCanvasElement):Promise<void>{
+    const w=this.width,h=this.height
+    if(w<=0||h<=0||!this.output)return
+    const bytesPerRow=Math.ceil((w*4)/256)*256
+    const readBuf=this.device.createBuffer({
+      size:bytesPerRow*h,
+      usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ,
+    })
+    const enc=this.device.createCommandEncoder()
+    enc.copyTextureToBuffer({texture:this.output},{buffer:readBuf,bytesPerRow,rowsPerImage:h},[w,h])
+    this.device.queue.submit([enc.finish()])
+    await readBuf.mapAsync(GPUMapMode.READ)
+    const src=new Uint8Array(readBuf.getMappedRange())
+    target.width=w;target.height=h
+    const ctx2d=target.getContext("2d")
+    if(ctx2d){
+      const img=ctx2d.createImageData(w,h)
+      const dst=img.data
+      const isBGRA=this.format==="bgra8unorm"
+      for(let y=0;y<h;y++){
+        const rowOff=y*bytesPerRow,dstOff=y*w*4
+        for(let x=0;x<w;x++){
+          const si=rowOff+x*4,di=dstOff+x*4
+          dst[di]=isBGRA?src[si+2]!:src[si]!
+          dst[di+1]=src[si+1]!
+          dst[di+2]=isBGRA?src[si]!:src[si+2]!
+          dst[di+3]=255
+        }
+      }
+      ctx2d.putImageData(img,0,0)
+    }
+    readBuf.unmap()
+    readBuf.destroy()
+  }
 }

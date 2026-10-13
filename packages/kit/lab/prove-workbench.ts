@@ -228,6 +228,7 @@ try {
     assert.equal(validRes.ok, true, "Valid preset imported")
 
     // 6. Radial Menu: 8 fixed compass sectors, disabled-in-place slots, <14px dead zone cancel, tap-to-latch + accelerator
+    await page.getByRole("button", { name: "Category Effects", exact: true }).click()
     await page.locator('[data-catalog-id="fixture:car-cones"]').click()
     await step(4)
     await page.locator("canvas").focus()
@@ -368,13 +369,24 @@ try {
 
     // 10. Frozen-frame deterministic re-simulation + A/B Slot Flip (V) & Split Wipe (Shift+V) + Copy Game Recipe
     await page.locator('[data-catalog-id="fixture:smoke-room"]').click()
+    await page.evaluate(() => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "effects")
+      s.settings.targetX = 0
+      s.settings.targetZ = 0
+      s.settings.size = 0.35
+      s.settings.density = 0.25
+      s.retrigger()
+    })
     await step(35)
     await page.locator("canvas").focus()
     await page.keyboard.press("k") // Pause at f35
-    await page.keyboard.press("b") // Pin Slot A at f35
+    await page.keyboard.press("b") // Pin Slot A at f35 (size=0.35, density=0.25)
     const sizeSlider = page.getByRole("slider", { name: "Size", exact: true })
     await sizeSlider.focus()
-    for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight")
+    for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+ArrowRight")
+    const densitySlider = page.getByRole("slider", { name: "Density", exact: true })
+    await densitySlider.focus()
+    for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+ArrowRight")
     await page.locator("canvas").focus()
     const abAfterScrub = await page.evaluate(() => ({
       frames: (window as any).lab.workbench.compare.frames,

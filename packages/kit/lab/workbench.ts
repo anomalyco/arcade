@@ -194,7 +194,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   flipBtn.className = "lab-btn"
   flipBtn.dataset.action = "compare-flip"
   flipBtn.title = "Flip Slot A / Slot B (V)"
-  flipBtn.textContent = "Flip · V"
+  flipBtn.textContent = "V"
   const wipeBtn = document.createElement("button")
   wipeBtn.type = "button"
   wipeBtn.className = "lab-btn"
@@ -213,7 +213,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   recipeBtn.dataset.action = "copy-recipe"
   recipeBtn.setAttribute("aria-label", "Copy recipe for game")
   recipeBtn.title = "Copy typed settings recipe for game source (no URL params)"
-  recipeBtn.textContent = "Copy Recipe"
+  recipeBtn.textContent = "Recipe"
   topbarRight.insertBefore(recipeBtn, exportBtn)
 
   const wipeDOM = createCompareWipeDOM(viewportEl, split => {
@@ -401,20 +401,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
       sec.retrigger?.()
       if (currentFrames > 0) stepSimulationDeterministic(currentFrames)
 
-      const w = Math.max(1, canvas.width)
-      const h = Math.max(1, canvas.height)
-      if (wipeDOM.canvasA.width !== w || wipeDOM.canvasA.height !== h) {
-        wipeDOM.canvasA.width = w
-        wipeDOM.canvasA.height = h
-      }
-      stage.onFrameSubmitted = () => {
-        const ctx2d = wipeDOM.canvasA.getContext("2d")
-        ctx2d?.clearRect(0, 0, w, h)
-        ctx2d?.drawImage(canvas, 0, 0, w, h)
-        stage.onFrameSubmitted = undefined
-      }
       await renderNow()
-      stage.onFrameSubmitted = undefined
+      await stage.captureToCanvas(wipeDOM.offscreenCanvas)
+      wipeDOM.imageA.src = wipeDOM.offscreenCanvas.toDataURL("image/png")
 
       // 2. Restore live Candidate B at the exact same frame
       for (const s of sections) {
@@ -1993,8 +1982,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const movableSelected = selectedList.filter(o => o.movable)
     const showGizmo =
       mode === "edit" &&
+      globalSettings.section === "spawn" &&
       root.dataset.closed !== "true" &&
       !ghost &&
+      !compareWipeEnabled &&
+      marqueeEl.hidden &&
       radialState.phase === "closed" &&
       movableSelected.length > 0 &&
       (selIds.length > 0 || Boolean(activeTransform))
@@ -2029,9 +2021,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     playModeBtn.dataset.playActive = String(mode === "play")
     boxModeBtn.setAttribute("aria-pressed", String(mode === "edit" && boxSelectMode))
     pinABtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
-    pinABtn.textContent = slotA ? `A (f${slotA.frames})` : "Pin A · B"
+    pinABtn.textContent = slotA ? `A·f${slotA.frames}` : "A"
     flipBtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
-    flipBtn.textContent = slotA ? `Slot ${activeSlot} · V` : "Flip · V"
+    flipBtn.textContent = slotA ? `${activeSlot}·V` : "V"
     wipeBtn.setAttribute("aria-pressed", String(compareWipeEnabled))
     syncCompareWipeOverlay()
 
