@@ -8,28 +8,7 @@ import { hex } from "./models"
  * bones that src/game/anim.ts poses one by one. Every part faces +x with +y up and +z to its right, pivot at its joint:
  * limbs hang down -y from the joint, the torso stands up +y from the waist, feet and guns reach forward +x.
  */
-export const RIG = {
-  /** Hip joints sit this far either side of the pelvis pivot. */
-  hipW: 0.11,
-  thigh: 0.42,
-  shin: 0.41,
-  /** Ankle joint above the sole. */
-  ankle: 0.085,
-  /** Torso pivot above the pelvis pivot. */
-  waist: 0.1,
-  /** Shoulder joints in the torso frame. */
-  shoulderY: 0.43,
-  shoulderW: 0.235,
-  neckY: 0.5,
-  upper: 0.29,
-  /** Elbow to the middle of the hand. */
-  fore: 0.27,
-}
-
-/** Standing pelvis height with soft knees. */
-export const HIP = 0.86
-/** Rough shoulder height, for aiming the cursor and effects. */
-export const SHOULDER = 1.38
+export { RIG, HIP, SHOULDER } from "@arcade/kit/rig"
 
 /** Where each gun sits, in the aim frame from the body centre on the floor: grip forward, height, to the right. */
 export const HOLD: Record<Gun, { fwd: number; up: number; side: number }> = {

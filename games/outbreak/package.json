@@ -1,0 +1,22 @@
+{
+  "name": "outbreak",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "bun test tests",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && bun run test && vite build",
+    "deploy": "bun run build && wrangler deploy"
+  },
+  "dependencies": { "@arcade/kit": "workspace:*" },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@types/bun": "^1.4.2",
+    "@webgpu/types": "^0.1.74",
+    "playwright-core": "^1.64.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "wrangler": "^4.149.0"
+  }
+}

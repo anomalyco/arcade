@@ -2,8 +2,8 @@ import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS } from "../../shared/config"
 import type { LightDef, LightKind, MapDef, MapKind, PropKind } from "../../shared/maps"
 import { deskMonitorLights } from "./models"
 
-export const LIGHT_FLOATS = 16
-export const OCC_FLOATS = 8
+import { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
+export { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 
 /** Heights of solid props for shadow casting; anything not listed casts none. */
 const PROP_H: Partial<Record<PropKind, number>> = {

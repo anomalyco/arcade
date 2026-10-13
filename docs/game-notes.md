@@ -64,6 +64,14 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Reserve a polar row for eye sight.** Outbreak M1 uses row zero at 1.65 m, with zero radiance, in the same
+  compute pass as its streetlights. Walls/closed doors feed that row; windows/fences remain collision-only.
+  The fragment shader combines its nearest hit with a 110° cone and occluded 2.5 m awareness. A CPU polar pass
+  marks a persistent 192² exploration mask with the same ray centres and shared slab tests, without GPU readback.
+  The mask is uploaded only after newly explored cells appear. Headless Chromium on Apple Metal checked a closed
+  room, opening its door, and turning away into an explored shroud, plus live Lab/input handling, without GPU errors.
+  `games/outbreak/scripts/prove.ts` reproduces the six views. The mask is 36 KiB; runtime/GPU cost is unmeasured.
+
 - **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
   selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then
   refreshes enablement and readouts. Metal checks covered minimum/midpoint/maximum draws, all 12 light sliders and the

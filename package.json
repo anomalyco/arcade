@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.4.2",
-  "workspaces": ["games/getaway", "games/blackout", "packages/*"],
+  "workspaces": ["games/getaway", "games/blackout", "games/outbreak", "packages/*"],
   "scripts": {
     "check:packages": "bun run --filter '@arcade/*' check"
   },

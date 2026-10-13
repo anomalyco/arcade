@@ -1,0 +1,4 @@
+* { box-sizing: border-box }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #080b0d; color: #d6d4c6; font: 12px ui-monospace, monospace }
+#game { display: block; width: 100%; height: 100%; cursor: crosshair }
+#status { position: fixed; left: 18px; bottom: 18px; padding: 8px 11px; border: 1px solid #ffffff1c; border-radius: 5px; background: #121919bc; pointer-events: none; font-variant-numeric: tabular-nums }
