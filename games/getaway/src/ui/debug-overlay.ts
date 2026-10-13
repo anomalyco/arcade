@@ -1,13 +1,23 @@
-import { LabPanel } from "../../../../packages/kit/lab-panel"
+import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
+import { chassisSettings } from "../game/chassis"
+
+/** Presentation only; these values never enter shared vehicle physics. */
+export const juice = chassisSettings(true)
 export const smokeStyles = ["Current", "Faceted puffs", "Soft volume", "Cel smoke", "Flame & wisps", "Ribbon trails", "Advected billows", "Directional billows", "Raymarched cloud"] as const
 export const smoke = { style: 6, visible: true }
+const controls: LabControl[] = ([
+  ["suspension", "Suspension springs"],
+  ["wheelContact", "Per-wheel contact"],
+  ["visibleWheels", "Steer & spin wheels"],
+  ["vehicleFeel", "Vehicle-specific feel"],
+] as const).map(([key, label]) => ({ key, label, group: "Chassis" }))
 export type PerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastUpdate = 0
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
   constructor(q: URLSearchParams, release: () => void) {
-    super({}, [], q, release)
+    super(juice, controls, q, release)
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
