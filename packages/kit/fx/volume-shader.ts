@@ -1,5 +1,5 @@
 export const volumeShader = /* wgsl */ `
-struct Frame { inverse: mat4x4f, eye: vec4f, screen: vec4f, ambient: vec4f, boxes: array<vec4f, 8>, lights: array<vec4f, 16> }
+struct Frame { inverse: mat4x4f, eye: vec4f, screen: vec4f, ambient: vec4f, boxes: array<vec4f, 8>, lights: array<vec4f, 16>, shape: vec4f, motion: vec4f, advection: vec4f }
 @group(0) @binding(0) var<uniform> F: Frame;
 @group(0) @binding(1) var field: texture_2d_array<f32>;
 @group(0) @binding(2) var linear: sampler;
@@ -22,12 +22,24 @@ fn density(p: vec3f) -> vec2f {
   var sum = vec2f(0);
   for (var s = 0; s < 4; s++) {
     let b = F.boxes[s*2]; let uv = (p.xz-b.xy)/b.z;
+    let source = F.boxes[s*2+1]; let offset = p.xz-source.xy;
+    // Travel is never shorter than Euclidean distance; retain a full filter footprint.
+    if (source.w <= 0.0 || dot(offset,offset) > (b.w+0.71)*(b.w+0.71)) { continue; }
     if (any(uv <= vec2f(0)) || any(uv >= vec2f(1))) { continue; }
-    // Nearest solid-cell guard prevents filtered density bleeding through narrow walls.
+    // Geometry is independent from an empty gas cell. Never clip the interpolated front.
     let cell = clamp(vec2i(uv*48.0),vec2i(0),vec2i(47));
-    if (textureLoad(field,cell,s,0).r == 0.0) { continue; }
-    let d = textureSampleLevel(field,linear,uv,s,0.0).r;
-    let ceiling = 2.65 + 0.55*sin(p.x*1.5-F.eye.w*0.3)*sin(p.z*1.2+F.eye.w*0.2);
+    let centre = textureLoad(field,cell,s,0);
+    if (centre.g > 0.5) { continue; }
+    // Wall-aware bilinear reconstruction: the diagonal tap must not connect two free
+    // cells across touching solid corners, even when a distant door makes both reachable.
+    let local = fract(uv*48.0)-0.5;
+    let dir = select(vec2i(-1),vec2i(1),local>=vec2f(0));
+    let x = textureLoad(field,clamp(cell+vec2i(dir.x,0),vec2i(0),vec2i(47)),s,0);
+    let z = textureLoad(field,clamp(cell+vec2i(0,dir.y),vec2i(0),vec2i(47)),s,0);
+    let diagonal = textureLoad(field,clamp(cell+dir,vec2i(0),vec2i(47)),s,0).r;
+    let safeDiagonal = select(diagonal,0.0,x.g>0.5 || z.g>0.5);
+    let d = mix(mix(centre.r,x.r,abs(local.x)),mix(z.r,safeDiagonal,abs(local.x)),abs(local.y));
+    let ceiling = F.shape.x * (0.86 + 0.14*sin(p.x*1.5-F.eye.w*0.3)*sin(p.z*1.2+F.eye.w*0.2));
     let y = p.y / ceiling;
     let amount = d * smoothstep(0.0,0.13,y) * (1.0-smoothstep(0.32,1.0,y));
     sum += vec2f(amount,amount*F.boxes[s*2+1].z);
@@ -35,14 +47,17 @@ fn density(p: vec3f) -> vec2f {
   return sum;
 }
 fn billow(p: vec3f) -> f32 {
-  let q = p * 0.035 + vec3f(-F.eye.w*0.009,-F.eye.w*0.012,F.eye.w*0.005);
-  let warp = vec3f(sin(q.z*8.0),cos(q.x*7.0),sin(q.y*9.0))*0.035;
+  let q = (p + F.advection.xyz) * (0.035 / F.shape.y);
+  let warp = vec3f(sin(q.z*8.0),cos(q.x*7.0),sin(q.y*9.0))*0.054*F.motion.z;
   return textureSampleLevel(noise,repeat,q+warp,0.0).r*0.65 + textureSampleLevel(noise,repeat,q*2.13-warp,0.0).r*0.35;
 }
 @fragment fn march(o: Out) -> @location(0) vec4f {
   let surface = unproject(o.uv,sceneDepth(o.uv)); let ray = normalize(surface-F.eye.xyz);
-  let near = max(0.0,(3.8-F.eye.y)/min(-0.0001,ray.y));
-  let far = min(distance(surface,F.eye.xyz),(0.015-F.eye.y)/min(-0.0001,ray.y));
+   // Intersect the actual height slab in either ray direction (including cameras inside it).
+   if (abs(ray.y) < 0.00001) { return vec4f(0); }
+   let a = (F.shape.x-F.eye.y)/ray.y; let b = (0.015-F.eye.y)/ray.y;
+   let near = max(0.0,min(a,b));
+   let far = min(distance(surface,F.eye.xyz),max(a,b));
   if (far <= near) { return vec4f(0); }
   let stepSize = (far-near)/24.0;
   let j = textureLoad(jitter,vec2i(o.position.xy)%32,0).r;
@@ -51,17 +66,17 @@ fn billow(p: vec3f) -> f32 {
     let p = F.eye.xyz + ray*(near+(f32(i)+j)*stepSize);
     let sample = density(p); let base = sample.x;
     if (base < 0.002) { continue; }
-    let d = base * smoothstep(0.22,0.72,billow(p)) * 2.8;
+    let d = base * mix(0.75,smoothstep(0.22,0.72,billow(p)),F.motion.z) * F.shape.z;
     let a = 1.0-exp(-d*stepSize); optical += d*stepSize;
     let sun = exp(-density(p+vec3f(0,0.65,0)).x*1.7);
-    var light = F.ambient.rgb + vec3f(0.38,0.43,0.51)*sun;
+    var light = F.ambient.rgb + vec3f(0.38,0.43,0.51)*sun*F.shape.w;
     for (var l = 0; l < min(8,i32(F.screen.z)); l++) {
       let pos = F.lights[l*2]; let color = F.lights[l*2+1]; let delta = pos.xyz-p;
       let d2 = dot(delta,delta);
       if (d2 >= pos.w*pos.w) { continue; }
       let dist = sqrt(max(0.001,d2));
       let shade = exp(-density(p+delta/dist*0.65).x*0.75);
-      light += color.rgb*color.w*pow(1.0-dist/pos.w,2.0)*shade;
+      light += color.rgb*color.w*pow(1.0-dist/pos.w,2.0)*shade*F.shape.w;
     }
     light *= mix(1.0,0.14,clamp(sample.y/max(base,0.001),0.0,1.0));
     if (F.screen.w == 1.0) { light = vec3f(base,base*0.4,1.0-base); }

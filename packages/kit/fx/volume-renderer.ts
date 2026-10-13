@@ -5,7 +5,7 @@ import { volumeShader } from "./volume-shader"
  * The renderer caps at 480x320 pixels, 24 steps, four volumes and eight lights.
  * Light input is eight floats per light: xyz/radius, rgb/intensity. */
 export class VolumeRenderer {
-  readonly uniforms = new Float32Array(124)
+  readonly uniforms = new Float32Array(136)
   private readonly buffer: GPUBuffer
   private readonly field: GPUTexture
   private readonly noise: GPUTexture
@@ -24,14 +24,14 @@ export class VolumeRenderer {
   private compositeAttachment:GPURenderPassColorAttachment|null=null
   private compositePass!:GPURenderPassDescriptor
   private destination: GPUTexelCopyTextureInfo
-  private readonly uploadLayout = { bytesPerRow: GRID, rowsPerImage: GRID }
+  private readonly uploadLayout = { bytesPerRow: GRID * 4, rowsPerImage: GRID }
   private readonly extent = { width: GRID, height: GRID, depthOrArrayLayers: VOLUMES }
   enabled = true
   debug = 0
   constructor(private readonly device: GPUDevice) {
     const d = device, usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
     this.buffer = d.createBuffer({ size: this.uniforms.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
-    this.field = d.createTexture({ size: [GRID,GRID,VOLUMES], format: "r8unorm", usage }); this.destination = { texture: this.field }
+    this.field = d.createTexture({ size: [GRID,GRID,VOLUMES], format: "rg16float", usage }); this.destination = { texture: this.field }
     this.noise = d.createTexture({ size: [32,32,32], dimension: "3d", format: "r8unorm", usage })
     let seed = 1729
     const noise = new Uint8Array(32**3)
@@ -89,8 +89,12 @@ export class VolumeRenderer {
   upload(volumes:SmokeVolumes) {
     this.uniforms[19]=volumes.time;this.uniforms[23]=this.debug
     this.uniforms.set(volumes.bounds,28)
+    const s=volumes.settings
+    this.uniforms[124]=s.height;this.uniforms[125]=s.billowScale;this.uniforms[126]=s.extinction;this.uniforms[127]=s.lighting
+    this.uniforms[128]=s.rise;this.uniforms[129]=s.wind;this.uniforms[130]=s.turbulence
+    this.uniforms.set(volumes.advection,132)
     this.device.queue.writeBuffer(this.buffer,0,this.uniforms)
-    this.device.queue.writeTexture(this.destination,volumes.density,this.uploadLayout,this.extent)
+    this.device.queue.writeTexture(this.destination,volumes.field,this.uploadLayout,this.extent)
   }
   render(encoder:GPUCommandEncoder,target:GPUTextureView,volumes:SmokeVolumes) {
     if(!this.enabled||!volumes.count)return
