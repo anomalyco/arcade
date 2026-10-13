@@ -8,6 +8,8 @@
 - Everything is served under https://anoma.ly/arcade/. A game owns `/arcade/<name>` and `/arcade/<name>/*`. The landing
   owns only `/arcade`, `/arcade/` and `/arcade/assets/*`. Never add a wildcard `/arcade/*` route.
 - Pushing to `main` deploys any project whose folder changed (`.github/workflows/`). Local `bun run deploy` also works.
+- Put genuinely shared helpers in `packages/kit/`; game workflows must trigger on every external import and tsconfig include (including root `scripts/**`).
+- Before changing checks or shared code, verify each affected game in a separate clean tree export with only its own `bun install --frozen-lockfile && bun run check`.
 - Adding a game: put it in `games/<name>`, give its Worker the name `arcade-<name>` with the routes above, set Vite's
   outDir to `dist/arcade/<name>`, strip the `/arcade/<name>` prefix in the Worker, add a workflow, and add a panel to
   `landing/index.html`. If it had an old `anoma.ly/labs/<name>` URL, add it to `redirects/` (GAMES and routes).

@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "games/wings/**"
+      - "scripts/**"
       - ".github/workflows/wings.yml"
   pull_request:
     paths:
       - "games/wings/**"
+      - "scripts/**"
       - ".github/workflows/wings.yml"
   workflow_dispatch:
 
@@ -29,6 +31,11 @@ jobs:
           bun-version: "1.4.2"
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - name: Install smoke browser
+        run: bunx --no-install playwright-core install --with-deps chromium --only-shell
+      - name: Smoke production bundle
+        timeout-minutes: 1
+        run: bun ../../scripts/smoke.mjs
 
   deploy:
     needs: check

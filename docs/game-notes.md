@@ -133,7 +133,21 @@ Candidates from the code audits; measure and playtest before moving any into the
   work half-done. Give each parallel task its own worktree and branch, and say which files it owns.
 - **A game's check must pass from a clean clone with only its own dependencies,** as CI runs it. Blackout's deploy
   failed because a Blackout script imported a Getaway helper that needed Getaway's Playwright install, and a fix to
-  that Getaway file didn't trigger Blackout's workflow at all.
+  that Getaway file didn't trigger Blackout's workflow at all. Both consumers now use
+  `packages/kit/getaway-main-hook.ts`, whose structural page type needs no game-local dependency. Separate tree exports
+  passed frozen installs, typechecks, builds and tests: Blackout 258, Getaway 106 (12 existing skips), Wings 303.
+  Keep the isolated check; these changes add no code to the games' runtime bundles.
+- **Follow imports and tsconfig includes when setting workflow paths.** Blackout also checks
+  `scripts/bench-multiplayer.ts`, which imports Getaway's shared simulation. Its workflow therefore watches
+  `games/getaway/shared/**` as well as `packages/kit/**` and root `scripts/**`. Getaway watches the shared package and
+  root scripts; Wings watches root scripts for the smoke runner. These filters in `.github/workflows/` passed
+  `actionlint`; the added CI workload from triggering more often is unmeasured.
+- **Load the production bundle before deploying.** `scripts/smoke.mjs` serves each build at its game prefix and rejects
+  browser errors and failed asset requests. It requires JS-created UI, or the explicit WebGPU-unavailable message
+  for Blackout/Getaway. Single Linux ARM64 Chromium runs in a two-CPU container took 1.3 s for Blackout and 2.2 s for
+  Getaway to reach their lobbies. Wings lost its software WebGPU device; its supported WebGL2 fallback passed in
+  8.4 s. All three workflows use this bounded smoke gate. Times exclude builds and browser installation; this checks
+  startup, not gameplay or visual correctness.
 
 ## Multiplayer
 

@@ -13,6 +13,8 @@ that uses it.
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
+`getaway-main-hook.ts` supplies the historical Getaway instrumentation used by both games' benchmark scripts;
+its structural page type keeps the helper independent of either game's Playwright installation.
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
 `?perf=1` / `?lab=1`; the always-available `~ Lab` pill and Backquote toggle it.

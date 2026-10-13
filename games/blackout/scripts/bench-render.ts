@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { hostname } from "node:os"
 import { findChromeExecutable, installGpuInstrumentation, runSceneABenchmark, verifyMonitorBounds } from "./compare"
-import { installMainHook } from "../../getaway/scripts/main-hook"
+import { installMainHook } from "../../../packages/kit/getaway-main-hook"
 
 const opt = (key: string, fallback: string) => process.argv.find((s) => s.startsWith(`--${key}=`))?.slice(key.length + 3) ?? fallback
 const target = opt("game", "blackout")

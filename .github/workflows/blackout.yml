@@ -6,11 +6,16 @@ on:
     paths:
       - "games/blackout/**"
       - "packages/kit/**"
+      - "scripts/**"
+      # tsconfig.scripts.json includes the cross-game multiplayer benchmark.
+      - "games/getaway/shared/**"
       - ".github/workflows/blackout.yml"
   pull_request:
     paths:
       - "games/blackout/**"
       - "packages/kit/**"
+      - "scripts/**"
+      - "games/getaway/shared/**"
       - ".github/workflows/blackout.yml"
   workflow_dispatch:
 
@@ -31,6 +36,11 @@ jobs:
           bun-version: "1.4.2"
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - name: Install smoke browser
+        run: bunx --no-install playwright-core install --with-deps chromium --only-shell
+      - name: Smoke production bundle
+        timeout-minutes: 1
+        run: bun ../../scripts/smoke.mjs
 
   deploy:
     needs: check
