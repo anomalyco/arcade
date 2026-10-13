@@ -22,6 +22,7 @@ export class Camera {
   private visualLanding = 0
   eye: [number, number, number] = [0, 0, 0]
   viewProj = mat4.identity()
+  get nitroRush(){return Math.max(this.visualRush,Math.min(1,Math.max(0,(this.fov-.6)/.05)))}
 
   snap(x: number, z: number) {
     this.fx = x

@@ -1,5 +1,6 @@
 import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
 import { chassisSettings } from "../game/chassis"
+import { motionBlur } from '../render/motion'
 
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }
@@ -23,6 +24,11 @@ export class DebugOverlay extends LabPanel {
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
   constructor(q: URLSearchParams, release: () => void) {
     super(juice, controls, q, release)
+    this.addControls(motionBlur,[
+      {key:'enabled',label:'Motion blur',group:'Motion'},
+      {key:'strength',label:'Strength',type:'range',min:0,max:2,step:.05},
+      {key:'shutter',label:'Shutter',type:'range',min:0,max:1,step:.05},
+    ])
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
