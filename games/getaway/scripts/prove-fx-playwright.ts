@@ -7,6 +7,7 @@ import { join, resolve } from "node:path"
 const root=resolve(import.meta.dir,"../../.."),out=join(root,"captures/fx-kit")
 mkdirSync(out,{recursive:true})
 const smokeOnly=process.argv.includes("--quick")
+const labOnly=process.argv.includes("--lab")
 const fixture=async(game:string,before=false)=>{
   const dir=join(root,"games",game)
   const server=await createServer({root:dir,configFile:join(dir,"vite.config.ts"),cacheDir:join(dir,before?"node_modules/.vite-fx-before":"node_modules/.vite-fx"),
@@ -35,15 +36,56 @@ try{
   if(!/metal/i.test(JSON.stringify(results.adapter))||/swiftshader/i.test(JSON.stringify(results.adapter)))throw new Error(`Not Metal: ${JSON.stringify(results.adapter)}`)
   console.log("Adapter",results.adapter)
   for(const [effect,frames,debug] of [["smoke",90,0],["water",55,0],["sparks",16,0],["smoke",90,1],["smoke",90,4],["debris",24,0],["fire",55,0],["nitro",30,0],["tyre",90,0],["explosion",12,0],["smoke",90,2],["smoke",90,3]] as const){
-    await page.locator("#effect").selectOption(effect)
-    await page.locator("#debug").selectOption(String(debug))
+    await page.getByRole("combobox",{name:"Effect",exact:true}).selectOption(effect)
+    await page.getByRole("combobox",{name:"Debug view",exact:true}).selectOption(String(debug))
     await page.evaluate(async({effect,frames,debug})=>{const f=(window as any).fx;f.reset(effect);f.debug(debug);for(let i=0;i<frames;i++)f.advance(1/30);await f.render(true)},{effect,frames,debug})
     await page.screenshot({path:join(out,`playground-${effect}-${debug}.png`)})
     console.log("Captured",effect,debug)
     if(errors.length)throw new Error("GPU validation errors")
     if(smokeOnly)break
   }
-  if(!smokeOnly){
+  if(labOnly){
+    const originalUrl=page.url()
+    const effect=page.getByRole("combobox",{name:"Effect",exact:true})
+    await effect.selectOption("sparks")
+    await page.getByRole("slider",{name:"Rate",exact:true}).focus()
+    await page.keyboard.press("ArrowRight")
+    if(await page.evaluate(()=>(window as any).fx.params.rate)!==76)throw new Error("Slider did not update shared state")
+    await page.keyboard.press("ArrowLeft")
+    await page.getByRole("checkbox",{name:"Play",exact:true}).uncheck()
+    await page.getByRole("checkbox",{name:"Loop",exact:true}).uncheck()
+    if(await page.evaluate(()=>(window as any).fx.params.playing||(window as any).fx.params.loop))throw new Error("Playback toggles failed")
+    await page.getByRole("button",{name:"Retrigger",exact:true}).click()
+    if(await page.evaluate(()=>(window as any).fx.particles.count)!==75)throw new Error("Retrigger failed")
+    await page.context().grantPermissions(["clipboard-read","clipboard-write"],{origin:getaway.url})
+    await page.getByRole("button",{name:"Copy",exact:true}).click()
+    await page.getByRole("button",{name:"Copied",exact:true}).waitFor()
+    const copied=JSON.parse(await page.evaluate(()=>navigator.clipboard.readText()))
+    if(copied.effect!=="sparks"||copied.rate!==75)throw new Error("Copy lost current settings")
+    await effect.focus();await page.keyboard.press("Backquote")
+    if(await effect.isVisible())throw new Error("Focused control Backquote did not close Lab")
+    await page.locator("canvas").focus();await page.keyboard.press("Backquote")
+    if(!await effect.isVisible())throw new Error("Canvas Backquote did not open Lab")
+    if(page.url()!==originalUrl)throw new Error("Playground UI rewrote the URL")
+    await page.goto(`${getaway.url}/?solo&peaceful=1&seed=7&bench&nohud&lab=1&smoke=6`)
+    await page.waitForFunction(()=>(window as any).__getawayBench)
+    await page.evaluate(async()=>{await(window as any).__getawayBench.ready})
+    const style=page.getByRole("combobox",{name:"Smoke style",exact:true}),gameUrl=page.url()
+    await style.selectOption("2")
+    await page.getByRole("button",{name:"All Off",exact:true}).click()
+    if(await style.inputValue()!=="2")throw new Error("Toggle preset changed the select")
+    await page.getByRole("button",{name:"All On",exact:true}).click()
+    if(page.url()!==gameUrl)throw new Error("Smoke selector rewrote the URL")
+    const blackout=await fixture("blackout");fixtures.push(blackout)
+    await page.goto(`${blackout.url}/envlab.html?fxproof&bench&lab=1&seed=1`)
+    await page.waitForFunction(()=>(window as any).fxProof)
+    await page.getByRole("checkbox",{name:"Volume Smoke",exact:true}).uncheck()
+    if(await page.evaluate(()=>(window as any).fxProof.settings.volumes))throw new Error("Blackout toggle failed")
+    await page.getByRole("button",{name:"All On",exact:true}).click()
+    if(!await page.evaluate(()=>(window as any).fxProof.settings.volumes))throw new Error("Blackout preset failed")
+    results.controls={select:true,slider:true,play:true,loop:true,retrigger:true,copy:copied,backquote:true,urlUnchanged:true,presetsPreserveSelect:true,blackoutToggle:true}
+  }
+  if(!smokeOnly&&!labOnly){
     const blackout=await fixture("blackout");fixtures.push(blackout)
     await page.goto(`${blackout.url}/envlab.html?fxproof&bench&seed=1&x=15&y=15&zoom=30&lab=1`)
     await page.waitForFunction(()=>(window as any).fxProof)
@@ -93,6 +135,6 @@ try{
     if(JSON.stringify(poses[0].pose)!==JSON.stringify(poses[1].pose))throw new Error("Tyre pose mismatch")
   }
   results.errors=errors
-  writeFileSync(join(out,"proof.json"),JSON.stringify(results,null,2))
+  writeFileSync(join(out,labOnly?"lab-proof.json":"proof.json"),JSON.stringify(results,null,2))
   if(errors.length)throw new Error(`${errors.length} browser errors`)
 }finally{await browser.close();for(const f of fixtures)await f.server.close()}

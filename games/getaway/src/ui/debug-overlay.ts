@@ -24,23 +24,10 @@ export class DebugOverlay extends LabPanel {
       event.preventDefault()
       this.toggle()
     })
-    const requested = Number(q.get("smoke") ?? 6)
+    // Query selection is retained only for deterministic automation.
+    const requested = Number(q.has("bench") || q.has("mux") ? q.get("smoke") ?? 6 : 6)
     smoke.style = Number.isInteger(requested) && requested >= 0 && requested < smokeStyles.length ? requested : 6
-    const label = document.createElement("label")
-    label.textContent = "Smoke"
-    const select = document.createElement("select")
-    select.setAttribute("aria-label", "Smoke style")
-    smokeStyles.forEach((name, i) => select.add(new Option(`${i} · ${name}`, String(i))))
-    select.value = String(smoke.style)
-    select.style.cssText = "margin-left:auto;max-width:195px;background:#263039;color:inherit;border:1px solid #ffffff30;border-radius:4px;font:inherit;padding:3px"
-    select.onchange = () => {
-      smoke.style = Number(select.value)
-      const url = new URL(location.href)
-      url.searchParams.set("smoke", select.value)
-      history.replaceState(null, "", url)
-    }
-    label.append(select)
-    this.header.after(label)
+    this.addControls(smoke, [{key:"style",label:"Smoke style",type:"select",options:smokeStyles.map((label,value)=>({label:`${value} · ${label}`,value}))}])
   }
   reset() { this.samples.length = 0; this.lastUpdate = 0 }
   update(now: number, frameMs: number, stats: Pick<PerfSample, "gpuMs" | "gpuKind" | "draws" | "verts" | "chunks" | "lights">) {

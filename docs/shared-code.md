@@ -20,6 +20,13 @@ remains game-owned. Both workflows already trigger on `packages/kit/**`, and bot
 FX source. `packages/kit/playground/` owns the controls, presets and small night scene; its Getaway entry only
 supplies camera matrices. Proof and GPU-cost limitations are in `perf/fx-kit.md`.
 
+All playground tuning now uses `LabPanel`, including the effect/debug selects, parameter sliders and playback,
+copy and carve actions. `LabControl` supports toggles, typed selects, ranges and actions; `addControls(settings,
+controls)` binds another game-owned settings object without copying it. Toggle presets leave selects and ranges
+alone. Standalone consumers opt into the shared Backquote listener, while games keep their existing input routing.
+Getaway's smoke selector uses this same control type. Its query override is restricted to benchmark/comparison
+automation, and changing styles in the panel leaves the URL alone.
+
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts. `perf-overlay.ts` supplies the historical builds' readout.
 `lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.

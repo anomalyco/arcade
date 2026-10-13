@@ -50,6 +50,7 @@ try {
     proof.push({ style, adapter, poses, samples })
   }
   // The compact selector changes the live emitter without reloading the page.
+  const selectorUrl = page.url()
   await page.evaluate(() => {
     const select = document.querySelector("[data-lab]")!.shadowRoot!.querySelector("select")!
     select.value = "2"
@@ -58,7 +59,7 @@ try {
   })
   let selected: any
   for (let i = 0; i < 20; i++) selected = await page.evaluate(async i => (window as any).__getawayBench.step(i, 1 / 30, true), i)
-  if (selected.smoke.puffs !== 0 || selected.smoke.sprites === 0 || !page.url().includes("smoke=2")) throw new Error("Live smoke selector failed")
+  if (selected.smoke.puffs !== 0 || selected.smoke.sprites === 0 || page.url() !== selectorUrl) throw new Error("Live smoke selector failed")
   writeFileSync(join(out, video ? "phone-proof.json" : "proof.json"), JSON.stringify({ errors, runs: proof }, null, 2))
   if (errors.length) throw new Error(errors.slice(0, 8).join("\n"))
 } finally { await browser.close() }

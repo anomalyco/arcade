@@ -364,6 +364,13 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
+- **Use one Lab for tuning.** The shared `LabPanel` supports typed selects, live ranges and actions alongside
+  toggles. The FX playground and Getaway smoke selector use those controls instead of creating their own DOM.
+  Selects preserve numeric option values; All On/Off changes only toggles. The Metal `--lab` proof exercised
+  slider keyboard input, effect/debug selection, playback, retrigger, clipboard copy, and Backquote from both a
+  focused control and the canvas. Blackout's existing toggle/preset adapter still passed. Interactive smoke style
+  changes leave the URL alone; `bench`/`mux` may supply a deterministic smoke override. Evidence: `perf/fx-kit-lab.json`.
+
 - **Ignore blur releases from the previous input owner.** On an iframe focus change, the old window's blur message can
   arrive after the new window's keydown or mousedown and cancel the new input. `games/blackout/compare.html` releases
   held input when ownership changes, then accepts release messages only from the current owner. The parent header is

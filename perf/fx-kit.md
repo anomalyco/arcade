@@ -32,3 +32,12 @@ renderer's discard mode. The screenshot comparison independently switches legacy
 `bun run check` passed in both games: 133 Getaway tests, 12 existing skips, and 258 Blackout tests, plus each
 game's client/server/script typechecks and production build. Four new tests cover sealed walls and doors,
 carve/refill/expiry, frame-rate-independent emission, pool limits and bouncing sparks.
+
+## Shared Lab controls
+
+The playground now uses `packages/kit/lab-panel.ts` for every control. Getaway's smoke selector also uses its
+generic select type; interactive changes do not rewrite the URL, and the old `smoke` query is read only under
+`bench` or `mux`. The `--lab` proof checks effect selection, a keyboard-driven slider change, play/loop, retrigger,
+clipboard output, Backquote from a focused control and the canvas, and Blackout's existing toggle/preset behavior.
+Toggle presets preserve select values. Both game checks passed again; `fx-kit-lab.json` records the Metal proof
+with no browser/GPU errors. This UI-only follow-up does not change the measured smoke pipelines.
