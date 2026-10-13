@@ -14,9 +14,11 @@ import { Renderer } from "./render/renderer"
 import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
-import { DebugOverlay } from "./ui/debug-overlay"
+import { DebugOverlay, smoke } from "./ui/debug-overlay"
 import { GpuPerf } from "../../../packages/kit/gpu-perf"
 import type { WorldView } from "../shared/sim/world"
+import { vehicleEffects } from "./game/vehicle-emissions"
+import { emissionInput, startEmissionStudy, type EmissionStudy } from "./game/emission-study"
 
 /** A message for the next lobby (an idle kick reloads the page back to it). */
 const NOTICE_KEY = "getaway.notice"
@@ -56,6 +58,7 @@ async function main() {
   const atlasReady = paintAtlas().then((img) => renderer.setAtlas(img))
 
   const q = new URLSearchParams(location.search)
+  if (q.has("coldExhaust")) vehicleEffects.coldExhaust = q.get("coldExhaust") === "1"
   const staged = (import.meta.env.DEV && q.has("stage")) || q.has("solo") || q.get("peaceful") === "1" || q.has("mux")
   const benchMode = q.has("bench")
   let session: Session | null = null
@@ -148,15 +151,23 @@ async function main() {
   if (mux) ready()
 
   let rafActive = !benchMode
+  let smokeStudy = false
+  let emissionStudy: EmissionStudy | null = null
+  let studyDistance = 38
+  let studyHoldX = 0, studyHoldZ = 0
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
     ready: atlasReady.then(() => true),
+    smoke(style: number, visible = true) { smoke.style = style; smoke.visible = visible },
+    distance(value: number) { studyDistance = value },
+    emissionStudy(value: EmissionStudy | null) { emissionStudy = value; vehicleEffects.coldExhaust = value === "cold" },
     adapterInfo: {
       vendor: adapter.info.vendor,
       architecture: adapter.info.architecture,
       device: adapter.info.device,
       description: adapter.info.description,
     },
-    reset() {
+    reset(study = false) {
+      smokeStudy = study
       rafActive = false
       const prng = mulberry32(1337)
       Math.random = () => prng()
@@ -172,6 +183,12 @@ async function main() {
       local.world.seen = true
       local.world.lastSeen = { x: 226, z: 150, t: local.world.t }
       Object.assign(local.world.heli, { active: true, x: 246, y: 18, z: 162, h: -1.6, sx: 229, sz: 174 })
+      if (smokeStudy) {
+        const body = local.world.robber()!.body
+        Object.assign(body, { x: 228, z: 197, h: 0, vx: 0, vz: 0, yaw: 0 })
+        if (emissionStudy) startEmissionStudy(body, emissionStudy)
+        local.world.heli.active = false
+      }
       local.syncBench()
       activeSession = local
       scene.resetBench()
@@ -186,20 +203,25 @@ async function main() {
       const rh = r?.h ?? 0
       const ryaw = r?.yaw ?? 0
       const targetX = 228 + Math.sin(frameIndex * 0.085) * 3.4
-      const steer = Math.max(-1, Math.min(1, (targetX - rx) * 0.18 - rh * 2.2 - ryaw * 0.35))
-      const handbrake = frameIndex >= 3 && frameIndex < 9
-      const boost = (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
-      const input = { throttle: 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false }
+      const steer = smokeStudy ? (frameIndex < 32 ? 0 : Math.max(-1, Math.min(1, (Math.PI / 2 - rh) * 1.8 - ryaw * 0.45))) : Math.max(-1, Math.min(1, (targetX - rx) * 0.18 - rh * 2.2 - ryaw * 0.35))
+      const handbrake = smokeStudy ? frameIndex >= 35 && frameIndex < 44 : frameIndex >= 3 && frameIndex < 9
+      const boost = smokeStudy ? frameIndex >= 6 && frameIndex < 100 : (frameIndex >= 22 && frameIndex < 52) || (frameIndex >= 115 && frameIndex < 150)
+      const input = { throttle: smokeStudy && frameIndex >= 100 ? 0 : 1, brake: 0, steer, handbrake, boost, gadget: null as 0 | 1 | null, engine: false }
+      if (emissionStudy && r) emissionInput(emissionStudy, frameIndex, r, input)
       const view = activeSession.update(dt, input)
       const mine = view.cars.find((c) => c.ownerId === activeSession.myId && !c.ghost)
       const robber = view.cars.find((c) => c.ownerId === view.robberId && !c.ghost)
       const focus = (view.phase === "intro" ? robber : mine) ?? robber ?? view.cars[0] ?? null
+      const holdFrame = emissionStudy === "drift" ? 64 : emissionStudy === "burnout" ? 85 : emissionStudy ? Infinity : 100
       if (focus) {
         if (!snapped) {
           cam.snap(focus.x, focus.z)
           snapped = true
         }
+        if (smokeStudy && frameIndex === holdFrame) { studyHoldX = cam.fx; studyHoldZ = cam.fz }
         cam.update(focus.x, focus.z, focus.vx, focus.vz, dt, 0, input.boost && focus.boost > 0 && focus.speed > 4)
+        // Hold the study camera at release so the car can leave while the cloud drifts and fades.
+        if (smokeStudy) { cam.dist = studyDistance; cam.fx = frameIndex < holdFrame ? focus.x : studyHoldX; cam.fz = frameIndex < holdFrame ? focus.z : studyHoldZ }
       }
       if (scene.shake > 0) {
         cam.bump(scene.shake)
@@ -207,7 +229,9 @@ async function main() {
       }
       scene.input = input
       if (scene.punch > 0) { cam.land(scene.punch); scene.punch = 0 }
-      scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
+      if (q.has("smoketiming")) { telemetry.enabled = false; renderer.measureNextFrame() }
+      const drawFocus = emissionStudy && frameIndex >= holdFrame && focus ? { ...focus, x: studyHoldX, z: studyHoldZ } : focus
+      scene.draw(view, cam, canvas.width, canvas.height, dt, drawFocus)
       const events = activeSession.drainEvents()
       hud.update(view, {
         myId: activeSession.myId,
@@ -228,7 +252,8 @@ async function main() {
         await device.queue.onSubmittedWorkDone()
         gpuMs = performance.now() - g0
       }
-      return { cpuMs, gpuMs, stats: { ...renderer.stats } }
+      const totalGpuMs = q.has("smoketiming") ? await renderer.totalGpuMs() : null
+      return { cpuMs, gpuMs, totalGpuMs, stats: { ...renderer.stats }, pose: focus && { x: focus.x, z: focus.z, h: focus.h, speed: focus.speed }, smoke: { puffs: scene.fx.puffs.length, sprites: scene.fx.alpha.length, connected: scene.trail.count, wisps: scene.emissions.wispCount, flames: scene.emissions.flameCount, pops: scene.emissions.pops } }
     },
   }
 

@@ -126,6 +126,64 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Art direction
 
+### Tyres, nitro and cold exhaust
+
+The connected study's boost cloud has been replaced by wheel-driven emission in
+`games/getaway/src/game/vehicle-emissions.ts`. The default remains style 6; style 8 uses the same wheel sources
+through its raymarched field. The look and preset code has no dependency on this policy.
+
+- **Two wheel sources, then one cloud.** Each rear wheel has independent position, distance remainder and heat.
+  Current vehicle specs have no drivetrain; the presentation defaults to rear drive (one rear source for bikes).
+  `drivenMask` also understands optional `fwd`/`awd` specs. Popped and airborne wheels emit nothing. Heat reaches
+  86% after one second of sustained slip, then decays when slip ends. Optical density scales with slip, rubbing
+  speed and heat; fixed 0.36 m samples preserve continuity instead of making weak emission open spatial gaps.
+  A stationary burnout uses a 14 Hz temporal top-up. The top-up subtracts the distance rate to avoid double emission.
+- **Smoke stays where the tyre made it.** `smoke-trail.ts` inherits just 0.8% of car velocity, with drag, a
+  city-seeded 0.45 m/s wind, analytic curl drift and gentle lift. Radius grows from 0.55 m to roughly 2.5 m;
+  density falls as it grows. Lifetime is 4.5–5.3 s. The inspected drift has separate young bands, a merged older
+  cloud, and an empty road by 8.2 s; the burnout leaves a cloud behind rather than dragging it along with the car.
+- **Telemetry limits are explicit.** `CarView.drift` is measured lateral speed, not wheel RPM; `CarView.slip` is an
+  oil timer and must not be used as tyre slip. Launch smoke uses high throttle, low speed and acceleration; burnout
+  uses high throttle plus brake at low speed. Only the handbrake explicitly represents locked wheels. Ordinary
+  straight-line braking does not smoke. Remote snapshots lack throttle/brake amount, so their drift/boost is visible
+  but stationary burnout and lift-off cannot be inferred reliably. These are presentation proxies, not tyre physics.
+- **Nitro is an attached flame.** A gripping boost run produced zero tyre-smoke particles across the entire capture.
+  Short blue cores and a restrained glow follow the exhaust every frame and flicker with throttle. There is no
+  persistent flame trail or boost cloud; the optional purge was omitted. Orange lift-off/shift pops last 0.11 s,
+  have a 1.8 s cooldown, require prior load and skip every third eligible event. Shifts use speed bands because the
+  simulation has no gearbox. The pops capture shows two events, with clear intervals between them.
+- **Cold exhaust has one integration setting.** Import `vehicleEffects` from `game/vehicle-emissions` and set
+  `vehicleEffects.coldExhaust = true` for a cold preset, false for warm presets. Default false; standalone preview
+  also accepts `?coldExhaust=1`. Low-opacity tailpipe wisps live at most 0.85 s, shortened with speed to disappear
+  within about 1–2 m. This is condensation, not tyre smoke or snow spray; snow appearance stays with the looks work.
+- **Cheap and shadowless.** New simulation, instance and wisp storage is persistent. Flames/wisps reuse the existing
+  additive/alpha batches; style 6 adds one smoke draw, with no normal-frame extra pass or smoke shadow draw.
+  Peak counts were 312 tyre elements for the drift and 96 for burnout. On M5 Max/Metal at 960×640, paired
+  whole-GPU deltas at the densest drift pose were 0.177 ms (MAD 0.0016); the active pop was 0.018 ms (MAD 0.0038),
+  cold wisps about 0.008 ms, and nitro below reliable resolution. Other poses had substantial shared-machine noise.
+  Raw pairs, total intervals and limitations: `perf/getaway-smoke-realistic.json` / `.md`.
+
+Real tyre smoke includes condensed tyre-derived compounds and fine rubber particles; it is not simply water
+vapour ([Street Machine](https://www.streetmachine.com.au/features/diy/how-to-make-coloured-burnout-smoke)).
+The [BeamNG volumetric-smoke mod](https://www.beamng.com/resources/volumetric-smoke.38775/) is a useful reference
+for heat-dependent wheel emission and restrained exhaust, but has richer wheel telemetry than Getaway.
+[NIOSH](https://www.cdc.gov/niosh/npg/npgd0465.html) identifies nitrous oxide as colourless; the short blue flame
+is a game readability convention, not a claim that nitrous itself burns blue. The selected warm-up, lifetime and
+spread values are tuned visual targets, not universal measurements for every tyre, wind or snowy road.
+
+Compatibility was checked with a three-way scratch merge against the current `getaway-looks` edits, followed by
+the combined check. Smoke's legacy faceted material now reserves ID 12 so it cannot collide with windows/buildings
+at 10–11. Smoke UI initialization and script entries are placed away from the preset additions. The other worktree
+was read only. Snapshot hashes: `perf/getaway-smoke-merge.json`.
+
+The GPU timer now joins the frame with a load/store of the same composite target before its ending timestamp.
+An independent 1px marker was rejected: Metal scheduled it early and returned a negative interval. The dependent
+marker's overhead is present on both sides of every pair; it exists only while benchmarking. No pass times are summed.
+The prior connected-study report describes its historical offscreen-target measurement, not this newer timer.
+
+Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, silent 720×1280 H.264 Main/yuv420p clip
+(31.6 s, 7,435,113 bytes), original stills, motion inspection, matching still/video route poses and paired GPU data.
+
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and
@@ -144,8 +202,84 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   playtest. Wall darkening and cool roof-top shading also default on. Costs remain unverified; see `perf/getaway-look.md`.
 - **Soft smoke can overshoot.** Replacing Getaway's hard faceted puffs with soft sprites fixed the hard look but made
   the trail barely visible; the concept's smoke is full and opaque. Aim for readable volume first, softness second.
+- **Smoke needs a dense core, a shaded underside and deliberate spacing.** Getaway's `fx.ts` and `shaders.ts` now
+  offer five presentation styles (`?smoke=1..5`, compact Smoke selector; `0` retains the previous sprites). Faceted
+  puffs use a shadowless model and vertex-lit scattering; soft/cel sprites shade three overlapping spherical lobes.
+  Soft smoke fades analytically at the ground plane, without a depth-texture pass. Flames stay attached to the
+  exhaust for one render frame rather than depositing blue beads, and ribbon segments join the previous rear-wheel
+  positions. Boost emission has a density floor and scales with speed so mild drifting cannot open large gaps.
+  All reuse existing passes. The 110-frame Metal study peaked at 40 faceted instances, 43 soft/cel sprites, 9 wisps,
+  or 61 ribbon/wisp sprites. All six runs had identical poses and no browser/GPU errors; live selector changes passed.
+  `scripts/prove-smoke.ts` captures the launch, turn and streetlamp frames; `scripts/smoke-sheet.py` assembles them.
+  Kit rejected these silhouettes as separate beads; the connected study below supersedes that recommendation.
+  Their GPU-time cost remains unmeasured. Evidence: `captures/getaway-smoke/` (sheet, labelled portrait clip and proof JSON).
+
+- **Connected smoke needs shared density, not just more puffs.** Getaway's `game/smoke-trail.ts` carries unused
+  emission distance, interpolates births every 0.42 m, and advects a fixed particle pool with the curl of an analytic
+  stream function, drag and buoyancy. `render/smoke.ts` samples shared animated 3D noise so overlapping particles
+  agree on billow structure. Styles 6 and 7 draw in the existing main pass with ground-plane fading; 7 adds a
+  low-frequency scattering-gradient approximation, not a baked six-way lightmap. No smoke enters the shadow pass.
+  On the M5 Max at 960×640, highest pose-median whole-frame GPU deltas were 0.132 ms (6) and 0.147 ms (7).
+- **A shallow density field can make one raymarched trail.** Style 8 splats density, height and radius into a reusable
+  128² RGBA8 field, then integrates twelve samples through the combined volume in one bounded draw. A conservative
+  footprint rejects empty pixels before lighting/noise work. Highest measured pose-median delta was 0.099 ms;
+  whole-frame CPU submission was about 0.3–0.5 ms, including CPU field construction. The cloud has approximate
+  vertical self-shading and nearby-light scattering, not a CS2 voxel simulation or obstacle-filling fluid solver.
+- **Measure the complete GPU interval and retain noise.** `render/frame-timer.ts` measures first-shadow-pass start
+  to final-composite end, never a sum of passes. `scripts/prove-smoke-real.ts --timing --fixture` alternates smoke
+  on/off at identical frozen poses, with nine measured pairs of eight frames after warmup. The final composite uses
+  an equal-size/format offscreen target to exclude presentation fences. One style-7 pair had a 1.502 ms delta;
+  retained raw results and per-pose medians/MAD are in `perf/getaway-smoke-real.json` and `perf/getaway-smoke-real.md`.
+  These numbers establish the single-trail study, not a many-car budget or a bound on every frame.
+- **Hold the camera after emission stops.** The connected-smoke capture holds after boost release so the car can
+  leave while the smoke expands and fades. Matched Metal captures show continuity through the sharp turn and
+  dissipation by 5.9 s. The inspected sheet and motion frames favour 8 for volume and 6 for softer edges; 7 is more
+  contrasty. Default 6 remains a review candidate. Peak live count was 388/768; the pool drops new births if full.
+  Evidence: `captures/getaway-smoke-real/`, including the original, faceted reference, concept crop and cited Valve
+  reference. No new per-frame JS storage is allocated by the smoke simulation, preparation or upload path.
 
 ## Researched, not yet adopted
+
+### Connected smoke research (2026-10-12)
+
+Kit rejected styles 1–5 because their separate silhouettes read as beads. The next study must maintain overlapping
+density through fast movement and sharp turns, then let that density drift and dissipate. Cost estimates below are
+operation counts and memory, not measured milliseconds.
+
+- **CS2 volumes.** [Valve's Responsive Smokes](https://www.youtube.com/watch?v=_y9MpNcAitQ) establishes connected,
+  world-space smoke that fills spaces and reacts to lighting and gunfire. [Gunnell's reconstruction](https://github.com/GarrettGunnell/CS2-Smoke-Grenades)
+  uses voxel flood fill, raymarching and tiled Worley density; this is a reconstruction, not Valve's shader source.
+  Shared density avoids sprite seams; light-ray transmittance gives internal shading. A full voxel solver is excessive
+  for tire smoke: a 64³ R8 density field is 256 KiB, before velocity, obstacles and lighting, plus repeated grid passes.
+- **Soft particles.** [NVIDIA's soft-particle paper](https://developer.download.nvidia.com/whitepapers/2007/SDK10/SoftParticles_hi.pdf)
+  fades opacity by the difference between scene and particle depth. Getaway can fade against y=0 for a few ALU operations;
+  full obstacle fade needs readable MSAA depth and a separate pass or resolve. The planar approximation does not soften building intersections.
+- **Distance emission.** [Unity's emission guide](https://docs.unity3d.com/Manual/particle-emissions-emitters.html)
+  specifically recommends emission per unit travelled for vehicle dust. Carry unused distance and interpolate births
+  along each segment; 0.35–0.5 m spacing with a radius above 0.7 m guarantees overlap, even across uneven frame times.
+  Cost is O(distance/spacing), with fixed-capacity storage and a teleport cutoff.
+- **Curl advection.** [Bridson, Hourihan and Nordenstam (SIGGRAPH 2007)](https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph2007-curlnoise.pdf)
+  take the curl of a noise potential to obtain divergence-free turbulence instead of random velocity sinks. A shallow
+  trail can use a 2D stream function plus buoyancy and drag, evaluated once per live element; this is much cheaper than a fluid solve.
+- **Billow textures and flipbooks.** [Epic's Niagara smoke guide](https://docs.unrealengine.com/4.27/en-US/RenderingAndGraphics/Niagara/HowTo/RecreateSmoke/)
+  uses sub-UV smoke, growth, acceleration and drag. Flipbooks preserve simulated billows at one or two texture reads;
+  procedural world-space fBm avoids repeating round sprites and texture animation assets, but costs several noise reads.
+  A small periodic 3D noise texture can be generated once and shared by all trail fragments.
+- **Six-way lighting.** [Unity's six-way documentation](https://docs.unity3d.com/Packages/com.unity.visualeffectgraph@17.7/manual/six-way-lighting.html)
+  packs six directional scattering responses into two RGBA textures. [The workflow](https://unity.com/blog/engine-platform/realistic-smoke-with-6-way-lighting-in-vfx-graph)
+  supports baked Houdini/Blender smoke and describes EmberGen's six-point export. It fits the sprite pipeline at two
+  fetches plus lighting; a procedural density-gradient approximation is cheaper to author but is not a baked six-way lightmap.
+- **Merged half-resolution cloud.** [GPU Gems 3, chapter 23](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-23-high-speed-screen-particles)
+  renders particles into a smaller target and composites with downsampled depth. Half width/height cuts fill to one
+  quarter; a small blur can hide seams but cannot repair separated density. Two half-resolution RGBA16F targets cost
+  about 2.34 MiB at 960×640, plus 2–3 passes; depth-aware upsampling is needed to prevent halos around cars and buildings.
+- **Bounded analytic volumes.** [GPU Gems 3, chapter 30](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-30-real-time-simulation-and-rendering-3d-fluids)
+  explains ray integration, transmittance, early exit and low-resolution volume rendering. For Getaway, overlap small
+  ellipsoid/capsule fields along the path and integrate their combined density in 8–16 samples, with shared 3D fBm.
+  One bounded draw avoids a voxel solver; cost scales with covered pixels × steps × density contributors, so cull contributors first.
+- **Overdraw and extinction.** GPU Gems 23 and Unity's [six-way discussion](https://discussions.unity.com/t/vfx-graph-introducing-six-way-lighting-for-smoke-dust-and-clouds-vfx/906564)
+  both identify transparent overdraw as the main expense. Keep noise coherent across overlapping elements, convert
+  optical depth with `1-exp(-density*distance)`, reduce density as the cloud expands, and bound screen coverage before adding resolution.
 
 Candidates from the code audits; measure and playtest before moving any into the sections above.
 

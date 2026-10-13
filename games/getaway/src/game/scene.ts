@@ -4,6 +4,7 @@ import type { City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
 import { buildPuff } from "../render/puff"
+import { EmissionState, VehicleEmissions } from "./vehicle-emissions"
 import { buildSpikeStrip } from "../render/spike"
 import { buildCityMesh, type LampLight } from "../render/city-mesh"
 import { MAT, Mesh } from "../render/mesh"
@@ -11,6 +12,7 @@ import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FL
 import { MAX_LIGHTS } from "../render/shaders"
 import type { Camera } from "./camera"
 import { Fx } from "./fx"
+import { smoke } from "../ui/debug-overlay"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
@@ -28,6 +30,7 @@ function normalizeV(v: number[]): [number, number, number] {
 }
 
 type Vis = {
+  emissions: EmissionState
   roll: number; pitch: number; speed: number; h: number; fuel: number; smokeAcc: number; sparkAcc: number
   scrapeAcc: number; wheels: { x: number; z: number }[]; height: number; springV: number; ground: number
   boosting: boolean; throttle: number; backfire: number; crash: number; impactCool: number; braking: boolean
@@ -45,6 +48,8 @@ export function sirenOn(phase: number, red: boolean) {
 
 export class Scene {
   readonly fx = new Fx()
+  readonly emissions = new VehicleEmissions()
+  readonly trail = this.emissions.trail
   private lamps: LampLight[]
   private spills: ShopSpill[]
   private models = new Map<string, number>()
@@ -73,6 +78,7 @@ export class Scene {
   input: Input | null = null
 
   resetBench() {
+    this.emissions.reset()
     this.fx.puffs.length = 0
     this.fx.alpha.length = 0
     this.fx.add.length = 0
@@ -90,6 +96,7 @@ export class Scene {
     readonly city: City,
   ) {
     const built = buildCityMesh(city)
+    this.trail.seedWind(city.seed)
     renderer.setCity(built.mesh)
     this.lamps = built.lamps
     this.spills = built.spills
@@ -100,14 +107,15 @@ export class Scene {
     }
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
-    this.puffModel = renderer.addModel(buildPuff())
+    this.puffModel = renderer.addModel(buildPuff(), false)
     this.spikeModel = renderer.addModel(buildSpikeStrip())
   }
 
   private visOf(c: CarView) {
     let v = this.vis.get(c.id)
     if (!v) {
-      v = { roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
+      v = { emissions: new EmissionState(), roll: 0, pitch: 0, speed: c.speed, h: c.h, fuel: c.boost, smokeAcc: 0, sparkAcc: 0, scrapeAcc: 0, wheels: [], height: 0, springV: 0, ground: 0, boosting: false, throttle: 0, backfire: 0, crash: 0, impactCool: 1, braking: false, boostHold: 0, brakeHold: 0, launch: 0, landings: c.landings ?? 0, landY: 0, landV: 0, vy: c.vy ?? 0, flameAcc: 0 }
+      v.emissions.speed = c.speed
       this.vis.set(c.id, v)
     }
     return v
@@ -150,6 +158,7 @@ export class Scene {
   private animate(view: WorldView, dt: number, focusId: number | null) {
     this.fx.update(dt)
     this.hitStopCool = Math.max(0, this.hitStopCool - dt)
+    this.emissions.update(dt)
     for (const c of view.cars) {
       if (c.ghost) continue
       const v = this.visOf(c)
@@ -206,6 +215,12 @@ export class Scene {
           if (prev) this.fx.skidSegment(prev.x, prev.z, wheel.x, wheel.z, drift ? 0.5 : v.launch > 0 ? 0.62 : 0.38, this.groundAt(wheel.x, wheel.z) + 0.025)
         })
       }
+      if (smoke.style === 5 && drift) {
+        wheels.slice(0, 2).forEach((wheel, i) => {
+          const prev = v.wheels[i]
+          if (prev) this.fx.ribbon(prev.x, prev.z, wheel.x, wheel.z, 0.55 + (c.y ?? 0))
+        })
+      }
       v.wheels = wheels
       const ground = wheels.reduce((sum, p) => sum + this.groundAt(p.x, p.z), 0) / wheels.length
       if (ground !== v.ground && c.speed > 2) v.springV += Math.min(1.6, c.speed * 0.06) * Math.abs(ground - v.ground) / KERB_H
@@ -217,28 +232,20 @@ export class Scene {
         left -= step
       }
       v.ground = ground
-      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || v.launch > 0)) {
-        const intensity = drift ? Math.min(1, (c.drift - 3) / 8) : 0.7
-        v.smokeAcc += dt * 16 * intensity
+      this.emissions.car(c, spec, v.emissions, input, dt, v.height, smoke.style >= 6, true)
+      const smoking = v.emissions.intensity > 0.008
+      if (smoke.style < 6 && smoking) {
+        const intensity = v.emissions.intensity
+        v.smokeAcc += dt * (smoke.style === 0 ? 16 : Math.max(28, c.speed * 0.9)) * intensity
         while (v.smokeAcc > 1) {
           v.smokeAcc -= 1
           const s = Math.random() < 0.5 ? -1 : 1
           this.fx.smoke(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, c.vx, c.vz, intensity)
         }
       }
-      if ((boosting && !v.boosting) || (input && v.throttle > 0.9 && input.throttle < 0.2 && c.speed > 22)) {
-        v.backfire = 0.07
-        this.fx.backfire(c.x - fx * (spec.length / 2 + 0.3), 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.3), -fx * 7, -fz * 7)
-      }
+      v.backfire = v.emissions.pop
       v.boosting = boosting
       v.throttle = input?.throttle ?? 0
-      if (boosting) {
-        v.flameAcc += dt * 30
-        while (v.flameAcc >= 1) {
-          v.flameAcc--
-          for (const s of spec.id === "bike" ? [0] : [-0.35, 0.35]) this.fx.flame(c.x - fx * (spec.length / 2 + 0.2) + rx * s, 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.2) + rz * s, -fx * 8, -fz * 8)
-        }
-      } else v.flameAcc = 0
       v.fuel = c.boost
       if (c.impact > 0.35 && c.speed > 4) {
         v.scrapeAcc += dt * (12 + Math.min(c.speed, 40))
@@ -441,7 +448,7 @@ export class Scene {
       const rz = -Math.sin(c.h)
       const half = spec.length / 2
       if (v.crash > 0) light(c.x + fx * half, 0.7 + v.height, c.z + fz * half, 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
-      if (v.backfire > 0) light(c.x - fx * (half + 0.3), 0.65 + v.height, c.z - fz * (half + 0.3), 4, 0.45, 0.55, 1, 3 * v.backfire / 0.07)
+      if (smoke.visible && v.backfire > 0) light(c.x - fx * (half + 0.3), 0.65 + v.height, c.z - fz * (half + 0.3), 2, 1, 0.3, 0.04, v.backfire / 0.11)
       // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
       light(c.x + fx * (half + 0.5), 1.3 + sagY, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
       const hw = spec.width / 2 - 0.25
@@ -588,6 +595,8 @@ export class Scene {
       )
     }
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST)
+    this.emissions.emit(alpha, fxc.alpha, add, fxc.add, MAX_SPRITES_PER_LIST, smoke.visible)
+    fxc.alpha = this.emissions.alphaCount; fxc.add = this.emissions.addCount
     const batches = this.batchOut
     batches.length = 0
     for (const [model, slot] of this.batchMap) {
@@ -600,6 +609,8 @@ export class Scene {
     }
     for (let i = 0; i < beams.v.length; i++) this.beamBuf[i] = beams.v[i]!
     this.renderer.setBeams(this.beamBuf, beams.count)
+    if (smoke.style >= 6) this.trail.prepare(smoke.style)
+    this.renderer.setSmoke(this.trail, smoke.style, smoke.visible)
     this.renderer.render({
       frame: f,
       lights: L,
