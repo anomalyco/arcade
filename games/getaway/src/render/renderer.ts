@@ -1,6 +1,5 @@
 import { SmokeRenderer } from "./smoke"
 import type { SmokeTrail } from "../game/smoke-trail"
-import { FrameTimer } from "./frame-timer"
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
@@ -95,14 +94,6 @@ function aabbInFrustum(
 
 export class Renderer {
   private readonly smoke: SmokeRenderer
-  private timer: FrameTimer | null = null
-  measure = false
-  measureNextFrame() {
-    if (!this.device.features.has("timestamp-query")) throw new Error("Total GPU timing requires timestamp-query")
-    this.timer ??= new FrameTimer(this.device)
-    this.measure = true
-  }
-  totalGpuMs() { return this.timer!.collect() }
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private instBuf: GPUBuffer
@@ -472,7 +463,6 @@ export class Renderer {
 
     const enc = d.createCommandEncoder()
     const sp = enc.beginRenderPass({
-      timestampWrites: this.measure ? this.timer!.start : undefined,
       colorAttachments: [],
       depthStencilAttachment: { view: this.shadowView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
     })
@@ -624,8 +614,6 @@ export class Renderer {
     fp.setBindGroup(0, g.composite)
     fp.draw(3)
     fp.end()
-    if (this.measure) this.timer!.finish(enc, this.context.getCurrentTexture().createView())
-    this.measure = false
     d.queue.submit([enc.finish()])
   }
 }

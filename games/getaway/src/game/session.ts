@@ -114,20 +114,6 @@ export class LocalSession implements Session {
     this.curr = this.prev = view
   }
 
-  /** The comparison's BEFORE follows the authoritative AFTER pose instead of integrating it twice. */
-  syncCar(pose: { x: number; z: number; vx: number; vz: number; h: number; yaw: number; speed: number }) {
-    if (!Object.values(pose).every(Number.isFinite)) return
-    const car = this.world.carOf(this.myId)
-    if (!car) return
-    const { x, z, vx, vz, h, yaw, speed } = pose
-    Object.assign(car.body, { x, z, vx, vz, h, yaw })
-    this.following = true
-    this.acc = 0
-    this.curr = this.prev = this.snapshot()
-    const mine = this.curr.cars.find((c) => c.ownerId === this.myId)
-    if (mine) mine.speed = speed
-  }
-
   drainEvents() {
     return this.world.drainEvents().filter((e) => e.to === undefined || e.to === this.myId)
   }

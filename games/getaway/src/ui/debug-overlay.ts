@@ -60,18 +60,11 @@ export class DebugOverlay extends LabPanel {
       else if (key === "proceduralAudio" && sound) { sound.reset(); sound.procedural = Boolean(value) }
       else Object.assign(juice, { [key]: value })
     })
-    addEventListener("keydown", (event) => {
-      if (q.has("mux") && parent !== window) return
-      if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
-      event.preventDefault()
-      this.toggle()
-    })
   }
-  reset() { this.samples.length = 0; this.lastUpdate = 0 }
   update(now: number, frameMs: number, stats: Pick<PerfSample, "gpuMs" | "gpuKind" | "draws" | "verts" | "chunks" | "lights">) {
     if (frameMs > 0 && frameMs < 1000) this.samples.push(frameMs)
     if (this.samples.length > 120) this.samples.shift()
-    if (document.hidden) { this.reset(); return false }
+    if (document.hidden) { this.samples.length = 0; this.lastUpdate = 0; return false }
     if (now - this.lastUpdate < 150) return false
     this.lastUpdate = now
     const sorted = [...this.samples].sort((a, b) => a - b)

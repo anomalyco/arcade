@@ -69,8 +69,7 @@ write path. Keep action rows in navigation rather than treating them as switches
 package scripts. For comparison panes, also adopt modifier forwarding in `packages/kit/compare.ts` and both games'
 `src/game/input.ts`. The proof runner and Getaway script typecheck entry provide the browser regression check.
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
-Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel. Getaway only
-accepts `lights` and `coldExhaust` URL overrides in `bench` or `mux` automation; ordinary play uses the panel.
+Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel.
 
 In rough order of value against risk.
 

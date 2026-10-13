@@ -2,12 +2,6 @@ import type { Vehicle } from "../../shared/config"
 
 /** 0 is the original reference; 4 is the tunable default. */
 export type LightStyle = 0 | 1 | 2 | 3 | 4
-/** Automation override. Players choose styles in the Lab. */
-export function lightStyle(params: URLSearchParams): LightStyle {
-  if (!params.has("bench") && !params.has("mux")) return 4
-  const n = Number(params.get("lights") ?? 4)
-  return n === 0 || n === 1 || n === 2 || n === 3 ? n : 4
-}
 
 /** Shared by the emissive lens, spotlight, beam, road pool and flare. */
 export const HEADLIGHT: [number, number, number] = [1, 0.93, 0.78]
