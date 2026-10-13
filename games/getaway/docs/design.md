@@ -43,6 +43,8 @@ Arcade bicycle model in `shared/sim/vehicle.ts` (`stepAndCollide`, substepped so
 through thin boxes). Handbrake (Space) drops grip for drifts that hold with throttle and counter-steer.
 Nitro (Shift) gives +30% top speed and empties in 3.5 s.
 
+- **Addition for Dax to review:** the east–west tunnel street loops at speed with mirrored lateral pose; darkness breaks sight, but pursuing cops can follow through the same link.
+
 Collisions (`shared/sim/collide.ts`): every car is an oriented box (96% of its drawn length and width), tested with
 separating axes against the axis-aligned city boxes and against other cars, with a one- or two-point contact manifold.
 Contacts resolve with rigid-body impulses: mass from the vehicle spec, spin through the yaw rate, friction at the

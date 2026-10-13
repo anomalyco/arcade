@@ -466,9 +466,10 @@ struct SOut {
   } else if (k == 9.0) {
     // Wider than the body; four stronger contact patches at the wheel tracks.
     let q = abs(o.uv);
-    let body = (1.0 - smoothstep(0.48, 1.0, q.x)) * (1.0 - smoothstep(0.58, 1.0, q.y));
+    let lift = clamp(o.extra / 5.0, 0.0, 1.0);
+    let body = (1.0 - smoothstep(mix(0.58, 0.12, lift), 1.0, q.x)) * (1.0 - smoothstep(mix(0.68, 0.18, lift), 1.0, q.y));
     let wheel = 1.0 - smoothstep(0.04, 0.27, length((q - vec2f(0.57, 0.53)) * vec2f(1.0, 1.3)));
-    a = min(1.0, body * 0.78 + wheel * 0.55);
+    a = min(1.0, body * 0.88 + wheel * 0.55 * (1.0 - lift));
   }
   if (a <= 0.002) { discard; }
   return vec4f(o.color.rgb * a * o.color.a, a * o.color.a);

@@ -1,6 +1,7 @@
 import { type Input, NO_INPUT, flatCount, forward, speedOf } from "./vehicle"
 import { BAY_DEPTH, nearestNode } from "./city"
 import { type Car, SURVIVAL, type World } from "./world"
+import { TUNNEL, inTunnel, tunnelLink } from "./tunnel"
 
 const TAU = Math.PI * 2
 
@@ -44,8 +45,16 @@ export function driveToward(car: Car, tx: number, tz: number, cap: number): Inpu
 /** Follows the precomputed road route node by node, then heads straight for the goal. */
 export function followRoute(world: World, car: Car, gx: number, gz: number, cap: number): Input {
   const b = car.body
+  // Commit to the dark bore rather than turning toward a waypoint across the map.
+  if (inTunnel(b) && ((b.x > TUNNEL.eastMouth && b.vx >= 0) || (b.x < TUNNEL.westMouth && b.vx <= 0))) {
+    return driveToward(car, b.x > TUNNEL.eastMouth ? TUNNEL.east + 20 : TUNNEL.west - 20, TUNNEL.z, cap)
+  }
   while (car.routeI < car.route.length) {
     const n = world.city.nodes[car.route[car.routeI]!]!
+    const prev = world.city.nodes[car.route[car.routeI - 1] ?? -1]
+    if (prev && tunnelLink(prev, n) && Math.abs(b.x - prev.x) < 35) {
+      return driveToward(car, prev.x < 0 ? TUNNEL.west - 20 : TUNNEL.east + 20, TUNNEL.z, cap)
+    }
     if (Math.hypot(n.x - b.x, n.z - b.z) < 14) {
       car.routeI++
       continue
@@ -157,6 +166,7 @@ function copGadget(world: World, car: Car, visible: boolean, guard: boolean): 0 
 }
 
 export function copBrain(world: World, car: Car): Input {
+  if (inTunnel(car.body)) return followRoute(world, car, car.body.x < 0 ? 0 : world.city.max - 8, TUNNEL.z, car.vehicle.maxSpeed)
   const target = world.copTarget(car)
   if (!target) return driveToward(car, car.homeX, car.homeZ, car.vehicle.maxSpeed * 0.4)
   const d = Math.hypot(target.x - car.body.x, target.z - car.body.z)

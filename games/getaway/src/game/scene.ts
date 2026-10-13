@@ -1,6 +1,6 @@
 import { vec4 } from "wgpu-matrix"
 import { CELL, GRID, ROAD_HALF, VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
-import type { City } from "../../shared/sim/city"
+import { rampSurface, type City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
 import { buildPuff } from "../render/puff"
@@ -411,7 +411,10 @@ export class Scene {
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = v.braking ? 1 : 0
       const altitude = c.y ?? 0
-      sprite("a", c.x, v.ground + 0.018, c.z, spec.width * 0.85 / (1 + altitude * 0.06), 0, 0, 0, 0.7 / (1 + altitude * 0.45), 9, c.h, spec.length / spec.width * 0.85, altitude)
+      let shadowGround = v.ground
+      for (const ramp of this.city.ramps) shadowGround = Math.max(shadowGround, rampSurface(ramp, c.x, c.z)?.y ?? 0)
+      const clearance = Math.max(0, altitude - shadowGround)
+      sprite("a", c.x, shadowGround + 0.035, c.z, spec.width * (0.92 + clearance * 0.14), 0, 0, 0, 0.92 / (1 + clearance * 0.10), 9, c.h, spec.length / spec.width * 0.85, clearance)
       // Popped tires: the body sags at those corners (roll toward the flat side, nose or tail down) and shimmies a little.
       const wm = c.wheels ?? 0
       let sagRoll = 0
@@ -450,7 +453,8 @@ export class Scene {
         sprite("d", c.x - fx * (half + 0.05) + rx * hw * s, 0.75 + sagY, c.z - fz * (half + 0.05) + rz * hw * s, braking ? 0.9 : 0.55, 1, 0.12, 0.08, braking ? 2.2 : 1.1, 0)
       }
       // No beam geometry: the spot light lights the road, plus a faint soft pool ahead of the car.
-      sprite("d", c.x + fx * (half + 6), 0.06, c.z + fz * (half + 6), 2.6, 1, 0.9, 0.72, 0.1, 3, c.h, 2.2)
+      const poolAhead = half + 6 + clearance * 3.1
+      sprite("d", c.x + fx * poolAhead, v.ground + 0.06, c.z + fz * poolAhead, 2.6 + clearance * 0.65, 1, 0.9, 0.72, 0.1 / (1 + clearance * 0.12), 3, c.h, 2.2)
       light(c.x - fx * (half + 0.6), 0.9 + sagY, c.z - fz * (half + 0.6), 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
       if (siren >= 0) {
         const red = sirenOn(siren, true)
@@ -462,7 +466,7 @@ export class Scene {
         if (red > 0) sprite("d", c.x - rx * 0.45, y, c.z - rz * 0.45, 0.9, 1, 0.1, 0.1, 1.5 * red, 0)
         if (blue > 0) sprite("d", c.x + rx * 0.45, y, c.z + rz * 0.45, 0.9, 0.2, 0.35, 1, 1.7 * blue, 0)
         // Colored wash on the road around the cruiser.
-        sprite("d", c.x, 0.08, c.z, 7, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue), 3)
+        sprite("d", c.x, v.ground + 0.08, c.z, 7 + clearance * 0.8, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue) / (1 + clearance * 0.15), 3)
       }
     }
 

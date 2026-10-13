@@ -44,6 +44,7 @@ export class Camera {
   }
 
   update(x: number, z: number, vx: number, vz: number, dt: number, zoom = 0, boosting = false) {
+    if (Math.hypot(x - this.fx, z - this.fz) > 100) this.snap(x, z)
     this.t += dt
     const k = 1 - Math.exp(-dt * 2.2)
     this.lx += (vx * 0.35 - this.lx) * k

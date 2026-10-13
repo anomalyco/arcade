@@ -1,6 +1,7 @@
 import { CELL, GRID, ROAD_HALF } from "../../../shared/config"
 import { type Box, GROUND_FLOOR, STOREY } from "../../../shared/sim/city"
-import { MAT, type Mesh, type Rgb } from "../mesh"
+import { TUNNEL } from "../../../shared/sim/tunnel"
+import { MAT, Mesh, type Rgb } from "../mesh"
 import { beam, cylinder, ground, shade, SKIP, slab } from "./kit"
 import { container } from "./harbor"
 import { fence, streetLamp, tree } from "./props"
@@ -33,7 +34,8 @@ export function outskirts(m: Mesh, rng: () => number, lamps: LampLight[], waterZ
   ground(m, EDGE - 400, MAX + 400, EDGE - 400, waterZ, -0.02, [0.1, 0.11, 0.14])
   const tz = 2 * CELL
   for (const [x0, x1, z0, z1] of [
-    [EDGE - 6, EDGE, EDGE - 6, waterZ],
+    [EDGE - 6, EDGE, EDGE - 6, tz - 7],
+    [EDGE - 6, EDGE, tz + 7, waterZ],
     [MAX, MAX + 6, EDGE - 6, tz - 7],
     [MAX, MAX + 6, tz + 7, waterZ],
     [EDGE - 6, MAX + 6, EDGE - 6, EDGE],
@@ -41,7 +43,7 @@ export function outskirts(m: Mesh, rng: () => number, lamps: LampLight[], waterZ
     slab(m, x0, x1, 0, 0.16, z0, z1, CURB, MAT.lit, SKIP.bottom, SIDEWALK)
   }
   // Low retaining wall with a railing along the west and north edges.
-  slab(m, EDGE - 6, EDGE - 5.4, 0, 1.1, EDGE - 6, waterZ, CONCRETE)
+  for (const [z0, z1] of [[EDGE - 6, tz - 7], [tz + 7, waterZ]]) slab(m, EDGE - 6, EDGE - 5.4, 0, 1.1, z0!, z1!, CONCRETE)
   slab(m, EDGE - 6, MAX + 6, 0, 1.1, EDGE - 6, EDGE - 5.4, CONCRETE)
   for (let z = EDGE + 10; z < waterZ - 5; z += 25) streetLamp(m, lamps, EDGE - 1.2, z + 12, EDGE - 3, z + 12)
   for (let x = EDGE + 10; x < MAX; x += 25) streetLamp(m, lamps, x, EDGE - 1.2, x, EDGE - 3)
@@ -49,6 +51,7 @@ export function outskirts(m: Mesh, rng: () => number, lamps: LampLight[], waterZ
   railViaduct(m, rng, lamps, -24, EDGE - 160, waterZ + 120)
   railYard(m, rng, lamps)
   tunnelCut(m, rng, lamps, waterZ)
+  tunnelCut(m, rng, lamps, waterZ, true)
 
   // Filler blocks beyond the west and north edges.
   const filler: Box[] = []
@@ -79,6 +82,7 @@ export function outskirts(m: Mesh, rng: () => number, lamps: LampLight[], waterZ
   // West of the viaduct, a service road under it.
   ground(m, -32, -15, EDGE - 6, waterZ, 0.0, ASPHALT)
   for (let z = EDGE - 4; z < waterZ - 20; z += 48) {
+    if (z < tz + 48 && z + 48 > tz - 48) continue
     ground(m, -150, -32, z + 36, z + 48, 0.0, ASPHALT)
     lot(-90, -35, z + 2, z + 18)
     lot(-90, -35, z + 18, z + 34)
@@ -103,6 +107,7 @@ function railViaduct(m: Mesh, rng: () => number, lamps: LampLight[], cx: number,
   const deck = 8.5
   const hw = 4.6
   for (let z = z0; z < z1; z += 20) {
+    if (Math.abs(z - TUNNEL.z) < 10) continue
     slab(m, cx - 1.6, cx + 1.6, 0, 0.5, z - 1.6, z + 1.6, shade(CONCRETE, 0.85))
     slab(m, cx - 0.9, cx + 0.9, 0.5, deck - 1.6, z - 0.9, z + 0.9, CONCRETE)
     slab(m, cx - hw + 0.4, cx + hw - 0.4, deck - 1.6, deck - 1.1, z - 1.1, z + 1.1, shade(CONCRETE, 0.9))
@@ -170,17 +175,22 @@ function railYard(m: Mesh, rng: () => number, lamps: LampLight[]) {
 }
 
 /** East edge: a faceted rock cut with trees on top and a lit tunnel portal where the road leaves town. */
-function tunnelCut(m: Mesh, rng: () => number, lamps: LampLight[], waterZ: number) {
+function tunnelCut(target: Mesh, rng: () => number, lamps: LampLight[], waterZ: number, west = false) {
+  // Build the reflected cut separately: the city uses BigMesh's packed storage, not Mesh.v.
+  const m = west ? new Mesh() : target
+  const firstVertex = m.v.length
+  const firstLamp = lamps.length
   const x0 = MAX + 6
-  const tz = 2 * CELL
+  const tz = TUNNEL.z
+  const startZ = west ? tz - 48 : EDGE - 120
   const cols = 16
   const step = 6
-  const rows = Math.ceil((waterZ + 40 - (EDGE - 120)) / step)
+  const rows = Math.ceil(((west ? tz + 48 : waterZ + 40) - startZ) / step)
   const hgt: number[][] = []
   for (let i = 0; i <= cols; i++) {
     hgt.push([])
     for (let j = 0; j <= rows; j++) {
-      const z = EDGE - 120 + j * step
+      const z = startZ + j * step
       // A steep lower face of bare rock, then a rolling wooded top; higher over the tunnel.
       const near = Math.max(0, 1 - Math.abs(z - tz) / 60)
       const face = Math.min(1, i / 3) * (10 + near * 6)
@@ -191,14 +201,14 @@ function tunnelCut(m: Mesh, rng: () => number, lamps: LampLight[], waterZ: numbe
   const pts: number[][][] = []
   for (let i = 0; i <= cols; i++) {
     pts.push([])
-    for (let j = 0; j <= rows; j++) pts[i]!.push([x0 + i * step * 0.8 + (i > 0 ? (rng() - 0.5) * 2 : 0), hgt[i]![j]!, EDGE - 120 + j * step + (i > 0 && j > 0 && j < rows ? (rng() - 0.5) * 2 : 0)])
+    for (let j = 0; j <= rows; j++) pts[i]!.push([x0 + i * step * 0.8 + (i > 0 ? (rng() - 0.5) * 2 : 0), hgt[i]![j]!, startZ + j * step + (i > 0 && j > 0 && j < rows ? (rng() - 0.5) * 2 : 0)])
   }
   for (let i = 0; i < cols; i++)
     for (let j = 0; j < rows; j++) {
       const a = pts[i]![j]!, b = pts[i + 1]![j]!, c = pts[i + 1]![j + 1]!, d = pts[i]![j + 1]!
       // Leave the tunnel mouth open.
       const zc = (a[2]! + c[2]!) / 2
-      if (i < 1 && Math.abs(zc - tz) < 9) continue
+      if (i < 3 && Math.abs(zc - tz) < 10) continue
       const k = 0.8 + rng() * 0.35
       const col = i > 3 ? shade(rng() < 0.5 ? [0.13, 0.2, 0.14] : [0.16, 0.22, 0.14], k) : shade(ROCK, k)
       m.facet(a, d, c, col)
@@ -224,4 +234,18 @@ function tunnelCut(m: Mesh, rng: () => number, lamps: LampLight[], waterZ: numbe
   // Chevron sign over the mouth.
   slab(m, px - 0.2, px, 8.2, 9.6, tz - 4, tz + 4, [0.15, 0.15, 0.17])
   m.decal([px - 0.22, 8.3, tz + 3.8], [px - 0.22, 8.3, tz - 3.8], [px - 0.22, 9.5, tz - 3.8], [px - 0.22, 9.5, tz + 3.8], [-1, 0, 0], "hazardYellow", [1, 1, 1], MAT.neon)
+  if (west) {
+    // Reflect only this cut, including normals and triangle winding. No second mesh or draw pass.
+    for (let i = firstVertex; i < m.v.length; i += 12) {
+      m.v[i] = GRID * CELL - m.v[i]!
+      m.v[i + 3] = -m.v[i + 3]!
+    }
+    for (let i = firstVertex; i < m.v.length; i += 36) for (let j = 0; j < 12; j++) {
+      const a = m.v[i + j]!
+      m.v[i + j] = m.v[i + 12 + j]!
+      m.v[i + 12 + j] = a
+    }
+    for (let i = firstLamp; i < lamps.length; i++) lamps[i]!.x = GRID * CELL - lamps[i]!.x
+    target.append(m)
+  }
 }
