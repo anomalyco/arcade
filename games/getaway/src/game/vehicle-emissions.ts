@@ -2,6 +2,7 @@ import type { Vehicle } from "../../shared/config"
 import type { CarView } from "../../shared/sim/world"
 import type { Input } from "../../shared/sim/vehicle"
 import { SmokeTrail, type SmokeSource } from "./smoke-trail"
+import { getawayEffects as settings } from "../lab/settings"
 
 /** Preset integration seam. Cold presets can set this without owning the smoke renderer or Lab. */
 export const vehicleEffects = { coldExhaust: false }
@@ -96,8 +97,8 @@ export class VehicleEmissions {
     const shift = gear > s.gear && throttle > 0.8 && c.speed > 17
     if (dt > 0 && popsEnabled && !c.engineOff && s.cooldown === 0 && s.load > 0.45 && (lift || shift)) {
       s.events++
-      if (s.events % 3 !== 0) { s.pop = 0.11; this.pops++ }
-      s.cooldown = 1.8
+      if (s.events % 3 !== 0) { s.pop = settings.pops.life; this.pops++ }
+      s.cooldown = settings.pops.cooldown
     }
     s.gear = gear; s.speed = c.speed; s.throttle = throttle
     const boost = !c.engineOff && (input ? input.boost && c.boost > 0 && c.stun <= 0 : !!c.boosting) && throttle > 0.1
@@ -105,22 +106,22 @@ export class VehicleEmissions {
     const flicker = 0.82 + 0.18 * Math.sin(this.time * 47 + c.id * 2.1)
     if (boost || s.pop > 0) for (let pipe = 0; pipe < (spec.id === "bike" ? 1 : 2); pipe++) {
       const side = spec.id === "bike" ? 0 : pipe ? 0.34 : -0.34
-      const orange = s.pop > 0 && !boost, power = orange ? s.pop / 0.11 : clamp(throttle) * flicker
-      const size = 0.15 + power * 0.035, length = 0.32 + power * 0.28
+      const orange = s.pop > 0 && !boost, power = orange ? s.pop / settings.pops.life : clamp(throttle) * flicker
+      const size = settings.nitro.size + power * settings.nitro.sizePower, length = settings.nitro.length + power * settings.nitro.lengthPower
       this.pack(this.flames, this.flameCount++, x + rx * side - fx * length * 0.5, y, z + rz * side - fz * length * 0.5, size,
-        orange ? 1 : 0.12, orange ? 0.3 : 0.4, orange ? 0.035 : 1, 1.8 * power, 13, Math.atan2(-fx, -fz), length / size, this.time)
+        orange ? 1 : 0.12, orange ? 0.3 : 0.4, orange ? 0.035 : 1, settings.nitro.power * power, 13, Math.atan2(-fx, -fz), length / size, this.time)
       this.pack(this.flames, this.flameCount++, x + rx * side, y, z + rz * side, 0.3, orange ? 1 : 0.15, orange ? 0.25 : 0.35, orange ? 0.03 : 1, 0.35 * power, 0, 0, 1, 0)
       this.flameCount = Math.min(124, this.flameCount)
     }
     if (vehicleEffects.coldExhaust && !c.engineOff) {
-      s.cold += dt * 24
+      s.cold += dt * settings.cold.rate
       while (s.cold >= 1) {
         s.cold--
         if (this.wispCount === 256) break
         const i = this.wispCount++ * 8, p = this.wisps
         p[i] = x; p[i + 1] = y; p[i + 2] = z; p[i + 3] = 0
-        p[i + 4] = c.vx * 0.08 - fx * 1.4 + 0.2; p[i + 5] = c.vz * 0.08 - fz * 1.4
-        p[i + 6] = 0.2; p[i + 7] = Math.min(0.85, 1.6 / (c.speed * 0.92 + 1.4))
+        p[i + 4] = c.vx * 0.08 - fx * settings.cold.speed + 0.2; p[i + 5] = c.vz * 0.08 - fz * settings.cold.speed
+        p[i + 6] = settings.cold.opacity; p[i + 7] = Math.min(settings.cold.life, 1.6 / (c.speed * 0.92 + settings.cold.speed))
       }
     } else s.cold = 0
   }

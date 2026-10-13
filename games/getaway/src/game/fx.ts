@@ -1,5 +1,7 @@
 import { SPRITE_FLOATS } from "../render/renderer"
 import { smoke } from "../ui/debug-overlay"
+import { getawayEffects as settings } from "../lab/settings"
+import { spriteMotionKeys } from "../render/motion"
 
 type Particle = {
   x: number
@@ -42,19 +44,19 @@ export class Fx {
       vy: 0.8 + Math.random() * 0.6,
       vz: vz * 0.15 + (Math.random() - 0.5) * 1.5,
       life: 0,
-      max: 1.1 + Math.random() * 0.8,
-      size: 0.35 + Math.random() * 0.25,
-      grow: 1.5 * (0.6 + intensity * 0.6),
+      max: settings.smoke.life + Math.random() * settings.smoke.lifeSpread,
+      size: settings.smoke.size + Math.random() * settings.smoke.sizeSpread,
+      grow: settings.smoke.growth * (0.6 + intensity * 0.6),
       r: 0.62,
       g: 0.63,
       b: 0.68,
-      a: 0.42 * intensity,
+      a: settings.smoke.opacity * intensity,
       kind: 1,
       rot: Math.random() * Math.PI * 2,
       stretch: 1,
       seed: Math.random(),
       gravity: 0,
-      drag: 1.6,
+      drag: settings.smoke.drag,
     }
     if (style === 0) { this.alpha.push(p); return }
     p.r = 0.92; p.g = 0.95; p.b = 1
@@ -87,16 +89,16 @@ export class Fx {
   }
 
   skid(x: number, z: number, h: number, alpha: number) {
-    this.skids.push({ x, y: 0.03, z, vx: 0, vy: 0, vz: 0, life: 0, max: 9, size: 0.18, grow: 0, r: 0.02, g: 0.02, b: 0.025, a: alpha, kind: 4, rot: h + Math.PI / 2, stretch: 5, seed: 0, gravity: 0, drag: 0 })
-    if (this.skids.length > 1600) this.skids.splice(0, this.skids.length - 1600)
+    this.skids.push({ x, y: 0.03, z, vx: 0, vy: 0, vz: 0, life: 0, max: settings.skids.life, size: 0.18, grow: 0, r: 0.02, g: 0.02, b: 0.025, a: alpha, kind: 4, rot: h + Math.PI / 2, stretch: 5, seed: 0, gravity: 0, drag: 0 })
+    if (this.skids.length > settings.skids.capacity) this.skids.splice(0, this.skids.length - settings.skids.capacity)
   }
 
   skidSegment(ax: number, az: number, bx: number, bz: number, alpha: number, y = 0.03) {
     const length = Math.hypot(bx - ax, bz - az)
     // Teleports and resets must not leave a streak across town.
     if (length < 0.015 || length > 8) return
-    this.skids.push({ x: (ax + bx) / 2, y, z: (az + bz) / 2, vx: 0, vy: 0, vz: 0, life: 0, max: 9, size: 0.16, grow: 0, r: 0.02, g: 0.02, b: 0.025, a: alpha, kind: 4, rot: Math.atan2(bx - ax, bz - az), stretch: (length / 2 + 0.025) / 0.16, seed: 0, gravity: 0, drag: 0 })
-    if (this.skids.length > 1600) this.skids.splice(0, this.skids.length - 1600)
+    this.skids.push({ x: (ax + bx) / 2, y, z: (az + bz) / 2, vx: 0, vy: 0, vz: 0, life: 0, max: settings.skids.life, size: settings.skids.width, grow: 0, r: 0.02, g: 0.02, b: 0.025, a: alpha, kind: 4, rot: Math.atan2(bx - ax, bz - az), stretch: (length / 2 + 0.025) / settings.skids.width, seed: 0, gravity: 0, drag: 0 })
+    if (this.skids.length > settings.skids.capacity) this.skids.splice(0, this.skids.length - settings.skids.capacity)
   }
 
   backfire(x: number, y: number, z: number, vx: number, vz: number) {
@@ -107,7 +109,7 @@ export class Fx {
   sparks(x: number, z: number, nx: number, nz: number, n: number, y = 0.6) {
     for (let i = 0; i < n; i++) {
       const a = Math.atan2(nz, nx) + (Math.random() - 0.5) * 2.2
-      const sp = 6 + Math.random() * 14
+      const sp = settings.sparks.speed + Math.random() * settings.sparks.speedSpread
       this.add.push({
         x,
         y: y + Math.random() * 0.5,
@@ -116,8 +118,8 @@ export class Fx {
         vy: 2 + Math.random() * 5,
         vz: Math.sin(a) * sp,
         life: 0,
-        max: 0.25 + Math.random() * 0.4,
-        size: 0.12 + Math.random() * 0.1,
+        max: settings.sparks.life + Math.random() * settings.sparks.lifeSpread,
+        size: settings.sparks.size + Math.random() * settings.sparks.sizeSpread,
         grow: -0.1,
         r: 1,
         g: 0.62 + Math.random() * 0.25,
@@ -127,8 +129,8 @@ export class Fx {
         rot: 0,
         stretch: 1,
         seed: 0,
-        gravity: 22,
-        drag: 0.8,
+        gravity: settings.sparks.gravity,
+        drag: settings.sparks.drag,
       })
     }
   }
@@ -158,7 +160,7 @@ export class Fx {
         p.y += p.vy * dt
         if (p.gravity && p.y < 0.05) {
           p.y = 0.05
-          p.vy = p.kind === 6 ? -p.vy * 0.48 : 0
+          p.vy = p.kind === 6 ? -p.vy * settings.sparks.bounce : 0
         }
         p.z += p.vz * dt
         if (p.kind === 6) {
@@ -173,6 +175,9 @@ export class Fx {
   }
 
   static write(out: Float32Array, i: number, p: { x: number; y: number; z: number; size: number; r: number; g: number; b: number; a: number; kind: number; rot: number; stretch: number; seed: number }, fade = 1) {
+    let keys = spriteMotionKeys.get(out)
+    if (!keys) spriteMotionKeys.set(out, keys = [])
+    keys[i] = p
     const o = i * SPRITE_FLOATS
     out[o] = p.x
     out[o + 1] = p.y

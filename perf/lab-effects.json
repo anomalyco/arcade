@@ -1,0 +1,83 @@
+{
+  "results": [
+    {
+      "host": "http://fx-kit-playground.localhost:1355",
+      "environment": "office",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 5.14 ms"
+    },
+    {
+      "host": "http://fx-kit-playground.localhost:1355",
+      "environment": "corridor",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 5.14 ms"
+    },
+    {
+      "host": "http://fx-kit-playground.localhost:1355",
+      "environment": "meeting",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 5.14 ms"
+    },
+    {
+      "host": "http://fx-kit-playground.localhost:1355",
+      "environment": "breakroom",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 5.14 ms"
+    },
+    {
+      "host": "http://fx-kit-playground.localhost:1355",
+      "environment": "server",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 5.14 ms"
+    },
+    {
+      "host": "http://fx-kit-playground.localhost:1355",
+      "environment": "downtown",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 5.14 ms"
+    },
+    {
+      "host": "http://fx-kit-playground.localhost:1355",
+      "adapter": {
+        "vendor": "apple",
+        "architecture": "metal-3"
+      },
+      "locked": true,
+      "keyboard": true
+    },
+    {
+      "host": "http://fx-kit-blackout.localhost:1355",
+      "environment": "office",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.86 ms"
+    },
+    {
+      "host": "http://fx-kit-blackout.localhost:1355",
+      "environment": "corridor",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.86 ms"
+    },
+    {
+      "host": "http://fx-kit-blackout.localhost:1355",
+      "environment": "meeting",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.86 ms"
+    },
+    {
+      "host": "http://fx-kit-blackout.localhost:1355",
+      "environment": "breakroom",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.86 ms"
+    },
+    {
+      "host": "http://fx-kit-blackout.localhost:1355",
+      "environment": "server",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.86 ms"
+    },
+    {
+      "host": "http://fx-kit-blackout.localhost:1355",
+      "environment": "downtown",
+      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.86 ms"
+    },
+    {
+      "host": "http://fx-kit-blackout.localhost:1355",
+      "adapter": {
+        "vendor": "apple",
+        "architecture": "metal-3"
+      },
+      "locked": true,
+      "keyboard": true
+    }
+  ],
+  "errors": []
+}

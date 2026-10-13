@@ -1,3 +1,4 @@
+import { tyreSettings as settings } from "../lab/tyre-settings"
 /** Fixed storage for the connected-smoke study. No particle objects or scratch arrays per frame. */
 export const SMOKE_CAPACITY = 768
 export const SMOKE_STRIDE = 8
@@ -28,14 +29,14 @@ export class SmokeTrail {
     const active = strength > 0.008
     if (active) {
       if (source.smokeActive && distance < 8) {
-        const spacing = 0.36
+        const spacing = Math.max(.01,settings.spacing)
         for (let at = spacing - source.smokeDistance; at <= distance; at += spacing) {
           const t = at / distance, px = source.smokeX + dx * t, pz = source.smokeZ + dz * t
           this.spawn(px, 0.3, pz, vx, vz, (1 - t) * dt, strength)
         }
         source.smokeDistance = (source.smokeDistance + distance) % spacing
         // A stationary burnout still emits. Only top up the distance-based rate, never double it.
-        source.idle += Math.max(0, dt * 14 - distance / spacing)
+        source.idle += Math.max(0, dt * settings.idleRate - distance / spacing)
         while (source.idle >= 1) { source.idle--; this.spawn(x, 0.3, z, vx, vz, 0, strength) }
       } else { source.smokeDistance = source.idle = 0; this.spawn(x, 0.3, z, vx, vz, 0, strength) }
     } else source.smokeDistance = source.idle = 0
@@ -50,17 +51,17 @@ export class SmokeTrail {
     this.particles[i + 1] = y
     this.particles[i + 2] = z
     this.particles[i + 3] = age
-    this.particles[i + 4] = vx * 0.008
-    this.particles[i + 5] = vz * 0.008
+    this.particles[i + 4] = vx * settings.inheritVelocity
+    this.particles[i + 5] = vz * settings.inheritVelocity
     this.particles[i + 6] = strength
-    this.particles[i + 7] = 4.5 + seed * 0.8
+    this.particles[i + 7] = settings.life + seed * settings.lifeSpread
   }
 
   update(dt: number) {
     this.time += dt
     let count = 0
     const p = this.particles
-    const drag = Math.exp(-dt * 2.6)
+    const drag = Math.exp(-dt * settings.drag)
     for (let n = 0; n < this.count; n++) {
       const i = n * SMOKE_STRIDE
       const age = p[i + 3]! + dt
@@ -73,9 +74,9 @@ export class SmokeTrail {
       const curlX = Math.sin(a) * Math.cos(b) * 0.6 + Math.sin(c) * Math.cos(d) * 0.18
       const curlZ = -Math.cos(a) * Math.sin(b) * 0.6 - Math.cos(c) * Math.sin(d) * 0.18
       const o = count++ * SMOKE_STRIDE
-      p[o] = x + (p[i + 4]! + this.windX + curlX * 0.6) * dt
-      p[o + 1] = p[i + 1]! + dt * (0.23 + 0.06 * Math.sin(a + b))
-      p[o + 2] = z + (p[i + 5]! + this.windZ + curlZ * 0.6) * dt
+      p[o] = x + (p[i + 4]! + this.windX + curlX * settings.curl) * dt
+      p[o + 1] = p[i + 1]! + dt * (settings.lift + 0.06 * Math.sin(a + b))
+      p[o + 2] = z + (p[i + 5]! + this.windZ + curlZ * settings.curl) * dt
       p[o + 3] = age
       p[o + 4] = p[i + 4]! * drag
       p[o + 5] = p[i + 5]! * drag
@@ -92,7 +93,7 @@ export class SmokeTrail {
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity
     for (let n = 0; n < this.count; n++) {
       const i = n * SMOKE_STRIDE, age = p[i + 3]!, t = age / p[i + 7]!
-      const radius = 0.55 + age * 0.43
+      const radius = settings.radius + age * settings.growth
       const density = p[i + 6]! * Math.pow(1 - t, 1.1) / (1 + age * 0.45)
       out[i] = p[i]!; out[i + 1] = p[i + 1]!; out[i + 2] = p[i + 2]!; out[i + 3] = radius
       out[i + 4] = density; out[i + 5] = age; out[i + 6] = p[i + 6]!; out[i + 7] = style

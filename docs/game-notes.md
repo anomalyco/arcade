@@ -533,3 +533,11 @@ Candidates from the code audits; measure and playtest before moving any into the
   faceted blobs replaced by soft smoke. Nitro onset below 24 m/s adds a 0.45 s rear-wheel skid/smoke burst under the
   existing skid switch; the capture recorded exactly 26 connected segments (two per frame) and five smoke sprites,
   then no further segments while boost stayed held. CPU/GPU cost and Kit's playtest verdict remain unmeasured.
+- **Effect tuning shares production settings and emission paths.** Both games' `src/lab/effects.ts` adapters
+  register sections through `packages/kit/lab/game-effects.ts`. Seeded rooms come from the real office/city
+  generators; surface tests call Blackout's tracer, furniture-hit and impact paths. A seeded desk may have no
+  monitor, so use `deskMonitorLights` to select a specimen seed instead of assuming every desk can spark.
+  Headless Metal proof asserted glass/paper, wall/metal/partition holes, monitor breakage, hydrant water and
+  propane explosions, plus panel locks, looping, pause, Copy JSON and keyboard input on both hosts.
+  Matched game PNGs before/after the settings extraction were byte-identical. See `docs/lab-effects.md`
+  and `perf/lab-effects*.json` for the inventory and proof limits; extraction overhead is unmeasured.
