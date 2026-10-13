@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1e2a28" />
+<title>wings</title>
+<meta name="description" content="wings — browser multiplayer aerial combat. Jets, helicopters, up to four teams." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2322262a'/%3E%3Crect x='7' y='21' width='18' height='2' fill='%23ff7a2e'/%3E%3C/svg%3E" />
+<link rel="preload" href="/fonts/archivo-narrow-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/fonts/plex-mono-400-latin.woff2" as="font" type="font/woff2" crossorigin />
+<style>
+/* Self-hosted, latin subset, OFL (licenses next to the files). Archivo Narrow is variable: one file, 500 + 700. */
+@font-face { font-family: "Archivo Narrow"; src: url(/fonts/archivo-narrow-latin.woff2) format("woff2"); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono"; src: url(/fonts/plex-mono-400-latin.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono"; src: url(/fonts/plex-mono-500-latin.woff2) format("woff2"); font-weight: 500; font-display: swap; }
+/* Metric-matched fallbacks so the swap doesn't move the layout. */
+@font-face { font-family: "Narrow Fallback"; src: local("Arial Narrow"), local("ArialNarrow"), local("Helvetica Neue Condensed"), local("Arial"); size-adjust: 86%; ascent-override: 101%; descent-override: 25%; line-gap-override: 0%; }
+@font-face { font-family: "Mono Fallback"; src: local("Menlo"), local("Consolas"), local("Courier New"); size-adjust: 99.6%; ascent-override: 103%; descent-override: 27.5%; line-gap-override: 0%; }
+:root {
+  --bg: #22262a; --fg: #eceae4; --dim: rgba(236, 234, 228, .55); --faint: rgba(236, 234, 228, .32); --line: rgba(236, 234, 228, .22); --or: #ff7a2e;
+  --t0: #3c6ea8; --t1: #c98a2e; --t2: #4e8a5a; --t3: #b04a44;
+  --narrow: "Archivo Narrow", "Narrow Fallback", "Arial Narrow", sans-serif-condensed, sans-serif;
+  --mono: "IBM Plex Mono", "Mono Fallback", ui-monospace, Menlo, Consolas, monospace;
+  --sh: 0 1px 2px rgba(0, 0, 0, .45);
+  --x: clamp(32px, 3.5vw, 60px);
+  --ease: cubic-bezier(.2, .7, .2, 1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 400 15px/1.4 var(--narrow); overflow: hidden; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+button, input { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; border-radius: 0; }
+button { cursor: pointer; text-align: left; }
+:focus { outline: none; }
+:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
+.mono { font-family: var(--mono); }
+kbd { font: 400 11px/1 var(--mono); border: 1px solid rgba(236, 234, 228, .35); padding: 2px 5px 1px; color: rgba(236, 234, 228, .85); text-transform: lowercase; display: inline-block; margin: 0 1px; }
+
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 1.2s ease; }
+#view.ready { opacity: 1; }
+/* Pre-world backdrop: the palette-B sky/sea, so the fade-in is seamless. */
+#backdrop { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(180deg, #1e2a28 0%, #2f3b39 40%, #55625f 52%, #2e3b38 54%, #1f2b2a 100%); transition: opacity 1.4s ease; }
+#backdrop.fade { opacity: 0; }
+/* Legibility comes from a soft dark gradient on the menu side only — no panels. */
+.shade { position: fixed; inset: 0; pointer-events: none; transition: opacity .5s ease;
+  background: linear-gradient(90deg, rgba(18, 20, 23, .8) 0%, rgba(18, 20, 23, .52) 32%, rgba(18, 20, 23, 0) 58%), linear-gradient(0deg, rgba(18, 20, 23, .5) 0%, rgba(18, 20, 23, 0) 26%); }
+body:not(.in-lobby) #lobby-shade { opacity: 0; }
+
+#lobby { position: fixed; inset: 0; text-shadow: var(--sh); animation: in .6s var(--ease) both; }
+#lobby[hidden] { display: none; }
+@keyframes in { from { opacity: 0; transform: translateX(-8px); } }
+.wm { position: absolute; left: calc(var(--x) - .06em); top: clamp(26px, 4.6vh, 48px); margin: 0; font: 700 clamp(84px, 14vh, 140px)/.9 var(--narrow); letter-spacing: -.035em; color: var(--fg); }
+
+/* Menu: numbered, stacked, sentence case. Selected = full opacity + short orange rule. */
+.screen { position: absolute; left: var(--x); top: clamp(150px, 27vh, 260px); width: min(560px, 46vw); }
+.crumb { font: 400 11px var(--mono); color: var(--dim); letter-spacing: .02em; margin: 0 0 14px 84px; min-height: 14px; }
+.crumb b { font-weight: 400; color: var(--fg); }
+.menu { display: flex; flex-direction: column; }
+.mi { display: grid; grid-template-columns: 34px 22px 1fr auto; column-gap: 14px; align-items: baseline; width: 100%; color: var(--dim); transition: color .15s; }
+.mi .ix { font: 400 12px var(--mono); color: var(--faint); transform: translateY(-.15em); transition: color .15s; }
+.mi .rule { align-self: center; height: 2px; background: var(--or); transform: scaleX(0); opacity: 0; transform-origin: left; transition: transform .2s var(--ease), opacity .1s; }
+.mi .t { font-weight: 500; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mi .v { font: 400 13px var(--mono); color: var(--dim); white-space: nowrap; justify-self: start; }
+.menu.mid .mi { grid-template-columns: 34px 22px minmax(0, 250px) 1fr; }
+.menu.big .mi .v { padding-left: 16px; font-size: 11px; color: var(--faint); }
+.menu.big .mi .t { overflow: visible; }
+.menu.big .mi { grid-template-columns: 34px 22px auto 1fr; }
+.mi .v { position: relative; }
+.mi .v .arr { color: var(--faint); visibility: hidden; padding-left: 10px; }
+.mi .v .arr.l { position: absolute; right: 100%; padding: 0 10px 0 0; }
+.mi.sel, .mi:focus-within { color: var(--fg); }
+.mi.sel .ix { color: var(--fg); }
+.mi.sel .rule { transform: none; opacity: 1; }
+.mi.sel .v { color: var(--fg); }
+.mi.sel .v .arr { visibility: visible; }
+.mi.off { cursor: default; }
+.mi.off .t { text-decoration: none; opacity: .6; }
+.menu.big .mi .t { font-size: clamp(30px, 4.6vh, 42px); line-height: 1.24; }
+.menu.mid .mi .t { font-size: clamp(22px, 3.2vh, 29px); line-height: 1.34; }
+.mi.sm .t { font-size: clamp(17px, 2.3vh, 20px) !important; line-height: 1.7 !important; }
+.mi input { width: 100%; color: var(--fg); caret-color: var(--or); }
+.mi input::placeholder { color: var(--faint); }
+.mi input:focus-visible, .foot input:focus-visible { outline: none; }
+.mi .v input { font: 400 13px var(--mono); width: 220px; border-bottom: 1px solid transparent; }
+.mi .v input:focus { border-bottom-color: var(--line); }
+.mi .t input { font: inherit; letter-spacing: .14em; text-transform: uppercase; }
+.meta { font: 400 11px/1.5 var(--mono); color: var(--dim); letter-spacing: .02em; padding: 0 0 12px 84px; animation: meta .25s var(--ease) both; }
+@keyframes meta { from { opacity: 0; transform: translateY(-3px); } }
+.note { font: 400 11px/1.6 var(--mono); color: var(--dim); margin: 18px 0 0 84px; max-width: 420px; }
+.note b { font-weight: 400; color: var(--fg); }
+/* Controls reference (help): two quiet columns. */
+.keys { border-collapse: collapse; margin-left: 84px; }
+.keys th { font: 400 11px var(--mono); color: var(--dim); text-align: left; padding: 16px 0 6px; letter-spacing: .08em; text-transform: uppercase; }
+.keys tr:first-child th { padding-top: 0; }
+.keys td { padding: 3px 0; font-size: 17px; vertical-align: baseline; }
+.keys td:first-child { color: var(--dim); padding-right: 28px; white-space: nowrap; }
+.keys td:last-child { font: 400 12px var(--mono); color: var(--dim); }
+
+.foot { position: absolute; left: var(--x); right: var(--x); bottom: clamp(20px, 3.4vh, 32px); display: flex; align-items: baseline; gap: 40px; font: 400 11px var(--mono); color: var(--dim); }
+.foot .who { display: flex; align-items: baseline; gap: 10px; }
+.foot .who input { font: 400 11px var(--mono); color: var(--fg); width: 18ch; text-transform: lowercase; border-bottom: 1px solid transparent; padding-bottom: 1px; }
+.foot .who input:hover, .foot .who input:focus { border-bottom-color: var(--line); }
+.foot .hints { display: flex; gap: 18px; }
+.foot .hints span { display: inline-flex; gap: 6px; align-items: baseline; }
+.foot .status { margin-left: auto; }
+.foot .status.err { color: var(--or); }
+
+#busy { position: fixed; inset: 0; z-index: 50; background: rgba(18, 20, 23, .6); display: flex; align-items: center; padding-left: var(--x); animation: fade .2s ease both; text-shadow: var(--sh); }
+#busy[hidden] { display: none; }
+#busy span { font: 500 clamp(30px, 4.6vh, 42px) var(--narrow); letter-spacing: -.01em; }
+#busy span::after { content: ""; display: inline-block; width: 1.4em; font-family: var(--mono); color: var(--dim); animation: dots 1.2s steps(4) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+@keyframes fade { from { opacity: 0; } }
+#toast { position: fixed; right: var(--x); bottom: clamp(48px, 7vh, 64px); z-index: 60; pointer-events: none; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font: 400 12px var(--mono); text-shadow: var(--sh); }
+#toast div { animation: toast 3.2s forwards; color: var(--fg); }
+#toast div.err { color: var(--or); }
+@keyframes toast { 0% { opacity: 0; transform: translateY(4px); } 8%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+
+@media (max-width: 760px) { .screen { width: calc(100vw - 2 * var(--x)); } .foot .hints { display: none; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001s !important; transition-duration: .001s !important; } }
+</style>
+<script type="module" src="/src/main.ts"></script>
+</head>
+<body class="in-lobby">
+<canvas id="view"></canvas>
+<div id="backdrop"></div>
+<div class="shade" id="lobby-shade"></div>
+
+<main id="lobby">
+  <h1 class="wm">wings</h1>
+  <nav class="screen" id="screen" aria-label="Main menu">
+    <div class="crumb"></div>
+    <div class="menu big">
+      <button class="mi sel"><span class="ix">01</span><span class="rule"></span><span class="t">Quick play</span><span class="v"></span></button>
+      <div class="meta">join the fullest open lobby</div>
+      <button class="mi"><span class="ix">02</span><span class="rule"></span><span class="t">Practice</span><span class="v"></span></button>
+      <button class="mi"><span class="ix">03</span><span class="rule"></span><span class="t">Create a lobby</span><span class="v"></span></button>
+      <button class="mi"><span class="ix">04</span><span class="rule"></span><span class="t">Join with a code</span><span class="v"></span></button>
+      <button class="mi"><span class="ix">05</span><span class="rule"></span><span class="t">Browse lobbies</span><span class="v"></span></button>
+      <button class="mi"><span class="ix">06</span><span class="rule"></span><span class="t">Settings</span><span class="v"></span></button>
+    </div>
+  </nav>
+  <footer class="foot">
+    <label class="who">callsign <input id="callsign" maxlength="16" autocomplete="off" spellcheck="false" aria-label="Callsign" /></label>
+    <div class="hints" id="hints"><span><kbd>↑↓</kbd> select</span><span><kbd>enter</kbd> confirm</span></div>
+    <div class="status" id="load-status">loading world</div>
+  </footer>
+</main>
+
+<div id="busy" hidden><span>Connecting</span></div>
+<div id="toast"></div>
+</body>
+</html>
