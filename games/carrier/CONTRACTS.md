@@ -1,0 +1,615 @@
+# carrier: module contracts
+
+Working name `carrier`. First milestone: **only the ocean and islands**, no ship yet. A procedurally generated sunny
+archipelago (new seed per room), big rolling swells plus chop, waves identical on every client because they are a pure
+function of `(seed, synced sea time)`. Look target: `concept/shot-5-fleet.png` (ocean, swells, sky, clouds) and
+`concept/shot-4-topdown.png` (islands, reef shallows). Same engine family as `games/blackout` (raw WebGPU, wgpu-matrix,
+packed 24-byte vertices, HDR + MSAA + bloom + graded composite), but lit by a sun, not practical lights.
+
+Units: metres, Y up, plan (x, z). A future carrier is ~330 m long, so the sea is big: swell wavelengths 165-390 m,
+crest-to-trough 6-7 m typical and 10-12 m on sets; faint chop 8-28 m. Islands 150 m-1.5 km across, scattered over roughly 12 km x 12 km; open sea forever.
+
+## Ownership (phase 1 runs in parallel; touch only your files)
+
+| owner | files |
+| --- | --- |
+| scaffold | `package.json`, `bun.lock`, `tsconfig*.json`, `vite.config.ts`, `wrangler.jsonc`, `index.html`, `AGENTS.md`, `scripts/**`, `src/main.ts`, `src/style.css`, `src/render/{renderer,camera,mesh,frame,lit,post,atmosphere}.ts`, `src/ui/**`, `src/input.ts`, `../../.github/workflows/carrier.yml`, `tests/render*.test.ts` |
+| net | `server/**`, `shared/protocol.ts`, `shared/clock.ts`, `src/net.ts`, `tests/net*.test.ts` |
+| sea | `shared/sea.ts`, `shared/sea.wgsl.ts`, `tests/sea*.test.ts` |
+| islands | `shared/rng.ts`, `shared/islands.ts`, `shared/seabed.ts`, `src/render/island-mesh.ts`, `tests/islands*.test.ts` |
+| ship | `src/render/carrier-mesh.ts`, `src/render/deck-vehicles.ts`, `src/render/ship-weapons.ts` (CIWS, SAM, 5-inch gun on `WEAPON_MOUNTS` sponsons; mount + yaw turret + pitch barrel; `concept/weapons-*.png`), `shared/carrier-spec.ts`, `scripts/carrier-preview.ts`, `scripts/raster.ts`, `concept/model-*.png`, `tests/carrier*.test.ts` |
+| ship viewer | `ship.html`, `src/dev/ship-viewer.ts`, `src/dev/ship-viewer.css`, `src/dev/feedback.ts`, `scripts/feedback-plugin.ts`, `feedback/**`, small edits to `vite.config.ts` (plugin + rollup input) |
+| driving | `shared/ship.ts`, `src/game/**`, `src/render/ship-pass.ts`, `tests/ship*.test.ts`, `scripts/drive-shot.ts`, `captures/drive/**`; edits to `src/render/camera.ts`, `src/ui/hud.ts`, `src/input.ts`, `server/**`, `shared/protocol.ts`, `src/net.ts`; additive edits to `src/main.ts` |
+| multiplayer | `server/lobby.ts`, `server/matchmaking.ts`, `shared/crew.ts`, `src/ui/lobby*.ts`, `src/ui/menu*.ts`, `src/ui/roster*.ts`, `src/ui/*.css` it creates, `tests/crew*.test.ts`, `tests/lobby*.test.ts`, `scripts/mp-shot.ts`, `captures/multiplayer/**`; `wrangler.jsonc` (LOBBY binding + migration); integration edits to `server/core.ts`, `server/room.ts`, `server/index.ts`, `shared/protocol.ts`, `src/net.ts`, `src/game/**`, `src/main.ts`, hud only in phase B (after the driving agent finishes) |
+| ui (Tab, squads, ship operations) | `shared/squad.ts`, `shared/ops.ts`, `src/ui/team-menu.*`, `src/ui/ops-menu.*`, `tests/squad*.test.ts`, `tests/ops*.test.ts`, `scripts/ui-shot.ts`, `captures/ui/**`; integration edits to `shared/crew.ts` (captain, lock, bans, slot `op`, `runOp`), `shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/main.ts`, `src/game/game.ts`, `src/ui/{hud,menu*}.ts`, and the LAUNCH button / F-Enter launch removal in `src/flight/{seam,hud,input,flight,harness}.ts` |
+| boat | `shared/boat.ts`, `src/boat/**`, `src/render/boat-*.ts`, `src/audio/boat*.ts`, `tests/boat*.test.ts`, `scripts/boat-shot.ts`, `captures/boat/**`; integration edits to `shared/ops.ts`, `shared/crew.ts`, `shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/game/game.ts`, `src/main.ts`, `src/ui/{ops-menu,hud,team-menu}.ts`, `src/dev/ship-viewer.ts`, combat hooks only in phase B (after ship health, then gunnery, finish) |
+| gunnery | `shared/gunnery.ts`, `src/gunnery/**`, `src/render/turret-*.ts`, `src/audio/turret*.ts`, `tests/gunnery*.test.ts`, `scripts/gunnery-shot.ts`, `captures/gunnery/**`; integration edits to `shared/ops.ts`, `shared/crew.ts`, `shared/combat.ts`, `shared/weapons.ts`, `shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/game/game.ts`, `src/main.ts`, `src/render/ship-pass.ts`, `src/ui/ops-menu.ts`, `src/ui/hud.ts` only in phase B (after the ship-health agent finishes) |
+| jet audio | `src/audio/jet*.ts`, `src/audio/mixer*.ts`, `public/sfx/**` (or `src/audio/assets/**`), `scripts/sfx-*.ts`, `tests/audio*.test.ts`, `captures/audio/**`; integration edits to `src/flight/**` / `src/weapons/weapons.ts` / `src/game/game.ts` / `src/main.ts` / `src/audio/weapon-audio.ts` only additive hook calls (re-read first) |
+| day-night | `shared/daycycle.ts`, `src/render/daynight*.ts`, `src/render/stars*.ts`, `src/render/lights*.ts`, `tests/daycycle*.test.ts`, `scripts/daynight-shot.ts`, `captures/daynight/**`, `concept/night-*.png` / `concept/time-*.png`; a "TIME" tab in the debug menu via `debugMenu.addTab`; integration edits to `src/render/{atmosphere,sky,clouds,post,lit,ship-pass,ocean*}.ts`, `src/render/weather-*.ts`, `src/main.ts`, protocol/server/net only in phase B (orchestrator go-ahead) |
+| weapons | `shared/weapons.ts`, `shared/combat.ts`, `shared/fleet.ts`, `src/weapons/**`, `src/render/weapon*.ts`, `src/audio/weapon*.ts`, `tests/weapon*.test.ts`, `tests/combat*.test.ts`, `scripts/weapons-shot.ts`, `captures/weapons/**`; integration edits to `src/flight/**` (input, hud, seam), `shared/plane.ts` (health/crash cause only), `shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/game/game.ts`, `src/main.ts` only in phase B (after the roles change and the jet paint finish) |
+| flight | `shared/plane.ts`, `shared/launch.ts`, `src/flight/**`, `src/render/plane*.ts`, `tests/plane*.test.ts`, `tests/launch*.test.ts`, `scripts/flight-shot.ts`, `captures/flight/**`; integration edits to `src/game/**`, camera, hud, input, main, protocol/server/net only in phase B (after the driving agent finishes) |
+| weather | `shared/weather.ts`, `src/render/rain*.ts`, `src/render/weather*.ts`, `src/audio/**`, `src/dev/debug-menu.*`, `src/dev/weather-lab.*`, `tests/weather*.test.ts`, `scripts/weather-shot.ts`, `captures/weather/**`; storm tuning in `shared/ship.ts` (SHIP.storm*); additive weather wiring in `src/main.ts`, `shared/protocol.ts`, `server/core.ts`, `src/net.ts` |
+| phase 2 ocean + sky | `src/render/ocean*.ts`, `src/render/sky.ts`, `src/render/clouds.ts`, `scripts/ocean-shot.ts`, `captures/ocean/**`; additive edits to `src/main.ts`, `src/render/atmosphere.ts` and post grade constants; may add detail-wave packing to `shared/sea.ts` without changing existing behaviour |
+
+Do not edit `package.json`; if you need a dependency, say so in your report. `shared/` must stay free of DOM and Worker
+APIs (it runs in the Durable Object and the browser). Use `bun test` for tests. Ports: Vite 5197, Wrangler 8797.
+
+## Frame uniform (`src/render/frame.ts`, bind group 0 binding 0, every scene pass)
+
+`FRAME_FLOATS = 48` (192 bytes). WGSL (export it as `FRAME_WGSL`):
+
+```wgsl
+struct Frame {
+  viewProj: mat4x4f,   // [0..16)
+  eye: vec4f,          // [16..20) camera position xyz, w = sea time in seconds (wrapped, for cheap animation only)
+  sunDir: vec4f,       // [20..24) unit vector toward the sun, w = sun intensity
+  sunColor: vec4f,     // [24..28) rgb, w = ambient strength
+  zenith: vec4f,       // [28..32) sky colour overhead, w unused
+  horizon: vec4f,      // [32..36) sky colour at the horizon, w = fog density (per metre)
+  viewport: vec4f,     // [36..40) w, h, 1/w, 1/h in pixels
+  forward: vec4f,      // [40..44) camera forward xyz
+  extra: vec4f,        // [44..48) day-night: night, warm twilight, practical lights, moon as key light (all 0 by day)
+}
+```
+
+## Scene passes (`src/render/renderer.ts`)
+
+```ts
+export type PassContext = {
+  device: GPUDevice
+  frameLayout: GPUBindGroupLayout // group 0: the Frame uniform, visible to vertex + fragment
+  color: GPUTextureFormat         // "rgba16float" HDR target
+  depth: GPUTextureFormat         // "depth32float", REVERSED Z: clear 0, depthCompare "greater-equal" (far plane ~40 km)
+  samples: number                 // 4 (MSAA)
+}
+export interface ScenePass {
+  /** Called inside the main HDR render pass with group 0 (Frame) already bound. Set your own pipeline and group 1+. */
+  draw(pass: GPURenderPassEncoder): void
+  /** Optional: encode work (compute, offscreen passes) into the frame's encoder before the main HDR pass begins. */
+  prepare?(enc: GPUCommandEncoder): void
+}
+renderer.context: PassContext
+renderer.addPass(slot: "sky" | "opaque" | "alpha", pass: ScenePass): void   // drawn in that order, each slot in insertion order
+renderer.setStatic(chunks: { data: ArrayBuffer; box: [x0: number, z0: number, x1: number, z1: number] }[]): void
+renderer.render(frame: Float32Array, grade: Grade): void
+```
+
+`setStatic` takes packed `Mesh` vertex data (`src/render/mesh.ts`, copied verbatim from Blackout's, with its own `MAT`):
+`MAT = { lit: 0, glow: 1, foliage: 2 }`. Vertex colour is albedo. `lit`: flat sun diffuse + sky ambient + distance fog
+to the horizon colour. `glow`: emissive. `foliage`: lit like `lit`, sways gently with `aux` as phase. Chunks are culled
+against the view rect from `camera.groundRect()`.
+
+Scaffold helpers for pass authors: `frame.ts` also exports `FRAME` (float offsets of each field), `TIME_WRAP` (3600:
+eye.w wraps there, so periodic shader animation should use whole cycles per 3600 s) and `FRAME_BINDING_WGSL` (the
+struct plus `@group(0) @binding(0) var<uniform> F: Frame;`). `atmosphere.ts` exports `ATMOSPHERE_WGSL` (needs `F` in
+scope): `skyColor(dir)`, `hazeColor(dir)` (the fog colour, equal to the sky at the horizon) and `applyFog(color, world)`.
+`renderer.module(code, label)` compiles WGSL and logs errors with line numbers. Static chunks open the opaque slot.
+`Grade` (`post.ts`, `DEFAULT_GRADE`): exposure, bloom, threshold, saturation, vignette, grain, warmth.
+
+## Sea (`shared/sea.ts`, `shared/sea.wgsl.ts`)
+
+Deterministic, seeded, Gerstner-style sum of waves (a dominant swell direction with long crests, a secondary swell, and
+chop). CPU and GPU must agree on displacement within a few centimetres.
+
+Recipe (`makeSea`, "bigger waves" revision; tests in `tests/sea.test.ts`): a FEW BIG swells, so the 330 m carrier
+rides one or two crests at a time and visibly heaves and pitches.
+
+- **Primary swell:** 4 components in two close-wavelength pairs, 250-340 m (dominant) and 165-225 m. Each partner is
+  10-16% longer and travels 8-24° from its pair-mate, on either side of `swell`. Significant height 7.5-9 m.
+  - Sets 2-4 km long: crest-to-trough about 6-7 m typical (median over 400 m stretches) and 10-12 m on sets.
+  - Crests are long but irregular: they end and shift where the partners cancel.
+- **Sharp crests:** one shared Gerstner Q > 1 on the primary swell (about 4-6), with its Σ Q k A at 0.6-0.72. The whole
+  sea is capped at Σ Q k A ≤ 0.85 (det J ≥ ~0.3). `Wave.steep` may exceed 1; each wave's own Q k A stays < 0.5.
+- **Shape:** one weak 90-130 m swell near `swell`, and one 140-240 m cross swell 40-80° off it. Both are under a third
+  of the dominant amplitude.
+- **Chop:** 5 faint components, 8-28 m, within ±60° of the wind, kA 0.005-0.013. Texture up close only.
+- **Foam:** `sea.foam` keeps its meaning.
+- **Detail band:** `makeSeaDetail` is cosmetic, 2-8 m, kA 0.008-0.015. Physics ignores it.
+- **Accuracy:** `seaRest` now iterates to < 1 µm.
+- **Weather:** `makeWeatherSea` (shared/weather.ts) keeps det J > 0 at full storm across 40 seeds. The test is in
+  `tests/sea.test.ts`.
+
+```ts
+export type Sea = {
+  seed: number; waves: Wave[]
+  wind: [number, number]  // unit plan direction the chop travels toward
+  swell: [number, number] // unit plan direction the primary swell travels toward
+  foam: [lo: number, hi: number, height: number] // foam = smoothstep(lo, hi, (1 - det J) + height * y)
+}
+export type Wave = { dirX: number; dirZ: number; k: number /* 2π/λ */; omega: number /* sqrt(g k) */; amp: number
+  steep: number /* Gerstner Q 0..1, horizontal amplitude = steep * amp */; phase: number /* seeded φ */ }
+export function makeSea(seed: number): Sea
+// Rest-position functions (what the GPU computes):
+/** Displaced surface offset for the rest position (x, z) at sea time t (seconds, float64 on the CPU). */
+export function seaDisplace(sea: Sea, x: number, z: number, t: number, out?: Float64Array): Float64Array // [dx, y, dz]
+export function seaSlope(sea: Sea, x: number, z: number, t: number, out?: Float64Array): Float64Array // [dh/dX, dh/dZ, foam, det J]
+export function seaFoam(sea: Sea, x: number, z: number, t: number): number
+// Plan-position functions (solve for the rest position by Newton, < 0.1 mm; for buoyancy):
+export function seaRest(sea: Sea, x: number, z: number, t: number, out?: Float64Array): Float64Array // rest [x, z]
+export function seaHeight(sea: Sea, x: number, z: number, t: number): number
+export function seaNormal(sea: Sea, x: number, z: number, t: number, out?: Float64Array): Float64Array // unit, y up
+export const SEA_MAX_WAVES = 16
+export const SEA_UNIFORM_FLOATS = 136 // 544 bytes
+export const SEA_UNIFORM_LAYOUT = { waves: 0, shape: 64, origin: 128, foam: 132 } // float offsets
+export const SEA_ORIGIN_GRID = 1024
+export function snapSeaOrigin(v: number): number // round to SEA_ORIGIN_GRID
+/** Packs the waves and their phases at time t into the GPU uniform. Phases k (d · origin) - ω t + φ are computed in
+ *  float64 and wrapped to [0, 2π), so the shader never sees a large time or coordinate. Call every frame. */
+export function packSea(sea: Sea, t: number, out: Float32Array, originX = 0, originZ = 0): void
+```
+
+`SEA_WGSL` (`shared/sea.wgsl.ts`) declares `struct SeaUniform` and functions only, no bindings. The consumer declares
+`@group(1) @binding(0) var<uniform> sea: SeaUniform;`. Functions: `fn seaDisplace(p: vec2f) -> vec3f` and
+`fn seaSlope(p: vec2f) -> vec4f` (xy = analytic height gradient of the displaced surface, normal =
+`normalize(vec3f(-g.x, 1, -g.y))`; z = crest foam 0..1 from the Jacobian and height; w = 0).
+
+```wgsl
+struct SeaUniform {
+  waves: array<vec4f, 16>, // dirX, dirZ, k, phase at p = 0
+  shape: array<vec4f, 16>, // A, Q*A, Q*A*k, A*k
+  origin: vec4f,           // origin x, z (world metres), wave count, 0
+  foam: vec4f,             // lo, hi, height weight, 0
+}
+```
+
+Large world coordinates: `p` is the rest position minus `origin`. Each frame, snap the camera position with
+`snapSeaOrigin` on both axes, pass it to `packSea`, and build `p` in f32 from small numbers (camera-centred grid plus the
+camera offset from the origin), never by subtracting two large f32 world coordinates. World position of a vertex =
+`origin + p + seaDisplace(p).xz`, height `seaDisplace(p).y`.
+
+## Islands (`shared/islands.ts`, `shared/seabed.ts`, `src/render/island-mesh.ts`)
+
+Look: `concept/island-1-kinds.png` (the six kinds), `island-2..5`. Every world has 24-36 islands of all six kinds and one
+centrepiece (`islands[0]`, a big volcano or jungle island 2.3-3.3 km north of the spawn). Islands come in groups with
+300-1200 m of open water between neighbouring coasts: the centrepiece's group (a big neighbour, stack clusters, cays, an
+atoll, a cliff island) spills toward the spawn, one group sits beyond it on the horizon, and 2-4 more are scattered
+further out. 600 m around (0, 0) is open deep sea.
+
+```ts
+export type IslandKind = "cay" | "jungle" | "atoll" | "stacks" | "cliff" | "volcanic"
+export type Island = { x: number; z: number; radius: number; peak: number; kind: IslandKind; seed: number }
+export type Archipelago = { seed: number; islands: Island[]; bounds: [x0: number, z0: number, x1: number, z1: number] }
+export function makeArchipelago(seed: number): Archipelago
+/** Terrain height in metres at (x, z): positive above sea level, negative on the seabed (deep sea ≈ -60). Deterministic. */
+export function terrainHeight(arch: Archipelago, x: number, z: number): number
+/** Coral cover of the seabed at (x, z), 0 = sand, 1 = coral heads (clustered blobs on reef shelves and in lagoons). */
+export function coralAt(arch: Archipelago, x: number, z: number): number
+export type Seabed = { x0: number; z0: number; size: number; res: number; data: Uint8Array<ArrayBuffer> } // RGBA8, res x res, square
+/**
+ * R = water depth / 40 m clamped (0 at the shoreline and on land), G = 255 on land, B = distance to shore / 300 m clamped
+ * (on land: distance to the water), A = coral cover (0 = sand, 255 = coral; 0 on land and deeper than 20 m).
+ */
+export function bakeSeabed(arch: Archipelago, res: number): Seabed
+export function seabedAt(bed: Seabed, x: number, z: number): { depth: number; land: boolean; shore: number; coral: number }
+```
+
+Reef shelves are pale and shallow (-0.5 to -4.5 m) out to a clear edge, then drop to -60 m within ~200 m; atoll lagoons
+are 3.5-5.5 m deep. The shelf outline is deliberately irregular: its width swings from almost nothing (steep and cliff
+sides) to several hundred metres, reef tongues trail toward the sea's wind (`reefWind(seed)`, from `makeSea`), the edge
+is lobed and scalloped with spur-and-groove fingers, passes cut through some reefs (jungle bays, atolls), shallow bars
+join close neighbours (broken by gaps), and patch reefs sit in open water near islands. Terrain stays continuous
+everywhere (no height jumps), so the depth (R), shore distance (B) and coral (A) channels agree. Coral patches lie on
+shelves, bars and patch reefs only, clustered toward the shelf middle and outer edge.
+
+`buildIslandMesh(arch, { props?: boolean }): { data: ArrayBuffer; box: [number, number, number, number] }[]` returns
+512 m chunks of flat-shaded, low-poly terrain (beach rings, jungle floor, volcano ridges, cliff strata) with every prop
+merged in (canopy clumps and palms as `MAT.foliage` with a per-instance `aux` phase; boulders, lava rocks, stacks'
+tufts, hillside crags), using `Mesh` and `MAT` from `./mesh`. At most `TRI_BUDGET` (900k) triangles; the canopy is thinned to fit.
+
+For an instancing renderer, `buildIslandMesh(arch, { props: false })` gives the terrain alone and
+`buildIslandProps(arch): { protos: { name; data: ArrayBuffer /* packed Mesh, prototype space */; tris }[]; instances:
+Float32Array[] }` gives the props: per prototype, `INSTANCE_FLOATS` (8) floats per instance, `x, y, z, yaw, scale, r, g,
+b`. World position = rotateY(yaw) · (scale · p) + (x, y, z); vertex colour × (r, g, b); foliage `aux` phase =
+fract(x · 0.0137 + z · 0.0071). The merged fallback is exactly this expansion.
+
+## Ocean, sky, clouds (`src/render/ocean*.ts`, `sky.ts`, `clouds.ts`)
+
+Technique: `docs/ocean-research.md` plus the Sea of Thieves colour/foam/area-sun model (`docs/sea-of-thieves-water.md`).
+`main.ts` wires them; no renderer change was needed.
+
+- `RelView` (`ocean-view.ts`): `update(eye, forward, aspect)` once per frame builds a rotation-only `viewProjRel`
+  (and its inverse, plus f64 copies for culling). Sea, sky and clouds draw eye-relative positions with it, never the
+  Frame's `viewProj`, so kilometre-scale coordinates never reach f32.
+- `Sky` ("sky" slot): fullscreen triangle; `skyColorAt` above the horizon, `seaHazeAt` below it.
+  `update(view, sunView)`.
+- Ocean lattice: N = 32, T = 4 (13 levels of 64 x 64 cells from 0.5 m; level skipping and the morph also scale with
+  camera height via `look.lodK`), for chunky 40-60 px facets.
+- Surf (`surfCover` in `ocean-shader.ts`) uses no fixed distance to shore:
+  - It breaks where depth < 1.3 × the local swell height. That height is the analytic envelope of the swell, so the
+    surf grows with sets and pulses as crests arrive.
+  - It is gated by exposure: a march up-swell through the seabed shelters lagoons, the lee of land and inner reefs, and
+    shores facing away from the swell get less.
+  - It is cut into segments by world-anchored, hash-based noise.
+  - It thins with pixel footprint, so islands seen from far away show a few windward flecks, not rings.
+  - The shore wash is a separate, thin layer, and wide and churning only on exposed rock and cliff.
+- Wake field (`src/render/ocean-wake.ts`): a camera-centred 2048² rg8 texture, 2 m texels, 4 km across.
+  - Hull passes (`src/game/wake.ts`) draw foam strength (R) and age (G) into it in their `prepare`.
+  - The ocean samples it, so wakes use the same chunky crest-foam look. `ocean.look.wake` scales it.
+- Hooks for the weather pass:
+  - `ocean.look.foamAmount` scales all crest, surf and wake foam coverage.
+  - `ocean.look.roughness` is the GGX base roughness.
+  - `Ocean.setSea` accepts the live `makeWeatherSea(...).sea` view: amplitudes are re-read every frame.
+- `Ocean` ("opaque" slot, after the static islands so early-z rejects water under them): `setSea(makeSea(seed))`,
+  `setSeabed(bakeSeabed(arch, 2048))` (R depth, B shore distance, A coral cover; reef-edge steepness comes from the R
+  gradient), `setClouds(seed, drift)`, then `update(seaTime, view, sunView)` every frame (packs the sea with `packSea`
+  at the snapped origin, adds `makeSeaDetail`, builds and frustum-culls the tile list). `ocean.look` is live-editable.
+- `Clouds` ("opaque" slot): `setWorld(seed, sea.wind)`, `update(seaTime, view)`. Placement is a hash of world cells in
+  a frame drifting with sea time, so every client sees the same clouds; `CLOUD_SHADOW_WGSL` mirrors it for shadows.
+- `Atmosphere.sunView?` (`atmosphere.ts`): optional direction of the visible sun disc, its glow and the sea's glitter
+  path, lower than `sunDir` (which still lights everything). The concepts paint a low sun with a long glitter path over
+  midday lighting. When it is unset, `sunDir` is used. `ATMOSPHERE_WGSL` adds `skyNoSun[At]`, `skyColorAt` and
+  `seaHaze[At]`.
+- `shared/sea.ts` gained `makeSeaDetail(sea)` (8 cosmetic 2-8 m waves, seeded from `seed ^ 0xde7a11`). Physics ignores
+  them; nothing else in `sea.ts` changed.
+
+## Net (`server/**`, `shared/protocol.ts`, `src/net.ts`)
+
+Room Durable Object (`Room`, binding `ROOM`) keyed by room name. First joiner creates `{ seed: random u32, epoch: Date.now() }`;
+when the last player leaves, the room forgets it, so the next visit is a new world. Sea time = `(serverNow - epoch) / 1000`.
+A reconnecting client sends the world it shows (`hello.resume`); an empty room adopts it, so a lone player's network
+blip or a Worker restart doesn't change the world. A reconnect into a room with a different world reloads the page.
+While reconnecting, `state` is `"connecting"` and `seaTime()` keeps running on the last clock estimate.
+
+The `Net` interface (`src/net.ts`) adds the room's crew and ships to the above: `room`, `id` (my player id), `crew`,
+`ships` (every ship's authoritative pose by crew ship id), `serverNow()`, `refused`, `sendHelm(throttle, rudder)` and the
+crew requests `op(id)` (a ship operation, shared/ops.ts: `"helm"` takes the helm, `"hornet"` launches; the SHIP
+OPERATIONS menu's only path), `board(ship, as?: "helm" | "pilot")`, `newShip(team)`, `recover(how)` (the jet is gone,
+the pilot waits on deck), and the captain powers `promote(player)`, `kick(player)`, `lock(locked)`. Client messages
+`op`, `promote`, `kick`, `lock` (no `takehelm` / `launch`). `connect({ room, seed, name, private, onFull })`.
+Offline (`?seed`) the same crew rules run locally on a crew of one.
+
+## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,menu,team-menu,ops-menu}.ts`)
+
+- Load screen (`menu.ts`, over an offline sea, seed 7): name, QUICK JOIN, CREATE GAME, JOIN GAME by code. `?room=X`
+  joins straight away, `?seed=N` plays offline; both skip it. The chosen room goes into the address bar as `?room=`.
+- Lobby Durable Object (`Lobby`, binding `LOBBY`, singleton, room reports persisted): `GET /api/quick` (fullest open
+  public room, else a shared fresh code), `POST /api/create` (fresh private code; quick join never hands it out),
+  `GET /api/room/:code`, `GET /api/stats`. Rooms report `{ code, players, private }` (1 s throttle, 10 s heartbeat,
+  30 s stale). Codes are 4 characters of `CODE_CHARS`. `/ws?room=CODE[&private=1]`.
+- Crew rules (`shared/crew.ts` header): two teams, up to 4 ships each. Two roles only: one HELM per ship, and PILOTs;
+  a ship holds `CREW.capacity` (5) players. No passenger seats. Joining a ship gives you its helm if free, else you
+  join as a pilot waiting on deck (`role: "pilot"`, `plane: -1`). Joining the room puts you on the most crewed
+  unlocked ship with room (a team may lead by at most 2); team switches must keep the teams within one (or improve
+  them); an empty ship sinks after 60 s; a vacated helm holds the throttle and centres the rudder; a reconnecting helm
+  gets the helm back if free, else is a pilot on deck (a locked ship still takes a reconnecting member back).
+- Ship operations (`shared/ops.ts`, data): `OPS` lists `{ id, label, name, kind: "helm" | "vehicle", vehicle?, cap,
+  recharge (s) }`. Today TAKE HELM (`helm`, cap 1, only while free), LAUNCH HORNET (`hornet`, cap 2 per ship,
+  recharge 30 s) and LAUNCH F-35C (`f35`, cap 1 per ship, recharge 45 s: the scarcer strike jet costs more to lose).
+  Each vehicle op gives every ship `cap` slots (`CrewShip.aircraft`, each `{ op, pilot, readyAt }`,
+  room-clock ms; `CREW.aircraft`/`CREW.recharge` are derived from the Hornet entry). A destroyed jet
+  (`recover(.., "crashed")`: a crash into the sea, an island or a ship, shot down, or lost off the map) leaves its slot
+  recharging for its op's `recharge`; landing on its carrier (`recover(.., "landed")`) frees it at once. There is no
+  manual way out of a flight (no R key, no "returned"; an old client's `returned` is ignored), so a pilot who wants
+  the helm lands first or dies: TAKE HELM reads AIRBORNE while they fly. Nothing launches by itself: a pilot on deck (or the helm, who hands off the helm) runs LAUNCH HORNET when a slot
+  is ready (`runOp`, a `launch` event, `sortie` + 1: a fresh jet on the catapult). Slots are tagged with their op, so
+  Hornets and the F-35C recharge independently; `slotVehicle(ship, slot)` / `playerVehicle(crew, id)` give the type a
+  slot flies (the room uses it for the combat sim and to stamp relayed jets, the client for the model). The room validates with `opError`
+  (member of the ship, not already flying, helm free / a ready slot; errors `flying`, `in-use`, `recharging`,
+  `helm-taken`, `at-helm`, `bad-op`). `shipOps(crew, me, now)` is the menu's view (state AVAILABLE / active / IN USE /
+  RECHARGING with `readyIn` / unavailable with a reason, and per-slot who / countdown). A new vehicle type = one `OPS`
+  entry plus its client module keyed on the slot's `op`.
+- Squads (`shared/squad.ts`): every crewed ship has a `captain`: its creator (CREATE SHIP), or on a room-made ship the
+  first aboard; when the captain leaves the ship (room, another ship, kicked) the longest-serving member (`since`, then
+  the lower id) takes over (a `captain` event); a role change aboard keeps it; an emptied ship has none and unlocks.
+  Captain powers on their own ship only, validated by the room (`not-captain`, `not-member`, `self`), 400 ms cooldown
+  per player: PROMOTE a member; LOCK/UNLOCK (`locked`: no new members at all, neither JOIN nor auto-assign; members
+  stay; invite links only pick the room); KICK a member, who moves to another ship of the team with room (unlocked
+  first, most crewed), else a new ship of their own (as its captain), else a locked ship with room, and is in the ship's
+  `bans` for 60 s (`SQUAD.kickMs`; JOIN refused with `kicked`). Crew snapshot fields: `CrewShip.captain`, `locked`,
+  `bans: { player, until }[]`, `CrewPlayer.since`.
+- The room is authoritative: `RoomCore` holds the crew and runs every ship (`shipStep`, fixed SHIP.tick on sea time,
+  ticked every 50 ms by the Room), takes `helm` orders only from that ship's helm, and sends `ships` at 10 Hz and the
+  whole `crew` after every change. The helm's client predicts its own ship and glides it onto the room's pose
+  (`src/game/game.ts`); every other hull is a remote (plan pose only, heave/pitch/roll floated on the local sea).
+- The role decides controls and camera: helm = helm keys + chase camera, pilot with a jet = the flight module
+  through `FlightSeam` (`game.setFlight`): the game calls `start({ ship, slot, deck, recover })` at every sortie (each
+  new `sortie` with an aircraft slot), `update` per frame, `stop` when it ends (a pilot on deck watches the ship); the
+  flight side calls `recover("landed" | "crashed")` (`crashed` covers shot down and lost). See Flight below.
+- Tab menu (`team-menu.ts`, `carrier.teams`, alias `carrier.roster`): hold Tab, tap (or PIN) to pin, Esc closes; frees
+  the pointer. Players and team switching only: both teams side by side, each ship with its captain (★), lock, helm and
+  pilots (airborne / on deck / down) and a K/D column once `teams.stats` is set. Actions: JOIN (another team's ship
+  switches team; disabled buttons say FULL / LOCKED / UNEVEN / KICKED 48S), CREATE SHIP, and on your own ship as
+  captain LOCK, ★ CAPTAIN (promote) and KICK, each of the last two needing a second click within 3 s.
+- SHIP OPERATIONS (`ops-menu.ts`, `carrier.ops`): hold E to see it, tap E to pin, tap again or Esc closes; frees the
+  pointer. E is matched by physical key only (code KeyE; the "e" character is Dvorak's D, a movement key) and is free in flight (V cycles weapons). Each op a row with its number key,
+  its slots (name, READY / FREE, or a recharge ring with seconds) and its state; click or press its number to run it
+  (the menu closes; digits never reach the helm's throttle presets while it is open). The only way to take the helm or
+  launch: there is no LAUNCH button, no F/Enter launch and no take-helm key. In the air it is read-only (TAKE HELM:
+  AIRBORNE). The HUD's bottom-left line is only state: `★ PILOT · CV-07 RESOLUTE · ON DECK`.
+- Mouse (`src/input.ts` owns Pointer Lock on the canvas, `src/game/chase.ts`): aboard (helm, on deck or flying) and
+  not in the free camera, the first left click takes Pointer Lock; then plain mouse movement orbits the chase camera
+  around the ship's centre (`CHASE.sensitivity` rad/px both axes, no invert, pitch 6-80°, fixed distance, back behind
+  the ship after 4.5 s without movement). In the air the same lock is the flight stick (`FlightInput.grab = false` in
+  the game; `?invert` flips only the stick), so ship ↔ jet hand-offs, crashes and recoveries keep it. Esc releases it
+  (the browser's), the next click takes it again. Tab, SHIP OPERATIONS and the debug menu `input.suspend()` it (free
+  cursor); when the last one closes, `input.resume()` takes it back only if it was held when they opened (allowed
+  without a click because the page released it). The free camera (C) unlocks and keeps drag-orbit, wheel and WASD;
+  if Pointer Lock is denied, dragging orbits the chase camera. LMB at the helm only takes the lock.
+- Previews with fake data: `menu.html?seed=7&show=menu|teams|ops` (`&as=N` views the crew as player N). Real-GPU
+  checks: `scripts/ui-shot.ts` (Tab, captains, ship operations; captures in `captures/ui/`) and `scripts/mp-shot.ts`
+  (older, still drives the removed roster and seats).
+
+URL params (read in `main.ts`): `?room=name` (join that room, skipping the menu), `?seed=N` (offline, fixed world, no menu), `?t=S` (freeze sea
+time at S), `?cam=x,z,yaw,pitch,dist` (initial camera; yaw and pitch in degrees, yaw 0 looks north (-z), 90 east,
+pitch is the eye's elevation seen from the focus, 8-85), `?weather=clear|light|medium|heavy` (local manual weather from
+the start, for scripted captures: the room's physics keep the room's weather), `?lab=weather` (debug menu open on the
+weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is untouched).
+
+## Weather (`shared/weather.ts`, `src/render/{rain,weather-fx,weather-system}.ts`, `src/dev/{debug-menu,weather-lab}.ts`)
+
+- Weather is a pure function of (room seed, sea time, room override), like the sea. `weatherAt(seed, t)` is the seeded
+  timeline: ~270 s slots (±50 s), a neighbour-only Markov chain over clear/light/medium/heavy evaluated exactly by
+  coupling from the past (shares ~45/26/18/10%), the first two slots of a room clear, 60-120 s smootherstep fades.
+  `Weather` is 16 linear parameters (rain, wind, windDir, sea, swell balance, foam, cloud, dark, fog (unused, always 0:
+  storms read without haze), sun, lightning, streak, density, splash, desat, darken). Lightning strikes are hashed
+  per 0.5 s slot (`lightningAt`, `strikesBetween`).
+- Room override: client `{ type: "weather", to: kind | "auto" | packWeather(w), f: fade s }`; the room builds
+  `overrideTo(seed, cur, seaNow + 1 s, to, f)` (its `from` is the room's weather at that moment, rounded like the wire
+  form) and sends `{ type: "weather", o: packOverride(o) | null }` to everyone, and to every joiner. Clients hold it in
+  `net.weather` (`RoomWeather`: the previous override still rules until the new one starts). Offline, `sendWeather`
+  applies it locally.
+- Sea: `makeWeatherSea(sea)` returns a stable `Sea` view whose amplitudes (and Gerstner Q) follow `set(weather)`;
+  wavelengths, ω, directions and phases never change. The long swell grows most (×1.9-2.02 at full storm), chop
+  ×1.8-3.4, the steepness cap 0.9 takes Q from the chop first. Heavy big sets 20-26 m crest to trough, medium 12-15 m.
+  The room steps every ship on its view (`server/core.ts`), the client hands its view to the ocean and the game, so
+  physics and visuals agree for everyone. `shared/ship.ts` blends to a lively storm response above Hs 9.6-15 m
+  (`seaStorm`): calm and light seas feel as before. `Ship.slam` (0..1, decays), `Ship.slams` (count) and `Ship.bowAir`.
+- Client (`WeatherSystem`): `setWorld(seed, sea)` returns the view; `room = net.weather`; per frame `update(dt, t, look)`
+  writes the shown atmosphere/grade/ocean look from the sunny bases, then `draw(dt, t, view, frame, fov)` runs the rain
+  pass ("alpha" slot, ~0.13 ms at heavy on the M4 Max). `manual` is the lab's local preview (never synced).
+- Storm look: `Atmosphere.overcast` (Frame `zenith.w`, `overcast()`/`sunVeil()` in ATMOSPHERE_WGSL) hides the sun disc,
+  halo, glow and glints and turns the far sea grey; `Clouds.storm` (`CloudStorm`, written by the weather) grows the
+  cumulus into a low, slate, faceted deck with dark undersides and lightning glow near the strike; the ocean look's
+  `stormFoam`, `rain`, `wind`, `windX/Z` (look slots 10-11) draw wind-streak foam (crests torn into streaks, densest on
+  crests and swell backs) and rain dimples near the camera. All zero / absent: the sunny look exactly.
+- Debug menu: ` / F2, `DebugMenu.addTab`, `wantsInput` pauses the game's input while the pointer is over it. Captures:
+  `scripts/weather-shot.ts` (kinds, low storm, lab, chase-camera storm sequence, rain benchmark).
+
+## Day-night (`shared/daycycle.ts`, `src/render/{daynight,daynight-wgsl,daynight-lab,stars,lights}.ts`)
+
+Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captures: `scripts/daynight-shot.ts`.
+
+- Time of day is a pure function of (room seed, sea time, room override), like the weather. A day is `DAY_CYCLE`
+  (300 s = 5 min) of sea time. The clock runs unevenly through it (`DAY_KNOTS`): ~175 s of day (07:00-17:00), ~31 s
+  of golden hour, sunset and dusk, ~62 s of night, ~31 s of dawn. Rooms start at 09:00-11:00 (seeded).
+  - `timelinePhase(seed, t)`: phase in days. `hourOfPhase` and `phaseOfHour` convert between phase and clock hour.
+  - `skyAt(seed, phase)`: hour, sun and moon directions, the moon's lit fraction, the star rotation.
+  - The sun's path is stylised for the views players get: it rises in the north at 06:00, stands 60° up at a bearing
+    of 26° at noon, and sets in the north-east at 18:00. Dawn and sunset happen ahead of a camera looking north.
+  - The moon runs about opposite in time, offset per day, and is nearly full.
+- Room override: client `{ type: "time", h: hour | null, s: speed, f: fade s }`.
+  - The room builds `timeOverride(seed, cur, seaNow + 1 s, h, s, f)` and sends `{ type: "time", o: packTime(o) | null }`
+    to everyone and to every joiner.
+  - Clients hold it in `net.time` (`RoomTime`). Offline, `sendTime` applies it locally.
+  - A fade runs the sky forward through the hours in between. Speed 0 freezes the clock.
+  - The server only relays it: physics never reads the time of day.
+- `DayNight` (client): `update(dt, t, bases, ocean.look)` turns the sunny bases (`atmosphere`, `grade`, `baseOcean`)
+  into this moment's `daynight.atmosphere/grade/ocean`. Those are the weather's bases, so the weather applies on top.
+  - `fill(frame)` writes the Frame's `extra`. `passes(view, stars, lights, ...)` drives the star/moon and lights passes.
+  - `state.daylight` dims the weather's overcast greys, lightning, desaturation and storm water toward navy, so a storm
+    at night is dark and lightning is its key light.
+  - Palettes key on the true sun elevation, with separate evening and morning rows (`DAYNIGHT_PALETTE`).
+  - The light and the painted disc are compressed elevations (`DAYNIGHT_SKY`). Noon lands exactly on the sunny base, so
+    clear noon is the sunny look, unchanged.
+  - Below −8° the moon takes over as the key light (`MOON`).
+- Shaders: `DAYNIGHT_WGSL` is part of `ATMOSPHERE_WGSL`.
+  - `ambientSky(n)`, `ambientBounce()` and `rimLight()` are used by `lit`, `ship-pass`, `plane-pass` and `weapon-fx`.
+  - `cloudAmbient` is used by the clouds: sky-lit at dusk and at night.
+  - `nightSurf` gives reef surf a soft cyan glow at night.
+  - The sky disc is skipped while the moon is the key light. The `Stars` pass draws a faceted moon with its phase.
+  - Every term is 0 in daylight.
+- `Stars` ("sky" slot): about 12k instanced star sprites, a Milky Way band and the moon. It fades with the night and
+  hides under the overcast.
+- `Lights` ("alpha" slot): additive point sprites with a minimum pixel size, plus flat deck pools.
+  - The carrier set covers the deck edges, the amber centreline and drop line, red/green sidelights, the masthead light,
+    the mast beacon, the bridge windows and the floodlit deck.
+  - Each jet model gets its own set via `lights.addJet(model)`: red/green wingtips (`PlaneModel.tips`), double-flash
+    strobes on the fin tips (found in `model.body`), a belly beacon, and an engine glow from the nozzles that shows only
+    at night. A new model (the F-35C) gets its lights from its own geometry.
+  - Create `Lights` before the game: `ShipPass` and `PlaneFx` find it through `lightsFor(renderer)` and add every ship
+    and jet they draw.
+- TIME debug tab (`daynight-lab.ts`): readouts, local hour scrub, presets, speed/freeze, BROADCAST TO ROOM / ROOM TO
+  TIMELINE.
+
+## Flight (`shared/{plane,launch,vehicles}.ts`, `src/flight/**`, `src/render/plane*.ts`)
+
+- `shared/plane.ts`: the arcade flight model (Battlefield-style), fixed 60 Hz `planeStep(s, c, dt, world, tuning,
+  probes)`, every tunable in a `PlaneTuning`; `PLANE` is the F/A-18E's. Body frame = the GLBs' (+Z nose, +Y up, +X the
+  pilot's left; right-handed, never mirrored).
+- `shared/vehicles.ts`: `VEHICLES[kind]` per aircraft type (`VehicleKind` = `"hornet" | "f35"`, wire code = index in
+  `VEHICLE_KINDS`): flight tuning, collision probes, engines, gear height, catapult stroke, approach speed, missile
+  rails and bomb stations (body frame from the centre, release order; the first `bay` are inside the weapons bay).
+  The Hornet is `PLANE` unchanged. The F-35C: centre 1.2 m, gear 1.05 m, stall 58, blue zone 134, top 180 (230 with
+  the burner) m/s, thrust 14.5, pitch 0.86 / roll 3.0 / yaw 0.36 rad/s, one engine; stroke 2.45 s (89.8 m/s).
+  `deckCentreY(kind)` and `landingVehicle(kind)` (shared/landing.ts `LandingVehicle`) carry the geometry into the
+  launch and the landing. `LandingVehicle.touch` moves a type's touchdown point (`Landing.touchZ`) so its hook tip
+  (`VEHICLES[kind].hookZ`) meets the wires where the Hornet's does: the F-35C's centre touches down ~2 m further aft.
+  `shipQuat`/`shipToWorld`/`worldToShip` map ship-local carrier-spec points exactly as `ShipPass` does.
+- `shared/launch.ts` (`startLaunch(ship, plane, kind)`, `launchPose(z, ship, plane, kind)`, `catapult(kind)`):
+  line-up, spool and a 110 m / 2.4 s (Hornet) catapult stroke on `CENTERLINE_X` ending at the bow, glued
+  to the hull pose every step; leaves with the ship's plan velocity plus 92 m/s, nose up, then a 0.5 s autopilot blend.
+- `src/flight/seam.ts` (`FlightModule`) is the game's `FlightSeam`: LAUNCH HORNET in SHIP OPERATIONS → the room gives
+  a ready aircraft slot → `start` → deck → catapult → flight; the auto-landing on its carrier (`recover("landed")`), or
+  2.5 s after a crash, a shoot-down or the edge timeout (`recover("crashed")`) → on deck until the pilot launches again
+  (a destroyed jet's slot recharges for 30 s). Nothing else ends a flight. The seam's `frame` runs every frame for every role
+  (every jet drawn). No LAUNCH button and no launch key in the game; the offline harness launches with Enter. Camera handoffs ease over ~1.2 s (`flight/blend.ts`);
+  `Camera.lookAlong` takes a free up vector and FOV and `main.ts` feeds them to the sea/sky through `FlightView`.
+- Models (`src/render/plane-glb.ts`): `loadPlaneModels()` builds every type's `PlaneModel` (registry `MODEL_SPECS`):
+  body, canopy, stabilisers, tailhook (`hookDown`: negative about X lowers the aft-pointing hook), bay doors
+  (`doorOpen` about ±Z), stores (one piece per bomb, release order), procedural gear sized per type, and anchors for
+  effects and lights: `nozzles` (one per engine), `tips`, `fins`, `beacon`, `eye`, `centre`. Accent faces: the
+  Hornet's fin tops and rails, the F-35C's own `F35_accent` material; both tinted per jet. `PlanePass`/`PlaneFx` take
+  the registry; `PlaneDrawPose.kind`, `doors` (0..1) and `stores` (bombs aboard) pick and pose the model.
+- Net: the pilot sends `plane` (`PlaneTuple`, 17 numbers plus an optional vehicle code and bay doors: 19) at 20 Hz; the room relays airborne players' jets as
+  `planes` every 50 ms (always 19 long: the room stamps the code of the pilot's slot, whatever the client sent; a
+  17-long tuple from an old client is a Hornet) and drops a jet when its slot is freed or its sortie ends (took the helm, recover, leave, sink). Mode 0 = on the deck (x = the
+  catapult z: receivers place it on their own copy of the hull), 1 = flying, 2 = crashed. Remote jets are drawn
+  120 ms behind with Hermite position and slerped orientation (`flight/remote-planes.ts`). A pilot reconnecting
+  mid-flight comes back on deck (the jet was lost with the connection).
+- Dev harness (not built): `flight.html` (offline, `?seed ?ship ?rudder ?invert ?cockpit ?f35`). Real-GPU checks:
+  `scripts/flight-shot.ts` (harness) and `--mp` (two pages in one room; still written for the old seats and roles);
+  `scripts/f35-shot.ts` (the F-35C in the game: ops, deck, catapult, flight, bay, bombs, landing, and a Hornet and an
+  F-35C in one room; captures in `captures/f35/`).
+
+## Weapons (`shared/{weapons,combat}.ts`, `src/weapons/**`, `src/render/weapon-fx.ts`, `src/audio/weapon-audio.ts`)
+
+- Loadouts are per aircraft (`LOADOUTS` in `shared/weapons.ts`), keyed by `VehicleKind`. The F/A-18E (`hornet`) has
+  the M61 gun, 2 AIM-9s and 2 flare bursts. The F-35C strike bomber (`f35`) has no gun: 2 AIM-9s on the outboard
+  wing stations, 4 bombs (2 in the bay, then 2 on the wing pylons) and 2 flare bursts. Selecting bombs opens its bay
+  doors (0.6 s, `Weapons.doors`, relayed in the plane tuple); a bay bomb leaves once they are open, wing bombs at
+  once; each release hides that station's bomb on the model and the bomb falls from it with the model's store mesh;
+  switching away shuts the doors. Bombs are plain gravity bombs that burst on sea, land or ships and only hurt jets in the blast; ships
+  and ground targets take no damage yet. Their burst (`WeaponFx.bombBlast`) is a tall white spout with a crown and a
+  rolling base surge on the sea, a fireball, flung earth and a dust column on land or a deck. Guided bombs are planned. Weapon kinds are `"gun" | "missile" | "bomb"`;
+  slot order is the 1/2/3 key order.
+- Controls in flight (`src/weapons/input.ts`), as in Battlefield 3/4 (fire on Space + LMB, 1/2 select). Space or LMB
+  under Pointer Lock fires the selected weapon; 1/2/3 select (only weapons the aircraft has); the mouse wheel or V
+  cycles; F drops flares (F launches nothing anywhere). Space is no longer nose-up (`src/flight/input.ts`). None of
+  these keys is a movement key on QWERTY, AZERTY or Dvorak. Weapons stay hot while the landing autopilot has the jet:
+  it can be shot and locked, and can flare, but cannot fire.
+- Tuning is in `WEAPONS`:
+  - Gun: 50 rps, 1,050 m/s muzzle speed plus the jet's velocity, gravity, 0.32° dispersion hashed from (owner, round),
+    a tracer every 3rd round, about 1.4 km range. 2 damage per round within a 6.5 m hit sphere. Overheats after 3.2 s
+    of fire and cools to 0.3 before it fires again.
+  - AIM-9: a 17° lock cone, 2.5 km range, locks in 1.4 s, keep cone ×1.3. Rails rearm one missile every 10 s. Pure PN
+    (N 3.4) at up to 16 g with a 0.22 s autopilot lag and a 42° gimbal. 12 m proximity fuse at closest approach,
+    74 damage at the centre to 42 at the edge. Breaking when it is 600–1,000 m out defeats it in the test geometry; an
+    earlier or later break does not. Firing without a lock is a dumbfire.
+  - Flares: 3 pairs on a closed-form path with linear drag, reload 16 s each. They seduce a missile homing on their jet
+    within 0.9 s of release if the missile is within 2 km and the flare is inside its gimbal. They also break and
+    block locks for 1.6 s.
+  - Health is 100. Below 50 the jet smokes, below 25 it burns. After 10 s without damage it repairs at 4 per second.
+    A crash within 12 s of damage credits the attacker. Friendly fire is off (`canHurt`).
+- Authority and wire (`shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/flight/seam.ts`):
+  - Rounds are shooter-authoritative. Each client flies its own rounds against jets as drawn and reports
+    `hits` (`{ on, n }`) every 0.1 s. The room's `CombatWorld.gunHit` checks: alive enemies, the shooter has a gun,
+    a round budget refilled at the gun's rate, and range between the relayed jets.
+  - Missiles, bombs and flares are events (pose, velocity, target, sea time). The room runs the authoritative
+    `CombatWorld` against the latest relayed jets, extrapolated (landing jets placed on the room's copy of their
+    carrier), and sends `boom` (`BoomTuple`), `hp` and `kill`. Client `fire` (`FireTuple`) and `flare` (`FlareTuple`)
+    are validated against the room's budgets and relayed to everyone else; clients run the same world without
+    authority to draw them and snap to the room's `boom`.
+  - Trigger state (`gun` on/off) lets others draw cosmetic rounds. Seeker state (`seek`) is relayed only to an enemy
+    target (`seek { by, s: 0 off | 1 tracking | 2 locked }`) for its LOCK warning; MISSILE comes from its own world
+    copy.
+  - Jets enter the room's world on `launch` (full health) and leave it on recovery. A kill (`kill { on, by, w }`) makes
+    the victim's client shoot the jet down: `CrashKind` "shot", the SHOT DOWN card, and the normal crash recovery
+    (`recover("crashed")`, so the slot recharges 30 s). A relayed crashed jet (`mode` 2) that was still alive is a crash,
+    credited to a recent attacker. The room counts kills and deaths per player and sends `stats` (`[id, kills,
+    deaths][]`) after every kill and to joiners; the Tab menu's K/D column reads `net.stats`.
+  - Effects: a shot-down jet explodes and its burning wreck falls (`Weapons.wreckPoses`); the generic crash burst is
+    skipped for it (`recentlyKilled`), and the crash camera follows the wreck.
+  - Offline (`?seed`, harnesses), the local world has the authority.
+- `Weapons` (`src/weapons/weapons.ts`) is the controller, owned by `FlightModule` (`flight.weapons`). Calls:
+  `setPilot`, `sortie(vehicle)`, `land()`, `crashed()`, `tick(plane, armed)` per fixed step while flying or landing, and per frame `beginJets()`, `jet(...)`, `setOwnModel(m)`, `frame(...)`.
+  Room events go to `apply(event)`, `remoteLaunch`, `remoteFlare`, `remoteGun` and `lockedBy`. `onDestroyed`, `trauma`,
+  `wreckPoses()` and `ownWreck` are for the host.
+- `WeaponFx` draws in the alpha slot, from fixed pools with no per-frame allocation:
+  - Sprites are soft capsules, additive glow or lit smoke, at least 1.3 px wide.
+  - Rocks are flat-shaded instanced icosahedra and an AIM-9 mesh: fireballs, smoke balls, spray, debris, missiles on
+    rails and in flight.
+- Dev harness (not built): `weapons.html` (`src/weapons/harness.ts`), offline with AI drones (`src/weapons/drones.ts`).
+  Params: `?drone=N`, `?hostile`, `?flares`, `?air`, `?f35`. Real-GPU checks: `scripts/weapons-shot.ts`; captures go
+  to `captures/weapons/`.
+
+## Ship damage (`shared/fleet.ts`, `server/core.ts`, `src/weapons/{ship-fx,ship-hud}.ts`)
+
+- The room is authoritative. `RoomCore` holds one `Fleet`: a `Hull` per carrier, added on `new` and removed on `sink`.
+  It steps with the ships and broadcasts every hull as `hulls` (`HullTuple[]`, `packHull`), at most every 100 ms when one
+  changes, and to joiners. Clients keep `net.hulls`, unpacked at their sea time (`unpackHull`).
+- Health is 1,000. Damage (`shipDamage`):
+  - Gun: 0.25 per round, so a 160-round overheat run takes ~4%.
+  - Missile: 50 (5%).
+  - Direct bomb hit: 175 (17.5%), so an F-35C's four bombs take ~70%.
+  - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 70 at the hull, falling to 15 at
+    25 m.
+  - Enemy jet crashing into the ship: 50.
+  - Friendly fire is off: `Fleet.hit` refuses the ship's own team.
+- Zones (`hullZone`, ship-local):
+  - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`
+    scales top speed (to 55%) and rudder (to 60%). The room's sim and the helm's prediction both apply it.
+  - DECK hits by bombs, missiles or crashes start a 30 s deck fire. While the deck burns (or the ship sinks),
+    `deckOpen` is false: launching is refused (`deck-fire`, `sinking`) and the landing autopilot won't capture on it.
+  - Anything else is the HULL side.
+- Fires: each bomb, missile or crash hit leaves a fire at its ship-local point (at most 8). A fire burns for 45 s,
+  and all of them stay lit below 60% health.
+- Repair: after 40 s without damage, 1.5 hp/s and the bridge 1% per second, back to full (like jet repair).
+- Settle (`settleOf`, `settled`): up to 3.2 m lower and 5° of list toward the side that took the hits, growing with
+  damage. It's an offset on the pose that is drawn and hit-tested, never inside the buoyancy physics. `game.ts` settles
+  every drawn hull and the room settles the poses its combat world hits, so health alone decides it everywhere.
+- Hit detection:
+  - Rounds are shooter-authoritative. `Bullets` reports the carrier it struck (`shipAt`, the settled hull box and
+    island). The client batches `shiphits { ship, n }` for enemy ships. The room checks the shooter has a gun, is
+    within 1.8 km of the ship, and spends the same round budget as jet hits (`CombatWorld.spendRounds`).
+  - Missiles and bombs are room-simulated in `CombatWorld`. A strike emits `{ k: "ship", ship, owner, w, x, y, z,
+    near }` with the ship-local entry point; a bomb that came down through the deck counts as on the deck. A bomb in
+    the sea emits a near miss for every ship within 25 m.
+  - Heat-seekers only lock jets, but a dumbfire (or any missile that strikes a hull) hits it.
+  - A jet the room sees reported crashed inside or near a ship's box damages that ship, if it is an enemy jet.
+- Sinking: at 0 health `sinkAt` is set. The ship loses power, the helm is ignored, and the room sends `sunk { ship,
+  name, team, by }`, which shows on the kill feed as "ADA SUNK CV-07 VALIANT" with a SUNK confirmation for the killer.
+  It goes down by the bow over 25 s, 70 m deep. Then the room scuttles it (`shared/crew.ts scuttle`):
+  - The helm and pilots on deck move to the most crewed ship of the team with room, else a new ship.
+  - Airborne pilots move with their jet: same sortie, a slot on the new ship (an extra one past the cap if needed,
+    trimmed when free). The client keeps flying: `flightChange` only restarts on a new sortie.
+- Landing on any friendly ship: `Flight.landables`, the friendly drawn ships with an open deck, own ship first. A
+  landing on another ship sends that ship's id in the plane tuple's `qw` (mode 3, 0 = own) so others place it on the
+  right hull, and `recover("landed", ship)`. The pilot then joins that ship if it has room.
+- Client:
+  - `ShipFx` draws the fires (taller and blacker as health falls), the deck fire, an island smoke column below half
+    health, and the sinking (walking explosions, deck fires, spray), all in ship-local space.
+  - `ShipHud` shows a thin HULL bar above the role line (DECK FIRE / SINKING beside it), a red screen-edge flash when
+    your ship is hit, and in the air a small bar over the enemy carrier nearest the sights.
+  - The Tab menu shows a hairline health bar per ship (`teams.hull`).
+- Hooks for ship guns (gunnery), on `RoomCore`:
+  - `damageShip(shipId, amount, at, by, kind = "shell")` damages a ship by an explicit amount from a world-space hit
+    point. The zone, fires and list come from where the point lands. Friendly fire is refused by `by`'s team. It
+    broadcasts like any other hit.
+  - `stores()` lists the room's missiles and bombs in flight (owner, seq, kind, position, velocity, team) for CIWS/SAM
+    targeting.
+  - `interceptStore(owner, seq)` destroys one: it bursts harmlessly for everyone (`CombatWorld.intercept`).
+  - `hullPoseList` gives the settled ship poses with id and team, for gunnery's own hit tests.
+  - `ShipHit.amount` / `ShipDamageKind` carry the shell type into `Fleet.hit`.
+- Real-GPU check: `scripts/ships-shot.ts`. Three pages: A's F-35C bombs B's carrier (direct hit, near miss), C's Hornet
+  strafes it and fires dumbfires, A's bombs finish it, B is reassigned. Captures go to `captures/ships/damage/`.
+
+## Jet audio (`src/audio/{mixer,mixer-lab,jet-*}.ts`, `public/sfx/{jet,boom}/`, `scripts/{sfx-jet,sfx-boom,audio-demo,audio-render}.ts`)
+
+- One AudioContext for the whole game (`mixer()` in `src/audio/mixer.ts`), started on the first gesture, suspended in
+  hidden tabs. Buses: `engines` (other jets), `flyby` and `weather` go through a canopy low-pass that closes to 1.3 kHz
+  in the cockpit; `own` (your engine and cockpit, already muffled), `sfx` (catapult, trap, gear, crashes), `weapons`
+  (`weapon-audio.ts`, explosions) and `ui` (stall warning) do not. Then a peak limiter (-8 dB, 14:1) with its automatic
+  makeup gain trimmed back out (`MAKEUP_TRIM`, measured: unity below the threshold), the master volume and a soft clip.
+  `mixer().duck(depth, hold, delay)` dips engines, flybys and weather (close explosions, flybys). Levels and mute
+  persist in localStorage `carrier.audio.v2`. **M mutes** (not while typing).
+- Engines are fully procedural, after Wings' fighter voice (`jet-engine.ts`): a soft triangle whine rising with core
+  speed (Hornet 420-1320 Hz, F-35 330-1000 Hz) with a ×2.76 sine overtone, pink-noise roar behind a low-pass opening
+  with throttle, brown-noise body, and only with the afterburner a brown rumble under ~280 Hz, a sub tone and a faint
+  high-passed crackle. Hornet: a second engine a few cents off, quieter. F-35: one deeper, heavier engine.
+- `FlightModule.audio` (`JetAudio`, `src/audio/jet-audio.ts`) is fed by `src/flight/seam.ts` every frame: `own(flight,
+  pose)`, `remote(id, pose, tuple)` per relayed jet, `crash(...)` per remote crash, then `frame(dt, eye, forward, up)`.
+  Voices for your jet plus the 5 loudest others (HRTF), placed in listener space with distance gain (full inside 60 m,
+  rolloff 0.7), air absorption, smoothed Doppler (exponent 0.7) and the engine cone (`jet-math.ts`). Your engine is
+  exterior in the chase view, an interior mix in the cockpit, plus `jet-cockpit.ts` (wind, canopy whistle, air
+  conditioning, buffet, breathing under g, creaks, the stall warble).
+- Levels (offline renders, 0.5 s RMS): gun burst -23 dBFS; your Hornet in chase at idle -47, military -41, afterburner
+  -37 (18 dB under the gun at military); cockpit -36 / -31; medium weather -28; a remote pass 40 m off peaks at -33.
+- Flybys: each remote jet's closest approach to the camera is predicted every frame; within 2.4 s, closer than 170 m and
+  faster than 75 m/s relative, a procedural air rush swells to the pass (its low-pass sweeping up then down) on top of
+  the engine's own Doppler; head-on merges above 300 m/s within 60 m add a crack. One-shots (procedural by default):
+  your catapult (hold-back clank, the shot, the water brake), remote catapults (full throttle on deck), traps, gear,
+  hook.
+- Explosions are recorded (`jet-boom.ts`, ON by default, `mixer.explosionSamples`): 3 takes per scenario in
+  `public/sfx/boom/` (871 KB, prompts and picks in `scripts/sfx-boom.ts`): `air-kill` (jet shot down), `missile`
+  (missile airburst), `bomb-water`, `bomb-land`, `crash-sea`, `crash-land`, plus 3 `far` rumbles. A random take (never
+  the same twice running), ±4% pitch, ±1.5 dB; the close take loses its top end with distance and crossfades into a far
+  rumble between 350 m and 1.8 km; travel time d / 343 (≤ 3 s); close ones duck the world. Mapping: `weapons.ts` boom
+  (bomb by surface, else missile), kill (`air-kill`), falling wreck hitting sea/land; your own and remote crashes by
+  surface (`jet-audio.ts`). Until decoded (or with the toggle off) the procedural blasts play.
+- The recorded engine/flyby/catapult/trap takes in `public/sfx/jet/` (`mixer.samplesOn`) are OFF by default and only
+  load if switched on in the AUDIO tab, for comparison.
+- AUDIO tab (`mixer-lab.ts`): levels, tuning (Doppler, pass duck, whine, roar, afterburner, wind, breathing, cockpit
+  bed), recorded takes and recorded explosions toggles, test buttons (flyby, burner pass, crack, catapult, trap, gear,
+  crash, one per explosion scenario, Far 2.5 km), readouts. Offline renders: `scripts/audio-render.ts` (instructions at
+  its top) renders `scripts/audio-demo.ts` scenes (engines, flybys, catapult, trap, gun, weather, a mix, the explosion
+  reel, a calibration tone) on hailmary into `captures/audio/v2-*` (MP3 + spectrogram).

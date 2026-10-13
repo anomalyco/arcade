@@ -1,0 +1,312 @@
+{
+ "jet-idle": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "jet-cruise": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "jet-mil": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "jet-ab": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "cockpit-engine": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "cockpit-wind": {
+  "take": 4,
+  "trim": 0,
+  "ratings": []
+ },
+ "flyby-low": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "flyby-fast": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "flyby-burner": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "flyby-distant": {
+  "take": 4,
+  "trim": 0,
+  "ratings": []
+ },
+ "sonic-crack": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "catapult": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "shuttle-slam": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "trap": {
+  "take": 4,
+  "trim": 0,
+  "ratings": []
+ },
+ "gear": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "tailhook": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "gun-loop": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "gun-tail": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "gun-distant": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "impact-water": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "impact-metal": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "tracer-zip": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "missile-launch": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "missile-motor": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "flares": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "bomb-release": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "bomb-whistle": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "water-geyser": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "boom-air": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "boom-missile": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "boom-bomb-land": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "boom-bomb-water": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "boom-crash-sea": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "boom-crash-land": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "boom-far": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "carrier-bed": {
+  "take": 4,
+  "trim": 0,
+  "ratings": []
+ },
+ "ship-horn": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "hull-slam": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "hull-creak": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "deck-fire": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "sinking": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ocean-calm": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ocean-rough": {
+  "take": 4,
+  "trim": 0,
+  "ratings": []
+ },
+ "ocean-storm": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "wind-light": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "wind-gale": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "rain-light": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "rain-heavy": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ },
+ "rain-canopy": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "thunder-near": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "thunder-far": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "lightning-crack": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ui-click": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ui-hover": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ui-confirm": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ui-open": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ui-kill": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ui-capture": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "ciws": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "sam-launch": {
+  "take": 2,
+  "trim": 0,
+  "ratings": []
+ },
+ "naval-gun": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "boat-engine": {
+  "take": 3,
+  "trim": 0,
+  "ratings": []
+ }
+}

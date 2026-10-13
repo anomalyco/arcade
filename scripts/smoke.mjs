@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "carrier"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -44,9 +44,14 @@ try {
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver.
   const ready = await page.waitForFunction(game => {
-    const failure = document.querySelector(game === "blackout" ? "#menu .notice" : "#overlay .nogpu p")?.textContent
-    if (failure && /needs WebGPU|No WebGPU adapter is available/.test(failure)) return failure
-    return document.querySelector(game === "blackout" ? '#menu [data-act="practice"]' : '#overlay [data-act="solo"]') ? "lobby ready" : false
+    const sel = {
+      blackout: ["#menu .notice", '#menu [data-act="practice"]'],
+      getaway: ["#overlay .nogpu p", '#overlay [data-act="solo"]'],
+      carrier: ["#hud .notice", '.mn [data-act="quick"]'],
+    }[game]
+    const failure = document.querySelector(sel[0])?.textContent
+    if (failure && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(failure)) return failure
+    return document.querySelector(sel[1]) ? "lobby ready" : false
   }, game, { timeout: 20_000 })
   // Let initialization promises and the first presentation frames report errors.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))

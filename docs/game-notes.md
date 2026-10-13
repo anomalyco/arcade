@@ -12,6 +12,21 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   and `device.queue.onSubmittedWorkDone()` otherwise.
 - **Headless Chromium on a Mac can use Metal.** Launch it with `--enable-unsafe-webgpu --use-angle=metal` and check that
   `adapter.info.architecture` is not SwiftShader before trusting a number. Linux headless only has SwiftShader.
+- **Deterministic video from the real game, no source changes.** Carrier's `scripts/video-weather.ts` replaces
+  `performance.now`, `Date.now` and `requestAnimationFrame` with a virtual clock in a Playwright init script, wraps
+  `game.update` from `page.evaluate` to place the camera, and steps exactly 1/60 s per frame. Two traps: the renderer
+  draws in a microtask and drops frames while two are in flight, so drain the queue before each step; and offset the
+  clock half a sim tick from the 60 Hz ship grid, or float drift gives 0- or 2-step frames. Raw BGRA readback through
+  the game's device piped into ffmpeg: 1,800 1080p frames in ~5.5 min on the M4 Max; frame-difference spikes only at
+  cuts and lightning.
+- **Capture the game's own audio in lockstep with a frame-stepped video.** Carrier's `scripts/video-epic.ts` moves the
+  game's mixer onto one `OfflineAudioContext` (`mixer.use`, then a synthetic `pointerdown` so the weather and weapon
+  sounds start on it) and, after every 1/60 s step, schedules `ctx.suspend` at that step's sample, resumes and awaits it:
+  engines, flybys, rain, thunder, guns and recorded explosions render in sync. Copy the swapchain texture before that
+  await, or the page yields, presents and destroys it (black frames). The camera goes in the flight module's per-frame
+  hook (`flight.frame`), not after `game.update`, so weapon effects, lights and the listener all see the video camera.
+  Cuts are free time skips: setups run muted and their sample ranges are dropped. 1,920 frames plus ~60 s of unseen
+  setup in ~6 min on the M4 Max.
 - **A performance pass must not change the look.** Compare before/after stills of the same seeded frame. If they differ,
   the change is a look change and needs its own review. (Getaway: a widened helicopter spotlight slipped into a perf
   pass; the tight original read better.)
@@ -143,6 +158,21 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   conservative bounds that skip the monitor suffix outside its footprint reduced those medians to 0.037 / 0.021 ms
   on the M5 Max, with considerable run-to-run noise. See `perf/monitor-lights.md` for the fixed-frame confirmation.
 
+- **Day-night as a palette over the sunny base.** Carrier (`games/carrier/src/render/daynight.ts`) keys sky, light,
+  grade and water on the true sun elevation, with separate evening and morning rows. The day key reads the live base,
+  so noon is the old look exactly. The result becomes the weather's base, and a `daylight` factor turns storm greys
+  navy at night. Shader terms read one Frame vec4 (night, twilight, lights, moon as key light), all 0 by day. Practical
+  lights are additive sprites with a minimum pixel size, so a distant carrier still reads as a cluster of points.
+  Throughput at 1536×1024 on the M4 Max: chase view 0.74 ms by day, 0.77 ms at night; jet view 0.60 ms by day,
+  0.65 ms at night.
+- **Per-pass timestamps lie on an idle Apple GPU.** At a light vsync'd load the M4 Max clocks down, so carrier's
+  per-pass timestamps read 5–30 ms for a frame that costs 0.9 ms flat out. Measure throughput instead: encode about
+  60 frames back to back through the renderer and divide the wall time (`games/carrier/scripts/ocean-shot.ts --bench`).
+- **Branch expensive fragment work behind cheap masks once all derivatives are taken.** On the carrier ocean, gating
+  foam noise, coral, glitter and shallows on their coverage, and moving cloud shadows to the vertex shader, cut the
+  sea's frame from 29 ms to 6–11 ms under the same (clocked-down) timestamp setup; a normals-only shader read 5 ms.
+  Flat-out throughput afterwards is 0.87 ms per frame, against 0.48 ms with no sea (1536×1024, MSAA ×4). Throughput
+  before the change was not measured.
 - **Keep `discard` out of the main opaque pipeline.** Apple GPUs lose hidden-surface removal for any pipeline whose
   fragment shader can discard. Draw opaque geometry with a variant without `discard`, and use the cutaway variant only
   for the chunks that touch the cutaway region. Blackout: GPU time 12.7 ms → 5.0 ms median across six views.
@@ -563,6 +593,20 @@ Candidates from the code audits; measure and playtest before moving any into the
   to reload into the same room (Blackout `scripts/build-id.ts`).
 - **Persist lobby room reports** in Durable Object storage so a restarted lobby knows every live room at once instead of
   waiting for heartbeats (Blackout `server/lobby.ts`).
+- **Slow vehicles: server sim plus soft-reconciled prediction, no input replay.** Carrier's room runs every ship on the
+  shared fixed-step sim; the helm's client predicts its own ship and eases it onto the room's pose (dead-reckoned to its
+  own time, 1.5 s lag, snap past 60 m). With orders arriving one trip late, the predicted and room ships stayed 0.6 m
+  apart after 6 s of throttle and rudder on hailmary (`games/carrier/src/game/game.ts`, `scripts/mp-shot.ts`).
+- **Hybrid combat authority for fast jets.** Carrier lets each shooter decide its own cannon hits, against the jets
+  as it draws them, 120 ms behind. The room only checks they are plausible: alive enemies, a round budget refilled at
+  the gun's rate, and range between the relayed jets. Missiles, bombs and flares are events (pose, velocity, target,
+  sea time). The room flies them in a shared deterministic `CombatWorld` against the latest relayed jets,
+  dead-reckoned, and decides detonation and damage. Clients run the same world without authority to draw them, and
+  snap to the room's burst. On hailmary, two pages in one room produced: a gun kill, a missile flared by the target,
+  a missile hit, a kill feed and K/D tallies on both pages (`games/carrier/shared/combat.ts`, `server/core.ts`,
+  `scripts/weapons-shot.ts --only=mp`). Bandwidth and room CPU are unmeasured.
+- **Capture DOM UI over WebGPU** by reading the frame back through the game's device, laying it under the page as an
+  `<img>` (canvas hidden) and taking a page screenshot (`games/carrier/scripts/mp-shot.ts`).
 
 ## Input
 
@@ -575,6 +619,20 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Support any keyboard layout.** Match both `e.code` (physical position) and `e.key` (character), so QWERTY and
   Dvorak both work without settings. Don't bind an action to a key that is a movement key on another layout (Blackout
   used `E` for plant/defuse, which is Dvorak's right strafe).
+- **A menu that takes number keys listens in the capture phase.** Carrier's SHIP OPERATIONS
+  (`games/carrier/src/ui/ops-menu.ts`) runs its rows on 1-9, the same keys as the helm's throttle presets, and both
+  listen on `window`. Registering the menu's keydown with `capture: true` and calling `stopImmediatePropagation()` on
+  the keys it uses means the game's input never records them, so closing the menu on that key can't leak a press into
+  the next frame. `scripts/ui-shot.ts` checks the throttle stays at 0 after picking a row by number at the helm. Its
+  toggle key, G, is matched by `e.code` and `e.key` and is a movement key on no common layout (QWERTY, AZERTY, Dvorak,
+  Colemak); B was rejected because Dvorak's physical B types `x`, the flight's free-look key.
+- **Menus take Pointer Lock away and give it back without a click.** Carrier's `games/carrier/src/input.ts` owns one
+  lock for the ship's chase camera and the flight stick. Menus call `suspend()` (remember whether it was held, then
+  `exitPointerLock()`); when the last menu closes, `resume()` calls `requestPointerLock()` from the frame loop. Chrome
+  allows that without a user gesture because the page, not the user, released the lock; after the user's own Esc it
+  isn't resumed. Track the held state from `pointerlockchange` rather than `document.pointerLockElement`, so a menu
+  that already called `exitPointerLock()` still reads as "was held". `scripts/ui-shot.ts --only=mouse` checks it on
+  Metal for Tab, the ops menu and the debug menu, and through a catapult launch and recovery.
 - **Release the character a key produced when it went down.** Shift and Option change `e.key` while a key is held
   (Dvorak `,` becomes `<`), so releasing by the keyup's `e.key` leaves the key stuck and the player keeps moving.
   Record the character per `e.code` on keydown and clear it on keyup. Release everything when Cmd comes up, because
@@ -690,3 +748,28 @@ Candidates from the code audits; measure and playtest before moving any into the
   faceted blobs replaced by soft smoke. Nitro onset below 24 m/s adds a 0.45 s rear-wheel skid/smoke burst under the
   existing skid switch; the capture recorded exactly 26 connected segments (two per frame) and five smoke sprites,
   then no further segments while boost stayed held. CPU/GPU cost and Kit's playtest verdict remain unmeasured.
+
+## Audio
+
+- **Render Web Audio offline to check a mix without ears.** Carrier's `scripts/audio-demo.ts` drives the real mixer and
+  jet audio on an `OfflineAudioContext`, stepping the scripted scene every 1024 frames with `ctx.suspend(t).then(...)`
+  and `resume()`; `scripts/audio-render.ts` runs it in headless Chrome on hailmary (a 15 s scene renders in about
+  0.5 s) and writes WAVs. Band levels per second and ffmpeg `showspectrumpic` spectrograms caught a sub-heavy engine
+  (lows 8-10 dB over the mids), an afterburner only 1.5 dB louder than military, a whine gliding in from the
+  constructor's default frequency, and a far jet 10 dB quieter than intended. Peaks stayed at -3 dBFS behind the
+  limiter in every scene.
+- **Jet engines: few smooth layers, and quiet.** Carrier's first engine (whine partials, buzz-saw rasp, intake howl,
+  noise-torn roar, crackle at military power, recorded flyby takes on top) was called "terrible and loud" in play. Its
+  replacement ports Wings' fighter voice (`games/carrier/src/audio/jet-engine.ts`): a soft triangle whine plus a ×2.76
+  overtone, pink roar behind a throttle-opened low-pass, brown body, an afterburner-only rumble/sub/crackle, all
+  procedural. Offline 0.5 s RMS: your jet in chase at military sits 18 dB under a gun burst, 13 dB under medium weather.
+- **Web Audio's compressor adds makeup gain.** A `DynamicsCompressorNode` raises everything by roughly 0.6 × its
+  full-scale gain reduction, so a "limiter" quietly made carrier's whole mix 3.7-7 dB louder. Carrier measures it with a
+  calibration tone (`scripts/audio-demo.ts` "calib") and trims it back (`MAKEUP_TRIM` in `src/audio/mixer.ts`).
+- **Recorded explosions, per scenario, crossfaded by distance.** Carrier's `src/audio/jet-boom.ts`: 3 ElevenLabs takes
+  per scenario (air kill, missile, bomb on water/land, crash into sea/land) and 3 distant rumbles; the close take is
+  low-passed by air absorption and crossfades into a rumble from 350 m to 1.8 km, after the travel time.
+- **Line flybys up with the predicted closest approach.** Carrier predicts each jet's straight-line closest approach
+  every frame and swells a procedural air rush to land on the pass, panned with the jet (recorded takes lined up the
+  same way by their loudest 100 ms are behind a toggle: they sounded worse than the procedural engine in play). Unit tests in `games/carrier/tests/audio.test.ts` check
+  the trigger fires once, at most 2.4 s ahead, landing on the pass. Live feel is unplaytested.
