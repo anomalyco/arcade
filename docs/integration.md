@@ -180,3 +180,30 @@ Cited merged-build images and reports are in `2026-10-13-arcade-integration/outb
 local artifact root. Visual gaps remain as described above and in `docs/outbreak-look-v2.md`; local review is needed.
 Linux CI took 6.0 seconds for the six-generation reproducibility test, exceeding Bun's default five-second timeout.
 That test alone now has a 20-second allowance; its mesh/mask assertions are unchanged, and this is not a frame-cost budget.
+
+### Lab workbench integration
+
+The exact `bb0eca4` workbench tip was merged after the Audio and Outbreak follow-ups. The integrated Audio lifecycle,
+sample asset roots, Outbreak sky-mask adapter and motion7/moon8/exploration9 bindings were preserved. Existing game
+effect defaults were compared directly with `76b96dc`; all values match. The new Lab-only glass/paper size multipliers
+default to one and are labelled as multipliers rather than metres. Game renderers and simulation code did not change.
+
+A clean archive of `7ff751c` passed frozen install, package checks (42 tests), Getaway (200 tests, 12 existing skips),
+Blackout (356 tests), Outbreak (15 tests), all production smokes and all Worker dry-runs on the Studio through Hivemind.
+The combined Metal workbench proof passed for both hosts:
+
+- Canvas dimensions exactly matched the center viewport: 740×722 at a 1280×800 window, and 1380×1002 at 1920×1080.
+- Keyboard library search selected Glass shards. Only Emitter, Glass shards and Environment were mounted, with
+  23 controls; shard scale changed to 2.2× by keyboard. Room reroll preserved the effect and edited size.
+- Group reset and undo/redo passed. A placed hydrant could be undone/redone. The car reached 10.92 m/s in Play;
+  Escape returned to Edit with zero throttle, and editing the Inspector left input released.
+- Audio selection and native offline rendering made zero live AudioContext attempts. Preset validation rejected
+  invalid input without losing the current scene. No browser/GPU errors occurred.
+
+The production Audio Lab proof passed again with its per-host asset/decode, cleanup and lifecycle assertions.
+The real Blackout floating overlay also passed the sniper local/network input proof, retaining 12 predicted and
+12 authoritative shots in each path. Both named local Lab previews were checked in their normal interactive mode:
+the workbench appeared, canvas dimensions matched, and Audio selection stayed silent with no browser errors.
+
+Cited combined screenshots and reports are in `2026-10-13-arcade-integration/workbench/`, relative to the local
+artifact root. Source-branch screenshots remain separate. The unfinished shared-human-rig work is still excluded.
