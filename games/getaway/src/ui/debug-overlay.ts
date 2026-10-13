@@ -2,6 +2,13 @@ import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
 import type { LightSettings } from "../render/car-lights"
 
 const lightControls: (LabControl & { key: keyof LightSettings })[] = [
+  { key: "style", label: "Style", group: "Lights", options: [
+    { value: 0, label: "Reference" },
+    { value: 1, label: "Recessed" },
+    { value: 2, label: "Light bar" },
+    { value: 3, label: "Cinematic" },
+    { value: 4, label: "Soft pool" },
+  ] },
   { key: "beamLength", label: "Beam length", min: 2, max: 24, step: 0.5, group: "Lights" },
   { key: "beamWidth", label: "Beam width", min: 0.05, max: 1, step: 0.01, group: "Lights" },
   { key: "beamSpread", label: "Beam spread", min: 0, max: 6, step: 0.1, group: "Lights" },
@@ -21,7 +28,7 @@ export class DebugOverlay extends LabPanel {
   private lastUpdate = 0
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
   constructor(q: URLSearchParams, release: () => void, lights?: LightSettings) {
-    super(lights ?? {}, lights ? lightControls : [], q, release)
+    super(lights ?? {}, lights ? lightControls.map(control => "min" in control ? { ...control, enabled: settings => settings.style === 4 } : control) : [], q, release)
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return

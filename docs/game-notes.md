@@ -126,7 +126,14 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Art direction
 
-- **Blend bumper beams into a tunable road pool.** Getaway's new default, `?lights=4`, shares one warm-white
+- **Choose lighting in the Lab.** Backquote → Lights → Style switches between Reference, Recessed, Light bar,
+  Cinematic and Soft pool while driving. Soft pool enables the 12 tuning sliders, and Copy JSON includes the style.
+  The shared Lab supplies selects and dependent-control enablement. `Scene` caches three mesh families and changes
+  both moving and parked cars without resetting the world. The Metal proof cycled all five styles, checked that
+  repeated selections reused meshes, and confirmed that the car state survived every change. `lights=N` remains
+  an automation override for repeatable captures; interactive comparisons use the panel.
+
+- **Blend bumper beams into a tunable road pool.** Getaway's new default, Soft pool, shares one warm-white
   `HEADLIGHT` colour between mesh lenses, lights, glows, beams and pools. Sprite kinds 14 and 15 use smooth fades
   with zero-slope edges and no alpha discard threshold. The pool projects the posed lamp's aim onto road height;
   brake dive brings it closer. All mounted origins still use `bodyPoint`. The Lab's Lights group has 12 live sliders

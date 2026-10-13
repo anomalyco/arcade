@@ -17,8 +17,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 960, height: 600 } })
   const errors: string[] = []
   page.on("pageerror", e => errors.push(e.message))
-  await page.goto(`${host}?solo&peaceful=1&seed=7&bench&nohud&lab=1`)
+  await page.goto(`${host}?solo&peaceful=1&seed=7&bench&nohud`)
   await page.waitForFunction(() => (window as any).__getawayBench)
+  await page.keyboard.press("Backquote")
+  await page.getByRole("combobox", { name: "Style" }).selectOption("2")
+  await page.getByRole("combobox", { name: "Style" }).selectOption("4")
   await page.evaluate(async () => {
     const bench = (window as any).__getawayBench
     await bench.ready

@@ -14,7 +14,7 @@ import { Fx } from "./fx"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
-import { HEADLIGHT, LIGHT_DEFAULTS, lampMounts, type LightStyle } from "../render/car-lights"
+import { HEADLIGHT, LIGHT_DEFAULTS, lampMounts, type LightSettings, type LightStyle } from "../render/car-lights"
 import { bodyPoint } from "./car-pose"
 
 const MAX_SPRITES_PER_LIST = 3000
@@ -46,12 +46,14 @@ export function sirenOn(phase: number, red: boolean) {
 }
 
 export class Scene {
-  readonly lightSettings = { ...LIGHT_DEFAULTS }
+  readonly lightSettings: LightSettings = { ...LIGHT_DEFAULTS, style: 4 }
   readonly fx = new Fx()
   private lamps: LampLight[]
   private spills: ShopSpill[]
   private models = new Map<string, number>()
   private variants = new Map<string, number[]>()
+  private carStyles = new Map<LightStyle, Map<string, number[]>>()
+  private get lightStyle() { return this.lightSettings.style }
   private heliModel: number
   private rotorModel: number
   private puffModel: number
@@ -91,21 +93,32 @@ export class Scene {
   constructor(
     private renderer: Renderer,
     readonly city: City,
-    private lightStyle: LightStyle = 4,
+    lightStyle: LightStyle = 4,
   ) {
     const built = buildCityMesh(city)
     renderer.setCity(built.mesh)
     this.lamps = built.lamps
     this.spills = built.spills
-    for (const v of VEHICLES) {
-      const ids = buildCarVariants(v, lightStyle).map((m) => renderer.addModel(m))
-      this.variants.set(v.id, ids)
-      this.models.set(v.id, ids[0]!)
-    }
+    this.lightSettings.style = lightStyle
+    this.useCarStyle()
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
     this.puffModel = renderer.addModel(buildPuff())
     this.spikeModel = renderer.addModel(buildSpikeStrip())
+  }
+
+  private useCarStyle() {
+    // The three warm-lamp styles share geometry. Cache each mesh family once so
+    // switching styles preserves the simulation and does not keep allocating GPU buffers.
+    const style = this.lightStyle === 0 || this.lightStyle === 2 ? this.lightStyle : 1
+    let variants = this.carStyles.get(style)
+    if (!variants) {
+      variants = new Map(VEHICLES.map(v => [v.id, buildCarVariants(v, style).map(mesh => this.renderer.addModel(mesh))]))
+      this.carStyles.set(style, variants)
+    }
+    if (this.variants === variants) return
+    this.variants = variants
+    for (const [id, models] of variants) this.models.set(id, models[0]!)
   }
 
   private visOf(c: CarView) {
@@ -280,6 +293,7 @@ export class Scene {
   }
 
   draw(view: WorldView, cam: Camera, w: number, h: number, dt: number, focus: CarView | null, opts: { bloom?: number; flash?: number } = {}) {
+    this.useCarStyle()
     this.time += dt
     this.animate(view, dt, focus?.id ?? null)
     const t = this.time

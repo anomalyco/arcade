@@ -172,6 +172,30 @@ try {
         let releases = 0, leaked = 0
         const panel = new DebugOverlay(new URLSearchParams("lab=1"), () => releases++, scene.lightSettings)
         const root = panel.host.shadowRoot
+        const select = root.querySelector('select[data-key="style"]') as HTMLSelectElement
+        if (!select || select.options.length !== 5 || select.value !== "4") throw new Error("Missing style selector")
+        const initial = JSON.stringify(car.body)
+        const models = new Map<number, number>()
+        let allocated = 0
+        const addModel = renderer.addModel.bind(renderer)
+        renderer.addModel = (mesh: any) => { allocated++; return addModel(mesh) }
+        try {
+          for (const style of [0, 1, 2, 3, 4, 0, 2, 4]) {
+            const previousAllocations = allocated
+            const cached = models.has(style)
+            select.value = String(style)
+            select.dispatchEvent(new Event("change", { bubbles: true }))
+            await w.__drawLights(24)
+            if (scene.lightSettings.style !== style) throw new Error("Style did not reach scene")
+            const model = scene.variants.get(car.vehicle.id)[0]
+            if (cached && (model !== models.get(style) || allocated !== previousAllocations)) throw new Error("Style meshes were not reused")
+            models.set(style, model)
+            const disabled = root.querySelector('input[type="range"]').disabled
+            if (disabled !== (style !== 4)) throw new Error("Tuning enabled for a fixed reference style")
+            if (JSON.stringify(car.body) !== initial) throw new Error("Style change reset the car")
+          }
+          if (models.get(0) === models.get(1) || models.get(2) === models.get(1) || models.get(1) !== models.get(4)) throw new Error("Incorrect mesh families")
+        } finally { renderer.addModel = addModel }
         const inputs = [...root.querySelectorAll('input[type="range"]')] as HTMLInputElement[]
         if (inputs.length !== 12 || !root.querySelector("nav").hidden) throw new Error("Incorrect lights controls")
         const onKey = () => leaked++
@@ -204,12 +228,13 @@ try {
         } finally { renderer.render = original; window.removeEventListener("keydown", onKey) }
         if (leaked || releases !== 12) throw new Error("Lab input isolation failed")
         await w.__drawLights(24)
-        return { count: inputs.length, releases, leaked, settings: scene.lightSettings }
+        return { count: inputs.length, releases, leaked, settings: scene.lightSettings, styles: select.options.length, meshesReused: true, carPreserved: true }
       })
       await page.getByRole("button", { name: "Copy Lights JSON" }).click()
       await page.getByRole("button", { name: "Copy Lights JSON" }).filter({ hasText: "Copied" }).waitFor()
       const copied = await page.evaluate(() => navigator.clipboard.readText())
-      if (JSON.stringify(JSON.parse(copied)) !== JSON.stringify(controls.settings)) throw new Error("Clipboard settings differ")
+      const values = JSON.parse(copied)
+      if (Object.keys(values).length !== Object.keys(controls.settings).length || Object.entries(controls.settings).some(([key, value]) => values[key] !== value)) throw new Error("Clipboard settings differ")
       await page.screenshot({ path: join(out, "4-lab.png") })
       results.push({ style, name: "lab", ...controls, clipboard: true })
     }

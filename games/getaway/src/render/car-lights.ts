@@ -2,6 +2,7 @@ import type { Vehicle } from "../../shared/config"
 
 /** 0 is the original reference; 4 is the tunable default. */
 export type LightStyle = 0 | 1 | 2 | 3 | 4
+/** Automation override. Players choose styles in the Lab. */
 export function lightStyle(params: URLSearchParams): LightStyle {
   const n = Number(params.get("lights") ?? 4)
   return n === 0 || n === 1 || n === 2 || n === 3 ? n : 4
@@ -23,7 +24,7 @@ export const LIGHT_DEFAULTS = {
   tailGlow: 0.75,
   brakeIntensity: 1.9,
 }
-export type LightSettings = typeof LIGHT_DEFAULTS
+export type LightSettings = typeof LIGHT_DEFAULTS & { style: LightStyle }
 
 /** Lens centres match the front/rear fascia geometry (local +z is forward). */
 export function lampMounts(v: Vehicle) {
