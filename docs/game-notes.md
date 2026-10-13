@@ -1092,4 +1092,10 @@ Candidates from the code audits; measure and playtest before moving any into the
   cluttered. Each moment now gets one sound (`games/carrier/captures/audio/v6-sounds.md`), and the bank
   (`games/carrier/src/audio/sfx-bank.ts`) caps recorded one-shots at 6 with per-slot cooldowns and priorities:
   explosions duck and outrank weapons, which outrank deck events, thunder, then accents and UI.
+- **Measure amplitude wobble, not just level.** "Feels weird" on carrier's procedural engine (v4) was a 7 dB
+  envelope wobble at 1.5-6 Hz (the std of a 20 ms RMS envelope after removing a 1 s moving average, on offline
+  renders from `games/carrier/scripts/audio-demo.ts`). Removing Doppler and the angle-dependent cone from your own jet (the camera
+  rides with it), slowing the twin-engine beat from 4 cents (≈3 Hz) to 0.6 cents, and halving the afterburner's level
+  drift brought it to 1.3-2 dB. Smoothing the heard throttle (0.3 s) removes filter jumps; matching the cockpit
+  interior's level to the chase view makes a camera switch change colour, not loudness.
 

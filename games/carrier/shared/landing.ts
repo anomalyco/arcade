@@ -16,8 +16,8 @@
 
 import { CENTERLINE_X, DECK_Y, STERN_Z, BOW_Z } from "./carrier-spec"
 import { type Hull, deckOpen } from "./fleet"
-import { DECK_CENTRE_Y, LAUNCH, type ShipLike, deckVelocity } from "./launch"
-import { PLANE, type Plane, type Quat, type ShipPoseLike, type Vec3, planeSpeed, quatAxis, quatMul, quatSlerp, setPlaneQuat, shipQuat, shipToWorld } from "./plane"
+import { LAUNCH, type ShipLike, deckVelocity } from "./launch"
+import { type Plane, type Quat, type ShipPoseLike, type Vec3, planeSpeed, quatAxis, quatMul, quatSlerp, setPlaneQuat, shipQuat, shipToWorld } from "./plane"
 
 const DEG = Math.PI / 180
 
@@ -48,11 +48,11 @@ export const LANDING = {
   /** Arresting stop (s), the hold on deck before the flight ends (s), and the hard timeout (s). */
   trap: 1.5,
   hold: 0.8,
-  timeout: 20,
+  timeout: 25,
 } as const
 
-/** The jet blends from where it was when F was pressed over this long (s). */
-const CAPTURE_BLEND = 0.8
+/** The jet blends from where it was when F was pressed over this long (s); until then it is relayed as flying. */
+export const CAPTURE_BLEND = 0.8
 /** Over this many metres behind the stern the frame blends from the plan pose to the full pose. */
 const FRAME_BLEND = 450
 
@@ -61,8 +61,7 @@ const FRAME_BLEND = 450
  * gear, its stall speed, its deck-relative approach speed, and `touch`: how far forward of LANDING.touchZ its centre
  * touches down (m, negative aft), so every type's hook meets the same wires.
  */
-export type LandingVehicle = { rest: number; stallSpeed: number; approachSpeed: number; touch?: number }
-export const HORNET_LANDING: LandingVehicle = { rest: DECK_CENTRE_Y - DECK_Y, stallSpeed: PLANE.stallSpeed, approachSpeed: 70 }
+export type LandingVehicle = { readonly rest: number; readonly stallSpeed: number; readonly approachSpeed: number; readonly touch: number }
 
 export type LandingPhase = "approach" | "trap" | "stopped" | "done"
 
@@ -209,7 +208,7 @@ export type LandingShip = ShipLike & { id: number; team: number }
  * sinking: `hulls`) within LANDING.range in plan, the jet below LANDING.ceiling above its deck, flying above stall, at
  * least LANDING.cooldown s after its launch (`airborne`).
  */
-export function landTarget<S extends LandingShip>(plane: Plane, airborne: number, ships: readonly S[], team: number, hulls: ReadonlyMap<number, Pick<Hull, "deckFire" | "sinkAt">> | null, t: number, vehicle: LandingVehicle = HORNET_LANDING): S | null {
+export function landTarget<S extends LandingShip>(plane: Plane, airborne: number, ships: readonly S[], team: number, hulls: ReadonlyMap<number, Pick<Hull, "deckFire" | "sinkAt">> | null, t: number, vehicle: LandingVehicle): S | null {
   if (plane.crashed || airborne < LANDING.cooldown) return null
   if (planeSpeed(plane) < vehicle.stallSpeed || plane.stall > 0.5) return null
   let best: S | null = null
@@ -363,22 +362,12 @@ function flyApproach(l: Landing, dt: number): void {
  * Takes the jet over to land on `ship` from wherever it is (the player pressed F at the prompt). The sequence starts
  * exactly where the jet is and blends its attitude in, so nothing jumps.
  */
-export function startLanding(plane: Plane, ship: ShipLike, vehicle: LandingVehicle = HORNET_LANDING): Landing {
+export function startLanding(plane: Plane, ship: ShipLike, vehicle: LandingVehicle): Landing {
   const at = worldToPlan(ship, plane.x, plane.y, plane.z, [0, 0, 0])
-  // Ship-local coordinates the blended frame maps back onto the jet (the frames differ by the hull's heave, pitch and
-  // roll): a few fixed-point corrections from the plan-frame guess.
-  const probe = { ...plane }
-  for (let i = 0; i < 4; i++) {
-    placeLocal(ship, at[0], at[1], at[2], 0, 0, 0, probe)
-    const e = dirToPlan(ship, plane.x - probe.x, plane.z - probe.z, v3)
-    at[0] += e[0]
-    at[1] += plane.y - probe.y
-    at[2] += e[2]
-  }
   const d = deckVelocity(ship, at[0], at[2], v3)
   const rel = dirToPlan(ship, plane.vx - d[0], plane.vz - d[2], [0, 0, 0])
   rel[1] = plane.vy
-  const touchZ = LANDING.touchZ + (vehicle.touch ?? 0)
+  const touchZ = LANDING.touchZ + vehicle.touch
   const restY = DECK_Y + vehicle.rest
   const l: Landing = {
     phase: "approach",
@@ -406,8 +395,9 @@ export function startLanding(plane: Plane, ship: ShipLike, vehicle: LandingVehic
     capQ: [plane.qx, plane.qy, plane.qz, plane.qw],
   }
   flyApproach(l, 1)
-  // Where the jet really is, minus where the sequence puts it: faded out over the capture blend.
-  placeLocal(ship, l.x, l.y, l.z, l.yaw, l.pitch, l.bank, probe)
+  // Where the jet really is, minus where the sequence puts it (the path starts from its plan-frame position; near the
+  // hull the full frame adds heave, pitch and roll): faded out over the capture blend.
+  const probe = placeLocal(ship, l.x, l.y, l.z, l.yaw, l.pitch, l.bank, { ...plane })
   l.offX = plane.x - probe.x
   l.offY = plane.y - probe.y
   l.offZ = plane.z - probe.z

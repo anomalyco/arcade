@@ -12,6 +12,7 @@
 //   gear, its hook is shorter and further forward, and its probes are its own.
 
 import { DECK_Y } from "./carrier-spec"
+import type { LandingVehicle } from "./landing"
 import { PLANE, type PlaneTuning, PROBES, type Vec3 } from "./plane"
 
 export type VehicleKind = "hornet" | "f35"
@@ -116,15 +117,14 @@ export const vehicleCode = (kind: VehicleKind): number => Math.max(0, VEHICLE_KI
 /** Ship-local height of a jet's centre sitting on the deck on its gear. */
 export const deckCentreY = (kind: VehicleKind): number => DECK_Y + VEHICLES[kind].gear + VEHICLES[kind].flight.centre
 
-/** What a type brings to an automatic landing (shared/landing.ts `LandingVehicle`): its centre's height above the deck
+/** What a type brings to the scripted landing (shared/landing.ts `LandingVehicle`): its centre's height above the deck
  *  on its gear, its stall speed, its approach speed, and its touchdown offset from the Hornet's, so its hook meets the
  *  same wires (the F-35C's hook trails its centre ~2 m less, so it touches down ~2 m further aft). */
-export const landingVehicle = (kind: VehicleKind): LandingSpec => LANDINGS[kind]
-type LandingSpec = { readonly rest: number; readonly stallSpeed: number; readonly approachSpeed: number; readonly touch: number }
-const landingOf = (v: VehicleSpec): LandingSpec => ({
+export const landingVehicle = (kind: VehicleKind): LandingVehicle => LANDINGS[kind]
+const landingOf = (v: VehicleSpec): LandingVehicle => ({
   rest: v.gear + v.flight.centre,
   stallSpeed: v.flight.stallSpeed,
   approachSpeed: v.approachSpeed,
   touch: VEHICLES.hornet.hookZ - v.hookZ,
 })
-const LANDINGS: Readonly<Record<VehicleKind, LandingSpec>> = { hornet: landingOf(VEHICLES.hornet), f35: landingOf(VEHICLES.f35) }
+const LANDINGS: Readonly<Record<VehicleKind, LandingVehicle>> = { hornet: landingOf(VEHICLES.hornet), f35: landingOf(VEHICLES.f35) }

@@ -99,15 +99,11 @@ export class FlightModule {
   private drawnShips: readonly DrawnShip[] = []
   private hulls: ReadonlyMap<number, Hull> | null = null
   private seaT = 0
-  /** The pending recover (to resend until the room has freed the slot), and when it was last sent (frame clock). */
-  private recoverArgs: [RecoverHow, number | undefined] | null = null
-  private recoverAt = 0
   /** Own ship health, the damage flash and enemy ship health in the air (src/weapons/ship-hud.ts). */
   readonly shipHud = new ShipHud()
   private recovering = false
   /** Granted before the hull was drawn: place the jet on the first deck seen. */
   private unplaced = false
-  private time = 0
   /** Guns, missiles, flares and everyone's weapon effects (src/weapons/weapons.ts). */
   readonly weapons: Weapons
   /** Every jet's engine, flybys, catapult, trap and cockpit sound (src/audio/jet-audio.ts). */
@@ -205,10 +201,9 @@ export class FlightModule {
     f.onRespawn = () => this.recover("crashed")
     // Landed on another friendly carrier: the room moves the pilot aboard it if it has room.
     f.onLanded = () => {
-      const on = f.landingShip && "id" in f.landingShip ? f.landingShip.id : undefined
+      const on = f.landingShip?.id
       this.recover("landed", on !== undefined && on !== this.ctx?.ship ? on : undefined)
     }
-    this.recoverArgs = null
     this.unplaced = !ship
     if (ship) f.toDeck(ship)
     else {
@@ -227,7 +222,6 @@ export class FlightModule {
     this.ctx = null
     this.pose = null
     this.recovering = false
-    this.recoverArgs = null
     this.weaponInput.flaresBlocked = false
     this.flight.idle()
     this.weapons.land()
@@ -237,8 +231,6 @@ export class FlightModule {
   private recover(how: RecoverHow, ship?: number): void {
     if (!this.ctx || this.recovering) return
     this.recovering = true
-    this.recoverArgs = [how, ship]
-    this.recoverAt = this.time
     this.ctx.recover(how, ship)
   }
 
@@ -264,12 +256,7 @@ export class FlightModule {
       }
       if (t - f.plane.t > 2 || t < f.plane.t - 1) f.plane.t = t - PLANE.tick
       this.world.ships = ctx.ships?.() ?? [deck]
-      // Every step advances the jet's clock; the cap is a last guard against a stalled clock freezing the page.
-      for (let n = 0; f.plane.t + PLANE.tick <= t; n++) {
-        if (n > 600) {
-          f.plane.t = t
-          break
-        }
+      while (f.plane.t + PLANE.tick <= t) {
         f.tick(deck, this.world)
         // Weapons ride along while the jet flies (and while it lands: a target, but nothing fires).
         const live = f.phase === "flying" || f.phase === "landing"
@@ -330,7 +317,7 @@ export class FlightModule {
       s[6] = r(l.pitch, 1e4)
       s[7] = r(l.bank, 1e4)
       // qw carries the carrier it lands on when that isn't its own (0: own), so others place it on the right hull.
-      const on = f.landingShip && "id" in f.landingShip ? (f.landingShip.id ?? 0) : 0
+      const on = f.landingShip?.id ?? 0
       s[8] = on !== this.ctx?.ship ? on : 0
     } else {
       s[2] = r(mode === 0 ? (f.launch?.z ?? 0) : p.x, 1e2)
@@ -356,7 +343,6 @@ export class FlightModule {
 
   /** Every frame, after the camera is placed: every jet drawn. (Launching is the SHIP OPERATIONS menu's job.) */
   frame(v: FlightFrame): void {
-    this.time += v.dt
     const airborne = this.ctx !== null && this.flight.phase !== "idle"
     if (!airborne) this.hud.update(null)
 
@@ -371,11 +357,6 @@ export class FlightModule {
     if (v.ships) {
       this.world.ships = v.ships
       this.drawnShips = v.ships
-    }
-    // The flight ended but the room has not freed the slot yet (a lost message, a reconnect): ask again.
-    if (this.ctx && this.recoverArgs && me && me.plane >= 0 && this.time - this.recoverAt > 1.5) {
-      this.recoverAt = this.time
-      this.ctx.recover(...this.recoverArgs)
     }
     if (v.crew)
       for (const p of v.crew.players) {

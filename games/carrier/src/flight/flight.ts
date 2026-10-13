@@ -1,4 +1,4 @@
-import { type Landing, landingPose, landingStep, startLanding } from "../../shared/landing"
+import { CAPTURE_BLEND, type Landing, type LandingShip, landingPose, landingStep, startLanding } from "../../shared/landing"
 import { DECK_Y } from "../../shared/carrier-spec"
 import { LAUNCH, type Launch, launchPose, launchStep, startLaunch, type ShipLike } from "../../shared/launch"
 import { PLANE, type Plane, type PlaneControls, type PlaneWorld, copyPlane, lerpPlane, makePlane, planeAttitude, planeSpeed, planeStep } from "../../shared/plane"
@@ -39,12 +39,10 @@ export class Flight {
   /** The scripted landing's state while it has the jet (and the previous step's, to draw between steps). */
   landing: Landing | null = null
   /** The carrier being landed on (until the flight ends). */
-  landingShip: (ShipLike & { t: number; id?: number }) | null = null
+  landingShip: (LandingShip & { t: number }) | null = null
   /** The host shows "F LAND" this frame (shared/landing.ts landTarget found a carrier). */
   landPrompt = false
   private prevLanding: Landing | null = null
-  /** `onLanded` has been called for this landing. */
-  private landedSent = false
   /** Gear 0 (up) .. 1 (down), and the tailhook. */
   private gear = 1
   private hook = 0
@@ -102,12 +100,11 @@ export class Flight {
   }
 
   /** F at the prompt: the scripted landing on `ship` takes the jet (from the next step on, input is ignored). */
-  land(ship: ShipLike & { t: number; id?: number }): void {
+  land(ship: LandingShip & { t: number }): void {
     if (this.phase !== "flying") return
     this.landingShip = ship
     this.landing = startLanding(this.plane, ship, landingVehicle(this.vehicle))
     this.prevLanding = { ...this.landing, capQ: [...this.landing.capQ] }
-    this.landedSent = false
     this.landPrompt = false
     this.phase = "landing"
   }
@@ -152,8 +149,8 @@ export class Flight {
       return
     }
     if (this.phase === "landing" && this.landing) {
-      // The scripted landing: no input, it always advances the clock and always ends; the jet then rides the deck
-      // until the host ends the flight (onLanded, once).
+      // The scripted landing: no input, it always advances the clock and always ends (landingStep reports that once);
+      // the jet then rides the deck until the host ends the flight.
       ship = this.landingShip ?? ship
       const l = this.landing
       Object.assign(this.prevLanding!, l)
@@ -161,8 +158,7 @@ export class Flight {
       const done = landingStep(l, this.plane, ship, dt)
       if (touched && l.phase !== "approach") this.trauma = Math.max(this.trauma, 0.7)
       this.trauma = Math.max(this.trauma, l.shake)
-      if (done && !this.landedSent) {
-        this.landedSent = true
+      if (done) {
         if (this.onLanded) this.onLanded()
         else this.toDeck(ship)
       }
@@ -206,7 +202,7 @@ export class Flight {
   /** Network mode of the current jet: 0 on deck (x = catapult z), 1 flying, 2 crashed, 3 landing (ship-local pose,
    *  once the capture blend is over; until then it is sent as flying). */
   get mode(): 0 | 1 | 2 | 3 {
-    if (this.phase === "landing") return this.landing && this.landing.since > 1.25 ? 3 : 1
+    if (this.phase === "landing") return this.landing && this.landing.since >= CAPTURE_BLEND ? 3 : 1
     return this.phase === "flying" ? 1 : this.phase === "crashed" ? 2 : 0
   }
 

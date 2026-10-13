@@ -14,6 +14,7 @@ import { makeShip, shipStep } from "../shared/ship"
 import { type VehicleKind, landingVehicle } from "../shared/vehicles"
 
 const DT = PLANE.tick
+const HORNET = landingVehicle("hornet")
 
 /** A carrier pitching ±6°, heaving ±3 m, rolling ±5° and turning at 2°/s at 16 m/s (far harder than the sea does). */
 function stormShip(t: number): ShipLike & { t: number } {
@@ -51,25 +52,25 @@ describe("the F LAND prompt", () => {
   }
 
   test("offers the nearest friendly carrier within range, under the ceiling, above stall, after the lockout", () => {
-    expect(landTarget(at(0, 1500), 10, ships, 0, null, 10)).toBe(own)
-    expect(landTarget(at(2700, 0), 10, ships, 0, null, 10)).toBe(friend)
+    expect(landTarget(at(0, 1500), 10, ships, 0, null, 10, HORNET)).toBe(own)
+    expect(landTarget(at(2700, 0), 10, ships, 0, null, 10, HORNET)).toBe(friend)
     // Friendly only: team 1 gets its own ship, never ours.
-    expect(landTarget(at(0, 1500), 10, ships, 1, null, 10)).toBe(enemy)
-    expect(landTarget(at(0, -LANDING.range - 50), 10, ships, 0, null, 10)).toBeNull()
-    expect(landTarget(at(0, 1500, DECK_Y + LANDING.ceiling + 20), 10, ships, 0, null, 10)).toBeNull()
-    expect(landTarget(at(0, 1500), LANDING.cooldown - 0.1, ships, 0, null, 10)).toBeNull()
-    expect(landTarget(at(0, 1500, DECK_Y + 300, PLANE.stallSpeed - 5), 10, ships, 0, null, 10)).toBeNull()
+    expect(landTarget(at(0, 1500), 10, ships, 1, null, 10, HORNET)).toBe(enemy)
+    expect(landTarget(at(0, -LANDING.range - 50), 10, ships, 0, null, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1500, DECK_Y + LANDING.ceiling + 20), 10, ships, 0, null, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1500), LANDING.cooldown - 0.1, ships, 0, null, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1500, DECK_Y + 300, PLANE.stallSpeed - 5), 10, ships, 0, null, 10, HORNET)).toBeNull()
     const crashed = at(0, 1500)
     crashed.crashed = "sea"
-    expect(landTarget(crashed, 10, ships, 0, null, 10)).toBeNull()
+    expect(landTarget(crashed, 10, ships, 0, null, 10, HORNET)).toBeNull()
   })
 
   test("no prompt for a carrier with a deck fire or sinking; the next friendly one is offered instead", () => {
     const fire = new Map<number, Hull>([[1, Object.assign(makeHull(1, 0), { deckFire: 10 + FLEET.deckFire })]])
-    expect(landTarget(at(1000, 0), 10, ships, 0, fire, 10)).toBe(friend)
-    expect(landTarget(at(1000, 0), 10, ships, 0, fire, 10 + FLEET.deckFire + 1)).toBe(own)
+    expect(landTarget(at(1000, 0), 10, ships, 0, fire, 10, HORNET)).toBe(friend)
+    expect(landTarget(at(1000, 0), 10, ships, 0, fire, 10 + FLEET.deckFire + 1, HORNET)).toBe(own)
     const sinking = new Map<number, Hull>([[1, Object.assign(makeHull(1, 0), { sinkAt: 5 })]])
-    expect(landTarget(at(0, 1500), 10, ships, 0, sinking, 10)).toBeNull()
+    expect(landTarget(at(0, 1500), 10, ships, 0, sinking, 10, HORNET)).toBeNull()
   })
 })
 
@@ -135,9 +136,9 @@ describe("the scripted landing", () => {
   })
 
   test("from close behind it is quick; from far ahead it still finishes well inside the timeout", () => {
-    const close = startLanding(nearShip(stormShip(3), 900, Math.PI, 80, 120), stormShip(3))
+    const close = startLanding(nearShip(stormShip(3), 900, Math.PI, 80, 120), stormShip(3), HORNET)
     expect(approachTime(close) + LANDING.trap + LANDING.hold).toBeLessThan(10)
-    const far = startLanding(nearShip(stormShip(3), 1990, 0, 900, 250), stormShip(3))
+    const far = startLanding(nearShip(stormShip(3), 1990, 0, 900, 250), stormShip(3), HORNET)
     expect(approachTime(far) + LANDING.trap + LANDING.hold).toBeLessThan(18)
   })
 
@@ -146,7 +147,7 @@ describe("the scripted landing", () => {
     const ship = makeShip(0, 0, 0.3, 0)
     for (let i = 0; i < 1200; i++) shipStep(ship, { throttle: 1, rudder: 1 }, sea, null)
     const plane = nearShip(ship, 1500, Math.PI / 2, 300, 150)
-    const l = startLanding(plane, ship)
+    const l = startLanding(plane, ship, HORNET)
     let done = 0
     for (let i = 0; i < 60 * 25 && l.phase !== "done"; i++) {
       shipStep(ship, { throttle: 1, rudder: 1 }, sea, null)
@@ -160,7 +161,7 @@ describe("the scripted landing", () => {
 
   test("the hard timeout ends it on the deck even if the sequence overruns", () => {
     const plane = nearShip(stormShip(3), 1500, 1, 300)
-    const l = startLanding(plane, stormShip(3))
+    const l = startLanding(plane, stormShip(3), HORNET)
     // An approach that never ends by itself.
     for (const s of l.segs) s.T = 1e6
     let done = 0
@@ -186,7 +187,7 @@ describe("the scripted landing", () => {
 
   test("a game-style step loop catches up and never spins after the landing is done (the old freeze)", () => {
     const plane = nearShip(stormShip(3), 800, Math.PI, 100, 120)
-    const l = startLanding(plane, stormShip(3))
+    const l = startLanding(plane, stormShip(3), HORNET)
     // The host steps while its clock is behind the frame's sea time, for a minute after the landing has ended.
     for (let frame = 1; frame < 60 * 40; frame++) {
       const t = 3 + frame / 60
@@ -245,7 +246,7 @@ describe("after landing, back on deck as a pilot with the slot free", () => {
     const after = playerOf(core.crew!, pilot.id)!
     expect(after).toMatchObject({ role: "pilot", plane: -1, ship })
     expect(slotReady(shipOf(core.crew!, ship)!.aircraft[slot]!, now())).toBe(true)
-    // The client resends until it sees the slot freed: a late duplicate changes nothing.
+    // A late duplicate changes nothing.
     say(pilot, { type: "recover", how: "landed" })
     expect(playerOf(core.crew!, pilot.id)).toMatchObject({ role: "pilot", plane: -1, ship })
   })
