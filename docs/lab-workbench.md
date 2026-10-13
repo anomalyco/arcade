@@ -1,5 +1,8 @@
 # Lab Workbench
 
+For tuning workflows and enforceable authoring rules, use [Lab authoring guide](lab.md). This document records
+the implemented workbench API and proof; research proposals are not supported actions.
+
 Desktop workbench for the shared isolation Lab (`packages/kit/lab/`, served at `/lab.html` in Getaway and Blackout).
 Embedded game debug overlays (`new LabPanel(...)` in Getaway, Blackout and Outbreak) retain their lightweight floating
 overlay behavior (`layout: "floating"`, `capture: "open"`). The standalone Lab mounts the three-column workbench shell
