@@ -167,10 +167,11 @@ export class BoatPass implements ScenePass {
       multisample: { count: ctx.samples },
     })
     this.lights = lightsFor(renderer)
-    if (this.lights) this.lightSet = addLightSet(this.lights, boatLights(), MAX_BOATS)
+    if (this.lights) this.lightSet = this.lights.addLights(boatLights(), MAX_BOATS)
   }
 
   begin(): void {
+    if (this.lightSet > 0) this.lights?.beginSet(this.lightSet)
     this.count = 0
     this.slots = 0
     this.draws.length = 0
@@ -237,19 +238,5 @@ export class BoatPass implements ScenePass {
       pass.setVertexBuffer(0, d.piece.buf)
       pass.draw(d.piece.verts)
     }
-  }
-}
-
-/**
- * Registers a light set on the Lights pass. Its `addSet` is private (it only exposes `addJet`), but a boat's lights are
- * not a jet's: reach it by name until lights.ts grows a public way in. The set is cleared with the jets' sets
- * (`Lights.beginJets`, which PlaneFx.begin calls), so boats must be added after the jets' fx begin each frame.
- */
-function addLightSet(lights: Lights, defs: LightDef[], max: number): number {
-  const add = (lights as unknown as { addSet?: (d: LightDef[], m: number) => number }).addSet
-  try {
-    return add ? add.call(lights, defs, max) : -1
-  } catch {
-    return -1
   }
 }

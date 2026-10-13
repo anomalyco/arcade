@@ -1,9 +1,10 @@
-// Dev ship viewer (ship.html): the procedural carrier from buildCarrier(), the Blender carrier (art/carrier.glb) and the
-// jets (art/hornet.glb, art/f35.glb, through the game's model registry src/render/plane-glb.ts) under the game's
+// Dev ship viewer (ship.html): the procedural carrier from buildCarrier(), the Blender carrier (art/carrier.glb), the
+// jets (art/hornet.glb, art/f35.glb, through the game's model registry src/render/plane-glb.ts) and the interceptor boat
+// (art/boat.glb, src/render/boat-glb.ts) under the game's
 // renderer, alone or side by side, with camera presets matching the concept sheets, reference overlays, and pinned
 // feedback notes stored by scripts/feedback-plugin.ts (dev) or localStorage (production). Edits to any model reload the
 // page; the view, toggles and an unsent note survive it.
-// URL (one-shot, for scripted screenshots): ?model=procedural|blender|side|hornet|f35&preset=HERO&env=sea|studio&deck=1
+// URL (one-shot, for scripted screenshots): ?model=procedural|blender|side|hornet|f35|boat&preset=HERO&env=sea|studio&deck=1
 // &wiggle=1&weapons=0|1&ui=0. globalThis.shipViewer exposes the state.
 import "@fontsource/ibm-plex-mono/300.css"
 import "@fontsource/ibm-plex-mono/400.css"
@@ -14,6 +15,7 @@ import { FRAME, FRAME_BINDING_WGSL, FRAME_FLOATS, TIME_WRAP } from "../render/fr
 import { MESH_LAYOUT } from "../render/lit"
 import { FLOATS_PER_VERT, MAT, Mesh, packVerts } from "../render/mesh"
 import { ACCENT, type PlaneModel, type PlanePiece, buildPlaneModel } from "../render/plane-glb"
+import { type BoatModel, buildBoatModel } from "../render/boat-glb"
 import { buildShipWeapons } from "../render/ship-weapons"
 import { DEFAULT_GRADE, type Grade } from "../render/post"
 import { teamColor } from "../render/team"
@@ -51,18 +53,19 @@ const conceptUrls = import.meta.glob<string>(
 const artUrls = import.meta.glob<string>("../../art/*.glb", { eager: true, query: "?url", import: "default" })
 const carrierGlbUrl = artUrls["../../art/carrier.glb"] ?? null
 const jetGlbUrls: Record<VehicleKind, string | null> = { hornet: artUrls["../../art/hornet.glb"] ?? null, f35: artUrls["../../art/f35.glb"] ?? null }
+const boatGlbUrl = artUrls["../../art/boat.glb"] ?? null
 const DECK_Y = spec.DECK_Y ?? 18
 
-type ModelId = "procedural" | "blender" | VehicleKind
+type ModelId = "procedural" | "blender" | VehicleKind | "boat"
 type Mode = ModelId | "side"
-type Subject = "carrier" | VehicleKind
-const MODELS: ModelId[] = ["procedural", "blender", "hornet", "f35"]
+type Subject = "carrier" | VehicleKind | "boat"
+const MODELS: ModelId[] = ["procedural", "blender", "hornet", "f35", "boat"]
 const JETS: VehicleKind[] = ["hornet", "f35"]
 const isJet = (m: string): m is VehicleKind => (JETS as string[]).includes(m)
 const CARRIERS = ["procedural", "blender"] as const
-const MODES: Mode[] = ["procedural", "blender", "side", "hornet", "f35"]
-const MODE_LABEL: Record<Mode, string> = { procedural: "PROCEDURAL", blender: "BLENDER", side: "SIDE BY SIDE", hornet: "HORNET", f35: "F-35C" }
-const subjectOf = (mode: Mode): Subject => (isJet(mode) ? mode : "carrier")
+const MODES: Mode[] = ["procedural", "blender", "side", "hornet", "f35", "boat"]
+const MODE_LABEL: Record<Mode, string> = { procedural: "PROCEDURAL", blender: "BLENDER", side: "SIDE BY SIDE", hornet: "HORNET", f35: "F-35C", boat: "BOAT" }
+const subjectOf = (mode: Mode): Subject => (isJet(mode) || mode === "boat" ? mode : "carrier")
 /** In a jet mode the jet flies (gear up) a little above the water plane, like its concepts. */
 const JET_LIFT = 8
 /** Side by side: parallel, same heading, this far apart between deck edges; procedural at −X (left of the screen from HERO), Blender at +X. */
@@ -238,6 +241,33 @@ function jetPieces(m: PlaneModel, gear: boolean): PieceSrc[] {
   m.stores.forEach((st, i) => out.push(piece(`store_${i}`, st)))
   if (gear) out.push(at("gear", m.gear, mat4.identity()))
   return out
+}
+
+/** The boat (boat-glb.ts) as viewer pieces: body, the radar bar (spinning), turret, gun and waterjets at their pivots,
+ *  its accent faces in team 0's colour. */
+function boatPieces(m: BoatModel): PieceSrc[] {
+  const accent = teamColor(0).map((c) => c ** (1 / 2.2))
+  const paint = (v: number[]) => {
+    const out = v.slice()
+    for (let i = 0; i < out.length; i += FLOATS_PER_VERT)
+      if (Math.round(out[i + 9]!) === ACCENT) {
+        out[i + 6] = accent[0]!
+        out[i + 7] = accent[1]!
+        out[i + 8] = accent[2]!
+        out[i + 9] = MAT.lit
+      }
+    return out
+  }
+  const turret = mat4.translation(m.turret.pivot)
+  const at = (name: string, v: number[], base: Float32Array, motion: Motion = null): PieceSrc => ({ name, geo: geoOf(paint(v), name), base, motion })
+  return [
+    at("hull", m.body, mat4.identity()),
+    at("radar", m.radar.verts, mat4.translation(m.radar.pivot), "radar"),
+    at("turret", m.turret.verts, turret),
+    at("gun", m.gun.verts, mat4.multiply(turret, mat4.translation(m.gun.pivot))),
+    at("waterjet_L", m.jetL.verts, mat4.translation(m.jetL.pivot)),
+    at("waterjet_R", m.jetR.verts, mat4.translation(m.jetR.pivot)),
+  ]
 }
 
 // ---- picking ------------------------------------------------------------------------------------------------------------
@@ -453,6 +483,18 @@ const PRESET_SETS: Record<Subject, PresetSet> = {
   f35: {
     main: [
       { name: "HERO", key: "1", yaw: 27, pitch: 19, fill: 0.95 },
+      { name: "TOP", key: "2", yaw: 180, pitch: 90, ortho: true, fill: 0.92 },
+      { name: "SIDE", key: "3", yaw: 90, pitch: 0, ortho: true, fill: 0.92 },
+      { name: "FRONT", key: "4", yaw: 0, pitch: 0, ortho: true, fill: 0.9 },
+      { name: "REAR", key: "5", yaw: 180, pitch: 0, ortho: true, fill: 0.9 },
+    ],
+    yaw: yawRing(25, 0.9),
+    pitch: [],
+  },
+  // Solved hero camera in art/boat-README.md: yaw 39°, 15° down. The boat sits on its waterline (y = 0).
+  boat: {
+    main: [
+      { name: "HERO", key: "1", yaw: 39, pitch: 15, fill: 0.95 },
       { name: "TOP", key: "2", yaw: 180, pitch: 90, ortho: true, fill: 0.92 },
       { name: "SIDE", key: "3", yaw: 90, pitch: 0, ortho: true, fill: 0.92 },
       { name: "FRONT", key: "4", yaw: 0, pitch: 0, ortho: true, fill: 0.9 },
@@ -878,7 +920,7 @@ const UI_HTML = /* html */ `
   <h2 data-collapse="controls"><span>VIEW</span><span class="caret"></span></h2>
   <div class="body">
     <div class="label">MODEL <kbd>M</kbd></div>
-    <div class="grid g2"><button data-act="procedural">PROCEDURAL</button><button data-act="blender">BLENDER</button><button data-act="side">SIDE BY SIDE</button><button data-act="hornet">HORNET</button><button data-act="f35" class="wide">F-35C</button></div>
+    <div class="grid g2"><button data-act="procedural">PROCEDURAL</button><button data-act="blender">BLENDER</button><button data-act="side">SIDE BY SIDE</button><button data-act="hornet">HORNET</button><button data-act="f35">F-35C</button><button data-act="boat">BOAT</button></div>
     <div class="label">CAMERA</div><div class="grid g2" id="p-main"></div>
     <div class="label">YAW · 25° DOWN <kbd>9</kbd></div><div class="grid g4" id="p-yaw"></div>
     <div class="label" id="l-pitch">PITCH</div><div class="grid g3" id="p-pitch"></div>
@@ -968,6 +1010,7 @@ async function main() {
     blender: { pieces: [], bounds: FALLBACK_BOUNDS, deckY: DECK_Y, buildMs: 0, status: ["WAITING FOR BLENDER MODEL", "art/carrier.glb"] },
     hornet: { pieces: [], bounds: [-7, 0, -9, 7, 5, 9], deckY: 0, buildMs: 0, status: ["WAITING FOR HORNET MODEL", "art/hornet.glb"] },
     f35: { pieces: [], bounds: [-6.6, 0, -7.8, 6.6, 3.6, 7.9], deckY: 0, buildMs: 0, status: ["WAITING FOR F-35C MODEL", "art/f35.glb"] },
+    boat: { pieces: [], bounds: [-2.8, -0.6, -9, 2.8, 4.9, 9], deckY: 0, buildMs: 0, status: ["WAITING FOR BOAT MODEL", "art/boat.glb"] },
   }
   let radarAngle = 0
   let stabAngle = 0
@@ -1100,6 +1143,19 @@ async function main() {
     }
   }
 
+  /** The interceptor boat through the game's loader (boat-glb.ts), as the game draws it, its parts at their pivots. */
+  async function loadBoat(): Promise<void> {
+    const v = variants.boat
+    if (!boatGlbUrl) return
+    try {
+      const t0 = performance.now()
+      install("boat", boatPieces(buildBoatModel(await fetchGlb(boatGlbUrl))).map((p) => ({ ...p, namer: () => `boat · ${p.name}` })), performance.now() - t0)
+    } catch (e) {
+      console.error(e)
+      v.status = ["BOAT MODEL ERROR", e instanceof Error ? e.message : String(e)]
+    }
+  }
+
   function updateNotice(): void {
     const bad = modelsIn(settings.model).map((m) => variants[m].status).find((s) => s)
     if (bad) showNotice(bad[0], bad[1])
@@ -1116,7 +1172,7 @@ async function main() {
   /** The model a note's point belongs to, from the first word of its part. */
   const noteModel = (part: string | null): ModelId => {
     const first = part?.split(" ")[0]
-    return first === "blender" || (first !== undefined && isJet(first)) ? (first as ModelId) : "procedural"
+    return first === "blender" || first === "boat" || (first !== undefined && isJet(first)) ? (first as ModelId) : "procedural"
   }
   const isShown = (m: ModelId) => modelsIn(settings.model).includes(m)
   const subject = () => subjectOf(settings.model)
@@ -1709,6 +1765,7 @@ async function main() {
       case "side":
       case "hornet":
       case "f35":
+      case "boat":
         setMode(name)
         break
       case "deckHornet":
@@ -1973,7 +2030,7 @@ async function main() {
 
   // ---- start ----
   await Promise.all([loadProcedural(), loadBlender()])
-  await Promise.all(JETS.map(loadJet))
+  await Promise.all([...JETS.map(loadJet), loadBoat()])
   ready = true
   const urlModel = params.get("model")
   if (urlModel && (MODES as string[]).includes(urlModel)) settings.model = urlModel as Mode

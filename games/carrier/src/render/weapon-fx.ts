@@ -629,6 +629,14 @@ export class WeaponFx implements ScenePass {
     this.spawn(mode, x, y, z, x, y, z, vx, vy, vz, life, s0, s1, r, g, b, a, drag, rise)
   }
 
+  /**
+   * A faceted white spray chunk (the translucent ball the round strikes on the sea use) thrown from (x, y, z) at v,
+   * falling at 1 g with a little drag, growing from s0 to s1 over `life` s, `stretch` taller than wide (boat spray).
+   */
+  spray(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, s0: number, s1: number, stretch = 1.3, alpha = 0.85): void {
+    this.spawnRock(0, x, y, z, vx, vy, vz, life, s0, s1, 0.93, 0.96, 0.99, 0, 0, alpha, 9.81, 0.6, [1, stretch, 1])
+  }
+
   /** Spawns a faceted particle (see RockPool). */
   private spawnRock(kind: 0 | 1 | 2, x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, s0: number, s1: number, r: number, g: number, b: number, emit: number, hot: number, a: number, grav: number, drag: number, shape: V3 = [1, 1, 1], spin = rnd(-2, 2)): void {
     const p = this.rk

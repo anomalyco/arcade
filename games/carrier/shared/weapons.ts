@@ -14,9 +14,10 @@ import { VEHICLES, type VehicleKind } from "./vehicles"
 /** Weapon kinds. A kind's tuning is WEAPONS[kind]; which aircraft carry it is LOADOUTS. */
 export type WeaponKind = "gun" | "missile" | "bomb"
 export const WEAPON_KINDS: readonly WeaponKind[] = ["gun", "missile", "bomb"]
-/** What can hurt a jet: its own kinds plus the ships' guns (shared/gunnery.ts: CIWS rounds, SAMs, 5-inch shells). */
-export type KillWeapon = WeaponKind | "ciws" | "sam" | "shell"
-export const KILL_WEAPONS: readonly KillWeapon[] = ["gun", "missile", "bomb", "ciws", "sam", "shell"]
+/** What can hurt a jet (or a boat): its own kinds plus the ships' guns (shared/gunnery.ts: CIWS rounds, SAMs, 5-inch
+ *  shells) and the boat's 25 mm autocannon (shared/boat.ts, `cannon`). */
+export type KillWeapon = WeaponKind | "ciws" | "sam" | "shell" | "cannon"
+export const KILL_WEAPONS: readonly KillWeapon[] = ["gun", "missile", "bomb", "ciws", "sam", "shell", "cannon"]
 export const isKillWeapon = (v: unknown): v is KillWeapon => typeof v === "string" && (KILL_WEAPONS as readonly string[]).includes(v)
 
 /** Aircraft types (shared/vehicles.ts). */
@@ -37,6 +38,10 @@ export const LOADOUTS: Readonly<Record<VehicleKind, LoadoutSpec>> = {
    *  they fall ballistically for now (guided bombs and ship/ground damage come later). */
   f35: { name: "F-35C", weapons: ["missile", "bomb"], missiles: 2, bombs: 4, flares: 2 },
 }
+
+/** The Mk VII interceptor boat (shared/boat.ts): only its 25 mm turret (`GUN` there, not the jets' M61), no stores. As
+ *  a fighter in the combat world it carries nothing the jets' budgets would refill. */
+export const BOAT_LOADOUT: LoadoutSpec = { name: "MK VII", weapons: [], missiles: 0, bombs: 0, flares: 0 }
 
 const DEG = Math.PI / 180
 
@@ -334,7 +339,8 @@ export const bombStation = (vehicle: VehicleKind, bombs: number, max: number): r
 // ---- seeker -------------------------------------------------------------------------------------------------------------
 
 /** A jet as weapons see it: id, team, centre and velocity. `alive` false for wrecks and jets on deck. */
-export type Target = { id: number; team: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; alive: boolean }
+/** `surface`: a boat (shared/boat.ts): rounds, blasts and shells hit it, heat-seekers never lock it. */
+export type Target = { id: number; team: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; alive: boolean; surface?: boolean }
 
 export function makeTarget(id = -1, team = -1): Target {
   return { id, team, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, alive: true }
@@ -372,7 +378,7 @@ export function lockStep(lock: Lock, dt: number, s: Shooter, targets: Iterable<T
   let best: Target | null = null
   let bestAngle = Infinity
   for (const t of targets) {
-    if (!t.alive || t.team === s.team || blind(t.id)) continue
+    if (!t.alive || t.team === s.team || t.surface || blind(t.id)) continue
     if (!offBore(s, t, ob)) continue
     if (t.id === lock.target && ob.angle <= m.cone * m.keep && ob.dist <= m.range * m.keepRange && ob.dist >= m.minRange * 0.5) keep = t
     if (ob.angle <= m.cone && ob.dist <= m.range && ob.dist >= m.minRange && ob.angle < bestAngle) {

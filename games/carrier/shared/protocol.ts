@@ -9,6 +9,7 @@ import { isOpId } from "./ops"
 import { TIME_SPEED_MAX } from "./daycycle"
 import { WEATHER_KINDS, type WeatherKind, unpackWeather } from "./weather"
 import { KILL_WEAPONS } from "./weapons"
+import { type BoatCtlTuple, type BoatTuple, isBoatCtl, isBoatTuple } from "./boat"
 import { type AimTuple, type GunBoomTuple, type GunFireTuple, type InterceptTuple, type TurretTuple, isAimTuple, isGunBoomTuple, isGunFireTuple, isInterceptTuple, isTurretTuple } from "./gunnery"
 
 export const DEFAULT_ROOM = "open-sea"
@@ -77,6 +78,12 @@ export type ClientMsg =
   | { type: "tshiphits"; ship: number; n: number }
   /** The sender's CIWS shot down a missile or bomb (store 0) or a SAM or shell (store 1). */
   | { type: "intercept"; i: InterceptTuple }
+  // The boat (shared/boat.ts), from its driver: the room runs the boat's sim on these orders.
+  /** The driver's throttle, steer, boost, turret aim and trigger (shared/boat.ts BoatCtlTuple), ~20 Hz while they change. */
+  | { type: "boat"; c: BoatCtlTuple }
+  /** The boat's 25 mm rounds hit something `n` times since its last report: `k` shared/boat.ts BOAT_HIT (0 a jet or
+   *  1 a boat: player `on`; 2 a carrier: ship `on`). */
+  | { type: "bhits"; k: number; on: number; n: number }
 
 export type ServerMsg =
   /** `id` is this connection's player id in the crew. */
@@ -124,6 +131,9 @@ export type ServerMsg =
   | { type: "gfire"; id: number; g: GunFireTuple }
   /** A SAM or shell burst (the room decided where, and whom it hit). */
   | { type: "gboom"; b: GunBoomTuple }
+  /** Every boat out (shared/boat.ts BoatTuple: its pose, crane state, turret and trigger), ~10 Hz while any is out
+   *  (then once empty). Its health, kills and the kill feed travel as `hp` / `kill` like a jet's. */
+  | { type: "boats"; b: BoatTuple[] }
 
 /** A launch: [sequence, sea time, x, y, z, vx, vy, vz, target (-1 none), kind (0 missile, 1 bomb)]. */
 export type FireTuple = [seq: number, t: number, x: number, y: number, z: number, vx: number, vy: number, vz: number, target: number, kind: number]
@@ -363,6 +373,10 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       return isCount(o.ship) && isCount(o.n) && o.n > 0 && o.n <= 300 ? { type: "tshiphits", ship: o.ship, n: o.n } : null
     case "intercept":
       return isInterceptTuple(o.i) ? { type: "intercept", i: o.i } : null
+    case "boat":
+      return isBoatCtl(o.c) ? { type: "boat", c: o.c } : null
+    case "bhits":
+      return (o.k === 0 || o.k === 1 || o.k === 2) && isCount(o.on) && isCount(o.n) && o.n > 0 && o.n <= 60 ? { type: "bhits", k: o.k, on: o.on, n: o.n } : null
     case "hello": {
       if (!isStr(o.build, 64)) return null
       const msg: ClientMsg = { type: "hello", build: o.build }
@@ -440,6 +454,8 @@ export function decodeServer(raw: unknown): ServerMsg | null {
       return isCount(o.id) && isGunFireTuple(o.g) ? { type: "gfire", id: o.id, g: o.g } : null
     case "gboom":
       return isGunBoomTuple(o.b) ? { type: "gboom", b: o.b } : null
+    case "boats":
+      return Array.isArray(o.b) && o.b.length <= 64 && o.b.every(isBoatTuple) ? { type: "boats", b: o.b as BoatTuple[] } : null
     case "sunk":
       return isCount(o.ship) && isStr(o.name, 40) && isCount(o.team) && isInt(o.by) ? { type: "sunk", ship: o.ship, name: o.name, team: o.team, by: o.by } : null
     case "stats": {

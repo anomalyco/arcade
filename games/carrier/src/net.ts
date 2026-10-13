@@ -4,6 +4,7 @@ import { type Crew, type Outcome, type RecoverHow, type Role, createShip, joinCr
 import { kick, promote, setLock } from "../shared/squad"
 import { type Hull, unpackHull } from "../shared/fleet"
 import type { AimTuple, GunFireTuple, InterceptTuple } from "../shared/gunnery"
+import type { BoatCtlTuple, BoatTuple } from "../shared/boat"
 import { type ClientMsg, type FireTuple, type FlareTuple, type PlaneTuple, type ServerMsg, type ShipTuple, type World, decodeServer, encode, roomName } from "../shared/protocol"
 import { RoomTime, TIME_OVERRIDE_LEAD, timeOverride, unpackTime } from "../shared/daycycle"
 import { RoomWeather, WEATHER_OVERRIDE_LEAD, type Weather, type WeatherKind, overrideTo, packWeather, unpackOverride } from "../shared/weather"
@@ -63,6 +64,15 @@ export interface Net {
   sendIntercept(i: InterceptTuple): void
   /** Ship-gun messages from the room (turrets, launches, bursts) in arrival order; the consumer empties it every frame. */
   readonly gunnery: GunneryMsg[]
+  // The boat (shared/boat.ts; dropped unless online: offline the boat runs locally).
+  /** The driver's orders; sent when they change and at least every second while out (dropped unless online). */
+  sendBoat(c: BoatCtlTuple): void
+  /** The boat's 25 mm hits since the last report: `k` 0 a jet, 1 a boat (player `on`), 2 a carrier (ship `on`). */
+  sendBoatHits(k: number, on: number, n: number): void
+  /** Every boat out by its driver's player id (ours included), as the room last sent them (~10 Hz). Empty offline. */
+  readonly boats: ReadonlyMap<number, BoatTuple>
+  /** Room sea time of the last `boats` frame (to age them). */
+  readonly boatsAt: number
   /** Every carrier's health, zones and fires (shared/fleet.ts), by crew ship id, as of the last `hulls` (empty offline). */
   readonly hulls: ReadonlyMap<number, Hull>
   /** Combat messages from the room in arrival order; the consumer empties it every frame. */
@@ -140,6 +150,9 @@ class NetClient implements Net {
   readonly gunnery: GunneryMsg[] = []
   readonly stats = new Map<number, { kills: number; deaths: number }>()
   readonly hulls = new Map<number, Hull>()
+  readonly boats = new Map<number, BoatTuple>()
+  boatsAt = 0
+  private boatSent = { key: "", at: 0 }
   readonly ready: Promise<void>
   private resolve!: () => void
   private settled = false
@@ -238,6 +251,17 @@ class NetClient implements Net {
 
   sendIntercept(i: InterceptTuple): void {
     this.send({ type: "intercept", i })
+  }
+
+  sendBoat(c: BoatCtlTuple): void {
+    const key = c.join()
+    const now = performance.now()
+    if (key === this.boatSent.key ? now - this.boatSent.at < HELM_RESEND_MS : now - this.boatSent.at < 50) return
+    if (this.send({ type: "boat", c })) this.boatSent = { key, at: now }
+  }
+
+  sendBoatHits(k: number, on: number, n: number): void {
+    this.send({ type: "bhits", k, on, n })
   }
 
   sendWeather(to: WeatherKind | Weather | null, fade: number): void {
@@ -440,6 +464,11 @@ class NetClient implements Net {
       case "ships":
         this.ships.clear()
         for (const s of msg.s) this.ships.set(s[0], s)
+        return
+      case "boats":
+        this.boats.clear()
+        for (const b of msg.b) this.boats.set(b[0]!, b)
+        this.boatsAt = this.seaTime()
         return
       case "planes":
         this.planes.clear()

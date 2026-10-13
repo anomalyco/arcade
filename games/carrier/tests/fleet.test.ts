@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { makeSlots } from "../shared/ops"
 import { CombatWorld, type CombatEvent, type GroundShip } from "../shared/combat"
 import { BOW_Z, DECK_Y, ISLAND } from "../shared/carrier-spec"
 import { CREW, type Crew, createShip, joinCrew, playerOf, recover, runOp, scuttle, shipOf } from "../shared/crew"
@@ -262,6 +263,6 @@ describe("sinking and the crew", () => {
     runOp(c, 3, "hornet", 21)
     recover(c, 3, "landed", 30, 3)
     expect(playerOf(c, 3)!.ship).toBe(third)
-    for (const s of c.ships) expect(s.aircraft.length).toBeLessThanOrEqual(3)
+    for (const s of c.ships) expect(s.aircraft.length).toBeLessThanOrEqual(makeSlots().length)
   })
 })

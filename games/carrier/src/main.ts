@@ -2,7 +2,7 @@ import "./style.css"
 import "@fontsource/ibm-plex-mono/300.css"
 import { makeArchipelago, type Archipelago } from "../shared/islands"
 import { TEAMS, playerOf, shipOf } from "../shared/crew"
-import { shipOps } from "../shared/ops"
+import { playerBoat, shipOps } from "../shared/ops"
 import { FLEET } from "../shared/fleet"
 import { PLANE_MODE } from "../shared/protocol"
 import { makeSea } from "../shared/sea"
@@ -16,6 +16,8 @@ import { SoundsLab } from "./audio/sounds-lab"
 import { WeatherLab } from "./dev/weather-lab"
 import { FlightView } from "./flight/camera"
 import { FlightModule } from "./flight/seam"
+import { BoatModule } from "./boat/seam"
+import { BOAT_MODE } from "../shared/boat"
 import { Gunnery, type GunneryNet } from "./gunnery/gunnery"
 import { createGame } from "./game/game"
 import { Input } from "./input"
@@ -129,6 +131,11 @@ async function main() {
   }
   gunnery.teamOf = (id) => (net.crew ? (playerOf(net.crew, id)?.team ?? -1) : -1)
   game.setGunnery(gunnery)
+  // The boat (SHIP OPERATIONS → LAUNCH BOAT): a driver's boat on the shared camera and mouse, everyone's boats; health,
+  // the kill feed and being a target for the jets' guns go through the jets' weapons.
+  const boat = new BoatModule(renderer, input, canvas, net)
+  boat.weapons = flight.weapons
+  game.setBoat(boat)
   renderer.addPass("sky", sky)
   renderer.addPass("sky", stars)
   renderer.addPass("opaque", ocean)
@@ -189,6 +196,7 @@ async function main() {
     const p = net.crew && playerOf(net.crew, id)
     if (!p || p.role !== "pilot") return null
     if (p.plane < 0) return "deck"
+    if (playerBoat(net.crew, id)) return net.boats.get(id)?.[12] === BOAT_MODE.sunk ? "down" : "boat"
     const mode = id === net.id ? flight.flight.mode : net.planes.get(id)?.[1]
     return mode === PLANE_MODE.flying ? "air" : mode === PLANE_MODE.crashed ? "down" : "deck"
   }
@@ -222,7 +230,7 @@ async function main() {
   }
 
   const debug: { renderer: Renderer; camera: Camera; net: typeof net; input: Input; frame: Float32Array; grade: typeof grade; atmosphere: typeof atmosphere; arch: Archipelago | null; ocean: Ocean; clouds: Clouds } = { renderer, camera, net, input, frame, grade, atmosphere, arch: null, ocean, clouds }
-  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, roster: teams, teams, ops, flight, weather, lab, debugMenu, baseOcean, daynight, stars, lights }) })
+  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, lab, debugMenu, baseOcean, daynight, stars, lights }) })
 
   let builtSeed: number | null = null
   const buildWorld = (seed: number) => {
@@ -238,6 +246,7 @@ async function main() {
     ocean.setSeabed(bakeSeabed(arch, 2048))
     game.setWorld(sea, arch)
     flight.setWorld(sea, arch)
+    boat.setWorld(sea, arch)
     gunnery.setGround({ sea, arch, ships: [] })
   }
   const useNet = (n: typeof net) => {
@@ -247,6 +256,7 @@ async function main() {
     daynight.room = n.time
     game.setNet(n)
     flight.setNet(n)
+    boat.setNet(n)
     void n.ready.then(() => net === n && buildWorld(n.seed))
   }
   useNet(net)
@@ -293,7 +303,10 @@ async function main() {
     teams.update(crew, net.id, net.room, serverNow)
     const me = crew ? playerOf(crew, net.id) : undefined
     const myShip = crew ? shipOf(crew, me?.ship ?? -1) : undefined
-    ops.airborne = me?.role === "pilot" && me.plane >= 0
+    // In the air E is the jet's rudder (the menu stays shut); at sea in the boat it opens read-only.
+    const inBoat = !!net.crew && !!me && playerBoat(net.crew, me.id)
+    ops.airborne = me?.role === "pilot" && me.plane >= 0 && !inBoat
+    ops.atSea = inBoat
     // The guns act for this player: online the room decides, offline the local world. A gunner's kills read as theirs
     // in the jets' kill feed.
     gunnery.setNet(net.state === "offline" ? null : gunneryNet)

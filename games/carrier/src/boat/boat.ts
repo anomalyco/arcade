@@ -107,6 +107,8 @@ export class BoatDriver {
   trauma = 0
   /** Recovery only arms once the boat has left the crane's reach (or sped up) after a launch. */
   armed = false
+  /** Offline the driver decides the pickup itself; online the room does (`beginRecover`, `destroy` from its tuple). */
+  authority = true
   /** Test hook: when set, aims at this world point instead of the camera's. */
   aimAt: [number, number, number] | null = null
   private controls: BoatControls = { throttle: 0, steer: 0, boost: false }
@@ -152,6 +154,21 @@ export class BoatDriver {
     this.setPhase("sunk", this.boat.t)
   }
 
+  /** The room picked the boat up at sea time `at` from ship-local `from` (online). */
+  beginRecover(from: { x: number; z: number; yaw: number }, at: number): void {
+    if (this.phase !== "drive") return
+    this.from = from
+    this.setPhase("recover", at)
+    this.phaseT = Math.max(0, this.boat.t - at)
+  }
+
+  /** The room's crane clock for a launch that began at sea time `at` (online: keeps the release in step with it). */
+  syncLaunch(at: number): void {
+    if (this.phase !== "launch") return
+    this.phaseAt = at
+    this.phaseT = Math.max(0, this.boat.t - at)
+  }
+
   /** Ends whatever the boat was doing, silently (the host took the player elsewhere). */
   stop(): void {
     this.phase = "idle"
@@ -168,6 +185,12 @@ export class BoatDriver {
     this.phase = p
     this.phaseT = 0
     this.phaseAt = t
+  }
+
+  /** The driver's orders this frame (for the room). */
+  get orders(): { throttle: number; steer: number; boost: boolean; trigger: boolean } {
+    const c = this.controls
+    return { throttle: c.throttle, steer: c.steer, boost: c.boost, trigger: this.trigger }
   }
 
   /** Reads the helm and the trigger once per frame (before the fixed steps). */
@@ -220,7 +243,7 @@ export class BoatDriver {
       const home = w.home
       const pick = home && this.hp > 0 ? recoverable(b, home) : null
       if (!pick) this.armed = true
-      else if (this.armed) {
+      else if (this.armed && this.authority) {
         this.from = pick
         this.setPhase("recover", b.t)
       }

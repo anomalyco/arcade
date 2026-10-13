@@ -547,6 +547,46 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   keys 1-5 switch mounts). Real-GPU checks: `scripts/gunnery-shot.ts` (views, ciws, intercept, sam, gun, mp); captures
   in `captures/gunnery/`.
 
+## Boat (`shared/boat.ts`, `src/boat/**`, `src/render/boat-*.ts`, `src/audio/boat-audio.ts`)
+
+- The Mk VII fast interceptor (`art/boat.glb`, `art/boat-README.md`): SHIP OPERATIONS → LAUNCH BOAT (`shared/ops.ts`
+  `boat: true` vehicle op, cap 1 per ship, recharge 40 s). The driver holds the boat's slot like a pilot holds a jet's
+  (`plane` = the slot, `playerBoat`, `slotIsBoat`), but only the room ends the sortie: picked up alongside its carrier
+  (`recover(.., "landed")`, the slot frees at once) or sunk (`"crashed"`, 40 s). Either way `recover` puts the driver back
+  in the role they launched from (`CrewPlayer.back`: the helm or their gun, if still free; else a pilot on deck). A
+  client's `recover` for a boat is ignored. Tab shows drivers as BOAT; the ops menu opens read-only at sea (AT SEA).
+- Sim (`boatStep`, fixed 60 Hz, deterministic): 45 kn, ~3.6 s to 90%, Shift boost (×1.2 speed for 3 s, 10 s recharge),
+  astern, ~45-60 m circle at speed heeling into the turn, planing trim and lift, 10 buoyancy points with real gravity
+  (airborne off storm crests: up to ~2 s and ~11 m in heavy seas, slams on landing; calm swells hop < 3 m), jets only
+  push and steer while the stern is wet, island grounding and carrier-hull bounces (`carrierHalfBeam`), soft world edge.
+  Remote boats float locally (`boatFloat`) on the plan pose.
+- Crane (`CRANE`, `cranePose`): the port deck-edge elevator. Launch: sits, swings out, lowered 26 m, released at 2.95 s
+  (`releaseBoat`: the carrier's velocity at that point). Recovery (`recoverable`): within 45 m of the crane point or 80 m
+  astern of the stern, < 6 m/s relative, in the water, armed only after the boat has left the zone; glide in, hoist,
+  swing in (`recoverTime`).
+- Turret and rounds: 25 mm (`GUN`): 7 rps, 1,100 m/s, ~1.25 km, heat 6 s, yaw ±145° from the bow, -10..70°. The
+  mouse aims in the world (`BoatCam`, the crosshair is the aim; the pip is the barrel). `BoatRounds` hits jets
+  (spheres), boats (`boatSegmentHit`, hull boxes) and the world; friendly fire off.
+- Health and damage: a boat is a fighter in the room's `CombatWorld` (`spawn(.., boat = true)`, `Fighter.boat`), so hp,
+  repair, kill credit, the kill feed (`cannon` kill weapon) and stats are the jets'. `BOAT_ARMOR` scales every weapon's
+  jet damage (gun 0.4, missile 0.85, bomb 1, CIWS 0.7, SAM 0.6, shell 1.2). Boats are `Target.surface`: jets' rounds,
+  blasts, CIWS rounds and shells hit them (the client hands them to `Weapons.surface` and to the gunnery's jets);
+  heat-seekers and SAM seekers never lock them. Its own 25 mm: 6 per round on a jet, 4.5 (armored) on a boat, 1.2 on a
+  carrier through `damageShip(.., "gun")`.
+- Authority and wire: the room runs every boat (`server/core.ts stepBoats`) on its driver's `boat` orders
+  (`BoatCtlTuple`: throttle, steer, boost, turret yaw/pitch mrad, trigger; sent on change, ≥ 1 Hz) and sends every boat
+  as `boats` (`BoatTuple`, 10 Hz). The driver predicts with the same sim and glides onto the room's pose; the room
+  decides the release, pickup and sinking. Rounds are shooter-authoritative: `bhits { k: 0 jet | 1 boat | 2 carrier,
+  on, n }`, checked against the room's `BoatBudget`, a boat alive and on the water, and the gun's reach.
+- Client: `BoatModule` (`src/boat/seam.ts`, `game.setBoat`) starts on a new boat sortie; `BoatDriver` (`src/boat/boat.ts`:
+  phases launch/drive/recover/sunk, HUD, camera), `RemoteBoats` (`src/boat/remote-boats.ts`), `BoatPass` (team accent,
+  radar spin, turret aim, nozzles, nav lights through `Lights.addLights`), `BoatWake` (into the ocean wake field after
+  the carriers' Wake), `BoatFx` (spray via `WeaponFx.spray`, rooster tail, slams, smoke, fire, explosion), `BoatAudio`
+  (the sfx bank's `boat-engine` loop once loaded, procedural twin diesel + waterjet whine before; slams, 25 mm).
+- Ship viewer: `ship.html?model=boat`. Dev harness (not built): `boat.html` (`?weather ?tod ?water ?targets ?drone`).
+  Real-GPU checks: `scripts/boat-shot.ts` (launch, drive, storm, gun, night, recover, hero, mp, strafe); captures in
+  `captures/boat/`.
+
 ## Ship damage (`shared/fleet.ts`, `server/core.ts`, `src/weapons/{ship-fx,ship-hud}.ts`)
 
 - The room is authoritative. `RoomCore` holds one `Fleet`: a `Hull` per carrier, added on `new` and removed on `sink`.
@@ -617,12 +657,16 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   an output trim (loudness: the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()`
   dips engines, flybys and ambience under explosions and passes. `mixer.listener` (camera pose, set by jet-audio.ts each
   frame) lets anything place a sound in the world. Levels and mute persist (`carrier.audio.v3`); **M mutes**.
-- **The sound bank** (`sfx-bank.ts`, `sfx()`): 62 slots (`sfx-slots.ts`: engine, flyby, carrier, gun, missile, bomb,
-  boom, ship, sea, ui, hooks) with 3-4 ElevenLabs candidate takes each, 222 takes in `public/sfx/v3/<slot>-<n>.ogg`
-  (48 kHz stereo Ogg Opus 96-112 kb/s, 11.8 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
+- **Jet sounds are procedural, by design** (user decision): everything that follows a jet's live state (engines,
+  afterburner, cockpit engine, canopy wind, buffet, breathing, creaks, wind rush, flybys, the sonic crack, the stall
+  warning) is synthesized every frame from rpm, throttle, afterburner, speed, g, stall and the listener's geometry, so
+  it never drifts from the jet. Only discrete events are recorded.
+- **The sound bank** (`sfx-bank.ts`, `sfx()`): 51 slots (`sfx-slots.ts`: carrier, gun, missile, bomb, boom, ship, sea,
+  ui, hooks) with 3-4 ElevenLabs candidate takes each, 178 takes in `public/sfx/v3/<slot>-<n>.ogg` (48 kHz stereo Ogg
+  Opus 96-112 kb/s, 9.5 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
   dBTP; loops crossfade-looped; `manifest.json` has each take's length, loop length, loudest moment, loudness).
   Prompts in `sfx-slots.ts`, processing in `scripts/sfx-cinematic.ts`. After the first gesture the bank loads every
-  slot's playing takes category by category (~100 takes, ~5 MB); `play`/`loop` return null until a slot has loaded and
+  slot's playing takes category by category (~90 takes, ~4.5 MB); `play`/`loop` return null until a slot has loaded and
   callers play their procedural placeholder. API for every module (gunnery and boat audio included):
   `sfx().play(slot, { at: worldXYZ | local | dist, gain, rate, delay, travel, reverb, echo, ref, rolloff, bus })` and
   `sfx().loop(slot, …)` → `{ set({ gain, rate, at, tc }), stop(fade) }`. Pooled one-shots (explosions, impacts, thunder,
@@ -634,12 +678,18 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   300 m, 1.5 km with the reverb, from the chase view or behind the canopy; ★ pick, live; level trim; 1-5 rating),
   category filter, COPY / SAVE / RESET. The AUDIO tab keeps the bus levels, engine/cockpit tuning, a recorded on/off
   switch and test buttons.
-- **Where each slot plays**: jet engines (`jet-loops.ts`): idle/cruise/military/afterburner loops crossfaded by throttle,
-  re-pitched within their band and by Doppler, the engine cone as a high shelf, the F-35 a lower heavier variant; in the
-  cockpit the `cockpit-engine` loop plus `cockpit-wind` and `rain-canopy` (`jet-cockpit.ts`); the procedural turbofan
-  (`jet-engine.ts`) until loaded. Flybys (`jet-sfx.ts`, timing from `jet-math.ts`): the take's loudest moment lands on
-  the predicted closest approach and follows the jet; `sonic-crack` on head-on merges. Carrier ops: catapult, shuttle
-  slam, trap, gear, tailhook. Weapons (`weapon-audio.ts`): the M61 loop cut in on the trigger with its tail, distant
+- **Procedural jets**: the engine (`jet-engine.ts`, Wings-style): a soft triangle whine with a ×2.76 overtone (front of
+  the cone), pink roar behind a throttle-opened low-pass (rear; your own Hornet's two engines decorrelated left/right),
+  brown body and a deep sub, an afterburner rumble that breathes plus a soft crackle and sub; spool inertia
+  (`jet-math.ts`); distance gain, air absorption, a reverb send that grows with distance and a close water slapback;
+  the F-35 one deeper engine. The afterburner lighting adds a soft whump (`jet-sfx.ts`). The cockpit (`jet-cockpit.ts`):
+  the engine through the airframe and the cockpit room, canopy wind by dynamic pressure, buffet, breathing under g,
+  creaks, the stall warble, plus recorded `rain-canopy` when it rains. Flybys (`jet-sfx.ts`): an air rush, a low
+  thunder body and (fast/burner) a bright tear, peaking on the closest approach predicted each frame (`jet-math.ts`)
+  and panned with the jet, on top of the engine's own Doppler; head-on merges above 300 m/s get a procedural N-wave
+  crack. Levels (offline, 0.5 s RMS): your Hornet in chase idle -38, military -33, afterburner -28 dBFS against a gun
+  burst at -15 and medium weather at -21; a close pass peaks at -20, a distant one at -27.
+- **Where each recorded slot plays**: carrier ops (catapult, shuttle slam, trap, gear, tailhook). Weapons (`weapon-audio.ts`): the M61 loop cut in on the trigger with its tail, distant
   bursts, missile launch, flares, bomb release (+ whistle), impacts; cockpit tones synthesized (sine seeker growl and
   lock, two-tone warning chimes) on the UI bus. Explosions (`jet-boom.ts`, `boomsFor().play(kind, dist, size)`): the
   scenario's take crossfading into `boom-far` from 400 m to 2.2 km, travel delay, heavy reverb and slapback, a water
@@ -651,5 +701,5 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `tracer-zip`, `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
   60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel) on hailmary into
-  `captures/audio/v3-*`; `captures/audio/v3-candidates-<category>.mp3` are every take back to back (index in
+  `captures/audio/v4-*` (engines and flybys) and `v3-*` (recorded slots); `captures/audio/v3-candidates-<category>.mp3` are every take back to back (index in
   `v3-candidates.md`). `public/sfx/boom/{far-1,bomb-water-2}.mp3` stay only for `scripts/video-epic.ts`.

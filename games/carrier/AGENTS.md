@@ -23,7 +23,10 @@
   weapon mount). E: SHIP OPERATIONS (hold, tap to pin; physical key only), the only way to
   take the helm, launch a Hornet (2 out per ship; a destroyed jet's slot recharges 30 s) or the F-35C strike jet (1 per
   ship, 45 s; no gun, bay and wing bombs), or man a gun (CIWS PORT/STBD, SAM PORT/STBD, 5-INCH GUN: first person, mouse
-  aims, LMB/Space fires, RMB zooms; pick another operation to leave); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
+  aims, LMB/Space fires, RMB zooms; pick another operation to leave), or launch the BOAT (1 per ship, craned over the
+  port side; W/S A/D Shift boost, mouse aims the 25 mm turret, LMB/Space fires; it ends only when brought back alongside
+  slowly or sunk, 40 s recharge, and you return to the role you launched from; dev harness `boat.html`, see CONTRACTS.md
+  "Boat"); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
   flight); Esc frees it, menus free it and give it back. Controls: at the helm W/S throttle, 1-9/0/= presets, A/D rudder; as a pilot the flight keys plus
   Space/LMB fire, 1/2/3 or wheel/V weapons, F flares (a flight ends only by landing aboard, a crash or being shot down); Tab players and ships (hold, tap to pin: JOIN switches ship or team, CREATE SHIP, captains LOCK, KICK,
   promote); C free camera (WASD pan, drag orbit, wheel zoom); M mute; ` debug menu. Shared rules: `shared/{crew,squad,ops}.ts`.

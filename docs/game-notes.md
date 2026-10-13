@@ -27,6 +27,13 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   hook (`flight.frame`), not after `game.update`, so weapon effects, lights and the listener all see the video camera.
   Cuts are free time skips: setups run muted and their sample ranges are dropped. 1,920 frames plus ~60 s of unseen
   setup in ~6 min on the M4 Max.
+- **Score a trailer to generated music, then cut to the music.** Carrier's `scripts/video-ship.ts` generates four
+  ElevenLabs Music takes from one prompt. It uses none of the prompt's timeline: it picks the take whose structure fits
+  (0.1 s band-energy curves and onset spacing from ffmpeg show a light intro, a boom and silence, a riser, a drop, then a
+  final hit). Shot boundaries, the storm drop, lightning strikes and the title land on those onsets. The night breakdown
+  crossfades to a low-passed copy, and the game's own audio sits 10-18 dB under. Night lightning in the game is graded
+  down to almost nothing, so the script adds ambient and cloud glow during a strike after `weather.update`. Forced
+  strikes peak about 0.1 s after they fire, so fire them that much early.
 - **A performance pass must not change the look.** Compare before/after stills of the same seeded frame. If they differ,
   the change is a look change and needs its own review. (Getaway: a widened helicopter spotlight slipped into a perf
   pass; the tight original read better.)
@@ -773,3 +780,23 @@ Candidates from the code audits; measure and playtest before moving any into the
   every frame and swells a procedural air rush to land on the pass, panned with the jet (recorded takes lined up the
   same way by their loudest 100 ms are behind a toggle: they sounded worse than the procedural engine in play). Unit tests in `games/carrier/tests/audio.test.ts` check
   the trigger fires once, at most 2.4 s ahead, landing on the pass. Live feel is unplaytested.
+
+- **When nobody on the team can listen, let the user's ears pick.** Carrier's v1 and v2 sounds were chosen from
+  spectrograms and called "cheap" in play. v3 ships 3-4 candidate takes for each of 51 slots and an audition board (the
+  SOUNDS tab, `games/carrier/src/audio/sounds-lab.ts`): play each take dry or placed in the world with the reverb, pick,
+  trim, rate; picks apply live, persist in localStorage, and a dev-server endpoint (`scripts/sfx-picks-plugin.ts`)
+  writes `public/sfx/picks.json`, the shipped defaults. Takes load lazily: only the picks (~4.5 MB of 9.5 MB).
+- **Seamless loops through lossy codecs.** `scripts/sfx-cinematic.ts` crossfade-loops each take, appends its first
+  0.25 s after the loop point and records the loop length in a manifest; the game loops `[start, start + length)` where
+  start skips any leading decoder padding (Safari's Opus pre-skip). Ogg Opus decodes in Chrome, Firefox and Safari
+  18.4+ (Safari 26 is the WebGPU floor anyway).
+- **Measure loudness with a montage, not per sound.** Carrier's 60 s offline montage (`scripts/audio-demo.ts`, ocean →
+  catapult → climb → pass → gun → missile → kill → storm → trap) measures -16.1 LUFS integrated and -1.7 dBTP through
+  the real mix; individual scenes put your engine in the chase view 16-18 dB under a gun burst and medium weather ~5 dB.
+  Unit-scene levels alone hid a sub-heavy bed (a ship ambience left playing in every scene) and rain carried over.
+- **Keep anything that follows a vehicle's live state procedural.** Carrier tried recorded engine loops crossfaded by
+  throttle and recorded flybys aligned to the predicted pass; the user ruled them out: throttle, spool, afterburner,
+  Doppler and geometry change every frame, and a take can't stay locked to them. v4 synthesizes engines, cockpit, wind,
+  flybys and the sonic crack (`games/carrier/src/audio/jet-engine.ts`, `jet-sfx.ts`, `jet-cockpit.ts`) and records only
+  discrete events (catapult, trap, gear, guns, missiles, explosions, ambience, UI). Sending the procedural voice into
+  the same convolution reverb and water slapback as the recorded one-shots makes them sit in one space.

@@ -13,7 +13,7 @@ function sent(i: number): PlaneTuple {
 describe("a 32-player room on the wire", () => {
   test("the jet relay stays compact with every jet slot in the air", () => {
     // 2 Hornets + 1 F-35C per ship, 4 ships.
-    const perShip = OPS.filter((o) => o.kind === "vehicle").reduce((n, o) => n + o.cap, 0)
+    const perShip = OPS.filter((o) => o.kind === "vehicle" && o.vehicle).reduce((n, o) => n + o.cap, 0)
     const jets = (CREW.roomMax / CREW.capacity) * perShip
     expect(jets).toBe(12)
     const before = encode({ type: "planes", p: Array.from({ length: jets }, (_, i): PlaneEntry => [i + 1, ...sent(i)]) }).length

@@ -18,8 +18,9 @@ function ship(): Crew {
 const state = (c: Crew, id: number, op: string, now: number) => shipOps(c, id, now)!.find((v) => v.op.id === op)!
 
 describe("the catalogue", () => {
-  test("TAKE HELM, LAUNCH HORNET (two per ship), LAUNCH F-35C (one per ship, a longer recharge), then the guns", () => {
-    expect(OPS.map((o) => o.id)).toEqual(["helm", "hornet", "f35", "ciws-port", "ciws-stbd", "sam-port", "sam-stbd", "gun-5in"])
+  test("TAKE HELM, LAUNCH HORNET (two per ship), LAUNCH F-35C (one per ship, a longer recharge), LAUNCH BOAT, then the guns", () => {
+    expect(OPS.map((o) => o.id)).toEqual(["helm", "hornet", "f35", "boat", "ciws-port", "ciws-stbd", "sam-port", "sam-stbd", "gun-5in"])
+    expect(opById("boat")).toMatchObject({ label: "LAUNCH BOAT", kind: "vehicle", boat: true, cap: 1, recharge: 40 })
     expect(F35).toMatchObject({ label: "LAUNCH F-35C", kind: "vehicle", vehicle: "f35", cap: 1 })
     expect(F35.recharge).toBeGreaterThan(HORNET.recharge)
     expect(isOpId("f35")).toBe(true)

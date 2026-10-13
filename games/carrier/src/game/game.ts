@@ -2,7 +2,8 @@ import { type Crew, type CrewPlayer, type RecoverHow, TEAMS, playerOf, shipOf, s
 import { fleetSpawn } from "../../shared/spawn"
 import type { Archipelago } from "../../shared/islands"
 import { hullLimits, settled } from "../../shared/fleet"
-import { gunOp, playerVehicle } from "../../shared/ops"
+import { gunOp, playerBoat, playerVehicle } from "../../shared/ops"
+import type { BoatModule } from "../boat/seam"
 import type { CombatWorld } from "../../shared/combat"
 import type { Target } from "../../shared/weapons"
 import { unpackGunBoom, unpackGunFire } from "../../shared/gunnery"
@@ -82,6 +83,8 @@ export type Game = {
   setFlight(flight: FlightSeam | null): void
   /** The ship guns (src/gunnery/gunnery.ts): a gunner's first-person turret, and everyone's turrets and their fire. */
   setGunnery(gunnery: Gunnery | null): void
+  /** The boat (src/boat/seam.ts): a driver's boat, and everyone's boats. */
+  setBoat(boat: BoatModule | null): void
   /** True while a menu or the roster has the mouse: no helm keys or look drags reach the game. */
   paused: boolean
   /**
@@ -110,6 +113,8 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
   renderer.addPass("opaque", turrets)
   let gunnery: Gunnery | null = null
   let lastMount = -1
+  let boat: BoatModule | null = null
+  let lastBoatSortie = -1
   const wake = new Wake(renderer)
   renderer.addPass("alpha", wake)
   let net = firstNet
@@ -218,7 +223,20 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
    * count is a fresh jet on the catapult); a pilot on deck waiting for a slot watches the ship.
    */
   function flightChange(role: Role, me: CrewPlayer | undefined): void {
-    const sortie = me && me.role === "pilot" && me.plane >= 0 ? me.sortie : -1
+    // A boat slot is the boat module's sortie, not a jet's.
+    const inBoat = !!me && me.role === "pilot" && me.plane >= 0 && playerBoat(net.crew, me.id)
+    const boatSortie = inBoat ? me!.sortie : -1
+    if (lastBoatSortie >= 0 && boatSortie !== lastBoatSortie) {
+      boat?.stop()
+      chase.reset()
+      blend.begin(camera, 1.1)
+    }
+    if (boatSortie >= 0 && boatSortie !== lastBoatSortie && me) {
+      boat?.start({ ship: me.ship, slot: me.plane, home: () => drawn.get(state.shipId) ?? null, recover: (how) => net.recover(how) }, simT)
+      blend.begin(camera, 1.3)
+    }
+    lastBoatSortie = boatSortie
+    const sortie = me && me.role === "pilot" && me.plane >= 0 && !inBoat ? me.sortie : -1
     // A new sortie is a fresh jet. A ship change with the same sortie is a jet rescued from a sunk carrier: it flies on.
     const fresh = sortie >= 0 && sortie !== lastSortie
     if (lastSortie >= 0 && (sortie < 0 || fresh)) flight?.stop()
@@ -364,7 +382,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
         ? {
             role: role === "helm" ? "HELM" : role === "gunner" ? "GUNNER" : "PILOT",
             ship: ship.name,
-            state: role === "pilot" && me.plane < 0 ? "ON DECK" : role === "gunner" ? (gunOp(me.mount)?.label ?? "") : "",
+            state: role === "pilot" && me.plane < 0 ? "ON DECK" : role === "gunner" ? (gunOp(me.mount)?.label ?? "") : lastBoatSortie >= 0 ? "BOAT" : "",
             captain: ship.captain === me.id,
             color: team?.color ?? "",
             flash: refused,
@@ -385,6 +403,8 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
       hulls: net.hulls,
       eye: camera.eye,
     })
+    // Every boat, after the jets' effects began (their lights share a pass); boats become everyone's targets.
+    boat?.frame({ t, dt, paused: game.paused, crew, ship: (id) => drawn.get(id) ?? null, ships: drawnList, jets: flight?.targets?.().jets ?? [], eye: camera.eye, fov: camera.fov })
     if (gunnery) {
       // The room's turrets, launches and bursts, then everyone's guns this frame.
       for (const m of net.gunnery) {
@@ -400,7 +420,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
         dt,
         paused: game.paused,
         ships: drawnList,
-        jets: tg?.jets ?? [],
+        jets: boat ? [...(tg?.jets ?? []), ...boat.targets()] : (tg?.jets ?? []),
         combat: tg?.world ?? null,
         eye: camera.eye,
         fov: camera.fov,
@@ -412,6 +432,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
 
   /** Places the camera for this player's role. False: the caller runs the free orbit camera. */
   function drive(dt: number, t: number, aspect: number, role: Role): boolean {
+    if (role === "pilot" && boat?.active && boat.update(dt, t, camera, aspect, { ships: drawnList, jets: flight?.targets?.().jets ?? [] }, game.paused)) return true
     if (role === "pilot" && flight?.update(dt, t, aspect, game.paused)) return true
     if (role === "gunner" && gunnery) {
       // The turret keeps reporting in the free camera; only the first-person view gives way.
@@ -442,6 +463,9 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
     },
     setGunnery(g: Gunnery | null) {
       gunnery = g
+    },
+    setBoat(b: BoatModule | null) {
+      boat = b
     },
     paused: false,
     update,

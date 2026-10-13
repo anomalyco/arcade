@@ -112,8 +112,8 @@ const LIGHT_FLOATS = 16
 const INST_FLOATS = 20
 const MAX_SHIPS = 33
 const MAX_JETS = 33
-/** Instance slots across every light set (the carrier's and up to four jet models). */
-const MAX_INSTANCES = MAX_SHIPS + 4 * MAX_JETS
+/** Instance slots across every light set (the carrier's, up to four jet models and the boats). */
+const MAX_INSTANCES = MAX_SHIPS + 4 * MAX_JETS + 24
 
 const LIGHTS_WGSL = /* wgsl */ `
 ${FRAME_BINDING_WGSL}
@@ -255,6 +255,20 @@ export class Lights implements ScenePass {
   /** Registers a jet model's lights; returns its set for `jet`. */
   addJet(frame: JetFrame): number {
     return this.addSet(jetLights(frame), MAX_JETS)
+  }
+
+  /**
+   * Registers any other vehicle's lights (model space, e.g. the boat's sidelights and masthead, render/boat-pass.ts)
+   * for up to `max` instances; returns its set. Feed it with `jet(set, model, 0, 0, id)` after `beginSet(set)` each frame.
+   */
+  addLights(defs: LightDef[], max: number): number {
+    return this.addSet(defs, max)
+  }
+
+  /** Clears one light set's instances for this frame (the jets' sets are cleared together by `beginJets`). */
+  beginSet(set: number): void {
+    const s = this.sets[set]
+    if (s && set > 0) s.n = 0
   }
 
   private addSet(defs: LightDef[], max: number): number {

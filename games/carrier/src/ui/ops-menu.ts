@@ -39,6 +39,8 @@ export class OpsMenu {
   enabled = true
   /** While flying, E is right rudder (src/flight/input.ts), so the menu leaves the key alone. */
   airborne = false
+  /** Out in the boat: the menu opens, read-only (every operation says AT SEA). */
+  atSea = false
   onToggle: ((open: boolean) => void) | null = null
 
   constructor(
@@ -152,7 +154,7 @@ export class OpsMenu {
     const info = this.info
     if (!views || !info) return
     const secs = (ms: number) => Math.ceil(ms / 1000)
-    const key = JSON.stringify([info.ship, info.color, views.map((v) => [v.state, v.reason, secs(v.readyIn), v.slots.map((s) => [s.player === null ? "" : info.name(s.player), secs(s.readyIn)])])])
+    const key = JSON.stringify([info.ship, info.color, this.atSea, views.map((v) => [v.state, v.reason, secs(v.readyIn), v.slots.map((s) => [s.player === null ? "" : info.name(s.player), secs(s.readyIn)])])])
     if (key !== this.key) {
       this.key = key
       this.el.style.setProperty("--tc", info.color)
@@ -191,7 +193,9 @@ export class OpsMenu {
             ? `RECHARGING ${Math.ceil(v.readyIn / 1000)}S`
             : v.state === "in-use"
               ? "IN USE"
-              : (REASON[v.reason!] ?? "UNAVAILABLE")
+              : v.reason === "flying" && this.atSea
+                ? "AT SEA"
+                : (REASON[v.reason!] ?? "UNAVAILABLE")
     // The guns sit under a hairline, after the helm and the aircraft.
     const sep = v.op.kind === "gun" && this.views?.[i - 1]?.op.kind !== "gun" ? " sep" : ""
     return `<div class="om-op ${v.state}${sep}" ${v.state === "available" ? `data-op="${i}"` : ""}>

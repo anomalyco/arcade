@@ -13,7 +13,11 @@
 //   SAM PORT/STBD, 5-INCH GUN. One gunner per mount (cap 1), no recharge to take the seat (ammo and reload are the
 //   weapon's). Taking a gun frees your previous role (the helm hands off; a pilot on deck or another gun switches);
 //   picking any other operation leaves the gun. A gunner is a crew member like a pilot on deck (`CrewPlayer.mount`).
-// - Who may run one: a member of the ship, not already out in a vehicle (in the air the menu is read-only).
+// - The boat (`boat: true` vehicle, LAUNCH BOAT, shared/boat.ts): one per ship, craned over the port side at the
+//   elevator. A driver holds its slot like a pilot holds a jet's (`plane` is the slot), but the room ends the sortie
+//   itself: brought back alongside its carrier ("landed": the slot frees at once) or sunk ("crashed": it recharges 40 s).
+//   Either way the driver goes back to the role they launched from (the helm or their gun, if still free; shared/crew.ts).
+// - Who may run one: a member of the ship, not already out in a vehicle (in the air or at sea the menu is read-only).
 //
 // Adding a vehicle type: one entry here (its id is the `op` of its slots and what the client's vehicle module keys
 // on) plus that module. A new kind of seat: an `OpKind`, its `opError` and `shipOps` cases and its `runOp` (crew.ts).
@@ -33,6 +37,8 @@ export type Op = {
   name: string
   kind: OpKind
   vehicle?: VehicleKind
+  /** The interceptor boat (shared/boat.ts) rather than an aircraft. */
+  boat?: boolean
   /** The gun's mount (index into carrier-spec `WEAPON_MOUNTS`), for `gun` operations. */
   mount?: number
   /** At most this many in use at once per ship. */
@@ -47,6 +53,8 @@ export const OPS: readonly Op[] = [
   { id: "hornet", label: "LAUNCH HORNET", name: "HORNET", kind: "vehicle", vehicle: "hornet", cap: 2, recharge: 30 },
   // One strike jet per ship: the stealth bomber is the scarcer, heavier asset, so losing it costs longer than a Hornet.
   { id: "f35", label: "LAUNCH F-35C", name: "F-35C", kind: "vehicle", vehicle: "f35", cap: 1, recharge: 45 },
+  // One fast interceptor per ship, lowered over the port side at the elevator.
+  { id: "boat", label: "LAUNCH BOAT", name: "BOAT", kind: "vehicle", boat: true, cap: 1, recharge: 40 },
   ...gunOps(),
 ]
 
@@ -76,7 +84,16 @@ export function gunnerAt(c: Crew, s: CrewShip, mount: number): number | null {
 export const opById = (id: string): Op | undefined => OPS.find((o) => o.id === id)
 export const isOpId = (v: unknown): v is string => typeof v === "string" && OPS.some((o) => o.id === v)
 
-/** The aircraft type flown from slot `slot` of ship `s` (the Hornet for an unknown slot or op). */
+/** Whether slot `slot` of ship `s` is the boat's. */
+export const slotIsBoat = (s: CrewShip | undefined, slot: number): boolean => !!(s && opById(s.aircraft[slot]?.op ?? "")?.boat)
+
+/** Whether player `id` is out in (or holds the slot of) their ship's boat. */
+export function playerBoat(c: Crew | null, id: number): boolean {
+  const p = c?.players.find((x) => x.id === id)
+  return !!p && p.plane >= 0 && slotIsBoat(c!.ships.find((x) => x.id === p.ship), p.plane)
+}
+
+/** The aircraft type flown from slot `slot` of ship `s` (the Hornet for an unknown slot or op, and for the boat's). */
 export const slotVehicle = (s: CrewShip | undefined, slot: number): VehicleKind => (s && opById(s.aircraft[slot]?.op ?? "")?.vehicle) || "hornet"
 
 /** The aircraft type player `id` flies (or last held a slot in), from the crew. */

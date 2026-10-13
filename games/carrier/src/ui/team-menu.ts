@@ -20,9 +20,9 @@ export type TeamActions = {
   lock(locked: boolean): void
 }
 
-/** Where a pilot's jet is: on the deck, in the air, or down (crashed, about to be back on the deck). */
-export type JetStatus = "deck" | "air" | "down"
-const STATUS: Record<JetStatus, string> = { deck: "ON DECK", air: "AIRBORNE", down: "DOWN" }
+/** Where a pilot's jet is: on the deck, in the air, or down (crashed, about to be back on the deck); or out in the boat. */
+export type JetStatus = "deck" | "air" | "down" | "boat"
+const STATUS: Record<JetStatus, string> = { deck: "ON DECK", air: "AIRBORNE", down: "DOWN", boat: "BOAT" }
 
 /** A Tab press shorter than this pins the menu open (or unpins it). */
 const TAP_MS = 220

@@ -18,6 +18,7 @@ import { type Archipelago, terrainHeight } from "./islands"
 import { PLANE, type ShipPoseLike, type Vec3, worldToShip } from "./plane"
 import { type Sea, seaHeight } from "./sea"
 import { FLEET, waterlineDistance } from "./fleet"
+import { BOAT_ARMOR, BOAT_HEALTH } from "./boat"
 import { LOADOUTS, WEAPONS, type Target, type VehicleKind, type WeaponKind, type KillWeapon, canHurt, hash01 } from "./weapons"
 
 const G = 9.81
@@ -477,6 +478,8 @@ export type Fighter = {
   rounds: number
   /** Last health sent out while repairing (repair updates go out in whole steps). */
   sent: number
+  /** A boat (shared/boat.ts), not a jet: same health scale, its damage scaled per weapon (`BOAT_ARMOR`), no stores. */
+  boat?: boolean
 }
 
 export type CombatEvent =
@@ -520,8 +523,8 @@ export class CombatWorld {
     public authority = true,
   ) {}
 
-  /** A jet entering combat (a new sortie): full health and budgets. */
-  spawn(id: number, team: number, vehicle: VehicleKind = "hornet", t = this.t): Fighter {
+  /** A jet entering combat (a new sortie): full health and budgets. `boat`: a boat instead (no budgets at all). */
+  spawn(id: number, team: number, vehicle: VehicleKind = "hornet", t = this.t, boat = false): Fighter {
     let f = this.fighters.get(id)
     if (!f) {
       f = { id, team, vehicle, hp: 0, alive: true, hitAt: -1e9, by: -1, w: "gun", missiles: 0, bombs: 0, flares: 0, rounds: 0, sent: 0 }
@@ -539,6 +542,8 @@ export class CombatWorld {
     f.bombs = spec.bombs
     f.flares = spec.flares
     f.rounds = spec.weapons.includes("gun") ? WEAPONS.gun.rate : 0
+    f.boat = boat
+    if (boat) f.missiles = f.bombs = f.flares = f.rounds = 0
     return f
   }
 
@@ -606,7 +611,7 @@ export class CombatWorld {
   gunHit(shooter: number, target: number, n: number, dist = 0): number {
     const a = this.fighters.get(shooter)
     const b = this.fighters.get(target)
-    if (!a || !b || !a.alive || !b.alive || !canHurt(a.team, a.id, b.team, b.id) || !LOADOUTS[a.vehicle].weapons.includes("gun")) return 0
+    if (!a || !b || !a.alive || !b.alive || a.boat || !canHurt(a.team, a.id, b.team, b.id) || !LOADOUTS[a.vehicle].weapons.includes("gun")) return 0
     const g = WEAPONS.gun
     if (dist > g.muzzle * g.life + 400) return 0
     const use = Math.max(0, Math.min(Math.floor(n), Math.floor(a.rounds)))
@@ -622,7 +627,7 @@ export class CombatWorld {
    */
   spendRounds(shooter: number, n: number): number {
     const a = this.fighters.get(shooter)
-    if (!a || !a.alive || !LOADOUTS[a.vehicle].weapons.includes("gun")) return 0
+    if (!a || !a.alive || a.boat || !LOADOUTS[a.vehicle].weapons.includes("gun")) return 0
     const use = Math.max(0, Math.min(Math.floor(n), Math.floor(a.rounds)))
     a.rounds -= use
     return use
@@ -661,6 +666,7 @@ export class CombatWorld {
   }
 
   private damage(f: Fighter, amount: number, by: number, w: KillWeapon): void {
+    if (f.boat) amount *= BOAT_ARMOR[w]
     if (!this.authority || !f.alive || amount <= 0) return
     f.hp = Math.max(0, f.hp - amount)
     f.sent = f.hp
@@ -861,6 +867,18 @@ export class CombatWorld {
     const g = WEAPONS.gun
     for (const f of this.fighters.values()) {
       if (!f.alive) continue
+      if (f.boat) {
+        // A boat carries nothing to refill; it repairs on its own clock.
+        const b = BOAT_HEALTH
+        if (f.hp < h.max && this.t - f.hitAt > b.repairDelay) {
+          f.hp = Math.min(h.max, f.hp + b.repair * dt)
+          if (f.hp - f.sent >= 5 || f.hp >= h.max) {
+            f.sent = f.hp
+            this.events.push({ k: "hp", on: f.id, hp: Math.round(f.hp * 10) / 10, by: -1, w: "" })
+          }
+        }
+        continue
+      }
       const spec = LOADOUTS[f.vehicle]
       if (spec.weapons.includes("gun")) f.rounds = Math.min(g.rate * 0.6, f.rounds + g.rate * dt * 1.15)
       // Slightly quicker than the client's own rearm, so a legitimate launch is never refused for clock skew.

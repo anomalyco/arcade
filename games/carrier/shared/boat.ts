@@ -22,7 +22,7 @@ import { type Ground, type GroundShip, groundHit, shipAt, sweep } from "./combat
 import { type Archipelago, islandFootprint, terrainHeight } from "./islands"
 import { type ShipPoseLike, type Vec3, shipToWorld, worldToShip } from "./plane"
 import { type Sea, seaHeight } from "./sea"
-import { canHurt, hash01, type Target } from "./weapons"
+import { type KillWeapon, WEAPONS, canHurt, hash01, type Target } from "./weapons"
 
 export const KNOT = 0.514444
 const G = 9.81
@@ -1143,56 +1143,53 @@ export class BoatRounds {
 
 // ---- health and damage --------------------------------------------------------------------------------------------
 
-/** What can hurt a boat (and what the boat's gun does to others). */
-export type BoatWeapon = "cannon" | "gun" | "missile" | "bomb" | "ciws" | "shell" | "crash"
-
+/**
+ * Boat health, on the jets' scale (WEAPONS.health.max, 100), so a boat is a fighter in the room's combat world
+ * (shared/combat.ts `Fighter.boat`): its kill feed, stats, kill credit and repair come for free. What makes it tougher
+ * than a jet (about twice) is `BOAT_ARMOR`, a per-weapon multiplier on the damage a jet would take.
+ */
 export const BOAT_HEALTH = {
-  max: 200,
+  max: WEAPONS.health.max,
   /** Smoke below this share of max, fire below `fire`. */
   smoke: 0.5,
   fire: 0.25,
   /** Field repair after `repairDelay` s without damage, hp per second. */
   repairDelay: 12,
-  repair: 3,
+  repair: 1.5,
   /** A boat lost within this long of damage credits the attacker (s). */
-  credit: 12,
-  /** Seconds a destroyed boat takes to go under (it is drawn sinking), and the slot's recharge after (shared/ops.ts). */
+  credit: WEAPONS.health.credit,
+  /** Seconds a destroyed boat takes to go under (drawn sinking) before its slot starts recharging (shared/ops.ts). */
   sink: 7,
 }
 
-/** Damage per hit. `cannon` is the boat's 25 mm, per round; `gun` the jets' M61, per round. */
+/**
+ * Damage multipliers on a boat for each weapon, against what the same hit does to a jet: the jets' M61 chips at the
+ * armoured hull (a long burst, ~125 rounds), a missile or SAM blast nearly halves it, a bomb or a 5-inch shell on top of
+ * it sinks it, the CIWS shreds it in about a second and a half. `cannon` is the boats' own 25 mm (`BOAT_DAMAGE`).
+ */
+export const BOAT_ARMOR: Readonly<Record<KillWeapon, number>> = { gun: 0.4, missile: 0.85, bomb: 1, ciws: 0.7, sam: 0.6, shell: 1.2, cannon: 1 }
+
+/** The 25 mm per round: on a boat (before armor), a jet (jet hp) and a carrier (1,000 hp: chip damage via the fleet). */
 export const BOAT_DAMAGE = {
-  /** The 25 mm on a boat, a jet (100 hp) and a carrier (1,000 hp: chip damage). */
-  cannonBoat: 9,
-  cannonJet: 7,
+  cannonBoat: 4.5,
+  cannonJet: 4,
   cannonShip: 1.2,
-  /** Jet cannon round, CIWS round, a missile strike (proximity: falls to `missileEdge` at 12 m), a bomb burst at the
-   *  centre (falls to `bombEdge` at 30 m), a 5-inch shell burst (falls to `shellEdge` at 15 m), a jet crashing into it. */
-  gun: 1.6,
-  ciws: 4,
-  missile: 140,
-  missileEdge: 60,
-  missileFuse: 12,
-  bomb: 220,
-  bombEdge: 50,
-  bombRadius: 30,
-  shell: 110,
-  shellEdge: 20,
-  shellRadius: 15,
-  crash: 80,
 }
 
-/** Damage to a boat from weapon `w` (`n` rounds for the guns; `dist` m from a burst for the explosives). */
-export function boatDamage(w: BoatWeapon, n = 1, dist = 0): number {
-  const D = BOAT_DAMAGE
+/** What a hit by `w` does to a boat, armor included: `n` rounds for the guns, `dist` m from a burst for the rest. */
+export function boatDamage(w: KillWeapon, n = 1, dist = 0): number {
   const fall = (at: number, edge: number, radius: number) => (dist > radius ? 0 : at + (edge - at) * (dist / radius))
-  if (w === "cannon") return D.cannonBoat * n
-  if (w === "gun") return D.gun * n
-  if (w === "ciws") return D.ciws * n
-  if (w === "missile") return fall(D.missile, D.missileEdge, D.missileFuse)
-  if (w === "bomb") return fall(D.bomb, D.bombEdge, D.bombRadius)
-  if (w === "shell") return fall(D.shell, D.shellEdge, D.shellRadius)
-  return D.crash
+  const W = WEAPONS
+  let raw: number
+  if (w === "cannon") raw = BOAT_DAMAGE.cannonBoat * n
+  else if (w === "gun") raw = W.gun.damage * n
+  else if (w === "ciws") raw = 1.6 * n
+  else if (w === "missile") raw = fall(W.missile.damage, W.missile.edge, W.missile.fuse)
+  else if (w === "bomb") raw = fall(W.bomb.damage, W.bomb.edge, W.bomb.radius)
+  // shared/gunnery.ts: SAM 110→50 over its 15 m fuse, 5-inch shell 75→25 over 16 m.
+  else if (w === "sam") raw = fall(110, 50, 15)
+  else raw = fall(75, 25, 16)
+  return raw * BOAT_ARMOR[w]
 }
 
 /** Damage state of a boat's health: 0 fine, 1 smoking, 2 burning, 3 destroyed. */
@@ -1205,17 +1202,18 @@ export function boatState(hp: number): 0 | 1 | 2 | 3 {
 }
 
 /** One boat's health in a `BoatCombat`. */
-export type BoatLife = { id: number; team: number; hp: number; alive: boolean; hitAt: number; by: number; w: BoatWeapon; rounds: number; sent: number }
+export type BoatLife = { id: number; team: number; hp: number; alive: boolean; hitAt: number; by: number; w: KillWeapon; rounds: number; sent: number }
 
 export type BoatEvent =
   /** A boat's health changed (damage, or repair with by −1). */
-  | { k: "bhp"; on: number; hp: number; by: number; w: BoatWeapon | "" }
+  | { k: "bhp"; on: number; hp: number; by: number; w: KillWeapon | "" }
   /** A boat was destroyed, by whom (−1 lost on its own) and with what. */
-  | { k: "bkill"; on: number; by: number; w: BoatWeapon | "" }
+  | { k: "bkill"; on: number; by: number; w: KillWeapon | "" }
 
 /**
- * Boat health for a room (or the offline harness): spawn on launch, `hit` applies damage (friendly fire off), a
- * round budget checks reported 25 mm rounds, repair after a quiet spell, kill credit. Events accumulate in `events`.
+ * Boat health on its own, for the offline harness and tests (the room keeps boats in its CombatWorld instead): spawn on
+ * launch, `hit` applies a final amount (`boatDamage`; friendly fire off), a round budget checks reported 25 mm rounds
+ * (the room's `BoatBudget` does the same), repair after a quiet spell, kill credit. Events accumulate in `events`.
  */
 export class BoatCombat {
   t = 0
@@ -1246,7 +1244,7 @@ export class BoatCombat {
   }
 
   /** `amount` damage to boat `on` from `by` (team `team`) with `w`. Refused for friends and dead boats. */
-  hit(on: number, by: number, team: number, w: BoatWeapon, amount: number): number {
+  hit(on: number, by: number, team: number, w: KillWeapon, amount: number): number {
     const b = this.boats.get(on)
     if (!b || !b.alive || amount <= 0 || !canHurt(team, by, b.team, on)) return 0
     b.hp = Math.max(0, b.hp - amount)
@@ -1262,7 +1260,7 @@ export class BoatCombat {
     return amount
   }
 
-  /** A boat lost on its own (ran into something, left the map): destroyed, credited to a recent attacker. */
+  /** A boat lost on its own: destroyed, credited to a recent attacker. */
   lose(on: number): void {
     const b = this.boats.get(on)
     if (!b || !b.alive) return
@@ -1282,7 +1280,7 @@ export class BoatCombat {
       b.rounds = Math.min(GUN.rate * 1.5, b.rounds + GUN.rate * 1.15 * dt)
       if (b.hp < h.max && t - b.hitAt > h.repairDelay) {
         b.hp = Math.min(h.max, b.hp + h.repair * dt)
-        if (b.hp - b.sent >= 10 || b.hp >= h.max) {
+        if (b.hp - b.sent >= 5 || b.hp >= h.max) {
           b.sent = b.hp
           this.events.push({ k: "bhp", on: b.id, hp: Math.round(b.hp * 10) / 10, by: -1, w: "" })
         }
@@ -1290,6 +1288,38 @@ export class BoatCombat {
     }
   }
 }
+
+/** The room's check on a boat's reported 25 mm rounds: a budget refilled at the gun's rate (a little over, for skew). */
+export class BoatBudget {
+  private rounds = new Map<number, { n: number; t: number }>()
+
+  /** Up to `n` rounds `id` may claim at sea time t (spent). */
+  spend(id: number, n: number, t: number): number {
+    let r = this.rounds.get(id)
+    if (!r) this.rounds.set(id, (r = { n: GUN.rate, t }))
+    r.n = Math.min(GUN.rate * 1.5, r.n + Math.max(0, t - r.t) * GUN.rate * 1.15)
+    r.t = t
+    const use = Math.max(0, Math.min(Math.floor(n), Math.floor(r.n)))
+    r.n -= use
+    return use
+  }
+
+  forget(id: number): void {
+    this.rounds.delete(id)
+  }
+}
+
+/** The driver's orders on the wire: [throttle, steer, boost 0/1, turret yaw, turret pitch (rad, ×1000), trigger 0/1]. */
+export type BoatCtlTuple = [throttle: number, steer: number, boost: number, yaw: number, pitch: number, trigger: number]
+export const BOAT_CTL = 6
+
+export function isBoatCtl(v: unknown): v is BoatCtlTuple {
+  if (!Array.isArray(v) || v.length !== BOAT_CTL || !v.every((x) => typeof x === "number" && Number.isFinite(x))) return false
+  return v[0] >= -1 && v[0] <= 1 && v[1] >= -1 && v[1] <= 1 && (v[2] === 0 || v[2] === 1) && Math.abs(v[3]) <= 4000 && Math.abs(v[4]) <= 2000 && (v[5] === 0 || v[5] === 1)
+}
+
+/** What the boat's rounds struck, in a `bhits` report: 0 a jet, 1 a boat, 2 a carrier. */
+export const BOAT_HIT = { jet: 0, boat: 1, ship: 2 } as const
 
 // ---- wire ---------------------------------------------------------------------------------------------------------
 

@@ -255,6 +255,15 @@ export class Weapons {
     if (j) rearm(j.rack)
   }
 
+  /**
+   * Boats this frame (shared/boat.ts; `surface` targets): our rounds and the world's blasts hit them, the seeker never
+   * locks them, and they are not jets (no racks, no cosmetic M61 fire, no wreck).
+   */
+  surface(list: readonly Target[]): void {
+    this.boats = list
+  }
+  private boats: readonly Target[] = []
+
   /** Our jet's model matrix this frame (to hang the missiles on its rails). */
   setOwnModel(m: Float32Array | null): void {
     this.hasOwnModel = !!m
@@ -600,6 +609,7 @@ export class Weapons {
     // (and so were not fed this frame) are still known for the feed and their wrecks.
     this.targets.length = 0
     for (const j of this.jets.values()) if (j.seen === this.frameNo) this.targets.push(j)
+    for (const b of this.boats) this.targets.push(b)
     if (this.flying && this.own.alive) this.targets.push(this.own)
     this.world.step(t, this.targets)
     if (this.world.events.length) for (const e of this.world.events.splice(0)) this.apply(e)
@@ -609,6 +619,7 @@ export class Weapons {
     for (const j of this.jets.values()) this.jetList.push(j)
     this.targets.length = 0
     for (const j of this.jetList) this.targets.push(j)
+    for (const b of this.boats) this.targets.push(b)
     for (const [id] of this.lockers) if (!this.jets.has(id)) this.lockers.delete(id)
     if (this.net) {
       this.hitIn -= dt

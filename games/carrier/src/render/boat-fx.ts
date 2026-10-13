@@ -115,10 +115,9 @@ export class BoatFx {
     }
   }
 
-  /** A faceted white spray chunk (weapon-fx's translucent sea-spray ball, as its round strikes use), falling at 1 g. */
+  /** A faceted white spray chunk (weapon-fx's sea-spray particle), falling at 1 g. */
   private rock(p: Vec3, vx: number, vy: number, vz: number, life: number, s0: number, s1: number): void {
-    // weapon-fx.ts keeps its particle spawner private; the boat's spray is the same particle as its sea strikes.
-    this.wfx["spawnRock"](0, p[0], p[1], p[2], vx, vy, vz, life, s0, s1, SPRAY[0], SPRAY[1], SPRAY[2], 0, 0, 0.85, 9.81, 0.6, [1, rnd(1.1, 1.6), 1])
+    this.wfx.spray(p[0], p[1], p[2], vx, vy, vz, life, s0, s1, rnd(1.1, 1.6))
   }
 
   /** A 25 mm round leaving the muzzle at `pos` along unit `dir`. */

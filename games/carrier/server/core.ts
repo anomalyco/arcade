@@ -24,15 +24,37 @@ import { type Archipelago, makeArchipelago } from "../shared/islands"
 import { CombatWorld, type CombatEvent, type GroundShip } from "../shared/combat"
 import { BOW_Z, DECK_X0, DECK_X1, ISLAND, STERN_Z } from "../shared/carrier-spec"
 import { Fleet, type ShipDamageKind, deckOpen, hullLimits, packHull, settled } from "../shared/fleet"
-import { opById } from "../shared/ops"
+import { opById, playerBoat, slotIsBoat } from "../shared/ops"
+import {
+  BOAT,
+  BOAT_DAMAGE,
+  BOAT_HEALTH,
+  BOAT_HIT,
+  BOAT_MODE,
+  type Boat,
+  BoatBudget,
+  type BoatControls,
+  type BoatMode,
+  type BoatTuple,
+  CRANE,
+  GUN,
+  boatStep,
+  boatVelocity,
+  cranePoint,
+  makeBoat,
+  packBoat,
+  recoverTime,
+  recoverable,
+  releaseBoat,
+} from "../shared/boat"
 import { placeLocal } from "../shared/landing"
 import { playerVehicle } from "../shared/ops"
-import { makePlane, worldToShip } from "../shared/plane"
+import { makePlane, shipToWorld, worldToShip } from "../shared/plane"
 import { type ClientMsg, compactPlane, type PlaneEntry, type PlaneTuple, PLANE_MODE, type ShipTuple, type StatTuple, type World, decodeClient, encode } from "../shared/protocol"
 import { vehicleCode } from "../shared/vehicles"
 import { makeTarget, type Target } from "../shared/weapons"
 import { GunneryWorld, type Interceptable, asInterceptable, packGunBoom, packTurret, shipHitOf, unpackGunFire } from "../shared/gunnery"
-import { type Sea, makeSea } from "../shared/sea"
+import { type Sea, makeSea, seaHeight } from "../shared/sea"
 import { SHIP, type Ship, type ShipControls, headingTo, makeShip, shipStep } from "../shared/ship"
 import { RoomTime, TIME_OVERRIDE_LEAD, type TimeOverride, packTime, timeOverride } from "../shared/daycycle"
 import { RoomWeather, WEATHER_OVERRIDE_LEAD, type WeatherOverride, type WeatherSea, makeWeather, makeWeatherSea, overrideTo, packOverride, unpackWeather } from "../shared/weather"
@@ -55,6 +77,27 @@ const randomU32 = () => crypto.getRandomValues(new Uint32Array(1))[0]!
 const round = (v: number, k: number) => Math.round(v * k) / k
 
 type Sim = { ship: Ship; controls: ShipControls }
+
+/** A boat out (shared/boat.ts): the room runs its sim on its driver's orders, and its crane, recovery and sinking. */
+type BoatSim = {
+  boat: Boat
+  ctl: BoatControls
+  yaw: number
+  pitch: number
+  firing: boolean
+  mode: BoatMode
+  /** Sea time the mode began. */
+  modeAt: number
+  /** The carrier its crane belongs to (the driver's ship). */
+  ship: number
+  /** The recovery's ship-local start. */
+  from: { x: number; z: number; yaw: number } | null
+  /** Recovery arms once the boat has been out of the pickup zone (a fresh launch starts inside it). */
+  armed: boolean
+}
+
+/** A boat's 25 mm can't plausibly hit anything farther than this (m). */
+const BOAT_REACH = GUN.muzzle * GUN.life + 300
 
 /**
  * One room, independent of the transport so tests can drive it. Holds a world while anyone has joined, and with it
@@ -117,6 +160,11 @@ export class RoomCore {
   private gunnery = new GunneryWorld({ sea: null, arch: null, ships: [] }, true)
   private turretsAt = -Infinity
   private turretsSent = 0
+  /** Every boat out, by its driver's player id (shared/boat.ts), and the check on their reported rounds. */
+  private boats = new Map<number, BoatSim>()
+  private boatsAt = -Infinity
+  private boatsSent = 0
+  private boatBudget = new BoatBudget()
 
   constructor(
     private clock: () => number = Date.now,
@@ -163,6 +211,8 @@ export class RoomCore {
       case "newship":
         return this.apply(conn, createShip(crew, id, msg.team, now))
       case "recover": {
+        // A boat's sortie ends only in the room (brought alongside, or sunk).
+        if (playerBoat(crew, id)) return
         // Landing on another friendly ship only counts if its deck is open (the client checks too).
         const on = msg.ship !== undefined && deckOpen(this.fleet.hulls.get(msg.ship), this.seaTime(now)) ? msg.ship : -1
         return this.apply(conn, recover(crew, id, msg.how, now, on))
@@ -178,7 +228,7 @@ export class RoomCore {
       }
       case "plane": {
         const p = playerOf(crew, id)
-        if (!p || p.plane < 0) return
+        if (!p || p.plane < 0 || playerBoat(crew, id)) return
         // The jet's type is the pilot's slot's, whatever the client says (old clients send none).
         const vehicle = playerVehicle(crew, id)
         const jet = msg.p.slice(0, 17) as PlaneTuple
@@ -197,8 +247,22 @@ export class RoomCore {
         return
       }
       case "gun":
-        if ((playerOf(crew, id)?.plane ?? -1) >= 0) this.sendOthers(id, encode({ type: "gun", id, on: msg.on }))
+        if ((playerOf(crew, id)?.plane ?? -1) >= 0 && !this.boats.has(id)) this.sendOthers(id, encode({ type: "gun", id, on: msg.on }))
         return
+      case "boat": {
+        const b = this.boats.get(id)
+        if (!b) return
+        const c = msg.c
+        b.ctl.throttle = c[0]
+        b.ctl.steer = c[1]
+        b.ctl.boost = c[2] === 1
+        b.yaw = c[3] / 1000
+        b.pitch = c[4] / 1000
+        b.firing = c[5] === 1
+        return
+      }
+      case "bhits":
+        return this.boatHits(id, msg.k, msg.on, msg.n, now)
       case "hits": {
         const a = this.where(id)
         const b = this.where(msg.on)
@@ -351,6 +415,7 @@ export class RoomCore {
     }
     this.apply(null, tickCrew(this.crew, now))
     this.settleHulls(t)
+    this.stepBoats(t, now)
     this.stepCombat(t)
     this.stepGunnery(t)
     this.fleet.step(t, Math.max(0, Math.min(1, t - this.fleetT)))
@@ -365,6 +430,12 @@ export class RoomCore {
       const list = [...this.gunnery.gunners.values()].map((g) => packTurret(g.ship, g))
       this.turretsSent = list.length
       this.sendAll(encode({ type: "turrets", t: list }))
+    }
+    if (now - this.boatsAt >= SHIPS_EVERY_MS && (this.boats.size || this.boatsSent)) {
+      this.boatsAt = now
+      const b = this.boatList()
+      this.boatsSent = b.length
+      this.sendAll(encode({ type: "boats", b }))
     }
     if (now - this.planesAt >= PLANES_EVERY_MS && (this.planes.size || this.planesSent)) {
       this.planesAt = now
@@ -400,6 +471,8 @@ export class RoomCore {
 
   /** World position of a player's relayed jet (landing jets placed on the room's copy of their carrier), or null. */
   private where(id: number): [number, number, number] | null {
+    const b = this.boats.get(id)
+    if (b) return b.mode === BOAT_MODE.drive ? [b.boat.x, b.boat.heave + 1.5, b.boat.z] : null
     const p = this.planes.get(id)
     if (!p || p[1] === PLANE_MODE.deck || p[1] === PLANE_MODE.crashed) return null
     if (p[1] === PLANE_MODE.landing) {
@@ -432,6 +505,25 @@ export class RoomCore {
       tg.vx = p[9]
       tg.vy = p[10]
       tg.vz = p[11]
+      list.push(tg)
+    }
+    // Boats on the water: blasts, shells and CIWS rounds hit them; heat-seekers never lock them (`surface`).
+    for (const [id, b] of this.boats) {
+      const f = this.combat.fighters.get(id)
+      if (!f || b.mode !== BOAT_MODE.drive) continue
+      let tg = this.targets.get(id)
+      if (!tg) this.targets.set(id, (tg = makeTarget(id, f.team)))
+      const [vx, vz] = boatVelocity(b.boat)
+      const dt = Math.max(0, Math.min(1, t - b.boat.t))
+      tg.team = f.team
+      tg.alive = f.alive
+      tg.surface = true
+      tg.x = b.boat.x + vx * dt
+      tg.y = b.boat.heave + 1.5
+      tg.z = b.boat.z + vz * dt
+      tg.vx = vx
+      tg.vy = 0
+      tg.vz = vz
       list.push(tg)
     }
     return list
@@ -553,6 +645,122 @@ export class RoomCore {
     return encode({ type: "hulls", h: [...this.fleet.hulls.values()].map((h) => packHull(h, t)) })
   }
 
+  // ---- boats (shared/boat.ts) --------------------------------------------------------------------------------------
+
+  /**
+   * Every boat to sea time t: on the crane (lowered over its carrier's port side, released into the sim after
+   * CRANE.release), driven on its driver's orders against the islands and every hull, picked up when it comes back
+   * alongside slowly (the crew sortie ends "landed" once the hoist is done), or sinking (it ends "crashed").
+   */
+  private stepBoats(t: number, now: number): void {
+    const crew = this.crew
+    const sea = this.sea
+    if (!crew || !sea || !this.boats.size) return
+    const dt = BOAT.tick
+    const done: [number, "landed" | "crashed"][] = []
+    for (const [id, s] of this.boats) {
+      const p = playerOf(crew, id)
+      if (!p) continue
+      s.ship = p.ship
+      const home = this.hullPoses.get(p.ship) ?? null
+      const b = s.boat
+      if (t - b.t > MAX_CATCHUP) b.t = t - dt
+      while (b.t + dt <= t) {
+        if (s.mode === BOAT_MODE.launch) {
+          b.t += dt
+          if (b.t - s.modeAt >= CRANE.release) {
+            if (!home) continue
+            const at = cranePoint(home)
+            releaseBoat(b, home, seaHeight(sea, at[0], at[2], b.t), b.t)
+            s.mode = BOAT_MODE.drive
+            s.modeAt = b.t
+          }
+        } else if (s.mode === BOAT_MODE.drive) {
+          boatStep(b, s.ctl, sea, this.arch, this.hullList, dt)
+          const alive = this.combat.fighters.get(id)?.alive ?? false
+          const pick = home && alive ? recoverable(b, home) : null
+          if (!pick) s.armed = true
+          else if (s.armed) {
+            s.mode = BOAT_MODE.recover
+            s.modeAt = b.t
+            s.from = pick
+          }
+        } else if (s.mode === BOAT_MODE.recover) {
+          b.t += dt
+          if (s.from && b.t - s.modeAt >= recoverTime(s.from.x, s.from.z)) {
+            done.push([id, "landed"])
+            break
+          }
+        } else {
+          // Sinking: adrift, losing way, until it has gone under.
+          b.u *= Math.exp(-dt * 0.9)
+          b.v *= Math.exp(-dt * 0.9)
+          b.r *= Math.exp(-dt * 1.2)
+          const sh = Math.sin(b.heading)
+          const ch = Math.cos(b.heading)
+          b.x += (b.u * sh + b.v * ch) * dt
+          b.z += (-b.u * ch + b.v * sh) * dt
+          b.t += dt
+          if (b.t - s.modeAt >= BOAT_HEALTH.sink) {
+            done.push([id, "crashed"])
+            break
+          }
+        }
+      }
+    }
+    for (const [id, how] of done) {
+      this.boats.delete(id)
+      this.apply(null, recover(crew, id, how, now))
+    }
+  }
+
+  /** Every boat on the wire. */
+  private boatList(): BoatTuple[] {
+    const out: BoatTuple[] = []
+    for (const [id, s] of this.boats) {
+      const b = s.boat
+      out.push(packBoat({ id, t: b.t, x: b.x, z: b.z, heading: b.heading, u: b.u, v: b.v, r: b.r, power: b.power, rudder: b.rudder, yaw: s.yaw, pitch: s.pitch, mode: s.mode, modeAt: s.modeAt, ship: s.ship, from: s.from, firing: s.firing, boosting: b.boosting }))
+    }
+    return out
+  }
+
+  /**
+   * A boat's reported 25 mm hits: a boat on the water, alive, with the rounds in its budget, within the gun's reach of
+   * an enemy jet (`k` 0), boat (1) or carrier (2). Jets and boats take the damage in the combat world (kill credit,
+   * feed, stats); a carrier takes chip damage on the side facing the boat.
+   */
+  private boatHits(id: number, k: number, on: number, n: number, now: number): void {
+    const s = this.boats.get(id)
+    const me = this.combat.fighters.get(id)
+    if (!s || !me || !me.alive || s.mode !== BOAT_MODE.drive) return
+    const t = this.seaTime(now)
+    const b = s.boat
+    if (k === BOAT_HIT.ship) {
+      const ship = this.hullPoses.get(on)
+      if (!ship || ship.team === me.team || Math.hypot(ship.x - b.x, ship.z - b.z) > BOAT_REACH + 200) return
+      const use = this.boatBudget.spend(id, n, t)
+      if (!use) return
+      const l = worldToShip(ship, b.x, b.heave + 2, b.z, [0, 0, 0])
+      const at = shipToWorld(ship, Math.max(-25, Math.min(25, l[0])), 8, Math.max(STERN_Z + 5, Math.min(BOW_Z - 5, l[2])), [0, 0, 0])
+      this.damageShip(on, use * BOAT_DAMAGE.cannonShip, at, id, "gun")
+      return
+    }
+    const f = this.combat.fighters.get(on)
+    if (!f || !f.alive || f.team === me.team || on === id || (k === BOAT_HIT.boat) !== !!f.boat) return
+    const at = this.where(on)
+    if (!at || Math.hypot(at[0] - b.x, at[1] - b.heave, at[2] - b.z) > BOAT_REACH) return
+    const use = this.boatBudget.spend(id, n, t)
+    if (!use) return
+    this.combat.t = Math.max(this.combat.t, t)
+    this.combat.hurt(on, use * (f.boat ? BOAT_DAMAGE.cannonBoat : BOAT_DAMAGE.cannonJet), id, "cannon")
+    this.flushCombat()
+  }
+
+  /** The boats out (for tests). */
+  get boatSims(): ReadonlyMap<number, { boat: Boat; mode: BoatMode; ship: number }> {
+    return this.boats
+  }
+
   // ---- hooks for ship guns (gunnery) -------------------------------------------------------------------------------
 
   /**
@@ -607,6 +815,12 @@ export class RoomCore {
       if (e.k === "boom") this.sendAll(encode({ type: "boom", b: [e.owner, e.seq, round(e.x, 10), round(e.y, 10), round(e.z, 10), e.on, e.water ? 1 : 0, e.bomb ? 1 : 0] }))
       else if (e.k === "hp") this.sendAll(encode({ type: "hp", id: e.on, hp: e.hp, by: e.by, w: e.w }))
       else if (e.k === "kill") {
+        // A boat destroyed goes down (its slot recharges once it has sunk).
+        const boat = this.boats.get(e.on)
+        if (boat && boat.mode !== BOAT_MODE.sunk) {
+          boat.mode = BOAT_MODE.sunk
+          boat.modeAt = boat.boat.t
+        }
         this.sendAll(encode({ type: "kill", on: e.on, by: e.by, w: e.w }))
         this.tally(e.on).deaths++
         if (e.by >= 0 && e.by !== e.on) this.tally(e.by).kills++
@@ -671,7 +885,12 @@ export class RoomCore {
       // A launch is a fresh jet in the fight; a recovery (or leaving) takes it out.
       if (e.k === "launch") {
         const p = this.crew && playerOf(this.crew, e.player)
-        this.combat.spawn(e.player, p?.team ?? 0, playerVehicle(this.crew, e.player), this.seaTime(this.clock()))
+        const t = this.seaTime(this.clock())
+        // The boat goes onto the elevator under its crane; a jet onto the catapult (its client runs that).
+        if (p && slotIsBoat(shipOf(this.crew!, e.ship), e.slot)) {
+          this.combat.spawn(e.player, p.team, "hornet", t, true)
+          this.boats.set(e.player, { boat: makeBoat(0, 0, 0, t), ctl: { throttle: 0, steer: 0, boost: false }, yaw: 0, pitch: 0, firing: false, mode: BOAT_MODE.launch, modeAt: t, ship: e.ship, from: null, armed: false })
+        } else this.combat.spawn(e.player, p?.team ?? 0, playerVehicle(this.crew, e.player), t)
       } else if (e.k === "recover" || e.k === "leave") this.combat.remove(e.player)
       if (e.k === "new") this.spawn(e.ship)
       else if (e.k === "sink") {
@@ -685,6 +904,12 @@ export class RoomCore {
         if (sim) sim.controls = { throttle: sim.controls.throttle, rudder: 0 }
       }
     }
+    // A boat whose driver no longer holds its slot (recovered, left) is gone.
+    for (const id of this.boats.keys())
+      if (!this.crew || !playerBoat(this.crew, id)) {
+        this.boats.delete(id)
+        this.boatBudget.forget(id)
+      }
     this.syncGunners()
     this.sendAll(encode({ type: "crew", crew: this.crew! }))
   }
@@ -811,6 +1036,9 @@ export class RoomCore {
     this.fleet = new Fleet()
     this.hullPoses.clear()
     this.hullList.length = 0
+    this.boats.clear()
+    this.boatsSent = 0
+    this.boatBudget = new BoatBudget()
   }
 
   private sendAll(data: string): void {

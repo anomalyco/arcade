@@ -41,6 +41,7 @@ const CSS = `
 #bt .cross::before { left: 12px; top: 0; width: 2px; height: 26px; clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%, 0 65%, 100% 65%, 100% 100%, 0 100%); }
 #bt .cross::after { left: 0; top: 12px; width: 26px; height: 2px; clip-path: polygon(0 0, 35% 0, 35% 100%, 0 100%, 0 0, 65% 0, 100% 0, 100% 100%, 65% 100%); }
 #bt .cross.out { opacity: 0.35; }
+#bt .cross.hit::before, #bt .cross.hit::after { background: #ffd36b; box-shadow: 0 0 8px #ff9a2a; }
 #bt .pip { position: absolute; left: 0; top: 0; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 1.5px solid #9dffb8; border-radius: 50%; box-shadow: 0 0 6px rgba(10, 60, 30, 0.4); will-change: transform; }
 #bt .cue { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.5em; margin-right: -0.5em; zoom: var(--hud, 1); opacity: 0.9; }
 #bt .home { position: absolute; left: 0; top: 0; color: var(--home, var(--ink)); will-change: transform; }
@@ -82,6 +83,7 @@ export class BoatHud {
   private cardSub: HTMLElement
   private last = ""
   private lastKm = ""
+  private hitTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(parent: HTMLElement = document.body) {
     if (!document.getElementById("bt-css")) {
@@ -130,6 +132,13 @@ export class BoatHud {
   /** Your team's colour (CSS), for the carrier marker. */
   set homeColor(c: string) {
     this.homeEl.style.setProperty("--home", c)
+  }
+
+  /** Our rounds struck something: the crosshair flashes. */
+  hit(): void {
+    this.cross.classList.add("hit")
+    if (this.hitTimer) clearTimeout(this.hitTimer)
+    this.hitTimer = setTimeout(() => this.cross.classList.remove("hit"), 120)
   }
 
   /** Full-screen card (boat lost), or null to hide it. */

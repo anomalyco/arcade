@@ -1,4 +1,5 @@
 import { type Mixer, mixer } from "./mixer"
+import { type LoopHandle, sfx } from "./sfx-bank"
 
 /** What one boat's engine voice needs each frame. */
 export type BoatVoiceInput = {
@@ -24,6 +25,8 @@ type Voice = {
   hiss: AudioBufferSourceNode
   hissGain: GainNode
   rpm: number
+  /** The recorded engine (sfx-bank "boat-engine") once it has loaded; the procedural one is its placeholder. */
+  loop: LoopHandle | null
 }
 
 /** Overall trims against the jets and the gun (scripts/audio-demo.ts levels). */
@@ -124,12 +127,16 @@ export class BoatAudio {
     dieselA.start()
     dieselB.start()
     whine.start()
-    return { out, pan, dieselA, dieselB, dieselLp, dieselGain, whine, whineGain, rush, rushLp, rushGain, hiss, hissGain, rpm: 0.2 }
+    return { out, pan, dieselA, dieselB, dieselLp, dieselGain, whine, whineGain, rush, rushLp, rushGain, hiss, hissGain, rpm: 0.2, loop: null }
   }
 
-  private drive(v: Voice, x: BoatVoiceInput, level: number, dt: number, lowpass = 20000): void {
+  private drive(v: Voice, x: BoatVoiceInput, level: number, dt: number, lowpass = 20000, at?: ArrayLike<number>): void {
     const ctx = this.ctx!
     const now = ctx.currentTime
+    // The recorded engine takes over once loaded: re-pitched with the revs, louder with power and speed. The
+    // procedural engine then keeps only a little of its water layers under it.
+    if (!v.loop?.playing) v.loop = sfx().loop("boat-engine", at ? { at, ref: 30, bus: "engines" } : { bus: "own" })
+    const rec = !!v.loop
     // The jets race in the air: the engines unload.
     const air = x.wet <= 0 ? 0.3 : 0
     const want = 0.18 + 0.72 * x.power + air + (x.boosting ? 0.12 : 0)
@@ -139,21 +146,29 @@ export class BoatAudio {
     v.dieselA.frequency.setTargetAtTime(fire, now, 0.05)
     v.dieselB.frequency.setTargetAtTime(fire, now, 0.05)
     v.dieselLp.frequency.setTargetAtTime(Math.min(lowpass, 220 + 1500 * r * r), now, 0.06)
-    v.dieselGain.gain.setTargetAtTime(0.35 + 0.35 * r, now, 0.06)
+    v.dieselGain.gain.setTargetAtTime(rec ? 0 : 0.35 + 0.35 * r, now, 0.06)
     v.whine.frequency.setTargetAtTime(170 + 620 * r, now, 0.06)
-    v.whineGain.gain.setTargetAtTime(Math.min(lowpass, 20000) > 2000 ? 0.012 + 0.04 * r * r : 0.005, now, 0.08)
+    v.whineGain.gain.setTargetAtTime(rec ? 0 : Math.min(lowpass, 20000) > 2000 ? 0.012 + 0.04 * r * r : 0.005, now, 0.08)
     const wet = Math.min(1, x.wet * 1.5)
     v.rushLp.frequency.setTargetAtTime(Math.min(lowpass, 180 + 1100 * x.speed), now, 0.08)
     v.rushGain.gain.setTargetAtTime((0.05 + 0.5 * x.speed) * wet, now, 0.07)
     v.hissGain.gain.setTargetAtTime(lowpass > 4000 ? 0.06 * x.speed * x.speed * wet : 0, now, 0.07)
-    v.out.gain.setTargetAtTime(level, now, 0.05)
+    v.out.gain.setTargetAtTime(rec ? level * 0.35 : level, now, 0.05)
+    if (v.loop) {
+      const g = (0.35 + 0.65 * Math.min(1, 0.3 * r + 0.8 * x.speed)) * (at ? 1.4 : 0.9)
+      v.loop.set(at ? { gain: g, rate: 0.75 + 0.5 * r, at } : { gain: g, rate: 0.75 + 0.5 * r })
+    }
   }
 
   /** Your boat (the listener sits behind it), or null when you have none. Call every frame. */
   ownBoat(x: BoatVoiceInput | null, dt: number): void {
     if (!this.ctx) return
     if (!x) {
-      if (this.own) this.own.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2)
+      if (this.own) {
+        this.own.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2)
+        this.own.loop?.stop(0.4)
+        this.own.loop = null
+      }
       return
     }
     this.own ??= this.voice(this.mix.bus.own, false)
@@ -166,10 +181,10 @@ export class BoatAudio {
   }
 
   /**
-   * Another boat `id` at `dist` metres, `pan` −1 (left) .. 1 (right). Only the nearest few are voiced: call with all of
-   * them and their distances (the caller sorts), then `endRemotes`.
+   * Another boat `id` at world point `at`, `dist` metres away, `pan` −1 (left) .. 1 (right). Only the nearest few are
+   * voiced: call with all of them, nearest first, then `endRemotes`.
    */
-  remote(id: number, x: BoatVoiceInput, dist: number, pan: number, dt: number): void {
+  remote(id: number, x: BoatVoiceInput, at: ArrayLike<number>, dist: number, pan: number, dt: number): void {
     if (!this.ctx || this.seen.size >= MAX_REMOTE || dist > 1500) return
     this.seen.add(id)
     let v = this.remotes.get(id)
@@ -180,7 +195,7 @@ export class BoatAudio {
     }
     v.pan!.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), this.ctx.currentTime, 0.05)
     const g = REMOTE / (1 + (dist / 45) ** 1.6)
-    this.drive(v, x, g, dt, 600 + 12000 / (1 + dist / 80))
+    this.drive(v, x, g, dt, 600 + 12000 / (1 + dist / 80), at)
   }
 
   /** Silences and drops remote voices not heard this frame. */
@@ -190,6 +205,7 @@ export class BoatAudio {
     for (const [id, v] of this.remotes) {
       if (this.seen.has(id)) continue
       v.out.gain.setTargetAtTime(0, ctx.currentTime, 0.1)
+      v.loop?.stop(0.4)
       const stop = ctx.currentTime + 0.6
       for (const s of [v.dieselA, v.dieselB, v.whine, v.rush, v.hiss]) s.stop(stop)
       this.remotes.delete(id)

@@ -43,7 +43,7 @@
 //
 // Room codes for the lobby live here too, since the server and the client both need them.
 
-import { makeSlots, opById, opError, readySlot } from "./ops"
+import { gunnerAt, makeSlots, opById, opError, readySlot } from "./ops"
 import { Rng } from "./rng"
 
 export { slotReady } from "./ops"
@@ -127,6 +127,8 @@ export type CrewPlayer = {
   waitSince: number
   /** When they boarded their current ship (room ms): the longest-serving member becomes captain. */
   since: number
+  /** The role a boat driver launched from (the room's only: not sent), restored when the boat comes back or sinks. */
+  back?: { role: Role; mount: number }
 }
 
 /** Plain JSON, so the room can send it as is. `made` counts ships ever created (names and hull numbers). `refitAt`
@@ -495,10 +497,25 @@ export function recover(c: Crew, id: number, how: RecoverHow, now: number, lande
   const s = shipOf(c, p.ship)
   if (!s) return fail("no-ship")
   if (p.role !== "pilot" || p.plane < 0) return fail("not-flying")
-  const readyAt = how === "crashed" ? now + (opById(s.aircraft[p.plane]?.op ?? "")?.recharge ?? 0) * 1000 : now
+  const op = opById(s.aircraft[p.plane]?.op ?? "")
+  const readyAt = how === "crashed" ? now + (op?.recharge ?? 0) * 1000 : now
   const slot = land(p, s, readyAt, now)
   trimSlots(s)
   const ev: CrewEvent[] = [{ k: "recover", player: id, ship: s.id, slot, how, readyAt }]
+  // Back from the boat: the role they launched it from, if it is still free (else a pilot on deck).
+  if (op?.boat) {
+    const back = p.back
+    delete p.back
+    if (back?.role === "helm" && s.helm === null) {
+      vacate(c, p, now, ev, false)
+      board(p, s, "helm", now, ev)
+    } else if (back?.role === "gunner" && back.mount >= 0 && gunnerAt(c, s, back.mount) === null) {
+      p.role = "gunner"
+      p.mount = back.mount
+      ev.push({ k: "gun", player: p.id, ship: s.id, mount: p.mount })
+    }
+    return done(ev)
+  }
   // Landed on another ship of the team: aboard it now, if it has room.
   const to = how === "landed" && landedOn !== s.id ? shipOf(c, landedOn) : undefined
   if (to && to.team === s.team && hasRoom(to)) {
@@ -584,6 +601,9 @@ export function runOp(c: Crew, id: number, opId: string, now: number): Outcome {
   const p = playerOf(c, id)!
   const s = shipOf(c, p.ship)!
   const ev: CrewEvent[] = []
+  // The boat remembers where its driver came from (shared/ops.ts); any other operation forgets it.
+  if (op.boat) p.back = { role: p.role, mount: p.mount }
+  else delete p.back
   if (p.role === "helm") {
     setHelm(s, null, ev)
     p.role = "pilot"

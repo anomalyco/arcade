@@ -407,7 +407,7 @@ export function samLockStep(lock: Lock, dt: number, x: number, y: number, z: num
   let best: Target | null = null
   let bestAngle = Infinity
   for (const t of targets) {
-    if (!t.alive || t.team === team || blind(t.id)) continue
+    if (!t.alive || t.team === team || t.surface || blind(t.id)) continue
     const dx = t.x - x
     const dy = t.y - y
     const dz = t.z - z
