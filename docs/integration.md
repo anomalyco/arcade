@@ -75,4 +75,23 @@ These client previews support local play. The sniper network proof uses a mocked
   compatible tyre-smoke pipeline for that attachment layout. No browser/GPU errors remained in the cited proofs.
 - Cited local evidence: `~/code/home/artifacts/2026-10-13-arcade-integration/` (screenshots and JSON reports).
 
-Final clean-archive production smokes and Worker dry-runs are pending. No deployment or main-branch push has run.
+Final verification used a clean `git archive` of `c61876d` on the Studio through Hivemind. Frozen install, the package
+check, all three game checks, all three production smokes, and all three `wrangler deploy --dry-run` commands passed.
+The Blackout/Getaway production smokes check the lobby; their gameplay GPU proof is the separate Metal run above.
+No deployment or main-branch push has run.
+
+To repeat from a clean export:
+
+```sh
+git archive HEAD | tar -x -C /path/to/empty/export
+cd /path/to/empty/export
+bun install --frozen-lockfile
+bun run check:packages
+for game in getaway blackout outbreak; do
+  (cd "games/$game" && bun run check && bun ../../scripts/smoke.mjs && bunx --no-install wrangler deploy --dry-run)
+done
+```
+
+Run the checks through the fleet in this environment. The smoke runner requires an installed Playwright Chromium.
+The repair commits after source integration contain the adapter and GPU fixes; this document records their
+combined verification rather than relying on any source PR's checks.
