@@ -485,7 +485,9 @@ export class Game {
         return
       case "veh": {
         const d = this.veh.draws.get(e.id)
-        if (d && me && e.what !== "seat" && Math.hypot(d.x - me.x, d.y - me.y) < 20) this.vsound.door(d.x - me.x, d.y - me.y, d.kind === "scooter")
+        const near = d && me && Math.hypot(d.x - me.x, d.y - me.y) < 25
+        if (near && e.what !== "seat" && Math.hypot(d.x - me.x, d.y - me.y) < 20) this.vsound.door(d.x - me.x, d.y - me.y, d.kind)
+        if (near && e.what !== "exit" && e.seat === 0) this.vsound.start(d.id, d.x - me.x, d.y - me.y, d.kind)
         return
       }
       case "wreck":
