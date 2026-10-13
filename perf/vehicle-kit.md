@@ -36,6 +36,19 @@ gearbox hysteresis, nitro gating and Blackout's rotation adapter.
 These are appearance, behavior and offline signal checks. No listening test or new CPU/GPU performance
 measurement was made.
 
+## Workspace rebase
+
+Rebased onto `1bac7ef` (PR #4) and converted game imports to `@arcade/kit/vehicle/*`.
+The smoke trail, smoke renderer and emission implementation are byte-for-byte unchanged from the original
+vehicle commit. Post-rebase Metal captures still match both Getaway baseline PNGs. Its offline audio has
+145 differing PCM samples, each by one 16-bit unit, with the same shift/nitro events and zero clipping.
+Blackout's driving captures, vehicle poses and audio results match the original vehicle proof; the initial
+lamp frame has minor startup rendering variation. Reports are `workspace-*-after.json` beside the original results.
+
+Clean `git archive` verification on the Studio passed the root frozen install, package typecheck and 25 tests,
+both full game checks (177/12 skips and 285), both Wrangler dry-run bundles and both production smoke checks
+(`lobby ready`).
+
 ## Reproduce
 
 Run the game previews through Nexus as `vehicle-kit-getaway` and `vehicle-kit-blackout`, then from the repo root:
@@ -52,13 +65,15 @@ cannot enter the test tree. The check installs at the root, checks the package a
 bundles and smoke-loads both production builds:
 
 ```sh
-git archive HEAD -o captures/vehicle-kit-workspace.tar
+git archive HEAD -o vehicle-kit-workspace.tar
 hivemind run --kind render -- sh -c '
+  set -eu
   clean=$(mktemp -d)
   trap '\''rm -rf "$clean"'\'' EXIT
-  tar -xf captures/vehicle-kit-workspace.tar -C "$clean"
+  tar -xf vehicle-kit-workspace.tar -C "$clean"
   sh "$clean/scripts/check-vehicle.sh"
 '
+rm vehicle-kit-workspace.tar
 ```
 
 Raw JSON results are in `perf/vehicle-kit/`. Ignored PNG/WAV originals are in `captures/vehicle-kit/` and the
