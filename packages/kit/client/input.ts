@@ -8,7 +8,11 @@ export type MuxState = { x: number; y: number; vx: number; vy: number; aim: numb
 export type MuxKey = { type: "mux-key"; kind: "keydown" | "keyup"; code: string; key: string; shiftKey?: boolean; altKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }
 export type MuxMouse = { type: "mux-mouse"; nx: number; ny: number; buttons?: number; down?: number; up?: number; wheel?: number }
 
-export class Input {
+export class Input<Selection extends string = string> {
+  spellMode = false
+  castSpell: (() => Selection) | null = null
+  private casts: { x: number; y: number; spell: Selection }[] = []
+  takeCast() { const click = this.casts.shift(); return this.enabled ? click : undefined }
   private keys = new Set<string>()
   /** The character each held key produced when it went down. */
   private chars = new Map<string, string>()
@@ -53,7 +57,7 @@ export class Input {
       if (this.mux) this.forward(msg)
       else this.key(msg)
     })
-    addEventListener("blur", () => {
+    window.addEventListener("blur", () => {
       if (this.mux) this.forward({ type: "mux-release" })
       this.release()
     })
@@ -73,7 +77,7 @@ export class Input {
       this.mouseEvent(e, { wheel: e.deltaY })
     }, { passive: false })
     canvas.addEventListener("contextmenu", (e) => e.preventDefault())
-    addEventListener("message", (e) => {
+    window.addEventListener("message", (e) => {
       if (!this.accepts(e)) return
       const m = e.data
       if (m?.type === "mux-key" && (m.kind === "keydown" || m.kind === "keyup") && typeof m.code === "string" && typeof m.key === "string") this.key(m)
@@ -87,6 +91,7 @@ export class Input {
   forward(message: object): void { if (this.mux) parent.postMessage({ ...message, run: this.muxRun }, this.parentOrigin) }
 
   release(): void {
+    this.casts = []
     this.keys.clear()
     this.chars.clear()
     this.firePressedAt = -Infinity
@@ -115,7 +120,7 @@ export class Input {
     if (e.code === "KeyR" || k === "r") this.reloadPressed = true
     if ((e.code === "KeyG" || k === "g") && !repeat) this.equipPressed = true
     if ((e.code === "KeyV" || k === "v") && !repeat) this.meleePressed = true
-    if (this.interactCodes.includes(e.code) && !repeat) this.enterPressed = true
+    if ((this.interactCodes.includes(e.code) && (!this.spellMode || e.code !== "KeyE") || this.interactCodes.includes("KeyF") && k === "f") && !repeat) this.enterPressed = true
     if (e.code === "KeyC" && !repeat) this.seatPressed = true
   }
 
@@ -128,6 +133,9 @@ export class Input {
   private pointer(m: MuxMouse): void {
     this.mouse.x = Math.max(0, Math.min(1, m.nx)) * innerWidth
     this.mouse.y = Math.max(0, Math.min(1, m.ny)) * innerHeight
+    // Canvas presses are edges, independent of mouseup and the fixed simulation clock.
+    // Do not derive these from held buttons: dragging out of a Lab control must not cast.
+    if (this.spellMode && this.enabled && m.down === 0 && this.casts.length < 8 && this.castSpell) this.casts.push({ ...this.mouse, spell: this.castSpell() })
     if (Number.isInteger(m.buttons)) {
       this.setFire((m.buttons! & 1) !== 0)
       this.looking = (m.buttons! & 2) !== 0

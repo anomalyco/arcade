@@ -3,6 +3,7 @@ import { SHOP_H as SHOP_TOP } from "../../shared/maps/downtown-town"
 import { MAT, Mesh, type Rgb } from "./mesh"
 import { PAL, buildProp, deskMonitorLights, hex, rng } from "./models"
 import { STREET_PROPS, STREET_WALLS, streetProp, streetWall } from "./street-models"
+import { castleFixture, castleProp, castleWall } from "./castle"
 
 const FLOOR_KIND = { carpet: 0, tile: 1, wood: 2, concrete: 3, grate: 4, asphalt: 5, sidewalk: 6, plaza: 7, grass: 8, parking: 9 } as const
 const FLOOR_COLOR = { carpet: PAL.carpet, tile: PAL.tile, wood: PAL.wood, concrete: PAL.concrete, grate: PAL.grate, asphalt: hex(0x24262c), sidewalk: hex(0x45484f), plaza: hex(0x4e5058), grass: hex(0x30482e), parking: hex(0x2a2c32) } as const
@@ -729,7 +730,7 @@ export function bakeBounce(map: MapDef, monitorIntensity = 1): FloorMap {
 }
 
 /** Static geometry for a floor, chunked: floors, walls and their fittings, windows' frames, furniture, light fixtures. */
-export function buildLevel(map: MapDef): LevelData {
+export function buildLevel(map: MapDef, castle = false): LevelData {
   const [W, H] = map.size
   const jobs: Job[] = []
   const grid = new WallGrid(map.walls)
@@ -743,10 +744,15 @@ export function buildLevel(map: MapDef): LevelData {
     for (let x = f.rect[0]; x < f.rect[2] - 1e-3; x += CHUNK)
       for (let z = f.rect[1]; z < f.rect[3] - 1e-3; z += CHUNK) {
         const r: Rect4 = [x, z, Math.min(f.rect[2], x + CHUNK), Math.min(f.rect[3], z + CHUNK)]
-        jobs.push({ x: (r[0] + r[2]) / 2, z: (r[1] + r[3]) / 2, build: (m) => floorQuad(m, r, y, FLOOR_COLOR[f.kind], MAT.floor, FLOOR_KIND[f.kind]) })
+        jobs.push({ x: (r[0] + r[2]) / 2, z: (r[1] + r[3]) / 2, build: (m) => floorQuad(m, r, y, castle ? hex(0x59606b) : FLOOR_COLOR[f.kind], MAT.floor, castle ? 10 : FLOOR_KIND[f.kind]) })
       }
   })
   for (const t of map.tape) jobs.push({ x: (t[0] + t[2]) / 2, z: (t[1] + t[3]) / 2, build: (m) => floorQuad(m, t, 0.012, PAL.tape, MAT.tape) })
+  if (map.id === "castle-hall") jobs.push({ x: 11, z: 10.5, build: (m) => {
+    floorQuad(m,[4.5,8.2,17.5,13],0.014,hex(0x85623a),MAT.lit)
+    floorQuad(m,[4.6,8.3,17.4,12.9],0.016,hex(0x4c2932),MAT.lit)
+    for (const z of [8.5,12.65]) floorQuad(m,[4.8,z,17.2,z+0.045],0.018,hex(0x9a7745),MAT.lit)
+  } })
   if (downtown) {
     const raised = map.floors.filter((f) => !LOW_FLOORS.has(f.kind)).map((f) => f.rect)
     for (const p of map.paint ?? []) {
@@ -763,10 +769,10 @@ export function buildLevel(map: MapDef): LevelData {
     }
     for (const c of curbs(map)) jobs.push({ x: (c[0] + c[2]) / 2, z: (c[1] + c[3]) / 2, build: (m) => m.box(c[0], 0, c[1], c[2], CURB + 0.004, c[3], hex(0x5e6168), MAT.lit, 0, hex(0x6c6f76)) })
   }
-  map.walls.forEach((w, i) => jobs.push({ x: (w.rect[0] + w.rect[2]) / 2, z: (w.rect[1] + w.rect[3]) / 2, build: (m) => wallGeometry(m, w, i, grid, seed) }))
+  map.walls.forEach((w, i) => jobs.push({ x: (w.rect[0] + w.rect[2]) / 2, z: (w.rect[1] + w.rect[3]) / 2, build: (m) => castle ? castleWall(m, w, seed + i) : wallGeometry(m, w, i, grid, seed) }))
   for (const w of map.windows) jobs.push({ x: (w[0] + w[2]) / 2, z: (w[1] + w[3]) / 2, build: (m) => windowGeometry(m, w, downtown) })
-  map.props.forEach((p, i) => jobs.push({ x: (p.rect[0] + p.rect[2]) / 2, z: (p.rect[1] + p.rect[3]) / 2, build: (m) => (STREET_PROPS.has(p.kind) ? streetProp(m, p, seed + i * 17, map) : buildProp(m, p, seed + i * 17)) }))
-  for (const l of map.lights) jobs.push({ x: l.x, z: l.y, build: (m) => fixture(m, l, rng(seed + l.id * 101)) })
+  map.props.forEach((p, i) => jobs.push({ x: (p.rect[0] + p.rect[2]) / 2, z: (p.rect[1] + p.rect[3]) / 2, build: (m) => castle ? castleProp(m, p, seed + i * 17) : (STREET_PROPS.has(p.kind) ? streetProp(m, p, seed + i * 17, map) : buildProp(m, p, seed + i * 17)) }))
+  for (const l of map.lights) jobs.push({ x: l.x, z: l.y, build: (m) => castle ? castleFixture(m, l) : fixture(m, l, rng(seed + l.id * 101)) })
 
   const buckets = new Map<number, Job[]>()
   for (const j of jobs) {
@@ -780,7 +786,7 @@ export function buildLevel(map: MapDef): LevelData {
   const base = new Mesh()
   if (downtown) surroundings(base, map)
   else {
-    base.quad([-200, -36, 200], [200, -36, 200], [200, -36, -200], [-200, -36, -200], [0, 1, 0], [0, 0, 0], MAT.city)
+    base.quad([-200, -36, 200], [200, -36, 200], [200, -36, -200], [-200, -36, -200], [0, 1, 0], [0, 0, 0], castle ? MAT.lit : MAT.city)
     base.box(-0.4, -0.8, -0.4, W + 0.4, -0.01, H + 0.4, hex(0x141826))
   }
   chunks.push({ data: base.pack(), box: [-1e5, -1e5, 1e5, 1e5] })

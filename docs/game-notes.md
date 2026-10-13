@@ -6,6 +6,14 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Proving a change
 
+- **Keep spell proof on the real input path.** Blackout's `scripts/prove-wizards-spells.ts` reads scrolls with F and
+  draws through Chromium mouse events. Its manual sandbox clock advances both simulation and animation between
+  captures; advancing simulation alone left the rig's planted feet behind. The inspected Metal proof captured a
+  dummy in a growing moon, its moving polar shadow and damaging pop, a rising skeleton pursuing its caster, and
+  a 71.6%-confidence degraded moon. Dvorak movement continued while drawing; there were no browser errors.
+  `shared/sim/spells.ts` owns the authoritative entities and `tests/spells.test.ts` verifies deterministic replay
+  and two room connections receiving the same cast. Runtime cost and live two-browser room play are unmeasured.
+
 - **Measure before you edit.** Record a baseline on the unchanged code, then make one change at a time. Use one warmup
   and seven or more measured runs, and compare medians with their spread. Results go in `perf/results.jsonl`.
 - **Separate GPU time from frame time.** Frame time is capped by vsync. Use `timestamp-query` where the adapter has it,
@@ -525,6 +533,14 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   four tip-first/tilted cones resting on their sloping sides. Evidence: `perf/clutter/rest-proof.json`. Runtime cost
   has not been remeasured; body-pair contacts still use decorative rounded proxies.
 
+- **Swap presentation while retaining the rig and map.** Blackout's opt-in Wizards lab study registers a second set
+  of meshes against the existing bones, uses a matte team-tinted cloth material, and rebuilds static geometry only
+  when the switch changes. `src/render/castle.ts` retains collision footprints and light IDs while replacing office
+  furniture and fittings; the existing lamp-power buffer drives smooth torch flicker. `scripts/prove-wizards.ts`
+  captured walking, aiming, casting, ragdoll, the furniture fixture and sandbox on Apple's Metal adapter with no
+  browser errors, including a live off/on toggle. Two tests check source-map preservation and finite model normals.
+  CPU/GPU cost has not been measured. Viewer links and weapon mappings are in `games/blackout/docs/wizards.md`.
+
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and
@@ -751,6 +767,13 @@ Candidates from the code audits; measure and playtest before moving any into the
   between-tick tap in both paths (0 predicted/authoritative shots); the fix produced 1/1. Each fixed path completed
   the consecutive-tap, sniper-hold, double-click, cooldown, Lab and rifle-hold checks with 12/12 shots. Physical
   trackpad gesture recognition and GPU cost were not measured.
+
+- **Latch click edges with their selection.** Blackout's wizard prototype stores canvas mousedown position and spell
+  choice until a fixed tick consumes them (`src/game/input.ts`, `game.ts`). Mouseup cannot erase a quick tap, and a
+  number-key/wheel change cannot change a pending cast. Blur and Lab interaction clear the bounded queue. A Metal
+  browser proof put down/up and a selection change between ticks, exercised five rapid clicks, Dvorak movement and
+  a Lab slider click, and checked separate server cooldowns and active caps. `scripts/prove-wizards-spells.ts` also
+  captured player/furniture orbit, pop damage, and a skeleton's wind-up and hit on its caster. Runtime cost is unmeasured.
 
 - **Ignore blur releases from the previous input owner.** On an iframe focus change, the old window's blur message can
   arrive after the new window's keydown or mousedown and cancel the new input. `games/blackout/compare.html` releases

@@ -3,8 +3,10 @@ import { type MapChoice, mapChoiceOf } from "./maps"
 import { type ModeId, modeOf } from "./sim/modes"
 import type { RosterRow, Snapshot } from "./sim/view"
 import type { Intent, SimEvent } from "./sim/world"
+import { spellConfig, type SpellConfig, type CastIntent } from "./sim/spell-config"
 
 export type ClientMsg =
+  | { type: "spells"; config: SpellConfig }
   /** `build` is the client's BUILD (shared/build.gen.ts); the server tells a mismatched client to reload. */
   | { type: "hello"; name: string; id?: string; gun: Gun; equip: Equip; build?: string }
   | { type: "intent"; seq: number; i: Intent }
@@ -81,10 +83,17 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null
       if (!i || typeof o.seq !== "number" || !Number.isInteger(o.seq) || o.seq < 0) return null
-      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, ...(i.firePressed === true ? { firePressed: true } : {}), reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), use: i.use === true, melee: i.melee === true, ...(i.enter === true ? { enter: true } : {}), ...(i.seat === true ? { seat: true } : {}), ...(i.horn === true ? { horn: true } : {}) } }
+      const c = i.cast as Record<string, unknown> | undefined
+      const cast: CastIntent | undefined = c && typeof c === "object" && (c.spell === null || c.spell === "moon" || c.spell === "necromancy") && [c.x,c.y,c.quality].every(v => typeof v === "number" && Number.isFinite(v))
+        ? { spell: c.spell, quality: num(c.quality, 0, 1), x: num(c.x,-1000,1000), y: num(c.y,-1000,1000) } : undefined
+      if (cast) i.cast = cast
+      else delete i.cast
+      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, ...(i.firePressed === true ? { firePressed: true } : {}), reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), use: i.use === true, melee: i.melee === true, ...(cast ? { cast } : {}), ...(i.enter === true ? { enter: true } : {}), ...(i.seat === true ? { seat: true } : {}), ...(i.horn === true ? { horn: true } : {}) } }
     }
     case "gun":
       return { type: "gun", gun: gunOf(o.gun) }
+    case "spells":
+      return { type: "spells", config: spellConfig(o.config) }
     case "equip":
       return { type: "equip", equip: equipOf(o.equip) }
     case "vote": {

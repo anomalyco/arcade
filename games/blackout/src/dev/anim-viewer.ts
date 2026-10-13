@@ -21,6 +21,7 @@ import { animation } from "../game/anim-settings"
 import { Rng } from "../../shared/rng"
 import { at } from "../game/rig"
 import { RIG } from "../render/person"
+import { wizardWeapon } from "../render/wizard"
 
 const SEED = 990001
 const W = 30
@@ -176,6 +177,7 @@ const ACTORS: Actor[] = [
       return { x: 21 + Math.cos(t * 1.6) * 1.2, y: 14 + Math.sin(t * 1.6) * 1.2, aim: t * 1.6 + Math.PI / 2, alive: c < 1.5 }
     },
   },
+  { id: "cast", gun: "rifle", at: () => ({ x: 16, y: 11, aim: 0, alive: true }) },
 ]
 
 class ScriptSession implements Session {
@@ -196,7 +198,7 @@ class ScriptSession implements Session {
     return this.snap
   }
   roster(): RosterRow[] {
-    return this.actors.map((a) => ({ id: a.id, name: a.id, human: false, kills: 0, deaths: 0, team: -1, caps: 0, plants: 0, defuses: 0 }))
+    return ACTORS.map((a) => ({ id: a.id, name: a.id, human: false, kills: 0, deaths: 0, team: -1, caps: 0, plants: 0, defuses: 0 }))
   }
   drainEvents(): SimEvent[] {
     const e = this.events
@@ -270,6 +272,7 @@ async function main() {
   const zoom = Number(params.get("zoom") ?? "15")
   const manual = params.has("manual")
   if (manual) { const rng = new Rng(7); Math.random = () => rng.next() }
+  const weapons = only?.[0] === "weapons" ? (["rifle", "shotgun", "sniper"] as const).map((gun) => renderer.addModel(wizardWeapon(gun))) : []
   const session = new ScriptSession(only)
   const sound = new Sound()
   const settings = juiceSettings(!params.has("vanilla"))
@@ -284,9 +287,9 @@ async function main() {
     const yaw = (Number(side) * Math.PI) / 180
     const elev = (Number(params.get("elev") ?? "12") * Math.PI) / 180
     cam.update = (aspect: number) => {
-      const target = [cam.x, 0.8, cam.z]
+      const target = [cam.x, 1.15, cam.z]
       const d = cam.dist
-      cam.eye = [target[0]! + Math.sin(yaw) * Math.cos(elev) * d, 0.8 + Math.sin(elev) * d, target[2]! + Math.cos(yaw) * Math.cos(elev) * d]
+      cam.eye = [target[0]! + Math.sin(yaw) * Math.cos(elev) * d, 1.15 + Math.sin(elev) * d, target[2]! + Math.cos(yaw) * Math.cos(elev) * d]
       const view = mat4.lookAt(cam.eye, target, [0, 1, 0])
       cam.viewProj = mat4.multiply(mat4.perspective(0.5, aspect, 0.5, 200), view)
       return cam.viewProj as Float32Array
@@ -314,7 +317,13 @@ async function main() {
     if (lead && !params.has("x")) cam.snap(lead.x, lead.y)
     else cam.follow(focus.x, focus.y, 0, 0, dt, false)
     cam.dist = zoom
-    renderer.render(game.build(cam, innerWidth, innerHeight, dt))
+    // Reuse the rig's existing free-hand throw for a casting pose study.
+    const caster = game.avatars.get("cast")
+    if (settings.wizards && caster) caster.throwAt = Math.floor(session.t / 3) * 3 + 0.2
+    const f = game.build(cam, innerWidth, innerHeight, dt)
+    f.grade[1] = 0 // The viewer is a spectator, not a dead player; inspect the actual team colours.
+    for (const [i, model] of weapons.entries()) f.batches.push({ model, count: 1, data: new Float32Array([focus.x + (i - 1) * 1.5, 1.2, focus.y, 0, 1, 1, 1, 1, 0, 0, 1, 0]) })
+    renderer.render(f)
     const beats = ["Walk", "Run", "Strafe left", "Strafe right", "Backpedal", "Turn in place", "Hard stop", "Recoil", "Death"]
     if (only?.includes("proof")) info.textContent = `${animation.animationMode === "old" ? "Old" : "New"} · ${beats[Math.min(8, Math.floor(session.t / 2))]}`
   }

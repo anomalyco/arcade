@@ -4,9 +4,11 @@ import { motionSettings } from "../render/motion"
 import { bloodSplatterSettings } from "../game/splatter"
 import { LIGHT_DEFAULTS, type LightSettings } from "@arcade/kit/vehicle/lights"
 import { lightControls } from "@arcade/kit/vehicle/lab"
+import { SPELL_CONTROLS, spellDefaults, type SpellConfig } from "../../shared/sim/spell-config"
 
 export const JUICE_LABELS = {
   volumes: "Volume Smoke",
+  wizards: "Wizards",
   monitors: "Monitor Lights", chairs: "Chair Shadows", ao: "Multi-Bounce AO",
   paper: "Fluttering Paper", glass: "Glass Shards",
   sparks: "Monitor Sparks", casings: "Shell Casings", trauma: "Shake & Kill Punch",
@@ -20,12 +22,13 @@ export const LOOK_LABELS = {
   lookCity: "City Depth", lookGloss: "Tile Reflections", lookShadows: "Long Furniture Shadows",
   lookShadowFilter: "Smooth Polar Shadows", lookMotion: "Motion Blur",
 } as const
-export type Juice = Record<keyof typeof JUICE_LABELS | keyof typeof LOOK_LABELS, boolean> & LightSettings & { monitorIntensity: number; aoStrength: number }
+export type Juice = Record<keyof typeof JUICE_LABELS | keyof typeof LOOK_LABELS, boolean> & LightSettings & SpellConfig & { wizardPitch: number; monitorIntensity: number; aoStrength: number }
 export const juiceSettings = (enabled = true): Juice => ({ volumes: enabled, monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, trauma: enabled,
   lookGrade: enabled, lookPractical: enabled, lookWalls: enabled, lookAO: enabled, lookCaps: enabled, lookFloors: enabled, lookCity: enabled, lookGloss: enabled, lookShadows: false,
   lookShadowFilter: enabled, lookMotion: false,
   vehicleSprings: enabled, vehicleWheels: enabled, vehicleLamps: enabled, vehicleSkids: enabled, tyreSmoke: enabled,
   vehicleSparks: enabled, backfire: enabled, vehicleImpact: enabled, vehicleAudio: enabled, ...LIGHT_DEFAULTS, style: 4,
+  ...spellDefaults(), wizardPitch: 0.9, wizards: false,
 })
 /** Bit layout shared with sceneShader; grade also uses bit zero in the composite. */
 const LOOK_KEYS = Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]
@@ -36,6 +39,8 @@ export function lookMask(settings: Juice): number {
 }
 export type Perf = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 const controls: LabControl[] = [
+  {key:"wizardPitch",label:"Camera angle",min:0.7,max:1.2,step:0.05,group:"Spells"},
+  ...Object.entries(SPELL_CONTROLS).filter(([key])=>!key.endsWith("Threshold")).map(([key,c]) => ({ key, label: c.label, min: c.min, max: c.max, step: c.step, group: "Spells" })),
   ...Object.entries(JUICE_LABELS).map(([key, label]) => ({ key, label })),
   ...Object.entries(LOOK_LABELS).map(([key, label]) => ({ key, label, group: "Look" })),
 ]
