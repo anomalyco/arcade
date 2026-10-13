@@ -19,6 +19,7 @@ import { Chassis, wheelRotation, type AxlePoint } from "./chassis"
 import { splitChassis } from "../render/chassis-mesh"
 import { HEADLIGHT, LIGHT_DEFAULTS, lampMounts, type LightSettings, type LightStyle } from "../render/car-lights"
 import { bodyPoint } from "./car-pose"
+import { StreetProps } from "./props"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -56,6 +57,7 @@ export class Scene {
   readonly fx = new Fx()
   readonly emissions = new VehicleEmissions()
   readonly trail = this.emissions.trail
+  readonly clutter: StreetProps
   private lamps: LampLight[]
   private spills: ShopSpill[]
   private models = new Map<string, number>()
@@ -87,6 +89,7 @@ export class Scene {
 
   resetBench() {
     this.emissions.reset()
+    this.clutter.reset()
     this.fx.add.length = 0
     this.fx.clearSkids()
     this.vis.clear()
@@ -126,6 +129,7 @@ export class Scene {
     this.heliModel = renderer.addModel(buildHeli())
     this.rotorModel = renderer.addModel(buildRotor())
     this.spikeModel = renderer.addModel(buildSpikeStrip())
+    this.clutter = new StreetProps(city, renderer, (x, z) => this.groundAt(x, z))
   }
 
   setLightStyle(style: LightStyle) {
@@ -304,6 +308,14 @@ export class Scene {
     this.animate(view, dt, focus?.id ?? null)
     const t = this.time
     const vp = cam.matrices(w / h)
+    if (juice.clutter) {
+      this.clutter.update(view.cars, dt, focus ?? { x: cam.fx, z: cam.fz }, juice.explosions, (x, y, z, radius) => {
+        const clip = vec4.transformMat4([x, y, z, 1], vp)
+        const margin = radius * 4
+        return clip[3]! > 0 && Math.abs(clip[0]!) < clip[3]! + margin && Math.abs(clip[1]!) < clip[3]! + margin && clip[2]! < clip[3]! + margin
+      })
+      this.shake = Math.max(this.shake, this.clutter.shake)
+    }
     const f = this.frame
     f.set(vp, 0)
     // Shadow camera: orthographic from the moon, centered on the camera focus.
@@ -417,6 +429,11 @@ export class Scene {
       slot.count++
       if (ghost) slot.ghostCount = slot.count
     }
+
+    if (juice.clutter) this.clutter.draw(
+      (model, x, y, z, yaw, roll, pitch, scale) => pushInst(model, false, x, y, z, yaw, roll, pitch, -1, -1, 0, 0, 0, scale),
+      sprite, light, { x: cam.fx, z: cam.fz }, juice.physicsDebug,
+    )
 
     for (const c of view.cars) {
       const spec = VEHICLE_BY_ID.get(c.vehicle)!
@@ -680,7 +697,7 @@ export class Scene {
     batches.length = 0
     for (const [model, slot] of this.batchMap) {
       if (slot.count > 0) {
-        batches.push({ model, data: slot.data, count: slot.count, ghostCount: slot.ghostCount })
+        batches.push({ model, data: slot.data, count: slot.count, ghostCount: slot.ghostCount, noShadow: this.clutter.shadowless.has(model) })
       }
     }
     if (beams.v.length > this.beamBuf.length) {

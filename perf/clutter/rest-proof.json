@@ -1,0 +1,31 @@
+{
+  "adapter": { "vendor": "apple", "architecture": "metal-3" },
+  "errors": [],
+  "dropFixture": {
+    "duration": 6,
+    "count": 4,
+    "awakeAtEnd": 0,
+    "upYAtEnd": [-0.2940858488375232, -0.29408584883752314, -0.2940858488375232, -0.294085848837523],
+    "originHeightAtEnd": 0.2629300470931331
+  },
+  "tests": {
+    "randomConeDrops": 256,
+    "exactAndNearInvertedConeDrops": 5,
+    "otherPropDrops": 448,
+    "suitePassed": 122,
+    "suiteSkipped": 12
+  },
+  "scenarios": [
+    { "name": "cones", "hits": 10, "explosions": 0, "peakAwake": 20, "peakParticles": 5 },
+    { "name": "furniture", "hits": 7, "explosions": 0, "peakAwake": 5, "peakParticles": 132 },
+    { "name": "hydrant", "hits": 6, "explosions": 0, "peakAwake": 3, "peakParticles": 149 },
+    { "name": "explosion", "hits": 2, "explosions": 4, "peakAwake": 34, "peakParticles": 280 }
+  ],
+  "sheet": { "file": "getaway-clutter-rest-sheet.jpg", "width": 1440, "height": 836 },
+  "video": {
+    "file": "getaway-clutter-rest.mp4",
+    "width": 720, "height": 1100, "duration": 20,
+    "codec": "h264", "profile": "Main", "pixelFormat": "yuv420p", "bytes": 4269972,
+    "audio": false
+  }
+}

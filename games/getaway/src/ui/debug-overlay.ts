@@ -6,10 +6,13 @@ import type { GameAudio } from "../audio/game-audio"
 import type { LightSettings, LightStyle } from "../render/car-lights"
 
 /** Presentation only; these values never enter shared vehicle physics. */
-export const juice = chassisSettings(true)
+export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }
 const controls: LabControl[] = [
   { key: "emissions", label: "Vehicle emissions", group: "Emissions" },
   { key: "coldExhaust", label: "Cold exhaust", group: "Emissions" },
+  { key: "clutter", label: "Street clutter", group: "Props" },
+  { key: "explosions", label: "Explosions", group: "Props" },
+  { key: "physicsDebug", label: "Physics debug", group: "Props" },
   ...([
     ["suspension", "Suspension springs"],
     ["wheelContact", "Per-wheel contact"],

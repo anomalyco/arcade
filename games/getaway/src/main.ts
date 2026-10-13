@@ -166,9 +166,11 @@ async function main() {
   let emissionStudy: EmissionStudy | null = null
   let studyDistance = 38
   let studyHoldX = 0, studyHoldZ = 0
+  const clutterBench = benchMode ? (await import("./dev/props-bench")).propsBench(scene, activeSession.update(0, controls.read(0)), canvas, device) : null
   ;(window as unknown as { __getawayBench: unknown }).__getawayBench = {
     soundMode: () => sound.procedural,
     nitroState: () => sound.nitroState,
+    clutter: clutterBench,
     ready: atlasReady.then(() => true),
     emissions(visible: boolean) { scene.emissions.visible = visible },
     distance(value: number) { studyDistance = value },

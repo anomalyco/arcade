@@ -121,16 +121,16 @@ export function shop(m: Mesh, s: Shop, lamps: LampLight[]) {
   box(wu + into * 0.02, wu + into * 0.72, 1.6, 3.0, KERB_H, KERB_H + 1.1, chest, MAT.lit, SKIP.bottom, shade(chest, 1.2))
   for (const y of [0.4, 0.65, 0.9]) box(wu + into * 0.72, wu + into * 0.74, 1.65, 2.95, KERB_H + y, KERB_H + y + 0.03, [0.2, 0.05, 0.04])
   const [dx, dz] = at(ou - into * 0.6, BD - 3.5)
-  cylinder(m, dx, dz, 0.36, KERB_H, KERB_H + 0.95, 10, [0.12, 0.3, 0.62], MAT.lit, shade([0.12, 0.3, 0.62], 0.7))
-  for (const y of [0.3, 0.65]) cylinder(m, dx, dz, 0.375, KERB_H + y, KERB_H + y + 0.05, 10, shade([0.12, 0.3, 0.62], 0.6))
+  cylinder(m, dx, dz, 0.28, KERB_H, KERB_H + 0.9, 12, [0.12, 0.3, 0.62], MAT.lit, shade([0.12, 0.3, 0.62], 0.7))
+  for (const y of [0.25, 0.65]) cylinder(m, dx, dz, 0.3, KERB_H + y, KERB_H + y + 0.035, 12, shade([0.12, 0.3, 0.62], 0.6))
   const [tx, tz] = at(ou - into * 0.6, BD - 4.6)
   for (let k = 0; k < 4; k++) {
-    const y = KERB_H + k * 0.26
-    cylinder(m, tx + (k % 2) * 0.04, tz, 0.42, y, y + 0.25, 10, RUBBER, MAT.lit, shade(RUBBER, 1.6))
+    const y = KERB_H + k * 0.23
+    cylinder(m, tx + (k % 2) * 0.04, tz, 0.36, y, y + 0.23, 10, RUBBER, MAT.lit, shade(RUBBER, 1.6))
   }
-  m.disc(tx + 0.04, KERB_H + 1.045, tz, 0.2, 8, [0.05, 0.05, 0.05])
+  m.disc(tx + 0.04, KERB_H + .925, tz, 0.2, 8, [0.05, 0.05, 0.05])
   const [sx, sz] = at(ou - into * 0.6, 1.6)
-  for (let k = 0; k < 2; k++) cylinder(m, sx, sz, 0.42, KERB_H + k * 0.26, KERB_H + k * 0.26 + 0.25, 10, RUBBER, MAT.lit, shade(RUBBER, 1.6))
+  for (let k = 0; k < 2; k++) cylinder(m, sx, sz, 0.36, KERB_H + k * 0.23, KERB_H + (k + 1) * 0.23, 10, RUBBER, MAT.lit, shade(RUBBER, 1.6))
 
   // Painted bay outline and a stop bar.
   const y = KERB_H + 0.012

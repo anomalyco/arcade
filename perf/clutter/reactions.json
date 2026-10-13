@@ -1,0 +1,39 @@
+{
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": ""
+  },
+  "errors": [],
+  "scenarios": [
+    {
+      "name": "cones",
+      "hits": 11,
+      "explosions": 0,
+      "peakAwake": 20,
+      "peakParticles": 5
+    },
+    {
+      "name": "furniture",
+      "hits": 7,
+      "explosions": 0,
+      "peakAwake": 5,
+      "peakParticles": 132
+    },
+    {
+      "name": "hydrant",
+      "hits": 6,
+      "explosions": 0,
+      "peakAwake": 3,
+      "peakParticles": 149
+    },
+    {
+      "name": "explosion",
+      "hits": 2,
+      "explosions": 4,
+      "peakAwake": 34,
+      "peakParticles": 280
+    }
+  ]
+}

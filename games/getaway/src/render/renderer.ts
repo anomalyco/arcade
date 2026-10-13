@@ -19,7 +19,7 @@ type Model = { vbuf: GPUBuffer; count: number; castsShadow: boolean }
 type CityModel = { vbuf: GPUBuffer; count: number; chunks: CityChunk[] }
 
 /** One instanced draw: a model and its packed instance data. */
-export type InstanceBatch = { model: number; data: Float32Array; count: number; ghost?: boolean; ghostCount?: number }
+export type InstanceBatch = { model: number; data: Float32Array; count: number; ghost?: boolean; ghostCount?: number; noShadow?: boolean }
 
 /** Extracts the 6 clip-space frustum planes (Left, Right, Bottom, Top, Near, Far) from a column-major 4x4 matrix at `mOff`. */
 function extractFrustumPlanes(m: Float32Array, mOff: number, out: Float32Array) {
@@ -441,14 +441,14 @@ export class Renderer {
     for (let i = 0; i < opts.ghosts.length; i++) extraGhostTotal += opts.ghosts[i]!.count
     this.ensureInstances(total + extraGhostTotal)
 
-    const ranges: { model: number; first: number; count: number }[] = []
+    const ranges: { model: number; first: number; count: number; noShadow?: boolean }[] = []
     const ghostRanges: { model: number; first: number; count: number }[] = []
     let off = 0
     for (let i = 0; i < opts.batches.length; i++) {
       const b = opts.batches[i]!
       if (!b.count) continue
       d.queue.writeBuffer(this.instBuf, off * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
-      ranges.push({ model: b.model, first: off, count: b.count })
+      ranges.push({ model: b.model, first: off, count: b.count, noShadow: b.noShadow })
       if (b.ghostCount && b.ghostCount > 0) {
         ghostRanges.push({ model: b.model, first: off, count: b.ghostCount })
       }
@@ -511,6 +511,7 @@ export class Renderer {
     sp.setVertexBuffer(1, this.instBuf)
     for (let i = 0; i < ranges.length; i++) {
       const r = ranges[i]!
+      if (r.noShadow) continue
       const m = this.models[r.model]!
       if (!m.castsShadow) continue
       sp.setVertexBuffer(0, m.vbuf)
