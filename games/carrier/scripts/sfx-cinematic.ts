@@ -158,7 +158,7 @@ await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 1)}\n`)
 console.log(`wrote ${(bytes / 1048576).toFixed(2)} MB`)
 
 // First-run defaults for public/sfx/picks.json (never overwrites: the user's SOUNDS-tab picks replace it). A guess
-// until someone listens: loops by the smoothest seam, flybys by the most centred pass, hits by the most punch
+// until someone listens: loops by the smoothest seam, hits by the most punch
 // (true peak over loudness), everything else take 1.
 const picksPath = join(import.meta.dir, "../public/sfx/picks.json")
 if (!existsSync(picksPath)) {
@@ -169,7 +169,7 @@ if (!existsSync(picksPath)) {
     for (let n = 1; n <= slot.count; n++) {
       const t = manifest[`${slot.id}-${n}`]
       if (!t) continue
-      const v = slot.loop ? -(t.seam ?? 0) : slot.category === "flyby" ? -Math.abs(t.peak / t.dur - 0.4) : ["boom", "carrier", "gun", "bomb", "hooks"].includes(slot.category) ? t.tp - t.lufs : -n
+      const v = slot.loop ? -(t.seam ?? 0) : ["boom", "carrier", "gun", "bomb", "hooks"].includes(slot.category) ? t.tp - t.lufs : -n
       if (v > score) {
         score = v
         best = n

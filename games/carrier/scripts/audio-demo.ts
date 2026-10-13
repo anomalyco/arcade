@@ -128,20 +128,19 @@ function ramp(kind: VehicleKind, view: "chase" | "cockpit"): Scene {
   }
 }
 
-/** A remote jet passing 40 m in front of a camera on the deck, right to left. */
-function flyby(burner: boolean, samples: boolean): Scene {
+/** A remote jet passing in front of a camera on the deck, right to left, `off` metres out and `up` metres above it. */
+function flyby(burner: boolean, off = 40, up = burner ? 18 : 28): Scene {
   let rt = 0
   const speed = burner ? 245 : 215
   return {
     dur: 12,
-    samples,
     setup: (s) => {
       s.eye = [0, 22, 0]
       s.fwd = [0, 0, -1]
       const r = s.makeRemote(7, "hornet")
       r.pose.x = speed * 5.6
-      r.pose.y = 22 + (burner ? 18 : 28)
-      r.pose.z = -40
+      r.pose.y = 22 + up
+      r.pose.z = -off
       yawQ(r.pose, -Math.PI / 2)
     },
     step: (s, _t, dt) => {
@@ -421,7 +420,6 @@ function climb(): Scene {
       const o = s.makeOwn("hornet", "chase")
       o.draw.y = 120
       yawQ(o.draw, Math.PI)
-      s.pose.gear = 0
     },
     step: (s, t, dt) => {
       const d = s.own!.draw
@@ -447,7 +445,6 @@ function headOn(): Scene {
       o.draw.y = 280
       o.draw.throttle = 0.85
       yawQ(o.draw, Math.PI)
-      s.pose.gear = 0
       const r = s.makeRemote(4, "hornet")
       r.pose.x = 25
       r.pose.y = 300
@@ -480,7 +477,6 @@ function combat(): Scene {
       o.draw.y = 300
       o.draw.throttle = 0.85
       yawQ(o.draw, Math.PI)
-      s.pose.gear = 0
     },
     step: (s, t, dt) => {
       const d = s.own!.draw
@@ -505,7 +501,6 @@ function storm(): Scene {
       o.draw.y = 90
       o.draw.throttle = 0.7
       yawQ(o.draw, Math.PI)
-      s.pose.gear = 0
     },
     step: (s, t, dt) => {
       const d = s.own!.draw
@@ -527,9 +522,10 @@ const SCENES: Record<string, () => Scene> = {
   "exterior-ramp": () => ramp("hornet", "chase"),
   "cockpit-ramp": () => ramp("hornet", "cockpit"),
   "f35-exterior-ramp": () => ramp("f35", "chase"),
-  flyby: () => flyby(false, true),
-  "flyby-burner": () => flyby(true, true),
-  "flyby-procedural": () => flyby(false, false),
+  flyby: () => flyby(false),
+  "flyby-burner": () => flyby(true),
+  "flyby-crack": headOn,
+  "flyby-distant": () => flyby(false, 120, 90),
   catapult,
   "catapult-deck": catapultDeck,
   trap,

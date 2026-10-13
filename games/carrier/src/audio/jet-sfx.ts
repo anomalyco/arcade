@@ -1,6 +1,6 @@
-import { alignPeak, type FlybyKind } from "./jet-math"
+import type { FlybyKind } from "./jet-math"
 import type { Bus, Mixer } from "./mixer"
-import { type Shot, sfx } from "./sfx-bank"
+import { sfx } from "./sfx-bank"
 
 /** A point in listener space (x right, y up, -z ahead), or null: head-locked (your own cockpit). */
 export type Where = { x: number; y: number; z: number } | null
@@ -25,17 +25,13 @@ export type ShotOptions = {
 /** A pass in progress: `move` follows the jet until `end`. */
 export type FlybyHandle = { id: number; move(at: { x: number; y: number; z: number }): void; end: number }
 
-const FLYBY_SLOT: Record<FlybyKind, string> = { low: "flyby-low", burner: "flyby-burner", snap: "flyby-fast", high: "flyby-distant" }
-
 /**
- * Jet one-shots: the cinematic recorded slots (sfx-bank.ts: flybys, the catapult shot and shuttle slam, the trap, gear,
- * tailhook, the sonic crack), each with a procedural placeholder built from the noise bank that plays until the slot has
- * loaded. Recorded shots go through the bank's spatial chain (distance, air, panning, reverb); placeholders get a fixed
- * panner and an air-absorption low-pass.
+ * Jet one-shots. Flybys and the sonic crack are procedural (timed to the jet's predicted pass, they must stay locked to
+ * it). Discrete deck events that don't follow the jet's live state use recorded slots (sfx-bank.ts: the catapult shot
+ * and shuttle slam, the trap, gear, tailhook), with a procedural placeholder until the slot has loaded. Recorded shots go
+ * through the bank's spatial chain; procedural ones get a panner, an air-absorption low-pass and reverb/echo sends.
  */
 export class JetSfx {
-  private pick = 0
-
   constructor(private mixer: Mixer) {}
 
   private get ctx(): BaseAudioContext {
@@ -136,6 +132,14 @@ export class JetSfx {
     this.burst(n.pink, "lowpass", 600, 2500, 0.6, gain * 0.4, 1.2, 2.4, o)
   }
 
+  /** The afterburner lighting: a soft low whump and a short swell of rumble (the engine voice carries the roar). */
+  burnerLight(gain: number, o: ShotOptions = {}): void {
+    const n = this.mixer.noise
+    this.tone("sine", 62, 30, gain * 0.6, 0.02, 0.6, o)
+    this.burst(n.brown, "lowpass", 260, 700, 0.6, gain * 0.7, 0.08, 0.9, o)
+    this.burst(n.crackle, "bandpass", 1600, 900, 0.6, gain * 0.15, 0.05, 0.6, o)
+  }
+
   /** The hold-back bar taking the strain as the engines spool: a metallic clank. */
   holdback(gain: number, o: ShotOptions = {}): void {
     const n = this.mixer.noise
@@ -190,62 +194,133 @@ export class JetSfx {
     this.mixer.duck(0.45, 1.2, o.delay ?? 0)
   }
 
-  /** The crack of a very fast, very close pass. */
-  boom(gain: number, o: ShotOptions = {}): void {
-    if (this.play("sonic-crack", { ...o, gain, echo: 0.5, reverb: 0.6 })) return
-    const n = this.mixer.noise
-    // An N-wave: two sharp cracks a tenth of a second apart, then a rolling tail.
-    this.burst(n.white, "lowpass", 9000, 2000, 0.5, gain, 0.001, 0.09, o)
-    this.burst(n.white, "lowpass", 9000, 2000, 0.5, gain * 0.8, 0.001, 0.09, { ...o, delay: (o.delay ?? 0) + 0.11 })
-    this.burst(n.brown, "lowpass", 400, 60, 0.7, gain, 0.01, 2.2, o)
+  /** Sends a node into the outdoor reverb and the water slapback. */
+  private space(node: AudioNode, reverb: number, echo: number): void {
+    const ctx = this.ctx
+    if (reverb > 0) {
+      const g = ctx.createGain()
+      g.gain.value = reverb
+      node.connect(g).connect(this.mixer.reverb)
+    }
+    if (echo > 0) {
+      const g = ctx.createGain()
+      g.gain.value = echo
+      node.connect(g).connect(this.mixer.echo)
+    }
   }
 
   /**
-   * A pass: the recorded take for its kind lined up so its loudest moment lands at the closest approach (`t` seconds
-   * from now), its panner left for the caller to move with the jet. The fallback is a swept noise whoosh with the same
-   * timing. Returns the handle (null when culled).
+   * The crack of a very fast, very close pass: an N-wave (two sharp cracks 0.11 s apart, the second a little softer), a sub thump under them, and a rolling tail that lives mostly in the reverb and the water's echo.
    */
-  flyby(id: number, kind: FlybyKind, t: number, gain: number, rate: number, at: Where): FlybyHandle | null {
+  boom(gain: number, o: ShotOptions = {}): void {
+    const ctx = this.ctx
+    const n = this.mixer.noise
+    const at = ctx.currentTime + 0.005 + (o.delay ?? 0)
+    const { entry } = this.chain(o.at ?? null, o.bus ?? "flyby", o.cutoff ?? 20000)
+    const out = ctx.createGain()
+    out.gain.value = gain
+    out.connect(entry)
+    this.space(out, 0.7, 0.5)
+    const crack = (t: number, g: number) => {
+      const src = ctx.createBufferSource()
+      src.buffer = n.white
+      const lp = ctx.createBiquadFilter()
+      lp.type = "lowpass"
+      lp.frequency.setValueAtTime(11000, t)
+      lp.frequency.exponentialRampToValueAtTime(1800, t + 0.08)
+      const hp = ctx.createBiquadFilter()
+      hp.type = "highpass"
+      hp.frequency.value = 60
+      const e = ctx.createGain()
+      e.gain.setValueAtTime(0.0001, t)
+      e.gain.linearRampToValueAtTime(g, t + 0.0015)
+      e.gain.exponentialRampToValueAtTime(g * 0.25, t + 0.012)
+      e.gain.exponentialRampToValueAtTime(0.0001, t + 0.12)
+      src.connect(hp).connect(lp).connect(e).connect(out)
+      src.start(t, Math.random() * 3)
+      src.stop(t + 0.15)
+    }
+    crack(at, 1)
+    crack(at + 0.11, 0.8)
+    // Sub thump.
+    const o2 = ctx.createOscillator()
+    o2.frequency.setValueAtTime(52, at)
+    o2.frequency.exponentialRampToValueAtTime(24, at + 0.7)
+    const sg = ctx.createGain()
+    sg.gain.setValueAtTime(0.0001, at)
+    sg.gain.linearRampToValueAtTime(0.9, at + 0.008)
+    sg.gain.exponentialRampToValueAtTime(0.0001, at + 0.8)
+    o2.connect(sg).connect(out)
+    o2.start(at)
+    o2.stop(at + 0.85)
+    // Rolling tail.
+    const tail = ctx.createBufferSource()
+    tail.buffer = n.brown
+    const tlp = ctx.createBiquadFilter()
+    tlp.type = "lowpass"
+    tlp.frequency.setValueAtTime(500, at)
+    tlp.frequency.exponentialRampToValueAtTime(80, at + 2.6)
+    const tg = ctx.createGain()
+    tg.gain.setValueAtTime(0.0001, at)
+    tg.gain.linearRampToValueAtTime(0.7, at + 0.06)
+    tg.gain.exponentialRampToValueAtTime(0.0001, at + 2.8)
+    tail.connect(tlp).connect(tg).connect(out)
+    tail.start(at, Math.random() * 3)
+    tail.stop(at + 2.9)
+    this.mixer.duck(0.6, 0.5, o.delay ?? 0)
+  }
+
+  /**
+   * A pass, all procedural so it stays locked to the jet: the closest approach is `t` seconds from now (predicted every
+   * frame by jet-math.ts); the engine voice carries the pitch and its Doppler drop, and this adds the air the jet tears
+   * through, in three layers that peak at the pass:
+   * - the rush: pink noise whose low-pass sweeps up into the pass and falls away after it (the spectral Doppler);
+   * - the body: low brown-noise thunder that swells just after the pass and rolls on (more for close, burner passes);
+   * - the tear: for the fastest, closest passes, a short bright band sweeping down through the moment of passing.
+   * Panned with the jet (`move`), sent to the reverb and (when close) the water slapback.
+   */
+  flyby(id: number, kind: FlybyKind, t: number, gain: number, _rate: number, at: Where): FlybyHandle | null {
     if (gain < 0.01 || !at) return null
     const ctx = this.ctx
-    const bank = sfx(this.mixer)
-    const slot = FLYBY_SLOT[kind]
-    const loudest = bank.info(slot)?.peak
-    const now = ctx.currentTime + 0.005
-    if (loudest !== undefined && bank.ready(slot)) {
-      const { delay, offset } = alignPeak(t, loudest / rate)
-      const shot: Shot | null = bank.play(slot, { local: at, gain, rate, delay, offset: offset * rate, bus: "flyby", ref: 60, rolloff: 0.4, echo: kind === "high" ? 0 : 0.25 })
-      if (shot) return { id, move: (p) => shot.move({ local: p }), end: shot.end }
-    }
-    const { entry, panner } = this.chain(at, "flyby", 20000)
-    // Procedural: an air rush that swells to the pass and falls away, its low-pass sweeping up into the pass and down
-    // after it (the engine voice's own Doppler carries the pitch drop). Smooth: pink noise, low Q, no band-pass edge.
     const n = this.mixer.noise
-    const lead = Math.min(t, kind === "high" ? 2.2 : 1.6)
+    const now = ctx.currentTime + 0.005
+    const { entry, panner } = this.chain(at, "flyby", 20000)
+    const out = ctx.createGain()
+    out.gain.value = gain
+    out.connect(entry)
+    const far = kind === "high"
+    this.space(out, far ? 0.6 : 0.35, far ? 0 : 0.22)
+    const lead = Math.min(t, far ? 2.4 : 1.7)
     const start = now + t - lead
     const peak = now + t
-    const tail = kind === "high" ? 3 : kind === "snap" ? 1.2 : 2
-    const top = kind === "high" ? 1400 : kind === "snap" ? 4200 : 3200
-    const src = ctx.createBufferSource()
-    src.buffer = n.pink
-    src.loop = true
-    const lp = ctx.createBiquadFilter()
-    lp.type = "lowpass"
-    lp.Q.value = 0.4
-    lp.frequency.setValueAtTime(top * 0.3, start)
-    lp.frequency.exponentialRampToValueAtTime(top, peak)
-    lp.frequency.exponentialRampToValueAtTime(top * 0.12, peak + tail)
-    const hp = ctx.createBiquadFilter()
-    hp.type = "highpass"
-    hp.frequency.value = 120
-    hp.Q.value = 0.5
-    const g = ctx.createGain()
-    g.gain.setValueAtTime(0.0001, start)
-    g.gain.exponentialRampToValueAtTime(gain * 0.6, peak)
-    g.gain.exponentialRampToValueAtTime(0.0001, peak + tail)
-    src.connect(hp).connect(lp).connect(g).connect(entry)
-    src.start(start, Math.random() * 3)
-    src.stop(peak + tail + 0.05)
+    const tail = far ? 3.5 : kind === "snap" ? 1.6 : 2.4
+    const layer = (buf: AudioBuffer, f0: number, fPeak: number, fEnd: number, g: number, at0: number, pk: number, end: number, hp = 120) => {
+      const src = ctx.createBufferSource()
+      src.buffer = buf
+      src.loop = true
+      const h = ctx.createBiquadFilter()
+      h.type = "highpass"
+      h.frequency.value = hp
+      h.Q.value = 0.5
+      const lp = ctx.createBiquadFilter()
+      lp.type = "lowpass"
+      lp.Q.value = 0.4
+      lp.frequency.setValueAtTime(f0, at0)
+      lp.frequency.exponentialRampToValueAtTime(fPeak, pk)
+      lp.frequency.exponentialRampToValueAtTime(fEnd, end)
+      const e = ctx.createGain()
+      e.gain.setValueAtTime(0.0001, at0)
+      e.gain.exponentialRampToValueAtTime(g, pk)
+      e.gain.exponentialRampToValueAtTime(0.0001, end)
+      src.connect(h).connect(lp).connect(e).connect(out)
+      src.start(at0, Math.random() * 3)
+      src.stop(end + 0.05)
+    }
+    const top = far ? 1500 : kind === "snap" ? 5200 : kind === "burner" ? 3600 : 3200
+    layer(n.pink, top * 0.28, top, top * 0.1, 0.6, start, peak, peak + tail)
+    const body = kind === "burner" ? 0.9 : kind === "snap" ? 0.6 : far ? 0.5 : 0.55
+    layer(n.brown, 180, 700, 90, body, start + lead * 0.3, peak + 0.15, peak + tail * 1.3, 30)
+    if (kind === "snap" || kind === "burner") layer(n.white, 3000, 7000, 1500, 0.18, peak - 0.35, peak - 0.02, peak + 0.5, 1500)
     const pn = panner!
     return {
       id,
@@ -255,7 +330,8 @@ export class JetSfx {
         pn.positionY.setTargetAtTime(p.y, tt, 0.02)
         pn.positionZ.setTargetAtTime(p.z, tt, 0.02)
       },
-      end: peak + tail,
+      end: peak + tail * 1.3,
     }
   }
+
 }

@@ -13,11 +13,11 @@ const PICKS_KEY = "carrier.sfx.picks"
  *  down. Everything else plays its picked take. */
 const POOLED = new Set(["boom-air", "boom-missile", "boom-bomb-land", "boom-bomb-water", "boom-crash-sea", "boom-crash-land", "boom-far", "impact-water", "impact-metal", "thunder-near", "thunder-far", "hull-slam", "gun-distant", "flares", "tracer-zip"])
 /** Default reverb send per category (open air is most of what makes it sound big). */
-const REVERB: Record<SlotCategory, number> = { engine: 0.12, flyby: 0.35, carrier: 0.25, gun: 0.3, missile: 0.35, bomb: 0.3, boom: 0.5, ship: 0.15, sea: 0, ui: 0, hooks: 0.35 }
+const REVERB: Record<SlotCategory, number> = { carrier: 0.25, gun: 0.3, missile: 0.35, bomb: 0.3, boom: 0.5, ship: 0.15, sea: 0, ui: 0, hooks: 0.35 }
 /** Default bus per category. */
-const BUS: Record<SlotCategory, Bus> = { engine: "engines", flyby: "flyby", carrier: "sfx", gun: "weapons", missile: "weapons", bomb: "weapons", boom: "weapons", ship: "weather", sea: "weather", ui: "ui", hooks: "weapons" }
+const BUS: Record<SlotCategory, Bus> = { carrier: "sfx", gun: "weapons", missile: "weapons", bomb: "weapons", boom: "weapons", ship: "weather", sea: "weather", ui: "ui", hooks: "weapons" }
 /** Load order after the first gesture. */
-const ORDER: readonly SlotCategory[] = ["sea", "engine", "carrier", "ui", "gun", "missile", "boom", "flyby", "bomb", "ship", "hooks"]
+const ORDER: readonly SlotCategory[] = ["sea", "carrier", "ui", "gun", "missile", "boom", "bomb", "ship", "hooks"]
 
 export type Place = {
   /** World position (needs the listener: mixer.listener, set by jet-audio.ts each frame). */

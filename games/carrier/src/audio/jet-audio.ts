@@ -5,7 +5,6 @@ import type { PlaneDrawPose } from "../render/plane-pass"
 import { type BoomKind, boomsFor } from "./jet-boom"
 import { CockpitBed } from "./jet-cockpit"
 import { JetVoice, makeVoiceInput } from "./jet-engine"
-import { JetLoopVoice } from "./jet-loops"
 import {
   type Approach,
   FlybyWatch,
@@ -21,6 +20,7 @@ import {
   makeCone,
   makeFlybyPlan,
   rpmFor,
+  smoothstep,
   spoolStep,
 } from "./jet-math"
 import { type FlybyHandle, JetSfx, type Where } from "./jet-sfx"
@@ -45,7 +45,7 @@ export const JET_TUNE = {
   /** Doppler exponent: 1 physical, 0 none. */
   doppler: 0.7,
   /** Flyby take level, and how far a jet's own engine voice dips under its flyby take at the pass. */
-  flyby: 1,
+  flyby: 0.65,
   flybyDuck: 0.9,
   /** One-shot level. */
   sfx: 1,
@@ -82,11 +82,13 @@ type Track = {
   throttle: number
   boost: number
   burner: number
+  /** The afterburner as last seen (its lighting is an event). */
+  lit: number
   rpm: number
   doppler: number
   fresh: boolean
   score: number
-  voice: JetVoice | JetLoopVoice | null
+  voice: JetVoice | null
   watch: FlybyWatch
   /** Closest approach of the pass in progress (audio time), for the engine duck. */
   passAt: number
@@ -98,7 +100,7 @@ type Track = {
   crashKey: number
 }
 
-type JetEvent = { type: "catapult" | "holdback" | "brake" | "trap" | "gear-up" | "gear-down" | "hook" | "crash"; own: boolean; x: number; y: number; z: number; water: boolean }
+type JetEvent = { type: "burner" | "catapult" | "holdback" | "brake" | "trap" | "gear-up" | "gear-down" | "hook" | "crash"; own: boolean; x: number; y: number; z: number; water: boolean }
 
 /**
  * Every jet's sound. The flight module feeds it each frame (`own`, `remote`, `crash`, then `frame` with the camera):
@@ -115,7 +117,7 @@ export class JetAudio {
   private bed: CockpitBed | null = null
   private tracks = new Map<number, Track>()
   private order: Track[] = []
-  private dying: (JetVoice | JetLoopVoice)[] = []
+  private dying: JetVoice[] = []
   /** The carriers near the camera (fed by `ships`), and the interface sounds. */
   readonly shipAudio: ShipAudio
   private shipList: [number, ShipLike][] = []
@@ -192,6 +194,7 @@ export class JetAudio {
         throttle: 0,
         boost: 0,
         burner: 0,
+        lit: 0,
         rpm: 0.64,
         doppler: 1,
         fresh: true,
@@ -489,6 +492,9 @@ export class JetAudio {
       const own = t.id === OWN
       t.rpm = t.fresh ? rpmFor(t.throttle) : spoolStep(t.rpm, rpmFor(t.throttle), dt)
       t.burner += (t.boost - t.burner) * ease(dt, t.boost > t.burner ? 0.18 : 0.4)
+      // The afterburner lighting: a soft thump and a swell of roar.
+      if (t.boost > 0.5 && t.lit < 0.5 && !t.fresh && (t.mode === 1 || t.id === OWN)) this.event("burner", own, t.x, t.y, t.z)
+      t.lit = t.boost
       const dx = t.x - ex
       const dy = t.y - ey
       const dz = t.z - ez
@@ -514,7 +520,7 @@ export class JetAudio {
             t.passAt = now + plan.t
             if (plan.kind !== "high") m.duck(0.85, 0.8, Math.max(0, plan.t - 0.3), true)
           }
-          if (plan.boom) this.sfx.boom(0.9 * JET_TUNE.sfx, { at: local(t.x, t.y, t.z), delay: plan.t, bus: "flyby" })
+          if (plan.boom) this.sfx.boom(0.7 * JET_TUNE.sfx, { at: local(t.x, t.y, t.z), delay: plan.t, bus: "flyby" })
         }
       }
     }
@@ -528,12 +534,9 @@ export class JetAudio {
         this.drop(t)
         continue
       }
-      // Recorded engine loops once they have loaded (the procedural voice is the placeholder until then).
-      const loops = m.samplesOn && JetLoopVoice.ready(sfx(m))
-      if (t.voice && loops !== t.voice instanceof JetLoopVoice) this.drop(t)
       if (!t.voice) {
         if (built >= NEW_PER_FRAME) continue
-        t.voice = loops ? new JetLoopVoice(m, sfx(m), t.kind, t.id !== OWN, t.id === OWN) : new JetVoice(m, t.kind, t.id !== OWN, t.id === OWN)
+        t.voice = new JetVoice(m, t.kind, t.id !== OWN, t.id === OWN)
         built++
       }
       this.feed(t, local, now)
@@ -607,6 +610,7 @@ export class JetAudio {
     s.y = w.y
     s.z = w.z
     s.interior = interior
+    s.far = smoothstep(ENGINE_REF * 2, 2500, d)
     t.voice!.update(s)
   }
 
@@ -626,6 +630,9 @@ export class JetAudio {
     if (g < 0.004) return
     const o = { at: head ? null : { x: w.x, y: w.y, z: w.z }, cutoff: head ? 20000 : airCutoff(d), bus: "sfx" as const }
     switch (e.type) {
+      case "burner":
+        s.burnerLight(g * 0.15, o)
+        break
       case "catapult":
         s.catapult(g, o)
         break
@@ -641,7 +648,7 @@ export class JetAudio {
       case "gear-up":
       case "gear-down":
         // Felt more than heard from outside.
-        s.gear(e.type === "gear-up", g * (head ? 1 : 0.5), o)
+        s.gear(e.type === "gear-up", g * (head ? 0.8 : 0.3), o)
         break
       case "hook":
         s.hook(g * 0.8, o)

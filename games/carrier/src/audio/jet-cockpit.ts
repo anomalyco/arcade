@@ -29,7 +29,6 @@ export class CockpitBed {
   private whistle: GainNode
   private ecs: GainNode
   private buffet: GainNode
-  private windLoop: LoopHandle | null = null
   private rainLoop: LoopHandle | null = null
   private stallGain: GainNode
   private stallOsc: OscillatorNode
@@ -100,16 +99,11 @@ export class CockpitBed {
     const q = s ? clamp((s.speed / 230) ** 2, 0, 1.4) : 0
     const tw = COCKPIT_TUNE.wind
 
-    // Wind: dynamic pressure. The recorded canopy wind (sfx-bank "cockpit-wind") once loaded, the procedural band until
-    // then; loud in the cockpit, a lighter whoosh past the chase camera.
+    // Wind: dynamic pressure; the band rises with speed. Loud in the cockpit, a lighter whoosh past the chase camera.
     const bank = sfx(this.mixer)
-    if (!this.windLoop && bank.ready("cockpit-wind")) this.windLoop = bank.loop("cockpit-wind", { bus: "own", reverb: 0 })
-    if (this.windLoop && !this.windLoop.playing) this.windLoop = null
-    const windLevel = s ? q * (0.06 + 0.26 * k) * tw : 0
-    this.windLoop?.set({ gain: windLevel * 0.9, rate: 0.85 + 0.25 * Math.min(1, q) })
     set(this.wind.filter.frequency, 380 + 3.2 * (s?.speed ?? 0))
     set(this.wind.src.playbackRate, 0.9 + 0.2 * Math.min(1, q))
-    set(this.wind.gain.gain, this.windLoop ? 0 : windLevel)
+    set(this.wind.gain.gain, s ? q * (0.05 + 0.14 * k) * tw : 0)
     set(this.whistle.gain, s ? smoothstep(0.5, 1.2, q) * 0.035 * k * tw : 0)
     set(this.ecs.gain, 0.022 * k)
     const buffet = s ? (s.stall * 0.55 + Math.max(0, s.g - 5) * 0.07 + s.brake * q * 0.45) * (0.35 + 0.65 * k) : 0

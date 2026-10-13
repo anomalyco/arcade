@@ -1,9 +1,10 @@
-// Every recorded sound slot in the game: what it is, its category (loaded together), whether it loops, how many
+// Every recorded sound slot in the game (discrete one-shots and ambience beds; nothing that follows a jet's live state:
+// engines, afterburners, cockpit, wind, flybys and the sonic crack are procedural, see jet-engine.ts): what it is, its category (loaded together), whether it loops, how many
 // candidate takes it has in public/sfx/v3/<id>-<n>.ogg, and the ElevenLabs prompt each take came from
 // (scripts/sfx-cinematic.ts generates and transcodes them). Which take plays is the user's pick (sfx-bank.ts: picks.json,
 // overridden in localStorage from the SOUNDS tab). DOM-free data.
 
-export type SlotCategory = "engine" | "flyby" | "carrier" | "gun" | "missile" | "bomb" | "boom" | "ship" | "sea" | "ui" | "hooks"
+export type SlotCategory = "carrier" | "gun" | "missile" | "bomb" | "boom" | "ship" | "sea" | "ui" | "hooks"
 
 export type Slot = {
   id: string
@@ -22,19 +23,6 @@ const L = "cinematic, high fidelity, seamless loop, steady, no music, no voice"
 
 /** [id, category, label, loop, count, duration, prompt]. */
 const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, number, string])[] = [
-  // Jet engines (exterior from the chase position, and the cockpit).
-  ["jet-idle", "engine", "Jet idle (exterior)", true, 4, 7, `Twin-engine fighter jet idling on an aircraft carrier deck, recorded from 30 metres behind: smooth high turbine whine over a soft warm exhaust rumble, ${L}`],
-  ["jet-cruise", "engine", "Jet cruise (exterior)", true, 4, 7, `Fighter jet flying at cruise power, exterior recorded from close behind: smooth powerful jet exhaust roar with a soft turbine whine, ${L}`],
-  ["jet-mil", "engine", "Jet military power (exterior)", true, 4, 7, `Fighter jet at full military power, exterior close behind: deep thunderous jet exhaust roar, rich low end, smooth, ${L}`],
-  ["jet-ab", "engine", "Jet afterburner (exterior)", true, 4, 7, `Fighter jet afterburner at full thrust, exterior close behind: massive crackling thunderous roar, deep sub rumble, ${L}`],
-  ["cockpit-engine", "engine", "Cockpit engine", true, 4, 7, `Inside a fighter jet cockpit in flight: engine rumble felt through the airframe, muffled low drone, faint air conditioning hiss, ${L}`],
-  ["cockpit-wind", "engine", "Cockpit wind", true, 4, 7, `High-speed wind roaring over a fighter jet canopy, heard from inside the cockpit, smooth airflow rush, ${L}`],
-  // Flybys.
-  ["flyby-low", "flyby", "Flyby low", false, 4, 7, `A fighter jet screams past low and close, flyby: rising turbine whine, explosive tearing roar at the closest moment, deep Doppler drop, long rumbling tail fading into open air, deep sub, ${C}`],
-  ["flyby-fast", "flyby", "Flyby fast", false, 4, 5, `A fighter jet rips past extremely fast and close: short violent whoosh, sharp roar, rapid Doppler drop, punchy, ${C}`],
-  ["flyby-burner", "flyby", "Flyby afterburner", false, 4, 7, `A fighter jet passes close in full afterburner: crackling thunder, massive roar, deep sub rumble, Doppler drop, rolling echo fading away, ${C}`],
-  ["flyby-distant", "flyby", "Flyby distant", false, 4, 7, `A jet passes high overhead in the distance: soft rolling rumble swelling and fading across a wide open sky, natural outdoor reverb, ${C}`],
-  ["sonic-crack", "flyby", "Sonic crack", false, 4, 4, `Sonic boom: sharp double crack, deep sub thump, rolling thunder tail across the sea, natural outdoor reverb, ${C}`],
   // Carrier operations.
   ["catapult", "carrier", "Catapult shot", false, 4, 6, `Steam catapult launch on an aircraft carrier: heavy steel hold-back clank, violent rush of steam hissing along the deck, jet engines roaring at full power accelerating away, deep sub thump, ${C}`],
   ["shuttle-slam", "carrier", "Catapult shuttle slam", false, 4, 3, `Massive steel catapult shuttle slamming into a water brake at the bow of an aircraft carrier: deep metallic boom, burst of steam, ringing steel, ${C}`],
@@ -99,4 +87,4 @@ const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, nu
 
 export const SLOTS: readonly Slot[] = RAW.map(([id, category, label, loop, count, dur, prompt]) => ({ id, category, label, loop, count, dur, prompt }))
 export const SLOT_BY_ID: ReadonlyMap<string, Slot> = new Map(SLOTS.map((s) => [s.id, s]))
-export const CATEGORIES: readonly SlotCategory[] = ["engine", "flyby", "carrier", "gun", "missile", "bomb", "boom", "ship", "sea", "ui", "hooks"]
+export const CATEGORIES: readonly SlotCategory[] = ["carrier", "gun", "missile", "bomb", "boom", "ship", "sea", "ui", "hooks"]
