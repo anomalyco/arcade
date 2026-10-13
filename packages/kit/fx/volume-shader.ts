@@ -23,10 +23,8 @@ fn density(p: vec3f) -> vec2f {
   for (var s = 0; s < 4; s++) {
     let b = F.boxes[s*2]; let uv = (p.xz-b.xy)/b.z;
     if (any(uv <= vec2f(0)) || any(uv >= vec2f(1))) { continue; }
-    // Nearest solid-cell guard prevents filtered density bleeding through narrow walls.
-    let cell = clamp(vec2i(uv*48.0),vec2i(0),vec2i(47));
-    if (textureLoad(field,cell,s,0).r == 0.0) { continue; }
     let d = textureSampleLevel(field,linear,uv,s,0.0).r;
+    if (d <= 0.001) { continue; }
     let ceiling = 2.65 + 0.55*sin(p.x*1.5-F.eye.w*0.3)*sin(p.z*1.2+F.eye.w*0.2);
     let y = p.y / ceiling;
     let amount = d * smoothstep(0.0,0.13,y) * (1.0-smoothstep(0.32,1.0,y));
@@ -35,9 +33,9 @@ fn density(p: vec3f) -> vec2f {
   return sum;
 }
 fn billow(p: vec3f) -> f32 {
-  let q = p * 0.035 + vec3f(-F.eye.w*0.009,-F.eye.w*0.012,F.eye.w*0.005);
-  let warp = vec3f(sin(q.z*8.0),cos(q.x*7.0),sin(q.y*9.0))*0.035;
-  return textureSampleLevel(noise,repeat,q+warp,0.0).r*0.65 + textureSampleLevel(noise,repeat,q*2.13-warp,0.0).r*0.35;
+  let q = p * 0.055 + vec3f(-F.eye.w*0.009,-F.eye.w*0.012,F.eye.w*0.005);
+  let warp = vec3f(sin(q.z*8.0),cos(q.x*7.0),sin(q.y*9.0))*0.045;
+  return textureSampleLevel(noise,repeat,q+warp,0.0).r*0.6 + textureSampleLevel(noise,repeat,q*2.3-warp,0.0).r*0.4;
 }
 @fragment fn march(o: Out) -> @location(0) vec4f {
   let surface = unproject(o.uv,sceneDepth(o.uv)); let ray = normalize(surface-F.eye.xyz);
@@ -51,7 +49,9 @@ fn billow(p: vec3f) -> f32 {
     let p = F.eye.xyz + ray*(near+(f32(i)+j)*stepSize);
     let sample = density(p); let base = sample.x;
     if (base < 0.002) { continue; }
-    let d = base * smoothstep(0.22,0.72,billow(p)) * 2.8;
+    let b = billow(p);
+    let erode = smoothstep(0.0, 0.18, base - (1.0 - b) * 0.11);
+    let d = base * erode * smoothstep(0.22,0.72,b) * 2.8;
     let a = 1.0-exp(-d*stepSize); optical += d*stepSize;
     let sun = exp(-density(p+vec3f(0,0.65,0)).x*1.7);
     var light = F.ambient.rgb + vec3f(0.38,0.43,0.51)*sun;

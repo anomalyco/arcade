@@ -257,10 +257,11 @@ export class Stage {
   }
   private uploadLighting(debug:number){
     const s=this.lighting,f=this.frame,deg=Math.PI/180,count=this.dynamicLights?Math.min(8,this.dynamicLights.length):Math.max(0,Math.min(8,Math.round(s.count)))
+    f[35]=Number(s.edgeAA??true)
     f[36]=count;f[37]=Number(s.shadows);f[38]=debug;f[39]=this.sceneMode
     f[40]=Math.cos(s.moonAzimuth*deg)*Math.cos(s.moonElevation*deg);f[41]=Math.sin(s.moonElevation*deg);f[42]=Math.sin(s.moonAzimuth*deg)*Math.cos(s.moonElevation*deg);f[43]=s.moon?s.moonPower:0
     f[44]=s.exposure;f[45]=s.tone;f[46]=s.saturation;f[47]=s.temperature
-    f[48]=0.06;f[49]=0.08;f[50]=0.13
+    f[48]=0.06;f[49]=0.08;f[50]=0.13;f[51]=s.shadowSoftness??0.45
     this.lightCount=0
     for(let i=0;i<8;i++){
       const o=i*12,spot=i===1,cool=i%2===1

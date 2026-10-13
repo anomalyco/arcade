@@ -11,8 +11,8 @@ struct Box { lo:vec3f, hi:vec3f }
 const fixtures=array<Box,9>(
   Box(vec3f(-6,0,-4),vec3f(6,2.2,-3.6)),Box(vec3f(-6,0,-4),vec3f(-5.6,2.2,5)),
   Box(vec3f(5.6,0,-4),vec3f(6,2.2,-1)),Box(vec3f(5.6,0,1),vec3f(6,2.2,5)),Box(vec3f(-6,0,4.6),vec3f(6,0.65,5)),
-  Box(vec3f(-3.5,0.2,-0.8),vec3f(-0.5,0.85,0.8)),Box(vec3f(-2.7,0.85,-0.65),vec3f(-1.1,1.4,0.65)),
-  Box(vec3f(2.5,0,0.7),vec3f(3,1.3,1.2)),Box(vec3f(2.55,1.3,0.75),vec3f(2.95,1.7,1.15)));
+  Box(vec3f(-3.5,0.2,-0.8),vec3f(-0.5,0.85,0.8)),Box(vec3f(-2.7,0.80,-0.65),vec3f(-1.1,1.4,0.65)),
+  Box(vec3f(2.5,0,0.7),vec3f(3,1.3,1.2)),Box(vec3f(2.55,1.20,0.75),vec3f(2.95,1.7,1.15)));
 const yardBoxes=array<Box,9>(
   Box(vec3f(-36,0,-42),vec3f(36,2.2,-41)),Box(vec3f(-36,0,-42),vec3f(-35,2.2,34)),
   Box(vec3f(35,0,-42),vec3f(36,2.2,34)),Box(vec3f(-36,0,33),vec3f(36,2.2,34)),
@@ -24,11 +24,18 @@ fn boxAt(i:u32)->Box {
   if(F.options.w<3.0){return fixtures[i];}
   return yardBoxes[i];
 }
-fn intersect(origin:vec3f,ray:vec3f,b:Box)->f32 {
-  let safe=select(vec3f(0.000001),ray,abs(ray)>vec3f(0.000001));
+fn safeDir(ray:vec3f)->vec3f {
+  return select(select(vec3f(-1e-6),vec3f(1e-6),ray>=vec3f(0.0)),ray,abs(ray)>vec3f(1e-6));
+}
+struct BoxHit { dist:f32, normal:vec3f }
+fn intersectBox(origin:vec3f,ray:vec3f,b:Box)->BoxHit {
+  let safe=safeDir(ray);
   let a=(b.lo-origin)/safe;let c=(b.hi-origin)/safe;let lo=min(a,c);let hi=max(a,c);
   let near=max(max(lo.x,lo.y),lo.z);let far=min(min(hi.x,hi.y),hi.z);
-  return select(10000.0,max(near,0.0),near<far&&far>0.0);
+  var n=vec3f(0.0,0.0,-sign(safe.z));
+  if(lo.x>=lo.y&&lo.x>=lo.z){n=vec3f(-sign(safe.x),0.0,0.0);}
+  else if(lo.y>=lo.x&&lo.y>=lo.z){n=vec3f(0.0,-sign(safe.y),0.0);}
+  return BoxHit(select(10000.0,max(near,0.0),near<far&&far>0.0),n);
 }
 fn sphere(origin:vec3f,ray:vec3f,centre:vec3f,radius:f32)->f32 {
   let oc=origin-centre;let b=dot(oc,ray);let d=b*b-dot(oc,oc)+radius*radius;
@@ -59,65 +66,187 @@ export const stageShader = common + /* wgsl */ `
 @group(0) @binding(1) var<storage,read> polar:array<vec4f>;
 struct Out {@builtin(position) p:vec4f,@location(0) uv:vec2f}
 @vertex fn vs(@builtin(vertex_index)i:u32)->Out {let c=array<vec2f,3>(vec2f(-1,-1),vec2f(3,-1),vec2f(-1,3));var o:Out;o.p=vec4f(c[i],0,1);o.uv=c[i]*vec2f(0.5,-0.5)+0.5;return o;}
-fn visibility(p:vec3f,l:i32,surface:i32)->f32 {
-  if(F.options.y<0.5){return 1.0;}
-  let source=F.lights[l*3];let delta=p-source.xyz;let distance=max(0.001,length(delta.xz));
-  let angle=atan2(delta.z,delta.x);let bin=i32(fract(angle/6.2831853+1.0)*256.0);
-  var sum=0.0;
-  for(var tap=-1;tap<=1;tap++){
-    let at=(bin+tap+256)%256;var lit=1.0;
-    for(var b=0;b<9;b++){
-      // Convex receiver cannot occlude itself; angular quantization otherwise stripes wall faces.
-      if(b==surface){continue;}
-      let interval=polar[(l*256+at)*9+b];let end=min(interval.y,distance-0.06);
-      if(interval.x>=end){continue;}
-      let h0=source.y+delta.y*interval.x/distance;let h1=source.y+delta.y*end/distance;
-      if(min(h0,h1)<interval.w-0.015&&max(h0,h1)>interval.z+0.015){lit=0.06;break;}
-    }
-    sum+=lit;
-  }
-  return sum/3.0;
+
+/** Exact signed-slab clearance and contact-hardening penumbra along a ray segment [0, dist] against box b. */
+fn boxShadow(p:vec3f,invSigned:vec3f,inv:vec3f,dist:f32,b:Box,rSource:f32)->f32 {
+  let rPad=rSource+0.008;
+  let t0=(b.lo-p)*invSigned;let t1=(b.hi-p)*invSigned;
+  let en=min(t0,t1);let ex=max(t0,t1);
+  let pad=rPad*inv;
+  let nearExp=max(0.0,max(en.x-pad.x,max(en.y-pad.y,en.z-pad.z)));
+  let farExp=min(dist,min(ex.x+pad.x,min(ex.y+pad.y,ex.z+pad.z)));
+  if(nearExp>=farExp){return 1.0;}
+  let half=0.5*(b.hi-b.lo);
+  var wSigned=max(-half.x,max(-half.y,-half.z));
+  var tCrit=0.5*(nearExp+farExp);
+  let denom=inv+inv.yzx;
+  let wA=(en-ex.yzx)/denom;
+  let tA=(en*inv.yzx+ex.yzx*inv)/denom;
+  if(wA.x>wSigned){wSigned=wA.x;tCrit=tA.x;}
+  if(wA.y>wSigned){wSigned=wA.y;tCrit=tA.y;}
+  if(wA.z>wSigned){wSigned=wA.z;tCrit=tA.z;}
+  let wB=(en.yzx-ex)/denom;
+  let tB=(en.yzx*inv+ex*inv.yzx)/denom;
+  if(wB.x>wSigned){wSigned=wB.x;tCrit=tB.x;}
+  if(wB.y>wSigned){wSigned=wB.y;tCrit=tB.y;}
+  if(wB.z>wSigned){wSigned=wB.z;tCrit=tB.z;}
+  let wStart=-ex/inv;
+  let mStart=max(wStart.x,max(wStart.y,wStart.z));
+  if(mStart>wSigned){wSigned=mStart;tCrit=0.0;}
+  let wEnd=(en-vec3f(dist))/inv;
+  let mEnd=max(wEnd.x,max(wEnd.y,wEnd.z));
+  if(mEnd>wSigned){wSigned=mEnd;tCrit=dist;}
+  if(tCrit<=0.001||tCrit>=dist-0.001){return 1.0;}
+  let pen=0.008+rSource*(tCrit/dist);
+  return smoothstep(-pen,pen,wSigned);
 }
-struct Pixel {@location(0) color:vec4f,@builtin(frag_depth) depth:f32}
-@fragment fn fs(o:Out)->Pixel {
-  // Receiver studies supply their own floor; the analytic y=0 grid would depth-fight it.
-  if(F.options.w==5.0){var out:Pixel;out.color=vec4f(.025,.03,.04,1);out.depth=1.0;return out;}
-  let q=F.inverse*vec4f(o.uv*vec2f(2,-2)+vec2f(-1,1),1,1);let ray=normalize(q.xyz/q.w-F.eye.xyz);
-  var hit=-F.eye.y/ray.y;var index=-1;
-  for(var i=0;i<9;i++){let d=intersect(F.eye.xyz,ray,boxAt(u32(i)));if(d<hit){hit=d;index=i;}}
-  // Neutral calibration sphere in Lighting/Materials. Material adapters replace the latter with their own meshes.
-  if(F.options.w==1.0||F.options.w==2.0){let d=sphere(F.eye.xyz,ray,vec3f(1.3,0.85,-1.8),0.85);if(d<hit){hit=d;index=9;}}
-  let p=F.eye.xyz+ray*hit;var normal=vec3f(0,1,0);var albedo=vec3f(0.18,0.21,0.26);
-  if(index>=0&&index<9){let b=boxAt(u32(index));let mid=(b.lo+b.hi)*0.5;let r=(p-mid)/((b.hi-b.lo)*0.5);let m=max(max(abs(r.x),abs(r.y)),abs(r.z));normal=normalize(select(vec3f(0),sign(r),abs(r)>=vec3f(m-0.002)));albedo=vec3f(0.3,0.34,0.38);if(index==5){albedo=vec3f(0.06,0.22,0.26);}if(index==6){albedo=vec3f(0.035,0.08,0.11);}if(index>=7){albedo=vec3f(0.42,0.32,0.17);}}
-  if(index==9){normal=normalize(p-vec3f(1.3,0.85,-1.8));albedo=vec3f(0.5);}
+
+fn visibility(p:vec3f,dir:vec3f,dist:f32,surface:i32,rSource:f32)->f32 {
+  if(F.options.y<0.5){return 1.0;}
+  let safe=safeDir(dir);
+  let invSigned=1.0/safe;
+  let inv=abs(invSigned);
+  var vis=1.0;
+  for(var b=0;b<9;b++){
+    if(b==surface){continue;}
+    let box=boxAt(u32(b));
+    if(all(p>box.lo+vec3f(0.002))&&all(p<box.hi-vec3f(0.002))){continue;}
+    vis=min(vis,boxShadow(p,invSigned,inv,dist,box,rSource));
+    if(vis<=0.001){break;}
+  }
+  return vis;
+}
+
+struct PrimaryHit { hit:f32, index:i32, ray:vec3f, normal:vec3f, albedo:vec3f, nearEdge:bool }
+fn traceRay(uv:vec2f)->PrimaryHit {
+  let q=F.inverse*vec4f(uv*vec2f(2,-2)+vec2f(-1,1),1,1);
+  let ray=normalize(q.xyz/q.w-F.eye.xyz);
+  var hit=select(10000.0,-F.eye.y/ray.y,ray.y<-1e-5);
+  var index=-1;
+  var normal=vec3f(0,1,0);
+  var albedo=vec3f(0.18,0.21,0.26);
+  var nearEdge=false;
+  let safe=safeDir(ray);
+  for(var i=0;i<9;i++){
+    let b=boxAt(u32(i));
+    let aExp=(b.lo-vec3f(0.08)-F.eye.xyz)/safe;
+    let cExp=(b.hi+vec3f(0.08)-F.eye.xyz)/safe;
+    let loExp=min(aExp,cExp);let hiExp=max(aExp,cExp);
+    let nExp=max(max(loExp.x,loExp.y),loExp.z);let fExp=min(min(hiExp.x,hiExp.y),hiExp.z);
+    if(nExp<fExp&&fExp>0.0&&max(nExp,0.0)<hit+0.15){
+      nearEdge=true;
+      let bh=intersectBox(F.eye.xyz,ray,b);
+      if(bh.dist<hit){
+        hit=bh.dist;index=i;normal=bh.normal;
+        albedo=vec3f(0.3,0.34,0.38);
+        if(i==5){albedo=vec3f(0.06,0.22,0.26);}
+        if(i==6){albedo=vec3f(0.035,0.08,0.11);}
+        if(i>=7){albedo=vec3f(0.42,0.32,0.17);}
+      }
+    }
+  }
+  if(F.options.w==1.0||F.options.w==2.0){
+    if(sphere(F.eye.xyz,ray,vec3f(1.3,0.85,-1.8),0.93)<hit+0.15){
+      nearEdge=true;
+      let d=sphere(F.eye.xyz,ray,vec3f(1.3,0.85,-1.8),0.85);
+      if(d<hit){hit=d;index=9;normal=normalize(F.eye.xyz+ray*hit-vec3f(1.3,0.85,-1.8));albedo=vec3f(0.5);}
+    }
+  }
+  if(F.options.w<2.0){
+    for(var l=0;l<min(8,i32(F.options.x));l++){
+      let pos=F.lights[l*3];let color=F.lights[l*3+1];
+      if(sphere(F.eye.xyz,ray,pos.xyz,0.18)<hit+0.15){
+        nearEdge=true;
+        let lamp=sphere(F.eye.xyz,ray,pos.xyz,0.12);
+        if(lamp<hit){hit=lamp;index=10+l;normal=normalize(F.eye.xyz+ray*hit-pos.xyz);albedo=color.rgb*color.w;}
+      }
+    }
+  }
+  if(index>=0&&index<9){
+    let p=F.eye.xyz+ray*hit;
+    let b=boxAt(u32(index));
+    let dEdge=min(abs(p-b.lo),abs(p-b.hi));
+    // Interior of a box face (>8cm from any two box planes) cannot straddle a crease or silhouette.
+    let cCount=i32(dEdge.x<0.08)+i32(dEdge.y<0.08)+i32(dEdge.z<0.08);
+    if(cCount<2){nearEdge=false;}
+  }
+  return PrimaryHit(hit,index,ray,normal,albedo,nearEdge);
+}
+
+fn shadeSample(h:PrimaryHit,aa:vec2f)->vec3f {
+  if(h.index>=10){
+    if(F.options.z==5.0){return h.normal*0.5+0.5;}
+    return h.albedo;
+  }
+  let p=F.eye.xyz+h.ray*h.hit;
+  let normal=h.normal;
+  let softness=max(0.05,select(0.45,F.ambient.w,F.ambient.w>0.0));
   var light=F.ambient.rgb*(0.5+0.5*max(normal.y,0.0));
   var specular=vec3f(0);
-  let moon=normalize(F.moon.xyz);var moonVisibility=1.0;
-  if(F.options.y>0.5){for(var b=0;b<9;b++){if(intersect(p+normal*0.04,moon,boxAt(u32(b)))<1000.0){moonVisibility=0.1;break;}}}
-  light+=vec3f(0.48,0.61,0.9)*F.moon.w*max(0.0,dot(normal,moon))*moonVisibility;
+  let moon=normalize(F.moon.xyz);
+  let moonVis=0.1+0.9*visibility(p+normal*0.015,moon,20.0,h.index,softness*0.8);
+  light+=vec3f(0.48,0.61,0.9)*F.moon.w*max(0.0,dot(normal,moon))*moonVis;
   for(var l=0;l<min(8,i32(F.options.x));l++){
     let pos=F.lights[l*3];let color=F.lights[l*3+1];let cone=F.lights[l*3+2];
     let delta=pos.xyz-p;let distance=length(delta);if(distance>=pos.w||color.w==0.0){continue;}
     let direction=delta/max(distance,0.001);var atten=pow(max(0.0,1.0-distance/pos.w),2.0)*color.w;
-    if(cone.w>-1.0){atten*=smoothstep(cone.w,min(1.0,cone.w+0.08),dot(-direction,cone.xyz));}
-    atten*=visibility(p+normal*0.04,l,index);
+    if(cone.w>-1.0){atten*=smoothstep(cone.w-0.08,min(1.0,cone.w+0.14),dot(-direction,cone.xyz));}
+    let vis=0.06+0.94*visibility(p+normal*0.015,direction,distance,h.index,softness);
+    atten*=vis;
     light+=color.rgb*atten*max(0.0,dot(normal,direction));
-    let halfway=normalize(direction-ray);specular+=color.rgb*atten*pow(max(0.0,dot(normal,halfway)),48.0)*select(0.06,0.3,index==9);
+    let halfway=normalize(direction-h.ray);specular+=color.rgb*atten*pow(max(0.0,dot(normal,halfway)),48.0)*select(0.06,0.3,h.index==9);
   }
-  let cell=abs(fract(p.xz+0.5)-0.5);let aa=max(fwidth(p.xz),vec2f(0.001));
+  let cell=abs(fract(p.xz+0.5)-0.5);
   let lines=1.0-smoothstep(vec2f(0.015),vec2f(0.015)+aa,cell);
-  let grid=select(1.0,1.0-0.28*max(lines.x,lines.y),index<0);
-  var rgb=albedo*light*grid+specular;
-  // Visible fixture cores locate the adjustable lights in the Lighting calibration stage only.
-  if(F.options.w<2.0){
-    for(var l=0;l<min(8,i32(F.options.x));l++){
-      let pos=F.lights[l*3];let color=F.lights[l*3+1];let lamp=sphere(F.eye.xyz,ray,pos.xyz,0.12);
-      if(lamp<hit){rgb=color.rgb*color.w;hit=lamp;normal=normalize(F.eye.xyz+ray*hit-pos.xyz);}
-    }
-  }
+  let grid=select(1.0,1.0-0.28*max(lines.x,lines.y),h.index<0);
+  var rgb=h.albedo*light*grid+specular;
   if(F.options.z==3.0){rgb=light;}
   if(F.options.z==5.0){rgb=normal*0.5+0.5;}
-  let clip=F.vp*vec4f(F.eye.xyz+ray*hit,1);var out:Pixel;out.color=vec4f(rgb,1);out.depth=clip.z/clip.w;return out;
+  return rgb;
+}
+
+struct Pixel {@location(0) color:vec4f,@builtin(frag_depth) depth:f32}
+@fragment fn fs(o:Out)->Pixel {
+  let center=traceRay(o.uv);
+  let pCenter=F.eye.xyz+center.ray*center.hit;
+  let aa=max(fwidth(pCenter.xz),vec2f(0.001));
+  let du=dpdx(o.uv);let dv=dpdy(o.uv);
+  // Sections with sceneMode >= 4 supply their own floor mesh; keep the analytic y=0 grid out of their depth buffer.
+  if(F.options.w>=4.0){var out:Pixel;out.color=vec4f(.025,.03,.04,1);out.depth=1.0;return out;}
+  var rgb:vec3f;
+  var farHit=center.hit;
+  var farRay=center.ray;
+  if(F.eye.w>0.5&&center.nearEdge){
+    let h0=traceRay(o.uv-0.125*du-0.375*dv);
+    let h1=traceRay(o.uv+0.375*du-0.125*dv);
+    let h2=traceRay(o.uv-0.375*du+0.125*dv);
+    let h3=traceRay(o.uv+0.125*du+0.375*dv);
+    if(h0.hit>farHit){farHit=h0.hit;farRay=h0.ray;}
+    if(h1.hit>farHit){farHit=h1.hit;farRay=h1.ray;}
+    if(h2.hit>farHit){farHit=h2.hit;farRay=h2.ray;}
+    if(h3.hit>farHit){farHit=h3.hit;farRay=h3.ray;}
+    let sameSurface=h0.index==h1.index&&h0.index==h2.index&&h0.index==h3.index&&all(h0.normal==h1.normal)&&all(h0.normal==h2.normal)&&all(h0.normal==h3.normal);
+    let count=select(4,1,sameSurface);
+    var acc=vec3f(0.0);
+    for(var s=0;s<count;s++){
+      var h=center;
+      if(count==4){
+        if(s==0){h=h0;}else if(s==1){h=h1;}else if(s==2){h=h2;}else{h=h3;}
+      }
+      acc+=shadeSample(h,aa);
+    }
+    rgb=acc/f32(count);
+  }else{
+    if(center.index<0){
+      let qTop=F.inverse*vec4f((o.uv-0.375*dv)*vec2f(2,-2)+vec2f(-1,1),1,1);
+      let rTop=normalize(qTop.xyz/qTop.w-F.eye.xyz);
+      let hitTop=select(10000.0,-F.eye.y/rTop.y,rTop.y<-1e-5);
+      if(hitTop>farHit){farHit=hitTop;farRay=rTop;}
+    }
+    rgb=shadeSample(center,aa);
+  }
+  let clip=F.vp*vec4f(F.eye.xyz+farRay*farHit,1);
+  var out:Pixel;out.color=vec4f(rgb,1);out.depth=min(1.0,clip.z/clip.w+2.5e-6);return out;
 }
 @group(1) @binding(0) var hdr:texture_2d<f32>;
 @fragment fn post(o:Out)->@location(0) vec4f {
@@ -127,6 +256,8 @@ struct Pixel {@location(0) color:vec4f,@builtin(frag_depth) depth:f32}
   c=mix(vec3f(dot(c,vec3f(0.2126,0.7152,0.0722))),c,F.grade.z);
   if(F.grade.y==0.0){c=c/(c+0.8);}
   if(F.grade.y==1.0){c=clamp((c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14),vec3f(0),vec3f(1));}
-  return vec4f(pow(max(c,vec3f(0)),vec3f(1.0/2.2)),1);
+  let srgb=pow(max(c,vec3f(0)),vec3f(1.0/2.2));
+  let dither=(fract(52.9829189*fract(dot(vec2f(p),vec2f(0.06711056,0.00583715))))-0.5)/255.0;
+  return vec4f(clamp(srgb+dither,vec3f(0.0),vec3f(1.0)),1);
 }
 `

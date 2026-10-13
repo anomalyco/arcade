@@ -11,7 +11,7 @@ struct Out {@builtin(position) p:vec4f,@location(0) world:vec3f,@location(1) nor
  for(var i=0;i<min(8,i32(F.options.x));i++){
    let p=F.lights[i*3];let c=F.lights[i*3+1];let cone=F.lights[i*3+2];let delta=p.xyz-o.world;let dist=length(delta);let dir=delta/max(.001,dist);
    var attenuation=pow(max(0.0,1.0-dist/p.w),2.0)*c.w;
-   if(cone.w > -1.0){attenuation*=smoothstep(cone.w,min(1.0,cone.w+.08),dot(-dir,cone.xyz));}
+   if(cone.w > -1.0){attenuation*=smoothstep(cone.w-.08,min(1.0,cone.w+.14),dot(-dir,cone.xyz));}
    light+=c.rgb*attenuation*(.15+.85*max(0.0,dot(n,dir)));
  }
  var color=o.color*(light+o.emission);

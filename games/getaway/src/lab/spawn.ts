@@ -129,7 +129,8 @@ export function getawaySpawn(context: LabContext) {
   const sprite: SpriteWriter = (list, x, y, z, size, r, g, b, a, kind, rot = 0, stretch = 1) => {
     if (list === "a") {
       const shape = kind === 2 ? 2 : kind === 3 || kind === 4 || kind === 9 ? 1 : kind === 20 ? 4 : 0
-      sprites.push(x, y, z, size, r, g, b, a, shape, rot, stretch)
+      const sy = kind === 3 && r === 0 && g === 0 && b === 0 ? Math.max(0.004, y - 0.017) : y
+      sprites.push(x, sy, z, size, r, g, b, a, shape, rot, stretch)
     } else {
       pendingAdd.push([x, y, z, size, r, g, b, a, kind === 2 ? 2 : 0, rot, stretch])
     }
@@ -409,7 +410,7 @@ export function getawaySpawn(context: LabContext) {
           g: HEADLIGHT[1] * 1.15,
           b: HEADLIGHT[2] * 1.15,
           power: 4.2,
-          cone: 0.79,
+          cone: 0.72,
         }))
         const tailLights: LabLight[] = sides.map(() => ({
           x: 0,

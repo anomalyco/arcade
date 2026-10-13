@@ -298,30 +298,43 @@ function hull(m: Mesh, body: Body, paint: HullPaint, nose: Paint, tail: Paint) {
   const st = hullStations(body)
   const rings = st.map(hullRing)
   loft(m, rings, false, (seg, e) => paint(e < 5 ? e : 9 - e, (st[seg]!.z + st[seg + 1]!.z) / 2), { front: nose, back: tail })
-  // Wheel-well liner: whatever the arches reveal is dark, staying inside the hull bottom and arch bounds.
+  //Wheel-well liner: whatever the arches reveal is dark, staying inside the upper arch bounds above the axle.
   const minS = Math.min(...st.map((k) => k.s))
-  const minB = Math.min(...body.hull.map((k) => k.b))
   const wmin = Math.min(...st.map((k) => k.w))
   for (const a of body.axles) {
     const x = wmin - 0.08
-    const rIn = body.archR * 0.82
-    m.box(-x, x, minB + 0.02, minS - 0.04, a - rIn, a + rIn, WELL)
+    const rIn = body.archR * 0.68
+    m.box(-x, x, body.wheelR + 0.01, minS - 0.04, a - rIn, a + rIn, WELL)
   }
   const hw = Math.max(...st.map((k) => k.w))
   for (const a of body.axles) for (const s of [-1, 1]) wheel(m, s, hw - 0.03, a, body.wheelR, body.wheelW)
 }
 
-function cabRing(k: CabKey): V3[] {
+/** Hull deck surface height at (x, z), accounting for the shoulder bevel and centerline crown. */
+function hullDeckY(body: Body, x: number, z: number): number {
+  const k = interpKey(body.hull, z)
+  const shY = k.t - 0.015
+  const sh = Math.min(0.055, k.w * 0.055)
+  const xSh = k.w - sh
+  const xMid = k.w * 0.42
+  const ax = Math.abs(x)
+  if (ax >= xSh) return shY
+  if (ax >= xMid) return lerp(k.t, shY, (ax - xMid) / Math.max(1e-6, xSh - xMid))
+  return lerp(k.t + (k.crown ?? 0.015), k.t, ax / Math.max(1e-6, xMid))
+}
+
+function cabRing(k: CabKey, body: Body): V3[] {
+  const baseAt = (x: number) => Math.max(k.yb, hullDeckY(body, x, k.z) + 0.006)
   const half: P2[] =
     k.yt <= k.yb + 1e-6
       ? [
-          [k.wb, k.yb],
-          [k.wb - 0.06, k.yb],
-          [k.wb - 0.11, k.yb],
-          [0, k.yb],
+          [k.wb, baseAt(k.wb)],
+          [k.wb - 0.001, baseAt(k.wb)],
+          [k.wb - 0.075, baseAt(k.wb - 0.075)],
+          [0, baseAt(0)],
         ]
       : [
-          [k.wb, k.yb],
+          [k.wb, baseAt(k.wb)],
           [k.wt + 0.045, k.yt - 0.055],
           [k.wt, k.yt],
           [0, k.yt],
@@ -334,8 +347,9 @@ function cabRing(k: CabKey): V3[] {
   return [...right, ...left]
 }
 
-function cab(m: Mesh, keys: CabKey[], paint: CabPaint, back?: Paint) {
-  const rings = keys.map(cabRing)
+function cab(m: Mesh, body: Body, paint: CabPaint, back?: Paint) {
+  const keys = body.cab
+  const rings = keys.map((k) => cabRing(k, body))
   const segs = keys.length - 1
   loft(m, rings, false, (seg, e) => paint(e < 3 ? e : 5 - e, seg, segs, (keys[seg]!.z + keys[seg + 1]!.z) / 2), back ? { back } : {})
 }
@@ -436,8 +450,8 @@ function lightbar(m: Mesh, y: number, zc: number, hw: number, d = 0.3, h = 0.15)
 /** Thin dark panel seam on both body sides. */
 function seam(m: Mesh, x: number, z: number, y0: number, y1: number) {
   for (const s of [-1, 1]) {
-    const xx = s * (x + 0.0015)
-    poly(m, [[xx, y0, z - 0.006], [xx, y0, z + 0.006], [xx, y1, z + 0.006], [xx, y1, z - 0.006]], TRIM, MAT.lit, [0, (y0 + y1) / 2, z])
+    const xx = s * (x + 0.0035)
+    poly(m, [[xx, y0, z - 0.012], [xx, y0, z + 0.012], [xx, y1, z + 0.012], [xx, y1, z - 0.012]], TRIM, MAT.lit, [0, (y0 + y1) / 2, z])
   }
 }
 
@@ -504,7 +518,7 @@ function cruiser(m: Mesh, v: Vehicle, unit: number, lights: LightStyle) {
     cuts: [doorF, doorR, -0.42],
   }
   hull(m, body, policeHull(white, black, doorF, doorR), { col: black }, { col: black })
-  cab(m, body.cab, sedanCab(white, white, 2))
+  cab(m, body, sedanCab(white, white, 2))
   frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true }, lights)
   rearFascia(m, body, { bumper: TRIM }, lights)
   mirrors(m, 0.85, hw - 0.12, 0.98, black)
@@ -551,7 +565,7 @@ function interceptor(m: Mesh, v: Vehicle, unit: number, lights: LightStyle) {
     cuts: [doorF, doorR, -0.55],
   }
   hull(m, body, policeHull(white, black, doorF, doorR), { col: black }, { col: black })
-  cab(m, body.cab, sedanCab(white, white, 2))
+  cab(m, body, sedanCab(white, white, 2))
   frontFascia(m, body, { bumper: TRIM, grille: INK, pushBar: true, lampW: 0.4, lampH: 0.08 }, lights)
   rearFascia(m, body, { bumper: TRIM, lampW: 0.42, lampH: 0.08, bar: true }, lights)
   mirrors(m, 0.66, hw - 0.12, 0.96, black)
@@ -595,20 +609,22 @@ function muscle(m: Mesh, v: Vehicle, lights: LightStyle) {
     archR: 0.47,
   }
   hull(m, body, () => ({ col: red }), { col: red }, { col: red })
-  cab(m, body.cab, sedanCab(red, red))
+  cab(m, body, sedanCab(red, red))
   frontFascia(m, body, { bumper: red, grille: INK, lampW: 0.32, lampH: 0.08, grilleH: 0.18 }, lights)
   rearFascia(m, body, { bumper: red, lampW: 0.36, lampH: 0.1 }, lights)
   mirrors(m, 0.45, hw - 0.12, 0.93, red)
   seam(m, hw, 0.52, 0.46, 0.80)
   handles(m, hw, [-0.45], 0.8, TRIM)
   // Hood vents, rocker trim, ducktail spoiler and twin exhausts.
-  const hy0 = topAt(body, 0.7) + 0.02
-  const hy1 = topAt(body, 1.5) + 0.03
-  prism(m, [[-0.34, hy0 - 0.03, 0.7], [0.34, hy0 - 0.03, 0.7], [0.27, hy0 + 0.09, 0.7], [-0.27, hy0 + 0.09, 0.7]], [[-0.3, hy1 - 0.04, 1.5], [0.3, hy1 - 0.04, 1.5], [0.24, hy1 + 0.07, 1.5], [-0.24, hy1 + 0.07, 1.5]], red)
-  poly(m, [[-0.22, hy1 - 0.01, 1.505], [0.22, hy1 - 0.01, 1.505], [0.2, hy1 + 0.055, 1.505], [-0.2, hy1 + 0.055, 1.505]], INK, MAT.lit, [0, hy1, 1.0])
+  const hy0 = hullDeckY(body, 0.34, 0.7) + 0.005
+  const hy1 = hullDeckY(body, 0.3, 1.5) + 0.005
+  const top0 = hullDeckY(body, 0, 0.7) + 0.075
+  const top1 = hullDeckY(body, 0, 1.5) + 0.065
+  prism(m, [[-0.34, hy0, 0.7], [0.34, hy0, 0.7], [0.27, top0, 0.7], [-0.27, top0, 0.7]], [[-0.3, hy1, 1.5], [0.3, hy1, 1.5], [0.24, top1, 1.5], [-0.24, top1, 1.5]], red)
+  poly(m, [[-0.22, hullDeckY(body, 0, 1.5) + 0.006, 1.505], [0.22, hullDeckY(body, 0, 1.5) + 0.006, 1.505], [0.2, top1 - 0.012, 1.505], [-0.2, top1 - 0.012, 1.505]], INK, MAT.lit, [0, top1, 1.0])
   extrudeX(m, [[zr + 0.04, 0.9], [zr + 0.34, 0.95], [zr + 0.3, 1.0], [zr + 0.02, 1.04]], -hw + 0.1, hw - 0.1, red)
   for (const s of [-1, 1]) {
-    const x = s * (hw + 0.0015)
+    const x = s * (hw + 0.0035)
     poly(m, [[x, 0.4, 0.96], [x, 0.4, -0.94], [x, 0.45, -0.94], [x, 0.45, 0.96]], trim, MAT.lit, [0, 0.42, 0])
     m.box(s * 0.45 - 0.06, s * 0.45 + 0.06, 0.26, 0.34, zr - 0.12, zr + 0.1, CHROME)
   }
@@ -644,7 +660,7 @@ function compact(m: Mesh, v: Vehicle, lights: LightStyle) {
     archR: 0.42,
   }
   hull(m, body, (band) => ({ col: band === 0 ? trim : paint }), { col: paint }, { col: paint })
-  cab(m, body.cab, (band, seg, segs) => {
+  cab(m, body, (band, seg, segs) => {
     if (band === 0) return seg === 2 ? { col: trim } : glass
     if (band === 1) return { col: seg === 0 || seg === segs - 1 ? trim : paint }
     return seg === 0 || seg === segs - 1 ? screen : { col: paint }
@@ -686,7 +702,7 @@ function van(m: Mesh, v: Vehicle, lights: LightStyle) {
   hull(m, body, (band) => ({ col: band === 0 ? trim : paint }), { col: paint }, { col: paint })
   cab(
     m,
-    body.cab,
+    body,
     (band, seg) => {
       if (band === 0) return seg === 1 ? glass : { col: paint }
       if (band === 1) return { col: paint }
@@ -738,7 +754,7 @@ function swat(m: Mesh, v: Vehicle, unit: number, lights: LightStyle) {
   hull(m, body, () => ({ col: paint }), { col: paint }, { col: paint })
   cab(
     m,
-    body.cab,
+    body,
     (band, seg) => {
       if (band === 0) return { col: paint }
       if (band === 1) return { col: paint }

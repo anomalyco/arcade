@@ -58,6 +58,10 @@ export class SmokeVolumes {
         this.arrival[start + n] = distance; this.queue[tail++] = n
       }
     }
+    for (let k = 0; k < tail; k++) {
+      const i = this.queue[k]!, dx = (i % GRID - 24) * 0.5, dz = (Math.floor(i / GRID) - 24) * 0.5
+      this.arrival[start + i] += Math.hypot(dx, dz) - (Math.abs(dx) + Math.abs(dz))
+    }
     this.count++
     return true
   }
