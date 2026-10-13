@@ -317,6 +317,14 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   four tip-first/tilted cones resting on their sloping sides. Evidence: `perf/clutter/rest-proof.json`. Runtime cost
   has not been remeasured; body-pair contacts still use decorative rounded proxies.
 
+- **Swap presentation while retaining the rig and map.** Blackout's opt-in Wizards lab study registers a second set
+  of meshes against the existing bones, uses a matte team-tinted cloth material, and rebuilds static geometry only
+  when the switch changes. `src/render/castle.ts` retains collision footprints and light IDs while replacing office
+  furniture and fittings; the existing lamp-power buffer drives smooth torch flicker. `scripts/prove-wizards.ts`
+  captured walking, aiming, casting, ragdoll, the furniture fixture and sandbox on Apple's Metal adapter with no
+  browser errors, including a live off/on toggle. Two tests check source-map preservation and finite model normals.
+  CPU/GPU cost has not been measured. Viewer links and weapon mappings are in `games/blackout/docs/wizards.md`.
+
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and

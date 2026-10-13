@@ -15,6 +15,8 @@ import { PAL, deskMonitorLights, hex, rng } from "../render/models"
 import { juiceSettings, type Juice } from "../ui/debug-overlay"
 import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
+import { wizardModels } from "../render/wizard"
+import { castleMap } from "../render/castle"
 import { type Avatar, EV, type PartModels, type PushPart, animate, fire as shoot, glow, gunPoints, hit, newAvatar, pose, swing, useGear } from "./anim"
 import { type Corpse, type DeathStyle, type Debris, deathStyle, emitRagdoll, ragdoll, ragdollCentre, stepDebris, stepRagdoll } from "./ragdoll"
 import { type Batch, type FrameInput, INST_FLOATS, type Renderer, SPRITE_FLOATS } from "../render/renderer"
@@ -245,6 +247,10 @@ export class Game {
   private hitSoundAt = -1
   private soundAt = new Map<string, number>()
   private models: PartModels
+  private soldierParts: PartModels
+  private wizardParts: PartModels
+  private sourceMap!: MapDef
+  private wizardLook = false
   private gear: { frag: number; claymore: number; led: number }
   private frame = new Float32Array(FRAME_FLOATS)
   private culler = new LightCuller()
@@ -271,7 +277,6 @@ export class Game {
     settings: Juice = juiceSettings(),
   ) {
     this.juice = settings
-    const p = personModels()
     const reg = (m: Parameters<Renderer["addModel"]>[0]) => renderer.addModel(m)
     const paper = new Mesh()
     paper.box(-0.1, -0.003, -0.14, 0.1, 0.003, 0.14, PAL.paper, MAT.lit, 0, undefined, true)
@@ -283,8 +288,8 @@ export class Game {
     const screen = new Mesh()
     screen.box(-0.252, 0.86, 0.023, 0.252, 1.142, 0.028, PAL.screenOff)
     this.sheetModels = { paper: reg(paper), glass: reg(glass), brass: reg(brass), screen: reg(screen) }
-    const regGuns = (r: typeof p.gun) => ({ rifle: reg(r.rifle), shotgun: reg(r.shotgun), sniper: reg(r.sniper) })
-    this.models = {
+    const regGuns = (r: ReturnType<typeof personModels>["gun"]) => ({ rifle: reg(r.rifle), shotgun: reg(r.shotgun), sniper: reg(r.sniper) })
+    const register = (p: ReturnType<typeof personModels>): PartModels => ({
       pelvis: reg(p.pelvis),
       torso: reg(p.torso),
       head: reg(p.head),
@@ -298,7 +303,10 @@ export class Game {
       mag: regGuns(p.mag),
       casing: regGuns(p.casing),
       hole: reg(p.hole),
-    }
+    })
+    this.soldierParts = register(personModels())
+    this.wizardParts = register(wizardModels())
+    this.models = this.soldierParts
     const gm = gearModels()
     this.gear = { frag: reg(gm.frag), claymore: reg(gm.claymore), led: reg(gm.led) }
     this.veh = new VehicleFx(renderer)
@@ -308,18 +316,27 @@ export class Game {
   }
 
   private load(map: MapDef): void {
-    this.map = map
+    this.sourceMap = map
+    this.applyLook()
     this.blockers = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass]
     this.solids = [...this.blockers, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
     this.obstacles = obstaclesOf(map)
-    const level = buildLevel(map)
+    this.clearScene()
+  }
+
+  /** Rebuild static presentation only when the lab switch changes; preserve live actors and simulation. */
+  private applyLook(): void {
+    this.wizardLook = this.juice.wizards
+    this.models = this.wizardLook ? this.wizardParts : this.soldierParts
+    const castle = this.wizardLook && this.sourceMap.kind === "office"
+    const map = this.map = castle ? castleMap(this.sourceMap) : this.sourceMap
+    const level = buildLevel(map, castle)
     this.bounceFull = level.bounce
     this.bounceBase = bakeBounce(map, 0)
     this.bounceIntensity = -1
     this.renderer.setLevel(level)
     this.culler.setMap(map)
-    this.monitors = []
-    this.clearScene()
+    this.culler.torchFlicker = castle
     this.monitors = deskMonitorLights(map).map(({ x, y, yaw }) => ({ x, y, yaw, broken: false }))
   }
 
@@ -397,7 +414,7 @@ export class Game {
       const s = l.snap
       // Practice on a fixed test map (?practice&map=lot): load that rather than generating one from the seed.
       const fixed = this.session.fixedMap?.()
-      if (fixed && fixed !== this.map) this.load(fixed)
+      if (fixed && fixed !== this.sourceMap) this.load(fixed)
       if (s.map !== this.map.seed || s.mapKind !== this.map.kind) this.load(getMap(s.mapKind ?? "office", s.map))
       else if (this.snap && s.match !== this.snap.match) this.clearScene()
       for (const p of s.players) {
@@ -1255,7 +1272,7 @@ export class Game {
     if (prev && Math.hypot(prev.x - at.x, prev.y - at.y) < 3) carry(a, prev, pose1)
     this.seatPose.set(id, pose1)
     const aim = seat === 0 ? d.h : id === this.myId ? this.aim : a.aim
-    this.cues(a, animate(a, adt, t, at.x, at.y, 0, 0, aim), id === this.myId)
+    this.cues(a, animate(a, adt, t, at.x, at.y, 0, 0, aim, this.wizardLook), id === this.myId)
     const sink = d.spec.seats[seat]!.sink
     const sunk: PushPart = (model, x, y, z, ...rest) => push(model, x, y - sink, z, ...rest)
     pose(sunk, a, col, this.models)
@@ -1266,6 +1283,7 @@ export class Game {
   }
 
   build(cam: Camera, w: number, h: number, dt: number): FrameInput {
+    if (this.wizardLook !== this.juice.wizards) this.applyLook()
     const t = this.now
     const intensity = this.juice.monitors ? this.juice.monitorIntensity : 0
     if (intensity !== this.bounceIntensity) {
@@ -1356,7 +1374,7 @@ export class Game {
       const vy = dt > 0 ? (ny - a.y) / dt : 0
       const col = this.colorOf(a.id)
       if (this.rider(a, a.id, adt, t, push, col)) continue
-      this.cues(a, animate(a, adt, t, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim), false)
+      this.cues(a, animate(a, adt, t, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim, this.wizardLook), false)
       pose(push, a, col, this.models)
       if (infected(snap, this.roster, a.id)) eyes(a, t, (...e) => this.sprite(...e))
       const gc = glow(col, 0.9)
@@ -1373,7 +1391,7 @@ export class Game {
       const d = this.drawn
       const col = this.colorOf(this.myId)
       if (!this.rider(a, this.myId, adt, t, push, col)) {
-        this.cues(a, animate(a, adt, t, d.x, d.y, me.vx, me.vy, this.aim), true)
+        this.cues(a, animate(a, adt, t, d.x, d.y, me.vx, me.vy, this.aim, this.wizardLook), true)
         pose(push, a, col, this.models)
         if (infected(snap, this.roster, this.myId)) eyes(a, t, (...e) => this.sprite(...e))
         const gc = glow(col, 0.9)

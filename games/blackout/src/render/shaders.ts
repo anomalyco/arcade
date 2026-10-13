@@ -221,6 +221,11 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.color = select(pow(v.color.rgb, vec3f(2.2)), inst.tint.rgb, accent);
   o.mat = select(v.matAux.x, 3.0, accent);
   o.aux = select(v.matAux.y, 0.85, accent);
+  // Robes use the same team tint as accents, but remain matte and receive actor lighting.
+  if (v.matAux.x > 13.5 && v.matAux.x < 14.5) {
+    o.color = inst.tint.rgb * pow(v.color.rgb, vec3f(2.2));
+    o.mat = 12.0;
+  }
   o.extra = inst.extra;
   return o;
 }
@@ -467,6 +472,14 @@ fn floorPattern(kind: i32, p: vec2f, base: vec3f, gloss: ptr<function, vec2f>) -
     c *= mix(0.86, 1.06, alt) + 0.1 * (hash2(cell) - 0.5) + 0.08 * (fbm(p * 1.7) - 0.5);
     c *= mix(0.68, 1.0, tileEdge(g, 0.012));
     *gloss = vec2f(60.0, 0.55);
+  } else if (kind == 10) {
+    // Staggered, broad flagstones: one shader branch, no extra floor geometry.
+    let row = floor(p.y / 0.85);
+    let q = vec2f(p.x / 1.25 + (row % 2.0) * 0.5, p.y / 0.85);
+    let cell = floor(q);
+    c *= 0.8 + 0.28 * hash2(cell) + 0.1 * noise2(p * 18.0);
+    c *= mix(0.32, 1.0, tileEdge(fract(q), 0.023));
+    *gloss = vec2f(24.0, 0.15);
   } else if (kind == 8) {
     // Grass: dark blades, clumps and bare patches.
     c *= 0.78 + 0.35 * noise2(p * 9.0) + 0.2 * (fbm(p * 0.8) - 0.5);

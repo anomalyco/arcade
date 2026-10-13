@@ -14,6 +14,8 @@ import type { Session } from "../game/session"
 import { Camera } from "../render/camera"
 import { Renderer } from "../render/renderer"
 import { IDLE_VIEW } from "../../shared/sim/modes"
+import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
+import { modelRoom } from "./model-room"
 
 /** Tiles a floor into a big grid of copies, to stress culling (lights, occluders, chunks). */
 function bigMap(base: MapDef, n: number): MapDef {
@@ -72,7 +74,7 @@ async function main() {
   const params = new URLSearchParams(location.search)
   const seed = Number(params.get("seed") ?? "1")
   const mapKind = mapKindOf(params.get("kind")) ?? "office"
-  let map = getMap(mapKind, seed)
+  let map = params.get("fixture") === "room" ? modelRoom() : getMap(mapKind, seed)
   if (params.has("big")) map = bigMap(map, Number(params.get("big")) || 2)
   let fx = Number(params.get("x") ?? map.size[0] / 2)
   let fy = Number(params.get("y") ?? map.size[1] / 2)
@@ -90,13 +92,14 @@ async function main() {
     { x: fx - 2.5, y: fy - 1.5, aim: 0.4 },
   ]
   const session = new StillSession(map, people)
-  const { juiceSettings } = await import("../ui/debug-overlay")
   const settings = juiceSettings(!params.has("vanilla"))
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
   const game = new Game(renderer, session, new Sound(), settings)
   ;(window as unknown as { setMonitors(on: boolean): void }).setMonitors = (on) => { settings.monitors = on }
   ;(game as unknown as { load(m: MapDef): void }).load(map)
   const input = new Input(canvas)
+  const lab = new DebugOverlay(settings, params, () => input.release())
+  addEventListener("keydown", (e) => { if (e.code === "Backquote" && !e.repeat) lab.toggle() })
   const cam = new Camera()
   cam.snap(fx, fy)
   const zoom = Number(params.get("zoom") ?? "17")
