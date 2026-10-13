@@ -24,6 +24,7 @@ export class LabPanel {
        h3{font:inherit;font-weight:600;margin:8px 0 3px;color:#a4b1bc}
     </style><button class="pill" type="button" aria-expanded="false">~ Lab</button><section aria-label="Debug controls"><header>FPS — · Frame ms — / —\nGPU ms —</header><nav><button data-preset="on">All On</button><button data-preset="off">All Off</button></nav><div data-controls></div></section>`
     this.panel = root.querySelector("section")!
+    root.querySelector<HTMLElement>("nav")!.hidden = controls.length === 0
     this.header = root.querySelector("header")!
     this.pill = root.querySelector(".pill")!
     const rows = root.querySelector("[data-controls]")!

@@ -64,6 +64,13 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Getaway's approved presentation is permanent.** The six Look effects and eight driving effects now run without
+  switches or `vanilla`/`off` overrides. The Lab retains its frame/GPU readout and input isolation, with no empty preset
+  buttons. Spotlight radius is the original 7.5 m with 0.0025 cone feather. The removed Wet Road setting stored 0.55,
+  but Flatter Ground already overrode it to 0.035; retaining 0.035 preserves the approved matte image. Two unused
+  frame-uniform vectors and the alternate colour-grade path were removed. `scripts/prove-look.ts` checks the retained
+  Lab on Metal; the historical switch experiment remains in git history. Performance cost remains unmeasured.
+
 - **Bake shop-spill footprints and room colours.** Getaway's `render/city/building.ts` records footprints only for
   lit street-facing shops; `game/scene.ts` draws nearby footprints in the existing additive batch. `render/mesh.ts`
   stores room tint in unused window UVs for vertex shading. Metal stills show sidewalk spill and window variety

@@ -15,7 +15,7 @@ const exe = readdirSync(cache).filter(n => n.startsWith("chromium-")).reverse().
 const browser = await chromium.launch({ executablePath: exe, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const results: unknown[] = []
 try {
-  for (const cfg of ["default", "off=trauma"]) {
+  for (const cfg of ["default"]) {
     const page = await browser.newPage({ viewport: { width: 640, height: 480 }, deviceScaleFactor: 1 })
     page.on("pageerror", e => { throw e })
     const draws: unknown[] = []

@@ -1,43 +1,11 @@
-import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
-
-export const lookSettings = (enabled = true) => ({ tightPools: enabled, flatGround: enabled, shopSpill: enabled, grounding: enabled, wallGradients: enabled, colourGrade: enabled })
-export const juiceSettings = (enabled = true) => ({ ...lookSettings(enabled), sparks: enabled, scrape: enabled, skids: enabled, backfire: enabled, rush: enabled, curb: enabled, trauma: enabled, landing: enabled, spotlightRadius: 1, spotlightSoftness: 1, roadSheen: 0.55 })
-/** Presentation only; these values never enter shared vehicle physics. */
-export const juice = juiceSettings()
-const controls: LabControl[] = [
-  ...([
-    ["tightPools", "Tighter lamp pools"],
-    ["flatGround", "Flatter ground"],
-    ["shopSpill", "Shop-window spill"],
-    ["grounding", "Grounding"],
-    ["wallGradients", "Wall & roof gradients"],
-    ["colourGrade", "Colour grade"],
-  ] as const).map(([key, label]) => ({ key, label, group: "Look" })),
-  { key: "spotlightRadius", label: "Wide Spotlight", off: 1, on: 1.4, group: "Effects" },
-  { key: "spotlightSoftness", label: "Soft Spotlight", off: 1, on: 1.4 },
-  { key: "roadSheen", label: "Wet Road Sheen", off: 0.55, on: 1.2 },
-  ...([
-    ["sparks", "Bouncing Sparks"],
-    ["scrape", "Scrape Sparks"],
-    ["skids", "Skid Ribbons"],
-    ["backfire", "Backfire"],
-    ["rush", "Nitro Camera Rush"],
-    ["curb", "Curb-Hop Spring"],
-    ["trauma", "Shake & PIT Hit-Stop"],
-    ["landing", "Landing Effects"],
-  ] as const).map(([key, label]) => ({ key, label })),
-]
+import { LabPanel } from "../../../../packages/kit/lab-panel"
 export type PerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastUpdate = 0
   sample: PerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
   constructor(q: URLSearchParams, release: () => void) {
-    if (q.get("vanilla") === "1") Object.assign(juice, juiceSettings(false))
-    // ?off=landing,trauma turns individual switches off from the URL.
-    const defaults = juiceSettings(false) as Record<string, boolean | number>
-    for (const key of q.get("off")?.split(",") ?? []) if (key in juice) (juice as Record<string, boolean | number>)[key] = defaults[key]!
-    super(juice, controls, q, release)
+    super({}, [], q, release)
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return

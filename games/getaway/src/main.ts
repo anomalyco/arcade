@@ -14,7 +14,7 @@ import { Renderer } from "./render/renderer"
 import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
-import { DebugOverlay, juice } from "./ui/debug-overlay"
+import { DebugOverlay } from "./ui/debug-overlay"
 import { GpuPerf } from "../../../packages/kit/gpu-perf"
 import type { WorldView } from "../shared/sim/world"
 
@@ -253,7 +253,7 @@ async function main() {
     const focus = (view.phase === "intro" ? robber : mine) ?? robber ?? view.cars[0] ?? null
     if (focus && focus.boost < previousFuel - 1e-4) boostingUntil = now + 80
     previousFuel = focus?.boost ?? 1
-    freeze = juice.trauma ? Math.max(freeze, scene.hitStop) : 0
+    freeze = Math.max(freeze, scene.hitStop)
     scene.hitStop = 0
     const held = freeze > 0
     freeze = Math.max(0, freeze - dt)

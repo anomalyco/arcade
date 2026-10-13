@@ -11,7 +11,6 @@ import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FL
 import { MAX_LIGHTS } from "../render/shaders"
 import type { Camera } from "./camera"
 import { Fx } from "./fx"
-import { juice } from "../ui/debug-overlay"
 import { KERB_H } from "../render/city/streets"
 import type { Input } from "../../shared/sim/vehicle"
 import type { ShopSpill } from "../render/city/types"
@@ -151,7 +150,6 @@ export class Scene {
   private animate(view: WorldView, dt: number, focusId: number | null) {
     this.fx.update(dt)
     this.hitStopCool = Math.max(0, this.hitStopCool - dt)
-    if (!juice.skids) this.fx.skids.length = 0
     for (const c of view.cars) {
       if (c.ghost) continue
       const v = this.visOf(c)
@@ -173,7 +171,7 @@ export class Scene {
       const boosting = v.boostHold > 0 && !c.engineOff
       if (boosting && !v.boosting && c.speed < 24 && !c.airborne) v.launch = 0.45
       else v.launch = Math.max(0, v.launch - dt)
-      if ((c.landings ?? 0) > v.landings && juice.landing) {
+      if ((c.landings ?? 0) > v.landings) {
         const impact = Math.max(c.landing ?? 0, Math.abs(v.vy))
         v.landV = -Math.min(2.8, impact * 0.22)
         if (impact > 8) this.fx.sparks(c.x, c.z, -c.vx, -c.vz, Math.min(10, Math.floor(impact * 0.6)), 0.08)
@@ -187,7 +185,6 @@ export class Scene {
         v.landY += v.landV * step
         left -= step
       }
-      if (!juice.landing) v.landY = v.landV = 0
       const k = 1 - Math.exp(-dt * 8)
       v.roll += (Math.max(-0.11, Math.min(0.11, yawRate * c.speed * 0.0035)) - v.roll) * k
       v.pitch += (Math.max(-0.06, Math.min(0.06, -accel * 0.004)) - v.pitch) * k
@@ -202,7 +199,7 @@ export class Scene {
       const wheels = [-1, 1].flatMap((a) => [-1, 1].map((s) => ({ x: c.x + fx * spec.length * 0.32 * a + rx * side * s, z: c.z + fz * spec.length * 0.32 * a + rz * side * s })))
       const drift = c.drift > 4 && c.speed > 7
       const spin = !!input && input.throttle > 0.9 && c.speed < 9 && accel > 3
-      if (juice.skids && !c.airborne && (c.y ?? 0) < 0.1 && (drift || v.braking || spin || v.launch > 0)) {
+      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || v.braking || spin || v.launch > 0)) {
         wheels.forEach((wheel, i) => {
           if (v.launch > 0 && !drift && !v.braking && i >= 2) return
           const prev = v.wheels[i]
@@ -211,18 +208,16 @@ export class Scene {
       }
       v.wheels = wheels
       const ground = wheels.reduce((sum, p) => sum + this.groundAt(p.x, p.z), 0) / wheels.length
-      if (juice.curb) {
-        if (ground !== v.ground && c.speed > 2) v.springV += Math.min(1.6, c.speed * 0.06) * Math.abs(ground - v.ground) / KERB_H
-        // Substep the damped second-order suspension; stable even on a slow render frame.
-        for (let left = dt; left > 0;) {
-          const step = Math.min(left, 1 / 120)
-          v.springV += ((ground - v.height) * 180 - v.springV * 15) * step
-          v.height += v.springV * step
-          left -= step
-        }
-      } else { v.height = 0; v.springV = 0 }
+      if (ground !== v.ground && c.speed > 2) v.springV += Math.min(1.6, c.speed * 0.06) * Math.abs(ground - v.ground) / KERB_H
+      // Substep the damped second-order suspension; stable even on a slow render frame.
+      for (let left = dt; left > 0;) {
+        const step = Math.min(left, 1 / 120)
+        v.springV += ((ground - v.height) * 180 - v.springV * 15) * step
+        v.height += v.springV * step
+        left -= step
+      }
       v.ground = ground
-      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || juice.skids && v.launch > 0)) {
+      if (!c.airborne && (c.y ?? 0) < 0.1 && (drift || v.launch > 0)) {
         const intensity = drift ? Math.min(1, (c.drift - 3) / 8) : 0.7
         v.smokeAcc += dt * 16 * intensity
         while (v.smokeAcc > 1) {
@@ -231,7 +226,7 @@ export class Scene {
           this.fx.smoke(c.x - fx * back + rx * side * s, c.z - fz * back + rz * side * s, c.vx, c.vz, intensity)
         }
       }
-      if (juice.backfire && ((boosting && !v.boosting) || (input && v.throttle > 0.9 && input.throttle < 0.2 && c.speed > 22))) {
+      if ((boosting && !v.boosting) || (input && v.throttle > 0.9 && input.throttle < 0.2 && c.speed > 22)) {
         v.backfire = 0.07
         this.fx.backfire(c.x - fx * (spec.length / 2 + 0.3), 0.5 + v.height + (c.y ?? 0), c.z - fz * (spec.length / 2 + 0.3), -fx * 7, -fz * 7)
       }
@@ -245,7 +240,7 @@ export class Scene {
         }
       } else v.flameAcc = 0
       v.fuel = c.boost
-      if (juice.scrape && c.impact > 0.35 && c.speed > 4) {
+      if (c.impact > 0.35 && c.speed > 4) {
         v.scrapeAcc += dt * (12 + Math.min(c.speed, 40))
         const count = Math.floor(v.scrapeAcc)
         v.scrapeAcc -= count
@@ -266,10 +261,10 @@ export class Scene {
       }
       if (c.impact > 5 && v.impactCool === 0) {
         v.impactCool = 0.15
-        if (juice.sparks) v.crash = 0.06
+        v.crash = 0.06
         const sp = Math.hypot(c.vx, c.vz) || 1
         this.fx.sparks(c.x + (c.vx / sp) * spec.length * 0.45, c.z + (c.vz / sp) * spec.length * 0.45, -c.vx / sp, -c.vz / sp, Math.min(24, Math.floor(c.impact)))
-        if (c.id === focusId && juice.trauma) {
+        if (c.id === focusId) {
           this.shake = Math.max(this.shake, Math.min(1, c.impact / 18))
           if (c.impact > 9 && this.hitStopCool === 0) {
             this.hitStop = 0.045
@@ -301,7 +296,7 @@ export class Scene {
     const fp = focus ? [focus.x, 1, focus.z] : [cam.fx, 1, cam.fz]
     put(fp[0]!, fp[1]!, fp[2]!, focus ? 0.24 : 0)
     put(w, h, 0, t)
-    put(MOON[0], MOON[1], MOON[2], juice.tightPools ? 0.36 : 0.6)
+    put(MOON[0], MOON[1], MOON[2], 0.36)
     const heli = view.heli
     if (heli.active) {
       const ox = heli.x + Math.sin(heli.h) * 1.7
@@ -309,7 +304,7 @@ export class Scene {
       const dir = normalizeV([heli.sx - ox, -heli.y - 0.4, heli.sz - oz])
       put(ox, heli.y + 0.4, oz, 1)
       const reach = Math.hypot(heli.sx - ox, heli.y, heli.sz - oz)
-      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS * juice.spotlightRadius / reach)) - 0.003)
+      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS / reach)) - 0.003)
     } else {
       put(0, 0, 0, 0)
       put(0, -1, 0, 1)
@@ -317,8 +312,6 @@ export class Scene {
     put(0.035, 0.045, 0.085, 0.0035)
     const clip = vec4.transformMat4([fp[0]!, fp[1]!, fp[2]!, 1], vp)
     put(clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0)
-    put(juice.spotlightSoftness, juice.flatGround ? 0.035 : juice.roadSheen, +juice.tightPools, +juice.wallGradients)
-    put(+juice.shopSpill, +juice.grounding, 0, 0)
 
     // Lights: cars first (they matter most), then the street lamps nearest to the camera focus.
     const L = this.lights
@@ -418,7 +411,7 @@ export class Scene {
       const siren = c.role === "cop" ? t * 1.7 + c.id * 0.37 : -1
       const braking = v.braking ? 1 : 0
       const altitude = c.y ?? 0
-      if (juice.grounding || altitude > 0.1) sprite("a", c.x, v.ground + 0.018, c.z, spec.width * (juice.grounding ? 0.85 : 0.55) / (1 + altitude * 0.06), 0, 0, 0, (juice.grounding ? 0.7 : 0.55) / (1 + altitude * 0.45), juice.grounding ? 9 : 7, c.h, spec.length / spec.width * (juice.grounding ? 0.85 : 1), altitude)
+      sprite("a", c.x, v.ground + 0.018, c.z, spec.width * 0.85 / (1 + altitude * 0.06), 0, 0, 0, 0.7 / (1 + altitude * 0.45), 9, c.h, spec.length / spec.width * 0.85, altitude)
       // Popped tires: the body sags at those corners (roll toward the flat side, nose or tail down) and shimmies a little.
       const wm = c.wheels ?? 0
       let sagRoll = 0
@@ -447,8 +440,8 @@ export class Scene {
       const rx = Math.cos(c.h)
       const rz = -Math.sin(c.h)
       const half = spec.length / 2
-      if (juice.sparks && v.crash > 0) light(c.x + fx * half, 0.7 + v.height, c.z + fz * half, 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
-      if (juice.backfire && v.backfire > 0) light(c.x - fx * (half + 0.3), 0.65 + v.height, c.z - fz * (half + 0.3), 4, 0.45, 0.55, 1, 3 * v.backfire / 0.07)
+      if (v.crash > 0) light(c.x + fx * half, 0.7 + v.height, c.z + fz * half, 7, 1, 0.35, 0.06, 5 * v.crash / 0.06)
+      if (v.backfire > 0) light(c.x - fx * (half + 0.3), 0.65 + v.height, c.z - fz * (half + 0.3), 4, 0.45, 0.55, 1, 3 * v.backfire / 0.07)
       // Headlights: one spot per car, plus lens glows and a soft pool on the road ahead.
       light(c.x + fx * (half + 0.5), 1.3 + sagY, c.z + fz * (half + 0.5), 36, 1, 0.92, 0.78, 3.2, fx * 0.95, -0.3, fz * 0.95, 0.8)
       const hw = spec.width / 2 - 0.25
@@ -512,8 +505,8 @@ export class Scene {
       )
       const sx = heli.x + Math.sin(heli.h) * 1.7
       const sz = heli.z + Math.cos(heli.h) * 1.7
-      cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS * juice.spotlightRadius, [0.75, 0.85, 1], 0.32)
-      sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * juice.spotlightRadius * 1.3, 0.85, 0.92, 1, 0.1, 3)
+      cone(beams, [sx, heli.y + 0.4, sz], [heli.sx, 0, heli.sz], SPOT_GROUND_RADIUS, [0.75, 0.85, 1], 0.32)
+      sprite("d", heli.sx, 0.1, heli.sz, SPOT_GROUND_RADIUS * 1.3, 0.85, 0.92, 1, 0.1, 3)
       sprite("d", heli.x, heli.y - 0.5, heli.z, 1.6, 1, 1, 1, 2.5, 0)
       if (Math.floor(t * 1.5) % 2 === 0) sprite("d", heli.x, heli.y + 1.6, heli.z, 1.2, 1, 0.1, 0.1, 2, 0)
     }
@@ -535,11 +528,11 @@ export class Scene {
       sprite("d", robber.x, 0.15, robber.z, 5.5, 0.25, 0.55, 1, 1 + view.bust * 2, 2, -t * 2)
     }
 
-    if (juice.shopSpill) for (const s of this.spills) {
+    for (const s of this.spills) {
       if ((s.x - cam.fx) ** 2 + (s.z - cam.fz) ** 2 > 125 ** 2) continue
       sprite("d", s.x, KERB_H + 0.014, s.z, s.width + 0.4, 1, 0.39, 0.085, 0.14, 8, s.yaw, 2.5 / (s.width + 0.4))
     }
-    if (juice.grounding) {
+    {
       for (const b of this.city.boxes) {
         const x = (b.x0 + b.x1) / 2, z = (b.z0 + b.z1) / 2
         if ((x - cam.fx) ** 2 + (z - cam.fz) ** 2 > 125 ** 2) continue
@@ -570,7 +563,7 @@ export class Scene {
     // Real lights only for lamps that can light what's on screen; the rest just glow.
     for (let i = 0; i < near.length; i++) {
       const { l, d } = near[i]!
-      if (d < 120 * 120) light(l.x, l.y, l.z, juice.tightPools ? (l.small ? 6 : 10.5) : (l.small ? 10 : 17), 1, juice.tightPools ? 0.48 : 0.58, juice.tightPools ? 0.15 : 0.26, juice.tightPools ? (l.small ? 5 : 18) : (l.small ? 3 : 5))
+      if (d < 120 * 120) light(l.x, l.y, l.z, l.small ? 6 : 10.5, 1, 0.48, 0.15, l.small ? 5 : 18)
     }
     f[32 + 8 + 2] = n
     this.lightCount = n
@@ -615,7 +608,6 @@ export class Scene {
       sprites: { alpha, alphaCount: fxc.alpha, add, addCount: fxc.add },
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,
-      colourGrade: juice.colourGrade,
     })
   }
 }

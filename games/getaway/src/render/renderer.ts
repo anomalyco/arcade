@@ -6,7 +6,7 @@ import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShad
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
 const HDR: GPUTextureFormat = "rgba16float"
-export const FRAME_FLOATS = 16 * 2 + 4 * 10
+export const FRAME_FLOATS = 16 * 2 + 4 * 8
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
 const MAX_SPRITES = 6000
@@ -403,12 +403,10 @@ export class Renderer {
     sprites: { alpha: Float32Array<ArrayBuffer>; alphaCount: number; add: Float32Array<ArrayBuffer>; addCount: number }
     bloom: number
     flash: number
-    colourGrade?: boolean
   }) {
     const d = this.device
     d.queue.writeBuffer(this.frameBuf, 0, opts.frame)
     d.queue.writeBuffer(this.lightBuf, 0, opts.lights)
-    this.compositeData[0] = opts.colourGrade ? 1 : 0
     this.compositeData[2] = opts.bloom
     this.compositeData[3] = opts.flash
     d.queue.writeBuffer(this.compositeParams, 0, this.compositeData)

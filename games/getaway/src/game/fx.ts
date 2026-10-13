@@ -1,5 +1,4 @@
 import { SPRITE_FLOATS } from "../render/renderer"
-import { juice } from "../ui/debug-overlay"
 
 type Particle = {
   x: number
@@ -122,12 +121,12 @@ export class Fx {
         p.y += p.vy * dt
         if (p.gravity && p.y < 0.05) {
           p.y = 0.05
-          p.vy = juice.sparks && p.kind === 6 ? -p.vy * 0.48 : 0
+          p.vy = p.kind === 6 ? -p.vy * 0.48 : 0
         }
         p.z += p.vz * dt
         if (p.kind === 6) {
-          p.rot = juice.sparks ? Math.atan2(p.vz, p.vx) : 0
-          p.stretch = juice.sparks ? 1 + Math.min(7, Math.hypot(p.vx, p.vz) * 0.28) : 1
+          p.rot = Math.atan2(p.vz, p.vx)
+          p.stretch = 1 + Math.min(7, Math.hypot(p.vx, p.vz) * 0.28)
         }
         p.size = Math.max(0.02, p.size + p.grow * dt)
         list[w++] = p
@@ -182,7 +181,7 @@ export class Fx {
       Fx.write(addOut, di++, p, 1 - p.life / p.max)
       // Kind 6 uses the existing glow shader. A short velocity-aligned ribbon of overlapping
       // instances makes its stretch visible without changing the renderer's sprite contract.
-      if (juice.sparks && p.kind === 6) {
+      if (p.kind === 6) {
         const speed = Math.hypot(p.vx, p.vz) || 1
         const length = p.size * (p.stretch - 1)
         for (let j = 1; j <= 4 && di < max; j++) {
