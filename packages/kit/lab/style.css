@@ -626,4 +626,190 @@ body {
   color: #d8f4fc;
 }
 
+/* In-Viewport Transform Gizmo (Move & Rotate Handles + Numeric Entry) */
+.lab-gizmo {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.lab-gizmo-ring {
+  position: absolute;
+  left: -42px;
+  top: -42px;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 1.5px dashed #7cc5d699;
+  pointer-events: none;
+}
+
+.lab-gizmo[data-active-mode="rotate"] .lab-gizmo-ring {
+  border-color: #f5b864;
+  border-style: solid;
+}
+
+.lab-gizmo-handle {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid #7cc5d6;
+  background: #131c24f0;
+  color: #e4f2fa;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: grab;
+  pointer-events: auto;
+  box-shadow: 0 2px 8px #00000099;
+}
+
+.lab-gizmo-handle:hover,
+.lab-gizmo[data-active-mode="move"] .lab-gizmo-move {
+  background: #1f3947;
+  border-color: #9de2f2;
+  color: #ffffff;
+}
+
+.lab-gizmo-move {
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+}
+
+.lab-gizmo-rotate {
+  left: 0;
+  top: 0;
+  transform: translate(calc(-50% + var(--rot-x, 0px)), calc(-50% + var(--rot-y, -42px)));
+  border-color: #e5a95c;
+  color: #ffe3b8;
+}
+
+.lab-gizmo-rotate:hover,
+.lab-gizmo[data-active-mode="rotate"] .lab-gizmo-rotate {
+  background: #3d2c19;
+  border-color: #ffc270;
+  color: #ffffff;
+}
+
+.lab-gizmo-numeric {
+  position: absolute;
+  left: 0;
+  top: 52px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: #11171ef2;
+  border: 1px solid #2d3b48;
+  border-radius: 5px;
+  box-shadow: 0 4px 12px #00000099;
+  pointer-events: auto;
+}
+
+.lab-gizmo-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 9.5px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #8fa3b3;
+}
+
+.lab-gizmo-input {
+  width: 46px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  border: 1px solid #2b3844;
+  background: #0d1217;
+  color: #e2edf5;
+  font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-gizmo-input:focus {
+  outline: 1px solid #7cc5d6;
+  border-color: #7cc5d6;
+}
+
+/* Context-Aware Viewport Cursor / Reticle */
+.lab-viewport-cursor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.lab-viewport-cursor-ring {
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid #7cc5d6aa;
+  transition: transform 60ms ease, border-color 60ms ease;
+}
+
+.lab-viewport-cursor[data-cursor-state="idle"] .lab-viewport-cursor-ring {
+  opacity: 0.45;
+  transform: scale(0.75);
+}
+
+.lab-viewport-cursor[data-cursor-state="hover"] .lab-viewport-cursor-ring {
+  border-color: #7cc5d6;
+  background: #7cc5d61f;
+  transform: scale(1.2);
+}
+
+.lab-viewport-cursor[data-cursor-state="place"] .lab-viewport-cursor-ring {
+  border-color: #63e2a6;
+  border-style: dashed;
+  transform: scale(1.3);
+}
+
+.lab-viewport-cursor[data-cursor-state="move"] .lab-viewport-cursor-ring {
+  border-color: #7cc5d6;
+  border-radius: 4px;
+}
+
+.lab-viewport-cursor[data-cursor-state="rotate"] .lab-viewport-cursor-ring {
+  border-color: #f5b864;
+  border-style: dashed;
+  transform: scale(1.35);
+}
+
+.lab-viewport-cursor[data-cursor-state="marquee"] .lab-viewport-cursor-ring {
+  border-radius: 2px;
+  border-color: #7cc5d6;
+}
+
+.lab-viewport-cursor[data-cursor-state="pan"] .lab-viewport-cursor-ring,
+.lab-viewport-cursor[data-cursor-state="orbit"] .lab-viewport-cursor-ring {
+  border-color: #9fb4c7;
+  transform: scale(0.9);
+}
+
+.lab-viewport-cursor-tag {
+  position: absolute;
+  left: 14px;
+  top: -8px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #10161de8;
+  border: 1px solid #2b3946;
+  color: #d6e6f2;
+  font: 9.5px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+
 

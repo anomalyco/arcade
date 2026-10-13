@@ -331,6 +331,7 @@ export async function lab(options:LabOptions) {
       radial:workbench!.radial,
       getSelectedIds:()=>workbench!.getSelectedIds(),
       setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
+      transform:workbench!.transform,
     },
   }
   let last=0
