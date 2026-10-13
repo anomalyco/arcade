@@ -1,6 +1,7 @@
 import type { City } from "../../shared/sim/city"
 import type { WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
+import { TUNNEL } from "../../shared/sim/tunnel"
 
 const SIZE = 196
 /** Meters from the center of the map to its rim. */
@@ -110,6 +111,17 @@ export class Minimap {
     const iAmCop = me?.role === "cop"
     const robber = view.cars.find((c) => c.ownerId === view.robberId)
     const arrows: { x: number; z: number; color: string }[] = []
+    // Matching link glyphs identify the two ends without drawing a road across the city.
+    for (const x of [TUNNEL.westMouth, TUNNEL.eastMouth]) {
+      const [tx, ty] = toMap(x, TUNNEL.z)
+      if (Math.hypot(tx, ty) > r - 12) arrows.push({ x, z: TUNNEL.z, color: "#ffc879" })
+      else {
+        g.fillStyle = "#ffc879"
+        g.font = "bold 18px sans-serif"
+        g.textAlign = "center"
+        g.fillText("↔", r + tx, r + ty + 6)
+      }
+    }
 
     // Dispatch tip: a broad dashed circle the driver is somewhere inside. Fades over the minute until the next tip.
     const tip = view.tip
@@ -306,4 +318,3 @@ function dot(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill:
   g.fill()
   g.stroke()
 }
-

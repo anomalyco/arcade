@@ -429,6 +429,14 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Tunnel crossings carry a snapshot counter.** Getaway's `shared/sim/tunnel.ts` mirrors lateral pose and velocity
+  between two bores on one street. The shared substepped driver and client proxies use the same transfer; interpolation
+  snaps on the counter and the camera cuts on the position jump. Seven tests cover both directions, velocity preservation,
+  deterministic worlds, delayed prediction, remote proxy blending and a pursuing bot. `scripts/prove-tunnel.ts` captured
+  the crossing and follower on Metal. Its two 90-frame ramp runs matched every car state and reached 3.26 m. The contact
+  shadow now grows with clearance, stays on top of ramp surfaces and loses its sharp wheel patches with height; the
+  headlight footprint moves forward and widens. Both reuse existing sprite batches. Runtime cost is unmeasured.
+
 - **Start elapsed time on the animation-frame clock.** Getaway's first RAF timestamp can precede completion of
   synchronous scene construction. Subtracting `performance.now()` produced a first delta of -0.463 s on Metal.
   Subtracting that negative delta raised crash, brake, boost and freeze timers from zero: orange light and a frozen

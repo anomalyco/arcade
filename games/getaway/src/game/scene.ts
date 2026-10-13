@@ -1,6 +1,6 @@
 import { vec4 } from "wgpu-matrix"
 import { CELL, GRID, ROAD_HALF, VEHICLE_BY_ID, VEHICLES } from "../../shared/config"
-import type { City } from "../../shared/sim/city"
+import { rampSurface, type City } from "../../shared/sim/city"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import { buildCarVariants, buildHeli, buildRotor } from "../render/car-mesh"
 import { EmissionState, VehicleEmissions } from "./vehicle-emissions"
@@ -427,7 +427,10 @@ export class Scene {
       const bodyPitch = (springBody ? 0 : v.pitch) + (springBody || juice.wheelContact ? ch.pitch.x : 0)
       const braking = v.braking ? 1 : 0
       const altitude = c.y ?? 0
-      sprite("a", c.x, v.ground + 0.018, c.z, spec.width * 0.85 / (1 + altitude * 0.06), 0, 0, 0, 0.7 / (1 + altitude * 0.45), 9, c.h, spec.length / spec.width * 0.85, altitude)
+      let shadowGround = v.ground
+      for (const ramp of this.city.ramps) shadowGround = Math.max(shadowGround, rampSurface(ramp, c.x, c.z)?.y ?? 0)
+      const clearance = Math.max(0, altitude - shadowGround)
+      sprite("a", c.x, shadowGround + 0.035, c.z, spec.width * (0.92 + clearance * 0.14), 0, 0, 0, 0.92 / (1 + clearance * 0.10), 9, c.h, spec.length / spec.width * 0.85, clearance)
       // Popped tires: the body sags at those corners (roll toward the flat side, nose or tail down) and shimmies a little.
       const wm = c.wheels ?? 0
       let sagRoll = 0
@@ -483,7 +486,7 @@ export class Scene {
         if (dir[1] < -0.03) {
           const reach = Math.min(18, Math.max(0, (head[1] - v.ground) / -dir[1]))
           const x = head[0] + dir[0] * reach, z = head[2] + dir[2] * reach
-          sprite("d", x, this.groundAt(x, z) + 0.06, z, 2.6, 1, 0.9, 0.72, 0.1, 3, Math.atan2(dir[0], dir[2]), 2.2)
+          sprite("d", x, this.groundAt(x, z) + 0.06, z, 2.6 + clearance * 0.65, 1, 0.9, 0.72, 0.1 / (1 + clearance * 0.12), 3, Math.atan2(dir[0], dir[2]), 2.2)
         }
         const tail = bodyPoint(c, pose, [0, 0.9, -(half + 0.6)])
         light(...tail, 7, 1, 0.1, 0.06, braking ? 3 : 1.2)
@@ -536,7 +539,7 @@ export class Scene {
         if (blue > 0) sprite("d", ...bodyPoint(c, pose, [0.45, y, 0]), 0.9, 0.2, 0.35, 1, 1.7 * blue, 0)
         // Colored wash on the road around the cruiser.
         const roof = bodyPoint(c, pose, [0, y, 0])
-        sprite("d", roof[0], this.groundAt(roof[0], roof[2]) + 0.08, roof[2], 7, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue), 3)
+        sprite("d", roof[0], this.groundAt(roof[0], roof[2]) + 0.08, roof[2], 7 + clearance * 0.8, red > blue ? 1 : 0.2, 0.15, red > blue ? 0.15 : 1, 0.12 * Math.max(red, blue) / (1 + clearance * 0.15), 3)
       }
     }
 
