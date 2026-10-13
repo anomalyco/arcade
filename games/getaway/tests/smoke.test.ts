@@ -33,13 +33,13 @@ test("a sharp turn stays connected and a teleport or inactive gap does not bridg
 })
 
 test("storage is bounded and reused while smoke disperses to zero", () => {
-  const t=new SmokeTrail(), particles=t.particles, instances=t.instances, field=t.field
+  const t=new SmokeTrail(), particles=t.particles, instances=t.instances
   for(let i=0;i<SMOKE_CAPACITY+10;i++) t.spawn(i*0.05,0.65,0,20,0)
   expect(t.count).toBe(SMOKE_CAPACITY)
-  t.update(0.1); t.prepare(8)
-  expect(t.field.some(x=>x>0)).toBe(true)
+  t.update(0.1); t.prepare()
+  expect(t.instances[4]).toBeGreaterThan(0)
   for(let i=0;i<360;i++) t.update(1/60)
-  t.prepare(8)
+  t.prepare()
   expect(t.count).toBe(0); expect(t.drawn).toBe(0)
-  expect(t.particles).toBe(particles); expect(t.instances).toBe(instances); expect(t.field).toBe(field)
+  expect(t.particles).toBe(particles); expect(t.instances).toBe(instances)
 })

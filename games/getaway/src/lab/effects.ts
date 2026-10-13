@@ -16,7 +16,7 @@ import { Chassis, chassisSettings } from "../game/chassis"
 import type { SpriteWriter } from "../game/props/particles"
 import { tyreSettings } from "../../../../packages/kit/lab/tyre-settings"
 
-const labels:Record<keyof typeof getawayEffects,string>={sparks:"Sparks",scrape:"Scrape",skids:"Skids",smoke:"Smoke",nitro:"Nitro flame",pops:"Exhaust pops",cold:"Cold exhaust",landing:"Landing",debris:"Clutter debris",hydrant:"Hydrant water",explosion:"Explosion",plumes:"Smoke plumes",headlights:"Headlights"}
+const labels:Record<keyof typeof getawayEffects,string>={sparks:"Sparks",scrape:"Scrape",skids:"Skids",nitro:"Nitro flame",pops:"Exhaust pops",cold:"Cold exhaust",landing:"Landing",debris:"Clutter debris",hydrant:"Hydrant water",explosion:"Explosion",plumes:"Smoke plumes",headlights:"Headlights"}
 
 export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"getaway-effects","Getaway effects",()=>{
   const {stage}=context,meshes=stage.meshes,sprites=new GameSprites(context),fx=new Fx(),emissions=new VehicleEmissions(context.trail)
@@ -36,7 +36,7 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
     else pending.push([x,y,z,size,r,g,b,a,kind===2?2:0,rot,stretch])
   }
   const pending:number[][]=[]
-  const clear=()=>{fx.alpha.length=fx.add.length=fx.puffs.length=fx.skids.length=0;props?.clear();emissions.reset();state=new EmissionState();active="";remaining=0;scrape=0;time=0}
+  const clear=()=>{fx.add.length=0;fx.clearSkids();props?.clear();emissions.reset();state=new EmissionState();active="";remaining=0;scrape=0;time=0}
   return {settings,groups,effects:[...Object.entries(labels).map(([value,label])=>({value,label})),{value:"tyre",label:"Connected tyre smoke"}],environments:getawayRooms,
     controls:[{key:"targetX",label:"Target X",type:"range",min:-12,max:12,step:.25},{key:"targetZ",label:"Target Z",type:"range",min:-12,max:12,step:.25}],
     environment(kind,seed){
@@ -57,7 +57,6 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
         Object.assign(car,{x,z,h:0,speed:0,vx:0,vz:0,drift:0})
         if(effect==="sparks"||effect==="scrape")fx.sparks(x,z,1,0,24,.3)
         if(effect==="skids")for(const side of [-.8,.8])fx.skidSegment(x+side,z-3,x+side,z+2,.6)
-        if(effect==="smoke")for(let i=0;i<10;i++)fx.smoke(x+(i-5)*.2,z,0,0,1)
         if(effect==="plumes")props!.particles.emit(1,x,.3,z,14,.9)
         if(effect==="hydrant"||effect==="explosion"||effect==="debris")props!.trigger(effect==="hydrant"?"hydrant":effect==="explosion"?"propane":"crate",x,z)
         if(effect==="pops"){state.throttle=1;state.load=1;state.speed=20;car.speed=20;state.cooldown=0}
@@ -97,6 +96,6 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
       sprites.upload()
       if(active==="headlights")dynamic.push({x:car.x,y:1.3,z:car.z+3,radius:getawayEffects.headlights.radius,r:1,g:.92,b:.78,power:getawayEffects.headlights.power,dx:0,dy:-.3,dz:.95,cone:.8})
       stage.dynamicLights=[...dynamic,...lights].slice(0,8)
-    },draw:sprites.draw,clear,inspect:()=>({particles:(props?.particles.count??0)+fx.alpha.length+fx.add.length,skids:fx.skids.length,chunks:props?.chunks.length??0,water:props?.reactions.filter(r=>r.water).length??0,explosions:props?.stats.explosions??0,tyre:context.trail.count,time:+time.toFixed(2)}),
+    },draw:sprites.draw,clear,inspect:()=>({particles:(props?.particles.count??0)+fx.add.length,skids:fx.skidCount,chunks:props?.chunks.length??0,water:props?.reactions.filter(r=>r.water).length??0,explosions:props?.stats.explosions??0,tyre:context.trail.count,time:+time.toFixed(2)}),
   }
 })

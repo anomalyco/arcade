@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 // A bounded, silent Metal proof. All fixtures are client-side view/body copies.
-const out = process.env.CHASSIS_OUT ?? join(import.meta.dir, "../../../captures/getaway-chassis")
+const lamps = process.argv.includes("--lamps")
+const out = process.env.CHASSIS_OUT ?? join(import.meta.dir, lamps ? "../../../captures/getaway-chassis-lamps" : "../../../captures/getaway-chassis")
 mkdirSync(out, { recursive: true })
 const fixture = process.argv.includes("--fixture") ? await (await import("vite")).createServer({ server: { host: "127.0.0.1", port: 0 }, configFile: join(import.meta.dir, "../vite.config.ts") }) : null
 await fixture?.listen()
@@ -14,7 +15,7 @@ const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const chrome = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).reverse().map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)!
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const mode = process.argv[2] ?? "stills"
-const scenarios = ["launch", "braking", "corner", "kerb", "landing", "countersteer"]
+const scenarios = lamps ? ["braking", "kerb"] : ["launch", "braking", "corner", "kerb", "landing", "countersteer"]
 const errors: string[] = []
 try {
   const page = await browser.newPage({ viewport: { width: 720, height: 600 }, deviceScaleFactor: 1 })
@@ -26,7 +27,7 @@ try {
   if (adapter.vendor !== "apple" || !adapter.architecture.includes("metal") || /swiftshader/i.test(JSON.stringify(adapter))) throw new Error(`Not Metal: ${JSON.stringify(adapter)}`)
   console.log("adapter", adapter)
   await page.addStyleTag({ content: "body > :not(canvas) { display:none !important } canvas { display:block }" })
-  await page.evaluate(async () => {
+  await page.evaluate(async (lamps) => {
     const load = (path: string) => import(/* @vite-ignore */ (performance.getEntriesByType("resource").find(e => new URL(e.name).pathname === path)?.name ?? path))
     const [{ Scene }, { Camera }, { juice }, sim, config] = await Promise.all([load("/src/game/scene.ts"), load("/src/game/camera.ts"), load("/src/ui/debug-overlay.ts"), load("/shared/sim/vehicle.ts"), load("/shared/config.ts")])
     const original = Scene.prototype.draw
@@ -41,9 +42,15 @@ try {
     p.view = structuredClone(p.view)
     p.view.heli.active = false
     p.cam = new Camera()
-    Object.assign(p.cam, { pitch: 0.6, dist: 20, fov: 0.6 })
+    Object.assign(p.cam, { pitch: 0.6, dist: lamps ? 16 : 20, fov: 0.6 })
     p.device = p.scene.renderer.device
-    p.reset = (scenario: string, enabled: boolean) => {
+    const { bodyPoint } = await load("/src/game/car-pose.ts")
+    const { lampMounts } = await load("/src/render/car-lights.ts")
+    if (lamps) {
+      const render = p.scene.renderer.render.bind(p.scene.renderer)
+      p.scene.renderer.render = (frame: any) => { p.renderFrame = frame; return render(frame) }
+    }
+    p.reset = (scenario: string, enabled: boolean, vehicle = "muscle") => {
       Object.assign(p.juice, { suspension: enabled, wheelContact: enabled, visibleWheels: enabled, vehicleFeel: enabled, trauma: false, rush: false })
       p.scene.resetBench()
       let seed = 7
@@ -55,8 +62,8 @@ try {
       if (scenario === "corner" || scenario === "countersteer") { p.body.x = 304; p.body.z = scenario === "corner" ? 266 : 282; p.body.vz = 23 }
       if (scenario === "kerb") Object.assign(p.body, { x: config.ROAD_HALF - 1.3, z: 27, h: 0.28, vx: 0.6, vz: 2 })
       if (scenario === "landing") Object.assign(p.body, { x: 322, z: 456, h: Math.PI / 2, vx: 30 })
-      p.spec = config.VEHICLE_BY_ID.get("muscle")
-      p.view.cars = [{ ...p.base, vehicle: "muscle" }]
+      p.spec = config.VEHICLE_BY_ID.get(vehicle)
+      p.view.cars = [{ ...p.base, vehicle, role: p.spec.role }]
       p.tick(0)
     }
     p.tick = (dt = 1 / 30) => {
@@ -77,9 +84,46 @@ try {
       p.scene.input = input
       p.scene.draw(p.view, p.cam, 720, 600, dt, c)
       const ch = p.scene.vis.get(c.id).chassis
-      return { scenario: s, frame: i, car: { ...c }, roll: ch.roll.x, pitch: ch.pitch.x, lift: ch.lift.x, steer: ch.steer, contacts: structuredClone(ch.contacts) }
+      let lampError = 0
+      if (lamps) {
+        const models = p.juice.visibleWheels ? p.scene.chassisModels.get(c.vehicle).bodies : p.scene.variants.get(c.vehicle)
+        const instance = p.scene.batchMap.get(models[c.id % models.length]).data
+        const pose = { height: instance[1], roll: instance[4], pitch: instance[5] }
+        const car = { x: instance[0], z: instance[2], h: instance[3] }
+        const point = (offset: [number, number, number]): [number, number, number] => bodyPoint(car, pose, offset)
+        const half = p.spec.length / 2, hw = p.spec.width / 2 - 0.25
+        const check = (actual: number[], expected: number[]) => { lampError = Math.max(lampError, Math.hypot(...expected.map((n, i) => n - actual[i]))) }
+        const lights = Array.from({ length: p.scene.lightCount }, (_, i) => [...p.renderFrame.lights.slice(i * 12, i * 12 + 12)])
+        const reference = p.scene.lightStyle === 0, mount = lampMounts(p.spec)
+        const head = lights.find(l => l[3] === (reference ? 36 : p.scene.lightStyle === 3 ? 22 : 18))!
+        const from = point(reference ? [0, 1.3, half + 0.5] : [0, mount.frontY, half + 0.08])
+        check(head, from)
+        const to = point(reference ? [0, 1, half + 1.45] : [0, mount.frontY - 0.28, half + 1.08])
+        const direction = to.map((n, i) => n - from[i]), length = Math.hypot(...direction)
+        check(head.slice(8, 11), direction.map(n => n / length))
+        check(lights.find(l => l[3] === (reference ? 7 : 4) && Math.abs(l[5] - (reference ? 0.1 : 0.055)) < 1e-5)!, point(reference ? [0, 0.9, -(half + 0.6)] : [0, mount.rearY, -half - 0.28]))
+        const sprites = Array.from({ length: p.renderFrame.sprites.addCount }, (_, i) => [...p.renderFrame.sprites.add.slice(i * 12, i * 12 + 12)])
+        for (const front of [true, false]) {
+          const green = front ? (reference ? 0.95 : p.scene.lightStyle === 2 ? 0.94 : 0.84) : reference ? 0.12 : 0.055
+          const glows = sprites.filter(l => l[8] === (reference ? 0 : 15) && Math.abs(l[5] - green) < 1e-5)
+          if (glows.length !== 2) throw new Error(`Missing ${front ? "head" : "tail"} glows`)
+          glows.forEach((g, j) => check(g, point(reference
+            ? [hw * (j ? 1 : -1), 0.75, front ? half + 0.1 : -(half + 0.05)]
+            : [(front ? mount.frontX : mount.rearX) * (j ? 1 : -1), (front ? mount.frontY : mount.rearY) + 0.02, front ? half + 0.065 : -half - 0.075])))
+        }
+        if (c.role === "cop") {
+          const y = c.vehicle === "swat" ? 2.9 : 1.9
+          check(lights.find(l => l[3] === 14 && l[4] === 1)!, point([-2.2, y - 1.2, 0]))
+          check(lights.find(l => l[3] === 14 && l[6] === 1)!, point([2.2, y - 1.2, 0]))
+          const sirens = sprites.filter(l => l[8] === 0 && Math.abs(l[5] - 0.1) < 1e-5 || l[8] === 0 && Math.abs(l[5] - 0.35) < 1e-5)
+          if (!sirens.length) throw new Error("Missing siren glows")
+          for (const glow of sirens) check(glow, point([glow[4] === 1 ? -0.45 : 0.45, y, 0]))
+        }
+        if (lampError > 0.0001) throw new Error(`Lamp attachment error: ${lampError}`)
+      }
+      return { scenario: s, frame: i, car: { ...c }, roll: ch.roll.x, pitch: ch.pitch.x, lift: ch.lift.x, steer: ch.steer, contacts: structuredClone(ch.contacts), lampError }
     }
-  })
+  }, lamps)
   const reports: any[] = []
   if (mode === "probe") {
     await page.evaluate(() => { const p = (window as any).__chassisProof; p.reset("launch", true); p.tick() })
@@ -95,6 +139,17 @@ try {
     }
     reports.push({ scenario, enabled, states })
     console.log(name, "maxY", Math.max(...states.map(s => s.car.y)), "landings", states.at(-1).car.landings)
+  }
+  if (lamps) for (const vehicle of ["cruiser", "swat"]) {
+    const check = await page.evaluate((vehicle) => {
+      const p = (window as any).__chassisProof
+      p.reset("kerb", true, vehicle)
+      let maxError = 0
+      for (let frame = 0; frame < 40; frame++) maxError = Math.max(maxError, p.tick().lampError)
+      return { vehicle, maxError }
+    }, vehicle)
+    reports.push({ sirenCheck: check })
+    console.log("siren", check)
   }
   if (mode.startsWith("perf")) {
     const result = await page.evaluate(async (wheelsOnly) => {

@@ -2,8 +2,7 @@
 export const getawayEffects = {
   sparks:{speed:6,speedSpread:14,life:.25,lifeSpread:.4,size:.12,sizeSpread:.1,gravity:22,drag:.8,bounce:.48},
   scrape:{rate:12,speedRate:40},
-  skids:{life:9,width:.16,capacity:1600},
-  smoke:{life:1.1,lifeSpread:.8,size:.35,sizeSpread:.25,growth:1.5,opacity:.42,drag:1.6},
+  skids:{life:9,width:.16},
   nitro:{size:.15,sizePower:.035,length:.32,lengthPower:.28,power:1.8},
   pops:{life:.11,cooldown:1.8},
   cold:{rate:24,life:.85,opacity:.2,speed:1.4},

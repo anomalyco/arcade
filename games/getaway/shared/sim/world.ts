@@ -52,8 +52,9 @@ import {
   stripWheels,
 } from "./gadgets"
 import { mulberry32, type Rng } from "./rng"
-import { carShape, shapeGap } from "./collide"
+import { carShape, collideShapes, shapeGap } from "./collide"
 import { type Body, type Impact, type Input, NO_INPUT, WHEEL_NAMES, collideBoxes, collideCars, flatCount, forward, isDark, lateralSpeed, newBody, speedOf, stepAndCollide, toggleEngine } from "./vehicle"
+import { TUNNEL, inTunnel, tunnelLink } from "./tunnel"
 
 /** intro: robber at the scene, alarm ringing. headstart: robber drives, cops wait. chase: everyone drives. end: results. */
 /** waiting: fewer than two players, everyone free-drives until someone joins. */
@@ -106,6 +107,7 @@ export type Car = {
 export type SimEvent = { t: number; kind: string; text: string; carId?: number; to?: string; impact?: number }
 
 export type CarView = {
+  tunnels?: number
   /** Optional for older snapshots; current worlds always supply vertical/control state. */
   y?: number
   vy?: number
@@ -574,6 +576,7 @@ export class World {
       if (slot !== null) this.useGadget(c, slot)
       prev.set(c.id, { x: c.body.x, z: c.body.z, h: c.body.h })
       c.impact = stepAndCollide(c.body, input, c.vehicle, dt, boxes, wall, this.city.ramps)
+      if (Math.abs(c.body.x - prev.get(c.id)!.x) > 100) prev.set(c.id, { x: c.body.x, z: c.body.z, h: c.body.h })
       if (c.body.landing > 0) this.events.push({ t: this.t, kind: "landing", text: "", carId: c.id, impact: c.body.landing, to: c.role === "robber" && !this.seen ? c.ownerId : undefined })
       if (c.impact >= IMPACT_EVENT) this.impactEvent(c, wall)
     }
@@ -583,10 +586,19 @@ export class World {
       for (let j = i + 1; j < this.cars.length; j++) {
         const a = this.cars[i]!
         const b = this.cars[j]!
-        // Cops pass through each other; only the driver is solid to them.
-        if (a.role === "cop" && b.role === "cop") continue
         const ma = this.moving(a)
         const mb = this.moving(b)
+        if (a.role === "cop" && b.role === "cop") {
+          // Gentle positional separation only: no collision impulse, damage, stun,
+          // heat or crash event. Frozen units stay put, and airborne cars pass above.
+          if ((!ma && !mb) || Math.abs(a.body.y - b.body.y) > 1.5) continue
+          const contact = collideShapes(carShape(a.body, a.vehicle), carShape(b.body, b.vehicle))
+          if (!contact) continue
+          const shift = Math.min(6 * dt, contact.depth * (1 - Math.exp(-dt * 12))) / (Number(ma) + Number(mb))
+          if (ma) { a.body.x -= contact.nx * shift; a.body.z -= contact.nz * shift; touched.add(a) }
+          if (mb) { b.body.x += contact.nx * shift; b.body.z += contact.nz * shift; touched.add(b) }
+          continue
+        }
         const hit = collideCars(a.body, a.vehicle, b.body, b.vehicle, dt, !ma, !mb)
         if (!hit) continue
         if (ma) touched.add(a)
@@ -660,6 +672,7 @@ export class World {
         for (const v of adj[u]!) {
           const a = nodes[u]!
           const b = nodes[v]!
+          if (tunnelLink(a, b)) continue // This edge is not a straight road through the city centre.
           if (segmentHitsCircle(a.x, a.z, b.x, b.z, p.x, p.z, ROAD_HALF + 1)) this.blockedEdges.add(u * 1024 + v)
         }
     }
@@ -804,6 +817,7 @@ export class World {
 
   /** Is the robber inside the area this cop's screen shows? (Survival mode's notion of "seeing" the robber.) */
   onScreen(cop: Car, r: Car) {
+    if (inTunnel(cop.body) || inTunnel(r.body)) return false
     const dx = r.body.x - cop.body.x
     const dz = r.body.z - cop.body.z
     const along = dx * Math.sin(CAMERA_YAW) + dz * Math.cos(CAMERA_YAW)
@@ -816,6 +830,7 @@ export class World {
    * leads the car by up to ~16 m and players have wide monitors. Used for drawing the car, never for radar.
    */
   inView(cop: Car, r: Car) {
+    if (inTunnel(cop.body) || inTunnel(r.body)) return false
     const dx = r.body.x - cop.body.x
     const dz = r.body.z - cop.body.z
     const along = dx * Math.sin(CAMERA_YAW) + dz * Math.cos(CAMERA_YAW)
@@ -824,6 +839,7 @@ export class World {
   }
 
   canSee(cop: Car, r: Car) {
+    if (inTunnel(cop.body) || inTunnel(r.body)) return false
     const a = cop.body
     const b = r.body
     const d = Math.hypot(a.x - b.x, a.z - b.z)
@@ -844,7 +860,7 @@ export class World {
     this.stepHeli(dt, r)
     const smoked = this.inSmoke(r.body.x, r.body.z)
     // Dark (engine off, standing still): no radar and no helicopter. Cops can still see the car on their own screens and bust it.
-    const dark = isDark(r.body)
+    const dark = isDark(r.body) || inTunnel(r.body)
     const spotted = this.heli.active && !smoked && !dark && Math.hypot(this.heli.sx - r.body.x, this.heli.sz - r.body.z) < SPOT_RADIUS
     this.heli.lock = spotted ? this.heli.lock + dt : 0
     if (spotted) this.heat += dt * HEAT_SPOT_RATE
@@ -993,6 +1009,7 @@ export class World {
         return {
           id: c.id, ownerId: c.ownerId, name: c.name, role: c.role, vehicle: c.vehicle.id,
           x: b.x, z: b.z, h: b.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b),
+          tunnels: b.tunnels,
           y: b.y, vy: b.vy, airborne: b.airborne, landing: b.landing, landings: b.landings, braking: b.braking, boosting: b.boosting,
           stun: b.stun, boost: b.boostFuel, human: c.human, impact: c.impact, ghost: false,
           gadgets: undefined, yaw: b.yaw, slide: b.drift ?? 0, slip: b.slip ?? 0, wheels: b.wheels ?? 0,
@@ -1016,7 +1033,7 @@ export class World {
       const hidden = c.role === "robber" && !showRobber && !ownSight
       if (hidden && !this.lastSeen) continue
       let view = base.cars[index]!
-      if (hidden) view = { ...view, x: this.lastSeen!.x, z: this.lastSeen!.z, h: this.lastSeenH, y: 0, vy: 0, airborne: false, landing: 0, landings: 0, braking: false, boosting: false, vx: 0, vz: 0, speed: 0, drift: 0, stun: 0, boost: 0, impact: 0, ghost: true, yaw: 0, slide: 0, slip: 0, wheels: 0, engineOff: false, radar: false }
+      if (hidden) view = { ...view, tunnels: 0, x: this.lastSeen!.x, z: this.lastSeen!.z, h: this.lastSeenH, y: 0, vy: 0, airborne: false, landing: 0, landings: 0, braking: false, boosting: false, vx: 0, vz: 0, speed: 0, drift: 0, stun: 0, boost: 0, impact: 0, ghost: true, yaw: 0, slide: 0, slip: 0, wheels: 0, engineOff: false, radar: false }
       else if (ownSight) view = { ...view, radar: false }
       if (viewerId === undefined || viewerId === c.ownerId) view = { ...view, gadgets: c.gadgets.map((g, i) => ({ ...g, ready: this.gadgetReady(c, i as 0 | 1) })) }
       cars.push(view)
@@ -1073,7 +1090,15 @@ export class World {
     const r = this.robber()
     if (!r) return null
     if (this.seen || (car && this.phase === "chase" && isDark(r.body) && this.onScreen(car, r))) return { x: r.body.x, z: r.body.z, visible: true }
-    if (this.lastSeen && this.t - this.lastSeen.t < 10) return { x: this.lastSeen.x, z: this.lastSeen.z, visible: false }
+    if (this.lastSeen && this.t - this.lastSeen.t < 10) {
+      const p = this.lastSeen
+      // Follow the observed departure, not the hidden live position.
+      if (Math.abs(p.z - TUNNEL.z) < TUNNEL.half) {
+        if (p.x > TUNNEL.eastMouth - 12 && Math.sin(this.lastSeenH) > 0.5) return { x: 0, z: TUNNEL.z, visible: false }
+        if (p.x < TUNNEL.westMouth + 12 && Math.sin(this.lastSeenH) < -0.5) return { x: this.city.max - 8, z: TUNNEL.z, visible: false }
+      }
+      return { x: p.x, z: p.z, visible: false }
+    }
     // Trail gone cold: ground units fan out along the helicopter's search spiral, each a different way round.
     return { ...this.heliSearch(car ? 2 + car.id * 2.4 : 0), visible: false }
   }

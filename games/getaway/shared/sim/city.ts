@@ -1,4 +1,5 @@
 import { CELL, GRID, ROAD_HALF, WATER_Z, WORLD_MAX, type Extraction, type JobSite } from "../config"
+import { TUNNEL, tunnelLink } from "./tunnel"
 import { mulberry32 } from "./rng"
 
 export type Rgb = [number, number, number]
@@ -353,8 +354,20 @@ export function generateCity(seed: number): City {
 
   const wall = (x0: number, x1: number, z0: number, z1: number) => boxes.push({ x0, x1, z0, z1, h: 40, color: [0, 0, 0], neon: null, kind: "wall", label: null })
   const edge = -ROAD_HALF
-  wall(edge - 6, edge, edge - 6, WORLD_MAX + 6)
-  wall(WORLD_MAX, WORLD_MAX + 6, edge - 6, WORLD_MAX + 6)
+  for (const [a, b] of [[edge - 6, edge], [WORLD_MAX, WORLD_MAX + 6]]) {
+    wall(a!, b!, edge - 6, TUNNEL.z - TUNNEL.half)
+    wall(a!, b!, TUNNEL.z + TUNNEL.half, WORLD_MAX + 6)
+  }
+  for (const [a, b] of [[TUNNEL.west - 8, edge], [WORLD_MAX, TUNNEL.east + 8]]) {
+    wall(a!, b!, TUNNEL.z - 10, TUNNEL.z - TUNNEL.half)
+    wall(a!, b!, TUNNEL.z + TUNNEL.half, TUNNEL.z + 10)
+  }
+  const west = nodes.push({ x: TUNNEL.west, z: TUNNEL.z }) - 1
+  const east = nodes.push({ x: TUNNEL.east, z: TUNNEL.z }) - 1
+  adj.push([], [])
+  link(nodeIndex(0, 2), west)
+  link(nodeIndex(GRID, 2), east)
+  link(west, east)
   wall(edge - 6, WORLD_MAX + 6, edge - 6, edge)
   wall(edge - 6, WORLD_MAX + 6, WATER_Z, WATER_Z + 6)
 
@@ -561,7 +574,7 @@ export function routeNodes(city: City, from: number, to: number, blocked?: (a: n
       if (blocked?.(u, v)) continue
       const a = city.nodes[u]!
       const b = city.nodes[v]!
-      const d = dist[u]! + Math.hypot(a.x - b.x, a.z - b.z)
+      const d = dist[u]! + (tunnelLink(a, b) ? 1 : Math.hypot(a.x - b.x, a.z - b.z))
       if (d < dist[v]!) {
         dist[v] = d
         prev[v] = u

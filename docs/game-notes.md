@@ -64,39 +64,67 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
-- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`. Sections share
-  one GPU device, test scene and panel; only the active section ticks. Its Metal proof changed 21 lighting settings
-  through panel controls and verified changed scene pixels, excluding the panel itself. Both game entries compiled
-  and rendered without GPU errors. Material codes come from the game catalogs; their shader adapters are pending.
-  A fixture adapter verified Physics collider bounds, sleeping visibility, counts, pause/reset/wake and inactive
-  section isolation. The client prop solver is still an extension point. Evidence: `perf/lab.json`.
-- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle shadow table stores each box's
-  near/far interval and height per light. Quantized neighboring rays can hit the receiving wall itself and stripe its
-  face. Skipping that convex receiver removes the stripes while retaining other blockers. This is a bounded test
-  scene implementation, not a replacement for either game's renderer. Its sphere receives shadows; only boxes cast
-  them. The Lab's sampled GPU ms is diagnostic, not a paired performance claim.
-
+- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`, sharing one device,
+  test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
+  Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
+  `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`; the Materials shader calibration remains a stub.
+- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
+  and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
+  bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.
 - **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes four-connected arrival
-  distances through 48² wall-clipped fields. The fragment shader adds a shallow height envelope, moving 3D billows,
-  approximate self-extinction and eight nearby lights. Blackout has frag and claymore equipment, so their post-blast
-  soot and burning-wreck plumes use this path; Volume Smoke in the Lab restores the legacy sprites for comparison.
-  Rays stop at stored MSAA depth, render at no more than 480×320 with 24 steps, then depth-aware upsampling places
-  them in HDR before bloom. Four volume slots cap work. Shots and explosions carve temporary cylinders; walls stay
-  closed as holes refill. This affects visual sight only. Blackout supplies walls at least 1.8 m high, windows and
-  glass as sealed columns. Low wrecks remain depth occluders, so they can emit smoke. Fluid pressure and vertical
-  flow over furniture remain unimplemented.
-- **Keep a shader extraction visually exact.** The Getaway tyre simulation and WGSL moved to `packages/kit/fx/`
-  behind two game adapters. The original modules from `94c62b9` and the shared path produced identical 960×640
-  pixels at seed 7's drift frame 64 on Metal. The playground uses that same tyre shader, alongside bounded general
-  particles and the grenade volume. All eight effects and density, optical-depth, lighting and bounds views compiled
-  and rendered without GPU errors. The separate particle heatmap adds fragment contributions; the volume heatmap
-  displays integrated optical depth rather than claiming to count transparent draw overlap.
-- **Measure the two volume passes with retained depth on both sides.** Blackout's final nine paired, frozen-pose
-  total-GPU measurements added 0.947 ms median, MAD 0.016 ms, on M5 Max/Metal at 960×640; pair deltas ranged from
-  0.872 to 0.979 ms. This isolates the raymarch and upsample with legacy sprites
-  suppressed on both sides; it excludes the historical depth discard-to-store change. The timer spans first polar
-  compute to a dependent final-composite marker, using an offscreen target and no pass sums. See `perf/fx-kit.json`
-  and `.md`; the result is a single-room measurement, not a four-cloud bound or a CS2-quality equivalence claim.
+  distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
+  restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and
+  eight nearby lights. Rays stop at stored MSAA depth, render at at most 480×320 with 24 steps, then depth-aware
+  upsampling places them before bloom. Shots carve temporary cylinders. Walls ≥1.8 m and glass seal the field;
+  low wrecks remain depth occluders. This is visual only; fluid pressure and vertical furniture flow are unimplemented.
+- **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
+  `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
+  vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.
+- **Measure the two volume passes with retained depth on both sides.** The earlier Blackout nine-pair frozen-room
+  measurement added 0.947 ms median, MAD 0.016 ms, at 960×640 on M5 Max/Metal (`perf/fx-kit.json`). It excludes the
+  depth discard-to-store change and is not a four-cloud bound. The interval covers first polar compute through a
+  dependent offscreen final composite; no pass sums.
+
+- **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
+  silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
+  world-anchored sub-stratum offsets remove the coherent bands without a fullscreen blur. Never interpolate blocker
+  distances across silhouettes. `src/render/shaders.ts`, `perf/blackout-shadows.md`; all-off remains RGB-identical to main.
+  This is a quality/cost tradeoff: the 1440p office paired delta was +1.341 ms (MAD 0.282).
+- **Motion history belongs to submitted frames and stable owners.** Blackout's opt-in MRT velocity path tracks actor,
+  projectile and vehicle parts by weak owner/model/part identities. Coalesced builds do not advance history; gaps,
+  teleports and resize reset it. Eight depth-aware samples run in the existing composite, before the DOM HUD. The
+  1440p M5 Max paired deltas were +0.060 / -0.312 / +0.237 ms for office/downtown/lot, with MAD
+  0.345 / 0.896 / 0.273. The sub-0.5 ms target is unproven under that variance. See `perf/blackout-motion.md`.
+
+- **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
+  selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then
+  refreshes enablement and readouts. Metal checks covered minimum/midpoint/maximum draws, all 12 light sliders and the
+  five-style select, exact Copy JSON, input isolation and unchanged switches/other groups. A generic fixture checked
+  string options and a non-divisible range (0.05–1, step 0.1 → maximum valid 0.95). Approved defaults remain unchanged.
+
+- **End tilted beams below the receiver.** Getaway's perpendicular cone rim had a raised half that ended across
+  the spotlight pool. Removing the beam in a Metal capture removed the seam. `game/scene.ts` now extends each rim ray
+  below the road, so the existing world-height fade reaches zero before the geometry ends. The 7.5 m pool and 0.0025
+  cone feather are unchanged. The contact shadow also has a smaller rounded footprint, a lower peak opacity and
+  stronger clearance fading in `render/shaders.ts`; its half-width grows from 1.482 to 2.372 m at the captured 3.26 m
+  jump, while opacity falls from 0.82 to 0.46. `scripts/prove-fixes.ts` captures the exact `b0a9446` module bodies and
+  current code with matching static/jump poses and spotlight uniforms. No passes or draws were added; runtime cost
+  is unmeasured. Stills and the no-beam diagnostic are in `captures/getaway-fixes/`.
+
+- **Presentation comparisons belong in the Lab.** Getaway exposes car-light styles, vehicle-emission visibility and
+  cold exhaust through the shared `packages/kit/lab-panel.ts`, alongside its chassis controls. The panel's generic
+  select leaves All On/Off restricted to toggles and keeps keyboard/pointer input out of the game. Switching light style
+  replaces the existing model buffers, retaining wheel contacts and spring state. A Metal check switched eight times
+  with 42 model slots throughout, unchanged chassis identity and no page/console errors; cold exhaust emitted wisps,
+  bulk toggles preserved the light choice, and regular URL style overrides had no effect. `bench`/`mux` overrides remain
+  for automation. This supersedes the query-selected light study instructions below; switching cost is unmeasured.
+
+- **Keep sprite kinds distinct when combining studies.** The integrated car-light and exhaust paths both originally
+  used kinds 10 and 13. Exhaust retains 10 (cold condensation) and 13 (attached flame); car-light footprints, lenses,
+  lens streaks and brake streaks use 14–17 in `game/scene.ts` and `render/shaders.ts`. On the combined Metal preview,
+  drift and standing nitro emitted 312 and 74 smoke samples, and the 16 posed light-style cases passed their packed
+  position/direction checks. Moving brake/kerb fixtures and cruiser/SWAT sirens also passed. Startup red stayed within
+  42.45–42.83, with no page or console errors. Runtime cost of this integration has not been measured.
 
 - **Getaway's approved presentation is permanent.** The six Look effects and eight driving effects now run without
   switches or `vanilla`/`off` overrides. The Lab retains its frame/GPU readout and input isolation, with no empty preset
@@ -160,7 +188,69 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Art direction
 
+- **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
+  A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
+  stronger baked contact AO, blue cap bevels and more visible floor pattern move the seeded office frame toward C.
+  The city material uses warm/cool window variation and soft window footprints to suggest distant defocus. This costs
+  shader terms rather than a fullscreen depth/blur pass; it does not add building geometry. All seven default on.
+  Tile gloss and longer furniture shadows remain separate opt-ins because their benefit in this view is small.
+  Office material changes are gated by map kind; downtown receives only the grade. Smoke and particle logic are unchanged.
+  At 1280×800 on M5 Max Metal, one warmup plus seven alternating pairs measured all-on total GPU deltas of
+  +0.071 ms office (MAD 0.077), -0.009 ms downtown (MAD 0.034), and +0.024 ms vehicle lot (MAD 0.020).
+  These are noisy cost estimates, not speedups. Each switch's paired samples and added work are in
+  `perf/blackout-look-paired.json` and `perf/blackout-look.md`; CPU and pipeline-creation costs remain unmeasured.
+- **Exact Look-off needs the original shader arithmetic.** Blackout's first uniform-disabled shader still differed
+  from main by a few one-code-value pixels. Shader overrides reduced the error but did not eliminate it. The shader
+  factories now omit Look terms entirely for the baseline pipelines. Main and Look-off stills match every RGB pixel
+  in the office, downtown and vehicle lot at the same seeded frame. Baseline normalized WGSL also matches main.
+  `games/blackout/scripts/look-proof.ts` captures those frames and rejects invalid hardware timestamps; the benchmark
+  uses first-pass start to composite end, awaits readback, and never sums overlapping pass intervals.
+  The production/current comparison completed 181 paired ticks with zero pose mismatches and passed the nine Look
+  switches and All On/Off controls. Its left pane preserves main's existing presentation defaults rather than forcing
+  the older vanilla preset.
+
+### Shipped tyre smoke and launch wheelspin (v2)
+
+Getaway now has one tyre/exhaust path. The shipped renderer is the former **6, advected billows**; its soft wheel
+sources read better in the inspected motion than the shallow raymarched alternative. The style selector, URL
+selection, faceted puffs, cel sprites, ribbons, directional variant, density field and volume pipeline were removed.
+Historical study reports below describe earlier commits; their experimental capture scripts are no longer shipped.
+
+`game/vehicle-emissions.ts` owns wheel-local heat and emission. A low-speed nitro press or high-throttle launch
+starts at most 1.25 s of wheelspin. Releasing a held brake under full throttle also starts a launch burst. Strength
+uses `accel / grip`, nitro strength, drivetrain and a speed envelope that reaches zero at 24 m/s. RWD uses full
+strength, FWD 0.75 and AWD 0.45. Compact is FWD, Interceptor AWD, and unspecified cars retain rear drive.
+Launch heat rises faster (6/s, about 95% in half a second), while normal drift heat still rises at 2/s.
+The smoke and skid ribbons consume the same per-wheel slip value; straight braking alone makes neither.
+The shared simulation still lacks wheel RPM/torque, so this is a presentation traction proxy, not a new handling model.
+
+Two small realism changes are shipped:
+
+- Smoke and skid emission stop on lawn. `tyreSurface` follows the park's 3.2 m grass inset and preserves its crossing
+  paths, central paving and plazas. Wheel histories continue updating while inactive so road re-entry cannot bridge
+  a track across the grass. Existing clouds can drift over a lawn. No dust/snow effect is implied.
+- Practical-light tint is stronger, sampled at billboard corners for a gradual colour change across each puff.
+  The bounded 32-light loop runs in the vertex stage, with cars and sirens packed before nearby street lamps.
+  The captures show red tail/brake tint fading into warm lamp light. This adds no lights, shadow pass or fragment loop.
+
+Skid ribbons use a fixed 1,600-slot buffer instead of per-segment objects. Per-car wheel positions are also reused.
+The six capture routes peaked at 312 smoke samples for drift, 144 for burnout/launch and 74 for standing nitro.
+Standing nitro produced 56 connected skid segments; the rolling nitro route produced zero smoke samples or skid
+segments. All three cloud routes dispersed completely, and still/phone simulations matched on every recorded frame.
+
+Paired whole-GPU measurements on M5 Max/Metal at 960×640 include tyre smoke, skid ribbons, exhaust sprites and pop
+lights. The largest pose-median increment was 0.0846 ms (dispersing drift, MAD 0.0092 ms). Some other poses had
+outliers over 1 ms; this is a median budget result, not a worst-frame or phone-GPU guarantee. Raw paired intervals,
+coverage and reproduction are in `perf/getaway-smoke-realistic-v2.json` and `.md`.
+
+The branch was rebased onto `getaway-look` at `5f9b839`, preserving its startup-clock fix and baked effects.
+`vehicleEffects.coldExhaust` remains the single cold-preset integration setting. Evidence is in
+`captures/getaway-smoke-realistic-v2/`: a 1440×1440 sheet and a silent 720×1280, 40.13 s, 8,001,888-byte
+H.264 Main/yuv420p fast-start clip. Both were inspected, copied to Lamplight's preview folder and sent to Kit.
+
 ### Tyres, nitro and cold exhaust
+
+Historical v1 study; the v2 section above describes the shipped path.
 
 The connected study's boost cloud has been replaced by wheel-driven emission in
 `games/getaway/src/game/vehicle-emissions.ts`. The default remains style 6; style 8 uses the same wheel sources
@@ -217,6 +307,56 @@ The prior connected-study report describes its historical offscreen-target measu
 
 Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, silent 720×1280 H.264 Main/yuv420p clip
 (31.6 s, 7,435,113 bytes), original stills, motion inspection, matching still/video route poses and paired GPU data.
+
+- **Choose lighting in the Lab.** Backquote → Lights → Style switches between Reference, Recessed, Light bar,
+  Cinematic and Soft pool while driving. Soft pool enables the 12 tuning sliders, and Copy JSON includes the style.
+  The shared Lab supplies selects and dependent-control enablement. `Scene` replaces existing mesh buffers and changes
+  both moving and parked cars without resetting the world. The Metal proof cycled all five styles, checked that
+  repeated selections reused meshes, and confirmed that the car state survived every change. `lights=N` remains
+  an automation override for repeatable captures; interactive comparisons use the panel.
+
+- **Blend bumper beams into a tunable road pool.** Getaway's new default, Soft pool, shares one warm-white
+  `HEADLIGHT` colour between mesh lenses, lights, glows, beams and pools. Sprite kinds 14 and 15 use smooth fades
+  with zero-slope edges and no alpha discard threshold. The pool projects the posed lamp's aim onto road height;
+  brake dive brings it closer. All mounted origins still use `bodyPoint`. The Lab's Lights group has 12 live sliders
+  and a Copy JSON button; settings last for the current page session. Styles 0–3 retain their comparison values.
+  `scripts/prove-car-lights.ts --v2 --pose` passed on Metal (`metal-3`): matched front/braking/gameplay stills for
+  0, 1 and 4, three 180-frame straight drives of 56.94 m with no lateral drift, and 12 submitted body-pose cases.
+  Every slider changed submitted lighting, its minimum remained finite, all 12 pointer interactions released game
+  input, keyboard events stayed in the panel, and clipboard JSON matched the settings. No page/GPU errors occurred.
+  `scripts/car-lights-sheet.py --v2` assembles the 1480×1190 sheet at `captures/preview/getaway-car-lights-v2.jpg`;
+  raw frames and proof are in `captures/preview/lights-v2/`. The seeded one-car light count stays at 100, as in style 1.
+  GPU-time cost remains unmeasured.
+
+- **One body pose for the mesh and its lamps.** `src/game/car-pose.ts` uses the chassis branch's
+  `bodyPoint(car, pose, local)` interface and the instance shader's roll → pitch → yaw order. Omitted height,
+  roll and pitch default to zero; supplied height includes ground, flight and springs. `scene.ts` sends the same
+  `pose` to the body instance and every car lamp glow/light, including the reference style, sirens, crash and backfire.
+  Headlight direction comes from two transformed local points, so brake dive changes the aim too. Ground footprints
+  use the posed lamp's horizontal origin and road height rather than floating with the body. Keep the chassis branch's
+  sprung `pose` calculation when integrating; lamp code needs no separate suspension calculation.
+  Four transform tests pass, and `scripts/prove-car-lights.ts --pose` checked lift, roll, brake dive and combined motion
+  for all four light styles on Metal. It compares actual submitted light/glow positions and beam directions with the
+  body instance pose (16 cases, tolerance 0.00003 m), and retains shaped lens glows in candidates 1–3. No GPU-time
+  claim is made for the extra transforms.
+
+- **Car-light studies (`?lights=0..3`).** `src/render/car-lights.ts`, `car-mesh.ts`, `game/scene.ts` and the sprite
+  shader keep an original reference (0), warm recessed lamps (1, preview default), cool headlamps/full rear bar (2),
+  and longer warm fans with subtle lens and braking streaks (3). All candidates replace oversized round sprites with
+  bevelled housings and tight rectangular lens glows. Lens positions follow body roll, pitch and jump height. Two
+  short-range lights let the adjacent body bevels catch the lamp colour; the ground fans fade out in flight.
+  The concept images show small rectangular rear lamps, compact red spill and beams connected to the nose. The
+  [Precinct Steam screenshots](https://store.steampowered.com/app/490110/The_Precinct/) show small practical sources
+  with road wash; [Art of Rally's Light Trails mod](https://mikematthews.itch.io/light-trails-mod) demonstrates
+  brake-only trails (a mod reference, not a claim about the base game). Our streak candidate is much shorter.
+  A physically elevated spotlight can leave a gap on the road; the old extra ellipse at bumper +6 m made that gap
+  read as a detached pool. Candidates use an 8/10/12 m fan starting at the bumper, plus the real spotlight.
+  Shape the fan **in fragment space on a rectangular quad**: a tapered vertex quad distorted affine UV interpolation
+  into two bright diagonal lines. The corrected fan is continuous in the inspected close and gameplay Metal views.
+  `scripts/prove-car-lights.ts --video` captures all four at identical poses, verifies real app startup for each URL,
+  and makes a silent 720×1280, 30 fps, 24 s H.264 Main/yuv420p phone clip (6.72 MB). Twelve stills and 720 video frames
+  completed without page or GPU errors. Light count rises from 98 to 100 in the seeded one-car scene; the extra
+  geometry and sprite/light work have no measured GPU-time claim. Kit's choice among the candidates is pending.
 
 - **Check street furniture in metres beside an unscaled car.** Getaway's `src/game/props/dimensions.ts` sets shared
   dimensions for all 17 clutter kinds. Mesh-bound tests catch lids and feet extending beyond colliders; a separate
@@ -286,26 +426,6 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
 
 ## Researched, not yet adopted
 
-### Responsive smoke research and the shared implementation (2026-10-12)
-
-[Valve's Responsive Smokes](https://www.youtube.com/watch?v=_y9MpNcAitQ) shows volumes filling spaces, reacting
-to lighting, opening under bullet fire and dispersing under explosions. Valve's public demonstration establishes
-the behavior, but does not publish the full solver or shader. [Garrett Gunnell's reconstruction](https://github.com/GarrettGunnell/CS2-Smoke-Grenades)
-documents limited voxel flood fill, mesh voxelization, tiled Worley noise, a generalized raymarcher and SDF-based
-deformation. These implementation details belong to the reconstruction, not verified Valve source. Solid voxels
-stop propagation; open cells let a connected front travel around corners. Density noise shapes the filled volume,
-light transmittance shades its interior, and temporary distance-field holes explain the shot/explosion response.
-
-For top-down WebGPU, the adopted version uses four bounded 2D arrival grids with analytic vertical density rather
-than a full 3D solver. It follows room walls and doors at 0.5 m resolution, drifts noise through the density, and
-integrates a low-resolution image with fixed spatial blue-noise-like farthest-point jitter. Scene-depth stopping and
-depth-aware upsampling follow the low-resolution-volume tradeoff described in
-[GPU Gems 3, chapter 23](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-23-high-speed-screen-particles)
-and [chapter 30](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-30-real-time-simulation-and-rendering-3d-fluids).
-The package reuses persistent field, particle and upload arrays. Its smoke target costs at most 1.17 MiB, plus
-the small noise and density textures and the host's retained depth. Full 3D flood propagation, obstacle-aware
-light transport, pressure advection and temporal reconstruction remain research candidates.
-
 ### Connected smoke research (2026-10-12)
 
 Kit rejected styles 1–5 because their separate silhouettes read as beads. The next study must maintain overlapping
@@ -346,6 +466,51 @@ operation counts and memory, not measured milliseconds.
 - **Overdraw and extinction.** GPU Gems 23 and Unity's [six-way discussion](https://discussions.unity.com/t/vfx-graph-introducing-six-way-lighting-for-smoke-dust-and-clouds-vfx/906564)
   both identify transparent overdraw as the main expense. Keep noise coherent across overlapping elements, convert
   optical depth with `1-exp(-density*distance)`, reduce density as the cloud expands, and bound screen coverage before adding resolution.
+
+### Getaway sound pass: research and choice
+
+- **Engine sources.** Crossfaded RPM/load recordings preserve a real engine's character; pitch-synchronous
+  granular playback follows RPM with fewer obvious layer boundaries. The [Project CARS / Forza Motorsport 5
+  interview](https://designingsound.org/2014/08/11/vehicle-engine-design-project-cars-forza-motorsport-5-and-rev/)
+  compares these approaches; [Audiokinetic's sample-to-granular guide](https://www.audiokinetic.com/en/community/blog/engine-sound-modeling-from-sampling-to-granular-synthesis-in-wwise)
+  describes RPM and load blending. This is the relevant racing-game pattern, not a claim that every Codemasters or
+  Forza release uses one implementation. Good recordings and loop authoring are the expensive part.
+- **Procedural alternative.** [Antonio-R1's WebAudio engine generator](https://github.com/Antonio-R1/engine-sound-generator)
+  separates intake, block and outlet, with waveguides and an AudioWorklet (and a faster WASM implementation).
+  [AngeTheGreat's engine-sim](https://github.com/ange-yaghi/engine-sim) simulates combustion and engine response to
+  generate audio. Both explain why firing pulses and resonances matter; full combustion simulation is excessive here.
+- **Chosen candidate:** native, band-limited periodic-wave firing harmonics over a 720-degree cycle, low exhaust
+  and brighter load-dependent intake, with crank rumble and filtered air. Automatic class-specific gear ratios,
+  hysteresis and 160 ms torque cuts give RPM drops and short clunks. One detailed player voice, four cheap world
+  engines. Native DSP avoids per-sample JS work. This is an arcade approximation, not a physical engine simulator.
+- **Tyres and transients:** lateral slip angle plus estimated launch slip ratio feeds quiet scrub, then resonant
+  band-limited noise whose centre frequency rises with slip. Airborne tyres are silent; grass reduces squeal and
+  kerbs brighten scrub. Nitro gets a noise ignition, sustained roar and release/blow-off with exhaust pops.
+  Existing crash layers follow speed and vehicle mass; contact speed drives the scrape loops and landings use thuds.
+- **Mix:** keep wail/yelp recordings with bounded Doppler and distance attenuation; street-height segment/AABB
+  occlusion closes their low-pass behind buildings. Nearby facades vary the synthetic street impulse send.
+  Eighteen sample one-shots, eight synthetic bursts, four remote engines and four remote sirens bound work.
+  Exponential parameter smoothing, event ducking and a final compressor/limiter follow the
+  [Web Audio API](https://www.w3.org/TR/webaudio/). A compressor is not a guaranteed true-peak brick wall: measure
+  rendered peaks and leave headroom. Hearing preference and mobile-device cost still need playtesting.
+- **Offline result:** 450 seed-7 chase frames, 30 Hz, captured on Chromium/Metal on the Studio. The new raw mixer
+  measured −16.04 LUFS integrated and −4.28 dBTP; legacy voices through the same protected bus measured −15.66 LUFS
+  and −4.20 dBTP. Neither clipped. Six shifts were scheduled; the actual M handler and Lab old/new switch passed.
+  New control scheduling was 0.10 ms median / 0.20 ms p95 in this single render (browser clock granularity; not a
+  runtime speedup or audio-thread CPU benchmark). Spectrograms show RPM harmonic movement and shift drops.
+  Maximum isolated-sample deviation was 0.144 new / 0.175 old; new control-boundary delta 0.167 was below its
+  overall 0.314 maximum. These are discontinuity diagnostics, not an assertion that no audible click exists.
+  No listening took place. Six focused gearbox/slip/occlusion tests passed; full check passed 112 tests, 12 skips.
+  Reproduction and provenance: `games/getaway/src/audio/SOURCES.md`; raw reports remain beside the private captures.
+- **Nitro retrigger correction:** the first player synth preferred snapshot `boosting` to local input, remote
+  bursts watched successive fuel decreases, and holding boost at empty fuel alternates depletion/refill in the sim.
+  `audio/nitro.ts` now latches one ignition per local press, locks out refill while held after exhaustion, and
+  debounces only remote boost-state releases. Interruption stops native sources and requires a fresh press.
+  The replacement noise/turbine voice sits under the engine; exhaust pops follow actual scene backfire events.
+  The 12-second peaceful proof recorded exactly four ignitions for four presses including a hold through empty,
+  zero voices afterward, −18.64 LUFS / −4.46 dBTP and zero clipped samples. A separate unfaded offline regression
+  checked eight ignitions and six exactly silent tail windows after exhaustion/release/interruption. Full check:
+  115 passed, 12 skips. Subjective improvement awaits Kit's listening; no audio was played during verification.
 
 ### Getaway street destruction research (2026-10-12)
 
@@ -422,25 +587,6 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
-- **Keep Lab spawning behind game adapters.** `packages/kit/lab/spawn.ts` owns placement, effects, lights and the
-  shared panel controls. Getaway's `src/lab/spawn.ts` supplies the production vehicle step, chassis, tyre emissions
-  and `StreetProps`; Blackout's supplies its movement and soldier rig. On headless Metal, actual keyboard input
-  drove a Muscle through five cones and a propane tank, triggering contact impulses, breakup and explosion
-  particles. The soldier walked 4.08 m in one second and sprinted 6.24 m with Dvorak comma + Shift. Panel focus
-  released throttle, all seven vehicles rendered, and row/grid/clear plus all eight effects and three light types
-  passed. `perf/lab-spawn.json` records the proof. Spawn and Physics share bodies; gameplay input is disabled in
-  Physics. Whole-scene sampled GPU time is diagnostic, not a performance comparison.
-- **Reserve separate sprite IDs when merging effects.** The clutter merge used 10–12 for paper/water/fire, which
-  collided with the existing smoke/ribbon shader IDs. Keep clutter's simulation kinds and map its output to
-  14–16; smoke/flames retain 10–13. Both game checks and the combined Metal shader/control proof passed.
-
-- **Use one Lab for tuning.** The shared `LabPanel` supports typed selects, live ranges and actions alongside
-  toggles. The FX playground and Getaway smoke selector use those controls instead of creating their own DOM.
-  Selects preserve numeric option values; All On/Off changes only toggles. The Metal `--lab` proof exercised
-  slider keyboard input, effect/debug selection, playback, retrigger, clipboard copy, and Backquote from both a
-  focused control and the canvas. Blackout's existing toggle/preset adapter still passed. Interactive smoke style
-  changes leave the URL alone; `bench`/`mux` may supply a deterministic smoke override. Evidence: `perf/fx-kit-lab.json`.
-
 - **Ignore blur releases from the previous input owner.** On an iframe focus change, the old window's blur message can
   arrive after the new window's keydown or mousedown and cancel the new input. `games/blackout/compare.html` releases
   held input when ownership changes, then accepts release messages only from the current owner. The parent header is
@@ -462,6 +608,30 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Lab navigation captures keys, not just focus.** The shared panel captures keyboard events at the window before
+  game bubble listeners, releases held input on open, and retains consumed keyups after close. This follows
+  [Dear ImGui's keyboard capture guidance](https://github.com/ocornut/imgui/blob/master/docs/FAQ.md#q-how-can-i-tell-whether-to-dispatch-mousekeyboard-to-dear-imgui-or-my-application).
+  Contextual row/group commands keep edits local; command-palette-style fuzzy search jumps through folded groups.
+  DOM-free tests cover focus, adjustment, search, exact values and default resets. Metal preview proof exercised both
+  games' input adapters, Dvorak letter keys, coarse/fine steps, edit cancellation, Copy JSON, search/unfolding, presets,
+  and comparison-message typing/modifiers with zero leaked keys or page errors. Rendering performance was not measured.
+
+- **Separate pursuing cops without crash impulses.** Getaway's `shared/sim/bots.ts` blends pursuit with distance- and
+  closing-speed-weighted separation steering and braking. `world.ts` gently corrects remaining cop/cop overlaps using
+  their oriented footprints, with no velocity impulse or crash event; it preserves frozen cars and vertical separation.
+  The 100-tick Metal chase's minimum centre spacing rose from 0.003 m to 4.001 m with zero impacts. The deterministic
+  eight-second sim test requires more than 2 m centre spacing and less than 0.4 m soft bumper overlap, plus zero stun
+  and impact events. All three new regression tests fail on the original simulation and pass after the change.
+  Neighbour checks are quadratic in the cop count; runtime cost is unmeasured.
+
+- **Tunnel crossings carry a snapshot counter.** Getaway's `shared/sim/tunnel.ts` mirrors lateral pose and velocity
+  between two bores on one street. The shared substepped driver and client proxies use the same transfer; interpolation
+  snaps on the counter and the camera cuts on the position jump. Seven tests cover both directions, velocity preservation,
+  deterministic worlds, delayed prediction, remote proxy blending and a pursuing bot. `scripts/prove-tunnel.ts` captured
+  the crossing and follower on Metal. Its two 90-frame ramp runs matched every car state and reached 3.26 m. The contact
+  shadow now grows with clearance, stays on top of ramp surfaces and loses its sharp wheel patches with height; the
+  headlight footprint moves forward and widens. Both reuse existing sprite batches. Runtime cost is unmeasured.
+
 - **Sleeping street props with bounded local debris.** Getaway's `src/game/props/` places 1,281 props from seed 7,
   independently of the authoritative city RNG. Rendered car boxes wake a 120 Hz impulse solver; a spatial hash and
   awake set skip resting bodies. Rotated box ground support and rounded pair proxies suit disposable furniture, but
@@ -481,6 +651,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   152.9 → 46.5 during startup before the clock fix to 47.2 → 47.0 after it; `off=trauma` starts at 47.0.
   Reset Seed in `compare.html` also retained the same stationary spawn without the flash. This supersedes the earlier
   unreproduced-startup note below. Runtime cost is unmeasured.
+
+- **Attach car lamps with the same transform as the body mesh.** Getaway's `src/game/car-pose.ts` exports
+  `bodyPoint(car, { height, roll, pitch }, [x, y, z])`, which applies roll, pitch, yaw, then translation like the
+  instance shader. Headlight/taillight glows, point/spot origins and sirens share it; the headlight direction uses two
+  transformed points. Ground-light pools project onto the road instead of floating with the body. Close-up Metal
+  braking/kerb captures and packed-buffer checks covered 288 off/on frames; maximum attachment error was 0.000007 m.
+  Cruiser and SWAT sirens also passed. `captures/preview/getaway-chassis-lamps-phone.mp4` has the stacked proof.
+  The extra CPU cost of the attachment transforms has not been measured.
 
 - **Filter acceleration before springing the body.** Getaway's `src/game/chassis.ts` filters interpolated velocity
   over 85 ms and acceleration over 65 ms, then uses exact underdamped springs (12–16 rad/s, damping ratio 0.52).
@@ -533,11 +711,3 @@ Candidates from the code audits; measure and playtest before moving any into the
   faceted blobs replaced by soft smoke. Nitro onset below 24 m/s adds a 0.45 s rear-wheel skid/smoke burst under the
   existing skid switch; the capture recorded exactly 26 connected segments (two per frame) and five smoke sprites,
   then no further segments while boost stayed held. CPU/GPU cost and Kit's playtest verdict remain unmeasured.
-- **Effect tuning shares production settings and emission paths.** Both games' `src/lab/effects.ts` adapters
-  register sections through `packages/kit/lab/game-effects.ts`. Seeded rooms come from the real office/city
-  generators; surface tests call Blackout's tracer, furniture-hit and impact paths. A seeded desk may have no
-  monitor, so use `deskMonitorLights` to select a specimen seed instead of assuming every desk can spark.
-  Headless Metal proof asserted glass/paper, wall/metal/partition holes, monitor breakage, hydrant water and
-  propane explosions, plus panel locks, looping, pause, Copy JSON and keyboard input on both hosts.
-  Matched game PNGs before/after the settings extraction were byte-identical. See `docs/lab-effects.md`
-  and `perf/lab-effects*.json` for the inventory and proof limits; extraction overhead is unmeasured.

@@ -240,7 +240,6 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal, inst);
   o.color = pow(v.color, vec3f(2.2));
-  if (v.mat == 12.0) { o.color *= smokeLight(o.world, o.normal); }
   o.mat = v.mat;
   o.extra = inst.params;
   o.cut = 0.0;
@@ -299,8 +298,6 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
       on = a * (0.5 + 0.5 * strobe);
     }
     col = o.color * (0.25 + on * 9.0);
-  } else if (mat == 12) {
-    col = o.color;
   } else if (mat == 6) {
     // Glass: near-black, picking up highlights from nearby lights and moonlight sheen.
     col = shade(o.color, o.world, n, 0.9, 0.25) + vec3f(0.006, 0.009, 0.016);
@@ -386,8 +383,10 @@ struct Inst {
  * Sprites: camera-facing glows and smoke, ground-aligned decals (rings, skid marks, light pools) and the
  * helicopter beam. kind: 0 glow, 1 smoke, 2 ring, 3 disc, 4 skid, 5 beam, 6 spark,
  * 7 airborne shadow, 8 rectangular spill/grounding, 9 wheel-weighted contact shadow,
- * 10 volumetric smoke, 11 cel smoke, 12 connected ribbon, 13 attached exhaust flame.
- * 14 fluttering paper, 15 water droplets, 16 fire lobes.
+ * 10 cold condensation, 13 attached exhaust flame,
+ * 14 bumper-anchored beam footprint, 15 mounted lens, 16 lens streak, 17 brake streak,
+ * 18 tunable soft beam, 19 soft road pool,
+ * 20 fluttering paper, 21 water droplets, 22 fire lobes.
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -413,10 +412,19 @@ struct SOut {
   let kind = s.misc.x;
   var world: vec3f;
   let size = s.posSize.w;
-  if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 12.0 || kind == 13.0) {
+  if (kind == 14.0 || kind == 17.0 || kind == 18.0) {
+    let t = c.y * 0.5 + 0.5;
+    // Shape the fan in fragment space: a trapezoid quad distorts interpolated UVs.
+    let lc = vec2f(c.x * size, t * size * s.misc.z);
+    let cr = cos(s.misc.y); let sr = sin(s.misc.y);
+    world = s.posSize.xyz + vec3f(lc.x * cr + lc.y * sr, 0.0, -lc.x * sr + lc.y * cr);
+  } else if (kind == 15.0) {
+    let cr = cos(s.misc.y); let sr = sin(s.misc.y);
+    world = s.posSize.xyz + vec3f(c.x * size * cr, c.y * size * s.misc.z, -c.x * size * sr);
+  } else if (kind == 2.0 || kind == 3.0 || kind == 4.0 || (kind >= 7.0 && kind <= 9.0) || kind == 13.0 || kind == 19.0) {
     let r = s.misc.y;
     let cr = cos(r); let sr = sin(r);
-    let taper = select(1.0, s.color.a, kind == 12.0);
+    let taper = 1.0;
     let lc = vec2f(c.x * size * taper, c.y * size * max(s.misc.z, 0.01));
     world = s.posSize.xyz + vec3f(lc.x * cr + lc.y * sr, 0.0, -lc.x * sr + lc.y * cr);
   } else if (kind == 5.0) {
@@ -434,21 +442,21 @@ struct SOut {
     let right = normalize(cross(vec3f(0.0, 1.0, 0.0), toCam));
     let up = cross(toCam, right);
     var corner = c;
-    if (kind == 14.0) {
+    if (kind == 20.0) {
       let cr = cos(s.misc.y); let sr = sin(s.misc.y);
       corner = vec2f(c.x * cr - c.y * sr, (c.x * sr + c.y * cr) * max(0.08, abs(s.misc.z)));
     }
-    if (kind == 15.0) { corner.y *= s.misc.z; }
+    if (kind == 21.0 || kind == 16.0) { corner.y *= s.misc.z; }
     world = s.posSize.xyz + (right * corner.x + up * corner.y) * size;
     // Nudge glows toward the camera so they are not swallowed by their own lamp geometry.
-    world += toCam * size * select(0.5, 0.0, kind >= 10.0);
+    world += toCam * size * select(0.5, 0.0, kind == 10.0 || (kind >= 20.0 && kind <= 22.0));
   }
   var o: SOut;
   o.pos = F.viewProj * vec4f(world, 1.0);
   o.uv = c;
   o.color = s.color;
   o.height = world.y;
-  if (kind == 10.0 || kind == 11.0) {
+  if (kind == 10.0) {
     o.color = vec4f(s.color.rgb * smokeLight(s.posSize.xyz, vec3f(0.0, 0.7, 0.0)), s.color.a);
   }
   if (kind == 1.0) {
@@ -476,11 +484,11 @@ struct SOut {
   var a = 0.0;
   let k = o.kind;
   var col = o.color.rgb;
-  if (k == 14.0) {
+  if (k == 20.0) {
     a = (1.0 - smoothstep(0.8, 1.0, abs(o.uv.x))) * (1.0 - smoothstep(0.8, 1.0, abs(o.uv.y)));
-  } else if (k == 15.0) {
+  } else if (k == 21.0) {
     a = pow(max(0.0, 1.0 - r * r), 1.2);
-  } else if (k == 16.0) {
+  } else if (k == 22.0) {
     let edge = r + 0.08 * sin(o.uv.x * 16.0) * sin(o.uv.y * 13.0);
     a = pow(max(0.0, 1.0 - edge), 1.3);
   } else if (k == 0.0 || k == 6.0) {
@@ -488,7 +496,7 @@ struct SOut {
   } else if (k == 1.0) {
     let billow = 0.88 + 0.12 * sin(o.uv.x * 5.0 + o.extra * 17.0) * sin(o.uv.y * 4.0 - o.extra * 11.0);
     a = pow(max(0.0, 1.0 - r * r), 2.0) * billow;
-  } else if (k == 10.0 || k == 11.0) {
+  } else if (k == 10.0) {
     // Three overlapping lobes, with a coherent shaded underside rather than radial grey haze.
     let angle = (o.extra - 0.5) * 1.6;
     let q = vec2f(o.uv.x * cos(angle) - o.uv.y * sin(angle), o.uv.x * sin(angle) + o.uv.y * cos(angle));
@@ -500,19 +508,9 @@ struct SOut {
     let lobes = min(d0, min(d1, d2)) - 1.0;
     let normal = vec3f(sphere, sqrt(max(0.0, 1.0 - dot(sphere, sphere))));
     let light = max(0.0, dot(normal, normalize(vec3f(-0.45, 0.7, 0.55))));
-    if (k == 10.0) {
-      a = 1.0 - smoothstep(-0.15, 0.10, lobes);
-      col *= mix(vec3f(0.16, 0.22, 0.36), vec3f(1.3, 1.25, 1.16), light);
-      a *= smoothstep(-0.12, 0.3, o.height);
-    } else {
-      a = 1.0 - smoothstep(-0.015, 0.015, lobes);
-      let tone = select(select(0.3, 0.73, light > 0.35), 1.18, light > 0.73);
-      col *= tone;
-      col *= select(1.0, 0.45, lobes > -0.06);
-    }
-  } else if (k == 12.0) {
-    let noise = 0.83 + 0.17 * sin(o.extra * 3.0 + o.uv.y * 7.0 - F.cam.w * 12.0);
-    a = pow(max(0.0, 1.0 - abs(o.uv.x)), 0.7) * noise;
+    a = 1.0 - smoothstep(-0.15, 0.10, lobes);
+    col *= mix(vec3f(0.16, 0.22, 0.36), vec3f(1.3, 1.25, 1.16), light);
+    a *= smoothstep(-0.12, 0.3, o.height);
   } else if (k == 13.0) {
     let along = o.uv.y * 0.5 + 0.5;
     let width = (1.0 - along) * (0.65 + 0.14 * sin(along * 15.0 + o.extra * 17.0));
@@ -536,13 +534,35 @@ struct SOut {
     // Short rectangular shop spill / grounding strip, feathered on both axes.
     a = (1.0 - smoothstep(0.55, 1.0, abs(o.uv.x))) * pow(max(0.0, 1.0 - o.uv.y * o.uv.y), 2.0);
   } else if (k == 9.0) {
-    // Wider than the body; four stronger contact patches at the wheel tracks.
+    // Rounded footprint, continuously feathered to zero before the quad boundary.
     let q = abs(o.uv);
-    let body = (1.0 - smoothstep(0.48, 1.0, q.x)) * (1.0 - smoothstep(0.58, 1.0, q.y));
-    let wheel = 1.0 - smoothstep(0.04, 0.27, length((q - vec2f(0.57, 0.53)) * vec2f(1.0, 1.3)));
-    a = min(1.0, body * 0.78 + wheel * 0.55);
+    let lift = clamp(o.extra / 5.0, 0.0, 1.0);
+    let rounded = length(max(q - vec2f(0.24, 0.34), vec2f(0.0)));
+    let body = 1.0 - smoothstep(mix(0.12, 0.0, lift), 0.62, rounded);
+    let wheel = 1.0 - smoothstep(0.02, 0.21, length((q - vec2f(0.70, 0.57)) * vec2f(1.0, 1.3)));
+    a = min(1.0, body * 0.84 + wheel * 0.36 * (1.0 - lift));
   }
-  if (a <= 0.002) { discard; }
+  if (k == 14.0) {
+    let t = o.uv.y * 0.5 + 0.5;
+    let width = mix(0.16, 1.0, t);
+    a = pow(max(0.0, 1.0 - abs(o.uv.x) / width), 1.3) * pow(1.0 - t, 0.8) * smoothstep(0.0, 0.025, t);
+  } else if (k == 18.0) {
+    let t = o.uv.y * 0.5 + 0.5;
+    let width = mix(o.extra, 1.0, t);
+    let side = 1.0 - smoothstep(0.0, 1.0, abs(o.uv.x) / width);
+    a = side * side * (1.0 - smoothstep(0.12, 1.0, t)) * smoothstep(0.0, 0.018, t);
+  } else if (k == 19.0) {
+    a = exp(-3.0 * r * r) * (1.0 - smoothstep(0.45, 1.0, r));
+  } else if (k == 17.0) {
+    let t = o.uv.y * 0.5 + 0.5;
+    a = pow(max(0.0, 1.0 - abs(o.uv.x)), 1.6) * pow(1.0 - t, 1.4) * smoothstep(0.0, 0.035, t);
+  } else if (k == 15.0) {
+    a = (1.0 - smoothstep(0.55, 1.0, abs(o.uv.x))) * (1.0 - smoothstep(0.3, 1.0, abs(o.uv.y)));
+  } else if (k == 16.0) {
+    a = pow(max(0.0, 1.0 - abs(o.uv.x)), 2.0) * pow(max(0.0, 1.0 - abs(o.uv.y)), 2.0);
+  }
+  // Keep the new road wash continuous all the way to zero, even at low intensity.
+  if (a <= 0.002 && k != 18.0 && k != 19.0) { discard; }
   return vec4f(col * a * o.color.a, a * o.color.a);
 }
 `

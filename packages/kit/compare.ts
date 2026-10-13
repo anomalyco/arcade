@@ -91,10 +91,10 @@ header.addEventListener("pointerdown", (event) => {
   activate(-1)
   if (!(event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement)) header.focus({ preventScroll: true })
 })
-for (const kind of ["keydown", "keyup"] as const) addEventListener(kind, (event) => {
+for (const kind of ["keydown", "keyup"] as const) window.addEventListener(kind, (event) => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLButtonElement && ["Enter", "Space"].includes(event.code)) return
   event.preventDefault()
-  if (!event.repeat) enqueue({ type: "mux-key", kind, code: event.code, key: event.key })
+  if (!event.repeat) enqueue({ type: "mux-key", kind, code: event.code, key: event.key, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey, ctrlKey: event.ctrlKey })
 })
 addEventListener("blur", () => enqueue({ type: "mux-release" }))
 document.addEventListener("visibilitychange", () => {

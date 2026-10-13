@@ -7,13 +7,16 @@
     "dev:client": "vite --host 0.0.0.0 --port 5191 --strictPort",
     "dev:server": "wrangler dev --port 8788",
     "build": "bun scripts/build-id.ts && vite build",
-    "test": "bun scripts/build-id.ts && bun test",
+    "test": "bun scripts/build-id.ts && bun test . ../../packages/kit",
     "typecheck": "tsc --noEmit",
     "typecheck:server": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.scripts.json",
     "build:id": "bun scripts/build-id.ts",
-    "check": "bun scripts/build-id.ts && tsc --noEmit && bun run typecheck:server && bun test && vite build",
+    "check": "bun scripts/build-id.ts && tsc --noEmit && bun run typecheck:server && bun run test && vite build",
     "shot": "bun scripts/shot.ts",
     "deploy": "bun scripts/build-id.ts && rm -rf dist && vite build && wrangler deploy"
+  },
+  "dependencies": {
+    "@arcade/kit": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261011.1",

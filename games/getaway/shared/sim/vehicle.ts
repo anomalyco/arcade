@@ -1,5 +1,6 @@
 import { FLAT_ACCEL, FLAT_GRIP, FLAT_SPEED, type Vehicle } from "../config"
 import { rampSurface, type Box, type Ramp } from "./city"
+import { crossTunnel } from "./tunnel"
 import { type Contact, CARS, type Mass, STATIC, WALL, boxShape, carHalf, carMass, carShape, collideShapes, resolve, separate } from "./collide"
 
 export type Input = {
@@ -17,6 +18,8 @@ export type Input = {
 export const NO_INPUT: Input = { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false }
 
 export type Body = {
+  /** Monotonic discontinuity marker, retained in snapshots and prediction. */
+  tunnels: number
   y: number
   vy: number
   airborne: boolean
@@ -90,7 +93,7 @@ export const DRIVE = {
 export const RAM_STUN_DV = 9
 
 export function newBody(x: number, z: number, h: number): Body {
-  return { x, z, h, y: 0, vy: 0, airborne: false, landing: 0, landings: 0, landGrip: 0, braking: false, boosting: false, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, wheels: 0, engineOff: false, crank: 0, spin: 0 }
+  return { x, z, h, tunnels: 0, y: 0, vy: 0, airborne: false, landing: 0, landings: 0, landGrip: 0, braking: false, boosting: false, vx: 0, vz: 0, yaw: 0, boostFuel: 1, hp: 1, stun: 0, drift: 0, slip: 0, wheels: 0, engineOff: false, crank: 0, spin: 0 }
 }
 
 /** Tires in Body.wheels order. */
@@ -320,6 +323,7 @@ export function stepAndCollide(b: Body, input: Input, spec: Vehicle, dt: number,
     }
   }
   if (out && impact === 0) out.impact = 0
+  crossTunnel(b)
   return impact
 }
 

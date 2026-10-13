@@ -15,8 +15,8 @@ import { Renderer } from "./render/renderer"
 import { Hud } from "./ui/hud"
 import { Menus } from "./ui/menus"
 import { ModeHud } from "./ui/modes-hud"
-import { DebugOverlay, juiceSettings } from "./ui/debug-overlay"
-import { GpuPerf } from "../../../packages/kit/gpu-perf"
+import { DebugOverlay, juiceSettings, LOOK_LABELS } from "./ui/debug-overlay"
+import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { Rng } from "../shared/rng"
 
 const MAX_DPR = 1.5
@@ -57,6 +57,9 @@ async function main() {
   const input = new Input(canvas)
   const cam = new Camera()
   const settings = juiceSettings(params.get("vanilla") !== "1")
+  // The panel owns presentation controls; comparison/capture automation can request the baseline.
+  const automatedLook = params.get("mux") === "1" || params.has("bench") || params.has("manualVideo")
+  if (automatedLook && params.get("look") === "0") for (const key of Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]) settings[key] = false
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
   const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) })
   input.onWheel = (delta) => { cam.zoomOffset = Math.max(-10, Math.min(24, cam.zoomOffset + Math.sign(delta))) }

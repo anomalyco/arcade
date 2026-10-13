@@ -27,6 +27,16 @@ The 1350×1300 sheet is `captures/preview/getaway-chassis-sheet.jpg`. The silent
 `captures/preview/getaway-chassis-phone.mp4`, with off above on, 14.4 seconds, H.264 Main/yuv420p, 5.05 MB.
 The local preview is `http://getaway-chassis.localhost:1355/?solo&peaceful=1&seed=7&lab=1`.
 
+Lamp attachment follow-up: `bodyPoint(car, { height, roll, pitch }, [x, y, z])` in `src/game/car-pose.ts` maps each
+lamp through the body shader's rotation order. It returns a world-space `[x, y, z]`; `car` only needs `x`, `z`, `h`.
+Head/tail/siren glow sprites and light origins share this helper. Spot direction follows two transformed points,
+while ground-light pools remain on the road. The `--lamps` proof checks the submitted lamp positions against the
+packed body instance pose, with a maximum 0.000007 m error over 288 braking/kerb frames. Cruiser and SWAT sirens
+also passed 40-frame checks. Three helper tests cover rotation order, dive/roll and rigid lamp spacing.
+`captures/preview/getaway-chassis-lamps-sheet.jpg` and `getaway-chassis-lamps-phone.mp4` show the close-ups;
+the clip is 720×1280, 4.8 seconds and 1.75 MB. Generate them with `clip --lamps` and `chassis-media.py --lamps`.
+`bun run check` passed 121 tests with 12 existing skips after this follow-up. Its added transform cost is unmeasured.
+
 Reproduce from `games/getaway`:
 
 ```sh

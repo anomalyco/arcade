@@ -4,14 +4,14 @@ export class LabInput {
   enabled=false
   constructor(readonly canvas:HTMLCanvasElement){
     canvas.addEventListener("pointerdown",()=>canvas.focus({preventScroll:true}))
-    addEventListener("keydown",event=>{
+    window.addEventListener("keydown",event=>{
       if(!this.enabled||document.activeElement!==canvas||event.metaKey||event.ctrlKey)return
       if(event.code==="Backquote"){this.release();return}
       if(!this.held.has(event.code))this.held.set(event.code,event.key.toLowerCase())
       if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.code))event.preventDefault()
     })
-    addEventListener("keyup",event=>{this.held.delete(event.code);if(event.key==="Meta")this.release()})
-    addEventListener("blur",()=>this.release())
+    window.addEventListener("keyup",event=>{this.held.delete(event.code);if(event.key==="Meta")this.release()})
+    window.addEventListener("blur",()=>this.release())
     document.addEventListener("focusin",()=>{if(document.activeElement!==canvas)this.release()})
   }
   release(){this.held.clear()}

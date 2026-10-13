@@ -38,7 +38,7 @@ try{
         let seed=1337;Math.random=()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t^=t+Math.imul(t^t>>>7,61|t);return((t^t>>>14)>>>0)/4294967296}
         let time=0;const callbacks:FrameRequestCallback[]=[]
         performance.now=()=>time
-        requestAnimationFrame=cb=>(callbacks.push(cb),callbacks.length)
+        window.requestAnimationFrame=cb=>(callbacks.push(cb),callbacks.length)
         ;(window as any).proofTick=()=>{time+=1000/60;const current=callbacks.splice(0);for(const cb of current)cb(time)}
       })
       const page=await context.newPage();page.on("pageerror",e=>{errors.push(e.message);console.error(e.message)});page.on("console",m=>{if(m.type()==="error")console.error(m.text())});page.on("response",r=>{if(r.status()>=400)console.error(`${r.status()} ${r.url()}`)})

@@ -1,4 +1,4 @@
-import { LabPanel, type LabControl } from "../../../../packages/kit/lab-panel"
+import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 
 export const JUICE_LABELS = {
   volumes: "Volume Smoke",
@@ -6,10 +6,29 @@ export const JUICE_LABELS = {
   rings: "Sound Rings", paper: "Fluttering Paper", glass: "Glass Shards",
   sparks: "Monitor Sparks", casings: "Shell Casings", lamps: "Lamp Flicker", trauma: "Shake & Kill Punch",
 } as const
-export type Juice = Record<keyof typeof JUICE_LABELS, boolean> & { monitorIntensity: number; aoStrength: number }
-export const juiceSettings = (enabled = true): Juice => ({ volumes: enabled, monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: false, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: false, trauma: enabled })
+export const LOOK_LABELS = {
+  lookGrade: "Teal & Warm Grade", lookPractical: "Warm Practicals", lookWalls: "Warm Wall Faces",
+  lookAO: "Corner & Contact AO", lookCaps: "Blue Cap Rims", lookFloors: "Floor Weave & Tile",
+  lookCity: "City Depth", lookGloss: "Tile Reflections", lookShadows: "Long Furniture Shadows",
+  lookShadowFilter: "Smooth Polar Shadows", lookMotion: "Motion Blur",
+} as const
+export type Juice = Record<keyof typeof JUICE_LABELS | keyof typeof LOOK_LABELS, boolean> & { monitorIntensity: number; aoStrength: number }
+export const juiceSettings = (enabled = true): Juice => ({ volumes: enabled, monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, rings: false, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, lamps: false, trauma: enabled,
+  lookGrade: enabled, lookPractical: enabled, lookWalls: enabled, lookAO: enabled, lookCaps: enabled, lookFloors: enabled, lookCity: enabled, lookGloss: false, lookShadows: false,
+  lookShadowFilter: enabled, lookMotion: false,
+})
+/** Bit layout shared with sceneShader; grade also uses bit zero in the composite. */
+const LOOK_KEYS = Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]
+export function lookMask(settings: Juice): number {
+  let bits = 0
+  for (let i = 0; i < LOOK_KEYS.length; i++) if (settings[LOOK_KEYS[i]!]) bits |= 1 << i
+  return bits
+}
 export type Perf = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
-const controls: LabControl[] = Object.entries(JUICE_LABELS).map(([key, label]) => ({ key, label }))
+const controls: LabControl[] = [
+  ...Object.entries(JUICE_LABELS).map(([key, label]) => ({ key, label })),
+  ...Object.entries(LOOK_LABELS).map(([key, label]) => ({ key, label, group: "Look" })),
+]
 
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []

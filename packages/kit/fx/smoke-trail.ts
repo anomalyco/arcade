@@ -1,15 +1,11 @@
 import { tyreSettings as settings } from "../lab/tyre-settings"
-/** Fixed storage for the connected-smoke study. No particle objects or scratch arrays per frame. */
+/** Shipped Getaway billows, with live Lab constants. No per-frame allocations. */
 export const SMOKE_CAPACITY = 768
 export const SMOKE_STRIDE = 8
-export const FIELD_SIZE = 128
 export type SmokeSource = { smokeDistance: number; smokeX: number; smokeZ: number; smokeActive: boolean; idle: number }
 export class SmokeTrail {
   readonly particles = new Float32Array(SMOKE_CAPACITY * SMOKE_STRIDE)
   readonly instances = new Float32Array(SMOKE_CAPACITY * SMOKE_STRIDE)
-  readonly field = new Uint8Array(FIELD_SIZE * FIELD_SIZE * 4)
-  private readonly sums = new Float32Array(FIELD_SIZE * FIELD_SIZE * 4)
-  readonly bounds = new Float32Array(8)
   count = 0
   drawn = 0
   time = 0
@@ -87,54 +83,15 @@ export class SmokeTrail {
   }
 
   /** Oldest first, which is back-to-front for the usual trailing chase view. */
-  prepare(style: number) {
+  prepare() {
     this.drawn = this.count
     const p = this.particles, out = this.instances
-    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity
     for (let n = 0; n < this.count; n++) {
       const i = n * SMOKE_STRIDE, age = p[i + 3]!, t = age / p[i + 7]!
       const radius = settings.radius + age * settings.growth
       const density = p[i + 6]! * Math.pow(1 - t, 1.1) / (1 + age * 0.45)
       out[i] = p[i]!; out[i + 1] = p[i + 1]!; out[i + 2] = p[i + 2]!; out[i + 3] = radius
-      out[i + 4] = density; out[i + 5] = age; out[i + 6] = p[i + 6]!; out[i + 7] = style
-      minX = Math.min(minX, p[i]! - radius * 1.5); maxX = Math.max(maxX, p[i]! + radius * 1.5)
-      minZ = Math.min(minZ, p[i + 2]! - radius * 1.5); maxZ = Math.max(maxZ, p[i + 2]! + radius * 1.5)
-    }
-    if (!this.count) return
-    // The fourth channel is a conservative footprint for the fixed top-down camera's ray slant.
-    // It rejects empty pixels before twelve field/noise samples and the practical-light loop.
-    if (style === 8) { minX -= 4; minZ -= 4; maxX += 4; maxZ += 4 }
-    this.bounds[0] = minX; this.bounds[1] = minZ
-    this.bounds[2] = Math.max(1, maxX - minX); this.bounds[3] = Math.max(1, maxZ - minZ)
-    this.bounds[4] = this.time
-    if (style !== 8) return
-    // Splat smooth density into a shallow field. Vertical radius/height remain independent so the
-    // fragment shader integrates an actual 3D cloud, not a blurred ground decal.
-    this.sums.fill(0)
-    const sx = FIELD_SIZE / this.bounds[2]!, sz = FIELD_SIZE / this.bounds[3]!
-    for (let n = 0; n < this.count; n++) {
-      const i = n * SMOKE_STRIDE, r = out[i + 3]!, density = out[i + 4]!
-      const cx = (out[i]! - minX) * sx, cz = (out[i + 2]! - minZ) * sz
-      const loX = Math.max(0, Math.floor(cx - (r + 4) * sx)), hiX = Math.min(FIELD_SIZE - 1, Math.ceil(cx + (r + 4) * sx))
-      const loZ = Math.max(0, Math.floor(cz - (r + 4) * sz)), hiZ = Math.min(FIELD_SIZE - 1, Math.ceil(cz + (r + 4) * sz))
-      for (let z = loZ; z <= hiZ; z++) for (let x = loX; x <= hiX; x++) {
-        const o = (z * FIELD_SIZE + x) * 4
-        this.sums[o + 3] = 1
-        const dx = (x + 0.5 - cx) / (sx * r), dz = (z + 0.5 - cz) / (sz * r)
-        const q = dx * dx + dz * dz
-        if (q >= 1) continue
-        const w = (1 - q) * (1 - q) * density
-        this.sums[o] += w
-        this.sums[o + 1] += w * out[i + 1]!
-        this.sums[o + 2] += w * r
-      }
-    }
-    for (let i = 0; i < this.field.length; i += 4) {
-      const weight = this.sums[i]!
-      this.field[i] = Math.min(255, weight * 48)
-      this.field[i + 1] = weight ? this.sums[i + 1]! / weight * 255 / 4 : 0
-      this.field[i + 2] = weight ? this.sums[i + 2]! / weight * 255 / 4 : 0
-      this.field[i + 3] = this.sums[i + 3]! * 255
+      out[i + 4] = density
     }
   }
 }
