@@ -1,7 +1,7 @@
 export type LabValue = boolean | number | string
 export type LabSettings = Record<string, LabValue>
-export type LabControl = { key: string; label: string; group?: string; enabled?: (settings: Readonly<LabSettings>) => boolean } & (
-  { min: number; max: number; step: number } | { options: readonly { value: number | string; label: string }[] } | { on?: number; off?: number }
+export type LabControl = { key: string; label: string; group?: string; change?: (value: LabValue) => void; enabled?: (settings: Readonly<LabSettings>) => boolean } & (
+  { type?: "range"; min: number; max: number; step?: number } | { type?: "select"; options: readonly { value: number | string; label: string }[] } | { type?: "toggle"; on?: number; off?: number } | { type: "action"; run: (button: HTMLButtonElement) => void | Promise<void> }
 )
 export type LabRow = { group: string; control?: LabControl }
 const wrap = (index: number, length: number) => (index % length + length) % length
@@ -41,14 +41,16 @@ export class LabNavigation {
   }
   jump(row: LabRow) { this.folded.delete(row.group); this.active = row }
   set(control: LabControl, value: LabValue) {
-    this.change?.(control.key, value)
+    if (control.type === "action") return
     this.settings[control.key] = value
+    control.change?.(value)
+    this.change?.(control.key, value)
   }
   adjust(direction: number, shift = false, alt = false) {
     const c = this.active?.control
-    if (!c || c.enabled?.(this.settings) === false) return
+    if (!c || c.type === "action" || c.enabled?.(this.settings) === false) return
     if ("min" in c) {
-      const delta = direction * c.step * (shift ? 10 : 1) * (alt ? 0.1 : 1)
+      const delta = direction * (c.step ?? .01) * (shift ? 10 : 1) * (alt ? 0.1 : 1)
       this.set(c, Number(Math.max(c.min, Math.min(c.max, Number(this.settings[c.key]) + delta)).toPrecision(12)))
     } else if ("options" in c) {
       if (!c.options.length) return
@@ -71,8 +73,9 @@ export class LabNavigation {
     for (const { control: c, group: name } of this.rows) {
       if (!c || name !== group) continue
       if ("min" in c) {
-        const steps = Math.floor((c.max - c.min) / c.step + 1e-9)
-        this.set(c, Number((c.min + Math.floor(Math.random() * (steps + 1)) * c.step).toPrecision(12)))
+        const step = c.step ?? .01
+        const steps = Math.floor((c.max - c.min) / step + 1e-9)
+        this.set(c, Number((c.min + Math.floor(Math.random() * (steps + 1)) * step).toPrecision(12)))
       } else if ("options" in c && c.options.length) this.set(c, c.options[Math.floor(Math.random() * c.options.length)]!.value)
     }
   }

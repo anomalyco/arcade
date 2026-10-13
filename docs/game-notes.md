@@ -145,6 +145,64 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   no measurable GPU cost in the 1440p M5 Max wood-room fixture (median −0.00048 ms, MAD 0.00249). See
   `perf/blackout-window-light.md` and `scripts/window-proof.ts`; motion/Look toggles produced identical movement poses.
 
+- **Attach splatter to the hit triangle.** `packages/kit/fx/splatter.ts`, `splatter-surfaces.ts` and
+  `splatter-renderer.ts` share a seeded ballistic spray and matte deposits across blood, ink, slime, oil and potion
+  presets. Blackout supplies packed visible receiver geometry; Outbreak can supply its own triangle/material list.
+  Swept-point collision catches thin walls and desk tops before the floor. A surface tangent from impact velocity
+  gives grazing elongation, and fragment clipping confines each deposit to up to 12 coplanar receiver triangles.
+  Glass stops spray without receiving a stain. At most 256 drops and 256 deposits recycle in fixed arrays.
+  - [Godot's decal guide](https://docs.godotengine.org/en/stable/tutorials/3d/using_decals.html) describes normal fade,
+    receiver masks, overlap limits and decal overdraw. This small system uses exact receiver triangles and material
+    classes instead of a projection volume. Reusing the hit normal prevents a wall hit from becoming a floor decal.
+  - The Lab compares the shipped blood against the candidate on pale tile, walls, desk tops and a dark street.
+    An inspected 1280×1260 sheet includes the actual Blackout renderer. The Lab's analytic grid initially competed
+    with the supplied y=0 floor; scene mode 5 now lets an adapter own its floor. A steeper camera clears foreground
+    roofs while keeping the target visible. Existing Lab scene modes retain their behavior.
+  - Paired whole-frame GPU deltas at 1000×720 on M2 Max/Metal were +0.050 ms office (MAD 0.078) and +0.043 ms
+    downtown (MAD 0.058). Both are smaller than their noise, so cost remains inconclusive. See `perf/lab-splatter.md`
+    and its raw JSON. The Blackout style stays opt-in; gameplay damage and detachment remain caller-owned.
+
+- **Give small fire and water effects a continuous silhouette.** The Lab's `Fire and water` section compares current
+  emitters with Flowing and Graphic styles in the generated downtown, office and Getaway alley. The shared
+  `packages/kit/fx/fire-water.ts` renderer uses three overlapping upright flame quads, a small additive core,
+  alpha smoke and rising embers. Upward-scrolling procedural noise erodes the tapered silhouette; the same flicker
+  signal changes flame height and light power. A depth-gated post-HDR distortion adds heat shimmer. Water combines
+  a continuous pressure sheet with velocity-aligned droplets, impact spray, expanding rings and a growing puddle.
+  The puddle perturbs its normal for ripples and samples up to eight scene lights for warm streetlamp and siren sheen.
+  Foam stays near the irregular boundary. These are shared Lab candidates; game renderer adoption is still separate.
+  Matched Metal captures and paired whole-frame costs are documented in `perf/lab-fire-water.md`.
+  - [Febucci's procedural fire breakdown](https://blog.febucci.com/2019/05/fire-shader) combines scrolling noise with
+    a gradient mask. The Lab uses that shape/erosion approach with textureless fBm and a hot yellow-white core fading
+    through orange to red tips. [Epic's Niagara smoke guide](https://docs.unrealengine.com/4.27/en-US/RenderingAndGraphics/Niagara/HowTo/RecreateSmoke/)
+    shows the flipbook alternative; authored frames can give richer billows at a texture-fetch cost, but this study
+    keeps all shapes procedural. Ember drift uses a helical path as a cheap curl-like approximation.
+  - [Nimue's stylized-water breakdown](https://80.lv/articles/how-to-build-stylized-water-shader-design-implementation-for-nimue)
+    separates moving normals, reflections, foam and interactive ripples, and reuses noise for foam. At gameplay zoom,
+    the Lab keeps the jet sheet, stretched drops and puddle separate so the jet remains readable between particles.
+    The sheen is direct-light specular, not reflected scene geometry. No water simulation or screen-space reflection
+    buffer is required. Heat shimmer does require an HDR copy and one extra pass, included in the timing.
+
+- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`, sharing one device,
+  test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
+  Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
+  `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`; the Materials shader calibration remains a stub.
+- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
+  and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
+  bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.
+- **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes four-connected arrival
+  distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
+  restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and
+  eight nearby lights. Rays stop at stored MSAA depth, render at at most 480×320 with 24 steps, then depth-aware
+  upsampling places them before bloom. Shots carve temporary cylinders. Walls ≥1.8 m and glass seal the field;
+  low wrecks remain depth occluders. This is visual only; fluid pressure and vertical furniture flow are unimplemented.
+- **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
+  `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
+  vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.
+- **Measure the two volume passes with retained depth on both sides.** The earlier Blackout nine-pair frozen-room
+  measurement added 0.947 ms median, MAD 0.016 ms, at 960×640 on M5 Max/Metal (`perf/fx-kit.json`). It excludes the
+  depth discard-to-store change and is not a four-cloud bound. The interval covers first polar compute through a
+  dependent offscreen final composite; no pass sums.
+
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
   silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
   world-anchored sub-stratum offsets remove the coherent bands without a fullscreen blur. Never interpolate blocker

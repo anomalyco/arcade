@@ -4,6 +4,7 @@ import { vehicleEffects } from "../game/vehicle-emissions"
 import type { Scene } from "../game/scene"
 import type { GameAudio } from "../audio/game-audio"
 import type { LightSettings, LightStyle } from "../render/car-lights"
+import { motionBlur } from "../render/motion"
 
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }
@@ -60,6 +61,11 @@ export class DebugOverlay extends LabPanel {
       else if (key === "proceduralAudio" && sound) { sound.reset(); sound.procedural = Boolean(value) }
       else Object.assign(juice, { [key]: value })
     })
+    this.addControls(motionBlur, [
+      {key:"enabled",label:"Motion blur",group:"Motion"},
+      {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
+      {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},
+    ])
     addEventListener("keydown", (event) => {
       if (q.has("mux") && parent !== window) return
       if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return

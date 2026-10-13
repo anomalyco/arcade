@@ -1,6 +1,7 @@
 import type { MapDef } from "../../shared/maps"
 import type { ViewRect } from "../render/lighting"
 import type { FxFn, SpriteFn } from "./vehicles"
+import { blackoutEffects } from "../lab/settings"
 
 const acc = new Map<number, number>()
 
@@ -17,16 +18,16 @@ export function mapFires(map: MapDef, view: ViewRect, t: number, dt: number, spr
       const f = 0.7 + 0.3 * Math.sin(t * (11 + i * 3) + i * 2 + l.id)
       const x = l.x + (i - 1) * 0.9
       const y = l.y + ((i * 0.37) % 1 - 0.5) * 0.6
-      sprite(true, x, 1.0, y, 0.6 * f, 1.7, 0.55, 0.1, 0.75 * f, 0)
+      sprite(true, x, 1.0, y, blackoutEffects.fire.size * f, 1.7, 0.55, 0.1, 0.75 * f, 0)
       sprite(true, x, 1.25, y, 0.32 * f, 1.9, 1.0, 0.4, 0.8 * f, 0)
     }
-    let a = (acc.get(l.id) ?? 0) + dt * 8
+    let a = (acc.get(l.id) ?? 0) + dt * blackoutEffects.fire.rate
     while (a > 1) {
       a--
       const x = l.x + (Math.random() - 0.5) * 2.4
       const y = l.y + (Math.random() - 0.5) * 1
       if (Math.random() < 0.4) fx(x, y, 0.9 + Math.random() * 0.3, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0.8 + Math.random() * 1.2, 0.35 + Math.random() * 0.3, 0.2 + Math.random() * 0.15, "fire")
-      else fx(x, y, 1.3, (Math.random() - 0.5) * 0.3 + 0.25, (Math.random() - 0.5) * 0.3 - 0.15, 0.9 + Math.random() * 0.6, 2.2 + Math.random() * 1.2, 0.3 + Math.random() * 0.2, "char")
+      else fx(x, y, 1.3, (Math.random() - 0.5) * 0.3 + 0.25, (Math.random() - 0.5) * 0.3 - 0.15, 0.9 + Math.random() * 0.6, blackoutEffects.wreck.life + Math.random() * blackoutEffects.wreck.lifeSpread, blackoutEffects.wreck.size + Math.random() * blackoutEffects.wreck.sizeSpread, "char")
     }
     acc.set(l.id, a)
   }

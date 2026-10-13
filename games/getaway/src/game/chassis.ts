@@ -3,6 +3,7 @@ import { rampSurface, type City } from "../../shared/sim/city"
 import type { CarView } from "../../shared/sim/world"
 import type { Input } from "../../shared/sim/vehicle"
 import { KERB_H } from "../render/city/streets"
+import { getawayEffects } from "../lab/settings"
 
 export const chassisSettings = (enabled = true) => ({ suspension: enabled, wheelContact: enabled, visibleWheels: enabled, vehicleFeel: enabled })
 export type ChassisSettings = ReturnType<typeof chassisSettings>
@@ -138,8 +139,8 @@ export class Chassis {
     const liftTarget = contact ? mean - (c.y ?? 0) : 0
     if (settings.suspension && !teleport) {
       if ((c.landings ?? 0) > this.landings) {
-        this.lift.v -= Math.min(2.8, (c.landing ?? 0) * 0.22)
-        this.leanPitch.v += Math.min(0.65, (c.landing ?? 0) * 0.035)
+        this.lift.v -= Math.min(getawayEffects.landing.liftLimit, (c.landing ?? 0) * getawayEffects.landing.liftSpeed)
+        this.leanPitch.v += Math.min(getawayEffects.landing.pitchLimit, (c.landing ?? 0) * getawayEffects.landing.pitchSpeed)
       }
       if (c.impact > 5 && this.impact <= 5) {
         this.leanPitch.v += clamp(-forward * 0.045, 0.8)

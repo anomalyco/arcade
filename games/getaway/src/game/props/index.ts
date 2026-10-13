@@ -8,6 +8,7 @@ import { placeProps, PROP_KINDS, SPECS, type Placement, type PropKind } from "./
 import { PropParticles, type SpriteWriter } from "./particles"
 import { mulberry32 } from "../../../shared/sim/rng"
 import { propGroundShape } from "./contact-shape"
+import { getawayEffects as settings } from "../../lab/settings"
 
 type Prop = { body: Body; home: Placement; model: number; broken: boolean; touched: number; hitAt: number; fuse: number }
 type Chunk = { body: Body; model: number; scale: number; life: number }
@@ -35,14 +36,14 @@ export class StreetProps {
   stats = { cpuMs: 0, awake: 0, particles: 0, chunks: 0, hits: 0, explosions: 0 }
   shake = 0
 
-  constructor(city: City, renderer: Pick<Renderer, "addModel">, readonly ground: (x: number, z: number) => number) {
+  constructor(city: City | { boxes: City["boxes"]; placements: Placement[] }, renderer: Pick<Renderer, "addModel">, readonly ground: (x: number, z: number) => number) {
     this.physics = new PropPhysics(ground, city.boxes)
     for (const kind of PROP_KINDS) {
       const model = renderer.addModel(propMesh(kind)), chunk = renderer.addModel(chunkMesh(SPECS[kind].color, ["bench", "pallet", "crate", "barrier", "sawhorse"].includes(kind)))
       this.models.set(kind, model); this.chunkModels.set(kind, chunk)
       this.shadowless.add(model); this.shadowless.add(chunk)
     }
-    this.layout = placeProps(city)
+    this.layout = "placements" in city ? city.placements : placeProps(city)
     for (const p of this.layout) this.add(p)
   }
   private add(p: Placement) {
@@ -51,6 +52,13 @@ export class StreetProps {
     const prop = { body: b, home: p, model: this.models.get(p.kind)!, broken: false, touched: -1, hitAt: -1, fuse: -1 }
     this.props.push(prop); this.byId.set(b.id, prop); this.physics.add(b)
     return prop
+  }
+  /** Client isolation tools add props through the same body, mesh and reaction path as the street. */
+  spawn(p: Placement) { if(this.props.length<512)this.add(p) }
+  clear() {
+    this.reset()
+    for(const p of this.props)this.physics.remove(p.body)
+    this.props.length=0;this.byId.clear();this.changed.clear();this.layout=[]
   }
   reset() {
     for (const c of this.chunks) this.physics.remove(c.body)
@@ -117,8 +125,8 @@ export class StreetProps {
     for (let i = this.reactions.length - 1; i >= 0; i--) {
       const r = this.reactions[i]!
       r.age += dt
-      if (r.water && r.age < 10) {
-        r.acc += dt * 100
+      if (r.water && r.age < settings.hydrant.duration) {
+        r.acc += dt * settings.hydrant.rate
         const count = Math.floor(r.acc); r.acc -= count
         this.particles.emit(11, r.x, r.y + .12, r.z, count, .6)
       }
@@ -147,13 +155,13 @@ export class StreetProps {
     if (p.broken) return
     p.broken = true; this.touch(p); this.physics.remove(p.body)
     const board = ["bench", "pallet", "crate", "barrier", "sawhorse"].includes(p.home.kind)
-    const n = p.home.kind === "dumpster" ? 12 : 8
+    const n = p.home.kind === "dumpster" ? settings.debris.largeCount : settings.debris.count
     for (let i = 0; i < n && this.chunks.length < MAX_CHUNKS; i++) {
       const rand = this.rng, scale = (.3 + rand() * .55) * Math.min(1, Math.max(...SPECS[p.home.kind].size) * .65)
       const b = body(this.nextId++, p.body.x + (rand() - .5) * p.body.hx * 1.6, p.body.y + (rand() - .5) * p.body.hy, p.body.z + (rand() - .5) * p.body.hz * 1.6, .5 * scale, (board ? .07 : .3) * scale, .22 * scale, 1.5)
       this.physics.add(b)
       this.physics.impulse(b, (vx * .35 + (rand() - .5) * 12) * b.mass, (3 + rand() * 6) * b.mass, (vz * .35 + (rand() - .5) * 12) * b.mass, 1)
-      this.chunks.push({ body: b, model: this.chunkModels.get(p.home.kind)!, scale, life: 10 + rand() * 5 })
+      this.chunks.push({ body: b, model: this.chunkModels.get(p.home.kind)!, scale, life: settings.debris.life + rand() * settings.debris.lifeSpread })
     }
   }
   private explode(p: Prop, focus: { x: number; z: number }) {
@@ -162,9 +170,9 @@ export class StreetProps {
     this.shatter(p, b.vx, b.vz)
     if (this.reactions.length >= 48) this.reactions.shift()
     this.reactions.push({ x, y: this.ground(x, z), z, age: 0, water: false, acc: 0 })
-    this.particles.emit(12, x, y, z, 10, .65)
-    this.particles.emit(6, x, y, z, 48, 2)
-    this.particles.emit(1, x, y, z, 14, .9)
+    this.particles.emit(12, x, y, z, settings.explosion.fireCount, .65)
+    this.particles.emit(6, x, y, z, settings.explosion.sparkCount, 2)
+    this.particles.emit(1, x, y, z, settings.explosion.smokeCount, .9)
     this.shake = Math.max(this.shake, Math.max(0, 1 - Math.hypot(x - focus.x, z - focus.z) / 35) * .8)
     this.physics.hash.query(x, z, 10, other => {
       const dx = other.x - x, dz = other.z - z, dist = Math.hypot(dx, dz)
@@ -194,14 +202,21 @@ export class StreetProps {
       } else {
         sprite("a", r.x, r.y + .027, r.z, 3.6, .015, .011, .008, Math.min(.8, (30 - r.age) * .1), 3)
         if (r.age < .55) sprite("d", r.x, r.y + .04, r.z, .5 + r.age * 20, 1, .58, .19, (1 - r.age / .55) * .85, 2)
-        if (r.age < .22) {
-          const flash = 1 - r.age / .22
+        if (r.age < settings.explosion.flashLife) {
+          const flash = 1 - r.age / settings.explosion.flashLife
           sprite("d", r.x, r.y + 1, r.z, 1.4 + r.age * 6, 1, .55, .13, flash * 2, 0)
-          light(r.x, r.y + 2, r.z, 13, 1, .29, .035, flash * 12)
+          light(r.x, r.y + 2, r.z, settings.explosion.lightRadius, 1, .29, .035, flash * settings.explosion.lightPower)
         }
       }
     }
     this.particles.draw(sprite)
+  }
+
+  /** Isolated presentation fixture for deterministic captures, never sent to the server. */
+  trigger(kind: PropKind, x:number, z:number) {
+    if(this.props.length>=512)return
+    const p=this.add({kind,x,z,y:this.ground(x,z),yaw:0})
+    this.hit(p,18,0,18,1400,true)
   }
 
   /** Isolated presentation fixture for deterministic captures, never sent to the server. */

@@ -3,7 +3,13 @@ import type { LevelData } from "./level-mesh"
 import { LIGHT_FLOATS, OCC_FLOATS } from "./lighting"
 import { VERT_BYTES, type Mesh } from "./mesh"
 import { FRAME_FLOATS, polarShader, postShader, sceneShader, spriteShader } from "./shaders"
-import { MotionHistory, type MotionKey } from "./motion"
+import { mat4 } from "wgpu-matrix"
+import { VolumeRenderer } from "@arcade/kit/fx/volume-renderer"
+import type { SmokeVolumes } from "@arcade/kit/fx/volume"
+import { FrameTimer } from "@arcade/kit/fx/frame-timer"
+import { MotionHistory, motionSettings, type MotionKey } from "./motion"
+import type { Splatter } from "@arcade/kit/fx/splatter"
+import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
@@ -40,6 +46,9 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array):
 export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: number; alpha?: boolean; motionKeys?: (MotionKey | undefined)[] }
 
 export type FrameInput = {
+  splatter?:Splatter
+  smoke?: SmokeVolumes
+  smokeEnabled?: boolean
   frame: Float32Array<ArrayBuffer>
   lights: Float32Array<ArrayBuffer>
   lightCount: number
@@ -68,6 +77,15 @@ export type FrameInput = {
  * tone-mapped composite with grade, vignette and grain.
  */
 export class Renderer {
+  private splatterRenderer?:SplatterRenderer
+  private readonly splatterEye=new Float32Array(3)
+  readonly smokeRenderer: VolumeRenderer
+  private readonly smokeMatrix = new Float32Array(16)
+  private readonly smokeInverse = new Float32Array(16)
+  private timer: FrameTimer | null = null
+  private timing = false
+  private measureTarget:GPUTexture|null=null
+  private measureView!:GPUTextureView
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private occBuf: GPUBuffer
@@ -127,9 +145,10 @@ export class Renderer {
   constructor(
     private device: GPUDevice,
     private context: GPUCanvasContext,
-    format: GPUTextureFormat,
+    private readonly format: GPUTextureFormat,
   ) {
     const d = device
+    this.smokeRenderer = new VolumeRenderer(d)
     const U = GPUBufferUsage
     this.frameBuf = d.createBuffer({ size: FRAME_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
     this.motionBuf = d.createBuffer({ size: 80, usage: U.UNIFORM | U.COPY_DST })
@@ -371,6 +390,7 @@ export class Renderer {
     if (w === this.width && h === this.height) return
     this.width = w
     this.height = h
+    this.measureTarget?.destroy();this.measureTarget=null
     this.previousFrame = null
     this.velocity?.destroy()
     this.velocityMSAA?.destroy()
@@ -383,8 +403,9 @@ export class Renderer {
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
     this.msaa = d.createTexture({ size: [w, h], format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     this.msaaView = this.msaa.createView()
-    this.depth = d.createTexture({ size: [w, h], format: DEPTH, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
+    this.depth = d.createTexture({ size: [w, h], format: DEPTH, sampleCount: SAMPLES, usage })
     this.depthView = this.depth.createView()
+    this.smokeRenderer.resize(w,h,this.depthView)
     this.hdr = d.createTexture({ size: [w, h], format: HDR, usage })
     this.hdrView = this.hdr.createView()
     this.bloom = []
@@ -467,6 +488,11 @@ export class Renderer {
   private draw(f: FrameInput): void {
     const d = this.device
     const motion = !!(f.frame[45]! & 1024)
+    if(f.splatter){
+      this.splatterRenderer??=new SplatterRenderer(d)
+      for(let i=0;i<3;i++)this.splatterEye[i]=f.frame[16+i]!
+      this.splatterRenderer.prepare(f.splatter,f.frame,this.splatterEye,motion)
+    }
     if (motion) this.prepareMotion()
     const scenePipes = motion ? this.motionPipes : ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512) ? this.pipes : this.baselinePipes
     const old = this.previousFrame
@@ -476,7 +502,7 @@ export class Renderer {
     if (motion) {
       this.motionData.set((continuous ? old! : f.frame).subarray(0, 16))
       // A 1/60 s exposure. The shader suppresses subpixel camera drift and caps fast trails.
-      this.motionData[16] = continuous ? Math.min(2, 1 / (60 * elapsed)) : 0
+      this.motionData[16] = continuous ? Math.min(2, 1 / (60 * elapsed)) * motionSettings.strength * motionSettings.shutter : 0
       d.queue.writeBuffer(this.motionBuf, 0, this.motionData)
     }
     this.previousFrame = motion ? f.frame.slice() : null
@@ -549,7 +575,7 @@ export class Renderer {
 
     const enc = d.createCommandEncoder()
     if (f.shadowLightCount) {
-      const cp = enc.beginComputePass()
+      const cp = enc.beginComputePass({ timestampWrites: this.timing ? this.timer!.start : undefined })
       cp.setPipeline(this.polarPipe)
       cp.setBindGroup(0, this.computeGroup)
       cp.dispatchWorkgroups(Math.ceil((Math.min(f.shadowLightCount, SLOTS) * POLAR_RAYS) / 64))
@@ -557,8 +583,9 @@ export class Renderer {
     }
 
     const pass = enc.beginRenderPass({
+      timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
       colorAttachments: [{ view: this.msaaView, resolveTarget: this.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
+      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
     })
     pass.setBindGroup(0, this.sceneGroup)
     const [vx0, vy0, vx1, vy1] = f.view
@@ -611,7 +638,28 @@ export class Renderer {
       if (motion) pass.setVertexBuffer(1, this.previousSprites, addOffset)
       pass.draw(6, addCount)
     }
+    if(f.splatter)this.splatterRenderer!.draw(pass,motion)
     pass.end()
+
+    if (f.smoke && f.smokeEnabled && f.smoke.count) {
+      const u = this.smokeRenderer.uniforms
+      for(let i=0;i<16;i++) this.smokeMatrix[i]=f.frame[i]!
+      mat4.inverse(this.smokeMatrix,this.smokeInverse);u.set(this.smokeInverse)
+      u[16]=f.frame[16]!;u[17]=f.frame[17]!;u[18]=f.frame[18]!
+      u[24]=0.09;u[25]=0.105;u[26]=0.14
+      // Select the first eight relevant culled lights without allocating or sorting per frame.
+      let count=0
+      for(let i=0;i<f.lightCount&&count<8;i++) {
+        const k=i*LIGHT_FLOATS
+        let nearby=false
+        for(let s=0;s<4;s++) if(f.smoke.bounds[s*8+7]!>0 && Math.hypot(f.lights[k]!-f.smoke.bounds[s*8+4]!,f.lights[k+2]!-f.smoke.bounds[s*8+5]!)<f.lights[k+3]!+5) nearby=true
+        if(!nearby)continue
+        for(let j=0;j<8;j++)u[60+count*8+j]=f.lights[k+j]!
+        count++
+      }
+      u[22]=count
+      this.smokeRenderer.render(enc,this.hdrView,f.smoke)
+    }
 
     const g = this.postGroups!
     for (let i = 0; i < BLOOM_LEVELS; i++) {
@@ -628,11 +676,22 @@ export class Renderer {
       p.draw(3)
       p.end()
     }
-    const fp = enc.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+    const output = this.timing ? this.measureView : this.context.getCurrentTexture().createView()
+    const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     fp.setPipeline((motion ? this.motionPipes : f.frame[45]! & 1 ? this.pipes : this.baselinePipes).composite!)
     fp.setBindGroup(0, motion ? this.motionComposite : g.composite)
     fp.draw(3)
     fp.end()
+    if(this.timing) this.timer!.finish(enc,output)
     d.queue.submit([enc.finish()])
+  }
+
+  /** Isolated proof caller owns scheduling. One complete dependent GPU interval, never pass sums. */
+  async measure(f:FrameInput) {
+    await this.device.queue.onSubmittedWorkDone()
+    this.timer ??= new FrameTimer(this.device)
+    if(!this.measureTarget){this.measureTarget=this.device.createTexture({size:[this.width,this.height],format:this.format,usage:GPUTextureUsage.RENDER_ATTACHMENT});this.measureView=this.measureTarget.createView()}
+    this.timing=true;this.draw(f);this.timing=false
+    return this.timer.collect()
   }
 }

@@ -1,78 +1,19 @@
-/** Stable part identities survive batching, disappearance and reordering. Owners are weakly held. */
-export type MotionKey = { initial?: readonly [number, number, number]; maxTravel?: number }
-export class MotionKeys {
-  private owners = new WeakMap<object, Map<number, MotionKey[]>>()
-  private arrays = new WeakMap<number[], (MotionKey | undefined)[]>()
-  private counts = new Map<number, number>()
-  private parts: Map<number, MotionKey[]> | undefined
-  private initial: MotionKey["initial"]
-  private maxTravel = 4
-  begin(owner?: object, initial?: MotionKey["initial"], maxTravel = 4): void {
-    this.counts.clear()
-    this.initial = initial
-    this.maxTravel = maxTravel
-    this.parts = owner ? this.owners.get(owner) : undefined
-    if (owner && !this.parts) this.owners.set(owner, this.parts = new Map())
-  }
-  record(array: number[], model: number): void {
-    const key = this.key(model)
-    if (!key) return
-    let keys = this.arrays.get(array)
-    if (!keys) this.arrays.set(array, keys = [])
-    keys[array.length / 12 - 1] = key
-  }
-  of(array: number[]) { return this.arrays.get(array) }
-  key(model: number): MotionKey | undefined {
-    if (!this.parts) return
-    const index = this.counts.get(model) ?? 0
-    this.counts.set(model, index + 1)
-    let parts = this.parts.get(model)
-    if (!parts) this.parts.set(model, parts = [])
-    return parts[index] ?? (parts[index] = { initial: this.initial, maxTravel: this.maxTravel })
-  }
-}
-
-/** Previous *submitted* transforms, rather than previous simulation or build calls. */
-export class MotionHistory {
-  private entries = new WeakMap<MotionKey, { frame: number; pose: Float32Array }>()
-  private frame = 0
-  private valid = false
-  begin(valid: boolean): void { this.frame++; this.valid = valid }
-  write(dst: Float32Array, offset: number, current: Float32Array, start: number, key?: MotionKey): void {
-    let old = key ? this.entries.get(key) : undefined
-    const continuous = this.valid && old?.frame === this.frame - 1 &&
-      Math.hypot(current[start]! - old.pose[0]!, current[start + 1]! - old.pose[1]!, current[start + 2]! - old.pose[2]!) < (key?.maxTravel ?? 4)
-    for (let j = 0; j < 12; j++) dst[offset + j] = continuous ? old!.pose[j]! : current[start + j]!
-    // New transient geometry can provide its actual emission point. Cuts still reset everything.
-    if (this.valid && !old && key?.initial) dst.set(key.initial, offset)
-    if (!key) return
-    if (!old) { old = { frame: this.frame, pose: new Float32Array(12) }; this.entries.set(key, old) }
-    old.frame = this.frame
-    for (let j = 0; j < 12; j++) old.pose[j] = current[start + j]!
-  }
-}
+import { motionGatherWGSL } from "@arcade/kit/gpu/motion-blur"
+export { MotionKeys, MotionHistory, type MotionKey } from "@arcade/kit/gpu/motion-blur"
+export const motionSettings = { strength: 1, shutter: 1 }
 
 /** One depth-aware gather, used by the existing composite only when motion blur is enabled. */
 export const motionGather = /* wgsl */ `
 @group(0) @binding(5) var velocityTex: texture_2d<f32>;
+fn motionField(uv:vec2f)->vec4f {
+  let size=vec2f(textureDimensions(src));
+  let m=textureLoad(velocityTex,clamp(vec2i(uv*size),vec2i(0),vec2i(size)-1),0);
+  return vec4f(m.xy/size,m.zw);
+}
+fn motionColor(uv:vec2f)->vec4f {return clean(textureSampleLevel(src,samp,uv,0));}
+${motionGatherWGSL(true)}
 fn motionColour(uv: vec2f) -> vec3f {
-  let size = vec2f(textureDimensions(src));
-  let center = textureLoad(velocityTex, vec2i(uv * size), 0);
-  let velocity = center.xy / size;
-  let original = clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;
-  if (dot(center.xy, center.xy) < 0.25) { return original; }
-  var colour = original;
-  var weight = 1.0;
-  for (var i = 0; i < 8; i++) {
-    let t = (f32(i) + 0.5) / 8.0 - 0.5;
-    let at = clamp(uv + velocity * t, 0.5 / size, 1.0 - 0.5 / size);
-    let sample = textureLoad(velocityTex, vec2i(at * size), 0);
-    // Reject other depth layers; retain sloping floors. No silhouette-wide blur of unrelated rooms.
-    let w = 1.0 - smoothstep(0.15, max(0.35, center.z * 0.018), abs(sample.z - center.z));
-    colour += textureSampleLevel(src, samp, at, 0.0).rgb * w;
-    weight += w;
-  }
-  return clean(vec4f(colour / weight, 1.0)).rgb;
+  return clean(gatherMotion(uv,vec2f(textureDimensions(src)),1.0,32.0)).rgb;
 }
 `
 

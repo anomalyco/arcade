@@ -641,6 +641,7 @@ fn aces(x: vec3f) -> vec3f {
   c = mix(c, vec3f(0.9, 0.1, 0.12), P.w * smoothstep(0.3, 0.8, v));
   return vec4f(pow(c, vec3f(1.0 / 2.2)), 1.0);
 }
+@fragment fn present(o: VO) -> @location(0) vec4f { return textureSampleLevel(src,samp,o.uv,0); }
 `
 
 /** Volumetric light cones (helicopter spotlight, extraction column): additive, brightest along the core. */

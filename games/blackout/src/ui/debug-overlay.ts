@@ -1,7 +1,10 @@
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { animationControls, animationLab } from "../game/anim-settings"
+import { motionSettings } from "../render/motion"
+import { bloodSplatterSettings } from "../game/splatter"
 
 export const JUICE_LABELS = {
+  volumes: "Volume Smoke",
   monitors: "Monitor Lights", chairs: "Chair Shadows", ao: "Multi-Bounce AO",
   paper: "Fluttering Paper", glass: "Glass Shards",
   sparks: "Monitor Sparks", casings: "Shell Casings", trauma: "Shake & Kill Punch",
@@ -13,7 +16,7 @@ export const LOOK_LABELS = {
   lookShadowFilter: "Smooth Polar Shadows", lookMotion: "Motion Blur",
 } as const
 export type Juice = Record<keyof typeof JUICE_LABELS | keyof typeof LOOK_LABELS, boolean> & { monitorIntensity: number; aoStrength: number }
-export const juiceSettings = (enabled = true): Juice => ({ monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, trauma: enabled,
+export const juiceSettings = (enabled = true): Juice => ({ volumes: enabled, monitors: enabled, chairs: enabled, ao: enabled, monitorIntensity: 1, aoStrength: 1, paper: enabled, glass: enabled, sparks: enabled, casings: enabled, trauma: enabled,
   lookGrade: enabled, lookPractical: enabled, lookWalls: enabled, lookAO: enabled, lookCaps: enabled, lookFloors: enabled, lookCity: enabled, lookGloss: enabled, lookShadows: false,
   lookShadowFilter: enabled, lookMotion: false,
 })
@@ -35,6 +38,11 @@ export class DebugOverlay extends LabPanel {
   private lastReport = 0
   constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}) {
     super(animationLab(settings, params), [...controls, ...animationControls], params, release)
+    this.addControls(bloodSplatterSettings,[{key:"style",label:"Style",group:"Blood",type:"select",options:[{value:0,label:"Current"},{value:1,label:"Surface splatter"}]}])
+    this.addControls(motionSettings,[
+      {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
+      {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},
+    ])
   }
   sample(now: number, elapsed: number, gpu: Pick<Perf, "gpuMs" | "gpuKind" | "draws" | "verts">, chunks: number, lights: number): Perf | null {
     if (elapsed > 0 && Number.isFinite(elapsed)) this.samples.push(elapsed)

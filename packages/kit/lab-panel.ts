@@ -1,5 +1,6 @@
 import { LabNavigation, type LabControl, type LabRow, type LabSettings, type LabValue } from "./lab-navigation"
 export type { LabControl, LabSettings, LabValue } from "./lab-navigation"
+export type LabOptions = { open?: boolean; presets?: boolean; shortcut?: boolean; capture?: "open" | "focus" }
 
 /** Presentation controls. Open panels capture keys before the game's bubble listeners. */
 export class LabPanel {
@@ -19,10 +20,15 @@ export class LabPanel {
   private previousFocus: HTMLElement | null = null
   private held = new Set<string>()
   private events = new AbortController()
+  private allowPresets = true
+  private focusOnly = false
 
-  constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, change?: (key: string, value: LabValue) => void) {
-    this.navigation = new LabNavigation(settings, controls, (key, value) => {
-      change?.(key, value)
+  constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
+    const change = typeof options === "function" ? options : undefined
+    this.allowPresets = typeof options === "object" ? options.presets !== false : true
+    this.focusOnly = typeof options === "object" && options.capture === "focus"
+    this.navigation = new LabNavigation({}, [], (key, value) => {
+      if (controls.some(control => control.key === key)) change?.(key, value)
       for (const copy of this.copies.values()) copy.textContent = "Copy"
     })
     this.host.dataset.lab = ""
@@ -54,20 +60,10 @@ export class LabPanel {
     this.searchBox = root.querySelector(".search input")!
     this.results = root.querySelector("[role=listbox]")!
     root.querySelector<HTMLElement>(".hint")!.title = "↑↓ rows · ←→ adjust · Shift ×10 / Alt ×0.1 · Enter/Space edit or fold · Esc cancel/close · / or Cmd-K search · Tab/Shift-Tab groups · R randomize group · 0 reset control / Shift-0 group · C copy JSON · Backquote close"
-    const rows = root.querySelector("[data-controls]")!
-    for (const row of this.navigation.rows) {
-      const element = row.control ? this.control(row.control) : this.group(row.group)
-      element.tabIndex = -1
-      element.dataset.row = row.control?.key ?? row.group
-      element.addEventListener("pointerdown", event => { if (event.target !== this.editor) this.cancelEdit(); this.navigation.active = row; this.sync() })
-      element.addEventListener("focusin", () => { this.navigation.active = row; this.sync() })
-      this.elements.set(row, element)
-      rows.append(element)
-    }
-    root.querySelector<HTMLElement>("nav")!.hidden = !controls.some(c => !("min" in c) && !("options" in c))
+    this.addControls(settings, controls)
     root.querySelectorAll<HTMLButtonElement>("[data-preset]").forEach(button => {
       button.onclick = () => {
-        for (const c of controls) if (!("min" in c) && !("options" in c)) this.navigation.set(c, button.dataset.preset === "on" ? c.on ?? true : c.off ?? false)
+        for (const {control:c} of this.navigation.rows) if (c && c.type !== "action" && !("min" in c) && !("options" in c)) this.navigation.set(c, button.dataset.preset === "on" ? c.on ?? true : c.off ?? false)
         this.sync()
       }
     })
@@ -89,7 +85,7 @@ export class LabPanel {
       if (this.keyboard(key, true)) event.stopImmediatePropagation()
     }, { capture: true, signal: this.events.signal })
     window.addEventListener("blur", () => { this.held.clear(); if (this.visible) release() }, { signal: this.events.signal })
-    const lab = params.get("perf") === "1" || params.get("lab") === "1"
+    const lab = (typeof options === "object" ? options.open : undefined) ?? (params.get("perf") === "1" || params.get("lab") === "1")
     this.panel.hidden = true
     this.pill.hidden = !lab
     document.body.append(this.host)
@@ -97,12 +93,42 @@ export class LabPanel {
     else this.sync()
   }
 
+  clearControls() {
+    this.cancelEdit()
+    this.navigation.rows.length = 0; this.navigation.active = undefined
+    this.navigation.folded.clear()
+    for (const key of Object.keys(this.navigation.settings)) delete this.navigation.settings[key]
+    for (const key of Object.keys(this.navigation.defaults)) delete this.navigation.defaults[key]
+    this.inputs.clear(); this.elements.clear(); this.copies.clear()
+    this.host.shadowRoot!.querySelector("[data-controls]")!.replaceChildren()
+    this.host.shadowRoot!.querySelector<HTMLElement>("nav")!.hidden = true
+  }
+  addControls(settings: LabSettings, controls: readonly LabControl[]) {
+    for (const c of controls) if (c.type !== "action") {
+      Object.defineProperty(this.navigation.settings, c.key, { configurable:true, enumerable:true, get:()=>settings[c.key], set:value=>{settings[c.key]=value} })
+      this.navigation.defaults[c.key] = settings[c.key]!
+    }
+    const added = new LabNavigation(this.navigation.settings, [...controls]).rows
+    this.navigation.rows.push(...added)
+    this.navigation.active ??= added[0]
+    const rows = this.host.shadowRoot!.querySelector("[data-controls]")!
+    for (const row of added) {
+      const element = row.control ? this.control(row.control) : this.group(row.group)
+      element.tabIndex = -1; element.dataset.row = row.control?.key ?? row.group
+      element.addEventListener("pointerdown", event => { if (event.target !== this.editor) this.cancelEdit(); this.navigation.active = row; this.sync() })
+      element.addEventListener("focusin", () => { this.navigation.active = row; this.sync() })
+      this.elements.set(row, element); rows.append(element)
+    }
+    this.host.shadowRoot!.querySelector<HTMLElement>("nav")!.hidden = !this.allowPresets || !this.navigation.rows.some(({control:c})=>c && c.type !== "action" && !("min" in c) && !("options" in c))
+    this.sync()
+  }
   private group(group: string) {
     const heading = document.createElement("h3"), fold = document.createElement("button"), actions = document.createElement("span")
     fold.className = "fold"; fold.type = "button"; fold.dataset.group = group
     fold.onclick = () => { this.navigation.active = this.navigation.rows.find(row => !row.control && row.group === group); this.navigation.fold(); this.focus() }
     const random = document.createElement("button")
     random.type = "button"; random.textContent = "Randomize"; random.setAttribute("aria-label", `Randomize ${group}`)
+    random.hidden = this.navigation.rows.some(row => row.group === group && row.control?.type === "action" && row.control.label === `Randomize ${group}`)
     random.disabled = !this.navigation.rows.some(row => row.group === group && row.control && ("min" in row.control || "options" in row.control && row.control.options.length > 0))
     random.onclick = () => { this.navigation.randomize(group); this.sync() }
     const copy = document.createElement("button")
@@ -113,6 +139,17 @@ export class LabPanel {
     return heading
   }
   private control(c: LabControl) {
+    if (c.type === "action") {
+      const button = document.createElement("button")
+      button.type = "button"; button.dataset.key = c.key; button.textContent = c.label
+      button.onclick = async () => {
+        if (c.enabled?.(this.navigation.settings) === false) return
+        button.disabled = true
+        try { await c.run(button) } catch (error) { button.textContent = "Failed"; console.error(error) }
+        finally { button.disabled = false; this.sync() }
+      }
+      return button
+    }
     const label = document.createElement("label")
     let input: HTMLInputElement | HTMLSelectElement
     if ("options" in c) {
@@ -143,7 +180,7 @@ export class LabPanel {
     this.inputs.set(c, input)
     return label
   }
-  private sync() {
+  sync() {
     this.pill.setAttribute("aria-expanded", String(this.visible))
     for (const [row, element] of this.elements) {
       element.hidden = !!row.control && this.navigation.folded.has(row.group)
@@ -157,7 +194,7 @@ export class LabPanel {
     for (const [c, input] of this.inputs) {
       input.disabled = c.enabled?.(this.navigation.settings) === false
       if ("options" in c || "min" in c) input.value = String(this.navigation.settings[c.key])
-      else if (input instanceof HTMLInputElement) input.checked = this.navigation.settings[c.key] === (c.on ?? true)
+      else if (c.type !== "action" && input instanceof HTMLInputElement) input.checked = this.navigation.settings[c.key] === (c.on ?? true)
       if ("min" in c) input.parentElement!.querySelector("output")!.value = String(this.navigation.settings[c.key])
     }
   }
@@ -239,6 +276,7 @@ export class LabPanel {
     const toggle = event.code === "Backquote"
     const target = event.composedPath()[0]
     const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLElement && target.isContentEditable
+    if (this.focusOnly && document.activeElement !== this.host && !this.held.has(event.code) && !(toggle && !typing)) return false
     if (!this.visible && !this.held.has(event.code) && !(toggle && !typing)) return false
     event.stopImmediatePropagation()
     if (event.type === "keyup") { this.held.delete(event.code); event.preventDefault(); return true }
@@ -287,7 +325,11 @@ export class LabPanel {
       else if ("min" in this.navigation.active.control) this.edit()
       else { this.navigation.adjust(1); this.focus() }
     } else if (!event.metaKey && !event.ctrlKey && !event.altKey && !repeat) {
-      if (key === "r") this.navigation.randomize()
+      if (key === "r") {
+        const row=this.navigation.rows.find(row=>row.group===this.navigation.active?.group&&row.control?.type==="action"&&row.control.label===`Randomize ${row.group}`)
+        if(row)(this.elements.get(row) as HTMLButtonElement).click()
+        else this.navigation.randomize()
+      }
       else if (key === "0" || event.shiftKey && (key === ")" || event.code === "Digit0")) this.navigation.reset(event.shiftKey)
       else if (key === "c") void this.copy()
       this.sync()

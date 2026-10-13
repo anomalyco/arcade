@@ -9,6 +9,7 @@ import type { Caster, DynLight } from "../render/lighting"
 import type { Renderer } from "../render/renderer"
 import { LAMPS, WHEELS, vehicleModels } from "../render/vehicle-mesh"
 import type { Avatar } from "./anim"
+import { blackoutEffects } from "../lab/settings"
 
 type Rgb3 = [number, number, number]
 type FxKind = "spark" | "dust" | "smoke" | "fire" | "soot" | "chip" | "char"
@@ -48,8 +49,6 @@ type Pred = { id: number; body: Rigid; px: number; py: number; ph: number; ox: n
 
 type Mark = { x: number; y: number; rot: number; len: number; t0: number }
 
-const SKID_LIFE = 9
-
 /**
  * Vehicles on this client: dead-reckoned and smoothed from snapshots, the one you drive predicted with the shared
  * physics (inputs replayed on every snapshot, like your own body on foot), and drawn with spinning, steering wheels,
@@ -62,7 +61,7 @@ export class VehicleFx {
   private marks: Mark[] = []
   private now = 0
 
-  constructor(renderer: Renderer) {
+  constructor(renderer: Pick<Renderer, "addModel">) {
     const m = vehicleModels()
     const reg = (x: Parameters<Renderer["addModel"]>[0]) => renderer.addModel(x)
     const out = {} as typeof this.models
@@ -79,7 +78,7 @@ export class VehicleFx {
     this.marks = []
   }
 
-  ingest(s: Snapshot, now: number): void {
+  ingest(s: Pick<Snapshot,"vehicles">, now: number): void {
     this.now = now
     const live = new Set<number>()
     for (const v of s.vehicles ?? []) {
@@ -207,10 +206,10 @@ export class VehicleFx {
   ping(id: number, x: number, y: number, dir: number, fx: FxFn): void {
     const d = this.draws.get(id)
     if (d) d.flash = 1
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < blackoutEffects.vehicle.sparkCount; i++) {
       const a = dir + Math.PI + (Math.random() - 0.5) * 2.2
-      const s = 2 + Math.random() * 5
-      fx(x, y, 0.6 + Math.random() * 0.6, Math.cos(a) * s, Math.sin(a) * s, 1 + Math.random() * 3, 0.15 + Math.random() * 0.2, 0.03, "spark")
+      const s = blackoutEffects.vehicle.speed + Math.random() * blackoutEffects.vehicle.speedSpread
+      fx(x, y, 0.6 + Math.random() * 0.6, Math.cos(a) * s, Math.sin(a) * s, 1 + Math.random() * 3, blackoutEffects.vehicle.life + Math.random() * blackoutEffects.vehicle.lifeSpread, blackoutEffects.vehicle.size, "spark")
     }
   }
 
@@ -290,9 +289,9 @@ export class VehicleFx {
    * shadow, skid marks, exhaust, smoke and fire. `teamColor` is the colour of the team holding a vehicle, or null.
    */
   emit(t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], teamColor: (d: VehDraw) => Rgb3 | null, begin?: (d: VehDraw) => void): void {
-    this.marks = this.marks.filter((m) => t - m.t0 < SKID_LIFE)
+    this.marks = this.marks.filter((m) => t - m.t0 < blackoutEffects.vehicle.skidLife)
     for (const m of this.marks) {
-      const a = Math.min(1, (SKID_LIFE - (t - m.t0)) / 3) * 0.55
+      const a = Math.min(1, (blackoutEffects.vehicle.skidLife - (t - m.t0)) / 3) * 0.55
       sprite(false, m.x, 0.008, m.y, m.len, 0.015, 0.015, 0.018, a, 4, m.rot, 0.16 / Math.max(0.05, m.len))
     }
     for (const d of this.draws.values()) { begin?.(d); this.draw(d, t, dt, push, sprite, fx, dyn, casters, teamColor(d)) }
@@ -350,12 +349,12 @@ export class VehicleFx {
         sprite(true, at.x, top + 0.15, at.y, 0.55 * f, 1.7, 0.55, 0.1, 0.75 * f, 0)
         sprite(true, at.x, top + 0.35, at.y, 0.3 * f, 1.9, 1.0, 0.4, 0.8 * f, 0)
       }
-      d.smoke += dt * 9
+      d.smoke += dt * blackoutEffects.wreck.rate
       while (d.smoke > 1) {
         d.smoke--
         const at = localToWorld(d, (Math.random() - 0.5) * hl * 1.4, (Math.random() - 0.5) * spec.width * 0.6)
         if (Math.random() < 0.45) fx(at.x, at.y, top + Math.random() * 0.3, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0.8 + Math.random() * 1.2, 0.35 + Math.random() * 0.3, 0.2 + Math.random() * 0.15, "fire")
-        else fx(at.x, at.y, top + 0.4, (Math.random() - 0.5) * 0.3 + 0.25, (Math.random() - 0.5) * 0.3 - 0.15, 0.9 + Math.random() * 0.6, 2.2 + Math.random() * 1.2, 0.3 + Math.random() * 0.2, "char")
+        else fx(at.x, at.y, top + 0.4, (Math.random() - 0.5) * 0.3 + 0.25, (Math.random() - 0.5) * 0.3 - 0.15, 0.9 + Math.random() * 0.6, blackoutEffects.wreck.life + Math.random() * blackoutEffects.wreck.lifeSpread, blackoutEffects.wreck.size + Math.random() * blackoutEffects.wreck.sizeSpread, "char")
       }
       return
     }
