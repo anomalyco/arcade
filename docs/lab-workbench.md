@@ -65,13 +65,28 @@ Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.
   `remove(id)`, `drawGhost(kind, at)`, `snapshot()`, `restore(placements)`, `environments`, `setEnvironment(kind, seed)`,
   `clearSkids()`, `setSkidsEnabled(enabled)`, `setSmokeEnabled(enabled)` and `skidStats()` using `StreetProps` body IDs
   and models without modifying game physics or default constants.
-- **Car skid marks and ground decals (`games/getaway/src/lab/spawn.ts`, `packages/kit/lab/game-sprites.ts`):**
+- **Car skid marks, lamp mounts and fender geometry (`games/getaway/src/lab/spawn.ts`, `games/getaway/src/render/car-mesh.ts`, `packages/kit/lab/game-sprites.ts`, `packages/kit/lab/stage-shader.ts`):**
   - Wires `emissions.skids = fx` (`Fx` from `@arcade/kit/vehicle/fx`) and advances `fx.update(dt)` + `emissions.update(dt)`
     once per simulation tick (`update(dt)`), never inside `prepare()`.
   - Fixes planar decal orientation in `GameSprites` (`right = (cos(r), 0, -sin(r))`, `up = (sin(r), 0, cos(r))`) to match
     `games/getaway/src/render/shaders.ts` so consecutive skid ribbon segments (`kind = 4`, up to 1,600 segments) join
     end-to-end along curves and diagonals, and adds car contact shadow (`kind = 9`, `shape = 5`) and forward headlight
     fan support (`shape = 6`).
+  - **Lamp pose & fixture sphere fix:** Restricts `stage-shader.ts`'s `0.12 m` debug light-core sphere raytracing to the
+    `Lighting` calibration stage (`F.options.w < 2.0`), eliminating the floating orange/red spheres on the car hood and
+    rear bumper. Builds Lab cars with `buildCar(spec, undefined, 4)` (`Soft pool` bevelled 3D headlamp/taillamp lenses
+    without duplicate `lights = 0` polygons) and computes both front spot `headlights` (preserving the twin rounded
+    headlight arcs), rear `tailLights`, and lens bloom halos from `lampMounts(spec)` + `bodyPoint(car, pose, ...)` using
+    full chassis `height`, `roll` and `pitch` (with vertical aim pitch clamped to `[-0.42, -0.18]` so brake dive brings
+    the twin arcs closer without throttle squat flinging them to the horizon).
+  - **Front fender & side seam fix (`car-mesh.ts`):** Previously `hullStations` added the full longitudinal `archR`
+    (`0.47 m`) vertically to `wheelR` (`0.37 m`), pushing `k.b` (`0.84 m`) above the belt crease `k.s` (`0.74–0.80 m`)
+    and folding the side/shoulder bands upside-down over the front wheel arch; `muscle` also had its front width/height
+    kink at `z = zf - 0.8 = 1.45` right on top of the front axle (`1.48`), a door `seam` extending to `y = 0.90` above
+    the `0.83` belt crease into empty air, and a lower rocker strip floating `3.4 cm` outside the lower chamfer. Keeping
+    arch lift below `k.s - 0.05`, moving the full-width fender station ahead of the arch (`zf - 0.32`), and keeping
+    `seam` and rocker trim flush within the vertical side wall eliminates the fender fold, silhouette spike and brake-dive
+    tire poke-through while preserving exact vertex counts for `splitChassis`.
   - Exposes `Vehicle & Skids` in the car inspector (`Skid marks`, `Skid width` `0.04–0.45 m`, `Skid life` `1–30 s`,
     `Tyre smoke`, `Clear skids`, `Reset scene`) with exact value entry.
 - **Persistent Playground and switchable environments (`packages/kit/lab/yard.ts`, `spawn.ts`, `main.ts`, `workbench.ts`):**
@@ -155,8 +170,13 @@ Saved car playground and skid proofs live under `~/code/home/artifacts/2026-10-1
   `73/1600` skid segments.
 - `after-street-environment-skids.png` — switching `Env` to `Getaway · Street`, relocating to a validated street spawn,
   and painting `86/1600` skid segments across the crosswalk.
-- `car-playground-proof.json` — verified counts and budgets (`1600` skids, `1024` smoke billows, `4096` particles,
-  `0` straight-cruise skids, `0` airborne skids, `0` teleport-bridged skids) across both `getaway` and `blackout` hosts.
+- `closeup-before-front-fender.png` and `closeup-before-rear.png` — pre-fix close-ups showing the floating orange/red
+  light-core spheres, front fender wheel-arch Z-fold, protruding door seam and floating rocker strip.
+- `closeup-front-fender.png`, `closeup-rear-lamps.png`, `closeup-throttle-squat.png`, `closeup-brake-dive.png` and
+  `closeup-kerb-roll.png` — post-fix close-ups showing clean fender geometry, bevelled 3D lenses, preserved twin
+  headlight arcs, and `bodyPoint`-locked lamps through throttle squat (`pitch = -0.0707 rad`, `headY = 0.6818 m`),
+  brake dive (`pitch = +0.0899 rad`, `headY = 0.2880 m`) and kerb roll (`roll = -0.0805 rad`).
+- `car-playground-proof.json` — verified counts, budgets and `lampPoseProof` across both `getaway` and `blackout` hosts.
 
 Saved before/after screenshots and proof JSON live under `~/code/home/artifacts/2026-10-13-lab-workbench/`:
 >>>>>>> 0ae6f7f (feat(lab): add connected car skids, persistent playground world, and switchable yard environments)

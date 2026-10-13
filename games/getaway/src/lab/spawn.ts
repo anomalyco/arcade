@@ -16,6 +16,8 @@ import { StreetProps } from "../game/props"
 import { PROP_KINDS } from "../game/props/placement"
 import type { SpriteWriter } from "../game/props/particles"
 import { getawayEnvironment, getawayRooms } from "./environment"
+import { bodyPoint, type BodyPose } from "@arcade/kit/vehicle/body-pose"
+import { HEADLIGHT, lampMounts } from "@arcade/kit/vehicle/lights"
 
 function makeYardBoxes(): Box[] {
   return yardWalls.map(([x0, z0, x1, z1]) => ({
@@ -364,7 +366,7 @@ export function getawaySpawn(context: LabContext) {
       label: `Getaway · ${spec.name}`,
       create(_context, at) {
         if (!model) {
-          model = splitChassis(buildCar(spec))
+          model = splitChassis(buildCar(spec, undefined, 4))
           bodyModel = addModel(model.body)
           wheelModels = model.wheels.map(w => addModel(w.mesh))
         }
@@ -393,8 +395,38 @@ export function getawaySpawn(context: LabContext) {
         let lastLandings = 0
         emissions.skids = skidsEnabled ? fx : null
         cars.splice(0, cars.length, car)
-        const headlights: LabLight[] = [0, 1].map(() => ({ x: 0, y: 0, z: 0, radius: 16, r: 1.1, g: 1.1, b: 0.85, power: 4, cone: 0.84 }))
-        const brake: LabLight = { x: 0, y: 0, z: 0, radius: 4, r: 1, g: 0.025, b: 0.01, power: 0.4 }
+        const mount = lampMounts(spec)
+        const half = spec.length / 2
+        const frontZ = mount.frontZ ?? half
+        const rearZ = mount.rearZ ?? -half
+        const sides = spec.id === "bike" ? [0] : [-1, 1]
+        const headlights: LabLight[] = sides.map(() => ({
+          x: 0,
+          y: 0,
+          z: 0,
+          radius: 17,
+          r: HEADLIGHT[0] * 1.15,
+          g: HEADLIGHT[1] * 1.15,
+          b: HEADLIGHT[2] * 1.15,
+          power: 4.2,
+          cone: 0.79,
+        }))
+        const tailLights: LabLight[] = sides.map(() => ({
+          x: 0,
+          y: 0,
+          z: 0,
+          radius: 4.2,
+          r: 1,
+          g: 0.04,
+          b: 0.015,
+          power: 0.35,
+        }))
+
+        const currentPose = (): BodyPose => ({
+          height: (car.y ?? 0) + chassis.lift.x,
+          roll: chassis.roll.x,
+          pitch: chassis.pitch.x,
+        })
 
         return {
           point,
@@ -448,52 +480,83 @@ export function getawaySpawn(context: LabContext) {
             Object.assign(point, { x: body.x, y: body.y, z: body.z, yaw: body.h })
           },
           prepare() {
-            meshes.instance(bodyModel, car.x, (car.y ?? 0) + chassis.lift.x, car.z, car.h, chassis.roll.x, chassis.pitch.x)
+            const pose = currentPose()
+            meshes.instance(bodyModel, car.x, pose.height ?? 0, car.z, car.h, pose.roll ?? 0, pose.pitch ?? 0)
             model!.wheels.forEach((p, i) => {
               const w = chassis.contacts[i]!
-              wheelRotation(w, car.h, car.airborne ? chassis.roll.x : 0, car.airborne ? chassis.pitch.x : 0, p.z > 0 ? chassis.steer : 0, w.spin)
+              wheelRotation(w, car.h, car.airborne ? (pose.roll ?? 0) : 0, car.airborne ? (pose.pitch ?? 0) : 0, p.z > 0 ? chassis.steer : 0, w.spin)
               meshes.instance(wheelModels[i]!, w.x, w.y, w.z, w.yaw, w.roll, w.pitch)
             })
+            const isBraking = Boolean(input.brake || input.throttle < 0 || input.handbrake)
+            const grounded = Math.max(0, 1 - Math.max(0, (car.y ?? 0) - activeGround(car.x, car.z)) / 1.2)
+            for (const s of sides) {
+              const head = bodyPoint(car, pose, [mount.frontX * s, mount.frontY + 0.01, frontZ + 0.048])
+              const aim = bodyPoint(car, pose, [mount.frontX * s, mount.frontY - 0.25, frontZ + 1.048])
+              const beamYaw = Math.atan2(aim[0] - head[0], aim[2] - head[2])
+              const tail = bodyPoint(car, pose, [mount.rearX * s, mount.rearY + 0.01, rearZ - 0.052])
+              pendingAdd.push([head[0], head[1], head[2], 0.24, HEADLIGHT[0], HEADLIGHT[1], HEADLIGHT[2], 0.26, 0, 0, 1])
+              if (grounded > 0.05) {
+                pendingAdd.push([head[0], activeGround(head[0], head[2]) + 0.032, head[2], 1.35, HEADLIGHT[0], HEADLIGHT[1], HEADLIGHT[2], 0.085 * grounded, 6, beamYaw, 5.5 / 1.35])
+              }
+              pendingAdd.push([tail[0], tail[1], tail[2], isBraking ? 0.32 : 0.2, 1, 0.06, 0.025, isBraking ? 0.45 : 0.18, 0, 0, 1])
+            }
             activeCarShadow = car.airborne
               ? null
               : { x: car.x, y: activeGround(car.x, car.z), z: car.z, h: car.h, width: spec.width, length: spec.length }
           },
           lights() {
-            const sn = Math.sin(car.h)
-            const cs = Math.cos(car.h)
-            headlights.forEach((l, i) =>
-              Object.assign(l, {
-                x: car.x + sn * spec.length * 0.47 + cs * (i ? 1 : -1) * spec.width * 0.34,
-                y: (car.y ?? 0) + 0.65,
-                z: car.z + cs * spec.length * 0.47 - sn * (i ? 1 : -1) * spec.width * 0.34,
-                dx: sn * 0.98,
-                dy: -0.2,
-                dz: cs * 0.98,
-              }),
-            )
-            Object.assign(brake, {
-              x: car.x - sn * spec.length * 0.5,
-              y: (car.y ?? 0) + 0.5,
-              z: car.z - cs * spec.length * 0.5,
-              power: input.brake || input.throttle < 0 || input.handbrake ? 2 : 0.4,
+            const pose = currentPose()
+            const isBraking = Boolean(input.brake || input.throttle < 0 || input.handbrake)
+            sides.forEach((s, i) => {
+              const head = bodyPoint(car, pose, [mount.frontX * s, mount.frontY + 0.01, frontZ + 0.05])
+              const aim = bodyPoint(car, pose, [mount.frontX * s, mount.frontY - 0.25, frontZ + 1.05])
+              const rawDx = aim[0] - head[0]
+              // Bound vertical pitch aim so brake dive brings pools closer without throttle squat flinging them to the horizon
+              const rawDy = Math.max(-0.42, Math.min(-0.18, aim[1] - head[1]))
+              const rawDz = aim[2] - head[2]
+              const len = Math.hypot(rawDx, rawDy, rawDz) || 1
+              Object.assign(headlights[i]!, {
+                x: head[0],
+                y: head[1],
+                z: head[2],
+                dx: rawDx / len,
+                dy: rawDy / len,
+                dz: rawDz / len,
+              })
+              const tail = bodyPoint(car, pose, [mount.rearX * s, mount.rearY + 0.01, rearZ - 0.08])
+              Object.assign(tailLights[i]!, {
+                x: tail[0],
+                y: tail[1],
+                z: tail[2],
+                power: isBraking ? 1.8 : 0.35,
+              })
             })
-            return [...headlights, brake]
+            return [...headlights, ...tailLights]
           },
-          inspect: () => ({
-            vehicle: spec.id,
-            ...point,
-            speed: car.speed,
-            drift: car.drift,
-            roll: chassis.roll.x,
-            pitch: chassis.pitch.x,
-            tyreParticles: context.trail.count,
-            skids: fx.skidCount,
-            skidBudget: 1600,
-            sparks: fx.add.length,
-            emittingWheels: emission.emittingWheels,
-            airborne: car.airborne,
-            input: { ...input },
-          }),
+          inspect: () => {
+            const pose = currentPose()
+            const s = sides[0]!
+            const headL = bodyPoint(car, pose, [mount.frontX * s, mount.frontY + 0.01, frontZ + 0.05])
+            const tailL = bodyPoint(car, pose, [mount.rearX * s, mount.rearY + 0.01, rearZ - 0.08])
+            return {
+              vehicle: spec.id,
+              ...point,
+              speed: car.speed,
+              drift: car.drift,
+              lift: chassis.lift.x,
+              roll: chassis.roll.x,
+              pitch: chassis.pitch.x,
+              headlampWorld: headL,
+              taillampWorld: tailL,
+              tyreParticles: context.trail.count,
+              skids: fx.skidCount,
+              skidBudget: 1600,
+              sparks: fx.add.length,
+              emittingWheels: emission.emittingWheels,
+              airborne: car.airborne,
+              input: { ...input },
+            }
+          },
           leave: () => {
             cars.length = 0
             activeCarShadow = null

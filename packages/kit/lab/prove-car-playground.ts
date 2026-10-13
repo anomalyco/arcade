@@ -333,6 +333,119 @@ try {
     assert.equal(afterResetScene.skids, 0)
     assert.equal(afterResetScene.items.props.length, 6)
 
+    // I. Close-up Muscle Car Fender, Lamp Mounts, Throttle Squat, Brake Dive & Kerb Roll Proof
+    await page.evaluate(() => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      s.moveObject("character:active", -12, 14, Math.PI)
+      s.controls.find((c: any) => c.key === "clearSkids").run()
+    })
+    await step(5)
+    const neutralChar = (await inspectSpawn()).character
+    if (hostIdx === 0) {
+      await page.locator("canvas").focus()
+      await page.keyboard.press("Backquote")
+      await page.evaluate(async () => {
+        const l = (window as any).lab
+        const ch = l.spawn.inspect().character
+        const st = l.context.stage
+        st.frameTarget(ch.x, 0.5, ch.z, 6.2)
+        st.orbit(2.25, -0.22)
+        await l.render()
+      })
+      await page.screenshot({ path: resolve(out, "closeup-front-fender.png") })
+      await page.evaluate(async () => {
+        const l = (window as any).lab
+        const ch = l.spawn.inspect().character
+        const st = l.context.stage
+        st.frameTarget(ch.x, 0.5, ch.z, 6.2)
+        st.camYaw = 0.65
+        st.camPitch = 0.45
+        await l.render()
+      })
+      await page.screenshot({ path: resolve(out, "closeup-rear-lamps.png") })
+      await page.keyboard.press("Backquote")
+    }
+
+    // Throttle squat: accelerate hard on open lane and verify nose rises (headlampWorld.y > neutral) and tail squats (taillampWorld.y < neutral)
+    await page.locator("canvas").focus()
+    await page.keyboard.press("p")
+    await page.keyboard.down("Shift")
+    await page.keyboard.down("w")
+    await step(12)
+    const squatChar = (await inspectSpawn()).character
+    await page.keyboard.up("Shift")
+    await page.keyboard.up("w")
+    await page.keyboard.press("Escape")
+    assert(squatChar.pitch < -0.01, `${game}: throttle squat pitches nose up (pitch=${squatChar.pitch})`)
+    assert(squatChar.headlampWorld[1] > neutralChar.headlampWorld[1] + 0.01, `${game}: headlamp rises with throttle squat`)
+    assert(squatChar.taillampWorld[1] < neutralChar.taillampWorld[1] - 0.01, `${game}: taillamp squats with throttle squat`)
+    if (hostIdx === 0) {
+      await page.locator("canvas").focus()
+      await page.keyboard.press("Backquote")
+      await page.evaluate(async () => {
+        const l = (window as any).lab
+        const ch = l.spawn.inspect().character
+        l.context.stage.frameTarget(ch.x, 0.5, ch.z, 6.4)
+        l.context.stage.camYaw = 1.95
+        l.context.stage.camPitch = 0.46
+        await l.render()
+      })
+      await page.screenshot({ path: resolve(out, "closeup-throttle-squat.png") })
+      await page.keyboard.press("Backquote")
+    }
+
+    // Brake dive: accelerate to speed on open lane then slam brake (S) and verify nose dives (headlampWorld.y < neutral) and tail rises
+    await page.locator("canvas").focus()
+    await page.keyboard.press("p")
+    await page.keyboard.down("w")
+    await step(35)
+    await page.keyboard.up("w")
+    await page.keyboard.down("s")
+    await step(12)
+    const diveChar = (await inspectSpawn()).character
+    await page.keyboard.up("s")
+    await page.keyboard.press("Escape")
+    assert(diveChar.pitch > 0.01, `${game}: brake dive pitches nose down (pitch=${diveChar.pitch})`)
+    assert(diveChar.headlampWorld[1] < neutralChar.headlampWorld[1] - 0.01, `${game}: headlamp dips with brake dive`)
+    assert(diveChar.taillampWorld[1] > neutralChar.taillampWorld[1] + 0.01, `${game}: taillamp rises with brake dive`)
+    if (hostIdx === 0) {
+      await page.locator("canvas").focus()
+      await page.keyboard.press("Backquote")
+      await page.evaluate(async () => {
+        const l = (window as any).lab
+        const ch = l.spawn.inspect().character
+        l.context.stage.frameTarget(ch.x, 0.5, ch.z, 6.4)
+        l.context.stage.camYaw = 2.05
+        l.context.stage.camPitch = 0.46
+        await l.render()
+      })
+      await page.screenshot({ path: resolve(out, "closeup-brake-dive.png") })
+      await page.keyboard.press("Backquote")
+    }
+
+    // Kerb / suspension step roll: straddle the edge of the suspension step at (x=15.75, z=10) so two wheels sit on the kerb
+    await page.evaluate(() => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      s.moveObject("character:active", 15.75, 10, Math.PI)
+    })
+    await step(45)
+    const kerbChar = (await inspectSpawn()).character
+    assert(Math.abs(kerbChar.roll) > 0.03, `${game}: straddling kerb tilts chassis roll (roll=${kerbChar.roll})`)
+    if (hostIdx === 0) {
+      await page.locator("canvas").focus()
+      await page.keyboard.press("Backquote")
+      await page.evaluate(async () => {
+        const l = (window as any).lab
+        const ch = l.spawn.inspect().character
+        l.context.stage.frameTarget(ch.x, 0.5, ch.z, 6.4)
+        l.context.stage.camYaw = 2.45
+        l.context.stage.camPitch = 0.45
+        await l.render()
+      })
+      await page.screenshot({ path: resolve(out, "closeup-kerb-roll.png") })
+      await page.keyboard.press("Backquote")
+    }
+
     // Restore default Skid width so shared state is clean
     await page.evaluate(() => {
       ;(window as any).lab.sections.find((s: any) => s.id === "spawn").settings.skidWidth = 0.16
@@ -359,6 +472,14 @@ try {
       },
       streetEnvironmentSkids: streetDriven.skids,
       resetRestoredOrigin: { x: afterResetScene.character.x, z: afterResetScene.character.z, props: afterResetScene.items.props.length },
+      lampPoseProof: {
+        neutralPitch: +neutralChar.pitch.toFixed(4),
+        squatPitch: +squatChar.pitch.toFixed(4),
+        divePitch: +diveChar.pitch.toFixed(4),
+        kerbRoll: +kerbChar.roll.toFixed(4),
+        squatHeadY: +squatChar.headlampWorld[1].toFixed(4),
+        diveHeadY: +diveChar.headlampWorld[1].toFixed(4),
+      },
     }
     await page.close()
   }

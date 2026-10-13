@@ -108,10 +108,12 @@ struct Pixel {@location(0) color:vec4f,@builtin(frag_depth) depth:f32}
   let lines=1.0-smoothstep(vec2f(0.015),vec2f(0.015)+aa,cell);
   let grid=select(1.0,1.0-0.28*max(lines.x,lines.y),index<0);
   var rgb=albedo*light*grid+specular;
-  // Visible fixture cores locate the adjustable lights in world space.
-  for(var l=0;l<min(8,i32(F.options.x));l++){
-    let pos=F.lights[l*3];let color=F.lights[l*3+1];let lamp=sphere(F.eye.xyz,ray,pos.xyz,0.12);
-    if(lamp<hit){rgb=color.rgb*color.w;hit=lamp;normal=normalize(F.eye.xyz+ray*hit-pos.xyz);}
+  // Visible fixture cores locate the adjustable lights in the Lighting calibration stage only.
+  if(F.options.w<2.0){
+    for(var l=0;l<min(8,i32(F.options.x));l++){
+      let pos=F.lights[l*3];let color=F.lights[l*3+1];let lamp=sphere(F.eye.xyz,ray,pos.xyz,0.12);
+      if(lamp<hit){rgb=color.rgb*color.w;hit=lamp;normal=normalize(F.eye.xyz+ray*hit-pos.xyz);}
+    }
   }
   if(F.options.z==3.0){rgb=light;}
   if(F.options.z==5.0){rgb=normal*0.5+0.5;}
