@@ -320,6 +320,8 @@ export async function lab(options:LabOptions) {
       setMode:(m:"edit"|"play")=>workbench!.setPlayMode(m),
       getMode:()=>workbench!.mode,
       frame:()=>workbench!.frameActiveTarget(),
+      commands:workbench!.commands,
+      radial:workbench!.radial,
     },
   }
   let last=0

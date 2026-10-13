@@ -243,6 +243,16 @@ export class Stage {
     const fx=ox+dx*tFlat,fz=oz+dz*tFlat
     return {x:fx,y:ground(fx,fz),z:fz}
   }
+  projectWorld(x:number,y:number,z:number):{u:number;v:number;visible:boolean}{
+    const m=this.viewProj
+    const cx=m[0]!*x+m[4]!*y+m[8]!*z+m[12]!
+    const cy=m[1]!*x+m[5]!*y+m[9]!*z+m[13]!
+    const cw=m[3]!*x+m[7]!*y+m[11]!*z+m[15]!
+    if(cw<=0.001)return {u:0.5,v:0.5,visible:false}
+    const u=(cx/cw+1)*0.5
+    const v=(1-cy/cw)*0.5
+    return {u,v,visible:u>=0&&u<=1&&v>=0&&v<=1}
+  }
   updateCamera(){
     if(this.cameraOverride&&!this.camCustom){
       this.cameraOverride(this.width,this.height,this.viewProj,this.inverse,this.eye,this.focus)

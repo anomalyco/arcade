@@ -487,3 +487,126 @@ body {
   resize: vertical;
   user-select: text;
 }
+
+/* Contextual 8-Sector Radial Marking Menu */
+.lab-radial {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: auto;
+  z-index: 60;
+  outline: none;
+}
+
+.lab-radial::before {
+  content: "";
+  position: absolute;
+  left: -96px;
+  top: -96px;
+  width: 192px;
+  height: 192px;
+  border-radius: 50%;
+  border: 1px dashed #3b4c5c88;
+  background: radial-gradient(circle, #0d131999 0%, #0d1319d8 52%, transparent 72%);
+  pointer-events: none;
+}
+
+.lab-radial-center {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  min-width: 82px;
+  max-width: 124px;
+  padding: 4px 7px;
+  border-radius: 99px;
+  background: #11171ef2;
+  border: 1.5px solid #486073;
+  box-shadow: 0 4px 16px #000000aa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.lab-radial-target {
+  font-size: 10px;
+  font-weight: 600;
+  color: #e6f0f7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 112px;
+}
+
+.lab-radial-sub {
+  font-size: 9px;
+  color: #8fa5b5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 112px;
+}
+
+.lab-radial-sector {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(calc(-50% + var(--sector-x, 0px)), calc(-50% + var(--sector-y, 0px)));
+  min-width: 78px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #151c24f2;
+  border: 1px solid #303d4b;
+  color: #dce6ef;
+  box-shadow: 0 4px 12px #00000088;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 60ms ease, border-color 60ms ease;
+  z-index: 3;
+}
+
+.lab-radial-sector:hover:not([aria-disabled="true"]),
+.lab-radial-sector[data-active="true"]:not([aria-disabled="true"]) {
+  background: #1f3947;
+  border-color: #7cc5d6;
+  color: #ffffff;
+}
+
+.lab-radial-sector[aria-disabled="true"] {
+  opacity: 0.36;
+  border-style: dashed;
+  cursor: default;
+}
+
+.lab-radial-sector[data-active="true"][aria-disabled="true"] {
+  border-color: #d9757588;
+  opacity: 0.52;
+}
+
+.lab-radial-slot {
+  font: 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #7e92a2;
+}
+
+.lab-radial-label {
+  font-weight: 500;
+}
+
+.lab-radial-kbd {
+  font: 9px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #96b0c2;
+  background: #0e1318;
+  border: 1px solid #27333f;
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+
