@@ -38,3 +38,22 @@ test("camera cuts, new parts and teleporting actors reset velocity", () => {
   history.begin(true); history.write(previous, 0, current, 0, {})
   expect(previous[0]).toBe(101)
 })
+
+test("fast tracers retain flight velocity and begin at their emission point", () => {
+  const keys = new MotionKeys(), history = new MotionHistory()
+  const current = new Float32Array(12), previous = new Float32Array(12)
+  keys.begin({}, [0, 1, 0], 32)
+  const tracer = keys.key(4)!
+  current[0] = 4; current[1] = 1
+  history.begin(true); history.write(previous, 0, current, 0, tracer)
+  expect([...previous.slice(0, 3)]).toEqual([0, 1, 0])
+  current[0] = 8
+  history.begin(true); history.write(previous, 0, current, 0, tracer)
+  expect(previous[0]).toBe(4)
+  current[0] = 16 // one 30 Hz frame at 240 m/s
+  history.begin(true); history.write(previous, 0, current, 0, tracer)
+  expect(previous[0]).toBe(8)
+  keys.begin({}, [0, 1, 0], 32)
+  history.begin(false); history.write(previous, 0, current, 0, keys.key(4))
+  expect(previous[0]).toBe(16) // even new emission resets across a camera cut
+})

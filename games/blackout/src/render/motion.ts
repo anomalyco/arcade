@@ -1,12 +1,16 @@
 /** Stable part identities survive batching, disappearance and reordering. Owners are weakly held. */
-export type MotionKey = object
+export type MotionKey = { initial?: readonly [number, number, number]; maxTravel?: number }
 export class MotionKeys {
   private owners = new WeakMap<object, Map<number, MotionKey[]>>()
   private arrays = new WeakMap<number[], (MotionKey | undefined)[]>()
   private counts = new Map<number, number>()
   private parts: Map<number, MotionKey[]> | undefined
-  begin(owner?: object): void {
+  private initial: MotionKey["initial"]
+  private maxTravel = 4
+  begin(owner?: object, initial?: MotionKey["initial"], maxTravel = 4): void {
     this.counts.clear()
+    this.initial = initial
+    this.maxTravel = maxTravel
     this.parts = owner ? this.owners.get(owner) : undefined
     if (owner && !this.parts) this.owners.set(owner, this.parts = new Map())
   }
@@ -24,7 +28,7 @@ export class MotionKeys {
     this.counts.set(model, index + 1)
     let parts = this.parts.get(model)
     if (!parts) this.parts.set(model, parts = [])
-    return parts[index] ?? (parts[index] = {})
+    return parts[index] ?? (parts[index] = { initial: this.initial, maxTravel: this.maxTravel })
   }
 }
 
@@ -37,8 +41,10 @@ export class MotionHistory {
   write(dst: Float32Array, offset: number, current: Float32Array, start: number, key?: MotionKey): void {
     let old = key ? this.entries.get(key) : undefined
     const continuous = this.valid && old?.frame === this.frame - 1 &&
-      Math.hypot(current[start]! - old.pose[0]!, current[start + 1]! - old.pose[1]!, current[start + 2]! - old.pose[2]!) < 4
+      Math.hypot(current[start]! - old.pose[0]!, current[start + 1]! - old.pose[1]!, current[start + 2]! - old.pose[2]!) < (key?.maxTravel ?? 4)
     for (let j = 0; j < 12; j++) dst[offset + j] = continuous ? old!.pose[j]! : current[start + j]!
+    // New transient geometry can provide its actual emission point. Cuts still reset everything.
+    if (this.valid && !old && key?.initial) dst.set(key.initial, offset)
     if (!key) return
     if (!old) { old = { frame: this.frame, pose: new Float32Array(12) }; this.entries.set(key, old) }
     old.frame = this.frame
@@ -74,12 +80,17 @@ export const motionOutput = /* wgsl */ `
 struct Motion { previous: mat4x4f, shutter: vec4f }
 @group(0) @binding(7) var<uniform> M: Motion;
 struct MotionOut { @location(0) color: vec4f, @location(1) velocity: vec4f }
+fn shutterVelocity(uv: vec2f, previous: vec4f) -> vec2f {
+  let prev = previous.xy / max(previous.w, 0.0001) * vec2f(0.5, -0.5) + 0.5;
+  let velocity = (uv - prev) * F.screen.xy * M.shutter.x;
+  let speed = length(velocity);
+  // Slow top-down following stays sharp; recoil and fast objects get a full-frame shutter.
+  if (previous.w <= 0.0 || speed <= 1.25) { return vec2f(0.0); }
+  return velocity * (min(32.0, speed - 1.25) / speed);
+}
 fn motionOutput(color: vec4f, frag: vec4f, previous: vec4f, world: vec3f) -> MotionOut {
   let uv = frag.xy / F.screen.xy;
-  let prev = previous.xy / max(previous.w, 0.0001) * vec2f(0.5, -0.5) + 0.5;
-  var velocity = (uv - prev) * F.screen.xy * M.shutter.x;
-  if (previous.w <= 0.0) { velocity = vec2f(0.0); }
-  velocity *= min(1.0, 24.0 / max(length(velocity), 0.001));
+  let velocity = shutterVelocity(uv, previous);
   var out: MotionOut;
   out.color = color;
   out.velocity = vec4f(velocity, length(world - F.cam.xyz), 1.0) * clamp(color.a, 0.0, 1.0);
