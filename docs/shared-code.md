@@ -9,6 +9,10 @@ both games and has a current consumer in each. Game rules, maps, meshes and the 
 include it, and each game's workflow must also trigger on `packages/kit/**`, because a change there ships every game
 that uses it.
 
+## Lab panel
+
+`packages/kit/lab-panel.ts` is the one debug panel for every game: switches, sliders, presets, Copy, perf readout. New tunables go there, not into URL parameters. When a game needs a new kind of control, add it to the shared panel.
+
 ## Candidates
 
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
