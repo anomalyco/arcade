@@ -72,7 +72,11 @@ The vehicle starts at 15 m/s and runs through the normal vehicle physics. The cl
 target, ejects a casing and is followed by a grenade throw. The four captures matched all recorded player, vehicle,
 camera and effect-count states. The shot contains eight tracers, one muzzle flash, one casing, one grenade and one
 ragdoll. Frame crops confirm sharper still scenery beside the moving vehicle, with HUD/crosshair outside the blur.
-The output is a silent 1080×600 side-by-side clip: vehicle at real time, shotgun at labelled quarter speed.
+The output is a silent eight-second 1080×600, 60 fps side-by-side clip: vehicle at real time, shotgun at labelled quarter
+speed. Both settled frames are RGB-identical below the OFF/ON label (zero differing pixels). The final package checks,
+267 Blackout tests, typechecks and build pass. Current main's PR #5 squash was merged with an identical source tree.
+Reviewed clip and raw state proof: `~/code/home/artifacts/2026-10-13-blackout-feedback/blackout-motion-blur.mp4`
+and `proof.json`.
 
 ```sh
 hivemind run --kind browser --fetch captures/blackout-motion-demo -- sh -c \
