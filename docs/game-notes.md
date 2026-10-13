@@ -64,6 +64,13 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Bake fine window coverage separately from soft AO.** Blackout's 12.5 cm moon mask, 18.75 cm blocker march and
+  box blur created stepped diagonals and cloudy mullion bands. Exact world-space segment/rectangle intersections and
+  2×2 coverage samples in a separate 3.125 cm R8 moon mask fix those edges without changing AO bytes. This costs
+  1.60–1.85 MiB and an extra 31–56 ms once per level for the two office seeds tested. One extra filtered sample added
+  no measurable GPU cost in the 1440p M5 Max wood-room fixture (median −0.00048 ms, MAD 0.00249). See
+  `perf/blackout-window-light.md` and `scripts/window-proof.ts`; motion/Look toggles produced identical movement poses.
+
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
   silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
   world-anchored sub-stratum offsets remove the coherent bands without a fullscreen blur. Never interpolate blocker
@@ -74,6 +81,12 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   teleports and resize reset it. Eight depth-aware samples run in the existing composite, before the DOM HUD. The
   1440p M5 Max paired deltas were +0.060 / -0.312 / +0.237 ms for office/downtown/lot, with MAD
   0.345 / 0.896 / 0.273. The sub-0.5 ms target is unproven under that variance. See `perf/blackout-motion.md`.
+- **Fast projectiles need a flight-aware continuity threshold.** Blackout's 240 m/s tracers crossed the original
+  4-metre actor teleport threshold at 60 Hz, suppressing their velocity. Transient keys now carry an emission point
+  and 32-metre threshold; casings and sheets also get stable keys. A 1/60 shutter, 1.25-pixel dead zone and 32-pixel cap
+  make fast motion visible while slow camera following stays sharp. Tracked flash/tracer quads sweep their trailing
+  edge so their narrow silhouettes can streak. `scripts/motion-demo.ts` matches vehicle, camera and effect states for
+  an actual passing car and close-zoom shotgun kill/throw. Cost of this tuning is unmeasured; blur stays default off.
 
 - **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
   selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then

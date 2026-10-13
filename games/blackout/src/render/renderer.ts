@@ -76,6 +76,7 @@ export class Renderer {
   private gradeBuf: GPUBuffer
   private sceneLayout: GPUBindGroupLayout
   private floorTex: GPUTexture
+  private moonTex: GPUTexture
   private bounceTex: GPUTexture
   private floorSampler: GPUSampler
   private chunks: Chunk[] = []
@@ -139,6 +140,7 @@ export class Renderer {
     this.polarBuf = d.createBuffer({ size: SLOTS * POLAR_RAYS * 32, usage: U.STORAGE })
     this.lampBuf = d.createBuffer({ size: MAX_MAP_LIGHTS * 4, usage: U.STORAGE | U.COPY_DST })
     this.floorTex = d.createTexture({ size: [1, 1], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.moonTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     this.gradeBuf = d.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST })
@@ -165,6 +167,7 @@ export class Renderer {
         { binding: 5, visibility: S.FRAGMENT, sampler: {} },
         { binding: 6, visibility: S.FRAGMENT, texture: {} },
         { binding: 7, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 8, visibility: S.FRAGMENT, texture: {} },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -307,6 +310,7 @@ export class Renderer {
         { binding: 5, resource: this.floorSampler },
         { binding: 6, resource: this.bounceTex.createView() },
         { binding: 7, resource: { buffer: this.motionBuf } },
+        { binding: 8, resource: this.moonTex.createView() },
       ],
     })
   }
@@ -343,6 +347,10 @@ export class Renderer {
     this.floorTex.destroy()
     this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.device.queue.writeTexture({ texture: this.floorTex }, f.data, { bytesPerRow: f.w * 2 }, [f.w, f.h])
+    const moon = f.moon
+    this.moonTex.destroy()
+    this.moonTex = this.device.createTexture({ size: [moon.w, moon.h], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.device.queue.writeTexture({ texture: this.moonTex }, moon.data, { bytesPerRow: moon.w }, [moon.w, moon.h])
     const b = level.bounce
     this.bounceTex.destroy()
     this.bounceTex = this.device.createTexture({ size: [b.w, b.h], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
@@ -467,8 +475,8 @@ export class Renderer {
     this.history.begin(continuous)
     if (motion) {
       this.motionData.set((continuous ? old! : f.frame).subarray(0, 16))
-      // A fixed 1/120 s exposure, bounded for high refresh rates and paused captures.
-      this.motionData[16] = continuous ? Math.min(1, 1 / (120 * elapsed)) : 0
+      // A 1/60 s exposure. The shader suppresses subpixel camera drift and caps fast trails.
+      this.motionData[16] = continuous ? Math.min(2, 1 / (60 * elapsed)) : 0
       d.queue.writeBuffer(this.motionBuf, 0, this.motionData)
     }
     this.previousFrame = motion ? f.frame.slice() : null
@@ -529,7 +537,13 @@ export class Renderer {
     if (addCount) d.queue.writeBuffer(this.sprites, addOffset, f.addSprites.buffer, 0, addCount * SPRITE_FLOATS * 4)
     if (motion) {
       this.spriteHistory.set(f.alphaSprites.subarray(0, alphaCount * SPRITE_FLOATS))
-      for (let i = 0; i < addCount; i++) this.history.write(this.spriteHistory, (half + i) * SPRITE_FLOATS, f.addSprites, i * SPRITE_FLOATS, f.addMotionKeys?.[i])
+      for (let i = 0; i < alphaCount; i++) this.spriteHistory[i * SPRITE_FLOATS + 3] = 0
+      for (let i = 0; i < addCount; i++) {
+        const key = f.addMotionKeys?.[i]
+        const at = (half + i) * SPRITE_FLOATS
+        this.history.write(this.spriteHistory, at, f.addSprites, i * SPRITE_FLOATS, key)
+        this.spriteHistory[at + 3] = key?.initial ? 1 : 0
+      }
       d.queue.writeBuffer(this.previousSprites, 0, this.spriteHistory)
     }
 
