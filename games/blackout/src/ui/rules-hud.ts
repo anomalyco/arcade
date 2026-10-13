@@ -10,7 +10,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const stat = (r: RosterRow, k: string) => r.stats?.[k] ?? 0
 
 /** Whether the mode hands out the loadout, so the gun and equipment picks are hidden. */
-export const fixedLoadout = (s: Snapshot | null) => !!s && FIXED_LOADOUT.includes(s.mode.id)
+export const fixedLoadout = (s: Snapshot | null) => !!s && (s.mode.id === "wizards" || FIXED_LOADOUT.includes(s.mode.id))
 
 /** The number on the mini leaderboard and how it ranks: score, tier or lives instead of kills. */
 export function boardStat(id: ModeId): ((r: RosterRow) => number) | null {

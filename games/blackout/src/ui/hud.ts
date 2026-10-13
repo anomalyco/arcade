@@ -46,7 +46,11 @@ export class Hud {
     const t = performance.now() / 1000
     el.status!.textContent = status ?? ""
     if (!s) return
-    el.floor!.textContent = mapLabel(s.mapKind, s.map)
+    el.help!.textContent = s.spells ? "WASD move · CLICK cast · 1 / 2 / WHEEL spell · V bonk · SHIFT sprint · ~ Lab" : "WASD move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · R reload · G equipment · V melee · F vehicle · TAB scores"
+    this.root.querySelector(".brand")!.textContent = s.spells ? "WIZARDS" : "BLACKOUT"
+    el.br!.style.display = s.spells ? "none" : ""
+    el.tc!.style.display = s.spells ? "none" : ""
+    el.floor!.textContent = s.spells ? "CASTLE HALL" : mapLabel(s.mapKind, s.map)
     el.clock!.textContent = s.phase === "play" ? clock(s.left) : `NEXT FLOOR IN ${Math.ceil(s.left)}`
     el.tr!.innerHTML = g.feed
       .filter((f) => t - f.t < 6)

@@ -1,7 +1,9 @@
 import type { Gun } from "../../shared/config"
 import type { Rect } from "../../shared/geom"
-import { GUNPTS, RIG } from "../render/person"
+import { Rng, seedOf } from "../../shared/rng"
+import { GUNPTS } from "../render/person"
 import { type Body, type PartModels, type PushPart, emitBody } from "./anim"
+import { bodyJoints } from "./anim-pose"
 import { type Frame, type V3, add, aimFrame, at, cross, dot, len, limb, madd, moved, norm, roll, scale, sub } from "./rig"
 
 /**
@@ -42,6 +44,7 @@ export type Ragdoll = {
   prev: V3[]
   cons: Con[]
   attach: { pelvis: Local; torso: Local; head: Local }
+  limbs: { ua: Local[]; fa: Local[]; th: Local[]; sh: Local[]; ft: Local[]; gun: Local }
   gunRoll: number
   gunSpin: number
   rects: Rect[]
@@ -72,25 +75,19 @@ function fromLocal(t: Frame, l: Local): Frame {
 }
 
 export function ragdoll(b: Body, gun: Gun, vx: number, vy: number, dx: number, dy: number, style: DeathStyle, solids: readonly Rect[]): Ragdoll {
+  const rng = new Rng(seedOf(`${gun}:${b.pelvis.p.join(",")}:${dx}:${dy}`))
   const g = b.gun ?? moved(b.torso, at(b.torso, 0.3, 0.2, 0))
-  const pos: V3[] = []
-  pos[P.hipL] = b.th[0].p
-  pos[P.hipR] = b.th[1].p
-  pos[P.shL] = b.ua[0].p
-  pos[P.shR] = b.ua[1].p
-  pos[P.back] = at(b.torso, -0.25, 0.27, 0)
-  pos[P.chest] = at(b.torso, 0.17, 0.28, 0)
-  pos[P.head] = at(b.head, 0, 0.18, 0)
-  pos[P.kneeL] = b.sh[0].p
-  pos[P.kneeR] = b.sh[1].p
-  pos[P.ankL] = b.ft[0].p
-  pos[P.ankR] = b.ft[1].p
-  pos[P.elbL] = b.fa[0].p
-  pos[P.elbR] = b.fa[1].p
-  pos[P.handL] = at(b.fa[0], 0, -RIG.fore, 0)
-  pos[P.handR] = at(b.fa[1], 0, -RIG.fore, 0)
-  pos[P.grip] = g.p
-  pos[P.muzzle] = at(g, GUNPTS[gun].muzzle, 0, 0)
+  // Own these points: the Verlet solver must not mutate the last living pose.
+  const pos = bodyJoints(b, gun).map((p): V3 => [...p])
+  const bind = (a: P, c: P, f: Frame, ref: Frame) => toLocal(limb(pos[a]!, pos[c]!, ref.x, ref.y), f)
+  const limbs = {
+    ua: [bind(P.shL, P.elbL, b.ua[0], b.torso), bind(P.shR, P.elbR, b.ua[1], b.torso)],
+    fa: [bind(P.elbL, P.handL, b.fa[0], b.torso), bind(P.elbR, P.handR, b.fa[1], b.torso)],
+    th: [bind(P.hipL, P.kneeL, b.th[0], b.pelvis), bind(P.hipR, P.kneeR, b.th[1], b.pelvis)],
+    sh: [bind(P.kneeL, P.ankL, b.sh[0], b.pelvis), bind(P.kneeR, P.ankR, b.sh[1], b.pelvis)],
+    ft: [bind(P.kneeL, P.ankL, b.ft[0], b.pelvis), bind(P.kneeR, P.ankR, b.ft[1], b.pelvis)],
+    gun: toLocal(aimFrame(g.p, sub(pos[P.muzzle]!, g.p), [0, 1, 0]), g),
+  }
 
   const cons: Con[] = []
   const link = (a: number, c: number, min = false, d = len(sub(pos[a]!, pos[c]!))) => cons.push({ a, b: c, d, min })
@@ -121,7 +118,7 @@ export function ragdoll(b: Body, gun: Gun, vx: number, vy: number, dx: number, d
   const d: V3 = [dx / l, 0, dy / l]
   const perp: V3 = [-d[2], 0, d[0]]
   const fwd = b.pelvis.x
-  const vel: V3[] = pos.map(() => [vx, 0, vy])
+  const vel: V3[] = pos.map((_, i) => b.velocities?.[i] ? [...b.velocities[i]!] : [vx, 0, vy])
   const push = (i: number, v: V3, s: number) => (vel[i] = madd(vel[i]!, v, s))
   for (const i of [P.shL, P.shR, P.back, P.chest, P.head, P.elbL, P.elbR, P.handL, P.handR]) {
     push(i, d, style.push)
@@ -141,10 +138,10 @@ export function ragdoll(b: Body, gun: Gun, vx: number, vy: number, dx: number, d
   }
   for (const i of [P.hipL, P.hipR, P.chest, P.back]) push(i, [0, -1, 0], style.buckle * 0.6)
   // The gun is flung away, tumbling.
-  const toss = madd(madd([0, 2.2, 0], perp, (Math.random() - 0.5) * 3), d, 1 + style.push * 0.4)
+  const toss = madd(madd([0, 2.2, 0], perp, (rng.next() - 0.5) * 3), d, 1 + style.push * 0.4)
   push(P.grip, toss, 1)
   push(P.muzzle, toss, 1)
-  push(P.muzzle, perp, (Math.random() - 0.5) * 4)
+  push(P.muzzle, perp, (rng.next() - 0.5) * 4)
 
   const prev = pos.map((p, i) => madd(p, vel[i]!, -SUB))
   const t = tri(pos)
@@ -155,8 +152,9 @@ export function ragdoll(b: Body, gun: Gun, vx: number, vy: number, dx: number, d
     prev,
     cons,
     attach: { pelvis: toLocal(t, b.pelvis), torso: toLocal(t, b.torso), head: toLocal(t, b.head) },
+    limbs,
     gunRoll: 0,
-    gunSpin: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 6),
+    gunSpin: (rng.next() < 0.5 ? -1 : 1) * (6 + rng.next() * 6),
     rects: solids.filter((r) => px > r[0] - 4 && px < r[2] + 4 && pz > r[1] - 4 && pz < r[3] + 4),
     acc: 0,
     still: 0,
@@ -252,18 +250,19 @@ export function ragdollBody(r: Ragdoll, sink: number, kind: Gun): Body {
   const torso = fromLocal(t, r.attach.torso)
   const pelvis = fromLocal(t, r.attach.pelvis)
   const head = fromLocal(t, r.attach.head)
-  const ankle = (k: number, a: number): Frame => moved(limb(p[k]!, p[a]!, pelvis.x, pelvis.y), p[a]!)
+  const bone = (a: P, b: P, ref: Frame, local: Local) => fromLocal(limb(p[a]!, p[b]!, ref.x, ref.y), local)
   let gun = aimFrame(p[P.grip]!, sub(p[P.muzzle]!, p[P.grip]!), [0, 1, 0])
+  gun = fromLocal(gun, r.limbs.gun)
   gun = roll(gun, Math.max(-1.5, Math.min(1.5, r.gunRoll)))
   return {
     pelvis,
     torso,
     head,
-    ua: [limb(p[P.shL]!, p[P.elbL]!, torso.x, torso.y), limb(p[P.shR]!, p[P.elbR]!, torso.x, torso.y)],
-    fa: [limb(p[P.elbL]!, p[P.handL]!, torso.x, torso.y), limb(p[P.elbR]!, p[P.handR]!, torso.x, torso.y)],
-    th: [limb(p[P.hipL]!, p[P.kneeL]!, pelvis.x, pelvis.y), limb(p[P.hipR]!, p[P.kneeR]!, pelvis.x, pelvis.y)],
-    sh: [limb(p[P.kneeL]!, p[P.ankL]!, pelvis.x, pelvis.y), limb(p[P.kneeR]!, p[P.ankR]!, pelvis.x, pelvis.y)],
-    ft: [ankle(P.kneeL, P.ankL), ankle(P.kneeR, P.ankR)],
+    ua: [bone(P.shL, P.elbL, torso, r.limbs.ua[0]!), bone(P.shR, P.elbR, torso, r.limbs.ua[1]!)],
+    fa: [bone(P.elbL, P.handL, torso, r.limbs.fa[0]!), bone(P.elbR, P.handR, torso, r.limbs.fa[1]!)],
+    th: [bone(P.hipL, P.kneeL, pelvis, r.limbs.th[0]!), bone(P.hipR, P.kneeR, pelvis, r.limbs.th[1]!)],
+    sh: [bone(P.kneeL, P.ankL, pelvis, r.limbs.sh[0]!), bone(P.kneeR, P.ankR, pelvis, r.limbs.sh[1]!)],
+    ft: [bone(P.kneeL, P.ankL, pelvis, r.limbs.ft[0]!), bone(P.kneeR, P.ankR, pelvis, r.limbs.ft[1]!)],
     gun,
     pump: kind === "shotgun" ? moved(gun, at(gun, GUNPTS.shotgun.fore, 0.005, 0)) : null,
     mag: kind === "shotgun" ? null : moved(gun, at(gun, GUNPTS[kind].mag[0], GUNPTS[kind].mag[1], GUNPTS[kind].mag[2])),

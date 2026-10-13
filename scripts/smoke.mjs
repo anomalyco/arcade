@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "carrier"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -31,9 +31,12 @@ try {
   browser = await chromium.launch({
     headless: true,
     timeout: 10_000,
-    // SwiftShader Vulkan for the compositor too: with only GL SwiftShader, Chrome cannot create the shared image behind
-    // a WebGPU canvas, so the first presented frame destroys the device. Games that draw behind their menu need this.
-    args: ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--use-vulkan=swiftshader", "--enable-features=Vulkan"],
+    args: [
+      "--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+      // Carrier and Outbreak draw behind the menu and need WebGPU presentation, not merely adapter creation.
+      "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--mute-audio",
+      ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : []),
+    ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
   const errors = []
@@ -46,6 +49,11 @@ try {
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver.
   const ready = await page.waitForFunction(game => {
+    if (game === "outbreak") {
+      const status = document.querySelector("#status")?.textContent
+      if (status && /needs WebGPU|No WebGPU adapter is available/.test(status)) return status
+      return window.__arcadeHarness?.ready ? "local session ready" : false
+    }
     const sel = {
       blackout: ["#menu .notice", '#menu [data-act="practice"]'],
       getaway: ["#overlay .nogpu p", '#overlay [data-act="solo"]'],

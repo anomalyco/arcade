@@ -14,5 +14,5 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true
   },
-  "include": ["src", "shared"]
+  "include": ["src", "shared", "../../packages/kit/fx"]
 }

@@ -6,6 +6,28 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Proving a change
 
+- **Keep spell proof on the real input path.** Blackout's `scripts/prove-wizards-spells.ts` reads scrolls with F and
+  draws through Chromium mouse events. Its manual sandbox clock advances both simulation and animation between
+  captures; advancing simulation alone left the rig's planted feet behind. The inspected Metal proof captured a
+  dummy in a growing moon, its moving polar shadow and damaging pop, a rising skeleton pursuing its caster, and
+  a 71.6%-confidence degraded moon. Dvorak movement continued while drawing; there were no browser errors.
+  `shared/sim/spells.ts` owns the authoritative entities and `tests/spells.test.ts` verifies deterministic replay
+  and two room connections receiving the same cast. Runtime cost and live two-browser room play are unmeasured.
+
+- **Record one motion tape across snapshots.** `scripts/compare-video.ts` captures headless Chromium on Metal and
+  sends encoding to the fleet. Its Getaway adapter patches HTTP responses for legacy, current and minified deployed
+  hooks without editing game files. Named scenarios supply frame-indexed inputs; the last pane supplies full world
+  views and camera state by default, so physics changes cannot move the cars between panes. `--input-only` compares
+  each version's simulation instead. The seed-7 historical/smoke pair matched all 360 world/camera snapshots at 30 Hz;
+  a four-pane seed-11 check also covered the deployed bundle and temporary-worktree cleanup. Two independent seed-11
+  deployed runs produced byte-identical PNGs for all 30 frames in input-only mode. Captures are canvas-only,
+  with PNG labels, a contact sheet and a JSON manifest. High quality defaults to 2× capture, Lanczos downsampling,
+  1080-wide stacked / 2560-wide side output, and 16 / 28 Mbps H.264 High. `--quality draft` retains 720 / 1920-wide
+  output at 1× capture. `--zoom` changes the projection only during drawing, leaving the replay camera state intact.
+  The 12-second seed-7 example at 1.35× zoom matched all 360 snapshots and produced 24.28 / 42.40 MB videos; full
+  decoding and full-resolution frame inspection passed. Capture timing
+  includes screenshot readback and is not a performance benchmark.
+
 - **Measure before you edit.** Record a baseline on the unchanged code, then make one change at a time. Use one warmup
   and seven or more measured runs, and compare medians with their spread. Results go in `perf/results.jsonl`.
 - **Separate GPU time from frame time.** Frame time is capped by vsync. Use `timestamp-query` where the adapter has it,
@@ -84,7 +106,189 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   passive/live toggle. `tests/sandbox.test.ts` now verifies five idle minutes and respawning at the original dummy
   position/aim; explicit peaceful mode prevents the B shortcut from reactivating bots. Runtime cost is unmeasured.
 
+## Human animation
+
+Blackout's `src/game/anim-locomotion.ts` separates the distance-driven stride wheel from contact ownership.
+The wheel advances by actual root displacement, with a smooth Froude transition around 2 m/s. Walking waits for
+support; running releases the supporting toe once the other swing is committed, allowing flight at the game's
+4.2/6.3 m/s travel speeds. A trailing foot can request an early step before rigid-leg reach fails. Cadence therefore
+exceeds the research reference of 115 walking / 150–180 running steps per minute; those rates are not enforced.
+The fixed-speed diagnostic measured approximately 207 steps/min at 1.4 m/s and 300 at 6.3 m/s. Cadence remains a
+look-tuning tradeoff, rather than a claim of anatomically calibrated walking.
+
+- Lock the **rendered toe**, not only the IK target. `plantedFoot` keeps the toe fixed while the heel rolls down
+  over 60 ms and the boot pivots with the pelvis. Swing ankles relax toward the shin, then recover ground alignment.
+  Heel/toe height clamps prevent the sole penetrating the floor. The `9.48 (1-u)^3 u` arc lifts early and glides in.
+- Keep pelvis intent and visible yaw within 1.05 rad of aim. Spring toward the circular midpoint of foot yaws,
+  add forward/back foot-separation twist, and counter it by 65% in the chest. Sidesteps open the leading boot
+  by 0.6 rad, the follower by 0.12 rad, with a 0.20 m separation constraint in aim space.
+- A sprung foot centre, capped at 0.30 m lag per axis, carries inertia through starts and stops. Hips move under
+  the head during lean. The head stays attached to the neck and springs toward aim. Pelvis sway and swing-side drop
+  are amplified 1.6× for the top-down view; body height has a fixed gait offset rather than an IK reach crouch.
+- Spring the weapon's world-space position and yaw independently of the shoulders. Rifle, shotgun and sniper
+  ergonomics scale catch-up frequency. Recoil holds for 1–3 60 Hz ticks before spring recovery; hit twist follows
+  the hit side. Existing reload, gear and melee clips still own their hand paths.
+- `anim-pose.ts` gives animation and ragdolls the same joint order. Difference consecutive poses for joint
+  velocities (capped at 15 m/s per axis), copy the pose into Verlet storage, and retain each part's local frame.
+  This preserves foot/hand orientation at death and prevents physics mutating the last living pose.
+
+Backquote → Animation exposes Old/New and all 14 numeric settings in the shared Lab, both in the game and in
+`anim.html`. Presentation settings have no simulation or wire fields. The Old path retains the former gait and
+weapon handling; seeded recoil and pose-preserving ragdoll attachment fixes are shared by both paths.
+
+**Proof:** 13 animation cases pass inside `bun run check` (279 total tests after the workspace/look rebase,
+plus the shared package's six tests, typechecks and production build).
+Locked contacts have exactly zero translation; rendered toe slip is below 1e-12 m during straight walk, run,
+sprint, both strafes, backpedal and in-place turning. Both strafes retain 0.20 m target separation. Steady forward
+walk/run/sprint planted ankles agree with the rigid shin endpoint within 1e-6 m. Transition, fixed-step replay,
+two-step stop settling, attached necks, running flight and ragdoll pose/velocity inheritance are checked.
+
+`scripts/prove-animation.ts --video` captured 2,160 headless Chromium/Metal frames through the real Game/Renderer,
+with nine scripted beats at gameplay and close zoom. It also checked the real `?sandbox=1` Lab's Old/New select
+and 14 sliders. The 36-second, silent, 1080×1080 H.264 High clip puts Old above New; the contact sheet includes
+a death frame strip. Stills and encoded run/death frames were inspected. Continuous playback and runtime CPU/GPU
+cost have not been measured. Reproduce encoding with `bash scripts/animation-film.sh` and the sheet with
+`python3 scripts/animation-sheet.py` (Pillow required).
+
+### Running attitude revision
+
+The first New gait lost the old run's forward attitude. A fixed-speed, 60-frame steady sample measured chest pitch
+at about 26°/47° in Old versus 9°/11° in New at 4.2/6.3 m/s. New also removed the pelvis's 9.7° forward pitch and
+moved its hips backward enough to keep the head nearly over the root. This was a pose change, not only a camera effect.
+
+`anim-locomotion.ts` now springs a separate running-posture value through the existing walk/run transition, with
+25% more at sprint speed and a forward-travel weight. `anim.ts` pitches the pelvis about its rolled hip-to-hip axis,
+then gives the chest the same travel-directed attitude. The hip joints retain their exact positions; the head stays
+attached and compensates its pitch, and the weapon keeps its independent world frame. Root acceleration lean,
+support drop, pelvis yaw and chest counter-rotation keep their existing roles.
+
+Animation → Run posture defaults to 0.18 rad. Zero reproduces the pre-revision New pose: 720-frame sequences of
+Old and zero-posture New matched the saved `39ef8bf` bodies exactly, including seeded fire and hit events. The new
+default measures roughly 7°/18° pelvis/chest pitch at run and 9°/23° at sprint. Fifteen animation cases include exact
+current/refined agreement on cadence, contact state, toe locks, pelvis position and weapon pose, plus finite joints
+and bounded, continuous posture through acceleration, braking and reversal. The earlier cadence limitation remains.
+
+`scripts/prove-running.ts` captures the real viewer/Game/Renderer on headless Metal. Its three-way comparison uses
+Old, current New (`runPosture=0`) and refined New, with five matched routes and gameplay, side and three-quarter
+cameras. The film uses identical ticks, root trajectories, aims and seeds. New/refined phases are exactly equal;
+Old's different gait clock is shown honestly. Separate ten-phase strips normalize successive left-foot touchdowns
+to the nearest 60 Hz frame, with actual fractions printed. `running-sheet.py` checks the pair's captured state;
+`running-film.py` adds labels and quarter-speed repeats without changing the simulation or scaling its pixels.
+
+Four screenshot-anchored paintovers under the dated running artifacts informed trunk attitude. Their minor weapon
+placement/free-leg deviations are not reproduced: contacts and weapon transforms are tested against the actual
+current pose. Paintovers are art targets, not biomechanical measurements. Continuous playback still needs visual
+review; sampled images and numerical checks do not establish it. Runtime CPU/GPU cost is unmeasured.
+
 ## Rendering (WebGPU)
+
+- **Bake fine window coverage separately from soft AO.** Blackout's 12.5 cm moon mask, 18.75 cm blocker march and
+  box blur created stepped diagonals and cloudy mullion bands. Exact world-space segment/rectangle intersections and
+  2×2 coverage samples in a separate 3.125 cm R8 moon mask fix those edges without changing AO bytes. This costs
+  1.60–1.85 MiB and an extra 31–56 ms once per level for the two office seeds tested. One extra filtered sample added
+  no measurable GPU cost in the 1440p M5 Max wood-room fixture (median −0.00048 ms, MAD 0.00249). See
+  `perf/blackout-window-light.md` and `scripts/window-proof.ts`; motion/Look toggles produced identical movement poses.
+
+- **Attach splatter to the hit triangle.** `packages/kit/fx/splatter.ts`, `splatter-surfaces.ts` and
+  `splatter-renderer.ts` share a seeded ballistic spray and matte deposits across blood, ink, slime, oil and potion
+  presets. Blackout supplies packed visible receiver geometry; Outbreak can supply its own triangle/material list.
+  Swept-point collision catches thin walls and desk tops before the floor. A surface tangent from impact velocity
+  gives grazing elongation, and fragment clipping confines each deposit to up to 12 coplanar receiver triangles.
+  Glass stops spray without receiving a stain. At most 256 drops and 256 deposits recycle in fixed arrays.
+  - [Godot's decal guide](https://docs.godotengine.org/en/stable/tutorials/3d/using_decals.html) describes normal fade,
+    receiver masks, overlap limits and decal overdraw. This small system uses exact receiver triangles and material
+    classes instead of a projection volume. Reusing the hit normal prevents a wall hit from becoming a floor decal.
+  - The Lab compares the shipped blood against the candidate on pale tile, walls, desk tops and a dark street.
+    An inspected 1280×1260 sheet includes the actual Blackout renderer. The Lab's analytic grid initially competed
+    with the supplied y=0 floor; scene mode 5 now lets an adapter own its floor. A steeper camera clears foreground
+    roofs while keeping the target visible. Existing Lab scene modes retain their behavior.
+  - Paired whole-frame GPU deltas at 1000×720 on M2 Max/Metal were +0.050 ms office (MAD 0.078) and +0.043 ms
+    downtown (MAD 0.058). Both are smaller than their noise, so cost remains inconclusive. See `perf/lab-splatter.md`
+    and its raw JSON. The Blackout style stays opt-in; gameplay damage and detachment remain caller-owned.
+
+- **Give small fire and water effects a continuous silhouette.** The Lab's `Fire and water` section compares current
+  emitters with Flowing and Graphic styles in the generated downtown, office and Getaway alley. The shared
+  `packages/kit/fx/fire-water.ts` renderer uses three overlapping upright flame quads, a small additive core,
+  alpha smoke and rising embers. Upward-scrolling procedural noise erodes the tapered silhouette; the same flicker
+  signal changes flame height and light power. A depth-gated post-HDR distortion adds heat shimmer. Water combines
+  a continuous pressure sheet with velocity-aligned droplets, impact spray, expanding rings and a growing puddle.
+  The puddle perturbs its normal for ripples and samples up to eight scene lights for warm streetlamp and siren sheen.
+  Foam stays near the irregular boundary. These are shared Lab candidates; game renderer adoption is still separate.
+  Matched Metal captures and paired whole-frame costs are documented in `perf/lab-fire-water.md`.
+  - [Febucci's procedural fire breakdown](https://blog.febucci.com/2019/05/fire-shader) combines scrolling noise with
+    a gradient mask. The Lab uses that shape/erosion approach with textureless fBm and a hot yellow-white core fading
+    through orange to red tips. [Epic's Niagara smoke guide](https://docs.unrealengine.com/4.27/en-US/RenderingAndGraphics/Niagara/HowTo/RecreateSmoke/)
+    shows the flipbook alternative; authored frames can give richer billows at a texture-fetch cost, but this study
+    keeps all shapes procedural. Ember drift uses a helical path as a cheap curl-like approximation.
+  - [Nimue's stylized-water breakdown](https://80.lv/articles/how-to-build-stylized-water-shader-design-implementation-for-nimue)
+    separates moving normals, reflections, foam and interactive ripples, and reuses noise for foam. At gameplay zoom,
+    the Lab keeps the jet sheet, stretched drops and puddle separate so the jet remains readable between particles.
+    The sheen is direct-light specular, not reflected scene geometry. No water simulation or screen-space reflection
+    buffer is required. Heat shimmer does require an HDR copy and one extra pass, included in the timing.
+
+- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`, sharing one device,
+  test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
+  Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
+  `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`; the Materials shader calibration remains a stub.
+- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
+  and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
+  bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.
+- **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes four-connected arrival
+  distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
+  restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and
+  eight nearby lights. Rays stop at stored MSAA depth, render at at most 480×320 with 24 steps, then depth-aware
+  upsampling places them before bloom. Shots carve temporary cylinders. Walls ≥1.8 m and glass seal the field;
+  low wrecks remain depth occluders. This is visual only; fluid pressure and vertical furniture flow are unimplemented.
+- **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
+  `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
+  vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.
+- **Measure the two volume passes with retained depth on both sides.** The earlier Blackout nine-pair frozen-room
+  measurement added 0.947 ms median, MAD 0.016 ms, at 960×640 on M5 Max/Metal (`perf/fx-kit.json`). It excludes the
+  depth discard-to-store change and is not a four-cloud bound. The interval covers first polar compute through a
+  dependent offscreen final composite; no pass sums.
+
+- **Linux software WebGPU needs presentation support too.** The production smoke browser's ANGLE SwiftShader
+  adapter initialized, then lost its instance at the first Outbreak canvas presentation with
+  `Could not find SharedImageBackingFactory` / `Instance dropped error in getCompilationInfo`.
+  `scripts/smoke.mjs` now enables Vulkan with SwiftShader and disables the native Vulkan surface on Linux.
+  The failure reproduced in headless Chromium 1248 on Linux; all three production smokes passed with these flags.
+  Keep errors fatal: accepting adapter creation alone would miss this failure.
+
+- **Diagnose washed-out surfaces before changing specular.** Outbreak's ground specular was already zero.
+  `games/outbreak/scripts/refine-proof.ts` captures the shared shader's albedo/direct/ambient/specular/bloom
+  contributions through the Lab. Smaller practical pools, sheltered ambient and removal of additive blue shadow
+  lift corrected the main wash. Room lamps are excluded above the roof underside. Default shared WGSL remains
+  equivalent across twelve outputs. See `docs/outbreak-look-v2.md` for aligned evidence and limitations.
+- **Cull and simplify generated planting before adding density.** The second Outbreak pass removes covered
+  terrain and excess grass/gravel, replaces sphere crowns with fewer folded-leaf sprays, and gives props their
+  own render bounds. Static vertices fall 299,238→196,722; street submitted vertices fall 164,820→97,014.
+  Seven M5 Max/Metal pairs at 1000×680 have mixed frame results: street aggregate medians 10.0→9.6 ms,
+  interior 9.9→10.7 ms. Keep those queue-completed spans distinct from GPU time. The measured Metal render-pass
+  timestamp intervals overlap; summing them would falsely attribute cost. Generation uses a three-entry cache,
+  and the determinism test explicitly evicts it before comparing independently compiled meshes.
+- **Separate scenery memory from actor LOS.** Outbreak's initial cone blacked out most of its neighbourhood.
+  Static room discovery now supplies the scenery texture while `Vision.visible` retains strict occlusion for actors.
+  A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
+  Exterior scenery remains lit, and remembered interior scenery is desaturated instead of hidden behind wedges.
+  `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
+- **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
+  pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
+  those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
+  New material IDs also need exclusion from the old dust-expansion branch. Outdoor finishes use four-corner value
+  noise while legacy Blackout noise is retained. These hooks add no changes to default Blackout WGSL.
+- **Test contact against packed geometry.** Outbreak uses the same seeded terrain vertices and triangle diagonal
+  in rendering and support queries. Tests intersect actual packed ground triangles at yard, threshold, interior,
+  driveway and curb samples. This caught driveway support returning 3.5 cm beneath a 10 cm sidewalk overlay.
+  Final look cost on M5 Max at 1000×680: median queue-completed spans 2.5→9.5 ms, 37,014→299,238 static vertices,
+  and sampled allocations 565,965→574,627 bytes/step including the proof harness. Pure GPU time is unmeasured.
+
+- **Reserve a polar row for eye sight.** Outbreak M1 uses row zero at 1.65 m, with zero radiance, in the same
+  compute pass as its streetlights. Walls/closed doors feed that row; windows/fences remain collision-only.
+  The fragment shader combines its nearest hit with a 110° cone and occluded 2.5 m awareness. A CPU polar pass
+  marks a persistent 192² exploration mask with the same ray centres and shared slab tests, without GPU readback.
+  The mask is uploaded only after newly explored cells appear. Headless Chromium on Apple Metal checked a closed
+  room, opening its door, and turning away into an explored shroud, plus live Lab/input handling, without GPU errors.
+  `games/outbreak/scripts/prove.ts` reproduces the six views. The mask is 36 KiB; runtime/GPU cost is unmeasured.
 
 - **Filter polar visibility across rays.** Blackout's five sparse nearest-ray shadow samples produced repeated radial
   silhouettes on floors and tables even with the Look pass off. Nine weighted, interpolated visibility taps with
@@ -96,6 +300,12 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
   teleports and resize reset it. Eight depth-aware samples run in the existing composite, before the DOM HUD. The
   1440p M5 Max paired deltas were +0.060 / -0.312 / +0.237 ms for office/downtown/lot, with MAD
   0.345 / 0.896 / 0.273. The sub-0.5 ms target is unproven under that variance. See `perf/blackout-motion.md`.
+- **Fast projectiles need a flight-aware continuity threshold.** Blackout's 240 m/s tracers crossed the original
+  4-metre actor teleport threshold at 60 Hz, suppressing their velocity. Transient keys now carry an emission point
+  and 32-metre threshold; casings and sheets also get stable keys. A 1/60 shutter, 1.25-pixel dead zone and 32-pixel cap
+  make fast motion visible while slow camera following stays sharp. Tracked flash/tracer quads sweep their trailing
+  edge so their narrow silhouettes can streak. `scripts/motion-demo.ts` matches vehicle, camera and effect states for
+  an actual passing car and close-zoom shotgun kill/throw. Cost of this tuning is unmeasured; blur stays default off.
 
 - **Randomize through the shared control path.** `packages/kit/lab-panel.ts` randomizes each named group's ranges and
   selects, retaining slider step alignment and option value types. It applies hidden-by-dependency values too, then
@@ -386,6 +596,14 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   four tip-first/tilted cones resting on their sloping sides. Evidence: `perf/clutter/rest-proof.json`. Runtime cost
   has not been remeasured; body-pair contacts still use decorative rounded proxies.
 
+- **Swap presentation while retaining the rig and map.** Blackout's opt-in Wizards lab study registers a second set
+  of meshes against the existing bones, uses a matte team-tinted cloth material, and rebuilds static geometry only
+  when the switch changes. `src/render/castle.ts` retains collision footprints and light IDs while replacing office
+  furniture and fittings; the existing lamp-power buffer drives smooth torch flicker. `scripts/prove-wizards.ts`
+  captured walking, aiming, casting, ragdoll, the furniture fixture and sandbox on Apple's Metal adapter with no
+  browser errors, including a live off/on toggle. Two tests check source-map preservation and finite model normals.
+  CPU/GPU cost has not been measured. Viewer links and weapon mappings are in `games/blackout/docs/wizards.md`.
+
 - **What makes the Getaway concept art read** (`games/getaway/concept/dir-d-lowpoly-*.png`), compared with the game on
   2026-10-12: small warm lamp pools with dark navy road between them (ours were large, even and hazy); flat, matte
   ground (ours too shiny); everything grounded by dark contact areas under cars and at building bases, curbs and
@@ -617,6 +835,23 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
+- **Latch fire presses across input ticks.** Blackout's `src/game/input.ts` keeps one press edge for at most 100 ms,
+  consumed by the next 30 Hz input tick. `Intent.firePressed` carries that edge through prediction and the wire so
+  consecutive taps remain distinct even without a sampled release. Weapon cooldown/reload gates consume rejected
+  presses; disabling play, Lab capture and blur clear pending input. `tests/fire-input.test.ts` covers taps, holds,
+  expiry, focus release and server queue delivery. `scripts/prove-fire-input.ts` drives trusted mouse down/up events
+  against the real game with manual ticks, silent audio and a mocked room socket. The original build lost the
+  between-tick tap in both paths (0 predicted/authoritative shots); the fix produced 1/1. Each fixed path completed
+  the consecutive-tap, sniper-hold, double-click, cooldown, Lab and rifle-hold checks with 12/12 shots. Physical
+  trackpad gesture recognition and GPU cost were not measured.
+
+- **Latch click edges with their selection.** Blackout's wizard prototype stores canvas mousedown position and spell
+  choice until a fixed tick consumes them (`src/game/input.ts`, `game.ts`). Mouseup cannot erase a quick tap, and a
+  number-key/wheel change cannot change a pending cast. Blur and Lab interaction clear the bounded queue. A Metal
+  browser proof put down/up and a selection change between ticks, exercised five rapid clicks, Dvorak movement and
+  a Lab slider click, and checked separate server cooldowns and active caps. `scripts/prove-wizards-spells.ts` also
+  captured player/furniture orbit, pop damage, and a skeleton's wind-up and hit on its caster. Runtime cost is unmeasured.
+
 - **Ignore blur releases from the previous input owner.** On an iframe focus change, the old window's blur message can
   arrive after the new window's keydown or mousedown and cancel the new input. `games/blackout/compare.html` releases
   held input when ownership changes, then accepts release messages only from the current owner. The parent header is
@@ -651,6 +886,16 @@ Candidates from the code audits; measure and playtest before moving any into the
   the panel. Runtime cost is unmeasured.
 
 ## Feel
+
+- **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
+  games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and
+  tonnes. Blackout converts its +X-forward mesh basis and kilograms; converting the complete rotation basis keeps
+  combined roll/pitch attachments aligned. The noise-lit smoke pipeline accepts each game's depth format
+  (`depth24plus` in Blackout, `depth24plus-stencil8` in Getaway). Matched Metal proof kept Getaway's two PNGs
+  byte-identical and Blackout's four sampled simulation poses identical. Blackout's drift produced 49 smoke samples
+  and 110 skid segments; its bounded four-voice offline mix peaked at 0.852 without clipping and became silent after
+  disabling vehicle audio. Full checks passed 177 tests (12 existing skips) in Getaway and 285 in Blackout.
+  Reproduction and audio comparison are in `perf/vehicle-kit.md`; runtime CPU/GPU cost has not been measured.
 
 - **Lab navigation captures keys, not just focus.** The shared panel captures keyboard events at the window before
   game bubble listeners, releases held input on open, and retains consumed keyups after close. This follows

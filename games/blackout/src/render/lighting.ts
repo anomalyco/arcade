@@ -2,8 +2,8 @@ import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS } from "../../shared/config"
 import type { LightDef, LightKind, MapDef, MapKind, PropKind } from "../../shared/maps"
 import { deskMonitorLights } from "./models"
 
-export const LIGHT_FLOATS = 16
-export const OCC_FLOATS = 8
+import { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
+export { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 
 /** Heights of solid props for shadow casting; anything not listed casts none. */
 const PROP_H: Partial<Record<PropKind, number>> = {
@@ -86,6 +86,7 @@ export function flicker(id: number, t: number, bad: number): number {
  */
 export class LightCuller {
   warmPracticals = false
+  torchFlicker = false
   readonly lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   readonly occ = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   readonly power = new Float32Array(MAX_MAP_LIGHTS)
@@ -182,7 +183,7 @@ export class LightCuller {
     const n = Math.min(map.lights.length, MAX_MAP_LIGHTS)
     for (let i = 0; i < n; i++) {
       const l = map.lights[i]!
-      P[i] = this.flick[i]! > 0 ? flicker(l.id, t, this.flick[i]!) : 1
+      P[i] = this.torchFlicker ? 0.9 + 0.065 * Math.sin(t * 7.3 + l.id * 2.1) + 0.035 * Math.sin(t * 13.7 + l.id) : this.flick[i]! > 0 ? flicker(l.id, t, this.flick[i]!) : 1
       const dx = Math.max(vx0 - l.x, 0, l.x - vx1)
       const dy = Math.max(vy0 - l.y, 0, l.y - vy1)
       if (dx * dx + dy * dy > l.r * l.r || l.power <= 0) continue

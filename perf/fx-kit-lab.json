@@ -1,0 +1,27 @@
+{
+  "adapter": {
+    "architecture": "metal-3",
+    "vendor": "apple",
+    "device": "",
+    "description": ""
+  },
+  "controls": {
+    "select": true,
+    "slider": true,
+    "play": true,
+    "loop": true,
+    "retrigger": true,
+    "copy": {
+      "effect": "sparks",
+      "rate": 75,
+      "size": 1,
+      "speed": 1,
+      "density": 1
+    },
+    "backquote": true,
+    "urlUnchanged": true,
+    "presetsPreserveSelect": true,
+    "blackoutToggle": true
+  },
+  "errors": []
+}

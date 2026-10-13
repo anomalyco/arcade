@@ -1,0 +1,22 @@
+/** Presentation defaults shared by the game and its Lab. Units are metres and seconds. */
+export const blackoutEffects = {
+  muzzle:{rifleLife:.05,heavyLife:.075,rifleLightLife:.055,heavyLightLife:.09,riflePower:.35,shotgunPower:.75,sniperPower:.65,lightRadius:7,coreSize:.32,petalLength:.45},
+  tracer:{speed:240,length:3.2,sniperLife:.55,rifleWidth:.026,shotgunWidth:.018,sniperWidth:.045},
+  holes:{capacity:160,life:12,fade:2,heat:.6,coolRate:2},
+  scorch:{capacity:24,fragRadius:1.6,claymoreRadius:1.1},
+  blood:{count:9,speed:1.5,speedSpread:3.5,life:1.2,size:.02,sizeSpread:.025},
+  splats:{life:5,lifeSpread:2,size:1.2,sizeSpread:.6},
+  impact:{rifleCount:7,shotgunCount:3,sniperCount:12,speed:2.5,speedSpread:5,life:.15,lifeSpread:.25,size:.03,bounce:.3},
+  dust:{life:.55,lifeSpread:.3,rifleSize:.13,sniperSize:.22,growth:3,opacity:.5},
+  glass:{size:1,count:10,countSpread:5,speed:1,speedSpread:3,lift:1,liftSpread:2,life:2.5},
+  paper:{size:1,count:4,countSpread:3,speed:.4,speedSpread:1,lift:1,liftSpread:2,life:4,gravity:1.8,drag:1.2,flutter:.25},
+  monitor:{count:14,speed:1,speedSpread:3,life:.25,lifeSpread:.3,size:.035,lightLife:.18,lightPower:2},
+  casings:{speed:1.6,speedSpread:1.2,lift:1.6,liftSpread:1.2,rifleLife:2.5,heavyLife:4,capacity:220},
+  magazines:{life:5,dropSpeed:.5},
+  lamps:{duration:2.5,retrigger:2.5,depth:.6,sparks:3},
+  explosion:{fireCount:18,sparkCount:60,sootCount:22,chipCount:16,smokeRadius:4.5,smokeLife:7},
+  corpse:{life:3.4,sinkAt:2.5,poolDelay:.4,poolTime:2.4,poolRadius:.55},
+  vehicle:{skidLife:9,sparkCount:6,speed:2,speedSpread:5,life:.15,lifeSpread:.2,size:.03},
+  fire:{rate:8,size:.6},
+  wreck:{rate:9,life:2.2,lifeSpread:1.2,size:.3,sizeSpread:.2},
+}

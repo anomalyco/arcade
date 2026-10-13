@@ -67,6 +67,7 @@ export class LocalSession implements Session {
 
   send(msg: ClientMsg): void {
     if (msg.type === "intent") this.world.push(this.myId, msg.seq, msg.i)
+    else if (msg.type === "spells" && this.world.spells) this.world.spells.config = msg.config
     else if (msg.type === "gun") this.world.pickGun(this.myId, msg.gun)
     else if (msg.type === "equip") this.world.pickEquip(this.myId, msg.equip)
     else if (msg.type === "vote") this.world.vote(this.myId, msg.mode)

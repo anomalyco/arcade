@@ -1,4 +1,4 @@
-import { VEHICLES, type Vehicle } from "../../shared/config"
+import type { Vehicle } from "../../shared/config"
 import { type AtlasRegion, regionAspect } from "./atlas"
 import { MAT, type Mat, Mesh, type Rgb } from "./mesh"
 import { HEADLIGHT, type LightStyle } from "./car-lights"
@@ -34,8 +34,6 @@ const SIREN_BLUE: Rgb = [0.12, 0.28, 1]
 
 /** Car paint: the decal material over the atlas's white texel, i.e. lit diffuse plus a soft specular sheen. */
 const PAINT: Mat = MAT.decal
-
-export const MAT_SIREN = MAT.siren
 
 /** Default roof unit numbers, per police vehicle. */
 export const UNIT_NUMBERS: Record<string, number[]> = { cruiser: [208, 617, 324, 54], interceptor: [17, 22, 90, 8], swat: [3] }
@@ -929,5 +927,3 @@ export function buildRotor(): Mesh {
   block(m, -0.3, 0.3, -0.06, 0.12, -0.3, 0.3, [0.2, 0.2, 0.22], MAT.lit, 0.08)
   return m
 }
-
-export const CAR_MODELS = VEHICLES.map((v) => v.id)

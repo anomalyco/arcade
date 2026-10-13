@@ -3,6 +3,7 @@ import { SHOP_H as SHOP_TOP } from "../../shared/maps/downtown-town"
 import { MAT, Mesh, type Rgb } from "./mesh"
 import { PAL, buildProp, deskMonitorLights, hex, rng } from "./models"
 import { STREET_PROPS, STREET_WALLS, streetProp, streetWall } from "./street-models"
+import { castleFixture, castleProp, castleWall } from "./castle"
 
 const FLOOR_KIND = { carpet: 0, tile: 1, wood: 2, concrete: 3, grate: 4, asphalt: 5, sidewalk: 6, plaza: 7, grass: 8, parking: 9 } as const
 const FLOOR_COLOR = { carpet: PAL.carpet, tile: PAL.tile, wood: PAL.wood, concrete: PAL.concrete, grate: PAL.grate, asphalt: hex(0x24262c), sidewalk: hex(0x45484f), plaza: hex(0x4e5058), grass: hex(0x30482e), parking: hex(0x2a2c32) } as const
@@ -14,9 +15,8 @@ const CHUNK = 12
 /** Baked floor map resolution, metres per texel. */
 const CELL = 0.125
 
-export type LevelChunk = { data: ArrayBuffer; box: readonly [number, number, number, number]; cutBox?: readonly number[] }
-export type FloorMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number; linear?: Float32Array }
-export type LevelData = { chunks: LevelChunk[]; glass: LevelChunk[]; floor: FloorMap; bounce: FloorMap }
+import type { BakedMap, LevelChunk, FloorMap, FloorLighting, LevelData } from "@arcade/kit/gpu/level"
+export type { LevelChunk, FloorMap, FloorLighting, LevelData } from "@arcade/kit/gpu/level"
 /** Bounce map resolution, metres per texel. */
 const BOUNCE_CELL = 0.5
 
@@ -491,10 +491,10 @@ function motes(m: Mesh, l: LightDef, r: () => number): void {
 }
 
 /**
- * Bakes the floor map: r = ambient occlusion from walls and furniture (blurred footprint coverage), g = moonlight
- * falling through the outer windows, striped by mullions and stopped by walls.
+ * Bakes soft floor AO and a finer moonlight mask. The RG map retains coarse moon coverage in g; rendering samples
+ * the separate R8 moon mask to resolve window mullions and wall edges without changing the AO footprint.
  */
-export function bakeFloor(map: MapDef): FloorMap {
+export function bakeFloor(map: MapDef): FloorLighting {
   const [W, H] = map.size
   const w = Math.max(1, Math.ceil(W / CELL))
   const h = Math.max(1, Math.ceil(H / CELL))
@@ -512,8 +512,6 @@ export function bakeFloor(map: MapDef): FloorMap {
   for (const r of map.windows) fill(r, 0.6)
   const PROP_AO: Record<string, number> = { tree: 0.3, bench: 0.3, bin: 0.4, newsbox: 0.45, desk: 0.55, table: 0.35, cabinet: 0.9, sofa: 0.8, vending: 1, copier: 0.85, printer: 0.8, counter: 0.9, fridge: 1, cooler: 0.6, bookshelf: 1, crate: 0.85, reception: 0.9, plant: 0.4, chair: 0.2 }
   for (const p of map.props) fill(p.rect, PROP_AO[p.kind] ?? 0)
-  const walls = new Uint8Array(w * h)
-  for (let i = 0; i < w * h; i++) walls[i] = occ[i]! >= 0.95 ? 1 : 0
   // Two box blurs of ~0.5 m make a soft tent falloff.
   const tmp = new Float32Array(w * h)
   const blur = (src: Float32Array, dst: Float32Array, rad: number) => {
@@ -539,9 +537,15 @@ export function bakeFloor(map: MapDef): FloorMap {
   blur(occ, ao, 3)
   blur(ao, ao, 3)
 
-  const moon = new Float32Array(w * h)
+  // Window edges need finer coverage than soft AO. A separate R8 mask preserves AO texels exactly.
+  const scale = map.kind === "office" ? 4 : 1
+  const mw = w * scale, mh = h * scale, mcw = cx / scale, mch = cy / scale
+  const moon = new Float32Array(mw * mh)
   if (map.kind === "downtown") skyMoon(map, moon, w, h, cx, cy)
-  // Moonlight: trace each texel near a window back along the moon direction to the glass.
+  // Integrate window visibility over the texel, rather than box-blurring a single binary centre sample.
+  // Keep occluders in world space: marching a quantised occupancy grid made diagonal edges stair-step.
+  const blockers = [...map.walls.filter(w => w.h >= 2).map(w => w.rect), ...map.props.filter(p => (PROP_AO[p.kind] ?? 0) >= 0.95).map(p => p.rect)]
+  const samples = 2
   const tanE = 0.62
   const [mcx, mcy] = [W / 2, H / 2]
   for (const win of map.windows) {
@@ -560,45 +564,48 @@ export function bakeFloor(map: MapDef): FloorMap {
     const bx1 = Math.max(win[2], win[2] + mx * reach) + 1
     const by0 = Math.min(win[1], win[1] + my * reach) - 1
     const by1 = Math.max(win[3], win[3] + my * reach) + 1
-    for (let ty = Math.max(0, Math.floor(by0 / cy)); ty <= Math.min(h - 1, Math.ceil(by1 / cy)); ty++)
-      for (let tx = Math.max(0, Math.floor(bx0 / cx)); tx <= Math.min(w - 1, Math.ceil(bx1 / cx)); tx++) {
-        const px = (tx + 0.5) * cx
-        const py = (ty + 0.5) * cy
-        // Distance back along -moon to the window line.
-        const dist = horizontal ? (py - line) / my : (px - line) / mx
-        if (!(dist > 0)) continue
-        const hy = dist * tanE
-        if (hy < 0.35 || hy > 2.6) continue
-        const hx = horizontal ? px - mx * dist : py - my * dist
-        const a0 = horizontal ? win[0] : win[1]
-        const a1 = horizontal ? win[2] : win[3]
-        if (hx < a0 || hx > a1) continue
-        const mull = (hx - a0) % 2.4
-        if (mull < 0.08 || mull > 2.32) continue
-        // Stopped by walls on the way.
-        let blocked = false
-        for (let k = 0.3; k < dist - 0.2; k += CELL * 1.5) {
-          const qx = Math.floor((px - mx * k) / cx)
-          const qy = Math.floor((py - my * k) / cy)
-          if (qx >= 0 && qy >= 0 && qx < w && qy < h && walls[qy * w + qx]) {
-            blocked = true
-            break
+    const nearby = blockers.filter(r => r[0] < bx1 && r[2] > bx0 && r[1] < by1 && r[3] > by0)
+    const a0 = horizontal ? win[0] : win[1]
+    const a1 = horizontal ? win[2] : win[3]
+    for (let ty = Math.max(0, Math.floor(by0 / mch)); ty <= Math.min(mh - 1, Math.ceil(by1 / mch)); ty++)
+      for (let tx = Math.max(0, Math.floor(bx0 / mcw)); tx <= Math.min(mw - 1, Math.ceil(bx1 / mcw)); tx++) {
+        let coverage = 0
+        for (let sy = 0; sy < samples; sy++) for (let sx = 0; sx < samples; sx++) {
+          const px = (tx + (sx + 0.5) / samples) * mcw
+          const py = (ty + (sy + 0.5) / samples) * mch
+          const dist = horizontal ? (py - line) / my : (px - line) / mx
+          const hy = dist * tanE
+          if (hy < 0.35 || hy > 2.6) continue
+          const hx = horizontal ? px - mx * dist : py - my * dist
+          if (hx < a0 || hx > a1) continue
+          const mull = (hx - a0) % 2.4
+          if (mull < 0.08 || mull > 2.32) continue
+          let blocked = false
+          for (const r of nearby) {
+            const x0 = (px - r[0]) / mx, x1 = (px - r[2]) / mx
+            const y0 = (py - r[1]) / my, y1 = (py - r[3]) / my
+            // Exact segment/rectangle slabs; retain the old receiver/window clearances.
+            if (Math.max(0.3, Math.min(x0, x1), Math.min(y0, y1)) < Math.min(dist - 0.2, Math.max(x0, x1), Math.max(y0, y1))) {
+              blocked = true
+              break
+            }
           }
+          if (!blocked) coverage += Math.min(1, (hy - 0.35) / 0.2, (2.6 - hy) / 0.3)
         }
-        if (blocked) continue
-        // Soft at the sill and head edges.
-        const edge = Math.min(1, (hy - 0.35) / 0.2, (2.6 - hy) / 0.3)
-        moon[ty * w + tx] = Math.max(moon[ty * w + tx]!, edge)
+        moon[ty * mw + tx] = Math.max(moon[ty * mw + tx]!, coverage / (samples * samples))
       }
   }
-  blur(moon, moon, 1)
+  // Downtown's coarse sky bake still needs its original reconstruction filter.
+  if (map.kind === "downtown") blur(moon, moon, 1)
 
   const data = new Uint8Array(w * h * 2)
+  const moonData = new Uint8Array(mw * mh)
+  for (let i = 0; i < moon.length; i++) moonData[i] = Math.round(Math.min(1, moon[i]!) * 255)
   for (let i = 0; i < w * h; i++) {
     data[i * 2] = Math.min(255, Math.round(Math.min(1, ao[i]! * 1.25) * 255))
-    data[i * 2 + 1] = Math.round(Math.min(1, moon[i]!) * 255)
+    data[i * 2 + 1] = moonData[Math.floor(i / w) * scale * mw + (i % w) * scale]!
   }
-  return { data, w, h }
+  return { data, w, h, moon: { data: moonData, w: mw, h: mh } }
 }
 
 /**
@@ -723,7 +730,7 @@ export function bakeBounce(map: MapDef, monitorIntensity = 1): FloorMap {
 }
 
 /** Static geometry for a floor, chunked: floors, walls and their fittings, windows' frames, furniture, light fixtures. */
-export function buildLevel(map: MapDef): LevelData {
+export function buildLevel(map: MapDef, castle = false): LevelData {
   const [W, H] = map.size
   const jobs: Job[] = []
   const grid = new WallGrid(map.walls)
@@ -737,10 +744,15 @@ export function buildLevel(map: MapDef): LevelData {
     for (let x = f.rect[0]; x < f.rect[2] - 1e-3; x += CHUNK)
       for (let z = f.rect[1]; z < f.rect[3] - 1e-3; z += CHUNK) {
         const r: Rect4 = [x, z, Math.min(f.rect[2], x + CHUNK), Math.min(f.rect[3], z + CHUNK)]
-        jobs.push({ x: (r[0] + r[2]) / 2, z: (r[1] + r[3]) / 2, build: (m) => floorQuad(m, r, y, FLOOR_COLOR[f.kind], MAT.floor, FLOOR_KIND[f.kind]) })
+        jobs.push({ x: (r[0] + r[2]) / 2, z: (r[1] + r[3]) / 2, build: (m) => floorQuad(m, r, y, castle ? hex(0x59606b) : FLOOR_COLOR[f.kind], MAT.floor, castle ? 10 : FLOOR_KIND[f.kind]) })
       }
   })
   for (const t of map.tape) jobs.push({ x: (t[0] + t[2]) / 2, z: (t[1] + t[3]) / 2, build: (m) => floorQuad(m, t, 0.012, PAL.tape, MAT.tape) })
+  if (map.id === "castle-hall") jobs.push({ x: 11, z: 10.5, build: (m) => {
+    floorQuad(m,[4.5,8.2,17.5,13],0.014,hex(0x85623a),MAT.lit)
+    floorQuad(m,[4.6,8.3,17.4,12.9],0.016,hex(0x4c2932),MAT.lit)
+    for (const z of [8.5,12.65]) floorQuad(m,[4.8,z,17.2,z+0.045],0.018,hex(0x9a7745),MAT.lit)
+  } })
   if (downtown) {
     const raised = map.floors.filter((f) => !LOW_FLOORS.has(f.kind)).map((f) => f.rect)
     for (const p of map.paint ?? []) {
@@ -757,10 +769,10 @@ export function buildLevel(map: MapDef): LevelData {
     }
     for (const c of curbs(map)) jobs.push({ x: (c[0] + c[2]) / 2, z: (c[1] + c[3]) / 2, build: (m) => m.box(c[0], 0, c[1], c[2], CURB + 0.004, c[3], hex(0x5e6168), MAT.lit, 0, hex(0x6c6f76)) })
   }
-  map.walls.forEach((w, i) => jobs.push({ x: (w.rect[0] + w.rect[2]) / 2, z: (w.rect[1] + w.rect[3]) / 2, build: (m) => wallGeometry(m, w, i, grid, seed) }))
+  map.walls.forEach((w, i) => jobs.push({ x: (w.rect[0] + w.rect[2]) / 2, z: (w.rect[1] + w.rect[3]) / 2, build: (m) => castle ? castleWall(m, w, seed + i) : wallGeometry(m, w, i, grid, seed) }))
   for (const w of map.windows) jobs.push({ x: (w[0] + w[2]) / 2, z: (w[1] + w[3]) / 2, build: (m) => windowGeometry(m, w, downtown) })
-  map.props.forEach((p, i) => jobs.push({ x: (p.rect[0] + p.rect[2]) / 2, z: (p.rect[1] + p.rect[3]) / 2, build: (m) => (STREET_PROPS.has(p.kind) ? streetProp(m, p, seed + i * 17, map) : buildProp(m, p, seed + i * 17)) }))
-  for (const l of map.lights) jobs.push({ x: l.x, z: l.y, build: (m) => fixture(m, l, rng(seed + l.id * 101)) })
+  map.props.forEach((p, i) => jobs.push({ x: (p.rect[0] + p.rect[2]) / 2, z: (p.rect[1] + p.rect[3]) / 2, build: (m) => castle ? castleProp(m, p, seed + i * 17) : (STREET_PROPS.has(p.kind) ? streetProp(m, p, seed + i * 17, map) : buildProp(m, p, seed + i * 17)) }))
+  for (const l of map.lights) jobs.push({ x: l.x, z: l.y, build: (m) => castle ? castleFixture(m, l) : fixture(m, l, rng(seed + l.id * 101)) })
 
   const buckets = new Map<number, Job[]>()
   for (const j of jobs) {
@@ -774,7 +786,7 @@ export function buildLevel(map: MapDef): LevelData {
   const base = new Mesh()
   if (downtown) surroundings(base, map)
   else {
-    base.quad([-200, -36, 200], [200, -36, 200], [200, -36, -200], [-200, -36, -200], [0, 1, 0], [0, 0, 0], MAT.city)
+    base.quad([-200, -36, 200], [200, -36, 200], [200, -36, -200], [-200, -36, -200], [0, 1, 0], [0, 0, 0], castle ? MAT.lit : MAT.city)
     base.box(-0.4, -0.8, -0.4, W + 0.4, -0.01, H + 0.4, hex(0x141826))
   }
   chunks.push({ data: base.pack(), box: [-1e5, -1e5, 1e5, 1e5] })

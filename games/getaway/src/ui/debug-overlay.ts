@@ -4,6 +4,8 @@ import { vehicleEffects } from "../game/vehicle-emissions"
 import type { Scene } from "../game/scene"
 import type { GameAudio } from "../audio/game-audio"
 import type { LightSettings, LightStyle } from "../render/car-lights"
+import { motionBlur } from "../render/motion"
+import { lightControls } from "@arcade/kit/vehicle/lab"
 
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }
@@ -21,27 +23,6 @@ const controls: LabControl[] = [
   ] as const).map(([key, label]) => ({ key, label, group: "Chassis" })),
 ]
 
-const lightControls: (LabControl & { key: keyof LightSettings })[] = [
-  { key: "style", label: "Style", group: "Lights", options: [
-    { value: 0, label: "Reference" },
-    { value: 1, label: "Recessed" },
-    { value: 2, label: "Light bar" },
-    { value: 3, label: "Cinematic" },
-    { value: 4, label: "Soft pool" },
-  ] },
-  { key: "beamLength", label: "Beam length", min: 2, max: 24, step: 0.5, group: "Lights" },
-  { key: "beamWidth", label: "Beam width", min: 0.05, max: 1, step: 0.01, group: "Lights" },
-  { key: "beamSpread", label: "Beam spread", min: 0, max: 6, step: 0.1, group: "Lights" },
-  { key: "beamIntensity", label: "Beam intensity", min: 0, max: 0.5, step: 0.01, group: "Lights" },
-  { key: "poolSize", label: "Pool size", min: 0.5, max: 8, step: 0.1, group: "Lights" },
-  { key: "poolIntensity", label: "Pool intensity", min: 0, max: 0.5, step: 0.01, group: "Lights" },
-  { key: "poolAhead", label: "Pool ahead", min: 1, max: 14, step: 0.25, group: "Lights" },
-  { key: "glowSize", label: "Lamp glow size", min: 0.1, max: 0.8, step: 0.01, group: "Lights" },
-  { key: "glowIntensity", label: "Lamp glow intensity", min: 0, max: 2, step: 0.05, group: "Lights" },
-  { key: "flareStrength", label: "Flare strength", min: 0, max: 0.4, step: 0.01, group: "Lights" },
-  { key: "tailGlow", label: "Taillight glow", min: 0, max: 2, step: 0.05, group: "Lights" },
-  { key: "brakeIntensity", label: "Brake intensity", min: 0, max: 4, step: 0.1, group: "Lights" },
-]
 export type PerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
@@ -60,18 +41,17 @@ export class DebugOverlay extends LabPanel {
       else if (key === "proceduralAudio" && sound) { sound.reset(); sound.procedural = Boolean(value) }
       else Object.assign(juice, { [key]: value })
     })
-    addEventListener("keydown", (event) => {
-      if (q.has("mux") && parent !== window) return
-      if (event.code !== "Backquote" || event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
-      event.preventDefault()
-      this.toggle()
-    })
+    this.addControls(motionBlur, [
+      {key:"enabled",label:"Motion blur",group:"Motion"},
+      {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
+      {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},
+    ])
   }
   reset() { this.samples.length = 0; this.lastUpdate = 0 }
   update(now: number, frameMs: number, stats: Pick<PerfSample, "gpuMs" | "gpuKind" | "draws" | "verts" | "chunks" | "lights">) {
     if (frameMs > 0 && frameMs < 1000) this.samples.push(frameMs)
     if (this.samples.length > 120) this.samples.shift()
-    if (document.hidden) { this.reset(); return false }
+    if (document.hidden) { this.samples.length = 0; this.lastUpdate = 0; return false }
     if (now - this.lastUpdate < 150) return false
     this.lastUpdate = now
     const sorted = [...this.samples].sort((a, b) => a - b)

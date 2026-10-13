@@ -1,14 +1,21 @@
 import { DT, PLAYER_RADIUS } from "../../shared/config"
-import { type Rect, angleDiff } from "../../shared/geom"
-import type { Rigid } from "../../shared/sim/vehicle-collide"
+import { type Rect, angleDiff, gridOf } from "../../shared/geom"
+import { type Contact, type Rigid, collideShapes, orientedShape, rectShape } from "../../shared/sim/vehicle-collide"
 import { VEH } from "../../shared/sim/vehicle-rules"
-import { type VehicleKind, type VehicleSpec, VEHICLES, boxOf, collideCars, distToBox, driveOf, driveStep, forwardSpeed, lateralSpeed, localToWorld, pushOutBox, rayBox, speedOf } from "../../shared/sim/vehicle"
+import { type VehicleKind, type VehicleSpec, VEHICLES, boxOf, collideCars, distToBox, driveOf, driveStep, forwardSpeed, localToWorld, pushOutBox, rayBox, speedOf } from "../../shared/sim/vehicle"
 import type { Snapshot, VehicleView } from "../../shared/sim/view"
 import type { Intent } from "../../shared/sim/world"
 import type { Caster, DynLight } from "../render/lighting"
 import type { Renderer } from "../render/renderer"
-import { LAMPS, WHEELS, vehicleModels } from "../render/vehicle-mesh"
+import { LAMPS, vehicleModels } from "../render/vehicle-mesh"
 import type { Avatar } from "./anim"
+import { VehiclePresentation, groundHeight } from "./vehicle-presentation"
+import { blackoutEffects } from "../lab/settings"
+import { VehicleEmissions } from "@arcade/kit/vehicle/emissions"
+import { Fx } from "@arcade/kit/vehicle/fx"
+import { drawLamps } from "@arcade/kit/vehicle/lights"
+import type { SpriteSink } from "@arcade/kit/vehicle/types"
+import type { Juice } from "../ui/debug-overlay"
 
 type Rgb3 = [number, number, number]
 type FxKind = "spark" | "dust" | "smoke" | "fire" | "soot" | "chip" | "char"
@@ -41,14 +48,12 @@ export type VehDraw = {
   smoke: number
   /** Last skid mark end, for joining marks into a trail. */
   skid: { x: number; y: number }[] | null
+  presentation: VehiclePresentation
+  scrapeAt: number
 }
 
 /** The vehicle you drive, predicted: the body now, before the last tick, and a correction being blended out. */
 type Pred = { id: number; body: Rigid; px: number; py: number; ph: number; ox: number; oy: number; oh: number }
-
-type Mark = { x: number; y: number; rot: number; len: number; t0: number }
-
-const SKID_LIFE = 9
 
 /**
  * Vehicles on this client: dead-reckoned and smoothed from snapshots, the one you drive predicted with the shared
@@ -59,10 +64,15 @@ export class VehicleFx {
   draws = new Map<number, VehDraw>()
   pred: Pred | null = null
   private models: Record<VehicleKind, { body: number; wreck: number; wheel: number; lens: number; tail: number; bar: number | null }>
-  private marks: Mark[] = []
+  readonly emissions = new VehicleEmissions()
+  readonly fx = new Fx()
+  private readonly alpha = new Float32Array(3000 * 12)
+  private readonly add = new Float32Array(3000 * 12)
+  private near: number[] = []
+  onPop?: (d: VehDraw) => void
   private now = 0
 
-  constructor(renderer: Renderer) {
+  constructor(private readonly renderer: Pick<Renderer, "addModel"> & Partial<Pick<Renderer, "setSmoke">>) {
     const m = vehicleModels()
     const reg = (x: Parameters<Renderer["addModel"]>[0]) => renderer.addModel(x)
     const out = {} as typeof this.models
@@ -76,10 +86,10 @@ export class VehicleFx {
   clear(): void {
     this.draws.clear()
     this.pred = null
-    this.marks = []
+    this.fx.clearSkids(); this.fx.add.length = 0; this.emissions.reset()
   }
 
-  ingest(s: Snapshot, now: number): void {
+  ingest(s: Pick<Snapshot,"vehicles">, now: number): void {
     this.now = now
     const live = new Set<number>()
     for (const v of s.vehicles ?? []) {
@@ -87,7 +97,7 @@ export class VehicleFx {
       let d = this.draws.get(v.id)
       // New, or back from a wreck at its spot: start it there.
       if (!d || (d.s.wreck && !v.wreck)) {
-        d = { id: v.id, kind: v.kind, spec: VEHICLES[v.kind], x: v.x, y: v.y, h: v.h, vx: v.vx, vy: v.vy, w: v.w, s: v, at: now, spin: 0, steer: 0, roll: 0, pitch: 0, flash: 0, vf: 0, puff: 0, smoke: 0, skid: null }
+        d = { id: v.id, kind: v.kind, spec: VEHICLES[v.kind], x: v.x, y: v.y, h: v.h, vx: v.vx, vy: v.vy, w: v.w, s: v, at: now, spin: 0, steer: 0, roll: 0, pitch: 0, flash: 0, vf: 0, puff: 0, smoke: 0, skid: null, presentation: new VehiclePresentation(v), scrapeAt: -10 }
         this.draws.set(v.id, d)
       }
       d.s = v
@@ -207,11 +217,35 @@ export class VehicleFx {
   ping(id: number, x: number, y: number, dir: number, fx: FxFn): void {
     const d = this.draws.get(id)
     if (d) d.flash = 1
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < blackoutEffects.vehicle.sparkCount; i++) {
       const a = dir + Math.PI + (Math.random() - 0.5) * 2.2
-      const s = 2 + Math.random() * 5
-      fx(x, y, 0.6 + Math.random() * 0.6, Math.cos(a) * s, Math.sin(a) * s, 1 + Math.random() * 3, 0.15 + Math.random() * 0.2, 0.03, "spark")
+      const s = blackoutEffects.vehicle.speed + Math.random() * blackoutEffects.vehicle.speedSpread
+      fx(x, y, 0.6 + Math.random() * 0.6, Math.cos(a) * s, Math.sin(a) * s, 1 + Math.random() * 3, blackoutEffects.vehicle.life + Math.random() * blackoutEffects.vehicle.lifeSpread, blackoutEffects.vehicle.size, "spark")
     }
+  }
+
+  /** Contact lookup from the vehicle-juice study, now feeding the shared spark pool. */
+  crash(id: number, x: number, y: number, speed: number, solids: readonly Rect[]): void {
+    const d = this.draws.get(id)
+    if (d) d.presentation.view.impact = speed
+    const contact = d ? this.wallContact({ x, y, h: d.s.h }, d.spec, solids) : null
+    const nx = contact?.nx ?? Math.cos(d?.h ?? 0), ny = contact?.ny ?? Math.sin(d?.h ?? 0)
+    const at = contact?.points[0] ?? { x, y }
+    this.fx.sparks(at.x - nx * 0.15, at.y - ny * 0.15, -nx, -ny, Math.min(14, speed), 0.55)
+  }
+
+  private wallContact(b: { x: number; y: number; h: number }, spec: VehicleSpec, solids: readonly Rect[]): Contact | null {
+    const r = Math.hypot(spec.length / 2, spec.width / 2) + 0.12
+    const grid = gridOf(solids)
+    const near = grid ? grid.query(b.x - r, b.y - r, b.x + r, b.y + r, this.near) : null
+    const shell = orientedShape(b.x, b.y, b.h, spec.length * 0.48 + 0.1, spec.width * 0.48 + 0.1)
+    for (let i = 0; i < (near ? near.length : solids.length); i++) {
+      const rect = solids[near ? near[i]! : i]!
+      if (b.x < rect[0] - r || b.x > rect[2] + r || b.y < rect[1] - r || b.y > rect[3] + r) continue
+      const contact = collideShapes(shell, rectShape(rect))
+      if (contact) return contact
+    }
+    return null
   }
 
   /** A vehicle blowing up: the extra fire, black smoke and flung panels on top of a frag-sized blast. */
@@ -289,16 +323,24 @@ export class VehicleFx {
    * Draws them: bodies, wheels, lamps and light bars as parts; their lights, round shadow casters, a soft contact
    * shadow, skid marks, exhaust, smoke and fire. `teamColor` is the colour of the team holding a vehicle, or null.
    */
-  emit(t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], teamColor: (d: VehDraw) => Rgb3 | null, begin?: (d: VehDraw) => void): void {
-    this.marks = this.marks.filter((m) => t - m.t0 < SKID_LIFE)
-    for (const m of this.marks) {
-      const a = Math.min(1, (SKID_LIFE - (t - m.t0)) / 3) * 0.55
-      sprite(false, m.x, 0.008, m.y, m.len, 0.015, 0.015, 0.018, a, 4, m.rot, 0.16 / Math.max(0.05, m.len))
+  emit(t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], teamColor: (d: VehDraw) => Rgb3 | null, begin: ((d: VehDraw) => void) | undefined, juice: Juice, solids: readonly Rect[], eye: ArrayLike<number>): void {
+    this.fx.update(dt); this.emissions.update(dt)
+    this.emissions.skids = juice.vehicleSkids ? this.fx : null
+    const sharedSprite: SpriteSink = (list, x, y, z, size, r, g, b, a, kind, rot = 0, stretch = 1, extra = 0) => sprite(list === "d", x, y, z, size, r, g, b, a, kind + 32, rot, stretch, extra)
+    for (const d of this.draws.values()) { begin?.(d); this.draw(d, t, dt, push, sprite, fx, dyn, casters, teamColor(d), juice, solids, eye, sharedSprite) }
+    const counts = this.fx.emit(this.alpha, 0, this.add, 0, 3000, juice.vehicleSkids)
+    this.emissions.emit(this.alpha, counts.alpha, this.add, counts.add, 3000, true)
+    for (const [data, count, list] of [[this.alpha, this.emissions.alphaCount, "a"], [this.add, this.emissions.addCount, "d"]] as const) {
+      for (let i = 0; i < count; i++) {
+        const o = i * 12, p = data
+        sharedSprite(list, p[o]!, p[o + 1]!, p[o + 2]!, p[o + 3]!, p[o + 4]!, p[o + 5]!, p[o + 6]!, p[o + 7]!, p[o + 8]!, p[o + 9]!, p[o + 10]!, p[o + 11]!)
+      }
     }
-    for (const d of this.draws.values()) { begin?.(d); this.draw(d, t, dt, push, sprite, fx, dyn, casters, teamColor(d)) }
+    this.emissions.trail.prepare()
+    this.renderer.setSmoke?.(this.emissions.trail, juice.tyreSmoke)
   }
 
-  private draw(d: VehDraw, t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], team: Rgb3 | null): void {
+  private draw(d: VehDraw, t: number, dt: number, push: PartFn, sprite: SpriteFn, fx: FxFn, dyn: DynLight[], casters: Caster[], team: Rgb3 | null, juice: Juice, solids: readonly Rect[], eye: ArrayLike<number>, sharedSprite: SpriteSink): void {
     const s = d.s
     const M = this.models[d.kind]
     const L = LAMPS[d.kind]
@@ -307,26 +349,16 @@ export class VehicleFx {
     const driven = !wreck && !!s.seats[0]
     const occupied = !wreck && s.seats.some(Boolean)
     const vf = forwardSpeed(d)
-    const lat = lateralSpeed(d)
     const speed = Math.hypot(d.vx, d.vy)
-    const accel = dt > 0 ? (vf - d.vf) / dt : 0
     d.vf = vf
-    const ke = 1 - Math.exp(-dt * 8)
     d.flash = Math.max(0, d.flash - dt * 6)
-    const wheels = WHEELS[d.kind]
-    d.spin += (vf * dt) / wheels[0]!.r
-    d.steer += ((wreck ? 0 : s.steer * (d.kind === "scooter" ? 0.4 : 0.5)) - d.steer) * Math.min(1, dt * 12)
-    // Bodies roll out of a turn on their springs, scooters lean into it; braking dips the nose, the throttle lifts it.
-    const rollTo = wreck ? 0.03 : d.kind === "scooter" ? Math.max(-0.5, Math.min(0.5, d.w * speed * 0.045)) : Math.max(-0.08, Math.min(0.08, -d.w * speed * (d.kind === "van" ? 0.009 : 0.011)))
-    const pitchTo = wreck ? -0.02 : Math.max(-0.05, Math.min(0.05, accel * (d.kind === "scooter" ? 0.002 : 0.004)))
-    d.roll += (rollTo - d.roll) * ke
-    d.pitch += (pitchTo - d.pitch) * ke
+    const visual = d.presentation
+    visual.update(d, dt, juice.vehicleSprings && !wreck)
+    d.roll = visual.chassis.roll.x; d.pitch = visual.chassis.pitch.x
     const idle = driven ? Math.sin(t * 40 + d.id) * 0.004 : 0
-    push(wreck ? M.wreck : M.body, d.x, idle, d.y, d.h, [1, 1, 1], d.pitch, d.roll, wreck ? 0 : d.flash * 0.06)
-    for (const wh of wheels) {
-      const at = localToWorld(d, wh.f, wh.s)
-      push(M.wheel, at.x, wh.r, at.y, d.h + (wh.front ? d.steer : 0), [1, 1, 1], -d.spin, d.kind === "scooter" ? d.roll : 0, 0)
-    }
+    visual.pose.height = (visual.pose.height ?? 0) + idle
+    visual.part(push, wreck ? M.wreck : M.body, visual.pose, [1, 1, 1], wreck ? 0 : d.flash * 0.06)
+    if (juice.vehicleWheels) visual.wheels(push, M.wheel)
     // Contact shadow.
     sprite(false, d.x, 0.011, d.y, spec.length * 0.55, 0, 0, 0, wreck ? 0.75 : 0.55, 4, d.h, spec.width / spec.length)
     const [hl] = [spec.length / 2]
@@ -350,45 +382,32 @@ export class VehicleFx {
         sprite(true, at.x, top + 0.15, at.y, 0.55 * f, 1.7, 0.55, 0.1, 0.75 * f, 0)
         sprite(true, at.x, top + 0.35, at.y, 0.3 * f, 1.9, 1.0, 0.4, 0.8 * f, 0)
       }
-      d.smoke += dt * 9
+      d.smoke += dt * blackoutEffects.wreck.rate
       while (d.smoke > 1) {
         d.smoke--
         const at = localToWorld(d, (Math.random() - 0.5) * hl * 1.4, (Math.random() - 0.5) * spec.width * 0.6)
         if (Math.random() < 0.45) fx(at.x, at.y, top + Math.random() * 0.3, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0.8 + Math.random() * 1.2, 0.35 + Math.random() * 0.3, 0.2 + Math.random() * 0.15, "fire")
-        else fx(at.x, at.y, top + 0.4, (Math.random() - 0.5) * 0.3 + 0.25, (Math.random() - 0.5) * 0.3 - 0.15, 0.9 + Math.random() * 0.6, 2.2 + Math.random() * 1.2, 0.3 + Math.random() * 0.2, "char")
+        else fx(at.x, at.y, top + 0.4, (Math.random() - 0.5) * 0.3 + 0.25, (Math.random() - 0.5) * 0.3 - 0.15, 0.9 + Math.random() * 0.6, blackoutEffects.wreck.life + Math.random() * blackoutEffects.wreck.lifeSpread, blackoutEffects.wreck.size + Math.random() * blackoutEffects.wreck.sizeSpread, "char")
       }
       return
     }
     // Lamps: headlights and tail lights glow on the bodywork when someone's at the wheel; braking or reversing brightens the tail.
     const braking = driven && ((s.thr < 0 && vf > 0.5) || !!s.hb)
     const reversing = driven && vf < -0.5
-    push(M.lens, d.x, idle, d.y, d.h, driven ? [4, 3.7, 3.1] : [0.05, 0.05, 0.05], d.pitch, d.roll, 0)
-    push(M.tail, d.x, idle, d.y, d.h, braking ? [5, 0.25, 0.15] : reversing ? [3, 3, 3] : driven ? [1.4, 0.06, 0.04] : [0.08, 0.01, 0.01], d.pitch, d.roll, 0)
+    visual.part(push, M.lens, visual.pose, driven && juice.vehicleLamps ? [4, 3.7, 3.1] : [0.05, 0.05, 0.05])
+    visual.part(push, M.tail, visual.pose, !juice.vehicleLamps ? [0.08, 0.01, 0.01] : braking ? [5, 0.25, 0.15] : reversing ? [3, 3, 3] : driven ? [1.4, 0.06, 0.04] : [0.08, 0.01, 0.01])
     const c = Math.cos(d.h)
     const sn = Math.sin(d.h)
-    if (driven) {
-      const front = localToWorld(d, L.head[0]![0] + 0.25, 0)
-      // The vehicle's own body doesn't shadow its lamps.
-      const near = spec.length + 0.3
-      dyn.push({ x: front.x, y: front.y, h: L.h, r: d.kind === "scooter" ? 11 : 15, color: [1, 0.9, 0.74], power: d.kind === "scooter" ? 1.3 : 1.9, size: 0.12, cone: [c, sn, Math.cos(d.kind === "scooter" ? 0.42 : 0.52)], near })
-      if (braking && d.kind !== "scooter") {
-        const back = localToWorld(d, L.tail[0]![0] - 0.4, 0)
-        dyn.push({ x: back.x, y: back.y, h: 0.6, r: 3, color: [1, 0.12, 0.06], power: 0.3, size: 0.3, cone: [-c, -sn, 0.5], near })
-      }
-      for (const [f, sd] of L.head) {
-        const at = localToWorld(d, f + 0.05, sd)
-        sprite(true, at.x, L.h, at.y, 0.2, 1.4, 1.3, 1.1, 0.7, 0)
-      }
-    }
-    for (const [f, sd] of L.tail) {
-      if (!driven) break
-      const at = localToWorld(d, f - 0.04, sd)
-      sprite(true, at.x, L.h, at.y, braking ? 0.22 : 0.12, 1.5, 0.1, 0.05, braking ? 0.8 : 0.45, 0)
-    }
+    if (driven && juice.vehicleLamps) drawLamps(visual.view, visual.pose, visual.spec, juice, Number(braking), 0, 0, eye, groundHeight, sharedSprite,
+      (x, h, y, r, red, green, blue, power, dx = 0, _dy = 0, dz = 0, cone = -2) => {
+        const length = Math.hypot(dx, dz) || 1
+        dyn.push({ x, y, h, r, color: [red, green, blue], power, size: 0.12, near: spec.length + 0.3,
+          ...(cone > -1 ? { cone: [dx / length, dz / length, cone] as [number, number, number] } : {}) })
+      })
     if (M.bar !== null && L.bar) {
       const col: Rgb3 = team ?? [1, 0.55, 0.1]
       const pulse = occupied ? 0.55 + 0.45 * Math.abs(Math.sin(t * 6 + d.id)) : 0.08
-      push(M.bar, d.x, idle, d.y, d.h, [col[0] * 1.1 * pulse, col[1] * 1.1 * pulse, col[2] * 1.1 * pulse], d.pitch, d.roll, 0)
+      visual.part(push, M.bar, visual.pose, [col[0] * 1.1 * pulse, col[1] * 1.1 * pulse, col[2] * 1.1 * pulse])
       if (occupied) {
         const at = localToWorld(d, L.bar[0], L.bar[1])
         dyn.push({ x: at.x, y: at.y, h: L.bar[2] + 0.6, r: 7, color: col, power: 0.14 * pulse, size: 0.2, near: spec.length })
@@ -404,24 +423,21 @@ export class VehicleFx {
         fx(at.x, at.y, 0.3, -c * (0.5 + Math.random() * 0.5) + d.vx * 0.2, -sn * (0.5 + Math.random() * 0.5) + d.vy * 0.2, 0.2, 0.5 + Math.random() * 0.3, 0.045 + Math.abs(s.thr) * 0.03, "smoke")
       }
     }
-    // Skids: tyre smoke and black marks from the rear wheels while sliding.
-    const sliding = Math.abs(lat) > 3.2 || (!!s.hb && speed > 4) || (s.thr < 0 && vf > 6)
-    if (sliding && speed > 2) {
-      const rear = wheels.filter((w) => !w.front)
-      const marks: { x: number; y: number }[] = rear.map((w) => localToWorld(d, w.f, w.s))
-      if (d.skid)
-        marks.forEach((m, i) => {
-          const p = d.skid![i]!
-          const len = Math.hypot(m.x - p.x, m.y - p.y)
-          if (len > 0.05 && len < 3) this.marks.push({ x: (m.x + p.x) / 2, y: (m.y + p.y) / 2, rot: Math.atan2(m.y - p.y, m.x - p.x), len: len / 2 + 0.04, t0: t })
-        })
-      d.skid = marks
-      if (Math.random() < dt * 30) {
-        const m = marks[Math.floor(Math.random() * marks.length)]!
-        fx(m.x, m.y, 0.15, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, 0.3, 0.9 + Math.random() * 0.6, 0.18, "dust")
+    const pops = this.emissions.pops
+    this.emissions.car(visual.view, visual.spec, visual.emissions, visual.input, dt, 0, juice.tyreSmoke || juice.vehicleSkids, juice.backfire)
+    if (this.emissions.pops > pops) this.onPop?.(d)
+    if (juice.backfire && visual.emissions.pop > 0) {
+      const at = localToWorld(d, -hl - 0.2, 0)
+      dyn.push({ x: at.x, y: at.y, h: 0.5, r: 2, color: [1, 0.3, 0.04], power: visual.emissions.pop / 0.11, size: 0.1, near: spec.length })
+    }
+    if (juice.vehicleSparks && speed > 3 && t - d.scrapeAt >= 0.05) {
+      d.scrapeAt = t
+      const contact = this.wallContact(d, spec, solids)
+      if (contact) {
+        const at = contact.points[0]!
+        this.fx.sparks(at.x, at.y, -contact.nx, -contact.ny, 2, 0.24)
       }
-      if (this.marks.length > 600) this.marks.splice(0, this.marks.length - 600)
-    } else d.skid = null
+    }
     // Hurt: smoke from the engine, and fire when it's nearly gone.
     const health = s.hp / spec.hp
     if (health < 0.45) {

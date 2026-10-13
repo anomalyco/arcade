@@ -12,7 +12,7 @@ rows = [
     [("Now · main", "office-main"), ("All Look on", "office-all")],
     [("Grade only", "office-lookGrade"), ("Practicals only", "office-lookPractical"), ("Wall faces only", "office-lookWalls")],
     [("Contact AO only", "office-lookAO"), ("Cap rims only", "office-lookCaps"), ("Floor pattern only", "office-lookFloors")],
-    [("City depth only", "office-lookCity"), ("Tile gloss only · opt-in", "office-lookGloss"), ("Long shadows only · opt-in", "office-lookShadows")],
+    [("City depth only", "office-lookCity"), ("Tile gloss only", "office-lookGloss"), ("Long shadows only · opt-in", "office-lookShadows")],
     [("C · target", args.references / "office2-polish.png"), ("A · reference", args.references / "office2-concept.png")],
     [("Downtown · all Look on", "downtown-all"), ("Vehicle lot · all Look on", "lot-all")],
 ]

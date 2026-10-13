@@ -1,0 +1,6 @@
+# Outbreak
+
+- Unlisted prototype: deployed at `/arcade/outbreak/`, accessible by link without login. Keep `noindex`, no landing panel, and no sitemap entry until promoted.
+- M1 is local-only. Keep simulation in `shared/`, presentation in `src/`, and the Session boundary ready for later network snapshots.
+- Every adjustable presentation value goes in the shared Lab panel. URL parameters are for session routing and automation only.
+- Proof: `bun scripts/prove.ts` from this directory, using headless Metal Chromium; no visible window or audio.

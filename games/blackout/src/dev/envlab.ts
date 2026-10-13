@@ -14,6 +14,8 @@ import type { Session } from "../game/session"
 import { Camera } from "../render/camera"
 import { Renderer } from "../render/renderer"
 import { IDLE_VIEW } from "../../shared/sim/modes"
+import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
+import { modelRoom } from "./model-room"
 
 /** Tiles a floor into a big grid of copies, to stress culling (lights, occluders, chunks). */
 function bigMap(base: MapDef, n: number): MapDef {
@@ -62,7 +64,7 @@ class StillSession implements Session {
 async function main() {
   const canvas = document.getElementById("view") as HTMLCanvasElement
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
-  const device = await adapter!.requestDevice()
+  const device = await adapter!.requestDevice({ requiredFeatures: adapter!.features.has("timestamp-query") ? ["timestamp-query"] : [] })
   device.addEventListener("uncapturederror", (e) => console.error(`[gpu] ${e.error.message}`))
   void device.lost.then((i) => console.error(`[gpu lost] ${i.reason} ${i.message}`))
   const context = canvas.getContext("webgpu")!
@@ -72,7 +74,7 @@ async function main() {
   const params = new URLSearchParams(location.search)
   const seed = Number(params.get("seed") ?? "1")
   const mapKind = mapKindOf(params.get("kind")) ?? "office"
-  let map = getMap(mapKind, seed)
+  let map = params.get("fixture") === "room" ? modelRoom() : getMap(mapKind, seed)
   if (params.has("big")) map = bigMap(map, Number(params.get("big")) || 2)
   let fx = Number(params.get("x") ?? map.size[0] / 2)
   let fy = Number(params.get("y") ?? map.size[1] / 2)
@@ -90,13 +92,15 @@ async function main() {
     { x: fx - 2.5, y: fy - 1.5, aim: 0.4 },
   ]
   const session = new StillSession(map, people)
-  const { juiceSettings } = await import("../ui/debug-overlay")
   const settings = juiceSettings(!params.has("vanilla"))
+  if(params.has("fxproof"))new DebugOverlay(settings,params)
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
   const game = new Game(renderer, session, new Sound(), settings)
   ;(window as unknown as { setMonitors(on: boolean): void }).setMonitors = (on) => { settings.monitors = on }
   ;(game as unknown as { load(m: MapDef): void }).load(map)
   const input = new Input(canvas)
+  const lab = new DebugOverlay(settings, params, () => input.release())
+  addEventListener("keydown", (e) => { if (e.code === "Backquote" && !e.repeat) lab.toggle() })
   const cam = new Camera()
   cam.snap(fx, fy)
   const zoom = Number(params.get("zoom") ?? "17")
@@ -127,7 +131,21 @@ async function main() {
   let last = performance.now()
   let clock = 0
   let fps = 60
+  const stepFx=(dt:number)=>{
+    clock+=dt*1000;game.update(dt,input,cam,innerWidth,innerHeight,clock);cam.snap(fx,fy);cam.dist=zoom
+    return game.build(cam,innerWidth,innerHeight,dt)
+  }
+  if(params.has("fxproof")){
+    let sequence=0
+    Object.assign(window,{fxProof:{game,map,renderer,settings,adapter:adapter!.info,
+      step:async(dt:number)=>{renderer.render(stepFx(dt));await device.queue.onSubmittedWorkDone()},
+      draw:async(on:boolean,measure=false)=>{settings.volumes=on;const f=stepFx(0);if(measure)return renderer.measure(f);renderer.render(f);await device.queue.onSubmittedWorkDone();return null},
+      explode:(x=fx,y=fy)=>{(game as unknown as {explode(e:SimEvent):void}).explode({k:"explode",id:++sequence,by:"viewer",x,y,kind:"frag",aim:0})},
+    }})
+    stepFx(0)
+  }
   const tick = (now: number) => {
+    if(params.has("fxproof")&&params.has("bench")){requestAnimationFrame(tick);return}
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
     clock += dt * 1000

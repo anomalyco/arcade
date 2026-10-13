@@ -1,0 +1,22 @@
+{
+  "baseline": "8211aa0",
+  "results": [
+    {
+      "game": "blackout",
+      "equal": true,
+      "hashes": [
+        "8ec66a759dd53a0b89de8650756e5027b12ea09acd005d022f7c2445bb4ab1ca",
+        "8ec66a759dd53a0b89de8650756e5027b12ea09acd005d022f7c2445bb4ab1ca"
+      ]
+    },
+    {
+      "game": "getaway",
+      "equal": true,
+      "hashes": [
+        "3ea47dec8d9ed6c476f518102590bafc852d38855053b54f8ed533adec21c1e0",
+        "3ea47dec8d9ed6c476f518102590bafc852d38855053b54f8ed533adec21c1e0"
+      ]
+    }
+  ],
+  "errors": []
+}

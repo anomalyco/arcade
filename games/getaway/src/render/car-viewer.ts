@@ -216,7 +216,6 @@ async function main() {
       frame,
       lights,
       batches: [...batches].map(([model, arr]) => ({ model, data: new Float32Array(arr), count: arr.length / INST_FLOATS })),
-      ghosts: [],
       sprites: { alpha, alphaCount: 0, add, addCount: di },
       bloom: 0.9,
       flash: 0,

@@ -1,0 +1,47 @@
+{
+  "tyre": {
+    "byteIdentical": true,
+    "poses": [
+      {
+        "pose": {
+          "x": 247.25188061910913,
+          "z": 229.79887869803022,
+          "h": 1.8588003115525926,
+          "speed": 22.63399423173539
+        },
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "metal-3",
+          "device": "",
+          "description": ""
+        }
+      },
+      {
+        "pose": {
+          "x": 247.25188061910913,
+          "z": 229.79887869803022,
+          "h": 1.8588003115525926,
+          "speed": 22.63399423173539
+        },
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "metal-3",
+          "device": "",
+          "description": ""
+        }
+      }
+    ]
+  },
+  "volume": {
+    "count": 1,
+    "cells": 123
+  },
+  "blackout": {
+    "parts": 60,
+    "motion": {
+      "keys": 10,
+      "exposure": 0.800000786781311
+    }
+  },
+  "errors": []
+}

@@ -48,28 +48,26 @@ export function groundNormal(b: Body): readonly [number, number, number] {
 
 /** Exact ground support of the convex/compound points, or the default box. */
 export function support(b: Body) {
+  const [x, y, z] = groundNormal(b)
   if (b.shape) {
-    const [x, y, z] = groundNormal(b)
     let height = -Infinity
     for (const p of b.shape.points) height = Math.max(height, -x * p[0] - y * p[1] - z * p[2])
     return height
   }
-  return Math.abs(Math.sin(b.roll) * Math.cos(b.pitch)) * b.hx + Math.abs(Math.cos(b.roll) * Math.cos(b.pitch)) * b.hy + Math.abs(Math.sin(b.pitch)) * b.hz
-}
-
-function centerOffset(b: Body) {
-  const y = b.shape?.centerY ?? 0, x = -Math.sin(b.roll) * y, z = Math.cos(b.roll) * Math.sin(b.pitch) * y
-  return [x * Math.cos(b.yaw) + z * Math.sin(b.yaw), Math.cos(b.roll) * Math.cos(b.pitch) * y, -x * Math.sin(b.yaw) + z * Math.cos(b.yaw)] as const
+  return Math.abs(x) * b.hx + Math.abs(y) * b.hy + Math.abs(z) * b.hz
 }
 
 /** Keep world COM fixed when rotating a mesh whose heavy base is below its geometric centre. */
 function rotate(b: Body, roll: number, pitch: number, yaw: number) {
-  const before = b.shape ? centerOffset(b) : null
+  const cy = b.shape?.centerY ?? 0
+  if (!cy) { b.roll = roll; b.pitch = pitch; b.yaw = yaw; return }
+  const x0 = -Math.sin(b.roll) * cy, z0 = Math.cos(b.roll) * Math.sin(b.pitch) * cy
+  const ox0 = x0 * Math.cos(b.yaw) + z0 * Math.sin(b.yaw), oy0 = Math.cos(b.roll) * Math.cos(b.pitch) * cy, oz0 = -x0 * Math.sin(b.yaw) + z0 * Math.cos(b.yaw)
   b.roll = roll; b.pitch = pitch; b.yaw = yaw
-  if (before) {
-    const after = centerOffset(b)
-    b.x += before[0] - after[0]; b.y += before[1] - after[1]; b.z += before[2] - after[2]
-  }
+  const x1 = -Math.sin(roll) * cy, z1 = Math.cos(roll) * Math.sin(pitch) * cy
+  b.x += ox0 - (x1 * Math.cos(yaw) + z1 * Math.sin(yaw))
+  b.y += oy0 - Math.cos(roll) * Math.cos(pitch) * cy
+  b.z += oz0 - (-x1 * Math.sin(yaw) + z1 * Math.cos(yaw))
 }
 
 const angle = (n: number) => Math.atan2(Math.sin(n), Math.cos(n))
@@ -106,6 +104,7 @@ export class PropPhysics {
   private remainder = 0
   private maxRadius = 0
   private walls = new Map<number, Solid[]>()
+  private seenWalls = new Set<Solid>()
   constructor(readonly ground: (x: number, z: number) => number = () => 0, solids: readonly Solid[] = []) {
     for (const b of solids) for (let x = Math.floor(b.x0 / 6); x <= Math.floor(b.x1 / 6); x++) for (let z = Math.floor(b.z0 / 6); z <= Math.floor(b.z1 / 6); z++) {
       const k = this.hash.key(x * 6, z * 6), cell = this.walls.get(k) ?? []
@@ -189,7 +188,8 @@ export class PropPhysics {
     }
   }
   private collideWalls(b: Body) {
-    const r = Math.min(b.radius, Math.max(b.hx, b.hz)), seen = new Set<Solid>()
+    const r = Math.min(b.radius, Math.max(b.hx, b.hz)), seen = this.seenWalls
+    seen.clear()
     for (let x = Math.floor((b.x - r) / 6); x <= Math.floor((b.x + r) / 6); x++) for (let z = Math.floor((b.z - r) / 6); z <= Math.floor((b.z + r) / 6); z++) {
       for (const wall of this.walls.get(this.hash.key(x * 6, z * 6)) ?? []) {
         if (seen.has(wall) || b.y - support(b) > wall.h) continue

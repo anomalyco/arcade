@@ -1,10 +1,13 @@
 import { SmokeRenderer } from "./smoke"
+import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import type { SmokeTrail } from "../game/smoke-trail"
-import { FrameTimer } from "./frame-timer"
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
 import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
+import { MotionBlur, PreviousTransforms } from '@arcade/kit/gpu/motion-blur'
+import { motionBlur, vehicleVelocityPipeline, particleVelocityPipeline, spriteMotionKeys } from './motion'
+import { mat4 } from 'wgpu-matrix'
 
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
@@ -19,7 +22,7 @@ type Model = { vbuf: GPUBuffer; count: number; castsShadow: boolean }
 type CityModel = { vbuf: GPUBuffer; count: number; chunks: CityChunk[] }
 
 /** One instanced draw: a model and its packed instance data. */
-export type InstanceBatch = { model: number; data: Float32Array; count: number; ghost?: boolean; ghostCount?: number; noShadow?: boolean }
+export type InstanceBatch = { model: number; data: Float32Array; count: number; keys?: (string | number | undefined)[]; ghostCount?: number; noShadow?: boolean }
 
 /** Extracts the 6 clip-space frustum planes (Left, Right, Bottom, Top, Near, Far) from a column-major 4x4 matrix at `mOff`. */
 function extractFrustumPlanes(m: Float32Array, mOff: number, out: Float32Array) {
@@ -94,7 +97,6 @@ function aabbInFrustum(
 }
 
 export class Renderer {
-  private readonly smoke: SmokeRenderer
   private timer: FrameTimer | null = null
   measure = false
   measureNextFrame() {
@@ -103,6 +105,28 @@ export class Renderer {
     this.measure = true
   }
   totalGpuMs() { return this.timer!.collect() }
+  private blur:MotionBlur
+  private velocityPipeline:GPURenderPipeline
+  private particleVelocity:GPURenderPipeline
+  private particleHistory=new PreviousTransforms()
+  private previousSprites=new Float32Array(MAX_SPRITES*12)
+  private previousSpriteBuffer:GPUBuffer
+  private history=new PreviousTransforms()
+  private previousInstances=new Float32Array(512*12)
+  private previousBuffer:GPUBuffer
+  private previousVP=mat4.identity()
+  private lastVP=mat4.identity()
+  private inverseVP=mat4.identity()
+  private lastEye=new Float32Array(3)
+  private motionReady=false
+  private motionValid=false
+  private motionDt=1/60
+  private motionGroups:{down:GPUBindGroup;composite:GPUBindGroup}|null=null
+  private timingTarget!:GPUTexture
+  private timingView!:GPUTextureView
+  private timingGroup!:GPUBindGroup
+  resetMotion(){this.motionReady=false;this.motionValid=false;this.history.reset();this.particleHistory.reset()}
+  private readonly smoke: SmokeRenderer
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private instBuf: GPUBuffer
@@ -149,9 +173,14 @@ export class Renderer {
   constructor(
     private device: GPUDevice,
     private context: GPUCanvasContext,
-    private format: GPUTextureFormat,
+    private readonly format: GPUTextureFormat,
   ) {
     const d = device
+    this.blur=new MotionBlur(d)
+    this.velocityPipeline=vehicleVelocityPipeline(d,this.blur)
+    this.particleVelocity=particleVelocityPipeline(d,this.blur)
+    this.previousSpriteBuffer=d.createBuffer({size:this.previousSprites.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST})
+    this.previousBuffer=d.createBuffer({size:this.previousInstances.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST})
     this.frameBuf = d.createBuffer({ size: FRAME_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     this.lightBuf = d.createBuffer({ size: MAX_LIGHTS * 12 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
     this.instBuf = d.createBuffer({ size: this.maxInst * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
@@ -286,6 +315,7 @@ export class Renderer {
       down: postPipe("down", HDR),
       up: postPipe("up", HDR, additive),
       composite: postPipe("composite", format),
+      present:postPipe('present',format),
     }
     for (let i = 0; i < BLOOM_LEVELS; i++) this.postParams.push(d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }))
     for (let i = 0; i < BLOOM_LEVELS - 1; i++) this.upParams.push(d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }))
@@ -353,29 +383,31 @@ export class Renderer {
   replaceModel(id: number, mesh: Mesh) {
     const model = this.models[id]!
     const vbuf = this.upload(mesh.toArray())
-    model.vbuf.destroy()
-    model.vbuf = vbuf
-    model.count = mesh.count
+    model.vbuf.destroy(); model.vbuf = vbuf; model.count = mesh.count
   }
-
   setSmoke(trail: SmokeTrail, visible: boolean) { this.smoke.upload(trail, visible) }
 
   resize(w: number, h: number) {
     if (w === this.width && h === this.height && this.hdr) return
     this.width = w
     this.height = h
+    this.resetMotion()
     this.msaa?.destroy()
     this.depth?.destroy()
     this.hdr?.destroy()
+    this.timingTarget?.destroy()
     for (const b of this.bloom) b.destroy()
     const d = this.device
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
     this.msaa = d.createTexture({ size: [w, h], format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     this.msaaView = this.msaa.createView()
-    this.depth = d.createTexture({ size: [w, h], format: "depth24plus-stencil8", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
+    this.depth = d.createTexture({ size: [w, h], format: "depth24plus-stencil8", sampleCount: SAMPLES, usage })
     this.depthView = this.depth.createView()
     this.hdr = d.createTexture({ size: [w, h], format: HDR, usage })
     this.hdrView = this.hdr.createView()
+    this.timingTarget=d.createTexture({size:[w,h],format:this.format,usage})
+    this.timingView=this.timingTarget.createView()
+    this.blur.resize(w,h,this.hdrView,this.depth.createView({aspect:'depth-only'}))
     this.bloom = []
     this.bloomViews = []
     for (let i = 0; i < BLOOM_LEVELS; i++) {
@@ -409,6 +441,8 @@ export class Renderer {
       up.push(group(this.bloomViews[i]!, upBuf))
     }
     this.postGroups = { down, up, composite: group(this.hdrView, this.compositeParams, this.bloomViews[0]!) }
+    this.motionGroups={down:group(this.blur.output,this.postParams[0]!),composite:group(this.blur.output,this.compositeParams,this.bloomViews[0]!)}
+    this.timingGroup=group(this.timingView,this.compositeParams)
   }
 
   private ensureInstances(n: number) {
@@ -416,16 +450,21 @@ export class Renderer {
     this.maxInst = Math.ceil(n * 1.5)
     this.instBuf.destroy()
     this.instBuf = this.device.createBuffer({ size: this.maxInst * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+    this.previousBuffer.destroy()
+    this.previousInstances=new Float32Array(this.maxInst*12)
+    this.previousBuffer=this.device.createBuffer({size:this.previousInstances.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST})
+    this.resetMotion()
   }
 
   render(opts: {
     frame: Float32Array<ArrayBuffer>
     lights: Float32Array<ArrayBuffer>
     batches: InstanceBatch[]
-    ghosts: InstanceBatch[]
     sprites: { alpha: Float32Array<ArrayBuffer>; alphaCount: number; add: Float32Array<ArrayBuffer>; addCount: number }
     bloom: number
     flash: number
+    dt?:number
+    rush?:number
   }) {
     const d = this.device
     d.queue.writeBuffer(this.frameBuf, 0, opts.frame)
@@ -437,9 +476,19 @@ export class Renderer {
     // Pack all instance batches into one buffer (reusing instBuf for ghost silhouettes).
     let total = 0
     for (let i = 0; i < opts.batches.length; i++) total += opts.batches[i]!.count
-    let extraGhostTotal = 0
-    for (let i = 0; i < opts.ghosts.length; i++) extraGhostTotal += opts.ghosts[i]!.count
-    this.ensureInstances(total + extraGhostTotal)
+    this.ensureInstances(total)
+    const dt=opts.dt??1/60
+    const advance=dt>0||!this.motionReady
+    if(advance){
+      this.motionValid=this.motionReady&&dt>0&&dt<.1&&Math.hypot(opts.frame[32]!-this.lastEye[0]!,opts.frame[33]!-this.lastEye[1]!,opts.frame[34]!-this.lastEye[2]!)<20
+      this.previousVP.set(this.motionValid?this.lastVP:opts.frame.subarray(0,16))
+      this.lastVP.set(opts.frame.subarray(0,16));this.lastEye.set(opts.frame.subarray(32,35));this.motionDt=Math.max(dt,1/240)
+      if(!this.motionValid){this.history.reset();this.particleHistory.reset()}
+      this.history.begin();this.particleHistory.begin();this.motionReady=true
+    }
+    mat4.inverse(opts.frame.subarray(0,16),this.inverseVP)
+    const blurOn=motionBlur.enabled&&motionBlur.strength>0&&motionBlur.shutter>0
+    this.blur.update(opts.frame,this.inverseVP,this.previousVP,this.motionDt,motionBlur.strength*(1+(opts.rush??0)*.8),motionBlur.shutter,this.motionValid)
 
     const ranges: { model: number; first: number; count: number; noShadow?: boolean }[] = []
     const ghostRanges: { model: number; first: number; count: number }[] = []
@@ -448,24 +497,35 @@ export class Renderer {
       const b = opts.batches[i]!
       if (!b.count) continue
       d.queue.writeBuffer(this.instBuf, off * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
+      if(advance)for(let j=0;j<b.count;j++){
+        const key=b.keys?.[j]
+        if(key!==undefined)this.history.write(key,b.data,j*12,this.previousInstances,(off+j)*12)
+        else for(let k=0;k<12;k++)this.previousInstances[(off+j)*12+k]=b.data[j*12+k]!
+      }
       ranges.push({ model: b.model, first: off, count: b.count, noShadow: b.noShadow })
       if (b.ghostCount && b.ghostCount > 0) {
         ghostRanges.push({ model: b.model, first: off, count: b.ghostCount })
       }
       off += b.count
     }
-    for (let i = 0; i < opts.ghosts.length; i++) {
-      const b = opts.ghosts[i]!
-      if (!b.count) continue
-      d.queue.writeBuffer(this.instBuf, off * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
-      ghostRanges.push({ model: b.model, first: off, count: b.count })
-      off += b.count
-    }
     const alphaCount = Math.min(opts.sprites.alphaCount, MAX_SPRITES / 2)
+    if(total)d.queue.writeBuffer(this.previousBuffer,0,this.previousInstances.buffer,0,total*48)
     const addCount = Math.min(opts.sprites.addCount, MAX_SPRITES / 2)
     if (alphaCount) d.queue.writeBuffer(this.spriteBuf, 0, opts.sprites.alpha.buffer, 0, alphaCount * SPRITE_FLOATS * 4)
     const addOffset = (MAX_SPRITES / 2) * SPRITE_FLOATS * 4
     if (addCount) d.queue.writeBuffer(this.spriteBuf, addOffset, opts.sprites.add.buffer, 0, addCount * SPRITE_FLOATS * 4)
+    if(advance)for(const [data,count,start] of [[opts.sprites.alpha,alphaCount,0],[opts.sprites.add,addCount,MAX_SPRITES/2]] as const){
+      const keys=spriteMotionKeys.get(data)
+      for(let i=0;i<count;i++){
+        const key=keys?.[i]
+        if(key)this.particleHistory.write(key,data,i*12,this.previousSprites,(start+i)*12)
+        else for(let k=0;k<12;k++)this.previousSprites[(start+i)*12+k]=data[i*12+k]!
+      }
+    }
+    if(blurOn){
+      if(alphaCount)d.queue.writeBuffer(this.previousSpriteBuffer,0,this.previousSprites.buffer,0,alphaCount*48)
+      if(addCount)d.queue.writeBuffer(this.previousSpriteBuffer,addOffset,this.previousSprites.buffer,addOffset,addCount*48)
+    }
 
     extractFrustumPlanes(opts.frame, 0, this.camPlanes)
     extractFrustumPlanes(opts.frame, 16, this.shadowPlanes)
@@ -525,7 +585,7 @@ export class Renderer {
         view: this.depthView,
         depthClearValue: 1,
         depthLoadOp: "clear",
-        depthStoreOp: "discard",
+        depthStoreOp: blurOn?"store":"discard",
         stencilClearValue: 0,
         stencilLoadOp: "clear",
         stencilStoreOp: "discard",
@@ -602,12 +662,21 @@ export class Renderer {
     }
     pass.end()
 
+    if(blurOn)this.blur.encode(enc,p=>{
+      p.setPipeline(this.velocityPipeline);p.setBindGroup(0,this.blur.group)
+      p.setVertexBuffer(1,this.instBuf);p.setVertexBuffer(2,this.previousBuffer)
+      for(const r of ranges){const m=this.models[r.model]!;p.setVertexBuffer(0,m.vbuf);p.draw(m.count,r.count,0,r.first)}
+      p.setPipeline(this.particleVelocity)
+      if(alphaCount){p.setVertexBuffer(0,this.spriteBuf);p.setVertexBuffer(1,this.previousSpriteBuffer);p.draw(6,alphaCount)}
+      if(addCount){p.setVertexBuffer(0,this.spriteBuf,addOffset);p.setVertexBuffer(1,this.previousSpriteBuffer,addOffset);p.draw(6,addCount)}
+    })
+
     // Bloom: threshold + downsample chain, then additive upsample back to half resolution.
     const g = this.postGroups!
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[i]!, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
       p.setPipeline(this.pipes.down!)
-      p.setBindGroup(0, g.down[i]!)
+      p.setBindGroup(0, blurOn&&i===0?this.motionGroups!.down:g.down[i]!)
       p.draw(3)
       p.end()
     }
@@ -619,12 +688,17 @@ export class Renderer {
       p.draw(3)
       p.end()
     }
-    const fp = enc.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+    const screen=this.context.getCurrentTexture().createView()
+    const fp = enc.beginRenderPass({ colorAttachments: [{ view: this.measure?this.timingView:screen, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     fp.setPipeline(this.pipes.composite!)
-    fp.setBindGroup(0, g.composite)
+    fp.setBindGroup(0, blurOn?this.motionGroups!.composite:g.composite)
     fp.draw(3)
     fp.end()
-    if (this.measure) this.timer!.finish(enc, this.context.getCurrentTexture().createView())
+    if (this.measure) {
+      this.timer!.finish(enc,this.timingView)
+      const copy=enc.beginRenderPass({colorAttachments:[{view:screen,loadOp:'clear',storeOp:'store',clearValue:[0,0,0,1]}]})
+      copy.setPipeline(this.pipes.present!);copy.setBindGroup(0,this.timingGroup);copy.draw(3);copy.end()
+    }
     this.measure = false
     d.queue.submit([enc.finish()])
   }

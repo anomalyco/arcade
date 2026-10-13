@@ -1,0 +1,422 @@
+{
+  "adapter": {
+    "architecture": "metal-3",
+    "vendor": "apple"
+  },
+  "before": {
+    "character": {
+      "vehicle": "muscle",
+      "x": 0,
+      "y": 0,
+      "z": 8,
+      "yaw": 3.141592653589793,
+      "speed": 0,
+      "roll": 0,
+      "pitch": 0,
+      "tyreParticles": 0,
+      "airborne": false,
+      "input": {
+        "throttle": 0,
+        "brake": 0,
+        "steer": 0,
+        "handbrake": false,
+        "boost": false
+      }
+    },
+    "items": {
+      "stats": {
+        "cpuMs": 0,
+        "awake": 0,
+        "particles": 0,
+        "chunks": 0,
+        "hits": 0,
+        "explosions": 0
+      },
+      "props": [
+        {
+          "kind": "cone",
+          "x": 7.347880794884119e-16,
+          "y": 0.35,
+          "z": 2,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 9.797174393178826e-16,
+          "y": 0.35,
+          "z": 0,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 1.224646799147353e-15,
+          "y": 0.35,
+          "z": -2,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 1.4695761589768238e-15,
+          "y": 0.35,
+          "z": -4,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 1.7145055188062944e-15,
+          "y": 0.35,
+          "z": -6,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "propane",
+          "x": 2.204364238465236e-15,
+          "y": 0.25,
+          "z": -10,
+          "awake": false,
+          "broken": false
+        }
+      ],
+      "chunks": 0
+    },
+    "lights": 0,
+    "effects": 0,
+    "particles": 0
+  },
+  "explosion": {
+    "character": {
+      "vehicle": "muscle",
+      "x": 2.0209165157591614e-15,
+      "y": 0,
+      "z": -8.50203566584424,
+      "yaw": 3.141592653589793,
+      "speed": 20.50200949528696,
+      "roll": -1.104754209781895e-32,
+      "pitch": -0.07118437401887977,
+      "tyreParticles": 68,
+      "airborne": false,
+      "input": {
+        "throttle": 1,
+        "brake": 0,
+        "steer": 0,
+        "handbrake": false,
+        "boost": false
+      }
+    },
+    "items": {
+      "stats": {
+        "cpuMs": 0.5999999940395355,
+        "awake": 13,
+        "particles": 77,
+        "chunks": 8,
+        "hits": 7,
+        "explosions": 1
+      },
+      "props": [
+        {
+          "kind": "cone",
+          "x": 0.0021288246609041145,
+          "y": 0.3579310294194472,
+          "z": 0.0032727686053283817,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 0.00009474312161555516,
+          "y": 0.35073028709345194,
+          "z": -0.9907153777180119,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": -0.0006377628603800909,
+          "y": 0.3777201826692852,
+          "z": -3.1029996876628214,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": -0.0004686252243844925,
+          "y": 0.4238677121180812,
+          "z": -5.151337591444535,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 0.057670570891263644,
+          "y": 0.3792194036905092,
+          "z": -8.581800148264284,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "propane",
+          "x": 0.0012834708580122917,
+          "y": 0.3802384762831076,
+          "z": -10.48297215844026,
+          "awake": false,
+          "broken": true
+        }
+      ],
+      "chunks": 8
+    },
+    "lights": 0,
+    "effects": 0,
+    "particles": 0
+  },
+  "after": {
+    "character": {
+      "vehicle": "muscle",
+      "x": 2.459605753856566e-15,
+      "y": 0,
+      "z": -12.084205140364055,
+      "yaw": 3.141592653589793,
+      "speed": 22.286723003442244,
+      "roll": 3.648835334596213e-33,
+      "pitch": -0.06721911414364758,
+      "tyreParticles": 68,
+      "airborne": false,
+      "input": {
+        "throttle": 1,
+        "brake": 0,
+        "steer": 0,
+        "handbrake": false,
+        "boost": false
+      }
+    },
+    "items": {
+      "stats": {
+        "cpuMs": 0,
+        "awake": 13,
+        "particles": 77,
+        "chunks": 8,
+        "hits": 7,
+        "explosions": 1
+      },
+      "props": [
+        {
+          "kind": "cone",
+          "x": 0.00048134134751126026,
+          "y": 0.35181673417104053,
+          "z": -0.02490923131159657,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 1.1018439364829006e-15,
+          "y": 0.35,
+          "z": -0.9938422753318861,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": -0.004477906143540015,
+          "y": 0.3890196291548585,
+          "z": -2.764515363063797,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": -0.0027562947413105644,
+          "y": 0.6298881058264101,
+          "z": -4.400732265988127,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "cone",
+          "x": 0.09937416548976852,
+          "y": 1.1779827081648442,
+          "z": -8.259049279296338,
+          "awake": true,
+          "broken": false
+        },
+        {
+          "kind": "propane",
+          "x": 0.0012834708580122917,
+          "y": 0.3802384762831076,
+          "z": -10.48297215844026,
+          "awake": false,
+          "broken": true
+        }
+      ],
+      "chunks": 8
+    },
+    "lights": 0,
+    "effects": 0,
+    "particles": 0
+  },
+  "physics": "13 bodies · 13 awake · 0 sleeping\n13/512 colliders · orange awake / cyan sleeping\nGPU 2.42 ms",
+  "spawned": {
+    "character": {
+      "vehicle": "swat",
+      "x": 0,
+      "y": 0,
+      "z": 8,
+      "yaw": 3.141592653589793,
+      "speed": 0,
+      "roll": 0,
+      "pitch": 0,
+      "tyreParticles": 18,
+      "airborne": false,
+      "input": {
+        "throttle": 0,
+        "brake": 0,
+        "steer": 0,
+        "handbrake": false,
+        "boost": false
+      }
+    },
+    "items": {
+      "stats": {
+        "cpuMs": 0,
+        "awake": 0,
+        "particles": 0,
+        "chunks": 0,
+        "hits": 0,
+        "explosions": 0
+      },
+      "props": [
+        {
+          "kind": "bench",
+          "x": 3.000000000000001,
+          "y": 0.425,
+          "z": 3.6739403974420594e-16,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": 9.797174393178826e-16,
+          "y": 0.425,
+          "z": 0,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": -2.999999999999999,
+          "y": 0.425,
+          "z": -3.6739403974420594e-16,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": 3.0000000000000013,
+          "y": 0.425,
+          "z": -2.9999999999999996,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": 1.3471114790620886e-15,
+          "y": 0.425,
+          "z": -3,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": -2.9999999999999987,
+          "y": 0.425,
+          "z": -3.0000000000000004,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": 3.0000000000000018,
+          "y": 0.425,
+          "z": -6,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": 1.7145055188062944e-15,
+          "y": 0.425,
+          "z": -6,
+          "awake": false,
+          "broken": false
+        },
+        {
+          "kind": "bench",
+          "x": -2.9999999999999982,
+          "y": 0.425,
+          "z": -6,
+          "awake": false,
+          "broken": false
+        }
+      ],
+      "chunks": 0
+    },
+    "lights": 3,
+    "effects": 3,
+    "particles": 236
+  },
+  "car": {
+    "hit": true,
+    "exploded": true,
+    "smoked": true,
+    "sprung": true,
+    "conesMoved": 5,
+    "panelRelease": true,
+    "allVehicles": true,
+    "grid": true,
+    "effects": true,
+    "lights": true
+  },
+  "soldier": {
+    "initial": {
+      "character": "soldier",
+      "x": 0,
+      "y": 0,
+      "z": 8,
+      "yaw": 3.141592653589793,
+      "speed": 0,
+      "sprint": 0
+    },
+    "walk": {
+      "character": "soldier",
+      "x": 0,
+      "y": 0,
+      "z": 3.920909090908938,
+      "yaw": 3.141592653589793,
+      "speed": 4.199999999994738,
+      "sprint": 0
+    },
+    "sprint": {
+      "character": "soldier",
+      "x": 0,
+      "y": 0,
+      "z": -2.318636363636441,
+      "yaw": 3.141592653589793,
+      "speed": 6.299999999997368,
+      "sprint": 1
+    },
+    "final": {
+      "character": "soldier",
+      "x": 2.023424328140202,
+      "y": 0,
+      "z": -2.499999871426063,
+      "yaw": 1.5707963267948966,
+      "speed": 2.659997022502012,
+      "sprint": 0
+    }
+  },
+  "errors": []
+}

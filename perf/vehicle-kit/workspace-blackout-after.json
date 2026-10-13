@@ -1,0 +1,130 @@
+{
+  "game": "blackout",
+  "label": "after",
+  "base": "8dff83439c254a6a70daaf2f934c12e918941f5c",
+  "frames": [
+    {
+      "name": "lamps",
+      "sha256": "f1a47bbf0ff8b1e38057e9778e2625cb4b5469a097e17dcd45e479d444b596af",
+      "pose": {
+        "x": 32,
+        "y": 18,
+        "h": 0,
+        "vx": 0,
+        "vy": 0
+      },
+      "smoke": 0,
+      "skids": 0,
+      "roll": 0,
+      "pitch": 0,
+      "pops": 0
+    },
+    {
+      "name": "pop",
+      "sha256": "b3599045cc610287025a793a745d3d8261d6335801d03c4bf272038f10876018",
+      "pose": {
+        "x": 39.93121381021781,
+        "y": 18,
+        "h": 0,
+        "vx": 9.483177143520532,
+        "vy": 0
+      },
+      "smoke": 0,
+      "skids": 0,
+      "roll": 3.1518706950130575e-18,
+      "pitch": -0.044120532626211836,
+      "pops": 1
+    },
+    {
+      "name": "drift",
+      "sha256": "60ad4bac4d4ed7fbedb87e047636a0839c9276c057684ebf28460c07bb50138e",
+      "pose": {
+        "x": 45.005380318477336,
+        "y": 18.4776394954228,
+        "h": 1.162008731927999,
+        "vx": 7.767389272878114,
+        "vy": 2.232902006599867
+      },
+      "smoke": 49,
+      "skids": 110,
+      "roll": -0.04333350501184904,
+      "pitch": -0.017536021425547155,
+      "pops": 1
+    },
+    {
+      "name": "brake",
+      "sha256": "d51c25b7200298e1b52da37806432c0d1411f7ae5208e79f97c26a900a24bdf9",
+      "pose": {
+        "x": 46.068619744468315,
+        "y": 20.316154824660927,
+        "h": 1.602183916339721,
+        "vx": 0.012440277350186973,
+        "vy": 0.25675173497393006
+      },
+      "smoke": 63,
+      "skids": 158,
+      "roll": -0.04210554579992167,
+      "pitch": 0.027617111870359604,
+      "pops": 1
+    },
+    {
+      "name": "van",
+      "sha256": "f7598f14d8af34b0467ee8b260c88ba10af9a3b85641e9a9759b710839815920",
+      "pose": {
+        "x": 36.2811650878897,
+        "y": 18.089709981752968,
+        "h": 0.6449412934676135,
+        "vx": 3.351462143810955,
+        "vy": 0.7892453400321009
+      },
+      "smoke": 0,
+      "skids": 0,
+      "roll": -0.007013236328922111,
+      "pitch": -0.0020334110388140012,
+      "pops": 0
+    },
+    {
+      "name": "scooter",
+      "sha256": "b2a05b12431af4bab0c1248004cfc8341ecc94499d7ce9f7ca5b47668c367252",
+      "pose": {
+        "x": 37.25565081029731,
+        "y": 21.160557210532964,
+        "h": 1.3468224226621786,
+        "vx": 4.443162613005313,
+        "vy": 5.998497058798785
+      },
+      "smoke": 7,
+      "skids": 19,
+      "roll": 0.08158138370819296,
+      "pitch": -0.022275236655092737,
+      "pops": 0
+    }
+  ],
+  "errors": [],
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3"
+  },
+  "switches": {
+    "vehicleSprings": true,
+    "vehicleWheels": true,
+    "vehicleLamps": true,
+    "vehicleSkids": true,
+    "tyreSmoke": true,
+    "vehicleSparks": true,
+    "backfire": true,
+    "vehicleImpact": true,
+    "vehicleAudio": true
+  },
+  "audio": {
+    "maxVoices": 4,
+    "peak": 0.851973831653595,
+    "clipped": 0,
+    "tailPeak": 0,
+    "kinds": [
+      "jeep",
+      "van",
+      "scooter"
+    ]
+  }
+}
