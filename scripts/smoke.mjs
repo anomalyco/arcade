@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -33,8 +33,9 @@ try {
     timeout: 10_000,
     args: [
       "--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
-      // Linux needs a Vulkan-backed compositor to present WebGPU swapchain images.
-      ...(process.platform === "linux" ? ["--enable-features=Vulkan", "--use-vulkan=swiftshader", "--disable-vulkan-surface"] : []),
+      // Carrier and Outbreak draw behind the menu and need WebGPU presentation, not merely adapter creation.
+      "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--mute-audio",
+      ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : []),
     ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
@@ -53,9 +54,14 @@ try {
       if (status && /needs WebGPU|No WebGPU adapter is available/.test(status)) return status
       return window.__arcadeHarness?.ready ? "local session ready" : false
     }
-    const failure = document.querySelector(game === "blackout" ? "#menu .notice" : "#overlay .nogpu p")?.textContent
-    if (failure && /needs WebGPU|No WebGPU adapter is available/.test(failure)) return failure
-    return document.querySelector(game === "blackout" ? '#menu [data-act="practice"]' : '#overlay [data-act="solo"]') ? "lobby ready" : false
+    const sel = {
+      blackout: ["#menu .notice", '#menu [data-act="practice"]'],
+      getaway: ["#overlay .nogpu p", '#overlay [data-act="solo"]'],
+      carrier: ["#hud .notice", '.mn [data-act="quick"]'],
+    }[game]
+    const failure = document.querySelector(sel[0])?.textContent
+    if (failure && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(failure)) return failure
+    return document.querySelector(sel[1]) ? "lobby ready" : false
   }, game, { timeout: 20_000 })
   // Let initialization promises and the first presentation frames report errors.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))

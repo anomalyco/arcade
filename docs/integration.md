@@ -25,8 +25,9 @@ Wizards' latest committed change is immediate click casting (`2e3177a`), after t
 
 ## Excluded
 
-The only unfinished follow-up excluded from this PR is `shared-human-rig`. The Lab workbench, Audio Lab and Outbreak
-refinement are included; the other items below are intentional scope exclusions.
+The unfinished `shared-human-rig` work remains excluded. The initial Lab workbench, Audio Lab and Outbreak refinement
+are included. Additional smoke-volume and workbench refinements are pending as described below; the other items here
+are intentional scope exclusions.
 
 - Rejected experimental Getaway look presets; existing approved Night presentation stays.
 - Historical branches already squashed into main.
@@ -62,6 +63,10 @@ The shared hybrid audio runtime and Audio Lab are included. In either existing L
 **Audition** is the only live unlock action; entering the section or changing controls does not start playback.
 **Render offline** renders the selected recipe without playing it. Approved in-game vehicle audio stays in use;
 the new candidate voice graphs are for review, with their reuse/parity boundary in `docs/audio-design.md`.
+
+Further `smoke-volume-refinement` and `lab-workbench` follow-up work remains in independent branches. Their next tested
+commits are not yet inputs to this PR and do not block upstream reconciliation. The workbench revision already listed
+in the source manifest remains included.
 
 The standalone Lab workbench is included. Its Library selects effects, objects, lighting and audio directly;
 the Inspector shows the selected item's controls beside a correctly sized central viewport. Edit/Play, transport,

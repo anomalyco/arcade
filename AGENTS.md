@@ -1,6 +1,6 @@
 # arcade
 
-- Bun workspace: `games/blackout/`, `games/getaway/`, `games/outbreak/` and `packages/*` share the root `bun.lock`. Run
+- Bun workspace: `games/blackout/`, `games/getaway/`, `games/outbreak/`, `games/carrier/` and `packages/*` share the root `bun.lock`. Run
   `bun install --frozen-lockfile` at the root, `bun run check:packages`, then `bun run check` inside each affected game.
   `bunfig.toml` selects hoisted dependencies for shared tooling and historical benchmark exports. Keep Vite, Wrangler,
   TypeScript and Playwright versions aligned across workspace games. `landing/`, `redirects/` and `games/wings/` are
@@ -28,3 +28,5 @@
   outDir to `dist/arcade/<name>`, strip the `/arcade/<name>` prefix in the Worker, add a workflow, and add a panel to
   `landing/index.html`. If it had an old `anoma.ly/labs/<name>` URL, add it to `redirects/` (GAMES and routes).
   Prototypes are unlisted: deploy normally, skip the landing panel, add `noindex`, and list the game in the README's prototypes section. Promote a game by adding the landing panel and removing `noindex`.
+- Every showcase video made for a game gets uploaded to the #arcade Slack channel (C0C8JM9SWP7) as soon as it's done,
+  with a one-line description and the live URL, signed "— from 𝕺𝖕𝖊𝖓𝕮𝖔𝖉𝖊". Keep files under 50 MB.

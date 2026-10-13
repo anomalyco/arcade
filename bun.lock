@@ -27,6 +27,20 @@
         "wrangler": "^4.149.0",
       },
     },
+    "games/carrier": {
+      "name": "carrier",
+      "devDependencies": {
+        "@cloudflare/workers-types": "^5.20261011.1",
+        "@fontsource/ibm-plex-mono": "^5.2.5",
+        "@types/bun": "^1.4.2",
+        "@webgpu/types": "^0.1.74",
+        "playwright-core": "^1.64.0",
+        "typescript": "^5.9.3",
+        "vite": "^8.3.4",
+        "wgpu-matrix": "^3.4.2",
+        "wrangler": "^4.149.0",
+      },
+    },
     "games/getaway": {
       "name": "getaway",
       "dependencies": {
@@ -266,6 +280,8 @@
     "blake3-wasm": ["blake3-wasm@2.1.5", "", {}, "sha512-F1+K8EbfOZE49dtoPtmxUQrpXaBIl3ICvasLh+nJta0xkz+9kF/7uet9fLnwKqhDrmj6g+6K3Tw9yQPUg2ka5g=="],
 
     "bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
+
+    "carrier": ["carrier@workspace:games/carrier"],
 
     "cookie": ["cookie@1.1.1", "", {}, "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="],
 
