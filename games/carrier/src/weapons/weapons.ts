@@ -28,6 +28,7 @@ import {
 import type { WeaponAudio } from "../audio/weapon-audio"
 import type { PlaneDrawPose } from "../render/plane-pass"
 import type { WeaponFx } from "../render/weapon-fx"
+import type { JetBreakup } from "../render/explosions"
 import type { WeaponHud, WeaponHudView } from "./hud"
 import type { WeaponInput } from "./input"
 import { type FxShip, ShipFx } from "./ship-fx"
@@ -115,6 +116,8 @@ export class Weapons {
   onDestroyed: ((by: number, w: KillWeapon | "") => void) | null = null
   /** Camera trauma owed from being hit (the host adds it and zeroes it). */
   trauma = 0
+  /** Breaks shot-down jets apart and draws their wrecks' impacts (src/render/explosions.ts); the old burst when null. */
+  breakup: JetBreakup | null = null
   /** Our weapons-bay doors, 0 shut .. 1 open: open while bombs are selected (and a bay bomb is waiting to drop). */
   doors = 0
   /** Draws a falling bomb with the jet model's own store mesh (the host's PlanePass); false falls back to a rock. */
@@ -351,7 +354,8 @@ export class Weapons {
         if (e.w) {
           const j = this.jetOrOwn(e.on)
           if (j) {
-            this.fx.explosion(j.x, j.y, j.z, j.vx, j.vy, j.vz, e.on === this.id ? 0.8 : 1.5, false)
+            const kind = e.on === this.id ? this.loadout.vehicle : (this.jets.get(e.on)?.vehicle ?? "hornet")
+            if (!this.breakup?.airKill(e.on, kind, j)) this.fx.explosion(j.x, j.y, j.z, j.vx, j.vy, j.vz, e.on === this.id ? 0.8 : 1.5, false)
             this.audio.explosion(this.dist(j.x, j.y, j.z), 1.5, "air-kill")
             this.wreck(e.on, j)
           }
@@ -396,15 +400,16 @@ export class Weapons {
     w.q[1] = j.qy
     w.q[2] = j.qz
     w.q[3] = j.qw
-    // Tumble mostly in roll with some pitch: a body-frame axis.
-    w.axis[0] = Math.random() - 0.5
-    w.axis[1] = (Math.random() - 0.5) * 0.4
+    // Tumble mostly in roll with some pitch: a body-frame axis (seeded per sortie, so every client sees the same fall).
+    const rnd = this.breakup?.random(id) ?? Math.random
+    w.axis[0] = rnd() - 0.5
+    w.axis[1] = (rnd() - 0.5) * 0.4
     w.axis[2] = 1.5
     const l = Math.hypot(...w.axis)
     w.axis[0] /= l
     w.axis[1] /= l
     w.axis[2] /= l
-    w.spin = (Math.random() < 0.5 ? -1 : 1) * (1.2 + Math.random() * 1.6)
+    w.spin = (rnd() < 0.5 ? -1 : 1) * (1.2 + rnd() * 1.6)
     w.age = 0
     w.live = true
     w.pose.kind = id === this.id ? this.loadout.vehicle : (this.jets.get(id)?.vehicle ?? "hornet")
@@ -793,12 +798,13 @@ export class Weapons {
       p.qz = w.q[2]
       p.qw = w.q[3]
       p.throttle = 0
-      this.fx.damage(0x300000 + w.id, w.x, w.y, w.z, w.vx, w.vy, w.vz, 2)
+      if (!this.breakup) this.fx.damage(0x300000 + w.id, w.x, w.y, w.z, w.vx, w.vy, w.vz, 2)
       const hit = groundHit(this.world.ground, w.x, w.y, w.z, t)
       if (hit || w.age > WRECK_LIFE) {
         w.live = false
-        if (hit === "sea") this.fx.splash(w.x, w.y, w.z, 1.6)
-        else if (hit) this.fx.explosion(w.x, w.y, w.z, 0, 0, 0, 1.2, false)
+        const drawn = !!hit && !!this.breakup?.wreckHit(w.id, hit, w.x, w.y, w.z, w.vx, w.vy, w.vz)
+        if (!drawn && hit === "sea") this.fx.splash(w.x, w.y, w.z, 1.6)
+        else if (!drawn && hit) this.fx.explosion(w.x, w.y, w.z, 0, 0, 0, 1.2, false)
         if (hit) this.audio.explosion(this.dist(w.x, w.y, w.z), 1.2, hit === "sea" ? "crash-sea" : "crash-land")
       }
     }

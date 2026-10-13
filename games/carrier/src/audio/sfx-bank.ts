@@ -16,6 +16,22 @@ const POOLED = new Set(["boom-air", "boom-missile", "boom-bomb-land", "boom-bomb
 const REVERB: Record<SlotCategory, number> = { carrier: 0.25, gun: 0.3, missile: 0.35, bomb: 0.3, boom: 0.5, ship: 0.15, sea: 0, ui: 0, hooks: 0.35 }
 /** Default bus per category. */
 const BUS: Record<SlotCategory, Bus> = { carrier: "sfx", gun: "weapons", missile: "weapons", bomb: "weapons", boom: "weapons", ship: "weather", sea: "weather", ui: "ui", hooks: "weapons" }
+/**
+ * The voice budget: at most VOICES recorded one-shots at once, no slot retriggering within its cooldown, and priority
+ * (explosion > weapons > deck events > thunder > accents and interface): a louder-mattering sound ducks the lesser ones
+ * already playing, takes the place of the least important when the budget is full, and for half a second keeps
+ * accents (priority ≤ 1) from starting at all. One clear sound per moment.
+ */
+const VOICES = 6
+const PRIORITY: Record<SlotCategory, number> = { boom: 5, gun: 4, missile: 4, bomb: 4, hooks: 4, carrier: 3, sea: 2, ship: 1, ui: 1 }
+const SLOT_PRIORITY: Record<string, number> = { sinking: 3, "ship-horn": 0, "hull-creak": 0, "ui-kill": 2 }
+/** Per-slot retrigger cooldown (s). */
+const COOLDOWN = 0.15
+const SLOT_COOLDOWN: Record<string, number> = { "ui-click": 0.12, "impact-metal": 0.12, "hull-slam": 2, "hull-creak": 6 }
+for (const k of ["boom-air", "boom-missile", "boom-bomb-land", "boom-bomb-water", "boom-crash-sea", "boom-crash-land", "boom-far"]) SLOT_COOLDOWN[k] = 0.08
+
+type Voice = { prio: number; start: number; end: number; input: GainNode; stop(fade?: number): void }
+
 /** Load order after the first gesture. */
 const ORDER: readonly SlotCategory[] = ["sea", "carrier", "ui", "gun", "missile", "boom", "bomb", "ship", "hooks"]
 
@@ -77,6 +93,10 @@ export class SfxBank {
   private base = ""
   private started = false
   private last = new Map<string, number>()
+  private voices: Voice[] = []
+  private lastPlayed = new Map<string, number>()
+  /** One-shots the budget turned away (readout). */
+  dropped = 0
   /** Resolves once boot has loaded every category's playing takes. */
   booted: Promise<void> = Promise.resolve()
 
@@ -290,6 +310,13 @@ export class SfxBank {
     const ctx = this.mixer.ctx
     const s = SLOT_BY_ID.get(slot)
     if (!ctx || !s || this.mixer.muted || !this.mixer.samplesOn) return null
+    // The budget (auditions with a forced take bypass it).
+    const prio = SLOT_PRIORITY[slot] ?? PRIORITY[s.category]
+    const now = ctx.currentTime
+    if (o.take === undefined && !this.admit(slot, prio, now)) {
+      this.dropped++
+      return null
+    }
     let take = o.take ?? this.take(slot)
     if (o.take === undefined && POOLED.has(slot)) {
       const pool = this.takesFor(slot).filter((t) => this.buffers.has(`${slot}-${t}`))
@@ -318,7 +345,7 @@ export class SfxBank {
     src.start(at, off)
     const end = at + (buf.duration - off) / rate
     const echo = o.echo ?? 0
-    return {
+    const shot: Shot = {
       src,
       end,
       move: (p) => this.place(c, p, echo, false),
@@ -332,6 +359,27 @@ export class SfxBank {
         }
       },
     }
+    if (o.take === undefined) {
+      this.lastPlayed.set(slot, now)
+      // Lesser sounds already playing step back under this one.
+      for (const v of this.voices) if (v.prio < prio) v.input.gain.setTargetAtTime(v.input.gain.value * 0.45, at, 0.03)
+      this.voices.push({ prio, start: at, end, input: c.input, stop: shot.stop })
+    }
+    return shot
+  }
+
+  /** Whether the budget lets `slot` (priority `prio`) start now; makes room by stopping a lesser voice if it must. */
+  private admit(slot: string, prio: number, now: number): boolean {
+    this.voices = this.voices.filter((v) => v.end > now)
+    if (now - (this.lastPlayed.get(slot) ?? -1e9) < (SLOT_COOLDOWN[slot] ?? COOLDOWN)) return false
+    if (prio <= 1 && this.voices.some((v) => v.prio >= 3 && now - v.start < 0.5)) return false
+    if (this.voices.length < VOICES) return true
+    let low: Voice | null = null
+    for (const v of this.voices) if (!low || v.prio < low.prio || (v.prio === low.prio && v.start < low.start)) low = v
+    if (!low || low.prio >= prio) return false
+    low.stop(0.08)
+    this.voices.splice(this.voices.indexOf(low), 1)
+    return true
   }
 
   /** Starts a looping slot (silent until `set` gives it a level); null when it hasn't loaded. */

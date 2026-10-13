@@ -37,10 +37,11 @@ const want = opt("scenes", "").split(",").filter(Boolean)
 for (const name of want.length ? want : all) {
   const t0 = performance.now()
   const r = await page.evaluate(
-    ([n, b]) => (globalThis as unknown as { renderScene: (n: string, b: string) => Promise<{ wav: string; peak: number; rms: number; loaded: number }> }).renderScene(n!, b!),
+    ([n, b]) => (globalThis as unknown as { renderScene: (n: string, b: string) => Promise<{ wav: string; peak: number; rms: number; loaded: number; fired: string[] }> }).renderScene(n!, b!),
     [name, base],
   )
   writeFileSync(join(out, `${name}.wav`), Buffer.from(r.wav, "base64"))
+  writeFileSync(join(out, `${name}.sounds.txt`), `${r.fired.join("\n")}\n`)
   const db = (v: number) => (20 * Math.log10(v + 1e-9)).toFixed(1)
   console.log(`${name.padEnd(20)} peak ${db(r.peak)} dBFS  rms ${db(r.rms)} dBFS  takes ${r.loaded}  (${((performance.now() - t0) / 1000).toFixed(1)} s)`)
 }

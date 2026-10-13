@@ -11,6 +11,8 @@ import { type PlaneDrawPose, PlanePass } from "../render/plane-pass"
 import type { Renderer } from "../render/renderer"
 import { playerTeamColor, shipTeamColor } from "../render/team"
 import { WeaponFx } from "../render/weapon-fx"
+import { Explosions, seeded, seedOf } from "../render/explosions"
+import { terrainHeight } from "../../shared/islands"
 import { WeaponAudio } from "../audio/weapon-audio"
 import { JetAudio } from "../audio/jet-audio"
 import { drawnShips } from "../audio/ship-audio"
@@ -108,6 +110,11 @@ export class FlightModule {
   private crew: Crew | null = null
   /** Each other pilot's last seen sortie: a new one is a fresh jet with full health and stores. */
   private sorties = new Map<number, number>()
+  /** Jet breakups, crashes and their fire, smoke, spray and debris (src/render/explosions.ts). */
+  readonly boom: Explosions
+  /** Our own crash has had its explosion; each remote crash (by its first crashed pose's time) too. */
+  private ownBoom = false
+  private remoteBooms = new Map<number, number>()
 
   constructor(
     private renderer: Renderer,
@@ -129,6 +136,16 @@ export class FlightModule {
       shipHits: (ship, n) => this.net.sendShipHits(ship, n),
     }
     this.weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), new WeaponInput(canvas), null)
+    this.boom = new Explosions(renderer)
+    // Shot-down jets break apart (seeded by pilot and sortie, so every client sees the same pieces).
+    this.weapons.breakup = {
+      airKill: (id, kind, j) => {
+        this.boom.airKill(this.seedFor(id), kind, playerTeamColor(this.crew, id), j, id)
+        return true
+      },
+      wreckHit: (id, hit, x, y, z, vx, vy, vz) => this.boom.wreckImpact(this.seedFor(id), id, hit, x, y, z, vx, vy, vz),
+      random: (id) => seeded(this.seedFor(id) ^ 0x7ec4),
+    }
     this.weapons.resolve = (id) => {
       const p = this.crew && playerOf(this.crew, id)
       return p ? { name: p.name, color: TEAMS[p.team]?.color ?? "#f4f7fb" } : null
@@ -144,6 +161,7 @@ export class FlightModule {
       this.models = m
       this.pass = new PlanePass(renderer, m)
       this.fx = new PlaneFx(renderer, m)
+      this.boom.setModels(m)
       renderer.addPass("opaque", this.pass)
       renderer.addPass("alpha", this.fx)
       this.flight.eyeModel = m[this.flight.vehicle].eye
@@ -160,6 +178,8 @@ export class FlightModule {
     this.world.sea = sea
     this.world.arch = arch
     this.weapons.setGround(this.world)
+    this.boom.world = this.world
+    this.boom.wind = [sea.wind[0] * 4, sea.wind[1] * 4]
   }
 
   get phase(): string {
@@ -243,6 +263,9 @@ export class FlightModule {
       f.shake(this.weapons.trauma)
       this.weapons.trauma = 0
     }
+    // Explosions nearby shake the camera too (presentation only).
+    const bang = this.boom.takeTrauma()
+    if (bang > 0) f.shake(bang)
     // Shot down: the crash camera follows the falling wreck.
     const wreck = f.phase === "crashed" ? this.weapons.ownWreck : null
     if (wreck)
@@ -253,7 +276,9 @@ export class FlightModule {
       }
     const k = Math.max(0, Math.min(1, (t - f.plane.t) / PLANE.tick))
     const sea = this.sea
-    this.pose = f.frame(dt, k, aspect, (x, z) => (sea ? seaHeight(sea, x, z, t) : 0), { w: innerWidth, h: innerHeight }, deck)
+    const arch = this.arch
+    // The crash camera's floor: the sea, or the land under it.
+    this.pose = f.frame(dt, k, aspect, (x, z) => Math.max(sea ? seaHeight(sea, x, z, t) : 0, arch ? terrainHeight(arch, x, z) + 45 : -1e9), { w: innerWidth, h: innerHeight }, deck)
     const cam = f.cam
     this.camera.lookAlong(cam.eye, cam.forward, cam.up, cam.fov, aspect)
 
@@ -342,6 +367,8 @@ export class FlightModule {
       pass.begin()
       fx.begin(v.eye, v.t)
     }
+    const camNow = airborne && this.flight.phase !== "crashed" ? this.flight.cam : null
+    this.boom.begin(v.dt, v.t, v.eye, camNow?.fov ?? this.camera.fov, innerHeight, v.ships)
     const f = this.flight
     if (airborne && this.pose && this.ctx) {
       this.pose.accent = shipTeamColor(v.crew, this.ctx.ship)
@@ -356,11 +383,25 @@ export class FlightModule {
       w.setOwnModel(f.phase === "flying" || f.phase === "landing" ? m : null)
     } else w.setOwnModel(null)
     this.audio.own(airborne ? f : null, this.pose)
-    // A jet that was shot down already has its explosion and burning wreck: no generic crash burst for it.
-    if (fx && airborne && f.phase === "crashed" && f.plane.crashed !== "shot") fx.burst(f.plane.x, f.plane.y, f.plane.z, f.crashTime, f.plane.crashed === "sea")
+    // A crash breaks the jet up where it hit (once). A jet that was shot down already has its breakup and burning
+    // wreck: no crash for it.
+    const crashed = airborne && f.phase === "crashed" ? f.plane.crashed : ""
+    if (crashed === "sea" || crashed === "land" || crashed === "ship") {
+      if (!this.ownBoom) {
+        this.ownBoom = true
+        const p = f.plane
+        this.boom.crash(this.seedFor(this.net.id), f.vehicle, this.pose?.accent ?? shipTeamColor(v.crew, this.ctx?.ship ?? -1), crashed, p)
+      }
+    } else if (f.phase !== "crashed") this.ownBoom = false
     for (const c of this.remotes.crashes(v.t))
       if (!w.recentlyKilled(c.id)) {
-        fx?.burst(c.x, c.y, c.z, c.age, c.y < 6)
+        const s = c.snap
+        if (this.remoteBooms.get(c.id) !== s[0] && c.age < 3) {
+          this.remoteBooms.set(c.id, s[0])
+          const g = this.boom.surfaceHeight(c.x, c.z, c.y + 3)
+          const hit = g.kind === "ship" ? "ship" : g.kind === "land" && c.y < g.h + 20 ? "land" : "sea"
+          this.boom.crash(this.seedFor(c.id), vehicleOfCode(s[17]), playerTeamColor(v.crew, c.id), hit, { x: c.x, y: c.y, z: c.z, vx: s[9], vy: s[10], vz: s[11], qx: s[5], qy: s[6], qz: s[7], qw: s[8] })
+        }
         this.audio.crash(c.id, c.x, c.y, c.z, c.age, c.y < 6)
       }
     for (const [id, pose] of this.remotes.poses(v.t, v.ship)) {
@@ -386,16 +427,24 @@ export class FlightModule {
     this.audio.frame(v.dt, v.eye, this.camera.forward, this.camera.upDir)
     if (pass) for (const [id, wp] of w.wreckPoses()) {
       wp.accent = playerTeamColor(v.crew, id)
-      pass.add(wp)
+      // A broken-up wreck is drawn by the explosions (what is left of it, burning).
+      if (!this.boom.drawWreck(id, wp)) pass.add(wp)
     }
     const cam = airborne && f.phase !== "crashed" ? f.cam : null
     if (v.ships) w.fleet(v.ships, hulls ?? null, me?.team ?? -1, v.t, v.dt)
     this.shipHud.update(v.dt, v.t, me ?? null, v.crew, v.ships ?? [], hulls ?? null, cam, airborne && (f.phase === "flying" || f.phase === "landing"), v.paused)
     w.frame(v.dt, v.t, v.eye, cam?.fov ?? this.camera.fov, innerHeight, (x, y, z) => (cam ? cam.project(x, y, z, innerWidth, innerHeight) : null), v.paused)
+    this.boom.end()
     if (pass && fx) {
       pass.upload()
       fx.upload()
     }
+  }
+
+  /** The breakup seed of jet `id`'s current sortie: the same on every client. */
+  private seedFor(id: number): number {
+    const p = this.crew && playerOf(this.crew, id)
+    return seedOf(id, p?.sortie ?? 0, 0xb00)
   }
 
   /** The room's combat messages since last frame, into the weapons. */

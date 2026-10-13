@@ -11,6 +11,8 @@ import type { ShipLike } from "../src/audio/ship-audio"
 import { DEFAULT_LEVELS, mixer } from "../src/audio/mixer"
 import { WeaponAudio } from "../src/audio/weapon-audio"
 import { WeatherAudio } from "../src/audio/weather-audio"
+import { JetSfx } from "../src/audio/jet-sfx"
+import { UiAudio } from "../src/audio/ui-audio"
 import type { PlaneDrawPose } from "../src/render/plane-pass"
 
 const RATE = 48000
@@ -27,6 +29,8 @@ class Sim {
   weapons: WeaponAudio | null = null
   weather: WeatherAudio | null = null
   wx = makeWeather()
+  /** Interface sounds (the scene calls them where the player would press and click). */
+  ui: UiAudio | null = null
   /** Carriers for the ship ambience (none unless a scene adds one). */
   ships: [number, ShipLike][] = []
 
@@ -205,6 +209,55 @@ function catapult(): Scene {
       d.vz = -speed
       d.z += d.vz * dt
       s.chase()
+    },
+  }
+}
+
+/**
+ * The whole launch as a player hears it, from the chase camera on the deck of a carrier in clear weather: E opens ship
+ * operations, the pointer finds LAUNCH and clicks it, then the catapult sequence (line-up, spool to afterburner, the
+ * stroke, off the bow, gear up) and the climb-out.
+ */
+function launch(): Scene {
+  const cat = catapult()
+  return {
+    dur: 11,
+    setup: (s) => {
+      s.sky("clear")
+      s.ships = [[1, { x: 0, z: 0, heave: 0, slams: 0, slam: 0 }]]
+      s.ui = new UiAudio(mixer(), false)
+      cat.setup!(s)
+    },
+    step: (s, t, dt) => {
+      const at = (x: number) => Math.abs(t - x) < dt / 2
+      if (at(0.15)) s.ui!.opened()
+      if (at(0.55)) s.ui!.hover()
+      if (at(0.85)) s.ui!.clicked()
+      s.weather!.update(s.wx, dt)
+      cat.step(s, Math.max(0, t - 1), dt)
+    },
+  }
+}
+
+/** The whole landing: the autopilot capture, touchdown and the trap, from the chase camera, ship ambience on. */
+function landing(): Scene {
+  const tr = trap()
+  return {
+    dur: 7,
+    setup: (s) => {
+      s.sky("clear")
+      s.ships = [[1, { x: 0, z: -200, heave: 0, slams: 0, slam: 0 }]]
+      const o = s.makeOwn("hornet", "chase")
+      o.phase = "flying"
+      tr.setup!(s)
+      s.own!.phase = "flying"
+    },
+    step: (s, t, dt) => {
+      s.weather!.update(s.wx, dt)
+      tr.step(s, t, dt)
+      // The landing autopilot takes the jet a moment in.
+      if (t < 0.3) s.own!.phase = "flying"
+      else if (s.own!.phase === "flying") s.own!.phase = "landing"
     },
   }
 }
@@ -536,6 +589,8 @@ function storm(): Scene {
 }
 
 const SCENES: Record<string, () => Scene> = {
+  launch,
+  landing,
   montage,
   "exterior-ramp": () => ramp("hornet", "chase"),
   "cockpit-ramp": () => ramp("hornet", "cockpit"),
@@ -560,7 +615,36 @@ const SCENES: Record<string, () => Scene> = {
   explosions,
 }
 
-async function renderScene(name: string, base: string): Promise<{ wav: string; peak: number; rms: number; loaded: number }> {
+/** What fired, when (audio time, s): every bank slot played and every jet one-shot, for the before/after lists. */
+const fired: string[] = []
+let logged = false
+function logSounds(mx: ReturnType<typeof mixer>): void {
+  if (logged) return
+  logged = true
+  const bank = sfx(mx)
+  const play = bank.play.bind(bank)
+  bank.play = (slot, o) => {
+    const r = play(slot, o)
+    fired.push(`${mx.now.toFixed(2)} ${r ? "" : "(dropped) "}${slot}`)
+    return r
+  }
+  const loop = bank.loop.bind(bank)
+  bank.loop = (slot, o) => {
+    fired.push(`${mx.now.toFixed(2)} loop ${slot}`)
+    return loop(slot, o)
+  }
+  for (const k of ["catapult", "holdback", "shuttleBrake", "burnerLight", "gear", "hook", "trap", "crash", "boom", "flyby", "thunk"] as const) {
+    const proto = JetSfx.prototype as unknown as Record<string, (...a: unknown[]) => unknown>
+    const f = proto[k]
+    if (!f) continue
+    proto[k] = function (this: unknown, ...a: unknown[]) {
+      fired.push(`${mx.now.toFixed(2)} jet:${k}`)
+      return f.apply(this, a)
+    }
+  }
+}
+
+async function renderScene(name: string, base: string): Promise<{ wav: string; peak: number; rms: number; loaded: number; fired: string[] }> {
   const scene = SCENES[name]!()
   const ctx = new OfflineAudioContext(2, Math.ceil(scene.dur * RATE), RATE)
   // The game's shared mixer, rebuilt on this context (weapon and weather audio find it there too).
@@ -573,6 +657,8 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
   mx.forceCockpit = null
   mx.cockpit = 0
   const bank = sfx(mx)
+  logSounds(mx)
+  fired.length = 0
   mx.use(ctx)
   // The sound bank's picked takes (decoded once; buffers are reused across renders).
   await bank.boot(base)
@@ -628,7 +714,7 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
   const bytes = new Uint8Array(out.buffer)
   let bin = ""
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return { wav: btoa(bin), peak, rms: Math.sqrt(sum / (2 * n)), loaded: bank.loaded }
+  return { wav: btoa(bin), peak, rms: Math.sqrt(sum / (2 * n)), loaded: bank.loaded, fired: [...fired] }
 }
 
 Object.assign(globalThis, { renderScene, scenes: Object.keys(SCENES) })

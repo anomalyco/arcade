@@ -23,54 +23,6 @@
   "lufs": -15.9,
   "tp": -4.9
  },
- "tailhook-1": {
-  "dur": 2,
-  "peak": 0.45,
-  "lufs": -16,
-  "tp": -5.4
- },
- "tailhook-2": {
-  "dur": 2,
-  "peak": 0.25,
-  "lufs": -16,
-  "tp": -3.1
- },
- "tailhook-3": {
-  "dur": 2,
-  "peak": 0.65,
-  "lufs": -16,
-  "tp": -6.1
- },
- "tailhook-4": {
-  "dur": 1.624,
-  "peak": 1.15,
-  "lufs": -16,
-  "tp": -3.7
- },
- "shuttle-slam-1": {
-  "dur": 3,
-  "peak": 0.08,
-  "lufs": -16.1,
-  "tp": 0
- },
- "shuttle-slam-2": {
-  "dur": 2.629,
-  "peak": 0.08,
-  "lufs": -16.1,
-  "tp": -3.9
- },
- "shuttle-slam-3": {
-  "dur": 3,
-  "peak": 0.08,
-  "lufs": -16,
-  "tp": -2.2
- },
- "shuttle-slam-4": {
-  "dur": 3,
-  "peak": 0.13,
-  "lufs": -16,
-  "tp": -4
- },
  "trap-1": {
   "dur": 5,
   "peak": 1.23,
@@ -899,60 +851,6 @@
   "lufs": -70,
   "tp": -14
  },
- "ui-hover-1": {
-  "dur": 0.202,
-  "peak": 0.13,
-  "lufs": -70,
-  "tp": -24.2
- },
- "ui-hover-2": {
-  "dur": 0.48,
-  "peak": 0.08,
-  "lufs": -26,
-  "tp": -8.7
- },
- "ui-hover-3": {
-  "dur": 0.48,
-  "peak": 0.18,
-  "lufs": -26.2,
-  "tp": -12.4
- },
- "ui-confirm-1": {
-  "dur": 1,
-  "peak": 0.05,
-  "lufs": -26,
-  "tp": -10.5
- },
- "ui-confirm-2": {
-  "dur": 1,
-  "peak": 0.08,
-  "lufs": -26.1,
-  "tp": -15
- },
- "ui-confirm-3": {
-  "dur": 1,
-  "peak": 0.05,
-  "lufs": -26.1,
-  "tp": -9.6
- },
- "ui-open-1": {
-  "dur": 1,
-  "peak": 0.23,
-  "lufs": -26,
-  "tp": -8.2
- },
- "ui-open-2": {
-  "dur": 0.666,
-  "peak": 0.1,
-  "lufs": -26,
-  "tp": -8.1
- },
- "ui-open-3": {
-  "dur": 0.654,
-  "peak": 0.3,
-  "lufs": -26,
-  "tp": -13.6
- },
  "ui-kill-1": {
   "dur": 1.48,
   "peak": 0.05,
@@ -970,24 +868,6 @@
   "peak": 0.05,
   "lufs": -26.1,
   "tp": -9
- },
- "ui-capture-1": {
-  "dur": 1.814,
-  "peak": 0.8,
-  "lufs": -26,
-  "tp": -19.6
- },
- "ui-capture-2": {
-  "dur": 2,
-  "peak": 0.08,
-  "lufs": -26,
-  "tp": -16.1
- },
- "ui-capture-3": {
-  "dur": 2,
-  "peak": 0.78,
-  "lufs": -26,
-  "tp": -16.6
  },
  "ciws-1": {
   "dur": 4.85,

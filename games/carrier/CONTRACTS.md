@@ -455,7 +455,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   mid-flight comes back on deck (the jet was lost with the connection).
 - Dev harness (not built): `flight.html` (offline, `?seed ?ship ?rudder ?invert ?cockpit ?f35`). Real-GPU checks:
   `scripts/flight-shot.ts` (harness) and `--mp` (two pages in one room; still written for the old seats and roles);
-  `scripts/f35-shot.ts` (the F-35C in the game: ops, deck, catapult, flight, bay, bombs, landing, and a Hornet and an
+  `scripts/explosion-shot.ts` (kills and crashes, day and night, and the explosions' GPU cost; captures in
+  `captures/explosions/`); `scripts/f35-shot.ts` (the F-35C in the game: ops, deck, catapult, flight, bay, bombs, landing, and a Hornet and an
   F-35C in one room; captures in `captures/f35/`).
 
 ## Weapons (`shared/{weapons,combat}.ts`, `src/weapons/**`, `src/render/weapon-fx.ts`, `src/audio/weapon-audio.ts`)
@@ -504,8 +505,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
     (`recover("crashed")`, so the slot recharges 30 s). A relayed crashed jet (`mode` 2) that was still alive is a crash,
     credited to a recent attacker. The room counts kills and deaths per player and sends `stats` (`[id, kills,
     deaths][]`) after every kill and to joiners; the Tab menu's K/D column reads `net.stats`.
-  - Effects: a shot-down jet explodes and its burning wreck falls (`Weapons.wreckPoses`); the generic crash burst is
-    skipped for it (`recentlyKilled`), and the crash camera follows the wreck.
+  - Effects: a shot-down jet breaks apart and its burning wreck falls (`Weapons.wreckPoses`, drawn by
+    `Explosions.drawWreck` as what is left of it); the crash breakup is skipped for it (`recentlyKilled`), and the crash
+    camera follows the wreck.
   - Offline (`?seed`, harnesses), the local world has the authority.
 - `Weapons` (`src/weapons/weapons.ts`) is the controller, owned by `FlightModule` (`flight.weapons`). Calls:
   `setPilot`, `sortie(vehicle)`, `land()`, `crashed()`, `tick(plane, armed)` per fixed step while flying or landing, and per frame `beginJets()`, `jet(...)`, `setOwnModel(m)`, `frame(...)`.
@@ -515,6 +517,21 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Sprites are soft capsules, additive glow or lit smoke, at least 1.3 px wide.
   - Rocks are flat-shaded instanced icosahedra and an AIM-9 mesh: fireballs, smoke balls, spray, debris, missiles on
     rails and in flight.
+- Explosions (`src/render/explosions.ts` choreography, `explosion-fx.ts` GPU, `jet-chunks.ts` model cuts), owned by
+  `FlightModule` (`flight.boom`), found by others with `explosionsFor(renderer)`. Pure presentation, deterministic from
+  the event and a seed (`seedOf(id, sortie)`), so every client sees the same breakup with no extra messages:
+  - `airKill` (via `Weapons.breakup`): a 1-2 frame flash, a faceted fireball whose facets cool to soot and roll into
+    dark smoke drifting with the sea's wind for ~10 s, sparks, shards, and a seeded set of the jet's own pieces
+    (canopy, wingtips, fins, stabilisers, sometimes a wing or the nose) flung off burning with smoke ribbons; the rest
+    stays on the falling wreck until `wreckImpact`.
+  - `crash` (own crash once per sortie, remote crashes once per first crashed pose): the whole jet in pieces. Sea: spray
+    column, crown, droplets, rooster tail, foam ring drawn into the wake field (`ocean-wake.ts`), steam if burning, light
+    pieces bobbing on the swell then sinking. Land or deck: fireball rising into a column, pieces that bounce and skid
+    and keep burning (on a deck they ride the ship, in its frame), flung earth or deck debris, dust, sparks, a scorch.
+  - `blast(seed, x, y, z, size, surface)` and `boatKill(seed, x, y, z, vx, vz, heading, size)` for anything else.
+  - Fireballs throw a short light (an additive glow and a pool on the surface, strong at night); nearby bursts add
+    camera trauma (`takeTrauma`, the seam shakes the chase and crash cameras). Puffs are opaque alpha-to-coverage
+    icospheres (no blended overdraw), pieces opaque, trail smoke one premultiplied ribbon, sparks additive; fixed pools.
 - Dev harness (not built): `weapons.html` (`src/weapons/harness.ts`), offline with AI drones (`src/weapons/drones.ts`).
   Params: `?drone=N`, `?hostile`, `?flares`, `?air`, `?f35`. Real-GPU checks: `scripts/weapons-shot.ts`; captures go
   to `captures/weapons/`.
@@ -656,7 +673,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   140 ms slapback off the water), `room` (a small metal cockpit). Then a gentle glue compressor, a -3 dB peak limiter,
   an output trim (loudness: the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()`
   dips engines, flybys and ambience under explosions and passes. `mixer.listener` (camera pose, set by jet-audio.ts each
-  frame) lets anything place a sound in the world. Levels and mute persist (`carrier.audio.v3`); **M mutes**.
+  frame) lets anything place a sound in the world. Levels and mute persist (`carrier.audio.v4`); **M mutes**.
 - **Live, state-driven sounds are procedural, by design** (user decision): everything that follows a jet's live state
   (engines, afterburner, cockpit engine, canopy wind, buffet, breathing, creaks, wind rush, flybys, the sonic crack, the
   stall warning) or the trigger (the M61, rounds cracking past) is synthesized every frame from rpm, throttle,
@@ -672,9 +689,19 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   get a supersonic crack and a falling whiz at the closest-approach moment, panned to their side. Levels: a burst -14
   dBFS RMS (the recorded loop was -15), cockpit -17, another jet's gun at 600 m -34. The boat's 25 mm and the CIWS were
   already procedural (boat-audio.ts, turret-audio.ts).
-- **The sound bank** (`sfx-bank.ts`, `sfx()`): 47 slots (`sfx-slots.ts`: carrier, gun impacts, missile, bomb, boom,
-  ship, sea, ui, hooks) with 3-4 ElevenLabs candidate takes each, 164 takes in `public/sfx/v3/<slot>-<n>.ogg` (48 kHz
-  stereo Ogg Opus 96-112 kb/s, 9.0 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
+- **One clear sound per moment** (user decision): a moment gets one sound, not layers. The launch is the engine
+  spooling to afterburner, one catapult take at the stroke, then engine and wind (a subtle gear retract; no hold-back
+  clank, shuttle slam, burner whump on deck or extra thud). The landing is one trap take (no tailhook, gear-down or
+  capture chime). Interface: one very quiet tick per button click, nothing on hover or when panels open. A kill is one
+  confirm. The bank's voice budget enforces it: at most 6 recorded one-shots at once, a per-slot cooldown (150 ms by
+  default, hull slams 2 s, creaks 6 s), and priority (explosions 5 > weapons 4 > deck events 3 > thunder 2 > ship
+  accents and interface 1, horn and creaks 0): a higher one ducks lesser ones already playing, replaces the least
+  important when the budget is full, and keeps accents from starting for half a second. Decorative levels are low by
+  default (interface bus 0.45, deck bed 0.45, a rare quiet horn). `captures/audio/v6-*` and `v6-sounds.md` compare the
+  launch and the landing before and after.
+- **The sound bank** (`sfx-bank.ts`, `sfx()`): 41 slots (`sfx-slots.ts`: carrier, gun impacts, missile, bomb, boom,
+  ship, sea, ui, hooks) with 3-4 ElevenLabs candidate takes each, 144 takes in `public/sfx/v3/<slot>-<n>.ogg` (48 kHz
+  stereo Ogg Opus 96-112 kb/s, 8.6 MB; one-shots -16 LUFS, loops -20 LUFS, interface -26 LUFS, true peak ≤ -1
   dBTP; loops crossfade-looped; `manifest.json` has each take's length, loop length, loudest moment, loudness).
   Prompts in `sfx-slots.ts`, processing in `scripts/sfx-cinematic.ts`. After the first gesture the bank loads every
   slot's playing takes category by category (~90 takes, ~4.5 MB); `play`/`loop` return null until a slot has loaded and
@@ -693,22 +720,21 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   the cone), pink roar behind a throttle-opened low-pass (rear; your own Hornet's two engines decorrelated left/right),
   brown body and a deep sub, an afterburner rumble that breathes plus a soft crackle and sub; spool inertia
   (`jet-math.ts`); distance gain, air absorption, a reverb send that grows with distance and a close water slapback;
-  the F-35 one deeper engine. The afterburner lighting adds a soft whump (`jet-sfx.ts`). The cockpit (`jet-cockpit.ts`):
+  the F-35 one deeper engine. The afterburner lighting in flight adds a soft whump (`jet-sfx.ts`). The cockpit (`jet-cockpit.ts`):
   the engine through the airframe and the cockpit room, canopy wind by dynamic pressure, buffet, breathing under g,
   creaks, the stall warble, plus recorded `rain-canopy` when it rains. Flybys (`jet-sfx.ts`): an air rush, a low
   thunder body and (fast/burner) a bright tear, peaking on the closest approach predicted each frame (`jet-math.ts`)
   and panned with the jet, on top of the engine's own Doppler; head-on merges above 300 m/s get a procedural N-wave
   crack. Levels (offline, 0.5 s RMS): your Hornet in chase idle -38, military -33, afterburner -28 dBFS against a gun
   burst at -15 and medium weather at -21; a close pass peaks at -20, a distant one at -27.
-- **Where each recorded slot plays**: carrier ops (catapult, shuttle slam, trap, gear, tailhook). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
+- **Where each recorded slot plays**: carrier ops (the catapult shot, the trap, the gear retract). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
   impacts (metal when we are hit); cockpit tones synthesized (sine seeker growl and
   lock, two-tone warning chimes) on the UI bus. Explosions (`jet-boom.ts`, `boomsFor().play(kind, dist, size)`): the
   scenario's take crossfading into `boom-far` from 400 m to 2.2 km, travel delay, heavy reverb and slapback, a water
   geyser for bombs in the sea. Sea and weather (`weather-audio.ts`): ocean beds by sea state (fading with altitude),
   wind light/gale, rain light/heavy, thunder near/far with the lightning crack. Ships (`ship-audio.ts`, fed by
   `seam.ts` `audio.ships(...)`): the deck bed near a hull, hull slams (`Ship.slams`), creaks in heavy seas, a rare horn.
-  Interface (`ui-audio.ts`): clicks and hovers on any button, a soft open on E / Tab / `, the kill confirm and the
-  landing-capture cue. Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
+  Interface (`ui-audio.ts`): a very quiet tick per button click; the kill confirm (`weapon-audio.ts`). Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
   `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
   60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel) on hailmary into

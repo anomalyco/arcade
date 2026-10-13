@@ -19,7 +19,7 @@ export class ShipAudio {
   private bed: LoopHandle | null = null
   private slams = new Map<number, number>()
   private creakIn = 8
-  private hornIn = 90 + Math.random() * 120
+  private hornIn = 180 + Math.random() * 180
 
   constructor(private mixer: Mixer) {}
 
@@ -44,7 +44,8 @@ export class ShipAudio {
     const level = near ? (1 - smoothstep(120, 700, best)) * (1 - smoothstep(40, 400, h)) : 0
     if (!this.bed && level > 0.01 && bank.ready("carrier-bed")) this.bed = bank.loop("carrier-bed", { bus: "weather", reverb: 0 })
     if (this.bed && !this.bed.playing) this.bed = null
-    this.bed?.set({ gain: level * 0.9 })
+    // Subtle: a bed under everything, not a feature.
+    this.bed?.set({ gain: level * 0.45 })
     if (!near || best > 600) return
     // The hull working in a big sea.
     const sea = this.mixer.sea
@@ -52,14 +53,14 @@ export class ShipAudio {
       this.creakIn -= dt * sea
       if (this.creakIn <= 0) {
         this.creakIn = 6 + Math.random() * 10
-        bank.play("hull-creak", { at: [near.x, near.heave + 6, near.z], ref: 150, gain: 0.5 + 0.5 * sea })
+        bank.play("hull-creak", { at: [near.x, near.heave + 6, near.z], ref: 150, gain: 0.3 + 0.3 * sea })
       }
     }
     // The horn, rarely.
     this.hornIn -= dt
     if (this.hornIn <= 0) {
-      this.hornIn = 150 + Math.random() * 240
-      bank.play("ship-horn", { at: [near.x, near.heave + 40, near.z], ref: 300, gain: 0.55, echo: 0.4, reverb: 0.7, travel: true })
+      this.hornIn = 300 + Math.random() * 300
+      bank.play("ship-horn", { at: [near.x, near.heave + 40, near.z], ref: 300, gain: 0.3, echo: 0.4, reverb: 0.7, travel: true })
     }
   }
 }

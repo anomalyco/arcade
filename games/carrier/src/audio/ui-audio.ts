@@ -2,55 +2,34 @@ import { type Mixer, mixer as sharedMixer } from "./mixer"
 import { sfx } from "./sfx-bank"
 
 /**
- * Sparse, quiet interface sounds from the sound bank, with no wiring in the menus: a click on any button (menus, the
- * debug menu, the load screen), a barely-there tick when the pointer moves onto one, and a soft open when E (ship
- * operations), Tab (players) or ` (debug) opens a panel. The kill confirm and the landing-capture cue are played by
- * weapon-audio.ts and jet-audio.ts. Silent until the "ui" slots load.
+ * Interface sound, minimal on purpose: one very quiet tick when a button is clicked (menus, LAUNCH, the debug menu), at
+ * most every 120 ms. Nothing on hover and nothing when a panel opens or closes; the kill confirm is played by
+ * weapon-audio.ts. Silent until the "ui" slots load.
  */
 export class UiAudio {
-  private lastHover = 0
   private lastClick = 0
-  private hovered: Element | null = null
 
-  constructor(private mixer: Mixer = sharedMixer()) {
-    if (typeof window === "undefined") return
-    const target = (e: Event) => (e.composedPath()[0] as Element | undefined)?.closest?.("button, [role=button]") ?? null
-    window.addEventListener(
-      "click",
-      (e) => {
-        if (!target(e)) return
-        const now = performance.now()
-        if (now - this.lastClick < 40) return
-        this.lastClick = now
-        this.play("ui-click", 0.9)
-      },
-      true,
-    )
-    window.addEventListener(
-      "pointerover",
-      (e) => {
-        const b = target(e)
-        if (!b || b === this.hovered) return
-        this.hovered = b
-        const now = performance.now()
-        if (now - this.lastHover < 90) return
-        this.lastHover = now
-        this.play("ui-hover", 0.45)
-      },
-      true,
-    )
-    window.addEventListener(
-      "keydown",
-      (e) => {
-        if (e.repeat || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-        if (e.code === "KeyE" || e.code === "Tab" || e.code === "Backquote" || e.code === "F2") this.play("ui-open", 0.7)
-      },
-      true,
-    )
+  constructor(
+    private mixer: Mixer = sharedMixer(),
+    /** Listen to the page (off: scripted renders call the methods). */
+    listen = true,
+  ) {
+    if (!listen || typeof window === "undefined") return
+    const button = (e: Event) => (e.composedPath()[0] as Element | undefined)?.closest?.("button, [role=button]") ?? null
+    window.addEventListener("click", (e) => button(e) && this.clicked(), true)
   }
 
-  play(slot: string, gain = 1): void {
-    if (!this.mixer.ctx) return
-    sfx(this.mixer).play(slot, { bus: "ui", gain, reverb: 0 })
+  /** A button was clicked. */
+  clicked(): void {
+    const now = performance.now()
+    if (now - this.lastClick < 120) return
+    this.lastClick = now
+    if (this.mixer.ctx) sfx(this.mixer).play("ui-click", { bus: "ui", gain: 0.35, reverb: 0 })
   }
+
+  /** The pointer moved onto a button: silent (kept so scripted renders can show it). */
+  hover(): void {}
+
+  /** A panel opened (E, Tab, `): silent. */
+  opened(): void {}
 }

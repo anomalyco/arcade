@@ -382,6 +382,15 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   lights are additive sprites with a minimum pixel size, so a distant carrier still reads as a cluster of points.
   Throughput at 1536×1024 on the M4 Max: chase view 0.74 ms by day, 0.77 ms at night; jet view 0.60 ms by day,
   0.65 ms at night.
+- **Explosions as alpha-to-coverage faceted puffs, real model chunks and one-ribbon trails.** Carrier
+  (`games/carrier/src/render/explosion-fx.ts`, `explosions.ts`, `jet-chunks.ts`): fireballs and smoke are jittered
+  icospheres drawn opaque with alpha-to-coverage (the clouds' trick), so a thick cloud costs no blended overdraw and
+  sorts itself; each facet cools on its own (hashed per facet), so a ball reads as fire and soot mixed. The jet breaks
+  into its own GLB triangles, split by centroid into ~13 chunks. Smoke trails are capsule segments whose drift is one
+  closed-form function of age, so a segment's tail (as old as the previous head) lands exactly on it: no beads, no
+  ladder. Everything is seeded from (player id, sortie): no network messages. Throughput (1536×1024, M4 Max, 7
+  alternating pairs of 60 frames): a kill at 70 m plus two more big bursts (77 puffs, 69 pieces, 211 glows, 197 trail
+  segments) cost +0.10 ms per frame (0.692 vs 0.592 ms).
 - **Per-pass timestamps lie on an idle Apple GPU.** At a light vsync'd load the M4 Max clocks down, so carrier's
   per-pass timestamps read 5–30 ms for a frame that costs 0.9 ms flat out. Measure throughput instead: encode about
   60 frames back to back through the renderer and divide the wall time (`games/carrier/scripts/ocean-shot.ts --bench`).
@@ -1051,4 +1060,9 @@ Candidates from the code audits; measure and playtest before moving any into the
   on the next round boundary, so bursts start on a clean transient and the overheat cut is exact. Offline: a burst at
   -14 dBFS RMS, rounds visibly 20 ms apart in the spectrogram. Rounds zipping past are found by each live round's
   closest approach to the camera within the frame and scheduled at that instant.
+- **One clear sound per moment, enforced by a voice budget.** Carrier's takeoff stacked eight one-shots (menu open, hover,
+  click, hold-back clank, burner whump, catapult plus an extra thud, shuttle slam, gear) and players called it
+  cluttered. Each moment now gets one sound (`games/carrier/captures/audio/v6-sounds.md`), and the bank
+  (`games/carrier/src/audio/sfx-bank.ts`) caps recorded one-shots at 6 with per-slot cooldowns and priorities:
+  explosions duck and outrank weapons, which outrank deck events, thunder, then accents and UI.
 

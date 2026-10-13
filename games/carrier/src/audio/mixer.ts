@@ -13,7 +13,7 @@
  *   ui (menus, cues, warnings; dry) ──────────────────────────────────────────┘
  *
  * Started on the first user gesture (browsers require one), suspended while the tab is hidden. M mutes. Levels and
- * mute persist in localStorage ("carrier.audio.v3"). `duck` dips engines, flybys and ambience so explosions punch
+ * mute persist in localStorage ("carrier.audio.v4"). `duck` dips engines, flybys and ambience so explosions punch
  * through. The reverbs are synthesized impulse responses (a big soft open-air ocean, a small metal cockpit). Also holds
  * the shared noise bank (procedural placeholders) and the listener pose (`listener`, set each frame by jet-audio.ts) so
  * any module can place a sound in the world. Works on an OfflineAudioContext too (`use`), for scripted renders.
@@ -23,8 +23,8 @@ export type Level = "master" | "engines" | "flyby" | "sfx" | "weapons" | "weathe
 export type Levels = Record<Level, number>
 export type Bus = "engines" | "own" | "flyby" | "sfx" | "weapons" | "weather" | "ui"
 
-export const DEFAULT_LEVELS: Readonly<Levels> = { master: 1, engines: 0.7, flyby: 0.8, sfx: 0.9, weapons: 0.9, weather: 0.8, ui: 0.7 }
-const STORE = "carrier.audio.v3"
+export const DEFAULT_LEVELS: Readonly<Levels> = { master: 1, engines: 0.7, flyby: 0.8, sfx: 0.9, weapons: 0.9, weather: 0.8, ui: 0.45 }
+const STORE = "carrier.audio.v4"
 /** Output trim after the glue and limiter (which add their own makeup gain): sets the integrated loudness of a typical
  *  dogfight near -16 LUFS (scripts/audio-demo.ts "montage") with peaks under -1 dBFS. */
 const MAKEUP_TRIM = 0.9

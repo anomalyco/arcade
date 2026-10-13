@@ -295,8 +295,9 @@ export class WeaponAudio {
 
   /** Our rounds hit an enemy (a crisp tick), or a kill (a heavier one). */
   hit(kill = false): void {
-    if (kill && this.ctx) sfx(mixer()).play("ui-kill", { bus: "ui", reverb: 0 })
-    this.burst(this.white, "highpass", kill ? 2500 : 4000, kill ? 1500 : 3000, kill ? 0.3 : 0.16, 0.001, kill ? 0.12 : 0.05)
+    // A kill: one sound, the recorded confirm (the procedural tick until it loads). A hit: a quiet tick.
+    if (kill && this.ctx && sfx(mixer()).play("ui-kill", { bus: "ui", reverb: 0, gain: 0.7 })) return
+    this.burst(this.white, "highpass", kill ? 2500 : 4000, kill ? 1500 : 3000, kill ? 0.22 : 0.08, 0.001, kill ? 0.12 : 0.05)
   }
 
   /** We were hit. */

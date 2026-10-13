@@ -27,8 +27,7 @@ export type FlybyHandle = { id: number; move(at: { x: number; y: number; z: numb
 
 /**
  * Jet one-shots. Flybys and the sonic crack are procedural (timed to the jet's predicted pass, they must stay locked to
- * it). Discrete deck events that don't follow the jet's live state use recorded slots (sfx-bank.ts: the catapult shot
- * and shuttle slam, the trap, gear, tailhook), with a procedural placeholder until the slot has loaded. Recorded shots go
+ * it). Discrete deck events use one recorded slot each (sfx-bank.ts: the catapult shot, the trap, the gear), with a procedural placeholder until the slot has loaded. Recorded shots go
  * through the bank's spatial chain; procedural ones get a panner, an air-absorption low-pass and reverb/echo sends.
  */
 export class JetSfx {
@@ -120,17 +119,16 @@ export class JetSfx {
     this.burst(n.white, "bandpass", 2200, 900, 1.2, gain * 0.25, 0.001, 0.08, o)
   }
 
-  /** The catapult firing: the shuttle's thunk, the steam's rush along the track, the deck's shudder. */
+  /**
+   * The catapult firing: one sound, the recorded shot (thump, steam and the jet tearing away) at the start of the stroke.
+   * Until it loads, one procedural thump and whoosh.
+   */
   catapult(gain: number, o: ShotOptions = {}): void {
-    const n = this.mixer.noise
-    const recorded = this.play("catapult", { ...o, gain, echo: 0.3 })
-    // Always a low thud under it: the deck taking the shot.
-    this.tone("sine", 70, 32, gain * (recorded ? 0.5 : 0.8), 0.004, 0.7, o)
-    if (recorded) return
-    this.thunk(gain * 0.8, o)
-    this.burst(n.white, "bandpass", 3800, 1600, 0.7, gain * 0.35, 0.05, 2.6, o)
-    this.burst(n.pink, "lowpass", 600, 2500, 0.6, gain * 0.4, 1.2, 2.4, o)
+    if (this.play("catapult", { ...o, gain, echo: 0.3 })) return
+    this.tone("sine", 75, 32, gain * 0.8, 0.004, 0.7, o)
+    this.burst(this.mixer.noise.pink, "lowpass", 600, 2500, 0.6, gain * 0.4, 0.3, 2.2, o)
   }
+
 
   /** The afterburner lighting: a soft low whump and a short swell of rumble (the engine voice carries the roar). */
   burnerLight(gain: number, o: ShotOptions = {}): void {
@@ -140,49 +138,25 @@ export class JetSfx {
     this.burst(n.crackle, "bandpass", 1600, 900, 0.6, gain * 0.15, 0.05, 0.6, o)
   }
 
-  /** The hold-back bar taking the strain as the engines spool: a metallic clank. */
-  holdback(gain: number, o: ShotOptions = {}): void {
-    const n = this.mixer.noise
-    this.burst(n.white, "bandpass", 1600, 1200, 6, gain * 0.5, 0.001, 0.18, o)
-    this.tone("triangle", 410, 380, gain * 0.12, 0.002, 0.25, o)
-    this.burst(n.brown, "lowpass", 500, 120, 0.7, gain * 0.5, 0.002, 0.2, o)
-  }
 
-  /** The shuttle slamming into the water brake at the bow as the jet leaves. */
-  shuttleBrake(gain: number, o: ShotOptions = {}): void {
-    if (this.play("shuttle-slam", { ...o, gain, echo: 0.3 })) return
-    const n = this.mixer.noise
-    this.tone("sine", 60, 30, gain * 0.7, 0.003, 0.9, o)
-    this.burst(n.brown, "lowpass", 700, 90, 0.7, gain * 0.8, 0.003, 0.7, o)
-    this.burst(n.white, "highpass", 2500, 1200, 0.7, gain * 0.25, 0.002, 0.5, o)
-  }
 
-  /** The trap: wheels and hook slam the deck, the wire screams out under tension, the jet stops. */
+
+
+  /** The trap: one sound, the recorded touchdown and wire pull-out; until it loads, one procedural thud. */
   trap(gain: number, o: ShotOptions = {}): void {
-    const n = this.mixer.noise
     if (this.play("trap", { ...o, gain })) return
     this.thunk(gain, o)
-    this.burst(n.pink, "bandpass", 1400, 420, 3, gain * 0.35, 0.05, 1.7, o)
-    this.tone("sawtooth", 900, 260, gain * 0.05, 0.05, 1.6, { ...o, cutoff: Math.min(o.cutoff ?? 20000, 3000) })
-    this.thunk(gain * 0.5, { ...o, delay: (o.delay ?? 0) + 1.6 })
   }
 
-  /** Gear moving: the hydraulic whirr, then the lock's clunk. */
+
+  /** The gear locking up: one subtle recorded take; until it loads, one soft thunk. */
   gear(up: boolean, gain: number, o: ShotOptions = {}): void {
-    const n = this.mixer.noise
-    if (this.play("gear", { ...o, gain: gain * 0.8, rate: up ? 1 : 0.94 })) return
-    this.tone("sawtooth", 95, up ? 130 : 110, gain * 0.035, 0.15, 2.1, { ...o, cutoff: 900 })
-    this.burst(n.pink, "bandpass", 700, 900, 1.5, gain * 0.15, 0.2, 2.1, o)
-    this.thunk(gain * 0.6, { ...o, delay: (o.delay ?? 0) + 2.1 })
+    if (this.play("gear", { ...o, gain, rate: up ? 1 : 0.94 })) return
+    this.thunk(gain * 0.5, { ...o, delay: (o.delay ?? 0) + 2 })
   }
 
-  /** The tailhook dropping. */
-  hook(gain: number, o: ShotOptions = {}): void {
-    if (this.play("tailhook", { ...o, gain })) return
-    const n = this.mixer.noise
-    this.burst(n.white, "bandpass", 1900, 1500, 4, gain * 0.3, 0.001, 0.12, o)
-    this.burst(n.brown, "lowpass", 600, 150, 0.7, gain * 0.5, 0.002, 0.25, o)
-  }
+
+
 
   /** A crash: a big blast and its long tail; into the sea, the splash take on top. */
   crash(water: boolean, gain: number, o: ShotOptions = {}): void {

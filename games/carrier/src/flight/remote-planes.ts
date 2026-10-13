@@ -53,8 +53,8 @@ export class RemotePlanes {
     }
   }
 
-  /** Jets that crashed: where, and how long ago (s) at sea time t. */
-  *crashes(t: number): Generator<{ id: number; x: number; y: number; z: number; age: number }> {
+  /** Jets that crashed: where, how long ago (s) at sea time t, and the first crashed pose (its velocity, attitude). */
+  *crashes(t: number): Generator<{ id: number; x: number; y: number; z: number; age: number; snap: PlaneTuple }> {
     const rt = t - DELAY
     for (const [id, r] of this.jets) {
       const s = r.snaps
@@ -62,7 +62,7 @@ export class RemotePlanes {
       if (!last || last[1] !== 2) continue
       let first = last
       for (let i = s.length - 1; i >= 0 && s[i]![1] === 2; i--) first = s[i]!
-      yield { id, x: first[2], y: first[3], z: first[4], age: rt - first[0] }
+      yield { id, x: first[2], y: first[3], z: first[4], age: rt - first[0], snap: first }
     }
   }
 

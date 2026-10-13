@@ -26,10 +26,8 @@ const L = "cinematic, high fidelity, seamless loop, steady, no music, no voice"
 const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, number, string])[] = [
   // Carrier operations.
   ["catapult", "carrier", "Catapult shot", false, 4, 6, `Steam catapult launch on an aircraft carrier: heavy steel hold-back clank, violent rush of steam hissing along the deck, jet engines roaring at full power accelerating away, deep sub thump, ${C}`],
-  ["shuttle-slam", "carrier", "Catapult shuttle slam", false, 4, 3, `Massive steel catapult shuttle slamming into a water brake at the bow of an aircraft carrier: deep metallic boom, burst of steam, ringing steel, ${C}`],
   ["trap", "carrier", "Arrested landing", false, 4, 5, `Fighter jet arrested landing on an aircraft carrier: heavy tyre thud and chirp on the steel deck, the arresting cable screaming as it pays out, engines spooling down, deep metallic thump, ${C}`],
   ["gear", "carrier", "Landing gear", false, 4, 3, `Fighter jet landing gear retracting: smooth hydraulic whine, mechanical motion, heavy solid clunk as it locks, close, ${C}`],
-  ["tailhook", "carrier", "Tailhook", false, 4, 2, `Fighter jet tailhook dropping and locking: heavy metallic clunk with a short hydraulic hiss, close, ${C}`],
   // Gun impacts (the M61 itself is procedural: gun-audio.ts).
   ["impact-water", "gun", "Rounds into water", false, 3, 2, `Bullets ripping into the ocean surface: rapid sharp water splashes and spray, ${C}`],
   ["impact-metal", "gun", "Rounds into metal", false, 3, 2, `Cannon rounds hitting a metal aircraft: sharp metallic impacts, sparks, ringing debris, ${C}`],
@@ -70,11 +68,7 @@ const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, nu
   ["lightning-crack", "sea", "Lightning crack", false, 3, 3, `Close lightning bolt crack: violent electric snap and tearing crack, ${C}`],
   // Interface.
   ["ui-click", "ui", "UI click", false, 3, 0.5, "Premium minimal user interface click, soft tactile tick, clean, subtle, no music, no voice"],
-  ["ui-hover", "ui", "UI hover", false, 3, 0.5, "Very subtle soft user interface hover tick, airy, clean, minimal, no music, no voice"],
-  ["ui-confirm", "ui", "UI confirm", false, 3, 1, "Premium user interface confirm sound, soft warm two-note chime, clean, subtle, no music, no voice"],
-  ["ui-open", "ui", "UI panel open", false, 3, 1, "Subtle user interface panel open, soft airy whoosh with a faint click, clean, premium, no music, no voice"],
   ["ui-kill", "ui", "Kill confirm", false, 3, 1.5, "Satisfying subtle kill confirmation for a military game, deep soft thump with a short clean metallic ping, premium, no music, no voice"],
-  ["ui-capture", "ui", "Landing capture", false, 3, 2, "Gentle cockpit confirmation tone, soft clean two-tone chime, calm, premium, no music, no voice"],
   // For the gunnery and boat audio (wired by their owners through sfx-bank.ts).
   ["ciws", "hooks", "CIWS (loop)", true, 3, 5, `Phalanx CIWS close-in weapon system firing continuously: brutal tearing brrrt of a 20 mm gatling gun, deep body, ${L}`],
   ["sam-launch", "hooks", "SAM launch", false, 3, 5, `Surface-to-air missile launching from a warship vertical launch cell: explosive ignition blast, roaring rocket climbing away, deep sub, ${C}`],

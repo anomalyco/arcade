@@ -64,6 +64,7 @@ export class FlightCam {
   framing = { yaw: 0, pitch: 0, dist: 1 }
   private frame = { yaw: 0, pitch: 0, dist: 1 }
   private placed = false
+  private shakeT = 0
   private time = 0
   private view = new Float64Array(16)
   private proj = new Float64Array(16)
@@ -181,21 +182,27 @@ export class FlightCam {
 
   /**
    * After a crash: the camera stops where it was, climbs clear of the water (never below `floor`) and backs away,
-   * looking at the wreck at (x, y, z), horizon level.
+   * looking just above the wreck at (x, y, z) (where its fireball and smoke rise), horizon level, shaken by `trauma`.
    */
-  crashView(x: number, y: number, z: number, floor: number, dt: number, aspect: number): void {
+  crashView(x: number, y: number, z: number, floor: number, dt: number, aspect: number, trauma = 0): void {
     let dx = this.eye[0] - x
     let dz = this.eye[2] - z
     const d = Math.hypot(dx, dz) || 1
     dx /= d
     dz /= d
-    const back = d < 60 ? (60 - d) * Math.min(1, dt * 2) : 0
+    const back = d < 110 ? (110 - d) * Math.min(1, dt * 2) : 0
     this.eye[0] += dx * back
     this.eye[2] += dz * back
-    const want = Math.max(floor + 14, this.eye[1])
+    // Never inside a hillside (a crash into a slope leaves the chase camera in it): out at once, then up clear.
+    if (this.eye[1] < floor) this.eye[1] = floor
+    const want = Math.max(floor + 16, this.eye[1])
     this.eye[1] += (want - this.eye[1]) * Math.min(1, dt * 3)
-    const fx = x - this.eye[0]
-    const fy = y - this.eye[1]
+    const s2 = trauma * trauma
+    this.shakeT += dt
+    const jx = s2 * FLIGHT_CAM.shake * 2 * Math.sin(this.shakeT * 37.1)
+    const jy = s2 * FLIGHT_CAM.shake * 2 * Math.sin(this.shakeT * 43.7 + 1.3)
+    const fx = x - this.eye[0] - jx
+    const fy = y + 6 - this.eye[1] - jy
     const fz = z - this.eye[2]
     const l = Math.hypot(fx, fy, fz) || 1
     this.forward[0] = fx / l

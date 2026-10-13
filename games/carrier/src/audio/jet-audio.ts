@@ -100,7 +100,7 @@ type Track = {
   crashKey: number
 }
 
-type JetEvent = { type: "burner" | "catapult" | "holdback" | "brake" | "trap" | "gear-up" | "gear-down" | "hook" | "crash"; own: boolean; x: number; y: number; z: number; water: boolean }
+type JetEvent = { type: "burner" | "catapult" | "trap" | "gear-up" | "crash"; own: boolean; x: number; y: number; z: number; water: boolean }
 
 /**
  * Every jet's sound. The flight module feeds it each frame (`own`, `remote`, `crash`, then `frame` with the camera):
@@ -266,25 +266,21 @@ export class JetAudio {
     // Events from phase changes.
     const lp = f.launch?.phase ?? ""
     if (phase === "launching" && lp !== this.ownLaunch) {
-      if (lp === "spool") this.event("holdback", true, p.x, p.y, p.z)
       if (lp === "stroke") this.event("catapult", true, p.x, p.y, p.z)
     }
-    if (this.ownPhase === "launching" && phase === "flying") this.event("brake", true, p.x, p.y, p.z)
     const ld = f.landing?.phase ?? ""
     if (phase === "landing" && this.ownLanding === "approach" && ld === "trap") this.event("trap", true, p.x, p.y, p.z)
     if (crashed && this.ownPhase !== "crashed" && this.ownPhase !== "" && f.plane.crashed !== "shot" && f.plane.crashed !== "lost") this.event("crash", true, p.x, p.y, p.z, f.plane.crashed === "sea")
     if (pose && !crashed) {
       const g = pose.gear
       const dir = g < this.ownGear - 1e-4 ? -1 : g > this.ownGear + 1e-4 ? 1 : 0
-      if (dir !== 0 && dir !== this.ownGearDir) this.event(dir < 0 ? "gear-up" : "gear-down", true, p.x, p.y, p.z)
+      // Only the retract, once, subtly (the landing has the trap).
+      if (dir < 0 && dir !== this.ownGearDir) this.event("gear-up", true, p.x, p.y, p.z)
       if (dir !== 0 || g <= 0 || g >= 1) this.ownGearDir = dir
       this.ownGear = g
       const h = pose.hook ?? 0
-      if (this.ownHook < 0.5 && h >= 0.5) this.event("hook", true, p.x, p.y, p.z)
       this.ownHook = h
     }
-    // The landing autopilot took the jet: a soft cockpit cue.
-    if (phase === "landing" && this.ownPhase === "flying") sfx(this.mixer).play("ui-capture", { bus: "ui", reverb: 0, gain: 0.8 })
     this.ownPhase = phase
     this.ownLaunch = lp
     this.ownLanding = ld
@@ -493,7 +489,7 @@ export class JetAudio {
       t.rpm = t.fresh ? rpmFor(t.throttle) : spoolStep(t.rpm, rpmFor(t.throttle), dt)
       t.burner += (t.boost - t.burner) * ease(dt, t.boost > t.burner ? 0.18 : 0.4)
       // The afterburner lighting: a soft thump and a swell of roar.
-      if (t.boost > 0.5 && t.lit < 0.5 && !t.fresh && (t.mode === 1 || t.id === OWN)) this.event("burner", own, t.x, t.y, t.z)
+      if (t.boost > 0.5 && t.lit < 0.5 && !t.fresh && t.mode === 1) this.event("burner", own, t.x, t.y, t.z)
       t.lit = t.boost
       const dx = t.x - ex
       const dy = t.y - ey
@@ -636,22 +632,11 @@ export class JetAudio {
       case "catapult":
         s.catapult(g, o)
         break
-      case "holdback":
-        s.holdback(g * 0.8, o)
-        break
-      case "brake":
-        s.shuttleBrake(g * 0.8, o)
-        break
       case "trap":
         s.trap(g, o)
         break
       case "gear-up":
-      case "gear-down":
-        // Felt more than heard from outside.
-        s.gear(e.type === "gear-up", g * (head ? 0.8 : 0.3), o)
-        break
-      case "hook":
-        s.hook(g * 0.8, o)
+        s.gear(true, g * (head ? 0.45 : 0.2), o)
         break
       case "crash": {
         // The recorded crash for the surface (jet-boom.ts), else the procedural one.

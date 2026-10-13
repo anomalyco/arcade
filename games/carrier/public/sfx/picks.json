@@ -4,22 +4,12 @@
   "trim": 0,
   "ratings": []
  },
- "shuttle-slam": {
-  "take": 1,
-  "trim": 0,
-  "ratings": []
- },
  "trap": {
   "take": 4,
   "trim": 0,
   "ratings": []
  },
  "gear": {
-  "take": 2,
-  "trim": 0,
-  "ratings": []
- },
- "tailhook": {
   "take": 2,
   "trim": 0,
   "ratings": []
@@ -189,27 +179,7 @@
   "trim": 0,
   "ratings": []
  },
- "ui-hover": {
-  "take": 1,
-  "trim": 0,
-  "ratings": []
- },
- "ui-confirm": {
-  "take": 1,
-  "trim": 0,
-  "ratings": []
- },
- "ui-open": {
-  "take": 1,
-  "trim": 0,
-  "ratings": []
- },
  "ui-kill": {
-  "take": 1,
-  "trim": 0,
-  "ratings": []
- },
- "ui-capture": {
   "take": 1,
   "trim": 0,
   "ratings": []

@@ -247,7 +247,7 @@ export class Flight {
     this.cam.framing.yaw = showDeck ? 0.5 : 0
     this.cam.framing.pitch = showDeck ? -0.32 : 0
     this.cam.framing.dist = showDeck ? 1.6 : 1
-    if (this.phase === "crashed") this.cam.crashView(p.x, p.y, p.z, seaHeight(this.cam.eye[0], this.cam.eye[2]), dt, aspect)
+    if (this.phase === "crashed") this.cam.crashView(p.x, p.y, p.z, seaHeight(this.cam.eye[0], this.cam.eye[2]), dt, aspect, Math.min(1, this.trauma))
     else this.cam.update(p, dt, aspect, Math.min(1, this.trauma), look, this.eyeModel, VEHICLES[this.vehicle].flight)
 
     const pose = this.pose
