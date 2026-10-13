@@ -260,12 +260,22 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 - **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
   and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
   bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.
-- **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes four-connected arrival
+- **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes corner-safe weighted arrival
   distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
   restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and
   eight nearby lights. Rays stop at stored MSAA depth, render at at most 480×320 with 24 steps, then depth-aware
   upsampling places them before bloom. Shots carve temporary cylinders. Walls ≥1.8 m and glass seal the field;
   low wrecks remain depth occluders. This is visual only; fluid pressure and vertical furniture flow are unimplemented.
+- **Separate empty gas from solid geometry.** The room-smoke shader previously rejected samples whenever the
+  nearest density byte was zero, defeating linear interpolation and producing square columns during growth/fade.
+  An independent occupancy channel retains wall clipping while RG16F density preserves the soft onset. A 16-direction
+  weighted field replaces Manhattan travel; tests bound angular radius variation to 5% and 60 Hz front jumps to
+  0.12 m, less than a quarter cell. The same 24-step/480×320 renderer produces the matched Metal frame-20/40/80/160
+  captures in `perf/smoke-volume-refinement.md`. Diagonal filter taps also respect adjacent walls; an actual WGSL
+  compute probe reads zero across a blocked corner and positive density in an empty growing-front cell.
+  Seven paired measurements show +0.166 ms render GPU time (MAD 0.008 ms); upload-inclusive queue timing is noisier
+  at +0.206 ms (MAD 0.032 ms). Storage rises by 83,004 CPU bytes
+  and 27,648 field-texture bytes. Both paths remain bounded, and updates allocate no arrays.
 - **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
   `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
   vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.

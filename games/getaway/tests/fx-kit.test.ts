@@ -8,7 +8,8 @@ test("smoke cannot cross a thin sealed wall; an open door admits a delayed wave"
   const door=new SmokeVolumes();door.reset([[0.1,-12,0.15,1],[0.1,3,0.15,12]]);door.spawn(-2,0,7,10)
   for(let i=0;i<50;i++){sealed.update(0.1);door.update(0.1)}
   expect(at(sealed,-1,0)).toBeGreaterThan(0);expect(at(sealed,1,0)).toBe(0)
-  expect(at(door,1,0)).toBeGreaterThan(0);expect(at(door,0.25,0)).toBe(0)
+  // Sample inside the 0.1–0.15m wall rather than an incidental neighbouring grid cell.
+  expect(at(door,1,0)).toBeGreaterThan(0);expect(at(door,0.125,0)).toBe(0)
 })
 test("bullet carve refills, then every cloud expires and releases its budget",()=>{
   const v=new SmokeVolumes();for(let i=0;i<4;i++)expect(v.spawn(i*0.1,0)).toBe(true)

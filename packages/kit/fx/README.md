@@ -33,8 +33,36 @@ pool or its instance layout. Its existing particles have not been migrated in th
 Call `SmokeVolumes.reset(walls)` when the map changes. `spawn(x,z,radius,life,power,soot)` starts a finite cloud;
 `sustain(x,z)` keeps a nearby wreck plume alive. `carve(ax,az,bx,bz,radius)` clears a temporary horizontal cylinder
 and `update(dt)` refills it. Four slots each hold a 48² field at 0.5 m spacing. Full pools reject new clouds.
-Flood-fill arrival distance follows doors instead of cutting straight through walls. Thin walls are rasterized
-conservatively; the game supplies walls, windows and glass once per map.
+Sixteen-direction weighted arrival distance follows doors instead of cutting straight through walls. Short moves
+check their entire cell rectangle, including diagonal corners. Thin walls are rasterized conservatively; the game
+supplies walls, windows and glass once per map. Unobstructed travel has at most 2.75% angular error before filtering.
+
+`new SmokeVolumes(partialSettings)` accepts typed settings from `fx/volume-settings.ts`. Existing spawn arguments
+override radius, total life and power. Without overrides, total life is growth time + hold + fade. Radius is the
+outer travel limit in metres. `reset(walls, seed)` resets noise motion deterministically (default seed 7).
+`density` is now a Float32Array of optical density multipliers; `solid` is independent geometry. The renderer uploads
+the preallocated `field` as RG16F and filters density even where the nearest density is zero. Nearest occupancy
+still excludes wall cells. Bilinear reconstruction excludes a diagonal tap if either intervening neighbour is solid,
+so filtering cannot skip a corner ahead of the arrival wave. Float16 upload preserves faint onsets that previously
+rounded down in the byte field.
+
+| Group | Controls (range) |
+| --- | --- |
+| Shape | Radius 2–8 m; height 1–4 m; edge softness 0.6–2.5 m; billow scale 0.5–2× |
+| Motion | Growth 0.6–4 s; rise 0–0.8 m/s; wind −0.8–0.8 m/s; turbulence 0–1× |
+| Appearance | Extinction 0.5–5 /m; lighting response 0–1.5× |
+| Lifetime | Hold 0–10 s; fade 1–6 s |
+
+Radius, growth, hold and fade apply at the next spawn and say “retrigger” in the inspector. Other controls are live;
+wind/rise integrate phase rather than multiplying absolute time, so speed edits do not jump to a new noise phase.
+Turbulence controls noise contrast and warp strength; its transport speed comes from wind/rise. Tint remains supplied
+by scene lights and the existing soot argument. Validate external numeric input with `smokeSettings(partial)`.
+The Lab's Copy and Workbench Export include all twelve fields and the separate effect seed. Group Randomize samples
+the middle 60% of each range and constrains softness to 40% of the randomized radius. Reset restores defaults.
+
+Call `update(dt)` once per presentation frame. Both the Lab and Blackout's `Game.build` already do this. Density is
+evaluated from continuous age, with no lower-rate simulation tick or cached cell activation to interpolate. Carve
+refill advances with elapsed time. Frame/substep replay is tested at 30 Hz, 60 Hz and one equivalent large step.
 
 Create `VolumeRenderer(device)`. On resize, call `resize(width,height,readableDepthView)` with the game's stored
 four-sample depth attachment. For a depth-stencil texture, use a depth-only view. Fill the persistent `uniforms`:
@@ -58,7 +86,8 @@ This shallow model treats every supplied rectangle as a sealed column. Blackout 
 high, windows and glass; low wrecks and cover remain depth occluders without sealing the smoke field. The model
 does not simulate pressure or support arbitrary camera angles. Carving is presentation-only and refills in about 0.7 s.
 It changes visual sightlines, not server visibility or hit detection. See `docs/game-notes.md` for the CS2 sources
-and `perf/fx-kit.md` for the measured cost and noise.
+and `perf/fx-kit.md` for the original cost and noise. The refined front's captures, tests and paired cost are in
+`perf/smoke-volume-refinement.md`.
 
 ## The tyre port preserves Getaway's image
 
