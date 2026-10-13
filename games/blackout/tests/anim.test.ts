@@ -7,10 +7,34 @@ import { ragdoll, ragdollBody, stepRagdoll } from "../src/game/ragdoll"
 import { angleDiff } from "../shared/geom"
 import { at } from "../src/game/rig"
 import { RIG } from "../src/render/person"
+import { humanProfiles } from "@arcade/kit/human-profile"
+import { animationLab, animationControls } from "../src/game/anim-settings"
+import { LabNavigation } from "@arcade/kit/lab-navigation"
+import { bodyBones, boneVisible, detach, type BoneId } from "@arcade/kit/human-pose"
 
 const defaults = { ...animation }
 afterEach(() => Object.assign(animation, defaults))
 const dt = 1 / 60
+
+test("runtime wizards consume shared posture while retaining all weapon frames and casting clips", () => {
+  for (const gun of ["rifle", "shotgun", "sniper"] as const) {
+    const wizard = newAvatar("wizard", 0, 0, 0, gun), soldier = newAvatar("wizard", 0, 0, 0, gun)
+    for (let n = 0; n < 180; n++) {
+      animate(wizard, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, 0.2, true)
+      animate(soldier, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, 0.2)
+      expect(wizard.body!.gun).not.toBeNull()
+      // Different stride phases may change the small authored weapon sway, not its aim ownership.
+      expect(wizard.body!.gun!.x.reduce((dot, value, axis) => dot + value * soldier.body!.gun!.x[axis]!, 0)).toBeGreaterThan(.999)
+    }
+    expect(wizard.profile).toBeUndefined()
+    expect(wizard.motion.stride / soldier.motion.stride).toBeCloseTo(humanProfiles.wizard.strideScale, 10)
+    const freeHand = wizard.body!.fa[0]
+    wizard.throwAt = 3
+    animate(wizard, dt, 3.15, 3.3, 0, 0, 0, 0.2, true)
+    expect(wizard.body!.fa[0]).not.toEqual(freeHand)
+    expect(wizard.body!.gun).not.toBeNull()
+  }
+})
 
 for (const [name, vx, vy, spin] of [["walk", 1.4, 0, 0], ["run", 4.2, 0, 0], ["sprint", 6.3, 0, 0], ["backpedal", -1.5, 0, 0], ["strafe left", 0, -2, 0], ["strafe right", 0, 2, 0], ["turn", 0, 0, 1.4]] as const) {
   test(`${name}: both the lock and rendered toe have zero planted slip`, () => {
@@ -118,6 +142,93 @@ test("sprint has flight instead of stretching a locked leg or crouching to reach
     if (a.feet.every(f => !f.planted)) flight++
   }
   expect(flight).toBeGreaterThan(30)
+})
+
+test("per-actor profiles preserve the default soldier and isolate zombie tuning", () => {
+  const a = newAvatar("same", 0, 0, 0, "rifle"), b = newAvatar("same", 0, 0, 0, "rifle")
+  b.profile = { ...humanProfiles.soldier }
+  const zombie = newAvatar("zombie", 0, 0, 0, "rifle")
+  zombie.profile = { ...humanProfiles.zombie }
+  for (let n = 0; n < 180; n++) {
+    for (const actor of [a, b, zombie]) animate(actor, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, n * dt * 0.2)
+    expect(a.body).toEqual(b.body)
+    expect(zombie.body!.gun).toBeNull()
+    expect(zombie.body!.head.p).toEqual(at(zombie.body!.torso, 0.02, RIG.neckY, 0))
+  }
+  expect(a.body!.torso).not.toEqual(zombie.body!.torso)
+})
+
+test("Lab profile selection, Copy and keyboard reset use the same settings", () => {
+  const settings = animationLab({}, new URLSearchParams()), nav = new LabNavigation(settings, animationControls)
+  const preset = animationControls.find(c => c.key === "profilePreset")!
+  nav.set(preset, "zombie")
+  for (const [key, value] of Object.entries(humanProfiles.zombie)) expect(settings[key as keyof typeof settings]).toBe(value)
+  expect(JSON.parse(nav.json("Animation")).handPose).toBe("reach")
+  nav.active = nav.rows.find(row => row.group === "Animation" && !row.control)
+  nav.reset(true)
+  expect({ ...animation }).toEqual(defaults)
+})
+
+test("missing limbs remain finite through future animation and do not mutate authoritative inputs", () => {
+  const a = newAvatar("missing", 0, 0, 0, "rifle")
+  a.profile = { ...humanProfiles.zombie }
+  a.hiddenBones = new Set<BoneId>()
+  for (let n = 0; n < 120; n++) {
+    const previous = a.body && bodyBones(a.body)
+    animate(a, dt, n * dt, n * dt, 0, 1, 0, 0)
+    if (n === 60) {
+      const before = JSON.stringify(a.body)
+      const pieces = detach(bodyBones(a.body!), previous ?? undefined, dt, "right.upperArm", a.hiddenBones)
+      expect(pieces.map(p => p.bone)).toEqual(["right.upperArm", "right.foreArm"])
+      expect(JSON.stringify(a.body)).toBe(before)
+    }
+    expect(Object.values(bodyBones(a.body!)).flatMap(frame => Object.values(frame).flat()).every(Number.isFinite)).toBe(true)
+    expect(a.vx).toBe(1)
+  }
+  expect(boneVisible("right.foreArm", a.hiddenBones)).toBe(false)
+  expect(boneVisible("left.foreArm", a.hiddenBones)).toBe(true)
+})
+
+test("profiles keep poses bounded at dt spikes with missing limbs and preserve rifle aim", () => {
+  for (const profile of Object.values(humanProfiles)) {
+    const a = newAvatar("spikes", 0, 0, 0, "rifle"), soldier = newAvatar("spikes", 0, 0, 0, "rifle")
+    a.profile = { ...profile }; a.hiddenBones = new Set(["left.thigh", "right.upperArm"])
+    let x = 0, t = 0
+    for (let n = 0; n < 240; n++) {
+      const step = [1 / 240, 1 / 60, 0.05, 0.2, 2][n % 5]!
+      t += step; x += Math.min(step, 0.05) * 4.2
+      for (const actor of [a, soldier]) animate(actor, step, t, x, 0, 4.2, 0, Math.sin(n / 60) * 0.4)
+      for (const frame of Object.values(bodyBones(a.body!))) {
+        expect(Object.values(frame).flat().every(Number.isFinite)).toBe(true)
+        expect(Math.hypot(frame.p[0] - x, frame.p[1], frame.p[2])).toBeLessThan(2.5)
+        for (const axis of [frame.x, frame.y, frame.z]) expect(Math.hypot(...axis)).toBeCloseTo(1, 10)
+      }
+      expect(Math.abs(angleDiff(Math.atan2(a.body!.pelvis.x[2], a.body!.pelvis.x[0]), a.aim))).toBeLessThan(1.2)
+      if (profile.handPose === "weapon") expect(a.body!.gun).toEqual(soldier.body!.gun)
+    }
+  }
+})
+
+test("corpse detachment starts at its displayed pose and retains the missing-limb mask", () => {
+  const a = newAvatar("corpse-detach", 0, 0, 0, "rifle")
+  a.hiddenBones = new Set(["left.foreArm"])
+  for (let n = 0; n < 90; n++) animate(a, dt, n * dt, n * dt * 4.2, 0, 4.2, 0, 0)
+  const r = ragdoll(a.body!, a.gun, 4.2, 0, 1, 0, { push: 0, lift: 0, spin: 0, buckle: 0 }, [], a.hiddenBones)
+  expect(boneVisible("left.foreArm", r.hiddenBones)).toBe(false)
+  a.hiddenBones.clear()
+  expect(boneVisible("left.foreArm", r.hiddenBones)).toBe(false)
+  const previous = bodyBones(ragdollBody(r, 0, a.gun))
+  stepRagdoll(r, dt)
+  const current = bodyBones(ragdollBody(r, 0, a.gun)), snapshot = JSON.stringify(r.pos)
+  const parts = detach(current, previous, dt, "right.upperArm", r.hiddenBones)
+  expect(parts.map(p => p.bone)).toEqual(["right.upperArm", "right.foreArm"])
+  for (const part of parts) {
+    expect(part.frame).toEqual(current[part.bone]!)
+    part.linear.forEach((v, i) => expect(v).toBeCloseTo((current[part.bone]!.p[i]! - previous[part.bone]!.p[i]!) / dt, 10))
+  }
+  expect(JSON.stringify(r.pos)).toBe(snapshot)
+  stepRagdoll(r, 0.2)
+  expect(Object.values(bodyBones(ragdollBody(r, 0, a.gun))).flatMap(f => Object.values(f).flat()).every(Number.isFinite)).toBe(true)
 })
 
 test("running posture changes the trunk, not cadence, contacts, root height or gun aim", () => {

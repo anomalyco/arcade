@@ -48,8 +48,8 @@ const controls: LabControl[] = [
 export class DebugOverlay extends LabPanel {
   private samples: number[] = []
   private lastReport = 0
-  constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}) {
-    super(animationLab(settings, params), [...controls, ...animationControls], params, release)
+  constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}, extra: LabControl[] = []) {
+    super(animationLab(settings, params), [...controls, ...animationControls, ...extra], params, release)
     this.addControls(settings, lightControls.filter(c => c.key !== "style").map(c => ({ ...c, group: "Vehicle lights" })))
     this.addControls(bloodSplatterSettings,[{key:"style",label:"Style",group:"Blood",type:"select",options:[{value:0,label:"Current"},{value:1,label:"Surface splatter"}]}])
     this.addControls(motionSettings,[

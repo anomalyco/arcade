@@ -19,6 +19,8 @@ import { IDLE_VIEW } from "../../shared/sim/modes"
 import { DebugOverlay, juiceSettings } from "../ui/debug-overlay"
 import { animation } from "../game/anim-settings"
 import { Rng } from "../../shared/rng"
+import { RigDemo, rigDemoControls } from "./rig-demo"
+import { detachedSplatter } from "../game/human-splatter"
 import { at } from "../game/rig"
 import { RIG } from "../render/person"
 import { wizardWeapon } from "../render/wizard"
@@ -181,6 +183,7 @@ const ACTORS: Actor[] = [
 ]
 
 class ScriptSession implements Session {
+  demo = false
   readonly room = null
   readonly myId = "viewer"
   t = 0
@@ -215,7 +218,7 @@ class ScriptSession implements Session {
     this.t += dt
     const t = this.t
     const players: Snapshot["players"] = []
-    for (const a of this.actors) {
+    for (const a of this.demo ? [] : this.actors) {
       const s = a.at(t)
       const p = this.prev.get(a.id) ?? { x: s.x, y: s.y, shots: 0, reloads: 0, alive: s.alive }
       const cut = a.id === "proof" && Math.floor(t / 2) !== Math.floor((t - dt) / 2)
@@ -275,11 +278,14 @@ async function main() {
   const weapons = only?.[0] === "weapons" ? (["rifle", "shotgun", "sniper"] as const).map((gun) => renderer.addModel(wizardWeapon(gun))) : []
   const session = new ScriptSession(only)
   const sound = new Sound()
-  const settings = juiceSettings(!params.has("vanilla"))
+  const settings = { ...juiceSettings(!params.has("vanilla")), rigDemo: "off", rigDemoSpeed: 1.1 }
   const game = new Game(renderer, session, sound, settings)
   ;(game as unknown as { load(m: MapDef): void }).load(MAP)
   const input = new Input(canvas)
-  new DebugOverlay(settings, params, () => input.release())
+  new DebugOverlay(settings, params, () => input.release(), rigDemoControls)
+  let detachId = 0x60000000
+  const rigDemo = new RigDemo(renderer, part => detachedSplatter(event => game.cosmeticSplatter(event), part,
+    { id: detachId++, seed: SEED, direction: [1, 0.2, 0], amount: 1 }))
   const side = params.get("side")
   const cam = new Camera()
   if (side !== null) {
@@ -311,21 +317,27 @@ async function main() {
     if (only?.includes("proof") && Math.floor((session.t + dt) / 2) !== Math.floor(session.t / 2)) game.avatars.delete("proof")
     if (only?.includes("running") && Math.floor((session.t + dt) / 3) !== Math.floor(session.t / 3)) game.avatars.delete("running")
     clock += dt * 1000
+    session.demo = settings.rigDemo !== "off"
+    if (session.demo) game.avatars.clear()
     game.update(dt, input, cam, innerWidth, innerHeight, clock)
     const fid = params.get("follow") ?? (only?.length === 1 ? only[0] : null)
     const lead = fid ? session.latest()?.snap.players.find((p) => p.id === fid) : undefined
     if (lead && !params.has("x")) cam.snap(lead.x, lead.y)
     else cam.follow(focus.x, focus.y, 0, 0, dt, false)
     cam.dist = zoom
+    const demoBatches = rigDemo.build(dt, settings.rigDemo, settings.rigDemoSpeed)
+    if (session.demo) cam.snap(rigDemo.avatar.x, rigDemo.avatar.y)
     // Reuse the rig's existing free-hand throw for a casting pose study.
     const caster = game.avatars.get("cast")
     if (settings.wizards && caster) caster.throwAt = Math.floor(session.t / 3) * 3 + 0.2
     const f = game.build(cam, innerWidth, innerHeight, dt)
+    f.batches.push(...demoBatches)
     f.grade[1] = 0 // The viewer is a spectator, not a dead player; inspect the actual team colours.
     for (const [i, model] of weapons.entries()) f.batches.push({ model, count: 1, data: new Float32Array([focus.x + (i - 1) * 1.5, 1.2, focus.y, 0, 1, 1, 1, 1, 0, 0, 1, 0]) })
     renderer.render(f)
     const beats = ["Walk", "Run", "Strafe left", "Strafe right", "Backpedal", "Turn in place", "Hard stop", "Recoil", "Death"]
-    if (only?.includes("proof")) info.textContent = `${animation.animationMode === "old" ? "Old" : "New"} · ${beats[Math.min(8, Math.floor(session.t / 2))]}`
+    if (session.demo) info.textContent = ""
+    else if (only?.includes("proof")) info.textContent = `${animation.animationMode === "old" ? "Old" : "New"} · ${beats[Math.min(8, Math.floor(session.t / 2))]}`
   }
   const w = window as unknown as { advance(ms: number): Promise<void>; ready: boolean }
   w.advance = async (ms: number) => {
@@ -362,7 +374,7 @@ async function main() {
     return out.toDataURL("image/jpeg", 0.9)
   }
   w.ready = true
-  Object.assign(window, { animProof: { game, session, animation, adapter: adapter!.info, step: frame,
+  Object.assign(window, { animProof: { game, session, animation, settings, rigDemo, adapter: adapter!.info, step: frame,
     sample: () => {
       const a = game.avatars.get("running")
       if (!a?.body) return null

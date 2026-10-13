@@ -232,7 +232,11 @@ Outbreak configures F-only interaction to avoid the Dvorak E movement binding. R
 dimensions are shared. Outbreak's civilian meshes and unarmed planted-foot gait adapt only the needed parts of
 Blackout's soldier code.
 
-Remaining migration targets: separate locomotion from Blackout's gun/reload/melee animation; split material-specific
+Human locomotion, profiles and semantic detachment now live in `human-locomotion`, `human-profile` and `human-pose`
+on the canonical rig. Blackout supplies weapon/reload/melee clips. See [Human rig](human-rig.md) for ownership,
+attachments, stable cosmetic IDs and velocity spaces.
+
+Remaining migration targets: split material-specific
 scene shading from the shared WGSL contract; generalize the map-aware LightCuller when another game needs its
 monitor/bounce caches. The Outbreak map/lighting writer and gameplay Session stay game-owned.
 

@@ -4,6 +4,7 @@ import { Rng, seedOf } from "../../shared/rng"
 import { GUNPTS } from "../render/person"
 import { type Body, type PartModels, type PushPart, emitBody } from "./anim"
 import { bodyJoints } from "./anim-pose"
+import type { BoneId, HiddenBones } from "@arcade/kit/human-pose"
 import { type Frame, type V3, add, aimFrame, at, cross, dot, len, limb, madd, moved, norm, roll, scale, sub } from "./rig"
 
 /**
@@ -40,6 +41,7 @@ type Local = { p: V3; x: V3; y: V3; z: V3 }
 type Con = { a: number; b: number; d: number; min: boolean }
 
 export type Ragdoll = {
+  hiddenBones: Set<BoneId>
   pos: V3[]
   prev: V3[]
   cons: Con[]
@@ -74,7 +76,7 @@ function fromLocal(t: Frame, l: Local): Frame {
   return { p: add(t.p, w(l.p)), x: w(l.x), y: w(l.y), z: w(l.z) }
 }
 
-export function ragdoll(b: Body, gun: Gun, vx: number, vy: number, dx: number, dy: number, style: DeathStyle, solids: readonly Rect[]): Ragdoll {
+export function ragdoll(b: Body, gun: Gun, vx: number, vy: number, dx: number, dy: number, style: DeathStyle, solids: readonly Rect[], hidden?: HiddenBones): Ragdoll {
   const rng = new Rng(seedOf(`${gun}:${b.pelvis.p.join(",")}:${dx}:${dy}`))
   const g = b.gun ?? moved(b.torso, at(b.torso, 0.3, 0.2, 0))
   // Own these points: the Verlet solver must not mutate the last living pose.
@@ -148,6 +150,7 @@ export function ragdoll(b: Body, gun: Gun, vx: number, vy: number, dx: number, d
   const px = (pos[P.hipL]![0] + pos[P.hipR]![0]) / 2
   const pz = (pos[P.hipL]![2] + pos[P.hipR]![2]) / 2
   return {
+    hiddenBones: new Set(hidden),
     pos,
     prev,
     cons,
@@ -277,7 +280,7 @@ export function ragdollCentre(r: Ragdoll): { x: number; y: number } {
 }
 
 export function emitRagdoll(push: PushPart, r: Ragdoll, gun: Gun, color: readonly [number, number, number], models: PartModels, flash: number, alpha: number, sink: number): void {
-  emitBody(push, ragdollBody(r, sink, gun), gun, color, models, flash, alpha)
+  emitBody(push, ragdollBody(r, sink, gun), gun, color, models, flash, alpha, r.hiddenBones)
 }
 
 /** A body where someone died. t0 is seconds. */

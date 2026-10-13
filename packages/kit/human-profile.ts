@@ -1,0 +1,56 @@
+import type { LabControl } from "./lab-navigation"
+import { at, clamp, pitch, roll, type Frame, type V3 } from "./rig"
+
+/** Flat, serializable presentation values; metres, radians and Hz. */
+export type HumanProfile = {
+  strideScale: number; swayScale: number; twistScale: number; leanScale: number; runPosture: number
+  bodyHz: number; footCentreHz: number; chestHz: number; headHz: number
+  timingBias: number; footDrag: number; torsoLean: number; torsoRoll: number
+  headTilt: number; armAsymmetry: number; armReach: number
+  handPose: "weapon" | "staff" | "reach"
+}
+export type HumanPreset = "soldier" | "wizard" | "zombie"
+const soldier: Readonly<HumanProfile> = Object.freeze({
+  strideScale: 1, swayScale: 1.6, twistScale: 1.6, leanScale: 1, runPosture: 0.18,
+  bodyHz: 3, footCentreHz: 4, chestHz: 5, headHz: 7,
+  timingBias: 0, footDrag: 0, torsoLean: 0, torsoRoll: 0,
+  headTilt: 0, armAsymmetry: 0, armReach: 0.42, handPose: "weapon",
+})
+export const humanProfiles: Readonly<Record<HumanPreset, Readonly<HumanProfile>>> = Object.freeze({
+  soldier,
+  wizard: Object.freeze({ ...soldier, strideScale: 0.85, swayScale: 0.7, twistScale: 0.6, torsoLean: -0.04, handPose: "staff" }),
+  zombie: Object.freeze({ ...soldier, strideScale: 0.8, timingBias: 0.28, footDrag: 0.9,
+    chestHz: 2, headHz: 1, torsoLean: 0.24, torsoRoll: 0.12, headTilt: 0.2,
+    armAsymmetry: 0.13, handPose: "reach" }),
+})
+
+/** Apply before constructing shoulders/neck so their attachments never open a gap. */
+export function profileTorso(frame: Frame, profile: HumanProfile): Frame {
+  return roll(pitch(frame, -clamp(profile.torsoLean, -0.15, 0.35)), clamp(profile.torsoRoll, -0.2, 0.2))
+}
+
+/** Caller-owned action clips may replace these rest targets before IK. */
+export function profileHands(torso: Frame, profile: HumanProfile): [V3, V3] | null {
+  const asymmetry = clamp(profile.armAsymmetry, -0.18, 0.18)
+  if (profile.handPose === "staff") return [at(torso, 0.16, 0.05, -0.25), at(torso, 0.32, 0.31, 0.32)]
+  if (profile.handPose === "reach") return [at(torso, clamp(profile.armReach, 0.2, 0.52), 0.33 + asymmetry, -0.17), at(torso, clamp(profile.armReach, 0.2, 0.52), 0.33 - asymmetry, 0.17)]
+  return null
+}
+
+/** Live presentation controls; edits update the next animation step without resetting the scene. */
+const range = (key: keyof HumanProfile, label: string, min: number, max: number, step: number, unit: string): LabControl => ({ key, label, group: "Animation", min, max, step, unit })
+export const humanProfileControls: LabControl[] = [
+  range("strideScale", "Stride", 0.6, 1.4, 0.05, "×"),
+  range("swayScale", "Sway", 0, 2, 0.1, "×"), range("twistScale", "Twist", 0, 2, 0.1, "×"),
+  range("leanScale", "Lean", 0, 1.5, 0.1, "×"), range("bodyHz", "Pelvis spring · Hz", 1, 8, 0.25, "Hz"),
+  range("runPosture", "Run posture · rad", 0, 0.3, 0.01, "rad"),
+  range("footCentreHz", "Foot centre · Hz", 2, 8, 0.25, "Hz"), range("chestHz", "Chest spring · Hz", 1, 10, 0.25, "Hz"),
+  range("headHz", "Head spring · Hz", 1, 12, 0.25, "Hz"),
+  range("timingBias", "Uneven timing", -0.3, 0.3, 0.02, ""), range("footDrag", "Right foot drag", 0, 0.95, 0.05, ""),
+  range("torsoLean", "Hunch", -0.15, 0.35, 0.02, "rad"), range("torsoRoll", "Torso cant", -0.2, 0.2, 0.02, "rad"),
+  range("headTilt", "Head tilt", -0.3, 0.3, 0.02, "rad"), range("armAsymmetry", "Arm asymmetry", -0.18, 0.18, 0.02, "m"),
+  range("armReach", "Reach", 0.2, 0.52, 0.02, "m"),
+  { key: "handPose", label: "Hands", group: "Animation", options: [
+    { label: "Weapon", value: "weapon" }, { label: "Staff", value: "staff" }, { label: "Reach", value: "reach" },
+  ] },
+]
