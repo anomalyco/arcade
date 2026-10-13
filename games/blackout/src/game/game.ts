@@ -37,6 +37,8 @@ import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
 import { mapFires } from "./map-fx"
 import { SmokeVolumes } from "@arcade/kit/fx/volume"
 import { blackoutEffects as fxSettings } from "../lab/settings"
+import { Splatter, type SplatterImpact, type SplatterSettings } from "@arcade/kit/fx/splatter"
+import { blackoutSplatterSurfaces, bloodSplatterSettings } from "./splatter"
 
 export type Rgb3 = [number, number, number]
 const PALETTE: Rgb3[] = [
@@ -170,6 +172,16 @@ type LooseSheet = Debris & { kind: "paper" | "glass"; phase: number }
  * and the per-frame GPU data.
  */
 export class Game {
+  /** Lab override is instance-local. Null follows the production review switch. */
+  splatterStyle:number|null=null
+  splatterFx:Splatter|undefined
+  private splatterEvent=0
+  /** Animation can pass stable event/limb IDs plus detached world pose and velocity here. */
+  cosmeticSplatter(event:SplatterImpact,settings:SplatterSettings=bloodSplatterSettings):boolean {
+    if(!(this.splatterStyle??bloodSplatterSettings.style))return false
+    this.splatterFx??=new Splatter(blackoutSplatterSurfaces(buildLevel(this.map)))
+    return this.splatterFx.emit(event,settings)
+  }
   readonly smokeVolumes = new SmokeVolumes()
   readonly juice: Juice
   private bounceBase!: FloorMap
@@ -313,6 +325,7 @@ export class Game {
 
   private load(map: MapDef): void {
     this.map = map
+    this.splatterFx=undefined
     this.blockers = [...map.walls.map((w) => w.rect), ...map.windows, ...map.glass]
     this.solids = [...this.blockers, ...map.props.filter((p) => p.solid).map((p) => p.rect)]
     this.obstacles = obstaclesOf(map)
@@ -329,6 +342,7 @@ export class Game {
 
   /** Drops everything left over from the last match: bodies, tracers, frags, blasts. */
   private clearScene(): void {
+    this.splatterFx?.reset();this.splatterEvent=0
     this.labFireMap=null
     this.smokeVolumes.reset([...this.map.walls.filter(w => w.h >= 1.8).map(w => w.rect), ...this.map.windows, ...this.map.glass])
     this.corpses = []
@@ -909,6 +923,7 @@ export class Game {
   labLoad(map:MapDef):void { this.load(map); this.now=0 }
   labClear():void { this.clearScene() }
   labAdvance(dt:number):void { this.now+=dt }
+  labBlood(event:SplatterImpact):void {this.blood(event.x,event.z,Math.atan2(event.dz,event.dx),event.amount??1)}
   labInspect() { return {sheets:this.sheets.length,particles:this.particles.length,holes:this.holes.length,corpses:this.corpses.length,casings:this.debris.length,monitors:this.monitors.filter(m=>m.broken).length} }
   labTrigger(effect:string,gun:Gun,surface:string,x:number,y:number):void {
     const a=newAvatar("lab",x,y+2,-Math.PI/2,gun)
@@ -1100,6 +1115,11 @@ export class Game {
   }
 
   private blood(x: number, y: number, dir: number, amount = 1): void {
+    if(this.splatterStyle??bloodSplatterSettings.style){
+      const id=++this.splatterEvent
+      this.cosmeticSplatter({id,seed:this.map.seed^id,x,y:1.05,z:y,dx:Math.cos(dir),dy:.12,dz:Math.sin(dir),amount})
+      return
+    }
     const n = Math.round(fxSettings.blood.count * amount)
     for (let i = 0; i < n; i++) {
       const a = dir + (Math.random() - 0.5) * 1.1
@@ -1662,6 +1682,7 @@ export class Game {
     }
     if (this.particles.length > 1500) this.particles.splice(0, this.particles.length - 1500)
 
+    this.splatterFx?.update(adt)
     // Uniforms.
     const F = this.frame
     F.set(vp, 0)
@@ -1678,6 +1699,7 @@ export class Game {
     const C = this.culler
     return {
       frame: F,
+      splatter:(this.splatterStyle??bloodSplatterSettings.style)?this.splatterFx:undefined,
       smoke: this.smokeVolumes,
       smokeEnabled: this.juice.volumes,
       lights: C.lights,

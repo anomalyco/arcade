@@ -1,5 +1,6 @@
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { motionSettings } from "../render/motion"
+import { bloodSplatterSettings } from "../game/splatter"
 
 export const JUICE_LABELS = {
   volumes: "Volume Smoke",
@@ -36,6 +37,7 @@ export class DebugOverlay extends LabPanel {
   private lastReport = 0
   constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}) {
     super(settings, controls, params, release)
+    this.addControls(bloodSplatterSettings,[{key:"style",label:"Style",group:"Blood",type:"select",options:[{value:0,label:"Current"},{value:1,label:"Surface splatter"}]}])
     this.addControls(motionSettings,[
       {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
       {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},

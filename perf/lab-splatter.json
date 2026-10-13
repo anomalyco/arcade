@@ -1,0 +1,731 @@
+{
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3"
+  },
+  "resolution": [
+    1000,
+    720
+  ],
+  "captures": [
+    "office-floor-1-0.png",
+    "office-floor-1-1.png",
+    "office-floor-2.5-0.png",
+    "office-floor-2.5-1.png",
+    "office-wall-1-0.png",
+    "office-wall-1-1.png",
+    "office-wall-2.5-0.png",
+    "office-wall-2.5-1.png",
+    "office-grazing-1-0.png",
+    "office-grazing-1-1.png",
+    "office-grazing-2.5-0.png",
+    "office-grazing-2.5-1.png",
+    "office-desk-1-0.png",
+    "office-desk-1-1.png",
+    "office-desk-2.5-0.png",
+    "office-desk-2.5-1.png",
+    "office-glass-1-0.png",
+    "office-glass-1-1.png",
+    "office-glass-2.5-0.png",
+    "office-glass-2.5-1.png",
+    "downtown-floor-1-0.png",
+    "downtown-floor-1-1.png",
+    "downtown-floor-2.5-0.png",
+    "downtown-floor-2.5-1.png",
+    "downtown-wall-1-0.png",
+    "downtown-wall-1-1.png",
+    "downtown-wall-2.5-0.png",
+    "downtown-wall-2.5-1.png",
+    "downtown-grazing-1-0.png",
+    "downtown-grazing-1-1.png",
+    "downtown-grazing-2.5-0.png",
+    "downtown-grazing-2.5-1.png",
+    "downtown-desk-1-0.png",
+    "downtown-desk-1-1.png",
+    "downtown-desk-2.5-0.png",
+    "downtown-desk-2.5-1.png",
+    "downtown-glass-1-0.png",
+    "downtown-glass-1-1.png",
+    "downtown-glass-2.5-0.png",
+    "downtown-glass-2.5-1.png",
+    "preset-blood.png",
+    "preset-ink.png",
+    "preset-slime.png",
+    "preset-oil.png",
+    "preset-potion.png"
+  ],
+  "results": [
+    {
+      "room": "office",
+      "target": "floor",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 0,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "office",
+      "target": "wall",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 32,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "office",
+      "target": "grazing",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 13,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "office",
+      "target": "desk",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 0,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "office",
+      "target": "glass",
+      "inspect": {
+        "particles": 0,
+        "decals": 0,
+        "walls": 0,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "downtown",
+      "target": "floor",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 0,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "downtown",
+      "target": "wall",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 32,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "downtown",
+      "target": "grazing",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 13,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "downtown",
+      "target": "desk",
+      "inspect": {
+        "particles": 0,
+        "decals": 32,
+        "walls": 0,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "room": "downtown",
+      "target": "glass",
+      "inspect": {
+        "particles": 0,
+        "decals": 0,
+        "walls": 0,
+        "time": 1.249999999999998
+      }
+    },
+    {
+      "controls": {
+        "stepTime": 0.016666666666666666,
+        "slowTime": 0.26666666666666666
+      }
+    },
+    {
+      "production": "office",
+      "delta": 0.05012299999999992,
+      "mad": 0.0783109999999998,
+      "pairs": [
+        {
+          "before": [
+            1.739045,
+            1.725629,
+            2.492552,
+            1.74892,
+            1.681548,
+            2.036489,
+            1.734879,
+            1.783168
+          ],
+          "after": [
+            2.459475,
+            1.718645,
+            2.826077,
+            1.920008,
+            1.715603,
+            1.690855,
+            2.05025,
+            1.694605
+          ],
+          "delta": 0.1710879999999999
+        },
+        {
+          "before": [
+            1.654008,
+            2.512093,
+            1.704255,
+            1.51568,
+            1.527972,
+            1.791835,
+            1.447225,
+            1.537095
+          ],
+          "after": [
+            1.499723,
+            1.478433,
+            1.40956,
+            1.517388,
+            1.414768,
+            2.138152,
+            1.491098,
+            1.352897
+          ],
+          "delta": -0.1629099999999999
+        },
+        {
+          "before": [
+            1.3665,
+            1.370166,
+            1.292628,
+            1.31846,
+            1.3655,
+            1.281753,
+            1.956898,
+            1.371542
+          ],
+          "after": [
+            1.395541,
+            2.173975,
+            1.416623,
+            1.3815,
+            1.36,
+            2.158225,
+            1.510038,
+            1.352667
+          ],
+          "delta": 0.05012299999999992
+        },
+        {
+          "before": [
+            1.273504,
+            1.943316,
+            1.29696,
+            1.290127,
+            1.958649,
+            1.293003,
+            1.263337,
+            1.909442
+          ],
+          "after": [
+            1.185172,
+            1.182881,
+            1.400249,
+            1.29171,
+            1.215547,
+            1.652242,
+            1.271127,
+            1.244462
+          ],
+          "delta": -0.025832999999999995
+        },
+        {
+          "before": [
+            1.276711,
+            1.244503,
+            1.283795,
+            1.222462,
+            1.272086,
+            1.217338,
+            1.342709,
+            1.284503
+          ],
+          "after": [
+            1.202046,
+            1.237087,
+            1.859526,
+            1.164089,
+            1.237921,
+            1.931441,
+            1.274419,
+            1.173756
+          ],
+          "delta": -0.03878999999999988
+        },
+        {
+          "before": [
+            1.700073,
+            1.196381,
+            1.796903,
+            1.278669,
+            1.282377,
+            1.312168,
+            1.913859,
+            1.219421
+          ],
+          "after": [
+            1.226296,
+            1.322169,
+            2.05048,
+            1.299794,
+            1.248462,
+            2.056271,
+            1.378583,
+            2.15831
+          ],
+          "delta": 0.06641499999999989
+        },
+        {
+          "before": [
+            1.550601,
+            1.505685,
+            2.087385,
+            1.572226,
+            1.505477,
+            2.84229,
+            1.532061,
+            1.530976
+          ],
+          "after": [
+            1.330043,
+            2.208892,
+            1.510579,
+            1.377291,
+            2.245389,
+            1.697323,
+            1.386958,
+            1.522413
+          ],
+          "delta": -0.02818799999999988
+        },
+        {
+          "before": [
+            1.685642,
+            1.49177,
+            1.946637,
+            1.703141,
+            1.578476,
+            1.939429,
+            1.616143,
+            2.28434
+          ],
+          "after": [
+            1.6736,
+            2.475212,
+            1.703349,
+            1.692725,
+            3.13487,
+            1.753931,
+            2.723167,
+            1.871888
+          ],
+          "delta": 0.16874699999999998
+        },
+        {
+          "before": [
+            2.433713,
+            2.052677,
+            1.958345,
+            1.598809,
+            1.707099,
+            2.681375,
+            1.719015,
+            1.726474
+          ],
+          "after": [
+            2.020177,
+            1.710099,
+            3.127203,
+            2.007428,
+            1.684057,
+            2.469546,
+            1.970761,
+            2.849123
+          ],
+          "delta": 0.06183199999999989
+        }
+      ]
+    },
+    {
+      "production": "downtown",
+      "delta": 0.04262499999999991,
+      "mad": 0.05824900000000022,
+      "pairs": [
+        {
+          "before": [
+            1.161299,
+            1.204381,
+            1.464915,
+            1.288877,
+            2.048896,
+            1.307293,
+            1.296836,
+            1.308128
+          ],
+          "after": [
+            1.171988,
+            1.207861,
+            1.857082,
+            1.188571,
+            1.175488,
+            1.171446,
+            1.856581,
+            1.177321
+          ],
+          "delta": -0.118722
+        },
+        {
+          "before": [
+            1.975732,
+            1.192256,
+            1.197256,
+            1.900067,
+            1.224962,
+            1.156132,
+            1.178256,
+            1.382957
+          ],
+          "after": [
+            1.208505,
+            1.212588,
+            1.862153,
+            1.221296,
+            1.218005,
+            1.217338,
+            1.190463,
+            1.179464
+          ],
+          "delta": -0.007624000000000075
+        },
+        {
+          "before": [
+            1.198463,
+            1.875733,
+            1.186297,
+            1.164673,
+            1.210755,
+            1.285586,
+            1.193671,
+            1.161132
+          ],
+          "after": [
+            1.209046,
+            2.004939,
+            1.265421,
+            1.241088,
+            1.195339,
+            1.142715,
+            1.208004,
+            1.248462
+          ],
+          "delta": 0.04262499999999991
+        },
+        {
+          "before": [
+            1.227921,
+            1.097884,
+            1.175756,
+            1.883859,
+            1.197422,
+            1.192547,
+            1.176047,
+            1.79457
+          ],
+          "after": [
+            1.213505,
+            1.193756,
+            1.910774,
+            1.192463,
+            1.209588,
+            1.201422,
+            1.884985,
+            1.217088
+          ],
+          "delta": 0.01608300000000007
+        },
+        {
+          "before": [
+            2.039979,
+            1.301168,
+            1.276628,
+            1.279461,
+            1.608326,
+            1.412165,
+            1.411874,
+            2.53034
+          ],
+          "after": [
+            1.207046,
+            1.936191,
+            1.167131,
+            1.18938,
+            1.197255,
+            1.190964,
+            1.261378,
+            1.219755
+          ],
+          "delta": -0.20511899999999983
+        },
+        {
+          "before": [
+            2.579587,
+            1.634743,
+            1.602159,
+            2.580713,
+            1.617451,
+            1.605993,
+            1.731323,
+            1.617201
+          ],
+          "after": [
+            1.750447,
+            1.667283,
+            2.817498,
+            1.741765,
+            1.643642,
+            2.811373,
+            1.67714,
+            1.634225
+          ],
+          "delta": 0.10702199999999995
+        },
+        {
+          "before": [
+            1.77414,
+            1.629684,
+            1.618226,
+            2.11476,
+            1.618266,
+            2.607253,
+            1.639808,
+            1.625809
+          ],
+          "after": [
+            1.643475,
+            2.963705,
+            1.580059,
+            2.543669,
+            1.740682,
+            1.669807,
+            2.072428,
+            1.717433
+          ],
+          "delta": 0.10087400000000013
+        },
+        {
+          "before": [
+            1.777473,
+            1.527102,
+            1.684307,
+            1.643683,
+            1.664267,
+            2.803207,
+            1.619226,
+            2.107426
+          ],
+          "after": [
+            1.770432,
+            2.98233,
+            1.956095,
+            2.771332,
+            2.072718,
+            1.822805,
+            1.98347,
+            1.980511
+          ],
+          "delta": 0.29916300000000007
+        },
+        {
+          "before": [
+            1.895347,
+            2.057594,
+            1.843804,
+            1.649892,
+            2.671334,
+            1.688641,
+            2.583585,
+            1.954053
+          ],
+          "after": [
+            2.693249,
+            2.006345,
+            2.682167,
+            1.953637,
+            1.59985,
+            1.897846,
+            2.588253,
+            2.00126
+          ],
+          "delta": 0.052292000000000005
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "base": "f24f6f2bedcd721ca118d4365d028170b77bd7ae",
+  "checks": {
+    "export": "git archive HEAD plus source patch",
+    "worker": "studio",
+    "packages": {
+      "passed": 11
+    },
+    "blackout": {
+      "passed": 272
+    },
+    "getaway": {
+      "passed": 184,
+      "skipped": 12
+    },
+    "wranglerDryRuns": [
+      "blackout",
+      "getaway"
+    ]
+  },
+  "getawaySmoke": {
+    "adapter": {
+      "vendor": "apple",
+      "architecture": "metal-3"
+    },
+    "resolution": [
+      1000,
+      720
+    ],
+    "captures": [
+      "office-floor-2.5-0.png",
+      "office-floor-2.5-1.png",
+      "office-wall-2.5-0.png",
+      "office-wall-2.5-1.png",
+      "office-desk-2.5-0.png",
+      "office-desk-2.5-1.png"
+    ],
+    "results": [
+      {
+        "room": "office",
+        "target": "floor",
+        "inspect": {
+          "particles": 0,
+          "decals": 32,
+          "walls": 0,
+          "time": 1.249999999999998
+        }
+      },
+      {
+        "room": "office",
+        "target": "wall",
+        "inspect": {
+          "particles": 0,
+          "decals": 32,
+          "walls": 32,
+          "time": 1.249999999999998
+        }
+      },
+      {
+        "room": "office",
+        "target": "desk",
+        "inspect": {
+          "particles": 0,
+          "decals": 32,
+          "walls": 0,
+          "time": 1.249999999999998
+        }
+      }
+    ],
+    "errors": []
+  },
+  "imageHashes": {
+    "downtown-desk-1-0.png": "00caefbc11882edb7eb0d01a5dd4853f59a3503a9c63bc381b63d823f1a56a88",
+    "downtown-desk-1-1.png": "faba6c446450a456eba471c8b3f5387710bd6571acd1e750d979b17d43af3f33",
+    "downtown-desk-2.5-0.png": "878e3b84e8af83c11d3d434d1f5bb565a29f1f89eaa702035b09fece47eb14a7",
+    "downtown-desk-2.5-1.png": "a2fe314ecbc6a5ed73cff1d8f07090ce25c62dfd245b60965516a9f44a81ce15",
+    "downtown-floor-1-0.png": "65fa7a1f22f5be4543074093cd297c8eea312eb8b56c988535ab095515107468",
+    "downtown-floor-1-1.png": "82d68d0bb6270407bf2001fc6b701dbe7ba1fe774f26a053fc5aa8557cf1309b",
+    "downtown-floor-2.5-0.png": "98f033f3ee5600a6fd0795b8a56f0d3eec866f441f022cebb4ca3a3617309155",
+    "downtown-floor-2.5-1.png": "20c230225d157da876f94f03ade9151549e15e1e6a88105f65db207525045357",
+    "downtown-glass-1-0.png": "636afb761ccb4c11accc99545dd4a9d79166d9e00888889c9cd03c88ce437f96",
+    "downtown-glass-1-1.png": "a1f9fea7d66c4cd1c588cdc55792588f41b6813ce0c7a4342c64f4360b02b7cc",
+    "downtown-glass-2.5-0.png": "3d7fba37d7a7b96999221c47f08f6a36e53891ec89c8b63357eaa45d130546ee",
+    "downtown-glass-2.5-1.png": "575bb2557f8242b60acc8113089eeb66959d986f1a2d05b862280384ec47f1d9",
+    "downtown-grazing-1-0.png": "2704ffcd17a0e91dfd921fb9101b5522b24fadc8ab14a9dbac17e6be2e46560c",
+    "downtown-grazing-1-1.png": "e02805c215dd282ccafa73088f0a68c2c4a0030cee14892bc8c7528adec8441a",
+    "downtown-grazing-2.5-0.png": "2010ff348be73d3a64de203bb1f812a4ba7a78dd945ba060cbbb240576e8b86b",
+    "downtown-grazing-2.5-1.png": "dac4e2ff1e58e6097fba6d39a9bf22f2a15cb9b8104eabe775881f5261f02f23",
+    "downtown-wall-1-0.png": "3104b32a262502173383d6d36e712d560a242e17e7d874afe815f2ffd32b7781",
+    "downtown-wall-1-1.png": "896fbdce628defa225bf429f6a3cec55679bc1fb13f6841ee2f7cf5d1f7b6121",
+    "downtown-wall-2.5-0.png": "220802994a288b2aa467ac8e64c45f1559ebda8fee5fbb9951db93b1e9c57c98",
+    "downtown-wall-2.5-1.png": "05e92c3d99183f9eee4bfca3e64c38f863f77a550b5716039bf4259332a74580",
+    "office-desk-1-0.png": "90ca34aee836f8a7fb78f06604a8f6fbc51c19c806fb800fd058c62d547183d9",
+    "office-desk-1-1.png": "a966c68a34b6fc225d482c22374024ce23842b646be359f12619e041248006a3",
+    "office-desk-2.5-0.png": "67de4604553d8acdb4775a6951fd83373278a5af79fb4d6ef623a499e5c4e75c",
+    "office-desk-2.5-1.png": "b979ec8f41c27e0699c007e9fbfcea354eaca6acd980c31742fdb4013f121c4c",
+    "office-floor-1-0.png": "37270b00e9e28d7b8240680a713dd8fe179dd5d27cb165f0d3e23c2409b1c935",
+    "office-floor-1-1.png": "2eb0234dcc5fb44d46bee6e2b0fca49f3c9e21b4ee98c6a56b2142c4d6013533",
+    "office-floor-2.5-0.png": "00354ea1088d177ca75b91136b8c146e1db329dac18e336c2b28ad7f5d2b7a2c",
+    "office-floor-2.5-1.png": "e260ddb0b373e72a0a9770db8e1742608387121687c71777288a25b1b5375695",
+    "office-glass-1-0.png": "afaae6f03f8929bf683332611c15f6c8be46c0280d5f0d07542289938c50f1e6",
+    "office-glass-1-1.png": "9b9952ec11bf50c507320f836ac27890ce30fb027235f0637ba18f3943af1c94",
+    "office-glass-2.5-0.png": "ed7e981cd375cf3477d365b22d5f53d2226a17779ff29c63dc670ad4ddee2d95",
+    "office-glass-2.5-1.png": "711cbc5d2eb553e3fd8533a4d74dcc77ee03d526d9580792c8fa20d9ab46e577",
+    "office-grazing-1-0.png": "ccf67946ec2fddbf14077576c4efd922edea3f009323cd940c2f0d8c69a39193",
+    "office-grazing-1-1.png": "8efeba1ec0b246d6263db34e456096aaef5907188c0e487be7cb533929283763",
+    "office-grazing-2.5-0.png": "b9a774df42d59c0683dd187990f01fa76448102234d559a67db069d28941befb",
+    "office-grazing-2.5-1.png": "b70db0769a7fb95512af88563498acac5c527caa4e4025c590a98b1852f06812",
+    "office-wall-1-0.png": "6b7c594461cda7e7c533deaea7f41247f0603009e8adbd8e3a35fb6b8bf23afe",
+    "office-wall-1-1.png": "98a78a208cd98ec14f6e87c25094f4f0f612ccd230519df26240ffd962cebc63",
+    "office-wall-2.5-0.png": "dd0138ba2f290028d691d40d7a6257c7afa52cf658d4f0feb31809646f17e2c6",
+    "office-wall-2.5-1.png": "8180317b2a1aa4e44ada3fc67757d30461e410c1fda09bca6a340d2257012f79",
+    "preset-blood.png": "e260ddb0b373e72a0a9770db8e1742608387121687c71777288a25b1b5375695",
+    "preset-ink.png": "b452542978ed67936cbd8d41c08abf25c10f595a0f945b4ad7179c72edd7bf9c",
+    "preset-oil.png": "bbcf67d69b2cdce72009370af0403546fb2221428056dd4f1da9505cba1c8c29",
+    "preset-potion.png": "311f5f2eefe6b9f08daffb05a0ada621b5722724fb43f803ec242fed20ff7110",
+    "preset-slime.png": "c12db8c9b6194b08dba55c6f14869987eea9c3428ff8671471b72c91dd29c02d",
+    "production-downtown-0.png": "2280505b3ea999cd7802077d416c4dab251a108a31a39903c9ca950aeb951459",
+    "production-downtown-1.png": "a668e3760d3209e0c3a659fd51c674a30b29e936a4e97c596bfb7abd8d187e3d",
+    "production-office-0.png": "6093bbe24af5061a2b169ed91d77d4694681647429c9a322529ff9fa4ac63a8e",
+    "production-office-1.png": "31d28cb4b2b11c5f49e078aef38d5dbb1df0627d469af8c592274cbbed149e7b"
+  },
+  "sourceHashes": {
+    "games/blackout/scripts/prove-splatter.ts": "8e76b33821bcb19845d8fa9dcfe0c5b80c3f783d8887b4ae52c6414bd1e720d9",
+    "games/blackout/scripts/splatter-sheet.py": "aea37d1e08eace184dd220243d990e80dff5e9e4a438b8e224bc4759d08f316e",
+    "games/blackout/src/game/game.ts": "fd2b7104f387ca2a6986a301caf5de8113e40319f4f456b4dbdd5564525c2647",
+    "games/blackout/src/game/splatter.ts": "ebf117da94c1b739c8bfaddd703f73fc887af90f5dd4f623af742050aad1a32d",
+    "games/blackout/src/lab.ts": "64f327ea8a08dd8dce920e0bf2af4794f2d3cf5716f1797d0adf0130de48d16a",
+    "games/blackout/src/lab/splatter.ts": "3d18fdccf296e089bd20ca1a5fc4ffab0820da15926ae8f8b3e33b2352e6b36e",
+    "games/blackout/src/render/renderer.ts": "20ce84f08163cc10e994af06b094bcbbd7affc904dd92f3994fe3039ab67b3c0",
+    "games/blackout/src/ui/debug-overlay.ts": "635872dc933d02f3eb39fc1fdb089cadd44b4646a9763c4f78af9eb14f820f49",
+    "games/getaway/src/lab.ts": "2e9e1fdc7dd67700a80c202e2cb0ef36a191b236d64dcececdd1179bacab7d7a",
+    "packages/kit/fx/splatter-renderer.ts": "dd7c8e999d61319f98628e40f3fdf1a7c2a716e8d43fc698c89d3bdd0c4bf35e",
+    "packages/kit/fx/splatter-surfaces.ts": "892f7b6c66018e80a752b51f151aa1132bd10678b7cf3a6ac0001d76785cd159",
+    "packages/kit/fx/splatter.ts": "51abeefa13c24057123b37da776023d02d7bdd5dfd94b6c8706a7054b6122079",
+    "packages/kit/lab/stage-shader.ts": "c8c308b862b7d8426de45c99067b57e4fd13b161bb515929f353d106768506b7",
+    "packages/kit/splatter.test.ts": "974b06cec20142912e10d3c30d1d9422538e7c525b3c47e300d756d99c3533a1"
+  }
+}

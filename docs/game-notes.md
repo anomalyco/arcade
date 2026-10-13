@@ -64,6 +64,23 @@ Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
 
 ## Rendering (WebGPU)
 
+- **Attach splatter to the hit triangle.** `packages/kit/fx/splatter.ts`, `splatter-surfaces.ts` and
+  `splatter-renderer.ts` share a seeded ballistic spray and matte deposits across blood, ink, slime, oil and potion
+  presets. Blackout supplies packed visible receiver geometry; Outbreak can supply its own triangle/material list.
+  Swept-point collision catches thin walls and desk tops before the floor. A surface tangent from impact velocity
+  gives grazing elongation, and fragment clipping confines each deposit to up to 12 coplanar receiver triangles.
+  Glass stops spray without receiving a stain. At most 256 drops and 256 deposits recycle in fixed arrays.
+  - [Godot's decal guide](https://docs.godotengine.org/en/stable/tutorials/3d/using_decals.html) describes normal fade,
+    receiver masks, overlap limits and decal overdraw. This small system uses exact receiver triangles and material
+    classes instead of a projection volume. Reusing the hit normal prevents a wall hit from becoming a floor decal.
+  - The Lab compares the shipped blood against the candidate on pale tile, walls, desk tops and a dark street.
+    An inspected 1280×1260 sheet includes the actual Blackout renderer. The Lab's analytic grid initially competed
+    with the supplied y=0 floor; scene mode 5 now lets an adapter own its floor. A steeper camera clears foreground
+    roofs while keeping the target visible. Existing Lab scene modes retain their behavior.
+  - Paired whole-frame GPU deltas at 1000×720 on M2 Max/Metal were +0.050 ms office (MAD 0.078) and +0.043 ms
+    downtown (MAD 0.058). Both are smaller than their noise, so cost remains inconclusive. See `perf/lab-splatter.md`
+    and its raw JSON. The Blackout style stays opt-in; gameplay damage and detachment remain caller-owned.
+
 - **Give small fire and water effects a continuous silhouette.** The Lab's `Fire and water` section compares current
   emitters with Flowing and Graphic styles in the generated downtown, office and Getaway alley. The shared
   `packages/kit/fx/fire-water.ts` renderer uses three overlapping upright flame quads, a small additive core,

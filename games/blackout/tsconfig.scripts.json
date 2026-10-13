@@ -12,5 +12,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/bench-render.ts", "scripts/bench-worker.ts", "scripts/bench-monitor-cost.ts", "scripts/prove-compare.ts", "scripts/prove-lab-worker.ts", "scripts/look-proof.ts", "scripts/prove-shared-motion.ts", "../../scripts/bench-multiplayer.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/bench-render.ts", "scripts/bench-worker.ts", "scripts/bench-monitor-cost.ts", "scripts/prove-compare.ts", "scripts/prove-lab-worker.ts", "scripts/look-proof.ts", "scripts/prove-shared-motion.ts", "scripts/prove-splatter.ts", "../../scripts/bench-multiplayer.ts"]
 }

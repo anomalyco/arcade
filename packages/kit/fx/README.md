@@ -68,7 +68,43 @@ supplies the smaller declaration it needs. The approved main billows use vertex-
 field. Live solver constants retain shipped defaults. `prepare()` and `upload(trail, visible)` replace the old
 style argument. The matched main/shared drift-frame proof has zero differing pixels.
 
-## Run the proof
+## Surface splatter
+
+`Splatter` accepts cosmetic impact events and an immutable `SplatterSurfaces` receiver mesh. Blackout uses it
+behind **Blood → Style → Surface splatter**; Current remains the gameplay default. Both Lab hosts have a Splatter
+section with blood, ink, slime, oil and potion presets, seeded retrigger, frame stepping and slow motion.
+
+```ts
+import { Splatter, splatterPresets } from "@arcade/kit/fx/splatter"
+import { SplatterSurfaces } from "@arcade/kit/fx/splatter-surfaces"
+import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
+
+// Per triangle: A.xyz, B.xyz, C.xyz, material (0 sealed, 1 absorbent, 2 slick, 3 blocker).
+const effect = new Splatter(new SplatterSurfaces(receiverTriangles))
+const renderer = new SplatterRenderer(device)
+effect.emit({ id: 42, limbId: 3, seed: 19,
+  x: 12, y: 1, z: 10, dx: 1, dy: 0, dz: 0, vx: 2, vy: 0, vz: 0 }, splatterPresets.blood)
+effect.update(dt)
+renderer.prepare(effect, viewProjection, eye)
+renderer.draw(hdrPass)
+```
+
+Events use world XYZ with Y up, including inherited velocity. The caller owns event and limb IDs, damage,
+detachment and pose sampling. The last 128 `(id, limbId)` pairs are deduplicated. Blackout exposes the same input
+through `Game.cosmeticSplatter`; a detachment producer can pass its world-space joint position, direction and
+velocity without importing game rules into the effect. An animation-side caller is still pending.
+
+The fixed 120 Hz solver sweeps points against actual static triangles. It stores at most 256 droplets and 256
+deposits, with a default recycling budget of 192 each. Every deposit clips to at most 12 coplanar receiver triangles.
+Grazing impacts stretch along the projected velocity; absorbent surfaces spread less and fade sooner. Glass
+blocks without receiving. The renderer uses one non-additive, depth-tested HDR draw and a preallocated instance
+buffer. Its optional motion-MRT pipeline preserves the velocity attachment. Rebuild the system when static
+receivers change; moving actors and vehicles are not receivers. The current tint is unlit and has no specular lobe.
+
+`games/blackout/scripts/prove-splatter.ts` records matched captures and paired whole-frame GPU samples against
+the current blood. See `perf/lab-splatter.md` for reproduction, measured costs and limits.
+
+## Integration proof
 
 From the repository root, run `bun games/getaway/scripts/prove-fx-integration.ts` on a Metal-capable Mac after the
 root frozen install. It launches private, headless Vite fixtures and closes them when done. It verifies shipped tyre

@@ -8,6 +8,8 @@ import { VolumeRenderer } from "@arcade/kit/fx/volume-renderer"
 import type { SmokeVolumes } from "@arcade/kit/fx/volume"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
+import type { Splatter } from "@arcade/kit/fx/splatter"
+import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
@@ -44,6 +46,7 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array):
 export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: number; alpha?: boolean; motionKeys?: (MotionKey | undefined)[] }
 
 export type FrameInput = {
+  splatter?:Splatter
   smoke?: SmokeVolumes
   smokeEnabled?: boolean
   frame: Float32Array<ArrayBuffer>
@@ -74,6 +77,8 @@ export type FrameInput = {
  * tone-mapped composite with grade, vignette and grain.
  */
 export class Renderer {
+  private splatterRenderer?:SplatterRenderer
+  private readonly splatterEye=new Float32Array(3)
   readonly smokeRenderer: VolumeRenderer
   private readonly smokeMatrix = new Float32Array(16)
   private readonly smokeInverse = new Float32Array(16)
@@ -475,6 +480,11 @@ export class Renderer {
   private draw(f: FrameInput): void {
     const d = this.device
     const motion = !!(f.frame[45]! & 1024)
+    if(f.splatter){
+      this.splatterRenderer??=new SplatterRenderer(d)
+      for(let i=0;i<3;i++)this.splatterEye[i]=f.frame[16+i]!
+      this.splatterRenderer.prepare(f.splatter,f.frame,this.splatterEye,motion)
+    }
     if (motion) this.prepareMotion()
     const scenePipes = motion ? this.motionPipes : ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512) ? this.pipes : this.baselinePipes
     const old = this.previousFrame
@@ -620,6 +630,7 @@ export class Renderer {
       if (motion) pass.setVertexBuffer(1, this.previousSprites, addOffset)
       pass.draw(6, addCount)
     }
+    if(f.splatter)this.splatterRenderer!.draw(pass,motion)
     pass.end()
 
     if (f.smoke && f.smokeEnabled && f.smoke.count) {

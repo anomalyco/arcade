@@ -14,7 +14,7 @@ const fixtures=array<Box,9>(
   Box(vec3f(-3.5,0.2,-0.8),vec3f(-0.5,0.85,0.8)),Box(vec3f(-2.7,0.85,-0.65),vec3f(-1.1,1.4,0.65)),
   Box(vec3f(2.5,0,0.7),vec3f(3,1.3,1.2)),Box(vec3f(2.55,1.3,0.75),vec3f(2.95,1.7,1.15)));
 fn boxAt(i:u32)->Box {
-  if(F.options.w==4.0){return Box(vec3f(1000),vec3f(1000.01));}
+  if(F.options.w>=4.0){return Box(vec3f(1000),vec3f(1000.01));}
   if(F.options.w<3.0){return fixtures[i];}
   if(i==0u){return Box(vec3f(-18,0,-28),vec3f(18,2,-27));}
   if(i==1u){return Box(vec3f(-18,0,-28),vec3f(-17,2,12));}
@@ -77,6 +77,8 @@ fn visibility(p:vec3f,l:i32,surface:i32)->f32 {
 }
 struct Pixel {@location(0) color:vec4f,@builtin(frag_depth) depth:f32}
 @fragment fn fs(o:Out)->Pixel {
+  // Receiver studies supply their own floor; the analytic y=0 grid would depth-fight it.
+  if(F.options.w==5.0){var out:Pixel;out.color=vec4f(.025,.03,.04,1);out.depth=1.0;return out;}
   let q=F.inverse*vec4f(o.uv*vec2f(2,-2)+vec2f(-1,1),1,1);let ray=normalize(q.xyz/q.w-F.eye.xyz);
   var hit=-F.eye.y/ray.y;var index=-1;
   for(var i=0;i<9;i++){let d=intersect(F.eye.xyz,ray,boxAt(u32(i)));if(d<hit){hit=d;index=i;}}
