@@ -98,7 +98,7 @@ export async function catalogueViewer(options: DevHubOptions) {
   canvas.addEventListener("pointermove", event => {
     if (!drag || drag.id !== event.pointerId) return
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.x = event.clientX; drag.y = event.clientY
-    change(() => { if (drag!.pan) { const scale = stage.camDist * .0015, c = Math.cos(stage.camYaw), s = Math.sin(stage.camYaw); stage.pan((-dx * c - dy * s) * scale, (dx * s - dy * c) * scale) } else stage.orbit(-dx * .008, dy * .008) })
+    change(() => { if (drag!.pan) stage.pan(-dx, -dy); else stage.orbit(-dx * .008, dy * .008) })
   })
   for (const name of ["pointerup", "pointercancel", "lostpointercapture"] as const) canvas.addEventListener(name, () => { drag = undefined })
   canvas.addEventListener("wheel", event => { if (event.metaKey || event.ctrlKey) return; event.preventDefault(); change(() => stage.zoomBy(Math.exp(Math.max(-100, Math.min(100, event.deltaY)) * .003))) }, { passive: false })
