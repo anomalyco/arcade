@@ -9,7 +9,9 @@ import {
   emitGrassTuft,
   emitHydrangeaPanicles,
   foliageSettings,
+  foliageTextureUrls,
   foliageWindDeclarationsWgsl,
+  getFoliageTexturesRevision,
   isFoliageCrownShape,
   isFoliagePresetId,
   packFoliageUniforms,
@@ -21,6 +23,7 @@ import {
   type FoliageParams,
   type FoliagePresetId,
   type FoliageStageMode,
+  type FoliageTextureSlot,
 } from "../gpu/foliage"
 import { MAT, Mesh, VERT_BYTES, type Rgb } from "../gpu/mesh"
 import {
@@ -159,6 +162,8 @@ struct FoliageStageUniforms {
 }
 
 @group(0) @binding(1) var<uniform> U: FoliageStageUniforms;
+@group(0) @binding(2) var foliageTexArray: texture_2d_array<f32>;
+@group(0) @binding(3) var foliageSamp: sampler;
 
 struct VIn {
   @location(0) pos: vec3f,
@@ -214,6 +219,15 @@ struct VOut {
   let V = normalize(F.eye.xyz - o.world);
   let isAfter = select(compareMode == 1, passSide > 0.0, compareMode == 2);
 
+  // Sample generated-textures WebP layers in uniform control flow (0=grassAlbedo, 1=grassNormal, 2=barkAlbedo, 3=leafAtlas)
+  let grassUv = o.world.xz * 0.42;
+  let barkUv = vec2f(o.world.x + o.world.z, o.world.y * 0.48);
+  let leafUv = vec2f(o.world.x + o.world.z * 0.73 + o.world.y * 0.41, o.world.y * 1.17 - o.world.x * 0.43 + o.world.z * 0.81) * 0.85;
+  let texGrass = pow(max(textureSample(foliageTexArray, foliageSamp, grassUv, 0).rgb, vec3f(0.01)), vec3f(2.2));
+  let texGrassNorm = textureSample(foliageTexArray, foliageSamp, grassUv * 1.6, 1).rgb * 2.0 - 1.0;
+  let texBark = pow(max(textureSample(foliageTexArray, foliageSamp, barkUv, 2).rgb, vec3f(0.01)), vec3f(2.2));
+  let texLeaf = pow(max(textureSample(foliageTexArray, foliageSamp, leafUv, 3).rgb, vec3f(0.01)), vec3f(2.2));
+
   // Emissive lamps (window panes, porch lantern, streetlamp head)
   if (mat == 2) {
     return vec4f(o.color * 2.8, 1.0);
@@ -234,10 +248,11 @@ struct VOut {
         r.u2.z = clamp(U.extra.x * 0.52, 0.0, 1.0);
         r.u2.w = clamp(0.35 + U.extra.x * 0.45, 0.0, 1.0);
         let s = evalGrassSoil(p, albedo, false, r);
-        albedo = s.albedo;
+        let grassMod = clamp(texGrass / vec3f(0.045, 0.085, 0.022), vec3f(0.68), vec3f(1.36));
+        albedo = s.albedo * mix(vec3f(1.0), grassMod, 0.55);
         gloss = s.gloss;
         cavity = s.cavity;
-        n = normalize(n + surfaceNormalShift);
+        n = normalize(n + surfaceNormalShift + vec3f(texGrassNorm.x * 0.24, 0.0, texGrassNorm.y * 0.24));
       } else {
         let s = evalLegacyMaterial(4, o.world, n, albedo);
         albedo = s.albedo;
@@ -255,10 +270,11 @@ struct VOut {
         let vEdge = smoothstep(0.0, 0.08, vDist);
         if (isAfter) {
           let s = evalGrassSoil(p, vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge), false, defaultMaterialRecipe(4));
-          albedo = s.albedo;
+          let grassMod = clamp(texGrass / vec3f(0.045, 0.085, 0.022), vec3f(0.68), vec3f(1.36));
+          albedo = s.albedo * mix(vec3f(1.0), grassMod, 0.52);
           gloss = s.gloss;
           cavity = s.cavity * (0.55 + 0.45 * vEdge);
-          n = normalize(n + surfaceNormalShift);
+          n = normalize(n + surfaceNormalShift + vec3f(texGrassNorm.x * 0.22, 0.0, texGrassNorm.y * 0.22));
         } else {
           let s = evalLegacyMaterial(4, o.world, n, vec3f(0.024, 0.036, 0.014));
           albedo = s.albedo;
@@ -298,6 +314,10 @@ struct VOut {
     albedo = mix(vec3f(0.32, 0.30, 0.26), albedo * (0.8 + 0.35 * hash2(floor(q))), seam(q.x, 0.025, 4.0) * seam(q.y, 0.06, 11.76));
   } else if (mat == 24) {
     albedo *= 0.84 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24;
+    if (isAfter) {
+      let barkMod = clamp(texBark / vec3f(0.065, 0.048, 0.034), vec3f(0.60), vec3f(1.42));
+      albedo *= mix(vec3f(1.0), barkMod, 0.65);
+    }
   } else if (mat == 22) {
     if (!isAfter) {
       albedo *= 0.82 + surfaceNoise(o.world.xz * 4.0 + o.world.y) * 0.30;
@@ -330,7 +350,8 @@ struct VOut {
       outAlpha = clamp(1.42 - bladeT * 0.48, 0.52, 1.0);
     } else {
       let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
-      albedo = s.albedo;
+      let leafMod = clamp(texLeaf / vec3f(0.048, 0.092, 0.024), vec3f(0.66), vec3f(1.36));
+      albedo = s.albedo * mix(vec3f(1.0), leafMod, 0.48);
       gloss = s.gloss;
       cavity = s.cavity;
       n = normalize(n + surfaceNormalShift);
@@ -795,10 +816,77 @@ export function createFoliage(context: LabContext): LabSection {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
 
+  const TEX_SZ = 256
+  const foliageTex = device.createTexture({
+    label: "Lab foliage texture array",
+    size: [TEX_SZ, TEX_SZ, 4],
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+  })
+  // Initialize with neutral mean colors so synchronous first renders are identity-modulated before async WebP decode completes
+  const neutralLayers: readonly [number, number, number, number][] = [
+    [62, 82, 44, 255],
+    [128, 128, 255, 255],
+    [72, 62, 50, 255],
+    [66, 90, 46, 255],
+  ]
+  for (let layer = 0; layer < 4; layer++) {
+    const [r, g, b, a] = neutralLayers[layer]!
+    const buf = new Uint8Array(TEX_SZ * TEX_SZ * 4)
+    for (let i = 0; i < buf.length; i += 4) {
+      buf[i] = r
+      buf[i + 1] = g
+      buf[i + 2] = b
+      buf[i + 3] = a
+    }
+    device.queue.writeTexture(
+      { texture: foliageTex, origin: [0, 0, layer] },
+      buf,
+      { bytesPerRow: TEX_SZ * 4, rowsPerImage: TEX_SZ },
+      [TEX_SZ, TEX_SZ, 1],
+    )
+  }
+  const foliageView = foliageTex.createView({ dimension: "2d-array", arrayLayerCount: 4 })
+  const foliageSamp = device.createSampler({
+    addressModeU: "repeat",
+    addressModeV: "repeat",
+    magFilter: "linear",
+    minFilter: "linear",
+    mipmapFilter: "linear",
+  })
+
+  let loadedTexRev = 0
+  const slotOrder: readonly FoliageTextureSlot[] = ["grassAlbedo", "grassNormal", "barkAlbedo", "leafAtlas"]
+  const ensureFoliageTextures = () => {
+    const rev = getFoliageTexturesRevision()
+    if (rev === loadedTexRev || typeof fetch === "undefined" || typeof createImageBitmap === "undefined") return
+    loadedTexRev = rev
+    for (const [layer, slot] of slotOrder.entries()) {
+      const url = foliageTextureUrls[slot]
+      if (!url) continue
+      void fetch(url)
+        .then(r => (r.ok ? r.blob() : null))
+        .then(b => (b ? createImageBitmap(b, { resizeWidth: TEX_SZ, resizeHeight: TEX_SZ }) : null))
+        .then(bmp => {
+          if (!bmp) return
+          device.queue.copyExternalImageToTexture(
+            { source: bmp },
+            { texture: foliageTex, origin: [0, 0, layer] },
+            [TEX_SZ, TEX_SZ],
+          )
+          bmp.close()
+        })
+        .catch(() => {})
+    }
+  }
+  ensureFoliageTextures()
+
   const bindLayout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "2d-array" } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
     ],
   })
   const bindGroupAfter = device.createBindGroup({
@@ -806,6 +894,8 @@ export function createFoliage(context: LabContext): LabSection {
     entries: [
       { binding: 0, resource: { buffer: frameBuffer } },
       { binding: 1, resource: { buffer: uniformBufferAfter } },
+      { binding: 2, resource: foliageView },
+      { binding: 3, resource: foliageSamp },
     ],
   })
   const bindGroupBefore = device.createBindGroup({
@@ -813,6 +903,8 @@ export function createFoliage(context: LabContext): LabSection {
     entries: [
       { binding: 0, resource: { buffer: frameBuffer } },
       { binding: 1, resource: { buffer: uniformBufferBefore } },
+      { binding: 2, resource: foliageView },
+      { binding: 3, resource: foliageSamp },
     ],
   })
 
@@ -1154,6 +1246,7 @@ export function createFoliage(context: LabContext): LabSection {
     },
     prepare() {
       stage.sceneMode = 5
+      ensureFoliageTextures()
       ensureMeshes()
     },
     draw(pass) {

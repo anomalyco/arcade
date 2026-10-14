@@ -163,6 +163,17 @@ try {
   )
   assert.equal(heightAfterReset, FOLIAGE_PRESETS.oak.defaults.treeHeight)
 
+  const texRes = await page.evaluate(() =>
+    (window as any).lab.workbench.invoke("foliage.textures", {
+      grassAlbedo: "texture-assets/lawn_grass.webp",
+      grassNormal: "texture-assets/lawn_grass_normal.webp",
+      barkAlbedo: "texture-assets/tree_bark.webp",
+      leafAtlas: "texture-assets/leaf_atlas.webp",
+    }),
+  )
+  assert.equal(texRes.ok, true)
+  assert.equal(texRes.result.textures.grassAlbedo, "texture-assets/lawn_grass.webp")
+
   // 6. Capture actual Outbreak game street & interior scenes at aligned target poses (seed 7)
   await page.setViewportSize({ width: 1000, height: 680 })
   await page.goto(`http://127.0.0.1:${fixture.port}/?solo&seed=7&bench`)
@@ -215,7 +226,7 @@ try {
   const summary = {
     adapter,
     initialState,
-    commandsVerified: ["foliage.set", "foliage.randomize", "foliage.preset"],
+    commandsVerified: ["foliage.set", "foliage.randomize", "foliage.preset", "foliage.textures"],
     captures: [
       "outbreak-lot-game-before.png",
       "outbreak-lot-game-after.png",

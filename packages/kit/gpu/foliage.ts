@@ -1558,16 +1558,29 @@ export type FoliageTextureSlot = "grassAlbedo" | "grassNormal" | "barkAlbedo" | 
 
 /**
  * Configurable texture URLs for external/generated textures (`grass/soil albedo`, `grass/soil detail normal`,
- * `bark albedo`, and `leaf-cluster RGBA atlas`). When set, the Lab and Outbreak can load and bind them directly.
+ * `bark albedo`, and `leaf-cluster RGBA atlas`). Defaults to the prepared WebP maps from `generated-textures`.
  */
-export const foliageTextureUrls: Partial<Record<FoliageTextureSlot, string>> = {}
+export const foliageTextureUrls: Record<FoliageTextureSlot, string> = {
+  grassAlbedo: "texture-assets/lawn_grass.webp",
+  grassNormal: "texture-assets/lawn_grass_normal.webp",
+  barkAlbedo: "texture-assets/tree_bark.webp",
+  leafAtlas: "texture-assets/leaf_atlas.webp",
+}
+
+let textureRev = 1
+export function getFoliageTexturesRevision(): number {
+  return textureRev
+}
 
 export function setFoliageTextureUrls(urls: Partial<Record<FoliageTextureSlot, string>>): void {
+  let changed = false
   for (const [k, v] of Object.entries(urls) as [FoliageTextureSlot, string | undefined][]) {
-    if (typeof v === "string" && v.trim()) {
+    if (typeof v === "string" && v.trim() && foliageTextureUrls[k] !== v.trim()) {
       foliageTextureUrls[k] = v.trim()
+      changed = true
     }
   }
+  if (changed) textureRev++
 }
 
 /**
