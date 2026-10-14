@@ -5,6 +5,7 @@ import { Transients } from "../audio/synth"
 import type { Input } from "../../shared/sim/vehicle"
 import type { CarView, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
+import type { City } from "../../shared/sim/city"
 
 /** What a Lab car reports each tick (`LabCharacter.sound`). */
 export type GetawayCarSound = { car: CarView; input: Input }
@@ -15,12 +16,12 @@ const isCar = (state: unknown): state is GetawayCarSound => typeof state === "ob
  * Getaway's own audio in the Lab: the game's `GameAudio` (procedural DriverVoice engine, gearbox, tyre squeal and scrub,
  * nitro, crash and scrape samples, city bed) on its own `AudioEngine`, fed the Lab car as the local player's car.
  */
-export function getawayLabAudio() {
+export function getawayLabAudio(options: { city?: City } = {}) {
   const engine = new AudioEngine(undefined, { bindDom: false })
-  const game = new GameAudio(undefined, undefined, engine)
+  const game = new GameAudio(undefined, options.city, engine)
   let transients: Transients | undefined
   let mix: LabMix | undefined
-  let ambience = 0
+  let ambience = 1
   let t = 0
   // A round already under way with no sirens: the car drives, nothing stings.
   const view = {
@@ -29,14 +30,20 @@ export function getawayLabAudio() {
   } as unknown as WorldView
   const cam = { fx: 0, fz: 0, right: [1, 0] as [number, number], axes() { return { fwd: [this.right[1], -this.right[0]], right: this.right } } }
 
+  // Bus levels last written; the engine starts at unity, and only changes are scheduled.
+  const applied = { master: 1, sfx: 1, sting: 1, amb: 1 }
+  const level = (bus: keyof typeof applied, value: number, tau: number) => {
+    if (applied[bus] === value) return
+    applied[bus] = value
+    engine[bus].gain.setTargetAtTime(value, engine.now, tau)
+  }
   const levels = () => {
     if (!engine.ctx || !mix) return
-    const at = engine.now
-    engine.master.gain.setTargetAtTime(mix.muted ? 0 : mix.volume, at, 0.04)
+    level("master", mix.muted ? 0 : mix.volume, 0.04)
     // The game's sfx bus carries engines, tyres and other cars' crashes; the sting bus carries your own crashes.
-    engine.sfx.gain.setTargetAtTime(mix.vehicles, at, 0.04)
-    engine.sting.gain.setTargetAtTime(mix.vehicles, at, 0.04)
-    engine.amb.gain.setTargetAtTime(mix.ambience * ambience, at, 0.4)
+    level("sfx", mix.vehicles, 0.04)
+    level("sting", mix.vehicles, 0.04)
+    level("amb", mix.ambience * ambience, 0.4)
   }
 
   const adapter: LabAudioAdapter & { engine: AudioEngine; game: GameAudio } = {

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { Plugin } from "vite"
+import { hostPath } from "./audio-assets"
 
 /**
  * Serves and emits Getaway's own samples under the host's `sfx/` directory, where Getaway's `AudioEngine` fetches them
@@ -13,7 +14,7 @@ export function getawaySfx(): Plugin {
     name: "arcade-getaway-sfx",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const file = files.get(new URL(req.url ?? "/", "http://localhost").pathname.replace(/^\//, ""))
+        const file = files.get(hostPath(req.url, server.config.base))
         if (!file) return next()
         res.setHeader("Content-Type", "audio/mpeg")
         res.end(readFileSync(file))

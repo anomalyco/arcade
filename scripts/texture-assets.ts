@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { Plugin } from "vite"
+import { hostPath } from "./audio-assets"
 import { DEFAULT_TEXTURE_MANIFEST } from "../packages/kit/textures/manifest"
 
 /**
@@ -18,7 +19,7 @@ export function textureAssets(): Plugin {
     name: "arcade-texture-assets",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const path = new URL(req.url ?? "/", "http://localhost").pathname.replace(/^\//, "")
+        const path = hostPath(req.url, server.config.base)
         const file = assets.get(path)
         if (!file) return next()
         res.setHeader("Content-Type", path.endsWith(".webp") ? "image/webp" : "image/png")

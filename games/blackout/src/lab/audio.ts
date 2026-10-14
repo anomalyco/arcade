@@ -50,6 +50,7 @@ export function blackoutLabAudio() {
       }
     },
     silence() {},
+    inspect() { return { live: sound.bus() !== null } },
   }
   return adapter
 }
