@@ -113,6 +113,7 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
   // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
   solidCutaway: "",
   surface: /* wgsl */ `
+  outbreakFlashMask = 0.0;
   let nightLamps = clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
   if (mat == 6) {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
@@ -184,23 +185,27 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
       col *= 0.08;
     }
+    let beamAdd = evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
     if (mat != 12) {
       col = applyOutbreakFogOfWar(col, o.world, n, o.color, inRoom, mat, w);
     } else {
       // Actors in LOS: Limbo/Noir top-down contour rim + anatomical form shading so zombies stay clearly readable even in dark areas
       let isLiveActor = o.extra.z >= 0.92;
-      let viewRim = pow(1.0 - max(dot(n, V), 0.0), 1.65);
-      let contourRim = pow(clamp(length(n.xz), 0.0, 1.0), 1.35) * smoothstep(0.15, 1.58, o.world.y);
-      let actorRim = max(viewRim, contourRim) * max(OL.u2.z, 1.15);
-      let topCatch = max(0.0, n.y) * 0.88 * max(OL.u2.z, 1.15) * smoothstep(0.45, 1.68, o.world.y);
-      let heightGrad = smoothstep(0.05, 1.62, o.world.y);
-      let formShade = (0.45 + 0.55 * clamp(n.y * 0.55 + 0.45, 0.0, 1.0)) * (0.50 + 0.50 * heightGrad);
-      let rimCol = mix(vec3f(0.32, 0.37, 0.44), vec3f(0.14, 0.11, 0.08), w);
-      let liftedBase = max(o.color, vec3f(0.11, 0.12, 0.13) * (0.45 + 0.55 * heightGrad));
-      let darkReadFloor = liftedBase * formShade * mix(vec3f(0.46, 0.51, 0.58), vec3f(0.28, 0.24, 0.19), w) * select(0.42, 1.0, isLiveActor);
-      col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.88) * (actorRim + topCatch) * select(0.45, 1.0, isLiveActor);
+      let inBeam = clamp(outbreakFlashMask, 0.0, 1.0);
+      let darkLosScale = select(0.42, 1.0 - 0.72 * inBeam, isLiveActor);
+      let v1 = 1.0 - max(dot(n, V), 0.0);
+      let viewRim = v1 * v1;
+      let c1 = clamp(length(n.xz), 0.0, 1.0);
+      let contourRim = c1 * c1 * smoothstep(0.22, 1.62, o.world.y);
+      let actorRim = max(viewRim, contourRim * 0.85) * max(OL.u2.z, 1.0);
+      let topCatch = max(0.0, n.y) * 0.45 * max(OL.u2.z, 1.0) * smoothstep(0.65, 1.68, o.world.y);
+      let heightGrad = smoothstep(0.08, 1.62, o.world.y);
+      let formShade = (0.36 + 0.64 * clamp(n.y * 0.55 + 0.45, 0.0, 1.0)) * (0.42 + 0.58 * heightGrad);
+      let rimCol = mix(vec3f(0.072, 0.088, 0.112), vec3f(0.065, 0.052, 0.038), w);
+      let darkReadFloor = o.color * formShade * mix(vec3f(0.22, 0.25, 0.30), vec3f(0.18, 0.15, 0.12), w) * darkLosScale;
+      col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale;
     }
-    col += evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
+    col += beamAdd;
   }
 `,
 }

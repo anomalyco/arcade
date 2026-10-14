@@ -621,13 +621,19 @@ export class Renderer {
     this.lookPipes = {
       level: pipe("vsStatic", [meshLayout], undefined, true, "fsSolid"),
       levelCut: pipe("vsStatic", [meshLayout], undefined, true, "fs"),
-      glass: pipe("vsStatic", [meshLayout], premul, false, "fs"),
-      inst: pipe("vsInst", [meshLayout, instLayout], undefined, true, "fs"),
+      glass: pipe("vsStatic", [meshLayout], premul, false, this.shaders ? "fsSolid" : "fs"),
+      inst: pipe("vsInst", [meshLayout, instLayout], undefined, true, this.shaders ? "fsSolid" : "fs"),
       instAlpha: pipe("vsInst", [meshLayout, instLayout], premul, false, "fs"),
       composite: d.createRenderPipeline({
         layout: postPipeLayout,
         vertex: { module: lookPostMod, entryPoint: "vs" },
         fragment: { module: lookPostMod, entryPoint: "composite", targets: [{ format: this.format }] },
+        primitive: { topology: "triangle-list" },
+      }),
+      compositeFast: d.createRenderPipeline({
+        layout: postPipeLayout,
+        vertex: { module: lookPostMod, entryPoint: "vs" },
+        fragment: { module: lookPostMod, entryPoint: "compositeFast", targets: [{ format: this.format }] },
         primitive: { topology: "triangle-list" },
       }),
     }
@@ -914,7 +920,22 @@ export class Renderer {
     }
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-    fp.setPipeline((motion ? this.motionPipes : useLookPipes ? this.ensureLookPipes() : f.frame[45]! & 1 ? this.pipes : this.baselinePipes).composite!)
+    const useFastLookPost =
+      useLookPipes &&
+      effectiveLook &&
+      (effectiveCompare.mode ?? 1) === 1 &&
+      effectiveLook.painterlySmooth <= 0.01 &&
+      effectiveLook.outlineStrength <= 0.001 &&
+      Math.round(effectiveLook.tonemap) !== 2
+    fp.setPipeline(
+      motion
+        ? this.motionPipes.composite!
+        : useLookPipes
+          ? (useFastLookPost ? this.ensureLookPipes().compositeFast! : this.ensureLookPipes().composite!)
+          : f.frame[45]! & 1
+            ? this.pipes.composite!
+            : this.baselinePipes.composite!,
+    )
     fp.setBindGroup(0, motion ? this.motionComposite : g.composite)
     fp.draw(3)
     fp.end()

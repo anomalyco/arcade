@@ -134,9 +134,10 @@ export class ZombieCrowdRenderer {
   private overlayCtx: CanvasRenderingContext2D | null = null
 
   constructor(renderer: Pick<Renderer, "addModel">) {
-    const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0.022) => {
+    const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0) => {
       const m = new Mesh()
-      m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, MAT.actor)
+      if (bevel > 0) m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, MAT.actor)
+      else m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
       return m
     }
     const skin = hex(0x7c906e)
@@ -149,25 +150,25 @@ export class ZombieCrowdRenderer {
     const boot = hex(0x28221e)
 
     const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
-    const torso = box(0.28, -0.02, 0.48, 0.4, jacket)
+    const torso = box(0.28, -0.02, 0.48, 0.4, jacket, 0.022)
     // Lighter shoulder/collar yolk so top-down silhouette reads clearly even in dim ambient
-    torso.bevelBox(-0.145, 0.34, -0.205, 0.145, 0.47, 0.205, 0.018, collar, MAT.actor)
+    torso.box(-0.145, 0.34, -0.205, 0.145, 0.47, 0.205, collar, MAT.actor)
     torso.box(0.11, 0.12, -0.12, 0.148, 0.36, 0.08, wound, MAT.actor)
     torso.box(-0.148, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
 
-    const head = box(0.185, 0.01, 0.24, 0.185, skin, 0.026)
-    head.bevelBox(-0.1, 0.19, -0.105, 0.1, 0.275, 0.105, 0.016, hair, MAT.actor)
+    const head = box(0.185, 0.01, 0.24, 0.185, skin, 0.024)
+    head.box(-0.1, 0.19, -0.105, 0.1, 0.275, 0.105, hair, MAT.actor)
     for (const z of [-0.042, 0.042]) {
       head.box(0.086, 0.13, z - 0.017, 0.098, 0.158, z + 0.017, hex(0xbce858), MAT.glow, 0.72)
     }
 
-    const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket, 0.018)
-    const foreArm = box(0.115, -0.28, 0.3, 0.115, forearmSkin, 0.016)
+    const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
+    const foreArm = box(0.115, -0.28, 0.3, 0.115, forearmSkin)
     foreArm.box(-0.04, -0.31, -0.046, 0.058, -0.255, 0.046, wound, MAT.actor)
 
-    const thigh = box(0.17, -0.42, 0.46, 0.17, trousers, 0.02)
-    const shin = box(0.135, -0.41, 0.43, 0.14, trousers, 0.018)
-    const foot = box(0.21, -0.075, 0.09, 0.14, boot, 0.015)
+    const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
+    const shin = box(0.135, -0.41, 0.43, 0.14, trousers)
+    const foot = box(0.21, -0.075, 0.09, 0.14, boot)
 
     this.models = [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot].map((m) => renderer.addModel(m))
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))

@@ -188,7 +188,7 @@ export function packOutbreakLightingUniforms(
   out[15] = dirY
   // u4
   out[16] = Math.tan(halfRad)
-  out[17] = state.inInteriorView ? Math.min(s.flashlightRange, 7.8) : Math.min(s.flashlightRange, 12.5)
+  out[17] = state.inInteriorView ? Math.min(s.flashlightRange, 7.2) : Math.min(s.flashlightRange, 9.8)
   out[18] = state.flashlightOutput * s.flashlightIntensity
   out[19] = state.flashlightSlot
   // u5
@@ -697,6 +697,7 @@ struct OutbreakLightingUniforms {
   u7: vec4f, // reserved
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
+var<private> outbreakFlashMask: f32;
 
 /**
  * Temperature-balanced twilight sky fill: smoothly transitions between cool steel-blue night (practicalWarmth -> 0)
@@ -765,8 +766,8 @@ fn evalTriplanarPropMod(world: vec3f, n: vec3f) -> f32 {
   let freq = 11.0;
   let fade = 1.0 - smoothstep(0.08, 0.45, surfaceFootprint * freq * 0.1);
   let uv = vec2f(world.x + world.z * 0.85, world.y * 1.6 + world.z * 0.35);
-  let fibre = (surfaceNoise(uv * freq) - 0.5) * fade;
-  return 1.0 + fibre * 0.20;
+  let fibre = (hash2(floor(uv * freq)) - 0.5) * fade;
+  return 1.0 + fibre * 0.16;
 }
 
 /**
@@ -775,9 +776,6 @@ fn evalTriplanarPropMod(world: vec3f, n: vec3f) -> f32 {
  */
 fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColor: vec3f, inRoom: bool, mat: i32) -> vec3f {
   var col = surfCol;
-  if (inRoom && abs(n.y) < 0.5 && world.y < 2.15) {
-    col += evalAreaFloorBounce(world, n) * surfCol * 8.0;
-  }
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let isInView = OL.u5.w > 0.5;
   let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
@@ -786,7 +784,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
   if (!inRoom) {
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool
     let sScale = OL.u1.w;
-    if (sScale > 0.001) {
+    if (sScale > 0.20) {
       let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
       let dS2 = dot(dvS, dvS);
@@ -800,7 +798,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
-    if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
+    if (w > 0.01 && (pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
       let dWinL2 = dot((world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64));
       let dWinR2 = dot((world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64));
       let dPorch2 = dot((world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52), (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52));
@@ -817,6 +815,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (w * w);
     }
   } else if (world.y < 2.72) {
+    col += evalAreaFloorBounce(world, n) * surfCol * 8.0;
     // Interior indirect room bounce & wall-wash halos (partitioned by quadrant so only 1 exp() runs per interior pixel)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
@@ -859,43 +858,56 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
  * Always 100% live on polar slot 1 (shadowAt).
  */
 fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, mat: i32) -> vec3f {
+  outbreakFlashMask = 0.0;
   if (OL.u4.z <= 0.001 || OL.u4.w < 0.5 || OL.u2.x <= 0.01) { return vec3f(0.0); }
-  let fSlot = u32(round(OL.u4.w));
   let fOrig = OL.u3.xy;
   let fDir = OL.u3.zw;
   let fSide = vec2f(-fDir.y, fDir.x);
   let rel = world.xz - fOrig;
   let along = dot(rel, fDir);
   let across = abs(dot(rel, fSide));
-  let tanHalf = max(0.12, OL.u4.x);
+  let tanHalf = max(0.16, OL.u4.x * 1.18);
   let fRange = max(2.8, OL.u4.y);
-  let coneR = 0.12 + max(0.0, along) * tanHalf;
-  if (along < -0.15 || along > fRange || across > coneR * 1.35 || world.y > 1.75) {
+  let coneR = 0.18 + max(0.0, along) * tanHalf;
+  if (along < -0.55 || along > fRange || across > coneR * 1.45 || world.y > 1.85) {
     return vec3f(0.0);
   }
-  if (mat == 12 && length(world.xz - OL.u6.xy) < 0.55) {
-    return vec3f(0.0);
+  let d0 = length(rel);
+  var footAdd = vec3f(0.0);
+  if (inRoom && world.y < 0.35 && d0 < 2.2) {
+    let footSpill = (1.0 - d0 / 2.2) * (1.0 - min(1.0, across / 1.1));
+    footAdd = baseAlbedo * vec3f(0.28, 0.20, 0.11) * footSpill;
+    outbreakFlashMask = clamp(footSpill * 1.1, 0.0, 0.85);
   }
+  if (along < -0.12 || (mat == 12 && length(world.xz - OL.u6.xy) < 0.55)) {
+    return footAdd;
+  }
+  let fSlot = u32(round(OL.u4.w));
   let radial = exp(-pow(across / (coneR * 0.78), 2.0)) * (1.0 - smoothstep(coneR * 0.72, coneR * 1.45, across));
   let axial = smoothstep(-0.12, 0.18, along) * pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.25);
   let profile = radial * axial;
-  if (profile <= 0.008) { return vec3f(0.0); }
+  if (profile <= 0.008) { return footAdd; }
 
   let aF = (atan2(rel.y, rel.x) + TAU) % TAU;
   let rayF = u32(i32(floor(aF / TAU * f32(RAYS))) + i32(RAYS)) % RAYS;
   let hitF = polar[(fSlot * RAYS + rayF) * 2u].x;
-  let vis = 1.0 - smoothstep(hitF - 0.05, hitF + 0.20, length(rel));
-  if (vis <= 0.001) { return vec3f(0.0); }
+  let vis = 1.0 - smoothstep(hitF - 0.05, hitF + 0.20, d0);
+  if (vis <= 0.001) { return footAdd; }
 
-  // Shadow-gated 3D drifting dust motes (dustAt) glinting inside unoccluded beam
+  outbreakFlashMask = max(outbreakFlashMask, clamp(profile * vis * 3.4, 0.0, 1.0));
+
   let moteCell = floor(world.xz * 7.5 + vec2f(F.cam.w * 0.18, -F.cam.w * 0.14));
   let moteHash = hash2(moteCell);
   let moteGlint = smoothstep(0.92, 0.99, moteHash) * (0.5 + 0.5 * sin(F.cam.w * 2.4 + moteHash * 31.0));
 
-  let surfW = select(0.34 + 0.56 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.32 && n.y > 0.65);
+  let surfW = select(0.36 + 0.58 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.32 && n.y > 0.65);
   let w = clamp(OL.u0.z, 0.0, 1.0);
-  let beamCol = mix(vec3f(1.06, 0.94, 0.76), vec3f(1.0, 0.62, 0.24), w * 0.78);
-  let mist = (profile / (0.42 + max(0.0, along) * 0.24) + moteGlint * 0.18) * OL.u2.x * 0.20 * surfW;
-  return (baseAlbedo * 1.35 + beamCol * 0.045) * beamCol * OL.u4.z * mist * vis;
+  let beamCol = mix(vec3f(1.08, 0.96, 0.78), vec3f(1.0, 0.62, 0.24), w * 0.78);
+  let mist = (profile / (0.38 + max(0.0, along) * 0.22) + moteGlint * 0.18) * OL.u2.x * 0.28 * surfW;
+  var beamAlbedo = baseAlbedo;
+  if (mat == 22 || mat == 20) {
+    beamAlbedo = mix(baseAlbedo, baseAlbedo * vec3f(0.95, 1.35, 0.74), outbreakFlashMask * 0.48);
+  }
+  return footAdd + (beamAlbedo * 1.65 + beamCol * 0.05) * beamCol * OL.u4.z * mist * vis;
 }
 `

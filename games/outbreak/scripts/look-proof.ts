@@ -46,7 +46,13 @@ try {
       for(let i=0;i<8;i++) await h.step()
     }, scene)
     await page.screenshot({ path: resolve(out, `${scene.name}.png`) })
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt")) el.style.visibility = "hidden"
+    })
     await page.locator("#game").screenshot({ path: resolve(out, `${scene.name}-canvas.png`) })
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt")) el.style.visibility = ""
+    })
   }
   const state=await page.evaluate(()=>(window as any).__arcadeHarness.state())
   if(phase!=="before") {

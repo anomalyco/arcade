@@ -830,22 +830,13 @@ async function main() {
         if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
       }
     }
-    const visChanged = vision.update(p.x, p.y, p.aim, blockers, settings, peek)
-    const scenChanged = scenery.update(town, vision)
-    if (visChanged || scenChanged) {
+    vision.update(p.x, p.y, p.aim, blockers, settings, peek)
+    if (scenery.update(town, vision)) {
       combinedFog.markDirty()
       combinedFog.update(vision, scenery, true)
       renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
     }
-    let frameLightOccluders = lightOccluders
-    for (let zi = 0; zi < zombies.length && frameLightOccluders < MAX_OCCLUDERS; zi++) {
-      const z = zombies[zi]!
-      if (z.state === "dead") continue
-      if (Math.hypot(z.x - p.x, z.y - p.y) > 16) continue
-      if (vision.actorVisible(z.x, z.y) <= 0.02) continue
-      // Height 0.96m (< flashlight height 1.18m) so zombies cast finite partialShadow ground shadows without blacking out entire rooms/walls behind them
-      occluders.set([z.x, z.y, 0.16, 0, 0.96, 1, 0, 0], frameLightOccluders++ * OCC_FLOATS)
-    }
+    const frameLightOccluders = lightOccluders
     const view = cam.groundRect(5.5)
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
@@ -907,7 +898,7 @@ async function main() {
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
       const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.35
       const power = p.flashlightOutput * settings.flashlightIntensity * directScale
-      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 7.8 : 11.5)
+      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 6.4)
       flashlightSlot = count
       lights.set(
         [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, frameLightOccluders, 0.06, -1],

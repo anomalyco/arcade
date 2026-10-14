@@ -1109,13 +1109,15 @@ fn lookTonemapACES(x: vec3f) -> vec3f {
 }
 
 fn lookTonemapFilmic(x: vec3f) -> vec3f {
-  let expCh = vec3f(1.0) - exp(-x * 1.35);
+  let u = x * 1.35;
+  let expCh = (u * (1.0 + u * 0.55)) / (vec3f(1.0) + u * (1.0 + u * 0.55));
   let lum = max(dot(x, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
-  let expLum = 1.0 - exp(-lum * 1.35);
+  let uL = lum * 1.35;
+  let expLum = (uL * (1.0 + uL * 0.55)) / (1.0 + uL * (1.0 + uL * 0.55));
   let huePres = clamp(x / lum * expLum, vec3f(0.0), vec3f(1.2));
   let c = mix(expCh, huePres, 0.42);
   let over = max(c - vec3f(0.62), vec3f(0.0));
-  return clamp(min(c, vec3f(0.62)) + vec3f(0.38) * (vec3f(1.0) - exp(-over / 0.38)), vec3f(0.0), vec3f(1.0));
+  return clamp(min(c, vec3f(0.62)) + (vec3f(0.38) * over) / (over + vec3f(0.38)), vec3f(0.0), vec3f(1.0));
 }
 
 fn lookTonemapAgX(val: vec3f) -> vec3f {
@@ -1156,6 +1158,17 @@ fn lookHash12(p: vec2f) -> f32 {
   var p3 = fract(vec3f(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
+}
+
+fn lookApplyTonemapFast(hdr: vec3f, mode: i32, huePreserve: f32) -> vec3f {
+  let x = max(hdr, vec3f(0.0));
+  if (mode == 1) {
+    return lookTonemapFilmic(x);
+  }
+  let baseAces = lookTonemapACES(x);
+  let peak = max(x.r, max(x.g, x.b));
+  let hp = select(huePreserve, 0.52, mode == 3);
+  return mix(baseAces, x * (lookTonemapACES(vec3f(peak)).r / max(peak, 1e-4)), hp);
 }
 
 fn lookGradeColor(
@@ -1202,7 +1215,8 @@ fn lookGradeColor(
 
   // 3. Mid-grey contrast curve around 0.18 (Lamplight post.wgsl)
   if (abs(contrast - 1.0) > 0.001) {
-    hdr = vec3f(0.18) * pow(max(hdr / 0.18, vec3f(1e-4)), vec3f(contrast));
+    let hLum = max(dot(hdr, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
+    hdr *= pow(hLum / 0.18, contrast - 1.0);
   }
 
   // 4. Tonemap (Current ACES / Filmic / AgX / ACES Hue-Preserving)
@@ -1211,8 +1225,9 @@ fn lookGradeColor(
   // 5. Highlight shoulder compression
   if (shoulder > 0.001) {
     let knee = 1.0 - shoulder * 0.45;
-    let over = max(c - vec3f(knee), vec3f(0.0));
-    let comp = min(c, vec3f(knee)) + (1.0 - knee) * (vec3f(1.0) - exp(-over / max(1.0 - knee, 0.06)));
+    let invSpan = 1.0 / max(1.0 - knee, 0.06);
+    let over = max(c - vec3f(knee), vec3f(0.0)) * invSpan;
+    let comp = min(c, vec3f(knee)) + (1.0 - knee) * (over / (vec3f(1.0) + over));
     c = mix(c, comp, clamp(shoulder, 0.0, 1.0));
   }
 
@@ -1261,10 +1276,7 @@ fn lookGradeColor(
     let timeSalt = select(0.0, floor(time * 24.0) * 19.37, grainAnim);
     let seedVec = vec2f(grainSeed * 1.13 + timeSalt, grainSeed * 2.71 - timeSalt * 0.63);
     let finePx = floor(fragXY * 0.9) + seedVec;
-    let coarsePx = floor(fragXY * 0.45) + seedVec * 1.7 + vec2f(53.0, 91.0);
-    let gFine = lookHash12(finePx) + lookHash12(finePx + vec2f(71.0, 193.0)) - 1.0;
-    let gCoarse = lookHash12(coarsePx) + lookHash12(coarsePx + vec2f(29.0, 113.0)) - 1.0;
-    let grainVal = (gFine * 0.72 + gCoarse * 0.28) * 0.5;
+    let grainVal = lookHash12(finePx) + lookHash12(finePx * 0.5 + vec2f(53.0, 91.0)) - 1.0;
     let midMask = smoothstep(0.004, 0.12, luma) * (1.0 - smoothstep(0.75, 1.0, luma));
     let amp = (0.026 + 0.024 * shaftLift) * grainStrength * (0.25 + 0.75 * midMask);
     c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));

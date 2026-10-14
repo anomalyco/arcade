@@ -354,7 +354,7 @@ export function collectFogSoundSprites(
     candidates.push({ agent: a, dist, isUrgent, isMoving })
   }
   candidates.sort((a, b) => (Number(b.isUrgent) - Number(a.isUrgent)) || a.dist - b.dist)
-  const maxCues = fogStyle === 2 ? 4 : 3
+  const maxCues = fogStyle === 2 ? 3 : 2
 
   for (let cIdx = 0; cIdx < Math.min(candidates.length, maxCues); cIdx++) {
     const { agent: a, dist, isUrgent, isMoving } = candidates[cIdx]!
@@ -376,7 +376,7 @@ export function collectFogSoundSprites(
     const gy = support(jx, jy) + 0.065
     const distAtten = Math.max(0.22, 1 - dist / 19)
     const env = Math.sin(pulseU * Math.PI) * (1 - pulseU * 0.4) * distAtten
-    const baseR = isUrgent ? 1.25 : isMoving ? 0.92 : 0.68
+    const baseR = isUrgent ? 1.15 : isMoving ? 0.85 : 0.62
 
     // Muted bone-silver Noir ripple for shuffles/groans; warm amber-crimson for urgent chase/bash
     const colR = isUrgent ? 0.92 : 0.62
@@ -388,7 +388,7 @@ export function collectFogSoundSprites(
       jx,
       gy,
       jy,
-      0.22 + baseR * pulseU,
+      0.20 + baseR * pulseU,
       colR,
       colG,
       colB,
@@ -398,31 +398,13 @@ export function collectFogSoundSprites(
       0.045,
       a.id * 1.3,
     )
-    // Secondary inner ring (kind 2)
-    if (pulseU > 0.20) {
-      const u2 = (pulseU - 0.20) / 0.80
-      pushSprite(
-        jx,
-        gy,
-        jy,
-        0.14 + baseR * 0.56 * u2,
-        colR,
-        colG,
-        colB,
-        (1 - u2) * distAtten * (isUrgent ? 0.36 : 0.22),
-        2,
-        0,
-        0.038,
-        0,
-      )
-    }
     // In Variant 2 ("Stark Cone + Pulse"), add a subtle Odradek-style dashed echo ring (kind 5)
     if (fogStyle === 2) {
       pushSprite(
         jx,
         gy + 0.01,
         jy,
-        0.32 + baseR * 0.78 * pulseU,
+        0.30 + baseR * 0.72 * pulseU,
         colR,
         colG,
         colB,
@@ -439,50 +421,30 @@ export function collectFogSoundSprites(
 }
 
 export const outbreakFogOfWarDeclarationsWgsl = /* wgsl */ `
-fn eyeRayVis(rayIdx: u32, distance: f32, softScale: f32) -> f32 {
-  let hit = polar[rayIdx * 2u].x;
-  let penumbra = (0.08 + max(0.0, distance - hit) * 0.22) * softScale;
-  return 1.0 - smoothstep(hit + 0.015, hit + 0.045 + penumbra, distance);
-}
-
-/**
- * 5-tap angularly feathered polar LOS visibility with distance-widening occlusion penumbra,
- * soft peripheral cone feather, and smooth close-awareness halo. Eliminates hard 2D polygon wedges.
- */
 fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - lights[0].pos.xz;
   let d2 = dot(delta, delta);
   let r = lights[0].pos.w;
   if (d2 >= r * r) { return 0.0; }
   let distance = sqrt(d2);
-  let soft = clamp( select(0.78, OL.u7.y, OL.u7.y > 0.01), 0.05, 1.5 );
+  let soft = clamp(select(0.78, OL.u7.y, OL.u7.y > 0.01), 0.05, 1.5);
   let facing = dot(delta / max(distance, 0.001), vec2f(cos(F.effects.x), sin(F.effects.x)));
-  let coneFeather = 0.05 + 0.18 * soft;
-  let cone = smoothstep(F.effects.y - coneFeather * 0.45, F.effects.y + coneFeather * 0.65, facing);
-  // Soft Gaussian close-awareness falloff on scenery so there is never a hard circular disc behind the player's back
-  let nearR = max(0.5, F.effects.z);
-  let near = exp(-d2 / (nearR * nearR * (0.65 + 0.45 * soft))) * 0.46;
+  let coneFeather = 0.04 + 0.14 * soft;
+  let cone = smoothstep(F.effects.y - coneFeather * 0.35, F.effects.y + coneFeather * 0.65, facing);
+  let near = (1.0 - smoothstep(0.35, F.effects.z + 0.55 * soft, distance)) * 0.42;
   let mask = max(cone, near);
-  if (mask <= 0.001) { return 0.0; }
-  let rangeFeather = 1.2 + 2.5 * soft;
-  let range = 1.0 - smoothstep(max(1.0, r - rangeFeather), r, distance);
-
+  if (mask <= 0.0) { return 0.0; }
+  let range = 1.0 - smoothstep(r - (1.0 + 1.5 * soft), r, distance);
   let a = (atan2(delta.y, delta.x) + TAU) % TAU;
   let f = a / TAU * f32(RAYS) - 0.5;
-  let angStep = clamp(0.65 + soft * 0.85, 0.5, 2.2);
-
-  // 5-tap angular kernel across polar sight row 0 so doorway and wall corners feather smoothly
-  var losSum = 0.0;
-  for (var k = -2; k <= 2; k++) {
-    let sampleF = f + f32(k) * angStep;
-    let r0 = u32(i32(floor(sampleF)) + i32(RAYS) * 4) % RAYS;
-    let r1 = (r0 + 1u) % RAYS;
-    let v0 = eyeRayVis(r0, distance, soft);
-    let v1 = eyeRayVis(r1, distance, soft);
-    let w = select(select(0.12, 0.22, abs(k) == 1), 0.32, k == 0);
-    losSum += mix(v0, v1, fract(sampleF)) * w;
-  }
-  return clamp(losSum * mask * range, 0.0, 1.0);
+  let r0 = u32(i32(floor(f)) + i32(RAYS)) % RAYS;
+  let r1 = (r0 + 1u) % RAYS;
+  let h0 = polar[r0 * 2u].x;
+  let h1 = polar[r1 * 2u].x;
+  let pen = 0.08 + 0.18 * soft;
+  let v0 = 1.0 - smoothstep(h0 + 0.02, h0 + pen, distance);
+  let v1 = 1.0 - smoothstep(h1 + 0.02, h1 + pen, distance);
+  return mix(v0, v1, fract(f)) * mask * range;
 }
 
 /**
@@ -501,6 +463,9 @@ fn applyOutbreakFogOfWar(
   warmth: f32,
 ) -> vec3f {
   let visible = eyeVisible(world.xz + n.xz * 0.06);
+  if (visible >= 0.995 && mat != 2) {
+    return colIn;
+  }
   let explored = textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24) * F.map.xy, 0.0).r;
   let fogStyle = i32(round(OL.u7.x));
   let baseMemDim = select(0.42, OL.u7.z, OL.u7.z > 0.01);
@@ -509,7 +474,6 @@ fn applyOutbreakFogOfWar(
     0.10,
     0.92
   );
-  let unknownGrainAmt = clamp(select(0.48, OL.u7.w, OL.u7.z > 0.01), 0.0, 1.0) * select(1.0, 1.35, fogStyle == 2);
 
   if (mat == 2) {
     var lampCol = colIn * 0.88;
@@ -523,27 +487,21 @@ fn applyOutbreakFogOfWar(
 
   let luminance = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
   let warmBias = clamp((colIn.r - colIn.b * 1.15) / max(colIn.r + 0.005, 1e-4), 0.0, 1.0);
-  // Cold steel-ash memory tint in Noir, shifting gently with warmth in warm presets
   let memTint = mix(vec3f(0.74, 0.86, 1.06), vec3f(0.98, 0.94, 0.86), warmth * 0.65);
   let memSat = select(0.06, 0.28, fogStyle == 0) + 0.14 * warmBias * warmth;
   let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * memDim;
 
-  // Subtle dual-scale animated film/ink grain in unexplored / out-of-sight shroud areas
-  let tSalt = floor(F.cam.w * 18.0) * 13.7;
-  let gCell = floor(world.xz * 14.0) + vec2f(tSalt, -tSalt * 0.7);
-  let gCoarse = surfaceNoise(world.xz * 2.2 + vec2f(F.cam.w * 0.12, -F.cam.w * 0.09)) - 0.5;
-  let gFine = hash2(gCell) - 0.5;
-  let shroudNoise = (gFine * 0.65 + gCoarse * 0.35) * unknownGrainAmt * 0.014;
-  let unknownShroud = max(vec3f(0.0015, 0.0022, 0.0038), baseColor * 0.010 + vec3f(0.0035, 0.0048, 0.0072) + vec3f(shroudNoise));
-
   if (inRoom && world.y < 2.8) {
+    let unknownGrainAmt = clamp(select(0.48, OL.u7.w, OL.u7.z > 0.01), 0.0, 1.0) * select(1.0, 1.35, fogStyle == 2);
+    let tSalt = floor(F.cam.w * 16.0) * 7.3;
+    let shroudNoise = (hash2(floor(world.xz * 12.0) + vec2f(tSalt, -tSalt)) - 0.5) * unknownGrainAmt * 0.014;
+    let unknownShroud = max(vec3f(0.0015, 0.0022, 0.0038), baseColor * 0.010 + vec3f(0.0035, 0.0048, 0.0072) + vec3f(shroudNoise));
     let shroudScale = clamp(F.effects.w * 2.2, 0.35, 1.0);
     let roomMem = memoryTone * shroudScale;
     let unrevealed = mix(unknownShroud, roomMem, explored);
     return mix(unrevealed, colIn, visible);
   }
 
-  let extMemory = mix(unknownShroud * 1.8 + memoryTone * 0.45, memoryTone, clamp(0.35 + 0.65 * explored, 0.0, 1.0));
-  return mix(extMemory, colIn, visible);
+  return mix(memoryTone * (0.76 + 0.24 * explored), colIn, visible);
 }
 `
