@@ -272,6 +272,50 @@ try {
   check(detachState.pieces === 3 && detachState.noPop === true, `Detach state failed: ${JSON.stringify(detachState)}`)
   check(detachState.splatterActive === true, `Detach did not produce blood splatter: ${JSON.stringify(detachState)}`)
 
+  // 5. Verify Command Registry contract for the arcade CLI (select, possess, release, profile.set, walk/run/stop, limb.detach, character.reset, camera.get/set, lab.get/set, transport.*)
+  const registryCheck = await page.evaluate(async () => {
+    const p = (window as any).charactersProof
+    const list = p.commands.describe().map((c: any) => c.id)
+    const rSelect = await p.invoke("select", { target: "wizard" })
+    const rProfile = await p.invoke("profile.set", { profile: "zombie" })
+    const rRun = await p.invoke("action.run", {})
+    const rStop = await p.invoke("action.stop", {})
+    const rPossess = await p.invoke("possess", { target: "zombie" })
+    const rRelease = await p.invoke("release", {})
+    const rCamSet = await p.invoke("camera.set", { orbit: 45, elevation: 25, distance: 5.5 })
+    const rCamGet = await p.invoke("camera.get", {})
+    const rLabSet = await p.invoke("lab.set", { path: "footDrag", value: 0.75 })
+    const rLabGet = await p.invoke("lab.get", { path: "footDrag" })
+    const rDetach = await p.invoke("limb.detach", { limb: "right.foreArm" })
+    const rReset = await p.invoke("character.reset", { target: "all" })
+    return {
+      list,
+      rSelect: rSelect.ok && rSelect.result.selected.id === "wizard",
+      rProfile: rProfile.ok && rProfile.result.profile === "zombie",
+      rRun: rRun.ok && rRun.result.action === "run",
+      rStop: rStop.ok && rStop.result.action === "idle",
+      rPossess: rPossess.ok && rPossess.result.mode === "play" && rPossess.result.characterId === "zombie",
+      rRelease: rRelease.ok && rRelease.result.mode === "edit",
+      rCam: rCamSet.ok && rCamGet.ok && rCamGet.result.orbit === 45 && rCamGet.result.distance === 5.5,
+      rLab: rLabSet.ok && rLabGet.ok && rLabGet.result.value === 0.75,
+      rDetach: rDetach.ok && rDetach.result.noPop === true,
+      rReset: rReset.ok && rReset.result.reset.length === 5,
+    }
+  })
+  check(
+    registryCheck.rSelect &&
+      registryCheck.rProfile &&
+      registryCheck.rRun &&
+      registryCheck.rStop &&
+      registryCheck.rPossess &&
+      registryCheck.rRelease &&
+      registryCheck.rCam &&
+      registryCheck.rLab &&
+      registryCheck.rDetach &&
+      registryCheck.rReset,
+    `Registry command check failed: ${JSON.stringify(registryCheck)}`,
+  )
+
   const audioCount = await page.evaluate(() => {
     const list = ((window as any).__audioContexts ?? []) as AudioContext[]
     return { total: list.length, running: list.filter(a => a.state === "running").length }
@@ -292,6 +336,7 @@ try {
     cam3,
     camFramed,
     detachState,
+    registryCheck,
     audioCount,
     framesRecorded: frameIndex,
     errors,

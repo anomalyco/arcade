@@ -1,7 +1,7 @@
 import "@arcade/kit/dev-hub.css"
 import { hubCommands, hubTargets } from "@arcade/kit/dev-hub-model"
 import { bindOrbitGestures } from "@arcade/kit/orbit-gestures"
-import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { LabPanel, formatLabValue, inferControlUnit, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
 import { humanProfiles, humanProfileControls, type HumanPreset, type HumanProfile } from "@arcade/kit/human-profile"
 import { attachment, bodyBones, boneParent, boneVisible, detach, poseArms, type BoneId, type BonePose, type PartMotion } from "@arcade/kit/human-pose"
 import { at, clamp, emit, len, moved, pitch, roll, scale, turn, yawFrame, type Frame, type PushPart, type V3 } from "@arcade/kit/rig"
@@ -30,9 +30,197 @@ import { outbreakPersonModels, zombieModels } from "../render/zombie"
 import { juiceSettings } from "../ui/debug-overlay"
 import { modelForBone, registerPartModels } from "./rig-demo"
 
+// Thin command registry adapter compatible with LabCommandRegistry & DevControlAdapter.
+export type CommandArgSpec = {
+  type: "string" | "number" | "boolean" | "number[]" | "object" | "value"
+  description?: string
+  required?: boolean
+  enum?: readonly (string | number)[]
+  min?: number
+  max?: number
+}
+
+export type CommandContext = {
+  pickedObject: null
+  groundHit: null
+  args?: Record<string, unknown>
+  source?: "ui" | "cli"
+  seed?: number
+}
+
+export type CommandDef = {
+  id: string
+  aliases?: readonly string[]
+  label: string
+  shortLabel: string
+  description?: string
+  category: "Mode" | "Transport" | "Scene" | "Object" | "Inspector" | "Camera" | "Navigation"
+  shortcut?: string
+  args?: Readonly<Record<string, CommandArgSpec>>
+  readOnly?: boolean
+  enabled: (ctx?: CommandContext) => boolean
+  disabledReason?: (ctx?: CommandContext) => string
+  run: (ctx?: CommandContext) => unknown
+}
+
+export type CommandDescriptor = {
+  id: string
+  aliases?: readonly string[]
+  label: string
+  shortLabel: string
+  description?: string
+  category: CommandDef["category"]
+  shortcut?: string
+  args?: Readonly<Record<string, CommandArgSpec>>
+  readOnly: boolean
+  enabled: boolean
+  available: boolean
+  disabledReason?: string
+}
+
+export type CommandOutcome<T = unknown> =
+  | { ok: true; id: string; command: string; label: string; readOnly: boolean; result: T }
+  | { ok: false; id: string; command: string; code: "unknown_command" | "invalid_args" | "unavailable" | "error"; error: string }
+
+export class CharacterCommandRegistry {
+  private readonly map = new Map<string, CommandDef>()
+  private readonly aliases = new Map<string, string>()
+  private readonly list: CommandDef[] = []
+
+  register(cmd: CommandDef): CommandDef {
+    this.map.set(cmd.id, cmd)
+    for (const alias of cmd.aliases ?? []) this.aliases.set(alias, cmd.id)
+    const idx = this.list.findIndex(c => c.id === cmd.id)
+    if (idx >= 0) this.list[idx] = cmd
+    else this.list.push(cmd)
+    return cmd
+  }
+
+  registerAll(cmds: readonly CommandDef[]): void {
+    for (const cmd of cmds) this.register(cmd)
+  }
+
+  get(id: string): CommandDef | undefined {
+    return this.map.get(id) ?? (this.aliases.has(id) ? this.map.get(this.aliases.get(id)!) : undefined)
+  }
+
+  all(): readonly CommandDef[] {
+    return this.list
+  }
+
+  describe(ctx?: CommandContext): CommandDescriptor[] {
+    const evalCtx: CommandContext = ctx ?? { pickedObject: null, groundHit: null, source: "cli" }
+    return this.list.map(cmd => {
+      const ok = cmd.enabled(evalCtx)
+      return {
+        id: cmd.id,
+        aliases: cmd.aliases,
+        label: cmd.label,
+        shortLabel: cmd.shortLabel,
+        description: cmd.description,
+        category: cmd.category,
+        shortcut: cmd.shortcut,
+        args: cmd.args,
+        readOnly: Boolean(cmd.readOnly),
+        enabled: ok,
+        available: ok,
+        disabledReason: ok ? undefined : cmd.disabledReason?.(evalCtx) ?? "Unavailable in current state",
+      }
+    })
+  }
+
+  execute(id: string, args?: Record<string, unknown>, source: "ui" | "cli" = "ui"): boolean {
+    const cmd = this.get(id)
+    const ctx: CommandContext = { pickedObject: null, groundHit: null, args: args ?? {}, source }
+    if (!cmd || !cmd.enabled(ctx)) return false
+    cmd.run(ctx)
+    return true
+  }
+
+  async invoke(id: string, rawArgs?: Record<string, unknown>, baseCtx?: Partial<CommandContext>): Promise<CommandOutcome> {
+    const cmd = this.get(id)
+    if (!cmd) {
+      return {
+        ok: false,
+        id,
+        command: id,
+        code: "unknown_command",
+        error: `Unknown command "${id}". Available: ${this.list.map(c => c.id).join(", ")}`,
+      }
+    }
+    const args = rawArgs ?? {}
+    if (cmd.args) {
+      for (const [key, spec] of Object.entries(cmd.args)) {
+        const val = args[key]
+        if (val === undefined || val === null) {
+          if (spec.required) {
+            return { ok: false, id: cmd.id, command: cmd.id, code: "invalid_args", error: `Missing required argument "${key}".` }
+          }
+          continue
+        }
+        if (spec.enum && !spec.enum.some(c => c === val || String(c).toLowerCase() === String(val).toLowerCase())) {
+          return {
+            ok: false,
+            id: cmd.id,
+            command: cmd.id,
+            code: "invalid_args",
+            error: `Invalid "${key}" value "${String(val)}". Expected one of: ${spec.enum.join(", ")}.`,
+          }
+        }
+        if (typeof val === "number") {
+          if (spec.min !== undefined && val < spec.min) {
+            return { ok: false, id: cmd.id, command: cmd.id, code: "invalid_args", error: `Argument "${key}" must be >= ${spec.min}.` }
+          }
+          if (spec.max !== undefined && val > spec.max) {
+            return { ok: false, id: cmd.id, command: cmd.id, code: "invalid_args", error: `Argument "${key}" must be <= ${spec.max}.` }
+          }
+        }
+      }
+    }
+    const ctx: CommandContext = {
+      pickedObject: null,
+      groundHit: null,
+      args,
+      source: baseCtx?.source ?? "cli",
+      seed: typeof args.seed === "number" ? args.seed : baseCtx?.seed,
+    }
+    if (!cmd.enabled(ctx)) {
+      return {
+        ok: false,
+        id: cmd.id,
+        command: cmd.id,
+        code: "unavailable",
+        error: cmd.disabledReason?.(ctx) ?? `Command "${cmd.id}" is currently unavailable.`,
+      }
+    }
+    try {
+      const result = await cmd.run(ctx)
+      return {
+        ok: true,
+        id: cmd.id,
+        command: cmd.id,
+        label: cmd.label,
+        readOnly: Boolean(cmd.readOnly),
+        result: result === undefined ? { ok: true } : result,
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        id: cmd.id,
+        command: cmd.id,
+        code: "error",
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+}
+
 const SEED = 990010
 const W = 28
 const H = 20
+const round2 = (n: number) => Math.round(n * 100) / 100
+const round3 = (n: number) => Math.round(n * 1000) / 1000
+const round4 = (n: number) => Math.round(n * 10000) / 10000
 
 function buildStageMap(): MapDef {
   const b = new Builder()
@@ -42,9 +230,7 @@ function buildStageMap(): MapDef {
   b.wall(0, H - 0.35, W, H)
   b.wall(0, 0, 0.35, H)
   b.wall(W - 0.35, 0, W, H)
-  // Low backdrop wall behind the character lineup so surface blood splatter also catches vertical wall triangles.
   b.wall(5, 5.2, 23, 5.55, 1.45, "partition")
-  // Offset 45-degree key and rim lights ("glow" kind has no fixture geometry, no haze cone, and no floating dust motes).
   for (const [x, y, power, color] of [
     [7.5, 13.0, 0.42, [0.92, 0.94, 1.0]],
     [14.0, 13.2, 0.45, [0.95, 0.96, 1.0]],
@@ -592,8 +778,17 @@ async function main() {
     makeActor("outbreak-zombie", "Outbreak Zombie", "Outbreak", 19.2, 8.6, "zombie", [0.58, 0.76, 0.34], outbreakZombieParts, false, false),
   ]
 
-  const actorById = (id: string | null | undefined) => actors.find(a => a.id === id)
-  let selected: StageActor = actorById(parseActorHash(location.hash)) ?? actors[0]!
+  const resolveActor = (query: string | null | undefined): StageActor | undefined => {
+    if (!query) return undefined
+    const q = query.trim().toLowerCase()
+    return (
+      actors.find(a => a.id === q) ??
+      actors.find(a => a.label.toLowerCase() === q) ??
+      actors.find(a => a.id.includes(q) || a.label.toLowerCase().includes(q))
+    )
+  }
+
+  let selected: StageActor = resolveActor(parseActorHash(location.hash)) ?? actors[0]!
   let possessing = false
   let paused = false
   let simSpeed = 1
@@ -642,6 +837,21 @@ async function main() {
     const view = mat4.lookAt(cam.eye, target, [0, 1, 0])
     cam.viewProj = mat4.multiply(mat4.perspective(0.5, aspect, 0.3, 200), view)
     return cam.viewProj as Float32Array
+  }
+
+  function readCameraState() {
+    cam.update(Math.max(0.1, canvas.width / Math.max(1, canvas.height)))
+    return {
+      orbit: round2((orbitState.yaw * 180) / Math.PI),
+      elevation: round2((orbitState.pitch * 180) / Math.PI),
+      distance: round2(orbitState.dist),
+      dist: orbitState.dist,
+      target: [round3(orbitState.focusX), round3(orbitState.focusY), round3(orbitState.focusZ)] as [number, number, number],
+      focus: [orbitState.focusX, orbitState.focusY, orbitState.focusZ] as [number, number, number],
+      yaw: round4(orbitState.yaw),
+      pitch: round4(orbitState.pitch),
+      eye: [round3(cam.eye[0]), round3(cam.eye[1]), round3(cam.eye[2])] as [number, number, number],
+    }
   }
 
   function frameSelected(mode: "close" | "gameplay" | "lineup" = "close") {
@@ -720,6 +930,8 @@ async function main() {
     }
   }
 
+  let notifyDevControl = () => {}
+
   const labPanel = new LabPanel(
     labSettingsProxy,
     labControls,
@@ -734,36 +946,17 @@ async function main() {
       capture: "focus",
       onToggle: visible => {
         labToggleBtn.setAttribute("aria-pressed", String(visible))
+        notifyDevControl()
       },
     },
   )
   const innerPill = labPanel.host.shadowRoot?.querySelector<HTMLElement>(".pill")
   if (innerPill) innerPill.style.display = "none"
   labToggleBtn.setAttribute("aria-pressed", String(labPanel.visible))
-  labToggleBtn.addEventListener("click", () => labPanel.toggle())
 
   function applyPresetToActor(actor: StageActor, preset: HumanPreset) {
     actor.preset = preset
     Object.assign(actor.profile, humanProfiles[preset])
-  }
-
-  function renderActorTabs() {
-    actorTabsEl.replaceChildren()
-    for (const actor of actors) {
-      const btn = document.createElement("button")
-      btn.type = "button"
-      btn.className = "actor-tab"
-      btn.setAttribute("role", "tab")
-      btn.dataset.actorId = actor.id
-      btn.setAttribute("aria-selected", String(actor.id === selected.id))
-      const name = document.createElement("span")
-      name.textContent = actor.label
-      const tag = document.createElement("small")
-      tag.textContent = actor.gameTag
-      btn.append(name, tag)
-      btn.addEventListener("click", () => selectActor(actor.id, true))
-      actorTabsEl.append(btn)
-    }
   }
 
   function syncUI() {
@@ -785,13 +978,13 @@ async function main() {
     speedOutput.value = `${simSpeed.toFixed(2)}×`
     syncLabDefaultsForActor(selected)
     labPanel.refresh()
+    notifyDevControl()
   }
 
   function selectActor(id: ActorId, frame = false, updateHash = true) {
-    const next = actorById(id)
+    const next = resolveActor(id)
     if (!next) return
     if (selected !== next) {
-      // Return previously selected actor to its lineup home mark so the stage stays tidy.
       selected.avatar.x = selected.homeX
       selected.avatar.y = selected.homeY
       selected.avatar.vx = 0
@@ -838,6 +1031,9 @@ async function main() {
 
   function detachLimb(bone: BoneId = limbSelect.value as BoneId): DetachedPiece[] {
     if (!selected.avatar.body) return []
+    if (limbSelect.value !== bone && LIMB_CHOICES.some(c => c.value === bone)) {
+      limbSelect.value = bone
+    }
     if (!boneVisible(bone, selected.hiddenBones)) {
       clearSubtree(selected.hiddenBones, bone)
     }
@@ -857,6 +1053,7 @@ async function main() {
       { id: detachEventId++, seed: SEED + detachEventId, direction: dir, amount: 1.35 },
     )
     statusEl.textContent = `Detached ${bone} from ${selected.label}`
+    notifyDevControl()
     return spawned
   }
 
@@ -882,6 +1079,448 @@ async function main() {
     }
     statusEl.textContent = `Reset ${actor.label}`
     syncUI()
+  }
+
+  // Register all Characters page actions in the shared-contract Command Registry
+  const commands = new CharacterCommandRegistry()
+  const actorIds = actors.map(a => a.id)
+  const limbValues = LIMB_CHOICES.map(c => c.value)
+
+  commands.registerAll([
+    {
+      id: "select",
+      aliases: ["character.select", "object.select"],
+      label: "Select Character",
+      shortLabel: "Select",
+      category: "Object",
+      args: {
+        target: { type: "string", description: "Character ID or name (soldier, wizard, zombie, survivor, outbreak-zombie)" },
+        id: { type: "string", description: "Character ID alias" },
+        frame: { type: "boolean", description: "Center camera on selected character" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const query = String(ctx?.args?.target ?? ctx?.args?.id ?? "").trim()
+        const target = resolveActor(query)
+        if (!target) throw new Error(`Unknown character "${query}". Available: ${actorIds.join(", ")}.`)
+        const shouldFrame = ctx?.args?.frame !== false
+        selectActor(target.id, shouldFrame)
+        statusEl.textContent = `Selected ${target.label}`
+        return {
+          selected: {
+            id: selected.id,
+            label: selected.label,
+            preset: selected.preset,
+            action: selected.action,
+          },
+        }
+      },
+    },
+    {
+      id: "possess",
+      aliases: ["object.possess", "mode.play", "character.possess"],
+      label: "Possess Character",
+      shortLabel: "Possess",
+      category: "Mode",
+      shortcut: "P",
+      args: {
+        target: { type: "string", description: "Optional character ID or name to select before possessing" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const query = typeof ctx?.args?.target === "string" ? ctx.args.target.trim() : ""
+        if (query) {
+          const target = resolveActor(query)
+          if (!target) throw new Error(`Unknown character "${query}". Available: ${actorIds.join(", ")}.`)
+          selectActor(target.id, true)
+        }
+        setPossessing(true)
+        return {
+          mode: "play",
+          possessing: true,
+          characterId: selected.id,
+          characterLabel: selected.label,
+        }
+      },
+    },
+    {
+      id: "release",
+      aliases: ["mode.edit", "character.release"],
+      label: "Release Character to Edit Mode",
+      shortLabel: "Release",
+      category: "Mode",
+      shortcut: "Esc",
+      enabled: () => true,
+      run: () => {
+        setPossessing(false)
+        return {
+          mode: "edit",
+          possessing: false,
+          characterId: selected.id,
+          characterLabel: selected.label,
+        }
+      },
+    },
+    {
+      id: "profile.set",
+      aliases: ["character.profile", "profile"],
+      label: "Set Character Rig Profile",
+      shortLabel: "Profile",
+      category: "Inspector",
+      args: {
+        profile: { type: "string", required: true, enum: ["soldier", "wizard", "zombie"], description: "Rig preset" },
+        target: { type: "string", description: "Optional character ID" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const preset = String(ctx?.args?.profile ?? "").toLowerCase() as HumanPreset
+        const actor = ctx?.args?.target ? resolveActor(String(ctx.args.target)) : selected
+        if (!actor) throw new Error(`Unknown character "${String(ctx?.args?.target)}".`)
+        applyPresetToActor(actor, preset)
+        syncUI()
+        return {
+          actorId: actor.id,
+          profile: actor.preset,
+          settings: { ...actor.profile },
+        }
+      },
+    },
+    {
+      id: "action.walk",
+      aliases: ["walk", "character.walk"],
+      label: "Start Walk Loop",
+      shortLabel: "Walk loop",
+      category: "Object",
+      enabled: () => true,
+      run: () => {
+        setAction("walk")
+        return { actorId: selected.id, action: selected.action }
+      },
+    },
+    {
+      id: "action.run",
+      aliases: ["run", "character.run"],
+      label: "Start Run Loop",
+      shortLabel: "Run loop",
+      category: "Object",
+      enabled: () => true,
+      run: () => {
+        setAction("run")
+        return { actorId: selected.id, action: selected.action }
+      },
+    },
+    {
+      id: "action.stop",
+      aliases: ["stop", "character.stop", "action.idle"],
+      label: "Stop Locomotion Loop",
+      shortLabel: "Stop",
+      category: "Object",
+      enabled: () => true,
+      run: () => {
+        setAction("idle")
+        return { actorId: selected.id, action: selected.action }
+      },
+    },
+    {
+      id: "action.set",
+      aliases: ["character.action"],
+      label: "Set Character Locomotion Action",
+      shortLabel: "Action",
+      category: "Object",
+      args: {
+        action: { type: "string", required: true, enum: ["walk", "run", "stop", "idle"], description: "Loop action" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const raw = String(ctx?.args?.action ?? "walk").toLowerCase()
+        setAction(raw === "stop" || raw === "idle" ? "idle" : raw === "run" ? "run" : "walk")
+        return { actorId: selected.id, action: selected.action }
+      },
+    },
+    {
+      id: "limb.detach",
+      aliases: ["detach", "character.detach"],
+      label: "Detach Character Limb",
+      shortLabel: "Detach limb",
+      category: "Object",
+      args: {
+        limb: { type: "string", enum: limbValues, description: "Semantic BoneId to detach" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const bone = (typeof ctx?.args?.limb === "string" ? ctx.args.limb : limbSelect.value) as BoneId
+        const spawned = detachLimb(bone)
+        return {
+          actorId: selected.id,
+          limb: bone,
+          detached: spawned.map(p => p.bone),
+          pieces: selected.pieces.length,
+          noPop: selected.noPop,
+          splatterActive: !!game.splatterFx?.particles.some((v: number) => v !== 0) || (game.splatterFx?.inspect().decals ?? 0) > 0,
+        }
+      },
+    },
+    {
+      id: "character.reset",
+      aliases: ["reset", "object.reset", "transport.retrigger"],
+      label: "Reset Character State",
+      shortLabel: "Reset",
+      category: "Object",
+      args: {
+        target: { type: "string", description: "Character ID or 'all'" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const t = typeof ctx?.args?.target === "string" ? ctx.args.target.trim().toLowerCase() : ""
+        if (t === "all") {
+          for (const actor of actors) resetActor(actor)
+          return { reset: actors.map(a => a.id), frames: tickCount, elapsed: round2(clock / 1000) }
+        }
+        const actor = t ? resolveActor(t) : selected
+        if (!actor) throw new Error(`Unknown character "${t}".`)
+        resetActor(actor)
+        return { reset: [actor.id], frames: tickCount, elapsed: round2(clock / 1000) }
+      },
+    },
+    {
+      id: "transport.play",
+      label: "Resume Simulation",
+      shortLabel: "Play",
+      category: "Transport",
+      enabled: () => true,
+      run: () => {
+        paused = false
+        syncUI()
+        return { playing: true, frames: tickCount, elapsed: round2(clock / 1000), speed: simSpeed }
+      },
+    },
+    {
+      id: "transport.pause",
+      label: "Pause Simulation",
+      shortLabel: "Pause",
+      category: "Transport",
+      enabled: () => true,
+      run: () => {
+        paused = true
+        syncUI()
+        return { playing: false, frames: tickCount, elapsed: round2(clock / 1000), speed: simSpeed }
+      },
+    },
+    {
+      id: "transport.toggle",
+      label: "Toggle Pause / Resume",
+      shortLabel: "Pause",
+      category: "Transport",
+      shortcut: "Space",
+      enabled: () => true,
+      run: () => {
+        paused = !paused
+        syncUI()
+        return { playing: !paused, frames: tickCount, elapsed: round2(clock / 1000), speed: simSpeed }
+      },
+    },
+    {
+      id: "transport.step",
+      label: "Step Forward 1/60s",
+      shortLabel: "Step",
+      category: "Transport",
+      args: {
+        frames: { type: "number", min: 1, max: 120, description: "Number of 1/60s frames to advance" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const count = typeof ctx?.args?.frames === "number" ? Math.max(1, Math.min(120, Math.round(ctx.args.frames))) : 1
+        paused = true
+        for (let i = 0; i < count; i++) {
+          stepSimulation(1 / 60)
+          renderScene(1 / 60)
+        }
+        syncUI()
+        return { stepped: count, frames: tickCount, elapsed: round2(clock / 1000) }
+      },
+    },
+    {
+      id: "transport.speed",
+      label: "Set Simulation Speed",
+      shortLabel: "Speed",
+      category: "Transport",
+      args: {
+        speed: { type: "number", required: true, min: 0.1, max: 2, description: "Speed multiplier (0.1..2.0)" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        simSpeed = clamp(Number(ctx?.args?.speed ?? 1), 0.1, 2)
+        syncUI()
+        return { speed: simSpeed }
+      },
+    },
+    {
+      id: "camera.get",
+      aliases: ["camera"],
+      label: "Get Camera State",
+      shortLabel: "Camera Get",
+      category: "Camera",
+      readOnly: true,
+      enabled: () => true,
+      run: () => readCameraState(),
+    },
+    {
+      id: "camera.set",
+      aliases: ["camera.frame"],
+      label: "Set Camera Orientation, Target or Framing",
+      shortLabel: "Camera Set",
+      category: "Camera",
+      shortcut: "F",
+      args: {
+        orbit: { type: "number", min: -3600, max: 3600, description: "Orbit yaw in degrees" },
+        elevation: { type: "number", min: 5, max: 85, description: "Elevation pitch in degrees" },
+        distance: { type: "number", min: 2, max: 28, description: "Camera distance in metres" },
+        target: { type: "number[]", description: "Target coordinates [x, y, z] or [x, z]" },
+        frame: { type: "string", description: "Frame mode ('close', 'gameplay', 'lineup') or character ID" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const a = ctx?.args ?? {}
+        if (typeof a.frame === "string" && a.frame.trim()) {
+          const f = a.frame.trim().toLowerCase()
+          if (f === "lineup" || f === "scene" || f === "all") frameSelected("lineup")
+          else if (f === "gameplay" || f === "game") frameSelected("gameplay")
+          else if (f === "close" || f === "selected" || f === "default") frameSelected("close")
+          else {
+            const targetActor = resolveActor(f)
+            if (!targetActor) throw new Error(`Unknown camera frame target "${a.frame}".`)
+            selectActor(targetActor.id, true)
+            frameSelected("close")
+          }
+        }
+        if (Array.isArray(a.target)) {
+          const arr = a.target as number[]
+          if (arr.length === 2) {
+            orbitState.focusX = Number(arr[0])
+            orbitState.focusZ = Number(arr[1])
+            followSelected = false
+          } else if (arr.length === 3) {
+            orbitState.focusX = Number(arr[0])
+            orbitState.focusY = Number(arr[1])
+            orbitState.focusZ = Number(arr[2])
+            followSelected = false
+          }
+        }
+        if (typeof a.orbit === "number") orbitState.yaw = (a.orbit * Math.PI) / 180
+        if (typeof a.elevation === "number") orbitState.pitch = clamp((a.elevation * Math.PI) / 180, 0.08, 1.38)
+        if (typeof a.distance === "number") orbitState.dist = clamp(a.distance, 2.0, 28)
+        renderScene(0)
+        notifyDevControl()
+        return readCameraState()
+      },
+    },
+    {
+      id: "lab.get",
+      label: "Get Selected Actor Lab Parameter(s)",
+      shortLabel: "Lab Get",
+      category: "Inspector",
+      readOnly: true,
+      args: {
+        path: { type: "string", description: "Control key or label (omit for all)" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const rawPath = typeof ctx?.args?.path === "string" ? ctx.args.path.trim() : ""
+        if (!rawPath || rawPath === "all" || rawPath === "*") {
+          const settingsMap: Record<string, LabValue> = { profilePreset: selected.preset, ...selected.profile }
+          const controlsList = labControls.map(c => {
+            const val = labPanel.navigation.settings[c.key]!
+            return {
+              key: c.key,
+              label: c.label,
+              group: c.group ?? "Profile",
+              value: val,
+              formatted: "min" in c ? formatLabValue(val, c.step, inferControlUnit(c.key, c.label, c.unit)) : String(val),
+            }
+          })
+          return { actorId: selected.id, settings: settingsMap, controls: controlsList }
+        }
+        const keyLower = rawPath.toLowerCase().replace(/^profile\./, "")
+        const ctrl = labControls.find(c => c.key.toLowerCase() === keyLower || c.label.toLowerCase() === keyLower)
+        if (!ctrl) throw new Error(`Unknown Lab control "${rawPath}".`)
+        const val = labPanel.navigation.settings[ctrl.key]!
+        return {
+          actorId: selected.id,
+          key: ctrl.key,
+          label: ctrl.label,
+          group: ctrl.group ?? "Profile",
+          value: val,
+          formatted: "min" in ctrl ? formatLabValue(val, ctrl.step, inferControlUnit(ctrl.key, ctrl.label, ctrl.unit)) : String(val),
+        }
+      },
+    },
+    {
+      id: "lab.set",
+      aliases: ["scene.set-param"],
+      label: "Set Selected Actor Lab Parameter",
+      shortLabel: "Lab Set",
+      category: "Inspector",
+      args: {
+        path: { type: "string", description: "Control key or label" },
+        key: { type: "string", description: "Control key alias" },
+        value: { type: "value", required: true, description: "New parameter value" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const rawPath = String(ctx?.args?.path ?? ctx?.args?.key ?? "").trim()
+        const rawVal = ctx?.args?.value
+        const keyLower = rawPath.toLowerCase().replace(/^profile\./, "")
+        const ctrl = labControls.find(c => c.key.toLowerCase() === keyLower || c.label.toLowerCase() === keyLower)
+        if (!ctrl) throw new Error(`Unknown Lab control "${rawPath}".`)
+        const before = labPanel.navigation.settings[ctrl.key]
+        const nextVal = "min" in ctrl ? Number(rawVal) : String(rawVal)
+        labPanel.navigation.set(ctrl, nextVal)
+        syncUI()
+        const after = labPanel.navigation.settings[ctrl.key]!
+        return {
+          actorId: selected.id,
+          key: ctrl.key,
+          label: ctrl.label,
+          group: ctrl.group ?? "Profile",
+          before,
+          value: after,
+          formatted: "min" in ctrl ? formatLabValue(after, ctrl.step, inferControlUnit(ctrl.key, ctrl.label, ctrl.unit)) : String(after),
+        }
+      },
+    },
+    {
+      id: "lab.toggle",
+      label: "Toggle Lab Inspector Panel",
+      shortLabel: "Lab",
+      category: "Inspector",
+      shortcut: "`",
+      enabled: () => true,
+      run: () => {
+        labPanel.toggle()
+        return { visible: labPanel.visible }
+      },
+    },
+  ])
+
+  function renderActorTabs() {
+    actorTabsEl.replaceChildren()
+    for (const actor of actors) {
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "actor-tab"
+      btn.setAttribute("role", "tab")
+      btn.dataset.actorId = actor.id
+      btn.setAttribute("aria-selected", String(actor.id === selected.id))
+      const name = document.createElement("span")
+      name.textContent = actor.label
+      const tag = document.createElement("small")
+      tag.textContent = actor.gameTag
+      btn.append(name, tag)
+      btn.addEventListener("click", () => {
+        void commands.invoke("select", { target: actor.id, frame: true }, { source: "ui" })
+      })
+      actorTabsEl.append(btn)
+    }
   }
 
   for (const actor of actors) {
@@ -920,46 +1559,60 @@ async function main() {
         }
       }
       if (best) {
-        selectActor(best.id, false)
-        statusEl.textContent = `Selected ${best.label}`
+        void commands.invoke("select", { target: best.id, frame: false }, { source: "ui" })
       }
     },
   })
 
-  possessBtn.addEventListener("click", () => setPossessing(!possessing))
-  profileSelect.addEventListener("change", () => {
-    const val = profileSelect.value as HumanPreset
-    if (val === "soldier" || val === "wizard" || val === "zombie") {
-      applyPresetToActor(selected, val)
-      syncUI()
-    }
+  // Wire all UI controls through the command registry
+  labToggleBtn.addEventListener("click", () => {
+    void commands.invoke("lab.toggle", {}, { source: "ui" })
   })
-  walkBtn.addEventListener("click", () => setAction("walk"))
-  runBtn.addEventListener("click", () => setAction("run"))
-  stopBtn.addEventListener("click", () => setAction("idle"))
-  detachBtn.addEventListener("click", () => detachLimb())
-  resetBtn.addEventListener("click", () => resetActor(selected))
+  possessBtn.addEventListener("click", () => {
+    void commands.invoke(possessing ? "release" : "possess", {}, { source: "ui" })
+  })
+  profileSelect.addEventListener("change", () => {
+    void commands.invoke("profile.set", { profile: profileSelect.value }, { source: "ui" })
+  })
+  walkBtn.addEventListener("click", () => {
+    void commands.invoke("action.walk", {}, { source: "ui" })
+  })
+  runBtn.addEventListener("click", () => {
+    void commands.invoke("action.run", {}, { source: "ui" })
+  })
+  stopBtn.addEventListener("click", () => {
+    void commands.invoke("action.stop", {}, { source: "ui" })
+  })
+  detachBtn.addEventListener("click", () => {
+    void commands.invoke("limb.detach", { limb: limbSelect.value }, { source: "ui" })
+  })
+  resetBtn.addEventListener("click", () => {
+    void commands.invoke("character.reset", {}, { source: "ui" })
+  })
   pauseBtn.addEventListener("click", () => {
-    paused = !paused
-    syncUI()
+    void commands.invoke("transport.toggle", {}, { source: "ui" })
   })
   stepBtn.addEventListener("click", () => {
-    paused = true
-    syncUI()
-    stepSimulation(1 / 60)
-    renderScene(1 / 60)
+    void commands.invoke("transport.step", { frames: 1 }, { source: "ui" })
   })
   speedInput.addEventListener("input", () => {
-    simSpeed = Number(speedInput.value) || 1
-    speedOutput.value = `${simSpeed.toFixed(2)}×`
+    void commands.invoke("transport.speed", { speed: Number(speedInput.value) || 1 }, { source: "ui" })
   })
-  frameBtn.addEventListener("click", () => frameSelected("close"))
-  gameZoomBtn.addEventListener("click", () => frameSelected("gameplay"))
-  lineupBtn.addEventListener("click", () => frameSelected("lineup"))
+  frameBtn.addEventListener("click", () => {
+    void commands.invoke("camera.set", { frame: "close" }, { source: "ui" })
+  })
+  gameZoomBtn.addEventListener("click", () => {
+    void commands.invoke("camera.set", { frame: "gameplay" }, { source: "ui" })
+  })
+  lineupBtn.addEventListener("click", () => {
+    void commands.invoke("camera.set", { frame: "lineup" }, { source: "ui" })
+  })
 
   for (const bar of document.querySelectorAll<HTMLElement>(".hub-bar, .char-dock, .actor-tabs")) {
     bar.addEventListener("focusin", e => {
-      if (possessing && e.target !== possessBtn) setPossessing(false)
+      if (possessing && e.target !== possessBtn) {
+        void commands.invoke("release", {}, { source: "ui" })
+      }
     })
   }
 
@@ -969,7 +1622,7 @@ async function main() {
     if (event.metaKey || event.ctrlKey || event.altKey) return
     if (event.key === "Escape" && possessing) {
       event.preventDefault()
-      setPossessing(false)
+      void commands.invoke("release", {}, { source: "ui" })
       return
     }
     if (typing) return
@@ -977,20 +1630,21 @@ async function main() {
     const key = event.key.toLowerCase()
     if (key === "p" && !possessing) {
       event.preventDefault()
-      setPossessing(true)
+      void commands.invoke("possess", {}, { source: "ui" })
     } else if (key === "f" && !possessing) {
       event.preventDefault()
-      frameSelected("close")
+      void commands.invoke("camera.set", { frame: "close" }, { source: "ui" })
     } else if (event.code === "Space" && !possessing) {
       event.preventDefault()
-      paused = !paused
-      syncUI()
+      void commands.invoke("transport.toggle", {}, { source: "ui" })
     }
   })
 
   window.addEventListener("hashchange", () => {
     const id = parseActorHash(location.hash)
-    if (id && id !== selected.id) selectActor(id, true, false)
+    if (id && id !== selected.id) {
+      void commands.invoke("select", { target: id, frame: true }, { source: "ui" })
+    }
   })
 
   function stepDetachedPiece(piece: DetachedPiece, dt: number, aim: number) {
@@ -1065,7 +1719,7 @@ async function main() {
           a.y = actor.homeY + 0.8
           actor.previousBones = undefined
         }
-        const dir = 0.72 // Three-quarter forward toward the camera
+        const dir = 0.72
         vx = Math.cos(dir) * speed
         vy = Math.sin(dir) * speed
         nextX = (actor.actionTime <= dt * simSpeed * 1.5 ? actor.homeX - 0.6 : a.x) + vx * dt
@@ -1159,10 +1813,53 @@ async function main() {
   resize()
   window.addEventListener("resize", resize)
 
+  function buildPageState() {
+    return {
+      mode: possessing ? ("play" as const) : ("edit" as const),
+      selected: selected.id,
+      possessing,
+      paused,
+      speed: simSpeed,
+      camera: readCameraState(),
+      actors: actors.map(a => ({
+        id: a.id,
+        label: a.label,
+        gameTag: a.gameTag,
+        preset: a.preset,
+        action: a.action,
+        x: round3(a.avatar.x),
+        y: round3(a.avatar.y),
+        aim: round3(a.avatar.aim),
+        hiddenBones: [...a.hiddenBones],
+        pieces: a.pieces.length,
+        noPop: a.noPop,
+      })),
+      settings: { profilePreset: selected.preset, ...selected.profile },
+      splatter: game.splatterFx?.inspect() ?? { particles: 0, decals: 0, walls: 0, time: 0 },
+      commands: commands.describe(),
+    }
+  }
+
+  // Connect to the shared DevControl runtime if loaded on this page
+  const devControlAdapter = {
+    kind: "characters" as const,
+    commands,
+    getCanvas: () => canvas,
+    getMode: () => (possessing ? ("play" as const) : ("edit" as const)),
+    getSection: () => selected.id,
+    getState: () => buildPageState(),
+  }
+  const rt = (window as unknown as { __arcadeDevControl?: { setAdapter?: (a: unknown) => void; sendStatus?: () => void } }).__arcadeDevControl
+  if (rt?.setAdapter) {
+    rt.setAdapter(devControlAdapter)
+    notifyDevControl = () => rt.sendStatus?.()
+  }
+
   const w = window as unknown as {
     ready: boolean
     advance(ms: number): Promise<void>
     charactersProof: Record<string, unknown>
+    charactersControl: typeof devControlAdapter
   }
 
   w.advance = async (ms: number) => {
@@ -1175,24 +1872,20 @@ async function main() {
     await new Promise(r => requestAnimationFrame(r))
   }
 
+  w.charactersControl = devControlAdapter
   w.charactersProof = {
     adapter: adapter.info,
     actors,
     game,
     labPanel,
+    commands,
+    invoke: (id: string, args?: Record<string, unknown>) => commands.invoke(id, args, { source: "cli" }),
+    state: () => buildPageState(),
     get selected() { return selected.id },
     get possessing() { return possessing },
     get paused() { return paused },
     get speed() { return simSpeed },
-    get camera() {
-      return {
-        focus: [orbitState.focusX, orbitState.focusY, orbitState.focusZ],
-        yaw: orbitState.yaw,
-        pitch: orbitState.pitch,
-        dist: orbitState.dist,
-        eye: [...cam.eye],
-      }
-    },
+    get camera() { return readCameraState() },
     get splatterActive() {
       return !!game.splatterFx?.particles.some((v: number) => v !== 0) || (game.splatterFx?.inspect().decals ?? 0) > 0
     },
@@ -1200,7 +1893,7 @@ async function main() {
     setPossessing,
     setAction,
     detachLimb,
-    resetActor: (id?: ActorId) => resetActor(id ? actorById(id) : selected),
+    resetActor: (id?: ActorId) => resetActor(id ? resolveActor(id) : selected),
     frameSelected,
   }
 
