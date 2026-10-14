@@ -30,7 +30,8 @@ avatar.profile = humanProfiles.zombie // uneven timing, dragged right foot, dela
 ```
 
 Presets are immutable. Spread a preset to tune an individual actor; it will not change other actors or the Lab.
-The neutral soldier defaults to the crouch-run posture: `leanScale=1.25`, `runPosture=0.34`, `crouchDepth=0.08`,
+The neutral soldier defaults to the crouch-run posture: `leanScale=1.25`, `hipDrop=0.095`, `bobScale=1`,
+`turnBank=1`, `stepLift=1`, `runPosture=0.34`, `crouchDepth=0.08`,
 `headStability=0.8`. Weapon clips can replace rest
 hand targets before IK. Profile hand poses do not implement spells, attacks, pathfinding or new zombie AI.
 
@@ -92,6 +93,6 @@ Open `/arcade/blackout/characters.html` (reachable from the Dev Hub top bar unde
 - Switch profiles per actor, trigger `Walk loop`, `Run loop`, `Stop`, `Detach limb` (any bone subtree, with surface blood splatter) or `Reset`, and control transport with `Pause`, `Step` (`1/60 s`) and `Speed`.
 - The `Lab ~` button (`Backquote`) toggles the shared `LabPanel` scoped to the selected actor's `Profile` controls.
 
-For scripted A/B fixtures, `anim.html?lab=1` retains `Profile walk`, `Three profiles` and `Detached forearm`. Production defaults remain the neutral soldier profile (`8223033` parity).
+For scripted A/B fixtures, `anim.html?lab=1` retains `Profile walk`, `Three profiles` and `Detached forearm`. Production defaults remain the neutral soldier profile (`7c8c3635` New parity; `8223033` Old parity).
 
 `games/blackout/scripts/prove-characters.ts` and `games/blackout/scripts/prove-human.ts` exercise interactive possession, camera gestures, per-actor profiles, attachments, detach handoff and Lab input on headless Metal through Hivemind. Shared tests cover contact locking, asymmetry bounds, semantic IDs, attachment visibility and origin/offset motion. Blackout tests cover default/profile parity, dt spikes, missing limbs, weapon stability and corpse detachment. Visual proof and release-base results belong in `perf/human-rig.md`.

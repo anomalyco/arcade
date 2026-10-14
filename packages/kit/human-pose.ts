@@ -22,21 +22,35 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
     const side = i === 0 ? -1 : 1, f = a.feet[i]!
     const hip = at(pelvis, 0, 0, side * RIG.hipW)
     const contact = f.planted ? plantedFoot(a, i) : null
-    const ankle: V3 = contact?.p ?? [f.p[0], f.p[1] + RIG.ankle, f.p[2]]
-    const pole = dirIn(pelvis, 1, 0, side * 0.3)
-    const [knee, ank] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
-    th.push(limb(hip, knee, pole, pelvis.x)); sh.push(limb(knee, ank, pole, pelvis.x))
     const u = m.swings[i]!
-    const swingReach = !f.planted ? smooth(u / 0.22) * (1 - smooth((u - 0.75) / 0.25)) : 0
-    let foot = contact ?? pitch(yawFrame(lerp3(ankle, ank, swingReach), f.yaw), f.pitch)
-    if (!f.planted) {
+    // Up-biased pole in pelvis space (+0.28 y) counteracts forward crouch-run pelvis pitch so the
+    // pole vector stays above the hip->ankle swing chord and never bows the knee outward.
+    const pole = dirIn(pelvis, 1, 0.28, side * 0.25)
+    if (contact) {
+      const [knee, ank] = ik(hip, contact.p, RIG.thigh, RIG.shin, pole)
+      th.push(limb(hip, knee, pole, pelvis.x)); sh.push(limb(knee, ank, pole, pelvis.x))
+      ft.push(contact)
+    } else {
+      const landBlend = smooth((u - 0.75) / 0.25)
+      const landFrame = pitch(yawFrame([0, 0, 0], f.yaw), -0.12)
+      const toeWorld: V3 = [f.p[0] + Math.cos(f.yaw) * 0.19, f.p[1], f.p[2] + Math.sin(f.yaw) * 0.19]
+      const landOff = at(landFrame, 0.19, -RIG.ankle, 0)
+      const landAnkle: V3 = [toeWorld[0] - landOff[0], toeWorld[1] - landOff[1], toeWorld[2] - landOff[2]]
+      const rawAnkle: V3 = [f.p[0], f.p[1] + RIG.ankle, f.p[2]]
+      const ankle: V3 = lerp3(rawAnkle, landAnkle, landBlend)
+      const [knee0, ank0] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
+      const sh0 = limb(knee0, ank0, pole, pelvis.x)
       const relaxed = smooth(u / 0.22) * (1 - smooth((u - 0.68) / 0.32))
-      const shinPitch = Math.atan2(sh[i]!.x[1], Math.hypot(sh[i]!.x[0], sh[i]!.x[2]))
-      foot = pitch(foot, (shinPitch - 0.12 - f.pitch) * relaxed)
-      const low = Math.min(at(foot, -0.08, -RIG.ankle, 0)[1], at(foot, 0.19, -RIG.ankle, 0)[1])
-      if (low < 0) foot = moved(foot, [foot.p[0], foot.p[1] - low, foot.p[2]])
+      const shinPitch = Math.atan2(sh0.x[1], Math.hypot(sh0.x[0], sh0.x[2]))
+      const footPitch = f.pitch + (shinPitch - 0.12 - f.pitch) * relaxed
+      const testFoot = pitch(yawFrame(ankle, f.yaw), footPitch)
+      const low = Math.min(at(testFoot, -0.08, -RIG.ankle, 0)[1], at(testFoot, 0.19, -RIG.ankle, 0)[1])
+      if (low < 0) ankle[1] -= low
+      const [knee, ank] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
+      th.push(limb(hip, knee, pole, pelvis.x)); sh.push(limb(knee, ank, pole, pelvis.x))
+      const swingReach = smooth(u / 0.22) * (1 - smooth((u - 0.75) / 0.25))
+      ft.push(pitch(yawFrame(lerp3(ankle, ank, swingReach), f.yaw), footPitch))
     }
-    ft.push(foot)
   }
   return { th: [th[0]!, th[1]!], sh: [sh[0]!, sh[1]!], ft: [ft[0]!, ft[1]!] }
 }

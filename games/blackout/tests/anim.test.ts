@@ -397,3 +397,64 @@ test("weapon frame is at least as stable as old during locomotion, stops and 30 
     expect(newM.maxShDist).toBeLessThan(0.33)
   }
 })
+
+test("reversals, sharp turns, strafe transitions, hard stops and mux stepping have no foot kick-out, knee flip or pelvis whip", () => {
+  const scenarios: { name: string; steps: number; step: (n: number) => { dt: number; vx: number; vy: number; aim: number; mux?: boolean } }[] = [
+    { name: "180-reversal-sprint", steps: 240, step: n => ({ dt, vx: n < 90 ? 6.3 : -6.3, vy: 0, aim: 0 }) },
+    { name: "sharp-90-turn-sprint", steps: 240, step: n => ({ dt, vx: n < 90 ? 6.3 : 0, vy: n < 90 ? 0 : 6.3, aim: n < 90 ? 0 : Math.PI / 2 }) },
+    { name: "strafe-to-run", steps: 300, step: n => { const ang = n / 300 * Math.PI * 2; return { dt, vx: Math.cos(ang) * 4.2, vy: Math.sin(ang) * 4.2, aim: 0 } } },
+    { name: "strafe-reversal", steps: 240, step: n => ({ dt, vx: 0, vy: Math.floor(n / 45) % 2 === 0 ? 4.2 : -4.2, aim: 0 }) },
+    { name: "start-stop-sprint", steps: 240, step: n => ({ dt, vx: n >= 30 && n < 120 ? 6.3 : 0, vy: 0, aim: 0 }) },
+    { name: "mux-30-in-60", steps: 240, step: n => ({ dt, vx: n < 150 ? 4.2 : 0, vy: 0, aim: 0, mux: true }) },
+  ]
+  for (const sc of scenarios) {
+    const a = newAvatar(sc.name, 0, 0, 0, "rifle")
+    let x = 0, y = 0, t = 0, muxX = 0, muxY = 0
+    let prevFootP: [number, number, number][] | null = null
+    let prevAnkles: [number, number, number][] | null = null
+    let prevToes: [number, number, number][] | null = null
+    let prevPlanted: boolean[] | null = null
+    let prevPelPitch = 0, prevPelY = 0
+    for (let n = 0; n < sc.steps; n++) {
+      const s = sc.step(n)
+      t += s.dt
+      if (s.mux) {
+        if (n % 2 === 0) { muxX += s.vx * (2 / 60); muxY += s.vy * (2 / 60) }
+        x = muxX; y = muxY
+      } else {
+        x += s.vx * s.dt; y += s.vy * s.dt
+      }
+      animate(a, s.dt, t, x, y, s.vx, s.vy, s.aim)
+      const b = a.body!
+      const footP = a.feet.map(f => [...f.p] as [number, number, number])
+      const ankles = b.ft.map(f => [...f.p] as [number, number, number])
+      const toes = b.ft.map(f => at(f, 0.19, -RIG.ankle, 0))
+      const planted = a.feet.map(f => f.planted)
+      const pelPitch = Math.asin(b.pelvis.x[1]), pelY = b.pelvis.p[1]
+      if (n > 0) {
+        expect(Math.abs(pelPitch - prevPelPitch)).toBeLessThan(0.05)
+        expect(Math.abs(pelY - prevPelY)).toBeLessThan(0.03)
+        for (let i = 0; i < 2; i++) {
+          const df = Math.hypot(footP[i]![0] - prevFootP![i]![0], footP[i]![1] - prevFootP![i]![1], footP[i]![2] - prevFootP![i]![2])
+          const da = Math.hypot(ankles[i]![0] - prevAnkles![i]![0], ankles[i]![1] - prevAnkles![i]![1], ankles[i]![2] - prevAnkles![i]![2])
+          expect(df).toBeLessThan(0.34)
+          expect(da).toBeLessThan(0.34)
+          if (planted[i] && prevPlanted![i]) {
+            const dtSlip = Math.hypot(toes[i]![0] - prevToes![i]![0], toes[i]![1] - prevToes![i]![1], toes[i]![2] - prevToes![i]![2])
+            expect(dtSlip).toBeLessThan(1e-12)
+          }
+        }
+      }
+      for (let i = 0; i < 2; i++) {
+        const hip = b.th[i]!.p, knee = at(b.th[i]!, 0, -RIG.thigh, 0), shinEnd = at(b.sh[i]!, 0, -RIG.shin, 0)
+        const mid = [(hip[0] + shinEnd[0]) * 0.5, (hip[1] + shinEnd[1]) * 0.5, (hip[2] + shinEnd[2]) * 0.5]
+        const kneeFwd = (knee[0] - mid[0]!) * b.pelvis.x[0] + (knee[1] - mid[1]!) * b.pelvis.x[1] + (knee[2] - mid[2]!) * b.pelvis.x[2]
+        const kneeSide = Math.abs((knee[0] - mid[0]!) * b.pelvis.z[0] + (knee[1] - mid[1]!) * b.pelvis.z[1] + (knee[2] - mid[2]!) * b.pelvis.z[2])
+        expect(kneeFwd).toBeGreaterThan(-0.01)
+        expect(kneeSide).toBeLessThan(0.17)
+      }
+      prevFootP = footP; prevAnkles = ankles; prevToes = toes; prevPlanted = planted
+      prevPelPitch = pelPitch; prevPelY = pelY
+    }
+  }
+})

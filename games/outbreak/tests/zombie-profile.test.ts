@@ -47,3 +47,25 @@ test("Lab endpoints stay within the shared rig's pose and contact limits", () =>
   expect(high.headHz).toBeGreaterThan(0)
   expect(high.strideScale).toBeLessThan(low.strideScale)
 })
+
+test("sloped reversals keep survivor and zombie pelvis height and foot transitions smooth", () => {
+  for (const isZombie of [false, true]) {
+    let model = 0
+    const avatar = new Survivor({ addModel: () => model++ })
+    if (isZombie) avatar.profile = zombieProfile(zombieTuning)
+    const p = { x: 0, y: 0, vx: 3.4, vy: 0, aim: 0 }
+    const support = (sx: number, sz: number) => .4 * Math.sin(sx * .6) + .25 * Math.cos(sz * .5)
+    let time = 0, prevPelY = 0
+    for (let n = 0; n < 240; n++) {
+      const dt = 1 / 60
+      p.vx = n < 90 ? 3.4 : n < 160 ? -3.4 : 0
+      p.vy = n >= 90 && n < 160 ? 2.0 : 0
+      p.aim = n < 90 ? 0 : Math.PI * .75
+      p.x += p.vx * dt; p.y += p.vy * dt; time += dt
+      avatar.draw(p, dt, time, support)
+      const pelY = avatar.bones.pelvis!.p[1]
+      if (n > 0) expect(Math.abs(pelY - prevPelY)).toBeLessThan(.06)
+      prevPelY = pelY
+    }
+  }
+})

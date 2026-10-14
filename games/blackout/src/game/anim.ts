@@ -630,9 +630,10 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   const sprint = smooth(a.sprint)
   const port = sprint * (clip ? 0.35 : 1)
   const breath = Math.sin(t * 1.7 + a.seed)
-  const speed = Math.max(0.1, Math.hypot(a.svx, a.svy))
-  const postureX = enhanced ? m.posture.x * a.svx / speed : 0
-  const postureY = enhanced ? m.posture.x * a.svy / speed : 0
+  // Align posture lean with legYaw (forward travel heading) rather than raw svx/speed so reversing
+  // velocity through zero never whips pelvis pitch backward while m.posture.x decays.
+  const postureX = enhanced ? m.posture.x * Math.cos(a.legYaw) : 0
+  const postureY = enhanced ? m.posture.x * Math.sin(a.legYaw) : 0
 
   // Pelvis: low and bobbing when running, swaying its weight when standing, kept within reach of both feet.
   const legLen = RIG.thigh + RIG.shin - 0.015
@@ -657,7 +658,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   pelvis = roll(pelvis, 0.06 * moving * Math.cos(th) + sway * 1.4)
   if (enhanced) {
     pelvis = yawFrame(pelvisPoint(a), a.aim + clamp(angleDiff(m.pelvis.x + m.twist.x, a.aim), -1.05, 1.05))
-    pelvis = roll(pelvis, m.drop.x)
+    pelvis = roll(pelvis, m.drop.x + (m.bank?.x ?? 0) * 0.5)
     // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
     // both leg reaches remain identical. The waist, shoulders and head lean together.
     pelvis = pitch(pelvis, -0.65 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
@@ -701,7 +702,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   const fwd = (a.bare ? 0.2 : 0) + (enhanced ? 0.08 + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * (enhanced ? 1 : 2.2) + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
-  torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * (enhanced ? 0.85 : 0.4))
+  torso = roll(torso, side * Math.cos(tb) + (enhanced ? (m.bank?.x ?? 0) : 0) - fwd * Math.sin(tb) * (enhanced ? 0.85 : 0.4))
   if (enhanced) torso = profileTorso(torso, profile)
 
   // Gun: hung off the shoulder line along the exact aim, then recoil, sway, clip tilt and the raise.

@@ -811,11 +811,7 @@ async function main() {
     const next = resolveActor(id)
     if (!next) return
     if (selected !== next) {
-      selected.avatar.x = selected.homeX
-      selected.avatar.y = selected.homeY
-      selected.avatar.vx = 0
-      selected.avatar.vy = 0
-      selected.avatar.aim = selected.homeAim
+      selected.avatar.body = null
       selected.actionTime = 0
       animate(selected.avatar, 1 / 60, selected.avatar.t + 1 / 60, selected.homeX, selected.homeY, 0, 0, selected.homeAim, selected.wizardCast)
     }
@@ -1539,18 +1535,27 @@ async function main() {
       const speed = baseSpeed * simSpeed
       if (actor === selected) {
         const period = actor.action === "run" ? 2.4 : 4.2
-        if (actor.actionTime >= period) {
+        const wrapped = actor.actionTime >= period
+        if (wrapped) {
           actor.actionTime %= period
-          a.x = actor.homeX - 0.6
-          a.y = actor.homeY + 0.8
+          a.body = null
           actor.previousBones = undefined
         }
         const dir = 0.72
         vx = Math.cos(dir) * speed
         vy = Math.sin(dir) * speed
-        nextX = (actor.actionTime <= dt * simSpeed * 1.5 ? actor.homeX - 0.6 : a.x) + vx * dt
-        nextY = (actor.actionTime <= dt * simSpeed * 1.5 ? actor.homeY + 0.8 : a.y) + vy * dt
+        const startReset = wrapped || actor.actionTime <= dt * simSpeed * 1.5
+        if (startReset && Math.hypot(a.x - actor.homeX, a.y - actor.homeY) > 0.05) {
+          a.body = null
+          actor.previousBones = undefined
+        }
+        nextX = (startReset ? actor.homeX : a.x) + vx * dt
+        nextY = (startReset ? actor.homeY : a.y) + vy * dt
         aim = dir + Math.sin(actor.actionTime * 1.8) * 0.14
+        if (wrapped && followSelected) {
+          orbitState.focusX = nextX
+          orbitState.focusZ = nextY
+        }
       } else {
         vx = 0
         vy = 0

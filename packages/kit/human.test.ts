@@ -92,3 +92,51 @@ test("cosmetic limb IDs remain stable and offset emitters inherit rotational mot
   expect(pointVelocity(part, [10, 1.5, 4])).toEqual([2, 0, 0])
   expect(pointVelocity(part, [10, 2.5, 4])).toEqual([0, 0, 0])
 })
+
+test("mid-swing retargeting, strafe transitions, reversals and pole vector prevent foot kick-outs and knee flips", () => {
+  const dt = 1 / 60
+  for (const scenario of ["reversal", "strafeCircle", "stop", "mux"] as const) {
+    const a = actor()
+    let x = 0, y = 0, muxX = 0
+    let prevFootP: [V3, V3] | null = null, prevAnkles: [V3, V3] | null = null
+    for (let n = 0; n < 240; n++) {
+      const vx = scenario === "reversal" ? (n < 90 ? 6.3 : -6.3)
+        : scenario === "strafeCircle" ? Math.cos(n / 240 * Math.PI * 2) * 4.2
+        : scenario === "stop" ? (n < 120 ? 6.3 : 0) : 4.2
+      const vy = scenario === "strafeCircle" ? Math.sin(n / 240 * Math.PI * 2) * 4.2 : 0
+      const kv = 1 - Math.exp(-dt * 14)
+      const nvx = a.svx + (vx - a.svx) * kv, nvy = a.svy + (vy - a.svy) * kv
+      a.acx += ((nvx - a.svx) / dt - a.acx) * (1 - Math.exp(-dt * 10))
+      a.acy += ((nvy - a.svy) / dt - a.acy) * (1 - Math.exp(-dt * 10))
+      a.svx = nvx; a.svy = nvy; a.vx = vx; a.vy = vy
+      if (scenario === "mux") {
+        if (n % 2 === 0) muxX += vx * (2 / 60)
+        x = muxX
+      } else {
+        x += vx * dt; y += vy * dt
+      }
+      const distStep = Math.hypot(x - a.x, y - a.y)
+      a.x = x; a.y = y
+      locomotion(a, dt, distStep, n === 0, humanProfiles.soldier)
+      const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
+      const legs = poseLegs(a, pelvis)
+      const footP: [V3, V3] = [[...a.feet[0].p], [...a.feet[1].p]]
+      const ankles: [V3, V3] = [[...legs.ft[0].p], [...legs.ft[1].p]]
+      if (n > 0) {
+        for (let i = 0; i < 2; i++) {
+          expect(len([footP[i]![0] - prevFootP![i]![0], footP[i]![1] - prevFootP![i]![1], footP[i]![2] - prevFootP![i]![2]])).toBeLessThan(0.35)
+          expect(len([ankles[i]![0] - prevAnkles![i]![0], ankles[i]![1] - prevAnkles![i]![1], ankles[i]![2] - prevAnkles![i]![2]])).toBeLessThan(0.35)
+        }
+      }
+      for (let i = 0; i < 2; i++) {
+        const hip = legs.th[i]!.p, knee = at(legs.th[i]!, 0, -RIG.thigh, 0), shinEnd = at(legs.sh[i]!, 0, -RIG.shin, 0)
+        const mid: V3 = [(hip[0] + shinEnd[0]) * 0.5, (hip[1] + shinEnd[1]) * 0.5, (hip[2] + shinEnd[2]) * 0.5]
+        const kneeFwd = (knee[0] - mid[0]) * pelvis.x[0] + (knee[1] - mid[1]) * pelvis.x[1] + (knee[2] - mid[2]) * pelvis.x[2]
+        const kneeSide = Math.abs((knee[0] - mid[0]) * pelvis.z[0] + (knee[1] - mid[1]) * pelvis.z[1] + (knee[2] - mid[2]) * pelvis.z[2])
+        expect(kneeFwd).toBeGreaterThan(-0.01)
+        expect(kneeSide).toBeLessThan(0.20)
+      }
+      prevFootP = footP; prevAnkles = ankles
+    }
+  }
+})
