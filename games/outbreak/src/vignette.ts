@@ -265,12 +265,12 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       streetLampPower: 0.0,
       streetLampTemp: 3400,
       streetLampFalloff: 0.85,
-      porchLightPower: 0.40,
+      porchLightPower: 0.29,
       porchLightTemp: 3600,
-      porchLightFalloff: 0.78,
-      windowLightPower: 0.42,
+      porchLightFalloff: 0.64,
+      windowLightPower: 0.40,
       windowLightTemp: 2450,
-      windowLightFalloff: 0.74,
+      windowLightFalloff: 0.72,
       flashlightOn: true,
       flashlightIntensity: 1.68,
       flashlightCone: 35,
@@ -1367,7 +1367,7 @@ fn eyeVisible(p: vec2f) -> f32 {
       let gableChevron = smoothstep(36.6, 37.08, o.world.z) * step(2.38, o.world.y) * gableMask;
       col = col * (0.76 + 0.32 * tabGrain) + vec3f(0.009, 0.014, 0.021) * courseStep * tabGrain + vec3f(0.030, 0.040, 0.054) * max(eaveGlow, gableChevron * 0.95);
     }
-    // Fine textured detail in darks: gravel ruts, asphalt aggregate, and grass/verge blade micro-contrast + front lawn window spill
+    // Fine textured detail in darks: gravel ruts, asphalt aggregate, sidewalk grain, and grass/verge blade micro-contrast + front lawn window spill
     if (mat == 20 && !interior(o.world.xz)) {
       let p = o.world.xz;
       let kind = i32(round(o.aux));
@@ -1375,25 +1375,30 @@ fn eyeVisible(p: vec2f) -> f32 {
       if (kind == 1) {
         let crackLine = 1.0 - smoothstep(0.0, 0.022, abs(surfaceNoise(p * 0.95 + vec2f(2.4, 5.1)) - 0.5));
         col = col * (0.62 + 0.76 * fineGrit) * (1.0 - crackLine * 0.48);
+      } else if (kind == 2) {
+        let frontWalk = smoothstep(42.0, 38.0, p.y) * smoothstep(16.0, 21.0, p.x) * smoothstep(42.0, 37.0, p.x);
+        col = col * (0.72 + 0.56 * fineGrit) + vec3f(0.008, 0.010, 0.014) * frontWalk * fineGrit * select(1.0, 0.35, Vig.params2.y < 35.0);
       } else if (kind == 0) {
         let tuft = smoothstep(0.28, 0.78, fineGrit);
         let sideTreeShadow = smoothstep(17.5, 22.5, p.x) * smoothstep(40.5, 36.5, p.x);
+        let frontLawn = smoothstep(40.0, 36.0, p.y) * smoothstep(35.0, 36.2, p.y) * sideTreeShadow;
         let frontLawnSpill = (exp(-pow((p.x - 24.5) * 0.38, 2.0)) + exp(-pow((p.x - 34.2) * 0.38, 2.0))) * exp(-pow((p.y - 37.2) * 0.45, 2.0));
-        col = col * mix(0.48, 1.38, tuft) * mix(0.52, 1.0, sideTreeShadow) + vec3f(0.018, 0.022, 0.026) * frontLawnSpill * tuft * select(1.0, 0.35, Vig.params2.y < 35.0);
+        col = col * mix(0.48, 1.38, tuft) * mix(0.52, 1.0, sideTreeShadow) + (vec3f(0.018, 0.022, 0.026) * frontLawnSpill + vec3f(0.007, 0.009, 0.012) * frontLawn) * tuft * select(1.0, 0.35, Vig.params2.y < 35.0);
       }
     }
     // Weathered dark slate-grey porch trim, columns, and clapboard courses on south facade
     if ((mat == 4 || mat == 21) && o.world.z > 35.15 && !interior(o.world.xz)) {
       let trimLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       let courseLap = mix(0.62, 1.12, smoothstep(0.0, 0.25, fract(o.world.y / 0.165)));
-      if (trimLum > 0.028) {
-        col = mix(vec3f(trimLum) * vec3f(0.22, 0.26, 0.32), col * 0.26, 0.20) * courseLap;
+      if (trimLum > 0.024) {
+        col = mix(vec3f(trimLum) * vec3f(0.19, 0.23, 0.28), col * 0.22, 0.18) * courseLap;
       }
     }
     // Desaturate bright rugs & bedding in Noir and balance interior rooms
     if (interior(o.world.xz) && o.world.y < 2.65) {
       let inLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(vec3f(inLum) * vec3f(0.92, 0.95, 1.02), col, 0.35);
+      let inDining = smoothstep(29.2, 31.2, o.world.x) * smoothstep(29.2, 30.8, o.world.z);
+      col = mix(vec3f(inLum) * vec3f(0.92, 0.95, 1.02), col, mix(0.35, 0.56, inDining));
       // Subdue white fridge/counter/stove tops & runner mat border along the partition
       if (o.world.x > 30.8 && o.world.x < 35.8 && o.world.z > 29.55 && o.world.z < 31.30) {
         if (o.world.y > 0.85 || (o.world.y > 0.131 && o.world.y < 0.148)) {
@@ -1411,7 +1416,7 @@ fn eyeVisible(p: vec2f) -> f32 {
       if (abs(n.y) < 0.35 && o.world.x > 29.2 && o.world.x < 36.2 && o.world.z > 29.40 && o.world.z < 30.25 && o.world.y > 0.55 && o.world.y < 2.55) {
         let wx = exp(-pow((o.world.x - 33.45) * 0.58, 2.0));
         let wy = exp(-pow((o.world.y - 1.48) * 1.15, 2.0));
-        col += vec3f(0.24, 0.135, 0.052) * wx * wy * plasterTex;
+        col += vec3f(0.25, 0.135, 0.045) * wx * wy * plasterTex;
       }
       // Textured dark wood-plank & plaster fill in the north-east room & central hallway threshold
       if (o.world.z < 29.6 && o.world.x > 28.5) {
@@ -1436,10 +1441,10 @@ fn eyeVisible(p: vec2f) -> f32 {
     }
     // Wider wet porch & walkway reflection pool under the porch light
     if (mat == 20 && o.world.x > 25.0 && o.world.x < 30.4 && o.world.z > 35.4 && o.world.z < 40.2) {
-      let cx = exp(-pow((o.world.x - 27.7) * 1.45, 2.0));
+      let cx = exp(-pow((o.world.x - 27.7) * 1.38, 2.0));
       let cz = smoothstep(40.2, 35.5, o.world.z);
       let pWet = 0.55 + 0.90 * surfaceFbm(o.world.xz * 4.5);
-      col = col * mix(0.55, 0.95, cx) + vec3f(0.20, 0.19, 0.17) * cx * cz * pWet * select(1.0, 0.28, Vig.params2.y < 35.0);
+      col = col * mix(0.55, 0.98, cx) + vec3f(0.28, 0.27, 0.24) * cx * cz * pWet * select(1.0, 0.30, Vig.params2.y < 35.0);
     }
   }
   // Direction 3 (Noir): volumetric flashlight cone haze + soft outer aura + hot hand core & textured ground beam
