@@ -42,9 +42,9 @@ import {
   OUTBREAK_LOOK_LIGHTING_PRESETS,
   outbreakLightingControls,
   packOutbreakLightingUniforms,
+  resolveLampLight,
   STREET_LAMP_POSTS,
   streetLampHead,
-  resolveLampLight,
 } from "./lighting"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"

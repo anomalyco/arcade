@@ -1010,6 +1010,4 @@ fn evalActorGroundShadow(world: vec3f, n: vec3f, inRoom: bool) -> f32 {
   let occ = max(actorShadowTerm(g, p, lamp, 1.72, directional), max(actorShadowTerm(g, z0, lamp, 1.68, directional), actorShadowTerm(g, z1, lamp, 1.68, directional)));
   return 1.0 - occ * k;
 }
-
-
 `
