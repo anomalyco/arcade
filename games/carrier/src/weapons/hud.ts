@@ -1,4 +1,5 @@
 import type { WeaponKind } from "../../shared/weapons"
+import { HitMarker } from "../ui/hit-marker"
 
 /** What the weapons HUD shows each frame. */
 export type WeaponHudView = {
@@ -47,13 +48,6 @@ const CSS = `
 #wp .mark { position: absolute; left: 0; top: 0; will-change: transform; }
 #wp .lock { width: 60px; height: 60px; margin: -30px 0 0 -30px; border: 1.5px dashed rgba(255, 200, 97, 0.9); box-shadow: 0 0 6px rgba(60, 30, 0, 0.35); }
 #wp .lock.locked { border: 2px solid #ff5a3a; box-shadow: 0 0 10px rgba(255, 70, 40, 0.6); }
-#wp .hitm { width: 30px; height: 30px; margin: -15px 0 0 -15px; opacity: 0; }
-#wp .hitm i { position: absolute; width: 9px; height: 2px; background: #fff; box-shadow: 0 0 5px rgba(255, 255, 255, 0.6); }
-#wp .hitm i:nth-child(1) { left: -2px; top: 4px; transform: rotate(45deg); }
-#wp .hitm i:nth-child(2) { right: -2px; top: 4px; transform: rotate(-45deg); }
-#wp .hitm i:nth-child(3) { left: -2px; bottom: 4px; transform: rotate(-45deg); }
-#wp .hitm i:nth-child(4) { right: -2px; bottom: 4px; transform: rotate(45deg); }
-#wp .hitm.kill i { background: #ff5a3a; box-shadow: 0 0 6px rgba(255, 70, 40, 0.8); }
 #wp .warn { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); font-size: 14px; letter-spacing: 0.6em; margin-right: -0.6em; color: #ffc861; zoom: var(--hud, 1); }
 #wp .warn.missile { color: #ff5a3a; animation: wp-pulse 0.25s steps(2, jump-none) infinite; }
 @keyframes wp-pulse { from { opacity: 1 } to { opacity: 0.3 } }
@@ -71,7 +65,6 @@ body.mn-open #wp { display: none; }
 
 const FEED_TIME = 6
 const FEED_MAX = 4
-const HIT_TIME = 0.16
 const CONFIRM_TIME = 1.5
 
 /**
@@ -87,14 +80,13 @@ export class WeaponHud {
   private hpBar: HTMLElement
   private hpFill: HTMLElement
   private lockBox: HTMLElement
-  private hitm: HTMLElement
+  private marker: HitMarker
   private warnEl: HTMLElement
   private feedEl: HTMLElement
   private confEl: HTMLElement
   private confLeft = 0
   private lastArm = ""
   private lastHp = ""
-  private hitLeft = 0
   private feedLines: { el: HTMLElement; left: number }[] = []
 
   constructor(parent: HTMLElement = document.body) {
@@ -107,7 +99,7 @@ export class WeaponHud {
     const root = document.createElement("div")
     root.id = "wp"
     root.innerHTML = `<div class="arm"></div><div class="hp" hidden><i></i></div><div class="mark lock" hidden></div>
-<div class="mark hitm"><i></i><i></i><i></i><i></i></div><div class="warn"></div><div class="feed"></div><div class="conf"></div>`
+<div class="warn"></div><div class="feed"></div><div class="conf"></div>`
     parent.append(root)
     this.root = root
     const q = (s: string) => root.querySelector<HTMLElement>(s)!
@@ -115,7 +107,7 @@ export class WeaponHud {
     this.hpBar = q(".hp")
     this.hpFill = q(".hp i")
     this.lockBox = q(".lock")
-    this.hitm = q(".hitm")
+    this.marker = new HitMarker(root)
     this.warnEl = q(".warn")
     this.feedEl = q(".feed")
     this.confEl = q(".conf")
@@ -123,13 +115,12 @@ export class WeaponHud {
 
   /** Per frame: the readout, or null to hide it (not flying). `dt` runs the hit marker and the feed. */
   update(dt: number, v: WeaponHudView | null): void {
-    this.hitLeft = Math.max(0, this.hitLeft - dt)
     if (this.confLeft > 0) {
       this.confLeft -= dt
       if (this.confLeft <= 0) this.confEl.classList.remove("on")
     }
-    this.hitm.style.opacity = this.hitLeft > 0 && v?.nose ? String(Math.min(1, this.hitLeft / 0.06)) : "0"
-    if (v?.nose) this.hitm.style.transform = `translate(${v.nose.x.toFixed(1)}px, ${v.nose.y.toFixed(1)}px)`
+    this.marker.hidden = !v?.nose
+    if (v?.nose) this.marker.place(v.nose.x, v.nose.y)
     for (let i = this.feedLines.length - 1; i >= 0; i--) {
       const l = this.feedLines[i]!
       l.left -= dt
@@ -186,8 +177,7 @@ export class WeaponHud {
 
   /** Our rounds or missile hit an enemy (a kill shows red). Presentation only. */
   hit(kill = false): void {
-    this.hitLeft = HIT_TIME * (kill ? 2.5 : 1)
-    this.hitm.classList.toggle("kill", kill)
+    this.marker.hit(kill)
   }
 
   /** A kill feed line, newest on top: killer ✕ victim in their team colours (killer null: the victim crashed on their

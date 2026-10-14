@@ -263,7 +263,6 @@ export class Gunnery {
         this.audio.burstAt(this.dist(e.x, e.y, e.z), e.kind, e.surface)
         if (e.owner === this.id && e.on >= 0) {
           this.hud.hit()
-          this.audio.hit()
         }
         return
       }
@@ -272,7 +271,6 @@ export class Gunnery {
         this.audio.intercept(this.dist(e.x, e.y, e.z))
         if (e.by === this.id) {
           this.hud.hit(true)
-          this.audio.hit(true)
         }
         if (this.world.authority) this.onEvent?.(e)
         return
@@ -289,7 +287,6 @@ export class Gunnery {
   /** A kill credited to us (from the jets' feed): the HUD's kill marker. */
   confirmKill(): void {
     this.hud.hit(true)
-    this.audio.hit(true)
   }
 
   // ---- our turret --------------------------------------------------------------------------------------------------------
@@ -434,7 +431,6 @@ export class Gunnery {
       this.fx.impact(kind === "jet" ? "jet" : kind, x, y, z)
       if (kind === "jet") {
         this.hud.hit()
-        this.audio.hit()
         if (this.net) this.pendingHits.set(target, (this.pendingHits.get(target) ?? 0) + 1)
         else {
           const j = this.subJets.find((j) => j.id === target)

@@ -146,7 +146,6 @@ export class Weapons {
   /** Burning carriers, smoke and the sinking (src/weapons/ship-fx.ts). */
   private shipFx: ShipFx
   private hitIn = 0
-  private hitSoundIn = 0
   private lockers = new Map<number, boolean>()
   private boomed: string[] = []
   private wrecks: Wreck[] = []
@@ -348,7 +347,6 @@ export class Weapons {
         this.hud.feed(killer, this.who(e.on), e.by === this.id && e.on !== this.id)
         if (e.by === this.id && e.on !== this.id) {
           this.hud.hit(true)
-          this.audio.hit(true)
         }
         // A jet shot down blows up and its wreck falls, burning.
         if (e.w) {
@@ -513,10 +511,6 @@ export class Weapons {
       }
       if (target < 0) return
       this.hud.hit()
-      if (this.hitSoundIn <= 0) {
-        this.audio.hit()
-        this.hitSoundIn = 0.06
-      }
       if (this.net) this.pendingHits.set(target, (this.pendingHits.get(target) ?? 0) + 1)
       else this.world.gunHit(this.id, target, 1)
     })
@@ -587,7 +581,6 @@ export class Weapons {
    */
   frame(dt: number, t: number, eye: ArrayLike<number>, fov: number, viewportH: number, project: (x: number, y: number, z: number) => { x: number; y: number } | null, paused = false): void {
     this.time += dt
-    this.hitSoundIn -= dt
     this.ear[0] = eye[0]!
     this.ear[1] = eye[1]!
     this.ear[2] = eye[2]!
