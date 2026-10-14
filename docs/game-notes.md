@@ -348,6 +348,21 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   Seven paired measurements show +0.166 ms render GPU time (MAD 0.008 ms); upload-inclusive queue timing is noisier
   at +0.206 ms (MAD 0.032 ms). Storage rises by 83,004 CPU bytes
   and 27,648 field-texture bytes. Both paths remain bounded, and updates allocate no arrays.
+- **Couple blackbody fireball crusting to buoyant, billow-eroded soot volumes.** `packages/kit/fx/explosion.ts`,
+  `particle-renderer.ts`, `volume.ts` and `volume-shader.ts` replace the Lab's 75 flat orange Gaussian sprites and
+  constant-tint linear smoke crawl with a multi-phase explosion. `ParticleRenderer` adds procedural domain-warped
+  fireball billows (`kind = 7`) where a Planckian temperature ramp cools convex outer lobes into dark charcoal soot
+  first while deep fissures roar white-yellow-orange, plus planar ground shockwave/dust rings (`kind = 5`), charred
+  ground scorch decals (`kind = 6`), temperature-cooling ballistic sparks (`kind = 1`) and elongated 3D shrapnel
+  splinters (`kind = 2`). For `soot > 0` explosions, `SmokeVolumes` uses a two-stage blast ease-out + buoyant drift,
+  keeps the central fireball cavity clear during the initial `0.44 s` flash so low-res smoke does not muddy the
+  high-res fireball, erodes outer cloud edges with 3D billow noise to eliminate `0.5 m` grid-cell stepping, and
+  shifts smoke albedo from deep charcoal soot (`#13110f`) through warm umber-grey to pale ash-grey (`colorShift`).
+  The Lab exposes typed `Fireball`, `Explosion Smoke` and `Blast & Debris` controls, `Loop interval` (default `2.2 s`),
+  and deterministic `tuningSeed` randomization (`effect.randomize`, `effect.trigger`, `effect.loop`) that retriggers
+  one-shot effects immediately. Across 7 alternating Metal pairs at `1280×800` (20 active explosion frames per run,
+  including dynamic polar-shadow flash lighting), median whole-frame GPU time is `0.8041 ms` vs `0.4542 ms` baseline
+  (`+0.3464 ms`, MAD `0.0107 ms`; `packages/kit/lab/prove-explosion.ts`).
 - **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
   `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
   vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.

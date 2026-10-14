@@ -87,11 +87,11 @@ export class VolumeRenderer {
     this.pass={label:"smoke low resolution",colorAttachments:[{view:this.lowView,clearValue:{r:0,g:0,b:0,a:0},loadOp:"clear",storeOp:"store"}]}
   }
   upload(volumes:SmokeVolumes) {
-    this.uniforms[19]=volumes.time;this.uniforms[23]=this.debug
+    this.uniforms[19]=volumes.time;this.uniforms[23]=this.debug;this.uniforms[27]=volumes.colorShift
     this.uniforms.set(volumes.bounds,28)
     const s=volumes.settings
     this.uniforms[124]=s.height;this.uniforms[125]=s.billowScale;this.uniforms[126]=s.extinction;this.uniforms[127]=s.lighting
-    this.uniforms[128]=s.rise;this.uniforms[129]=s.wind;this.uniforms[130]=s.turbulence
+    this.uniforms[128]=s.rise;this.uniforms[129]=s.wind;this.uniforms[130]=s.turbulence;this.uniforms[131]=volumes.coreGlow
     this.uniforms.set(volumes.advection,132)
     this.device.queue.writeBuffer(this.buffer,0,this.uniforms)
     this.device.queue.writeTexture(this.destination,volumes.field,this.uploadLayout,this.extent)

@@ -1617,6 +1617,125 @@ export function createWorkbench(opts: WorkbenchOptions) {
       },
     },
     {
+      id: "effect.trigger",
+      aliases: ["transport.retrigger", "retrigger"],
+      label: "Retrigger Active Effect",
+      shortLabel: "Retrigger",
+      category: "Transport",
+      shortcut: "Space",
+      args: {
+        effect: { type: "string", description: "Optional effect ID to select before triggering" },
+        seed: { type: "number", description: "Optional effect seed" },
+      },
+      enabled: () => Boolean(activeSection().retrigger),
+      run: (ctx, args) => {
+        const sec = activeSection()
+        if (typeof args?.effect === "string" && args.effect.trim() && "effect" in sec.settings) {
+          sec.settings.effect = args.effect.trim()
+        }
+        const nextSeed = typeof args?.seed === "number" ? args.seed : ctx?.seed
+        if (typeof nextSeed === "number") {
+          if ("effectSeed" in sec.settings) sec.settings.effectSeed = nextSeed
+          else if ("seed" in sec.settings) sec.settings.seed = nextSeed
+        }
+        elapsed = 0
+        frames = 0
+        sec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          section: sec.id,
+          effect: sec.settings.effect ?? null,
+          seed: sec.settings.effectSeed ?? sec.settings.seed ?? null,
+          elapsed: 0,
+          frames: 0,
+        }
+      },
+    },
+    {
+      id: "effect.randomize",
+      aliases: ["randomize"],
+      label: "Randomize Active Effect Parameters & Retrigger",
+      shortLabel: "Randomize",
+      category: "Inspector",
+      shortcut: "R",
+      undoable: true,
+      args: {
+        group: { type: "string", description: "Optional parameter group name to randomize (omit for all active groups)" },
+        seed: { type: "number", description: "Optional deterministic tuning seed" },
+      },
+      enabled: () => mode !== "play",
+      run: (ctx, args) => {
+        const sec = activeSection()
+        const nextSeed = typeof args?.seed === "number" ? args.seed : ctx?.seed
+        if (typeof nextSeed === "number" && "tuningSeed" in sec.settings) {
+          sec.settings.tuningSeed = nextSeed
+        }
+        const targetGroup = typeof args?.group === "string" && args.group.trim() ? args.group.trim().toLowerCase() : null
+        const customActions = sec.controls.filter(
+          c =>
+            c.type === "action" &&
+            /^Randomize\b/i.test(c.label) &&
+            (c.visible ? c.visible(sec.settings) : true) &&
+            (!targetGroup || (c.group ?? "").toLowerCase().includes(targetGroup) || c.label.toLowerCase().includes(targetGroup)),
+        )
+        if (customActions.length > 0) {
+          const dummyBtn = document.createElement("button")
+          for (const act of customActions) {
+            if (act.type === "action") void act.run(dummyBtn)
+          }
+        } else {
+          const groups = new Set(
+            panel.navigation.visibleRows
+              .filter(r => r.control && r.group !== "Emitter" && r.group !== "Environment" && r.group !== "Origin & Seed")
+              .map(r => r.group)
+              .filter(g => !targetGroup || g.toLowerCase().includes(targetGroup)),
+          )
+          for (const g of groups) panel.navigation.randomize(g)
+        }
+        elapsed = 0
+        frames = 0
+        sec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          section: sec.id,
+          effect: sec.settings.effect ?? null,
+          tuningSeed: sec.settings.tuningSeed ?? null,
+          settings: { ...sec.settings },
+        }
+      },
+    },
+    {
+      id: "effect.loop",
+      aliases: ["transport.loop"],
+      label: "Set Effect Loop & Interval",
+      shortLabel: "Loop",
+      category: "Transport",
+      args: {
+        loop: { type: "boolean", description: "Enable or disable looping (omit to toggle)" },
+        interval: { type: "number", min: 0.2, max: 15, description: "Loop interval in seconds" },
+      },
+      enabled: () => "loop" in activeSection().settings,
+      run: (_ctx, args) => {
+        const sec = activeSection()
+        if (typeof args?.loop === "boolean") sec.settings.loop = args.loop
+        else sec.settings.loop = !sec.settings.loop
+        if (typeof args?.interval === "number" && "interval" in sec.settings) {
+          sec.settings.interval = args.interval
+        }
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          loop: Boolean(sec.settings.loop),
+          interval: "interval" in sec.settings ? Number(sec.settings.interval) : null,
+        }
+      },
+    },
+    {
       id: "scene.select-section",
       label: "Switch Lab Section",
       shortLabel: "Section",
@@ -4082,16 +4201,36 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const sec = activeSection()
       const isPaused = "playing" in sec.settings && !sec.settings.playing
       const changedKeys = Object.keys(beforeSettings).filter(k => beforeSettings[k] !== sec.settings[k])
+      const nonTransportKeys = changedKeys.filter(k => !["playing", "loop", "interval", "tuningSeed"].includes(k))
+      const isRandomizeOrReset = /^Randomize\b|^Reset\b/i.test(label)
+      const isOneShotEffect =
+        (sec.id === "effects" && ["explosion", "sparks", "debris", "tyre"].includes(String(sec.settings.effect))) ||
+        (sec.id === "fire-water" && ["explosion", "fireball"].includes(String(sec.settings.effect))) ||
+        sec.id === "splatter"
       const needsRetrigger =
+        isOneShotEffect ||
+        (isRandomizeOrReset && sec.id === "effects" && (!isPaused || nonTransportKeys.some(k => {
+          const ctrl = sec.controls.find(c => c.key === k)
+          return Boolean(ctrl?.unit?.includes("retrigger"))
+        }))) ||
         sec.id !== "effects" ||
         sec.settings.effect !== "smoke" ||
-        changedKeys.some(k => {
+        nonTransportKeys.some(k => {
           const ctrl = sec.controls.find(c => c.key === k)
           return Boolean(ctrl?.unit?.includes("retrigger") || ["effect", "targetX", "targetZ", "seed"].includes(k))
         })
-      if (isPaused && frames > 0 && needsRetrigger) {
+      if (isPaused && frames > 0 && needsRetrigger && nonTransportKeys.length > 0) {
         resimulateFrozenFrame()
-      } else if (!isBench && (sec.id === "blackout-effects" || sec.id === "getaway-effects")) {
+      } else if (
+        !isBench &&
+        nonTransportKeys.length > 0 &&
+        (sec.id === "blackout-effects" ||
+          sec.id === "getaway-effects" ||
+          isOneShotEffect ||
+          (sec.id === "effects" && (isRandomizeOrReset || needsRetrigger)))
+      ) {
+        elapsed = 0
+        frames = 0
         sec.retrigger?.()
       }
       if (slotA && activeSlot === "B") {
