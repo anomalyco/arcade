@@ -6,7 +6,6 @@ import {
   buildFoliageTree,
   buildLegacyFoliageTree,
   emitCurvedGrassBlade,
-  emitGrassFurShells,
   emitGrassTuft,
   foliageSettings,
   foliageWindDeclarationsWgsl,
@@ -208,11 +207,6 @@ struct VOut {
 
   let compareMode = i32(round(U.config.y));
   let passSide = U.config.z;
-  // Perspective-correct screen-space NDC split (ndcX == 0.0) eliminates 3D polygon intersection seams.
-  if (compareMode == 2) {
-    if (passSide < -0.5 && ndcX >= 0.0) { discard; }
-    if (passSide > 0.5 && ndcX < 0.0) { discard; }
-  }
 
   let mat = i32(round(o.mat));
   var n = normalize(o.normal);
@@ -343,8 +337,11 @@ struct VOut {
         let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
         let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
         let brushField = brush1 * 0.58 + brush2 * 0.42;
-        let edgeMask = smoothstep(0.015, 0.16, cardEdge);
-        outAlpha = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+        let edgeMask = smoothstep(0.015, 0.24, cardEdge);
+        let lobeMask = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+        albedo *= mix(0.28, 1.08, lobeMask);
+        cavity *= mix(0.35, 1.0, lobeMask);
+        outAlpha = lobeMask;
       }
     }
   }
@@ -608,20 +605,13 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
     }
   } else {
     const grassRng = new Rng(seed ^ 0x73c9)
-    // 4-layer volumetric grass fur shells covering the front lawns, side yards, and curb verge strip
-    emitGrassFurShells(m, -7.45, -0.58, -0.82, 1.98, () => 0.0, params, 4, 2.0)
-    emitGrassFurShells(m, 0.82, -0.58, 7.45, 1.98, () => 0.0, params, 4, 2.0)
-    emitGrassFurShells(m, -11.4, -6.5, -10.55, 1.98, () => 0.0, params, 4, 2.2)
-    emitGrassFurShells(m, 7.55, -6.5, 11.4, 1.98, () => 0.0, params, 4, 2.2)
-    emitGrassFurShells(m, -7.4, 3.34, -0.95, 3.74, () => 0.08, params, 3, 2.0)
-    emitGrassFurShells(m, 0.95, 3.34, 11.4, 3.74, () => 0.08, params, 3, 2.0)
 
-    // Dense 3D curved grass tufts emerging above the fur carpet
+    // Dense 3D curved grass tufts emerging from the normal-mapped turf ground
     const clumps = scatterGrassClumps({
       seed: seed ^ 0x453a,
       bounds: [-11.0, -0.62, 11.0, 1.94],
-      clusterCount: 165,
-      tuftsPerCluster: 5,
+      clusterCount: 115,
+      tuftsPerCluster: 4,
       params,
       avoid: (gx, gz) =>
         (gx > -0.88 && gx < 0.88 && gz > -1.5) ||
@@ -632,7 +622,7 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
     })
     for (const c of clumps) {
       emitGrassTuft(m, c.x, 0.0, c.z, {
-        bladeCount: c.blades + 1,
+        bladeCount: c.blades,
         radius: c.radius * 1.18,
         height: c.height * 1.14,
         width: c.width * 1.12,
@@ -713,15 +703,12 @@ function buildSwatchFoliageMesh(seed: number, params: Readonly<FoliageParams>, i
   buildFoliageTree(m, -2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
   buildFoliageTree(m, 2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
 
-  // 4-layer volumetric grass fur shells across the swatch pad
-  emitGrassFurShells(m, -5.0, -3.6, 5.0, 2.55, () => 0.0, params, 4, 2.0)
-
   const grassRng = new Rng(seed ^ 0x51a9)
   const clumps = scatterGrassClumps({
     seed: seed ^ 0x2c91,
     bounds: [-4.95, -3.55, 4.95, 2.54],
-    clusterCount: 280,
-    tuftsPerCluster: 6,
+    clusterCount: 150,
+    tuftsPerCluster: 5,
     params,
     avoid: (x, z) =>
       Math.hypot(x, z + 0.35) < 0.36 ||
@@ -730,7 +717,7 @@ function buildSwatchFoliageMesh(seed: number, params: Readonly<FoliageParams>, i
   })
   for (const c of clumps) {
     emitGrassTuft(m, c.x, 0.0, c.z, {
-      bladeCount: c.blades + 1,
+      bladeCount: c.blades,
       radius: c.radius * 1.18,
       height: c.height * 1.18,
       width: c.width,
@@ -862,7 +849,7 @@ export function createFoliage(context: LabContext): LabSection {
     },
     primitive: { topology: "triangle-list", cullMode: "none" },
     depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less-equal" },
-    multisample: { count: 4, alphaToCoverageEnabled: true },
+    multisample: { count: 4 },
   })
 
   const uploadPackedMesh = (packed: ArrayBuffer, prev?: { buf: GPUBuffer; count: number }) => {
@@ -1212,14 +1199,21 @@ export function createFoliage(context: LabContext): LabSection {
         pass.setVertexBuffer(0, afterMesh.buf)
         pass.draw(afterMesh.count)
       } else {
+        const stg = stage as unknown as { width?: number; height?: number }
+        const w = Math.max(2, Math.floor(stg.width || 1280))
+        const h = Math.max(2, Math.floor(stg.height || 800))
+        const midW = Math.floor(w / 2)
         fillUniform(uniformDataBefore, uniformBufferBefore, -1)
         fillUniform(uniformDataAfter, uniformBufferAfter, 1)
+        pass.setScissorRect(0, 0, midW, h)
         pass.setBindGroup(0, bindGroupBefore)
         pass.setVertexBuffer(0, beforeMesh.buf)
         pass.draw(beforeMesh.count)
+        pass.setScissorRect(midW, 0, w - midW, h)
         pass.setBindGroup(0, bindGroupAfter)
         pass.setVertexBuffer(0, afterMesh.buf)
         pass.draw(afterMesh.count)
+        pass.setScissorRect(0, 0, w, h)
       }
     },
     telemetry() {

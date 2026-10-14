@@ -5,7 +5,7 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
-import { emitCurvedGrassBlade, emitGrassFurShells, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
+import { emitCurvedGrassBlade, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
@@ -103,7 +103,7 @@ function compileLevel(town: Town): LevelData {
   const tufts = scatterGrassClumps({
     seed: town.seed ^ 0x453a,
     bounds: [1.5, 1.5, SIZE - 1.5, SIZE - 1.5],
-    clusterCount: Math.round(145 * (town.foliageDensity ?? 1)),
+    clusterCount: Math.round(95 * (town.foliageDensity ?? 1)),
     tuftsPerCluster: 3,
     params: foliageSettings,
     avoid: (x, z) =>
@@ -118,7 +118,7 @@ function compileLevel(town: Town): LevelData {
   for (const t of tufts) {
     const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
     emitGrassTuft(m, t.x, y, t.z, {
-      bladeCount: 3,
+      bladeCount: 2,
       radius: t.radius * 1.15,
       height: t.height * 1.12,
       width: t.width * 1.15,
@@ -129,34 +129,23 @@ function compileLevel(town: Town): LevelData {
       rng: grassRng,
     })
   }
-  // Dense front-lawn, walkway-edge & side-yard grass clumps + 4-layer volumetric fur shells around every building frontage.
+  // Dense front-lawn, walkway-edge & side-yard grass clumps + 3-layer volumetric fur shells around every building frontage.
   for (const [bIdx, b] of town.buildings.entries()) {
     const [bx0, bz0, bx1, bz1] = b.rect
     const sidewalkZ = frontageEnd(b) - 0.08
     const lawnPatches: readonly [number, number, number, number, number][] = [
-      [bx0 + 0.25, bz1 + 0.90, bx0 + 4.85, sidewalkZ, 30],
-      [bx0 + 6.55, bz1 + 0.90, Math.min(37.7, bx1 - 0.25), sidewalkZ, 32],
-      [Math.max(2.0, bx0 - 7.5), bz0 + 0.5, bx0 - 3.15, sidewalkZ, 28],
-      [bx1 + 0.35, bz0 + 0.5, Math.min(37.7, bx1 + 3.2), sidewalkZ, 20],
+      [bx0 + 0.25, bz1 + 0.90, bx0 + 4.85, sidewalkZ, 22],
+      [bx0 + 6.55, bz1 + 0.90, Math.min(37.7, bx1 - 0.25), sidewalkZ, 24],
+      [Math.max(2.0, bx0 - 7.5), bz0 + 0.5, bx0 - 3.15, sidewalkZ, 18],
+      [bx1 + 0.35, bz0 + 0.5, Math.min(37.7, bx1 + 3.2), sidewalkZ, 14],
     ]
     for (const [pIdx, [lx0, lz0, lx1, lz1, count]] of lawnPatches.entries()) {
       if (lz1 <= lz0 + 0.2 || lx1 <= lx0 + 0.2 || (lx0 > 37.8 && lx0 < 50.2)) continue
-      emitGrassFurShells(
-        at((lx0 + lx1) * 0.5, (lz0 + lz1) * 0.5),
-        lx0,
-        lz0,
-        lx1,
-        lz1,
-        (gx, gz) => supportHeight(town, gx, gz),
-        foliageSettings,
-        4,
-        2.2,
-      )
       const patchClumps = scatterGrassClumps({
         seed: (town.seed ^ (bIdx * 4099 + pIdx * 613)) >>> 0,
         bounds: [lx0, lz0, lx1, lz1],
         clusterCount: Math.max(2, Math.round(count * (town.foliageDensity ?? 1))),
-        tuftsPerCluster: 4,
+        tuftsPerCluster: 3,
         params: foliageSettings,
         avoid: (gx, gz) => (gx > 37.8 && gx < 50.2) || (gz > 37.8 && gz < 50.2),
       })
@@ -174,36 +163,6 @@ function compileLevel(town: Town): LevelData {
           rng: grassRng,
         })
       }
-    }
-  }
-  // Volumetric grass fur shells over the outer woodland/street yards and curb verge strips.
-  for (const [fx0, fz0, fx1, fz1] of [
-    [6.0, 20.0, 17.8, 37.8],
-    [6.0, 50.2, 20.5, 70.0],
-  ] as const) {
-    emitGrassFurShells(
-      at((fx0 + fx1) * 0.5, (fz0 + fz1) * 0.5),
-      fx0,
-      fz0,
-      fx1,
-      fz1,
-      (gx, gz) => supportHeight(town, gx, gz),
-      foliageSettings,
-      3,
-      3.0,
-    )
-  }
-  for (const [vx0, vx1] of [
-    [2.5, 18.6],
-    [22.0, 26.6],
-    [28.8, 37.5],
-    [53.0, 72.5],
-  ] as const) {
-    for (const [vz0, vz1] of [
-      [39.35, 39.75],
-      [48.25, 48.65],
-    ] as const) {
-      emitGrassFurShells(at((vx0 + vx1) * 0.5, vz0), vx0, vz0, vx1, vz1, () => 0.10, foliageSettings, 3, 2.2)
     }
   }
   // Shadowed root-collar tussock tufts around every exterior street/yard tree.

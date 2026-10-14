@@ -1085,8 +1085,10 @@ export const surfaceMaterial = /* wgsl */ `
           let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
           let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
           let brushField = brush1 * 0.58 + brush2 * 0.42;
-          let edgeMask = smoothstep(0.015, 0.16, cardEdge);
-          surfaceAlpha = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+          let edgeMask = smoothstep(0.015, 0.24, cardEdge);
+          let lobeMask = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+          albedo *= mix(0.28, 1.08, lobeMask);
+          surfaceAlpha = lobeMask;
         }
       }
       alpha = surfaceAlpha;

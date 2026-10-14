@@ -775,11 +775,12 @@ function emitBrushyLeafCard(
   const cup = cardRadius * 0.22
   const center: Point = [px + upBias[0] * cup, py + upBias[1] * cup, pz + upBias[2] * cup]
 
-  const sides = 6
+  // 4-sided cupped diamond fan (4 tris = 12 verts): outer edges have aux = 0.01 (100% transparent in alphaToCoverage)
+  const sides = 4
   const ring: Point[] = []
   for (let i = 0; i < sides; i++) {
-    const a = (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.16
-    const r = cardRadius * (i % 2 === 0 ? 1.06 : 0.88) * (0.90 + rng.next() * 0.20)
+    const a = (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.18
+    const r = cardRadius * (i % 2 === 0 ? 1.12 : 0.94) * (0.90 + rng.next() * 0.20)
     const droop = cardRadius * 0.12
     const ca = Math.cos(a) * r
     const sa = Math.sin(a) * r
@@ -850,7 +851,7 @@ function emitBoughCluster(
   const midCol = scaleRgb(base, midShade)
   const sunlitCol = scaleRgb(base, 1.20)
 
-  const totalCards = Math.max(18, Math.round(sprigDensity * 1.6))
+  const totalCards = Math.max(8, Math.round(sprigDensity * 1.15))
   for (let s = 0; s < totalCards; s++) {
     const tierFrac = s / totalCards
     const isCore = tierFrac < 0.34
@@ -1011,7 +1012,9 @@ export function buildFoliageTree(
   const clumpsPerBough = isTree ? Math.max(1, Math.round(params.clumpCount)) : 1
   const clumpScale = params.clumpSize * Math.max(0.45, Math.min(1.45, radiusRatio))
   const cardScale = params.leafCardSize * Math.max(0.55, Math.min(1.40, radiusRatio))
-  const sprigsPerClump = isTree ? 14 : 10
+  // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer perimeter woods
+  const isPerimeterTree = isTree && (x < 9 || x > 76 || z < 16 || z > 74)
+  const sprigsPerClump = isTree ? (isPerimeterTree ? 7 : 11) : 7
 
   for (let b = 0; b < boughs; b++) {
     const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * 0.42
