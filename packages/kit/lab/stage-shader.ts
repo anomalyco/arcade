@@ -154,7 +154,8 @@ fn traceRay(uv:vec2f)->PrimaryHit {
   }
   if(F.options.w<2.0){
     for(var l=0;l<min(8,i32(F.options.x));l++){
-      let pos=F.lights[l*3];let color=F.lights[l*3+1];
+      let pos=F.lights[l*3];let color=F.lights[l*3+1];let cone=F.lights[l*3+2];
+      if(cone.w<-2.5){continue;}
       if(sphere(F.eye.xyz,ray,pos.xyz,0.18)<hit+0.15){
         nearEdge=true;
         let lamp=sphere(F.eye.xyz,ray,pos.xyz,0.12);
