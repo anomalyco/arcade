@@ -137,7 +137,7 @@ try {
   await page.keyboard.down("Shift"); await page.mouse.move(cx, cy); await page.mouse.down(); await page.mouse.move(cx + 80, cy + 40, { steps: 6 }); await page.mouse.up(); await page.keyboard.up("Shift")
   const c2 = await exportCamera(); check(c2.focus.join() !== c1.focus.join() && c2.yaw === c1.yaw, "Shift-drag should pan")
   await page.mouse.move(cx, cy); await page.mouse.down({ button: "right" }); await page.mouse.move(cx - 60, cy, { steps: 6 }); await page.mouse.up({ button: "right" })
-  const c3 = await exportCamera(); check(c3.focus.join() !== c2.focus.join(), "Right-drag should pan")
+  const c3 = await exportCamera(); check(c3.yaw !== c2.yaw, "Right-drag should orbit")
   check(!await page.getByRole("menu", { name: "Asset actions" }).isVisible(), "Right-drag opened the menu")
   await page.mouse.click(cx, cy, { button: "right" })
   check(await page.getByRole("menu", { name: "Asset actions" }).isVisible(), "Right-click menu")
@@ -149,7 +149,8 @@ try {
   await feedbackBox.fill("Inspect rear wheel"); await page.keyboard.press("f")
   check((await feedbackBox.inputValue()).endsWith("f"), "Canvas F hijacked text input")
   await feedbackBox.fill("Inspect rear wheel")
-  check(await canvas.evaluate(element => element.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, ctrlKey: true, cancelable: true }))), "Native Ctrl-wheel/pinch hijacked")
+  check(!(await canvas.evaluate(element => element.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, ctrlKey: true, cancelable: true })))), "Canvas Ctrl-wheel/pinch should zoom 3D camera and prevent browser page zoom")
+  check(await canvas.evaluate(element => element.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, metaKey: true, cancelable: true }))), "Meta+wheel hijacked")
   check(await canvas.evaluate(element => element.dispatchEvent(new KeyboardEvent("keydown", { key: "r", metaKey: true, cancelable: true, bubbles: true }))), "Cmd shortcut hijacked")
   await page.screenshot({ path: join(out, "catalogue.png") })
 

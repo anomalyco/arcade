@@ -5,6 +5,7 @@ import { SmokeRenderer } from "../fx/tyre-renderer"
 import type { SmokeTrail } from "../fx/smoke-trail"
 import { VolumeRenderer } from "../fx/volume-renderer"
 import type { SmokeVolumes, Wall } from "../fx/volume"
+import { computeGrabPanDelta, pickHorizontalPlane } from "../orbit-gestures"
 import { polarShader, stageShader } from "./stage-shader"
 import { lightingDefaults } from "./lighting"
 import { LabMeshes } from "./meshes"
@@ -24,7 +25,7 @@ export type StageMarker={x:number;y:number;z:number;radius?:number;yaw?:number;p
 const DEFAULT_PITCH = Math.atan2(22, 23)
 const DEFAULT_DIST = Math.hypot(22, 23)
 
-function writeOrbitCamera(width: number, height: number, vp: Float32Array, inverse: Float32Array, eye: Float32Array, focus: readonly number[], yaw: number, pitch: number, dist: number) {
+export function writeOrbitCamera(width: number, height: number, vp: Float32Array, inverse: Float32Array, eye: Float32Array, focus: readonly number[], yaw: number, pitch: number, dist: number) {
   const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw)
   const ex = focus[0]! + sy * cp * dist
   const ey = focus[1]! + sp * dist
@@ -206,11 +207,13 @@ export class Stage {
     this.targetPitch=this.camPitch
     this.hasDampedTarget=false
     this.camCustom=true
+    this.updateCamera()
   }
   resetCamera(){
     this.camYaw=0;this.camPitch=DEFAULT_PITCH;this.camDist=DEFAULT_DIST
     this.targetYaw=0;this.targetPitch=DEFAULT_PITCH;this.targetDist=DEFAULT_DIST
     this.hasDampedTarget=false;this.camCustom=false
+    this.updateCamera()
   }
   private ensureDampedTargets(){
     if(!this.hasDampedTarget){
@@ -230,6 +233,8 @@ export class Stage {
       this.camPitch=Math.max(0.18,Math.min(1.45,this.camPitch+dpitch))
       this.targetYaw=this.camYaw
       this.targetPitch=this.camPitch
+      this.hasDampedTarget=false
+      this.updateCamera()
       return
     }
     this.ensureDampedTargets()
@@ -237,18 +242,32 @@ export class Stage {
     this.targetPitch=Math.max(0.18,Math.min(1.45,this.targetPitch+dpitch))
     this.camYaw+=(this.targetYaw-this.camYaw)*0.45
     this.camPitch+=(this.targetPitch-this.camPitch)*0.45
+    this.updateCamera()
+  }
+  panGrab(u0:number,v0:number,u1:number,v1:number){
+    this.camCustom=true
+    const w=Math.max(1,this.width||1280),h=Math.max(1,this.height||800)
+    const {dx,dz}=computeGrabPanDelta(u0,v0,u1,v1,this.camYaw,this.camPitch,this.camDist,w/h,0.65)
+    this.focus[0]+=dx
+    this.focus[2]+=dz
+    this.targetFocus[0]=this.focus[0]!
+    this.targetFocus[1]=this.focus[1]!
+    this.targetFocus[2]=this.focus[2]!
+    this.hasDampedTarget=false
+    this.updateCamera()
   }
   pan(dx:number,dz:number,smooth=false){
     this.camCustom=true
-    const cy=Math.cos(this.camYaw),sy=Math.sin(this.camYaw),scale=this.camDist*0.0016
-    const wx=(cy*dx+sy*dz)*scale
-    const wz=(-sy*dx+cy*dz)*scale
+    const w=Math.max(1,this.width||1280),h=Math.max(1,this.height||800)
+    const {dx:wx,dz:wz}=computeGrabPanDelta(0.5,0.5,0.5-dx/w,0.5-dz/h,this.camYaw,this.camPitch,this.camDist,w/h,0.65)
     if(!smooth){
       this.focus[0]+=wx
       this.focus[2]+=wz
       this.targetFocus[0]=this.focus[0]!
       this.targetFocus[1]=this.focus[1]!
       this.targetFocus[2]=this.focus[2]!
+      this.hasDampedTarget=false
+      this.updateCamera()
       return
     }
     this.ensureDampedTargets()
@@ -256,17 +275,21 @@ export class Stage {
     this.targetFocus[2]+=wz
     this.focus[0]+=(this.targetFocus[0]!-this.focus[0]!)*0.45
     this.focus[2]+=(this.targetFocus[2]!-this.focus[2]!)*0.45
+    this.updateCamera()
   }
   zoomBy(factor:number,smooth=false){
     this.camCustom=true
     if(!smooth){
       this.camDist=Math.max(4,Math.min(75,this.camDist*factor))
       this.targetDist=this.camDist
+      this.hasDampedTarget=false
+      this.updateCamera()
       return
     }
     this.ensureDampedTargets()
     this.targetDist=Math.max(4,Math.min(75,this.targetDist*factor))
     this.camDist+=(this.targetDist-this.camDist)*0.45
+    this.updateCamera()
   }
   stepCamera(dt:number):boolean{
     if(!this.hasDampedTarget)return false
@@ -291,6 +314,7 @@ export class Stage {
       this.focus[2]=this.targetFocus[2]!
       this.hasDampedTarget=false
     }
+    this.updateCamera()
     return this.hasDampedTarget
   }
   screenRay(u:number,v:number):{origin:[number,number,number];dir:[number,number,number]}{
@@ -302,6 +326,9 @@ export class Stage {
     let dx=x/w-this.eye[0]!,dy=y/w-this.eye[1]!,dz=z/w-this.eye[2]!
     const len=Math.hypot(dx,dy,dz)||1
     return {origin:[this.eye[0]!,this.eye[1]!,this.eye[2]!],dir:[dx/len,dy/len,dz/len]}
+  }
+  pickPlaneY(u:number,v:number,planeY=this.focus[1]!):{x:number;y:number;z:number}|null{
+    return pickHorizontalPlane(this.screenRay(u,v),planeY)
   }
   pickGround(u:number,v:number,ground:(x:number,z:number)=>number=()=>0):{x:number;y:number;z:number}|null{
     const {origin:[ox,oy,oz],dir:[dx,dy,dz]}=this.screenRay(u,v)

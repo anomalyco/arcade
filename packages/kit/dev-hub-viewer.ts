@@ -7,7 +7,7 @@ import { LabPanel } from "./lab-panel"
 import type { LabContext } from "./lab/types"
 import type { LabCharacter } from "./lab/spawn-types"
 import { catalogueHash, catalogueLights, filterAssets, parseHubHash, type CatalogueAsset } from "./dev-hub-model"
-import { bindOrbitGestures } from "./orbit-gestures"
+import { applyArrowCameraKey, bindOrbitGestures } from "./orbit-gestures"
 import type { DevHubOptions } from "./dev-hub"
 import { LabCommandRegistry } from "./lab-commands"
 import {
@@ -56,7 +56,7 @@ export async function catalogueViewer(options: DevHubOptions) {
     <div class="inspector-panel" data-light-panel></div>
     <label class="field">Feedback<textarea aria-label="Asset feedback" maxlength="10000" rows="4"></textarea></label>
     <div class="row"><button type="button" data-copy>Copy feedback</button><button type="button" data-export>Export feedback</button></div>
-    <p class="legend"><kbd>Drag</kbd><span>Orbit</span><kbd>⇧ Drag</kbd><span>Pan</span><kbd>Scroll</kbd><span>Zoom</span><kbd>F</kbd><span>Frame</span></p>
+    <p class="legend"><kbd>2F / Drag</kbd><span>Orbit</span><kbd>⇧</kbd><span>Pan</span><kbd>Pinch / Wheel</kbd><span>Zoom</span><kbd>F</kbd><span>Frame</span></p>
     <dialog aria-label="Feedback JSON"><textarea aria-label="Feedback JSON content" readonly></textarea><div class="row"><button type="button" data-close>Close</button></div></dialog>`
   const menu = document.createElement("div")
   menu.className = "context-menu"; menu.popover = "auto"; menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Asset actions")
@@ -137,7 +137,7 @@ export async function catalogueViewer(options: DevHubOptions) {
   tools.querySelector("[data-near]")!.addEventListener("click", () => change(() => stage.zoomBy(.85)))
   tools.querySelector("[data-far]")!.addEventListener("click", () => change(() => stage.zoomBy(1.15)))
 
-  // Same camera grammar as the Lab: drag orbits; Shift, middle or right drag pans. A right/Control click opens actions.
+  // Shared 3D viewport grammar: 2F scroll or LMB/RMB/MMB drag orbits; Shift pans; Pinch/Wheel zooms; RMB/Ctrl tap opens actions.
   const gestures = bindOrbitGestures(canvas, {
     target: stage,
     onChange: () => { dirty = true; schedule() },
@@ -148,12 +148,32 @@ export async function catalogueViewer(options: DevHubOptions) {
     const key = event.key
     if (key.toLowerCase() === "f") { event.preventDefault(); frame() }
     else if (key === "Escape") { gestures.cancelDrag(); search.focus() }
-    else if (key === "ContextMenu") { event.preventDefault(); const box = canvas.getBoundingClientRect(); openMenu(box.left + box.width / 2, box.top + box.height / 2) }
+    else if (key === "ContextMenu" || key.toLowerCase() === "m") { event.preventDefault(); const box = canvas.getBoundingClientRect(); openMenu(box.left + box.width / 2, box.top + box.height / 2) }
     else if (key === "+" || key === "=" || key === "-") { event.preventDefault(); change(() => stage.zoomBy(key === "-" ? 1.15 : .85)) }
-    else if (key.startsWith("Arrow")) {
+    else if (applyArrowCameraKey(stage, event)) {
       event.preventDefault()
-      const sign = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1, vertical = key === "ArrowUp" || key === "ArrowDown"
-      change(() => event.shiftKey ? stage.pan(vertical ? 0 : sign * 40, vertical ? sign * 40 : 0) : stage.orbit(vertical ? 0 : sign * .25, vertical ? sign * -.12 : 0))
+      dirty = true
+      schedule()
+    }
+  })
+  window.addEventListener("keydown", event => {
+    if (!visible() || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+    const target = event.composedPath()[0]
+    if (
+      target === canvas ||
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable) ||
+      document.activeElement === panel.host
+    ) {
+      return
+    }
+    if (event.key.toLowerCase() === "f") {
+      event.preventDefault()
+      frame()
+    } else if (event.key === "Escape") {
+      gestures.cancelDrag()
     }
   })
 
