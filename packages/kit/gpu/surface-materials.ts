@@ -1349,7 +1349,7 @@ export const surfaceMaterial = /* wgsl */ `
             albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.80 * texContrastMult);
           }
         } else {
-          let s = evalWoodPlanks(p, albedo * 0.82, defaultMaterialRecipe(0));
+          let s = evalWoodPlanks(p, albedo * 0.94, defaultMaterialRecipe(0));
           albedo = s.albedo;
           if (texOn && floorStyleBits < 2u) {
             let styleScale = select(0.65, 0.95, floorStyleBits == 1u) * texScaleMult;

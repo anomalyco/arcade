@@ -485,8 +485,10 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
       m.yawBox(x+5.12,z+2.76,.52,.36,.151,.156,.34,rgb(0x2e0e0a),MAT.lit)
       m.yawBox(x+2.72,z+3.18,.38,.32,.13,.38,.74,rgb(0x4a3420),MAT.timber)
     }
-    // 2. Entry hallway & living room clutter: survivor duffle bag by front door, cardboard boxes, scattered papers & books
+    // 2. Entry hallway & living room clutter: survivor duffle bag by front door, hallway side console, cardboard boxes, scattered papers & books
     m.yawBox(x+4.46,e-.46,.54,.30,.13,.36,.24,rgb(0x384230),MAT.lit,0,rgb(0x48543e))
+    m.bevelBox(x+6.48,.13,e-3.25,x+6.88,.64,e-1.95,.02,rgb(0x4e3824),rgb(0x624830),MAT.timber,MAT.timber)
+    m.yawBox(x+6.66,e-2.45,.26,.20,.64,.675,-.24,rgb(0xa89e88),MAT.lit)
     m.yawBox(x+2.38,z+6.12,.44,.38,.13,.46,-.18,rgb(0x5c462e),MAT.timber,0,rgb(0x6e5438))
     // Fallen books & magazines in front of the living room bookcase and beside coffee table
     for (const [bx, bz, byaw, bcol] of [
@@ -499,13 +501,13 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
       m.yawBox(bx, bz, .25, .19, .148, .182, byaw, rgb(bcol), MAT.lit, 0, rgb(0x88806e))
     }
     // Scattered letters, flyers & newspapers across the entry hallway & living room floor (flat so they never block walking)
-    const paperCount = Math.min(14, Math.round((isRansacked ? 9 : 5) * density))
+    const paperCount = Math.min(14, Math.round((isRansacked ? 10 : 5) * density))
     for (let p = 0; p < paperCount; p++) {
-      const px = x + 3.6 + cRng.next() * 3.4
-      const pz = z + 6.2 + cRng.next() * (e - z - 6.6)
+      const px = x + 4.6 + cRng.next() * 2.2
+      const pz = z + 6.4 + cRng.next() * (e - z - 6.8)
       const pyaw = (cRng.next() - 0.5) * 3.14
-      const pcol = cRng.pick([0x7c7564, 0x6e6858, 0x867e6c, 0x5e584a])
-      m.yawBox(px, pz, .22 + cRng.next() * .08, .16 + cRng.next() * .06, .133, .137, pyaw, rgb(pcol), MAT.lit)
+      const pcol = cRng.pick([0x9c9482, 0x8a8270, 0xa69e8a, 0x787060])
+      m.yawBox(px, pz, .23 + cRng.next() * .08, .17 + cRng.next() * .06, .133, .137, pyaw, rgb(pcol), MAT.lit)
     }
     // Fallen picture frame leaning against the hallway partition
     if (isRansacked) {

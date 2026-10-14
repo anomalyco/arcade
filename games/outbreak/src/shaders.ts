@@ -131,8 +131,8 @@ fn eyeVisible(p: vec2f) -> f32 {
     // Deep weathered slate-charcoal roof reusing surfaceAlpha (courseLip * tabSlot) from surfaceMaterial.
     let eave = smoothstep(2.82, 3.62, o.world.y);
     let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
-    let moonGlint = (0.26 * eave + 1.05 * ridgeRim + 2.10 * surfaceAlpha * (0.35 + 0.65 * eave)) * F.ambient.w * max(0.0, n.y);
-    col = col * mix(0.60, 1.02, eave) + vec3f(0.008, 0.016, 0.034) * moonGlint;
+    let moonGlint = (0.30 * eave + 1.15 * ridgeRim + 2.65 * surfaceAlpha * (0.38 + 0.62 * eave)) * F.ambient.w * max(0.0, n.y);
+    col = col * mix(0.68, 1.14, eave) + vec3f(0.009, 0.018, 0.038) * moonGlint;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     if (mat == 20) {

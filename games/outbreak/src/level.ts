@@ -498,8 +498,6 @@ function compileLevel(town: Town): LevelData {
           // Warm amber lantern glass cage
           m.box(sx - .055, 1.67, sz + .02, sx + .055, 1.88, sz + .13, hex(0xffc470), MAT.lamp, id)
         }
-        // Tucked-up overhead porch ceiling fixture inside the gable soffit
-        m.prism(p.x, p.y - .18, .08, .06, 2.46, 2.54, 6, hex(0xffd896), MAT.lamp, id)
       }
       continue
     }
