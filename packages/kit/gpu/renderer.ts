@@ -192,6 +192,11 @@ export class Renderer {
     private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string },
   ) {
     const d = device
+    this.notifyPacer = installFramePacer(
+      () => this.inflight === 0,
+      () => this.onIdle !== null,
+      d,
+    )
     this.smokeRenderer = new VolumeRenderer(d)
     this.splatterRenderer = new SplatterRenderer(d)
     this.particleRenderer = new ParticleRenderer(d, DEPTH, SAMPLES)
@@ -560,11 +565,7 @@ export class Renderer {
   private scheduled = false
   inflight = 0
   onIdle: (() => void) | null = null
-  private readonly notifyPacer = installFramePacer(
-    () => this.inflight === 0,
-    () => this.onIdle !== null,
-    this.device,
-  )
+  private readonly notifyPacer: () => void
 
   /**
    * Queues a frame. Calls within one task collapse to the last (Game reuses its arrays, so the latest input is always

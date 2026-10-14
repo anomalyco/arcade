@@ -69,6 +69,7 @@ export class Renderer {
     format: GPUTextureFormat,
   ) {
     const d = device
+    this.notifyPacer = installFramePacer(() => this.inflight === 0, () => false, d)
     this.frameBuf = d.createBuffer({ label: "frame", size: FRAME_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const frameLayout = d.createBindGroupLayout({
       label: "frame",
@@ -146,7 +147,7 @@ export class Renderer {
   readonly currentFrame = new Float32Array(FRAME_FLOATS)
   private scheduled = false
   private inflight = 0
-  private readonly notifyPacer = installFramePacer(() => this.inflight === 0, () => false, this.device)
+  private readonly notifyPacer: () => void
 
   /**
    * Queues a frame. Calls within one task collapse to the last (callers reuse their arrays, so the latest input is
