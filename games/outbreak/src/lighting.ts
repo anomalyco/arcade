@@ -31,8 +31,6 @@ export type OutbreakLightingSettings = {
   rimStrength: number
   vignetteDarkness: number
   streetAirHaze: number
-  streetPoolOrigin: number
-  porchAirGlow: number
   actorLampShadow: number
 }
 
@@ -51,10 +49,8 @@ export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   wetSpecular: 0.56,
   rimStrength: 0.76,
   vignetteDarkness: 0.34,
-  streetAirHaze: 0,
-  streetPoolOrigin: 0,
-  porchAirGlow: 0,
-  actorLampShadow: 0,
+  streetAirHaze: 1,
+  actorLampShadow: 1,
 }
 
 /** Preset lighting profiles so switching `@arcade/kit/look` presets in the Lab dials in the base lighting primitives too. */
@@ -139,12 +135,10 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "rimStrength", label: "Moonlight rim", group: "Lighting", min: 0, max: 2.0, step: 0.05, unit: "×" },
   { key: "vignetteDarkness", label: "Peripheral darkness", group: "Lighting", min: 0, max: 1.2, step: 0.05, unit: "×" },
   { key: "streetAirHaze", label: "Streetlamp air haze", group: "Atmosphere", min: 0, max: 2, step: 0.05, unit: "×" },
-  { key: "streetPoolOrigin", label: "Streetlamp pool origin", group: "Atmosphere", unit: "", options: [{ label: "Mid-road (legacy)", value: 0 }, { label: "Under lens", value: 1 }] },
-  { key: "porchAirGlow", label: "Porch lantern glow", group: "Atmosphere", min: 0, max: 2, step: 0.05, unit: "×" },
-  { key: "actorLampShadow", label: "Actor lamp shadow", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "actorLampShadow", label: "Actor lamp shadow & boot AO", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
 ]
 
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 48
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 40
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & {
@@ -167,7 +161,7 @@ export type OutbreakLightingFrameState = {
 }
 
 /**
- * Packs 48 floats (12 vec4f) into Renderer's custom uniform buffer (@group(0) @binding(13)):
+ * Packs 40 floats (10 vec4f) into Renderer's custom uniform buffer (@group(0) @binding(13)):
  * u0: skyFill, moonFill, practicalWarmth, lightFalloff
  * u1: porchPower, windowPower, roomPower, streetPower
  * u2: flashlightHaze, wetSpecular, rimStrength, vignetteDarkness
@@ -176,10 +170,8 @@ export type OutbreakLightingFrameState = {
  * u5: flashColorR, flashColorG, flashColorB, inInteriorView (1 or 0)
  * u6: playerX, playerY, playerH, exposure
  * u7: streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
- * u8: porchAirGlow, reserved, actorLampShadow, reserved
- * u9: reserved, reserved, streetPoolOrigin, reserved
- * u10: zombie0X, zombie0Y, zombie1X, zombie1Y
- * u11: reserved
+ * u8: actorLampShadow, reserved, reserved, reserved
+ * u9: zombie0X, zombie0Y, zombie1X, zombie1Y
  */
 export function packOutbreakLightingUniforms(
   state: OutbreakLightingFrameState,
@@ -234,12 +226,9 @@ export function packOutbreakLightingUniforms(
   out[30] = state.streetHead[2]
   out[31] = s.streetAirHaze
   // u8
-  out[32] = s.porchAirGlow
-  out[34] = s.actorLampShadow
+  out[32] = s.actorLampShadow
   // u9
-  out[38] = s.streetPoolOrigin
-  // u10
-  out.set(state.zombies, 40)
+  out.set(state.zombies, 36)
   return out
 }
 
@@ -279,11 +268,9 @@ export function resolveLampLight(
     let r = lamp.radius * 0.92 * invTight
     let pMult = 1.0
     if (lamp.x === 52 && lamp.y === 39) {
-      const [hx, , hz] = streetLampHead(STREET_LAMP_POSTS[0])
-      const underLens = s.streetPoolOrigin >= 0.5
-      lx = underLens ? hx - 0.26 : 40.6
-      ly = underLens ? hz - 1.5 : 42.4
-      lh = underLens ? 4.6 : 3.65
+      lx = 40.6
+      ly = 42.4
+      lh = 3.65
       r = 6.8 * invTight
       pMult = 1.65
     } else if (lamp.x === 50 && lamp.y === 8) {
@@ -731,10 +718,8 @@ struct OutbreakLightingUniforms {
   u5: vec4f, // flashColorR, flashColorG, flashColorB, inInteriorView
   u6: vec4f, // playerX, playerY, playerH, exposure
   u7: vec4f, // streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
-  u8: vec4f, // porchAirGlow, reserved, actorLampShadow, reserved
-  u9: vec4f, // reserved, reserved, streetPoolOrigin, reserved
-  u10: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
-  u11: vec4f, // reserved
+  u8: vec4f, // actorLampShadow, reserved, reserved, reserved
+  u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 
@@ -827,7 +812,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool
     let sScale = OL.u1.w;
     if (sScale > 0.001) {
-      let sPos = select(select(vec2f(41.2, 42.4), OL.u7.xz + vec2f(-0.36, -1.9), OL.u9.z > 0.5), vec2f(39.0, 25.0), isInView);
+      let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
       let dS2 = dot(dvS, dvS);
       if (dS2 < 95.0) {
@@ -939,10 +924,10 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
 }
 
 /**
- * Analytic sodium air cone under the streetlamp lens plus porch lantern veil, integrated along the camera ray to the
- * shaded surface (no extra pass). The cone uses six midpoint samples on the ray segment clipped to the lamp's height
- * slab, gated by the ray's horizontal closest approach to the pole axis; the porch veil and both bulb glows use the
- * closed-form Gaussian line integral at the ray's closest approach, faded where the surface occludes the far half.
+ * Analytic sodium air cone under the streetlamp lens, integrated along the camera ray to the shaded surface (no extra
+ * pass). The cone uses six midpoint samples on the ray segment clipped to the lamp's height slab, gated by the ray's
+ * horizontal closest approach to the pole axis; the lens and its halo use the closed-form Gaussian line integral at
+ * the ray's closest approach, faded where the surface occludes the far half.
  */
 fn gaussLineAir(ro: vec3f, rd: vec3f, tMax: f32, c: vec3f, sigma: f32, slack: f32) -> f32 {
   let tc = dot(c - ro, rd);
@@ -959,7 +944,7 @@ fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
   let tMax = length(seg);
   let rd = seg / tMax;
   var out = vec3f(0.0);
-  let haze = OL.u7.w * OL.u1.w;
+  let haze = OL.u7.w * OL.u1.w * select(1.0, 0.6, inView);
   if (haze > 0.001) {
     let head = OL.u7.xyz;
     let k = 0.58;
@@ -987,12 +972,6 @@ fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
     let halo = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.25, 0.0), 0.7, 0.0);
     out += vec3f(1.0, 0.42, 0.08) * (air * 0.03 + lens * 3.0 + halo * 0.03) * haze;
   }
-  let porch = OL.u8.x * OL.u1.x * select(1.0, 0.55, inView);
-  if (porch > 0.001) {
-    let veil = gaussLineAir(ro, rd, tMax, vec3f(27.7, 1.55, 36.35), 1.25, 0.0);
-    let bulbs = gaussLineAir(ro, rd, tMax, vec3f(26.76, 1.78, 35.67), 0.09, 0.12) + gaussLineAir(ro, rd, tMax, vec3f(28.64, 1.78, 35.67), 0.09, 0.12);
-    out += vec3f(1.0, 0.5, 0.14) * (veil * 0.07 + bulbs * 3.0) * porch;
-  }
   return out * nightLamps;
 }
 
@@ -1017,12 +996,12 @@ fn actorShadowTerm(g: vec2f, feet: vec2f, lamp: vec3f, actorH: f32, directional:
 }
 
 fn evalActorGroundShadow(world: vec3f, n: vec3f, inRoom: bool) -> f32 {
-  let k = OL.u8.z;
+  let k = OL.u8.x;
   if (k <= 0.001 || n.y < 0.6 || world.y > OL.u6.z + 0.35) { return 1.0; }
   let g = world.xz;
   let p = OL.u6.xy;
-  let z0 = OL.u10.xy;
-  let z1 = OL.u10.zw;
+  let z0 = OL.u9.xy;
+  let z1 = OL.u9.zw;
   let near = min(dot(g - p, g - p), min(dot(g - z0, g - z0), dot(g - z1, g - z1)));
   if (near > 9.0) { return 1.0; }
   // Outdoors the sodium lens is the dominant caster; indoors only the boot contact remains.

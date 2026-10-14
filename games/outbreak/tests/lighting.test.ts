@@ -64,7 +64,7 @@ describe("Outbreak lighting module & Lab controls", () => {
     expect(resolvedRooms[3]!.castShadows).toBe(false)
   })
 
-  test("packs 48-float custom uniform buffer and follows active aim outside north rest pose", () => {
+  test("packs 40-float custom uniform buffer and follows active aim outside north rest pose", () => {
     const rgb = flashlightColor(0.92)
     const restBuf = packOutbreakLightingUniforms(
       {
