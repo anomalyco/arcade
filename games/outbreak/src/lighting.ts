@@ -4,6 +4,17 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
 
+/** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
+export const STREET_LAMP_POSTS = [
+  { x: 38.25, z: 47.85, yaw: -Math.PI * 0.92 },
+  { x: 37.95, z: 25.15, yaw: 0.32 },
+] as const
+
+/** World-space centre of a post's sodium lens (model lens at x = 1.44, y = 6.10 above the 0.08 m curb). */
+export function streetLampHead(post: (typeof STREET_LAMP_POSTS)[number]): [number, number, number] {
+  return [post.x + Math.cos(post.yaw) * 1.44, 6.18, post.z + Math.sin(post.yaw) * 1.44]
+}
+
 export type OutbreakLightingSettings = {
   exposure: number
   skyFill: number
@@ -19,6 +30,14 @@ export type OutbreakLightingSettings = {
   wetSpecular: number
   rimStrength: number
   vignetteDarkness: number
+  streetAirHaze: number
+  streetPoolOrigin: number
+  porchAirGlow: number
+  windowInteriorDepth: number
+  actorLampShadow: number
+  actorBounce: number
+  asphaltSheen: number
+  foliageContact: number
 }
 
 export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
@@ -36,6 +55,14 @@ export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   wetSpecular: 0.56,
   rimStrength: 0.76,
   vignetteDarkness: 0.34,
+  streetAirHaze: 0,
+  streetPoolOrigin: 0,
+  porchAirGlow: 0,
+  windowInteriorDepth: 0,
+  actorLampShadow: 0,
+  actorBounce: 0,
+  asphaltSheen: 0,
+  foliageContact: 0,
 }
 
 /** Preset lighting profiles so switching `@arcade/kit/look` presets in the Lab dials in the base lighting primitives too. */
@@ -119,9 +146,17 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "wetSpecular", label: "Wet specular sheen", group: "Lighting", min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "rimStrength", label: "Moonlight rim", group: "Lighting", min: 0, max: 2.0, step: 0.05, unit: "×" },
   { key: "vignetteDarkness", label: "Peripheral darkness", group: "Lighting", min: 0, max: 1.2, step: 0.05, unit: "×" },
+  { key: "streetAirHaze", label: "Streetlamp air haze", group: "Atmosphere", min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "streetPoolOrigin", label: "Streetlamp pool origin", group: "Atmosphere", unit: "", options: [{ label: "Mid-road (legacy)", value: 0 }, { label: "Under lens", value: 1 }] },
+  { key: "porchAirGlow", label: "Porch lantern glow", group: "Atmosphere", min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "windowInteriorDepth", label: "Window interior depth", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "actorLampShadow", label: "Actor lamp shadow", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "actorBounce", label: "Directional actor bounce", group: "Atmosphere", min: 0, max: 1.5, step: 0.05, unit: "×" },
+  { key: "asphaltSheen", label: "Wet asphalt lamp sheen", group: "Atmosphere", min: 0, max: 1.5, step: 0.05, unit: "×" },
+  { key: "foliageContact", label: "Foliage contact bend", group: "Atmosphere", min: 0, max: 1.5, step: 0.05, unit: "×" },
 ]
 
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 32
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 48
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & {
@@ -137,10 +172,14 @@ export type OutbreakLightingFrameState = {
   flashlightOutput: number
   flashlightSlot: number
   inInteriorView: boolean
+  /** Lens centre of the streetlamp nearest the camera target. */
+  streetHead: readonly [number, number, number]
+  /** Up to two nearest living zombies (x, y); unused slots are far away. */
+  zombies: readonly [number, number, number, number]
 }
 
 /**
- * Packs 32 floats (8 vec4f) into Renderer's custom uniform buffer (@group(0) @binding(13)):
+ * Packs 48 floats (12 vec4f) into Renderer's custom uniform buffer (@group(0) @binding(13)):
  * u0: skyFill, moonFill, practicalWarmth, lightFalloff
  * u1: porchPower, windowPower, roomPower, streetPower
  * u2: flashlightHaze, wetSpecular, rimStrength, vignetteDarkness
@@ -148,7 +187,11 @@ export type OutbreakLightingFrameState = {
  * u4: flashTanHalf, flashRange, flashPower, flashSlot
  * u5: flashColorR, flashColorG, flashColorB, inInteriorView (1 or 0)
  * u6: playerX, playerY, playerH, exposure
- * u7: reserved
+ * u7: streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
+ * u8: porchAirGlow, windowInteriorDepth, actorLampShadow, actorBounce
+ * u9: asphaltSheen, foliageContact, streetPoolOrigin, reserved
+ * u10: zombie0X, zombie0Y, zombie1X, zombie1Y
+ * u11: reserved
  */
 export function packOutbreakLightingUniforms(
   state: OutbreakLightingFrameState,
@@ -197,6 +240,22 @@ export function packOutbreakLightingUniforms(
   out[25] = state.playerY
   out[26] = state.playerH
   out[27] = s.exposure
+  // u7
+  out[28] = state.streetHead[0]
+  out[29] = state.streetHead[1]
+  out[30] = state.streetHead[2]
+  out[31] = s.streetAirHaze
+  // u8
+  out[32] = s.porchAirGlow
+  out[33] = s.windowInteriorDepth
+  out[34] = s.actorLampShadow
+  out[35] = s.actorBounce
+  // u9
+  out[36] = s.asphaltSheen
+  out[37] = s.foliageContact
+  out[38] = s.streetPoolOrigin
+  // u10
+  out.set(state.zombies, 40)
   return out
 }
 
@@ -236,9 +295,11 @@ export function resolveLampLight(
     let r = lamp.radius * 0.92 * invTight
     let pMult = 1.0
     if (lamp.x === 52 && lamp.y === 39) {
-      lx = 40.6
-      ly = 42.4
-      lh = 3.65
+      const [hx, , hz] = streetLampHead(STREET_LAMP_POSTS[0])
+      const underLens = s.streetPoolOrigin >= 0.5
+      lx = underLens ? hx - 0.26 : 40.6
+      ly = underLens ? hz - 1.5 : 42.4
+      lh = underLens ? 4.6 : 3.65
       r = 6.8 * invTight
       pMult = 1.65
     } else if (lamp.x === 50 && lamp.y === 8) {
@@ -685,7 +746,11 @@ struct OutbreakLightingUniforms {
   u4: vec4f, // flashTanHalf, flashRange, flashPower, flashSlot
   u5: vec4f, // flashColorR, flashColorG, flashColorB, inInteriorView
   u6: vec4f, // playerX, playerY, playerH, exposure
-  u7: vec4f, // reserved
+  u7: vec4f, // streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
+  u8: vec4f, // porchAirGlow, windowInteriorDepth, actorLampShadow, actorBounce
+  u9: vec4f, // asphaltSheen, foliageContact, streetPoolOrigin, reserved
+  u10: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
+  u11: vec4f, // reserved
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 
@@ -778,7 +843,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool
     let sScale = OL.u1.w;
     if (sScale > 0.001) {
-      let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
+      let sPos = select(select(vec2f(41.2, 42.4), OL.u7.xz + vec2f(-0.36, -1.9), OL.u9.z > 0.5), vec2f(39.0, 25.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
       let dS2 = dot(dvS, dvS);
       if (dS2 < 95.0) {
@@ -887,5 +952,63 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let beamCol = vec3f(1.0, 0.62, 0.24);
   let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * OL.u2.x * 0.14 * surfW;
   return (baseAlbedo * 0.75 + beamCol * 0.06) * beamCol * OL.u4.z * mist * vis;
+}
+
+/**
+ * Analytic sodium air cone under the streetlamp lens plus porch lantern veil, integrated along the camera ray to the
+ * shaded surface (no extra pass). The cone uses six midpoint samples on the ray segment clipped to the lamp's height
+ * slab, gated by the ray's horizontal closest approach to the pole axis; the porch veil and both bulb glows use the
+ * closed-form Gaussian line integral at the ray's closest approach, faded where the surface occludes the far half.
+ */
+fn gaussLineAir(ro: vec3f, rd: vec3f, tMax: f32, c: vec3f, sigma: f32, slack: f32) -> f32 {
+  let tc = dot(c - ro, rd);
+  let d = length(ro + rd * tc - c);
+  let shown = clamp(0.5 + (tMax - tc + slack) / (sigma * 1.8), 0.0, 1.0);
+  return sigma * exp(-d * d / (sigma * sigma)) * shown;
+}
+
+fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
+  let nightLamps = clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
+  if (nightLamps <= 0.001) { return vec3f(0.0); }
+  let ro = F.cam.xyz;
+  let seg = world - ro;
+  let tMax = length(seg);
+  let rd = seg / tMax;
+  var out = vec3f(0.0);
+  let haze = OL.u7.w * OL.u1.w;
+  if (haze > 0.001) {
+    let head = OL.u7.xyz;
+    let k = 0.58;
+    var air = 0.0;
+    if (rd.y < -1e-4) {
+      let t0 = max(0.0, (head.y - 0.04 - ro.y) / rd.y);
+      let t1 = min(tMax, -ro.y / rd.y);
+      if (t1 > t0) {
+        let oxz = ro.xz - head.xz;
+        let tAx = clamp(-dot(oxz, rd.xz) / max(dot(rd.xz, rd.xz), 1e-6), t0, t1);
+        if (length(oxz + rd.xz * tAx) < k * head.y * 1.2 + 0.5) {
+          let dt = (t1 - t0) / 6.0;
+          for (var i = 0; i < 6; i++) {
+            let p = ro + rd * (t0 + (f32(i) + 0.5) * dt);
+            let depth = head.y - p.y;
+            let coneR = 0.2 + k * depth;
+            let r2 = dot(p.xz - head.xz, p.xz - head.xz);
+            air += exp(-2.0 * r2 / (coneR * coneR)) / (1.0 + depth * 0.55);
+          }
+          air *= dt;
+        }
+      }
+    }
+    let lens = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.05, 0.0), 0.22, 0.3);
+    let halo = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.25, 0.0), 0.7, 0.0);
+    out += vec3f(1.0, 0.42, 0.08) * (air * 0.03 + lens * 3.0 + halo * 0.03) * haze;
+  }
+  let porch = OL.u8.x * OL.u1.x * select(1.0, 0.55, inView);
+  if (porch > 0.001) {
+    let veil = gaussLineAir(ro, rd, tMax, vec3f(27.7, 1.55, 36.35), 1.25, 0.0);
+    let bulbs = gaussLineAir(ro, rd, tMax, vec3f(26.76, 1.78, 35.67), 0.09, 0.12) + gaussLineAir(ro, rd, tMax, vec3f(28.64, 1.78, 35.67), 0.09, 0.12);
+    out += vec3f(1.0, 0.5, 0.14) * (veil * 0.07 + bulbs * 3.0) * porch;
+  }
+  return out * nightLamps;
 }
 `

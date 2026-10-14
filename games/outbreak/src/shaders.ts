@@ -228,6 +228,7 @@ fn eyeVisible(p: vec2f) -> f32 {
     }
     col += evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
   }
+  if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }
 `,
 }
 
