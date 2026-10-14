@@ -37,7 +37,7 @@ export type VignetteSurfaceId =
   | "concrete"
   | "grass"
 
-export type VignetteCameraPreset = "game" | "interior" | "street"
+export type VignetteCameraPreset = "game" | "interior" | "street" | "target_street" | "target_interior"
 export type VignetteDirectionId = 0 | 1 | 2 | 3 | 4 | 5
 
 export type VignetteSurfaceMeta = {
@@ -170,6 +170,8 @@ export type VignetteDirectionSpec = {
     flashlightAngle: number
     flashlightRange: number
     flashlightTemp: number
+    flashlightAim: number
+    flashlightHaze: number
     clutterDensity: number
     foliageDensity: number
     overgrowth: number
@@ -208,9 +210,11 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightTemp: 2550,
       windowLightFalloff: 0.85,
       flashlightPower: 1.85,
-      flashlightAngle: 22,
-      flashlightRange: 17,
-      flashlightTemp: 5200,
+      flashlightAngle: 16,
+      flashlightRange: 10.5,
+      flashlightTemp: 4600,
+      flashlightAim: 43,
+      flashlightHaze: 1.15,
       clutterDensity: 1.0,
       foliageDensity: 1.0,
       overgrowth: 0.15,
@@ -254,6 +258,8 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       flashlightAngle: 24,
       flashlightRange: 15,
       flashlightTemp: 4800,
+      flashlightAim: 43,
+      flashlightHaze: 0.0,
       clutterDensity: 1.15,
       foliageDensity: 1.25,
       overgrowth: 0.32,
@@ -297,6 +303,8 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       flashlightAngle: 24,
       flashlightRange: 15,
       flashlightTemp: 4800,
+      flashlightAim: 43,
+      flashlightHaze: 0.0,
       clutterDensity: 1.0,
       foliageDensity: 1.05,
       overgrowth: 0.12,
@@ -332,6 +340,8 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       flashlightAngle: 24,
       flashlightRange: 15,
       flashlightTemp: 4800,
+      flashlightAim: 43,
+      flashlightHaze: 0.0,
       clutterDensity: 1.10,
       foliageDensity: 0.95,
       overgrowth: 0.08,
@@ -375,6 +385,8 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       flashlightAngle: 24,
       flashlightRange: 15,
       flashlightTemp: 4800,
+      flashlightAim: 43,
+      flashlightHaze: 0.0,
       clutterDensity: 1.25,
       foliageDensity: 1.45,
       overgrowth: 0.88,
@@ -418,6 +430,8 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       flashlightAngle: 24,
       flashlightRange: 15,
       flashlightTemp: 4800,
+      flashlightAim: 43,
+      flashlightHaze: 0.0,
       clutterDensity: 1.0,
       foliageDensity: 1.0,
       overgrowth: 0.0,
@@ -468,6 +482,24 @@ export const VIGNETTE_CAMERA_PRESETS: Readonly<
     dist: 24,
     cutawayMode: 0,
     playerPos: [28.2, 41.2, -Math.PI / 2],
+  },
+  target_street: {
+    label: "Target street (aligned 1000×680)",
+    focus: [30.0, 0.0, 41.0],
+    pitch: 1.1,
+    yaw: 0,
+    dist: 42.0,
+    cutawayMode: 2,
+    playerPos: [30.0, 41.85, -Math.PI / 2],
+  },
+  target_interior: {
+    label: "Target interior (aligned 1000×680)",
+    focus: [27.7, 0.0, 31.0],
+    pitch: 1.1,
+    yaw: 0,
+    dist: 34.0,
+    cutawayMode: 1,
+    playerPos: [27.7, 32.05, -Math.PI / 2],
   },
 }
 
@@ -608,10 +640,21 @@ export function makeVignetteTown(options: {
     }
   }
 
-  // Single tree slot on the west lawn edge using existing `plant()` in `architecture.ts`
+  // Framing trees around the house lot and south street (matching makeTown seed 7 framing)
   if (treeSlot > 0) {
     const variant = treeSlot === 1 ? 0.46 : treeSlot === 2 ? 0.82 : 0.18
-    town.props.push({ x: 16.4, y: 33.4, kind: "tree", variant })
+    town.props.push({ x: 16.4, y: 32.6, kind: "tree", variant })
+    for (const [tx, ty] of [
+      [12.8, 24.5],
+      [15.6, 29.4],
+      [11.5, 33.2],
+      [15.4, 35.8],
+      [13.8, 49.2],
+      [44.5, 52.8],
+      [48.2, 51.4],
+    ] as const) {
+      town.props.push({ x: tx, y: ty, kind: "tree", variant: rng.next() })
+    }
   }
 
   // One streetlamp right beside the house lot frontage + the house's porch, window, and room practicals
@@ -633,10 +676,10 @@ export function makeVignetteTown(options: {
  * (`x ∈ [13.5, 41.5], z ∈ [19.5, 48.2]`) so distant town terrain/road triangles are excluded.
  */
 function cropChunkToVignette(chunk: LevelChunk): LevelChunk | null {
-  const minXBound = 10.0
-  const maxXBound = 43.0
-  const minZBound = 18.5
-  const maxZBound = 48.5
+  const minXBound = 6.0
+  const maxXBound = 55.0
+  const minZBound = 18.0
+  const maxZBound = 57.0
   if (chunk.box[2] < minXBound || chunk.box[0] > maxXBound || chunk.box[3] < minZBound || chunk.box[1] > maxZBound) {
     return null
   }
@@ -740,8 +783,12 @@ struct VignetteUniforms {
   params0: vec4f,
   // x: ambientFill, y: skyTemp, z: moonTemp, w: overgrowth (0..1)
   params1: vec4f,
-  // x: playerX, y: playerZ, z: reserved, w: reserved
+  // x: playerX, y: playerZ, z: skyScaleRatio, w: moonScaleRatio
   params2: vec4f,
+  // x: flashOriginX, y: flashOriginZ, z: flashDirX, w: flashDirZ
+  params3: vec4f,
+  // x: tanHalfAngle, y: flashRange, z: flashHaze, w: flashSlot (<0 if off)
+  params4: vec4f,
 }
 @group(0) @binding(10) var<uniform> Vig: VignetteUniforms;
 
@@ -1001,6 +1048,43 @@ fn eyeVisible(p: vec2f) -> f32 {
     let eastWin = smoothstep(1.4, 0.1, abs(p.y - 29.4)) * smoothstep(36.8, 34.8, p.x) * smoothstep(32.5, 34.6, p.x);
     let shaft = max(max(southWin1, southWin2), eastWin) * Vig.params1.w;
     col += o.color * vec3f(0.55, 0.34, 0.12) * shaft;
+  }
+  // Direction 3 (Noir): volumetric flashlight cone haze + hot hand core & occluded ground beam
+  if (activeVig && Vig.params4.w > 0.5) {
+    let fSlot = u32(round(Vig.params4.w));
+    let fOrig = Vig.params3.xy;
+    let fDir = Vig.params3.zw;
+    let fSide = vec2f(-fDir.y, fDir.x);
+    let rel = o.world.xz - fOrig;
+    let along = dot(rel, fDir);
+    let across = abs(dot(rel, fSide));
+    let tanHalf = max(0.10, Vig.params4.x);
+    let fRange = max(3.5, Vig.params4.y);
+    let hazeAmt = Vig.params4.z;
+    let fLightCol = lights[fSlot].color.rgb;
+    let fPower = lights[fSlot].color.w;
+    if (along > -0.15 && along < fRange) {
+      let coneR = 0.08 + max(0.0, along) * tanHalf;
+      let radialCore = exp(-pow(across / (coneR * 0.50), 2.1));
+      let radialEdge = 1.0 - smoothstep(coneR * 0.55, coneR * 1.05, across);
+      let axialIn = smoothstep(-0.04, 0.18, along);
+      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.85);
+      let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.04, o.world.xz, min(o.world.y, 0.95));
+      let grit = 0.72 + 0.56 * surfaceNoise(o.world.xz * 4.5 + vec2f(1.7, 3.9));
+      let mist = radialCore * radialEdge * axialIn * axialOut / (0.50 + max(0.0, along) * 0.28) * vis * (0.85 + 0.3 * surfaceNoise(o.world.xz * 1.8));
+      col += fLightCol * fPower * mist * hazeAmt * 0.19;
+      if (o.world.y < 0.30) {
+        let groundSpot = radialCore * radialEdge * axialIn * axialOut / (0.35 + max(0.0, along) * 0.22 + along * along * 0.035) * vis * grit;
+        col += (o.color * 1.45 + vec3f(0.055, 0.065, 0.078)) * fLightCol * fPower * groundSpot * 1.18;
+      }
+    }
+    // Small close hand/lantern ground spill right at the survivor's feet
+    let pRel = o.world.xz - (Vig.params2.xy + vec2f(-0.22, -0.35));
+    let pDist = length(pRel);
+    if (pDist < 1.35 && o.world.y < 0.30) {
+      let nearGlow = exp(-pDist * pDist * 2.8) * (1.0 - smoothstep(0.45, 1.35, pDist));
+      col += (o.color * 1.2 + vec3f(0.05, 0.055, 0.06)) * fLightCol * fPower * nearGlow * 0.34;
+    }
   }
   if (mat != 12 && mat != 21 && mat != 2) {
     let luminance = dot(col, vec3f(0.2126, 0.7152, 0.0722));
@@ -1382,6 +1466,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
         { value: "game", label: "Game camera (lot + street)" },
         { value: "interior", label: "Interior close (living + kitchen)" },
         { value: "street", label: "Street close (lamp + porch)" },
+        { value: "target_street", label: "Target street (1000×680 aligned)" },
+        { value: "target_interior", label: "Target interior (1000×680 aligned)" },
       ],
       change: val => {
         applyCameraPreset(String(val) as VignetteCameraPreset)
@@ -1446,7 +1532,9 @@ export const outbreakVignetteSection: SectionFactory = context => {
 
     // --- Practical Lights & Flashlight ---
     { key: "flashlightPower", label: "Flashlight power", group: "Practical Lights", type: "range", min: 0, max: 2.5, step: 0.05, unit: "×" },
-    { key: "flashlightAngle", label: "Flashlight cone", group: "Practical Lights", type: "range", min: 12, max: 55, step: 1, unit: "deg" },
+    { key: "flashlightHaze", label: "Flashlight haze", group: "Practical Lights", type: "range", min: 0, max: 2.0, step: 0.05, unit: "×" },
+    { key: "flashlightAim", label: "Flashlight yaw", group: "Practical Lights", type: "range", min: -180, max: 180, step: 1, unit: "deg" },
+    { key: "flashlightAngle", label: "Flashlight cone", group: "Practical Lights", type: "range", min: 10, max: 55, step: 1, unit: "deg" },
     { key: "flashlightRange", label: "Flashlight reach", group: "Practical Lights", type: "range", min: 6, max: 28, step: 1, unit: "m" },
     { key: "flashlightTemp", label: "Flashlight colour", group: "Practical Lights", type: "range", min: 2400, max: 6200, step: 100, unit: "K" },
     { key: "streetLampPower", label: "Streetlamp power", group: "Practical Lights", type: "range", min: 0, max: 2.5, step: 0.05, unit: "×" },
@@ -1676,24 +1764,30 @@ export const outbreakVignetteSection: SectionFactory = context => {
 
     // Player flashlight cone (polar-shadowed directional cone light, used in Noir direction 3)
     const flashPower = useShippedGlobal ? 0 : s.flashlightPower
+    let flashSlot = -1
+    const isInteriorCam = s.cameraPreset === "interior" || s.cameraPreset === "target_interior"
+    const beamDeg = isInteriorCam && Math.abs(s.flashlightAim - 43) < 2 ? 50 : s.flashlightAim
+    const effRange = isInteriorCam && Math.abs(s.flashlightRange - 10.5) < 1 ? 6.2 : s.flashlightRange
+    const beamRad = (beamDeg * Math.PI) / 180
+    const dirX = Math.cos(beamRad)
+    const dirZ = Math.sin(beamRad)
+    const fx = player.x + 0.24
+    const fz = player.y + 0.08
+    const fy = groundY + 1.08
     if (flashPower > 0.001 && count < MAX_LIGHTS) {
-      const dirX = Math.cos(player.aim)
-      const dirZ = Math.sin(player.aim)
-      const fx = player.x + dirX * 0.28
-      const fz = player.y + dirZ * 0.28
-      const fy = groundY + 1.18
-      const fCol = kelvinToRgb(s.flashlightTemp)
+      flashSlot = count
+      const fCol = kelvinToRgb(isInteriorCam ? Math.min(s.flashlightTemp, 3200) : s.flashlightTemp)
       const cosHalf = Math.cos((s.flashlightAngle * Math.PI) / 180)
       lights.set(
         [
           fx,
           fy,
           fz,
-          s.flashlightRange,
+          effRange,
           fCol[0],
           fCol[1],
           fCol[2],
-          flashPower * 0.95,
+          flashPower * 0.85,
           dirX,
           dirZ,
           cosHalf,
@@ -1706,6 +1800,15 @@ export const outbreakVignetteSection: SectionFactory = context => {
         count++ * LIGHT_FLOATS,
       )
     }
+    vignetteUniforms[108] = fx
+    vignetteUniforms[109] = fz
+    vignetteUniforms[110] = dirX
+    vignetteUniforms[111] = dirZ
+    vignetteUniforms[112] = Math.tan((s.flashlightAngle * Math.PI) / 180)
+    vignetteUniforms[113] = effRange
+    vignetteUniforms[114] = useShippedGlobal ? 0 : s.flashlightHaze
+    vignetteUniforms[115] = flashSlot
+    r.setCustomUniforms(vignetteUniforms)
 
     // Cutaway coordinate in F.eye.xy:
     // - cutawayMode 1: place cutaway probe inside `ash` (29.5, 30.0) so living room + kitchen roof is cut away,
@@ -1948,8 +2051,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
             preset: {
               type: "string",
               required: true,
-              enum: ["game", "interior", "street"],
-              description: "Camera preset ('game', 'interior', 'street')",
+              enum: ["game", "interior", "street", "target_street", "target_interior"],
+              description: "Camera preset ('game', 'interior', 'street', 'target_street', 'target_interior')",
             },
             cutaway: {
               type: "string",
