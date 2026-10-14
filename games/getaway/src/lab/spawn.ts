@@ -535,6 +535,7 @@ export function getawaySpawn(context: LabContext) {
             })
             return [...headlights, ...tailLights]
           },
+          sound: () => ({ car, input }),
           inspect: () => {
             const pose = currentPose()
             const s = sides[0]!

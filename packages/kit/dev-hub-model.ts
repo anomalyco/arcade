@@ -1,6 +1,9 @@
+import { labLocation } from "./lab-url"
+
 export const hubCommands = [
   { id: "games", label: "Games", href: "dev.html#games" },
-  { id: "sandbox", label: "Sandbox", href: "lab.html" },
+  // The Lab is its own app beside the games (/arcade/lab/), so this one link leaves the game prefix.
+  { id: "lab", label: "Lab", href: "../lab/" },
   { id: "characters", label: "Characters", href: "characters.html" },
   { id: "catalogue", label: "Catalogue", href: "dev.html#catalogue" },
 ] as const
@@ -56,6 +59,7 @@ export function devRoute(url: string, mounted: readonly string[]): DevRoute {
   if (!match || !mounted.includes(match[1]!)) return { kind: "missing" }
   const game = match[1]!, rest = match[2]
   if (!rest) return { kind: "redirect", location: `/arcade/${game}/${search}` }
+  if (rest === "/lab.html" && game !== "lab" && mounted.includes("lab")) return { kind: "redirect", location: labLocation(search, game) }
   if (game !== "blackout" && rest === "/characters.html" && mounted.includes("blackout")) return { kind: "redirect", location: `/arcade/blackout/characters.html${search}` }
   if (/^\/(api\/|ws(\/|$))/.test(rest)) return { kind: "worker", game }
   return { kind: "vite", game, path: rest + search }

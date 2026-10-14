@@ -29,7 +29,12 @@ export function gameEffects(context:LabContext,id:string,label:string,create:()=
   const settings:LabSettings={effect:"",environment:"",seed:7,effectSeed:19,loop:false,interval:2,playing:true,lockEffect:true,lockEnvironment:false}
   const controls:LabControl[]=[]
   const rng=(seed:number)=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t^=t+Math.imul(t^t>>>7,61|t);return((t^t>>>14)>>>0)/4294967296}
-  const trigger=()=>{adapter!.trigger(String(settings.effect),Number(settings.effectSeed));elapsed=0;context.sync()}
+  const trigger=()=>{
+    adapter!.trigger(String(settings.effect),Number(settings.effectSeed));elapsed=0
+    const at=adapter!.objects?.(settings).find(o=>o.category==="emitter")??adapter!.frameTarget?.(settings)??{x:0,y:0,z:0}
+    context.emit?.({type:"effect",section:id,effect:String(settings.effect),variant:settings.surface===undefined?undefined:String(settings.surface),settings,x:at.x,y:at.y,z:at.z})
+    context.sync()
+  }
   const rebuild=()=>{adapter!.environment(String(settings.environment),Number(settings.seed));context.sync()}
   const shuffle=()=>{
     if(!settings.lockEnvironment){settings.seed=((Number(settings.seed)*1664525+1013904223)>>>0)%99999+1;rebuild()}

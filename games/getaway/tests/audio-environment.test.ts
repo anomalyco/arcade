@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { blocked } from "./environment"
+import { blocked } from "../src/audio/environment"
 test("street occlusion handles parallel rays and endpoints", () => {
   const b = { x0: 2, x1: 4, z0: 2, z1: 4 }
   expect(blocked(0, 3, 6, 3, b)).toBe(true)

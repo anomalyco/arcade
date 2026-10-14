@@ -8,7 +8,8 @@ The rules below apply to new authoring work. Existing gaps are listed explicitly
 
 ## Tune one change and reproduce it
 
-1. Open the Getaway or Blackout host's `/lab.html`. Choose an effect or fixture in the Library drawer
+1. Open the Lab at `/arcade/lab/` (one app for every game; the top-bar Game picker loads one game's adapters or
+   all of them). Choose an effect or fixture in the Library drawer
    (`Ctrl+Space`), then its environment in the Outliner's World footer. Select what you are tuning in the Outliner or
    viewport; Details shows its settings first. `⌘K` finds objects, Library items, commands and setting names, and
    the pin on a Details row adds it to the Watch list. Backquote toggles the workbench chrome; games use the same
@@ -121,7 +122,7 @@ and `packages/kit/lab/viewport-input.ts`):
   on empty space box-selects where multi-object selection exists (Lab sections with scene objects, or when `Box`/`Alt`
   is active) and orbits elsewhere (Catalogue, Characters, or Lab sections without selectable objects; `Shift+drag` pans
   when not adding to an existing selection).
-- **Context / Radial**: unmoved `RMB` tap or `Ctrl+click` (`<= 8 px` threshold) or `M` / `ContextMenu` opens the
+- **Context / Radial**: unmoved `RMB` tap or `Ctrl+click` (`<= 8 px` threshold) or the `ContextMenu` key opens the
   contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters. The Lab ring
   (`packages/kit/lab/radial.ts`) draws 8 equal wedges with an icon and short label each; the wedge under the pointer's
   bearing from the centre is highlighted (not the label under the pointer), a press anywhere on the disc selects by
@@ -136,9 +137,26 @@ Audio entry/selection must stay silent. Render waveform/spectrogram previews off
 Audition. Neither a generic Retrigger nor a preset import should automatically unlock/play audio. Release live audio
 on section leave, blur or hidden-tab transitions.
 
+Scene sound is the exception that follows the scene: once the user's first click or key unlocks audio, each loaded
+game plays its own sound through a `LabAudioAdapter` (`packages/kit/lab/audio-adapter.ts`), loaded with that game's
+Lab adapters and attached to the Lab's single `AudioContext`. Getaway's adapter (`games/getaway/src/lab/audio.ts`) runs
+the game's `GameAudio` on its own `AudioEngine`, with the Lab car as the local player's car: the approved procedural
+DriverVoice engine and gearbox, tyre squeal and scrub, nitro, crash and scrape samples, landing thumps, exhaust pops and
+the city bed. Blackout's (`games/blackout/src/lab/audio.ts`) drives its `Sound` the way `Game` does: animation-cued
+footsteps and gun mechanics for the soldier, plus gunshots, bullet impacts, casing and magazine clinks and explosions
+for effects. Outbreak has no sound yet. The shared runtime only stands in where no loaded game has a sound: glass,
+sparks, splats, vehicle-effect crashes, fire and water beds, and explosions when Blackout isn't loaded. Sections report
+effects through `LabContext.emit`; characters hand `LabCharacter.sound()` state to the adapters every simulated tick.
+`bun games/lab/scripts/prove-game-audio.ts` renders each game's path and the Lab's into separate offline contexts and
+requires identical nodes, connections and AudioParam automation (an engine held at fixed RPM, a slide, footsteps,
+gun cues, an explosion) and samples within -120 dBFS. The
+top-bar speaker toggles mute (`M` in Edit mode, never in text fields or Play), its slider sets master volume, and the
+Audio section's **Lab volume** group sets Vehicles, Effects, Ambience and UI. All of it persists in `localStorage`
+(`arcade.lab.audio.v1`). `?bench` stays silent unless `&sound` is added, and automated browsers start muted.
+
 ## Compare matched state and label cost honestly
 
-Use `/lab.html?bench` for automation: it stops the live loop and exposes `window.lab` with `select`, `advance`, `render`
+Use `/arcade/lab/?bench` for automation: it stops the live loop and exposes `window.lab` with `select`, `advance`, `render`
 and workbench import/export. Reset each variant, apply recorded settings/seeds and advance identical fixed ticks with
 the same camera, viewport, lighting and inputs. Pause/Step helps inspect a frame; it does not supply saved A/B slots.
 Use the existing `compare.html` acknowledged paired-tick protocol for game comparisons and verify matching snapshots.

@@ -17,7 +17,7 @@ export function blackoutSpawn(context:LabContext):CharacterSpawnable {
       models={pelvis:add(source.pelvis),torso:add(source.torso),head:add(source.head),upperArm:add(source.upperArm),foreArm:add(source.foreArm),thigh:add(source.thigh),shin:add(source.shin),foot:add(source.foot),pump:add(source.pump),hole:add(source.hole),gun:by(source.gun),mag:by(source.mag),casing:by(source.casing)}
     }
     const point={...at},body={x:at.x,y:at.z,vx:0,vy:0},avatar=newAvatar("lab",at.x,at.z,-Math.PI/2,"rifle")
-    let time=0,aim=-Math.PI/2
+    let time=0,aim=-Math.PI/2,ev=0
     animate(avatar,1/60,0,body.x,body.y,0,0,aim)
     return {point,setPoint(nextAt){
       body.x=nextAt.x;body.y=nextAt.z;body.vx=0;body.vy=0
@@ -31,9 +31,12 @@ export function blackoutSpawn(context:LabContext):CharacterSpawnable {
       stepBody(body,mx,mz,input.shift?SPRINT_SPEED:SPEED,yardWalls,dt)
       if(mx||mz)aim=Math.atan2(mz,mx)
       avatar.sprint=input.shift?1:0
-      animate(avatar,dt,time,body.x,body.y,body.vx,body.vy,aim)
+      ev=animate(avatar,dt,time,body.x,body.y,body.vx,body.vy,aim)
       Object.assign(point,{x:body.x,y:yardGround(body.x,body.y),z:body.y,yaw:Math.PI/2-aim})
     },prepare(){pose((model,x,y,z,yaw,tint,pitch,roll)=>meshes.instance(model,x,y+point.y,z,-yaw,pitch,roll,1,tint),avatar,[.25,.75,1],models!)},
-    lights:()=>[],inspect:()=>({character:"soldier",...point,speed:Math.hypot(body.vx,body.vy),sprint:avatar.sprint})}
+    lights:()=>[],
+    // This tick's animation cues (footsteps, gun mechanics) for Blackout's own Sound in the Lab.
+    sound:()=>({ev,gun:avatar.gun,speed:Math.hypot(avatar.svx,avatar.svy)}),
+    inspect:()=>({character:"soldier",...point,speed:Math.hypot(body.vx,body.vy),sprint:avatar.sprint})}
   }}
 }

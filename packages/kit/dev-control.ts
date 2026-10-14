@@ -613,14 +613,16 @@ export function resolveNavigationPath(target: string): string {
     baseResolved = "/arcade/blackout/characters.html"
   } else if (lower === "anim" || lower === "anim-viewer") {
     baseResolved = "/arcade/blackout/anim.html"
-  } else if (lower === "lab" || lower === "sandbox" || lower === "getaway-lab") {
-    baseResolved = "/arcade/getaway/lab.html"
+  } else if (lower === "lab" || lower === "sandbox") {
+    baseResolved = "/arcade/lab/"
+  } else if (lower === "getaway-lab") {
+    baseResolved = "/arcade/lab/?game=getaway"
   } else if (lower === "outbreak-lab" || lower === "vignette" || lower === "outbreak-vignette") {
-    baseResolved = "/arcade/outbreak/lab.html?section=outbreak-vignette"
+    baseResolved = "/arcade/lab/?game=outbreak&section=outbreak-vignette"
   } else if (lower === "looks" || lower === "looks-lab") {
-    baseResolved = "/arcade/getaway/lab.html#looks"
+    baseResolved = "/arcade/lab/#looks"
   } else if (lower === "blackout-lab") {
-    baseResolved = "/arcade/blackout/lab.html"
+    baseResolved = "/arcade/lab/?game=blackout"
   } else if (lower === "getaway") baseResolved = "/arcade/getaway/?solo&seed=7"
   else if (lower === "blackout") baseResolved = "/arcade/blackout/?sandbox=1&seed=1"
   else if (lower === "wizards") baseResolved = "/arcade/blackout/?sandbox=1&mode=wizards&seed=1"
@@ -629,7 +631,7 @@ export function resolveNavigationPath(target: string): string {
 
   if (!baseResolved) {
     throw new Error(
-      `Unknown page target "${target}". Expected one of: hub, games, lab, sandbox, blackout-lab, outbreak-lab, catalogue, characters, getaway, blackout, outbreak, carrier, or a /arcade/... path.`,
+      `Unknown page target "${target}". Expected one of: hub, games, lab, sandbox, getaway-lab, blackout-lab, outbreak-lab, catalogue, characters, getaway, blackout, outbreak, carrier, or a /arcade/... path.`,
     )
   }
   if (!extraSuffix) return baseResolved
@@ -641,6 +643,9 @@ export function resolveNavigationPath(target: string): string {
   if (extraUrl.hash) baseUrl.hash = extraUrl.hash
   return baseUrl.pathname + baseUrl.search + baseUrl.hash
 }
+
+/** The single Lab app (`/arcade/lab/`); `lab.html` covers standalone fixtures that still serve one. */
+const isLabPath = (pathname: string) => pathname.startsWith("/arcade/lab/") || pathname.endsWith("/lab.html")
 
 const ALLOWED_TARGET_KEYS = new Set([
   "objectId",
@@ -984,7 +989,7 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
     if (!rawUrl && isPage) {
       resolvedUrl = `/arcade/getaway/dev.html#tour/${encodeURIComponent(id)}/${stepNum}`
     } else if (!rawUrl && isGrid) {
-      resolvedUrl = "/arcade/getaway/lab.html"
+      resolvedUrl = "/arcade/lab/"
     } else {
       try {
         resolvedUrl = resolveNavigationPath(rawUrl)
@@ -2374,7 +2379,7 @@ class PageControlRuntime {
         copy.sort()
         return copy.toString()
       }
-      const isLab = cur.pathname.endsWith("/lab.html")
+      const isLab = isLabPath(cur.pathname)
       return stripParams(cur.searchParams, isLab) === stripParams(dst.searchParams, isLab)
     } catch {
       void step
@@ -2429,7 +2434,7 @@ class PageControlRuntime {
       this.renderStudioPage(tour, step, stepNumber)
     } else {
       this.hideStudioPage()
-      if (location.pathname.endsWith("/lab.html")) {
+      if (isLabPath(location.pathname)) {
         const parsed = new URL(step.url, location.origin)
         const urlSection =
           parsed.searchParams.get("section")?.trim() ||
@@ -3001,7 +3006,7 @@ class PageControlRuntime {
 
   private isPageReady(): boolean {
     if (this.adapter !== null) return true
-    if (location.pathname.endsWith("/lab.html") || location.pathname.endsWith("/dev.html")) {
+    if (isLabPath(location.pathname) || location.pathname.endsWith("/dev.html")) {
       return this.fallbackReady
     }
     if (location.pathname.includes("/outbreak/")) {
@@ -3016,7 +3021,7 @@ class PageControlRuntime {
   private pollUntilReady() {
     const started = Date.now()
     const isStructuredPage =
-      location.pathname.endsWith("/lab.html") ||
+      isLabPath(location.pathname) ||
       location.pathname.endsWith("/dev.html") ||
       location.pathname.includes("/outbreak/")
     const maxWait = isStructuredPage ? 6000 : 1200

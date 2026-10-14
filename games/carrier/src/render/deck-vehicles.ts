@@ -1,11 +1,11 @@
 // Deck vehicles for the carrier: jet, helicopter, tow tractor, cart and deck crew. Each is built at the origin of its
 // own frame (ground at y = 0, nose toward +Z), so it can be instanced on its own. Also the small geometry helpers the
 // carrier mesh shares: fans, lofts, faceted spheres and arbitrary yaw placement.
+import { hex } from "@arcade/kit/gpu/mesh"
 import { FLOATS_PER_VERT, MAT, type Mat, type Mesh, type Rgb } from "./mesh"
 
 export type V3 = [number, number, number]
-
-export const hex = (h: number): Rgb => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255]
+export { hex }
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]

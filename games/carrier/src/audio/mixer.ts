@@ -19,6 +19,8 @@
  * any module can place a sound in the world. Works on an OfflineAudioContext too (`use`), for scripted renders.
  */
 
+import { isEditableEventTarget } from "@arcade/kit/client/controls"
+
 export type Level = "master" | "engines" | "flyby" | "sfx" | "weapons" | "weather" | "ui"
 export type Levels = Record<Level, number>
 export type Bus = "engines" | "own" | "flyby" | "sfx" | "weapons" | "weather" | "ui"
@@ -91,8 +93,7 @@ export class Mixer {
       else void c.resume().catch(() => undefined)
     })
     window.addEventListener("keydown", (e) => {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditableEventTarget(e.target)) return
       if (e.code === "KeyM") this.setMuted(!this.muted)
     })
   }

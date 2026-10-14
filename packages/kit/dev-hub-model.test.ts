@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test"
+import { labUrl } from "./lab-url"
 import { catalogueHash, catalogueLights, devRoute, filterAssets, gameLink, hubCommands, hubGames, hubPath, hubTargets, parseHubHash } from "./dev-hub-model"
 
 const router = JSON.stringify({ games: ["getaway", "blackout", "outbreak", "carrier"], workers: false })
 
 describe("developer hub", () => {
-  test("navigation stays relative to each game prefix", () => {
+  test("navigation stays relative to each game prefix; the Lab is its own app", () => {
     for (const host of ["getaway", "blackout"]) for (const command of hubCommands) {
-      expect(new URL(command.href, `https://anoma.ly/arcade/${host}/lab.html`).pathname).toStartWith(`/arcade/${host}/`)
-      expect(new URL(command.href, `http://arcade.localhost:1355/arcade/${host}/dev.html`).pathname).toStartWith(`/arcade/${host}/`)
+      const expected = command.id === "lab" ? "/arcade/lab/" : `/arcade/${host}/`
+      expect(new URL(command.href, `https://anoma.ly/arcade/${host}/dev.html`).pathname).toStartWith(expected)
+      expect(new URL(command.href, `http://arcade.localhost:1355/arcade/${host}/dev.html`).pathname).toStartWith(expected)
     }
   })
   test("prototypes remain separate", () => {
@@ -36,6 +38,13 @@ describe("developer hub", () => {
     for (const path of ["/arcade/getaway/api/quick", "/arcade/getaway/ws/ABCD", "/arcade/getaway/ws", "/arcade/getaway/ws?room=A"]) expect(devRoute(path, mounted)).toEqual({ kind: "worker", game: "getaway" })
     expect(devRoute("/arcade/getaway/wsx.ts", mounted).kind).toBe("vite")
     for (const path of ["/arcade/wings/", "/arcade/landing", "/src/main.ts", "/arcade/../etc"]) expect(devRoute(path, mounted).kind).not.toBe("vite")
+  })
+  test("old per-game Lab pages redirect to the single Lab with that game chosen", () => {
+    const mounted = ["getaway", "blackout", "outbreak", "lab"]
+    expect(devRoute("/arcade/getaway/lab.html", mounted)).toEqual({ kind: "redirect", location: "/arcade/lab/?game=getaway" })
+    expect(devRoute("/arcade/outbreak/lab.html?section=outbreak-vignette&game=x", mounted)).toEqual({ kind: "redirect", location: "/arcade/lab/?game=outbreak&section=outbreak-vignette" })
+    expect(devRoute("/arcade/lab/?game=blackout", mounted)).toEqual({ kind: "vite", game: "lab", path: "/?game=blackout" })
+    expect(labUrl("https://anoma.ly/arcade/blackout/lab.html?bench", "blackout")).toBe("https://anoma.ly/arcade/lab/?game=blackout&bench=")
   })
   test("catalogue selection round-trips through the hash", () => {
     for (const id of ["getaway:compact", "getaway:prop:cone", "blackout:soldier"]) expect(parseHubHash(catalogueHash(id))).toEqual({ page: "catalogue", assetId: id })

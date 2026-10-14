@@ -1,4 +1,6 @@
+import { keyLabel } from "@arcade/kit/client/controls"
 import { KNOT, PLANE } from "../../shared/plane"
+import { CenterCard, HomeMarker, homeAndCenterCss, type HomeMarkerView } from "../ui/hud-common"
 
 /** What the flight readout shows each frame. */
 export type FlightHudView = {
@@ -22,7 +24,7 @@ export type FlightHudView = {
   prompt?: boolean
   /** Your carrier: a tiny tick under it at (x, y) when in view (`on`), else a small edge chevron pointing along `angle`
    *  (screen radians, 0 = right, y down); distance in km. Null hides it. */
-  home?: { x: number; y: number; size: number; on: boolean; angle: number; km: number } | null
+  home?: (HomeMarkerView & { size: number }) | null
 }
 
 const CSS = `
@@ -50,20 +52,13 @@ const CSS = `
 #fl .fpm::before { right: 13px; }
 #fl .fpm::after { left: 13px; }
 #fl .warn { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.5em; margin-right: -0.5em; color: #ffc861; zoom: var(--hud, 1); }
-#fl .home { position: absolute; left: 0; top: 0; color: var(--home, var(--ink)); will-change: transform; }
-#fl .home .tick { position: absolute; left: -0.75px; top: 7px; width: 1.5px; height: 6px; background: currentColor; opacity: 0.85; filter: drop-shadow(0 0 2px rgba(10, 30, 60, 0.5)); }
-#fl .home .chev { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; }
-#fl .home .chev::before { content: ""; position: absolute; left: 2px; top: 3px; width: 6px; height: 6px; border: solid currentColor; border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); filter: drop-shadow(0 0 2px rgba(10, 30, 60, 0.5)); }
-#fl .home .km { position: absolute; left: 0; top: 0; transform: translate(-50%, 0); font-size: 9px; letter-spacing: 0.22em; white-space: nowrap; opacity: 0.8; font-variant-numeric: tabular-nums; }
 #fl .warn.cue { color: var(--ink); opacity: 0.9; }
 #fl .land { position: absolute; left: 50%; top: 68%; transform: translateX(-50%); zoom: var(--hud, 1); font-size: 13px; letter-spacing: 0.32em;
   padding: 5px calc(10px - 0.32em) 5px 10px; background: rgba(6, 16, 30, 0.62); text-shadow: none; white-space: nowrap; }
 #fl .land b { font-weight: 300; border: 1px solid currentColor; padding: 0 0.35em; margin-right: 0.9em; letter-spacing: 0; }
 #fl .warn.pulse { animation: fl-pulse 0.7s ease-in-out infinite alternate; }
 @keyframes fl-pulse { from { opacity: 0.35 } to { opacity: 1 } }
-#fl .center { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); text-align: center; display: grid; gap: 10px; zoom: var(--hud, 1); }
-#fl .center .title { font-size: 26px; letter-spacing: 0.6em; margin-right: -0.6em; }
-#fl .center .sub { font-size: 11px; letter-spacing: 0.4em; margin-right: -0.4em; opacity: 0.85; }
+${homeAndCenterCss("#fl")}
 body.mn-open #fl { display: none; }
 `
 
@@ -88,15 +83,10 @@ export class FlightHud {
   private fpm: HTMLElement
   private warn: HTMLElement
   private land: HTMLElement
-  private card: HTMLElement
-  private cardTitle: HTMLElement
-  private cardSub: HTMLElement
+  private landKey: HTMLElement
+  private homeMarker: HomeMarker
+  private centerCard: CenterCard
   private last = ""
-  private homeEl!: HTMLElement
-  private homeTick!: HTMLElement
-  private homeChev!: HTMLElement
-  private homeKm!: HTMLElement
-  private lastKm = ""
 
   constructor(parent: HTMLElement = document.body) {
     if (!document.getElementById("fl-css")) {
@@ -128,39 +118,14 @@ export class FlightHud {
     this.fpm = q(".fpm")
     this.warn = q(".warn")
     this.land = q(".land")
-    this.card = q(".center")
-    this.cardTitle = q(".center .title")
-    this.cardSub = q(".center .sub")
-    this.homeEl = q(".home")
-    this.homeTick = q(".home .tick")
-    this.homeChev = q(".home .chev")
-    this.homeKm = q(".home .km")
+    this.landKey = q(".land b")
+    this.homeMarker = new HomeMarker(root)
+    this.centerCard = new CenterCard(root)
   }
 
   /** Your team's colour (CSS), for the carrier marker. */
   set homeColor(c: string) {
-    this.homeEl.style.setProperty("--home", c)
-  }
-
-  private home(h: FlightHudView["home"]): void {
-    this.homeEl.hidden = !h
-    if (!h) return
-    this.homeEl.style.transform = `translate(${h.x.toFixed(1)}px, ${h.y.toFixed(1)}px)`
-    this.homeTick.hidden = !h.on
-    this.homeChev.hidden = h.on
-    if (h.on) this.homeKm.style.transform = "translate(-50%, 15px)"
-    else {
-      this.homeChev.style.transform = `rotate(${h.angle.toFixed(3)}rad)`
-      // The distance sits on the inside of the chevron.
-      const ix = -Math.cos(h.angle) * 22
-      const iy = -Math.sin(h.angle) * 16 - 5
-      this.homeKm.style.transform = `translate(calc(-50% + ${ix.toFixed(0)}px), ${iy.toFixed(0)}px)`
-    }
-    const km = h.km < 10 ? h.km.toFixed(1) : Math.round(h.km).toString()
-    if (km !== this.lastKm) {
-      this.lastKm = km
-      this.homeKm.textContent = `${km} KM`
-    }
+    this.homeMarker.color = c
   }
 
   set visible(v: boolean) {
@@ -169,10 +134,7 @@ export class FlightHud {
 
   /** Full-screen card (crash, respawn), or null to hide it. */
   message(title: string | null, sub = ""): void {
-    this.card.hidden = !title
-    if (!title) return
-    this.cardTitle.textContent = title
-    this.cardSub.textContent = sub
+    this.centerCard.show(title, sub)
   }
 
   /** The flight readout and markers, or null to hide them (on the deck, crashed). */
@@ -180,7 +142,7 @@ export class FlightHud {
     this.read.hidden = !v
     this.nose.hidden = !v?.nose
     this.fpm.hidden = !v?.path
-    this.home(v?.home ?? null)
+    this.homeMarker.update(v?.home ?? null)
     if (!v) {
       this.warn.textContent = ""
       this.land.hidden = true
@@ -201,6 +163,10 @@ export class FlightHud {
       this.boost.classList.toggle("lit", v.boosting)
     }
     this.land.hidden = !v.prompt
+    if (v.prompt) {
+      const fk = keyLabel("KeyF")
+      if (this.landKey.textContent !== fk) this.landKey.textContent = fk
+    }
     let warn = ""
     if (v.edgeLeft !== null) warn = `RETURN  ${Math.ceil(v.edgeLeft)}`
     else if (v.landing) warn = "LANDING"

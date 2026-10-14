@@ -23,6 +23,8 @@ export type LabCharacter={
   lights():readonly LabLight[]
   /** Adapter-specific telemetry, also used by the deterministic proof. */
   inspect():unknown
+  /** Live state for the game's own Lab audio adapter (for example the car and its controls). */
+  sound?():unknown
   leave?():void
 }
 export type CharacterSpawnable={id:string;label:string;/** Groups under Vehicles in the Outliner. */vehicle?:boolean;create(context:LabContext,at:SpawnPoint):LabCharacter}

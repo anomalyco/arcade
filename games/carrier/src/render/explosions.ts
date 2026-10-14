@@ -47,17 +47,8 @@ export type JetBreakup = {
   random(id: number): () => number
 }
 
-/** Deterministic random stream (mulberry32). */
-export function seeded(seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
+import { mulberry32 as seeded } from "../../shared/rng"
+export { seeded }
 
 /** Hash of a few integers into a seed. */
 export function seedOf(...k: number[]): number {

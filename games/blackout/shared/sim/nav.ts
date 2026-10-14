@@ -1,5 +1,5 @@
 import { PLAYER_RADIUS } from "../config"
-import { type Vec, inRect } from "../geom"
+import { MinHeap, type Vec, inRect } from "../geom"
 import type { MapDef } from "../maps"
 import type { Rng } from "../rng"
 
@@ -20,7 +20,7 @@ export class Nav {
   /** A* bookkeeping is valid for a cell when seen[i] >= stamp; closed cells hold stamp + 1. */
   private seen: Uint32Array
   private stamp = 0
-  private heap = new Heap()
+  private heap = new MinHeap()
 
   constructor(readonly map: MapDef) {
     this.w = Math.ceil(map.size[0] / CELL)
@@ -243,59 +243,6 @@ export class Nav {
   /** Cell index of a point, for indexing masks and distance fields. */
   cellOf(p: Vec): number {
     return this.idx(p)
-  }
-}
-
-class Heap {
-  private ids: number[] = []
-  private keys: number[] = []
-
-  get size() {
-    return this.ids.length
-  }
-
-  clear() {
-    this.ids.length = 0
-    this.keys.length = 0
-  }
-
-  push(id: number, key: number) {
-    this.ids.push(id)
-    this.keys.push(key)
-    let i = this.ids.length - 1
-    while (i > 0) {
-      const p = (i - 1) >> 1
-      if (this.keys[p]! <= key) break
-      this.swap(i, p)
-      i = p
-    }
-  }
-
-  pop(): number {
-    const top = this.ids[0]!
-    const lastId = this.ids.pop()!
-    const lastKey = this.keys.pop()!
-    if (this.ids.length) {
-      this.ids[0] = lastId
-      this.keys[0] = lastKey
-      let i = 0
-      for (;;) {
-        const l = i * 2 + 1
-        const r = l + 1
-        let m = i
-        if (l < this.ids.length && this.keys[l]! < this.keys[m]!) m = l
-        if (r < this.ids.length && this.keys[r]! < this.keys[m]!) m = r
-        if (m === i) break
-        this.swap(i, m)
-        i = m
-      }
-    }
-    return top
-  }
-
-  private swap(a: number, b: number) {
-    ;[this.ids[a], this.ids[b]] = [this.ids[b]!, this.ids[a]!]
-    ;[this.keys[a], this.keys[b]] = [this.keys[b]!, this.keys[a]!]
   }
 }
 

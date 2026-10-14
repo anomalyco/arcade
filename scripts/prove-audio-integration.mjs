@@ -1,4 +1,4 @@
-/** Silent proof of the actual Lab hosts and native OfflineAudioContext. No live audio context is permitted. */
+/** Silent proof of the Lab app (/arcade/lab/) and native OfflineAudioContext. No live audio context is permitted. */
 import assert from "node:assert/strict"
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
@@ -9,7 +9,7 @@ const out = resolve(process.env.OUT ?? "captures/audio-integration")
 mkdirSync(out, { recursive: true })
 const server = production ? Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
   const path = new URL(req.url).pathname
-  const game = path.match(/^\/arcade\/(getaway|blackout|outbreak)\//)?.[1]
+  const game = path.match(/^\/arcade\/(lab)\//)?.[1]
   if (!game) return new Response("Not found", { status: 404 })
   const root = resolve(`games/${game}/dist`), file = resolve(root, `.${decodeURIComponent(path)}`)
   if (!file.startsWith(root + sep)) return new Response("Not found", { status: 404 })
@@ -20,7 +20,7 @@ const base = game => server ? `http://127.0.0.1:${server.port}/arcade/${game}/` 
 const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--mute-audio"] })
 const results = {}
 try {
-  for (const game of ["getaway", "blackout"]) {
+  for (const game of ["lab"]) {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
     const errors = [], assetRequests = []
     page.on("pageerror", e => errors.push(e.message))
@@ -46,7 +46,7 @@ try {
         }
       }
     })
-    await page.goto(`${base(game)}lab.html?bench`)
+    await page.goto(`${base(game)}?bench`)
     await page.waitForFunction(() => window.lab && window.audioLab)
     await page.locator('[data-row="section"] select').selectOption("audio")
     const initial = await page.evaluate(() => ({ attempts: audioProof.realtimeAttempts, offline: audioProof.offlineContexts, state: audioLab.runtime.telemetry().state, playing: audioLab.settings.playing }))
@@ -131,7 +131,7 @@ try {
     await page.close()
   }
   if (production) {
-    for (const game of ["blackout", "getaway"]) {
+    for (const game of ["lab"]) {
       const assets = resolve(`games/${game}/dist/arcade/${game}/assets`)
       for (const file of readdirSync(assets).filter(f => f.endsWith(".js"))) {
         assert(!/DeterministicOfflineAudioContext|OfflineParam|test-context/.test(readFileSync(resolve(assets, file), "utf8")), `Test context in ${game}/${file}`)

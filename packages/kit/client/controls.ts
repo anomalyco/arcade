@@ -238,3 +238,56 @@ export function matchesAction(
 ): boolean {
   return bindings[action].includes(code)
 }
+
+/** True when `target` is an interactive form field or contentEditable element that owns keyboard input. */
+export function isEditableEventTarget(target: EventTarget | null | undefined): boolean {
+  if (!target || typeof target !== "object") return false
+  if (typeof HTMLInputElement !== "undefined" && target instanceof HTMLInputElement) return true
+  if (typeof HTMLTextAreaElement !== "undefined" && target instanceof HTMLTextAreaElement) return true
+  if (typeof HTMLSelectElement !== "undefined" && target instanceof HTMLSelectElement) return true
+  const el = target as { tagName?: unknown; isContentEditable?: unknown }
+  const tag = typeof el.tagName === "string" ? el.tagName.toUpperCase() : ""
+  return el.isContentEditable === true || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+}
+
+export const isNavigationKey = (code: string): boolean =>
+  code === "Space" || code === "ArrowUp" || code === "ArrowDown" || code === "ArrowLeft" || code === "ArrowRight"
+
+export const isMetaKey = (code: string): boolean => code === "MetaLeft" || code === "MetaRight"
+
+/** Requests Pointer Lock with `unadjustedMovement: true` where supported, falling back to plain Pointer Lock. */
+export function requestCanvasPointerLock(canvas: HTMLElement): void {
+  const c = canvas as HTMLElement & { requestPointerLock(o?: { unadjustedMovement?: boolean }): Promise<void> | void }
+  const plain = () => { try { void Promise.resolve(c.requestPointerLock()).catch(() => {}) } catch {} }
+  try {
+    const p = c.requestPointerLock({ unadjustedMovement: true })
+    if (p) void p.catch(plain)
+  } catch { plain() }
+}
+
+/** Tracks held physical `KeyboardEvent.code` keys and per-frame key-down edges on `window`. */
+export class KeyStateTracker {
+  readonly keys = new Set<string>()
+  readonly downs = new Set<string>()
+
+  constructor(options?: { onRelease?: () => void; shouldPreventDefault?: (code: string) => boolean }) {
+    const prevent = options?.shouldPreventDefault ?? isNavigationKey
+    window.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (isEditableEventTarget(e.target)) return
+      if (prevent(e.code)) e.preventDefault()
+      observeKeyLayout(e)
+      if (!this.keys.has(e.code)) { this.keys.add(e.code); this.downs.add(e.code) }
+    })
+    window.addEventListener("keyup", (e: KeyboardEvent) => {
+      this.keys.delete(e.code)
+      if (isMetaKey(e.code)) { this.release(); options?.onRelease?.() }
+    })
+    window.addEventListener("blur", () => { this.release(); options?.onRelease?.() })
+  }
+
+  held(code: string): boolean { return this.keys.has(code) }
+  any(...codes: string[]): boolean { return codes.some((c) => this.keys.has(c)) }
+  pressed(...codes: string[]): boolean { return codes.some((c) => this.downs.has(c)) }
+  clearDowns(): void { this.downs.clear() }
+  release(): void { this.keys.clear(); this.downs.clear() }
+}

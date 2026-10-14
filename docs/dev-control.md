@@ -33,7 +33,7 @@ bun run arcade screenshot --out /tmp/shot.png          # Capture canvas PNG over
 Mutating commands (display a brief `CLI: …` indicator in the page, respect Kit's live drag/possession input, and record Undo history on the same stack as `⌘Z`):
 
 ```sh
-bun run arcade open <target>                           # Navigate existing page: hub, catalogue, characters, lab, blackout-lab, getaway, blackout, outbreak, carrier, or /arcade/…
+bun run arcade open <target>                           # Navigate existing page: hub, catalogue, characters, lab, getaway-lab, blackout-lab, outbreak-lab, getaway, blackout, outbreak, carrier, or /arcade/…
 bun run arcade open hub --new                          # Open a background browser tab ONLY if 0 pages are connected
 bun run arcade select <id|name>                        # object.select: scene object (prop:0, character:active, hydrant), catalog fixture, or asset
 bun run arcade camera set --orbit 38 --elevation 24 --distance 13 --target 0,0.5,4
@@ -101,7 +101,7 @@ To call Kit's attention to a specific feature in an open tab or walk him through
   Opens **one** browser tab by default (`singleTab: true`; pass `--multi-tab` for the legacy one-browser-tab-per-step behavior, or `--no-open` to stage without opening a tab) and renders a persistent, dark, collapsible **Studio Tab Strip** (`[data-arcade-studio-strip]`) across the top of every Arcade page (Hub, Lab, Catalogue, Characters, and games).
   - Each tour step appears as a numbered mini-tab (`1 Title`, `2 Title`, …) with its active step highlighted.
   - Switch between mini-tabs by clicking any tab, clicking `‹`/`›`, or pressing `Alt+[` / `Alt+]` (`Option+[` / `Option+]` on macOS).
-  - **Fast in-place switching (no reload)**: If the target step shares the current page (e.g. switching Lab sections/presets/cameras on `/lab.html` or player poses on `/arcade/outbreak/`), its `setup` commands and `ui.note` card apply in place in milliseconds without reloading or recreating the WebGPU device. If the target step is on a different page, the tab navigates in place and resumes the strip from `sessionStorage` and the WebSocket bridge so **at most one WebGPU context is ever alive at a time**.
+  - **Fast in-place switching (no reload)**: If the target step shares the current page (e.g. switching Lab sections/presets/cameras on `/arcade/lab/` or player poses on `/arcade/outbreak/`), its `setup` commands and `ui.note` card apply in place in milliseconds without reloading or recreating the WebGPU device. If the target step is on a different page, the tab navigates in place and resumes the strip from `sessionStorage` and the WebSocket bridge so **at most one WebGPU context is ever alive at a time**.
   - **Static Studio Landing Pages (`"kind": "page"`)**: Steps can also be zero-WebGPU landing pages rendered inside the studio shell (`/arcade/getaway/dev.html#tour/<id>/<step>`) with `"markdown"` and/or `"images"` (served from `.arcade-tours/assets/<id>/` via `/__arcade/tour-assets/<id>/<file>`, with click-to-zoom lightbox).
   - **Multi-Tile Variation Grids (`"kind": "grid"` / `arcade grid`)**: Renders 2–9 numbered, labeled variants of the same Lab scene (`looks`, `explosions`, `smoke`, `materials`, `foliage`, `lighting`, or custom `tiles`) live into a single WebGPU canvas using per-tile viewports/scissors at reduced per-tile resolution and a shared simulation timeline/seed (~0.6–0.8 ms total for 6 tiles). Click a tile or press `1`–`9` (or `arcade grid focus <1..9>`) to zoom that tile full-size; press `Esc` or `G` (or `arcade grid focus 0` / `arcade grid close`) to return to the grid or close it.
   - Append a step from the CLI with `arcade tour --add-step <tour> --title "..." [--kind page|grid|scene] [--preset looks|explosions] [--markdown "..."] [--images a.png,b.png]`.
@@ -138,20 +138,20 @@ To call Kit's attention to a specific feature in an open tab or walk him through
         "kind": "grid",
         "title": "Looks Grid · 6 Style Directions",
         "body": "3×2 live WebGPU Variation Grid in the Looks debug room (Current, Noir, Painterly, Dusk, 70s Sodium, Cozy).",
-        "url": "/arcade/getaway/lab.html?section=looks",
+        "url": "/arcade/lab/?section=looks",
         "preset": "looks"
       },
       {
         "kind": "grid",
         "title": "Explosion Variants · 4 Live Recipes",
         "body": "2×2 synchronized live WebGPU grid sharing one timeline and seed.",
-        "url": "/arcade/getaway/lab.html?section=effects",
+        "url": "/arcade/lab/?section=effects",
         "preset": "explosions"
       },
       {
         "title": "Vignette · Noir, game camera",
         "body": "Same lot with the Noir preset. Compare value structure with the paint-over tab.",
-        "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+        "url": "/arcade/lab/?game=outbreak&section=outbreak-vignette",
         "setup": [
           { "command": "vignette.preset", "args": { "direction": "noir" } },
           { "command": "vignette.camera", "args": { "preset": "game", "cutaway": "cutaway" } }

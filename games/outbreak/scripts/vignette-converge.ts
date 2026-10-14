@@ -35,7 +35,7 @@ try {
     if (m.type() === "error") errors.push(m.text())
   })
 
-  await page.goto("http://127.0.0.1:5188/arcade/outbreak/lab.html?section=outbreak-vignette&bench")
+  await page.goto("http://127.0.0.1:5188/arcade/lab/?game=outbreak&section=outbreak-vignette&bench")
   await page.waitForFunction(() => Boolean((window as any).lab && (window as any).__arcadeDevControl), undefined, {
     timeout: 30000,
   })

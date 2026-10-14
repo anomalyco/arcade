@@ -1,4 +1,6 @@
 import { HitMarker } from "../ui/hit-marker"
+import { CenterCard, HomeMarker, homeAndCenterCss, type HomeMarkerView } from "../ui/hud-common"
+
 /** What the boat readout shows each frame. */
 export type BoatHudView = {
   knots: number
@@ -16,7 +18,7 @@ export type BoatHudView = {
   arc: boolean
   barrel: { x: number; y: number } | null
   /** Your carrier (as the flight HUD's): a tick under it when in view, else an edge chevron along `angle`. */
-  home: { x: number; y: number; on: boolean; angle: number; km: number } | null
+  home: HomeMarkerView | null
 }
 
 const CSS = `
@@ -44,14 +46,7 @@ const CSS = `
 #bt .cross.out { opacity: 0.35; }
 #bt .pip { position: absolute; left: 0; top: 0; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 1.5px solid #9dffb8; border-radius: 50%; box-shadow: 0 0 6px rgba(10, 60, 30, 0.4); will-change: transform; }
 #bt .cue { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.5em; margin-right: -0.5em; zoom: var(--hud, 1); opacity: 0.9; }
-#bt .home { position: absolute; left: 0; top: 0; color: var(--home, var(--ink)); will-change: transform; }
-#bt .home .tick { position: absolute; left: -0.75px; top: 7px; width: 1.5px; height: 6px; background: currentColor; opacity: 0.85; filter: drop-shadow(0 0 2px rgba(10, 30, 60, 0.5)); }
-#bt .home .chev { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; }
-#bt .home .chev::before { content: ""; position: absolute; left: 2px; top: 3px; width: 6px; height: 6px; border: solid currentColor; border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); filter: drop-shadow(0 0 2px rgba(10, 30, 60, 0.5)); }
-#bt .home .km { position: absolute; left: 0; top: 0; transform: translate(-50%, 0); font-size: 9px; letter-spacing: 0.22em; white-space: nowrap; opacity: 0.8; font-variant-numeric: tabular-nums; }
-#bt .center { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); text-align: center; display: grid; gap: 10px; zoom: var(--hud, 1); }
-#bt .center .title { font-size: 26px; letter-spacing: 0.6em; margin-right: -0.6em; }
-#bt .center .sub { font-size: 11px; letter-spacing: 0.4em; margin-right: -0.4em; opacity: 0.85; }
+${homeAndCenterCss("#bt")}
 body.mn-open #bt { display: none; }
 `
 
@@ -74,15 +69,9 @@ export class BoatHud {
   private cross: HTMLElement
   private pip: HTMLElement
   private cueEl: HTMLElement
-  private homeEl: HTMLElement
-  private homeTick: HTMLElement
-  private homeChev: HTMLElement
-  private homeKm: HTMLElement
-  private card: HTMLElement
-  private cardTitle: HTMLElement
-  private cardSub: HTMLElement
+  private homeMarker: HomeMarker
+  private centerCard: CenterCard
   private last = ""
-  private lastKm = ""
   private marker: HitMarker
 
   constructor(parent: HTMLElement = document.body) {
@@ -117,13 +106,8 @@ export class BoatHud {
     this.marker = new HitMarker(root, true)
     this.pip = q(".pip")
     this.cueEl = q(".cue")
-    this.homeEl = q(".home")
-    this.homeTick = q(".home .tick")
-    this.homeChev = q(".home .chev")
-    this.homeKm = q(".home .km")
-    this.card = q(".center")
-    this.cardTitle = q(".center .title")
-    this.cardSub = q(".center .sub")
+    this.homeMarker = new HomeMarker(root)
+    this.centerCard = new CenterCard(root)
   }
 
   set visible(v: boolean) {
@@ -132,7 +116,7 @@ export class BoatHud {
 
   /** Your team's colour (CSS), for the carrier marker. */
   set homeColor(c: string) {
-    this.homeEl.style.setProperty("--home", c)
+    this.homeMarker.color = c
   }
 
   /** Our rounds struck something (a kill shows red). */
@@ -142,10 +126,7 @@ export class BoatHud {
 
   /** Full-screen card (boat lost), or null to hide it. */
   message(title: string | null, sub = ""): void {
-    this.card.hidden = !title
-    if (!title) return
-    this.cardTitle.textContent = title
-    this.cardSub.textContent = sub
+    this.centerCard.show(title, sub)
   }
 
   /** The readout and markers, or null to hide them (on the crane, sunk), and a quiet cue line (LAUNCHING, …). */
@@ -153,7 +134,7 @@ export class BoatHud {
     this.read.hidden = !v
     this.cross.hidden = !v
     this.pip.hidden = !v?.barrel
-    this.home(v?.home ?? null)
+    this.homeMarker.update(v?.home ?? null)
     if (this.cueEl.textContent !== cue) this.cueEl.textContent = cue
     if (!v) return
     this.cross.classList.toggle("out", !v.arc)
@@ -162,7 +143,6 @@ export class BoatHud {
     if (key === this.last) return
     this.last = key
     this.speed.textContent = `${Math.round(v.knots)} KN`
-    // The throttle bar: forward fills up from the astern mark (30%), astern fills down below it.
     const zero = 30
     const th = Math.max(-1, Math.min(1, v.throttle))
     this.thrFill.style.bottom = `${th >= 0 ? zero : zero + th * zero}%`
@@ -173,25 +153,5 @@ export class BoatHud {
     this.heat.classList.toggle("hot", v.overheated)
     this.hpFill.style.width = `${(Math.max(0, v.hp) * 100).toFixed(1)}%`
     this.hp.classList.toggle("low", v.hp < 0.5)
-  }
-
-  private home(h: BoatHudView["home"]): void {
-    this.homeEl.hidden = !h
-    if (!h) return
-    this.homeEl.style.transform = `translate(${h.x.toFixed(1)}px, ${h.y.toFixed(1)}px)`
-    this.homeTick.hidden = !h.on
-    this.homeChev.hidden = h.on
-    if (h.on) this.homeKm.style.transform = "translate(-50%, 15px)"
-    else {
-      this.homeChev.style.transform = `rotate(${h.angle.toFixed(3)}rad)`
-      const ix = -Math.cos(h.angle) * 22
-      const iy = -Math.sin(h.angle) * 16 - 5
-      this.homeKm.style.transform = `translate(calc(-50% + ${ix.toFixed(0)}px), ${iy.toFixed(0)}px)`
-    }
-    const km = h.km < 10 ? h.km.toFixed(1) : Math.round(h.km).toString()
-    if (km !== this.lastKm) {
-      this.lastKm = km
-      this.homeKm.textContent = `${km} KM`
-    }
   }
 }

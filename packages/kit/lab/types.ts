@@ -76,6 +76,19 @@ export type LabSection = {
   library?:LabSectionLibrary
   registerCommands?(commands:import("../lab-commands").LabCommandRegistry):void
 }
+/** Something audible happened in a section (an effect fired). Cosmetic only; hosts may sonify it. */
+export type LabEvent = {
+  type:"effect"
+  section:string
+  effect:string
+  /** Effect-specific detail, for example the struck surface. */
+  variant?:string
+  /** The section's settings when it fired (weapon, surface, …). */
+  settings?:Readonly<LabSettings>
+  x:number
+  y:number
+  z:number
+}
 export type LabContext = {
   device:GPUDevice
   stage:Stage
@@ -88,6 +101,7 @@ export type LabContext = {
   activeWalls?:()=>readonly (readonly [number,number,number,number])[]
   activeGround?:(x:number,z:number)=>number
   hasPlaygroundScene?:()=>boolean
+  emit?:(event:LabEvent)=>void
 }
 export type SectionFactory = (context:LabContext)=>LabSection
 /** Shape is compatible with getaway-clutter's Body; no dependency on that worktree's solver. */

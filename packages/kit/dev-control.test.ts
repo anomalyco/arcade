@@ -230,9 +230,10 @@ describe("Shared Lab & Camera Commands", () => {
     expect(resolveNavigationPath("hub")).toBe("/arcade/getaway/dev.html#games")
     expect(resolveNavigationPath("catalogue")).toBe("/arcade/getaway/dev.html#catalogue")
     expect(resolveNavigationPath("catalogue/getaway:muscle")).toBe("/arcade/getaway/dev.html#catalogue/getaway%3Amuscle")
-    expect(resolveNavigationPath("lab")).toBe("/arcade/getaway/lab.html")
-    expect(resolveNavigationPath("lab?section=looks")).toBe("/arcade/getaway/lab.html?section=looks")
-    expect(resolveNavigationPath("blackout-lab")).toBe("/arcade/blackout/lab.html")
+    expect(resolveNavigationPath("lab")).toBe("/arcade/lab/")
+    expect(resolveNavigationPath("lab?section=looks")).toBe("/arcade/lab/?section=looks")
+    expect(resolveNavigationPath("blackout-lab")).toBe("/arcade/lab/?game=blackout")
+    expect(resolveNavigationPath("outbreak-lab")).toBe("/arcade/lab/?game=outbreak&section=outbreak-vignette")
     expect(resolveNavigationPath("characters")).toBe("/arcade/blackout/characters.html")
     expect(resolveNavigationPath("getaway")).toBe("/arcade/getaway/?solo&seed=7")
     expect(() => resolveNavigationPath("unknown-page")).toThrow()
@@ -334,14 +335,14 @@ describe("Shared Lab & Camera Commands", () => {
       command: "player.pose",
       args: { x: 27.7, y: 41, aim: -1.5708 },
     })
-    expect(tour.steps[1]?.url).toBe("/arcade/getaway/lab.html?section=looks")
+    expect(tour.steps[1]?.url).toBe("/arcade/lab/?section=looks")
     expect(tour.steps[1]?.target).toEqual({ setting: "compare" })
 
     const step1Url = buildTourStepUrl("https://kits-mac-studio.taila8e7c7.ts.net:5180", tour.steps[0]!.url, tour.id, 1, false)
     expect(step1Url).toBe("https://kits-mac-studio.taila8e7c7.ts.net:5180/arcade/outbreak/?seed=7&tour=overnight&step=1")
 
-    const step2SingleUrl = buildTourStepUrl("http://127.0.0.1:5180", "/arcade/getaway/lab.html?section=looks#looks", tour.id, 2, true)
-    expect(step2SingleUrl).toBe("http://127.0.0.1:5180/arcade/getaway/lab.html?section=looks&tour=overnight&step=2&singleTab=1#looks")
+    const step2SingleUrl = buildTourStepUrl("http://127.0.0.1:5180", "/arcade/lab/?section=looks#looks", tour.id, 2, true)
+    expect(step2SingleUrl).toBe("http://127.0.0.1:5180/arcade/lab/?section=looks&tour=overnight&step=2&singleTab=1#looks")
 
     // Default singleTab is true
     expect(tour.singleTab).toBe(true)
@@ -382,7 +383,7 @@ describe("Shared Lab & Camera Commands", () => {
     expect(resolveTourAssetUrl("look-review", "street.png")).toBe("/__arcade/tour-assets/look-review/street.png")
     expect(resolveNavigationPath("tour/look-review/1")).toBe("/arcade/getaway/dev.html#tour/look-review/1")
 
-    // "kind": "grid" steps auto-resolve to /arcade/getaway/lab.html and append grid.open setup command
+    // "kind": "grid" steps auto-resolve to /arcade/lab/ and append grid.open setup command
     const gridTour = validateTourDefinition(
       [
         {
@@ -403,7 +404,7 @@ describe("Shared Lab & Camera Commands", () => {
       "grid-demo",
     )
     expect(gridTour.steps[0]?.kind).toBe("grid")
-    expect(gridTour.steps[0]?.url).toBe("/arcade/getaway/lab.html")
+    expect(gridTour.steps[0]?.url).toBe("/arcade/lab/")
     expect(gridTour.steps[0]?.setup).toEqual([
       {
         command: "grid.open",

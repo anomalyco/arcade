@@ -96,7 +96,7 @@ try {
       assert(motion.smoke > 0)
       await page.screenshot({ path: resolve(out, "blackout-office.png") })
       report.blackout = motion
-      await page.goto(`${base(game)}/lab.html?bench`)
+      await page.goto(`${base("lab")}/?bench`)
       await page.waitForFunction(() => (window as any).lab)
       const result = await page.evaluate(async () => {
         const a = await navigator.gpu.requestAdapter()

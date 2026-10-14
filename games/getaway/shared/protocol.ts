@@ -1,3 +1,5 @@
+import { UPPER_CODE_CHARS, cleanPlayerName, randomRoomCode } from "@arcade/kit/sim/matchmaking"
+import { seedOf as rawSeedOf } from "@arcade/kit/sim/rng"
 import { VEHICLE_BY_ID, VEHICLES, type Role } from "./config"
 import type { Body, Input } from "./sim/vehicle"
 import type { SimEvent, WorldView } from "./sim/world"
@@ -93,10 +95,7 @@ export function cleanChat(v: unknown): string {
   return Array.from(s).slice(0, CHAT_MAX).join("").trim()
 }
 
-export function cleanName(v: unknown): string {
-  const s = typeof v === "string" ? v.replace(/[^\p{L}\p{N} _.'-]/gu, "").trim().slice(0, 16) : ""
-  return s || "Driver"
-}
+export const cleanName = (v: unknown): string => cleanPlayerName(v, 16, "Driver")
 
 /** Validates an untrusted client frame. Returns null for anything malformed. */
 export function decodeClient(raw: unknown): ClientMsg | null {
@@ -135,17 +134,9 @@ export function normalizeRoom(code: string): string | null {
   return /^[A-Z0-9]{1,12}$/.test(c) ? c : null
 }
 
-/** Generated room codes: 4 letters, no I or O so they read cleanly aloud and on screen. */
-export const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
-
-export function randomCode(rand: () => number = Math.random): string {
-  let s = ""
-  for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)]
-  return s
-}
+export const CODE_CHARS = UPPER_CODE_CHARS
+export const randomCode = (rand: () => number = Math.random): string => randomRoomCode(CODE_CHARS, rand)
 
 export function seedOf(room: string): number {
-  let h = 2166136261
-  for (let i = 0; i < room.length; i++) h = Math.imul(h ^ room.charCodeAt(i), 16777619)
-  return (h >>> 0) % 1_000_000
+  return rawSeedOf(room) % 1_000_000
 }

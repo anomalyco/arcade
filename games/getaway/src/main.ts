@@ -10,6 +10,7 @@ import { Scene } from "./game/scene"
 import { LocalSession, type Session } from "./game/session"
 import { applyStage } from "./game/stage"
 import { mulberry32 } from "../shared/sim/rng"
+import { audio } from "./audio/audio"
 import { GameAudio } from "./audio/game-audio"
 import { Radio } from "./audio/radio"
 import { Renderer } from "./render/renderer"
@@ -78,7 +79,7 @@ async function main() {
   if (q.has("nohud")) document.getElementById("hud")!.style.display = "none"
   const scene = new Scene(renderer, session.city)
   const hud = new Hud(document.getElementById("hud")!, session.city)
-  const sound = new GameAudio(document.getElementById("hud")!, session.city)
+  const sound = new GameAudio(document.getElementById("hud")!, session.city, audio)
   sound.onShift = car => scene.backfire(car)
   const backfires: SimEvent[] = []
   scene.onBackfire = car => backfires.push({ kind: "backfire", carId: car.id, text: "", t: 0 })

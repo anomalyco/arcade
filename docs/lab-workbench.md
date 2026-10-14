@@ -3,7 +3,7 @@
 For tuning workflows and enforceable authoring rules, use [Lab authoring guide](lab.md). This document records
 the implemented workbench API and proof; research proposals are not supported actions.
 
-Desktop workbench for the shared isolation Lab (`packages/kit/lab/`, served at `/lab.html` in Getaway and Blackout).
+Desktop workbench for the shared isolation Lab (`packages/kit/lab/`, served by the Lab app at `/arcade/lab/`).
 Embedded game debug overlays (`new LabPanel(...)` in Getaway, Blackout and Outbreak) retain their lightweight floating
 overlay behavior (`layout: "floating"`, `capture: "open"`). The standalone Lab mounts the three-column workbench shell
 with `LabPanel` in `layout: "inspector"` and `capture: "focus"`.
@@ -204,7 +204,7 @@ Priority order:
    `⌘K` (toggle search) and `Ctrl+Space` (Library drawer, physical Space key) work from anywhere, including Play.
    A focused Outliner tree owns arrows, `Space`, `Enter`, `Home`/`End` and `Escape`; other keys fall through to
    the Edit canvas shortcuts below.
-2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or `M` / `ContextMenu`)**:
+2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or the `ContextMenu` key)**:
    - Uses 8 fixed compass sectors (`0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°`), a `14 px` center dead zone, `96 px` ring radius, and `180 ms` tap-to-latch vs. hold-flick-release threshold.
    - Unavailable commands stay dimmed (`aria-disabled="true"`) in their fixed compass slot so neighbor angles never shift.
    - Object ring (`N` Trigger `Space`, `NE` Possess `P`, `E` Duplicate `D`, `SE` Inspect `I`, `S` Delete `⌫`, `SW` Reset `0`, `W` Move `G`, `NW` Frame `F`) vs. Empty-Ground ring (`N` Trigger FX `Space`, `NE` Spawn Char `P`, `E` Spawn Here `A`/`E`, `SE` Drop Light `L`, `S` Clear FX `⌫`, `SW` Reroll `R`, `W` Move Here `G`, `NW` Frame `F`).
@@ -242,7 +242,14 @@ bun run check:packages
 bun run --cwd games/getaway check
 bun run --cwd games/blackout check
 bun run --cwd games/outbreak check
+bun run --cwd games/lab check
 ```
+
+`bun games/lab/scripts/prove-lab.ts` (headless Metal, browser muted) loads every game's sections from the one app,
+checks that audio assets return 200 under `/arcade/lab/`, that no `AudioContext` exists before the first gesture, that
+mute, master volume and category volumes persist, and that unmuted effects, beds and the engine create voices on a
+never-rendered `OfflineAudioContext`. `bun games/lab/scripts/prove-game-audio.ts` checks that the Lab's Getaway and Blackout
+audio builds the same node graph and automation as the games' own paths.
 
 Run the headless Metal browser proofs through `hivemind`:
 

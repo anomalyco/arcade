@@ -286,7 +286,7 @@ try {
         selectedStep: document.querySelector('[data-studio-step][aria-selected="true"]')?.getAttribute("data-studio-step"),
       }))
       .catch(() => null)
-    if (st?.path === "/arcade/outbreak/lab.html" && st.stepText === "5/6" && st.selectedStep === "5") break
+    if (st?.path === "/arcade/lab/" && st.stepText === "5/6" && st.selectedStep === "5") break
     await Bun.sleep(100)
   }
   check(context.pages().length === 1, "Studio Tab Strip must keep only 1 browser tab open")
@@ -324,7 +324,7 @@ try {
 
   // 5. Verify Lab Play mode on Getaway Lab & Blackout Lab for both QWERTY and Dvorak layouts
   for (const hostGame of ["getaway", "blackout"] as const) {
-    await page.goto(`${origin}/arcade/${hostGame}/lab.html`, { waitUntil: "domcontentloaded" })
+    await page.goto(`${origin}/arcade/lab/?game=${hostGame}`, { waitUntil: "domcontentloaded" })
     await page.waitForFunction(
       () => Boolean(document.querySelector('[data-action="mode-play"]') && document.querySelector("canvas")),
       undefined,
@@ -422,7 +422,7 @@ try {
   }
 
   // 6. Verify Multi-Tile Variation Grid: 6-tile Looks grid & 4-tile Explosion variants grid
-  await page.goto(`${origin}/arcade/getaway/lab.html?section=looks`, { waitUntil: "domcontentloaded" })
+  await page.goto(`${origin}/arcade/lab/?section=looks`, { waitUntil: "domcontentloaded" })
   await page.waitForFunction(
     () => Boolean(document.querySelector('[data-action="compare-grid"]') && document.querySelector("canvas")),
     undefined,

@@ -1,18 +1,9 @@
+import { blocked } from "@arcade/kit/audio"
 import type { City, Box } from "../../shared/sim/city"
 import { CELL, ROAD_HALF } from "../../shared/config"
 import type { Surface } from "./drivetrain"
 
-/** Segment/AABB slab test at street height. No rays or render data on the audio thread. */
-export function blocked(x: number, z: number, tx: number, tz: number, b: Pick<Box, "x0" | "x1" | "z0" | "z1">) {
-  let lo = 0.01, hi = 0.99
-  for (const [a, d, min, max] of [[x, tx - x, b.x0, b.x1], [z, tz - z, b.z0, b.z1]]) {
-    if (Math.abs(d) < 1e-6) { if (a < min || a > max) return false; continue }
-    const p = (min - a) / d, q = (max - a) / d
-    lo = Math.max(lo, Math.min(p, q)); hi = Math.min(hi, Math.max(p, q))
-    if (lo > hi) return false
-  }
-  return true
-}
+export { blocked }
 
 export class StreetAcoustics {
   density = 0
