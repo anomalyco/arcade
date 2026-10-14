@@ -25,7 +25,7 @@ export type LabCharacter={
   inspect():unknown
   leave?():void
 }
-export type CharacterSpawnable={id:string;label:string;create(context:LabContext,at:SpawnPoint):LabCharacter}
+export type CharacterSpawnable={id:string;label:string;/** Groups under Vehicles in the Outliner. */vehicle?:boolean;create(context:LabContext,at:SpawnPoint):LabCharacter}
 export type PlaygroundEnvironmentInfo={
   kind:string
   seed:number

@@ -28,6 +28,90 @@ Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.
 6. **Implicit gameplay input in `Spawn`:** Clicking the canvas immediately drove the vehicle or soldier, so Dvorak `e`
    and `Space` competed with editing controls.
 
+## Layout: Outliner + Details + Library drawer
+
+Board decision D-4 (AR-13) picked concept 1 from `2026-10-14-lab-layout/` (Unreal/Unity style), plus ⌘K universal
+search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts the shell; the pieces live in
+`outliner.ts`, `library.ts`, `palette.ts` and `watch.ts`, wired by `workbench.ts`.
+
+```
+┌ top bar: Hub · Lab <game> · Edit/Play/Box/2F · transport ⟲ ❚❚ ⏭ ↻ speed clock · A V Wipe · View · ⌘K Search · ⌖ ↶ ↷ ⋯ ┐
+├ Outliner ─────────┬ viewport (canvas, HUD badge, toast, Watch list) ─────────┬ Details ───────────────────┤
+│ search · filter   │                                                          │ selection header + chips  │
+│ Vehicles 1        │                                                          │ search · Modified · All   │
+│ Props 6 ▸ Cone ×5 ├ Library drawer: categories · collections · tiles ────────┤ Transform → object groups │
+│ World: section,   │ (Ctrl+Space; drag a tile into the viewport or click)     │ → relevant section groups │
+│ env, seed, locks  │                                                          │                           │
+└ status: focus pill · telemetry · hints ─────────────────────────────────────────────────────────────────┘
+```
+
+- **Outliner** (left) lists only what is in the scene (`allSceneObjects()`), grouped Characters, Vehicles, Props,
+  Emitters, Lights and Fixtures (specimens) with counts and collapse. Repeated kinds fold into one row (`Cone ×5`,
+  expandable; clicking the fold selects every member). Type filter menu, `Search scene` field and a per-row lock
+  (locked objects are skipped by viewport picking and the marquee). Selection syncs both ways: click replaces,
+  `⌘`/`Ctrl`-click toggles, `Shift`-click selects a range; viewport clicks, Shift-clicks and marquees highlight and
+  reveal rows. Keyboard (focus with `⇧Tab` from the canvas): `↑↓` select, `⇧↑↓` extend, `←→` collapse/expand,
+  `Space` toggle, `Enter` frame, `⌫`/`D`/`F`/`G` act on the selection, `Esc` returns to the canvas. Visibility toggles
+  are not implemented (sections have no per-object hide hook yet). The World footer holds Section, Environment,
+  seed, Reroll and the effect/environment locks.
+- **Details** (right) shows the selection first: header (name, group, kind, position or a multi-selection summary),
+  registry-backed action chips (Trigger, Frame, Duplicate, Delete, Move, Play), then `LabPanel` groups ordered by
+  the section's `detailsGroups(selection)`: Transform, then object groups (Character, Vehicle & Skids for a vehicle;
+  Items for a prop; Light and Lights for a light; Effects for an emitter). Unrelated groups are hidden while
+  something is selected; `All` shows them. Nothing selected shows scene settings (Spawn starts with Environment).
+  Multi-selection keeps the shared Position X/Z/Yaw (and light) fields. Non-default values are accent-coloured with a
+  per-field `↺` reset (one undo entry) and a modified count per group; `Modified` filters to changed fields and
+  `Search details` filters by label/key/group. Spawn-time values (units ending `· retrigger`) show an amber dot.
+  Defaults are the section's settings captured when the workbench starts, before fixtures or edits.
+- **Library drawer** (bottom, `Ctrl+Space`) holds everything you can add: Effects (Starting Fixtures first), Objects,
+  Lighting, Audio, Materials, Foliage and Looks, with collections, search and tiles. Click arms a placement ghost
+  for props/lights (or runs the fixture/effect); dragging a tile into the viewport places props, lights and characters
+  at the ground point under the cursor (with a live ghost) and moves an effect's emitter there. The drawer bar with
+  category buttons and `Search library` stays visible when closed. Open state persists in `localStorage`.
+- **⌘K** searches scene objects (select and frame), Library items, registry commands (those without required
+  arguments) and every section's setting names (switch section if needed, clear Details filters, scroll, focus and
+  flash the field). Prefixes: `@` scene, `#` settings, `+` library, `>` commands. `/` also opens it.
+- **Watch** pins any Details field (hover a row, click the pin) to a small list in the viewport's lower left. Values
+  update live, modified values are accented, clicking a name jumps to the field, `×` unpins. Pins persist in
+  `localStorage` (`arcade.lab.watch.v1`).
+
+Kept unchanged: transport, A/B compare, radial menu, cursor states, Edit/Play, preset/recipe dialogs (now under `⋯`),
+text-field ownership and the CLI. Every layout action is a registry command:
+
+| Command | Args | Effect |
+| --- | --- | --- |
+| `outliner.select` | `id`, `ids` (comma list), `kind`, `additive` | Replace or extend the selection; reveals the row |
+| `outliner.lock` | `id`, `locked?` | Lock/unlock viewport picking |
+| `outliner.collapse` | `group`, `collapsed?` | Collapse or expand a type group |
+| `outliner.focus` | | Focus the Outliner (`⇧Tab`) |
+| `library.toggle` | `open?`, `category?`, `query?` | Toggle/open the drawer (`Ctrl+Space`) |
+| `library.place` | `id`, `at?` (`x,z`), `yaw?` | Place a Library item at a ground point, or arm/run it |
+| `palette.open` | `query?` | Open ⌘K search |
+| `watch.pin` / `watch.unpin` | `key`, `section?`, `pinned?` / `all?` | Manage Watch pins |
+| `details.filter` | `modified?`, `query?`, `all?` | Details filters; returns the visible keys |
+| `details.reveal` | `key`, `section?` | Jump to a setting |
+
+`arcade state` includes `layout` (`library`, `locked`, `details`, `watch`).
+
+### Registering sections with the layout
+
+Sections need no layout-specific code: every section gets a Library entry (`section:<id>`) categorised by
+`LabSection.library?.category` or by its id (`foliage` → Foliage, `looks` → Looks, `*effect*`/`*fx*`/`vignette`/
+`explosion` → Effects, `material` → Materials, `audio` → Audio, `light` → Lighting, otherwise Objects). Optional hooks:
+
+```ts
+const section: LabSection = {
+  id: "looks", label: "Looks", settings, controls,
+  library: { category: "looks", items: () => looks.map(l => ({ id: l.id, label: l.label, tag: "Look", select: () => apply(l) })) },
+  detailsGroups: selected => (selected.length ? ["Transform", "Grade"] : undefined),
+}
+```
+
+Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategoryOf` maps `sectionId: "foliage"`,
+`"looks"` and `material-recipe:*` entries to their drawer categories even when they use the older `category`.
+`LabWorldObject.kind` drives folding and `vehicle` the Vehicles group; `CharacterSpawnable.vehicle` sets it for Spawn.
+`LabControl.derived` marks values that mirror scene state (selection transform) so they never count as modified.
+
 ## Shared API extensions
 
 ### `packages/kit/lab-navigation.ts` and `packages/kit/lab-panel.ts`
@@ -48,6 +132,13 @@ Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.
     resets and group randomizations.
   - `onFocusChange?: (focused: boolean, activeRow?: LabRow) => void` and `onToggle?: (visible: boolean) => void`.
 - Each group header provides `Randomize`, `Reset` (`aria-label="Reset <group>"`) and `Copy` (`aria-label="Copy <group> JSON"`).
+  In the inspector layout they are hover icons (⚄ ↺ ⧉) beside an accent modified count.
+- Inspector layout only: `addControls(settings, controls, defaults?)` takes approved defaults for Reset and modified
+  highlighting; `setView({ order, filter })` orders groups and filters rows (also applied to keyboard navigation via
+  `LabNavigation.filter`); `reveal(key)` unfolds, focuses, scrolls and flashes a row; `resetControl(key)`;
+  `modifiedControls()`; `LabOptions.onPin`/`isPinned` add the per-row Watch pin. Rows render as 24 px label/value
+  pairs with scrub fields (drag the value, double-click for exact entry), tabular numbers and a range fill.
+  Floating game overlays keep their previous look.
 - Horizontal pointer dragging on `<output>` (and holding `F` over an active numeric row) scrubs values continuously
   (`Shift` ×10, `Alt` ×0.1; `Escape` cancels an active `F`-scrub).
 
@@ -108,8 +199,11 @@ Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.
 
 Priority order:
 
-1. **Text editing / modal dialog** (`Search library`, `Search controls`, `Exact <control>`, Gizmo numeric `X`/`Z`/`°` inputs, Preset/Recipe JSON modal): owns
+1. **Text editing / modal dialog** (⌘K search, `Search scene`, `Search library`, `Search details`, `Search controls`, `Exact <control>`, Gizmo numeric `X`/`Z`/`°` inputs, Preset/Recipe JSON modal): owns
    printable keys, `Space`, arrows and clipboard shortcuts; `Escape` closes the active editor or clears search.
+   `⌘K` (toggle search) and `Ctrl+Space` (Library drawer, physical Space key) work from anywhere, including Play.
+   A focused Outliner tree owns arrows, `Space`, `Enter`, `Home`/`End` and `Escape`; other keys fall through to
+   the Edit canvas shortcuts below.
 2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or `M` / `ContextMenu`)**:
    - Uses 8 fixed compass sectors (`0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°`), a `14 px` center dead zone, `96 px` ring radius, and `180 ms` tap-to-latch vs. hold-flick-release threshold.
    - Unavailable commands stay dimmed (`aria-disabled="true"`) in their fixed compass slot so neighbor angles never shift.
@@ -159,6 +253,14 @@ hivemind run -- bun games/getaway/scripts/prove-lab-effects.ts
 hivemind run -- bun games/getaway/scripts/prove-lab-spawn.ts
 ```
 
+`prove-workbench.ts` step 12 runs the layout at 1920×1080 and 1280×800 on both hosts: Outliner grouping, counts
+and the `Cone ×5` fold; nothing selected → Environment first; fold multi-select (Transform + Items, no Vehicle &
+Skids); vehicle selection groups; Shift-range; viewport click revealed in the Outliner; `⇧Tab`/arrow/`Esc` keyboard
+flow; lock skips picking; modified highlight, `Modified` filter, per-field reset with one undo entry; Watch pins with
+live values; ⌘K object, setting and command results; `Ctrl+Space`; dragging a Library tile to place a prop;
+`library.place` and `outliner.select kind=cone`. Captures `layout-*-{1920,1280}.png` and the earlier set are in
+`2026-10-14-lab-layout-impl/` relative to the local artifact root.
+
 Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, `2026-10-13-lab-car-playground/`, and `2026-10-13-lab-interaction/`, relative to the local artifact root:
 
 - `after-radial-menu.png` — 8-sector fixed-compass Radial Marking Menu opened over the scene with disabled-in-place slots and shortcut badges.
@@ -182,8 +284,8 @@ Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab
 - `car-playground-proof.json` — verified counts, budgets and `lampPoseProof` across both `getaway` and `blackout` hosts.
 - `before-default.png` and `before-blackout-effects.png` — prior floating panel with duplicate `Controls` headers and
   all 20 effect groups exposed.
-- `after-default-1280x800.png` — workbench layout at 1280×800 with Left Library, framed smoke room, Right Inspector and
-  Bottom Transport.
+- `after-default-1280x800.png` — workbench layout at 1280×800 with the Outliner, framed smoke room, Details, the
+  Library drawer and the top-bar transport.
 - `after-glass-default.png`, `after-glass-shard-size.png`, `after-glass-rerolled.png` — keyboard-selected `Glass shards`
   in the meeting room (`▾ Emitter`, `▾ Glass shards`, `▾ Environment` only), framed at the glass pane, shard size
   adjusted to a `2.2×` scale factor, and room seed rerolled with the effect locked. Integration labels the new
