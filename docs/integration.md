@@ -397,3 +397,64 @@ A clean `git archive` export passed on the Mac Studio:
 - `BENCH_LABEL=release-3-studio-d5ec4f6 bun games/outbreak/scripts/bench-outbreak.ts` (Mac Studio Metal):
   - Street: fresh submit `p95 = 18.60 ms` (MAD `0.10 ms`), `p50 = 16.85 ms`, `55.95 states/s`, `realtime_ratio = 0.9988` (`3.396 m/s`), dependent GPU `15.464 ms` (MAD `0.012 ms`)
   - Interior: fresh submit `p95 = 21.60 ms` (MAD `0.50 ms`), `p50 = 19.90 ms`, `48.31 states/s`, `realtime_ratio = 0.9972` (`3.390 m/s`), dependent GPU `18.431 ms` (MAD `0.003 ms`)
+
+## Release 4 integration
+
+`release-4` is based on `origin/main` at `8c6a22fe70af69c1b8408fce6a7a1bdaf2a93ed0`. Each finished source branch is merged separately in order:
+
+| Source | Exact committed tip |
+| --- | --- |
+| lab-layout | `0a92046b39992abe22e67c93596b982b6446b62a` |
+| locomotion-pass | `b709e4c89ac48996da5435bd78348345092d1398` |
+| explosion-fx | `add14b970c9e266132e55e1306404dd8d1e29937` |
+| generated-textures | `0eea8a216832eaf26ca86bc2c62661ca18cf3cf8` |
+| outbreak-interact (via outbreak-art) | `0c765d7a8589c1b11ed0915cb8c53be0477c83df` |
+| outbreak-art | `adb49067bb2c3659488f5ef4b10f9c0dc1c02a8b` |
+| foliage-lab | `e0b829981043acd87b21e36b3f0d9adf1ae1e2ee` |
+| zombie-ai | `7cca89f1cbd55f654fafff67ed537a4823be014f` |
+| looks | `4371dfab0eb701577d83237ee1b41a93009e03ab` |
+| outbreak-vignette | `79d728ba5b570fe5ab3fe4da0580829da443e4b0` |
+
+### Excluded from Release 4
+
+- `view-controls` (`ca088be1215aa9e7913f00549ab29f6194dc7405`), `release-1`, `release-2`, `release-3`: already merged into `origin/main`.
+- `outbreak-perf`, `zombie`, `outbreak-ai`, `rig-page`, `materials`, `shadow-edges`, `soldier-run`, `dev-control`, `lab-interaction`, `shared-human-rig`: older exploratory or superseded branches already folded into `main` or superseded by the tips above.
+
+### Resolution and performance optimization log
+
+- `generated-textures` (`0eea8a2`) + `outbreak-art` (`adb4906`) + `foliage-lab` (`e0b8299`):
+  - Preserved `generated-textures`'s `postLightMaterial` hook, branchless L-shaped `interior(p)`, `F.screen.w` texture bit-packing (`texCfgBits`), `MessageChannel` + `onIdle` frame pacer, and `scripts/texture-assets.ts` Vite plugin across all four workspace games.
+  - Preserved `outbreak-art`'s 5-slot hotbar, flashlight battery HUD, `OutbreakCombatFX` (pistol/melee/plank barricade), and L-shaped house plan with interior bedroom/kitchen props.
+  - Combined `foliage-lab`'s 3D grass tufts, lawn patches, tree-collar tussocks, curb/walkway rosettes, vertex wind (`applyFoliageVertexWind`), and `evalGrassSoil` / `evalFoliageCanopy` with `generated-textures`'s 16-layer `materialTexArray` bindings (`10`/`11`/`12`/`13`). Removed duplicate `games/outbreak/public/texture-assets/*.webp` copies already served from `packages/kit/textures/assets/`.
+- `zombie-ai` (`7cca89f`) + `outbreak-interact` (`0c765d7`):
+  - Combined `ZombieCrowdRenderer`, `AISimulation`, noise propagation, window clambering, door bashing, and `ai.*` Lab commands with `outbreak-interact`'s stamina/flashlight/combat/barricade systems.
+  - Fixed a Lab control key collision between `DEFAULT_AI_CONFIG.walkSpeed` (`0.95 m/s` zombie wander speed) and `DEFAULT_STAMINA_TUNING.walkSpeed` (`3.4 m/s` survivor walk speed) by renaming the AI Lab control key to `aiWalkSpeed`.
+- `looks` (`4371dfa`) + `lab-layout` (`0a92046`) + `outbreak-vignette` (`79d728b`):
+  - Integrated the `Looks` Lab section (`LookPresetId`, `makeLookSceneShader`, `makeLookPostShader`, `ensureLookPipes()`, and split-screen wipe compare) into both the shared `Renderer`, `Outbreak` (`setLookPreset`, `setLook`, `setLookCompare`), and `outbreak-vignette` (`Vignette`).
+  - Integrated `lab-layout`'s right-docked `Outliner` + `Details` inspector and `Library` drawer (`B`) with `foliage-lab`'s `foliage.*` commands and `looks`'s `looks.*` commands.
+- Outbreak performance pass (`3456×1894` Retina on Mac Studio Metal):
+  - Post-merge baseline (`captures/outbreak-bench/release-4-post-merge-baseline.json`): street fresh-submit `p95 = 21.80 ms` (`gpu_hw = 18.031 ms`), interior fresh-submit `p95 = 23.30 ms` (`gpu_hw = 19.376 ms`).
+  - Made `OutbreakCombatFX.splatter` lazy with a `WeakMap<LevelData, SplatterSurfaces>()` cache so `reset()` does not rebuild a 97k-triangle spatial grid and `Renderer` skips splatter passes when no shots have hit zombies.
+  - Culled occluded `lamp.kind === "room"` lights in closed buildings (except south-room window-adjacent lamps on visible houses) and added perspective frustum-plane cylinder culling (`inLightFrustum`) for off-screen streetlamps.
+  - Removed dead fur-shell shader branch (`o.aux < -1.5`), deduplicated inlined `evalGrassSoil`, `evalCobblestone`, and `evalPlasterWall` calls in `surfaceMaterial`, hoisted `floorData(o.world.xz)` before `hooks.ambient` to eliminate a duplicate 2-texture lookup per pixel, added an early cone/range mask exit in `eyeVisible` before `atan2`/`polar[]` fetches, and tightened Outbreak's smooth polar shadow filter to 3 interpolated taps with precomputed Gaussian weights.
+  - Optimized result (`captures/outbreak-bench/release-4-optimized.json`):
+    - Street: fresh submit `p95 = 17.30 ms` (MAD `0.50 ms`, pooled `p95 = 18.00 ms`), `p50 = 16.70 ms`, `55.74 states/s`, `realtime_ratio = 0.9953` (`3.384 m/s`), dependent GPU `14.037 ms` (MAD `0.014 ms`).
+    - Interior: fresh submit `p95 = 20.30 ms` (MAD `0.10 ms`, pooled `p95 = 20.40 ms`), `p50 = 19.00 ms`, `50.38 states/s`, `realtime_ratio = 0.9977` (`3.392 m/s`), dependent GPU `16.041 ms` (MAD `0.017 ms`).
+
+### Verification
+
+A clean `git archive` export passed on the Mac Studio:
+
+- `bun install --frozen-lockfile`
+- `bun run check:packages`: 131 passed
+- `games/getaway`: 289 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 456 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove-human-parity.ts`, and `scripts/prove-characters.ts`
+- `games/outbreak`: 53 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove.ts`, and `scripts/prove-ai.ts`
+- `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun packages/kit/lab/prove-workbench.ts`: passed on both `getaway` and `blackout` Lab hosts on Metal
+- `bun packages/kit/lab/prove-explosion.ts`: passed on Metal
+- `bun packages/kit/lab/prove-looks.ts`: passed on Metal (`diffBytes = 0` under `current`, all 6 presets and `look.*` commands verified)
+- `bun packages/kit/lab/prove-materials.ts`: passed on Metal (all 6 recipes, texture layer controls, isolated randomization, and preset round-trip verified)
+- `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity in `old` (`00bde28a…`) and `new` (`f5a333ae…`) modes without hash modification
+
+

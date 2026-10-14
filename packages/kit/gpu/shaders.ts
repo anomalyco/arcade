@@ -299,17 +299,29 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
   let f = a / TAU * f32(RAYS) - 0.5;
   let base = slot * RAYS;
   let stepR = max(size * 0.22 / max(d, 0.4) * f32(RAYS) / TAU, 0.35);
-  ${looks || hooks.smoothShadows ? `if (${hooks.smoothShadows ? "true" : "(u32(F.effects.y) & 512u) != 0u"}) {
+  ${looks || hooks.smoothShadows ? `${hooks.smoothShadows && hooks.shadowTaps === 5 ? `{
+    var sum = 0.0;
+    let step = max(stepR * 1.35, 0.65);
+    for (var k = -1; k <= 1; k++) {
+      let ray = f + f32(k) * step;
+      let lo = floor(ray);
+      let a = tapVis(base, lo, d, y, hl, size);
+      let b = tapVis(base, lo + 1.0, d, y, hl, size);
+      let w = select(0.7557837, 1.0, k == 0);
+      sum += mix(a, b, fract(ray)) * w;
+    }
+    return sum * 0.3981576;
+  }` : `if ((u32(F.effects.y) & 512u) != 0u) {
     // Interpolate visibility, not blocker distance: interpolating distances leaks across silhouettes.
     // A denser angular kernel removes the five repeated hard silhouettes of the old sparse PCF.
     var sum = 0.0;
     var weights = 0.0;
     // World-anchored sub-stratum rotation breaks coherent PCF contours without time-varying noise.
-    let phase = ${hooks.smoothShadows ? "0.0" : "hash2(floor(p * 64.0)) - 0.5"};
-    let step = max(stepR * ${hooks.shadowTaps===5?"1.0":"0.5"}, 0.5);
+    let phase = hash2(floor(p * 64.0)) - 0.5;
+    let step = max(stepR * 0.5, 0.5);
     var prevLo = -1e9;
     var prevVis = 0.0;
-    for (var k = ${hooks.shadowTaps===5?"-2":"-4"}; k <= ${hooks.shadowTaps===5?"2":"4"}; k++) {
+    for (var k = -4; k <= 4; k++) {
       let ray = f + (f32(k) + phase) * step;
       let lo = floor(ray);
       let a = select(tapVis(base, lo, d, y, hl, size), prevVis, lo == prevLo);
@@ -321,13 +333,13 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
       weights += w;
     }
     return sum / weights;
-  }` : ""}
-  var acc = 0.0;
+  }`}` : ""}
+  ${hooks.smoothShadows && hooks.shadowTaps === 5 ? "" : `var acc = 0.0;
   for (var k = -2; k <= 2; k++) {
     let w = select(select(0.15, 0.2, abs(k) == 1), 0.3, k == 0);
     acc += tapVis(base, f + f32(k) * stepR, d, y, hl, size) * w;
   }
-  return acc;
+  return acc;`}
 }
 
 struct Lit { diff: vec3f, spec: vec3f }
@@ -645,8 +657,8 @@ fn shadeScene(o: VOut) -> vec4f {
     let wrap = select(0.35, 0.0, floorish);
     let lit = lightSum(o.world, n, V, gloss.x, wrap);
     ${hooks.postLightMaterial ?? ""}
-    var amb = ${hooks.ambient ?? "ambientAt(n)"};
     let fd = floorData(o.world.xz);
+    var amb = ${hooks.ambient ?? "ambientAt(n)"};
     amb += ${hooks.bounce ?? "bounceAt(o.world.xz + n.xz * 0.3) * 0.32"};
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
     let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);

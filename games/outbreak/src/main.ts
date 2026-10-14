@@ -68,10 +68,11 @@ const settings = {
   texRoughness: 0.0,
   humanProfile: 0,
   lookPreset: "current",
+  ...DEFAULT_AI_CONFIG,
+  aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
   ...DEFAULT_FLASHLIGHT_TUNING,
   ...zombieTuning,
-  ...DEFAULT_AI_CONFIG,
   ...(peaceful ? { zombieCount: 0 } : {}),
 }
 
@@ -335,16 +336,28 @@ async function main() {
     pendingDrawDt += stepped
     return substeps.length
   }
+  window.addEventListener(
+    "keydown",
+    () => {
+      const now = performance.now()
+      if (!frozen && !document.hidden) stepSimulation(now)
+    },
+    true,
+  )
+  window.addEventListener(
+    "keyup",
+    () => {
+      const now = performance.now()
+      if (!frozen && !document.hidden) stepSimulation(now)
+    },
+    true,
+  )
   window.addEventListener("keydown", () => {
-    const now = performance.now()
-    clock.recordMove(now, liveMove())
-    if (!frozen && !document.hidden) stepSimulation(now)
+    clock.recordMove(performance.now(), liveMove())
     scheduleFrame()
   })
   window.addEventListener("keyup", () => {
-    const now = performance.now()
-    clock.recordMove(now, liveMove())
-    if (!frozen && !document.hidden) stepSimulation(now)
+    clock.recordMove(performance.now(), liveMove())
     scheduleFrame()
   })
   document.addEventListener("visibilitychange", () => {
@@ -640,7 +653,23 @@ async function main() {
     vision.update(p.x, p.y, p.aim, blockers, settings, peek)
     if (scenery.update(town, vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
     const view = cam.groundRect(5.5)
-    const [vx0, vy0, vx1, vy1] = view
+    const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
+    const vp = cam.viewProj
+    const inLightFrustum = (lx: number, ly: number, r: number): boolean => {
+      for (const [sx, sy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const a = vp[3]! + sx * vp[0]! + sy * vp[1]!
+        const b = vp[7]! + sx * vp[4]! + sy * vp[5]!
+        const c = vp[11]! + sx * vp[8]! + sy * vp[9]!
+        const d = vp[15]! + sx * vp[12]! + sy * vp[13]!
+        if (a * lx + c * ly + r * Math.hypot(a, c) + (b > 0 ? 2.8 * b : 0) + d < 0) return false
+      }
+      return true
+    }
     const day = dayCycle(hour)
     lights.fill(0)
     const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
@@ -724,6 +753,11 @@ async function main() {
       lights.set([mx, my, mz, 9.5, 1.0, 0.78, 0.38, mPower, 0, 0, 0, 0, 0, lightOccluders, 0.14, -1], count++ * LIGHT_FLOATS)
     }
 
+    const cutX = activePeek ? activePeek.cutX : p.x
+    const cutY = activePeek ? activePeek.cutY : p.y
+    const cutFlag = activePeek ? 1 + peekBlend : 1
+    const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
+    const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
     for (const [i, lamp] of town.lamps.entries()) {
       const lampScale = day.lamps * settings.lighting
       lampPower[i] = lampScale
@@ -732,8 +766,19 @@ async function main() {
       const lx = lamp.x + (lamp.kind === "street" ? 0.55 : 0)
       const ly = lamp.y
       const r = lamp.radius
+      const rEff = r * (r <= 7.5 ? 0.85 : 0.92)
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
-      if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
+      if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
+      if (lamp.kind === "room") {
+        const b = town.buildings.find(
+          (bld) => lx >= bld.rect[0] && lx <= bld.rect[2] && ly >= bld.rect[1] && ly <= bld.rect[3],
+        )
+        if (b) {
+          const roofOpen =
+            cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1
+          if (!roofOpen && (b.kind !== "house" || ly < b.rect[1] + 5.5 || b.rect[3] - r > vy1)) continue
+        }
+      }
       const color =
         lamp.kind === "street"
           ? [1, 0.72, 0.44]
@@ -749,11 +794,6 @@ async function main() {
         count++ * LIGHT_FLOATS,
       )
     }
-    const cutX = activePeek ? activePeek.cutX : p.x
-    const cutY = activePeek ? activePeek.cutY : p.y
-    const cutFlag = activePeek ? 1 + peekBlend : 1
-    const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
-    const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
     frame.set(cam.viewProj, 0)
     frame.set([...cam.eye, time], 16)
     const texCfgBits =
@@ -810,7 +850,7 @@ async function main() {
       0,
     )
     render.addCount = addCount
-    render.splatter = combatFx.splatter ?? undefined
+    render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     render.batches = [
       ...survivorBatches,
       ...fxOut.batches,

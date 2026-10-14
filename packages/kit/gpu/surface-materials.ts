@@ -1037,17 +1037,6 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
   var cavity = 1.0;
 
   if (isConcrete) {
-    let inNorthVerge = p.y > 39.32 && p.y < 39.78 && (p.x < 37.8 || p.x > 50.2);
-    let inSouthVerge = p.y > 48.22 && p.y < 48.68 && (p.x < 37.8 || p.x > 50.2);
-    let inDrivewayApron = (p.x > 18.8 && p.x < 21.8) || (p.x > 49.8 && p.x < 52.8);
-    let inFrontWalk = (p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0);
-    if ((inNorthVerge || inSouthVerge) && !inDrivewayApron && !inFrontWalk) {
-      let vDist = select(min(p.y - 48.22, 48.68 - p.y), min(p.y - 39.32, 39.78 - p.y), inNorthVerge);
-      let vEdge = smoothstep(0.0, 0.08, vDist);
-      var vs = evalGrassSoil(p, vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge), false, defaultMaterialRecipe(4));
-      vs.cavity *= 0.55 + 0.45 * vEdge;
-      return vs;
-    }
     let isCurb = (p.y >= 39.78 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.22) || (p.x >= 39.78 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.22);
     let warp = (surfaceNoise(p * 1.4 + 2.3) - 0.5) * 0.035 * irreg;
     let q = p / slabSize + warp;
@@ -1096,6 +1085,16 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
 }
 
+fn evalMulchBed(p: vec2f, baseTint: vec3f, scale: f32, gScale: f32) -> SurfaceSample {
+  let barkG = surfaceNoiseGrad(vec2f(p.x * 4.2, p.y * 6.5) * gScale);
+  let damp = smoothstep(0.32, 0.72, surfaceNoise(p * 0.85 * scale));
+  var col = mix(baseTint * vec3f(0.92, 0.84, 0.72), baseTint * vec3f(0.48, 0.42, 0.34), damp * 0.65);
+  col *= 0.82 + (barkG.x - 0.5) * 0.38;
+  let atten = 1.0 - smoothstep(0.08, 0.45, surfaceFootprint);
+  surfaceNormalShift = vec3f(barkG.y * 0.16, 0.0, barkG.z * 0.16) * atten;
+  return SurfaceSample(col, vec2f(0.0), 0.95, 0.88);
+}
+
 /** Recipe 4: Clump-correlated lawn turf with impostor blade-tuft relief, mowed/overgrown zones & wind waves. */
 fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
@@ -1108,13 +1107,7 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   surfaceNormalShift = vec3f(0.0);
 
   if (isMulchBed) {
-    let barkG = surfaceNoiseGrad(vec2f(p.x * 4.2, p.y * 6.5) * gScale);
-    let damp = smoothstep(0.32, 0.72, surfaceNoise(p * 0.85 * scale));
-    var col = mix(baseTint * vec3f(0.92, 0.84, 0.72), baseTint * vec3f(0.48, 0.42, 0.34), damp * 0.65);
-    col *= 0.82 + (barkG.x - 0.5) * 0.38;
-    let atten = 1.0 - smoothstep(0.08, 0.45, surfaceFootprint);
-    surfaceNormalShift = vec3f(barkG.y * 0.16, 0.0, barkG.z * 0.16) * atten;
-    return SurfaceSample(col, vec2f(0.0), 0.95, 0.88);
+    return evalMulchBed(p, baseTint, scale, gScale);
   }
 
   // Wind-aligned coordinate frame (matching applyFoliageVertexWind's windDir = (0.88, 0.47))
@@ -1261,19 +1254,27 @@ export const surfaceMaterial = /* wgsl */ `
     if (mat == 20) {
       let kind = i32(round(o.aux));
       let p = o.world.xz;
-      if (kind == 0) {
-        let s = evalGrassSoil(p, albedo, false, defaultMaterialRecipe(4));
-        albedo = s.albedo * s.cavity;
-        gloss = s.gloss;
+      let inNorthVerge = kind == 2 && p.y > 39.32 && p.y < 39.78 && (p.x < 37.8 || p.x > 50.2);
+      let inSouthVerge = kind == 2 && p.y > 48.22 && p.y < 48.68 && (p.x < 37.8 || p.x > 50.2);
+      let inVergeGrass = (inNorthVerge || inSouthVerge) && !((p.x > 18.8 && p.x < 21.8) || (p.x > 49.8 && p.x < 52.8)) && !((p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0));
+      if (kind == 0 || inVergeGrass) {
+        var vEdge = 1.0;
+        var grassTint = albedo;
+        if (inVergeGrass) {
+          let vDist = select(min(p.y - 48.22, 48.68 - p.y), min(p.y - 39.32, 39.78 - p.y), inNorthVerge);
+          vEdge = smoothstep(0.0, 0.08, vDist);
+          grassTint = vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge);
+        }
+        let s = evalGrassSoil(p, grassTint, false, defaultMaterialRecipe(4));
+        albedo = s.albedo * s.cavity * select(1.0, 0.55 + 0.45 * vEdge, inVergeGrass);
         n = normalize(n + surfaceNormalShift);
-        if (texOn) {
+        if (texOn && !inVergeGrass) {
           let tex = sampleMaterialFast(8, p, 0.58 * texScaleMult);
           albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.82 * texContrastMult);
         }
       } else if (kind == 1) {
         let s = evalAsphaltConcrete(p, albedo, false, defaultMaterialRecipe(3));
         albedo = s.albedo;
-        gloss = s.gloss;
         if (texOn) {
           let tex = sampleMaterialFast(7, p, 0.55 * texScaleMult);
           albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.85 * texContrastMult);
@@ -1283,7 +1284,6 @@ export const surfaceMaterial = /* wgsl */ `
         if (isShopFloor) {
           let s = evalKitchenTile(p, albedo);
           albedo = s.albedo;
-          gloss = s.gloss;
           if (texOn) {
             let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
             albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85 * texContrastMult);
@@ -1291,9 +1291,7 @@ export const surfaceMaterial = /* wgsl */ `
         } else {
           let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
           albedo = s.albedo * s.cavity;
-          gloss = s.gloss;
-          n = normalize(n + surfaceNormalShift);
-          if (texOn && length(surfaceNormalShift) < 0.001) {
+          if (texOn) {
             let tex = sampleMaterialFast(6, p, 0.58 * texScaleMult);
             albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.82 * texContrastMult);
           }
@@ -1307,7 +1305,6 @@ export const surfaceMaterial = /* wgsl */ `
         let centerMoss = exp(-pow((uDrive - 0.50) * 7.5, 2.0)) * smoothstep(0.38, 0.72, mossNoise);
         albedo *= (0.74 + pebbles + (surfaceNoise(p * 2.6) - 0.5) * 0.32 - 0.14 * clamp(ruts, 0.0, 1.0)) * (0.76 + 0.24 * edgeFade);
         albedo = mix(albedo, vec3f(0.022, 0.036, 0.014), centerMoss * 0.58);
-        gloss = vec2f(0.0);
       } else if (kind == 4) {
         let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
         let inKitchen = p.x > b.z - 6.08 && p.x < b.z - 0.05 && p.y > b.y + 5.68 && p.y < b.w - 0.05;
@@ -1315,33 +1312,21 @@ export const surfaceMaterial = /* wgsl */ `
           let s = evalKitchenTile(p, vec3f(0.42, 0.37, 0.29));
           let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
           albedo = modulateFast(s.albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85 * texContrastMult);
-          gloss = s.gloss;
         } else {
           let s = evalWoodPlanks(p, albedo, defaultMaterialRecipe(0));
           albedo = s.albedo;
-          gloss = s.gloss;
           if (texOn && floorStyleBits < 2u) {
             let styleScale = select(0.65, 0.95, floorStyleBits == 1u) * texScaleMult;
             let tex = sampleMaterialFast(0, p, styleScale);
             albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.82 * texContrastMult);
           }
         }
-      } else if (kind == 6) {
-        let s = evalCobblestone(p, albedo, defaultMaterialRecipe(1));
-        albedo = s.albedo;
-        gloss = s.gloss;
-        if (texOn) {
-          let tex = sampleMaterialFast(15, p, 0.68 * texScaleMult);
-          albedo = modulateFast(albedo, tex, vec3f(0.2950, 0.2326, 0.1649), 0.72 * texContrastMult);
-        }
       } else {
-        let s = evalGrassSoil(p, albedo, true, defaultMaterialRecipe(4));
+        let s = evalMulchBed(p, albedo, 1.0, 1.0);
         albedo = s.albedo * s.cavity;
-        gloss = s.gloss;
         n = normalize(n + surfaceNormalShift);
       }
-    }
-    if (mat == 0 && o.world.y > 0.131 && o.world.y < 0.156 && o.world.x < 37.5 && texOn && rugStyleBits < 2u) {
+    } else if (mat == 0 && o.world.y > 0.131 && o.world.y < 0.156 && o.world.x < 37.5 && texOn && rugStyleBits < 2u) {
       let p = o.world.xz;
       let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
       if (p.x >= b.x + 1.53 && p.x <= b.x + 4.44 && p.y >= b.w - 4.37 && p.y <= b.w - 0.83) {
@@ -1371,45 +1356,33 @@ export const surfaceMaterial = /* wgsl */ `
         let centered = refLin + (tex.rgb - refLin) * texContrastMult;
         albedo = clamp(centered * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
       }
-    }
-    if (mat == 4) {
+    } else if (mat == 4) {
       let wallUv = vec2f(o.world.x + o.world.z, o.world.y);
-      if (interior(o.world.xz + n.xz * 0.3)) {
-        let s = evalPlasterWall(o.world, n, vec3f(0.32, 0.27, 0.21), defaultMaterialRecipe(2));
+      let inWallRoom = interior(o.world.xz + n.xz * 0.3);
+      if (inWallRoom || o.aux > 20.5) {
+        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.32, 0.27, 0.21), inWallRoom), defaultMaterialRecipe(2));
         albedo = s.albedo;
-        gloss = s.gloss;
-        if (texOn && wallStyleBits < 2u) {
-          let wallScale = select(0.78, 1.15, wallStyleBits == 1u) * texScaleMult;
+        if (texOn && (!inWallRoom || wallStyleBits < 2u)) {
+          let wallScale = select(0.78, select(0.78, 1.15, wallStyleBits == 1u), inWallRoom) * texScaleMult;
           let tex = sampleMaterialFast(2, wallUv, wallScale);
-          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.75 * texContrastMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), select(0.70, 0.75, inWallRoom) * texContrastMult);
         }
       } else if (o.aux > 19.5) {
-        if (o.aux > 20.5) {
-          let s = evalPlasterWall(o.world, n, albedo, defaultMaterialRecipe(2));
-          albedo = s.albedo;
-          gloss = s.gloss;
-          if (texOn) {
-            let tex = sampleMaterialFast(2, wallUv, 0.78 * texScaleMult);
-            albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.70 * texContrastMult);
-          }
-        } else {
-          let course = o.world.y / 0.165;
-          let row = floor(course);
-          let fy = fract(course);
-          let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
-          albedo *= 0.96 + (hash2(vec2f(row, plank)) - 0.5) * 0.09;
-          if (texOn) {
-            let tex = sampleMaterialFast(3, wallUv, 0.72 * texScaleMult);
-            albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.78 * texContrastMult);
-          }
-          let lapShadow = mix(0.56, 1.05, smoothstep(0.0, 0.22, fy)) * mix(1.04, 0.90, fy);
-          albedo *= mix(1.0, lapShadow * mix(0.62, 1.0, seam(course, 0.032, 6.06)), 1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 6.06));
-          albedo *= 0.97 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.12;
-          albedo *= mix(0.84, 1.0, smoothstep(0.28, 0.65, o.world.y));
+        let course = o.world.y / 0.165;
+        let row = floor(course);
+        let fy = fract(course);
+        let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
+        albedo *= 0.96 + (hash2(vec2f(row, plank)) - 0.5) * 0.09;
+        if (texOn) {
+          let tex = sampleMaterialFast(3, wallUv, 0.72 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.78 * texContrastMult);
         }
+        let lapShadow = mix(0.56, 1.05, smoothstep(0.0, 0.22, fy)) * mix(1.04, 0.90, fy);
+        albedo *= mix(1.0, lapShadow * mix(0.62, 1.0, seam(course, 0.032, 6.06)), 1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 6.06));
+        albedo *= 0.97 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.12;
+        albedo *= mix(0.84, 1.0, smoothstep(0.28, 0.65, o.world.y));
       }
-    }
-    if (mat == 21) {
+    } else if (mat == 21) {
       let row = floor(o.world.z / 0.23);
       let q = vec2f(o.world.x / 0.34 + fract(row * 0.5) + (hash2(vec2f(row, 3.1)) - 0.5) * 0.15, o.world.z / 0.23);
       let tabHash = hash2(floor(q)) - 0.5;
@@ -1421,8 +1394,7 @@ export const surfaceMaterial = /* wgsl */ `
       }
       albedo *= mix(0.48, 1.0, seam(q.x, 0.020, 2.94) * seam(q.y, 0.042, 4.35));
       albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.12;
-    }
-    if (mat == 23) {
+    } else if (mat == 23) {
       let p = vec2f(o.world.x + o.world.z, o.world.y);
       let row = floor(p.y / 0.085);
       let q = vec2f(p.x / 0.25 + fract(row * 0.5), p.y / 0.085);
@@ -1431,26 +1403,8 @@ export const surfaceMaterial = /* wgsl */ `
         let tex = sampleMaterialFast(5, p, 0.85 * texScaleMult);
         albedo = modulateFast(albedo, tex, vec3f(0.3143, 0.1732, 0.1377), 0.78 * texContrastMult);
       }
-    }
-    if (mat == 22) {
-      surfaceAlpha = 1.0;
-      if (o.aux < -1.5) {
-        // Volumetric grass fur shell layer (aux = -(2.0 + shellT)): fuzzy multi-scale strand density & normal relief.
-        let shellT = clamp(-o.aux - 2.0, 0.0, 1.0);
-        let p = o.world.xz;
-        let cMound = surfaceNoise(p * 0.68 + vec2f(1.7, 4.3));
-        let tuftG = surfaceNoiseGrad(p * 4.2 + vec2f(3.1, 6.7));
-        let strand1 = surfaceNoise(p * 19.5 + vec2f(tuftG.x * 0.9, 2.3));
-        let strand2 = surfaceNoise(p * 38.0 + vec2f(7.4, 1.9));
-        let strandReach = (tuftG.x * 0.34 + strand1 * 0.40 + strand2 * 0.32) * (0.66 + 0.48 * cMound);
-        surfaceAlpha = clamp((strandReach - shellT * 0.76) * 3.8, 0.0, 1.0);
-        let rootAO = mix(0.38, 1.18, pow(shellT, 0.62));
-        let crestNoise = surfaceNoise(p * 0.30 + vec2f(surfaceTime * 0.28, surfaceTime * 0.16));
-        let crestHighlight = smoothstep(0.38, 0.68, crestNoise) * 0.38 * shellT;
-        albedo = mix(albedo * (0.90 + strand1 * 0.24), vec3f(0.54, 0.72, 0.18), crestHighlight) * rootAO;
-        gloss = vec2f(42.0, 0.24 * shellT);
-        n = normalize(n + vec3f(tuftG.y * 0.48, 0.0, tuftG.z * 0.48));
-      } else if (o.aux < -0.02) {
+    } else if (mat == 22) {
+      if (o.aux < -0.02) {
         // Curved 3D grass blade: root contact AO, vascular vein striation, wind-crest highlight & feathered tip.
         let bladeT = clamp(-o.aux, 0.0, 1.0);
         let rootAO = mix(0.24, 1.0, smoothstep(0.0, 0.32, bladeT));
@@ -1458,30 +1412,20 @@ export const surfaceMaterial = /* wgsl */ `
         let crestNoise = surfaceNoise(o.world.xz * 0.32 + vec2f(surfaceTime * 0.28, surfaceTime * 0.16));
         let crestHighlight = smoothstep(0.42, 0.72, crestNoise) * 0.22 * bladeT;
         albedo = mix(albedo * (0.92 + vein), vec3f(0.28, 0.42, 0.18), crestHighlight) * rootAO * mix(0.80, 1.06, pow(bladeT, 0.62));
-        gloss = vec2f(48.0, 0.22 * bladeT);
-        surfaceAlpha = clamp(1.42 - bladeT * 0.48, 0.52, 1.0);
       } else {
         let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
         albedo = s.albedo * mix(0.58, 1.0, s.cavity);
-        gloss = s.gloss;
         n = normalize(n + surfaceNormalShift);
         if (o.aux > 0.0) {
-          let cardEdge = clamp(o.aux, 0.0, 1.0);
           let uv3 = vec2f(o.world.x + o.world.z * 0.73 + o.world.y * 0.41, o.world.y * 1.17 - o.world.x * 0.43 + o.world.z * 0.81);
           let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
           let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
           let brushField = brush1 * 0.58 + brush2 * 0.42;
-          let edgeMask = smoothstep(0.015, 0.18, cardEdge);
-          let lobeMask = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
           albedo *= mix(0.84, 1.06, brushField);
-          surfaceAlpha = lobeMask;
         }
       }
-      alpha = surfaceAlpha;
-    }
-    if (mat == 24) {
+    } else if (mat == 24) {
       albedo *= 0.84 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24;
-      gloss = vec2f(0.0);
     }
 `
 

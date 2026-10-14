@@ -92,7 +92,7 @@ try {
     }
   }
 
-  await page.getByRole("button", { name: "Category Lighting", exact: true }).click()
+  await page.getByRole("button", { name: "Category Looks", exact: true }).click()
   await page.locator('[data-catalog-id="section:looks"]').click()
   await renderStep(3)
   assert.equal(await page.evaluate(() => (window as any).lab.settings.section), "looks")

@@ -49,7 +49,7 @@ import {
   type StaminaTuning,
 } from "./stamina"
 
-export type SessionTuning = StaminaTuning & Partial<FlashlightTuning> & Partial<AIConfig>
+export type SessionTuning = StaminaTuning & Partial<FlashlightTuning> & Partial<AIConfig> & { aiWalkSpeed?: number }
 
 export type Command = {
   mx: number
@@ -299,7 +299,8 @@ export class LocalSession implements Session {
     if (tuning.sightRange !== undefined) this.ai.config.sightRange = tuning.sightRange
     if (tuning.sightCone !== undefined) this.ai.config.sightCone = tuning.sightCone
     if (tuning.hearingScale !== undefined) this.ai.config.hearingScale = tuning.hearingScale
-    if (tuning.walkSpeed !== undefined) this.ai.config.walkSpeed = tuning.walkSpeed
+    if (tuning.aiWalkSpeed !== undefined) this.ai.config.walkSpeed = tuning.aiWalkSpeed
+    else if (tuning.walkSpeed !== undefined && tuning.walkSpeed < 2.3) this.ai.config.walkSpeed = tuning.walkSpeed
     if (tuning.chaseSpeed !== undefined) this.ai.config.chaseSpeed = tuning.chaseSpeed
     if (tuning.aggression !== undefined) this.ai.config.aggression = tuning.aggression
     if (tuning.nightMultiplier !== undefined) this.ai.config.nightMultiplier = tuning.nightMultiplier

@@ -18,8 +18,12 @@ const half = (h: number) => {
   return s * (e ? 2 ** (e - 15) * (1 + m / 1024) : 2 ** -14 * (m / 1024))
 }
 
+const splatterSurfaceCache = new WeakMap<LevelData, SplatterSurfaces>()
+
 /** Extracts visible receiver triangles from Outbreak's compiled LevelData for blood splatter decals. */
 export function outbreakSplatterSurfaces(level: LevelData): SplatterSurfaces {
+  const cached = splatterSurfaceCache.get(level)
+  if (cached) return cached
   const triangles: number[] = []
   for (const chunks of [level.chunks, level.glass]) {
     for (const chunk of chunks) {
@@ -28,7 +32,7 @@ export function outbreakSplatterSurfaces(level: LevelData): SplatterSurfaces {
       for (let i = 0; i < chunk.data.byteLength; i += 72) {
         const mat = Math.round(half(p.getUint16(i + 20, true)))
         const floor = Math.round(half(p.getUint16(i + 22, true)))
-        if (mat === 21 || mat === 18) continue // Skip roofs and foliage tufts
+        if (mat === 21 || mat === 18 || mat === 22) continue // Skip roofs and foliage tufts
         const material: SplatterMaterial =
           mat === 6 || mat === 2 || mat === 3 ? 3 : mat === 10 ? 2 : mat === 1 && (floor === 0 || floor === 6) ? 1 : 0
         for (let v = 0; v < 3; v++) {
@@ -40,7 +44,9 @@ export function outbreakSplatterSurfaces(level: LevelData): SplatterSurfaces {
       }
     }
   }
-  return new SplatterSurfaces(triangles)
+  const surfaces = new SplatterSurfaces(triangles)
+  splatterSurfaceCache.set(level, surfaces)
+  return surfaces
 }
 
 export class OutbreakCombatFX {
@@ -49,7 +55,9 @@ export class OutbreakCombatFX {
   private readonly pistolData = new Float32Array(INST_FLOATS)
   private readonly plankData = new Float32Array(64 * INST_FLOATS)
   private readonly seenShots = new Set<number>()
+  private levelData: LevelData | null = null
   splatter: Splatter | null = null
+  hasEmitted = false
   private lastFlash: { x: number; y: number; z: number; until: number } | null = null
 
   constructor(renderer: Pick<Renderer, "addModel">) {
@@ -68,12 +76,15 @@ export class OutbreakCombatFX {
   }
 
   setLevel(level: LevelData): void {
-    this.splatter = new Splatter(outbreakSplatterSurfaces(level))
+    this.levelData = level
+    this.splatter = null
+    this.hasEmitted = false
   }
 
   reset(): void {
     this.seenShots.clear()
     this.splatter?.reset()
+    this.hasEmitted = false
     this.lastFlash = null
   }
 
@@ -263,7 +274,9 @@ export class OutbreakCombatFX {
       const fy = support(s.fromX, s.fromY) + 1.2
       this.lastFlash = { x: s.fromX, y: fy, z: s.fromY, until: time + 0.08 }
 
-      if (s.hitZombieId !== null && this.splatter) {
+      if (s.hitZombieId !== null && this.levelData) {
+        this.splatter ??= new Splatter(outbreakSplatterSurfaces(this.levelData))
+        this.hasEmitted = true
         const z = ai.agents.find((a) => a.id === s.hitZombieId)
         const dx = Math.cos(s.aim)
         const dz = Math.sin(s.aim)

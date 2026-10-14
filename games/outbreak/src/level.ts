@@ -447,22 +447,20 @@ function compileLevel(town: Town): LevelData {
       return [{ data: source.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
     }
     const opaque = new Mesh()
-    const fur = new Mesh()
     const screen = new Mesh()
     const customByBuilding = BUILDING_RECTS.map(() => new Mesh())
     const interiorCapByBuilding = BUILDING_RECTS.map(() => new Mesh())
     for (let i = 0; i < source.v.length; i += 33) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
-      let hasRoof = false, hasScreen = false, hasFoliage = false, hasFur = false
+      let hasRoof = false, hasScreen = false, hasFoliage = false
       for (const j of [0, 11, 22]) {
         const vx = source.v[i + j]!, vy = source.v[i + j + 1]!, vz = source.v[i + j + 2]!
-        const mat = Math.round(source.v[i + j + 9]!), aux = source.v[i + j + 10]!
+        const mat = Math.round(source.v[i + j + 9]!)
         minX = Math.min(minX, vx); maxX = Math.max(maxX, vx)
         minY = Math.min(minY, vy); maxY = Math.max(maxY, vy)
         minZ = Math.min(minZ, vz); maxZ = Math.max(maxZ, vz)
         if (mat === 21) hasRoof = true
         if (mat === 22 || mat === 24) hasFoliage = true
-        if (mat === 22 && aux < -1.5) hasFur = true
         if ((mat === 4 || mat === 9 || mat === 11) && maxY > 1.0) hasScreen = true
       }
       let customId = -1
@@ -529,7 +527,6 @@ function compileLevel(town: Town): LevelData {
   })
   // Indoor sky/moon mask (fd.g) with inward window moonlight shafts, plus rectangular exterior window-spill in bounce.a.
   const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)
-  const bRes=192, bScale=SIZE/bRes, bounceData = new Uint8Array(bRes * bRes * 4)
   const windows = town.barriers.filter(b => b.kind === "window")
   const furnitureContacts=town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})
   for (let z = 0; z < resolution; z++) for (let x = 0; x < resolution; x++) {

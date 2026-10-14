@@ -43,7 +43,7 @@ export const aiControls = [
   { key: "sightRange", label: "Sight range", group: "AI", min: 6, max: 36, step: 1, unit: "m" },
   { key: "sightCone", label: "Sight cone", group: "AI", min: 45, max: 180, step: 5, unit: "deg" },
   { key: "hearingScale", label: "Hearing scale", group: "AI", min: 0, max: 2.5, step: 0.1, unit: "×" },
-  { key: "walkSpeed", label: "Wander speed", group: "AI", min: 0.4, max: 2.2, step: 0.05, unit: "m/s" },
+  { key: "aiWalkSpeed", label: "Wander speed", group: "AI", min: 0.4, max: 2.2, step: 0.05, unit: "m/s" },
   { key: "chaseSpeed", label: "Chase speed", group: "AI", min: 1.2, max: 4.8, step: 0.05, unit: "m/s" },
   { key: "aggression", label: "Aggression", group: "AI", min: 0.3, max: 2.5, step: 0.1, unit: "×" },
   { key: "nightMultiplier", label: "Night boost", group: "AI", min: 1.0, max: 2.2, step: 0.05, unit: "×" },

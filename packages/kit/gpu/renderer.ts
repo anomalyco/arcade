@@ -322,8 +322,8 @@ export class Renderer {
       })
     this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
     this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
-    this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", "fs")
-    this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
+    this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", shaders ? "fsSolid" : "fs")
+    this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", shaders ? "fsSolid" : "fs")
     this.pipes.instAlpha = pipe(scene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
     // Keep the all-off shader's arithmetic identical, including compiler rounding.
     this.baselinePipes.level = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
@@ -640,21 +640,29 @@ export class Renderer {
     this.draw(f, targetView)
   }
 
+  get hasPending(): boolean {
+    return this.pending !== null
+  }
+
   private schedule(): void {
     if (this.scheduled) return
     this.scheduled = true
     queueMicrotask(() => {
       this.scheduled = false
-      const f = this.pending
-      if (!f || this.inflight >= 1) return
-      this.pending = null
-      this.draw(f)
-      this.inflight++
-      void this.device.queue.onSubmittedWorkDone().then(() => {
-        this.inflight--
-        if (this.pending) this.schedule()
-        else this.onIdle?.()
-      })
+      this.flushPending()
+    })
+  }
+
+  private flushPending(): void {
+    const f = this.pending
+    if (!f || this.inflight >= 1) return
+    this.pending = null
+    this.draw(f)
+    this.inflight++
+    void this.device.queue.onSubmittedWorkDone().then(() => {
+      this.inflight--
+      if (this.pending) this.flushPending()
+      this.onIdle?.()
     })
   }
 
