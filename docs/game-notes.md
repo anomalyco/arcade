@@ -253,17 +253,24 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 - **Unify explosions through one shared blackbody-billow + volumetric-smoke system and thin renderer adapters.**
   `packages/kit/fx/explosion.ts`, `particle-renderer.ts` (`makeParticleShader`, `blackbodyFireWgsl`) and `volume-renderer.ts`
   drive seven typed presets (`grenade`, `propane`, `car`, `barrel`, `missile`, `ship`, `pop`) parameterised by size, energy,
-  fuel duration, smoke amount/darkness/shift, debris/sparks, scorch, flash and shockwave ring. Getaway's `StreetProps` and
-  `Renderer` (`games/getaway/src/game/props/index.ts`, `src/render/renderer.ts`), Blackout's `Game` and `@arcade/kit/gpu/renderer`
-  (`games/blackout/src/game/game.ts`, `packages/kit/gpu/renderer.ts`), and Carrier's `WeaponFx`/`ExplosionFx`
-  (`games/carrier/src/render/weapon-fx.ts`, `explosion-fx.ts`, `explosions.ts`, binding at `@group(1)` with reversed-Z
-  `depth32float` `greater-equal` so `@group(0)` `Frame` stays intact) all call `spawnExplosion` and `explosionFlashLight`.
-  Legacy per-game fire/ring/scorch sprite loops (`PropParticles` kind 12, `Game.explode` sprite loops, `Vehicles.burst`,
-  `FireWater` kind 8 quads, and `WeaponFx` `RockPool` fireball/debris rocks) and duplicate Lab Library explosion entries
-  are removed. Across seven alternating pairs on M5 Max/Metal (`packages/kit/lab/prove-explosion-unify.ts`,
-  `perf/explosion-unify.json`), active-blast GPU/frame medians are **0.684→0.834 ms (+0.165 ms, MAD 0.027)** in Getaway
-  (`1000×720`), **0.701→1.058 ms (+0.232 ms, MAD 0.101)** in Blackout (`1000×720`), and **0.282→0.475 ms (+0.193 ms, MAD 0.008)**
-  in Carrier (`1200×800`, 60-frame flat-out throughput). Non-exploding frames add zero draws or passes.
+  fuel duration, smoke amount/darkness/shift, debris/sparks, scorch, flash and shockwave ring, with distance and
+  concurrent-load LOD scaling (`computeExplosionLod`), proximity volume coalescing (`3.2 m`), 4-slot oldest eviction,
+  per-ray 3D volume AABB clipping and fast 1-tap `densityFast` self-shadowing (`packages/kit/fx/volume-shader.ts`).
+  Getaway's `StreetProps` and `Renderer` (`games/getaway/src/game/props/index.ts`, `src/render/renderer.ts`), Blackout's
+  `Game` and `@arcade/kit/gpu/renderer` (`games/blackout/src/game/game.ts`, `packages/kit/gpu/renderer.ts`), and Carrier's
+  `WeaponFx`/`ExplosionFx` (`games/carrier/src/render/weapon-fx.ts`, `explosion-fx.ts`, `explosions.ts`, binding at
+  `@group(1)` with reversed-Z `depth32float` `greater-equal` so `@group(0)` `Frame` stays intact) all call `spawnExplosion`
+  and `explosionFlashLight`. Legacy per-game fire/ring/scorch sprite loops (`PropParticles` kind 12, `Game.explode` sprite
+  loops, `Vehicles.burst`, `FireWater` kind 8 quads, and `WeaponFx` `RockPool` fireball/debris rocks) and duplicate Lab
+  Library explosion entries are removed. Across seven alternating pairs of 30 active blast frames on M5 Max/Metal
+  (`packages/kit/lab/prove-explosion-unify.ts`, `perf/explosion-unify.json`), whole-frame GPU mean / peak costs are:
+  - **Getaway (`960×720`)**: single blast **0.648→0.761 ms** mean (**0.676→0.803 ms** peak, delta `+0.113 ms`, MAD `0.001`);
+    4× simultaneous propane/fuel worst-case **0.697→0.818 ms** mean (**0.735→0.889 ms** peak, delta `+0.121 ms`, MAD `0.001`).
+  - **Blackout (`960×720`)**: single grenade **1.000→0.870 ms** mean (**1.421→1.032 ms** peak, delta `-0.130 ms`, MAD `0.263`);
+    5× grenade-spam worst-case **1.928→4.862 ms** mean (**2.737→6.657 ms** peak, delta `+1.221 ms`, MAD `0.594`).
+  - **Carrier (`960×720`)**: single deck strike **0.351→0.377 ms** mean (**0.400→0.450 ms** peak, delta `+0.039 ms`, MAD `0.051`);
+    4× simultaneous ship+airburst+boat worst-case **0.687→0.602 ms** mean (**0.725→0.725 ms** peak, delta `-0.085 ms`, MAD `0.059`).
+  All single and worst-case scenarios remain well within the 16.67 ms (60 Hz) frame budget; non-exploding frames add zero draws or passes.
 
 - **Keep game-owned roof discard out of the opaque entry point, cull off-screen lamps, and pace fixed ticks.**
   Outbreak used its roof hook in `fsSolid`, mixed floors with screen-cuttable walls, routed exterior tree canopies into

@@ -736,6 +736,8 @@ export class Game {
     const y = e.y
     const preset: ExplosionPresetId = presetOverride ?? (clay ? "pop" : "grenade")
     const settings = EXPLOSION_PRESETS[preset].settings
+    const me = this.body
+    const distToPlayer = me ? Math.hypot(x - me.x, y - me.y) : 0
     this.smokeVolumes.carve(x, y, x, y, 3)
     spawnExplosion(
       this.explosionParticles,
@@ -747,7 +749,11 @@ export class Game {
       Math.random,
       1,
       1,
-      clay ? { aim: e.aim, cone: CLAYMORE.blastCone } : undefined,
+      {
+        ...(clay ? { aim: e.aim, cone: CLAYMORE.blastCone } : {}),
+        distanceToEye: distToPlayer,
+        referenceDist: 20,
+      },
     )
     this.booms.push({ x, y, t0: t, kind: e.kind, aim: e.aim, preset })
     const R = Math.random
@@ -759,7 +765,6 @@ export class Game {
         this.tracer(x, y, 0.15, x + Math.cos(a) * len, y + Math.sin(a) * len, "shotgun")
       }
     }
-    const me = this.body
     if (!me) return
     const dx = x - me.x
     const dy = y - me.y

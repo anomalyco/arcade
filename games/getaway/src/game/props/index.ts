@@ -207,6 +207,7 @@ export class StreetProps {
     if (this.reactions.length >= 48) this.reactions.shift()
     this.reactions.push({ x, y: gy, z, age: 0, water: false, acc: 0, preset })
     const baseSettings = EXPLOSION_PRESETS[preset].settings
+    const distToFocus = Math.hypot(x - focus.x, z - focus.z)
     spawnExplosion(
       this.fxParticles,
       this.fxVolumes,
@@ -217,9 +218,9 @@ export class StreetProps {
       this.rng,
       1,
       1,
-      { vx: b.vx * 0.2, vz: b.vz * 0.2 },
+      { vx: b.vx * 0.2, vz: b.vz * 0.2, distanceToEye: distToFocus, referenceDist: 22 },
     )
-    this.shake = Math.max(this.shake, Math.max(0, 1 - Math.hypot(x - focus.x, z - focus.z) / 35) * .8)
+    this.shake = Math.max(this.shake, Math.max(0, 1 - distToFocus / 35) * .8)
     this.physics.hash.query(x, z, 10, other => {
       const dx = other.x - x, dz = other.z - z, dist = Math.hypot(dx, dz)
       if (dist > 9 || dist < .01) return
@@ -235,14 +236,24 @@ export class StreetProps {
   /** Triggers a full car/fuel explosion at (x, z) using the shared `car` preset. */
   explodeCar(x: number, z: number, vx = 0, vz = 0, focus: { x: number; z: number } = { x, z }) {
     const gy = this.ground(x, z)
+    const distToFocus = Math.hypot(x - focus.x, z - focus.z)
     this.stats.explosions++
     if (this.reactions.length >= 48) this.reactions.shift()
     this.reactions.push({ x, y: gy, z, age: 0, water: false, acc: 0, preset: "car" })
-    spawnExplosion(this.fxParticles, this.fxVolumes, x, gy, z, EXPLOSION_PRESETS.car.settings, this.rng, 1, 1, {
-      vx: vx * 0.25,
-      vz: vz * 0.25,
-    })
-    this.shake = Math.max(this.shake, Math.max(0, 1 - Math.hypot(x - focus.x, z - focus.z) / 40) * 1.0)
+    const baseSettings = EXPLOSION_PRESETS.car.settings
+    spawnExplosion(
+      this.fxParticles,
+      this.fxVolumes,
+      x,
+      gy,
+      z,
+      { ...baseSettings, fireballTemp: baseSettings.fireballTemp * 0.78 },
+      this.rng,
+      1,
+      1,
+      { vx: vx * 0.25, vz: vz * 0.25, distanceToEye: distToFocus, referenceDist: 22 },
+    )
+    this.shake = Math.max(this.shake, Math.max(0, 1 - distToFocus / 40) * 1.0)
   }
 
   draw(instance: PropInstanceWriter, sprite: SpriteWriter, light: PropLightWriter, focus: { x: number; z: number }, debug: boolean) {

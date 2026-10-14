@@ -41,6 +41,7 @@ import { type Start, startFromUrl, storedName } from "./ui/lobby"
 import { showMenu } from "./ui/menu"
 import { OpsMenu } from "./ui/ops-menu"
 import { TeamMenu } from "./ui/team-menu"
+import { registerGameCommands } from "@arcade/kit/dev-control"
 
 const MAX_DPR = 1.5
 /** The quiet sea behind the load screen (offline, until a room is chosen). */
@@ -231,6 +232,51 @@ async function main() {
 
   const debug: { renderer: Renderer; camera: Camera; net: typeof net; input: Input; frame: Float32Array; grade: typeof grade; atmosphere: typeof atmosphere; arch: Archipelago | null; ocean: Ocean; clouds: Clouds } = { renderer, camera, net, input, frame, grade, atmosphere, arch: null, ocean, clouds }
   Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, lab, debugMenu, baseOcean, daynight, stars, lights }) })
+
+  let carrierBlastTimer = 0
+  registerGameCommands(commands => {
+    commands.registerAll([
+      {
+        id: "explosion.trigger",
+        label: "Trigger Explosion",
+        shortLabel: "Explosion",
+        category: "Scene",
+        undoable: false,
+        args: {
+          preset: { type: "string", description: "Explosion scenario (ship, missile, boat)" },
+          repeat: { type: "boolean", description: "Repeat explosion every 2.4s" },
+        },
+        enabled: () => true,
+        run: (_ctx, args) => {
+          if (carrierBlastTimer) {
+            window.clearInterval(carrierBlastTimer)
+            carrierBlastTimer = 0
+          }
+          const preset = String(args?.preset ?? "ship")
+          const fire = () => {
+            const s = game.state.ship
+            if (!s) return
+            game.state.free = true
+            if (preset === "missile") {
+              camera.set({ x: s.x, z: s.z - 220, yaw: 0, pitch: 15, dist: 95 })
+              flight.weapons.fx.explosion(s.x, 22, s.z - 220, 0, 0, 0, 1.2, false, "missile")
+            } else if (preset === "boat") {
+              camera.set({ x: s.x + 85, z: s.z - 60, yaw: 25, pitch: 16, dist: 75 })
+              flight.weapons.fx.explosion(s.x + 85, 2.2, s.z - 60, 0, 2, 0, 1.15, true, "car")
+            } else {
+              camera.set({ x: s.x, z: s.z, yaw: 35, pitch: 18, dist: 145 })
+              flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false, "ship")
+            }
+          }
+          fire()
+          if (args?.repeat !== false) {
+            carrierBlastTimer = window.setInterval(fire, 2400)
+          }
+          return { triggered: preset, repeat: args?.repeat !== false }
+        },
+      },
+    ])
+  })
 
   let builtSeed: number | null = null
   const buildWorld = (seed: number) => {

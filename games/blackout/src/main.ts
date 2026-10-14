@@ -17,6 +17,7 @@ import { Menus } from "./ui/menus"
 import { ModeHud } from "./ui/modes-hud"
 import { DebugOverlay, juiceSettings, LOOK_LABELS } from "./ui/debug-overlay"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
+import { registerGameCommands } from "@arcade/kit/dev-control"
 import { Rng } from "../shared/rng"
 import { SpellHud } from "./ui/spell-hud"
 
@@ -169,6 +170,47 @@ async function main() {
   // Dev and screenshots: a local match against bots, no server.
   if (params.get("peaceful") === "1" || params.get("sandbox") === "1" || input.mux) sandbox(localStorage.getItem(NAME_KEY) ?? "you")
   else if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip, modeOf(params.get("mode")) ?? "ffa", params.get("map")))
+
+  let blackoutBlastTimer = 0
+  registerGameCommands(commands => {
+    commands.registerAll([
+      {
+        id: "explosion.trigger",
+        label: "Trigger Explosion",
+        shortLabel: "Explosion",
+        category: "Scene",
+        undoable: false,
+        args: {
+          preset: { type: "string", description: "Explosion preset (grenade, car, pop)" },
+          repeat: { type: "boolean", description: "Repeat explosion every 2.2s" },
+        },
+        enabled: () => true,
+        run: (_ctx, args) => {
+          if (blackoutBlastTimer) {
+            window.clearInterval(blackoutBlastTimer)
+            blackoutBlastTimer = 0
+          }
+          const preset = String(args?.preset ?? "grenade")
+          const fire = () => {
+            if (!game) return
+            const b = game.body
+            const aim = game.aim
+            const bx = b ? b.x + Math.cos(aim) * 3.6 : game.map.size[0] / 2
+            const by = b ? b.y + Math.sin(aim) * 3.6 : game.map.size[1] / 2
+            ;(game as unknown as { explode(e: unknown, p?: string): void }).explode(
+              { k: "explode", id: -1, by: "tour", x: bx, y: by, kind: preset === "pop" ? "claymore" : "frag", aim },
+              preset === "car" ? "car" : preset === "pop" ? "pop" : "grenade",
+            )
+          }
+          fire()
+          if (args?.repeat !== false) {
+            blackoutBlastTimer = window.setInterval(fire, 2200)
+          }
+          return { triggered: preset, repeat: args?.repeat !== false }
+        },
+      },
+    ])
+  })
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
