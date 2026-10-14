@@ -97,7 +97,7 @@ export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:numbe
 /** Procedural bungalow over authoritative room and opening boundaries. */
 export function house(m:Mesh,b:Building,id:number,town:Town) {
   const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
-  const trim=rgb(0x96978b),roof=rgb(0x495260),brick=rgb(0x624b40)
+  const trim=rgb(0xd4d2c8),roof=rgb(0x3d4758),brick=rgb(0x684339)
   if(b.kind!=="house"){m.box(x-.15,2.8,z-.15,r+.15,2.94,e+.15,rgb(0x555a54),MAT.roof,id);return}
   const slopeY = (pz: number) => 2.88 + (ridge - 2.88) * (1 - Math.abs(pz - mid) / (mid - (z - .42)))
   const xCuts = [x - .42, x + .36, r - .36, r + .42]
@@ -110,28 +110,37 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   }
   for(const px of [x-.01,r+.01])m.facet([px,2.8,z],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
   m.box(x-.45,2.68,z-.42,r+.45,2.86,z-.31,trim,MAT.roof,id)
-  m.box(x-.45,2.68,e+.31,r+.45,2.86,e+.42,trim,MAT.roof,id)
-  // Dark soffit and half-round gutter read as a thin sheltered edge, not a white outline.
-  m.box(x-.42,2.65,e+.03,r+.42,2.7,e+.4,rgb(0x555b55),MAT.roof,id)
-  m.box(x-.48,2.74,e+.4,r+.48,2.80,e+.49,rgb(0x686f6b),MAT.roof,id)
+  m.box(x-.45,2.72,e+.34,r+.45,2.87,e+.44,trim,MAT.roof,id)
+  // Dark soffit and half-round gutter read as a crisp eave border with trim fascia.
+  m.box(x-.42,2.63,e+.02,r+.42,2.71,e+.40,rgb(0x282e38),MAT.roof,id)
+  m.box(x-.48,2.76,e+.43,r+.48,2.83,e+.50,rgb(0x9da4b0),MAT.roof,id)
   for (let xi = 0; xi < 3; xi++) {
-    m.box(xCuts[xi]!, ridge - .04, mid - .1, xCuts[xi + 1]!, ridge + .04, mid + .1, roof, MAT.roof, id)
+    m.box(xCuts[xi]!, ridge - .04, mid - .1, xCuts[xi + 1]!, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
   }
-  m.box(r-1.8,3.25,mid+1.1,r-1.15,4.7,mid+1.75,brick,MAT.brick)
-  m.box(r-1.88,4.67,mid+1.02,r-1.07,4.78,mid+1.83,rgb(0x79796e))
-  m.box(r-1.68,4.78,mid+1.22,r-1.27,4.79,mid+1.63,rgb(0x1e2427))
+  // Brick chimney on upper-right slope with stone cap and dark flue.
+  m.box(r-2.05,3.20,mid+.85,r-1.15,4.78,mid+1.75,brick,MAT.brick)
+  m.box(r-2.13,4.74,mid+.77,r-1.07,4.86,mid+1.83,rgb(0x888b90))
+  m.box(r-1.88,4.86,mid+1.02,r-1.32,4.88,mid+1.58,rgb(0x181c22))
   const cx=x+5.7
-  m.quadAuto([cx-1.5,2.5,e+1.6],[cx,3.15,e+1.6],[cx,3.15,e-.15],[cx-1.5,2.5,e-.15],roof,MAT.roof,id)
-  m.quadAuto([cx,3.15,e+1.6],[cx+1.5,2.5,e+1.6],[cx+1.5,2.5,e-.15],[cx,3.15,e-.15],roof,MAT.roof,id)
-  for(const px of [cx-1.3,cx+1.3]){
-    m.box(px-.075,.13,e+1.22,px+.075,2.5,e+1.37,trim,MAT.wall)
-    m.box(px-.12,.13,e+1.17,px+.12,.3,e+1.42,brick,MAT.brick)
+  // Gabled porch canopy with dark shingle slopes, shadowed tympanum and crisp white rake trim (^).
+  m.quadAuto([cx-1.62,2.46,e+1.58],[cx,3.22,e+1.58],[cx,3.22,e-.15],[cx-1.62,2.46,e-.15],roof,MAT.roof,id)
+  m.quadAuto([cx,3.22,e+1.58],[cx+1.62,2.46,e+1.58],[cx+1.62,2.46,e-.15],[cx,3.22,e-.15],roof,MAT.roof,id)
+  m.facet([cx-1.52,2.46,e+1.48],[cx,3.16,e+1.48],[cx+1.52,2.46,e+1.48],rgb(0x2c323d),MAT.roof,id)
+  m.quadAuto([cx-1.64,2.42,e+1.60],[cx,3.19,e+1.60],[cx,3.26,e+1.56],[cx-1.64,2.49,e+1.56],trim,MAT.roof,id)
+  m.quadAuto([cx,3.19,e+1.60],[cx+1.64,2.42,e+1.60],[cx+1.64,2.49,e+1.56],[cx,3.26,e+1.56],trim,MAT.roof,id)
+  m.box(cx-1.58,2.38,e+1.36,cx+1.58,2.46,e+1.52,trim,MAT.roof,id)
+  for(const px of [cx-1.32,cx+1.32]){
+    m.box(px-.09,.34,e+1.20,px+.09,2.42,e+1.38,rgb(0xeae4d7),MAT.wall)
+    m.box(px-.14,.13,e+1.15,px+.14,.34,e+1.43,rgb(0xd8d2c5),MAT.wall)
   }
+  // Porch steps leading to the front walkway, plus wall mailbox next to the door.
+  m.box(cx-.85,.08,e+1.28,cx+.85,.135,e+1.52,rgb(0xb8b2a4),MAT.wall)
+  m.box(cx+1.02,1.22,e+.01,cx+1.22,1.44,e+.10,rgb(0x2b3036),MAT.wall)
   // Door casing, lintel, sill and supported coir mat share the real 1.4m opening.
-  for(const px of [x+4.94,x+6.4])m.box(px,.13,e-.24,px+.08,2.36,e+.06,trim,MAT.wall)
-  m.box(x+4.94,2.3,e-.24,x+6.48,2.4,e+.06,trim,MAT.wall)
-  m.box(x+5,.13,e-.28,x+6.4,.15,e+.18,rgb(0x7f7865))
-  m.box(cx-.48,.132,e+.22,cx+.48,.155,e+.7,rgb(0x655740),MAT.timber)
+  for(const px of [x+4.92,x+6.40])m.box(px,.13,e-.24,px+.09,2.38,e+.07,rgb(0xeae4d7),MAT.wall)
+  m.box(x+4.92,2.30,e-.24,x+6.49,2.42,e+.07,rgb(0xeae4d7),MAT.wall)
+  m.box(x+5,.13,e-.28,x+6.4,.15,e+.18,rgb(0x9a9382))
+  m.box(cx-.52,.132,e+.20,cx+.52,.155,e+.74,rgb(0x523f2c),MAT.timber)
   // Grouped foundation planting: natural soil bed without toothed brick edging, boxwood pair by porch, corner shrubs and hydrangea.
   const rng=new Rng(town.houseSeed+id*71)
   for(const [a,d] of [[x+.15,x+4.35],[x+7.15,r-.15]]){

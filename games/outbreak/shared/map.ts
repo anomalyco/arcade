@@ -80,7 +80,7 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
   for (const p of [8, 52, 78]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:6.3,power:.36,kind:"street"})
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect
-    town.lamps.push({x:x+5.7,y:e+.55,h:2.45,radius:7.6,power:1.15,kind:"porch"})
+    town.lamps.push({x:x+5.7,y:e+1.15,h:2.42,radius:6.8,power:1.05,kind:"porch"})
     town.lamps.push({x:x+2.6,y:z+1.85,h:1.18,radius:3.6,power:.26,kind:"room"})
     town.lamps.push({x:x+1.25,y:e-1.35,h:1.28,radius:4.2,power:.32,kind:"room"})
     town.lamps.push({x:r-2.8,y:e-3.1,h:2.15,radius:4.6,power:.28,kind:"room"})

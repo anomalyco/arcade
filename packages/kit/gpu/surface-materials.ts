@@ -772,6 +772,15 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
   var cavity = 1.0;
 
   if (isConcrete) {
+    // Grass verge strip between the concrete sidewalk (z=38..39.32) and street curb (z=39.78..40.0) on house frontages.
+    let inNorthVerge = p.y > 39.32 && p.y < 39.78 && (p.x < 37.8 || p.x > 50.2);
+    let inSouthVerge = p.y > 48.22 && p.y < 48.68 && (p.x < 37.8 || p.x > 50.2);
+    let inDrivewayApron = (p.x > 18.8 && p.x < 21.8) || (p.x > 49.8 && p.x < 52.8);
+    let inFrontWalk = (p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0);
+    if ((inNorthVerge || inSouthVerge) && !inDrivewayApron && !inFrontWalk) {
+      return evalGrassSoil(p, vec3f(0.24, 0.30, 0.17), false, defaultMaterialRecipe(4));
+    }
+    let isCurb = (p.y >= 39.78 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.22) || (p.x >= 39.78 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.22);
     let warp = (surfaceNoise(p * 1.4 + 2.3) - 0.5) * 0.035 * irreg;
     let q = p / slabSize + warp;
     let cell = floor(q);
@@ -780,15 +789,19 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let hWarm = fract((hSlab + 0.5) * 11.3) - 0.5;
     col *= (0.94 + hSlab * 0.18 * colVar) * vec3f(1.0 + hWarm * 0.06 * colVar, 1.0 + hWarm * 0.02 * colVar, 1.0 - hWarm * 0.07 * colVar);
 
-    let sx = seam(q.x, max(0.003, jWidth * 0.14), 1.0 / slabSize);
-    let sy = seam(q.y, max(0.003, jWidth * 0.14), 1.0 / slabSize);
-    let joint = sx * sy;
+    let sx = seam(q.x, max(0.003, jWidth * 0.16), 1.0 / slabSize);
+    let sy = seam(q.y, max(0.003, jWidth * 0.16), 1.0 / slabSize);
+    var joint = sx * sy;
+    if (isCurb) {
+      joint = seam(q.x * 0.75, 0.006, 0.75 / slabSize);
+      col *= vec3f(0.84, 0.86, 0.90);
+    }
     let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
-    let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.16;
-    let grit = grain(p, 10.5 * gScale) * 0.20;
+    let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.18;
+    let grit = grain(p, 10.5 * gScale) * 0.22;
     let macroTone = (warp / max(0.001, 0.035 * irreg)) * 0.18 * macroVar;
-    col *= 0.96 + grit + macroTone - edgeDirt;
-    col = mix(col * vec3f(0.45, 0.44, 0.38), col, joint);
+    col *= 0.95 + grit + macroTone - edgeDirt;
+    col = mix(col * vec3f(0.38, 0.37, 0.32), col, joint);
     cavity = joint;
   } else {
     let coarseAgg = grain(p, 7.2 * gScale) * 0.34;
@@ -798,12 +811,20 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let crackAa = max(surfaceFootprint * 0.78 * scale, 0.006);
     let crack = (1.0 - smoothstep(0.006, 0.016 + crackAa, crackField)) * step(0.45, patchField) * wear;
     let macroTone = (surfaceNoise(p * 0.20 + vec2f(8.3, 1.4)) - 0.5) * 0.24 * macroVar;
+    // Darkened wet gutter pan along the street curbs (z=40.0..40.35 and z=47.65..48.0).
+    let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
+    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.38, gutterDist)) * 0.36;
+    // Scattered fallen autumn leaves near the gutter and sidewalk edge.
+    let leafCell = floor(p * 9.5);
+    let leafHash = hash2(leafCell + vec2f(4.7, 9.1));
+    let leafMask = step(0.955, leafHash) * (1.0 - smoothstep(0.0, 1.35, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.5));
 
-    col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar);
+    col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar) * gutterShade;
     col = mix(col, col * vec3f(0.76, 0.78, 0.82), tarPatch * 0.55);
-    col = mix(col, col * 0.52, crack * 0.65);
+    col = mix(col, col * 0.50, crack * 0.68);
+    col = mix(col, vec3f(0.42, 0.28, 0.14), leafMask * 0.75);
     localRough = clamp(r.u0.w - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
-    cavity = 1.0 - crack * 0.4;
+    cavity = (1.0 - crack * 0.4) * gutterShade;
   }
 
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);

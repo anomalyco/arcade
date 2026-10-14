@@ -117,15 +117,16 @@ function compileLevel(town: Town): LevelData {
   }
   // Clustered curb-verge & front-lawn edge ground cover with natural gaps.
   const vergeRng = new Rng(town.seed ^ 0x91e1)
-  for (let v = 2; v < SIZE - 2; v += 1.4 + vergeRng.next() * 2.2) {
-    if (v > 37 && v < 51) continue
-    for (const zBase of [37.75, 39.82, 48.18, 50.25]) {
-      if (vergeRng.next() < 0.32) continue
-      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 1.1 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.2))) continue
-      for (let k = 0; k < 2; k++) {
-        const x = v + (vergeRng.next() - 0.5) * 0.55, z = zBase + (vergeRng.next() - 0.5) * 0.16
-        const y = supportHeight(town, x, z), m = at(x, z), r = 0.08 + vergeRng.next() * 0.09, h = 0.09 + vergeRng.next() * 0.12
-        const c = hex(vergeRng.pick([0x5a6840, 0x4d5c37, 0x6f7348]))
+  for (let v = 2; v < SIZE - 2; v += 0.95 + vergeRng.next() * 1.45) {
+    if (v > 37.5 && v < 50.5) continue
+    for (const zBase of [37.82, 39.55, 48.45, 50.18]) {
+      if (vergeRng.next() < 0.24) continue
+      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 1.0 || (v > b.rect[0] - 3.2 && v < b.rect[0] - 0.2))) continue
+      const count = zBase > 39 && zBase < 49 ? 3 : 2
+      for (let k = 0; k < count; k++) {
+        const x = v + (vergeRng.next() - 0.5) * 0.62, z = zBase + (vergeRng.next() - 0.5) * 0.22
+        const y = supportHeight(town, x, z), m = at(x, z), r = 0.10 + vergeRng.next() * 0.12, h = 0.11 + vergeRng.next() * 0.14
+        const c = hex(vergeRng.pick([0x5a6840, 0x4d5c37, 0x6f7348, 0x7b7846]))
         m.facet([x - r, y, z], [x + r * .2, y + h, z + r * .4], [x + r, y, z - r * .2], c, MAT.foliage)
         m.facet([x, y, z - r], [x - r * .4, y + h * .85, z], [x + r * .2, y, z + r], c, MAT.foliage)
       }
@@ -150,12 +151,11 @@ function compileLevel(town: Town): LevelData {
       at(v,s).quadAuto([v,.014,edge],[v+1,.014,edge],[v+1,.1,inner],[v,.1,inner],hex(0xa4a7b0),MAT.ground,2)
     }
   }
-  for(const [x,z] of [[32,39.8],[48.1,31],[59,48.1],[39.8,63]]) {
-    const m=at(x!,z!); m.box(x!-.45,.023,z!-.1,x!+.45,.027,z!+.1,hex(0x262e2c))
-    for(let i=0;i<8;i++) m.box(x!-.43+i*.11,.028,z!-.1,x!-.4+i*.11,.032,z!+.1,hex(0x696b62))
+  for(const [x,z] of [[33.8,40.08],[48.1,31],[59,48.1],[39.8,63]]) {
+    const m=at(x!,z!); m.box(x!-.42,.018,z!-.14,x!+.42,.024,z!+.14,hex(0x14181c))
+    for(let i=0;i<7;i++) m.box(x!-.38+i*.12,.024,z!-.12,x!-.33+i*.12,.028,z!+.12,hex(0x454a52))
   }
-  for (let v = 2; v < SIZE; v += 5) {
-    if (v > 37 && v < 51) continue
+  for (let v = 52; v < SIZE; v += 5) {
     const m = at(v, 44)
     m.box(v, .025, 43.9, v + 2.4, .027, 44.02, hex(0xb9ab7a))
     at(44, v).box(43.9, .025, v, 44.02, .027, v + 2.4, hex(0xb9ab7a))
@@ -190,25 +190,36 @@ function compileLevel(town: Town): LevelData {
     } else if (b.kind === "window") {
       m.box(x, .13, z, r, .85, end, color, MAT.wall,20)
       m.box(x, 2.15, z, r, 2.8, end, color, MAT.wall,20)
-      m.box(x-.08,.78,z-.06,r+.08,.87,end+.12,hex(0xd4cfc2),MAT.wall)
-      m.box(x-.07,2.13,z-.06,r+.07,2.23,end+.08,hex(0xd4cfc2),MAT.wall)
+      m.box(x-.08,.78,z-.06,r+.08,.87,end+.12,hex(0xd8d5cb),MAT.wall)
+      m.box(x-.07,2.13,z-.06,r+.07,2.23,end+.08,hex(0xd8d5cb),MAT.wall)
       const g = at(x, z, true)
       g.box(x + .025, .87, z + .025, r - .025, 2.14, end - .025, hex(0x809c9e), MAT.glass)
       const owner=town.buildings.findIndex(h=>x>=h.rect[0]-.01&&r<=h.rect[2]+.01&&z>=h.rect[1]&&end<=h.rect[3])
       const house=town.buildings[owner]!
       const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])
-      // Warm interior window glow flush with the outer sash and sill so it reads clearly from the top-down camera.
+      // Warm interior window glow with darker curtain side drapes and crisp white mullions/sills.
       if(r-x>1) {
-        m.box(x+.05,.88,z+.02,r-.05,1.46,end+.015,hex(0xf2a649),MAT.lamp,lamp)
-        m.box(x+.05,1.48,z+.02,r-.05,2.11,end+.005,hex(0xc98238),MAT.lamp,lamp)
-        m.box(x+.04,.872,end+.005,r-.04,.885,end+.11,hex(0xdba056),MAT.lamp,lamp)
-        for(const px of [x+.08,r-.38])for(let i=0;i<3;i++)m.box(px+i*.08,.89,z+.03,px+i*.08+.065,2.11,end+.02,hex(i%2?0xab783c:0x8f6230),MAT.lamp,lamp)
-        m.box(x+.06,1.44,z-.01,r-.06,1.50,end+.04,hex(0xd8d4c8),MAT.wall)
-      }else for(const pz of [z+.1,end-.45])m.box(x+.07,.9,pz,x+.10,2.1,pz+.35,hex(0xc98238),MAT.lamp,lamp)
+        m.box(x+.05,.88,z+.02,r-.05,1.46,end+.012,hex(0x9e6228),MAT.lamp,lamp)
+        m.box(x+.05,1.48,z+.02,r-.05,2.11,end+.004,hex(0x6e441d),MAT.lamp,lamp)
+        m.box(x+.04,.871,end+.005,r-.04,.884,end+.11,hex(0x825428),MAT.lamp,lamp)
+        const doubleWin = r - x > 2.2
+        const panes = doubleWin ? [[x+.06, (x+r)/2-.07], [(x+r)/2+.07, r-.06]] : [[x+.06, r-.06]]
+        for (const [wx0, wx1] of panes) {
+          for (const px of [wx0!, wx1! - .22]) {
+            m.box(px, .89, z+.03, px + .22, 2.10, end+.018, hex(0x4a3119), MAT.lamp, lamp)
+          }
+          const midX = (wx0! + wx1!) / 2
+          m.box(midX - .018, .87, z - .01, midX + .018, 2.15, end + .035, hex(0xdcd9cf), MAT.wall)
+        }
+        m.box(x+.04,1.45,z-.01,r-.04,1.50,end+.04,hex(0xdcd9cf),MAT.wall)
+      }else for(const pz of [z+.1,end-.45])m.box(x+.07,.9,pz,x+.10,2.1,pz+.35,hex(0x784d22),MAT.lamp,lamp)
       if (r - x > 1) {
-        for (const px of [x, (x + r) / 2 - .03, r - .06]) m.box(px, .85, z - .03, px + .06, 2.2, end + .04, hex(0xd8d4c8), MAT.wall)
+        const divW = r - x > 2.2 ? .06 : .035
+        for (const [px, w] of [[x, .06], [(x + r) / 2 - divW, divW * 2], [r - .06, .06]] as const) {
+          m.box(px, .85, z - .03, px + w, 2.2, end + .045, hex(0xdcd9cf), MAT.wall)
+        }
       } else {
-        for (const pz of [z, (z + end) / 2, end - .06]) m.box(x - .03, .85, pz, r + .03, 2.2, pz + .06, hex(0xd8d4c8), MAT.wall)
+        for (const pz of [z, (z + end) / 2, end - .06]) m.box(x - .03, .85, pz, r + .03, 2.2, pz + .06, hex(0xdcd9cf), MAT.wall)
       }
     } else {
       const horizontal = r - x > end - z, length = horizontal ? r - x : end - z

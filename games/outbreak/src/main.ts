@@ -180,7 +180,7 @@ async function main() {
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
       if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
       const color=lamp.kind==="street"?[1,.78,.54]:lamp.kind==="porch"?[1,.66,.28]:lamp.kind==="window"?[1,.60,.24]:[1,.52,.19]
-      const cone=lamp.kind==="window"?[0,1,-.15,1]:lamp.kind==="porch"?[.22,.975,.28,1]:[0,0,0,lamp.kind==="room"?-1:0]
+      const cone=lamp.kind==="window"?[0,1,-.15,1]:lamp.kind==="porch"?[0,1,-.35,1]:[0,0,0,lamp.kind==="room"?-1:0]
       lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.16:.22, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
