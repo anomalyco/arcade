@@ -56,16 +56,40 @@ export function isAllowedLoopbackHost(hostname: string): boolean {
   return h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1" || h.endsWith(".localhost")
 }
 
-export function isSameLoopbackOrigin(originHeader: string | undefined, hostHeader: string | undefined): boolean {
+export function isLoopbackHostHeader(hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false
+  try {
+    return isAllowedLoopbackHost(new URL(`http://${hostHeader}`).hostname)
+  } catch {
+    return false
+  }
+}
+
+/** Extra page hostnames (e.g. a Tailscale Serve name) from ARCADE_DEV_ALLOWED_HOSTS or Vite's allowed-hosts env. */
+export function extraPageHosts(env: Record<string, string | undefined> = process.env): string[] {
+  const raw = [env.ARCADE_DEV_ALLOWED_HOSTS, env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS].filter(Boolean).join(",")
+  return raw
+    .split(",")
+    .map(h => h.trim().toLowerCase().replace(/\.$/, ""))
+    .filter(h => h && !h.startsWith(".") && !h.includes("*"))
+}
+
+/** Page origins must match the Host header; extra hosts are accepted over HTTPS only. */
+export function isAllowedPageOrigin(originHeader: string | undefined, hostHeader: string | undefined, extraHosts: readonly string[] = []): boolean {
   if (!originHeader || !hostHeader) return false
   try {
     const parsed = new URL(originHeader)
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false
-    if (!isAllowedLoopbackHost(parsed.hostname)) return false
-    return parsed.host.toLowerCase() === hostHeader.toLowerCase()
+    if (parsed.host.toLowerCase() !== hostHeader.toLowerCase()) return false
+    if (isAllowedLoopbackHost(parsed.hostname)) return true
+    return parsed.protocol === "https:" && extraHosts.includes(parsed.hostname.toLowerCase())
   } catch {
     return false
   }
+}
+
+export function isSameLoopbackOrigin(originHeader: string | undefined, hostHeader: string | undefined): boolean {
+  return isAllowedPageOrigin(originHeader, hostHeader)
 }
 
 function safeTokenEquals(expected: string, actual: string | undefined): boolean {
@@ -214,12 +238,14 @@ export function createDevControlServer(opts: {
   port: number
   games: readonly string[]
   workers: boolean
+  pageHosts?: readonly string[]
 }) {
   const cliToken = randomBytes(32).toString("hex")
   const pageToken = randomBytes(32).toString("hex")
   const startedAt = Date.now()
   const startedIso = new Date(startedAt).toISOString()
   const origin = `http://${opts.host}:${opts.port}`
+  const pageHosts = opts.pageHosts ?? extraPageHosts()
 
   const clients = new Map<string, ConnectedClient>()
   const pendingRpcs = new Map<string, PendingRpc>()
@@ -372,7 +398,7 @@ export function createDevControlServer(opts: {
       return false
     }
 
-    if (!isLoopbackAddress(req.socket.remoteAddress)) {
+    if (!isLoopbackAddress(req.socket.remoteAddress) || !isLoopbackHostHeader(req.headers.host)) {
       writeJson(res, 403, { ok: false, code: "forbidden_host", error: "Control endpoint is loopback-only." })
       return true
     }
@@ -515,7 +541,7 @@ export function createDevControlServer(opts: {
       return true
     }
 
-    if (!isSameLoopbackOrigin(req.headers.origin, req.headers.host)) {
+    if (!isAllowedPageOrigin(req.headers.origin, req.headers.host, pageHosts)) {
       rejectUpgrade(403, "forbidden_origin", "Cross-origin or missing Origin header on WebSocket upgrade.")
       return true
     }
