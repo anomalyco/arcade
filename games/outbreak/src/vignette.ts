@@ -210,10 +210,10 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightTemp: 2450,
       windowLightFalloff: 0.74,
       flashlightPower: 1.85,
-      flashlightAngle: 16,
+      flashlightAngle: 17.5,
       flashlightRange: 10.5,
       flashlightTemp: 4600,
-      flashlightAim: 43,
+      flashlightAim: 45.5,
       flashlightHaze: 1.15,
       clutterDensity: 1.0,
       foliageDensity: 1.0,
@@ -490,7 +490,7 @@ export const VIGNETTE_CAMERA_PRESETS: Readonly<
     yaw: 0,
     dist: 42.0,
     cutawayMode: 2,
-    playerPos: [30.0, 41.85, -Math.PI / 2],
+    playerPos: [30.0, 41.35, -Math.PI / 2],
   },
   target_interior: {
     label: "Target interior (aligned 1000×680)",
@@ -499,7 +499,7 @@ export const VIGNETTE_CAMERA_PRESETS: Readonly<
     yaw: 0,
     dist: 34.0,
     cutawayMode: 1,
-    playerPos: [27.7, 32.05, -Math.PI / 2],
+    playerPos: [28.15, 31.35, -Math.PI / 2],
   },
 }
 
@@ -1183,6 +1183,12 @@ fn eyeVisible(p: vec2f) -> f32 {
       let nearGlow = exp(-pDist * pDist * 2.2) * (1.0 - smoothstep(0.5, 1.55, pDist));
       col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.34, 0.65, inHouse);
     }
+  }
+  if (isNoir) {
+    // Subtle Noir shadow toe & sub-LSB dither to prevent banding in deep night gradients
+    col = pow(max(col, vec3f(0.0)), vec3f(1.035)) * 0.97;
+    let dither = (hash2(o.pos.xy) + hash2(o.pos.xy * 1.7 + 13.0) - 1.0) * 0.0012;
+    col = max(vec3f(0.0), col + vec3f(dither));
   }
   if (mat != 12 && mat != 21 && mat != 2) {
     let luminance = dot(col, vec3f(0.2126, 0.7152, 0.0722));
@@ -1888,7 +1894,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
     // Player flashlight cone (polar-shadowed directional cone light, used in Noir direction 3)
     const flashPower = useShippedGlobal ? 0 : s.flashlightPower
     let flashSlot = -1
-    const beamDeg = isInteriorCam && Math.abs(s.flashlightAim - 43) < 3 ? 50 : s.flashlightAim
+    const beamDeg = isInteriorCam && Math.abs(s.flashlightAim - 45.5) < 3 ? 54.5 : s.flashlightAim
     const effRange = isInteriorCam && Math.abs(s.flashlightRange - 10.5) < 1 ? 6.2 : s.flashlightRange
     const beamRad = (beamDeg * Math.PI) / 180
     const dirX = Math.cos(beamRad)
