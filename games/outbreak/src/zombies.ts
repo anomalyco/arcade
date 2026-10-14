@@ -105,7 +105,7 @@ function reconstructBonePose(pose: Float32Array, baseOff: number): BonePose {
 export function buildZombiePartMeshes(): Mesh[] {
   const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0) => {
     const m = new Mesh()
-    if (bevel > 0) m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, MAT.actor)
+    if (bevel > 0) m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, col, MAT.actor)
     else m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
     return m
   }
@@ -767,7 +767,6 @@ export class ZombieCrowdRenderer {
         tb,
         alpha,
         flash,
-        isGhost,
       )
 
       // 3..6: Left and right upperArm & foreArm (zombie reach + shambling swing)

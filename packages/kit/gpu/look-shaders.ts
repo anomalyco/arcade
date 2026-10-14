@@ -245,9 +245,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
   return base
     .replace(
       "let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);",
-      hasPostLight
-        ? "let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);"
-        : `let useLookLight = LK.u11.w > 0.5;
+      `let useLookLight = LK.u11.w > 0.5;
     let effWrap = select(wrap, wrap + LK.u10.x, useLookLight);
     let effBands = select(0.0, LK.u10.y, useLookLight);
     let effSoft = select(0.18, LK.u10.z, useLookLight);
