@@ -41,7 +41,7 @@ export type DetachedDebrisPiece = {
 }
 
 const PART_COUNT = 8
-const MAX_INSTANCES_PER_PART = 2048
+export const MAX_INSTANCES_PER_PART = 2048
 const BONE_COUNT = 13
 const BONE_STRIDE = BONE_COUNT * 12
 const INITIAL_AGENT_CAPACITY = 512
@@ -285,10 +285,47 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out
   return profile
 }
 
+/** Builds the 8 instanced zombie body-part meshes (pelvis, torso, head, upperArm, foreArm, thigh, shin, foot). */
+export function buildZombiePartMeshes(): Mesh[] {
+  const box = (w: number, y0: number, h: number, d: number, col: Rgb) => {
+    const m = new Mesh()
+    m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
+    return m
+  }
+  const skin = hex(0x6c7d60)
+  const forearmSkin = hex(0x4e5d45)
+  const jacket = hex(0x454137)
+  const trousers = hex(0x2b3136)
+  const wound = hex(0x581416)
+  const hair = hex(0x212623)
+  const boot = hex(0x26201c)
+
+  const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
+  const torso = box(0.28, -0.02, 0.48, 0.4, jacket)
+  torso.box(0.11, 0.12, -0.12, 0.145, 0.36, 0.08, wound, MAT.actor)
+  torso.box(-0.145, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
+
+  const head = box(0.18, 0.01, 0.24, 0.18, skin)
+  head.box(-0.1, 0.19, -0.11, 0.1, 0.28, 0.11, hair, MAT.actor)
+  for (const z of [-0.042, 0.042]) {
+    head.box(0.086, 0.13, z - 0.016, 0.095, 0.155, z + 0.016, hex(0x98d838), MAT.glow, 0.55)
+  }
+
+  const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
+  const foreArm = box(0.11, -0.28, 0.3, 0.11, forearmSkin)
+  foreArm.box(-0.04, -0.31, -0.045, 0.055, -0.26, 0.045, wound, MAT.actor)
+
+  const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
+  const shin = box(0.13, -0.41, 0.43, 0.14, trousers)
+  const foot = box(0.21, -0.075, 0.09, 0.14, boot)
+
+  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot]
+}
+
 export class ZombieCrowdRenderer {
   private readonly models: number[]
   private readonly partData: Float32Array<ArrayBuffer>[]
-  private readonly partCounts = new Int32Array(PART_COUNT)
+  readonly partCounts = new Int32Array(PART_COUNT)
   private readonly poolBatches: Batch[]
   private readonly scratchProfile: HumanProfile = { ...humanProfiles.zombie }
   private readonly scratchTorsoFrame: Frame = { p: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }
@@ -337,40 +374,9 @@ export class ZombieCrowdRenderer {
   private currBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
   private prevBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
 
-  constructor(renderer: Pick<Renderer, "addModel">) {
-    const box = (w: number, y0: number, h: number, d: number, col: Rgb) => {
-      const m = new Mesh()
-      m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
-      return m
-    }
-    const skin = hex(0x6c7d60)
-    const forearmSkin = hex(0x4e5d45)
-    const jacket = hex(0x454137)
-    const trousers = hex(0x2b3136)
-    const wound = hex(0x581416)
-    const hair = hex(0x212623)
-    const boot = hex(0x26201c)
-
-    const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
-    const torso = box(0.28, -0.02, 0.48, 0.4, jacket)
-    torso.box(0.11, 0.12, -0.12, 0.145, 0.36, 0.08, wound, MAT.actor)
-    torso.box(-0.145, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
-
-    const head = box(0.18, 0.01, 0.24, 0.18, skin)
-    head.box(-0.1, 0.19, -0.11, 0.1, 0.28, 0.11, hair, MAT.actor)
-    for (const z of [-0.042, 0.042]) {
-      head.box(0.086, 0.13, z - 0.016, 0.095, 0.155, z + 0.016, hex(0x98d838), MAT.glow, 0.55)
-    }
-
-    const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
-    const foreArm = box(0.11, -0.28, 0.3, 0.11, forearmSkin)
-    foreArm.box(-0.04, -0.31, -0.045, 0.055, -0.26, 0.045, wound, MAT.actor)
-
-    const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
-    const shin = box(0.13, -0.41, 0.43, 0.14, trousers)
-    const foot = box(0.21, -0.075, 0.09, 0.14, boot)
-
-    this.models = [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot].map((m) => renderer.addModel(m))
+  constructor(renderer: Pick<Renderer, "addModel">, maxAgents = INITIAL_AGENT_CAPACITY) {
+    if (maxAgents > this.capacity) this.growCapacity(maxAgents)
+    this.models = buildZombiePartMeshes().map((m) => renderer.addModel(m))
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
     this.poolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
       model: this.models[i]!,
