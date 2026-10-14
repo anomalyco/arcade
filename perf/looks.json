@@ -1,0 +1,210 @@
+{
+  "date": "2026-10-14",
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3"
+  },
+  "pixelIdentityUnderCurrent": {
+    "verified": true,
+    "streetBaselineBytes": 549507,
+    "streetRestoredBytes": 549507,
+    "diffBytes": 0
+  },
+  "debugRoomPerf": {
+    "viewport": [
+      1280,
+      800
+    ],
+    "metric": "dependent whole-frame GPU timestamp interval (ms)",
+    "warmupRounds": 1,
+    "measuredPairs": 7,
+    "presets": {
+      "current": {
+        "medianGpuMs": 3.4821,
+        "madGpuMs": 1.5218,
+        "deltaVsCurrentMs": 0,
+        "samples": [
+          0.638,
+          4.5341,
+          3.4821,
+          0.6695,
+          0.6471,
+          4.9135,
+          5.0039
+        ]
+      },
+      "noir": {
+        "medianGpuMs": 2.904,
+        "madGpuMs": 2.1291,
+        "deltaVsCurrentMs": -0.5781,
+        "samples": [
+          2.904,
+          5.7881,
+          0.7412,
+          0.7749,
+          0.7769,
+          5.148,
+          4.728
+        ]
+      },
+      "painterly": {
+        "medianGpuMs": 0.8063,
+        "madGpuMs": 0.0214,
+        "deltaVsCurrentMs": -2.6758,
+        "samples": [
+          0.7972,
+          3.5097,
+          0.7866,
+          0.8063,
+          0.7849,
+          6.7242,
+          5.7253
+        ]
+      },
+      "cinematic_dusk": {
+        "medianGpuMs": 0.8113,
+        "madGpuMs": 0.0546,
+        "deltaVsCurrentMs": -2.6708,
+        "samples": [
+          0.7649,
+          4.9761,
+          0.7567,
+          0.8113,
+          0.7586,
+          4.5597,
+          4.9767
+        ]
+      },
+      "sodium_70s": {
+        "medianGpuMs": 0.7731,
+        "madGpuMs": 0.0275,
+        "deltaVsCurrentMs": -2.709,
+        "samples": [
+          0.7731,
+          6.4218,
+          0.7456,
+          0.7862,
+          0.764,
+          0.7395,
+          6.1521
+        ]
+      },
+      "cozy_golden_hour": {
+        "medianGpuMs": 0.7824,
+        "madGpuMs": 0.0155,
+        "deltaVsCurrentMs": -2.6997,
+        "samples": [
+          0.7824,
+          5.2585,
+          0.7441,
+          0.7979,
+          0.7742,
+          0.7672,
+          7.2992
+        ]
+      }
+    }
+  },
+  "outbreakHookPerf": {
+    "viewport": [
+      1000,
+      680
+    ],
+    "metric": "queue-completed frame submission span (ms)",
+    "warmupRounds": 1,
+    "measuredPairs": 7,
+    "presets": {
+      "current": {
+        "medianSpanMs": 8.2375,
+        "madSpanMs": 0.7125,
+        "deltaVsCurrentMs": 0,
+        "samples": [
+          8.95,
+          3.275,
+          3.4,
+          8.7375,
+          8.2,
+          8.2375,
+          9.125
+        ]
+      },
+      "noir": {
+        "medianSpanMs": 8.775,
+        "madSpanMs": 3.3,
+        "deltaVsCurrentMs": 0.5375,
+        "samples": [
+          12.075,
+          4.35,
+          4.7125,
+          8.775,
+          4.85,
+          9.7,
+          9.8625
+        ]
+      },
+      "painterly": {
+        "medianSpanMs": 8.4625,
+        "madSpanMs": 1.65,
+        "deltaVsCurrentMs": 0.225,
+        "samples": [
+          10.1125,
+          4.8125,
+          4.2375,
+          9.1875,
+          4.275,
+          8.4625,
+          9.8125
+        ]
+      },
+      "cinematic_dusk": {
+        "medianSpanMs": 6.6125,
+        "madSpanMs": 2.5,
+        "deltaVsCurrentMs": -1.625,
+        "samples": [
+          8.575,
+          4.675,
+          3.9625,
+          6.6125,
+          4.1125,
+          11.4,
+          9.8
+        ]
+      },
+      "sodium_70s": {
+        "medianSpanMs": 5.375,
+        "madSpanMs": 1.3625,
+        "deltaVsCurrentMs": -2.8625,
+        "samples": [
+          8.35,
+          4.3625,
+          4.0125,
+          5.375,
+          4.5375,
+          8.475,
+          10.9625
+        ]
+      },
+      "cozy_golden_hour": {
+        "medianSpanMs": 5.425,
+        "madSpanMs": 1.3875,
+        "deltaVsCurrentMs": -2.8125,
+        "samples": [
+          8.5125,
+          4.625,
+          4.0375,
+          5.425,
+          5.2,
+          8.375,
+          9.2375
+        ]
+      }
+    }
+  },
+  "commandsVerified": [
+    "look.preset",
+    "look.set",
+    "look.randomize",
+    "preset.export",
+    "preset.import"
+  ]
+}

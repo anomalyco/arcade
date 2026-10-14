@@ -29,6 +29,8 @@ import {
 } from "../gpu/foliage"
 import { FOLIAGE_LIGHTING_PRESETS } from "./foliage"
 import { lightingDefaults } from "./lighting"
+import type { LookLabController } from "./looks"
+import { LOOK_PRESETS, LOOK_PRESET_IDS, resolveLookPresetId, type LookGroup } from "../gpu/look"
 import { createRadialMenuDOM, RadialMenuStateMachine, type RadialReleaseResult } from "./radial"
 import { applyGameRecipe, buildGameRecipe, type GameRecipePayload } from "./recipe"
 import {
@@ -141,10 +143,11 @@ export type WorkbenchOptions = {
   renderNow: () => Promise<unknown>
   advanceSim: (dt: number) => void
   spawn?: ReturnType<typeof createSpawn>
+  looks?: LookLabController
 }
 
 export function createWorkbench(opts: WorkbenchOptions) {
-  const { root, canvas, panel, context, sections, globalSettings, selectSection, renderNow, advanceSim, spawn } = opts
+  const { root, canvas, panel, context, sections, globalSettings, selectSection, renderNow, advanceSim, spawn, looks } = opts
   const { stage, input } = context
   const isBench = new URLSearchParams(location.search).has("bench")
 
@@ -2247,6 +2250,120 @@ export function createWorkbench(opts: WorkbenchOptions) {
         return { textures: { ...foliageTextureUrls } }
       },
     },
+    {
+      id: "look.preset",
+      label: "Apply Rendering Look Preset",
+      shortLabel: "Look Preset",
+      category: "Preset",
+      undoable: true,
+      args: {
+        preset: {
+          type: "string",
+          required: true,
+          description: "Preset ID or name (current, noir, painterly, cinematic_dusk, sodium_70s, cozy_golden_hour)",
+        },
+      },
+      enabled: () => Boolean(looks) && mode !== "play",
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode. Run 'arcade release' first." : "Looks section unavailable."),
+      run: (_ctx, args) => {
+        if (!looks) throw new Error("Looks controller is not available.")
+        const raw = String(args?.preset ?? "").trim()
+        const pid = resolveLookPresetId(raw)
+        if (!pid) {
+          throw new Error(`Unknown look preset "${raw}". Valid presets: ${LOOK_PRESET_IDS.join(", ")}.`)
+        }
+        if (globalSettings.section !== "looks") selectSection("looks")
+        const settings = looks.applyPreset(pid)
+        activeCatalogId = `look-preset:${pid}`
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          preset: pid,
+          label: LOOK_PRESETS[pid].label,
+          settings,
+        }
+      },
+    },
+    {
+      id: "look.set",
+      label: "Set Rendering Look Parameter",
+      shortLabel: "Look Set",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        key: { type: "string", required: true, description: "Look parameter key (e.g. exposure, contrast, shaftStrength, fogDensity)" },
+        value: { type: "value", required: true, description: "Parameter value" },
+      },
+      enabled: () => Boolean(looks) && mode !== "play",
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode. Run 'arcade release' first." : "Looks section unavailable."),
+      run: (_ctx, args) => {
+        if (!looks) throw new Error("Looks controller is not available.")
+        const key = String(args?.key ?? "").trim()
+        const val = args?.value
+        if (!key || val === undefined) throw new Error("look.set requires key and value.")
+        if (globalSettings.section !== "looks") selectSection("looks")
+        const found = findControlRow([panel], key)
+        if (found && found.control.type !== "action") {
+          const before = panel.navigation.settings[found.control.key]
+          const next = coerceControlValue(found.control, val)
+          panel.navigation.set(found.control, next)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return {
+            key: found.control.key,
+            label: found.control.label,
+            group: found.row.group,
+            before,
+            value: panel.navigation.settings[found.control.key],
+            preset: looks.getLookSettings().preset,
+          }
+        }
+        const res = looks.setParam(key, val as string | number | boolean)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          ...res,
+          preset: looks.getLookSettings().preset,
+        }
+      },
+    },
+    {
+      id: "look.randomize",
+      label: "Randomize Rendering Look Parameters",
+      shortLabel: "Look Randomize",
+      category: "Preset",
+      undoable: true,
+      args: {
+        group: {
+          type: "string",
+          required: false,
+          description: "Group to randomize (all, tone, split_tone, lighting, atmosphere, lens, painterly)",
+        },
+        seed: {
+          type: "number",
+          required: false,
+          min: 1,
+          max: 9999,
+          description: "Deterministic tuning seed (leaves roomSeed unchanged)",
+        },
+      },
+      enabled: () => Boolean(looks) && mode !== "play",
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode. Run 'arcade release' first." : "Looks section unavailable."),
+      run: (ctx, args) => {
+        if (!looks) throw new Error("Looks controller is not available.")
+        if (globalSettings.section !== "looks") selectSection("looks")
+        const rawGroup = typeof args?.group === "string" ? args.group : "all"
+        const explicitSeed = typeof args?.seed === "number" ? args.seed : ctx?.seed
+        const out = looks.randomizeGroup(rawGroup as LookGroup | "all", explicitSeed)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return out
+      },
+    },
   ])
 
   function buildSceneState(): Omit<LabSceneState, "commands"> {
@@ -3158,7 +3275,44 @@ export function createWorkbench(opts: WorkbenchOptions) {
       })
     }
 
-    // 8. Lighting Category
+    // 8. Lighting & Looks Categories
+    const looksSec = sections.find(s => s.id === "looks")
+    if (looksSec && looks) {
+      entries.push({
+        id: "section:looks",
+        label: "Looks Debug Room",
+        group: "Rendering Styles (Looks)",
+        category: "lighting",
+        collection: "shared",
+        tag: "Room",
+        sectionId: "looks",
+        isActive: () => globalSettings.section === "looks",
+        run: () => selectSection("looks"),
+      })
+      for (const pid of LOOK_PRESET_IDS) {
+        const def = LOOK_PRESETS[pid]
+        const id = `look-preset:${pid}`
+        entries.push({
+          id,
+          label: def.label,
+          group: "Rendering Styles (Looks)",
+          category: "lighting",
+          collection: "shared",
+          tag: "Look",
+          sectionId: "looks",
+          isActive: () => globalSettings.section === "looks" && looksSec.settings.preset === pid,
+          run: () => {
+            const before = captureSnapshot()
+            activeCatalogId = id
+            if (globalSettings.section !== "looks") selectSection("looks")
+            looks.applyPreset(pid)
+            recordHistory(`Look preset: ${def.label}`, before)
+            panel.sync()
+            void renderNow()
+          },
+        })
+      }
+    }
     entries.push({
       id: "section:lighting",
       label: "Stage Lighting & Grade",
@@ -3597,6 +3751,18 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const obj = parsed as Record<string, unknown>
     if (obj.version !== 1) {
       return { ok: false, error: `Unsupported preset schema version: ${String(obj.version)} (expected 1).` }
+    }
+    if (obj.section === undefined && looks && ("preset" in obj || (obj.settings && typeof obj.settings === "object" && "exposure" in (obj.settings as Record<string, unknown>)))) {
+      const before = captureSnapshot()
+      if (globalSettings.section !== "looks") selectSection("looks")
+      const res = looks.importPresetJson(obj)
+      if (!res.ok) return res
+      recordHistory("Import look preset", before)
+      panel.sync()
+      syncChrome()
+      void renderNow()
+      showToast("Imported look preset")
+      return { ok: true }
     }
     if (typeof obj.section !== "string" || !sections.some(s => s.id === obj.section)) {
       return { ok: false, error: `Unknown Lab section: "${String(obj.section)}".` }
@@ -4242,8 +4408,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const envLabel = envCtrl && "options" in envCtrl ? envCtrl.options.find(o => o.value === envOwner.settings[envCtrl.key])?.label : null
       const seed = envOwner.settings.seed ?? envOwner.settings.roomSeed
       let title = sec.detailsGroups ? "Scene" : sec.label
-      const primary = sec.controls.find(c => (c.key === "effect" || c.key === "recipe" || c.key === "treePreset") && "options" in c)
+      const primary = sec.controls.find(c => (c.key === "effect" || c.key === "recipe" || c.key === "treePreset" || c.key === "preset") && "options" in c)
       if (!sec.detailsGroups && primary && "options" in primary) title = primary.options.find(o => o.value === sec.settings[primary.key])?.label ?? sec.label
+      if (sec.id === "looks" && "preset" in sec.settings) {
+        const pid = resolveLookPresetId(sec.settings.preset) ?? "current"
+        title = LOOK_PRESETS[pid].label
+        inspectorSub.textContent = `Looks · ${LOOK_PRESETS[pid].directionRef}`
+      }
       inspectorTitle.textContent = title
       detailsMeta.textContent = ["Nothing selected · scene settings", envLabel, seed !== undefined ? `seed ${seed}` : null].filter(Boolean).join(" · ")
       detailsIcon.textContent = LIBRARY_CATEGORIES.find(c => c.id === (sec.library?.category ?? sectionLibraryCategory(sec.id)))?.icon ?? "◇"

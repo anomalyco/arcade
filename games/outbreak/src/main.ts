@@ -3,6 +3,17 @@ import { keyLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import {
+  LOOK_PRESETS,
+  LOOK_PRESET_IDS,
+  applyLookPreset,
+  createLookControls,
+  createLookSettings,
+  resolveLookPresetId,
+  type LookCompareMode,
+  type LookPresetId,
+  type LookSettings,
+} from "@arcade/kit/look"
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
@@ -28,6 +39,8 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
+const lookSettings = createLookSettings("current")
+const lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
 const peaceful = params.has("peaceful")
 const settings = {
   hour: 18,
@@ -54,6 +67,7 @@ const settings = {
   texContrast: 1.0,
   texRoughness: 0.0,
   humanProfile: 0,
+  lookPreset: "current",
   ...DEFAULT_STAMINA_TUNING,
   ...DEFAULT_FLASHLIGHT_TUNING,
   ...zombieTuning,
@@ -197,6 +211,7 @@ async function main() {
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
     { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
+    { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
     { key: "exposure", label: "Exposure", group: "Look", min: 0.5, max: 2, step: 0.05 },
     { key: "skyFill", label: "Sky fill", group: "Look", min: 0, max: 1.5, step: 0.05 },
     { key: "moonFill", label: "Moonlight fill", group: "Look", min: 0, max: 2, step: 0.05 },
@@ -375,6 +390,11 @@ async function main() {
         key === "texRoughness"
       )
         syncTextures()
+      if (key === "lookPreset") {
+        const pid = resolveLookPresetId(settings.lookPreset) ?? "current"
+        applyLookPreset(lookSettings, pid)
+        lab.refresh()
+      }
     },
   )
 
@@ -449,6 +469,10 @@ async function main() {
     ])
   })
 
+  lab.addControls(
+    lookSettings as unknown as Record<string, string | number | boolean>,
+    createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
+  )
   let vertices = 0
   function level() {
     session.view.town.foliageDensity = settings.foliageDensity
@@ -799,6 +823,8 @@ async function main() {
     render.lampCount = town.lamps.length
     render.view = view
     render.grade = [time, settings.diagnostic, 0, settings.exposure]
+    render.look = lookSettings
+    render.lookCompare = lookCompare
     renderer.render(render)
     if (staminaEl && staminaFill) {
       const pct = Math.max(0, Math.min(100, p.stamina * 100))
@@ -955,17 +981,16 @@ async function main() {
       clock.reset(performance.now(), liveMove())
       if (!frozen) scheduleFrame()
     },
-    setLab(key: keyof typeof settings, value: number | boolean) {
+    setLab(key: keyof typeof settings, value: number | boolean | string) {
       const control = controls.find((c) => c.key === key)
       if (!control) throw new Error(`Invalid lab key: ${String(key)}`)
       if (typeof value === "boolean") {
         ;(settings as Record<string, unknown>)[key] = value
       } else {
         if (
-          !Number.isFinite(value) ||
-          ("min" in control
-            ? value < control.min || value > control.max
-            : "options" in control && !control.options.some((o) => o.value === value))
+          "min" in control
+            ? typeof value !== "number" || !Number.isFinite(value) || value < control.min || value > control.max
+            : "options" in control && !control.options.some((o) => o.value === value)
         ) {
           throw new Error(`Invalid lab value: ${String(key)}`)
         }
@@ -976,7 +1001,7 @@ async function main() {
         session.ai.config.zombieCount = Number(settings.zombieCount)
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
-      if (key === "hour") session.view.hour = wrapHour(Number(value))
+      if (key === "hour" && typeof value === "number") session.view.hour = wrapHour(value)
       if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
       if (
         key === "textures" ||
@@ -988,7 +1013,31 @@ async function main() {
         key === "texRoughness"
       )
         syncTextures()
+      if (key === "lookPreset") {
+        const pid = resolveLookPresetId(value) ?? "current"
+        applyLookPreset(lookSettings, pid)
+        lab.refresh()
+      }
     },
+    setLookPreset(preset: LookPresetId | string) {
+      const pid = resolveLookPresetId(preset)
+      if (!pid) throw new Error(`Unknown look preset: ${preset}`)
+      settings.lookPreset = pid
+      applyLookPreset(lookSettings, pid)
+      lab.refresh()
+      return { ...lookSettings }
+    },
+    setLook(patch: Partial<LookSettings>) {
+      Object.assign(lookSettings, patch)
+      if (patch.preset) settings.lookPreset = patch.preset
+      lab.refresh()
+      return { ...lookSettings }
+    },
+    setLookCompare(mode: LookCompareMode, wipeSplit = 0.5) {
+      lookCompare.mode = mode
+      lookCompare.wipeSplit = wipeSplit
+    },
+    getLook: () => ({ ...lookSettings }),
     pose(x: number, y: number, aim: number) {
       Object.assign(session.view.player, {
         x,

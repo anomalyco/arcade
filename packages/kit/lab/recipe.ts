@@ -8,6 +8,7 @@ export type GameRecipeTarget =
   | "getaway-effects"
   | "shared-effects"
   | "lighting"
+  | "looks"
   | "spawn"
   | "foliage"
 
@@ -107,6 +108,29 @@ export function buildGameRecipe(opts: {
       effectSeed,
       values,
       codeSnippet: `// ${modulePath} -> ${exportName}${activeEffect === "tyre" ? "" : `.${activeEffect}`}\n${activeEffect}: { ${entries} },`,
+    }
+  }
+
+  if (sectionId === "looks") {
+    const values: Record<string, number | boolean | string> = {}
+    for (const [k, v] of Object.entries(settings)) {
+      if (k === "compare" || k === "wipeSplit" || k === "roomSeed" || k === "tuningSeed") continue
+      if (typeof v === "number" && Number.isFinite(v)) values[k] = Number(v.toFixed(4))
+      else if (typeof v === "boolean" || typeof v === "string") values[k] = v
+    }
+    const entries = Object.entries(values)
+      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+      .join(", ")
+    const presetName = String(settings.preset ?? "current")
+    return {
+      schema: "arcade-game-recipe/v1",
+      target: "looks",
+      modulePath: "packages/kit/gpu/look.ts",
+      exportName: "LOOK_PRESETS",
+      group: presetName,
+      seed,
+      values,
+      codeSnippet: `// packages/kit/gpu/look.ts -> LOOK_PRESETS.${presetName}.defaults\n{ ${entries} }`,
     }
   }
 

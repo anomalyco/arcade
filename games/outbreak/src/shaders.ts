@@ -1,17 +1,23 @@
-import { makeSceneShader, spriteShader, postShader } from "@arcade/kit/gpu/shaders"
+import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
 import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
 
-/** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
-export const shaders = {
-  sprite: spriteShader(),
-  post: postShader(false,false,{chromatic:0,bloom:.055,grain:.002,vignette:.90,diagnostics:true,shadowLift:0,huePreserve:.42}),
-  scene: makeSceneShader({
-    ao: "0.42",
-    bounce: "vec3f(0.0)",
-    lightLeak: "0.006 * vis",
-    lightAttenuation: `let dn = max(d3, 0.85);
+export const outbreakPostFinish: PostFinishOptions = {
+  chromatic: 0,
+  bloom: .055,
+  grain: .002,
+  vignette: .90,
+  diagnostics: true,
+  shadowLift: 0,
+  huePreserve: .42,
+}
+
+export const outbreakSceneHooks: SceneHooks = {
+  ao: "0.42",
+  bounce: "vec3f(0.0)",
+  lightLeak: "0.006 * vis",
+  lightAttenuation: `let dn = max(d3, 0.85);
     if (L.cone.w > 0.5 && L.pos.w < 4.5) {
       let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.96) / 0.65, 0.0, 1.0);
       let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.55) - 0.85) / 1.25, 0.0, 1.0);
@@ -23,24 +29,24 @@ export const shaders = {
       att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
-    wallDirectScale: "mix(0.18, 0.33, smoothstep(0.0, 1.5, o.world.y))",
-    ambient: "ambientAt(n) * mix(0.05, 1.0, select(1.0, select(floorData(o.world.xz).g, 0.04, abs(n.y) < 0.5), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.008, 0.005, 0.0025), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)",
-    diagnostics: "F.map.z",
-    smoothShadows: true,
-    shadowTaps: 5,
-    lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
-    material: " ",
-    postLightMaterial: `${surfaceMaterial}
+  wallDirectScale: "mix(0.18, 0.33, smoothstep(0.0, 1.5, o.world.y))",
+  ambient: "ambientAt(n) * mix(0.05, 1.0, select(1.0, select(floorData(o.world.xz).g, 0.04, abs(n.y) < 0.5), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.008, 0.005, 0.0025), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)",
+  diagnostics: "F.map.z",
+  smoothShadows: true,
+  shadowTaps: 5,
+  lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
+  material: " ",
+  postLightMaterial: `${surfaceMaterial}
       if (mat == 22 && o.aux < -1.5 && alpha < 0.22) { return vec4f(0.0); }
     `,
-    fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
-    vertex: /* wgsl */ `
+  fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
+  vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
     let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, defaultFoliageWindConfig());
     o.world = fw[0];
     o.normal = fw[1];
   }`,
-    declarations: /* wgsl */ `
+  declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
 ${surfaceMaterialDeclarations}
 ${foliageWindDeclarationsWgsl}
@@ -98,8 +104,8 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
   return los * max(cone, near) * range;
 }`,
-    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 1.75, 0.08, abs(n.y) < 0.5), 1.0, !interior(o.world.xz + n.xz * 0.28) || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
-    cutaway: `
+  directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 1.75, 0.08, abs(n.y) < 0.5), 1.0, !interior(o.world.xz + n.xz * 0.28) || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
         for(var i=0;i<4;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
@@ -110,9 +116,9 @@ fn eyeVisible(p: vec2f) -> f32 {
         if (wr < 1.0 && bayer4x4(o.pos) < smoothstep(1.0, 0.45, wr) * alpha * 0.92) { discard; }
       }
     `,
-    // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
-    solidCutaway: "",
-    surface: /* wgsl */ `
+  // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
+  solidCutaway: "",
+  surface: /* wgsl */ `
   let inRoom = interior(o.world.xz + n.xz * 0.28);
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, (o.world.xz + n.xz * 0.24) * F.map.xy, 0.0).r;
@@ -205,5 +211,13 @@ fn eyeVisible(p: vec2f) -> f32 {
     }
   }
 `,
-  }),
+}
+
+/** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
+export const shaders = {
+  sprite: spriteShader(),
+  post: postShader(false, false, outbreakPostFinish),
+  scene: makeSceneShader(outbreakSceneHooks),
+  lookScene: makeLookSceneShader(outbreakSceneHooks),
+  lookPost: makeLookPostShader(outbreakPostFinish),
 }

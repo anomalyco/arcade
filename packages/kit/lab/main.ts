@@ -6,6 +6,7 @@ import { Stage, type CameraWriter } from "./stage"
 import { createEffects } from "./effects"
 import { createFoliage } from "./foliage"
 import { createLighting } from "./lighting"
+import { createLooksSection } from "./looks"
 import { createMaterials } from "./materials"
 import { createPhysics } from "./physics"
 import type { LabContext, LabSection, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
@@ -169,8 +170,8 @@ export async function lab(options:LabOptions) {
     hasPlaygroundScene:()=>Boolean(spawn?.hasActiveScene()),
   }
   spawn=options.spawn?createSpawn(context,options.spawn(context)):undefined
-  const effects=createEffects(context),physics=createPhysics(context,spawn?.physics??options.physics?.(context))
-  const sections=[effects.section,createLighting(context),createMaterials(context,options.materials??[]),createFoliage(context),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
+  const effects=createEffects(context),looks=createLooksSection(context),physics=createPhysics(context,spawn?.physics??options.physics?.(context))
+  const sections=[effects.section,createLighting(context),looks.section,createMaterials(context,options.materials??[]),createFoliage(context),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
   const ids=new Set<string>()
   for(const section of sections){if(ids.has(section.id))throw new Error(`Duplicate Lab section: ${section.id}`);ids.add(section.id)}
   for(const s of sections)sectionSelect.add(new Option(s.label,s.id))
@@ -202,7 +203,7 @@ export async function lab(options:LabOptions) {
     sectionSelect.value=id
     syncDebugOptions(id)
     const inPlayground=Boolean(spawn?.hasActiveScene()&&isPlaygroundSection(id))
-    stage.sceneMode=inPlayground||(id==="spawn"||id==="physics"&&spawn)?(spawn?.section.settings.environment==="yard"?3:4):id==="lighting"?1:id==="materials"?2:0
+    stage.sceneMode=inPlayground||(id==="spawn"||id==="physics"&&spawn)?(spawn?.section.settings.environment==="yard"?3:4):id==="lighting"?1:id==="materials"?2:id==="looks"?5:0
     panel?.clearControls();panel?.addControls(active.settings,active.controls,workbench?.sectionDefaults(id))
     if(!keepPlayground||id==="effects")active.enter?.()
     else if(id==="spawn")spawn?.section.enter?.()
@@ -287,6 +288,7 @@ export async function lab(options:LabOptions) {
       active.update?.(s)
     },
     spawn,
+    looks,
   })
 
   select("effects")
@@ -318,6 +320,16 @@ export async function lab(options:LabOptions) {
     }else{
       stage.frameTarget(-1,0.5,0,15)
     }
+    const rawHash=location.hash.replace(/^#/,"").trim().toLowerCase()
+    if(rawHash){
+      const [secHash,subHash]=rawHash.split("/")
+      if(secHash&&sections.some(s=>s.id===secHash)){
+        select(secHash)
+        if(secHash==="looks"&&subHash){
+          try{workbench.invoke("look.preset",{preset:subHash})}catch{}
+        }
+      }
+    }
   }
   window.addEventListener("hashchange",()=>{
     const target=resolveDeepSection()
@@ -335,6 +347,7 @@ export async function lab(options:LabOptions) {
     render,
     advance,
     attachPhysics:physics.attach,
+    looks,
     spawn:spawn?{inspect:spawn.inspect}:undefined,
     workbench:{
       undo:()=>workbench!.undo(),
