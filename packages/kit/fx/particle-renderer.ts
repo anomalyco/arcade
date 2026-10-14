@@ -100,9 +100,10 @@ ${blackbodyFireWgsl}
 @fragment fn fs(o:Out)->@location(0) vec4f {
   var alpha=o.color.a;
   if(o.kind==7.0){
+    let r=length(o.uv);
+    if(r>=0.98){discard;}
     let seed=o.misc.x;let age=clamp(o.misc.y,0.0,1.0);
     let tempScale=max(0.1,o.misc.z);let turb=max(0.25,o.misc.w);
-    let r=length(o.uv);
     let q=o.uv*(1.85+turb*0.72)+vec2f(cos(seed*1.3)*3.7,sin(seed*1.7)*3.7-age*1.85);
     let warp=vec2f(vnoise(q*1.25+vec2f(0.0,-age*2.1)),vnoise(q*1.25+vec2f(7.4,age*1.8)))-0.5;
     let n1=vnoise(q+warp*(0.95*turb));
@@ -139,6 +140,7 @@ ${blackbodyFireWgsl}
   }
   if(o.kind==5.0){
     let r=length(o.uv);
+    if(r>=0.98){discard;}
     let n=fbm3(o.uv*3.4+vec2f(o.misc.x,o.misc.y*2.2));
     let waveR=0.74+(n-0.5)*0.15;
     let ring=exp(-pow((r-waveR)/0.105,2.0))*0.88+smoothstep(waveR,waveR-0.36,r)*smoothstep(0.20,waveR-0.08,r)*0.34;
@@ -152,6 +154,7 @@ ${blackbodyFireWgsl}
   }
   if(o.kind==6.0){
     let r=length(o.uv);
+    if(r>=0.98){discard;}
     let angle=atan2(o.uv.y,o.uv.x);
     let spokes=0.5+0.3*sin(angle*7.0+o.misc.x)+0.2*cos(angle*13.0-o.misc.x*1.7);
     let n=fbm3(o.uv*3.8+vec2f(o.misc.x,o.misc.x*0.5));

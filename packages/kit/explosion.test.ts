@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import {
   applyExplosionSmokeLive,
+  computeExplosionLod,
   EXPLOSION_PRESET_IDS,
   EXPLOSION_PRESETS,
   explosionDefaults,
@@ -12,7 +13,7 @@ import {
   type ExplosionNumericKey,
 } from "./fx/explosion"
 import { Particles, PARTICLE_STRIDE } from "./fx/particles"
-import { SmokeVolumes } from "./fx/volume"
+import { SmokeVolumes, VOLUMES } from "./fx/volume"
 
 function seededRng(seed = 7) {
   return () => {
@@ -141,4 +142,32 @@ test("explosionFlashLight peaks at detonation and decays to null after fireball 
   applyExplosionSmokeLive(v, { ...explosionDefaults, smokeRise: 1.1, smokeColorShift: 0.9 })
   expect(v.settings.rise).toBeCloseTo(1.1, 5)
   expect(v.colorShift).toBeCloseTo(0.9, 5)
+})
+
+test("computeExplosionLod and SmokeVolumes cap concurrent load and coalesce nearby blasts", () => {
+  const lod0 = computeExplosionLod(0, 10, 24)
+  const lodDist = computeExplosionLod(0, 60, 24)
+  const lodCrowd = computeExplosionLod(650, 10, 24)
+
+  expect(lod0.tier).toBe(0)
+  expect(lod0.countScale).toBe(1)
+  expect(lodDist.countScale).toBeLessThan(0.6)
+  expect(lodCrowd.countScale).toBeLessThan(0.6)
+  expect(lodCrowd.sizeCompensation).toBeGreaterThan(1.05)
+
+  // Grenade spam at the same spot coalesces into 1 volume slot; 6 widely spaced blasts cap at VOLUMES (4)
+  const p = new Particles()
+  const v = new SmokeVolumes()
+  v.reset([], 7)
+  for (let i = 0; i < 4; i++) {
+    spawnExplosion(p, v, 0 + i * 0.8, 0, 0, EXPLOSION_PRESETS.grenade.settings, seededRng(7 + i))
+  }
+  expect(v.count).toBe(1)
+
+  for (let i = 0; i < 6; i++) {
+    spawnExplosion(p, v, i * 12, 0, 0, EXPLOSION_PRESETS.grenade.settings, seededRng(20 + i))
+    v.update(1 / 60)
+  }
+  expect(v.count).toBeLessThanOrEqual(VOLUMES)
+  expect(p.count).toBeLessThan(800)
 })

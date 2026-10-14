@@ -1090,14 +1090,14 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let macroTone = (surfaceNoise(p * 0.20 + vec2f(8.3, 1.4)) - 0.5) * 0.24 * macroVar;
     let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
     let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.38, gutterDist)) * 0.36;
-    let leafCell = floor(p * 9.5);
+    let leafCell = floor(p * 9.0);
     let leafHash = hash2(leafCell + vec2f(4.7, 9.1));
-    let leafMask = step(0.955, leafHash) * (1.0 - smoothstep(0.0, 1.35, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.5));
+    let leafMask = step(0.946, leafHash) * (1.0 - smoothstep(0.0, 1.65, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.0));
 
     col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar) * gutterShade;
     col = mix(col, col * vec3f(0.76, 0.78, 0.82), tarPatch * 0.55);
     col = mix(col, col * 0.50, crack * 0.68);
-    col = mix(col, vec3f(0.42, 0.28, 0.14), leafMask * 0.75);
+    col = mix(col, select(vec3f(0.34, 0.21, 0.08), vec3f(0.46, 0.30, 0.12), fract(leafHash * 17.3) > 0.5), leafMask * 0.78);
     localRough = clamp(localRough - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
     cavity = (1.0 - crack * 0.4) * gutterShade;
   }
@@ -1143,14 +1143,11 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   let clumpField = c0 * 0.56 + c1 * 0.44;
   let overgrownMask = smoothstep(0.34, 0.72, clumpField);
 
-  // 2. Multi-scale impostor blade-tuft micro-relief + high-frequency detail normal (visible at 34-46m AND close-up)
+  // 2. Multi-scale impostor blade-tuft micro-relief + high-frequency detail normal
   let tuftMed = surfaceNoiseGrad(windUv * vec2f(3.2, 2.2) * gScale + vec2f(4.2, 7.1));
-  let detailG = surfaceNoiseGrad(windUv * vec2f(14.5, 11.0) * gScale + vec2f(1.7, 8.3));
-  let bladeFreq = 26.0 * gScale;
-  let bladeAtten = 1.0 - smoothstep(0.04, 0.32, surfaceFootprint * bladeFreq * 0.08);
-  let bladeFine = (surfaceNoise(windUv * vec2f(bladeFreq, bladeFreq * 0.65) + vec2f(windWave * 0.35, 2.9)) - 0.5) * bladeAtten;
+  let bladeFine = grain(windUv + vec2f(windWave * 0.15, 0.0), 18.0 * gScale);
 
-  let tuftHeight = c1 * 0.32 + tuftMed.x * 0.36 + (detailG.x - 0.5) * 0.28 + bladeFine * 0.32;
+  let tuftHeight = c1 * 0.34 + tuftMed.x * 0.42 + bladeFine * 0.45 + 0.12;
   let bladeCrest = smoothstep(0.24, 0.72, tuftHeight + overgrownMask * 0.14);
   let rootThatch = 1.0 - smoothstep(0.18, 0.52, tuftHeight);
 
@@ -1172,8 +1169,7 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   let gustWave = smoothstep(0.34, 0.74, windCrest * 0.65 + c0 * 0.35) * (0.28 + 0.50 * overgrownMask);
   turfCol = mix(turfCol, turfCol * vec3f(1.10, 1.08, 0.88), gustWave * 0.22);
 
-  let macroPatch = surfaceNoise(p * 0.24 + vec2f(5.1, 2.7));
-  let macroShade = mix(0.68, 1.16, smoothstep(0.22, 0.78, macroPatch));
+  let macroShade = mix(0.68, 1.16, smoothstep(0.22, 0.78, c0 * 0.65 + c1 * 0.35));
   let soilMask = smoothstep(0.44 - wear * 0.20, 0.76 - wear * 0.10, 1.0 - clumpField) * rootThatch * macroVar;
   let soilCol = vec3f(0.022, 0.020, 0.013) * (0.85 + 0.25 * c1);
   var col = mix(turfCol * macroShade, soilCol, soilMask * 0.52);
@@ -1181,16 +1177,15 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   // Scattered warm autumn fallen leaf flecks on the lawn and verge
   let leafCell = floor(p * 7.4);
   let leafHash = hash2(leafCell + vec2f(3.7, 7.9));
-  let leafPatch = smoothstep(0.36, 0.68, c0 * 0.55 + macroPatch * 0.45);
+  let leafPatch = smoothstep(0.36, 0.68, clumpField);
   let leafMask = step(0.942, leafHash) * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
   let leafCol = select(vec3f(0.16, 0.095, 0.032), vec3f(0.21, 0.14, 0.045), fract(leafHash * 19.3) > 0.5);
   col = mix(col, leafCol, leafMask * 0.78);
 
   // High-frequency ground detail normal + tuft mound normal so the lawn never reads as a flat plane
   let normAtten = 1.0 - smoothstep(0.14, 0.85, surfaceFootprint);
-  let detailAtten = 1.0 - smoothstep(0.05, 0.36, surfaceFootprint);
-  let nx = (tuftMed.y * 0.38 + detailG.y * 0.46 * detailAtten + bladeFine * 0.28 + windWave * 0.10) * normAtten;
-  let nz = (tuftMed.z * 0.38 + detailG.z * 0.46 * detailAtten + bladeFine * 0.22 + windWave * 0.06) * normAtten;
+  let nx = (tuftMed.y * 0.52 + bladeFine * 0.38 + windWave * 0.10) * normAtten;
+  let nz = (tuftMed.z * 0.52 + bladeFine * 0.32 + windWave * 0.06) * normAtten;
   surfaceNormalShift = vec3f(nx, 0.0, nz);
 
   let cavity = clamp(mix(0.48, 1.0, bladeCrest) * (0.82 + 0.18 * overgrownMask), 0.42, 1.0);
@@ -1217,8 +1212,8 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   // Isotropic plan-oriented 3D domain-warped UV for fine 3-5cm micro-leaves
   let uv3 = world.xz * 1.65 + vec2f(world.y * 0.36 + n0 * 0.28, -world.y * 0.32 - n0 * 0.24);
   let clusterG = surfaceNoiseGrad(uv3 * (11.5 * gScale) + vec2f(1.7, 6.3));
-  let bladeG = surfaceNoiseGrad(uv3 * (26.5 * gScale) + vec2f(clusterG.x * 0.7 + 5.4, 2.9));
-  let microLeaf = clusterG.x * 0.50 + bladeG.x * 0.50;
+  let bladeFine = grain(uv3 + vec2f(clusterG.x * 0.4, 0.0), 22.0 * gScale);
+  let microLeaf = clamp(clusterG.x * 0.72 + bladeFine * 0.45 + 0.14, 0.0, 1.0);
   // Crisp inter-leaf crevices with a deep-but-not-crushed multi-bounce walnut-olive floor
   let leafGap = 1.0 - smoothstep(0.26, 0.54, microLeaf);
   let leafPlate = smoothstep(0.46, 0.80, microLeaf);
@@ -1239,9 +1234,9 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
 
   let leafBumpAtten = (1.0 - smoothstep(0.08, 0.55, surfaceFootprint)) * 0.48;
   surfaceNormalShift = vec3f(
-    clusterG.y * 0.52 + bladeG.y * 0.48,
-    (clusterG.z - bladeG.y) * 0.28,
-    clusterG.z * 0.52 + bladeG.z * 0.48
+    clusterG.y * 0.68 + bladeFine * 0.32,
+    clusterG.z * 0.24,
+    clusterG.z * 0.68 - bladeFine * 0.32
   ) * leafBumpAtten;
 
   let cavity = clamp(mix(0.54, 1.0, topMask) * (1.0 - 0.32 * leafGap), 0.38, 1.0);
@@ -1291,29 +1286,29 @@ export const surfaceMaterial = /* wgsl */ `
       var inVergeGrass = false;
       var pyW = p.y;
       if (kind == 2 || kind == 3) {
-        edgeWarp = (surfaceNoise(p * 2.8 + vec2f(1.7, 4.3)) - 0.42) * 0.28;
+        edgeWarp = (sin(p.x * 7.2 + sin(p.y * 5.8) * 1.3) * 0.55 + cos(p.y * 8.1 - p.x * 4.2) * 0.45 + 0.05) * 0.085;
       }
       if (kind == 2) {
         pyW = p.y + edgeWarp;
         let pxW = p.x - edgeWarp * 0.85;
-        inNorthVerge = pyW > 39.24 && pyW < 39.84 && (pxW < 37.85 || pxW > 50.15);
-        let inSouthVerge = pyW > 48.16 && pyW < 48.76 && (pxW < 37.85 || pxW > 50.15);
+        inNorthVerge = pyW > 39.30 && pyW < 39.78 && (pxW < 37.90 || pxW > 50.10);
+        let inSouthVerge = pyW > 48.22 && pyW < 48.70 && (pxW < 37.90 || pxW > 50.10);
         let inDriveOrWalk = ((pxW > 18.85 && pxW < 21.75) || (pxW > 49.85 && pxW < 52.75)) || ((pxW > 26.88 && pxW < 28.52 && p.y < 40.0) || (pxW > 25.88 && pxW < 27.52 && p.y > 48.0));
         inVergeGrass = (inNorthVerge || inSouthVerge) && !inDriveOrWalk;
-        let inSidewalkEdgeWeeds = !inDriveOrWalk && (pxW < 37.85 || pxW > 50.15) && ((p.y >= 37.98 && pyW < 38.28) || (p.y <= 50.02 && pyW > 49.72));
-        let inWalkwayEdgeWeeds = p.y < 38.05 && (abs(p.x - 27.0) < 0.24 || abs(p.x - 28.4) < 0.24) && edgeWarp > 0.01;
+        let inSidewalkEdgeWeeds = !inDriveOrWalk && (pxW < 37.85 || pxW > 50.15) && ((p.y >= 37.98 && pyW < 38.12) || (p.y <= 50.02 && pyW > 49.88));
+        let inWalkwayEdgeWeeds = p.y < 38.05 && (abs(p.x - 27.0) < 0.14 || abs(p.x - 28.4) < 0.14) && edgeWarp > 0.015;
         isConcreteGrass = inVergeGrass || inSidewalkEdgeWeeds || inWalkwayEdgeWeeds;
       }
       if (kind == 0 || isConcreteGrass) {
         var vEdge = 1.0;
-        var grassTint = albedo * vec3f(0.68, 0.72, 0.62);
+        var grassTint = albedo * vec3f(0.76, 0.78, 0.66);
         if (isConcreteGrass) {
-          let vDist = select(0.06, select(min(pyW - 48.16, 48.76 - pyW), min(pyW - 39.24, 39.84 - pyW), inNorthVerge), inVergeGrass);
-          vEdge = smoothstep(0.0, 0.12, vDist);
-          grassTint = vec3f(0.062, 0.078, 0.036) * (0.52 + 0.48 * vEdge);
+          let vDist = select(0.05, select(min(pyW - 48.22, 48.70 - pyW), min(pyW - 39.30, 39.78 - pyW), inNorthVerge), inVergeGrass);
+          vEdge = smoothstep(0.0, 0.08, vDist);
+          grassTint = vec3f(0.082, 0.098, 0.042) * (0.78 + 0.22 * vEdge);
         }
         let s = evalGrassSoil(p, grassTint, false, defaultMaterialRecipe(4));
-        albedo = s.albedo * s.cavity * select(1.0, 0.64 + 0.36 * vEdge, isConcreteGrass);
+        albedo = s.albedo * s.cavity * select(1.0, 0.84 + 0.16 * vEdge, isConcreteGrass);
         if (texOn) {
           let tex = sampleMaterialFast(8, p, 0.58 * texScaleMult);
           albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.85 * texContrastMult);
@@ -1327,42 +1322,11 @@ export const surfaceMaterial = /* wgsl */ `
           albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.85 * texContrastMult);
         }
       } else if (kind == 2) {
-        let isShopFloor = p.x > 52.9 && (p.y < 38.1 || p.y > 53.9);
-        if (isShopFloor) {
-          let s = evalKitchenTile(p, albedo);
-          albedo = s.albedo;
-          if (texOn) {
-            let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
-            albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85 * texContrastMult);
-          }
-        } else {
-          let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
-          albedo = s.albedo * s.cavity;
-          if (texOn) {
-            let tex = sampleMaterialFast(6, p, 0.58 * texScaleMult);
-            albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.82 * texContrastMult);
-          }
-          // Weathered porch deck & front walkway: step tread seams, edge moss/grime, and threshold stain.
-          let bPorch = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
-          let onPorch = p.x >= bPorch.x + 4.45 && p.x <= bPorch.x + 7.05 && p.y >= bPorch.w - 0.05 && p.y <= bPorch.w + 1.32;
-          let onWalk = p.x >= bPorch.x + 4.95 && p.x <= bPorch.x + 6.45 && p.y > bPorch.w + 1.32 && p.y <= bPorch.w + 4.55;
-          if (onPorch) {
-            let edgeX = min(p.x - (bPorch.x + 4.5), (bPorch.x + 7.0) - p.x);
-            let edgeZ = min(p.y - bPorch.w, (bPorch.w + 1.3) - p.y);
-            let borderGrime = smoothstep(0.0, 0.32, min(edgeX, edgeZ));
-            let stainNoise = surfaceNoise(p * 3.4 + vec2f(1.7, 5.2));
-            let rustStain = smoothstep(0.42, 0.76, stainNoise) * exp(-length(p - vec2f(bPorch.x + 5.35, bPorch.w + 0.92)) * 2.1) * weatherMult;
-            let stepSeam = seam((p.y - bPorch.w) / 0.42, 0.024, 2.38);
-            albedo *= (0.44 + 0.32 * borderGrime) * mix(0.52, 1.0, stepSeam);
-            albedo = mix(albedo, vec3f(0.11, 0.04, 0.02), clamp(rustStain * 0.65, 0.0, 0.72));
-          } else if (onWalk) {
-            let walkEdge = min(p.x - (bPorch.x + 5.0), (bPorch.x + 6.4) - p.x);
-            let walkGrime = smoothstep(0.0, 0.26, walkEdge);
-            let wNoise = surfaceNoise(p * 5.2 + vec2f(2.1, 6.7));
-            let walkCrack = abs(surfaceNoise(p * 1.85 + vec2f(wNoise * 0.45, 1.9)) - 0.5);
-            let crackLine = (1.0 - smoothstep(0.005, 0.018, walkCrack)) * step(0.54, wNoise) * 0.40 * weatherMult;
-            albedo *= (0.58 + 0.28 * walkGrime) * (1.0 - crackLine);
-          }
+        let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
+        albedo = s.albedo * s.cavity;
+        if (texOn) {
+          let tex = sampleMaterialFast(6, p, 0.58 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.82 * texContrastMult);
         }
       } else if (kind == 3) {
         let uDrive = fract((p.x - 19.0) * 0.377);
@@ -1547,15 +1511,8 @@ export const surfaceMaterial = /* wgsl */ `
         albedo = mix(albedo * (0.90 + vein), vec3f(0.24, 0.26, 0.14), crestHighlight) * rootAO * mix(0.68, 0.98, pow(bladeT, 0.65));
       } else {
         let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
-        albedo = s.albedo * mix(0.64, 1.0, s.cavity);
+        albedo = s.albedo * mix(0.60, 1.04, s.cavity);
         n = normalize(n + surfaceNormalShift);
-        if (o.aux > 0.0) {
-          let uv3 = o.world.xz * 1.65 + vec2f(o.world.y * 0.36, -o.world.y * 0.32);
-          let billow1 = surfaceNoise(uv3 * 2.8 + vec2f(2.1, 4.7));
-          let brush1 = surfaceNoise(uv3 * 16.5 + vec2f(billow1 * 0.9 + 1.3, 4.7));
-          let leafCrevice = smoothstep(0.24, 0.72, brush1);
-          albedo *= mix(0.54, 1.18, leafCrevice) * (0.82 + 0.32 * billow1);
-        }
       }
     } else if (mat == 24) {
       albedo *= (0.72 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24) * mix(0.45, 0.82, smoothstep(0.0, 1.4, o.world.y)) * (1.0 - 0.42 * smoothstep(2.1, 3.8, o.world.y));

@@ -498,6 +498,7 @@ export class Explosions {
     // A flash for a frame or two, then the light it throws on everything around.
     fx.spark(x, y, z, vx * 0.5, vy * 0.5, vz * 0.5, 0.07, 16 * s, 9, 8, 6.5, 0, 0, 0)
     this.addLight(x, y, z, s, floor)
+    const distToEye = Math.hypot(x - fx.eye[0]!, y - fx.eye[1]!, z - fx.eye[2]!)
     spawnExplosion(
       fx.fxParticles,
       null,
@@ -508,7 +509,7 @@ export class Explosions {
       r,
       s * 4.6,
       1,
-      { vx: vx * 0.35, vy: vy * 0.35, vz: vz * 0.35, airburst: !ground },
+      { vx: vx * 0.35, vy: vy * 0.35, vz: vz * 0.35, airburst: !ground, distanceToEye: distToEye, referenceDist: 160 },
     )
     // The fireball: hot balls bursting out from the middle, swelling fast, then cooling into soot as they slow.
     const n = Math.round(16 * Math.sqrt(s))

@@ -950,7 +950,8 @@ export class WeaponFx implements ScenePass {
     preset?: ExplosionPresetId,
   ): void {
     const s = size
-    const near = Math.min(1, Math.max(0, (Math.hypot(x - this.eye[0], y - this.eye[1], z - this.eye[2]) - 15) / 90))
+    const distToEye = Math.hypot(x - this.eye[0], y - this.eye[1], z - this.eye[2])
+    const near = Math.min(1, Math.max(0, (distToEye - 15) / 90))
     const hot = 0.3 + 0.7 * near
     const chosen: ExplosionPresetId =
       preset ?? (water ? "barrel" : s >= 1.2 && y < 45 ? "ship" : s <= 0.6 ? "pop" : "missile")
@@ -963,6 +964,8 @@ export class WeaponFx implements ScenePass {
       vy: vy * 0.45,
       vz: vz * 0.45,
       airburst,
+      distanceToEye: distToEye,
+      referenceDist: 160,
     })
     if (this.activeFlashes.length >= 8) this.activeFlashes.shift()
     this.activeFlashes.push({ x, y, z, age: 0, preset: chosen })

@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test"
 import { locomotion, newMotion, pelvisPoint, type Locomotion, type Foot } from "./human-locomotion"
 import { humanProfiles, profileHands, profileTorso } from "./human-profile"
-import { attachment, bodyBones, boneVisible, detach, frameMotion, limbIds, pointVelocity, poseArms, poseLegs, unarmedHands, type BoneId } from "./human-pose"
-import { at, len, moved, scale, spring, turn, yawFrame, RIG, type V3 } from "./rig"
+import { attachment, bodyBones, boneVisible, detach, frameMotion, limbIds, pointVelocity, poseArms, poseLegs, poseUnarmedArms, unarmedHands, type BoneId } from "./human-pose"
+import { buildCycleFromJointFrames, buildWilliamsReferenceCycle, compareCycles, computePoseAngles, extractBodyJoints, jointsFromAngles, normalizeJoints, projectOrtho } from "./pose-diff"
+import { at, len, moved, pitch, roll, scale, spring, turn, yawFrame, RIG, type V3 } from "./rig"
 
 function actor(): Locomotion {
   const foot = (): Foot => ({ p: [0, 0, 0], yaw: 0, pitch: 0, planted: true, lift: [0, 0, 0], liftYaw: 0 })
@@ -253,4 +254,112 @@ test("steady walk, run and sprint maintain L/R step symmetry within 3%, bounded 
     expect(meanContactSpeed).toBeLessThan(0.065)
     expect(maxObservedContactSpeed).toBeLessThan(maxContactSpeed)
   }
+})
+
+test("pose-diff normalization, FK angle synthesis and unarmed walk/run arm kinematics match biomechanical bounds", () => {
+  // 1. Verify FK -> angle extraction round-trip and pelvis-origin normalization
+  const synth = jointsFromAngles({
+    trunkPitchDeg: 5,
+    pelvisBobCm: 0,
+    shoulderFlexL: 20,
+    shoulderFlexR: -24,
+    shoulderAbdL: 12,
+    shoulderAbdR: 12,
+    elbowFlexL: 32,
+    elbowFlexR: 10,
+    forearmInwardL: 0,
+    forearmInwardR: 0,
+    hipFlexL: 28,
+    hipFlexR: -14,
+    kneeFlexL: 10,
+    kneeFlexR: 26,
+    anklePitchL: 8,
+    anklePitchR: -12,
+  })
+  const normPose = normalizeJoints(synth, 0)
+  expect(normPose.pelvisOriginJoints.pelvis).toEqual([0, 0, 0])
+  expect(normPose.groundY).toBeCloseTo(-1, 4)
+  const side2D = projectOrtho(normPose, "side", true)
+  expect(side2D.points.pelvis).toEqual([0, 0])
+  const extracted = computePoseAngles(synth, 0)
+  expect(extracted.shoulderFlexL).toBeCloseTo(20, -1)
+  expect(extracted.shoulderFlexR).toBeCloseTo(-24, -1)
+  expect(extracted.elbowFlexL).toBeCloseTo(32, -1)
+  expect(extracted.elbowFlexR).toBeCloseTo(10, -1)
+
+  // 2. Measure steady unarmed walk (1.4 m/s) and run (4.2 m/s) through pose-diff
+  const dt = 1 / 60
+  const measureUnarmedMode = (mode: "walk" | "run", speed: number) => {
+    const a = actor()
+    a.unarmed = true
+    const profile = humanProfiles.soldier
+    let x = 0, prevPlantedL = true
+    const tdsL: number[] = []
+    const frames: ReturnType<typeof extractBodyJoints>[] = []
+
+    for (let n = 0; n < 420; n++) {
+      const t = n * dt
+      a.vx = speed; a.vy = 0; a.svx = speed; a.svy = 0
+      x += speed * dt
+      const distStep = x - a.x
+      a.x = x
+      locomotion(a, dt, distStep, n === 0, profile)
+      const m = a.motion
+      let pelvis = yawFrame(pelvisPoint(a), m.pelvis.x + m.twist.x)
+      pelvis = roll(pelvis, m.drop.x)
+      pelvis = pitch(pelvis, -0.65 * m.posture.x)
+      const baseFwd = 0.045 + 0.025 * m.run
+      let torso = yawFrame(at(pelvis, 0, RIG.waist, 0), -m.twist.x * 0.65)
+      torso = pitch(torso, -(baseFwd + a.leanX.x + m.posture.x))
+      torso = profileTorso(torso, profile)
+      const head = yawFrame(at(torso, 0.02, RIG.neckY, 0), 0)
+      const [hL, hR] = unarmedHands(a, torso, t * 2)
+      const arms = poseUnarmedArms(torso, hL, hR)
+      const legs = poseLegs(a, pelvis)
+      if (n >= 180 && !prevPlantedL && a.feet[0].planted) tdsL.push(n)
+      prevPlantedL = a.feet[0].planted
+      frames.push(extractBodyJoints({ pelvis, torso, head, ...arms, ...legs }))
+    }
+
+    const f0 = tdsL[1]!, f1 = tdsL[2]!
+    const cyc = buildCycleFromJointFrames(`unarmed-${mode}`, mode, speed, (f1 - f0) * dt, frames.slice(f0, f1), 0)
+    const ref = buildWilliamsReferenceCycle(mode)
+    return { cyc, comp: compareCycles(cyc, ref) }
+  }
+
+  const walkRes = measureUnarmedMode("walk", 1.4)
+  const wk = walkRes.comp.kinematics.ours
+  expect(wk.shoulderFlexMinDeg).toBeLessThan(-24)
+  expect(wk.shoulderFlexMaxDeg).toBeGreaterThan(15)
+  expect(wk.shoulderFlexP2PDeg).toBeGreaterThan(42)
+  expect(wk.shoulderFlexP2PDeg).toBeLessThan(56)
+  expect(wk.elbowFlexMinDeg).toBeGreaterThan(4)
+  expect(wk.elbowFlexMinDeg).toBeLessThan(12)
+  expect(wk.elbowFlexMaxDeg).toBeGreaterThan(28)
+  expect(wk.elbowFlexMaxDeg).toBeLessThan(40)
+  expect(wk.wristRelHipXMinCm).toBeLessThan(-18)
+  expect(wk.wristRelHipXMaxCm).toBeGreaterThan(26)
+  expect(wk.wristRelHipYMaxCm - wk.wristRelHipYMinCm).toBeGreaterThan(10)
+  expect(wk.armOppositeLegCorr).toBeGreaterThan(0.88)
+  expect(wk.armPhaseLagDeg).toBeGreaterThanOrEqual(5)
+  expect(wk.armPhaseLagDeg).toBeLessThanOrEqual(24)
+  expect(walkRes.comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(7.5)
+
+  const runRes = measureUnarmedMode("run", 4.2)
+  const rk = runRes.comp.kinematics.ours
+  expect(rk.shoulderFlexMinDeg).toBeLessThan(-48)
+  expect(rk.shoulderFlexMaxDeg).toBeGreaterThan(20)
+  expect(rk.shoulderFlexP2PDeg).toBeGreaterThan(74)
+  // Elbow stays flexed throughout the entire run cycle (never unbending at peak reach or backswing)
+  expect(rk.elbowFlexMinDeg).toBeGreaterThan(70)
+  expect(rk.elbowFlexMaxDeg).toBeGreaterThan(105)
+  expect(rk.elbowFlexMaxDeg).toBeLessThan(124)
+  // Forearm stays angled forward/upward on backswing (> +20 deg from vertical down) and pumps upward (> +115 deg) on frontswing
+  expect(rk.forearmPitchMinDeg).toBeGreaterThan(20)
+  expect(rk.forearmPitchMaxDeg).toBeGreaterThan(115)
+  expect(rk.elbowRelTorsoXMinCm).toBeLessThan(-9)
+  expect(rk.elbowRelTorsoXMaxCm).toBeGreaterThan(18)
+  expect(rk.armOppositeLegCorr).toBeGreaterThan(0.84)
+  expect(Math.abs(rk.armPhaseLagDeg)).toBeLessThanOrEqual(18)
+  expect(runRes.comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(6.5)
 })

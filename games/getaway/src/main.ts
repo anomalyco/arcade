@@ -19,6 +19,7 @@ import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 import { DebugOverlay } from "./ui/debug-overlay"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
+import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { WorldView, SimEvent } from "../shared/sim/world"
 
 /** A message for the next lobby (an idle kick reloads the page back to it). */
@@ -98,6 +99,46 @@ async function main() {
     controls.release()
     controls.forward({ type: "mux-release" })
   }, scene, sound)
+  let explosionLoopTimer = 0
+  registerGameCommands(commands => {
+    commands.registerAll([
+      {
+        id: "explosion.trigger",
+        label: "Trigger Explosion",
+        shortLabel: "Explosion",
+        category: "Scene",
+        undoable: false,
+        args: {
+          kind: { type: "string", description: "Prop or preset kind (propane, fuel, car)" },
+          repeat: { type: "boolean", description: "Repeat explosion every 2.2s" },
+        },
+        enabled: () => true,
+        run: (_ctx, args) => {
+          if (explosionLoopTimer) {
+            window.clearInterval(explosionLoopTimer)
+            explosionLoopTimer = 0
+          }
+          const kind = String(args?.kind ?? "propane")
+          const fire = () => {
+            const view = (window as unknown as { __view?: WorldView }).__view
+            const car = view?.cars.find(c => c.ownerId === session.myId && !c.ghost) ?? view?.cars[0]
+            const cx = car ? car.x + Math.sin(car.h) * 4.5 : cam.fx
+            const cz = car ? car.z + Math.cos(car.h) * 4.5 : cam.fz + 4.5
+            if (kind === "car") {
+              scene.clutter.explodeCar(cx, cz, 0, 0, { x: cam.fx, z: cam.fz })
+            } else {
+              scene.clutter.trigger(kind === "fuel" ? "fuel" : "propane", cx, cz)
+            }
+          }
+          fire()
+          if (args?.repeat !== false) {
+            explosionLoopTimer = window.setInterval(fire, 2200)
+          }
+          return { triggered: kind, repeat: args?.repeat !== false }
+        },
+      },
+    ])
+  })
   const chat = session.chat ? new Chat(document.getElementById("hud")!, controls, session) : null
   let snapped = false
   let freeze = 0

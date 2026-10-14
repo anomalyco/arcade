@@ -20,6 +20,7 @@ export {
   explosionPresetOptions,
   isExplosionPresetId,
   resolveExplosionSettings,
+  computeExplosionLod,
   applyExplosionSmokeLive,
   spawnExplosion,
   explosionFlashLight,
@@ -28,4 +29,5 @@ export {
   type ExplosionPresetId,
   type ExplosionParams,
   type ExplosionSpawnOptions,
+  type ExplosionLodInfo,
 } from "./explosion"

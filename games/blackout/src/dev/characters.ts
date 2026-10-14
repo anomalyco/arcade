@@ -5,7 +5,7 @@ import { hubCommands, hubTargets } from "@arcade/kit/dev-hub-model"
 import { applyArrowCameraKey, bindOrbitGestures, computeGrabPanDelta } from "@arcade/kit/orbit-gestures"
 import { LabPanel, formatLabValue, inferControlUnit, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
 import { humanProfiles, humanProfileControls, type HumanPreset, type HumanProfile } from "@arcade/kit/human-profile"
-import { attachment, bodyBones, boneParent, boneVisible, detach, poseArms, poseUnarmedArms, unarmedHands, type BoneId, type BonePose, type PartMotion } from "@arcade/kit/human-pose"
+import { attachment, bodyBones, boneParent, boneVisible, detach, type BoneId, type BonePose, type PartMotion } from "@arcade/kit/human-pose"
 import { at, clamp, emit, len, moved, pitch, roll, scale, turn, yawFrame, type Frame, type PushPart, type V3 } from "@arcade/kit/rig"
 import { mat4 } from "wgpu-matrix"
 import { SPEED, SPRINT_SPEED } from "../../shared/config"
@@ -1432,17 +1432,6 @@ async function main() {
     a.profile = actor.profile
     a.unarmed = actor.unarmedSwing && actor.profile.handPose === "weapon"
     animate(a, dt, a.t + dt, nextX, nextY, vx, vy, aim, actor.wizardCast)
-
-    if (actor.unarmedSwing && actor.profile.handPose === "weapon" && a.body) {
-      const torso = a.body.torso
-      const [hL, hR] = unarmedHands(a, torso, a.t * 2)
-      const arms = poseUnarmedArms(torso, hL, hR)
-      a.body.ua = arms.ua
-      a.body.fa = arms.fa
-      a.body.gun = null
-      a.body.mag = null
-      a.body.pump = null
-    }
   }
 
   function stepSimulation(dt: number) {

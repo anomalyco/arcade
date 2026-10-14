@@ -70,6 +70,21 @@ fn density(p: vec3f) -> vec2f {
   }
   return sum;
 }
+fn densityFast(p: vec3f) -> f32 {
+  var sum = 0.0;
+  for (var s = 0; s < 4; s++) {
+    let b = F.boxes[s*2]; let uv = (p.xz-b.xy)/b.z;
+    let source = F.boxes[s*2+1]; let offset = p.xz-source.xy;
+    if (source.w <= 0.0 || dot(offset,offset) > (b.w+0.71)*(b.w+0.71)) { continue; }
+    if (any(uv <= vec2f(0)) || any(uv >= vec2f(1))) { continue; }
+    let cell = clamp(vec2i(uv*48.0),vec2i(0),vec2i(47));
+    let centre = textureLoad(field,cell,s,0);
+    if (centre.g > 0.5) { continue; }
+    let y = p.y / max(0.8, F.shape.x * 1.15);
+    sum += centre.r * smoothstep(0.0, 0.14, y) * (1.0 - smoothstep(0.34, 1.0, y));
+  }
+  return sum;
+}
 fn billow(p: vec3f) -> f32 {
   let q = (p + F.advection.xyz) * (0.035 / F.shape.y);
   let warp = vec3f(sin(q.z*8.0),cos(q.x*7.0),sin(q.y*9.0))*0.054*F.motion.z;
@@ -80,13 +95,45 @@ fn billow(p: vec3f) -> f32 {
    // Intersect the actual height slab in either ray direction (including cameras inside it).
    if (abs(ray.y) < 0.00001) { return vec4f(0); }
    let a = (F.shape.x*1.42-F.eye.y)/ray.y; let b = (0.015-F.eye.y)/ray.y;
-   let near = max(0.0,min(a,b));
-   let far = min(distance(surface,F.eye.xyz),max(a,b));
+   let slabNear = max(0.0,min(a,b));
+   let slabFar = min(distance(surface,F.eye.xyz),max(a,b));
+  if (slabFar <= slabNear) { return vec4f(0); }
+  if (F.screen.w == 4.0) {
+    let p = F.eye.xyz+ray*((1.5-F.eye.y)/ray.y);
+    for (var s = 0; s < 4; s++) {
+      let bBox = F.boxes[s*2]; let uv = (p.xz-bBox.xy)/bBox.z;
+      if (F.boxes[s*2+1].w > 0.0 && all(uv>vec2f(0)) && all(uv<vec2f(1)) && min(min(uv.x,uv.y),min(1.0-uv.x,1.0-uv.y))<0.006) { return vec4f(0.1,1,0.6,1); }
+    }
+  }
+  // Tighten [near, far] to the union of active 3D volume bounding boxes and early-out rays that miss all volumes.
+  let invRayXZ = 1.0 / select(ray.xz, vec2f(0.00001), abs(ray.xz) < vec2f(0.00001));
+  var volNear = 1e9;
+  var volFar = -1e9;
+  for (var s = 0; s < 4; s++) {
+    let src = F.boxes[s*2+1];
+    if (src.w <= 0.0) { continue; }
+    let bBox = F.boxes[s*2];
+    let rad = bBox.w + 0.72;
+    let minXZ = max(bBox.xy, src.xy - vec2f(rad));
+    let maxXZ = min(bBox.xy + vec2f(bBox.z), src.xy + vec2f(rad));
+    let t0 = (minXZ - F.eye.xz) * invRayXZ;
+    let t1 = (maxXZ - F.eye.xz) * invRayXZ;
+    let tMin = max(min(t0.x, t1.x), min(t0.y, t1.y));
+    let tMax = min(max(t0.x, t1.x), max(t0.y, t1.y));
+    if (tMax > max(0.0, tMin)) {
+      volNear = min(volNear, tMin);
+      volFar = max(volFar, tMax);
+    }
+  }
+  let near = max(slabNear, volNear);
+  let far = min(slabFar, volFar);
   if (far <= near) { return vec4f(0); }
-  let stepSize = (far-near)/24.0;
+  let steps = select(18, 14, far - near < 5.5);
+  let stepSize = (far-near)/f32(steps);
   let j = textureLoad(jitter,vec2i(o.position.xy)%32,0).r;
   var trans = 1.0; var rgb = vec3f(0); var optical = 0.0;
-  for (var i = 0; i < 24; i++) {
+  for (var i = 0; i < 18; i++) {
+    if (i >= steps) { break; }
     let p = F.eye.xyz + ray*(near+(f32(i)+j)*stepSize);
     let sample = density(p); let base = sample.x;
     if (base < 0.002) { continue; }
@@ -100,16 +147,16 @@ fn billow(p: vec3f) -> f32 {
     let d = base * edgeErode * F.shape.z;
     if (d < 0.002) { continue; }
     let a = 1.0-exp(-d*stepSize); optical += d*stepSize;
-    let sun = exp(-density(p+vec3f(0,0.65,0)).x*select(1.7,2.1,isSoot));
+    let sun = exp(-densityFast(p+vec3f(0,0.65,0))*select(1.7,2.1,isSoot));
     var baseLight = F.ambient.rgb + vec3f(0.40,0.45,0.54)*sun*F.shape.w;
     var ptLight = vec3f(0);
+    let localShade = exp(-base * select(0.42, 0.92, isSoot)) * (0.52 + 0.48 * sun);
     for (var l = 0; l < min(8,i32(F.screen.z)); l++) {
       let pos = F.lights[l*2]; let color = F.lights[l*2+1]; let delta = pos.xyz-p;
       let d2 = dot(delta,delta);
       if (d2 >= pos.w*pos.w) { continue; }
       let dist = sqrt(max(0.001,d2));
-      let shade = exp(-density(p+delta/dist*0.65).x*select(0.75,1.75,isSoot));
-      ptLight += color.rgb*color.w*pow(1.0-dist/pos.w,2.0)*shade*F.shape.w;
+      ptLight += color.rgb*color.w*pow(1.0-dist/pos.w,2.0)*localShade*F.shape.w;
     }
     var light = baseLight + select(ptLight, ptLight / (vec3f(1.0) + ptLight * 0.58), isSoot);
     let sootRatio = clamp(sample.y/max(base,0.001),0.0,1.0);
@@ -139,13 +186,6 @@ fn billow(p: vec3f) -> f32 {
     if (F.screen.w == 3.0) { light = light / max(0.01,d); }
     rgb += trans*a*light; trans *= 1.0-a;
     if (trans < 0.015) { break; }
-  }
-  if (F.screen.w == 4.0) {
-    let p = F.eye.xyz+ray*((1.5-F.eye.y)/ray.y);
-    for (var s = 0; s < 4; s++) {
-      let b = F.boxes[s*2]; let uv = (p.xz-b.xy)/b.z;
-      if (F.boxes[s*2+1].w > 0.0 && all(uv>vec2f(0)) && all(uv<vec2f(1)) && min(min(uv.x,uv.y),min(1.0-uv.x,1.0-uv.y))<0.006) { return vec4f(0.1,1,0.6,1); }
-    }
   }
   return vec4f(rgb,1.0-trans);
 }

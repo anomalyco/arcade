@@ -1,0 +1,68 @@
+{
+  "id": "explosion-unify",
+  "title": "Unified Explosion VFX Across Games & Lab",
+  "singleTab": true,
+  "steps": [
+    {
+      "kind": "page",
+      "title": "Before / After & Perf",
+      "body": "Per-game before/after contact sheets (Getaway propane & car, Blackout frag & wreck, Carrier ship hit, airburst & boat) and Apple Metal 60 Hz budget table.",
+      "markdown": "- **One shared explosion system (`@arcade/kit/fx/explosion`)**: 7 typed presets (`grenade`, `propane`, `car`, `barrel`, `missile`, `ship`, `pop`) parameterised by size, energy, fuel, smoke, debris, scorch, flash, and shockwave.\n- **Per-game 60 Hz budget (M5 Max Metal, 16.67 ms budget)**:\n  - **Getaway** (`960×720`): Single blast GPU mean **0.76 ms** (peak **0.80 ms**) · 4× simultaneous worst-case GPU mean **0.82 ms** (peak **0.89 ms**).\n  - **Blackout** (`960×720`): Single blast GPU mean **0.87 ms** (peak **1.03 ms**) · 5× grenade spam worst-case GPU mean **4.86 ms** (peak **6.66 ms**).\n  - **Carrier** (`960×720`): Single blast GPU mean **0.38 ms** (peak **0.45 ms**) · 4× simultaneous worst-case GPU mean **0.60 ms** (peak **0.73 ms**).",
+      "images": [
+        { "src": "getaway-sheet.png", "label": "Getaway · Propane Tank & Car / Fuel (Before vs After)", "tag": "Getaway" },
+        { "src": "blackout-sheet.png", "label": "Blackout · Frag Grenade & Vehicle Wreck (Before vs After)", "tag": "Blackout" },
+        { "src": "carrier-sheet.png", "label": "Carrier · Ship Hit, Missile Airburst & Boat (Before vs After)", "tag": "Carrier" }
+      ]
+    },
+    {
+      "kind": "grid",
+      "title": "Lab · 4-Up Explosion Grid",
+      "body": "Synchronized 2×2 live WebGPU Variation Grid in the Lab sharing one timeline and seed. Click 1–4 to inspect full screen.",
+      "url": "/arcade/lab/?section=effects",
+      "preset": "explosions"
+    },
+    {
+      "title": "Lab · 7 Explosion Presets",
+      "body": "Single canonical Explosion entry in the Lab with typed presets (Frag grenade, Propane tank, Car / fuel, Fuel barrel, Missile airburst, Ship / hull hit, Small pop).",
+      "url": "/arcade/lab/?section=effects",
+      "setup": [
+        { "command": "scene.set-param", "args": { "key": "effect", "value": "explosion" } },
+        { "command": "scene.set-param", "args": { "key": "explosionPreset", "value": "car" } },
+        { "command": "scene.set-param", "args": { "key": "loop", "value": true } }
+      ],
+      "target": { "setting": "explosionPreset" }
+    },
+    {
+      "title": "Getaway · Propane & Car Blast",
+      "body": "Live Getaway street scene with repeating propane/car explosions rendered through the shared @arcade/kit ParticleRenderer and VolumeRenderer.",
+      "url": "/arcade/getaway/?peaceful=1&seed=7",
+      "setup": [
+        { "command": "explosion.trigger", "args": { "kind": "car", "repeat": true } }
+      ]
+    },
+    {
+      "title": "Blackout · Office Frag Grenade",
+      "body": "Live Blackout office scene with repeating frag grenade blasts (blackbody fireball crusting into wall-clipped volumetric smoke, shockwave dust ring, and scorch).",
+      "url": "/arcade/blackout/?peaceful=1&seed=1",
+      "setup": [
+        { "command": "explosion.trigger", "args": { "preset": "grenade", "repeat": true } }
+      ]
+    },
+    {
+      "title": "Carrier · Ship Deck Strike",
+      "body": "Live Carrier deck view with repeating heavy ship-hit explosions rendered via the shared @arcade/kit ParticleRenderer (@group(1), reversed-Z depth32float).",
+      "url": "/arcade/carrier/?seed=7&tod=10.5&free=1",
+      "setup": [
+        { "command": "explosion.trigger", "args": { "preset": "ship", "repeat": true } }
+      ]
+    },
+    {
+      "title": "Carrier · Missile Airburst",
+      "body": "Live Carrier airburst view over the sea using the missile preset (camera-facing 3D shockwave ring + spherical blackbody fireball billows, no ground scorch).",
+      "url": "/arcade/carrier/?seed=7&tod=10.5&free=1",
+      "setup": [
+        { "command": "explosion.trigger", "args": { "preset": "missile", "repeat": true } }
+      ]
+    }
+  ]
+}

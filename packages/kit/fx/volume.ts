@@ -49,8 +49,29 @@ export class SmokeVolumes {
   }
   spawn(x: number, z: number, radius = this.settings.radius, life = this.settings.growthTime+this.settings.hold+this.settings.fade, power = 1, soot = 0, growthTime = soot > 0 ? Math.min(0.75, this.settings.growthTime * 0.42) : this.settings.growthTime) {
     if (![x,z,radius,life,power,soot,growthTime].every(Number.isFinite)) return false
+    // Coalesce nearby explosion smoke bursts (within 3.2m) so grenade spam or chain explosions reuse one volume slot.
+    if (soot > 0) {
+      for (let s = 0; s < VOLUMES; s++) {
+        if (this.life[s] > 0 && this.bounds[s * 8 + 6]! > 0 && Math.hypot(x - this.bounds[s * 8 + 4]!, z - this.bounds[s * 8 + 5]!) < 3.2) {
+          this.age[s] = Math.min(this.age[s]!, 0.16)
+          this.life[s] = Math.max(this.life[s]! - this.age[s]!, Math.max(0.1, life))
+          this.radius[s] = Math.min(8.5, Math.max(this.radius[s]!, radius) * 1.06)
+          this.power[s] = Math.min(2.0, Math.max(this.power[s]!, power))
+          return true
+        }
+      }
+    }
     let slot = -1
     for (let s=0;s<VOLUMES;s++) if (!this.life[s]) {slot=s;break}
+    if (slot<0 && soot > 0) {
+      // Evict the oldest fading slot when all 4 volume slots are active.
+      let oldestRatio = -1
+      for (let s = 0; s < VOLUMES; s++) {
+        const ratio = this.age[s]! / Math.max(0.1, this.life[s]!)
+        if (ratio > oldestRatio) { oldestRatio = ratio; slot = s }
+      }
+      if (slot >= 0) this.count = Math.max(0, this.count - 1)
+    }
     if (slot<0) return false
     const b=slot*8,start=slot*CELLS
     // Put the source exactly at a cell centre, rather than snapping it to a cell corner.
