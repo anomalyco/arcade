@@ -328,7 +328,7 @@ async function main() {
       const lx = lamp.x + (lamp.kind === "street" ? .55 : 0), ly = lamp.y, r = lamp.radius
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
       if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
-      const color=lamp.kind==="street"?[1,.76,.50]:lamp.kind==="porch"?[1,.62,.24]:lamp.kind==="window"?[1,.58,.22]:[1,.56,.20]
+      const color=lamp.kind==="street"?[1,.72,.44]:lamp.kind==="porch"?[1,.58,.18]:lamp.kind==="window"?[1,.54,.16]:[1,.54,.18]
       const cone=lamp.kind==="window"?[0,1,-.75,1]:[0,0,0,(lamp.kind==="room"||lamp.kind==="porch")?-1:0]
       lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.16:.22, i], count++ * LIGHT_FLOATS)
     }

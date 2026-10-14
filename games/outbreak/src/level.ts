@@ -328,8 +328,8 @@ function compileLevel(town: Town): LevelData {
         for (const px of [x, r - .07]) {
           m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0xdcd8ce), MAT.wall)
         }
-        // Subtle warm sill bounce strip on the recessed inner sill (does not block the window opening!)
-        m.box(x+.08, .861, zm-.04, r-.08, .872, zm+.05, hex(0xb87632), MAT.lamp, lamp)
+        // Warm amber-gold sill & interior reveal bounce (rich saturation so it never clips to white)
+        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(0x8a4814), MAT.lamp, lamp)
         const doubleWin = r - x > 2.2
         if (doubleWin) {
           const mid = (x + r) / 2
@@ -337,16 +337,17 @@ function compileLevel(town: Town): LevelData {
         }
         const panes = doubleWin ? [[x+.07, (x+r)/2-.05], [(x+r)/2+.05, r-.07]] : [[x+.07, r-.07]]
         for (const [wx0, wx1] of panes) {
-          // Soft warm sheer valence at top of sash + gathered side curtains at left/right 22cm edges
-          m.box(wx0!, 1.90, z-.03, wx1!, 2.13, z+.02, hex(0x9a622c), MAT.lamp, lamp)
-          for (const [cx0, cx1] of [[wx0!, wx0! + .22], [wx1! - .22, wx1!]]) {
-            m.box(cx0!, .87, z-.03, cx1!, 1.90, z+.03, hex(0x885424), MAT.lamp, lamp)
+          // Dark silhouette side curtains at left/right 24cm edges + warm amber-orange inner glow valence
+          m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(0x783c10), MAT.lamp, lamp)
+          m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(0x5c2c0b), MAT.lamp, lamp)
+          for (const [cx0, cx1] of [[wx0!, wx0! + .24], [wx1! - .24, wx1!]]) {
+            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x362212), MAT.wall)
           }
           // Recessed vertical & horizontal sash muntins at the window mid-plane zm
           const midX = (wx0! + wx1!) / 2
-          m.box(midX - .016, .86, zm - .022, midX + .016, 2.14, zm + .022, hex(0xe2dfd6), MAT.wall)
+          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0xe2dfd6), MAT.wall)
           // See-through glass pane recessed at zm
-          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x96aab0), MAT.glass)
+          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x5a4838), MAT.glass)
         }
         // Recessed horizontal meeting rail across the sash mid-plane
         m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0xe2dfd6), MAT.wall)

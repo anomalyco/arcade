@@ -11,12 +11,15 @@ export const shaders = {
     ao: "0.42",
     lightLeak: "0.006 * vis",
     lightAttenuation: `let dn = max(d3, 0.85);
-    if (L.cone.w > 0.5) {
-      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.88) / 0.42, 0.0, 1.0);
-      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.25) - 0.65) / 0.85, 0.0, 1.0);
-      win = rx * rx * ry * ry * (0.76 + 0.24 * smoothstep(0.0, 0.14, abs(dv.x)));
+    if (L.cone.w > 0.5 && L.pos.w < 4.5) {
+      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.96) / 0.65, 0.0, 1.0);
+      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.55) - 0.85) / 1.25, 0.0, 1.0);
+      win = rx * rx * ry * ry * (0.78 + 0.22 * smoothstep(0.0, 0.14, abs(dv.x)));
     }
     var att = power * win * (0.04 + 2.45 / (1.0 + dn * dn * 0.55));
+    if (L.extra.w > -0.5 && L.pos.w > 7.5) {
+      att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * exp(-pow(dv.x / 3.8, 2.0));
+    }
     if (att <= 0.0035) { continue; }`,
     wallDirectScale: "mix(0.28, 0.46, smoothstep(0.0, 1.5, o.world.y))",
     ambient: "ambientAt(n) * mix(0.08, 1.0, select(floorData(o.world.xz + n.xz * 0.28).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), vec3f(0.016, 0.011, 0.006), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)",
@@ -122,9 +125,9 @@ fn eyeVisible(p: vec2f) -> f32 {
     if (inRoom && o.world.y < 2.8) { col *= max(explored, visible); }
   }
   if(mat == 6) {
-    // See-through window glass: warm interior glow when viewed from outside, cool sky reflection from inside.
+    // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
     let outsideView = !interior(F.eye.xy);
-    col += select(vec3f(0.020, 0.036, 0.072), vec3f(0.62, 0.35, 0.11) * nightLamps, outsideView);
+    col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
   }
   if(mat == 4 && !inRoom) { col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y)); }
   if(mat == 20 && i32(round(o.aux)) == 1) {

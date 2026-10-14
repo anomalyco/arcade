@@ -13,10 +13,10 @@ export type FlashlightTuning = {
 }
 
 export const DEFAULT_FLASHLIGHT_TUNING: FlashlightTuning = {
-  flashlightIntensity: 1.35,
+  flashlightIntensity: 0.48,
   flashlightRange: 19,
-  flashlightCone: 52,
-  flashlightWarmth: 0.45,
+  flashlightCone: 56,
+  flashlightWarmth: 0.92,
   flashlightDrain: 0.07,
   flashlightRegen: 0.16,
   flashlightDelay: 1.2,
@@ -62,8 +62,8 @@ export function flashlightColor(warmth: number): [number, number, number] {
   const w = Math.max(0, Math.min(1, warmth))
   return [
     Number((0.82 + 0.18 * w).toFixed(4)),
-    Number((0.92 - 0.08 * w).toFixed(4)),
-    Number((1.0 - 0.38 * w).toFixed(4)),
+    Number((0.88 - 0.26 * w).toFixed(4)),
+    Number((1.0 - 0.74 * w).toFixed(4)),
   ]
 }
 
