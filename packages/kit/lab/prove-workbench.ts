@@ -338,6 +338,54 @@ try {
     assert.equal(await page.evaluate(() => (window as any).lab.workbench.cursor.state), "rotate", "Cursor adapts to rotate handle")
     if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-transform-gizmo.png") })
 
+    // Select car, verify ground-plane ellipse rotate ring and drag rotate handle to 125° around ground ring
+    const carRotateTarget = await page.evaluate(async () => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      s.selectObject("character:active")
+      const st = (window as any).lab.context.stage
+      st.frameTarget(0, 0.4, 6, 15)
+      ;(window as any).lab.context.sync()
+      await (window as any).lab.render()
+      const car = s.objects().find((o: any) => o.id === "character:active")!
+      const ringRadius = car.radius ?? 0.75
+      const ringY = car.y + 0.02 + 0.03 * ringRadius
+      const targetRad = (125 * Math.PI) / 180
+      const wx = car.x + Math.sin(targetRad) * ringRadius
+      const wz = car.z + Math.cos(targetRad) * ringRadius
+      const p = st.projectWorld(wx, ringY, wz)
+      const rect = document.querySelector("canvas")!.getBoundingClientRect()
+      return {
+        targetScreenX: rect.left + p.u * rect.width,
+        targetScreenY: rect.top + p.v * rect.height,
+      }
+    })
+    await step(1)
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-car-rotate-ring-initial.png") })
+    const carHandleBox0 = (await page.locator('[data-gizmo-handle="rotate"]').boundingBox())!
+    await page.mouse.move(carHandleBox0.x + carHandleBox0.width / 2, carHandleBox0.y + carHandleBox0.height / 2)
+    await page.mouse.down({ button: "left" })
+    await page.mouse.move(carRotateTarget.targetScreenX, carRotateTarget.targetScreenY, { steps: 6 })
+    await step(1)
+    if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-car-rotate-ring-dragged.png") })
+    const carHandleBox1 = (await page.locator('[data-gizmo-handle="rotate"]').boundingBox())!
+    const handleCenter1 = {
+      x: carHandleBox1.x + carHandleBox1.width / 2,
+      y: carHandleBox1.y + carHandleBox1.height / 2,
+    }
+    const handleTrackErr = Math.hypot(handleCenter1.x - carRotateTarget.targetScreenX, handleCenter1.y - carRotateTarget.targetScreenY)
+    assert(handleTrackErr < 4, `Expected rotate handle to stay under cursor (<4px), got ${handleTrackErr.toFixed(2)}px`)
+    const liveYawInput = Number(await page.locator('[data-transform-input="yaw"]').inputValue())
+    assert(Math.abs(liveYawInput - 125) <= 2, `Expected live numeric yaw input ~125°, got ${liveYawInput}°`)
+    await page.mouse.up({ button: "left" })
+    await page.keyboard.press("Meta+z") // Undo car rotation back to 180°
+    await step(1)
+    await page.evaluate(() => {
+      const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+      const firstProp = s.objects().find((o: any) => o.category === "prop")
+      if (firstProp) s.selectObject(firstProp.id)
+    })
+    await step(1)
+
     // Hover selectable car -> cursor state "hover" + delayed target label after 200ms
     const carScreen = await page.evaluate(() => {
       const st = (window as any).lab.context.stage
@@ -433,6 +481,31 @@ try {
     assert(camAfterWheel.dist < camBeforeWheel.dist, "Ctrl+wheel pinch zoomed camera in")
     assert.notEqual(camAfterWheel.yaw, camBeforeWheel.yaw, "Two-finger scroll orbited camera")
     assert.notEqual(camAfterWheel.focusX, camBeforeWheel.focusX, "Shift + two-finger scroll panned camera")
+
+    // Verify Shift+LMB drag grab-pan keeps ground point under cursor even when car is selected
+    const grabStart = { x: canvasBox.x + canvasBox.width * 0.38, y: canvasBox.y + canvasBox.height * 0.58 }
+    const grabEnd = { x: canvasBox.x + canvasBox.width * 0.62, y: canvasBox.y + canvasBox.height * 0.44 }
+    const worldBeforeGrab = await page.evaluate(({ x, y }) => {
+      const s = (window as any).lab.sections.find((sec: any) => sec.id === "spawn")
+      s.selectObject("character:active")
+      const c = document.querySelector("canvas")!.getBoundingClientRect()
+      const st = (window as any).lab.context.stage
+      return st.pickPlaneY((x - c.left) / c.width, (y - c.top) / c.height, st.focus[1])
+    }, grabStart)
+    await page.keyboard.down("Shift")
+    await page.mouse.move(grabStart.x, grabStart.y)
+    await page.mouse.down({ button: "left" })
+    await page.mouse.move(grabEnd.x, grabEnd.y, { steps: 6 })
+    await page.mouse.up({ button: "left" })
+    await page.keyboard.up("Shift")
+    await step(1)
+    const worldAfterGrab = await page.evaluate(({ x, y }) => {
+      const c = document.querySelector("canvas")!.getBoundingClientRect()
+      const st = (window as any).lab.context.stage
+      return st.pickPlaneY((x - c.left) / c.width, (y - c.top) / c.height, st.focus[1])
+    }, grabEnd)
+    const grabErr = Math.hypot(worldAfterGrab.x - worldBeforeGrab.x, worldAfterGrab.z - worldBeforeGrab.z)
+    assert(grabErr < 0.05, `Expected Shift+drag grab-pan to keep ground point under cursor (<0.05m), got ${grabErr.toFixed(4)}m`)
 
     // 10. Frozen-frame deterministic re-simulation + A/B Slot Flip (V) & Split Wipe (Shift+V) + Copy Game Recipe
     await page.locator('[data-catalog-id="fixture:smoke-room"]').click()

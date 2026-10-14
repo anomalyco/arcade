@@ -31,7 +31,86 @@ export {
 export type OrbitCameraTarget = {
   orbit(dyaw: number, dpitch: number, smooth?: boolean): void
   pan(dx: number, dz: number, smooth?: boolean): void
+  /**
+   * True ray-plane grab pan: moves the camera target on the focus ground plane by the exact world delta
+   * between the ray through normalized canvas coordinates `(u0, v0)` and `(u1, v1)`, keeping the grabbed
+   * ground point under `(u0, v0)` stationary under `(u1, v1)`.
+   */
+  panGrab?(u0: number, v0: number, u1: number, v1: number): void
   zoomBy(factor: number, smooth?: boolean): void
+}
+
+/**
+ * Computes the world `(x, z)` offset from `focus` where a camera ray through normalized viewport
+ * coordinates `(u, v)` (`[0..1]`) intersects the horizontal focus plane `y = focusY`.
+ */
+export function rayGroundOffset(
+  u: number,
+  v: number,
+  yaw: number,
+  pitch: number,
+  dist: number,
+  aspect: number,
+  fovY = 0.65,
+): { x: number; z: number } {
+  const nx = u * 2 - 1
+  const ny = 1 - v * 2
+  const tanHalf = Math.tan(fovY * 0.5)
+  const cx = nx * Math.max(0.1, aspect) * tanHalf
+  const cyCam = ny * tanHalf
+  const sp = Math.sin(pitch)
+  const cp = Math.cos(pitch)
+  const sy = Math.sin(yaw)
+  const cy = Math.cos(yaw)
+  const denom = Math.max(0.05, sp - cyCam * cp)
+  const qRight = (dist * sp * cx) / denom
+  const qFwd = (dist * cyCam) / denom
+  return {
+    x: cy * qRight - sy * qFwd,
+    z: -sy * qRight - cy * qFwd,
+  }
+}
+
+/**
+ * Computes the camera focus delta `(dx, dz)` required so the ground point under `(u0, v0)` stays
+ * under `(u1, v1)` on the horizontal focus plane (`focus += offset(u0, v0) - offset(u1, v1)`).
+ */
+export function computeGrabPanDelta(
+  u0: number,
+  v0: number,
+  u1: number,
+  v1: number,
+  yaw: number,
+  pitch: number,
+  dist: number,
+  aspect: number,
+  fovY = 0.65,
+): { dx: number; dz: number } {
+  const p0 = rayGroundOffset(u0, v0, yaw, pitch, dist, aspect, fovY)
+  const p1 = rayGroundOffset(u1, v1, yaw, pitch, dist, aspect, fovY)
+  return {
+    dx: p0.x - p1.x,
+    dz: p0.z - p1.z,
+  }
+}
+
+/**
+ * Intersects a world-space ray `{ origin, dir }` with the horizontal plane `y = planeY`.
+ */
+export function pickHorizontalPlane(
+  ray: { origin: readonly [number, number, number]; dir: readonly [number, number, number] },
+  planeY = 0,
+): { x: number; y: number; z: number } | null {
+  const [ox, oy, oz] = ray.origin
+  const [dx, dy, dz] = ray.dir
+  if (dy >= -1e-4) return null
+  const t = (planeY - oy) / dy
+  if (!Number.isFinite(t) || t <= 0 || t > 500) return null
+  return {
+    x: ox + dx * t,
+    y: planeY,
+    z: oz + dz * t,
+  }
 }
 
 export type OrbitMarqueeCallbacks = {
@@ -185,8 +264,10 @@ export function bindOrbitGestures(canvas: HTMLElement, options: OrbitGestureOpti
         marquee?.onStart?.(drag.startX, drag.startY, event)
       }
     }
-    const dx = event.clientX - drag.x
-    const dy = event.clientY - drag.y
+    const prevX = drag.x
+    const prevY = drag.y
+    const dx = event.clientX - prevX
+    const dy = event.clientY - prevY
     drag.x = event.clientX
     drag.y = event.clientY
 
@@ -196,10 +277,26 @@ export function bindOrbitGestures(canvas: HTMLElement, options: OrbitGestureOpti
     }
 
     if (event.shiftKey) {
-      change(() => target.pan(-dx, -dy, smooth))
+      change(() => {
+        if (target.panGrab) {
+          const rect = typeof canvas.getBoundingClientRect === "function" ? canvas.getBoundingClientRect() : null
+          const w = Math.max(1, rect?.width || canvas.clientWidth || 1280)
+          const h = Math.max(1, rect?.height || canvas.clientHeight || 800)
+          const left = rect?.left ?? 0
+          const top = rect?.top ?? 0
+          target.panGrab(
+            (prevX - left) / w,
+            (prevY - top) / h,
+            (event.clientX - left) / w,
+            (event.clientY - top) / h,
+          )
+        } else {
+          target.pan(-dx, -dy, false)
+        }
+      })
       onCameraDragMove?.("pan", event)
     } else if (drag.isSecondaryButton || (drag.button === 0 && (canPrimaryOrbit ? canPrimaryOrbit(event) : true))) {
-      change(() => target.orbit(-dx * 0.0065, dy * 0.0055, smooth))
+      change(() => target.orbit(-dx * 0.0065, dy * 0.0055, false))
       onCameraDragMove?.("orbit", event)
     }
   })
@@ -251,9 +348,20 @@ export function bindOrbitGestures(canvas: HTMLElement, options: OrbitGestureOpti
     event.preventDefault()
     if (!enabled()) return
     change(() => {
-      if (action.kind === "zoom") target.zoomBy(action.factor, smooth)
-      else if (action.kind === "pan") target.pan(action.dx, action.dy, smooth)
-      else target.orbit(action.dyaw, action.dpitch, smooth)
+      if (action.kind === "zoom") {
+        target.zoomBy(action.factor, smooth)
+      } else if (action.kind === "pan") {
+        if (target.panGrab) {
+          const rect = typeof canvas.getBoundingClientRect === "function" ? canvas.getBoundingClientRect() : null
+          const w = Math.max(1, rect?.width || canvas.clientWidth || 1280)
+          const h = Math.max(1, rect?.height || canvas.clientHeight || 800)
+          target.panGrab(0.5, 0.5, 0.5 - action.dx / w, 0.5 - action.dy / h)
+        } else {
+          target.pan(action.dx, action.dy, false)
+        }
+      } else {
+        target.orbit(action.dyaw, action.dpitch, smooth)
+      }
     })
   }, { passive: false })
 

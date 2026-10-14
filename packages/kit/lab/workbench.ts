@@ -25,12 +25,13 @@ import type { createSpawn, SpawnSceneSnapshot } from "./spawn"
 import type { StageMarker } from "./stage"
 import {
   applyNumericTransformKey,
+  computePointerYawRad,
   createTransformGizmoDOM,
   createTransformState,
   createViewportCursorDOM,
+  projectGroundRotateRing,
   sampleGroundNormal,
   snapGroundCoord,
-  snapYawRad,
   type ActiveTransformState,
   type GroundSurfaceSample,
   type NumericAxis,
@@ -2743,19 +2744,38 @@ export function createWorkbench(opts: WorkbenchOptions) {
       movableSelected.length > 0 &&
       (selIds.length > 0 || Boolean(activeTransform))
     if (showGizmo) {
+      stage.updateCamera()
       const c = computeSelectionCentroid(movableSelected)
-      const proj = stage.projectWorld(c.x, c.y + 0.25, c.z)
+      const primaryObj = movableSelected.at(-1)
+      const ringRadius = primaryObj?.radius ?? 0.75
+      const ringY = c.y + 0.02 + 0.03 * ringRadius
       const rect = viewportEl.getBoundingClientRect()
-      if (proj.visible && rect.width > 0 && rect.height > 0) {
-        transformGizmo.sync({
-          visible: true,
-          screenX: proj.u * rect.width,
-          screenY: proj.v * rect.height,
-          x: c.x,
-          z: c.z,
-          yawRad: c.yaw,
-          activeMode: activeTransform?.mode ?? null,
-        })
+      if (rect.width > 0 && rect.height > 0) {
+        const projected = projectGroundRotateRing(
+          c.x,
+          ringY,
+          c.z,
+          ringRadius,
+          c.yaw,
+          rect.width,
+          rect.height,
+          (x, y, z) => stage.projectWorld(x, y, z),
+        )
+        if (projected.visible) {
+          transformGizmo.sync({
+            visible: true,
+            screenX: projected.screenX,
+            screenY: projected.screenY,
+            x: c.x,
+            z: c.z,
+            yawRad: c.yaw,
+            activeMode: activeTransform?.mode ?? null,
+            ringPoints: projected.ringPoints,
+            handleOffset: projected.handleOffset,
+          })
+        } else {
+          transformGizmo.sync({ visible: false, screenX: 0, screenY: 0, x: 0, z: 0, yawRad: 0, activeMode: null })
+        }
       } else {
         transformGizmo.sync({ visible: false, screenX: 0, screenY: 0, x: 0, z: 0, yawRad: 0, activeMode: null })
       }
@@ -3488,20 +3508,27 @@ export function createWorkbench(opts: WorkbenchOptions) {
             void renderNow()
           }
         } else {
-          const proj = stage.projectWorld(activeTransform.currentX, groundFn(activeTransform.currentX, activeTransform.currentZ) + 0.25, activeTransform.currentZ)
-          const cx = proj.u * vRect.width
-          const cy = proj.v * vRect.height
-          const rawRad = Math.atan2(localX - cx, -(localY - cy))
-          activeTransform.currentYaw = snapYawRad(rawRad, event.shiftKey, event.altKey)
-          applyActiveTransformToWorld(activeTransform)
-          viewportCursor.update({
-            state: "rotate",
-            x: localX,
-            y: localY,
-          })
-          panel.sync()
-          syncChrome()
-          void renderNow()
+          const pivotY = groundFn(activeTransform.currentX, activeTransform.currentZ) + 0.03
+          const hit = stage.pickPlaneY(u, v, pivotY) ?? stage.pickGround(u, v, groundFn)
+          if (hit) {
+            activeTransform.currentYaw = computePointerYawRad(
+              activeTransform.currentX,
+              activeTransform.currentZ,
+              hit.x,
+              hit.z,
+              event.shiftKey,
+              event.altKey,
+            )
+            applyActiveTransformToWorld(activeTransform)
+            viewportCursor.update({
+              state: "rotate",
+              x: localX,
+              y: localY,
+            })
+            panel.sync()
+            syncChrome()
+            void renderNow()
+          }
         }
         return
       }
@@ -3577,9 +3604,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     marquee: {
       shouldMarquee: event => {
         if (spawn?.getGhost() || activeTransform) return false
+        if (event.shiftKey && !event.altKey && !boxSelectMode) return false
         if (event.altKey || boxSelectMode) return true
         if (!hasBoxSelectableObjects()) return false
-        if (event.shiftKey && currentSelectedIds().length === 0) return false
         const [u, v] = canvasUV(event)
         return pickObjectAt(u, v) === null
       },
@@ -3942,7 +3969,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       event.preventDefault()
       frameActiveTarget()
     } else if (key === "r" && !event.repeat) {
-      if (event.shiftKey && commands.get("object.rotate")?.enabled()) {
+      if ((event.shiftKey || (sec.id === "spawn" && currentSelectedObjects().some(o => o.movable))) && commands.get("object.rotate")?.enabled()) {
         event.preventDefault()
         commands.execute("object.rotate")
       } else {

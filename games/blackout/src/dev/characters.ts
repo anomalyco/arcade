@@ -1,6 +1,6 @@
 import "@arcade/kit/dev-hub.css"
 import { hubCommands, hubTargets } from "@arcade/kit/dev-hub-model"
-import { applyArrowCameraKey, bindOrbitGestures } from "@arcade/kit/orbit-gestures"
+import { applyArrowCameraKey, bindOrbitGestures, computeGrabPanDelta } from "@arcade/kit/orbit-gestures"
 import { LabPanel, formatLabValue, inferControlUnit, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
 import { humanProfiles, humanProfileControls, type HumanPreset, type HumanProfile } from "@arcade/kit/human-profile"
 import { attachment, bodyBones, boneParent, boneVisible, detach, poseArms, type BoneId, type BonePose, type PartMotion } from "@arcade/kit/human-pose"
@@ -641,12 +641,20 @@ async function main() {
       this.yaw += dyaw
       this.pitch = clamp(this.pitch + dpitch, 0.08, 1.38)
     },
-    pan(dx: number, dz: number) {
-      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw)
-      const s = this.dist * 0.0015
-      this.focusX += (cy * dx + sy * dz) * s
-      this.focusZ += (-sy * dx + cy * dz) * s
+    panGrab(u0: number, v0: number, u1: number, v1: number) {
+      const rect = canvas.getBoundingClientRect()
+      const w = Math.max(1, rect.width || canvas.clientWidth || 1280)
+      const h = Math.max(1, rect.height || canvas.clientHeight || 800)
+      const { dx, dz } = computeGrabPanDelta(u0, v0, u1, v1, this.yaw, this.pitch, this.dist, w / h, 0.5)
+      this.focusX += dx
+      this.focusZ += dz
       followSelected = false
+    },
+    pan(dx: number, dz: number) {
+      const rect = canvas.getBoundingClientRect()
+      const w = Math.max(1, rect.width || canvas.clientWidth || 1280)
+      const h = Math.max(1, rect.height || canvas.clientHeight || 800)
+      this.panGrab(0.5, 0.5, 0.5 - dx / w, 0.5 - dz / h)
     },
     zoomBy(factor: number) {
       this.dist = clamp(this.dist * factor, 2.0, 28)

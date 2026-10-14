@@ -117,8 +117,8 @@ export function classifyWheelGesture(
   if (event.shiftKey) {
     return {
       kind: "pan",
-      dx: -dx * 0.85,
-      dy: -dy * 0.85,
+      dx,
+      dy,
       source: "trackpad-pan",
     }
   }
@@ -134,8 +134,8 @@ export function classifyWheelGesture(
   if (scrollMode === "pan") {
     return {
       kind: "pan",
-      dx: -dx * 0.85,
-      dy: -dy * 0.85,
+      dx,
+      dy,
       source: "trackpad-pan",
     }
   }

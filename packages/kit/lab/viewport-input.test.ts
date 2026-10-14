@@ -4,13 +4,16 @@ import {
   bindOrbitGestures,
   bindSafariTrackpadGestures,
   classifyWheelGesture,
+  computeGrabPanDelta,
   getTwoFingerScrollMode,
   isMouseWheelEvent,
   MOUSE_WHEEL_MIN_DELTA_Y,
+  pickHorizontalPlane,
   PRIMARY_DRAG_THRESHOLD_PX,
   RADIAL_TAP_THRESHOLD_PX,
   setTwoFingerScrollMode,
 } from "../orbit-gestures"
+import { writeOrbitCamera } from "./stage"
 
 class FakeCanvas {
   style: Record<string, string> = {}
@@ -101,8 +104,8 @@ test("classifyWheelGesture handles trackpad two-finger orbit/pan, Shift pan, Ctr
   const modePan = classifyWheelGesture({ deltaX: 30, deltaY: -20 }, { twoFingerScroll: "pan" })
   expect(modePan).toEqual({
     kind: "pan",
-    dx: -30 * 0.85,
-    dy: 20 * 0.85,
+    dx: 30,
+    dy: -20,
     source: "trackpad-pan",
   })
 
@@ -110,8 +113,8 @@ test("classifyWheelGesture handles trackpad two-finger orbit/pan, Shift pan, Ctr
   const scrollPan = classifyWheelGesture({ deltaX: 20, deltaY: 40, shiftKey: true })
   expect(scrollPan).toEqual({
     kind: "pan",
-    dx: -20 * 0.85,
-    dy: -40 * 0.85,
+    dx: 20,
+    dy: 40,
     source: "trackpad-pan",
   })
 
@@ -282,4 +285,93 @@ test("bindOrbitGestures unifies LMB click/box-select/orbit, RMB/MMB orbit + Shif
   expect(applyArrowCameraKey(target, { key: "ArrowLeft" })).toBe(true)
   expect(applyArrowCameraKey(target, { key: "ArrowUp", shiftKey: true })).toBe(true)
   expect(log).toEqual(["orbit:-0.250,0.000", "pan:0,-40"])
+})
+
+test("ray-plane grab pan keeps the grabbed ground point under the cursor within epsilon across camera pitches and yaws", () => {
+  const width = 1280
+  const height = 800
+  const aspect = width / height
+  const vp = new Float32Array(16)
+  const inv = new Float32Array(16)
+  const eye = new Float32Array(3)
+
+  function screenRayAt(u: number, v: number): { origin: [number, number, number]; dir: [number, number, number] } {
+    const nx = u * 2 - 1
+    const ny = 1 - v * 2
+    const x = inv[0]! * nx + inv[4]! * ny + inv[8]! + inv[12]!
+    const y = inv[1]! * nx + inv[5]! * ny + inv[9]! + inv[13]!
+    const z = inv[2]! * nx + inv[6]! * ny + inv[10]! + inv[14]!
+    const w = inv[3]! * nx + inv[7]! * ny + inv[11]! + inv[15]! || 1
+    const dx = x / w - eye[0]!
+    const dy = y / w - eye[1]!
+    const dz = z / w - eye[2]!
+    const len = Math.hypot(dx, dy, dz) || 1
+    return {
+      origin: [eye[0]!, eye[1]!, eye[2]!],
+      dir: [dx / len, dy / len, dz / len],
+    }
+  }
+
+  for (const pitch of [0.28, 0.45, 0.76, 1.15, 1.38]) {
+    for (const yaw of [0, 0.65, -1.2, Math.PI]) {
+      const focus = [2.5, 0.4, -3.0]
+      const dist = 18
+      writeOrbitCamera(width, height, vp, inv, eye, focus, yaw, pitch, dist)
+
+      const steps: [number, number][] = [
+        [0.32, 0.68],
+        [0.41, 0.61],
+        [0.55, 0.52],
+        [0.68, 0.44],
+      ]
+      const startHit = pickHorizontalPlane(screenRayAt(steps[0]![0], steps[0]![1]), focus[1]!)!
+      expect(startHit).not.toBeNull()
+
+      for (let i = 1; i < steps.length; i++) {
+        const [u0, v0] = steps[i - 1]!
+        const [u1, v1] = steps[i]!
+        const delta = computeGrabPanDelta(u0, v0, u1, v1, yaw, pitch, dist, aspect, 0.65)
+        focus[0] += delta.dx
+        focus[2] += delta.dz
+        writeOrbitCamera(width, height, vp, inv, eye, focus, yaw, pitch, dist)
+        const curHit = pickHorizontalPlane(screenRayAt(u1, v1), focus[1]!)!
+        expect(Math.hypot(curHit.x - startHit.x, curHit.z - startHit.z)).toBeLessThan(1e-3)
+      }
+    }
+  }
+
+  // Verify drag direction signs at yaw = 0:
+  // 1. Shift+drag cursor right (+u) and down (+v) moves focus left (-X) and away (-Z) so ground moves right and down with cursor
+  const grabRightDown = computeGrabPanDelta(0.5, 0.5, 0.6, 0.6, 0, 0.75, 18, aspect, 0.65)
+  expect(grabRightDown.dx).toBeLessThan(0)
+  expect(grabRightDown.dz).toBeLessThan(0)
+
+  // 2. Shift+two-finger scroll right and down on macOS natural scrolling produces deltaX < 0, deltaY < 0,
+  // which moves focus in the exact same (-X, -Z) direction as Shift+drag right and down
+  const wheelRightDown = classifyWheelGesture({ deltaX: -25, deltaY: -25, shiftKey: true })
+  expect(wheelRightDown.kind).toBe("pan")
+  if (wheelRightDown.kind === "pan") {
+    const scrollGrab = computeGrabPanDelta(
+      0.5,
+      0.5,
+      0.5 - wheelRightDown.dx / width,
+      0.5 - wheelRightDown.dy / height,
+      0,
+      0.75,
+      18,
+      aspect,
+      0.65,
+    )
+    expect(scrollGrab.dx).toBeLessThan(0)
+    expect(scrollGrab.dz).toBeLessThan(0)
+  }
+
+  // 3. Orbit direction ("grab-the-world"): dragging right (dx > 0 -> dyaw < 0) turns a foreground point (0, 0, +2) to the right (+u) on screen
+  const focus0 = [0, 0, 0]
+  writeOrbitCamera(width, height, vp, inv, eye, focus0, 0, 0.75, 18)
+  const uBefore = ((vp[0]! * 0 + vp[4]! * 0 + vp[8]! * 2 + vp[12]!) / (vp[3]! * 0 + vp[7]! * 0 + vp[11]! * 2 + vp[15]!) + 1) * 0.5
+  const dyawRightDrag = -40 * 0.0065 // dx = +40 px right
+  writeOrbitCamera(width, height, vp, inv, eye, focus0, dyawRightDrag, 0.75, 18)
+  const uAfter = ((vp[0]! * 0 + vp[4]! * 0 + vp[8]! * 2 + vp[12]!) / (vp[3]! * 0 + vp[7]! * 0 + vp[11]! * 2 + vp[15]!) + 1) * 0.5
+  expect(uAfter).toBeGreaterThan(uBefore)
 })
