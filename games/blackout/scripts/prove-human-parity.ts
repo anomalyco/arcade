@@ -9,11 +9,13 @@ import { HIP, RIG } from "../src/render/person"
 
 const EXPECTED_HASHES = {
   old: "00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac",
-  // Deliberately updated from 756db0b50d8755b4941daa5d490e3ea669682932408842e857b86b3ecd7914ff after the
-  // run-realism pass: mocap-calibrated running heel kick-up and knee drive in poseLegs, unwrapped sagittal
-  // shin-relative swing ankle pitch, seeded pair-balanced per-step variation (stride, timing, lift, lateral
-  // placement, toe-out yaw, arm swing), start/stop weight transfer, turn banking, and secondary head lag.
-  new: "3ae7dc130987d3ed3b4de90c79902359919089406532374929b42c1485b5c5e7",
+  // Deliberately updated from 756db0b50d8755b4941daa5d490e3ea669682932408842e857b86b3ecd7914ff ->
+  // 3ae7dc130987d3ed3b4de90c79902359919089406532374929b42c1485b5c5e7 after the
+  // run-realism pass and crouch-run leg calibration: mocap-calibrated running heel kick-up and knee drive in
+  // poseLegs, crouch-depth swing heel-kick attenuation (preventing the crouched pelvis from jackknifing the
+  // swing thigh into the chest), unwrapped sagittal shin-relative swing ankle pitch, seeded pair-balanced
+  // per-step variation, start/stop weight transfer, turn banking, and secondary head lag.
+  new: "2ae7f402b426f81cd1318d940d5dd67ebc52a9054fdc20362328a4e248df6683",
 } as const
 
 type Api = {

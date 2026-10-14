@@ -26,7 +26,8 @@ means the walk and run reference clips that `common.ts` downloads on first use.
 | --- | --- |
 | `packages/kit/human-locomotion.ts` | `gaitAt` (stride, duty, run blend), `locomotion` (stride clock, step release, swing, pelvis springs, arm springs), `plantedFoot` (toe lock and roll), `pelvisPoint` |
 | `packages/kit/human-pose.ts` | `poseLegs` (leg IK, swing ankle), `unarmedHands` (FK arm angles), `poseUnarmedArms` (arm IK pole), `poseArms` (armed hands) |
-| `packages/kit/human-profile.ts` | `humanProfiles` presets and their Lab controls |
+| `packages/kit/human-profile.ts` | `humanProfiles` presets and their Lab controls (`zombieVariant`) |
+| `packages/kit/shamble-crouch.ts` | `buildShambleReferenceCycle`, `buildCrouchRunReferenceCycle`, `extractAsymmetricBvhCycle`, `shambleHandsFK`, `shambleTorsoModulation`, zombie variants (`limper`, `dragger`, `reacher`, `lunger`) |
 | `packages/kit/rig.ts` | `RIG` link lengths, `ik`, frames and springs |
 | `games/blackout/src/game/anim.ts` | `animate`/`build`: pelvis pitch, torso and head, weapon frame, action clips |
 | `games/outbreak/src/survivor.ts`, `zombies.ts` | Terrain adapters with their own stride clocks |
@@ -213,10 +214,15 @@ lean below 1.65 m/s, rising to full lean at 3.4 m/s.
 per m/s² of acceleration, times `leanScale`, capped at 0.24 rad and sprung at 2.5 Hz. `pelvisPoint` moves the
 hips under the head rather than throwing the head forward. Backpedalling keeps 35% of the velocity lean.
 
-**Crouch-run is a profile choice.** The soldier's `runPosture` (0.34 rad) and `crouchDepth` (0.08 m) ramp in
-with run speed. Measured on 2026-10-13 at run and sprint speed, the pelvis lowers about 14.5 and 17.2 cm, the
-knees bend about 75° and 72° (50° walking), the pelvis pitches 12.5° and 15.6° and the chest 29° and 39°. Unarmed civilians keep 32% of the
-posture and 25% of the crouch: a 4.2 m/s survivor's chest pitches 10° to 18° against the soldier's 24° or more.
+**Crouch-run is a profile choice; attenuate swing heel-kick with crouch depth.** The soldier's `runPosture` (0.34 rad)
+and `crouchDepth` (0.08 m) ramp in with run speed. Measured at run and sprint speed, the pelvis lowers about 14.5 and
+17.2 cm, the knees bend about 71° (53° walking), the pelvis pitches 12.6° and 15.7° and the chest 29° and 39°. Unarmed
+civilians keep 32% of the posture and 25% of the crouch by default (chest pitch 10° to 18°), or 100% when crouch-run is
+selected (`Pose = Crouch-run` or `crouchDepth > 0.085`). Because a crouched pelvis is already 8 to 14.5 cm closer to the
+floor, adding full upright-run heel kick-up (22 cm) in `poseLegs` lifted the ankle 39.4 cm and jackknifed the swing
+thigh into the chest (80° hip flexion, 139° knee flexion). Scaling swing lift and heel-kick down with `m.crouch.x` and
+compensating `unarmedHands` for the extra forward torso pitch brought crouch-run overall angle RMSE against
+`buildCrouchRunReferenceCycle` from 9.5° to 6.0° (leg RMSE 11.8° to 5.5°, soldier leg RMSE 18.5° to 14.1°).
 
 **Pitch the pelvis about the hip axis, after the support roll.** `build` in `anim.ts` does this so both hip joints
 stay put and planted reaches are unchanged.
@@ -272,10 +278,33 @@ Presets live in `humanProfiles`. Spread one to tune an actor; never mutate the p
 | Soldier | default; crouch-run with rifle | `runPosture 0.34`, `crouchDepth 0.08`, `leanScale 1.25`, `headStability 0.8` |
 | Survivor | soldier profile with `unarmed = true` | FK arm swing, upright walk, 32% of the run posture |
 | Wizard | upright, narrow, staff in hand | `strideScale 0.85`, `runPosture 0.12`, `bobScale 0.7`, `handPose "staff"` |
-| Zombie | uneven and dragging | `timingBias 0.28`, `footDrag 0.9` (right foot), `hipDrop 0.13`, `headStability 0.2`, `handPose "reach"` |
+| Zombie | uneven, lurching and dragging | `timingBias 0.28`, `footDrag 0.9`, `hipDrop 0.13`, `headStability 0.2`, `handPose "reach"`, `zombieVariant` (`auto`, `limper`, `dragger`, `reacher`, `lunger`) |
 
-`timingBias` shifts one foot's phase and swing length; `footDrag` shortens and flattens only the right foot's
-swing and adds a limp to the pelvis. Tests bound both and keep the toe locks exact.
+`timingBias` shifts one foot's phase and swing length; `footDrag` shortens and flattens the crippled foot's
+swing, slows cadence (`157 -> 118 steps/min` at `0.95 m/s`, matching tired/injured mocap at `100-110 steps/min`),
+and adds a limp to the pelvis. Tests bound both and keep the toe locks exact (`0.000 mm` slip).
+
+### Zombie shamble
+
+- **Clamp swing foot pitch against the floor before lifting the ankle.** When `footDrag = 0.9`, the dragged ankle is only
+  1 cm above the ground while the shin tilts backward (`-37°`). Pitching the boot nose-down to follow the shin pushed the
+  0.19 m toe 11 cm underground, and `poseLegs`'s floor-clearance guard (`if (low < 0) ankle[1] -= low`) levitated the
+  dragged ankle to 11.8 cm (`89.9°` knee bend), erasing the drag. Clamping nose-down `footPitch` by the ankle's floor
+  clearance (`-asin((ankleY - RIG.ankle) / 0.19)`) lets the toe scrape along the floor and cut dragged-foot lift from
+  11.84 cm to 3.61 cm in Blackout (2.91 cm vs 11.02 cm good foot in Outbreak).
+- **Drive reaching/hanging zombie arms by FK angles in horizontal heading space (`shambleHandsFK`).** Static
+  `profileHands` targets solved with the rifle's `poseArms` held zombie arms frozen (`0.01°` swing in Outbreak, `3-4°`
+  in Blackout) with asymmetric rifle elbow poles. `shambleHandsFK` + `poseUnarmedArms` drives asymmetric reaching and
+  hanging waves in yaw-aligned horizontal space (so torso pitch/roll never shifts world shoulder flexion), cutting zombie
+  arm angle RMSE against `buildShambleReferenceCycle` from 24.8° to 4.0° in Outbreak (overall RMSE 20.2° to 6.5°; against
+  `walk_tired_001.bvh` mocap from 27.0° to 16.8°) and from 25.7° to 6.6° in Blackout (overall RMSE 22.0° to 9.5°).
+- **Readability from top-down comes from stumble-and-catch torso lurch, shoulder cant, head lolling and variants.**
+  Vertical bob is foreshortened from a 60° camera. `shambleTorsoModulation` adds a cyclic forward catch pitch (`Δ8.5°`),
+  coronal shoulder cant (`Δ12.2°` to `15.0°`), shoulder twist and phase-lagged head lolling (attached at the neck),
+  driven by `gait` (`1.0` at `0.95 m/s` rather than `speed / 4.2 = 0.22`). Seeded crowd zombies resolve across four
+  variants (`limper`, `dragger`, `reacher`, `lunger`) and left/right crippled sides (`resolveDragFoot`) so a 100-zombie
+  horde never moves in lockstep (100-zombie `bench-outbreak`: street p95 `18.6 ms`, interior p95 `19.6 ms`, realtime
+  ratio `0.996` / `0.999`, CPU prep `1.0 ms` / `0.6 ms`).
 
 ## Weapons
 

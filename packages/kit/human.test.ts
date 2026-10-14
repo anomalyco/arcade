@@ -3,6 +3,7 @@ import { locomotion, newMotion, pelvisPoint, type Locomotion, type Foot } from "
 import { humanProfiles, profileHands, profileTorso } from "./human-profile"
 import { attachment, bodyBones, boneVisible, detach, frameMotion, limbIds, pointVelocity, poseArms, poseLegs, poseUnarmedArms, unarmedHands, type BoneId } from "./human-pose"
 import { buildCycleFromJointFrames, buildWilliamsReferenceCycle, compareCycles, computePoseAngles, extractBodyJoints, jointsFromAngles, normalizeJoints, projectOrtho } from "./pose-diff"
+import { buildCrouchRunReferenceCycle, buildShambleReferenceCycle, resolveDragFoot, resolveZombieVariant, shambleHandsFK, shambleTorsoModulation, ZOMBIE_VARIANTS } from "./shamble-crouch"
 import { at, len, moved, pitch, roll, scale, spring, turn, yawFrame, RIG, type V3 } from "./rig"
 
 function actor(): Locomotion {
@@ -471,4 +472,73 @@ test("seeded per-step variation, crowd personality desync, start/stop weight shi
   }
   const phases = crowd.map(c => c.phase * 360)
   expect(Math.max(...phases) - Math.min(...phases)).toBeGreaterThan(20)
+})
+
+test("zombie shamble and crouch-run reference cycles, FK shamble arms, variants and crouch-run leg kinematics stay within biomechanical bounds", () => {
+  const dt = 1 / 60
+  const shambleRef = buildShambleReferenceCycle()
+  const crouchRef = buildCrouchRunReferenceCycle()
+  expect(shambleRef.phases8).toHaveLength(8)
+  expect(crouchRef.phases8).toHaveLength(8)
+
+  // Verify all 4 zombie variants produce distinct, finite FK arm poses and torso modulation
+  const pelvis = yawFrame([0, 0.84, 0], 0)
+  const torso = profileTorso(yawFrame(at(pelvis, 0, RIG.waist, 0), 0), humanProfiles.zombie)
+  const variantHands = ZOMBIE_VARIANTS.map(v => {
+    const prof = { ...humanProfiles.zombie, zombieVariant: v }
+    const [hL, hR] = shambleHandsFK(torso, 0.25, 1, 0, prof, 0)
+    const mod = shambleTorsoModulation(0.125, 1, prof, 0)
+    expect(hL.every(Number.isFinite)).toBe(true)
+    expect(hR.every(Number.isFinite)).toBe(true)
+    expect(Math.abs(mod.torsoPitchAdd)).toBeGreaterThan(0.01)
+    expect(Math.abs(mod.torsoRollAdd)).toBeGreaterThan(0.01)
+    return hL[0]
+  })
+  // Reacher and lunger reach further forward than limper
+  expect(variantHands[2]!).toBeGreaterThan(variantHands[0]!)
+  expect(variantHands[3]!).toBeGreaterThan(variantHands[0]!)
+
+  // Seeded crowd resolves all 4 variants and both left and right drag feet
+  const resolvedVariants = new Set(Array.from({ length: 32 }, (_, i) => resolveZombieVariant("auto", i + 1)))
+  const resolvedFeet = new Set(Array.from({ length: 32 }, (_, i) => resolveDragFoot(i + 1)))
+  expect(resolvedVariants.size).toBe(4)
+  expect(resolvedFeet.size).toBe(2)
+
+  // Measure unarmed crouch-run against buildCrouchRunReferenceCycle
+  const a = actor()
+  a.unarmed = true
+  ;(a as { crouchRun?: boolean }).crouchRun = true
+  const crouchProfile = { ...humanProfiles.soldier, runPosture: 0.34, crouchDepth: 0.09 }
+  let x = 0, prevPlantedL = true
+  const tdsL: number[] = []
+  const frames: ReturnType<typeof extractBodyJoints>[] = []
+  for (let n = 0; n < 420; n++) {
+    const t = n * dt
+    a.vx = 4.2; a.vy = 0; a.svx = 4.2; a.svy = 0
+    x += 4.2 * dt
+    const stepDist = x - a.x
+    a.x = x
+    locomotion(a, dt, stepDist, n === 0, crouchProfile)
+    const m = a.motion
+    let pel = yawFrame(pelvisPoint(a), m.pelvis.x + m.twist.x)
+    pel = roll(pel, m.drop.x)
+    pel = pitch(pel, -0.65 * m.posture.x)
+    const baseFwd = 0.045 + 0.025 * m.run
+    let tor = yawFrame(at(pel, 0, RIG.waist, 0), -m.twist.x * 0.65)
+    tor = pitch(tor, -(baseFwd + a.leanX.x + m.posture.x))
+    tor = profileTorso(tor, crouchProfile)
+    const head = yawFrame(at(tor, 0.02, RIG.neckY, 0), 0)
+    const [hL, hR] = unarmedHands(a, tor, t * 2)
+    const arms = poseUnarmedArms(tor, hL, hR)
+    const legs = poseLegs(a, pel)
+    if (n >= 180 && !prevPlantedL && a.feet[0].planted) tdsL.push(n)
+    prevPlantedL = a.feet[0].planted
+    frames.push(extractBodyJoints({ pelvis: pel, torso: tor, head, ...arms, ...legs }))
+  }
+  const f0 = tdsL[1]!, f1 = tdsL[2]!
+  const crouchCyc = buildCycleFromJointFrames("crouch-run", "run", 4.2, (f1 - f0) * dt, frames.slice(f0, f1), 0)
+  const comp = compareCycles(crouchCyc, crouchRef)
+  expect(comp.angleRmseDeg.overallAngleRmse).toBeLessThan(7.0)
+  expect(comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(7.5)
+  expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(7.0)
 })

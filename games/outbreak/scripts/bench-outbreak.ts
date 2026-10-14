@@ -12,6 +12,7 @@ const label = process.env.BENCH_LABEL ?? "baseline"
 const warmupRuns = Number(process.env.BENCH_WARMUP ?? 1)
 const measuredRuns = Number(process.env.BENCH_RUNS ?? 7)
 const holdMs = Number(process.env.BENCH_HOLD_MS ?? 2000)
+const zombieCount = process.env.BENCH_ZOMBIE_COUNT ? Number(process.env.BENCH_ZOMBIE_COUNT) : null
 const runAblations = process.env.BENCH_ABLATE === "1"
 mkdirSync(out, { recursive: true })
 
@@ -177,11 +178,13 @@ try {
     })
 
     for (const scene of scenes) {
-      await page.evaluate(async scene => {
+      await page.evaluate(async ({ scene, zombieCount }) => {
         const w = window as any
         const h = w.__arcadeHarness
         h.freeze(true)
+        if (zombieCount !== null) h.setLab("zombieCount", zombieCount)
         h.reset(7)
+        if (zombieCount !== null) h.setLab("zombieCount", zombieCount)
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
@@ -229,7 +232,7 @@ try {
         await new Promise(resolve => setTimeout(resolve, 350))
         h.freeze(true)
         await r.device.queue.onSubmittedWorkDone()
-      }, scene)
+      }, { scene, zombieCount })
 
       await page.locator("canvas").click()
       await page.evaluate(() => {
@@ -241,7 +244,7 @@ try {
       await page.evaluate(ms => new Promise(resolve => setTimeout(resolve, ms)), holdMs)
       await page.keyboard.up("ArrowRight")
 
-      const live = await page.evaluate(async scene => {
+      const live = await page.evaluate(async ({ scene, zombieCount }) => {
         const w = window as any
         const h = w.__arcadeHarness
         const s = w.__pacing
@@ -252,7 +255,9 @@ try {
         await h.renderer.device.queue.onSubmittedWorkDone()
 
         // Deterministic 24-step non-overlapping CPU / queue-completion / GPU hardware timestamp profile
+        if (zombieCount !== null) h.setLab("zombieCount", zombieCount)
         h.reset(7)
+        if (zombieCount !== null) h.setLab("zombieCount", zombieCount)
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
@@ -319,7 +324,7 @@ try {
           canvas: [canvas.width, canvas.height],
           hidden: document.hidden,
         }
-      }, scene)
+      }, { scene, zombieCount })
 
       const down = live.inputs.find((e: any) => e.kind === "down")
       const up = live.inputs.find((e: any) => e.kind === "up")

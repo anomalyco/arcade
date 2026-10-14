@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test"
 import { zombieProfile, zombieProfileOverrides, zombieTuning, zombieControls } from "../src/zombie-profile"
 import { Survivor } from "../src/survivor"
+import { ZombieCrowdRenderer } from "../src/zombies"
 import { humanProfiles } from "@arcade/kit/human-profile"
+import { createAIAgent } from "@arcade/kit/sim/ai"
+import { buildCycleFromJointFrames, compareCycles, extractBonePoseJoints, type RigJointMap } from "@arcade/kit/pose-diff"
+import { buildShambleReferenceCycle } from "@arcade/kit/shamble-crouch"
+import { at, RIG } from "@arcade/kit/rig"
 
 test("zombie controls keep reaching and delayed upper-body response independent of foot drag", () => {
   const profile = zombieProfileOverrides(zombieTuning)
@@ -87,4 +92,65 @@ test("unarmed survivor arm swing opposes foot stride and scales with speed", () 
   }
   expect(maxArmSpread).toBeGreaterThan(0.15)
   expect(maxTorsoCounterTwist).toBeGreaterThan(0.05)
+})
+
+test("zombie crowd shamble matches key-pose reference within 7.5 deg RMSE, locks planted toes, drags crippled foot and desynchronizes variants across a horde", () => {
+  const zr = new ZombieCrowdRenderer({ addModel: () => 0 })
+  const ag = createAIAgent(1, 7, 0, 0, 0)
+  ag.lurch = 0.85; ag.asymmetry = 0.85; ag.drag = 0.9; ag.reach = 0.8
+  ag.state = "wander"; ag.vx = 0.95; ag.vy = 0; ag.aim = 0
+  const dt = 1 / 60
+  const frames: RigJointMap[] = []
+  const tdsL: number[] = []
+  let prevPlantedL = true, prevPlantedR = true
+  let prevToeL = [0, 0, 0], prevToeR = [0, 0, 0]
+  let maxToeSlip = 0
+
+  for (let n = 0; n < 420; n++) {
+    ag.x += 0.95 * dt
+    zr.draw([ag], dt, () => 0, { visible: () => true, actorVisible: () => 1 } as never, [-100, -100, 100, 100], zombieTuning, false, n * dt)
+    const st = zr.getAgentBones(1)!
+    const j = extractBonePoseJoints(st.bones)
+    const [pL, pR] = st.planted!
+    const toeL = at(st.bones["left.foot"]!, 0.19, -RIG.ankle, 0)
+    const toeR = at(st.bones["right.foot"]!, 0.19, -RIG.ankle, 0)
+    if (n >= 180) {
+      if (prevPlantedL && pL) maxToeSlip = Math.max(maxToeSlip, Math.hypot(toeL[0] - prevToeL[0]!, toeL[1] - prevToeL[1]!, toeL[2] - prevToeL[2]!))
+      if (prevPlantedR && pR) maxToeSlip = Math.max(maxToeSlip, Math.hypot(toeR[0] - prevToeR[0]!, toeR[1] - prevToeR[1]!, toeR[2] - prevToeR[2]!))
+      if (!prevPlantedL && pL) tdsL.push(n)
+    }
+    prevPlantedL = pL; prevPlantedR = pR
+    prevToeL = toeL; prevToeR = toeR
+    frames.push(j)
+  }
+
+  expect(maxToeSlip).toBeLessThan(1e-6)
+  const f0 = tdsL[1]!, f1 = tdsL[2]!
+  const cyc = buildCycleFromJointFrames("outbreak-zombie", "walk", 0.95, (f1 - f0) * dt, frames.slice(f0, f1), 0)
+  const ref = buildShambleReferenceCycle()
+  const comp = compareCycles(cyc, ref)
+  expect(comp.angleRmseDeg.overallAngleRmse).toBeLessThan(7.5)
+  expect(comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(5.0)
+  const liftL = Math.max(...cyc.denseSamples.map(s => s.angles.footLiftLCm))
+  const liftR = Math.max(...cyc.denseSamples.map(s => s.angles.footLiftRCm))
+  expect(liftR).toBeLessThan(liftL * 0.35)
+  const tr = cyc.denseSamples.map(s => s.angles.trunkPitchDeg)
+  const shRoll = cyc.denseSamples.map(s => s.angles.shoulderRollDeg)
+  expect(Math.max(...tr) - Math.min(...tr)).toBeGreaterThan(6.5)
+  expect(Math.max(...shRoll) - Math.min(...shRoll)).toBeGreaterThan(9.5)
+
+  // Verify all 4 explicit variants (1..4) render finite poses and distinct silhouettes
+  const variantTilts = [1, 2, 3, 4].map(v => {
+    zr.reset()
+    const z = createAIAgent(2, 13, 0, 0, 0)
+    z.vx = 0.95; z.vy = 0; z.aim = 0
+    for (let k = 0; k < 60; k++) {
+      z.x += 0.95 * dt
+      zr.draw([z], dt, () => 0, { visible: () => true, actorVisible: () => 1 } as never, [-100, -100, 100, 100], { ...zombieTuning, zombieVariant: v }, false, k * dt)
+    }
+    const j = extractBonePoseJoints(zr.getAgentBones(2)!.bones)
+    return j.wristL[0] - j.pelvis[0]
+  })
+  expect(variantTilts.every(Number.isFinite)).toBe(true)
+  expect(Math.max(...variantTilts) - Math.min(...variantTilts)).toBeGreaterThan(0.04)
 })

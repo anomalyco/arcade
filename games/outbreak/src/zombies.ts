@@ -6,10 +6,16 @@ import {
   boneVisible,
   detach,
   poseArms,
+  poseUnarmedArms,
   type BoneId,
   type BonePose,
 } from "@arcade/kit/human-pose"
-import { profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
+import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
+import {
+  resolveDragFoot,
+  shambleHandsFK,
+  shambleTorsoModulation,
+} from "@arcade/kit/shamble-crouch"
 import {
   at,
   clamp,
@@ -20,6 +26,7 @@ import {
   pitch,
   RIG,
   roll,
+  smooth,
   smoother,
   spring,
   stepSpring,
@@ -34,7 +41,7 @@ import { hex } from "./level"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
 
 type AgentAnimState = {
-  feet: { p: V3; lift: V3; planted: boolean; yaw: number }[]
+  feet: { p: V3; lift: V3; target: V3; prevU: number; planted: boolean; yaw: number }[]
   phase: number
   yaw: number
   last: [number, number]
@@ -42,6 +49,8 @@ type AgentAnimState = {
   svy: number
   leanX: { x: number; v: number }
   leanY: { x: number; v: number }
+  reachDrop: { x: number; v: number }
+  twist: { x: number; v: number }
   chest: { x: number; v: number }
   head: { x: number; v: number }
   bones: BonePose
@@ -91,7 +100,7 @@ function frameAngles(f: Frame): [number, number, number] {
 }
 
 /** Computes a zombie's dynamic HumanProfile from global Lab tuning + individual traits + AI state/speed. */
-export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning): HumanProfile {
+export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out?: HumanProfile): HumanProfile {
   const stateBoost =
     agent.state === "chase" || agent.state === "alert" || agent.state === "bash"
       ? 1.0
@@ -106,12 +115,17 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning): Hu
   const drag = clamp(baseTuning.zombieDrag * agent.drag * (1 - 0.38 * stateBoost), 0, 1)
   const reach = clamp(baseTuning.zombieReach * (0.65 + 0.35 * agent.reach) + 0.28 * stateBoost + 0.1 * speedNorm, 0, 1)
 
-  const profile = zombieProfile({
-    zombieLurch: lurch,
-    zombieAsymmetry: asymmetry,
-    zombieDrag: drag,
-    zombieReach: reach,
-  })
+  const profile = zombieProfile(
+    {
+      zombieVariant: baseTuning.zombieVariant,
+      zombieLurch: lurch,
+      zombieAsymmetry: asymmetry,
+      zombieDrag: drag,
+      zombieReach: reach,
+    },
+    agent.id === 1 && (baseTuning.zombieVariant ?? 0) === 0 ? 0 : agent.seed,
+    out,
+  )
   if (stateBoost > 0.5) {
     profile.chestHz = Math.min(8, profile.chestHz + 2.2)
     profile.headHz = Math.min(9, profile.headHz + 2.8)
@@ -124,6 +138,7 @@ export class ZombieCrowdRenderer {
   private readonly partData: Float32Array<ArrayBuffer>[]
   private readonly partCounts = new Int32Array(PART_COUNT)
   private readonly anims = new Map<number, AgentAnimState>()
+  private readonly scratchProfile: HumanProfile = { ...humanProfiles.zombie }
   readonly debris: DetachedDebrisPiece[] = []
   readonly batches: Batch[] = []
   private overlayCanvas: HTMLCanvasElement | null = null
@@ -171,10 +186,15 @@ export class ZombieCrowdRenderer {
     this.debris.length = 0
   }
 
-  getAgentBones(agentId: number): { bones: BonePose; prevBones: BonePose; hiddenBones: Set<BoneId> } | undefined {
+  getAgentBones(agentId: number): { bones: BonePose; prevBones: BonePose; hiddenBones: Set<BoneId>; planted?: [boolean, boolean] } | undefined {
     const st = this.anims.get(agentId)
     if (!st) return undefined
-    return { bones: st.bones, prevBones: st.prevBones, hiddenBones: st.hiddenBones }
+    return {
+      bones: st.bones,
+      prevBones: st.prevBones,
+      hiddenBones: st.hiddenBones,
+      planted: [st.feet[0]!.planted, st.feet[1]!.planted],
+    }
   }
 
   detachAgentLimb(agent: AIAgent, root: BoneId, dt: number, impulseDir: V3): ( ReturnType<typeof detach>[number] )[] {
@@ -218,16 +238,20 @@ export class ZombieCrowdRenderer {
         feet: [-1, 1].map((side) => ({
           p: [agent.x, y0, agent.y + side * 0.13] as V3,
           lift: [agent.x, y0, agent.y + side * 0.13] as V3,
+          target: [agent.x, y0, agent.y + side * 0.13] as V3,
+          prevU: 0,
           planted: true,
           yaw: agent.aim,
         })),
-        phase: (agent.id * 0.27) % 1,
+        phase: (agent.id * 0.27 + (agent.seed % 97) * 0.01) % 1,
         yaw: agent.aim,
         last: [agent.x, agent.y],
         svx: 0,
         svy: 0,
         leanX: spring(),
         leanY: spring(),
+        reachDrop: spring(),
+        twist: spring(),
         chest: { x: agent.aim, v: 0 },
         head: { x: agent.aim, v: 0 },
         bones: {},
@@ -375,7 +399,9 @@ export class ZombieCrowdRenderer {
         continue
       }
 
-      st.prevBones = { ...st.bones }
+      for (const k in st.bones) {
+        st.prevBones[k as BoneId] = st.bones[k as BoneId]
+      }
       const clamberLift = a.clamberWindowId
         ? Math.sin(clamp(a.clamberElapsed / Math.max(0.1, a.clamberDuration), 0, 1) * Math.PI) * 0.56
         : 0
@@ -393,7 +419,7 @@ export class ZombieCrowdRenderer {
         st.head = { x: a.aim, v: 0 }
       }
 
-      const profile = agentZombieProfile(a, zombieTune)
+      const profile = agentZombieProfile(a, zombieTune, this.scratchProfile)
       const k = 1 - Math.exp(-dt * 14)
       const vx = st.svx + (a.vx - st.svx) * k
       const vy = st.svy + (a.vy - st.svy) * k
@@ -418,26 +444,37 @@ export class ZombieCrowdRenderer {
         st.feet.forEach((f, i) => {
           f.p = rest(i)
           f.lift = [...f.p]
+          f.target = [...f.p]
+          f.prevU = 0
           f.planted = true
           f.yaw = st.yaw
         })
+        st.reachDrop = spring()
+        st.twist = spring()
       }
-      const needsStep = st.feet.some(
-        (f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > 0.2 || !f.planted,
-      )
-      const rate = Math.max(speed / ((0.7 + 0.22 * speed) * profile.strideScale), needsStep ? 1.5 : 0)
+      const actorSeed = a.id === 1 && (zombieTune.zombieVariant ?? 0) === 0 ? 0 : a.seed
+      const dragFoot = resolveDragFoot(actorSeed)
+      const needsStep =
+        speed < 0.2 &&
+        st.feet.some((f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > 0.22 || !f.planted)
+      const stride = (0.98 + 0.34 * speed) * profile.strideScale
+      const rate = speed >= 0.15 ? speed / stride : needsStep ? 1.25 : 0
       st.phase = (st.phase + rate * dt) % 1
-      const duty = 0.64 - 0.2 * moving
+      const duty = 0.62 - 0.18 * moving
       st.feet.forEach((f, i) => {
-        const phase = (st.phase + i * (0.5 + profile.timingBias * 0.25)) % 1
+        const isDrag = i === dragFoot
+        const drag = isDrag ? clamp(profile.footDrag, 0, 0.95) : 0
+        const phase = (st.phase + i * (0.5 + profile.timingBias * 0.22)) % 1
         if (rate > 0 && phase >= duty) {
+          const u = (phase - duty) / (1 - duty)
+          const e = smoother(u)
+          const eHoriz = drag > 0 ? e * (1 - 0.34 * drag * (1 - u)) : e
           if (f.planted) {
             f.planted = false
             f.lift = [...f.p]
+            f.prevU = 0
           }
-          const u = (phase - duty) / (1 - duty)
-          const e = smoother(u)
-          const lead = (1 - phase) / rate + (duty / rate) * 0.5
+          const lead = Math.min(0.38, (1 - phase) / rate + (duty / rate) * 0.48) * (isDrag ? 1 - 0.18 * drag : 1.06)
           const target = rest(i)
           target[0] += vx * lead
           target[2] += vy * lead
@@ -449,28 +486,70 @@ export class ZombieCrowdRenderer {
             target[2] += cosY * side * (0.16 - lat)
           }
           target[1] = supportAt(target[0], target[2])
-          const clearance = i === 1 ? 1 - profile.footDrag : 1
-          f.p = [
-            f.lift[0] + (target[0] - f.lift[0]) * e,
-            f.lift[1] + (target[1] - f.lift[1]) * e + Math.sin(Math.PI * u) * (0.05 + 0.08 * moving) * clearance,
-            f.lift[2] + (target[2] - f.lift[2]) * e,
-          ]
+          const epPrev = smoother(f.prevU) * (drag > 0 ? 1 - 0.34 * drag * (1 - f.prevU) : 1)
+          if (epPrev > 0 && epPrev < 0.96 && u < 0.78) {
+            const curX = f.lift[0] + (f.target[0] - f.lift[0]) * epPrev
+            const curY = f.lift[1] + (f.target[1] - f.lift[1]) * epPrev
+            const curZ = f.lift[2] + (f.target[2] - f.lift[2]) * epPrev
+            f.lift = [
+              (curX - target[0] * epPrev) / (1 - epPrev),
+              (curY - target[1] * epPrev) / (1 - epPrev),
+              (curZ - target[2] * epPrev) / (1 - epPrev),
+            ]
+            f.target = target
+          } else if (f.prevU === 0) {
+            f.target = target
+          }
+          f.prevU = u
+          const tgt = f.target
+          const clearance = isDrag ? Math.max(0.08, (1 - drag) * 0.85) : 1.08
+          const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
+          const px = f.lift[0] + (tgt[0] - f.lift[0]) * eHoriz
+          const pz = f.lift[2] + (tgt[2] - f.lift[2]) * eHoriz
+          const py = Math.max(
+            supportAt(px, pz),
+            f.lift[1] + (tgt[1] - f.lift[1]) * eHoriz + liftBell * (0.092 + 0.055 * moving) * clearance,
+          )
+          f.p = [px, py, pz]
           f.yaw += angleDiff(st.yaw, f.yaw) * e
         } else if (!f.planted) {
           f.planted = true
-          f.p[1] = supportAt(f.p[0], f.p[2])
+          f.prevU = 0
+          f.p = [f.target[0], supportAt(f.target[0], f.target[2]), f.target[2]]
+          f.yaw = st.yaw
         }
       })
 
-      let height = supportAt(a.x, a.y) + HIP - 0.05 * moving - 0.035 * moving * Math.cos(st.phase * Math.PI * 4)
+      const footSupport =
+        (supportAt(st.feet[0]!.p[0], st.feet[0]!.p[2]) + supportAt(st.feet[1]!.p[0], st.feet[1]!.p[2])) * 0.5
+      const supportY = supportAt(a.x, a.y) * 0.65 + footSupport * 0.35
+      const shambleGait = smooth((speed - 0.12) / 0.35)
+      const shambleMod = shambleTorsoModulation(st.phase, shambleGait, profile, actorSeed)
+      const baseHeight =
+        supportY +
+        HIP -
+        0.012 * moving +
+        shambleMod.pelvisBobAdd -
+        0.016 * shambleGait * Math.sin(st.phase * Math.PI * 4 - 0.35)
+      let desiredDrop = 0
       for (const f of st.feet) {
-        const d = Math.hypot(f.p[0] - a.x, f.p[2] - a.y)
-        height = Math.min(height, Math.sqrt(Math.max(0, 0.815 ** 2 - d ** 2)) + RIG.ankle + f.p[1])
+        const d = Math.min(0.72, Math.hypot(f.p[0] - a.x, f.p[2] - a.y))
+        const reachY = Math.sqrt(Math.max(0, 0.822 ** 2 - d ** 2)) + RIG.ankle + f.p[1]
+        desiredDrop = Math.max(desiredDrop, Math.max(0, Math.min(0.14, baseHeight - reachY)))
       }
-      const pelvis = yawFrame([a.x, height, a.y], st.yaw)
+      stepSpring(st.reachDrop, 120, 0.88, dt, desiredDrop)
+      const fdx = st.feet[1]!.p[0] - st.feet[0]!.p[0]
+      const fdz = st.feet[1]!.p[2] - st.feet[0]!.p[2]
+      const footFwd = fdx * cosY + fdz * sinY
+      stepSpring(st.twist, 110, 0.85, dt, clamp(footFwd * 0.28, -0.16, 0.16) * (profile.twistScale ?? 1.4))
+
+      const height = baseHeight - st.reachDrop.x
+      let pelvis = yawFrame([a.x, height, a.y], st.yaw + st.twist.x)
+      pelvis = roll(pelvis, shambleMod.pelvisRollAdd)
+      pelvis = pitch(pelvis, -0.06 * moving - 0.35 * shambleMod.torsoPitchAdd)
       const lean = st.leanX.x * Math.cos(a.aim) + st.leanY.x * Math.sin(a.aim)
-      angleSpring(st.chest, a.aim, profile.chestHz, dt)
-      angleSpring(st.head, a.aim, profile.headHz, dt)
+      angleSpring(st.chest, a.aim - st.twist.x * 0.55 + shambleMod.torsoYawAdd, profile.chestHz, dt)
+      angleSpring(st.head, a.aim + shambleMod.headYawAdd, profile.headHz, dt)
 
       // Add a lunge pitch during door bashing or backward flinch during bullet/shove stagger
       const bashPulse =
@@ -479,28 +558,62 @@ export class ZombieCrowdRenderer {
         a.state === "stagger" ? -0.36 * clamp(a.timer / 0.3, 0, 1) : -0.18 * a.hitFlash
       const staggerCant =
         a.state === "stagger" ? (a.id % 2 ? 1 : -1) * 0.22 * clamp(a.timer / 0.3, 0, 1) : 0
-      let torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), st.chest.x), -0.05 - lean - bashPulse - staggerRecoil)
-      torso = roll(profileTorso(torso, profile), staggerCant)
+      let torso = pitch(
+        yawFrame(at(pelvis, 0, RIG.waist, 0), st.chest.x),
+        -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil,
+      )
+      torso = roll(profileTorso(torso, profile), shambleMod.torsoRollAdd + staggerCant)
       let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), st.head.x)
-      head = roll(pitch(head, -staggerRecoil * 0.6), profile.headTilt + staggerCant * 0.5)
-      const hands = profileHands(torso, profile)!
-      const arms = poseArms(torso, ...hands)
+      head = roll(
+        pitch(head, -0.12 * profile.torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6),
+        profile.headTilt + shambleMod.headRollAdd + staggerCant * 0.5,
+      )
+      const runBlend = clamp((speed - 1.5) / 1.5, 0, 1)
+      const hands = shambleHandsFK(torso, st.phase, shambleGait, runBlend, profile, actorSeed)
+      const arms = poseUnarmedArms(torso, ...hands)
 
-      st.bones = { pelvis, torso, head }
+      st.bones.pelvis = pelvis
+      st.bones.torso = torso
+      st.bones.head = head
       if (boneVisible("pelvis", st.hiddenBones)) this.pushPart(0, pelvis, tint, a.hitFlash, alpha)
       if (boneVisible("torso", st.hiddenBones)) this.pushPart(1, torso, tint, a.hitFlash, alpha)
       if (boneVisible("head", st.hiddenBones)) this.pushPart(2, head, tint, a.hitFlash, alpha)
 
       for (let i = 0; i < 2; i++) {
         const side = i ? 1 : -1
+        const isDrag = i === dragFoot
+        const drag = isDrag ? clamp(profile.footDrag, 0, 0.95) : 0
         const foot = st.feet[i]!
         const hip = at(pelvis, 0, 0, side * RIG.hipW)
         const ankle: V3 = [foot.p[0], foot.p[1] + RIG.ankle, foot.p[2]]
-        const pole = dirIn(pelvis, 1, 0, side * 0.3)
+        const pole = dirIn(pelvis, 1, 0.28, side * 0.25)
         const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
         const thigh = limb(hip, knee, pole, pelvis.x)
         const shin = limb(knee, end, pole, pelvis.x)
-        const boot = yawFrame(end, foot.yaw)
+        const footPhase = (st.phase + i * (0.5 + profile.timingBias * 0.22)) % 1
+        const stanceFrac = foot.planted ? clamp(footPhase / Math.max(0.1, duty), 0, 1) : 0
+        const stancePitch = isDrag
+          ? -0.22 * smooth((stanceFrac - 0.58) / 0.42) * drag * shambleGait
+          : -0.20 * smooth((stanceFrac - 0.62) / 0.38) * shambleGait
+        const swingPitch = isDrag
+          ? -0.24 * Math.sin(Math.PI * (1 - foot.prevU * 0.65)) * drag
+          : (-0.18 * Math.sin(Math.PI * clamp(foot.prevU / 0.55, 0, 1)) +
+              0.14 * Math.sin(Math.PI * clamp((foot.prevU - 0.5) / 0.5, 0, 1))) *
+            shambleGait
+        const fc = Math.cos(foot.yaw)
+        const fs = Math.sin(foot.yaw)
+        let boot: Frame
+        if (foot.planted) {
+          // Lock the planted toe in world space while rolling heel-off in terminal stance
+          const f0 = pitch(yawFrame([0, 0, 0], foot.yaw), stancePitch)
+          const off = at(f0, 0.19, -RIG.ankle, 0)
+          f0.p[0] = foot.p[0] + fc * 0.19 - off[0]
+          f0.p[1] = foot.p[1] - off[1]
+          f0.p[2] = foot.p[2] + fs * 0.19 - off[2]
+          boot = f0
+        } else {
+          boot = pitch(yawFrame(end, foot.yaw), swingPitch)
+        }
         const name = i === 0 ? "left" : "right"
         st.bones[`${name}.thigh` as BoneId] = thigh
         st.bones[`${name}.shin` as BoneId] = shin

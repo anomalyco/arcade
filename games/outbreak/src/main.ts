@@ -44,6 +44,7 @@ import {
   packOutbreakLightingUniforms,
   resolveLampLight,
 } from "./lighting"
+import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
@@ -145,7 +146,12 @@ async function main() {
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const updateProfile = () => {
-    avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
+    avatar.profile =
+      settings.humanProfile === 1
+        ? zombieProfile(settings)
+        : settings.humanProfile === 2
+          ? { ...humanProfiles.soldier, runPosture: 0.34, crouchDepth: 0.095 }
+          : undefined
   }
   const controls: LabControl[] = [
     ...aiControls,
@@ -221,6 +227,7 @@ async function main() {
       options: [
         { label: "Survivor", value: 0 },
         { label: "Zombie", value: 1 },
+        { label: "Crouch-run", value: 2 },
       ],
     },
     ...zombieControls,
@@ -1135,14 +1142,19 @@ async function main() {
     }
     if (!pacerTimer && !channelPending) {
       const rem = msUntilNextDraw(performance.now())
-      const waitMs = renderer.inflight === 0 && rem <= 3.5 ? 0 : Math.max(1, Math.floor(rem - 1.5))
-      pacerTimer = window.setTimeout(() => {
-        pacerTimer = 0
-        if (!frozen && !document.hidden && !channelPending) {
-          channelPending = true
-          paceChannel.port2.postMessage(null)
-        }
-      }, waitMs)
+      if (renderer.inflight === 0 && rem <= 1.8) {
+        channelPending = true
+        paceChannel.port2.postMessage(null)
+      } else {
+        const waitMs = Math.max(1, Math.floor(rem - 1.6))
+        pacerTimer = window.setTimeout(() => {
+          pacerTimer = 0
+          if (!frozen && !document.hidden && !channelPending) {
+            channelPending = true
+            paceChannel.port2.postMessage(null)
+          }
+        }, waitMs)
+      }
     }
   }
   const rafLoop = (now: number) => {
