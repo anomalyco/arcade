@@ -1458,6 +1458,38 @@ export function emitGrassTuft(
   }
 }
 
+export function emitWeedMat(
+  m: Mesh,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+  height: number,
+  rng: Rng,
+  baseCol: Rgb = [0.16, 0.25, 0.11],
+): void {
+  const center: Point = [x, y + height, z]
+  const sides = 5
+  const ring: Point[] = []
+  const rot = rng.next() * Math.PI * 2
+  for (let i = 0; i < sides; i++) {
+    const a = rot + (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.36
+    const r = radius * (i % 2 === 0 ? 1.15 + rng.next() * 0.25 : 0.72 + rng.next() * 0.22)
+    ring.push([x + Math.cos(a) * r, y + 0.008, z + Math.sin(a) * r])
+  }
+  const cCol = scaleRgb(baseCol, 0.92 + rng.next() * 0.16)
+  const rCol = scaleRgb(baseCol, 0.54 + rng.next() * 0.12)
+  for (let i = 0; i < sides; i++) {
+    const p0 = ring[i]!
+    const p1 = ring[(i + 1) % sides]!
+    const n0 = normalize3(p0[0] - x, radius * 1.45, p0[2] - z)
+    const n1 = normalize3(p1[0] - x, radius * 1.45, p1[2] - z)
+    m.vert(center, [0, 1, 0], cCol, MAT.foliage, 0.55)
+    m.vert(p0, n0, rCol, MAT.foliage, 0.15)
+    m.vert(p1, n1, rCol, MAT.foliage, 0.15)
+  }
+}
+
 export type GrassClumpSample = {
   x: number
   z: number

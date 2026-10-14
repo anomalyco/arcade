@@ -5,7 +5,7 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
-import { emitCurvedGrassBlade, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
+import { emitCurvedGrassBlade, emitGrassTuft, emitWeedMat, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
@@ -155,11 +155,12 @@ function compileLevel(town: Town): LevelData {
   for (const [bIdx, b] of town.buildings.entries()) {
     const [bx0, bz0, bx1, bz1] = b.rect
     const sidewalkZ = frontageEnd(b) - 0.08
+    const isHero = bIdx === 0
     const lawnPatches: readonly [number, number, number, number, number][] = [
-      [bx0 + 0.25, bz1 + 0.90, bx0 + 4.85, sidewalkZ, 22],
-      [bx0 + 6.55, bz1 + 0.90, Math.min(37.7, bx1 - 0.25), sidewalkZ, 24],
-      [Math.max(2.0, bx0 - 7.5), bz0 + 0.5, bx0 - 3.15, sidewalkZ, 18],
-      [bx1 + 0.35, bz0 + 0.5, Math.min(37.7, bx1 + 3.2), sidewalkZ, 14],
+      [bx0 + 0.20, bz1 + 0.72, bx0 + 4.90, sidewalkZ, isHero ? 32 : 14],
+      [bx0 + 6.50, bz1 + 0.72, Math.min(37.7, bx1 - 0.20), sidewalkZ, isHero ? 36 : 16],
+      [Math.max(2.0, bx0 - 7.5), bz0 + 0.5, bx0 - 3.15, sidewalkZ, isHero ? 20 : 12],
+      [bx1 + 0.35, bz0 + 0.5, Math.min(37.7, bx1 + 3.2), sidewalkZ, isHero ? 14 : 10],
     ]
     for (const [pIdx, [lx0, lz0, lx1, lz1, count]] of lawnPatches.entries()) {
       if (lz1 <= lz0 + 0.2 || lx1 <= lx0 + 0.2 || (lx0 > 37.8 && lx0 < 50.2)) continue
@@ -175,9 +176,9 @@ function compileLevel(town: Town): LevelData {
         const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
         emitGrassTuft(m, t.x, y, t.z, {
           bladeCount: 3,
-          radius: t.radius * 1.25,
-          height: t.height * 1.22,
-          width: t.width * 1.25,
+          radius: t.radius * 1.18,
+          height: t.height * 1.16,
+          width: t.width * 0.96,
           curvature: t.curvature,
           leanAngle: t.leanAngle,
           rootColor: t.rootColor,
@@ -212,27 +213,27 @@ function compileLevel(town: Town): LevelData {
       })
     }
   }
-  // Radiating rosette grass tussocks along curb verges, sidewalk borders, front walkways, and gravel driveways.
+  // Radiating rosette grass & weed tussocks along curb verges, sidewalk borders, front walkways, and gravel driveways.
   const vergeRng = new Rng(town.seed ^ 0x91e1)
-  for (let v = 2.5; v < SIZE - 2.5; v += 0.72 + vergeRng.next() * 0.68) {
+  for (let v = 2.5; v < SIZE - 2.5; v += 0.64 + vergeRng.next() * 0.58) {
     if (v > 37.5 && v < 50.5) continue
-    for (const zBase of [37.88, 39.55, 48.45, 50.12]) {
+    for (const zBase of [37.86, 39.55, 48.45, 50.14]) {
       if (vergeRng.next() < 0.14) continue
       if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 0.95 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.25))) continue
       const inCurbStrip = zBase > 39 && zBase < 49
-      const x = v + (vergeRng.next() - 0.5) * 0.28
-      const z = zBase + (vergeRng.next() - 0.5) * 0.12
+      const x = v + (vergeRng.next() - 0.5) * 0.30
+      const z = zBase + (vergeRng.next() - 0.5) * 0.14
       const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
       const m = at(x, z)
-      const h = (inCurbStrip ? 0.24 + vergeRng.next() * 0.16 : 0.18 + vergeRng.next() * 0.14) * (foliageSettings.bladeHeight / 0.30)
-      const rootCol = hex(vergeRng.pick([0x182610, 0x14200d, 0x1e2812]))
-      const tipCol = hex(vergeRng.pick([0x4c6828, 0x3e5822, 0x5c682c]))
+      const h = (inCurbStrip ? 0.20 + vergeRng.next() * 0.16 : 0.16 + vergeRng.next() * 0.14) * (foliageSettings.bladeHeight / 0.30)
+      const rootCol = hex(vergeRng.pick([0x14200d, 0x101a0a, 0x1a2410]))
+      const tipCol = hex(vergeRng.pick([0x3c5420, 0x32481c, 0x485624]))
       emitGrassTuft(m, x, y, z, {
         bladeCount: inCurbStrip ? 4 : 3,
-        radius: inCurbStrip ? 0.22 + vergeRng.next() * 0.08 : 0.16 + vergeRng.next() * 0.06,
+        radius: inCurbStrip ? 0.22 + vergeRng.next() * 0.08 : 0.18 + vergeRng.next() * 0.06,
         height: h,
-        width: foliageSettings.bladeWidth * 1.28,
-        curvature: Math.min(1.0, foliageSettings.bladeCurvature * 1.15),
+        width: foliageSettings.bladeWidth * 1.15,
+        curvature: Math.min(1.0, foliageSettings.bladeCurvature * 1.18),
         leanAngle: vergeRng.next() * Math.PI * 2,
         rootColor: rootCol,
         tipColor: tipCol,
@@ -243,45 +244,46 @@ function compileLevel(town: Town): LevelData {
   for (const b of town.buildings) {
     const [bx0, bz0, , bz1] = b.rect
     const walkEnd = frontageEnd(b) - 0.12
-    for (let wz = bz1 + 1.15; wz < walkEnd; wz += 0.62 + vergeRng.next() * 0.45) {
-      for (const wx of [bx0 + 4.92, bx0 + 6.48]) {
+    for (let wz = bz1 + 1.05; wz < walkEnd; wz += 0.54 + vergeRng.next() * 0.42) {
+      for (const wx of [bx0 + 4.88, bx0 + 6.52]) {
         const gx = wx + (vergeRng.next() - 0.5) * 0.14
         const gz = wz + (vergeRng.next() - 0.5) * 0.18
         const y = supportHeight(town, gx, gz)
         emitGrassTuft(at(gx, gz), gx, y, gz, {
-          bladeCount: 3,
-          radius: 0.18,
-          height: (0.20 + vergeRng.next() * 0.12) * (foliageSettings.bladeHeight / 0.30),
-          width: foliageSettings.bladeWidth * 1.20,
+          bladeCount: 4,
+          radius: 0.20 + vergeRng.next() * 0.06,
+          height: (0.18 + vergeRng.next() * 0.14) * (foliageSettings.bladeHeight / 0.30),
+          width: foliageSettings.bladeWidth * 1.12,
           curvature: foliageSettings.bladeCurvature,
-          leanAngle: wx < bx0 + 5.5 ? 0.15 : Math.PI - 0.15,
-          rootColor: hex(0x182610),
-          tipColor: hex(0x4a6428),
+          leanAngle: wx < bx0 + 5.5 ? 0.12 : Math.PI - 0.12,
+          rootColor: hex(0x14200d),
+          tipColor: hex(0x3a5220),
           rng: vergeRng,
         })
       }
     }
-    for (let dz = bz0 + 1.2; dz < walkEnd; dz += 0.85 + vergeRng.next() * 0.65) {
+    for (let dz = bz0 + 1.2; dz < walkEnd; dz += 0.78 + vergeRng.next() * 0.58) {
       for (const dx of [bx0 - 2.94, bx0 - 1.68, bx0 - 0.42]) {
-        if (dx === bx0 - 1.68 && vergeRng.next() < 0.48) continue
+        if (dx === bx0 - 1.68 && vergeRng.next() < 0.42) continue
         const gx = dx + (vergeRng.next() - 0.5) * 0.18
         const gz = dz + (vergeRng.next() - 0.5) * 0.22
         const y = supportHeight(town, gx, gz)
-        emitCurvedGrassBlade(
-          at(gx, gz),
-          gx,
-          y,
-          gz,
-          0.18 + vergeRng.next() * 0.12,
-          foliageSettings.bladeWidth * 1.18,
-          foliageSettings.bladeCurvature,
-          vergeRng.next() * Math.PI * 2,
-          hex(0x182410),
-          hex(0x465c26),
-        )
+        emitGrassTuft(at(gx, gz), gx, y, gz, {
+          bladeCount: 2,
+          radius: 0.14,
+          height: 0.15 + vergeRng.next() * 0.12,
+          width: foliageSettings.bladeWidth * 1.08,
+          curvature: foliageSettings.bladeCurvature,
+          leanAngle: vergeRng.next() * Math.PI * 2,
+          rootColor: hex(0x14200d),
+          tipColor: hex(0x384e1e),
+          rng: vergeRng,
+        })
       }
     }
   }
+  void emitWeedMat
+  void emitCurvedGrassBlade
   // Segment streets at chunk edges to retain useful culling.
   for (let v = 0; v < SIZE; v += CHUNK) {
     floor(at(44, v), 40, v, 48, v + CHUNK, .014, 0x454d5c, 5)
