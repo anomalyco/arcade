@@ -298,11 +298,15 @@ export function computePoseAngles(
     const hipFlex = Math.atan2(th[0], Math.max(1e-4, -th[1])) * DEG
     const cosKnee = clamp(dot(th, shn) / ((len(th) || 1e-4) * (len(shn) || 1e-4)), -1, 1)
     const kneeFlex = Math.acos(cosKnee) * DEG
-    // Flat foot has ankle at y = RIG.ankle and toe at y = 0, so baseline pitch is atan2(-RIG.ankle, 0.19)
+    // Flat foot has ankle at y = RIG.ankle and toe at y = 0, so baseline pitch is atan2(-RIG.ankle, 0.19).
+    // Measure anatomical ankle dorsiflexion(+)/plantarflexion(-) relative to the shin in the sagittal plane.
     const baseFootPitch = Math.atan2(-RIG.ankle, 0.19)
-    const rawFootPitch = Math.atan2(ft[1], Math.max(1e-4, ft[0]))
-    const anklePitch = (rawFootPitch - baseFootPitch) * DEG
-    return { hipFlex, kneeFlex, anklePitch }
+    const footWorldPitch = Math.atan2(ft[1], ft[0]) - baseFootPitch
+    const shinWorldPitch = Math.atan2(shn[0], -shn[1])
+    let ankleRel = (footWorldPitch - shinWorldPitch) * DEG
+    while (ankleRel > 180) ankleRel -= 360
+    while (ankleRel < -180) ankleRel += 360
+    return { hipFlex, kneeFlex, anklePitch: clamp(ankleRel, -65, 65) }
   }
 
   const leftL = legMetrics(j.hipL, j.kneeL, j.ankleL, j.toeL)
@@ -412,9 +416,9 @@ export function jointsFromAngles(a: KeyPoseAngles): RigJointMap {
     const shDir: V3 = [Math.sin(sf), -Math.cos(sf), 0]
     const ankle: V3 = [knee[0] + shDir[0] * RIG.shin, knee[1] + shDir[1] * RIG.shin, knee[2]]
     const baseFootAngle = Math.atan2(-RIG.ankle, 0.19)
-    const footAngle = baseFootAngle + ankPitchDeg * RAD
+    const footAngle = baseFootAngle + sf + ankPitchDeg * RAD
     const footLen = Math.hypot(0.19, RIG.ankle)
-    const toe: V3 = [ankle[0] + Math.cos(footAngle) * footLen, Math.max(0, ankle[1] + Math.sin(footAngle) * footLen), ankle[2]]
+    const toe: V3 = [ankle[0] + Math.cos(footAngle) * footLen, ankle[1] + Math.sin(footAngle) * footLen, ankle[2]]
     return [hip, knee, ankle, toe]
   }
 
@@ -581,16 +585,23 @@ export function retargetBvhFrame(p: Record<string, V3>, meanPelvisY: number, min
   const hipL = step(pelvis, hipBarDir, -RIG.hipW)
   const hipR = step(pelvis, hipBarDir, RIG.hipW)
 
+  // Compensate for the 14.87° rest-pose slope difference between BVH Foot->Toes (-38.97°) and RIG ankle->toe (-24.10°)
+  const alignBvhFoot = (d: V3): V3 => {
+    const footDelta = 14.87 * RAD
+    const c = Math.cos(footDelta), s = Math.sin(footDelta)
+    return norm([d[0] * c - d[1] * s, d[0] * s + d[1] * c, d[2]])
+  }
+
   const thDirL = dir(p.UpperLeg_L!, p.LowerLeg_L!)
   const shDirL = dir(p.LowerLeg_L!, p.Foot_L!)
-  const ftDirL = dir(p.Foot_L!, p.Toes_L!)
+  const ftDirL = alignBvhFoot(dir(p.Foot_L!, p.Toes_L!))
   const kneeL = step(hipL, thDirL, RIG.thigh)
   const ankleL = step(kneeL, shDirL, RIG.shin)
   const toeL = step(ankleL, ftDirL, Math.hypot(0.19, RIG.ankle))
 
   const thDirR = dir(p.UpperLeg_R!, p.LowerLeg_R!)
   const shDirR = dir(p.LowerLeg_R!, p.Foot_R!)
-  const ftDirR = dir(p.Foot_R!, p.Toes_R!)
+  const ftDirR = alignBvhFoot(dir(p.Foot_R!, p.Toes_R!))
   const kneeR = step(hipR, thDirR, RIG.thigh)
   const ankleR = step(kneeR, shDirR, RIG.shin)
   const toeR = step(ankleR, ftDirR, Math.hypot(0.19, RIG.ankle))
@@ -872,6 +883,7 @@ export type CycleComparison = {
   positionRmse: {
     wristRelHipXCm: number
     wristRelHipYCm: number
+    footLiftCm: number
     side2DNorm: number
     front2DNorm: number
   }
@@ -891,6 +903,13 @@ export type CycleComparison = {
       wristRelHipYMaxCm: number
       elbowRelTorsoXMinCm: number
       elbowRelTorsoXMaxCm: number
+      hipFlexMinDeg: number
+      hipFlexMaxDeg: number
+      kneeFlexMinDeg: number
+      kneeFlexMaxDeg: number
+      anklePitchMinDeg: number
+      anklePitchMaxDeg: number
+      footLiftMaxCm: number
       armOppositeLegCorr: number
       armPhaseLagDeg: number
     }
@@ -909,6 +928,13 @@ export type CycleComparison = {
       wristRelHipYMaxCm: number
       elbowRelTorsoXMinCm: number
       elbowRelTorsoXMaxCm: number
+      hipFlexMinDeg: number
+      hipFlexMaxDeg: number
+      kneeFlexMinDeg: number
+      kneeFlexMaxDeg: number
+      anklePitchMinDeg: number
+      anklePitchMaxDeg: number
+      footLiftMaxCm: number
       armOppositeLegCorr: number
       armPhaseLagDeg: number
     }
@@ -962,6 +988,10 @@ function computeArmPhaseStats(samples: PhaseSample[]) {
   const wx = samples.flatMap(s => [s.angles.wristRelHipL[0], s.angles.wristRelHipR[0]])
   const wy = samples.flatMap(s => [s.angles.wristRelHipL[1], s.angles.wristRelHipR[1]])
   const ex = samples.flatMap(s => [s.angles.elbowRelTorsoL[0], s.angles.elbowRelTorsoR[0]])
+  const hip = samples.flatMap(s => [s.angles.hipFlexL, s.angles.hipFlexR])
+  const knee = samples.flatMap(s => [s.angles.kneeFlexL, s.angles.kneeFlexR])
+  const ank = samples.flatMap(s => [s.angles.anklePitchL, s.angles.anklePitchR])
+  const lift = samples.flatMap(s => [s.angles.footLiftLCm, s.angles.footLiftRCm])
 
   return {
     shoulderFlexMinDeg: r2(Math.min(...sh)),
@@ -978,6 +1008,13 @@ function computeArmPhaseStats(samples: PhaseSample[]) {
     wristRelHipYMaxCm: r2(Math.max(...wy)),
     elbowRelTorsoXMinCm: r2(Math.min(...ex)),
     elbowRelTorsoXMaxCm: r2(Math.max(...ex)),
+    hipFlexMinDeg: r2(Math.min(...hip)),
+    hipFlexMaxDeg: r2(Math.max(...hip)),
+    kneeFlexMinDeg: r2(Math.min(...knee)),
+    kneeFlexMaxDeg: r2(Math.max(...knee)),
+    anklePitchMinDeg: r2(Math.min(...ank)),
+    anklePitchMaxDeg: r2(Math.max(...ank)),
+    footLiftMaxCm: r2(Math.max(...lift)),
     armOppositeLegCorr: r4(corr),
     armPhaseLagDeg: r2(lagDeg),
   }
@@ -1024,6 +1061,10 @@ export function compareCycles(ours: CycleData, ref: CycleData): CycleComparison 
   const wyRmse = Math.hypot(
     rmsePair(oS.map(s => s.angles.wristRelHipL[1]), rS.map(s => s.angles.wristRelHipL[1])),
     rmsePair(oS.map(s => s.angles.wristRelHipR[1]), rS.map(s => s.angles.wristRelHipR[1])),
+  ) / Math.SQRT2
+  const liftRmse = Math.hypot(
+    rmsePair(oS.map(s => s.angles.footLiftLCm), rS.map(s => s.angles.footLiftLCm)),
+    rmsePair(oS.map(s => s.angles.footLiftRCm), rS.map(s => s.angles.footLiftRCm)),
   ) / Math.SQRT2
 
   let sideSq = 0, frontSq = 0, countJoints = 0
@@ -1078,6 +1119,7 @@ export function compareCycles(ours: CycleData, ref: CycleData): CycleComparison 
     positionRmse: {
       wristRelHipXCm: r2(wxRmse),
       wristRelHipYCm: r2(wyRmse),
+      footLiftCm: r2(liftRmse),
       side2DNorm: r4(Math.sqrt(sideSq / Math.max(1, countJoints))),
       front2DNorm: r4(Math.sqrt(frontSq / Math.max(1, countJoints))),
     },

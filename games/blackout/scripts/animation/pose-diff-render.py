@@ -656,11 +656,154 @@ if TAG == "after" and before_data:
     render_before_after_overlay_sheet("survivorWalk", "mocapWalk", "survivorWalkVsMocap", "front", "overlay-compare-walk-front.png", "Survivor Walk (1.4 m/s)")
     render_before_after_overlay_sheet("survivorRun", "mocapRun", "survivorRunVsMocap", "side", "overlay-compare-run-side.png", "Survivor Run (4.2 m/s)")
     render_before_after_overlay_sheet("survivorRun", "mocapRun", "survivorRunVsMocap", "front", "overlay-compare-run-front.png", "Survivor Run (4.2 m/s)")
+    if "survivorSprint" in cur_data["cycles"]:
+        render_before_after_overlay_sheet("survivorSprint", "mocapRun", "survivorSprintVsMocap", "side", "overlay-compare-sprint-side.png", "Survivor Sprint (6.3 m/s)")
     render_before_after_overlay_sheet("outbreakWalk", "mocapWalk", "outbreakWalkVsMocap", "side", "overlay-compare-outbreak-walk-side.png", "Outbreak Survivor Walk (1.4 m/s)")
     render_before_after_overlay_sheet("outbreakRun", "mocapRun", "outbreakRunVsMocap", "side", "overlay-compare-outbreak-run-side.png", "Outbreak Survivor Run (4.2 m/s)")
 
     render_angle_plots("survivorWalk", "mocapWalk", "williamsWalk", "survivorWalkVsMocap", "angles-walk-compare.png", "Survivor Walk (1.4 m/s) — BEFORE vs AFTER vs MOCAP", include_before=True)
     render_angle_plots("survivorRun", "mocapRun", "williamsRun", "survivorRunVsMocap", "angles-run-compare.png", "Survivor Run (4.2 m/s) — BEFORE vs AFTER vs MOCAP", include_before=True)
+
+    def render_leg_compare_plot(cycle_key, ref_key, comp_key, out_name, title):
+        if cycle_key not in cur_data["cycles"] or cycle_key not in before_data["cycles"]:
+            return
+        b_cyc = before_data["cycles"][cycle_key]
+        a_cyc = cur_data["cycles"][cycle_key]
+        ref = cur_data["references"][ref_key]
+        b_comp = before_data["comparisons"][comp_key]
+        a_comp = cur_data["comparisons"][comp_key]
+
+        W, H = 1280, 640
+        img = Image.new("RGBA", (W, H), BG_DARK)
+        draw = ImageDraw.Draw(img)
+
+        br = b_comp["angleRmseDeg"]
+        ar = a_comp["angleRmseDeg"]
+        bk = b_comp["kinematics"]["ours"]
+        ak = a_comp["kinematics"]["ours"]
+        rk = a_comp["kinematics"]["ref"]
+        draw.text((20, 10), f"{title} — Leg Kinematics & Foot Swing Lift vs. Mocap", fill=COL_SPINE, font=FONT_TITLE)
+        sub = (
+            f"Mean Leg Angle RMSE: {br['meanLegAngleRmse']:.1f}° -> {ar['meanLegAngleRmse']:.1f}° "
+            f"(Knee {br['kneeFlex']:.1f}°->{ar['kneeFlex']:.1f}°, Ankle {br['anklePitch']:.1f}°->{ar['anklePitch']:.1f}°, Hip {br['hipFlex']:.1f}°->{ar['hipFlex']:.1f}°)  |  "
+            f"Peak Foot Lift: {bk['footLiftMaxCm']:.1f}cm -> {ak['footLiftMaxCm']:.1f}cm (Mocap {rk['footLiftMaxCm']:.1f}cm)  |  "
+            f"Peak Knee Flex: {bk['kneeFlexMaxDeg']:.1f}° -> {ak['kneeFlexMaxDeg']:.1f}° (Mocap {rk['kneeFlexMaxDeg']:.1f}°)"
+        )
+        draw.text((20, 34), sub, fill=(175, 190, 210, 255), font=FONT_SMALL)
+
+        b_s = b_cyc["denseSamples"]
+        a_s = a_cyc["denseSamples"]
+        r_s = ref["denseSamples"]
+        us = [s["phaseFrac"] for s in a_s]
+
+        pw, ph = 604, 252
+        x_cols = [20, 656]
+        y_rows = [62, 344]
+        is_walk = a_cyc["mode"] == "walk"
+
+        # 1. Knee Flexion
+        box0 = (x_cols[0], y_rows[0], x_cols[0] + pw, y_rows[0] + ph)
+        k_min, k_max = (0, 85) if is_walk else (0, 140)
+        draw_plot_panel(draw, box0, "1. Knee Flexion Angle [deg] (Heel Kick-Up in Swing)", k_min, k_max, [("Before L", COL_BEFORE), ("After L", COL_LEFT), ("After R", COL_RIGHT), ("Mocap L", COL_MOCAP)], zero_line=False)
+        draw_curve(draw, box0, us, [s["angles"]["kneeFlexL"] for s in b_s], k_min, k_max, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, box0, us, [s["angles"]["kneeFlexL"] for s in r_s], k_min, k_max, COL_MOCAP, width=2, dashed=True)
+        draw_curve(draw, box0, us, [s["angles"]["kneeFlexR"] for s in a_s], k_min, k_max, COL_RIGHT, width=2)
+        draw_curve(draw, box0, us, [s["angles"]["kneeFlexL"] for s in a_s], k_min, k_max, COL_LEFT, width=3)
+
+        # 2. Hip Flexion / Extension
+        box1 = (x_cols[1], y_rows[0], x_cols[1] + pw, y_rows[0] + ph)
+        h_min, h_max = (-25, 45) if is_walk else (-55, 70)
+        draw_plot_panel(draw, box1, "2. Hip Sagittal Flexion(+) / Extension(-) [deg] (Knee Drive)", h_min, h_max, [("Before L", COL_BEFORE), ("After L", COL_LEFT), ("After R", COL_RIGHT), ("Mocap L", COL_MOCAP)])
+        draw_curve(draw, box1, us, [s["angles"]["hipFlexL"] for s in b_s], h_min, h_max, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, box1, us, [s["angles"]["hipFlexL"] for s in r_s], h_min, h_max, COL_MOCAP, width=2, dashed=True)
+        draw_curve(draw, box1, us, [s["angles"]["hipFlexR"] for s in a_s], h_min, h_max, COL_RIGHT, width=2)
+        draw_curve(draw, box1, us, [s["angles"]["hipFlexL"] for s in a_s], h_min, h_max, COL_LEFT, width=3)
+
+        # 3. Ankle Dorsi/Plantar Flexion
+        box2 = (x_cols[0], y_rows[1], x_cols[0] + pw, y_rows[1] + ph)
+        a_min, a_max = (-35, 35) if is_walk else (-40, 48)
+        draw_plot_panel(draw, box2, "3. Ankle Dorsi(+) / Plantar(-) Flexion Rel. to Shin [deg]", a_min, a_max, [("Before L", COL_BEFORE), ("After L", COL_LEFT), ("Mocap L", COL_MOCAP)])
+        draw_curve(draw, box2, us, [s["angles"]["anklePitchL"] for s in b_s], a_min, a_max, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, box2, us, [s["angles"]["anklePitchL"] for s in r_s], a_min, a_max, COL_MOCAP, width=2, dashed=True)
+        draw_curve(draw, box2, us, [s["angles"]["anklePitchL"] for s in a_s], a_min, a_max, COL_LEFT, width=3)
+
+        # 4. Foot Swing Lift Trajectory
+        box3 = (x_cols[1], y_rows[1], x_cols[1] + pw, y_rows[1] + ph)
+        l_min, l_max = (-1, 16) if is_walk else (-2, 50)
+        draw_plot_panel(draw, box3, "4. Foot Swing Height Above Floor [cm] (Heel Kick-Up Arc)", l_min, l_max, [("Before L", COL_BEFORE), ("After L", COL_LEFT), ("After R", COL_RIGHT), ("Mocap L", COL_MOCAP)], zero_line=True)
+        draw_curve(draw, box3, us, [s["angles"]["footLiftLCm"] for s in b_s], l_min, l_max, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, box3, us, [s["angles"]["footLiftLCm"] for s in r_s], l_min, l_max, COL_MOCAP, width=2, dashed=True)
+        draw_curve(draw, box3, us, [s["angles"]["footLiftRCm"] for s in a_s], l_min, l_max, COL_RIGHT, width=2)
+        draw_curve(draw, box3, us, [s["angles"]["footLiftLCm"] for s in a_s], l_min, l_max, COL_LEFT, width=3)
+
+        for col_x in x_cols:
+            for p_idx in range(8):
+                px = col_x + (p_idx / 8.0) * pw
+                draw.text((px + 4, H - 22), f"{p_idx}/8", fill=(150, 165, 185, 255), font=FONT_TINY)
+
+        img.convert("RGB").save(os.path.join(OUT_DIR, out_name))
+        print(f"Saved {out_name}")
+
+    render_leg_compare_plot("survivorWalk", "mocapWalk", "survivorWalkVsMocap", "leg-angles-walk-compare.png", "Survivor Walk (1.4 m/s)")
+    render_leg_compare_plot("survivorRun", "mocapRun", "survivorRunVsMocap", "leg-angles-run-compare.png", "Survivor Run (4.2 m/s)")
+    render_leg_compare_plot("survivorSprint", "mocapRun", "survivorSprintVsMocap", "leg-angles-sprint-compare.png", "Survivor Sprint (6.3 m/s)")
+
+    # Render 20-step variation plot if variation data is present
+    if "variation" in cur_data and "variation" in before_data:
+        W, H = 1280, 620
+        img = Image.new("RGBA", (W, H), BG_DARK)
+        draw = ImageDraw.Draw(img)
+        va = cur_data["variation"]["run"]
+        vb = before_data["variation"]["run"]
+        vw = cur_data["variation"]["walk"]
+        draw.text((20, 10), "Natural Per-Step Seeded Variation Over 20 Consecutive Steps (Run 4.2 m/s & Walk 1.4 m/s)", fill=COL_SPINE, font=FONT_TITLE)
+        draw.text(
+            (20, 34),
+            f"Run 4.2 m/s (20 steps): Stride CV {vb['strideLengthCVPct']:.2f}%->{va['strideLengthCVPct']:.2f}% (range {va['strideLengthRangePct']:.1f}%) | "
+            f"Step Time CV {vb['stepDurationCVPct']:.2f}%->{va['stepDurationCVPct']:.2f}% (L/R ratio {va['stepDurationRatioLR']:.4f}) | "
+            f"Lift {va['swingPeakLiftMeanCm']:.1f}±{va['swingPeakLiftStdCm']:.1f}cm | Lat ±{va['footLateralStdCm']:.2f}cm | Toe ±{va['footToeYawStdDeg']:.2f}° | "
+            f"5-Actor Crowd Spread {va['crowdPhaseSpreadDeg']:.1f}° | Planted Toe Slip {va['maxPlantedToeSlipM']:.1e}m",
+            fill=(175, 190, 210, 255),
+            font=FONT_SMALL,
+        )
+        pw, ph = 604, 244
+        x_cols = [20, 656]
+        y_rows = [62, 340]
+        sa = va["stepSeries"]
+        sb = vb["stepSeries"]
+        sw = vw["stepSeries"]
+        us_a = [(i / max(1, len(sa) - 1)) for i in range(len(sa))]
+        us_b = [(i / max(1, len(sb) - 1)) for i in range(len(sb))]
+        us_w = [(i / max(1, len(sw) - 1)) for i in range(len(sw))]
+
+        # Panel 1: Stride length (cm) across 20 steps
+        b0 = (x_cols[0], y_rows[0], x_cols[0] + pw, y_rows[0] + ph)
+        draw_plot_panel(draw, b0, "1. Run Stride Length per Step [cm] (±2-4% Seeded Blue Noise)", 196, 224, [("Before (0% var)", COL_BEFORE), ("After (stepVariation=0.35)", COL_LEFT)], zero_line=False)
+        draw_curve(draw, b0, us_b, [s["strideCm"] for s in sb], 196, 224, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, b0, us_a, [s["strideCm"] for s in sa], 196, 224, COL_LEFT, width=3)
+
+        # Panel 2: Step Duration (ms) across 20 steps
+        b1 = (x_cols[1], y_rows[0], x_cols[1] + pw, y_rows[0] + ph)
+        draw_plot_panel(draw, b1, f"2. Run Step Duration per Step [ms] (L/R Ratio = {va['stepDurationRatioLR']:.4f})", 225, 275, [("Before", COL_BEFORE), ("After", COL_MOCAP)], zero_line=False)
+        draw_curve(draw, b1, us_b, [s["durationMs"] for s in sb], 225, 275, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, b1, us_a, [s["durationMs"] for s in sa], 225, 275, COL_MOCAP, width=3)
+
+        # Panel 3: Peak Swing Foot Lift (cm) per step (Run & Walk)
+        b2 = (x_cols[0], y_rows[1], x_cols[0] + pw, y_rows[1] + ph)
+        draw_plot_panel(draw, b2, "3. Peak Swing Foot Lift per Step [cm] (Run & Walk)", 8, 48, [("Run Before", COL_BEFORE), ("Run After", COL_LEFT), ("Walk After", COL_WEAPON)], zero_line=False)
+        draw_curve(draw, b2, us_b, [s["peakLiftCm"] for s in sb], 8, 48, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, b2, us_a, [s["peakLiftCm"] for s in sa], 8, 48, COL_LEFT, width=3)
+        draw_curve(draw, b2, us_w, [s["peakLiftCm"] for s in sw], 8, 48, COL_WEAPON, width=2)
+
+        # Panel 4: Toe-out Angle (deg) & Lateral Placement Jitter (cm) per step
+        b3 = (x_cols[1], y_rows[1], x_cols[1] + pw, y_rows[1] + ph)
+        draw_plot_panel(draw, b3, "4. Per-Step Toe-Out Jitter [deg] & Lateral Foot Offset [mm]", -8, 8, [("Toe-Out Δdeg", COL_RIGHT), ("Lateral Offset mm", COL_LEFT), ("Before", COL_BEFORE)])
+        draw_curve(draw, b3, us_b, [s["toeYawDeg"] for s in sb], -8, 8, COL_BEFORE, width=2, dashed=True)
+        draw_curve(draw, b3, us_a, [s["lateralCm"] * 10.0 for s in sa], -8, 8, COL_LEFT, width=2)
+        draw_curve(draw, b3, us_a, [s["toeYawDeg"] for s in sa], -8, 8, COL_RIGHT, width=3)
+
+        img.convert("RGB").save(os.path.join(OUT_DIR, "step-variation-20steps.png"))
+        print("Saved step-variation-20steps.png")
 
     summary = {
         "generatedAt": cur_data["timestamp"],
@@ -683,6 +826,10 @@ if TAG == "after" and before_data:
             "reference": ac["kinematics"]["ref"],
         }
     with open(os.path.join(OUT_DIR, "pose-diff-summary.json"), "w") as sf:
+        summary["variation"] = {
+            "before": before_data.get("variation"),
+            "after": cur_data.get("variation"),
+        }
         json.dump(summary, sf, indent=2)
     print("Saved pose-diff-summary.json")
 

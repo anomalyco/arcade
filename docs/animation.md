@@ -126,9 +126,38 @@ target.
 stretched the hip-to-ankle distance to 1.46 m on a 0.83 m leg; the IK clamped the shin and the boot visibly
 separated from it by 53 cm. That is the main cause of "legs kick out".
 
-**Keep the knee pole above the swing chord.** The knee pole is `dirIn(pelvis, 1, 0.28, ±0.25)` in pelvis space.
-A level pole tilted down with the crouch-run pelvis, lined up with the hip-to-ankle chord and bowed the knee
-outward. With the up-bias there are zero knee flips in all ten stress scenarios.
+**Keep the knee pole orthogonal to the swing chord.** The stance knee pole is `dirIn(pelvis, 1, 0.28, ±0.25)` in
+pelvis space. During running swing heel kick-up (`cx < 0`, when the ankle kicks up behind the hip), the chord points
+backward and downward at `~−135°`, which is nearly anti-parallel to `(1, +0.28)`. `poseLegs` tilts the swing pole
+downward (`0.28 − 0.65 × backKick`) and narrows its lateral offset so the pole stays orthogonal to the backward
+hip-to-ankle chord and never bows the knee sideways.
+
+**Fold the heel up behind the hip and tuck it horizontally in running swing.** Interpolating the swing foot along a
+symmetric horizontal `smoother(u)` path with a low 19 cm bell pushed the ankle forward too early in mid-swing and
+unbent the knee to 71° at `6/8` and 5.5° at `7/8` (mocap: 127° and 68.5°). `poseLegs` adds a running heel kick-up
+bell (`+22 cm` at `u ≈ 0.56`, raising total swing ankle lift from 19.5 cm to **38.9 cm** vs. mocap's 44.5 cm) and a
+horizontal heel-tuck lag (`−24 cm` at `u ≈ 0.65`) that tapers to zero before `u = 0.92`. Keeping the ankle tucked
+under the hip during mid-to-late swing lets two-bone IK flex the knee to **119°** (sprint **122°**) while driving the
+thigh high in front (`+62°`), then whip the lower leg down to a zero-velocity touchdown.
+
+**Measure and drive swing ankle pitch relative to the shin.** `poseLegs` computes unwrapped sagittal shin pitch from
+`sh0.y` (`-atan2(shinFwd, sh0.y[1])`, avoiding `±90°` folding when the shin tilts past horizontal during heel kick-up)
+and applies plantarflexion (`−0.20..−0.35 rad`) during push-off and early swing followed by dorsiflexed recovery in
+late swing. Together with a 2.6 cm taller unarmed walking pelvis (`walkDrop = −0.012`), leg angle RMSE against mocap
+dropped from **12.2° to 9.2°** in the walk (knee `15.5° → 10.4°`, ankle `16.1° → 11.9°`, hip `5.3°`), from
+**24.5° to 16.9°** in the run (knee `33.9° → 25.0°`, ankle `24.5° → 14.8°`, hip `15.0° → 11.0°`, foot-lift RMSE
+`16.5 → 6.9 cm`), from **29.3° to 22.7°** in the sprint, and in Outbreak from **19.3° to 12.4°** (walk) and **31.8° to
+15.2°** (run, knee `27.4° → 11.6°`, ankle `52.4° → 18.5°`).
+
+**Sample per-step variation once at liftoff with same-foot high-pass blue noise.** `stepVariation` (`0..1`, default
+`0.35` on soldier, `0.30` on wizard, `0.65` on zombie, exposed in the shared Lab) samples deterministic seeded offsets
+(`stepHash(seed, stepCount, ch)`) once when a foot lifts off (`m.stepReach`, `m.stepLat`, `m.stepLiftVar`,
+`m.stepToeYaw`, `m.stepArmVar`), never per frame. Stride reach uses same-foot high-pass filtering (`0.65 h(n) − 0.55 h(n − 2)`,
+where `n − 2` is the previous step of the *same* foot rather than the opposite foot `n − 1`) so each foot's mean
+telescopes to zero (`L/R step duration ratio = 1.000–1.007` across 20 steps, stride range `2.5–2.7%`, lift
+`38.9 ± 1.25 cm`, lateral placement `±0.37 cm`, toe-out `±0.80°`, planted toe slip `< 1.5e-14 m`). Per-actor stride and
+phase traits (`actorSeed`) spread a 5-actor crowd by `17°–31°` so groups of survivors or zombies do not march in
+lockstep.
 
 **Clear the floor before solving IK.** `poseLegs` lifts the swing ankle so the sole stays above the floor, then
 solves `ik(hip, ankle)`. Clamping after IK separated the boot from the shin by 7 to 9 cm in a steady walk.
@@ -280,8 +309,10 @@ comparison. Presentation settings never touch simulation or network state.
 
 ## Known gaps
 
-- **Leg angles do not match mocap.** Walk RMSE: hip 5°, knee 16°, ankle 19°. Run: hip 15°, knee 34°, ankle 29°.
-  Outbreak's survivor is worse at the ankle (37° walk, 50° run). Arms are fixed; legs are next.
+- **Run late-swing knee extension still leads mocap by ~10°.** Walk leg RMSE is now 9.2° (hip 5.3°, knee 10.4°,
+  ankle 11.9°) and run leg RMSE is 16.9° (hip 11.0°, knee 25.0°, ankle 14.8°, Outbreak run 15.2° with knee 11.6°);
+  the remaining run knee error comes from late swing (`7/8`), where tapering the heel-tuck before `u = 0.92` for
+  zero-speed contact extends the shin slightly earlier than the mocap runner.
 - **The walk steps fast and short:** 157 steps/min with 0.54 m steps, against about 110 steps/min in the mocap
   walk at a similar speed.
 - **The walk's bob peaks late.** Our pelvis is highest about 0.39 of a cycle after left heel strike; the mocap

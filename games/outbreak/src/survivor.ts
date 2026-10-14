@@ -1,7 +1,7 @@
 import { Mesh, MAT } from "@arcade/kit/gpu/mesh"
 import { Renderer, type Batch } from "@arcade/kit/gpu/renderer"
 import { RIG, HIP, at, clamp, dirIn, emit, ik, limb, pitch, roll, smooth, spring, stepSpring, smoother, yawFrame, type V3, type PushPart } from "@arcade/kit/rig"
-import { angleSpring } from "@arcade/kit/human-locomotion"
+import { angleSpring, stepHash } from "@arcade/kit/human-locomotion"
 import { profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
 import { poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
 import { angleDiff } from "@arcade/kit/sim/geom"
@@ -12,6 +12,7 @@ import { hex } from "./level"
 export class Survivor {
   /** Optional presentation override; does not change the Session's player or movement. */
   profile?: HumanProfile
+  seed = 17
   bones: BonePose = {}
   private chest = spring()
   private head = spring()
@@ -20,7 +21,8 @@ export class Survivor {
   private arms = [spring(), spring()] as const
   private hands = [spring(), spring()] as const
   private models: number[]
-  private feet = [-1, 1].map(() => ({ p: [0, 0, 0] as V3, lift: [0, 0, 0] as V3, target: [0, 0, 0] as V3, prevU: 0, planted: true, yaw: 0 }))
+  private feet = [-1, 1].map(() => ({ p: [0, 0, 0] as V3, lift: [0, 0, 0] as V3, target: [0, 0, 0] as V3, prevU: 0, planted: true, yaw: 0, stepReach: 1, stepLat: 0, stepLift: 1, stepToe: 0 }))
+  private stepCount = 0
   private phase = 0
   private yaw = 0
   private last: [number, number] = [Infinity, Infinity]
@@ -47,7 +49,7 @@ export class Survivor {
 
   reset(): void {
     this.last = [Infinity, Infinity]
-    this.phase = this.yaw = this.svx = this.svy = 0
+    this.phase = this.yaw = this.svx = this.svy = this.stepCount = 0
     this.leanX = spring(); this.leanY = spring(); this.reachDrop = spring(); this.twist = spring()
     this.arms[0].x = this.arms[0].v = this.arms[1].x = this.arms[1].v = 0
     this.hands[0].x = this.hands[0].v = this.hands[1].x = this.hands[1].v = 0
@@ -97,10 +99,19 @@ export class Survivor {
         const phase = (this.phase + i * (.5 + (profile?.timingBias ?? 0) * .25)) % 1
         if (rate > 0 && phase >= duty) {
           const u = (phase - duty) / (1 - duty), e = smoother(u)
-          if (f.planted) { f.planted = false; f.lift = [...f.p]; f.prevU = 0 }
-          const lead = Math.min(.32, (1 - phase) / rate + duty / rate * .5)
+          if (f.planted) {
+            f.planted = false; f.lift = [...f.p]; f.prevU = 0
+            const sc = ++this.stepCount
+            const varAmt = clamp(profile?.stepVariation ?? .35, 0, 1)
+            const blue = 0.65 * stepHash(this.seed, sc, 1) - 0.35 * stepHash(this.seed, sc - 1, 1)
+            f.stepReach = 1 + varAmt * .065 * blue
+            f.stepLat = varAmt * .016 * stepHash(this.seed, sc, 2)
+            f.stepLift = 1 + varAmt * .15 * stepHash(this.seed, sc, 3)
+            f.stepToe = varAmt * .06 * stepHash(this.seed, sc, 4)
+          }
+          const lead = Math.min(.32, (1 - phase) / rate + duty / rate * .5) * f.stepReach
           const target = rest(i)
-          target[0] += vx * lead; target[2] += vy * lead
+          target[0] += vx * lead - s * f.stepLat; target[2] += vy * lead + c * f.stepLat
           // Preserve Blackout's minimum side-step separation.
           const other = this.feet[1 - i]!, side = i ? 1 : -1
           const lat = (-(target[0] - other.p[0]) * s + (target[2] - other.p[2]) * c) * side
@@ -114,7 +125,7 @@ export class Survivor {
             f.lift = [(curX - target[0] * ep) / (1 - ep), (curY - target[1] * ep) / (1 - ep), (curZ - target[2] * ep) / (1 - ep)]
           }
           f.target = target; f.prevU = u
-          const clearance = i === 1 ? 1 - (profile?.footDrag ?? 0) : 1
+          const clearance = (i === 1 ? 1 - (profile?.footDrag ?? 0) : 1) * f.stepLift
           // Mid-swing terrain clearance boost & floor guard (Lamplight arachnid/mod.rs & walk.rs:1419, 1446)
           const midY = support((f.lift[0] + target[0]) * .5, (f.lift[2] + target[2]) * .5)
           const boost = Math.max(0, midY - Math.max(f.lift[1], target[1]))
@@ -122,7 +133,7 @@ export class Survivor {
           const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
           const py = Math.max(support(px, pz), f.lift[1] + (target[1] - f.lift[1]) * e + liftBell * ((.08 + .11 * moving) * clearance + boost))
           f.p = [px, py, pz]
-          f.yaw += angleDiff(this.yaw, f.yaw) * e
+          f.yaw += angleDiff(this.yaw + f.stepToe, f.yaw) * e
         } else if (!f.planted) { f.planted = true; f.prevU = 0; f.p[1] = support(f.p[0],f.p[2]) }
       })
       // Anticipatory support floor: blend root terrain support with foot terrain heights (never airborne swing height).
@@ -195,10 +206,28 @@ export class Survivor {
     for (let i = 0; i < 2; i++) {
       const side = i ? 1 : -1, foot = this.feet[i]!
       const hip = at(pelvis, 0, 0, side * RIG.hipW)
-      const ankle: V3 = [foot.p[0], foot.p[1] + RIG.ankle, foot.p[2]]
+      const u = foot.planted ? 0 : foot.prevU
+      const sinU = Math.sin(Math.PI * u)
+      const kickBell = sinU * sinU * (.42 + .92 * Math.pow(u, .80))
+      const tuckBell = sinU * sinU * Math.pow(u, .95) * 1.65
+      const clearance = (i === 1 ? 1 - (profile?.footDrag ?? 0) : 1) * foot.stepLift
+      const heelKick = foot.planted ? 0 : (.018 * (1 - runBlend) + .22 * runBlend) * clearance * kickBell
+      const heelTuck = foot.planted ? 0 : (.025 * (1 - runBlend) + .24 * runBlend) * clearance * tuckBell
+      const fc = Math.cos(foot.yaw), fs = Math.sin(foot.yaw)
+      const ankle: V3 = [foot.p[0] - fc * heelTuck, foot.p[1] + RIG.ankle + heelKick, foot.p[2] - fs * heelTuck]
       const pole = dirIn(pelvis, 1, .28, side * .25)
       const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
-      const thigh = limb(hip, knee, pole, pelvis.x), shin = limb(knee, end, pole, pelvis.x), boot = yawFrame(end, foot.yaw)
+      const thigh = limb(hip, knee, pole, pelvis.x), shin = limb(knee, end, pole, pelvis.x)
+      // Terrain-conforming boot pitch in stance + plantarflexed push-off and dorsiflexed recovery in swing.
+      const groundSlope = clamp((support(foot.p[0] + fc * .12, foot.p[2] + fs * .12) - support(foot.p[0] - fc * .08, foot.p[2] - fs * .08)) / .20, -.45, .45)
+      const footPhase = (this.phase + i * (.5 + (profile?.timingBias ?? 0) * .25)) % 1
+      const dutyNow = .62 - .22 * moving
+      const stanceFrac = foot.planted ? clamp(footPhase / Math.max(.1, dutyNow), 0, 1) : 0
+      const stancePitch = groundSlope - (.18 + .06 * runBlend) * smooth((stanceFrac - .58) / .42) * gait
+      const shinPitch = -Math.atan2(shin.y[0] * fc + shin.y[2] * fs, shin.y[1])
+      const swingRel = -(.20 + .15 * runBlend) * (1 - smooth((u - .50) / .34)) + (.04 + .16 * runBlend) * smooth((u - .60) / .28)
+      const footPitch = foot.planted ? stancePitch : stancePitch + (shinPitch + swingRel - stancePitch) * smooth(u / .10) * (1 - smooth((u - .78) / .18))
+      const boot = pitch(yawFrame(end, foot.yaw), footPitch)
       const name = i === 0 ? "left" : "right"
       this.bones[`${name}.thigh`] = thigh; this.bones[`${name}.shin`] = shin; this.bones[`${name}.foot`] = boot
       draw(5, thigh); draw(6, shin); draw(7, boot)
