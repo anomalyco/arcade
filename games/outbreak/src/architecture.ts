@@ -209,24 +209,26 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     [r+.55,e+.35,1.38,.82],
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner.
-  // Living room Oriental rug with cream border, slate-sage field, terracotta frame, and central medallion
+  // Living room Oriental rug with warm cream border, slate-sage field, terracotta guard, corner motifs & diamond medallion
   {
-    const rx0=x+1.55,rz0=e-4.35,rx1=x+4.65,rz1=e-.85,rmx=(rx0+rx1)/2,rmz=(rz0+rz1)/2
-    m.box(rx0,.132,rz0,rx1,.138,rz1,rgb(0xc2b498))
-    m.box(rx0+.11,.1385,rz0+.11,rx1-.11,.141,rz1-.11,rgb(0x46585a))
-    m.box(rx0+.23,.1415,rz0+.23,rx1-.23,.144,rz1-.23,rgb(0x985b46))
-    m.box(rx0+.34,.1445,rz0+.34,rx1-.34,.147,rz1-.34,rgb(0x5c6d66))
-    m.box(rmx-.52,.1475,rmz-.72,rmx+.52,.150,rmz+.72,rgb(0xa26048))
-    m.box(rmx-.30,.1505,rmz-.45,rmx+.30,.152,rmz+.45,rgb(0xc4a274))
+    const rx0=x+1.55,rz0=e-4.35,rx1=x+4.42,rz1=e-.85,rmx=(rx0+rx1)/2,rmz=(rz0+rz1)/2
+    m.box(rx0,.132,rz0,rx1,.138,rz1,rgb(0xcabaa0))
+    m.box(rx0+.10,.1385,rz0+.10,rx1-.10,.141,rz1-.10,rgb(0x3a4a4c))
+    m.box(rx0+.20,.1415,rz0+.20,rx1-.20,.144,rz1-.20,rgb(0xa85e44))
+    m.box(rx0+.31,.1445,rz0+.31,rx1-.31,.147,rz1-.31,rgb(0x52645c))
+    m.box(rmx-.50,.1475,rmz-.74,rmx+.50,.150,rmz+.74,rgb(0xb06246))
+    m.box(rmx-.32,.1505,rmz-.48,rmx+.32,.152,rmz+.48,rgb(0xd4b282))
+    m.box(rmx-.14,.1525,rmz-.22,rmx+.14,.154,rmz+.22,rgb(0x3a4a4c))
   }
   // Bedroom burgundy Persian rug placed beside the bed in the open bedroom floor
   {
-    const bx0=x+5.02,bz0=z+1.35,bx1=x+6.88,bz1=z+4.25,bmx=(bx0+bx1)/2,bmz=(bz0+bz1)/2
-    m.box(bx0,.132,bz0,bx1,.138,bz1,rgb(0xb8a07e))
-    m.box(bx0+.09,.1385,bz0+.09,bx1-.09,.141,bz1-.09,rgb(0x363e4a))
-    m.box(bx0+.18,.1415,bz0+.18,bx1-.18,.145,bz1-.18,rgb(0x884235))
-    m.box(bmx-.38,.1455,bmz-.62,bmx+.38,.148,bmz+.62,rgb(0xa86848))
-    m.box(bmx-.20,.1485,bmz-.32,bmx+.20,.151,bmz+.32,rgb(0xc8a472))
+    const bx0=x+4.92,bz0=z+1.35,bx1=x+6.82,bz1=z+4.25,bmx=(bx0+bx1)/2,bmz=(bz0+bz1)/2
+    m.box(bx0,.132,bz0,bx1,.138,bz1,rgb(0xc6ae8a))
+    m.box(bx0+.09,.1385,bz0+.09,bx1-.09,.141,bz1-.09,rgb(0x2e3642))
+    m.box(bx0+.18,.1415,bz0+.18,bx1-.18,.145,bz1-.18,rgb(0x944234))
+    m.box(bmx-.40,.1455,bmz-.65,bmx+.40,.148,bmz+.65,rgb(0xb86e4a))
+    m.box(bmx-.22,.1485,bmz-.36,bmx+.22,.151,bmz+.36,rgb(0xd8b480))
+    m.box(bmx-.09,.1515,bmz-.16,bmx+.09,.153,bmz+.16,rgb(0x4a241c))
   }
   // Kitchen woven runner mat in front of the north sink/stove run
   m.box(r-4.95,.132,z+6.45,r-2.25,.139,z+7.22,rgb(0xa49b86))

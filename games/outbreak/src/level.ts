@@ -30,18 +30,18 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     // Two plump white pillows
     for (const px of [x - .38, x + .38]) m.bevelBox(px - .31, .64, z - 1.06, px + .31, .78, z - .62, .04, hex(0xd4cebf), hex(0xeae4d6))
   } else if (kind === "sofa") {
-    // Warm olive-sage 3-cushion sofa with rolled arms, rust & ochre throw pillows, and side lamp table
-    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x58604e))
-    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x636c58),hex(0x78826a))
+    // Readable warm sage-olive 3-cushion sofa with rolled arms, terracotta & cream throw pillows, and side lamp table
+    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x646e58))
+    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x707b63),hex(0x889478))
     for(const dz of [-.74,0,.74]){
-      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x68725d),hex(0x808a72))
-      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x6e7862),hex(0x848e76))
+      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x768268),hex(0x909c80))
+      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x7c886e),hex(0x94a084))
     }
-    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x5f6854),hex(0x747e68))
+    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x6c765f),hex(0x849076))
     for(const dx of [-.42,.42])for(const dz of [-1.05,1.05])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.22,z+dz+.04,legs)
-    // Rust-orange throw pillow at north end + cream cushion & draped throw at south end
-    m.bevelBox(x-.24,.62,z-.98,x+.22,.84,z-.58,.045,hex(0x8f4326),hex(0xa85232))
-    m.bevelBox(x-.24,.62,z+.60,x+.24,.83,z+1.02,.045,hex(0xb5a482),hex(0xcfc09e))
+    // Bright terracotta throw pillow at north end + cream cushion at south end
+    m.bevelBox(x-.24,.62,z-.98,x+.22,.84,z-.58,.045,hex(0xa24c2c),hex(0xc25e38))
+    m.bevelBox(x-.24,.62,z+.60,x+.24,.83,z+1.02,.045,hex(0xc4b28e),hex(0xdfd0ae))
     // End table at south arm of sofa under the living room table lamp
     m.bevelBox(x-.32,.13,z+1.38,x+.32,.66,z+1.96,.025,wood,hex(0x8f6d4a),MAT.timber,MAT.timber)
   } else if(kind==="coffee") {
@@ -277,7 +277,7 @@ function compileLevel(town: Town): LevelData {
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
     for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
-      floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x765a3e : 0x89968b, b.kind === "house" ? 2 : 1)
+      floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
     }
     floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x847f73, 6)
     floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x8a8579,6)

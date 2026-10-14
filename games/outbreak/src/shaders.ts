@@ -22,8 +22,8 @@ export const shaders = {
       att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
-    wallDirectScale: "mix(0.28, 0.46, smoothstep(0.0, 1.5, o.world.y))",
-    ambient: "ambientAt(n) * mix(0.08, 1.0, select(1.0, select(floorData(o.world.xz).g, 0.06, abs(n.y) < 0.5), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.016, 0.011, 0.006), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)",
+    wallDirectScale: "mix(0.18, 0.33, smoothstep(0.0, 1.5, o.world.y))",
+    ambient: "ambientAt(n) * mix(0.05, 1.0, select(1.0, select(floorData(o.world.xz).g, 0.04, abs(n.y) < 0.5), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.008, 0.005, 0.0025), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)",
     diagnostics: "F.map.z",
     smoothShadows: true,
     shadowTaps: 5,
@@ -31,7 +31,7 @@ export const shaders = {
     material: surfaceMaterial + `
       if (mat == 22 && o.aux < -1.5 && alpha < 0.22) { return vec4f(0.0); }
       if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
-        let s = evalPlasterWall(o.world, n, vec3f(.44, .38, .31), defaultMaterialRecipe(2));
+        let s = evalPlasterWall(o.world, n, vec3f(.32, .27, .21), defaultMaterialRecipe(2));
         albedo = s.albedo;
         gloss = s.gloss;
       }
