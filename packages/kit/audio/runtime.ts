@@ -156,6 +156,8 @@ export class AudioRuntime {
   readonly cues = new Map<string, CueRecipe>()
 
   muted = false
+  /** Master level applied while unmuted (0..1). */
+  volume = 1
   maxVoices: number
   visibilityQuery?: VisibilityQuery
 
@@ -353,7 +355,7 @@ export class AudioRuntime {
     subCut.Q.value = 0.707
 
     this.master = ctx.createGain()
-    this.master.gain.value = this.muted ? 0 : 1
+    this.master.gain.value = this.muted ? 0 : this.volume
 
     this.dazeNode = ctx.createBiquadFilter()
     this.dazeNode.type = "lowpass"
@@ -432,13 +434,19 @@ export class AudioRuntime {
     }
     if (this.ctx && this.master) {
       const t = this.now
-      holdParam(this.master.gain, t, muted ? 1 : 0)
-      this.master.gain.linearRampToValueAtTime(muted ? 0 : 1, t + 0.025)
+      holdParam(this.master.gain, t, muted ? this.volume : 0)
+      this.master.gain.linearRampToValueAtTime(muted ? 0 : this.volume, t + 0.025)
     }
     if (muted) {
       this.stopAllVoices(0.02)
     }
     for (const fn of this.muteListeners) fn(muted)
+  }
+
+  /** Master volume while unmuted; muting still ramps to silence and back to this level. */
+  setVolume(level: number, tau = 0.03): void {
+    this.volume = clamp(level, 0, 1)
+    if (this.ctx && this.master && !this.muted) smoothParam(this.master.gain, this.volume, this.now, tau)
   }
 
   setReverbWet(wet: number, tau = 0.06): void {

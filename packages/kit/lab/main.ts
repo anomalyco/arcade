@@ -9,7 +9,7 @@ import { createLighting } from "./lighting"
 import { createLooksSection } from "./looks"
 import { createMaterials } from "./materials"
 import { createPhysics } from "./physics"
-import type { LabContext, LabSection, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
+import type { LabContext, LabEvent, LabSection, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
 import "./style.css"
 import { LabInput } from "./input"
 import { createSpawn } from "./spawn"
@@ -17,7 +17,7 @@ import type { SpawnFactory } from "./spawn-types"
 import { createWorkbench } from "./workbench"
 import { hubCommands, hubPath } from "../dev-hub-model"
 
-export type { LabContext, LabSection, LabWorldObject, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
+export type { LabContext, LabEvent, LabSection, LabWorldObject, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
 export type { SpawnFactory, SpawnAdapters, CharacterSpawnable, LabCharacter, ItemWorld, SpawnPoint } from "./spawn-types"
 
 export type LabOptions = {
@@ -30,6 +30,8 @@ export type LabOptions = {
   brand?:string
   /** Mounts host controls (game picker, audio) in the top bar before the debug view. */
   toolbar?:(slot:HTMLElement)=>void
+  /** Section events (effects firing), for host audio. */
+  onEvent?:(event:LabEvent)=>void
 }
 export async function lab(options:LabOptions) {
   document.title="Lab"
@@ -177,6 +179,7 @@ export async function lab(options:LabOptions) {
     activeWalls:()=>spawn?.activeWalls()??[],
     activeGround:(x,z)=>spawn?spawn.activeGround(x,z):0,
     hasPlaygroundScene:()=>Boolean(spawn?.hasActiveScene()),
+    emit:event=>options.onEvent?.(event),
   }
   spawn=options.spawn?createSpawn(context,options.spawn(context)):undefined
   const effects=createEffects(context),looks=createLooksSection(context),physics=createPhysics(context,spawn?.physics??options.physics?.(context))

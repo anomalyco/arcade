@@ -83,7 +83,9 @@ export function createEffects(context:LabContext) {
     if(effect==="smoke")volume.spawn(tx,tz)
     if(effect==="explosion")spawnExplosion(particles,volume,tx,gy,tz,params,random,params.size,params.density)
     if(effect==="sparks"||effect==="debris")for(let i=0;i<params.rate;i++)emit(tx,gy+0.8,tz)
-    params.effect=effect;context.sync()
+    params.effect=effect
+    context.emit?.({type:"effect",section:"effects",effect,x:tx,y:gy,z:tz})
+    context.sync()
   }
   const retriggerIfOneShot=()=>{
     applySmoke()

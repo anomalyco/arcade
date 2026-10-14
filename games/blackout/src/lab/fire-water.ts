@@ -42,6 +42,7 @@ export const fireWaterSection:SectionFactory=context=>{
     if(settings.effect==="water")props?.trigger("hydrant",0,0)
     else if(settings.effect==="fireball")props?.trigger("propane",0,0)
     else game?.labTrigger(settings.effect,"rifle","wall",12,10)
+    context.emit?.({type:"effect",section:"fire-water",effect:settings.effect,x:0,y:.2,z:0})
     context.sync()
   }
   const load=()=>{
