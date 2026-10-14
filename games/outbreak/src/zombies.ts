@@ -12,6 +12,7 @@ import {
   clamp,
   HIP,
   RIG,
+  smooth,
   smoother,
   type Frame,
   type V3,
@@ -914,16 +915,20 @@ export class ZombieCrowdRenderer {
         this.footPlanted[f1] = 1
         this.footYaw[f1] = syaw
       }
-
       const needsStep =
         !this.footPlanted[f0] ||
         !this.footPlanted[f1] ||
         Math.hypot(this.footPx[f0]! - rest0X, this.footPz[f0]! - rest0Z) > 0.2 ||
         Math.hypot(this.footPx[f1]! - rest1X, this.footPz[f1]! - rest1Z) > 0.2
-      const rate = Math.max(speed / ((0.7 + 0.22 * speed) * strideScale), needsStep ? 1.5 : 0)
+      const legH = RIG.thigh + RIG.shin
+      const froude = (speed * speed) / (9.81 * legH)
+      const run = smooth((froude - 0.36) / 0.28)
+      const effSpeed = speed - 0.22 * Math.max(0, speed - 3.6) * smooth((speed - 3.0) / 3.3)
+      const stride = ((legH * (effSpeed / Math.sqrt(9.81 * legH) + 0.665 - 0.015 * run)) / 0.83) * strideScale
+      const duty = 0.56 - 0.12 * run - 0.2 * smooth((speed - 2.5) / 3)
+      const rate = speed > 0.2 ? Math.max(0.85, speed / stride) : needsStep ? 1.5 : 0
       const curPhase = (this.phase[s]! + rate * dt) % 1
       this.phase[s] = curPhase
-      const duty = 0.64 - 0.2 * moving
 
       for (let i = 0; i < 2; i++) {
         const fi = f0 + i

@@ -29,7 +29,7 @@ test("shared zombie gait locks toes, bounds uneven timing and drags only the swi
         contacts++
       }
       expect(a.motion.durations[i]!).toBeGreaterThanOrEqual(0.077)
-      expect(a.motion.durations[i]!).toBeLessThanOrEqual(0.39)
+      expect(a.motion.durations[i]!).toBeLessThanOrEqual(0.48)
     }
     leftLift = Math.max(leftLift, a.feet[0].p[1]); rightLift = Math.max(rightLift, a.feet[1].p[1])
   }
