@@ -1,5 +1,4 @@
 import { Stage } from "./lab/stage"
-import { classifyWheelGesture } from "./lab/viewport-input"
 import { LabInput } from "./lab/input"
 import { Particles } from "./fx/particles"
 import { SmokeVolumes } from "./fx/volume"
@@ -8,7 +7,16 @@ import { LabPanel } from "./lab-panel"
 import type { LabContext } from "./lab/types"
 import type { LabCharacter } from "./lab/spawn-types"
 import { catalogueHash, catalogueLights, filterAssets, parseHubHash, type CatalogueAsset } from "./dev-hub-model"
+import { bindOrbitGestures } from "./orbit-gestures"
 import type { DevHubOptions } from "./dev-hub"
+import { LabCommandRegistry } from "./lab-commands"
+import {
+  readStageCameraState,
+  registerDevControl,
+  registerPanelLabCommands,
+  registerStageCameraCommands,
+  type DevControlAdapter,
+} from "./dev-control"
 
 const assetKey = "arcade.catalogue.asset.v1", lightingKey = "arcade.catalogue.lighting.v1"
 const categoryLabel = { vehicle: "Vehicle", prop: "Prop", character: "Character" } as const
@@ -110,9 +118,9 @@ export async function catalogueViewer(options: DevHubOptions) {
   search.addEventListener("keydown", event => { if (event.key === "ArrowDown") { event.preventDefault(); list.querySelector<HTMLElement>("[data-asset-id]")?.focus() } })
 
   const visible = () => !disposed && !document.hidden && parseHubHash(location.hash).page === "catalogue"
-  async function render() {
-    if (!visible()) return
-    canvas.width = Math.max(1, Math.round(canvas.clientWidth)); canvas.height = Math.max(1, Math.round(canvas.clientHeight)) // 1× like the Lab.
+  async function render(force = false) {
+    if (!force && !visible()) return
+    canvas.width = Math.max(1, Math.round(canvas.clientWidth || 640)); canvas.height = Math.max(1, Math.round(canvas.clientHeight || 400)) // 1× like the Lab.
     stage.resize(canvas.width, canvas.height); stage.updateCamera(); stage.meshes.reset(); stage.transients.reset()
     character?.prepare(); registry.items.prepare()
     await stage.render(particles, volume, trail, 0)
@@ -130,43 +138,16 @@ export async function catalogueViewer(options: DevHubOptions) {
   tools.querySelector("[data-far]")!.addEventListener("click", () => change(() => stage.zoomBy(1.15)))
 
   // Same camera grammar as the Lab: drag orbits; Shift, middle or right drag pans. A right/Control click opens actions.
-  let drag: { id: number; x: number; y: number; startX: number; startY: number; pan: boolean; context: boolean; moved: boolean } | undefined
-  canvas.addEventListener("pointerdown", event => {
-    canvas.focus({ preventScroll: true })
-    const context = event.button === 2 || (event.button === 0 && event.ctrlKey)
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, pan: event.shiftKey || event.button === 1 || event.button === 2, context, moved: false }
-    if (event.button === 1) event.preventDefault()
-    canvas.setPointerCapture(event.pointerId)
+  const gestures = bindOrbitGestures(canvas, {
+    target: stage,
+    onChange: () => { dirty = true; schedule() },
+    onContextClick: (x, y) => openMenu(x, y),
   })
-  canvas.addEventListener("pointermove", event => {
-    if (!drag || drag.id !== event.pointerId) return
-    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= 4) return
-    const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.x = event.clientX; drag.y = event.clientY; drag.moved = true
-    const pan = drag.pan
-    change(() => { if (pan) stage.pan(-dx, -dy); else stage.orbit(-dx * .0065, dy * .0055) })
-  })
-  canvas.addEventListener("pointerup", event => {
-    if (!drag || drag.id !== event.pointerId) return
-    const { context, moved } = drag; drag = undefined
-    if (context && !moved) openMenu(event.clientX, event.clientY)
-  })
-  for (const name of ["pointercancel", "lostpointercapture"] as const) canvas.addEventListener(name, () => { drag = undefined })
-  canvas.addEventListener("contextmenu", event => event.preventDefault())
-  canvas.addEventListener("wheel", event => {
-    const action = classifyWheelGesture(event, { pinchZoom: false, twoFingerScroll: "zoom" })
-    if (action.kind === "ignore") return
-    event.preventDefault()
-    change(() => {
-      if (action.kind === "zoom") stage.zoomBy(action.factor)
-      else if (action.kind === "pan") stage.pan(action.dx, action.dy)
-      else stage.orbit(action.dyaw, action.dpitch)
-    })
-  }, { passive: false })
   canvas.addEventListener("keydown", event => {
     if (event.metaKey || event.ctrlKey || event.altKey) return
     const key = event.key
     if (key.toLowerCase() === "f") { event.preventDefault(); frame() }
-    else if (key === "Escape") { drag = undefined; search.focus() }
+    else if (key === "Escape") { gestures.cancelDrag(); search.focus() }
     else if (key === "ContextMenu") { event.preventDefault(); const box = canvas.getBoundingClientRect(); openMenu(box.left + box.width / 2, box.top + box.height / 2) }
     else if (key === "+" || key === "=" || key === "-") { event.preventDefault(); change(() => stage.zoomBy(key === "-" ? 1.15 : .85)) }
     else if (key.startsWith("Arrow")) {
@@ -199,19 +180,135 @@ export async function catalogueViewer(options: DevHubOptions) {
   menu.addEventListener("toggle", event => { if ((event as ToggleEvent).newState === "closed" && menu.contains(document.activeElement)) canvas.focus({ preventScroll: true }) })
 
   const resize = new ResizeObserver(() => change(() => {})); resize.observe(canvas)
-  document.addEventListener("visibilitychange", () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; drag = undefined } else change(() => {}) })
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; gestures.cancelDrag() } else change(() => {}) })
   window.addEventListener("hashchange", () => {
-    drag = undefined
+    gestures.cancelDrag()
     const asset = byId(parseHubHash(location.hash).assetId)
     if (asset && asset.id !== selected.id) select(asset, "none")
     else if (parseHubHash(location.hash).page === "catalogue" && !parseHubHash(location.hash).assetId) window.history.replaceState(null, "", catalogueHash(selected.id))
     change(() => {})
   })
   window.addEventListener("pagehide", event => {
-    cancelAnimationFrame(raf); raf = 0; drag = undefined; input.release()
+    cancelAnimationFrame(raf); raf = 0; gestures.cancelDrag(); input.release()
     if (!event.persisted) { disposed = true; resize.disconnect(); character?.leave?.(); device.destroy() }
   })
   window.addEventListener("pageshow", () => change(() => {}))
   device.addEventListener("uncapturederror", event => { status.textContent = event.error.message })
   lights(); select(selected)
+
+  function resolveAsset(query: string): CatalogueAsset | undefined {
+    const q = query.trim().toLowerCase()
+    return (
+      assets.find(a => a.id.toLowerCase() === q) ??
+      assets.find(a => a.label.toLowerCase() === q) ??
+      assets.find(a => a.id.toLowerCase().endsWith(`:${q}`)) ??
+      assets.find(a => a.label.toLowerCase().includes(q) || a.id.toLowerCase().includes(q))
+    )
+  }
+
+  const commands = new LabCommandRegistry()
+  commands.registerAll([
+    {
+      id: "object.select",
+      label: "Select Catalogue Asset",
+      shortLabel: "Select",
+      category: "Object",
+      args: {
+        id: { type: "string", required: true, description: "Asset ID or label (e.g. getaway:muscle, getaway:prop:cone, blackout:soldier)" },
+      },
+      enabled: () => true,
+      run: async (_ctx, args) => {
+        const target = String(args?.id ?? "").trim()
+        const asset = resolveAsset(target)
+        if (!asset) {
+          throw new Error(`Unknown catalogue asset "${target}". Available: ${assets.map(a => a.id).join(", ")}`)
+        }
+        select(asset)
+        await render(true)
+        return { selected: { id: asset.id, label: asset.label, category: asset.category } }
+      },
+    },
+    {
+      id: "object.frame",
+      label: "Frame Asset",
+      shortLabel: "Frame",
+      category: "Scene",
+      shortcut: "F",
+      enabled: () => true,
+      run: async () => {
+        frame()
+        await render(true)
+        return readStageCameraState(stage)
+      },
+    },
+    {
+      id: "scene.set-env",
+      label: "Set Catalogue Lighting Setup",
+      shortLabel: "Lighting",
+      category: "Scene",
+      args: {
+        name: { type: "string", required: true, enum: Object.keys(catalogueLights), description: "Lighting setup (neutral, day, night, interior)" },
+      },
+      enabled: () => true,
+      run: async (_ctx, args) => {
+        const name = String(args?.name ?? "").toLowerCase()
+        if (!(name in catalogueLights)) {
+          throw new Error(`Unknown lighting setup "${name}". Expected: ${Object.keys(catalogueLights).join(", ")}.`)
+        }
+        lightingSettings.setup = name
+        lights()
+        panel.sync()
+        await render(true)
+        return { environment: name, lighting: { ...stage.lighting } }
+      },
+    },
+    {
+      id: "preset.export",
+      label: "Export Asset Feedback JSON",
+      shortLabel: "Export",
+      category: "Preset",
+      enabled: () => true,
+      run: () => JSON.parse(feedback()) as Record<string, unknown>,
+    },
+  ])
+  registerStageCameraCommands(commands, {
+    stage,
+    render: () => render(true),
+    resolveFrameTarget: query => {
+      if (!query || query === "scene" || query === "active" || resolveAsset(query)?.id === selected.id) {
+        return { x: 0, y: 0.8, z: 0, dist: selected.category === "vehicle" ? 11 : 6, label: selected.label }
+      }
+      const match = resolveAsset(query)
+      if (!match) return null
+      select(match)
+      return { x: 0, y: 0.8, z: 0, dist: match.category === "vehicle" ? 11 : 6, label: match.label }
+    },
+  })
+  registerPanelLabCommands(commands, {
+    getPanels: () => [panel],
+    render: () => render(true),
+  })
+
+  const controlAdapter: DevControlAdapter = {
+    kind: "catalogue",
+    commands,
+    getCanvas: () => canvas,
+    captureCanvas: async target => {
+      await render(true)
+      await stage.captureToCanvas(target)
+    },
+    isBusy: () => (gestures.isDragging() ? { busy: true, reason: "User is dragging the Catalogue viewport camera" } : { busy: false }),
+    getState: () => ({
+      asset: { id: selected.id, label: selected.label, category: selected.category },
+      assets: assets.map(a => ({ id: a.id, label: a.label, category: a.category })),
+      filter: { query: search.value, category: category.value },
+      camera: readStageCameraState(stage),
+      lighting: { setup: lightingSettings.setup, ...stage.lighting },
+      settings: { setup: lightingSettings.setup },
+    }),
+  }
+  if (parseHubHash(location.hash).page === "catalogue") {
+    registerDevControl(controlAdapter)
+  }
+  return { adapter: controlAdapter }
 }

@@ -1,0 +1,126 @@
+{
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3"
+  },
+  "staticStability": {
+    "framesChecked": 30,
+    "maxDiff": 0,
+    "changedPixels": 0
+  },
+  "gpuBenchmark": {
+    "viewport": "1280x800 (canvas 740x722)",
+    "interval": "polar compute start through post composite end (hardware timestamp-query)",
+    "warmupPairs": 1,
+    "measuredPairs": 9,
+    "framesPerSample": 25,
+    "room": {
+      "pairsCount": 9,
+      "beforeMedianMs": 0.7194,
+      "afterMedianMs": 0.9415,
+      "deltaMedianMs": 0.2215,
+      "deltaMadMs": 0.0221,
+      "rawPairs": [
+        {
+          "beforeMs": 1.0917,
+          "afterMs": 1.1288,
+          "deltaMs": 0.0371
+        },
+        {
+          "beforeMs": 1.3444,
+          "afterMs": 2.2145,
+          "deltaMs": 0.8701
+        },
+        {
+          "beforeMs": 1.668,
+          "afterMs": 2.1962,
+          "deltaMs": 0.5282
+        },
+        {
+          "beforeMs": 1.6668,
+          "afterMs": 2.1962,
+          "deltaMs": 0.5294
+        },
+        {
+          "beforeMs": 0.7151,
+          "afterMs": 0.9415,
+          "deltaMs": 0.2264
+        },
+        {
+          "beforeMs": 0.7179,
+          "afterMs": 0.9227,
+          "deltaMs": 0.2049
+        },
+        {
+          "beforeMs": 0.7194,
+          "afterMs": 0.9189,
+          "deltaMs": 0.1994
+        },
+        {
+          "beforeMs": 0.7123,
+          "afterMs": 0.9338,
+          "deltaMs": 0.2215
+        },
+        {
+          "beforeMs": 0.715,
+          "afterMs": 0.9241,
+          "deltaMs": 0.209
+        }
+      ]
+    },
+    "yard": {
+      "pairsCount": 9,
+      "beforeMedianMs": 0.8057,
+      "afterMedianMs": 0.718,
+      "deltaMedianMs": 0.0252,
+      "deltaMadMs": 0.0908,
+      "rawPairs": [
+        {
+          "beforeMs": 2.3853,
+          "afterMs": 2.0643,
+          "deltaMs": -0.321
+        },
+        {
+          "beforeMs": 1.9728,
+          "afterMs": 2.5375,
+          "deltaMs": 0.5647
+        },
+        {
+          "beforeMs": 0.5439,
+          "afterMs": 0.5544,
+          "deltaMs": 0.0106
+        },
+        {
+          "beforeMs": 0.5169,
+          "afterMs": 0.5421,
+          "deltaMs": 0.0252
+        },
+        {
+          "beforeMs": 0.5688,
+          "afterMs": 0.534,
+          "deltaMs": -0.0348
+        },
+        {
+          "beforeMs": 0.5954,
+          "afterMs": 0.6363,
+          "deltaMs": 0.0409
+        },
+        {
+          "beforeMs": 0.8057,
+          "afterMs": 0.718,
+          "deltaMs": -0.0877
+        },
+        {
+          "beforeMs": 0.9796,
+          "afterMs": 1.3721,
+          "deltaMs": 0.3926
+        },
+        {
+          "beforeMs": 1.0612,
+          "afterMs": 1.1772,
+          "deltaMs": 0.116
+        }
+      ]
+    }
+  }
+}

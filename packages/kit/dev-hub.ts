@@ -1,4 +1,6 @@
 import { gameLink, hubCommands, hubGames, hubTargets, parseHubHash } from "./dev-hub-model"
+import { registerDevControl, resolveNavigationPath, type DevControlAdapter } from "./dev-control"
+import { LabCommandRegistry } from "./lab-commands"
 import type { SpawnFactory } from "./lab/spawn-types"
 import "./dev-hub.css"
 
@@ -26,7 +28,8 @@ export function devHub(options: DevHubOptions) {
   const nav = document.querySelector("nav")!
   for (const command of hubCommands) {
     const link = document.createElement("a")
-    link.href = command.href; link.textContent = command.label; link.dataset.page = command.id
+    link.href = command.id === "characters" && !location.pathname.startsWith("/arcade/blackout/") ? `${gameLink("blackout", targets).href}characters.html` : command.href
+    link.textContent = command.label; link.dataset.page = command.id
     nav.append(link)
   }
   for (const game of hubGames) {
@@ -40,13 +43,80 @@ export function devHub(options: DevHubOptions) {
   if (targets.kind === "standalone") { note.hidden = false; note.innerHTML = "Games open in production. For local games, run <code>bun run dev</code> at the repository root." }
   if (targets.kind === "router" && !targets.workers) { note.hidden = false; note.innerHTML = "Online play needs Workers: <code>bun run dev --workers</code>" }
 
-  let catalogue: Promise<unknown> | undefined
+  let catalogue: Promise<{ adapter: DevControlAdapter }> | undefined
+  let catalogueAdapter: DevControlAdapter | undefined
+
+  const hubRegistry = new LabCommandRegistry()
+  hubRegistry.register({
+    id: "object.select",
+    label: "Select Hub Tab or Game",
+    shortLabel: "Select",
+    category: "Scene",
+    args: {
+      id: { type: "string", required: true, description: "Tab (games, catalogue, sandbox) or game ID (getaway, blackout, outbreak, carrier)" },
+    },
+    enabled: () => true,
+    run: async (_ctx, args) => {
+      const target = String(args?.id ?? "").trim()
+      if (!target) throw new Error("object.select requires an id.")
+      const lower = target.toLowerCase()
+      if (lower === "catalogue" || lower === "catalog") {
+        location.hash = "#catalogue"
+        await catalogue
+        return { page: "catalogue" }
+      }
+      if (lower === "games" || lower === "hub") {
+        location.hash = "#games"
+        return { page: "games" }
+      }
+      const path = resolveNavigationPath(target)
+      const url = new URL(path, location.origin)
+      if (url.pathname === location.pathname && url.hash.startsWith("#catalogue")) {
+        location.hash = url.hash
+        await catalogue
+        return { page: "catalogue", hash: url.hash }
+      }
+      setTimeout(() => location.assign(url.href), 15)
+      return { navigating: true, url: url.href }
+    },
+  })
+
+  const hubAdapter: DevControlAdapter = {
+    kind: "hub",
+    commands: hubRegistry,
+    getState: () => ({
+      activeTab: parseHubHash(location.hash).page,
+      environment,
+      games: hubGames.map(g => ({
+        id: g.id,
+        label: g.label,
+        prototype: g.prototype,
+        ...gameLink(g.id, targets),
+      })),
+    }),
+  }
+
   function route() {
     const { page } = parseHubHash(location.hash)
     for (const id of ["games", "catalogue"]) document.getElementById(id)!.hidden = id !== page
     document.body.dataset.page = page
     for (const link of nav.querySelectorAll("a")) { if (link.dataset.page === page) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current") }
-    if (page === "catalogue") catalogue ??= import("./dev-hub-viewer").then(module => module.catalogueViewer(options)).catch(error => { document.querySelector("[data-viewer-status]")!.textContent = error instanceof Error ? error.message : String(error) })
+    if (page === "catalogue") {
+      if (catalogueAdapter) registerDevControl(catalogueAdapter)
+      catalogue ??= import("./dev-hub-viewer")
+        .then(module => module.catalogueViewer(options))
+        .then(ctrl => {
+          catalogueAdapter = ctrl.adapter
+          if (parseHubHash(location.hash).page === "catalogue") registerDevControl(ctrl.adapter)
+          return ctrl
+        })
+        .catch(error => {
+          document.querySelector("[data-viewer-status]")!.textContent = error instanceof Error ? error.message : String(error)
+          throw error
+        })
+    } else {
+      registerDevControl(hubAdapter)
+    }
   }
   window.addEventListener("hashchange", route); route()
 }

@@ -7,6 +7,7 @@ import {
   type LabSettings,
   type LabValue,
 } from "./lab-navigation"
+import { attachLabPanelControl } from "./dev-control"
 export { formatLabValue, inferControlUnit } from "./lab-navigation"
 export type { LabControl, LabRow, LabSettings, LabValue } from "./lab-navigation"
 export type LabOptions = {
@@ -51,6 +52,7 @@ export class LabPanel {
   private gestureLabel = ""
   private fScrub: { control: LabControl; startX: number; startValue: number; before: LabSettings } | null = null
   private lastPointerX = 0
+  private detachControl?: () => void
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const change = typeof options === "function" ? options : undefined
@@ -176,6 +178,11 @@ export class LabPanel {
         this.toggle()
       }
     } else this.sync()
+    this.detachControl = attachLabPanelControl(this)
+  }
+
+  isInteracting(): boolean {
+    return this.gestureBefore !== null || this.fScrub !== null || this.editor !== null
   }
 
   private snapshotSettings(): LabSettings {
@@ -605,6 +612,6 @@ export class LabPanel {
     else { this.sync(); this.previousFocus?.focus({ preventScroll: true }) }
     this.onToggle?.(this.visible)
   }
-  dispose() { this.release(); this.events.abort(); this.host.remove() }
+  dispose() { this.detachControl?.(); this.release(); this.events.abort(); this.host.remove() }
   get visible() { return !this.panel.hidden }
 }

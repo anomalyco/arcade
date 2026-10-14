@@ -35,7 +35,9 @@ export function animationLab<T extends Record<string, boolean | number | string>
     const mode = params.get("animation")
     if (mode === "old" || mode === "new") animation.animationMode = mode
     const posture = Number(params.get("runPosture"))
-    if (params.has("runPosture") && Number.isFinite(posture)) animation.runPosture = Math.max(0, Math.min(0.3, posture))
+    if (params.has("runPosture") && Number.isFinite(posture)) animation.runPosture = Math.max(0, Math.min(0.45, posture))
+    const crouch = Number(params.get("crouchDepth"))
+    if (params.has("crouchDepth") && Number.isFinite(crouch)) animation.crouchDepth = Math.max(0, Math.min(0.16, crouch))
   }
   for (const key of Object.keys(animation) as (keyof typeof animation)[]) Object.defineProperty(settings, key, {
     enumerable: true, configurable: true,

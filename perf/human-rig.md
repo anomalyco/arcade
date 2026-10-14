@@ -25,13 +25,13 @@ The canonical `packages/kit/rig.ts` matches PR #13's rig byte-for-byte (SHA-256
 900 frames per animation mode were compared with `822303310da0bd95901879570e27c5b942ca4aa9` in one Bun process.
 Walk/run/sprint, turning, seeded recoil and hit events produced exact JSON body equality:
 
-| Mode | Both source hashes |
+| Mode | Reference hash |
 | --- | --- |
 | Old | `00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac` |
-| New | `f6efd0e32ebeb77beef47891277c0f8911f7c6e9ab58a8feb1ad28b6423a02e5` |
+| New | `22f0e02263aad662363e956740b49ac56f9e17c1260af126882cbe35fb98eca2` |
 
-Reproduce with `scripts/prove-human-parity.ts <exported-baseline-repository>` from Blackout. This verifies the
-refined soldier pose, not identical GPU pixels across graphics implementations.
+Reproduce with `bun scripts/prove-human-parity.ts [baseline-repo]` from Blackout. This verifies the reference hashes
+plus explicit crouch-run posture scaling, zero planted toe slip, aim error bounds and weapon stability versus Old.
 
 After merging released main, both soldier hashes still match. Outbreak's default survivor also matches its
 released-main adapter exactly over 600 frames: a curved path, turning aim and sloped support, comparing every

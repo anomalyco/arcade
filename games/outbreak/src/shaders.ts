@@ -45,9 +45,12 @@ fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - F.eye.xy;
   let distance = length(delta);
   let a = (atan2(delta.y, delta.x) + TAU) % TAU;
-  let ray = u32(floor(a / TAU * f32(RAYS))) % RAYS;
-  let reach = polar[ray * 2u].x;
-  let los = 1.0 - smoothstep(reach + 0.025, reach + 0.10, distance);
+  let f = a / TAU * f32(RAYS) - 0.5;
+  let ray0 = u32(i32(floor(f)) + i32(RAYS)) % RAYS;
+  let ray1 = (ray0 + 1u) % RAYS;
+  let los0 = 1.0 - smoothstep(polar[ray0 * 2u].x + 0.025, polar[ray0 * 2u].x + 0.10, distance);
+  let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
+  let los = mix(los0, los1, fract(f));
   let facing = dot(delta / max(distance, 0.001), vec2f(cos(F.effects.x), sin(F.effects.x)));
   let cone = smoothstep(F.effects.y, F.effects.y + 0.035, facing);
   let near = 1.0 - smoothstep(F.effects.z - 0.2, F.effects.z, distance);

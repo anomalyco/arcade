@@ -191,23 +191,24 @@ a death frame strip. Stills and encoded run/death frames were inspected. Continu
 cost have not been measured. Reproduce encoding with `bash scripts/animation-film.sh` and the sheet with
 `python3 scripts/animation-sheet.py` (Pillow required).
 
-### Running attitude revision
+### Running attitude and weapon stability revision
 
-The first New gait lost the old run's forward attitude. A fixed-speed, 60-frame steady sample measured chest pitch
-at about 26°/47° in Old versus 9°/11° in New at 4.2/6.3 m/s. New also removed the pelvis's 9.7° forward pitch and
-moved its hips backward enough to keep the head nearly over the root. This was a pose change, not only a camera effect.
+The first New gait lost the old run's forward attitude, and its world-space weapon spring (`m.gun` chasing world
+`[a.x + ..., hold.up, a.y + ...]` at 6 Hz) lagged 18–34 cm behind the moving soldier and vibrated at 30 Hz (`deltaRms`
+0.0665 m) under `compare.html`'s decoupled `mux` tick rate.
 
-`anim-locomotion.ts` now springs a separate running-posture value through the existing walk/run transition, with
-25% more at sprint speed and a forward-travel weight. `anim.ts` pitches the pelvis about its rolled hip-to-hip axis,
-then gives the chest the same travel-directed attitude. The hip joints retain their exact positions; the head stays
-attached and compensates its pitch, and the weapon keeps its independent world frame. Root acceleration lean,
-support drop, pelvis yaw and chest counter-rotation keep their existing roles.
+`human-locomotion.ts` and `human-profile.ts` now spring both `runPosture` (`Run lean · rad`, default `0.34`) and
+`crouchDepth` (`Crouch depth · m`, default `0.08`) through the walk→run→sprint speed ramp, with `leanScale=1.25` and
+`headStability=0.8` (`Head stabilisation`). Forward run and sprint lower the pelvis (`~14.5 / 17.2 cm` total drop),
+bend the knees (`~75° / 72°` vs `50°` at walk), pitch the pelvis (`-12.5° / -15.6°`) and chest (`-28.9° / -38.9°`)
+forward while keeping the head stabilised (`-6.9° / -7.7°`) and world-locked toe contacts at zero slip. Strafe and
+backpedal suppress forward run lean and damp backward velocity lean so backpedalling stays upright.
 
-Animation → Run posture defaults to 0.18 rad. Zero reproduces the pre-revision New pose: 720-frame sequences of
-Old and zero-posture New matched the saved `39ef8bf` bodies exactly, including seeded fire and hit events. The new
-default measures roughly 7°/18° pelvis/chest pitch at run and 9°/23° at sprint. Fifteen animation cases include exact
-current/refined agreement on cadence, contact state, toe locks, pelvis position and weapon pose, plus finite joints
-and bounded, continuous posture through acceleration, braking and reversal. The earlier cadence limitation remains.
+`anim.ts` anchors `m.gun` to a stabilised shoulder posture frame (root + crouch + lean/dip, excluding cyclic hip sway
+`m.sway`, pelvic roll `m.drop` and spine counter-twist `m.twist`) and carries root displacement `(dx, dy)` and aim
+delta `dAim` 1:1 before stepping the `weaponHz * ergonomics` springs. This keeps the rifle compact in front of the
+crouched chest (`~0.26 m` ahead of the shoulders) with zero world-velocity lag, zero 30 Hz `mux` sawtooth jitter, and
+lower positional and angular RMS/delta-RMS than Old across steady run, sprint, strafe, circle, stop and aim sweeps.
 
 `scripts/prove-running.ts` captures the real viewer/Game/Renderer on headless Metal. Its three-way comparison uses
 Old, current New (`runPosture=0`) and refined New, with five matched routes and gameplay, side and three-quarter
@@ -298,9 +299,17 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   120 steps against `076fb7c`), static vertices drop `196,722 → 139,620`; median paired frame-span deltas are `-1.1 ms`
   street (`9.0 → 7.9 ms`, range `-3.9 to +0.9 ms`) and `+0.3 ms` interior (`9.0 → 9.9 ms`, range `-4.3 to +2.2 ms`,
   inside spread). Default Blackout and Getaway shaders remain unchanged.
-- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
-  and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
-  bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.
+- **Exclude a convex receiver from its own shadow test, and supersample only near analytic edges.** The Lab's fullscreen
+  raytraced stage (`packages/kit/lab/stage-shader.ts`) evaluates inside a 4× MSAA pass, where a single fullscreen triangle
+  otherwise runs once at pixel center and broadcasts a flat `frag_depth` across all four subsamples. Entry-slab normals
+  (`argmax(lo.x, lo.y, lo.z)`) prevent downward normal flips at `y = 0` wall–floor seams; closed-form signed-slab
+  clearance (`boxShadow`) replaces the 3-tap 256-bin polar staircase with continuous contact-hardening penumbras; 4× RGSS
+  sub-rays run only when the center ray passes within 8 cm of a box/sphere edge (`Edge AA` and shadow `Softness` live in
+  the shared Lab panel); and `frag_depth` uses the furthest subsample hit so rasterized 4× MSAA meshes at `y = 0` do not
+  fail upper-subsample depth tests. Seated car greenhouse/scoop bases (`games/getaway/src/render/car-mesh.ts`) remove
+  shallow mesh self-intersection stair-steps. Nine alternating Metal pairs at 1280×800 (`740×722` viewport) on M5 Max
+  measured whole-GPU deltas of +0.2215 ms room (MAD 0.0221) and +0.0252 ms yard (MAD 0.0908, inside noise), with zero
+  pixel change across 30 stationary frames (`perf/lab-shadow-edges.json`, `packages/kit/lab/prove-shadow-edges.ts`).
 - **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes corner-safe weighted arrival
   distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
   restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and

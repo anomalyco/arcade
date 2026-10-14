@@ -17,7 +17,7 @@ struct Out {@builtin(position) p:vec4f,@location(0) uv:vec2f,@location(1) color:
 }
 @fragment fn fs(o:Out)->@location(0) vec4f {
  let d=length(o.uv);var a=exp(-d*d*3.5)*smoothstep(1.0,.65,d);
- if(o.kind==1.0){a=smoothstep(1.0,.75,d);}
+ if(o.kind==1.0){a=pow(max(0.0,1.0-d*d),1.6)*smoothstep(1.0,.72,d);}
  if(o.kind==2.0){a=smoothstep(.13,.025,abs(d-.82));}
  if(o.kind==3.0){a=smoothstep(1.0,.4,abs(o.uv.x))*smoothstep(1.0,.7,abs(o.uv.y));}
  if(o.kind==4.0){a=1.0-smoothstep(.75,1.0,max(abs(o.uv.x),abs(o.uv.y)));}
@@ -25,7 +25,7 @@ struct Out {@builtin(position) p:vec4f,@location(0) uv:vec2f,@location(1) color:
    let q=abs(o.uv);
    let rounded=length(max(q-vec2f(0.24,0.34),vec2f(0.0)));
    let body=1.0-smoothstep(0.10,0.62,rounded);
-   let wheel=1.0-smoothstep(0.02,0.21,length((q-vec2f(0.70,0.57))*vec2f(1.0,1.3)));
+   let wheel=1.0-smoothstep(0.02,0.20,length((q-vec2f(0.54,0.55))*vec2f(1.2,1.3)));
    a=min(1.0,body*0.84+wheel*0.36);
  }
  if(o.kind==6.0){

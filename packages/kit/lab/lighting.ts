@@ -3,12 +3,13 @@ import type { LabContext, LabSection } from "./types"
 export const lightingDefaults = () => ({
   lamps:true,lampPower:2,lampRadius:10,lampHeight:3,
   spot:true,spotPower:4,spotAngle:38,spotYaw:-120,spotPitch:40,
-  shadows:true,moon:true,moonPower:0.35,moonAzimuth:-45,moonElevation:55,
+  shadows:true,shadowSoftness:0.45,edgeAA:true,moon:true,moonPower:0.35,moonAzimuth:-45,moonElevation:55,
   count:2,exposure:0,tone:0,temperature:0,saturation:1,
 })
 export function createLighting({stage}:LabContext):LabSection {
   return {id:"lighting",label:"Lighting",settings:stage.lighting,controls:[
     {key:"count",label:"Light count",group:"Scene",type:"range",min:0,max:8,step:1},
+    {key:"edgeAA",label:"Edge AA",group:"Scene"},
     {key:"lamps",label:"Lamps",group:"Lamp"},
     {key:"lampPower",label:"Power",group:"Lamp",type:"range",min:0,max:8,step:0.1},
     {key:"lampRadius",label:"Radius",group:"Lamp",type:"range",min:2,max:20,step:0.5},
@@ -19,6 +20,7 @@ export function createLighting({stage}:LabContext):LabSection {
     {key:"spotYaw",label:"Yaw",group:"Spot",type:"range",min:-180,max:180},
     {key:"spotPitch",label:"Pitch",group:"Spot",type:"range",min:5,max:85},
     {key:"shadows",label:"Polar shadows",group:"Shadows"},
+    {key:"shadowSoftness",label:"Softness",group:"Shadows",type:"range",min:0.05,max:1.2,step:0.05,enabled:s=>Boolean(s.shadows)},
     {key:"moon",label:"Moon",group:"Moon"},
     {key:"moonPower",label:"Moon power",group:"Moon",type:"range",min:0,max:2,step:0.05},
     {key:"moonAzimuth",label:"Azimuth",group:"Moon",type:"range",min:-180,max:180},
