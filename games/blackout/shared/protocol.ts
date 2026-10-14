@@ -1,3 +1,4 @@
+import { LOWER_CODE_CHARS, cleanPlayerName, randomRoomCode } from "@arcade/kit/sim/matchmaking"
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "./config"
 import { type MapChoice, mapChoiceOf } from "./maps"
 import { type ModeId, modeOf } from "./sim/modes"
@@ -53,10 +54,7 @@ export function decodeServer(raw: string): ServerMsg | null {
 
 export const encodeClient = (msg: ClientMsg) => JSON.stringify(msg)
 
-export function cleanName(v: unknown): string {
-  const s = typeof v === "string" ? v.replace(/[^\p{L}\p{N} _.'-]/gu, "").trim().slice(0, NAME_MAX) : ""
-  return s || "stranger"
-}
+export const cleanName = (v: unknown): string => cleanPlayerName(v, NAME_MAX, "stranger")
 
 const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 0)
 
@@ -121,11 +119,5 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   }
 }
 
-export const CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"
-
-/** A fresh four-character room code. */
-export function randomCode(rand: () => number = Math.random): string {
-  let out = ""
-  for (let i = 0; i < 4; i++) out += CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)]
-  return out
-}
+export const CODE_CHARS = LOWER_CODE_CHARS
+export const randomCode = (rand: () => number = Math.random): string => randomRoomCode(CODE_CHARS, rand)
