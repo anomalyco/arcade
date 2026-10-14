@@ -2,12 +2,13 @@ import type { Wall } from "./volume"
 
 export const PARTICLE_CAPACITY = 2048
 export const PARTICLE_STRIDE = 24
-export type ParticleKind = "soft" | "spark" | "debris" | "water" | "fire"
+export type ParticleKind = "soft" | "spark" | "debris" | "water" | "fire" | "shock" | "scorch" | "fireball"
 export type ParticleSpec = {
   kind: ParticleKind; life: number; size: number; growth: number; gravity: number; drag: number
   bounce: number; r: number; g: number; b: number; alpha: number
+  temperature?: number; turbulence?: number; ease?: number
 }
-const kinds: Record<ParticleKind,number> = {soft:0,spark:1,debris:2,water:3,fire:4}
+const kinds: Record<ParticleKind,number> = {soft:0,spark:1,debris:2,water:3,fire:4,shock:5,scorch:6,fireball:7}
 
 /** Packed, bounded storage. Collision/ground callbacks remain owned by the game. */
 export class Particles {
@@ -24,6 +25,7 @@ export class Particles {
     p[i+8]=spec.life;p[i+9]=spec.growth;p[i+10]=spec.gravity;p[i+11]=spec.drag
     p[i+12]=spec.r;p[i+13]=spec.g;p[i+14]=spec.b;p[i+15]=spec.alpha
     p[i+16]=kinds[spec.kind];p[i+17]=spec.bounce;p[i+18]=seed
+    p[i+19]=spec.temperature??0;p[i+20]=spec.turbulence??0;p[i+21]=spec.ease??1
     return true
   }
   update(dt:number,walls:readonly Wall[]=[],ground:(x:number,z:number)=>number=flatGround) {
@@ -32,10 +34,16 @@ export class Particles {
     for(let n=0;n<this.count;n++) {
       const i=n*PARTICLE_STRIDE
       p[i+7]+=dt;if(p[i+7]>=p[i+8])continue
+      const kind=p[i+16]
       const drag=Math.exp(-p[i+11]*dt),ox=p[i],oz=p[i+2]
       p[i+4]*=drag;p[i+5]=p[i+5]*drag-p[i+10]*dt;p[i+6]*=drag
+      if(kind===7){
+        const age=p[i+7],seed=p[i+18],turb=p[i+20]||0.7
+        p[i]+=Math.sin(age*4.4+seed)*0.32*turb*dt
+        p[i+2]+=Math.cos(age*4.1+seed*1.3)*0.32*turb*dt
+      }
       p[i]+=p[i+4]*dt;p[i+1]+=p[i+5]*dt;p[i+2]+=p[i+6]*dt
-      const floor=ground(p[i],p[i+2])+0.04
+      const floor=ground(p[i],p[i+2])+(kind===5||kind===6?0.025:0.04)
       if(p[i+1]<floor){p[i+1]=floor;p[i+5]=Math.abs(p[i+5])*p[i+17];p[i+4]*=0.8;p[i+6]*=0.8}
       for(const w of walls) if(p[i]>=w[0]&&p[i]<=w[2]&&p[i+2]>=w[1]&&p[i+2]<=w[3]) {
         p[i]=ox;p[i+2]=oz;p[i+4]*=-p[i+17];p[i+6]*=-p[i+17];break
@@ -48,11 +56,13 @@ export class Particles {
   prepare(){
     const p=this.data,o=this.instances
     for(let n=0;n<this.count;n++) {
-      const i=n*PARTICLE_STRIDE,k=n*16,t=p[i+7]/p[i+8]
-      o[k]=p[i];o[k+1]=p[i+1];o[k+2]=p[i+2];o[k+3]=Math.max(0.01,p[i+3]+p[i+9]*p[i+7])
-      o[k+4]=p[i+12];o[k+5]=p[i+13];o[k+6]=p[i+14];o[k+7]=p[i+15]*Math.min(1,(1-t)*4)
-      o[k+8]=p[i+4];o[k+9]=p[i+5];o[k+10]=p[i+6];o[k+11]=p[i+16]
-      o[k+12]=p[i+18]+p[i+7]*2;o[k+13]=t;o[k+14]=0;o[k+15]=0
+      const i=n*PARTICLE_STRIDE,k=n*16,age=p[i+7],life=p[i+8],t=age/life,kind=p[i+16],ease=p[i+21]||1
+      const growthCurve=ease!==1?(1-Math.pow(Math.max(0,1-t),ease))*life:age
+      o[k]=p[i];o[k+1]=p[i+1];o[k+2]=p[i+2];o[k+3]=Math.max(0.01,p[i+3]+p[i+9]*growthCurve)
+      const fade=kind===6?Math.min(1,t*18)*Math.pow(Math.max(0,1-t),1.35):kind===5?Math.pow(Math.max(0,1-t),1.75):kind===7?Math.min(1,t*18)*Math.min(1,(1-t)*2.35):Math.min(1,(1-t)*4)
+      o[k+4]=p[i+12];o[k+5]=p[i+13];o[k+6]=p[i+14];o[k+7]=p[i+15]*fade
+      o[k+8]=p[i+4];o[k+9]=p[i+5];o[k+10]=p[i+6];o[k+11]=kind
+      o[k+12]=p[i+18]+(kind===5||kind===6?0:age*2);o[k+13]=t;o[k+14]=p[i+19];o[k+15]=p[i+20]
     }
   }
 }

@@ -2,6 +2,7 @@ import type { LabContext, LabSection, LabWorldObject } from "./types"
 import type { LabCharacter, SpawnAdapters, SpawnPoint } from "./spawn-types"
 import type { LabLight } from "./stage"
 import { effectOptions, effectSpecs } from "./effects"
+import { explosionDefaults, spawnExplosion } from "../fx/explosion"
 import { rampVertices, yardGlassVertices, yardGround, yardWalls } from "./yard"
 import { vehicleEffectSettings } from "../vehicle/effect-settings"
 
@@ -226,7 +227,12 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
   }
 
   function effectAt(at:SpawnPoint=target(),id=String(settings.effect)){
-    if(id==="smoke"||id==="explosion")volume.spawn(at.x,at.z,id==="smoke"?5.5:3.5,id==="smoke"?9:4,1,id==="explosion"?.45:0)
+    if(id==="explosion"){
+      spawnExplosion(particles,volume,at.x,at.y,at.z,explosionDefaults,random)
+      context.sync()
+      return
+    }
+    if(id==="smoke")volume.spawn(at.x,at.z,5.5,9,1,0)
     if(id==="tyre")for(let i=0;i<18;i++)trail.spawn(at.x+(random()-.5)*1.2,at.y+.3,at.z+(random()-.5)*1.2,0,0)
     else if(["fire","water","nitro"].includes(id)){
       if(sources.length<16){

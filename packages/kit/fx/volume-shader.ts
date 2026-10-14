@@ -38,20 +38,24 @@ fn density(p: vec3f) -> vec2f {
     let z = textureLoad(field,clamp(cell+vec2i(0,dir.y),vec2i(0),vec2i(47)),s,0);
     let diagonal = textureLoad(field,clamp(cell+dir,vec2i(0),vec2i(47)),s,0).r;
     let safeDiagonal = select(diagonal,0.0,x.g>0.5 || z.g>0.5);
-    let d = mix(mix(centre.r,x.r,abs(local.x)),mix(z.r,safeDiagonal,abs(local.x)),abs(local.y));
+    var d = mix(mix(centre.r,x.r,abs(local.x)),mix(z.r,safeDiagonal,abs(local.x)),abs(local.y));
     let soot = source.z;
     if (soot > 0.0) {
       let lifeU = clamp(source.w, 0.0, 1.0);
       let dist = length(offset);
       let radialU = clamp(dist / max(0.35, b.w), 0.0, 1.0);
       let lobe = 0.5 + 0.28 * sin(p.x * 1.9 + F.advection.x * 0.45) * cos(p.z * 1.8 - F.advection.z * 0.45) + 0.22 * sin((p.x - p.z) * 2.7 - F.eye.w * 1.1);
-      d = d * smoothstep(0.0, 0.35 + 0.45 * lobe, d + 0.18 * (1.0 - radialU));
-      let lift = lifeU * F.motion.x * 2.2 * (1.0 - radialU * 0.45);
-      let ceiling = F.shape.x * (1.22 - 0.42 * radialU * radialU) + lift * 0.55;
-      let floorY = lift * (0.18 + 0.32 * radialU * radialU);
-      let y = clamp((p.y - floorY) / max(0.4, ceiling - floorY), 0.0, 1.5);
+      d = d * smoothstep(0.0, 0.36 + 0.44 * lobe, d + 0.16 * (1.0 - radialU));
+      let lift = pow(lifeU, 0.78) * F.motion.x * 2.8 * (1.0 - radialU * 0.42);
+      let ceiling = F.shape.x * (0.58 + 0.72 * pow(lifeU, 0.45)) * (1.20 - 0.45 * radialU * radialU) + lift * 0.52;
+      let floorY = lift * (0.14 + 0.36 * radialU * radialU) * smoothstep(0.10, 0.65, lifeU);
+      let y = clamp((p.y - floorY) / max(0.45, ceiling - floorY), 0.0, 1.5);
       let amount = d * smoothstep(0.0, 0.14, y) * (1.0 - smoothstep(0.34, 1.0, y));
-      let cool = clamp(1.0 - lifeU * 0.62 - radialU * 0.32 - y * 0.28, 0.12, 1.0);
+      let shift = select(0.75, F.ambient.w, F.ambient.w > 0.001);
+      // Keep smoke dark sooty during the first 35% of life, then progressively dilute toward warm-grey and light ash-grey.
+      let ageShift = smoothstep(0.14, 0.88, lifeU);
+      let dispersion = clamp((ageShift * 0.72 + radialU * 0.24 + y * 0.24) * shift, 0.0, 0.90);
+      let cool = clamp(1.0 - dispersion, 0.10, 1.0);
       sum += vec2f(amount, amount * soot * cool);
     } else {
       let ceiling = F.shape.x * (0.86 + 0.14*sin(p.x*1.5-F.eye.w*0.3)*sin(p.z*1.2+F.eye.w*0.2));
@@ -83,26 +87,46 @@ fn billow(p: vec3f) -> f32 {
     let sample = density(p); let base = sample.x;
     if (base < 0.002) { continue; }
     let bVal = billow(p);
-    let d = base * mix(0.75,smoothstep(0.22,0.72,bVal),F.motion.z) * F.shape.z;
+    let isSoot = sample.y > 0.0005;
+    let edgeErode = select(
+      mix(0.75,smoothstep(0.22,0.72,bVal),F.motion.z),
+      smoothstep(clamp(0.44 - base * 0.66, 0.02, 0.42) * clamp(F.motion.z, 0.1, 1.4), 0.76, bVal),
+      isSoot
+    );
+    let d = base * edgeErode * F.shape.z;
+    if (d < 0.002) { continue; }
     let a = 1.0-exp(-d*stepSize); optical += d*stepSize;
-    let sun = exp(-density(p+vec3f(0,0.65,0)).x*1.7);
-    var light = F.ambient.rgb + vec3f(0.38,0.43,0.51)*sun*F.shape.w;
+    let sun = exp(-density(p+vec3f(0,0.65,0)).x*select(1.7,2.4,isSoot));
+    var baseLight = F.ambient.rgb + vec3f(0.38,0.43,0.51)*sun*F.shape.w;
+    var ptLight = vec3f(0);
     for (var l = 0; l < min(8,i32(F.screen.z)); l++) {
       let pos = F.lights[l*2]; let color = F.lights[l*2+1]; let delta = pos.xyz-p;
       let d2 = dot(delta,delta);
       if (d2 >= pos.w*pos.w) { continue; }
       let dist = sqrt(max(0.001,d2));
-      let shade = exp(-density(p+delta/dist*0.65).x*0.75);
-      light += color.rgb*color.w*pow(1.0-dist/pos.w,2.0)*shade*F.shape.w;
+      let shade = exp(-density(p+delta/dist*0.65).x*select(0.75,1.85,isSoot));
+      ptLight += color.rgb*color.w*pow(1.0-dist/pos.w,2.0)*shade*F.shape.w;
     }
+    var light = baseLight + select(ptLight, ptLight / (vec3f(1.0) + ptLight * 0.58), isSoot);
     let sootRatio = clamp(sample.y/max(base,0.001),0.0,1.0);
-    if (sootRatio > 0.001) {
-      let ridge = smoothstep(0.28, 0.78, bVal) * clamp(p.y / max(0.8, F.shape.x), 0.0, 1.0);
-      let darkTint = vec3f(0.11, 0.095, 0.085);
-      let warmMid = vec3f(0.46, 0.41, 0.37);
-      let ashLight = vec3f(0.92, 0.95, 0.99);
-      let smokeTint = mix(mix(ashLight, warmMid, clamp(sootRatio * 1.5, 0.0, 1.0)), darkTint, clamp(sootRatio * 1.35 * (1.0 - ridge * 0.55), 0.0, 1.0));
+    if (isSoot) {
+      let ridge = smoothstep(0.24, 0.80, bVal) * clamp(p.y / max(0.8, F.shape.x), 0.0, 1.0);
+      let darkTint = vec3f(0.032, 0.028, 0.026);
+      let warmMid = vec3f(0.26, 0.23, 0.21);
+      let ashLight = vec3f(0.82, 0.86, 0.93);
+      let tone = clamp(sootRatio * 1.48 * (1.0 - ridge * 0.42), 0.0, 1.0);
+      let smokeTint = mix(mix(ashLight, warmMid, clamp(tone * 1.75, 0.0, 1.0)), darkTint, smoothstep(0.32, 0.86, tone));
       light *= smokeTint;
+      let glowScale = select(1.0, F.motion.w, F.motion.w > 0.001);
+      for (var s = 0; s < 4; s++) {
+        let src = F.boxes[s*2+1];
+        if (src.z > 0.0 && src.w > 0.0 && src.w < 0.22) {
+          let heatLife = pow(max(0.0, 1.0 - src.w / 0.22), 2.0);
+          let distCore = length(vec3f(p.x - src.x, (p.y - 0.75) * 0.9, p.z - src.y));
+          let coreScatter = exp(-distCore * 1.25) * heatLife * glowScale * 0.55 * (1.0 - bVal * 0.6);
+          light += vec3f(1.9, 0.42, 0.04) * coreScatter;
+        }
+      }
     } else {
       light *= mix(1.0,0.14,sootRatio);
     }
