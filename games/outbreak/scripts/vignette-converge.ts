@@ -55,6 +55,8 @@ try {
       const lab = (window as any).lab
       lab.workbench.invoke("vignette.preset", { direction: slug })
       await lab.render()
+      await new Promise(r => setTimeout(r, 250))
+      await lab.render()
     },
     { slug: presetSlug },
   )

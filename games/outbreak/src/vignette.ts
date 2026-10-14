@@ -265,17 +265,17 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       streetLampPower: 0.0,
       streetLampTemp: 3400,
       streetLampFalloff: 0.85,
-      porchLightPower: 0.28,
-      porchLightTemp: 3800,
-      porchLightFalloff: 0.56,
+      porchLightPower: 0.40,
+      porchLightTemp: 3600,
+      porchLightFalloff: 0.78,
       windowLightPower: 0.42,
       windowLightTemp: 2450,
       windowLightFalloff: 0.74,
       flashlightOn: true,
-      flashlightIntensity: 1.85,
+      flashlightIntensity: 1.68,
       flashlightCone: 35,
-      flashlightRange: 10.5,
-      flashlightWarmth: 0.25,
+      flashlightRange: 10.6,
+      flashlightWarmth: 0.22,
       flashlightAim: 45.5,
       flashlightHaze: 1.15,
       clutterDensity: 1.0,
@@ -862,7 +862,7 @@ struct VignetteUniforms {
   // x: tanHalfAngle, y: flashRange, z: flashHaze, w: flashSlot (<0 if off)
   params4: vec4f,
 }
-@group(0) @binding(10) var<uniform> Vig: VignetteUniforms;
+@group(0) @binding(13) var<uniform> Vig: VignetteUniforms;
 
 fn useVignetteActive(fragPos: vec4f) -> bool {
   let mode = i32(round(Vig.params0.x));
@@ -960,6 +960,8 @@ fn eyeVisible(p: vec2f) -> f32 {
 `,
     material: /* wgsl */ `
     let activeVignette = useVignetteActive(o.pos);
+    let texOn = surfaceTexEnabledAt(o.world.x);
+    let wallUv = select(vec2f(o.world.x, o.world.y), vec2f(o.world.z, o.world.y), abs(n.x) > abs(n.z));
     if (mat == 20) {
       let kind = i32(round(o.aux));
       let p = o.world.xz;
@@ -969,12 +971,23 @@ fn eyeVisible(p: vec2f) -> f32 {
         let s = evalGrassSoil(p, tinted, false, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(8, p, 0.58 * max(0.25, r.u1.x));
+          albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.88);
+          let normAtten = (1.0 - smoothstep(0.08, 0.48, surfaceFootprint)) * 0.28;
+          let tilt = (tex.a - 0.91) * 3.2;
+          n = normalize(n + vec3f(tilt, 0.0, -tilt * 0.85) * normAtten);
+        }
       } else if (kind == 1) {
         let r = pickRecipe(3, 3, activeVignette);
         let tinted = select(albedo, scaleBaseTint(albedo, r.u0.xyz, vec3f(0.24, 0.26, 0.28)), activeVignette);
         let s = evalAsphaltConcrete(p, tinted, false, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(7, p, 0.55 * max(0.25, r.u1.x));
+          albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.92);
+        }
         if (activeVignette && Vig.params1.w > 0.02) {
           let edgeCreep = (1.0 - smoothstep(0.0, 1.25, min(abs(p.y - 40.0), abs(p.y - 48.0)))) * surfaceNoise(p * 1.8 + vec2f(4.2, 1.9));
           let moss = smoothstep(0.42, 0.72, edgeCreep) * Vig.params1.w;
@@ -986,15 +999,23 @@ fn eyeVisible(p: vec2f) -> f32 {
         let s = evalAsphaltConcrete(p, tinted, true, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(6, p, 0.58 * max(0.25, r.u1.x));
+          albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.85);
+        }
         if (activeVignette && Vig.params1.w > 0.02) {
           let jointMoss = (1.0 - s.cavity) * smoothstep(0.30, 0.68, surfaceNoise(p * 1.5 + vec2f(7.1, 2.3))) * Vig.params1.w;
           albedo = mix(albedo, vec3f(0.16, 0.24, 0.10), clamp(jointMoss * 1.35, 0.0, 0.78));
         }
       } else if (kind == 3) {
         let ruts = exp(-pow((fract((p.x - 19.0) * 0.377) - 0.26) * 5.2, 2.0)) + exp(-pow((fract((p.x - 19.0) * 0.377) - 0.74) * 5.2, 2.0));
-        let pebbles = grain(p, 18.0) * 0.78 + grain(p + vec2f(3.7, 1.9), 9.5) * 0.42;
+        let pebbles = grain(p, 18.0) * 0.85 + grain(p + vec2f(3.7, 1.9), 9.5) * 0.48;
         let edgeFade = smoothstep(0.0, 0.24, min(fract((p.x - 19.0) * 0.377), 1.0 - fract((p.x - 19.0) * 0.377)));
-        albedo *= (0.78 + pebbles + (surfaceNoise(p * 2.6) - 0.5) * 0.32 - 0.14 * clamp(ruts, 0.0, 1.0)) * (0.76 + 0.24 * edgeFade);
+        albedo *= (0.78 + pebbles + (surfaceNoise(p * 2.6) - 0.5) * 0.36 - 0.16 * clamp(ruts, 0.0, 1.0)) * (0.76 + 0.24 * edgeFade);
+        if (texOn) {
+          let tex = sampleMaterialFast(15, p, 0.85);
+          albedo = modulateFast(albedo, tex, vec3f(0.2950, 0.2326, 0.1649), 0.65);
+        }
         gloss = vec2f(0.0);
       } else if (kind == 4) {
         let r = pickRecipe(0, 0, activeVignette);
@@ -1002,16 +1023,42 @@ fn eyeVisible(p: vec2f) -> f32 {
         let s = evalWoodPlanks(p, tinted, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(0, p, 0.65 * max(0.25, r.u1.x));
+          albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.82);
+        }
       } else if (kind == 6) {
         let r = pickRecipe(1, 1, activeVignette);
         let s = evalCobblestone(p, albedo, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(15, p, 0.68);
+          albedo = modulateFast(albedo, tex, vec3f(0.2950, 0.2326, 0.1649), 0.78);
+        }
       } else {
         let r = pickRecipe(4, 5, activeVignette);
         let s = evalGrassSoil(p, albedo, true, r);
         albedo = s.albedo;
         gloss = s.gloss;
+      }
+    }
+    // Textured area rugs in living room, bedroom, and kitchen runner
+    if (mat == 0 && o.world.y > 0.131 && o.world.y < 0.156 && o.world.x < 37.5 && texOn) {
+      let p = o.world.xz;
+      let b = vec4f(22.0, 24.0, 37.0, 35.5);
+      if (p.x >= b.x + 1.53 && p.x <= b.x + 4.67 && p.y >= b.w - 4.37 && p.y <= b.w - 0.83) {
+        let uv = clamp((p - vec2f(b.x + 1.55, b.w - 4.35)) / vec2f(3.10, 3.50), vec2f(0.015), vec2f(0.985));
+        let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+        let tex = textureSampleLevel(materialTexArray, materialSampler, uv, 12, materialMipLod(0.32));
+        albedo = clamp(tex.rgb * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
+        gloss = vec2f(0.0);
+      } else if (p.x >= b.x + 5.00 && p.x <= b.x + 6.90 && p.y >= b.y + 1.33 && p.y <= b.y + 4.27) {
+        let uv = clamp((p - vec2f(b.x + 5.02, b.y + 1.35)) / vec2f(1.86, 2.90), vec2f(0.015), vec2f(0.985));
+        let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+        let tex = textureSampleLevel(materialTexArray, materialSampler, uv, 13, materialMipLod(0.45));
+        albedo = clamp(tex.rgb * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
+        gloss = vec2f(0.0);
       }
     }
     if (mat == 4 && o.aux > 19.5) {
@@ -1020,12 +1067,20 @@ fn eyeVisible(p: vec2f) -> f32 {
         let s = evalPlasterWall(o.world, n, albedo, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(2, wallUv, 0.78);
+          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.72);
+        }
       } else if (activeVignette) {
         let r = Vig.recipes[6];
         let tinted = scaleBaseTint(albedo, r.u0.xyz, vec3f(0.70, 0.68, 0.62));
         let s = evalClapboardSiding(o.world, tinted, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(3, wallUv, 0.72 * max(0.25, r.u1.x));
+          albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.80);
+        }
       } else {
         let row = floor(o.world.y / 0.18);
         let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
@@ -1041,6 +1096,10 @@ fn eyeVisible(p: vec2f) -> f32 {
       let s = evalPlasterWall(o.world, n, baseWall, r);
       albedo = s.albedo;
       gloss = s.gloss;
+      if (texOn) {
+        let tex = sampleMaterialFast(2, wallUv, 0.78 * max(0.25, r.u1.x));
+        albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.72);
+      }
     }
     if (mat == 21) {
       if (activeVignette) {
@@ -1049,6 +1108,10 @@ fn eyeVisible(p: vec2f) -> f32 {
         let s = evalRoofShingles(o.world, tinted, r);
         albedo = s.albedo;
         gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(4, o.world.xz, 0.68 * max(0.25, r.u1.x));
+          albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.88);
+        }
       } else {
         let row = floor(o.world.z / 0.24);
         let q = vec2f(o.world.x / 0.36 + fract(row * 0.5), o.world.z / 0.24);
@@ -1063,20 +1126,34 @@ fn eyeVisible(p: vec2f) -> f32 {
       let row = floor(p.y / 0.085);
       let q = vec2f(p.x / 0.25 + fract(row * 0.5), p.y / 0.085);
       albedo = mix(vec3f(0.32, 0.30, 0.26), albedo * (0.8 + 0.35 * hash2(floor(q))), seam(q.x, 0.025, 4.0) * seam(q.y, 0.06, 11.76));
+      if (texOn) {
+        let tex = sampleMaterialFast(5, p, 0.85);
+        albedo = modulateFast(albedo, tex, vec3f(0.3143, 0.1732, 0.1377), 0.80);
+      }
     }
     if (mat == 22) {
       let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
       albedo = s.albedo;
       gloss = s.gloss;
+      if (texOn) {
+        let tex = sampleMaterialFast(9, o.world.xz + vec2f(o.world.y * 0.35), 0.95);
+        albedo = modulateFast(albedo, tex, vec3f(0.145, 0.195, 0.082), 0.72);
+      }
       if (activeVignette && Vig.params1.y < -0.35 && Vig.params0.w < 0.05) {
-        // Noir foliage: desaturated midnight-slate leaves with crisp moonlit upper-leaf rim
+        // Noir foliage: desaturated midnight-slate leaves with crisp moonlit upper-leaf rim & deep core contrast
         let fLum = dot(albedo, vec3f(0.2126, 0.7152, 0.0722));
-        let tipRim = smoothstep(0.35, 0.88, fract(o.world.y * 1.35 + surfaceNoise(o.world.xz * 3.2) * 0.4)) * max(0.0, n.y);
-        albedo = mix(vec3f(fLum) * vec3f(0.28, 0.34, 0.42), albedo * 0.32, 0.22) + vec3f(0.06, 0.08, 0.11) * tipRim;
+        let leafMicro = surfaceNoise(o.world.xz * 7.5 + vec2f(o.world.y * 3.1, -o.world.y * 2.4));
+        let tipRim = smoothstep(0.38, 0.82, leafMicro) * max(0.0, n.y);
+        let coreShadow = smoothstep(0.15, 0.65, leafMicro);
+        albedo = mix(vec3f(fLum) * vec3f(0.24, 0.30, 0.38), albedo * 0.30, 0.20) * mix(0.45, 1.25, coreShadow) + vec3f(0.075, 0.095, 0.125) * tipRim;
       }
     }
     if (mat == 24) {
       albedo *= 0.84 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24;
+      if (texOn) {
+        let tex = sampleMaterialFast(10, vec2f(o.world.x + o.world.z, o.world.y), 0.9);
+        albedo = modulateFast(albedo, tex, vec3f(0.18, 0.13, 0.09), 0.70);
+      }
       gloss = vec2f(0.0);
     }
 `,
@@ -1233,11 +1310,32 @@ fn eyeVisible(p: vec2f) -> f32 {
     if (o.world.y > 2.74 && o.world.y < 2.83 && n.y > 0.75 && o.world.x > 21.8 && o.world.x < 37.2 && o.world.z > 23.8 && o.world.z < 35.8) {
       col *= 0.08;
     }
+    // Roof shingles catching cold directional moonlight along course steps & eave drip edge (street view)
+    if (mat == 21 && Vig.params2.y > 35.0) {
+      let courseStep = smoothstep(0.65, 0.96, fract(o.world.z / 0.23));
+      let tabGrain = 0.65 + 0.70 * surfaceNoise(o.world.xz * 6.5);
+      let eaveGlow = smoothstep(35.4, 35.9, o.world.z) * smoothstep(36.1, 35.85, o.world.z);
+      let gableChevron = smoothstep(36.7, 37.08, o.world.z) * step(2.38, o.world.y);
+      col = col * (0.78 + 0.34 * tabGrain) + vec3f(0.011, 0.016, 0.024) * courseStep * tabGrain + vec3f(0.032, 0.042, 0.055) * max(eaveGlow, gableChevron * 0.85);
+    }
+    // Fine textured detail in darks: gravel ruts, asphalt aggregate, and grass/verge blade micro-contrast
+    if (mat == 20 && !interior(o.world.xz)) {
+      let p = o.world.xz;
+      let kind = i32(round(o.aux));
+      let fineGrit = surfaceNoise(p * 6.8) * 0.6 + surfaceNoise(p * 15.0) * 0.4;
+      if (kind == 1) {
+        let crackLine = 1.0 - smoothstep(0.0, 0.022, abs(surfaceNoise(p * 0.95 + vec2f(2.4, 5.1)) - 0.5));
+        col = col * (0.62 + 0.76 * fineGrit) * (1.0 - crackLine * 0.48);
+      } else if (kind == 0) {
+        let tuft = smoothstep(0.32, 0.78, fineGrit);
+        col = col * mix(0.55, 1.45, tuft);
+      }
+    }
     // Weathered dark slate-grey porch trim, columns, and window mullions on south facade
     if ((mat == 4 || mat == 21) && o.world.z > 35.15 && !interior(o.world.xz)) {
       let trimLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       if (trimLum > 0.035) {
-        col = mix(vec3f(trimLum) * vec3f(0.26, 0.30, 0.36), col * 0.30, 0.22);
+        col = mix(vec3f(trimLum) * vec3f(0.28, 0.32, 0.38), col * 0.34, 0.25);
       }
     }
     // Desaturate bright rugs & bedding in Noir and balance interior rooms
@@ -1284,15 +1382,15 @@ fn eyeVisible(p: vec2f) -> f32 {
       let moonShaft = winX * max(winZ1, winZ2) * smoothstep(2.45, 0.05, o.world.y);
       col += vec3f(0.075, 0.105, 0.155) * moonShaft;
     }
-    // Wet central porch walkway specular streak under the porch light
-    if (mat == 20 && o.world.x > 26.4 && o.world.x < 29.0 && o.world.z > 35.5 && o.world.z < 40.0) {
-      let cx = exp(-pow((o.world.x - 27.7) * 2.6, 2.0));
-      let cz = smoothstep(40.0, 35.6, o.world.z);
+    // Wider wet porch & walkway reflection pool under the porch light
+    if (mat == 20 && o.world.x > 25.2 && o.world.x < 30.2 && o.world.z > 35.4 && o.world.z < 40.2) {
+      let cx = exp(-pow((o.world.x - 27.7) * 1.55, 2.0));
+      let cz = smoothstep(40.2, 35.5, o.world.z);
       let pWet = 0.55 + 0.90 * surfaceFbm(o.world.xz * 4.5);
-      col = col * mix(0.36, 0.78, cx) + vec3f(0.155, 0.145, 0.125) * cx * cz * pWet * select(1.0, 0.45, Vig.params2.y < 35.0);
+      col = col * mix(0.55, 0.92, cx) + vec3f(0.18, 0.17, 0.15) * cx * cz * pWet * select(1.0, 0.45, Vig.params2.y < 35.0);
     }
   }
-  // Direction 3 (Noir): volumetric flashlight cone haze + hot hand core & occluded ground beam
+  // Direction 3 (Noir): volumetric flashlight cone haze + soft outer aura + hot hand core & textured ground beam
   if (activeVig && Vig.params4.w > 0.5) {
     let fSlot = u32(round(Vig.params4.w));
     let fOrig = Vig.params3.xy;
@@ -1309,17 +1407,18 @@ fn eyeVisible(p: vec2f) -> f32 {
     let inHouse = interior(o.world.xz);
     if (along > -0.15 && along < fRange) {
       let coneR = 0.09 + max(0.0, along) * tanHalf * select(1.0, 1.25, inHouse);
-      let radialCore = exp(-pow(across / (coneR * select(0.50, 0.62, inHouse)), 2.0));
-      let radialEdge = 1.0 - smoothstep(coneR * 0.55, coneR * 1.12, across);
+      let radialCore = exp(-pow(across / (coneR * select(0.52, 0.62, inHouse)), 2.0));
+      let radialAura = exp(-pow(across / (coneR * 0.92), 1.5)) * (1.0 - smoothstep(coneR * 0.75, coneR * 1.38, across));
+      let radialEdge = 1.0 - smoothstep(coneR * 0.58, coneR * 1.16, across);
       let axialIn = smoothstep(-0.06, 0.14, along);
-      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.65, 1.25, inHouse));
-      let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.04, o.world.xz, min(o.world.y, 0.95));
-      let grit = 0.72 + 0.56 * surfaceNoise(o.world.xz * 4.5 + vec2f(1.7, 3.9));
-      let mist = radialCore * radialEdge * axialIn * axialOut / (0.45 + max(0.0, along) * 0.24) * vis * (0.85 + 0.3 * surfaceNoise(o.world.xz * 1.8));
-      col += fLightCol * fPower * mist * hazeAmt * select(0.20, 0.36, inHouse);
+      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.55, 1.25, inHouse));
+      let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, o.world.xz, min(o.world.y, 0.95));
+      let grit = 0.55 + 0.90 * (surfaceNoise(o.world.xz * 4.5 + vec2f(1.7, 3.9)) * 0.6 + surfaceNoise(o.world.xz * 11.2) * 0.4);
+      let mist = (radialCore * radialEdge * 0.72 + radialAura * 0.38) * axialIn * axialOut / (0.45 + max(0.0, along) * 0.24) * vis * (0.82 + 0.36 * surfaceNoise(o.world.xz * 2.1));
+      col += fLightCol * fPower * mist * hazeAmt * select(0.22, 0.36, inHouse);
       if (o.world.y < 0.38) {
         let groundSpot = radialCore * radialEdge * axialIn * axialOut / (0.28 + max(0.0, along) * 0.16 + along * along * 0.022) * vis * grit;
-        col += (o.color * select(1.45, 2.85, inHouse) + vec3f(0.065, 0.072, 0.080)) * fLightCol * fPower * groundSpot * select(1.18, 2.45, inHouse);
+        col += (o.color * select(1.55, 2.85, inHouse) + vec3f(0.062, 0.070, 0.078)) * fLightCol * fPower * groundSpot * select(1.22, 2.45, inHouse);
       }
     }
     // Small close hand/lantern ground spill right at the survivor's feet
@@ -1327,7 +1426,7 @@ fn eyeVisible(p: vec2f) -> f32 {
     let pDist = length(pRel);
     if (pDist < 1.55 && o.world.y < 0.35) {
       let nearGlow = exp(-pDist * pDist * 2.2) * (1.0 - smoothstep(0.5, 1.55, pDist));
-      col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.34, 0.65, inHouse);
+      col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.36, 0.65, inHouse);
     }
   }
   if (mat != 12 && mat != 21 && mat != 2) {
@@ -1993,6 +2092,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
   function renderVignetteToStage(width: number, height: number, outputView: GPUTextureView): number | null {
     const r = ensureRenderer()
     r.resize(width, height)
+    r.setSurfaceTexUniforms({ enabled: s.compareMode === 1 ? 0 : 1, globalScale: 1.0, globalContrast: 1.15, globalRoughness: 0.0 })
     packVignetteUniformBuffer()
     r.setCustomUniforms(vignetteUniforms)
 

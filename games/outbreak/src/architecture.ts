@@ -6,7 +6,22 @@ import { supportHeight } from "../shared/terrain"
 const rgb = (v:number):Rgb => [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]
 type Point = [number,number,number]
 
-/** Boxy 1990s 4-door suburban sedan parked nose-in on the gravel driveway (front facing -z, rear/trunk facing street +z). */
+/** Weathered clapboard garden shed with hipped shingle roof in the north-west side yard by the picket fence. */
+function gardenShed(m:Mesh,x0:number,z0:number,x1:number,z1:number,ground:number) {
+  const y=ground, wallCol=rgb(0x6c7582), trimCol=rgb(0x9ca3ad), roofCol=rgb(0x384252), ridgeCol=rgb(0x4b5668)
+  const mx=(x0+x1)/2, mz=(z0+z1)/2, eave=y+1.52, peak=y+2.08
+  m.box(x0,y+.02,z0,x1,eave,z1,wallCol,MAT.lit)
+  for(const px of [x0,x1-.06])for(const pz of [z0,z1-.06])m.box(px,y+.02,pz,px+.06,eave,pz+.06,trimCol,MAT.lit)
+  // Double shed doors on the south face (+z)
+  m.box(mx-.42,y+.06,z1+.002,mx-.02,eave-.12,z1+.03,rgb(0x525a66),MAT.lit)
+  m.box(mx+.02,y+.06,z1+.002,mx+.42,eave-.12,z1+.03,rgb(0x525a66),MAT.lit)
+  // Four-sided hipped shingle roof (MAT.lit so it stays in the fast opaque pipeline)
+  const ox0=x0-.12,ox1=x1+.12,oz0=z0-.12,oz1=z1+.12,top:Point=[mx,peak,mz]
+  m.facet([ox0,eave,oz1],[ox1,eave,oz1],top,roofCol,MAT.lit)
+  m.facet([ox1,eave,oz0],[ox0,eave,oz0],top,roofCol,MAT.lit)
+  m.facet([ox0,eave,oz0],[ox0,eave,oz1],top,ridgeCol,MAT.lit)
+  m.facet([ox1,eave,oz1],[ox1,eave,oz0],top,ridgeCol,MAT.lit)
+}
 function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
   const y=ground, from=m.length
   // Soft contact shadow under chassis
@@ -175,13 +190,15 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   for (let xi = 0; xi < 3; xi++) {
     m.box(xCuts[xi]!, ridge - .04, mid - .1, xCuts[xi + 1]!, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
   }
-  // Brick chimney on upper-right slope with stone cap and dark flue.
-  m.box(r-2.05,3.20,mid+.85,r-1.15,4.78,mid+1.75,brick,MAT.brick)
-  m.box(r-2.13,4.74,mid+.77,r-1.07,4.86,mid+1.83,rgb(0x888b90))
-  m.box(r-1.88,4.86,mid+1.02,r-1.32,4.88,mid+1.58,rgb(0x181c22))
+  // Brick chimney on upper-right slope with stone cap, dark flue, and east-eave downspout.
+  m.box(r-2.08,3.18,mid+.82,r-1.12,4.82,mid+1.78,rgb(0x7c483a),MAT.brick)
+  m.box(r-2.16,4.76,mid+.74,r-1.04,4.88,mid+1.86,rgb(0x8e9196))
+  m.box(r-1.88,4.88,mid+1.02,r-1.32,4.91,mid+1.58,rgb(0x181c22))
+  m.box(r+.02,.15,e-.12,r+.10,2.76,e-.04,rgb(0x7d8490),MAT.lit)
   const cx=x+5.7
   const porchLamp=Math.max(0,town.lamps.findIndex(l=>l.kind==="porch"&&Math.abs(l.x-cx)<1.5&&Math.abs(l.y-(e+1.15))<1.5))
   parkedSedan(m,x-1.68,e-1.35,.035)
+  gardenShed(m,x-2.85,z+.55,x-1.15,z+2.25,.035)
   // Gabled porch canopy with dark shingle slopes, warm-lit tympanum and crisp white rake trim (^).
   m.quadAuto([cx-1.62,2.46,e+1.58],[cx,3.22,e+1.58],[cx,3.22,e-.15],[cx-1.62,2.46,e-.15],roof,MAT.roof,id)
   m.quadAuto([cx,3.22,e+1.58],[cx+1.62,2.46,e+1.58],[cx+1.62,2.46,e-.15],[cx,3.22,e-.15],roof,MAT.roof,id)
@@ -322,7 +339,7 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   for(const barrier of town.barriers){
     const [a,c,d,f]=barrier.rect
     if(a<x||d>r||c<z||f>e||barrier.kind==="fence")continue
-    m.box(a-.018,.025,c-.018,d+.018,.28,f+.018,brick,MAT.brick)
-    m.box(a,.28,c,d,.32,f,trim,MAT.wall)
+    m.box(a-.032,.025,c-.032,d+.032,.33,f+.032,rgb(0x74463a),MAT.brick)
+    m.box(a-.036,.33,c-.036,d+.036,.37,f+.036,trim,MAT.wall)
   }
 }

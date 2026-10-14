@@ -166,11 +166,11 @@ function compileLevel(town: Town): LevelData {
     if(v>=38 && v<50) continue
     for(const s of [38,48]) {
       const a=s===38?s:s+.25,b=s===38?s+1.75:s+2
-      floor(at(s,v),a,v,b,v+1,.1,0x989ba4,6)
-      floor(at(v,s),v,a,v+1,b,.1,0x989ba4,6)
+      floor(at(s,v),a,v,b,v+1,.1,0x868a94,6)
+      floor(at(v,s),v,a,v+1,b,.1,0x868a94,6)
       const edge=s===38?40:48, inner=s===38?39.75:48.25, m=at(s,v)
-      m.quadAuto([edge,.014,v],[edge,.014,v+1],[inner,.1,v+1],[inner,.1,v],hex(0xa4a7b0),MAT.ground,2)
-      at(v,s).quadAuto([v,.014,edge],[v+1,.014,edge],[v+1,.1,inner],[v,.1,inner],hex(0xa4a7b0),MAT.ground,2)
+      m.quadAuto([edge,.014,v],[edge,.014,v+1],[inner,.1,v+1],[inner,.1,v],hex(0x9296a0),MAT.ground,2)
+      at(v,s).quadAuto([v,.014,edge],[v+1,.014,edge],[v+1,.1,inner],[v,.1,inner],hex(0x9296a0),MAT.ground,2)
     }
   }
   for(const [x,z] of [[33.8,40.08],[48.1,31],[59,48.1],[39.8,63]]) {
@@ -185,8 +185,8 @@ function compileLevel(town: Town): LevelData {
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
     floor(m, x, z, r, end, .13, b.kind === "house" ? 0x765a3e : 0x89968b, b.kind === "house" ? 2 : 1)
-    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0xa29d90, 6)
-    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0xa6a194,6)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x847f73, 6)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x8a8579,6)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
     // Concrete curb-cut ramp flare at the street edge of the driveway
     if(b.kind==="house"&&end<40){

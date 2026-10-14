@@ -1,8 +1,9 @@
 import { defineConfig } from "vite"
 import { audioAssets } from "../../scripts/audio-assets"
+import { textureAssets } from "../../scripts/texture-assets"
 
 export default defineConfig({
-  plugins: [audioAssets()],
+  plugins: [audioAssets(), textureAssets()],
   base: "./",
   build: {
     target: "esnext",
