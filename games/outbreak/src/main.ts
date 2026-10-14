@@ -47,6 +47,15 @@ import {
   streetLampHead,
 } from "./lighting"
 import { Survivor } from "./survivor"
+import { WEATHER_PRESETS } from "@arcade/kit/weather"
+import {
+  DEFAULT_OUTBREAK_WEATHER,
+  OutbreakWeatherController,
+  applyOutbreakWeatherPreset,
+  outbreakWeatherControls,
+  randomizeOutbreakWeather,
+  toSharedWeatherSettings,
+} from "./weather"
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
@@ -88,6 +97,7 @@ const settings = {
   ...DEFAULT_STAMINA_TUNING,
   ...DEFAULT_FLASHLIGHT_TUNING,
   ...DEFAULT_GROUND_SETTINGS,
+  ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
@@ -185,6 +195,7 @@ async function main() {
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
+  const weatherController = new OutbreakWeatherController()
   const updateProfile = () => {
     avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
   }
@@ -308,6 +319,26 @@ async function main() {
     },
     { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
+    ...outbreakWeatherControls,
+    {
+      key: "triggerWeatherLightning",
+      label: "Trigger lightning strike",
+      group: "Weather",
+      type: "action",
+      run: () => {
+        weatherController.strikeNow()
+      },
+    },
+    {
+      key: "randomizeWeatherTuning",
+      label: "Randomize weather",
+      group: "Weather",
+      type: "action",
+      run: () => {
+        randomizeOutbreakWeather(settings, settings.weatherTuningSeed)
+        lab.refresh()
+      },
+    },
   ]
   const doorMesh = new Mesh()
   // Deep weathered walnut stiles & rails, 6 recessed craft panels, tarnished brass kickplate, and antique lockset
@@ -518,6 +549,18 @@ async function main() {
         Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
         lab.refresh()
       }
+      if (key === "weatherPreset") {
+        applyOutbreakWeatherPreset(settings, settings.weatherPreset)
+        lab.refresh()
+      }
+      if (key === "weatherEnabled") {
+        if (settings.weatherEnabled && settings.weatherPreset === "clear" && settings.weatherIntensity <= 0.001) {
+          applyOutbreakWeatherPreset(settings, "rain")
+        } else if (!settings.weatherEnabled) {
+          settings.weather = 0
+        }
+        lab.refresh()
+      }
     },
   )
 
@@ -689,6 +732,42 @@ async function main() {
           }
         },
       },
+      {
+        id: "weather.preset",
+        label: "Set Outbreak Weather Preset",
+        shortLabel: "Weather Preset",
+        category: "Scene",
+        undoable: false,
+        args: {
+          preset: {
+            type: "string",
+            required: true,
+            description: "Weather preset ID (clear, drizzle, rain, storm, fog, snow)",
+          },
+        },
+        enabled: () => true,
+        run: async (_ctx, args) => {
+          const applied = applyOutbreakWeatherPreset(settings, String(args?.preset ?? "rain"))
+          lab.refresh()
+          draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return { preset: settings.weatherPreset, enabled: settings.weatherEnabled, settings: applied }
+        },
+      },
+      {
+        id: "weather.strike",
+        label: "Trigger Outbreak Lightning Strike",
+        shortLabel: "Lightning Strike",
+        category: "Scene",
+        undoable: false,
+        enabled: () => true,
+        run: async () => {
+          const strike = weatherController.strikeNow()
+          draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return { triggered: true, strike }
+        },
+      },
     ])
   })
 
@@ -746,6 +825,7 @@ async function main() {
     zombieCrowd.reset()
     combatFx.reset()
     ambientMotion.reset()
+    weatherController.reset(nextSeed)
     level()
     scenery = new SceneryMemory()
     renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -778,7 +858,11 @@ async function main() {
     const alerted = zombies.filter((z) => z.state === "chase" || z.state === "alert" || z.state === "bash").length
     const alertText = alerted > 0 ? ` · ${alerted} pursuing` : ""
     const lootText = p.lootMessage && time < p.lootMessageUntil ? ` · ${p.lootMessage}` : ""
-    return `${clockText(hour)}${weaponText}${plankText}${p.exhausted ? " · Exhausted" : ""}${alertText}${promptText}${lootText}`
+    const weatherText =
+      settings.weatherEnabled && settings.weatherPreset !== "clear"
+        ? ` · ${WEATHER_PRESETS[settings.weatherPreset]?.label ?? settings.weatherPreset}`
+        : ""
+    return `${clockText(hour)}${weatherText}${weaponText}${plankText}${p.exhausted ? " · Exhausted" : ""}${alertText}${promptText}${lootText}`
   }
   const syncWorldPrompt = (w: number, h: number) => {
     if (!promptEl) return
@@ -1031,6 +1115,31 @@ async function main() {
       if (count >= MAX_LIGHTS) break
       lights.set(packed, count++ * LIGHT_FLOATS)
     }
+    const ambLum = (day.ambient[0] + day.ambient[1] + day.ambient[2]) * settings.skyFill * 0.333
+    const weatherOut = weatherController.stepAndPrepare({
+      dt,
+      town,
+      settings,
+      viewProj: cam.viewProj,
+      eye: cam.eye,
+      playerX: p.x,
+      playerY: p.y,
+      playerGroundY,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      zoom: settings.zoom,
+      lights,
+      lightCount: count,
+      ambientLum: ambLum,
+    })
+    const activeWeather = weatherOut.prepareInput
+      ? {
+          wetness: weatherOut.state.wetness,
+          puddleCoverage: weatherOut.state.puddleCoverage,
+          rippleIntensity: weatherOut.state.rippleIntensity,
+          snowAmount: weatherOut.state.snowAmount,
+        }
+      : undefined
     packOutbreakLightingUniforms(
       {
         settings,
@@ -1043,6 +1152,7 @@ async function main() {
         inInteriorView,
         streetHead: nearestStreetHead(camX, camY),
         zombies: nearestZombies(zombies, p.x, p.y),
+        weather: activeWeather,
       },
       flashRgb,
       lightingUniforms,
@@ -1060,10 +1170,11 @@ async function main() {
       ((Math.round(settings.weathering * 5) & 15) << 20)
     frame.set([canvas.width, canvas.height, count, texCfgBits], 20)
     frame.set([cutX, cutY, cutFlag, cutRadius], 24)
+    const lightningFlash = weatherOut.prepareInput ? weatherOut.state.flash : 0
     frame.set(
       [
-        ...day.ambient.map((v) => v * settings.skyFill * (1 - settings.weather * 0.3)),
-        day.strength * settings.moonFill * (1 - settings.weather * 0.85),
+        ...day.ambient.map((v) => v * settings.skyFill * (1 - settings.weather * 0.3) + lightningFlash * 0.16),
+        day.strength * settings.moonFill * (1 - settings.weather * 0.85) + lightningFlash * 0.65,
       ],
       28,
     )
@@ -1120,6 +1231,7 @@ async function main() {
     render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
     render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
+    render.weather = weatherOut.prepareInput
     render.batches = [
       ...groundWearBatches,
       ...clutterBatches,
@@ -1136,7 +1248,7 @@ async function main() {
     render.occluderCount = lightOccluders
     render.lampCount = town.lamps.length
     render.view = view
-    render.grade = [time, settings.diagnostic, 0, settings.exposure]
+    render.grade = [time, settings.diagnostic, lightningFlash * 0.35, settings.exposure]
     render.look = lookSettings
     render.lookCompare = lookCompare
     renderer.render(render)
@@ -1292,6 +1404,12 @@ async function main() {
         clutterSeed: settings.clutterSeed,
         groundTuningSeed: settings.groundTuningSeed,
       },
+      weather: {
+        enabled: settings.weatherEnabled,
+        preset: settings.weatherPreset,
+        settings: toSharedWeatherSettings(settings),
+        state: { ...weatherController.sim.state },
+      },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
     coop: () => coop.inspect(),
@@ -1362,6 +1480,26 @@ async function main() {
         applyLookPreset(lookSettings, pid)
         lab.refresh()
       }
+      if (key === "weatherPreset") {
+        applyOutbreakWeatherPreset(settings, String(value))
+        lab.refresh()
+      }
+      if (key === "weatherEnabled") {
+        if (settings.weatherEnabled && settings.weatherPreset === "clear" && settings.weatherIntensity <= 0.001) {
+          applyOutbreakWeatherPreset(settings, "rain")
+        } else if (!settings.weatherEnabled) {
+          settings.weather = 0
+        }
+        lab.refresh()
+      }
+    },
+    setWeatherPreset(preset: string) {
+      const applied = applyOutbreakWeatherPreset(settings, preset)
+      lab.refresh()
+      return applied
+    },
+    strikeLightning(seed?: number) {
+      return weatherController.strikeNow(seed)
     },
     setLookPreset(preset: LookPresetId | string) {
       const pid = resolveLookPresetId(preset)

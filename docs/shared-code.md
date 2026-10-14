@@ -302,7 +302,16 @@ In rough order of value against risk:
 6. **Modular Look & Vignette shaders (`@arcade/kit/gpu/look-shaders`, `@arcade/kit/lab/looks-room`, `games/outbreak/src/vignette/`).**
    `makeLookSceneShader` and `makeLookPostShader` live in `gpu/look-shaders.ts` (re-exported by `gpu/shaders.ts`), the
    Lab Looks calibration room lives in `lab/looks-room.ts`, and Outbreak's vignette splits into `vignette/{presets,shaders,section}.ts`.
-7. **Remaining candidates:**
+7. **Shared Weather system & Lab Weather section (`@arcade/kit/weather`, `packages/kit/lab/weather.ts`, `games/outbreak/src/weather.ts`).**
+   `packages/kit/weather/` owns `WeatherSettings`, the six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`),
+   continuous-phase `WeatherSimulation` (wind gusts, seeded multi-stroke lightning, progressive surface `wetness`),
+   `weatherSurfaceDeclarationsWgsl` (puddle masks, concentric raindrop ripples, stretched wet mirror streaks), and
+   `WeatherRenderer` (GPU-instanced two-layer streaks/snowflakes, splash rings + upward crowns + roof-eave drips,
+   interior building exclusion rects, and 12-light cone/pool illumination with `litOnly` gating). Carrier retains its
+   ocean-specific `games/carrier/src/render/rain.ts` and `shared/weather.ts` because its splash pass is displaced directly
+   onto `SEA_WGSL` Gerstner waves under a reversed-Z `RelView` ocean camera; Wings (`games/wings/src/render/world/rain.ts`)
+   retains its Three.js TSL node-material rain/spray in its independent project.
+8. **Remaining candidates:**
    - **Room plumbing:** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
      handshake, and seat bookkeeping.
    - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
