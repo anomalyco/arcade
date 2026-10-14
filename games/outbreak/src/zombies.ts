@@ -7,7 +7,12 @@ import {
   type BoneId,
   type BonePose,
 } from "@arcade/kit/human-pose"
-import { type HumanProfile } from "@arcade/kit/human-profile"
+import { humanProfiles, type HumanProfile } from "@arcade/kit/human-profile"
+import {
+  resolveDragFoot,
+  shambleHandsFK,
+  shambleTorsoModulation,
+} from "@arcade/kit/shamble-crouch"
 import {
   clamp,
   HIP,
@@ -36,7 +41,7 @@ export type DetachedDebrisPiece = {
 }
 
 const PART_COUNT = 8
-const MAX_INSTANCES_PER_PART = 2048
+export const MAX_INSTANCES_PER_PART = 2048
 const BONE_COUNT = 13
 const BONE_STRIDE = BONE_COUNT * 12
 const INITIAL_AGENT_CAPACITY = 512
@@ -247,7 +252,7 @@ function readBonePose(buf: Float32Array, baseOff: number): BonePose {
 }
 
 /** Computes a zombie's dynamic HumanProfile from global Lab tuning + individual traits + AI state/speed. */
-export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning): HumanProfile {
+export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out?: HumanProfile): HumanProfile {
   const stateBoost =
     agent.state === "chase" || agent.state === "alert" || agent.state === "bash"
       ? 1.0
@@ -262,12 +267,17 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning): Hu
   const drag = clamp(baseTuning.zombieDrag * agent.drag * (1 - 0.38 * stateBoost), 0, 1)
   const reach = clamp(baseTuning.zombieReach * (0.65 + 0.35 * agent.reach) + 0.28 * stateBoost + 0.1 * speedNorm, 0, 1)
 
-  const profile = zombieProfile({
-    zombieLurch: lurch,
-    zombieAsymmetry: asymmetry,
-    zombieDrag: drag,
-    zombieReach: reach,
-  })
+  const profile = zombieProfile(
+    {
+      zombieVariant: baseTuning.zombieVariant,
+      zombieLurch: lurch,
+      zombieAsymmetry: asymmetry,
+      zombieDrag: drag,
+      zombieReach: reach,
+    },
+    agent.id === 1 && (baseTuning.zombieVariant ?? 0) === 0 ? 0 : agent.seed,
+    out,
+  )
   if (stateBoost > 0.5) {
     profile.chestHz = Math.min(8, profile.chestHz + 2.2)
     profile.headHz = Math.min(9, profile.headHz + 2.8)
@@ -275,11 +285,50 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning): Hu
   return profile
 }
 
+/** Builds the 8 instanced zombie body-part meshes (pelvis, torso, head, upperArm, foreArm, thigh, shin, foot). */
+export function buildZombiePartMeshes(): Mesh[] {
+  const box = (w: number, y0: number, h: number, d: number, col: Rgb) => {
+    const m = new Mesh()
+    m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
+    return m
+  }
+  const skin = hex(0x6c7d60)
+  const forearmSkin = hex(0x4e5d45)
+  const jacket = hex(0x454137)
+  const trousers = hex(0x2b3136)
+  const wound = hex(0x581416)
+  const hair = hex(0x212623)
+  const boot = hex(0x26201c)
+
+  const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
+  const torso = box(0.28, -0.02, 0.48, 0.4, jacket)
+  torso.box(0.11, 0.12, -0.12, 0.145, 0.36, 0.08, wound, MAT.actor)
+  torso.box(-0.145, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
+
+  const head = box(0.18, 0.01, 0.24, 0.18, skin)
+  head.box(-0.1, 0.19, -0.11, 0.1, 0.28, 0.11, hair, MAT.actor)
+  for (const z of [-0.042, 0.042]) {
+    head.box(0.086, 0.13, z - 0.016, 0.095, 0.155, z + 0.016, hex(0x98d838), MAT.glow, 0.55)
+  }
+
+  const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
+  const foreArm = box(0.11, -0.28, 0.3, 0.11, forearmSkin)
+  foreArm.box(-0.04, -0.31, -0.045, 0.055, -0.26, 0.045, wound, MAT.actor)
+
+  const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
+  const shin = box(0.13, -0.41, 0.43, 0.14, trousers)
+  const foot = box(0.21, -0.075, 0.09, 0.14, boot)
+
+  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot]
+}
+
 export class ZombieCrowdRenderer {
   private readonly models: number[]
   private readonly partData: Float32Array<ArrayBuffer>[]
-  private readonly partCounts = new Int32Array(PART_COUNT)
+  readonly partCounts = new Int32Array(PART_COUNT)
   private readonly poolBatches: Batch[]
+  private readonly scratchProfile: HumanProfile = { ...humanProfiles.zombie }
+  private readonly scratchTorsoFrame: Frame = { p: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }
   readonly debris: DetachedDebrisPiece[] = []
   readonly batches: Batch[] = []
   private overlayCanvas: HTMLCanvasElement | null = null
@@ -295,6 +344,10 @@ export class ZombieCrowdRenderer {
   private footLiftX = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
   private footLiftY = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
   private footLiftZ = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
+  private footTargetX = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
+  private footTargetY = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
+  private footTargetZ = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
+  private footPrevU = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
   private footYaw = new Float32Array(INITIAL_AGENT_CAPACITY * 2)
   private footPlanted = new Uint8Array(INITIAL_AGENT_CAPACITY * 2)
   private phase = new Float32Array(INITIAL_AGENT_CAPACITY)
@@ -307,6 +360,10 @@ export class ZombieCrowdRenderer {
   private leanXv = new Float32Array(INITIAL_AGENT_CAPACITY)
   private leanYx = new Float32Array(INITIAL_AGENT_CAPACITY)
   private leanYv = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private reachDropX = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private reachDropV = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private twistX = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private twistV = new Float32Array(INITIAL_AGENT_CAPACITY)
   private chestX = new Float32Array(INITIAL_AGENT_CAPACITY)
   private chestV = new Float32Array(INITIAL_AGENT_CAPACITY)
   private headX = new Float32Array(INITIAL_AGENT_CAPACITY)
@@ -317,40 +374,9 @@ export class ZombieCrowdRenderer {
   private currBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
   private prevBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
 
-  constructor(renderer: Pick<Renderer, "addModel">) {
-    const box = (w: number, y0: number, h: number, d: number, col: Rgb) => {
-      const m = new Mesh()
-      m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
-      return m
-    }
-    const skin = hex(0x6c7d60)
-    const forearmSkin = hex(0x4e5d45)
-    const jacket = hex(0x454137)
-    const trousers = hex(0x2b3136)
-    const wound = hex(0x581416)
-    const hair = hex(0x212623)
-    const boot = hex(0x26201c)
-
-    const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
-    const torso = box(0.28, -0.02, 0.48, 0.4, jacket)
-    torso.box(0.11, 0.12, -0.12, 0.145, 0.36, 0.08, wound, MAT.actor)
-    torso.box(-0.145, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
-
-    const head = box(0.18, 0.01, 0.24, 0.18, skin)
-    head.box(-0.1, 0.19, -0.11, 0.1, 0.28, 0.11, hair, MAT.actor)
-    for (const z of [-0.042, 0.042]) {
-      head.box(0.086, 0.13, z - 0.016, 0.095, 0.155, z + 0.016, hex(0x98d838), MAT.glow, 0.55)
-    }
-
-    const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
-    const foreArm = box(0.11, -0.28, 0.3, 0.11, forearmSkin)
-    foreArm.box(-0.04, -0.31, -0.045, 0.055, -0.26, 0.045, wound, MAT.actor)
-
-    const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
-    const shin = box(0.13, -0.41, 0.43, 0.14, trousers)
-    const foot = box(0.21, -0.075, 0.09, 0.14, boot)
-
-    this.models = [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot].map((m) => renderer.addModel(m))
+  constructor(renderer: Pick<Renderer, "addModel">, maxAgents = INITIAL_AGENT_CAPACITY) {
+    if (maxAgents > this.capacity) this.growCapacity(maxAgents)
+    this.models = buildZombiePartMeshes().map((m) => renderer.addModel(m))
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
     this.poolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
       model: this.models[i]!,
@@ -373,6 +399,10 @@ export class ZombieCrowdRenderer {
     this.footLiftX = growF32(this.footLiftX, 2)
     this.footLiftY = growF32(this.footLiftY, 2)
     this.footLiftZ = growF32(this.footLiftZ, 2)
+    this.footTargetX = growF32(this.footTargetX, 2)
+    this.footTargetY = growF32(this.footTargetY, 2)
+    this.footTargetZ = growF32(this.footTargetZ, 2)
+    this.footPrevU = growF32(this.footPrevU, 2)
     this.footYaw = growF32(this.footYaw, 2)
     const nextPlanted = new Uint8Array(nextCap * 2)
     nextPlanted.set(this.footPlanted)
@@ -387,6 +417,10 @@ export class ZombieCrowdRenderer {
     this.leanXv = growF32(this.leanXv)
     this.leanYx = growF32(this.leanYx)
     this.leanYv = growF32(this.leanYv)
+    this.reachDropX = growF32(this.reachDropX)
+    this.reachDropV = growF32(this.reachDropV)
+    this.twistX = growF32(this.twistX)
+    this.twistV = growF32(this.twistV)
     this.chestX = growF32(this.chestX)
     this.chestV = growF32(this.chestV)
     this.headX = growF32(this.headX)
@@ -415,7 +449,7 @@ export class ZombieCrowdRenderer {
     return out
   }
 
-  getAgentBones(agentId: number): { bones: BonePose; prevBones: BonePose; hiddenBones: Set<BoneId> } | undefined {
+  getAgentBones(agentId: number): { bones: BonePose; prevBones: BonePose; hiddenBones: Set<BoneId>; planted?: [boolean, boolean] } | undefined {
     const s = this.slotById.get(agentId)
     if (s === undefined) return undefined
     const bOff = s * BONE_STRIDE
@@ -423,6 +457,7 @@ export class ZombieCrowdRenderer {
       bones: readBonePose(this.currBones, bOff),
       prevBones: readBonePose(this.prevBones, bOff),
       hiddenBones: this.maskToHiddenSet(this.hiddenMask[s]!),
+      planted: [this.footPlanted[s * 2] !== 0, this.footPlanted[s * 2 + 1] !== 0],
     }
   }
 
@@ -479,6 +514,10 @@ export class ZombieCrowdRenderer {
       this.footLiftX[f0] = agent.x
       this.footLiftY[f0] = y0
       this.footLiftZ[f0] = agent.y - 0.13
+      this.footTargetX[f0] = agent.x
+      this.footTargetY[f0] = y0
+      this.footTargetZ[f0] = agent.y - 0.13
+      this.footPrevU[f0] = 0
       this.footPlanted[f0] = 1
       this.footYaw[f0] = agent.aim
 
@@ -488,10 +527,14 @@ export class ZombieCrowdRenderer {
       this.footLiftX[f1] = agent.x
       this.footLiftY[f1] = y0
       this.footLiftZ[f1] = agent.y + 0.13
+      this.footTargetX[f1] = agent.x
+      this.footTargetY[f1] = y0
+      this.footTargetZ[f1] = agent.y + 0.13
+      this.footPrevU[f1] = 0
       this.footPlanted[f1] = 1
       this.footYaw[f1] = agent.aim
 
-      this.phase[s] = (agent.id * 0.27) % 1
+      this.phase[s] = (agent.id * 0.27 + (agent.seed % 97) * 0.01) % 1
       this.yaw[s] = agent.aim
       this.lastX[s] = agent.x
       this.lastY[s] = agent.y
@@ -501,6 +544,10 @@ export class ZombieCrowdRenderer {
       this.leanXv[s] = 0
       this.leanYx[s] = 0
       this.leanYv[s] = 0
+      this.reachDropX[s] = 0
+      this.reachDropV[s] = 0
+      this.twistX[s] = 0
+      this.twistV[s] = 0
       this.chestX[s] = agent.aim
       this.chestV[s] = 0
       this.headX[s] = agent.aim
@@ -828,31 +875,21 @@ export class ZombieCrowdRenderer {
         this.chestV[s] = 0
         this.headX[s] = a.aim
         this.headV[s] = 0
+        this.reachDropX[s] = 0
+        this.reachDropV[s] = 0
+        this.twistX[s] = 0
+        this.twistV[s] = 0
       }
 
-      // Compute scalar zombie profile values without allocating a HumanProfile object
-      const stateBoost =
-        a.state === "chase" || a.state === "alert" || a.state === "bash"
-          ? 1.0
-          : a.state === "investigate" || a.state === "search"
-            ? 0.45
-            : 0.0
-      const rawSpeed = Math.hypot(a.vx, a.vy)
-      const speedNorm = clamp(rawSpeed / 3.0, 0, 1)
-      const lurch = clamp(zombieTune.zombieLurch * (0.75 + 0.35 * a.lurch) + 0.16 * stateBoost, 0, 1)
-      const asymmetry = clamp(zombieTune.zombieAsymmetry * (0.7 + 0.4 * a.asymmetry), 0, 1)
-      const drag = clamp(zombieTune.zombieDrag * a.drag * (1 - 0.38 * stateBoost), 0, 1)
-      const reach = clamp(zombieTune.zombieReach * (0.65 + 0.35 * a.reach) + 0.28 * stateBoost + 0.1 * speedNorm, 0, 1)
-      const strideScale = 0.94 - 0.24 * lurch
-      const torsoLean = 0.05 + 0.24 * lurch
-      const chestHz = stateBoost > 0.5 ? Math.min(8, 5 - 3 * lurch + 2.2) : 5 - 3 * lurch
-      const headHz = stateBoost > 0.5 ? Math.min(9, 7 - 5.8 * lurch + 2.8) : 7 - 5.8 * lurch
-      const timingBias = 0.28 * asymmetry
-      const torsoRoll = 0.12 * asymmetry
-      const headTilt = 0.2 * asymmetry
-      const armAsymmetry = 0.13 * asymmetry
-      const footDrag = 0.95 * drag
-      const armReach = 0.2 + 0.32 * reach
+      const profile = agentZombieProfile(a, zombieTune, this.scratchProfile)
+      const strideScale = profile.strideScale
+      const torsoLean = profile.torsoLean
+      const chestHz = profile.chestHz
+      const headHz = profile.headHz
+      const timingBias = profile.timingBias
+      const torsoRoll = profile.torsoRoll
+      const headTilt = profile.headTilt
+      const footDrag = profile.footDrag
 
       const oldSvx = this.svx[s]!
       const oldSvy = this.svy[s]!
@@ -903,6 +940,10 @@ export class ZombieCrowdRenderer {
         this.footLiftX[f0] = rest0X
         this.footLiftY[f0] = y0
         this.footLiftZ[f0] = rest0Z
+        this.footTargetX[f0] = rest0X
+        this.footTargetY[f0] = y0
+        this.footTargetZ[f0] = rest0Z
+        this.footPrevU[f0] = 0
         this.footPlanted[f0] = 1
         this.footYaw[f0] = syaw
 
@@ -912,38 +953,50 @@ export class ZombieCrowdRenderer {
         this.footLiftX[f1] = rest1X
         this.footLiftY[f1] = y1
         this.footLiftZ[f1] = rest1Z
+        this.footTargetX[f1] = rest1X
+        this.footTargetY[f1] = y1
+        this.footTargetZ[f1] = rest1Z
+        this.footPrevU[f1] = 0
         this.footPlanted[f1] = 1
         this.footYaw[f1] = syaw
       }
+      const actorSeed = a.id === 1 && (zombieTune.zombieVariant ?? 0) === 0 ? 0 : a.seed
+      const dragFoot = resolveDragFoot(actorSeed)
       const needsStep =
-        !this.footPlanted[f0] ||
-        !this.footPlanted[f1] ||
-        Math.hypot(this.footPx[f0]! - rest0X, this.footPz[f0]! - rest0Z) > 0.2 ||
-        Math.hypot(this.footPx[f1]! - rest1X, this.footPz[f1]! - rest1Z) > 0.2
+        speed < 0.2 &&
+        (!this.footPlanted[f0] ||
+          !this.footPlanted[f1] ||
+          Math.hypot(this.footPx[f0]! - rest0X, this.footPz[f0]! - rest0Z) > 0.22 ||
+          Math.hypot(this.footPx[f1]! - rest1X, this.footPz[f1]! - rest1Z) > 0.22)
       const legH = RIG.thigh + RIG.shin
       const froude = (speed * speed) / (9.81 * legH)
       const run = smooth((froude - 0.36) / 0.28)
       const effSpeed = speed - 0.22 * Math.max(0, speed - 3.6) * smooth((speed - 3.0) / 3.3)
       const stride = ((legH * (effSpeed / Math.sqrt(9.81 * legH) + 0.665 - 0.015 * run)) / 0.83) * strideScale
       const duty = 0.56 - 0.12 * run - 0.2 * smooth((speed - 2.5) / 3)
-      const rate = speed > 0.2 ? Math.max(0.85, speed / stride) : needsStep ? 1.5 : 0
+      const dragSlow = 1 - 0.22 * clamp(footDrag, 0, 0.95) * (1 - 0.5 * run)
+      const rate = speed >= 0.15 ? Math.max(0.72, (speed / stride) * dragSlow) : needsStep ? 1.25 : 0
       const curPhase = (this.phase[s]! + rate * dt) % 1
       this.phase[s] = curPhase
 
       for (let i = 0; i < 2; i++) {
         const fi = f0 + i
         const fo = f0 + (1 - i)
-        const fPhase = (curPhase + i * (0.5 + timingBias * 0.25)) % 1
+        const isDrag = i === dragFoot
+        const dragAmt = isDrag ? clamp(footDrag, 0, 0.95) : 0
+        const fPhase = (curPhase + i * (0.5 + timingBias * 0.22)) % 1
         if (rate > 0 && fPhase >= duty) {
+          const u = (fPhase - duty) / (1 - duty)
+          const e = smoother(u)
+          const eHoriz = dragAmt > 0 ? e * (1 - 0.34 * dragAmt * (1 - u)) : e
           if (this.footPlanted[fi]) {
             this.footPlanted[fi] = 0
             this.footLiftX[fi] = this.footPx[fi]!
             this.footLiftY[fi] = this.footPy[fi]!
             this.footLiftZ[fi] = this.footPz[fi]!
+            this.footPrevU[fi] = 0
           }
-          const u = (fPhase - duty) / (1 - duty)
-          const e = smoother(u)
-          const lead = (1 - fPhase) / rate + (duty / rate) * 0.5
+          const lead = Math.min(0.38, (1 - fPhase) / rate + (duty / rate) * 0.48) * (isDrag ? 1 - 0.18 * dragAmt : 1.06)
           let tx = (i ? rest1X : rest0X) + vx * lead
           let tz = (i ? rest1Z : rest0Z) + vy * lead
           const side = i ? 1 : -1
@@ -953,30 +1006,103 @@ export class ZombieCrowdRenderer {
             tz += cosY * side * (0.16 - lat)
           }
           const ty = support(tx, tz) + clamberLift
-          const clearance = i === 1 ? 1 - footDrag : 1
+          const prevU = this.footPrevU[fi]!
+          const epPrev = smoother(prevU) * (dragAmt > 0 ? 1 - 0.34 * dragAmt * (1 - prevU) : 1)
+          if (epPrev > 0 && epPrev < 0.96 && u < 0.78) {
+            const curX = this.footLiftX[fi]! + (this.footTargetX[fi]! - this.footLiftX[fi]!) * epPrev
+            const curY = this.footLiftY[fi]! + (this.footTargetY[fi]! - this.footLiftY[fi]!) * epPrev
+            const curZ = this.footLiftZ[fi]! + (this.footTargetZ[fi]! - this.footLiftZ[fi]!) * epPrev
+            this.footLiftX[fi] = (curX - tx * epPrev) / (1 - epPrev)
+            this.footLiftY[fi] = (curY - ty * epPrev) / (1 - epPrev)
+            this.footLiftZ[fi] = (curZ - tz * epPrev) / (1 - epPrev)
+            this.footTargetX[fi] = tx
+            this.footTargetY[fi] = ty
+            this.footTargetZ[fi] = tz
+          } else if (prevU === 0) {
+            this.footTargetX[fi] = tx
+            this.footTargetY[fi] = ty
+            this.footTargetZ[fi] = tz
+          }
+          this.footPrevU[fi] = u
+          const tgtX = this.footTargetX[fi]!
+          const tgtY = this.footTargetY[fi]!
+          const tgtZ = this.footTargetZ[fi]!
           const lx = this.footLiftX[fi]!
           const ly = this.footLiftY[fi]!
           const lz = this.footLiftZ[fi]!
-          this.footPx[fi] = lx + (tx - lx) * e
-          this.footPy[fi] = ly + (ty - ly) * e + Math.sin(Math.PI * u) * (0.05 + 0.08 * moving) * clearance
-          this.footPz[fi] = lz + (tz - lz) * e
+          const clearance = isDrag ? Math.max(0.08, (1 - dragAmt) * 0.85) : 1.08
+          const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
+          const px = lx + (tgtX - lx) * eHoriz
+          const pz = lz + (tgtZ - lz) * eHoriz
+          const py = Math.max(
+            support(px, pz) + clamberLift,
+            ly + (tgtY - ly) * eHoriz + liftBell * (0.092 + 0.055 * moving) * clearance,
+          )
+          this.footPx[fi] = px
+          this.footPy[fi] = py
+          this.footPz[fi] = pz
           this.footYaw[fi] = this.footYaw[fi]! + angleDiff(syaw, this.footYaw[fi]!) * e
         } else if (!this.footPlanted[fi]) {
           this.footPlanted[fi] = 1
-          this.footPy[fi] = support(this.footPx[fi]!, this.footPz[fi]!) + clamberLift
+          this.footPrevU[fi] = 0
+          const tx = this.footTargetX[fi]!
+          const tz = this.footTargetZ[fi]!
+          this.footPx[fi] = tx
+          this.footPy[fi] = support(tx, tz) + clamberLift
+          this.footPz[fi] = tz
+          this.footYaw[fi] = syaw
         }
       }
 
-      let height = support(a.x, a.y) + clamberLift + HIP - 0.05 * moving - 0.035 * moving * Math.cos(curPhase * Math.PI * 4)
-      const d0 = Math.hypot(this.footPx[f0]! - a.x, this.footPz[f0]! - a.y)
-      height = Math.min(height, Math.sqrt(Math.max(0, 0.815 * 0.815 - d0 * d0)) + RIG.ankle + this.footPy[f0]!)
-      const d1 = Math.hypot(this.footPx[f1]! - a.x, this.footPz[f1]! - a.y)
-      height = Math.min(height, Math.sqrt(Math.max(0, 0.815 * 0.815 - d1 * d1)) + RIG.ankle + this.footPy[f1]!)
+      const footSupport =
+        (support(this.footPx[f0]!, this.footPz[f0]!) + support(this.footPx[f1]!, this.footPz[f1]!)) * 0.5 + clamberLift
+      const supportY = (support(a.x, a.y) + clamberLift) * 0.65 + footSupport * 0.35
+      const shambleGait = smooth((speed - 0.12) / 0.35)
+      const shambleMod = shambleTorsoModulation(curPhase, shambleGait, profile, actorSeed)
+      const baseHeight =
+        supportY +
+        HIP -
+        0.012 * moving +
+        shambleMod.pelvisBobAdd -
+        0.016 * shambleGait * Math.sin(curPhase * Math.PI * 4 - 0.35)
+      const d0 = Math.min(0.72, Math.hypot(this.footPx[f0]! - a.x, this.footPz[f0]! - a.y))
+      const reach0 = Math.sqrt(Math.max(0, 0.822 * 0.822 - d0 * d0)) + RIG.ankle + this.footPy[f0]!
+      const d1 = Math.min(0.72, Math.hypot(this.footPx[f1]! - a.x, this.footPz[f1]! - a.y))
+      const reach1 = Math.sqrt(Math.max(0, 0.822 * 0.822 - d1 * d1)) + RIG.ankle + this.footPy[f1]!
+      const desiredDrop = Math.max(
+        0,
+        Math.min(0.14, baseHeight - Math.min(reach0, reach1)),
+      )
+      const fdx = this.footPx[f1]! - this.footPx[f0]!
+      const fdz = this.footPz[f1]! - this.footPz[f0]!
+      const footFwd = fdx * cosY + fdz * sinY
+      const targetTwist = clamp(footFwd * 0.28, -0.16, 0.16) * (profile.twistScale ?? 1.4)
+      let rdx = this.reachDropX[s]!
+      let rdv = this.reachDropV[s]!
+      let twx = this.twistX[s]!
+      let twv = this.twistV[s]!
+      const reachDamp = 2 * Math.sqrt(120) * 0.88
+      const twistDamp = 2 * Math.sqrt(110) * 0.85
+      for (let step = 0; step < springSubsteps; step++) {
+        rdv += (-(rdx - desiredDrop) * 120 - rdv * reachDamp) * springH
+        rdx += rdv * springH
+        twv += (-(twx - targetTwist) * 110 - twv * twistDamp) * springH
+        twx += twv * springH
+      }
+      this.reachDropX[s] = rdx
+      this.reachDropV[s] = rdv
+      this.twistX[s] = twx
+      this.twistV[s] = twv
 
-      writeYawFrame(bBuf, pelvisOff, a.x, height, a.y, syaw)
+      const height = baseHeight - rdx
+      writeYawFrame(bBuf, pelvisOff, a.x, height, a.y, syaw + twx)
+      rollInPlace(bBuf, pelvisOff, shambleMod.pelvisRollAdd)
+      pitchInPlace(bBuf, pelvisOff, -0.06 * moving - 0.35 * shambleMod.torsoPitchAdd)
       const lean = lxx * Math.cos(a.aim) + lyx * Math.sin(a.aim)
 
       // Inline angleSpring for chest and head
+      const chestGoal = a.aim - twx * 0.55 + shambleMod.torsoYawAdd
+      const headGoal = a.aim + shambleMod.headYawAdd
       const wChest = chestHz * Math.PI * 2
       const kChest = wChest * wChest
       const cChest = 2 * wChest * 0.85
@@ -988,9 +1114,9 @@ export class ZombieCrowdRenderer {
       let hxAng = this.headX[s]!
       let hv = this.headV[s]!
       for (let step = 0; step < springSubsteps; step++) {
-        cv += (angleDiff(a.aim, cx) * kChest - cv * cChest) * springH
+        cv += (angleDiff(chestGoal, cx) * kChest - cv * cChest) * springH
         cx += cv * springH
-        hv += (angleDiff(a.aim, hxAng) * kHead - hv * cHead) * springH
+        hv += (angleDiff(headGoal, hxAng) * kHead - hv * cHead) * springH
         hxAng += hv * springH
       }
       this.chestX[s] = cx
@@ -1009,23 +1135,23 @@ export class ZombieCrowdRenderer {
       const torsoPy = bBuf[pelvisOff + 1]! + bBuf[pelvisOff + 7]! * RIG.waist
       const torsoPz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
       writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx)
-      pitchInPlace(bBuf, torsoOff, -0.05 - lean - bashPulse - staggerRecoil)
+      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil)
       pitchInPlace(bBuf, torsoOff, -clamp(torsoLean, -0.15, 0.35))
       rollInPlace(bBuf, torsoOff, clamp(torsoRoll, -0.2, 0.2))
-      rollInPlace(bBuf, torsoOff, staggerCant)
+      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant)
 
       const headPx = torsoPx + bBuf[torsoOff + 3]! * 0.02 + bBuf[torsoOff + 6]! * RIG.neckY
       const headPy = torsoPy + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
       const headPz = torsoPz + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
       writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng)
-      pitchInPlace(bBuf, headOff, -staggerRecoil * 0.6)
-      rollInPlace(bBuf, headOff, headTilt + staggerCant * 0.5)
+      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6)
+      rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5)
 
-      this.emitUprightBone(bOff, 0, 0, hidden, syaw, tintR, tintG, tintB, a.hitFlash, alpha)
+      this.emitBone(bOff, 0, 0, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
       this.emitBone(bOff, 1, 1, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
       this.emitBone(bOff, 2, 2, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
 
-      // Solve arms (profileHands("reach") + poseArms) in-place
+      // Solve FK shamble arms in-place
       const txAxisX = bBuf[torsoOff + 3]!
       const txAxisY = bBuf[torsoOff + 4]!
       const txAxisZ = bBuf[torsoOff + 5]!
@@ -1036,47 +1162,45 @@ export class ZombieCrowdRenderer {
       const tzAxisY = bBuf[torsoOff + 10]!
       const tzAxisZ = bBuf[torsoOff + 11]!
 
-      const asym = clamp(armAsymmetry, -0.18, 0.18)
-      const rch = clamp(armReach, 0.2, 0.52)
-      const lxLocal = clamp(rch + asym * 0.45, 0.2, 0.54)
-      const lyLocal = 0.35 + asym
-      const lzLocal = -0.15
-      const rxLocal = clamp(rch - asym * 0.55, 0.18, 0.52)
-      const ryLocal = 0.27 - asym * 0.85
-      const rzLocal = 0.2
+      const tf = this.scratchTorsoFrame
+      tf.p[0] = torsoPx; tf.p[1] = torsoPy; tf.p[2] = torsoPz
+      tf.x[0] = txAxisX; tf.x[1] = txAxisY; tf.x[2] = txAxisZ
+      tf.y[0] = tyAxisX; tf.y[1] = tyAxisY; tf.y[2] = tyAxisZ
+      tf.z[0] = tzAxisX; tf.z[1] = tzAxisY; tf.z[2] = tzAxisZ
+      const runBlend = clamp((speed - 1.5) / 1.5, 0, 1)
+      const [hL, hR] = shambleHandsFK(tf, curPhase, shambleGait, runBlend, profile, actorSeed)
 
-      const handLX = torsoPx + txAxisX * lxLocal + tyAxisX * lyLocal + tzAxisX * lzLocal
-      const handLY = torsoPy + txAxisY * lxLocal + tyAxisY * lyLocal + tzAxisY * lzLocal
-      const handLZ = torsoPz + txAxisZ * lxLocal + tyAxisZ * lyLocal + tzAxisZ * lzLocal
-      const handRX = torsoPx + txAxisX * rxLocal + tyAxisX * ryLocal + tzAxisX * rzLocal
-      const handRY = torsoPy + txAxisY * rxLocal + tyAxisY * ryLocal + tzAxisY * rzLocal
-      const handRZ = torsoPz + txAxisZ * rxLocal + tyAxisZ * ryLocal + tzAxisZ * rzLocal
-
-      const shLX = torsoPx + tyAxisX * RIG.shoulderY - tzAxisX * RIG.shoulderW
-      const shLY = torsoPy + tyAxisY * RIG.shoulderY - tzAxisY * RIG.shoulderW
-      const shLZ = torsoPz + tyAxisZ * RIG.shoulderY - tzAxisZ * RIG.shoulderW
-      const shRX = torsoPx + tyAxisX * RIG.shoulderY + tzAxisX * RIG.shoulderW
-      const shRY = torsoPy + tyAxisY * RIG.shoulderY + tzAxisY * RIG.shoulderW
-      const shRZ = torsoPz + tyAxisZ * RIG.shoulderY + tzAxisZ * RIG.shoulderW
-
-      const poleLX = txAxisX * -0.15 - tyAxisX - tzAxisX * 1.1
-      const poleLY = txAxisY * -0.15 - tyAxisY - tzAxisY * 1.1
-      const poleLZ = txAxisZ * -0.15 - tyAxisZ - tzAxisZ * 1.1
-      solveIkToScratch(shLX, shLY, shLZ, handLX, handLY, handLZ, RIG.upper, RIG.fore, poleLX, poleLY, poleLZ)
-      writeLimbFrame(bBuf, bOff + 3 * 12, shLX, shLY, shLZ, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
-      writeLimbFrame(bBuf, bOff + 5 * 12, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, ikScratch[3]!, ikScratch[4]!, ikScratch[5]!, 0, 1, 0, txAxisX, txAxisY, txAxisZ)
-
-      const poleRX = txAxisX * -0.5 - tyAxisX + tzAxisX * 0.8
-      const poleRY = txAxisY * -0.5 - tyAxisY + tzAxisY * 0.8
-      const poleRZ = txAxisZ * -0.5 - tyAxisZ + tzAxisZ * 0.8
-      solveIkToScratch(shRX, shRY, shRZ, handRX, handRY, handRZ, RIG.upper, RIG.fore, poleRX, poleRY, poleRZ)
-      writeLimbFrame(bBuf, bOff + 4 * 12, shRX, shRY, shRZ, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
-      writeLimbFrame(bBuf, bOff + 6 * 12, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, ikScratch[3]!, ikScratch[4]!, ikScratch[5]!, 0, 1, 0, txAxisX, txAxisY, txAxisZ)
+      for (let i = 0; i < 2; i++) {
+        const side = i === 0 ? -1 : 1
+        const shX = torsoPx + tyAxisX * RIG.shoulderY + tzAxisX * (side * RIG.shoulderW)
+        const shY = torsoPy + tyAxisY * RIG.shoulderY + tzAxisY * (side * RIG.shoulderW)
+        const shZ = torsoPz + tyAxisZ * RIG.shoulderY + tzAxisZ * (side * RIG.shoulderW)
+        const target = i === 0 ? hL : hR
+        const dwx = target[0] - shX
+        const dwy = target[1] - shY
+        const dwz = target[2] - shZ
+        const dxDot = dwx * txAxisX + dwy * txAxisY + dwz * txAxisZ
+        const dyDot = dwx * tyAxisX + dwy * tyAxisY + dwz * tyAxisZ
+        const liftArm = clamp((dyDot + 0.35) / 0.45, 0, 1)
+        const backArm = clamp((-dxDot + 0.10) / 0.35, 0, 1)
+        const pxLocal = -0.95 - 0.25 * liftArm
+        const pyLocal = -0.55 + 0.70 * backArm
+        const pzLocal = side * (0.24 + 0.14 * liftArm)
+        const poleX = txAxisX * pxLocal + tyAxisX * pyLocal + tzAxisX * pzLocal
+        const poleY = txAxisY * pxLocal + tyAxisY * pyLocal + tzAxisY * pzLocal
+        const poleZ = txAxisZ * pxLocal + tyAxisZ * pyLocal + tzAxisZ * pzLocal
+        solveIkToScratch(shX, shY, shZ, target[0], target[1], target[2], RIG.upper, RIG.fore, poleX, poleY, poleZ)
+        writeLimbFrame(bBuf, bOff + (3 + i) * 12, shX, shY, shZ, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
+        writeLimbFrame(bBuf, bOff + (5 + i) * 12, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, ikScratch[3]!, ikScratch[4]!, ikScratch[5]!, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
+      }
 
       // Solve legs in-place
       const pxAxisX = bBuf[pelvisOff + 3]!
       const pxAxisY = bBuf[pelvisOff + 4]!
       const pxAxisZ = bBuf[pelvisOff + 5]!
+      const pyAxisX = bBuf[pelvisOff + 6]!
+      const pyAxisY = bBuf[pelvisOff + 7]!
+      const pyAxisZ = bBuf[pelvisOff + 8]!
       const pzAxisX = bBuf[pelvisOff + 9]!
       const pzAxisY = bBuf[pelvisOff + 10]!
       const pzAxisZ = bBuf[pelvisOff + 11]!
@@ -1084,6 +1208,8 @@ export class ZombieCrowdRenderer {
       for (let i = 0; i < 2; i++) {
         const side = i ? 1 : -1
         const fi = f0 + i
+        const isDrag = i === dragFoot
+        const dragAmt = isDrag ? clamp(footDrag, 0, 0.95) : 0
         const hipZ = side * RIG.hipW
         const hipX = a.x + pzAxisX * hipZ
         const hipY = height + pzAxisY * hipZ
@@ -1091,9 +1217,9 @@ export class ZombieCrowdRenderer {
         const ankX = this.footPx[fi]!
         const ankY = this.footPy[fi]! + RIG.ankle
         const ankZ = this.footPz[fi]!
-        const poleX = pxAxisX + pzAxisX * (side * 0.3)
-        const poleY = pxAxisY + pzAxisY * (side * 0.3)
-        const poleZ = pxAxisZ + pzAxisZ * (side * 0.3)
+        const poleX = pxAxisX + pyAxisX * 0.28 + pzAxisX * (side * 0.25)
+        const poleY = pxAxisY + pyAxisY * 0.28 + pzAxisY * (side * 0.25)
+        const poleZ = pxAxisZ + pyAxisZ * 0.28 + pzAxisZ * (side * 0.25)
         solveIkToScratch(hipX, hipY, hipZWorld, ankX, ankY, ankZ, RIG.thigh, RIG.shin, poleX, poleY, poleZ)
         const kx = ikScratch[0]!
         const ky = ikScratch[1]!
@@ -1106,11 +1232,40 @@ export class ZombieCrowdRenderer {
         const footIdx = 11 + i
         writeLimbFrame(bBuf, bOff + thighIdx * 12, hipX, hipY, hipZWorld, kx, ky, kz, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
         writeLimbFrame(bBuf, bOff + shinIdx * 12, kx, ky, kz, ex, ey, ez, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
-        writeYawFrame(bBuf, bOff + footIdx * 12, ex, ey, ez, this.footYaw[fi]!)
+
+        const footPhase = (curPhase + i * (0.5 + timingBias * 0.22)) % 1
+        const planted = this.footPlanted[fi] !== 0
+        const stanceFrac = planted ? clamp(footPhase / Math.max(0.1, duty), 0, 1) : 0
+        const prevU = this.footPrevU[fi]!
+        const stancePitch = isDrag
+          ? -0.22 * smooth((stanceFrac - 0.58) / 0.42) * dragAmt * shambleGait
+          : -0.20 * smooth((stanceFrac - 0.62) / 0.38) * shambleGait
+        const swingPitch = isDrag
+          ? -0.24 * Math.sin(Math.PI * (1 - prevU * 0.65)) * dragAmt
+          : (-0.18 * Math.sin(Math.PI * clamp(prevU / 0.55, 0, 1)) +
+              0.14 * Math.sin(Math.PI * clamp((prevU - 0.5) / 0.5, 0, 1))) *
+            shambleGait
+        const fyaw = this.footYaw[fi]!
+        const footOff = bOff + footIdx * 12
+        if (planted) {
+          const fc = Math.cos(fyaw)
+          const fs = Math.sin(fyaw)
+          writeYawFrame(bBuf, footOff, 0, 0, 0, fyaw)
+          pitchInPlace(bBuf, footOff, stancePitch)
+          const offX = bBuf[footOff + 3]! * 0.19 - bBuf[footOff + 6]! * RIG.ankle
+          const offY = bBuf[footOff + 4]! * 0.19 - bBuf[footOff + 7]! * RIG.ankle
+          const offZ = bBuf[footOff + 5]! * 0.19 - bBuf[footOff + 8]! * RIG.ankle
+          bBuf[footOff] = this.footPx[fi]! + fc * 0.19 - offX
+          bBuf[footOff + 1] = this.footPy[fi]! - offY
+          bBuf[footOff + 2] = this.footPz[fi]! + fs * 0.19 - offZ
+        } else {
+          writeYawFrame(bBuf, footOff, ex, ey, ez, fyaw)
+          pitchInPlace(bBuf, footOff, swingPitch)
+        }
 
         this.emitBone(bOff, thighIdx, 5, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         this.emitBone(bOff, shinIdx, 6, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
-        this.emitUprightBone(bOff, footIdx, 7, hidden, this.footYaw[fi]!, tintR, tintG, tintB, a.hitFlash, alpha)
+        this.emitBone(bOff, footIdx, 7, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
 
         const uaIdx = 3 + i
         const faIdx = 5 + i

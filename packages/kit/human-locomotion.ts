@@ -37,7 +37,7 @@ export function angleSpring(s: Spring, goal: number, hz: number, dt: number): vo
 export function newMotion(x: number, y: number, aim: number) {
   return {
     enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0, strafeSign: 0,
-    stepCount: 0, clock: 0,
+    stepCount: 0, clock: 0, footDrag: 0, dragFoot: 1 as 0 | 1,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
     bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(), crouch: spring(), bank: spring(),
@@ -212,9 +212,12 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   a.legYaw = a.aim + clamp(angleDiff(a.legYaw, a.aim), -1.05, 1.05)
   const curGait = gaitAt(speed, a.back, strafe, animation)
   m.run = curGait.run; m.stride = curGait.stride
+  m.footDrag = clamp(animation.footDrag, 0, 0.95)
+  m.dragFoot = 1
   a.duty = curGait.duty
-  const effStride = curGait.stride * actorStrideTrait
-  const cadence = moving ? Math.max(0.85, speed / effStride) : (!a.feet[0].planted || !a.feet[1].planted ? 1.7 : 0)
+  const dragSlow = m.footDrag > 0 ? 1 - 0.28 * m.footDrag * (1 - 0.5 * curGait.run) : 1
+  const effStride = curGait.stride * actorStrideTrait / dragSlow
+  const cadence = moving ? Math.max(0.72, speed / effStride) : (!a.feet[0].planted || !a.feet[1].planted ? 1.7 : 0)
   const wheel = teleport ? 0 : moving ? cadence * dt : distance / effStride
   a.phase = (a.phase + wheel + 1) % 1
   m.stepDebt = Math.min(1, m.stepDebt + wheel * 2)
@@ -402,9 +405,10 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const bankScale = clamp(animation.turnBank ?? 1, 0, 2)
   stepSpring(m.bank, k, 0.9, dt, clamp(latAccel * 0.008 * bankScale * a.gait, -0.18, 0.18))
   // Keep PR #9's running attitude separate from root acceleration and contact timing.
-  // Unarmed civilians run with an upright athletic lean rather than the soldier's deep rifle crouch-run.
-  const postureScale = a.unarmed ? 0.32 : 1
-  const crouchScale = a.unarmed ? 0.25 : 1
+  // Unarmed civilians run with an upright athletic lean unless crouch-run is explicitly active.
+  const isCrouchOverride = Boolean((a as { crouchRun?: boolean }).crouchRun) || (animation.crouchDepth ?? 0) > 0.085
+  const postureScale = a.unarmed && !isCrouchOverride ? 0.32 : 1
+  const crouchScale = a.unarmed && !isCrouchOverride ? 0.25 : 1
   const speedRamp = curGait.run * a.gait * (0.65 + 0.35 * smooth((speed - 1.8) / 2.4) + 0.244 * smooth((speed - 4.2) / 2.1))
   const posture = clamp(animation.runPosture, 0, 0.45) * postureScale * speedRamp * smooth(forward)
   const crouch = clamp(animation.crouchDepth ?? 0, 0, 0.16) * crouchScale * speedRamp * (0.35 + 0.65 * smooth(forward))
@@ -438,7 +442,7 @@ export function plantedFoot(a: Avatar, i: number) {
 /** Head is the lean pivot; hips move underneath rather than throwing the head forward. */
 export function pelvisPoint(a: Avatar): V3 {
   const m = a.motion, c = Math.cos(m.pelvis.x), s = Math.sin(m.pelvis.x)
-  const walkDrop = (a.unarmed ? 0.004 : 0.044) * (1 - m.run) + 0.04 * m.run
+  const walkDrop = (a.unarmed ? 0.004 : m.footDrag > 0 ? 0.008 : 0.044) * (1 - m.run) + 0.04 * m.run
   const runDrop = a.unarmed ? -0.008 : 0.02
   return [a.x - a.leanX.x * 0.22 - s * m.sway.x + a.hitX.x * 0.5,
     HIP - (walkDrop + m.run * runDrop) * a.gait - m.crouch.x + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,

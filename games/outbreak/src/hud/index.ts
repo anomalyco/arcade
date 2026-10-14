@@ -91,8 +91,11 @@ export class OutbreakHud {
     }
   }
 
-  /** Call once per drawn frame after the camera update. */
-  update(dt: number, view: SessionView, cam: Camera, w: number, h: number, lowBattery: number): void {
+  /**
+   * Call once per drawn frame after the camera update. `noiseSource` is the local survivor's noise id ("player"
+   * offline, the seat id in co-op).
+   */
+  update(dt: number, view: SessionView, cam: Camera, w: number, h: number, lowBattery: number, noiseSource = "player"): void {
     this.cam = cam
     this.w = w
     this.h = h
@@ -118,7 +121,7 @@ export class OutbreakHud {
       prompt: view.prompt,
       inventory: view.inventory,
       noises: view.noises,
-      noiseSource: "player",
+      noiseSource,
       pursuing,
       lowBattery,
       reloadKey: keyLabel("KeyR"),
@@ -126,10 +129,11 @@ export class OutbreakHud {
     this.layer.render(dt, (id) => this.anchor(id))
   }
 
-  /** Compact top-left summary for callout mode. Returns null when unchanged. */
-  summary(view: SessionView): string | null {
+  /** Compact top-left summary for callout mode, with an optional weather label. Returns null when unchanged. */
+  summary(view: SessionView, weather = ""): string | null {
     const p = view.player
     const parts = [clockText(view.hour)]
+    if (weather) parts.push(weather)
     if (p.equippedItem === "pistol") parts.push(`9mm ${p.magAmmo}/${p.magCapacity} +${p.reserveAmmo}`)
     if (p.planks > 0) parts.push(`${p.planks} plank${p.planks > 1 ? "s" : ""}`)
     const alerted = view.zombies.reduce((n, z) => n + (z.state === "chase" || z.state === "alert" || z.state === "bash" ? 1 : 0), 0)
