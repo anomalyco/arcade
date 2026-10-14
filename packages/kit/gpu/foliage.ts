@@ -149,14 +149,14 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       clumpSize: 0.95,
       leafCardSize: 0.28,
       porosity: 0.35,
-      treeColorR: 0.25,
-      treeColorG: 0.38,
-      treeColorB: 0.17,
+      treeColorR: 0.19,
+      treeColorG: 0.30,
+      treeColorB: 0.14,
       treeColorVariation: 0.62,
-      autumnMix: 0.25,
-      translucency: 0.30,
-      canopyAO: 0.72,
-      normalSoftness: 0.88,
+      autumnMix: 0.18,
+      translucency: 0.26,
+      canopyAO: 0.78,
+      normalSoftness: 0.90,
       treeWindStrength: 0.26,
       treeWindFreq: 0.80,
       treeWindGust: 0.42,
@@ -1034,16 +1034,16 @@ export function buildFoliageTree(
   const angleRad = (params.branchAngle * Math.PI) / 180
   const cosPitch = Math.cos(angleRad)
   const sinPitch = Math.sin(angleRad)
-  const clumpsPerBough = isTree ? Math.max(1, Math.round(params.clumpCount)) : 1
+  const isHeroTree = !isTree || Math.abs(x) < 12 || (x > 11 && x < 46 && z > 18 && z < 56)
+  const clumpsPerBough = isTree ? (isHeroTree ? Math.max(1, Math.round(params.clumpCount)) : 1) : 1
   const clumpScale = isTree
-    ? params.clumpSize * Math.max(0.45, Math.min(1.45, radiusRatio))
+    ? params.clumpSize * Math.max(0.45, Math.min(1.65, radiusRatio))
     : radius * (0.50 + rng.next() * 0.14)
   const cardScale = isTree
-    ? params.leafCardSize * Math.max(0.55, Math.min(1.40, radiusRatio))
+    ? params.leafCardSize * Math.max(0.55, Math.min(1.55, radiusRatio))
     : Math.max(0.11, radius * 0.24)
-  // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer perimeter woods
-  const isPerimeterTree = isTree && (x < 10 || x > 74 || z < 18 || z > 72)
-  const sprigsPerClump = isTree ? (isPerimeterTree ? 4 : 8) : 5
+  // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer town trees
+  const sprigsPerClump = isTree ? (isHeroTree ? 8 : 5) : 5
 
   for (let b = 0; b < boughs; b++) {
     const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * (isTree ? 0.42 : 0.58)

@@ -218,28 +218,35 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
   }
   for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,trim,MAT.wall)
-  // Framing side-yard trees, sidewalk-overhanging street canopies, corner shrubs, and driveway border hedges.
+  // Big, soft, dark framing tree masses & irregular overgrown driveway/corner hedges.
   for(const [px,pz,ph,pr] of [
-    // Continuous dark border hedge & overarching woodland trees along the left driveway fence
-    [x-3.62,e+2.05,1.46,.92],
-    [x-3.58,e+.55,1.42,.86],
-    [x-3.55,e-.95,1.38,.82],
-    [x-3.65,e-2.80,1.34,.78],
-    [x-3.60,z+3.20,1.38,.80],
-    [x-5.25,e-.60,6.35,2.55],
-    [x-4.85,z+3.60,6.65,2.65],
-    // Multi-layered broadleaf street & side-yard trees overhanging the right lawn and north-south sidewalk
-    [r+2.45,z+1.60,6.40,2.45],
-    [r+2.95,z+5.80,6.85,2.65],
-    [r+2.55,e-2.10,6.15,2.35],
-    [r+.85,e+.40,1.48,.94],
-    // Rounded dark-green shrub at the front-right lawn corner inside the sidewalk intersection + border companion
-    [r+2.75,e+2.45,1.46,.94],
-    [r+1.15,e+2.60,1.06,.74],
-    // South-side street corner framing shrubs across the road (for the hero north-west lot)
+    // Overgrown border hedge & bramble thicket along both sides of the left driveway picket fence + overarching woodland canopies
+    [x-3.58,e+2.12,1.56,1.04],
+    [x-2.76,e+1.48,.92,.72],
+    [x-3.52,e+.55,1.48,.96],
+    [x-3.55,e-.95,1.44,.92],
+    [x-3.65,e-2.65,1.38,.88],
+    [x-2.82,e-4.65,.96,.74],
+    [x-3.60,z+3.20,1.44,.92],
+    [x-5.55,e+.80,7.60,3.55],
+    [x-5.15,e-3.60,8.00,3.75],
+    [x-4.80,z+3.20,7.40,3.45],
+    // Multi-layered broadleaf street & side-yard trees rooted on the lawn edge (x < 37.8) overhanging the right sidewalk
+    [r+.62,z+1.80,7.40,3.35],
+    [r+.68,z+5.90,7.90,3.65],
+    [r+.64,e-1.90,7.20,3.25],
+    [r+.58,e+.45,1.52,.98],
+    // Overgrown shrub thicket at the front-right lawn corner inside the sidewalk intersection
+    [r+.52,e+1.95,1.48,.96],
+    [r-.48,e+2.15,1.08,.76],
+    // South-side street framing tree masses & corner thickets across the road (framing bottom-left & bottom-right of street view)
     ...(id===0 ? [
-      [x-6.35,e+16.4,5.60,2.25],
-      [r+3.35,e+16.6,1.48,.96],
+      [x-5.20,e+14.20,7.60,3.55],
+      [x-1.40,e+15.80,6.60,3.05],
+      [x-3.40,e+14.80,1.58,1.08],
+      [r+3.20,e+14.40,7.80,3.65],
+      [r+.20,e+15.80,6.50,3.00],
+      [r+1.80,e+14.80,1.56,1.06],
     ] as const : []),
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner.
