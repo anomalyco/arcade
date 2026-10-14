@@ -122,6 +122,7 @@ export class Stage {
   dynamicLights:LabLight[]|null=null
   /** Optional effect-study camera and post-HDR distortion; cleared when that section leaves. */
   cameraOverride?:CameraWriter
+  customRender?:(width:number,height:number,outputView:GPUTextureView,outputTexture:GPUTexture,debug:number,measure:boolean)=>Promise<number|null>|number|null
   afterScene?:(encoder:GPUCommandEncoder,hdr:GPUTexture,depth:GPUTextureView,width:number,height:number)=>void
   onFrameSubmitted?:()=>void
   private readonly tyre:SmokeRenderer
@@ -374,6 +375,15 @@ export class Stage {
   }
   async render(particles:Particles,volumes:SmokeVolumes,trail:SmokeTrail,debug:number,measure=false,draw?:(pass:GPURenderPassEncoder)=>void){
     if(this.measuring)return null
+    if(this.customRender){
+      const ms=await this.customRender(this.width,this.height,this.outputView,this.output,debug,measure)
+      const enc=this.device.createCommandEncoder()
+      enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.width,this.height])
+      this.device.queue.submit([enc.finish()])
+      this.onFrameSubmitted?.()
+      if(ms!==null)this.gpuMs=ms
+      return ms
+    }
     const timed=!!this.timer&&(measure||this.frames++%45===0)
     this.uploadLighting(debug)
     if(this.showMarkers){

@@ -292,8 +292,14 @@ export async function lab(options:LabOptions) {
   })
 
   select("effects")
-  const bench=new URLSearchParams(location.search).has("bench")
-  if(!bench){
+  const urlParams=new URLSearchParams(location.search)
+  const bench=urlParams.has("bench")
+  const initialSection=urlParams.get("section")
+  if(initialSection&&sections.some(s=>s.id===initialSection)){
+    select(initialSection)
+    const ft=sections.find(s=>s.id===initialSection)?.frameTarget?.()
+    if(ft)stage.frameTarget(ft.x,ft.y,ft.z,ft.dist??15)
+  }else if(!bench){
     if(spawn){
       select("spawn")
       spawn.section.settings.character="getaway:muscle"

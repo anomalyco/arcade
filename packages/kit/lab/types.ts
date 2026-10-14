@@ -47,6 +47,7 @@ export type LabSection = {
   duplicateObject?(id:string):string|null
   duplicateObjects?(ids?:readonly string[]):string[]
   groundHeight?(x:number,z:number):number
+  registerCommands?(commands:import("../lab-commands").LabCommandRegistry):void
 }
 export type LabContext = {
   device:GPUDevice
