@@ -604,7 +604,7 @@ export class Renderer {
         { shaderLocation: 7, offset: 32, format: "float32x4" },
       ],
     }
-    const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } }
+    const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
     const lookSceneMod = this.module(this.shaders?.lookScene ?? makeLookSceneShader(), "scene look")
     const pipe = (vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, fs = "fs") =>

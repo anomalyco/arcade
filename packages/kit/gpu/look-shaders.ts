@@ -23,27 +23,8 @@ export type PostFinishOptions = {
  */
 export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
   const postMat = `    if (lookUseAfter) {
-      let folShift = LK.u11.z;
-      if ((mat == 22 || (mat == 20 && (i32(round(o.aux)) == 0 || i32(round(o.aux)) == 5))) && abs(folShift) > 0.001) {
-        let warmFol = albedo * vec3f(1.38, 1.08, 0.52);
-        let coolFol = vec3f(dot(albedo, vec3f(0.3, 0.5, 0.2))) * vec3f(0.70, 0.86, 0.96);
-        albedo = select(mix(albedo, coolFol, clamp(-folShift, 0.0, 1.0)), mix(albedo, warmFol, clamp(folShift, 0.0, 1.0)), folShift >= 0.0);
-      }
-      let wet = LK.u6.y;
-      if (wet > 0.001 && n.y > 0.7 && (mat == 1 || mat == 20)) {
-        let puddle = smoothstep(0.34, 0.68, noise2(o.world.xz * 0.65 + vec2f(2.1, 4.7)));
-        let wMask = wet * (0.4 + 0.6 * puddle);
-        albedo *= 1.0 - 0.28 * wMask;
-        gloss = mix(gloss, vec2f(110.0, 1.1), wMask);
-      }
-      lookAlbedo = albedo;
-    }\n`
-  const base = makeSceneShader({
-    ...hooks,
-    declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\n`,
-    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  lookAlbedo = o.color;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.012); }\n`,
-    material: `    if (lookUseAfter) {
-      let palMix = LK.u3.w;
+      let flashSuppress = clamp(lookFlashIrradiance * LK.u15.w, 0.0, 1.0);
+      let palMix = LK.u3.w * (1.0 - flashSuppress);
       if (palMix > 0.001) {
         if (mat == 4) { albedo = mix(albedo, pow(max(LK.u12.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.45); }
         else if (mat == 20) {
@@ -59,17 +40,38 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
           albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.48);
         }
       }
-    }
-    ${hooks.material ?? ""}
-    ${hooks.postLightMaterial ? "" : postMat}`,
+      let folShift = LK.u11.z * (1.0 - flashSuppress);
+      if ((mat == 22 || (mat == 20 && (i32(round(o.aux)) == 0 || i32(round(o.aux)) == 5))) && (abs(folShift) > 0.001 || flashSuppress > 0.01)) {
+        let warmFol = albedo * vec3f(1.38, 1.08, 0.52);
+        let coolFol = vec3f(dot(albedo, vec3f(0.3, 0.5, 0.2))) * vec3f(0.70, 0.86, 0.96);
+        albedo = select(mix(albedo, coolFol, clamp(-folShift, 0.0, 1.0)), mix(albedo, warmFol, clamp(folShift, 0.0, 1.0)), folShift >= 0.0);
+        if (flashSuppress > 0.01) {
+          albedo = mix(albedo, albedo * vec3f(0.95, 1.38, 0.72), flashSuppress * 0.65);
+        }
+      }
+      let wet = LK.u6.y;
+      if (wet > 0.001 && n.y > 0.7 && (mat == 1 || mat == 20)) {
+        let puddle = smoothstep(0.34, 0.68, noise2(o.world.xz * 0.65 + vec2f(2.1, 4.7)));
+        let wMask = wet * (0.4 + 0.6 * puddle);
+        albedo *= 1.0 - 0.28 * wMask;
+        gloss = mix(gloss, vec2f(110.0, 1.1), wMask);
+      }
+      lookAlbedo = albedo;
+    }\n`
+  const base = makeSceneShader({
+    ...hooks,
+    declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\nvar<private> lookFlashIrradiance: f32;\n`,
+    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  lookAlbedo = o.color;\n  lookFlashIrradiance = 0.0;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.012); }\n`,
+    material: `${hooks.material ?? ""}\n    ${hooks.postLightMaterial ? "" : postMat}`,
     postLightMaterial: hooks.postLightMaterial ? `${hooks.postLightMaterial}\n${postMat}` : undefined,
     surface: `${hooks.surface ?? ""}\n  if (lookUseAfter) {
     // Rim / silhouette light on characters, trees, props & wall edges
     let ndv = clamp(dot(n, V), 0.0, 1.0);
-    let rimW = select(0.75, 1.65, mat == 12 || mat == 22 || mat == 0);
-    let rim = pow(1.0 - ndv, 2.6) * LK.u5.w * rimW;
-    let rimTint = mix(vec3f(0.55, 0.72, 1.0) * LK.u4.yzw, vec3f(1.0, 0.80, 0.52), clamp(LK.u1.w * 0.5 + 0.25, 0.0, 1.0));
-    col += rimTint * rim * 0.065;
+    let rimW = select(0.75, 1.85, mat == 12 || mat == 22 || mat == 0);
+    let contourTerm = select(0.0, pow(clamp(length(n.xz), 0.0, 1.0), 1.45) * smoothstep(0.20, 1.62, o.world.y) * 1.15, mat == 12);
+    let rim = max(pow(1.0 - ndv, 2.4), contourTerm) * LK.u5.w * rimW;
+    let rimTint = mix(vec3f(0.68, 0.80, 1.0) * LK.u4.yzw, vec3f(1.0, 0.80, 0.52), clamp(LK.u1.w * 0.5 + 0.25, 0.0, 1.0));
+    col += rimTint * rim * 0.075;
 
     // Extra contact / cavity shading
     if (LK.u6.x > 0.001 && mat != 2 && mat != 3 && mat != 11) {
@@ -165,28 +167,41 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
         }
       }
 
-      // Volumetric flashlight air haze + wet road/floor beam scatter (independent of dark asphalt albedo)
-      if (LK.u5.w > 1.0 && u32(F.screen.z) > 0u && lights[0].color.w <= 0.001 && o.world.y < 2.1) {
-        let pPos = lights[0].pos.xz;
-        let isDefaultAim = abs(F.effects.x - (-1.5707963)) < 0.05;
-        let aimDir = select(vec2f(cos(F.effects.x), sin(F.effects.x)), normalize(vec2f(0.67, 0.74)), isDefaultAim);
-        let handOrigin = pPos + vec2f(0.18, 0.10);
-        let dv0 = o.world.xz - handOrigin;
-        let d0 = length(dv0);
-        let along = dot(dv0, aimDir);
-        let perp = abs(dv0.x * (-aimDir.y) + dv0.y * aimDir.x);
-        if (along > 0.05 && d0 < 14.5) {
-          let halfW = 0.14 + along * 0.23;
-          let beamMask = exp(-(perp * perp) / (halfW * halfW * 0.55)) * smoothstep(halfW * 1.4, halfW * 0.25, perp);
-          if (beamMask > 0.001) {
-            let vis0 = shadowAt(0u, pPos, lights[0].pos.y, 0.04, o.world.xz + n.xz * 0.04, o.world.y);
-            let distFade = pow(max(0.0, 1.0 - d0 / 14.5), 1.25) / (1.0 + d0 * 0.18);
-            let hotSpot = exp(-d0 * d0 * 0.55) * 0.85;
-            let inHouse = pPos.y < 35.0;
-            let hazeCol = select(vec3f(0.075, 0.092, 0.118), vec3f(0.115, 0.092, 0.062), inHouse);
-            let gritSpec = 0.75 + 0.5 * noise2(o.world.xz * 18.0);
-            let plankMod = select(1.0, 0.45 + 0.65 * smoothstep(0.0, 0.08, abs(fract(o.world.z / 0.165 + 0.5) - 0.5)), inHouse && n.y > 0.8);
-            col += hazeCol * (distFade + hotSpot) * beamMask * vis0 * gritSpec * plankMod * (LK.u5.w * 0.85);
+      // Volumetric flashlight air haze + wet road/floor beam scatter (driven by real 3D flashlight cone in lights[1] or sight row 0)
+      if ((LK.u5.w > 1.0 || LK.u15.w > 0.01) && u32(F.screen.z) > 0u && lights[0].color.w <= 0.001 && o.world.y < 2.1) {
+        let hasDynFlash = u32(F.screen.z) > 1u && lights[1].cone.w > 0.5 && lights[1].extra.w < -0.5;
+        let flashActive = select(true, lights[1].color.w > 0.001, hasDynFlash);
+        if (flashActive) {
+          let pPos = lights[0].pos.xz;
+          let handOrigin = select(pPos + vec2f(cos(F.effects.x), sin(F.effects.x)) * 0.24, lights[1].pos.xz, hasDynFlash);
+          let aimDir = select(vec2f(cos(F.effects.x), sin(F.effects.x)), lights[1].cone.xy, hasDynFlash);
+          let fSlot = select(0u, 1u, hasDynFlash);
+          let fHeight = select(lights[0].pos.y, lights[1].pos.y, hasDynFlash);
+          let dv0 = o.world.xz - handOrigin;
+          let d0 = length(dv0);
+          let along = dot(dv0, aimDir);
+          let perp = abs(dv0.x * (-aimDir.y) + dv0.y * aimDir.x);
+          let maxR = select(13.5, max(8.5, lights[1].pos.w * 1.25), hasDynFlash);
+          let inHouse = pPos.y < 35.0;
+          // Close interior hallway runner spill right around the survivor's feet & hand
+          if (inHouse && o.world.y < 0.35 && d0 < 2.6 && along > -2.2) {
+            let footSpill = exp(-(perp * perp) / 0.65) * exp(-(d0 * d0) / 3.2);
+            col += lookAlbedo * vec3f(0.32, 0.22, 0.12) * footSpill;
+            lookFlashIrradiance = max(lookFlashIrradiance, clamp(footSpill * 1.15, 0.0, 0.88));
+          }
+          if (along > 0.05 && d0 < maxR) {
+            let halfW = 0.20 + along * 0.34;
+            let beamMask = exp(-(perp * perp) / (halfW * halfW * 0.72)) * smoothstep(halfW * 1.52, halfW * 0.26, perp);
+            if (beamMask > 0.001) {
+              let vis0 = shadowAt(fSlot, handOrigin, fHeight, 0.05, o.world.xz + n.xz * 0.04, o.world.y);
+              let distFade = pow(max(0.0, 1.0 - d0 / maxR), 1.25) / (1.0 + d0 * 0.16);
+              let hotSpot = exp(-d0 * d0 * 0.55) * 0.65;
+              let hazeCol = select(vec3f(0.095, 0.088, 0.072), vec3f(0.115, 0.092, 0.064), inHouse);
+              let gritSpec = 0.75 + 0.5 * noise2(o.world.xz * 18.0);
+              let plankMod = select(1.0, 0.48 + 0.62 * smoothstep(0.0, 0.08, abs(fract(o.world.z / 0.165 + 0.5) - 0.5)), inHouse && n.y > 0.8);
+              col += (lookAlbedo * 0.45 + hazeCol) * (distFade + hotSpot) * beamMask * vis0 * gritSpec * plankMod * (max(LK.u5.w, 1.0) * 0.75);
+              lookFlashIrradiance = max(lookFlashIrradiance, clamp((distFade * 1.6 + hotSpot) * beamMask * vis0 * 2.2, 0.0, 1.0));
+            }
           }
         }
       }
@@ -340,8 +355,13 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
     )
     .replace(
       "out.diff += L.color.rgb * att * (diffuse * vis +",
-      `var lCol = select(L.color.rgb, lookPracticalColor(L.color.rgb, LK.u5.x) * LK.u5.y, useLookLight);
-    if (isNoirPreset) {
+      `let isDynFlash = L.cone.w > 0.5 && L.extra.w < -0.5;
+    var lCol = select(L.color.rgb, lookPracticalColor(L.color.rgb, LK.u5.x) * LK.u5.y, useLookLight && !isDynFlash);
+    if (isDynFlash && useLookLight) {
+      lCol = vec3f(1.06, 0.96, 0.84) * max(LK.u5.y, 1.35);
+      let fIrr = clamp(att * vis * (0.55 + 0.65 * max(ndl, 0.0)) * 2.8, 0.0, 1.0);
+      lookFlashIrradiance = max(lookFlashIrradiance, fIrr);
+    } else if (isNoirPreset) {
       // Noir lighting choreography: dim outer streetlamps (hl > 3.2), living-room SW lamp & north-kitchen lamp;
       // cool silvery-blue NW bedroom lamp; warm amber SE dining lamp & focused porch bulb.
       if (hl > 3.2) {
@@ -366,38 +386,40 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
     .replace("out.spec += L.color.rgb * att * s * vis;", "out.spec += lCol * att * s * vis;")
     .replace(
       "return out;\n}",
-      `if (LK.u11.w > 0.5 && LK.u5.w > 1.0 && count > 0u && lights[0].color.w <= 0.001) {
-    // Survival-horror Noir player flashlight cone using already-computed polar sight slot 0
-    let pPos = lights[0].pos.xz;
-    // At the default north pose (-PI/2), shine the right-hand flashlight southeast (0.67, 0.74) matching the dir3 paint-overs;
-    // when the player actively aims elsewhere, follow F.effects.x.
-    let isDefaultAim = abs(F.effects.x - (-1.5707963)) < 0.05;
-    let aimDir = select(vec2f(cos(F.effects.x), sin(F.effects.x)), normalize(vec2f(0.67, 0.74)), isDefaultAim);
-    let handOrigin = pPos + vec2f(0.18, 0.10);
-    let dv0 = world.xz - handOrigin;
-    let d0 = length(dv0);
-    let maxR = 14.5;
-    if (d0 > 0.08 && d0 < maxR) {
-      let dir2 = dv0 / d0;
-      let along = dot(dv0, aimDir);
-      let perp = abs(dv0.x * (-aimDir.y) + dv0.y * aimDir.x);
-      if (along > 0.0) {
-        let halfW = 0.14 + along * 0.23;
-        let beamProfile = exp(-(perp * perp) / (halfW * halfW * 0.55)) * smoothstep(halfW * 1.35, halfW * 0.35, perp);
-        if (beamProfile > 0.001) {
-          let vis0 = shadowAt(0u, pPos, lights[0].pos.y, 0.04, plan, world.y);
-          let fade0 = pow(max(0.0, 1.0 - d0 / maxR), 1.35) / (1.0 + d0 * 0.18);
-          let l30 = normalize(vec3f(handOrigin.x, lights[0].pos.y - 0.35, handOrigin.y) - world);
-          let ndl0 = lookQuantizeDiffuse(dot(n, l30), wrap + LK.u10.x, LK.u10.y, LK.u10.z);
-          let torchStr = clamp((LK.u5.w - 0.8) * 1.65, 0.0, 2.4) * beamProfile * fade0 * vis0;
-          // Slightly warmer tungsten-white beam inside the house, icy steel-white on the street
-          let inHouse = pPos.y < 35.0;
-          let torchCol = select(vec3f(0.76, 0.90, 1.12), vec3f(1.08, 0.92, 0.72), inHouse);
-          out.diff += torchCol * torchStr * (0.35 + 0.65 * ndl0);
-          if (shin > 0.0) {
-            let h0 = normalize(l30 + V);
-            let s0 = pow(max(dot(n, h0), 0.0), shin) * (shin + 2.0) * 0.006;
-            out.spec += torchCol * torchStr * s0 * 1.4;
+      `if (LK.u11.w > 0.5 && (LK.u5.w > 1.0 || LK.u15.w > 0.01) && count > 0u && lights[0].color.w <= 0.001) {
+    // Survival-horror Noir player flashlight cone using real dynamic cone in lights[1] or polar sight slot 0
+    let hasDynFlash = count > 1u && lights[1].cone.w > 0.5 && lights[1].extra.w < -0.5;
+    let flashActive = select(true, lights[1].color.w > 0.001, hasDynFlash);
+    if (flashActive) {
+      let pPos = lights[0].pos.xz;
+      let handOrigin = select(pPos + vec2f(cos(F.effects.x), sin(F.effects.x)) * 0.24, lights[1].pos.xz, hasDynFlash);
+      let aimDir = select(vec2f(cos(F.effects.x), sin(F.effects.x)), lights[1].cone.xy, hasDynFlash);
+      let fSlot = select(0u, 1u, hasDynFlash);
+      let fHeight = select(lights[0].pos.y, lights[1].pos.y, hasDynFlash);
+      let dv0 = world.xz - handOrigin;
+      let d0 = length(dv0);
+      let maxR = select(13.5, max(8.5, lights[1].pos.w * 1.25), hasDynFlash);
+      if (d0 > 0.08 && d0 < maxR) {
+        let along = dot(dv0, aimDir);
+        let perp = abs(dv0.x * (-aimDir.y) + dv0.y * aimDir.x);
+        if (along > 0.0) {
+          let halfW = 0.20 + along * 0.34;
+          let beamProfile = exp(-(perp * perp) / (halfW * halfW * 0.72)) * smoothstep(halfW * 1.52, halfW * 0.30, perp);
+          if (beamProfile > 0.001) {
+            let vis0 = shadowAt(fSlot, handOrigin, fHeight, 0.05, plan, world.y);
+            let fade0 = pow(max(0.0, 1.0 - d0 / maxR), 1.25) / (1.0 + d0 * 0.16);
+            let l30 = normalize(vec3f(handOrigin.x, fHeight - 0.18, handOrigin.y) - world);
+            let ndl0 = lookQuantizeDiffuse(dot(n, l30), wrap + LK.u10.x, LK.u10.y, LK.u10.z);
+            let torchStr = clamp((max(LK.u5.w, 1.2) - 0.65) * 1.65, 0.0, 2.6) * beamProfile * fade0 * vis0;
+            // Natural warm-halogen white beam so illuminated surfaces reveal their true rich colours
+            let torchCol = vec3f(1.06, 0.96, 0.84);
+            out.diff += torchCol * torchStr * (0.42 + 0.58 * ndl0);
+            lookFlashIrradiance = max(lookFlashIrradiance, clamp(beamProfile * fade0 * vis0 * 2.8, 0.0, 1.0));
+            if (shin > 0.0) {
+              let h0 = normalize(l30 + V);
+              let s0 = pow(max(dot(n, h0), 0.0), shin) * (shin + 2.0) * 0.006;
+              out.spec += torchCol * torchStr * s0 * 1.4;
+            }
           }
         }
       }
@@ -413,6 +435,12 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
     }
     let effMoon = select(moon, moon * LK.u5.z, lookUseAfter);
     col = albedo * (amb + direct + effMoon)`,
+    )
+    .replace(
+      "return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);",
+      `let outRgb = select(col * a, col, mat == 22 && o.aux >= -1.5);
+  let outAlpha = select(a, 1.0 - clamp(lookFlashIrradiance, 0.0, 1.0), a >= 0.999 && lookUseAfter);
+  return vec4f(outRgb, outAlpha);`,
     )
 }
 
@@ -536,6 +564,8 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
   }
 
   // Active Look composite
+  let centerSamp = clean(textureSampleLevel(src, samp, uv, 0.0));
+  let flashMask = clamp(1.0 - centerSamp.a, 0.0, 1.0);
   let caAmt = baseCA + L.u9.w * 0.016;
   let ca = fromC * dot(fromC, fromC) * caAmt;
   var hdr: vec3f;
@@ -544,11 +574,11 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
   } else if (caAmt > 0.0005) {
     hdr = vec3f(
       clean(textureSampleLevel(src, samp, clamp(uv + ca, vec2f(0.001), vec2f(0.999)), 0.0)).r,
-      clean(textureSampleLevel(src, samp, uv, 0.0)).g,
+      centerSamp.g,
       clean(textureSampleLevel(src, samp, clamp(uv - ca, vec2f(0.001), vec2f(0.999)), 0.0)).b,
     );
   } else {
-    hdr = clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;
+    hdr = centerSamp.rgb;
   }
 
   // Ink / structural edge outlines
@@ -560,7 +590,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
     let cD = clean(textureSampleLevel(src, samp, clamp(uv + vec2f(0.0, stepUv.y), vec2f(0.001), vec2f(0.999)), 0.0)).rgb;
     let grad = (length(cR - cL) + length(cU - cD)) / max(0.08, length(hdr) + 0.12);
     let edge = smoothstep(0.32, 0.95, grad) * clamp(L.u11.x, 0.0, 1.2);
-    let inkCol = vec3f(0.03, 0.035, 0.055) * (0.45 + L.u15.w);
+    let inkCol = vec3f(0.03, 0.035, 0.055) * 0.66;
     hdr = mix(hdr, inkCol, clamp(edge, 0.0, 0.85));
   }
 
@@ -575,6 +605,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
     baseBloom,
     baseVig,
     baseHuePres,
+    flashMask,
   );
   let v = length(fromC * vec2f(1.0, 0.8));
   c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));

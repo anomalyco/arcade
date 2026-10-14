@@ -408,6 +408,33 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
       },
     ],
   },
+  fog: {
+    id: "fog",
+    title: "Fog of War · 3 Variants",
+    section: "outbreak-vignette",
+    cols: 3,
+    rows: 1,
+    tiles: [
+      {
+        id: "noir-memory-echo",
+        label: "1 · Noir Memory + Echo (Default)",
+        settings: { directionPreset: 3, fogStyle: 1, fogEdgeSoftness: 0.78, fogMemoryDim: 0.42, fogUnknownGrain: 0.48 },
+        subtitle: "5-tap feathered LOS · 42% cold-ash memory · sound ripples",
+      },
+      {
+        id: "stark-cone-pulse",
+        label: "2 · Stark Cone + Pulse",
+        settings: { directionPreset: 3, fogStyle: 2, fogEdgeSoftness: 0.42, fogMemoryDim: 0.22, fogUnknownGrain: 0.75 },
+        subtitle: "Darkwood spotlight cone · 22% deep shroud · Odradek pulse",
+      },
+      {
+        id: "soft-shroud-classic",
+        label: "3 · Soft Shroud (Classic)",
+        settings: { directionPreset: 3, fogStyle: 0, fogEdgeSoftness: 1.15, fogMemoryDim: 0.68, fogUnknownGrain: 0.15 },
+        subtitle: "Gentle peripheral dim (68%) · soft transitions",
+      },
+    ],
+  },
 }
 
 const PRESET_ALIASES: Record<string, string> = {
@@ -420,10 +447,13 @@ const PRESET_ALIASES: Record<string, string> = {
   material: "materials",
   trees: "foliage",
   light: "lighting",
+  "fog-of-war": "fog",
+  "outbreak-fog": "fog",
 }
 
 export function defaultGridPresetForSection(sectionId: string, effectName?: string): string {
   if (sectionId === "looks") return "looks"
+  if (sectionId === "outbreak-vignette") return "fog"
   if (sectionId === "materials") return "materials"
   if (sectionId === "foliage") return "foliage"
   if (sectionId === "lighting") return "lighting"

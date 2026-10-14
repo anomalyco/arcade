@@ -48,6 +48,7 @@ export type LookNumericKey =
   | "highlightTintG"
   | "highlightTintB"
   | "paletteMix"
+  | "selectiveColor"
   | "foliageShift"
   | "ambientFill"
   | "shadowColorR"
@@ -134,6 +135,7 @@ export const LOOK_PARAM_SPECS: readonly LookParamSpec[] = [
   { key: "highlightTintG", label: "Highlight tint G", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
   { key: "highlightTintB", label: "Highlight tint B", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
   { key: "paletteMix", label: "Preset palette blend", group: "Split-Tone & Palette", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "selectiveColor", label: "Selective beam colour", group: "Split-Tone & Palette", type: "range", min: 0.0, max: 1.5, step: 0.02, unit: "×", boundary: "uniform" },
   { key: "foliageShift", label: "Foliage warmth shift", group: "Split-Tone & Palette", type: "range", min: -0.6, max: 0.6, step: 0.01, unit: "", boundary: "uniform" },
 
   // Lighting & Silhouette
@@ -220,6 +222,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       highlightTintG: 1.0,
       highlightTintB: 1.0,
       paletteMix: 0.0,
+      selectiveColor: 0.0,
       foliageShift: 0.0,
       ambientFill: 1.0,
       shadowColorR: 1.0,
@@ -258,7 +261,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
     index: 1,
     label: "Noir / Limbo",
     directionRef: "Outbreak Dir 3 + Lamplight amber-limbo / hybrid-noir",
-    summary: "Crushed inky shadows, cold steel-cyan moonlight, sparse warm amber practicals, dense silver-ash height fog with venetian light shafts, wet road sheen, and film grain.",
+    summary: "Desaturated Limbo/Noir world with cold steel tint, deep readable blacks, crisp silhouette rims, and film grain, while the player's 3D flashlight beam restores full natural colour.",
     palette: {
       sky: [0.42, 0.56, 0.72],
       practical: [1.0, 0.62, 0.24],
@@ -271,48 +274,49 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
     },
     defaults: {
       preset: "noir",
-      exposure: 1.06,
+      exposure: 1.1,
       tonemap: 1,
-      contrast: 1.26,
-      toe: 0.32,
-      shoulder: 0.32,
-      blackCrush: 0.018,
-      saturation: 0.24,
-      temperature: -0.24,
-      splitTone: 0.88,
-      shadowTintR: 0.64,
-      shadowTintG: 0.8,
-      shadowTintB: 1.12,
-      highlightTintR: 1.14,
-      highlightTintG: 0.94,
-      highlightTintB: 0.68,
-      paletteMix: 0.62,
-      foliageShift: -0.42,
-      ambientFill: 0.34,
-      shadowColorR: 0.56,
-      shadowColorG: 0.72,
-      shadowColorB: 1.02,
-      practicalWarmth: 0.48,
-      practicalIntensity: 1.25,
+      contrast: 1.22,
+      toe: 0.24,
+      shoulder: 0.28,
+      blackCrush: 0.012,
+      saturation: 0.04,
+      temperature: -0.08,
+      splitTone: 0.32,
+      shadowTintR: 0.9,
+      shadowTintG: 0.96,
+      shadowTintB: 1.06,
+      highlightTintR: 0.98,
+      highlightTintG: 1.0,
+      highlightTintB: 1.02,
+      paletteMix: 0.24,
+      selectiveColor: 1.24,
+      foliageShift: -0.14,
+      ambientFill: 0.38,
+      shadowColorR: 0.84,
+      shadowColorG: 0.92,
+      shadowColorB: 1.04,
+      practicalWarmth: 0.0,
+      practicalIntensity: 1.15,
       moonIntensity: 1.15,
-      rimStrength: 1.45,
-      contactShade: 0.9,
-      surfaceWetness: 0.85,
-      fogDensity: 0.42,
+      rimStrength: 1.65,
+      contactShade: 0.85,
+      surfaceWetness: 0.82,
+      fogDensity: 0.32,
       fogHeightFalloff: 1.6,
       fogColorR: 0.04,
-      fogColorG: 0.06,
-      fogColorB: 0.09,
-      shaftStrength: 2.1,
+      fogColorG: 0.05,
+      fogColorB: 0.07,
+      shaftStrength: 1.65,
       shaftSlats: 0.65,
-      bloom: 1.15,
-      halation: 0.28,
-      vignette: 0.88,
+      bloom: 1.1,
+      halation: 0.14,
+      vignette: 0.82,
       grain: 0.38,
       grainSeed: 73,
       grainAnimated: true,
-      chromatic: 0.18,
-      diffuseWrap: 0.08,
+      chromatic: 0.1,
+      diffuseWrap: 0.1,
       diffuseBands: 0,
       bandSoftness: 0.16,
       painterlySmooth: 0.0,
@@ -354,6 +358,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       highlightTintG: 1.0,
       highlightTintB: 0.82,
       paletteMix: 0.88,
+      selectiveColor: 0.0,
       foliageShift: 0.28,
       ambientFill: 1.65,
       shadowColorR: 0.74,
@@ -421,6 +426,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       highlightTintG: 0.98,
       highlightTintB: 0.86,
       paletteMix: 0.38,
+      selectiveColor: 0.0,
       foliageShift: 0.04,
       ambientFill: 0.82,
       shadowColorR: 0.78,
@@ -488,6 +494,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       highlightTintG: 0.88,
       highlightTintB: 0.58,
       paletteMix: 0.62,
+      selectiveColor: 0.0,
       foliageShift: -0.22,
       ambientFill: 0.68,
       shadowColorR: 0.76,
@@ -555,6 +562,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       highlightTintG: 0.96,
       highlightTintB: 0.68,
       paletteMix: 0.74,
+      selectiveColor: 0.0,
       foliageShift: 0.48,
       ambientFill: 1.05,
       shadowColorR: 1.12,
@@ -952,7 +960,7 @@ export function createLookControls(
  * u12: paletteWall.rgb, compareMode (0=before, 1=after, 2=wipe)
  * u13: paletteWood.rgb, wipeSplit (0..1)
  * u14: paletteStone.rgb, presetIndex
- * u15: paletteFoliage.rgb, inkLuma / reserved
+ * u15: paletteFoliage.rgb, selectiveColor (per-pixel flashlight colour retention)
  */
 export const LOOK_UNIFORM_FLOATS = 64
 
@@ -1045,7 +1053,7 @@ export function packLookUniforms(
   out[offset + 60] = pal.foliage[0]
   out[offset + 61] = pal.foliage[1]
   out[offset + 62] = pal.foliage[2]
-  out[offset + 63] = pal.ink[0] * 0.2126 + pal.ink[1] * 0.7152 + pal.ink[2] * 0.0722
+  out[offset + 63] = settings.selectiveColor
 
   return out
 }
@@ -1161,6 +1169,7 @@ fn lookGradeColor(
   baseBloomScale: f32,
   baseVignetteFloor: f32,
   baseHuePreserve: f32,
+  flashMask: f32,
 ) -> vec3f {
   let exposure = L.u0.x;
   let tonemapMode = i32(round(L.u0.y));
@@ -1179,13 +1188,16 @@ fn lookGradeColor(
   let grainStrength = L.u9.x;
   let grainSeed = L.u9.y;
   let grainAnim = L.u9.z > 0.5;
+  let selectiveColor = clamp(L.u15.w, 0.0, 1.5);
+  let beamRetain = clamp(flashMask * selectiveColor, 0.0, 1.0);
 
   // 1. Add bloom & warm film halation before tone mapping
   let halationTint = vec3f(1.08, 0.34, 0.10) * halation * 0.28;
   var hdr = hdrIn + bloomIn * (baseBloomScale * bloomMult + halationTint);
 
-  // 2. Exposure & colour temperature in linear HDR
-  hdr *= exposure * vec3f(1.0 + temperature * 0.24, 1.0 + temperature * 0.03, 1.0 - temperature * 0.24);
+  // 2. Exposure & colour temperature in linear HDR (relax cold monochrome shift inside the flashlight beam)
+  let effTemp = mix(temperature, max(temperature, 0.06), beamRetain * 0.88);
+  hdr *= exposure * vec3f(1.0 + effTemp * 0.24, 1.0 + effTemp * 0.03, 1.0 - effTemp * 0.24);
   hdr = max(hdr, vec3f(0.0));
 
   // 3. Mid-grey contrast curve around 0.18 (Lamplight post.wgsl)
@@ -1194,7 +1206,7 @@ fn lookGradeColor(
   }
 
   // 4. Tonemap (Current ACES / Filmic / AgX / ACES Hue-Preserving)
-  var c = lookApplyTonemap(hdr, tonemapMode, baseHuePreserve);
+  var c = lookApplyTonemap(hdr, tonemapMode, max(baseHuePreserve, beamRetain * 0.45));
 
   // 5. Highlight shoulder compression
   if (shoulder > 0.001) {
@@ -1205,25 +1217,35 @@ fn lookGradeColor(
   }
 
   // 6. Shadow toe curve (Lamplight paper.wgsl)
-  if (toe > 0.001) {
-    let toeK = toe * 0.055;
+  let effToe = toe * (1.0 - 0.65 * beamRetain);
+  if (effToe > 0.001) {
+    let toeK = effToe * 0.055;
     let t = c * c / max(c + vec3f(toeK), vec3f(1e-5));
-    c = mix(c, t * (1.0 + toeK * 0.5), clamp(toe * 0.75, 0.0, 0.85));
+    c = mix(c, t * (1.0 + toeK * 0.5), clamp(effToe * 0.75, 0.0, 0.85));
   }
 
-  // 7. Split-toning & saturation (preserve warm amber/sodium practical hues from pre-grade hdrIn before split-toning)
+  // 7. Split-toning & light-driven selective colour restoration (per-pixel flashlight irradiance mask from scene pass)
   let luma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   let splitCurve = mix(shadowTint, highlightTint, smoothstep(0.02, 0.55, luma));
   let activeSplit = mix(vec3f(1.0), splitCurve, clamp(splitTone, 0.0, 1.5));
   let mono = vec3f(luma) * activeSplit;
   let warmBias = clamp((hdrIn.r - hdrIn.b * 1.05) / max(hdrIn.r + 0.005, 1e-4) - 0.08, 0.0, 1.0) * clamp(L.u5.x * 1.6, 0.0, 1.0);
   let warmTinted = c * mix(activeSplit, vec3f(1.18, 0.88, 0.52), warmBias * 0.65);
-  let effSat = mix(saturation, max(saturation, 0.92), warmBias * 0.88);
-  c = mix(mono, warmTinted, effSat);
+  let effSat = mix(saturation, max(saturation, 0.88), warmBias * 0.82);
+  let outsideCol = mix(mono, warmTinted, effSat);
+  if (beamRetain > 0.001) {
+    let beamSplit = mix(activeSplit, vec3f(1.05, 1.00, 0.94), beamRetain * 0.92);
+    let beamSat = clamp(max(saturation, 1.15 * min(selectiveColor, 1.35)), 0.0, 1.55);
+    let beamCol = mix(vec3f(luma) * beamSplit, c * beamSplit, beamSat);
+    c = mix(outsideCol, beamCol, smoothstep(0.0, 1.0, beamRetain));
+  } else {
+    c = outsideCol;
+  }
 
   // 8. Black crush (carves deep shadows to near-black while keeping dim moonlight & lit beams intact)
-  if (blackCrush > 0.0005) {
-    let linearCrush = blackCrush * 0.045;
+  let effCrush = blackCrush * (1.0 - 0.8 * beamRetain);
+  if (effCrush > 0.0005) {
+    let linearCrush = effCrush * 0.045;
     c = max(vec3f(0.0), (c - vec3f(linearCrush)) / max(1.0 - linearCrush, 0.1));
   }
 
