@@ -9,12 +9,12 @@ import { HIP, RIG } from "../src/render/person"
 
 const EXPECTED_HASHES = {
   old: "00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac",
-  // Deliberately updated from 22f0e02263aad662363e956740b49ac56f9e17c1260af126882cbe35fb98eca2 after the
-  // procedural locomotion pass: C0-continuous mid-swing retargeting, smooth strafe separation, up-biased knee
-  // pole vector, touchdown toe-roll continuity, reversal posture/step handling, Lamplight touchdown Down
-  // compression, phase-synchronised walk<->run<->sprint blending, sublinear high-speed stride curve,
-  // Overgrowth-style lead-follow strafe shuffle, and Holden/Bollo quadrant-flip inertialization.
-  new: "f5a333ae622e3df2042d99638c1010121ffdbf95edef6a7a0cca6d932670539b",
+  // Deliberately updated from f5a333ae622e3df2042d99638c1010121ffdbf95edef6a7a0cca6d932670539b after the
+  // walk/run gait audit: phase-locked anti-phase step scheduling (eliminating the 45% run / 12.5% walk L/R step
+  // stagger and 3-step phase-wrap bob beat), smooth Williams Contact->Down->Passing->Up COM curve without
+  // discontinuous touchdown dip impulse, terminal-stance heel-off roll + dorsiflexed heel-strike preparation
+  // with near-zero contact foot velocity, and phase-compensated opposing arm swing.
+  new: "17bb751b28e85ae0296821526dbab0c9e938a91865953d9378824b388f72e388",
 } as const
 
 type Api = {

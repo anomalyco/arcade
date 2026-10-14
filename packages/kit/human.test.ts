@@ -175,3 +175,82 @@ test("phase-synchronised walk-run-sprint ramp and unarmed arm follow-through sta
   expect(Math.abs(a.motion.arms[0].x)).toBeGreaterThan(0.01)
   expect(Math.sign(a.motion.arms[0].x)).toBe(-Math.sign(a.motion.arms[1].x))
 })
+
+test("steady walk, run and sprint maintain L/R step symmetry within 3%, bounded cadence variance, smooth COM jerk at touchdown and near-zero contact foot speed", () => {
+  const dt = 1 / 60
+  for (const [speed, maxTouchdownJerk, maxContactSpeed] of [
+    [1.4, 95, 0.08],
+    [4.2, 540, 0.15],
+    [6.3, 880, 0.24],
+  ] as const) {
+    const a = actor(), profile = humanProfiles.soldier
+    let x = 0
+    let prevPlanted: [boolean, boolean] = [true, true]
+    let prevAnkles: [V3, V3] | null = null
+    const touchdowns: { foot: 0 | 1; t: number; frame: number; x: number; contactSpeed: number }[] = []
+    const pelY: number[] = []
+    const warmup = 180, count = 480
+
+    for (let n = 0; n < warmup + count; n++) {
+      const t = n * dt
+      a.vx = speed; a.vy = 0; a.svx = speed; a.svy = 0
+      x += speed * dt
+      const distStep = x - a.x
+      a.x = x
+      locomotion(a, dt, distStep, n === 0, profile)
+      const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
+      const legs = poseLegs(a, pelvis)
+      const ankles: [V3, V3] = [[...legs.ft[0].p], [...legs.ft[1].p]]
+
+      if (n >= warmup) {
+        const relFrame = n - warmup
+        const relT = relFrame * dt
+        pelY.push(pelvis.p[1])
+        for (const foot of [0, 1] as const) {
+          if (!prevPlanted[foot] && a.feet[foot]!.planted) {
+            const cSpeed = prevAnkles ? len([
+              (ankles[foot]![0] - prevAnkles[foot]![0]) / dt,
+              (ankles[foot]![1] - prevAnkles[foot]![1]) / dt,
+              (ankles[foot]![2] - prevAnkles[foot]![2]) / dt,
+            ]) : 0
+            touchdowns.push({ foot, t: relT, frame: relFrame, x: a.feet[foot]!.p[0], contactSpeed: cSpeed })
+          }
+        }
+      }
+      prevPlanted = [a.feet[0].planted, a.feet[1].planted]
+      prevAnkles = ankles
+    }
+
+    const stepDursL: number[] = [], stepDursR: number[] = []
+    for (let i = 1; i < touchdowns.length; i++) {
+      const prev = touchdowns[i - 1]!, cur = touchdowns[i]!
+      expect(cur.foot).toBe((1 - prev.foot) as 0 | 1)
+      const dur = cur.t - prev.t
+      if (cur.foot === 0) stepDursL.push(dur)
+      else stepDursR.push(dur)
+    }
+    const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length
+    const meanL = avg(stepDursL), meanR = avg(stepDursR)
+    const ratioLR = Math.max(meanL, meanR) / Math.min(meanL, meanR)
+    const allDurs = [...stepDursL, ...stepDursR]
+    const meanAll = avg(allDurs)
+    const cv = Math.sqrt(allDurs.reduce((s, v) => s + (v - meanAll) ** 2, 0) / allDurs.length) / meanAll
+
+    const vy = pelY.map((y, i) => (i === 0 ? (pelY[1]! - y) / dt : (y - pelY[i - 1]!) / dt))
+    const ay = vy.map((v, i) => (i <= 1 ? (vy[2]! - vy[1]!) / dt : (v - vy[i - 1]!) / dt))
+    const jy = ay.map((acc, i) => (i <= 2 ? 0 : (acc - ay[i - 1]!) / dt))
+    const tdJerk = Math.max(...touchdowns.map(td => Math.max(Math.abs(jy[td.frame] ?? 0), Math.abs(jy[td.frame + 1] ?? 0))))
+    const meanContactSpeed = avg(touchdowns.map(td => td.contactSpeed))
+    const maxObservedContactSpeed = Math.max(...touchdowns.map(td => td.contactSpeed))
+
+    // 1. L/R step duration ratio within 3%
+    expect(ratioLR).toBeLessThan(1.03)
+    // 2. Cadence coefficient of variation bounded (< 4.5%)
+    expect(cv).toBeLessThan(0.045)
+    // 3. Smooth COM jerk at touchdown (no impulse "boom")
+    expect(tdJerk).toBeLessThan(maxTouchdownJerk)
+    // 4. Contact foot speed ~ 0
+    expect(meanContactSpeed).toBeLessThan(0.065)
+    expect(maxObservedContactSpeed).toBeLessThan(maxContactSpeed)
+  }
+})
