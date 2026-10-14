@@ -6,8 +6,8 @@ import type { Mixer } from "./mixer"
  * Doppler and the listener's angle change every frame). After Wings' proven fighter voice
  * (games/wings/src/audio/engines.ts), richer but still smooth:
  *
- *   whine     a soft triangle turbine tone rising with core speed (through a gentle low-pass), an inharmonic ×2.76
- *             sine overtone; the Hornet's second engine 0.6 cents off, quieter (a beat slower than a second)
+ *   whine     a quiet, low triangle turbine tone rising with core speed through a low-pass (no pure high tones, and
+ *             only a third of the Doppler); the Hornet's second engine 0.6 cents off, quieter
  *   roar      pink noise behind a low-pass that opens with throttle; for your own Hornet two decorrelated roars, one
  *             per engine, slightly left and right (stereo width without moving the image)
  *   body      brown noise, low and warm, and a deep sub tone that grows with throttle
@@ -41,8 +41,8 @@ export type EngineCharacter = {
 
 /** Twin F414s: the brighter whine, a slow faint beat. The F135: one engine, deeper and heavier, less whine. */
 export const ENGINES: Readonly<Record<VehicleKind, EngineCharacter>> = {
-  hornet: { engines: 2, whine: [420, 1320], whineGain: 1, roar: [350, 1400], roarGain: 1, body: [220, 260], bodyGain: 1, burnLp: 280, sub: 42, burnGain: 1 },
-  f35: { engines: 1, whine: [330, 1000], whineGain: 0.7, roar: [280, 1050], roarGain: 0.95, body: [180, 240], bodyGain: 1.35, burnLp: 240, sub: 34, burnGain: 1.2 },
+  hornet: { engines: 2, whine: [300, 760], whineGain: 0.45, roar: [350, 1400], roarGain: 1, body: [220, 260], bodyGain: 1, burnLp: 280, sub: 42, burnGain: 1 },
+  f35: { engines: 1, whine: [240, 600], whineGain: 0.3, roar: [280, 1050], roarGain: 0.95, body: [180, 240], bodyGain: 1.35, burnLp: 240, sub: 34, burnGain: 1.2 },
 }
 
 /** Live tuning (the AUDIO debug tab). */
@@ -95,7 +95,6 @@ export class JetVoice {
   private nodes: AudioNode[] = []
   private whines: Osc[] = []
   private whineLp: BiquadFilterNode
-  private overtone: Osc
   private roars: Noise[] = []
   private body: Noise
   private deep: Osc
@@ -191,8 +190,9 @@ export class JetVoice {
       int.connect(gain(0.5, mixer.room))
     }
 
-    // Whine (front): soft triangles through a gentle low-pass, an inharmonic overtone.
-    this.whineLp = filter("lowpass", 2400, 0.5)
+    // Whine (front): soft, low triangles through a low-pass. No pure high tones: a rising or Doppler-swept sine read as
+    // a bird's screech.
+    this.whineLp = filter("lowpass", 1100, 0.5)
     this.whineLp.connect(this.front)
     for (let i = 0; i < c.engines; i++) {
       // The second engine sits 0.6 cents off: a beat slower than a second, felt rather than heard (a few cents beat at
@@ -201,7 +201,6 @@ export class JetVoice {
       w.osc.detune.value = i ? 0.6 : 0
       this.whines.push(w)
     }
-    this.overtone = osc("sine", c.whine[0] * 2.76, this.front)
 
     // Roar (rear): one, or for your own Hornet one per engine, decorrelated and spread a little left and right.
     if (interior && c.engines > 1) {
@@ -249,17 +248,16 @@ export class JetVoice {
     // Core speed 0 (idle) .. 1 (military).
     const n = Math.max(0, Math.min(1, (s.rpm - 0.64) / 0.36))
 
-    // Whine.
-    const wf = (c.whine[0] + (c.whine[1] - c.whine[0]) * n) * d
+    // Whine. It takes only a third of the Doppler shift (the roar carries the swoop), so a passing or launching jet
+    // never sweeps a tone up and down.
+    const wf = (c.whine[0] + (c.whine[1] - c.whine[0]) * n) * (1 + (d - 1) * 0.35)
     const wg = (0.012 + 0.016 * n) * c.whineGain * ENGINE_TUNE.whine
     for (let i = 0; i < this.whines.length; i++) {
       const w = this.whines[i]!
       set(w.osc.frequency, wf)
       set(w.gain.gain, wg * (i ? 0.25 : 1))
     }
-    set(this.whineLp.frequency, 2400 * d)
-    set(this.overtone.osc.frequency, wf * 2.76)
-    set(this.overtone.gain.gain, wg * 0.2)
+    set(this.whineLp.frequency, 1100)
 
     // Roar, body, the deep sub.
     const tr = ENGINE_TUNE.roar

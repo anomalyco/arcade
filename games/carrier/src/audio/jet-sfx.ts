@@ -240,10 +240,9 @@ export class JetSfx {
   /**
    * A pass, all procedural so it stays locked to the jet: the closest approach is `t` seconds from now (predicted every
    * frame by jet-math.ts); the engine voice carries the pitch and its Doppler drop, and this adds the air the jet tears
-   * through, in three layers that peak at the pass:
+   * through, in two layers that peak at the pass:
    * - the rush: pink noise whose low-pass sweeps up into the pass and falls away after it (the spectral Doppler);
    * - the body: low brown-noise thunder that swells just after the pass and rolls on (more for close, burner passes);
-   * - the tear: for the fastest, closest passes, a short bright band sweeping down through the moment of passing.
    * Panned with the jet (`move`), sent to the reverb and (when close) the water slapback.
    */
   flyby(id: number, kind: FlybyKind, t: number, gain: number, _rate: number, at: Where): FlybyHandle | null {
@@ -287,7 +286,6 @@ export class JetSfx {
     layer(n.pink, top * 0.28, top, top * 0.1, 0.6, start, peak, peak + tail)
     const body = kind === "burner" ? 0.9 : kind === "snap" ? 0.6 : far ? 0.5 : 0.55
     layer(n.brown, 180, 700, 90, body, start + lead * 0.3, peak + 0.15, peak + tail * 1.3, 30)
-    if (kind === "snap" || kind === "burner") layer(n.white, 3000, 7000, 1500, 0.18, peak - 0.35, peak - 0.02, peak + 0.5, 1500)
     const pn = panner!
     return {
       id,
