@@ -427,7 +427,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let r = lights[0].pos.w;
   if (d2 >= r * r) { return 0.0; }
   let distance = sqrt(d2);
-  let soft = clamp(select(0.78, OL.u8.z, OL.u8.z > 0.01), 0.05, 1.5);
+  let soft = clamp(select(0.78, OL.u10.y, OL.u10.y > 0.01), 0.05, 1.5);
   let facing = dot(delta / max(distance, 0.001), vec2f(cos(F.effects.x), sin(F.effects.x)));
   let coneFeather = 0.04 + 0.14 * soft;
   let cone = smoothstep(F.effects.y - coneFeather * 0.35, F.effects.y + coneFeather * 0.65, facing);
@@ -467,8 +467,8 @@ fn applyOutbreakFogOfWar(
     return colIn;
   }
   let explored = textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24) * F.map.xy, 0.0).r;
-  let fogStyle = i32(floor(OL.u8.y * 0.25 + 1e-4));
-  let baseMemDim = select(0.42, OL.u8.w, OL.u8.w > 0.01);
+  let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
+  let baseMemDim = select(0.42, OL.u10.z, OL.u10.z > 0.01);
   let memDim = clamp(
     select(select(baseMemDim, baseMemDim * 0.52, fogStyle == 2), max(baseMemDim, 0.66), fogStyle == 0),
     0.10,
@@ -492,7 +492,7 @@ fn applyOutbreakFogOfWar(
   let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * memDim;
 
   if (inRoom && world.y < 2.8) {
-    let unknownGrainAmt = clamp(select(0.48, fract(OL.u8.y), OL.u8.w > 0.01), 0.0, 1.0) * select(1.0, 1.35, fogStyle == 2);
+    let unknownGrainAmt = clamp(select(0.48, fract(OL.u10.x), OL.u10.z > 0.01), 0.0, 1.0) * select(1.0, 1.35, fogStyle == 2);
     let tSalt = floor(F.cam.w * 16.0) * 7.3;
     let shroudNoise = (hash2(floor(world.xz * 12.0) + vec2f(tSalt, -tSalt)) - 0.5) * unknownGrainAmt * 0.014;
     let unknownShroud = max(vec3f(0.0015, 0.0022, 0.0038), baseColor * 0.010 + vec3f(0.0035, 0.0048, 0.0072) + vec3f(shroudNoise));

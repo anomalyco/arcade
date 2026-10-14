@@ -2,6 +2,7 @@ import type { LabValue } from "../lab-panel"
 import { LOOK_PRESETS } from "../gpu/look"
 import { MATERIAL_RECIPES } from "../gpu/surface-materials"
 import { FOLIAGE_PRESETS } from "../gpu/foliage"
+import { WEATHER_PRESETS } from "../weather"
 
 export type VariationTileConfig = {
   id?: string
@@ -435,6 +436,57 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
       },
     ],
   },
+  weather: {
+    id: "weather",
+    title: "Weather · 6 Atmospheric Presets",
+    section: "weather",
+    cols: 3,
+    rows: 2,
+    tiles: [
+      {
+        id: "clear",
+        label: WEATHER_PRESETS.clear.label,
+        preset: "clear",
+        settings: { preset: "clear", compare: 1 },
+        subtitle: "Dry street · zero weather draw overhead",
+      },
+      {
+        id: "drizzle",
+        label: WEATHER_PRESETS.drizzle.label,
+        preset: "drizzle",
+        settings: { preset: "drizzle", compare: 1 },
+        subtitle: "Fine mist · damp sheen · light ripples",
+      },
+      {
+        id: "rain",
+        label: WEATHER_PRESETS.rain.label,
+        preset: "rain",
+        settings: { preset: "rain", compare: 1 },
+        subtitle: "Lit cone streaks · puddles · eave drips",
+      },
+      {
+        id: "storm",
+        label: WEATHER_PRESETS.storm.label,
+        preset: "storm",
+        settings: { preset: "storm", compare: 1 },
+        subtitle: "Wind-slanted downpour · gusts · lightning",
+      },
+      {
+        id: "fog",
+        label: WEATHER_PRESETS.fog.label,
+        preset: "fog",
+        settings: { preset: "fog", compare: 1 },
+        subtitle: "Thick mist banks · lamp & beam inscatter",
+      },
+      {
+        id: "snow",
+        label: WEATHER_PRESETS.snow.label,
+        preset: "snow",
+        settings: { preset: "snow", compare: 1 },
+        subtitle: "Fluttering snowflakes · frost cover",
+      },
+    ],
+  },
 }
 
 const PRESET_ALIASES: Record<string, string> = {
@@ -449,9 +501,12 @@ const PRESET_ALIASES: Record<string, string> = {
   light: "lighting",
   "fog-of-war": "fog",
   "outbreak-fog": "fog",
+  rain: "weather",
+  "weather-6": "weather",
 }
 
 export function defaultGridPresetForSection(sectionId: string, effectName?: string): string {
+  if (sectionId === "weather") return "weather"
   if (sectionId === "looks") return "looks"
   if (sectionId === "outbreak-vignette") return "fog"
   if (sectionId === "materials") return "materials"

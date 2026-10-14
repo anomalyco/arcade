@@ -35,6 +35,7 @@ const DEG = Math.PI / 180
  */
 export function unarmedHands(a: UnarmedRigState, torso: Frame, breathPhase = 0): [V3, V3] {
   const m = a.motion, gait = clamp(a.gait, 0, 1), run = clamp(m.run * gait, 0, 1)
+  const crouchAmt = clamp(((m as { crouch?: { x: number } }).crouch?.x ?? 0) - 0.025, 0, 0.08) / 0.065
   const swNorm = 0.1575 + 0.1885 * run
   const hwNorm = 0.1518 + 0.1720 * run
 
@@ -49,18 +50,21 @@ export function unarmedHands(a: UnarmedRigState, torso: Frame, breathPhase = 0):
     const walkSh = (-1.6 * gait + walkWave * 23.8) * DEG
 
     const runWave = 0.22 * s + 0.78 * h - 0.16 * q
-    const runSh = (-2.0 * gait + runWave * 39.5) * DEG
+    // In a deep crouch-run, compensate for the extra forward torso pitch so world shoulder swing stays compact [-44°..+24°]
+    const runShMean = -2.0 + 14.0 * crouchAmt
+    const runShAmp = 39.5 * (1 - 0.12 * crouchAmt)
+    const runSh = (runShMean * gait + runWave * runShAmp) * DEG
     const shFlex = walkSh + (runSh - walkSh) * run
 
     const walkAbd = (12.6 + 3.4 * h + 0.8 * q) * DEG
-    const runAbd = (14.5 - 3.0 * runWave - 3.5 * q) * DEG
+    const runAbd = ((14.5 - 2.2 * crouchAmt) - 3.0 * runWave - 3.5 * q) * DEG
     const shAbd = (walkAbd + (runAbd - walkAbd) * run) * (0.35 + 0.65 * gait) - side * 0.008 * Math.sin(breathPhase)
 
     const walkElb = (4.0 + 11.2 * gait + 15.8 * (0.2 * s + 0.8 * h) + 3.8 * h * h) * DEG
-    const runElb = (87.5 * gait + 15.5 * (0.50 * s + 0.50 * h) + 11.0 * runWave * runWave + 8.5 * q) * DEG
+    const runElb = ((87.5 + 8.5 * crouchAmt) * gait + 15.5 * (0.50 * s + 0.50 * h) + 11.0 * runWave * runWave + 8.5 * q) * DEG
     const elbFlex = clamp(walkElb + (runElb - walkElb) * run, 2 * DEG, 128 * DEG)
 
-    const inward = clamp((2.5 + 3.5 * Math.max(0, h)) * (1 - run) + (9.0 + 9.0 * Math.max(0, runWave)) * run, 0, 22) * DEG * gait
+    const inward = clamp((2.5 + 3.5 * Math.max(0, h)) * (1 - run) + (9.0 + 4.0 * crouchAmt + 9.0 * Math.max(0, runWave)) * run, 0, 22) * DEG * gait
 
     const u1 = [
       Math.sin(shFlex) * Math.cos(shAbd),
@@ -133,9 +137,16 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
       th.push(limb(hip, knee, pole, pelvis.x)); sh.push(limb(knee, ank, pole, pelvis.x))
       ft.push(contact)
     } else {
+      const isDrag = i === (m.dragFoot ?? 1) && (m.footDrag ?? 0) > 0
+      const drag = isDrag ? clamp(m.footDrag ?? 0, 0, 0.95) : 0
+      const dragKeep = 1 - drag
+      // When crouch-running (m.crouch.x > 0.025), the pelvis is already lowered 8..14 cm toward the floor;
+      // scale swing heel-kick so the thigh drives to ~46° instead of jackknifing into the crouched chest.
+      const crouchT = clamp(((m.crouch?.x ?? 0) - 0.025) / 0.065, 0, 1)
+      const crouchSwingScale = 1 - 0.55 * crouchT
       // Smoothly release from the terminal-stance toe-off pivot over the first 25% of swing,
       // and blend into the heel-strike contact frame over the last 25% of swing so liftoff and touchdown are C1 continuous.
-      const liftOffBlend = (1 - smooth(u / 0.25)) * a.gait
+      const liftOffBlend = (1 - smooth(u / 0.25)) * a.gait * dragKeep
       const toeOffPitch = -(0.20 + 0.06 * m.run) * liftOffBlend
       const toeFrame = pitch(yawFrame([0, 0, 0], f.yaw), toeOffPitch)
       const toeOff = at(toeFrame, 0.19, -RIG.ankle, 0)
@@ -152,20 +163,20 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
       const lateTaper = 1 - smooth((u - 0.74) / 0.18)
       const kickBell = sinU * sinU * (0.42 + 0.92 * Math.pow(u, 0.80)) * lateTaper
       const tuckBell = sinU * sinU * Math.pow(u, 0.95) * 1.65 * lateTaper
-      const heelKickUp = (0.018 * (1 - run) + 0.22 * run) * liftVar * athletic * kickBell
-      const heelTuckBack = (0.025 * (1 - run) + 0.24 * run) * athletic * tuckBell
+      const heelKickUp = (0.018 * (1 - run) + 0.22 * run * crouchSwingScale) * liftVar * athletic * kickBell * dragKeep
+      const heelTuckBack = (0.025 * (1 - run) + 0.24 * run * (1 - 0.35 * crouchT)) * athletic * tuckBell * dragKeep
       const fwdX = Math.cos(f.yaw), fwdZ = Math.sin(f.yaw)
       const ankle: V3 = [
         f.p[0] + liftAnkX * liftOffBlend - fwdX * heelTuckBack,
-        f.p[1] + RIG.ankle + liftAnkY * liftOffBlend + heelKickUp,
+        f.p[1] * (1 - 0.32 * crouchT) + RIG.ankle + liftAnkY * liftOffBlend + heelKickUp,
         f.p[2] + liftAnkZ * liftOffBlend - fwdZ * heelTuckBack,
       ]
       // When the heel kicks up behind the hip (cx < 0), tilt the pole downward from +0.28 toward -0.35
       // so the pole stays orthogonal to the backward hip->ankle chord without bowing the knee sideways.
       const chord = sub(ankle, hip)
       const cx = dot(chord, pelvis.x)
-      const backKick = run * kickBell * clamp(-cx / 0.35, 0, 1)
-      const swingPole = dirIn(pelvis, 1, 0.28 - 0.65 * backKick, side * (0.25 - 0.17 * run * kickBell))
+      const backKick = run * kickBell * clamp(-cx / 0.35, 0, 1) * dragKeep
+      const swingPole = dirIn(pelvis, 1, 0.28 - 0.65 * backKick, side * (0.25 - 0.17 * run * kickBell * dragKeep))
       const [knee0, ank0] = ik(hip, ankle, RIG.thigh, RIG.shin, swingPole)
       const sh0 = limb(knee0, ank0, swingPole, pelvis.x)
       const relaxed = smooth(u / 0.10) * (1 - smooth((u - 0.72) / 0.18))
@@ -173,7 +184,12 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
       const shinPitch = -Math.atan2(shinFwd, sh0.y[1])
       const basePitch = f.pitch + toeOffPitch
       const swingAnkleRel = -(0.20 + 0.15 * run) * (1 - smooth((u - 0.50) / 0.34)) + (0.04 + 0.16 * run) * smooth((u - 0.60) / 0.28)
-      const footPitch = basePitch + (shinPitch + swingAnkleRel - basePitch) * relaxed
+      let footPitch = basePitch + (shinPitch + swingAnkleRel - basePitch) * relaxed
+      if (drag > 0) {
+        // A dragged foot's toe scrapes along the floor rather than pitching underground and levitating the ankle.
+        const maxNoseDown = -Math.asin(clamp(Math.max(0, ankle[1] - RIG.ankle) / 0.19, 0, 0.95))
+        footPitch = Math.max(footPitch, maxNoseDown * (1 - drag) + footPitch * (1 - drag))
+      }
       const testFoot = pitch(yawFrame(ankle, f.yaw), footPitch)
       const low = Math.min(at(testFoot, -0.08, -RIG.ankle, 0)[1], at(testFoot, 0.19, -RIG.ankle, 0)[1])
       if (low < 0) ankle[1] -= low

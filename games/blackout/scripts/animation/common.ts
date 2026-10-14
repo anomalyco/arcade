@@ -36,6 +36,36 @@ export const MOCAP = {
     url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-2/data/dataset-2_run_normal_001.bvh`,
     sha256: "3efb502ebf6245f3a644072fe24f24ccef6f7e35dad7efb5475b57f87801f423",
   },
+  walkTired: {
+    file: "dataset-1_walk_tired_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_walk_tired_001.bvh`,
+    sha256: "c23ae74ce470c3588bd12232fdeae0c5001b736bdf1234c1873aec26723c40c1",
+  },
+  walkOld: {
+    file: "dataset-1_walk_old_002.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_walk_old_002.bvh`,
+    sha256: "40e133e29c4f954a40bbed88e9132088aad3595bc6772288449c9cc86d005691",
+  },
+  walkExhausted: {
+    file: "dataset-2_walk_exhausted_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-2/data/dataset-2_walk_exhausted_001.bvh`,
+    sha256: "f5bdb63830b6656ae88c872b65056622a2a5211cfecf288889ac1d7e95d2231f",
+  },
+  runCrouch: {
+    file: "dataset-1_dash_not-confident_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_dash_not-confident_001.bvh`,
+    sha256: "0cc2713c90c6760aa5dcdef8bc9f556cd110eb72c3e6a733dfed00383b9118c1",
+  },
+  runTired: {
+    file: "dataset-1_dash_tired_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_dash_tired_001.bvh`,
+    sha256: "3d006956b32dbe230e162ffc0e2104e5d41bbb8bd537c67d5fa4ee340358589d",
+  },
+  runOld: {
+    file: "dataset-1_run_old_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_run_old_001.bvh`,
+    sha256: "1985df3f564adc8de91bff9628978c2127b2fc3adcb1a791aac468c6b7bdc12f",
+  },
 } as const
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")

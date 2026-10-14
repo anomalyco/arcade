@@ -5,6 +5,7 @@
   "exports": {
     "./audio": "./audio/index.ts",
     "./textures": "./textures/index.ts",
+    "./weather": "./weather/index.ts",
     "./*.css": "./*.css",
     "./*": "./*.ts"
   },
