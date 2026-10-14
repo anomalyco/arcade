@@ -311,7 +311,7 @@ export class NetSession implements Session {
     for (const z of b.zombies) {
       let agent = this.agents.get(z.id)
       if (!agent) {
-        agent = createAIAgent(z.id, z.seed ?? this.sim.town.seed, z.x, z.y, z.aim)
+        agent = createAIAgent(z.id, z.seed, z.x, z.y, z.aim)
         this.agents.set(z.id, agent)
       }
       const p = prev.get(z.id) ?? z

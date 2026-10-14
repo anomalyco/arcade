@@ -2,7 +2,7 @@ import { ByteReader, ByteWriter, frame, packAngle, unframe, unpackAngle } from "
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
 import type { AIAgent, AIState } from "./ai"
 import type { CombatShotEvent } from "./combat"
-import type { CoopSim } from "./coop-sim"
+import { createSurvivor, type CoopSim } from "./coop-sim"
 import type { InteractActionId } from "./interact"
 import type { InventoryState } from "./inventory"
 import type { Command, Survivor } from "./session"
@@ -84,7 +84,6 @@ const FLAG = {
   melee: 128,
   barricade: 256,
 } as const
-const EDGES = FLAG.interact | FLAG.flashlight | FLAG.jump | FLAG.fire | FLAG.reload | FLAG.melee | FLAG.barricade
 const ACTIONS: readonly (InteractActionId | undefined)[] = [undefined, "toggle", "lock", "peek", "climb", "search", "barricade"]
 
 const q3 = (v: number) => Math.round(v * 1000) / 1000
@@ -134,7 +133,6 @@ export const commandOps: InputOps<Command> = {
     return EDGE_KEYS.some((k) => c[k]) || c.hotbarSlot !== undefined || Boolean(c.hotbarDelta) || Boolean(c.interactAction)
   },
 }
-void EDGES
 
 // ── Snapshots ───────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -159,7 +157,7 @@ export type RemoteSurvivor = {
 
 export type ZombieState = {
   id: number
-  seed: number | null
+  seed: number
   x: number
   y: number
   aim: number
@@ -358,13 +356,14 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
 const round = (_k: string, v: unknown) =>
   typeof v === "number" ? (Number.isFinite(v) ? Math.round(v * 10000) / 10000 : v > 0 ? 1e9 : -1e9) : v
 
+/** Survivor fields in wire order (both ends run the same shared code: the build handshake guarantees it). */
+const PERSONAL_KEYS = (Object.keys(createSurvivor(0, 0)) as (keyof Survivor)[]).filter((k) => k !== "vx" && k !== "vy")
+
 /** The private part for one player: what to reconcile against, and the inventory when it changed. */
 export function encodePersonal(ack: number, survivor: Survivor, inventoryJson: string | null): Uint8Array {
   const w = new ByteWriter(1024)
   w.u32(ack < 0 ? 0xffffffff : ack)
-  const { vx: _vx, vy: _vy, ...rest } = survivor as Survivor & { id?: string }
-  delete (rest as { id?: string }).id
-  w.str(JSON.stringify(rest, round))
+  w.str(JSON.stringify(PERSONAL_KEYS.map((k) => survivor[k]), round))
   w.str(inventoryJson ?? "")
   return w.finish()
 }
@@ -372,14 +371,14 @@ export function encodePersonal(ack: number, survivor: Survivor, inventoryJson: s
 export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
   const r = new ByteReader(bytes)
   const raw = r.u32()
-  const survivor = JSON.parse(r.str()) as Partial<Survivor>
-  for (const k of Object.keys(survivor) as (keyof Survivor)[]) {
-    const v = survivor[k]
-    if (v === 1e9) (survivor as Record<string, unknown>)[k] = Infinity
-    else if (v === -1e9) (survivor as Record<string, unknown>)[k] = -Infinity
-  }
+  const values = JSON.parse(r.str()) as unknown[]
+  const survivor: Record<string, unknown> = {}
+  PERSONAL_KEYS.forEach((k, i) => {
+    const v = values[i]
+    survivor[k] = v === 1e9 ? Infinity : v === -1e9 ? -Infinity : v
+  })
   const inv = r.str()
-  return { ack: raw === 0xffffffff ? -1 : raw, survivor, inventory: inv ? (JSON.parse(inv) as InventoryState) : null }
+  return { ack: raw === 0xffffffff ? -1 : raw, survivor: survivor as Partial<Survivor>, inventory: inv ? (JSON.parse(inv) as InventoryState) : null }
 }
 
 export const encodeSnapshot = frame
