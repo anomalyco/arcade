@@ -82,11 +82,6 @@ describe("Outbreak lighting module & Lab controls", () => {
       },
       rgb,
     )
-    expect(restBuf.length).toBe(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
-    // At north rest pose (-PI/2), beam points down-left into the street (dirY > 0, dirX < 0)
-    expect(restBuf[14]).toBeLessThan(0)
-    expect(restBuf[15]).toBeGreaterThan(0)
-
     const aimedBuf = packOutbreakLightingUniforms(
       {
         settings: {
@@ -106,6 +101,10 @@ describe("Outbreak lighting module & Lab controls", () => {
       },
       rgb,
     )
+    expect(restBuf.length).toBe(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
+    // Beam follows playerAim (-PI/2 -> dirX ~ 0, dirY ~ -1; 0 -> dirX ~ 1, dirY ~ 0)
+    expect(restBuf[14]).toBeCloseTo(0, 4)
+    expect(restBuf[15]).toBeCloseTo(-1, 4)
     expect(aimedBuf[14]).toBeCloseTo(1, 5)
     expect(aimedBuf[15]).toBeCloseTo(0, 5)
   })

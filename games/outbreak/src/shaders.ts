@@ -139,11 +139,11 @@ fn eyeVisible(p: vec2f) -> f32 {
     // Weathered charcoal-slate roof shingles catching twilight sky & warm sodium/porch bounce; eaves stay grounded.
     let eave = smoothstep(2.85, 3.55, o.world.y);
     let courseStep = smoothstep(0.62, 0.96, fract(o.world.z / 0.24));
-    let tabGrain = 0.74 + 0.52 * surfaceNoise(o.world.xz * 6.2);
+    let tabGrain = 0.72 + 0.56 * surfaceNoise(o.world.xz * 6.2);
     let w = clamp(OL.u0.z, 0.0, 1.0);
-    let roofTint = mix(vec3f(0.014, 0.026, 0.058), vec3f(0.062, 0.054, 0.048), w);
-    let extRoofScale = select(1.0, 0.52, OL.u5.w > 0.5);
-    col = col * mix(0.88, 1.38, eave) * tabGrain * extRoofScale + roofTint * F.ambient.w * OL.u2.z * (0.58 * eave + 0.42 * courseStep) * max(0.0, n.y) * extRoofScale;
+    let roofTint = mix(vec3f(0.014, 0.026, 0.058), vec3f(0.115, 0.100, 0.088), w);
+    let extRoofScale = select(1.0, 0.44, OL.u5.w > 0.5);
+    col = col * mix(1.02, 1.58, eave) * tabGrain * extRoofScale + roofTint * F.ambient.w * OL.u2.z * (0.58 * eave + 0.42 * courseStep) * max(0.0, n.y) * extRoofScale;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let w = clamp(OL.u0.z, 0.0, 1.0);
@@ -152,10 +152,10 @@ fn eyeVisible(p: vec2f) -> f32 {
       if (kind == 0) {
         // Muted 70s olive-ochre-moss lawn turf with clump variation & fallen autumn leaf flecks.
         let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.50, 1.08, smoothstep(0.24, 0.76, turfPatch));
+        col *= mix(0.56, 1.22, smoothstep(0.24, 0.76, turfPatch));
         let turfLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.25, 0.92, 0.56), w);
-        col = mix(col, oliveOchre, 0.68);
+        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.34, 0.94, 0.50), w);
+        col = mix(col, oliveOchre, 0.74);
       } else if (kind == 1) {
         // Textured cracked asphalt: dark gutters & wheel ruts, alligator fracture lines, coarse aggregate, and warm-slate twilight sheen.
         let p = o.world.xz;
@@ -171,49 +171,54 @@ fn eyeVisible(p: vec2f) -> f32 {
         let fy = abs(fract(p.y * 0.42 - warp * 0.48 + roadMacro * 0.35) - 0.5);
         let mask = smoothstep(0.38, 0.64, roadMacro);
         let cracks = clamp(((1.0 - smoothstep(0.004, 0.016, fx)) + (1.0 - smoothstep(0.005, 0.018, fy)) * 0.85) * mask, 0.0, 1.0);
-        let grit = (w2 - 0.5) * 0.36;
+        let grit = (w2 - 0.5) * 0.38;
         let dxRoad = (p.x - 31.5) * 0.055;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        col *= (0.72 + 0.32 * gutter - 0.08 * ruts + 0.18 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
-        let wetRoad = (0.48 + 0.52 * crown) * (0.48 + 0.52 * centerFocus) * (0.64 + 0.76 * w1) * (1.0 - 0.50 * cracks);
-        let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.072, 0.058, 0.048), w);
+        col *= (0.88 + 0.34 * gutter - 0.08 * ruts + 0.20 * (roadMacro - 0.5) + grit) * (1.0 - 0.52 * cracks);
+        let wetRoad = (0.55 + 0.45 * crown) * (0.52 + 0.48 * centerFocus) * (0.64 + 0.76 * w1) * (1.0 - 0.52 * cracks);
+        let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.112, 0.090, 0.072), w);
         col += roadSheenCol * F.ambient.w * OL.u2.y * wetRoad;
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
         if (!inVerge) {
-          let gritWalk = 0.76 + 0.48 * surfaceNoise(o.world.xz * 7.5);
+          let gritWalk = 0.74 + 0.52 * surfaceNoise(o.world.xz * 7.5);
           let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-          let warmStone = vec3f(walkLum) * vec3f(1.22, 0.90, 0.56);
-          col = mix(col * 0.56, warmStone * 0.48, w) * gritWalk;
+          let warmStone = vec3f(walkLum) * vec3f(1.24, 0.88, 0.50);
+          col = mix(col * 0.56, warmStone * 0.50, w) * gritWalk;
           // Warm porch walkway reflection streak
           let dxWalk = o.world.x - 27.7;
           if (abs(dxWalk) < 4.5 && o.world.z > 35.3 && o.world.z < 40.4) {
             let walkCore = exp(-(dxWalk * dxWalk) / 1.15) * smoothstep(40.4, 35.5, o.world.z);
             let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            let extScale = select(1.0, 0.65, OL.u5.w > 0.5);
-            col += vec3f(0.055, 0.032, 0.010) * (walkCore * 1.05 + sideSpread * 0.45) * gritWalk * OL.u2.y * nightLamps * extScale;
+            let extScale = select(1.0, 0.68, OL.u5.w > 0.5);
+            col += col * vec3f(1.15, 0.65, 0.22) * (walkCore * 0.95 + sideSpread * 0.45) * OL.u2.y * nightLamps * extScale;
           }
         }
       }
     } else if (mat == 4 && !inRoom) {
       col *= mix(1.0, 0.56, smoothstep(2.15, 2.78, o.world.y));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(wallLum) * vec3f(1.24, 0.92, 0.56), w * 0.72) * 0.78;
+      col = mix(col, vec3f(wallLum) * vec3f(1.26, 0.92, 0.54), w * 0.74) * 0.82;
     }
     if (!inRoom) {
       let vigDark = clamp(OL.u2.w, 0.0, 1.2);
-      let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.055, 0.068));
-      let periphShade = mix(1.0, clamp(1.16 - dCenter * 0.44, 0.42, 1.0), vigDark);
-      let extCutDim = select(1.0, select(0.58, 0.85, o.world.x > 37.2), OL.u5.w > 0.5);
+      let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.052, 0.064));
+      let periphShade = mix(1.0, clamp(1.18 - dCenter * 0.42, 0.46, 1.0), vigDark);
+      let extCutDim = select(1.0, select(0.68, 0.92, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
       col *= periphShade * extCutDim;
     } else {
       let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(roomLum) * vec3f(1.32, 0.86, 0.46), w * 0.62) * 0.62;
-    }
-    col += evalSceneLightHazeAndBounce(o.world, n, o.color, inRoom) * nightLamps;
-    // Darken cutaway wall-top molding (y = 2.75..2.82) so interior walls have a clean dark slate cap
-    if (o.world.y > 2.74 && o.world.y < 2.83 && n.y > 0.75) {
-      col *= 0.24;
+      col = mix(col, vec3f(roomLum) * vec3f(1.38, 0.82, 0.36), w * 0.68) * 0.54;
+      // Warm amber kitchen sink window glow (north kitchen wall above sink at x=32.72..34.05, z=29.65..30.18, y=1.18..2.32)
+      if (o.world.x > 32.72 && o.world.x < 34.05 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.18 && o.world.y < 2.32) {
+        let paneX = abs(fract((o.world.x - 32.72) / 0.665) - 0.5);
+        let paneY = abs(fract((o.world.y - 1.18) / 0.57) - 0.5);
+        let muntin = smoothstep(0.04, 0.09, min(paneX, paneY));
+        col = mix(vec3f(0.08, 0.045, 0.02), vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)), muntin * nightLamps);
+      } else if (o.world.x > 30.9 && o.world.x < 36.8 && o.world.z > 29.65 && o.world.z < 30.55 && o.world.y > 0.85) {
+        // Subdue cream refrigerator & flanking upper kitchen cabinets into warm walnut-tan
+        col *= vec3f(0.52, 0.40, 0.28);
+      }
     }
     if (mat == 22) {
       // Subsurface leaf translucency & grazing rim shifted toward muted autumn olive-ochre
@@ -221,16 +226,21 @@ fn eyeVisible(p: vec2f) -> f32 {
       let keyDir = normalize(F.monitorBounds.xyz);
       let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
       let backNormal = max(0.0, dot(-n, keyDir));
-      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.24 * tipWeight;
-      let chloroTint = mix(vec3f(0.16, 0.22, 0.08), vec3f(0.36, 0.34, 0.16), sqrt(tipWeight));
-      let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 3.5) * 0.16 * tipWeight * F.ambient.w;
-      col += o.color * (chloroTint * transLobe + vec3f(0.38, 0.34, 0.20) * fresnelRim);
+      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight;
+      let chloroTint = mix(vec3f(0.20, 0.24, 0.10), vec3f(0.42, 0.36, 0.18), sqrt(tipWeight));
+      let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 3.2) * 0.22 * tipWeight * F.ambient.w;
+      col += o.color * (chloroTint * transLobe + vec3f(0.44, 0.38, 0.26) * fresnelRim);
       let folLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(folLum) * vec3f(1.12, 0.98, 0.78), w * 0.55);
+      col = mix(col, vec3f(folLum) * vec3f(1.16, 0.98, 0.78), w * 0.64);
       if (o.world.y < 0.48) {
         let lawnPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.46, 0.98, smoothstep(0.26, 0.76, lawnPatch));
+        col *= mix(0.48, 1.02, smoothstep(0.26, 0.76, lawnPatch));
       }
+    }
+    col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, o.color, inRoom, mat), nightLamps);
+    // Darken cutaway wall-top molding (y = 2.73..2.83) so interior walls have a crisp dark charcoal cap
+    if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
+      col *= 0.08;
     }
     if (mat != 12) {
       let visible = eyeVisible(o.world.xz + n.xz * 0.06);

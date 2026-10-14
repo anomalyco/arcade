@@ -20,20 +20,20 @@ export type OutbreakLightingSettings = {
 }
 
 export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
-  exposure: 1.00,
-  skyFill: 0.82,
-  moonFill: 0.92,
+  exposure: 1.04,
+  skyFill: 0.88,
+  moonFill: 0.98,
   lighting: 1.0,
-  practicalWarmth: 0.84,
-  porchPower: 0.44,
-  windowPower: 0.58,
-  roomPower: 0.68,
-  streetPower: 0.90,
-  lightFalloff: 1.25,
-  flashlightHaze: 0.25,
-  wetSpecular: 0.52,
-  rimStrength: 0.65,
-  vignetteDarkness: 0.38,
+  practicalWarmth: 0.88,
+  porchPower: 0.62,
+  windowPower: 0.76,
+  roomPower: 0.78,
+  streetPower: 0.96,
+  lightFalloff: 1.15,
+  flashlightHaze: 0.22,
+  wetSpecular: 0.56,
+  rimStrength: 0.72,
+  vignetteDarkness: 0.34,
 }
 
 /** Preset lighting profiles so switching `@arcade/kit/look` presets in the Lab dials in the base lighting primitives too. */
@@ -401,102 +401,109 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
 }
 
 /**
- * General albedo-preserving indirect bounce & localized atmospheric light haze for sodium streetlamps and tungsten practicals.
+ * Albedo-multiplying indirect bounce & localized bulb halation for sodium streetlamps and tungsten practicals.
+ * Multiplies surfCol (which already contains full procedural cracks, plank joints, rug motifs, and texture detail)
+ * so light pools sharpen surface detail rather than washing it out with flat fog.
  */
-fn evalSceneLightHazeAndBounce(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool) -> vec3f {
-  var add = vec3f(0.0);
+fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColor: vec3f, inRoom: bool, mat: i32) -> vec3f {
+  var col = surfCol;
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let isInView = OL.u5.w > 0.5;
+  let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.22, mat == 22 && world.y > 0.85);
+  let grit = 0.72 + 0.56 * surfaceNoise(world.xz * 6.5 + vec2f(1.9, 4.3));
+  let texAlbedo = (surfCol * 1.45 + baseColor * 0.22 * grit);
 
   if (!inRoom) {
-    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + tight bulb haze
+    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + tight bulb halation
     let sScale = OL.u1.w;
     if (sScale > 0.001) {
-      let sPos = select(vec2f(40.8, 42.4), vec2f(39.2, 24.5), isInView);
-      let dvS = world.xz - sPos;
+      let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
+      let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
       let dS2 = dot(dvS, dvS);
       if (dS2 < 95.0) {
-        let sodiumCol = vec3f(1.0, 0.42, 0.09);
-        let poolS = exp(-dS2 / select(20.0, 24.0, isInView));
-        let bulbHaze = exp(-dS2 / 1.4) * 0.055;
-        add += (baseAlbedo * 0.85 * poolS + vec3f(0.020, 0.0085, 0.0018) * poolS + sodiumCol * bulbHaze) * sodiumCol * sScale;
+        let sodiumCol = vec3f(1.0, 0.40, 0.06);
+        let poolS = exp(-dS2 / select(20.0, 28.0, isInView)) * groundMask;
+        let rawD2 = dot(world.xz - sPos, world.xz - sPos);
+        let bulbCore = exp(-rawD2 / 0.65) * select(0.09, 0.14, isInView) * step(world.y, 0.55);
+        col += texAlbedo * sodiumCol * poolS * select(1.35, 2.85, isInView) * sScale + sodiumCol * bulbCore * sScale;
       }
     }
 
     // 2. Warm 2500K tungsten window & porch bounce across the front yard, shrubs, and sidewalk
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
-    let extCutScale = select(1.0, 0.78, isInView);
-    if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.8 && world.z < 46.5 && world.x > 17.5 && world.x < 40.5) {
-      let dWinL2 = dot(world.xz - vec2f(24.5, 36.4), world.xz - vec2f(24.5, 36.4));
-      let dWinR2 = dot(world.xz - vec2f(34.25, 36.4), world.xz - vec2f(34.25, 36.4));
-      let dPorch2 = dot((world.xz - vec2f(27.7, 37.4)) * vec2f(0.82, 0.65), (world.xz - vec2f(27.7, 37.4)) * vec2f(0.82, 0.65));
-      let spill = ((exp(-dWinL2 / 9.5) + exp(-dWinR2 / 9.5)) * wScale * 0.48 + exp(-dPorch2 / 11.5) * pScale * 0.58) * extCutScale;
-      add += (baseAlbedo * 0.65 + vec3f(0.016, 0.0075, 0.0015)) * vec3f(1.0, 0.48, 0.10) * spill * w;
+    if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.8 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
+      let dWinL2 = dot((world.xz - vec2f(24.5, 36.8)) * vec2f(0.75, 0.65), (world.xz - vec2f(24.5, 36.8)) * vec2f(0.75, 0.65));
+      let dWinR2 = dot((world.xz - vec2f(34.25, 36.8)) * vec2f(0.75, 0.65), (world.xz - vec2f(34.25, 36.8)) * vec2f(0.75, 0.65));
+      let dPorch2 = dot((world.xz - vec2f(27.7, 37.8)) * vec2f(0.68, 0.52), (world.xz - vec2f(27.7, 37.8)) * vec2f(0.68, 0.52));
+      let cutZoneScale = select(0.88, select(0.52, 1.08, world.z > 38.0), isInView);
+      let spill = ((exp(-dWinL2 / 14.0) + exp(-dWinR2 / 14.0)) * wScale * 0.68 + exp(-dPorch2 / 16.0) * pScale * 0.78) * cutZoneScale * groundMask;
+      col += texAlbedo * vec3f(1.0, 0.44, 0.07) * spill * w;
     }
 
-    // 3. Warm golden-amber lantern/porch spill around the survivor on the street (z = 40.1..45.2)
-    let dp = world.xz - vec2f(OL.u6.x, OL.u6.y + 0.65);
-    let dp2 = dot(dp * vec2f(0.72, 0.85), dp * vec2f(0.72, 0.85));
-    if (!isInView && dp2 < 20.0 && world.y < 0.45 && world.z > 40.0) {
-      let pPool = exp(-dp2 / 5.8);
-      add += (baseAlbedo * 1.15 + vec3f(0.032, 0.017, 0.005)) * vec3f(1.0, 0.54, 0.16) * pPool * (0.4 + 0.6 * w);
+    // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0)
+    let dp = world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85);
+    let dp2 = dot(dp * vec2f(0.60, 0.76), dp * vec2f(0.60, 0.76));
+    if (!isInView && dp2 < 26.0 && world.y < 0.45 && world.z > 39.9) {
+      let pPool = exp(-dp2 / 7.8);
+      col += texAlbedo * vec3f(1.0, 0.48, 0.11) * pPool * 1.15 * (0.4 + 0.6 * w);
     }
-  } else if (world.y < 2.74) {
+  } else if (world.y < 2.72) {
     // Interior indirect room bounce & wall-wash halos (albedo-multiplying so wood planks, rugs & tiles retain full texture contrast)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
+      let warmTungsten = vec3f(1.0, 0.42, 0.07);
       // NW Bedroom bedside lamp wall wash & bed/rug bounce
-      let vNW = (world.xz - vec2f(25.1, 25.4)) * vec2f(0.68, 0.76);
+      let vNW = (world.xz - vec2f(25.1, 25.4)) * vec2f(0.66, 0.74);
       let dNW2 = dot(vNW, vNW);
       if (dNW2 < 18.0) {
-        let nwPool = exp(-dNW2 / 4.6);
-        let wallBoost = select(0.45, 1.25, abs(n.y) < 0.45 && world.z < 26.8);
-        add += (baseAlbedo * 0.068 + vec3f(0.011, 0.0046, 0.0009)) * vec3f(1.0, 0.48, 0.11) * nwPool * wallBoost * roomScale;
+        let nwPool = exp(-dNW2 / 4.8);
+        let wallBoost = select(0.55, 1.35, abs(n.y) < 0.45 && world.z < 26.8);
+        col += (surfCol * 1.45 + vec3f(0.011, 0.0042, 0.0006)) * warmTungsten * nwPool * wallBoost * roomScale;
       }
 
       // NE Bedroom dresser & rug bounce
-      let vNE = (world.xz - vec2f(29.0, 26.2)) * vec2f(0.72, 0.78);
+      let vNE = (world.xz - vec2f(29.0, 26.2)) * vec2f(0.70, 0.76);
       let dNE2 = dot(vNE, vNE);
       if (dNE2 < 15.0) {
-        let nePool = exp(-dNE2 / 4.2);
-        let wallBoost = select(0.42, 0.98, abs(n.y) < 0.45 && world.z < 26.2);
-        add += (baseAlbedo * 0.048 + vec3f(0.0055, 0.0022, 0.0005)) * vec3f(1.0, 0.46, 0.11) * nePool * wallBoost * roomScale;
+        let nePool = exp(-dNE2 / 4.4);
+        let wallBoost = select(0.48, 1.05, abs(n.y) < 0.45 && world.z < 26.2);
+        col += (surfCol * 1.15 + vec3f(0.0055, 0.0022, 0.0003)) * warmTungsten * nePool * wallBoost * roomScale;
       }
 
       // SE Kitchen north sink-window glow (33.5, 30.0) and warm tile/dining bounce
-      let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.68, 0.78);
+      let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.66, 0.76);
       let dSink2 = dot(vSink, vSink);
       if (dSink2 < 20.0) {
         let sinkPool = exp(-dSink2 / 4.8);
-        let sinkWinBoost = select(0.52, 1.45, abs(n.y) < 0.45 && world.z < 30.4 && world.y > 0.85);
-        add += (baseAlbedo * 0.075 + vec3f(0.013, 0.0054, 0.0011)) * vec3f(1.0, 0.48, 0.11) * sinkPool * sinkWinBoost * roomScale;
+        let sinkWinBoost = select(0.55, 1.45, abs(n.y) < 0.45 && world.z < 30.4 && world.y > 0.85);
+        col += (surfCol * 1.35 + vec3f(0.010, 0.0040, 0.0006)) * warmTungsten * sinkPool * sinkWinBoost * roomScale;
       }
-      let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.62, 0.65);
+      let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.60, 0.64);
       let dDin2 = dot(vDin, vDin);
       if (dDin2 < 20.0) {
         let dinPool = exp(-dDin2 / 5.2);
-        add += (baseAlbedo * 0.068 + vec3f(0.0088, 0.0036, 0.0008)) * vec3f(1.0, 0.46, 0.10) * dinPool * roomScale;
+        col += (surfCol * 1.25 + vec3f(0.008, 0.0032, 0.0005)) * warmTungsten * dinPool * roomScale;
       }
 
       // SW Living room Oriental rug & coffee table warm bounce
-      let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.65, 0.65);
+      let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.64, 0.64);
       let dSW2 = dot(vSW, vSW);
       if (dSW2 < 16.0) {
-        let swPool = exp(-dSW2 / 4.6);
-        add += (baseAlbedo * 0.055 + vec3f(0.0065, 0.0028, 0.0006)) * vec3f(1.0, 0.46, 0.10) * swPool * roomScale;
+        let swPool = exp(-dSW2 / 4.5);
+        col += (surfCol * 0.95 + vec3f(0.0048, 0.0019, 0.0003)) * warmTungsten * swPool * roomScale;
       }
 
       // Central hallway warm walnut floorboard bounce
-      let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.68, 0.58);
+      let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.66, 0.56);
       let dHall2 = dot(vHall, vHall);
       if (dHall2 < 16.0) {
         let hallPool = exp(-dHall2 / 4.8);
-        add += (baseAlbedo * 0.068 + vec3f(0.0078, 0.0034, 0.0007)) * vec3f(1.0, 0.46, 0.10) * hallPool * roomScale;
+        col += (surfCol * 1.25 + vec3f(0.0072, 0.0028, 0.0005)) * warmTungsten * hallPool * roomScale;
       }
     }
   }
-  return add;
+  return col;
 }
 
 /**
