@@ -75,7 +75,7 @@ try {
   assert(!sectionsByGame.getaway!.includes("blackout-effects"), "getaway only loads its own adapters")
   assert(!sectionsByGame.outbreak!.includes("spawn"), "outbreak has no Playground")
 
-  type Sound = { muted: boolean; volume: number; vehicles: number; effects: number; state: string; contexts: number; voices: number; loadedSamples: number; masterGain: number | null; events: number; vehicleTicks: number; steps: number }
+  type Sound = { muted: boolean; volume: number; vehicles: number; effects: number; state: string; contexts: number; voices: number; loadedSamples: number; masterGain: number | null; events: number; characterTicks: number; gameEvents: number; sharedEvents: number; beds: string[]; adapters: Record<string, { attached?: boolean; ready?: boolean; live?: boolean }> }
   const telemetry = (page: Page) => page.evaluate(() => (window as unknown as { labSound: { telemetry(): Sound } }).labSound.telemetry())
   const contexts = (page: Page) => page.evaluate(() => (window as unknown as { __audioContexts: number }).__audioContexts)
   const invoke = (page: Page, id: string, args: Record<string, unknown>) => page.evaluate(([id, args]) => (window as unknown as { lab: { workbench: { invoke(id: string, args: unknown): unknown } } }).lab.workbench.invoke(id, args), [id, args] as const)
@@ -83,8 +83,8 @@ try {
   // 2. Audio exists only after a gesture; automation starts muted; samples load from /arcade/lab/audio-assets/.
   {
     const { page, failed } = await open("/arcade/lab/?bench&sound", { audioProbe: true })
-    const assets: { path: string; status: number }[] = []
-    page.on("response", r => { if (r.url().includes("audio-assets/")) assets.push({ path: new URL(r.url()).pathname, status: r.status() }) })
+    const assets: { path: string; status: number; type: string }[] = []
+    page.on("response", r => { if (/\/(audio-assets|sfx)\//.test(r.url())) assets.push({ path: new URL(r.url()).pathname, status: r.status(), type: r.headers()["content-type"] ?? "" }) })
     await ready(page)
     await page.waitForTimeout(500)
     const before = { contexts: await contexts(page), sound: await telemetry(page) }
@@ -92,12 +92,16 @@ try {
     assert.equal(before.sound.state, "uninitialized")
     assert.equal(before.sound.muted, true, "automation starts muted")
     await page.locator("canvas").first().click({ position: { x: 640, y: 380 } })
-    await page.waitForFunction(() => (window as unknown as { labSound: { telemetry(): { loadedSamples: number } } }).labSound.telemetry().loadedSamples >= 20, undefined, { timeout: 20000 })
+    await page.waitForFunction(() => {
+      const t = (window as unknown as { labSound: { telemetry(): Sound } }).labSound.telemetry()
+      return t.loadedSamples >= 20 && t.adapters.getaway?.ready
+    }, undefined, { timeout: 20000 })
     const after = { contexts: await contexts(page), sound: await telemetry(page) }
-    assert.equal(after.contexts, 1, "one AudioContext after the first gesture")
+    assert.equal(after.contexts, 1, "one AudioContext after the first gesture, shared by every game's audio")
     assert.equal(after.sound.muted, true)
     assert.equal(after.sound.masterGain, 0, "muted master gain")
-    assert(assets.length >= 20 && assets.every(a => a.status === 200 && a.path.startsWith("/arcade/lab/audio-assets/")), `audio assets: ${JSON.stringify(assets)}`)
+    const shared = assets.filter(a => a.path.startsWith("/arcade/lab/audio-assets/")), getaway = assets.filter(a => a.path.startsWith("/arcade/lab/sfx/"))
+    assert(shared.length >= 20 && getaway.length >= 40 && assets.every(a => a.status === 200 && a.type.startsWith("audio/")), `audio assets: ${JSON.stringify(assets)}`)
     // Effects and the car feed the sound system even while muted.
     await page.evaluate(async () => {
       const lab = (window as unknown as { lab: { select(id: string): void; sections: { id: string; retrigger?(): void }[]; advance(dt: number): void; render(): Promise<number> } }).lab
@@ -117,10 +121,9 @@ try {
     await drive("blackout:soldier")
     const fed = await telemetry(page)
     assert(fed.events >= 1, "effect events reach the sound system")
-    assert(fed.vehicleTicks >= 60, "the car feeds the engine/tyre emitter")
-    assert(fed.steps >= 2, "the soldier's footsteps are counted")
+    assert(fed.characterTicks >= 160, "the car and the soldier report every simulated tick")
     assert.equal(fed.voices, 0, "muted: no voices")
-    report.audio = { before, after: { ...after, events: fed.events, vehicleTicks: fed.vehicleTicks, steps: fed.steps, voices: fed.voices }, assets: assets.length }
+    report.audio = { before, after: { ...after, events: fed.events, characterTicks: fed.characterTicks, voices: fed.voices }, assets: { shared: shared.length, getaway: getaway.length } }
     assert.deepEqual(failed, [])
     await page.close()
   }
@@ -131,8 +134,11 @@ try {
     const { page } = await open("/arcade/lab/?bench&sound")
     await page.addInitScript(() => {
       localStorage.setItem("arcade.lab.audio.v1", JSON.stringify({ muted: false }))
+      const w = window as unknown as { __oscillators: number }
+      w.__oscillators = 0
       window.AudioContext = class extends OfflineAudioContext {
         constructor() { super(2, 48000 * 30, 48000) }
+        override createOscillator() { w.__oscillators++; return super.createOscillator() }
         override get state() { return "running" as AudioContextState }
         override resume() { return Promise.resolve() }
       } as unknown as typeof AudioContext
@@ -148,6 +154,13 @@ try {
       section.settings.effect = "explosion"; section.retrigger!()
     })
     const boom = await telemetry(page)
+    await page.evaluate(() => {
+      const lab = (window as unknown as { lab: { select(id: string): void; sections: { id: string; settings: Record<string, unknown>; retrigger?(): void }[] } }).lab
+      lab.select("blackout-effects")
+      const section = lab.sections.find(s => s.id === "blackout-effects")!
+      section.settings.effect = "glass"; section.retrigger!()
+    })
+    const glass = await telemetry(page)
     await page.evaluate(() => (window as unknown as { lab: { select(id: string): void } }).lab.select("fire-water"))
     await page.waitForTimeout(400)
     const fire = await telemetry(page) as Sound & { beds: string[] }
@@ -157,11 +170,14 @@ try {
       lab.context.input.enabled = true; lab.context.input.held.add("KeyW")
       for (let i = 0; i < 30; i++) lab.advance(1 / 60)
     })
-    const car = await telemetry(page) as Sound & { vehicleActive: boolean }
-    assert(boom.voices >= 1, `explosion voices: ${boom.voices}`)
+    const car = await telemetry(page)
+    const oscillators = await page.evaluate(() => (window as unknown as { __oscillators: number }).__oscillators)
+    assert(boom.gameEvents >= 1 && boom.sharedEvents === 0, `explosion is Blackout's: ${JSON.stringify(boom)}`)
+    assert(glass.sharedEvents >= 1, "glass has no game sound, so the shared one plays")
     assert(fire.beds.includes("fire"), `fire bed: ${fire.beds}`)
-    assert(car.vehicleActive, "engine emitter active while driving")
-    report.unmuted = { explosionVoices: boom.voices, fireBeds: fire.beds, engineActive: car.vehicleActive }
+    assert(car.adapters.getaway?.ready && car.adapters.blackout?.live, `game audio attached: ${JSON.stringify(car.adapters)}`)
+    assert(oscillators >= 2, "Getaway's DriverVoice built its oscillators on the shared context")
+    report.unmuted = { explosion: { game: boom.gameEvents, shared: boom.sharedEvents }, glassShared: glass.sharedEvents, fireBeds: fire.beds, adapters: car.adapters, oscillators }
     await page.evaluate(() => (window as unknown as { labSound: { set(p: object): void } }).labSound.set({ muted: true }))
     await page.close()
   }

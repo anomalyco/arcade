@@ -248,7 +248,8 @@ bun run --cwd games/lab check
 `bun games/lab/scripts/prove-lab.ts` (headless Metal, browser muted) loads every game's sections from the one app,
 checks that audio assets return 200 under `/arcade/lab/`, that no `AudioContext` exists before the first gesture, that
 mute, master volume and category volumes persist, and that unmuted effects, beds and the engine create voices on a
-never-rendered `OfflineAudioContext`.
+never-rendered `OfflineAudioContext`. `bun games/lab/scripts/prove-game-audio.ts` checks that the Lab's Getaway and Blackout
+audio builds the same node graph and automation as the games' own paths.
 
 Run the headless Metal browser proofs through `hivemind`:
 
