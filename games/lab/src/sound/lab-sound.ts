@@ -5,7 +5,7 @@ import type { LabSection, SectionFactory } from "@arcade/kit/lab/types"
 import type { Stage } from "@arcade/kit/lab/stage"
 import { effectBed } from "./cues"
 import { MIX_GROUPS, MIX_GROUP_IDS, type MixState } from "./mix"
-import type { SceneAudio, SceneView, VehicleSample, WalkerSample } from "./scene-audio"
+import type { SceneAudio, SceneView } from "./scene-audio"
 
 const percent = (value: number) => Math.round(value * 100)
 
@@ -33,7 +33,7 @@ export function audioSection(sound: SceneAudio): SectionFactory {
   }
 }
 
-/** Characters report their simulated state each tick: vehicles drive the engine/tyre emitter, walkers footsteps. */
+/** Characters hand their `sound()` state to the games' audio adapters after every simulated tick. */
 export function withSound(character: CharacterSpawnable, sound: SceneAudio): CharacterSpawnable {
   return {
     ...character,
@@ -43,9 +43,7 @@ export function withSound(character: CharacterSpawnable, sound: SceneAudio): Cha
         ...live,
         update(dt, input) {
           live.update(dt, input)
-          const data = live.inspect()
-          if (character.vehicle) sound.vehicle(data as VehicleSample, dt)
-          else sound.walker(data as WalkerSample, dt)
+          sound.character(character.id, live.sound?.())
         },
       }
     },

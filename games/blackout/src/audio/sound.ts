@@ -13,13 +13,16 @@ export class Sound {
   private verb: ConvolverNode | null = null
   private noise: AudioBuffer | null = null
   muted = false
+  /** Master level under the mute (the Lab's volume); the game leaves it at 1. */
+  volume = 1
 
-  start(): void {
+  /** Starts on a gesture; the Lab passes its own shared context instead of creating one. */
+  start(context?: AudioContext): void {
     if (this.ctx) {
       void this.ctx.resume()
       return
     }
-    const ctx = new AudioContext()
+    const ctx = context ?? new AudioContext()
     this.ctx = ctx
     this.comp = ctx.createDynamicsCompressor()
     this.comp.threshold.value = -16
@@ -28,7 +31,7 @@ export class Sound {
     this.comp.attack.value = 0.002
     this.comp.release.value = 0.12
     this.master = ctx.createGain()
-    this.master.gain.value = 0.75
+    this.master.gain.value = this.muted ? 0 : 0.75 * this.volume
     this.master.connect(this.comp).connect(ctx.destination)
     const len = ctx.sampleRate
     const buf = ctx.createBuffer(1, len, ctx.sampleRate)
@@ -72,7 +75,12 @@ export class Sound {
 
   setMuted(m: boolean): void {
     this.muted = m
-    if (this.master) this.master.gain.value = m ? 0 : 0.75
+    if (this.master) this.master.gain.value = m ? 0 : 0.75 * this.volume
+  }
+
+  setVolume(level: number): void {
+    this.volume = level
+    this.setMuted(this.muted)
   }
 
   /** A source (dx, dy) metres away: distance gain, pan, top end rolled off with distance, and a reverb send. */

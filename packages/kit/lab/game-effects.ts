@@ -32,7 +32,7 @@ export function gameEffects(context:LabContext,id:string,label:string,create:()=
   const trigger=()=>{
     adapter!.trigger(String(settings.effect),Number(settings.effectSeed));elapsed=0
     const at=adapter!.objects?.(settings).find(o=>o.category==="emitter")??adapter!.frameTarget?.(settings)??{x:0,y:0,z:0}
-    context.emit?.({type:"effect",section:id,effect:String(settings.effect),variant:settings.surface===undefined?undefined:String(settings.surface),x:at.x,y:at.y,z:at.z})
+    context.emit?.({type:"effect",section:id,effect:String(settings.effect),variant:settings.surface===undefined?undefined:String(settings.surface),settings,x:at.x,y:at.y,z:at.z})
     context.sync()
   }
   const rebuild=()=>{adapter!.environment(String(settings.environment),Number(settings.seed));context.sync()}

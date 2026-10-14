@@ -535,6 +535,7 @@ export function getawaySpawn(context: LabContext) {
             })
             return [...headlights, ...tailLights]
           },
+          sound: () => ({ car, input }),
           inspect: () => {
             const pose = currentPose()
             const s = sides[0]!
@@ -545,11 +546,6 @@ export function getawaySpawn(context: LabContext) {
               ...point,
               speed: car.speed,
               drift: car.drift,
-              // Contact state and velocity, for the Lab's engine/tyre/impact audio.
-              fuel: car.boost,
-              impact: car.impact,
-              vx: car.vx,
-              vz: car.vz,
               lift: chassis.lift.x,
               roll: chassis.roll.x,
               pitch: chassis.pitch.x,
