@@ -617,12 +617,12 @@ export class GroundWearRenderer {
       if (count > 0) batches.push({ model, data: buf, count })
     }
 
-    packVisible(this.manholes, this.manholeData, this.manholeModel, Math.max(0.2, wear))
-    packVisible(this.drains, this.drainData, this.drainModel, Math.max(0.2, wear))
+    packVisible(this.manholes, this.manholeData, this.manholeModel, wear)
+    packVisible(this.drains, this.drainData, this.drainModel, wear)
     packVisible(this.potholes, this.potholeData, this.potholeModel, wear)
     packVisible(this.slabs, this.slabData, this.crackedSlabModel, wear)
     packVisible(this.curbs, this.curbData, this.curbBlockModel, wear)
-    packVisible(this.paints, this.paintData, this.paintDashModel, Math.max(0.25, wear))
+    packVisible(this.paints, this.paintData, this.paintDashModel, wear)
     packVisible(this.clods, this.clodData, this.edgeClodModel, dirt)
 
     return batches

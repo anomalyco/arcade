@@ -308,7 +308,7 @@ export class OutbreakAmbientMotion {
         0.35,
         player.y - WIND_DIR_Z * 8.0,
         effDt,
-        2.8 * density * gustHere,
+        5.5 * density * gustHere,
         "rate",
         (ex, ey, ez) => {
           const s = (this.emitSeed = (this.emitSeed * 1664525 + 1013904223) >>> 0)
@@ -327,7 +327,7 @@ export class OutbreakAmbientMotion {
         0.18,
         player.y - WIND_DIR_Z * 6.0,
         effDt,
-        0.9 * density * gustHere,
+        1.8 * density * gustHere,
         "rate",
         (ex, ey, ez) => {
           const s = (this.emitSeed = (this.emitSeed * 1664525 + 1013904223) >>> 0)
