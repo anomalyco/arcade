@@ -131,8 +131,8 @@ fn eyeVisible(p: vec2f) -> f32 {
     // Deep weathered slate-charcoal roof reusing surfaceAlpha (courseLip * tabSlot) from surfaceMaterial.
     let eave = smoothstep(2.82, 3.62, o.world.y);
     let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
-    let moonGlint = (0.22 * eave + 0.95 * ridgeRim + 1.35 * surfaceAlpha * (0.35 + 0.65 * eave)) * F.ambient.w * max(0.0, n.y);
-    col = col * mix(0.56, 0.96, eave) + vec3f(0.007, 0.014, 0.030) * moonGlint;
+    let moonGlint = (0.26 * eave + 1.05 * ridgeRim + 2.10 * surfaceAlpha * (0.35 + 0.65 * eave)) * F.ambient.w * max(0.0, n.y);
+    col = col * mix(0.60, 1.02, eave) + vec3f(0.008, 0.016, 0.034) * moonGlint;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     if (mat == 20) {
@@ -169,10 +169,11 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       }
     } else if (mat == 4 && !inRoom) {
-      // Deep eave overhang shadow beneath main roof soffit and porch gable overhang.
-      let eaveShadow = smoothstep(2.02, 2.72, o.world.y);
-      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
-      col *= mix(1.0, 0.34, clamp(eaveShadow + underPorchGable * 0.48, 0.0, 1.0));
+      // Deep eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub/sill occlusion.
+      let eaveShadow = smoothstep(1.96, 2.70, o.world.y);
+      let lowShadow = (1.0 - smoothstep(0.28, 0.95, o.world.y)) * 0.45;
+      let underPorchGable = step(2.02, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.65) * step(34.5, o.world.z);
+      col *= mix(0.76, 0.28, clamp(eaveShadow + lowShadow + underPorchGable * 0.52, 0.0, 1.0));
     }
     if (!inRoom && o.world.y < 0.35) {
       let dp = o.world.xz - lights[0].pos.xz;

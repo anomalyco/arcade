@@ -356,8 +356,8 @@ function compileLevel(town: Town): LevelData {
     for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
       floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
     }
-    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x3d3830, 6)
-    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x58534a,6)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x26221c, 6)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x3c3831,6)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
     // Concrete curb-cut ramp flare at the street edge of the driveway
     if(b.kind==="house"&&end<40){
@@ -397,40 +397,40 @@ function compileLevel(town: Town): LevelData {
       if (r - x > 1) {
         const zm = (z + end) / 2
         const isLeftWin = x < house.rect[0] + 5
-        // Projecting weathered stone/wood sill + dark water-stain apron, and deep interior walnut sill
-        m.box(x-.08, .79, z+.04, r+.08, .86, end+.14, hex(0x8e887a), MAT.wall)
-        m.box(x-.05, .72, end, r+.05, .79, end+.08, hex(0x46423b), MAT.wall)
-        m.box(x-.06, .80, z-.10, r+.06, .86, z+.06, hex(0x6e5236), MAT.timber)
+        // Projecting weathered dark-taupe sill + deep water-stain apron, and interior walnut sill
+        m.box(x-.08, .79, z+.04, r+.08, .86, end+.14, hex(0x585248), MAT.wall)
+        m.box(x-.05, .72, end, r+.05, .79, end+.08, hex(0x2c2924), MAT.wall)
+        m.box(x-.06, .80, z-.10, r+.06, .86, z+.06, hex(0x563e28), MAT.timber)
         // Recessed window header & deep side jamb reveals
-        m.box(x-.07, 2.14, z-.05, r+.07, 2.23, end+.09, hex(0x8e887a), MAT.wall)
+        m.box(x-.07, 2.14, z-.05, r+.07, 2.23, end+.09, hex(0x585248), MAT.wall)
         for (const px of [x, r - .07]) {
-          m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0x8e887a), MAT.wall)
+          m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0x585248), MAT.wall)
         }
-        // Subdued warm amber sill bounce (rich saturation without clipping to white)
-        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(isLeftWin ? 0x522608 : 0x68320c), MAT.lamp, lamp)
+        // Rich amber sill bounce without white clipping
+        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(isLeftWin ? 0x2e1404 : 0x3e1c06), MAT.lamp, lamp)
         const doubleWin = r - x > 2.2
         if (doubleWin) {
           const mid = (x + r) / 2
-          m.box(mid - .05, .85, z-.03, mid + .05, 2.16, end+.05, hex(0x8e887a), MAT.wall)
+          m.box(mid - .05, .85, z-.03, mid + .05, 2.16, end+.05, hex(0x585248), MAT.wall)
         }
         const panes = doubleWin ? [[x+.07, (x+r)/2-.05], [(x+r)/2+.05, r-.07]] : [[x+.07, r-.07]]
         for (const [pIdx, [wx0, wx1]] of panes.entries()) {
           // Deep amber-orange inner glow + half-drawn blind/curtain silhouettes for moody depth
-          const lowGlow = isLeftWin ? (pIdx === 0 ? 0x482208 : 0x381a06) : (pIdx === 0 ? 0x56280a : 0x622e0c)
-          const hiGlow = isLeftWin ? 0x2c1304 : 0x3c1b07
+          const lowGlow = isLeftWin ? (pIdx === 0 ? 0x321604 : 0x261003) : (pIdx === 0 ? 0x3e1c06 : 0x482008)
+          const hiGlow = isLeftWin ? 0x1c0b02 : 0x281104
           m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(lowGlow), MAT.lamp, lamp)
           m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(hiGlow), MAT.lamp, lamp)
           for (const [cx0, cx1] of [[wx0!, wx0! + .24], [wx1! - .24, wx1!]]) {
-            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x24170d), MAT.wall)
+            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x1c120a), MAT.wall)
           }
           // Recessed vertical & horizontal sash muntins at the window mid-plane zm
           const midX = (wx0! + wx1!) / 2
-          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0x9a9486), MAT.wall)
+          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0x686256), MAT.wall)
           // See-through glass pane recessed at zm
-          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x463628), MAT.glass)
+          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x382a1e), MAT.glass)
         }
         // Recessed horizontal meeting rail across the sash mid-plane
-        m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0x9a9486), MAT.wall)
+        m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0x686256), MAT.wall)
       } else {
         const xm = (x + r) / 2
         // East wall window: projecting exterior sill, deep interior wooden sill, recessed jambs, side drapes & see-through glass

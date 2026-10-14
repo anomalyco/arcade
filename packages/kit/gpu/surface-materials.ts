@@ -1310,19 +1310,19 @@ export const surfaceMaterial = /* wgsl */ `
           if (onPorch) {
             let edgeX = min(p.x - (bPorch.x + 4.5), (bPorch.x + 7.0) - p.x);
             let edgeZ = min(p.y - bPorch.w, (bPorch.w + 1.3) - p.y);
-            let borderGrime = smoothstep(0.0, 0.28, min(edgeX, edgeZ));
+            let borderGrime = smoothstep(0.0, 0.34, min(edgeX, edgeZ));
             let stainNoise = surfaceNoise(p * 3.4 + vec2f(1.7, 5.2));
-            let rustStain = smoothstep(0.42, 0.76, stainNoise) * exp(-length(p - vec2f(bPorch.x + 5.35, bPorch.w + 0.92)) * 2.2) * weatherMult;
-            let stepSeam = seam((p.y - bPorch.w) / 0.42, 0.022, 2.38);
-            albedo *= (0.48 + 0.34 * borderGrime) * mix(0.55, 1.0, stepSeam);
-            albedo = mix(albedo, vec3f(0.11, 0.032, 0.018), clamp(rustStain * 0.72, 0.0, 0.75));
+            let rustStain = smoothstep(0.40, 0.74, stainNoise) * exp(-length(p - vec2f(bPorch.x + 5.35, bPorch.w + 0.92)) * 2.1) * weatherMult;
+            let stepSeam = seam((p.y - bPorch.w) / 0.42, 0.025, 2.38);
+            albedo *= (0.34 + 0.28 * borderGrime) * mix(0.48, 1.0, stepSeam);
+            albedo = mix(albedo, vec3f(0.09, 0.026, 0.015), clamp(rustStain * 0.75, 0.0, 0.78));
           } else if (onWalk) {
             let walkEdge = min(p.x - (bPorch.x + 5.0), (bPorch.x + 6.4) - p.x);
-            let walkGrime = smoothstep(0.0, 0.24, walkEdge);
+            let walkGrime = smoothstep(0.0, 0.28, walkEdge);
             let wNoise = surfaceNoise(p * 5.2 + vec2f(2.1, 6.7));
             let walkCrack = abs(surfaceNoise(p * 1.85 + vec2f(wNoise * 0.45, 1.9)) - 0.5);
-            let crackLine = (1.0 - smoothstep(0.005, 0.018, walkCrack)) * step(0.54, wNoise) * 0.38 * weatherMult;
-            albedo *= (0.58 + 0.30 * walkGrime) * (1.0 - crackLine);
+            let crackLine = (1.0 - smoothstep(0.005, 0.018, walkCrack)) * step(0.54, wNoise) * 0.42 * weatherMult;
+            albedo *= (0.48 + 0.26 * walkGrime) * (1.0 - crackLine);
           }
         }
       } else if (kind == 3) {
@@ -1340,8 +1340,8 @@ export const surfaceMaterial = /* wgsl */ `
         if (inKitchen) {
           // Moody weathered darkstone-slate kitchen tile floor (less bright so warm table & clutter read clearly)
           let perimDist = min(min(p.x - (b.z - 6.08), (b.z - 0.05) - p.x), min(p.y - (b.y + 5.68), (b.w - 0.05) - p.y));
-          let perimShade = 0.66 + 0.34 * smoothstep(0.0, 0.75, perimDist);
-          let s = evalKitchenTile(p, vec3f(0.145, 0.132, 0.114) * perimShade);
+          let perimShade = 0.62 + 0.38 * smoothstep(0.0, 0.85, perimDist);
+          let s = evalKitchenTile(p, vec3f(0.122, 0.112, 0.096) * perimShade);
           albedo = s.albedo;
           gloss = s.gloss;
           if (texOn) {
