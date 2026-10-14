@@ -30,6 +30,7 @@ import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
+import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
 import { ExteriorClutterRenderer } from "./clutter"
 import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
@@ -134,6 +135,7 @@ async function main() {
   const combatFx = new OutbreakCombatFX(renderer)
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
+  const ambientMotion = new OutbreakAmbientMotion(renderer)
   const updateProfile = () => {
     avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
   }
@@ -620,6 +622,7 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    ambientMotion.reset()
   }
   function reset(nextSeed = seed) {
     session.close()
@@ -631,6 +634,7 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    ambientMotion.reset()
     level()
     scenery = new SceneryMemory()
     renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -940,7 +944,7 @@ async function main() {
       sashData.set([(wx0 + wx1) / 2, 0.38, (wy0 + wy1) / 2, yaw, 1, 1, 1, 1, 0, 0, 1, 0], openWindows++ * 12)
     }
     sashBatch.count = openWindows
-    render.alphaCount = zombieCrowd.renderDebugOverlay(
+    const debugAlphaCount = zombieCrowd.renderDebugOverlay(
       Boolean(settings.aiDebugOverlay),
       zombies,
       noises,
@@ -954,13 +958,25 @@ async function main() {
       alphaSprites,
       0,
     )
-    render.addCount = addCount
-    render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     const groundWearBatches = groundWear.collectBatches(town, view, settings)
     const clutterBatches = exteriorClutter.collectBatches(town, view, settings)
+    const motionOut = ambientMotion.stepAndCollect(
+      dt,
+      time,
+      town,
+      p,
+      view,
+      settings,
+      alphaSprites,
+      debugAlphaCount,
+    )
+    render.alphaCount = motionOut.alphaCount
+    render.addCount = addCount
+    render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     render.batches = [
       ...groundWearBatches,
       ...clutterBatches,
+      ...motionOut.batches,
       ...survivorBatches,
       ...fxOut.batches,
       ...zombieBatches,
