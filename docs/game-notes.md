@@ -2,21 +2,15 @@
 
 Techniques that have worked in one arcade game and should carry to the others. Add an entry once something is proven:
 what it does, where it lives, and what it measured. Mark candidates that have not been measured or playtested yet.
-Shared code that bakes these decisions in is tracked in `docs/shared-code.md`.
+Shared code that bakes these decisions in is tracked in `docs/shared-code.md`. Animation has its own file,
+[animation.md](animation.md).
 
-## Shared human presentation
+## Human animation
 
-`human-locomotion`, `human-profile` and `human-pose` share the canonical rig's contacts, IK, posture and semantic
-attachments. The soldier adapter reproduces `8223033` exactly over 900 seeded body frames per animation mode,
-including running posture, recoil and hits. Runtime wizards keep game-owned weapon frames and casting clips;
-Outbreak's zombie preview keeps game-owned terrain support. See [Human rig](human-rig.md) for the API boundary.
-
-Detach samples the displayed pose before hiding the subtree. Copy the frames, seed origin linear and world
-angular velocity from consecutive samples, and start debris integration on the next tick. An offset wound or
-centre of mass needs `linear + angular × offset`. Keep numeric cosmetic limb IDs independent of mesh order and
-emit one selected wound through the existing splatter hook. Corpse detaches sample the current ragdoll, not its
-last living frame. Tests and first Metal proof are recorded in `../perf/human-rig.md`; playback and cost limits
-remain explicit there.
+Animation insights for the shared human rig (gait timing, contacts, arms, posture, transitions, profiles and
+weapons, with measured values and known gaps) live in [animation.md](animation.md). The rig's API and ownership are
+in [human-rig.md](human-rig.md), and the tuning procedure is the `procedural-animation-iteration` skill. Add
+proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
@@ -146,107 +140,6 @@ remain explicit there.
   an actual kill with a two-second respawn, 240 firing/reload ticks with ammo remaining and no reload delay, and the
   passive/live toggle. `tests/sandbox.test.ts` now verifies five idle minutes and respawning at the original dummy
   position/aim; explicit peaceful mode prevents the B shortcut from reactivating bots. Runtime cost is unmeasured.
-
-## Human animation
-
-Blackout's `src/game/anim-locomotion.ts` separates the distance-driven stride wheel from contact ownership.
-The wheel advances by actual root displacement, with a smooth Froude transition around 2 m/s. Walking waits for
-support; running releases the supporting toe once the other swing is committed, allowing flight at the game's
-4.2/6.3 m/s travel speeds. A trailing foot can request an early step before rigid-leg reach fails. Cadence therefore
-exceeds the research reference of 115 walking / 150–180 running steps per minute; those rates are not enforced.
-The fixed-speed diagnostic measured approximately 207 steps/min at 1.4 m/s and 300 at 6.3 m/s. Cadence remains a
-look-tuning tradeoff, rather than a claim of anatomically calibrated walking.
-
-- Lock the **rendered toe**, not only the IK target. `plantedFoot` keeps the toe fixed while the heel rolls down
-  over 60 ms and the boot pivots with the pelvis. Swing ankles relax toward the shin, then recover ground alignment.
-  Heel/toe height clamps prevent the sole penetrating the floor. The `9.48 (1-u)^3 u` arc lifts early and glides in.
-- Keep pelvis intent and visible yaw within 1.05 rad of aim. Spring toward the circular midpoint of foot yaws,
-  add forward/back foot-separation twist, and counter it by 65% in the chest. Sidesteps open the leading boot
-  by 0.6 rad, the follower by 0.12 rad, with a 0.20 m separation constraint in aim space.
-- A sprung foot centre, capped at 0.30 m lag per axis, carries inertia through starts and stops. Hips move under
-  the head during lean. The head stays attached to the neck and springs toward aim. Pelvis sway and swing-side drop
-  are amplified 1.6× for the top-down view; body height has a fixed gait offset rather than an IK reach crouch.
-- Spring the weapon's world-space position and yaw independently of the shoulders. Rifle, shotgun and sniper
-  ergonomics scale catch-up frequency. Recoil holds for 1–3 60 Hz ticks before spring recovery; hit twist follows
-  the hit side. Existing reload, gear and melee clips still own their hand paths.
-- `anim-pose.ts` gives animation and ragdolls the same joint order. Difference consecutive poses for joint
-  velocities (capped at 15 m/s per axis), copy the pose into Verlet storage, and retain each part's local frame.
-  This preserves foot/hand orientation at death and prevents physics mutating the last living pose.
-
-Backquote → Animation exposes Old/New and all 14 numeric settings in the shared Lab, both in the game and in
-`anim.html`. Presentation settings have no simulation or wire fields. The Old path retains the former gait and
-weapon handling; seeded recoil and pose-preserving ragdoll attachment fixes are shared by both paths.
-
-**Proof:** 13 animation cases pass inside `bun run check` (279 total tests after the workspace/look rebase,
-plus the shared package's six tests, typechecks and production build).
-Locked contacts have exactly zero translation; rendered toe slip is below 1e-12 m during straight walk, run,
-sprint, both strafes, backpedal and in-place turning. Both strafes retain 0.20 m target separation. Steady forward
-walk/run/sprint planted ankles agree with the rigid shin endpoint within 1e-6 m. Transition, fixed-step replay,
-two-step stop settling, attached necks, running flight and ragdoll pose/velocity inheritance are checked.
-
-`scripts/prove-animation.ts --video` captured 2,160 headless Chromium/Metal frames through the real Game/Renderer,
-with nine scripted beats at gameplay and close zoom. It also checked the real `?sandbox=1` Lab's Old/New select
-and 14 sliders. The 36-second, silent, 1080×1080 H.264 High clip puts Old above New; the contact sheet includes
-a death frame strip. Stills and encoded run/death frames were inspected. Continuous playback and runtime CPU/GPU
-cost have not been measured. Reproduce encoding with `bash scripts/animation-film.sh` and the sheet with
-`python3 scripts/animation-sheet.py` (Pillow required).
-
-### Running attitude and weapon stability revision
-
-The first New gait lost the old run's forward attitude, and its world-space weapon spring (`m.gun` chasing world
-`[a.x + ..., hold.up, a.y + ...]` at 6 Hz) lagged 18–34 cm behind the moving soldier and vibrated at 30 Hz (`deltaRms`
-0.0665 m) under `compare.html`'s decoupled `mux` tick rate.
-
-`human-locomotion.ts` and `human-profile.ts` now spring both `runPosture` (`Run lean · rad`, default `0.34`) and
-`crouchDepth` (`Crouch depth · m`, default `0.08`) through the walk→run→sprint speed ramp, with `leanScale=1.25` and
-`headStability=0.8` (`Head stabilisation`). Forward run and sprint lower the pelvis (`~14.5 / 17.2 cm` total drop),
-bend the knees (`~75° / 72°` vs `50°` at walk), pitch the pelvis (`-12.5° / -15.6°`) and chest (`-28.9° / -38.9°`)
-forward while keeping the head stabilised (`-6.9° / -7.7°`) and world-locked toe contacts at zero slip. Strafe and
-backpedal suppress forward run lean and damp backward velocity lean so backpedalling stays upright.
-
-`anim.ts` anchors `m.gun` to a stabilised shoulder posture frame (root + crouch + lean/dip, excluding cyclic hip sway
-`m.sway`, pelvic roll `m.drop` and spine counter-twist `m.twist`) and carries root displacement `(dx, dy)` and aim
-delta `dAim` 1:1 before stepping the `weaponHz * ergonomics` springs. This keeps the rifle compact in front of the
-crouched chest (`~0.26 m` ahead of the shoulders) with zero world-velocity lag, zero 30 Hz `mux` sawtooth jitter, and
-lower positional and angular RMS/delta-RMS than Old across steady run, sprint, strafe, circle, stop and aim sweeps.
-
-`scripts/prove-running.ts` captures the real viewer/Game/Renderer on headless Metal. Its three-way comparison uses
-Old, current New (`runPosture=0`) and refined New, with five matched routes and gameplay, side and three-quarter
-cameras. The film uses identical ticks, root trajectories, aims and seeds. New/refined phases are exactly equal;
-Old's different gait clock is shown honestly. Separate ten-phase strips normalize successive left-foot touchdowns
-to the nearest 60 Hz frame, with actual fractions printed. `running-sheet.py` checks the pair's captured state;
-`running-film.py` adds labels and quarter-speed repeats without changing the simulation or scaling its pixels.
-
-Four screenshot-anchored paintovers under the dated running artifacts informed trunk attitude. Their minor weapon
-placement/free-leg deviations are not reproduced: contacts and weapon transforms are tested against the actual
-current pose. Paintovers are art targets, not biomechanical measurements. Continuous playback still needs visual
-review; sampled images and numerical checks do not establish it. Runtime CPU/GPU cost is unmeasured.
-
-### Procedural locomotion transition and contact continuity pass
-
-- **Re-anchor mid-swing `f.lift` when landing targets update.** Updating `m.targets[i]` directly in `f.lift + (target - f.lift) * e`
-  retroactively scaled target deltas by completed swing progress `e(u)`, causing up to `0.352 m` touchdown snaps on hard
-  stops (`!travelling`) and `0.514 m` (`30.82 m/s`) mid-air kicks when crossing the binary `strafe > 0.2` separation gate.
-  `packages/kit/human-locomotion.ts` now folds mid-swing target changes into `f.lift` (`(cur - desired * ep) / (1 - ep)`),
-  weights aim-space foot separation with a smooth ramp `smooth((strafe - 0.05) / 0.20)`, blends authoritative velocity into
-  reversal lookahead, redirects late-swing airborne feet once on 180° reversals, and guards against unannounced caller
-  teleports (`stranded` feet `> 0.72 m` from root).
-- **Keep sole floor clearance before IK, align touchdown pitch, and bias the knee pole above horizontal.** `packages/kit/human-pose.ts`
-  applies swing sole floor clearance (`low < 0`) to `ankle[1]` before solving `ik(hip, ankle)`, blends late-swing ankles
-  into the `-0.12 rad` toe-pivot touchdown frame over `u = 0.75..1.0`, and uses `dirIn(pelvis, 1, 0.28, side * 0.25)` so
-  forward crouch-run pelvis pitch cannot tilt the knee pole into the swing chord.
-- **Keep run-posture lean aligned with `legYaw` and expose hip drop, bounce, turn bank, step lift, arm swing and transition Hz in the Lab.** `anim.ts`
-  projects `m.posture.x` along `a.legYaw` rather than `a.svx / speed`, reducing 180°-reversal pelvis pitch jumps from
-  `0.406 rad` (`23.3°`) to `0.032 rad` (`1.8°`) while keeping steady run/sprint posture and weapon stability metrics intact.
-  `human-locomotion.ts` phase-locks `a.phase` softly to the active swing foot, uses a phase-shifted bounce harmonic
-  `cos(2*theta - pi*run)` (preventing amplitude cancellation at `run = 0.5`), curves stride length sublinearly above
-  `3.6 m/s`, inertializes forward/backpedal quadrant flips (`m.yawOffset` at `transitionHz`), and uses an Overgrowth-style
-  lead-follow lateral strafe shuffle. `human-profile.ts` adds `hipDrop`, `bobScale`, `turnBank`, `stepLift`, `armSwing`
-  and `transitionHz` to the shared `Profile`/`Animation` Lab controls. Outbreak's `src/survivor.ts` replaces its raw
-  `sqrt(0.815^2 - d^2)` pelvis clamp with a sprung `reachDrop` filter, re-anchored swing targets, pelvic twist, and
-  two-stage arm/hand follow-through springs, cutting sloped reversal pelvis jumps from `0.358 m` / `0.566 m` to
-  `0.049 m` / `0.040 m`. `games/blackout/src/dev/characters.ts` squares up the unarmed Survivor's chest, uses
-  `unarmedHands()`, and wraps loops by stage distance (`5.8 m`) so toggling `Walk loop` ↔ `Run loop` transitions in place.
 
 ## Rendering (WebGPU)
 
@@ -609,6 +502,15 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   without avoiding a pass on this path (`perf/getaway.md`).
 - **Getaway early-Z split was not a clear win.** Opaque/cutaway pipelines with separate alpha chunks measured
   38.254 → 37.308 ms (inside MAD), with increased CPU submission cost; reverted (`perf/autoresearch.md`).
+- **Put the analytic lamp air on the actual lens, and anchor actors with a capsule shadow.** Outbreak's sodium pool
+  centre sits 6.7 m from the visible cobra-head lens, so the 2026-10-14 experiments integrate the air cone along the
+  camera ray from the lens (`STREET_LAMP_POSTS`/`streetLampHead`, six samples clipped to the lamp's height slab, plus a
+  closed-form Gaussian lens/halo line integral) and cast a soft capsule shadow from the survivor and two nearest zombies
+  away from that lens with 22 cm boot contact AO (`evalLampAir`, `evalActorGroundShadow` in
+  `games/outbreak/src/lighting.ts`; Lab Atmosphere group). Against the sodium-70s target (`scripts/look-compare.py`),
+  street lamp-head ΔE2000 fell 9.57 → 1.16, lamp air 3.37 → 1.52, actor ground 3.06 → 2.40, global 6.36 → 6.24. Same-frame
+  paired GPU cost (`scripts/ab-gpu.ts`, 20 rounds, 3456×1894) is +0.011 ms street / −0.014 ms interior (MADs 0.23/0.11),
+  inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
 
 ## Art direction
 
@@ -857,6 +759,22 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   reference. No new per-frame JS storage is allocated by the smoke simulation, preparation or upload path.
 
 ## Researched, not yet adopted
+
+### Outbreak survey §5 experiments rejected on measurement (2026-10-14)
+
+Evidence and patches: `~/code/home/artifacts/2026-10-14-visual-experiments/progress.md`.
+
+- **Window interior parallax** (virtual room, drapes, valance behind the glass): after Release 5's lamp-box and drape
+  geometry behind 22 % glass, five tunings all moved the window regions away from the target (best: street 6.75 → 8.50,
+  open 4.56 → 6.12) and read paler. The existing geometry already supplies the warm depth.
+- **Light-list grid / static polar rows**: skipping the entire polar dispatch changed GPU time by under 0.15 ms, so
+  row caching cannot pay. A pixel-exact 16×10 view bitmask grid (0 scene pixels changed) had no clear win with only 6/3
+  lights in the benchmark frames; 11 rejected dummy lights cost +2.2–2.5 ms, so revisit if light counts grow.
+- **Directional actor bounce and wet asphalt lamp sheen**: actor pixels moved under 2/255. The 6.2 m lens's mirror point
+  for this camera lands on the far sidewalk under the tree canopy, so a physically placed sheen never reaches the road.
+- **Foliage contact bend and Karis bloom average**: the bend darkened the shrub mass instead of reading as parting.
+  With `bloom = 0.068` and a 0.9 threshold, the Karis average changed the frame by at most 3/255 and frame-to-frame
+  shimmer not at all.
 
 ### Connected smoke research (2026-10-12)
 

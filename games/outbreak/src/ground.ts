@@ -5,6 +5,7 @@ import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer
 import { Rng } from "@arcade/kit/sim/rng"
 import { frontageEnd, SIZE, type Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
+import { STREET_LAMP_POSTS } from "./lighting"
 
 const rgb = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 
@@ -377,36 +378,19 @@ export class GroundWearRenderer {
     this.cachedKey = key
     const rng = new Rng((town.seed ^ (seedOverride * 0x45d9f3b) ^ 0x4f91c27b) >>> 0)
 
-    this.streetLamps = [
-      // South-east curb streetlamp overhanging the street in street.png (base at 38.25, 47.85 -> arm reaches left to ~36.8, 47.6)
-      {
-        x: 38.25,
-        y: 0.08,
-        z: 47.85,
-        yaw: -Math.PI * 0.92,
-        r: 1,
-        g: 1,
-        b: 1,
-        scale: 1,
-        pitch: 0,
-        roll: 0,
-        threshold: 0.05,
-      },
-      // East-sidewalk streetlamp in open.png (base at 37.95, 25.15 -> head at ~39.1, 25.8)
-      {
-        x: 37.95,
-        y: 0.08,
-        z: 25.15,
-        yaw: 0.32,
-        r: 1,
-        g: 1,
-        b: 1,
-        scale: 1,
-        pitch: 0,
-        roll: 0,
-        threshold: 0.05,
-      },
-    ]
+    this.streetLamps = STREET_LAMP_POSTS.map((post) => ({
+      x: post.x,
+      y: 0.08,
+      z: post.z,
+      yaw: post.yaw,
+      r: 1,
+      g: 1,
+      b: 1,
+      scale: 1,
+      pitch: 0,
+      roll: 0,
+      threshold: 0.05,
+    }))
 
     this.manholes = [
       [33.45, 43.85],

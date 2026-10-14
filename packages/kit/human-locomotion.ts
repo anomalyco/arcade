@@ -8,7 +8,7 @@ export type Locomotion = {
   x: number; y: number; vx: number; vy: number; aim: number
   svx: number; svy: number; acx: number; acy: number
   legYaw: number; gait: number; duty: number; phase: number; back: boolean; turning: boolean
-  unarmed?: boolean
+  unarmed?: boolean; seed?: number
   feet: [Foot, Foot]; motion: ReturnType<typeof newMotion>
   leanX: Spring; leanY: Spring; dip: Spring; hitX: Spring; hitY: Spring
   body?: { gun?: { p: V3 } | null } | null
@@ -21,6 +21,13 @@ const angleDiff = (a: number, b: number) => {
   return d
 }
 
+/** Deterministic platform-independent hash in [-1, 1] for per-step and per-actor variation. */
+export function stepHash(seed: number, step: number, channel: number): number {
+  let h = Math.imul((Math.round(seed * 1000) | 0) ^ Math.imul(step + 1, 0x9e3779b1), 0x85ebca6b)
+  h = Math.imul(h ^ (h >>> 13) ^ Math.imul(channel + 1, 0xc2b2ae35), 0x27d4eb2f)
+  return ((h ^ (h >>> 16)) >>> 0) / 2147483647.5 - 1
+}
+
 const TAU = Math.PI * 2
 export const stiffness = (hz: number) => (hz * TAU) ** 2
 export function angleSpring(s: Spring, goal: number, hz: number, dt: number): void {
@@ -30,14 +37,20 @@ export function angleSpring(s: Spring, goal: number, hz: number, dt: number): vo
 export function newMotion(x: number, y: number, aim: number) {
   return {
     enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0, strafeSign: 0,
+    stepCount: 0, clock: 0,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
     bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(), crouch: spring(), bank: spring(),
-    yawOffset: spring(),
+    secondary: spring(), yawOffset: spring(),
     arms: [spring(), spring()] as [Spring, Spring],
     hands: [spring(), spring()] as [Spring, Spring],
     gun: [spring(), spring(), spring()] as [Spring, Spring, Spring],
     swings: [0, 0], durations: [0.2, 0.2], contacts: [1, 1], stances: [0, 0],
+    stepReach: [1, 1] as [number, number],
+    stepLat: [0, 0] as [number, number],
+    stepLiftVar: [1, 1] as [number, number],
+    stepToeYaw: [0, 0] as [number, number],
+    stepArmVar: [1, 1] as [number, number],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
     toes: [[x, 0, y], [x, 0, y]] as [V3, V3],
   }
@@ -94,8 +107,10 @@ function computeTarget(a: Avatar, i: number, remaining: number, strafe: number, 
   const lat = -pvx * Math.sin(a.aim) + pvy * Math.cos(a.aim)
   const isLead = side * lat > 0
   const strafeLeadScale = strafe > 0.05 ? (isLead ? 1 + 0.06 * strafe : 1 - 0.32 * strafe) : 1
-  const extraWidth = strafe * (isLead ? 0.025 : 0.01)
-  return separate(a, i, home(a, i, (remaining + halfStance) * strafeLeadScale + lag, pvx, pvy, extraWidth), smooth((strafe - 0.05) / 0.20))
+  const reachVar = m.stepReach?.[i] ?? 1
+  const latVar = m.stepLat?.[i] ?? 0
+  const extraWidth = strafe * (isLead ? 0.025 : 0.01) + latVar
+  return separate(a, i, home(a, i, ((remaining + halfStance) * strafeLeadScale + lag) * reachVar, pvx, pvy, extraWidth), smooth((strafe - 0.05) / 0.20))
 }
 
 function reset(a: Avatar): void {
@@ -103,13 +118,14 @@ function reset(a: Avatar): void {
   m.centreX = { x: a.x, v: a.vx }
   m.centreY = { x: a.y, v: a.vy }
   for (const s of [m.pelvis, m.chest, m.head, m.weapon]) { s.x = a.aim; s.v = 0 }
-  for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch, m.bank, m.yawOffset, ...m.arms, ...m.hands]) { s.x = 0; s.v = 0 }
-  m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0; m.strafeSign = 0
+  for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch, m.bank, m.secondary, m.yawOffset, ...m.arms, ...m.hands]) { s.x = 0; s.v = 0 }
+  m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0; m.strafeSign = 0; m.stepCount = 0; m.clock = 0
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
     f.p = home(a, i, 0); f.lift = [...f.p]; f.yaw = a.legYaw; f.pitch = 0; f.planted = true
     lockToe(a, i)
     m.swings[i] = 0; m.contacts[i] = 1; m.stances[i] = 0; m.targets[i] = [...f.p]
+    m.stepReach[i] = 1; m.stepLat[i] = 0; m.stepLiftVar[i] = 1; m.stepToeYaw[i] = 0; m.stepArmVar[i] = 1
   }
   const hold = a.body?.gun?.p ?? [a.x, 1.24, a.y]
   m.gun.forEach((s, i) => { s.x = hold[i]!; s.v = 0 })
@@ -133,23 +149,34 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     m.strafeSign = strafeSign
   } else if (strafe < 0.1) m.strafeSign = 0
   const moving = speed > (m.moving ? 0.12 : 0.25)
+  const varAmt = clamp(animation.stepVariation ?? 0.35, 0, 1)
+  const actorSeed = a.seed ?? 0
+  const actorStrideTrait = actorSeed !== 0 && varAmt > 0 ? 1 + 0.016 * varAmt * stepHash(actorSeed, 0, 8) : 1
   const gait = gaitAt(speed, a.back, strafe, animation)
   const bias = clamp(animation.timingBias, -0.3, 0.3)
+  m.clock = (m.clock ?? 0) + dt
   if (moving && !m.moving) {
     const firstFoot = lateral > 0 ? 1 : 0
     m.start = 0.015; m.stepDebt = 1; m.next = firstFoot
     if (teleport || a.phase === 0) {
       // Align the gait wheel on fresh start so firstFoot begins at its swing boundary while the other foot is in mid-stance.
-      a.phase = (gait.duty - firstFoot * (0.5 + 0.25 * bias) + 1) % 1
+      const seedPhase = actorSeed !== 0 && varAmt > 0 ? 0.03 * varAmt * stepHash(actorSeed, 0, 10) : 0
+      a.phase = (gait.duty - firstFoot * (0.5 + 0.25 * bias) + seedPhase + 1) % 1
     }
-    // Start anticipation: subtle crouch dip and initial lean impulse into acceleration.
+    // Start anticipation: lateral weight transfer over the stance foot, crouch dip, and lean impulse into acceleration.
     a.dip.v -= 0.14
+    m.sway.v += (firstFoot === 0 ? 1 : -1) * 0.14 * clamp(animation.swayScale, 0, 2)
     a.leanX.v += a.acx * 0.008 * animation.leanScale
     a.leanY.v += a.acy * 0.008 * animation.leanScale
+  } else if (!moving && m.moving) {
+    // Stop weight-settle impulse over the receiving support foot.
+    m.sway.v += (m.next === 0 ? -1 : 1) * 0.10 * clamp(animation.swayScale, 0, 2)
+    a.dip.v -= 0.06 * clamp(speed / 4.2, 0, 1)
   }
   m.moving = moving
   m.start = Math.max(0, m.start - dt)
   const transK = stiffness(clamp(animation.transitionHz ?? 6, 2, 14))
+  const prevLegYaw = a.legYaw
   // Angular limits are ownership constraints, not springs that can remain outside the limit.
   if (moving) {
     let direction = Math.atan2(a.svy, a.svx)
@@ -186,8 +213,9 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const curGait = gaitAt(speed, a.back, strafe, animation)
   m.run = curGait.run; m.stride = curGait.stride
   a.duty = curGait.duty
-  const cadence = moving ? Math.max(0.85, speed / curGait.stride) : (!a.feet[0].planted || !a.feet[1].planted ? 1.7 : 0)
-  const wheel = teleport ? 0 : moving ? cadence * dt : distance / curGait.stride
+  const effStride = curGait.stride * actorStrideTrait
+  const cadence = moving ? Math.max(0.85, speed / effStride) : (!a.feet[0].planted || !a.feet[1].planted ? 1.7 : 0)
+  const wheel = teleport ? 0 : moving ? cadence * dt : distance / effStride
   a.phase = (a.phase + wheel + 1) % 1
   m.stepDebt = Math.min(1, m.stepDebt + wheel * 2)
   const follow = stiffness(animation.footCentreHz)
@@ -239,7 +267,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     const drag = i === 1 ? clamp(animation.footDrag, 0, 0.95) : 0
     const e = smoother(u)
     const eHoriz = drag > 0 ? e * (1 - 0.38 * drag * (1 - u)) : e
-    const liftScale = clamp(animation.stepLift ?? 1, 0.5, 1.8)
+    const liftScale = clamp(animation.stepLift ?? 1, 0.5, 1.8) * (m.stepLiftVar?.[i] ?? 1)
     // Quadratic liftoff (u=0) and cubic feather-soft touchdown (u=1) so contact foot velocity is ~0.
     const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
     f.p = [f.lift[0] + (target[0] - f.lift[0]) * eHoriz,
@@ -249,7 +277,8 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     if (sepW > 0) f.p = separate(a, i, f.p, sepW)
     const side = i === 0 ? -1 : 1
     const opening = strafe * Math.sign(lateral) * (side * lateral > 0 ? 0.6 : 0.12)
-    f.yaw = f.liftYaw + angleDiff(a.legYaw + opening + side * 0.06, f.liftYaw) * e
+    const toeVar = m.stepToeYaw?.[i] ?? 0
+    f.yaw = f.liftYaw + angleDiff(a.legYaw + opening + side * 0.06 + toeVar, f.liftYaw) * e
     // Toe-off plantarflexion in early swing transitioning to dorsiflexed heel-strike preparation in late swing,
     // settling smoothly to flat (0 rad) at u = 1 so touchdown has zero pitch/vertical velocity discontinuity.
     const pushOffPitch = -0.30 * Math.sin(Math.PI * clamp(u / 0.58, 0, 1))
@@ -297,6 +326,15 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       const f = a.feet[i]!
       f.planted = false; f.lift = [f.p[0], 0, f.p[2]]; f.liftYaw = f.yaw
       m.swings[i] = 0; m.stances[i] = 0
+      const stepIdx = ++m.stepCount
+      // Same-foot (stepIdx - 2) high-pass blue-noise variation: genuine step-to-step organic variation
+      // while telescoping each foot's mean to zero so L/R step symmetry stays ~1.000.
+      const blue = (ch: number) => 0.65 * stepHash(actorSeed, stepIdx, ch) - 0.55 * stepHash(actorSeed, stepIdx - 2, ch)
+      m.stepReach[i] = actorStrideTrait * (1 + varAmt * 0.065 * blue(1))
+      m.stepLat[i] = varAmt * 0.018 * stepHash(actorSeed, stepIdx, 2)
+      m.stepLiftVar[i] = 1 + varAmt * 0.16 * stepHash(actorSeed, stepIdx, 3)
+      m.stepToeYaw[i] = varAmt * 0.065 * stepHash(actorSeed, stepIdx, 4)
+      m.stepArmVar[i] = 1 + varAmt * 0.14 * stepHash(actorSeed, stepIdx, 5)
       const swingFrac = (1 - curGait.duty) * (1 + (i === 0 ? -1 : 1) * bias)
       const curFootPhase = (a.phase + i * (0.5 + 0.25 * bias) + 1) % 1
       const phaseLead = moving && curFootPhase >= curGait.duty ? clamp(curFootPhase - curGait.duty, 0, swingFrac * 0.35) : 0
@@ -315,17 +353,19 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const footForward = dx * Math.cos(a.legYaw) + dz * Math.sin(a.legYaw)
   const twist = clamp(footForward * 0.30, -0.162, 0.162)
   // Phase-compensated two-stage arm & forearm springs opposing leg swing so the hand peaks in phase with the opposite leg.
-  const armScale = clamp(animation.armSwing ?? 1, 0, 2)
+  const armScale = clamp(animation.armSwing ?? 1, 0, 2) * (actorSeed !== 0 ? 1 + varAmt * 0.06 * stepHash(actorSeed, 0, 9) : 1)
   const footNorm = clamp(footForward / Math.max(0.35, curGait.stride * 0.44), -1, 1)
   const armLeadRad = 0.22 + 1.06 * curGait.run
   const phaseArm = -Math.cos(TAU * a.phase + armLeadRad) * a.gait
   const armSignal = moving ? footNorm * 0.25 + phaseArm * 0.75 : footNorm
-  const armAmp = (0.16 + 0.22 * curGait.run) * armScale * a.gait
+  const slowDrift = 1 + varAmt * 0.05 * Math.sin(m.clock * 1.4 + actorSeed)
+  const armAmp = (0.16 + 0.22 * curGait.run) * armScale * slowDrift * a.gait
   const armK = stiffness(Math.max(6.5, animation.chestHz * 1.6))
   const handK = stiffness(Math.max(5.5, animation.chestHz * 1.3))
   for (let i = 0; i < 2; i++) {
     const side = i === 0 ? -1 : 1
-    stepSpring(m.arms[i]!, armK, 0.85, dt, -side * armSignal * armAmp)
+    const stepArm = m.stepArmVar?.[i] ?? 1
+    stepSpring(m.arms[i]!, armK, 0.85, dt, -side * armSignal * armAmp * stepArm)
     stepSpring(m.hands[i]!, handK, 0.82, dt, m.arms[i]!.x)
   }
   // Smooth sinusoidal support wave (-1 in L mid-stance, +1 in R mid-stance) eliminates square-wave contact jerk.
@@ -353,8 +393,12 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   stepSpring(m.drop, k, 0.85, dt, limp > 0 ? dropGoal + limp * 0.055 * Math.sin(theta) : dropGoal)
   stepSpring(m.bob, bobK, 0.85, dt, limp > 0 ? bobGoal - limp * 0.032 * Math.sin(theta) : bobGoal)
   if (a.vx * a.svx + a.vy * a.svy < 0) m.bob.v = clamp(m.bob.v, -0.05, 0.05)
-  // Centripetal banking into turns from lateral acceleration in legYaw frame.
-  const latAccel = -a.acx * Math.sin(a.legYaw) + a.acy * Math.cos(a.legYaw)
+  // Secondary follow-through spring (backpack, gear, head pitch lag behind COM vertical bounce + breathing drift).
+  const breathIdle = (1 - a.gait * 0.6) * 0.008 * Math.sin(m.clock * 1.7 + actorSeed)
+  stepSpring(m.secondary, stiffness(3.8), 0.68, dt, m.bob.x * 1.35 + breathIdle)
+  // Centripetal banking into turns from both lateral linear acceleration and angular turn rate * speed.
+  const yawRate = clamp(angleDiff(a.legYaw, prevLegYaw) / Math.max(dt, 1e-3), -8, 8)
+  const latAccel = -a.acx * Math.sin(a.legYaw) + a.acy * Math.cos(a.legYaw) + yawRate * speed * 0.55
   const bankScale = clamp(animation.turnBank ?? 1, 0, 2)
   stepSpring(m.bank, k, 0.9, dt, clamp(latAccel * 0.008 * bankScale * a.gait, -0.18, 0.18))
   // Keep PR #9's running attitude separate from root acceleration and contact timing.
@@ -394,8 +438,8 @@ export function plantedFoot(a: Avatar, i: number) {
 /** Head is the lean pivot; hips move underneath rather than throwing the head forward. */
 export function pelvisPoint(a: Avatar): V3 {
   const m = a.motion, c = Math.cos(m.pelvis.x), s = Math.sin(m.pelvis.x)
-  const walkDrop = a.unarmed ? 0.014 : 0.04
-  const runDrop = a.unarmed ? 0.026 : 0.02
+  const walkDrop = a.unarmed ? -0.012 : 0.04
+  const runDrop = a.unarmed ? -0.006 : 0.02
   return [a.x - a.leanX.x * 0.22 - s * m.sway.x + a.hitX.x * 0.5,
     HIP - (walkDrop + m.run * runDrop) * a.gait - m.crouch.x + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
     a.y - a.leanY.x * 0.22 + c * m.sway.x + a.hitY.x * 0.5]
