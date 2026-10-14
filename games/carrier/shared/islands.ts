@@ -694,26 +694,38 @@ export function blobHeight(b: Blob, x: number, z: number, o: Polar): number {
  * Coral clumps like the concepts: on a 44 m lattice, cells picked by a slow cluster noise hold a clump of 3-6 round
  * heads (5-10 m) packed around a centre, so they read as lobed, cauliflower-like patches. 0..1.
  */
-// Memo of per-cell clump decisions (pure function of cell and seed; just skips recomputing the cluster noise).
+// Memo of per-cell clump decisions and head offsets (pure function of cell and seed; skips recomputing noise and trig per texel).
 const DOT_N = 4096
 const dotKey = new Int32Array(DOT_N * 3).fill(0x7fffffff)
-const dotVal = new Float64Array(DOT_N * 5)
+const dotVal = new Float64Array(DOT_N * 22)
 
-/** Clump of cell (cx, cz): writes [present, px, pz, heads, a0] into dotVal at slot*5; returns the slot. */
+/** Clump of cell (cx, cz): writes [present, px, pz, heads, hx0, hz0, r0, ...] into dotVal at slot*22; returns the offset. */
 function dotCell(seed: number, cx: number, cz: number, cell: number): number {
   const slot = ((Math.imul(cx, 73856093) ^ Math.imul(cz, 19349663) ^ Math.imul(seed, 83492791)) >>> 0) % DOT_N
   const k = slot * 3
-  const o = slot * 5
+  const o = slot * 22
   if (dotKey[k] === cx && dotKey[k + 1] === cz && dotKey[k + 2] === seed) return o
   dotKey[k] = cx
   dotKey[k + 1] = cz
   dotKey[k + 2] = seed
   const cl = noise2(seed + 3, (cx * cell) / 230, (cz * cell) / 230) + 0.4 * noise2(seed + 4, (cx * cell) / 90, (cz * cell) / 90)
-  dotVal[o] = hash3(cx, cz, seed) > 0.95 * ss(-0.5, 0.15, cl) ? 0 : 1
+  const present = hash3(cx, cz, seed) > 0.95 * ss(-0.5, 0.15, cl) ? 0 : 1
+  dotVal[o] = present
+  if (!present) return o
   dotVal[o + 1] = (cx + 0.25 + 0.5 * hash3(cx, cz, seed + 1)) * cell
   dotVal[o + 2] = (cz + 0.25 + 0.5 * hash3(cx, cz, seed + 2)) * cell
-  dotVal[o + 3] = 3 + Math.floor(hash3(cx, cz, seed + 5) * 4)
-  dotVal[o + 4] = hash3(cx, cz, seed + 6) * TAU
+  const heads = 3 + Math.floor(hash3(cx, cz, seed + 5) * 4)
+  dotVal[o + 3] = heads
+  const a0 = hash3(cx, cz, seed + 6) * TAU
+  for (let h = 0; h < heads; h++) {
+    const rad = 8 + 6 * hash3(cx * 7 + h, cz, seed + 7)
+    const off = h === 0 ? 0 : 8 + 10 * hash3(cx, cz * 7 + h, seed + 8)
+    const a = a0 + h * 2.4
+    const ho = o + 4 + h * 3
+    dotVal[ho] = Math.cos(a) * off
+    dotVal[ho + 1] = Math.sin(a) * off
+    dotVal[ho + 2] = rad
+  }
   return o
 }
 
@@ -731,18 +743,208 @@ function dots(seed: number, x: number, z: number): number {
       const dx0 = x - dotVal[o + 1]!
       const dz0 = z - dotVal[o + 2]!
       if (dx0 * dx0 + dz0 * dz0 > 46 * 46) continue
-      const heads = dotVal[o + 3]!
-      const a0 = dotVal[o + 4]!
-      for (let k = 0; k < heads; k++) {
-        const rad = 8 + 6 * hash3(cx * 7 + k, cz, seed + 7)
-        const off = k === 0 ? 0 : 8 + 10 * hash3(cx, cz * 7 + k, seed + 8)
-        const a = a0 + k * 2.4
-        const dist = hypot(dx0 - Math.cos(a) * off, dz0 - Math.sin(a) * off)
-        if (dist < rad) m = Math.max(m, ss(rad, rad - 2.5, dist))
+      const end = o + 4 + dotVal[o + 3]! * 3
+      for (let ho = o + 4; ho < end; ho += 3) {
+        const hdx = dx0 - dotVal[ho]!
+        const hdz = dz0 - dotVal[ho + 1]!
+        const rad = dotVal[ho + 2]!
+        const d2 = hdx * hdx + hdz * hdz
+        if (d2 < rad * rad) m = Math.max(m, ss(rad, rad - 2.5, Math.sqrt(d2)))
       }
     }
   }
   return m
+}
+
+/** Stamps one blob's seabed height and coral into grid arrays over its local bounding box, skipping open-ocean texels. */
+export function stampBlobSeabed(
+  b: Blob,
+  x0: number,
+  z0: number,
+  texel: number,
+  res: number,
+  heights: Float32Array,
+  land: Uint8Array,
+  water: Uint8Array,
+  coral: Uint8Array,
+  o: Polar,
+): void {
+  const reach = b.reach
+  const i0 = Math.max(0, Math.floor((b.x - reach - x0) / texel - 0.5) + 1)
+  const i1 = Math.min(res - 1, Math.ceil((b.x + reach - x0) / texel - 0.5) - 1)
+  const j0 = Math.max(0, Math.floor((b.z - reach - z0) / texel - 0.5) + 1)
+  const j1 = Math.min(res - 1, Math.ceil((b.z + reach - z0) / texel - 0.5) - 1)
+  const hasBound = b.bound.length > 0
+  const isBank = b.kind === "bank"
+  const isReef = b.kind === "reef"
+
+  for (let j = j0; j <= j1; j++) {
+    const z = z0 + (j + 0.5) * texel
+    const dz = z - b.z
+    const dz2 = dz * dz
+    const maxDx2 = b.reach2 - dz2
+    if (maxDx2 <= 0) continue
+    const maxDx = Math.sqrt(maxDx2)
+    const rowI0 = Math.max(i0, Math.floor((b.x - maxDx - x0) / texel - 0.5) + 1)
+    const rowI1 = Math.min(i1, Math.ceil((b.x + maxDx - x0) / texel - 0.5) - 1)
+    const rowOff = j * res
+
+    for (let i = rowI0; i <= rowI1; i++) {
+      const k = rowOff + i
+      if (land[k] === 1) continue
+      const x = x0 + (i + 0.5) * texel
+      const dx = x - b.x
+      const r2 = dx * dx + dz2
+      if (r2 >= b.reach2) continue
+
+      if (isBank) {
+        const l2 = b.hx * b.hx + b.hz * b.hz
+        const t = l2 > 0 ? Math.max(-1, Math.min(1, (dx * b.hx + dz * b.hz) / l2)) : 0
+        const d = hypot(dx - b.hx * t, dz - b.hz * t)
+        const wBase = b.halfW * (0.55 + 0.45 * Math.sqrt(Math.max(0, 1 - t * t)))
+        if (d - (wBase * 1.6 + 16) > 180) continue
+        const S = b.n
+        let w = wBase * (1 + 0.6 * noise2(S[2]! + 17, x / 170, z / 170)) + 16 * noise2(S[2]! + 23, x / 60, z / 60)
+        if (l2 > 0) w *= ss(-0.45, 0.15, noise2(S[2]! + 29, (t * Math.sqrt(l2)) / 260, 0.5))
+        w = Math.max(0, w)
+        const e = d - w + Math.max(0, 22 - w) * 1.6
+        if (e <= 180) {
+          const flat = b.flat + (e < 0 ? 0.8 * noise2(b.n[0]!, x / 60, z / 60) : 0)
+          const h = Math.min(-0.6, flat) - (11.5 + flat) * ss(-10, 35, e) - 46 * ss(25, 180, e)
+          if (h > heights[k]!) heights[k] = h
+          if (e <= 0) {
+            const cVal = Math.round(dots(b.n[5]!, x, z) * ss(0, 0.4, ss(-6, -30, e)) * 255)
+            if (cVal > coral[k]!) coral[k] = cVal
+          }
+        }
+        continue
+      }
+
+      if (isReef) {
+        blobPolar(b, x, z, o)
+        const s = -o.d
+        let h: number
+        if (s >= 0) {
+          const wa = atan2(dz, dx)
+          let e0 = 70 * (0.5 + 0.5 * Math.cos(3 * o.th + b.ph2)) * (0.5 + 0.5 * Math.cos(2 * o.th + b.ph3))
+          const c = Math.cos(wa - b.wind)
+          if (c > 0) e0 += b.tongue * Math.pow(c, 7)
+          if (s > e0 + 291) continue
+          let e = e0 + 45 * noise2(b.n[2]! + 17, x / 240, z / 240) + 16 * noise2(b.n[2]! + 23, x / 70, z / 70)
+          e += 10 * noise2(b.n[2]! + 31, (o.th * (b.R + s)) / 22, s / 140) * ss(e - 20, e, s)
+          e = Math.max(0, e)
+          h = -0.7 - 1.8 * ss(e, e + 25, s) - 11.5 * ss(e + 15, e + 70, s) - 46 * ss(e + 50, e + 220, s)
+          if (h > -6) {
+            const pass = passAt(b, o.th)
+            if (pass > 0) h = Math.min(h, h + (-6 - h) * pass)
+          }
+        } else {
+          const w = b.ring * (0.8 + 0.4 * (0.5 + 0.5 * Math.cos(2 * o.th + b.shelfPh)))
+          const t = -s - w
+          if (t <= 0) h = -0.75 + 0.25 * noise2(b.n[0]!, x / 45, z / 45)
+          else h = -0.75 - (b.lagoon - 0.75) * ss(0, 80, t) + 1.8 * Math.max(0, fbm(b.n[1]!, x / 120, z / 120, 2)) * ss(30, 110, t)
+          if (t < 40 && h > -4.5) {
+            const pass = passAt(b, o.th)
+            if (pass > 0) h = Math.min(h, h + (-4.5 - h) * pass)
+          }
+          const zone = Math.max(ss(w + 15, w + 45, -s), 0.5 * ss(w * 0.2, w * 0.5, -s) * (1 - ss(w * 0.7, w, -s)))
+          if (zone >= 0.2) {
+            const cVal = Math.round(dots(b.n[5]!, x, z) * ss(0.2, 0.5, zone) * 255)
+            if (cVal > coral[k]!) coral[k] = cVal
+          }
+        }
+        if (h > heights[k]!) heights[k] = h
+        continue
+      }
+
+      if (hasBound) {
+        let bin = Math.floor(((atan2(dz, dx) + Math.PI) / TAU) * BOUND_BINS)
+        if (bin >= BOUND_BINS) bin = 0
+        const lim = b.bound[bin]!
+        if (r2 > lim * lim) continue
+      }
+
+      if (b.bend > 0) {
+        const rRing = hypot(x - b.bx, z - b.bz) - b.bend
+        if (Math.abs(rRing) > b.R * 1.45 + 65) continue
+      }
+
+      blobPolar(b, x, z, o)
+      if (o.d >= 0) {
+        if (o.d > 0) {
+          heights[k] = 1
+          land[k] = 1
+          water[k] = 0
+        } else if (0 > heights[k]!) {
+          heights[k] = 0
+        }
+        continue
+      }
+
+      const s = -o.d
+      if (b.bend > 0) {
+        if (s < 50) {
+          const h = -1.2 * ss(0, 14, s) - 58.8 * ss(14, 50, s)
+          if (h > heights[k]!) heights[k] = h
+        }
+        if (s < 42) {
+          const W = shelfEdge(b, o.th, x, z, s)
+          const inner = ss(W * 0.22, W * 0.45, s)
+          const zone = inner * (1 - ss(W * 0.86, W * 1.0, s))
+          if (zone >= 0.2) {
+            const cVal = Math.round(dots(b.n[5]!, x, z) * ss(0.2, 0.5, zone) * 255)
+            if (cVal > coral[k]!) coral[k] = cVal
+          }
+        }
+        continue
+      }
+
+      if (s > b.edgeMax + 185) continue
+      let W0 = shelfWidth(b, o.th)
+      const wa = atan2(dz, dx)
+      if (b.tongue > 0) {
+        const c = Math.cos(wa - b.wind)
+        if (c > 0) W0 += b.tongue * Math.pow(c, 7)
+      }
+      if (b.tongue2Len > 0) {
+        const c = Math.cos(wa - b.tongue2)
+        if (c > 0) W0 += b.tongue2Len * Math.pow(c, 11)
+      }
+      if (s > W0 * 1.28 + 209) continue
+
+      const S = b.n
+      let W = W0 + W0 * 0.28 * noise2(S[2]! + 17, x / 260, z / 260) + 16 * noise2(S[2]! + 23, x / 75, z / 75)
+      if (s > W * 0.6 && s < W + 60) {
+        const along = o.th * (Math.max(b.R, 40) + s)
+        W += 13 * noise2(S[2]! + 31, along / 22, s / 140) * ss(W * 0.6, W * 0.95, s) * (1 - ss(W + 20, W + 60, s))
+      }
+      W = Math.max(8, W)
+
+      let h: number
+      if (b.kind === "stack") {
+        h = -2.2 * ss(0, 8, s) - 3 * ss(8, W, s) - 10.8 * ss(W - 6, W + 30, s) - 44 * ss(W + 15, W + 150, s)
+      } else if (b.kind === "cliff") {
+        h = -2.6 * ss(0, 9, s) - 3.2 * ss(8, W, s) - 10.2 * ss(W - 10, W + 40, s) - 44 * ss(W + 20, W + 170, s)
+      } else {
+        const nw = Math.min(18, W * 0.3)
+        h = -1.2 * ss(0, nw, s) - 1.3 * ss(nw * 0.8, W * 0.55, s) - 2 * ss(W * 0.5, W, s) - 11.5 * ss(W - 10, W + 40, s) - 44 * ss(W + 20, W + 180, s)
+      }
+      if (b.pass >= -9 && s > 12 && h > -9) {
+        const p = passCut(b, o.th, x, z, s)
+        if (p > 0) h = Math.min(h, h + (-9 - h) * p * ss(12, 30, s))
+      }
+      if (h > heights[k]!) heights[k] = h
+
+      if (s < W) {
+        const inner = b.kind === "cliff" || b.kind === "stack" ? ss(12, 30, s) : ss(W * 0.22, W * 0.45, s)
+        const zone = inner * (1 - ss(W * 0.86, W * 1.0, s))
+        if (zone >= 0.2) {
+          const cVal = Math.round(dots(b.n[5]!, x, z) * ss(0.2, 0.5, zone) * 255)
+          if (cVal > coral[k]!) coral[k] = cVal
+        }
+      }
+    }
+  }
 }
 
 function blobCoral(b: Blob, x: number, z: number, o: Polar): number {
