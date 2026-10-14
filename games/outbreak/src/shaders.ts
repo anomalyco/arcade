@@ -1,28 +1,34 @@
-import { makeSceneShader, spriteShader, postShader } from "@arcade/kit/gpu/shaders"
+import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
 import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 import { BUILDING_RECTS } from "../shared/map"
 
-/** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
-export const shaders = {
-  sprite: spriteShader(),
-  post: postShader(false,false,{chromatic:0,bloom:.045,grain:.002,vignette:.92,diagnostics:true,shadowLift:0,huePreserve:.35}),
-  scene: makeSceneShader({
-    ao: "0.35",
-    lightLeak: "0.004 * vis",
-    ambient: "ambientAt(n) * mix(0.25, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8))",
-    diagnostics: "F.map.z",
-    smoothShadows: true,
-    shadowTaps: 5,
-    lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
-    material: surfaceMaterial + `
+export const outbreakPostFinish: PostFinishOptions = {
+  chromatic: 0,
+  bloom: .045,
+  grain: .002,
+  vignette: .92,
+  diagnostics: true,
+  shadowLift: 0,
+  huePreserve: .35,
+}
+
+export const outbreakSceneHooks: SceneHooks = {
+  ao: "0.35",
+  lightLeak: "0.004 * vis",
+  ambient: "ambientAt(n) * mix(0.25, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8))",
+  diagnostics: "F.map.z",
+  smoothShadows: true,
+  shadowTaps: 5,
+  lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
+  material: surfaceMaterial + `
       if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
         let s = evalPlasterWall(o.world, n, vec3f(.38, .34, .28), defaultMaterialRecipe(2));
         albedo = s.albedo;
         gloss = s.gloss;
       }
     `,
-    fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
-    declarations: /* wgsl */ `
+  fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
+  declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
 ${surfaceMaterialDeclarations}
 fn houseRect(id: i32) -> vec4f {
@@ -54,16 +60,16 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
   return los * max(cone, near) * range;
 }`,
-    directional: "mix(vec3f(0.52, 0.68, 1.0), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g, 1.0, o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
-    cutaway: `
+  directional: "mix(vec3f(0.52, 0.68, 1.0), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g, 1.0, o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
+  cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)))) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
         for(var i=0;i<4;i++) { if(roofCut(o.world,i)){discard;} }
       }
     `,
-    // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
-    solidCutaway: "",
-    surface: /* wgsl */ `
+  // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
+  solidCutaway: "",
+  surface: /* wgsl */ `
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, o.world.xz * F.map.xy, 0.0).r;
   if(mat == 2) { col *= .38; }
@@ -82,5 +88,13 @@ fn eyeVisible(p: vec2f) -> f32 {
     }
   }
 `,
-  }),
+}
+
+/** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
+export const shaders = {
+  sprite: spriteShader(),
+  post: postShader(false, false, outbreakPostFinish),
+  scene: makeSceneShader(outbreakSceneHooks),
+  lookScene: makeLookSceneShader(outbreakSceneHooks),
+  lookPost: makeLookPostShader(outbreakPostFinish),
 }

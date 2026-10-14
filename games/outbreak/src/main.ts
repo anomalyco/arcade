@@ -1,6 +1,17 @@
 import { Camera } from "@arcade/kit/client/camera"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import {
+  LOOK_PRESETS,
+  LOOK_PRESET_IDS,
+  applyLookPreset,
+  createLookControls,
+  createLookSettings,
+  resolveLookPresetId,
+  type LookCompareMode,
+  type LookPresetId,
+  type LookSettings,
+} from "@arcade/kit/look"
 import { Renderer, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
@@ -19,7 +30,9 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...zombieTuning }
+const lookSettings = createLookSettings("current")
+const lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, lookPreset: "current", ...zombieTuning }
 const controls: LabControl[] = [
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
@@ -30,6 +43,7 @@ const controls: LabControl[] = [
   { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: .1 },
   { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
   { key: "shroud", label: "Explored shroud", group: "Vision", min: .02, max: .4, step: .01 },
+  { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
   { key: "exposure", label: "Exposure", group: "Look", min: .5, max: 2, step: .05 },
   { key: "skyFill", label: "Sky fill", group: "Look", min: 0, max: 1.5, step: .05 },
   { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
@@ -112,7 +126,16 @@ async function main() {
     if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
     if (key === "houseSeed" || key === "terrain") regenerate()
+    if (key === "lookPreset") {
+      const pid = resolveLookPresetId(settings.lookPreset) ?? "current"
+      applyLookPreset(lookSettings, pid)
+      lab.refresh()
+    }
   })
+  lab.addControls(
+    lookSettings as unknown as Record<string, string | number | boolean>,
+    createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
+  )
   let vertices = 0
   function level() {
     const data=buildLevel(session.view.town)
@@ -192,6 +215,8 @@ async function main() {
     render.batches = [...avatar.draw(p, dt, time, (x,z)=>supportHeight(town,x,z)), doorBatch]
     render.lightCount = render.shadowLightCount = count; render.occluderCount = lightOccluders; render.lampCount = town.lamps.length
     render.view = view; render.grade = [time, settings.diagnostic, 0, settings.exposure]
+    render.look = lookSettings
+    render.lookCompare = lookCompare
     renderer.render(render)
     const door = nearbyDoor(town, p.x, p.y)
     status.textContent = `${clockText(hour)}${door ? ` · F ${door.open ? "Close" : "Open"} door` : ""}`
@@ -291,14 +316,38 @@ async function main() {
       clock.reset(performance.now(), input.move())
       if (!frozen) scheduleFrame()
     },
-    setLab(key: keyof typeof settings, value: number) {
+    setLab(key: keyof typeof settings, value: number | string) {
       const control = controls.find(c => c.key === key)
-      if (!control || !Number.isFinite(value) || ("min" in control ? value < control.min || value > control.max : !("options" in control) || !control.options.some(o=>o.value===value))) throw new Error(`Invalid lab value: ${key}`)
-      settings[key] = value
+      if (!control || ("min" in control ? typeof value !== "number" || !Number.isFinite(value) || value < control.min || value > control.max : !("options" in control) || !control.options.some(o=>o.value===value))) throw new Error(`Invalid lab value: ${String(key)}`)
+      ;(settings as Record<string, number | string>)[key] = value
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
-      if (key === "hour") session.view.hour = wrapHour(value)
+      if (key === "hour" && typeof value === "number") session.view.hour = wrapHour(value)
       if (key === "houseSeed" || key === "terrain") regenerate()
+      if (key === "lookPreset") {
+        const pid = resolveLookPresetId(value) ?? "current"
+        applyLookPreset(lookSettings, pid)
+        lab.refresh()
+      }
     },
+    setLookPreset(preset: LookPresetId | string) {
+      const pid = resolveLookPresetId(preset)
+      if (!pid) throw new Error(`Unknown look preset: ${preset}`)
+      settings.lookPreset = pid
+      applyLookPreset(lookSettings, pid)
+      lab.refresh()
+      return { ...lookSettings }
+    },
+    setLook(patch: Partial<LookSettings>) {
+      Object.assign(lookSettings, patch)
+      if (patch.preset) settings.lookPreset = patch.preset
+      lab.refresh()
+      return { ...lookSettings }
+    },
+    setLookCompare(mode: LookCompareMode, wipeSplit = 0.5) {
+      lookCompare.mode = mode
+      lookCompare.wipeSplit = wipeSplit
+    },
+    getLook: () => ({ ...lookSettings }),
     pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
     async step(dt = 1 / 60, command?: Partial<Command>) {
       session.update(dt, { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }, settings.timeScale)

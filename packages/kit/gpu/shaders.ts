@@ -1,4 +1,5 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "./limits"
+import { lookStructWgsl } from "./look"
 import { motionGather, motionOutput } from "./motion"
 import { vehicleSprites } from "@arcade/kit/vehicle/sprites"
 
@@ -946,5 +947,342 @@ fn hash(p: vec2f) -> f32 {
   let grain = hash(px + fract(G.x * 13.7) * 1000.0) + hash(px * 1.37 + fract(G.x * 7.3) * 500.0) - 1.0;
   c += grain * ${finish ? finish.grain.toFixed(4) : looks ? "select(0.022, 0.009, enhanced)" : "0.022"} * (1.0 - l * 0.6);
   return vec4f(c, 1.0);
+}
+`
+
+export type PostFinishOptions = {
+  chromatic: number
+  bloom: number
+  grain: number
+  vignette: number
+  diagnostics?: boolean
+  shadowLift?: number
+  huePreserve?: number
+}
+
+/**
+ * Opt-in Look-enabled scene shader generator.
+ * Binds `LookUniforms` at `@group(0) @binding(7)` (unused when motion blur is off).
+ * Default `makeSceneShader` remains untouched for bit-exact identity under "Current".
+ */
+export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
+  const base = makeSceneShader({
+    ...hooks,
+    declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\n`,
+    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.09); }\n`,
+    material: `${hooks.material ?? ""}\n    if (lookUseAfter) {
+      let palMix = LK.u3.w;
+      let folShift = LK.u11.z;
+      if (palMix > 0.001) {
+        if (mat == 4) { albedo = mix(albedo, pow(max(LK.u12.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.55); }
+        else if (mat == 20) {
+          let k = i32(round(o.aux));
+          if (k == 4) { albedo = mix(albedo, pow(max(LK.u13.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.55); }
+          else if (k == 6 || k == 2) { albedo = mix(albedo, pow(max(LK.u14.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.5); }
+          else if (k == 0 || k == 5) { albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.6); }
+        } else if (mat == 22) {
+          albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.65);
+        }
+      }
+      if ((mat == 22 || (mat == 20 && (i32(round(o.aux)) == 0 || i32(round(o.aux)) == 5))) && abs(folShift) > 0.001) {
+        let warmFol = albedo * vec3f(1.38, 1.08, 0.52);
+        let coolFol = vec3f(dot(albedo, vec3f(0.3, 0.5, 0.2))) * vec3f(0.70, 0.86, 0.96);
+        albedo = select(mix(albedo, coolFol, clamp(-folShift, 0.0, 1.0)), mix(albedo, warmFol, clamp(folShift, 0.0, 1.0)), folShift >= 0.0);
+      }
+      let wet = LK.u6.y;
+      if (wet > 0.001 && n.y > 0.7 && (mat == 1 || mat == 20)) {
+        let puddle = smoothstep(0.34, 0.68, noise2(o.world.xz * 0.65 + vec2f(2.1, 4.7)));
+        let wMask = wet * (0.4 + 0.6 * puddle);
+        albedo *= 1.0 - 0.28 * wMask;
+        gloss = mix(gloss, vec2f(110.0, 1.1), wMask);
+      }
+    }\n`,
+    surface: `${hooks.surface ?? ""}\n  if (lookUseAfter) {
+    // Rim / silhouette light on characters, trees, props & wall edges
+    let ndv = clamp(dot(n, V), 0.0, 1.0);
+    let rimW = select(0.75, 1.65, mat == 12 || mat == 22 || mat == 0);
+    let rim = pow(1.0 - ndv, 2.6) * LK.u5.w * rimW;
+    let rimTint = mix(vec3f(0.55, 0.72, 1.0) * LK.u4.yzw, vec3f(1.0, 0.80, 0.52), clamp(LK.u1.w * 0.5 + 0.25, 0.0, 1.0));
+    col += rimTint * rim * 0.065;
+
+    // Extra contact / cavity shading
+    if (LK.u6.x > 0.001 && mat != 2 && mat != 3 && mat != 11) {
+      let fOcc = floorData(o.world.xz).r * (1.0 - smoothstep(0.0, 1.1, o.world.y));
+      col *= 1.0 - clamp(fOcc * LK.u6.x * 0.62, 0.0, 0.78);
+    }
+
+    // Height-settled peripheral fog & localized window shaft scatter (keeps central play area crisp)
+    let fogDens = LK.u6.z;
+    let shaftStr = LK.u7.w;
+    if (fogDens > 0.001 || shaftStr > 0.001) {
+      let hFall = max(0.35, LK.u6.w);
+      let dPlanFocus = length(o.world.xz - F.eye.xy);
+      let hFactor = exp(-max(o.world.y, 0.0) / hFall);
+      let fogTau = fogDens * 0.018 * max(0.0, dPlanFocus - 13.5) * hFactor;
+      let trans = exp(-fogTau);
+      let fogCol = pow(max(LK.u7.xyz, vec3f(0.005)), vec3f(2.2)) * 0.14;
+      let moonMask = floorData(o.world.xz).g;
+      // Localize window shaft scatter to interior window thresholds where moonMask is partial
+      let isWindowBeam = smoothstep(0.02, 0.25, moonMask) * (1.0 - smoothstep(0.75, 0.98, moonMask)) * step(o.world.y, 1.4);
+      let slatWave = 1.0 - LK.u8.x * 0.45 * (0.5 + 0.5 * cos((o.world.x + o.world.z) * 14.0));
+      let shaftCol = mix(vec3f(0.58, 0.75, 1.05), vec3f(1.05, 0.78, 0.45), clamp(LK.u1.w * 0.5 + 0.3, 0.0, 1.0));
+      let shaftAdd = shaftCol * isWindowBeam * hFactor * slatWave * shaftStr * 0.055;
+      col = col * trans + fogCol * (1.0 - trans) + shaftAdd;
+    }
+  }\n`,
+  })
+
+  return base
+    .replace(
+      "let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);",
+      `let useLookLight = LK.u11.w > 0.5;
+    let effWrap = select(wrap, wrap + LK.u10.x, useLookLight);
+    let effBands = select(0.0, LK.u10.y, useLookLight);
+    let effSoft = select(0.18, LK.u10.z, useLookLight);
+    let diffuse = lookQuantizeDiffuse(ndl, effWrap, effBands, effSoft);`,
+    )
+    .replace(
+      "out.diff += L.color.rgb * att * (diffuse * vis +",
+      `let lCol = select(L.color.rgb, lookPracticalColor(L.color.rgb, LK.u5.x) * LK.u5.y, useLookLight);
+    out.diff += lCol * att * (diffuse * vis +`,
+    )
+    .replace(
+      "out.spec += L.color.rgb * att * s * vis;",
+      "out.spec += lCol * att * s * vis;",
+    )
+    .replace(
+      "return out;\n}",
+      `if (LK.u11.w > 0.5 && LK.u5.w > 1.0 && count > 0u && lights[0].color.w <= 0.001) {
+    // Survival-horror Noir player flashlight cone using already-computed polar sight slot 0
+    let pPos = lights[0].pos.xz;
+    let dv0 = world.xz - pPos;
+    let d0 = length(dv0);
+    let maxR = min(lights[0].pos.w, 16.5);
+    if (d0 > 0.15 && d0 < maxR) {
+      let dir2 = dv0 / d0;
+      let aimDir = vec2f(cos(F.effects.x), sin(F.effects.x));
+      let facing = dot(dir2, aimDir);
+      let cone = smoothstep(max(F.effects.y, 0.76), min(0.98, max(F.effects.y, 0.76) + 0.16), facing);
+      if (cone > 0.001) {
+        let vis0 = shadowAt(0u, pPos, lights[0].pos.y, 0.04, plan, world.y);
+        let fade0 = pow(max(0.0, 1.0 - d0 / maxR), 1.6);
+        let l30 = normalize(vec3f(pPos.x, lights[0].pos.y, pPos.y) - world);
+        let ndl0 = lookQuantizeDiffuse(dot(n, l30), wrap + LK.u10.x, LK.u10.y, LK.u10.z);
+        let torchStr = clamp((LK.u5.w - 0.9) * 0.85, 0.0, 0.95) * cone * fade0 * vis0;
+        let torchCol = vec3f(0.76, 0.90, 1.12);
+        out.diff += torchCol * torchStr * (0.25 + 0.75 * ndl0);
+        if (shin > 0.0) {
+          let h0 = normalize(l30 + V);
+          let s0 = pow(max(dot(n, h0), 0.0), shin) * (shin + 2.0) * 0.004;
+          out.spec += torchCol * torchStr * s0;
+        }
+      }
+    }
+  }
+  return out;
+}`,
+    )
+    .replace(
+      "col = albedo * (amb + direct + moon)",
+      `if (lookUseAfter) {
+      amb *= LK.u4.x * LK.u4.yzw;
+    }
+    let effMoon = select(moon, moon * LK.u5.z, lookUseAfter);
+    col = albedo * (amb + direct + effMoon)`,
+    )
+}
+
+/**
+ * Opt-in Look-enabled post composite shader generator.
+ * Binds `GradeAndLook` (8-float header + 64-float `LookUniforms`) at `@group(0) @binding(4)`.
+ * Default `postShader` remains untouched for bit-exact identity under "Current".
+ */
+export const makeLookPostShader = (finish?: PostFinishOptions): string => /* wgsl */ `
+${lookStructWgsl}
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var<uniform> P: vec4f;
+@group(0) @binding(3) var bloomTex: texture_2d<f32>;
+
+struct GradeAndLook {
+  G: vec4f,
+  pad: vec4f,
+  L: LookUniforms,
+}
+@group(0) @binding(4) var<uniform> GL: GradeAndLook;
+
+struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
+
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  var o: VO;
+  o.pos = vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+  o.uv = vec2f(p.x, 1.0 - p.y);
+  return o;
+}
+
+fn clean(c: vec4f) -> vec4f {
+  let bad = any(c != c) || any(abs(c) > vec4f(6e4));
+  return select(min(c, vec4f(64.0)), vec4f(0.0), bad);
+}
+
+fn aces(x: vec3f) -> vec3f {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0));
+}
+
+fn hash(p: vec2f) -> f32 {
+  let q = fract(p * vec2f(0.1031, 0.1030));
+  let r = q + dot(q, q.yx + 33.33);
+  return fract((r.x + r.y) * r.x);
+}
+
+fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
+  let center = clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;
+  if (strength <= 0.01) { return center; }
+  let r = texel * (1.0 + strength * 1.5);
+  let cNW = clean(textureSampleLevel(src, samp, uv + vec2f(-r.x, -r.y), 0.0)).rgb;
+  let cN  = clean(textureSampleLevel(src, samp, uv + vec2f(0.0, -r.y), 0.0)).rgb;
+  let cNE = clean(textureSampleLevel(src, samp, uv + vec2f(r.x, -r.y), 0.0)).rgb;
+  let cW  = clean(textureSampleLevel(src, samp, uv + vec2f(-r.x, 0.0), 0.0)).rgb;
+  let cE  = clean(textureSampleLevel(src, samp, uv + vec2f(r.x, 0.0), 0.0)).rgb;
+  let cSW = clean(textureSampleLevel(src, samp, uv + vec2f(-r.x, r.y), 0.0)).rgb;
+  let cS  = clean(textureSampleLevel(src, samp, uv + vec2f(0.0, r.y), 0.0)).rgb;
+  let cSE = clean(textureSampleLevel(src, samp, uv + vec2f(r.x, r.y), 0.0)).rgb;
+
+  let lw = vec3f(0.2126, 0.7152, 0.0722);
+  let lC  = dot(center, lw);
+  let lNW = dot(cNW, lw); let lN = dot(cN, lw); let lNE = dot(cNE, lw);
+  let lW  = dot(cW, lw);                         let lE  = dot(cE, lw);
+  let lSW = dot(cSW, lw); let lS = dot(cS, lw); let lSE = dot(cSE, lw);
+
+  let m0 = (center + cNW + cN + cW) * 0.25;
+  let m1 = (center + cNE + cN + cE) * 0.25;
+  let m2 = (center + cSW + cS + cW) * 0.25;
+  let m3 = (center + cSE + cS + cE) * 0.25;
+
+  let lm0 = (lC + lNW + lN + lW) * 0.25;
+  let lm1 = (lC + lNE + lN + lE) * 0.25;
+  let lm2 = (lC + lSW + lS + lW) * 0.25;
+  let lm3 = (lC + lSE + lS + lE) * 0.25;
+
+  let v0 = (lC - lm0)*(lC - lm0) + (lNW - lm0)*(lNW - lm0) + (lN - lm0)*(lN - lm0) + (lW - lm0)*(lW - lm0);
+  let v1 = (lC - lm1)*(lC - lm1) + (lNE - lm1)*(lNE - lm1) + (lN - lm1)*(lN - lm1) + (lE - lm1)*(lE - lm1);
+  let v2 = (lC - lm2)*(lC - lm2) + (lSW - lm2)*(lSW - lm2) + (lS - lm2)*(lS - lm2) + (lW - lm2)*(lW - lm2);
+  let v3 = (lC - lm3)*(lC - lm3) + (lSE - lm3)*(lSE - lm3) + (lS - lm3)*(lS - lm3) + (lE - lm3)*(lE - lm3);
+
+  let w0 = 1.0 / (1.0 + v0 * 240.0);
+  let w1 = 1.0 / (1.0 + v1 * 240.0);
+  let w2 = 1.0 / (1.0 + v2 * 240.0);
+  let w3 = 1.0 / (1.0 + v3 * 240.0);
+  return mix(center, (m0 * w0 + m1 * w1 + m2 * w2 + m3 * w3) / (w0 + w1 + w2 + w3), clamp(strength, 0.0, 1.0));
+}
+
+@fragment fn composite(o: VO) -> @location(0) vec4f {
+  let G = GL.G;
+  let L = GL.L;
+  let uv = o.uv;
+  let dims = vec2f(textureDimensions(src));
+  let texel = 1.0 / max(dims, vec2f(1.0));
+  let fromC = uv - 0.5;
+
+  let compareMode = i32(round(L.u12.w));
+  let wipeSplit = L.u13.w;
+  let useLook = select(compareMode == 1, uv.x >= wipeSplit, compareMode == 2) && L.u11.w > 0.5;
+
+  let baseCA = ${finish ? finish.chromatic.toFixed(4) : "0.012"};
+  let baseBloom = ${finish ? finish.bloom.toFixed(4) : "0.32"};
+  let baseVig = ${finish ? finish.vignette.toFixed(4) : "0.45"};
+  let baseGrain = ${finish ? finish.grain.toFixed(4) : "0.022"};
+  let baseHuePres = ${finish?.huePreserve ? finish.huePreserve.toFixed(4) : "0.0"};
+  let baseShadowLift = ${finish?.shadowLift === undefined ? "1.0" : finish.shadowLift.toFixed(4)};
+
+  let bloom = textureSampleLevel(bloomTex, samp, uv, 0.0).rgb;
+  ${finish?.diagnostics ? `if (G.y > 0.5) {
+    var diagHdr = clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;
+    if (i32(G.y) == 5) { diagHdr = bloom * baseBloom; }
+    return vec4f(pow(max(diagHdr, vec3f(0.0)), vec3f(1.0 / 2.2)), 1.0);
+  }` : ""}
+
+  if (!useLook) {
+    let ca = fromC * dot(fromC, fromC) * baseCA;
+    var hdr = vec3f(
+      clean(textureSampleLevel(src, samp, uv + ca, 0.0)).r,
+      clean(textureSampleLevel(src, samp, uv, 0.0)).g,
+      clean(textureSampleLevel(src, samp, uv - ca, 0.0)).b,
+    );
+    hdr = hdr + bloom * baseBloom;
+    var c = aces(hdr * G.w);
+    if (baseHuePres > 0.0) {
+      let exposed = max(hdr * G.w, vec3f(0.0));
+      let peak = max(exposed.r, max(exposed.g, exposed.b));
+      c = mix(c, exposed * (aces(vec3f(peak)).r / max(peak, 0.0001)), baseHuePres);
+    }
+    let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    c = mix(vec3f(l), c, 1.0 - G.y);
+    c += vec3f(0.006, 0.011, 0.028) * baseShadowLift * (1.0 - smoothstep(0.0, 0.25, l));
+    c *= mix(vec3f(0.93, 0.97, 1.06), vec3f(1.04, 1.0, 0.95), smoothstep(0.2, 0.8, l));
+    let v = length(fromC * vec2f(1.0, 0.8));
+    c *= mix(1.0, baseVig, smoothstep(0.32, 0.85, v));
+    c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
+    c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
+    let px = o.pos.xy;
+    let grain = hash(px + fract(G.x * 13.7) * 1000.0) + hash(px * 1.37 + fract(G.x * 7.3) * 500.0) - 1.0;
+    c += grain * baseGrain * (1.0 - l * 0.6);
+    if (compareMode == 2) {
+      let line = 1.0 - smoothstep(texel.x * 1.2, texel.x * 2.8, abs(uv.x - wipeSplit));
+      c = mix(c, vec3f(0.92, 0.96, 1.0), line * 0.85);
+    }
+    return vec4f(c, 1.0);
+  }
+
+  // Active Look composite
+  let caAmt = baseCA + L.u9.w * 0.016;
+  let ca = fromC * dot(fromC, fromC) * caAmt;
+  var hdr: vec3f;
+  if (L.u10.w > 0.01) {
+    hdr = kuwaharaPost(uv, texel, L.u10.w);
+  } else if (caAmt > 0.0005) {
+    hdr = vec3f(
+      clean(textureSampleLevel(src, samp, clamp(uv + ca, vec2f(0.001), vec2f(0.999)), 0.0)).r,
+      clean(textureSampleLevel(src, samp, uv, 0.0)).g,
+      clean(textureSampleLevel(src, samp, clamp(uv - ca, vec2f(0.001), vec2f(0.999)), 0.0)).b,
+    );
+  } else {
+    hdr = clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;
+  }
+
+  // Ink / structural edge outlines
+  if (L.u11.x > 0.001) {
+    let stepUv = texel * L.u11.y;
+    let cR = clean(textureSampleLevel(src, samp, clamp(uv + vec2f(stepUv.x, 0.0), vec2f(0.001), vec2f(0.999)), 0.0)).rgb;
+    let cL = clean(textureSampleLevel(src, samp, clamp(uv - vec2f(stepUv.x, 0.0), vec2f(0.001), vec2f(0.999)), 0.0)).rgb;
+    let cU = clean(textureSampleLevel(src, samp, clamp(uv - vec2f(0.0, stepUv.y), vec2f(0.001), vec2f(0.999)), 0.0)).rgb;
+    let cD = clean(textureSampleLevel(src, samp, clamp(uv + vec2f(0.0, stepUv.y), vec2f(0.001), vec2f(0.999)), 0.0)).rgb;
+    let grad = (length(cR - cL) + length(cU - cD)) / max(0.08, length(hdr) + 0.12);
+    let edge = smoothstep(0.32, 0.95, grad) * clamp(L.u11.x, 0.0, 1.2);
+    let inkCol = vec3f(0.03, 0.035, 0.055) * (0.45 + L.u15.w);
+    hdr = mix(hdr, inkCol, clamp(edge, 0.0, 0.85));
+  }
+
+  var c = lookGradeColor(
+    L,
+    hdr * G.w,
+    bloom,
+    uv,
+    o.pos.xy,
+    G.x,
+    clamp(L.u7.w * 0.35, 0.0, 1.0),
+    baseBloom,
+    baseVig,
+    baseHuePres,
+  );
+  let v = length(fromC * vec2f(1.0, 0.8));
+  c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
+  c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
+  if (compareMode == 2) {
+    let line = 1.0 - smoothstep(texel.x * 1.2, texel.x * 2.8, abs(uv.x - wipeSplit));
+    c = mix(c, vec3f(0.92, 0.96, 1.0), line * 0.85);
+  }
+  return vec4f(clamp(c, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `

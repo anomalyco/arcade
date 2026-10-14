@@ -8,7 +8,17 @@ import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
-import { FRAME_FLOATS, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
+import {
+  LOOK_UNIFORM_FLOATS,
+  createLookSettings,
+  isIdentityLook,
+  packLookUniforms,
+  resolveLookPresetId,
+  type LookCompareMode,
+  type LookPresetId,
+  type LookSettings,
+} from "./look"
+import { FRAME_FLOATS, makeLookPostShader, makeLookSceneShader, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
 import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 
@@ -73,6 +83,9 @@ export type FrameInput = {
   addMotionKeys?: (MotionKey | undefined)[]
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
+  /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
+  look?: LookSettings | null
+  lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
 }
 
 /**
@@ -112,6 +125,10 @@ export class Renderer {
   private pipes: Record<string, GPURenderPipeline> = {}
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
+  private lookPipes: Record<string, GPURenderPipeline> | null = null
+  private activeLook: LookSettings | null = null
+  private activeLookCompare: { mode?: LookCompareMode; wipeSplit?: number } = {}
+  private lookSceneData = new Float32Array(LOOK_UNIFORM_FLOATS)
   private motionBuf: GPUBuffer
   private previousInst: GPUBuffer
   private previousSprites: GPUBuffer
@@ -139,7 +156,7 @@ export class Renderer {
   private hdrView!: GPUTextureView
   private bloom: GPUTexture[] = []
   private bloomViews: GPUTextureView[] = []
-  private gradeData = new Float32Array(8)
+  private gradeData = new Float32Array(8 + LOOK_UNIFORM_FLOATS)
   private postLayout: GPUBindGroupLayout
   private postGroups: { down: GPUBindGroup[]; up: GPUBindGroup[]; composite: GPUBindGroup } | null = null
   private postParams: GPUBuffer[] = []
@@ -155,13 +172,13 @@ export class Renderer {
     private device: GPUDevice,
     private context: GPUCanvasContext,
     private readonly format: GPUTextureFormat,
-    private shaders?: { scene: string; sprite: string; post?: string },
+    private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string },
   ) {
     const d = device
     this.smokeRenderer = new VolumeRenderer(d)
     const U = GPUBufferUsage
     this.frameBuf = d.createBuffer({ size: FRAME_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
-    this.motionBuf = d.createBuffer({ size: 80, usage: U.UNIFORM | U.COPY_DST })
+    this.motionBuf = d.createBuffer({ size: Math.max(80, LOOK_UNIFORM_FLOATS * 4), usage: U.UNIFORM | U.COPY_DST })
     this.previousInst = d.createBuffer({ size: this.previousData.byteLength, usage: U.VERTEX | U.COPY_DST })
     this.previousSprites = d.createBuffer({ size: this.spriteHistory.byteLength, usage: U.VERTEX | U.COPY_DST })
     this.lightBuf = d.createBuffer({ size: MAX_LIGHTS * LIGHT_FLOATS * 4, usage: U.STORAGE | U.COPY_DST })
@@ -173,7 +190,7 @@ export class Renderer {
     this.visibilityTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
-    this.gradeBuf = d.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST })
+    this.gradeBuf = d.createBuffer({ size: this.gradeData.byteLength, usage: U.UNIFORM | U.COPY_DST })
     this.inst = { buf: d.createBuffer({ size: 4096 * INST_FLOATS * 4, usage: U.VERTEX | U.COPY_DST }), count: 0, cap: 4096 }
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -490,6 +507,75 @@ export class Renderer {
    */
   setSmoke(trail: SmokeTrail, visible: boolean): void { this.vehicleSmoke.upload(trail, visible) }
 
+  /**
+   * Opt-in hook for applying a shared `LookSettings` preset or custom look to this Renderer.
+   * Passing `null` or `"current"` (identity) restores the exact baseline pipelines.
+   */
+  setLook(look: LookSettings | LookPresetId | null, compare?: { mode?: LookCompareMode; wipeSplit?: number }): void {
+    if (typeof look === "string") {
+      const pid = resolveLookPresetId(look) ?? "current"
+      this.activeLook = createLookSettings(pid)
+    } else {
+      this.activeLook = look ? { ...look } : null
+    }
+    if (compare) this.activeLookCompare = { ...compare }
+  }
+
+  getLook(): LookSettings | null {
+    return this.activeLook ? { ...this.activeLook } : null
+  }
+
+  private ensureLookPipes(): Record<string, GPURenderPipeline> {
+    if (this.lookPipes) return this.lookPipes
+    const d = this.device
+    const meshLayout: GPUVertexBufferLayout = {
+      arrayStride: VERT_BYTES,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x3" },
+        { shaderLocation: 1, offset: 12, format: "snorm8x4" },
+        { shaderLocation: 2, offset: 16, format: "unorm8x4" },
+        { shaderLocation: 3, offset: 20, format: "float16x2" },
+      ],
+    }
+    const instLayout: GPUVertexBufferLayout = {
+      arrayStride: INST_FLOATS * 4,
+      stepMode: "instance",
+      attributes: [
+        { shaderLocation: 5, offset: 0, format: "float32x4" },
+        { shaderLocation: 6, offset: 16, format: "float32x4" },
+        { shaderLocation: 7, offset: 32, format: "float32x4" },
+      ],
+    }
+    const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } }
+    const layout = d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
+    const lookSceneMod = this.module(this.shaders?.lookScene ?? makeLookSceneShader(), "scene look")
+    const pipe = (vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, fs = "fs") =>
+      d.createRenderPipeline({
+        layout,
+        vertex: { module: lookSceneMod, entryPoint: vs, buffers },
+        fragment: { module: lookSceneMod, entryPoint: fs, targets: [{ format: HDR, blend }] },
+        primitive: { topology: "triangle-list", cullMode: "none" },
+        depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
+        multisample: { count: SAMPLES },
+      })
+    const lookPostMod = this.module(this.shaders?.lookPost ?? makeLookPostShader(), "post look")
+    const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
+    this.lookPipes = {
+      level: pipe("vsStatic", [meshLayout], undefined, true, "fsSolid"),
+      levelCut: pipe("vsStatic", [meshLayout], undefined, true, "fs"),
+      glass: pipe("vsStatic", [meshLayout], premul, false, "fs"),
+      inst: pipe("vsInst", [meshLayout, instLayout], undefined, true, "fs"),
+      instAlpha: pipe("vsInst", [meshLayout, instLayout], premul, false, "fs"),
+      composite: d.createRenderPipeline({
+        layout: postPipeLayout,
+        vertex: { module: lookPostMod, entryPoint: "vs" },
+        fragment: { module: lookPostMod, entryPoint: "composite", targets: [{ format: this.format }] },
+        primitive: { topology: "triangle-list" },
+      }),
+    }
+    return this.lookPipes
+  }
+
   render(f: FrameInput): void {
     this.pending = f
     this.schedule()
@@ -522,7 +608,16 @@ export class Renderer {
       this.splatterRenderer.prepare(f.splatter,f.frame,this.splatterEye,motion)
     }
     if (motion) this.prepareMotion()
-    const scenePipes = motion ? this.motionPipes : this.shaders || ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512) ? this.pipes : this.baselinePipes
+    const effectiveLook = f.look !== undefined ? f.look : this.activeLook
+    const effectiveCompare = f.lookCompare ?? this.activeLookCompare
+    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
+    const scenePipes = motion
+      ? this.motionPipes
+      : useLookPipes
+        ? this.ensureLookPipes()
+        : this.shaders || ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512)
+          ? this.pipes
+          : this.baselinePipes
     const old = this.previousFrame
     const elapsed = old ? f.frame[19]! - old[19]! : 0
     const continuous = !!old && elapsed > 0 && elapsed < 0.1 && Math.hypot(f.frame[16]! - old[16]!, f.frame[17]! - old[17]!, f.frame[18]! - old[18]!) < 4
@@ -532,6 +627,12 @@ export class Renderer {
       // A 1/60 s exposure. The shader suppresses subpixel camera drift and caps fast trails.
       this.motionData[16] = continuous ? Math.min(2, 1 / (60 * elapsed)) * motionSettings.strength * motionSettings.shutter : 0
       d.queue.writeBuffer(this.motionBuf, 0, this.motionData)
+    } else if (useLookPipes && effectiveLook) {
+      packLookUniforms(effectiveLook, this.lookSceneData, 0, {
+        compareMode: effectiveCompare.mode ?? 1,
+        wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
+      })
+      d.queue.writeBuffer(this.motionBuf, 0, this.lookSceneData)
     }
     this.previousFrame = motion ? f.frame.slice() : null
     d.queue.writeBuffer(this.frameBuf, 0, f.frame)
@@ -540,7 +641,15 @@ export class Renderer {
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
     this.gradeData[4] = f.frame[45]! & 1
-    d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
+    if (useLookPipes && effectiveLook) {
+      packLookUniforms(effectiveLook, this.gradeData, 8, {
+        compareMode: effectiveCompare.mode ?? 1,
+        wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
+      })
+      d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
+    } else {
+      d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
+    }
 
     const total = f.batches.reduce((s, b) => s + b.count, 0)
     if (motion && total * INST_FLOATS > this.previousData.length) {
@@ -710,7 +819,7 @@ export class Renderer {
     }
     const output = this.timing ? this.measureView : this.context.getCurrentTexture().createView()
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-    fp.setPipeline((motion ? this.motionPipes : f.frame[45]! & 1 ? this.pipes : this.baselinePipes).composite!)
+    fp.setPipeline((motion ? this.motionPipes : useLookPipes ? this.ensureLookPipes() : f.frame[45]! & 1 ? this.pipes : this.baselinePipes).composite!)
     fp.setBindGroup(0, motion ? this.motionComposite : g.composite)
     fp.draw(3)
     fp.end()

@@ -312,6 +312,16 @@ export async function lab(options:LabOptions) {
     }else{
       stage.frameTarget(-1,0.5,0,15)
     }
+    const rawHash=location.hash.replace(/^#/,"").trim().toLowerCase()
+    if(rawHash){
+      const [secHash,subHash]=rawHash.split("/")
+      if(secHash&&sections.some(s=>s.id===secHash)){
+        select(secHash)
+        if(secHash==="looks"&&subHash){
+          try{workbench.invoke("look.preset",{preset:subHash})}catch{}
+        }
+      }
+    }
   }
   const api={
     adapter:adapter.info,

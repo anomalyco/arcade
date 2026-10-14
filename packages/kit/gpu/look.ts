@@ -116,7 +116,7 @@ export const LOOK_GROUPS: readonly LookGroup[] = [
 
 export const LOOK_PARAM_SPECS: readonly LookParamSpec[] = [
   // Tone & Curve
-  { key: "exposure", label: "Exposure", group: "Tone & Curve", type: "range", min: 0.25, max: 2.5, step: 0.02, unit: "×", boundary: "uniform" },
+  { key: "exposure", label: "Exposure", group: "Tone & Curve", type: "range", min: 0.2, max: 2.5, step: 0.02, unit: "×", boundary: "uniform" },
   { key: "tonemap", label: "Tonemap", group: "Tone & Curve", type: "select", options: LOOK_TONEMAP_OPTIONS, boundary: "uniform" },
   { key: "contrast", label: "Contrast", group: "Tone & Curve", type: "range", min: 0.6, max: 1.8, step: 0.02, unit: "×", boundary: "uniform" },
   { key: "toe", label: "Shadow toe", group: "Tone & Curve", type: "range", min: 0.0, max: 0.8, step: 0.02, unit: "", boundary: "uniform" },
@@ -133,45 +133,45 @@ export const LOOK_PARAM_SPECS: readonly LookParamSpec[] = [
   { key: "highlightTintR", label: "Highlight tint R", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
   { key: "highlightTintG", label: "Highlight tint G", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
   { key: "highlightTintB", label: "Highlight tint B", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "paletteMix", label: "Preset palette blend", group: "Split-Tone & Palette", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "foliageShift", label: "Foliage warmth shift", group: "Split-Tone & Palette", type: "range", min: -0.6, max: 0.6, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "paletteMix", label: "Preset palette blend", group: "Split-Tone & Palette", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "foliageShift", label: "Foliage warmth shift", group: "Split-Tone & Palette", type: "range", min: -0.6, max: 0.6, step: 0.01, unit: "", boundary: "uniform" },
 
   // Lighting & Silhouette
-  { key: "ambientFill", label: "Ambient / sky fill", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.2, step: 0.02, unit: "×", boundary: "uniform" },
+  { key: "ambientFill", label: "Ambient / sky fill", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.2, step: 0.01, unit: "×", boundary: "uniform" },
   { key: "shadowColorR", label: "Shadow colour R", group: "Lighting & Silhouette", type: "range", min: 0.1, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
   { key: "shadowColorG", label: "Shadow colour G", group: "Lighting & Silhouette", type: "range", min: 0.1, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
   { key: "shadowColorB", label: "Shadow colour B", group: "Lighting & Silhouette", type: "range", min: 0.1, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "practicalWarmth", label: "Practical warmth", group: "Lighting & Silhouette", type: "range", min: -0.8, max: 1.2, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "practicalWarmth", label: "Practical warmth", group: "Lighting & Silhouette", type: "range", min: -0.8, max: 1.2, step: 0.01, unit: "", boundary: "uniform" },
   { key: "practicalIntensity", label: "Practical intensity", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
   { key: "moonIntensity", label: "Moon / sun intensity", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
   { key: "rimStrength", label: "Rim / silhouette light", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.0, step: 0.05, unit: "×", boundary: "uniform" },
   { key: "contactShade", label: "Contact shading", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 1.5, step: 0.05, unit: "", boundary: "uniform" },
-  { key: "surfaceWetness", label: "Surface damp sheen", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 1.0, step: 0.05, unit: "", boundary: "uniform" },
+  { key: "surfaceWetness", label: "Surface damp sheen", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
 
   // Atmosphere & Shafts
   { key: "fogDensity", label: "Fog density", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.2, step: 0.02, unit: "", boundary: "uniform" },
   { key: "fogHeightFalloff", label: "Fog height falloff", group: "Atmosphere & Shafts", type: "range", min: 0.3, max: 4.5, step: 0.1, unit: "m", boundary: "uniform" },
-  { key: "fogColorR", label: "Fog colour R", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "fogColorG", label: "Fog colour G", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "fogColorB", label: "Fog colour B", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "fogColorR", label: "Fog colour R", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "fogColorG", label: "Fog colour G", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "fogColorB", label: "Fog colour B", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
   { key: "shaftStrength", label: "Light shaft strength", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
-  { key: "shaftSlats", label: "Venetian slats / cookie", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.05, unit: "", boundary: "uniform" },
+  { key: "shaftSlats", label: "Venetian slats / cookie", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
 
   // Lens & Film
   { key: "bloom", label: "Bloom strength", group: "Lens & Film", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
-  { key: "halation", label: "Film halation", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.05, unit: "", boundary: "uniform" },
-  { key: "vignette", label: "Lens vignette", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.05, unit: "", boundary: "uniform" },
+  { key: "halation", label: "Film halation", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "vignette", label: "Lens vignette", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
   { key: "grain", label: "Film grain", group: "Lens & Film", type: "range", min: 0.0, max: 1.2, step: 0.02, unit: "", boundary: "uniform" },
   { key: "grainSeed", label: "Grain seed", group: "Lens & Film", type: "range", min: 1, max: 9999, step: 1, unit: "", boundary: "uniform" },
   { key: "grainAnimated", label: "Temporal grain", group: "Lens & Film", type: "toggle", boundary: "uniform" },
-  { key: "chromatic", label: "Chromatic softness", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.05, unit: "", boundary: "uniform" },
+  { key: "chromatic", label: "Chromatic softness", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
 
   // Painterly & Ink
-  { key: "diffuseWrap", label: "Diffuse wrap", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.0, step: 0.05, unit: "", boundary: "uniform" },
+  { key: "diffuseWrap", label: "Diffuse wrap", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
   { key: "diffuseBands", label: "Diffuse bands (0=off)", group: "Painterly & Ink", type: "range", min: 0, max: 6, step: 1, unit: "", boundary: "uniform" },
-  { key: "bandSoftness", label: "Band softness", group: "Painterly & Ink", type: "range", min: 0.02, max: 0.45, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "painterlySmooth", label: "Kuwahara brush smooth", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.0, step: 0.05, unit: "", boundary: "uniform" },
-  { key: "outlineStrength", label: "Ink outline strength", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.5, step: 0.05, unit: "", boundary: "uniform" },
+  { key: "bandSoftness", label: "Band softness", group: "Painterly & Ink", type: "range", min: 0.02, max: 0.46, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "painterlySmooth", label: "Kuwahara brush smooth", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "outlineStrength", label: "Ink outline strength", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
   { key: "outlineWidth", label: "Ink outline width", group: "Painterly & Ink", type: "range", min: 0.5, max: 3.0, step: 0.25, unit: "px", boundary: "uniform" },
 ] as const
 
@@ -1211,12 +1211,14 @@ fn lookGradeColor(
     c = mix(c, t * (1.0 + toeK), clamp(toe * 0.75, 0.0, 0.85));
   }
 
-  // 7. Split-toning & saturation
+  // 7. Split-toning & saturation (with selective warm practical hue retention when practicalWarmth > 0)
   let luma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   let splitCurve = mix(shadowTint, highlightTint, smoothstep(0.02, 0.55, luma));
   let activeSplit = mix(vec3f(1.0), splitCurve, clamp(splitTone, 0.0, 1.5));
   let mono = vec3f(luma) * activeSplit;
-  c = mix(mono, c * activeSplit, saturation);
+  let warmBias = clamp((c.r - max(c.g * 0.85, c.b)) / max(c.r, 1e-4) - 0.12, 0.0, 1.0) * clamp(L.u5.x, 0.0, 1.0);
+  let effSat = mix(saturation, max(saturation, 0.82), warmBias * 0.75);
+  c = mix(mono, c * activeSplit, effSat);
 
   // 8. Black crush (scaled for linear space before sRGB encoding so deep shadows crush without eating midtones)
   if (blackCrush > 0.0005) {
