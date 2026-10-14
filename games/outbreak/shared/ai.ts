@@ -179,6 +179,31 @@ export function spawnTownZombies(
   return agents
 }
 
+/** What the crowd perceives of a survivor. `id` defaults to "player" (the single-player target id). */
+export type AISurvivor = {
+  id?: string
+  x: number
+  y: number
+  vx: number
+  vy: number
+  aim: number
+  noise: number
+} & SurvivorFlashlightState
+
+function nearestSurvivor(survivors: readonly AISurvivor[], x: number, y: number): AISurvivor | undefined {
+  if (survivors.length <= 1) return survivors[0]
+  let best: AISurvivor | undefined
+  let bestD = Infinity
+  for (const s of survivors) {
+    const d = Math.hypot(s.x - x, s.y - y)
+    if (d < bestD) {
+      bestD = d
+      best = s
+    }
+  }
+  return best
+}
+
 export class OutbreakAISubsystem {
   readonly nav = new GridNav(SIZE, SIZE, 0.5)
   readonly spatial = new SpatialHash(SIZE, SIZE, 4)
@@ -349,49 +374,56 @@ export class OutbreakAISubsystem {
 
   step(
     town: Town,
-    player: {
-      x: number
-      y: number
-      vx: number
-      vy: number
-      aim: number
-      noise: number
-    } & SurvivorFlashlightState,
+    player: AISurvivor,
     hour: number,
     time: number,
     dt: number,
     flashlightTuning: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone"> = DEFAULT_FLASHLIGHT_TUNING,
   ): { topologyChanged: boolean; playerDamage: number } {
+    const res = this.stepSurvivors(town, [player], hour, time, dt, flashlightTuning)
+    return { topologyChanged: res.topologyChanged, playerDamage: res.damage[0]! }
+  }
+
+  /** Advances the crowd against every survivor; `damage[i]` is the damage dealt to `survivors[i]` this tick. */
+  stepSurvivors(
+    town: Town,
+    survivors: readonly AISurvivor[],
+    hour: number,
+    time: number,
+    dt: number,
+    flashlightTuning: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone"> = DEFAULT_FLASHLIGHT_TUNING,
+  ): { topologyChanged: boolean; damage: number[] } {
     this.tick++
     const day = dayCycle(hour)
     const darkness = 1 - day.sun
     const nightFactor = 1 + darkness * (this.config.nightMultiplier - 1)
-    const baseLightLevel = samplePointLightLevel(town, hour, player.x, player.y, 1)
-    const lightLevel = Math.min(1.5, baseLightLevel + (player.flashlightOn ? player.flashlightOutput * 0.55 : 0))
-    const flashlight: FlashlightState | null =
-      player.flashlightOn && player.flashlightOutput > 0.01
-        ? {
-            on: true,
-            x: player.x,
-            y: player.y,
-            aim: player.aim,
-            range: player.lightSignature || flashlightTuning.flashlightRange,
-            halfAngle: (flashlightTuning.flashlightCone * Math.PI) / 360,
-            output: player.flashlightOutput,
-            awarenessAt: (zx, zy) => flashlightAwarenessAt(player, zx, zy, this.sightBlockers, flashlightTuning),
-          }
-        : null
-
-    const target: PerceptionTarget = {
-      id: "player",
-      x: player.x,
-      y: player.y,
-      vx: player.vx,
-      vy: player.vy,
-      lightLevel,
-      continuousNoiseRadius: player.noise,
-      flashlight,
-    }
+    const targets: PerceptionTarget[] = survivors.map((player) => {
+      const baseLightLevel = samplePointLightLevel(town, hour, player.x, player.y, 1)
+      const lightLevel = Math.min(1.5, baseLightLevel + (player.flashlightOn ? player.flashlightOutput * 0.55 : 0))
+      const flashlight: FlashlightState | null =
+        player.flashlightOn && player.flashlightOutput > 0.01
+          ? {
+              on: true,
+              x: player.x,
+              y: player.y,
+              aim: player.aim,
+              range: player.lightSignature || flashlightTuning.flashlightRange,
+              halfAngle: (flashlightTuning.flashlightCone * Math.PI) / 360,
+              output: player.flashlightOutput,
+              awarenessAt: (zx, zy) => flashlightAwarenessAt(player, zx, zy, this.sightBlockers, flashlightTuning),
+            }
+          : null
+      return {
+        id: player.id ?? "player",
+        x: player.x,
+        y: player.y,
+        vx: player.vx,
+        vy: player.vy,
+        lightLevel,
+        continuousNoiseRadius: player.noise,
+        flashlight,
+      }
+    })
 
     // Optional AI Director pacing: at night or after quiet stretches, gently drift 1-2 distant idle roamers toward active street corridors
     if (this.config.directorPacing > 0) {
@@ -402,6 +434,8 @@ export class OutbreakAISubsystem {
         for (let i = 0; i < this.agents.length && nudged < 2; i++) {
           const a = this.agents[i]!
           if (a.state !== "wander") continue
+          const player = nearestSurvivor(survivors, a.x, a.y)
+          if (!player) break
           const d = Math.hypot(a.x - player.x, a.y - player.y)
           if (d > 22 && d < 52) {
             const ang = Math.atan2(player.y - a.y, player.x - a.x) + ((i % 2 === 0 ? 1 : -1) * 0.35)
@@ -434,7 +468,7 @@ export class OutbreakAISubsystem {
       spatial: this.spatial,
       noiseBus: this.noiseBus,
       config: this.config,
-      targets: [target],
+      targets,
     })
 
     let topologyChanged = false
@@ -467,13 +501,15 @@ export class OutbreakAISubsystem {
       this.rebuildTopology(town)
     }
 
-    let playerDamage = 0
+    const damage = survivors.map(() => 0)
     for (const atk of res.attacks) {
-      if (Math.hypot(atk.x - player.x, atk.y - player.y) <= 1.25) {
-        playerDamage += atk.damage
+      const i = survivors.length === 1 ? 0 : targets.findIndex((t) => t.id === atk.targetId)
+      const player = survivors[i]
+      if (player && Math.hypot(atk.x - player.x, atk.y - player.y) <= 1.25) {
+        damage[i]! += atk.damage
       }
     }
 
-    return { topologyChanged, playerDamage }
+    return { topologyChanged, damage }
   }
 }

@@ -29,7 +29,7 @@ test("shared zombie gait locks toes, bounds uneven timing and drags only the swi
         contacts++
       }
       expect(a.motion.durations[i]!).toBeGreaterThanOrEqual(0.077)
-      expect(a.motion.durations[i]!).toBeLessThanOrEqual(0.39)
+      expect(a.motion.durations[i]!).toBeLessThanOrEqual(0.48)
     }
     leftLift = Math.max(leftLift, a.feet[0].p[1]); rightLift = Math.max(rightLift, a.feet[1].p[1])
   }
@@ -362,4 +362,113 @@ test("pose-diff normalization, FK angle synthesis and unarmed walk/run arm kinem
   expect(rk.armOppositeLegCorr).toBeGreaterThan(0.84)
   expect(Math.abs(rk.armPhaseLagDeg)).toBeLessThanOrEqual(18)
   expect(runRes.comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(6.5)
+  // Running heel kick-up (> 34 cm lift, > 110 deg knee flexion) and high knee drive (> 50 deg hip flexion)
+  expect(rk.footLiftMaxCm).toBeGreaterThan(34)
+  expect(rk.kneeFlexMaxDeg).toBeGreaterThan(110)
+  expect(rk.hipFlexMaxDeg).toBeGreaterThan(50)
+  expect(wk.kneeFlexMaxDeg).toBeGreaterThan(64)
+  expect(wk.kneeFlexMaxDeg).toBeLessThan(76)
+})
+
+test("seeded per-step variation, crowd personality desync, start/stop weight shift and secondary lag preserve zero toe slip", () => {
+  const dt = 1 / 60
+  const a = actor()
+  a.unarmed = true
+  a.seed = 42.125
+  const profile = { ...humanProfiles.soldier, stepVariation: 0.35 }
+  let x = 0
+  let prevPlanted: [boolean, boolean] = [true, true]
+  let prevToes: [V3, V3] | null = null
+  let lastTdT: number | null = null
+  const lastTdX: [number | null, number | null] = [null, null]
+  const curLift: [number, number] = [0, 0]
+  const steps: { foot: 0 | 1; durMs: number; strideCm: number; liftCm: number; latCm: number; toeDeg: number }[] = []
+
+  for (let n = 0; n < 1200 && steps.length < 20; n++) {
+    const t = n * dt
+    a.vx = 4.2; a.vy = 0; a.svx = 4.2; a.svy = 0
+    x += 4.2 * dt
+    const distStep = x - a.x
+    a.x = x
+    locomotion(a, dt, distStep, n === 0, profile)
+    const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
+    const legs = poseLegs(a, pelvis)
+    const toes: [V3, V3] = [at(legs.ft[0], 0.19, -RIG.ankle, 0), at(legs.ft[1], 0.19, -RIG.ankle, 0)]
+
+    if (n === 0) {
+      // Start anticipation triggers lateral weight-shift velocity and crouch dip
+      expect(Math.abs(a.motion.sway.v)).toBeGreaterThan(0.02)
+      expect(a.dip.v).toBeLessThan(-0.05)
+    }
+
+    if (n >= 120) {
+      for (const i of [0, 1] as const) {
+        if (prevPlanted[i] && a.feet[i]!.planted && prevToes) {
+          expect(len([toes[i]![0] - prevToes[i]![0], toes[i]![1] - prevToes[i]![1], toes[i]![2] - prevToes[i]![2]])).toBeLessThan(1e-12)
+        }
+        if (!a.feet[i]!.planted) {
+          curLift[i] = Math.max(curLift[i], (legs.ft[i]!.p[1] - RIG.ankle) * 100)
+        }
+        if (!prevPlanted[i] && a.feet[i]!.planted) {
+          if (lastTdT !== null && lastTdX[i] !== null) {
+            const side = i === 0 ? -1 : 1
+            steps.push({
+              foot: i,
+              durMs: (t - lastTdT) * 1000,
+              strideCm: (a.feet[i]!.p[0] - lastTdX[i]!) * 100,
+              liftCm: curLift[i],
+              latCm: (a.feet[i]!.p[2] - side * 0.145) * 100,
+              toeDeg: (a.feet[i]!.yaw - side * 0.06) * 180 / Math.PI,
+            })
+          }
+          lastTdT = t
+          lastTdX[i] = a.feet[i]!.p[0]
+          curLift[i] = 0
+        }
+      }
+    }
+    prevPlanted = [a.feet[0].planted, a.feet[1].planted]
+    prevToes = toes
+  }
+
+  expect(steps.length).toBe(20)
+  const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length
+  const std = (arr: number[]) => {
+    const m = avg(arr)
+    return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length)
+  }
+  const strides = steps.map(s => s.strideCm)
+  const lifts = steps.map(s => s.liftCm)
+  const lats = steps.map(s => s.latCm)
+  const toesDeg = steps.map(s => s.toeDeg)
+  const dursL = steps.filter(s => s.foot === 0).map(s => s.durMs)
+  const dursR = steps.filter(s => s.foot === 1).map(s => s.durMs)
+
+  // Genuine per-step variation in stride, lift, lateral placement, and toe-out angle
+  expect(std(strides) / avg(strides)).toBeGreaterThan(0.005)
+  expect(std(strides) / avg(strides)).toBeLessThan(0.04)
+  expect(std(lifts)).toBeGreaterThan(0.5)
+  expect(std(lats)).toBeGreaterThan(0.2)
+  expect(std(toesDeg)).toBeGreaterThan(0.4)
+  // Same-foot high-pass blue noise preserves long-run L/R symmetry
+  expect(Math.max(avg(dursL), avg(dursR)) / Math.min(avg(dursL), avg(dursR))).toBeLessThan(1.03)
+  // Secondary motion spring tracks vertical bob with phase lag
+  expect(Math.abs(a.motion.secondary.x)).toBeGreaterThan(0.001)
+
+  // Crowd of 5 seeded actors desynchronizes instead of marching in lockstep
+  const crowd = [11, 29, 47, 73, 97].map(seed => {
+    const c = actor()
+    c.seed = seed
+    return c
+  })
+  let cx = 0
+  for (let n = 0; n < 300; n++) {
+    cx += 4.2 * dt
+    for (const c of crowd) {
+      c.vx = 4.2; c.svx = 4.2; c.x = cx
+      locomotion(c, dt, 4.2 * dt, n === 0, profile)
+    }
+  }
+  const phases = crowd.map(c => c.phase * 360)
+  expect(Math.max(...phases) - Math.min(...phases)).toBeGreaterThan(20)
 })

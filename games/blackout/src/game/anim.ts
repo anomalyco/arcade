@@ -841,13 +841,14 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   }
   const { ua, fa } = useUnarmedSwing ? poseUnarmedArms(torso, handL, handR) : poseArms(torso, handL, handR)
 
-  // Head follows the aim, looks down at the gun while reloading.
+  // Head follows the aim, looks down at the gun while reloading, with subtle secondary follow-through lag.
+  const secLag = enhanced ? (m.secondary?.x ?? 0) - m.bob.x : 0
   let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), a.aim + a.hitTwist.x * 1.6 + clamp(a.aimVel * 0.02, -0.25, 0.25))
   if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + a.hitTwist.x)
   const stab = enhanced ? clamp(profile.headStability ?? 0.8, 0, 1) : 0
   const headLean = fwd - (postureX * ca + postureY * sa) * stab
   const baseHeadPitch = enhanced ? (a.unarmed ? -0.015 - 0.045 * m.run : -0.04 - 0.06 * m.run) * (1 - 0.35 * stab) : -0.1
-  head = pitch(head, baseHeadPitch - look * 1.1 - a.torsoKick.x * 0.6 - headLean * (0.3 * (1 - 0.55 * stab)) + Math.sin(2 * th) * 0.03 * (1 - 0.7 * stab) * moving)
+  head = pitch(head, baseHeadPitch - look * 1.1 - a.torsoKick.x * 0.6 - headLean * (0.3 * (1 - 0.55 * stab)) + secLag * 0.45 * (1 - 0.5 * stab) + Math.sin(2 * th) * 0.03 * (1 - 0.7 * stab) * moving)
   head = roll(head, side * 0.5 * (1 - 0.5 * stab) - a.hitTwist.x * 0.5)
   if (enhanced) {
     if (profile.torsoLean > 0) head = pitch(head, -0.22 * clamp(profile.torsoLean, 0, 0.35) + Math.sin(th) * 0.04 * moving * clamp(profile.footDrag, 0, 1))

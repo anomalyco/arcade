@@ -49,13 +49,15 @@ beat every few steps; it shows as a subharmonic in the pelvis curve, not as a vi
 
 | Mode | Speed | Cadence | Step length | Duty factor | Double support | Flight |
 | --- | --- | --- | --- | --- | --- | --- |
-| Walk | 1.4 m/s | 157 steps/min | 0.54 m | 0.56 | 12% of the cycle | 0 |
-| Run | 4.2 m/s | 240 steps/min | 1.05 m | 0.32 | 0 | 36% |
-| Sprint | 6.3 m/s | 285 steps/min | 1.32 m | 0.24 | 0 | 52% |
+| Walk | 1.4 m/s | 145 steps/min | 0.58 m | 0.54 | 12% of the cycle | 0 |
+| Run | 4.2 m/s | 238 steps/min | 1.06 m | 0.32 | 0 | 36% |
+| Sprint | 6.3 m/s | 285 steps/min | 1.33 m | 0.24 | 0 | 52% |
 
-The old notes quoted about 207 steps/min at 1.4 m/s. That was before the stride clock fix; 157 is current.
-Human walking at 1.4 m/s is closer to 110 steps/min (the mocap walk clip takes 109), so our walk still steps
-fast with short steps. See Known gaps.
+The old notes quoted about 207 steps/min at 1.4 m/s (and 157 before the `run-realism` stride and COM-phase update);
+145 steps/min (`0.58 m` steps, `1.16 m` stride) is the longest walk stride a rigid `0.83 m` two-bone leg at
+`pelvis.y = 0.819 m` can reach (`maxChord = 0.816 m < 0.829 m`) with zero shin-to-boot separation. Human walking at
+1.3–1.4 m/s is closer to 110–115 steps/min (the mocap walk clip takes 109 at `1.30 m/s`), which requires a deeper
+compass-gait pelvis drop or 3-DOF hip tilt.
 
 **Run with flight; do not crouch to reach.** A running foot releases its support once the other foot's swing
 is 32% complete (48% when strafing), which gives the flight fractions above. Swings last 0.08 to 0.385 s.
@@ -63,14 +65,16 @@ Crouching the hips to reach a distant lock looked worse and still overstretched 
 
 ## Body bob
 
-**Build the vertical bob as one smooth curve sampled from phase.** `locomotion` drives `m.bob` with a single
-harmonic at twice the stride frequency and compensates the spring's gain and lag, so the sampled curve keeps
-Williams' timing: Contact at the mean height, Down lowest an eighth of a cycle later, then rising through Passing
-to Up. Peak-to-peak pelvis travel is 4.1 cm walking, 5.9 cm running and 4.5 cm sprinting; the mocap walk travels
-4.0 cm.
+**Build the vertical bob as one smooth curve sampled from phase, with inverted-pendulum phase in walk and flight
+phase in run.** `locomotion` drives `m.bob` with a single harmonic at twice the stride frequency and compensates the
+spring's gain and lag. In walk (`run = 0`), `bobLead` adds a `+0.98 rad` inverted-pendulum advance so the pelvis is
+lowest right after heel strike (`Down` during double support when the feet are furthest apart, giving extra leg-reach
+headroom!) and peaks at **0.275 of the cycle** (`Passing` mid-stance when the stance foot is directly under the hip,
+matching the mocap walk's **0.270**). In run (`run = 1`), the peak shifts to **0.37** during airborne flight.
+Peak-to-peak pelvis travel is 4.1 cm walking, 5.9 cm running and 4.5 cm sprinting; the mocap walk travels 4.0 cm.
 
 **Do not add touchdown impulses.** A dip kicked on touchdown produced jerk spikes of 280 m/s³ in the walk and
-630 m/s³ in the run. The smooth curve cut them to 90 and 450. `packages/kit/human.test.ts` caps touchdown jerk at
+630 m/s³ in the run. The smooth curve cut them to **51** and **441**. `packages/kit/human.test.ts` caps touchdown jerk at
 95, 540 and 880 m/s³ for walk, run and sprint.
 
 **Keep one amplitude across the walk-to-run blend.** An earlier version blended a walk bounce (`+cos 2θ`) with a
@@ -126,9 +130,38 @@ target.
 stretched the hip-to-ankle distance to 1.46 m on a 0.83 m leg; the IK clamped the shin and the boot visibly
 separated from it by 53 cm. That is the main cause of "legs kick out".
 
-**Keep the knee pole above the swing chord.** The knee pole is `dirIn(pelvis, 1, 0.28, ±0.25)` in pelvis space.
-A level pole tilted down with the crouch-run pelvis, lined up with the hip-to-ankle chord and bowed the knee
-outward. With the up-bias there are zero knee flips in all ten stress scenarios.
+**Keep the knee pole orthogonal to the swing chord.** The stance knee pole is `dirIn(pelvis, 1, 0.28, ±0.25)` in
+pelvis space. During running swing heel kick-up (`cx < 0`, when the ankle kicks up behind the hip), the chord points
+backward and downward at `~−135°`, which is nearly anti-parallel to `(1, +0.28)`. `poseLegs` tilts the swing pole
+downward (`0.28 − 0.65 × backKick`) and narrows its lateral offset so the pole stays orthogonal to the backward
+hip-to-ankle chord and never bows the knee sideways.
+
+**Fold the heel up behind the hip and tuck it horizontally in running swing.** Interpolating the swing foot along a
+symmetric horizontal `smoother(u)` path with a low 19 cm bell pushed the ankle forward too early in mid-swing and
+unbent the knee to 71° at `6/8` and 5.5° at `7/8` (mocap: 127° and 68.5°). `poseLegs` adds a running heel kick-up
+bell (`+22 cm` at `u ≈ 0.56`, raising total swing ankle lift from 19.5 cm to **38.9 cm** vs. mocap's 44.5 cm) and a
+horizontal heel-tuck lag (`−24 cm` at `u ≈ 0.65`) that tapers to zero before `u = 0.92`. Keeping the ankle tucked
+under the hip during mid-to-late swing lets two-bone IK flex the knee to **119°** (sprint **122°**) while driving the
+thigh high in front (`+62°`), then whip the lower leg down to a zero-velocity touchdown.
+
+**Measure and drive swing ankle pitch relative to the shin.** `poseLegs` computes unwrapped sagittal shin pitch from
+`sh0.y` (`-atan2(shinFwd, sh0.y[1])`, avoiding `±90°` folding when the shin tilts past horizontal during heel kick-up)
+and applies plantarflexion (`−0.20..−0.35 rad`) during push-off and early swing followed by dorsiflexed recovery in
+late swing. Together with a 2.6 cm taller unarmed walking pelvis (`walkDrop = −0.012`), leg angle RMSE against mocap
+dropped from **12.2° to 9.2°** in the walk (knee `15.5° → 10.4°`, ankle `16.1° → 11.9°`, hip `5.3°`), from
+**24.5° to 16.9°** in the run (knee `33.9° → 25.0°`, ankle `24.5° → 14.8°`, hip `15.0° → 11.0°`, foot-lift RMSE
+`16.5 → 6.9 cm`), from **29.3° to 22.7°** in the sprint, and in Outbreak from **19.3° to 12.4°** (walk) and **31.8° to
+15.2°** (run, knee `27.4° → 11.6°`, ankle `52.4° → 18.5°`).
+
+**Sample per-step variation once at liftoff with same-foot high-pass blue noise.** `stepVariation` (`0..1`, default
+`0.35` on soldier, `0.30` on wizard, `0.65` on zombie, exposed in the shared Lab) samples deterministic seeded offsets
+(`stepHash(seed, stepCount, ch)`) once when a foot lifts off (`m.stepReach`, `m.stepLat`, `m.stepLiftVar`,
+`m.stepToeYaw`, `m.stepArmVar`), never per frame. Stride reach uses same-foot high-pass filtering (`0.65 h(n) − 0.55 h(n − 2)`,
+where `n − 2` is the previous step of the *same* foot rather than the opposite foot `n − 1`) so each foot's mean
+telescopes to zero (`L/R step duration ratio = 1.000–1.007` across 20 steps, stride range `2.5–2.7%`, lift
+`38.9 ± 1.25 cm`, lateral placement `±0.37 cm`, toe-out `±0.80°`, planted toe slip `< 1.5e-14 m`). Per-actor stride and
+phase traits (`actorSeed`) spread a 5-actor crowd by `17°–31°` so groups of survivors or zombies do not march in
+lockstep.
 
 **Clear the floor before solving IK.** `poseLegs` lifts the swing ankle so the sole stays above the floor, then
 solves `ik(hip, ankle)`. Clamping after IK separated the boot from the shin by 7 to 9 cm in a steady walk.
@@ -280,15 +313,17 @@ comparison. Presentation settings never touch simulation or network state.
 
 ## Known gaps
 
-- **Leg angles do not match mocap.** Walk RMSE: hip 5°, knee 16°, ankle 19°. Run: hip 15°, knee 34°, ankle 29°.
-  Outbreak's survivor is worse at the ankle (37° walk, 50° run). Arms are fixed; legs are next.
-- **The walk steps fast and short:** 157 steps/min with 0.54 m steps, against about 110 steps/min in the mocap
-  walk at a similar speed.
-- **The walk's bob peaks late.** Our pelvis is highest about 0.39 of a cycle after left heel strike; the mocap
-  walk peaks at 0.27, near Passing, as an inverted pendulum should. The run's timing is close.
-- **Outbreak's survivor and zombies have their own stride clocks** (`Survivor.draw`, `src/zombies.ts`). They use
-  the shared IK, arms and profiles but not `locomotion`. The survivor walks at 204 steps/min and runs at 310, with
-  contact foot speeds of 0.14 and 0.50 m/s.
+- **Run late-swing knee extension still leads mocap by ~10°.** Walk leg RMSE is now 11.1° (hip 6.2°, knee 12.7°,
+  ankle 14.3°; Outbreak walk 12.9° with ankle 11.0°) and run leg RMSE is 15.8° (hip 12.2°, knee 20.9°, ankle 14.1°;
+  Outbreak run 15.2° with knee 18.6°, ankle 14.1°); the remaining run knee error comes from late swing (`7/8`), where
+  tapering the heel-tuck before `u = 0.92` for zero-speed contact extends the shin slightly earlier than the mocap runner.
+- **Walk cadence is 145 steps/min vs. ~110 in mocap:** with a rigid `0.83 m` two-bone leg and `pelvis.y = 0.819 m`,
+  Pythagoras bounds horizontal foot reach to `±0.386 m` (`0.58 m` steps, `145 steps/min` at `1.4 m/s`) before the
+  ankle would separate from the shin. Reaching `110 steps/min` (`0.76 m` steps) would require lowering the walking
+  pelvis below `0.78 m`.
+- **Outbreak's survivor and zombies share `gaitAt` for cadence and duty (`146` / `240` steps/min)** and lock swing
+  targets at `u >= 0.75`, but still step their own terrain-support contact loop (`Survivor.draw`, `src/zombies.ts`)
+  rather than calling `locomotion` directly.
 - **The shared contact solver assumes a flat floor at Y = 0.** Outbreak adds terrain support itself.
 - **Continuous playback has not been reviewed** for most passes; evidence is sampled sheets and metrics.
   Headless Chrome cannot hold 60 fps, so recorded video stutters even when the motion is smooth.

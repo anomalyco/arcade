@@ -5,9 +5,11 @@ import { chromium } from "playwright-core"
 
 const game = resolve(import.meta.dir, "..")
 const phase = process.env.LOOK_PHASE ?? "after"
+// Optional Lab overrides for A/B experiments, e.g. LOOK_LAB='{"streetAirHaze":0}'.
+const labOverrides: Record<string, number> = JSON.parse(process.env.LOOK_LAB ?? "{}")
 const out = resolve(game, "../../captures/outbreak-look", phase)
 mkdirSync(out, { recursive: true })
-assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: game, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
+if (process.env.LOOK_SKIP_BUILD !== "1") assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: game, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
 const root = resolve(game, "dist/arcade/outbreak")
 const fixture = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
   const path = new URL(req.url).pathname
@@ -34,9 +36,10 @@ try {
     { name: "yard", x: 20, y: 35, aim: -1.6, hour: 23, zoom: 42 },
   ]
   for (const scene of scenes) {
-    await page.evaluate(async s => {
+    await page.evaluate(async ({ s, labOverrides }) => {
       const h = (window as any).__arcadeHarness
       h.reset(7); h.setLab("timeScale", 0); h.setLab("hour", s.hour); h.setLab("zoom", s.zoom)
+      for (const [key, value] of Object.entries(labOverrides)) h.setLab(key, value)
       // One short walk's memory around the house; identical staging in every capture.
       for (const [x,y,a] of [[30,41,-1.57],[20,35,-1.57],[20,26,0],[30,21,1.57],[38,32,3.14]]) {
         h.pose(x,y,a); await h.step()
@@ -44,7 +47,7 @@ try {
       h.pose(s.x,s.y,s.aim)
       if (s.name === "open") await h.step(1/60,{interact:true})
       for(let i=0;i<8;i++) await h.step()
-    }, scene)
+    }, { s: scene, labOverrides })
     await page.screenshot({ path: resolve(out, `${scene.name}.png`) })
     await page.evaluate(() => {
       for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt")) el.style.visibility = "hidden"
@@ -73,5 +76,5 @@ try {
     await page.screenshot({path:resolve(out,"portrait.png")})
   }
   assert.deepEqual(errors, [])
-  await Bun.write(resolve(out, "proof.json"), JSON.stringify({ adapter, scenes, viewport: [1000,680], dpr:1, crop:[0,0,1000,680], vertices:state.vertices, generation:"real Lab sliders preserve player and doors",errors },null,2))
+  await Bun.write(resolve(out, "proof.json"), JSON.stringify({ adapter, scenes, labOverrides, viewport: [1000,680], dpr:1, crop:[0,0,1000,680], vertices:state.vertices, generation:"real Lab sliders preserve player and doors",errors },null,2))
 } finally { await browser.close(); fixture.stop(true) }

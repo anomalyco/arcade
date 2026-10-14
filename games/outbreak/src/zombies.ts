@@ -1,28 +1,21 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, SPRITE_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
-import { angleSpring } from "@arcade/kit/human-locomotion"
 import {
-  boneVisible,
+  boneIds,
   detach,
-  poseArms,
   type BoneId,
   type BonePose,
 } from "@arcade/kit/human-pose"
-import { profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
+import { type HumanProfile } from "@arcade/kit/human-profile"
 import {
-  at,
   clamp,
-  dirIn,
   HIP,
-  ik,
-  limb,
   pitch,
   RIG,
   roll,
+  smooth,
   smoother,
-  spring,
-  stepSpring,
   yawFrame,
   type Frame,
   type V3,
@@ -30,27 +23,8 @@ import {
 import { angleDiff } from "@arcade/kit/sim/geom"
 import type { AIAgent, AIConfig, NoiseEvent } from "../shared/ai"
 import type { Vision } from "../shared/vision"
-import { ZombieMemoryTracker } from "./fog-of-war"
 import { hex } from "./level"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
-
-type AgentAnimState = {
-  feet: { p: V3; lift: V3; planted: boolean; yaw: number }[]
-  phase: number
-  yaw: number
-  last: [number, number]
-  svx: number
-  svy: number
-  leanX: { x: number; v: number }
-  leanY: { x: number; v: number }
-  chest: { x: number; v: number }
-  head: { x: number; v: number }
-  bones: BonePose
-  prevBones: BonePose
-  hiddenBones: Set<BoneId>
-  collapse: number
-  collapseDir: number
-}
 
 export type DetachedDebrisPiece = {
   partIndex: number
@@ -65,7 +39,10 @@ export type DetachedDebrisPiece = {
 }
 
 const PART_COUNT = 8
-const MAX_INSTANCES_PER_PART = 256
+export const MAX_INSTANCES_PER_PART = 2048
+const BONE_COUNT = 13
+const POSE_FLOATS_PER_BONE = 6
+const POSE_STRIDE = BONE_COUNT * POSE_FLOATS_PER_BONE
 
 const BONE_TO_PART: Record<BoneId, number> = {
   pelvis: 0,
@@ -83,12 +60,86 @@ const BONE_TO_PART: Record<BoneId, number> = {
   "right.foot": 7,
 }
 
+const BONE_INDEX_TO_PART = [0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7] as const
+
+const BONE_SUBTREE_MASK: Record<BoneId, number> = {
+  pelvis: 0x1fff,
+  torso: 0b0000001111110,
+  head: 1 << 2,
+  "left.upperArm": (1 << 3) | (1 << 5),
+  "right.upperArm": (1 << 4) | (1 << 6),
+  "left.foreArm": 1 << 5,
+  "right.foreArm": 1 << 6,
+  "left.thigh": (1 << 7) | (1 << 9) | (1 << 11),
+  "right.thigh": (1 << 8) | (1 << 10) | (1 << 12),
+  "left.shin": (1 << 9) | (1 << 11),
+  "right.shin": (1 << 10) | (1 << 12),
+  "left.foot": 1 << 11,
+  "right.foot": 1 << 12,
+}
+
 function frameAngles(f: Frame): [number, number, number] {
   const p = Math.asin(clamp(f.x[1], -1, 1))
   const c = Math.cos(p)
   const yaw = c > 1e-4 ? Math.atan2(f.x[2], f.x[0]) : Math.atan2(-f.z[0], f.z[2])
   const r = c > 1e-4 ? Math.atan2(-f.z[1], f.y[1]) : 0
   return [yaw, p, r]
+}
+
+function reconstructBonePose(pose: Float32Array, baseOff: number): BonePose {
+  const out: BonePose = {}
+  for (let i = 0; i < BONE_COUNT; i++) {
+    const o = baseOff + i * POSE_FLOATS_PER_BONE
+    const px = pose[o]!
+    const py = pose[o + 1]!
+    const pz = pose[o + 2]!
+    const yw = pose[o + 3]!
+    const pt = pose[o + 4]!
+    const rl = pose[o + 5]!
+    out[boneIds[i]!] = roll(pitch(yawFrame([px, py, pz], yw), pt), rl)
+  }
+  return out
+}
+
+/** Builds the 8 instanced zombie body-part meshes (pelvis, torso, head, upperArm, foreArm, thigh, shin, foot). */
+export function buildZombiePartMeshes(): Mesh[] {
+  const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0) => {
+    const m = new Mesh()
+    if (bevel > 0) m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, MAT.actor)
+    else m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
+    return m
+  }
+  const skin = hex(0x7c906e)
+  const forearmSkin = hex(0x647857)
+  const jacket = hex(0x61594b)
+  const collar = hex(0x786f5e)
+  const trousers = hex(0x3a434c)
+  const wound = hex(0x9c2024)
+  const hair = hex(0x252b28)
+  const boot = hex(0x28221e)
+
+  const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
+  const torso = box(0.28, -0.02, 0.48, 0.4, jacket, 0.022)
+  // Lighter shoulder/collar yolk so top-down silhouette reads clearly even in dim ambient
+  torso.box(-0.145, 0.34, -0.205, 0.145, 0.47, 0.205, collar, MAT.actor)
+  torso.box(0.11, 0.12, -0.12, 0.148, 0.36, 0.08, wound, MAT.actor)
+  torso.box(-0.148, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
+
+  const head = box(0.185, 0.01, 0.24, 0.185, skin, 0.024)
+  head.box(-0.1, 0.19, -0.105, 0.1, 0.275, 0.105, hair, MAT.actor)
+  for (const z of [-0.042, 0.042]) {
+    head.box(0.086, 0.13, z - 0.017, 0.098, 0.158, z + 0.017, hex(0xbce858), MAT.glow, 0.72)
+  }
+
+  const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
+  const foreArm = box(0.115, -0.28, 0.3, 0.115, forearmSkin)
+  foreArm.box(-0.04, -0.31, -0.046, 0.058, -0.255, 0.046, wound, MAT.actor)
+
+  const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
+  const shin = box(0.135, -0.41, 0.43, 0.14, trousers)
+  const foot = box(0.21, -0.075, 0.09, 0.14, boot)
+
+  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot]
 }
 
 /** Computes a zombie's dynamic HumanProfile from global Lab tuning + individual traits + AI state/speed. */
@@ -120,77 +171,151 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning): Hu
   return profile
 }
 
+/**
+ * Data-Oriented (SoA) Crowd Animation + Instance Packing Renderer:
+ * 1. Raises `MAX_INSTANCES_PER_PART` to `2048`.
+ * 2. Stores all per-agent animation state and last-known fog-of-war memory poses in flat contiguous SoA columns (`cap = 1024`).
+ * 3. Solves 2-bone analytical limb transforms directly in registers and writes the 12-float instance data
+ *    in-place into `partData[partIndex]` (opaque LOS) or `ghostPartData[partIndex]` (fading LKP memory ghost).
+ */
 export class ZombieCrowdRenderer {
   private readonly models: number[]
   private readonly partData: Float32Array<ArrayBuffer>[]
-  private readonly partCounts = new Int32Array(PART_COUNT)
+  readonly partCounts = new Int32Array(PART_COUNT)
+  private readonly poolBatches: Batch[]
   private readonly ghostPartData: Float32Array<ArrayBuffer>[]
   private readonly ghostPartCounts = new Int32Array(PART_COUNT)
-  private readonly anims = new Map<number, AgentAnimState>()
-  readonly memory = new ZombieMemoryTracker()
+  private readonly ghostPoolBatches: Batch[]
   readonly debris: DetachedDebrisPiece[] = []
   readonly batches: Batch[] = []
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
 
-  constructor(renderer: Pick<Renderer, "addModel">) {
-    const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0) => {
-      const m = new Mesh()
-      if (bevel > 0) m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, MAT.actor)
-      else m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
-      return m
-    }
-    const skin = hex(0x7c906e)
-    const forearmSkin = hex(0x647857)
-    const jacket = hex(0x61594b)
-    const collar = hex(0x786f5e)
-    const trousers = hex(0x3a434c)
-    const wound = hex(0x9c2024)
-    const hair = hex(0x252b28)
-    const boot = hex(0x28221e)
+  // Flat SoA columns (capacity = 1024 agents)
+  private readonly cap: number
+  private readonly initialized: Uint8Array
+  private readonly phase: Float32Array
+  private readonly yaw: Float32Array
+  private readonly lastX: Float32Array
+  private readonly lastY: Float32Array
+  private readonly svx: Float32Array
+  private readonly svy: Float32Array
+  private readonly leanX: Float32Array
+  private readonly leanVX: Float32Array
+  private readonly leanY: Float32Array
+  private readonly leanVY: Float32Array
+  private readonly chestX: Float32Array
+  private readonly chestV: Float32Array
+  private readonly headX: Float32Array
+  private readonly headV: Float32Array
+  private readonly collapse: Float32Array
+  private readonly collapseDir: Float32Array
+  private readonly hiddenMask: Uint16Array
+  // Feet (2 per agent -> length = cap * 2)
+  private readonly footX: Float32Array
+  private readonly footY: Float32Array
+  private readonly footZ: Float32Array
+  private readonly liftX: Float32Array
+  private readonly liftY: Float32Array
+  private readonly liftZ: Float32Array
+  private readonly footYaw: Float32Array
+  private readonly planted: Uint8Array
+  // Compact 6-float bone poses [px, py, pz, yaw, pitch, roll]
+  private currPose: Float32Array
+  private prevPose: Float32Array
+  // Last-known position (LKP) fog-of-war memory SoA columns
+  private readonly seenAt: Float32Array
+  private readonly seenX: Float32Array
+  private readonly seenY: Float32Array
+  private readonly seenPose: Float32Array
 
-    const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
-    const torso = box(0.28, -0.02, 0.48, 0.4, jacket, 0.022)
-    // Lighter shoulder/collar yolk so top-down silhouette reads clearly even in dim ambient
-    torso.box(-0.145, 0.34, -0.205, 0.145, 0.47, 0.205, collar, MAT.actor)
-    torso.box(0.11, 0.12, -0.12, 0.148, 0.36, 0.08, wound, MAT.actor)
-    torso.box(-0.148, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
+  constructor(renderer: Pick<Renderer, "addModel">, maxAgents = 1024) {
+    this.cap = maxAgents
+    this.initialized = new Uint8Array(maxAgents)
+    this.phase = new Float32Array(maxAgents)
+    this.yaw = new Float32Array(maxAgents)
+    this.lastX = new Float32Array(maxAgents)
+    this.lastY = new Float32Array(maxAgents)
+    this.svx = new Float32Array(maxAgents)
+    this.svy = new Float32Array(maxAgents)
+    this.leanX = new Float32Array(maxAgents)
+    this.leanVX = new Float32Array(maxAgents)
+    this.leanY = new Float32Array(maxAgents)
+    this.leanVY = new Float32Array(maxAgents)
+    this.chestX = new Float32Array(maxAgents)
+    this.chestV = new Float32Array(maxAgents)
+    this.headX = new Float32Array(maxAgents)
+    this.headV = new Float32Array(maxAgents)
+    this.collapse = new Float32Array(maxAgents)
+    this.collapseDir = new Float32Array(maxAgents)
+    this.hiddenMask = new Uint16Array(maxAgents)
 
-    const head = box(0.185, 0.01, 0.24, 0.185, skin, 0.024)
-    head.box(-0.1, 0.19, -0.105, 0.1, 0.275, 0.105, hair, MAT.actor)
-    for (const z of [-0.042, 0.042]) {
-      head.box(0.086, 0.13, z - 0.017, 0.098, 0.158, z + 0.017, hex(0xbce858), MAT.glow, 0.72)
-    }
+    this.footX = new Float32Array(maxAgents * 2)
+    this.footY = new Float32Array(maxAgents * 2)
+    this.footZ = new Float32Array(maxAgents * 2)
+    this.liftX = new Float32Array(maxAgents * 2)
+    this.liftY = new Float32Array(maxAgents * 2)
+    this.liftZ = new Float32Array(maxAgents * 2)
+    this.footYaw = new Float32Array(maxAgents * 2)
+    this.planted = new Uint8Array(maxAgents * 2)
+    this.currPose = new Float32Array(maxAgents * POSE_STRIDE)
+    this.prevPose = new Float32Array(maxAgents * POSE_STRIDE)
+    this.seenAt = new Float32Array(maxAgents).fill(-1e9)
+    this.seenX = new Float32Array(maxAgents)
+    this.seenY = new Float32Array(maxAgents)
+    this.seenPose = new Float32Array(maxAgents * POSE_STRIDE)
 
-    const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
-    const foreArm = box(0.115, -0.28, 0.3, 0.115, forearmSkin)
-    foreArm.box(-0.04, -0.31, -0.046, 0.058, -0.255, 0.046, wound, MAT.actor)
-
-    const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
-    const shin = box(0.135, -0.41, 0.43, 0.14, trousers)
-    const foot = box(0.21, -0.075, 0.09, 0.14, boot)
-
-    this.models = [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot].map((m) => renderer.addModel(m))
+    this.models = buildZombiePartMeshes().map((m) => renderer.addModel(m))
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
+    this.poolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
+      model: this.models[i]!,
+      data: this.partData[i]!,
+      count: 0,
+    }))
     this.ghostPartData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
+    this.ghostPoolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
+      model: this.models[i]!,
+      data: this.ghostPartData[i]!,
+      count: 0,
+      alpha: true,
+    }))
   }
 
   reset(): void {
-    this.anims.clear()
-    this.memory.reset()
+    this.initialized.fill(0)
+    this.hiddenMask.fill(0)
+    this.seenAt.fill(-1e9)
     this.debris.length = 0
   }
 
-  getAgentBones(agentId: number): { bones: BonePose; prevBones: BonePose; hiddenBones: Set<BoneId> } | undefined {
-    const st = this.anims.get(agentId)
-    if (!st) return undefined
-    return { bones: st.bones, prevBones: st.prevBones, hiddenBones: st.hiddenBones }
+  private maskToHiddenSet(mask: number): Set<BoneId> {
+    const out = new Set<BoneId>()
+    for (let i = 0; i < BONE_COUNT; i++) {
+      if ((mask & (1 << i)) !== 0) out.add(boneIds[i]!)
+    }
+    return out
   }
 
-  detachAgentLimb(agent: AIAgent, root: BoneId, dt: number, impulseDir: V3): ( ReturnType<typeof detach>[number] )[] {
-    const st = this.anims.get(agent.id)
-    if (!st) return []
-    const pieces = detach(st.bones, st.prevBones, Math.max(1 / 120, dt), root, st.hiddenBones)
+  getAgentBones(agentId: number): { bones: BonePose; prevBones: BonePose; hiddenBones: Set<BoneId> } | undefined {
+    const slot = ((agentId % this.cap) + this.cap) % this.cap
+    if (this.initialized[slot] === 0) return undefined
+    const pOff = slot * POSE_STRIDE
+    return {
+      bones: reconstructBonePose(this.currPose, pOff),
+      prevBones: reconstructBonePose(this.prevPose, pOff),
+      hiddenBones: this.maskToHiddenSet(this.hiddenMask[slot]!),
+    }
+  }
+
+  detachAgentLimb(agent: AIAgent, root: BoneId, dt: number, impulseDir: V3): (ReturnType<typeof detach>[number])[] {
+    const slot = ((agent.id % this.cap) + this.cap) % this.cap
+    if (this.initialized[slot] === 0) return []
+    const pOff = slot * POSE_STRIDE
+    const bones = reconstructBonePose(this.currPose, pOff)
+    const prev = reconstructBonePose(this.prevPose, pOff)
+    const hidden = this.maskToHiddenSet(this.hiddenMask[slot]!)
+    const pieces = detach(bones, prev, Math.max(1 / 120, dt), root, hidden)
+    this.hiddenMask[slot] = this.hiddenMask[slot]! | BONE_SUBTREE_MASK[root]
     if (!agent.detachedLimbs.includes(root)) {
       agent.detachedLimbs.push(root)
     }
@@ -220,58 +345,49 @@ export class ZombieCrowdRenderer {
     return pieces
   }
 
-  private ensureAnim(agent: AIAgent, support: (x: number, z: number) => number): AgentAnimState {
-    let st = this.anims.get(agent.id)
-    if (!st) {
-      const y0 = support(agent.x, agent.y)
-      st = {
-        feet: [-1, 1].map((side) => ({
-          p: [agent.x, y0, agent.y + side * 0.13] as V3,
-          lift: [agent.x, y0, agent.y + side * 0.13] as V3,
-          planted: true,
-          yaw: agent.aim,
-        })),
-        phase: (agent.id * 0.27) % 1,
-        yaw: agent.aim,
-        last: [agent.x, agent.y],
-        svx: 0,
-        svy: 0,
-        leanX: spring(),
-        leanY: spring(),
-        chest: { x: agent.aim, v: 0 },
-        head: { x: agent.aim, v: 0 },
-        bones: {},
-        prevBones: {},
-        hiddenBones: new Set<BoneId>(agent.detachedLimbs as BoneId[]),
-        collapse: 0,
-        collapseDir: (agent.id % 2 === 0 ? 1 : -1) * 0.35,
-      }
-      this.anims.set(agent.id, st)
-    }
-    return st
-  }
-
-  private pushPart(partIndex: number, frame: Frame, tint: Rgb, flash: number, alpha = 1, isGhost = false): void {
-    const counts = isGhost ? this.ghostPartCounts : this.partCounts
-    const buffers = isGhost ? this.ghostPartData : this.partData
-    const count = counts[partIndex]!
+  private writePart(
+    pOff: number,
+    boneIdx: number,
+    partIndex: number,
+    hidden: number,
+    px: number,
+    py: number,
+    pz: number,
+    yaw: number,
+    pitch: number,
+    roll: number,
+    tr: number,
+    tg: number,
+    tb: number,
+    alpha: number,
+    flash: number,
+  ): void {
+    const bOff = pOff + boneIdx * POSE_FLOATS_PER_BONE
+    const cPose = this.currPose
+    cPose[bOff] = px
+    cPose[bOff + 1] = py
+    cPose[bOff + 2] = pz
+    cPose[bOff + 3] = yaw
+    cPose[bOff + 4] = pitch
+    cPose[bOff + 5] = roll
+    if ((hidden & (1 << boneIdx)) !== 0) return
+    const count = this.partCounts[partIndex]!
     if (count >= MAX_INSTANCES_PER_PART) return
-    const [yaw, p, r] = frameAngles(frame)
-    const offset = count * INST_FLOATS
-    const data = buffers[partIndex]!
-    data[offset] = frame.p[0]
-    data[offset + 1] = frame.p[1]
-    data[offset + 2] = frame.p[2]
-    data[offset + 3] = yaw
-    data[offset + 4] = tint[0]
-    data[offset + 5] = tint[1]
-    data[offset + 6] = tint[2]
-    data[offset + 7] = 1
-    data[offset + 8] = p
-    data[offset + 9] = r
-    data[offset + 10] = alpha
-    data[offset + 11] = flash
-    counts[partIndex] = count + 1
+    const off = count * INST_FLOATS
+    const data = this.partData[partIndex]!
+    data[off] = px
+    data[off + 1] = py
+    data[off + 2] = pz
+    data[off + 3] = yaw
+    data[off + 4] = tr
+    data[off + 5] = tg
+    data[off + 6] = tb
+    data[off + 7] = 1
+    data[off + 8] = pitch
+    data[off + 9] = roll
+    data[off + 10] = alpha
+    data[off + 11] = flash
+    this.partCounts[partIndex] = count + 1
   }
 
   draw(
@@ -288,6 +404,8 @@ export class ZombieCrowdRenderer {
     this.partCounts.fill(0)
     this.ghostPartCounts.fill(0)
     const [vx0, vy0, vx1, vy1] = viewRect
+    const focusX = (vx0 + vx1) * 0.5
+    const focusY = (vy0 + vy1) * 0.5
     const ghostDuration = zombieTune.fogGhostDuration ?? 3.2
 
     // Step detached limb debris
@@ -321,259 +439,416 @@ export class ZombieCrowdRenderer {
       if (count < MAX_INSTANCES_PER_PART) {
         const offset = count * INST_FLOATS
         const data = this.partData[d.partIndex]!
-        data.set([d.p[0], d.p[1], d.p[2], d.yaw, 0.85, 0.75, 0.75, 1, d.pitchAngle, d.rollAngle, 1, 0], offset)
+        data[offset] = d.p[0]
+        data[offset + 1] = d.p[1]
+        data[offset + 2] = d.p[2]
+        data[offset + 3] = d.yaw
+        data[offset + 4] = 0.85
+        data[offset + 5] = 0.75
+        data[offset + 6] = 0.75
+        data[offset + 7] = 1
+        data[offset + 8] = d.pitchAngle
+        data[offset + 9] = d.rollAngle
+        data[offset + 10] = 1
+        data[offset + 11] = 0
         this.partCounts[d.partIndex] = count + 1
       }
     }
 
+    const prevTmp = this.prevPose
+    this.prevPose = this.currPose
+    this.currPose = prevTmp
+
+    const {
+      cap,
+      initialized,
+      phase,
+      yaw,
+      lastX,
+      lastY,
+      svx,
+      svy,
+      leanX,
+      leanVX,
+      leanY,
+      leanVY,
+      chestX,
+      chestV,
+      headX,
+      headV,
+      collapse,
+      collapseDir,
+      hiddenMask,
+      footX,
+      footY,
+      footZ,
+      liftX,
+      liftY,
+      liftZ,
+      footYaw,
+      planted,
+      seenAt,
+      seenX,
+      seenY,
+      seenPose,
+    } = this
+
+    const velBlend = 1 - Math.exp(-dt * 14)
+    const baseLurch = zombieTune.zombieLurch
+    const baseDrag = zombieTune.zombieDrag
+    const baseReach = zombieTune.zombieReach
+    const legH = RIG.thigh + RIG.shin
+    const invSqrtGLeg = 1 / Math.sqrt(9.81 * legH)
+
     for (let idx = 0; idx < agents.length; idx++) {
       const a = agents[idx]!
-      if (a.x < vx0 - 3 || a.x > vx1 + 3 || a.y < vy0 - 3 || a.y > vy1 + 3) continue
-
-      const visWeight = vision.actorVisible(a.x, a.y)
+      const ax = a.x
+      const ay = a.y
+      if (ax < vx0 - 3 || ax > vx1 + 3 || ay < vy0 - 3 || ay > vy1 + 3) continue
+      const slot = ((a.id % cap) + cap) % cap
+      const pOff = slot * POSE_STRIDE
+      const visWeight = vision.actorVisible(ax, ay)
       const isVisible = visWeight > 0.02
+
       if (!isVisible && !debugOverlay) {
-        const mem = this.memory.getActiveGhost(a, vision, time, ghostDuration)
-        if (mem) {
-          const g = mem.ghost
-          const gTint: Rgb = [0.42, 0.48, 0.58]
-          for (const [boneId, frame] of Object.entries(g.bones)) {
-            if (!frame || !boneVisible(boneId as BoneId, g.hiddenBones)) continue
-            const partIdx = BONE_TO_PART[boneId as BoneId]
-            if (partIdx !== undefined) {
-              this.pushPart(partIdx, frame, gTint, 0, mem.alpha, true)
+        if (ghostDuration > 0.05 && a.state !== "dead") {
+          const age = time - seenAt[slot]!
+          if (age >= 0 && age < ghostDuration) {
+            const sx = seenX[slot]!
+            const sy = seenY[slot]!
+            if (Math.hypot(ax - sx, ay - sy) > 0.85 && vision.visible(sx, sy)) {
+              seenAt[slot] = -1e9
+            } else {
+              const gAlpha = Math.pow(1 - age / ghostDuration, 1.55) * 0.56
+              if (gAlpha > 0.02) {
+                const hidden = hiddenMask[slot]!
+                for (let b = 0; b < BONE_COUNT; b++) {
+                  if ((hidden & (1 << b)) !== 0) continue
+                  const partIdx = BONE_INDEX_TO_PART[b]!
+                  const gCount = this.ghostPartCounts[partIdx]!
+                  if (gCount >= MAX_INSTANCES_PER_PART) continue
+                  const bOff = pOff + b * POSE_FLOATS_PER_BONE
+                  const off = gCount * INST_FLOATS
+                  const data = this.ghostPartData[partIdx]!
+                  data[off] = seenPose[bOff]!
+                  data[off + 1] = seenPose[bOff + 1]!
+                  data[off + 2] = seenPose[bOff + 2]!
+                  data[off + 3] = seenPose[bOff + 3]!
+                  data[off + 4] = 0.42
+                  data[off + 5] = 0.48
+                  data[off + 6] = 0.58
+                  data[off + 7] = 1
+                  data[off + 8] = seenPose[bOff + 4]!
+                  data[off + 9] = seenPose[bOff + 5]!
+                  data[off + 10] = gAlpha
+                  data[off + 11] = 0
+                  this.ghostPartCounts[partIdx] = gCount + 1
+                }
+              }
             }
           }
         }
         continue
       }
 
-      const st = this.ensureAnim(a, support)
-      for (const limbId of a.detachedLimbs) {
-        st.hiddenBones.add(limbId as BoneId)
+      const f0 = slot * 2
+      const f1 = f0 + 1
+
+      if (initialized[slot] === 0) {
+        initialized[slot] = 1
+        const y0 = support(ax, ay)
+        phase[slot] = (a.id * 0.27) % 1
+        yaw[slot] = a.aim
+        lastX[slot] = ax
+        lastY[slot] = ay
+        svx[slot] = a.vx
+        svy[slot] = a.vy
+        chestX[slot] = a.aim
+        headX[slot] = a.aim
+        collapse[slot] = 0
+        collapseDir[slot] = (a.id % 2 === 0 ? 1 : -1) * 0.35
+        footX[f0] = liftX[f0] = ax
+        footY[f0] = liftY[f0] = y0
+        footZ[f0] = liftZ[f0] = ay - 0.13
+        footYaw[f0] = a.aim
+        planted[f0] = 1
+        footX[f1] = liftX[f1] = ax
+        footY[f1] = liftY[f1] = y0
+        footZ[f1] = liftZ[f1] = ay + 0.13
+        footYaw[f1] = a.aim
+        planted[f1] = 1
       }
 
-      // Compute individual colour variation
+      let hidden = hiddenMask[slot]!
+      if (a.detachedLimbs.length > 0) {
+        for (let i = 0; i < a.detachedLimbs.length; i++) {
+          hidden |= BONE_SUBTREE_MASK[a.detachedLimbs[i] as BoneId] ?? 0
+        }
+        hiddenMask[slot] = hidden
+      }
+
       const shade = 0.88 + ((a.id * 19) % 7) * 0.035
       const isGhost = !isVisible && debugOverlay
-      const tint: Rgb = isGhost ? [0.55, 0.72, 0.85] : [shade, shade * 0.98, shade * 0.94]
+      const tr = isGhost ? 0.55 : shade
+      const tg = isGhost ? 0.72 : shade * 0.98
+      const tb = isGhost ? 0.85 : shade * 0.94
       const alpha = isGhost ? 0.58 : Math.min(1.0, 0.25 + 0.75 * visWeight)
+      const flash = a.hitFlash
+
+      const groundY =
+        support(ax, ay) +
+        (a.clamberWindowId ? Math.sin(clamp(a.clamberElapsed / Math.max(0.1, a.clamberDuration), 0, 1) * Math.PI) * 0.56 : 0)
 
       if (a.state === "dead") {
-        this.memory.remove(a.id)
-        st.collapse = Math.min(1, st.collapse + dt * 4.2)
-        const c = smoother(st.collapse)
-        const groundY = support(a.x, a.y)
-        const pelvisY = groundY + (HIP * (1 - c) + 0.14 * c)
-        let pelvis = yawFrame([a.x, pelvisY, a.y], st.yaw)
-        pelvis = pitch(pelvis, -1.42 * c)
-        pelvis = roll(pelvis, st.collapseDir * c)
-        const torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), st.yaw), -1.48 * c)
-        const head = pitch(yawFrame(at(torso, 0.02, RIG.neckY, 0), st.yaw), -1.35 * c)
-
-        if (boneVisible("pelvis", st.hiddenBones)) this.pushPart(0, pelvis, tint, a.hitFlash, alpha, isGhost)
-        if (boneVisible("torso", st.hiddenBones)) this.pushPart(1, torso, tint, a.hitFlash, alpha, isGhost)
-        if (boneVisible("head", st.hiddenBones)) this.pushPart(2, head, tint, a.hitFlash, alpha, isGhost)
-        for (let i = 0; i < 2; i++) {
-          const side = i ? 1 : -1
-          const name = i === 0 ? "left" : "right"
-          const hip = at(pelvis, 0, 0, side * RIG.hipW)
-          const footTarget: V3 = [
-            a.x - Math.cos(st.yaw) * 0.65,
-            groundY + 0.09,
-            a.y - Math.sin(st.yaw) * 0.65 + side * 0.16,
-          ]
-          const pole = dirIn(pelvis, 1, 0, side * 0.3)
-          const [knee, end] = ik(hip, footTarget, RIG.thigh, RIG.shin, pole)
-          if (boneVisible(`${name}.thigh` as BoneId, st.hiddenBones))
-            this.pushPart(5, limb(hip, knee, pole, pelvis.x), tint, a.hitFlash, alpha, isGhost)
-          if (boneVisible(`${name}.shin` as BoneId, st.hiddenBones))
-            this.pushPart(6, limb(knee, end, pole, pelvis.x), tint, a.hitFlash, alpha, isGhost)
-          if (boneVisible(`${name}.foot` as BoneId, st.hiddenBones))
-            this.pushPart(7, pitch(yawFrame(end, st.yaw), -1.2 * c), tint, a.hitFlash, alpha, isGhost)
-
-          const shoulder = at(torso, 0, RIG.shoulderY, side * RIG.shoulderW)
-          const handTarget: V3 = [
-            a.x + Math.cos(st.yaw) * 0.45,
-            groundY + 0.08,
-            a.y + Math.sin(st.yaw) * 0.45 + side * 0.25,
-          ]
-          const [elbow, wrist] = ik(shoulder, handTarget, RIG.upper, RIG.fore, dirIn(torso, -0.4, -1, side))
-          if (boneVisible(`${name}.upperArm` as BoneId, st.hiddenBones))
-            this.pushPart(3, limb(shoulder, elbow, torso.x, torso.y), tint, a.hitFlash, alpha, isGhost)
-          if (boneVisible(`${name}.foreArm` as BoneId, st.hiddenBones))
-            this.pushPart(4, limb(elbow, wrist, torso.x, torso.y), tint, a.hitFlash, alpha, isGhost)
+        seenAt[slot] = -1e9
+        const col = Math.min(1, collapse[slot]! + dt * 4.2)
+        collapse[slot] = col
+        const c = smoother(col)
+        const py = groundY + (HIP * (1 - c) + 0.14 * c)
+        const yw = yaw[slot]!
+        const cosY = Math.cos(yw)
+        const sinY = Math.sin(yw)
+        const pPitch = -1.42 * c
+        const pRoll = collapseDir[slot]! * c
+        this.writePart(pOff, 0, 0, hidden, ax, py, ay, yw, pPitch, pRoll, tr, tg, tb, alpha, flash)
+        this.writePart(pOff, 1, 1, hidden, ax, py + RIG.waist * (1 - c * 0.8), ay, yw, -1.48 * c, pRoll, tr, tg, tb, alpha, flash)
+        this.writePart(
+          pOff,
+          2,
+          2,
+          hidden,
+          ax + cosY * 0.02,
+          py + (RIG.waist + RIG.neckY) * (1 - c * 0.8),
+          ay + sinY * 0.02,
+          yw,
+          -1.35 * c,
+          pRoll,
+          tr,
+          tg,
+          tb,
+          alpha,
+          flash,
+        )
+        for (let s = 0; s < 2; s++) {
+          const side = s === 0 ? -1 : 1
+          const oz = side * RIG.hipW
+          const hx = ax - sinY * oz
+          const hz = ay + cosY * oz
+          this.writePart(pOff, 7 + s, 5, hidden, hx, py, hz, yw, pPitch, 0, tr, tg, tb, alpha, flash)
+          this.writePart(pOff, 9 + s, 6, hidden, hx - cosY * 0.32, groundY + 0.12, hz - sinY * 0.32, yw, pPitch, 0, tr, tg, tb, alpha, flash)
+          this.writePart(pOff, 11 + s, 7, hidden, hx - cosY * 0.65, groundY + 0.09, hz - sinY * 0.65, yw, -1.2 * c, 0, tr, tg, tb, alpha, flash)
+          const sx = ax - sinY * (side * RIG.shoulderW)
+          const sz = ay + cosY * (side * RIG.shoulderW)
+          this.writePart(pOff, 3 + s, 3, hidden, sx, py + 0.25, sz, yw, -1.1 * c, 0, tr, tg, tb, alpha, flash)
+          this.writePart(pOff, 5 + s, 4, hidden, sx + cosY * 0.25, groundY + 0.1, sz + sinY * 0.25, yw, -1.3 * c, 0, tr, tg, tb, alpha, flash)
         }
         continue
       }
 
-      st.prevBones = { ...st.bones }
-      const clamberLift = a.clamberWindowId
-        ? Math.sin(clamp(a.clamberElapsed / Math.max(0.1, a.clamberDuration), 0, 1) * Math.PI) * 0.56
-        : 0
-      const supportAt = (x: number, z: number) => support(x, z) + clamberLift
+      // Smooth velocity & springs in-place (zero object allocation)
+      const vx = svx[slot]! + (a.vx - svx[slot]!) * velBlend
+      const vy = svy[slot]! + (a.vy - svy[slot]!) * velBlend
+      const axAcc = (vx - svx[slot]!) / dt
+      const ayAcc = (vy - svy[slot]!) / dt
+      svx[slot] = vx
+      svy[slot] = vy
 
-      const prevX = st.last[0]
-      const prevY = st.last[1]
-      const teleport = Math.hypot(a.x - prevX, a.y - prevY) > 2.5
-      st.last = [a.x, a.y]
-      if (teleport) {
-        st.yaw = a.aim
-        st.svx = a.vx
-        st.svy = a.vy
-        st.chest = { x: a.aim, v: 0 }
-        st.head = { x: a.aim, v: 0 }
-      }
+      // Critically damped spring step for leanX, leanY
+      let lx = leanX[slot]!
+      let lvx = leanVX[slot]!
+      lvx += (vx * 0.035 + axAcc * 0.003 - lx * 90 - lvx * 7.2) * dt
+      lx += lvx * dt
+      leanX[slot] = lx
+      leanVX[slot] = lvx
 
-      const profile = agentZombieProfile(a, zombieTune)
-      const k = 1 - Math.exp(-dt * 14)
-      const vx = st.svx + (a.vx - st.svx) * k
-      const vy = st.svy + (a.vy - st.svy) * k
-      stepSpring(st.leanX, 90, 0.38, dt, vx * 0.035 + ((vx - st.svx) / dt) * 0.003)
-      stepSpring(st.leanY, 90, 0.38, dt, vy * 0.035 + ((vy - st.svy) / dt) * 0.003)
-      st.svx = vx
-      st.svy = vy
+      let ly = leanY[slot]!
+      let lvy = leanVY[slot]!
+      lvy += (vy * 0.035 + ayAcc * 0.003 - ly * 90 - lvy * 7.2) * dt
+      ly += lvy * dt
+      leanY[slot] = ly
+      leanVY[slot] = lvy
+
       const speed = Math.hypot(vx, vy)
       const moving = Math.min(1, speed / 3.0)
       let travel = speed > 0.25 ? Math.atan2(vy, vx) : a.aim
       if (Math.abs(angleDiff(travel, a.aim)) > 2.05) travel += Math.PI
-      const want = a.aim + clamp(angleDiff(travel, a.aim), -1.05, 1.05)
-      st.yaw += angleDiff(want, st.yaw) * Math.min(1, dt * 9)
-      const cosY = Math.cos(st.yaw)
-      const sinY = Math.sin(st.yaw)
-      const rest = (i: number): V3 => {
-        const rx = a.x - sinY * (i ? 0.13 : -0.13)
-        const rz = a.y + cosY * (i ? 0.13 : -0.13)
-        return [rx, supportAt(rx, rz), rz]
-      }
-      if (teleport) {
-        st.feet.forEach((f, i) => {
-          f.p = rest(i)
-          f.lift = [...f.p]
-          f.planted = true
-          f.yaw = st.yaw
-        })
-      }
-      const needsStep = st.feet.some(
-        (f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > 0.2 || !f.planted,
-      )
-      const rate = Math.max(speed / ((0.7 + 0.22 * speed) * profile.strideScale), needsStep ? 1.5 : 0)
-      st.phase = (st.phase + rate * dt) % 1
-      const duty = 0.64 - 0.2 * moving
-      st.feet.forEach((f, i) => {
-        const phase = (st.phase + i * (0.5 + profile.timingBias * 0.25)) % 1
-        if (rate > 0 && phase >= duty) {
-          if (f.planted) {
-            f.planted = false
-            f.lift = [...f.p]
-          }
-          const u = (phase - duty) / (1 - duty)
-          const e = smoother(u)
-          const lead = (1 - phase) / rate + (duty / rate) * 0.5
-          const target = rest(i)
-          target[0] += vx * lead
-          target[2] += vy * lead
-          const other = st.feet[1 - i]!
-          const side = i ? 1 : -1
-          const lat = (-(target[0] - other.p[0]) * sinY + (target[2] - other.p[2]) * cosY) * side
-          if (lat < 0.16) {
-            target[0] -= sinY * side * (0.16 - lat)
-            target[2] += cosY * side * (0.16 - lat)
-          }
-          target[1] = supportAt(target[0], target[2])
-          const clearance = i === 1 ? 1 - profile.footDrag : 1
-          f.p = [
-            f.lift[0] + (target[0] - f.lift[0]) * e,
-            f.lift[1] + (target[1] - f.lift[1]) * e + Math.sin(Math.PI * u) * (0.05 + 0.08 * moving) * clearance,
-            f.lift[2] + (target[2] - f.lift[2]) * e,
-          ]
-          f.yaw += angleDiff(st.yaw, f.yaw) * e
-        } else if (!f.planted) {
-          f.planted = true
-          f.p[1] = supportAt(f.p[0], f.p[2])
-        }
-      })
+      const wantYaw = a.aim + clamp(angleDiff(travel, a.aim), -1.05, 1.05)
+      const curYaw = yaw[slot]! + angleDiff(wantYaw, yaw[slot]!) * Math.min(1, dt * 9)
+      yaw[slot] = curYaw
+      const cosY = Math.cos(curYaw)
+      const sinY = Math.sin(curYaw)
 
-      let height = supportAt(a.x, a.y) + HIP - 0.05 * moving - 0.035 * moving * Math.cos(st.phase * Math.PI * 4)
-      for (const f of st.feet) {
-        const d = Math.hypot(f.p[0] - a.x, f.p[2] - a.y)
-        height = Math.min(height, Math.sqrt(Math.max(0, 0.815 ** 2 - d ** 2)) + RIG.ankle + f.p[1])
-      }
-      const pelvis = yawFrame([a.x, height, a.y], st.yaw)
-      const lean = st.leanX.x * Math.cos(a.aim) + st.leanY.x * Math.sin(a.aim)
-      angleSpring(st.chest, a.aim, profile.chestHz, dt)
-      angleSpring(st.head, a.aim, profile.headHz, dt)
+      const strideScale = 0.72 + 0.16 * (1 - baseDrag * a.drag)
+      const froude = (speed * speed) / (9.81 * legH)
+      const run = smooth((froude - 0.36) / 0.28)
+      const effSpeed = speed - 0.22 * Math.max(0, speed - 3.6) * smooth((speed - 3.0) / 3.3)
+      const stride = ((legH * (effSpeed * invSqrtGLeg + 0.665 - 0.015 * run)) / 0.83) * strideScale
+      const duty = 0.56 - 0.12 * run - 0.2 * smooth((speed - 2.5) / 3)
+      const rate = speed > 0.2 ? Math.max(0.85, speed / stride) : 0
+      const ph = (phase[slot]! + rate * dt) % 1
+      phase[slot] = ph
+      const timingBias = 0.12 * baseLurch * a.lurch
 
-      // Add a lunge pitch during door bashing or backward flinch during bullet/shove stagger
-      const bashPulse =
-        a.state === "bash" ? Math.pow(Math.max(0, Math.sin((a.stateTime * Math.PI * 2) / 0.9)), 3) * 0.34 : 0
-      const staggerRecoil =
-        a.state === "stagger" ? -0.36 * clamp(a.timer / 0.3, 0, 1) : -0.18 * a.hitFlash
-      const staggerCant =
-        a.state === "stagger" ? (a.id % 2 ? 1 : -1) * 0.22 * clamp(a.timer / 0.3, 0, 1) : 0
-      let torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), st.chest.x), -0.05 - lean - bashPulse - staggerRecoil)
-      torso = roll(profileTorso(torso, profile), staggerCant)
-      let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), st.head.x)
-      head = roll(pitch(head, -staggerRecoil * 0.6), profile.headTilt + staggerCant * 0.5)
-      const hands = profileHands(torso, profile)!
-      const arms = poseArms(torso, ...hands)
-
-      st.bones = { pelvis, torso, head }
-      if (boneVisible("pelvis", st.hiddenBones)) this.pushPart(0, pelvis, tint, a.hitFlash, alpha, isGhost)
-      if (boneVisible("torso", st.hiddenBones)) this.pushPart(1, torso, tint, a.hitFlash, alpha, isGhost)
-      if (boneVisible("head", st.hiddenBones)) this.pushPart(2, head, tint, a.hitFlash, alpha, isGhost)
+      // Distance from camera center for kinematic LOD:
+      // Within 26m: full planted-foot terrain support; beyond 26m: reuse root groundY
+      const distSqToFocus = (ax - focusX) * (ax - focusX) + (ay - focusY) * (ay - focusY)
+      const nearLod = distSqToFocus < 26 * 26
 
       for (let i = 0; i < 2; i++) {
-        const side = i ? 1 : -1
-        const foot = st.feet[i]!
-        const hip = at(pelvis, 0, 0, side * RIG.hipW)
-        const ankle: V3 = [foot.p[0], foot.p[1] + RIG.ankle, foot.p[2]]
-        const pole = dirIn(pelvis, 1, 0, side * 0.3)
-        const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
-        const thigh = limb(hip, knee, pole, pelvis.x)
-        const shin = limb(knee, end, pole, pelvis.x)
-        const boot = yawFrame(end, foot.yaw)
-        const name = i === 0 ? "left" : "right"
-        st.bones[`${name}.thigh` as BoneId] = thigh
-        st.bones[`${name}.shin` as BoneId] = shin
-        st.bones[`${name}.foot` as BoneId] = boot
-        if (boneVisible(`${name}.thigh` as BoneId, st.hiddenBones)) this.pushPart(5, thigh, tint, a.hitFlash, alpha, isGhost)
-        if (boneVisible(`${name}.shin` as BoneId, st.hiddenBones)) this.pushPart(6, shin, tint, a.hitFlash, alpha, isGhost)
-        if (boneVisible(`${name}.foot` as BoneId, st.hiddenBones)) this.pushPart(7, boot, tint, a.hitFlash, alpha, isGhost)
-
-        const upper = arms.ua[i]!
-        const fore = arms.fa[i]!
-        st.bones[`${name}.upperArm` as BoneId] = upper
-        st.bones[`${name}.foreArm` as BoneId] = fore
-        if (boneVisible(`${name}.upperArm` as BoneId, st.hiddenBones)) this.pushPart(3, upper, tint, a.hitFlash, alpha, isGhost)
-        if (boneVisible(`${name}.foreArm` as BoneId, st.hiddenBones)) this.pushPart(4, fore, tint, a.hitFlash, alpha, isGhost)
+        const fi = f0 + i
+        const side = i === 0 ? -1 : 1
+        const rx = ax - sinY * (side * 0.13)
+        const rz = ay + cosY * (side * 0.13)
+        const fPhase = (ph + i * (0.5 + timingBias * 0.25)) % 1
+        if (rate > 0 && fPhase >= duty) {
+          if (planted[fi] === 1) {
+            planted[fi] = 0
+            liftX[fi] = footX[fi]!
+            liftY[fi] = footY[fi]!
+            liftZ[fi] = footZ[fi]!
+          }
+          const u = (fPhase - duty) / (1 - duty)
+          const e = smoother(u)
+          const lead = (1 - fPhase) / rate + (duty / rate) * 0.5
+          const tx = rx + vx * lead
+          const tz = rz + vy * lead
+          const ty = nearLod ? support(tx, tz) : groundY
+          const clearance = i === 1 ? 1 - baseDrag * a.drag * 0.55 : 1
+          footX[fi] = liftX[fi]! + (tx - liftX[fi]!) * e
+          footY[fi] = liftY[fi]! + (ty - liftY[fi]!) * e + Math.sin(Math.PI * u) * (0.05 + 0.08 * moving) * clearance
+          footZ[fi] = liftZ[fi]! + (tz - liftZ[fi]!) * e
+          footYaw[fi] = footYaw[fi]! + angleDiff(curYaw, footYaw[fi]!) * e
+        } else if (planted[fi] === 0) {
+          planted[fi] = 1
+          footY[fi] = nearLod ? support(footX[fi]!, footZ[fi]!) : groundY
+        }
       }
+
+      const pelvisY = groundY + HIP - 0.05 * moving - 0.035 * moving * Math.cos(ph * Math.PI * 4)
+      const lean = lx * Math.cos(a.aim) + ly * Math.sin(a.aim)
+
+      // Angle springs for chest & head
+      const cDiff = angleDiff(a.aim, chestX[slot]!)
+      chestV[slot] = (chestV[slot]! + cDiff * 36 * dt) * Math.exp(-8.5 * dt)
+      const cYaw = chestX[slot]! + chestV[slot]! * dt
+      chestX[slot] = cYaw
+
+      const hDiff = angleDiff(a.aim, headX[slot]!)
+      headV[slot] = (headV[slot]! + hDiff * 42 * dt) * Math.exp(-9.2 * dt)
+      const hYaw = headX[slot]! + headV[slot]! * dt
+      headX[slot] = hYaw
+
+      const bashPulse = a.state === "bash" ? Math.pow(Math.max(0, Math.sin((a.stateTime * Math.PI * 2) / 0.9)), 3) * 0.34 : 0
+      const staggerRecoil = a.state === "stagger" ? -0.36 * clamp(a.timer / 0.3, 0, 1) : -0.18 * flash
+      const staggerCant = a.state === "stagger" ? (a.id % 2 ? 1 : -1) * 0.22 * clamp(a.timer / 0.3, 0, 1) : 0
+      const torsoPitch = -0.05 - lean - 0.22 * baseLurch * a.lurch - bashPulse - staggerRecoil
+      const torsoRoll = 0.08 * a.asymmetry + staggerCant
+
+      const torsoY = pelvisY + RIG.waist
+      const cosC = Math.cos(cYaw)
+      const sinC = Math.sin(cYaw)
+
+      // 0: pelvis, 1: torso, 2: head
+      this.writePart(pOff, 0, 0, hidden, ax, pelvisY, ay, curYaw, 0, 0, tr, tg, tb, alpha, flash)
+      this.writePart(pOff, 1, 1, hidden, ax, torsoY, ay, cYaw, torsoPitch, torsoRoll, tr, tg, tb, alpha, flash)
+      this.writePart(
+        pOff,
+        2,
+        2,
+        hidden,
+        ax + cosC * 0.02,
+        torsoY + RIG.neckY,
+        ay + sinC * 0.02,
+        hYaw,
+        -staggerRecoil * 0.6,
+        0.12 * a.asymmetry + staggerCant * 0.5,
+        tr,
+        tg,
+        tb,
+        alpha,
+        flash,
+        isGhost,
+      )
+
+      // 3..6: Left and right upperArm & foreArm (zombie reach + shambling swing)
+      const reachAmt = clamp(baseReach * (0.65 + 0.35 * a.reach) + (a.state === "chase" ? 0.28 : 0), 0, 1)
+      const armPitchBase = -0.25 - reachAmt * 1.05
+      const armSwing = Math.sin(ph * Math.PI * 2) * (0.28 * moving * (1 - reachAmt * 0.6))
+      const shoulderY = torsoY + RIG.shoulderY
+      for (let s = 0; s < 2; s++) {
+        const side = s === 0 ? -1 : 1
+        const sx = ax - sinC * (side * RIG.shoulderW)
+        const sz = ay + cosC * (side * RIG.shoulderW)
+        const uPitch = armPitchBase + side * armSwing
+        const fPitch = uPitch - 0.38 - reachAmt * 0.25
+        // Upper arm origin is at shoulder; forearm origin is at elbow
+        const elbowDist = RIG.upper * Math.sin(-uPitch)
+        const elbowDrop = RIG.upper * Math.cos(-uPitch)
+        const ex = sx + cosC * elbowDist
+        const ey = shoulderY - elbowDrop
+        const ez = sz + sinC * elbowDist
+        this.writePart(pOff, 3 + s, 3, hidden, sx, shoulderY, sz, cYaw, uPitch, side * 0.08, tr, tg, tb, alpha, flash)
+        this.writePart(pOff, 5 + s, 4, hidden, ex, ey, ez, cYaw, fPitch, side * 0.05, tr, tg, tb, alpha, flash)
+      }
+
+      // 7..12: Left and right thigh, shin, and foot
+      for (let i = 0; i < 2; i++) {
+        const fi = f0 + i
+        const side = i === 0 ? -1 : 1
+        const hx = ax - sinY * (side * RIG.hipW)
+        const hy = pelvisY
+        const hz = ay + cosY * (side * RIG.hipW)
+        const fx = footX[fi]!
+        const fy = footY[fi]! + RIG.ankle
+        const fz = footZ[fi]!
+
+        // Analytical 2-bone leg pitch in sagittal plane
+        const dx = fx - hx
+        const dy = fy - hy
+        const dz = fz - hz
+        const fwd = dx * cosY + dz * sinY
+        const d2 = clamp(dx * dx + dy * dy + dz * dz, 0.04, (RIG.thigh + RIG.shin - 0.005) ** 2)
+        const d = Math.sqrt(d2)
+        const cosKnee = clamp((RIG.thigh * RIG.thigh + RIG.shin * RIG.shin - d2) / (2 * RIG.thigh * RIG.shin), -1, 1)
+        const cosHipBend = clamp((d2 + RIG.thigh * RIG.thigh - RIG.shin * RIG.shin) / (2 * d * RIG.thigh), -1, 1)
+        const legChordPitch = Math.atan2(fwd, -dy)
+        const thighPitch = legChordPitch + Math.acos(cosHipBend)
+        const kneeAngle = Math.PI - Math.acos(cosKnee)
+        const shinPitch = thighPitch - kneeAngle
+
+        const kx = hx + cosY * (RIG.thigh * Math.sin(thighPitch))
+        const ky = hy - RIG.thigh * Math.cos(thighPitch)
+        const kz = hz + sinY * (RIG.thigh * Math.sin(thighPitch))
+
+        this.writePart(pOff, 7 + i, 5, hidden, hx, hy, hz, curYaw, thighPitch, 0, tr, tg, tb, alpha, flash)
+        this.writePart(pOff, 9 + i, 6, hidden, kx, ky, kz, curYaw, shinPitch, 0, tr, tg, tb, alpha, flash)
+        this.writePart(pOff, 11 + i, 7, hidden, fx, footY[fi]! + 0.075, fz, footYaw[fi]!, 0, 0, tr, tg, tb, alpha, flash)
+      }
+
       if (isVisible) {
-        this.memory.recordSeen(a.id, a.x, a.y, st.yaw, st.bones, st.hiddenBones, time)
+        seenAt[slot] = time
+        seenX[slot] = ax
+        seenY[slot] = ay
+        for (let f = 0; f < POSE_STRIDE; f++) {
+          seenPose[pOff + f] = this.currPose[pOff + f]!
+        }
       }
     }
 
     this.batches.length = 0
-    for (let i = 0; i < PART_COUNT; i++) {
-      const count = this.partCounts[i]!
-      if (count > 0) {
-        this.batches.push({
-          model: this.models[i]!,
-          data: this.partData[i]!,
-          count,
-        })
-      }
+    for (let p = 0; p < PART_COUNT; p++) {
+      const count = this.partCounts[p]!
+      if (count <= 0) continue
+      const b = this.poolBatches[p]!
+      b.count = count
+      this.batches.push(b)
     }
-    for (let i = 0; i < PART_COUNT; i++) {
-      const count = this.ghostPartCounts[i]!
-      if (count > 0) {
-        this.batches.push({
-          model: this.models[i]!,
-          data: this.ghostPartData[i]!,
-          count,
-          alpha: true,
-        })
-      }
+    for (let p = 0; p < PART_COUNT; p++) {
+      const count = this.ghostPartCounts[p]!
+      if (count <= 0) continue
+      const b = this.ghostPoolBatches[p]!
+      b.count = count
+      this.batches.push(b)
     }
     return this.batches
   }

@@ -15,6 +15,21 @@ shared-material work, actual comparison captures, seven paired cost runs and rem
 The [zombie profile adapter](../../docs/outbreak-zombie-profile.md) prepares lurch/asymmetry/drag/reach tuning for
 the shared human rig in flight, with shared-Lab descriptors and the server/client limb-state boundary.
 
+## Co-op
+
+**Host co-op** (top left) creates a room, copies its invite link and joins it; up to three friends open the link
+(`/arcade/outbreak/?room=<code>`) and drop into the same neighbourhood. Everyone shares doors, windows, barricades,
+searched containers, zombies and the clock; inventory, ammo, planks, stamina and battery are each survivor's own.
+Each player sees only what their own survivor can see; other survivors' flashlights light everyone's world. Without
+`?room` the game is the offline single-player session. Design, protocol and measurements: [docs/outbreak-coop.md](../../docs/outbreak-coop.md).
+
+```sh
+bun run dev:server                 # build + wrangler dev on :8797 (rooms included)
+bun scripts/coop-smoke.ts          # two protocol clients: join, door, shot, agreement, bandwidth
+bun scripts/coop-browser.ts        # two headless Metal pages with real keyboard/mouse input
+bun scripts/coop-bench.ts          # room CPU per tick and bytes per client, 4 survivors + 60 zombies
+```
+
 ## Milestone 1
 
 The 96 × 96 m neighbourhood has nine 32 m chunks, two houses with separate rooms, a hardware store, a pharmacy,
@@ -47,8 +62,8 @@ and collision, exploration persistence, awareness occlusion and clock/daylight m
 
 ## Follow-ups
 
-M2 adds zombies and noise. M3 adds survival inventory and barricades. M4 replaces the local Session implementation
-with co-op snapshots and persistence; M5 adds audio, fire and vehicles. There is no networking or save storage yet.
+M2 adds zombies and noise. M3 adds survival inventory and barricades. Co-op rooms (2–4 survivors) are live; persistence
+is not: a room resets once everyone has been gone for a minute. M5 adds audio, fire and vehicles.
 Furniture and trees are visual props in M1. Sun/moon direction shades surfaces, but does not cast a directional
 shadow map. Practical lights use polar shadows. The look study reports measured queue-completed frame spans;
 pure GPU time and higher-DPR devices remain unmeasured.

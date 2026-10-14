@@ -49,8 +49,12 @@ import {
   outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
+  STREET_LAMP_POSTS,
+  streetLampHead,
 } from "./lighting"
 import { Survivor } from "./survivor"
+import { CoopView } from "./coop-view"
+import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
 import { shaders } from "./shaders"
@@ -94,6 +98,39 @@ const settings = {
   ...DEFAULT_GROUND_SETTINGS,
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
+  infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
+}
+
+const streetHeads = STREET_LAMP_POSTS.map(streetLampHead)
+function nearestStreetHead(x: number, y: number): readonly [number, number, number] {
+  let best = streetHeads[0]!
+  for (const head of streetHeads) if (Math.hypot(head[0] - x, head[2] - y) < Math.hypot(best[0] - x, best[2] - y)) best = head
+  return best
+}
+
+const zombieSlots: [number, number, number, number] = [-999, -999, -999, -999]
+/** Two nearest living zombies within 12 m for analytic lamp shadows; unused slots stay far away. */
+function nearestZombies(zombies: readonly { x: number; y: number; state: string }[], px: number, py: number) {
+  let d0 = 144
+  let d1 = 144
+  zombieSlots.fill(-999)
+  for (const z of zombies) {
+    if (z.state === "dead") continue
+    const d = (z.x - px) ** 2 + (z.y - py) ** 2
+    if (d < d0) {
+      d1 = d0
+      zombieSlots[2] = zombieSlots[0]
+      zombieSlots[3] = zombieSlots[1]
+      d0 = d
+      zombieSlots[0] = z.x
+      zombieSlots[1] = z.y
+    } else if (d < d1) {
+      d1 = d
+      zombieSlots[2] = z.x
+      zombieSlots[3] = z.y
+    }
+  }
+  return zombieSlots
 }
 
 async function main() {
@@ -124,7 +161,10 @@ async function main() {
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format, shaders)
   const seed = Number(params.get("seed") ?? 7) >>> 0
-  let session = new LocalSession(seed, settings.houseSeed, settings.terrain, settings)
+  // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
+  const coop = CoopView.fromUrl(renderer, params)
+  const makeSession = (s: number) => coop.net ?? new LocalSession(s, settings.houseSeed, settings.terrain, settings)
+  let session: LocalSession | NetSession = makeSession(seed)
   let vision = new Vision()
   let scenery = new SceneryMemory()
   const combinedFog = new CombinedFogMemory()
@@ -147,7 +187,8 @@ async function main() {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
   const cam = new Camera()
-  const avatar = new Survivor(renderer)
+  let avatar = new Survivor(renderer)
+  let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
   const groundWear = new GroundWearRenderer(renderer)
@@ -243,6 +284,15 @@ async function main() {
     },
     { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: 0.05 },
     { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
+    {
+      key: "infiniteAmmo",
+      label: "Infinite ammo",
+      group: "Combat",
+      options: [
+        { label: "Off", value: 0 },
+        { label: "On", value: 1 },
+      ],
+    },
     { key: "cone", label: "Vision cone", group: "Vision", min: 60, max: 180, step: 1 },
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
@@ -669,6 +719,8 @@ async function main() {
     combatFx.setLevel(data)
   }
   function regenerate() {
+    // A co-op room's neighbourhood is fixed by the room: only presentation settings rebuild the level.
+    if (coop.net) return level()
     const previous = session.view
     session = new LocalSession(previous.town.seed, settings.houseSeed, settings.terrain, settings)
     Object.assign(session.view.player, previous.player)
@@ -694,8 +746,8 @@ async function main() {
     ambientMotion.reset()
   }
   function reset(nextSeed = seed) {
-    session.close()
-    session = new LocalSession(nextSeed, settings.houseSeed, settings.terrain, settings)
+    if (session !== coop.net) session.close()
+    session = makeSession(nextSeed)
     vision = new Vision()
     revision = -1
     peekBlend = 0
@@ -793,6 +845,12 @@ async function main() {
   syncTextures()
   function draw(dt: number) {
     if (settings.textures === 2) syncTextures()
+    coop.net?.sync(dt)
+    if (coop.localPalette !== avatarPalette) {
+      avatarPalette = coop.localPalette
+      avatar = avatarPalette ? new Survivor(renderer, coop.localPalette!) : avatar
+      updateProfile()
+    }
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
     settings.hour = Math.round(hour * 20) / 20
     if (peek) {
@@ -812,8 +870,9 @@ async function main() {
       renderer.resize(canvas.width, canvas.height)
     }
     cam.zoomOffset = settings.zoom - 24
-    const camX = p.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
-    const camY = p.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
+    const drawn = coop.pose(p)
+    const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
+    const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
     cam.follow(camX, camY, 0, 0, dt, false)
     cam.update(w / h)
     if (revision !== session.view.revision) {
@@ -905,9 +964,11 @@ async function main() {
         count++ * LIGHT_FLOATS,
       )
     }
+    count = coop.flashlights(lights, count, town, settings, lightOccluders)
 
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift)
+    const survivorBatches = avatar.draw(drawn, dt, time, (x, z) => supportHeight(town, x, z) + lift)
+    const coopBatches = coop.bodies(dt, time, town, vision)
     const zombieBatches = zombieCrowd.draw(
       zombies,
       dt,
@@ -998,6 +1059,8 @@ async function main() {
         flashlightOutput: p.flashlightOutput,
         flashlightSlot,
         inInteriorView,
+        streetHead: nearestStreetHead(camX, camY),
+        zombies: nearestZombies(zombies, p.x, p.y),
       },
       flashRgb,
       lightingUniforms,
@@ -1091,6 +1154,7 @@ async function main() {
       ...clutterBatches,
       ...motionOut.batches,
       ...survivorBatches,
+      ...coopBatches,
       ...fxOut.batches,
       ...zombieBatches,
       doorBatch,
@@ -1121,6 +1185,7 @@ async function main() {
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
     status.textContent = formatStatus()
+    coop.overlay(cam, w, h, town, vision)
     syncWorldPrompt(w, h)
     syncHotbar()
     const meterNow = performance.now()
@@ -1258,6 +1323,7 @@ async function main() {
       },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
+    coop: () => coop.inspect(),
     reset,
     freeze: (value = true) => {
       frozen = value

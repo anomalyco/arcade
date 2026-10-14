@@ -64,7 +64,7 @@ describe("Outbreak lighting module & Lab controls", () => {
     expect(resolvedRooms[3]!.castShadows).toBe(false)
   })
 
-  test("packs 32-float custom uniform buffer and follows active aim outside north rest pose", () => {
+  test("packs 40-float custom uniform buffer and follows active aim outside north rest pose", () => {
     const rgb = flashlightColor(0.92)
     const restBuf = packOutbreakLightingUniforms(
       {
@@ -82,6 +82,8 @@ describe("Outbreak lighting module & Lab controls", () => {
         flashlightOutput: 1,
         flashlightSlot: 1,
         inInteriorView: false,
+        streetHead: [36.86, 6.18, 47.49],
+        zombies: [-999, -999, -999, -999],
       },
       rgb,
     )
@@ -101,6 +103,8 @@ describe("Outbreak lighting module & Lab controls", () => {
         flashlightOutput: 1,
         flashlightSlot: 1,
         inInteriorView: false,
+        streetHead: [36.86, 6.18, 47.49],
+        zombies: [-999, -999, -999, -999],
       },
       rgb,
     )
