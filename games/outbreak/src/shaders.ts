@@ -36,7 +36,7 @@ export const outbreakSceneHooks: SceneHooks = {
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
-  lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
+  lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }\n    if (i == 1u && L.cone.w > 0.5 && L.pos.w > 6.0 && abs(n.y) < 0.5 && OL.u5.w > 0.5) { continue; }",
   material: " ",
   postLightMaterial: `${surfaceMaterial}
     let inRoom = interior(o.world.xz + n.xz * 0.28);`,
@@ -135,16 +135,22 @@ fn eyeVisible(p: vec2f) -> f32 {
     let eave = smoothstep(2.85, 3.55, o.world.y);
     let courseStep = smoothstep(0.65, 0.96, fract(o.world.z / 0.24));
     let tabGrain = 0.72 + 0.56 * surfaceNoise(o.world.xz * 6.2);
-    let moonRim = OL.u2.z;
-    col = col * mix(0.74, 1.18, eave) * tabGrain + vec3f(0.011, 0.018, 0.036) * F.ambient.w * moonRim * (0.55 * eave + 0.45 * courseStep) * max(0.0, n.y);
+    let moonRim = OL.u2.z * select(1.45, 0.65, OL.u5.w > 0.5);
+    col = col * mix(0.84, 1.32, eave) * tabGrain + vec3f(0.014, 0.026, 0.058) * F.ambient.w * moonRim * (0.58 * eave + 0.42 * courseStep) * max(0.0, n.y);
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     if (mat == 20) {
       let kind = i32(round(o.aux));
       if (kind == 0) {
-        // Overgrown dark-clump variation across lawns & yards so turf reads with deep mossy shadows and organic patches.
+        // Overgrown dark-clump variation across lawns & yards with cool desaturated night moonlight + warm window/porch bounce.
         let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.46, 1.08, smoothstep(0.26, 0.76, turfPatch));
+        col *= mix(0.52, 1.12, smoothstep(0.26, 0.76, turfPatch));
+        let turfLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+        col = mix(vec3f(turfLum) * vec3f(0.96, 1.0, 1.12), col, 0.48);
+        if (o.world.z > 35.4 && o.world.z < 38.2 && o.world.x > 21.5 && o.world.x < 37.5 && OL.u5.w < 0.5) {
+          let lawnGlow = (exp(-pow((o.world.x - 24.5) * 0.42, 2.0)) + exp(-pow((o.world.x - 34.2) * 0.42, 2.0)) + exp(-pow((o.world.x - 27.7) * 0.35, 2.0)) * 1.2) * exp(-pow((o.world.z - 36.8) * 0.55, 2.0));
+          col += vec3f(0.016, 0.014, 0.011) * lawnGlow * nightLamps;
+        }
       } else if (kind == 1) {
         // Textured cracked asphalt: dark gutters & wheel ruts, jagged fracture lines, coarse aggregate, and wet moonlit road sheen.
         let p = o.world.xz;
@@ -165,24 +171,30 @@ fn eyeVisible(p: vec2f) -> f32 {
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
         col *= (0.56 + 0.32 * gutter - 0.10 * ruts + 0.20 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
         let wetRoad = (0.35 + 0.65 * crown) * (0.38 + 0.62 * centerFocus) * (0.55 + 0.85 * w1) * (1.0 - 0.55 * cracks);
-        col += vec3f(0.024, 0.032, 0.052) * F.ambient.w * OL.u2.y * wetRoad;
+        col += vec3f(0.025, 0.033, 0.054) * F.ambient.w * OL.u2.y * wetRoad;
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
         if (!inVerge) {
           let gritWalk = 0.76 + 0.48 * surfaceNoise(o.world.xz * 7.5);
-          col = col * 0.88 * gritWalk + vec3f(0.012, 0.015, 0.024) * F.ambient.w * gritWalk;
+          let extScale = select(1.0, 0.42, OL.u5.w > 0.5);
+          let frontBand = smoothstep(42.0, 37.5, o.world.z) * smoothstep(18.0, 23.0, o.world.x) * smoothstep(41.0, 36.0, o.world.x);
+          col = col * 0.92 * gritWalk + vec3f(0.018, 0.020, 0.026) * F.ambient.w * gritWalk * (0.7 + 0.65 * frontBand * extScale);
           // Wet porch walkway & sidewalk reflection streak under the porch sconces (x ~ 27.7, z ~ 35.4..40.4)
           let dxWalk = o.world.x - 27.7;
-          if (abs(dxWalk) < 3.6 && o.world.z > 35.3 && o.world.z < 40.4) {
-            let walkCore = exp(-(dxWalk * dxWalk) / 0.85) * smoothstep(40.4, 35.5, o.world.z);
-            let sideSpread = exp(-(dxWalk * dxWalk) / 5.2) * smoothstep(37.6, 38.6, o.world.z) * smoothstep(40.2, 39.0, o.world.z);
-            let extScale = select(1.0, 0.35, OL.u5.w > 0.5);
-            col += vec3f(0.068, 0.052, 0.034) * (walkCore * 1.15 + sideSpread * 0.55) * gritWalk * OL.u2.y * nightLamps * extScale;
+          if (abs(dxWalk) < 5.5 && o.world.z > 35.3 && o.world.z < 40.4) {
+            let walkCore = exp(-(dxWalk * dxWalk) / 1.15) * smoothstep(40.4, 35.5, o.world.z);
+            let sideSpread = exp(-(dxWalk * dxWalk) / 9.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
+            col += vec3f(0.088, 0.068, 0.046) * (walkCore * 1.25 + sideSpread * 0.78) * gritWalk * OL.u2.y * nightLamps * extScale;
           }
         }
       }
     } else if (mat == 4 && !inRoom) {
       col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y));
+      // Subdue overly bright white window trim & clapboard outside the porch sconce core
+      if (o.world.z > 35.15) {
+        let nearPorch = exp(-pow((o.world.x - 27.7) / 1.65, 2.0));
+        col *= mix(0.68, 1.02, nearPorch);
+      }
     }
     if (!inRoom) {
       // Peripheral darkness vignette: outer lawns, sidewalks, and trees recede into night shadow
@@ -194,9 +206,11 @@ fn eyeVisible(p: vec2f) -> f32 {
       col *= periphShade * extCutDim;
     } else if (o.world.y < 2.74) {
       col += evalInteriorWallWash(o.world, n, o.color) * nightLamps;
-      // Subdue bright white fridge top so it doesn't pop out of the shadowed kitchen corner
-      if (o.world.x > 35.6 && o.world.z > 30.8 && o.world.z < 32.2 && o.world.y > 1.4) {
-        col *= 0.28;
+      // Subdue cream-white kitchen refrigerator & runner border in the shadowed NW kitchen corner
+      if (o.world.x > 30.8 && o.world.x < 35.0 && o.world.z > 29.6 && o.world.z < 31.3) {
+        if (o.world.y > 0.85 || (o.world.y > 0.131 && o.world.y < 0.148)) {
+          col *= 0.24;
+        }
       }
     }
     // Darken cutaway wall-top molding (y = 2.75..2.82) so interior walls don't have a bright beige outline
