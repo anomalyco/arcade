@@ -69,7 +69,7 @@ export class ShipFx {
       this.next.set(s.id, this.time + rnd(0.5, 1.6) * (u < 0.15 ? 0.5 : 1))
       const z = rnd(STERN_Z + 20, BOW_Z - 20)
       const p = shipToWorld(s, rnd(-25, 25), rnd(DECK_Y - 12, DECK_Y + 2), z, at)
-      this.fx.explosion(p[0], p[1], p[2], vx, 0, vz, rnd(1.2, 2.2), false)
+      this.fx.explosion(p[0], p[1], p[2], vx, 0, vz, rnd(1.2, 2.2), false, "ship")
       const e = this.ear()
       this.audio.explosion(Math.hypot(p[0] - e[0]!, p[1] - e[1]!, p[2] - e[2]!), 1.6, "bomb-land")
     } else if (!this.next.has(s.id)) this.next.set(s.id, this.time)

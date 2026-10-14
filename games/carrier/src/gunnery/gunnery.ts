@@ -251,13 +251,13 @@ export class Gunnery {
         this.boomed.push(key)
         if (this.boomed.length > 48) this.boomed.shift()
         const fx = this.fx
-        if (e.kind === "sam") fx.explosion(e.x, e.y, e.z, 0, 0, 0, 1, e.surface === "sea")
+        if (e.kind === "sam") fx.explosion(e.x, e.y, e.z, 0, 0, 0, 1, e.surface === "sea", "missile")
         else if (e.surface === "sea") {
           fx.splash(e.x, e.y, e.z, 0.85)
           fx.glowAt(e.x, e.y + 1, e.z, 4, 6, 3, 1, 1)
-        } else if (e.surface === "air") fx.explosion(e.x, e.y, e.z, 0, 0, 0, 0.55, false)
+        } else if (e.surface === "air") fx.explosion(e.x, e.y, e.z, 0, 0, 0, 0.55, false, "pop")
         else {
-          fx.explosion(e.x, e.y + 1, e.z, 0, 0, 0, 0.8, false)
+          fx.explosion(e.x, e.y + 1, e.z, 0, 0, 0, 0.8, false, e.surface === "ship" ? "ship" : "barrel")
           fx.impact(e.surface === "land" ? "land" : "ship", e.x, e.y, e.z)
         }
         this.audio.burstAt(this.dist(e.x, e.y, e.z), e.kind, e.surface)
@@ -267,7 +267,7 @@ export class Gunnery {
         return
       }
       case "intercept": {
-        this.fx.explosion(e.x, e.y, e.z, 0, 0, 0, 0.5, false)
+        this.fx.explosion(e.x, e.y, e.z, 0, 0, 0, 0.5, false, "pop")
         this.audio.intercept(this.dist(e.x, e.y, e.z))
         if (e.by === this.id) {
           this.hud.hit(true)

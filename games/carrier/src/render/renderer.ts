@@ -142,6 +142,7 @@ export class Renderer {
 
   private pendingFrame: Float32Array | null = null
   private pendingGrade: Grade | null = null
+  readonly currentFrame = new Float32Array(FRAME_FLOATS)
   private scheduled = false
   private inflight = 0
 
@@ -151,6 +152,7 @@ export class Renderer {
    * backlog. A dropped frame is drawn once the GPU catches up, so the latest state always reaches the screen.
    */
   render(frame: Float32Array, grade: Grade): void {
+    this.currentFrame.set(frame.subarray(0, FRAME_FLOATS))
     this.pendingFrame = frame
     this.pendingGrade = grade
     this.schedule()
@@ -182,6 +184,7 @@ export class Renderer {
 
   private draw(frame: Float32Array, grade: Grade): void {
     const d = this.device
+    this.currentFrame.set(frame.subarray(0, FRAME_FLOATS))
     d.queue.writeBuffer(this.frameBuf, 0, frame.buffer, frame.byteOffset, FRAME_FLOATS * 4)
     this.clear.r = frame[FRAME.horizon]!
     this.clear.g = frame[FRAME.horizon + 1]!

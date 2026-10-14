@@ -1,5 +1,6 @@
 import { mat4 } from "wgpu-matrix"
 import { FireWater, fireStyles, type ElementEffect } from "@arcade/kit/fx/fire-water"
+import { EXPLOSION_PRESETS, explosionFlashLight, spawnExplosion } from "@arcade/kit/fx/explosion"
 import { GameSprites } from "@arcade/kit/lab/game-sprites"
 import type { SectionFactory } from "@arcade/kit/lab/types"
 import type { LabControl } from "@arcade/kit/lab-panel"
@@ -39,8 +40,12 @@ export const fireWaterSection:SectionFactory=context=>{
   const addModel=(m:{v:number[]})=>meshes.add(m.v,12,c=>[2,5,8,9].includes(c)?1.5:0)
   const trigger=()=>{
     time=0;dt=0;settings.age=0;fx.reset(settings.effect as ElementEffect);game?.labClear();props?.clear()
+    context.particles.reset();context.volume.reset([],Math.max(1,Math.round(settings.seed)))
     if(settings.effect==="water")props?.trigger("hydrant",0,0)
-    else if(settings.effect==="fireball")props?.trigger("propane",0,0)
+    else if(settings.effect==="explosion"||settings.effect==="fireball"){
+      const preset=settings.effect==="fireball"?EXPLOSION_PRESETS.propane.settings:EXPLOSION_PRESETS.grenade.settings
+      seeded(Math.max(1,Math.round(settings.seed)),()=>spawnExplosion(context.particles,context.volume,0,0,0,preset,Math.random))
+    }
     else game?.labTrigger(settings.effect,"rifle","wall",12,10)
     context.emit?.({type:"effect",section:"fire-water",effect:settings.effect,x:0,y:.2,z:0})
     context.sync()
@@ -102,7 +107,13 @@ export const fireWaterSection:SectionFactory=context=>{
       load()
     },
     leave(){stage.cameraOverride=undefined;stage.afterScene=undefined;Object.assign(stage.lighting,previousLighting)},
-    update(delta){if(!settings.playing)return;time+=delta;dt+=delta;settings.age=time;fx.update(delta);seeded(73+Math.round(time*60),()=>{game?.labAdvance(delta);props?.update([],delta,{x:0,z:0},true,()=>true)});if(settings.loop&&["explosion","fireball"].includes(settings.effect)&&time>4)trigger()},
+    update(delta){
+      if(!settings.playing)return
+      time+=delta;dt+=delta;settings.age=time;fx.update(delta)
+      context.particles.update(delta);context.volume.update(delta)
+      seeded(73+Math.round(time*60),()=>{game?.labAdvance(delta);props?.update([],delta,{x:0,z:0},true,()=>true)})
+      if(settings.loop&&["explosion","fireball"].includes(settings.effect)&&time>2.4)trigger()
+    },
     prepare(){
       if(!game||environmentModel<0)return
       meshes.instance(environmentModel,0,.002,0)
@@ -124,7 +135,13 @@ export const fireWaterSection:SectionFactory=context=>{
       if(settings.style===0)legacy.upload()
       fx.style=settings.style;fx.effect=settings.effect as ElementEffect
       const dynamic:LabLight[]=[{x:-3,y:3.4,z:-3,radius:13,r:1,g:.67,b:.32,power:4}]
-      const flame=fx.light();if(flame)dynamic.push(flame)
+      if(settings.effect==="explosion"||settings.effect==="fireball"){
+        const preset=settings.effect==="fireball"?EXPLOSION_PRESETS.propane.settings:EXPLOSION_PRESETS.grenade.settings
+        const fl=explosionFlashLight(0,0,0,time,preset)
+        if(fl)dynamic.push(fl)
+      }else{
+        const flame=fx.light();if(flame)dynamic.push(flame)
+      }
       if(settings.style===0){
         if(settings.effect==="fireball")dynamic.push(...legacyLights.slice(0,2))
         else if(settings.effect!=="water")for(let i=0;i<Math.min(frame.lightCount,2);i++){const o=i*16,p=frame.lights;dynamic.push({x:p[o]-12,y:p[o+1],z:p[o+2]-10,radius:p[o+3],r:p[o+4],g:p[o+5],b:p[o+6],power:p[o+7]})}

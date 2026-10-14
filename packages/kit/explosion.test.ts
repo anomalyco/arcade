@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test"
 import {
   applyExplosionSmokeLive,
+  EXPLOSION_PRESET_IDS,
+  EXPLOSION_PRESETS,
   explosionDefaults,
   explosionFlashLight,
   explosionRanges,
   explosionSettings,
+  resolveExplosionSettings,
   spawnExplosion,
   type ExplosionNumericKey,
 } from "./fx/explosion"
@@ -39,6 +42,38 @@ test("explosionSettings clamps numeric ranges and preserves scorch toggle", () =
   }
 })
 
+test("all seven typed explosion presets are within valid bounds and resolve macro parameters", () => {
+  expect(EXPLOSION_PRESET_IDS).toEqual(["grenade", "propane", "car", "barrel", "missile", "ship", "pop"])
+  for (const id of EXPLOSION_PRESET_IDS) {
+    const preset = EXPLOSION_PRESETS[id]
+    expect(preset.id).toBe(id)
+    for (const key of Object.keys(explosionRanges) as ExplosionNumericKey[]) {
+      const [min, max] = explosionRanges[key]
+      expect(preset.settings[key]).toBeGreaterThanOrEqual(min)
+      expect(preset.settings[key]).toBeLessThanOrEqual(max)
+    }
+  }
+  expect(EXPLOSION_PRESETS.missile.settings.scorch).toBe(false)
+  expect(EXPLOSION_PRESETS.car.settings.fireballSize).toBeGreaterThan(EXPLOSION_PRESETS.grenade.settings.fireballSize)
+  expect(EXPLOSION_PRESETS.ship.settings.smokeAmount).toBeGreaterThan(EXPLOSION_PRESETS.propane.settings.smokeAmount)
+  expect(EXPLOSION_PRESETS.pop.settings.fireballSize).toBeLessThan(EXPLOSION_PRESETS.grenade.settings.fireballSize)
+
+  const custom = resolveExplosionSettings({
+    preset: "propane",
+    size: 1.2,
+    energy: 1.1,
+    fuel: 1.15,
+    smoke: 0.8,
+    debris: 1.5,
+    scorch: false,
+    flash: 0.9,
+    shockwave: 1.1,
+  })
+  expect(custom.scorch).toBe(false)
+  expect(custom.fireballSize).toBeGreaterThan(EXPLOSION_PRESETS.propane.settings.fireballSize)
+  expect(custom.debrisCount).toBe(Math.round(EXPLOSION_PRESETS.propane.settings.debrisCount * 1.5))
+})
+
 test("spawnExplosion emits scorch, shock rings, fireball billows, sparks, debris, and soot volume deterministically", () => {
   const p1 = new Particles()
   const v1 = new SmokeVolumes()
@@ -67,6 +102,18 @@ test("spawnExplosion emits scorch, shock rings, fireball billows, sparks, debris
   expect(kinds.has(7)).toBe(true)
   expect(kinds.has(1)).toBe(true)
   expect(kinds.has(2)).toBe(true)
+
+  // Airburst omits ground scorch and ground smoke volume
+  const pAir = new Particles()
+  const vAir = new SmokeVolumes()
+  vAir.reset([], 7)
+  spawnExplosion(pAir, vAir, 0, 80, 0, EXPLOSION_PRESETS.missile.settings, seededRng(7), 4, 1, { airburst: true })
+  expect(vAir.count).toBe(0)
+  const airKinds = new Set<number>()
+  for (let i = 0; i < pAir.count; i++) airKinds.add(pAir.data[i * PARTICLE_STRIDE + 16]!)
+  expect(airKinds.has(6)).toBe(false)
+  expect(airKinds.has(5)).toBe(true)
+  expect(airKinds.has(7)).toBe(true)
 
   // Advance simulation and verify ease-out expansion & finite instance preparation
   for (let f = 0; f < 60; f++) {

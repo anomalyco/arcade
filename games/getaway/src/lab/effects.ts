@@ -36,7 +36,7 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
     else pending.push([x,y,z,size,r,g,b,a,kind===2?2:0,rot,stretch])
   }
   const pending:number[][]=[]
-  const clear=()=>{fx.add.length=0;fx.clearSkids();props?.clear();emissions.reset();state=new EmissionState();active="";remaining=0;scrape=0;time=0}
+  const clear=()=>{fx.add.length=0;fx.clearSkids();props?.clear();context.particles.reset();context.volume.reset();emissions.reset();state=new EmissionState();active="";remaining=0;scrape=0;time=0}
   return {settings,groups,effects:[...Object.entries(labels).map(([value,label])=>({value,label})),{value:"tyre",label:"Connected tyre smoke"}],environments:getawayRooms,
     controls:[{key:"targetX",label:"Target X",type:"range",min:-12,max:12,step:.25,unit:"m"},{key:"targetZ",label:"Target Z",type:"range",min:-12,max:12,step:.25,unit:"m"}],
     relevantGroups(s){
@@ -55,7 +55,11 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
       if(envModel<0)envModel=meshes.add(env.vertices,12,c=>[2,5,8,9].includes(c)?1.5:0)
       else meshes.replace(envModel,env.vertices,12,c=>[2,5,8,9].includes(c)?1.5:0)
       lights=env.lights
-      if(!props)props=new StreetProps({boxes:[],placements:[]},{addModel},()=>.02)
+      if(!props)props=new StreetProps({boxes:[],placements:[]},{addModel},()=>.02,{particles:context.particles,volumes:context.volume})
+      const ox=env.origin.x,oz=env.origin.z
+      const shiftedBoxes=env.city.boxes.map(b=>({...b,x0:b.x0-ox,x1:b.x1-ox,z0:b.z0-oz,z1:b.z1-oz}))
+      props.setWalls(shiftedBoxes)
+      context.volume.reset(shiftedBoxes.map(b=>[b.x0,b.z0,b.x1,b.z1] as const),seed)
       if(!model){model=splitChassis(buildCar(spec));bodyModel=addModel(model.body);wheels=model.wheels.map(w=>addModel(w.mesh));chassis=new Chassis(car,model.wheels)}
       stage.sceneMode=4;stage.focus[0]=stage.focus[1]=stage.focus[2]=0
       seeded(seed,()=>{stage.lighting.moonPower=.15+Math.random()*.6;stage.lighting.exposure=Math.random()*.6;stage.lighting.temperature=Math.random()*.8-.4})
@@ -81,6 +85,7 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
     update(dt){
       time+=dt;remaining=Math.max(0,remaining-dt);fx.update(dt);emissions.update(dt)
       props?.update([],dt,{x:0,z:0},true,()=>true)
+      context.particles.update(dt,[],()=>.02);context.volume.update(dt)
       if(remaining>0){
         if(active==="scrape"){scrape+=dt*(getawayEffects.scrape.rate+getawayEffects.scrape.speedRate);const n=Math.floor(scrape);scrape-=n;fx.sparks(car.x,car.z,1,0,n,.12)}
         const cold=vehicleEffects.coldExhaust;vehicleEffects.coldExhaust=active==="cold"
@@ -107,6 +112,6 @@ export const getawayEffectSection:SectionFactory=context=>gameEffects(context,"g
       sprites.upload()
       if(active==="headlights")dynamic.push({x:car.x,y:1.3,z:car.z+3,radius:getawayEffects.headlights.radius,r:1,g:.92,b:.78,power:getawayEffects.headlights.power,dx:0,dy:-.3,dz:.95,cone:.8})
       stage.dynamicLights=[...dynamic,...lights].slice(0,8)
-    },draw:sprites.draw,clear,inspect:()=>({particles:(props?.particles.count??0)+fx.add.length,skids:fx.skidCount,chunks:props?.chunks.length??0,water:props?.reactions.filter(r=>r.water).length??0,explosions:props?.stats.explosions??0,tyre:context.trail.count,time:+time.toFixed(2)}),
+    },draw:sprites.draw,clear,inspect:()=>({particles:(props?.particles.count??0)+context.particles.count+fx.add.length,skids:fx.skidCount,chunks:props?.chunks.length??0,water:props?.reactions.filter(r=>r.water).length??0,explosions:props?.stats.explosions??0,tyre:context.trail.count,time:+time.toFixed(2)}),
   }
 })

@@ -109,9 +109,15 @@ export function getawaySpawn(context: LabContext) {
   let activeCarShadow: { x: number; y: number; z: number; h: number; width: number; length: number } | null = null
 
   const addModel = (mesh: { v: number[] }) => meshes.add(mesh.v, 12, code => ([2, 5, 8, 9].includes(code) ? 1.5 : 0))
-  const props = new StreetProps({ boxes: city.boxes, placements: [] }, { addModel }, (x, z) => activeGround(x, z))
+  const props = new StreetProps(
+    { boxes: city.boxes, placements: [] },
+    { addModel },
+    (x, z) => activeGround(x, z),
+    { particles: context.particles, volumes: context.volume },
+  )
 
   function rebuildPropWallHash(boxes: readonly Box[]) {
+    props.setWalls(boxes as City["boxes"])
     const wallMap = (props.physics as unknown as { walls: Map<number, Box[]> }).walls
     wallMap.clear()
     for (const b of boxes) {

@@ -323,7 +323,7 @@ export class Weapons {
         const j = e.on >= 0 ? this.jetOrOwn(e.on) : null
         // A hit on our own jet bursts right by the chase camera: smaller, so it doesn't white out the screen.
         if (e.bomb) this.fx.bombBlast(e.x, e.y, e.z, e.water)
-        else this.fx.explosion(e.x, e.y, e.z, j?.vx ?? 0, j?.vy ?? 0, j?.vz ?? 0, e.on === this.id ? 0.55 : 1, e.water)
+        else this.fx.explosion(e.x, e.y, e.z, j?.vx ?? 0, j?.vy ?? 0, j?.vz ?? 0, e.on === this.id ? 0.55 : 1, e.water, e.on === this.id ? "pop" : "missile")
         this.audio.explosion(this.dist(e.x, e.y, e.z), e.bomb ? 1.8 : 1, e.bomb ? (e.water ? "bomb-water" : "bomb-land") : "missile")
         if (e.owner === this.id && e.on >= 0) this.hud.hit()
         return
@@ -440,7 +440,7 @@ export class Weapons {
     this.hud.feed(killer, { name, color }, by === this.id, "SUNK", "SUNK")
     const s = this.fleetShips.find((x) => x.id === ship)
     if (s) {
-      this.fx.explosion(s.x, s.heave + 26, s.z, 0, 0, 0, 3, false)
+      this.fx.explosion(s.x, s.heave + 26, s.z, 0, 0, 0, 3, false, "ship")
       this.audio.explosion(this.dist(s.x, s.heave + 26, s.z), 2.5, "bomb-land")
     }
   }

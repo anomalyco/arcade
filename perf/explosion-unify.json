@@ -1,0 +1,273 @@
+{
+  "baseline": "HEAD~1",
+  "labUnification": {
+    "presetCounts": {
+      "grenade": {
+        "particles": 116,
+        "volumes": 1,
+        "scorch": true
+      },
+      "propane": {
+        "particles": 110,
+        "volumes": 1,
+        "scorch": true
+      },
+      "car": {
+        "particles": 152,
+        "volumes": 1,
+        "scorch": true
+      },
+      "barrel": {
+        "particles": 118,
+        "volumes": 1,
+        "scorch": true
+      },
+      "missile": {
+        "particles": 149,
+        "volumes": 0,
+        "scorch": false
+      },
+      "ship": {
+        "particles": 174,
+        "volumes": 1,
+        "scorch": true
+      },
+      "pop": {
+        "particles": 84,
+        "volumes": 1,
+        "scorch": true
+      }
+    },
+    "getawaySharedParticles": 110,
+    "getawaySharedVolumes": 1,
+    "blackoutSharedParticles": 116,
+    "blackoutSharedVolumes": 1,
+    "catalogItems": [
+      "fixture:smoke-room",
+      "fixture:glass-pane",
+      "fixture:paper-desk",
+      "fixture:car-cones",
+      "fixture:flame-hydrant",
+      "fixture:audio-audition",
+      "fixture:outbreak-vignette",
+      "effects:smoke",
+      "effects:tyre",
+      "effects:nitro",
+      "effects:sparks",
+      "effects:explosion",
+      "effects:water",
+      "effects:debris",
+      "effects:fire",
+      "blackout-effects:shot",
+      "blackout-effects:muzzle",
+      "blackout-effects:tracer",
+      "blackout-effects:holes",
+      "blackout-effects:blood",
+      "blackout-effects:splats",
+      "blackout-effects:impact",
+      "blackout-effects:dust",
+      "blackout-effects:glass",
+      "blackout-effects:paper",
+      "blackout-effects:monitor",
+      "blackout-effects:casings",
+      "blackout-effects:magazines",
+      "blackout-effects:lamps",
+      "blackout-effects:corpse",
+      "blackout-effects:vehicle",
+      "blackout-effects:fire",
+      "blackout-effects:wreck",
+      "getaway-effects:sparks",
+      "getaway-effects:scrape",
+      "getaway-effects:skids",
+      "getaway-effects:nitro",
+      "getaway-effects:pops",
+      "getaway-effects:cold",
+      "getaway-effects:landing",
+      "getaway-effects:debris",
+      "getaway-effects:hydrant",
+      "getaway-effects:plumes",
+      "getaway-effects:headlights",
+      "getaway-effects:tyre",
+      "fire-water:fire",
+      "fire-water:wreck",
+      "fire-water:water",
+      "splatter:blood",
+      "splatter:ink",
+      "splatter:slime",
+      "splatter:oil",
+      "splatter:potion",
+      "section:effects",
+      "section:getaway-effects",
+      "section:blackout-effects",
+      "section:fire-water",
+      "section:splatter",
+      "section:outbreak-vignette"
+    ]
+  },
+  "getawayPerf": {
+    "beforeGpuMedianMs": 0.6778,
+    "afterGpuMedianMs": 0.8247,
+    "deltaGpuMedianMs": 0.1497,
+    "deltaGpuMadMs": 0.0042,
+    "beforeCpuMedianMs": 0.4,
+    "afterCpuMedianMs": 0.5,
+    "pairs": [
+      {
+        "pair": 1,
+        "beforeGpuMs": 0.683,
+        "afterGpuMs": 1.7191,
+        "deltaGpuMs": 1.0361,
+        "beforeCpuMs": 0.6,
+        "afterCpuMs": 0.7
+      },
+      {
+        "pair": 2,
+        "beforeGpuMs": 0.6848,
+        "afterGpuMs": 0.8197,
+        "deltaGpuMs": 0.1349,
+        "beforeCpuMs": 0.6,
+        "afterCpuMs": 0.7
+      },
+      {
+        "pair": 3,
+        "beforeGpuMs": 0.6767,
+        "afterGpuMs": 0.8247,
+        "deltaGpuMs": 0.148,
+        "beforeCpuMs": 0.4,
+        "afterCpuMs": 0.6
+      },
+      {
+        "pair": 4,
+        "beforeGpuMs": 0.6778,
+        "afterGpuMs": 0.8275,
+        "deltaGpuMs": 0.1497,
+        "beforeCpuMs": 0.4,
+        "afterCpuMs": 0.5
+      },
+      {
+        "pair": 5,
+        "beforeGpuMs": 0.6757,
+        "afterGpuMs": 0.8296,
+        "deltaGpuMs": 0.1539,
+        "beforeCpuMs": 0.4,
+        "afterCpuMs": 0.5
+      },
+      {
+        "pair": 6,
+        "beforeGpuMs": 0.6681,
+        "afterGpuMs": 0.8182,
+        "deltaGpuMs": 0.1501,
+        "beforeCpuMs": 0.4,
+        "afterCpuMs": 0.4
+      },
+      {
+        "pair": 7,
+        "beforeGpuMs": 0.6809,
+        "afterGpuMs": 0.812,
+        "deltaGpuMs": 0.1311,
+        "beforeCpuMs": 0.4,
+        "afterCpuMs": 0.4
+      }
+    ]
+  },
+  "blackoutPerf": {
+    "beforeGpuMedianMs": 0.6938,
+    "afterGpuMedianMs": 0.9204,
+    "deltaGpuMedianMs": 0.2455,
+    "deltaGpuMadMs": 0.0455,
+    "pairs": [
+      {
+        "pair": 1,
+        "beforeGpuMs": 1.3955,
+        "afterGpuMs": 1.7903,
+        "deltaGpuMs": 0.3948
+      },
+      {
+        "pair": 2,
+        "beforeGpuMs": 1.6488,
+        "afterGpuMs": 2.5209,
+        "deltaGpuMs": 0.8721
+      },
+      {
+        "pair": 3,
+        "beforeGpuMs": 0.999,
+        "afterGpuMs": 2.6605,
+        "deltaGpuMs": 1.6615
+      },
+      {
+        "pair": 4,
+        "beforeGpuMs": 0.6779,
+        "afterGpuMs": 0.8982,
+        "deltaGpuMs": 0.2203
+      },
+      {
+        "pair": 5,
+        "beforeGpuMs": 0.6749,
+        "afterGpuMs": 0.9204,
+        "deltaGpuMs": 0.2455
+      },
+      {
+        "pair": 6,
+        "beforeGpuMs": 0.6938,
+        "afterGpuMs": 0.8938,
+        "deltaGpuMs": 0.2
+      },
+      {
+        "pair": 7,
+        "beforeGpuMs": 0.6725,
+        "afterGpuMs": 0.915,
+        "deltaGpuMs": 0.2425
+      }
+    ]
+  },
+  "carrierPerf": {
+    "beforeFrameMedianMs": 0.2383,
+    "afterFrameMedianMs": 0.4533,
+    "deltaFrameMedianMs": 0.215,
+    "deltaFrameMadMs": 0.0267,
+    "pairs": [
+      {
+        "pair": 1,
+        "beforeFrameMs": 0.2883,
+        "afterFrameMs": 0.6133,
+        "deltaFrameMs": 0.325
+      },
+      {
+        "pair": 2,
+        "beforeFrameMs": 0.28,
+        "afterFrameMs": 0.5433,
+        "deltaFrameMs": 0.2633
+      },
+      {
+        "pair": 3,
+        "beforeFrameMs": 0.2383,
+        "afterFrameMs": 0.49,
+        "deltaFrameMs": 0.2517
+      },
+      {
+        "pair": 4,
+        "beforeFrameMs": 0.2383,
+        "afterFrameMs": 0.4533,
+        "deltaFrameMs": 0.215
+      },
+      {
+        "pair": 5,
+        "beforeFrameMs": 0.225,
+        "afterFrameMs": 0.4233,
+        "deltaFrameMs": 0.1983
+      },
+      {
+        "pair": 6,
+        "beforeFrameMs": 0.2367,
+        "afterFrameMs": 0.425,
+        "deltaFrameMs": 0.1883
+      },
+      {
+        "pair": 7,
+        "beforeFrameMs": 0.2317,
+        "afterFrameMs": 0.4283,
+        "deltaFrameMs": 0.1966
+      }
+    ]
+  }
+}

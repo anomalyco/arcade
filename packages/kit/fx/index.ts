@@ -1,5 +1,11 @@
 export { Particles, Emitter, PARTICLE_CAPACITY, type ParticleSpec, type ParticleKind } from "./particles"
-export { ParticleRenderer, particleShader } from "./particle-renderer"
+export {
+  ParticleRenderer,
+  particleShader,
+  makeParticleShader,
+  blackbodyFireWgsl,
+  type ParticleRendererOptions,
+} from "./particle-renderer"
 export { SmokeTrail, type SmokeSource } from "./smoke-trail"
 export { SmokeRenderer as TyreRenderer, tyreShader } from "./tyre-renderer"
 export { SmokeVolumes, GRID, VOLUMES, type Wall } from "./volume"
@@ -9,9 +15,17 @@ export {
   explosionDefaults,
   explosionRanges,
   explosionSettings,
+  EXPLOSION_PRESET_IDS,
+  EXPLOSION_PRESETS,
+  explosionPresetOptions,
+  isExplosionPresetId,
+  resolveExplosionSettings,
   applyExplosionSmokeLive,
   spawnExplosion,
   explosionFlashLight,
   type ExplosionSettings,
   type ExplosionNumericKey,
+  type ExplosionPresetId,
+  type ExplosionParams,
+  type ExplosionSpawnOptions,
 } from "./explosion"

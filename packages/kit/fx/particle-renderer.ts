@@ -1,8 +1,18 @@
 import { PARTICLE_CAPACITY, Particles } from "./particles"
 
-export const particleShader = /* wgsl */ `
+export const blackbodyFireWgsl = /* wgsl */ `
+fn blackbodyFire(T: f32) -> vec3f {
+  var c = mix(vec3f(0.95, 0.048, 0.004), vec3f(2.75, 0.52, 0.032), smoothstep(0.16, 0.44, T));
+  c = mix(c, vec3f(4.8, 2.35, 0.38), smoothstep(0.44, 0.80, T));
+  c = mix(c, vec3f(7.4, 6.4, 4.6), smoothstep(0.80, 1.35, T));
+  return c;
+}
+`
+
+export function makeParticleShader(bindGroupIndex = 0): string {
+  return /* wgsl */ `
 struct Frame { vp: mat4x4f, eye: vec4f, ambient: vec4f, lights: array<vec4f,16> }
-@group(0) @binding(0) var<uniform> F: Frame;
+@group(${bindGroupIndex}) @binding(0) var<uniform> F: Frame;
 struct In { @location(0) pos: vec4f, @location(1) color: vec4f, @location(2) velocity: vec4f, @location(3) misc: vec4f }
 struct Out {
   @builtin(position) position: vec4f,
@@ -27,6 +37,7 @@ fn vnoise(p: vec2f) -> f32 {
 fn fbm3(p: vec2f) -> f32 {
   return vnoise(p) * 0.54 + vnoise(p * 2.07 + vec2f(17.3, -9.1)) * 0.31 + vnoise(p * 4.23 + vec2f(-11.7, 23.5)) * 0.15;
 }
+${blackbodyFireWgsl}
 @vertex fn vs(@builtin(vertex_index) i:u32,s:In)->Out {
   let corners=array<vec2f,6>(vec2f(-1,-1),vec2f(1,-1),vec2f(1,1),vec2f(-1,-1),vec2f(1,1),vec2f(-1,1));
   let c=corners[i%6];let toward=normalize(F.eye.xyz-s.pos.xyz);
@@ -35,10 +46,10 @@ fn fbm3(p: vec2f) -> f32 {
   if(kind==1.0||kind==3.0){
     let v=s.velocity.xyz;let speed=length(v);
     if(speed>0.1){up=v/speed;right=normalize(cross(up,toward));size.y*=1.0+min(9.0,speed*0.25);size.x*=0.4;}
-  } else if(kind==5.0||kind==6.0){
+  } else if((kind==5.0&&s.misc.z<0.5)||kind==6.0){
     let angle=s.misc.x;let cs=cos(angle);let sn=sin(angle);
     right=vec3f(cs,0.0,-sn);up=vec3f(sn,0.0,cs);
-  } else if(kind==7.0){
+  } else if(kind==5.0||kind==7.0){
     let spin=select(-1.0,1.0,fract(s.misc.x*0.37)>0.5);
     let angle=s.misc.x+s.misc.y*spin*1.05;
     let cs=cos(angle);let sn=sin(angle);
@@ -46,7 +57,7 @@ fn fbm3(p: vec2f) -> f32 {
     right=r0*cs-u0*sn;up=r0*sn+u0*cs;
   }
   var world=s.pos.xyz+(right*c.x*size.x+up*c.y*size.y);
-  var normal=select(toward,vec3f(0.0,1.0,0.0),kind==5.0||kind==6.0);
+  var normal=select(toward,vec3f(0.0,1.0,0.0),(kind==5.0&&s.misc.z<0.5)||kind==6.0);
   if(kind==7.0){normal=normalize(toward+vec3f(0.0,0.75,0.0));}
   if(kind==2.0){
     let face=i/6;let axis=face/2;let sign=select(-1.0,1.0,face%2==0);
@@ -101,7 +112,7 @@ fn fbm3(p: vec2f) -> f32 {
     let lobeRadius=0.72+(billow-0.48)*(0.38+turb*0.18);
     let edgeSoft=mix(0.10,0.22,age);
     let shapeMask=(1.0-smoothstep(lobeRadius-edgeSoft,lobeRadius+edgeSoft,r))*(1.0-smoothstep(0.84,1.0,r));
-    let groundSoft=smoothstep(0.01,0.22,o.world.y);
+    let groundSoft=select(1.0,smoothstep(0.01,0.22,o.world.y),o.world.y<0.25&&o.world.y>-0.5);
     let smokeHandoff=1.0-smoothstep(0.72,1.0,age+(1.0-billow)*0.14);
     alpha*=shapeMask*groundSoft*smokeHandoff;
     if(alpha<0.003){discard;}
@@ -118,9 +129,7 @@ fn fbm3(p: vec2f) -> f32 {
     let extLight=clamp(o.color.rgb,vec3f(0.20,0.21,0.23),vec3f(0.96,0.90,0.84));
     let sootTint=mix(vec3f(0.036,0.033,0.031),vec3f(0.22,0.22,0.23),clamp(age*0.82+puffUp*0.26,0.0,1.0));
     let sootRgb=sootTint*extLight*(0.42+0.88*puffUp);
-    var blackbody=mix(vec3f(0.95,0.048,0.004),vec3f(2.75,0.52,0.032),smoothstep(0.16,0.44,T));
-    blackbody=mix(blackbody,vec3f(4.8,2.35,0.38),smoothstep(0.44,0.80,T));
-    blackbody=mix(blackbody,vec3f(7.4,6.4,4.6),smoothstep(0.80,1.35,T));
+    let blackbody=blackbodyFire(T);
     let incand=smoothstep(0.16,0.36,T);
     let rgb=mix(sootRgb,blackbody,incand);
     if(F.eye.w==2.0){return vec4f(0.12,0.025,0.008,0.06);}
@@ -164,29 +173,122 @@ fn fbm3(p: vec2f) -> f32 {
   return vec4f(o.color.rgb*alpha,alpha);
 }
 `
+}
+
+export const particleShader = makeParticleShader(0)
+
+export type ParticleRendererOptions = {
+  depthFormat?: GPUTextureFormat
+  samples?: number
+  depthCompare?: GPUCompareFunction
+  bindGroupIndex?: number
+  extraBindGroupLayouts?: readonly GPUBindGroupLayout[]
+}
 
 /** One instanced HDR draw. Non-debris extra vertices degenerate; debris gets six genuinely lit faces. */
 export class ParticleRenderer {
-  readonly uniforms=new Float32Array(88)
-  private readonly buffer:GPUBuffer
-  private readonly instances:GPUBuffer
-  private readonly group:GPUBindGroup
-  private readonly pipeline:GPURenderPipeline
-  private readonly heat:GPURenderPipeline
-  private count=0
-  constructor(private readonly device:GPUDevice,depthFormat:GPUTextureFormat="depth24plus",samples=4){
-    this.buffer=device.createBuffer({size:this.uniforms.byteLength,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST})
-    this.instances=device.createBuffer({size:PARTICLE_CAPACITY*64,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST})
-    const layout=device.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}}]})
-    this.group=device.createBindGroup({layout,entries:[{binding:0,resource:{buffer:this.buffer}}]})
-    const module=device.createShaderModule({code:particleShader,label:"kit particles"})
-    const pipe=(heat:boolean)=>device.createRenderPipeline({layout:device.createPipelineLayout({bindGroupLayouts:[layout]}),
-      vertex:{module,entryPoint:"vs",buffers:[{arrayStride:64,stepMode:"instance",attributes:[0,1,2,3].map(i=>({shaderLocation:i,offset:i*16,format:"float32x4"}))}]},
-      fragment:{module,entryPoint:"fs",targets:[{format:"rgba16float",blend:{color:{srcFactor:"one",dstFactor:heat?"one":"one-minus-src-alpha"},alpha:{srcFactor:"one",dstFactor:"one-minus-src-alpha"}}}]},
-      depthStencil:{format:depthFormat,depthWriteEnabled:false,depthCompare:"less-equal"},multisample:{count:samples}})
-    this.pipeline=pipe(false);this.heat=pipe(true)
+  readonly uniforms = new Float32Array(88)
+  private readonly buffer: GPUBuffer
+  private readonly instances: GPUBuffer
+  private readonly group: GPUBindGroup
+  private readonly bindGroupIndex: number
+  private readonly pipeline: GPURenderPipeline
+  private readonly heat: GPURenderPipeline
+  private motionPipeline?: GPURenderPipeline
+  private readonly makePipe: (heat: boolean, motion: boolean) => GPURenderPipeline
+  private count = 0
+  constructor(
+    private readonly device: GPUDevice,
+    depthFormatOrOpts: GPUTextureFormat | ParticleRendererOptions = "depth24plus",
+    samples = 4,
+  ) {
+    const opts: ParticleRendererOptions =
+      typeof depthFormatOrOpts === "string" ? { depthFormat: depthFormatOrOpts, samples } : depthFormatOrOpts
+    const depthFormat = opts.depthFormat ?? "depth24plus"
+    const sampleCount = opts.samples ?? samples
+    const depthCompare = opts.depthCompare ?? "less-equal"
+    this.bindGroupIndex = opts.bindGroupIndex ?? 0
+    this.buffer = device.createBuffer({
+      size: this.uniforms.byteLength,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    })
+    this.instances = device.createBuffer({
+      size: PARTICLE_CAPACITY * 64,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    })
+    const layout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform" },
+        },
+      ],
+    })
+    this.group = device.createBindGroup({
+      layout,
+      entries: [{ binding: 0, resource: { buffer: this.buffer } }],
+    })
+    const module = device.createShaderModule({
+      code: this.bindGroupIndex === 0 ? particleShader : makeParticleShader(this.bindGroupIndex),
+      label: "kit particles",
+    })
+    const bindGroupLayouts = opts.extraBindGroupLayouts ? [...opts.extraBindGroupLayouts, layout] : [layout]
+    const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts })
+    this.makePipe = (heat: boolean, motion: boolean) =>
+      device.createRenderPipeline({
+        layout: pipelineLayout,
+        vertex: {
+          module,
+          entryPoint: "vs",
+          buffers: [
+            {
+              arrayStride: 64,
+              stepMode: "instance",
+              attributes: [0, 1, 2, 3].map(i => ({
+                shaderLocation: i,
+                offset: i * 16,
+                format: "float32x4" as const,
+              })),
+            },
+          ],
+        },
+        fragment: {
+          module,
+          entryPoint: "fs",
+          targets: [
+            {
+              format: "rgba16float",
+              blend: {
+                color: { srcFactor: "one", dstFactor: heat ? "one" : "one-minus-src-alpha" },
+                alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              },
+            },
+            ...(motion ? [{ format: "rgba16float" as const, writeMask: 0 }] : []),
+          ],
+        },
+        depthStencil: { format: depthFormat, depthWriteEnabled: false, depthCompare },
+        multisample: { count: sampleCount },
+      })
+    this.pipeline = this.makePipe(false, false)
+    this.heat = this.makePipe(true, false)
   }
-  upload(p:Particles){p.prepare();this.count=p.count;this.device.queue.writeBuffer(this.buffer,0,this.uniforms);if(p.count)this.device.queue.writeBuffer(this.instances,0,p.instances.buffer,0,p.count*64)}
-  draw(pass:GPURenderPassEncoder){if(!this.count)return;pass.setPipeline(this.uniforms[19]===2?this.heat:this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.instances);pass.draw(36,this.count)}
-  destroy(){this.buffer.destroy();this.instances.destroy()}
+  upload(p: Particles) {
+    p.prepare()
+    this.count = p.count
+    this.device.queue.writeBuffer(this.buffer, 0, this.uniforms)
+    if (p.count) this.device.queue.writeBuffer(this.instances, 0, p.instances.buffer, 0, p.count * 64)
+  }
+  draw(pass: GPURenderPassEncoder, motion = false) {
+    if (!this.count) return
+    if (motion && !this.motionPipeline) this.motionPipeline = this.makePipe(false, true)
+    pass.setPipeline(this.uniforms[19] === 2 ? this.heat : motion ? this.motionPipeline! : this.pipeline)
+    pass.setBindGroup(this.bindGroupIndex, this.group)
+    pass.setVertexBuffer(0, this.instances)
+    pass.draw(36, this.count)
+  }
+  destroy() {
+    this.buffer.destroy()
+    this.instances.destroy()
+  }
 }

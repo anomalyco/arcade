@@ -9,10 +9,18 @@ import { PropParticles, type SpriteWriter } from "./particles"
 import { mulberry32 } from "../../../shared/sim/rng"
 import { propGroundShape } from "./contact-shape"
 import { getawayEffects as settings } from "../../lab/settings"
+import { Particles } from "@arcade/kit/fx/particles"
+import { SmokeVolumes, type Wall } from "@arcade/kit/fx/volume"
+import {
+  EXPLOSION_PRESETS,
+  explosionFlashLight,
+  spawnExplosion,
+  type ExplosionPresetId,
+} from "@arcade/kit/fx/explosion"
 
 type Prop = { body: Body; home: Placement; model: number; broken: boolean; touched: number; hitAt: number; fuse: number }
 type Chunk = { body: Body; model: number; scale: number; life: number }
-type Reaction = { x: number; y: number; z: number; age: number; water: boolean; acc: number }
+type Reaction = { x: number; y: number; z: number; age: number; water: boolean; acc: number; preset?: ExplosionPresetId }
 export type PropInstanceWriter = (model: number, x: number, y: number, z: number, yaw: number, roll: number, pitch: number, scale: number) => void
 export type PropLightWriter = (x: number, y: number, z: number, radius: number, r: number, g: number, b: number, intensity: number) => void
 const MAX_CHUNKS = 384
@@ -21,6 +29,10 @@ const isBoard = (kind: PropKind) => ["bench", "pallet", "crate", "barrier", "saw
 export class StreetProps {
   readonly physics: PropPhysics
   readonly particles = new PropParticles()
+  readonly fxParticles: Particles
+  readonly fxVolumes: SmokeVolumes
+  private readonly ownsFx: boolean
+  private wallRects: Wall[] = []
   readonly models = new Map<PropKind, number>()
   readonly shadowless = new Set<number>()
   readonly props: Prop[] = []
@@ -37,8 +49,17 @@ export class StreetProps {
   stats = { cpuMs: 0, awake: 0, particles: 0, chunks: 0, hits: 0, explosions: 0 }
   shake = 0
 
-  constructor(city: City | { boxes: City["boxes"]; placements: Placement[] }, renderer: Pick<Renderer, "addModel">, readonly ground: (x: number, z: number) => number) {
+  constructor(
+    city: City | { boxes: City["boxes"]; placements: Placement[] },
+    renderer: Pick<Renderer, "addModel">,
+    readonly ground: (x: number, z: number) => number,
+    sharedFx?: { particles: Particles; volumes: SmokeVolumes },
+  ) {
     this.physics = new PropPhysics(ground, city.boxes)
+    this.fxParticles = sharedFx?.particles ?? new Particles()
+    this.fxVolumes = sharedFx?.volumes ?? new SmokeVolumes()
+    this.ownsFx = !sharedFx
+    this.setWalls(city.boxes)
     for (const kind of PROP_KINDS) {
       const model = renderer.addModel(propMesh(kind)), chunk = renderer.addModel(chunkMesh(SPECS[kind].color, isBoard(kind)))
       this.models.set(kind, model); this.chunkModels.set(kind, chunk)
@@ -46,6 +67,10 @@ export class StreetProps {
     }
     this.layout = "placements" in city ? city.placements : placeProps(city)
     for (const p of this.layout) this.add(p)
+  }
+  setWalls(boxes: City["boxes"]) {
+    this.wallRects = boxes.map(b => [b.x0, b.z0, b.x1, b.z1] as const)
+    if (this.ownsFx) this.fxVolumes.reset(this.wallRects)
   }
   private add(p: Placement) {
     const s = SPECS[p.kind], [w, h, d] = s.size
@@ -65,6 +90,10 @@ export class StreetProps {
     for (const c of this.chunks) this.physics.remove(c.body)
     this.chunks.length = this.reactions.length = 0
     this.particles.reset(); this.previous.clear(); this.rng = mulberry32(179); this.time = 0; this.shake = 0
+    if (this.ownsFx) {
+      this.fxParticles.reset()
+      this.fxVolumes.reset(this.wallRects)
+    }
     for (const p of this.changed) this.restore(p)
     this.changed.clear(); this.stats.hits = this.stats.explosions = 0
   }
@@ -123,6 +152,10 @@ export class StreetProps {
       if (c.life <= 0) { this.physics.remove(c.body); this.chunks[i] = this.chunks.at(-1)!; this.chunks.pop() }
     }
     this.particles.update(dt, this.ground)
+    if (this.ownsFx) {
+      this.fxParticles.update(dt, this.wallRects, this.ground)
+      this.fxVolumes.update(dt)
+    }
     for (let i = this.reactions.length - 1; i >= 0; i--) {
       const r = this.reactions[i]!
       r.age += dt
@@ -134,7 +167,7 @@ export class StreetProps {
       if (r.age > (r.water ? 22 : 30)) { this.reactions[i] = this.reactions.at(-1)!; this.reactions.pop() }
     }
     this.stats.cpuMs = performance.now() - started
-    this.stats.awake = this.physics.active.size; this.stats.particles = this.particles.count; this.stats.chunks = this.chunks.length
+    this.stats.awake = this.physics.active.size; this.stats.particles = this.particles.count + this.fxParticles.count; this.stats.chunks = this.chunks.length
   }
 
   private hit(p: Prop, vx: number, vz: number, speed: number, carMass: number, explosions: boolean) {
@@ -166,14 +199,26 @@ export class StreetProps {
     }
   }
   private explode(p: Prop, focus: { x: number; z: number }) {
-    const b = p.body, x = b.x, y = Math.max(.2, b.y), z = b.z
+    const b = p.body, x = b.x, z = b.z, gy = this.ground(x, z)
     this.stats.explosions++
     this.shatter(p, b.vx, b.vz)
+    const preset: ExplosionPresetId =
+      p.home.kind === "fuel" ? "car" : p.home.kind === "canister" ? "barrel" : "propane"
     if (this.reactions.length >= 48) this.reactions.shift()
-    this.reactions.push({ x, y: this.ground(x, z), z, age: 0, water: false, acc: 0 })
-    this.particles.emit(12, x, y, z, settings.explosion.fireCount, .65)
-    this.particles.emit(6, x, y, z, settings.explosion.sparkCount, 2)
-    this.particles.emit(1, x, y, z, settings.explosion.smokeCount, .9)
+    this.reactions.push({ x, y: gy, z, age: 0, water: false, acc: 0, preset })
+    const baseSettings = EXPLOSION_PRESETS[preset].settings
+    spawnExplosion(
+      this.fxParticles,
+      this.fxVolumes,
+      x,
+      gy,
+      z,
+      { ...baseSettings, fireballTemp: baseSettings.fireballTemp * 0.78 },
+      this.rng,
+      1,
+      1,
+      { vx: b.vx * 0.2, vz: b.vz * 0.2 },
+    )
     this.shake = Math.max(this.shake, Math.max(0, 1 - Math.hypot(x - focus.x, z - focus.z) / 35) * .8)
     this.physics.hash.query(x, z, 10, other => {
       const dx = other.x - x, dz = other.z - z, dist = Math.hypot(dx, dz)
@@ -185,6 +230,19 @@ export class StreetProps {
       this.touch(q)
       if (SPECS[q.home.kind].explosive && !q.broken && q.fuse < 0) q.fuse = this.time + .12 + dist * .025
     })
+  }
+
+  /** Triggers a full car/fuel explosion at (x, z) using the shared `car` preset. */
+  explodeCar(x: number, z: number, vx = 0, vz = 0, focus: { x: number; z: number } = { x, z }) {
+    const gy = this.ground(x, z)
+    this.stats.explosions++
+    if (this.reactions.length >= 48) this.reactions.shift()
+    this.reactions.push({ x, y: gy, z, age: 0, water: false, acc: 0, preset: "car" })
+    spawnExplosion(this.fxParticles, this.fxVolumes, x, gy, z, EXPLOSION_PRESETS.car.settings, this.rng, 1, 1, {
+      vx: vx * 0.25,
+      vz: vz * 0.25,
+    })
+    this.shake = Math.max(this.shake, Math.max(0, 1 - Math.hypot(x - focus.x, z - focus.z) / 40) * 1.0)
   }
 
   draw(instance: PropInstanceWriter, sprite: SpriteWriter, light: PropLightWriter, focus: { x: number; z: number }, debug: boolean) {
@@ -201,12 +259,10 @@ export class StreetProps {
       if (r.water) {
         sprite("a", r.x, r.y + .028, r.z, Math.min(4, .6 + r.age * .5), .015, .03, .045, Math.min(.55, (22 - r.age) * .1), 3, 0, .8)
       } else {
-        sprite("a", r.x, r.y + .027, r.z, 3.6, .015, .011, .008, Math.min(.8, (30 - r.age) * .1), 3)
-        if (r.age < .55) sprite("d", r.x, r.y + .04, r.z, .5 + r.age * 20, 1, .58, .19, (1 - r.age / .55) * .85, 2)
-        if (r.age < settings.explosion.flashLife) {
-          const flash = 1 - r.age / settings.explosion.flashLife
-          sprite("d", r.x, r.y + 1, r.z, 1.4 + r.age * 6, 1, .55, .13, flash * 2, 0)
-          light(r.x, r.y + 2, r.z, settings.explosion.lightRadius, 1, .29, .035, flash * settings.explosion.lightPower)
+        const preset = EXPLOSION_PRESETS[r.preset ?? "propane"].settings
+        const fl = explosionFlashLight(r.x, r.y, r.z, r.age, preset)
+        if (fl) {
+          light(fl.x, fl.y, fl.z, fl.radius, fl.r, fl.g, fl.b, fl.power * 0.48)
         }
       }
     }
@@ -215,8 +271,12 @@ export class StreetProps {
 
   /** Isolated presentation fixture for deterministic captures, never sent to the server. */
   trigger(kind: PropKind, x:number, z:number) {
-    if(this.props.length>=512)return
-    const p=this.add({kind,x,z,y:this.ground(x,z),yaw:0})
+    let p = this.props.length < 512 ? this.add({kind,x,z,y:this.ground(x,z),yaw:0}) : this.props.find(q => q.home.kind === kind && !q.broken)
+    if (!p) p = this.add({kind,x,z,y:this.ground(x,z),yaw:0})
+    const gy = this.ground(x, z)
+    p.body.x = x
+    p.body.z = z
+    p.body.y = gy + p.body.hy
     this.hit(p,18,0,18,1400,true)
   }
 

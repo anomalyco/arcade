@@ -46,6 +46,30 @@ export const explosionRanges: Record<
   shockRing: [0, 2.0, 0.05, "× · retrigger", "Blast & Debris", "Shockwave ring"],
 }
 
+export const EXPLOSION_PRESET_IDS = ["grenade", "propane", "car", "barrel", "missile", "ship", "pop"] as const
+export type ExplosionPresetId = (typeof EXPLOSION_PRESET_IDS)[number]
+
+/** High-level physical recipe axes mapped onto `ExplosionSettings`. */
+export type ExplosionParams = {
+  preset?: ExplosionPresetId
+  /** Scales fireball radius (`fireballSize`). */
+  size?: number
+  /** Scales blackbody core temperature (`fireballTemp`). */
+  energy?: number
+  /** Scales fireball burn duration (`fireballDuration`). */
+  fuel?: number
+  /** Scales volumetric soot plume density (`smokeAmount`). */
+  smoke?: number
+  /** Scales shrapnel & spark counts (`debrisCount`, `sparkCount`). */
+  debris?: number
+  /** Enables or disables ground scorch decal (`scorch`). */
+  scorch?: boolean
+  /** Scales scene illumination flash (`flashIntensity`). */
+  flash?: number
+  /** Scales supersonic blast ring (`shockRing`). */
+  shockwave?: number
+}
+
 export function explosionSettings(input: Partial<ExplosionSettings> = {}): ExplosionSettings {
   const out = { ...explosionDefaults }
   for (const key of Object.keys(explosionRanges) as ExplosionNumericKey[]) {
@@ -59,13 +83,205 @@ export function explosionSettings(input: Partial<ExplosionSettings> = {}): Explo
   return out
 }
 
-export function applyExplosionSmokeLive(volume: SmokeVolumes, settings: Readonly<ExplosionSettings>, densityScale = 1): void {
+export const EXPLOSION_PRESETS: Readonly<
+  Record<ExplosionPresetId, { readonly id: ExplosionPresetId; readonly label: string; readonly settings: ExplosionSettings }>
+> = {
+  grenade: {
+    id: "grenade",
+    label: "Frag grenade",
+    settings: explosionSettings(explosionDefaults),
+  },
+  propane: {
+    id: "propane",
+    label: "Propane tank",
+    settings: explosionSettings({
+      fireballSize: 1.4,
+      fireballDuration: 0.68,
+      fireballTemp: 1.4,
+      smokeAmount: 1.15,
+      smokeDarkness: 0.76,
+      smokeColorShift: 0.82,
+      smokeRise: 1.2,
+      smokeSpreadSpeed: 1.05,
+      smokeTurbulence: 0.96,
+      smokeLinger: 3.8,
+      sparkCount: 52,
+      debrisCount: 20,
+      flashIntensity: 7.6,
+      shockRing: 1.15,
+      scorch: true,
+    }),
+  },
+  car: {
+    id: "car",
+    label: "Car / fuel",
+    settings: explosionSettings({
+      fireballSize: 1.75,
+      fireballDuration: 0.82,
+      fireballTemp: 1.36,
+      smokeAmount: 1.55,
+      smokeDarkness: 0.88,
+      smokeColorShift: 0.74,
+      smokeRise: 1.15,
+      smokeSpreadSpeed: 1.15,
+      smokeTurbulence: 1.08,
+      smokeLinger: 4.8,
+      sparkCount: 78,
+      debrisCount: 36,
+      flashIntensity: 9.2,
+      shockRing: 1.35,
+      scorch: true,
+    }),
+  },
+  barrel: {
+    id: "barrel",
+    label: "Fuel barrel",
+    settings: explosionSettings({
+      fireballSize: 1.52,
+      fireballDuration: 0.72,
+      fireballTemp: 1.3,
+      smokeAmount: 1.38,
+      smokeDarkness: 0.84,
+      smokeColorShift: 0.76,
+      smokeRise: 1.1,
+      smokeSpreadSpeed: 1.02,
+      smokeTurbulence: 1.02,
+      smokeLinger: 4.2,
+      sparkCount: 54,
+      debrisCount: 26,
+      flashIntensity: 7.8,
+      shockRing: 1.2,
+      scorch: true,
+    }),
+  },
+  missile: {
+    id: "missile",
+    label: "Missile airburst",
+    settings: explosionSettings({
+      fireballSize: 1.35,
+      fireballDuration: 0.52,
+      fireballTemp: 1.55,
+      smokeAmount: 0.95,
+      smokeDarkness: 0.64,
+      smokeColorShift: 0.88,
+      smokeRise: 0.85,
+      smokeSpreadSpeed: 1.42,
+      smokeTurbulence: 1.05,
+      smokeLinger: 2.6,
+      sparkCount: 84,
+      debrisCount: 28,
+      flashIntensity: 8.0,
+      shockRing: 1.25,
+      scorch: false,
+    }),
+  },
+  ship: {
+    id: "ship",
+    label: "Ship / hull hit",
+    settings: explosionSettings({
+      fireballSize: 1.95,
+      fireballDuration: 0.88,
+      fireballTemp: 1.42,
+      smokeAmount: 1.75,
+      smokeDarkness: 0.92,
+      smokeColorShift: 0.7,
+      smokeRise: 1.28,
+      smokeSpreadSpeed: 1.18,
+      smokeTurbulence: 1.12,
+      smokeLinger: 5.2,
+      sparkCount: 96,
+      debrisCount: 40,
+      flashIntensity: 10.0,
+      shockRing: 1.45,
+      scorch: true,
+    }),
+  },
+  pop: {
+    id: "pop",
+    label: "Small pop",
+    settings: explosionSettings({
+      fireballSize: 0.72,
+      fireballDuration: 0.36,
+      fireballTemp: 1.18,
+      smokeAmount: 0.58,
+      smokeDarkness: 0.56,
+      smokeColorShift: 0.9,
+      smokeRise: 0.88,
+      smokeSpreadSpeed: 1.32,
+      smokeTurbulence: 0.78,
+      smokeLinger: 2.0,
+      sparkCount: 34,
+      debrisCount: 12,
+      flashIntensity: 4.2,
+      shockRing: 0.68,
+      scorch: true,
+    }),
+  },
+}
+
+export const explosionPresetOptions: readonly { value: ExplosionPresetId; label: string }[] = EXPLOSION_PRESET_IDS.map(
+  id => ({ value: id, label: EXPLOSION_PRESETS[id].label }),
+)
+
+export function isExplosionPresetId(value: unknown): value is ExplosionPresetId {
+  return typeof value === "string" && (EXPLOSION_PRESET_IDS as readonly string[]).includes(value)
+}
+
+export function resolveExplosionSettings(
+  presetOrInput: ExplosionPresetId | (Partial<ExplosionSettings> & ExplosionParams) = "grenade",
+  overrides?: Partial<ExplosionSettings> & ExplosionParams,
+): ExplosionSettings {
+  const basePreset: ExplosionPresetId =
+    typeof presetOrInput === "string"
+      ? isExplosionPresetId(presetOrInput)
+        ? presetOrInput
+        : "grenade"
+      : isExplosionPresetId(presetOrInput.preset)
+        ? presetOrInput.preset
+        : "grenade"
+  const base = { ...EXPLOSION_PRESETS[basePreset].settings }
+  const merged = typeof presetOrInput === "string" ? (overrides ?? {}) : { ...presetOrInput, ...overrides }
+  for (const key of Object.keys(explosionRanges) as ExplosionNumericKey[]) {
+    if (typeof merged[key] === "number" && Number.isFinite(merged[key])) {
+      base[key] = merged[key]!
+    }
+  }
+  if (typeof merged.size === "number" && Number.isFinite(merged.size)) base.fireballSize *= merged.size
+  if (typeof merged.energy === "number" && Number.isFinite(merged.energy)) base.fireballTemp *= merged.energy
+  if (typeof merged.fuel === "number" && Number.isFinite(merged.fuel)) base.fireballDuration *= merged.fuel
+  if (typeof merged.smoke === "number" && Number.isFinite(merged.smoke)) base.smokeAmount *= merged.smoke
+  if (typeof merged.debris === "number" && Number.isFinite(merged.debris)) {
+    base.debrisCount = Math.round(base.debrisCount * merged.debris)
+    base.sparkCount = Math.round(base.sparkCount * merged.debris)
+  }
+  if (typeof merged.flash === "number" && Number.isFinite(merged.flash)) base.flashIntensity *= merged.flash
+  if (typeof merged.shockwave === "number" && Number.isFinite(merged.shockwave)) base.shockRing *= merged.shockwave
+  if (typeof merged.scorch === "boolean") base.scorch = merged.scorch
+  return explosionSettings(base)
+}
+
+export function applyExplosionSmokeLive(
+  volume: SmokeVolumes,
+  settings: Readonly<ExplosionSettings>,
+  densityScale = 1,
+): void {
   volume.colorShift = settings.smokeColorShift
   volume.coreGlow = settings.fireballTemp * Math.min(1.6, Math.max(0.2, settings.smokeAmount))
   volume.settings.rise = settings.smokeRise
   volume.settings.turbulence = Math.min(1, settings.smokeTurbulence)
   volume.settings.height = Math.max(3.1, Math.min(5.2, 3.35 + settings.fireballSize * 0.58 + settings.smokeRise * 0.65))
   volume.settings.extinction = Math.max(0.8, Math.min(4.8, 2.55 * Math.max(0.25, settings.smokeAmount) * densityScale))
+}
+
+export type ExplosionSpawnOptions = {
+  scale?: number
+  densityScale?: number
+  vx?: number
+  vy?: number
+  vz?: number
+  aim?: number
+  cone?: number
+  airburst?: boolean
 }
 
 const reusableSpec: ParticleSpec = {
@@ -91,7 +307,7 @@ const reusableSpec: ParticleSpec = {
  */
 export function spawnExplosion(
   particles: Particles,
-  volume: SmokeVolumes,
+  volume: SmokeVolumes | null,
   x: number,
   y: number,
   z: number,
@@ -99,22 +315,39 @@ export function spawnExplosion(
   random: () => number,
   scale = 1,
   densityScale = 1,
+  options?: ExplosionSpawnOptions,
 ): void {
-  const fbSize = Math.max(0.25, settings.fireballSize * scale)
+  const effScale = options?.scale ?? scale
+  const effDensity = options?.densityScale ?? densityScale
+  const fbSize = Math.max(0.25, settings.fireballSize * effScale)
   const fbDur = Math.max(0.15, settings.fireballDuration)
   const fbTemp = Math.max(0.3, settings.fireballTemp)
-  const smokeAmt = Math.max(0, settings.smokeAmount * densityScale)
+  const smokeAmt = Math.max(0, settings.smokeAmount * effDensity)
+  const airburst = Boolean(options?.airburst)
+  const bvx = options?.vx ?? 0
+  const bvy = options?.vy ?? 0
+  const bvz = options?.vz ?? 0
+  const hasCone = typeof options?.aim === "number" && typeof options?.cone === "number"
+  const coneAim = options?.aim ?? 0
+  const coneHalf = options?.cone ?? Math.PI
+  const sampleAngle = (fallback: number) =>
+    hasCone ? coneAim + (random() - 0.5) * 2 * coneHalf : fallback
 
-  applyExplosionSmokeLive(volume, settings, densityScale)
-  if (smokeAmt > 0.02) {
-    const smokeRadius = Math.max(1.6, Math.min(7.5, (2.15 + fbSize * 0.88) * (0.68 + 0.32 * settings.smokeSpreadSpeed)))
-    const growthTime = Math.max(0.2, Math.min(1.5, (0.44 * fbSize) / Math.max(0.25, settings.smokeSpreadSpeed)))
-    const totalLife = Math.max(0.9, fbDur * 0.65 + settings.smokeLinger)
-    volume.spawn(x, z, smokeRadius, totalLife, Math.min(2.0, smokeAmt * 1.05), settings.smokeDarkness, growthTime)
+  if (volume) {
+    applyExplosionSmokeLive(volume, settings, effDensity)
+    if (smokeAmt > 0.02 && !airburst) {
+      const smokeRadius = Math.max(
+        1.6,
+        Math.min(7.5, (2.15 + fbSize * 0.88) * (0.68 + 0.32 * settings.smokeSpreadSpeed)),
+      )
+      const growthTime = Math.max(0.2, Math.min(1.5, (0.44 * fbSize) / Math.max(0.25, settings.smokeSpreadSpeed)))
+      const totalLife = Math.max(0.9, fbDur * 0.65 + settings.smokeLinger)
+      volume.spawn(x, z, smokeRadius, totalLife, Math.min(2.0, smokeAmt * 1.05), settings.smokeDarkness, growthTime)
+    }
   }
 
   // 1. Ground scorch mark (drawn first on the ground plane beneath the plume)
-  if (settings.scorch) {
+  if (settings.scorch && !airburst) {
     Object.assign(reusableSpec, {
       kind: "scorch",
       life: Math.max(2.2, settings.smokeLinger + 1.2),
@@ -134,9 +367,9 @@ export function spawnExplosion(
     particles.spawn(reusableSpec, x, y + 0.026, z, 0, 0, 0, random() * 6.283)
   }
 
-  // 2. Supersonic ground shockwave & boundary-layer dust ring
+  // 2. Supersonic shockwave & boundary-layer dust ring
   if (settings.shockRing > 0.02) {
-    const ringScale = settings.shockRing * Math.sqrt(fbSize)
+    const ringScale = settings.shockRing * (airburst ? fbSize * 0.85 : Math.sqrt(fbSize))
     Object.assign(reusableSpec, {
       kind: "shock",
       life: 0.42,
@@ -147,13 +380,13 @@ export function spawnExplosion(
       bounce: 0,
       r: 0.64,
       g: 0.58,
-      b: 0.50,
+      b: 0.5,
       alpha: Math.min(1, 0.82 * settings.shockRing),
-      temperature: 0,
+      temperature: airburst ? 1 : 0,
       turbulence: 0,
       ease: 2.5,
     })
-    particles.spawn(reusableSpec, x, y + 0.035, z, 0, 0, 0, random() * 6.283)
+    particles.spawn(reusableSpec, x, airburst ? y : y + 0.035, z, bvx * 0.3, bvy * 0.3, bvz * 0.3, random() * 6.283)
 
     Object.assign(reusableSpec, {
       kind: "shock",
@@ -167,25 +400,25 @@ export function spawnExplosion(
       g: 0.44,
       b: 0.39,
       alpha: Math.min(1, 0.54 * settings.shockRing),
-      temperature: 0,
+      temperature: airburst ? 1 : 0,
       turbulence: 0,
       ease: 2.1,
     })
-    particles.spawn(reusableSpec, x, y + 0.038, z, 0, 0, 0, random() * 6.283)
+    particles.spawn(reusableSpec, x, airburst ? y : y + 0.038, z, bvx * 0.3, bvy * 0.3, bvz * 0.3, random() * 6.283)
   }
 
   // 3. Turbulent blackbody fireball billows (3 tiers: outer soot-crusting ring, main incandescent dome, superheated core + crown)
   const outerCount = 14
   for (let i = 0; i < outerCount; i++) {
-    const a = ((i + (random() - 0.5) * 0.55) / outerCount) * Math.PI * 2
+    const a = sampleAngle(((i + (random() - 0.5) * 0.55) / outerCount) * Math.PI * 2)
     const r0 = (0.12 + random() * 0.18) * fbSize
     const speed = (1.7 + random() * 2.3) * fbSize
-    const vy = (1.8 + random() * 2.8) * fbSize
+    const vy = airburst ? (random() - 0.38) * 3.8 * fbSize : (1.8 + random() * 2.8) * fbSize
     const life = fbDur * (1.05 + random() * 0.52)
     Object.assign(reusableSpec, {
       kind: "fireball",
       life,
-      size: (0.42 + random() * 0.20) * fbSize,
+      size: (0.42 + random() * 0.2) * fbSize,
       growth: ((0.95 + random() * 0.38) * fbSize) / life,
       gravity: -3.6 * (0.7 + settings.smokeRise * 0.55),
       drag: 5.8,
@@ -201,21 +434,21 @@ export function spawnExplosion(
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * r0,
-      y + 0.36 + random() * 0.38 * fbSize,
+      y + (airburst ? (random() - 0.5) * 0.45 * fbSize : 0.36 + random() * 0.38 * fbSize),
       z + Math.sin(a) * r0,
-      Math.cos(a) * speed,
-      vy,
-      Math.sin(a) * speed,
+      bvx + Math.cos(a) * speed,
+      bvy + vy,
+      bvz + Math.sin(a) * speed,
       random() * 6.283,
     )
   }
 
   const domeCount = 12
   for (let i = 0; i < domeCount; i++) {
-    const a = ((i + 0.5 + (random() - 0.5) * 0.5) / domeCount) * Math.PI * 2
+    const a = sampleAngle(((i + 0.5 + (random() - 0.5) * 0.5) / domeCount) * Math.PI * 2)
     const r0 = (0.06 + random() * 0.14) * fbSize
     const speed = (1.0 + random() * 1.7) * fbSize
-    const vy = (2.6 + random() * 3.6) * fbSize
+    const vy = airburst ? (random() - 0.32) * 3.2 * fbSize : (2.6 + random() * 3.6) * fbSize
     const life = fbDur * (0.84 + random() * 0.36)
     Object.assign(reusableSpec, {
       kind: "fireball",
@@ -236,17 +469,17 @@ export function spawnExplosion(
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * r0,
-      y + 0.48 + random() * 0.48 * fbSize,
+      y + (airburst ? (random() - 0.45) * 0.4 * fbSize : 0.48 + random() * 0.48 * fbSize),
       z + Math.sin(a) * r0,
-      Math.cos(a) * speed,
-      vy,
-      Math.sin(a) * speed,
+      bvx + Math.cos(a) * speed,
+      bvy + vy,
+      bvz + Math.sin(a) * speed,
       random() * 6.283,
     )
   }
 
   for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + random() * 0.6
+    const a = sampleAngle((i / 3) * Math.PI * 2 + random() * 0.6)
     const life = fbDur * (0.46 + random() * 0.16)
     Object.assign(reusableSpec, {
       kind: "fireball",
@@ -267,23 +500,23 @@ export function spawnExplosion(
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * 0.06 * fbSize,
-      y + (0.62 + i * 0.18) * fbSize,
+      y + (airburst ? (i - 1) * 0.14 * fbSize : (0.62 + i * 0.18) * fbSize),
       z + Math.sin(a) * 0.06 * fbSize,
-      Math.cos(a) * 0.65 * fbSize,
-      (2.0 + i * 0.85) * fbSize,
-      Math.sin(a) * 0.65 * fbSize,
+      bvx + Math.cos(a) * 0.65 * fbSize,
+      bvy + (airburst ? (i - 1) * 0.85 * fbSize : (2.0 + i * 0.85) * fbSize),
+      bvz + Math.sin(a) * 0.65 * fbSize,
       random() * 6.283,
     )
   }
 
   // Anterior soot-crusting crown billows that roll over the hot core
   for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + 0.35 + (random() - 0.5) * 0.35
+    const a = sampleAngle((i / 6) * Math.PI * 2 + 0.35 + (random() - 0.5) * 0.35)
     const life = fbDur * (1.32 + random() * 0.65)
     Object.assign(reusableSpec, {
       kind: "fireball",
       life,
-      size: (0.44 + random() * 0.20) * fbSize,
+      size: (0.44 + random() * 0.2) * fbSize,
       growth: (1.08 * fbSize) / life,
       gravity: -4.6 * (0.75 + settings.smokeRise * 0.5),
       drag: 5.6,
@@ -299,26 +532,26 @@ export function spawnExplosion(
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * 0.18 * fbSize,
-      y + (0.68 + random() * 0.42) * fbSize,
+      y + (airburst ? (random() - 0.3) * 0.5 * fbSize : (0.68 + random() * 0.42) * fbSize),
       z + Math.sin(a) * 0.18 * fbSize,
-      Math.cos(a) * 1.45 * fbSize,
-      (2.8 + random() * 2.2) * fbSize,
-      Math.sin(a) * 1.45 * fbSize,
+      bvx + Math.cos(a) * 1.45 * fbSize,
+      bvy + (airburst ? (random() - 0.2) * 3.0 * fbSize : (2.8 + random() * 2.2) * fbSize),
+      bvz + Math.sin(a) * 1.45 * fbSize,
       random() * 6.283,
     )
   }
 
   // 4. High-speed ballistic sparks with blackbody cooling and floor/wall restitution
   const sparks = Math.max(0, Math.round(settings.sparkCount))
-  const velScale = Math.sqrt(fbSize)
+  const velScale = airburst ? Math.max(1, fbSize * 0.82) : Math.sqrt(fbSize)
   for (let i = 0; i < sparks; i++) {
-    const a = ((i + random() * 0.85) / Math.max(1, sparks)) * Math.PI * 2
+    const a = sampleAngle(((i + random() * 0.85) / Math.max(1, sparks)) * Math.PI * 2)
     const speed = (6.5 + random() * 13.5) * velScale
-    const vy = (2.8 + random() * 9.2) * velScale
+    const vy = airburst ? (random() - 0.42) * 14.0 * velScale : (2.8 + random() * 9.2) * velScale
     Object.assign(reusableSpec, {
       kind: "spark",
       life: 0.42 + random() * 1.15,
-      size: 0.046 + random() * 0.036,
+      size: (0.046 + random() * 0.036) * Math.max(1, effScale * 0.65),
       growth: -0.018,
       gravity: 13.5,
       drag: 0.82,
@@ -334,11 +567,11 @@ export function spawnExplosion(
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * 0.15,
-      y + 0.35 + random() * 0.35,
+      y + (airburst ? 0 : 0.35 + random() * 0.35),
       z + Math.sin(a) * 0.15,
-      Math.cos(a) * speed,
-      vy,
-      Math.sin(a) * speed,
+      bvx + Math.cos(a) * speed,
+      bvy + vy,
+      bvz + Math.sin(a) * speed,
       random() * 6.283,
     )
   }
@@ -346,15 +579,15 @@ export function spawnExplosion(
   // 5. Tumbling 3D lit shrapnel / debris splinters with gravity and floor bounces
   const debris = Math.max(0, Math.round(settings.debrisCount))
   for (let i = 0; i < debris; i++) {
-    const a = ((i + random() * 0.85) / Math.max(1, debris)) * Math.PI * 2
+    const a = sampleAngle(((i + random() * 0.85) / Math.max(1, debris)) * Math.PI * 2)
     const speed = (3.4 + random() * 7.8) * velScale
-    const vy = (3.6 + random() * 7.6) * velScale
+    const vy = airburst ? (random() - 0.38) * 11.0 * velScale : (3.6 + random() * 7.6) * velScale
     const shade = 0.09 + random() * 0.13
     const warm = random() * 0.04
     Object.assign(reusableSpec, {
       kind: "debris",
       life: 1.8 + random() * 2.4,
-      size: (0.032 + random() * 0.036) * velScale,
+      size: (0.032 + random() * 0.036) * velScale * Math.max(1, effScale * 0.55),
       growth: 0,
       gravity: 14.2,
       drag: 0.32,
@@ -370,11 +603,11 @@ export function spawnExplosion(
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * 0.22,
-      y + 0.24 + random() * 0.3,
+      y + (airburst ? 0 : 0.24 + random() * 0.3),
       z + Math.sin(a) * 0.22,
-      Math.cos(a) * speed,
-      vy,
-      Math.sin(a) * speed,
+      bvx + Math.cos(a) * speed,
+      bvy + vy,
+      bvz + Math.sin(a) * speed,
       random() * 6.283,
     )
   }

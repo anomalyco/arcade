@@ -1,37 +1,37 @@
 {
   "results": [
     {
-      "host": "http://localhost:56064",
+      "host": "http://localhost:63418",
       "environment": "office",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.25 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.31 ms"
     },
     {
-      "host": "http://localhost:56064",
+      "host": "http://localhost:63418",
       "environment": "corridor",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.25 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.31 ms"
     },
     {
-      "host": "http://localhost:56064",
+      "host": "http://localhost:63418",
       "environment": "meeting",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.25 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.31 ms"
     },
     {
-      "host": "http://localhost:56064",
+      "host": "http://localhost:63418",
       "environment": "breakroom",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.25 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.31 ms"
     },
     {
-      "host": "http://localhost:56064",
+      "host": "http://localhost:63418",
       "environment": "server",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.25 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.31 ms"
     },
     {
-      "host": "http://localhost:56064",
+      "host": "http://localhost:63418",
       "environment": "downtown",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.25 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.31 ms"
     },
     {
-      "host": "http://localhost:56064",
+      "host": "http://localhost:63418",
       "adapter": {
         "vendor": "apple",
         "architecture": "metal-3"
@@ -40,37 +40,37 @@
       "keyboard": true
     },
     {
-      "host": "http://localhost:56065",
+      "host": "http://localhost:63419",
       "environment": "office",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.16 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.51 ms"
     },
     {
-      "host": "http://localhost:56065",
+      "host": "http://localhost:63419",
       "environment": "corridor",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.16 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.51 ms"
     },
     {
-      "host": "http://localhost:56065",
+      "host": "http://localhost:63419",
       "environment": "meeting",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.16 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.51 ms"
     },
     {
-      "host": "http://localhost:56065",
+      "host": "http://localhost:63419",
       "environment": "breakroom",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.16 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.51 ms"
     },
     {
-      "host": "http://localhost:56065",
+      "host": "http://localhost:63419",
       "environment": "server",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.16 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.51 ms"
     },
     {
-      "host": "http://localhost:56065",
+      "host": "http://localhost:63419",
       "environment": "downtown",
-      "telemetry": "Blackout effects · seed 7\n{\"sheets\":0,\"particles\":0,\"holes\":0,\"corpses\":0,\"casings\":0,\"monitors\":0}\nGPU 2.16 ms"
+      "telemetry": "Blackout effects · seed 7\n0 sheets · 0 particles · 0 holes\nGPU 1.51 ms"
     },
     {
-      "host": "http://localhost:56065",
+      "host": "http://localhost:63419",
       "adapter": {
         "vendor": "apple",
         "architecture": "metal-3"

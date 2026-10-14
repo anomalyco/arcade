@@ -4,6 +4,7 @@ import { type Quat, type ShipPoseLike, quatRotate, shipQuat, shipToWorld, worldT
 import { type Sea, seaHeight } from "../../shared/sea"
 import type { VehicleKind } from "../../shared/vehicles"
 import { ExplosionFx, type MeshRef, type PuffSpec } from "./explosion-fx"
+import { EXPLOSION_PRESETS, spawnExplosion } from "@arcade/kit/fx/explosion"
 import { type ChunkPart, type JetChunk, jetChunks } from "./jet-chunks"
 import type { Rgb } from "./mesh"
 import type { PlaneModels } from "./plane-glb"
@@ -497,6 +498,18 @@ export class Explosions {
     // A flash for a frame or two, then the light it throws on everything around.
     fx.spark(x, y, z, vx * 0.5, vy * 0.5, vz * 0.5, 0.07, 16 * s, 9, 8, 6.5, 0, 0, 0)
     this.addLight(x, y, z, s, floor)
+    spawnExplosion(
+      fx.fxParticles,
+      null,
+      x,
+      ground ? Math.max(floor, y) : y,
+      z,
+      ground ? EXPLOSION_PRESETS.ship.settings : EXPLOSION_PRESETS.missile.settings,
+      r,
+      s * 4.6,
+      1,
+      { vx: vx * 0.35, vy: vy * 0.35, vz: vz * 0.35, airburst: !ground },
+    )
     // The fireball: hot balls bursting out from the middle, swelling fast, then cooling into soot as they slow.
     const n = Math.round(16 * Math.sqrt(s))
     for (let i = 0; i < n; i++) {

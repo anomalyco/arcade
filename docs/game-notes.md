@@ -250,6 +250,21 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 
 ## Rendering (WebGPU)
 
+- **Unify explosions through one shared blackbody-billow + volumetric-smoke system and thin renderer adapters.**
+  `packages/kit/fx/explosion.ts`, `particle-renderer.ts` (`makeParticleShader`, `blackbodyFireWgsl`) and `volume-renderer.ts`
+  drive seven typed presets (`grenade`, `propane`, `car`, `barrel`, `missile`, `ship`, `pop`) parameterised by size, energy,
+  fuel duration, smoke amount/darkness/shift, debris/sparks, scorch, flash and shockwave ring. Getaway's `StreetProps` and
+  `Renderer` (`games/getaway/src/game/props/index.ts`, `src/render/renderer.ts`), Blackout's `Game` and `@arcade/kit/gpu/renderer`
+  (`games/blackout/src/game/game.ts`, `packages/kit/gpu/renderer.ts`), and Carrier's `WeaponFx`/`ExplosionFx`
+  (`games/carrier/src/render/weapon-fx.ts`, `explosion-fx.ts`, `explosions.ts`, binding at `@group(1)` with reversed-Z
+  `depth32float` `greater-equal` so `@group(0)` `Frame` stays intact) all call `spawnExplosion` and `explosionFlashLight`.
+  Legacy per-game fire/ring/scorch sprite loops (`PropParticles` kind 12, `Game.explode` sprite loops, `Vehicles.burst`,
+  `FireWater` kind 8 quads, and `WeaponFx` `RockPool` fireball/debris rocks) and duplicate Lab Library explosion entries
+  are removed. Across seven alternating pairs on M5 Max/Metal (`packages/kit/lab/prove-explosion-unify.ts`,
+  `perf/explosion-unify.json`), active-blast GPU/frame medians are **0.684→0.834 ms (+0.165 ms, MAD 0.027)** in Getaway
+  (`1000×720`), **0.701→1.058 ms (+0.232 ms, MAD 0.101)** in Blackout (`1000×720`), and **0.282→0.475 ms (+0.193 ms, MAD 0.008)**
+  in Carrier (`1200×800`, 60-frame flat-out throughput). Non-exploding frames add zero draws or passes.
+
 - **Keep game-owned roof discard out of the opaque entry point, cull off-screen lamps, and pace fixed ticks.**
   Outbreak used its roof hook in `fsSolid`, mixed floors with screen-cuttable walls, routed exterior tree canopies into
   the `discard` pipeline, and clamped visible frame deltas at 50 ms without an accumulator. Its level writer now keeps

@@ -248,26 +248,6 @@ export class VehicleFx {
     return null
   }
 
-  /** A vehicle blowing up: the extra fire, black smoke and flung panels on top of a frag-sized blast. */
-  burst(x: number, y: number, fx: FxFn): void {
-    const R = Math.random
-    for (let i = 0; i < 26; i++) {
-      const a = R() * Math.PI * 2
-      const s = 1 + R() * 5
-      fx(x + Math.cos(a) * 0.6, y + Math.sin(a) * 0.6, 0.6 + R() * 1.2, Math.cos(a) * s, Math.sin(a) * s, 1.5 + R() * 4, 0.45 + R() * 0.5, 0.45 + R() * 0.5, "fire")
-    }
-    for (let i = 0; i < 30; i++) {
-      const a = R() * Math.PI * 2
-      const s = 0.5 + R() * 3
-      fx(x + Math.cos(a) * 0.8, y + Math.sin(a) * 0.8, 1 + R() * 1.5, Math.cos(a) * s, Math.sin(a) * s, 0.8 + R() * 1.2, 3 + R() * 2.5, 0.5 + R() * 0.5, i % 2 ? "soot" : "char")
-    }
-    for (let i = 0; i < 24; i++) {
-      const a = R() * Math.PI * 2
-      const s = 3 + R() * 8
-      fx(x, y, 0.8, Math.cos(a) * s, Math.sin(a) * s, 3 + R() * 6, 1.2 + R() * 0.8, 0.07 + R() * 0.08, "chip")
-    }
-  }
-
   // Per frame ----------------------------------------------------------------------------------------------------
 
   /**

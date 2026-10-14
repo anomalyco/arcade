@@ -1,5 +1,9 @@
 import { SmokeRenderer } from "./smoke"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
+import type { Particles } from "@arcade/kit/fx/particles"
+import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
+import type { SmokeVolumes } from "@arcade/kit/fx/volume"
+import { VolumeRenderer } from "@arcade/kit/fx/volume-renderer"
 import type { SmokeTrail } from "../game/smoke-trail"
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
@@ -127,6 +131,8 @@ export class Renderer {
   private timingGroup!:GPUBindGroup
   resetMotion(){this.motionReady=false;this.motionValid=false;this.history.reset();this.particleHistory.reset()}
   private readonly smoke: SmokeRenderer
+  private readonly fxParticles: ParticleRenderer
+  private readonly fxVolumes: VolumeRenderer
   private frameBuf: GPUBuffer
   private lightBuf: GPUBuffer
   private instBuf: GPUBuffer
@@ -220,6 +226,8 @@ export class Renderer {
       ],
     })
     this.smoke = new SmokeRenderer(d, mainLayout)
+    this.fxParticles = new ParticleRenderer(d, "depth24plus-stencil8", SAMPLES)
+    this.fxVolumes = new VolumeRenderer(d)
     const shadowLayout = d.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }] })
     this.shadowGroup = d.createBindGroup({ layout: shadowLayout, entries: [{ binding: 0, resource: { buffer: this.frameBuf } }] })
     this.postLayout = d.createBindGroupLayout({
@@ -407,7 +415,9 @@ export class Renderer {
     this.hdrView = this.hdr.createView()
     this.timingTarget=d.createTexture({size:[w,h],format:this.format,usage})
     this.timingView=this.timingTarget.createView()
-    this.blur.resize(w,h,this.hdrView,this.depth.createView({aspect:'depth-only'}))
+    const depthOnlyView = this.depth.createView({ aspect: "depth-only" })
+    this.blur.resize(w, h, this.hdrView, depthOnlyView)
+    this.fxVolumes.resize(w, h, depthOnlyView)
     this.bloom = []
     this.bloomViews = []
     for (let i = 0; i < BLOOM_LEVELS; i++) {
@@ -461,6 +471,8 @@ export class Renderer {
     lights: Float32Array<ArrayBuffer>
     batches: InstanceBatch[]
     sprites: { alpha: Float32Array<ArrayBuffer>; alphaCount: number; add: Float32Array<ArrayBuffer>; addCount: number }
+    fxParticles?: Particles
+    fxVolumes?: SmokeVolumes
     bloom: number
     flash: number
     dt?:number
@@ -530,6 +542,31 @@ export class Renderer {
     extractFrustumPlanes(opts.frame, 0, this.camPlanes)
     extractFrustumPlanes(opts.frame, 16, this.shadowPlanes)
 
+    const hasFxParticles = Boolean(opts.fxParticles && opts.fxParticles.count > 0)
+    const hasFxVolumes = Boolean(opts.fxVolumes && opts.fxVolumes.count > 0)
+    if (hasFxParticles && opts.fxParticles) {
+      const u = this.fxParticles.uniforms
+      u.set(opts.frame.subarray(0, 16), 0)
+      u[16] = opts.frame[32]!
+      u[17] = opts.frame[33]!
+      u[18] = opts.frame[34]!
+      u[19] = 0
+      u[20] = 0.22
+      u[21] = 0.25
+      u[22] = 0.36
+      const totalLights = Math.min(MAX_LIGHTS, Math.round(opts.frame[42] ?? 0))
+      let pLights = 0
+      u.fill(0, 24)
+      for (let i = 0; i < totalLights && pLights < 8; i++) {
+        const k = i * 12
+        if (opts.lights[k + 7]! <= 0.01) continue
+        for (let j = 0; j < 8; j++) u[24 + pLights * 8 + j] = opts.lights[k + j]!
+        pLights++
+      }
+      u[23] = pLights
+      this.fxParticles.upload(opts.fxParticles)
+    }
+
     const enc = d.createCommandEncoder()
     const sp = enc.beginRenderPass({
       timestampWrites: this.measure ? this.timer!.start : undefined,
@@ -585,7 +622,7 @@ export class Renderer {
         view: this.depthView,
         depthClearValue: 1,
         depthLoadOp: "clear",
-        depthStoreOp: blurOn?"store":"discard",
+        depthStoreOp: blurOn || hasFxVolumes ? "store" : "discard",
         stencilClearValue: 0,
         stencilLoadOp: "clear",
         stencilStoreOp: "discard",
@@ -660,7 +697,32 @@ export class Renderer {
         pass.draw(m.count, r.count, 0, r.first)
       }
     }
+    if (hasFxParticles) {
+      this.fxParticles.draw(pass)
+      pass.setBindGroup(0, this.mainGroup)
+    }
     pass.end()
+
+    if (hasFxVolumes && opts.fxVolumes) {
+      const u = this.fxVolumes.uniforms
+      u.set(this.inverseVP, 0)
+      u[16] = opts.frame[32]!
+      u[17] = opts.frame[33]!
+      u[18] = opts.frame[34]!
+      u[24] = 0.12
+      u[25] = 0.14
+      u[26] = 0.22
+      const totalLights = Math.min(MAX_LIGHTS, Math.round(opts.frame[42] ?? 0))
+      let count = 0
+      for (let i = 0; i < totalLights && count < 8; i++) {
+        const k = i * 12
+        if (opts.lights[k + 7]! <= 0.01) continue
+        for (let j = 0; j < 8; j++) u[60 + count * 8 + j] = opts.lights[k + j]!
+        count++
+      }
+      u[22] = count
+      this.fxVolumes.render(enc, this.hdrView, opts.fxVolumes)
+    }
 
     if(blurOn)this.blur.encode(enc,p=>{
       p.setPipeline(this.velocityPipeline);p.setBindGroup(0,this.blur.group)

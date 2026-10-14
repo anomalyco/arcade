@@ -1,6 +1,14 @@
 import { ATMOSPHERE_WGSL } from "./atmosphere"
-import { FRAME_BINDING_WGSL } from "./frame"
+import { FRAME, FRAME_BINDING_WGSL } from "./frame"
 import type { Renderer, ScenePass } from "./renderer"
+import { Particles } from "@arcade/kit/fx/particles"
+import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
+import {
+  EXPLOSION_PRESETS,
+  explosionFlashLight,
+  spawnExplosion,
+  type ExplosionPresetId,
+} from "@arcade/kit/fx/explosion"
 
 // Weapon effects ("alpha" slot): tracers, muzzle flashes, impacts, missiles with their smoke trails, flares, faceted
 // low-poly explosions with debris, damage smoke and fire. Two primitives:
@@ -362,6 +370,9 @@ export class WeaponFx implements ScenePass {
   private params = new Float32Array(4)
   private sp = new SpritePool()
   private rk = new RockPool()
+  readonly fxParticles = new Particles()
+  private readonly fxRenderer: ParticleRenderer
+  private readonly activeFlashes: { x: number; y: number; z: number; age: number; preset: ExplosionPresetId }[] = []
   private trails = new Map<number, Trail>()
   private eye: V3 = [0, 0, 0]
   private time = 0
@@ -450,6 +461,13 @@ export class WeaponFx implements ScenePass {
       depthStencil: { format: ctx.depth, depthWriteEnabled: false, depthCompare: "greater-equal" },
       multisample: { count: ctx.samples },
     })
+    this.fxRenderer = new ParticleRenderer(d, {
+      depthFormat: ctx.depth,
+      samples: ctx.samples,
+      depthCompare: "greater-equal",
+      bindGroupIndex: 1,
+      extraBindGroupLayouts: [ctx.frameLayout],
+    })
   }
 
   /** Start of a frame: advances every particle by dt and lays the survivors into this frame's instance lists. */
@@ -466,6 +484,12 @@ export class WeaponFx implements ScenePass {
     this.counts[0] = this.counts[1] = this.counts[2] = 0
     this.stepSprites(dt)
     this.stepRocks(dt)
+    this.fxParticles.update(dt, [], () => -1e9)
+    for (let i = this.activeFlashes.length - 1; i >= 0; i--) {
+      const fl = this.activeFlashes[i]!
+      fl.age += dt
+      if (fl.age >= 1.5) this.activeFlashes.splice(i, 1)
+    }
     for (const [k, tr] of this.trails) if (time - tr.seen > 1 || tr.seen > time + 1) this.trails.delete(k)
   }
 
@@ -910,39 +934,60 @@ export class WeaponFx implements ScenePass {
   }
 
   /**
-   * An explosion at (x, y, z) carried along at v: a flash, a faceted fireball that cools to soot, smoke balls, burning
-   * debris; over water a white spray column too. `size` 1 = a missile hitting a jet (a jet's own end looks bigger).
+   * An explosion at (x, y, z) carried along at v: unified blackbody fireball billows that crust into dark soot,
+   * shockwave ring, ballistic sparks and 3D lit shrapnel; over water a white spray column too.
+   * `size` 1 = a missile hitting a jet (a jet's own end or ship strike uses a larger scale).
    */
-  explosion(x: number, y: number, z: number, vx: number, vy: number, vz: number, size = 1, water = false): void {
+  explosion(
+    x: number,
+    y: number,
+    z: number,
+    vx: number,
+    vy: number,
+    vz: number,
+    size = 1,
+    water = false,
+    preset?: ExplosionPresetId,
+  ): void {
     const s = size
-    // Close to the camera the flash and the fireball's glow are held back (the shader damps emission near the eye too).
     const near = Math.min(1, Math.max(0, (Math.hypot(x - this.eye[0], y - this.eye[1], z - this.eye[2]) - 15) / 90))
     const hot = 0.3 + 0.7 * near
-    this.puff(0, x, y, z, vx * 0.5, vy * 0.5, vz * 0.5, 0.25, 10 * s, 22 * s, 6 * hot, 4 * hot, 2 * hot, 1, 2)
-    for (let i = 0; i < 8; i++) {
-      const ox = rnd(-1, 1) * 3 * s
-      const oy = rnd(-1, 1) * 3 * s
-      const oz = rnd(-1, 1) * 3 * s
-      const life = rnd(1.6, 2.6)
-      this.spawnRock(0, x + ox, y + oy, z + oz, vx * 0.6 + ox * 4, vy * 0.6 + oy * 4 + 3, vz * 0.6 + oz * 4, life, rnd(2, 3.4) * s, rnd(6, 9) * s, 1, 0.55, 0.18, rnd(2.5, 4) * hot, rnd(0.55, 0.9), 0.95, -2, 1.6)
-    }
-    for (let i = 0; i < 7; i++) {
-      const ox = rnd(-1, 1) * 5 * s
-      const oy = rnd(-0.5, 1) * 5 * s
-      const oz = rnd(-1, 1) * 5 * s
-      this.spawnRock(0, x + ox, y + oy, z + oz, vx * 0.2 + ox, vy * 0.2 + oy + 2, vz * 0.2 + oz, rnd(4, 6.5), rnd(3, 5) * s, rnd(10, 15) * s, 0.2, 0.19, 0.18, 0, 0, 0.7, -0.8, 0.9)
-    }
-    for (let i = 0; i < Math.round(10 * s); i++) {
-      const dvx = rnd(-1, 1) * 45
-      const dvy = rnd(-0.4, 1) * 40
-      const dvz = rnd(-1, 1) * 45
-      this.spawnRock(i % 3 === 0 ? 2 : 1, x, y, z, vx * 0.6 + dvx, vy * 0.6 + dvy, vz * 0.6 + dvz, rnd(2.5, 4.5), rnd(0.5, 1.1) * s, rnd(0.4, 0.9) * s, 0.24, 0.25, 0.27, 0, 0, 1, 9.81, 0.25, [rnd(0.6, 1.4), rnd(0.15, 0.35), rnd(0.8, 1.8)], rnd(-9, 9))
-    }
-    for (let i = 0; i < 12; i++) {
-      const dvx = rnd(-1, 1) * 70
-      const dvy = rnd(-1, 1) * 70
-      const dvz = rnd(-1, 1) * 70
-      this.spawn(0, x, y, z, x, y, z, vx * 0.5 + dvx, vy * 0.5 + dvy, vz * 0.5 + dvz, rnd(0.4, 0.9), 0.25, 0.1, 10, 5, 1.5, 1, 1.2, -9.81)
+    const chosen: ExplosionPresetId =
+      preset ?? (water ? "barrel" : s >= 1.2 && y < 45 ? "ship" : s <= 0.6 ? "pop" : "missile")
+    const baseSettings = EXPLOSION_PRESETS[chosen].settings
+    const settings = { ...baseSettings, fireballTemp: baseSettings.fireballTemp * (chosen === "ship" ? 0.72 : 0.88) }
+    const airburst = !water && (chosen === "missile" || y > 32)
+    const worldScale = s * (chosen === "ship" ? 2.8 : 4.2)
+    spawnExplosion(this.fxParticles, null, x, y, z, settings, Math.random, worldScale, 1, {
+      vx: vx * 0.45,
+      vy: vy * 0.45,
+      vz: vz * 0.45,
+      airburst,
+    })
+    if (this.activeFlashes.length >= 8) this.activeFlashes.shift()
+    this.activeFlashes.push({ x, y, z, age: 0, preset: chosen })
+    for (let i = 0; i < 6; i++) {
+      const ox = rnd(-1, 1) * 4.5 * s
+      const oy = rnd(-0.4, 1) * 4.5 * s
+      const oz = rnd(-1, 1) * 4.5 * s
+      this.puff(
+        1,
+        x + ox,
+        y + oy,
+        z + oz,
+        vx * 0.2 + ox * 0.8,
+        vy * 0.2 + oy * 0.8 + 2.2,
+        vz * 0.2 + oz * 0.8,
+        rnd(3.5, 5.5),
+        rnd(3.2, 5.2) * s,
+        rnd(11, 16) * s,
+        0.16,
+        0.15,
+        0.145,
+        0.65,
+        0.85,
+        0.8,
+      )
     }
     if (water) this.splash(x, y, z, 1.4 * s)
   }
@@ -960,7 +1005,7 @@ export class WeaponFx implements ScenePass {
   /**
    * A bomb bursting on the surface. On the sea: a short orange flash, a tall white spout (a column 50-70 m high that
    * falls back), a crown of spray thrown outward, a base surge of mist rolling out over the water and a hanging cloud.
-   * On land or a deck: a fireball, a fountain of dark earth and debris, a brown dust column and a ground-hugging ring.
+   * On land or a deck: unified `ship` explosion preset, a brown dust column and a ground-hugging ring.
    */
   bombBlast(x: number, y: number, z: number, water: boolean): void {
     const near = Math.min(1, Math.max(0, (Math.hypot(x - this.eye[0], y - this.eye[1], z - this.eye[2]) - 15) / 90))
@@ -992,18 +1037,7 @@ export class WeaponFx implements ScenePass {
       this.puff(1, x, y + 30, z, 0, 3, 0, 7, 12, 36, 0.94, 0.96, 0.98, 0.22, 0.4)
       return
     }
-    this.explosion(x, y + 2, z, 0, 0, 0, 1.6, false)
-    for (let i = 0; i < 22; i++) {
-      const a = rnd(0, Math.PI * 2)
-      const up = rnd(0.5, 1)
-      const out = rnd(8, 26)
-      this.spawnRock(1, x, y + 1, z, Math.cos(a) * out, up * rnd(25, 48), Math.sin(a) * out, rnd(2.5, 4.5), rnd(0.6, 1.6), rnd(0.5, 1.2), 0.24, 0.19, 0.13, 0, 0, 1, 9.81, 0.15, [rnd(0.7, 1.4), rnd(0.4, 0.8), rnd(0.7, 1.4)], rnd(-8, 8))
-    }
-    for (let i = 0; i < 9; i++) {
-      const ox = rnd(-1, 1) * 6
-      const oz = rnd(-1, 1) * 6
-      this.spawnRock(0, x + ox, y + rnd(2, 10), z + oz, ox * 0.6, rnd(6, 14), oz * 0.6, rnd(6, 9), rnd(4, 6), rnd(12, 18), 0.36, 0.3, 0.23, 0, 0, 0.75, -0.6, 0.8)
-    }
+    this.explosion(x, y + 2, z, 0, 0, 0, 1.6, false, "ship")
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2
       this.puff(1, x + Math.cos(a) * 5, y + 1.5, z + Math.sin(a) * 5, Math.cos(a) * rnd(12, 18), 0.4, Math.sin(a) * rnd(12, 18), rnd(4, 6), 6, 22, 0.42, 0.36, 0.28, 0.55, 0.8, 0.2)
@@ -1022,6 +1056,39 @@ export class WeaponFx implements ScenePass {
     if (this.glows) q.writeBuffer(this.glowBuf, 0, this.glow, 0, this.glows * SPRITE_FLOATS)
     if (this.smokes) q.writeBuffer(this.smokeBuf, 0, this.smoke, 0, this.smokes * SPRITE_FLOATS)
     for (let l = 0; l < 3; l++) if (this.counts[l]) q.writeBuffer(this.rockBuf, l * MAX_ROCKS * ROCK_FLOATS * 4, this.rockData, l * MAX_ROCKS * ROCK_FLOATS, this.counts[l]! * ROCK_FLOATS)
+    if (this.fxParticles.count > 0) {
+      const f = this.renderer.currentFrame
+      const u = this.fxRenderer.uniforms
+      u.set(f.subarray(0, 16), 0)
+      u[16] = this.eye[0]
+      u[17] = this.eye[1]
+      u[18] = this.eye[2]
+      u[19] = 0
+      const sunW = f[FRAME.sunDir + 3]!
+      const ambW = f[FRAME.sunColor + 3]!
+      const scale = Math.max(0.28, sunW * 0.48 + ambW * 0.72)
+      u[20] = f[FRAME.sunColor]! * scale
+      u[21] = f[FRAME.sunColor + 1]! * scale
+      u[22] = f[FRAME.sunColor + 2]! * scale
+      u.fill(0, 24)
+      let pLights = 0
+      for (const fl of this.activeFlashes) {
+        if (pLights >= 8) break
+        const light = explosionFlashLight(fl.x, fl.y, fl.z, fl.age, EXPLOSION_PRESETS[fl.preset].settings)
+        if (!light) continue
+        const o = 24 + pLights++ * 8
+        u[o] = light.x
+        u[o + 1] = light.y
+        u[o + 2] = light.z
+        u[o + 3] = light.radius * 5
+        u[o + 4] = light.r
+        u[o + 5] = light.g
+        u[o + 6] = light.b
+        u[o + 7] = light.power * 0.45
+      }
+      u[23] = pLights
+      this.fxRenderer.upload(this.fxParticles)
+    }
   }
 
   draw(pass: GPURenderPassEncoder): void {
@@ -1046,6 +1113,9 @@ export class WeaponFx implements ScenePass {
       pass.setPipeline(this.glowPipe)
       pass.setBindGroup(1, this.glowGroup)
       pass.draw(18, this.glows)
+    }
+    if (this.fxParticles.count > 0) {
+      this.fxRenderer.draw(pass)
     }
   }
 }

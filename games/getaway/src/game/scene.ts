@@ -637,6 +637,8 @@ export class Scene {
       lights: L,
       batches,
       sprites: { alpha, alphaCount: counts.alpha, add, addCount: counts.add },
+      fxParticles: this.clutter.fxParticles,
+      fxVolumes: this.clutter.fxVolumes,
       bloom: opts.bloom ?? 0.9,
       flash: opts.flash ?? 0,
       dt,rush:cam.nitroRush,

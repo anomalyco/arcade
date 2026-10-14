@@ -109,13 +109,19 @@ export const blackoutEffectSection:SectionFactory=context=>gameEffects(context,"
           else if(modelCount===1)glassSheetModel=id
           modelCount++
           return id
-        },setLevel,updateBounce:()=>{},width:1100,height:760},{myId:"lab",room:null,latest:()=>null,roster:()=>[],drainEvents:()=>[],send:()=>{},status:()=>null,update:()=>{},close:()=>{}},new Sound(),{...juiceSettings(),volumes:false},map))
+        },setLevel,updateBounce:()=>{},width:1100,height:760},{myId:"lab",room:null,latest:()=>null,roster:()=>[],drainEvents:()=>[],send:()=>{},status:()=>null,update:()=>{},close:()=>{}},new Sound(),{...juiceSettings(),volumes:true},map,{particles:context.particles,volumes:context.volume}))
       }else game.labLoad(map)
       dt=0;frame=undefined;stage.sceneMode=4;stage.focus[0]=12;stage.focus[1]=0;stage.focus[2]=10;camera.snap(12,10);camera.dist=40
       seeded(seed,()=>{stage.lighting.moonPower=.2+Math.random()*.6;stage.lighting.temperature=Math.random()*.8-.4;stage.lighting.exposure=Math.random()*.7})
     },
     trigger(effect,seed){if(game)seeded(seed,()=>game!.labTrigger(effect,GUN_IDS.find(g=>g===settings.weapon)??"rifle",settings.surface,settings.targetX,settings.targetZ))},
-    update(delta){dt+=delta;game?.labAdvance(delta)},
+    update(delta){
+      dt+=delta
+      game?.labAdvance(delta)
+      const walls=game?[...game.map.walls.filter(w=>w.h>=1.8).map(w=>w.rect),...game.map.windows,...game.map.glass]:[]
+      context.particles.update(delta,walls)
+      context.volume.update(delta)
+    },
     prepare(){
       if(!game)return
       frame=seeded(Math.floor(game.map.seed+dt*1e6),()=>game!.build(camera,1100,760,dt));dt=0

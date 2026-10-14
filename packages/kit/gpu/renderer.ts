@@ -4,6 +4,8 @@ import { VERT_BYTES, type Mesh } from "./mesh"
 import { mat4 } from "wgpu-matrix"
 import { VolumeRenderer } from "@arcade/kit/fx/volume-renderer"
 import type { SmokeVolumes } from "@arcade/kit/fx/volume"
+import type { Particles } from "@arcade/kit/fx/particles"
+import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
@@ -65,6 +67,7 @@ export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: num
 
 export type FrameInput = {
   splatter?:Splatter
+  fxParticles?: Particles
   smoke?: SmokeVolumes
   smokeEnabled?: boolean
   frame: Float32Array<ArrayBuffer>
@@ -99,6 +102,7 @@ export type FrameInput = {
  */
 export class Renderer {
   private splatterRenderer?:SplatterRenderer
+  private particleRenderer?:ParticleRenderer
   private readonly splatterEye=new Float32Array(3)
   readonly smokeRenderer: VolumeRenderer
   private readonly smokeMatrix = new Float32Array(16)
@@ -674,6 +678,28 @@ export class Renderer {
       for(let i=0;i<3;i++)this.splatterEye[i]=f.frame[16+i]!
       this.splatterRenderer.prepare(f.splatter,f.frame,this.splatterEye,motion)
     }
+    if (f.fxParticles && f.fxParticles.count > 0) {
+      this.particleRenderer ??= new ParticleRenderer(d, DEPTH, SAMPLES)
+      const u = this.particleRenderer.uniforms
+      u.set(f.frame.subarray(0, 16), 0)
+      u[16] = f.frame[16]!
+      u[17] = f.frame[17]!
+      u[18] = f.frame[18]!
+      u[19] = 0
+      u[20] = Math.max(0.18, f.frame[28]!)
+      u[21] = Math.max(0.2, f.frame[29]!)
+      u[22] = Math.max(0.24, f.frame[30]!)
+      let pLights = 0
+      u.fill(0, 24)
+      for (let i = 0; i < f.lightCount && pLights < 8; i++) {
+        const k = i * LIGHT_FLOATS
+        if (f.lights[k + 7]! <= 0.001) continue
+        for (let j = 0; j < 8; j++) u[24 + pLights * 8 + j] = f.lights[k + j]!
+        pLights++
+      }
+      u[23] = pLights
+      this.particleRenderer.upload(f.fxParticles)
+    }
     if (motion) this.prepareMotion()
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
     const effectiveCompare = f.lookCompare ?? this.activeLookCompare
@@ -848,6 +874,7 @@ export class Renderer {
       pass.draw(6, addCount)
     }
     if(f.splatter)this.splatterRenderer!.draw(pass,motion)
+    if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion)
     pass.end()
 
     if (f.smoke && f.smokeEnabled && f.smoke.count) {

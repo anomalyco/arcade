@@ -37,7 +37,14 @@ import { VehicleSound } from "../audio/vehicle-sound"
 import { FLOOR } from "../render/vehicle-mesh"
 import { type FxFn, type VehDraw, VehicleFx, carry } from "./vehicles"
 import { mapFires } from "./map-fx"
-import { SmokeVolumes } from "@arcade/kit/fx/volume"
+import { SmokeVolumes, type Wall } from "@arcade/kit/fx/volume"
+import { Particles } from "@arcade/kit/fx/particles"
+import {
+  EXPLOSION_PRESETS,
+  explosionFlashLight,
+  spawnExplosion,
+  type ExplosionPresetId,
+} from "@arcade/kit/fx/explosion"
 import { blackoutEffects as fxSettings } from "../lab/settings"
 import { Splatter, type SplatterImpact, type SplatterSettings } from "@arcade/kit/fx/splatter"
 import { blackoutSplatterSurfaces, bloodSplatterSettings } from "./splatter"
@@ -79,7 +86,7 @@ const CAM_RECOIL: Record<Gun, { kick: number; shake: number; punch: number; roll
 export type FeedLine = { killer: string; victim: string; kc: Rgb3; vc: Rgb3; how: Weapon; t: number; mine: boolean }
 /** A frag as drawn: simulated locally from the throw (corrected by snapshots), `at` on the client clock. */
 type FragFx = Grenade & { spin: number; yaw: number }
-type Boom = { x: number; y: number; t0: number; kind: Equip; aim: number }
+type Boom = { x: number; y: number; t0: number; kind: Equip; aim: number; preset: ExplosionPresetId }
 /** Blasts throw bodies hard, up and away. */
 const blastStyle = (): DeathStyle => ({ push: 7 + Math.random() * 2, lift: 2.6 + Math.random(), spin: (Math.random() - 0.5) * 3, buckle: 0.2 })
 
@@ -191,7 +198,10 @@ export class Game {
     this.splatterFx??=new Splatter(blackoutSplatterSurfaces(buildLevel(this.map)))
     return this.splatterFx.emit(event,settings)
   }
-  readonly smokeVolumes = new SmokeVolumes()
+  readonly smokeVolumes: SmokeVolumes
+  readonly explosionParticles: Particles
+  private readonly ownsFx: boolean
+  private wallRects: Wall[] = []
   readonly juice: Juice
   private bounceBase!: FloorMap
   private bounceFull!: FloorMap
@@ -241,7 +251,6 @@ export class Game {
   /** When each tripped claymore beeped. */
   private trips = new Map<number, number>()
   private booms: Boom[] = []
-  private scorches: { x: number; y: number; t0: number; r: number; rot: number }[] = []
   reloadUntil = 0
   private cooldownUntil = 0
   private readyAt = 0
@@ -299,8 +308,12 @@ export class Game {
     private sound: Sound,
     settings: Juice = juiceSettings(),
     initialMap: MapDef = getMap("office", 1),
+    sharedFx?: { particles: Particles; volumes: SmokeVolumes },
   ) {
     this.juice = settings
+    this.smokeVolumes = sharedFx?.volumes ?? new SmokeVolumes()
+    this.explosionParticles = sharedFx?.particles ?? new Particles()
+    this.ownsFx = !sharedFx
     const reg = (m: Parameters<Renderer["addModel"]>[0]) => renderer.addModel(m)
     const paper = new Mesh()
     paper.box(-0.1, -0.003, -0.14, 0.1, 0.003, 0.14, PAL.paper, MAT.lit, 0, undefined, true)
@@ -374,7 +387,9 @@ export class Game {
   private clearScene(): void {
     this.splatterFx?.reset();this.splatterEvent=0
     this.labFireMap=null
-    this.smokeVolumes.reset([...this.map.walls.filter(w => w.h >= 1.8).map(w => w.rect), ...this.map.windows, ...this.map.glass])
+    this.wallRects = [...this.map.walls.filter(w => w.h >= 1.8).map(w => w.rect), ...this.map.windows, ...this.map.glass]
+    this.smokeVolumes.reset(this.wallRects)
+    this.explosionParticles.reset()
     this.corpses = []
     this.tracers = []
     this.particles = []
@@ -384,7 +399,6 @@ export class Game {
     this.grenades.clear()
     this.trips.clear()
     this.booms = []
-    this.scorches = []
     this.veh?.clear()
     this.riding = null
     this.seatPose.clear()
@@ -692,8 +706,7 @@ export class Game {
         return
       }
       case "wreck":
-        this.explode({ k: "explode", kind: "frag", by: e.by, id: -e.id, x: e.x, y: e.y, aim: 0 })
-        this.veh.burst(e.x, e.y, this.fxv)
+        this.explode({ k: "explode", kind: "frag", by: e.by, id: -e.id, x: e.x, y: e.y, aim: 0 }, "car")
         if (e.by === this.myId) this.banner = { text: "VEHICLE DESTROYED", t }
         return
       case "crash":
@@ -713,43 +726,31 @@ export class Game {
     }
   }
 
-  /** A frag or claymore going off: flash, fireball, fragments, smoke, a scorch mark, the shake and the bang. */
-  private explode(e: Extract<SimEvent, { k: "explode" }>): void {
+  /** A frag, claymore, or vehicle going off: shared multi-phase fireball, shockwave, scorch, shrapnel, volumetric smoke, shake and bang. */
+  private explode(e: Extract<SimEvent, { k: "explode" }>, presetOverride?: ExplosionPresetId): void {
     const t = this.now
     const clay = e.kind === "claymore"
-    const f = this.grenades.get(e.id)
     this.grenades.delete(e.id)
     this.trips.delete(e.id)
     const x = e.x
     const y = e.y
-    this.smokeVolumes.carve(x,y,x,y,3)
-    this.smokeVolumes.spawn(x,y,clay ? 2.8 : fxSettings.explosion.smokeRadius,clay ? 5 : fxSettings.explosion.smokeLife,0.9,0.45)
-    const z0 = clay ? 0.15 : (f?.z ?? FRAG.size)
-    this.booms.push({ x, y, t0: t, kind: e.kind, aim: e.aim })
-    this.scorches.push({ x: x + (clay ? Math.cos(e.aim) * 0.4 : 0), y: y + (clay ? Math.sin(e.aim) * 0.4 : 0), t0: t, r: clay ? fxSettings.scorch.claymoreRadius : fxSettings.scorch.fragRadius, rot: Math.random() * 6.28 })
-    if (this.scorches.length > fxSettings.scorch.capacity) this.scorches.shift()
+    const preset: ExplosionPresetId = presetOverride ?? (clay ? "pop" : "grenade")
+    const settings = EXPLOSION_PRESETS[preset].settings
+    this.smokeVolumes.carve(x, y, x, y, 3)
+    spawnExplosion(
+      this.explosionParticles,
+      this.smokeVolumes,
+      x + (clay ? Math.cos(e.aim) * 0.35 : 0),
+      0,
+      y + (clay ? Math.sin(e.aim) * 0.35 : 0),
+      settings,
+      Math.random,
+      1,
+      1,
+      clay ? { aim: e.aim, cone: CLAYMORE.blastCone } : undefined,
+    )
+    this.booms.push({ x, y, t0: t, kind: e.kind, aim: e.aim, preset })
     const R = Math.random
-    const dir = (spread: number) => (clay ? e.aim + (R() - 0.5) * 2 * spread : R() * Math.PI * 2)
-    for (let i = 0; i < fxSettings.explosion.fireCount; i++) {
-      const a = dir(0.55)
-      const s = clay ? 3 + R() * 8 : 1.5 + R() * 5
-      this.fx(x, y, z0 + 0.2 + R() * 0.5, Math.cos(a) * s, Math.sin(a) * s, 1 + R() * 3, 0.3 + R() * 0.35, 0.3 + R() * 0.35, "fire")
-    }
-    for (let i = 0; i < fxSettings.explosion.sparkCount; i++) {
-      const a = dir(0.8)
-      const s = 7 + R() * 16
-      this.fx(x, y, z0 + 0.2, Math.cos(a) * s, Math.sin(a) * s, R() * 6, 0.2 + R() * 0.4, 0.035, "spark")
-    }
-    for (let i = 0; i < fxSettings.explosion.sootCount; i++) {
-      const a = dir(0.9)
-      const s = 0.6 + R() * (clay ? 3.5 : 2.6)
-      this.fx(x + Math.cos(a) * 0.3, y + Math.sin(a) * 0.3, 0.3 + R() * 0.8, Math.cos(a) * s, Math.sin(a) * s, 0.5 + R() * 0.8, 2.4 + R() * 1.8, 0.32 + R() * 0.3, "soot")
-    }
-    for (let i = 0; i < fxSettings.explosion.chipCount; i++) {
-      const a = dir(0.9)
-      const s = 2 + R() * 6
-      this.fx(x, y, z0 + 0.1, Math.cos(a) * s, Math.sin(a) * s, 2 + R() * 4, 0.9 + R() * 0.6, 0.03 + R() * 0.03, "chip")
-    }
     if (clay) {
       // The ball bearings: a fan of streaks out to the walls.
       for (let i = 0; i < 16; i++) {
@@ -963,7 +964,7 @@ export class Game {
   labClear():void { this.clearScene() }
   labAdvance(dt:number):void { this.now+=dt }
   labBlood(event:SplatterImpact):void {this.blood(event.x,event.z,Math.atan2(event.dz,event.dx),event.amount??1)}
-  labInspect() { return {sheets:this.sheets.length,particles:this.particles.length,holes:this.holes.length,corpses:this.corpses.length,casings:this.debris.length,monitors:this.monitors.filter(m=>m.broken).length} }
+  labInspect() { return {sheets:this.sheets.length,particles:this.particles.length+this.explosionParticles.count,holes:this.holes.length,corpses:this.corpses.length,casings:this.debris.length,monitors:this.monitors.filter(m=>m.broken).length} }
   labTrigger(effect:string,gun:Gun,surface:string,x:number,y:number):void {
     const a=newAvatar("lab",x,y+2,-Math.PI/2,gun)
     animate(a,1/60,this.now,x,y+2,0,0,-Math.PI/2)
@@ -981,6 +982,7 @@ export class Game {
     }
     if(effect==="wreck"||effect==="vehicle"){
       this.veh.ingest({vehicles:[{id:1,kind:"jeep",x,y,h:0,vx:0,vy:0,w:0,hp:effect==="wreck"?0:100,seats:["lab"],steer:0,thr:1,...(effect==="wreck"?{wreck:1 as const}:{})}]},this.now)
+      if(effect==="wreck")this.explode({k:"explode",id:-1,by:"lab",x,y,kind:"frag",aim:0},"car")
       if(effect==="vehicle")this.veh.ping(1,x+1,y,0,this.fxv)
       return
     }
@@ -1232,16 +1234,8 @@ export class Game {
     return (t + c.id * 0.37) % 2.5 < 0.06 ? [1.4, 0.07, 0.05] : [0.02, 0.004, 0.003]
   }
 
-  /** Frag danger rings, claymore laser cones, blast flashes and shock rings, and the scorch marks they leave. */
+  /** Frag danger rings and claymore laser cones. */
   private gearSprites(t: number): void {
-    this.scorches = this.scorches.filter((s) => t - s.t0 < 25)
-    for (const s of this.scorches) {
-      const age = t - s.t0
-      const fade = Math.min(1, (25 - age) / 5)
-      this.sprite(false, s.x, 0.009, s.y, s.r, 0.02, 0.018, 0.016, 0.8 * fade, 6)
-      this.sprite(false, s.x, 0.01, s.y, s.r * 0.65, 0.01, 0.009, 0.008, 0.6 * fade, 3, s.rot, 0.5, s.rot)
-      if (age < 2.5) this.sprite(true, s.x, 0.02, s.y, s.r * 0.6, 1.4, 0.35, 0.06, (1 - age / 2.5) ** 2 * 0.8, 0)
-    }
     for (const g of this.grenades.values()) {
       const left = g.at - t
       const rate = left < 0.6 ? 14 : left < 1.2 ? 8 : 4
@@ -1261,20 +1255,10 @@ export class Game {
     }
     for (const b of this.booms) {
       const age = t - b.t0
-      const clay = b.kind === "claymore"
-      const ca = Math.cos(b.aim)
-      const sa = Math.sin(b.aim)
-      if (age < 0.09) {
-        const k = 1 - age / 0.09
-        const off = clay ? 0.6 : 0
-        this.sprite(true, b.x + ca * off, 0.6, b.y + sa * off, (clay ? 1.2 : 1.5) * (0.7 + k * 0.5), 2.2, 1.7, 1.1, k, 0)
-      }
-      if (age < 0.35) {
+      if (b.kind === "claymore" && age < 0.35) {
         const u = age / 0.35
-        if (clay) this.sprite(true, b.x, 0.05, b.y, CLAYMORE.blast * (0.4 + u * 0.8), 2, 0.9, 0.4, (1 - u) ** 2, 8, b.aim, 1, CLAYMORE.blastCone)
-        else this.sprite(true, b.x, 0.05, b.y, 0.4 + Math.sqrt(u) * FRAG.radius, 1.2, 0.8, 0.5, (1 - u) ** 2 * 0.45, 2, 0, 0.05)
+        this.sprite(true, b.x, 0.05, b.y, CLAYMORE.blast * (0.4 + u * 0.8), 2, 0.9, 0.4, (1 - u) ** 2, 8, b.aim, 1, CLAYMORE.blastCone)
       }
-      if (age < 0.6) this.sprite(true, b.x, 0.03, b.y, clay ? 1.5 : 2, 1.2, 0.4, 0.1, (1 - age / 0.6) ** 2 * 0.7, 6)
     }
   }
 
@@ -1407,12 +1391,28 @@ export class Game {
     this.electric = this.electric.filter((f) => t - f.t0 < fxSettings.monitor.lightLife)
     if (this.juice.sparks) for (const f of this.electric) dyn.push({ x: f.x, y: f.y, h: 1.1, r: 3, color: [0.4, 0.8, 1], power: fxSettings.monitor.lightPower * (1 - (t - f.t0) / fxSettings.monitor.lightLife), size: 0.1 })
     // Blasts: a blinding flash, then the fireball's glow dying away.
-    this.booms = this.booms.filter((b) => t - b.t0 < 1.2)
+    this.booms = this.booms.filter((b) => t - b.t0 < 1.5)
     for (const b of this.booms) {
       const age = t - b.t0
       const off = b.kind === "claymore" ? 0.9 : 0
-      const flash = Math.max(0, 1 - age / 0.16)
-      dyn.push({ x: b.x + Math.cos(b.aim) * off, y: b.y + Math.sin(b.aim) * off, h: 1.1, r: 6 + 3 * flash, color: [1, 0.62 + 0.25 * flash, 0.3 + 0.4 * flash], power: 4 * flash * flash + 0.9 * Math.exp(-age * 4), size: 0.25 })
+      const fl = explosionFlashLight(
+        b.x + Math.cos(b.aim) * off,
+        0,
+        b.y + Math.sin(b.aim) * off,
+        age,
+        EXPLOSION_PRESETS[b.preset].settings,
+      )
+      if (fl) {
+        dyn.push({
+          x: fl.x,
+          y: fl.z,
+          h: fl.y,
+          r: fl.radius,
+          color: [fl.r, fl.g, fl.b],
+          power: fl.power * 0.55,
+          size: 0.3,
+        })
+      }
     }
     const casters: Caster[] = []
     for (const a of this.avatars.values()) if (a.alive) casters.push({ x: a.x, y: a.y })
@@ -1698,6 +1698,9 @@ export class Game {
     }
     if (this.particles.length > 1500) this.particles.splice(0, this.particles.length - 1500)
 
+    if (this.ownsFx) {
+      this.explosionParticles.update(adt, this.wallRects)
+    }
     this.splatterFx?.update(adt)
     // Uniforms.
     const F = this.frame
@@ -1716,6 +1719,7 @@ export class Game {
     return {
       frame: F,
       splatter:(this.splatterStyle??bloodSplatterSettings.style)?this.splatterFx:undefined,
+      fxParticles: this.explosionParticles,
       smoke: this.smokeVolumes,
       smokeEnabled: this.juice.volumes,
       lights: C.lights,

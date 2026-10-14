@@ -358,7 +358,7 @@ struct Inst {
  * 10 cold condensation, 13 attached exhaust flame,
  * 14 bumper-anchored beam footprint, 15 mounted lens, 16 lens streak, 17 brake streak,
  * 18 tunable soft beam, 19 soft road pool,
- * 20 fluttering paper, 21 water droplets, 22 fire lobes.
+ * 20 fluttering paper, 21 water droplets.
  */
 export const spriteShader = /* wgsl */ `
 ${common}
@@ -410,7 +410,7 @@ struct SOut {
     if (kind == 21.0 || kind == 16.0) { corner.y *= s.misc.z; }
     world = s.posSize.xyz + (right * corner.x + up * corner.y) * size;
     // Nudge glows toward the camera so they are not swallowed by their own lamp geometry.
-    world += toCam * size * select(0.5, 0.0, kind == 10.0 || (kind >= 20.0 && kind <= 22.0));
+    world += toCam * size * select(0.5, 0.0, kind == 10.0 || (kind >= 20.0 && kind <= 21.0));
   }
   var o: SOut;
   o.pos = F.viewProj * vec4f(world, 1.0);
@@ -449,9 +449,6 @@ struct SOut {
     a = (1.0 - smoothstep(0.8, 1.0, abs(o.uv.x))) * (1.0 - smoothstep(0.8, 1.0, abs(o.uv.y)));
   } else if (k == 21.0) {
     a = pow(max(0.0, 1.0 - r * r), 1.2);
-  } else if (k == 22.0) {
-    let edge = r + 0.08 * sin(o.uv.x * 16.0) * sin(o.uv.y * 13.0);
-    a = pow(max(0.0, 1.0 - edge), 1.3);
   } else if (k == 0.0 || k == 6.0) {
     a = pow(max(0.0, 1.0 - r), 2.2);
   } else if (k == 1.0) {

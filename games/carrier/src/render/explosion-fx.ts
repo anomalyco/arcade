@@ -1,11 +1,13 @@
 import { ATMOSPHERE_WGSL } from "./atmosphere"
-import { FRAME_BINDING_WGSL } from "./frame"
+import { FRAME, FRAME_BINDING_WGSL } from "./frame"
 import { MESH_LAYOUT } from "./lit"
 import { FLOATS_PER_VERT, Mesh, type Rgb, packVerts } from "./mesh"
 import { HASH_WGSL } from "./ocean-hash"
 import { WAKE_FORMAT, WAKE_SIZE, wakeTarget, type WakeTarget } from "./ocean-wake"
 import { ACCENT } from "./plane-glb"
 import type { Renderer, ScenePass } from "./renderer"
+import { Particles } from "@arcade/kit/fx/particles"
+import { blackbodyFireWgsl, ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 
 // Explosion rendering (src/render/explosions.ts choreographs it). Four primitives, all from fixed pools, nothing
 // allocated per frame:
@@ -80,12 +82,10 @@ fn rotate(v: vec3f, axis: vec3f, a: f32) -> vec3f {
   return o;
 }
 
-/** Fire colour for heat 0..1: deep red embers, orange, then a white-yellow core (HDR, so the bloom takes it). */
+${blackbodyFireWgsl}
+/** Fire colour for heat 0..1: shared Planckian blackbody ramp from @arcade/kit/fx/particle-renderer. */
 fn fire(h: f32) -> vec3f {
-  var c = mix(vec3f(0.5, 0.05, 0.01), vec3f(2.0, 0.5, 0.06), smoothstep(0.08, 0.45, h));
-  c = mix(c, vec3f(3.6, 1.7, 0.45), smoothstep(0.45, 0.8, h));
-  c = mix(c, vec3f(5.5, 4.2, 2.4), smoothstep(0.82, 1.0, h));
-  return c * smoothstep(0.0, 0.1, h);
+  return blackbodyFire(h * 1.42) * smoothstep(0.0, 0.1, h);
 }
 
 struct FO { @location(0) color: vec4f }
@@ -624,6 +624,8 @@ export class ExplosionFx {
   private pp = new PuffPool()
   private sp = new SparkPool()
   private st = new StreakPool()
+  readonly fxParticles = new Particles()
+  private readonly fxRenderer: ParticleRenderer
   private smokeBuf: GPUBuffer
   private smokeGroup: GPUBindGroup
   private smokeData = new Float32Array(STREAK_POOL * SEG_FLOATS)
@@ -756,6 +758,13 @@ export class ExplosionFx {
       primitive: { topology: "triangle-list", cullMode: "none" },
     })
     this.foamPass = { colorAttachments: [{ view: this.wake.view, loadOp: "load", storeOp: "store" }] }
+    this.fxRenderer = new ParticleRenderer(d, {
+      depthFormat: ctx.depth,
+      samples: ctx.samples,
+      depthCompare: "greater-equal",
+      bindGroupIndex: 1,
+      extraBindGroupLayouts: [ctx.frameLayout],
+    })
 
     this.opaque = { draw: (pass) => this.drawOpaque(pass) }
     this.alpha = { draw: (pass) => this.drawAlpha(pass), prepare: (enc) => this.prepareFoam(enc) }
@@ -807,6 +816,7 @@ export class ExplosionFx {
     this.stepPuffs(dt)
     this.stepSparks(dt)
     this.stepStreaks(dt)
+    this.fxParticles.update(dt, [], () => -1e9)
   }
 
   /** Live puffs (for budgets and scripts). */
@@ -1192,6 +1202,23 @@ export class ExplosionFx {
     if (this.pools) q.writeBuffer(this.discBuf, (MAX_DISCS - this.pools) * DISC_FLOATS * 4, this.discData, (MAX_DISCS - this.pools) * DISC_FLOATS, this.pools * DISC_FLOATS)
     this.foamDrawn = this.foamVerts
     if (this.foamVerts) q.writeBuffer(this.foamBuf, 0, this.foamData, 0, this.foamVerts * FOAM_FLOATS)
+    if (this.fxParticles.count > 0) {
+      const f = this.renderer.currentFrame
+      const u = this.fxRenderer.uniforms
+      u.set(f.subarray(0, 16), 0)
+      u[16] = this.eye[0]!
+      u[17] = this.eye[1]!
+      u[18] = this.eye[2]!
+      u[19] = 0
+      const sunW = f[FRAME.sunDir + 3]!
+      const ambW = f[FRAME.sunColor + 3]!
+      const scale = Math.max(0.28, sunW * 0.48 + ambW * 0.72)
+      u[20] = f[FRAME.sunColor]! * scale
+      u[21] = f[FRAME.sunColor + 1]! * scale
+      u[22] = f[FRAME.sunColor + 2]! * scale
+      u[23] = 0
+      this.fxRenderer.upload(this.fxParticles)
+    }
   }
 
   private prepareFoam(enc: GPUCommandEncoder): void {
@@ -1248,6 +1275,9 @@ export class ExplosionFx {
       pass.setPipeline(this.spritePipe)
       pass.setBindGroup(1, this.spriteGroup)
       pass.draw(18, this.sprites)
+    }
+    if (this.fxParticles.count > 0) {
+      this.fxRenderer.draw(pass)
     }
   }
 }

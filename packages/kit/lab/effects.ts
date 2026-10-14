@@ -3,11 +3,15 @@ import { SmokeTrail } from "../fx/smoke-trail"
 import { SmokeVolumes } from "../fx/volume"
 import {
   applyExplosionSmokeLive,
+  EXPLOSION_PRESETS,
   explosionDefaults,
   explosionFlashLight,
+  explosionPresetOptions,
   explosionRanges,
+  isExplosionPresetId,
   spawnExplosion,
   type ExplosionNumericKey,
+  type ExplosionPresetId,
 } from "../fx/explosion"
 import { smokeDefaults, smokeRanges, type SmokeKey } from "../fx/volume-settings"
 import type { LabControl } from "../lab-panel"
@@ -34,6 +38,7 @@ export function createEffects(context:LabContext) {
   const params={
     ...smokeDefaults,
     ...explosionDefaults,
+    explosionPreset:"grenade" as ExplosionPresetId,
     rate:75,
     size:1,
     speed:1,
@@ -83,7 +88,10 @@ export function createEffects(context:LabContext) {
     const gy=context.activeGround?context.activeGround(tx,tz):0
     applySmoke()
     if(effect==="smoke")volume.spawn(tx,tz)
-    if(effect==="explosion")spawnExplosion(particles,volume,tx,gy,tz,params,random,params.size,params.density)
+    if(effect==="explosion"){
+      const airburst=params.explosionPreset==="missile"
+      spawnExplosion(particles,volume,tx,airburst?gy+1.8:gy,tz,params,random,params.size,params.density,{airburst})
+    }
     if(effect==="sparks"||effect==="debris")for(let i=0;i<params.rate;i++)emit(tx,gy+0.8,tz)
     params.effect=effect
     context.emit?.({type:"effect",section:"effects",effect,x:tx,y:gy,z:tz})
@@ -150,6 +158,12 @@ export function createEffects(context:LabContext) {
   }
   const controls:LabControl[]=[
     {key:"effect",label:"Effect",group:"Emitter",type:"select",options:effectOptions,change:value=>reset(String(value))},
+    {key:"explosionPreset",label:"Preset",group:"Emitter",type:"select",options:explosionPresetOptions,visible:s=>s.effect==="explosion",change:value=>{
+      const pid=isExplosionPresetId(value)?value:"grenade"
+      params.explosionPreset=pid
+      Object.assign(params,EXPLOSION_PRESETS[pid].settings)
+      reset("explosion")
+    }},
     {key:"playing",label:"Play",group:"Emitter"},{key:"loop",label:"Loop",group:"Emitter"},
     {key:"interval",label:"Loop interval",group:"Emitter",type:"range",min:0.5,max:8,step:0.1,unit:"s",visible:s=>Boolean(s.loop)&&s.effect!=="smoke"&&s.effect!=="water"&&s.effect!=="fire"&&s.effect!=="nitro"},
     {key:"trigger",label:"Retrigger",group:"Emitter",type:"action",run:()=>reset()},

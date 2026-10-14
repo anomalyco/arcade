@@ -3560,6 +3560,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const blackoutEffectControl = blackoutSec?.controls.find(c => c.key === "effect" && "options" in c)
     if (blackoutSec && blackoutEffectControl && "options" in blackoutEffectControl) {
       for (const opt of blackoutEffectControl.options) {
+        if (opt.value === "explosion" || opt.value === "scorch") continue
         const id = `blackout-effects:${opt.value}`
         entries.push({
           id,
@@ -3593,6 +3594,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const getawayEffectControl = getawaySec?.controls.find(c => c.key === "effect" && "options" in c)
     if (getawaySec && getawayEffectControl && "options" in getawayEffectControl) {
       for (const opt of getawayEffectControl.options) {
+        if (opt.value === "explosion") continue
         const id = `getaway-effects:${opt.value}`
         entries.push({
           id,
@@ -3619,6 +3621,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const fwEffectControl = fwSec?.controls.find(c => c.key === "effect" && "options" in c)
     if (fwSec && fwEffectControl && "options" in fwEffectControl) {
       for (const opt of fwEffectControl.options) {
+        if (opt.value === "explosion" || opt.value === "fireball") continue
         const id = `fire-water:${opt.value}`
         entries.push({
           id,

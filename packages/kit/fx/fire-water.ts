@@ -88,29 +88,24 @@ export class FireWater {
         this.quad(2,x+Math.cos(a)*u*.75,y+s.height*.75+u*.7,z+Math.sin(a)*u*.75,.25+u*.55,.2+u*.3,.45,.65,.7,s.mist*(1-u)*.55,i)
       }
       this.split=this.count
-    }else if(this.style>0){
-      const s=this.fire[this.style],wreck=this.effect==="wreck",explosion=this.effect==="explosion"||this.effect==="fireball",flick=fireFlicker(t)
-      const sustain=explosion?Math.min(1,Math.max(0,age-.12)*3)*Math.max(0,1-age/8):1
+    }else if(this.style>0&&this.effect!=="explosion"&&this.effect!=="fireball"){
+      const s=this.fire[this.style],wreck=this.effect==="wreck",flick=fireFlicker(t)
       // Smoke first, behind the colored alpha flames; a small additive core follows last.
       for(let i=0;i<9;i++){
         const seed=hash(i+30),u=(t*.28+seed)%1;
-        this.quad(2,x+Math.sin(i*4+u*2)*u*.7,y+1.4+u*3.3,z-u*.6,.55+u*1.05,.7+u*.85,.09,.085,.08,Math.sin(u*Math.PI)*s.smoke*1.2*sustain,i)
+        this.quad(2,x+Math.sin(i*4+u*2)*u*.7,y+1.4+u*3.3,z-u*.6,.55+u*1.05,.7+u*.85,.09,.085,.08,Math.sin(u*Math.PI)*s.smoke*1.2,i)
       }
       for(let i=0;i<3;i++){
         const side=(i-1)*s.width*.48,dx=wreck?side:side*.8,dz=Math.sin(i*4.7)*.22;
         const height=s.height*(i===1?1:i===0?.73:.59)*flick*(wreck?.85:1);
-        this.quad(0,x+dx,y+height*.5+(wreck?.55:0),z+dz,s.width*(i===1?.8:.48),height*.5,1,1,1,.92*sustain,i*2.83,0,1,0,s.speed,s.erosion)
-      }
-      if(explosion&&age<1.1){
-        const radius=.3+Math.sqrt(age)*2.6,fade=Math.max(0,1-age/1.1)
-        for(let i=0;i<5;i++){const a=i*2.4;this.quad(8,x+Math.cos(a)*radius*.33,y+.7+radius*.5+Math.sin(a)*radius*.15,z+Math.sin(a)*radius*.22,radius*.68,radius*.7,1,1,1,fade*.95,i*3.1)}
+        this.quad(0,x+dx,y+height*.5+(wreck?.55:0),z+dz,s.width*(i===1?.8:.48),height*.5,1,1,1,.92,i*2.83,0,1,0,s.speed,s.erosion)
       }
       this.split=this.count
       const h=s.height*.68*flick
-      this.quad(1,x,y+h*.5+(wreck?.55:0),z+.08,s.width*.65,h*.5,1,1,1,sustain,5,0,1,0,s.speed,s.erosion)
+      this.quad(1,x,y+h*.5+(wreck?.55:0),z+.08,s.width*.65,h*.5,1,1,1,1,5,0,1,0,s.speed,s.erosion)
       for(let i=0;i<Math.min(120,s.embers);i++){
         const seed=hash(i+99),u=(t*(.35+seed*.15)+seed)%1,a=i*2.399+u*2.3
-        this.quad(3,x+Math.cos(a)*(.2+u*u*1.5),y+.5+u*4.8,z+Math.sin(a)*(.2+u*u*1.1),.016+seed*.014,.04+seed*.045,2.2,.35+seed*.35,.035,Math.sin(u*Math.PI)*sustain*flick,seed,-Math.sin(a)*.4,1,Math.cos(a)*.4)
+        this.quad(3,x+Math.cos(a)*(.2+u*u*1.5),y+.5+u*4.8,z+Math.sin(a)*(.2+u*u*1.1),.016+seed*.014,.04+seed*.045,2.2,.35+seed*.35,.035,Math.sin(u*Math.PI)*flick,seed,-Math.sin(a)*.4,1,Math.cos(a)*.4)
       }
     }
     this.frame.set(vp);this.frame.set(eye,16);this.frame[19]=t;this.frame[20]=Math.min(8,lights.length)

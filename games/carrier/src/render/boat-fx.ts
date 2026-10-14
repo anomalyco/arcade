@@ -140,7 +140,7 @@ export class BoatFx {
     const sh = Math.sin(b.heading)
     const ch = Math.cos(b.heading)
     const p = this.world(b, 0, 2, 0)
-    this.wfx.explosion(p[0], p[1], p[2], (b.u * sh + b.v * ch) * 0.5, 2, (-b.u * ch + b.v * sh) * 0.5, 1.15, true)
+    this.wfx.explosion(p[0], p[1], p[2], (b.u * sh + b.v * ch) * 0.5, 2, (-b.u * ch + b.v * sh) * 0.5, 1.15, true, "car")
   }
 }
 
