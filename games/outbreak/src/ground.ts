@@ -110,27 +110,29 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let isCurb = (p.y >= 39.74 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.26) || (p.x >= 39.74 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.26);
     let isWalkway = p.y < 38.02 || p.y > 49.98;
     let isNS = (p.x >= 37.95 && p.x <= 40.05) || (p.x >= 47.95 && p.x <= 50.05);
-    col = select(vec3f(0.118, 0.124, 0.134), vec3f(0.052, 0.048, 0.042), isWalkway);
-    if (isCurb) { col = vec3f(0.088, 0.092, 0.100); }
+    col = select(vec3f(0.118, 0.124, 0.134), vec3f(0.035, 0.032, 0.028), isWalkway);
+    if (isCurb) { col = vec3f(0.086, 0.090, 0.098); }
 
     let along = select(p.x, p.y, isNS || isWalkway);
     let across = select(p.y, p.x, isNS || isWalkway);
     let courseId = floor(across / select(0.92, 0.72, isWalkway));
-    let stagger = (hash2(vec2f(courseId, 11.7)) - 0.5) * 0.45;
-    let slabU = (along + (n1 - 0.5) * 0.58 * wear) / select(1.42, 1.08, isWalkway) + stagger;
-    let slabV = (across + (n2 - 0.5) * 0.09 * wear) / select(0.92, 0.72, isWalkway);
+    let stagger = (hash2(vec2f(courseId, 11.7)) - 0.5) * 0.42;
+    let slabU = (along + (n1 - 0.5) * 0.36 * wear) / select(1.42, 1.08, isWalkway) + stagger;
+    let slabV = (across + (n2 - 0.5) * 0.045 * wear) / select(0.92, 0.72, isWalkway);
     let cell = vec2f(floor(slabU), floor(slabV));
     let fq = vec2f(fract(slabU), fract(slabV));
     let hSlab = hash2(cell * 1.73 + 0.9) - 0.5;
     let hWarm = fract((hSlab + 0.5) * 11.3) - 0.5;
-    col *= (0.88 + hSlab * 0.28 * wear) * vec3f(1.0 + hWarm * 0.08, 1.0 + hWarm * 0.02, 1.0 - hWarm * 0.08);
+    col *= (0.86 + hSlab * 0.30 * wear) * vec3f(1.0 + hWarm * 0.08, 1.0 + hWarm * 0.02, 1.0 - hWarm * 0.08);
 
-    let jW = (0.013 + 0.011 * n1) * clamp(wear, 0.5, 1.8);
-    let joint = seam(slabU, jW, 0.75) * select(seam(slabV, jW * 0.85, 1.05), 1.0, isCurb);
-    let diag = (fq.x - 0.5) * (0.75 + hWarm * 0.5) + (fq.y - 0.5) * (0.75 - hSlab * 0.5) + (n1 - 0.5) * 0.25;
-    let slabCrack = (1.0 - smoothstep(0.005, 0.022 + surfaceFootprint * 0.8, abs(diag))) * step(0.02, hSlab + (wear - 1.0) * 0.25) * wear;
+    let jW = (0.009 + 0.007 * n1) * clamp(wear, 0.5, 1.8);
+    let joint = seam(slabU, jW, 0.75) * select(seam(slabV, jW * 0.80, 1.05), 1.0, isCurb);
     let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
-    let edgeDirt = (1.0 - smoothstep(0.0, 0.13 * wear, edgeDist)) * (0.5 + 0.5 * n1) * 0.24;
+    // Hair-thin corner/edge fractures in ~28% of slabs (confined near slab edges so slabs never have thick X ribbons)
+    let diag = (fq.x - 0.5) * (0.75 + hWarm * 0.5) + (fq.y - 0.5) * (0.75 - hSlab * 0.5) + (n1 - 0.5) * 0.16;
+    let edgeCrackMask = 1.0 - smoothstep(0.04, 0.38, edgeDist);
+    let slabCrack = (1.0 - smoothstep(0.002, 0.010 + surfaceFootprint * 0.45, abs(diag))) * step(0.22, hSlab + (wear - 1.0) * 0.20) * edgeCrackMask * wear;
+    let edgeDirt = (1.0 - smoothstep(0.0, 0.14 * wear, edgeDist)) * (0.5 + 0.5 * n1) * 0.28;
 
     var borderDist = min(abs(p.y - 38.0), abs(p.y - 50.0));
     if (isWalkway) {
@@ -140,45 +142,53 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     } else if (isNS) {
       borderDist = min(abs(p.x - 38.0), abs(p.x - 50.0));
     }
-    let borderSpill = (1.0 - smoothstep(0.0, (0.14 + n1 * 0.26) * dirtAmt, borderDist)) * clamp(dirtAmt, 0.0, 1.5);
-    let creviceCol = mix(vec3f(0.024, 0.021, 0.017), vec3f(0.032, 0.052, 0.020), smoothstep(0.42, 0.74, n2) * 0.75);
+    let borderSpill = (1.0 - smoothstep(0.0, (0.15 + n1 * 0.26) * dirtAmt, borderDist)) * clamp(dirtAmt, 0.0, 1.5);
+    let creviceCol = mix(vec3f(0.022, 0.019, 0.015), vec3f(0.030, 0.048, 0.018), smoothstep(0.42, 0.74, n2) * 0.75);
 
-    col *= 0.94 + grit * 0.22 - edgeDirt - n2 * 0.12 * wetness;
-    col = mix(creviceCol, col, joint * (1.0 - slabCrack * 0.80));
-    col = mix(col, creviceCol, borderSpill * 0.76);
-    cavity = mix(0.42, 1.0, joint * (1.0 - slabCrack * 0.65) * (1.0 - borderSpill * 0.55));
+    col *= 0.94 + grit * 0.26 - edgeDirt - n2 * 0.14 * wetness;
+    col = mix(creviceCol, col, joint * (1.0 - slabCrack * 0.75));
+    col = mix(col, creviceCol, borderSpill * 0.78);
+    cavity = mix(0.44, 1.0, joint * (1.0 - slabCrack * 0.55) * (1.0 - borderSpill * 0.55));
   } else {
-    col = vec3f(0.066, 0.074, 0.088);
+    col = vec3f(0.070, 0.078, 0.092);
     let roadU = clamp((p.y - 40.0) * 0.125, 0.0, 1.0);
     let dRut = min(abs(roadU - 0.26), abs(roadU - 0.74));
     let rut = max(0.0, 1.0 - dRut * dRut * 36.0);
     let dLane = min(abs(roadU - 0.32), abs(roadU - 0.68));
     let laneCenter = max(0.0, 1.0 - dLane * dLane * 52.0);
 
+    // Multi-scale crushed stone aggregate & mineral speckle that stays crisp at 42m camera zoom
+    let aggCell1 = hash2(floor(p * 9.5) + vec2f(1.7, 5.3)) - 0.5;
+    let aggCell2 = hash2(floor(p * 19.0) + vec2f(8.1, 2.9)) - 0.5;
+    let aggFade = 1.0 - smoothstep(0.20, 0.65, surfaceFootprint * 9.5);
+    let aggDetail = (aggCell1 * 0.34 + aggCell2 * 0.28 + grit * 0.45) * aggFade;
+    let pebbleGlint = step(0.44, aggCell2) * (0.4 + 0.6 * wetness) * aggFade;
+
     let patchMask = smoothstep(0.58 - wear * 0.06, 0.64 - wear * 0.06, n2 * 0.65 + n1 * 0.35) * step(0.14, roadU) * step(roadU, 0.86);
-    let r1 = abs(surfaceNoise(p * vec2f(0.42, 0.58) + vec2f(n1 - 0.5, n2 - 0.5) * 0.85) - 0.5);
-    let ridgeMin = min(r1, abs(n1 - 0.5) * 0.85 + 0.02);
-    let crackGate = smoothstep(0.40, 0.68, n2 + rut * 0.25);
-    let aaM = max(surfaceFootprint * 0.48, 0.004);
-    let crack = (1.0 - smoothstep(0.004, 0.016 + aaM, ridgeMin)) * crackGate * wear;
-    let tarBand = (1.0 - smoothstep(0.010, 0.042 + aaM, r1)) * step(0.56, n2) * clamp(wear, 0.0, 1.4);
-    let oilStain = smoothstep(0.36, 0.58, n1 * n2 * (0.65 + 0.60 * laneCenter)) * clamp(wear * 0.85, 0.0, 1.3);
+    let r1 = abs(surfaceNoise(p * vec2f(0.48, 0.64) + vec2f(n1 - 0.5, n2 - 0.5) * 0.72) - 0.5);
+    let ridgeMin = min(r1, abs(n1 - 0.5) * 0.90 + 0.015);
+    let crackGate = smoothstep(0.48, 0.72, n2 + rut * 0.22);
+    let aaM = max(surfaceFootprint * 0.35, 0.0025);
+    // Crisp, thin hairline fractures & thin tar seams (no thick wormy bands)
+    let crack = (1.0 - smoothstep(0.0015, 0.0075 + aaM, ridgeMin)) * crackGate * wear;
+    let tarBand = (1.0 - smoothstep(0.004, 0.014 + aaM, r1)) * step(0.62, n2) * clamp(wear, 0.0, 1.3);
+    let oilStain = smoothstep(0.38, 0.60, n1 * n2 * (0.65 + 0.60 * laneCenter)) * clamp(wear * 0.85, 0.0, 1.3);
 
     let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
     let gutterWarp = (n1 - 0.5) * 0.50;
-    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.52 + gutterWarp * 0.35, gutterDist)) * 0.44 * dirtAmt;
+    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.48 + gutterWarp * 0.35, gutterDist)) * 0.42 * dirtAmt;
     let qLeaf = p * 5.2 + vec2f(n1 - 0.5, n2 - 0.5) * 1.4;
     let leafH = hash2(floor(qLeaf) + vec2f(4.7, 9.1));
     let leafUv = fract(qLeaf) - 0.5;
-    let leafMask = step(0.76, leafH) * (1.0 - smoothstep(0.14, 0.32, length(leafUv * vec2f(1.0, 1.45)))) * (1.0 - smoothstep(0.0, 1.35 + gutterWarp, gutterDist)) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.2));
+    let leafMask = step(0.75, leafH) * (1.0 - smoothstep(0.14, 0.32, length(leafUv * vec2f(1.0, 1.45)))) * (1.0 - smoothstep(0.0, 1.45 + gutterWarp, gutterDist)) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.2));
 
-    col *= (0.94 + grit * 0.48 + (n2 - 0.5) * 0.28 - rut * 0.09) * gutterShade;
-    col = mix(col, col * vec3f(0.72, 0.75, 0.80), patchMask * 0.50);
-    col = mix(col, col * vec3f(0.48, 0.50, 0.54), tarBand * 0.52);
-    col = mix(col, col * 0.38, oilStain * 0.65);
-    col = mix(col, col * 0.24, crack * 0.82);
-    col = mix(col, vec3f(0.13, 0.075, 0.028), leafMask * 0.82 * dirtAmt);
-    cavity = (1.0 - crack * 0.45) * gutterShade;
+    col *= (0.95 + aggDetail + pebbleGlint * 0.26 + (n2 - 0.5) * 0.26 - rut * 0.08) * gutterShade;
+    col = mix(col, col * vec3f(0.76, 0.79, 0.84), patchMask * 0.45);
+    col = mix(col, col * vec3f(0.54, 0.56, 0.60), tarBand * 0.45);
+    col = mix(col, col * 0.42, oilStain * 0.58);
+    col = mix(col, col * 0.22, crack * 0.78);
+    col = mix(col, vec3f(0.14, 0.082, 0.032), leafMask * 0.84 * dirtAmt);
+    cavity = (1.0 - crack * 0.42) * gutterShade;
   }
 
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
