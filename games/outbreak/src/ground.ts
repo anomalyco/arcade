@@ -1,8 +1,12 @@
 import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 import type { LabControl } from "@arcade/kit/lab-panel"
-import { MAT, type Mesh } from "@arcade/kit/gpu/mesh"
+import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
 import { Rng } from "@arcade/kit/sim/rng"
-import type { Town } from "../shared/map"
+import { frontageEnd, SIZE, type Town } from "../shared/map"
+import { supportHeight } from "../shared/terrain"
+
+const rgb = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 
 export type GroundSettings = {
   wearAmount: number
@@ -223,3 +227,395 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
       }
     }
 `
+
+type WearInstance = {
+  x: number
+  y: number
+  z: number
+  yaw: number
+  r: number
+  g: number
+  b: number
+  scale: number
+  pitch: number
+  roll: number
+  threshold: number
+}
+
+/**
+ * Instanced 3D ground-wear & street-infrastructure renderer:
+ * - Cast-iron circular manhole covers with recessed tar collars & waffle ribs
+ * - Storm drain catch-basins with curb hoods & clogged autumn leaf drifts
+ * - 3D potholes & spalled asphalt depressions with wet puddle centers & broken asphalt rim chunks
+ * - Faded, chipped, tire-worn road paint dashes
+ * - Lifted/cracked concrete sidewalk & front-walkway slabs, chipped curb blocks, and weathered verge stones
+ * - Creeping soil/moss clods spilling over hard sidewalk, walkway, and driveway boundaries
+ *
+ * Frustum-culled per frame against `view` and scaled live by `wearAmount` / `curbDirt` without rebuilding `LevelData`.
+ */
+export class GroundWearRenderer {
+  private readonly manholeModel: number
+  private readonly drainModel: number
+  private readonly potholeModel: number
+  private readonly crackedSlabModel: number
+  private readonly curbBlockModel: number
+  private readonly paintDashModel: number
+  private readonly edgeClodModel: number
+
+  private cachedKey = ""
+  private manholes: WearInstance[] = []
+  private drains: WearInstance[] = []
+  private potholes: WearInstance[] = []
+  private slabs: WearInstance[] = []
+  private curbs: WearInstance[] = []
+  private paints: WearInstance[] = []
+  private clods: WearInstance[] = []
+
+  private readonly manholeData = new Float32Array(16 * INST_FLOATS)
+  private readonly drainData = new Float32Array(16 * INST_FLOATS)
+  private readonly potholeData = new Float32Array(32 * INST_FLOATS)
+  private readonly slabData = new Float32Array(160 * INST_FLOATS)
+  private readonly curbData = new Float32Array(192 * INST_FLOATS)
+  private readonly paintData = new Float32Array(128 * INST_FLOATS)
+  private readonly clodData = new Float32Array(256 * INST_FLOATS)
+
+  constructor(renderer: Pick<Renderer, "addModel">) {
+    // 1. Cast-iron manhole cover + recessed asphalt collar (toned to blend naturally with weathered asphalt)
+    const mh = new Mesh()
+    mh.prism(0, 0, 0.44, 0.41, 0.0, 0.006, 12, rgb(0x282d35), MAT.lit)
+    mh.prism(0, 0, 0.37, 0.35, 0.006, 0.015, 12, rgb(0x3a3f47), MAT.shiny)
+    mh.prism(0, 0, 0.32, 0.31, 0.012, 0.020, 12, rgb(0x46423d), MAT.shiny)
+    for (const d of [-0.14, 0, 0.14]) {
+      mh.box(-0.24, 0.019, d - 0.016, 0.24, 0.024, d + 0.016, rgb(0x524d46), MAT.shiny)
+      mh.box(d - 0.016, 0.019, -0.24, d + 0.016, 0.024, 0.24, rgb(0x524d46), MAT.shiny)
+    }
+    this.manholeModel = renderer.addModel(mh)
+
+    // 2. Storm drain grate + curb inlet hood + clogged leaf drift
+    const dr = new Mesh()
+    dr.box(-0.44, 0.0, -0.16, 0.44, 0.009, 0.16, rgb(0x16191f), MAT.lit)
+    dr.box(-0.48, 0.005, -0.19, 0.48, 0.013, 0.19, rgb(0x323740), MAT.shiny)
+    for (let i = -3; i <= 3; i++) {
+      const bx = i * 0.115
+      dr.box(bx - 0.020, 0.012, -0.14, bx + 0.020, 0.019, 0.14, rgb(0x484d56), MAT.shiny)
+    }
+    dr.yawBox(-0.32, 0.07, 0.14, 0.09, 0.010, 0.022, 0.4, rgb(0x4e2e14), MAT.lit)
+    dr.yawBox(0.30, -0.05, 0.12, 0.08, 0.010, 0.020, -0.5, rgb(0x5c3818), MAT.lit)
+    this.drainModel = renderer.addModel(dr)
+
+    // 3. Spalled pothole rim & loose asphalt fragments (irregular cluster of small stones/tar, no big dark octagon)
+    const ph = new Mesh()
+    ph.yawBox(0, 0, 0.28, 0.19, 0.0, 0.009, 0.3, rgb(0x262b33), MAT.lit)
+    ph.yawBox(0.08, 0.04, 0.19, 0.13, 0.004, 0.013, -0.4, rgb(0x303640), MAT.shiny)
+    ph.yawBox(-0.18, 0.11, 0.085, 0.065, 0.0, 0.024, 0.6, rgb(0x424752), MAT.lit)
+    ph.yawBox(0.21, -0.09, 0.075, 0.055, 0.0, 0.020, -0.7, rgb(0x383d47), MAT.lit)
+    ph.yawBox(0.06, -0.16, 0.065, 0.050, 0.0, 0.018, 1.1, rgb(0x4a505c), MAT.lit)
+    this.potholeModel = renderer.addModel(ph)
+
+    // 4. Broken concrete corner chunk & spalled slab fragment (compact 3D rubble along slab seams)
+    const sl = new Mesh()
+    sl.bevelBox(-0.11, 0.0, -0.08, 0.11, 0.028, 0.08, 0.007, rgb(0x4a4e56), rgb(0x5c606a), MAT.lit, MAT.lit)
+    sl.yawBox(0.14, 0.06, 0.08, 0.06, 0.0, 0.020, 0.5, rgb(0x42464e), MAT.lit)
+    sl.yawBox(-0.12, -0.07, 0.06, 0.05, 0.0, 0.016, -0.4, rgb(0x525660), MAT.lit)
+    this.crackedSlabModel = renderer.addModel(sl)
+
+    // 5. Weathered stone verge border block / chipped curb segment
+    const cb = new Mesh()
+    cb.bevelBox(-0.24, 0.0, -0.055, 0.24, 0.032, 0.055, 0.007, rgb(0x3e424a), rgb(0x4e525b), MAT.lit, MAT.lit)
+    cb.box(-0.27, 0.0, -0.06, -0.23, 0.022, 0.06, rgb(0x1c1f24), MAT.lit)
+    this.curbBlockModel = renderer.addModel(cb)
+
+    // 6. Chipped, eroded road paint dash (3 broken paint flakes per dash)
+    const pd = new Mesh()
+    pd.box(-0.82, 0.0, -0.048, -0.28, 0.004, 0.048, rgb(0x564f3a), MAT.lit)
+    pd.box(-0.12, 0.0, -0.045, 0.30, 0.004, 0.046, rgb(0x4c4533), MAT.lit)
+    pd.box(0.44, 0.0, -0.046, 0.78, 0.004, 0.044, rgb(0x5c543e), MAT.lit)
+    this.paintDashModel = renderer.addModel(pd)
+
+    // 7. Small irregular gravel/twig/leaf litter cluster along sidewalk & curb edges
+    const ec = new Mesh()
+    ec.yawBox(0, 0, 0.09, 0.06, 0.0, 0.015, 0.3, rgb(0x483018), MAT.lit)
+    ec.yawBox(0.08, 0.04, 0.07, 0.05, 0.0, 0.014, 1.2, rgb(0x583a1c), MAT.lit)
+    ec.yawBox(-0.07, 0.05, 0.05, 0.04, 0.0, 0.018, -0.6, rgb(0x4a4d52), MAT.lit)
+    ec.yawBox(0.03, -0.06, 0.14, 0.018, 0.0, 0.012, 0.8, rgb(0x3a2c1e), MAT.timber)
+    this.edgeClodModel = renderer.addModel(ec)
+  }
+
+  private ensureBuilt(town: Town, seedOverride: number): void {
+    const key = `${town.seed}:${town.terrain}:${seedOverride}`
+    if (this.cachedKey === key) return
+    this.cachedKey = key
+    const rng = new Rng((town.seed ^ (seedOverride * 0x45d9f3b) ^ 0x4f91c27b) >>> 0)
+
+    this.manholes = [
+      [33.45, 43.85],
+      [43.85, 43.95],
+      [44.20, 29.60],
+      [56.80, 43.75],
+    ].map(([x, z], i) => ({
+      x: x!,
+      y: 0.014,
+      z: z!,
+      yaw: i * 0.62,
+      r: 1,
+      g: 1,
+      b: 1,
+      scale: 1,
+      pitch: 0,
+      roll: 0,
+      threshold: 0.15,
+    }))
+
+    this.drains = [
+      [24.65, 40.12, 0],
+      [33.80, 40.12, 0],
+      [31.35, 47.88, Math.PI],
+      [59.00, 47.88, Math.PI],
+      [48.10, 31.00, Math.PI / 2],
+      [39.88, 63.00, -Math.PI / 2],
+    ].map(([x, z, yaw]) => ({
+      x: x!,
+      y: 0.014,
+      z: z!,
+      yaw: yaw!,
+      r: 1,
+      g: 1,
+      b: 1,
+      scale: 1,
+      pitch: 0,
+      roll: 0,
+      threshold: 0.1,
+    }))
+
+    this.potholes = [
+      [25.60, 42.15, 0.95],
+      [32.45, 45.20, 1.05],
+      [27.40, 46.45, 0.88],
+      [36.10, 41.65, 0.85],
+      [21.40, 45.30, 1.00],
+      [43.40, 36.20, 0.95],
+      [52.60, 44.60, 1.05],
+      [16.20, 42.90, 0.96],
+      [64.50, 45.10, 1.02],
+    ].map(([x, z, sc], i) => ({
+      x: x!,
+      y: 0.014,
+      z: z!,
+      yaw: i * 1.17 + rng.next() * 0.5,
+      r: 1,
+      g: 1,
+      b: 1,
+      scale: sc!,
+      pitch: 0,
+      roll: 0,
+      threshold: 0.25 + (i % 4) * 0.35,
+    }))
+
+    this.paints = []
+    for (let v = 6; v < SIZE - 6; v += 5.0) {
+      if (v > 36.0 && v < 51.0) continue
+      if (v < 38.0) {
+        this.paints.push({
+          x: v + 1.1,
+          y: 0.015,
+          z: 43.96,
+          yaw: (rng.next() - 0.5) * 0.02,
+          r: 1,
+          g: 1,
+          b: 1,
+          scale: 0.92 + rng.next() * 0.18,
+          pitch: 0,
+          roll: 0,
+          threshold: 0.2,
+        })
+      }
+      this.paints.push({
+        x: 43.96,
+        y: 0.015,
+        z: v + 1.1,
+        yaw: Math.PI / 2 + (rng.next() - 0.5) * 0.02,
+        r: 1,
+        g: 1,
+        b: 1,
+        scale: 0.92 + rng.next() * 0.18,
+        pitch: 0,
+        roll: 0,
+        threshold: 0.2,
+      })
+    }
+
+    this.slabs = []
+    this.curbs = []
+    this.clods = []
+
+    for (let x = 6; x < SIZE - 6; x += 1.35 + rng.next() * 0.65) {
+      if (x > 37.4 && x < 50.6) continue
+      const inDriveway = (x > 18.6 && x < 22.0) || (x > 49.6 && x < 53.0)
+      const inWalkway = (x > 26.7 && x < 28.7) || (x > 57.7 && x < 59.7)
+      if (inDriveway) continue
+
+      for (const isNorth of [true, false]) {
+        const zSidewalk = isNorth ? 38.64 : 49.36
+        const zVergeInner = isNorth ? 39.30 : 48.70
+        const zCurb = isNorth ? 39.88 : 48.12
+        const zLawnEdge = isNorth ? 38.06 : 49.94
+
+        if (!inWalkway && rng.next() < 0.72) {
+          this.curbs.push({
+            x: x + (rng.next() - 0.5) * 0.18,
+            y: 0.094,
+            z: zVergeInner,
+            yaw: (rng.next() - 0.5) * 0.08,
+            r: 1,
+            g: 1,
+            b: 1,
+            scale: 0.85 + rng.next() * 0.30,
+            pitch: (rng.next() - 0.5) * 0.04,
+            roll: 0,
+            threshold: rng.next() * 1.4,
+          })
+        }
+
+        if (rng.next() < 0.55) {
+          this.curbs.push({
+            x: x + (rng.next() - 0.5) * 0.22,
+            y: 0.062,
+            z: zCurb,
+            yaw: (rng.next() - 0.5) * 0.10,
+            r: 1,
+            g: 1,
+            b: 1,
+            scale: 0.78 + rng.next() * 0.28,
+            pitch: (rng.next() - 0.5) * 0.05,
+            roll: 0,
+            threshold: rng.next() * 1.5,
+          })
+        }
+
+        if (rng.next() < 0.45) {
+          this.slabs.push({
+            x: x + (rng.next() - 0.5) * 0.35,
+            y: 0.100,
+            z: zSidewalk + (rng.next() - 0.5) * 0.38,
+            yaw: rng.next() * Math.PI * 2,
+            r: 1,
+            g: 1,
+            b: 1,
+            scale: 0.65 + rng.next() * 0.55,
+            pitch: (rng.next() - 0.5) * 0.08,
+            roll: (rng.next() - 0.5) * 0.08,
+            threshold: rng.next() * 1.6,
+          })
+        }
+
+        if (!inWalkway && rng.next() < 0.75) {
+          this.clods.push({
+            x: x + (rng.next() - 0.5) * 0.42,
+            y: 0.100,
+            z: zLawnEdge + (isNorth ? 0.06 + rng.next() * 0.22 : -0.06 - rng.next() * 0.22),
+            yaw: rng.next() * Math.PI * 2,
+            r: 1,
+            g: 1,
+            b: 1,
+            scale: 0.75 + rng.next() * 0.65,
+            pitch: 0,
+            roll: 0,
+            threshold: rng.next() * 1.6,
+          })
+        }
+      }
+    }
+
+    // Subtle twig/leaf/stone litter along walkway & driveway borders
+    for (const b of town.buildings) {
+      if (b.kind !== "house") continue
+      const [bx0, bz0, , bz1] = b.rect
+      const walkEnd = frontageEnd(b) + 1.9
+      for (let wz = bz1 + 0.55; wz < walkEnd; wz += 0.85 + rng.next() * 0.55) {
+        for (const side of [-1, 1] as const) {
+          if (rng.next() < 0.35) continue
+          this.clods.push({
+            x: bx0 + 5.7 + side * (0.64 + (rng.next() - 0.5) * 0.12),
+            y: 0.130,
+            z: wz + (rng.next() - 0.5) * 0.20,
+            yaw: rng.next() * Math.PI * 2,
+            r: 1,
+            g: 1,
+            b: 1,
+            scale: 0.70 + rng.next() * 0.50,
+            pitch: 0,
+            roll: 0,
+            threshold: rng.next() * 1.6,
+          })
+        }
+      }
+      for (let dz = bz0 + 0.9; dz < walkEnd; dz += 0.85 + rng.next() * 0.55) {
+        for (const edgeX of [bx0 - 2.96, bx0 - 0.40]) {
+          const gx = edgeX + (rng.next() - 0.5) * 0.22
+          const gz = dz + (rng.next() - 0.5) * 0.22
+          this.clods.push({
+            x: gx,
+            y: supportHeight(town, gx, gz),
+            z: gz,
+            yaw: rng.next() * Math.PI * 2,
+            r: 1,
+            g: 1,
+            b: 1,
+            scale: 0.75 + rng.next() * 0.55,
+            pitch: 0,
+            roll: 0,
+            threshold: rng.next() * 1.6,
+          })
+        }
+      }
+    }
+  }
+
+  collectBatches(
+    town: Town,
+    view: readonly [number, number, number, number],
+    settings: Pick<GroundSettings, "wearAmount" | "curbDirt" | "clutterSeed">,
+  ): Batch[] {
+    this.ensureBuilt(town, settings.clutterSeed)
+    const [vx0, vy0, vx1, vy1] = view
+    const wear = Math.max(0, settings.wearAmount)
+    const dirt = Math.max(0, settings.curbDirt)
+    const batches: Batch[] = []
+
+    const packVisible = (list: WearInstance[], buf: Float32Array<ArrayBuffer>, model: number, gate: number) => {
+      if (gate <= 0.01) return
+      const cap = Math.floor(buf.length / INST_FLOATS)
+      let count = 0
+      for (let i = 0; i < list.length && count < cap; i++) {
+        const it = list[i]!
+        if (it.threshold > gate) continue
+        if (it.x < vx0 - 1.2 || it.x > vx1 + 1.2 || it.z < vy0 - 1.2 || it.z > vy1 + 1.2) continue
+        const o = count++ * INST_FLOATS
+        buf[o] = it.x
+        buf[o + 1] = it.y
+        buf[o + 2] = it.z
+        buf[o + 3] = it.yaw
+        buf[o + 4] = it.r
+        buf[o + 5] = it.g
+        buf[o + 6] = it.b
+        buf[o + 7] = it.scale
+        buf[o + 8] = it.pitch
+        buf[o + 9] = it.roll
+        buf[o + 10] = 1
+        buf[o + 11] = 0
+      }
+      if (count > 0) batches.push({ model, data: buf, count })
+    }
+
+    packVisible(this.manholes, this.manholeData, this.manholeModel, Math.max(0.2, wear))
+    packVisible(this.drains, this.drainData, this.drainModel, Math.max(0.2, wear))
+    packVisible(this.potholes, this.potholeData, this.potholeModel, wear)
+    packVisible(this.slabs, this.slabData, this.crackedSlabModel, wear)
+    packVisible(this.curbs, this.curbData, this.curbBlockModel, wear)
+    packVisible(this.paints, this.paintData, this.paintDashModel, Math.max(0.25, wear))
+    packVisible(this.clods, this.clodData, this.edgeClodModel, dirt)
+
+    return batches
+  }
+}
+

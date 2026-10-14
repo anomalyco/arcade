@@ -307,8 +307,8 @@ function compileLevel(town: Town): LevelData {
   }
   for (let v = 52; v < SIZE; v += 5) {
     const m = at(v, 44)
-    m.box(v, .025, 43.9, v + 2.4, .027, 44.02, hex(0xb9ab7a))
-    at(44, v).box(43.9, .025, v, 44.02, .027, v + 2.4, hex(0xb9ab7a))
+    m.box(v, .025, 43.9, v + 2.4, .027, 44.02, hex(0x58523d))
+    at(44, v).box(43.9, .025, v, 44.02, .027, v + 2.4, hex(0x58523d))
   }
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)

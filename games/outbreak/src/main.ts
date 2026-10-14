@@ -31,7 +31,7 @@ import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakCombatFX } from "./combat-fx"
-import { DEFAULT_GROUND_SETTINGS, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
+import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
@@ -131,6 +131,7 @@ async function main() {
   const avatar = new Survivor(renderer)
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
+  const groundWear = new GroundWearRenderer(renderer)
   const updateProfile = () => {
     avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
   }
@@ -953,7 +954,9 @@ async function main() {
     )
     render.addCount = addCount
     render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
+    const groundWearBatches = groundWear.collectBatches(town, view, settings)
     render.batches = [
+      ...groundWearBatches,
       ...survivorBatches,
       ...fxOut.batches,
       ...zombieBatches,
