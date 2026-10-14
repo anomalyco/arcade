@@ -1139,42 +1139,40 @@ fn hash(p: vec2f) -> f32 {
 fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
   let center = clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;
   if (strength <= 0.01) { return center; }
-  let r = texel * (1.0 + strength * 1.5);
-  let cNW = clean(textureSampleLevel(src, samp, uv + vec2f(-r.x, -r.y), 0.0)).rgb;
-  let cN  = clean(textureSampleLevel(src, samp, uv + vec2f(0.0, -r.y), 0.0)).rgb;
-  let cNE = clean(textureSampleLevel(src, samp, uv + vec2f(r.x, -r.y), 0.0)).rgb;
-  let cW  = clean(textureSampleLevel(src, samp, uv + vec2f(-r.x, 0.0), 0.0)).rgb;
-  let cE  = clean(textureSampleLevel(src, samp, uv + vec2f(r.x, 0.0), 0.0)).rgb;
-  let cSW = clean(textureSampleLevel(src, samp, uv + vec2f(-r.x, r.y), 0.0)).rgb;
-  let cS  = clean(textureSampleLevel(src, samp, uv + vec2f(0.0, r.y), 0.0)).rgb;
-  let cSE = clean(textureSampleLevel(src, samp, uv + vec2f(r.x, r.y), 0.0)).rgb;
+  // Canvas brushstroke domain warp (~3-5 px dabs) + multi-ring 4-sector Kuwahara painter's filter
+  let pxCoord = uv / max(texel, vec2f(1e-5));
+  let dabAng = hash(floor(pxCoord * 0.28)) * 6.2831853;
+  let dabWarp = vec2f(cos(dabAng), sin(dabAng)) * texel * (0.85 * strength);
+  let uvW = clamp(uv + dabWarp, vec2f(0.002), vec2f(0.998));
 
+  let r1 = texel * (0.9 + strength * 0.7);
+  let r2 = texel * (1.6 + strength * 1.1);
   let lw = vec3f(0.2126, 0.7152, 0.0722);
-  let lC  = dot(center, lw);
-  let lNW = dot(cNW, lw); let lN = dot(cN, lw); let lNE = dot(cNE, lw);
-  let lW  = dot(cW, lw);                         let lE  = dot(cE, lw);
-  let lSW = dot(cSW, lw); let lS = dot(cS, lw); let lSE = dot(cSE, lw);
 
-  let m0 = (center + cNW + cN + cW) * 0.25;
-  let m1 = (center + cNE + cN + cE) * 0.25;
-  let m2 = (center + cSW + cS + cW) * 0.25;
-  let m3 = (center + cSE + cS + cE) * 0.25;
-
-  let lm0 = (lC + lNW + lN + lW) * 0.25;
-  let lm1 = (lC + lNE + lN + lE) * 0.25;
-  let lm2 = (lC + lSW + lS + lW) * 0.25;
-  let lm3 = (lC + lSE + lS + lE) * 0.25;
-
-  let v0 = (lC - lm0)*(lC - lm0) + (lNW - lm0)*(lNW - lm0) + (lN - lm0)*(lN - lm0) + (lW - lm0)*(lW - lm0);
-  let v1 = (lC - lm1)*(lC - lm1) + (lNE - lm1)*(lNE - lm1) + (lN - lm1)*(lN - lm1) + (lE - lm1)*(lE - lm1);
-  let v2 = (lC - lm2)*(lC - lm2) + (lSW - lm2)*(lSW - lm2) + (lS - lm2)*(lS - lm2) + (lW - lm2)*(lW - lm2);
-  let v3 = (lC - lm3)*(lC - lm3) + (lSE - lm3)*(lSE - lm3) + (lS - lm3)*(lS - lm3) + (lE - lm3)*(lE - lm3);
-
-  let w0 = 1.0 / (1.0 + v0 * 240.0);
-  let w1 = 1.0 / (1.0 + v1 * 240.0);
-  let w2 = 1.0 / (1.0 + v2 * 240.0);
-  let w3 = 1.0 / (1.0 + v3 * 240.0);
-  return mix(center, (m0 * w0 + m1 * w1 + m2 * w2 + m3 * w3) / (w0 + w1 + w2 + w3), clamp(strength, 0.0, 1.0));
+  var m = array<vec3f, 4>(center, center, center, center);
+  var s2 = array<f32, 4>(0.0, 0.0, 0.0, 0.0);
+  let lC = dot(center, lw);
+  for (var q = 0; q < 4; q++) {
+    let sx = select(-1.0, 1.0, (q & 1) != 0);
+    let sy = select(-1.0, 1.0, (q & 2) != 0);
+    let d = vec2f(sx, sy);
+    let c1 = clean(textureSampleLevel(src, samp, clamp(uvW + d * r1, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c2 = clean(textureSampleLevel(src, samp, clamp(uvW + vec2f(d.x * r2.x, d.y * r1.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c3 = clean(textureSampleLevel(src, samp, clamp(uvW + vec2f(d.x * r1.x, d.y * r2.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c4 = clean(textureSampleLevel(src, samp, clamp(uvW + d * r2, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let mean = (center + c1 + c2 + c3 + c4) * 0.2;
+    let l1 = dot(c1, lw); let l2 = dot(c2, lw); let l3 = dot(c3, lw); let l4 = dot(c4, lw);
+    let lm = (lC + l1 + l2 + l3 + l4) * 0.2;
+    let v = (lC - lm)*(lC - lm) + (l1 - lm)*(l1 - lm) + (l2 - lm)*(l2 - lm) + (l3 - lm)*(l3 - lm) + (l4 - lm)*(l4 - lm);
+    m[q] = mean;
+    s2[q] = v;
+  }
+  let w0 = 1.0 / (1.0 + s2[0] * 1400.0);
+  let w1 = 1.0 / (1.0 + s2[1] * 1400.0);
+  let w2 = 1.0 / (1.0 + s2[2] * 1400.0);
+  let w3 = 1.0 / (1.0 + s2[3] * 1400.0);
+  let painted = (m[0] * w0 + m[1] * w1 + m[2] * w2 + m[3] * w3) / (w0 + w1 + w2 + w3);
+  return mix(center, painted, clamp(strength, 0.0, 1.0));
 }
 
 @fragment fn composite(o: VO) -> @location(0) vec4f {

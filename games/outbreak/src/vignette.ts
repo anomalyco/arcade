@@ -1242,75 +1242,80 @@ fn eyeVisible(p: vec2f) -> f32 {
   // Direction 2 (Painterly): rich gouache twilight, saturated lush greens, warm honey interiors, peach highlights vs periwinkle shadows
   if (activeVig && Vig.params0.w > 0.05) {
     let wAmt = Vig.params0.w;
+    // Multi-scale cell brush strokes + organic FBM so flat surfaces read as hand-painted gouache dabs
+    let warp = vec2f(surfaceNoise(o.world.xz * 2.8 + vec2f(1.3, 4.1)) - 0.5, surfaceNoise(o.world.xz * 2.8 + vec2f(7.9, 2.6)) - 0.5) * 0.35;
+    let brushCell = floor((o.world.xz + warp) * 3.4);
+    let cellTone = (hash2(brushCell) - 0.5) * 0.18;
     let fbm1 = surfaceFbm(o.world.xz * 1.35 + vec2f(o.world.y * 0.8, 2.3));
     let fbm2 = surfaceNoise(o.world.xz * 4.2 + vec2f(5.1, 1.7));
-    let brush = 0.74 + 0.52 * (fbm1 * 0.65 + fbm2 * 0.35);
+    let brush = clamp(0.76 + 0.48 * (fbm1 * 0.60 + fbm2 * 0.40) + cellTone, 0.58, 1.38);
     let isInteriorView = Vig.params2.y < 35.0;
-    let extScale = select(1.0, 0.36, isInteriorView);
+    let extScale = select(1.0, 0.38, isInteriorView);
     let texMod = mix(vec3f(1.0), surfaceTexRatio, 0.55);
     if (mat == 2) {
       // Rich warm golden-amber window panes & glowing lamp shades
-      col = vec3f(1.25, 0.72, 0.20) * (0.88 + 0.28 * fbm1);
+      col = vec3f(1.22, 0.70, 0.22) * (0.88 + 0.28 * fbm1);
     } else if (interior(o.world.xz) && o.world.y < 2.76) {
-      let dBed = exp(-(pow((o.world.x - 24.6) * 0.42, 2.0) + pow((o.world.z - 25.8) * 0.42, 2.0)));
-      let dSofa = exp(-(pow((o.world.x - 23.8) * 0.38, 2.0) + pow((o.world.z - 33.6) * 0.38, 2.0)));
-      let dHall = exp(-(pow((o.world.x - 28.0) * 0.34, 2.0) + pow((o.world.z - 32.2) * 0.34, 2.0)));
-      let dDin = exp(-(pow((o.world.x - 33.6) * 0.38, 2.0) + pow((o.world.z - 32.4) * 0.38, 2.0)));
-      let dNorthTab = exp(-(pow((o.world.x - 32.5) * 0.48, 2.0) + pow((o.world.z - 27.4) * 0.48, 2.0)));
-      let dEastWin = exp(-pow((o.world.x - 36.6) * 0.60, 2.0)) * (exp(-pow((o.world.z - 28.8) * 0.48, 2.0)) + exp(-pow((o.world.z - 32.8) * 0.48, 2.0)));
-      let lampPools = clamp(dBed * 1.15 + dSofa * 1.05 + dHall * 0.85 + dDin * 1.15 + dNorthTab * 0.90 + dEastWin * 0.55, 0.0, 1.45);
-      // Sage-green lower wainscot band on interior walls (y < 0.92), warm parchment-periwinkle upper plaster
+      let dBed = exp(-(pow((o.world.x - 24.6) * 0.44, 2.0) + pow((o.world.z - 25.6) * 0.44, 2.0)));
+      let dSofa = exp(-(pow((o.world.x - 23.6) * 0.40, 2.0) + pow((o.world.z - 33.8) * 0.40, 2.0)));
+      let dHall = exp(-(pow((o.world.x - 28.0) * 0.36, 2.0) + pow((o.world.z - 32.0) * 0.36, 2.0)));
+      let dDin = exp(-(pow((o.world.x - 33.8) * 0.42, 2.0) + pow((o.world.z - 32.5) * 0.42, 2.0)));
+      let dNorthTab = exp(-(pow((o.world.x - 31.8) * 0.55, 2.0) + pow((o.world.z - 27.6) * 0.55, 2.0)));
+      let lampPools = clamp(dBed * 1.25 + dSofa * 1.15 + dHall * 0.75 + dDin * 0.95 + dNorthTab * 0.85, 0.0, 1.40);
+      // Sage-green lower wainscot band on interior walls (y < 0.92), warm parchment-taupe upper plaster
       if (mat == 4 && abs(n.y) < 0.4) {
         let wainscot = 1.0 - smoothstep(0.82, 0.98, o.world.y);
-        let wallShadow = mix(vec3f(0.18, 0.155, 0.145), vec3f(0.082, 0.105, 0.078), wainscot);
-        let lampWall = vec3f(0.24, 0.135, 0.035) * lampPools;
-        col = col * 0.20 + (wallShadow + lampWall) * texMod * brush * (0.75 + 0.25 * smoothstep(0.2, 2.4, o.world.y));
+        let inKitchenWall = smoothstep(29.8, 26.5, o.world.z) * smoothstep(28.0, 31.5, o.world.x);
+        let upperPlaster = mix(vec3f(0.145, 0.128, 0.118), vec3f(0.095, 0.095, 0.105), inKitchenWall * 0.7);
+        let wallShadow = mix(upperPlaster, vec3f(0.068, 0.092, 0.068), wainscot);
+        let lampWall = vec3f(0.20, 0.115, 0.032) * lampPools;
+        col = col * 0.14 + (wallShadow + lampWall) * texMod * brush * (0.72 + 0.28 * smoothstep(0.2, 2.4, o.world.y));
       } else if (mat == 20 || (o.world.y > 0.13 && o.world.y < 0.16)) {
-        // Rich reddish-chestnut gouache floorboards with dark plank joints & shadowed corners, lifting in lamp pools
+        // Rich reddish-chestnut gouache floorboards with dark plank joints & shadowed kitchen tiles
         let row = floor(o.world.z / 0.22);
         let plank = floor((o.world.x + fract(row * 0.41) * 1.8) / 1.6);
         let boardVar = 0.68 + 0.60 * hash2(vec2f(row, plank));
         let seamLong = smoothstep(0.0, 0.09, abs(fract(o.world.z / 0.22) - 0.5));
         let seamButt = smoothstep(0.0, 0.05, abs(fract((o.world.x + fract(row * 0.41) * 1.8) / 1.6) - 0.5));
-        let inKitchen = smoothstep(29.8, 26.2, o.world.z) * smoothstep(27.5, 31.8, o.world.x);
-        let floorBase = mix(vec3f(0.082, 0.044, 0.026), vec3f(0.042, 0.030, 0.024), inKitchen * 0.85);
-        let warmLift = vec3f(0.145, 0.072, 0.022) * lampPools;
-        col = (floorBase * boardVar + warmLift) * texMod * brush * (0.52 + 0.48 * seamLong * seamButt);
+        let inKitchen = smoothstep(29.8, 26.2, o.world.z) * smoothstep(28.2, 31.5, o.world.x);
+        let floorBase = mix(vec3f(0.076, 0.042, 0.025), vec3f(0.036, 0.032, 0.030), inKitchen * 0.88);
+        let warmLift = vec3f(0.125, 0.065, 0.022) * lampPools;
+        col = (floorBase * boardVar + warmLift) * texMod * brush * (0.54 + 0.46 * seamLong * seamButt);
       } else {
         // Furniture: muted sage-teal bed blankets & kitchen cabinets, warm walnut tables/chairs
         let isBedOrCounter = (o.world.x < 25.4 && o.world.y > 0.40 && o.world.y < 0.72) || (o.world.x > 31.0 && o.world.z < 29.8 && o.world.y < 0.92);
-        let furnBase = select(o.color * vec3f(0.20, 0.12, 0.068), vec3f(0.055, 0.088, 0.078), isBedOrCounter);
-        col = col * 0.16 + (furnBase + vec3f(0.105, 0.058, 0.018) * lampPools) * brush;
+        let furnBase = select(o.color * vec3f(0.18, 0.11, 0.064), vec3f(0.052, 0.082, 0.072), isBedOrCounter);
+        col = col * 0.14 + (furnBase + vec3f(0.095, 0.052, 0.018) * lampPools) * brush;
       }
       // Darken cutaway wall-top border to slate-periwinkle
       if (o.world.y > 2.73 && n.y > 0.75) {
-        col = vec3f(0.042, 0.052, 0.092);
+        col = vec3f(0.040, 0.048, 0.088);
       }
     } else {
-      // Exterior gouache twilight: periwinkle-lavender road & roof, muted sage-olive turf/trees, golden-peach porch/window pools
-      let edgeVignette = clamp(1.0 - pow(abs(o.world.x - 29.5) / 22.0, 1.8) * 0.34, 0.58, 1.06);
-      let winGlowL = exp(-pow((o.world.x - 24.5) * 0.34, 2.0)) * exp(-pow((o.world.z - 36.4) * 0.36, 2.0));
-      let winGlowR = exp(-pow((o.world.x - 34.2) * 0.34, 2.0)) * exp(-pow((o.world.z - 36.4) * 0.36, 2.0));
-      let porchGlow = exp(-pow((o.world.x - 27.7) * 0.25, 2.0)) * exp(-pow((o.world.z - 37.8) * 0.26, 2.0));
-      let warmLawn = clamp(winGlowL + winGlowR + porchGlow * 1.35, 0.0, 1.35);
+      // Exterior gouache twilight: periwinkle-lavender road & roof, lush sage-olive turf/trees, golden-peach porch/window pools
+      let edgeVignette = clamp(1.0 - pow(abs(o.world.x - 29.5) / 22.0, 1.8) * 0.30, 0.62, 1.06);
+      let winGlowL = exp(-pow((o.world.x - 24.5) * 0.38, 2.0)) * exp(-pow((o.world.z - 36.2) * 0.42, 2.0));
+      let winGlowR = exp(-pow((o.world.x - 34.2) * 0.38, 2.0)) * exp(-pow((o.world.z - 36.2) * 0.42, 2.0));
+      let porchGlow = exp(-pow((o.world.x - 27.7) * 0.26, 2.0)) * exp(-pow((o.world.z - 37.6) * 0.28, 2.0));
+      let warmLawn = clamp(winGlowL * 0.85 + winGlowR * 0.85 + porchGlow * 1.25, 0.0, 1.25);
       if (mat == 20) {
         let kind = i32(round(o.aux));
         if (kind == 1) {
           // Street asphalt: dappled periwinkle-lavender gouache wash with warm peach-gold porch spill
           let warmPool = exp(-pow((o.world.x - 28.0) * 0.15, 2.0)) * exp(-pow((o.world.z - 41.0) * 0.22, 2.0));
-          let roadBase = mix(vec3f(0.098, 0.112, 0.195), vec3f(0.26, 0.185, 0.125), warmPool * 0.90);
+          let roadBase = mix(vec3f(0.102, 0.118, 0.202), vec3f(0.26, 0.185, 0.125), warmPool * 0.90);
           col = col * 0.12 + roadBase * texMod * brush * edgeVignette * extScale;
         } else if (kind == 2 || kind == 6) {
-          // Sidewalk & front stone path: warm cream-lavender with rich golden-peach porch spill
+          // Sidewalk & front stone path: warm cream-stone with rich golden-peach porch spill
           let walkGlow = exp(-pow((o.world.x - 27.7) * 0.26, 2.0)) * smoothstep(43.2, 35.5, o.world.z);
           let slabJoint = smoothstep(0.0, 0.06, min(abs(fract(o.world.x / 1.4) - 0.5), abs(fract(o.world.z / 1.2) - 0.5)));
-          let walkBase = mix(vec3f(0.138, 0.148, 0.198), vec3f(0.46, 0.29, 0.11), walkGlow * 0.95);
+          let walkBase = mix(vec3f(0.165, 0.165, 0.188), vec3f(0.45, 0.28, 0.11), walkGlow * 0.92);
           col = col * 0.14 + walkBase * texMod * brush * (0.82 + 0.18 * slabJoint) * edgeVignette * extScale;
         } else {
-          // Lawn & verge: cool twilight olive-slate in side yards & south verge, lifting to warm golden-chartreuse in window/porch pools
-          let yardCenter = exp(-pow((o.world.x - 29.5) * 0.11, 2.0)) * smoothstep(46.0, 36.0, o.world.z);
-          let shadowGrass = mix(vec3f(0.045, 0.064, 0.068), vec3f(0.082, 0.122, 0.076), yardCenter);
-          let grassBase = mix(shadowGrass, vec3f(0.35, 0.26, 0.075), warmLawn * 0.90);
+          // Lawn & verge: cool olive-slate under side trees & south lawn, warm sage-olive on front lawn, golden in window/porch pools
+          let frontYard = smoothstep(18.0, 22.5, o.world.x) * smoothstep(41.0, 36.5, o.world.x) * smoothstep(46.5, 41.0, o.world.z);
+          let shadowGrass = mix(vec3f(0.055, 0.075, 0.074), vec3f(0.095, 0.138, 0.076), frontYard);
+          let grassBase = mix(shadowGrass, vec3f(0.32, 0.24, 0.072), warmLawn * 0.85);
           col = col * 0.08 + grassBase * texMod * brush * edgeVignette * extScale;
         }
       } else if (mat == 21) {
@@ -1321,17 +1326,20 @@ fn eyeVisible(p: vec2f) -> f32 {
         let tileSeam = smoothstep(0.0, 0.08, abs(fract(q.x) - 0.5)) * smoothstep(0.0, 0.11, abs(fract(q.y) - 0.5));
         col = col * 0.10 + vec3f(0.056, 0.068, 0.125) * tileVar * (0.72 + 0.28 * tileSeam) * texMod * brush * edgeVignette * extScale;
       } else if (mat == 22) {
-        // Tree & shrub foliage: deep twilight olive-sage in inner boughs, soft sage lobes on top, golden shrubs by windows
+        // Tree & shrub foliage: deep twilight olive-sage in inner boughs, soft sage lobes on top, warm blossom dabs on foundation shrubs
         let crownLift = clamp(smoothstep(0.2, 3.8, o.world.y) * 0.36 + max(0.0, n.y) * 0.40, 0.0, 1.0);
-        let leafTone = mix(vec3f(0.020, 0.036, 0.034), vec3f(0.062, 0.095, 0.062), crownLift);
-        let warmShrub = vec3f(0.24, 0.18, 0.048) * warmLawn * smoothstep(2.2, 0.2, o.world.y);
-        col = col * 0.06 + (leafTone + warmShrub) * texMod * brush * edgeVignette * extScale;
+        let leafTone = mix(vec3f(0.022, 0.042, 0.034), vec3f(0.068, 0.108, 0.058), crownLift);
+        let isFoundationBush = step(34.6, o.world.z) * step(o.world.z, 37.0) * step(22.0, o.world.x) * step(o.world.x, 36.8);
+        let blossom = smoothstep(0.32, 0.58, hash2(floor(o.world.xz * 5.2))) * isFoundationBush;
+        let shrubGlow = mix(vec3f(0.04, 0.065, 0.025), vec3f(0.22, 0.15, 0.045), blossom) * warmLawn;
+        col = col * 0.06 + (leafTone + shrubGlow) * texMod * brush * edgeVignette * extScale;
       } else if (mat == 4) {
-        // Exterior clapboard walls & porch columns: warm cream-peach near windows/porch, soft lavender at corners
-        let wallWarm = mix(vec3f(0.14, 0.145, 0.19), vec3f(0.36, 0.24, 0.105), warmLawn * 0.85);
-        col = col * 0.18 + o.color * wallWarm * texMod * brush * extScale;
+        // Exterior clapboard walls & porch columns: soft cream-lavender siding with subtle warm window/porch bounce
+        let lap = 0.78 + 0.22 * smoothstep(0.0, 0.22, fract(o.world.y / 0.18));
+        let wallWarm = mix(vec3f(0.135, 0.142, 0.185), vec3f(0.24, 0.18, 0.11), warmLawn * 0.65);
+        col = col * 0.14 + o.color * wallWarm * lap * texMod * brush * extScale;
       } else {
-        col = col * 0.20 + o.color * vec3f(0.13, 0.14, 0.19) * brush * extScale;
+        col = col * 0.18 + o.color * vec3f(0.13, 0.14, 0.185) * brush * extScale;
       }
     }
     col = mix(o.color, col, wAmt);
