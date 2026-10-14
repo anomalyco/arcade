@@ -6,6 +6,64 @@ import { supportHeight } from "../shared/terrain"
 const rgb = (v:number):Rgb => [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]
 type Point = [number,number,number]
 
+/** Boxy 1990s 4-door suburban sedan parked nose-in on the gravel driveway (front facing -z, rear/trunk facing street +z). */
+function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
+  const y=ground, from=m.length
+  // Soft contact shadow under chassis
+  m.quad([-.92,y+.004,2.14],[.92,y+.004,2.14],[.92,y+.004,-2.14],[-.92,y+.004,-2.14],[0,1,0],rgb(0x111419),MAT.lit)
+  const paintSide=rgb(0x636f80),paintTop=rgb(0x7c899c),paintRoof=rgb(0x8a98ad),trim=rgb(0x232830),glass=rgb(0x25303f),pillar=rgb(0x94a2b6)
+  // Four wheels with dark tires and alloy rims
+  for(const sx of [-.78,.78])for(const sz of [-1.28,1.22]){
+    m.box(sx-.11,y+.01,sz-.31,sx+.11,y+.56,sz+.31,rgb(0x17191d),MAT.lit)
+    m.box(sx+(sx<0?-.12:.09),y+.14,sz-.19,sx+(sx<0?-.09:.12),y+.43,sz+.19,rgb(0x78808e),MAT.shiny)
+  }
+  // Lower body hull: long hood at north (-z), trunk deck at south (+z)
+  m.bevelBox(-.84,y+.22,-2.04,.84,y+.76,2.02,.055,paintSide,paintTop,MAT.lit,MAT.lit)
+  // Front (-z) & rear (+z) wrap-around dark bumpers + side rub strips
+  m.box(-.86,y+.20,1.86,.86,y+.43,2.09,trim,MAT.lit)
+  m.box(-.86,y+.20,-2.09,.86,y+.43,-1.86,trim,MAT.lit)
+  m.box(-.86,y+.35,-1.86,.86,y+.41,1.86,trim,MAT.lit)
+  // Hood creases (-z) and trunk lid seam (+z)
+  for(const sx of [-.56,.56])m.box(sx-.022,y+.76,-1.94,sx+.022,y+.778,-.74,rgb(0x687486),MAT.lit)
+  m.box(-.015,y+.76,-1.96,.015,y+.778,-.74,rgb(0x8e9cb2),MAT.lit)
+  m.box(-.68,y+.755,-.74,.68,y+.772,-.62,trim,MAT.lit)
+  for(const sx of [-.72,.72])m.box(sx-.015,y+.758,1.08,sx+.015,y+.772,1.94,rgb(0x525c6b),MAT.lit)
+  // Tapered cabin greenhouse: windshield at -z, roof in center, rear window at +z facing the street camera
+  const bL=-.78,bR=.78,tL=-.65,tR=.65,y0=y+.75,y1=y+1.26
+  const zRearBot=1.12,zRearTop=.48,zFrontTop=-.34,zFrontBot=-.76
+  // Solid greenhouse hull (brighter C/A pillars and roof)
+  m.quadAuto([tL,y1,zRearTop],[tR,y1,zRearTop],[tR,y1,zFrontTop],[tL,y1,zFrontTop],paintRoof,MAT.lit)
+  m.quadAuto([bL,y0,zRearBot],[bR,y0,zRearBot],[tR,y1,zRearTop],[tL,y1,zRearTop],pillar,MAT.lit)
+  m.quadAuto([tL,y1,zFrontTop],[tR,y1,zFrontTop],[bR,y0,zFrontBot],[bL,y0,zFrontBot],pillar,MAT.lit)
+  m.quadAuto([bL,y0,zFrontBot],[bL,y0,zRearBot],[tL,y1,zRearTop],[tL,y1,zFrontTop],paintSide,MAT.lit)
+  m.quadAuto([bR,y0,zRearBot],[bR,y0,zFrontBot],[tR,y1,zFrontTop],[tR,y1,zRearTop],paintSide,MAT.lit)
+  // Inset rear window (+z, facing camera) & front windshield (-z) with crisp dark glass + thin silver trim
+  m.quadAuto([bL+.09,y0+.03,zRearBot+.006],[bR-.09,y0+.03,zRearBot+.006],[tR-.08,y1-.03,zRearTop+.006],[tL+.08,y1-.03,zRearTop+.006],glass,MAT.shiny)
+  m.quadAuto([tL+.08,y1-.03,zFrontTop-.006],[tR-.08,y1-.03,zFrontTop-.006],[bR-.09,y0+.03,zFrontBot-.006],[bL+.09,y0+.03,zFrontBot-.006],glass,MAT.shiny)
+  // Inset side door windows separated by B-pillar, plus front side mirrors near A-pillar (-z)
+  for(const [za,zb,ta,tb] of [[.10,zRearBot-.10,.08,zRearTop-.06],[zFrontBot+.10,.03,zFrontTop+.06,.03]] as const){
+    m.quadAuto([bL-.005,y0+.03,za],[bL-.005,y0+.03,zb],[tL-.005,y1-.03,tb],[tL-.005,y1-.03,ta],glass,MAT.shiny)
+    m.quadAuto([bR+.005,y0+.03,zb],[bR+.005,y0+.03,za],[tR+.005,y1-.03,ta],[tR+.005,y1-.03,tb],glass,MAT.shiny)
+  }
+  for(const s of [-1,1])m.box(s*.84,y+.74,-.52,s*.97,y+.84,-.38,paintTop,MAT.lit)
+  // Rear (+z, facing camera): tail-light clusters, amber turn strips, trunk garnish & recessed license plate
+  m.box(-.22,y+.47,2.00,.22,y+.63,2.04,rgb(0x3a414d),MAT.lit)
+  m.box(-.16,y+.49,2.01,.16,y+.60,2.05,rgb(0xc8c5ba),MAT.lit)
+  for(const sx of [-.56,.56]){
+    m.box(sx-.22,y+.48,2.00,sx+.22,y+.65,2.04,rgb(0x8e2c28),MAT.shiny)
+    m.box(sx-.22,y+.58,2.005,sx+.22,y+.65,2.045,rgb(0xb56c28),MAT.shiny)
+    m.box(sx-.18,y+.48,-2.05,sx+.18,y+.66,-2.00,rgb(0xc2cbd8),MAT.shiny)
+  }
+  m.box(-.42,y+.47,-2.05,.42,y+.65,-2.00,rgb(0x1c2026),MAT.lit)
+  // Slight natural parking yaw (~3 deg) and translate to driveway
+  const yaw=-.055, c=Math.cos(yaw), s=Math.sin(yaw)
+  for(let i=from;i<m.v.length;i+=11){
+    const vx=m.v[i]!,vz=m.v[i+2]!,nx=m.v[i+3]!,nz=m.v[i+5]!
+    m.v[i]=vx*c-vz*s+cx; m.v[i+2]=vx*s+vz*c+cz
+    m.v[i+3]=nx*c-nz*s; m.v[i+5]=nx*s+nz*c
+  }
+}
+
 function branch(m:Mesh,a:Point,b:Point,r:number) {
   const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],len=Math.hypot(dx,dy,dz)
   const axis=[dx/len,dy/len,dz/len],side=Math.hypot(dx,dz)
@@ -122,19 +180,24 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(r-2.13,4.74,mid+.77,r-1.07,4.86,mid+1.83,rgb(0x888b90))
   m.box(r-1.88,4.86,mid+1.02,r-1.32,4.88,mid+1.58,rgb(0x181c22))
   const cx=x+5.7
-  // Gabled porch canopy with dark shingle slopes, shadowed tympanum and crisp white rake trim (^).
+  const porchLamp=Math.max(0,town.lamps.findIndex(l=>l.kind==="porch"&&Math.abs(l.x-cx)<1.5&&Math.abs(l.y-(e+1.15))<1.5))
+  parkedSedan(m,x-1.68,e-1.35,.035)
+  // Gabled porch canopy with dark shingle slopes, warm-lit tympanum and crisp white rake trim (^).
   m.quadAuto([cx-1.62,2.46,e+1.58],[cx,3.22,e+1.58],[cx,3.22,e-.15],[cx-1.62,2.46,e-.15],roof,MAT.roof,id)
   m.quadAuto([cx,3.22,e+1.58],[cx+1.62,2.46,e+1.58],[cx+1.62,2.46,e-.15],[cx,3.22,e-.15],roof,MAT.roof,id)
-  m.facet([cx-1.52,2.46,e+1.48],[cx,3.16,e+1.48],[cx+1.52,2.46,e+1.48],rgb(0x2c323d),MAT.roof,id)
+  m.facet([cx-1.52,2.46,e+1.48],[cx,3.16,e+1.48],[cx+1.52,2.46,e+1.48],rgb(0x3a352e),MAT.roof,id)
   m.quadAuto([cx-1.64,2.42,e+1.60],[cx,3.19,e+1.60],[cx,3.26,e+1.56],[cx-1.64,2.49,e+1.56],trim,MAT.roof,id)
   m.quadAuto([cx,3.19,e+1.60],[cx+1.64,2.42,e+1.60],[cx+1.64,2.49,e+1.56],[cx,3.26,e+1.56],trim,MAT.roof,id)
   m.box(cx-1.58,2.38,e+1.36,cx+1.58,2.46,e+1.52,trim,MAT.roof,id)
+  // Warm glowing porch sconce above the front door + warm-washed transoms
+  m.box(cx-.11,2.24,e+.02,cx+.11,2.38,e+.16,rgb(0xffdfa6),MAT.lamp,porchLamp)
+  m.box(cx-.48,2.22,e+.01,cx+.48,2.30,e+.06,rgb(0x8c5e2c),MAT.lamp,porchLamp)
   for(const px of [cx-1.32,cx+1.32]){
     m.box(px-.09,.34,e+1.20,px+.09,2.42,e+1.38,rgb(0xeae4d7),MAT.wall)
     m.box(px-.14,.13,e+1.15,px+.14,.34,e+1.43,rgb(0xd8d2c5),MAT.wall)
   }
   // Porch steps leading to the front walkway, plus wall mailbox next to the door.
-  m.box(cx-.85,.08,e+1.28,cx+.85,.135,e+1.52,rgb(0xb8b2a4),MAT.wall)
+  m.box(cx-1.28,.08,e+1.28,cx+1.28,.132,e+1.46,rgb(0xc6bfb0),MAT.wall)
   m.box(cx+1.02,1.22,e+.01,cx+1.22,1.44,e+.10,rgb(0x2b3036),MAT.wall)
   // Door casing, lintel, sill and supported coir mat share the real 1.4m opening.
   for(const px of [x+4.92,x+6.40])m.box(px,.13,e-.24,px+.09,2.38,e+.07,rgb(0xeae4d7),MAT.wall)

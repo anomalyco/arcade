@@ -10,7 +10,8 @@ export const shaders = {
     ao: "0.42",
     lightLeak: "0.006 * vis",
     lightAttenuation: `let dn = max(d3, 0.55);
-    var att = power * win * (0.08 + 3.4 / (1.0 + dn * dn * 0.45));`,
+    var att = power * win * (0.08 + 3.4 / (1.0 + dn * dn * 0.45));
+    if (att <= 0.004) { continue; }`,
     wallDirectScale: "mix(0.20, 0.34, smoothstep(0.0, 1.5, o.world.y))",
     ambient: "ambientAt(n) * mix(0.09, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), vec3f(0.014, 0.009, 0.005), interior(o.world.xz) && o.world.y < 2.8)",
     diagnostics: "F.map.z",
@@ -34,6 +35,7 @@ fn houseRect(id: i32) -> vec4f {
   }
 }
 fn interior(p:vec2f) -> bool {
+  if (p.x < 21.25 || p.x > 72.75 || p.y < 23.25 || p.y > 67.75 || (p.x > 36.75 && p.x < 53.25) || (p.y > 37.75 && p.y < 54.25)) { return false; }
   for(var i=0;i<4;i++) { let b=houseRect(i); if(all(p>b.xy+0.25)&&all(p<b.zw-0.25)){return true;} }
   return false;
 }

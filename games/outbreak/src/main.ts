@@ -64,12 +64,12 @@ async function main() {
   const avatar = new Survivor(renderer)
   const updateProfile = () => { avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined }
   const doorMesh = new Mesh()
-  doorMesh.box(0, .13, -.1, 1.4, 2.3, .1, hex(0x796045), MAT.wall)
-  doorMesh.box(.08, .35, -.11, 1.32, 2.1, -.105, hex(0x8b7253), MAT.wall)
-  doorMesh.box(1.15, 1.1, .1, 1.24, 1.17, .17, hex(0xb9a071))
+  doorMesh.box(0, .13, -.1, 1.4, 2.3, .1, hex(0x463322), MAT.timber)
+  doorMesh.box(.08, .35, -.11, 1.32, 2.1, -.105, hex(0x57402b), MAT.timber)
+  doorMesh.box(1.14, 1.08, .1, 1.25, 1.19, .18, hex(0xc9a96a), MAT.shiny)
   for(const x of [.15,.75])for(const y of [.42,1.36]){
-    doorMesh.box(x,y,.101,x+.48,y+.70,.125,hex(0x91754e))
-    doorMesh.box(x+.035,y+.04,.126,x+.445,y+.66,.132,hex(0x70583d))
+    doorMesh.box(x,y,.101,x+.48,y+.70,.125,hex(0x5b432d),MAT.timber)
+    doorMesh.box(x+.035,y+.04,.126,x+.445,y+.66,.132,hex(0x3a2a1c),MAT.timber)
   }
   const doorModel = renderer.addModel(doorMesh)
   const doorData = new Float32Array(8 * 12)

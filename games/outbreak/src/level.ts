@@ -165,11 +165,15 @@ function compileLevel(town: Town): LevelData {
     floor(m, x, z, r, end, .13, b.kind === "house" ? 0x765a3e : 0x89968b, b.kind === "house" ? 2 : 1)
     floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0xa29d90, 6)
     floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0xa6a194,6)
-    floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x646659,7)
+    floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
+    // Concrete curb-cut ramp flare at the street edge of the driveway
+    if(b.kind==="house"&&end<40){
+      m.quadAuto([x-3.18,.015,40.0],[x-.18,.015,40.0],[x-.30,.101,39.75],[x-3.05,.101,39.75],hex(0x888b94),MAT.lit)
+    }
     const gravel=new Rng(town.seed+id*177)
-    for(let k=0;k<45;k++) {
+    for(let k=0;k<36;k++) {
       const px=x-3+gravel.next()*2.65,pz=z+gravel.next()*(frontageEnd(b)+2-z),size=.025+gravel.next()*.045
-      m.prism(px,pz,size,size*.5,.036,.055,5,hex(gravel.pick([0x949084,0x65685f,0x79776a])))
+      m.prism(px,pz,size,size*.5,.036,.055,5,hex(gravel.pick([0x949084,0x65685f,0x79776a,0x585a50])))
     }
     house(m,b,id,town)
     if (b.kind !== "house") {
@@ -223,11 +227,12 @@ function compileLevel(town: Town): LevelData {
       }
     } else {
       const horizontal = r - x > end - z, length = horizontal ? r - x : end - z
-      for (let d = 0; d < length; d += .45) {
+      const picketCol = hex(0x8e8c83), railCol = hex(0x7c7a71)
+      for (let d = 0; d < length; d += .35) {
         const px = x + (horizontal ? d : 0), pz = z + (horizontal ? 0 : d)
-        m.box(px, .05, pz, px + .09, 1.1, pz + .09, color)
+        m.box(px, .05, pz, px + (horizontal ? .15 : .08), 1.16, pz + (horizontal ? .08 : .15), picketCol, MAT.lit)
       }
-      for (const h of [.35, .8]) m.box(x, h, z, r, h + .08, end, color)
+      for (const h of [.32, .86]) m.box(x, h, z, r, h + .07, end, railCol, MAT.lit)
     }
   }
   for (const p of town.props) { const mesh=new Mesh(); furniture(mesh,p,town); props.push(mesh) }
@@ -275,7 +280,7 @@ function compileLevel(town: Town): LevelData {
         minZ = Math.min(minZ, vz); maxZ = Math.max(maxZ, vz)
         if (mat === 21) hasRoof = true
         if (mat === 22 || mat === 24) hasFoliage = true
-        if (mat === 4 || mat === 9 || mat === 2 || mat === 11) hasScreen = true
+        if ((mat === 4 || mat === 9 || mat === 2 || mat === 11) && maxY > 1.0) hasScreen = true
       }
       let customId = -1
       let strictlyInsideCutout = false

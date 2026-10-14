@@ -920,8 +920,10 @@ export const surfaceMaterial = /* wgsl */ `
         gloss = s.gloss;
       } else if (kind == 3) {
         // Gravel drive: crushed stone aggregate with wheel-track compaction and dark soil crevices.
-        let ruts = exp(-pow((fract(p.x * 0.38) - 0.32) * 5.5, 2.0)) + exp(-pow((fract(p.x * 0.38) - 0.72) * 5.5, 2.0));
-        albedo *= 0.72 + grain(p, 16.0) * 0.65 + surfaceNoise(p * 3.0) * 0.35 + 0.08 * clamp(ruts, 0.0, 1.0);
+        let ruts = exp(-pow((fract((p.x - 19.0) * 0.377) - 0.26) * 5.2, 2.0)) + exp(-pow((fract((p.x - 19.0) * 0.377) - 0.74) * 5.2, 2.0));
+        let pebbles = grain(p, 18.0) * 0.78 + grain(p + vec2f(3.7, 1.9), 9.5) * 0.42;
+        let edgeFade = smoothstep(0.0, 0.24, min(fract((p.x - 19.0) * 0.377), 1.0 - fract((p.x - 19.0) * 0.377)));
+        albedo *= (0.78 + pebbles + (surfaceNoise(p * 2.6) - 0.5) * 0.32 - 0.14 * clamp(ruts, 0.0, 1.0)) * (0.76 + 0.24 * edgeFade);
         gloss = vec2f(0.0);
       } else if (kind == 4) {
         let s = evalWoodPlanks(p, albedo, defaultMaterialRecipe(0));
