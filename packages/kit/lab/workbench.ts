@@ -395,7 +395,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       frames = prevFrames
       elapsed = prevElapsed
     }
-    if (sec.id === "blackout-effects" || sec.id === "getaway-effects") {
+    if (sec.id === "blackout-effects" || sec.id === "getaway-effects" || sec.id === "outbreak-vignette") {
       sec.enter?.()
       sec.retrigger?.()
     } else if (sec.id === "effects" || sec.id === "fire-water" || sec.id === "splatter") {
@@ -2779,6 +2779,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     },
   ])
 
+  for (const s of sections) {
+    s.registerCommands?.(commands)
+  }
   devControlHandle = registerDevControl({
     kind: "lab",
     commands,
@@ -2937,6 +2940,46 @@ export function createWorkbench(opts: WorkbenchOptions) {
         },
       },
     )
+
+    const outbreakVignetteSec = sections.find(s => s.id === "outbreak-vignette")
+    if (outbreakVignetteSec) {
+      entries.push({
+        id: "fixture:outbreak-vignette",
+        label: "Outbreak lot vignette",
+        group: "Starting Fixtures",
+        category: "effects",
+        collection: "fixtures",
+        tag: "Vignette",
+        sectionId: "outbreak-vignette",
+        isActive: () => globalSettings.section === "outbreak-vignette",
+        run: () => {
+          activeCatalogId = "fixture:outbreak-vignette"
+          selectSection("outbreak-vignette")
+          frameActiveTarget()
+        },
+      })
+      const dirCtrl = outbreakVignetteSec.controls.find(c => c.key === "directionPreset" && "options" in c)
+      if (dirCtrl && "options" in dirCtrl) {
+        for (const opt of dirCtrl.options) {
+          const id = `outbreak-vignette:dir-${opt.value}`
+          entries.push({
+            id,
+            label: opt.label,
+            group: "Outbreak Art Directions",
+            category: "lighting",
+            collection: "shared",
+            tag: "Outbreak",
+            sectionId: "outbreak-vignette",
+            isActive: () => globalSettings.section === "outbreak-vignette" && outbreakVignetteSec.settings.directionPreset === opt.value,
+            run: () => {
+              activeCatalogId = id
+              if (globalSettings.section !== "outbreak-vignette") selectSection("outbreak-vignette")
+              panel.navigation.set(dirCtrl, opt.value)
+            },
+          })
+        }
+      }
+    }
 
     // 2. Shared FX presets
     for (const opt of effectOptions) {

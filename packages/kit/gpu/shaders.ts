@@ -1428,10 +1428,10 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
     let sx = select(-1.0, 1.0, (q & 1) != 0);
     let sy = select(-1.0, 1.0, (q & 2) != 0);
     let d = vec2f(sx, sy);
-    let c1 = clean(textureSampleLevel(src, samp, clamp(uv + d * r1, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
-    let c2 = clean(textureSampleLevel(src, samp, clamp(uv + vec2f(d.x * r2.x, d.y * r1.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
-    let c3 = clean(textureSampleLevel(src, samp, clamp(uv + vec2f(d.x * r1.x, d.y * r2.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
-    let c4 = clean(textureSampleLevel(src, samp, clamp(uv + d * r2, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c1 = clean(textureSampleLevel(src, samp, clamp(uvW + d * r1, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c2 = clean(textureSampleLevel(src, samp, clamp(uvW + vec2f(d.x * r2.x, d.y * r1.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c3 = clean(textureSampleLevel(src, samp, clamp(uvW + vec2f(d.x * r1.x, d.y * r2.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c4 = clean(textureSampleLevel(src, samp, clamp(uvW + d * r2, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
     let mean = (center + c1 + c2 + c3 + c4) * 0.2;
     let l1 = dot(c1, lw); let l2 = dot(c2, lw); let l3 = dot(c3, lw); let l4 = dot(c4, lw);
     let lm = (lC + l1 + l2 + l3 + l4) * 0.2;

@@ -1,12 +1,17 @@
 import { mat4 } from "wgpu-matrix"
 import { lab } from "@arcade/kit/lab/main"
+import { createAudioLab } from "@arcade/kit/audio/lab"
 import { MAT } from "@arcade/kit/gpu/mesh"
+import { outbreakVignetteSection } from "./vignette"
 
 if (!location.hash && !new URLSearchParams(location.search).has("section") && !new URLSearchParams(location.search).has("bench")) {
-  location.hash = "#foliage"
+  const url = new URL(location.href)
+  url.searchParams.set("section", "outbreak-vignette")
+  history.replaceState(null, "", url)
 }
 
 void lab({
+  sections: [outbreakVignetteSection, createAudioLab],
   materials: [{ game: "Outbreak", codes: MAT }],
   camera: (width, height, vp, inverse, eye, focus) => {
     eye.set([focus[0], focus[1] + 22, focus[2] + 23])

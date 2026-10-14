@@ -20,10 +20,12 @@ import {
   type LookSettings,
 } from "../gpu/look"
 import {
+  SURFACE_TEX_UNIFORM_FLOATS,
   legacyMaterialComparisonWgsl,
   scatterClusteredGroundCover,
   surfaceMaterialCoreWgsl,
 } from "../gpu/surface-materials"
+import { createFallbackMaterialTextureArray, createMaterialSampler } from "../textures/loader"
 import type { LabControl } from "../lab-panel"
 import { frameShader } from "./stage-shader"
 import type { LabContext, LabSection, LabWorldObject } from "./types"
@@ -985,11 +987,20 @@ export function createLooksSection(context: LabContext): LookLabController {
     size: lookUniformData.byteLength,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
+  const surfaceTexBuffer = device.createBuffer({
+    size: SURFACE_TEX_UNIFORM_FLOATS * 4,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  const fallbackTex = createFallbackMaterialTextureArray(device)
+  const materialSampler = createMaterialSampler(device)
 
   const sceneBindLayout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "2d-array" } },
+      { binding: 11, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      { binding: 12, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
     ],
   })
   const sceneBindGroup = device.createBindGroup({
@@ -997,6 +1008,9 @@ export function createLooksSection(context: LabContext): LookLabController {
     entries: [
       { binding: 0, resource: { buffer: frameBuffer } },
       { binding: 1, resource: { buffer: lookUniformBuffer } },
+      { binding: 10, resource: fallbackTex.view },
+      { binding: 11, resource: materialSampler },
+      { binding: 12, resource: { buffer: surfaceTexBuffer } },
     ],
   })
 

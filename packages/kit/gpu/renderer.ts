@@ -114,6 +114,7 @@ export class Renderer {
   private polarBuf: GPUBuffer
   private lampBuf: GPUBuffer
   private gradeBuf: GPUBuffer
+  private customBuf: GPUBuffer
   private sceneLayout: GPUBindGroupLayout
   private floorTex: GPUTexture
   private moonTex: GPUTexture
@@ -209,6 +210,7 @@ export class Renderer {
     packSurfaceTexUniforms({ ...this.surfaceTexInput, enabled: 0 }, this.surfaceTexData)
     d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
     this.gradeBuf = d.createBuffer({ size: this.gradeData.byteLength, usage: U.UNIFORM | U.COPY_DST })
+    this.customBuf = d.createBuffer({ size: 512, usage: U.UNIFORM | U.COPY_DST })
     this.inst = { buf: d.createBuffer({ size: 4096 * INST_FLOATS * 4, usage: U.VERTEX | U.COPY_DST }), count: 0, cap: 4096 }
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -236,6 +238,8 @@ export class Renderer {
         { binding: 9, visibility: S.FRAGMENT, texture: {} },
         { binding: 10, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
         { binding: 11, visibility: S.FRAGMENT, sampler: {} },
+        { binding: 12, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 13, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -406,8 +410,14 @@ export class Renderer {
         { binding: 9, resource: this.visibilityTex.createView() },
         { binding: 10, resource: this.materialTexView },
         { binding: 11, resource: this.materialSampler },
+        { binding: 12, resource: { buffer: this.surfaceTexBuf } },
+        { binding: 13, resource: { buffer: this.customBuf } },
       ],
     })
+  }
+
+  setCustomUniforms(data: Float32Array<ArrayBuffer>): void {
+    this.device.queue.writeBuffer(this.customBuf, 0, data.buffer, data.byteOffset, Math.min(512, data.byteLength))
   }
 
   private upload(data: ArrayBuffer, prev: Buf | null): Buf {
@@ -625,6 +635,11 @@ export class Renderer {
     this.schedule()
   }
 
+  /** Immediate synchronous render for Lab sections that share a Stage output texture. */
+  drawTo(f: FrameInput, targetView?: GPUTextureView): void {
+    this.draw(f, targetView)
+  }
+
   private schedule(): void {
     if (this.scheduled) return
     this.scheduled = true
@@ -643,7 +658,7 @@ export class Renderer {
     })
   }
 
-  private draw(f: FrameInput): void {
+  private draw(f: FrameInput, targetView?: GPUTextureView): void {
     const d = this.device
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
     if(f.splatter){
@@ -862,7 +877,7 @@ export class Renderer {
       p.draw(3)
       p.end()
     }
-    const output = this.timing ? this.measureView : this.context.getCurrentTexture().createView()
+    const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     fp.setPipeline((motion ? this.motionPipes : useLookPipes ? this.ensureLookPipes() : f.frame[45]! & 1 ? this.pipes : this.baselinePipes).composite!)
     fp.setBindGroup(0, motion ? this.motionComposite : g.composite)

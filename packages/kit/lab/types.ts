@@ -74,6 +74,7 @@ export type LabSection = {
   /** Details panel: control groups relevant to the selection, in display order. Omit to show every group. */
   detailsGroups?(selected:readonly LabWorldObject[]):readonly string[]|undefined
   library?:LabSectionLibrary
+  registerCommands?(commands:import("../lab-commands").LabCommandRegistry):void
 }
 export type LabContext = {
   device:GPUDevice
