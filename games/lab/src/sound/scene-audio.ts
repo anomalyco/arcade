@@ -43,6 +43,8 @@ export class SceneAudio {
   private beds: Partial<Record<"fire" | "water" | "ambience", VoiceHandle>> = {}
   private crackle = 0
   unlocked = false
+  /** Inputs received, audible or not (for proofs). */
+  readonly counts = { events: 0, vehicleTicks: 0, steps: 0 }
 
   constructor(options: { storage: Storage | null; automated: boolean; baseUrl: string }) {
     this.storage = options.storage
@@ -101,6 +103,7 @@ export class SceneAudio {
   private get live() { return Boolean(this.runtime.ctx && this.runtime.ctx.state === "running" && !this.mix.muted) }
 
   event(event: LabEvent) {
+    this.counts.events++
     if (!this.live) return
     for (const sound of effectSounds(event.effect, event.variant)) {
       this.runtime.playCue(sound.cue, { intensity: sound.intensity, force: 0.6 + sound.intensity * 0.6, position: { x: event.x, y: event.y, z: event.z } })
@@ -109,6 +112,7 @@ export class SceneAudio {
 
   vehicle(sample: VehicleSample, dt: number) {
     this.vehicleAt = performance.now()
+    this.counts.vehicleTicks++
     if (!this.live) return
     const position = { x: sample.x, z: sample.z, vx: sample.vx, vz: sample.vz }
     this.vehicleEmitter.update({
@@ -125,6 +129,7 @@ export class SceneAudio {
     const length = sample.sprint ? 1.05 : 0.75
     if (this.stride < length) return
     this.stride -= length
+    this.counts.steps++
     if (this.live) this.runtime.playCue("lab_footstep", { intensity: sample.sprint ? 0.9 : 0.65, position: { x: sample.x, z: sample.z } })
   }
 
@@ -165,7 +170,7 @@ export class SceneAudio {
 
   telemetry() {
     const t = this.runtime.telemetry()
-    return { ...this.mix, state: t.state, contexts: this.runtime.ctx ? 1 : 0, voices: t.activeVoices, loadedSamples: t.loadedSamples, masterGain: this.runtime.master?.gain.value ?? null }
+    return { ...this.mix, ...this.counts, state: t.state, contexts: this.runtime.ctx ? 1 : 0, voices: t.activeVoices, loadedSamples: t.loadedSamples, masterGain: this.runtime.master?.gain.value ?? null, vehicleActive: this.vehicleEmitter.isActive, beds: Object.keys(this.beds) }
   }
 
   dispose() { this.armed?.abort(); this.vehicleEmitter.dispose(); this.runtime.dispose() }

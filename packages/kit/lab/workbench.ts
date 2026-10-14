@@ -3520,7 +3520,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
     }
 
-    return entries
+    // Fixtures for a game whose adapters this Lab did not load (the Lab's game picker) would select a missing section.
+    return entries.filter(entry => !entry.sectionId || sections.some(sec => sec.id === entry.sectionId))
   }
 
   function resolveEnvOwner(): LabSection {
