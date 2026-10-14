@@ -22,9 +22,16 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: .92, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...DEFAULT_STAMINA_TUNING, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: .92, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, textures: 1, rugStyle: 0, wallStyle: 0, floorStyle: 0, texScale: 1.0, texContrast: 1.0, texRoughness: 0.0, humanProfile: 0, ...DEFAULT_STAMINA_TUNING, ...zombieTuning }
 const controls: LabControl[] = [
   ...staminaControls,
+  { key: "textures", label: "Material mode", group: "Materials", options: [{ label: "Textured + procedural", value: 1 }, { label: "Procedural fallback", value: 0 }, { label: "A/B split", value: 2 }] },
+  { key: "rugStyle", label: "Rug style", group: "Materials", options: [{ label: "Oriental & Persian", value: 0 }, { label: "Swapped Medallion", value: 1 }, { label: "Procedural geometric", value: 2 }] },
+  { key: "wallStyle", label: "Wall finish", group: "Materials", options: [{ label: "Damask & plaster", value: 0 }, { label: "Fine linen plaster", value: 1 }, { label: "Procedural plaster", value: 2 }] },
+  { key: "floorStyle", label: "Floorboards", group: "Materials", options: [{ label: "Wide honey oak", value: 0 }, { label: "Narrow strip oak", value: 1 }, { label: "Procedural planks", value: 2 }] },
+  { key: "texScale", label: "Texture scale", group: "Materials", min: .5, max: 2, step: .05, unit: "×" },
+  { key: "texContrast", label: "Texture contrast", group: "Materials", min: 0, max: 2, step: .05, unit: "×" },
+  { key: "texRoughness", label: "Roughness trim", group: "Materials", min: -.3, max: .3, step: .02, unit: "" },
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
   { key: "diagnostic", label: "Contribution", group: "Diagnostics", options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory"].map((label,value)=>({label,value})) },
@@ -125,10 +132,23 @@ async function main() {
   window.addEventListener("keyup", () => { clock.recordMove(performance.now(), liveMove()); scheduleFrame() })
   document.addEventListener("visibilitychange", () => { if (document.hidden) clock.pause(performance.now()); else scheduleFrame() })
   window.addEventListener("blur", () => clock.pause(performance.now()))
+  const syncTextures = () => {
+    renderer.setSurfaceTexUniforms({
+      enabled: settings.textures,
+      globalScale: settings.texScale,
+      globalContrast: settings.texContrast,
+      globalRoughness: settings.texRoughness,
+      rugStyle: settings.rugStyle,
+      wallStyle: settings.wallStyle,
+      floorStyle: settings.floorStyle,
+      splitX: session.view.player.x,
+    })
+  }
   const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
     if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
     if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+    if (key === "textures" || key === "rugStyle" || key === "wallStyle" || key === "floorStyle" || key === "texScale" || key === "texContrast" || key === "texRoughness") syncTextures()
   })
   let vertices = 0
   function level() {
@@ -174,7 +194,10 @@ async function main() {
     return `${clockText(hour)}${p.exhausted ? " · Exhausted" : ""}${promptText}`
   }
   onKeyLayoutChange(() => { status.textContent = formatStatus() })
+  await renderer.texturesReady
+  syncTextures()
   function draw(dt: number) {
+    if (settings.textures === 2) syncTextures()
     const { player: p, town, hour, time, peek } = session.view
     settings.hour = Math.round(hour * 20) / 20
     if (peek) {
@@ -233,7 +256,14 @@ async function main() {
     const cutFlag = activePeek ? 1 + peekBlend : 1
     const cutRadius = activePeek ? .22 + .08 * peekBlend : .22
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
-    frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
+    const texCfgBits =
+      ((settings.textures & 3) >>> 0) |
+      (((settings.rugStyle & 3) << 2) >>> 0) |
+      (((settings.wallStyle & 3) << 4) >>> 0) |
+      (((settings.floorStyle & 3) << 6) >>> 0) |
+      ((Math.round((settings.texScale - 0.5) / 0.05) & 63) << 8) |
+      ((Math.round(settings.texContrast / 0.05) & 63) << 14)
+    frame.set([canvas.width, canvas.height, count, texCfgBits], 20)
     frame.set([cutX, cutY, cutFlag, cutRadius], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*settings.moonFill*(1-settings.weather*.85)], 28)
     const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
     const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
@@ -271,15 +301,26 @@ async function main() {
       frames = 0; meterAt = meterNow; meterSubmits = renderer.submittedFrames
     }
   }
-  let pacerTimer = 0, rafScheduled = false
+  let pacerTimer = 0, rafScheduled = false, channelPending = false
+  const paceChannel = new MessageChannel()
   const canDrawNow = (nowMs: number) =>
     renderer.inflight === 0 &&
-    nowMs - lastDrawAt >= TICK_DT * 1000 - 2.2 &&
+    nowMs - lastDrawAt >= TICK_DT * 1000 - 0.65 &&
     (pendingDrawDt > 0 || clock.readyForStep(nowMs))
   const msUntilNextDraw = (nowMs: number) => {
     const stepWait = pendingDrawDt > 0 ? 0 : clock.msUntilNextStep(nowMs)
-    const paceWait = Math.max(0, TICK_DT * 1000 - 2.0 - (nowMs - lastDrawAt))
+    const paceWait = Math.max(0, TICK_DT * 1000 - 0.55 - (nowMs - lastDrawAt))
     return Math.max(stepWait, paceWait)
+  }
+  paceChannel.port1.onmessage = () => {
+    channelPending = false
+    if (frozen || document.hidden) return
+    const now = performance.now()
+    if (canDrawNow(now)) {
+      tick(now)
+    } else {
+      scheduleFrame()
+    }
   }
   const scheduleFrame = () => {
     if (frozen || document.hidden) return
@@ -287,15 +328,14 @@ async function main() {
       rafScheduled = true
       requestAnimationFrame(rafLoop)
     }
-    if (!pacerTimer) {
-      const waitMs = Math.max(1, Math.ceil(msUntilNextDraw(performance.now())))
+    if (!pacerTimer && !channelPending) {
+      const rem = msUntilNextDraw(performance.now())
+      const waitMs = renderer.inflight === 0 && rem <= 3.5 ? 0 : Math.max(1, Math.floor(rem - 1.5))
       pacerTimer = window.setTimeout(() => {
         pacerTimer = 0
-        const now = performance.now()
-        if (!frozen && !document.hidden && canDrawNow(now)) {
-          tick(now)
-        } else if (!frozen && !document.hidden) {
-          scheduleFrame()
+        if (!frozen && !document.hidden && !channelPending) {
+          channelPending = true
+          paceChannel.port2.postMessage(null)
         }
       }, waitMs)
     }
@@ -340,7 +380,10 @@ async function main() {
     const now = performance.now()
     if (!frozen && !document.hidden && renderer.inflight === 0) {
       if (canDrawNow(now)) tick(now)
-      else scheduleFrame()
+      else {
+        if (pacerTimer) { clearTimeout(pacerTimer); pacerTimer = 0 }
+        scheduleFrame()
+      }
     }
   }
   draw(TICK_DT)
@@ -367,6 +410,7 @@ async function main() {
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
       if (key === "hour") session.view.hour = wrapHour(value)
       if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (key === "textures" || key === "rugStyle" || key === "wallStyle" || key === "floorStyle" || key === "texScale" || key === "texContrast" || key === "texRoughness") syncTextures()
     },
     pose(x: number, y: number, aim: number) {
       Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0, peekingWindowId: null, lastPeekedWindowId: null, cycledTargetId: null, cycledActionIndex: 0, vault: null })

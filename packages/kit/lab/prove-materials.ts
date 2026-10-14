@@ -81,7 +81,7 @@ try {
     return { groups, inputCount: inputs.length, inputs }
   })
   assert.deepEqual(domAudit.groups, ["▾ Swatch", "▾ Wood planks", "▸ Game Catalog"])
-  assert(domAudit.inputCount <= 22, `Expected compact control set, got ${domAudit.inputCount}`)
+  assert(domAudit.inputCount <= 28, `Expected compact control set, got ${domAudit.inputCount}`)
 
   // 2. Apply Outbreak dusk lighting preset and capture Room & walk vignette in A/B split mode.
   await page.getByRole("combobox", { name: "Lighting preset", exact: true }).selectOption("outbreak_dusk")

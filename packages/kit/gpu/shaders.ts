@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string }
+export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -573,18 +573,18 @@ fn lampK(aux: f32) -> f32 {
 
 fn shadeScene(o: VOut) -> vec4f {
   let mat = i32(round(o.mat));
-  if (mat == 13) {
+  ${hooks.postLightMaterial ? "" : `if (mat == 13) {
     let r = length(o.normal.xy);
     let k = lampK(o.aux);
     let tw = 0.55 + 0.45 * sin(F.cam.w * 1.3 + o.normal.z * 5.0);
     let a = (1.0 - smoothstep(0.2, 1.0, r)) * k * tw * 1.6;
     return vec4f(o.color * a, 0.0);
-  }
+  }`}
   let n = normalize(o.normal);
   let V = normalize(F.cam.xyz - o.world);
   var col: vec3f;
   var alpha = 1.0;
-  if (mat == 7) {
+  ${hooks.postLightMaterial ? "" : `if (mat == 7) {
     return vec4f(city(o.world.xz), 1.0);
   }
   if (mat == 11) {
@@ -594,7 +594,7 @@ fn shadeScene(o: VOut) -> vec4f {
     let fall = smoothstep(-0.2, 2.6, o.world.y) * (1.0 - smoothstep(2.0, 2.7, o.world.y) * 0.5);
     let a = k * thick * fall * ${looks ? "select(0.11, 0.055, look(2u))" : "0.11"};
     return vec4f(o.color * a, 0.0);
-  }
+  }`}
   if (mat == 2) {
     // Fixture tied to a map light: bright when on, near-dark while it stutters.
     let k = lampK(o.aux);
@@ -604,7 +604,7 @@ fn shadeScene(o: VOut) -> vec4f {
       if (o.color.b > o.color.r && o.color.r > 0.35) { col *= vec3f(1.35, 1.04, 0.65); }
       if (o.color.r > o.color.g * 4.0 && o.color.b > o.color.g * 2.0) { col *= vec3f(1.0, 0.65, 0.22); }
     }` : ""}
-  } else if (mat == 3) {
+  ${hooks.postLightMaterial ? "" : `} else if (mat == 3) {
     // aux >= 10 blinks, with its phase in the fraction.
     var k = o.aux;
     if (k >= 10.0) {
@@ -617,7 +617,7 @@ fn shadeScene(o: VOut) -> vec4f {
     let rim = 1.0 - n.y;
     let sp = spill(o.world);
     col = o.color * (vec3f(0.5, 0.55, 0.7) + mix(vec3f(dot(sp, vec3f(0.33))), sp, 0.5) * 0.25) + vec3f(0.02, 0.03, 0.06) * rim;
-    ${looks ? "if (look(16u)) { col = col * vec3f(0.65, 0.9, 1.04) + vec3f(0.018, 0.07, 0.13) * rim; }" : ""}
+    ${looks ? "if (look(16u)) { col = col * vec3f(0.65, 0.9, 1.04) + vec3f(0.018, 0.07, 0.13) * rim; }" : ""}`}
   } else if (mat == 6) {
     col = vec3f(0.006, 0.01, 0.02) + spill(o.world) * 0.12 + vec3f(0.03, 0.05, 0.09) * pow(1.0 - abs(n.y), 3.0);
     alpha = 0.22;
@@ -626,18 +626,19 @@ fn shadeScene(o: VOut) -> vec4f {
     ${looks ? "if (mat == 4 && look(4u)) { albedo *= vec3f(1.3, 1.13, 0.87); }" : ""}
     var gloss = vec2f(0.0);
     ${hooks.material ?? ""}
-    if (mat == 1 || mat == 5) {
+    ${hooks.postLightMaterial ? "if (mat == 10) { gloss = vec2f(50.0, 0.5); }" : `if (mat == 1 || mat == 5) {
       if (mat == 1) { albedo = floorPattern(i32(round(o.aux)), o.world.xz, albedo, &gloss); }
       else { albedo *= 0.85 + 0.25 * noise2(o.world.xz * 8.0); gloss = vec2f(20.0, 0.2); }
     } else if (mat == 10) {
       gloss = vec2f(50.0, 0.5);
-    }
+    }`}
     let floorish = n.y > 0.5 && o.world.y < 0.15;
     let wrap = select(0.35, 0.0, floorish);
     let lit = lightSum(o.world, n, V, gloss.x, wrap);
     var amb = ${hooks.ambient ?? "ambientAt(n)"};
     let fd = floorData(o.world.xz);
-    amb += bounceAt(o.world.xz + n.xz * 0.3) * 0.32;
+    amb += ${hooks.bounce ?? "bounceAt(o.world.xz + n.xz * 0.3) * 0.32"};
+    ${hooks.postLightMaterial ?? ""}
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
     let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);
     let ao = mix(1.0, 1.0 - fd.r * 0.85, low);
