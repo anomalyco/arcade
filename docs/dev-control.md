@@ -46,6 +46,11 @@ bun run arcade transport pause                         # transport.toggle / tran
 bun run arcade possess getaway:muscle                  # mode.play: enter Play mode on character
 bun run arcade release                                 # mode.play: exit Play mode back to Edit mode and release input
 bun run arcade run <command-id> '{"key":"value"}'      # Invoke any command ID from 'arcade cmd list'
+bun run arcade run outliner.select '{"kind":"cone"}'   # Lab layout: select in the Outliner (also id, ids, additive)
+bun run arcade run library.place '{"id":"spawn-prop:hydrant","at":"2,-4"}'  # Place a Library item at a ground point
+bun run arcade run library.toggle '{"category":"materials"}'               # Open the Library drawer on a category
+bun run arcade run watch.pin '{"key":"skidWidth"}'     # Pin a setting to the viewport Watch list (watch.unpin)
+bun run arcade run details.filter '{"modified":true}'  # Details: show only modified settings (details.reveal jumps)
 ```
 
 Global flags: `--json` (machine-readable output), `--page <id|kind>` (target a specific connected tab), `--control-file <path>`, `--timeout <ms>`.

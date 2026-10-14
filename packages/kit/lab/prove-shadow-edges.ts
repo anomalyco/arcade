@@ -314,7 +314,6 @@ try {
     await page.screenshot({ path: resolve(out, `${variant}-room-clean-1280x800.png`) })
 
     // Scene C: Blackout Meeting Room with Glass (seed 7, sceneMode 4)
-    await page.keyboard.press("Meta+k")
     await page.getByRole("searchbox", { name: "Search library" }).fill("Glass shards")
     await page.keyboard.press("Enter")
     await page.evaluate(() => {

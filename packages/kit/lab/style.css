@@ -1430,8 +1430,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-modal {
   width: 480px;
   max-width: calc(100vw - 32px);
-  background: #14191f;
-  border: 1px solid #2f3b47;
+  background: var(--panel);
+  border: 1px solid var(--line2);
   border-radius: 6px;
   padding: 10px;
   box-shadow: 0 16px 40px #00000099;
@@ -1443,9 +1443,9 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-modal textarea {
   width: 100%;
   height: 180px;
-  background: #0e1217;
-  color: #dce4ec;
-  border: 1px solid #2b3540;
+  background: var(--fieldbg);
+  color: var(--tx);
+  border: 1px solid var(--line);
   border-radius: 4px;
   padding: 8px;
   font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;

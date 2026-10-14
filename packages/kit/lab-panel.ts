@@ -153,6 +153,8 @@ export class LabPanel {
       :host([data-layout=inspector]) label.range{grid-template-columns:42% minmax(0,1fr) 16px 16px;gap:0 5px}
       :host([data-layout=inspector]) .name{grid-column:1;grid-row:1;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
       :host([data-layout=inspector]) label[data-modified=true] .name{color:var(--tx)}
+      :host([data-layout=inspector]) label[data-boundary=spawn] .name::after{content:"";display:inline-block;width:5px;height:5px;margin-left:5px;border-radius:50%;background:#d9a03c;vertical-align:middle}
+      :host([data-layout=inspector]) .field output{white-space:nowrap;overflow:hidden}
       :host([data-layout=inspector]) label > select{grid-column:2;grid-row:1;max-width:none;width:100%;min-width:0;margin:0;height:18px;padding:0 4px}
       :host([data-layout=inspector]) label > input[type=checkbox]{grid-column:2;grid-row:1;justify-self:start;width:14px;height:14px;accent-color:var(--acc)}
       :host([data-layout=inspector]) label[data-modified=true] > select{color:color-mix(in srgb,var(--acc) 70%,var(--tx));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
@@ -558,13 +560,18 @@ export class LabPanel {
       if ("options" in c || "min" in c) input.value = String(this.navigation.settings[c.key])
       else if (c.type !== "action" && input instanceof HTMLInputElement) input.checked = this.navigation.settings[c.key] === (c.on ?? true)
       if ("min" in c) {
-        const unit = inferControlUnit(c.key, c.label, c.unit)
+        const raw = inferControlUnit(c.key, c.label, c.unit)
+        const unit = this.layoutMode === "inspector" ? raw.replace(/\s*·\s*retrigger$/, "") : raw
         input.parentElement!.querySelector("output")!.value = formatLabValue(this.navigation.settings[c.key]!, c.step, unit)
       }
       if (this.layoutMode === "inspector") {
         const label = input.closest("label")
         if (label) {
           label.dataset.modified = String(this.navigation.isModified(c))
+          if (c.unit?.includes("retrigger") && !label.dataset.boundary) {
+            label.dataset.boundary = "spawn"
+            label.querySelector(".name")?.setAttribute("title", `${c.label} · spawn-time value: retrigger (Space) to see the change`)
+          }
           if ("min" in c) {
             const span = c.max - c.min
             const p = span > 0 ? (Number(this.navigation.settings[c.key]) - c.min) / span : 0

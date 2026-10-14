@@ -2410,6 +2410,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
             spawn.spawnItems("row", { x: 0, y: 0, z: 2, yaw: Math.PI })
             spawn.section.settings.item = "propane"
             spawn.spawnItems("one", { x: 0, y: 0, z: -10, yaw: Math.PI })
+            spawn.section.selectObject?.("character:active")
             stage.frameTarget(0, 0.4, 2, 18)
           }
         },
@@ -3782,7 +3783,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   function applyDetailsView(force = false) {
     const sec = activeSection()
-    const selected = currentSelectedObjects()
+    const selected = detailsSelection()
     const relevant = sec.detailsGroups?.(selected)
     const only = relevant && selected.length && !detailsShowAll ? new Set(relevant) : null
     const q = detailsQuery.trim().toLowerCase()
@@ -3809,9 +3810,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   const CATEGORY_ICON: Record<string, string> = { character: "♟", prop: "▣", emitter: "✺", light: "✦", specimen: "◇" }
 
+  /** Selected objects owned by the active section; a Spawn selection kept while tuning an effect does not drive Details. */
+  function detailsSelection(): LabWorldObject[] {
+    const sec = activeSection()
+    return currentSelectedObjects().filter(o => resolveObjectOwner(o.id) === sec)
+  }
+
   function syncDetails() {
     const sec = activeSection()
-    const selList = currentSelectedObjects()
+    const selList = detailsSelection()
     const selObj = selList.at(-1) ?? null
     inspectorSub.textContent = sec.label
     if (selList.length > 1) {
@@ -3833,9 +3840,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const envCtrl = envOwner.controls.find(c => (c.key === "environment" || c.key === "room") && "options" in c)
       const envLabel = envCtrl && "options" in envCtrl ? envCtrl.options.find(o => o.value === envOwner.settings[envCtrl.key])?.label : null
       const seed = envOwner.settings.seed ?? envOwner.settings.roomSeed
-      let title = sec.label
+      let title = sec.detailsGroups ? "Scene" : sec.label
       const primary = sec.controls.find(c => (c.key === "effect" || c.key === "recipe") && "options" in c)
-      if (primary && "options" in primary) title = primary.options.find(o => o.value === sec.settings[primary.key])?.label ?? sec.label
+      if (!sec.detailsGroups && primary && "options" in primary) title = primary.options.find(o => o.value === sec.settings[primary.key])?.label ?? sec.label
       inspectorTitle.textContent = title
       detailsMeta.textContent = ["Nothing selected · scene settings", envLabel, seed !== undefined ? `seed ${seed}` : null].filter(Boolean).join(" · ")
       detailsIcon.textContent = LIBRARY_CATEGORIES.find(c => c.id === (sec.library?.category ?? sectionLibraryCategory(sec.id)))?.icon ?? "◇"
@@ -3846,7 +3853,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
     const actionIds = selList.length
       ? ["object.trigger", "object.frame", "object.duplicate", "object.delete", "object.move", ...(selObj?.category === "character" ? ["object.possess"] : [])]
-      : ["ground.trigger-here", "ground.frame", "ground.reroll", "ground.clear"]
+      : [...(sec.retrigger ? ["ground.trigger-here"] : []), "ground.frame", "ground.reroll", "ground.clear"]
     const ctx: LabCommandContext = { pickedObject: null, groundHit: null, source: "ui" }
     const states = actionIds.map(id => {
       const cmd = commands.get(id)
@@ -4805,17 +4812,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
       syncChrome()
     },
     onPanelTransaction(label: string, beforeSettings: LabSettings) {
+      // Capture "before" by briefly writing the old values through the live settings, so settings aliased by
+      // several sections (for example Spawn skidWidth and Getaway effects skids.width) snapshot consistently.
+      const live = panel.navigation.settings
+      const afterValues: LabSettings = {}
+      for (const k of Object.keys(beforeSettings)) if (k in live) afterValues[k] = live[k]!
+      for (const [k, v] of Object.entries(beforeSettings)) if (k in live) live[k] = v
       const beforeSnap = captureSnapshot()
-      const secId = globalSettings.section
-      if (secId === "lighting") {
-        for (const [k, v] of Object.entries(beforeSettings)) {
-          if (k in beforeSnap.lighting) beforeSnap.lighting[k] = v
-        }
-      } else if (beforeSnap.sections[secId]) {
-        for (const [k, v] of Object.entries(beforeSettings)) {
-          if (k in beforeSnap.sections[secId]!) beforeSnap.sections[secId]![k] = v
-        }
-      }
+      for (const [k, v] of Object.entries(afterValues)) live[k] = v
       const afterSnap = captureSnapshot()
       if (JSON.stringify(beforeSnap) !== JSON.stringify(afterSnap)) {
         undoStack.push({ label, before: beforeSnap, after: afterSnap })
