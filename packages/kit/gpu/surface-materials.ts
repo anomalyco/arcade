@@ -1296,6 +1296,26 @@ export const surfaceMaterial = /* wgsl */ `
             let tex = sampleMaterialFast(6, p, 0.58 * texScaleMult);
             albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.82 * texContrastMult);
           }
+          // Weathered porch deck & front walkway: step tread seams, edge moss/grime, and threshold stain.
+          let bPorch = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
+          let onPorch = p.x >= bPorch.x + 4.45 && p.x <= bPorch.x + 7.05 && p.y >= bPorch.w - 0.05 && p.y <= bPorch.w + 1.32;
+          let onWalk = p.x >= bPorch.x + 4.95 && p.x <= bPorch.x + 6.45 && p.y > bPorch.w + 1.32 && p.y <= bPorch.w + 4.55;
+          if (onPorch) {
+            let edgeX = min(p.x - (bPorch.x + 4.5), (bPorch.x + 7.0) - p.x);
+            let edgeZ = min(p.y - bPorch.w, (bPorch.w + 1.3) - p.y);
+            let borderGrime = smoothstep(0.0, 0.28, min(edgeX, edgeZ));
+            let stainNoise = surfaceNoise(p * 3.4 + vec2f(1.7, 5.2));
+            let rustStain = smoothstep(0.42, 0.76, stainNoise) * exp(-length(p - vec2f(bPorch.x + 5.35, bPorch.w + 0.92)) * 2.2) * weatherMult;
+            let stepSeam = seam((p.y - bPorch.w) / 0.42, 0.022, 2.38);
+            albedo *= (0.48 + 0.34 * borderGrime) * mix(0.55, 1.0, stepSeam);
+            albedo = mix(albedo, vec3f(0.11, 0.032, 0.018), clamp(rustStain * 0.72, 0.0, 0.75));
+          } else if (onWalk) {
+            let walkEdge = min(p.x - (bPorch.x + 5.0), (bPorch.x + 6.4) - p.x);
+            let walkGrime = smoothstep(0.0, 0.22, walkEdge);
+            let walkCrack = abs(surfaceNoise(p * 2.1 + vec2f(4.3, 1.9)) - 0.5);
+            let crackLine = (1.0 - smoothstep(0.008, 0.028, walkCrack)) * 0.45 * weatherMult;
+            albedo *= (0.64 + 0.28 * walkGrime) * (1.0 - crackLine);
+          }
         }
       } else if (kind == 3) {
         let uDrive = fract((p.x - 19.0) * 0.377);

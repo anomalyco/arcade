@@ -244,13 +244,18 @@ async function main() {
     { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: 0.05 },
   ]
   const doorMesh = new Mesh()
-  doorMesh.box(0, 0.13, -0.1, 1.4, 2.3, 0.1, hex(0x463322), MAT.timber)
-  doorMesh.box(0.08, 0.35, -0.11, 1.32, 2.1, -0.105, hex(0x57402b), MAT.timber)
-  doorMesh.box(1.14, 1.08, 0.1, 1.25, 1.19, 0.18, hex(0xc9a96a), MAT.shiny)
-  for (const x of [0.15, 0.75]) {
-    for (const y of [0.42, 1.36]) {
-      doorMesh.box(x, y, 0.101, x + 0.48, y + 0.7, 0.125, hex(0x5b432d), MAT.timber)
-      doorMesh.box(x + 0.035, y + 0.04, 0.126, x + 0.445, y + 0.66, 0.132, hex(0x3a2a1c), MAT.timber)
+  // Deep weathered walnut stiles & rails, 6 recessed craft panels, tarnished brass kickplate, and antique lockset
+  doorMesh.box(0, 0.13, -0.09, 1.4, 2.3, 0.09, hex(0x322216), MAT.timber)
+  doorMesh.box(0.07, 0.15, 0.09, 1.33, 0.32, 0.102, hex(0x6e5834), MAT.shiny)
+  doorMesh.box(0.08, 0.35, -0.10, 1.32, 2.12, -0.092, hex(0x3e2b1c), MAT.timber)
+  // Escutcheon backplate, brass knob & deadbolt cylinder
+  doorMesh.box(1.13, 0.98, 0.09, 1.24, 1.28, 0.115, hex(0x4a3c24), MAT.shiny)
+  doorMesh.box(1.15, 1.05, 0.115, 1.22, 1.13, 0.165, hex(0xc29e58), MAT.shiny)
+  doorMesh.box(1.155, 1.19, 0.115, 1.215, 1.24, 0.14, hex(0xb89450), MAT.shiny)
+  for (const x of [0.14, 0.74]) {
+    for (const [y0, y1] of [[0.38, 0.98], [1.08, 1.66], [1.76, 2.14]] as const) {
+      doorMesh.box(x, y0, 0.091, x + 0.50, y1, 0.112, hex(0x422e1e), MAT.timber)
+      doorMesh.box(x + 0.04, y0 + 0.04, 0.113, x + 0.46, y1 - 0.04, 0.122, hex(0x23170e), MAT.timber)
     }
   }
   const doorModel = renderer.addModel(doorMesh)

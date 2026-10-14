@@ -315,8 +315,8 @@ function compileLevel(town: Town): LevelData {
     for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
       floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
     }
-    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x847f73, 6)
-    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x8a8579,6)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x3d3830, 6)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x58534a,6)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
     // Concrete curb-cut ramp flare at the street edge of the driveway
     if(b.kind==="house"&&end<40){
@@ -425,11 +425,18 @@ function compileLevel(town: Town): LevelData {
         m.prism(p.x,p.y,.23,.125,p.h-.13,p.h+.16,9,hex(0xe8b86b),MAT.lamp,id)
         m.prism(p.x,p.y,.19,.19,p.h-.14,p.h-.13,9,hex(0xffdca0),MAT.lamp,id)
       } else {
-        // Warm porch sconce beside the door + warm overhead porch bulb under the gable arch
-        const sx=p.x+.86, sz=p.y-.38
-        m.box(sx-.06,1.68,sz,sx+.06,1.88,sz+.12,hex(0xffcf88),MAT.lamp,id)
-        m.box(sx-.09,1.88,sz-.02,sx+.09,1.93,sz+.14,hex(0x2d3238),MAT.lit)
-        m.prism(p.x,p.y-.22,.10,.08,2.24,2.38,7,hex(0xffe0a6),MAT.lamp,id)
+        // Twin flanking dark-iron coach lantern sconces beside the front door + recessed gable ceiling fixture
+        for (const side of [-1, 1] as const) {
+          const sx = p.x + side * 0.94, sz = p.y - 0.46
+          // Wall mounting backplate & top/bottom iron bracket
+          m.box(sx - .05, 1.62, sz - .02, sx + .05, 1.92, sz + .02, hex(0x1e2228), MAT.lit)
+          m.box(sx - .08, 1.88, sz, sx + .08, 1.93, sz + .15, hex(0x1e2228), MAT.lit)
+          m.box(sx - .06, 1.63, sz + .01, sx + .06, 1.67, sz + .13, hex(0x1e2228), MAT.lit)
+          // Warm amber lantern glass cage
+          m.box(sx - .055, 1.67, sz + .02, sx + .055, 1.88, sz + .13, hex(0xffc470), MAT.lamp, id)
+        }
+        // Tucked-up overhead porch ceiling fixture inside the gable soffit
+        m.prism(p.x, p.y - .18, .08, .06, 2.46, 2.54, 6, hex(0xffd896), MAT.lamp, id)
       }
       continue
     }

@@ -205,21 +205,71 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.quadAuto([cx-1.58,2.44,e+1.30],[cx,3.01,e+1.30],[cx,3.08,e+1.26],[cx-1.58,2.51,e+1.26],rgb(0x64686e),MAT.roof,id)
   m.quadAuto([cx,3.01,e+1.30],[cx+1.58,2.44,e+1.30],[cx+1.58,2.51,e+1.26],[cx,3.08,e+1.26],rgb(0x64686e),MAT.roof,id)
   m.box(cx-1.52,2.40,e+1.08,cx+1.52,2.48,e+1.24,rgb(0x4a4e54),MAT.roof,id)
-  for(const px of [cx-1.32,cx+1.32]){
-    m.box(px-.09,.34,e+1.06,px+.09,2.42,e+1.24,rgb(0xeae4d7),MAT.wall)
-    m.box(px-.14,.13,e+1.01,px+.14,.34,e+1.29,rgb(0xd8d2c5),MAT.wall)
+  // Craftsman porch columns with brick/stone plinth pedestals, recessed shaft panels, capital collars & side balustrades.
+  for(const [side, px] of [[-1, cx-1.24], [1, cx+1.24]] as const){
+    // Brick plinth pedestal & stone cap
+    m.box(px-.16,.025,e+.98,px+.16,.44,e+1.30,rgb(0x58342a),MAT.brick)
+    m.box(px-.18,.44,e+.96,px+.18,.50,e+1.32,rgb(0x6e695f),MAT.lit)
+    // Tapered timber shaft with recessed inner panel & capital collar
+    m.box(px-.11,.50,e+1.03,px+.11,2.40,e+1.25,rgb(0x8c8578),MAT.lit)
+    m.box(px-.07,.58,e+1.251,px+.07,2.28,e+1.265,rgb(0x645e53),MAT.lit)
+    m.box(px-.14,2.34,e+1.00,px+.14,2.42,e+1.28,rgb(0x787266),MAT.roof,id)
+    // Side porch balustrade (west & east edges, z = e+.06 .. e+1.02)
+    m.box(px-.05,.76,e+.04,px+.05,.82,e+1.03,rgb(0x7d776b),MAT.lit,0,rgb(0x918a7c))
+    m.box(px-.04,.24,e+.04,px+.04,.29,e+1.03,rgb(0x686358),MAT.lit)
+    for(let bz=e+.14;bz<=e+.96;bz+=.16){
+      m.box(px-.022,.29,bz-.02,px+.022,.76,bz+.02,rgb(0x746e62),MAT.lit)
+    }
+    // Short front return balustrade wing framing the central 1.56m step opening
+    const rx0 = side < 0 ? px + .11 : cx + .78
+    const rx1 = side < 0 ? cx - .78 : px - .11
+    m.box(rx0,.76,e+1.10,rx1,.82,e+1.18,rgb(0x7d776b),MAT.lit,0,rgb(0x918a7c))
+    m.box(rx0,.24,e+1.11,rx1,.29,e+1.17,rgb(0x686358),MAT.lit)
+    for(const bx of [rx0+.08,(rx0+rx1)/2,rx1-.08]){
+      m.box(bx-.02,.29,e+1.12,bx+.02,.76,e+1.16,rgb(0x746e62),MAT.lit)
+    }
+    // Brick & stone step cheek wall flanking the front steps
+    const cx0 = side < 0 ? px - .14 : cx + .74
+    const cx1 = side < 0 ? cx - .74 : px + .14
+    m.box(cx0,.025,e+1.28,cx1,.30,e+1.64,rgb(0x543228),MAT.brick)
+    m.box(cx0-.02,.30,e+1.26,cx1+.02,.35,e+1.66,rgb(0x666158),MAT.lit)
   }
-  // Porch steps leading to the front walkway, plus wall mailbox next to the door.
-  m.box(cx-1.28,.08,e+1.28,cx+1.28,.132,e+1.46,rgb(0xc6bfb0),MAT.wall)
-  m.box(cx+1.02,1.22,e+.01,cx+1.22,1.44,e+.10,rgb(0x2b3036),MAT.wall)
-  // Door casing, lintel, sill and supported coir mat share the real 1.4m opening.
-  for(const px of [x+4.92,x+6.40]){
-    m.box(px,.13,e-.24,px+.09,2.38,e+.07,rgb(0xeae4d7),MAT.wall)
-    m.box(px,.13,z+5.48,px+.08,2.34,z+5.72,rgb(0xc8bfae),MAT.wall)
+  // Porch deck perimeter brick skirt + two-tier step risers & bullnose shadow lines leading to front walkway.
+  m.box(x+4.46,.02,e+.02,cx-1.36,.132,e+1.28,rgb(0x4e2e25),MAT.brick)
+  m.box(cx+1.36,.02,e+.02,x+7.04,.132,e+1.28,rgb(0x4e2e25),MAT.brick)
+  m.box(cx-.74,.08,e+1.26,cx+.74,.131,e+1.32,rgb(0x22201d),MAT.lit)
+  m.box(cx-.74,.04,e+1.44,cx+.74,.131,e+1.49,rgb(0x1e1c19),MAT.lit)
+  m.box(cx-.74,.015,e+1.60,cx+.74,.131,e+1.65,rgb(0x24221e),MAT.lit)
+  // Cast-iron wall mailbox with brass slot & sticking-out rolled flyer, plus house number plaque beside the door.
+  m.box(cx+1.00,1.18,e+.01,cx+1.22,1.44,e+.11,rgb(0x21262c),MAT.lit,0,rgb(0x2f353d))
+  m.box(cx+1.03,1.36,e+.11,cx+1.19,1.385,e+.125,rgb(0xa88b52),MAT.shiny)
+  m.box(cx+1.04,1.43,e+.03,cx+1.17,1.49,e+.09,rgb(0xc8c0ae),MAT.lit)
+  // House number plaque ("247" / "251") on left pilaster
+  m.box(cx-.92,1.42,e+.01,cx-.74,1.54,e+.04,rgb(0x1d2024),MAT.lit)
+  for(let d=0;d<3;d++)m.box(cx-.89+d*.05,1.45,e+.041,cx-.86+d*.05,1.51,e+.05,rgb(0xc4a25e),MAT.shiny)
+  // Door casing, recessed dark jambs, moulded pediment lintel, weathered threshold sill & rubber-bordered coir mat.
+  for(const px of [x+4.89,x+6.41]){
+    m.box(px,.13,e-.25,px+.10,2.38,e+.08,rgb(0x888174),MAT.wall)
+    m.box(px+.02,.13,e-.02,px+.08,2.34,e+.095,rgb(0x666055),MAT.wall)
+    m.box(px,.13,z+5.48,px+.08,2.34,z+5.72,rgb(0x787062),MAT.wall)
   }
-  m.box(x+4.92,2.30,e-.24,x+6.49,2.42,e+.07,rgb(0xeae4d7),MAT.wall)
-  m.box(x+5,.13,e-.28,x+6.4,.15,e+.18,rgb(0x9a9382))
-  m.box(cx-.52,.132,e+.20,cx+.52,.155,e+.74,rgb(0x523f2c),MAT.timber)
+  m.box(x+4.86,2.30,e-.25,x+6.54,2.42,e+.09,rgb(0x888174),MAT.wall)
+  m.box(x+4.84,2.41,e-.24,x+6.56,2.47,e+.12,rgb(0x6e685c),MAT.wall)
+  m.box(x+5,.13,e-.28,x+6.4,.152,e+.18,rgb(0x585246),MAT.lit)
+  // Rubber-bordered coir welcome mat with scraper ribs
+  m.box(cx-.54,.131,e+.18,cx+.54,.148,e+.74,rgb(0x1c1b19),MAT.lit)
+  m.box(cx-.48,.134,e+.23,cx+.48,.154,e+.69,rgb(0x4a3623),MAT.timber)
+  for(let rz=e+.28;rz<=e+.64;rz+=.09)m.box(cx-.44,.154,rz,cx+.44,.158,rz+.03,rgb(0x362718),MAT.timber)
+  // Porch clutter: slatted wood crate, terracotta planter with dead stems, muddy boots, leaning broom & parcel box
+  m.yawBox(cx-1.02,e+.36,.38,.32,.13,.42,.18,rgb(0x4e3b28),MAT.timber,0,rgb(0x3b2c1d))
+  m.prism(cx-.98,e+.78,.15,.11,.13,.38,7,rgb(0x6e3d26),MAT.lit)
+  m.prism(cx-.98,e+.78,.13,.13,.36,.39,7,rgb(0x241d16),MAT.lit)
+  m.box(cx-.68,.13,e+.22,cx-.58,.28,e+.34,rgb(0x22201d),MAT.lit)
+  m.box(cx-.67,.13,e+.30,cx-.59,.19,e+.42,rgb(0x2a2723),MAT.lit)
+  m.yawBox(cx+.96,e+.34,.32,.26,.13,.32,-.22,rgb(0x685238),MAT.timber,0,rgb(0x7a6244))
+  // Leaning porch broom against right wall beside door
+  m.quadAuto([cx+.82,.13,e+.18],[cx+.85,.13,e+.18],[cx+.76,1.28,e+.03],[cx+.73,1.28,e+.03],rgb(0x5c462e),MAT.timber)
+  m.box(cx+.76,.13,e+.14,cx+.90,.32,e+.23,rgb(0x6e5a38),MAT.timber)
   // Grouped foundation planting: natural soil bed without toothed brick edging, boxwood pair by porch, corner shrubs and hydrangea.
   const rng=new Rng(town.houseSeed+id*71)
   for(const [a,d] of [[x+.15,x+4.35],[x+7.15,r-.15]]){
