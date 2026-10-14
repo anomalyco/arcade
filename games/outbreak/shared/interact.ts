@@ -6,12 +6,13 @@ export const INTERACT_RANGE = 2.2
 export const VAULT_DURATION = 0.30
 export const VAULT_STAMINA_COST = 0.18
 export const FENCE_VAULT_NOISE = 10.0
+export const HOLD_DURATION = 0.38
 export const PEEK_CONE = 165
 export const PEEK_AWARENESS = 4.2
 
 export type InteractableKind = "door" | "window" | "fence" | (string & {})
 export type InteractActionId = "toggle" | "lock" | "peek" | "climb"
-export type InteractAction = { id: InteractActionId; label: string }
+export type InteractAction = { id: InteractActionId; label: string; hold?: boolean }
 
 export type VaultState = {
   windowId: string
@@ -52,9 +53,9 @@ export type InteractActorState = {
   peekOriginX: number
   peekOriginY: number
   peekOriginDist: number
-  lastPeekedWindowId: string | null
-  cycledTargetId: string | null
-  cycledActionIndex: number
+  holdTargetId: string | null
+  holdElapsed: number
+  holdTriggered: boolean
   vault: VaultState | null
 }
 
@@ -64,9 +65,9 @@ export function createInteractActorState(): Pick<
   | "peekOriginX"
   | "peekOriginY"
   | "peekOriginDist"
-  | "lastPeekedWindowId"
-  | "cycledTargetId"
-  | "cycledActionIndex"
+  | "holdTargetId"
+  | "holdElapsed"
+  | "holdTriggered"
   | "vault"
 > {
   return {
@@ -74,9 +75,9 @@ export function createInteractActorState(): Pick<
     peekOriginX: 0,
     peekOriginY: 0,
     peekOriginDist: 0,
-    lastPeekedWindowId: null,
-    cycledTargetId: null,
-    cycledActionIndex: 0,
+    holdTargetId: null,
+    holdElapsed: 0,
+    holdTriggered: false,
     vault: null,
   }
 }
@@ -85,10 +86,13 @@ export type RawInteractCandidate = {
   kind: InteractableKind
   id: string
   rect: Rect
+  worldX: number
+  worldY: number
   buildingId?: string
   buildingIndex?: number
+  primary: InteractAction
+  secondary?: InteractAction
   actions: InteractAction[]
-  defaultAction: InteractAction
 }
 
 export type InteractTarget = RawInteractCandidate & {
@@ -127,8 +131,6 @@ function candidateScore(actor: InteractActorState, rect: Rect): { dist: number; 
   const [nx, ny] = nearestPointOnRect(actor.x, actor.y, rect)
   const toAngle = Math.atan2(ny - actor.y, nx - actor.x)
   const facing = Math.cos(angleDiff(actor.aim, toAngle))
-  // Proximity dominates so walking right up to a window or fence selects it from any mouse angle;
-  // facing direction breaks ties when equidistant between two openings.
   const score = (INTERACT_RANGE - dist) * 2.0 + facing * 0.45
   return { dist, facing, score }
 }
@@ -145,49 +147,37 @@ function applyVaultStaminaCost(actor: InteractActorState, cost = VAULT_STAMINA_C
   }
 }
 
-function doorActions(door: Door): { actions: InteractAction[]; defaultAction: InteractAction } {
-  if (door.open) {
-    const close: InteractAction = { id: "toggle", label: "Close door" }
-    return { actions: [close], defaultAction: close }
-  }
+function doorActions(door: Door): { primary: InteractAction; secondary?: InteractAction; actions: InteractAction[] } {
   if (door.locked) {
-    const unlock: InteractAction = { id: "lock", label: "Unlock door" }
-    return { actions: [unlock], defaultAction: unlock }
+    const unlock: InteractAction = { id: "lock", label: "Unlock" }
+    return { primary: unlock, actions: [unlock] }
   }
-  const open: InteractAction = { id: "toggle", label: "Open door" }
-  const lock: InteractAction = { id: "lock", label: "Lock door" }
-  return { actions: [open, lock], defaultAction: open }
+  const primary: InteractAction = { id: "toggle", label: door.open ? "Close" : "Open" }
+  const secondary: InteractAction = { id: "lock", label: "Lock", hold: true }
+  return { primary, secondary, actions: [primary, secondary] }
 }
 
 function windowActions(
   win: WindowOpening,
   actor: InteractActorState,
-): { actions: InteractAction[]; defaultAction: InteractAction } {
+): { primary: InteractAction; secondary?: InteractAction; actions: InteractAction[] } {
   const isPeekingThis = actor.peekingWindowId === win.id
-  if (isPeekingThis) {
-    const stopPeek: InteractAction = { id: "peek", label: "Stop peeking" }
-    const actions: InteractAction[] = [stopPeek]
-    if (!win.open && win.openable) actions.push({ id: "toggle", label: "Open window" })
-    if (win.open) {
-      actions.push({ id: "climb", label: "Climb through" })
-      if (win.openable) actions.push({ id: "toggle", label: "Close window" })
-    }
-    return { actions, defaultAction: stopPeek }
-  }
-
-  const peek: InteractAction = { id: "peek", label: "Peek window" }
   if (!win.open) {
+    const primary: InteractAction = { id: "peek", label: isPeekingThis ? "Stop peeking" : "Peek" }
     if (!win.openable) {
-      return { actions: [peek], defaultAction: peek }
+      return { primary, actions: [primary] }
     }
-    const open: InteractAction = { id: "toggle", label: "Open window" }
-    return { actions: [peek, open], defaultAction: peek }
+    const secondary: InteractAction = { id: "toggle", label: "Open" }
+    return { primary, secondary, actions: [primary, secondary] }
   }
 
-  const climb: InteractAction = { id: "climb", label: "Climb through" }
-  const actions: InteractAction[] = [peek, climb]
-  if (win.openable) actions.push({ id: "toggle", label: "Close window" })
-  return { actions, defaultAction: peek }
+  // Open window: primary action is Climb, secondary action is Close.
+  const primary: InteractAction = { id: "climb", label: "Climb" }
+  if (!win.openable) {
+    return { primary, actions: [primary] }
+  }
+  const secondary: InteractAction = { id: "toggle", label: "Close" }
+  return { primary, secondary, actions: [primary, secondary] }
 }
 
 function isLandingSpotClear(town: Town, cx: number, cy: number, ignoreRect?: Rect): boolean {
@@ -248,13 +238,16 @@ export const doorInteractionHandler: InteractionHandler = {
     const out: RawInteractCandidate[] = []
     for (const door of town.doors) {
       if (distToRect(actor.x, actor.y, door.rect) > INTERACT_RANGE) continue
-      const { actions, defaultAction } = doorActions(door)
+      const { primary, secondary, actions } = doorActions(door)
       out.push({
         kind: "door",
         id: door.id,
         rect: door.rect,
+        worldX: (door.rect[0] + door.rect[2]) / 2,
+        worldY: (door.rect[1] + door.rect[3]) / 2,
+        primary,
+        secondary,
         actions,
-        defaultAction,
       })
     }
     return out
@@ -263,7 +256,14 @@ export const doorInteractionHandler: InteractionHandler = {
     const door = town.doors.find((d) => d.id === targetId)
     if (!door || distToRect(actor.x, actor.y, door.rect) > INTERACT_RANGE) return { handled: false }
     if (action === "lock") {
-      if (door.open) return { handled: false }
+      if (door.open) {
+        if (distToRect(actor.x, actor.y, door.rect) < 0.35) return { handled: false }
+        door.open = false
+        door.locked = true
+        actor.peekingWindowId = null
+        actor.noise = Math.max(actor.noise, DOOR_NOISE)
+        return { handled: true, kind: "door", targetId: door.id, action: "lock", topologyChanged: true, noise: actor.noise }
+      }
       door.locked = !door.locked
       actor.peekingWindowId = null
       actor.noise = Math.max(actor.noise, DOOR_NOISE * 0.7)
@@ -271,7 +271,6 @@ export const doorInteractionHandler: InteractionHandler = {
     }
     if (action === "toggle") {
       if (door.locked) return { handled: false }
-      // Do not close a door through the survivor.
       if (door.open && distToRect(actor.x, actor.y, door.rect) < 0.35) return { handled: false }
       door.open = !door.open
       actor.peekingWindowId = null
@@ -288,15 +287,18 @@ export const windowInteractionHandler: InteractionHandler = {
     const out: RawInteractCandidate[] = []
     for (const win of town.windows) {
       if (distToRect(actor.x, actor.y, win.rect) > INTERACT_RANGE) continue
-      const { actions, defaultAction } = windowActions(win, actor)
+      const { primary, secondary, actions } = windowActions(win, actor)
       out.push({
         kind: "window",
         id: win.id,
         rect: win.rect,
+        worldX: (win.rect[0] + win.rect[2]) / 2,
+        worldY: (win.rect[1] + win.rect[3]) / 2,
         buildingId: win.buildingId,
         buildingIndex: win.buildingIndex,
+        primary,
+        secondary,
         actions,
-        defaultAction,
       })
     }
     return out
@@ -308,7 +310,6 @@ export const windowInteractionHandler: InteractionHandler = {
     if (action === "peek") {
       if (actor.peekingWindowId === win.id) {
         actor.peekingWindowId = null
-        actor.lastPeekedWindowId = win.id
       } else {
         actor.peekingWindowId = win.id
         actor.peekOriginX = actor.x
@@ -321,7 +322,9 @@ export const windowInteractionHandler: InteractionHandler = {
     if (action === "toggle") {
       if (!win.openable) return { handled: false }
       win.open = !win.open
-      actor.peekingWindowId = null
+      if (!win.open && actor.peekingWindowId === win.id) {
+        actor.peekingWindowId = null
+      }
       actor.noise = Math.max(actor.noise, DOOR_NOISE)
       return { handled: true, kind: "window", targetId: win.id, action: "toggle", topologyChanged: true, noise: actor.noise }
     }
@@ -330,7 +333,6 @@ export const windowInteractionHandler: InteractionHandler = {
       const dest = computeVaultDestination(town, win.rect, actor.x, actor.y, false)
       if (!dest) return { handled: false }
       actor.peekingWindowId = null
-      actor.lastPeekedWindowId = null
       actor.vault = {
         windowId: win.id,
         fromX: actor.x,
@@ -368,13 +370,15 @@ export const fenceInteractionHandler: InteractionHandler = {
         Math.min(b.rect[2], nx + 0.35),
         Math.min(b.rect[3], ny + 0.35),
       ]
-      const vaultAction: InteractAction = { id: "climb", label: "Vault fence" }
+      const vaultAction: InteractAction = { id: "climb", label: "Vault" }
       out.push({
         kind: "fence",
         id,
         rect: localRect,
+        worldX: nx,
+        worldY: ny,
+        primary: vaultAction,
         actions: [vaultAction],
-        defaultAction: vaultAction,
       })
     }
     return out
@@ -435,7 +439,7 @@ export const defaultInteractionRegistry = new InteractionRegistry()
 
 /**
  * Selects the single best interaction target within reach, combining distance and facing angle.
- * While actively peeking a window in reach, that window remains the active target so E stops peeking.
+ * Both primary (`E`) and secondary (`F` / Hold `E`) actions are exposed simultaneously on the returned target.
  */
 export function selectInteractTarget(
   town: Town,
@@ -448,16 +452,12 @@ export function selectInteractTarget(
     for (const raw of handler.candidates(town, actor)) {
       const { dist, facing, score } = candidateScore(actor, raw.rect)
       const peekBoost = raw.kind === "window" && actor.peekingWindowId === raw.id ? 10 : 0
-      const activeAction =
-        actor.cycledTargetId === raw.id && actor.cycledActionIndex > 0
-          ? raw.actions[actor.cycledActionIndex % raw.actions.length]!
-          : raw.defaultAction
       scored.push({
         ...raw,
         dist,
         facing,
         score: score + peekBoost,
-        activeAction,
+        activeAction: raw.primary,
       })
     }
   }
@@ -466,35 +466,19 @@ export function selectInteractTarget(
   return scored[0]
 }
 
-/** Cycles to the next available action on the current target (bound to Q). */
-export function cycleInteractAction(
-  town: Town,
-  actor: InteractActorState,
-  registry: InteractionRegistry = defaultInteractionRegistry,
-): InteractTarget | undefined {
-  const current = selectInteractTarget(town, actor, registry)
-  if (!current || current.actions.length <= 1) return current
-  if (actor.cycledTargetId !== current.id) {
-    actor.cycledTargetId = current.id
-    const defaultIdx = current.actions.findIndex((a) => a.id === current.defaultAction.id)
-    actor.cycledActionIndex = ((defaultIdx >= 0 ? defaultIdx : 0) + 1) % current.actions.length
-  } else {
-    actor.cycledActionIndex = (actor.cycledActionIndex + 1) % current.actions.length
-  }
-  return selectInteractTarget(town, actor, registry)
-}
-
-/** Executes the active or explicitly requested interaction action on the current target. */
+/**
+ * Executes the primary (`E`), secondary (`F`), or explicitly specified interaction action on the current target.
+ */
 export function executeInteraction(
   town: Town,
   actor: InteractActorState,
-  explicitAction?: InteractActionId,
+  slotOrAction?: "primary" | "secondary" | InteractActionId,
   registry: InteractionRegistry = defaultInteractionRegistry,
 ): InteractOutcome {
   if (actor.vault) return { handled: false }
   const target = selectInteractTarget(town, actor, registry)
   if (!target) {
-    if (actor.peekingWindowId) {
+    if (actor.peekingWindowId && (!slotOrAction || slotOrAction === "primary" || slotOrAction === "peek")) {
       actor.peekingWindowId = null
       return { handled: true, kind: "window", action: "peek" }
     }
@@ -502,13 +486,61 @@ export function executeInteraction(
   }
   const handler = registry.get(target.kind)
   if (!handler) return { handled: false }
-  const actionId = explicitAction ?? target.activeAction.id
-  const outcome = handler.execute(town, actor, target.id, actionId)
-  if (outcome.handled) {
-    actor.cycledTargetId = null
-    actor.cycledActionIndex = 0
+  let actionId: InteractActionId | undefined
+  if (!slotOrAction || slotOrAction === "primary") {
+    actionId = target.primary.id
+  } else if (slotOrAction === "secondary") {
+    actionId = target.secondary?.id
+  } else {
+    actionId = slotOrAction
   }
-  return outcome
+  if (!actionId) return { handled: false }
+  return handler.execute(town, actor, target.id, actionId)
+}
+
+/**
+ * Advances Hold-E timer (`HOLD_DURATION`) to trigger the target's secondary action (e.g. Lock door, Open/Close window).
+ */
+export function stepHoldInteraction(
+  town: Town,
+  actor: InteractActorState,
+  interactHeld: boolean,
+  dt: number,
+  registry: InteractionRegistry = defaultInteractionRegistry,
+): InteractOutcome {
+  if (!interactHeld || actor.vault) {
+    actor.holdTargetId = null
+    actor.holdElapsed = 0
+    actor.holdTriggered = false
+    return { handled: false }
+  }
+  const target = selectInteractTarget(town, actor, registry)
+  if (!target || !target.secondary) {
+    actor.holdTargetId = null
+    actor.holdElapsed = 0
+    return { handled: false }
+  }
+  if (actor.holdTargetId !== target.id) {
+    actor.holdTargetId = target.id
+    actor.holdElapsed = 0
+    actor.holdTriggered = false
+  }
+  if (actor.holdTriggered) return { handled: false }
+  actor.holdElapsed = Math.min(HOLD_DURATION, actor.holdElapsed + dt)
+  if (actor.holdElapsed + 1e-6 >= HOLD_DURATION) {
+    actor.holdTriggered = true
+    const handler = registry.get(target.kind)
+    if (handler) {
+      return handler.execute(town, actor, target.id, target.secondary.id)
+    }
+  }
+  return { handled: false }
+}
+
+/** Progress 0..1 of an in-flight Hold-E secondary interaction. */
+export function holdProgress(actor: Pick<InteractActorState, "holdTargetId" | "holdElapsed" | "holdTriggered">): number {
+  if (!actor.holdTargetId || actor.holdTriggered || actor.holdElapsed <= 0.04) return 0
+  return Math.max(0, Math.min(1, actor.holdElapsed / HOLD_DURATION))
 }
 
 /**
@@ -538,7 +570,6 @@ export function stepInteractionState(town: Town, actor: InteractActorState, dt: 
       actor.peekingWindowId = null
     } else {
       const dist = distToRect(actor.x, actor.y, win.rect)
-      // Keep peeking if the survivor moves closer to or along the window; release only when moving away.
       if (dist < actor.peekOriginDist) {
         actor.peekOriginDist = dist
       }
@@ -547,21 +578,6 @@ export function stepInteractionState(town: Town, actor: InteractActorState, dt: 
       if (backedAway || outOfRange) {
         actor.peekingWindowId = null
       }
-    }
-  }
-
-  if (actor.lastPeekedWindowId) {
-    const win = town.windows.find((w) => w.id === actor.lastPeekedWindowId)
-    if (!win || distToRect(actor.x, actor.y, win.rect) > INTERACT_RANGE + 0.35) {
-      actor.lastPeekedWindowId = null
-    }
-  }
-
-  if (actor.cycledTargetId) {
-    const target = selectInteractTarget(town, actor)
-    if (!target || target.id !== actor.cycledTargetId) {
-      actor.cycledTargetId = null
-      actor.cycledActionIndex = 0
     }
   }
 
@@ -583,8 +599,6 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
   const insideBuilding = actor.x > bx0 && actor.x < bx1 && actor.y > bz0 && actor.y < bz1
 
   if (horizontal) {
-    // Outside south window (actor.y >= wy): look north (-1) into the building.
-    // Inside south window (actor.y < wy): look south (+1) out of the building.
     const lookingNorth = actor.y >= wy
     const dir = lookingNorth ? -1 : 1
     const eyeX = Math.max(x0 + 0.25, Math.min(x1 - 0.25, actor.x))
@@ -606,11 +620,8 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
       camOffsetY: dir * 1.45,
     }
   } else {
-    // Outside east window (actor.x >= wx): look west (-1) into the building.
-    // Inside east window (actor.x < wx): look east (+1) out of the building.
     const lookingWest = actor.x >= wx
     const dir = lookingWest ? -1 : 1
-    // Avoid the interior partition wall at split = bz0 + 5.5..5.7 which bisects the east window.
     const split = bz0 + 5.6
     const inSouthRoom = actor.y >= split
     const eyeY = inSouthRoom ? Math.max(split + 0.42, Math.min(y1 - 0.2, actor.y)) : Math.min(split - 0.42, Math.max(y0 + 0.2, actor.y))

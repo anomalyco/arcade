@@ -3,10 +3,12 @@ import { distToRect } from "@arcade/kit/sim/geom"
 import { TICK_DT } from "../shared/clock"
 import {
   FENCE_VAULT_NOISE,
+  HOLD_DURATION,
   InteractionRegistry,
   VAULT_DURATION,
   VAULT_STAMINA_COST,
   createInteractActorState,
+  holdProgress,
   selectInteractTarget,
   vaultLift,
 } from "../shared/interact"
@@ -16,8 +18,8 @@ import { LocalSession } from "../shared/session"
 import { VAULT_NOISE, WALK_NOISE } from "../shared/stamina"
 import { DEFAULT_VISION, Vision } from "../shared/vision"
 
-describe("contextual window, door, and fence interactions", () => {
-  test("selects one target at a time, preferring proximity and using facing angle to break ties", () => {
+describe("simultaneous dual-action contextual interactions (E primary, F / Hold E secondary)", () => {
+  test("selects one target at a time with simultaneous primary and secondary actions (no cycling)", () => {
     const town = makeTown(7)
     const actor = {
       x: 26.25, // Equidistant between ash-south-west window [23.5..25.5] and ash-front door [27..28.4]
@@ -30,12 +32,16 @@ describe("contextual window, door, and fence interactions", () => {
     const westTarget = selectInteractTarget(town, actor)
     expect(westTarget?.kind).toBe("window")
     expect(westTarget?.id).toBe("ash-south-west")
+    expect(westTarget?.primary).toEqual({ id: "peek", label: "Peek" })
+    expect(westTarget?.secondary).toEqual({ id: "toggle", label: "Open" })
 
     // Turn east toward the front door from the equidistant midpoint
     actor.aim = 0
     const eastTarget = selectInteractTarget(town, actor)
     expect(eastTarget?.kind).toBe("door")
     expect(eastTarget?.id).toBe("ash-front")
+    expect(eastTarget?.primary).toEqual({ id: "toggle", label: "Open" })
+    expect(eastTarget?.secondary).toEqual({ id: "lock", label: "Lock", hold: true })
 
     // Standing right in front of the window selects the window even if mouse aim is oblique or behind
     actor.x = 24.5
@@ -45,7 +51,8 @@ describe("contextual window, door, and fence interactions", () => {
       const target = selectInteractTarget(town, actor)
       expect(target?.kind).toBe("window")
       expect(target?.id).toBe("ash-south-west")
-      expect(target?.activeAction.id).toBe("peek")
+      expect(target?.primary).toEqual({ id: "peek", label: "Peek" })
+      expect(target?.secondary).toEqual({ id: "toggle", label: "Open" })
     }
 
     // Far from any building or fence: no prompt
@@ -54,89 +61,96 @@ describe("contextual window, door, and fence interactions", () => {
     expect(selectInteractTarget(town, actor)).toBeUndefined()
   })
 
-  test("walking up to any window from typical approach angles (both sides, open/closed, sprinting) and pressing E reliably peeks", () => {
+  test("walking up to any closed window from typical approach angles (both sides, sprinting) and pressing E reliably peeks", () => {
     const approaches = [
-      // South-west window approached straight north, diagonal NW, diagonal NE, and while holding Shift+W
       { winId: "ash-south-west", startX: 24.5, startY: 37.4, mx: 0, my: -1, aim: -Math.PI / 2, sprint: false },
       { winId: "ash-south-west", startX: 25.8, startY: 37.2, mx: -0.7, my: -1, aim: -2.1, sprint: true },
       { winId: "ash-south-west", startX: 23.2, startY: 37.2, mx: 0.7, my: -1, aim: -0.9, sprint: false },
-      // South-east window approached with oblique cursor
       { winId: "ash-south-east", startX: 34.2, startY: 37.3, mx: 0, my: -1, aim: 0.3, sprint: false },
-      // East window approached from east (south half -> living room, north half -> bedroom)
       { winId: "ash-east", startX: 38.4, startY: 30.1, mx: -1, my: 0, aim: Math.PI, sprint: false },
       { winId: "ash-east", startX: 38.4, startY: 28.4, mx: -1, my: 0, aim: Math.PI, sprint: true },
-      // Inside the house approaching south-west window from north looking out
       { winId: "ash-south-west", startX: 24.5, startY: 33.8, mx: 0, my: 1, aim: Math.PI / 2, sprint: false },
     ]
 
     for (const cfg of approaches) {
-      for (const initiallyOpen of [false, true]) {
-        const session = new LocalSession(7)
-        const p = session.view.player
-        const win = session.view.town.windows.find((w) => w.id === cfg.winId)!
-        win.open = initiallyOpen
-        Object.assign(p, { x: cfg.startX, y: cfg.startY, vx: 0, vy: 0, aim: cfg.aim })
-        session.rebuildCollision()
+      const session = new LocalSession(7)
+      const p = session.view.player
+      Object.assign(p, { x: cfg.startX, y: cfg.startY, vx: 0, vy: 0, aim: cfg.aim })
+      session.rebuildCollision()
 
-        // Walk/sprint up to the window over 30 ticks
-        for (let i = 0; i < 30; i++) {
-          session.update(TICK_DT, { mx: cfg.mx, my: cfg.my, aim: cfg.aim, interact: false, sprint: cfg.sprint }, 0)
-        }
-        expect(session.view.prompt?.id).toBe(cfg.winId)
-        expect(session.view.prompt?.activeAction.id).toBe("peek")
-
-        // Press E while still holding movement/sprint input: must reliably enter Peek!
-        session.update(TICK_DT, { mx: cfg.mx, my: cfg.my, aim: cfg.aim, interact: true, sprint: cfg.sprint }, 0)
-        expect(p.peekingWindowId).toBe(cfg.winId)
-        expect(session.view.peek?.windowId).toBe(cfg.winId)
-        expect(session.view.prompt?.activeAction).toEqual({ id: "peek", label: "Stop peeking" })
-
-        // Continuing to press into the wall or strafe slightly along the sill must NOT cancel peek
-        for (let i = 0; i < 12; i++) {
-          session.update(TICK_DT, { mx: cfg.mx, my: cfg.my, aim: cfg.aim, interact: false, sprint: cfg.sprint }, 0)
-        }
-        expect(p.peekingWindowId).toBe(cfg.winId)
-
-        // Pressing E again reliably stops peeking, and default action returns to Peek window
-        session.update(TICK_DT, { mx: 0, my: 0, aim: cfg.aim, interact: true }, 0)
-        expect(p.peekingWindowId).toBeNull()
-        expect(session.view.peek).toBeNull()
-        expect(session.view.prompt?.activeAction).toEqual({ id: "peek", label: "Peek window" })
+      for (let i = 0; i < 30; i++) {
+        session.update(TICK_DT, { mx: cfg.mx, my: cfg.my, aim: cfg.aim, interact: false, sprint: cfg.sprint }, 0)
       }
+      expect(session.view.prompt?.id).toBe(cfg.winId)
+      expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Peek" })
+      expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+
+      // Press E while still holding movement/sprint input: must reliably enter Peek!
+      session.update(TICK_DT, { mx: cfg.mx, my: cfg.my, aim: cfg.aim, interact: true, sprint: cfg.sprint }, 0)
+      expect(p.peekingWindowId).toBe(cfg.winId)
+      expect(session.view.peek?.windowId).toBe(cfg.winId)
+      expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Stop peeking" })
+      expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+
+      // Continuing to press into the wall must NOT cancel peek
+      for (let i = 0; i < 12; i++) {
+        session.update(TICK_DT, { mx: cfg.mx, my: cfg.my, aim: cfg.aim, interact: false, sprint: cfg.sprint }, 0)
+      }
+      expect(p.peekingWindowId).toBe(cfg.winId)
+
+      // Pressing E again reliably stops peeking
+      session.update(TICK_DT, { mx: 0, my: 0, aim: cfg.aim, interact: true }, 0)
+      expect(p.peekingWindowId).toBeNull()
+      expect(session.view.peek).toBeNull()
+      expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Peek" })
     }
   })
 
-  test("window open/close via Q cycle and climb-through via Space or Q+E", () => {
+  test("automatic window context: closed -> E Peek / F Open; open -> E Climb / F Close", () => {
     const session = new LocalSession(7)
     const p = session.view.player
     Object.assign(p, { x: 24.5, y: 36.1, vx: 0, vy: 0, aim: -Math.PI / 2 })
     session.rebuildCollision()
 
-    // Cycle with Q from Peek window -> Open window, then press E to open
-    expect(session.view.prompt?.activeAction).toEqual({ id: "peek", label: "Peek window" })
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, cycle: true }, 0)
-    expect(session.view.prompt?.activeAction).toEqual({ id: "toggle", label: "Open window" })
+    // Closed window: primary is Peek (E), secondary is Open (F)
+    expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Peek" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
 
-    const revBefore = session.view.revision
+    // Press E to Peek
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
+    expect(p.peekingWindowId).toBe("ash-south-west")
+    expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Stop peeking" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+
+    // Press F (secondary: true) while peeking -> opens window immediately and switches context to E Climb · F Close!
+    const revBefore = session.view.revision
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
     const win = session.view.town.windows.find((w) => w.id === "ash-south-west")!
     expect(win.open).toBe(true)
     expect(session.view.revision).toBe(revBefore + 1)
+    expect(session.view.prompt?.primary).toEqual({ id: "climb", label: "Climb" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Close" })
 
-    // On an open window, E still defaults to Peek window, while Space climbs right through!
-    expect(session.view.prompt?.activeAction).toEqual({ id: "peek", label: "Peek window" })
+    // Press F again -> closes window, context returns to E Peek · F Open
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
+    expect(win.open).toBe(false)
+    expect(p.peekingWindowId).toBeNull()
+    expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Peek" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+
+    // Press F to Open again, then press E (primary: Climb) to climb right through!
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
+    expect(win.open).toBe(true)
     const staminaBefore = p.stamina
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, jump: true }, 0)
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
     expect(p.vault).not.toBeNull()
     expect(p.stamina).toBeCloseTo(staminaBefore - VAULT_STAMINA_COST, 4)
     expect(p.noise).toBeGreaterThanOrEqual(VAULT_NOISE - 0.5)
     expect(p.noise).toBeGreaterThan(WALK_NOISE * 2)
 
-    // Mid-vault has positive vertical lift over the sill
     session.update(VAULT_DURATION * 0.5, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false }, 0)
     expect(vaultLift(p)).toBeGreaterThan(0.4)
 
-    // Finish vault: lands inside the living room north of the south wall (y < 35.0)
     for (let i = 0; i < 15; i++) {
       session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false }, 0)
     }
@@ -149,13 +163,12 @@ describe("contextual window, door, and fence interactions", () => {
     const p = session.view.player
     const solids = solidRects(session.view.town)
 
-    // Stand south of north yard fence [18, 20, 39, 20.12] at (26, 20.65) facing north
     Object.assign(p, { x: 26, y: 20.65, vx: 0, vy: 0, aim: -Math.PI / 2 })
     session.rebuildCollision()
     expect(session.view.prompt?.kind).toBe("fence")
-    expect(session.view.prompt?.activeAction).toEqual({ id: "climb", label: "Vault fence" })
+    expect(session.view.prompt?.primary).toEqual({ id: "climb", label: "Vault" })
+    expect(session.view.prompt?.secondary).toBeUndefined()
 
-    // Press E to vault north over the fence
     const stamina0 = p.stamina
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
     expect(p.vault).not.toBeNull()
@@ -167,7 +180,6 @@ describe("contextual window, door, and fence interactions", () => {
     }
     expect(p.vault).toBeNull()
     expect(p.y).toBeLessThan(19.6)
-    // Verify landing spot is completely clear of solid colliders and player can walk freely north
     for (const r of solids) {
       expect(distToRect(p.x, p.y, r)).toBeGreaterThanOrEqual(0.3)
     }
@@ -177,7 +189,7 @@ describe("contextual window, door, and fence interactions", () => {
     }
     expect(p.y).toBeLessThan(yLanded - 0.4)
 
-    // Walk back to the fence from the north side and press Space (jump: true) to vault south back into the yard
+    // Vault back south with Space (jump: true)
     Object.assign(p, { x: 26, y: 19.45, vx: 0, vy: 0, aim: Math.PI / 2 })
     session.rebuildCollision()
     expect(session.view.prompt?.kind).toBe("fence")
@@ -201,12 +213,10 @@ describe("contextual window, door, and fence interactions", () => {
     Object.assign(p, { x: 24.5, y: 36.1, vx: 0, vy: 0, aim: -Math.PI / 2 })
     session.rebuildCollision()
 
-    // Before peeking: wide interior point (30, 33) behind the south wall is occluded
     vision.update(p.x, p.y, p.aim, blockers, DEFAULT_VISION, session.view.peek)
     expect(vision.visible(30, 33)).toBe(false)
     expect(vision.state(30, 33)).toBe("unexplored")
 
-    // Start peeking: interior room points become visible and room scenery is discovered
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
     expect(session.view.peek).not.toBeNull()
     vision.update(p.x, p.y, p.aim, blockers, DEFAULT_VISION, session.view.peek)
@@ -214,7 +224,6 @@ describe("contextual window, door, and fence interactions", () => {
     expect(vision.visible(30, 33)).toBe(true)
     expect(vision.visible(22.8, 34.2)).toBe(true)
 
-    // Walk away from the window: peek releases automatically and interior returns to explored shroud
     for (let i = 0; i < 24; i++) {
       session.update(TICK_DT, { mx: 0, my: 1, aim: Math.PI / 2, interact: false }, 0)
     }
@@ -225,36 +234,43 @@ describe("contextual window, door, and fence interactions", () => {
     expect(vision.state(30, 33)).toBe("explored")
   })
 
-  test("door lock/unlock via Q cycle and custom registry handlers", () => {
+  test("door open/close via E and lock/unlock via F or Hold E", () => {
     const session = new LocalSession(7)
     const p = session.view.player
+    const door = session.view.town.doors.find((d) => d.id === "ash-front")!
 
-    // At front door [27, 35.28, 28.4, 35.5]
     Object.assign(p, { x: 27.7, y: 36.2, vx: 0, vy: 0, aim: -Math.PI / 2 })
     session.rebuildCollision()
     expect(session.view.prompt?.id).toBe("ash-front")
-    expect(session.view.prompt?.activeAction.id).toBe("toggle")
+    expect(session.view.prompt?.primary).toEqual({ id: "toggle", label: "Open" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "lock", label: "Lock", hold: true })
 
-    // Cycle with Q to Lock door, then press E
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, cycle: true }, 0)
-    expect(session.view.prompt?.activeAction).toEqual({ id: "lock", label: "Lock door" })
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
-
-    const door = session.view.town.doors.find((d) => d.id === "ash-front")!
+    // Press F (secondary) to lock door directly
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
     expect(door.locked).toBe(true)
     expect(door.open).toBe(false)
-    expect(session.view.prompt?.activeAction).toEqual({ id: "lock", label: "Unlock door" })
+    expect(session.view.prompt?.primary).toEqual({ id: "lock", label: "Unlock" })
 
     // Press E to unlock, then E to open
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
     expect(door.locked).toBe(false)
-    expect(session.view.prompt?.activeAction).toEqual({ id: "toggle", label: "Open door" })
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
+    expect(session.view.prompt?.primary).toEqual({ id: "toggle", label: "Open" })
+
+    // Hold E for HOLD_DURATION (0.38s): initial press opens, holding through 0.38s closes & locks!
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true, interactHeld: true }, 0)
     expect(door.open).toBe(true)
+    const holdTicks = Math.ceil(HOLD_DURATION / TICK_DT) + 1
+    for (let i = 0; i < holdTicks; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: true }, 0)
+      if (i === 5) expect(holdProgress(p)).toBeGreaterThan(0.1)
+    }
+    expect(door.open).toBe(false)
+    expect(door.locked).toBe(true)
 
     // Custom handler registration on InteractionRegistry
     const customRegistry = new InteractionRegistry()
     let triggered = false
+    const tune: { id: "toggle"; label: string } = { id: "toggle", label: "Tune radio" }
     customRegistry.register({
       kind: "radio",
       candidates: () => [
@@ -262,8 +278,10 @@ describe("contextual window, door, and fence interactions", () => {
           kind: "radio",
           id: "radio-1",
           rect: [27.5, 36.0, 27.9, 36.3],
-          actions: [{ id: "toggle", label: "Tune radio" }],
-          defaultAction: { id: "toggle", label: "Tune radio" },
+          worldX: 27.7,
+          worldY: 36.15,
+          primary: tune,
+          actions: [tune],
         },
       ],
       execute: () => {
@@ -273,7 +291,7 @@ describe("contextual window, door, and fence interactions", () => {
     })
     const target = selectInteractTarget(session.view.town, p, customRegistry)
     expect(target?.kind).toBe("radio")
-    expect(target?.activeAction.label).toBe("Tune radio")
+    expect(target?.primary.label).toBe("Tune radio")
     customRegistry.get("radio")?.execute(session.view.town, p, "radio-1", "toggle")
     expect(triggered).toBe(true)
   })

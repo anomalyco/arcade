@@ -2,10 +2,10 @@ import { pushOut } from "@arcade/kit/sim/geom"
 import { advanceHour } from "./day-cycle"
 import {
   createInteractActorState,
-  cycleInteractAction,
   executeInteraction,
   peekInfoFor,
   selectInteractTarget,
+  stepHoldInteraction,
   stepInteractionState,
   type InteractActionId,
   type InteractActorState,
@@ -26,8 +26,9 @@ export type Command = {
   my: number
   aim: number
   interact: boolean
+  secondary?: boolean
+  interactHeld?: boolean
   sprint?: boolean
-  cycle?: boolean
   jump?: boolean
   interactAction?: InteractActionId
 }
@@ -99,9 +100,6 @@ export class LocalSession implements Session {
       }
       stepInteractionState(view.town, p, 0)
     }
-    if (command.cycle) {
-      cycleInteractAction(view.town, p)
-    }
     if (command.jump) {
       const outcome = executeInteraction(view.town, p, "climb")
       if (outcome.topologyChanged) {
@@ -109,12 +107,24 @@ export class LocalSession implements Session {
         this.solids = solidRects(view.town)
       }
     }
-    if (command.interact) {
-      const outcome = executeInteraction(view.town, p, command.interactAction)
+    if (command.secondary) {
+      const outcome = executeInteraction(view.town, p, "secondary")
       if (outcome.topologyChanged) {
         view.revision++
         this.solids = solidRects(view.town)
       }
+    }
+    if (command.interact) {
+      const outcome = executeInteraction(view.town, p, command.interactAction ?? "primary")
+      if (outcome.topologyChanged) {
+        view.revision++
+        this.solids = solidRects(view.town)
+      }
+    }
+    const holdOutcome = stepHoldInteraction(view.town, p, Boolean(command.interactHeld), dt)
+    if (holdOutcome.topologyChanged) {
+      view.revision++
+      this.solids = solidRects(view.town)
     }
     p.vx = dt > 0 ? (p.x - x) / dt : 0; p.vy = dt > 0 ? (p.y - y) / dt : 0
     view.peek = peekInfoFor(view.town, p)

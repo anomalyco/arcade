@@ -23,12 +23,11 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
      physical code letter (`KeyE` → `E` on QWERTY, `.` on Dvorak; `moveClusterLabel()` → `WASD` on QWERTY, `,AOE` on
      Dvorak).
 
-3. ** Primary interact/use is physical `KeyE`.**
-   - `KeyE` is the primary interact, use, enter/exit vehicle, door/window, and ship-operations key across games.
-   - Where `KeyF` has no competing binding (Blackout and Outbreak on foot), `KeyF` remains accepted as a silent alias
-     for muscle memory while HUD prompts display `keyLabel("KeyE")`.
-   - In aircraft flight (Carrier pilot), `KeyQ` / `KeyE` are left/right yaw rudder per PC flight-sim convention, so
-     aircraft countermeasures/carrier landing use `KeyF`.
+3. **Primary interact/use is physical `KeyE`, with simultaneous `KeyF` (or Hold `KeyE`) for secondary object actions.**
+   - `KeyE` is the primary interact, use, enter/exit vehicle, door/window/fence, and ship-operations key across games.
+   - Where an interactable object offers two contextual actions (such as Outbreak's windows and doors), **both actions are shown simultaneously** in a floating world-space prompt near the object (`[E] Peek  ·  [F] Open` on closed windows; `[E] Climb  ·  [F] Close` on open windows; `[E] Open  ·  [F / Hold E] Lock` on doors; `[E] Vault` on fences), with no hidden action cycling and `KeyQ` kept free.
+   - Where `KeyF` has no separate secondary action (Blackout on foot), `KeyF` remains accepted as a silent alias for `KeyE`.
+   - In aircraft flight (Carrier pilot), `KeyQ` / `KeyE` are left/right yaw rudder per PC flight-sim convention, so aircraft countermeasures/carrier landing use `KeyF`.
 
 4. **Input ownership and release discipline.**
    - Ignore gameplay bindings when focus is inside `<input>`, `<textarea>`, `<select>`, or `contentEditable`, or while
@@ -41,8 +40,9 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
 | Action | PC Convention | Arcade Standard (`e.code`) | QWERTY Prompt | Dvorak Prompt | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Move / Steer / Pitch-Roll | `WASD` / Arrows | `KeyW`, `KeyA`, `KeyS`, `KeyD` + `Arrow*` | `WASD` | `,AOE` | Screen-axis move in top-down games; throttle/steer in vehicles |
-| Interact / Use / Enter-Exit | `E` | `KeyE` (`KeyF` alias on foot) | `E` | `.` | Doors, windows, bomb plant/defuse, enter/exit vehicle, Ship Ops |
-| Contextual Action Cycle / Secondary | `Q` | `KeyQ` | `Q` | `'` | Cycles window/door actions in Outbreak; cop gadget in Getaway; left rudder in flight |
+| Interact / Primary Action | `E` | `KeyE` (`KeyF` alias in single-action games) | `E` | `.` | Primary contextual verb (Peek closed window, Climb open window, Vault fence, Open/Close door, Enter/Exit vehicle, Ship Ops) |
+| Secondary Object Action | `F` / Hold `E` | `KeyF` (or Hold `KeyE` `0.38 s`) | `F` | `U` | Shown simultaneously alongside `E` in Outbreak (`F` Open/Close window, `F / Hold E` Lock door); flares/land in Carrier flight |
+| Gadget / Rudder (Context) | `Q` | `KeyQ` | `Q` | `'` | Kept free in Outbreak/Blackout; cop gadget in Getaway; left yaw rudder in Carrier flight |
 | Sprint / Boost / Afterburner | `Shift` | `ShiftLeft`, `ShiftRight` | `SHIFT` | `SHIFT` | Stamina sprint in Outbreak; run in Blackout; nitro/boost in Getaway & Carrier |
 | Crouch / Seat / Camera | `Ctrl` / `C` | `ControlLeft`, `KeyC` | `CTRL` / `C` | `CTRL` / `J` | `KeyC` cycles vehicle seat in Blackout and toggles camera in Carrier |
 | Reload | `R` | `KeyR` | `R` | `P` | Firearm reload in Blackout |
@@ -64,7 +64,7 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
 
 | Surface | Move / Steer | Sprint / Boost | Handbrake / Jump | Interact / Use | Fire / Aim / Look | Reload / Equip / Melee / Swap | Camera / Seat / Horn | UI / Scoreboard / Chat / Audio / Lab | Audit fixes applied |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **Outbreak** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` (stamina sprint) | `Space` contextual vault (fences & open windows) | `KeyE` (`KeyF` alias) door, window peek/open/close/climb, fence vault; `KeyQ` cycles action | Cursor aim | — | Scroll wheel / Lab zoom | `Backquote` Lab | Switched interact from `KeyF`-only to `KeyE` (`KeyF` alias); wired `Space` for fence/window vaulting; removed `KeyE`/`Comma`/`KeyO` from `move()`; added layout-aware prompts |
+| **Outbreak** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` (stamina sprint) | `Space` contextual vault (fences & open windows) | `KeyE` primary (`Peek` closed window, `Climb` open window, `Vault` fence, `Open/Close` door); `KeyF` or Hold `KeyE` secondary (`Open/Close` window, `Lock` door) shown simultaneously; `KeyQ` free | Cursor aim | — | Scroll wheel / Lab zoom | `Backquote` Lab | Switched interact to simultaneous dual-action prompts (`E` primary + `F` / Hold `E` secondary) anchored near the object with `KeyQ` free; wired `Space` for fence/window vaulting; layout-aware prompts |
 | **Blackout (On Foot)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` | — | `KeyE` (`KeyF` alias) enter vehicle, hold to plant/defuse bomb | `Mouse0` fire, Cursor aim, `Mouse2` look ahead, Wheel zoom | `KeyR` reload, `KeyG`/`Mouse1` equip, `KeyV` melee, `Digit1`–`Digit3` gun, `Digit4`–`Digit5` equip | — | `Tab` scores, `KeyT` pin scores/teams, `Digit1`–`Digit4` end vote, `KeyM` mute, `KeyB` sandbox bots, `Backquote` Lab | Unified bomb plant/defuse (`interactHeld`) and vehicle enter/exit on `KeyE` (`KeyF` alias); removed logical `e.key` matching (`r`/`g`/`v`/`f`/`t`/`m`/`b`); layout-aware HUD prompts |
 | **Blackout (Driving)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | — | `ShiftLeft` / `ShiftRight` handbrake | `KeyE` (`KeyF` alias) exit vehicle | Passengers shoot (`Mouse0`) and look (`Mouse2`) | — | `KeyC` cycle seat, `KeyH` horn | `Tab` scores, `KeyT` teams, `KeyM` mute, `Backquote` Lab | Prompt updated to `keyLabel("KeyE")` / `keyLabel("KeyC")` / `keyLabel("KeyH")` |
 | **Blackout (Wizards)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` | — | `KeyE` (`KeyF` alias) | `Mouse0` cast spell at cursor, `Mouse2` look ahead | `Digit1`/`Digit2` or Wheel select spell, `KeyV` staff bonk | — | `Tab` scores, `KeyT` teams, `KeyM` mute, `Backquote` Lab | Removed `spellMode` `KeyE` movement workaround now that `KeyD` and `KeyE` are bound by physical `e.code` |

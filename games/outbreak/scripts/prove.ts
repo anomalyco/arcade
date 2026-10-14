@@ -94,7 +94,7 @@ try {
   await page.keyboard.up("KeyD")
   await page.keyboard.up("ShiftLeft")
 
-  // Window interaction on Elm house via real live keyboard input: walk up with W, press E while walking -> Peek bubble, Q+E Open, Space Climb through.
+  // Window interaction on Elm house via real live keyboard input: walk up with W, press E -> Peek bubble, press F -> Open, press E -> Climb through.
   await page.evaluate(() => (window as any).__arcadeHarness.freeze())
   await pose(23.5, 67.2, -Math.PI / 2, 18, 38)
   assert.equal(await page.evaluate(() => (window as any).__arcadeHarness.fog(29, 63)), "unexplored")
@@ -109,21 +109,20 @@ try {
   await page.evaluate(() => (window as any).__arcadeHarness.freeze())
   await shot("06-window-peek")
 
-  // Cycle with Q to Open window, press E to open, then Space to climb through into the room.
+  // Press F directly to Open window (no Q cycling), then press E (primary Climb on open window) to climb through into the room.
   await page.evaluate(() => (window as any).__arcadeHarness.freeze(false))
-  await page.keyboard.press("KeyQ")
-  await page.keyboard.press("KeyE")
+  await page.keyboard.press("KeyF")
   await page.waitForFunction(() => (window as any).__arcadeHarness.state().town.windows.find((w: any) => w.id === "elm-south-west")?.open)
-  await page.keyboard.press("Space")
+  await page.keyboard.press("KeyE")
   await page.waitForFunction(() => (window as any).__arcadeHarness.state().player.y < 65.0)
   await page.evaluate(() => (window as any).__arcadeHarness.freeze())
 
-  // Fence vaulting: pose near north yard fence [18, 20, 39, 20.12] and vault across with Space.
+  // Fence vaulting: pose near north yard fence [18, 20, 39, 20.12] and vault across with E / Space.
   await pose(26, 20.65, -Math.PI / 2, 18, 38)
   assert.equal(await page.evaluate(() => (window as any).__arcadeHarness.state().prompt?.kind), "fence")
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
-    await h.step(1 / 60, { jump: true })
+    await h.step(1 / 60, { interact: true })
     for (let i = 0; i < 8; i++) await h.step(1 / 60)
   })
   await shot("07-fence-vault")
@@ -133,6 +132,6 @@ try {
   })
   assert(await page.evaluate(() => (window as any).__arcadeHarness.state().player.y < 19.6))
   assert.deepEqual(errors, [])
-  await Bun.write(resolve(out, "proof.json"), JSON.stringify({ adapter, captures: ["01-dusk-street", "02-house-interior", "02-house-closed", "03-door-reveal", "04-explored-shroud", "05-night-lamps", "06-window-peek", "07-fence-vault"], errors, door: "blocked → visible → explored", window: "walk+E peek bubble → Q+E open → Space climb through", fence: "E/Space vault with stamina + noise", sprint: "ShiftLeft stamina drain + recovery", lab: "time slider + live input isolation", input: "E interact (F alias) + Space vault + physical WASD/Dvorak movement" }, null, 2))
+  await Bun.write(resolve(out, "proof.json"), JSON.stringify({ adapter, captures: ["01-dusk-street", "02-house-interior", "02-house-closed", "03-door-reveal", "04-explored-shroud", "05-night-lamps", "06-window-peek", "07-fence-vault"], errors, door: "blocked → visible → explored", window: "walk+E peek bubble → F open → E climb through", fence: "E/Space vault with stamina + noise", sprint: "ShiftLeft stamina drain + recovery", lab: "time slider + live input isolation", input: "E primary + F/Hold-E secondary + Space vault + physical WASD/Dvorak movement" }, null, 2))
   console.log(`Metal proof passed: ${out}`)
 } finally { await browser.close(); fixture.stop(true) }

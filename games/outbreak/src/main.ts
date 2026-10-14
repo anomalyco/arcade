@@ -7,7 +7,7 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { LocalSession, type Command } from "../shared/session"
-import { vaultLift, type PeekInfo } from "../shared/interact"
+import { holdProgress, vaultLift, type PeekInfo } from "../shared/interact"
 import { DEFAULT_STAMINA_TUNING, staminaControls } from "../shared/stamina"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, propShape, SIZE } from "../shared/map"
@@ -46,6 +46,7 @@ const controls: LabControl[] = [
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#game")!
   const status = document.querySelector<HTMLElement>("#status")!
+  const promptEl = document.querySelector<HTMLElement>("#prompt")
   const staminaEl = document.querySelector<HTMLElement>("#stamina")
   const staminaFill = document.querySelector<HTMLElement>("#stamina-fill")
   if (!navigator.gpu) { status.textContent = "Outbreak needs WebGPU."; return }
@@ -61,7 +62,7 @@ async function main() {
   const seed = Number(params.get("seed") ?? 7) >>> 0
   let session = new LocalSession(seed), vision = new Vision()
   let scenery = new SceneryMemory()
-  const input = new Input(canvas)
+  const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
   const cam = new Camera()
@@ -98,13 +99,34 @@ async function main() {
       clock.pause(wallNow)
       return 0
     }
-    const substeps = clock.frame(wallNow, liveMove(), () => input.takeEnter(), () => input.takeCycle(), () => input.takeJump())
+    const substeps = clock.frame(
+      wallNow,
+      liveMove(),
+      () => input.takeEnter(),
+      () => input.takeSecondary(),
+      () => input.takeJump(),
+      () => input.interactHeld,
+    )
     if (!substeps.length) return 0
     const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
     let stepped = 0
     for (const step of substeps) {
       const p = session.view.player
-      session.update(step.dt, { mx: step.mx, my: step.my, sprint: step.sprint, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact, cycle: step.cycle, jump: step.jump }, settings.timeScale, settings)
+      session.update(
+        step.dt,
+        {
+          mx: step.mx,
+          my: step.my,
+          sprint: step.sprint,
+          aim: Math.atan2(target.y - p.y, target.x - p.x),
+          interact: step.interact,
+          secondary: step.secondary,
+          jump: step.jump,
+          interactHeld: step.interactHeld,
+        },
+        settings.timeScale,
+        settings,
+      )
       stepped += step.dt
       frames++
     }
@@ -160,25 +182,47 @@ async function main() {
     clock.reset(performance.now(), liveMove())
   }
   reset()
+  const esc = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
   const formatStatus = () => {
     const { player: p, hour, prompt } = session.view
-    const interactKey = keyLabel("KeyE")
-    const cycleKey = keyLabel("KeyQ")
-    const jumpKey = keyLabel("Space")
+    const primaryKey = keyLabel("KeyE")
+    const secondaryKey = keyLabel("KeyF")
     let promptText = ""
     if (prompt) {
-      if (prompt.kind === "fence") {
-        promptText = ` · ${interactKey} / ${jumpKey} ${prompt.activeAction.label}`
-      } else {
-        const nextIdx = (prompt.actions.findIndex(a => a.id === prompt.activeAction.id) + 1) % prompt.actions.length
-        const next = prompt.actions.length > 1 ? prompt.actions[nextIdx] : undefined
-        const canSpaceClimb = prompt.kind === "window" && prompt.actions.some(a => a.id === "climb") && prompt.activeAction.id !== "climb"
-        promptText = ` · ${interactKey} ${prompt.activeAction.label}${canSpaceClimb ? ` · ${jumpKey} Climb through` : ""}${next ? ` (${cycleKey} ${next.label})` : ""}`
-      }
+      const second = prompt.secondary
+        ? `  ·  ${prompt.secondary.hold ? `${secondaryKey} / Hold ${primaryKey}` : secondaryKey} ${prompt.secondary.label}`
+        : ""
+      promptText = ` · ${primaryKey} ${prompt.primary.label}${second}`
     }
     return `${clockText(hour)}${p.exhausted ? " · Exhausted" : ""}${promptText}`
   }
-  onKeyLayoutChange(() => { status.textContent = formatStatus() })
+  const syncWorldPrompt = (w: number, h: number) => {
+    if (!promptEl) return
+    const { player: p, town, prompt } = session.view
+    if (!prompt) {
+      promptEl.hidden = true
+      return
+    }
+    const isPeeking = Boolean(session.view.peek)
+    const anchorHeight = (isPeeking ? .15 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
+    const proj = cam.project(prompt.worldX, anchorHeight, prompt.worldY, w, h)
+    if (!proj.ok) {
+      promptEl.hidden = true
+      return
+    }
+    const primaryKey = esc(keyLabel("KeyE"))
+    const secondaryKey = esc(keyLabel("KeyF"))
+    const primaryHtml = `<span><kbd>${primaryKey}</kbd>${esc(prompt.primary.label)}</span>`
+    const secondaryHtml = prompt.secondary
+      ? `<span class="sep">·</span><span><kbd>${prompt.secondary.hold ? `${secondaryKey} / Hold ${primaryKey}` : secondaryKey}</kbd>${esc(prompt.secondary.label)}</span>`
+      : ""
+    const hold = holdProgress(p)
+    const holdHtml = hold > 0 ? `<i class="hold" style="width:${(hold * 100).toFixed(1)}%"></i>` : ""
+    promptEl.innerHTML = `${primaryHtml}${secondaryHtml}${holdHtml}`
+    promptEl.hidden = false
+    promptEl.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
+  }
+  onKeyLayoutChange(() => { status.textContent = formatStatus(); syncWorldPrompt(innerWidth, innerHeight) })
   function draw(dt: number) {
     const { player: p, town, hour, time, peek } = session.view
     settings.hour = Math.round(hour * 20) / 20
@@ -270,6 +314,7 @@ async function main() {
       staminaEl.dataset.exhausted = String(p.exhausted)
     }
     status.textContent = formatStatus()
+    syncWorldPrompt(w, h)
     const meterNow = performance.now(), elapsed = (meterNow - meterAt) / 1000
     if (elapsed > .25) {
       lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
@@ -375,7 +420,7 @@ async function main() {
       if (key === "houseSeed" || key === "terrain") regenerate()
     },
     pose(x: number, y: number, aim: number) {
-      Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0, peekingWindowId: null, lastPeekedWindowId: null, cycledTargetId: null, cycledActionIndex: 0, vault: null })
+      Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0, peekingWindowId: null, holdTargetId: null, holdElapsed: 0, holdTriggered: false, vault: null })
       peekBlend = 0; lastPeek = null
       session.rebuildCollision()
       cam.snap(x, y); cam.dist = settings.zoom
