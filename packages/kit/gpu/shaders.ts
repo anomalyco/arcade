@@ -977,11 +977,16 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
         if (mat == 4) { albedo = mix(albedo, pow(max(LK.u12.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.55); }
         else if (mat == 20) {
           let k = i32(round(o.aux));
-          if (k == 4) { albedo = mix(albedo, pow(max(LK.u13.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.55); }
-          else if (k == 6 || k == 2) { albedo = mix(albedo, pow(max(LK.u14.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.5); }
-          else if (k == 0 || k == 5) { albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.6); }
+          if (k == 4) { albedo = mix(albedo, pow(max(LK.u13.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.68); }
+          else if (k == 6 || k == 2) { albedo = mix(albedo, pow(max(LK.u14.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.62); }
+          else if (k == 1) {
+            // Road asphalt in Painterly: lift to soft periwinkle-slate gouache
+            let roadTarget = select(pow(max(LK.u14.xyz * 0.65, vec3f(0.02)), vec3f(2.2)), vec3f(0.15, 0.18, 0.32), i32(round(LK.u14.w)) == 2);
+            albedo = mix(albedo, roadTarget, palMix * 0.72);
+          }
+          else if (k == 0 || k == 5) { albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.72); }
         } else if (mat == 22) {
-          albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.65);
+          albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.75);
         }
       }
       if ((mat == 22 || (mat == 20 && (i32(round(o.aux)) == 0 || i32(round(o.aux)) == 5))) && abs(folShift) > 0.001) {
@@ -1116,6 +1121,101 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
             col += hazeCol * (distFade + hotSpot) * beamMask * vis0 * gritSpec * plankMod * (LK.u5.w * 0.85);
           }
         }
+      }
+    }
+
+    // Painterly gouache twilight choreography (Tiny Glade / Ghibli soft shapes, periwinkle shadows, lush sage greens & peach-gold pools)
+    if (i32(round(LK.u14.w)) == 2 || (LK.u10.w > 0.35 && LK.u10.y >= 2.0)) {
+      let dab = noise2(o.world.xz * 2.2 + vec2f(o.world.y * 1.3, 3.7)) - 0.5;
+      let dabBroad = noise2(o.world.xz * 0.65 + vec2f(7.1, 2.3)) - 0.5;
+      let isIn = interior(o.world.xz) && o.world.y < 2.8;
+
+      if (!isIn) {
+        // Exterior gouache twilight lift: periwinkle road/roof, lush sunlit moss-sage trees & lawn, warm peach-gold window/porch spill
+        var gouacheBase = lookAlbedo;
+        if (mat == 20) {
+          let k = i32(round(o.aux));
+          if (k == 1) {
+            // Street asphalt: velvety periwinkle-lavender gouache (#5f6c96) with subtle brush mottling, hiding harsh road dashes
+            gouacheBase = vec3f(0.115, 0.148, 0.285) * (1.0 + dab * 0.14 + dabBroad * 0.12);
+          } else if (k == 2) {
+            // Concrete sidewalk slabs: warm periwinkle-cream stone (#8d93a8)
+            gouacheBase = vec3f(0.24, 0.26, 0.36) * (1.0 + dab * 0.12);
+          } else if (k == 6) {
+            // Front flagstone walk: warm honey-buff stone pavers
+            gouacheBase = vec3f(0.34, 0.29, 0.24) * (1.0 + dab * 0.16);
+          } else if (k == 0 || k == 5) {
+            // Lawn turf & garden beds: lush sage & moss-olive gouache
+            gouacheBase = mix(vec3f(0.10, 0.20, 0.075), vec3f(0.20, 0.30, 0.095), clamp(0.5 + dabBroad * 1.1 + dab * 0.5, 0.0, 1.0));
+          } else if (k == 3) {
+            // Driveway gravel/cobbles
+            gouacheBase = vec3f(0.18, 0.19, 0.23) * (1.0 + dab * 0.18);
+          }
+        } else if (mat == 21) {
+          // Roof shingles: soft slate-periwinkle gouache with quantized shingle row bands
+          let roofBand = floor(clamp(o.world.y - 2.8, 0.0, 2.5) * 2.5) / 2.5;
+          gouacheBase = vec3f(0.085, 0.108, 0.205) * (0.92 + 0.18 * roofBand + dab * 0.14);
+        } else if (mat == 22) {
+          // Trees & bushes: 3-band Ghibli foliage (cool teal-sage shadow underside -> lush moss midtone -> warm olive-gold crown)
+          let crownH = clamp((o.world.y - 0.3) / 3.8, 0.0, 1.0);
+          let sunSide = clamp(n.y * 0.55 - n.x * 0.25 + 0.35 + dab * 0.28, 0.0, 1.0);
+          let bandF = lookQuantizeDiffuse(clamp(crownH * 0.55 + sunSide * 0.65, 0.0, 1.0), 0.15, max(3.0, LK.u10.y), LK.u10.z);
+          gouacheBase = mix(vec3f(0.055, 0.125, 0.075), vec3f(0.24, 0.36, 0.10), bandF);
+        } else if (mat == 4) {
+          // Exterior clapboard siding: warm cream plaster catching porch/window glow
+          gouacheBase = vec3f(0.32, 0.30, 0.29) * (1.0 + dab * 0.08);
+        }
+
+        // Broad peach-gold gouache glow spilling from front windows (24.4, 34.0), (31.2, 34.0) and porch (27.7, 35.0)
+        let dWinL = length(o.world.xz - vec2f(24.4, 34.3));
+        let dWinR = length(o.world.xz - vec2f(31.2, 34.3));
+        let dPorch = length((o.world.xz - vec2f(27.7, 36.2)) * vec2f(0.85, 0.62));
+        let spillL = exp(-(dWinL * dWinL) / 9.5);
+        let spillR = exp(-(dWinR * dWinR) / 9.5);
+        let spillP = exp(-(dPorch * dPorch) / 16.5);
+        let warmSpill = clamp(spillL * 0.75 + spillR * 0.75 + spillP * 1.05, 0.0, 1.35) * step(o.world.y, 2.75);
+        let peachLight = vec3f(1.35, 0.88, 0.42) * warmSpill;
+
+        // Soft flower-bush blossoms along the house foundation (z ~ 33.5..35.2)
+        if (mat == 22 && o.world.z > 33.2 && o.world.z < 35.6 && o.world.x > 22.0 && o.world.x < 33.8) {
+          let blossom = smoothstep(0.28, 0.48, hash2(floor(o.world.xz * 5.5)));
+          gouacheBase = mix(gouacheBase, vec3f(0.62, 0.52, 0.28), blossom * 0.55);
+        }
+
+        let skyAmb = vec3f(0.92, 0.96, 1.12);
+        col = mix(col, gouacheBase * (skyAmb + peachLight * 1.65) + peachLight * 0.085, clamp(LK.u10.w, 0.0, 1.0));
+      } else {
+        // Interior cutaway gouache: warm honey-ochre floorboards, two-tone painted plaster walls, and cozy golden room pools
+        var intBase = lookAlbedo;
+        if (n.y > 0.75 && o.world.y < 0.28) {
+          // Honey-ochre gouache wood planks with soft warm seams
+          let row = floor(o.world.z / 0.22);
+          let plankVar = (hash2(vec2f(row, floor(o.world.x / 1.4))) - 0.5) * 0.16;
+          intBase = vec3f(0.32, 0.175, 0.075) * (1.0 + plankVar + dab * 0.10);
+        } else if (mat == 4) {
+          // Two-tone painted interior wall: sage-grey lower wainscot (y < 1.05) + warm cream-peach upper plaster
+          let isUpper = smoothstep(0.92, 1.12, o.world.y);
+          let wainscot = vec3f(0.16, 0.18, 0.15) * (1.0 + dab * 0.10);
+          let upperWall = vec3f(0.34, 0.28, 0.24) * (1.0 + dab * 0.12);
+          intBase = mix(wainscot, upperWall, isUpper);
+        }
+        // Cozy golden lamp pools in all 4 rooms (NW bed, SW bed/living, SE dining, NE kitchen table)
+        let dNW = length(o.world.xz - vec2f(25.2, 25.6));
+        let dSW = length(o.world.xz - vec2f(23.8, 32.5));
+        let dSE = length(o.world.xz - vec2f(31.5, 30.8));
+        let dNE = length(o.world.xz - vec2f(30.4, 26.8));
+        let dHall = length(o.world.xz - vec2f(27.7, 29.5));
+        let warmPool = exp(-(dNW * dNW) / 14.0) * 0.95
+          + exp(-(dSW * dSW) / 12.0) * 0.85
+          + exp(-(dSE * dSE) / 15.0) * 1.05
+          + exp(-(dNE * dNE) / 13.0) * 0.80
+          + exp(-(dHall * dHall) / 18.0) * 0.55;
+        let roomLight = vec3f(0.68, 0.62, 0.58) + vec3f(1.15, 0.76, 0.36) * warmPool;
+        col = mix(col, intBase * roomLight + vec3f(0.08, 0.05, 0.02) * warmPool, clamp(LK.u10.w, 0.0, 1.0));
+      }
+      if (mat == 9) {
+        // Cutaway wall-top trim in Painterly: soft slate-indigo border
+        col = mix(col, vec3f(0.09, 0.10, 0.15), clamp(LK.u10.w, 0.0, 1.0));
       }
     }
   }\n`,
