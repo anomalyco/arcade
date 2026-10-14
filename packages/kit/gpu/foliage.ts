@@ -1053,6 +1053,7 @@ function emitBoughCluster(
   auxOffset = 0,
   sprigs = 0,
   mound = false,
+  moundSegs = 6,
 ): void {
   const domePivot: Point = [cx, cy - ry * 0.28, cz]
   // Note: vertex colors are sRGB (raised to ^2.2 in vs), so 0.58 sRGB = 0.30 linear (deep uncrushed 70s olive-walnut shadow)
@@ -1062,7 +1063,7 @@ function emitBoughCluster(
   const midCol = scaleRgb(base, midShade)
   const sunlitCol = scaleRgb(base, 1.24)
 
-  if (mound) emitLeafMound(m, cx, cy, cz, rx * 0.9, ry * 0.92, deepCol, midCol, rng, auxOffset, flexBase)
+  if (mound) emitLeafMound(m, cx, cy, cz, rx * 0.9, ry * 0.92, deepCol, midCol, rng, auxOffset, flexBase, moundSegs)
   const totalCards = Math.max(mound ? 2 : 3, Math.round(sprigDensity))
   for (let s = 0; s < totalCards; s++) {
     // With a mound for mass, rosettes go only on the mid/outer shells where they break the silhouette.
@@ -1254,7 +1255,7 @@ export function buildFoliageTree(
     ? params.leafCardSize * Math.max(0.55, Math.min(1.55, radiusRatio))
     : Math.max(0.11, radius * 0.24)
   // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer town trees
-  const sprigsPerClump = 3
+  const sprigsPerClump = isHeroTree ? 3 : 2
   const edgeSprigs = isHeroTree ? 1 : 0
 
   for (let b = 0; b < boughs; b++) {
@@ -1357,6 +1358,7 @@ export function buildFoliageTree(
         0,
         inGap ? 0 : edgeSprigs,
         true,
+        isHeroTree ? 6 : 5,
       )
     }
   }
@@ -1477,6 +1479,7 @@ export function buildFoliageBush(
       FOLIAGE_BUSH_AUX,
       sprigs,
       true,
+      5,
     )
   }
   const topR = R * (0.56 + 0.1 * wild)
