@@ -121,12 +121,12 @@ const COMMON_GRASS_DEFAULTS = {
   bladeWidth: 0.058,
   bladeCurvature: 0.62,
   grassClumping: 0.82,
-  rootColorR: 0.11,
-  rootColorG: 0.19,
-  rootColorB: 0.07,
-  tipColorR: 0.44,
-  tipColorG: 0.58,
-  tipColorB: 0.22,
+  rootColorR: 0.08,
+  rootColorG: 0.14,
+  rootColorB: 0.06,
+  tipColorR: 0.25,
+  tipColorG: 0.37,
+  tipColorB: 0.16,
   grassVariation: 0.62,
   dryPatches: 0.28,
   grassWind: 0.48,
@@ -149,17 +149,17 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       clumpSize: 0.95,
       leafCardSize: 0.28,
       porosity: 0.35,
-      treeColorR: 0.31,
-      treeColorG: 0.44,
-      treeColorB: 0.19,
-      treeColorVariation: 0.58,
-      autumnMix: 0.22,
-      translucency: 0.54,
-      canopyAO: 0.68,
+      treeColorR: 0.20,
+      treeColorG: 0.31,
+      treeColorB: 0.14,
+      treeColorVariation: 0.62,
+      autumnMix: 0.25,
+      translucency: 0.30,
+      canopyAO: 0.74,
       normalSoftness: 0.88,
-      treeWindStrength: 0.30,
-      treeWindFreq: 0.85,
-      treeWindGust: 0.45,
+      treeWindStrength: 0.26,
+      treeWindFreq: 0.80,
+      treeWindGust: 0.42,
       ...COMMON_GRASS_DEFAULTS,
     },
   },
@@ -689,11 +689,11 @@ function emitLeafSprig(
 
   for (let l = 0; l < leafletCount; l++) {
     // Splay 3 leaflets in a natural botanical trefoil fan (-0.68, 0, +0.68 rad)
-    const fanOffset = leafletCount === 1 ? 0 : (l - (leafletCount - 1) * 0.5) * 0.72
+    const fanOffset = leafletCount === 1 ? 0 : (l - (leafletCount - 1) * 0.5) * 0.68
     const yaw = yawBase + fanOffset + (rng.next() - 0.5) * 0.28
-    const pitch = outDir[1] * 0.55 + (l === 1 ? 0.16 : -0.14) + (rng.next() - 0.5) * 0.24
-    const len = sprigSize * (l === 1 ? 1.12 : 0.88 + rng.next() * 0.20)
-    const wid = len * (0.42 + rng.next() * 0.10)
+    const pitch = outDir[1] * 0.55 + (l === 1 ? 0.18 : -0.12) + (rng.next() - 0.5) * 0.22
+    const len = sprigSize * (l === 1 ? 1.15 : 0.92 + rng.next() * 0.20)
+    const wid = len * (0.52 + rng.next() * 0.12)
 
     const dir = normalize3(Math.cos(yaw), pitch, Math.sin(yaw))
     const side = normalize3(-Math.sin(yaw), (rng.next() - 0.5) * 0.28, Math.cos(yaw))
@@ -845,11 +845,11 @@ function emitBoughCluster(
   flexBase: number,
 ): void {
   const domePivot: Point = [cx, cy - ry * 0.28, cz]
-  const coreDark = Math.max(0.16, 0.48 - canopyAO * 0.34)
-  const midShade = Math.max(0.42, 0.78 - canopyAO * 0.22)
+  const coreDark = Math.max(0.10, 0.40 - canopyAO * 0.36)
+  const midShade = Math.max(0.30, 0.68 - canopyAO * 0.24)
   const deepCol = scaleRgb(base, coreDark)
   const midCol = scaleRgb(base, midShade)
-  const sunlitCol = scaleRgb(base, 1.20)
+  const sunlitCol = scaleRgb(base, 1.08)
 
   const totalCards = Math.max(8, Math.round(sprigDensity * 1.15))
   for (let s = 0; s < totalCards; s++) {
@@ -879,39 +879,50 @@ function emitBoughCluster(
     const outDir = normalize3(px - cx, (py - domePivot[1]) * 1.18 + (isCore ? 0.28 : 0.08), pz - cz)
 
     const heightLift = clamp01((oy + ry * 0.48) / Math.max(0.1, ry * 1.15))
-    const cardCenterCol = isCore
-      ? deepCol
-      : isMid
-        ? mixRgb(deepCol, midCol, 0.48 + 0.52 * heightLift)
-        : mixRgb(midCol, base, 0.58 + 0.42 * heightLift)
-    const cardRimCol = isCore
-      ? mixRgb(deepCol, midCol, 0.62)
-      : isMid
-        ? mixRgb(midCol, sunlitCol, 0.56 + 0.44 * heightLift)
-        : scaleRgb(sunlitCol, 0.96 + 0.18 * heightLift)
 
     const cardRadius = Math.max(
       0.20,
       leafCardScale * (isCore ? 1.55 : isMid ? 1.32 : 1.08) * (0.88 + rng.next() * 0.24),
     )
 
-    emitBrushyLeafCard(
-      m,
-      px,
-      py,
-      pz,
-      outDir,
-      cardRadius,
-      domePivot,
-      crownCenter,
-      Math.min(0.96, normalSoftness * 0.92 + 0.06),
-      rng,
-      cardCenterCol,
-      cardRimCol,
-    )
+    if (isCore) {
+      emitBrushyLeafCard(
+        m,
+        px,
+        py,
+        pz,
+        outDir,
+        cardRadius * 1.12,
+        domePivot,
+        crownCenter,
+        Math.min(0.96, normalSoftness * 0.92 + 0.06),
+        rng,
+        deepCol,
+        scaleRgb(deepCol, 0.72),
+      )
+    } else {
+      const sprigRootCol = isMid
+        ? mixRgb(deepCol, midCol, 0.35 + 0.45 * heightLift)
+        : mixRgb(midCol, base, 0.38 + 0.45 * heightLift)
+      const sprigTipCol = isMid
+        ? mixRgb(midCol, base, 0.55 + 0.45 * heightLift)
+        : mixRgb(base, sunlitCol, 0.42 + 0.58 * heightLift)
+      emitLeafSprig(
+        m,
+        [px, py, pz],
+        outDir,
+        cardRadius * 1.48,
+        domePivot,
+        crownCenter,
+        Math.min(0.96, normalSoftness * 0.90 + 0.06),
+        rng,
+        sprigRootCol,
+        sprigTipCol,
+        flexBase * (isMid ? 0.85 : 1.05),
+        2,
+      )
+    }
   }
-  void flexBase
-  void emitLeafSprig
 }
 
 /**
@@ -1329,10 +1340,10 @@ export function emitCurvedGrassBlade(
   const n1L = normalize3(spineN1[0] * cosR - sideX * sinR, spineN1[1] * cosR, spineN1[2] * cosR - sideZ * sinR)
   const n1R = normalize3(spineN1[0] * cosR + sideX * sinR, spineN1[1] * cosR, spineN1[2] * cosR + sideZ * sinR)
 
-  // High-contrast root-to-tip gradient so tufts pop from 38-46m overhead
-  const rootGrounded = scaleRgb(rootCol, 0.38)
-  const midCol = mixRgb(rootCol, tipCol, Math.pow(yFrac1, 0.60))
-  const brightTip = scaleRgb(tipCol, 1.18)
+  // High-contrast root-to-tip gradient so tufts pop from 38-46m overhead without neon oversaturation
+  const rootGrounded = scaleRgb(rootCol, 0.36)
+  const midCol = mixRgb(rootCol, tipCol, Math.pow(yFrac1, 0.62))
+  const brightTip = scaleRgb(tipCol, 1.04)
   const aux0 = -0.05
   const aux1 = -0.52
   const aux2 = -1.0

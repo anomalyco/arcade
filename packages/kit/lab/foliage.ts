@@ -42,24 +42,24 @@ export const FOLIAGE_LIGHTING_PRESETS: Readonly<
     label: "Outbreak dusk (18:00)",
     values: {
       lamps: true,
-      lampPower: 3.1,
-      lampRadius: 14.5,
-      lampHeight: 3.5,
-      spot: true,
-      spotPower: 3.8,
-      spotAngle: 42,
+      lampPower: 1.8,
+      lampRadius: 10.5,
+      lampHeight: 3.2,
+      spot: false,
+      spotPower: 1.6,
+      spotAngle: 38,
       spotYaw: -118,
       spotPitch: 40,
       shadows: true,
       moon: true,
-      moonPower: 0.48,
+      moonPower: 0.34,
       moonAzimuth: -48,
-      moonElevation: 38,
+      moonElevation: 40,
       count: 4,
-      exposure: 0.12,
+      exposure: -0.14,
       tone: 1,
-      temperature: 0.16,
-      saturation: 1.05,
+      temperature: -0.12,
+      saturation: 0.96,
     },
   },
   outbreak_day: {
@@ -69,45 +69,45 @@ export const FOLIAGE_LIGHTING_PRESETS: Readonly<
       lampPower: 0.5,
       lampRadius: 12,
       lampHeight: 3.5,
-      spot: true,
-      spotPower: 4.6,
+      spot: false,
+      spotPower: 2.4,
       spotAngle: 48,
       spotYaw: -55,
       spotPitch: 56,
       shadows: true,
       moon: true,
-      moonPower: 1.25,
+      moonPower: 1.05,
       moonAzimuth: -42,
       moonElevation: 62,
       count: 2,
-      exposure: 0.22,
+      exposure: 0.08,
       tone: 1,
-      temperature: 0.12,
-      saturation: 1.06,
+      temperature: 0.06,
+      saturation: 1.0,
     },
   },
   outbreak_night: {
     label: "Outbreak night (22:30)",
     values: {
       lamps: true,
-      lampPower: 3.5,
-      lampRadius: 14.5,
-      lampHeight: 3.6,
-      spot: true,
-      spotPower: 5.2,
+      lampPower: 2.2,
+      lampRadius: 11.5,
+      lampHeight: 3.4,
+      spot: false,
+      spotPower: 2.4,
       spotAngle: 34,
       spotYaw: -102,
       spotPitch: 44,
       shadows: true,
       moon: true,
-      moonPower: 0.24,
+      moonPower: 0.20,
       moonAzimuth: -58,
       moonElevation: 46,
       count: 4,
-      exposure: -0.02,
+      exposure: -0.22,
       tone: 1,
-      temperature: -0.14,
-      saturation: 1.02,
+      temperature: -0.20,
+      saturation: 0.94,
     },
   },
   cold_moon: {
@@ -233,7 +233,7 @@ struct VOut {
         r.u2.z = clamp(U.extra.x * 0.52, 0.0, 1.0);
         r.u2.w = clamp(0.35 + U.extra.x * 0.45, 0.0, 1.0);
         let s = evalGrassSoil(p, albedo, false, r);
-        albedo = mix(s.albedo, albedo * vec3f(0.62, 0.88, 0.42), 0.32 * (1.0 - U.extra.x * 0.5));
+        albedo = s.albedo;
         gloss = s.gloss;
         cavity = s.cavity;
         n = normalize(n + surfaceNormalShift);
@@ -317,12 +317,12 @@ struct VOut {
       n = normalize(n + vec3f(tuftG.y * 0.48, 0.0, tuftG.z * 0.48));
     } else if (o.aux < -0.02) {
       let bladeT = clamp(-o.aux, 0.0, 1.0);
-      let rootAO = mix(0.28, 1.0, smoothstep(0.0, 0.28, bladeT));
-      let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.18;
+      let rootAO = mix(0.24, 1.0, smoothstep(0.0, 0.32, bladeT));
+      let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.16;
       let crestNoise = surfaceNoise(o.world.xz * 0.32 + vec2f(U.config.x * 0.28, U.config.x * 0.16));
-      let crestHighlight = smoothstep(0.40, 0.68, crestNoise) * 0.38 * bladeT;
-      albedo = mix(albedo * (0.94 + vein), vec3f(0.54, 0.72, 0.18), crestHighlight) * mix(0.84, 1.24, pow(bladeT, 0.62));
-      gloss = vec2f(48.0, 0.32 * bladeT);
+      let crestHighlight = smoothstep(0.42, 0.72, crestNoise) * 0.22 * bladeT;
+      albedo = mix(albedo * (0.92 + vein), vec3f(0.28, 0.42, 0.18), crestHighlight) * mix(0.80, 1.06, pow(bladeT, 0.62));
+      gloss = vec2f(48.0, 0.22 * bladeT);
       cavity = rootAO;
       outAlpha = clamp(1.42 - bladeT * 0.48, 0.52, 1.0);
     } else {
@@ -337,10 +337,9 @@ struct VOut {
         let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
         let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
         let brushField = brush1 * 0.58 + brush2 * 0.42;
-        let edgeMask = smoothstep(0.015, 0.24, cardEdge);
+        let edgeMask = smoothstep(0.015, 0.18, cardEdge);
         let lobeMask = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
-        albedo *= mix(0.28, 1.08, lobeMask);
-        cavity *= mix(0.35, 1.0, lobeMask);
+        albedo *= mix(0.84, 1.06, brushField);
         outAlpha = lobeMask;
       }
     }
@@ -373,15 +372,16 @@ struct VOut {
   }
 
   let isFoliage = mat == 22;
-  let wrap = select(0.18, 0.40, isFoliage && isAfter);
-  let tipWeight = clamp(abs(o.aux), 0.0, 1.2);
-  let transStrength = select(0.0, U.wind.u0.w * (0.35 + 0.65 * tipWeight), isFoliage && isAfter);
+  let wrap = select(0.18, 0.36, isFoliage && isAfter);
+  let tipWeight = clamp(abs(o.aux), 0.0, 1.0);
+  let transStrength = select(0.0, U.wind.u0.w * (0.30 + 0.55 * tipWeight), isFoliage && isAfter);
 
-  var diff = F.ambient.rgb * (0.52 + 0.48 * max(n.y, 0.0)) * cavity;
+  let ambientTint = select(vec3f(0.56, 0.68, 0.88) * 0.62, vec3f(0.84, 0.90, 1.0) * 0.78, U.config.w > 0.5);
+  var diff = F.ambient.rgb * ambientTint * (0.44 + 0.48 * max(n.y, 0.0)) * cavity;
   let moonDir = normalize(F.moon.xyz);
   let moonNdl = max(0.0, (dot(n, moonDir) + wrap) / (1.0 + wrap));
-  let moonBack = max(0.0, dot(-n, moonDir)) * transStrength * 0.65;
-  diff += vec3f(0.52, 0.65, 0.92) * F.moon.w * (moonNdl * cavity + moonBack);
+  let moonBack = max(0.0, dot(-n, moonDir)) * transStrength * 0.42;
+  diff += vec3f(0.46, 0.62, 0.92) * F.moon.w * (moonNdl * cavity + moonBack);
 
   var spec = vec3f(0.0);
   let lightCount = min(8, i32(F.options.x));
@@ -393,13 +393,13 @@ struct VOut {
     let dist = length(delta);
     if (dist >= lpos.w || lcol.w <= 0.001) { continue; }
     let ldir = delta / max(dist, 0.001);
-    var atten = pow(max(0.0, 1.0 - dist / lpos.w), 2.0) * lcol.w;
+    var atten = pow(max(0.0, 1.0 - dist / lpos.w), 2.2) * lcol.w;
     if (lcone.w > -1.0) {
       atten *= smoothstep(lcone.w, min(1.0, lcone.w + 0.08), dot(-ldir, lcone.xyz));
     }
     let ndl = max(0.0, (dot(n, ldir) + wrap) / (1.0 + wrap));
-    let back = max(0.0, dot(-n, ldir)) * transStrength * 0.58;
-    diff += lcol.rgb * atten * (ndl * mix(0.65, 1.0, cavity) + back);
+    let back = max(0.0, dot(-n, ldir)) * transStrength * 0.34;
+    diff += lcol.rgb * atten * (ndl * mix(0.62, 1.0, cavity) + back);
     if (gloss.x > 0.0 && gloss.y > 0.0) {
       let h = normalize(ldir + V);
       let s = pow(max(0.0, dot(n, h)), gloss.x) * (gloss.x + 2.0) * 0.008;
@@ -407,11 +407,11 @@ struct VOut {
     }
   }
 
-  var color = albedo * diff * 1.15 + spec;
+  var color = albedo * diff + spec;
   if (isFoliage && isAfter) {
-    let fresnel = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.24 * tipWeight;
-    let chloro = mix(vec3f(0.16, 0.45, 0.04), vec3f(0.55, 0.85, 0.10), sqrt(clamp(tipWeight, 0.0, 1.0)));
-    color += albedo * chloro * transStrength * 0.35 + albedo * vec3f(0.50, 0.85, 0.30) * fresnel;
+    let fresnel = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.14 * tipWeight * max(0.15, F.moon.w);
+    let chloro = mix(vec3f(0.10, 0.24, 0.05), vec3f(0.28, 0.44, 0.14), sqrt(tipWeight));
+    color += albedo * chloro * moonBack * 0.45 + albedo * vec3f(0.32, 0.52, 0.22) * fresnel;
   }
 
   // Crisp 1.5px screen-space split indicator line in A/B Split mode
@@ -439,21 +439,17 @@ function addOutbreakLotArchitecture(m: Mesh, seed: number): void {
   const x = -7.5, r = 7.5, z = -6.5, e = -1.5
   const mid = (z + e) / 2
   const ridge = 4.35
-  const trim = rgb(0xd4d2c8)
-  const roof = rgb(0x3d4758)
-  const brick = rgb(0x684339)
-  const wallCol = rgb(0x767f78)
+  const trim = rgb(0xc8c5ba)
+  const roof = rgb(0x323b4a)
+  const brick = rgb(0x5c3a30)
+  const wallCol = rgb(0x667068)
 
-  // Lawn ground (-11.6..11.6 in X, -6.8..2.0 in Z)
-  m.box(-11.6, -0.08, -6.8, 11.6, 0.0, 2.0, rgb(0x526438), MAT.ground, 0)
+  // Lawn ground (-11.6..11.6 in X, -6.8..2.0 in Z) matching Outbreak's dark forest turf base
+  m.box(-11.6, -0.08, -6.8, 11.6, 0.0, 2.0, rgb(0x303e22), MAT.ground, 0)
   // Sidewalk + verge + curb (z = 2.0..4.0)
-  m.box(-11.6, -0.06, 2.0, 11.6, 0.08, 4.0, rgb(0x989ba4), MAT.ground, 2)
+  m.box(-11.6, -0.06, 2.0, 11.6, 0.08, 4.0, rgb(0x767b86), MAT.ground, 2)
   // Street asphalt (z = 4.0..8.4)
-  m.box(-11.6, -0.08, 4.0, 11.6, 0.014, 8.4, rgb(0x454d5c), MAT.ground, 1)
-  // Dashed yellow street center lines
-  for (const vx of [-9.5, -4.5, 0.5, 5.5]) {
-    m.box(vx, 0.015, 6.1, vx + 2.4, 0.022, 6.22, rgb(0xb9ab7a))
-  }
+  m.box(-11.6, -0.08, 4.0, 11.6, 0.014, 8.4, rgb(0x343c4a), MAT.ground, 1)
   // Storm drain grate at curb
   m.box(-3.8, 0.016, 3.86, -2.96, 0.024, 4.14, rgb(0x14181c))
   for (let i = 0; i < 7; i++) {
@@ -912,15 +908,15 @@ export function createFoliage(context: LabContext): LabSection {
     if (key === "outbreak_dusk") {
       stage.dynamicLights = isLot
         ? [
-            // Warm sodium streetlamp on the right curb + left streetlamp fill + warm porch lantern + window spill
-            { x: 3.6, y: 3.6, z: 3.65, radius: 14.5, r: 1.0, g: 0.78, b: 0.50, power: 3.2 },
-            { x: -5.2, y: 3.6, z: 3.65, radius: 13.5, r: 1.0, g: 0.76, b: 0.48, power: 2.6 },
-            { x: 0.9, y: 2.1, z: -0.4, radius: 9.5, r: 1.0, g: 0.66, b: 0.30, power: 2.2 },
-            { x: -4.2, y: 1.6, z: -0.6, radius: 8.5, r: 1.0, g: 0.62, b: 0.26, power: 1.8 },
+            // Warm porch lantern pool centered at the stoop + left/right window ground spills + right curb lamp
+            { x: 0.2, y: 2.1, z: -0.25, radius: 6.4, r: 1.0, g: 0.72, b: 0.36, power: 1.85 },
+            { x: -4.2, y: 1.5, z: -0.65, radius: 5.2, r: 1.0, g: 0.64, b: 0.28, power: 1.15 },
+            { x: 4.2, y: 1.5, z: -0.65, radius: 5.2, r: 1.0, g: 0.64, b: 0.28, power: 1.15 },
+            { x: 4.0, y: 3.5, z: 3.65, radius: 9.0, r: 1.0, g: 0.76, b: 0.46, power: 1.45 },
           ]
         : [
-            { x: -3.2, y: 4.2, z: 2.8, radius: 14, r: 1.0, g: 0.76, b: 0.48, power: 2.8 },
-            { x: 3.4, y: 2.6, z: -2.2, radius: 11, r: 1.0, g: 0.64, b: 0.34, power: 1.8 },
+            { x: -3.2, y: 4.2, z: 2.8, radius: 12, r: 1.0, g: 0.76, b: 0.48, power: 1.9 },
+            { x: 3.4, y: 2.6, z: -2.2, radius: 9, r: 1.0, g: 0.64, b: 0.34, power: 1.2 },
           ]
     } else if (key === "outbreak_day") {
       stage.dynamicLights = [
