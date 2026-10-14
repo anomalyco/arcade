@@ -215,39 +215,62 @@ function compileLevel(town: Town): LevelData {
       m.box(x+.03,2.78,z+.03,r-.03,2.80,end-.03,hex(0xb8b0a0),MAT.lit)
       m.box(x - .02, .14, z - .02, r + .02, .28, end + .02, hex(0x594836), MAT.lit)
     } else if (b.kind === "window") {
-      m.box(x, .13, z, r, .85, end, color, MAT.wall,20)
-      m.box(x, 2.15, z, r, 2.78, end, color, MAT.wall,20, hex(0x303744))
+      // Lower wall apron and upper wall header around the 0.85..2.15m window opening
+      m.box(x, .13, z, r, .84, end, color, MAT.wall, 20)
+      m.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, hex(0x303744))
       m.box(x+.03, 2.78, z+.03, r-.03, 2.80, end-.03, hex(0xb8b0a0), MAT.lit)
-      m.box(x-.08,.78,z-.06,r+.08,.87,end+.12,hex(0xd8d5cb),MAT.wall)
-      m.box(x-.07,2.13,z-.06,r+.07,2.23,end+.08,hex(0xd8d5cb),MAT.wall)
-      const g = at(x, z, true)
-      g.box(x + .025, .87, z + .025, r - .025, 2.14, end - .025, hex(0x809c9e), MAT.glass)
       const owner=town.buildings.findIndex(h=>x>=h.rect[0]-.01&&r<=h.rect[2]+.01&&z>=h.rect[1]&&end<=h.rect[3])
       const house=town.buildings[owner]!
       const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])
-      // Warm interior window glow with darker curtain side drapes and crisp white mullions/sills.
-      if(r-x>1) {
-        m.box(x+.05,.88,z+.02,r-.05,1.46,end+.012,hex(0x9e6228),MAT.lamp,lamp)
-        m.box(x+.05,1.48,z+.02,r-.05,2.11,end+.004,hex(0x6e441d),MAT.lamp,lamp)
-        m.box(x+.04,.871,end+.005,r-.04,.884,end+.11,hex(0x825428),MAT.lamp,lamp)
-        const doubleWin = r - x > 2.2
-        const panes = doubleWin ? [[x+.06, (x+r)/2-.07], [(x+r)/2+.07, r-.06]] : [[x+.06, r-.06]]
-        for (const [wx0, wx1] of panes) {
-          for (const px of [wx0!, wx1! - .22]) {
-            m.box(px, .89, z+.03, px + .22, 2.10, end+.018, hex(0x4a3119), MAT.lamp, lamp)
-          }
-          const midX = (wx0! + wx1!) / 2
-          m.box(midX - .018, .87, z - .01, midX + .018, 2.15, end + .035, hex(0xdcd9cf), MAT.wall)
-        }
-        m.box(x+.04,1.45,z-.01,r-.04,1.50,end+.04,hex(0xdcd9cf),MAT.wall)
-      }else for(const pz of [z+.1,end-.45])m.box(x+.07,.9,pz,x+.10,2.1,pz+.35,hex(0x784d22),MAT.lamp,lamp)
+      const g = at(x, z, true)
       if (r - x > 1) {
-        const divW = r - x > 2.2 ? .06 : .035
-        for (const [px, w] of [[x, .06], [(x + r) / 2 - divW, divW * 2], [r - .06, .06]] as const) {
-          m.box(px, .85, z - .03, px + w, 2.2, end + .045, hex(0xdcd9cf), MAT.wall)
+        const zm = (z + end) / 2
+        // Projecting exterior stone/wood sill + shadow apron, and deep interior honey-wood sill
+        m.box(x-.08, .79, z+.04, r+.08, .86, end+.14, hex(0xdcd8ce), MAT.wall)
+        m.box(x-.05, .74, end, r+.05, .79, end+.08, hex(0x7c786e), MAT.wall)
+        m.box(x-.06, .80, z-.10, r+.06, .86, z+.06, hex(0x9a7852), MAT.timber)
+        // Recessed window header & deep side jamb reveals (26cm deep so frame recession reads from outside & inside)
+        m.box(x-.07, 2.14, z-.05, r+.07, 2.23, end+.09, hex(0xdcd8ce), MAT.wall)
+        for (const px of [x, r - .07]) {
+          m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0xdcd8ce), MAT.wall)
         }
+        // Subtle warm sill bounce strip on the recessed inner sill (does not block the window opening!)
+        m.box(x+.08, .861, zm-.04, r-.08, .872, zm+.05, hex(0xb87632), MAT.lamp, lamp)
+        const doubleWin = r - x > 2.2
+        if (doubleWin) {
+          const mid = (x + r) / 2
+          m.box(mid - .05, .85, z-.03, mid + .05, 2.16, end+.05, hex(0xdcd8ce), MAT.wall)
+        }
+        const panes = doubleWin ? [[x+.07, (x+r)/2-.05], [(x+r)/2+.05, r-.07]] : [[x+.07, r-.07]]
+        for (const [wx0, wx1] of panes) {
+          // Soft warm sheer valence at top of sash + gathered side curtains at left/right 22cm edges
+          m.box(wx0!, 1.90, z-.03, wx1!, 2.13, z+.02, hex(0x9a622c), MAT.lamp, lamp)
+          for (const [cx0, cx1] of [[wx0!, wx0! + .22], [wx1! - .22, wx1!]]) {
+            m.box(cx0!, .87, z-.03, cx1!, 1.90, z+.03, hex(0x885424), MAT.lamp, lamp)
+          }
+          // Recessed vertical & horizontal sash muntins at the window mid-plane zm
+          const midX = (wx0! + wx1!) / 2
+          m.box(midX - .016, .86, zm - .022, midX + .016, 2.14, zm + .022, hex(0xe2dfd6), MAT.wall)
+          // See-through glass pane recessed at zm
+          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x96aab0), MAT.glass)
+        }
+        // Recessed horizontal meeting rail across the sash mid-plane
+        m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0xe2dfd6), MAT.wall)
       } else {
-        for (const pz of [z, (z + end) / 2, end - .06]) m.box(x - .03, .85, pz, r + .03, 2.2, pz + .06, hex(0xdcd9cf), MAT.wall)
+        const xm = (x + r) / 2
+        // East wall window: projecting exterior sill, deep interior wooden sill, recessed jambs, side drapes & see-through glass
+        m.box(x+.04, .79, z-.08, r+.14, .86, end+.08, hex(0xdcd8ce), MAT.wall)
+        m.box(x-.10, .80, z-.06, x+.06, .86, end+.06, hex(0x9a7852), MAT.timber)
+        m.box(x-.05, 2.14, z-.07, r+.09, 2.23, end+.07, hex(0xdcd8ce), MAT.wall)
+        for (const pz of [z, end - .07]) m.box(x-.04, .84, pz, r+.06, 2.16, pz+.07, hex(0xdcd8ce), MAT.wall)
+        m.box(xm-.04, .861, z+.08, xm+.05, .872, end-.08, hex(0xb87632), MAT.lamp, lamp)
+        for (const [cz0, cz1] of [[z+.08, z+.30], [end-.30, end-.08]]) {
+          m.box(x-.03, .87, cz0!, x+.03, 2.13, cz1!, hex(0x8e5c2c), MAT.lamp, lamp)
+        }
+        const midZ = (z + end) / 2
+        m.box(xm - .026, .86, midZ - .03, xm + .026, 2.14, midZ + .03, hex(0xe2dfd6), MAT.wall)
+        m.box(xm - .024, 1.46, z+.06, xm + .024, 1.51, end-.06, hex(0xe2dfd6), MAT.wall)
+        g.box(xm - .01, .86, z+.07, xm + .01, 2.14, end-.07, hex(0x8aa8ac), MAT.glass)
       }
     } else {
       const horizontal = r - x > end - z, length = horizontal ? r - x : end - z
@@ -363,8 +386,10 @@ function compileLevel(town: Town): LevelData {
     })
     return [...pack(opaque), ...screenChunk(), ...customChunks]
   })
-  // Indoor sky mask: roofs are cut away, but rooms still receive only subdued daylight.
+  // Indoor sky/moon mask (fd.g) with inward window moonlight shafts, plus rectangular exterior window-spill in bounce.a.
   const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)
+  const bRes=192, bScale=SIZE/bRes, bounceData = new Uint8Array(bRes * bRes * 4)
+  const windows = town.barriers.filter(b => b.kind === "window")
   const furnitureContacts=town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})
   for (let z = 0; z < resolution; z++) for (let x = 0; x < resolution; x++) {
     const px=(x+.5)*scale,pz=(z+.5)*scale
@@ -376,7 +401,41 @@ function compileLevel(town: Town): LevelData {
     }
     for(const rect of furnitureContacts)contact=Math.max(contact,Math.exp(-distToRect(px,pz,rect)*5)*.85)
     data[(z * resolution + x) * 2] = Math.round(contact*255)
-    data[(z * resolution + x) * 2 + 1] = indoor ? 32 : 255
+    data[(z * resolution + x) * 2 + 1] = indoor ? 14 : 255
+  }
+  // Stamp inward moonlight shafts only within each window's local 3m interior footprint (1000x faster than full-grid scan).
+  for (const w of windows) {
+    const [wx0, wz0, wx1, wz1] = w.rect
+    const x0 = Math.max(0, Math.floor((wx0 - 2.8) / scale)), x1 = Math.min(resolution - 1, Math.ceil((wx1 + 0.6) / scale))
+    const z0 = Math.max(0, Math.floor((wz0 - 2.8) / scale)), z1 = Math.min(resolution - 1, Math.ceil((wz1 + 0.6) / scale))
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const idx = (z * resolution + x) * 2 + 1
+      if (data[idx] === 255) continue
+      const px = (x + .5) * scale, pz = (z + .5) * scale
+      if (wx1 - wx0 > 1) {
+        const dz = wz0 - pz
+        if (dz > -0.1 && dz < 2.6) {
+          const xShift = px + dz * 0.18, half = (wx1 - wx0) * 0.46, mid = (wx0 + wx1) * 0.5
+          const dx = Math.max(0, Math.abs(xShift - mid) - half)
+          if (dx < 0.45) {
+            const along = Math.max(0, 1 - Math.max(0, dz) / 2.5), across = Math.max(0, 1 - dx / 0.42)
+            const mullion = 1 - 0.35 * Math.exp(-(((xShift - mid) / 0.08) ** 2))
+            data[idx] = Math.max(data[idx]!, Math.round(14 + 215 * along * along * across * mullion))
+          }
+        }
+      } else {
+        const dx = wx0 - px
+        if (dx > -0.1 && dx < 2.6) {
+          const zShift = pz - dx * 0.15, half = (wz1 - wz0) * 0.46, mid = (wz0 + wz1) * 0.5
+          const dz = Math.max(0, Math.abs(zShift - mid) - half)
+          if (dz < 0.45) {
+            const along = Math.max(0, 1 - Math.max(0, dx) / 2.5), across = Math.max(0, 1 - dz / 0.42)
+            const mullion = 1 - 0.35 * Math.exp(-(((zShift - mid) / 0.08) ** 2))
+            data[idx] = Math.max(data[idx]!, Math.round(14 + 215 * along * along * across * mullion))
+          }
+        }
+      }
+    }
   }
   return { chunks: chunks([...meshes,...props],true), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
 }
