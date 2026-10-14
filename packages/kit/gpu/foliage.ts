@@ -4,10 +4,11 @@ import { Rng } from "../sim/rng"
 export type FoliagePresetId = "oak" | "maple" | "birch" | "pine" | "hydrangea"
 export type FoliageCrownShape = "dome" | "layered" | "columnar" | "conical" | "spreading"
 export type FoliageCameraMode = "close" | "game"
+export type FoliageStageMode = "lot" | "swatch"
 export type FoliageCompareMode = 0 | 1 | 2
 
 export type FoliageNumericKey =
-  // Tree (18 numeric parameters)
+  // Tree (19 numeric parameters)
   | "treeHeight"
   | "crownRadius"
   | "branchCount"
@@ -27,7 +28,7 @@ export type FoliageNumericKey =
   | "treeWindStrength"
   | "treeWindFreq"
   | "treeWindGust"
-  // Grass (14 numeric parameters)
+  // Grass (15 numeric parameters)
   | "grassDensity"
   | "bladeHeight"
   | "bladeWidth"
@@ -73,7 +74,7 @@ export const FOLIAGE_PARAM_SPECS: readonly FoliageParamSpec[] = [
   { key: "branchAngle", label: "Branch angle", group: "Tree Structure", min: 18, max: 78, step: 1, unit: "°", boundary: "structural" },
   { key: "clumpCount", label: "Clump count", group: "Tree Structure", min: 1, max: 5, step: 1, unit: "", boundary: "structural" },
   { key: "clumpSize", label: "Clump size", group: "Tree Structure", min: 0.35, max: 1.65, step: 0.05, unit: "m", boundary: "structural" },
-  { key: "leafCardSize", label: "Leaf card size", group: "Tree Structure", min: 0.14, max: 0.80, step: 0.02, unit: "m", boundary: "structural" },
+  { key: "leafCardSize", label: "Leaf card size", group: "Tree Structure", min: 0.12, max: 0.75, step: 0.02, unit: "m", boundary: "structural" },
   { key: "porosity", label: "Crown porosity", group: "Tree Structure", min: 0.0, max: 0.85, step: 0.05, unit: "", boundary: "structural" },
   // Tree Canopy & Shading
   { key: "treeColorR", label: "Base red", group: "Tree Canopy & Shading", min: 0.08, max: 0.85, step: 0.01, unit: "", boundary: "structural" },
@@ -90,14 +91,14 @@ export const FOLIAGE_PARAM_SPECS: readonly FoliageParamSpec[] = [
   { key: "treeWindGust", label: "Wind gust", group: "Tree Wind", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
   // Grass Blades
   { key: "grassDensity", label: "Grass density", group: "Grass Blades", min: 0.25, max: 2.5, step: 0.05, unit: "×", boundary: "structural" },
-  { key: "bladeHeight", label: "Blade height", group: "Grass Blades", min: 0.06, max: 0.50, step: 0.01, unit: "m", boundary: "structural" },
-  { key: "bladeWidth", label: "Blade width", group: "Grass Blades", min: 0.015, max: 0.11, step: 0.005, unit: "m", boundary: "structural" },
+  { key: "bladeHeight", label: "Blade height", group: "Grass Blades", min: 0.06, max: 0.55, step: 0.01, unit: "m", boundary: "structural" },
+  { key: "bladeWidth", label: "Blade width", group: "Grass Blades", min: 0.015, max: 0.12, step: 0.005, unit: "m", boundary: "structural" },
   { key: "bladeCurvature", label: "Blade curvature", group: "Grass Blades", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
   { key: "grassClumping", label: "Clumping", group: "Grass Blades", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
   // Grass Colour & Wind
-  { key: "rootColorR", label: "Root red", group: "Grass Colour & Wind", min: 0.05, max: 0.65, step: 0.01, unit: "", boundary: "structural" },
-  { key: "rootColorG", label: "Root green", group: "Grass Colour & Wind", min: 0.08, max: 0.70, step: 0.01, unit: "", boundary: "structural" },
-  { key: "rootColorB", label: "Root blue", group: "Grass Colour & Wind", min: 0.04, max: 0.50, step: 0.01, unit: "", boundary: "structural" },
+  { key: "rootColorR", label: "Root red", group: "Grass Colour & Wind", min: 0.04, max: 0.65, step: 0.01, unit: "", boundary: "structural" },
+  { key: "rootColorG", label: "Root green", group: "Grass Colour & Wind", min: 0.06, max: 0.70, step: 0.01, unit: "", boundary: "structural" },
+  { key: "rootColorB", label: "Root blue", group: "Grass Colour & Wind", min: 0.03, max: 0.50, step: 0.01, unit: "", boundary: "structural" },
   { key: "tipColorR", label: "Tip red", group: "Grass Colour & Wind", min: 0.12, max: 0.90, step: 0.01, unit: "", boundary: "structural" },
   { key: "tipColorG", label: "Tip green", group: "Grass Colour & Wind", min: 0.18, max: 0.92, step: 0.01, unit: "", boundary: "structural" },
   { key: "tipColorB", label: "Tip blue", group: "Grass Colour & Wind", min: 0.06, max: 0.65, step: 0.01, unit: "", boundary: "structural" },
@@ -116,19 +117,19 @@ export type FoliagePresetDef = {
 
 const COMMON_GRASS_DEFAULTS = {
   grassDensity: 1.0,
-  bladeHeight: 0.28,
-  bladeWidth: 0.052,
-  bladeCurvature: 0.56,
-  grassClumping: 0.80,
-  rootColorR: 0.14,
-  rootColorG: 0.24,
-  rootColorB: 0.09,
-  tipColorR: 0.42,
-  tipColorG: 0.56,
-  tipColorB: 0.24,
-  grassVariation: 0.58,
-  dryPatches: 0.26,
-  grassWind: 0.46,
+  bladeHeight: 0.30,
+  bladeWidth: 0.058,
+  bladeCurvature: 0.62,
+  grassClumping: 0.82,
+  rootColorR: 0.11,
+  rootColorG: 0.19,
+  rootColorB: 0.07,
+  tipColorR: 0.44,
+  tipColorG: 0.58,
+  tipColorB: 0.22,
+  grassVariation: 0.62,
+  dryPatches: 0.28,
+  grassWind: 0.48,
   distanceFade: 0.55,
 } as const
 
@@ -136,7 +137,7 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
   oak: {
     id: "oak",
     label: "Street Oak (Broadleaf)",
-    summary: "Spreading broadleaf dome with layered bough puffs, soft bent normals, deep interior AO, and clumped meadow grass.",
+    summary: "Spreading broadleaf dome with 3-shell sub-crown leaf bouquets, spherized normals, deep interior AO, and clumped meadow grass.",
     defaults: {
       treePreset: "oak",
       crownShape: "dome",
@@ -146,16 +147,16 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       branchAngle: 44,
       clumpCount: 2,
       clumpSize: 0.95,
-      leafCardSize: 0.38,
+      leafCardSize: 0.28,
       porosity: 0.35,
-      treeColorR: 0.34,
-      treeColorG: 0.45,
-      treeColorB: 0.22,
+      treeColorR: 0.31,
+      treeColorG: 0.44,
+      treeColorB: 0.19,
       treeColorVariation: 0.58,
-      autumnMix: 0.24,
-      translucency: 0.52,
-      canopyAO: 0.64,
-      normalSoftness: 0.82,
+      autumnMix: 0.22,
+      translucency: 0.54,
+      canopyAO: 0.68,
+      normalSoftness: 0.88,
       treeWindStrength: 0.30,
       treeWindFreq: 0.85,
       treeWindGust: 0.45,
@@ -165,7 +166,7 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
   maple: {
     id: "maple",
     label: "Autumn Maple (Layered)",
-    summary: "Tiered horizontal bough shelves with warm amber-ochre peripheral foliage and golden-straw lawn patches.",
+    summary: "Tiered horizontal bough shelves with warm amber-ochre peripheral leaf bouquets and golden-straw lawn patches.",
     defaults: {
       treePreset: "maple",
       crownShape: "layered",
@@ -174,17 +175,17 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       branchCount: 7,
       branchAngle: 52,
       clumpCount: 3,
-      clumpSize: 0.85,
-      leafCardSize: 0.36,
+      clumpSize: 0.86,
+      leafCardSize: 0.26,
       porosity: 0.45,
       treeColorR: 0.46,
-      treeColorG: 0.44,
-      treeColorB: 0.21,
+      treeColorG: 0.43,
+      treeColorB: 0.19,
       treeColorVariation: 0.68,
-      autumnMix: 0.64,
+      autumnMix: 0.66,
       translucency: 0.58,
-      canopyAO: 0.60,
-      normalSoftness: 0.80,
+      canopyAO: 0.64,
+      normalSoftness: 0.86,
       treeWindStrength: 0.34,
       treeWindFreq: 0.90,
       treeWindGust: 0.50,
@@ -195,7 +196,7 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
   birch: {
     id: "birch",
     label: "Silver Birch (Airy)",
-    summary: "Slender upright white-barked crown with high porosity, fine fluttering leaf cards, and tall feathery grass.",
+    summary: "Slender upright white-barked crown with high porosity, fine fluttering leaf sprigs, and tall feathery grass.",
     defaults: {
       treePreset: "birch",
       crownShape: "columnar",
@@ -204,29 +205,29 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       branchCount: 6,
       branchAngle: 32,
       clumpCount: 2,
-      clumpSize: 0.72,
-      leafCardSize: 0.28,
+      clumpSize: 0.74,
+      leafCardSize: 0.22,
       porosity: 0.55,
-      treeColorR: 0.38,
-      treeColorG: 0.49,
-      treeColorB: 0.24,
+      treeColorR: 0.36,
+      treeColorG: 0.48,
+      treeColorB: 0.21,
       treeColorVariation: 0.52,
       autumnMix: 0.36,
       translucency: 0.64,
-      canopyAO: 0.52,
-      normalSoftness: 0.76,
+      canopyAO: 0.58,
+      normalSoftness: 0.84,
       treeWindStrength: 0.42,
       treeWindFreq: 1.15,
       treeWindGust: 0.55,
       ...COMMON_GRASS_DEFAULTS,
-      bladeHeight: 0.27,
+      bladeHeight: 0.34,
       bladeCurvature: 0.72,
     },
   },
   pine: {
     id: "pine",
     label: "Conifer Pine (Spire)",
-    summary: "Conical evergreen tiers with downward-swept boughs, deep forest needles, and shaded understory turf.",
+    summary: "Conical evergreen tiers with downward-swept boughs, dense needle sprays, and shaded understory turf.",
     defaults: {
       treePreset: "pine",
       crownShape: "conical",
@@ -235,30 +236,30 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       branchCount: 8,
       branchAngle: 62,
       clumpCount: 2,
-      clumpSize: 0.80,
-      leafCardSize: 0.32,
+      clumpSize: 0.82,
+      leafCardSize: 0.24,
       porosity: 0.25,
-      treeColorR: 0.22,
-      treeColorG: 0.35,
-      treeColorB: 0.18,
+      treeColorR: 0.20,
+      treeColorG: 0.34,
+      treeColorB: 0.16,
       treeColorVariation: 0.40,
       autumnMix: 0.08,
-      translucency: 0.34,
-      canopyAO: 0.74,
-      normalSoftness: 0.72,
+      translucency: 0.36,
+      canopyAO: 0.76,
+      normalSoftness: 0.82,
       treeWindStrength: 0.22,
       treeWindFreq: 0.75,
       treeWindGust: 0.40,
       ...COMMON_GRASS_DEFAULTS,
-      rootColorR: 0.14,
-      rootColorG: 0.20,
-      rootColorB: 0.10,
+      rootColorR: 0.10,
+      rootColorG: 0.17,
+      rootColorB: 0.07,
     },
   },
   hydrangea: {
     id: "hydrangea",
     label: "Garden Hydrangea (Shrub)",
-    summary: "Compact multi-stemmed foundation shrub with lush peripheral rosettes and creamy-white panicle blooms.",
+    summary: "Compact multi-stemmed foundation shrub with lush peripheral leaf sprigs and creamy-white panicle blooms.",
     defaults: {
       treePreset: "hydrangea",
       crownShape: "spreading",
@@ -268,16 +269,16 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       branchAngle: 56,
       clumpCount: 2,
       clumpSize: 0.58,
-      leafCardSize: 0.26,
+      leafCardSize: 0.20,
       porosity: 0.20,
-      treeColorR: 0.31,
-      treeColorG: 0.43,
-      treeColorB: 0.21,
+      treeColorR: 0.29,
+      treeColorG: 0.42,
+      treeColorB: 0.18,
       treeColorVariation: 0.48,
       autumnMix: 0.12,
       translucency: 0.50,
-      canopyAO: 0.66,
-      normalSoftness: 0.85,
+      canopyAO: 0.68,
+      normalSoftness: 0.88,
       treeWindStrength: 0.24,
       treeWindFreq: 0.95,
       treeWindGust: 0.38,
@@ -377,7 +378,7 @@ export function randomizeFoliageParams(
     out.branchAngle = snapKey("branchAngle", isSlender ? 26 + rng.next() * 28 : 34 + rng.next() * 28)
     out.clumpCount = snapKey("clumpCount", 1 + Math.floor(rng.next() * 3))
     out.clumpSize = snapKey("clumpSize", out.crownRadius * (0.34 + rng.next() * 0.16))
-    out.leafCardSize = snapKey("leafCardSize", out.clumpSize * (0.34 + rng.next() * 0.16))
+    out.leafCardSize = snapKey("leafCardSize", out.clumpSize * (0.24 + rng.next() * 0.12))
     out.porosity = snapKey("porosity", 0.15 + rng.next() * 0.45)
 
     // Keep chlorophyll green dominant (G >= R*0.85, B <= G*0.65) so trees never turn neon magenta/cyan.
@@ -389,38 +390,37 @@ export function randomizeFoliageParams(
     out.treeColorB = snapKey("treeColorB", b)
     out.treeColorVariation = snapKey("treeColorVariation", 0.36 + rng.next() * 0.46)
     out.autumnMix = snapKey("autumnMix", base.treePreset === "pine" ? rng.next() * 0.18 : rng.next() * 0.72)
-    out.translucency = snapKey("translucency", 0.30 + rng.next() * 0.48)
-    out.canopyAO = snapKey("canopyAO", 0.44 + rng.next() * 0.38)
-    out.normalSoftness = snapKey("normalSoftness", 0.60 + rng.next() * 0.34)
+    out.translucency = snapKey("translucency", 0.32 + rng.next() * 0.46)
+    out.canopyAO = snapKey("canopyAO", 0.48 + rng.next() * 0.38)
+    out.normalSoftness = snapKey("normalSoftness", 0.68 + rng.next() * 0.28)
     out.treeWindStrength = snapKey("treeWindStrength", 0.16 + rng.next() * 0.42)
     out.treeWindFreq = snapKey("treeWindFreq", 0.55 + rng.next() * 0.95)
     out.treeWindGust = snapKey("treeWindGust", 0.24 + rng.next() * 0.54)
   }
 
   if (scope === "all" || scope === "grass") {
-    out.grassDensity = snapKey("grassDensity", 0.70 + rng.next() * 0.95)
-    out.bladeHeight = snapKey("bladeHeight", 0.14 + rng.next() * 0.22)
-    out.bladeWidth = snapKey("bladeWidth", 0.030 + rng.next() * 0.040)
-    out.bladeCurvature = snapKey("bladeCurvature", 0.36 + rng.next() * 0.50)
-    out.grassClumping = snapKey("grassClumping", 0.52 + rng.next() * 0.42)
+    out.grassDensity = snapKey("grassDensity", 0.75 + rng.next() * 0.95)
+    out.bladeHeight = snapKey("bladeHeight", 0.18 + rng.next() * 0.22)
+    out.bladeWidth = snapKey("bladeWidth", 0.035 + rng.next() * 0.045)
+    out.bladeCurvature = snapKey("bladeCurvature", 0.40 + rng.next() * 0.48)
+    out.grassClumping = snapKey("grassClumping", 0.55 + rng.next() * 0.40)
 
-    const rootG = 0.16 + rng.next() * 0.12
-    const rootR = rootG * (0.64 + rng.next() * 0.20)
-    const rootB = rootG * (0.42 + rng.next() * 0.16)
+    const rootG = 0.14 + rng.next() * 0.11
+    const rootR = rootG * (0.58 + rng.next() * 0.20)
+    const rootB = rootG * (0.36 + rng.next() * 0.14)
     out.rootColorR = snapKey("rootColorR", rootR)
     out.rootColorG = snapKey("rootColorG", rootG)
     out.rootColorB = snapKey("rootColorB", rootB)
 
-    // Tips are always warmer and brighter than roots so blades read with ground-up AO.
-    const tipG = Math.min(0.68, rootG * (1.85 + rng.next() * 0.55))
-    const tipR = Math.min(0.64, tipG * (0.74 + rng.next() * 0.24))
-    const tipB = Math.min(0.42, tipG * (0.44 + rng.next() * 0.16))
+    const tipG = Math.min(0.72, rootG * (2.15 + rng.next() * 0.65))
+    const tipR = Math.min(0.66, tipG * (0.72 + rng.next() * 0.24))
+    const tipB = Math.min(0.40, tipG * (0.36 + rng.next() * 0.16))
     out.tipColorR = snapKey("tipColorR", tipR)
     out.tipColorG = snapKey("tipColorG", tipG)
     out.tipColorB = snapKey("tipColorB", tipB)
-    out.grassVariation = snapKey("grassVariation", 0.38 + rng.next() * 0.44)
+    out.grassVariation = snapKey("grassVariation", 0.40 + rng.next() * 0.44)
     out.dryPatches = snapKey("dryPatches", 0.12 + rng.next() * 0.48)
-    out.grassWind = snapKey("grassWind", 0.22 + rng.next() * 0.46)
+    out.grassWind = snapKey("grassWind", 0.24 + rng.next() * 0.48)
     out.distanceFade = snapKey("distanceFade", 0.36 + rng.next() * 0.44)
   }
 
@@ -432,6 +432,7 @@ export type FoliagePresetV1 = {
   seed: number
   tuningSeed: number
   cameraMode: FoliageCameraMode
+  stageMode?: FoliageStageMode
   compare: FoliageCompareMode
   lightingPreset: string
   params: FoliageParams
@@ -445,6 +446,7 @@ export function exportFoliagePreset(input: Omit<FoliagePresetV1, "version">): Fo
     seed: Math.max(1, Math.min(999, Math.trunc(input.seed) || 7)),
     tuningSeed: Math.max(1, Math.min(9999, Math.trunc(input.tuningSeed) || 41)),
     cameraMode: input.cameraMode === "game" ? "game" : "close",
+    stageMode: input.stageMode === "swatch" ? "swatch" : "lot",
     compare: input.compare === 0 ? 0 : input.compare === 2 ? 2 : 1,
     lightingPreset: input.lightingPreset || "outbreak_dusk",
     params: checked.value,
@@ -488,6 +490,7 @@ export function importFoliagePreset(
       seed: Math.trunc(obj.seed),
       tuningSeed: Math.trunc(obj.tuningSeed),
       cameraMode: obj.cameraMode,
+      stageMode: obj.stageMode === "swatch" ? "swatch" : "lot",
       compare: obj.compare,
       lightingPreset: typeof obj.lightingPreset === "string" ? obj.lightingPreset : "outbreak_dusk",
       params: paramsRes.value,
@@ -512,7 +515,7 @@ function hash2(x: number, y: number): number {
   return fract((qx + qy) * qx)
 }
 
-function noise2(x: number, y: number): number {
+export function noise2(x: number, y: number): number {
   const ix = Math.floor(x)
   const iy = Math.floor(y)
   const fx = x - ix
@@ -570,123 +573,182 @@ function scaleRgb(c: Rgb, k: number): Rgb {
   return [clamp01(c[0] * k), clamp01(c[1] * k), clamp01(c[2] * k)]
 }
 
-function branchSegment(m: Mesh, a: Point, b: Point, r0: number, r1: number, bark: Rgb, sides = 5): void {
-  const dx = b[0] - a[0]
-  const dy = b[1] - a[1]
-  const dz = b[2] - a[2]
-  const len = Math.hypot(dx, dy, dz) || 1
-  const axis: Point = [dx / len, dy / len, dz / len]
-  const side = Math.hypot(dx, dz)
-  const u: Point = side < 0.001 ? [1, 0, 0] : [-dz / side, 0, dx / side]
-  const v = cross3(axis, u)
-  const ringPoint = (end: number, i: number): Point => {
-    const q = end ? b : a
-    const s = end ? r1 : r0
-    const ang = (i * Math.PI * 2) / sides
-    const c = Math.cos(ang)
-    const n = Math.sin(ang)
-    return [
-      q[0] + s * (u[0] * c + v[0] * n),
-      q[1] + s * (u[1] * c + v[1] * n),
-      q[2] + s * (u[2] * c + v[2] * n),
-    ]
+/**
+ * Multi-step curved & tapered timber branch/trunk with smooth radial vertex normals
+ * and optional root-collar buttress flare (`collarFlare > 0`).
+ */
+function emitTaperedLimb(
+  m: Mesh,
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  r0: number,
+  r1: number,
+  bark: Rgb,
+  steps = 3,
+  sides = 6,
+  collarFlare = 0,
+): void {
+  const rings: { pt: Point; n: Point }[][] = []
+  const baseCol = scaleRgb(bark, 0.78)
+  const upperCol = scaleRgb(bark, 1.04)
+
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps
+    const u = 1 - t
+    const cx = u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0]
+    const cy = u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]
+    const cz = u * u * p0[2] + 2 * u * t * p1[2] + t * t * p2[2]
+
+    const tx = 2 * u * (p1[0] - p0[0]) + 2 * t * (p2[0] - p1[0])
+    const ty = 2 * u * (p1[1] - p0[1]) + 2 * t * (p2[1] - p1[1])
+    const tz = 2 * u * (p1[2] - p0[2]) + 2 * t * (p2[2] - p1[2])
+    const axis = normalize3(tx, ty, tz)
+    const horiz = Math.hypot(axis[0], axis[2])
+    const uVec: Point = horiz < 0.001 ? [1, 0, 0] : [-axis[2] / horiz, 0, axis[0] / horiz]
+    const vVec = cross3(axis, uVec)
+
+    const rBase = r0 + (r1 - r0) * Math.pow(t, 0.82)
+    const flare = 1 + collarFlare * Math.exp(-t * 6.0)
+    const ring: { pt: Point; n: Point }[] = []
+
+    for (let i = 0; i < sides; i++) {
+      const ang = (i / sides) * Math.PI * 2
+      const ca = Math.cos(ang)
+      const sa = Math.sin(ang)
+      // Fluted root buttresses at the base of the trunk
+      const buttress = collarFlare > 0 ? 1 + collarFlare * 0.42 * Math.exp(-t * 7.5) * Math.cos(ang * 5) : 1
+      const r = rBase * flare * buttress
+      const nx = uVec[0] * ca + vVec[0] * sa
+      const ny = uVec[1] * ca + vVec[1] * sa + 0.12
+      const nz = uVec[2] * ca + vVec[2] * sa
+      ring.push({
+        pt: [cx + nx * r, cy + (uVec[1] * ca + vVec[1] * sa) * r, cz + nz * r],
+        n: normalize3(nx, ny, nz),
+      })
+    }
+    rings.push(ring)
   }
-  for (let i = 0; i < sides; i++) {
-    m.quadAuto(ringPoint(0, i), ringPoint(1, i), ringPoint(1, i + 1), ringPoint(0, i + 1), bark, MAT.timber, 0)
+
+  for (let s = 0; s < steps; s++) {
+    const rA = rings[s]!
+    const rB = rings[s + 1]!
+    const colA = mixRgb(baseCol, upperCol, s / steps)
+    const colB = mixRgb(baseCol, upperCol, (s + 1) / steps)
+    for (let i = 0; i < sides; i++) {
+      const next = (i + 1) % sides
+      const a0 = rA[i]!
+      const a1 = rA[next]!
+      const b1 = rB[next]!
+      const b0 = rB[i]!
+      m.vert(a0.pt, a0.n, colA, MAT.timber, 0)
+      m.vert(b0.pt, b0.n, colB, MAT.timber, 0)
+      m.vert(b1.pt, b1.n, colB, MAT.timber, 0)
+
+      m.vert(a0.pt, a0.n, colA, MAT.timber, 0)
+      m.vert(b1.pt, b1.n, colB, MAT.timber, 0)
+      m.vert(a1.pt, a1.n, colA, MAT.timber, 0)
+    }
   }
 }
 
 /**
- * Emits a cupped, multi-lobed botanical leaf fan pitched tangentially to its bough puff,
- * with vertex normals smoothly blended toward the ellipsoidal bough + crown normal (`normalSoftness`).
- * Avoids flat horizontal 4-corner square pyramids ("umbrella/ravioli" artifacts).
+ * Emits a small, curved 3-leaf botanical trefoil sprig (3 individual pointed ovate/lanceolate leaves
+ * radiating from a stem node, each folded along its midrib) with normals blended `normalSoftness`
+ * toward the ellipsoidal sub-cloud + crown dome normal (`Lamplight §3.3`).
+ * Replaces large flat polygonal cards so canopies read as hundreds of small individual leaves.
  */
-function emitBentLeafRosette(
+function emitLeafSprig(
   m: Mesh,
-  px: number,
-  py: number,
-  pz: number,
-  size: number,
-  dirX: number,
-  dirY: number,
-  dirZ: number,
-  clusterCenter: Point,
+  root: Point,
+  outDir: Point,
+  sprigSize: number,
+  domePivot: Point,
   crownCenter: Point,
   normalSoftness: number,
   rng: Rng,
-  baseTone: Rgb,
-  innerDarken: number,
+  baseCol: Rgb,
+  tipCol: Rgb,
   flexWeight: number,
+  leafletCount = 3,
 ): void {
-  const upBias = normalize3(dirX * 0.68, Math.max(0.28, dirY * 0.75 + 0.35), dirZ * 0.68)
-  const yaw = rng.next() * Math.PI * 2
-  const ref: Point = Math.abs(upBias[1]) > 0.92 ? [Math.cos(yaw), 0, Math.sin(yaw)] : [0, 1, 0]
-  const t1Raw = cross3(ref, upBias)
-  const t1 = normalize3(t1Raw[0], t1Raw[1], t1Raw[2])
-  const t2 = cross3(upBias, t1)
-
-  const rot = rng.next() * Math.PI * 2
-  const cr = Math.cos(rot)
-  const sr = Math.sin(rot)
-  const uAxis: Point = [t1[0] * cr + t2[0] * sr, t1[1] * cr + t2[1] * sr, t1[2] * cr + t2[2] * sr]
-  const vAxis: Point = [-t1[0] * sr + t2[0] * cr, -t1[1] * sr + t2[1] * cr, -t1[2] * sr + t2[2] * cr]
-
-  const dome = size * 0.28
-  const center: Point = [
-    px + upBias[0] * dome,
-    py + upBias[1] * dome,
-    pz + upBias[2] * dome,
-  ]
-
-  // 6-sided scalloped organic leaf fan with alternating major/minor lobe radii
-  const lobes = 6
-  const ring: Point[] = []
-  for (let i = 0; i < lobes; i++) {
-    const a = (i / lobes) * Math.PI * 2 + (rng.next() - 0.5) * 0.18
-    const lobeScale = (i % 2 === 0 ? 1.06 : 0.78) * (0.88 + rng.next() * 0.24)
-    const r = size * lobeScale
-    const droop = size * (0.10 + (i % 2) * 0.08)
-    const ca = Math.cos(a) * r
-    const sa = Math.sin(a) * r
-    ring.push([
-      px + uAxis[0] * ca + vAxis[0] * sa - upBias[0] * droop,
-      py + uAxis[1] * ca + vAxis[1] * sa - upBias[1] * droop - droop * 0.35,
-      pz + uAxis[2] * ca + vAxis[2] * sa - upBias[2] * droop,
-    ])
-  }
-
-  const shade = 0.92 + rng.next() * 0.20
-  const tipCol = scaleRgb(baseTone, shade * 1.08)
-  const midCol = scaleRgb(baseTone, shade * 0.96)
-  const centerCol = scaleRgb(baseTone, shade * innerDarken)
-
-  const sphericalNormalAt = (pt: Point): Point => {
-    const nCluster = normalize3(
-      pt[0] - clusterCenter[0],
-      (pt[1] - clusterCenter[1]) * 1.15 + 0.16,
-      pt[2] - clusterCenter[2],
+  const yawBase = Math.atan2(outDir[2], outDir[0])
+  const domeNormalAt = (pt: Point): Point => {
+    const nCloud = normalize3(
+      pt[0] - domePivot[0],
+      (pt[1] - domePivot[1]) * 1.35 + 0.14,
+      pt[2] - domePivot[2],
     )
     const nCrown = normalize3(
       pt[0] - crownCenter[0],
-      (pt[1] - crownCenter[1]) * 1.05 + 0.22,
+      (pt[1] - crownCenter[1]) * 1.15 + 0.22,
       pt[2] - crownCenter[2],
     )
-    return blendNormal(nCluster, nCrown, 0.36)
+    return blendNormal(nCloud, nCrown, 0.35)
   }
 
-  for (let i = 0; i < lobes; i++) {
-    const p0 = ring[i]!
-    const p1 = ring[(i + 1) % lobes]!
-    const fn = faceNormal(center, p0, p1)
-    const nCenter = blendNormal(fn, sphericalNormalAt(center), normalSoftness)
-    const n0 = blendNormal(fn, sphericalNormalAt(p0), normalSoftness)
-    const n1 = blendNormal(fn, sphericalNormalAt(p1), normalSoftness)
-    m.vert(center, nCenter, centerCol, MAT.foliage, flexWeight * 0.85)
-    m.vert(p0, n0, i % 2 === 0 ? tipCol : midCol, MAT.foliage, flexWeight)
-    m.vert(p1, n1, (i + 1) % 2 === 0 ? tipCol : midCol, MAT.foliage, flexWeight)
+  for (let l = 0; l < leafletCount; l++) {
+    // Splay 3 leaflets in a natural botanical trefoil fan (-0.68, 0, +0.68 rad)
+    const fanOffset = leafletCount === 1 ? 0 : (l - (leafletCount - 1) * 0.5) * 0.72
+    const yaw = yawBase + fanOffset + (rng.next() - 0.5) * 0.28
+    const pitch = outDir[1] * 0.55 + (l === 1 ? 0.16 : -0.14) + (rng.next() - 0.5) * 0.24
+    const len = sprigSize * (l === 1 ? 1.12 : 0.88 + rng.next() * 0.20)
+    const wid = len * (0.42 + rng.next() * 0.10)
+
+    const dir = normalize3(Math.cos(yaw), pitch, Math.sin(yaw))
+    const side = normalize3(-Math.sin(yaw), (rng.next() - 0.5) * 0.28, Math.cos(yaw))
+    const geomUp = cross3(side, dir)
+
+    // Cupped V-folded diamond leaflet: petiole base -> wide left/right flanks -> pointed curved apex
+    const droop = len * 0.18
+    const fold = wid * 0.22
+    const pBase: Point = root
+    const pMidL: Point = [
+      root[0] + dir[0] * len * 0.48 - side[0] * wid + geomUp[0] * fold,
+      root[1] + dir[1] * len * 0.48 - side[1] * wid + geomUp[1] * fold,
+      root[2] + dir[2] * len * 0.48 - side[2] * wid + geomUp[2] * fold,
+    ]
+    const pMidR: Point = [
+      root[0] + dir[0] * len * 0.48 + side[0] * wid + geomUp[0] * fold,
+      root[1] + dir[1] * len * 0.48 + side[1] * wid + geomUp[1] * fold,
+      root[2] + dir[2] * len * 0.48 + side[2] * wid + geomUp[2] * fold,
+    ]
+    const pTip: Point = [
+      root[0] + dir[0] * len,
+      root[1] + dir[1] * len - droop,
+      root[2] + dir[2] * len,
+    ]
+
+    const fnL = faceNormal(pBase, pMidL, pTip)
+    const fnR = faceNormal(pBase, pTip, pMidR)
+    const nBase = blendNormal(fnL, domeNormalAt(pBase), normalSoftness)
+    const nMidL = blendNormal(fnL, domeNormalAt(pMidL), normalSoftness)
+    const nMidR = blendNormal(fnR, domeNormalAt(pMidR), normalSoftness)
+    const nTip = blendNormal(fnR, domeNormalAt(pTip), normalSoftness)
+
+    const midCol = mixRgb(baseCol, tipCol, 0.58)
+    const tipFlex = Math.min(1.45, flexWeight * 1.12)
+
+    m.vert(pBase, nBase, baseCol, MAT.foliage, flexWeight * 0.78)
+    m.vert(pMidL, nMidL, midCol, MAT.foliage, flexWeight * 0.95)
+    m.vert(pTip, nTip, tipCol, MAT.foliage, tipFlex)
+
+    m.vert(pBase, nBase, baseCol, MAT.foliage, flexWeight * 0.78)
+    m.vert(pTip, nTip, tipCol, MAT.foliage, tipFlex)
+    m.vert(pMidR, nMidR, midCol, MAT.foliage, flexWeight * 0.95)
   }
 }
 
+/**
+ * 3-Shell Volumetric Bough Bouquet (`Lamplight §3.3` + `walk.rs:emit_leaf_cluster`):
+ * Every single triangle in the crown is an individual cupped diamond leaflet in a 3-leaf botanical sprig
+ * (zero giant polygon cards, zero solid onion/balloon cores):
+ * - Shell 0 (Inner Core, rShell = 0.08..0.44): Dense crossed dark forest-olive 3-leaf sprigs that block
+ *   unnatural sky holes through the bough center.
+ * - Shell 1 (Mid Dome, rShell = 0.36..0.74): Overlapping cupped leaf sprigs forming a billowy 3D puff.
+ * - Shell 2 (Outer Fringe, rShell = 0.62..1.00): Sunlit peripheral leaf sprigs breaking the silhouette into crisp leaves.
+ * All vertices blend their normals `normalSoftness` (88%) toward the smooth ellipsoidal dome normal.
+ */
 function emitBoughCluster(
   m: Mesh,
   cx: number,
@@ -697,85 +759,77 @@ function emitBoughCluster(
   crownCenter: Point,
   rng: Rng,
   base: Rgb,
-  rosettes: number,
+  sprigDensity: number,
   leafCardScale: number,
   canopyAO: number,
   normalSoftness: number,
   flexBase: number,
 ): void {
-  const clusterCenter: Point = [cx, cy - ry * 0.18, cz]
-  // Two-tier rounded 7-sided core volume (upper sunlit dome + recessed lower shadow skirt)
-  const coreDark = Math.max(0.22, 0.64 - canopyAO * 0.40)
-  const midShade = Math.max(0.45, 0.82 - canopyAO * 0.24)
-  const darkCol = scaleRgb(base, coreDark)
+  const domePivot: Point = [cx, cy - ry * 0.28, cz]
+  const coreDark = Math.max(0.18, 0.50 - canopyAO * 0.34)
+  const midShade = Math.max(0.44, 0.80 - canopyAO * 0.22)
+  const deepCol = scaleRgb(base, coreDark)
   const midCol = scaleRgb(base, midShade)
-  const topCol = scaleRgb(base, 1.04)
+  const sunlitCol = scaleRgb(base, 1.18)
 
-  const segs = 7
-  const apex: Point = [cx, cy + ry * 0.62, cz]
-  const upperRing: Point[] = []
-  const lowerRing: Point[] = []
-  for (let i = 0; i < segs; i++) {
-    const a = (i / segs) * Math.PI * 2 + (rng.next() - 0.5) * 0.22
-    const rUp = rx * (0.64 + (i % 2) * 0.12 + (rng.next() - 0.5) * 0.12)
-    const rLo = rx * (0.48 + (rng.next() - 0.5) * 0.12)
-    upperRing.push([cx + Math.cos(a) * rUp, cy + ry * (0.08 + (rng.next() - 0.5) * 0.10), cz + Math.sin(a) * rUp])
-    lowerRing.push([cx + Math.cos(a + 0.22) * rLo, cy - ry * 0.34, cz + Math.sin(a + 0.22) * rLo])
-  }
+  const totalSprigs = Math.max(12, Math.round(sprigDensity * 1.15))
+  for (let s = 0; s < totalSprigs; s++) {
+    const tierFrac = s / totalSprigs
+    const isCore = tierFrac < 0.36
+    const isMid = tierFrac >= 0.36 && tierFrac < 0.74
 
-  const smoothN = (pt: Point): Point => {
-    const nc = normalize3(pt[0] - clusterCenter[0], (pt[1] - clusterCenter[1]) * 1.15 + 0.15, pt[2] - clusterCenter[2])
-    const nw = normalize3(pt[0] - crownCenter[0], (pt[1] - crownCenter[1]) * 1.05 + 0.20, pt[2] - crownCenter[2])
-    return blendNormal(nc, nw, 0.35)
-  }
-
-  for (let i = 0; i < segs; i++) {
-    const u0 = upperRing[i]!
-    const u1 = upperRing[(i + 1) % segs]!
-    const l0 = lowerRing[i]!
-
-    const fnUp = faceNormal(apex, u0, u1)
-    m.vert(apex, blendNormal(fnUp, smoothN(apex), normalSoftness), topCol, MAT.foliage, flexBase * 0.72)
-    m.vert(u0, blendNormal(fnUp, smoothN(u0), normalSoftness), midCol, MAT.foliage, flexBase * 0.80)
-    m.vert(u1, blendNormal(fnUp, smoothN(u1), normalSoftness), midCol, MAT.foliage, flexBase * 0.80)
-
-    const fnLo = faceNormal(u0, l0, u1)
-    m.vert(u0, blendNormal(fnLo, smoothN(u0), normalSoftness), midCol, MAT.foliage, flexBase * 0.75)
-    m.vert(l0, blendNormal(fnLo, smoothN(l0), normalSoftness), darkCol, MAT.foliage, flexBase * 0.60)
-    m.vert(u1, blendNormal(fnLo, smoothN(u1), normalSoftness), midCol, MAT.foliage, flexBase * 0.75)
-  }
-
-  // Fibonacci golden-angle peripheral leaf fans pitched tangentially across the cluster surface
-  const innerDarken = Math.max(0.56, 0.92 - canopyAO * 0.30)
-  const totalRosettes = Math.max(4, rosettes + 1)
-  for (let s = 0; s < totalRosettes; s++) {
     const a = s * 2.39996 + (rng.next() - 0.5) * 0.32
-    const tFrac = s / Math.max(1, totalRosettes - 1)
-    const radial = rx * (s === 0 ? 0.14 : 0.48 + Math.sqrt(tFrac) * (0.44 + rng.next() * 0.18))
-    const ox = Math.cos(a) * radial
-    const oz = Math.sin(a) * radial
-    const oy = s === 0 ? ry * 0.58 : ry * (0.42 - tFrac * 0.62 + (rng.next() - 0.5) * 0.16)
-    const dir = normalize3(ox, oy + ry * 0.35, oz)
-    const sz = Math.max(0.14, leafCardScale * (s === 0 ? 1.05 : 0.78 + rng.next() * 0.36))
-    const lift = s === 0 ? 1.16 : 0.84 + (1 - tFrac * 0.55) * 0.32
-    const tone = scaleRgb(base, lift)
-    const flex = Math.min(1.4, flexBase * (0.85 + 0.35 * (radial / Math.max(0.1, rx))))
-    emitBentLeafRosette(
+    const rNorm = Math.sqrt((s + 0.25) / totalSprigs)
+    const rShell = isCore
+      ? 0.08 + 0.36 * rNorm
+      : isMid
+        ? 0.36 + 0.38 * rNorm
+        : 0.62 + 0.38 * rNorm
+
+    const lobeMod = 0.86 + 0.24 * Math.sin(a * 3 + cx * 1.7)
+    const radX = rx * rShell * lobeMod
+    const domeArch = Math.sqrt(Math.max(0.05, 1 - Math.min(1, rShell * 0.84) ** 2))
+    const oy = isCore
+      ? (rng.next() - 0.42) * ry * 0.48
+      : (domeArch * 0.68 - (1 - domeArch) * 0.30 + (rng.next() - 0.5) * 0.22) * ry
+
+    const px = cx + Math.cos(a) * radX
+    const py = cy + oy
+    const pz = cz + Math.sin(a) * radX
+    const outDir = normalize3(px - cx, (py - domePivot[1]) * 1.15 + (isCore ? 0.25 : 0.05), pz - cz)
+
+    const heightLift = clamp01((oy + ry * 0.48) / Math.max(0.1, ry * 1.15))
+    const sprigBaseCol = isCore
+      ? deepCol
+      : isMid
+        ? mixRgb(deepCol, midCol, 0.52 + 0.48 * heightLift)
+        : mixRgb(midCol, base, 0.62 + 0.38 * heightLift)
+    const sprigTipCol = isCore
+      ? mixRgb(deepCol, midCol, 0.65)
+      : isMid
+        ? mixRgb(midCol, sunlitCol, 0.58 + 0.42 * heightLift)
+        : scaleRgb(sunlitCol, 0.96 + 0.16 * heightLift)
+
+    // Core sprigs are slightly broader to seal interior sky holes; outer sprigs are fine individual leaves
+    const sprigSize = Math.max(
+      0.18,
+      leafCardScale * (isCore ? 1.28 : isMid ? 1.12 : 0.96) * (0.88 + rng.next() * 0.26),
+    )
+    const flex = Math.min(1.45, flexBase * (0.55 + 0.65 * rShell))
+
+    emitLeafSprig(
       m,
-      cx + ox,
-      cy + oy,
-      cz + oz,
-      sz,
-      dir[0],
-      dir[1],
-      dir[2],
-      clusterCenter,
+      [px, py, pz],
+      outDir,
+      sprigSize,
+      domePivot,
       crownCenter,
       normalSoftness,
       rng,
-      tone,
-      innerDarken,
+      sprigBaseCol,
+      sprigTipCol,
       flex,
+      isCore ? 2 : 3,
     )
   }
 }
@@ -798,35 +852,37 @@ export function buildFoliageTree(
   const isTree = h > 2.1
   const shape: FoliageCrownShape = shapeOverride ?? (isTree ? params.crownShape : "spreading")
 
-  // Scale defaults proportionally when called from Outbreak's per-prop height/radius arguments.
   const heightRatio = h / Math.max(1.2, params.treeHeight)
   const radiusRatio = radius / Math.max(0.7, params.crownRadius)
   const boughs = isTree ? Math.max(3, Math.round(params.branchCount)) : Math.max(3, Math.min(5, Math.round(params.branchCount * 0.75)))
   const gapAngle = rng.next() * Math.PI * 2
-  const gapHalfWidth = 0.15 + params.porosity * 0.72
-  const leanX = (rng.next() - 0.5) * (isTree ? 0.22 : 0.04)
-  const leanZ = (rng.next() - 0.5) * (isTree ? 0.22 : 0.04)
+  const gapHalfWidth = 0.16 + params.porosity * 0.72
+  const leanX = (rng.next() - 0.5) * (isTree ? 0.26 : 0.05)
+  const leanZ = (rng.next() - 0.5) * (isTree ? 0.26 : 0.05)
 
   const barkColor: Rgb =
     params.treePreset === "birch" || shape === "columnar"
-      ? [0.58, 0.56, 0.51]
+      ? [0.64, 0.61, 0.56]
       : params.treePreset === "pine" || shape === "conical"
-        ? [0.27, 0.21, 0.16]
-        : [0.28, 0.26, 0.20]
+        ? [0.28, 0.21, 0.16]
+        : [0.30, 0.26, 0.20]
 
   if (isTree) {
-    const trunkTopFrac = shape === "conical" ? 0.88 : shape === "columnar" ? 0.80 : 0.72
-    const trunkR0 = (shape === "columnar" ? 0.12 : 0.165) * Math.max(0.7, Math.min(1.3, heightRatio))
-    // Root flare collar + main trunk
-    branchSegment(m, [x, ground, z], [x + leanX * 0.25, ground + h * 0.16, z + leanZ * 0.25], trunkR0 * 1.28, trunkR0, barkColor, 5)
-    branchSegment(
+    const trunkTopFrac = shape === "conical" ? 0.88 : shape === "columnar" ? 0.80 : 0.68
+    const trunkR0 = (shape === "columnar" ? 0.13 : 0.175) * Math.max(0.7, Math.min(1.3, heightRatio))
+    const midBowX = leanX * 0.45 + (rng.next() - 0.5) * 0.14
+    const midBowZ = leanZ * 0.45 + (rng.next() - 0.5) * 0.14
+    emitTaperedLimb(
       m,
-      [x + leanX * 0.25, ground + h * 0.15, z + leanZ * 0.25],
+      [x, ground - 0.02, z],
+      [x + midBowX, ground + h * (trunkTopFrac * 0.48), z + midBowZ],
       [x + leanX, ground + h * trunkTopFrac, z + leanZ],
       trunkR0,
-      trunkR0 * 0.38,
+      trunkR0 * 0.34,
       barkColor,
-      5,
+      4,
+      7,
+      0.48,
     )
   }
 
@@ -842,9 +898,9 @@ export function buildFoliageTree(
       clamp01(baseRgb[2] * (1 - 0.12 * varAmt)),
     ],
     [
-      clamp01(baseRgb[0] * (1 - 0.18 * varAmt)),
-      clamp01(baseRgb[1] * (1 - 0.14 * varAmt)),
-      clamp01(baseRgb[2] * (1 - 0.10 * varAmt)),
+      clamp01(baseRgb[0] * (1 - 0.16 * varAmt)),
+      clamp01(baseRgb[1] * (1 - 0.12 * varAmt)),
+      clamp01(baseRgb[2] * (1 - 0.08 * varAmt)),
     ],
     [
       clamp01(baseRgb[0] * (1 + 0.28 * varAmt)),
@@ -858,11 +914,11 @@ export function buildFoliageTree(
     ],
   ]
   const autumnPalette: Rgb[] = [
-    [0.62, 0.44, 0.18], // warm ochre gold
-    [0.68, 0.34, 0.16], // burnt rust amber
-    [0.54, 0.47, 0.20], // olive-gold
-    [0.72, 0.49, 0.19], // sunlit amber
-    [0.44, 0.38, 0.19], // russet bronze
+    [0.64, 0.45, 0.16],
+    [0.70, 0.34, 0.15],
+    [0.54, 0.48, 0.18],
+    [0.74, 0.50, 0.18],
+    [0.45, 0.38, 0.17],
   ]
   const palette: Rgb[] = greenPalette.map((gCol, idx) => {
     const aWeight = clamp01(autumn * (idx % 2 === 0 ? 1.15 : 0.72))
@@ -875,8 +931,8 @@ export function buildFoliageTree(
   const sinPitch = Math.sin(angleRad)
   const clumpsPerBough = isTree ? Math.max(1, Math.round(params.clumpCount)) : 1
   const clumpScale = params.clumpSize * Math.max(0.45, Math.min(1.45, radiusRatio))
-  const cardScale = params.leafCardSize * Math.max(0.50, Math.min(1.40, radiusRatio))
-  const rosettesPerClump = isTree ? 5 : 4
+  const cardScale = params.leafCardSize * Math.max(0.55, Math.min(1.40, radiusRatio))
+  const sprigsPerClump = isTree ? 14 : 10
 
   for (let b = 0; b < boughs; b++) {
     const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * 0.42
@@ -884,46 +940,54 @@ export function buildFoliageTree(
     const inGap = gapDelta < gapHalfWidth
     const tierFrac = boughs > 1 ? b / (boughs - 1) : 0.5
 
-    let shapeProfile = 1 - tierFrac * 0.25
+    let shapeProfile = 1 - tierFrac * 0.24
     if (shape === "conical") {
-      shapeProfile = 1.12 - tierFrac * 0.68
+      shapeProfile = 1.14 - tierFrac * 0.68
     } else if (shape === "columnar") {
       shapeProfile = 0.68 * (1 - Math.abs(tierFrac - 0.45) * 0.55)
     } else if (shape === "layered") {
-      shapeProfile = 1.08 - tierFrac * 0.32
+      shapeProfile = 1.08 - tierFrac * 0.30
     } else if (shape === "spreading") {
-      shapeProfile = 1.15 - tierFrac * 0.18
+      shapeProfile = 1.16 - tierFrac * 0.18
     }
 
     const reach =
       radius *
       shapeProfile *
-      (inGap ? Math.max(0.28, 0.52 - params.porosity * 0.28) : 0.62 + rng.next() * 0.34) *
+      (inGap ? Math.max(0.26, 0.48 - params.porosity * 0.28) : 0.62 + rng.next() * 0.34) *
       (0.72 + 0.28 * sinPitch)
 
     const startH =
       ground +
       h *
         (isTree
-          ? (shape === "conical" ? 0.20 + tierFrac * 0.52 : 0.26 + tierFrac * 0.32)
+          ? shape === "conical"
+            ? 0.22 + tierFrac * 0.50
+            : 0.28 + tierFrac * 0.30
           : 0.10 + tierFrac * 0.14)
-    const rise = reach * Math.max(-0.18, cosPitch * (shape === "conical" ? 0.22 : 0.52))
+    const rise = reach * Math.max(-0.18, cosPitch * (shape === "conical" ? 0.20 : 0.50))
     const tipH = Math.min(
       ground + h * 0.94,
-      startH + rise + h * (isTree ? 0.14 + (rng.next() - 0.4) * 0.07 : 0.30 + tierFrac * 0.28),
+      startH + rise + h * (isTree ? 0.14 + (rng.next() - 0.4) * 0.08 : 0.28 + tierFrac * 0.28),
     )
 
-    const start: Point = [x + leanX * (0.25 + tierFrac * 0.45), startH, z + leanZ * (0.25 + tierFrac * 0.45)]
+    const start: Point = [x + leanX * (0.28 + tierFrac * 0.45), startH, z + leanZ * (0.28 + tierFrac * 0.45)]
     const tip: Point = [x + Math.cos(baseAngle) * reach, tipH, z + Math.sin(baseAngle) * reach]
+    const midCtrl: Point = [
+      (start[0] + tip[0]) * 0.5 + (rng.next() - 0.5) * 0.18,
+      (start[1] + tip[1]) * 0.5 + h * 0.05,
+      (start[2] + tip[2]) * 0.5 + (rng.next() - 0.5) * 0.18,
+    ]
 
     if (isTree) {
-      branchSegment(m, start, tip, 0.068 * (1 - tierFrac * 0.32), 0.026 * (1 - tierFrac * 0.32), barkColor, 5)
+      const rBough0 = 0.078 * (1 - tierFrac * 0.32) * Math.max(0.75, Math.min(1.25, heightRatio))
+      emitTaperedLimb(m, start, midCtrl, tip, rBough0, rBough0 * 0.28, barkColor, 3, 5, 0.22)
     }
 
     const boughClumps = inGap ? 1 : clumpsPerBough
     for (let cIdx = 0; cIdx < boughClumps; cIdx++) {
-      const tAlong = boughClumps === 1 ? 0.96 : 0.58 + (cIdx / (boughClumps - 1)) * 0.44
-      const jitterA = cIdx === 0 ? 0 : (rng.next() - 0.5) * 0.52
+      const tAlong = boughClumps === 1 ? 0.94 : 0.56 + (cIdx / (boughClumps - 1)) * 0.44
+      const jitterA = cIdx === 0 ? 0 : (rng.next() - 0.5) * 0.54
       const cAngle = baseAngle + jitterA
       const cDist = reach * tAlong
       const cx = x + Math.cos(cAngle) * cDist
@@ -933,9 +997,20 @@ export function buildFoliageTree(
         (tip[1] - start[1]) * tAlong +
         (shape === "layered" ? 0 : (cIdx % 2 === 0 ? 0.06 : -0.05) * h)
 
+      // Emit a secondary forked twig to sub-clusters so every leaf bouquet is visibly supported
+      if (isTree && cIdx > 0) {
+        const forkStart: Point = [
+          start[0] + (tip[0] - start[0]) * 0.48,
+          start[1] + (tip[1] - start[1]) * 0.48,
+          start[2] + (tip[2] - start[2]) * 0.48,
+        ]
+        const forkMid: Point = [(forkStart[0] + cx) * 0.5, (forkStart[1] + cy) * 0.5 + 0.08, (forkStart[2] + cz) * 0.5]
+        emitTaperedLimb(m, forkStart, forkMid, [cx, cy, cz], 0.036, 0.014, barkColor, 2, 4, 0)
+      }
+
       const clusterTone = palette[(b + cIdx + Math.floor(rng.next() * 2)) % palette.length]!
       const subScale = cIdx === 0 ? 1.0 : 0.78 + rng.next() * 0.18
-      const rx = clumpScale * subScale * (inGap ? 0.74 : 0.92 + rng.next() * 0.22)
+      const rx = clumpScale * subScale * (inGap ? 0.72 : 0.92 + rng.next() * 0.22)
       const ry = rx * (shape === "layered" ? 0.48 : isTree ? 0.68 : 0.78)
       const flexBase = 0.22 + 0.78 * clamp01((cy - ground) / Math.max(1.0, h))
 
@@ -949,7 +1024,7 @@ export function buildFoliageTree(
         crownCenter,
         rng,
         clusterTone,
-        rosettesPerClump,
+        sprigsPerClump,
         cardScale * subScale,
         params.canopyAO,
         params.normalSoftness,
@@ -958,28 +1033,27 @@ export function buildFoliageTree(
     }
   }
 
-  // Crown apex cluster
+  // Crown apex bouquet
   const crownTone = palette[seed % palette.length]!
-  const apexRx = clumpScale * (shape === "conical" ? 0.62 : 0.92)
+  const apexRx = clumpScale * (shape === "conical" ? 0.64 : 0.94)
   const apexRy = apexRx * (shape === "layered" ? 0.52 : 0.72)
   emitBoughCluster(
     m,
     x + leanX * 0.55,
-    ground + h * (isTree ? 0.86 : 0.70),
+    ground + h * (isTree ? 0.85 : 0.70),
     z + leanZ * 0.55,
     apexRx,
     apexRy,
     crownCenter,
     rng,
     crownTone,
-    rosettesPerClump,
+    sprigsPerClump + 2,
     cardScale * 0.95,
     params.canopyAO,
     params.normalSoftness,
     0.95,
   )
 
-  // Hydrangea creamy panicle blooms when shrub/hydrangea preset is active
   if (params.treePreset === "hydrangea") {
     for (let i = 0; i < 12; i++) {
       const a = i * 2.39996 + (seed % 7) * 0.2
@@ -992,18 +1066,18 @@ export function buildFoliageTree(
     }
   }
 
-  // Root-flare curved grass blades around the trunk base, leaving an open side gap
-  const coverCount = isTree ? 4 : 2
+  // Root-flare curved grass tufts around the trunk base, leaving an open side gap
+  const coverCount = isTree ? 5 : 3
   for (let c = 0; c < coverCount; c++) {
-    const a = gapAngle + 1.2 + c * 1.45 + (rng.next() - 0.5) * 0.35
-    const d = radius * (isTree ? 0.24 : 0.38) * (0.65 + rng.next() * 0.45)
+    const a = gapAngle + 1.1 + c * 1.25 + (rng.next() - 0.5) * 0.35
+    const d = radius * (isTree ? 0.24 : 0.38) * (0.60 + rng.next() * 0.45)
     const gx = x + Math.cos(a) * d
     const gz = z + Math.sin(a) * d
     emitGrassTuft(m, gx, ground, gz, {
-      bladeCount: 3,
-      radius: 0.14 + rng.next() * 0.08,
-      height: (isTree ? 0.18 : 0.13) + rng.next() * 0.07,
-      width: params.bladeWidth,
+      bladeCount: 4,
+      radius: 0.16 + rng.next() * 0.09,
+      height: (isTree ? 0.24 : 0.16) + rng.next() * 0.08,
+      width: params.bladeWidth * 1.1,
       curvature: params.bladeCurvature,
       leanAngle: a + (rng.next() - 0.5) * 0.4,
       rootColor: [params.rootColorR, params.rootColorG, params.rootColorB],
@@ -1032,7 +1106,20 @@ export function buildLegacyFoliageTree(
   const gapAngle = rng.next() * 6.283
   const leanX = (rng.next() - 0.5) * (tree ? 0.22 : 0.06)
   const leanZ = (rng.next() - 0.5) * (tree ? 0.22 : 0.06)
-  if (tree) branchSegment(m, [x, ground, z], [x + leanX, ground + h * 0.78, z + leanZ], 0.17, 0.17 * 0.4, [0.28, 0.26, 0.20], 5)
+  if (tree) {
+    emitTaperedLimb(
+      m,
+      [x, ground, z],
+      [x + leanX * 0.5, ground + h * 0.39, z + leanZ * 0.5],
+      [x + leanX, ground + h * 0.78, z + leanZ],
+      0.17,
+      0.17 * 0.4,
+      [0.28, 0.26, 0.20],
+      1,
+      5,
+      0,
+    )
+  }
   const palette: Rgb[] = [
     [0.26, 0.34, 0.17],
     [0.31, 0.38, 0.20],
@@ -1050,7 +1137,18 @@ export function buildLegacyFoliageTree(
     const start: Point = [x + leanX * 0.35, startH, z + leanZ * 0.35]
     const tip: Point = [x + Math.cos(baseAngle) * reach, tipH, z + Math.sin(baseAngle) * reach]
     const br = tree ? 0.075 * (1 - tierFrac * 0.28) : 0.022
-    branchSegment(m, start, tip, br, br * 0.4, [0.28, 0.26, 0.20], 5)
+    emitTaperedLimb(
+      m,
+      start,
+      [(start[0] + tip[0]) * 0.5, (start[1] + tip[1]) * 0.5, (start[2] + tip[2]) * 0.5],
+      tip,
+      br,
+      br * 0.4,
+      [0.28, 0.26, 0.20],
+      1,
+      5,
+      0,
+    )
     const lobes = tree ? (inGap ? 1 : 2) : 1
     for (let lobe = 0; lobe < lobes; lobe++) {
       const t = lobes === 1 ? 0.82 : 0.58 + lobe * 0.38
@@ -1097,7 +1195,7 @@ export function buildLegacyFoliageTree(
  * Emits a single curved, parabolically tapered (1 - y^2) 2-segment 3D grass blade
  * combining Above the Grassland's quadratic tilt + cubic curvature (y^3), arc-length height drop,
  * cylindrical cross-section normal rotation (±55°), power-curve root-to-tip colour (y^0.65),
- * and strong root contact AO.
+ * and strong root contact AO that survives at Outbreak's 34-46m game camera.
  */
 export function emitCurvedGrassBlade(
   m: Mesh,
@@ -1116,20 +1214,20 @@ export function emitCurvedGrassBlade(
   const sideX = -dirZ
   const sideZ = dirX
 
-  // Above the Grassland arch profile: quadratic tilt (y^2) + cubic curvature (y^3) with arc-length height compensation
+  // Arch profile with generous horizontal reach so top-down cameras (34-46m) see the curved blade ribbon
   const yFrac1 = 0.52
-  const bend1 = height * (0.18 * yFrac1 * yFrac1 + curvature * 0.62 * yFrac1 * yFrac1 * yFrac1)
-  const bend2 = height * (0.18 + curvature * 0.68)
-  const y1 = by + height * yFrac1 - bend1 * bend1 * 0.18
-  const y2 = by + Math.max(height * 0.56, height - bend2 * bend2 * 0.20)
+  const bend1 = height * (0.24 * yFrac1 * yFrac1 + curvature * 0.68 * yFrac1 * yFrac1 * yFrac1)
+  const bend2 = height * (0.28 + curvature * 0.82)
+  const y1 = by + height * yFrac1 - bend1 * bend1 * 0.16
+  const y2 = by + Math.max(height * 0.54, height - bend2 * bend2 * 0.18)
 
   const c0: Point = [bx, by, bz]
   const c1: Point = [bx + dirX * bend1, y1, bz + dirZ * bend1]
   const c2: Point = [bx + dirX * bend2, y2, bz + dirZ * bend2]
 
-  // Parabolic width taper w(y) = w0 * (1 - y^2) keeps lower blade full and lush
+  // Parabolic width taper w(y) = w0 * (1 - 0.72 * y^2) keeps upper-mid blade broad enough to read at 42m
   const w0 = width * 0.5
-  const w1 = width * 0.5 * (1 - yFrac1 * yFrac1)
+  const w1 = width * 0.5 * (1 - 0.72 * yFrac1 * yFrac1)
 
   const p0L: Point = [c0[0] - sideX * w0, c0[1], c0[2] - sideZ * w0]
   const p0R: Point = [c0[0] + sideX * w0, c0[1], c0[2] + sideZ * w0]
@@ -1137,21 +1235,22 @@ export function emitCurvedGrassBlade(
   const p1R: Point = [c1[0] + sideX * w1, c1[1], c1[2] + sideZ * w1]
   const p2Tip: Point = c2
 
-  // Cylindrical cross-section normal rotation (normalRounding = 0.77 -> ±55° rotation toward side tangent)
-  const spineN0 = normalize3(-dirX * 0.28, 0.96, -dirZ * 0.28)
-  const spineN1 = normalize3(-dirX * (0.38 + curvature * 0.28), 0.88, -dirZ * (0.38 + curvature * 0.28))
-  const spineN2 = normalize3(-dirX * (0.25 + curvature * 0.32), 0.92, -dirZ * (0.25 + curvature * 0.32))
+  // Cylindrical cross-section normal rotation + terrain-normal upward bias (`Lamplight §3.1`)
+  const spineN0 = normalize3(-dirX * 0.25, 0.96, -dirZ * 0.25)
+  const spineN1 = normalize3(-dirX * (0.34 + curvature * 0.24), 0.90, -dirZ * (0.34 + curvature * 0.24))
+  const spineN2 = normalize3(-dirX * (0.20 + curvature * 0.28), 0.94, -dirZ * (0.20 + curvature * 0.28))
 
-  const cosR = 0.58 // cos(0.77 * 0.4 * PI)
-  const sinR = 0.81 // sin(0.77 * 0.4 * PI)
+  const cosR = 0.58
+  const sinR = 0.81
   const n0L = normalize3(spineN0[0] * cosR - sideX * sinR, spineN0[1] * cosR, spineN0[2] * cosR - sideZ * sinR)
   const n0R = normalize3(spineN0[0] * cosR + sideX * sinR, spineN0[1] * cosR, spineN0[2] * cosR + sideZ * sinR)
   const n1L = normalize3(spineN1[0] * cosR - sideX * sinR, spineN1[1] * cosR, spineN1[2] * cosR - sideZ * sinR)
   const n1R = normalize3(spineN1[0] * cosR + sideX * sinR, spineN1[1] * cosR, spineN1[2] * cosR + sideZ * sinR)
 
-  // Power-curve root-to-tip colour (y^0.65) + strong root contact AO
-  const rootGrounded = scaleRgb(rootCol, 0.52)
-  const midCol = mixRgb(rootCol, tipCol, Math.pow(yFrac1, 0.65))
+  // High-contrast root-to-tip gradient so tufts pop from 38-46m overhead
+  const rootGrounded = scaleRgb(rootCol, 0.38)
+  const midCol = mixRgb(rootCol, tipCol, Math.pow(yFrac1, 0.60))
+  const brightTip = scaleRgb(tipCol, 1.18)
   const aux0 = -0.05
   const aux1 = -0.52
   const aux2 = -1.0
@@ -1168,7 +1267,7 @@ export function emitCurvedGrassBlade(
   // Segment 1 tapered tip triangle
   m.vert(p1L, n1L, midCol, MAT.foliage, aux1)
   m.vert(p1R, n1R, midCol, MAT.foliage, aux1)
-  m.vert(p2Tip, spineN2, tipCol, MAT.foliage, aux2)
+  m.vert(p2Tip, spineN2, brightTip, MAT.foliage, aux2)
 }
 
 export function emitGrassTuft(
@@ -1194,13 +1293,13 @@ export function emitGrassTuft(
     const radialD = radius * Math.sqrt((i + 0.2) / bladeCount) * (0.45 + rng.next() * 0.55)
     const bx = x + Math.cos(radialA) * radialD
     const bz = z + Math.sin(radialA) * radialD
-    // Blend clump-correlated wind lean with slight outward radial splay
-    const splay = Math.atan2(Math.sin(radialA - leanAngle), Math.cos(radialA - leanAngle)) * 0.32
+    // Splay blades outward from the tuft heart while biasing toward the clump wind-lean direction
+    const splay = Math.atan2(Math.sin(radialA - leanAngle), Math.cos(radialA - leanAngle)) * 0.42
     const bladeYaw = leanAngle + splay + (rng.next() - 0.5) * 0.45
-    const bh = height * (0.78 + rng.next() * 0.42) * (1.08 - (radialD / Math.max(0.05, radius)) * 0.24)
-    const bw = width * (0.85 + rng.next() * 0.30)
-    const bCurve = clamp01(curvature * (0.82 + rng.next() * 0.36))
-    const shade = 0.88 + rng.next() * 0.24
+    const bh = height * (0.82 + rng.next() * 0.42) * (1.12 - (radialD / Math.max(0.05, radius)) * 0.26)
+    const bw = width * (0.88 + rng.next() * 0.30)
+    const bCurve = clamp01(curvature * (0.85 + rng.next() * 0.32))
+    const shade = 0.88 + rng.next() * 0.26
     emitCurvedGrassBlade(
       m,
       bx,
@@ -1210,8 +1309,8 @@ export function emitGrassTuft(
       bw,
       bCurve,
       bladeYaw,
-      scaleRgb(rootColor, shade * 0.82),
-      scaleRgb(tipColor, shade * 1.05),
+      scaleRgb(rootColor, shade * 0.80),
+      scaleRgb(tipColor, shade * 1.08),
     )
   }
 }
@@ -1230,7 +1329,7 @@ export type GrassClumpSample = {
 }
 
 /**
- * Generates clump-correlated grass tufts with shared wind-lean direction, height mounds,
+ * Generates clump-correlated grass tufts with mowed vs. overgrown zones, shared wind-lean direction,
  * root-to-tip colour gradients, and dry straw patches.
  */
 export function scatterGrassClumps(options: {
@@ -1252,8 +1351,8 @@ export function scatterGrassClumps(options: {
   const rng = new Rng(seed ^ 0x6a09e667)
   const baseRoot: Rgb = [params.rootColorR, params.rootColorG, params.rootColorB]
   const baseTip: Rgb = [params.tipColorR, params.tipColorG, params.tipColorB]
-  const dryRoot: Rgb = [0.28, 0.24, 0.13]
-  const dryTip: Rgb = [0.62, 0.54, 0.28]
+  const dryRoot: Rgb = [0.24, 0.20, 0.10]
+  const dryTip: Rgb = [0.64, 0.54, 0.24]
 
   const out: GrassClumpSample[] = []
   const effClusters = Math.max(1, Math.round(clusterCount * params.grassDensity))
@@ -1263,13 +1362,15 @@ export function scatterGrassClumps(options: {
     const cz = z0 + rng.next() * (z1 - z0)
     if (avoid?.(cx, cz)) continue
 
-    // Correlated clump noise field (shared lean angle, dry-patch weight, and mound height)
+    // Correlated clump noise field: shared lean angle, mowed vs. overgrown height envelope, and dry-patch weight
     const nLean = noise2(cx * 0.22 + 3.1, cz * 0.22 + 7.4)
     const nDry = noise2(cx * 0.18 + 11.3, cz * 0.18 + 2.9)
+    const nOvergrown = noise2(cx * 0.32 + 5.7, cz * 0.32 + 1.9)
     const clumpLean = nLean * Math.PI * 2
-    const spread = (0.48 + rng.next() * 0.95) * (1.25 - params.grassClumping * 0.45)
+    const overgrownScale = 0.72 + Math.pow(nOvergrown, 1.3) * 0.78
+    const spread = (0.45 + rng.next() * 0.90) * (1.25 - params.grassClumping * 0.45)
     const dryWeight = clamp01((nDry - (0.62 - params.dryPatches * 0.45)) * 2.4) * params.dryPatches
-    const hueShift = (rng.next() - 0.5) * 0.28 * params.grassVariation
+    const hueShift = (rng.next() - 0.5) * 0.32 * params.grassVariation
 
     const clusterRoot = mixRgb(
       [
@@ -1299,8 +1400,7 @@ export function scatterGrassClumps(options: {
       const tz = cz + Math.sin(angle) * dist
       if (tx < x0 || tx > x1 || tz < z0 || tz > z1 || avoid?.(tx, tz)) continue
 
-      // Taller in the heart of the clump, tapering toward the fringe (like Botanics & Ghost of Tsushima)
-      const moundScale = 1.18 - radialFrac * 0.34 * params.grassClumping
+      const moundScale = (1.22 - radialFrac * 0.36 * params.grassClumping) * overgrownScale
       const shade = 0.86 + rng.next() * 0.28
       const randomLean = (rng.next() - 0.5) * Math.PI * 2
       const leanAngle = clumpLean * params.grassClumping + randomLean * (1 - params.grassClumping)
@@ -1308,9 +1408,9 @@ export function scatterGrassClumps(options: {
       out.push({
         x: tx,
         z: tz,
-        radius: 0.10 + rng.next() * 0.12,
+        radius: 0.11 + rng.next() * 0.12,
         height: params.bladeHeight * moundScale * (0.82 + rng.next() * 0.36),
-        width: params.bladeWidth * (0.88 + rng.next() * 0.24),
+        width: params.bladeWidth * (0.90 + rng.next() * 0.24),
         curvature: params.bladeCurvature,
         leanAngle,
         blades: 3 + (i % 2),
@@ -1353,17 +1453,18 @@ struct FoliageWindConfig {
 
 fn defaultFoliageWindConfig() -> FoliageWindConfig {
   return FoliageWindConfig(
-    vec4f(0.30, 0.85, 0.45, 0.52),
-    vec4f(0.42, 0.55, 0.64, 0.82)
+    vec4f(0.30, 0.85, 0.45, 0.54),
+    vec4f(0.48, 0.55, 0.68, 0.88)
   );
 }
 
 /**
  * Hierarchical vertex displacement for MAT.foliage (mat == 22):
  * - aux > 0.02: Tree/shrub canopy vertex with flexibility weight aux. Combines global bough sway
- *   with 3D spatial leaf-card flutter (inspired by Sujen Phea's Botanics applyTreeWind).
+ *   with 3D spatial leaf-card flutter (Botanics applyTreeWind + Lamplight §3.2).
  * - aux < -0.02: Curved grass blade vertex with normalized root-to-tip coordinate bladeT = -aux.
- *   Applies travelling wind waves with arc-length-preserving vertical dip.
+ *   Applies Above the Grassland's 3-wave directional wind field with arc-length height preservation
+ *   and top-down distance visibility compensation.
  */
 fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: vec3f, cfg: FoliageWindConfig) -> array<vec3f, 2> {
   var p = pos;
@@ -1376,7 +1477,7 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     let phase = pos.x * 0.52 + pos.z * 0.39 + pos.y * 0.31;
     let swayX = (sin(time * freq * 3.1 + phase) + 0.55 * sin(time * freq * 1.35 + phase * 1.7 + 1.2)) * strength * gustEnv;
     let swayZ = (cos(time * freq * 2.6 + phase * 0.9) + 0.45 * sin(time * freq * 1.15 - phase * 1.3)) * strength * 0.78 * gustEnv;
-    let flutter = sin(time * freq * 6.8 + dot(pos, vec3f(4.3, 6.1, 4.9))) * strength * 0.26;
+    let flutter = sin(time * freq * 6.8 + dot(pos, vec3f(4.3, 6.1, 4.9))) * strength * 0.28;
     let dx = swayX + flutter;
     let dz = swayZ - flutter * 0.7;
     p.x += dx;
@@ -1384,15 +1485,14 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     p.y -= (abs(dx) + abs(dz)) * 0.14;
     n = normalize(n + vec3f(dx * 1.4, 0.0, dz * 1.4));
   } else if (aux < -0.02) {
-    // Above the Grassland 3-wave directional wind field (primary swell + diagonal gust + cross-turbulence + tip flutter)
     let bladeT = clamp(-aux, 0.0, 1.0);
     let bendWeight = bladeT * bladeT;
-    let dist = length(eye.xz - pos.xz);
-    let fade = 1.0 - smoothstep(28.0, 66.0, dist) * cfg.u1.y * 0.65;
+    let dist = length(eye - pos);
+    let fade = 1.0 - smoothstep(32.0, 68.0, dist) * cfg.u1.y * 0.55;
     let windDir = vec2f(0.88, 0.47);
     let crossDir = vec2f(-0.47, 0.88);
-    let freq = 0.38;
-    let speed = 1.35;
+    let freq = 0.42;
+    let speed = 1.45;
     let l = dot(pos.xz, windDir) * freq + time * speed;
     let u = dot(pos.xz, crossDir) * freq;
     let phi = fract(sin(dot(floor(pos.xz * 4.0), vec2f(12.9898, 78.233))) * 43758.5453) * 6.28318;
@@ -1400,15 +1500,14 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     let gust = sin(l * 0.37 + u * 0.90 + time * speed * 0.31 + phi * 0.73);
     let turb = sin(l * 2.30 - u * 1.70 + time * speed * 1.90 + phi * 1.37);
     let flutter = sin(time * 5.0 + pos.x * 0.35 + pos.z * 0.22 + bladeT * 2.5 + phi) * 0.16;
-    let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.u1.x * 0.11 * bendWeight * fade;
+    let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.u1.x * 0.13 * bendWeight * fade;
     let across = (gust * 0.22 + turb * 0.12 + flutter * 0.6) * cfg.u1.x * 0.09 * bendWeight * fade;
     let wx = windDir.x * along + crossDir.x * across;
     let wz = windDir.y * along + crossDir.y * across;
     p.x += wx;
     p.z += wz;
-    // Arc-length preservation: horizontal bend lowers blade tip height.
-    p.y -= (wx * wx + wz * wz) * 1.65 + (abs(wx) + abs(wz)) * 0.16 * bladeT;
-    n = normalize(n + vec3f(wx * 3.4, 0.0, wz * 3.4));
+    p.y -= (wx * wx + wz * wz) * 1.45 + (abs(wx) + abs(wz)) * 0.14 * bladeT;
+    n = normalize(n + vec3f(wx * 3.6, 0.0, wz * 3.6));
   }
   return array<vec3f, 2>(p, n);
 }

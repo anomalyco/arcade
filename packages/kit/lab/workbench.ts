@@ -1831,6 +1831,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         value: { type: "value", description: "Parameter value when using { key, value }" },
         treePreset: { type: "string", enum: FOLIAGE_PRESET_IDS, description: "Species preset" },
         crownShape: { type: "string", enum: FOLIAGE_CROWN_SHAPES.map(s => s.value), description: "Crown silhouette shape" },
+        stageMode: { type: "string", enum: ["lot", "swatch"], description: "Stage environment ('lot' = Outbreak house lot, 'swatch' = Hero tree pad)" },
         cameraMode: { type: "string", enum: ["close", "game"], description: "Camera view mode" },
         lightingPreset: { type: "string", enum: Object.keys(FOLIAGE_LIGHTING_PRESETS), description: "Stage lighting preset" },
         compare: { type: "number", min: 0, max: 2, description: "Comparison mode (0=Before, 1=After, 2=Split)" },
@@ -1934,6 +1935,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
           enum: Object.keys(FOLIAGE_LIGHTING_PRESETS),
           description: "Optional Outbreak lighting preset ('outbreak_dusk', 'outbreak_day', 'outbreak_night', 'cold_moon')",
         },
+        stageMode: {
+          type: "string",
+          enum: ["lot", "swatch"],
+          description: "Optional stage mode ('lot' = Outbreak house lot, 'swatch' = Hero tree pad)",
+        },
         cameraMode: {
           type: "string",
           enum: ["close", "game"],
@@ -1987,6 +1993,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
           const lp = FOLIAGE_LIGHTING_PRESETS[args.lighting]
           if (lp && Object.keys(lp.values).length > 0) Object.assign(stage.lighting, lp.values)
         }
+        if (args?.stageMode === "lot" || args?.stageMode === "swatch") {
+          const stgCtrl = foliageSec.controls.find(c => c.key === "stageMode")
+          if (stgCtrl) panel.navigation.set(stgCtrl, args.stageMode)
+        }
         if (args?.cameraMode === "close" || args?.cameraMode === "game") {
           const camCtrl = foliageSec.controls.find(c => c.key === "cameraMode")
           if (camCtrl) panel.navigation.set(camCtrl, args.cameraMode)
@@ -2002,6 +2012,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         const exported = exportFoliagePreset({
           seed: Number(foliageSec.settings.seed) || 7,
           tuningSeed: Number(foliageSec.settings.tuningSeed) || 41,
+          stageMode: foliageSec.settings.stageMode === "swatch" ? "swatch" : "lot",
           cameraMode: (foliageSec.settings.cameraMode === "game" ? "game" : "close") as FoliageCameraMode,
           compare: (Number(foliageSec.settings.compare) === 0 ? 0 : Number(foliageSec.settings.compare) === 2 ? 2 : 1) as FoliageCompareMode,
           lightingPreset: String(foliageSec.settings.lightingPreset || "outbreak_dusk"),

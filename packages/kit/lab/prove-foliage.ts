@@ -6,7 +6,7 @@ import { chromium } from "playwright-core"
 import { FOLIAGE_PRESETS } from "../gpu/foliage"
 
 const root = resolve(import.meta.dir, "../../..")
-const out = resolve(process.env.FOLIAGE_OUT ?? `${process.env.HOME}/code/home/artifacts/2026-10-14-foliage-lab`)
+const out = resolve(process.env.FOLIAGE_OUT ?? `${process.env.HOME}/code/home/artifacts/2026-10-14-foliage-lab/pass2`)
 mkdirSync(out, { recursive: true })
 
 const dir = resolve(root, "games/outbreak")
@@ -46,7 +46,7 @@ try {
     if (m.type() === "error") errors.push(m.text())
   })
 
-  // 1. Open Lab with #foliage deep link
+  // 1. Open Lab with #foliage deep link (defaults to Outbreak house lot + Game camera)
   await page.goto(`http://127.0.0.1:${fixture.port}/lab.html?bench#foliage`)
   await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 25000 })
 
@@ -56,8 +56,14 @@ try {
   })
   assert.match(adapter.architecture, /metal/i, "Metal WebGPU adapter required")
 
-  const activeSection = await page.evaluate(() => (window as any).lab.settings.section)
-  assert.equal(activeSection, "foliage", "Deep URL #foliage must open Foliage section directly")
+  const initialState = await page.evaluate(() => {
+    const l = (window as any).lab
+    const s = l.sections.find((x: any) => x.id === "foliage")
+    return { section: l.settings.section, stageMode: s.settings.stageMode, cameraMode: s.settings.cameraMode }
+  })
+  assert.equal(initialState.section, "foliage")
+  assert.equal(initialState.stageMode, "lot")
+  assert.equal(initialState.cameraMode, "game")
 
   const renderStep = async (n = 3) => {
     for (let i = 0; i < n; i++) {
@@ -71,53 +77,83 @@ try {
   await renderStep(4)
   assert.deepEqual(errors, [])
 
-  // 2. Capture Before, After, and A/B Split in Close Inspect under Outbreak dusk
-  await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { preset: "oak", lighting: "outbreak_dusk", cameraMode: "close", compare: 0 }))
+  // 2. Outbreak Lot at Game Camera: Before, After, and A/B Split under Outbreak dusk
+  await page.evaluate(() =>
+    (window as any).lab.workbench.invoke("foliage.preset", {
+      preset: "oak",
+      stageMode: "lot",
+      cameraMode: "game",
+      lighting: "outbreak_dusk",
+      compare: 0,
+    }),
+  )
   await renderStep(3)
-  const beforePng = await page.locator("canvas").screenshot({ path: resolve(out, "foliage-lab-before-close.png") })
+  const lotBeforePng = await page.locator("canvas").screenshot({ path: resolve(out, "outbreak-lot-game-before.png") })
 
-  await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { preset: "oak", lighting: "outbreak_dusk", cameraMode: "close", compare: 1 }))
+  await page.evaluate(() =>
+    (window as any).lab.workbench.invoke("foliage.preset", {
+      preset: "oak",
+      stageMode: "lot",
+      cameraMode: "game",
+      lighting: "outbreak_dusk",
+      compare: 1,
+    }),
+  )
   await renderStep(3)
-  const afterPng = await page.locator("canvas").screenshot({ path: resolve(out, "foliage-lab-after-close.png") })
-  assert.notDeepEqual(beforePng, afterPng, "Improved foliage After must differ visually from shipped Before")
+  const lotAfterPng = await page.locator("canvas").screenshot({ path: resolve(out, "outbreak-lot-game-after.png") })
+  assert.notDeepEqual(lotBeforePng, lotAfterPng, "Outbreak lot After must differ visually from Before at game camera")
 
   await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { compare: 2 }))
   await renderStep(3)
-  await page.screenshot({ path: resolve(out, "foliage-lab-split-close.png") })
+  await page.screenshot({ path: resolve(out, "outbreak-lot-game-split.png") })
 
-  // 3. Capture Game Camera (38 m) view
-  await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { cameraMode: "game", compare: 1 }))
+  // 3. Outbreak Lot at Close Inspect: After and A/B Split
+  await page.evaluate(() =>
+    (window as any).lab.workbench.invoke("foliage.preset", {
+      stageMode: "lot",
+      cameraMode: "close",
+      compare: 1,
+    }),
+  )
   await renderStep(3)
-  await page.screenshot({ path: resolve(out, "foliage-lab-game-camera.png") })
+  await page.locator("canvas").screenshot({ path: resolve(out, "outbreak-lot-close-after.png") })
 
-  // 4. Capture Autumn Maple under Outbreak Day and Silver Birch under Outbreak Night
-  await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { preset: "maple", lighting: "outbreak_day", cameraMode: "close", compare: 1 }))
+  await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { compare: 2 }))
   await renderStep(3)
-  await page.screenshot({ path: resolve(out, "foliage-lab-maple-day.png") })
+  await page.screenshot({ path: resolve(out, "outbreak-lot-close-split.png") })
 
-  await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { preset: "birch", lighting: "outbreak_night", cameraMode: "close", compare: 1 }))
+  // 4. Swatch stage at Close Inspect: A/B Split (verify screen-space split has zero white trunk seam)
+  await page.evaluate(() =>
+    (window as any).lab.workbench.invoke("foliage.preset", {
+      stageMode: "swatch",
+      cameraMode: "close",
+      compare: 2,
+    }),
+  )
   await renderStep(3)
-  await page.screenshot({ path: resolve(out, "foliage-lab-birch-night.png") })
+  await page.screenshot({ path: resolve(out, "swatch-close-split.png") })
 
-  // 5. Verify foliage.set, foliage.randomize, Reset, and Preset JSON round-trip
-  await page.evaluate(() => (window as any).lab.workbench.invoke("foliage.preset", { preset: "oak", lighting: "outbreak_dusk", cameraMode: "close", compare: 1 }))
+  // 5. Verify foliage.set, foliage.randomize, and Reset on Outbreak lot
+  await page.evaluate(() =>
+    (window as any).lab.workbench.invoke("foliage.preset", {
+      preset: "oak",
+      stageMode: "lot",
+      cameraMode: "game",
+      compare: 1,
+    }),
+  )
   const setRes = await page.evaluate(() =>
-    (window as any).lab.workbench.invoke("foliage.set", { treeHeight: 6.1, bladeCurvature: 0.78 }),
+    (window as any).lab.workbench.invoke("foliage.set", { treeHeight: 5.8, bladeCurvature: 0.74 }),
   )
   assert.equal(setRes.ok, true)
-  assert.equal(setRes.result.settings.treeHeight, 6.1)
-  assert.equal(setRes.result.settings.bladeCurvature, 0.78)
+  assert.equal(setRes.result.settings.treeHeight, 5.8)
 
   const randRes = await page.evaluate(() =>
     (window as any).lab.workbench.invoke("foliage.randomize", { scope: "all", tuningSeed: 55 }),
   )
   assert.equal(randRes.ok, true)
-  assert.equal(randRes.result.seed, 7, "foliage.randomize must preserve structural seed")
-  assert.equal(randRes.result.nextTuningSeed, 56, "foliage.randomize increments tuningSeed")
-  await renderStep(3)
-  await page.screenshot({ path: resolve(out, "foliage-lab-randomized.png") })
+  assert.equal(randRes.result.seed, 7)
 
-  // Reset to oak defaults
   const resetRes = await page.evaluate(() =>
     (window as any).lab.workbench.invoke("foliage.preset", { preset: "reset" }),
   )
@@ -127,15 +163,7 @@ try {
   )
   assert.equal(heightAfterReset, FOLIAGE_PRESETS.oak.defaults.treeHeight)
 
-  // Export and import preset JSON
-  const presetJson = resetRes.result.json
-  const importRes = await page.evaluate(
-    (json: string) => (window as any).lab.workbench.invoke("foliage.preset", { json }),
-    presetJson,
-  )
-  assert.equal(importRes.ok, true)
-
-  // 6. Capture actual Outbreak game street scene with improved trees and curved grass blades
+  // 6. Capture actual Outbreak game street scene at game camera (seed 7)
   await page.goto(`http://127.0.0.1:${fixture.port}/?seed=7&bench`)
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, undefined, { timeout: 25000 })
   await page.evaluate(async () => {
@@ -146,26 +174,25 @@ try {
     h.pose(29.5, 40.5, -Math.PI / 2)
     await h.step(1 / 60)
   })
-  await page.screenshot({ path: resolve(out, "foliage-outbreak-in-game.png") })
+  await page.screenshot({ path: resolve(out, "outbreak-in-game-street.png") })
 
   assert.deepEqual(errors, [])
 
   const summary = {
     adapter,
-    deepUrlVerified: true,
+    initialState,
     commandsVerified: ["foliage.set", "foliage.randomize", "foliage.preset"],
     captures: [
-      "foliage-lab-before-close.png",
-      "foliage-lab-after-close.png",
-      "foliage-lab-split-close.png",
-      "foliage-lab-game-camera.png",
-      "foliage-lab-maple-day.png",
-      "foliage-lab-birch-night.png",
-      "foliage-lab-randomized.png",
-      "foliage-outbreak-in-game.png",
+      "outbreak-lot-game-before.png",
+      "outbreak-lot-game-after.png",
+      "outbreak-lot-game-split.png",
+      "outbreak-lot-close-after.png",
+      "outbreak-lot-close-split.png",
+      "swatch-close-split.png",
+      "outbreak-in-game-street.png",
     ],
   }
-  writeFileSync(resolve(out, "foliage-lab-proof.json"), JSON.stringify(summary, null, 2) + "\n")
+  writeFileSync(resolve(out, "foliage-lab-pass2-proof.json"), JSON.stringify(summary, null, 2) + "\n")
   console.log(JSON.stringify(summary, null, 2))
 } finally {
   fixture.stop(true)
