@@ -236,9 +236,11 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     [r+.68,z+5.90,7.90,3.65],
     [r+.64,e-1.90,7.20,3.25],
     [r+.58,e+.45,1.52,.98],
-    // Overgrown shrub thicket at the front-right lawn corner inside the sidewalk intersection
+    // Overgrown shrub thicket at the front-right lawn & sidewalk intersection corner + left sidewalk margin bush
     [r+.52,e+1.95,1.48,.96],
     [r-.48,e+2.15,1.08,.76],
+    [r+1.82,e+3.12,1.68,1.18],
+    [x-4.25,e+3.08,1.52,1.06],
     // South-side street framing tree masses & corner thickets across the road (framing bottom-left & bottom-right of street view)
     ...(id===0 ? [
       [x-5.20,e+14.20,7.60,3.55],
