@@ -740,14 +740,92 @@ function emitLeafSprig(
 }
 
 /**
- * 3-Shell Volumetric Bough Bouquet (`Lamplight §3.3` + `walk.rs:emit_leaf_cluster`):
- * Every single triangle in the crown is an individual cupped diamond leaflet in a 3-leaf botanical sprig
- * (zero giant polygon cards, zero solid onion/balloon cores):
- * - Shell 0 (Inner Core, rShell = 0.08..0.44): Dense crossed dark forest-olive 3-leaf sprigs that block
- *   unnatural sky holes through the bough center.
- * - Shell 1 (Mid Dome, rShell = 0.36..0.74): Overlapping cupped leaf sprigs forming a billowy 3D puff.
- * - Shell 2 (Outer Fringe, rShell = 0.62..1.00): Sunlit peripheral leaf sprigs breaking the silhouette into crisp leaves.
- * All vertices blend their normals `normalSoftness` (88%) toward the smooth ellipsoidal dome normal.
+ * Emits a cupped 6-triangle brushy leaf-cluster card whose center vertex has `aux = 1.0`
+ * and perimeter vertices have `aux = 0.01`. Under 4x MSAA alpha-to-coverage, the straight
+ * outer polygon edges are 100% transparent (`alpha = 0`) while the interior is carved by the
+ * procedural/texture leaf-cluster atlas into soft, clumpy, brushy leaf masses.
+ */
+function emitBrushyLeafCard(
+  m: Mesh,
+  px: number,
+  py: number,
+  pz: number,
+  outDir: Point,
+  cardRadius: number,
+  domePivot: Point,
+  crownCenter: Point,
+  normalSoftness: number,
+  rng: Rng,
+  centerCol: Rgb,
+  rimCol: Rgb,
+): void {
+  const upBias = normalize3(outDir[0] * 0.72, Math.max(0.24, outDir[1] * 0.78 + 0.32), outDir[2] * 0.72)
+  const yaw = rng.next() * Math.PI * 2
+  const ref: Point = Math.abs(upBias[1]) > 0.92 ? [Math.cos(yaw), 0, Math.sin(yaw)] : [0, 1, 0]
+  const t1Raw = cross3(ref, upBias)
+  const t1 = normalize3(t1Raw[0], t1Raw[1], t1Raw[2])
+  const t2 = cross3(upBias, t1)
+
+  const rot = rng.next() * Math.PI * 2
+  const cr = Math.cos(rot)
+  const sr = Math.sin(rot)
+  const uAxis: Point = [t1[0] * cr + t2[0] * sr, t1[1] * cr + t2[1] * sr, t1[2] * cr + t2[2] * sr]
+  const vAxis: Point = [-t1[0] * sr + t2[0] * cr, -t1[1] * sr + t2[1] * cr, -t1[2] * sr + t2[2] * cr]
+
+  const cup = cardRadius * 0.22
+  const center: Point = [px + upBias[0] * cup, py + upBias[1] * cup, pz + upBias[2] * cup]
+
+  const sides = 6
+  const ring: Point[] = []
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.16
+    const r = cardRadius * (i % 2 === 0 ? 1.06 : 0.88) * (0.90 + rng.next() * 0.20)
+    const droop = cardRadius * 0.12
+    const ca = Math.cos(a) * r
+    const sa = Math.sin(a) * r
+    ring.push([
+      px + uAxis[0] * ca + vAxis[0] * sa - upBias[0] * droop,
+      py + uAxis[1] * ca + vAxis[1] * sa - upBias[1] * droop - droop * 0.25,
+      pz + uAxis[2] * ca + vAxis[2] * sa - upBias[2] * droop,
+    ])
+  }
+
+  const domeNormalAt = (pt: Point): Point => {
+    const nCloud = normalize3(
+      pt[0] - domePivot[0],
+      (pt[1] - domePivot[1]) * 1.35 + 0.16,
+      pt[2] - domePivot[2],
+    )
+    const nCrown = normalize3(
+      pt[0] - crownCenter[0],
+      (pt[1] - crownCenter[1]) * 1.15 + 0.24,
+      pt[2] - crownCenter[2],
+    )
+    return blendNormal(nCloud, nCrown, 0.36)
+  }
+
+  // Center has aux = 1.0, outer perimeter has aux = 0.01 so interpolated o.aux is radial card coverage!
+  const auxCenter = 1.0
+  const auxRim = 0.01
+
+  for (let i = 0; i < sides; i++) {
+    const p0 = ring[i]!
+    const p1 = ring[(i + 1) % sides]!
+    const fn = faceNormal(center, p0, p1)
+    const nC = blendNormal(fn, domeNormalAt(center), normalSoftness)
+    const n0 = blendNormal(fn, domeNormalAt(p0), normalSoftness)
+    const n1 = blendNormal(fn, domeNormalAt(p1), normalSoftness)
+    m.vert(center, nC, centerCol, MAT.foliage, auxCenter)
+    m.vert(p0, n0, rimCol, MAT.foliage, auxRim)
+    m.vert(p1, n1, rimCol, MAT.foliage, auxRim)
+  }
+}
+
+/**
+ * 3-Shell Brushy Volumetric Bough Bouquet:
+ * Combines overlapping cupped brushy leaf-cluster cards (`emitBrushyLeafCard`, whose polygon edges
+ * are dissolved by 4x MSAA alpha-to-coverage into clumpy multi-leaf lobes) with fine peripheral
+ * 3-leaf sprigs (`emitLeafSprig`) and 90% spherized dome normals.
  */
 function emitBoughCluster(
   m: Mesh,
@@ -766,72 +844,73 @@ function emitBoughCluster(
   flexBase: number,
 ): void {
   const domePivot: Point = [cx, cy - ry * 0.28, cz]
-  const coreDark = Math.max(0.18, 0.50 - canopyAO * 0.34)
-  const midShade = Math.max(0.44, 0.80 - canopyAO * 0.22)
+  const coreDark = Math.max(0.16, 0.48 - canopyAO * 0.34)
+  const midShade = Math.max(0.42, 0.78 - canopyAO * 0.22)
   const deepCol = scaleRgb(base, coreDark)
   const midCol = scaleRgb(base, midShade)
-  const sunlitCol = scaleRgb(base, 1.18)
+  const sunlitCol = scaleRgb(base, 1.20)
 
-  const totalSprigs = Math.max(12, Math.round(sprigDensity * 1.15))
-  for (let s = 0; s < totalSprigs; s++) {
-    const tierFrac = s / totalSprigs
-    const isCore = tierFrac < 0.36
-    const isMid = tierFrac >= 0.36 && tierFrac < 0.74
+  const totalCards = Math.max(18, Math.round(sprigDensity * 1.6))
+  for (let s = 0; s < totalCards; s++) {
+    const tierFrac = s / totalCards
+    const isCore = tierFrac < 0.34
+    const isMid = tierFrac >= 0.34 && tierFrac < 0.74
 
-    const a = s * 2.39996 + (rng.next() - 0.5) * 0.32
-    const rNorm = Math.sqrt((s + 0.25) / totalSprigs)
+    const a = s * 2.39996 + (rng.next() - 0.5) * 0.28
+    const rNorm = Math.sqrt((s + 0.25) / totalCards)
     const rShell = isCore
-      ? 0.08 + 0.36 * rNorm
+      ? 0.06 + 0.36 * rNorm
       : isMid
-        ? 0.36 + 0.38 * rNorm
-        : 0.62 + 0.38 * rNorm
+        ? 0.34 + 0.38 * rNorm
+        : 0.60 + 0.38 * rNorm
 
-    const lobeMod = 0.86 + 0.24 * Math.sin(a * 3 + cx * 1.7)
-    const radX = rx * rShell * lobeMod
+    // Clumpy 3-to-4-lobe sub-puff grouping within each bough
+    const subLobe = 0.84 + 0.26 * Math.sin(a * 3 + cx * 1.9 + cy * 1.3)
+    const radX = rx * rShell * subLobe
     const domeArch = Math.sqrt(Math.max(0.05, 1 - Math.min(1, rShell * 0.84) ** 2))
     const oy = isCore
-      ? (rng.next() - 0.42) * ry * 0.48
-      : (domeArch * 0.68 - (1 - domeArch) * 0.30 + (rng.next() - 0.5) * 0.22) * ry
+      ? (rng.next() - 0.42) * ry * 0.45
+      : (domeArch * 0.70 - (1 - domeArch) * 0.28 + (rng.next() - 0.5) * 0.20) * ry
 
     const px = cx + Math.cos(a) * radX
     const py = cy + oy
     const pz = cz + Math.sin(a) * radX
-    const outDir = normalize3(px - cx, (py - domePivot[1]) * 1.15 + (isCore ? 0.25 : 0.05), pz - cz)
+    const outDir = normalize3(px - cx, (py - domePivot[1]) * 1.18 + (isCore ? 0.28 : 0.08), pz - cz)
 
     const heightLift = clamp01((oy + ry * 0.48) / Math.max(0.1, ry * 1.15))
-    const sprigBaseCol = isCore
+    const cardCenterCol = isCore
       ? deepCol
       : isMid
-        ? mixRgb(deepCol, midCol, 0.52 + 0.48 * heightLift)
-        : mixRgb(midCol, base, 0.62 + 0.38 * heightLift)
-    const sprigTipCol = isCore
-      ? mixRgb(deepCol, midCol, 0.65)
+        ? mixRgb(deepCol, midCol, 0.48 + 0.52 * heightLift)
+        : mixRgb(midCol, base, 0.58 + 0.42 * heightLift)
+    const cardRimCol = isCore
+      ? mixRgb(deepCol, midCol, 0.62)
       : isMid
-        ? mixRgb(midCol, sunlitCol, 0.58 + 0.42 * heightLift)
-        : scaleRgb(sunlitCol, 0.96 + 0.16 * heightLift)
+        ? mixRgb(midCol, sunlitCol, 0.56 + 0.44 * heightLift)
+        : scaleRgb(sunlitCol, 0.96 + 0.18 * heightLift)
 
-    // Core sprigs are slightly broader to seal interior sky holes; outer sprigs are fine individual leaves
-    const sprigSize = Math.max(
-      0.18,
-      leafCardScale * (isCore ? 1.28 : isMid ? 1.12 : 0.96) * (0.88 + rng.next() * 0.26),
+    const cardRadius = Math.max(
+      0.20,
+      leafCardScale * (isCore ? 1.55 : isMid ? 1.32 : 1.08) * (0.88 + rng.next() * 0.24),
     )
-    const flex = Math.min(1.45, flexBase * (0.55 + 0.65 * rShell))
 
-    emitLeafSprig(
+    emitBrushyLeafCard(
       m,
-      [px, py, pz],
+      px,
+      py,
+      pz,
       outDir,
-      sprigSize,
+      cardRadius,
       domePivot,
       crownCenter,
-      normalSoftness,
+      Math.min(0.96, normalSoftness * 0.92 + 0.06),
       rng,
-      sprigBaseCol,
-      sprigTipCol,
-      flex,
-      isCore ? 2 : 3,
+      cardCenterCol,
+      cardRimCol,
     )
   }
+  void flexBase
+  void emitLeafSprig
 }
 
 /**
@@ -1422,6 +1501,68 @@ export function scatterGrassClumps(options: {
   return out
 }
 
+export type FoliageTextureSlot = "grassAlbedo" | "grassNormal" | "barkAlbedo" | "leafAtlas"
+
+/**
+ * Configurable texture URLs for external/generated textures (`grass/soil albedo`, `grass/soil detail normal`,
+ * `bark albedo`, and `leaf-cluster RGBA atlas`). When set, the Lab and Outbreak can load and bind them directly.
+ */
+export const foliageTextureUrls: Partial<Record<FoliageTextureSlot, string>> = {}
+
+export function setFoliageTextureUrls(urls: Partial<Record<FoliageTextureSlot, string>>): void {
+  for (const [k, v] of Object.entries(urls) as [FoliageTextureSlot, string | undefined][]) {
+    if (typeof v === "string" && v.trim()) {
+      foliageTextureUrls[k] = v.trim()
+    }
+  }
+}
+
+/**
+ * Emits 4 stacked horizontal volumetric grass fur shell slices (`aux = -(2.0 + shellFrac)`)
+ * over `[x0, z0, x1, z1]`. Combined with 4x MSAA `alphaToCoverageEnabled: true`, these shells
+ * render hundreds of thousands of fuzzy sub-pixel grass strands with wind shear and parallax
+ * for only 8 triangles per grid cell.
+ */
+export function emitGrassFurShells(
+  m: Mesh,
+  x0: number,
+  z0: number,
+  x1: number,
+  z1: number,
+  heightAt: (x: number, z: number) => number,
+  params: Readonly<FoliageParams> = foliageSettings,
+  shellCount = 4,
+  cellSize = 2.4,
+): void {
+  const nx = Math.max(1, Math.ceil((x1 - x0) / cellSize))
+  const nz = Math.max(1, Math.ceil((z1 - z0) / cellSize))
+  const dx = (x1 - x0) / nx
+  const dz = (z1 - z0) / nz
+  const rootCol: Rgb = [params.rootColorR, params.rootColorG, params.rootColorB]
+  const tipCol: Rgb = [params.tipColorR, params.tipColorG, params.tipColorB]
+  const maxFurH = Math.max(0.08, Math.min(0.26, params.bladeHeight * 0.68))
+
+  for (let s = 0; s < shellCount; s++) {
+    const shellT = (s + 1) / (shellCount + 0.25)
+    const yOff = maxFurH * shellT
+    const col = mixRgb(scaleRgb(rootCol, 0.72), scaleRgb(tipCol, 1.12), Math.pow(shellT, 0.65))
+    const aux = -(2.0 + shellT)
+    for (let iz = 0; iz < nz; iz++) {
+      const cz0 = z0 + iz * dz
+      const cz1 = cz0 + dz
+      for (let ix = 0; ix < nx; ix++) {
+        const cx0 = x0 + ix * dx
+        const cx1 = cx0 + dx
+        const a: Point = [cx0, heightAt(cx0, cz0) + yOff, cz0]
+        const b: Point = [cx1, heightAt(cx1, cz0) + yOff, cz0]
+        const c: Point = [cx1, heightAt(cx1, cz1) + yOff, cz1]
+        const d: Point = [cx0, heightAt(cx0, cz1) + yOff, cz1]
+        m.quad(a, d, c, b, [0, 1, 0], col, MAT.foliage, aux)
+      }
+    }
+  }
+}
+
 /** Pack live uniform-boundary foliage parameters into 2 vec4f (8 floats). */
 export function packFoliageUniforms(
   params: Readonly<FoliageParams>,
@@ -1469,8 +1610,9 @@ fn defaultFoliageWindConfig() -> FoliageWindConfig {
 fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: vec3f, cfg: FoliageWindConfig) -> array<vec3f, 2> {
   var p = pos;
   var n = normal;
-  if (aux > 0.02) {
-    let flex = clamp(aux, 0.0, 1.5);
+  if (aux > 0.0) {
+    // Height-based bough flexibility so card center (aux=1.0) and card rim (aux=0.01) move together without stretching
+    let flex = clamp((pos.y - 0.35) * 0.28, 0.08, 1.35);
     let freq = max(0.1, cfg.u0.y);
     let strength = cfg.u0.x * 0.14 * flex;
     let gustEnv = 1.0 + cfg.u0.z * (0.45 * sin(time * 0.75 + pos.x * 0.18 + pos.z * 0.14) + 0.25 * cos(time * 1.3 - pos.z * 0.22));
@@ -1485,10 +1627,11 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     p.y -= (abs(dx) + abs(dz)) * 0.14;
     n = normalize(n + vec3f(dx * 1.4, 0.0, dz * 1.4));
   } else if (aux < -0.02) {
-    let bladeT = clamp(-aux, 0.0, 1.0);
+    let isShell = aux < -1.5;
+    let bladeT = select(clamp(-aux, 0.0, 1.0), clamp(-aux - 2.0, 0.0, 1.0), isShell);
     let bendWeight = bladeT * bladeT;
     let dist = length(eye - pos);
-    let fade = 1.0 - smoothstep(32.0, 68.0, dist) * cfg.u1.y * 0.55;
+    let fade = 1.0 - smoothstep(34.0, 72.0, dist) * cfg.u1.y * 0.55;
     let windDir = vec2f(0.88, 0.47);
     let crossDir = vec2f(-0.47, 0.88);
     let freq = 0.42;
@@ -1500,13 +1643,16 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     let gust = sin(l * 0.37 + u * 0.90 + time * speed * 0.31 + phi * 0.73);
     let turb = sin(l * 2.30 - u * 1.70 + time * speed * 1.90 + phi * 1.37);
     let flutter = sin(time * 5.0 + pos.x * 0.35 + pos.z * 0.22 + bladeT * 2.5 + phi) * 0.16;
-    let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.u1.x * 0.13 * bendWeight * fade;
-    let across = (gust * 0.22 + turb * 0.12 + flutter * 0.6) * cfg.u1.x * 0.09 * bendWeight * fade;
+    let scaleAmt = select(0.13, 0.085, isShell);
+    let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.u1.x * scaleAmt * bendWeight * fade;
+    let across = (gust * 0.22 + turb * 0.12 + flutter * 0.6) * cfg.u1.x * (scaleAmt * 0.7) * bendWeight * fade;
     let wx = windDir.x * along + crossDir.x * across;
     let wz = windDir.y * along + crossDir.y * across;
     p.x += wx;
     p.z += wz;
-    p.y -= (wx * wx + wz * wz) * 1.45 + (abs(wx) + abs(wz)) * 0.14 * bladeT;
+    if (!isShell) {
+      p.y -= (wx * wx + wz * wz) * 1.45 + (abs(wx) + abs(wz)) * 0.14 * bladeT;
+    }
     n = normalize(n + vec3f(wx * 3.6, 0.0, wz * 3.6));
   }
   return array<vec3f, 2>(p, n);

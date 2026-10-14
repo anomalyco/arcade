@@ -168,7 +168,7 @@ struct VOut {
   @location(1) normal: vec3f,
   @location(2) color: vec3f,
   @location(3) @interpolate(flat) mat: f32,
-  @location(4) @interpolate(flat) aux: f32,
+  ${hooks.vertex ? "@location(4) aux: f32," : "@location(4) @interpolate(flat) aux: f32,"}
   @location(5) @interpolate(flat) extra: vec4f,
   ${motion ? "@location(6) previous: vec4f," : ""}
 }
@@ -687,9 +687,9 @@ fn shadeScene(o: VOut) -> vec4f {
   ${hooks.diagnostics ? `if (${hooks.diagnostics} > 0.5 && ${hooks.diagnostics} < 4.5) {
     return vec4f(select(vec3f(0.0), o.color, i32(${hooks.diagnostics}) == 1), alpha);
   }` : ""}
-  let a = alpha * o.extra.z;
   ${hooks.surface ?? ""}
-  return vec4f(col * a, a);
+  let a = alpha * o.extra.z;
+  return vec4f(select(col * a, col, mat == 22), a);
 }
 
 @fragment fn fs(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {

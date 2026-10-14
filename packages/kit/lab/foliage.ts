@@ -6,12 +6,12 @@ import {
   buildFoliageTree,
   buildLegacyFoliageTree,
   emitCurvedGrassBlade,
+  emitGrassFurShells,
   emitGrassTuft,
   foliageSettings,
   foliageWindDeclarationsWgsl,
   isFoliageCrownShape,
   isFoliagePresetId,
-  noise2,
   packFoliageUniforms,
   randomizeFoliageParams,
   resetFoliageParams,
@@ -173,7 +173,7 @@ struct VOut {
   @location(1) normal: vec3f,
   @location(2) color: vec3f,
   @location(3) @interpolate(flat) mat: f32,
-  @location(4) @interpolate(flat) aux: f32,
+  @location(4) aux: f32,
   @location(5) clipXW: vec2f,
 }
 
@@ -227,6 +227,7 @@ struct VOut {
   var albedo = o.color;
   var gloss = vec2f(0.0);
   var cavity = 1.0;
+  var outAlpha = 1.0;
 
   if (mat == 20) {
     let kind = i32(round(o.aux));
@@ -253,7 +254,6 @@ struct VOut {
       gloss = s.gloss;
       cavity = s.cavity;
     } else if (kind == 2) {
-      // Concrete sidewalk & curb with grass verge strip in lot mode (z in 3.32..3.76)
       let inVerge = U.config.w < 0.5 && p.y > 3.32 && p.y < 3.76 && abs(p.x) > 0.9 && p.x > -7.6;
       if (inVerge) {
         if (isAfter) {
@@ -304,6 +304,23 @@ struct VOut {
   } else if (mat == 22) {
     if (!isAfter) {
       albedo *= 0.82 + surfaceNoise(o.world.xz * 4.0 + o.world.y) * 0.30;
+    } else if (o.aux < -1.5) {
+      // Volumetric grass fur shell layer (aux = -(2.0 + shellT))
+      let shellT = clamp(-o.aux - 2.0, 0.0, 1.0);
+      let p = o.world.xz;
+      let cMound = surfaceNoise(p * 0.68 + vec2f(1.7, 4.3));
+      let tuftG = surfaceNoiseGrad(p * 4.2 + vec2f(3.1, 6.7));
+      let strand1 = surfaceNoise(p * 19.5 + vec2f(tuftG.x * 0.9, 2.3));
+      let strand2 = surfaceNoise(p * 38.0 + vec2f(7.4, 1.9));
+      let strandReach = (tuftG.x * 0.34 + strand1 * 0.40 + strand2 * 0.32) * (0.66 + 0.48 * cMound);
+      outAlpha = clamp((strandReach - shellT * 0.76) * 3.8, 0.0, 1.0);
+      let rootAO = mix(0.38, 1.18, pow(shellT, 0.62));
+      let crestNoise = surfaceNoise(p * 0.30 + vec2f(U.config.x * 0.28, U.config.x * 0.16));
+      let crestHighlight = smoothstep(0.38, 0.68, crestNoise) * 0.38 * shellT;
+      albedo = mix(albedo * (0.90 + strand1 * 0.24), vec3f(0.54, 0.72, 0.18), crestHighlight) * rootAO;
+      gloss = vec2f(42.0, 0.24 * shellT);
+      cavity = mix(0.46, 1.0, shellT);
+      n = normalize(n + vec3f(tuftG.y * 0.48, 0.0, tuftG.z * 0.48));
     } else if (o.aux < -0.02) {
       let bladeT = clamp(-o.aux, 0.0, 1.0);
       let rootAO = mix(0.28, 1.0, smoothstep(0.0, 0.28, bladeT));
@@ -313,12 +330,22 @@ struct VOut {
       albedo = mix(albedo * (0.94 + vein), vec3f(0.54, 0.72, 0.18), crestHighlight) * mix(0.84, 1.24, pow(bladeT, 0.62));
       gloss = vec2f(48.0, 0.32 * bladeT);
       cavity = rootAO;
+      outAlpha = clamp(1.42 - bladeT * 0.48, 0.52, 1.0);
     } else {
       let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
       albedo = s.albedo;
       gloss = s.gloss;
       cavity = s.cavity;
       n = normalize(n + surfaceNormalShift);
+      if (o.aux > 0.0) {
+        let cardEdge = clamp(o.aux, 0.0, 1.0);
+        let uv3 = vec2f(o.world.x + o.world.z * 0.73 + o.world.y * 0.41, o.world.y * 1.17 - o.world.x * 0.43 + o.world.z * 0.81);
+        let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
+        let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
+        let brushField = brush1 * 0.58 + brush2 * 0.42;
+        let edgeMask = smoothstep(0.015, 0.16, cardEdge);
+        outAlpha = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+      }
     }
   }
 
@@ -401,7 +428,7 @@ struct VOut {
   } else if (F.options.z == 5.0) {
     color = n * 0.5 + 0.5;
   }
-  return vec4f(color, 1.0);
+  return vec4f(color, outAlpha);
 }
 `
 
@@ -581,27 +608,34 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
     }
   } else {
     const grassRng = new Rng(seed ^ 0x73c9)
-    // Clumped mowed vs. overgrown lawn patches leaving natural mowed turf breathing room
+    // 4-layer volumetric grass fur shells covering the front lawns, side yards, and curb verge strip
+    emitGrassFurShells(m, -7.45, -0.58, -0.82, 1.98, () => 0.0, params, 4, 2.0)
+    emitGrassFurShells(m, 0.82, -0.58, 7.45, 1.98, () => 0.0, params, 4, 2.0)
+    emitGrassFurShells(m, -11.4, -6.5, -10.55, 1.98, () => 0.0, params, 4, 2.2)
+    emitGrassFurShells(m, 7.55, -6.5, 11.4, 1.98, () => 0.0, params, 4, 2.2)
+    emitGrassFurShells(m, -7.4, 3.34, -0.95, 3.74, () => 0.08, params, 3, 2.0)
+    emitGrassFurShells(m, 0.95, 3.34, 11.4, 3.74, () => 0.08, params, 3, 2.0)
+
+    // Dense 3D curved grass tufts emerging above the fur carpet
     const clumps = scatterGrassClumps({
       seed: seed ^ 0x453a,
-      bounds: [-10.8, -0.60, 10.8, 1.92],
-      clusterCount: 115,
-      tuftsPerCluster: 4,
+      bounds: [-11.0, -0.62, 11.0, 1.94],
+      clusterCount: 165,
+      tuftsPerCluster: 5,
       params,
       avoid: (gx, gz) =>
-        (gx > -0.92 && gx < 0.92 && gz > -1.5) ||
+        (gx > -0.88 && gx < 0.88 && gz > -1.5) ||
         (gx < -7.75 && gx > -10.55) ||
-        Math.hypot(gx + 5.4, gz - 0.55) < 0.32 ||
-        Math.hypot(gx - 5.4, gz - 0.55) < 0.32 ||
-        Math.hypot(gx - 2.4, gz - 0.85) < 0.28 ||
-        noise2(gx * 0.48 + 2.1, gz * 0.48 + 5.3) < 0.34,
+        Math.hypot(gx + 5.4, gz - 0.55) < 0.30 ||
+        Math.hypot(gx - 5.4, gz - 0.55) < 0.30 ||
+        Math.hypot(gx - 2.4, gz - 0.85) < 0.26,
     })
     for (const c of clumps) {
       emitGrassTuft(m, c.x, 0.0, c.z, {
-        bladeCount: c.blades,
-        radius: c.radius * 1.15,
-        height: c.height * 1.08,
-        width: c.width * 1.08,
+        bladeCount: c.blades + 1,
+        radius: c.radius * 1.18,
+        height: c.height * 1.14,
+        width: c.width * 1.12,
         curvature: c.curvature,
         leanAngle: c.leanAngle,
         rootColor: c.rootColor,
@@ -678,6 +712,9 @@ function buildSwatchFoliageMesh(seed: number, params: Readonly<FoliageParams>, i
   buildFoliageTree(m, 0, -0.35, params.treeHeight, params.crownRadius, seed * 31 + 7, 0.015, params)
   buildFoliageTree(m, -2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
   buildFoliageTree(m, 2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
+
+  // 4-layer volumetric grass fur shells across the swatch pad
+  emitGrassFurShells(m, -5.0, -3.6, 5.0, 2.55, () => 0.0, params, 4, 2.0)
 
   const grassRng = new Rng(seed ^ 0x51a9)
   const clumps = scatterGrassClumps({
@@ -825,7 +862,7 @@ export function createFoliage(context: LabContext): LabSection {
     },
     primitive: { topology: "triangle-list", cullMode: "none" },
     depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less-equal" },
-    multisample: { count: 4 },
+    multisample: { count: 4, alphaToCoverageEnabled: true },
   })
 
   const uploadPackedMesh = (packed: ArrayBuffer, prev?: { buf: GPUBuffer; count: number }) => {

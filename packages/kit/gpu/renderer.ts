@@ -270,17 +270,18 @@ export class Renderer {
     const scene = this.module(shaders?.scene ?? sceneShader(), "scene")
     const baselineScene = shaders ? scene : this.module(sceneShader(false), "scene baseline")
     const sprite = this.module(shaders?.sprite ?? spriteShader(), "sprite")
-    const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false) =>
+    const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false, alphaToCoverage = false) =>
       d.createRenderPipeline({
         layout,
         vertex: { module, entryPoint: vs, buffers },
         fragment: { module, entryPoint: fs, targets: [{ format: HDR, blend }, ...(motion ? [{ format: HDR, blend: blend ? premul : undefined }] : [])] },
         primitive: { topology: "triangle-list", cullMode },
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
-        multisample: { count: SAMPLES },
+        multisample: { count: SAMPLES, alphaToCoverageEnabled: alphaToCoverage && !blend && !motion },
       })
-    this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
-    this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
+    const useA2C = Boolean(shaders)
+    this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid", false, useA2C)
+    this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs", false, useA2C)
     this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", "fs")
     this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
     this.pipes.instAlpha = pipe(scene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")

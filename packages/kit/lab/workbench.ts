@@ -18,10 +18,12 @@ import {
   FOLIAGE_PRESET_IDS,
   exportFoliagePreset,
   foliageSettings,
+  foliageTextureUrls,
   importFoliagePreset,
   isFoliagePresetId,
   randomizeFoliageParams,
   resetFoliageParams,
+  setFoliageTextureUrls,
   type FoliageCameraMode,
   type FoliageCompareMode,
 } from "../gpu/foliage"
@@ -2023,6 +2025,30 @@ export function createWorkbench(opts: WorkbenchOptions) {
           exported,
           json: JSON.stringify(exported, null, 2),
         }
+      },
+    },
+    {
+      id: "foliage.textures",
+      label: "Bind Foliage & Grass Texture Maps",
+      shortLabel: "Foliage Textures",
+      category: "Preset",
+      undoable: false,
+      args: {
+        grassAlbedo: { type: "string", description: "URL/path for grass & soil albedo texture" },
+        grassNormal: { type: "string", description: "URL/path for grass & soil detail normal map" },
+        barkAlbedo: { type: "string", description: "URL/path for bark albedo/normal texture" },
+        leafAtlas: { type: "string", description: "URL/path for brushy leaf-cluster RGBA atlas" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        setFoliageTextureUrls({
+          grassAlbedo: typeof args?.grassAlbedo === "string" ? args.grassAlbedo : undefined,
+          grassNormal: typeof args?.grassNormal === "string" ? args.grassNormal : undefined,
+          barkAlbedo: typeof args?.barkAlbedo === "string" ? args.barkAlbedo : undefined,
+          leafAtlas: typeof args?.leafAtlas === "string" ? args.leafAtlas : undefined,
+        })
+        void renderNow()
+        return { textures: { ...foliageTextureUrls } }
       },
     },
   ])

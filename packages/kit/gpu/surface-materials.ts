@@ -537,6 +537,7 @@ export const surfaceMaterialCoreWgsl = /* wgsl */ `
 var<private> surfaceFootprint: f32;
 var<private> surfaceTime: f32;
 var<private> surfaceNormalShift: vec3f;
+var<private> surfaceAlpha: f32;
 
 struct MaterialRecipe {
   u0: vec4f, // baseR, baseG, baseB, roughness
@@ -884,25 +885,26 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   let clumpField = c0 * 0.56 + c1 * 0.44;
   let overgrownMask = smoothstep(0.34, 0.72, clumpField);
 
-  // 2. Multi-scale impostor blade-tuft micro-relief (1 analytical gradient sample + band-limited blade ridge)
-  let tuftMed = surfaceNoiseGrad(windUv * vec2f(2.6, 1.8) * gScale + vec2f(4.2, 7.1));
-  let bladeFreq = 7.8 * gScale;
-  let bladeAtten = 1.0 - smoothstep(0.06, 0.38, surfaceFootprint * bladeFreq * 0.12);
-  let bladeFine = (surfaceNoise(windUv * vec2f(bladeFreq, bladeFreq * 0.55) + vec2f(windWave * 0.35, 2.9)) - 0.5) * bladeAtten;
+  // 2. Multi-scale impostor blade-tuft micro-relief + high-frequency detail normal (visible at 34-46m AND close-up)
+  let tuftMed = surfaceNoiseGrad(windUv * vec2f(3.2, 2.2) * gScale + vec2f(4.2, 7.1));
+  let detailG = surfaceNoiseGrad(windUv * vec2f(14.5, 11.0) * gScale + vec2f(1.7, 8.3));
+  let bladeFreq = 26.0 * gScale;
+  let bladeAtten = 1.0 - smoothstep(0.04, 0.32, surfaceFootprint * bladeFreq * 0.08);
+  let bladeFine = (surfaceNoise(windUv * vec2f(bladeFreq, bladeFreq * 0.65) + vec2f(windWave * 0.35, 2.9)) - 0.5) * bladeAtten;
 
-  let tuftHeight = c1 * 0.36 + tuftMed.x * 0.38 + bladeFine * 0.34;
-  let bladeCrest = smoothstep(0.26, 0.74, tuftHeight + overgrownMask * 0.14);
+  let tuftHeight = c1 * 0.32 + tuftMed.x * 0.36 + (detailG.x - 0.5) * 0.28 + bladeFine * 0.32;
+  let bladeCrest = smoothstep(0.24, 0.72, tuftHeight + overgrownMask * 0.14);
   let rootThatch = 1.0 - smoothstep(0.18, 0.52, tuftHeight);
 
   // Deep sap-olive root thatch in crevices -> rich emerald mid-turf -> sunlit chartreuse/golden tips on crests
-  let deepRootTint = baseTint * vec3f(0.54, 0.68, 0.36);
-  let lushMidTint = baseTint * vec3f(0.92, 1.14, 0.64);
-  let sunlitTipTint = baseTint * vec3f(1.36, 1.48, 0.76);
-  let dryStrawTint = baseTint * vec3f(1.34, 1.14, 0.66);
+  let deepRootTint = baseTint * vec3f(0.48, 0.64, 0.32);
+  let lushMidTint = baseTint * vec3f(0.92, 1.16, 0.62);
+  let sunlitTipTint = baseTint * vec3f(1.38, 1.52, 0.76);
+  let dryStrawTint = baseTint * vec3f(1.34, 1.14, 0.64);
 
   let dryMix = smoothstep(0.46 - wear * 0.18, 0.80 - wear * 0.10, c0 * 0.65 + (1.0 - c1) * 0.35) * colVar * 0.78;
-  var turfCol = mix(deepRootTint, lushMidTint, smoothstep(0.16, 0.58, tuftHeight));
-  turfCol = mix(turfCol, sunlitTipTint, bladeCrest * (0.48 + 0.36 * overgrownMask));
+  var turfCol = mix(deepRootTint, lushMidTint, smoothstep(0.14, 0.56, tuftHeight));
+  turfCol = mix(turfCol, sunlitTipTint, bladeCrest * (0.52 + 0.36 * overgrownMask));
   turfCol = mix(turfCol, dryStrawTint, dryMix * (0.45 + 0.55 * bladeCrest));
 
   // Wind-driven value & lime-gold highlight waves that sweep visibly across the lawn at 34-46m
@@ -910,14 +912,15 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   turfCol = mix(turfCol, turfCol * vec3f(1.24, 1.28, 0.82), gustWave * 0.38);
 
   // Subtle damp loam in worn/low crevices without turning the lawn into bald mud
-  let soilMask = smoothstep(0.64 - wear * 0.20, 0.84 - wear * 0.10, 1.0 - clumpField) * rootThatch * macroVar;
+  let soilMask = smoothstep(0.66 - wear * 0.20, 0.86 - wear * 0.10, 1.0 - clumpField) * rootThatch * macroVar;
   let soilCol = vec3f(0.14, 0.13, 0.08) * (0.85 + 0.25 * c1);
-  let col = mix(turfCol, soilCol, soilMask * 0.42);
+  let col = mix(turfCol, soilCol, soilMask * 0.36);
 
-  // Perturb ground normal so raking sunlight, porch lights, and streetlamps model 3D tuft mounds from 42m
-  let normAtten = 1.0 - smoothstep(0.12, 0.75, surfaceFootprint);
-  let nx = (tuftMed.y * 0.36 + bladeFine * 0.28 + windWave * 0.10) * normAtten;
-  let nz = (tuftMed.z * 0.36 + bladeFine * 0.22 + windWave * 0.06) * normAtten;
+  // High-frequency ground detail normal + tuft mound normal so the lawn never reads as a flat plane
+  let normAtten = 1.0 - smoothstep(0.14, 0.85, surfaceFootprint);
+  let detailAtten = 1.0 - smoothstep(0.05, 0.36, surfaceFootprint);
+  let nx = (tuftMed.y * 0.38 + detailG.y * 0.46 * detailAtten + bladeFine * 0.28 + windWave * 0.10) * normAtten;
+  let nz = (tuftMed.z * 0.38 + detailG.z * 0.46 * detailAtten + bladeFine * 0.22 + windWave * 0.06) * normAtten;
   surfaceNormalShift = vec3f(nx, 0.0, nz);
 
   let cavity = clamp(mix(0.56, 1.08, bladeCrest) * (0.84 + 0.16 * overgrownMask), 0.45, 1.05);
@@ -1044,9 +1047,25 @@ export const surfaceMaterial = /* wgsl */ `
       albedo = mix(vec3f(0.32, 0.30, 0.26), albedo * (0.8 + 0.35 * hash2(floor(q))), seam(q.x, 0.025, 4.0) * seam(q.y, 0.06, 11.76));
     }
     if (mat == 22) {
-      if (o.aux < -0.02) {
-        // Above the Grassland curved 3D grass blade: root contact AO, vascular vein striation,
-        // travelling wind-crest highlight shimmer (#c8e64a), and height-gated specular gloss.
+      surfaceAlpha = 1.0;
+      if (o.aux < -1.5) {
+        // Volumetric grass fur shell layer (aux = -(2.0 + shellT)): fuzzy multi-scale strand density & normal relief.
+        let shellT = clamp(-o.aux - 2.0, 0.0, 1.0);
+        let p = o.world.xz;
+        let cMound = surfaceNoise(p * 0.68 + vec2f(1.7, 4.3));
+        let tuftG = surfaceNoiseGrad(p * 4.2 + vec2f(3.1, 6.7));
+        let strand1 = surfaceNoise(p * 19.5 + vec2f(tuftG.x * 0.9, 2.3));
+        let strand2 = surfaceNoise(p * 38.0 + vec2f(7.4, 1.9));
+        let strandReach = (tuftG.x * 0.34 + strand1 * 0.40 + strand2 * 0.32) * (0.66 + 0.48 * cMound);
+        surfaceAlpha = clamp((strandReach - shellT * 0.76) * 3.8, 0.0, 1.0);
+        let rootAO = mix(0.38, 1.18, pow(shellT, 0.62));
+        let crestNoise = surfaceNoise(p * 0.30 + vec2f(surfaceTime * 0.28, surfaceTime * 0.16));
+        let crestHighlight = smoothstep(0.38, 0.68, crestNoise) * 0.38 * shellT;
+        albedo = mix(albedo * (0.90 + strand1 * 0.24), vec3f(0.54, 0.72, 0.18), crestHighlight) * rootAO;
+        gloss = vec2f(42.0, 0.24 * shellT);
+        n = normalize(n + vec3f(tuftG.y * 0.48, 0.0, tuftG.z * 0.48));
+      } else if (o.aux < -0.02) {
+        // Curved 3D grass blade: root contact AO, vascular vein striation, wind-crest highlight & feathered tip.
         let bladeT = clamp(-o.aux, 0.0, 1.0);
         let rootAO = mix(0.28, 1.0, smoothstep(0.0, 0.28, bladeT));
         let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.18;
@@ -1054,12 +1073,23 @@ export const surfaceMaterial = /* wgsl */ `
         let crestHighlight = smoothstep(0.40, 0.68, crestNoise) * 0.38 * bladeT;
         albedo = mix(albedo * (0.94 + vein), vec3f(0.54, 0.72, 0.18), crestHighlight) * rootAO * mix(0.84, 1.24, pow(bladeT, 0.62));
         gloss = vec2f(48.0, 0.30 * bladeT);
+        surfaceAlpha = clamp(1.42 - bladeT * 0.48, 0.52, 1.0);
       } else {
         let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
-        albedo = s.albedo * mix(0.76, 1.0, s.cavity);
+        albedo = s.albedo * mix(0.74, 1.0, s.cavity);
         gloss = s.gloss;
         n = normalize(n + surfaceNormalShift);
+        if (o.aux > 0.0) {
+          let cardEdge = clamp(o.aux, 0.0, 1.0);
+          let uv3 = vec2f(o.world.x + o.world.z * 0.73 + o.world.y * 0.41, o.world.y * 1.17 - o.world.x * 0.43 + o.world.z * 0.81);
+          let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
+          let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
+          let brushField = brush1 * 0.58 + brush2 * 0.42;
+          let edgeMask = smoothstep(0.015, 0.16, cardEdge);
+          surfaceAlpha = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+        }
       }
+      alpha = surfaceAlpha;
     }
     if (mat == 24) {
       albedo *= 0.84 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24;
