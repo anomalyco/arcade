@@ -247,10 +247,4 @@ export class TurretAudio {
     if (boomsFor(mixer()).play("missile", dist, 0.6)) return
     this.burst(mixer().noise.brown, "lowpass", 900, 80, 0.8 * distanceGain(dist, 60, 0.8), 0.005, 1, Math.min(3, dist / 343))
   }
-
-  /** Our rounds or a burst hit an enemy (a tick), or a kill. */
-  hit(kill = false): void {
-    if (!this.ctx) return
-    this.burst(mixer().noise.white, "highpass", kill ? 2500 : 4000, kill ? 1500 : 3000, kill ? 0.3 : 0.14, 0.001, kill ? 0.12 : 0.05)
-  }
 }
