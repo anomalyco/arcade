@@ -1134,37 +1134,37 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   let bladeCrest = smoothstep(0.24, 0.72, tuftHeight + overgrownMask * 0.14);
   let rootThatch = 1.0 - smoothstep(0.18, 0.52, tuftHeight);
 
-  // Deep dark forest-moss root thatch -> rich muted olive-weed mid-turf -> earthy sage-olive crests
-  let deepRootTint = baseTint * vec3f(0.24, 0.34, 0.18);
-  let lushMidTint = baseTint * vec3f(0.54, 0.68, 0.40);
-  let sunlitTipTint = baseTint * vec3f(0.78, 0.90, 0.50);
-  let dryStrawTint = baseTint * vec3f(0.76, 0.64, 0.36);
+  // Desaturated 70s/80s suburban olive-ochre-walnut turf: deep walnut-moss root thatch -> muted olive mid-turf -> dusty ochre crests
+  let deepRootTint = baseTint * vec3f(0.36, 0.40, 0.25);
+  let lushMidTint = baseTint * vec3f(0.72, 0.78, 0.50);
+  let sunlitTipTint = baseTint * vec3f(1.04, 1.02, 0.64);
+  let dryStrawTint = baseTint * vec3f(1.02, 0.84, 0.48);
 
-  let dryMix = smoothstep(0.38 - wear * 0.18, 0.74 - wear * 0.10, c0 * 0.65 + (1.0 - c1) * 0.35) * colVar * 0.78;
+  let dryMix = smoothstep(0.34 - wear * 0.18, 0.72 - wear * 0.10, c0 * 0.65 + (1.0 - c1) * 0.35) * colVar * 0.82;
   var turfCol = mix(deepRootTint, lushMidTint, smoothstep(0.14, 0.56, tuftHeight));
-  turfCol = mix(turfCol, sunlitTipTint, bladeCrest * (0.42 + 0.32 * overgrownMask));
-  turfCol = mix(turfCol, dryStrawTint, dryMix * (0.44 + 0.48 * bladeCrest));
+  turfCol = mix(turfCol, sunlitTipTint, bladeCrest * (0.44 + 0.34 * overgrownMask));
+  turfCol = mix(turfCol, dryStrawTint, dryMix * (0.48 + 0.48 * bladeCrest));
 
   // Broad dark weedy rosette patches & damp soil hollows (reusing c0/c1 to keep register count low)
   let weedPatch = smoothstep(0.34, 0.68, c1 * 0.65 + (1.0 - c0) * 0.35);
-  turfCol = mix(turfCol, baseTint * vec3f(0.34, 0.46, 0.22), weedPatch * 0.48);
+  turfCol = mix(turfCol, baseTint * vec3f(0.44, 0.48, 0.28), weedPatch * 0.46);
 
   let gustWave = smoothstep(0.34, 0.74, windCrest * 0.65 + c0 * 0.35) * (0.28 + 0.50 * overgrownMask);
-  turfCol = mix(turfCol, turfCol * vec3f(1.08, 1.12, 0.88), gustWave * 0.22);
+  turfCol = mix(turfCol, turfCol * vec3f(1.10, 1.08, 0.88), gustWave * 0.22);
 
   let macroPatch = surfaceNoise(p * 0.24 + vec2f(5.1, 2.7));
-  let macroShade = mix(0.64, 1.14, smoothstep(0.22, 0.78, macroPatch));
+  let macroShade = mix(0.68, 1.16, smoothstep(0.22, 0.78, macroPatch));
   let soilMask = smoothstep(0.44 - wear * 0.20, 0.76 - wear * 0.10, 1.0 - clumpField) * rootThatch * macroVar;
-  let soilCol = vec3f(0.012, 0.015, 0.008) * (0.82 + 0.25 * c1);
-  var col = mix(turfCol * macroShade, soilCol, soilMask * 0.58);
+  let soilCol = vec3f(0.022, 0.020, 0.013) * (0.85 + 0.25 * c1);
+  var col = mix(turfCol * macroShade, soilCol, soilMask * 0.52);
 
   // Scattered warm autumn fallen leaf flecks on the lawn and verge
   let leafCell = floor(p * 7.4);
   let leafHash = hash2(leafCell + vec2f(3.7, 7.9));
   let leafPatch = smoothstep(0.36, 0.68, c0 * 0.55 + macroPatch * 0.45);
   let leafMask = step(0.942, leafHash) * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
-  let leafCol = select(vec3f(0.13, 0.065, 0.018), vec3f(0.17, 0.10, 0.025), fract(leafHash * 19.3) > 0.5);
-  col = mix(col, leafCol, leafMask * 0.76);
+  let leafCol = select(vec3f(0.16, 0.095, 0.032), vec3f(0.21, 0.14, 0.045), fract(leafHash * 19.3) > 0.5);
+  col = mix(col, leafCol, leafMask * 0.78);
 
   // High-frequency ground detail normal + tuft mound normal so the lawn never reads as a flat plane
   let normAtten = 1.0 - smoothstep(0.14, 0.85, surfaceFootprint);
@@ -1173,7 +1173,7 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   let nz = (tuftMed.z * 0.38 + detailG.z * 0.46 * detailAtten + bladeFine * 0.22 + windWave * 0.06) * normAtten;
   surfaceNormalShift = vec3f(nx, 0.0, nz);
 
-  let cavity = clamp(mix(0.46, 0.98, bladeCrest) * (0.80 + 0.20 * overgrownMask), 0.38, 1.0);
+  let cavity = clamp(mix(0.48, 1.0, bladeCrest) * (0.82 + 0.18 * overgrownMask), 0.42, 1.0);
   let localRough = clamp(r.u0.w - gustWave * 0.10 - bladeCrest * 0.06, 0.48, 0.96);
   return SurfaceSample(col, roughnessToGloss(localRough, 0.04), localRough, cavity);
 }
@@ -1194,36 +1194,37 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   let hCluster = hash2(clusterCell.xz + vec2f(clusterCell.y * 3.7, 11.3)) - 0.5;
   let hHue = fract((hCluster + 0.5) * 13.7) - 0.5;
 
-  // Isotropic plan-oriented 3D domain-warped UV so top-down cameras see organic 4-7cm micro-leaves with zero vertical striping
-  let uv3 = world.xz * 1.35 + vec2f(world.y * 0.32 + n0 * 0.28, -world.y * 0.28 - n0 * 0.24);
-  let clusterG = surfaceNoiseGrad(uv3 * (8.5 * gScale) + vec2f(1.7, 6.3));
-  let bladeG = surfaceNoiseGrad(uv3 * (21.5 * gScale) + vec2f(clusterG.x * 0.7 + 5.4, 2.9));
-  let microLeaf = clusterG.x * 0.52 + bladeG.x * 0.48;
-  // Deep inter-leaf crevices carve each cluster into dozens of small individual leaves
-  let leafGap = 1.0 - smoothstep(0.28, 0.56, microLeaf);
+  // Isotropic plan-oriented 3D domain-warped UV for fine 3-5cm micro-leaves
+  let uv3 = world.xz * 1.65 + vec2f(world.y * 0.36 + n0 * 0.28, -world.y * 0.32 - n0 * 0.24);
+  let clusterG = surfaceNoiseGrad(uv3 * (11.5 * gScale) + vec2f(1.7, 6.3));
+  let bladeG = surfaceNoiseGrad(uv3 * (26.5 * gScale) + vec2f(clusterG.x * 0.7 + 5.4, 2.9));
+  let microLeaf = clusterG.x * 0.50 + bladeG.x * 0.50;
+  // Crisp inter-leaf crevices with a deep-but-not-crushed multi-bounce walnut-olive floor
+  let leafGap = 1.0 - smoothstep(0.26, 0.54, microLeaf);
   let leafPlate = smoothstep(0.46, 0.80, microLeaf);
 
   let topMask = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
   let heightLift = smoothstep(0.05, 1.2, fract(world.y * 0.55));
-  let puffCrown = pow(clamp(topMask * 0.68 + heightLift * 0.20 + (microLeaf - 0.48) * 0.44, 0.0, 1.0), 1.32);
-  let canopyLift = mix(0.22 - wear * 0.06, 1.46, puffCrown);
-  let warmTip = clamp((microLeaf - 0.45) + topMask * 0.35 - 0.10, -0.4, 0.55);
+  let puffCrown = pow(clamp(topMask * 0.66 + heightLift * 0.20 + (microLeaf - 0.48) * 0.42, 0.0, 1.0), 1.18);
+  let canopyLift = mix(0.48 - wear * 0.06, 1.38, puffCrown);
+  let warmTip = clamp((microLeaf - 0.45) + topMask * 0.35 - 0.08, -0.4, 0.58);
   let hueTint = vec3f(
-    1.0 + (hHue * 0.16 + warmTip * 0.18) * colVar,
+    1.0 + (hHue * 0.20 + warmTip * 0.22) * colVar,
     1.0 + (hHue * 0.08 + warmTip * 0.10) * colVar,
     1.0 - (hHue * 0.14 + warmTip * 0.16) * colVar
   );
-  var col = baseTint * hueTint * (0.90 + hCluster * 0.30 * colVar) * canopyLift;
-  col *= (1.0 - 0.68 * leafGap + 0.28 * leafPlate) * (1.0 + n0 * 0.20 * macroVar);
+  var col = baseTint * hueTint * (0.94 + hCluster * 0.30 * colVar) * canopyLift;
+  col *= (1.0 - 0.52 * leafGap + 0.26 * leafPlate) * (1.0 + n0 * 0.18 * macroVar);
+  col = max(col, baseTint * vec3f(0.26, 0.28, 0.20));
 
-  let leafBumpAtten = (1.0 - smoothstep(0.08, 0.55, surfaceFootprint)) * 0.46;
+  let leafBumpAtten = (1.0 - smoothstep(0.08, 0.55, surfaceFootprint)) * 0.48;
   surfaceNormalShift = vec3f(
     clusterG.y * 0.52 + bladeG.y * 0.48,
     (clusterG.z - bladeG.y) * 0.28,
     clusterG.z * 0.52 + bladeG.z * 0.48
   ) * leafBumpAtten;
 
-  let cavity = clamp(mix(0.36, 1.0, topMask) * (1.0 - 0.42 * leafGap), 0.20, 1.0);
+  let cavity = clamp(mix(0.54, 1.0, topMask) * (1.0 - 0.32 * leafGap), 0.38, 1.0);
   return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.05), r.u0.w, cavity);
 }
 
@@ -1435,23 +1436,23 @@ export const surfaceMaterial = /* wgsl */ `
         albedo *= mix(0.24, 0.94, clod) * mix(0.45, 0.92, shellT);
         n = normalize(n + vec3f(tuftG.y * 0.42, 0.0, tuftG.z * 0.42));
       } else if (o.aux < -0.02) {
-        // Curved 3D grass/weed blade: grounded root AO & muted dark olive-sage tip so blades blend into weedy turf
+        // Curved 3D grass/weed blade: grounded root AO & desaturated 70s olive-ochre tip
         let bladeT = clamp(-o.aux, 0.0, 1.0);
-        let rootAO = mix(0.22, 0.92, smoothstep(0.0, 0.36, bladeT));
+        let rootAO = mix(0.32, 0.96, smoothstep(0.0, 0.36, bladeT));
         let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.14;
         let crestNoise = surfaceNoise(o.world.xz * 0.32 + vec2f(surfaceTime * 0.28, surfaceTime * 0.16));
         let crestHighlight = smoothstep(0.44, 0.74, crestNoise) * 0.14 * bladeT;
-        albedo = mix(albedo * (0.86 + vein), vec3f(0.18, 0.28, 0.11), crestHighlight) * rootAO * mix(0.62, 0.94, pow(bladeT, 0.65));
+        albedo = mix(albedo * (0.90 + vein), vec3f(0.24, 0.26, 0.14), crestHighlight) * rootAO * mix(0.68, 0.98, pow(bladeT, 0.65));
       } else {
         let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
-        albedo = s.albedo * mix(0.42, 1.0, s.cavity);
+        albedo = s.albedo * mix(0.64, 1.0, s.cavity);
         n = normalize(n + surfaceNormalShift);
         if (o.aux > 0.0) {
-          let uv3 = o.world.xz * 1.35 + vec2f(o.world.y * 0.32, -o.world.y * 0.28);
+          let uv3 = o.world.xz * 1.65 + vec2f(o.world.y * 0.36, -o.world.y * 0.32);
           let billow1 = surfaceNoise(uv3 * 2.8 + vec2f(2.1, 4.7));
-          let brush1 = surfaceNoise(uv3 * 14.5 + vec2f(billow1 * 0.9 + 1.3, 4.7));
-          let leafCrevice = smoothstep(0.24, 0.70, brush1);
-          albedo *= mix(0.26, 1.18, leafCrevice) * (0.76 + 0.38 * billow1);
+          let brush1 = surfaceNoise(uv3 * 16.5 + vec2f(billow1 * 0.9 + 1.3, 4.7));
+          let leafCrevice = smoothstep(0.24, 0.72, brush1);
+          albedo *= mix(0.54, 1.18, leafCrevice) * (0.82 + 0.32 * billow1);
         }
       }
     } else if (mat == 24) {

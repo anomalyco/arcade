@@ -117,19 +117,19 @@ export type FoliagePresetDef = {
 
 const COMMON_GRASS_DEFAULTS = {
   grassDensity: 1.0,
-  bladeHeight: 0.30,
-  bladeWidth: 0.058,
-  bladeCurvature: 0.62,
+  bladeHeight: 0.20,
+  bladeWidth: 0.042,
+  bladeCurvature: 0.72,
   grassClumping: 0.82,
-  rootColorR: 0.12,
-  rootColorG: 0.20,
-  rootColorB: 0.08,
-  tipColorR: 0.30,
-  tipColorG: 0.43,
-  tipColorB: 0.19,
-  grassVariation: 0.62,
-  dryPatches: 0.28,
-  grassWind: 0.48,
+  rootColorR: 0.16,
+  rootColorG: 0.19,
+  rootColorB: 0.12,
+  tipColorR: 0.29,
+  tipColorG: 0.33,
+  tipColorB: 0.20,
+  grassVariation: 0.68,
+  dryPatches: 0.36,
+  grassWind: 0.44,
   distanceFade: 0.55,
 } as const
 
@@ -149,17 +149,17 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       clumpSize: 0.95,
       leafCardSize: 0.28,
       porosity: 0.35,
-      treeColorR: 0.19,
-      treeColorG: 0.30,
-      treeColorB: 0.14,
-      treeColorVariation: 0.62,
-      autumnMix: 0.18,
-      translucency: 0.26,
-      canopyAO: 0.78,
+      treeColorR: 0.27,
+      treeColorG: 0.31,
+      treeColorB: 0.19,
+      treeColorVariation: 0.66,
+      autumnMix: 0.42,
+      translucency: 0.28,
+      canopyAO: 0.64,
       normalSoftness: 0.90,
-      treeWindStrength: 0.26,
+      treeWindStrength: 0.24,
       treeWindFreq: 0.80,
-      treeWindGust: 0.42,
+      treeWindGust: 0.40,
       ...COMMON_GRASS_DEFAULTS,
     },
   },
@@ -872,9 +872,9 @@ function emitBoughCluster(
   flexBase: number,
 ): void {
   const domePivot: Point = [cx, cy - ry * 0.28, cz]
-  // Note: vertex colors are sRGB (raised to ^2.2 in vs), so 0.48 sRGB = 0.20 linear (deep green interior shadow, never pitch black)
-  const coreDark = Math.max(0.46, 0.72 - canopyAO * 0.32)
-  const midShade = Math.max(0.66, 0.88 - canopyAO * 0.24)
+  // Note: vertex colors are sRGB (raised to ^2.2 in vs), so 0.58 sRGB = 0.30 linear (deep uncrushed 70s olive-walnut shadow)
+  const coreDark = Math.max(0.56, 0.80 - canopyAO * 0.28)
+  const midShade = Math.max(0.76, 0.94 - canopyAO * 0.20)
   const deepCol = scaleRgb(base, coreDark)
   const midCol = scaleRgb(base, midShade)
   const sunlitCol = scaleRgb(base, 1.18)
@@ -994,7 +994,7 @@ export function buildFoliageTree(
     clamp01(params.treeColorB * (1 - treeToneShift * 0.12)),
   ]
   const varAmt = params.treeColorVariation
-  const autumn = clamp01(params.autumnMix * (isTree ? 0.85 + (Math.abs(seed * 7) % 5) * 0.12 : 0.45))
+  const autumn = clamp01(params.autumnMix * (isTree ? 0.85 + (Math.abs(seed * 7) % 5) * 0.12 : 0.72))
   const greenPalette: Rgb[] = [
     baseRgb,
     [
@@ -1003,27 +1003,27 @@ export function buildFoliageTree(
       clamp01(baseRgb[2] * (1 - 0.12 * varAmt)),
     ],
     [
-      clamp01(baseRgb[0] * (1 - 0.18 * varAmt)),
-      clamp01(baseRgb[1] * (1 - 0.14 * varAmt)),
-      clamp01(baseRgb[2] * (1 - 0.08 * varAmt)),
+      clamp01(baseRgb[0] * (1 - 0.14 * varAmt)),
+      clamp01(baseRgb[1] * (1 - 0.12 * varAmt)),
+      clamp01(baseRgb[2] * (1 - 0.06 * varAmt)),
     ],
     [
-      clamp01(baseRgb[0] * (1 + 0.28 * varAmt)),
-      clamp01(baseRgb[1] * (1 + 0.14 * varAmt)),
-      clamp01(baseRgb[2] * (1 - 0.16 * varAmt)),
+      clamp01(baseRgb[0] * (1 + 0.26 * varAmt)),
+      clamp01(baseRgb[1] * (1 + 0.12 * varAmt)),
+      clamp01(baseRgb[2] * (1 - 0.14 * varAmt)),
     ],
     [
-      clamp01(baseRgb[0] * (1 - 0.10 * varAmt)),
-      clamp01(baseRgb[1] * (1 - 0.06 * varAmt)),
+      clamp01(baseRgb[0] * (1 - 0.08 * varAmt)),
+      clamp01(baseRgb[1] * (1 - 0.05 * varAmt)),
       clamp01(baseRgb[2] * (1 + 0.06 * varAmt)),
     ],
   ]
   const autumnPalette: Rgb[] = [
-    [0.52, 0.36, 0.14],
-    [0.58, 0.28, 0.13],
-    [0.44, 0.40, 0.15],
-    [0.62, 0.42, 0.15],
-    [0.36, 0.32, 0.14],
+    [0.44, 0.36, 0.20],
+    [0.48, 0.32, 0.18],
+    [0.38, 0.35, 0.20],
+    [0.50, 0.40, 0.21],
+    [0.34, 0.30, 0.18],
   ]
   const palette: Rgb[] = greenPalette.map((gCol, idx) => {
     const aWeight = clamp01(autumn * (idx % 2 === 0 ? 1.15 : 0.72))
