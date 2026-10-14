@@ -9,6 +9,11 @@ secondary action shown simultaneously in the floating object prompt (open/close 
 `Space` vaults fences or climbs through open windows. On-screen prompts adapt to the user's keyboard layout
 (`navigator.keyboard.getLayoutMap()`). Backquote opens the shared Lab.
 
+Action feedback appears above the survivor's head (`src/hud/`): reload, search and barricade show a progress ring,
+loot pops float up, and warnings, damage and loud noises get their own colours. The hotbar sits at the bottom centre
+and a one-line time and ammo summary sits top left. The Lab's HUD group sets callout size, offset, duration and stack
+depth, and can switch back to the old bottom-left status log.
+
 The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
 shared-material work, actual comparison captures, seven paired cost runs and remaining visual gaps.
 
@@ -38,6 +43,7 @@ bun install --frozen-lockfile
 sh games/outbreak/scripts/check-workspace.sh
 hivemind run --fetch captures/outbreak-m1 -- bun games/outbreak/scripts/prove.ts
 python3 games/outbreak/scripts/sheet.py
+(cd games/outbreak && bun scripts/hud-proof.ts)   # callout stills and per-frame HUD cost in captures/outbreak-hud
 ```
 
 The Metal proof uses the built production bundle and six real screenshots. It checks blocked/revealed/explored

@@ -45,6 +45,7 @@ import {
   resolveLampLight,
 } from "./lighting"
 import { Survivor } from "./survivor"
+import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
 import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
 import { shaders } from "./shaders"
@@ -85,6 +86,7 @@ const settings = {
   ...DEFAULT_FLASHLIGHT_TUNING,
   ...DEFAULT_GROUND_SETTINGS,
   ...zombieTuning,
+  ...DEFAULT_HUD_SETTINGS,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -98,6 +100,8 @@ async function main() {
   const batteryEl = document.querySelector<HTMLElement>("#battery")
   const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
   const hotbarEl = document.querySelector<HTMLElement>("#hotbar")
+  const hud = new OutbreakHud(document.body, settings)
+  hud.avoid(promptEl)
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
     return
@@ -225,6 +229,7 @@ async function main() {
       ],
     },
     ...zombieControls,
+    ...hudControls,
     {
       key: "diagnostic",
       label: "Contribution",
@@ -439,6 +444,7 @@ async function main() {
     },
     (key) => {
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
+      if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
       if (key === "zombieCount") {
         session.ai.config.zombieCount = settings.zombieCount
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
@@ -704,6 +710,7 @@ async function main() {
     zombieCrowd.reset()
     combatFx.reset()
     ambientMotion.reset()
+    hud.reset()
     level()
     scenery = new SceneryMemory()
     renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -778,12 +785,19 @@ async function main() {
       const label = item
         ? `${esc(item.shortLabel)}${item.kind === "flashlight" ? ` (${esc(fKey)})` : item.count && item.count > 1 ? ` ×${item.count}` : ""}`
         : "—"
-      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
+      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!item}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
     }).join("")
+  }
+  const syncStatus = () => {
+    if (hud.logMode) status.textContent = formatStatus()
+    else {
+      const summary = hud.summary(session.view)
+      if (summary !== null) status.textContent = summary
+    }
   }
   onKeyLayoutChange(() => {
     lastHotbarKey = ""
-    status.textContent = formatStatus()
+    syncStatus()
     syncWorldPrompt(innerWidth, innerHeight)
     syncHotbar()
   })
@@ -1101,7 +1115,8 @@ async function main() {
       batteryEl.style.opacity =
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
-    status.textContent = formatStatus()
+    hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker)
+    syncStatus()
     syncWorldPrompt(w, h)
     syncHotbar()
     const meterNow = performance.now()
@@ -1239,6 +1254,8 @@ async function main() {
       },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
+    callouts: () =>
+      hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     reset,
     freeze: (value = true) => {
       frozen = value
@@ -1268,6 +1285,7 @@ async function main() {
         ;(settings as Record<string, unknown>)[key] = value
       }
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
+      if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
       if (key === "zombieCount") {
         session.ai.config.zombieCount = Number(settings.zombieCount)
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
