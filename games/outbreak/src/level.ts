@@ -1,6 +1,6 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
-import { CHUNK, SIZE, BUILDING_RECTS, frontageEnd, propShape, type Town, type Prop } from "../shared/map"
+import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
@@ -117,7 +117,7 @@ function compileLevel(town: Town): LevelData {
   const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
   for (let z=0;z<SIZE;z++) for(let x=0;x<SIZE;x++) {
-    if((x>=40&&x<48)||(z>=40&&z<48)||town.buildings.some(b=>x>=b.rect[0]&&x+1<=b.rect[2]&&z>=b.rect[1]&&z+1<=b.rect[3]))continue
+    if((x>=40&&x<48)||(z>=40&&z<48)||town.buildings.some(b=>buildingFootprint(b).some(f=>x>=f[0]&&x+1<=f[2]&&z>=f[1]&&z+1<=f[3])))continue
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
     m.facet(a,c,b,hex(0x586044),MAT.ground,0); m.facet(a,d,c,hex(0x586044),MAT.ground,0)
   }
@@ -184,7 +184,9 @@ function compileLevel(town: Town): LevelData {
   }
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
-    floor(m, x, z, r, end, .13, b.kind === "house" ? 0x765a3e : 0x89968b, b.kind === "house" ? 2 : 1)
+    for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
+      floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x765a3e : 0x89968b, b.kind === "house" ? 2 : 1)
+    }
     floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x847f73, 6)
     floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x8a8579,6)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
@@ -334,17 +336,23 @@ function compileLevel(town: Town): LevelData {
       }
       let customId = -1
       let strictlyInsideCutout = false
+      const strictlyInsideHouse = (id: number, minX: number, maxX: number, minZ: number, maxZ: number) => {
+        const b = BUILDING_RECTS[id]!
+        if (id >= 2) return minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
+        const inSouth = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + 5.65 && maxZ < b[3] + 1.65
+        const inNorth = minX > b[0] + 2.25 && maxX < b[0] + 9.25 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
+        return inSouth || inNorth
+      }
       if (hasRoof) {
         const id = Math.max(0, Math.min(BUILDING_RECTS.length - 1, Math.round(source.v[i + 10]!)))
-        const b = BUILDING_RECTS[id]!
         customId = id
-        strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
+        strictlyInsideCutout = strictlyInsideHouse(id, minX, maxX, minZ, maxZ)
       } else if (maxY > 2.8 && !hasFoliage) {
         for (let id = 0; id < BUILDING_RECTS.length; id++) {
           const b = BUILDING_RECTS[id]!
           if (maxX > b[0] + .25 && minX < b[2] - .25 && maxZ > b[1] + .25 && minZ < b[3] + 1.65) {
             customId = id
-            strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65 && minY > 2.801
+            strictlyInsideCutout = strictlyInsideHouse(id, minX, maxX, minZ, maxZ) && minY > 2.801
             break
           }
         }
@@ -393,7 +401,7 @@ function compileLevel(town: Town): LevelData {
   const furnitureContacts=town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})
   for (let z = 0; z < resolution; z++) for (let x = 0; x < resolution; x++) {
     const px=(x+.5)*scale,pz=(z+.5)*scale
-    const indoor = town.buildings.some(b => px >= b.rect[0] && px < b.rect[2] && pz >= b.rect[1] && pz < b.rect[3])
+    const indoor = town.buildings.some(b => inBuildingFootprint(b, px, pz))
     let contact=0
     for(const wall of town.barriers) if(wall.kind!=="fence") contact=Math.max(contact,Math.exp(-distToRect(px,pz,wall.rect)*4)*.8)
     for(const p of town.props) {

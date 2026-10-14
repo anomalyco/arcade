@@ -40,13 +40,27 @@ fn houseRect(id: i32) -> vec4f {
   }
 }
 fn interior(p:vec2f) -> bool {
-  if (p.x < 21.25 || p.x > 72.75 || p.y < 23.25 || p.y > 67.75 || (p.x > 36.75 && p.x < 53.25) || (p.y > 37.75 && p.y < 54.25)) { return false; }
-  for(var i=0;i<4;i++) { let b=houseRect(i); if(all(p>b.xy+0.25)&&all(p<b.zw-0.25)){return true;} }
-  return false;
+  if (p.x < 21.22 || p.x > 72.78 || p.y < 23.22 || p.y > 67.78 || (p.x > 36.78 && p.x < 53.22) || (p.y > 37.78 && p.y < 54.22)) { return false; }
+  if (p.x < 45.0) {
+    let b = select(vec4f(22.0, 24.0, 37.0, 35.5), vec4f(21.0, 54.0, 36.0, 65.5), p.y > 45.0);
+    let south = p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22;
+    let north = p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72;
+    return south || north;
+  }
+  let s = select(vec4f(53.0, 23.0, 73.0, 38.0), vec4f(53.0, 54.0, 72.0, 68.0), p.y > 45.0);
+  return all(p > s.xy + 0.22) && all(p < s.zw - 0.22);
 }
 fn roofCut(p:vec3f, id:i32) -> bool {
   let b=houseRect(id);
-  return all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&p.x>b.x+0.35&&p.x<b.z-0.35&&p.z>b.y+0.35&&p.z<b.w+1.65;
+  if (F.eye.x < b.x - 0.1 || F.eye.x > b.z + 0.1 || F.eye.y < b.y - 0.1 || F.eye.y > b.w + 0.1) { return false; }
+  if (id < 2) {
+    let eyeIn = F.eye.y > b.y + 5.4 || (F.eye.x > b.x + 1.9 && F.eye.x < b.x + 9.6);
+    if (!eyeIn) { return false; }
+    let south = p.x > b.x + 0.35 && p.x < b.z - 0.35 && p.z > b.y + 5.65 && p.z < b.w + 1.65;
+    let north = p.x > b.x + 2.25 && p.x < b.x + 9.25 && p.z > b.y + 0.35 && p.z < b.y + 5.85;
+    return south || north;
+  }
+  return p.x>b.x+0.35&&p.x<b.z-0.35&&p.z>b.y+0.35&&p.z<b.w+1.65;
 }
 fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - F.eye.xy;

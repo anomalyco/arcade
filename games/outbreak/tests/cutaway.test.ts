@@ -43,5 +43,5 @@ test("every roof or high interior triangle is routed to its building's custom cu
   expect(opaque).toBeGreaterThan(0)
   expect(screen).toBeGreaterThan(0)
   expect(cut).toBeGreaterThan(0)
-  expect(opaque + screen + cut + level.glass.reduce((n, c) => n + c.data.byteLength / 24, 0)).toBe(169881)
+  expect(opaque + screen + cut + level.glass.reduce((n, c) => n + c.data.byteLength / 24, 0)).toBe(172755)
 })

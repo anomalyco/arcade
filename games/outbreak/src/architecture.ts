@@ -173,22 +173,41 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   const trim=rgb(0xd4d2c8),roof=rgb(0x3d4758),brick=rgb(0x684339)
   if(b.kind!=="house"){m.box(x-.15,2.8,z-.15,r+.15,2.94,e+.15,rgb(0x555a54),MAT.roof,id);return}
   const slopeY = (pz: number) => 2.88 + (ridge - 2.88) * (1 - Math.abs(pz - mid) / (mid - (z - .42)))
-  const xCuts = [x - .42, x + .36, r - .36, r + .42]
-  for (const [z0, z1] of [[e + .42, e - .36], [e - .36, mid], [mid, z + .36], [z + .36, z - .42]] as const) {
+  // Front roof slope (mid .. e+.42) spans full width; north slope steps in at x+9.5 and r-1.6 to match the L-shaped plan.
+  const xCutsFront = [x - .42, x + .36, r - .36, r + .42]
+  for (const [z0, z1] of [[e + .42, e - .36], [e - .36, mid]] as const) {
     const y0 = slopeY(z0), y1 = slopeY(z1)
     for (let xi = 0; xi < 3; xi++) {
-      const x0 = xCuts[xi]!, x1 = xCuts[xi + 1]!
+      const x0 = xCutsFront[xi]!, x1 = xCutsFront[xi + 1]!
       m.quadAuto([x0, y0, z0], [x1, y0, z0], [x1, y1, z1], [x0, y1, z1], roof, MAT.roof, id)
     }
   }
-  for(const px of [x-.01,r+.01])m.facet([px,2.8,z],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
-  m.box(x-.45,2.68,z-.42,r+.45,2.86,z-.31,trim,MAT.roof,id)
+  const xCutsBack = [x + 1.85, x + 2.35, x + 9.15, x + 9.75]
+  for (const [z0, z1] of [[mid, z + .36], [z + .36, z - .42]] as const) {
+    const y0 = slopeY(z0), y1 = slopeY(z1)
+    for (let xi = 0; xi < 3; xi++) {
+      const x0 = xCutsBack[xi]!, x1 = xCutsBack[xi + 1]!
+      m.quadAuto([x0, y0, z0], [x1, y0, z0], [x1, y1, z1], [x0, y1, z1], roof, MAT.roof, id)
+    }
+  }
+  // Left roof wing alongside the west bedroom wall (x-.42 .. x+2.05, z+1.2 .. z+5.55), meeting the living room north wall cleanly
+  m.quadAuto([x-.42, 2.84, z+1.2], [x-.42, 2.84, z+5.55], [x+2.05, 3.48, z+5.55], [x+2.05, 3.48, z+1.2], roof, MAT.roof, id)
+  m.box(x-.45, 2.70, z+1.15, x+2.05, 2.85, z+1.26, trim, MAT.roof, id)
+  // Stepped north-east shingle roof wing (x+9.45 .. r-1.55, z+1.45 .. z+5.55) and kitchen north eave (r-1.60 .. r+.42, z+5.12 .. mid)
+  m.quadAuto([x+9.45, 3.46, z+5.55], [r-1.55, 3.46, z+5.55], [r-1.55, 2.84, z+1.45], [x+9.45, 2.84, z+1.45], roof, MAT.roof, id)
+  m.quadAuto([r-1.55, 3.46, z+5.55], [r-1.55, 2.84, z+5.15], [r-1.55, 2.84, z+1.45], [r-1.55, 3.46, z+5.55], roof, MAT.roof, id)
+  m.quadAuto([r-1.60, slopeY(mid), mid], [r+.42, slopeY(mid), mid], [r+.42, 2.84, z+5.12], [r-1.60, 2.84, z+5.12], roof, MAT.roof, id)
+  m.box(x+9.45, 2.70, z+1.38, r-1.50, 2.85, z+1.50, trim, MAT.roof, id)
+  m.box(r-1.62, 2.70, z+1.38, r-1.50, 2.85, z+5.18, trim, MAT.roof, id)
+  m.box(r-1.55, 2.70, z+5.08, r+.45, 2.85, z+5.20, trim, MAT.roof, id)
+  for(const px of [x-.01,r+.01])m.facet([px,2.8,z+5.5],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
+  m.box(x+1.75,2.68,z-.42,x+9.78,2.86,z-.31,trim,MAT.roof,id)
   m.box(x-.45,2.72,e+.34,r+.45,2.87,e+.44,trim,MAT.roof,id)
   // Dark soffit and half-round gutter read as a crisp eave border with trim fascia.
   m.box(x-.42,2.63,e+.02,r+.42,2.71,e+.40,rgb(0x282e38),MAT.roof,id)
   m.box(x-.48,2.76,e+.43,r+.48,2.83,e+.50,rgb(0x9da4b0),MAT.roof,id)
   for (let xi = 0; xi < 3; xi++) {
-    m.box(xCuts[xi]!, ridge - .04, mid - .1, xCuts[xi + 1]!, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
+    m.box(xCutsFront[xi]!, ridge - .04, mid - .1, xCutsFront[xi + 1]!, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
   }
   // Brick chimney on upper-right slope with stone cap, dark flue, and east-eave downspout.
   m.box(r-2.08,3.18,mid+.82,r-1.12,4.82,mid+1.78,rgb(0x7c483a),MAT.brick)
@@ -318,13 +337,16 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(r-5.00,.96,kz,r-1.38,1.68,kz+.04,rgb(0x9e8c6c),MAT.wall)
   m.box(r-5.00,1.72,kz,r-2.25,2.38,kz+.38,rgb(0x7c664c),MAT.timber)
   for(let i=0;i<4;i++)m.box(r-4.94+i*.67,1.76,kz+.38,r-4.35+i*.67,2.32,kz+.40,rgb(0x947b5c),MAT.timber)
-  // East-wall upper cupboards and framed art prints
+  // Potted plant in bedroom top-right corner beside the dresser
+  m.prism(x+8.95,z+.85,.17,.13,.13,.44,7,rgb(0x885238))
+  plant(m,x+8.95,z+.85,.62,.36,town.houseSeed+91,.40)
+  // East-wall upper cupboards and framed art prints (within the L-shaped bedroom & kitchen walls)
   m.box(r-.245,1.02,e-3.2,r-.23,1.67,e-.85,rgb(0x727d70),MAT.wall)
   m.box(r-.60,1.78,e-3.2,r-.25,2.37,e-1.2,rgb(0x7c664c),MAT.timber)
   for(let i=0;i<3;i++)m.box(r-.62,1.82,e-3.15+i*.64,r-.60,2.33,e-2.56+i*.64,rgb(0x947b5c),MAT.timber)
-  // Framed paintings on bedroom north wall, living room west wall, and kitchen east wall
-  for(let i=0;i<8;i++)m.box(r-3.7+i*.13,.3,z+.25,r-3.62+i*.13,.85,z+.42,rgb(0x87877a),MAT.wall)
-  for(const [px,pz] of [[x+4.1,z+.23],[x+6.2,z+.23],[r-3,e-.27]]){
+  // Framed paintings on bedroom north wall (x+2..x+9.5), living room west wall, and kitchen south wall
+  for(let i=0;i<6;i++)m.box(x+5.4+i*.13,.3,z+.25,x+5.48+i*.13,.85,z+.42,rgb(0x87877a),MAT.wall)
+  for(const [px,pz] of [[x+3.85,z+.23],[x+7.85,z+.23],[r-3,e-.27]]){
     m.box(px!-.52,1.28,pz!,px!+.52,1.98,pz!+.055,rgb(0x4e3d2c),MAT.wall)
     m.box(px!-.43,1.37,pz!+.056,px!+.43,1.89,pz!+.062,rgb(0x8c8872),MAT.wall)
   }
