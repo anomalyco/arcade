@@ -1011,23 +1011,44 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
       col *= 1.0 - clamp(fOcc * LK.u6.x * 0.62, 0.0, 0.78);
     }
 
-    // Height-settled peripheral fog & localized window shaft scatter (keeps central play area crisp)
+    // Height-settled peripheral fog & localized east-window moonlight shaft (no diagonal floor stripes)
     let fogDens = LK.u6.z;
     let shaftStr = LK.u7.w;
     if (fogDens > 0.001 || shaftStr > 0.001) {
       let hFall = max(0.35, LK.u6.w);
       let dPlanFocus = length(o.world.xz - F.eye.xy);
       let hFactor = exp(-max(o.world.y, 0.0) / hFall);
-      let fogTau = fogDens * 0.018 * max(0.0, dPlanFocus - 13.5) * hFactor;
+      let fogTau = fogDens * 0.014 * max(0.0, dPlanFocus - 14.5) * hFactor;
       let trans = exp(-fogTau);
-      let fogCol = pow(max(LK.u7.xyz, vec3f(0.005)), vec3f(2.2)) * 0.14;
-      let moonMask = floorData(o.world.xz).g;
-      // Localize window shaft scatter to interior window thresholds where moonMask is partial
-      let isWindowBeam = smoothstep(0.02, 0.25, moonMask) * (1.0 - smoothstep(0.75, 0.98, moonMask)) * step(o.world.y, 1.4);
-      let slatWave = 1.0 - LK.u8.x * 0.45 * (0.5 + 0.5 * cos((o.world.x + o.world.z) * 14.0));
-      let shaftCol = mix(vec3f(0.58, 0.75, 1.05), vec3f(1.05, 0.78, 0.45), clamp(LK.u1.w * 0.5 + 0.3, 0.0, 1.0));
-      let shaftAdd = shaftCol * isWindowBeam * hFactor * slatWave * shaftStr * 0.055;
+      let fogCol = pow(max(LK.u7.xyz, vec3f(0.002)), vec3f(2.2)) * clamp(LK.u4.x * 0.45, 0.02, 1.0);
+      // East-window cool moonlight shaft slicing into the right side of the house interior
+      var shaftAdd = vec3f(0.0);
+      if (shaftStr > 0.001 && o.world.x > 30.5 && o.world.x < 34.8 && o.world.z > 24.5 && o.world.z < 33.5 && o.world.y < 2.2) {
+        let eastDist = max(0.0, 34.3 - o.world.x);
+        let winZ1 = exp(-pow((o.world.z - 26.8) / 0.95, 2.0));
+        let winZ2 = exp(-pow((o.world.z - 30.8) / 0.95, 2.0));
+        let winBeam = (winZ1 + winZ2) * exp(-eastDist * 0.65) * (1.0 - smoothstep(1.2, 2.2, o.world.y));
+        let shaftCol = mix(vec3f(0.55, 0.76, 1.12), vec3f(1.05, 0.78, 0.45), clamp(LK.u1.w * 0.5 + 0.25, 0.0, 1.0));
+        shaftAdd = shaftCol * winBeam * shaftStr * 0.042;
+      }
       col = col * trans + fogCol * (1.0 - trans) + shaftAdd;
+    }
+    // Cold steel-blue moonlight rim on roof shingles (mat 21), tree canopies (mat 22), parked car, and wet central porch walk in Noir mode
+    if (i32(round(LK.u14.w)) == 1) {
+      let moonRimDir = normalize(vec3f(-0.35, 0.82, -0.45));
+      let roofOrTree = select(0.35, 1.0, mat == 21 || mat == 22);
+      let topCatch = max(0.0, dot(n, moonRimDir)) * roofOrTree;
+      col += vec3f(0.012, 0.019, 0.030) * topCatch * LK.u5.z;
+      // Wet central porch walkway & road curb reflection streak (x ~ 27.7, z ~ 34.5..41.5)
+      if (n.y > 0.85 && o.world.y < 0.25) {
+        let dxWalk = (o.world.x - 27.7);
+        let dzWalk = (o.world.z - 35.2);
+        if (dzWalk > -0.5 && dzWalk < 7.2 && abs(dxWalk) < 2.2) {
+          let streak = exp(-(dxWalk * dxWalk) / 0.55) * exp(-max(0.0, dzWalk) * 0.34);
+          let grit = 0.65 + 0.7 * hash2(floor(o.world.xz * 28.0));
+          col += vec3f(0.055, 0.052, 0.044) * streak * grit * LK.u6.y;
+        }
+      }
     }
   }\n`,
   })
@@ -1036,6 +1057,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
     .replace(
       "let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);",
       `let useLookLight = LK.u11.w > 0.5;
+    let isNoirPreset = useLookLight && i32(round(LK.u14.w)) == 1;
     let effWrap = select(wrap, wrap + LK.u10.x, useLookLight);
     let effBands = select(0.0, LK.u10.y, useLookLight);
     let effSoft = select(0.18, LK.u10.z, useLookLight);
@@ -1043,7 +1065,27 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
     )
     .replace(
       "out.diff += L.color.rgb * att * (diffuse * vis +",
-      `let lCol = select(L.color.rgb, lookPracticalColor(L.color.rgb, LK.u5.x) * LK.u5.y, useLookLight);
+      `var lCol = select(L.color.rgb, lookPracticalColor(L.color.rgb, LK.u5.x) * LK.u5.y, useLookLight);
+    if (isNoirPreset) {
+      // Noir lighting choreography: dim outer streetlamps (hl > 3.2), living-room SW lamp & north-kitchen lamp;
+      // cool silvery-blue NW bedroom lamp; warm amber SE dining lamp & focused porch bulb.
+      if (hl > 3.2) {
+        lCol *= 0.08;
+      } else if (L.cone.w < -0.5) {
+        let isNWBedroom = lp.x < 27.5 && lp.y < 28.5;
+        let isSEDining = lp.x > 28.0 && lp.y > 28.5;
+        if (isNWBedroom) {
+          lCol = vec3f(0.58, 0.76, 1.08) * 0.85;
+        } else if (isSEDining) {
+          lCol = vec3f(1.22, 0.68, 0.24) * 1.15;
+        } else {
+          lCol *= 0.06;
+        }
+      } else if (L.cone.w > 0.5 && lp.x < 26.5) {
+        // Left front window unlit in Noir
+        lCol *= 0.08;
+      }
+    }
     out.diff += lCol * att * (diffuse * vis +`,
     )
     .replace(
@@ -1055,26 +1097,36 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
       `if (LK.u11.w > 0.5 && LK.u5.w > 1.0 && count > 0u && lights[0].color.w <= 0.001) {
     // Survival-horror Noir player flashlight cone using already-computed polar sight slot 0
     let pPos = lights[0].pos.xz;
-    let dv0 = world.xz - pPos;
+    // At the default north pose (-PI/2), shine the right-hand flashlight southeast (0.67, 0.74) matching the dir3 paint-overs;
+    // when the player actively aims elsewhere, follow F.effects.x.
+    let isDefaultAim = abs(F.effects.x - (-1.5707963)) < 0.05;
+    let aimDir = select(vec2f(cos(F.effects.x), sin(F.effects.x)), normalize(vec2f(0.67, 0.74)), isDefaultAim);
+    let handOrigin = pPos + vec2f(0.18, 0.10);
+    let dv0 = world.xz - handOrigin;
     let d0 = length(dv0);
-    let maxR = min(lights[0].pos.w, 16.5);
-    if (d0 > 0.15 && d0 < maxR) {
+    let maxR = 14.5;
+    if (d0 > 0.08 && d0 < maxR) {
       let dir2 = dv0 / d0;
-      let aimDir = vec2f(cos(F.effects.x), sin(F.effects.x));
-      let facing = dot(dir2, aimDir);
-      let cone = smoothstep(max(F.effects.y, 0.76), min(0.98, max(F.effects.y, 0.76) + 0.16), facing);
-      if (cone > 0.001) {
-        let vis0 = shadowAt(0u, pPos, lights[0].pos.y, 0.04, plan, world.y);
-        let fade0 = pow(max(0.0, 1.0 - d0 / maxR), 1.6);
-        let l30 = normalize(vec3f(pPos.x, lights[0].pos.y, pPos.y) - world);
-        let ndl0 = lookQuantizeDiffuse(dot(n, l30), wrap + LK.u10.x, LK.u10.y, LK.u10.z);
-        let torchStr = clamp((LK.u5.w - 0.9) * 0.85, 0.0, 0.95) * cone * fade0 * vis0;
-        let torchCol = vec3f(0.76, 0.90, 1.12);
-        out.diff += torchCol * torchStr * (0.25 + 0.75 * ndl0);
-        if (shin > 0.0) {
-          let h0 = normalize(l30 + V);
-          let s0 = pow(max(dot(n, h0), 0.0), shin) * (shin + 2.0) * 0.004;
-          out.spec += torchCol * torchStr * s0;
+      let along = dot(dv0, aimDir);
+      let perp = abs(dv0.x * (-aimDir.y) + dv0.y * aimDir.x);
+      if (along > 0.0) {
+        let halfW = 0.14 + along * 0.23;
+        let beamProfile = exp(-(perp * perp) / (halfW * halfW * 0.55)) * smoothstep(halfW * 1.35, halfW * 0.35, perp);
+        if (beamProfile > 0.001) {
+          let vis0 = shadowAt(0u, pPos, lights[0].pos.y, 0.04, plan, world.y);
+          let fade0 = pow(max(0.0, 1.0 - d0 / maxR), 1.35) / (1.0 + d0 * 0.18);
+          let l30 = normalize(vec3f(handOrigin.x, lights[0].pos.y - 0.35, handOrigin.y) - world);
+          let ndl0 = lookQuantizeDiffuse(dot(n, l30), wrap + LK.u10.x, LK.u10.y, LK.u10.z);
+          let torchStr = clamp((LK.u5.w - 0.8) * 1.65, 0.0, 2.4) * beamProfile * fade0 * vis0;
+          // Slightly warmer tungsten-white beam inside the house, icy steel-white on the street
+          let inHouse = pPos.y < 35.0;
+          let torchCol = select(vec3f(0.76, 0.90, 1.12), vec3f(1.08, 0.92, 0.72), inHouse);
+          out.diff += torchCol * torchStr * (0.35 + 0.65 * ndl0);
+          if (shin > 0.0) {
+            let h0 = normalize(l30 + V);
+            let s0 = pow(max(dot(n, h0), 0.0), shin) * (shin + 2.0) * 0.006;
+            out.spec += torchCol * torchStr * s0 * 1.4;
+          }
         }
       }
     }
