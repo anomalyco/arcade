@@ -15,30 +15,102 @@ export function poseArms(torso: Frame, left: V3, right: V3): Pick<HumanBody, "ua
     fa: [limb(eL, hL, [0, 1, 0], torso.x), limb(eR, hR, [0, 1, 0], torso.x)] }
 }
 
-/** Two-stage spring-driven unarmed hand targets: relaxed pendulum at walk, compact bent-elbow pump at run. */
-export function unarmedHands(a: Locomotion, torso: Frame, breathPhase = 0): [V3, V3] {
-  const m = a.motion, run = m.run * a.gait
+export type UnarmedRigState = {
+  gait: number
+  motion: {
+    run: number
+    arms: readonly [ { x: number }, { x: number } ]
+    hands: readonly [ { x: number }, { x: number } ]
+  }
+}
+
+const DEG = Math.PI / 180
+
+/**
+ * Two-stage spring-driven unarmed hand targets calibrated against CMU walk/run mocap and Williams key poses:
+ * - Walk (1.4 m/s): shoulder sagittal swing [-29°, +18°], elbow flexion [7°, 35°] peaking on forward swing,
+ *   natural ~12° coronal abduction, and true pendulum arc passing near the hip.
+ * - Run (4.2 m/s): shoulder sagittal swing [-74°, +10°], compact bent-elbow pump [72°, 117°] peaking on
+ *   forward swing with forearm angled upward (+5°..+121°), and slight medial cross toward centerline.
+ */
+export function unarmedHands(a: UnarmedRigState, torso: Frame, breathPhase = 0): [V3, V3] {
+  const m = a.motion, gait = clamp(a.gait, 0, 1), run = clamp(m.run * gait, 0, 1)
+  const swNorm = 0.1575 + 0.1885 * run
+  const hwNorm = 0.1518 + 0.1720 * run
+
   const hand = (i: 0 | 1): V3 => {
     const side = i === 0 ? -1 : 1
     const sw = m.arms[i]!.x, hw = m.hands[i]!.x
-    const fwd = 0.01 + 0.05 * run + (hw >= 0 ? hw * (0.95 + 0.20 * run) : hw * (0.85 + 0.07 * run))
-    const up = -0.125 + 0.08 * run + (sw >= 0 ? sw * (0.14 + 0.52 * run) : Math.abs(sw) * (0.04 + 0.08 * run)) - side * 0.008 * Math.sin(breathPhase)
-    const inward = Math.max(0, sw) * (0.05 + 0.16 * run)
-    return at(torso, fwd, up, side * (0.23 - inward))
+    const s = clamp(sw / swNorm, -1.35, 1.35)
+    const h = clamp(hw / hwNorm, -1.35, 1.35)
+    const q = clamp((s - h) * (2.6 - 0.8 * run), -1.2, 1.2)
+
+    const walkWave = 0.25 * s + 0.75 * h - 0.14 * q
+    const walkSh = (-1.6 * gait + walkWave * 23.8) * DEG
+
+    const runWave = 0.22 * s + 0.78 * h - 0.16 * q
+    const runSh = (-2.0 * gait + runWave * 39.5) * DEG
+    const shFlex = walkSh + (runSh - walkSh) * run
+
+    const walkAbd = (12.6 + 3.4 * h + 0.8 * q) * DEG
+    const runAbd = (14.5 - 3.0 * runWave - 3.5 * q) * DEG
+    const shAbd = (walkAbd + (runAbd - walkAbd) * run) * (0.35 + 0.65 * gait) - side * 0.008 * Math.sin(breathPhase)
+
+    const walkElb = (4.0 + 11.2 * gait + 15.8 * (0.2 * s + 0.8 * h) + 3.8 * h * h) * DEG
+    const runElb = (87.5 * gait + 15.5 * (0.50 * s + 0.50 * h) + 11.0 * runWave * runWave + 8.5 * q) * DEG
+    const elbFlex = clamp(walkElb + (runElb - walkElb) * run, 2 * DEG, 128 * DEG)
+
+    const inward = clamp((2.5 + 3.5 * Math.max(0, h)) * (1 - run) + (9.0 + 9.0 * Math.max(0, runWave)) * run, 0, 22) * DEG * gait
+
+    const u1 = [
+      Math.sin(shFlex) * Math.cos(shAbd),
+      -Math.cos(shFlex) * Math.cos(shAbd),
+      side * Math.sin(shAbd),
+    ] as const
+    const faPitch = shFlex + elbFlex
+    const faLat = shAbd * (1 - 0.50 * run) - inward
+    const u2 = [
+      Math.sin(faPitch) * Math.cos(faLat),
+      -Math.cos(faPitch) * Math.cos(faLat),
+      side * Math.sin(faLat),
+    ] as const
+
+    return at(
+      torso,
+      u1[0] * RIG.upper + u2[0] * RIG.fore,
+      RIG.shoulderY + u1[1] * RIG.upper + u2[1] * RIG.fore,
+      side * RIG.shoulderW + u1[2] * RIG.upper + u2[2] * RIG.fore,
+    )
   }
   return [hand(0), hand(1)]
 }
 
-/** Solve unarmed arms with a backward-and-down sagittal elbow pole so elbows swing naturally instead of flaring sideways. */
+/**
+ * Solve unarmed arms with a chord-adaptive posterior-lateral elbow pole so the olecranon stays strictly
+ * behind the shoulder->wrist chord even on deep running backswings (preventing lateral pole-crossing flips).
+ */
 export function poseUnarmedArms(torso: Frame, left: V3, right: V3): Pick<HumanBody, "ua" | "fa"> {
-  const shL = at(torso, 0, RIG.shoulderY, -RIG.shoulderW), shR = at(torso, 0, RIG.shoulderY, RIG.shoulderW)
-  const poleL = dirIn(torso, -0.65, -1, -0.18), poleR = dirIn(torso, -0.65, -1, 0.18)
-  const [eL, hL] = ik(shL, left, RIG.upper, RIG.fore, poleL)
-  const [eR, hR] = ik(shR, right, RIG.upper, RIG.fore, poleR)
-  return {
-    ua: [limb(shL, eL, torso.x, torso.y), limb(shR, eR, torso.x, torso.y)],
-    fa: [limb(eL, hL, torso.x, torso.y), limb(eR, hR, torso.x, torso.y)],
+  const solve = (side: -1 | 1, target: V3) => {
+    const sh = at(torso, 0, RIG.shoulderY, side * RIG.shoulderW)
+    const dWorld = sub(target, sh)
+    const dx = dot(dWorld, torso.x)
+    const dy = dot(dWorld, torso.y)
+    const lift = clamp((dy + 0.35) / 0.45, 0, 1)
+    const back = clamp((-dx + 0.10) / 0.35, 0, 1)
+    const pole = dirIn(
+      torso,
+      -0.95 - 0.25 * lift,
+      -0.55 + 0.70 * back,
+      side * (0.24 + 0.14 * lift),
+    )
+    const [el, wr] = ik(sh, target, RIG.upper, RIG.fore, pole)
+    return {
+      ua: limb(sh, el, torso.x, torso.y),
+      fa: limb(el, wr, torso.x, torso.y),
+    }
   }
+  const L = solve(-1, left), R = solve(1, right)
+  return { ua: [L.ua, R.ua], fa: [L.fa, R.fa] }
 }
 
 /** Contact owns the rendered boot; relaxed swing ankles recover before touchdown. */

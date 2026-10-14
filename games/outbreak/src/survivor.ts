@@ -1,9 +1,9 @@
 import { Mesh, MAT } from "@arcade/kit/gpu/mesh"
 import { Renderer, type Batch } from "@arcade/kit/gpu/renderer"
-import { RIG, HIP, at, clamp, dirIn, emit, ik, limb, pitch, roll, spring, stepSpring, smoother, yawFrame, type V3, type PushPart } from "@arcade/kit/rig"
+import { RIG, HIP, at, clamp, dirIn, emit, ik, limb, pitch, roll, smooth, spring, stepSpring, smoother, yawFrame, type V3, type PushPart } from "@arcade/kit/rig"
 import { angleSpring } from "@arcade/kit/human-locomotion"
 import { profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
-import { poseArms, type BonePose } from "@arcade/kit/human-pose"
+import { poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
 import { angleDiff } from "@arcade/kit/sim/geom"
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
@@ -139,16 +139,22 @@ export class Survivor {
       const fdx = this.feet[1]!.p[0] - this.feet[0]!.p[0], fdz = this.feet[1]!.p[2] - this.feet[0]!.p[2]
       const footFwd = fdx * c + fdz * s
       stepSpring(this.twist, 160, .85, h, clamp(footFwd * .32, -.17, .17) * (profile?.twistScale ?? 1.2))
-      const armAmp = (.16 + .22 * runBlend) * (profile?.armSwing ?? 1) * moving
-      const footNorm = clamp(footFwd / .42, -1, 1)
-      const armSignal = footNorm * .35 - Math.cos(this.phase * Math.PI * 2 + .65) * .65 * moving
+      const gait = smooth((speed - .15) / .35)
+      const stride = (.7 + .22 * speed) * (profile?.strideScale ?? 1)
+      const footNorm = clamp(footFwd / Math.max(.35, stride * .44), -1, 1)
+      const armLead = .26 + 1.28 * runBlend
+      const phaseArm = -Math.cos(this.phase * Math.PI * 2 + armLead) * gait
+      const armSignal = speed > .2 ? footNorm * .25 + phaseArm * .75 : footNorm
+      const armAmp = (.16 + .22 * runBlend) * (profile?.armSwing ?? 1) * gait
       for (let i = 0; i < 2; i++) {
         const side = i === 0 ? -1 : 1
         stepSpring(this.arms[i]!, 2400, .85, h, -side * armSignal * armAmp)
         stepSpring(this.hands[i]!, 1600, .82, h, this.arms[i]!.x)
       }
     }
-    const runBlend = Math.max(0, Math.min(1, (Math.hypot(this.svx, this.svy) - 1.8) / 1.8))
+    const curSpeed = Math.hypot(this.svx, this.svy)
+    const gait = smooth((curSpeed - .15) / .35)
+    const runBlend = Math.max(0, Math.min(1, (curSpeed - 1.8) / 1.8))
     const footSupport = (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * .5
     const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - (.015 + .035 * runBlend) * moving - .025 * moving * Math.sin(this.phase * Math.PI * 4) - this.reachDrop.x
     const pelvis = roll(yawFrame([p.x, height, p.y], this.yaw + this.twist.x), Math.cos(this.phase * Math.PI * 2) * (.07 + .03 * (profile?.hipDrop ?? 0)) * moving)
@@ -171,7 +177,11 @@ export class Survivor {
         [rawHands[1][0] - torso.x[0] * lurch * .7, rawHands[1][1] - claw * .8, rawHands[1][2] - torso.x[2] * lurch * .7],
       ]
     }
-    const arms = hands ? poseArms(torso, ...hands) : null
+    const unarmed = poseUnarmedArms(
+      torso,
+      ...unarmedHands({ gait, motion: { run: runBlend, arms: this.arms, hands: this.hands } }, torso, time * 2),
+    )
+    const arms = hands ? poseArms(torso, ...hands) : unarmed
     this.bones = { pelvis, torso, head }
     this.batches.length = 0
     let index = 0
@@ -192,14 +202,7 @@ export class Survivor {
       const name = i === 0 ? "left" : "right"
       this.bones[`${name}.thigh`] = thigh; this.bones[`${name}.shin`] = shin; this.bones[`${name}.foot`] = boot
       draw(5, thigh); draw(6, shin); draw(7, boot)
-      const shoulder = at(torso, 0, RIG.shoulderY, side * RIG.shoulderW)
-      const sw = this.arms[i]!.x, hw = this.hands[i]!.x
-      const fwd = .01 + .05 * runBlend + (hw >= 0 ? hw * (.95 + .20 * runBlend) : hw * (.85 + .07 * runBlend))
-      const up = -.125 + .08 * runBlend + (sw >= 0 ? sw * (.14 + .52 * runBlend) : Math.abs(sw) * (.04 + .08 * runBlend)) - side * .01 * Math.sin(time * 2)
-      const inward = Math.max(0, sw) * (.05 + .16 * runBlend)
-      const hand = at(torso, fwd, up, side * (.23 - inward))
-      const [elbow, wrist] = ik(shoulder, hand, RIG.upper, RIG.fore, dirIn(torso, -.65, -1, side * .18))
-      const upper = arms?.ua[i] ?? limb(shoulder, elbow, torso.x, torso.y), fore = arms?.fa[i] ?? limb(elbow, wrist, torso.x, torso.y)
+      const upper = arms.ua[i]!, fore = arms.fa[i]!
       this.bones[`${name}.upperArm`] = upper; this.bones[`${name}.foreArm`] = fore
       draw(3, upper); draw(4, fore)
     }

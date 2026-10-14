@@ -532,4 +532,6 @@ test("walk (<=1.8 m/s) stays upright with level head and no crouch, and unarmed 
   expect(survChestPitch).toBeLessThan(18)
   expect(soldChestPitch).toBeGreaterThan(24)
   expect(survRun.body!.pelvis.p[1]).toBeGreaterThan(soldRun.body!.pelvis.p[1] + 0.04)
+  expect(survRun.body!.gun).toBeNull()
+  expect(soldRun.body!.gun).not.toBeNull()
 })

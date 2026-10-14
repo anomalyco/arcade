@@ -96,3 +96,15 @@ Open `/arcade/blackout/characters.html` (reachable from the Dev Hub top bar unde
 For scripted A/B fixtures, `anim.html?lab=1` retains `Profile walk`, `Three profiles` and `Detached forearm`. Production defaults remain the neutral soldier profile (`f5a333ae` New parity; `8223033` Old parity).
 
 `games/blackout/scripts/prove-characters.ts` and `games/blackout/scripts/prove-human.ts` exercise interactive possession, camera gestures, per-actor profiles, attachments, detach handoff and Lab input on headless Metal through Hivemind. Shared tests cover contact locking, asymmetry bounds, semantic IDs, attachment visibility and origin/offset motion. Blackout tests cover default/profile parity, dt spikes, missing limbs, weapon stability and corpse detachment. Visual proof and release-base results belong in `perf/human-rig.md`.
+
+## Pose diff workflow
+
+Use `@arcade/kit/pose-diff` and `games/blackout/scripts/pose-diff.ts` whenever tuning locomotion or limb IK:
+
+```bash
+bun games/blackout/scripts/pose-diff.ts --out /path/to/artifacts/pose-diff
+```
+
+1. **Deterministic orthographic line-rig sheets (`line-rig-*.png`)**: extracts the 19 canonical 3D joints (`extractBodyJoints` / `extractBonePoseJoints`), normalises hip height to `1` with the pelvis at the origin (`normalizeJoints`), and projects 8 and 16 evenly spaced gait phases (`Left Heel Strike -> Left Heel Strike`) in orthographic `side` and `front` views on a transparent background (left limbs blue, right limbs orange, spine/head white, weapon gold).
+2. **Joint-level reference poses (`parseBvh`, `extractBvhCycle`, `buildWilliamsReferenceCycle`)**: retargets CMU BVH mocap (`walk_normal_001.bvh`, `dataset-2_run_normal_001.bvh`) and Richard Williams (*Animator's Survival Kit*) key-pose angles (`Contact`, `Down`, `Passing`, `Up`) onto exact `RIG` link lengths via `jointsFromAngles`, phase-aligned at left heel strike.
+3. **Overlay, per-joint error vectors and cycle angle plots (`overlay-diff-*.png`, `overlay-compare-*.png`, `angles-*.png`, `paintover-overlay-*.png`)**: draws our line rig and torso box silhouette over the mocap/Williams references, renders per-joint error vectors with Δangle readouts, overlays before/after arm chains onto the ideal paint-over sheet, and plots shoulder sagittal flexion/extension, elbow flexion, forearm pitch, shoulder abduction, wrist trajectory relative to the hip, leg angles (`hip`, `knee`, `ankle`), and opposite-leg cross-correlation / phase lag (`pose-diff-summary.json`).

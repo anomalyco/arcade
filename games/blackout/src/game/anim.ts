@@ -6,7 +6,7 @@ import { animation } from "./anim-settings"
 import { angleSpring, locomotion, newMotion, pelvisPoint, stiffness } from "./anim-locomotion"
 import { bodyJoints } from "./anim-pose"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
-import { boneVisible, jointVelocities, poseArms, poseLegs, type BoneId, type HumanBody, type HiddenBones } from "@arcade/kit/human-pose"
+import { boneVisible, jointVelocities, poseArms, poseLegs, poseUnarmedArms, unarmedHands, type BoneId, type HumanBody, type HiddenBones } from "@arcade/kit/human-pose"
 import {
   type Frame,
   type PushPart,
@@ -835,7 +835,11 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
     handL = lerp3(handL, down, Math.sin(Math.PI * Math.min(1, pw * 1.3)))
   }
 
-  const { ua, fa } = poseArms(torso, handL, handR)
+  const useUnarmedSwing = Boolean(a.unarmed && enhanced && !clip && !a.bare && profile.handPose === "weapon")
+  if (useUnarmedSwing) {
+    ;[handL, handR] = unarmedHands(a, torso, t * 2)
+  }
+  const { ua, fa } = useUnarmedSwing ? poseUnarmedArms(torso, handL, handR) : poseArms(torso, handL, handR)
 
   // Head follows the aim, looks down at the gun while reloading.
   let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), a.aim + a.hitTwist.x * 1.6 + clamp(a.aimVel * 0.02, -0.25, 0.25))
@@ -872,7 +876,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   if (magState === "gun") mag = moved(gunF, at(gunF, pts.mag[0], pts.mag[1], pts.mag[2]))
   else if (magState === "hand") mag = moved(gunF, at(fa[0], 0, -RIG.fore - 0.02, 0))
   const pump = g === "shotgun" ? moved(gunF, at(gunF, pts.fore - pumpBack, 0.005, 0)) : null
-  if (a.bare || enhanced && profile.handPose !== "weapon") return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: null, pump: null, mag: null }
+  if (a.bare || useUnarmedSwing || enhanced && profile.handPose !== "weapon") return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: null, pump: null, mag: null }
   return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: gunF, pump, mag }
 }
 
