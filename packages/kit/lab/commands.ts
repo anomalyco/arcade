@@ -3,6 +3,22 @@ import type { LabWorldObject } from "./types"
 
 export type RadialSlot = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
 export type RadialContext = "object" | "ground"
+/** Glyphs the radial menu can draw next to a command's short label. */
+export type LabCommandIcon =
+  | "zap"
+  | "gamepad"
+  | "copy"
+  | "search"
+  | "trash"
+  | "reset"
+  | "move"
+  | "frame"
+  | "pin-plus"
+  | "user-plus"
+  | "light"
+  | "eraser"
+  | "shuffle"
+
 export type LabCommandCategory = "Mode" | "Transport" | "Scene" | "Compare" | "Object" | "Inspector" | "Preset" | "Camera" | "Navigation"
 
 export const RADIAL_COMPASS: readonly { slot: RadialSlot; compass: string; angle: number }[] = [
@@ -116,6 +132,7 @@ export type LabCommand<TArgs extends LabCommandArgs = LabCommandArgs> = {
   category: LabCommandCategory
   shortcut?: string
   accelerators?: readonly string[]
+  icon?: LabCommandIcon
   args?: LabCommandArgSchema
   /** Whether invoking this command should record an authored undo transaction when state mutates. */
   undoable?: boolean

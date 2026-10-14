@@ -194,10 +194,10 @@ async function main() {
       const d = drones.list.find((q) => q.id === id)
       const dist = d ? Math.hypot(d.plane.x - x, d.plane.z - z) : 0
       combat.gunHit(ME, id, Math.max(1, Math.round(7 / WEAPONS.gun.damage)), dist)
-      weaponAudio.hit(false)
+      driver.hud.hit(false)
     } else if (kind === "boat") {
       boats.hit(id, ME, team, "cannon", boatDamage("cannon"))
-      weaponAudio.hit(false)
+      driver.hud.hit(false)
     }
   }
   const relaunch = () => {
@@ -391,7 +391,7 @@ async function main() {
           const d = drones.list.find((q) => q.id === ev.on)
           if (d) {
             wfx.explosion(d.plane.x, d.plane.y, d.plane.z, d.plane.vx * 0.5, d.plane.vy * 0.5, d.plane.vz * 0.5, 1.4)
-            weaponAudio.hit(true)
+            driver.hud.hit(true)
             weaponAudio.explosion(Math.hypot(d.plane.x - camera.eye[0], d.plane.y - camera.eye[1], d.plane.z - camera.eye[2]), 1.2, "air-kill")
           }
         }
@@ -405,7 +405,7 @@ async function main() {
           if (e && e.dead < 0) {
             e.dead = 0
             fx.explode({ x: e.boat.x, z: e.boat.z, heave: e.boat.heave, heading: e.boat.heading, pitch: 0, roll: 0, u: e.boat.u, v: e.boat.v })
-            weaponAudio.hit(true)
+            driver.hud.hit(true)
             weaponAudio.explosion(Math.hypot(e.boat.x - camera.eye[0], e.boat.z - camera.eye[2]), 1, "missile")
           }
         }

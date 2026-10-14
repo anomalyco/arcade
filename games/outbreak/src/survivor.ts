@@ -75,11 +75,13 @@ export class Survivor {
       const sy = teleport ? p.y : prevY + (p.y - prevY) * uStep
       const k = 1 - Math.exp(-h * 14)
       const vx = this.svx + (p.vx - this.svx) * k, vy = this.svy + (p.vy - this.svy) * k
-      stepSpring(this.leanX, 90, .38, h, vx * .035 + (vx - this.svx) / h * .003)
-      stepSpring(this.leanY, 90, .38, h, vy * .035 + (vy - this.svy) / h * .003)
-      this.svx = vx; this.svy = vy
       const speed = Math.hypot(vx, vy)
       moving = Math.min(1, speed / 3.4)
+      const runBlend = Math.max(0, Math.min(1, (speed - 1.8) / 1.8))
+      const leanScale = 0.25 + 0.75 * runBlend
+      stepSpring(this.leanX, 90, .38, h, vx * .028 * leanScale + (vx - this.svx) / h * .003)
+      stepSpring(this.leanY, 90, .38, h, vy * .028 * leanScale + (vy - this.svy) / h * .003)
+      this.svx = vx; this.svy = vy
       let travel = speed > .35 ? Math.atan2(vy, vx) : p.aim
       if (Math.abs(angleDiff(travel, p.aim)) > 2.05) travel += Math.PI
       const want = p.aim + Math.max(-1.05, Math.min(1.05, angleDiff(travel, p.aim)))
@@ -117,15 +119,16 @@ export class Survivor {
           const midY = support((f.lift[0] + target[0]) * .5, (f.lift[2] + target[2]) * .5)
           const boost = Math.max(0, midY - Math.max(f.lift[1], target[1]))
           const px = f.lift[0] + (target[0] - f.lift[0]) * e, pz = f.lift[2] + (target[2] - f.lift[2]) * e
-          const py = Math.max(support(px, pz), f.lift[1] + (target[1] - f.lift[1]) * e + Math.sin(Math.PI * u) * ((.06 + .09 * moving) * clearance + boost))
+          const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
+          const py = Math.max(support(px, pz), f.lift[1] + (target[1] - f.lift[1]) * e + liftBell * ((.08 + .11 * moving) * clearance + boost))
           f.p = [px, py, pz]
           f.yaw += angleDiff(this.yaw, f.yaw) * e
         } else if (!f.planted) { f.planted = true; f.prevU = 0; f.p[1] = support(f.p[0],f.p[2]) }
       })
-      // Anticipatory support floor: blend root support with foot landing/planted heights (Lamplight arachnid/mod.rs:502)
-      const footSupport = (this.feet[0]!.p[1] + this.feet[1]!.p[1]) * .5
+      // Anticipatory support floor: blend root terrain support with foot terrain heights (never airborne swing height).
+      const footSupport = (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * .5
       const supportY = support(sx, sy) * .65 + footSupport * .35
-      const baseHeight = supportY + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
+      const baseHeight = supportY + HIP - .05 * moving - .025 * moving * Math.sin(this.phase * Math.PI * 4)
       let desiredDrop = 0
       for (const f of this.feet) {
         const distance = Math.min(.72, Math.hypot(f.p[0] - sx, f.p[2] - sy))
@@ -136,23 +139,25 @@ export class Survivor {
       const fdx = this.feet[1]!.p[0] - this.feet[0]!.p[0], fdz = this.feet[1]!.p[2] - this.feet[0]!.p[2]
       const footFwd = fdx * c + fdz * s
       stepSpring(this.twist, 160, .85, h, clamp(footFwd * .32, -.17, .17) * (profile?.twistScale ?? 1.2))
-      const armAmp = (.24 + .10 * moving) * (profile?.armSwing ?? 1) * moving
+      const armAmp = (.16 + .22 * runBlend) * (profile?.armSwing ?? 1) * moving
       const footNorm = clamp(footFwd / .42, -1, 1)
+      const armSignal = footNorm * .35 - Math.cos(this.phase * Math.PI * 2 + .65) * .65 * moving
       for (let i = 0; i < 2; i++) {
         const side = i === 0 ? -1 : 1
-        stepSpring(this.arms[i]!, 220, .85, h, -side * footNorm * armAmp)
-        stepSpring(this.hands[i]!, 150, .78, h, this.arms[i]!.x)
+        stepSpring(this.arms[i]!, 2400, .85, h, -side * armSignal * armAmp)
+        stepSpring(this.hands[i]!, 1600, .82, h, this.arms[i]!.x)
       }
     }
-    const footSupport = (this.feet[0]!.p[1] + this.feet[1]!.p[1]) * .5
-    const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4) - this.reachDrop.x
+    const runBlend = Math.max(0, Math.min(1, (Math.hypot(this.svx, this.svy) - 1.8) / 1.8))
+    const footSupport = (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * .5
+    const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - (.015 + .035 * runBlend) * moving - .025 * moving * Math.sin(this.phase * Math.PI * 4) - this.reachDrop.x
     const pelvis = roll(yawFrame([p.x, height, p.y], this.yaw + this.twist.x), Math.cos(this.phase * Math.PI * 2) * (.07 + .03 * (profile?.hipDrop ?? 0)) * moving)
     const ca = Math.cos(p.aim), sa = Math.sin(p.aim)
     const lean = this.leanX.x * ca + this.leanY.x * sa
     const sideLean = (-this.leanX.x * sa + this.leanY.x * ca) * (profile?.turnBank ?? 1)
     if (profile) { angleSpring(this.chest, p.aim - this.twist.x * .65, profile.chestHz, dt); angleSpring(this.head, p.aim, profile.headHz, dt) }
     const torsoYaw = profile ? this.chest.x : p.aim - this.twist.x * .65
-    let torso = roll(pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), torsoYaw), -.05 - lean - .14 * moving * (profile?.runPosture ?? .18)), sideLean * .75)
+    let torso = roll(pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), torsoYaw), -.05 - lean - .14 * runBlend * (profile?.runPosture ?? .18)), sideLean * .75)
     if (profile) torso = profileTorso(torso, profile)
     let head = pitch(yawFrame(at(torso, .02, RIG.neckY, 0), profile ? this.head.x : p.aim), lean * .35 * (profile?.headStability ?? .75))
     if (profile) head = roll(head, profile.headTilt)
@@ -189,9 +194,9 @@ export class Survivor {
       draw(5, thigh); draw(6, shin); draw(7, boot)
       const shoulder = at(torso, 0, RIG.shoulderY, side * RIG.shoulderW)
       const sw = this.arms[i]!.x, hw = this.hands[i]!.x
-      const fwd = .05 + (hw >= 0 ? hw * 1.15 : hw * .92) + .06 * moving
-      const up = -.09 + (sw >= 0 ? sw * (.36 + .24 * moving) : -sw * .12) + .04 * moving - side * .015 * Math.sin(time * 2)
-      const inward = Math.max(0, sw) * (.12 + .08 * moving)
+      const fwd = .01 + .05 * runBlend + (hw >= 0 ? hw * (.95 + .20 * runBlend) : hw * (.85 + .07 * runBlend))
+      const up = -.125 + .08 * runBlend + (sw >= 0 ? sw * (.14 + .52 * runBlend) : Math.abs(sw) * (.04 + .08 * runBlend)) - side * .01 * Math.sin(time * 2)
+      const inward = Math.max(0, sw) * (.05 + .16 * runBlend)
       const hand = at(torso, fwd, up, side * (.23 - inward))
       const [elbow, wrist] = ik(shoulder, hand, RIG.upper, RIG.fore, dirIn(torso, -.65, -1, side * .18))
       const upper = arms?.ua[i] ?? limb(shoulder, elbow, torso.x, torso.y), fore = arms?.fa[i] ?? limb(elbow, wrist, torso.x, torso.y)

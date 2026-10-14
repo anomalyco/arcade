@@ -494,3 +494,42 @@ test("walk-to-run-to-sprint-to-walk speed ramp and strafe reversals keep phase, 
     expect(Math.abs(angleDiff(st.legYaw, st.aim))).toBeLessThanOrEqual(0.55)
   }
 })
+
+test("walk (<=1.8 m/s) stays upright with level head and no crouch, and unarmed survivor does not inherit soldier crouch-run", () => {
+  const deg = (f: { x: [number, number, number] }) => Math.atan2(f.x[1], Math.hypot(f.x[0], f.x[2])) * 180 / Math.PI
+  for (const speed of [1.4, 1.8] as const) {
+    for (const unarmed of [true, false] as const) {
+      const a = newAvatar(`walk-${speed}-${unarmed}`, 0, 0, 0, "rifle")
+      a.unarmed = unarmed
+      let x = 0
+      for (let n = 0; n < 240; n++) {
+        x += speed * dt
+        animate(a, dt, n * dt, x, 0, speed, 0, 0)
+        if (n >= 120) {
+          const b = a.body!
+          const pelPitch = -deg(b.pelvis), chestPitch = -deg(b.torso), headPitch = Math.abs(deg(b.head))
+          expect(pelPitch).toBeLessThan(1.0)
+          expect(chestPitch).toBeGreaterThan(2.5)
+          expect(chestPitch).toBeLessThan(6.0)
+          expect(headPitch).toBeLessThan(3.5)
+          expect(a.motion.crouch.x).toBeLessThan(0.005)
+        }
+      }
+    }
+  }
+  const survRun = newAvatar("survivor-run", 0, 0, 0, "rifle")
+  survRun.unarmed = true
+  const soldRun = newAvatar("soldier-run", 0, 0, 0, "rifle")
+  let x = 0
+  for (let n = 0; n < 180; n++) {
+    x += 4.2 * dt
+    animate(survRun, dt, n * dt, x, 0, 4.2, 0, 0)
+    animate(soldRun, dt, n * dt, x, 0, 4.2, 0, 0)
+  }
+  const survChestPitch = -deg(survRun.body!.torso)
+  const soldChestPitch = -deg(soldRun.body!.torso)
+  expect(survChestPitch).toBeGreaterThan(10)
+  expect(survChestPitch).toBeLessThan(18)
+  expect(soldChestPitch).toBeGreaterThan(24)
+  expect(survRun.body!.pelvis.p[1]).toBeGreaterThan(soldRun.body!.pelvis.p[1] + 0.04)
+})

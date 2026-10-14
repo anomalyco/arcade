@@ -1,4 +1,5 @@
 import type { MountKind } from "../../shared/gunnery"
+import { HitMarker } from "../ui/hit-marker"
 
 type Pt = { x: number; y: number }
 
@@ -85,17 +86,9 @@ const CSS = `
 #tg .pips b { width: 4px; height: 11px; border: 1px solid rgba(244, 247, 251, 0.75); }
 #tg .pips b.full { background: var(--ink, #f4f7fb); }
 #tg .rng { min-width: 5.5em; text-align: right; opacity: 0.85; }
-#tg .hitm { left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; opacity: 0; }
-#tg .hitm i { position: absolute; width: 9px; height: 2px; background: #fff; box-shadow: 0 0 5px rgba(255, 255, 255, 0.6); }
-#tg .hitm i:nth-child(1) { left: -2px; top: 4px; transform: rotate(45deg); }
-#tg .hitm i:nth-child(2) { right: -2px; top: 4px; transform: rotate(-45deg); }
-#tg .hitm i:nth-child(3) { left: -2px; bottom: 4px; transform: rotate(-45deg); }
-#tg .hitm i:nth-child(4) { right: -2px; bottom: 4px; transform: rotate(45deg); }
-#tg .hitm.kill i { background: #ff5a3a; box-shadow: 0 0 6px rgba(255, 70, 40, 0.8); }
 body.mn-open #tg { display: none; }
 `
 
-const HIT_TIME = 0.16
 
 /**
  * The gunner's HUD, Blackout/Carrier typography and no instruction text: a crosshair on the aim (per weapon: a cross,
@@ -109,7 +102,7 @@ export class TurretHud {
   private q: (s: string) => HTMLElement
   private lastArm = ""
   private lastKind = ""
-  private hitLeft = 0
+  private marker: HitMarker
 
   constructor(parent: HTMLElement = document.body) {
     if (!document.getElementById("tg-css")) {
@@ -123,16 +116,15 @@ export class TurretHud {
     root.hidden = true
     root.innerHTML = `<div class="mark aim"><i></i><i></i><i></i><i></i></div><div class="mark bore"></div><div class="mark lock" hidden></div>
 <div class="mark lead" hidden><b></b></div><div class="mark imp" hidden><b></b></div><div class="arc"><i></i></div><div class="el"><i></i></div>
-<div class="edge l"></div><div class="edge r"></div><div class="edge u"></div><div class="edge d"></div><div class="arm"></div>
-<div class="mark hitm"><i></i><i></i><i></i><i></i></div>`
+<div class="edge l"></div><div class="edge r"></div><div class="edge u"></div><div class="edge d"></div><div class="arm"></div>`
     parent.append(root)
     this.root = root
     this.q = (s: string) => root.querySelector<HTMLElement>(s)!
+    this.marker = new HitMarker(root, true)
   }
 
   /** Per frame: the view, or null to hide (not manning a turret, or a menu is open). */
   update(dt: number, v: TurretHudView | null): void {
-    this.hitLeft = Math.max(0, this.hitLeft - dt)
     this.root.hidden = !v
     if (!v) return
     const q = this.q
@@ -140,7 +132,6 @@ export class TurretHud {
       this.lastKind = v.kind
       this.root.className = v.kind
     }
-    q(".hitm").style.opacity = this.hitLeft > 0 ? String(Math.min(1, this.hitLeft / 0.06)) : "0"
     const place = (el: HTMLElement, p: Pt | null, extra = "") => {
       el.hidden = !p
       if (p) el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)${extra}`
@@ -191,7 +182,6 @@ export class TurretHud {
 
   /** Our rounds or a burst hit (a kill or an intercept shows red). */
   hit(kill = false): void {
-    this.hitLeft = HIT_TIME * (kill ? 2.5 : 1)
-    this.q(".hitm").classList.toggle("kill", kill)
+    this.marker.hit(kill)
   }
 }

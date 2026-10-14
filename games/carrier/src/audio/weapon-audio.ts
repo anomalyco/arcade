@@ -15,7 +15,7 @@ import { sfx } from "./sfx-bank"
  * - warnings: a soft two-tone chime while an enemy locks us, a fast urgent one while a missile is inbound.
  * The procedural placeholders, started on the first user gesture:
  * - missile launch (a rushing noise sweep), bomb release (a clunk), explosions (a low boom, duller and later the
- *   further it is), flare pops, hit ticks on the target and thuds when we are hit;
+ *   further it is), flare pops and thuds when we are hit (hit confirmations: hit-audio.ts);
  * - the seeker: an AIM-9 growl (a warbling low tone) while searching and a high steady tone when locked;
  * - warnings: slow beeps while an enemy locks us, fast high beeps while a missile is inbound.
  * Distances are metres from the listener; the speed of sound delays far explosions.
@@ -291,13 +291,6 @@ export class WeaponAudio {
     if (this.ctx && sfx(mixer()).play("flares", { dist, ref: 30, gain: 0.9, travel: true })) return
     const a = this.att(dist)
     for (let i = 0; i < 3; i++) this.burst(this.white, "bandpass", 2200, 900, 0.22 * a, 0.002, 0.18, i * 0.12)
-  }
-
-  /** Our rounds hit an enemy (a crisp tick), or a kill (a heavier one). */
-  hit(kill = false): void {
-    // A kill: one sound, the recorded confirm (the procedural tick until it loads). A hit: a quiet tick.
-    if (kill && this.ctx && sfx(mixer()).play("ui-kill", { bus: "ui", reverb: 0, gain: 0.7 })) return
-    this.burst(this.white, "highpass", kill ? 2500 : 4000, kill ? 1500 : 3000, kill ? 0.22 : 0.08, 0.001, kill ? 0.12 : 0.05)
   }
 
   /** We were hit. */
