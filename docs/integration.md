@@ -260,6 +260,7 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | shared-human-rig | `5a55cb394ea1f01de6a3bddc809ba13e565f27af` | — |
 | lab-interaction | `a91975bfaf3355daa4064379cfedfc54cb391ff8` | — |
 | perf/outbreak-autoresearch | `2fbba0994aa5d4f82d473dbddcfa4d2b619bf9aa` | #19 |
+| materials | `f5750cf8254e1917aa1cd5cf7441c04c6c665cf6` | — |
 
 ### Resolution log
 
@@ -285,17 +286,24 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
   `onIdle`) and `depthStoreOp: hasSmoke ? "store" : "discard"` leave Getaway, Carrier, and Lab `Stage` untouched and
   preserve Blackout's `requestAnimationFrame` coalescing (`this.pending` is immediately scheduled when `onSubmittedWorkDone`
   completes).
-- Pending additions (materials library, shadow/edge fixes, rig-page, dev-control, and soldier-run) enter as separate
-  merge commits once their committed branch tips are finalized; uncommitted worktree changes are never copied.
+- `materials` vs `lab-interaction` & `perf/outbreak-autoresearch`: preserved `lab-interaction`'s workbench catalog/inspector
+  alongside `materials`'s 6 `material-recipe:*` Library entries, `Material Swatch Stage`, and `recipe` inspector title;
+  preserved `#19`'s `solidCutaway: ""` and building cutaway routing in `games/outbreak/src/{shaders,level}.ts` while
+  adopting `scatterClusteredGroundCover`, cupped leaf sprays, and the 6 procedural material recipes (`evalWoodPlanks`,
+  `evalCobblestone`, `evalPlasterWall`, `evalAsphaltConcrete`, `evalGrassSoil`, `evalFoliageCanopy`). Updated
+  `games/outbreak/tests/cutaway.test.ts` seed-7 static vertex count from `196,722` to `139,620` (reflecting the
+  clustered ground-cover and cupped-leaf geometry reduction).
+- Pending additions (shadow/edge fixes, rig-page, dev-control, and soldier-run) enter as separate merge commits once
+  their committed branch tips are finalized; uncommitted worktree changes are never copied.
 
 ### Verification
 
 A clean `git archive` export passed on the Studio via Hivemind:
 
 - `bun install --frozen-lockfile`
-- `bun run check:packages`: 76 passed
-- `games/getaway`: 234 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
-- `games/blackout`: 397 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun run check:packages`: 82 passed
+- `games/getaway`: 240 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 403 passed, typechecks, production build, smoke, and Worker dry-run
 - `games/outbreak`: 25 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove.ts`, and `scripts/prove-human.ts`
 - `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
 - `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity against `8223033` in both `old` and `new` modes
@@ -306,3 +314,9 @@ A clean `git archive` export passed on the Studio via Hivemind:
   cursor + sloped ground reticle, trackpad gestures (`Ctrl+wheel` pinch zoom, two-finger orbit, `Shift+scroll` pan),
   pre-Play checkpoint restore on `Escape`, and frozen-frame A/B flip (`V`) + GPU readback split wipe (`Shift+V`) on
   both Lab hosts (`getaway` and `blackout`) on Metal.
+- `bun packages/kit/lab/prove-materials.ts`: all 6 procedural material recipes (`wood_planks`, `cobblestone`,
+  `plaster_wall`, `asphalt_concrete`, `grass_soil`, `foliage_canopy`), swatch modes, isolated `tuningSeed`
+  randomization, and versioned preset round-trip passed on Metal.
+- `BENCH_LABEL=release-2-materials-studio bun games/outbreak/scripts/bench-outbreak.ts` (Studio M5 Max Metal, 3456×1894 Retina, 1 warmup + 7 × 2 s runs):
+  - Street: fresh submit `p95 = 23.50 ms` (MAD `1.90 ms`), `p50 = 16.40 ms`, `56.24 states/s`, `realtime_ratio = 0.9973` (`3.391 m/s`), dependent GPU `15.254 ms` (MAD `0.347 ms`).
+  - Interior: fresh submit `p95 = 32.30 ms` (MAD `0.60 ms`), `p50 = 26.15 ms`, `36.87 states/s`, `realtime_ratio = 0.9966` (`3.388 m/s`), dependent GPU `22.906 ms` (MAD `0.984 ms`).
