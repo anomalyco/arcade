@@ -39,10 +39,26 @@ fn density(p: vec3f) -> vec2f {
     let diagonal = textureLoad(field,clamp(cell+dir,vec2i(0),vec2i(47)),s,0).r;
     let safeDiagonal = select(diagonal,0.0,x.g>0.5 || z.g>0.5);
     let d = mix(mix(centre.r,x.r,abs(local.x)),mix(z.r,safeDiagonal,abs(local.x)),abs(local.y));
-    let ceiling = F.shape.x * (0.86 + 0.14*sin(p.x*1.5-F.eye.w*0.3)*sin(p.z*1.2+F.eye.w*0.2));
-    let y = p.y / ceiling;
-    let amount = d * smoothstep(0.0,0.13,y) * (1.0-smoothstep(0.32,1.0,y));
-    sum += vec2f(amount,amount*F.boxes[s*2+1].z);
+    let soot = source.z;
+    if (soot > 0.0) {
+      let lifeU = clamp(source.w, 0.0, 1.0);
+      let dist = length(offset);
+      let radialU = clamp(dist / max(0.35, b.w), 0.0, 1.0);
+      let lobe = 0.5 + 0.28 * sin(p.x * 1.9 + F.advection.x * 0.45) * cos(p.z * 1.8 - F.advection.z * 0.45) + 0.22 * sin((p.x - p.z) * 2.7 - F.eye.w * 1.1);
+      d = d * smoothstep(0.0, 0.35 + 0.45 * lobe, d + 0.18 * (1.0 - radialU));
+      let lift = lifeU * F.motion.x * 2.2 * (1.0 - radialU * 0.45);
+      let ceiling = F.shape.x * (1.22 - 0.42 * radialU * radialU) + lift * 0.55;
+      let floorY = lift * (0.18 + 0.32 * radialU * radialU);
+      let y = clamp((p.y - floorY) / max(0.4, ceiling - floorY), 0.0, 1.5);
+      let amount = d * smoothstep(0.0, 0.14, y) * (1.0 - smoothstep(0.34, 1.0, y));
+      let cool = clamp(1.0 - lifeU * 0.62 - radialU * 0.32 - y * 0.28, 0.12, 1.0);
+      sum += vec2f(amount, amount * soot * cool);
+    } else {
+      let ceiling = F.shape.x * (0.86 + 0.14*sin(p.x*1.5-F.eye.w*0.3)*sin(p.z*1.2+F.eye.w*0.2));
+      let y = p.y / ceiling;
+      let amount = d * smoothstep(0.0,0.13,y) * (1.0-smoothstep(0.32,1.0,y));
+      sum += vec2f(amount,amount*soot);
+    }
   }
   return sum;
 }
@@ -66,7 +82,8 @@ fn billow(p: vec3f) -> f32 {
     let p = F.eye.xyz + ray*(near+(f32(i)+j)*stepSize);
     let sample = density(p); let base = sample.x;
     if (base < 0.002) { continue; }
-    let d = base * mix(0.75,smoothstep(0.22,0.72,billow(p)),F.motion.z) * F.shape.z;
+    let bVal = billow(p);
+    let d = base * mix(0.75,smoothstep(0.22,0.72,bVal),F.motion.z) * F.shape.z;
     let a = 1.0-exp(-d*stepSize); optical += d*stepSize;
     let sun = exp(-density(p+vec3f(0,0.65,0)).x*1.7);
     var light = F.ambient.rgb + vec3f(0.38,0.43,0.51)*sun*F.shape.w;
@@ -78,7 +95,17 @@ fn billow(p: vec3f) -> f32 {
       let shade = exp(-density(p+delta/dist*0.65).x*0.75);
       light += color.rgb*color.w*pow(1.0-dist/pos.w,2.0)*shade*F.shape.w;
     }
-    light *= mix(1.0,0.14,clamp(sample.y/max(base,0.001),0.0,1.0));
+    let sootRatio = clamp(sample.y/max(base,0.001),0.0,1.0);
+    if (sootRatio > 0.001) {
+      let ridge = smoothstep(0.28, 0.78, bVal) * clamp(p.y / max(0.8, F.shape.x), 0.0, 1.0);
+      let darkTint = vec3f(0.11, 0.095, 0.085);
+      let warmMid = vec3f(0.46, 0.41, 0.37);
+      let ashLight = vec3f(0.92, 0.95, 0.99);
+      let smokeTint = mix(mix(ashLight, warmMid, clamp(sootRatio * 1.5, 0.0, 1.0)), darkTint, clamp(sootRatio * 1.35 * (1.0 - ridge * 0.55), 0.0, 1.0));
+      light *= smokeTint;
+    } else {
+      light *= mix(1.0,0.14,sootRatio);
+    }
     if (F.screen.w == 1.0) { light = vec3f(base,base*0.4,1.0-base); }
     if (F.screen.w == 2.0) { light = vec3f(optical*0.16,0.12,1.0-optical*0.12); }
     if (F.screen.w == 3.0) { light = light / max(0.01,d); }

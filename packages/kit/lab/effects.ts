@@ -19,11 +19,16 @@ export const effectOptions=[
 const specs=effectSpecs
 export function createEffects(context:LabContext) {
   const {particles,volume,trail,stage}=context,emitter=new Emitter()
-  const params={...smokeDefaults,rate:75,size:1,speed:1,density:1,effect:"smoke",playing:true,loop:true,targetX:-1,targetZ:0,seed:7,roomSeed:1}
+  const params={...smokeDefaults,rate:75,size:1,speed:1,density:1,interval:2.0,effect:"smoke",playing:true,loop:true,targetX:-1,targetZ:0,seed:7,roomSeed:1,tuningSeed:137}
   const applySmoke=()=>{for(const key of Object.keys(smokeDefaults) as SmokeKey[])volume.settings[key]=params[key]}
   let effect="smoke",time=0,seed=7
   const source={smokeDistance:0,smokeX:0,smokeZ:0,smokeActive:false,idle:0}
   const random=()=>{seed=Math.imul(seed,1664525)+1013904223|0;return(seed>>>0)/4294967296}
+  const nextTuningRng=()=>{
+    let s=Math.max(1,Math.round(params.tuningSeed))|0
+    params.tuningSeed=(s%9999)+1
+    return()=>{s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t^=t+Math.imul(t^t>>>7,61|t);return((t^t>>>14)>>>0)/4294967296}
+  }
   const current:ParticleSpec={...specs.sparks}
   const emit=(x:number,y:number,z:number)=>{
     const name=effect==="explosion"?"fire":effect,spec=specs[name]??specs.sparks
@@ -45,9 +50,14 @@ export function createEffects(context:LabContext) {
     const tx=params.targetX,tz=params.targetZ
     applySmoke()
     if(effect==="smoke")volume.spawn(tx,tz)
-    if(effect==="explosion")volume.spawn(tx,tz,5.5*params.size,5,params.density,0.45)
+    if(effect==="explosion")volume.spawn(tx,tz,4.6*params.size,Math.max(1.8,params.interval+0.35),params.density,0.58,0.52)
     if(effect==="sparks"||effect==="debris"||effect==="explosion")for(let i=0;i<params.rate;i++)emit(tx,0.8,tz)
     params.effect=effect;context.sync()
+  }
+  const retriggerIfOneShot=()=>{
+    applySmoke()
+    if(effect==="explosion"||effect==="sparks"||effect==="debris")reset()
+    else context.sync()
   }
   const reroll=()=>{
     params.roomSeed=(params.roomSeed*1664525+1013904223>>>0)%9999+1
@@ -65,30 +75,48 @@ export function createEffects(context:LabContext) {
     if(effect==="tyre"&&time<3.5){trail.follow(source,tx+Math.sin(time*1.8)*2,tz+Math.cos(time*1.8)*1.5,0,0,dt,params.density)}
     if(effect==="water"||effect==="fire"||effect==="nitro")emitter.step(tx,0.3,tz,dt,params.rate,"rate",emit)
     particles.update(dt,activeWalls,groundFn);volume.update(dt);trail.update(dt)
-    if(params.loop&&time>(effect==="smoke"?params.growthTime+params.hold+params.fade+1:effect==="tyre"?8:5))reset()
+    const loopPeriod=effect==="smoke"?params.growthTime+params.hold+params.fade+0.6:effect==="tyre"?Math.max(4,params.interval*2.5):params.interval
+    if(params.loop&&time>=loopPeriod)reset()
   }
   const controls:LabControl[]=[
     {key:"effect",label:"Effect",group:"Emitter",type:"select",options:effectOptions,change:value=>reset(String(value))},
     {key:"playing",label:"Play",group:"Emitter"},{key:"loop",label:"Loop",group:"Emitter"},
+    {key:"interval",label:"Loop interval",group:"Emitter",type:"range",min:0.5,max:8,step:0.1,unit:"s",visible:s=>Boolean(s.loop)&&s.effect!=="smoke"&&s.effect!=="water"&&s.effect!=="fire"&&s.effect!=="nitro"},
     {key:"trigger",label:"Retrigger",group:"Emitter",type:"action",run:()=>reset()},
-    {key:"rate",label:"Rate",group:"Parameters",type:"range",min:5,max:180,step:1,unit:"/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"},
-    {key:"size",label:"Size",group:"Parameters",type:"range",min:0.3,max:2,step:0.05,unit:"m",visible:s=>s.effect!=="tyre"&&s.effect!=="smoke"},
-    {key:"speed",label:"Speed",group:"Parameters",type:"range",min:0.2,max:2,step:0.05,unit:"m/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"},
-    {key:"density",label:"Density",group:"Parameters",type:"range",min:0.1,max:2,step:0.05,unit:"",visible:s=>s.effect!=="smoke"},
+    {key:"rate",label:"Rate",group:"Parameters",type:"range",min:5,max:180,step:1,unit:"/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre",change:retriggerIfOneShot},
+    {key:"size",label:"Size",group:"Parameters",type:"range",min:0.3,max:2,step:0.05,unit:"m",visible:s=>s.effect!=="tyre"&&s.effect!=="smoke",change:retriggerIfOneShot},
+    {key:"speed",label:"Speed",group:"Parameters",type:"range",min:0.2,max:2,step:0.05,unit:"m/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre",change:retriggerIfOneShot},
+    {key:"density",label:"Density",group:"Parameters",type:"range",min:0.1,max:2,step:0.05,unit:"",visible:s=>s.effect!=="smoke",change:retriggerIfOneShot},
+    {key:"random-Parameters",label:"Randomize Parameters",group:"Parameters",type:"action",visible:s=>s.effect!=="smoke",run:()=>{
+      const rng=nextTuningRng()
+      if(effect!=="tyre"){
+        params.rate=Math.round(25+rng()*120)
+        params.size=Number((Math.round((0.5+rng()*1.2)/0.05)*0.05).toFixed(2))
+        params.speed=Number((Math.round((0.5+rng()*1.2)/0.05)*0.05).toFixed(2))
+      }
+      params.density=Number((Math.round((0.4+rng()*1.3)/0.05)*0.05).toFixed(2))
+      reset()
+    }},
     ...(Object.keys(smokeDefaults) as SmokeKey[]).map((key):LabControl=>{
       const [min,max,step,unit,group]=smokeRanges[key]
       const labels:Record<SmokeKey,string>={radius:"Radius",height:"Height",softness:"Edge softness",billowScale:"Billow scale",growthTime:"Growth time",rise:"Rise",wind:"Wind",turbulence:"Turbulence",extinction:"Extinction",lighting:"Lighting",hold:"Hold",fade:"Fade"}
-      return {key,label:labels[key],group,type:"range",min,max,step,unit,visible:s=>s.effect==="smoke",change:applySmoke}
+      return {key,label:labels[key],group,type:"range",min,max,step,unit,visible:s=>s.effect==="smoke",change:()=>{
+        applySmoke()
+        if(unit.includes("retrigger")&&params.playing)reset()
+      }}
     }),
     ...["Shape","Motion","Appearance","Lifetime"].map((group):LabControl=>({
       key:`random-${group}`,label:`Randomize ${group}`,group,type:"action",visible:s=>s.effect==="smoke",run:()=>{
         // Deliberately use the middle 60% of documented ranges for useful starting points.
+        const rng=nextTuningRng()
         for(const key of Object.keys(smokeDefaults) as SmokeKey[]){
           const [min,max,step,,g]=smokeRanges[key]
-          if(g===group)params[key]=Number((Math.round((min+(max-min)*(0.2+Math.random()*0.6))/step)*step).toFixed(3))
+          if(g===group)params[key]=Number((Math.round((min+(max-min)*(0.2+rng()*0.6))/step)*step).toFixed(3))
         }
         if(group==="Shape")params.softness=Math.min(params.softness,params.radius*0.4)
-        applySmoke();context.sync()
+        applySmoke()
+        if(params.playing||group!=="Appearance")reset()
+        else context.sync()
       },
     })),
     {key:"targetX",label:"Origin X",group:"Origin & Seed",type:"range",min:-4.8,max:4.8,step:0.2,unit:"m",change:()=>reset()},

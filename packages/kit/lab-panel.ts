@@ -232,10 +232,13 @@ export class LabPanel {
     const random = document.createElement("button")
     random.type = "button"; random.textContent = "Randomize"; random.setAttribute("aria-label", `Randomize ${group}`)
     random.onclick = () => {
-      const before = this.snapshotSettings()
       const custom = this.navigation.rows.find(row => row.group === group && row.control?.type === "action" && row.control.label === `Randomize ${group}`)
-      if (custom) (this.elements.get(custom) as HTMLButtonElement | undefined)?.click()
-      else this.navigation.randomize(group)
+      if (custom) {
+        ;(this.elements.get(custom) as HTMLButtonElement | undefined)?.click()
+        return
+      }
+      const before = this.snapshotSettings()
+      this.navigation.randomize(group)
       this.commitTransaction(`Randomize ${group}`, before)
       this.sync()
     }
@@ -260,8 +263,12 @@ export class LabPanel {
       button.type = "button"; button.dataset.key = c.key; button.textContent = c.label
       button.onclick = async () => {
         if (c.enabled?.(this.navigation.settings) === false) return
+        const before = this.snapshotSettings()
         button.disabled = true
-        try { await c.run(button) } catch (error) { button.textContent = "Failed"; console.error(error) }
+        try {
+          await c.run(button)
+          this.commitTransaction(c.label, before)
+        } catch (error) { button.textContent = "Failed"; console.error(error) }
         finally { button.disabled = false; this.sync() }
       }
       return button
@@ -576,10 +583,10 @@ export class LabPanel {
         this.fScrub = { control: c, startX: this.lastPointerX, startValue: Number(this.navigation.settings[c.key]), before: this.snapshotSettings() }
       }
       else if (key === "r") {
-        const before = this.snapshotSettings()
         const row = this.navigation.rows.find(row => row.group === this.navigation.active?.group && row.control?.type === "action" && row.control.label === `Randomize ${row.group}`)
         if (row) (this.elements.get(row) as HTMLButtonElement).click()
         else {
+          const before = this.snapshotSettings()
           this.navigation.randomize()
           this.commitTransaction(`Randomize ${this.navigation.active?.group ?? "Group"}`, before)
         }
