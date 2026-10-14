@@ -441,7 +441,9 @@ export class Stage {
     enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.width,this.height])
     this.device.queue.submit([enc.finish()])
     this.onFrameSubmitted?.()
-    if(timed){this.measuring=true;try{this.gpuMs=await this.timer!.collect()}finally{this.measuring=false}}
+    // Only explicit measurements must be valid; the periodic HUD sample reports "unavailable" instead of failing
+    // (software adapters exceed the interval bound).
+    if(timed){this.measuring=true;try{this.gpuMs=await this.timer!.collect()}catch(error){if(measure)throw error;this.gpuMs=null}finally{this.measuring=false}}
     return timed?this.gpuMs:null
   }
   async captureToCanvas(target:HTMLCanvasElement):Promise<void>{

@@ -55,6 +55,10 @@ async function start() {
 }
 
 start().catch(error => {
-  console.error(error)
-  document.body.textContent = String(error)
+  const notice = document.createElement("p")
+  notice.dataset.labNotice = ""
+  notice.className = "lab-notice"
+  if (error instanceof Error && error.message === "WebGPU unavailable") notice.textContent = "The Lab needs WebGPU. Open it in a recent Chrome, Edge or Safari."
+  else { console.error(error); notice.textContent = String(error) }
+  document.body.replaceChildren(notice)
 })

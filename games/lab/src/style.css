@@ -1,2 +1,3 @@
 .lab-topbar-extra { display: flex; align-items: center; gap: 6px; }
 .lab-game { max-width: 116px; }
+.lab-notice { font: 14px/1.5 system-ui, sans-serif; color: #c9d4db; background: #0b1014; margin: 0; padding: 32px; min-height: 100dvh; box-sizing: border-box; }

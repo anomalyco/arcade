@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak", "carrier"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier", "lab"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -44,11 +44,17 @@ try {
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
   page.on("requestfailed", request => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
   page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`) })
-  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}`, { waitUntil: "load", timeout: 15_000 })
+  // The Lab's bench mode exposes window.lab after its first frame and keeps audio locked.
+  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver.
   const ready = await page.waitForFunction(game => {
+    if (game === "lab") {
+      const notice = document.querySelector("[data-lab-notice]")?.textContent
+      if (notice && /needs WebGPU/.test(notice)) return notice
+      return window.lab ? `Lab ready (${window.lab.sections.length} sections)` : false
+    }
     if (game === "outbreak") {
       const status = document.querySelector("#status")?.textContent
       if (status && /needs WebGPU|No WebGPU adapter is available/.test(status)) return status
