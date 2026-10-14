@@ -74,186 +74,6 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 const round3 = (n: number) => Math.round(n * 1000) / 1000
 const round4 = (n: number) => Math.round(n * 10000) / 10000
 
-export function isAllowedLoopbackHost(hostname: string): boolean {
-  const h = hostname.trim().toLowerCase()
-  return h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1" || h.endsWith(".localhost")
-}
-
-export function parseHostHeader(
-  hostHeader: string | undefined,
-  protocol: "http:" | "https:" = "http:",
-): { host: string; hostname: string; port: string } | null {
-  if (!hostHeader) return null
-  const trimmed = hostHeader.trim().toLowerCase()
-  if (!trimmed || /[\s/?#@\\]/.test(trimmed)) return null
-  try {
-    const parsed = new URL(`${protocol}//${trimmed}`)
-    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
-      return null
-    }
-    if (parsed.host.toLowerCase() !== trimmed) {
-      return null
-    }
-    return {
-      host: parsed.host.toLowerCase(),
-      hostname: parsed.hostname.toLowerCase(),
-      port: parsed.port,
-    }
-  } catch {
-    return null
-  }
-}
-
-function normalizeAllowedHostEntry(raw: string): string | null {
-  let token = raw.trim().toLowerCase()
-  if (!token) return null
-  if (
-    token === "*" ||
-    token === "." ||
-    token === "true" ||
-    token === "false" ||
-    token === "all" ||
-    token === "0.0.0.0" ||
-    token === "::" ||
-    token === "[::]"
-  ) {
-    return null
-  }
-  if (token.includes("*")) return null
-
-  const leadingDot = token.startsWith(".")
-  if (leadingDot) {
-    token = token.slice(1)
-  }
-
-  let hostname: string
-  if (token.startsWith("http://") || token.startsWith("https://")) {
-    if (leadingDot) return null
-    try {
-      const u = new URL(token)
-      if (u.username || u.password) return null
-      hostname = u.hostname.toLowerCase()
-    } catch {
-      return null
-    }
-  } else {
-    const parsed = parseHostHeader(token, "https:") ?? parseHostHeader(token, "http:")
-    if (!parsed) return null
-    hostname = parsed.hostname
-  }
-
-  if (!hostname || hostname === "0.0.0.0" || hostname === "::" || hostname === "[::]") {
-    return null
-  }
-
-  if (leadingDot) {
-    const labels = hostname.split(".").filter(Boolean)
-    if (labels.length < 2) return null
-    if (labels.length === 2 && (hostname.endsWith(".ts.net") || hostname.endsWith(".co.uk") || hostname.endsWith(".com.au"))) {
-      return null
-    }
-    return `.${hostname}`
-  }
-
-  return hostname
-}
-
-export function parseAllowedHosts(...sources: (string | readonly string[] | undefined)[]): string[] {
-  const out = new Set<string>()
-  for (const src of sources) {
-    if (!src) continue
-    const items = typeof src === "string" ? src.split(/[\s,]+/) : src
-    for (const item of items) {
-      if (typeof item !== "string") continue
-      for (const part of item.split(/[\s,]+/)) {
-        const normalized = normalizeAllowedHostEntry(part)
-        if (normalized) out.add(normalized)
-      }
-    }
-  }
-  return [...out]
-}
-
-export function resolveAllowedHosts(
-  extraHosts?: readonly string[] | string,
-  env: Record<string, string | undefined> | undefined = typeof process !== "undefined" ? process.env : undefined,
-): string[] {
-  if (extraHosts !== undefined) {
-    return parseAllowedHosts(extraHosts)
-  }
-  return parseAllowedHosts(env?.ARCADE_DEV_ALLOWED_HOSTS, env?.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS)
-}
-
-export function isAllowedExtraHost(
-  hostname: string,
-  allowedHosts?: readonly string[] | string,
-  env?: Record<string, string | undefined>,
-): boolean {
-  const h = hostname.trim().toLowerCase()
-  if (!h) return false
-  const list = resolveAllowedHosts(allowedHosts, env)
-  for (const entry of list) {
-    if (entry.startsWith(".")) {
-      if (h.endsWith(entry) && h.length > entry.length) return true
-    } else if (h === entry) {
-      return true
-    }
-  }
-  return false
-}
-
-export function isAllowedHost(
-  hostOrHostname: string | undefined,
-  allowedHosts?: readonly string[] | string,
-  env?: Record<string, string | undefined>,
-): boolean {
-  if (!hostOrHostname) return false
-  const parsed = parseHostHeader(hostOrHostname, "https:") ?? parseHostHeader(hostOrHostname, "http:")
-  const hostname = parsed ? parsed.hostname : hostOrHostname.trim().toLowerCase()
-  if (!hostname || /[\s/?#@\\]/.test(hostname)) return false
-  return isAllowedLoopbackHost(hostname) || isAllowedExtraHost(hostname, allowedHosts, env)
-}
-
-export function isSameAllowedOrigin(
-  originHeader: string | undefined,
-  hostHeader: string | undefined,
-  allowedHosts?: readonly string[] | string,
-  env?: Record<string, string | undefined>,
-): boolean {
-  if (!originHeader || !hostHeader) return false
-  const trimmedOrigin = originHeader.trim()
-  try {
-    const parsed = new URL(trimmedOrigin)
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false
-    if (parsed.origin.toLowerCase() !== trimmedOrigin.toLowerCase()) return false
-    const parsedHost = parseHostHeader(hostHeader, parsed.protocol)
-    if (!parsedHost) return false
-    if (parsed.host.toLowerCase() !== parsedHost.host) return false
-
-    if (isAllowedLoopbackHost(parsed.hostname)) {
-      return true
-    }
-    if (isAllowedExtraHost(parsed.hostname, allowedHosts, env)) {
-      return parsed.protocol === "https:"
-    }
-    return false
-  } catch {
-    return false
-  }
-}
-
-export const isSameLoopbackOrigin = isSameAllowedOrigin
-
-export function buildDevControlWsUrl(
-  loc: { protocol: string; host: string },
-  controlPath: string,
-  pageToken: string,
-  pageId: string,
-): string {
-  const proto = loc.protocol === "https:" ? "wss:" : "ws:"
-  return `${proto}//${loc.host}${controlPath}?token=${encodeURIComponent(pageToken)}&pageId=${encodeURIComponent(pageId)}`
-}
-
 export function readStageCameraState(stage: Stage) {
   stage.updateCamera()
   return {
@@ -752,16 +572,6 @@ function synthesizeHubCanvas(): HTMLCanvasElement {
   return out
 }
 
-export function buildDevControlWsUrl(
-  loc: { protocol: string; host: string },
-  controlPath: string,
-  pageToken: string,
-  pageId: string,
-): string {
-  const proto = loc.protocol === "https:" ? "wss:" : "ws:"
-  return `${proto}//${loc.host}${controlPath}?token=${encodeURIComponent(pageToken)}&pageId=${encodeURIComponent(pageId)}`
-}
-
 const COMMAND_ALIASES: Record<string, string> = {
   select: "object.select",
   spawn: "ground.spawn-here",
@@ -1247,7 +1057,8 @@ class PageControlRuntime {
 
   private connect() {
     if (!this.routerConfig) return
-    const wsUrl = buildDevControlWsUrl(location, this.routerConfig.controlPath, this.routerConfig.pageToken, this.pageId)
+    const proto = location.protocol === "https:" ? "wss:" : "ws:"
+    const wsUrl = `${proto}//${location.host}${this.routerConfig.controlPath}?token=${encodeURIComponent(this.routerConfig.pageToken)}&pageId=${encodeURIComponent(this.pageId)}`
     try {
       const ws = new WebSocket(wsUrl)
       this.ws = ws
