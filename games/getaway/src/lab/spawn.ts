@@ -365,6 +365,7 @@ export function getawaySpawn(context: LabContext) {
     return {
       id: `getaway:${spec.id}`,
       label: `Getaway · ${spec.name}`,
+      vehicle: true,
       create(_context, at) {
         if (!model) {
           model = splitChassis(buildCar(spec, undefined, 4))

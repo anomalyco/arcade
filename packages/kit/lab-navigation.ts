@@ -6,6 +6,8 @@ export type LabControl = {
   group?: string
   unit?: string
   folded?: boolean
+  /** Mirrors scene state (for example the selection's position) rather than an authored default. */
+  derived?: boolean
   visible?: (settings: Readonly<LabSettings>) => boolean
   change?: (value: LabValue) => void
   enabled?: (settings: Readonly<LabSettings>) => boolean
@@ -43,6 +45,8 @@ export class LabNavigation {
   readonly folded = new Set<string>()
   readonly defaults: LabSettings
   active: LabRow | undefined
+  /** Optional view filter (Details search, Modified only, selection relevance). Applies to keyboard navigation too. */
+  filter: ((row: LabRow) => boolean) | undefined
 
   constructor(readonly settings: LabSettings, controls: LabControl[], private change?: (key: string, value: LabValue) => void) {
     this.defaults = { ...settings }
@@ -79,11 +83,22 @@ export class LabNavigation {
 
   isRowVisible(row: LabRow): boolean {
     if (row.control) {
-      return row.control.visible ? row.control.visible(this.settings) : true
+      if (row.control.visible && !row.control.visible(this.settings)) return false
+      return this.filter ? this.filter(row) : true
     }
     const groupControls = this.rows.filter(r => r.control && r.group === row.group)
-    if (!groupControls.length) return true
-    return groupControls.some(r => (r.control!.visible ? r.control!.visible(this.settings) : true))
+    if (!groupControls.length) return !this.filter
+    return groupControls.some(r => this.isRowVisible(r))
+  }
+
+  isModified(control: LabControl): boolean {
+    if (control.type === "action" || control.derived || !(control.key in this.defaults)) return false
+    const value = this.settings[control.key], initial = this.defaults[control.key]
+    if (typeof value === "number" && typeof initial === "number") {
+      const step = "min" in control ? control.step ?? 0.01 : 1e-6
+      return Math.abs(value - initial) > step * 1e-3
+    }
+    return value !== initial
   }
 
   get visibleRows() {

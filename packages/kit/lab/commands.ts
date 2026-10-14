@@ -98,6 +98,13 @@ export type LabSceneState = {
     redoDepth: number
   }
   commands: LabCommandDescriptor[]
+  /** Workbench layout state (Outliner locks, Library drawer, Details filters, Watch pins). */
+  layout?: {
+    library: { open: boolean; category: string; query: string }
+    locked: string[]
+    details: { query: string; modifiedOnly: boolean; showAll: boolean; modified: string[] }
+    watch: { section: string; key: string; label: string; value: string | null }[]
+  }
 }
 
 export type LabCommand<TArgs extends LabCommandArgs = LabCommandArgs> = {

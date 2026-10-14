@@ -259,17 +259,18 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
     const out:LabWorldObject[]=[]
     if(character&&characterId){
       const label=adapters.characters.find(c=>c.id===characterId)?.label??"Character"
-      out.push({id:"character:active",label,category:"character",x:character.point.x,y:character.point.y,z:character.point.z,yaw:character.point.yaw,radius:1.4,movable:true,deletable:false})
+      const spawnable=adapters.characters.find(c=>c.id===characterId)
+      out.push({id:"character:active",label,category:"character",x:character.point.x,y:character.point.y,z:character.point.z,yaw:character.point.yaw,radius:1.4,movable:true,deletable:false,kind:characterId,vehicle:Boolean(spawnable?.vehicle)})
     }
     for(const p of items.entries?.()??[]){
-      out.push({id:p.id,label:p.label,category:"prop",x:p.x,y:p.y,z:p.z,yaw:p.yaw,radius:p.radius,movable:true,deletable:true})
+      out.push({id:p.id,label:p.label,category:"prop",x:p.x,y:p.y,z:p.z,yaw:p.yaw,radius:p.radius,movable:true,deletable:true,kind:p.kind})
     }
     for(const d of dropped){
       const name=d.kind[0]!.toUpperCase()+d.kind.slice(1)
-      out.push({id:d.id,label:`${name} (${d.id.split(":")[1]})`,category:"light",x:d.at.x,y:d.at.y,z:d.at.z,yaw:d.at.yaw,radius:0.85,movable:true,deletable:true})
+      out.push({id:d.id,label:`${name} (${d.id.split(":")[1]})`,category:"light",x:d.at.x,y:d.at.y,z:d.at.z,yaw:d.at.yaw,radius:0.85,movable:true,deletable:true,kind:d.kind})
     }
     for(const s of sources){
-      out.push({id:s.uid,label:`${s.id} emitter`,category:"emitter",x:s.at.x,y:s.at.y,z:s.at.z,yaw:s.at.yaw,radius:0.8,movable:true,deletable:true})
+      out.push({id:s.uid,label:`${s.id} emitter`,category:"emitter",x:s.at.x,y:s.at.y,z:s.at.z,yaw:s.at.yaw,radius:0.8,movable:true,deletable:true,kind:s.id})
     }
     return out
   }
@@ -486,7 +487,7 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
     {key:"smokeEnabled",label:"Tyre smoke",group:"Vehicle & Skids",change:v=>items.setSmokeEnabled?.(Boolean(v))},
     {key:"clearSkids",label:"Clear skids",group:"Vehicle & Skids",type:"action",run:()=>{items.clearSkids?.();context.sync()}},
     {key:"resetScene",label:"Reset scene",group:"Vehicle & Skids",type:"action",run:resetScene},
-    {key:"selectedX",label:"Position X",group:"Selected Object",type:"range",min:-34,max:34,step:0.25,unit:"m",visible:()=>selectedIds.length>0,change:v=>{
+    {key:"selectedX",label:"Position X",group:"Transform",derived:true,type:"range",min:-34,max:34,step:0.25,unit:"m",visible:()=>selectedIds.length>0,change:v=>{
       const sel=selectedObjects().filter(o=>o.movable)
       if(!sel.length)return
       const cx=sel.reduce((a,o)=>a+o.x,0)/sel.length
@@ -494,7 +495,7 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
       for(const o of sel)moveObjectSilent(o.id,o.x+dx,o.z,o.yaw)
       syncSelectedFields();context.sync()
     }},
-    {key:"selectedZ",label:"Position Z",group:"Selected Object",type:"range",min:-40,max:32,step:0.25,unit:"m",visible:()=>selectedIds.length>0,change:v=>{
+    {key:"selectedZ",label:"Position Z",group:"Transform",derived:true,type:"range",min:-40,max:32,step:0.25,unit:"m",visible:()=>selectedIds.length>0,change:v=>{
       const sel=selectedObjects().filter(o=>o.movable)
       if(!sel.length)return
       const cz=sel.reduce((a,o)=>a+o.z,0)/sel.length
@@ -502,7 +503,7 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
       for(const o of sel)moveObjectSilent(o.id,o.x,o.z+dz,o.yaw)
       syncSelectedFields();context.sync()
     }},
-    {key:"selectedYaw",label:"Yaw",group:"Selected Object",type:"range",min:-180,max:180,step:5,unit:"°",visible:()=>selectedIds.length>0,change:v=>{
+    {key:"selectedYaw",label:"Yaw",group:"Transform",derived:true,type:"range",min:-180,max:180,step:5,unit:"°",visible:()=>selectedIds.length>0,change:v=>{
       const sel=selectedObjects().filter(o=>o.movable)
       if(!sel.length)return
       const primary=sel.at(-1)!
@@ -511,19 +512,19 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
       for(const o of sel)moveObjectSilent(o.id,o.x,o.z,(o.yaw??0)+dyaw)
       syncSelectedFields();context.sync()
     }},
-    {key:"selectedPower",label:"Light power",group:"Selected Object",type:"range",min:0.2,max:10,step:0.2,visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
+    {key:"selectedPower",label:"Light power",group:"Light",derived:true,type:"range",min:0.2,max:10,step:0.2,visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
       for(const d of dropped)if(selectedIds.includes(d.id))d.light.power=Number(v)
     }},
-    {key:"selectedRadius",label:"Light radius",group:"Selected Object",type:"range",min:2,max:28,step:0.5,unit:"m",visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
+    {key:"selectedRadius",label:"Light radius",group:"Light",derived:true,type:"range",min:2,max:28,step:0.5,unit:"m",visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
       for(const d of dropped)if(selectedIds.includes(d.id))d.light.radius=Number(v)
     }},
-    {key:"duplicateSelected",label:"Duplicate selected",group:"Selected Object",type:"action",visible:()=>selectedIds.some(id=>id!=="character:active"),run:()=>{
+    {key:"duplicateSelected",label:"Duplicate selected",group:"Transform",type:"action",visible:()=>selectedIds.some(id=>id!=="character:active"),run:()=>{
       const n=selectedIds.filter(id=>id!=="character:active").length
       const label=n>1?`Duplicate ${n} objects`:"Duplicate object"
       if(context.transact)context.transact(label,()=>{duplicateObjects()})
       else duplicateObjects()
     }},
-    {key:"deleteSelected",label:"Delete selected",group:"Selected Object",type:"action",visible:()=>selectedIds.some(id=>id!=="character:active"),run:()=>{
+    {key:"deleteSelected",label:"Delete selected",group:"Transform",type:"action",visible:()=>selectedIds.some(id=>id!=="character:active"),run:()=>{
       const n=selectedIds.filter(id=>id!=="character:active").length
       const label=n>1?`Delete ${n} objects`:"Delete object"
       if(context.transact)context.transact(label,()=>{deleteObjects()})
@@ -567,6 +568,17 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
     return{x:0,y:0,z:4,dist:22}
   },
   objects:listObjects,
+  detailsGroups:selected=>{
+    if(!selected.length)return["Environment","Character","Vehicle & Skids","Items","Lights","Effects"]
+    const groups=["Transform"]
+    for(const o of selected){
+      if(o.category==="character")groups.push("Character",...(o.vehicle?["Vehicle & Skids"]:[]))
+      else if(o.category==="prop")groups.push("Items")
+      else if(o.category==="light")groups.push("Light","Lights")
+      else if(o.category==="emitter")groups.push("Effects")
+    }
+    return[...new Set(groups)]
+  },
   selectedObjectId:undefined,
   selectedObjectIds:[],
   selectObject,
