@@ -149,7 +149,7 @@ function compileLevel(town: Town): LevelData {
   const tufts = scatterGrassClumps({
     seed: town.seed ^ 0x453a,
     bounds: [1.5, 1.5, SIZE - 1.5, SIZE - 1.5],
-    clusterCount: Math.round(95 * (town.foliageDensity ?? 1)),
+    clusterCount: Math.round(65 * (town.foliageDensity ?? 1)),
     tuftsPerCluster: 3,
     params: foliageSettings,
     avoid: (x, z) =>

@@ -395,6 +395,7 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     [r+.52,e-2.40,5.80,2.35],
     [r+.52,e+.42,1.44,.92],
     [r+.48,e+1.65,1.38,.88],
+    [r+1.82,e+3.05,1.52,1.04],
     [r-.45,e+1.95,.98,.68],
     // South-side street corner framing trees across the road (leaving south sidewalk & verge open)
     ...(id===0 ? [
