@@ -193,22 +193,22 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
     values: {
       hour: 22.4,
       exposure: 0.94,
-      ambientFill: 0.28,
-      skyFill: 0.36,
-      skyTemp: -0.68,
-      moonStrength: 1.45,
-      moonTemp: -0.78,
+      ambientFill: 0.18,
+      skyFill: 0.24,
+      skyTemp: -0.78,
+      moonStrength: 1.15,
+      moonTemp: -0.85,
       shadowSoftness: 0.07,
       diffuseWrap: 0.0,
       streetLampPower: 0.0,
       streetLampTemp: 3400,
       streetLampFalloff: 0.85,
-      porchLightPower: 0.36,
-      porchLightTemp: 3700,
-      porchLightFalloff: 0.62,
-      windowLightPower: 0.48,
+      porchLightPower: 0.28,
+      porchLightTemp: 3800,
+      porchLightFalloff: 0.56,
+      windowLightPower: 0.42,
       windowLightTemp: 2450,
-      windowLightFalloff: 0.78,
+      windowLightFalloff: 0.74,
       flashlightPower: 1.85,
       flashlightAngle: 16,
       flashlightRange: 10.5,
@@ -996,6 +996,12 @@ fn eyeVisible(p: vec2f) -> f32 {
       let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
       albedo = s.albedo;
       gloss = s.gloss;
+      if (activeVignette && Vig.params1.y < -0.35 && Vig.params0.w < 0.05) {
+        // Noir foliage: desaturated midnight-slate leaves with crisp moonlit upper-leaf rim
+        let fLum = dot(albedo, vec3f(0.2126, 0.7152, 0.0722));
+        let tipRim = smoothstep(0.35, 0.88, fract(o.world.y * 1.35 + surfaceNoise(o.world.xz * 3.2) * 0.4)) * max(0.0, n.y);
+        albedo = mix(vec3f(fLum) * vec3f(0.28, 0.34, 0.42), albedo * 0.32, 0.22) + vec3f(0.06, 0.08, 0.11) * tipRim;
+      }
     }
     if (mat == 24) {
       albedo *= 0.84 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24;
@@ -1076,6 +1082,42 @@ fn eyeVisible(p: vec2f) -> f32 {
     let shaft = max(max(southWin1, southWin2), eastWin) * Vig.params1.w;
     col += o.color * vec3f(0.55, 0.34, 0.12) * shaft;
   }
+  if (isNoir) {
+    // Darken cutaway wall-top molding (y = 2.76..2.81) so interior walls don't have a bright white outline
+    if (o.world.y > 2.74 && o.world.y < 2.83 && n.y > 0.75 && o.world.x > 21.8 && o.world.x < 37.2 && o.world.z > 23.8 && o.world.z < 35.8) {
+      col *= 0.08;
+    }
+    // Weathered dark slate-grey porch trim, columns, and window mullions on south facade
+    if (mat == 4 && o.world.z > 35.15 && !interior(o.world.xz)) {
+      let trimLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      if (trimLum > 0.045) {
+        col = mix(vec3f(trimLum) * vec3f(0.34, 0.38, 0.44), col * 0.38, 0.25);
+      }
+    }
+    // Desaturate bright rugs & bedding in Noir and deepen unlit north kitchen corner
+    if (interior(o.world.xz) && o.world.y < 1.95) {
+      let inLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      col = mix(vec3f(inLum) * vec3f(0.92, 0.95, 1.02), col, 0.38);
+      if (o.world.x > 29.5 && o.world.z < 29.6) {
+        col *= 0.42;
+      }
+    }
+    // East window icy moonlight spill on window reveals & kitchen counter/floor
+    if (o.world.x > 34.2 && o.world.x < 37.2 && o.world.z > 27.2 && o.world.z < 34.8) {
+      let winX = smoothstep(34.2, 36.85, o.world.x);
+      let winZ1 = exp(-pow((o.world.z - 29.2) * 0.85, 2.0));
+      let winZ2 = exp(-pow((o.world.z - 32.8) * 0.85, 2.0));
+      let moonShaft = winX * max(winZ1, winZ2) * smoothstep(2.4, 0.1, o.world.y);
+      col += vec3f(0.055, 0.082, 0.125) * moonShaft;
+    }
+    // Wet central porch walkway specular streak under the porch light
+    if (mat == 20 && o.world.x > 26.8 && o.world.x < 28.6 && o.world.z > 35.5 && o.world.z < 40.0) {
+      let cx = exp(-pow((o.world.x - 27.7) * 2.2, 2.0));
+      let cz = smoothstep(40.0, 35.8, o.world.z);
+      let pWet = 0.65 + 0.7 * surfaceNoise(o.world.xz * 4.2);
+      col = col * 0.62 + vec3f(0.11, 0.10, 0.085) * cx * cz * pWet;
+    }
+  }
   // Direction 3 (Noir): volumetric flashlight cone haze + hot hand core & occluded ground beam
   if (activeVig && Vig.params4.w > 0.5) {
     let fSlot = u32(round(Vig.params4.w));
@@ -1090,19 +1132,20 @@ fn eyeVisible(p: vec2f) -> f32 {
     let hazeAmt = Vig.params4.z;
     let fLightCol = lights[fSlot].color.rgb;
     let fPower = lights[fSlot].color.w;
+    let inHouse = interior(o.world.xz);
     if (along > -0.15 && along < fRange) {
       let coneR = 0.08 + max(0.0, along) * tanHalf;
-      let radialCore = exp(-pow(across / (coneR * 0.50), 2.1));
-      let radialEdge = 1.0 - smoothstep(coneR * 0.55, coneR * 1.05, across);
-      let axialIn = smoothstep(-0.04, 0.18, along);
-      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.85);
+      let radialCore = exp(-pow(across / (coneR * 0.52), 2.0));
+      let radialEdge = 1.0 - smoothstep(coneR * 0.55, coneR * 1.08, across);
+      let axialIn = smoothstep(-0.04, 0.16, along);
+      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.65);
       let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.04, o.world.xz, min(o.world.y, 0.95));
       let grit = 0.72 + 0.56 * surfaceNoise(o.world.xz * 4.5 + vec2f(1.7, 3.9));
-      let mist = radialCore * radialEdge * axialIn * axialOut / (0.50 + max(0.0, along) * 0.28) * vis * (0.85 + 0.3 * surfaceNoise(o.world.xz * 1.8));
-      col += fLightCol * fPower * mist * hazeAmt * 0.19;
-      if (o.world.y < 0.30) {
-        let groundSpot = radialCore * radialEdge * axialIn * axialOut / (0.35 + max(0.0, along) * 0.22 + along * along * 0.035) * vis * grit;
-        col += (o.color * 1.45 + vec3f(0.055, 0.065, 0.078)) * fLightCol * fPower * groundSpot * 1.18;
+      let mist = radialCore * radialEdge * axialIn * axialOut / (0.48 + max(0.0, along) * 0.26) * vis * (0.85 + 0.3 * surfaceNoise(o.world.xz * 1.8));
+      col += fLightCol * fPower * mist * hazeAmt * select(0.20, 0.28, inHouse);
+      if (o.world.y < 0.35) {
+        let groundSpot = radialCore * radialEdge * axialIn * axialOut / (0.32 + max(0.0, along) * 0.20 + along * along * 0.028) * vis * grit;
+        col += (o.color * select(1.45, 2.25, inHouse) + vec3f(0.055, 0.065, 0.075)) * fLightCol * fPower * groundSpot * select(1.18, 1.85, inHouse);
       }
     }
     // Small close hand/lantern ground spill right at the survivor's feet
