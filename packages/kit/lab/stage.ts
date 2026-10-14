@@ -220,7 +220,7 @@ export class Stage {
   frameTarget(x:number,y:number,z:number,dist=17){
     this.focus[0]=x;this.focus[1]=y;this.focus[2]=z
     this.targetFocus[0]=x;this.targetFocus[1]=y;this.targetFocus[2]=z
-    this.camDist=Math.max(4,Math.min(75,dist))
+    this.camDist=Math.max(4,Math.min(110,dist))
     this.targetDist=this.camDist
     this.targetYaw=this.camYaw
     this.targetPitch=this.camPitch
@@ -299,14 +299,14 @@ export class Stage {
   zoomBy(factor:number,smooth=false){
     this.camCustom=true
     if(!smooth){
-      this.camDist=Math.max(4,Math.min(75,this.camDist*factor))
+      this.camDist=Math.max(4,Math.min(110,this.camDist*factor))
       this.targetDist=this.camDist
       this.hasDampedTarget=false
       this.updateCamera()
       return
     }
     this.ensureDampedTargets()
-    this.targetDist=Math.max(4,Math.min(75,this.targetDist*factor))
+    this.targetDist=Math.max(4,Math.min(110,this.targetDist*factor))
     this.camDist+=(this.targetDist-this.camDist)*0.45
     this.updateCamera()
   }

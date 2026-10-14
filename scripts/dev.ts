@@ -9,7 +9,8 @@ import { connect, createServer as createNetServer, type Socket } from "node:net"
 import { join, resolve } from "node:path"
 import { createServer as createViteServer, type Plugin, type ViteDevServer } from "vite"
 import { devRoute, hubPath } from "../packages/kit/dev-hub-model"
-import { createDevControlServer } from "./dev-control-server"
+import { createDevControlServer, extraPageHosts } from "./dev-control-server"
+import { createLabFeedback } from "./lab-feedback"
 
 const root = resolve(import.meta.dirname, "..")
 const workspaces: string[] = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).workspaces
@@ -17,6 +18,7 @@ const games = workspaces.filter(path => path.startsWith("games/")).map(path => p
 const workers = process.argv.includes("--workers")
 const port = Number(process.env.PORT) || 5180, host = process.env.HOST || "127.0.0.1"
 const control = createDevControlServer({ root, host, port, games, workers })
+const labFeedback = createLabFeedback({ root, pageToken: control.pageToken, pageHosts: extraPageHosts() })
 
 const server = createHttpServer((req, res) => { void handle(req, res) })
 const vites = new Map<string, Promise<ViteDevServer>>(), ready = new Set<string>()
@@ -98,6 +100,7 @@ const workerOff = (game: string) => JSON.stringify({ error: `The ${game} Worker 
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
   if (await control.handleHttp(req, res)) return
+  if (await labFeedback.handle(req, res)) return
   const target = devRoute(req.url ?? "/", games)
   try {
     if (target.kind === "redirect") return void res.writeHead(302, { location: target.location }).end()
