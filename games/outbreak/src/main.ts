@@ -43,6 +43,8 @@ import {
   outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
+  STREET_LAMP_POSTS,
+  streetLampHead,
 } from "./lighting"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
@@ -87,6 +89,38 @@ const settings = {
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
+}
+
+const streetHeads = STREET_LAMP_POSTS.map(streetLampHead)
+function nearestStreetHead(x: number, y: number): readonly [number, number, number] {
+  let best = streetHeads[0]!
+  for (const head of streetHeads) if (Math.hypot(head[0] - x, head[2] - y) < Math.hypot(best[0] - x, best[2] - y)) best = head
+  return best
+}
+
+const zombieSlots: [number, number, number, number] = [-999, -999, -999, -999]
+/** Two nearest living zombies within 12 m for analytic lamp shadows; unused slots stay far away. */
+function nearestZombies(zombies: readonly { x: number; y: number; state: string }[], px: number, py: number) {
+  let d0 = 144
+  let d1 = 144
+  zombieSlots.fill(-999)
+  for (const z of zombies) {
+    if (z.state === "dead") continue
+    const d = (z.x - px) ** 2 + (z.y - py) ** 2
+    if (d < d0) {
+      d1 = d0
+      zombieSlots[2] = zombieSlots[0]
+      zombieSlots[3] = zombieSlots[1]
+      d0 = d
+      zombieSlots[0] = z.x
+      zombieSlots[1] = z.y
+    } else if (d < d1) {
+      d1 = d
+      zombieSlots[2] = z.x
+      zombieSlots[3] = z.y
+    }
+  }
+  return zombieSlots
 }
 
 async function main() {
@@ -990,6 +1024,8 @@ async function main() {
         flashlightOutput: p.flashlightOutput,
         flashlightSlot,
         inInteriorView,
+        streetHead: nearestStreetHead(camX, camY),
+        zombies: nearestZombies(zombies, p.x, p.y),
       },
       flashRgb,
       lightingUniforms,
