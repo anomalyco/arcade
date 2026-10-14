@@ -137,9 +137,9 @@ export class SmokeVolumes {
         const at=start+i,distance=this.arrival[at]
         this.holes[at]=Math.max(0,this.holes[at]-dt*1.5)
         const edge=Math.max(0,Math.min(1,(reach-distance)/soft))
-        // Keep the central fireball zone clear of low-res volumetric fog while the high-res fireball billows burn (0..0.42s),
-        // then fill the rising column with dense soot as the fireball crusts over.
-        const coreClear=soot>0&&age<0.44?Math.min(1,Math.max(0.08,Math.pow(age/0.44,1.8)+Math.max(0,(distance-1.15)/1.45))):1
+        // Keep the central fireball zone clear of low-res volumetric fog while the high-res fireball billows burn (0..0.40s),
+        // then fill the rising column with sculpted soot as the fireball crusts over.
+        const coreClear=soot>0&&age<0.44?Math.min(1,Math.max(0.06,Math.pow(age/0.44,1.75)+Math.max(0,(distance-1.15)/1.45))):1
         const d=this.solid[at]?0:fade*coreClear*edge*edge*(3-2*edge)*this.power[s]*(1-this.holes[at])
         this.density[at]=d;this.field[at*2]=half(d);this.field[at*2+1]=this.solid[at]?0x3c00:0
       }
