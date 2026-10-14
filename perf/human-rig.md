@@ -28,10 +28,13 @@ Walk/run/sprint, turning, seeded recoil and hit events produced exact JSON body 
 | Mode | Reference hash |
 | --- | --- |
 | Old | `00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac` |
-| New | `22f0e02263aad662363e956740b49ac56f9e17c1260af126882cbe35fb98eca2` |
+| New | `623c4d5a3478946df33a65c5022dce5826d883542cfc13d78f83275278851189` |
 
 Reproduce with `bun scripts/prove-human-parity.ts [baseline-repo]` from Blackout. This verifies the reference hashes
 plus explicit crouch-run posture scaling, zero planted toe slip, aim error bounds and weapon stability versus Old.
+(`New` was deliberately updated from `22f0e02263aad662363e956740b49ac56f9e17c1260af126882cbe35fb98eca2` after the
+procedural locomotion pass: $C^0$-continuous mid-swing retargeting, smooth strafe separation, up-biased knee pole
+vector, touchdown toe-roll continuity, reversal step/posture handling and centripetal turn banking.)
 
 After merging released main, both soldier hashes still match. Outbreak's default survivor also matches its
 released-main adapter exactly over 600 frames: a curved path, turning aim and sloped support, comparing every
