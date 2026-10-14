@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
+import { BARRICADE_DURATION, PISTOL_RELOAD_TIME, SEARCH_DURATION } from "../shared/combat"
 import { LocalSession } from "../shared/session"
 import { agentZombieProfile } from "../src/zombies"
 import { zombieTuning } from "../src/zombie-profile"
 
-describe("Outbreak AI integration", () => {
+describe("Outbreak AI & survival combat integration", () => {
   test("spawns deterministic wandering zombies and emits noise on door/window/sprint actions", () => {
     const a = new LocalSession(7)
     const b = new LocalSession(7)
@@ -58,5 +59,104 @@ describe("Outbreak AI integration", () => {
     expect(chaseProfile.armReach).toBeGreaterThan(wanderProfile.armReach)
     expect(chaseProfile.torsoLean).toBeGreaterThan(wanderProfile.torsoLean)
     expect(chaseProfile.footDrag).toBeLessThan(wanderProfile.footDrag)
+  })
+
+  test("pistol firing consumes ammo, emits loud gunshot noise, staggers/kills zombie, and reloads with R", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const p = session.view.player
+    Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0, magAmmo: 2, reserveAmmo: 6 })
+    const target = session.ai.spawnZombie(session.view.town, 34, 44, "wander", Math.PI)
+    const distant = session.ai.spawnZombie(session.view.town, 62, 44, "wander", Math.PI)
+
+    // Shot 1: hits and staggers target, emits gunshot noise that wakes distant zombie 32m away
+    session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0)
+    expect(p.magAmmo).toBe(1)
+    expect(target.hp).toBeLessThan(100)
+    expect(target.state).toBe("stagger")
+    expect(session.view.noises.some((n) => n.kind === "gunshot" && n.radius >= 50)).toBe(true)
+
+    // Step through fire cooldown so distant zombie processes gunshot and we can fire shot 2
+    for (let i = 0; i < 18; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false }, 0)
+    }
+    expect(distant.awareness).toBeGreaterThan(0.3)
+
+    // Shot 2: kills target and selects a detachable limb
+    session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0)
+    expect(p.magAmmo).toBe(0)
+    expect(target.state).toBe("dead")
+    expect(session.view.shots.at(-1)?.killed).toBe(true)
+    expect(session.view.shots.at(-1)?.detachBone).not.toBeNull()
+
+    // Reload with R: refills magazine from reserveAmmo after PISTOL_RELOAD_TIME
+    session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, reload: true }, 0)
+    expect(p.reloadRemaining).toBeGreaterThan(1.0)
+    const reloadSteps = Math.ceil((PISTOL_RELOAD_TIME + 0.05) / TICK_DT)
+    for (let i = 0; i < reloadSteps; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false }, 0)
+    }
+    expect(p.reloadRemaining).toBe(0)
+    expect(p.magAmmo).toBe(6)
+    expect(p.reserveAmmo).toBe(0)
+  })
+
+  test("scavenging house containers yields ammo/planks and melee shove pushes zombies back", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const p = session.view.player
+    const container = session.view.containers.find((c) => c.ammo > 0 || c.planks > 0)!
+    expect(container).toBeDefined()
+
+    // Stand right beside the container inside the room
+    Object.assign(p, { x: container.x, y: container.y + 0.75, vx: 0, vy: 0, aim: -Math.PI / 2, reserveAmmo: 0, planks: 0 })
+    session.rebuildCollision()
+
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
+    expect(p.channel?.kind).toBe("search")
+    const searchSteps = Math.ceil((SEARCH_DURATION + 0.05) / TICK_DT)
+    for (let i = 0; i < searchSteps; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false }, 0)
+    }
+    expect(container.searched).toBe(true)
+    expect(p.reserveAmmo + p.planks).toBeGreaterThan(0)
+
+    // Melee shove knocks a close zombie back into stagger
+    Object.assign(p, { x: 44, y: 44, aim: 0 })
+    const z = session.ai.spawnZombie(session.view.town, 45.1, 44, "chase", Math.PI)
+    session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, melee: true }, 0)
+    expect(z.state).toBe("stagger")
+    expect(z.staggerVx).toBeGreaterThan(4)
+  })
+
+  test("plank barricades board up doors/windows and zombies bash planks down over time", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0, bashInterval: 0.2, aggression: 1.8 })
+    const p = session.view.player
+    const frontDoor = session.view.town.doors.find((d) => d.id === "ash-front")!
+
+    // Stand inside Ash front door and build 1 plank barricade
+    Object.assign(p, { x: 27.7, y: 34.4, vx: 0, vy: 0, aim: Math.PI / 2, planks: 2 })
+    session.rebuildCollision()
+    session.update(TICK_DT, { mx: 0, my: 0, aim: Math.PI / 2, interact: false, barricade: true }, 0)
+    expect(p.channel?.kind).toBe("barricade")
+
+    const buildSteps = Math.ceil((BARRICADE_DURATION + 0.05) / TICK_DT)
+    for (let i = 0; i < buildSteps; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: Math.PI / 2, interact: false }, 0)
+    }
+    expect(session.ai.getBarricadePlanks(frontDoor.id)).toBe(1)
+    expect(p.planks).toBe(1)
+
+    // Barricaded door cannot be opened normally with E
+    session.update(TICK_DT, { mx: 0, my: 0, aim: Math.PI / 2, interact: true }, 0)
+    expect(frontDoor.open).toBe(false)
+
+    // Spawn chasing zombie outside to bash down the plank and then the door
+    const z = session.ai.spawnZombie(session.view.town, 27.7, 36.1, "chase", -Math.PI / 2)
+    z.targetX = p.x
+    z.targetY = p.y
+    for (let i = 0; i < 160; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: Math.PI / 2, interact: false }, 0)
+      if (session.ai.getBarricadePlanks(frontDoor.id) === 0) break
+    }
+    expect(session.ai.getBarricadePlanks(frontDoor.id)).toBe(0)
   })
 })

@@ -17,6 +17,7 @@ import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
+import { OutbreakCombatFX } from "./combat-fx"
 import { buildLevel, hex } from "./level"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
@@ -79,12 +80,19 @@ async function main() {
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
   let pendingFlashlightToggle = false
+  let pendingBarricade = false
+  let pendingSlot: 1 | 2 | 3 | undefined
   input.onKey = (code) => {
     if (code === "KeyL") pendingFlashlightToggle = true
+    if (code === "KeyB") pendingBarricade = true
+    if (code === "Digit1") pendingSlot = 1
+    if (code === "Digit2") pendingSlot = 2
+    if (code === "Digit3") pendingSlot = 3
   }
   const cam = new Camera()
   const avatar = new Survivor(renderer)
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
+  const combatFx = new OutbreakCombatFX(renderer)
   const updateProfile = () => {
     avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
   }
@@ -173,7 +181,7 @@ async function main() {
   doorMesh.box(0.08, 0.35, -0.11, 1.32, 2.1, -0.105, hex(0x8b7253), MAT.wall)
   doorMesh.box(1.15, 1.1, 0.1, 1.24, 1.17, 0.17, hex(0xb9a071))
   for (const x of [0.15, 0.75]) {
-    for (const y of [0.42, 1.36]) {
+    for (const y of [0.42, 0.36 + 1]) {
       doorMesh.box(x, y, 0.101, x + 0.48, y + 0.7, 0.125, hex(0x91754e))
       doorMesh.box(x + 0.035, y + 0.04, 0.126, x + 0.445, y + 0.66, 0.132, hex(0x70583d))
     }
@@ -231,11 +239,20 @@ async function main() {
     const substeps = clock.frame(wallNow, liveMove(), () => input.takeEnter(), () => input.takeCycle())
     if (!substeps.length) return 0
     const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
+    const fireEdge = input.takeFirePress()
+    const reloadEdge = input.takeReload()
+    const meleeEdge = input.takeMelee()
     let stepped = 0
     for (const [idx, step] of substeps.entries()) {
       const p = session.view.player
       const toggleFl = idx === 0 && pendingFlashlightToggle
-      if (toggleFl) pendingFlashlightToggle = false
+      const barricade = idx === 0 && pendingBarricade
+      const slot = idx === 0 ? pendingSlot : undefined
+      if (idx === 0) {
+        pendingFlashlightToggle = false
+        pendingBarricade = false
+        pendingSlot = undefined
+      }
       session.update(
         step.dt,
         {
@@ -245,7 +262,12 @@ async function main() {
           aim: Math.atan2(target.y - p.y, target.x - p.x),
           interact: step.interact,
           cycle: step.cycle,
+          fire: idx === 0 ? fireEdge : false,
+          reload: idx === 0 ? reloadEdge : false,
+          melee: idx === 0 ? meleeEdge : false,
+          barricade,
           toggleFlashlight: toggleFl,
+          slot,
         },
         settings.timeScale,
         settings,
@@ -380,6 +402,7 @@ async function main() {
     const data = buildLevel(session.view.town)
     vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
     renderer.setLevel(data)
+    combatFx.setLevel(data)
   }
   function regenerate() {
     const previous = session.view
@@ -401,6 +424,7 @@ async function main() {
     level()
     avatar.reset()
     zombieCrowd.reset()
+    combatFx.reset()
   }
   function reset(nextSeed = seed) {
     session.close()
@@ -411,6 +435,7 @@ async function main() {
     lastPeek = null
     avatar.reset()
     zombieCrowd.reset()
+    combatFx.reset()
     level()
     scenery = new SceneryMemory()
     renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -421,25 +446,43 @@ async function main() {
   }
   reset()
   const formatStatus = () => {
-    const { player: p, hour, prompt, zombies } = session.view
+    const { player: p, hour, time, prompt, zombies } = session.view
     const interactKey = keyLabel("KeyE")
     const cycleKey = keyLabel("KeyQ")
+    const reloadKey = keyLabel("KeyR")
+    const barricadeKey = keyLabel("KeyB")
     let promptText = ""
-    if (prompt) {
+    if (p.channel) {
+      const pct = Math.min(100, Math.round((p.channel.elapsed / Math.max(0.1, p.channel.duration)) * 100))
+      promptText = ` · ${p.channel.label} (${pct}%)`
+    } else if (prompt) {
       const nextIdx = (prompt.actions.findIndex((a) => a.id === prompt.activeAction.id) + 1) % prompt.actions.length
       const next = prompt.actions.length > 1 ? prompt.actions[nextIdx] : undefined
-      promptText = ` · ${interactKey} ${prompt.activeAction.label}${next ? ` (${cycleKey} ${next.label})` : ""}`
+      const canBarricade =
+        (prompt.kind === "door" || prompt.kind === "window") &&
+        p.planks > 0 &&
+        session.ai.getBarricadePlanks(prompt.id) < 3
+      const barricadeHint = canBarricade ? ` [${barricadeKey} Barricade]` : ""
+      promptText = ` · ${interactKey} ${prompt.activeAction.label}${next ? ` (${cycleKey} ${next.label})` : ""}${barricadeHint}`
     }
+    const weaponText =
+      p.reloadRemaining > 0
+        ? ` · Reloading…`
+        : p.equippedItem === "pistol"
+          ? ` · 9mm ${p.magAmmo}/${p.magCapacity} (+${p.reserveAmmo}${p.magAmmo === 0 && p.reserveAmmo > 0 ? ` ${reloadKey}` : ""})`
+          : ` · Hands`
+    const plankText = p.planks > 0 ? ` · ${p.planks}🪵` : ""
+    const flText = p.flashlightOn ? " · 🔦ON" : ""
     const alerted = zombies.filter((z) => z.state === "chase" || z.state === "alert" || z.state === "bash").length
     const alertText = alerted > 0 ? ` · ${alerted} pursuing` : ""
-    const flText = p.flashlightOn ? " · Flashlight ON" : ""
-    return `${clockText(hour)}${p.exhausted ? " · Exhausted" : ""}${flText}${alertText}${promptText}`
+    const lootText = p.lootMessage && time < p.lootMessageUntil ? ` · ${p.lootMessage}` : ""
+    return `${clockText(hour)}${weaponText}${plankText}${flText}${p.exhausted ? " · Exhausted" : ""}${alertText}${promptText}${lootText}`
   }
   onKeyLayoutChange(() => {
     status.textContent = formatStatus()
   })
   function draw(dt: number) {
-    const { player: p, town, hour, time, peek, zombies, noises } = session.view
+    const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
     settings.hour = Math.round(hour * 20) / 20
     if (peek) {
       lastPeek = peek
@@ -535,6 +578,47 @@ async function main() {
         count++ * LIGHT_FLOATS,
       )
     }
+
+    const lift = vaultLift(p)
+    const survivorBatches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift)
+    const zombieBatches = zombieCrowd.draw(
+      zombies,
+      dt,
+      (x, z) => supportHeight(town, x, z),
+      vision,
+      view,
+      settings,
+      Boolean(settings.aiDebugOverlay),
+    )
+
+    let addCount = combatFx.processShots(
+      shots,
+      time,
+      dt,
+      session.ai,
+      zombieCrowd,
+      (x, z) => supportHeight(town, x, z),
+      addSprites,
+      0,
+    )
+    const fxOut = combatFx.stepAndCollect(
+      dt,
+      time,
+      town,
+      p,
+      avatar.bones,
+      session.ai,
+      zombieCrowd,
+      (x, z) => supportHeight(town, x, z),
+      addSprites,
+      addCount,
+    )
+    addCount = fxOut.addCount
+    if (fxOut.muzzleLight && count < MAX_LIGHTS) {
+      const [mx, my, mz, mPower] = fxOut.muzzleLight
+      lights.set([mx, my, mz, 9.5, 1.0, 0.78, 0.38, mPower, 0, 0, 0, 0, 0, lightOccluders, 0.14, -1], count++ * LIGHT_FLOATS)
+    }
+
     for (const [i, lamp] of town.lamps.entries()) {
       const lampScale = day.lamps * settings.lighting
       lampPower[i] = lampScale
@@ -603,16 +687,6 @@ async function main() {
       sashData.set([(wx0 + wx1) / 2, 0.38, (wy0 + wy1) / 2, yaw, 1, 1, 1, 1, 0, 0, 1, 0], openWindows++ * 12)
     }
     sashBatch.count = openWindows
-    const lift = vaultLift(p)
-    const zombieBatches = zombieCrowd.draw(
-      zombies,
-      dt,
-      (x, z) => supportHeight(town, x, z),
-      vision,
-      view,
-      settings,
-      Boolean(settings.aiDebugOverlay),
-    )
     render.alphaCount = zombieCrowd.renderDebugOverlay(
       Boolean(settings.aiDebugOverlay),
       zombies,
@@ -627,8 +701,11 @@ async function main() {
       alphaSprites,
       0,
     )
+    render.addCount = addCount
+    render.splatter = combatFx.splatter ?? undefined
     render.batches = [
-      ...avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift),
+      ...survivorBatches,
+      ...fxOut.batches,
       ...zombieBatches,
       doorBatch,
       ...(openWindows ? [sashBatch] : []),
@@ -742,6 +819,7 @@ async function main() {
       peekBlend,
       explored: vision.explored.filter((v) => v > 0).length,
       vertices,
+      splatter: combatFx.splatter?.inspect() ?? null,
     }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
@@ -793,6 +871,7 @@ async function main() {
         cycledTargetId: null,
         cycledActionIndex: 0,
         vault: null,
+        channel: null,
       })
       peekBlend = 0
       lastPeek = null

@@ -9,7 +9,7 @@ export const PEEK_CONE = 155
 export const PEEK_AWARENESS = 3.5
 
 export type InteractableKind = "door" | "window" | (string & {})
-export type InteractActionId = "toggle" | "lock" | "peek" | "climb"
+export type InteractActionId = "toggle" | "lock" | "peek" | "climb" | "search" | "barricade"
 export type InteractAction = { id: InteractActionId; label: string }
 
 export type VaultState = {

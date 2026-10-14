@@ -4,7 +4,7 @@ import { resolve } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = resolve(import.meta.dir, "..")
-const out = resolve(game, "../../captures/outbreak-ai-phase2")
+const out = resolve(game, "../../captures/outbreak-ai-phase3")
 const framesDir = resolve(out, "frames")
 rmSync(framesDir, { recursive: true, force: true })
 mkdirSync(framesDir, { recursive: true })
@@ -61,81 +61,107 @@ try {
     }
   }
 
-  // Setup Beat 1: Dusk street with wandering zombie cluster in view (facing away/across street, calm WANDER state)
+  // Beat 1: Dusk street with wandering zombies + AI debug overlay showing green WANDER cones
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
     h.setLab("timeScale", 0)
-    h.setLab("hour", 19.2)
-    h.setLab("zoom", 42)
+    h.setLab("hour", 19.1)
+    h.setLab("zoom", 38)
     h.pose(29.5, 43.2, 0)
     h.setZombieState("wander")
-    h.spawnZombie(36.8, 42.2, "wander", 0.25)
-    h.spawnZombie(37.6, 44.3, "wander", -0.35)
-    h.spawnZombie(35.2, 45.4, "wander", 0.8)
+    h.spawnZombie(35.2, 42.6, "wander", 0.25)
+    h.spawnZombie(36.0, 44.1, "wander", -0.35)
+    h.spawnZombie(34.4, 44.8, "wander", 0.7)
     await h.step(1 / 60)
   })
 
-  // 45 frames: calm wandering shamblers, turn on AI debug overlay at frame 12 (green WANDER cones), then toggle flashlight at frame 30
-  for (let f = 0; f < 45; f++) {
-    if (f === 12) {
+  for (let f = 0; f < 35; f++) {
+    if (f === 10) {
       await page.evaluate(() => (window as any).__arcadeHarness.setLab("aiDebugOverlay", true))
     }
-    const toggleFl = f === 30
-    await page.evaluate(
-      async ({ toggleFl }) => {
-        const h = (window as any).__arcadeHarness
-        await h.step(1 / 60, { mx: 0, my: 0, aim: -0.05, toggleFlashlight: toggleFl })
-        await h.step(1 / 60, { mx: 0, my: 0, aim: -0.05 })
-      },
-      { toggleFl },
-    )
-    await captureFrame(f === 8 ? "01-wandering-dusk" : f === 22 ? "02-debug-overlay-wander" : undefined)
-  }
-
-  // Beat 2: Emit noise & sprint -> zombies transition to INVESTIGATE -> ALERT -> CHASE
-  await page.evaluate(() => {
-    const h = (window as any).__arcadeHarness
-    const p = h.state().player
-    h.makeNoise(p.x, p.y, 16, "sprint")
-  })
-  for (let f = 0; f < 65; f++) {
-    await page.evaluate(
-      async ({ f }) => {
-        const h = (window as any).__arcadeHarness
-        const sprint = f < 28
-        const mx = f < 35 ? -0.7 : 0
-        const my = f < 25 ? -0.7 : 0
-        await h.step(1 / 60, { mx, my, sprint, aim: 0.25 })
-        await h.step(1 / 60, { mx, my, sprint, aim: 0.25 })
-      },
-      { f },
-    )
-    await captureFrame(f === 8 ? "03-noise-investigate" : f === 42 ? "04-chase-pack" : undefined)
-  }
-
-  // Beat 3: Survivor retreats behind Ash front door; zombies bash the closed door open
-  await page.evaluate(async () => {
-    const h = (window as any).__arcadeHarness
-    h.pose(27.7, 33.4, Math.PI / 2)
-    const z1 = h.spawnZombie(27.7, 36.2, "chase", -Math.PI / 2)
-    const z2 = h.spawnZombie(28.4, 36.5, "chase", -Math.PI / 2)
-    z1.targetX = 27.7
-    z1.targetY = 33.4
-    z2.targetX = 27.7
-    z2.targetY = 33.4
-  })
-  for (let f = 0; f < 50; f++) {
     await page.evaluate(async () => {
       const h = (window as any).__arcadeHarness
-      await h.step(1 / 60, { mx: 0, my: 0, aim: Math.PI / 2 })
-      await h.step(1 / 60, { mx: 0, my: 0, aim: Math.PI / 2 })
+      await h.step(1 / 60, { mx: 0, my: 0, aim: 0 })
+      await h.step(1 / 60, { mx: 0, my: 0, aim: 0 })
     })
-    await captureFrame(f === 18 ? "05-door-bash" : f === 46 ? "06-door-breached" : undefined)
+    await captureFrame(f === 22 ? "01-wander-debug" : undefined)
+  }
+
+  // Beat 2: Turn on flashlight & fire pistol at zombie pack -> muzzle flash, blood splatter, limb detach, gunshot noise ring!
+  await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    await h.step(1 / 60, { toggleFlashlight: true, aim: -0.08 })
+  })
+  for (let f = 0; f < 65; f++) {
+    const shouldFire = f === 4 || f === 14 || f === 26 || f === 38
+    const shouldReload = f === 48
+    await page.evaluate(
+      async ({ shouldFire, shouldReload, f }) => {
+        const h = (window as any).__arcadeHarness
+        const p = h.state().player
+        const living = h
+          .state()
+          .zombies.filter((z: any) => z.state !== "dead" && Math.hypot(z.x - p.x, z.y - p.y) < 12)
+        const target = living[0]
+        const aim = target ? Math.atan2(target.y - p.y, target.x - p.x) : 0
+        const mx = f > 20 && f < 45 ? -0.45 : 0
+        await h.step(1 / 60, { mx, my: 0, aim, fire: shouldFire, reload: shouldReload })
+        await h.step(1 / 60, { mx, my: 0, aim })
+      },
+      { shouldFire, shouldReload, f },
+    )
+    await captureFrame(
+      f === 4 ? "02-pistol-muzzle-flash" : f === 28 ? "03-splatter-and-gunshot-ring" : undefined,
+    )
+  }
+
+  const splatterStats = await page.evaluate(() => (window as any).__arcadeHarness.state().splatter)
+  assert(splatterStats && (splatterStats.decals > 0 || splatterStats.particles > 0), "Expected blood splatter from pistol hits")
+
+  // Beat 3: Scavenge inside Ash house for 9mm ammo & planks, then board up the south-west window and watch zombies bash the planks!
+  await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    h.setLab("aiDebugOverlay", true)
+    h.setLab("hour", 18.4)
+    h.setLab("zoom", 32)
+    // First scavenge kitchen counter inside Ash house
+    h.pose(35.3, 33.5, 0)
+    await h.step(1 / 60, { interact: true })
+    for (let i = 0; i < 55; i++) await h.step(1 / 60)
+    // Move outside the south-west window [23.5..25.5, 35.28..35.5] where planks are clearly visible to the camera
+    h.pose(24.5, 36.25, -Math.PI / 2)
+    await h.step(1 / 60, { barricade: true })
+  })
+
+  for (let f = 0; f < 55; f++) {
+    const secondPlank = f === 24
+    await page.evaluate(
+      async ({ secondPlank }) => {
+        const h = (window as any).__arcadeHarness
+        await h.step(1 / 60, { mx: 0, my: 0, aim: -Math.PI / 2, barricade: secondPlank })
+        await h.step(1 / 60, { mx: 0, my: 0, aim: -Math.PI / 2 })
+      },
+      { secondPlank },
+    )
+    if (f === 26) {
+      // Spawn chasing zombies to bash the barricaded window
+      await page.evaluate(() => {
+        const h = (window as any).__arcadeHarness
+        h.pose(24.5, 33.8, Math.PI / 2)
+        const z1 = h.spawnZombie(24.2, 36.2, "chase", -Math.PI / 2)
+        const z2 = h.spawnZombie(24.9, 36.3, "chase", -Math.PI / 2)
+        z1.targetX = 24.5
+        z1.targetY = 33.8
+        z2.targetX = 24.5
+        z2.targetY = 33.8
+      })
+    }
+    await captureFrame(f === 23 ? "04-barricaded-door" : f === 50 ? "05-zombies-bashing-barricade" : undefined)
   }
 
   assert.deepEqual(errors, [])
 
-  const videoPath = resolve(out, "zombie-ai-phase2.mp4")
+  const videoPath = resolve(out, "zombie-ai-complete.mp4")
   const ff = Bun.spawnSync(
     [
       "ffmpeg",
@@ -157,7 +183,7 @@ try {
     { stdout: "inherit", stderr: "inherit" },
   )
   assert.equal(ff.exitCode, 0)
-  console.log(`Phase 2 video & stills saved to ${out}`)
+  console.log(`Complete survival video & stills saved to ${out}`)
 } finally {
   await browser.close()
   fixture.stop(true)
