@@ -125,9 +125,9 @@ try {
   await advance(120)
   await page.keyboard.up("d")
   await page.locator("header").click({ position: { x: 10, y: 8 }, force: true })
-  await page.keyboard.down(",")
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: ",", bubbles: true })))
   await advance(Math.max(1, ticks - Math.min(ticks, 180) - 120))
-  await page.keyboard.up(",")
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW", key: ",", bubbles: true })))
   await advance(10)
   // Blackout's AFTER panel uses shadow DOM; target its host directly.
   const hidden = (i: number) => frames[i]!.evaluate((before) => {

@@ -1,4 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
+import { keyLabel } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { Renderer, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
@@ -55,7 +56,7 @@ async function main() {
   const seed = Number(params.get("seed") ?? 7) >>> 0
   let session = new LocalSession(seed), vision = new Vision()
   let scenery = new SceneryMemory()
-  const input = new Input(canvas, ["KeyF"])
+  const input = new Input(canvas)
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
   const cam = new Camera()
@@ -194,7 +195,7 @@ async function main() {
     render.view = view; render.grade = [time, settings.diagnostic, 0, settings.exposure]
     renderer.render(render)
     const door = nearbyDoor(town, p.x, p.y)
-    status.textContent = `${clockText(hour)}${door ? ` · F ${door.open ? "Close" : "Open"} door` : ""}`
+    status.textContent = `${clockText(hour)}${door ? ` · ${keyLabel("KeyE")} ${door.open ? "Close" : "Open"} door` : ""}`
     const meterNow = performance.now(), elapsed = (meterNow - meterAt) / 1000
     if (elapsed > .25) {
       lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`

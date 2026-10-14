@@ -28,7 +28,7 @@ export class Chat {
     addEventListener("keydown", (e) => {
       if (this.isOpen() || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.code !== "Enter" && e.code !== "NumpadEnter" && e.code !== "KeyT" && e.key.toLowerCase() !== "t") return
+      if (e.code !== "Enter" && e.code !== "NumpadEnter" && e.code !== "KeyT") return
       e.preventDefault()
       this.open()
     })

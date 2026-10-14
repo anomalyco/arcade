@@ -48,7 +48,7 @@ try {
   await advance(70);assert((await state()).spells.skeletons.length===1,"Selection changed a latched click / independent summon cooldown failed")
   await page.keyboard.press("2");await page.keyboard.press("1");assert((await state()).selected==="moon","1 did not select moon")
   const before=(await state()).players.find(p=>p.id==="you")!
-  await page.keyboard.down("KeyE");await click(12,11);await advance(120);await page.keyboard.up("KeyE")
+  await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent("keydown",{code:"KeyD",key:"e",bubbles:true})));await click(12,11);await advance(120);await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent("keyup",{code:"KeyD",key:"e",bubbles:true})))
   assert((await state()).players.find(p=>p.id==="you")!.x>before.x,"Dvorak movement failed while casting")
   await advance(500);await click(12,11);await advance(70)
   assert((await state()).spells.moons.length===2,"Ready second click failed")

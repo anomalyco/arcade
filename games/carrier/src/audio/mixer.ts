@@ -93,7 +93,7 @@ export class Mixer {
     window.addEventListener("keydown", (e) => {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.code === "KeyM" || e.key === "m" || e.key === "M") this.setMuted(!this.muted)
+      if (e.code === "KeyM") this.setMuted(!this.muted)
     })
   }
 
