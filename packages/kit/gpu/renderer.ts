@@ -25,7 +25,7 @@ const BLOOM_LEVELS = 5
 const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
-type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" }
+type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" }
 
 /** Conservative screen bounds of cuttable geometry. The cutaway is screen-space, not a fixed world-space box. */
 function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, custom = false): boolean {
@@ -33,7 +33,8 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, 
     if (!box) return true
     return f[24]! > box[0]! && f[24]! < box[3]! && f[25]! > box[2]! && f[25]! < box[5]!
   }
-  if (!box || f[26]! < 0.5 || box[4]! < f[34]! || box[5]! < f[25]! + 0.25) return false
+  const peeking = f[26]! > 1.001
+  if (!box || f[26]! < 0.5 || box[4]! < f[34]! || (!peeking && box[5]! < f[25]! + 0.25)) return false
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
   for (let i = 0; i < 8; i++) {
     const x = box[i & 1 ? 3 : 0]!, y = box[i & 2 ? 4 : 1]!, z = box[i & 4 ? 5 : 2]!
@@ -289,19 +290,20 @@ export class Renderer {
     const scene = this.module(shaders?.scene ?? sceneShader(), "scene")
     const baselineScene = shaders ? scene : this.module(sceneShader(false), "scene baseline")
     const sprite = this.module(shaders?.sprite ?? spriteShader(), "sprite")
-    const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false) =>
+    const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false, alphaToCoverage = false) =>
       d.createRenderPipeline({
         layout,
         vertex: { module, entryPoint: vs, buffers },
         fragment: { module, entryPoint: fs, targets: [{ format: HDR, blend }, ...(motion ? [{ format: HDR, blend: blend ? premul : undefined }] : [])] },
         primitive: { topology: "triangle-list", cullMode },
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
-        multisample: { count: SAMPLES },
+        multisample: { count: SAMPLES, alphaToCoverageEnabled: alphaToCoverage && !blend && !motion },
       })
-    this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
-    this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
-    this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", "fs")
-    this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
+    const useA2C = Boolean(shaders)
+    this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid", false, false)
+    this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs", false, useA2C)
+    this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", shaders ? "fsSolid" : "fs")
+    this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", shaders ? "fsSolid" : "fs")
     this.pipes.instAlpha = pipe(scene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
     // Keep the all-off shader's arithmetic identical, including compiler rounding.
     this.baselinePipes.level = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
@@ -669,9 +671,10 @@ export class Renderer {
       for (const c of this.chunks) {
         if (c.box[0] > vx1 || c.box[2] < vx0 || c.box[1] > vy1 || c.box[3] < vy0) continue
         const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
-        if (c.customCutaway === "outside" && insideCustom) continue
+        const peeking = f.frame[26]! > 1.001
+        if (c.customCutaway === "outside" && insideCustom && !peeking) continue
         drawn++
-        const next = c.customCutaway ? (c.customCutaway === true && insideCustom) : intersectsCutaway(c.cutBox, f.frame)
+        const next = c.customCutaway ? (insideCustom && peeking) : intersectsCutaway(c.cutBox, f.frame)
         if (cut !== next) {
           cut = next
           pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!)

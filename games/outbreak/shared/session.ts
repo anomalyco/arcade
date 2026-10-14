@@ -1,17 +1,32 @@
 import { pushOut } from "@arcade/kit/sim/geom"
 import { advanceHour } from "./day-cycle"
 import {
+  createFlashlightState,
+  DEFAULT_FLASHLIGHT_TUNING,
+  stepFlashlight,
+  toggleFlashlight,
+  type FlashlightState,
+  type FlashlightTuning,
+} from "./flashlight"
+import {
   createInteractActorState,
-  cycleInteractAction,
   executeInteraction,
   peekInfoFor,
   selectInteractTarget,
+  stepHoldInteraction,
   stepInteractionState,
   type InteractActionId,
   type InteractActorState,
   type InteractTarget,
   type PeekInfo,
 } from "./interact"
+import {
+  createInventoryState,
+  cycleHotbarSlot,
+  selectHotbarSlot,
+  syncFlashlightItem,
+  type InventoryState,
+} from "./inventory"
 import { makeTown, SIZE, solidRects, type Town } from "./map"
 import {
   createStaminaState,
@@ -21,29 +36,42 @@ import {
   type StaminaTuning,
 } from "./stamina"
 
+export type SessionTuning = StaminaTuning & Partial<FlashlightTuning>
+
 export type Command = {
   mx: number
   my: number
   aim: number
   interact: boolean
+  interactHeld?: boolean
+  flashlight?: boolean
   sprint?: boolean
-  cycle?: boolean
+  jump?: boolean
+  hotbarSlot?: number
+  hotbarDelta?: number
   interactAction?: InteractActionId
 }
-export type Survivor = { x: number; y: number; vx: number; vy: number; aim: number } & StaminaState & InteractActorState
+
+export type Survivor = { x: number; y: number; vx: number; vy: number; aim: number } &
+  StaminaState &
+  FlashlightState &
+  InteractActorState
+
 export type SessionView = {
   town: Town
   player: Survivor
+  inventory: InventoryState
   hour: number
   time: number
   revision: number
   prompt: InteractTarget | undefined
   peek: PeekInfo | null
 }
+
 /** Transport boundary: M4 can implement the same update/view contract with snapshots. */
 export interface Session {
   readonly view: SessionView
-  update(dt: number, command: Command, timeScale: number, tuning?: StaminaTuning): void
+  update(dt: number, command: Command, timeScale: number, tuning?: SessionTuning): void
   close(): void
 }
 
@@ -59,11 +87,13 @@ export class LocalSession implements Session {
       vy: 0,
       aim: -Math.PI / 2,
       ...createStaminaState(),
+      ...createFlashlightState(true),
       ...createInteractActorState(),
     }
     this.view = {
       town,
       player,
+      inventory: createInventoryState(player.flashlightOn),
       hour: 18,
       time: 0,
       revision: 0,
@@ -72,20 +102,21 @@ export class LocalSession implements Session {
     }
     this.solids = solidRects(town)
   }
-  update(dt: number, command: Command, timeScale: number, tuning: StaminaTuning = DEFAULT_STAMINA_TUNING): void {
+  update(dt: number, command: Command, timeScale: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING): void {
     const view = this.view, p = view.player
     dt = Math.max(0, Math.min(.1, dt))
     if (!p.vault) p.aim = command.aim
-    if (command.cycle) {
-      cycleInteractAction(view.town, p)
+
+    if (command.hotbarSlot !== undefined) {
+      selectHotbarSlot(view.inventory, command.hotbarSlot)
     }
-    if (command.interact) {
-      const outcome = executeInteraction(view.town, p, command.interactAction)
-      if (outcome.topologyChanged) {
-        view.revision++
-        this.solids = solidRects(view.town)
-      }
+    if (command.hotbarDelta) {
+      cycleHotbarSlot(view.inventory, command.hotbarDelta)
     }
+    if (command.flashlight) {
+      toggleFlashlight(p)
+    }
+
     const x = p.x, y = p.y
     if (stepInteractionState(view.town, p, dt)) {
       stepStamina(p, false, false, dt, tuning)
@@ -108,11 +139,42 @@ export class LocalSession implements Session {
       }
       stepInteractionState(view.town, p, 0)
     }
+    if (command.jump) {
+      const outcome = executeInteraction(view.town, p, "climb")
+      if (outcome.topologyChanged) {
+        view.revision++
+        this.solids = solidRects(view.town)
+      }
+    }
+    if (command.interact) {
+      const outcome = executeInteraction(
+        view.town,
+        p,
+        command.interactAction ?? "primary",
+        undefined,
+        Boolean(command.interactHeld),
+      )
+      if (outcome.topologyChanged) {
+        view.revision++
+        this.solids = solidRects(view.town)
+      }
+    }
+    const holdOutcome = stepHoldInteraction(view.town, p, Boolean(command.interactHeld), dt)
+    if (holdOutcome.topologyChanged) {
+      view.revision++
+      this.solids = solidRects(view.town)
+    }
+
     p.vx = dt > 0 ? (p.x - x) / dt : 0; p.vy = dt > 0 ? (p.y - y) / dt : 0
-    view.peek = peekInfoFor(view.town, p)
-    view.prompt = selectInteractTarget(view.town, p)
     view.time += dt
     view.hour = advanceHour(view.hour, dt, timeScale)
+
+    const flashlightTuning = { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning }
+    stepFlashlight(p, dt, view.time, flashlightTuning)
+    syncFlashlightItem(view.inventory, p.battery, p.flashlightOn)
+
+    view.peek = peekInfoFor(view.town, p)
+    view.prompt = selectInteractTarget(view.town, p)
   }
   close(): void {}
   rebuildCollision(): void {

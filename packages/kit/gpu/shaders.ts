@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string }
+export type SceneHooks = { declarations?: string; vertex?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -168,7 +168,7 @@ struct VOut {
   @location(1) normal: vec3f,
   @location(2) color: vec3f,
   @location(3) @interpolate(flat) mat: f32,
-  @location(4) @interpolate(flat) aux: f32,
+  ${hooks.vertex ? "@location(4) aux: f32," : "@location(4) @interpolate(flat) aux: f32,"}
   @location(5) @interpolate(flat) extra: vec4f,
   ${motion ? "@location(6) previous: vec4f," : ""}
 }
@@ -191,6 +191,7 @@ struct VOut {
     // Corner in the normal slot for the fragment's round falloff; phase rides in z.
     o.normal = vec3f(v.normal.xy, ph);
   }
+  ${hooks.vertex ?? ""}
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.color = pow(v.color.rgb, vec3f(2.2));
   o.mat = v.matAux.x;
@@ -241,17 +242,24 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   return o;
 }
 
-fn cutaway(world: vec3f, frag: vec4f) -> bool {
-  if (F.eye.z < 0.5 || world.y < F.focus.z) { return false; }
-  // Only what stands between the camera and you: south of you on the plan.
-  if (world.z < F.eye.y + 0.25) { return false; }
+fn bayer4x4(frag: vec4f) -> f32 {
+  let p = vec2u(frag.xy) % 4u;
+  let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (m[p.y * 4u + p.x] + 0.5) / 16.0;
+}
+
+fn cutawayBubble(world: vec3f, frag: vec4f, minHeight: f32, southOnly: bool, opacity: f32) -> bool {
+  if (F.eye.z < 0.5 || world.y < minHeight || opacity <= 0.001) { return false; }
+  if (southOnly && world.z < F.eye.y + 0.25) { return false; }
   let ndc = vec2f(frag.x / F.screen.x * 2.0 - 1.0, 1.0 - frag.y / F.screen.y * 2.0);
   let dv = (ndc - F.focus.xy) * vec2f(F.screen.x / F.screen.y, 1.0);
   let r = length(dv) / F.eye.w;
   if (r > 1.0) { return false; }
-  let p = vec2u(frag.xy) % 4u;
-  let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-  return (m[p.y * 4u + p.x] + 0.5) / 16.0 < smoothstep(1.0, 0.6, r) * 0.85;
+  return bayer4x4(frag) < smoothstep(1.0, 0.6, r) * opacity;
+}
+
+fn cutaway(world: vec3f, frag: vec4f) -> bool {
+  return cutawayBubble(world, frag, F.focus.z, F.eye.z <= 1.001, 0.85);
 }
 
 /** Shadow of one lower occluder (enter t0, exit t1, height h) on a point at distance d and height y. */
@@ -580,7 +588,7 @@ fn shadeScene(o: VOut) -> vec4f {
     let a = (1.0 - smoothstep(0.2, 1.0, r)) * k * tw * 1.6;
     return vec4f(o.color * a, 0.0);
   }`}
-  let n = normalize(o.normal);
+  var n = normalize(o.normal);
   let V = normalize(F.cam.xyz - o.world);
   var col: vec3f;
   var alpha = 1.0;
@@ -635,10 +643,10 @@ fn shadeScene(o: VOut) -> vec4f {
     let floorish = n.y > 0.5 && o.world.y < 0.15;
     let wrap = select(0.35, 0.0, floorish);
     let lit = lightSum(o.world, n, V, gloss.x, wrap);
+    ${hooks.postLightMaterial ?? ""}
     var amb = ${hooks.ambient ?? "ambientAt(n)"};
     let fd = floorData(o.world.xz);
     amb += ${hooks.bounce ?? "bounceAt(o.world.xz + n.xz * 0.3) * 0.32"};
-    ${hooks.postLightMaterial ?? ""}
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
     let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);
     let ao = mix(1.0, 1.0 - fd.r * 0.85, low);
@@ -687,9 +695,9 @@ fn shadeScene(o: VOut) -> vec4f {
   ${hooks.diagnostics ? `if (${hooks.diagnostics} > 0.5 && ${hooks.diagnostics} < 4.5) {
     return vec4f(select(vec3f(0.0), o.color, i32(${hooks.diagnostics}) == 1), alpha);
   }` : ""}
-  let a = alpha * o.extra.z;
   ${hooks.surface ?? ""}
-  return vec4f(col * a, a);
+  let a = alpha * o.extra.z;
+  return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);
 }
 
 @fragment fn fs(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {

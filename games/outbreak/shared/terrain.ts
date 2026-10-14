@@ -1,4 +1,4 @@
-import { frontageEnd, type Town } from "./map"
+import { buildingFootprint, frontageEnd, inBuildingFootprint, type Town } from "./map"
 
 const clamp = (x: number) => Math.max(0, Math.min(1, x))
 const smooth = (x: number) => { x = clamp(x); return x * x * (3 - 2 * x) }
@@ -7,7 +7,10 @@ const distance = (x: number, z: number, a: number, b: number, c: number, d: numb
 /** Heights at integer terrain vertices. Roads, foundations and entrance walks remain flat. */
 export function terrainVertex(town: Town, x: number, z: number): number {
   let free = Math.min(distance(x,z,38,0,50,96), distance(x,z,0,38,96,50))
-  for (const b of town.buildings) free = Math.min(free, distance(x,z,...b.rect), distance(x,z,b.rect[0]+4.5,b.rect[3],b.rect[0]+7,frontageEnd(b)+2),distance(x,z,b.rect[0]-3,b.rect[1],b.rect[0]-.35,frontageEnd(b)+2))
+  for (const b of town.buildings) {
+    for (const r of buildingFootprint(b)) free = Math.min(free, distance(x, z, ...r))
+    free = Math.min(free, distance(x,z,...b.rect), distance(x,z,b.rect[0]+4.5,b.rect[3],b.rect[0]+7,frontageEnd(b)+2),distance(x,z,b.rect[0]-3,b.rect[1],b.rect[0]-.35,frontageEnd(b)+2))
+  }
   const s = town.seed * .37
   return smooth(free / 2) * town.terrain * (.55 + .25 * Math.sin(x*.41+s)*Math.cos(z*.32-s) + .2*Math.sin(x*.17-z*.23+s))
 }
@@ -23,8 +26,8 @@ export function groundHeight(town: Town, x: number, z: number): number {
 export function supportHeight(town: Town, x: number, z: number): number {
   let height=groundHeight(town,x,z)
   for (const b of town.buildings) {
-    const [a,c,r,e]=b.rect
-    if (x>=a && x<=r && z>=c && z<=e) return .13
+    const [a,c,,e]=b.rect
+    if (inBuildingFootprint(b, x, z)) return .13
     if (x>=a+5 && x<=a+6.4 && z>=e && z<=frontageEnd(b)+2) return .13
     if (x>=a+4.5 && x<=a+7 && z>=e && z<=e+1.3) return .13
     if (x>=a-3 && x<=a-.35 && z>=c && z<=frontageEnd(b)+2) height=Math.max(.035,height)

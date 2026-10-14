@@ -1,4 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import { buildFoliageTree, foliageSettings } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
@@ -79,116 +80,61 @@ function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
   }
 }
 
-function branch(m:Mesh,a:Point,b:Point,r:number) {
-  const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],len=Math.hypot(dx,dy,dz)
-  const axis=[dx/len,dy/len,dz/len],side=Math.hypot(dx,dz)
-  const u=side<.001?[1,0,0]:[-dz/side,0,dx/side]
-  const v=[axis[1]!*u[2]!-axis[2]!*u[1]!,axis[2]!*u[0]!-axis[0]!*u[2]!,axis[0]!*u[1]!-axis[1]!*u[0]!]
-  const p=(end:number,i:number)=>{const q=end?b:a,s=r*(end?.4:1),c=Math.cos(i*6.283/5),n=Math.sin(i*6.283/5);return q.map((x,j)=>x+s*(u[j]!*c+v[j]!*n))}
-  for(let i=0;i<5;i++)m.quadAuto(p(0,i),p(1,i),p(1,i+1),p(0,i+1),rgb(0x484332),MAT.timber)
-}
-
-/** Shadowed inner foliage core + peripheral ruffled leaf rosettes for fine organic silhouettes. */
-function leafRosette(m:Mesh,px:number,py:number,pz:number,size:number,tiltX:number,tiltZ:number,rng:Rng,tone:Rgb) {
-  const a=rng.next()*6.283,w=size*(.76+rng.next()*.22)
-  const f=[Math.cos(a)*size,Math.sin(a)*size],side=[-Math.sin(a)*w,Math.cos(a)*w]
-  const dome=size*.34,droop=size*.18
-  const center:Point=[px+tiltX*.05,py+dome,pz+tiltZ*.05]
-  const a0:Point=[px-f[0]!,py-droop*.5-tiltX*f[0]!*.22,pz-f[1]!]
-  const a1:Point=[px+side[0]!,py-droop-tiltZ*side[1]!*.22,pz+side[1]!]
-  const a2:Point=[px+f[0]!,py-droop*.7+tiltX*f[0]!*.22,pz+f[1]!]
-  const a3:Point=[px-side[0]!,py-droop+tiltZ*side[1]!*.22,pz-side[1]!]
-  const k=.88+rng.next()*.26,col:Rgb=[tone[0]*k,tone[1]*k,tone[2]*k]
-  for(const [p0,p1] of [[a0,a1],[a1,a2],[a2,a3],[a3,a0]])m.facet(center,p0!,p1!,col,MAT.foliage)
-}
-
-function foliageCluster(m:Mesh,cx:number,cy:number,cz:number,rx:number,ry:number,rng:Rng,base:Rgb,rosettes:number) {
-  // Compact dark inner shadow core so the cluster has volume without looking like a balloon.
-  const segs=5,top:Point=[cx,cy+ry*.55,cz],ring:Point[]=[]
-  const dark:Rgb=[base[0]*.52,base[1]*.55,base[2]*.48]
-  for(let i=0;i<segs;i++){
-    const a=(i/segs)*6.283+(rng.next()-.5)*.28,r=rx*(.52+rng.next()*.18)
-    ring.push([cx+Math.cos(a)*r,cy-ry*.18,cz+Math.sin(a)*r])
-  }
-  for(let i=0;i<segs;i++)m.facet(top,ring[i]!,ring[(i+1)%segs]!,dark,MAT.foliage)
-  // Peripheral overlapping leaf rosettes break the silhouette into crisp leafy lobes.
-  for(let s=0;s<rosettes;s++){
-    const a=s*(6.283/rosettes)+(rng.next()-.5)*.55
-    const radial=rx*(s===0?.18:.48+rng.next()*.44)
-    const ox=Math.cos(a)*radial,oz=Math.sin(a)*radial
-    const oy=s===0?ry*.48:ry*(.24-(radial/rx)*.36+(rng.next()-.5)*.22)
-    const sz=rx*(s===0?.46:.34+rng.next()*.22)
-    const lift=s===0?1.12:.86+(1-radial/rx)*.28
-    const tone:Rgb=[Math.min(1,base[0]*lift),Math.min(1,base[1]*lift),Math.min(1,base[2]*lift)]
-    leafRosette(m,cx+ox,cy+oy,cz+oz,sz,Math.cos(a),Math.sin(a),rng,tone)
-  }
-}
-
-/** Broadleaf scaffold: layered bough clusters, dark inner cores, ruffled peripheral leaf sprays and crown gaps. */
+/** Broadleaf scaffold: layered bough clusters, bent-normal peripheral leaf rosettes, interior canopy AO and base grass tufts. */
 export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number) {
-  const rng=new Rng(seed),tree=h>2.1,boughs=tree?6:4,gapAngle=rng.next()*6.283
-  const leanX=(rng.next()-.5)*(tree?.22:.04),leanZ=(rng.next()-.5)*(tree?.22:.04)
-  if(tree)branch(m,[x,ground,z],[x+leanX,ground+h*.72,z+leanZ],.16)
-  // sRGB palette: rich olive, warm autumn-ochre green, deep forest green, and sunlit sage.
-  const palette:Rgb[]=[[0.36,0.44,0.24],[0.44,0.48,0.26],[0.28,0.37,0.19],[0.49,0.50,0.27],[0.32,0.41,0.22]]
-  for(let b=0;b<boughs;b++){
-    const baseAngle=b*6.283/boughs+(rng.next()-.5)*.45
-    const gapDelta=Math.abs(Math.atan2(Math.sin(baseAngle-gapAngle),Math.cos(baseAngle-gapAngle)))
-    const inGap=gapDelta<.55
-    const tierFrac=b/(boughs-1)
-    const reach=radius*(inGap?.36:.52+(1-tierFrac*.25)*(.30+rng.next()*.26))
-    const startH=ground+h*(tree?.28+tierFrac*.22:.10+tierFrac*.12)
-    const tipH=ground+h*(tree?.50+tierFrac*.34+(rng.next()-.4)*.08:.42+tierFrac*.36)
-    const start:Point=[x+leanX*.35,startH,z+leanZ*.35]
-    const tip:Point=[x+Math.cos(baseAngle)*reach,tipH,z+Math.sin(baseAngle)*reach]
-    if(tree)branch(m,start,tip,.068*(1-tierFrac*.28))
-    const clusterTone=palette[(b+Math.floor(rng.next()*2))%palette.length]!
-    const rx=radius*(tree?(inGap?.34:.46+rng.next()*.16):.46+rng.next()*.16)
-    const ry=h*(tree?.16+rng.next()*.06:.28+rng.next()*.10)
-    foliageCluster(m,tip[0],tip[1],tip[2],rx,ry,rng,clusterTone,tree?5:4)
-    if(tree&&!inGap&&b%2===0){
-      const subA=baseAngle+(rng.next()-.5)*.65,subR=reach*.58
-      const sx=x+Math.cos(subA)*subR,sz=z+Math.sin(subA)*subR,sy=tip[1]+h*.12
-      foliageCluster(m,sx,sy,sz,rx*.76,ry*.85,rng,palette[(b+3)%palette.length]!,4)
-    }
-  }
-  const crownTone=palette[seed%palette.length]!
-  foliageCluster(m,x+leanX*.45,ground+h*(tree?.84:.68),z+leanZ*.45,radius*(tree?.44:.48),h*(tree?.15:.24),rng,crownTone,tree?5:4)
-  const coverCount=tree?4:2
-  for(let c=0;c<coverCount;c++){
-    const a=gapAngle+1.2+c*1.45+(rng.next()-.5)*.35,d=radius*(tree?.26:.42)*(0.65+rng.next()*.45)
-    const gx=x+Math.cos(a)*d,gz=z+Math.sin(a)*d,sz=(tree?.24:.15)+rng.next()*.09,gh=(tree?.16:.11)+rng.next()*.06
-    const col:Rgb=[.30+.08*rng.next(),.38+.08*rng.next(),.19+.05*rng.next()]
-    const top=[gx,ground+gh,gz]
-    for(let k=0;k<3;k++){
-      const ka=a+k*2.09,ka2=ka+1.15
-      m.facet(top,[gx+Math.cos(ka)*sz,ground+.01,gz+Math.sin(ka)*sz],[gx+Math.cos(ka2)*sz,ground+.01,gz+Math.sin(ka2)*sz],col,MAT.foliage)
-    }
-  }
+  buildFoliageTree(m,x,z,h,radius,seed,ground,foliageSettings)
 }
 
 /** Procedural bungalow over authoritative room and opening boundaries. */
 export function house(m:Mesh,b:Building,id:number,town:Town) {
   const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
   const trim=rgb(0xd4d2c8),roof=rgb(0x3d4758),brick=rgb(0x684339)
-  if(b.kind!=="house"){m.box(x-.15,2.8,z-.15,r+.15,2.94,e+.15,rgb(0x555a54),MAT.roof,id);return}
+  if(b.kind!=="house"){
+    const sc=rgb(0x555a54)
+    m.box(x+.36,2.8,z+.36,r-.36,2.94,e-.36,sc,MAT.roof,id)
+    m.box(x-.15,2.8,z-.15,r+.15,2.94,z+.36,sc,MAT.roof,id)
+    m.box(x-.15,2.8,e-.36,r+.15,2.94,e+.15,sc,MAT.roof,id)
+    m.box(x-.15,2.8,z+.36,x+.36,2.94,e-.36,sc,MAT.roof,id)
+    m.box(r-.36,2.8,z+.36,r+.15,2.94,e-.36,sc,MAT.roof,id)
+    return
+  }
   const slopeY = (pz: number) => 2.88 + (ridge - 2.88) * (1 - Math.abs(pz - mid) / (mid - (z - .42)))
-  const xCuts = [x - .42, x + .36, r - .36, r + .42]
-  for (const [z0, z1] of [[e + .42, e - .36], [e - .36, mid], [mid, z + .36], [z + .36, z - .42]] as const) {
+  // Front roof slope (mid .. e+.42) spans full width; north slope steps in at x+9.5 and r-1.6 to match the L-shaped plan.
+  const xCutsFront = [x - .42, x + .36, r - .36, r + .42]
+  for (const [z0, z1] of [[e + .42, e - .36], [e - .36, mid]] as const) {
     const y0 = slopeY(z0), y1 = slopeY(z1)
     for (let xi = 0; xi < 3; xi++) {
-      const x0 = xCuts[xi]!, x1 = xCuts[xi + 1]!
+      const x0 = xCutsFront[xi]!, x1 = xCutsFront[xi + 1]!
       m.quadAuto([x0, y0, z0], [x1, y0, z0], [x1, y1, z1], [x0, y1, z1], roof, MAT.roof, id)
     }
   }
-  for(const px of [x-.01,r+.01])m.facet([px,2.8,z],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
-  m.box(x-.45,2.68,z-.42,r+.45,2.86,z-.31,trim,MAT.roof,id)
-  m.box(x-.45,2.72,e+.34,r+.45,2.87,e+.44,trim,MAT.roof,id)
-  // Dark soffit and half-round gutter read as a crisp eave border with trim fascia.
-  m.box(x-.42,2.63,e+.02,r+.42,2.71,e+.40,rgb(0x282e38),MAT.roof,id)
-  m.box(x-.48,2.76,e+.43,r+.48,2.83,e+.50,rgb(0x9da4b0),MAT.roof,id)
+  const xCutsBack = [x + 1.85, x + 2.35, x + 9.15, x + 9.75]
+  for (const [z0, z1] of [[mid, z + .36], [z + .36, z - .42]] as const) {
+    const y0 = slopeY(z0), y1 = slopeY(z1)
+    for (let xi = 0; xi < 3; xi++) {
+      const x0 = xCutsBack[xi]!, x1 = xCutsBack[xi + 1]!
+      m.quadAuto([x0, y0, z0], [x1, y0, z0], [x1, y1, z1], [x0, y1, z1], roof, MAT.roof, id)
+    }
+  }
+  // Left roof wing alongside the west bedroom wall (x-.42 .. x+2.05, z+1.2 .. z+5.55), meeting the living room north wall cleanly
+  m.quadAuto([x-.42, 2.84, z+1.2], [x-.42, 2.84, z+5.55], [x+2.05, 3.48, z+5.55], [x+2.05, 3.48, z+1.2], roof, MAT.roof, id)
+  m.box(x-.45, 2.70, z+1.15, x+2.05, 2.85, z+1.26, trim, MAT.roof, id)
+  // Stepped north-east shingle roof wing (x+9.45 .. r-1.55, z+1.45 .. z+5.55) and kitchen north eave (r-1.60 .. r+.42, z+5.12 .. mid)
+  m.quadAuto([x+9.45, 3.46, z+5.55], [r-1.55, 3.46, z+5.55], [r-1.55, 2.84, z+1.45], [x+9.45, 2.84, z+1.45], roof, MAT.roof, id)
+  m.quadAuto([r-1.55, 3.46, z+5.55], [r-1.55, 2.84, z+5.15], [r-1.55, 2.84, z+1.45], [r-1.55, 3.46, z+5.55], roof, MAT.roof, id)
+  m.quadAuto([r-1.60, slopeY(mid), mid], [r+.42, slopeY(mid), mid], [r+.42, 2.84, z+5.12], [r-1.60, 2.84, z+5.12], roof, MAT.roof, id)
+  m.box(x+9.45, 2.70, z+1.38, r-1.50, 2.85, z+1.50, trim, MAT.roof, id)
+  m.box(r-1.62, 2.70, z+1.38, r-1.50, 2.85, z+5.18, trim, MAT.roof, id)
+  m.box(r-1.55, 2.70, z+5.08, r+.45, 2.85, z+5.20, trim, MAT.roof, id)
+  for(const px of [x-.01,r+.01])m.facet([px,2.8,z+5.5],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
+  m.box(x+1.75,2.68,z-.42,x+9.78,2.86,z-.31,trim,MAT.roof,id)
+  // Split south eave fascia, dark soffit, and gutter across xCutsFront so the middle span cuts away cleanly on CPU when inside.
   for (let xi = 0; xi < 3; xi++) {
-    m.box(xCuts[xi]!, ridge - .04, mid - .1, xCuts[xi + 1]!, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
+    const x0 = xCutsFront[xi]!, x1 = xCutsFront[xi + 1]!
+    m.box(x0, 2.72, e+.34, x1, 2.87, e+.44, trim, MAT.roof, id)
+    m.box(x0, 2.63, e+.02, x1, 2.71, e+.40, rgb(0x282e38), MAT.roof, id)
+    m.box(x0, 2.76, e+.43, x1, 2.83, e+.50, rgb(0x9da4b0), MAT.roof, id)
+    m.box(x0, ridge - .04, mid - .1, x1, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
   }
   // Brick chimney on upper-right slope with stone cap, dark flue, and east-eave downspout.
   m.box(r-2.08,3.18,mid+.82,r-1.12,4.82,mid+1.78,rgb(0x7c483a),MAT.brick)
@@ -263,24 +209,26 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     [r+.55,e+.35,1.38,.82],
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner.
-  // Living room Oriental rug with cream border, slate-sage field, terracotta frame, and central medallion
+  // Living room Oriental rug with warm cream border, slate-sage field, terracotta guard, corner motifs & diamond medallion
   {
-    const rx0=x+1.55,rz0=e-4.35,rx1=x+4.65,rz1=e-.85,rmx=(rx0+rx1)/2,rmz=(rz0+rz1)/2
-    m.box(rx0,.132,rz0,rx1,.138,rz1,rgb(0xc2b498))
-    m.box(rx0+.11,.1385,rz0+.11,rx1-.11,.141,rz1-.11,rgb(0x46585a))
-    m.box(rx0+.23,.1415,rz0+.23,rx1-.23,.144,rz1-.23,rgb(0x985b46))
-    m.box(rx0+.34,.1445,rz0+.34,rx1-.34,.147,rz1-.34,rgb(0x5c6d66))
-    m.box(rmx-.52,.1475,rmz-.72,rmx+.52,.150,rmz+.72,rgb(0xa26048))
-    m.box(rmx-.30,.1505,rmz-.45,rmx+.30,.152,rmz+.45,rgb(0xc4a274))
+    const rx0=x+1.55,rz0=e-4.35,rx1=x+4.42,rz1=e-.85,rmx=(rx0+rx1)/2,rmz=(rz0+rz1)/2
+    m.box(rx0,.132,rz0,rx1,.138,rz1,rgb(0xcabaa0))
+    m.box(rx0+.10,.1385,rz0+.10,rx1-.10,.141,rz1-.10,rgb(0x3a4a4c))
+    m.box(rx0+.20,.1415,rz0+.20,rx1-.20,.144,rz1-.20,rgb(0xa85e44))
+    m.box(rx0+.31,.1445,rz0+.31,rx1-.31,.147,rz1-.31,rgb(0x52645c))
+    m.box(rmx-.50,.1475,rmz-.74,rmx+.50,.150,rmz+.74,rgb(0xb06246))
+    m.box(rmx-.32,.1505,rmz-.48,rmx+.32,.152,rmz+.48,rgb(0xd4b282))
+    m.box(rmx-.14,.1525,rmz-.22,rmx+.14,.154,rmz+.22,rgb(0x3a4a4c))
   }
   // Bedroom burgundy Persian rug placed beside the bed in the open bedroom floor
   {
-    const bx0=x+5.02,bz0=z+1.35,bx1=x+6.88,bz1=z+4.25,bmx=(bx0+bx1)/2,bmz=(bz0+bz1)/2
-    m.box(bx0,.132,bz0,bx1,.138,bz1,rgb(0xb8a07e))
-    m.box(bx0+.09,.1385,bz0+.09,bx1-.09,.141,bz1-.09,rgb(0x363e4a))
-    m.box(bx0+.18,.1415,bz0+.18,bx1-.18,.145,bz1-.18,rgb(0x884235))
-    m.box(bmx-.38,.1455,bmz-.62,bmx+.38,.148,bmz+.62,rgb(0xa86848))
-    m.box(bmx-.20,.1485,bmz-.32,bmx+.20,.151,bmz+.32,rgb(0xc8a472))
+    const bx0=x+4.92,bz0=z+1.35,bx1=x+6.82,bz1=z+4.25,bmx=(bx0+bx1)/2,bmz=(bz0+bz1)/2
+    m.box(bx0,.132,bz0,bx1,.138,bz1,rgb(0xc6ae8a))
+    m.box(bx0+.09,.1385,bz0+.09,bx1-.09,.141,bz1-.09,rgb(0x2e3642))
+    m.box(bx0+.18,.1415,bz0+.18,bx1-.18,.145,bz1-.18,rgb(0x944234))
+    m.box(bmx-.40,.1455,bmz-.65,bmx+.40,.148,bmz+.65,rgb(0xb86e4a))
+    m.box(bmx-.22,.1485,bmz-.36,bmx+.22,.151,bmz+.36,rgb(0xd8b480))
+    m.box(bmx-.09,.1515,bmz-.16,bmx+.09,.153,bmz+.16,rgb(0x4a241c))
   }
   // Kitchen woven runner mat in front of the north sink/stove run
   m.box(r-4.95,.132,z+6.45,r-2.25,.139,z+7.22,rgb(0xa49b86))
@@ -314,17 +262,27 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(r-2.23,.94,kz-.01,r-1.37,.965,kz+.69,rgb(0x323838))
   for(const dx of [-.22,.22])for(const dz of [.18,.48])m.prism(r-1.80+dx,kz+dz,.11,.11,.966,.982,8,rgb(0x1b2022))
   m.box(r-2.12,.26,kz+.68,r-1.48,.76,kz+.70,rgb(0x282e30),MAT.shiny)
-  // Warm tiled backsplash & upper wall cupboards above north kitchen run
+  // Warm tiled backsplash, under-cabinet warm light strip & upper wall cupboards above north kitchen run
+  const kLamp=Math.max(0,town.lamps.findIndex(l=>l.kind==="room"&&l.x>x+7&&l.x<r&&l.y>z+5.5&&l.y<e))
+  const lLamp=Math.max(0,town.lamps.findIndex(l=>l.kind==="room"&&l.x>x&&l.x<x+5&&l.y>z+5.5&&l.y<e))
   m.box(r-5.00,.96,kz,r-1.38,1.68,kz+.04,rgb(0x9e8c6c),MAT.wall)
+  m.box(r-4.92,1.69,kz+.06,r-2.32,1.72,kz+.24,rgb(0xffd896),MAT.lamp,kLamp)
   m.box(r-5.00,1.72,kz,r-2.25,2.38,kz+.38,rgb(0x7c664c),MAT.timber)
   for(let i=0;i<4;i++)m.box(r-4.94+i*.67,1.76,kz+.38,r-4.35+i*.67,2.32,kz+.40,rgb(0x947b5c),MAT.timber)
-  // East-wall upper cupboards and framed art prints
+  // Living room corner table lamp on the sofa end table (x+1.1, e-.62)
+  m.prism(x+1.10,e-.62,.03,.025,.66,.92,6,rgb(0x5a4b35))
+  m.prism(x+1.10,e-.62,.21,.12,.90,1.16,9,rgb(0xe8b86b),MAT.lamp,lLamp)
+  m.prism(x+1.10,e-.62,.17,.17,.89,.90,9,rgb(0xffdca0),MAT.lamp,lLamp)
+  // Potted plant in bedroom top-right corner beside the dresser
+  m.prism(x+8.95,z+.85,.17,.13,.13,.44,7,rgb(0x885238))
+  plant(m,x+8.95,z+.85,.62,.36,town.houseSeed+91,.40)
+  // East-wall upper cupboards and framed art prints (within the L-shaped bedroom & kitchen walls)
   m.box(r-.245,1.02,e-3.2,r-.23,1.67,e-.85,rgb(0x727d70),MAT.wall)
   m.box(r-.60,1.78,e-3.2,r-.25,2.37,e-1.2,rgb(0x7c664c),MAT.timber)
   for(let i=0;i<3;i++)m.box(r-.62,1.82,e-3.15+i*.64,r-.60,2.33,e-2.56+i*.64,rgb(0x947b5c),MAT.timber)
-  // Framed paintings on bedroom north wall, living room west wall, and kitchen east wall
-  for(let i=0;i<8;i++)m.box(r-3.7+i*.13,.3,z+.25,r-3.62+i*.13,.85,z+.42,rgb(0x87877a),MAT.wall)
-  for(const [px,pz] of [[x+4.1,z+.23],[x+6.2,z+.23],[r-3,e-.27]]){
+  // Framed paintings on bedroom north wall (x+2..x+9.5), living room west wall, and kitchen south wall
+  for(let i=0;i<6;i++)m.box(x+5.4+i*.13,.3,z+.25,x+5.48+i*.13,.85,z+.42,rgb(0x87877a),MAT.wall)
+  for(const [px,pz] of [[x+3.85,z+.23],[x+7.85,z+.23],[r-3,e-.27]]){
     m.box(px!-.52,1.28,pz!,px!+.52,1.98,pz!+.055,rgb(0x4e3d2c),MAT.wall)
     m.box(px!-.43,1.37,pz!+.056,px!+.43,1.89,pz!+.062,rgb(0x8c8872),MAT.wall)
   }

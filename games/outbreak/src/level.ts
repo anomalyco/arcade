@@ -1,11 +1,11 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
-import { CHUNK, SIZE, BUILDING_RECTS, frontageEnd, propShape, type Town, type Prop } from "../shared/map"
+import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
-import { scatterClusteredGroundCover } from "@arcade/kit/gpu/surface-materials"
+import { emitCurvedGrassBlade, emitGrassFurShells, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
@@ -30,18 +30,18 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     // Two plump white pillows
     for (const px of [x - .38, x + .38]) m.bevelBox(px - .31, .64, z - 1.06, px + .31, .78, z - .62, .04, hex(0xd4cebf), hex(0xeae4d6))
   } else if (kind === "sofa") {
-    // Warm olive-sage 3-cushion sofa with rolled arms, rust & ochre throw pillows, and side lamp table
-    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x58604e))
-    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x636c58),hex(0x78826a))
+    // Readable warm sage-olive 3-cushion sofa with rolled arms, terracotta & cream throw pillows, and side lamp table
+    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x646e58))
+    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x707b63),hex(0x889478))
     for(const dz of [-.74,0,.74]){
-      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x68725d),hex(0x808a72))
-      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x6e7862),hex(0x848e76))
+      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x768268),hex(0x909c80))
+      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x7c886e),hex(0x94a084))
     }
-    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x5f6854),hex(0x747e68))
+    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x6c765f),hex(0x849076))
     for(const dx of [-.42,.42])for(const dz of [-1.05,1.05])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.22,z+dz+.04,legs)
-    // Rust-orange throw pillow at north end + cream cushion & draped throw at south end
-    m.bevelBox(x-.24,.62,z-.98,x+.22,.84,z-.58,.045,hex(0x8f4326),hex(0xa85232))
-    m.bevelBox(x-.24,.62,z+.60,x+.24,.83,z+1.02,.045,hex(0xb5a482),hex(0xcfc09e))
+    // Bright terracotta throw pillow at north end + cream cushion at south end
+    m.bevelBox(x-.24,.62,z-.98,x+.22,.84,z-.58,.045,hex(0xa24c2c),hex(0xc25e38))
+    m.bevelBox(x-.24,.62,z+.60,x+.24,.83,z+1.02,.045,hex(0xc4b28e),hex(0xdfd0ae))
     // End table at south arm of sofa under the living room table lamp
     m.bevelBox(x-.32,.13,z+1.38,x+.32,.66,z+1.96,.025,wood,hex(0x8f6d4a),MAT.timber,MAT.timber)
   } else if(kind==="coffee") {
@@ -117,40 +117,132 @@ function compileLevel(town: Town): LevelData {
   const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
   for (let z=0;z<SIZE;z++) for(let x=0;x<SIZE;x++) {
-    if((x>=40&&x<48)||(z>=40&&z<48)||town.buildings.some(b=>x>=b.rect[0]&&x+1<=b.rect[2]&&z>=b.rect[1]&&z+1<=b.rect[3]))continue
+    if((x>=40&&x<48)||(z>=40&&z<48)||town.buildings.some(b=>buildingFootprint(b).some(f=>x>=f[0]&&x+1<=f[2]&&z>=f[1]&&z+1<=f[3])))continue
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
     m.facet(a,c,b,hex(0x586044),MAT.ground,0); m.facet(a,d,c,hex(0x586044),MAT.ground,0)
   }
-  const tufts = scatterClusteredGroundCover({
+  const grassRng = new Rng(town.seed ^ 0x73c9)
+  const tufts = scatterGrassClumps({
     seed: town.seed ^ 0x453a,
-    bounds: [0.5, 0.5, SIZE - 0.5, SIZE - 0.5],
-    clusterCount: Math.round(210 * (town.foliageDensity ?? 1)),
-    tuftsPerCluster: 4,
+    bounds: [1.5, 1.5, SIZE - 1.5, SIZE - 1.5],
+    clusterCount: Math.round(145 * (town.foliageDensity ?? 1)),
+    tuftsPerCluster: 3,
+    params: foliageSettings,
     avoid: (x, z) =>
-      (x > 37.8 && x < 50.2) ||
-      (z > 37.8 && z < 50.2) ||
-      town.buildings.some(b => x > b.rect[0] - 3.1 && x < b.rect[2] + 0.3 && z > b.rect[1] - 0.4 && z < b.rect[3] + 1.8),
+      (x > 38.0 && x < 50.0) ||
+      (z > 38.0 && z < 50.0) ||
+      town.buildings.some(
+        b =>
+          (inBuildingFootprint(b, x, z) || (x > b.rect[0] - 3.05 && x < b.rect[0] + 0.2 && z > b.rect[1] - 0.3 && z < b.rect[3] + 0.88) || (x >= b.rect[0] && x <= b.rect[2] && z >= b.rect[3] && z < b.rect[3] + 0.88)) ||
+          (x > b.rect[0] + 4.35 && x < b.rect[0] + 7.15 && z >= b.rect[3] && z < frontageEnd(b) + 2.1),
+      ),
   })
   for (const t of tufts) {
-    const { x, z, radius: r, height: h, tint: c } = t
-    const y = supportHeight(town, x, z), m = at(x, z)
-    m.facet([x - r * .7, y, z - r * .3], [x + r * .2, y + h, z + r * .3], [x + r * .8, y, z - r * .2], c, MAT.foliage)
-    m.facet([x - r * .2, y, z - r * .8], [x - r * .3, y + h * .85, z + r * .2], [x + r * .4, y, z + r * .7], c, MAT.foliage)
+    const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+    emitGrassTuft(m, t.x, y, t.z, {
+      bladeCount: 3,
+      radius: t.radius * 1.15,
+      height: t.height * 1.12,
+      width: t.width * 1.15,
+      curvature: t.curvature,
+      leanAngle: t.leanAngle,
+      rootColor: t.rootColor,
+      tipColor: t.tipColor,
+      rng: grassRng,
+    })
   }
-  // Clustered curb-verge & front-lawn edge ground cover with natural gaps.
+  // Dense front-lawn, walkway-edge & side-yard grass clumps + 4-layer volumetric fur shells around every building frontage.
+  for (const [bIdx, b] of town.buildings.entries()) {
+    const [bx0, bz0, bx1, bz1] = b.rect
+    const sidewalkZ = frontageEnd(b) - 0.08
+    const lawnPatches: readonly [number, number, number, number, number][] = [
+      [bx0 + 0.25, bz1 + 0.90, bx0 + 4.85, sidewalkZ, 30],
+      [bx0 + 6.55, bz1 + 0.90, Math.min(37.7, bx1 - 0.25), sidewalkZ, 32],
+      [Math.max(2.0, bx0 - 7.5), bz0 + 0.5, bx0 - 3.15, sidewalkZ, 28],
+      [bx1 + 0.35, bz0 + 0.5, Math.min(37.7, bx1 + 3.2), sidewalkZ, 20],
+    ]
+    for (const [pIdx, [lx0, lz0, lx1, lz1, count]] of lawnPatches.entries()) {
+      if (lz1 <= lz0 + 0.2 || lx1 <= lx0 + 0.2 || (lx0 > 37.8 && lx0 < 50.2)) continue
+      if (b.kind === "house" && pIdx < 2) {
+        emitGrassFurShells(
+          at((lx0 + lx1) * 0.5, (lz0 + lz1) * 0.5, true),
+          lx0,
+          lz0,
+          lx1,
+          lz1,
+          (gx, gz) => supportHeight(town, gx, gz),
+          foliageSettings,
+          1,
+          2.2,
+        )
+      }
+      const patchClumps = scatterGrassClumps({
+        seed: (town.seed ^ (bIdx * 4099 + pIdx * 613)) >>> 0,
+        bounds: [lx0, lz0, lx1, lz1],
+        clusterCount: Math.max(2, Math.round(count * (town.foliageDensity ?? 1))),
+        tuftsPerCluster: 4,
+        params: foliageSettings,
+        avoid: (gx, gz) => (gx > 37.8 && gx < 50.2) || (gz > 37.8 && gz < 50.2),
+      })
+      for (const t of patchClumps) {
+        const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+        emitGrassTuft(m, t.x, y, t.z, {
+          bladeCount: 3,
+          radius: t.radius * 1.25,
+          height: t.height * 1.22,
+          width: t.width * 1.25,
+          curvature: t.curvature,
+          leanAngle: t.leanAngle,
+          rootColor: t.rootColor,
+          tipColor: t.tipColor,
+          rng: grassRng,
+        })
+      }
+    }
+  }
+  // Shadowed root-collar tussock tufts around every exterior street/yard tree.
+  for (const [pIdx, p] of town.props.entries()) {
+    if (p.kind !== "tree") continue
+    const treeRng = new Rng((town.seed ^ (pIdx * 2749 + 0x517c)) >>> 0)
+    const collarCount = Math.max(3, Math.round(6 * (town.foliageDensity ?? 1)))
+    for (let c = 0; c < collarCount; c++) {
+      const a = c * 2.39996 + treeRng.next() * 0.45
+      const d = 0.42 + treeRng.next() * 1.25
+      const tx = p.x + Math.cos(a) * d
+      const tz = p.y + Math.sin(a) * d
+      if ((tx > 37.9 && tx < 50.1) || (tz > 37.9 && tz < 50.1)) continue
+      const y = supportHeight(town, tx, tz), m = at(tx, tz)
+      emitGrassTuft(m, tx, y, tz, {
+        bladeCount: 3,
+        radius: 0.16 + treeRng.next() * 0.10,
+        height: foliageSettings.bladeHeight * (0.95 + treeRng.next() * 0.45),
+        width: foliageSettings.bladeWidth * 1.2,
+        curvature: foliageSettings.bladeCurvature,
+        leanAngle: a + (treeRng.next() - 0.5) * 0.5,
+        rootColor: [foliageSettings.rootColorR * 0.85, foliageSettings.rootColorG * 0.85, foliageSettings.rootColorB * 0.85],
+        tipColor: [foliageSettings.tipColorR * 1.05, foliageSettings.tipColorG * 1.08, foliageSettings.tipColorB * 0.95],
+        rng: treeRng,
+      })
+    }
+  }
+  // Clustered curb-verge & front-lawn edge curved grass tufts with natural gaps.
   const vergeRng = new Rng(town.seed ^ 0x91e1)
-  for (let v = 2; v < SIZE - 2; v += 0.95 + vergeRng.next() * 1.45) {
+  for (let v = 2; v < SIZE - 2; v += 0.58 + vergeRng.next() * 0.82) {
     if (v > 37.5 && v < 50.5) continue
-    for (const zBase of [37.82, 39.55, 48.45, 50.18]) {
-      if (vergeRng.next() < 0.24) continue
-      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 1.0 || (v > b.rect[0] - 3.2 && v < b.rect[0] - 0.2))) continue
-      const count = zBase > 39 && zBase < 49 ? 3 : 2
+    for (const zBase of [37.84, 39.48, 39.66, 48.34, 48.54, 50.16]) {
+      if (vergeRng.next() < 0.16) continue
+      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 0.95 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.25))) continue
+      const inCurbStrip = zBase > 39 && zBase < 49
+      const count = inCurbStrip ? 3 : 2
+      const lean = vergeRng.next() * Math.PI * 2
       for (let k = 0; k < count; k++) {
-        const x = v + (vergeRng.next() - 0.5) * 0.62, z = zBase + (vergeRng.next() - 0.5) * 0.22
-        const y = supportHeight(town, x, z), m = at(x, z), r = 0.10 + vergeRng.next() * 0.12, h = 0.11 + vergeRng.next() * 0.14
-        const c = hex(vergeRng.pick([0x5a6840, 0x4d5c37, 0x6f7348, 0x7b7846]))
-        m.facet([x - r, y, z], [x + r * .2, y + h, z + r * .4], [x + r, y, z - r * .2], c, MAT.foliage)
-        m.facet([x, y, z - r], [x - r * .4, y + h * .85, z], [x + r * .2, y, z + r], c, MAT.foliage)
+        const x = v + (vergeRng.next() - 0.5) * 0.46, z = zBase + (vergeRng.next() - 0.5) * 0.14
+        // Curb verge strip sits on the y = 0.10 sidewalk/verge slab; lawn edge sits on terrain supportHeight.
+        const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
+        const m = at(x, z), h = (0.20 + vergeRng.next() * 0.16) * (foliageSettings.bladeHeight / 0.30)
+        const rootCol = hex(vergeRng.pick([0x1c2b12, 0x182510, 0x242c16]))
+        const tipCol = hex(vergeRng.pick([0x6e883c, 0x5e7634, 0x828442]))
+        emitCurvedGrassBlade(m, x, y, z, h, foliageSettings.bladeWidth * 1.22, foliageSettings.bladeCurvature, lean + (vergeRng.next() - 0.5) * 0.5, rootCol, tipCol)
       }
     }
   }
@@ -184,7 +276,9 @@ function compileLevel(town: Town): LevelData {
   }
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
-    floor(m, x, z, r, end, .13, b.kind === "house" ? 0x765a3e : 0x89968b, b.kind === "house" ? 2 : 1)
+    for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
+      floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
+    }
     floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x847f73, 6)
     floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x8a8579,6)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
@@ -234,8 +328,8 @@ function compileLevel(town: Town): LevelData {
         for (const px of [x, r - .07]) {
           m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0xdcd8ce), MAT.wall)
         }
-        // Subtle warm sill bounce strip on the recessed inner sill (does not block the window opening!)
-        m.box(x+.08, .861, zm-.04, r-.08, .872, zm+.05, hex(0xb87632), MAT.lamp, lamp)
+        // Warm amber-gold sill & interior reveal bounce (rich saturation so it never clips to white)
+        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(0x8a4814), MAT.lamp, lamp)
         const doubleWin = r - x > 2.2
         if (doubleWin) {
           const mid = (x + r) / 2
@@ -243,16 +337,17 @@ function compileLevel(town: Town): LevelData {
         }
         const panes = doubleWin ? [[x+.07, (x+r)/2-.05], [(x+r)/2+.05, r-.07]] : [[x+.07, r-.07]]
         for (const [wx0, wx1] of panes) {
-          // Soft warm sheer valence at top of sash + gathered side curtains at left/right 22cm edges
-          m.box(wx0!, 1.90, z-.03, wx1!, 2.13, z+.02, hex(0x9a622c), MAT.lamp, lamp)
-          for (const [cx0, cx1] of [[wx0!, wx0! + .22], [wx1! - .22, wx1!]]) {
-            m.box(cx0!, .87, z-.03, cx1!, 1.90, z+.03, hex(0x885424), MAT.lamp, lamp)
+          // Dark silhouette side curtains at left/right 24cm edges + warm amber-orange inner glow valence
+          m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(0x783c10), MAT.lamp, lamp)
+          m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(0x5c2c0b), MAT.lamp, lamp)
+          for (const [cx0, cx1] of [[wx0!, wx0! + .24], [wx1! - .24, wx1!]]) {
+            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x362212), MAT.wall)
           }
           // Recessed vertical & horizontal sash muntins at the window mid-plane zm
           const midX = (wx0! + wx1!) / 2
-          m.box(midX - .016, .86, zm - .022, midX + .016, 2.14, zm + .022, hex(0xe2dfd6), MAT.wall)
+          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0xe2dfd6), MAT.wall)
           // See-through glass pane recessed at zm
-          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x96aab0), MAT.glass)
+          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x5a4838), MAT.glass)
         }
         // Recessed horizontal meeting rail across the sash mid-plane
         m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0xe2dfd6), MAT.wall)
@@ -316,35 +411,43 @@ function compileLevel(town: Town): LevelData {
       return [{ data: source.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
     }
     const opaque = new Mesh()
+    const fur = new Mesh()
     const screen = new Mesh()
     const customByBuilding = BUILDING_RECTS.map(() => new Mesh())
     const interiorCapByBuilding = BUILDING_RECTS.map(() => new Mesh())
     for (let i = 0; i < source.v.length; i += 33) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
-      let hasRoof = false, hasScreen = false, hasFoliage = false
+      let hasRoof = false, hasScreen = false, hasFoliage = false, hasFur = false
       for (const j of [0, 11, 22]) {
         const vx = source.v[i + j]!, vy = source.v[i + j + 1]!, vz = source.v[i + j + 2]!
-        const mat = Math.round(source.v[i + j + 9]!)
+        const mat = Math.round(source.v[i + j + 9]!), aux = source.v[i + j + 10]!
         minX = Math.min(minX, vx); maxX = Math.max(maxX, vx)
         minY = Math.min(minY, vy); maxY = Math.max(maxY, vy)
         minZ = Math.min(minZ, vz); maxZ = Math.max(maxZ, vz)
         if (mat === 21) hasRoof = true
         if (mat === 22 || mat === 24) hasFoliage = true
+        if (mat === 22 && aux < -1.5) hasFur = true
         if ((mat === 4 || mat === 9 || mat === 11) && maxY > 1.0) hasScreen = true
       }
       let customId = -1
       let strictlyInsideCutout = false
+      const strictlyInsideHouse = (id: number, minX: number, maxX: number, minZ: number, maxZ: number) => {
+        const b = BUILDING_RECTS[id]!
+        if (id >= 2) return minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
+        const inSouth = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + 5.55 && maxZ < b[3] + 1.65
+        const inNorth = minX > b[0] + 2.25 && maxX < b[0] + 9.25 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
+        return inSouth || inNorth
+      }
       if (hasRoof) {
         const id = Math.max(0, Math.min(BUILDING_RECTS.length - 1, Math.round(source.v[i + 10]!)))
-        const b = BUILDING_RECTS[id]!
         customId = id
-        strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
+        strictlyInsideCutout = strictlyInsideHouse(id, minX, maxX, minZ, maxZ)
       } else if (maxY > 2.8 && !hasFoliage) {
         for (let id = 0; id < BUILDING_RECTS.length; id++) {
           const b = BUILDING_RECTS[id]!
           if (maxX > b[0] + .25 && minX < b[2] - .25 && maxZ > b[1] + .25 && minZ < b[3] + 1.65) {
             customId = id
-            strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65 && minY > 2.801
+            strictlyInsideCutout = strictlyInsideHouse(id, minX, maxX, minZ, maxZ) && minY > 2.801
             break
           }
         }
@@ -367,15 +470,17 @@ function compileLevel(town: Town): LevelData {
       }
       return [{ data: m.pack(), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
     }
-    const screenChunk = (): LevelChunk[] => {
+    const screenChunks = (): LevelChunk[] => {
       if (!screen.count) return []
-      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, top = 0, z1 = -Infinity
-      for (let i = 0; i < screen.v.length; i += 11) {
-        x0 = Math.min(x0, screen.v[i]!); x1 = Math.max(x1, screen.v[i]!)
-        top = Math.max(top, screen.v[i + 1]!)
-        z0 = Math.min(z0, screen.v[i + 2]!); z1 = Math.max(z1, screen.v[i + 2]!)
+      // Bucket cuttable walls into 4m Z-bands so north/partition/south walls don't merge into one room-spanning cutBox.
+      const bands = new Map<number, Mesh>()
+      for (let i = 0; i < screen.v.length; i += 33) {
+        const zBand = Math.floor(Math.min(screen.v[i + 2]!, screen.v[i + 13]!, screen.v[i + 24]!) / 4)
+        let bm = bands.get(zBand)
+        if (!bm) { bm = new Mesh(); bands.set(zBand, bm) }
+        bm.v.push(...screen.v.slice(i, i + 33))
       }
-      return [{ data: screen.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
+      return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => ({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))
     }
     const customChunks = BUILDING_RECTS.flatMap((b, id) => {
       const bounds = [b[0] - .1, 0, b[1] - .1, b[2] + .1, 5, b[3] + 1.7] as const
@@ -384,7 +489,7 @@ function compileLevel(town: Town): LevelData {
         ...pack(customByBuilding[id]!, bounds, true),
       ]
     })
-    return [...pack(opaque), ...screenChunk(), ...customChunks]
+    return [...pack(opaque), ...screenChunks(), ...customChunks]
   })
   // Indoor sky/moon mask (fd.g) with inward window moonlight shafts, plus rectangular exterior window-spill in bounce.a.
   const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)
@@ -393,7 +498,7 @@ function compileLevel(town: Town): LevelData {
   const furnitureContacts=town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})
   for (let z = 0; z < resolution; z++) for (let x = 0; x < resolution; x++) {
     const px=(x+.5)*scale,pz=(z+.5)*scale
-    const indoor = town.buildings.some(b => px >= b.rect[0] && px < b.rect[2] && pz >= b.rect[1] && pz < b.rect[3])
+    const indoor = town.buildings.some(b => inBuildingFootprint(b, px, pz))
     let contact=0
     for(const wall of town.barriers) if(wall.kind!=="fence") contact=Math.max(contact,Math.exp(-distToRect(px,pz,wall.rect)*4)*.8)
     for(const p of town.props) {
