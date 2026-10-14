@@ -27,7 +27,7 @@ export const vignetteSceneHooks: SceneHooks = {
   fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
-    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, defaultFoliageWindConfig());
+    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, defaultFoliageWindConfig(), noFoliageActors());
     o.world = fw[0];
     o.normal = fw[1];
   }`,

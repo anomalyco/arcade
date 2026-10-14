@@ -2,11 +2,11 @@ import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
-import { house, plant, archSettings } from "./architecture"
+import { house, plant, plantFootprints, archSettings } from "./architecture"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
-import { emitCurvedGrassBlade, emitGrassTuft, emitWeedMat, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
+import { emitCurvedGrassBlade, emitGrassClump, emitGrassTuft, emitWeedMat, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
@@ -138,6 +138,7 @@ export function buildLevel(town: Town): LevelData {
 }
 
 function compileLevel(town: Town): LevelData {
+  plantFootprints.length = 0
   const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
   for (let z=0;z<SIZE;z++) for(let x=0;x<SIZE;x++) {
@@ -163,6 +164,7 @@ function compileLevel(town: Town): LevelData {
   })
   for (const t of tufts) {
     const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+    if (t.weed) { emitGrassClump(m, t, y, grassRng); continue }
     emitGrassTuft(m, t.x, y, t.z, {
       bladeCount: 2,
       radius: t.radius * 1.15,
@@ -198,6 +200,7 @@ function compileLevel(town: Town): LevelData {
       })
       for (const t of patchClumps) {
         const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+        if (t.weed) { emitGrassClump(m, t, y, grassRng); continue }
         emitGrassTuft(m, t.x, y, t.z, {
           bladeCount: 3,
           radius: t.radius * 0.96,
@@ -593,6 +596,20 @@ function compileLevel(town: Town): LevelData {
     for(const rect of furnitureContacts)contact=Math.max(contact,Math.exp(-distToRect(px,pz,rect)*5)*.85)
     data[(z * resolution + x) * 2] = Math.round(contact*255)
     data[(z * resolution + x) * 2 + 1] = indoor ? 14 : 255
+  }
+  // Contact shade under house trees and shrubs, stamped locally (crown shade for trees, a tight dark pool for bushes).
+  for (const f of plantFootprints) {
+    if (f.ground > 0.3) continue
+    const reach = f.tree ? f.radius * 1.1 : f.radius * 1.5
+    const fall = f.tree ? f.radius * f.radius * 0.55 : f.radius * f.radius * 0.8
+    const x0 = Math.max(0, Math.floor((f.x - reach) / scale)), x1 = Math.min(resolution - 1, Math.ceil((f.x + reach) / scale))
+    const z0 = Math.max(0, Math.floor((f.z - reach) / scale)), z1 = Math.min(resolution - 1, Math.ceil((f.z + reach) / scale))
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const d2 = ((x + .5) * scale - f.x) ** 2 + ((z + .5) * scale - f.z) ** 2
+      const c = Math.max(Math.exp(-d2 / fall) * (f.tree ? 0.42 : 0.6), f.tree ? Math.exp(-d2 / 1.2) * 0.6 : 0)
+      const i = (z * resolution + x) * 2
+      data[i] = Math.max(data[i]!, Math.round(c * 255))
+    }
   }
   // Stamp inward moonlight shafts only within each window's local 3m interior footprint (1000x faster than full-grid scan).
   for (const w of windows) {

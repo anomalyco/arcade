@@ -344,7 +344,7 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
   },
   foliage: {
     id: "foliage",
-    title: "Foliage · 4 Tree Species",
+    title: "Vegetation · 4 Tree Presets",
     section: "foliage",
     cols: 2,
     rows: 2,
@@ -352,25 +352,25 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
       {
         id: "oak",
         label: FOLIAGE_PRESETS.oak.label,
-        settings: { treePreset: "oak", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "oak", tool: "tree", cameraMode: "close" },
         subtitle: "Spreading crown · dense canopy lobes",
       },
       {
         id: "maple",
         label: FOLIAGE_PRESETS.maple.label,
-        settings: { treePreset: "maple", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "maple", tool: "tree", cameraMode: "close" },
         subtitle: "Rounded crown · warm autumn mix",
       },
       {
         id: "birch",
         label: FOLIAGE_PRESETS.birch.label,
-        settings: { treePreset: "birch", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "birch", tool: "tree", cameraMode: "close" },
         subtitle: "Columnar crown · high porosity",
       },
       {
         id: "pine",
         label: FOLIAGE_PRESETS.pine.label,
-        settings: { treePreset: "pine", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "pine", tool: "tree", cameraMode: "close" },
         subtitle: "Conical needle tiers",
       },
     ],

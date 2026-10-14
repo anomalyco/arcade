@@ -121,7 +121,9 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "vignetteDarkness", label: "Peripheral darkness", group: "Lighting", min: 0, max: 1.2, step: 0.05, unit: "×" },
 ]
 
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 32
+/** 32 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`. */
+export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 32
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 64
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & {
@@ -686,6 +688,8 @@ struct OutbreakLightingUniforms {
   u5: vec4f, // flashColorR, flashColorG, flashColorB, inInteriorView
   u6: vec4f, // playerX, playerY, playerH, exposure
   u7: vec4f, // reserved
+  veg: FoliageWindConfig,
+  vegActors: FoliageActors,
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 
@@ -883,7 +887,8 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let moteHash = hash2(moteCell);
   let moteGlint = smoothstep(0.92, 0.99, moteHash) * (0.5 + 0.5 * sin(F.cam.w * 2.4 + moteHash * 31.0));
 
-  let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.25 && n.y > 0.7);
+  // Leaves and blades are thin: inside the cone they transmit and scatter regardless of facing (foliage-owned term).
+  let surfW = select(select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.25 && n.y > 0.7), 0.55, mat == 22);
   let beamCol = vec3f(1.0, 0.62, 0.24);
   let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * OL.u2.x * 0.14 * surfW;
   return (baseAlbedo * 0.75 + beamCol * 0.06) * beamCol * OL.u4.z * mist * vis;
