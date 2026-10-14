@@ -14,6 +14,9 @@
   interact, `KeyW`/`KeyA`/`KeyS`/`KeyD` move, `ShiftLeft` sprint) and render prompts with the user's layout label via
   `@arcade/kit/client/controls`. `docs/shared-code.md` lists code both games duplicate and what to extract into
   `packages/kit/`; check it before writing something a game already has.
+- Before tuning or fixing character animation (gait, walk/run cycles, arm swing, rig poses, IK), load the
+  `procedural-animation-iteration` project skill (`.opencode/skills/procedural-animation-iteration/SKILL.md`):
+  measure with deterministic scripts and pose-diff against mocap before and after every change.
 - Read [docs/lab.md](docs/lab.md) before adding or tuning effects, materials, physics, audio or rendering options. To show Kit an orientation, asset, or sandbox setup in his open browser tab, use `bun run arcade …`; to walk him through a labeled multi-tab tour or highlight a target with a pinned note, use `arcade tour` and `arcade note` ([docs/dev-control.md#show-kit-things](docs/dev-control.md#show-kit-things)).
   All tunable values belong in typed settings bound to the shared `LabPanel` (Backquote), with meaningful labels,
   explicit units/ranges/steps, approved defaults and Reset. Query parameters are for automation only.
