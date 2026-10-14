@@ -13,6 +13,8 @@ const warmupRuns = Number(process.env.BENCH_WARMUP ?? 1)
 const measuredRuns = Number(process.env.BENCH_RUNS ?? 7)
 const holdMs = Number(process.env.BENCH_HOLD_MS ?? 2000)
 const runAblations = process.env.BENCH_ABLATE === "1"
+/** Optional Lab foliage density (0.5..1.5) for GPU-cost-per-density sweeps. */
+const foliageDensity = process.env.BENCH_FOLIAGE_DENSITY ? Number(process.env.BENCH_FOLIAGE_DENSITY) : null
 mkdirSync(out, { recursive: true })
 
 function sampleThermal(): { host: string; thermalPressure: string; pmset: string } {
@@ -64,8 +66,8 @@ const browser = await chromium.launch({
 })
 
 const scenes = [
-  { name: "street", x: 30, y: 41, zoom: 46, hour: 18 },
-  { name: "interior", x: 27.7, y: 31, zoom: 34, hour: 19 },
+  { name: "street", x: 30, y: 41, zoom: 46, hour: 18, foliageDensity },
+  { name: "interior", x: 27.7, y: 31, zoom: 34, hour: 19, foliageDensity },
 ] as const
 
 const median = (xs: number[]): number => {
@@ -185,6 +187,7 @@ try {
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
+        if (scene.foliageDensity !== null) h.setLab("foliageDensity", scene.foliageDensity)
         h.pose(scene.x, scene.y, -Math.PI / 2)
         await h.step(0)
         const s = h.session()
@@ -256,6 +259,7 @@ try {
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
+        if (scene.foliageDensity !== null) h.setLab("foliageDensity", scene.foliageDensity)
         h.pose(scene.x, scene.y, -Math.PI / 2)
         const cpuPrepMs: number[] = []
         const cpuVisionStepMs: number[] = []
@@ -417,6 +421,7 @@ try {
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
+        if (scene.foliageDensity !== null) h.setLab("foliageDensity", scene.foliageDensity)
         h.pose(scene.x, scene.y, -Math.PI / 2)
         await h.step(0)
 
