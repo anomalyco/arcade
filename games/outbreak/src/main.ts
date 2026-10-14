@@ -7,6 +7,7 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { LocalSession, type Command } from "../shared/session"
+import { DEFAULT_STAMINA_TUNING, staminaControls } from "../shared/stamina"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { nearbyDoor, sightRects, propShape, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
@@ -20,8 +21,9 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...DEFAULT_STAMINA_TUNING, ...zombieTuning }
 const controls: LabControl[] = [
+  ...staminaControls,
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
   { key: "diagnostic", label: "Contribution", group: "Diagnostics", options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory"].map((label,value)=>({label,value})) },
@@ -43,6 +45,8 @@ const controls: LabControl[] = [
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#game")!
   const status = document.querySelector<HTMLElement>("#status")!
+  const staminaEl = document.querySelector<HTMLElement>("#stamina")
+  const staminaFill = document.querySelector<HTMLElement>("#stamina-fill")
   if (!navigator.gpu) { status.textContent = "Outbreak needs WebGPU."; return }
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
   if (!adapter) { status.textContent = "No WebGPU adapter is available."; return }
@@ -79,18 +83,19 @@ async function main() {
   let blockers = sightRects(session.view.town), revision = -1, lightOccluders=0
   let frozen = params.has("bench"), frames = 0, meterAt = performance.now(), meterSubmits = renderer.submittedFrames, pendingDrawDt = 0, lastDrawAt = -Infinity
   const clock = new FrameClock()
+  const liveMove = () => ({ ...input.move(), sprint: input.sprinting })
   const stepSimulation = (wallNow: number) => {
     if (frozen || document.hidden) {
       clock.pause(wallNow)
       return 0
     }
-    const substeps = clock.frame(wallNow, input.move(), () => input.takeEnter())
+    const substeps = clock.frame(wallNow, liveMove(), () => input.takeEnter(), () => input.takeCycle())
     if (!substeps.length) return 0
     const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
     let stepped = 0
     for (const step of substeps) {
       const p = session.view.player
-      session.update(step.dt, { mx: step.mx, my: step.my, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact }, settings.timeScale)
+      session.update(step.dt, { mx: step.mx, my: step.my, sprint: step.sprint, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact }, settings.timeScale, settings)
       stepped += step.dt
       frames++
     }
@@ -105,8 +110,8 @@ async function main() {
     const now = performance.now()
     if (!frozen && !document.hidden) stepSimulation(now)
   }, true)
-  window.addEventListener("keydown", () => { clock.recordMove(performance.now(), input.move()); scheduleFrame() })
-  window.addEventListener("keyup", () => { clock.recordMove(performance.now(), input.move()); scheduleFrame() })
+  window.addEventListener("keydown", () => { clock.recordMove(performance.now(), liveMove()); scheduleFrame() })
+  window.addEventListener("keyup", () => { clock.recordMove(performance.now(), liveMove()); scheduleFrame() })
   document.addEventListener("visibilitychange", () => { if (document.hidden) clock.pause(performance.now()); else scheduleFrame() })
   window.addEventListener("blur", () => clock.pause(performance.now()))
   const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
@@ -194,8 +199,14 @@ async function main() {
     render.lightCount = render.shadowLightCount = count; render.occluderCount = lightOccluders; render.lampCount = town.lamps.length
     render.view = view; render.grade = [time, settings.diagnostic, 0, settings.exposure]
     renderer.render(render)
+    if (staminaEl && staminaFill) {
+      const pct = Math.max(0, Math.min(100, p.stamina * 100))
+      staminaFill.style.width = `${pct.toFixed(1)}%`
+      staminaEl.dataset.active = String(p.sprinting || p.exhausted || p.stamina < .999)
+      staminaEl.dataset.exhausted = String(p.exhausted)
+    }
     const door = nearbyDoor(town, p.x, p.y)
-    status.textContent = `${clockText(hour)}${door ? ` · ${keyLabel("KeyE")} ${door.open ? "Close" : "Open"} door` : ""}`
+    status.textContent = `${clockText(hour)}${p.exhausted ? " · Exhausted" : ""}${door ? ` · ${keyLabel("KeyE")} ${door.open ? "Close" : "Open"} door` : ""}`
     const meterNow = performance.now(), elapsed = (meterNow - meterAt) / 1000
     if (elapsed > .25) {
       lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
@@ -302,7 +313,7 @@ async function main() {
     },
     pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
     async step(dt = 1 / 60, command?: Partial<Command>) {
-      session.update(dt, { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }, settings.timeScale)
+      session.update(dt, { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }, settings.timeScale, settings)
       frames++
       draw(dt)
       await Promise.resolve(); await device.queue.onSubmittedWorkDone()
