@@ -142,8 +142,9 @@ export function classifyWheelGesture(
 
   return {
     kind: "orbit",
-    dyaw: -dx * 0.0045,
-    dpitch: dy * 0.0038,
+    // Natural scrolling: fingers move opposite to the wheel delta. Match pointer-drag orbit (grab the world).
+    dyaw: dx * 0.0045,
+    dpitch: -dy * 0.0038,
     source: "trackpad-scroll",
   }
 }

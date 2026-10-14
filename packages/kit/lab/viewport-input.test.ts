@@ -95,8 +95,8 @@ test("classifyWheelGesture handles trackpad two-finger orbit/pan, Shift pan, Ctr
   const scrollOrbit = classifyWheelGesture({ deltaX: 30, deltaY: -20 })
   expect(scrollOrbit).toEqual({
     kind: "orbit",
-    dyaw: -30 * 0.0045,
-    dpitch: -20 * 0.0038,
+    dyaw: 30 * 0.0045,
+    dpitch: 20 * 0.0038,
     source: "trackpad-scroll",
   })
 
@@ -158,8 +158,8 @@ test("isMouseWheelEvent and classifyWheelGesture distinguish physical mouse whee
   const verticalTrackpad = classifyWheelGesture({ deltaX: 0, deltaY: -24, deltaMode: 0 }, { twoFingerScroll: "orbit" })
   expect(verticalTrackpad).toEqual({
     kind: "orbit",
-    dyaw: -0,
-    dpitch: -24 * 0.0038,
+    dyaw: 0,
+    dpitch: 24 * 0.0038,
     source: "trackpad-scroll",
   })
 })
