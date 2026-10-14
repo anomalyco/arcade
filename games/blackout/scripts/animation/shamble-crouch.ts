@@ -276,7 +276,6 @@ function sampleOutbreakZombie(
       [-200, -200, 200, 200],
       hooks.zombieTuningObj,
       false,
-      n * dt,
     )
     const st = zr.getAgentBones(1)!
     const j = extractBonePoseJoints(st.bones)

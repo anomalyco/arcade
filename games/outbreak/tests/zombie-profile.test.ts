@@ -108,7 +108,7 @@ test("zombie crowd shamble matches key-pose reference within 7.5 deg RMSE, locks
 
   for (let n = 0; n < 420; n++) {
     ag.x += 0.95 * dt
-    zr.draw([ag], dt, () => 0, { visible: () => true, actorVisible: () => 1 } as never, [-100, -100, 100, 100], zombieTuning, false, n * dt)
+    zr.draw([ag], dt, () => 0, { visible: () => true, actorVisible: () => 1 } as never, [-100, -100, 100, 100], zombieTuning, false)
     const st = zr.getAgentBones(1)!
     const j = extractBonePoseJoints(st.bones)
     const [pL, pR] = st.planted!
@@ -146,7 +146,7 @@ test("zombie crowd shamble matches key-pose reference within 7.5 deg RMSE, locks
     z.vx = 0.95; z.vy = 0; z.aim = 0
     for (let k = 0; k < 60; k++) {
       z.x += 0.95 * dt
-      zr.draw([z], dt, () => 0, { visible: () => true, actorVisible: () => 1 } as never, [-100, -100, 100, 100], { ...zombieTuning, zombieVariant: v }, false, k * dt)
+      zr.draw([z], dt, () => 0, { visible: () => true, actorVisible: () => 1 } as never, [-100, -100, 100, 100], { ...zombieTuning, zombieVariant: v }, false)
     }
     const j = extractBonePoseJoints(zr.getAgentBones(2)!.bones)
     return j.wristL[0] - j.pelvis[0]
