@@ -85,8 +85,11 @@ fn eyeVisible(p: vec2f) -> f32 {
     col += vec3f(0.018, 0.026, 0.052) * F.ambient.w * crown * (0.88 + 0.24 * surfaceNoise(o.world.xz * 0.35));
   }
   if(mat == 20 && i32(round(o.aux)) == 2) {
-    // Cool moonlit fill on concrete sidewalks and curbs.
-    col += vec3f(0.012, 0.018, 0.036) * F.ambient.w;
+    let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
+    if (!inVerge) {
+      // Cool moonlit fill on concrete sidewalks and curbs.
+      col += vec3f(0.012, 0.018, 0.036) * F.ambient.w;
+    }
   }
   if(mat == 21) {
     // Subtle cool twilight sky sheen on upper roof shingle slopes; eaves stay shadowed.

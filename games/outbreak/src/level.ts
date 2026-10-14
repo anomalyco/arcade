@@ -190,24 +190,73 @@ function compileLevel(town: Town): LevelData {
       })
     }
   }
-  // Clustered curb-verge & front-lawn edge curved grass tufts with natural gaps.
+  // Radiating rosette grass tussocks along curb verges, sidewalk borders, front walkways, and gravel driveways.
   const vergeRng = new Rng(town.seed ^ 0x91e1)
-  for (let v = 2; v < SIZE - 2; v += 0.58 + vergeRng.next() * 0.82) {
+  for (let v = 2.5; v < SIZE - 2.5; v += 0.72 + vergeRng.next() * 0.68) {
     if (v > 37.5 && v < 50.5) continue
-    for (const zBase of [37.84, 39.48, 39.66, 48.34, 48.54, 50.16]) {
-      if (vergeRng.next() < 0.16) continue
+    for (const zBase of [37.88, 39.55, 48.45, 50.12]) {
+      if (vergeRng.next() < 0.14) continue
       if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 0.95 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.25))) continue
       const inCurbStrip = zBase > 39 && zBase < 49
-      const count = inCurbStrip ? 3 : 2
-      const lean = vergeRng.next() * Math.PI * 2
-      for (let k = 0; k < count; k++) {
-        const x = v + (vergeRng.next() - 0.5) * 0.46, z = zBase + (vergeRng.next() - 0.5) * 0.14
-        // Curb verge strip sits on the y = 0.10 sidewalk/verge slab; lawn edge sits on terrain supportHeight.
-        const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
-        const m = at(x, z), h = (0.20 + vergeRng.next() * 0.16) * (foliageSettings.bladeHeight / 0.30)
-        const rootCol = hex(vergeRng.pick([0x1c2b12, 0x182510, 0x242c16]))
-        const tipCol = hex(vergeRng.pick([0x6e883c, 0x5e7634, 0x828442]))
-        emitCurvedGrassBlade(m, x, y, z, h, foliageSettings.bladeWidth * 1.22, foliageSettings.bladeCurvature, lean + (vergeRng.next() - 0.5) * 0.5, rootCol, tipCol)
+      const x = v + (vergeRng.next() - 0.5) * 0.28
+      const z = zBase + (vergeRng.next() - 0.5) * 0.12
+      const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
+      const m = at(x, z)
+      const h = (inCurbStrip ? 0.24 + vergeRng.next() * 0.16 : 0.18 + vergeRng.next() * 0.14) * (foliageSettings.bladeHeight / 0.30)
+      const rootCol = hex(vergeRng.pick([0x182610, 0x14200d, 0x1e2812]))
+      const tipCol = hex(vergeRng.pick([0x4c6828, 0x3e5822, 0x5c682c]))
+      emitGrassTuft(m, x, y, z, {
+        bladeCount: inCurbStrip ? 4 : 3,
+        radius: inCurbStrip ? 0.22 + vergeRng.next() * 0.08 : 0.16 + vergeRng.next() * 0.06,
+        height: h,
+        width: foliageSettings.bladeWidth * 1.28,
+        curvature: Math.min(1.0, foliageSettings.bladeCurvature * 1.15),
+        leanAngle: vergeRng.next() * Math.PI * 2,
+        rootColor: rootCol,
+        tipColor: tipCol,
+        rng: vergeRng,
+      })
+    }
+  }
+  for (const b of town.buildings) {
+    const [bx0, bz0, , bz1] = b.rect
+    const walkEnd = frontageEnd(b) - 0.12
+    for (let wz = bz1 + 1.15; wz < walkEnd; wz += 0.62 + vergeRng.next() * 0.45) {
+      for (const wx of [bx0 + 4.92, bx0 + 6.48]) {
+        const gx = wx + (vergeRng.next() - 0.5) * 0.14
+        const gz = wz + (vergeRng.next() - 0.5) * 0.18
+        const y = supportHeight(town, gx, gz)
+        emitGrassTuft(at(gx, gz), gx, y, gz, {
+          bladeCount: 3,
+          radius: 0.18,
+          height: (0.20 + vergeRng.next() * 0.12) * (foliageSettings.bladeHeight / 0.30),
+          width: foliageSettings.bladeWidth * 1.20,
+          curvature: foliageSettings.bladeCurvature,
+          leanAngle: wx < bx0 + 5.5 ? 0.15 : Math.PI - 0.15,
+          rootColor: hex(0x182610),
+          tipColor: hex(0x4a6428),
+          rng: vergeRng,
+        })
+      }
+    }
+    for (let dz = bz0 + 1.2; dz < walkEnd; dz += 0.85 + vergeRng.next() * 0.65) {
+      for (const dx of [bx0 - 2.94, bx0 - 1.68, bx0 - 0.42]) {
+        if (dx === bx0 - 1.68 && vergeRng.next() < 0.48) continue
+        const gx = dx + (vergeRng.next() - 0.5) * 0.18
+        const gz = dz + (vergeRng.next() - 0.5) * 0.22
+        const y = supportHeight(town, gx, gz)
+        emitCurvedGrassBlade(
+          at(gx, gz),
+          gx,
+          y,
+          gz,
+          0.18 + vergeRng.next() * 0.12,
+          foliageSettings.bladeWidth * 1.18,
+          foliageSettings.bladeCurvature,
+          vergeRng.next() * Math.PI * 2,
+          hex(0x182410),
+          hex(0x465c26),
+        )
       }
     }
   }

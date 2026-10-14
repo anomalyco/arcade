@@ -251,14 +251,16 @@ struct VOut {
     } else if (kind == 2) {
       let inVerge = U.config.w < 0.5 && p.y > 3.32 && p.y < 3.76 && abs(p.x) > 0.9 && p.x > -7.6;
       if (inVerge) {
+        let vDist = min(p.y - 3.32, 3.76 - p.y);
+        let vEdge = smoothstep(0.0, 0.08, vDist);
         if (isAfter) {
-          let s = evalGrassSoil(p, vec3f(0.24, 0.32, 0.16), false, defaultMaterialRecipe(4));
+          let s = evalGrassSoil(p, vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge), false, defaultMaterialRecipe(4));
           albedo = s.albedo;
           gloss = s.gloss;
-          cavity = s.cavity;
+          cavity = s.cavity * (0.55 + 0.45 * vEdge);
           n = normalize(n + surfaceNormalShift);
         } else {
-          let s = evalLegacyMaterial(4, o.world, n, vec3f(0.24, 0.30, 0.16));
+          let s = evalLegacyMaterial(4, o.world, n, vec3f(0.024, 0.036, 0.014));
           albedo = s.albedo;
         }
       } else {

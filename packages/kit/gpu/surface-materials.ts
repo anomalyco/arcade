@@ -799,7 +799,11 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let inDrivewayApron = (p.x > 18.8 && p.x < 21.8) || (p.x > 49.8 && p.x < 52.8);
     let inFrontWalk = (p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0);
     if ((inNorthVerge || inSouthVerge) && !inDrivewayApron && !inFrontWalk) {
-      return evalGrassSoil(p, vec3f(0.24, 0.30, 0.17), false, defaultMaterialRecipe(4));
+      let vDist = select(min(p.y - 48.22, 48.68 - p.y), min(p.y - 39.32, 39.78 - p.y), inNorthVerge);
+      let vEdge = smoothstep(0.0, 0.08, vDist);
+      var vs = evalGrassSoil(p, vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge), false, defaultMaterialRecipe(4));
+      vs.cavity *= 0.55 + 0.45 * vEdge;
+      return vs;
     }
     let isCurb = (p.y >= 39.78 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.22) || (p.x >= 39.78 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.22);
     let warp = (surfaceNoise(p * 1.4 + 2.3) - 0.5) * 0.035 * irreg;
@@ -911,10 +915,20 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   let gustWave = smoothstep(0.34, 0.74, windCrest * 0.65 + c0 * 0.35) * (0.30 + 0.55 * overgrownMask);
   turfCol = mix(turfCol, turfCol * vec3f(1.10, 1.14, 0.90), gustWave * 0.26);
 
-  // Damp mossy loam in low inter-clump troughs for rich organic lawn variation
-  let soilMask = smoothstep(0.54 - wear * 0.20, 0.82 - wear * 0.10, 1.0 - clumpField) * rootThatch * macroVar;
-  let soilCol = vec3f(0.09, 0.10, 0.06) * (0.82 + 0.25 * c1);
-  let col = mix(turfCol, soilCol, soilMask * 0.48);
+  // Broad painterly lawn value waves & damp mossy troughs
+  let macroPatch = surfaceNoise(p * 0.22 + vec2f(5.1, 2.7));
+  let macroShade = mix(0.74, 1.12, smoothstep(0.24, 0.76, macroPatch));
+  let soilMask = smoothstep(0.50 - wear * 0.20, 0.80 - wear * 0.10, 1.0 - clumpField) * rootThatch * macroVar;
+  let soilCol = vec3f(0.015, 0.018, 0.010) * (0.82 + 0.25 * c1);
+  var col = mix(turfCol * macroShade, soilCol, soilMask * 0.52);
+
+  // Scattered warm autumn fallen leaf flecks on the lawn and verge
+  let leafCell = floor(p * 8.2);
+  let leafHash = hash2(leafCell + vec2f(3.7, 7.9));
+  let leafPatch = smoothstep(0.42, 0.72, c0 * 0.6 + macroPatch * 0.4);
+  let leafMask = step(0.958, leafHash) * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 8.2));
+  let leafCol = select(vec3f(0.14, 0.07, 0.02), vec3f(0.18, 0.11, 0.03), fract(leafHash * 19.3) > 0.5);
+  col = mix(col, leafCol, leafMask * 0.72);
 
   // High-frequency ground detail normal + tuft mound normal so the lawn never reads as a flat plane
   let normAtten = 1.0 - smoothstep(0.14, 0.85, surfaceFootprint);
@@ -995,12 +1009,16 @@ export const surfaceMaterial = /* wgsl */ `
         gloss = s.gloss;
       } else if (kind == 2) {
         let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
-        albedo = s.albedo;
+        albedo = s.albedo * s.cavity;
         gloss = s.gloss;
+        n = normalize(n + surfaceNormalShift);
       } else if (kind == 3) {
-        // Gravel drive: crushed stone aggregate with wheel-track compaction and dark soil crevices.
+        // Gravel drive: crushed stone aggregate with wheel-track compaction, dark soil crevices, and mossy edge/median weeds.
         let ruts = exp(-pow((fract(p.x * 0.38) - 0.32) * 5.5, 2.0)) + exp(-pow((fract(p.x * 0.38) - 0.72) * 5.5, 2.0));
-        albedo *= 0.72 + grain(p, 16.0) * 0.65 + surfaceNoise(p * 3.0) * 0.35 + 0.08 * clamp(ruts, 0.0, 1.0);
+        let mossNoise = surfaceNoise(p * 1.8 + vec2f(2.4, 5.1));
+        let centerMoss = exp(-pow((fract(p.x * 0.38) - 0.52) * 7.5, 2.0)) * smoothstep(0.38, 0.72, mossNoise);
+        albedo *= 0.70 + grain(p, 16.0) * 0.62 + surfaceNoise(p * 3.0) * 0.32 - 0.14 * clamp(ruts, 0.0, 1.0);
+        albedo = mix(albedo, vec3f(0.022, 0.036, 0.014), centerMoss * 0.58);
         gloss = vec2f(0.0);
       } else if (kind == 4) {
         let s = evalWoodPlanks(p, albedo, defaultMaterialRecipe(0));
