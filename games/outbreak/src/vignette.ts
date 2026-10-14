@@ -1088,34 +1088,51 @@ fn eyeVisible(p: vec2f) -> f32 {
       col *= 0.08;
     }
     // Weathered dark slate-grey porch trim, columns, and window mullions on south facade
-    if (mat == 4 && o.world.z > 35.15 && !interior(o.world.xz)) {
+    if ((mat == 4 || mat == 21) && o.world.z > 35.15 && !interior(o.world.xz)) {
       let trimLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      if (trimLum > 0.045) {
-        col = mix(vec3f(trimLum) * vec3f(0.34, 0.38, 0.44), col * 0.38, 0.25);
+      if (trimLum > 0.035) {
+        col = mix(vec3f(trimLum) * vec3f(0.26, 0.30, 0.36), col * 0.30, 0.22);
       }
     }
-    // Desaturate bright rugs & bedding in Noir and deepen unlit north kitchen corner
-    if (interior(o.world.xz) && o.world.y < 1.95) {
+    // Desaturate bright rugs & bedding in Noir and balance interior rooms
+    if (interior(o.world.xz) && o.world.y < 2.65) {
       let inLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(vec3f(inLum) * vec3f(0.92, 0.95, 1.02), col, 0.38);
-      if (o.world.x > 29.5 && o.world.z < 29.6) {
-        col *= 0.42;
+      col = mix(vec3f(inLum) * vec3f(0.92, 0.95, 1.02), col, 0.35);
+      // Subdue white fridge/counter/stove tops along the partition so they don't form a bright white band
+      if (o.world.x > 30.8 && o.world.x < 35.8 && o.world.z > 29.55 && o.world.z < 30.48 && o.world.y > 0.85) {
+        col *= 0.28;
+      }
+      // Warm amber wall-wash on the south-east dining partition wall above the console table
+      if (o.world.x > 29.2 && o.world.x < 36.2 && o.world.z > 29.45 && o.world.z < 30.65 && o.world.y > 0.55 && o.world.y < 2.55) {
+        let wx = exp(-pow((o.world.x - 33.45) * 0.55, 2.0));
+        let wy = exp(-pow((o.world.y - 1.45) * 1.15, 2.0));
+        col += vec3f(0.22, 0.125, 0.048) * wx * wy;
+      }
+      // Subtle cool moonlight fill in the north-east room & central hallway threshold
+      if (o.world.z < 29.6 && o.world.x > 28.5) {
+        col += vec3f(0.012, 0.015, 0.020) * (0.7 + 0.3 * max(0.0, n.y));
+      }
+      // Hallway & living-room floorboard bounce around the survivor
+      if (o.world.y < 0.22 && o.world.x > 26.2 && o.world.x < 31.8 && o.world.z > 29.2 && o.world.z < 35.3) {
+        let hallCarry = exp(-pow((o.world.x - 28.1) * 0.65, 2.0)) * exp(-pow((o.world.z - 31.4) * 0.48, 2.0));
+        let plankVar = 0.75 + 0.5 * surfaceNoise(vec2f(o.world.x * 1.4, o.world.z * 9.5));
+        col += vec3f(0.042, 0.046, 0.052) * hallCarry * plankVar;
       }
     }
     // East window icy moonlight spill on window reveals & kitchen counter/floor
-    if (o.world.x > 34.2 && o.world.x < 37.2 && o.world.z > 27.2 && o.world.z < 34.8) {
-      let winX = smoothstep(34.2, 36.85, o.world.x);
-      let winZ1 = exp(-pow((o.world.z - 29.2) * 0.85, 2.0));
-      let winZ2 = exp(-pow((o.world.z - 32.8) * 0.85, 2.0));
-      let moonShaft = winX * max(winZ1, winZ2) * smoothstep(2.4, 0.1, o.world.y);
-      col += vec3f(0.055, 0.082, 0.125) * moonShaft;
+    if (o.world.x > 33.8 && o.world.x < 37.2 && o.world.z > 26.8 && o.world.z < 35.0) {
+      let winX = smoothstep(33.8, 36.85, o.world.x);
+      let winZ1 = exp(-pow((o.world.z - 28.8) * 0.78, 2.0));
+      let winZ2 = exp(-pow((o.world.z - 32.8) * 0.78, 2.0));
+      let moonShaft = winX * max(winZ1, winZ2) * smoothstep(2.45, 0.05, o.world.y);
+      col += vec3f(0.075, 0.105, 0.155) * moonShaft;
     }
     // Wet central porch walkway specular streak under the porch light
-    if (mat == 20 && o.world.x > 26.8 && o.world.x < 28.6 && o.world.z > 35.5 && o.world.z < 40.0) {
-      let cx = exp(-pow((o.world.x - 27.7) * 2.2, 2.0));
-      let cz = smoothstep(40.0, 35.8, o.world.z);
-      let pWet = 0.65 + 0.7 * surfaceNoise(o.world.xz * 4.2);
-      col = col * 0.62 + vec3f(0.11, 0.10, 0.085) * cx * cz * pWet;
+    if (mat == 20 && o.world.x > 26.4 && o.world.x < 29.0 && o.world.z > 35.5 && o.world.z < 40.0) {
+      let cx = exp(-pow((o.world.x - 27.7) * 2.8, 2.0));
+      let cz = smoothstep(40.0, 35.6, o.world.z);
+      let pWet = 0.65 + 0.7 * surfaceNoise(o.world.xz * 4.8);
+      col = col * mix(0.38, 0.72, cx) + vec3f(0.14, 0.13, 0.11) * cx * cz * pWet * select(1.0, 0.45, Vig.params2.y < 35.0);
     }
   }
   // Direction 3 (Noir): volumetric flashlight cone haze + hot hand core & occluded ground beam
@@ -1134,26 +1151,26 @@ fn eyeVisible(p: vec2f) -> f32 {
     let fPower = lights[fSlot].color.w;
     let inHouse = interior(o.world.xz);
     if (along > -0.15 && along < fRange) {
-      let coneR = 0.08 + max(0.0, along) * tanHalf;
-      let radialCore = exp(-pow(across / (coneR * 0.52), 2.0));
-      let radialEdge = 1.0 - smoothstep(coneR * 0.55, coneR * 1.08, across);
-      let axialIn = smoothstep(-0.04, 0.16, along);
-      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.65);
+      let coneR = 0.09 + max(0.0, along) * tanHalf * select(1.0, 1.25, inHouse);
+      let radialCore = exp(-pow(across / (coneR * select(0.52, 0.64, inHouse)), 2.0));
+      let radialEdge = 1.0 - smoothstep(coneR * 0.58, coneR * 1.15, across);
+      let axialIn = smoothstep(-0.06, 0.14, along);
+      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.65, 1.25, inHouse));
       let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.04, o.world.xz, min(o.world.y, 0.95));
       let grit = 0.72 + 0.56 * surfaceNoise(o.world.xz * 4.5 + vec2f(1.7, 3.9));
-      let mist = radialCore * radialEdge * axialIn * axialOut / (0.48 + max(0.0, along) * 0.26) * vis * (0.85 + 0.3 * surfaceNoise(o.world.xz * 1.8));
-      col += fLightCol * fPower * mist * hazeAmt * select(0.20, 0.28, inHouse);
-      if (o.world.y < 0.35) {
-        let groundSpot = radialCore * radialEdge * axialIn * axialOut / (0.32 + max(0.0, along) * 0.20 + along * along * 0.028) * vis * grit;
-        col += (o.color * select(1.45, 2.25, inHouse) + vec3f(0.055, 0.065, 0.075)) * fLightCol * fPower * groundSpot * select(1.18, 1.85, inHouse);
+      let mist = radialCore * radialEdge * axialIn * axialOut / (0.45 + max(0.0, along) * 0.24) * vis * (0.85 + 0.3 * surfaceNoise(o.world.xz * 1.8));
+      col += fLightCol * fPower * mist * hazeAmt * select(0.20, 0.36, inHouse);
+      if (o.world.y < 0.38) {
+        let groundSpot = radialCore * radialEdge * axialIn * axialOut / (0.28 + max(0.0, along) * 0.16 + along * along * 0.022) * vis * grit;
+        col += (o.color * select(1.45, 2.85, inHouse) + vec3f(0.065, 0.072, 0.080)) * fLightCol * fPower * groundSpot * select(1.18, 2.45, inHouse);
       }
     }
     // Small close hand/lantern ground spill right at the survivor's feet
     let pRel = o.world.xz - (Vig.params2.xy + vec2f(-0.22, -0.35));
     let pDist = length(pRel);
-    if (pDist < 1.35 && o.world.y < 0.30) {
-      let nearGlow = exp(-pDist * pDist * 2.8) * (1.0 - smoothstep(0.45, 1.35, pDist));
-      col += (o.color * 1.2 + vec3f(0.05, 0.055, 0.06)) * fLightCol * fPower * nearGlow * 0.34;
+    if (pDist < 1.55 && o.world.y < 0.35) {
+      let nearGlow = exp(-pDist * pDist * 2.2) * (1.0 - smoothstep(0.5, 1.55, pDist));
+      col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.34, 0.65, inHouse);
     }
   }
   if (mat != 12 && mat != 21 && mat != 2) {
@@ -1815,7 +1832,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
             noirColorOverride = [0.64, 0.82, 1.0]
           } else if (lamp.x > 30 && lamp.y > 29) {
             // Dining/kitchen lamp: warm amber pool
-            noirRoomMult = 1.75
+            noirRoomMult = 1.22
             noirColorOverride = [1.0, 0.58, 0.22]
           } else {
             // SW living room & central hallway lamps off in Noir
