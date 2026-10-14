@@ -848,7 +848,7 @@ struct SOut {
 `
 
 /** Fullscreen passes: bloom downsample and upsample, then the tone-mapped, graded composite. */
-export const postShader = (looks = true, motion = false, finish?: { chromatic: number; bloom: number; grain: number; vignette: number; diagnostics?: boolean; shadowLift?: number; huePreserve?: number }) => /* wgsl */ `
+export const postShader = (looks = true, motion = false, finish?: PostFinishOptions) => /* wgsl */ `
 ${motion ? motionGather : ""}
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
@@ -938,7 +938,7 @@ fn hash(p: vec2f) -> f32 {
     if (i32(G.y) == 5) { hdr = bloom * ${finish.bloom.toFixed(4)}; }
     return vec4f(pow(max(hdr, vec3f(0.0)), vec3f(1.0/2.2)), 1.0);
   }` : ""}
-  hdr = hdr + bloom * ${finish ? finish.bloom.toFixed(4) : "0.32"};
+  hdr = hdr + bloom * ${finish ? (finish.halation ? `(${finish.bloom.toFixed(4)} + vec3f(1.08, 0.36, 0.12) * ${finish.halation.toFixed(4)})` : finish.bloom.toFixed(4)) : "0.32"};
   var c = aces(hdr * G.w);
   ${finish?.huePreserve ? `let exposed=max(hdr*G.w,vec3f(0.0));
   let peak=max(exposed.r,max(exposed.g,exposed.b));
@@ -956,9 +956,9 @@ fn hash(p: vec2f) -> f32 {
     c += vec3f(0.001, 0.004, 0.008) * (1.0 - smoothstep(0.0, 0.25, l));
     c *= mix(vec3f(0.72, 1.0, 1.04), vec3f(1.08, 1.01, 0.89), smoothstep(0.05, 0.65, l));
   } else {` : ""}
-    c = mix(vec3f(l), c, 1.0 - G.y);
-    c += vec3f(0.006, 0.011, 0.028) * ${finish?.shadowLift === undefined ? "" : `${finish.shadowLift.toFixed(4)} * `}(1.0 - smoothstep(0.0, 0.25, l));
-    c *= mix(vec3f(0.93, 0.97, 1.06), vec3f(1.04, 1.0, 0.95), smoothstep(0.2, 0.8, l));
+    c = mix(vec3f(l), c, ${finish?.saturation !== undefined ? `${finish.saturation.toFixed(4)} * ` : ""}(1.0 - G.y));
+    c += ${finish?.shadowLiftColor ? `vec3f(${finish.shadowLiftColor.map(v => v.toFixed(4)).join(", ")})` : "vec3f(0.006, 0.011, 0.028)"} * ${finish?.shadowLift === undefined ? "" : `${finish.shadowLift.toFixed(4)} * `}(1.0 - smoothstep(0.0, 0.25, l));
+    c *= mix(${finish?.shadowTint ? `vec3f(${finish.shadowTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(0.93, 0.97, 1.06)"}, ${finish?.highlightTint ? `vec3f(${finish.highlightTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(1.04, 1.0, 0.95)"}, smoothstep(0.2, 0.8, l));
   ${looks ? "}" : ""}
   let v = length(fromC * vec2f(1.0, 0.8));
   c *= mix(1.0, ${finish ? finish.vignette.toFixed(4) : "0.45"}, smoothstep(0.32, 0.85, v));
@@ -979,6 +979,11 @@ export type PostFinishOptions = {
   diagnostics?: boolean
   shadowLift?: number
   huePreserve?: number
+  halation?: number
+  saturation?: number
+  shadowLiftColor?: readonly [number, number, number]
+  shadowTint?: readonly [number, number, number]
+  highlightTint?: readonly [number, number, number]
 }
 
 /**
@@ -1492,7 +1497,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
       clean(textureSampleLevel(src, samp, uv, 0.0)).g,
       clean(textureSampleLevel(src, samp, uv - ca, 0.0)).b,
     );
-    hdr = hdr + bloom * baseBloom;
+    hdr = hdr + bloom * ${finish?.halation ? `(baseBloom + vec3f(1.08, 0.36, 0.12) * ${finish.halation.toFixed(4)})` : "baseBloom"};
     var c = aces(hdr * G.w);
     if (baseHuePres > 0.0) {
       let exposed = max(hdr * G.w, vec3f(0.0));
@@ -1500,9 +1505,9 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
       c = mix(c, exposed * (aces(vec3f(peak)).r / max(peak, 0.0001)), baseHuePres);
     }
     let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-    c = mix(vec3f(l), c, 1.0 - G.y);
-    c += vec3f(0.006, 0.011, 0.028) * baseShadowLift * (1.0 - smoothstep(0.0, 0.25, l));
-    c *= mix(vec3f(0.93, 0.97, 1.06), vec3f(1.04, 1.0, 0.95), smoothstep(0.2, 0.8, l));
+    c = mix(vec3f(l), c, ${finish?.saturation !== undefined ? `${finish.saturation.toFixed(4)} * ` : ""}(1.0 - G.y));
+    c += ${finish?.shadowLiftColor ? `vec3f(${finish.shadowLiftColor.map(v => v.toFixed(4)).join(", ")})` : "vec3f(0.006, 0.011, 0.028)"} * baseShadowLift * (1.0 - smoothstep(0.0, 0.25, l));
+    c *= mix(${finish?.shadowTint ? `vec3f(${finish.shadowTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(0.93, 0.97, 1.06)"}, ${finish?.highlightTint ? `vec3f(${finish.highlightTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(1.04, 1.0, 0.95)"}, smoothstep(0.2, 0.8, l));
     let v = length(fromC * vec2f(1.0, 0.8));
     c *= mix(1.0, baseVig, smoothstep(0.32, 0.85, v));
     c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
