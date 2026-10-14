@@ -190,8 +190,18 @@ fn eyeVisible(p: vec2f) -> f32 {
       let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.062, 0.075));
       let periphShade = mix(1.0, clamp(1.18 - dCenter * 0.52, 0.34, 1.0), vigDark);
       // When inside a building cutaway, dim the exterior yard & sidewalk so interior light pools lead the eye
-      let extCutDim = select(1.0, mix(0.42, 0.72, exp(-pow((o.world.x - 27.7) * 0.32, 2.0)) * smoothstep(42.0, 35.2, o.world.z)), OL.u5.w > 0.5);
+      let extCutDim = select(1.0, mix(0.46, 0.74, exp(-pow((o.world.x - 27.7) * 0.32, 2.0)) * smoothstep(42.0, 35.2, o.world.z)), OL.u5.w > 0.5);
       col *= periphShade * extCutDim;
+    } else if (o.world.y < 2.74) {
+      col += evalInteriorWallWash(o.world, n, o.color) * nightLamps;
+      // Subdue bright white fridge top so it doesn't pop out of the shadowed kitchen corner
+      if (o.world.x > 35.6 && o.world.z > 30.8 && o.world.z < 32.2 && o.world.y > 1.4) {
+        col *= 0.28;
+      }
+    }
+    // Darken cutaway wall-top molding (y = 2.75..2.82) so interior walls don't have a bright beige outline
+    if (o.world.y > 2.74 && o.world.y < 2.83 && n.y > 0.75) {
+      col *= 0.16;
     }
     if (mat == 22) {
       // Above the Grassland + Botanics subsurface chlorophyll translucency & 4th-power grazing Fresnel rim.

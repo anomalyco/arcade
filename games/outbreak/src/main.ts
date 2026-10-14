@@ -858,7 +858,7 @@ async function main() {
       const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings, inInteriorView)
       lampPower[i] = resolved.fixtureBrightness
       if (resolved.power <= 0.001) continue
-      const { lx, lh, ly, r, rEff, color, power, cone, softness } = resolved
+      const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
       if (Math.hypot(lx - p.x, ly - p.y) > 40) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
       if (lamp.kind === "room") {
@@ -868,11 +868,11 @@ async function main() {
         if (b) {
           const roofOpen =
             cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1
-          if (!roofOpen && (b.kind !== "house" || ly < b.rect[1] + 5.5 || b.rect[3] - r > vy1)) continue
+          if (!roofOpen) continue
         }
       }
       lights.set(
-        [lx, lh, ly, r, ...color, power, ...cone, 0, lightOccluders, softness, i],
+        [lx, lh, ly, r, ...color, power, ...cone, 0, castShadows ? lightOccluders : 0, softness, i],
         count++ * LIGHT_FLOATS,
       )
     }

@@ -146,6 +146,7 @@ export type ResolvedLamp = {
   fixtureBrightness: number
   cone: [number, number, number, number]
   softness: number
+  castShadows: boolean
 }
 
 /**
@@ -177,6 +178,7 @@ export function resolveLampLight(
       fixtureBrightness: master * s.streetPower * 0.35,
       cone: [0, 0, 0, 0],
       softness: 0.2,
+      castShadows: true,
     }
   }
 
@@ -195,6 +197,7 @@ export function resolveLampLight(
       fixtureBrightness: master * s.porchPower * interiorDim * 0.62,
       cone: [0, 0, 0, -1],
       softness: 0.16,
+      castShadows: true,
     }
   }
 
@@ -213,6 +216,7 @@ export function resolveLampLight(
       fixtureBrightness: master * s.windowPower * interiorDim * 0.65,
       cone: [0, 1, -0.55, 1],
       softness: 0.18,
+      castShadows: !inInteriorView,
     }
   }
 
@@ -226,6 +230,7 @@ export function resolveLampLight(
   let rScale = 0.72
   let pScale = 0.65
   let fixtureScale = 0.65
+  let castShadows = false
   let color: [number, number, number] = [1.0, 0.56 - 0.08 * w, 0.20 - 0.06 * w]
 
   if (b && b.kind === "house") {
@@ -233,40 +238,41 @@ export function resolveLampLight(
     const relY = lamp.y - b.rect[1]
     if (relX < 4.0 && relY < 3.0) {
       // #1 NW bedroom nightstand lamp: warm primary focal pool next to bed
-      lx = b.rect[0] + 2.65
-      ly = b.rect[1] + 1.15
-      lh = 1.18
-      rScale = 0.92
-      pScale = 1.05
-      fixtureScale = 1.15
-      color = [1.0, 0.62 - 0.06 * w, 0.24 - 0.06 * w]
-    } else if (relX > 4.0 && relY < 4.5) {
-      // #4 NE bedroom dresser candle/accent: shifted to the dresser at (x+7.55, z+1.15), tight warm pool
-      lx = b.rect[0] + 7.45
+      lx = b.rect[0] + 2.75
       ly = b.rect[1] + 1.25
-      lh = 1.32
-      rScale = 0.56
-      pScale = 0.46
-      fixtureScale = 0.25
-      color = [1.0, 0.54 - 0.06 * w, 0.16 - 0.04 * w]
+      lh = 1.26
+      rScale = 0.98
+      pScale = 1.28
+      fixtureScale = 1.20
+      castShadows = true
+      color = [1.0, 0.62 - 0.05 * w, 0.24 - 0.05 * w]
+    } else if (relX > 4.0 && relY < 4.5) {
+      // #4 NE bedroom dresser candle/accent: warm pool over dresser & north-east rug
+      lx = b.rect[0] + 7.35
+      ly = b.rect[1] + 1.35
+      lh = 1.38
+      rScale = 0.64
+      pScale = 0.68
+      fixtureScale = 0.35
+      color = [1.0, 0.56 - 0.05 * w, 0.18 - 0.04 * w]
     } else if (relX < 4.5 && relY >= 4.5) {
-      // #2 SW living room: low warm candle pool on the coffee table (x+2.7, b-2.2), keeping corners moody
+      // #2 SW living room: warm candle pool on the coffee table (x+2.7, b-2.2)
       lx = b.rect[0] + 2.7
       ly = b.rect[3] - 2.2
-      lh = 0.92
-      rScale = 0.52
-      pScale = 0.34
-      fixtureScale = 0.12
-      color = [1.0, 0.48 - 0.06 * w, 0.14 - 0.04 * w]
-    } else {
-      // #3 SE kitchen/dining: small localized warm pool over the wooden dining table (r-3.2, b-2.8)
-      lx = b.rect[2] - 3.2
-      ly = b.rect[3] - 2.8
-      lh = 1.35
-      rScale = 0.48
-      pScale = 0.28
+      lh = 1.05
+      rScale = 0.56
+      pScale = 0.46
       fixtureScale = 0.15
-      color = [1.0, 0.52 - 0.06 * w, 0.16 - 0.04 * w]
+      color = [1.0, 0.50 - 0.05 * w, 0.15 - 0.04 * w]
+    } else {
+      // #3 SE kitchen/dining: warm pool over the wooden dining table (r-3.2, b-2.6)
+      lx = b.rect[2] - 3.15
+      ly = b.rect[3] - 2.65
+      lh = 1.42
+      rScale = 0.60
+      pScale = 0.52
+      fixtureScale = 0.18
+      color = [1.0, 0.52 - 0.05 * w, 0.16 - 0.04 * w]
     }
   }
 
@@ -283,6 +289,7 @@ export function resolveLampLight(
     fixtureBrightness: master * s.roomPower * fixtureScale,
     cone: [0, 0, 0, -1],
     softness: 0.14,
+    castShadows,
   }
 }
 
@@ -339,34 +346,86 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, world.xz + n.xz * 0.03, min(world.y, 1.05));
   if (vis <= 0.001) { return vec3f(0.0); }
 
-  // Suppress volumetric mist on vertical partition walls so the beam doesn't paint a vertical white bar beside the player
-  let surfWeight = select(0.06 * max(0.0, dot(n.xz, -fDir)), 1.0, n.y > 0.65 || mat == 12);
+  // Suppress volumetric mist on vertical partition walls & doors so the beam doesn't paint a bright bar beside the player
+  if (inRoom && world.x < 27.08 && world.z > 29.4) {
+    return vec3f(0.0);
+  }
+  let isTrueFloor = world.y < 0.165 && n.y > 0.75;
+  let surfWeight = select(0.03 * max(0.0, dot(n.xz, -fDir)), 1.0, isTrueFloor || mat == 12);
 
   // 1. Tight ground/air origin point right under the hand
   let d2Orig = dot(rel, rel);
-  let handOriginGlow = exp(-d2Orig / 0.028) * 1.35 * step(world.y, 0.35) * surfWeight;
+  let handOriginGlow = exp(-d2Orig / 0.024) * 1.15 * step(world.y, 0.20) * surfWeight;
 
   // 2. Volumetric air mist cone scatter
   let airNoise = 0.84 + 0.32 * surfaceNoise(world.xz * 2.4 + vec2f(1.3, 4.7));
-  let mist = (radialCore * radialEdge * 0.76 + radialAura * 0.44) * axialIn * axialOut / (0.34 + max(0.0, along) * 0.20) * airNoise * surfWeight;
-  var add = beamTint * fPower * (mist * hazeAmt * select(0.42, 0.32, inRoom) + handOriginGlow);
+  let mist = (radialCore * radialEdge * 0.72 + radialAura * 0.38) * axialIn * axialOut / (0.38 + max(0.0, along) * 0.22) * airNoise * surfWeight;
+  var add = beamTint * fPower * (mist * hazeAmt * select(0.32, 0.28, inRoom) + handOriginGlow);
 
   // 3. Tilted flashlight beam striking wet road asphalt / damp interior floorboards
-  if (world.y < 0.36 && n.y > 0.65) {
+  if (isTrueFloor) {
     let grit = 0.48 + 1.05 * (surfaceNoise(world.xz * 5.6 + vec2f(1.7, 3.9)) * 0.58 + surfaceNoise(world.xz * 16.0) * 0.42);
     let strikePeak = select(
-      exp(-pow((along - 2.65) / 2.25, 2.0)) * 1.45 + 0.52,
-      exp(-pow((along - 1.55) / 1.20, 2.0)) * 1.25 + 0.42,
+      exp(-pow((along - 2.65) / 2.25, 2.0)) * 1.22 + 0.44,
+      exp(-pow((along - 1.55) / 1.25, 2.0)) * 1.38 + 0.48,
       inRoom
     );
-    var groundSpot = (radialCore * radialEdge + radialAura * 0.38) * axialIn * axialOut * strikePeak / (0.26 + max(0.0, along) * 0.13 + along * along * 0.015) * grit;
+    var groundSpot = (radialCore * radialEdge + radialAura * 0.34) * axialIn * axialOut * strikePeak / (0.28 + max(0.0, along) * 0.14 + along * along * 0.016) * grit;
     if (inRoom) {
       let plankSeam = 0.36 + 0.64 * smoothstep(0.0, 0.075, abs(fract(world.z / 0.165 + 0.5) - 0.5));
       groundSpot *= plankSeam;
     }
     let specTint = select(vec3f(0.96, 0.94, 0.88), vec3f(0.90, 0.94, 0.95), inRoom);
-    add += (baseAlbedo * 1.95 + specTint * 0.19 * wetAmt) * fPower * groundSpot * select(1.55, 1.24, inRoom);
+    add += (baseAlbedo * 1.85 + specTint * 0.16 * wetAmt) * fPower * groundSpot * select(1.22, 1.48, inRoom);
   }
   return add * vis;
+}
+
+fn evalInteriorWallWash(world: vec3f, n: vec3f, baseAlbedo: vec3f) -> vec3f {
+  // Fast analytical linear-HDR warm wall-wash & indirect bounce (zero extra noise fetches)
+  let roomScale = OL.u1.z;
+  if (roomScale <= 0.001) { return vec3f(0.0); }
+  var add = vec3f(0.0);
+
+  // 1. NW Bedroom bedside lamp wall wash (north & west walls around x=24.6, z=24.2..26.5) + warm bed/floor bounce
+  let vNW = (world.xz - vec2f(25.2, 25.4)) * vec2f(0.75, 0.85);
+  let dNW2 = dot(vNW, vNW);
+  if (dNW2 < 16.0) {
+    let nwPool = exp(-dNW2 / 3.8);
+    let wallBoost = select(0.45, 1.35, abs(n.y) < 0.45 && world.z < 26.8);
+    add += (baseAlbedo * 0.055 + vec3f(0.014, 0.0078, 0.0028)) * nwPool * wallBoost * roomScale;
+  }
+
+  // 2. NE Bedroom dresser candle wall wash (around x=29.5, z=24.8)
+  let vNE = (world.xz - vec2f(29.4, 25.2)) * vec2f(0.85, 0.90);
+  let dNE2 = dot(vNE, vNE);
+  if (dNE2 < 12.0) {
+    let nePool = exp(-dNE2 / 3.0);
+    let wallBoost = select(0.42, 1.25, abs(n.y) < 0.45 && world.z < 26.2);
+    add += (baseAlbedo * 0.045 + vec3f(0.0095, 0.0052, 0.0020)) * nePool * wallBoost * roomScale;
+  }
+
+  // 3. East kitchen window warm sill & counter spill (around x=36.6, z=28.0..30.6) + dining table bounce
+  let vEW = (world.xz - vec2f(36.4, 29.2)) * vec2f(0.68, 0.72);
+  let dEW2 = dot(vEW, vEW);
+  if (dEW2 < 16.0) {
+    let winSpill = exp(-dEW2 / 3.4) * smoothstep(2.4, 0.1, world.y);
+    add += (baseAlbedo * 0.048 + vec3f(0.0085, 0.0048, 0.0020)) * winSpill * roomScale;
+  }
+  let vDin = (world.xz - vec2f(33.6, 32.5)) * vec2f(0.72, 0.72);
+  let dDin2 = dot(vDin, vDin);
+  if (dDin2 < 12.0) {
+    let dinPool = exp(-dDin2 / 3.2);
+    add += (baseAlbedo * 0.042 + vec3f(0.0062, 0.0036, 0.0016)) * dinPool * roomScale;
+  }
+
+  // 4. SW Living room coffee table warm bounce (around x=24.7, z=33.3)
+  let vSW = (world.xz - vec2f(24.7, 33.1)) * vec2f(0.75, 0.75);
+  let dSW2 = dot(vSW, vSW);
+  if (dSW2 < 11.0) {
+    let swPool = exp(-dSW2 / 2.8);
+    add += (baseAlbedo * 0.036 + vec3f(0.0046, 0.0026, 0.0012)) * swPool * roomScale;
+  }
+  return add;
 }
 `
