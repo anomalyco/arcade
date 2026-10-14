@@ -1,3 +1,8 @@
 .lab-topbar-extra { display: flex; align-items: center; gap: 6px; }
 .lab-game { max-width: 116px; }
 .lab-notice { font: 14px/1.5 system-ui, sans-serif; color: #c9d4db; background: #0b1014; margin: 0; padding: 32px; min-height: 100dvh; box-sizing: border-box; }
+.lab-audio { display: flex; align-items: center; gap: 4px; }
+.lab-audio .lab-icon-btn { display: grid; place-items: center; }
+.lab-audio[data-muted="true"] .lab-icon-btn { color: var(--tx3); background: none; }
+.lab-audio-volume { width: 64px; height: 14px; margin: 0; accent-color: var(--acc); }
+.lab-audio[data-muted="true"] .lab-audio-volume { opacity: 0.45; }
