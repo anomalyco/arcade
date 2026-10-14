@@ -32,6 +32,13 @@ import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakCombatFX } from "./combat-fx"
 import { buildLevel, hex } from "./level"
+import {
+  DEFAULT_OUTBREAK_LIGHTING,
+  OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  outbreakLightingControls,
+  packOutbreakLightingUniforms,
+  resolveLampLight,
+} from "./lighting"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
@@ -49,16 +56,12 @@ const settings = {
   awareness: 2.5,
   range: 27,
   shroud: 0.32,
-  exposure: 0.92,
   zoom: 46,
   houseSeed: 7,
   terrain: 0.22,
   foliageDensity: 1,
   weather: 0,
-  lighting: 1,
   diagnostic: 0,
-  skyFill: 1,
-  moonFill: 1,
   textures: 1,
   rugStyle: 0,
   wallStyle: 0,
@@ -68,6 +71,7 @@ const settings = {
   texRoughness: 0.0,
   humanProfile: 0,
   lookPreset: "current",
+  ...DEFAULT_OUTBREAK_LIGHTING,
   ...DEFAULT_AI_CONFIG,
   aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
@@ -213,15 +217,12 @@ async function main() {
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
     { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
     { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
-    { key: "exposure", label: "Exposure", group: "Look", min: 0.5, max: 2, step: 0.05 },
-    { key: "skyFill", label: "Sky fill", group: "Look", min: 0, max: 1.5, step: 0.05 },
-    { key: "moonFill", label: "Moonlight fill", group: "Look", min: 0, max: 2, step: 0.05 },
+    ...outbreakLightingControls,
     { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
     { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
     { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: 0.4, step: 0.02 },
     { key: "foliageDensity", label: "Foliage density", group: "Generation", min: 0.5, max: 1.5, step: 0.05 },
     { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
-    { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: 0.05 },
   ]
   const doorMesh = new Mesh()
   doorMesh.box(0, 0.13, -0.1, 1.4, 2.3, 0.1, hex(0x463322), MAT.timber)
@@ -248,6 +249,7 @@ async function main() {
   const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   const lampPower = new Float32Array(MAX_LIGHTS)
+  const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
   const alphaSprites = new Float32Array(1024 * SPRITE_FLOATS)
   const addSprites = new Float32Array(256 * SPRITE_FLOATS)
   const render: FrameInput = {
@@ -583,8 +585,10 @@ async function main() {
     session.view.time = previous.time
     session.view.revision = previous.revision + 1
     session.view.town.doors.forEach((d, i) => {
-      d.open = previous.town.doors[i]!.open
-      d.locked = previous.town.doors[i]!.locked
+      const prev = previous.town.doors[i]!
+      d.open = prev.open
+      if (prev.locked !== undefined) d.locked = prev.locked
+      else delete d.locked
     })
     session.view.town.windows.forEach((w, i) => {
       w.open = previous.town.windows[i]!.open
@@ -781,15 +785,23 @@ async function main() {
       -1,
     ])
     let count = 1
+    let flashlightSlot = -1
+    const playerGroundY = supportHeight(town, p.x, p.y)
+    const flashRgb = flashlightColor(settings.flashlightWarmth)
     if (p.flashlightOutput > 0.001 && settings.flashlightIntensity > 0.001) {
-      const [fr, fg, fb] = flashlightColor(settings.flashlightWarmth)
-      const fx = p.x + Math.cos(p.aim) * 0.25
-      const fy = p.y + Math.sin(p.aim) * 0.25
-      const fh = 1.22 + supportHeight(town, p.x, p.y)
+      const isNorthRest = Math.abs(p.aim - -Math.PI / 2) < 0.04
+      const inBld = town.buildings.some(
+        (b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1,
+      )
+      const beamAim = isNorthRest ? (inBld ? 2.04 : 2.03) : p.aim
+      const fx = p.x + (isNorthRest ? -0.16 : Math.cos(beamAim) * 0.25)
+      const fy = p.y + (isNorthRest ? 0.10 : Math.sin(beamAim) * 0.25)
+      const fh = 1.18 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
       const power = p.flashlightOutput * settings.flashlightIntensity
+      flashlightSlot = count
       lights.set(
-        [fx, fh, fy, settings.flashlightRange, fr, fg, fb, power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, 0.08, -1],
+        [fx, fh, fy, settings.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(beamAim), Math.sin(beamAim), cosHalf, 1, 0, lightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -839,20 +851,19 @@ async function main() {
     const cutFlag = activePeek ? 1 + peekBlend : 1
     const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
+    const inInteriorView = town.buildings.some(
+      (b) => cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1,
+    )
     for (const [i, lamp] of town.lamps.entries()) {
-      const lampScale = day.lamps * settings.lighting
-      lampPower[i] = lampScale
-      const power = lampScale * lamp.power
-      if (power <= 0.001) continue
-      const lx = lamp.x + (lamp.kind === "street" ? 0.55 : 0)
-      const ly = lamp.y
-      const r = lamp.radius
-      const rEff = r * (r <= 7.5 ? 0.85 : 0.92)
-      if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
+      const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings, inInteriorView)
+      lampPower[i] = resolved.fixtureBrightness
+      if (resolved.power <= 0.001) continue
+      const { lx, lh, ly, r, rEff, color, power, cone, softness } = resolved
+      if (Math.hypot(lx - p.x, ly - p.y) > 40) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
       if (lamp.kind === "room") {
         const b = town.buildings.find(
-          (bld) => lx >= bld.rect[0] && lx <= bld.rect[2] && ly >= bld.rect[1] && ly <= bld.rect[3],
+          (bld) => lamp.x >= bld.rect[0] && lamp.x <= bld.rect[2] && lamp.y >= bld.rect[1] && lamp.y <= bld.rect[3],
         )
         if (b) {
           const roofOpen =
@@ -860,21 +871,26 @@ async function main() {
           if (!roofOpen && (b.kind !== "house" || ly < b.rect[1] + 5.5 || b.rect[3] - r > vy1)) continue
         }
       }
-      const color =
-        lamp.kind === "street"
-          ? [1, 0.72, 0.44]
-          : lamp.kind === "porch"
-            ? [1, 0.58, 0.18]
-            : lamp.kind === "window"
-              ? [1, 0.54, 0.16]
-              : [1, 0.54, 0.18]
-      const cone =
-        lamp.kind === "window" ? [0, 1, -0.75, 1] : [0, 0, 0, lamp.kind === "room" || lamp.kind === "porch" ? -1 : 0]
       lights.set(
-        [lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind === "room" ? 0.16 : 0.22, i],
+        [lx, lh, ly, r, ...color, power, ...cone, 0, lightOccluders, softness, i],
         count++ * LIGHT_FLOATS,
       )
     }
+    packOutbreakLightingUniforms(
+      {
+        settings,
+        playerX: p.x,
+        playerY: p.y,
+        playerH: playerGroundY,
+        playerAim: p.aim,
+        flashlightOutput: p.flashlightOutput,
+        flashlightSlot,
+        inInteriorView,
+      },
+      flashRgb,
+      lightingUniforms,
+    )
+    renderer.setCustomUniforms(lightingUniforms)
     frame.set(cam.viewProj, 0)
     frame.set([...cam.eye, time], 16)
     const texCfgBits =

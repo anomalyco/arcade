@@ -2,12 +2,13 @@ import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader,
 import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
+import { outbreakLightingDeclarationsWgsl } from "./lighting"
 
 export const outbreakPostFinish: PostFinishOptions = {
   chromatic: 0,
-  bloom: .055,
+  bloom: .048,
   grain: .002,
-  vignette: .90,
+  vignette: .84,
   diagnostics: true,
   shadowLift: 0,
   huePreserve: .42,
@@ -16,21 +17,22 @@ export const outbreakPostFinish: PostFinishOptions = {
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
   bounce: "vec3f(0.0)",
-  lightLeak: "0.006 * vis",
+  lightLeak: "0.004 * vis",
   lightAttenuation: `let dn = max(d3, 0.85);
-    if (L.cone.w > 0.5 && L.pos.w < 4.5) {
-      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.96) / 0.65, 0.0, 1.0);
-      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.55) - 0.85) / 1.25, 0.0, 1.0);
+    let tight = max(0.5, OL.u0.w);
+    if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
+      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.78) / 0.52, 0.0, 1.0);
+      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.38) - 0.62) / 0.85, 0.0, 1.0);
       win = rx * rx * ry * ry * (0.78 + 0.22 * smoothstep(0.0, 0.14, abs(dv.x)));
     }
-    var att = power * win * (0.04 + 2.45 / (1.0 + dn * dn * 0.55));
-    if (L.extra.w > -0.5 && L.pos.w > 7.5) {
-      let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.065);
-      att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * xFall * xFall;
+    var att = power * win * (0.02 + 2.15 / (1.0 + dn * dn * 0.68 * tight));
+    if (L.extra.w > -0.5 && L.pos.w > 4.2 && L.cone.w < -0.5 && hl > 2.0) {
+      let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.22);
+      att *= 0.82 + 0.65 * smoothstep(0.0, 2.8, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
-  wallDirectScale: "mix(0.18, 0.33, smoothstep(0.0, 1.5, o.world.y))",
-  ambient: "ambientAt(n) * mix(0.05, 1.0, select(1.0, select(fd.g, 0.04, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.008, 0.005, 0.0025), inRoom && o.world.y < 2.8)",
+  wallDirectScale: "mix(0.16, 0.30, smoothstep(0.0, 1.5, o.world.y))",
+  ambient: "ambientAt(n) * mix(0.03, 0.82, select(1.0, select(fd.g * 0.65, 0.03, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.004, 0.003, 0.0018), inRoom && o.world.y < 2.8)",
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
@@ -47,6 +49,7 @@ export const outbreakSceneHooks: SceneHooks = {
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
+${outbreakLightingDeclarationsWgsl}
 ${surfaceMaterialDeclarations}
 ${foliageWindDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
@@ -169,13 +172,14 @@ fn eyeVisible(p: vec2f) -> f32 {
     } else if (mat == 4 && !inRoom) {
       col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y));
     }
-    if (!inRoom && o.world.y < 0.35) {
-      let dp = o.world.xz - lights[0].pos.xz;
-      let d2 = dot(dp, dp);
-      if (d2 < 14.0) {
-        let aura = max(0.0, 1.0 - d2 / 14.0);
-        col += o.color * vec3f(0.52, 0.31, 0.11) * aura * aura * nightLamps;
-      }
+    if (!inRoom) {
+      // Peripheral darkness vignette: outer lawns, sidewalks, and trees recede into night shadow
+      let vigDark = clamp(OL.u2.w, 0.0, 1.2);
+      let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.062, 0.075));
+      let periphShade = mix(1.0, clamp(1.18 - dCenter * 0.52, 0.34, 1.0), vigDark);
+      // When inside a building cutaway, dim the exterior yard & sidewalk so interior light pools lead the eye
+      let extCutDim = select(1.0, mix(0.42, 0.72, exp(-pow((o.world.x - 27.7) * 0.32, 2.0)) * smoothstep(42.0, 35.2, o.world.z)), OL.u5.w > 0.5);
+      col *= periphShade * extCutDim;
     }
     if (mat == 22) {
       // Above the Grassland + Botanics subsurface chlorophyll translucency & 4th-power grazing Fresnel rim.
