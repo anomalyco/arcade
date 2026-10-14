@@ -1575,7 +1575,10 @@ async function main() {
     if (actor.unarmedSwing && actor.profile.handPose === "weapon" && a.body) {
       const torso = a.body.torso
       const moving = a.gait * clamp(Math.hypot(a.svx, a.svy) / 3.4, 0, 1)
-      const sw = Math.sin(a.phase * Math.PI * 2) * (0.24 + 0.1 * a.motion.run) * moving
+      // Oppose actual foot forward/back separation (Lamplight walk.rs:1494) rather than open-loop sine.
+      const fdx = a.feet[1].p[0] - a.feet[0].p[0], fdz = a.feet[1].p[2] - a.feet[0].p[2]
+      const footSep = clamp((fdx * Math.cos(a.legYaw) + fdz * Math.sin(a.legYaw)) / Math.max(0.35, a.motion.stride * 0.5), -1, 1)
+      const sw = footSep * (0.24 + 0.1 * a.motion.run) * moving
       const hL = at(torso, sw + 0.07, -0.02 + 0.015 * Math.sin(a.t * 2), -0.24)
       const hR = at(torso, -sw + 0.07, -0.02 - 0.015 * Math.sin(a.t * 2), 0.24)
       const arms = poseArms(torso, hL, hR)

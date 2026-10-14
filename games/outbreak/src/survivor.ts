@@ -103,11 +103,19 @@ export class Survivor {
           }
           f.target = target; f.prevU = u
           const clearance = i === 1 ? 1 - (profile?.footDrag ?? 0) : 1
-          f.p = [f.lift[0] + (target[0] - f.lift[0]) * e, f.lift[1]+(target[1]-f.lift[1])*e+Math.sin(Math.PI * u) * (.06 + .09 * moving) * clearance, f.lift[2] + (target[2] - f.lift[2]) * e]
+          // Mid-swing terrain clearance boost & floor guard (Lamplight arachnid/mod.rs & walk.rs:1419, 1446)
+          const midY = support((f.lift[0] + target[0]) * .5, (f.lift[2] + target[2]) * .5)
+          const boost = Math.max(0, midY - Math.max(f.lift[1], target[1]))
+          const px = f.lift[0] + (target[0] - f.lift[0]) * e, pz = f.lift[2] + (target[2] - f.lift[2]) * e
+          const py = Math.max(support(px, pz), f.lift[1] + (target[1] - f.lift[1]) * e + Math.sin(Math.PI * u) * ((.06 + .09 * moving) * clearance + boost))
+          f.p = [px, py, pz]
           f.yaw += angleDiff(this.yaw, f.yaw) * e
         } else if (!f.planted) { f.planted = true; f.prevU = 0; f.p[1] = support(f.p[0],f.p[2]) }
       })
-      const baseHeight = support(sx, sy) + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
+      // Anticipatory support floor: blend root support with foot landing/planted heights (Lamplight arachnid/mod.rs:502)
+      const footSupport = (this.feet[0]!.p[1] + this.feet[1]!.p[1]) * .5
+      const supportY = support(sx, sy) * .65 + footSupport * .35
+      const baseHeight = supportY + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
       let desiredDrop = 0
       for (const f of this.feet) {
         const distance = Math.min(.72, Math.hypot(f.p[0] - sx, f.p[2] - sy))
@@ -116,7 +124,8 @@ export class Survivor {
       }
       stepSpring(this.reachDrop, 140, .85, h, desiredDrop)
     }
-    const height = support(p.x,p.y)+HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4) - this.reachDrop.x
+    const footSupport = (this.feet[0]!.p[1] + this.feet[1]!.p[1]) * .5
+    const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4) - this.reachDrop.x
     const pelvis = roll(yawFrame([p.x, height, p.y], this.yaw), Math.cos(this.phase * Math.PI * 2) * .06 * moving)
     const lean = this.leanX.x * Math.cos(p.aim) + this.leanY.x * Math.sin(p.aim)
     if (profile) { angleSpring(this.chest, p.aim, profile.chestHz, dt); angleSpring(this.head, p.aim, profile.headHz, dt) }

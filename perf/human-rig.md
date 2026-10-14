@@ -28,7 +28,7 @@ Walk/run/sprint, turning, seeded recoil and hit events produced exact JSON body 
 | Mode | Reference hash |
 | --- | --- |
 | Old | `00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac` |
-| New | `7c8c3635444d07bc28ade62aca9e43fa2c6b1e915b814e076fa1fbb40ceed7f1` |
+| New | `623c4d5a3478946df33a65c5022dce5826d883542cfc13d78f83275278851189` |
 
 Reproduce with `bun scripts/prove-human-parity.ts [baseline-repo]` from Blackout. This verifies the reference hashes
 plus explicit crouch-run posture scaling, zero planted toe slip, aim error bounds and weapon stability versus Old.

@@ -205,6 +205,8 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       f.planted = true; f.p[1] = 0; f.pitch = 0
       lockToe(a, i)
       m.contacts[i] = 0; landed = true
+      // Weight-acceptance Down impulse on touchdown (Williams / Lamplight walk.rs:1455).
+      a.dip.v -= (0.04 + 0.08 * gait.run) * clamp(animation.bobScale ?? 1, 0, 2) * a.gait
     }
   }
   // Walking requests a step only with support. Running releases the support toe after the

@@ -11,8 +11,9 @@ const EXPECTED_HASHES = {
   old: "00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac",
   // Deliberately updated from 22f0e02263aad662363e956740b49ac56f9e17c1260af126882cbe35fb98eca2 after the
   // procedural locomotion pass: C0-continuous mid-swing retargeting, smooth strafe separation, up-biased knee
-  // pole vector, touchdown toe-roll continuity, reversal posture/step handling and turn banking.
-  new: "7c8c3635444d07bc28ade62aca9e43fa2c6b1e915b814e076fa1fbb40ceed7f1",
+  // pole vector, touchdown toe-roll continuity, reversal posture/step handling, Lamplight swing-progression &
+  // touchdown Down compression, and turn banking.
+  new: "623c4d5a3478946df33a65c5022dce5826d883542cfc13d78f83275278851189",
 } as const
 
 type Api = {
