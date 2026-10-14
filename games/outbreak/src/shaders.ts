@@ -131,9 +131,12 @@ fn eyeVisible(p: vec2f) -> f32 {
     let outsideView = !interior(F.eye.xy);
     col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
   } else if (mat == 21) {
-    // Subtle cool twilight sky sheen on upper roof shingle slopes; eaves stay shadowed.
-    let eave = smoothstep(2.88, 3.55, o.world.y);
-    col = col * mix(0.62, 1.08, eave) + vec3f(0.005, 0.010, 0.022) * F.ambient.w * eave * max(0.0, n.y);
+    // Cool steel-blue directional moonlight on shingle courses & porch gable; eaves stay shadowed.
+    let eave = smoothstep(2.85, 3.55, o.world.y);
+    let courseStep = smoothstep(0.65, 0.96, fract(o.world.z / 0.24));
+    let tabGrain = 0.72 + 0.56 * surfaceNoise(o.world.xz * 6.2);
+    let moonRim = OL.u2.z;
+    col = col * mix(0.74, 1.18, eave) * tabGrain + vec3f(0.011, 0.018, 0.036) * F.ambient.w * moonRim * (0.55 * eave + 0.45 * courseStep) * max(0.0, n.y);
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     if (mat == 20) {
@@ -141,9 +144,9 @@ fn eyeVisible(p: vec2f) -> f32 {
       if (kind == 0) {
         // Overgrown dark-clump variation across lawns & yards so turf reads with deep mossy shadows and organic patches.
         let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.42, 1.05, smoothstep(0.26, 0.76, turfPatch));
+        col *= mix(0.46, 1.08, smoothstep(0.26, 0.76, turfPatch));
       } else if (kind == 1) {
-        // Textured cracked asphalt: dark gutters & wheel ruts, jagged fracture lines, coarse aggregate, and localized moonlit crown sheen.
+        // Textured cracked asphalt: dark gutters & wheel ruts, jagged fracture lines, coarse aggregate, and wet moonlit road sheen.
         let p = o.world.xz;
         let roadU = clamp((p.y - 40.0) / 8.0, 0.0, 1.0);
         let crown = 1.0 - abs(roadU * 2.0 - 1.0);
@@ -157,16 +160,25 @@ fn eyeVisible(p: vec2f) -> f32 {
         let fy = abs(fract(p.y * 0.42 - warp * 0.48 + roadMacro * 0.35) - 0.5);
         let mask = smoothstep(0.38, 0.64, roadMacro);
         let cracks = clamp(((1.0 - smoothstep(0.004, 0.016, fx)) + (1.0 - smoothstep(0.005, 0.018, fy)) * 0.85) * mask, 0.0, 1.0);
-        let grit = (w2 - 0.5) * 0.32;
-        let dxRoad = (p.x - 29.0) * 0.07;
+        let grit = (w2 - 0.5) * 0.36;
+        let dxRoad = (p.x - 32.0) * 0.062;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        col *= (0.50 + 0.32 * gutter - 0.12 * ruts + 0.18 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
-        let sheen = crown * crown * (0.45 + 0.55 * centerFocus) * (0.65 + 0.65 * roadMacro) * (1.0 - 0.65 * cracks);
-        col += vec3f(0.011, 0.018, 0.035) * F.ambient.w * sheen;
-      } else if (kind == 2) {
+        col *= (0.56 + 0.32 * gutter - 0.10 * ruts + 0.20 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
+        let wetRoad = (0.35 + 0.65 * crown) * (0.38 + 0.62 * centerFocus) * (0.55 + 0.85 * w1) * (1.0 - 0.55 * cracks);
+        col += vec3f(0.024, 0.032, 0.052) * F.ambient.w * OL.u2.y * wetRoad;
+      } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
         if (!inVerge) {
-          col = col * 0.84 + vec3f(0.007, 0.011, 0.022) * F.ambient.w;
+          let gritWalk = 0.76 + 0.48 * surfaceNoise(o.world.xz * 7.5);
+          col = col * 0.88 * gritWalk + vec3f(0.012, 0.015, 0.024) * F.ambient.w * gritWalk;
+          // Wet porch walkway & sidewalk reflection streak under the porch sconces (x ~ 27.7, z ~ 35.4..40.4)
+          let dxWalk = o.world.x - 27.7;
+          if (abs(dxWalk) < 3.6 && o.world.z > 35.3 && o.world.z < 40.4) {
+            let walkCore = exp(-(dxWalk * dxWalk) / 0.85) * smoothstep(40.4, 35.5, o.world.z);
+            let sideSpread = exp(-(dxWalk * dxWalk) / 5.2) * smoothstep(37.6, 38.6, o.world.z) * smoothstep(40.2, 39.0, o.world.z);
+            let extScale = select(1.0, 0.35, OL.u5.w > 0.5);
+            col += vec3f(0.068, 0.052, 0.034) * (walkCore * 1.15 + sideSpread * 0.55) * gritWalk * OL.u2.y * nightLamps * extScale;
+          }
         }
       }
     } else if (mat == 4 && !inRoom) {
@@ -214,7 +226,7 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       }
     }
-    col += evalFlashlightBeam(o.world, n, o.color, inRoom);
+    col += evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
   }
 `,
 }

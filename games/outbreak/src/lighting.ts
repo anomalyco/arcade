@@ -90,12 +90,12 @@ export function packOutbreakLightingUniforms(
   // When facing the static north pose (-PI/2) at rest, angle the left-hand beam down-left into the street/hallway
   // matching the Noir & Dusk paint-overs; when actively aiming elsewhere, follow playerAim.
   const isNorthRestPose = Math.abs(state.playerAim - -Math.PI / 2) < 0.04
-  const beamAngle = isNorthRestPose ? (state.inInteriorView ? 1.84 : 1.91) : state.playerAim
+  const beamAngle = isNorthRestPose ? (state.inInteriorView ? 1.80 : 1.98) : state.playerAim
   const dirX = Math.cos(beamAngle)
   const dirY = Math.sin(beamAngle)
-  const handX = state.playerX + (isNorthRestPose ? (state.inInteriorView ? -0.10 : -0.24) : dirX * 0.24)
-  const handY = state.playerY + (isNorthRestPose ? (state.inInteriorView ? 0.16 : 0.24) : dirY * 0.24)
-  const halfRad = (Math.max(18, Math.min(90, s.flashlightCone * 0.56)) * Math.PI) / 360
+  const handX = state.playerX + (isNorthRestPose ? (state.inInteriorView ? -0.06 : -0.22) : dirX * 0.24)
+  const handY = state.playerY + (isNorthRestPose ? (state.inInteriorView ? 0.22 : 0.28) : dirY * 0.24)
+  const halfRad = (Math.max(18, Math.min(90, s.flashlightCone * (state.inInteriorView ? 0.50 : 0.64))) * Math.PI) / 360
 
   // u0
   out[0] = s.skyFill
@@ -119,7 +119,7 @@ export function packOutbreakLightingUniforms(
   out[15] = dirY
   // u4
   out[16] = Math.tan(halfRad)
-  out[17] = state.inInteriorView ? Math.min(s.flashlightRange, 4.4) : Math.min(s.flashlightRange, 7.6)
+  out[17] = state.inInteriorView ? Math.min(s.flashlightRange, 4.3) : Math.min(s.flashlightRange, 8.6)
   out[18] = state.flashlightOutput * s.flashlightIntensity
   out[19] = state.flashlightSlot
   // u5
@@ -299,7 +299,7 @@ struct OutbreakLightingUniforms {
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 
-fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool) -> vec3f {
+fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, mat: i32) -> vec3f {
   if (OL.u4.z <= 0.001 || OL.u4.w < 0.5) { return vec3f(0.0); }
   let fSlot = u32(round(OL.u4.w));
   let fOrig = OL.u3.xy;
@@ -310,50 +310,62 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool) -
   let across = abs(dot(rel, fSide));
   let tanHalf = max(0.12, OL.u4.x);
   let fRange = max(2.8, OL.u4.y);
-  if (along < -0.18 || along > fRange || across > (0.18 + max(0.0, along) * tanHalf * 1.45) || world.y > 1.85) {
+  if (along < -0.22 || along > fRange || across > (0.28 + max(0.0, along) * tanHalf * 1.85) || world.y > 1.75) {
     return vec3f(0.0);
   }
-  let coneR = 0.08 + max(0.0, along) * tanHalf;
-  let radialCore = exp(-pow(across / (coneR * 0.52), 2.0));
-  let radialAura = exp(-pow(across / (coneR * 0.94), 1.6)) * (1.0 - smoothstep(coneR * 0.72, coneR * 1.38, across));
-  let radialEdge = 1.0 - smoothstep(coneR * 0.56, coneR * 1.15, across);
-  let axialIn = smoothstep(-0.08, 0.14, along);
-  let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.45, 1.35, inRoom));
+
+  // Crisp neutral-cool white-halogen beam colour (5200K-5600K)
+  let beamTint = mix(vec3f(0.94, 0.95, 0.98), OL.u5.xyz, 0.16);
+  let hazeAmt = OL.u2.x;
+  let wetAmt = OL.u2.y;
+  let fPower = OL.u4.z * 2.25;
+
+  // On the player's own body (within 0.55m of player XY), only illuminate a tiny point at the left hand
+  if (mat == 12) {
+    let dPlayer = length(world.xz - OL.u6.xy);
+    if (dPlayer < 0.55) {
+      let handPos3 = vec3f(fOrig.x, OL.u6.z + 0.92, fOrig.y);
+      let dHand3 = length(world - handPos3);
+      return beamTint * fPower * exp(-(dHand3 * dHand3) / 0.012) * 1.35;
+    }
+  }
+
+  let coneR = 0.09 + max(0.0, along) * tanHalf;
+  let radialCore = exp(-pow(across / (coneR * select(0.58, 0.48, inRoom)), 2.0));
+  let radialAura = exp(-pow(across / (coneR * select(1.12, 0.88, inRoom)), 1.55)) * (1.0 - smoothstep(coneR * 0.82, coneR * 1.65, across));
+  let radialEdge = 1.0 - smoothstep(coneR * 0.62, coneR * 1.32, across);
+  let axialIn = smoothstep(-0.08, 0.16, along);
+  let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.32, 1.38, inRoom));
   let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, world.xz + n.xz * 0.03, min(world.y, 1.05));
   if (vis <= 0.001) { return vec3f(0.0); }
 
-  // Crisp neutral-cool white-halogen beam colour (5200K-5600K) that cuts cleanly against warm practicals and blue night
-  let beamTint = mix(vec3f(0.92, 0.95, 1.02), OL.u5.xyz, 0.22);
-  let hazeAmt = OL.u2.x;
-  let wetAmt = OL.u2.y;
-  let fPower = OL.u4.z * 2.15;
+  // Suppress volumetric mist on vertical partition walls so the beam doesn't paint a vertical white bar beside the player
+  let surfWeight = select(0.06 * max(0.0, dot(n.xz, -fDir)), 1.0, n.y > 0.65 || mat == 12);
 
-  // 1. Hot bulb core at the survivor's hand origin
+  // 1. Tight ground/air origin point right under the hand
   let d2Orig = dot(rel, rel);
-  let handBulb = exp(-d2Orig / 0.038) * 1.65 * step(world.y, 1.45);
+  let handOriginGlow = exp(-d2Orig / 0.028) * 1.35 * step(world.y, 0.35) * surfWeight;
 
   // 2. Volumetric air mist cone scatter
   let airNoise = 0.84 + 0.32 * surfaceNoise(world.xz * 2.4 + vec2f(1.3, 4.7));
-  let mist = (radialCore * radialEdge * 0.78 + radialAura * 0.38) * axialIn * axialOut / (0.36 + max(0.0, along) * 0.22) * airNoise;
-  var add = beamTint * fPower * (mist * hazeAmt * select(0.38, 0.34, inRoom) + handBulb);
+  let mist = (radialCore * radialEdge * 0.76 + radialAura * 0.44) * axialIn * axialOut / (0.34 + max(0.0, along) * 0.20) * airNoise * surfWeight;
+  var add = beamTint * fPower * (mist * hazeAmt * select(0.42, 0.32, inRoom) + handOriginGlow);
 
   // 3. Tilted flashlight beam striking wet road asphalt / damp interior floorboards
   if (world.y < 0.36 && n.y > 0.65) {
-    let grit = 0.52 + 0.96 * (surfaceNoise(world.xz * 5.2 + vec2f(1.7, 3.9)) * 0.58 + surfaceNoise(world.xz * 14.5) * 0.42);
-    // Peak ground strike where the downward-tilted hand beam intersects y=0 (~1.2m..3.8m out on street, ~0.8m..2.8m in hall)
+    let grit = 0.48 + 1.05 * (surfaceNoise(world.xz * 5.6 + vec2f(1.7, 3.9)) * 0.58 + surfaceNoise(world.xz * 16.0) * 0.42);
     let strikePeak = select(
-      exp(-pow((along - 2.35) / 1.85, 2.0)) * 1.35 + 0.45,
-      exp(-pow((along - 1.55) / 1.25, 2.0)) * 1.25 + 0.45,
+      exp(-pow((along - 2.65) / 2.25, 2.0)) * 1.45 + 0.52,
+      exp(-pow((along - 1.55) / 1.20, 2.0)) * 1.25 + 0.42,
       inRoom
     );
-    var groundSpot = radialCore * radialEdge * axialIn * axialOut * strikePeak / (0.28 + max(0.0, along) * 0.14 + along * along * 0.018) * grit;
+    var groundSpot = (radialCore * radialEdge + radialAura * 0.38) * axialIn * axialOut * strikePeak / (0.26 + max(0.0, along) * 0.13 + along * along * 0.015) * grit;
     if (inRoom) {
-      // Preserve crisp dark floorboard plank seams inside the reflected hallway beam
-      let plankSeam = 0.38 + 0.62 * smoothstep(0.0, 0.075, abs(fract(world.z / 0.165 + 0.5) - 0.5));
+      let plankSeam = 0.36 + 0.64 * smoothstep(0.0, 0.075, abs(fract(world.z / 0.165 + 0.5) - 0.5));
       groundSpot *= plankSeam;
     }
-    let specTint = select(vec3f(0.96, 0.94, 0.88), vec3f(0.92, 0.95, 0.96), inRoom);
-    add += (baseAlbedo * 1.85 + specTint * 0.16 * wetAmt) * fPower * groundSpot * select(1.42, 1.28, inRoom);
+    let specTint = select(vec3f(0.96, 0.94, 0.88), vec3f(0.90, 0.94, 0.95), inRoom);
+    add += (baseAlbedo * 1.95 + specTint * 0.19 * wetAmt) * fPower * groundSpot * select(1.55, 1.24, inRoom);
   }
   return add * vis;
 }
