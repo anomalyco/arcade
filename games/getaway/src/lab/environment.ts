@@ -15,6 +15,12 @@ export function getawayEnvironment(kind:string,seed:number){
   const near=(px:number,pz:number)=>Math.abs(px-x)<40&&Math.abs(pz-z)<40
   const local={...city,boxes:city.boxes.filter(b=>b.x0<x+35&&b.x1>x-35&&b.z0<z+35&&b.z1>z-35),trees:city.trees.filter(t=>near(t.x,t.z)),lamps:city.lamps.filter(l=>near(l.x,l.z)),parks:city.parks.filter(p=>near((p.x0+p.x1)/2,(p.z0+p.z1)/2)),shops:city.shops.filter(s=>near(s.x,s.z)),yards:city.yards.filter(y=>near((y.x0+y.x1)/2,(y.z0+y.z1)/2))}
   const built=buildCityMesh(local),partition=partitionCityMesh(built.mesh,24),vertices:number[]=[]
+  // Ensure cropped boundary neighborhoods have a continuous asphalt base under the street.
+  for(const [ax,az,bx,bz,cx,cz] of [[-48,-48,-48,48,48,48],[-48,-48,48,48,48,-48]] as const){
+    for(const [px,pz] of [[ax,az],[bx,bz],[cx,cz]] as const){
+      vertices.push(px,-0.004,pz,0,1,0,0.15,0.17,0.23,0,0,0)
+    }
+  }
   for(const chunk of partition.chunks){
     if(chunk.maxX<x-26||chunk.minX>x+26||chunk.maxZ<z-24||chunk.minZ>z+24)continue
     for(let v=chunk.first*12;v<(chunk.first+chunk.count)*12;v+=36){

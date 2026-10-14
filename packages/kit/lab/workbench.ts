@@ -360,11 +360,20 @@ export function createWorkbench(opts: WorkbenchOptions) {
     timeReadout.textContent = `${elapsed.toFixed(2)}s · f${frames}`
   }
 
-  function resimulateFrozenFrame() {
+  function resimulateFrozenFrame(control?: { key: string; unit?: string }) {
     const sec = activeSection()
     const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
     if (playing || frames <= 0) return false
     if (!["effects", "blackout-effects", "getaway-effects", "fire-water", "splatter"].includes(sec.id)) return false
+    if (
+      sec.id === "effects" &&
+      sec.settings.effect === "smoke" &&
+      control &&
+      !control.unit?.includes("retrigger") &&
+      !["effect", "targetX", "targetZ", "seed"].includes(control.key)
+    ) {
+      return false
+    }
     const targetFrames = frames
     sec.retrigger?.()
     stepSimulationDeterministic(targetFrames)
@@ -757,14 +766,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
   panel.navigation.set = (control, value) => {
     origNavSet(control, value)
     if (isCapturingWipe) return
-    const didResim = resimulateFrozenFrame()
+    const didResim = resimulateFrozenFrame(control)
     if (slotA && activeSlot === "B") {
       slotB = { snapshot: captureSnapshot(), frames, elapsed }
     }
     if (compareWipeEnabled && slotA) {
       syncCompareWipeOverlay()
     }
-    if (didResim) {
+    if (didResim || ("playing" in activeSection().settings && !activeSection().settings.playing)) {
       void renderNow()
     }
   }
@@ -3538,7 +3547,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
       const sec = activeSection()
       const isPaused = "playing" in sec.settings && !sec.settings.playing
-      if (isPaused && frames > 0) {
+      const changedKeys = Object.keys(beforeSettings).filter(k => beforeSettings[k] !== sec.settings[k])
+      const needsRetrigger =
+        sec.id !== "effects" ||
+        sec.settings.effect !== "smoke" ||
+        changedKeys.some(k => {
+          const ctrl = sec.controls.find(c => c.key === k)
+          return Boolean(ctrl?.unit?.includes("retrigger") || ["effect", "targetX", "targetZ", "seed"].includes(k))
+        })
+      if (isPaused && frames > 0 && needsRetrigger) {
         resimulateFrozenFrame()
       } else if (!isBench && (sec.id === "blackout-effects" || sec.id === "getaway-effects")) {
         sec.retrigger?.()

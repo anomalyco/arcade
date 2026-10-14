@@ -298,9 +298,17 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   120 steps against `076fb7c`), static vertices drop `196,722 → 139,620`; median paired frame-span deltas are `-1.1 ms`
   street (`9.0 → 7.9 ms`, range `-3.9 to +0.9 ms`) and `+0.3 ms` interior (`9.0 → 9.9 ms`, range `-4.3 to +2.2 ms`,
   inside spread). Default Blackout and Getaway shaders remain unchanged.
-- **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
-  and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
-  bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.
+- **Exclude a convex receiver from its own shadow test, and supersample only near analytic edges.** The Lab's fullscreen
+  raytraced stage (`packages/kit/lab/stage-shader.ts`) evaluates inside a 4× MSAA pass, where a single fullscreen triangle
+  otherwise runs once at pixel center and broadcasts a flat `frag_depth` across all four subsamples. Entry-slab normals
+  (`argmax(lo.x, lo.y, lo.z)`) prevent downward normal flips at `y = 0` wall–floor seams; closed-form signed-slab
+  clearance (`boxShadow`) replaces the 3-tap 256-bin polar staircase with continuous contact-hardening penumbras; 4× RGSS
+  sub-rays run only when the center ray passes within 8 cm of a box/sphere edge (`Edge AA` and shadow `Softness` live in
+  the shared Lab panel); and `frag_depth` uses the furthest subsample hit so rasterized 4× MSAA meshes at `y = 0` do not
+  fail upper-subsample depth tests. Seated car greenhouse/scoop bases (`games/getaway/src/render/car-mesh.ts`) remove
+  shallow mesh self-intersection stair-steps. Nine alternating Metal pairs at 1280×800 (`740×722` viewport) on M5 Max
+  measured whole-GPU deltas of +0.2215 ms room (MAD 0.0221) and +0.0252 ms yard (MAD 0.0908, inside noise), with zero
+  pixel change across 30 stationary frames (`perf/lab-shadow-edges.json`, `packages/kit/lab/prove-shadow-edges.ts`).
 - **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes corner-safe weighted arrival
   distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
   restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and
