@@ -263,6 +263,7 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | materials | `f5750cf8254e1917aa1cd5cf7441c04c6c665cf6` | — |
 | shadow-edges | `df1310ad60c8718dc53c1a31ea5af93c381eacd1` | — |
 | rig-page | `5b3740c043ef7105c72cd8bf78a2f4f92d9e4d64` | — |
+| soldier-run | `a5971c3ded4815652f71aebae9ac0ab9e5fb1952` | — |
 
 ### Resolution log
 
@@ -306,8 +307,13 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
   (`@arcade/kit/lab-commands` / `packages/kit/lab/commands.ts`), adding `aliases`, `readOnly`, structured `result`
   return values, and error codes (`unknown_command`, `invalid_args`, `unavailable`, `error`) to `LabCommandRegistry`
   and removing the duplicate registry class from `games/blackout/src/dev/characters.ts`.
-- Pending additions (dev-control and soldier-run) enter as separate merge commits once their committed branch tips are
-  finalized; uncommitted worktree changes are never copied.
+- `soldier-run` vs `rig-page`: combined `soldier-run`'s crouch-run soldier posture (`runPosture: 0.34, crouchDepth: 0.08,
+  headStability: 0.8, leanScale: 1.25`), stabilised shoulder weapon hold, and 1:1 root weapon translation with
+  `rig-page`'s `profile.torsoLean > 0` / `profile.footDrag > 0` zombie/wizard gait and hand-pose refinements. Both
+  900-frame SHA-256 reference hashes in `prove-human-parity.ts` (`old` `00bde28a…`, `new` `22f0e022…`) match exactly
+  without modification.
+- Pending additions (dev-control) enter as separate merge commits once their committed branch tips are finalized;
+  uncommitted worktree changes are never copied.
 
 ### Verification
 
@@ -316,10 +322,10 @@ A clean `git archive` export passed on the Studio via Hivemind:
 - `bun install --frozen-lockfile`
 - `bun run check:packages`: 82 passed
 - `games/getaway`: 240 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
-- `games/blackout`: 403 passed, typechecks, production build, smoke, Worker dry-run, and `scripts/prove-characters.ts`
+- `games/blackout`: 405 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove-human-parity.ts`, and `scripts/prove-characters.ts`
 - `games/outbreak`: 25 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove.ts`, and `scripts/prove-human.ts`
 - `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
-- `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity against `8223033` in both `old` and `new` modes
+- `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity in `old` (`00bde28a…`) and `new` (`22f0e022…`) modes, plus crouch-lean, head-stabilisation, zero-foot-slide, and weapon-stability checks.
 - `(cd games/blackout && bun scripts/prove-characters.ts)`: 5 real character actors (`soldier`, `wizard`, `zombie`,
   `survivor`, `outbreak-zombie`), Hub top-bar `Characters` nav link, possess (`P`) + walk/run/stop + `Escape` release,
   orbit/pan/zoom/frame/lineup camera, limb detachment with zero spawn pop + blood splatter, and 20 `LabCommandRegistry`
