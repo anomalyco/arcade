@@ -264,6 +264,7 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | shadow-edges | `df1310ad60c8718dc53c1a31ea5af93c381eacd1` | — |
 | rig-page | `5b3740c043ef7105c72cd8bf78a2f4f92d9e4d64` | — |
 | soldier-run | `a5971c3ded4815652f71aebae9ac0ab9e5fb1952` | — |
+| dev-control | `28d86be3bcd59cc104387a27ae500a7f883ab750` | — |
 
 ### Resolution log
 
@@ -303,34 +304,35 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
   `stage-shader.ts` entry-slab normals, `boxShadow` contact-hardening penumbras, 4× RGSS edge AA, `lighting.ts`
   `edgeAA` / `shadowSoftness` controls, `car-mesh.ts` `hullDeckY` cab/scoop seating, and `games/outbreak/src/shaders.ts`
   2-tap `eyeVisible` angular interpolation.
-- `rig-page` vs `lab-interaction`: unified command registration onto the single canonical `LabCommandRegistry`
-  (`@arcade/kit/lab-commands` / `packages/kit/lab/commands.ts`), adding `aliases`, `readOnly`, structured `result`
-  return values, and error codes (`unknown_command`, `invalid_args`, `unavailable`, `error`) to `LabCommandRegistry`
-  and removing the duplicate registry class from `games/blackout/src/dev/characters.ts`.
+- `rig-page` + `dev-control` vs `lab-interaction`: unified command registration onto the single canonical
+  `LabCommandRegistry` (`@arcade/kit/lab-commands` / `packages/kit/lab/commands.ts`), wired
+  `games/blackout/src/dev/characters.ts` through `registerDevControl(devControlAdapter)` from `@arcade/kit/dev-control`,
+  exposed `gestures.isDragging()` from `packages/kit/orbit-gestures.ts` for Catalogue's `isBusy()` guard, and pointed
+  `resolveNavigationPath("characters")` at `/arcade/blackout/characters.html`.
 - `soldier-run` vs `rig-page`: combined `soldier-run`'s crouch-run soldier posture (`runPosture: 0.34, crouchDepth: 0.08,
   headStability: 0.8, leanScale: 1.25`), stabilised shoulder weapon hold, and 1:1 root weapon translation with
   `rig-page`'s `profile.torsoLean > 0` / `profile.footDrag > 0` zombie/wizard gait and hand-pose refinements. Both
   900-frame SHA-256 reference hashes in `prove-human-parity.ts` (`old` `00bde28a…`, `new` `22f0e022…`) match exactly
   without modification.
-- Pending additions (dev-control) enter as separate merge commits once their committed branch tips are finalized;
-  uncommitted worktree changes are never copied.
 
 ### Verification
 
 A clean `git archive` export passed on the Studio via Hivemind:
 
 - `bun install --frozen-lockfile`
-- `bun run check:packages`: 82 passed
-- `games/getaway`: 240 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
-- `games/blackout`: 405 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove-human-parity.ts`, and `scripts/prove-characters.ts`
+- `bun run check:packages`: 87 passed
+- `games/getaway`: 245 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 410 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove-human-parity.ts`, and `scripts/prove-characters.ts`
 - `games/outbreak`: 25 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove.ts`, and `scripts/prove-human.ts`
 - `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun scripts/prove-dev-control.ts`: token/origin security (`403`), Catalogue/Lab/Game remote control and screenshot
+  verification across all 4 games, `busy`/`unavailable` conflict guards, and production bundle exclusion passed on Metal.
 - `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity in `old` (`00bde28a…`) and `new` (`22f0e022…`) modes, plus crouch-lean, head-stabilisation, zero-foot-slide, and weapon-stability checks.
 - `(cd games/blackout && bun scripts/prove-characters.ts)`: 5 real character actors (`soldier`, `wizard`, `zombie`,
   `survivor`, `outbreak-zombie`), Hub top-bar `Characters` nav link, possess (`P`) + walk/run/stop + `Escape` release,
-  orbit/pan/zoom/frame/lineup camera, limb detachment with zero spawn pop + blood splatter, and 20 `LabCommandRegistry`
+  orbit/pan/zoom/frame/lineup camera, limb detachment with zero spawn pop + blood splatter, and 23 `LabCommandRegistry`
   commands (`select`, `possess`, `release`, `profile.set`, `action.*`, `limb.detach`, `character.reset`, `transport.*`,
-  `camera.*`, `lab.*`) passed on Metal with 0 audio contexts and 0 browser errors.
+  `camera.*`, `lab.*`, `nav.open`, `state`, `screenshot`) passed on Metal with 0 audio contexts and 0 browser errors.
 - `bun scripts/prove-dev-hub.ts`: single-origin redirect, all four game prefixes, Vite HMR across all four games,
   Catalogue 25-asset rotation/pause/reload persistence, and `--workers` health + WebSocket forwarding passed on Metal.
 - `bun packages/kit/lab/prove-workbench.ts`: radial menu (8 fixed compass sectors, dead-zone cancel, Spawn Here),
