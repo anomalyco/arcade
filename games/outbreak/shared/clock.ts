@@ -8,7 +8,7 @@ export const MAX_HITCH_SECONDS = 0.5
 export const MAX_HITCH_MS = MAX_HITCH_SECONDS * 1000
 
 export type MoveSample = { mx: number; my: number; sprint?: boolean }
-export type TimedSubstep = { dt: number; mx: number; my: number; sprint: boolean; interact: boolean; cycle: boolean }
+export type TimedSubstep = { dt: number; mx: number; my: number; sprint: boolean; interact: boolean; cycle: boolean; jump: boolean }
 
 type MoveTransition = { atMs: number; mx: number; my: number; sprint: boolean }
 
@@ -89,7 +89,13 @@ export class FrameClock {
     return Math.max(0, TICK_MS - (this.accMs + elapsedMs))
   }
 
-  frame(nowMs: number, liveMove: MoveSample, takeInteract?: () => boolean, takeCycle?: () => boolean): TimedSubstep[] {
+  frame(
+    nowMs: number,
+    liveMove: MoveSample,
+    takeInteract?: () => boolean,
+    takeCycle?: () => boolean,
+    takeJump?: () => boolean,
+  ): TimedSubstep[] {
     if (this.lastMs === null) {
       this.reset(nowMs, liveMove)
       return []
@@ -117,6 +123,7 @@ export class FrameClock {
     const out: TimedSubstep[] = []
     const interact = takeInteract ? takeInteract() : false
     const cycle = takeCycle ? takeCycle() : false
+    const jump = takeJump ? takeJump() : false
     for (let i = 0; i < steps; i++) {
       this.accMs = Math.max(0, this.accMs - TICK_MS)
       const tickStart = this.simCursorMs
@@ -151,6 +158,7 @@ export class FrameClock {
         sprint: stepMove.sprint,
         interact: i === 0 ? interact : false,
         cycle: i === 0 ? cycle : false,
+        jump: i === 0 ? jump : false,
       })
     }
     return out

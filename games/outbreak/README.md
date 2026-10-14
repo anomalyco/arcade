@@ -2,7 +2,8 @@
 
 Unlisted local-session prototype at `/arcade/outbreak/?solo`. Physical WASD (`KeyW`, `KeyA`, `KeyS`, `KeyD`) or arrows move,
 `Shift` sprints with stamina and exhaustion recovery, the mouse aims, `E` (`KeyE`, with `KeyF` alias) interacts with
-doors and windows (peek interior, open/close, climb through, lock/unlock doors), and `Q` cycles contextual actions.
+doors, windows (peek interior with a localised cutaway bubble, open/close, climb through), and fences (vault), `Space`
+vaults over fences or climbs through open windows, and `Q` cycles contextual actions.
 On-screen prompts adapt to the user's keyboard layout (`navigator.keyboard.getLayoutMap()`). Backquote opens the shared Lab.
 
 The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,

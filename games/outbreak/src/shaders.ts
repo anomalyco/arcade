@@ -36,14 +36,18 @@ fn interior(p:vec2f) -> bool {
 }
 fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
-  if (!(all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy+0.35)&&all(p.xz<b.zw-0.35))) {
+  if (F.eye.z <= 1.0001) {
+    return all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy+0.35)&&all(p.xz<b.zw-0.35);
+  }
+  if (!(all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy-0.55)&&all(p.xz<b.zw+1.65))) {
     return false;
   }
-  if (F.eye.z <= 1.0001 || F.eye.z >= 1.999) { return true; }
   let alpha = clamp(F.eye.z - 1.0, 0.0, 1.0);
-  let q = vec2u(frag.xy) % 4u;
-  let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-  return (m[q.y * 4u + q.x] + 0.5) / 16.0 < alpha;
+  let worldR = length(p.xz - F.eye.xy) / (5.8 * alpha + 0.001);
+  if (worldR > 1.0) { return false; }
+  let fade = smoothstep(1.0, 0.48, worldR) * alpha;
+  if (fade >= 0.995) { return true; }
+  return bayer4x4(frag) < fade;
 }
 fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - lights[0].pos.xz;
@@ -66,6 +70,11 @@ fn eyeVisible(p: vec2f) -> f32 {
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
         for(var i=0;i<4;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
+      }
+      if (F.eye.z > 1.0001 && o.world.y > 0.88 && (mat == 4 || mat == 9 || mat == 2 || mat == 6)) {
+        let alpha = clamp(F.eye.z - 1.0, 0.0, 1.0);
+        let wr = length(o.world.xz - F.eye.xy) / (3.4 * alpha + 0.001);
+        if (wr < 1.0 && bayer4x4(o.pos) < smoothstep(1.0, 0.45, wr) * alpha * 0.92) { discard; }
       }
     `,
     // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.

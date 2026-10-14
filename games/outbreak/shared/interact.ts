@@ -1,14 +1,15 @@
 import { angleDiff, distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { propShape, type Door, type Town, type WindowOpening } from "./map"
-import { DOOR_NOISE, VAULT_NOISE } from "./stamina"
+import { DEFAULT_STAMINA_TUNING, DOOR_NOISE, VAULT_NOISE } from "./stamina"
 
-export const INTERACT_RANGE = 1.8
-export const PEEK_MOVE_RELEASE = 0.45
-export const VAULT_DURATION = 0.32
-export const PEEK_CONE = 155
-export const PEEK_AWARENESS = 3.5
+export const INTERACT_RANGE = 2.2
+export const VAULT_DURATION = 0.30
+export const VAULT_STAMINA_COST = 0.18
+export const FENCE_VAULT_NOISE = 10.0
+export const PEEK_CONE = 165
+export const PEEK_AWARENESS = 4.2
 
-export type InteractableKind = "door" | "window" | (string & {})
+export type InteractableKind = "door" | "window" | "fence" | (string & {})
 export type InteractActionId = "toggle" | "lock" | "peek" | "climb"
 export type InteractAction = { id: InteractActionId; label: string }
 
@@ -42,11 +43,15 @@ export type InteractActorState = {
   x: number
   y: number
   aim: number
+  stamina?: number
+  exhausted?: boolean
   sprinting?: boolean
+  regenCooldown?: number
   noise: number
   peekingWindowId: string | null
   peekOriginX: number
   peekOriginY: number
+  peekOriginDist: number
   lastPeekedWindowId: string | null
   cycledTargetId: string | null
   cycledActionIndex: number
@@ -55,12 +60,20 @@ export type InteractActorState = {
 
 export function createInteractActorState(): Pick<
   InteractActorState,
-  "peekingWindowId" | "peekOriginX" | "peekOriginY" | "lastPeekedWindowId" | "cycledTargetId" | "cycledActionIndex" | "vault"
+  | "peekingWindowId"
+  | "peekOriginX"
+  | "peekOriginY"
+  | "peekOriginDist"
+  | "lastPeekedWindowId"
+  | "cycledTargetId"
+  | "cycledActionIndex"
+  | "vault"
 > {
   return {
     peekingWindowId: null,
     peekOriginX: 0,
     peekOriginY: 0,
+    peekOriginDist: 0,
     lastPeekedWindowId: null,
     cycledTargetId: null,
     cycledActionIndex: 0,
@@ -114,9 +127,22 @@ function candidateScore(actor: InteractActorState, rect: Rect): { dist: number; 
   const [nx, ny] = nearestPointOnRect(actor.x, actor.y, rect)
   const toAngle = Math.atan2(ny - actor.y, nx - actor.x)
   const facing = Math.cos(angleDiff(actor.aim, toAngle))
-  // Closer and more directly in front of the survivor's aim wins.
-  const score = (INTERACT_RANGE - dist) + facing * 0.75
+  // Proximity dominates so walking right up to a window or fence selects it from any mouse angle;
+  // facing direction breaks ties when equidistant between two openings.
+  const score = (INTERACT_RANGE - dist) * 2.0 + facing * 0.45
   return { dist, facing, score }
+}
+
+function applyVaultStaminaCost(actor: InteractActorState, cost = VAULT_STAMINA_COST): void {
+  if (typeof actor.stamina === "number") {
+    actor.stamina = Math.max(0, actor.stamina - cost)
+    actor.regenCooldown = Math.max(actor.regenCooldown ?? 0, DEFAULT_STAMINA_TUNING.staminaDelay)
+    if (actor.stamina <= 1e-6) {
+      actor.stamina = 0
+      actor.exhausted = true
+      actor.sprinting = false
+    }
+  }
 }
 
 function doorActions(door: Door): { actions: InteractAction[]; defaultAction: InteractAction } {
@@ -149,59 +175,70 @@ function windowActions(
     return { actions, defaultAction: stopPeek }
   }
 
+  const peek: InteractAction = { id: "peek", label: "Peek window" }
   if (!win.open) {
-    const peek: InteractAction = { id: "peek", label: "Peek window" }
     if (!win.openable) {
       return { actions: [peek], defaultAction: peek }
     }
     const open: InteractAction = { id: "toggle", label: "Open window" }
-    const actions = [peek, open]
-    const defaultAction = actor.lastPeekedWindowId === win.id ? open : peek
-    return { actions, defaultAction }
+    return { actions: [peek, open], defaultAction: peek }
   }
 
   const climb: InteractAction = { id: "climb", label: "Climb through" }
-  const peek: InteractAction = { id: "peek", label: "Peek window" }
-  const actions: InteractAction[] = [climb, peek]
+  const actions: InteractAction[] = [peek, climb]
   if (win.openable) actions.push({ id: "toggle", label: "Close window" })
-  return { actions, defaultAction: climb }
+  return { actions, defaultAction: peek }
+}
+
+function isLandingSpotClear(town: Town, cx: number, cy: number, ignoreRect?: Rect): boolean {
+  for (const b of town.barriers) {
+    if (ignoreRect && b.rect === ignoreRect) continue
+    if (distToRect(cx, cy, b.rect) < 0.32) return false
+  }
+  for (const d of town.doors) {
+    if (!d.open && distToRect(cx, cy, d.rect) < 0.32) return false
+  }
+  for (const p of town.props) {
+    const s = propShape(p)
+    if (s && distToRect(cx, cy, s.rect) < 0.28) return false
+    if (p.kind === "tree" && Math.hypot(cx - p.x, cy - p.y) < 0.45) return false
+  }
+  return true
 }
 
 function computeVaultDestination(
   town: Town,
-  win: WindowOpening,
+  rect: Rect,
   fromX: number,
   fromY: number,
-): { toX: number; toY: number; aim: number } {
-  const [x0, y0, x1, y1] = win.rect
+  preferAnchor = false,
+): { toX: number; toY: number; aim: number } | null {
+  const [x0, y0, x1, y1] = rect
   const horizontal = x1 - x0 > y1 - y0
-  const wx = (x0 + x1) / 2
-  const wy = (y0 + y1) / 2
+  const wx = preferAnchor ? Math.max(x0 + 0.45, Math.min(x1 - 0.45, fromX)) : (x0 + x1) / 2
+  const wy = preferAnchor ? Math.max(y0 + 0.45, Math.min(y1 - 0.45, fromY)) : (y0 + y1) / 2
   const clearance = 0.58
-  const propRects = town.props.flatMap((p) => {
-    const s = propShape(p)
-    return s ? [s.rect] : []
-  })
-  const isClear = (cx: number, cy: number) => propRects.every((r) => distToRect(cx, cy, r) >= 0.28)
 
   if (horizontal) {
-    const intoNorth = fromY >= wy
+    const midY = (y0 + y1) / 2
+    const intoNorth = fromY >= midY
     const targetY = intoNorth ? y0 - clearance : y1 + clearance
     const aim = intoNorth ? -Math.PI / 2 : Math.PI / 2
-    for (const offset of [0, -0.35, 0.35, -0.65, 0.65]) {
+    for (const offset of [0, -0.35, 0.35, -0.7, 0.7]) {
       const cx = Math.max(x0 + 0.3, Math.min(x1 - 0.3, wx + offset))
-      if (isClear(cx, targetY)) return { toX: cx, toY: targetY, aim }
+      if (isLandingSpotClear(town, cx, targetY, rect)) return { toX: cx, toY: targetY, aim }
     }
-    return { toX: wx, toY: targetY, aim }
+    return preferAnchor ? null : { toX: wx, toY: targetY, aim }
   } else {
-    const intoWest = fromX >= wx
+    const midX = (x0 + x1) / 2
+    const intoWest = fromX >= midX
     const targetX = intoWest ? x0 - clearance : x1 + clearance
     const aim = intoWest ? Math.PI : 0
-    for (const offset of [0, -0.35, 0.35, -0.65, 0.65]) {
+    for (const offset of [0, -0.35, 0.35, -0.7, 0.7]) {
       const cy = Math.max(y0 + 0.3, Math.min(y1 - 0.3, wy + offset))
-      if (isClear(targetX, cy)) return { toX: targetX, toY: cy, aim }
+      if (isLandingSpotClear(town, targetX, cy, rect)) return { toX: targetX, toY: cy, aim }
     }
-    return { toX: targetX, toY: wy, aim }
+    return preferAnchor ? null : { toX: targetX, toY: wy, aim }
   }
 }
 
@@ -266,7 +303,8 @@ export const windowInteractionHandler: InteractionHandler = {
   },
   execute(town, actor, targetId, action) {
     const win = town.windows.find((w) => w.id === targetId)
-    if (!win || distToRect(actor.x, actor.y, win.rect) > INTERACT_RANGE) return { handled: false }
+    const dist = win ? distToRect(actor.x, actor.y, win.rect) : Infinity
+    if (!win || dist > INTERACT_RANGE) return { handled: false }
     if (action === "peek") {
       if (actor.peekingWindowId === win.id) {
         actor.peekingWindowId = null
@@ -275,7 +313,8 @@ export const windowInteractionHandler: InteractionHandler = {
         actor.peekingWindowId = win.id
         actor.peekOriginX = actor.x
         actor.peekOriginY = actor.y
-        actor.lastPeekedWindowId = win.id
+        actor.peekOriginDist = dist
+        actor.sprinting = false
       }
       return { handled: true, kind: "window", targetId: win.id, action: "peek", topologyChanged: false }
     }
@@ -287,8 +326,9 @@ export const windowInteractionHandler: InteractionHandler = {
       return { handled: true, kind: "window", targetId: win.id, action: "toggle", topologyChanged: true, noise: actor.noise }
     }
     if (action === "climb") {
-      if (!win.open || actor.vault) return { handled: false }
-      const dest = computeVaultDestination(town, win, actor.x, actor.y)
+      if (!win.open || actor.vault || actor.exhausted) return { handled: false }
+      const dest = computeVaultDestination(town, win.rect, actor.x, actor.y, false)
+      if (!dest) return { handled: false }
       actor.peekingWindowId = null
       actor.lastPeekedWindowId = null
       actor.vault = {
@@ -302,8 +342,68 @@ export const windowInteractionHandler: InteractionHandler = {
         duration: VAULT_DURATION,
       }
       actor.aim = dest.aim
+      applyVaultStaminaCost(actor, VAULT_STAMINA_COST)
       actor.noise = Math.max(actor.noise, VAULT_NOISE)
       return { handled: true, kind: "window", targetId: win.id, action: "climb", topologyChanged: false, noise: actor.noise }
+    }
+    return { handled: false }
+  },
+}
+
+export const fenceInteractionHandler: InteractionHandler = {
+  kind: "fence",
+  candidates(town, actor) {
+    const out: RawInteractCandidate[] = []
+    let fenceIdx = 0
+    for (const b of town.barriers) {
+      if (b.kind !== "fence") continue
+      const id = `fence-${fenceIdx++}`
+      if (distToRect(actor.x, actor.y, b.rect) > INTERACT_RANGE) continue
+      const dest = computeVaultDestination(town, b.rect, actor.x, actor.y, true)
+      if (!dest) continue
+      const [nx, ny] = nearestPointOnRect(actor.x, actor.y, b.rect)
+      const localRect: Rect = [
+        Math.max(b.rect[0], nx - 0.35),
+        Math.max(b.rect[1], ny - 0.35),
+        Math.min(b.rect[2], nx + 0.35),
+        Math.min(b.rect[3], ny + 0.35),
+      ]
+      const vaultAction: InteractAction = { id: "climb", label: "Vault fence" }
+      out.push({
+        kind: "fence",
+        id,
+        rect: localRect,
+        actions: [vaultAction],
+        defaultAction: vaultAction,
+      })
+    }
+    return out
+  },
+  execute(town, actor, targetId, action) {
+    if (action !== "climb" || actor.vault || actor.exhausted) return { handled: false }
+    let fenceIdx = 0
+    for (const b of town.barriers) {
+      if (b.kind !== "fence") continue
+      const id = `fence-${fenceIdx++}`
+      if (id !== targetId) continue
+      if (distToRect(actor.x, actor.y, b.rect) > INTERACT_RANGE) return { handled: false }
+      const dest = computeVaultDestination(town, b.rect, actor.x, actor.y, true)
+      if (!dest) return { handled: false }
+      actor.peekingWindowId = null
+      actor.vault = {
+        windowId: id,
+        fromX: actor.x,
+        fromY: actor.y,
+        toX: dest.toX,
+        toY: dest.toY,
+        aim: dest.aim,
+        elapsed: 0,
+        duration: VAULT_DURATION,
+      }
+      actor.aim = dest.aim
+      applyVaultStaminaCost(actor, VAULT_STAMINA_COST)
+      actor.noise = Math.max(actor.noise, FENCE_VAULT_NOISE)
+      return { handled: true, kind: "fence", targetId: id, action: "climb", topologyChanged: false, noise: actor.noise }
     }
     return { handled: false }
   },
@@ -312,7 +412,9 @@ export const windowInteractionHandler: InteractionHandler = {
 export class InteractionRegistry {
   private readonly handlers = new Map<InteractableKind, InteractionHandler>()
 
-  constructor(initial: readonly InteractionHandler[] = [doorInteractionHandler, windowInteractionHandler]) {
+  constructor(
+    initial: readonly InteractionHandler[] = [doorInteractionHandler, windowInteractionHandler, fenceInteractionHandler],
+  ) {
     for (const h of initial) this.register(h)
   }
 
@@ -345,7 +447,6 @@ export function selectInteractTarget(
   for (const handler of registry.all()) {
     for (const raw of handler.candidates(town, actor)) {
       const { dist, facing, score } = candidateScore(actor, raw.rect)
-      // Give the actively peeked window priority while the survivor remains at the sill.
       const peekBoost = raw.kind === "window" && actor.peekingWindowId === raw.id ? 10 : 0
       const activeAction =
         actor.cycledTargetId === raw.id && actor.cycledActionIndex > 0
@@ -411,7 +512,7 @@ export function executeInteraction(
 }
 
 /**
- * Advances active window vault movement and auto-releases window peeking when the survivor moves away.
+ * Advances active window/fence vault movement and auto-releases window peeking when the survivor moves away.
  * Returns true while the survivor is mid-vault (so normal movement/collision is skipped for this step).
  */
 export function stepInteractionState(town: Town, actor: InteractActorState, dt: number): boolean {
@@ -433,10 +534,19 @@ export function stepInteractionState(town: Town, actor: InteractActorState, dt: 
 
   if (actor.peekingWindowId) {
     const win = town.windows.find((w) => w.id === actor.peekingWindowId)
-    const movedFromOrigin = Math.hypot(actor.x - actor.peekOriginX, actor.y - actor.peekOriginY) > PEEK_MOVE_RELEASE
-    const outOfRange = !win || distToRect(actor.x, actor.y, win.rect) > INTERACT_RANGE
-    if (movedFromOrigin || outOfRange || actor.sprinting) {
+    if (!win) {
       actor.peekingWindowId = null
+    } else {
+      const dist = distToRect(actor.x, actor.y, win.rect)
+      // Keep peeking if the survivor moves closer to or along the window; release only when moving away.
+      if (dist < actor.peekOriginDist) {
+        actor.peekOriginDist = dist
+      }
+      const backedAway = dist > actor.peekOriginDist + 0.55
+      const outOfRange = dist > INTERACT_RANGE
+      if (backedAway || outOfRange) {
+        actor.peekingWindowId = null
+      }
     }
   }
 
@@ -458,7 +568,7 @@ export function stepInteractionState(town: Town, actor: InteractActorState, dt: 
   return false
 }
 
-/** Computes the eye origin, roof-cutaway anchor, and camera lean for the currently peeked window. */
+/** Computes the eye origin, localised cutaway bubble center, and camera lean for the currently peeked window. */
 export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y" | "peekingWindowId">): PeekInfo | null {
   if (!actor.peekingWindowId) return null
   const win = town.windows.find((w) => w.id === actor.peekingWindowId)
@@ -473,12 +583,14 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
   const insideBuilding = actor.x > bx0 && actor.x < bx1 && actor.y > bz0 && actor.y < bz1
 
   if (horizontal) {
-    const lookingNorth = !insideBuilding ? actor.y >= wy : actor.y >= wy
+    // Outside south window (actor.y >= wy): look north (-1) into the building.
+    // Inside south window (actor.y < wy): look south (+1) out of the building.
+    const lookingNorth = actor.y >= wy
     const dir = lookingNorth ? -1 : 1
-    const eyeX = wx
+    const eyeX = Math.max(x0 + 0.25, Math.min(x1 - 0.25, actor.x))
     const eyeY = (dir < 0 ? y0 : y1) + dir * 0.35
     const cutX = wx
-    const cutY = insideBuilding ? actor.y : Math.max(bz0 + 1.2, Math.min(bz1 - 1.2, wy + dir * 2.2))
+    const cutY = insideBuilding ? actor.y : Math.max(bz0 + 1.2, Math.min(bz1 - 1.2, wy - 1.85))
     return {
       windowId: win.id,
       buildingId: win.buildingId,
@@ -491,15 +603,20 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
       cone: PEEK_CONE,
       awareness: PEEK_AWARENESS,
       camOffsetX: 0,
-      camOffsetY: dir * 1.4,
+      camOffsetY: dir * 1.45,
     }
   } else {
-    const lookingWest = !insideBuilding ? actor.x >= wx : actor.x >= wx
+    // Outside east window (actor.x >= wx): look west (-1) into the building.
+    // Inside east window (actor.x < wx): look east (+1) out of the building.
+    const lookingWest = actor.x >= wx
     const dir = lookingWest ? -1 : 1
+    // Avoid the interior partition wall at split = bz0 + 5.5..5.7 which bisects the east window.
+    const split = bz0 + 5.6
+    const inSouthRoom = actor.y >= split
+    const eyeY = inSouthRoom ? Math.max(split + 0.42, Math.min(y1 - 0.2, actor.y)) : Math.min(split - 0.42, Math.max(y0 + 0.2, actor.y))
     const eyeX = (dir < 0 ? x0 : x1) + dir * 0.35
-    const eyeY = wy
-    const cutX = insideBuilding ? actor.x : Math.max(bx0 + 1.2, Math.min(bx1 - 1.2, wx + dir * 2.2))
-    const cutY = wy
+    const cutX = insideBuilding ? actor.x : Math.max(bx0 + 1.2, Math.min(bx1 - 1.2, wx - 1.85))
+    const cutY = eyeY
     return {
       windowId: win.id,
       buildingId: win.buildingId,
@@ -511,13 +628,13 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
       aim: dir < 0 ? Math.PI : 0,
       cone: PEEK_CONE,
       awareness: PEEK_AWARENESS,
-      camOffsetX: dir * 1.4,
+      camOffsetX: dir * 1.45,
       camOffsetY: 0,
     }
   }
 }
 
-/** Vertical vault hop over a window sill (metres) for presentation. */
+/** Vertical vault hop over a window sill or fence (metres) for presentation. */
 export function vaultLift(actor: Pick<InteractActorState, "vault">): number {
   if (!actor.vault) return 0
   const u = Math.max(0, Math.min(1, actor.vault.elapsed / actor.vault.duration))

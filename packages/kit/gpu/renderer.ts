@@ -31,7 +31,8 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, 
     if (!box) return true
     return f[24]! > box[0]! && f[24]! < box[3]! && f[25]! > box[2]! && f[25]! < box[5]!
   }
-  if (!box || f[26]! < 0.5 || box[4]! < f[34]! || box[5]! < f[25]! + 0.25) return false
+  const peeking = f[26]! > 1.001
+  if (!box || f[26]! < 0.5 || box[4]! < f[34]! || (!peeking && box[5]! < f[25]! + 0.25)) return false
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
   for (let i = 0; i < 8; i++) {
     const x = box[i & 1 ? 3 : 0]!, y = box[i & 2 ? 4 : 1]!, z = box[i & 4 ? 5 : 2]!
@@ -626,9 +627,10 @@ export class Renderer {
       for (const c of this.chunks) {
         if (c.box[0] > vx1 || c.box[2] < vx0 || c.box[1] > vy1 || c.box[3] < vy0) continue
         const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
-        if (c.customCutaway === "outside" && insideCustom) continue
+        const peeking = f.frame[26]! > 1.001
+        if (c.customCutaway === "outside" && insideCustom && !peeking) continue
         drawn++
-        const next = c.customCutaway ? (c.customCutaway === true && insideCustom) : intersectsCutaway(c.cutBox, f.frame)
+        const next = c.customCutaway ? (insideCustom && (c.customCutaway === true || peeking)) : intersectsCutaway(c.cutBox, f.frame)
         if (cut !== next) {
           cut = next
           pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!)

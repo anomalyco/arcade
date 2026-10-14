@@ -98,13 +98,13 @@ async function main() {
       clock.pause(wallNow)
       return 0
     }
-    const substeps = clock.frame(wallNow, liveMove(), () => input.takeEnter(), () => input.takeCycle())
+    const substeps = clock.frame(wallNow, liveMove(), () => input.takeEnter(), () => input.takeCycle(), () => input.takeJump())
     if (!substeps.length) return 0
     const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
     let stepped = 0
     for (const step of substeps) {
       const p = session.view.player
-      session.update(step.dt, { mx: step.mx, my: step.my, sprint: step.sprint, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact, cycle: step.cycle }, settings.timeScale, settings)
+      session.update(step.dt, { mx: step.mx, my: step.my, sprint: step.sprint, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact, cycle: step.cycle, jump: step.jump }, settings.timeScale, settings)
       stepped += step.dt
       frames++
     }
@@ -113,14 +113,16 @@ async function main() {
   }
   window.addEventListener("keydown", () => {
     const now = performance.now()
+    clock.recordMove(now, liveMove())
     if (!frozen && !document.hidden) stepSimulation(now)
-  }, true)
+    scheduleFrame()
+  })
   window.addEventListener("keyup", () => {
     const now = performance.now()
+    clock.recordMove(now, liveMove())
     if (!frozen && !document.hidden) stepSimulation(now)
-  }, true)
-  window.addEventListener("keydown", () => { clock.recordMove(performance.now(), liveMove()); scheduleFrame() })
-  window.addEventListener("keyup", () => { clock.recordMove(performance.now(), liveMove()); scheduleFrame() })
+    scheduleFrame()
+  })
   document.addEventListener("visibilitychange", () => { if (document.hidden) clock.pause(performance.now()); else scheduleFrame() })
   window.addEventListener("blur", () => clock.pause(performance.now()))
   const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
@@ -162,11 +164,17 @@ async function main() {
     const { player: p, hour, prompt } = session.view
     const interactKey = keyLabel("KeyE")
     const cycleKey = keyLabel("KeyQ")
+    const jumpKey = keyLabel("Space")
     let promptText = ""
     if (prompt) {
-      const nextIdx = (prompt.actions.findIndex(a => a.id === prompt.activeAction.id) + 1) % prompt.actions.length
-      const next = prompt.actions.length > 1 ? prompt.actions[nextIdx] : undefined
-      promptText = ` · ${interactKey} ${prompt.activeAction.label}${next ? ` (${cycleKey} ${next.label})` : ""}`
+      if (prompt.kind === "fence") {
+        promptText = ` · ${interactKey} / ${jumpKey} ${prompt.activeAction.label}`
+      } else {
+        const nextIdx = (prompt.actions.findIndex(a => a.id === prompt.activeAction.id) + 1) % prompt.actions.length
+        const next = prompt.actions.length > 1 ? prompt.actions[nextIdx] : undefined
+        const canSpaceClimb = prompt.kind === "window" && prompt.actions.some(a => a.id === "climb") && prompt.activeAction.id !== "climb"
+        promptText = ` · ${interactKey} ${prompt.activeAction.label}${canSpaceClimb ? ` · ${jumpKey} Climb through` : ""}${next ? ` (${cycleKey} ${next.label})` : ""}`
+      }
     }
     return `${clockText(hour)}${p.exhausted ? " · Exhausted" : ""}${promptText}`
   }
@@ -228,14 +236,15 @@ async function main() {
     const cutX = activePeek ? activePeek.cutX : p.x
     const cutY = activePeek ? activePeek.cutY : p.y
     const cutFlag = activePeek ? 1 + peekBlend : 1
-    const cutRadius = activePeek ? .48 + .08 * peekBlend : .48
+    const cutRadius = activePeek ? .48 + .10 * peekBlend : .48
+    const cutHeight = activePeek ? 1.0 - .12 * peekBlend : 1.0
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
     frame.set([cutX, cutY, cutFlag, cutRadius], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
     const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
     const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
     const focus = cam.project(focusX, 1, focusY, w, h)
-    frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, 1.0, count], 32)
+    frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, cutHeight, count], 32)
     frame.set([...day.direction, day.sun], 36); frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
     frame.set([sightAim, Math.cos(sightCone * Math.PI / 360), sightAwareness, settings.shroud], 44)
     town.doors.forEach((door, i) => doorData.set([door.rect[0], 0, (door.rect[1] + door.rect[3]) / 2, door.open ? -Math.PI / 2 : 0, 1, 1, 1, 1, 0, 0, 1, 0], i * 12))

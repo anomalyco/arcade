@@ -28,6 +28,7 @@ export type Command = {
   interact: boolean
   sprint?: boolean
   cycle?: boolean
+  jump?: boolean
   interactAction?: InteractActionId
 }
 export type Survivor = { x: number; y: number; vx: number; vy: number; aim: number } & StaminaState & InteractActorState
@@ -76,16 +77,6 @@ export class LocalSession implements Session {
     const view = this.view, p = view.player
     dt = Math.max(0, Math.min(.1, dt))
     if (!p.vault) p.aim = command.aim
-    if (command.cycle) {
-      cycleInteractAction(view.town, p)
-    }
-    if (command.interact) {
-      const outcome = executeInteraction(view.town, p, command.interactAction)
-      if (outcome.topologyChanged) {
-        view.revision++
-        this.solids = solidRects(view.town)
-      }
-    }
     const x = p.x, y = p.y
     if (stepInteractionState(view.town, p, dt)) {
       stepStamina(p, false, false, dt, tuning)
@@ -107,6 +98,23 @@ export class LocalSession implements Session {
         p.x = Math.max(.4, Math.min(SIZE - .4, p.x)); p.y = Math.max(.4, Math.min(SIZE - .4, p.y))
       }
       stepInteractionState(view.town, p, 0)
+    }
+    if (command.cycle) {
+      cycleInteractAction(view.town, p)
+    }
+    if (command.jump) {
+      const outcome = executeInteraction(view.town, p, "climb")
+      if (outcome.topologyChanged) {
+        view.revision++
+        this.solids = solidRects(view.town)
+      }
+    }
+    if (command.interact) {
+      const outcome = executeInteraction(view.town, p, command.interactAction)
+      if (outcome.topologyChanged) {
+        view.revision++
+        this.solids = solidRects(view.town)
+      }
     }
     p.vx = dt > 0 ? (p.x - x) / dt : 0; p.vy = dt > 0 ? (p.y - y) / dt : 0
     view.peek = peekInfoFor(view.town, p)
