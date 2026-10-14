@@ -1,5 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
-import { buildFoliageTree, emitHydrangeaPanicles, foliageSettings } from "@arcade/kit/gpu/foliage"
+import { buildFoliageTree, emitGrassTuft, emitHydrangeaPanicles, foliageSettings } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
@@ -166,29 +166,53 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(x+4.92,2.30,e-.24,x+6.49,2.42,e+.07,rgb(0xeae4d7),MAT.wall)
   m.box(x+5,.13,e-.28,x+6.4,.15,e+.18,rgb(0x9a9382))
   m.box(cx-.52,.132,e+.20,cx+.52,.155,e+.74,rgb(0x523f2c),MAT.timber)
-  // Grouped foundation planting: natural soil bed without toothed brick edging, boxwood pair by porch, corner shrubs and hydrangea.
+  // Overgrown, irregular foundation hedge & bramble thicket: organic soil discs (no straight rectangular bed)
+  // and multi-height sprawling shrubs keeping window sills & porch columns clear while spilling wild weeds onto the lawn.
   const rng=new Rng(town.houseSeed+id*71)
-  for(const [a,d] of [[x+.15,x+4.35],[x+7.15,r-.15]]){
-    m.quad([a!,.022,e+.92],[d!,.022,e+.92],[d!,.022,e+.05],[a!,.022,e+.05],[0,1,0],rgb(0x28291f),MAT.ground,5)
-  }
-  // Left corner shrub cluster + low under-window shrubs + twin boxwood globes + flowering hydrangea
   for(const [px,pz,ph,pr] of [
-    [x+.28,e+.54,1.38,.88],
-    [x-.28,e-.35,1.22,.78],
-    [x+1.45,e+.44,.64,.44],
-    [x+2.52,e+.46,.52,.38],
-    [x+3.65,e+.38,.56,.40],
-    // Two distinct compact rounded boxwood globes right of the porch column (h/r >= 1.65 triggers globe habit)
-    [x+7.42,e+.50,.88,.50],
-    [x+8.68,e+.52,.84,.48],
-    // Low border shrubs under the right window
-    [x+10.05,e+.42,.52,.38],
-    [x+11.25,e+.44,.56,.40],
-    // Lush flowering Hydrangea bush at the front-right corner
-    [r-1.05,e+.62,1.12,.88],
-  ])plant(m,px!,pz!,ph!,pr!,Math.floor(rng.next()*1e6),supportHeight(town,px!,pz!))
-  // Multi-floret creamy-white hydrangea corymb panicles on the front-right corner bush
-  emitHydrangeaPanicles(m,r-1.05,supportHeight(town,r-1.05,e+.62),e+.62,1.12,.88,town.houseSeed+31)
+    // Left corner bush cluster wrapping around the corner by the driveway sedan
+    [x-.24,e-.35,1.24,.82],
+    [x+.28,e+.56,1.18,.80],
+    [x+.88,e+.96,.68,.56],
+    // Irregular low-to-mid bushes under the left window (below 0.85m sill) + taller bush flanking the left porch column
+    [x+1.52,e+.46,.72,.58],
+    [x+2.28,e+.78,.54,.48],
+    [x+2.95,e+.44,.66,.54],
+    [x+3.82,e+.58,1.08,.72],
+    // Taller bush flanking the right porch column + irregular overgrown shrubs under the right window
+    [x+7.48,e+.56,1.12,.74],
+    [x+8.48,e+.52,.94,.66],
+    [x+9.28,e+.84,.58,.50],
+    [x+10.05,e+.44,.68,.56],
+    [x+10.92,e+.78,.56,.48],
+    [x+11.65,e+.48,.74,.58],
+    // Front-right corner hydrangea thicket
+    [r-1.08,e+.62,1.16,.84],
+    [r-.22,e+1.02,.76,.62],
+  ]){
+    const gy=supportHeight(town,px!,pz!)
+    m.prism(px!,pz!,pr!*1.05,pr!*.95,gy+.006,gy+.018,7,rgb(0x14180f),MAT.ground,5)
+    plant(m,px!,pz!,ph!,pr!,Math.floor(rng.next()*1e6),gy)
+  }
+  // Wild apron of radiating fern/bramble/weed shoots emerging in front of the foundation bushes
+  for(let wx=x-.1;wx<=r+.1;wx+=.52+rng.next()*.38){
+    if(wx>x+4.15&&wx<x+7.15)continue
+    const wz=e+.68+rng.next()*.78
+    const gy=supportHeight(town,wx,wz)
+    emitGrassTuft(m,wx,gy,wz,{
+      bladeCount:5,
+      radius:.26+rng.next()*.14,
+      height:.22+rng.next()*.18,
+      width:foliageSettings.bladeWidth*1.22,
+      curvature:Math.min(1,foliageSettings.bladeCurvature*1.18),
+      leanAngle:Math.PI*.5+(rng.next()-.5)*1.4,
+      rootColor:rgb(0x121e0c),
+      tipColor:rgb(rng.pick([0x385220,0x465c26,0x2e461b])),
+      rng,
+    })
+  }
+  // Delicate creamy-white blossom flecks on the front-right corner bush
+  emitHydrangeaPanicles(m,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,town.houseSeed+31)
   for(const px of [x+.08,r-.14]){
     m.box(px,.12,e+.1,px+.07,2.77,e+.17,trim,MAT.timber)
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)

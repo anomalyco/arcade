@@ -1192,27 +1192,28 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   let hCluster = hash2(clusterCell.xz + vec2f(clusterCell.y * 3.7, 11.3)) - 0.5;
   let hHue = fract((hCluster + 0.5) * 13.7) - 0.5;
 
-  // Non-degenerate 3D tangent projection for individual 4-8cm overlapping leaf platelets & midribs
-  let uv3 = vec2f(world.x + world.z * 0.73 + world.y * 0.41, world.y * 1.17 - world.x * 0.43 + world.z * 0.81);
-  let clusterG = surfaceNoiseGrad(uv3 * (8.8 * gScale) + vec2f(1.7, 6.3));
-  let bladeG = surfaceNoiseGrad(uv3 * (21.5 * gScale) + vec2f(clusterG.x * 0.7 + 5.4, 2.9));
+  // Isotropic plan-oriented 3D domain-warped UV so top-down cameras see organic 4-7cm micro-leaves with zero vertical striping
+  let warp2 = vec2f(surfaceNoise(world.xz * 3.6 + world.y * 1.7), surfaceNoise(world.zx * 3.6 - world.y * 1.9)) - 0.5;
+  let uv3 = world.xz * 1.35 + vec2f(world.y * 0.32, -world.y * 0.28) + warp2 * 0.30;
+  let clusterG = surfaceNoiseGrad(uv3 * (8.5 * gScale) + vec2f(1.7, 6.3));
+  let bladeG = surfaceNoiseGrad(uv3 * (21.0 * gScale) + vec2f(clusterG.x * 0.7 + 5.4, 2.9));
   let fineLeaf = surfaceNoise(uv3 * (38.0 * gScale) + vec2f(bladeG.x * 0.6 + 3.1, 7.4));
-  let microLeaf = clusterG.x * 0.46 + bladeG.x * 0.36 + fineLeaf * 0.18;
-  // Deep inter-leaf crevices carve each polygon into dozens of small individual leaves
-  let leafGap = 1.0 - smoothstep(0.26, 0.52, microLeaf);
-  let leafPlate = smoothstep(0.44, 0.78, microLeaf);
+  let microLeaf = clusterG.x * 0.44 + bladeG.x * 0.36 + fineLeaf * 0.20;
+  // Deep inter-leaf crevices carve each cluster into dozens of small individual leaves
+  let leafGap = 1.0 - smoothstep(0.28, 0.54, microLeaf);
+  let leafPlate = smoothstep(0.46, 0.80, microLeaf);
 
   let topMask = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
   let heightLift = smoothstep(0.05, 1.2, fract(world.y * 0.55));
-  let canopyLift = mix(0.42 - wear * 0.08, 1.22, clamp(topMask * 0.64 + heightLift * 0.20 + (microLeaf - 0.5) * 0.36, 0.0, 1.0));
+  let canopyLift = mix(0.32 - wear * 0.08, 1.16, clamp(topMask * 0.62 + heightLift * 0.18 + (microLeaf - 0.5) * 0.38, 0.0, 1.0));
   let warmTip = clamp((microLeaf - 0.45) + topMask * 0.35 - 0.10, -0.4, 0.55);
   let hueTint = vec3f(
     1.0 + (hHue * 0.16 + warmTip * 0.18) * colVar,
     1.0 + (hHue * 0.08 + warmTip * 0.10) * colVar,
     1.0 - (hHue * 0.14 + warmTip * 0.16) * colVar
   );
-  var col = baseTint * hueTint * (0.92 + hCluster * 0.28 * colVar) * canopyLift;
-  col *= (1.0 - 0.56 * leafGap + 0.20 * leafPlate) * (1.0 + n0 * 0.16 * macroVar);
+  var col = baseTint * hueTint * (0.88 + hCluster * 0.28 * colVar) * canopyLift;
+  col *= (1.0 - 0.62 * leafGap + 0.22 * leafPlate) * (1.0 + n0 * 0.16 * macroVar);
 
   let leafBumpAtten = (1.0 - smoothstep(0.08, 0.55, surfaceFootprint)) * 0.46;
   surfaceNormalShift = vec3f(
@@ -1417,19 +1418,19 @@ export const surfaceMaterial = /* wgsl */ `
         let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
         albedo = s.albedo * mix(0.42, 1.0, s.cavity);
         n = normalize(n + surfaceNormalShift);
-        let uv3 = vec2f(o.world.x + o.world.z * 0.73 + o.world.y * 0.41, o.world.y * 1.17 - o.world.x * 0.43 + o.world.z * 0.81);
+        let uv3 = o.world.xz * 1.35 + vec2f(o.world.y * 0.32, -o.world.y * 0.28);
         if (texOn) {
           let tex = sampleMaterialFast(11, uv3, 1.35 * texScaleMult);
           albedo = modulateFast(albedo, tex, vec3f(0.2654, 0.1868, 0.0342), 0.72 * texContrastMult);
         }
         if (o.aux > 0.0) {
           let billow1 = surfaceNoise(uv3 * 2.8 + vec2f(2.1, 4.7));
-          let brush1 = surfaceNoise(uv3 * 11.5 + vec2f(billow1 * 0.9 + 1.3, 4.7));
-          let brush2 = surfaceNoise(uv3 * 26.0 + vec2f(brush1 * 0.8 + 6.3, 1.9));
-          let brushField = brush1 * 0.56 + brush2 * 0.44;
+          let brush1 = surfaceNoise(uv3 * 12.5 + vec2f(billow1 * 0.9 + 1.3, 4.7));
+          let brush2 = surfaceNoise(uv3 * 28.0 + vec2f(brush1 * 0.8 + 6.3, 1.9));
+          let brushField = brush1 * 0.54 + brush2 * 0.46;
           // Continuous 3D world-space micro-leaf & sub-puff relief (no per-polygon border moat)
-          let leafCrevice = smoothstep(0.24, 0.68, brushField);
-          albedo *= mix(0.28, 1.18, leafCrevice) * (0.78 + 0.36 * billow1);
+          let leafCrevice = smoothstep(0.26, 0.68, brushField);
+          albedo *= mix(0.24, 1.18, leafCrevice) * (0.76 + 0.38 * billow1);
         }
       }
     } else if (mat == 24) {
