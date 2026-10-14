@@ -7,6 +7,7 @@ import { angleSpring, locomotion, newMotion, pelvisPoint, stiffness } from "./an
 import { bodyJoints } from "./anim-pose"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
 import { boneVisible, jointVelocities, poseArms, poseLegs, poseUnarmedArms, unarmedHands, type BoneId, type HumanBody, type HiddenBones } from "@arcade/kit/human-pose"
+import { shambleHandsFK, shambleTorsoModulation } from "@arcade/kit/shamble-crouch"
 import {
   type Frame,
   type PushPart,
@@ -658,13 +659,17 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   let pelvis = yawFrame([px, h, pz], a.legYaw + twist)
   pelvis = pitch(pelvis, -0.12 * moving - 0.05)
   pelvis = roll(pelvis, 0.06 * moving * Math.cos(th) + sway * 1.4)
+  const isShamble = Boolean(enhanced && profile.handPose === "reach")
+  const shambleMod = isShamble ? shambleTorsoModulation(a.phase, a.gait, profile, 0) : null
   if (enhanced) {
-    pelvis = yawFrame(pelvisPoint(a), a.aim + clamp(angleDiff(m.pelvis.x + m.twist.x, a.aim), -1.05, 1.05))
-    pelvis = roll(pelvis, m.drop.x + (m.bank?.x ?? 0) * 0.5)
+    const pPt = pelvisPoint(a)
+    if (shambleMod) pPt[1] += shambleMod.pelvisBobAdd
+    pelvis = yawFrame(pPt, a.aim + clamp(angleDiff(m.pelvis.x + m.twist.x, a.aim), -1.05, 1.05))
+    pelvis = roll(pelvis, m.drop.x + (m.bank?.x ?? 0) * 0.5 + (shambleMod?.pelvisRollAdd ?? 0))
     // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
     // both leg reaches remain identical. The waist, shoulders and head lean together.
     pelvis = pitch(pelvis, -0.65 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
-    if (profile.torsoLean > 0) pelvis = pitch(pelvis, -0.35 * clamp(profile.torsoLean, 0, 0.35))
+    if (profile.torsoLean > 0) pelvis = pitch(pelvis, -0.35 * clamp(profile.torsoLean, 0, 0.35) - 0.35 * (shambleMod?.torsoPitchAdd ?? 0))
   }
 
   // Lean in the torso's own axes: travel lean and hit pushes come in plan space.
@@ -696,18 +701,18 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   const run = angleDiff(a.legYaw, a.aim) * port * 0.7
   const sw = swingPhase(a, now)
   const blade = a.bare || a.unarmed || enhanced && profile.handPose !== "weapon" ? 0 : BLADE[g]
-  const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x + run - blade * 0.4 * port : a.aim + run + blade * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
+  const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x + (shambleMod?.torsoYawAdd ?? 0) + run - blade * 0.4 * port : a.aim + run + blade * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
   const baseFwd = a.unarmed ? 0.045 + 0.025 * m.run : 0.035 + 0.045 * m.run
   const steadyBase = a.unarmed ? baseFwd : 0.075 + 0.005 * m.run
-  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? baseFwd + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? baseFwd + leanFwd + (shambleMod?.torsoPitchAdd ?? 0) : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const steadyFwd = (a.bare ? 0.2 : 0) + steadyBase + leanFwd - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * (enhanced ? 1 : 2.2) + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
-  torso = roll(torso, side * Math.cos(tb) + (enhanced ? (m.bank?.x ?? 0) : 0) - fwd * Math.sin(tb) * (enhanced ? 0.85 : 0.4))
+  torso = roll(torso, side * Math.cos(tb) + (enhanced ? (m.bank?.x ?? 0) + (shambleMod?.torsoRollAdd ?? 0) : 0) - fwd * Math.sin(tb) * (enhanced ? 0.85 : 0.4))
   if (enhanced) torso = profileTorso(torso, profile)
 
   // Gun: hung off the shoulder line along the exact aim, then recoil, sway, clip tilt and the raise.
@@ -800,15 +805,14 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   let handR = handAt(clip?.right, true)
   const hands = enhanced ? profileHands(torso, profile) : null
   if (hands && !clip) {
-    ;[handL, handR] = hands
-    if (profile.handPose === "reach" && moving > 0) {
-      const lurch = Math.sin(th) * 0.055 * moving
-      const claw = Math.cos(th) * 0.035 * moving
-      handL = [handL[0] + torso.x[0] * lurch, handL[1] + claw, handL[2] + torso.x[2] * lurch]
-      handR = [handR[0] - torso.x[0] * lurch * 0.7, handR[1] - claw * 0.8, handR[2] - torso.x[2] * lurch * 0.7]
-    } else if (profile.handPose === "staff" && moving > 0) {
-      const swing = Math.sin(th) * 0.05 * moving
-      handL = [handL[0] + torso.x[0] * swing, handL[1] + Math.abs(swing) * 0.25, handL[2] + torso.x[2] * swing]
+    if (profile.handPose === "reach") {
+      ;[handL, handR] = shambleHandsFK(torso, a.phase, a.gait, m.run, profile, 0)
+    } else {
+      ;[handL, handR] = hands
+      if (profile.handPose === "staff" && moving > 0) {
+        const swing = Math.sin(th) * 0.05 * moving
+        handL = [handL[0] + torso.x[0] * swing, handL[1] + Math.abs(swing) * 0.25, handL[2] + torso.x[2] * swing]
+      }
     }
   }
   if (a.bare) {
@@ -836,23 +840,24 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   }
 
   const useUnarmedSwing = Boolean(a.unarmed && enhanced && !clip && !a.bare && profile.handPose === "weapon")
+  const useFkArms = Boolean(useUnarmedSwing || (enhanced && !clip && !a.bare && profile.handPose === "reach"))
   if (useUnarmedSwing) {
     ;[handL, handR] = unarmedHands(a, torso, t * 2)
   }
-  const { ua, fa } = useUnarmedSwing ? poseUnarmedArms(torso, handL, handR) : poseArms(torso, handL, handR)
+  const { ua, fa } = useFkArms ? poseUnarmedArms(torso, handL, handR) : poseArms(torso, handL, handR)
 
   // Head follows the aim, looks down at the gun while reloading, with subtle secondary follow-through lag.
   const secLag = enhanced ? (m.secondary?.x ?? 0) - m.bob.x : 0
   let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), a.aim + a.hitTwist.x * 1.6 + clamp(a.aimVel * 0.02, -0.25, 0.25))
-  if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + a.hitTwist.x)
+  if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + (shambleMod?.headYawAdd ?? 0) + a.hitTwist.x)
   const stab = enhanced ? clamp(profile.headStability ?? 0.8, 0, 1) : 0
   const headLean = fwd - (postureX * ca + postureY * sa) * stab
   const baseHeadPitch = enhanced ? (a.unarmed ? -0.015 - 0.045 * m.run : -0.04 - 0.06 * m.run) * (1 - 0.35 * stab) : -0.1
   head = pitch(head, baseHeadPitch - look * 1.1 - a.torsoKick.x * 0.6 - headLean * (0.3 * (1 - 0.55 * stab)) + secLag * 0.45 * (1 - 0.5 * stab) + Math.sin(2 * th) * 0.03 * (1 - 0.7 * stab) * moving)
   head = roll(head, side * 0.5 * (1 - 0.5 * stab) - a.hitTwist.x * 0.5)
   if (enhanced) {
-    if (profile.torsoLean > 0) head = pitch(head, -0.22 * clamp(profile.torsoLean, 0, 0.35) + Math.sin(th) * 0.04 * moving * clamp(profile.footDrag, 0, 1))
-    head = roll(head, clamp(profile.headTilt, -0.3, 0.3))
+    if (profile.torsoLean > 0) head = pitch(head, -0.22 * clamp(profile.torsoLean, 0, 0.35) - (shambleMod?.headPitchAdd ?? 0) + Math.sin(th) * 0.04 * moving * clamp(profile.footDrag, 0, 1))
+    head = roll(head, clamp(profile.headTilt, -0.3, 0.3) + (shambleMod?.headRollAdd ?? 0))
   }
 
   // Legs.
