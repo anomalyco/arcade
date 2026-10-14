@@ -14,6 +14,8 @@ const measuredRuns = Number(process.env.BENCH_RUNS ?? 7)
 const holdMs = Number(process.env.BENCH_HOLD_MS ?? 2000)
 const zombieCount = process.env.BENCH_ZOMBIE_COUNT ? Number(process.env.BENCH_ZOMBIE_COUNT) : null
 const runAblations = process.env.BENCH_ABLATE === "1"
+// Optional Lab overrides for A/B experiments, e.g. BENCH_LAB='{"streetAirHaze":1}'.
+const labOverrides: Record<string, number> = JSON.parse(process.env.BENCH_LAB ?? "{}")
 mkdirSync(out, { recursive: true })
 
 function sampleThermal(): { host: string; thermalPressure: string; pmset: string } {
@@ -178,7 +180,7 @@ try {
     })
 
     for (const scene of scenes) {
-      await page.evaluate(async ({ scene, zombieCount }) => {
+      await page.evaluate(async ({ scene, zombieCount, labOverrides }) => {
         const w = window as any
         const h = w.__arcadeHarness
         h.freeze(true)
@@ -188,6 +190,7 @@ try {
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
+        for (const [key, value] of Object.entries(labOverrides)) h.setLab(key, value)
         h.pose(scene.x, scene.y, -Math.PI / 2)
         await h.step(0)
         const s = h.session()
@@ -232,7 +235,7 @@ try {
         await new Promise(resolve => setTimeout(resolve, 350))
         h.freeze(true)
         await r.device.queue.onSubmittedWorkDone()
-      }, { scene, zombieCount })
+      }, { scene, zombieCount, labOverrides })
 
       await page.locator("canvas").click()
       await page.evaluate(() => {
@@ -244,7 +247,7 @@ try {
       await page.evaluate(ms => new Promise(resolve => setTimeout(resolve, ms)), holdMs)
       await page.keyboard.up("ArrowRight")
 
-      const live = await page.evaluate(async ({ scene, zombieCount }) => {
+      const live = await page.evaluate(async ({ scene, zombieCount, labOverrides }) => {
         const w = window as any
         const h = w.__arcadeHarness
         const s = w.__pacing
@@ -261,6 +264,7 @@ try {
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
+        for (const [key, value] of Object.entries(labOverrides)) h.setLab(key, value)
         h.pose(scene.x, scene.y, -Math.PI / 2)
         const cpuPrepMs: number[] = []
         const cpuVisionStepMs: number[] = []
@@ -324,7 +328,7 @@ try {
           canvas: [canvas.width, canvas.height],
           hidden: document.hidden,
         }
-      }, { scene, zombieCount })
+      }, { scene, zombieCount, labOverrides })
 
       const down = live.inputs.find((e: any) => e.kind === "down")
       const up = live.inputs.find((e: any) => e.kind === "up")
@@ -575,6 +579,7 @@ try {
 
   const output = {
     label,
+    labOverrides,
     recordedAt: new Date().toISOString(),
     note: "GPU queue completion and submission timestamps are not physical display presentation. True display presentation latency is unmeasured.",
     device: {
