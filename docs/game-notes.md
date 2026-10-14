@@ -1068,6 +1068,19 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Report actions above the actor, not in a corner.** Outbreak's `src/hud/` shows every player action as a short
+  DOM callout stacked over the survivor's head: progress rings for reload, search and barricade, item pops that float
+  up (`+5 9mm`), amber warnings (`Out of ammo`), red damage, and dashed noise tags for actions heard 9 m or more away.
+  `ActorFeedback` diffs the actor's state each frame, so `shared/` is unchanged and co-op snapshots can reuse it;
+  `CalloutLayer.callout(actorId, text, kind, { key, progress, duration })` is the API, and a `key` updates a callout in
+  place instead of stacking. Progress sits nearest the head, newest pops on top, at most three per actor (Lab HUD).
+  The anchor is the highest projected point of the head and shoulders, and it lifts over the floating E / Hold E
+  prompt when the two would overlap. Only visible callouts touch the DOM. Metal proof (`scripts/hud-proof.ts`, 14
+  stills): `hud.update` averaged 0.025 ms per frame with three callouts live. In a paired same-page A/B, callout mode
+  spent 0.039 to 0.049 ms per frame in style and layout, against 0.064 to 0.079 ms for the old status line, which
+  rewrote its text every frame. `bench-outbreak` (5 runs): street p95 18.0 ms at realtime 0.996, interior p95
+  18.0 ms at 0.9985.
+
 - **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
   games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and
   tonnes. Blackout converts its +X-forward mesh basis and kilograms; converting the complete rotation basis keeps

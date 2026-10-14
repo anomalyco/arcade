@@ -48,6 +48,7 @@ import {
 } from "./lighting"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor } from "./survivor"
+import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import {
   DEFAULT_OUTBREAK_WEATHER,
@@ -100,6 +101,7 @@ const settings = {
   ...DEFAULT_GROUND_SETTINGS,
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
+  ...DEFAULT_HUD_SETTINGS,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -145,6 +147,8 @@ async function main() {
   const batteryEl = document.querySelector<HTMLElement>("#battery")
   const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
   const hotbarEl = document.querySelector<HTMLElement>("#hotbar")
+  const hud = new OutbreakHud(document.body, settings)
+  hud.avoid(promptEl)
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
     return
@@ -283,6 +287,7 @@ async function main() {
       ],
     },
     ...zombieControls,
+    ...hudControls,
     {
       key: "diagnostic",
       label: "Contribution",
@@ -517,6 +522,7 @@ async function main() {
     },
     (key) => {
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
+      if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
       if (key === "zombieCount") {
         session.ai.config.zombieCount = settings.zombieCount
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
@@ -832,6 +838,7 @@ async function main() {
     zombieCrowd.reset()
     combatFx.reset()
     ambientMotion.reset()
+    hud.reset()
     weatherController.reset(nextSeed)
     level()
     scenery = new SceneryMemory()
@@ -911,12 +918,23 @@ async function main() {
       const label = item
         ? `${esc(item.shortLabel)}${item.kind === "flashlight" ? ` (${esc(fKey)})` : item.count && item.count > 1 ? ` ×${item.count}` : ""}`
         : "—"
-      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
+      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!item}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
     }).join("")
+  }
+  const syncStatus = () => {
+    if (hud.logMode) status.textContent = formatStatus()
+    else {
+      const weather =
+        settings.weatherEnabled && settings.weatherPreset !== "clear"
+          ? (WEATHER_PRESETS[settings.weatherPreset]?.label ?? settings.weatherPreset)
+          : ""
+      const summary = hud.summary(session.view, weather)
+      if (summary !== null) status.textContent = summary
+    }
   }
   onKeyLayoutChange(() => {
     lastHotbarKey = ""
-    status.textContent = formatStatus()
+    syncStatus()
     syncWorldPrompt(innerWidth, innerHeight)
     syncHotbar()
   })
@@ -1274,7 +1292,8 @@ async function main() {
       batteryEl.style.opacity =
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
-    status.textContent = formatStatus()
+    hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker, coop.net?.id || "player")
+    syncStatus()
     coop.overlay(cam, w, h, town, vision)
     syncWorldPrompt(w, h)
     syncHotbar()
@@ -1424,6 +1443,8 @@ async function main() {
       },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
+    callouts: () =>
+      hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     coop: () => coop.inspect(),
     reset,
     freeze: (value = true) => {
@@ -1454,6 +1475,7 @@ async function main() {
         ;(settings as Record<string, unknown>)[key] = value
       }
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
+      if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
       if (key === "zombieCount") {
         session.ai.config.zombieCount = Number(settings.zombieCount)
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
