@@ -22,7 +22,7 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...DEFAULT_STAMINA_TUNING, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: .92, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...DEFAULT_STAMINA_TUNING, ...zombieTuning }
 const controls: LabControl[] = [
   ...staminaControls,
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
@@ -36,9 +36,11 @@ const controls: LabControl[] = [
   { key: "shroud", label: "Explored shroud", group: "Vision", min: .02, max: .4, step: .01 },
   { key: "exposure", label: "Exposure", group: "Look", min: .5, max: 2, step: .05 },
   { key: "skyFill", label: "Sky fill", group: "Look", min: 0, max: 1.5, step: .05 },
+  { key: "moonFill", label: "Moonlight fill", group: "Look", min: 0, max: 2, step: .05 },
   { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
   { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
   { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: .4, step: .02 },
+  { key: "foliageDensity", label: "Foliage density", group: "Generation", min: .5, max: 1.5, step: .05 },
   { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: .05 },
   { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: .05 },
 ]
@@ -68,12 +70,12 @@ async function main() {
   const avatar = new Survivor(renderer)
   const updateProfile = () => { avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined }
   const doorMesh = new Mesh()
-  doorMesh.box(0, .13, -.1, 1.4, 2.3, .1, hex(0x796045), MAT.wall)
-  doorMesh.box(.08, .35, -.11, 1.32, 2.1, -.105, hex(0x8b7253), MAT.wall)
-  doorMesh.box(1.15, 1.1, .1, 1.24, 1.17, .17, hex(0xb9a071))
+  doorMesh.box(0, .13, -.1, 1.4, 2.3, .1, hex(0x463322), MAT.timber)
+  doorMesh.box(.08, .35, -.11, 1.32, 2.1, -.105, hex(0x57402b), MAT.timber)
+  doorMesh.box(1.14, 1.08, .1, 1.25, 1.19, .18, hex(0xc9a96a), MAT.shiny)
   for(const x of [.15,.75])for(const y of [.42,1.36]){
-    doorMesh.box(x,y,.101,x+.48,y+.70,.125,hex(0x91754e))
-    doorMesh.box(x+.035,y+.04,.126,x+.445,y+.66,.132,hex(0x70583d))
+    doorMesh.box(x,y,.101,x+.48,y+.70,.125,hex(0x5b432d),MAT.timber)
+    doorMesh.box(x+.035,y+.04,.126,x+.445,y+.66,.132,hex(0x3a2a1c),MAT.timber)
   }
   const doorModel = renderer.addModel(doorMesh)
   const doorData = new Float32Array(8 * 12)
@@ -126,10 +128,11 @@ async function main() {
   const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
     if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
-    if (key === "houseSeed" || key === "terrain") regenerate()
+    if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
   })
   let vertices = 0
   function level() {
+    session.view.town.foliageDensity = settings.foliageDensity
     const data=buildLevel(session.view.town)
     vertices=[...data.chunks,...data.glass].reduce((n,c)=>n+c.data.byteLength/24,0)
     renderer.setLevel(data)
@@ -221,17 +224,17 @@ async function main() {
       const lx = lamp.x + (lamp.kind === "street" ? .55 : 0), ly = lamp.y, r = lamp.radius
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
       if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
-      const color=lamp.kind==="street"?[1,.76,.52]:lamp.kind==="porch"?[1,.60,.30]:[1,.54,.24]
-      const cone=lamp.kind==="window"?[0,1,-.3,1]:[0,0,0,lamp.kind==="room"?-1:0]
-      lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.18:.22, i], count++ * LIGHT_FLOATS)
+      const color=lamp.kind==="street"?[1,.76,.50]:lamp.kind==="porch"?[1,.62,.24]:lamp.kind==="window"?[1,.58,.22]:[1,.56,.20]
+      const cone=lamp.kind==="window"?[0,1,.10,1]:[0,0,0,(lamp.kind==="room"||lamp.kind==="porch")?-1:0]
+      lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.16:.22, i], count++ * LIGHT_FLOATS)
     }
     const cutX = activePeek ? activePeek.cutX : p.x
     const cutY = activePeek ? activePeek.cutY : p.y
     const cutFlag = activePeek ? 1 + peekBlend : 1
-    const cutRadius = activePeek ? .48 + .08 * peekBlend : .48
+    const cutRadius = activePeek ? .22 + .08 * peekBlend : .22
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
-    frame.set([cutX, cutY, cutFlag, cutRadius], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
+    frame.set([cutX, cutY, cutFlag, cutRadius], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*settings.moonFill*(1-settings.weather*.85)], 28)
     const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
     const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
     const focus = cam.project(focusX, 1, focusY, w, h)
@@ -363,7 +366,7 @@ async function main() {
       settings[key] = value
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
       if (key === "hour") session.view.hour = wrapHour(value)
-      if (key === "houseSeed" || key === "terrain") regenerate()
+      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
     },
     pose(x: number, y: number, aim: number) {
       Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0, peekingWindowId: null, lastPeekedWindowId: null, cycledTargetId: null, cycledActionIndex: 0, vault: null })
