@@ -968,11 +968,15 @@ export const surfaceMaterial = /* wgsl */ `
     }
     if (mat == 22) {
       if (o.aux < -0.02) {
-        // Curved 3D grass blade: preserve per-vertex root-to-tip gradient, add subtle vein grain and grazing tip sheen.
+        // Above the Grassland curved 3D grass blade: root contact AO, vascular vein striation,
+        // travelling wind-crest highlight shimmer (#c8e64a), and height-gated specular gloss.
         let bladeT = clamp(-o.aux, 0.0, 1.0);
-        let vein = grain(o.world.xz * 2.2 + vec2f(o.world.y * 1.4), 14.0) * 0.16;
-        albedo *= (0.94 + vein) * mix(0.76, 1.14, bladeT);
-        gloss = vec2f(48.0, 0.22 * bladeT);
+        let rootAO = mix(0.26, 1.0, smoothstep(0.0, 0.26, bladeT));
+        let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.18;
+        let crestNoise = surfaceNoise(o.world.xz * 0.32 + vec2f(F.cam.w * 0.28, F.cam.w * 0.16));
+        let crestHighlight = smoothstep(0.42, 0.68, crestNoise) * 0.34 * bladeT;
+        albedo = mix(albedo * (0.94 + vein), vec3f(0.52, 0.68, 0.16), crestHighlight) * rootAO * mix(0.84, 1.18, pow(bladeT, 0.65));
+        gloss = vec2f(48.0, 0.28 * bladeT);
       } else {
         let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
         albedo = s.albedo;

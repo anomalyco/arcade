@@ -217,10 +217,12 @@ struct VOut {
     if (kind == 0) {
       if (isAfter) {
         var r = defaultMaterialRecipe(4);
-        r.u2.x = clamp(0.45 + U.extra.y * 0.45, 0.0, 1.0);
-        r.u2.z = clamp(0.25 + U.extra.x * 0.55, 0.0, 1.0);
+        r.u2.x = clamp(0.35 + U.extra.y * 0.40, 0.0, 1.0);
+        r.u2.z = clamp(U.extra.x * 0.45, 0.0, 1.0);
+        r.u2.w = clamp(U.extra.x * 0.50, 0.0, 1.0);
         let s = evalGrassSoil(p, albedo, false, r);
-        albedo = s.albedo;
+        // Anchor under-turf toward deep emerald-moss (#2a4a10) so dark grass roots fuse into the ground
+        albedo = mix(s.albedo, albedo * vec3f(0.58, 0.82, 0.42), 0.46 * (1.0 - U.extra.x * 0.6));
         gloss = s.gloss;
         cavity = s.cavity;
       } else {
@@ -246,10 +248,13 @@ struct VOut {
       albedo *= 0.82 + surfaceNoise(o.world.xz * 4.0 + o.world.y) * 0.30;
     } else if (o.aux < -0.02) {
       let bladeT = clamp(-o.aux, 0.0, 1.0);
-      let vein = grain(o.world.xz * 2.2 + vec2f(o.world.y * 1.4), 14.0) * 0.16;
-      albedo *= (0.94 + vein) * mix(0.76, 1.14, bladeT);
-      gloss = vec2f(48.0, 0.24 * bladeT);
-      cavity = mix(0.55, 1.0, bladeT);
+      let rootAO = mix(0.24, 1.0, smoothstep(0.0, 0.26, bladeT));
+      let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.18;
+      let crestNoise = surfaceNoise(o.world.xz * 0.32 + vec2f(U.config.x * 0.28, U.config.x * 0.16));
+      let crestHighlight = smoothstep(0.42, 0.68, crestNoise) * 0.36 * bladeT;
+      albedo = mix(albedo * (0.94 + vein), vec3f(0.54, 0.72, 0.18), crestHighlight) * mix(0.84, 1.18, pow(bladeT, 0.65));
+      gloss = vec2f(48.0, 0.30 * bladeT);
+      cavity = rootAO;
     } else {
       let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
       albedo = s.albedo;
@@ -306,6 +311,11 @@ struct VOut {
   }
 
   var color = albedo * diff * 1.15 + spec;
+  if (isFoliage && isAfter) {
+    let fresnel = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.24 * tipWeight;
+    let chloro = mix(vec3f(0.16, 0.45, 0.04), vec3f(0.55, 0.85, 0.10), sqrt(clamp(tipWeight, 0.0, 1.0)));
+    color += albedo * chloro * transStrength * 0.35 + albedo * vec3f(0.50, 0.85, 0.30) * fresnel;
+  }
 
   if (compareMode == 2) {
     let splitLine = 1.0 - smoothstep(max(surfaceFootprint * 0.75, 0.008), max(surfaceFootprint * 1.8, 0.024), abs(o.world.x - splitX));
@@ -347,24 +357,24 @@ function buildAfterFoliageMesh(seed: number, params: Readonly<FoliageParams>): A
   buildFoliageTree(m, -2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
   buildFoliageTree(m, 2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
 
-  // Lush, clumped curved 3D grass meadow across the lawn patch (Botanics / Ghost of Tsushima density)
+  // Lush, clumped curved 3D grass meadow across the lawn patch (Above the Grassland + Botanics density)
   const grassRng = new Rng(seed ^ 0x51a9)
   const clumps = scatterGrassClumps({
     seed: seed ^ 0x2c91,
-    bounds: [-4.9, -3.5, 4.9, 2.52],
-    clusterCount: 165,
-    tuftsPerCluster: 5,
+    bounds: [-4.95, -3.55, 4.95, 2.54],
+    clusterCount: 280,
+    tuftsPerCluster: 6,
     params,
     avoid: (x, z) =>
-      Math.hypot(x, z + 0.35) < 0.38 ||
-      Math.hypot(x + 2.7, z + 1.5) < 0.35 ||
-      Math.hypot(x - 2.7, z + 1.5) < 0.35,
+      Math.hypot(x, z + 0.35) < 0.36 ||
+      Math.hypot(x + 2.7, z + 1.5) < 0.32 ||
+      Math.hypot(x - 2.7, z + 1.5) < 0.32,
   })
   for (const c of clumps) {
     emitGrassTuft(m, c.x, 0.0, c.z, {
       bladeCount: c.blades + 1,
-      radius: c.radius * 1.15,
-      height: c.height * 1.15,
+      radius: c.radius * 1.18,
+      height: c.height * 1.18,
       width: c.width,
       curvature: c.curvature,
       leanAngle: c.leanAngle,

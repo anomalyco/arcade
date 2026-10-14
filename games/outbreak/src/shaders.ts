@@ -94,12 +94,16 @@ fn eyeVisible(p: vec2f) -> f32 {
     col = col * mix(0.62, 1.08, eave) + vec3f(0.005, 0.010, 0.022) * F.ambient.w * eave * max(0.0, n.y);
   }
   if(mat == 22) {
-    // Subsurface back-lit translucency for peripheral leaf tips and curved grass blades.
+    // Above the Grassland + Botanics subsurface chlorophyll translucency & 4th-power grazing Fresnel rim.
     let tipWeight = clamp(abs(o.aux), 0.0, 1.2);
     let keyDir = normalize(F.monitorBounds.xyz);
-    let backSun = max(0.0, dot(-n, keyDir)) * F.ambient.w * 0.42 * tipWeight;
-    let lampTrans = spill(o.world) * 0.14 * tipWeight;
-    col += o.color * (vec3f(0.95, 0.86, 0.52) * backSun + lampTrans);
+    let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
+    let backNormal = max(0.0, dot(-n, keyDir));
+    let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.48 * tipWeight;
+    let chloroTint = mix(vec3f(0.18, 0.46, 0.04), vec3f(0.58, 0.85, 0.12), sqrt(clamp(tipWeight, 0.0, 1.0)));
+    let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.22 * tipWeight * F.ambient.w;
+    let lampTrans = spill(o.world) * 0.16 * tipWeight;
+    col += o.color * (chloroTint * transLobe + vec3f(0.50, 0.85, 0.30) * fresnelRim + lampTrans);
   }
   // Scenery and illumination are not an enemy-visibility mask. Exterior form remains readable.
   // Dynamic entities use the authoritative CPU Vision before submitting a draw (the local survivor is exempt).

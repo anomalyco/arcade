@@ -116,19 +116,19 @@ export type FoliagePresetDef = {
 
 const COMMON_GRASS_DEFAULTS = {
   grassDensity: 1.0,
-  bladeHeight: 0.22,
-  bladeWidth: 0.045,
-  bladeCurvature: 0.62,
-  grassClumping: 0.78,
-  rootColorR: 0.16,
-  rootColorG: 0.23,
-  rootColorB: 0.11,
-  tipColorR: 0.43,
-  tipColorG: 0.54,
-  tipColorB: 0.27,
+  bladeHeight: 0.28,
+  bladeWidth: 0.052,
+  bladeCurvature: 0.56,
+  grassClumping: 0.80,
+  rootColorR: 0.14,
+  rootColorG: 0.24,
+  rootColorB: 0.09,
+  tipColorR: 0.42,
+  tipColorG: 0.56,
+  tipColorB: 0.24,
   grassVariation: 0.58,
-  dryPatches: 0.28,
-  grassWind: 0.42,
+  dryPatches: 0.26,
+  grassWind: 0.46,
   distanceFade: 0.55,
 } as const
 
@@ -1094,8 +1094,10 @@ export function buildLegacyFoliageTree(
 }
 
 /**
- * Emits a single curved, tapered 2-segment 3D grass blade with rounded cross-section normals,
- * root-to-tip colour/AO gradient, and normalized arc coordinate encoded in `aux < 0`.
+ * Emits a single curved, parabolically tapered (1 - y^2) 2-segment 3D grass blade
+ * combining Above the Grassland's quadratic tilt + cubic curvature (y^3), arc-length height drop,
+ * cylindrical cross-section normal rotation (±55°), power-curve root-to-tip colour (y^0.65),
+ * and strong root contact AO.
  */
 export function emitCurvedGrassBlade(
   m: Mesh,
@@ -1111,21 +1113,23 @@ export function emitCurvedGrassBlade(
 ): void {
   const dirX = Math.cos(leanAngle)
   const dirZ = Math.sin(leanAngle)
-  // Perpendicular horizontal axis across blade width
   const sideX = -dirZ
   const sideZ = dirX
 
-  const bend1 = height * curvature * 0.28
-  const bend2 = height * curvature * 0.72
-  const y1 = by + height * (0.52 - curvature * 0.05)
-  const y2 = by + height * Math.max(0.58, 1.0 - curvature * 0.18)
+  // Above the Grassland arch profile: quadratic tilt (y^2) + cubic curvature (y^3) with arc-length height compensation
+  const yFrac1 = 0.52
+  const bend1 = height * (0.18 * yFrac1 * yFrac1 + curvature * 0.62 * yFrac1 * yFrac1 * yFrac1)
+  const bend2 = height * (0.18 + curvature * 0.68)
+  const y1 = by + height * yFrac1 - bend1 * bend1 * 0.18
+  const y2 = by + Math.max(height * 0.56, height - bend2 * bend2 * 0.20)
 
   const c0: Point = [bx, by, bz]
   const c1: Point = [bx + dirX * bend1, y1, bz + dirZ * bend1]
   const c2: Point = [bx + dirX * bend2, y2, bz + dirZ * bend2]
 
+  // Parabolic width taper w(y) = w0 * (1 - y^2) keeps lower blade full and lush
   const w0 = width * 0.5
-  const w1 = width * 0.28
+  const w1 = width * 0.5 * (1 - yFrac1 * yFrac1)
 
   const p0L: Point = [c0[0] - sideX * w0, c0[1], c0[2] - sideZ * w0]
   const p0R: Point = [c0[0] + sideX * w0, c0[1], c0[2] + sideZ * w0]
@@ -1133,28 +1137,31 @@ export function emitCurvedGrassBlade(
   const p1R: Point = [c1[0] + sideX * w1, c1[1], c1[2] + sideZ * w1]
   const p2Tip: Point = c2
 
-  // Compute smooth spine normal + Ghost of Tsushima lateral normal rounding (`±0.36`)
-  const spineN0 = normalize3(-dirX * 0.35, 0.92, -dirZ * 0.35)
-  const spineN1 = normalize3(-dirX * (0.42 + curvature * 0.25), 0.86, -dirZ * (0.42 + curvature * 0.25))
-  const spineN2 = normalize3(-dirX * (0.28 + curvature * 0.30), 0.92, -dirZ * (0.28 + curvature * 0.30))
+  // Cylindrical cross-section normal rotation (normalRounding = 0.77 -> ±55° rotation toward side tangent)
+  const spineN0 = normalize3(-dirX * 0.28, 0.96, -dirZ * 0.28)
+  const spineN1 = normalize3(-dirX * (0.38 + curvature * 0.28), 0.88, -dirZ * (0.38 + curvature * 0.28))
+  const spineN2 = normalize3(-dirX * (0.25 + curvature * 0.32), 0.92, -dirZ * (0.25 + curvature * 0.32))
 
-  const round = 0.36
-  const n0L = normalize3(spineN0[0] - sideX * round, spineN0[1], spineN0[2] - sideZ * round)
-  const n0R = normalize3(spineN0[0] + sideX * round, spineN0[1], spineN0[2] + sideZ * round)
-  const n1L = normalize3(spineN1[0] - sideX * round, spineN1[1], spineN1[2] - sideZ * round)
-  const n1R = normalize3(spineN1[0] + sideX * round, spineN1[1], spineN1[2] + sideZ * round)
+  const cosR = 0.58 // cos(0.77 * 0.4 * PI)
+  const sinR = 0.81 // sin(0.77 * 0.4 * PI)
+  const n0L = normalize3(spineN0[0] * cosR - sideX * sinR, spineN0[1] * cosR, spineN0[2] * cosR - sideZ * sinR)
+  const n0R = normalize3(spineN0[0] * cosR + sideX * sinR, spineN0[1] * cosR, spineN0[2] * cosR + sideZ * sinR)
+  const n1L = normalize3(spineN1[0] * cosR - sideX * sinR, spineN1[1] * cosR, spineN1[2] * cosR - sideZ * sinR)
+  const n1R = normalize3(spineN1[0] * cosR + sideX * sinR, spineN1[1] * cosR, spineN1[2] * cosR + sideZ * sinR)
 
-  const midCol = mixRgb(rootCol, tipCol, 0.58)
+  // Power-curve root-to-tip colour (y^0.65) + strong root contact AO
+  const rootGrounded = scaleRgb(rootCol, 0.52)
+  const midCol = mixRgb(rootCol, tipCol, Math.pow(yFrac1, 0.65))
   const aux0 = -0.05
   const aux1 = -0.52
   const aux2 = -1.0
 
   // Segment 0 quad (2 triangles)
-  m.vert(p0L, n0L, rootCol, MAT.foliage, aux0)
-  m.vert(p0R, n0R, rootCol, MAT.foliage, aux0)
+  m.vert(p0L, n0L, rootGrounded, MAT.foliage, aux0)
+  m.vert(p0R, n0R, rootGrounded, MAT.foliage, aux0)
   m.vert(p1R, n1R, midCol, MAT.foliage, aux1)
 
-  m.vert(p0L, n0L, rootCol, MAT.foliage, aux0)
+  m.vert(p0L, n0L, rootGrounded, MAT.foliage, aux0)
   m.vert(p1R, n1R, midCol, MAT.foliage, aux1)
   m.vert(p1L, n1L, midCol, MAT.foliage, aux1)
 
@@ -1377,21 +1384,31 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     p.y -= (abs(dx) + abs(dz)) * 0.14;
     n = normalize(n + vec3f(dx * 1.4, 0.0, dz * 1.4));
   } else if (aux < -0.02) {
+    // Above the Grassland 3-wave directional wind field (primary swell + diagonal gust + cross-turbulence + tip flutter)
     let bladeT = clamp(-aux, 0.0, 1.0);
     let bendWeight = bladeT * bladeT;
     let dist = length(eye.xz - pos.xz);
-    let fade = 1.0 - smoothstep(26.0, 62.0, dist) * cfg.u1.y * 0.65;
-    let wavePhase = pos.x * 0.85 + pos.z * 0.62;
-    let ripple = sin(time * 3.2 + wavePhase) + 0.6 * sin(time * 1.45 + pos.x * 0.35 - pos.z * 0.48 + 2.1);
-    let gust = 0.75 + 0.45 * sin(time * 0.85 + pos.x * 0.22 + pos.z * 0.19);
-    let windAmt = cfg.u1.x * 0.085 * bendWeight * gust * fade;
-    let wx = ripple * windAmt;
-    let wz = cos(time * 2.5 + wavePhase * 0.8) * windAmt * 0.65;
+    let fade = 1.0 - smoothstep(28.0, 66.0, dist) * cfg.u1.y * 0.65;
+    let windDir = vec2f(0.88, 0.47);
+    let crossDir = vec2f(-0.47, 0.88);
+    let freq = 0.38;
+    let speed = 1.35;
+    let l = dot(pos.xz, windDir) * freq + time * speed;
+    let u = dot(pos.xz, crossDir) * freq;
+    let phi = fract(sin(dot(floor(pos.xz * 4.0), vec2f(12.9898, 78.233))) * 43758.5453) * 6.28318;
+    let swell = sin(l + phi);
+    let gust = sin(l * 0.37 + u * 0.90 + time * speed * 0.31 + phi * 0.73);
+    let turb = sin(l * 2.30 - u * 1.70 + time * speed * 1.90 + phi * 1.37);
+    let flutter = sin(time * 5.0 + pos.x * 0.35 + pos.z * 0.22 + bladeT * 2.5 + phi) * 0.16;
+    let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.u1.x * 0.11 * bendWeight * fade;
+    let across = (gust * 0.22 + turb * 0.12 + flutter * 0.6) * cfg.u1.x * 0.09 * bendWeight * fade;
+    let wx = windDir.x * along + crossDir.x * across;
+    let wz = windDir.y * along + crossDir.y * across;
     p.x += wx;
     p.z += wz;
-    // Arc-length preservation: horizontal deflection slightly lowers blade tip height.
-    p.y = (p.y * mix(1.0, fade, 0.35)) - (abs(wx) + abs(wz)) * 0.28 * bladeT;
-    n = normalize(n + vec3f(wx * 3.2, 0.0, wz * 3.2));
+    // Arc-length preservation: horizontal bend lowers blade tip height.
+    p.y -= (wx * wx + wz * wz) * 1.65 + (abs(wx) + abs(wz)) * 0.16 * bladeT;
+    n = normalize(n + vec3f(wx * 3.4, 0.0, wz * 3.4));
   }
   return array<vec3f, 2>(p, n);
 }
