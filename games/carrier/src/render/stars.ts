@@ -1,3 +1,4 @@
+import { mulberry32 } from "../../shared/rng"
 import { ATMOSPHERE_WGSL } from "./atmosphere"
 import { FRAME_BINDING_WGSL } from "./frame"
 import type { RelView } from "./ocean-view"
@@ -263,14 +264,7 @@ export class Stars implements ScenePass {
  * circle (the Milky Way), and BLOBS soft glows along it (w = −angular radius). Deterministic.
  */
 function starField(seed: number): Float32Array<ArrayBuffer> {
-  let s = seed >>> 0
-  const rnd = () => {
-    s = (s + 0x6d2b79f5) >>> 0
-    let t = s
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
+  const rnd = mulberry32(seed)
   const gauss = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, rnd()))) * Math.cos(2 * Math.PI * rnd())
   const out = new Float32Array(COUNT * 4)
   const put = (i: number, x: number, y: number, z: number, w: number) => {

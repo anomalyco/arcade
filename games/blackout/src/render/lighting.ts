@@ -1,4 +1,5 @@
 import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS } from "../../shared/config"
+import { RectGrid, type Rect } from "../../shared/geom"
 import type { LightDef, LightKind, MapDef, MapKind, PropKind } from "../../shared/maps"
 import { deskMonitorLights } from "./models"
 
@@ -98,48 +99,36 @@ export class LightCuller {
   occCount = 0
   private map: MapDef | null = null
   private rects: Float32Array = new Float32Array(0)
-  private grid = new Map<number, number[]>()
-  private stamp = new Uint32Array(0)
-  private stampN = 0
+  private rectGrid: RectGrid | null = null
+  private queryScratch: number[] = []
   private cache = new Map<number, Float32Array>()
   private flick: number[] = []
   private order: { l: LightDef; d: number }[] = []
   private monitorLights: LightDef[] = []
   private chairs = true
   monitorIntensity = 1
-  private static CELL = 4
 
   setMap(map: MapDef, chairs = this.chairs): void {
     this.chairs = chairs
     this.map = map
     this.monitorLights = deskMonitorLights(map)
     this.cache.clear()
-    this.grid.clear()
     const list: number[] = []
-    for (const w of map.walls) list.push(...w.rect, w.h)
+    const rectList: Rect[] = []
+    for (const w of map.walls) {
+      list.push(...w.rect, w.h)
+      rectList.push(w.rect)
+    }
     for (const p of map.props) {
       if (p.kind === "chair" && !chairs) continue
       const h = p.solid || p.kind === "chair" ? PROP_H[p.kind] : undefined
-      if (h !== undefined) list.push(...p.rect, p.kind === "crate" ? Math.min(p.rect[2] - p.rect[0], p.rect[3] - p.rect[1]) * 0.9 : h)
+      if (h !== undefined) {
+        list.push(...p.rect, p.kind === "crate" ? Math.min(p.rect[2] - p.rect[0], p.rect[3] - p.rect[1]) * 0.9 : h)
+        rectList.push(p.rect)
+      }
     }
     this.rects = new Float32Array(list)
-    const n = list.length / 5
-    this.stamp = new Uint32Array(n)
-    const C = LightCuller.CELL
-    for (let i = 0; i < n; i++) {
-      const o = i * 5
-      const cx0 = Math.floor(this.rects[o]! / C)
-      const cy0 = Math.floor(this.rects[o + 1]! / C)
-      const cx1 = Math.floor(this.rects[o + 2]! / C)
-      const cy1 = Math.floor(this.rects[o + 3]! / C)
-      for (let cy = cy0; cy <= cy1; cy++)
-        for (let cx = cx0; cx <= cx1; cx++) {
-          const k = cy * 4096 + cx
-          let cell = this.grid.get(k)
-          if (!cell) this.grid.set(k, (cell = []))
-          cell.push(i)
-        }
-    }
+    this.rectGrid = new RectGrid(rectList)
     this.flick = map.lights.map(flickers)
   }
 
@@ -149,24 +138,16 @@ export class LightCuller {
 
   /** Occluders within reach of a light at (x, y), radius r, packed. */
   private gather(x: number, y: number, r: number): Float32Array {
-    const C = LightCuller.CELL
+    if (!this.rectGrid) return new Float32Array(0)
     const out: number[] = []
-    this.stampN++
     const R = this.rects
-    for (let cy = Math.floor((y - r) / C); cy <= Math.floor((y + r) / C); cy++)
-      for (let cx = Math.floor((x - r) / C); cx <= Math.floor((x + r) / C); cx++) {
-        const cell = this.grid.get(cy * 4096 + cx)
-        if (!cell) continue
-        for (const i of cell) {
-          if (this.stamp[i] === this.stampN) continue
-          this.stamp[i] = this.stampN
-          const o = i * 5
-          const dx = Math.max(R[o]! - x, 0, x - R[o + 2]!)
-          const dy = Math.max(R[o + 1]! - y, 0, y - R[o + 3]!)
-          if (dx * dx + dy * dy > r * r) continue
-          out.push(R[o]!, R[o + 1]!, R[o + 2]!, R[o + 3]!, R[o + 4]!, 0, 0, 0)
-        }
-      }
+    for (const i of this.rectGrid.query(x - r, y - r, x + r, y + r, this.queryScratch)) {
+      const o = i * 5
+      const dx = Math.max(R[o]! - x, 0, x - R[o + 2]!)
+      const dy = Math.max(R[o + 1]! - y, 0, y - R[o + 3]!)
+      if (dx * dx + dy * dy > r * r) continue
+      out.push(R[o]!, R[o + 1]!, R[o + 2]!, R[o + 3]!, R[o + 4]!, 0, 0, 0)
+    }
     return new Float32Array(out)
   }
 

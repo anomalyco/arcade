@@ -1,4 +1,6 @@
+import { mulberry32 } from "../sim/rng"
 import { CUE_BY_ID, DEFAULT_CUES } from "./cues"
+export { mulberry32 } from "../sim/rng"
 import { DEFAULT_SAMPLE_MANIFEST, defaultSfxBaseUrl, SampleBank } from "./manifest"
 import { clamp, fallTime, holdParam, scheduleSynthLayer, smoothParam, type ScheduledLayerNodes } from "./synth"
 import type {
@@ -22,16 +24,6 @@ import type {
 
 const CATEGORIES: readonly MixCategory[] = ["engine", "tyre", "impact", "ambience", "spell", "ui"]
 const SOUND_SPEED = 260
-
-export function mulberry32(seed: number): () => number {
-  let a = seed | 0
-  return () => {
-    a = (a + 0x6d2b79f5) | 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 /**
  * 2D segment/AABB slab test at street/room height.
