@@ -10,6 +10,7 @@ import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
+import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
 import {
   LOOK_UNIFORM_FLOATS,
   createLookSettings,
@@ -68,6 +69,7 @@ export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: num
 export type FrameInput = {
   splatter?:Splatter
   fxParticles?: Particles
+  weather?: WeatherPrepareInput | null
   smoke?: SmokeVolumes
   smokeEnabled?: boolean
   frame: Float32Array<ArrayBuffer>
@@ -103,6 +105,7 @@ export type FrameInput = {
 export class Renderer {
   private splatterRenderer?:SplatterRenderer
   private particleRenderer?:ParticleRenderer
+  private weatherRenderer?:WeatherRenderer
   private readonly splatterEye=new Float32Array(3)
   readonly smokeRenderer: VolumeRenderer
   private readonly smokeMatrix = new Float32Array(16)
@@ -700,6 +703,10 @@ export class Renderer {
       u[23] = pLights
       this.particleRenderer.upload(f.fxParticles)
     }
+    if (f.weather) {
+      this.weatherRenderer ??= new WeatherRenderer(d, HDR, DEPTH, SAMPLES)
+      this.weatherRenderer.prepare(f.weather)
+    }
     if (motion) this.prepareMotion()
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
     const effectiveCompare = f.lookCompare ?? this.activeLookCompare
@@ -875,6 +882,7 @@ export class Renderer {
     }
     if(f.splatter)this.splatterRenderer!.draw(pass,motion)
     if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion)
+    if(f.weather)this.weatherRenderer!.draw(pass,motion)
     pass.end()
 
     if (f.smoke && f.smokeEnabled && f.smoke.count) {

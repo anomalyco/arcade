@@ -143,6 +143,32 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
+  `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
+  share one `WeatherSettings` contract and six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`) across the
+  unified Lab (`/arcade/lab/?section=weather`) and Outbreak (`Renderer.draw` via `FrameInput.weather`).
+  - In top-down / three-quarter views (`zoom = 34–46 m`, `pitch = 1.1 rad`), the camera eye sits `30–40 m` above and
+    south of the visible ground patch; anchoring the wrapped two-layer streak/snowflake volume (`24 m` near + `42 m`
+    far), ground splash rings/crowns (`26 m`), and mist billows on `focusXZ` (`anchor = [focusX, groundY, focusZ]`)
+    instead of `eye` keeps every droplet and splash inside the visible streetlamp pools and flashlight cone.
+  - `WeatherRenderer` evaluates up to 12 active scene lights (point lamps + directional cones) in the vertex shader with
+    a forward/backscatter Mie boost, scaling opacity by `litOnly` (`0..1`) so rain outside practical pools fades into
+    darkness while drops slicing through the survivor's flashlight beam or 2100 K sodium streetlamp flare brightly. Up
+    to 8 building interior AABBs (`excludeRects`) cull indoor drops so cutaway rooms stay dry while roof overhang
+    segments (`eaves`) emit concentrated drip lines. Omitting `discard` in premultiplied-alpha `streakFs`/`splashFs`/`mistFs`
+    preserves Apple Silicon TBDR early-Z, and folding `OL.u7` (`wetness`, `puddleCoverage`, `rippleIntensity`, `snowAmount`)
+    into `applySceneLightBounceAndHaze` and `evalFlashlightBeam` avoids crossing the 32-register SIMD occupancy cliff in
+    `fsSolid`.
+  - Across 7 alternating Metal rounds in the Lab (`1280×800`, `perf/weather-lab.json`), whole-frame GPU medians are
+    **`1.32 ms` (`Clear`)**, **`1.39 ms` (`Drizzle`)**, **`1.72 ms` (`Rain`)**, **`1.53 ms` (`Storm`)**, **`1.26 ms` (`Fog`)**,
+    and **`1.28 ms` (`Snow`)**. In Outbreak (`1000×680`), whole-frame GPU medians are **`3.85 / 3.69 / 3.37 / 3.24 / 3.11 / 2.99 ms`**
+    on the street and **`7.20 / 7.37 / 7.29 / 7.49 / 7.59 / 7.37 ms`** in the interior across `Clear / Drizzle / Rain / Storm / Fog / Snow`.
+    In full-resolution `3456×1894` `bench-outbreak.ts` (1 warmup + 7 runs), **Rain** measures **`18.200 ms` street `p95`**
+    (`MAD 0.300`, `realtime 0.9967`, `15.605 ms` GPU) and **`18.400 ms` interior `p95`** (`MAD 0.200`, `realtime 0.9959`,
+    `15.915 ms` GPU); **Storm** measures **`18.000 ms` street `p95`** (`MAD 0.400`, `realtime 0.9963`, `15.711 ms` GPU)
+    and **`18.300 ms` interior `p95`** (`MAD 0.400`, `realtime 0.9980`, `16.061 ms` GPU). Evidence: `perf/weather-lab.json`
+    and `~/code/home/artifacts/2026-10-14-weather/`.
+
 - **Bucket cuttable walls into 2D `(xBand, zBand)` tiles and partition `shadowLightCount` before shadowless lights.**
   In Release 5 (combining `outbreak-lighting`, `architecture-materials`, `ground-clutter`, and `foliage-lab`), 1D `zBand` wall chunking in `games/outbreak/src/level.ts` (`screenChunks`) merged all walls across the 15 m width of a house into one `cutBox`, forcing the entire house's walls into the `discard` pipeline (`levelCut`) whenever the player walked through the hallway. Bucketing `screenChunks` by 2D `4m × 4m` `(xBand, zBand)` tiles keeps 85% of house walls in `fsSolid` with Apple TBDR Hidden-Surface Removal intact. Partitioning shadow-casting lights ahead of shadowless lights in `games/outbreak/src/main.ts` (`render.shadowLightCount`), rejecting cone back-hemispheres (`dot(dv, L.cone.xy) <= 0.0`) before `sqrt` in `lightMask`, replacing the second 5-tap `shadowAt` in `evalFlashlightBeam` with a 1-ray polar check, and precomputing `groundY` per drifter/hinge track in `OutbreakAmbientMotion` cut 3456×1894 M5 Max Metal GPU medians from **17.912→15.450 ms** (street) and **18.793→16.016 ms** (interior), and fresh-submit `p95` from **22.00→18.10 ms** (street, MAD 0.20 ms) and **22.50→19.80 ms** (interior, MAD 0.90 ms) across 1 warmup + 7 measured runs, while reducing Primary 70s Sodium combined ΔE2000 from **13.813→6.677 (-51.7%)**.
 

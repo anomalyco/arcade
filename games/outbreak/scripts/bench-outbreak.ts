@@ -9,6 +9,7 @@ import { createServer } from "vite"
 const root = resolve(import.meta.dir, "..")
 const out = resolve(process.env.PERF_OUT ?? "captures/outbreak-bench")
 const label = process.env.BENCH_LABEL ?? "baseline"
+const weatherPreset = process.env.BENCH_WEATHER ?? ""
 const warmupRuns = Number(process.env.BENCH_WARMUP ?? 1)
 const measuredRuns = Number(process.env.BENCH_RUNS ?? 7)
 const holdMs = Number(process.env.BENCH_HOLD_MS ?? 2000)
@@ -177,15 +178,19 @@ try {
     })
 
     for (const scene of scenes) {
-      await page.evaluate(async scene => {
-        const w = window as any
-        const h = w.__arcadeHarness
-        h.freeze(true)
-        h.reset(7)
-        h.setLab("timeScale", 0)
-        h.setLab("zoom", scene.zoom)
-        h.setLab("hour", scene.hour)
-        h.pose(scene.x, scene.y, -Math.PI / 2)
+      await page.evaluate(
+        async ({ scene, weatherPreset }) => {
+          const w = window as any
+          const h = w.__arcadeHarness
+          h.freeze(true)
+          h.reset(7)
+          h.setLab("timeScale", 0)
+          h.setLab("zoom", scene.zoom)
+          h.setLab("hour", scene.hour)
+          if (weatherPreset && typeof h.setWeatherPreset === "function") {
+            h.setWeatherPreset(weatherPreset)
+          }
+          h.pose(scene.x, scene.y, -Math.PI / 2)
         await h.step(0)
         const s = h.session()
         const v = h.vision()
@@ -229,7 +234,9 @@ try {
         await new Promise(resolve => setTimeout(resolve, 350))
         h.freeze(true)
         await r.device.queue.onSubmittedWorkDone()
-      }, scene)
+      },
+      { scene, weatherPreset },
+    )
 
       await page.locator("canvas").click()
       await page.evaluate(() => {
@@ -241,22 +248,26 @@ try {
       await page.evaluate(ms => new Promise(resolve => setTimeout(resolve, ms)), holdMs)
       await page.keyboard.up("ArrowRight")
 
-      const live = await page.evaluate(async scene => {
-        const w = window as any
-        const h = w.__arcadeHarness
-        const s = w.__pacing
-        s.end = performance.now()
-        s.header = h.lab.header.textContent
-        s.active = false
-        h.freeze(true)
-        await h.renderer.device.queue.onSubmittedWorkDone()
+      const live = await page.evaluate(
+        async ({ scene, weatherPreset }) => {
+          const w = window as any
+          const h = w.__arcadeHarness
+          const s = w.__pacing
+          s.end = performance.now()
+          s.header = h.lab.header.textContent
+          s.active = false
+          h.freeze(true)
+          await h.renderer.device.queue.onSubmittedWorkDone()
 
-        // Deterministic 24-step non-overlapping CPU / queue-completion / GPU hardware timestamp profile
-        h.reset(7)
-        h.setLab("timeScale", 0)
-        h.setLab("zoom", scene.zoom)
-        h.setLab("hour", scene.hour)
-        h.pose(scene.x, scene.y, -Math.PI / 2)
+          // Deterministic 24-step non-overlapping CPU / queue-completion / GPU hardware timestamp profile
+          h.reset(7)
+          h.setLab("timeScale", 0)
+          h.setLab("zoom", scene.zoom)
+          h.setLab("hour", scene.hour)
+          if (weatherPreset && typeof h.setWeatherPreset === "function") {
+            h.setWeatherPreset(weatherPreset)
+          }
+          h.pose(scene.x, scene.y, -Math.PI / 2)
         const cpuPrepMs: number[] = []
         const cpuVisionStepMs: number[] = []
         const cpuSimStepMs: number[] = []
@@ -319,7 +330,9 @@ try {
           canvas: [canvas.width, canvas.height],
           hidden: document.hidden,
         }
-      }, scene)
+      },
+      { scene, weatherPreset },
+    )
 
       const down = live.inputs.find((e: any) => e.kind === "down")
       const up = live.inputs.find((e: any) => e.kind === "up")

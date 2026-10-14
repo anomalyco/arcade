@@ -137,6 +137,12 @@ export type OutbreakLightingFrameState = {
   flashlightOutput: number
   flashlightSlot: number
   inInteriorView: boolean
+  weather?: {
+    wetness: number
+    puddleCoverage: number
+    rippleIntensity: number
+    snowAmount: number
+  }
 }
 
 /**
@@ -197,6 +203,11 @@ export function packOutbreakLightingUniforms(
   out[25] = state.playerY
   out[26] = state.playerH
   out[27] = s.exposure
+  // u7: weather surface response (wetness, puddleCoverage, rippleIntensity, snowAmount)
+  out[28] = state.weather?.wetness ?? 0
+  out[29] = state.weather?.puddleCoverage ?? 0
+  out[30] = state.weather?.rippleIntensity ?? 0
+  out[31] = state.weather?.snowAmount ?? 0
   return out
 }
 
@@ -775,7 +786,18 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
   let texAlbedo = (surfCol * 1.48 + baseColor * 0.21);
 
   if (!inRoom) {
-    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool
+    var wetPuddle = 0.0;
+    if (OL.u7.x > 0.01) {
+      if (world.y < 0.35 && n.y > 0.75) {
+        let q = abs(fract(world.xz * vec2f(0.14, 0.11) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
+        wetPuddle = OL.u7.x * (0.45 + 0.85 * q.x * q.y);
+        col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
+      }
+    }
+    if (OL.u7.w > 0.01 && n.y > 0.45) {
+      col = mix(col, vec3f(0.16, 0.20, 0.28) * (0.45 + 0.55 * F.ambient.w) + surfCol * 1.4, OL.u7.w * 0.55 * n.y);
+    }
+    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen
     let sScale = OL.u1.w;
     if (sScale > 0.001) {
       let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
@@ -784,7 +806,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       if (dS2 < 95.0) {
         let sodiumCol = vec3f(1.0, 0.45, 0.09);
         let poolS = exp(-dS2 / select(20.0, 28.0, isInView)) * groundMask;
-        col += texAlbedo * sodiumCol * poolS * select(1.12, 2.75, isInView) * sScale;
+        col += texAlbedo * (1.0 + wetPuddle * OL.u2.y * 1.15) * sodiumCol * poolS * select(1.12, 2.75, isInView) * sScale;
       }
     }
 
@@ -797,7 +819,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       let dPorch2 = dot((world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52), (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52));
       let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView);
       let spill = ((exp(-dWinL2 / 14.5) + exp(-dWinR2 / 14.5)) * wScale * 0.88 + exp(-dPorch2 / 15.5) * pScale * 1.05) * cutZoneScale * groundMask;
-      col += texAlbedo * vec3f(1.0, 0.54, 0.14) * spill * w;
+      col += texAlbedo * vec3f(1.0, 0.54, 0.14) * spill * w * (1.0 + wetPuddle * OL.u2.y * 0.95);
     }
 
     // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0)
@@ -805,7 +827,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     let dp2 = dot(dp * vec2f(0.60, 0.76), dp * vec2f(0.60, 0.76));
     if (!isInView && dp2 < 26.0 && world.y < 0.45 && world.z > 39.9) {
       let pPool = exp(-dp2 / 7.5);
-      col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (0.4 + 0.6 * w);
+      col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (0.4 + 0.6 * w) * (1.0 + wetPuddle * 0.65);
     }
   } else if (world.y < 2.72) {
     // Interior indirect room bounce & wall-wash halos (partitioned by quadrant so only 1 exp() runs per interior pixel)
@@ -883,9 +905,9 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let moteHash = hash2(moteCell);
   let moteGlint = smoothstep(0.92, 0.99, moteHash) * (0.5 + 0.5 * sin(F.cam.w * 2.4 + moteHash * 31.0));
 
-  let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.25 && n.y > 0.7);
+  let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0 + select(0.0, OL.u7.x * OL.u2.y * 0.85, !inRoom), world.y < 0.25 && n.y > 0.7);
   let beamCol = vec3f(1.0, 0.62, 0.24);
-  let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * OL.u2.x * 0.14 * surfW;
+  let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * (OL.u2.x + select(0.0, OL.u7.x * 0.35, !inRoom)) * 0.14 * surfW;
   return (baseAlbedo * 0.75 + beamCol * 0.06) * beamCol * OL.u4.z * mist * vis;
 }
 `
