@@ -585,9 +585,28 @@ async function main() {
               }
             }
           }
+          if (args?.openDoor) {
+            for (const d of session.view.town.doors) {
+              if (d.id.startsWith("0-")) d.open = true
+            }
+            const bRects = sightRects(session.view.town)
+            for (const [vx, vy, va] of [
+              [30, 41, -1.57],
+              [20, 35, -1.57],
+              [20, 26, 0],
+              [30, 21, 1.57],
+              [38, 32, 3.14],
+            ] as const) {
+              vision.update(vx, vy, va, bRects, settings, null)
+              scenery.update(session.view.town, vision)
+            }
+            renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
+            session.view.revision++
+          }
           peekBlend = 0
           lastPeek = null
           session.rebuildCollision()
+          avatar.reset()
           cam.snap(x, y)
           cam.dist = settings.zoom
           cam.update(innerWidth / Math.max(1, innerHeight))

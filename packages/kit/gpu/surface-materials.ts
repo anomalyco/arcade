@@ -1090,14 +1090,14 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let macroTone = (surfaceNoise(p * 0.20 + vec2f(8.3, 1.4)) - 0.5) * 0.24 * macroVar;
     let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
     let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.38, gutterDist)) * 0.36;
-    let leafCell = floor(p * 9.5);
+    let leafCell = floor(p * 9.0);
     let leafHash = hash2(leafCell + vec2f(4.7, 9.1));
-    let leafMask = step(0.955, leafHash) * (1.0 - smoothstep(0.0, 1.35, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.5));
+    let leafMask = step(0.946, leafHash) * (1.0 - smoothstep(0.0, 1.65, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.0));
 
     col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar) * gutterShade;
     col = mix(col, col * vec3f(0.76, 0.78, 0.82), tarPatch * 0.55);
     col = mix(col, col * 0.50, crack * 0.68);
-    col = mix(col, vec3f(0.42, 0.28, 0.14), leafMask * 0.75);
+    col = mix(col, select(vec3f(0.34, 0.21, 0.08), vec3f(0.46, 0.30, 0.12), fract(leafHash * 17.3) > 0.5), leafMask * 0.78);
     localRough = clamp(localRough - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
     cavity = (1.0 - crack * 0.4) * gutterShade;
   }
@@ -1286,29 +1286,29 @@ export const surfaceMaterial = /* wgsl */ `
       var inVergeGrass = false;
       var pyW = p.y;
       if (kind == 2 || kind == 3) {
-        edgeWarp = (sin(p.x * 2.3 + sin(p.y * 1.9) * 1.3) * 0.55 + cos(p.y * 2.7 - p.x * 1.4) * 0.45 + 0.08) * 0.24;
+        edgeWarp = (sin(p.x * 7.2 + sin(p.y * 5.8) * 1.3) * 0.55 + cos(p.y * 8.1 - p.x * 4.2) * 0.45 + 0.05) * 0.085;
       }
       if (kind == 2) {
         pyW = p.y + edgeWarp;
         let pxW = p.x - edgeWarp * 0.85;
-        inNorthVerge = pyW > 39.24 && pyW < 39.84 && (pxW < 37.85 || pxW > 50.15);
-        let inSouthVerge = pyW > 48.16 && pyW < 48.76 && (pxW < 37.85 || pxW > 50.15);
+        inNorthVerge = pyW > 39.30 && pyW < 39.78 && (pxW < 37.90 || pxW > 50.10);
+        let inSouthVerge = pyW > 48.22 && pyW < 48.70 && (pxW < 37.90 || pxW > 50.10);
         let inDriveOrWalk = ((pxW > 18.85 && pxW < 21.75) || (pxW > 49.85 && pxW < 52.75)) || ((pxW > 26.88 && pxW < 28.52 && p.y < 40.0) || (pxW > 25.88 && pxW < 27.52 && p.y > 48.0));
         inVergeGrass = (inNorthVerge || inSouthVerge) && !inDriveOrWalk;
-        let inSidewalkEdgeWeeds = !inDriveOrWalk && (pxW < 37.85 || pxW > 50.15) && ((p.y >= 37.98 && pyW < 38.28) || (p.y <= 50.02 && pyW > 49.72));
-        let inWalkwayEdgeWeeds = p.y < 38.05 && (abs(p.x - 27.0) < 0.24 || abs(p.x - 28.4) < 0.24) && edgeWarp > 0.01;
+        let inSidewalkEdgeWeeds = !inDriveOrWalk && (pxW < 37.85 || pxW > 50.15) && ((p.y >= 37.98 && pyW < 38.12) || (p.y <= 50.02 && pyW > 49.88));
+        let inWalkwayEdgeWeeds = p.y < 38.05 && (abs(p.x - 27.0) < 0.14 || abs(p.x - 28.4) < 0.14) && edgeWarp > 0.015;
         isConcreteGrass = inVergeGrass || inSidewalkEdgeWeeds || inWalkwayEdgeWeeds;
       }
       if (kind == 0 || isConcreteGrass) {
         var vEdge = 1.0;
         var grassTint = albedo * vec3f(0.76, 0.78, 0.66);
         if (isConcreteGrass) {
-          let vDist = select(0.06, select(min(pyW - 48.16, 48.76 - pyW), min(pyW - 39.24, 39.84 - pyW), inNorthVerge), inVergeGrass);
-          vEdge = smoothstep(0.0, 0.12, vDist);
-          grassTint = vec3f(0.062, 0.078, 0.036) * (0.52 + 0.48 * vEdge);
+          let vDist = select(0.05, select(min(pyW - 48.22, 48.70 - pyW), min(pyW - 39.30, 39.78 - pyW), inNorthVerge), inVergeGrass);
+          vEdge = smoothstep(0.0, 0.08, vDist);
+          grassTint = vec3f(0.082, 0.098, 0.042) * (0.78 + 0.22 * vEdge);
         }
         let s = evalGrassSoil(p, grassTint, false, defaultMaterialRecipe(4));
-        albedo = s.albedo * s.cavity * select(1.0, 0.64 + 0.36 * vEdge, isConcreteGrass);
+        albedo = s.albedo * s.cavity * select(1.0, 0.84 + 0.16 * vEdge, isConcreteGrass);
         if (texOn) {
           let tex = sampleMaterialFast(8, p, 0.58 * texScaleMult);
           albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.85 * texContrastMult);
