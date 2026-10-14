@@ -461,9 +461,73 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.prism(x+1.10,e-.62,.03,.025,.66,.92,6,rgb(0x4a3c2a))
   m.prism(x+1.10,e-.62,.21,.12,.90,1.16,9,rgb(0xb88642),MAT.lamp,lLamp)
   m.prism(x+1.10,e-.62,.17,.17,.89,.90,9,rgb(0xd4a662),MAT.lamp,lLamp)
-  // Potted plant in bedroom top-right corner beside the dresser
-  m.prism(x+8.95,z+.85,.17,.13,.13,.44,7,rgb(0x633b28))
-  plant(m,x+8.95,z+.85,.62,.36,town.houseSeed+91,.40)
+  // Bedroom north-wall shelf above headboard, second nightstand between bed & dresser, and tall NE corner chest of drawers
+  m.box(x+3.15,1.88,z+.22,x+4.55,1.94,z+.38,rgb(0x48321e),MAT.timber)
+  m.bevelBox(x+5.05,.13,z+.68,x+5.62,.68,z+1.22,.02,rgb(0x46311e),rgb(0x583e26),MAT.timber,MAT.timber)
+  m.bevelBox(x+8.68,.13,z+.38,x+9.24,1.38,z+1.12,.025,rgb(0x422e1c),rgb(0x543b24),MAT.timber,MAT.timber)
+  // Potted plant moved slightly south along east bedroom wall
+  m.prism(x+8.95,z+1.45,.17,.13,.13,.44,7,rgb(0x633b28))
+  plant(m,x+8.95,z+1.45,.62,.36,town.houseSeed+91,.40)
+  // Lived-in & ransacked survival-horror interior clutter (scaled by archSettings.clutterDensity & decay state)
+  const density = archSettings.clutterDensity
+  if (density > 0.05) {
+    const cRng = new Rng(((town.houseSeed ^ (archSettings.clutterSeed * 2654435761)) + id * 1013) >>> 0)
+    const isRansacked = decay >= 3
+    // 1. Bedroom clutter: fallen books by nightstand, rumpled laundry piles, overturned footstool & blood smear
+    m.yawBox(x+2.62,z+2.15,.26,.20,.132,.175,.42,rgb(0x685c48),MAT.lit,0,rgb(0x827864))
+    m.yawBox(x+2.85,z+2.42,.24,.18,.132,.168,-.35,rgb(0x5a2e24),MAT.lit,0,rgb(0x743c30))
+    // Rumpled clothes / laundry pile on bedroom rug & floor
+    m.yawBox(x+5.28,z+2.92,.44,.34,.152,.22,.28,rgb(0x464e44),MAT.lit,0,rgb(0x566052))
+    m.yawBox(x+5.48,z+3.12,.36,.28,.152,.20,-.44,rgb(0x5c4c3e),MAT.lit,0,rgb(0x6e5c4c))
+    m.yawBox(x+6.95,z+1.62,.42,.32,.132,.21,.62,rgb(0x3d444e),MAT.lit,0,rgb(0x4d5662))
+    if (isRansacked) {
+      // Sparing dark crimson-umber blood smear & overturned bedroom stool
+      m.yawBox(x+5.12,z+2.76,.52,.36,.151,.156,.34,rgb(0x2e0e0a),MAT.lit)
+      m.yawBox(x+2.72,z+3.18,.38,.32,.13,.38,.74,rgb(0x4a3420),MAT.timber)
+    }
+    // 2. Entry hallway & living room clutter: survivor duffle bag by front door, cardboard boxes, scattered papers & books
+    m.yawBox(x+4.46,e-.46,.54,.30,.13,.36,.24,rgb(0x384230),MAT.lit,0,rgb(0x48543e))
+    m.yawBox(x+2.38,z+6.12,.44,.38,.13,.46,-.18,rgb(0x5c462e),MAT.timber,0,rgb(0x6e5438))
+    // Fallen books & magazines in front of the living room bookcase and beside coffee table
+    for (const [bx, bz, byaw, bcol] of [
+      [x+1.18, z+6.72, .38, 0x623226],
+      [x+1.52, z+6.84, -.52, 0x3a4c48],
+      [x+1.84, z+6.68, .21, 0x685e48],
+      [x+3.42, e-2.62, -.44, 0x726854],
+      [x+3.58, e-1.85, .64, 0x48525c],
+    ] as const) {
+      m.yawBox(bx, bz, .25, .19, .148, .182, byaw, rgb(bcol), MAT.lit, 0, rgb(0x88806e))
+    }
+    // Scattered letters, flyers & newspapers across the entry hallway & living room floor (flat so they never block walking)
+    const paperCount = Math.min(14, Math.round((isRansacked ? 9 : 5) * density))
+    for (let p = 0; p < paperCount; p++) {
+      const px = x + 3.6 + cRng.next() * 3.4
+      const pz = z + 6.2 + cRng.next() * (e - z - 6.6)
+      const pyaw = (cRng.next() - 0.5) * 3.14
+      const pcol = cRng.pick([0x7c7564, 0x6e6858, 0x867e6c, 0x5e584a])
+      m.yawBox(px, pz, .22 + cRng.next() * .08, .16 + cRng.next() * .06, .133, .137, pyaw, rgb(pcol), MAT.lit)
+    }
+    // Fallen picture frame leaning against the hallway partition
+    if (isRansacked) {
+      m.yawBox(x+4.68, z+5.92, .48, .06, .13, .48, .22, rgb(0x3a2a1c), MAT.lit, 0, rgb(0x5c5646))
+    }
+    // 3. Kitchen & dining room clutter: toppled dining chair, cardboard supply crate, spilled dishes & floor papers
+    if (isRansacked || density > 1.1) {
+      // Toppled wooden chair lying on its side between hallway and dining table (matching target-noir-open)
+      const tx = r - 4.55, tz = e - 1.65
+      m.yawBox(tx, tz, .48, .46, .13, .38, .58, rgb(0x4c3622), MAT.timber, 0, rgb(0x5c422a))
+      m.yawBox(tx - .22, tz - .16, .46, .08, .13, .52, .58, rgb(0x422e1c), MAT.timber)
+      // Sparing drag stain / dark spill on kitchen floor near hallway threshold
+      m.yawBox(r - 5.25, e - 1.95, .64, .38, .131, .135, -.28, rgb(0x22120d), MAT.lit)
+    }
+    // Extra angled dining chair on the west side of the dining table + cardboard box in SE kitchen corner
+    m.yawBox(r - 3.98, e - 2.85, .48, .48, .13, .54, .32, rgb(0x4e3824), MAT.timber, 0, rgb(0x5c432c))
+    m.yawBox(r - 4.16, e - 2.85, .10, .48, .54, .98, .32, rgb(0x563e28), MAT.timber)
+    m.yawBox(r - 1.12, e - .68, .46, .38, .13, .48, -.24, rgb(0x5e4830), MAT.timber, 0, rgb(0x6e563a))
+    // Fallen ceramic plate & mug on the kitchen tile floor
+    m.prism(r - 3.82, e - 1.92, .12, .10, .132, .152, 7, rgb(0x7c7668), MAT.lit)
+    m.prism(r - 2.55, e - 2.25, .05, .045, .132, .21, 6, rgb(0x6e685a), MAT.lit)
+  }
   // East-wall upper cupboards and framed art prints (MAT.lit/MAT.timber so they stay in fast fsSolid pipeline)
   m.box(r-.245,1.02,e-3.2,r-.23,1.67,e-.85,rgb(0x464d44),MAT.lit)
   m.box(r-.60,1.78,e-3.2,r-.25,2.37,e-1.2,rgb(0x4a3826),MAT.timber)

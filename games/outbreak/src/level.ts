@@ -16,46 +16,58 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     plant(m,x,z,4.6+p.variant*1.8,2.05+p.variant*.75,Math.floor(p.variant*1e6),supportHeight(town,x,z))
     return
   }
-  const wood = hex(0x7a5c3e), legs = hex(0x3b352e)
+  const wood = hex(0x523a24), legs = hex(0x2b251f)
   if (kind === "bed") {
-    // Honey-oak frame, headboard & footboard, crisp white sheets/pillows, and quilted olive-green blanket
+    // Aged dark walnut frame, paneled headboard with corner posts, rumpled pillows, mussed olive bedspread & sparing blood stain
     m.box(x - .82, .12, z - 1.22, x + .82, .42, z + 1.22, wood, MAT.timber)
-    m.box(x - .86, .15, z - 1.30, x + .86, 1.06, z - 1.16, hex(0x8c6b48), MAT.timber)
-    m.box(x - .84, .14, z + 1.16, x + .84, .58, z + 1.26, hex(0x826242), MAT.timber)
-    m.bevelBox(x - .78, .42, z - 1.15, x + .78, .64, z + 1.15, .06, hex(0xcfc8b8), hex(0xe0dacb))
-    // Quilted olive bedspread over lower two-thirds + cream fold-back sheet strip
-    m.bevelBox(x - .80, .44, z - .38, x + .80, .67, z + 1.16, .05, hex(0x42523b), hex(0x526449))
-    m.box(x - .79, .65, z - .48, x + .79, .68, z - .32, hex(0xdad4c4))
-    for (const qz of [z - .02, z + .38, z + .78]) m.box(x - .76, .668, qz, x + .76, .676, qz + .03, hex(0x364430))
-    // Two plump white pillows
-    for (const px of [x - .38, x + .38]) m.bevelBox(px - .31, .64, z - 1.06, px + .31, .78, z - .62, .04, hex(0xd4cebf), hex(0xeae4d6))
+    m.box(x - .86, .15, z - 1.30, x + .86, 1.08, z - 1.16, hex(0x46301d), MAT.timber)
+    for (const px of [x - .86, x + .78]) m.box(px, .15, z - 1.32, px + .08, 1.16, z - 1.14, hex(0x382515), MAT.timber)
+    m.box(x - .74, .52, z - 1.158, x - .04, .96, z - 1.14, hex(0x362415), MAT.timber)
+    m.box(x + .04, .52, z - 1.158, x + .74, .96, z - 1.14, hex(0x362415), MAT.timber)
+    m.box(x - .84, .14, z + 1.16, x + .84, .56, z + 1.26, hex(0x422d1b), MAT.timber)
+    // Mussed mattress sheet in muted warm oatmeal-taupe
+    m.bevelBox(x - .78, .42, z - 1.15, x + .78, .64, z + 1.15, .06, hex(0x6e685a), hex(0x7c7566))
+    // Quilted dark olive bedspread with rumpled folds + angled fold-back sheet corner
+    m.bevelBox(x - .80, .44, z - .38, x + .80, .67, z + 1.16, .05, hex(0x2a3525), hex(0x35422f))
+    m.yawBox(x - .18, z - .40, .86, .22, .64, .685, .08, hex(0x746d5e), MAT.lit, 0, hex(0x827a6a))
+    m.yawBox(x + .36, z - .34, .68, .24, .64, .682, -.14, hex(0x6c6556), MAT.lit, 0, hex(0x787060))
+    for (const qz of [z - .02, z + .38, z + .78]) m.box(x - .76, .668, qz, x + .76, .676, qz + .04, hex(0x20291c))
+    // Rumpled diagonal blanket fold + sparing dried-blood stain on the bedspread
+    m.yawBox(x - .12, z + .24, .62, .48, .665, .692, .28, hex(0x3d1812), MAT.lit, 0, hex(0x4a1d16))
+    m.yawBox(x + .18, z + .52, .44, .32, .665, .688, -.35, hex(0x2e3a28), MAT.lit)
+    // Two slightly angled, slept-in pillows
+    m.yawBox(x - .38, z - .84, .58, .38, .64, .77, .11, hex(0x686254), MAT.lit, 0, hex(0x787262))
+    m.yawBox(x + .36, z - .82, .58, .38, .64, .76, -.15, hex(0x625c4e), MAT.lit, 0, hex(0x726c5c))
   } else if (kind === "sofa") {
-    // Readable warm sage-olive 3-cushion sofa with rolled arms, terracotta & cream throw pillows, and side lamp table
-    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x646e58))
-    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x707b63),hex(0x889478))
+    // Weathered deep olive-sage 3-cushion sofa with rolled arms, draped knit blanket, angled throw pillows & end table
+    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x343b2e))
+    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x3c4435),hex(0x4a5442))
     for(const dz of [-.74,0,.74]){
-      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x768268),hex(0x909c80))
-      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x7c886e),hex(0x94a084))
+      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x424b3a),hex(0x505a46))
+      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x46503e),hex(0x54604a))
     }
-    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x6c765f),hex(0x849076))
+    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x3a4234),hex(0x485240))
     for(const dx of [-.42,.42])for(const dz of [-1.05,1.05])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.22,z+dz+.04,legs)
-    // Bright terracotta throw pillow at north end + cream cushion at south end
-    m.bevelBox(x-.24,.62,z-.98,x+.22,.84,z-.58,.045,hex(0xa24c2c),hex(0xc25e38))
-    m.bevelBox(x-.24,.62,z+.60,x+.24,.83,z+1.02,.045,hex(0xc4b28e),hex(0xdfd0ae))
+    // Angled rust-terracotta throw pillow at north end + muted oatmeal cushion & draped blanket at south end
+    m.yawBox(x-.02,z-.78,.42,.38,.62,.83,.22,hex(0x6e321c),MAT.lit,0,hex(0x823c22))
+    m.yawBox(x+.02,z+.78,.44,.38,.62,.82,-.18,hex(0x6e6450),MAT.lit,0,hex(0x7e735c))
+    m.box(x-.18,.42,z+.96,x+.58,.65,z+1.28,hex(0x52483a),MAT.lit)
     // End table at south arm of sofa under the living room table lamp
-    m.bevelBox(x-.32,.13,z+1.38,x+.32,.66,z+1.96,.025,wood,hex(0x8f6d4a),MAT.timber,MAT.timber)
+    m.bevelBox(x-.32,.13,z+1.38,x+.32,.66,z+1.96,.025,wood,hex(0x5e442c),MAT.timber,MAT.timber)
   } else if(kind==="coffee") {
-    m.bevelBox(x-.52,.42,z-.78,x+.52,.52,z+.78,.035,wood,hex(0x8c6a46),MAT.timber,MAT.timber)
+    m.bevelBox(x-.52,.42,z-.78,x+.52,.52,z+.78,.035,hex(0x46321e),hex(0x583f26),MAT.timber,MAT.timber)
     for(const dx of [-.42,.42])for(const dz of [-.65,.65])m.box(x+dx-.035,.13,z+dz-.035,x+dx+.035,.43,z+dz+.035,legs)
-    // Open book, ceramic mug, and small potted centerpiece plant on coffee table
-    m.box(x-.22,.52,z+.14,x+.20,.56,z+.52,hex(0xd8d2c0))
-    m.prism(x-.16,z-.38,.07,.065,.52,.63,8,hex(0xc8c0aa))
-    m.prism(x+.14,z-.22,.12,.09,.52,.66,8,hex(0x7c4a32))
-    m.prism(x+.14,z-.22,.18,.08,.64,.82,7,hex(0x465c36),MAT.foliage)
+    // Warm candle holder, weathered open book, mug, and knocked-over bottle on coffee table
+    m.yawBox(x-.12,z+.28,.34,.28,.52,.56,.18,hex(0x7c7462),MAT.lit,0,hex(0x8c8470))
+    m.prism(x-.04,z-.06,.09,.08,.52,.56,8,hex(0x5a4628),MAT.shiny)
+    m.prism(x-.04,z-.06,.035,.03,.56,.66,7,hex(0xd89844),MAT.lit)
+    m.prism(x-.22,z-.42,.06,.055,.52,.62,8,hex(0x6e6858))
+    m.prism(x+.18,z-.28,.11,.08,.52,.64,8,hex(0x583422))
+    m.prism(x+.18,z-.28,.16,.07,.62,.78,7,hex(0x324226),MAT.foliage)
   } else if(kind==="nightstand") {
-    m.bevelBox(x-.28,.14,z-.28,x+.28,.66,z+.28,.02,wood,hex(0x8e6c48),MAT.timber,MAT.timber)
-    m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x987652),MAT.timber)
-    m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xc4ab78))
+    m.bevelBox(x-.28,.14,z-.28,x+.28,.66,z+.28,.02,wood,hex(0x5c422a),MAT.timber,MAT.timber)
+    m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x64482e),MAT.timber)
+    m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0x9a8458))
   } else if(kind==="stove") {
     m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x483624),MAT.timber)
     m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0x4e483e))
@@ -69,19 +81,33 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     }else if(kind==="fridge"){
       m.box(a-.015,.22,c+.05,a,height-.12,e-.05,hex(0x5a422c),MAT.timber)
     }else {
-      for(let i=0;i<3;i++)for(const [da,dr] of [[a+.05,(a+r)/2-.03],[(a+r)/2+.03,r-.05]]){
-        m.box(da!,.20+i*.27,e+.002,dr!,.43+i*.27,e+.022,hex(0x5c442c),MAT.timber)
+      for(let i=0;i<3;i++)for(const [ cIdx, [da,dr]] of [[a+.05,(a+r)/2-.03],[(a+r)/2+.03,r-.05]].entries()){
+        // Pull one drawer slightly open with rumpled cloth spilling out
+        const pull = i === 1 && cIdx === 0 ? 0.14 : 0
+        m.box(da!,.20+i*.27,e+.002,dr!,.43+i*.27,e+.022+pull,hex(0x5c442c),MAT.timber)
+        if (pull > 0) m.box(da!+.06,.38+i*.27,e+.02,dr!-.08,.45+i*.27,e+pull+.04,hex(0x5e5648),MAT.lit)
         const mx=(da!+dr!)/2
-        m.box(mx-.08,.30+i*.27,e+.022,mx+.08,.34+i*.27,e+.055,hex(0x9a8254))
+        m.box(mx-.08,.30+i*.27,e+.022+pull,mx+.08,.34+i*.27,e+.055+pull,hex(0x9a8254))
       }
-      // Potted plant & keepsake box on top of the bedroom dresser
-      m.prism(a+.42,c+.35,.12,.09,height,height+.16,7,hex(0x5e3824))
-      m.prism(a+.42,c+.35,.19,.08,height+.14,height+.36,7,hex(0x3a4d2c),MAT.foliage)
+      // Vintage globe, candle & keepsake box on top of the bedroom dresser
+      m.prism(a+.45,c+.35,.14,.12,height+.04,height+.28,8,hex(0x3a4a48),MAT.lit)
+      m.prism(a+.45,c+.35,.08,.03,height,height+.06,6,hex(0x7a6238),MAT.shiny)
+      m.yawBox(a+1.15,c+.38,.28,.20,height,height+.10,.18,hex(0x4a3220),MAT.timber)
+      m.prism(r-.42,c+.36,.06,.05,height,height+.14,7,hex(0xc89652),MAT.lit)
     }
   } else if(kind==="chair") {
-    m.box(x-.26,.50,z-.26,x+.26,.58,z+.26,hex(0x523c26),MAT.timber)
-    m.box(x-.26,.58,z+.19,x+.26,1.04,z+.26,hex(0x5c432c),MAT.timber)
-    for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.50,z+dz+.025,legs)
+    const inLivingRoom = (x > 22 && x < 27.2 && z > 31 && z < 36) || (x > 21 && x < 26.2 && z > 61 && z < 66)
+    if (inLivingRoom) {
+      // Upholstered lounge armchair angled toward the coffee table
+      m.yawBox(x, z, .68, .66, .18, .48, -.42, hex(0x463424), MAT.lit, 0, hex(0x56402c))
+      m.yawBox(x + .08, z + .14, .68, .22, .44, .92, -.42, hex(0x3e2e20), MAT.lit, 0, hex(0x4e3a28))
+      m.yawBox(x - .24, z + .04, .16, .62, .38, .68, -.42, hex(0x423122), MAT.lit)
+      m.yawBox(x + .24, z - .04, .16, .62, .38, .68, -.42, hex(0x423122), MAT.lit)
+    } else {
+      m.box(x-.26,.50,z-.26,x+.26,.58,z+.26,hex(0x523c26),MAT.timber)
+      m.box(x-.26,.58,z+.19,x+.26,1.04,z+.26,hex(0x5c432c),MAT.timber)
+      for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.50,z+dz+.025,legs)
+    }
   } else if (kind === "table") {
     // Rich weathered walnut dining/study table with beveled plank top, candle/dishes, and surrounding chairs
     m.bevelBox(x - .72, .72, z - .95, x + .72, .82, z + .95, .03, hex(0x4a3420), hex(0x5c4028), MAT.timber, MAT.timber)
@@ -97,12 +123,20 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.prism(x - .18, z + .54, .05, .045, .82, .91, 6, hex(0x7c7464), MAT.lit)
     m.yawBox(x + .24, z + .56, .24, .18, .82, .835, -.32, hex(0x9a9280), MAT.lit)
   } else {
-    for (const dx of [-.8, .8]) m.box(x + dx - .06, .1, z - .38, x + dx + .06, 1.8, z + .38, legs)
-    for (const h of [.3, .85, 1.4]) {
-      m.box(x - .85, h, z - .4, x + .85, h + .07, z + .4, wood, MAT.timber)
+    // Multi-shelf wooden bookcase with back panel, leaning book clusters, missing gaps, and top storage box
+    m.box(x - .84, .13, z - .40, x + .84, 1.82, z - .34, hex(0x2e2014), MAT.timber)
+    for (const dx of [-.8, .8]) m.box(x + dx - .06, .13, z - .38, x + dx + .06, 1.82, z + .38, legs, MAT.timber)
+    for (const [sIdx, h] of [.28, .76, 1.24, 1.72].entries()) {
+      m.box(x - .85, h, z - .4, x + .85, h + .06, z + .4, wood, MAT.timber)
+      if (sIdx === 3) {
+        m.yawBox(x - .32, z, .42, .32, h + .06, h + .28, .12, hex(0x5e4830), MAT.timber, 0, hex(0x6e563a))
+        continue
+      }
       for (let i = 0; i < 5; i++) {
+        if ((i + sIdx) % 4 === 2) continue // gap where books fell out
         const px = x - .68 + i * .3
-        m.box(px, h + .07, z - .25, px + .2, h + .2 + (p.variant + i * .13) % .27, z + .25, hex(i % 2 ? 0xa39b7c : 0x5a7973))
+        const bookCol = hex([0x6e644c, 0x384d48, 0x68362a, 0x464e5c, 0x5c4a34][(i + sIdx) % 5]!)
+        m.box(px, h + .06, z - .25, px + .21, h + .20 + (p.variant + i * .13) % .22, z + .24, bookCol)
       }
     }
   }
