@@ -1,3 +1,4 @@
+import { keyLabel, moveClusterLabel } from "@arcade/kit/client/controls"
 import { END_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
 import { type City, shopAt } from "../../shared/sim/city"
 import { DRIVE, flatCount } from "../../shared/sim/vehicle"
@@ -95,10 +96,11 @@ export class Hud {
     e.intro = h("div", "h-intro off", r, `<div class="i-line"></div><div class="i-sub"></div>`)
     e.iLine = e.intro.querySelector(".i-line")!
     e.iSub = e.intro.querySelector(".i-sub")!
-    e.keys = h("div", "h-keys off", r, "WASD drive · SPACE drift · SHIFT nitro · H engine")
+    e.keys = h("div", "h-keys off", r, `${moveClusterLabel()} drive · SPACE drift · SHIFT nitro · ${keyLabel("KeyH")} engine`)
 
     e.flash = h("div", "h-flash off", r)
-    e.gadget = h("div", "h-gadget off", r, `<div class="g-row"><span class="g-key">Q</span><span class="g-name"></span><span class="g-pips">${"<i></i>".repeat(GADGETS.spike.charges)}</span></div><div class="g-bar"><b></b></div>`)
+    e.gadget = h("div", "h-gadget off", r, `<div class="g-row"><span class="g-key">${esc(keyLabel("KeyQ"))}</span><span class="g-name"></span><span class="g-pips">${"<i></i>".repeat(GADGETS.spike.charges)}</span></div><div class="g-bar"><b></b></div>`)
+    e.gKey = e.gadget.querySelector(".g-key")!
     e.gName = e.gadget.querySelector(".g-name")!
     this.pips = [...e.gadget.querySelectorAll<HTMLElement>(".g-pips i")]
     e.gFill = e.gadget.querySelector(".g-bar b")!
@@ -196,7 +198,7 @@ export class Hud {
       text(e.iSub!, view.phase === "headstart" ? `${isRobber ? "COPS IN" : "YOU ROLL IN"} ${Math.max(1, Math.ceil(left))}` : "")
     }
     show(e.keys!, this.firstRound && pre)
-    text(e.keys!, `WASD drive · SPACE drift · SHIFT nitro · H engine${ctx.room ? " · ENTER chat" : ""}`)
+    text(e.keys!, `${moveClusterLabel()} drive · SPACE drift · SHIFT nitro · ${keyLabel("KeyH")} engine${ctx.room ? " · ENTER chat" : ""}`)
 
     this.updateGadgets(view, ctx, isRobber)
     const mine = view.cars.find((c) => c.ownerId === ctx.myId && !c.ghost)
@@ -230,6 +232,7 @@ export class Hud {
     show(e.gadget!, !!g)
     if (g) {
       const spec = GADGETS[g.id]
+      text(e.gKey!, keyLabel("KeyQ"))
       text(e.gName!, g.id === "spike" ? `${spec.name} · POPS A TIRE` : spec.name)
       // Pips: strips you can still lay before your oldest one is picked up.
       this.pips.forEach((pip, i) => flag(pip, "used", i >= g.charges))

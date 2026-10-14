@@ -48,7 +48,7 @@ export class Survivor {
     this.chest = spring(); this.head = spring(); this.bones = {}
   }
 
-  draw(p: Pose, dt: number, time: number, support: (x:number,z:number)=>number): Batch[] {
+  draw(p: Pick<Pose, "x" | "y" | "vx" | "vy" | "aim">, dt: number, time: number, support: (x:number,z:number)=>number): Batch[] {
     dt = Math.max(.0001, Math.min(.2, dt))
     const prevX = this.last[0], prevY = this.last[1]
     const teleport = Math.hypot(p.x - prevX, p.y - prevY) > 2.5

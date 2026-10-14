@@ -1,5 +1,6 @@
 import { raycast, type Rect } from "@arcade/kit/sim/geom"
 import { POLAR_RAYS } from "@arcade/kit/gpu/limits"
+import type { PeekInfo } from "./interact"
 import { SIZE } from "./map"
 
 export type VisionSettings = { range: number; cone: number; awareness: number }
@@ -17,16 +18,33 @@ export class Vision {
   aim = 0
   settings: VisionSettings = { ...DEFAULT_VISION }
 
-  update(x: number, y: number, aim: number, blockers: readonly Rect[], settings = this.settings): boolean {
-    this.x = x; this.y = y; this.aim = aim; this.settings = settings
+  update(
+    x: number,
+    y: number,
+    aim: number,
+    blockers: readonly Rect[],
+    settings = this.settings,
+    peek?: PeekInfo | null,
+  ): boolean {
+    const ox = peek ? peek.eyeX : x
+    const oy = peek ? peek.eyeY : y
+    const oAim = peek ? peek.aim : aim
+    const effectiveSettings = peek
+      ? {
+          range: settings.range,
+          cone: Math.max(settings.cone, peek.cone),
+          awareness: Math.max(settings.awareness, peek.awareness),
+        }
+      : settings
+    this.x = ox; this.y = oy; this.aim = oAim; this.settings = effectiveSettings
     for (let i = 0; i < POLAR_RAYS; i++) {
       const a = (i + .5) / POLAR_RAYS * TAU
-      this.rays[i] = Math.min(settings.range, raycast(x, y, Math.cos(a), Math.sin(a), blockers, settings.range))
+      this.rays[i] = Math.min(effectiveSettings.range, raycast(ox, oy, Math.cos(a), Math.sin(a), blockers, effectiveSettings.range))
     }
     let changed = false
-    const r = settings.range
-    for (let gy = Math.max(0, Math.floor((y - r) / FOG_CELL)); gy < Math.min(FOG_SIZE, Math.ceil((y + r) / FOG_CELL)); gy++) {
-      for (let gx = Math.max(0, Math.floor((x - r) / FOG_CELL)); gx < Math.min(FOG_SIZE, Math.ceil((x + r) / FOG_CELL)); gx++) {
+    const r = effectiveSettings.range
+    for (let gy = Math.max(0, Math.floor((oy - r) / FOG_CELL)); gy < Math.min(FOG_SIZE, Math.ceil((oy + r) / FOG_CELL)); gy++) {
+      for (let gx = Math.max(0, Math.floor((ox - r) / FOG_CELL)); gx < Math.min(FOG_SIZE, Math.ceil((ox + r) / FOG_CELL)); gx++) {
         const idx = gy * FOG_SIZE + gx
         if (!this.explored[idx] && this.visible((gx + .5) * FOG_CELL, (gy + .5) * FOG_CELL)) {
           this.explored[idx] = 255; changed = true

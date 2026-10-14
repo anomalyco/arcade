@@ -46,7 +46,7 @@ export class BoatInput {
   get fire(): boolean {
     if (this.trigger !== null) return this.trigger
     if (!this.enabled) return false
-    return this.mouseFire || this.input.held("Space") || this.input.held(" ")
+    return this.mouseFire || this.input.held("Space")
   }
 
   /** Mouse look this frame (CSS px). */

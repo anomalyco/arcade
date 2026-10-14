@@ -807,9 +807,9 @@ export class Game {
       const firePressed = input.takeFirePress() && live && !this.snap?.spells
       const fire = live && input.enabled && (input.firing || firePressed) && !this.snap?.spells
       const equip = live && input.takeEquip()
-      const use = live && input.enabled && input.held("KeyF")
+      const use = live && input.interactHeld
       const melee = live && input.takeMelee() && this.kit.melee
-      // F gets in or out of a vehicle, unless it plants or defuses here; H is the horn at the wheel.
+      // E (or F) gets in or out of a vehicle, unless it plants or defuses here; H is the horn at the wheel.
       const enter = live && input.takeEnter() && !(this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y))
       const seat = live && input.takeSeat() && !!this.riding
       const driving = this.riding?.seat === 0

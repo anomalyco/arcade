@@ -217,7 +217,7 @@ game-owned. The smoke pool and GPU pipeline are canonical in `kit/fx`; vehicle s
 ### Outbreak M1 extractions
 
 Blackout and Outbreak now consume `@arcade/kit/gpu/{mesh,renderer,shaders,limits,level}`,
-`@arcade/kit/client/{camera,input}`, `@arcade/kit/rig`, and `@arcade/kit/sim/{geom,rng}`.
+`@arcade/kit/client/{camera,input,controls}`, `@arcade/kit/rig`, and `@arcade/kit/sim/{geom,rng}`.
 Blackout's original paths re-export the shared implementations. The renderer owns packed vertices/instances,
 polar-light compute, cutaway chunks, MSAA/HDR targets and the five-level bloom/post chain. `makeSceneShader`
 accepts pure WGSL surface and directional-light hooks, with Blackout's shader behavior as its default.
@@ -228,8 +228,9 @@ the existing dense shadow kernel and custom post constants through shared shader
 is preserved. House and terrain generation remain game-owned. See `docs/outbreak-look.md` for measured cost and gaps.
 
 Outbreak reserves polar slot zero for eye-height sight with zero light power. Its CPU exploration mask uses the
-same ray angles and slab geometry. The shared Input retains its existing action methods for compatibility;
-Outbreak configures F-only interaction to avoid the Dvorak E movement binding. Rig math, IK, springs and human
+same ray angles and slab geometry. The shared `Input` binds movement and actions by physical `KeyboardEvent.code`
+(`KeyE` primary interact, `KeyF` alias) while `@arcade/kit/client/controls` resolves on-screen prompt labels from
+`navigator.keyboard.getLayoutMap()` (see [Controls standard](controls.md)). Rig math, IK, springs and human
 dimensions are shared. Outbreak's civilian meshes and unarmed planted-foot gait adapt only the needed parts of
 Blackout's soldier code.
 

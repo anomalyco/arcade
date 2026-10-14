@@ -268,7 +268,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
 
   function update(dt: number, t: number, aspect: number): boolean {
     // C is the free camera aboard; in the air it belongs to the jet (chase / cockpit).
-    if (!game.paused && state.role !== "pilot" && input.pressed("KeyC", "c")) {
+    if (!game.paused && state.role !== "pilot" && input.pressed("KeyC")) {
       state.free = !state.free
       // The free camera keeps its drag-to-orbit: let go of the mouse.
       if (state.free) input.unlock()
