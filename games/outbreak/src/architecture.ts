@@ -194,20 +194,20 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     m.prism(px!,pz!,pr!*1.05,pr!*.95,gy+.006,gy+.018,7,rgb(0x14180f),MAT.ground,5)
     plant(m,px!,pz!,ph!,pr!,Math.floor(rng.next()*1e6),gy)
   }
-  // Wild apron of radiating fern/bramble/weed shoots emerging in front of the foundation bushes
-  for(let wx=x-.1;wx<=r+.1;wx+=.52+rng.next()*.38){
+  // Subtle, short, matted olive-ochre weed & turf tufts along the front margin of the foundation bushes
+  for(let wx=x-.1;wx<=r+.1;wx+=.58+rng.next()*.42){
     if(wx>x+4.15&&wx<x+7.15)continue
-    const wz=e+.68+rng.next()*.78
+    const wz=e+.72+rng.next()*.68
     const gy=supportHeight(town,wx,wz)
     emitGrassTuft(m,wx,gy,wz,{
-      bladeCount:5,
-      radius:.26+rng.next()*.14,
-      height:.22+rng.next()*.18,
-      width:foliageSettings.bladeWidth*1.22,
-      curvature:Math.min(1,foliageSettings.bladeCurvature*1.18),
+      bladeCount:3,
+      radius:.16+rng.next()*.08,
+      height:.11+rng.next()*.09,
+      width:foliageSettings.bladeWidth*.88,
+      curvature:Math.min(1,foliageSettings.bladeCurvature*1.15),
       leanAngle:Math.PI*.5+(rng.next()-.5)*1.4,
-      rootColor:rgb(0x121e0c),
-      tipColor:rgb(rng.pick([0x385220,0x465c26,0x2e461b])),
+      rootColor:rgb(0x1c1e12),
+      tipColor:rgb(rng.pick([0x3e3c24,0x484226,0x343820])),
       rng,
     })
   }
@@ -218,37 +218,28 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
   }
   for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,trim,MAT.wall)
-  // Big, soft, dark framing tree masses & irregular overgrown driveway/corner hedges.
+  // Framing woodland & street trees + irregular driveway fence hedge matching target-sodium70s-street & target-sodium70s-open.
   for(const [px,pz,ph,pr] of [
-    // Overgrown border hedge & bramble thicket along both sides of the left driveway picket fence + overarching woodland canopies
-    [x-3.58,e+2.12,1.56,1.04],
-    [x-2.76,e+1.48,.92,.72],
-    [x-3.52,e+.55,1.48,.96],
-    [x-3.55,e-.95,1.44,.92],
-    [x-3.65,e-2.65,1.38,.88],
-    [x-2.82,e-4.65,.96,.74],
-    [x-3.60,z+3.20,1.44,.92],
-    [x-5.55,e+.80,7.60,3.55],
-    [x-5.15,e-3.60,8.00,3.75],
-    [x-4.80,z+3.20,7.40,3.45],
-    // Multi-layered broadleaf street & side-yard trees rooted on the lawn edge (x < 37.8) overhanging the right sidewalk
-    [r+.62,z+1.80,7.40,3.35],
-    [r+.68,z+5.90,7.90,3.65],
-    [r+.64,e-1.90,7.20,3.25],
-    [r+.58,e+.45,1.52,.98],
-    // Overgrown shrub thicket at the front-right lawn & sidewalk intersection corner + left sidewalk margin bush
-    [r+.52,e+1.95,1.48,.96],
-    [r-.48,e+2.15,1.08,.76],
-    [r+1.82,e+3.12,1.68,1.18],
-    [x-4.25,e+3.08,1.52,1.06],
-    // South-side street framing tree masses & corner thickets across the road (framing bottom-left & bottom-right of street view)
+    // Overgrown border hedge along the left driveway picket fence + overarching left woodland canopies
+    [x-3.58,e+2.05,1.48,.96],
+    [x-3.52,e+.55,1.42,.90],
+    [x-3.55,e-.95,1.38,.86],
+    [x-3.65,e-2.65,1.34,.82],
+    [x-3.60,z+3.20,1.38,.86],
+    [x-5.45,e+.60,6.80,3.10],
+    [x-5.15,e-3.60,7.20,3.25],
+    [x-4.80,z+3.20,6.60,2.95],
+    // Right yard street tree & corner bush (keeping the north-south sidewalk x=38..40 open under the sodium streetlamp)
+    [r+.52,e-2.40,5.80,2.35],
+    [r+.52,e+.42,1.44,.92],
+    [r+.48,e+1.65,1.38,.88],
+    [r-.45,e+1.95,.98,.68],
+    // South-side street corner framing trees across the road (leaving south sidewalk & verge open)
     ...(id===0 ? [
-      [x-5.20,e+14.20,7.60,3.55],
-      [x-1.40,e+15.80,6.60,3.05],
-      [x-3.40,e+14.80,1.58,1.08],
-      [r+3.20,e+14.40,7.80,3.65],
-      [r+.20,e+15.80,6.50,3.00],
-      [r+1.80,e+14.80,1.56,1.06],
+      [x-5.40,e+14.50,6.80,3.05],
+      [x-3.50,e+14.80,1.48,.98],
+      [r+4.40,e+14.60,6.80,3.05],
+      [r+2.80,e+14.80,1.46,.96],
     ] as const : []),
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner.

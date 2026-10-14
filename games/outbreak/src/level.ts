@@ -176,9 +176,9 @@ function compileLevel(town: Town): LevelData {
         const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
         emitGrassTuft(m, t.x, y, t.z, {
           bladeCount: 3,
-          radius: t.radius * 1.18,
-          height: t.height * 1.16,
-          width: t.width * 0.96,
+          radius: t.radius * 0.96,
+          height: t.height * 0.90,
+          width: t.width * 0.86,
           curvature: t.curvature,
           leanAngle: t.leanAngle,
           rootColor: t.rootColor,
@@ -192,23 +192,23 @@ function compileLevel(town: Town): LevelData {
   for (const [pIdx, p] of town.props.entries()) {
     if (p.kind !== "tree") continue
     const treeRng = new Rng((town.seed ^ (pIdx * 2749 + 0x517c)) >>> 0)
-    const collarCount = Math.max(3, Math.round(6 * (town.foliageDensity ?? 1)))
+    const collarCount = Math.max(3, Math.round(5 * (town.foliageDensity ?? 1)))
     for (let c = 0; c < collarCount; c++) {
       const a = c * 2.39996 + treeRng.next() * 0.45
-      const d = 0.42 + treeRng.next() * 1.25
+      const d = 0.42 + treeRng.next() * 1.15
       const tx = p.x + Math.cos(a) * d
       const tz = p.y + Math.sin(a) * d
       if ((tx > 37.9 && tx < 50.1) || (tz > 37.9 && tz < 50.1)) continue
       const y = supportHeight(town, tx, tz), m = at(tx, tz)
       emitGrassTuft(m, tx, y, tz, {
         bladeCount: 3,
-        radius: 0.16 + treeRng.next() * 0.10,
-        height: foliageSettings.bladeHeight * (0.95 + treeRng.next() * 0.45),
-        width: foliageSettings.bladeWidth * 1.2,
+        radius: 0.14 + treeRng.next() * 0.08,
+        height: foliageSettings.bladeHeight * (0.85 + treeRng.next() * 0.35),
+        width: foliageSettings.bladeWidth * 0.95,
         curvature: foliageSettings.bladeCurvature,
         leanAngle: a + (treeRng.next() - 0.5) * 0.5,
         rootColor: [foliageSettings.rootColorR * 0.85, foliageSettings.rootColorG * 0.85, foliageSettings.rootColorB * 0.85],
-        tipColor: [foliageSettings.tipColorR * 1.05, foliageSettings.tipColorG * 1.08, foliageSettings.tipColorB * 0.95],
+        tipColor: [foliageSettings.tipColorR * 1.02, foliageSettings.tipColorG * 1.02, foliageSettings.tipColorB * 0.95],
         rng: treeRng,
       })
     }
@@ -225,15 +225,15 @@ function compileLevel(town: Town): LevelData {
       const z = zBase + (vergeRng.next() - 0.5) * 0.14
       const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
       const m = at(x, z)
-      const h = (inCurbStrip ? 0.20 + vergeRng.next() * 0.16 : 0.16 + vergeRng.next() * 0.14) * (foliageSettings.bladeHeight / 0.30)
-      const rootCol = hex(vergeRng.pick([0x14200d, 0x101a0a, 0x1a2410]))
-      const tipCol = hex(vergeRng.pick([0x3c5420, 0x32481c, 0x485624]))
+      const h = (inCurbStrip ? 0.16 + vergeRng.next() * 0.12 : 0.13 + vergeRng.next() * 0.11) * (foliageSettings.bladeHeight / 0.20)
+      const rootCol = hex(vergeRng.pick([0x1c1e12, 0x181a10, 0x222214]))
+      const tipCol = hex(vergeRng.pick([0x3e3c24, 0x484226, 0x343820]))
       emitGrassTuft(m, x, y, z, {
         bladeCount: inCurbStrip ? 4 : 3,
-        radius: inCurbStrip ? 0.22 + vergeRng.next() * 0.08 : 0.18 + vergeRng.next() * 0.06,
+        radius: inCurbStrip ? 0.18 + vergeRng.next() * 0.06 : 0.15 + vergeRng.next() * 0.05,
         height: h,
-        width: foliageSettings.bladeWidth * 1.15,
-        curvature: Math.min(1.0, foliageSettings.bladeCurvature * 1.18),
+        width: foliageSettings.bladeWidth * 0.96,
+        curvature: Math.min(1.0, foliageSettings.bladeCurvature * 1.15),
         leanAngle: vergeRng.next() * Math.PI * 2,
         rootColor: rootCol,
         tipColor: tipCol,
@@ -250,14 +250,14 @@ function compileLevel(town: Town): LevelData {
         const gz = wz + (vergeRng.next() - 0.5) * 0.18
         const y = supportHeight(town, gx, gz)
         emitGrassTuft(at(gx, gz), gx, y, gz, {
-          bladeCount: 4,
-          radius: 0.20 + vergeRng.next() * 0.06,
-          height: (0.18 + vergeRng.next() * 0.14) * (foliageSettings.bladeHeight / 0.30),
-          width: foliageSettings.bladeWidth * 1.12,
+          bladeCount: 3,
+          radius: 0.16 + vergeRng.next() * 0.05,
+          height: (0.14 + vergeRng.next() * 0.10) * (foliageSettings.bladeHeight / 0.20),
+          width: foliageSettings.bladeWidth * 0.92,
           curvature: foliageSettings.bladeCurvature,
           leanAngle: wx < bx0 + 5.5 ? 0.12 : Math.PI - 0.12,
-          rootColor: hex(0x14200d),
-          tipColor: hex(0x3a5220),
+          rootColor: hex(0x1c1e12),
+          tipColor: hex(0x3e3c24),
           rng: vergeRng,
         })
       }
@@ -270,13 +270,13 @@ function compileLevel(town: Town): LevelData {
         const y = supportHeight(town, gx, gz)
         emitGrassTuft(at(gx, gz), gx, y, gz, {
           bladeCount: 2,
-          radius: 0.14,
-          height: 0.15 + vergeRng.next() * 0.12,
-          width: foliageSettings.bladeWidth * 1.08,
+          radius: 0.13,
+          height: 0.12 + vergeRng.next() * 0.09,
+          width: foliageSettings.bladeWidth * 0.88,
           curvature: foliageSettings.bladeCurvature,
           leanAngle: vergeRng.next() * Math.PI * 2,
-          rootColor: hex(0x14200d),
-          tipColor: hex(0x384e1e),
+          rootColor: hex(0x1a1c10),
+          tipColor: hex(0x3a3822),
           rng: vergeRng,
         })
       }
