@@ -271,8 +271,11 @@ function compileLevel(town: Town): LevelData {
         m.prism(p.x,p.y,.23,.125,p.h-.13,p.h+.16,9,hex(0xe8b86b),MAT.lamp,id)
         m.prism(p.x,p.y,.19,.19,p.h-.14,p.h-.13,9,hex(0xffdca0),MAT.lamp,id)
       } else {
-        m.box(p.x-.1,p.h-.18,p.y-.08,p.x+.1,p.h+.18,p.y+.08,hex(0xffd49a),MAT.lamp,id)
-        m.box(p.x-.15,p.h+.18,p.y-.12,p.x+.15,p.h+.24,p.y+.12,hex(0x343b38))
+        // Warm porch sconce beside the door + warm overhead porch bulb under the gable arch
+        const sx=p.x+.86, sz=p.y-.38
+        m.box(sx-.06,1.68,sz,sx+.06,1.88,sz+.12,hex(0xffcf88),MAT.lamp,id)
+        m.box(sx-.09,1.88,sz-.02,sx+.09,1.93,sz+.14,hex(0x2d3238),MAT.lit)
+        m.prism(p.x,p.y-.22,.10,.08,2.24,2.38,7,hex(0xffe0a6),MAT.lamp,id)
       }
       continue
     }
@@ -304,7 +307,7 @@ function compileLevel(town: Town): LevelData {
         minZ = Math.min(minZ, vz); maxZ = Math.max(maxZ, vz)
         if (mat === 21) hasRoof = true
         if (mat === 22 || mat === 24) hasFoliage = true
-        if ((mat === 4 || mat === 9 || mat === 2 || mat === 11) && maxY > 1.0) hasScreen = true
+        if ((mat === 4 || mat === 9 || mat === 11) && maxY > 1.0) hasScreen = true
       }
       let customId = -1
       let strictlyInsideCutout = false

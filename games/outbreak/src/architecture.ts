@@ -196,22 +196,18 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(r-1.88,4.88,mid+1.02,r-1.32,4.91,mid+1.58,rgb(0x181c22))
   m.box(r+.02,.15,e-.12,r+.10,2.76,e-.04,rgb(0x7d8490),MAT.lit)
   const cx=x+5.7
-  const porchLamp=Math.max(0,town.lamps.findIndex(l=>l.kind==="porch"&&Math.abs(l.x-cx)<1.5&&Math.abs(l.y-(e+1.15))<1.5))
   parkedSedan(m,x-1.68,e-1.35,.035)
   gardenShed(m,x-2.85,z+.55,x-1.15,z+2.25,.035)
-  // Gabled porch canopy with dark shingle slopes, warm-lit tympanum and crisp white rake trim (^).
-  m.quadAuto([cx-1.62,2.46,e+1.58],[cx,3.22,e+1.58],[cx,3.22,e-.15],[cx-1.62,2.46,e-.15],roof,MAT.roof,id)
-  m.quadAuto([cx,3.22,e+1.58],[cx+1.62,2.46,e+1.58],[cx+1.62,2.46,e-.15],[cx,3.22,e-.15],roof,MAT.roof,id)
-  m.facet([cx-1.52,2.46,e+1.48],[cx,3.16,e+1.48],[cx+1.52,2.46,e+1.48],rgb(0x3a352e),MAT.roof,id)
-  m.quadAuto([cx-1.64,2.42,e+1.60],[cx,3.19,e+1.60],[cx,3.26,e+1.56],[cx-1.64,2.49,e+1.56],trim,MAT.roof,id)
-  m.quadAuto([cx,3.19,e+1.60],[cx+1.64,2.42,e+1.60],[cx+1.64,2.49,e+1.56],[cx,3.26,e+1.56],trim,MAT.roof,id)
-  m.box(cx-1.58,2.38,e+1.36,cx+1.58,2.46,e+1.52,trim,MAT.roof,id)
-  // Warm glowing porch sconce above the front door + warm-washed transoms
-  m.box(cx-.11,2.24,e+.02,cx+.11,2.38,e+.16,rgb(0xffdfa6),MAT.lamp,porchLamp)
-  m.box(cx-.48,2.22,e+.01,cx+.48,2.30,e+.06,rgb(0x8c5e2c),MAT.lamp,porchLamp)
+  // Gabled porch canopy aligned over the columns (e+1.28) so the street camera sees the front door, sconce bulb, and full doormat.
+  m.quadAuto([cx-1.56,2.48,e+1.28],[cx,3.04,e+1.28],[cx,3.04,e-.12],[cx-1.56,2.48,e-.12],roof,MAT.roof,id)
+  m.quadAuto([cx,3.04,e+1.28],[cx+1.56,2.48,e+1.28],[cx+1.56,2.48,e-.12],[cx,3.04,e-.12],roof,MAT.roof,id)
+  m.facet([cx-1.46,2.48,e+1.18],[cx,2.98,e+1.18],[cx+1.46,2.48,e+1.18],rgb(0x3a352e),MAT.roof,id)
+  m.quadAuto([cx-1.58,2.44,e+1.30],[cx,3.01,e+1.30],[cx,3.08,e+1.26],[cx-1.58,2.51,e+1.26],trim,MAT.roof,id)
+  m.quadAuto([cx,3.01,e+1.30],[cx+1.58,2.44,e+1.30],[cx+1.58,2.51,e+1.26],[cx,3.08,e+1.26],trim,MAT.roof,id)
+  m.box(cx-1.52,2.40,e+1.08,cx+1.52,2.48,e+1.24,trim,MAT.roof,id)
   for(const px of [cx-1.32,cx+1.32]){
-    m.box(px-.09,.34,e+1.20,px+.09,2.42,e+1.38,rgb(0xeae4d7),MAT.wall)
-    m.box(px-.14,.13,e+1.15,px+.14,.34,e+1.43,rgb(0xd8d2c5),MAT.wall)
+    m.box(px-.09,.34,e+1.06,px+.09,2.42,e+1.24,rgb(0xeae4d7),MAT.wall)
+    m.box(px-.14,.13,e+1.01,px+.14,.34,e+1.29,rgb(0xd8d2c5),MAT.wall)
   }
   // Porch steps leading to the front walkway, plus wall mailbox next to the door.
   m.box(cx-1.28,.08,e+1.28,cx+1.28,.132,e+1.46,rgb(0xc6bfb0),MAT.wall)

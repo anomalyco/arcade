@@ -77,15 +77,15 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
   }
   for(const [x,y] of [[12.8,24.5],[15.6,29.4],[11.5,33.2],[15.4,35.8],[13.8,49.2],[14,59],[12,63]]) town.props.push({x:x!,y:y!,kind:"tree",variant:rng.next()})
   town.props.push({x:16.4,y:32.6,kind:"tree",variant:.46})
-  for (const p of [8, 52, 78]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:6.3,power:.36,kind:"street"})
+  for (const p of [8, 52, 78]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:5.8,power:.28,kind:"street"})
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect
-    town.lamps.push({x:x+5.7,y:e+1.15,h:2.42,radius:6.8,power:1.05,kind:"porch"})
-    town.lamps.push({x:x+2.6,y:z+1.85,h:1.24,radius:4.6,power:.38,kind:"room"})
-    town.lamps.push({x:x+1.25,y:e-1.25,h:1.48,radius:5.4,power:.45,kind:"room"})
-    town.lamps.push({x:r-3.2,y:e-3.6,h:2.15,radius:5.4,power:.38,kind:"room"})
-    town.lamps.push({x:x+6.1,y:z+4.2,h:2.40,radius:5.2,power:.34,kind:"room"})
-    if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.12,h:1.42,radius:2.1,power:.22,kind:"window"})
+    town.lamps.push({x:x+5.7,y:e+.42,h:2.35,radius:5.8,power:.68,kind:"porch"})
+    town.lamps.push({x:x+2.6,y:z+1.85,h:1.24,radius:4.0,power:.30,kind:"room"})
+    town.lamps.push({x:x+1.25,y:e-1.25,h:1.42,radius:4.5,power:.34,kind:"room"})
+    town.lamps.push({x:r-3.2,y:e-3.6,h:2.10,radius:4.6,power:.30,kind:"room"})
+    town.lamps.push({x:x+6.1,y:z+4.2,h:2.38,radius:4.2,power:.22,kind:"room"})
+    if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.18,h:1.35,radius:2.8,power:.24,kind:"window"})
   }
   return town
 }

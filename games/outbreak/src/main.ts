@@ -19,7 +19,7 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: .92, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...zombieTuning }
 const controls: LabControl[] = [
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
@@ -179,13 +179,13 @@ async function main() {
       const lx = lamp.x + (lamp.kind === "street" ? .55 : 0), ly = lamp.y, r = lamp.radius
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
       if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
-      const color=lamp.kind==="street"?[1,.78,.54]:lamp.kind==="porch"?[1,.66,.28]:lamp.kind==="window"?[1,.60,.24]:[1,.52,.19]
-      const cone=lamp.kind==="window"?[0,1,-.15,1]:lamp.kind==="porch"?[0,1,-.35,1]:[0,0,0,lamp.kind==="room"?-1:0]
+      const color=lamp.kind==="street"?[1,.76,.50]:lamp.kind==="porch"?[1,.62,.24]:lamp.kind==="window"?[1,.58,.22]:[1,.56,.20]
+      const cone=lamp.kind==="window"?[0,1,.10,1]:[0,0,0,(lamp.kind==="room"||lamp.kind==="porch")?-1:0]
       lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.16:.22, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
-    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*settings.moonFill*(1-settings.weather*.85)], 28)
+    frame.set([p.x, p.y, 1, .22], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*settings.moonFill*(1-settings.weather*.85)], 28)
     const focus = cam.project(p.x, 1, p.y, w, h)
     frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, 1.0, count], 32)
     frame.set([...day.direction, day.sun], 36); frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)

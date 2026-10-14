@@ -9,9 +9,9 @@ export const shaders = {
   scene: makeSceneShader({
     ao: "0.42",
     lightLeak: "0.006 * vis",
-    lightAttenuation: `let dn = max(d3, 0.55);
-    var att = power * win * (0.08 + 3.4 / (1.0 + dn * dn * 0.45));
-    if (att <= 0.004) { continue; }`,
+    lightAttenuation: `let dn = max(d3, 0.85);
+    var att = power * win * (0.04 + 2.45 / (1.0 + dn * dn * 0.55));
+    if (att <= 0.0035) { continue; }`,
     wallDirectScale: "mix(0.28, 0.46, smoothstep(0.0, 1.5, o.world.y))",
     ambient: "ambientAt(n) * mix(0.13, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), vec3f(0.022, 0.015, 0.008), interior(o.world.xz) && o.world.y < 2.8)",
     diagnostics: "F.map.z",
