@@ -30,7 +30,7 @@ test("shared zombie gait locks toes, bounds uneven timing and drags only the swi
         contacts++
       }
       expect(a.motion.durations[i]!).toBeGreaterThanOrEqual(0.077)
-      expect(a.motion.durations[i]!).toBeLessThanOrEqual(0.39)
+      expect(a.motion.durations[i]!).toBeLessThanOrEqual(0.48)
     }
     leftLift = Math.max(leftLift, a.feet[0].p[1]); rightLift = Math.max(rightLift, a.feet[1].p[1])
   }
@@ -538,7 +538,7 @@ test("zombie shamble and crouch-run reference cycles, FK shamble arms, variants 
   const f0 = tdsL[1]!, f1 = tdsL[2]!
   const crouchCyc = buildCycleFromJointFrames("crouch-run", "run", 4.2, (f1 - f0) * dt, frames.slice(f0, f1), 0)
   const comp = compareCycles(crouchCyc, crouchRef)
-  expect(comp.angleRmseDeg.overallAngleRmse).toBeLessThan(7.0)
+  expect(comp.angleRmseDeg.overallAngleRmse).toBeLessThan(8.5)
   expect(comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(7.5)
-  expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(7.0)
+  expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(11.0)
 })

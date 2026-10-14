@@ -1,7 +1,7 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, SPRITE_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
-import { angleSpring } from "@arcade/kit/human-locomotion"
+import { angleSpring, gaitAt } from "@arcade/kit/human-locomotion"
 import {
   boneVisible,
   detach,
@@ -457,10 +457,11 @@ export class ZombieCrowdRenderer {
       const needsStep =
         speed < 0.2 &&
         st.feet.some((f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > 0.22 || !f.planted)
-      const stride = (0.98 + 0.34 * speed) * profile.strideScale
-      const rate = speed >= 0.15 ? speed / stride : needsStep ? 1.25 : 0
+      const curGait = gaitAt(speed, false, 0, profile)
+      const dragSlow = 1 - 0.22 * clamp(profile.footDrag, 0, 0.95) * (1 - 0.5 * curGait.run)
+      const rate = speed >= 0.15 ? Math.max(0.72, (speed / curGait.stride) * dragSlow) : needsStep ? 1.25 : 0
       st.phase = (st.phase + rate * dt) % 1
-      const duty = 0.62 - 0.18 * moving
+      const duty = curGait.duty
       st.feet.forEach((f, i) => {
         const isDrag = i === dragFoot
         const drag = isDrag ? clamp(profile.footDrag, 0, 0.95) : 0
