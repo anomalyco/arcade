@@ -1,5 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
-import { buildFoliageTree, foliageSettings } from "@arcade/kit/gpu/foliage"
+import { buildFoliageTree, emitHydrangeaPanicles, foliageSettings } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
@@ -171,42 +171,47 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   for(const [a,d] of [[x+.15,x+4.35],[x+7.15,r-.15]]){
     m.quad([a!,.022,e+.92],[d!,.022,e+.92],[d!,.022,e+.05],[a!,.022,e+.05],[0,1,0],rgb(0x28291f),MAT.ground,5)
   }
-  // Left corner shrub cluster + low under-window shrubs
+  // Left corner shrub cluster + low under-window shrubs + twin boxwood globes + flowering hydrangea
   for(const [px,pz,ph,pr] of [
-    [x+.45,e+.48,1.08,.74],
-    [x-.28,e-.35,1.18,.78],
-    [x+1.35,e+.44,.68,.48],
-    [x+2.45,e+.46,.52,.42],
-    [x+3.65,e+.38,.58,.44],
-    // Two distinct rounded boxwood shrubs right of the porch column
-    [x+7.55,e+.48,.88,.58],
-    [x+8.62,e+.50,.84,.56],
+    [x+.28,e+.54,1.38,.88],
+    [x-.28,e-.35,1.22,.78],
+    [x+1.45,e+.44,.64,.44],
+    [x+2.52,e+.46,.52,.38],
+    [x+3.65,e+.38,.56,.40],
+    // Two distinct compact rounded boxwood globes right of the porch column (h/r >= 1.65 triggers globe habit)
+    [x+7.42,e+.50,.88,.50],
+    [x+8.68,e+.52,.84,.48],
     // Low border shrubs under the right window
-    [x+10.1,e+.42,.52,.42],
-    [x+11.4,e+.44,.56,.44],
-    // Hydrangea bush at the front-right corner
-    [r-1.05,e+.58,.96,.76],
+    [x+10.05,e+.42,.52,.38],
+    [x+11.25,e+.44,.56,.40],
+    // Lush flowering Hydrangea bush at the front-right corner
+    [r-1.05,e+.62,1.12,.88],
   ])plant(m,px!,pz!,ph!,pr!,Math.floor(rng.next()*1e6),supportHeight(town,px!,pz!))
-  // Creamy-white hydrangea flower clusters on the front-right corner bush
-  for(let i=0;i<14;i++){
-    const a=i*2.399,dist=.12+(i%4)*.15,px=r-1.05+Math.cos(a)*dist,pz=e+.58+Math.sin(a)*dist*.82
-    const py=.48+(1-(i%4)*.18)*.42+(i%2)*.05
-    m.prism(px,pz,.075,.055,py,py+.09,6,rgb(i%3===0?0xdde3d5:0xc5cebc))
-  }
+  // Multi-floret creamy-white hydrangea corymb panicles on the front-right corner bush
+  emitHydrangeaPanicles(m,r-1.05,supportHeight(town,r-1.05,e+.62),e+.62,1.12,.88,town.houseSeed+31)
   for(const px of [x+.08,r-.14]){
     m.box(px,.12,e+.1,px+.07,2.77,e+.17,trim,MAT.timber)
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
   }
   for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,trim,MAT.wall)
-  // Framing side-yard trees and border hedges along the driveway and east side of the house.
+  // Framing side-yard trees, sidewalk-overhanging street canopies, corner shrubs, and driveway border hedges.
   for(const [px,pz,ph,pr] of [
-    [x-3.55,e-.4,1.35,.78],
-    [x-3.65,e-2.8,1.28,.72],
-    [x-3.60,z+3.2,1.35,.74],
-    [r+1.05,z+1.8,4.4,1.25],
-    [r+1.15,z+5.8,4.8,1.35],
-    [r+1.05,e-2.6,4.2,1.22],
-    [r+.55,e+.35,1.38,.82],
+    // Continuous dark border hedge & overarching woodland trees along the left driveway fence
+    [x-3.62,e+2.05,1.46,.92],
+    [x-3.58,e+.55,1.42,.86],
+    [x-3.55,e-.95,1.38,.82],
+    [x-3.65,e-2.80,1.34,.78],
+    [x-3.60,z+3.20,1.38,.80],
+    [x-5.25,e-.60,6.35,2.55],
+    [x-4.85,z+3.60,6.65,2.65],
+    // Multi-layered broadleaf street & side-yard trees overhanging the right lawn and north-south sidewalk
+    [r+2.45,z+1.60,6.40,2.45],
+    [r+2.95,z+5.80,6.85,2.65],
+    [r+2.55,e-2.10,6.15,2.35],
+    [r+.85,e+.40,1.48,.94],
+    // Rounded dark-green shrub at the front-right lawn corner inside the sidewalk intersection + border companion
+    [r+2.75,e+2.45,1.46,.94],
+    [r+1.15,e+2.60,1.06,.74],
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner.
   // Living room Oriental rug with warm cream border, slate-sage field, terracotta guard, corner motifs & diamond medallion

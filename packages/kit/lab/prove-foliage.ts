@@ -163,18 +163,52 @@ try {
   )
   assert.equal(heightAfterReset, FOLIAGE_PRESETS.oak.defaults.treeHeight)
 
-  // 6. Capture actual Outbreak game street scene at game camera (seed 7)
-  await page.goto(`http://127.0.0.1:${fixture.port}/?seed=7&bench`)
+  // 6. Capture actual Outbreak game street & interior scenes at aligned target poses (seed 7)
+  await page.setViewportSize({ width: 1000, height: 680 })
+  await page.goto(`http://127.0.0.1:${fixture.port}/?solo&seed=7&bench`)
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, undefined, { timeout: 25000 })
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
+    h.reset(7)
     h.setLab("timeScale", 0)
     h.setLab("hour", 18)
-    h.setLab("zoom", 38)
-    h.pose(29.5, 40.5, -Math.PI / 2)
-    await h.step(1 / 60)
+    h.setLab("zoom", 42)
+    for (const [x, y, a] of [
+      [30, 41, -1.57],
+      [20, 35, -1.57],
+      [20, 26, 0],
+      [30, 21, 1.57],
+      [38, 32, 3.14],
+    ]) {
+      h.pose(x, y, a)
+      await h.step()
+    }
+    h.pose(30, 41, -Math.PI / 2)
+    for (let i = 0; i < 8; i++) await h.step()
   })
   await page.screenshot({ path: resolve(out, "outbreak-in-game-street.png") })
+
+  await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    h.reset(7)
+    h.setLab("timeScale", 0)
+    h.setLab("hour", 19)
+    h.setLab("zoom", 34)
+    for (const [x, y, a] of [
+      [30, 41, -1.57],
+      [20, 35, -1.57],
+      [20, 26, 0],
+      [30, 21, 1.57],
+      [38, 32, 3.14],
+    ]) {
+      h.pose(x, y, a)
+      await h.step()
+    }
+    h.pose(27.7, 31, -Math.PI / 2)
+    await h.step(1 / 60, { interact: true })
+    for (let i = 0; i < 8; i++) await h.step()
+  })
+  await page.screenshot({ path: resolve(out, "outbreak-in-game-interior.png") })
 
   assert.deepEqual(errors, [])
 
@@ -190,6 +224,7 @@ try {
       "outbreak-lot-close-split.png",
       "swatch-close-split.png",
       "outbreak-in-game-street.png",
+      "outbreak-in-game-interior.png",
     ],
   }
   writeFileSync(resolve(out, "foliage-lab-pass2-proof.json"), JSON.stringify(summary, null, 2) + "\n")

@@ -6,8 +6,8 @@ import {
   buildFoliageTree,
   buildLegacyFoliageTree,
   emitCurvedGrassBlade,
-  emitGrassFurShells,
   emitGrassTuft,
+  emitHydrangeaPanicles,
   foliageSettings,
   foliageWindDeclarationsWgsl,
   isFoliageCrownShape,
@@ -43,24 +43,24 @@ export const FOLIAGE_LIGHTING_PRESETS: Readonly<
     label: "Outbreak dusk (18:00)",
     values: {
       lamps: true,
-      lampPower: 3.1,
-      lampRadius: 14.5,
-      lampHeight: 3.5,
-      spot: true,
-      spotPower: 3.8,
-      spotAngle: 42,
+      lampPower: 1.8,
+      lampRadius: 10.5,
+      lampHeight: 3.2,
+      spot: false,
+      spotPower: 1.6,
+      spotAngle: 38,
       spotYaw: -118,
       spotPitch: 40,
       shadows: true,
       moon: true,
-      moonPower: 0.48,
+      moonPower: 0.34,
       moonAzimuth: -48,
-      moonElevation: 38,
+      moonElevation: 40,
       count: 4,
-      exposure: 0.12,
+      exposure: -0.14,
       tone: 1,
-      temperature: 0.16,
-      saturation: 1.05,
+      temperature: -0.12,
+      saturation: 0.96,
     },
   },
   outbreak_day: {
@@ -70,45 +70,45 @@ export const FOLIAGE_LIGHTING_PRESETS: Readonly<
       lampPower: 0.5,
       lampRadius: 12,
       lampHeight: 3.5,
-      spot: true,
-      spotPower: 4.6,
+      spot: false,
+      spotPower: 2.4,
       spotAngle: 48,
       spotYaw: -55,
       spotPitch: 56,
       shadows: true,
       moon: true,
-      moonPower: 1.25,
+      moonPower: 1.05,
       moonAzimuth: -42,
       moonElevation: 62,
       count: 2,
-      exposure: 0.22,
+      exposure: 0.08,
       tone: 1,
-      temperature: 0.12,
-      saturation: 1.06,
+      temperature: 0.06,
+      saturation: 1.0,
     },
   },
   outbreak_night: {
     label: "Outbreak night (22:30)",
     values: {
       lamps: true,
-      lampPower: 3.5,
-      lampRadius: 14.5,
-      lampHeight: 3.6,
-      spot: true,
-      spotPower: 5.2,
+      lampPower: 2.2,
+      lampRadius: 11.5,
+      lampHeight: 3.4,
+      spot: false,
+      spotPower: 2.4,
       spotAngle: 34,
       spotYaw: -102,
       spotPitch: 44,
       shadows: true,
       moon: true,
-      moonPower: 0.24,
+      moonPower: 0.20,
       moonAzimuth: -58,
       moonElevation: 46,
       count: 4,
-      exposure: -0.02,
+      exposure: -0.22,
       tone: 1,
-      temperature: -0.14,
-      saturation: 1.02,
+      temperature: -0.20,
+      saturation: 0.94,
     },
   },
   cold_moon: {
@@ -208,11 +208,6 @@ struct VOut {
 
   let compareMode = i32(round(U.config.y));
   let passSide = U.config.z;
-  // Perspective-correct screen-space NDC split (ndcX == 0.0) eliminates 3D polygon intersection seams.
-  if (compareMode == 2) {
-    if (passSide < -0.5 && ndcX >= 0.0) { discard; }
-    if (passSide > 0.5 && ndcX < 0.0) { discard; }
-  }
 
   let mat = i32(round(o.mat));
   var n = normalize(o.normal);
@@ -239,7 +234,7 @@ struct VOut {
         r.u2.z = clamp(U.extra.x * 0.52, 0.0, 1.0);
         r.u2.w = clamp(0.35 + U.extra.x * 0.45, 0.0, 1.0);
         let s = evalGrassSoil(p, albedo, false, r);
-        albedo = mix(s.albedo, albedo * vec3f(0.62, 0.88, 0.42), 0.32 * (1.0 - U.extra.x * 0.5));
+        albedo = s.albedo;
         gloss = s.gloss;
         cavity = s.cavity;
         n = normalize(n + surfaceNormalShift);
@@ -256,14 +251,16 @@ struct VOut {
     } else if (kind == 2) {
       let inVerge = U.config.w < 0.5 && p.y > 3.32 && p.y < 3.76 && abs(p.x) > 0.9 && p.x > -7.6;
       if (inVerge) {
+        let vDist = min(p.y - 3.32, 3.76 - p.y);
+        let vEdge = smoothstep(0.0, 0.08, vDist);
         if (isAfter) {
-          let s = evalGrassSoil(p, vec3f(0.24, 0.32, 0.16), false, defaultMaterialRecipe(4));
+          let s = evalGrassSoil(p, vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge), false, defaultMaterialRecipe(4));
           albedo = s.albedo;
           gloss = s.gloss;
-          cavity = s.cavity;
+          cavity = s.cavity * (0.55 + 0.45 * vEdge);
           n = normalize(n + surfaceNormalShift);
         } else {
-          let s = evalLegacyMaterial(4, o.world, n, vec3f(0.24, 0.30, 0.16));
+          let s = evalLegacyMaterial(4, o.world, n, vec3f(0.024, 0.036, 0.014));
           albedo = s.albedo;
         }
       } else {
@@ -323,12 +320,12 @@ struct VOut {
       n = normalize(n + vec3f(tuftG.y * 0.48, 0.0, tuftG.z * 0.48));
     } else if (o.aux < -0.02) {
       let bladeT = clamp(-o.aux, 0.0, 1.0);
-      let rootAO = mix(0.28, 1.0, smoothstep(0.0, 0.28, bladeT));
-      let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.18;
+      let rootAO = mix(0.24, 1.0, smoothstep(0.0, 0.32, bladeT));
+      let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.16;
       let crestNoise = surfaceNoise(o.world.xz * 0.32 + vec2f(U.config.x * 0.28, U.config.x * 0.16));
-      let crestHighlight = smoothstep(0.40, 0.68, crestNoise) * 0.38 * bladeT;
-      albedo = mix(albedo * (0.94 + vein), vec3f(0.54, 0.72, 0.18), crestHighlight) * mix(0.84, 1.24, pow(bladeT, 0.62));
-      gloss = vec2f(48.0, 0.32 * bladeT);
+      let crestHighlight = smoothstep(0.42, 0.72, crestNoise) * 0.22 * bladeT;
+      albedo = mix(albedo * (0.92 + vein), vec3f(0.28, 0.42, 0.18), crestHighlight) * mix(0.80, 1.06, pow(bladeT, 0.62));
+      gloss = vec2f(48.0, 0.22 * bladeT);
       cavity = rootAO;
       outAlpha = clamp(1.42 - bladeT * 0.48, 0.52, 1.0);
     } else {
@@ -343,8 +340,10 @@ struct VOut {
         let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
         let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
         let brushField = brush1 * 0.58 + brush2 * 0.42;
-        let edgeMask = smoothstep(0.015, 0.16, cardEdge);
-        outAlpha = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+        let edgeMask = smoothstep(0.015, 0.18, cardEdge);
+        let lobeMask = clamp((cardEdge * 1.32 + (brushField - 0.40) * 0.92 - 0.14) * 2.8, 0.0, 1.0) * edgeMask;
+        albedo *= mix(0.84, 1.06, brushField);
+        outAlpha = lobeMask;
       }
     }
   }
@@ -376,15 +375,16 @@ struct VOut {
   }
 
   let isFoliage = mat == 22;
-  let wrap = select(0.18, 0.40, isFoliage && isAfter);
-  let tipWeight = clamp(abs(o.aux), 0.0, 1.2);
-  let transStrength = select(0.0, U.wind.u0.w * (0.35 + 0.65 * tipWeight), isFoliage && isAfter);
+  let wrap = select(0.18, 0.36, isFoliage && isAfter);
+  let tipWeight = clamp(abs(o.aux), 0.0, 1.0);
+  let transStrength = select(0.0, U.wind.u0.w * (0.30 + 0.55 * tipWeight), isFoliage && isAfter);
 
-  var diff = F.ambient.rgb * (0.52 + 0.48 * max(n.y, 0.0)) * cavity;
+  let ambientTint = select(vec3f(0.56, 0.68, 0.88) * 0.62, vec3f(0.84, 0.90, 1.0) * 0.78, U.config.w > 0.5);
+  var diff = F.ambient.rgb * ambientTint * (0.44 + 0.48 * max(n.y, 0.0)) * cavity;
   let moonDir = normalize(F.moon.xyz);
   let moonNdl = max(0.0, (dot(n, moonDir) + wrap) / (1.0 + wrap));
-  let moonBack = max(0.0, dot(-n, moonDir)) * transStrength * 0.65;
-  diff += vec3f(0.52, 0.65, 0.92) * F.moon.w * (moonNdl * cavity + moonBack);
+  let moonBack = max(0.0, dot(-n, moonDir)) * transStrength * 0.42;
+  diff += vec3f(0.46, 0.62, 0.92) * F.moon.w * (moonNdl * cavity + moonBack);
 
   var spec = vec3f(0.0);
   let lightCount = min(8, i32(F.options.x));
@@ -396,13 +396,13 @@ struct VOut {
     let dist = length(delta);
     if (dist >= lpos.w || lcol.w <= 0.001) { continue; }
     let ldir = delta / max(dist, 0.001);
-    var atten = pow(max(0.0, 1.0 - dist / lpos.w), 2.0) * lcol.w;
+    var atten = pow(max(0.0, 1.0 - dist / lpos.w), 2.2) * lcol.w;
     if (lcone.w > -1.0) {
       atten *= smoothstep(lcone.w, min(1.0, lcone.w + 0.08), dot(-ldir, lcone.xyz));
     }
     let ndl = max(0.0, (dot(n, ldir) + wrap) / (1.0 + wrap));
-    let back = max(0.0, dot(-n, ldir)) * transStrength * 0.58;
-    diff += lcol.rgb * atten * (ndl * mix(0.65, 1.0, cavity) + back);
+    let back = max(0.0, dot(-n, ldir)) * transStrength * 0.34;
+    diff += lcol.rgb * atten * (ndl * mix(0.62, 1.0, cavity) + back);
     if (gloss.x > 0.0 && gloss.y > 0.0) {
       let h = normalize(ldir + V);
       let s = pow(max(0.0, dot(n, h)), gloss.x) * (gloss.x + 2.0) * 0.008;
@@ -410,11 +410,11 @@ struct VOut {
     }
   }
 
-  var color = albedo * diff * 1.15 + spec;
+  var color = albedo * diff + spec;
   if (isFoliage && isAfter) {
-    let fresnel = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.24 * tipWeight;
-    let chloro = mix(vec3f(0.16, 0.45, 0.04), vec3f(0.55, 0.85, 0.10), sqrt(clamp(tipWeight, 0.0, 1.0)));
-    color += albedo * chloro * transStrength * 0.35 + albedo * vec3f(0.50, 0.85, 0.30) * fresnel;
+    let fresnel = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.14 * tipWeight * max(0.15, F.moon.w);
+    let chloro = mix(vec3f(0.10, 0.24, 0.05), vec3f(0.28, 0.44, 0.14), sqrt(tipWeight));
+    color += albedo * chloro * moonBack * 0.45 + albedo * vec3f(0.32, 0.52, 0.22) * fresnel;
   }
 
   // Crisp 1.5px screen-space split indicator line in A/B Split mode
@@ -442,21 +442,17 @@ function addOutbreakLotArchitecture(m: Mesh, seed: number): void {
   const x = -7.5, r = 7.5, z = -6.5, e = -1.5
   const mid = (z + e) / 2
   const ridge = 4.35
-  const trim = rgb(0xd4d2c8)
-  const roof = rgb(0x3d4758)
-  const brick = rgb(0x684339)
-  const wallCol = rgb(0x767f78)
+  const trim = rgb(0xc8c5ba)
+  const roof = rgb(0x323b4a)
+  const brick = rgb(0x5c3a30)
+  const wallCol = rgb(0x667068)
 
-  // Lawn ground (-11.6..11.6 in X, -6.8..2.0 in Z)
-  m.box(-11.6, -0.08, -6.8, 11.6, 0.0, 2.0, rgb(0x526438), MAT.ground, 0)
+  // Lawn ground (-11.6..11.6 in X, -6.8..2.0 in Z) matching Outbreak's dark forest turf base
+  m.box(-11.6, -0.08, -6.8, 11.6, 0.0, 2.0, rgb(0x303e22), MAT.ground, 0)
   // Sidewalk + verge + curb (z = 2.0..4.0)
-  m.box(-11.6, -0.06, 2.0, 11.6, 0.08, 4.0, rgb(0x989ba4), MAT.ground, 2)
+  m.box(-11.6, -0.06, 2.0, 11.6, 0.08, 4.0, rgb(0x767b86), MAT.ground, 2)
   // Street asphalt (z = 4.0..8.4)
-  m.box(-11.6, -0.08, 4.0, 11.6, 0.014, 8.4, rgb(0x454d5c), MAT.ground, 1)
-  // Dashed yellow street center lines
-  for (const vx of [-9.5, -4.5, 0.5, 5.5]) {
-    m.box(vx, 0.015, 6.1, vx + 2.4, 0.022, 6.22, rgb(0xb9ab7a))
-  }
+  m.box(-11.6, -0.08, 4.0, 11.6, 0.014, 8.4, rgb(0x343c4a), MAT.ground, 1)
   // Storm drain grate at curb
   m.box(-3.8, 0.016, 3.86, -2.96, 0.024, 4.14, rgb(0x14181c))
   for (let i = 0; i < 7; i++) {
@@ -567,30 +563,23 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
   plantFn(2.4, 0.85, params.treeHeight * 0.88, params.crownRadius * 0.88, seed * 47 + 13)
   plantFn(-9.4, -1.8, params.treeHeight * 0.92, params.crownRadius * 0.85, seed * 59 + 19)
 
-  // 2. Foundation shrubs along the house front & porch
+  // 2. Foundation shrubs along the house front & porch (including twin boxwood globes & corner hydrangea)
   const rng = new Rng(seed + 71)
   for (const [px, pz, ph, pr] of [
-    [x + 0.55, e + 0.48, 1.12, 0.76],
-    [x + 1.65, e + 0.44, 0.68, 0.48],
-    [x + 2.85, e + 0.46, 0.56, 0.44],
-    [x + 4.05, e + 0.40, 0.62, 0.46],
-    [-2.05, e + 0.48, 0.88, 0.58],
-    [2.05, e + 0.48, 0.88, 0.58],
-    [3.25, e + 0.44, 0.58, 0.44],
-    [4.45, e + 0.42, 0.56, 0.44],
-    [r - 1.05, e + 0.58, 0.98, 0.78],
+    [x + 0.45, e + 0.52, 1.32, 0.84],
+    [x + 1.65, e + 0.44, 0.64, 0.44],
+    [x + 2.85, e + 0.46, 0.52, 0.38],
+    [x + 4.05, e + 0.40, 0.58, 0.40],
+    [-2.05, e + 0.48, 0.88, 0.50],
+    [1.85, e + 0.48, 0.88, 0.50],
+    [2.95, e + 0.50, 0.84, 0.48],
+    [4.25, e + 0.42, 0.56, 0.40],
+    [r - 1.05, e + 0.62, 1.12, 0.88],
   ] as const) {
-    plantFn(px, pz, ph, pr, Math.floor(rng.next() * 1e6), "spreading")
+    plantFn(px, pz, ph, pr, Math.floor(rng.next() * 1e6))
   }
-  // Creamy-white hydrangea blooms on the front-right corner shrub
-  for (let i = 0; i < 14; i++) {
-    const a = i * 2.399
-    const dist = 0.12 + (i % 4) * 0.15
-    const px = r - 1.05 + Math.cos(a) * dist
-    const pz = e + 0.58 + Math.sin(a) * dist * 0.82
-    const py = 0.48 + (1 - (i % 4) * 0.18) * 0.42 + (i % 2) * 0.05
-    m.prism(px, pz, 0.075, 0.055, py, py + 0.09, 6, rgb(i % 3 === 0 ? 0xdde3d5 : 0xc5cebc))
-  }
+  // Multi-floret creamy-white hydrangea panicles on the front-right corner shrub
+  emitHydrangeaPanicles(m, r - 1.05, 0.018, e + 0.62, 1.12, 0.88, seed + 31)
 
   // 3. Lawn & verge grass
   if (isLegacy) {
@@ -608,20 +597,13 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
     }
   } else {
     const grassRng = new Rng(seed ^ 0x73c9)
-    // 4-layer volumetric grass fur shells covering the front lawns, side yards, and curb verge strip
-    emitGrassFurShells(m, -7.45, -0.58, -0.82, 1.98, () => 0.0, params, 4, 2.0)
-    emitGrassFurShells(m, 0.82, -0.58, 7.45, 1.98, () => 0.0, params, 4, 2.0)
-    emitGrassFurShells(m, -11.4, -6.5, -10.55, 1.98, () => 0.0, params, 4, 2.2)
-    emitGrassFurShells(m, 7.55, -6.5, 11.4, 1.98, () => 0.0, params, 4, 2.2)
-    emitGrassFurShells(m, -7.4, 3.34, -0.95, 3.74, () => 0.08, params, 3, 2.0)
-    emitGrassFurShells(m, 0.95, 3.34, 11.4, 3.74, () => 0.08, params, 3, 2.0)
 
-    // Dense 3D curved grass tufts emerging above the fur carpet
+    // Dense 3D curved grass tufts emerging from the normal-mapped turf ground
     const clumps = scatterGrassClumps({
       seed: seed ^ 0x453a,
       bounds: [-11.0, -0.62, 11.0, 1.94],
-      clusterCount: 165,
-      tuftsPerCluster: 5,
+      clusterCount: 115,
+      tuftsPerCluster: 4,
       params,
       avoid: (gx, gz) =>
         (gx > -0.88 && gx < 0.88 && gz > -1.5) ||
@@ -632,7 +614,7 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
     })
     for (const c of clumps) {
       emitGrassTuft(m, c.x, 0.0, c.z, {
-        bladeCount: c.blades + 1,
+        bladeCount: c.blades,
         radius: c.radius * 1.18,
         height: c.height * 1.14,
         width: c.width * 1.12,
@@ -713,15 +695,12 @@ function buildSwatchFoliageMesh(seed: number, params: Readonly<FoliageParams>, i
   buildFoliageTree(m, -2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
   buildFoliageTree(m, 2.7, -1.5, shrubH, shrubR, seed * 17 + 3, 0.015, params, "spreading")
 
-  // 4-layer volumetric grass fur shells across the swatch pad
-  emitGrassFurShells(m, -5.0, -3.6, 5.0, 2.55, () => 0.0, params, 4, 2.0)
-
   const grassRng = new Rng(seed ^ 0x51a9)
   const clumps = scatterGrassClumps({
     seed: seed ^ 0x2c91,
     bounds: [-4.95, -3.55, 4.95, 2.54],
-    clusterCount: 280,
-    tuftsPerCluster: 6,
+    clusterCount: 150,
+    tuftsPerCluster: 5,
     params,
     avoid: (x, z) =>
       Math.hypot(x, z + 0.35) < 0.36 ||
@@ -730,7 +709,7 @@ function buildSwatchFoliageMesh(seed: number, params: Readonly<FoliageParams>, i
   })
   for (const c of clumps) {
     emitGrassTuft(m, c.x, 0.0, c.z, {
-      bladeCount: c.blades + 1,
+      bladeCount: c.blades,
       radius: c.radius * 1.18,
       height: c.height * 1.18,
       width: c.width,
@@ -862,7 +841,7 @@ export function createFoliage(context: LabContext): LabSection {
     },
     primitive: { topology: "triangle-list", cullMode: "none" },
     depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less-equal" },
-    multisample: { count: 4, alphaToCoverageEnabled: true },
+    multisample: { count: 4 },
   })
 
   const uploadPackedMesh = (packed: ArrayBuffer, prev?: { buf: GPUBuffer; count: number }) => {
@@ -925,15 +904,15 @@ export function createFoliage(context: LabContext): LabSection {
     if (key === "outbreak_dusk") {
       stage.dynamicLights = isLot
         ? [
-            // Warm sodium streetlamp on the right curb + left streetlamp fill + warm porch lantern + window spill
-            { x: 3.6, y: 3.6, z: 3.65, radius: 14.5, r: 1.0, g: 0.78, b: 0.50, power: 3.2 },
-            { x: -5.2, y: 3.6, z: 3.65, radius: 13.5, r: 1.0, g: 0.76, b: 0.48, power: 2.6 },
-            { x: 0.9, y: 2.1, z: -0.4, radius: 9.5, r: 1.0, g: 0.66, b: 0.30, power: 2.2 },
-            { x: -4.2, y: 1.6, z: -0.6, radius: 8.5, r: 1.0, g: 0.62, b: 0.26, power: 1.8 },
+            // Warm porch lantern pool centered at the stoop + left/right window ground spills + right curb lamp
+            { x: 0.2, y: 2.1, z: -0.25, radius: 6.4, r: 1.0, g: 0.72, b: 0.36, power: 1.85 },
+            { x: -4.2, y: 1.5, z: -0.65, radius: 5.2, r: 1.0, g: 0.64, b: 0.28, power: 1.15 },
+            { x: 4.2, y: 1.5, z: -0.65, radius: 5.2, r: 1.0, g: 0.64, b: 0.28, power: 1.15 },
+            { x: 4.0, y: 3.5, z: 3.65, radius: 9.0, r: 1.0, g: 0.76, b: 0.46, power: 1.45 },
           ]
         : [
-            { x: -3.2, y: 4.2, z: 2.8, radius: 14, r: 1.0, g: 0.76, b: 0.48, power: 2.8 },
-            { x: 3.4, y: 2.6, z: -2.2, radius: 11, r: 1.0, g: 0.64, b: 0.34, power: 1.8 },
+            { x: -3.2, y: 4.2, z: 2.8, radius: 12, r: 1.0, g: 0.76, b: 0.48, power: 1.9 },
+            { x: 3.4, y: 2.6, z: -2.2, radius: 9, r: 1.0, g: 0.64, b: 0.34, power: 1.2 },
           ]
     } else if (key === "outbreak_day") {
       stage.dynamicLights = [
@@ -1212,14 +1191,21 @@ export function createFoliage(context: LabContext): LabSection {
         pass.setVertexBuffer(0, afterMesh.buf)
         pass.draw(afterMesh.count)
       } else {
+        const stg = stage as unknown as { width?: number; height?: number }
+        const w = Math.max(2, Math.floor(stg.width || 1280))
+        const h = Math.max(2, Math.floor(stg.height || 800))
+        const midW = Math.floor(w / 2)
         fillUniform(uniformDataBefore, uniformBufferBefore, -1)
         fillUniform(uniformDataAfter, uniformBufferAfter, 1)
+        pass.setScissorRect(0, 0, midW, h)
         pass.setBindGroup(0, bindGroupBefore)
         pass.setVertexBuffer(0, beforeMesh.buf)
         pass.draw(beforeMesh.count)
+        pass.setScissorRect(midW, 0, w - midW, h)
         pass.setBindGroup(0, bindGroupAfter)
         pass.setVertexBuffer(0, afterMesh.buf)
         pass.draw(afterMesh.count)
+        pass.setScissorRect(0, 0, w, h)
       }
     },
     telemetry() {

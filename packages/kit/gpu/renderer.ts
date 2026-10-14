@@ -299,11 +299,10 @@ export class Renderer {
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
         multisample: { count: SAMPLES, alphaToCoverageEnabled: alphaToCoverage && !blend && !motion },
       })
-    const useA2C = Boolean(shaders)
-    this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid", false, false)
-    this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs", false, useA2C)
-    this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", shaders ? "fsSolid" : "fs")
-    this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", shaders ? "fsSolid" : "fs")
+    this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
+    this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
+    this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", "fs")
+    this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
     this.pipes.instAlpha = pipe(scene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
     // Keep the all-off shader's arithmetic identical, including compiler rounding.
     this.baselinePipes.level = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")

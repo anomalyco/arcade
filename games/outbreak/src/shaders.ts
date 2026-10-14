@@ -98,7 +98,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
   return los * max(cone, near) * range;
 }`,
-    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 1.75, 0.08, abs(n.y) < 0.5), 1.0, !interior(o.world.xz + n.xz * 0.28) || o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
+    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 1.75, 0.08, abs(n.y) < 0.5), 1.0, !interior(o.world.xz + n.xz * 0.28) || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
     cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
@@ -157,8 +157,11 @@ fn eyeVisible(p: vec2f) -> f32 {
     col += vec3f(0.011, 0.018, 0.035) * F.ambient.w * sheen;
   }
   if(mat == 20 && i32(round(o.aux)) == 2) {
-    // Weathered concrete sidewalks and curbs with subtle slab variation.
-    col = col * 0.84 + vec3f(0.007, 0.011, 0.022) * F.ambient.w;
+    let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
+    if (!inVerge) {
+      // Weathered concrete sidewalks and curbs with subtle slab variation.
+      col = col * 0.84 + vec3f(0.007, 0.011, 0.022) * F.ambient.w;
+    }
   }
   if (!inRoom && o.world.y < 0.35) {
     let dp = o.world.xz - lights[0].pos.xz;
@@ -175,14 +178,14 @@ fn eyeVisible(p: vec2f) -> f32 {
   }
   if(mat == 22) {
     // Above the Grassland + Botanics subsurface chlorophyll translucency & 4th-power grazing Fresnel rim.
-    let tipWeight = clamp(abs(o.aux), 0.0, 1.2);
+    let tipWeight = clamp(abs(o.aux), 0.0, 1.0);
     let keyDir = normalize(F.monitorBounds.xyz);
     let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
     let backNormal = max(0.0, dot(-n, keyDir));
-    let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.32 * tipWeight;
-    let chloroTint = mix(vec3f(0.16, 0.38, 0.05), vec3f(0.46, 0.68, 0.14), sqrt(clamp(tipWeight, 0.0, 1.0)));
-    let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.15 * tipWeight * F.ambient.w;
-    col += o.color * (chloroTint * transLobe + vec3f(0.42, 0.72, 0.26) * fresnelRim) + col * 0.14 * tipWeight;
+    let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.24 * tipWeight;
+    let chloroTint = mix(vec3f(0.10, 0.24, 0.05), vec3f(0.28, 0.44, 0.14), sqrt(tipWeight));
+    let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.14 * tipWeight * F.ambient.w;
+    col += o.color * (chloroTint * transLobe + vec3f(0.32, 0.52, 0.22) * fresnelRim);
     if (o.world.y < 0.48) {
       let lawnPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
       col *= mix(0.40, 0.95, smoothstep(0.26, 0.76, lawnPatch));
