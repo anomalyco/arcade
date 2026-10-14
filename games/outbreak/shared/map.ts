@@ -8,7 +8,7 @@ export type Door = { id: string; rect: Rect; open: boolean }
 export type Building = { id: string; kind: "house" | "hardware" | "pharmacy"; rect: Rect; color: number }
 export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove"; variant: number }
 export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
-export type Town = { seed: number; houseSeed: number; terrain: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; props: Prop[]; lamps: Lamp[] }
+export type Town = { seed: number; houseSeed: number; terrain: number; foliageDensity: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; props: Prop[]; lamps: Lamp[] }
 
 /** One footprint source for geometry, collision, roof cutaways and room memory. */
 export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
@@ -21,10 +21,10 @@ export function propShape(p: Prop): { rect: Rect; height: number } | undefined {
 }
 
 /** Fixed street topology; seeded house palettes, trees and shelf stock. All dimensions are metres. */
-export function makeTown(seed: number, houseSeed = seed, terrain = .22): Town {
+export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageDensity = 1): Town {
   const rng = new Rng(seed)
   const houses = new Rng(houseSeed)
-  const town: Town = { seed, houseSeed, terrain, chunks: [], buildings: [], barriers: [], doors: [], props: [], lamps: [] }
+  const town: Town = { seed, houseSeed, terrain, foliageDensity, chunks: [], buildings: [], barriers: [], doors: [], props: [], lamps: [] }
   for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) town.chunks.push([x * CHUNK, y * CHUNK, (x + 1) * CHUNK, (y + 1) * CHUNK])
   const wall = (rect: Rect, color: number, kind: Barrier["kind"] = "wall") => town.barriers.push({ rect, color, kind })
   const building = (id: string, kind: Building["kind"], rect: Rect) => {
@@ -75,8 +75,8 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22): Town {
     if ((x > 36 && x < 53) || (y > 36 && y < 53) || town.buildings.some(b => distToRect(x, y, b.rect) < 4.5)) continue
     town.props.push({ x, y, kind: "tree", variant: rng.next() })
   }
-  for(const [x,y] of [[12,27],[14.7,30],[11,33],[14,59],[12,63]]) town.props.push({x:x!,y:y!,kind:"tree",variant:rng.next()})
-  town.props.push({x:16.1,y:32.8,kind:"tree",variant:.36})
+  for(const [x,y] of [[12.8,24.5],[15.6,29.4],[11.5,33.2],[15.4,35.8],[13.8,49.2],[14,59],[12,63]]) town.props.push({x:x!,y:y!,kind:"tree",variant:rng.next()})
+  town.props.push({x:16.4,y:32.6,kind:"tree",variant:.46})
   for (const p of [8, 52, 78]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:6.3,power:.36,kind:"street"})
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect

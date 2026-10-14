@@ -19,7 +19,7 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...zombieTuning }
 const controls: LabControl[] = [
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
@@ -36,6 +36,7 @@ const controls: LabControl[] = [
   { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
   { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
   { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: .4, step: .02 },
+  { key: "foliageDensity", label: "Foliage density", group: "Generation", min: .5, max: 1.5, step: .05 },
   { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: .05 },
   { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: .05 },
 ]
@@ -112,10 +113,11 @@ async function main() {
   const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
     if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
-    if (key === "houseSeed" || key === "terrain") regenerate()
+    if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
   })
   let vertices = 0
   function level() {
+    session.view.town.foliageDensity = settings.foliageDensity
     const data=buildLevel(session.view.town)
     vertices=[...data.chunks,...data.glass].reduce((n,c)=>n+c.data.byteLength/24,0)
     renderer.setLevel(data)
@@ -298,7 +300,7 @@ async function main() {
       settings[key] = value
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
       if (key === "hour") session.view.hour = wrapHour(value)
-      if (key === "houseSeed" || key === "terrain") regenerate()
+      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
     },
     pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
     async step(dt = 1 / 60, command?: Partial<Command>) {

@@ -13,7 +13,7 @@ const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, c
 function furniture(m: Mesh, p: Prop, town: Town): void {
   const { x, y: z, kind } = p
   if (kind === "tree") {
-    plant(m,x,z,4.4+p.variant*1.6,1.7+p.variant*.5,Math.floor(p.variant*1e6),supportHeight(town,x,z))
+    plant(m,x,z,4.6+p.variant*1.8,2.05+p.variant*.75,Math.floor(p.variant*1e6),supportHeight(town,x,z))
     return
   }
   const wood = hex(0x75604b), legs = hex(0x3b3934)
@@ -82,7 +82,7 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
 const levelCache = new Map<string, LevelData>()
 export function buildLevel(town: Town): LevelData {
-  const key=`${town.seed}/${town.houseSeed}/${town.terrain}`
+  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}`
   const cached=levelCache.get(key)
   if(cached)return cached
   const level=compileLevel(town)
@@ -102,7 +102,7 @@ function compileLevel(town: Town): LevelData {
   const tufts = scatterClusteredGroundCover({
     seed: town.seed ^ 0x453a,
     bounds: [0.5, 0.5, SIZE - 0.5, SIZE - 0.5],
-    clusterCount: 210,
+    clusterCount: Math.round(210 * (town.foliageDensity ?? 1)),
     tuftsPerCluster: 4,
     avoid: (x, z) =>
       (x > 37.8 && x < 50.2) ||
@@ -255,7 +255,7 @@ function compileLevel(town: Town): LevelData {
     const interiorCapByBuilding = BUILDING_RECTS.map(() => new Mesh())
     for (let i = 0; i < source.v.length; i += 33) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
-      let hasRoof = false, hasScreen = false
+      let hasRoof = false, hasScreen = false, hasFoliage = false
       for (const j of [0, 11, 22]) {
         const vx = source.v[i + j]!, vy = source.v[i + j + 1]!, vz = source.v[i + j + 2]!
         const mat = Math.round(source.v[i + j + 9]!)
@@ -263,6 +263,7 @@ function compileLevel(town: Town): LevelData {
         minY = Math.min(minY, vy); maxY = Math.max(maxY, vy)
         minZ = Math.min(minZ, vz); maxZ = Math.max(maxZ, vz)
         if (mat === 21) hasRoof = true
+        if (mat === 22 || mat === 24) hasFoliage = true
         if (mat === 4 || mat === 9 || mat === 2 || mat === 11) hasScreen = true
       }
       let customId = -1
@@ -272,7 +273,7 @@ function compileLevel(town: Town): LevelData {
         const b = BUILDING_RECTS[id]!
         customId = id
         strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] - .35
-      } else if (maxY > 2.8) {
+      } else if (maxY > 2.8 && !hasFoliage) {
         for (let id = 0; id < BUILDING_RECTS.length; id++) {
           const b = BUILDING_RECTS[id]!
           if (maxX > b[0] + .25 && minX < b[2] - .25 && maxZ > b[1] + .25 && minZ < b[3] - .25) {

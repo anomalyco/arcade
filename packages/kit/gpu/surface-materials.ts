@@ -863,14 +863,16 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   let hCluster = hash2(clusterCell.xz + vec2f(clusterCell.y * 3.7, 11.3)) - 0.5;
   let hHue = fract((hCluster + 0.5) * 13.7) - 0.5;
 
+  let leafClump = surfaceNoise(world.xz * 5.8 + vec2f(world.y * 2.1, -world.y * 1.7)) - 0.5;
+  let fineLeaf = grain(world.xz + vec2f(world.y * 0.7), 11.5 * gScale);
   let topMask = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
   let heightLift = smoothstep(0.05, 1.2, fract(world.y * 0.65));
-  let canopyLift = mix(0.68 - wear * 0.14, 1.24, clamp(topMask * 0.75 + heightLift * 0.25, 0.0, 1.0));
-  let hueTint = vec3f(1.0 + hHue * 0.18 * colVar, 1.0 + hHue * 0.08 * colVar, 1.0 - hHue * 0.16 * colVar);
-  var col = baseTint * hueTint * (0.94 + hCluster * 0.30 * colVar) * canopyLift;
+  let canopyLift = mix(0.56 - wear * 0.12, 1.32, clamp(topMask * 0.72 + heightLift * 0.28 + leafClump * 0.22, 0.0, 1.0));
+  let warmTip = clamp(leafClump + topMask * 0.35 - 0.1, -0.4, 0.6);
+  let hueTint = vec3f(1.0 + (hHue * 0.18 + warmTip * 0.22) * colVar, 1.0 + (hHue * 0.08 + warmTip * 0.14) * colVar, 1.0 - (hHue * 0.16 + warmTip * 0.20) * colVar);
+  var col = baseTint * hueTint * (0.94 + hCluster * 0.32 * colVar) * canopyLift;
 
-  let leafDetail = grain(world.xz + vec2f(world.y * 0.7), 7.5 * gScale) * 0.28;
-  col *= 1.0 + leafDetail + n0 * 0.18 * macroVar;
+  col *= 1.0 + leafClump * 0.34 + fineLeaf * 0.32 + n0 * 0.18 * macroVar;
 
   return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.05), r.u0.w, mix(0.68, 1.0, topMask));
 }
