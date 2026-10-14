@@ -68,7 +68,7 @@ export class CockpitBed {
     this.wind = { src: ws, filter: wf, gain: wg }
     this.whistle = gain(own)
     const hs = loop(n.white)
-    hs.connect(filter("bandpass", 4200, 1.6)).connect(this.whistle)
+    hs.connect(filter("bandpass", 2600, 0.6)).connect(this.whistle)
     this.ecs = gain(own)
     const es = loop(n.white)
     es.connect(filter("bandpass", 5600, 0.5)).connect(this.ecs)
@@ -104,7 +104,7 @@ export class CockpitBed {
     set(this.wind.filter.frequency, 380 + 3.2 * (s?.speed ?? 0))
     set(this.wind.src.playbackRate, 0.9 + 0.2 * Math.min(1, q))
     set(this.wind.gain.gain, s ? q * (0.05 + 0.14 * k) * tw : 0)
-    set(this.whistle.gain, s ? smoothstep(0.5, 1.2, q) * 0.035 * k * tw : 0)
+    set(this.whistle.gain, s ? smoothstep(0.5, 1.2, q) * 0.02 * k * tw : 0)
     set(this.ecs.gain, 0.022 * k)
     const buffet = s ? (s.stall * 0.55 + Math.max(0, s.g - 5) * 0.07 + s.brake * q * 0.45) * (0.35 + 0.65 * k) : 0
     set(this.buffet.gain, flying ? buffet : 0, 0.05)
