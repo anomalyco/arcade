@@ -608,7 +608,7 @@ async function main() {
 
   const resolveActor = (query: string | null | undefined): StageActor | undefined => {
     if (!query) return undefined
-    const q = query.trim().toLowerCase()
+    const q = query.trim().toLowerCase().replace(/^(blackout|outbreak):/, "")
     return (
       actors.find(a => a.id === q) ??
       actors.find(a => a.label.toLowerCase() === q) ??
@@ -1749,6 +1749,27 @@ async function main() {
     getMode: () => (possessing ? ("play" as const) : ("edit" as const)),
     getSection: () => selected.id,
     getState: () => buildPageState(),
+    resolveTargetRect: (target: { objectId?: string; world?: [number, number, number] }) => {
+      const cRect = canvas.getBoundingClientRect()
+      if (cRect.width <= 0 || cRect.height <= 0) return null
+      if (target.world) {
+        const [wx, wy, wz] = target.world
+        const proj = cam.project(wx, wy, wz, cRect.width, cRect.height)
+        if (proj.ok) {
+          return { x: cRect.left + proj.x - 40, y: cRect.top + proj.y - 40, width: 80, height: 80, shape: "pill" as const }
+        }
+      }
+      if (target.objectId) {
+        const actor = resolveActor(target.objectId) ?? (target.objectId === "character" || target.objectId === "active" ? selected : null)
+        if (actor) {
+          const proj = cam.project(actor.avatar.x, 0.9, actor.avatar.y, cRect.width, cRect.height)
+          if (proj.ok) {
+            return { x: cRect.left + proj.x - 44, y: cRect.top + proj.y - 54, width: 88, height: 108, shape: "pill" as const, label: actor.label }
+          }
+        }
+      }
+      return null
+    },
   }
   const devControl = registerDevControl(devControlAdapter)
   notifyDevControl = devControl.notifyUpdate

@@ -523,6 +523,26 @@ export class LabPanel {
     setTimeout(() => { if (element.dataset.flash === "true") element.dataset.flash = "false" }, 1400)
     return true
   }
+  /** Locate a control row element without stealing focus; optionally unfolds its group and opens a hidden floating panel. */
+  getControlElement(key: string, revealIfFolded = false): HTMLElement | null {
+    const row = this.navigation.rows.find(r => r.control?.key === key)
+    if (!row || !this.navigation.isRowVisible(row)) return null
+    if (revealIfFolded) {
+      let changed = false
+      if (!this.visible) {
+        this.pill.hidden = false
+        this.panel.hidden = false
+        changed = true
+      }
+      if (this.navigation.folded.has(row.group)) {
+        this.navigation.folded.delete(row.group)
+        changed = true
+      }
+      if (changed) this.sync()
+      this.elements.get(row)?.scrollIntoView({ block: "nearest" })
+    }
+    return this.elements.get(row) ?? null
+  }
   /** Refresh values advanced by the game outside panel input. */
   refresh(): void { this.sync() }
 

@@ -45,6 +45,8 @@ bun run arcade env street --seed 9                     # scene.set-env: switch L
 bun run arcade transport pause                         # transport.toggle / transport.step [frames] / transport.speed <mult> / ground.trigger-here
 bun run arcade possess getaway:muscle                  # mode.play: enter Play mode on character
 bun run arcade release                                 # mode.play: exit Play mode back to Edit mode and release input
+bun run arcade note "Noir A/B Wipe" --body "Left: current · Right: noir" --target setting:compare
+bun run arcade tour .arcade-tours/overnight.json       # Open one labeled tab per step and apply each step's setup
 bun run arcade run <command-id> '{"key":"value"}'      # Invoke any command ID from 'arcade cmd list'
 bun run arcade run outliner.select '{"kind":"cone"}'   # Lab layout: select in the Outliner (also id, ids, additive)
 bun run arcade run library.place '{"id":"spawn-prop:hydrant","at":"2,-4"}'  # Place a Library item at a ground point
@@ -78,7 +80,60 @@ import {
 } from "@arcade/kit/dev-control"
 ```
 
-Pages (Hub, Lab Workbench, Catalogue, Characters page on `rig-page`, and games) register their command table and state reader via `registerDevControl({ kind, commands, getState, getCanvas, captureCanvas, isBusy })`. Any page mounting `LabPanel` automatically exposes `lab.get`, `scene.set-param`, `nav.open`, `state`, and `screenshot`.
+Pages (Hub, Lab Workbench, Catalogue, Characters page on `rig-page`, and games) register their command table and state reader via `registerDevControl({ kind, commands, getState, getCanvas, captureCanvas, isBusy })`. Any page mounting `LabPanel` automatically exposes `lab.get`, `scene.set-param`, `nav.open`, `ui.note`, `state`, and `screenshot`.
+
+## Show Kit things
+
+To call Kit's attention to a specific feature in an open tab or walk him through several setups across tabs:
+
+- **One-off pinned note (`ui.note` / `arcade note`)**:
+  Renders a compact, dark, non-blocking card at the top of the page, prefixes `document.title` with `▸ <title>` so tabs are distinguishable, and optionally pulses a highlight ring around a scene object (`--object` or `--target <id>`), a Details inspector control (`--setting <key>` or `--target setting:<key>`), a 3D world point (`--world x,y,z`), a DOM element (`--selector <css>`), or a screen rectangle (`--rect x,y,w,h`). Pressing `Esc` or clicking `×` dismisses the card without stealing input focus.
+
+  ```sh
+  bun run arcade note "Outliner & Car Details" \
+    --body "Muscle car selected; vehicle & skid controls prioritized in Details." \
+    --target character:active
+  bun run arcade note --clear
+  ```
+
+- **Multi-tab guided tours (`arcade tour`)**:
+  Opens one tab per step (default `open` locally, or `ssh pro 'open "<url>"'` when `ARCADE_OPEN=pro` / `--open pro`; pass `--single-tab` to navigate within a single tab, or `--no-open` to stage without opening tabs). Each step URL receives `?tour=<id>&step=<n>` so when the page connects to the bridge it automatically runs its `setup` commands and renders its `ui.note` card with step badge (`2/5`) and `‹ Prev` / `Next ›` buttons. Tours are persisted in `.arcade-tours/<id>.json` for replay.
+
+  ```sh
+  ARCADE_OPEN=pro bun run arcade tour .arcade-tours/overnight.json \
+    --base-url https://kits-mac-studio.taila8e7c7.ts.net:5180
+  ```
+
+  Example tour JSON (`.arcade-tours/example.json`):
+
+  ```json
+  {
+    "id": "example",
+    "title": "Look & Vignette Walkthrough",
+    "steps": [
+      {
+        "title": "Outbreak Vignette · Noir",
+        "body": "Cold moonlit roof courses, volumetric flashlight haze, and split room practicals.",
+        "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+        "setup": [
+          { "command": "vignette.preset", "args": { "direction": "noir" } },
+          { "command": "vignette.camera", "args": { "preset": "game", "cutaway": "cutaway" } }
+        ],
+        "target": { "setting": "directionPreset" }
+      },
+      {
+        "title": "Lab Looks · Noir vs Current Wipe",
+        "body": "50/50 split wipe in the Look Debug Room comparing Current (left) vs Noir (right).",
+        "url": "/arcade/getaway/lab.html?section=looks",
+        "setup": [
+          { "command": "look.preset", "args": { "preset": "noir" } },
+          { "command": "look.set", "args": { "key": "compare", "value": 2 } }
+        ],
+        "target": { "setting": "compare" }
+      }
+    ]
+  }
+  ```
 
 ## Proof
 

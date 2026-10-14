@@ -479,6 +479,87 @@ async function main() {
           return { noise: ev }
         },
       },
+      {
+        id: "player.pose",
+        label: "Position Survivor & Aim",
+        shortLabel: "Pose",
+        category: "Scene",
+        undoable: false,
+        args: {
+          x: { type: "number", required: true, description: "World X coordinate" },
+          y: { type: "number", required: true, description: "World Y/Z coordinate" },
+          aim: { type: "number", description: "Aim angle in radians" },
+          flashlight: { type: "boolean", description: "Flashlight on/off" },
+          clearZombiesRadius: { type: "number", description: "Clear nearby zombies within radius" },
+        },
+        enabled: () => true,
+        run: async (_ctx, args) => {
+          const x = Number(args?.x ?? session.view.player.x)
+          const y = Number(args?.y ?? session.view.player.y)
+          const aim = typeof args?.aim === "number" ? args.aim : session.view.player.aim
+          Object.assign(session.view.player, {
+            x,
+            y,
+            aim,
+            vx: 0,
+            vy: 0,
+            peekingWindowId: null,
+            holdTargetId: null,
+            holdElapsed: 0,
+            holdTriggered: false,
+            holdPendingPrimary: null,
+            vault: null,
+            channel: null,
+          })
+          if (typeof args?.flashlight === "boolean") {
+            session.view.player.flashlightOn = args.flashlight
+            session.view.player.flashlightOutput = args.flashlight ? 1 : 0
+          }
+          if (typeof args?.clearZombiesRadius === "number" && args.clearZombiesRadius > 0) {
+            const rad = args.clearZombiesRadius
+            for (const z of session.view.zombies) {
+              if (Math.hypot(z.x - x, z.y - y) < rad) {
+                z.x = 6
+                z.y = 6
+                z.state = "wander"
+              }
+            }
+          }
+          peekBlend = 0
+          lastPeek = null
+          session.rebuildCollision()
+          cam.snap(x, y)
+          cam.dist = settings.zoom
+          cam.update(innerWidth / Math.max(1, innerHeight))
+          const ahead = cam.project(x + Math.cos(aim) * 4, 0, y + Math.sin(aim) * 4, innerWidth, innerHeight)
+          if (ahead.ok) {
+            input.mouse.x = ahead.x
+            input.mouse.y = ahead.y
+          }
+          session.update(
+            1 / 60,
+            { mx: 0, my: 0, aim, interact: false },
+            settings.timeScale,
+            settings,
+          )
+          draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return {
+            x: session.view.player.x,
+            y: session.view.player.y,
+            aim: session.view.player.aim,
+            flashlightOn: session.view.player.flashlightOn,
+            prompt: session.view.prompt
+              ? {
+                  id: session.view.prompt.id,
+                  kind: session.view.prompt.kind,
+                  primary: session.view.prompt.primary.label,
+                  secondary: session.view.prompt.secondary?.label,
+                }
+              : null,
+          }
+        },
+      },
     ])
   })
 
@@ -1110,6 +1191,32 @@ async function main() {
     },
     makeNoise(x: number, y: number, radius = 18, kind = "glass") {
       return session.ai.emitNoise(x, y, radius, kind, session.view.time, "player")
+    },
+    resolveTargetRect(target: { objectId?: string; world?: [number, number, number]; selector?: string }) {
+      const w = innerWidth
+      const h = innerHeight
+      if (target.world) {
+        const [wx, wy, wz] = target.world
+        const proj = cam.project(wx, wy, wz, w, h)
+        if (proj.ok) {
+          return { x: proj.x - 42, y: proj.y - 42, width: 84, height: 84, shape: "pill" as const }
+        }
+      }
+      if (target.objectId === "prompt" && promptEl && !promptEl.hidden) {
+        const r = promptEl.getBoundingClientRect()
+        if (r.width > 0 && r.height > 0) {
+          return { x: r.left, y: r.top, width: r.width, height: r.height, shape: "rect" as const }
+        }
+      }
+      if (target.objectId === "player" || target.objectId === "survivor") {
+        const p = session.view.player
+        const gy = supportHeight(session.view.town, p.x, p.y)
+        const proj = cam.project(p.x, gy + 0.9, p.y, w, h)
+        if (proj.ok) {
+          return { x: proj.x - 36, y: proj.y - 44, width: 72, height: 88, shape: "pill" as const }
+        }
+      }
+      return null
     },
     async step(dt = 1 / 60, command?: Partial<Command>) {
       session.update(

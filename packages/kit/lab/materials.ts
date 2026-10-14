@@ -570,6 +570,7 @@ export function createMaterials(context: LabContext, adapters: readonly Material
         { binding: 12, resource: { buffer: surfaceTexBuffer } },
       ],
     })
+    context.sync()
   })
 
   const module = device.createShaderModule({ code: materialSwatchShader, label: "Lab materials swatch" })

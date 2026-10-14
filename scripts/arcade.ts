@@ -13,20 +13,31 @@
 //   bun run arcade env <name> [--seed <n>]
 //   bun run arcade transport play|pause|step [frames]|speed <mult>|retrigger [--seed <n>]
 //   bun run arcade possess [id|name] | release
+//   bun run arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
+//   bun run arcade tour <file.json|name> | tour --json '[...]' [--single-tab] [--open pro|local|none] [--base-url <url>]
 //   bun run arcade screenshot [--out <file.png>] [--max-size <px>|--downscale <px>|--full]
 //   bun run arcade state [--json]
 
-import { spawn } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
-import { resolveNavigationPath, type DevPageSummary } from "../packages/kit/dev-control"
+import { basename, dirname, join, resolve } from "node:path"
+import {
+  buildTourStepUrl,
+  normalizeNoteArgs,
+  normalizeNoteTarget,
+  resolveNavigationPath,
+  validateTourDefinition,
+  type DevPageSummary,
+  type TourDefinition,
+} from "../packages/kit/dev-control"
 import { CONTROL_PATH, DEFAULT_CONTROL_FILENAME, type ControlFilePayload } from "./dev-control-server"
 
 const repoRoot = resolve(import.meta.dirname, "..")
 
 type GlobalFlags = {
   json: boolean
+  inlineJson?: string
   page?: string
   controlFile?: string
   url?: string
@@ -49,7 +60,14 @@ function parseGlobalFlags(rawArgv: string[]): { flags: GlobalFlags; rest: string
   for (let i = 0; i < rawArgv.length; i++) {
     const arg = rawArgv[i]!
     if (arg === "--json") {
-      flags.json = true
+      const next = rawArgv[i + 1]
+      if (next && (next.trim().startsWith("[") || next.trim().startsWith("{")) && rawArgv.includes("tour")) {
+        flags.inlineJson = rawArgv[++i]
+      } else {
+        flags.json = true
+      }
+    } else if (arg.startsWith("--json=")) {
+      flags.inlineJson = arg.slice("--json=".length)
     } else if (arg === "--help" || arg === "-h") {
       flags.help = true
     } else if (arg === "--page" || arg === "-p") {
@@ -154,7 +172,17 @@ async function fetchStatus(target: { origin: string; token: string; controlPath:
   }
   return body as {
     ok: true
-    server: { pid: number; origin: string; host: string; port: number; games: string[]; workers: boolean; uptimeMs: number }
+    server: {
+      pid: number
+      origin: string
+      publicOrigin?: string
+      pageHosts?: string[]
+      host: string
+      port: number
+      games: string[]
+      workers: boolean
+      uptimeMs: number
+    }
     connectedPages: number
     activePageId: string | null
     pages: DevPageSummary[]
@@ -244,6 +272,10 @@ Mutating commands (show unobtrusive page indicator, respect live user input, rec
   arcade transport play|pause|step [n]|speed <mult>|retrigger [--seed <n>]
   arcade possess [id|name]                     Possess character / enter Play mode (mode.play)
   arcade release                               Exit Play mode & release held input (mode.play)
+  arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
+                                               Pin a "Show me" card & optional highlight ring on the active page
+  arcade tour <file.json|name> [--single-tab] [--open pro|local|none] [--base-url <url>]
+  arcade tour --json '[...]'                   Open a multi-tab (or --single-tab) guided tour and persist in .arcade-tours/
   arcade run <command> [json-args] [--seed <n>] Run any command ID from 'arcade cmd list'
 
 Global options:
@@ -702,6 +734,281 @@ async function main() {
       const res = await invokeRemote(target, flags, "mode.play", { mode: "edit" })
       if (flags.json) console.log(JSON.stringify(res, null, 2))
       else console.log(`Released character -> mode=${res.result.mode}`)
+      return
+    }
+
+    if (sub === "note") {
+      let clear = false
+      let title = ""
+      let body: string | undefined
+      let step: string | undefined
+      let accent: string | undefined
+      let rawTarget: unknown
+      let dismissible = true
+
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i]!
+        if (a === "--clear" || a === "--dismiss" || a === "clear" || a === "dismiss") {
+          clear = true
+        } else if (a === "--body" || a === "-b") {
+          body = String(args[++i] ?? "")
+        } else if (a.startsWith("--body=")) {
+          body = a.slice("--body=".length)
+        } else if (a === "--step" || a === "-s") {
+          step = String(args[++i] ?? "")
+        } else if (a.startsWith("--step=")) {
+          step = a.slice("--step=".length)
+        } else if (a === "--accent" || a === "-a") {
+          accent = String(args[++i] ?? "")
+        } else if (a.startsWith("--accent=")) {
+          accent = a.slice("--accent=".length)
+        } else if (a === "--target" || a === "-t") {
+          rawTarget = String(args[++i] ?? "")
+        } else if (a.startsWith("--target=")) {
+          rawTarget = a.slice("--target=".length)
+        } else if (a === "--object") {
+          rawTarget = { objectId: String(args[++i] ?? "") }
+        } else if (a === "--setting" || a === "--key") {
+          rawTarget = { setting: String(args[++i] ?? "") }
+        } else if (a === "--rect") {
+          rawTarget = `rect:${String(args[++i] ?? "")}`
+        } else if (a === "--world" || a === "--point") {
+          rawTarget = `world:${String(args[++i] ?? "")}`
+        } else if (a === "--selector") {
+          rawTarget = { selector: String(args[++i] ?? "") }
+        } else if (a === "--no-dismiss") {
+          dismissible = false
+        } else if (a.startsWith("-")) {
+          throw new CliError(4, "invalid_args", `Unknown note flag "${a}".`)
+        } else if (!title) {
+          title = a
+        } else if (!body) {
+          body = a
+        } else {
+          throw new CliError(4, "invalid_args", `Unexpected note argument "${a}".`)
+        }
+      }
+
+      let noteArgs: Record<string, unknown>
+      try {
+        if (clear) {
+          noteArgs = { clear: true }
+        } else {
+          const targetObj = rawTarget !== undefined ? normalizeNoteTarget(rawTarget) : undefined
+          const validated = normalizeNoteArgs({
+            title,
+            ...(body !== undefined ? { body } : {}),
+            ...(step !== undefined ? { step } : {}),
+            ...(accent !== undefined ? { accent } : {}),
+            ...(targetObj !== undefined ? { target: targetObj } : {}),
+            dismissible,
+          })
+          noteArgs = validated.clear ? { clear: true } : (validated.note as unknown as Record<string, unknown>)
+        }
+      } catch (err) {
+        throw new CliError(4, "invalid_args", err instanceof Error ? err.message : String(err))
+      }
+
+      const res = await invokeRemote(target, flags, "ui.note", noteArgs)
+      if (flags.json) {
+        console.log(JSON.stringify(res, null, 2))
+      } else if (clear) {
+        console.log(`Cleared note on ${res.page.id} (${res.page.title})`)
+      } else {
+        console.log(`Pinned note on ${res.page.id}: ${res.result.documentTitle}${res.result.body ? ` — ${res.result.body}` : ""}`)
+      }
+      return
+    }
+
+    if (sub === "tour") {
+      const toursDir = join(repoRoot, ".arcade-tours")
+      if (args[0] === "list") {
+        mkdirSync(toursDir, { recursive: true })
+        const files = readdirSync(toursDir).filter(f => f.endsWith(".json")).sort()
+        if (flags.json) {
+          console.log(JSON.stringify({ ok: true, directory: toursDir, tours: files.map(f => f.replace(/\.json$/, "")) }, null, 2))
+        } else if (files.length === 0) {
+          console.log("No saved tours in .arcade-tours/.")
+        } else {
+          for (const f of files) console.log(`  ${f.replace(/\.json$/, "")}\t(${join(toursDir, f)})`)
+        }
+        return
+      }
+
+      let singleTab = false
+      let openMode: string | undefined
+      let baseUrl: string | undefined
+      let tourIdOverride: string | undefined
+      let inlineJson = flags.inlineJson
+      let sourceArg: string | undefined
+
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i]!
+        if (a === "--single-tab") {
+          singleTab = true
+        } else if (a === "--no-open" || a === "--dry-run") {
+          openMode = "none"
+        } else if (a === "--open") {
+          openMode = String(args[++i] ?? "")
+        } else if (a.startsWith("--open=")) {
+          openMode = a.slice("--open=".length)
+        } else if (a === "--base-url") {
+          baseUrl = String(args[++i] ?? "")
+        } else if (a.startsWith("--base-url=")) {
+          baseUrl = a.slice("--base-url=".length)
+        } else if (a === "--id") {
+          tourIdOverride = String(args[++i] ?? "")
+        } else if (a.startsWith("--id=")) {
+          tourIdOverride = a.slice("--id=".length)
+        } else if (a.startsWith("-")) {
+          throw new CliError(4, "invalid_args", `Unknown tour flag "${a}".`)
+        } else if (!sourceArg) {
+          sourceArg = a
+        } else {
+          throw new CliError(4, "invalid_args", `Unexpected tour argument "${a}".`)
+        }
+      }
+
+      if (!inlineJson && sourceArg && (sourceArg.trim().startsWith("[") || sourceArg.trim().startsWith("{"))) {
+        inlineJson = sourceArg
+        sourceArg = undefined
+      }
+
+      let rawTourData: unknown
+      let defaultId = tourIdOverride || "tour"
+      if (inlineJson) {
+        try {
+          rawTourData = JSON.parse(inlineJson)
+        } catch (err) {
+          throw new CliError(4, "invalid_args", `Invalid tour --json payload: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      } else if (sourceArg) {
+        const candidatePaths = [
+          resolve(sourceArg),
+          join(toursDir, sourceArg),
+          join(toursDir, `${sourceArg}.json`),
+        ]
+        const foundFile = candidatePaths.find(p => existsSync(p) && statSync(p).isFile())
+        if (!foundFile) {
+          throw new CliError(4, "invalid_args", `Tour file not found: "${sourceArg}" (also checked ${join(toursDir, `${sourceArg}.json`)}).`)
+        }
+        if (!tourIdOverride) {
+          defaultId = basename(foundFile, ".json")
+        }
+        try {
+          rawTourData = JSON.parse(readFileSync(foundFile, "utf8"))
+        } catch (err) {
+          throw new CliError(4, "invalid_args", `Failed to parse tour JSON ${foundFile}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      } else {
+        throw new CliError(4, "invalid_args", "Usage: arcade tour <file.json|name> | arcade tour --json '[...]' [--single-tab] [--open pro|local|none]")
+      }
+
+      let validated: TourDefinition
+      try {
+        validated = validateTourDefinition(rawTourData, defaultId)
+        if (tourIdOverride) {
+          validated.id = tourIdOverride.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || validated.id
+        }
+      } catch (err) {
+        throw new CliError(4, "invalid_args", err instanceof Error ? err.message : String(err))
+      }
+
+      // Persist in .arcade-tours/<id>.json for replay (without baking transient CLI --base-url / --single-tab overrides)
+      mkdirSync(toursDir, { recursive: true })
+      const savedFile = join(toursDir, `${validated.id}.json`)
+      writeFileSync(savedFile, JSON.stringify(validated, null, 2) + "\n", "utf8")
+
+      const runtimeSingleTab = Boolean(singleTab || validated.singleTab)
+      const runtimeBaseUrl = baseUrl ? baseUrl.replace(/\/$/, "") : validated.baseUrl
+
+      // Register tour on the dev control server
+      let statusInfo: Awaited<ReturnType<typeof fetchStatus>> | null = null
+      let serverStepUrls: { step: number; title: string; body: string | null; url: string; localUrl: string }[] | null = null
+      try {
+        statusInfo = await fetchStatus(target)
+        const postRes = await fetch(`${target.origin}${target.controlPath}/tour`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${target.token}`,
+          },
+          body: JSON.stringify({
+            tour: validated,
+            id: validated.id,
+            singleTab: runtimeSingleTab,
+            ...(runtimeBaseUrl ? { baseUrl: runtimeBaseUrl } : {}),
+          }),
+        })
+        const postBody = (await postRes.json().catch(() => ({}))) as Record<string, any>
+        if (postRes.ok && postBody.ok && Array.isArray(postBody.stepUrls)) {
+          serverStepUrls = postBody.stepUrls
+        }
+      } catch (err) {
+        if (err instanceof CliError) throw err
+        throw new CliError(1, "server_unreachable", `Could not register tour on ${target.origin}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+
+      const resolvedOpener = (openMode ?? process.env.ARCADE_OPEN ?? "local").trim()
+      const effectiveOrigin =
+        runtimeBaseUrl ||
+        process.env.ARCADE_PUBLIC_URL?.replace(/\/$/, "") ||
+        (resolvedOpener === "pro" && statusInfo?.server.publicOrigin ? statusInfo.server.publicOrigin : target.origin)
+
+      const stepUrls = validated.steps.map((s, idx) => ({
+        step: idx + 1,
+        title: s.title,
+        body: s.body ?? null,
+        url: buildTourStepUrl(effectiveOrigin, s.url, validated.id, idx + 1, runtimeSingleTab),
+      }))
+      void serverStepUrls
+
+      const urlsToOpen = runtimeSingleTab ? [stepUrls[0]!.url] : stepUrls.map(s => s.url)
+      if (resolvedOpener !== "none") {
+        if (resolvedOpener === "pro") {
+          const remoteCmd = urlsToOpen.map(u => `open ${JSON.stringify(u)}`).join("; sleep 0.12; ")
+          const res = spawnSync("ssh", ["pro", remoteCmd], { stdio: "pipe", timeout: 15000 })
+          if (res.status !== 0) {
+            const stderr = res.stderr?.toString("utf8").trim() || `exit ${res.status}`
+            throw new CliError(1, "open_failed", `Failed to open tour tabs on 'pro' via ssh: ${stderr}`)
+          }
+        } else if (resolvedOpener === "local") {
+          for (const u of urlsToOpen) {
+            if (process.platform === "darwin") {
+              spawn("open", [u], { detached: true, stdio: "ignore" }).unref()
+            } else {
+              spawn("xdg-open", [u], { detached: true, stdio: "ignore" }).unref()
+            }
+            if (urlsToOpen.length > 1) {
+              await new Promise(r => setTimeout(r, 90))
+            }
+          }
+        } else {
+          for (const u of urlsToOpen) {
+            spawn("sh", ["-c", `${resolvedOpener} "$1"`, "--", u], { detached: true, stdio: "ignore" }).unref()
+          }
+        }
+      }
+
+      const payload = {
+        ok: true,
+        id: validated.id,
+        title: validated.title ?? validated.id,
+        savedFile,
+        opener: resolvedOpener,
+        singleTab: runtimeSingleTab,
+        openedTabs: resolvedOpener === "none" ? 0 : urlsToOpen.length,
+        steps: stepUrls,
+      }
+      if (flags.json || (flags.inlineJson && process.argv.filter(a => a === "--json").length > 1)) {
+        console.log(JSON.stringify(payload, null, 2))
+      } else {
+        console.log(`Tour "${validated.id}" (${stepUrls.length} steps) saved to ${savedFile}`)
+        console.log(`Opener: ${resolvedOpener} (${payload.openedTabs} tab${payload.openedTabs === 1 ? "" : "s"} opened)`)
+        for (const s of stepUrls) {
+          console.log(`  [${s.step}/${stepUrls.length}] ▸ ${s.title} -> ${s.url}`)
+        }
+      }
       return
     }
 

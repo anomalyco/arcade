@@ -4,7 +4,12 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Socket } from "node:net"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import type { DevPageSummary } from "../packages/kit/dev-control"
+import {
+  buildTourStepUrl,
+  validateTourDefinition,
+  type DevPageSummary,
+  type TourDefinition,
+} from "../packages/kit/dev-control"
 import type { LabCommandInvokeResult } from "../packages/kit/lab-commands"
 
 export const CONTROL_PATH = "/__arcade/control"
@@ -28,6 +33,8 @@ type ConnectedClient = {
   socket: Socket
   summary: DevPageSummary
   connectedAt: number
+  appliedTourKey?: string
+  applyingTour?: boolean
 }
 
 type PendingRpc = {
@@ -250,7 +257,36 @@ export function createDevControlServer(opts: {
   const clients = new Map<string, ConnectedClient>()
   const pendingRpcs = new Map<string, PendingRpc>()
   const navWaiters = new Set<NavigationWaiter>()
+  const tours = new Map<string, TourDefinition>()
   const writtenFiles: string[] = []
+  const toursDir = join(opts.root, ".arcade-tours")
+
+  function loadTourById(tourId: string): TourDefinition | null {
+    const cleanId = tourId.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")
+    if (!cleanId) return null
+    const mem = tours.get(cleanId) ?? tours.get(tourId)
+    if (mem) return mem
+    const diskPath = join(toursDir, `${cleanId}.json`)
+    if (existsSync(diskPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(diskPath, "utf8"))
+        const validated = validateTourDefinition(parsed, cleanId)
+        tours.set(validated.id, validated)
+        return validated
+      } catch {}
+    }
+    return null
+  }
+
+  function saveTour(tour: TourDefinition): string {
+    tours.set(tour.id, tour)
+    const file = join(toursDir, `${tour.id}.json`)
+    try {
+      mkdirSync(toursDir, { recursive: true })
+      writeFileSync(file, JSON.stringify(tour, null, 2) + "\n", "utf8")
+    } catch {}
+    return file
+  }
 
   function writeStateFiles() {
     const payload: ControlFilePayload = {
@@ -317,9 +353,14 @@ export function createDevControlServer(opts: {
     const direct = clients.get(targetPage)
     if (direct) return { client: direct }
     for (const c of clients.values()) {
+      const tourStepTag = c.summary.tour ? `${c.summary.tour.id}:${c.summary.tour.step}`.toLowerCase() : ""
+      const stepOnlyTag = c.summary.tour ? `step=${c.summary.tour.step}` : ""
       if (
         c.id.toLowerCase() === q ||
         c.summary.kind.toLowerCase() === q ||
+        tourStepTag === q ||
+        stepOnlyTag === q ||
+        c.summary.title.toLowerCase().includes(q) ||
         c.summary.pathname.toLowerCase().includes(q) ||
         c.summary.url.toLowerCase().includes(q)
       ) {
@@ -392,6 +433,107 @@ export function createDevControlServer(opts: {
     })
   }
 
+  async function applyTourStepToClient(
+    client: ConnectedClient,
+    tour: TourDefinition,
+    stepNum: number,
+    singleTabOverride?: boolean,
+  ): Promise<{ ok: boolean; errors: string[] }> {
+    const step = tour.steps[stepNum - 1]
+    if (!step) return { ok: false, errors: [`Step ${stepNum} out of range (1..${tour.steps.length}).`] }
+    const errors: string[] = []
+    let clientOrigin = tour.baseUrl || origin
+    try {
+      if (client.summary.url) {
+        clientOrigin = new URL(client.summary.url).origin
+      }
+    } catch {}
+    const singleTab = Boolean(singleTabOverride ?? tour.singleTab)
+    const prevUrl =
+      stepNum > 1 ? buildTourStepUrl(clientOrigin, tour.steps[stepNum - 2]!.url, tour.id, stepNum - 1, singleTab) : undefined
+    const nextUrl =
+      stepNum < tour.steps.length
+        ? buildTourStepUrl(clientOrigin, tour.steps[stepNum]!.url, tour.id, stepNum + 1, singleTab)
+        : undefined
+
+    await new Promise(r => setTimeout(r, 90))
+
+    for (const cmd of step.setup) {
+      if (!clients.has(client.id)) return { ok: false, errors: ["Client disconnected during tour setup."] }
+      let res = await invokeOnClient(client, cmd.command, cmd.args, 10000).catch(err => ({
+        outcome: { ok: false as const, id: cmd.command, error: err instanceof Error ? err.message : String(err) },
+      }))
+      if (!res.outcome.ok) {
+        await new Promise(r => setTimeout(r, 200))
+        res = await invokeOnClient(client, cmd.command, cmd.args, 10000).catch(err => ({
+          outcome: { ok: false as const, id: cmd.command, error: err instanceof Error ? err.message : String(err) },
+        }))
+      }
+      if (!res.outcome.ok) {
+        errors.push(`${cmd.command}: ${res.outcome.error}`)
+      }
+    }
+
+    if (!clients.has(client.id)) return { ok: false, errors }
+    const noteRes = await invokeOnClient(
+      client,
+      "ui.note",
+      {
+        title: step.title,
+        ...(step.body ? { body: step.body } : {}),
+        step: `${stepNum}/${tour.steps.length}`,
+        ...(step.accent ? { accent: step.accent } : {}),
+        ...(step.target ? { target: step.target } : {}),
+        dismissible: step.dismissible ?? true,
+        tourId: tour.id,
+        stepIndex: stepNum,
+        stepCount: tour.steps.length,
+        ...(prevUrl ? { prevUrl } : {}),
+        ...(nextUrl ? { nextUrl } : {}),
+        singleTab,
+      },
+      8000,
+    ).catch(err => ({
+      outcome: { ok: false as const, id: "ui.note", error: err instanceof Error ? err.message : String(err) },
+    }))
+    if (!noteRes.outcome.ok) {
+      errors.push(`ui.note: ${noteRes.outcome.error}`)
+    }
+    return { ok: errors.length === 0, errors }
+  }
+
+  function extractTourParams(summary: DevPageSummary): { id: string; step: number; singleTab?: boolean } | null {
+    if (summary.tour && summary.tour.id && summary.tour.step >= 1) return summary.tour
+    try {
+      if (!summary.url) return null
+      const u = new URL(summary.url)
+      const id = u.searchParams.get("tour")?.trim()
+      const step = Number(u.searchParams.get("step"))
+      if (id && Number.isFinite(step) && step >= 1) {
+        return {
+          id,
+          step: Math.round(step),
+          ...(u.searchParams.get("singleTab") === "1" ? { singleTab: true } : {}),
+        }
+      }
+    } catch {}
+    return null
+  }
+
+  function maybeApplyTourOnStatus(client: ConnectedClient) {
+    const meta = extractTourParams(client.summary)
+    if (!meta) return
+    const key = `${meta.id}:${meta.step}:${client.summary.pathname}${client.summary.hash}`
+    if (client.appliedTourKey === key || client.applyingTour) return
+    const tour = loadTourById(meta.id)
+    if (!tour || !tour.steps[meta.step - 1]) return
+    client.appliedTourKey = key
+    client.applyingTour = true
+    void applyTourStepToClient(client, tour, meta.step, meta.singleTab).finally(() => {
+      client.applyingTour = false
+    })
+  }
+
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const url = new URL(req.url ?? "/", "http://127.0.0.1")
     if (url.pathname !== CONTROL_PATH && !url.pathname.startsWith(`${CONTROL_PATH}/`)) {
@@ -418,11 +560,14 @@ export function createDevControlServer(opts: {
     const sub = url.pathname.slice(CONTROL_PATH.length) || "/status"
     if (req.method === "GET" && (sub === "/status" || sub === "" || sub === "/pages")) {
       const pages = sortedPages()
+      const publicOrigin = pageHosts.length > 0 ? `https://${pageHosts[0]}:${opts.port}` : origin
       writeJson(res, 200, {
         ok: true,
         server: {
           pid: process.pid,
           origin,
+          publicOrigin,
+          pageHosts,
           host: opts.host,
           port: opts.port,
           games: opts.games,
@@ -432,6 +577,82 @@ export function createDevControlServer(opts: {
         connectedPages: pages.length,
         activePageId: pages[0]?.id ?? null,
         pages,
+      })
+      return true
+    }
+
+    if (req.method === "GET" && sub === "/tour") {
+      const id = url.searchParams.get("id")?.trim()
+      if (id) {
+        const tour = loadTourById(id)
+        if (!tour) {
+          writeJson(res, 404, { ok: false, code: "not_found", error: `Unknown tour "${id}".` })
+          return true
+        }
+        writeJson(res, 200, { ok: true, tour })
+        return true
+      }
+      writeJson(res, 200, { ok: true, tours: [...tours.values()] })
+      return true
+    }
+
+    if (req.method === "POST" && sub === "/tour") {
+      let body: Record<string, unknown>
+      try {
+        body = await readJsonBody(req)
+      } catch (err) {
+        writeJson(res, 400, { ok: false, code: "invalid_args", error: err instanceof Error ? err.message : String(err) })
+        return true
+      }
+
+      let validated: TourDefinition
+      try {
+        const defaultId = typeof body.id === "string" && body.id.trim() ? body.id.trim() : "tour"
+        validated = validateTourDefinition(body.tour ?? body, defaultId)
+      } catch (err) {
+        writeJson(res, 400, { ok: false, code: "invalid_args", error: err instanceof Error ? err.message : String(err) })
+        return true
+      }
+
+      const savedFile = saveTour(validated)
+      const runtimeSingleTab = typeof body.singleTab === "boolean" ? body.singleTab : Boolean(validated.singleTab)
+      const runtimeBaseUrl =
+        typeof body.baseUrl === "string" && body.baseUrl.trim() ? body.baseUrl.trim().replace(/\/$/, "") : validated.baseUrl
+      tours.set(validated.id, {
+        ...validated,
+        ...(runtimeSingleTab ? { singleTab: true } : {}),
+        ...(runtimeBaseUrl ? { baseUrl: runtimeBaseUrl } : {}),
+      })
+      const baseOrigin = runtimeBaseUrl || (pageHosts.length > 0 ? `https://${pageHosts[0]}:${opts.port}` : origin)
+      const singleTab = runtimeSingleTab
+      const stepUrls = validated.steps.map((s, idx) => ({
+        step: idx + 1,
+        title: s.title,
+        body: s.body ?? null,
+        url: buildTourStepUrl(baseOrigin, s.url, validated.id, idx + 1, singleTab),
+        localUrl: buildTourStepUrl(origin, s.url, validated.id, idx + 1, singleTab),
+      }))
+
+      // Re-apply on any connected pages already displaying a step of this tour
+      const appliedPages: string[] = []
+      for (const c of clients.values()) {
+        const meta = extractTourParams(c.summary)
+        if (meta && meta.id === validated.id && validated.steps[meta.step - 1]) {
+          c.appliedTourKey = `${meta.id}:${meta.step}:${c.summary.pathname}${c.summary.hash}`
+          c.applyingTour = true
+          appliedPages.push(c.id)
+          void applyTourStepToClient(c, validated, meta.step, singleTab).finally(() => {
+            c.applyingTour = false
+          })
+        }
+      }
+
+      writeJson(res, 200, {
+        ok: true,
+        tour: validated,
+        savedFile,
+        stepUrls,
+        appliedPages,
       })
       return true
     }
@@ -595,6 +816,10 @@ export function createDevControlServer(opts: {
             page?: DevPageSummary
             requestId?: string
             outcome?: LabCommandInvokeResult
+            tourId?: string
+            step?: number
+            url?: string
+            singleTab?: boolean
           }
           if (msg.type === "status" && msg.page) {
             if (msg.page.id && msg.page.id !== client.id) {
@@ -604,6 +829,26 @@ export function createDevControlServer(opts: {
             }
             client.summary = { ...msg.page, updatedAt: Date.now() }
             checkNavWaiters(client.summary)
+            maybeApplyTourOnStatus(client)
+          } else if (msg.type === "tour.focus" && typeof msg.tourId === "string" && typeof msg.step === "number") {
+            let targetClient: ConnectedClient | undefined
+            for (const c of clients.values()) {
+              const meta = extractTourParams(c.summary)
+              if (meta && meta.id === msg.tourId && meta.step === msg.step) {
+                targetClient = c
+                break
+              }
+            }
+            if (targetClient) {
+              targetClient.summary.lastActiveAt = Date.now()
+              try {
+                targetClient.socket.write(encodeWsTextFrame(JSON.stringify({ type: "tour.activate" })))
+              } catch {}
+            } else if (typeof msg.url === "string" && msg.url) {
+              try {
+                client.socket.write(encodeWsTextFrame(JSON.stringify({ type: "tour.navigate", url: msg.url })))
+              } catch {}
+            }
           } else if (msg.type === "result" && msg.requestId && msg.outcome) {
             if (msg.page) {
               client.summary = { ...msg.page, updatedAt: Date.now() }

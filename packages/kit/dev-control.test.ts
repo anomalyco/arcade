@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { LabCommandRegistry, RADIAL_COMPASS } from "./lab-commands"
 import {
+  buildTourStepUrl,
+  normalizeNoteArgs,
+  normalizeNoteTarget,
   registerPanelLabCommands,
   registerStageCameraCommands,
+  registerUiNoteCommand,
   resolveNavigationPath,
+  validateTourDefinition,
+  type DevNotePayload,
 } from "./dev-control"
 import { LabNavigation, type LabControl, type LabSettings } from "./lab-navigation"
 import type { LabPanel } from "./lab-panel"
@@ -224,9 +230,122 @@ describe("Shared Lab & Camera Commands", () => {
     expect(resolveNavigationPath("catalogue")).toBe("/arcade/getaway/dev.html#catalogue")
     expect(resolveNavigationPath("catalogue/getaway:muscle")).toBe("/arcade/getaway/dev.html#catalogue/getaway%3Amuscle")
     expect(resolveNavigationPath("lab")).toBe("/arcade/getaway/lab.html")
+    expect(resolveNavigationPath("lab?section=looks")).toBe("/arcade/getaway/lab.html?section=looks")
     expect(resolveNavigationPath("blackout-lab")).toBe("/arcade/blackout/lab.html")
     expect(resolveNavigationPath("characters")).toBe("/arcade/blackout/characters.html")
     expect(resolveNavigationPath("getaway")).toBe("/arcade/getaway/?solo&seed=7")
     expect(() => resolveNavigationPath("unknown-page")).toThrow()
+  })
+
+  test("ui.note command validates title, target shapes, step badge, and clear", () => {
+    const commands = new LabCommandRegistry()
+    const state: { shown: DevNotePayload | null; docTitle: string } = {
+      shown: null,
+      docTitle: "Lab Workbench",
+    }
+
+    registerUiNoteCommand(commands, {
+      onShow: note => {
+        state.shown = note
+        state.docTitle = note.title.startsWith("▸ ") ? note.title : `▸ ${note.title}`
+        return { x: 120, y: 180, width: 88, height: 88, shape: "pill" }
+      },
+      onClear: () => {
+        state.shown = null
+        state.docTitle = "Lab Workbench"
+      },
+      getDocumentTitle: () => state.docTitle,
+    })
+
+    // Missing title fails validation
+    const missingTitle = commands.invoke("ui.note", { body: "No title" })
+    expect(missingTitle.ok).toBe(false)
+    if (!missingTitle.ok) expect(missingTitle.code).toBe("invalid_args")
+
+    // Invalid target field fails validation
+    const badTarget = commands.invoke("ui.note", { title: "Bad target", target: { bogus: 123 } as any })
+    expect(badTarget.ok).toBe(false)
+    if (!badTarget.ok) expect(badTarget.code).toBe("invalid_args")
+
+    // Invalid rect dimensions fail validation
+    const badRect = commands.invoke("ui.note", { title: "Bad rect", target: { rect: [10, 20, -5, 40] } as any })
+    expect(badRect.ok).toBe(false)
+    if (!badRect.ok) expect(badRect.code).toBe("invalid_args")
+
+    // Valid object target note
+    const okNote = commands.invoke("ui.note", {
+      title: "Car selected in Outliner",
+      body: "Vehicle & skid controls prioritized in Details",
+      step: "9/10",
+      accent: "amber",
+      target: { objectId: "character:active" },
+    })
+    expect(okNote.ok).toBe(true)
+    if (okNote.ok) {
+      expect(okNote.result.active).toBe(true)
+      expect(okNote.result.documentTitle).toBe("▸ Car selected in Outliner")
+      expect(okNote.result.step).toBe("9/10")
+      expect(okNote.result.targetResolved).toBe(true)
+    }
+    expect(state.shown?.title).toBe("Car selected in Outliner")
+    expect(state.shown?.target).toEqual({ objectId: "character:active" })
+
+    // Target string shorthands normalize cleanly
+    expect(normalizeNoteTarget("setting:skidWidth")).toEqual({ setting: "skidWidth" })
+    expect(normalizeNoteTarget("rect:10,20,100,50")).toEqual({ rect: [10, 20, 100, 50] })
+    expect(normalizeNoteTarget("world:27.7,1.2,38.5")).toEqual({ world: [27.7, 1.2, 38.5] })
+    expect(normalizeNoteTarget("#prompt")).toEqual({ selector: "#prompt" })
+    expect(normalizeNoteArgs({ clear: true })).toEqual({ clear: true })
+
+    // Clear restores title and clears active note
+    const cleared = commands.invoke("ui.note", { clear: true })
+    expect(cleared.ok).toBe(true)
+    expect(state.shown).toBeNull()
+    expect(state.docTitle).toBe("Lab Workbench")
+  })
+
+  test("validateTourDefinition and buildTourStepUrl validate steps, setup commands, and tour query params", () => {
+    const tour = validateTourDefinition(
+      [
+        {
+          title: "Outbreak Dusk Street",
+          body: "Flashlight cone at 18:00 dusk",
+          url: "/arcade/outbreak/?seed=7",
+          setup: [
+            { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
+            { command: "player.pose", x: 27.7, y: 41, aim: -1.5708 },
+          ],
+          target: { world: [27.7, 1, 38.5] },
+        },
+        {
+          title: "Lab Looks A/B Wipe",
+          url: "lab?section=looks",
+          setup: [{ cmd: "look.preset", preset: "noir" }],
+          target: "setting:compare",
+        },
+      ],
+      "overnight",
+    )
+
+    expect(tour.id).toBe("overnight")
+    expect(tour.steps).toHaveLength(2)
+    expect(tour.steps[0]?.setup[1]).toEqual({
+      command: "player.pose",
+      args: { x: 27.7, y: 41, aim: -1.5708 },
+    })
+    expect(tour.steps[1]?.url).toBe("/arcade/getaway/lab.html?section=looks")
+    expect(tour.steps[1]?.target).toEqual({ setting: "compare" })
+
+    const step1Url = buildTourStepUrl("https://kits-mac-studio.taila8e7c7.ts.net:5180", tour.steps[0]!.url, tour.id, 1, false)
+    expect(step1Url).toBe("https://kits-mac-studio.taila8e7c7.ts.net:5180/arcade/outbreak/?seed=7&tour=overnight&step=1")
+
+    const step2SingleUrl = buildTourStepUrl("http://127.0.0.1:5180", "/arcade/getaway/lab.html?section=looks#looks", tour.id, 2, true)
+    expect(step2SingleUrl).toBe("http://127.0.0.1:5180/arcade/getaway/lab.html?section=looks&tour=overnight&step=2&singleTab=1#looks")
+
+    // Invalid tours throw descriptive errors
+    expect(() => validateTourDefinition([])).toThrow(/non-empty 'steps'/)
+    expect(() => validateTourDefinition([{ title: "", url: "lab" }])).toThrow(/missing a non-empty "title"/)
+    expect(() => validateTourDefinition([{ title: "Bad URL", url: "not-a-valid-page" }])).toThrow(/Unknown page target/)
+    expect(() => validateTourDefinition([{ title: "Bad Setup", url: "lab", setup: [{}] }])).toThrow(/missing "command"/)
   })
 })

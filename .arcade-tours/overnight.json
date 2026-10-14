@@ -1,0 +1,281 @@
+{
+  "id": "overnight",
+  "title": "Overnight Arcade Walkthrough",
+  "steps": [
+    {
+      "title": "Outbreak · Dusk Street & Flashlight",
+      "body": "Seed 7 street at 18:00 dusk — warm flashlight cone, battery indicator, and porch light bounce.",
+      "url": "/arcade/outbreak/?seed=7",
+      "setup": [
+        {
+          "command": "scene.set-param",
+          "args": {
+            "key": "timeScale",
+            "value": 0
+          }
+        },
+        {
+          "command": "player.pose",
+          "args": {
+            "x": 27.7,
+            "y": 41,
+            "aim": -1.5708,
+            "flashlight": true,
+            "clearZombiesRadius": 18
+          }
+        }
+      ],
+      "target": {
+        "world": [
+          27.7,
+          0.8,
+          38.5
+        ]
+      },
+      "accent": "amber"
+    },
+    {
+      "title": "Outbreak · Interior & Window Peek",
+      "body": "Ash house cutaway interior with oriental rug and contextual E Peek / Hold E Open window prompt.",
+      "url": "/arcade/outbreak/?seed=7",
+      "setup": [
+        {
+          "command": "scene.set-param",
+          "args": {
+            "key": "timeScale",
+            "value": 0
+          }
+        },
+        {
+          "command": "player.pose",
+          "args": {
+            "x": 34.25,
+            "y": 34.35,
+            "aim": 1.5708,
+            "flashlight": true,
+            "clearZombiesRadius": 18
+          }
+        }
+      ],
+      "target": {
+        "selector": "#prompt"
+      },
+      "accent": "cyan"
+    },
+    {
+      "title": "Outbreak Vignette · Noir Look",
+      "body": "Single-lot vignette in Noir direction: cold moonlit roof courses, volumetric flashlight haze, and split room lamps.",
+      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "setup": [
+        {
+          "command": "vignette.preset",
+          "args": {
+            "direction": "noir"
+          }
+        },
+        {
+          "command": "vignette.camera",
+          "args": {
+            "preset": "game",
+            "cutaway": "cutaway"
+          }
+        }
+      ],
+      "target": {
+        "setting": "directionPreset"
+      },
+      "accent": "cyan"
+    },
+    {
+      "title": "Outbreak Vignette · Painterly Look",
+      "body": "Same single-house lot with Painterly gouache twilight: brush-stroke cell modulation, sage wainscot, and warm window pools.",
+      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "setup": [
+        {
+          "command": "vignette.preset",
+          "args": {
+            "direction": "painterly"
+          }
+        },
+        {
+          "command": "vignette.camera",
+          "args": {
+            "preset": "game",
+            "cutaway": "cutaway"
+          }
+        }
+      ],
+      "target": {
+        "setting": "directionPreset"
+      },
+      "accent": "violet"
+    },
+    {
+      "title": "Lab Looks · Noir vs Current A/B Wipe",
+      "body": "Deliberate Look Debug Room 50/50 split wipe: Current baseline (left) vs Noir look with window shafts & wet floor (right).",
+      "url": "/arcade/getaway/lab.html?section=looks",
+      "setup": [
+        {
+          "command": "look.preset",
+          "args": {
+            "preset": "noir"
+          }
+        },
+        {
+          "command": "look.set",
+          "args": {
+            "key": "compare",
+            "value": 2
+          }
+        },
+        {
+          "command": "look.set",
+          "args": {
+            "key": "wipeSplit",
+            "value": 0.5
+          }
+        }
+      ],
+      "target": {
+        "setting": "compare"
+      },
+      "accent": "cyan"
+    },
+    {
+      "title": "Lab Foliage · Outbreak House Lot Stage",
+      "body": "Procedural oak canopy, bark, and grass tufts staged directly on the Outbreak house lot at dusk.",
+      "url": "/arcade/getaway/lab.html?section=foliage",
+      "setup": [
+        {
+          "command": "foliage.preset",
+          "args": {
+            "preset": "oak",
+            "stageMode": "lot",
+            "lighting": "outbreak_dusk",
+            "cameraMode": "close"
+          }
+        }
+      ],
+      "target": {
+        "setting": "stageMode"
+      },
+      "accent": "emerald"
+    },
+    {
+      "title": "Lab Effects · Looping Explosion",
+      "body": "Fireball core glow, shockwave debris, scorch decal, and dynamic flash light looping every 2.2s.",
+      "url": "/arcade/getaway/lab.html?section=effects",
+      "setup": [
+        {
+          "command": "effect.trigger",
+          "args": {
+            "effect": "explosion",
+            "seed": 7
+          }
+        },
+        {
+          "command": "effect.loop",
+          "args": {
+            "loop": true,
+            "interval": 2.2
+          }
+        },
+        {
+          "command": "transport.toggle",
+          "args": {
+            "action": "play"
+          }
+        }
+      ],
+      "target": {
+        "objectId": "emitter:origin"
+      },
+      "accent": "amber"
+    },
+    {
+      "title": "Characters · Lineup & Walk Loop",
+      "body": "Shared human rig lineup across Blackout and Outbreak with active walk cycle locomotion.",
+      "url": "/arcade/blackout/characters.html",
+      "setup": [
+        {
+          "command": "camera.set",
+          "args": {
+            "frame": "lineup"
+          }
+        },
+        {
+          "command": "action.walk"
+        },
+        {
+          "command": "transport.play"
+        }
+      ],
+      "target": {
+        "objectId": "soldier"
+      },
+      "accent": "emerald"
+    },
+    {
+      "title": "Lab Workbench · Outliner & Car Details",
+      "body": "Muscle car selected in Outliner with contextual vehicle & skid controls prioritized in the Details inspector.",
+      "url": "/arcade/getaway/lab.html",
+      "setup": [
+        {
+          "command": "outliner.select",
+          "args": {
+            "id": "character:active"
+          }
+        },
+        {
+          "command": "camera.set",
+          "args": {
+            "frame": "character:active",
+            "distance": 14
+          }
+        }
+      ],
+      "target": {
+        "objectId": "character:active"
+      },
+      "accent": "cyan"
+    },
+    {
+      "title": "Lab Materials · Generated Rug Texture",
+      "body": "Generated Oriental area rug (sage & terracotta, layer 12) mapped onto the surface swatch.",
+      "url": "/arcade/getaway/lab.html?section=materials",
+      "setup": [
+        {
+          "command": "scene.select-section",
+          "args": {
+            "section": "materials"
+          }
+        },
+        {
+          "command": "scene.set-param",
+          "args": {
+            "key": "recipe",
+            "value": "wood_planks"
+          }
+        },
+        {
+          "command": "scene.set-param",
+          "args": {
+            "key": "wood_planks.textureLayer",
+            "value": 12
+          }
+        },
+        {
+          "command": "scene.set-param",
+          "args": {
+            "key": "swatch",
+            "value": "plane"
+          }
+        }
+      ],
+      "target": {
+        "setting": "wood_planks.textureLayer"
+      },
+      "accent": "rose"
+    }
+  ]
+}

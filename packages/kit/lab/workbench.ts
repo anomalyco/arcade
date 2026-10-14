@@ -2795,6 +2795,48 @@ export function createWorkbench(opts: WorkbenchOptions) {
     onIndicator: (text, isError) => {
       showToast(text, Boolean(isError))
     },
+    resolveTargetRect: target => {
+      const cRect = canvas.getBoundingClientRect()
+      if (target.world && cRect.width > 0 && cRect.height > 0) {
+        const [wx, wy, wz] = target.world
+        const proj = stage.projectWorld(wx, wy, wz)
+        if (proj.visible && proj.u >= 0.01 && proj.u <= 0.99 && proj.v >= 0.01 && proj.v <= 0.99) {
+          const size = 76
+          return {
+            x: cRect.left + proj.u * cRect.width - size * 0.5,
+            y: cRect.top + proj.v * cRect.height - size * 0.5,
+            width: size,
+            height: size,
+            shape: "pill",
+          }
+        }
+      }
+      if (target.objectId) {
+        const q = target.objectId.trim().toLowerCase()
+        const objs = allSceneObjects()
+        const obj =
+          objs.find(o => o.id.toLowerCase() === q) ??
+          objs.find(o => o.label.toLowerCase() === q) ??
+          objs.find(o => (q === "car" || q === "character" || q === "player") && o.category === "character") ??
+          objs.find(o => o.label.toLowerCase().includes(q) || o.id.toLowerCase().includes(q)) ??
+          null
+        if (obj && cRect.width > 0 && cRect.height > 0) {
+          const proj = stage.projectWorld(obj.x, obj.y + 0.45, obj.z)
+          if (proj.visible && proj.u >= 0.02 && proj.u <= 0.98 && proj.v >= 0.02 && proj.v <= 0.98) {
+            const size = Math.max(64, Math.min(116, ((obj.radius ?? 0.9) * 920) / Math.max(6, stage.camDist)))
+            return {
+              x: cRect.left + proj.u * cRect.width - size * 0.5,
+              y: cRect.top + proj.v * cRect.height - size * 0.5,
+              width: size,
+              height: size,
+              shape: "pill",
+              label: obj.label,
+            }
+          }
+        }
+      }
+      return null
+    },
     isBusy: () => {
       if (viewportGestures?.isDragging()) return { busy: true, reason: "User is dragging the viewport camera" }
       if (activeTransform) return { busy: true, reason: `User is transforming ${activeTransform.primaryId}` }

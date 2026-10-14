@@ -27,6 +27,61 @@ declare global {
 
 export type DevPageKind = "hub" | "lab" | "catalogue" | "characters" | "game"
 
+export type DevNoteTarget = {
+  objectId?: string
+  setting?: string
+  rect?: [number, number, number, number]
+  world?: [number, number, number]
+  selector?: string
+}
+
+export type DevNoteResolvedRect = {
+  x: number
+  y: number
+  width: number
+  height: number
+  shape?: "pill" | "rect"
+  label?: string
+}
+
+export type DevNotePayload = {
+  title: string
+  body?: string
+  step?: string
+  accent?: string
+  target?: DevNoteTarget
+  dismissible: boolean
+  tourId?: string
+  stepIndex?: number
+  stepCount?: number
+  prevUrl?: string
+  nextUrl?: string
+  singleTab?: boolean
+}
+
+export type TourSetupCommand = {
+  command: string
+  args?: Record<string, unknown>
+}
+
+export type TourStepDefinition = {
+  title: string
+  body?: string
+  url: string
+  setup: TourSetupCommand[]
+  target?: DevNoteTarget
+  accent?: string
+  dismissible?: boolean
+}
+
+export type TourDefinition = {
+  id: string
+  title?: string
+  baseUrl?: string
+  singleTab?: boolean
+  steps: TourStepDefinition[]
+}
+
 export type DevPageSummary = {
   id: string
   kind: DevPageKind
@@ -38,6 +93,8 @@ export type DevPageSummary = {
   visible: boolean
   mode: "edit" | "play" | "view"
   section?: string
+  note?: DevNotePayload | null
+  tour?: { id: string; step: number; singleTab?: boolean } | null
   commands: LabCommandDescriptor[]
   updatedAt: number
   lastActiveAt: number
@@ -58,6 +115,7 @@ export type DevControlAdapter = {
   getMode?: () => "edit" | "play" | "view"
   getSection?: () => string | undefined
   onIndicator?: (text: string, isError?: boolean) => void
+  resolveTargetRect?: (target: DevNoteTarget) => DevNoteResolvedRect | null
 }
 
 export type StageCameraCommandOptions = {
@@ -203,6 +261,10 @@ export function findControlRow(
     }
   }
 
+  for (const entry of allRows) {
+    const { control } = entry
+    if (control.key === trimmed || control.key.toLowerCase() === trimmed.toLowerCase()) return entry
+  }
   for (const entry of allRows) {
     const { row, control } = entry
     if (prefix && normalizeSlug(row.group) !== normalizeSlug(prefix)) continue
@@ -513,37 +575,561 @@ export function resolveNavigationPath(target: string): string {
   if (raw.startsWith("/")) return raw
   if (raw.startsWith("#")) return `/arcade/getaway/dev.html${raw}`
 
-  const lower = raw.toLowerCase()
-  if (lower === "hub" || lower === "games") return "/arcade/getaway/dev.html#games"
-  if (lower === "catalogue" || lower === "catalog") return "/arcade/getaway/dev.html#catalogue"
-  if (lower.startsWith("catalogue/") || lower.startsWith("catalog/")) {
-    const asset = raw.slice(raw.indexOf("/") + 1)
-    return `/arcade/getaway/dev.html#catalogue/${encodeURIComponent(asset)}`
+  let baseRaw = raw
+  let extraSuffix = ""
+  const qIdx = raw.indexOf("?")
+  const hIdx = raw.indexOf("#")
+  const splitIdx = qIdx >= 0 && hIdx >= 0 ? Math.min(qIdx, hIdx) : qIdx >= 0 ? qIdx : hIdx
+  if (splitIdx > 0) {
+    baseRaw = raw.slice(0, splitIdx)
+    extraSuffix = raw.slice(splitIdx)
   }
-  if (lower === "characters" || lower === "character" || lower === "rig") {
-    return "/arcade/blackout/characters.html"
-  }
-  if (lower === "anim" || lower === "anim-viewer") {
-    return "/arcade/blackout/anim.html"
-  }
-  if (lower === "lab" || lower === "sandbox" || lower === "getaway-lab") {
-    return "/arcade/getaway/lab.html"
-  }
-  if (lower === "looks" || lower === "looks-lab") {
-    return "/arcade/getaway/lab.html#looks"
-  }
-  if (lower === "blackout-lab") {
-    return "/arcade/blackout/lab.html"
-  }
-  if (lower === "getaway") return "/arcade/getaway/?solo&seed=7"
-  if (lower === "blackout") return "/arcade/blackout/?sandbox=1&seed=1"
-  if (lower === "wizards") return "/arcade/blackout/?sandbox=1&mode=wizards&seed=1"
-  if (lower === "outbreak") return "/arcade/outbreak/?seed=7"
-  if (lower === "carrier") return "/arcade/carrier/?seed=7"
 
-  throw new Error(
-    `Unknown page target "${target}". Expected one of: hub, games, lab, sandbox, blackout-lab, catalogue, characters, getaway, blackout, outbreak, carrier, or a /arcade/... path.`,
-  )
+  const lower = baseRaw.toLowerCase()
+  let baseResolved: string | null = null
+  if (lower === "hub" || lower === "games") baseResolved = "/arcade/getaway/dev.html#games"
+  else if (lower === "catalogue" || lower === "catalog") baseResolved = "/arcade/getaway/dev.html#catalogue"
+  else if (lower.startsWith("catalogue/") || lower.startsWith("catalog/")) {
+    const asset = baseRaw.slice(baseRaw.indexOf("/") + 1)
+    baseResolved = `/arcade/getaway/dev.html#catalogue/${encodeURIComponent(asset)}`
+  } else if (lower === "characters" || lower === "character" || lower === "rig") {
+    baseResolved = "/arcade/blackout/characters.html"
+  } else if (lower === "anim" || lower === "anim-viewer") {
+    baseResolved = "/arcade/blackout/anim.html"
+  } else if (lower === "lab" || lower === "sandbox" || lower === "getaway-lab") {
+    baseResolved = "/arcade/getaway/lab.html"
+  } else if (lower === "outbreak-lab" || lower === "vignette" || lower === "outbreak-vignette") {
+    baseResolved = "/arcade/outbreak/lab.html?section=outbreak-vignette"
+  } else if (lower === "looks" || lower === "looks-lab") {
+    baseResolved = "/arcade/getaway/lab.html#looks"
+  } else if (lower === "blackout-lab") {
+    baseResolved = "/arcade/blackout/lab.html"
+  } else if (lower === "getaway") baseResolved = "/arcade/getaway/?solo&seed=7"
+  else if (lower === "blackout") baseResolved = "/arcade/blackout/?sandbox=1&seed=1"
+  else if (lower === "wizards") baseResolved = "/arcade/blackout/?sandbox=1&mode=wizards&seed=1"
+  else if (lower === "outbreak") baseResolved = "/arcade/outbreak/?seed=7"
+  else if (lower === "carrier") baseResolved = "/arcade/carrier/?seed=7"
+
+  if (!baseResolved) {
+    throw new Error(
+      `Unknown page target "${target}". Expected one of: hub, games, lab, sandbox, blackout-lab, outbreak-lab, catalogue, characters, getaway, blackout, outbreak, carrier, or a /arcade/... path.`,
+    )
+  }
+  if (!extraSuffix) return baseResolved
+  const baseUrl = new URL(baseResolved, "http://arcade.local")
+  const extraUrl = new URL(`http://arcade.local/x${extraSuffix}`)
+  for (const [k, v] of extraUrl.searchParams.entries()) {
+    baseUrl.searchParams.set(k, v)
+  }
+  if (extraUrl.hash) baseUrl.hash = extraUrl.hash
+  return baseUrl.pathname + baseUrl.search + baseUrl.hash
+}
+
+const ALLOWED_TARGET_KEYS = new Set([
+  "objectId",
+  "object",
+  "id",
+  "setting",
+  "settingKey",
+  "key",
+  "rect",
+  "screenRect",
+  "world",
+  "worldPoint",
+  "point",
+  "selector",
+  "x",
+  "y",
+  "z",
+  "width",
+  "height",
+  "w",
+  "h",
+])
+
+function parseNumberList(raw: string, label: string, expectedCounts: readonly number[]): number[] {
+  const nums = raw
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(Number)
+  if (!expectedCounts.includes(nums.length) || !nums.every(Number.isFinite)) {
+    throw new Error(`Invalid ${label} "${raw}". Expected ${expectedCounts.join(" or ")} comma-separated numbers.`)
+  }
+  return nums
+}
+
+export function normalizeNoteTarget(raw: unknown): DevNoteTarget | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (!trimmed) return undefined
+    if (trimmed.startsWith("{")) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(trimmed)
+      } catch (err) {
+        throw new Error(`Invalid JSON in note target: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      return normalizeNoteTarget(parsed)
+    }
+    const lower = trimmed.toLowerCase()
+    if (lower.startsWith("rect:")) {
+      const nums = parseNumberList(trimmed.slice(5), "screen rect", [4])
+      if (nums[2]! <= 0 || nums[3]! <= 0) throw new Error("Screen rect width and height must be > 0.")
+      return { rect: [nums[0]!, nums[1]!, nums[2]!, nums[3]!] }
+    }
+    if (lower.startsWith("world:") || lower.startsWith("point:")) {
+      const slice = trimmed.slice(trimmed.indexOf(":") + 1)
+      const nums = parseNumberList(slice, "world point", [2, 3])
+      return { world: nums.length === 2 ? [nums[0]!, 0, nums[1]!] : [nums[0]!, nums[1]!, nums[2]!] }
+    }
+    if (lower.startsWith("setting:") || lower.startsWith("key:")) {
+      const val = trimmed.slice(trimmed.indexOf(":") + 1).trim()
+      if (!val) throw new Error("Setting target key cannot be empty.")
+      return { setting: val }
+    }
+    if (lower.startsWith("object:")) {
+      const val = trimmed.slice(trimmed.indexOf(":") + 1).trim()
+      if (!val) throw new Error("Object target ID cannot be empty.")
+      return { objectId: val }
+    }
+    if (lower.startsWith("selector:")) {
+      const val = trimmed.slice(trimmed.indexOf(":") + 1).trim()
+      if (!val) throw new Error("DOM selector target cannot be empty.")
+      return { selector: val }
+    }
+    if (trimmed.startsWith("#") || trimmed.startsWith(".") || trimmed.startsWith("[")) {
+      return { selector: trimmed }
+    }
+    return { objectId: trimmed, setting: trimmed }
+  }
+
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Note target must be an object ({ objectId, setting, rect, world, selector }) or target string.")
+  }
+
+  const obj = raw as Record<string, unknown>
+  for (const k of Object.keys(obj)) {
+    if (!ALLOWED_TARGET_KEYS.has(k)) {
+      throw new Error(`Unknown note target field "${k}". Expected one of: objectId, setting, rect, world, selector.`)
+    }
+  }
+
+  const out: DevNoteTarget = {}
+  const rawObjId = obj.objectId ?? obj.object ?? obj.id
+  if (rawObjId !== undefined) {
+    if (typeof rawObjId !== "string" || !rawObjId.trim()) {
+      throw new Error("Note target 'objectId' must be a non-empty string.")
+    }
+    out.objectId = rawObjId.trim()
+  }
+
+  const rawSetting = obj.setting ?? obj.settingKey ?? obj.key
+  if (rawSetting !== undefined) {
+    if (typeof rawSetting !== "string" || !rawSetting.trim()) {
+      throw new Error("Note target 'setting' must be a non-empty string.")
+    }
+    out.setting = rawSetting.trim()
+  }
+
+  if (obj.selector !== undefined) {
+    if (typeof obj.selector !== "string" || !obj.selector.trim()) {
+      throw new Error("Note target 'selector' must be a non-empty string.")
+    }
+    out.selector = obj.selector.trim()
+  }
+
+  const rawRect =
+    obj.rect ??
+    obj.screenRect ??
+    (obj.x !== undefined && obj.y !== undefined && (obj.width !== undefined || obj.w !== undefined)
+      ? { x: obj.x, y: obj.y, width: obj.width ?? obj.w, height: obj.height ?? obj.h }
+      : undefined)
+  if (rawRect !== undefined) {
+    if (Array.isArray(rawRect)) {
+      if (rawRect.length !== 4 || !rawRect.every(n => typeof n === "number" && Number.isFinite(n))) {
+        throw new Error("Note target 'rect' array must be [x, y, width, height] with 4 finite numbers.")
+      }
+      if (Number(rawRect[2]) <= 0 || Number(rawRect[3]) <= 0) {
+        throw new Error("Note target 'rect' width and height must be > 0.")
+      }
+      out.rect = [Number(rawRect[0]), Number(rawRect[1]), Number(rawRect[2]), Number(rawRect[3])]
+    } else if (rawRect && typeof rawRect === "object") {
+      const r = rawRect as Record<string, unknown>
+      const rx = Number(r.x)
+      const ry = Number(r.y)
+      const rw = Number(r.width ?? r.w)
+      const rh = Number(r.height ?? r.h)
+      if (![rx, ry, rw, rh].every(Number.isFinite) || rw <= 0 || rh <= 0) {
+        throw new Error("Note target 'rect' object requires finite x, y, width (>0), and height (>0).")
+      }
+      out.rect = [rx, ry, rw, rh]
+    } else {
+      throw new Error("Note target 'rect' must be [x, y, width, height] or { x, y, width, height }.")
+    }
+  }
+
+  const rawWorld =
+    obj.world ??
+    obj.worldPoint ??
+    obj.point ??
+    (obj.x !== undefined && obj.z !== undefined && obj.width === undefined && obj.w === undefined
+      ? { x: obj.x, y: obj.y ?? 0, z: obj.z }
+      : undefined)
+  if (rawWorld !== undefined) {
+    if (Array.isArray(rawWorld)) {
+      if ((rawWorld.length !== 2 && rawWorld.length !== 3) || !rawWorld.every(n => typeof n === "number" && Number.isFinite(n))) {
+        throw new Error("Note target 'world' array must be [x, y, z] or [x, z] with finite numbers.")
+      }
+      out.world =
+        rawWorld.length === 2
+          ? [Number(rawWorld[0]), 0, Number(rawWorld[1])]
+          : [Number(rawWorld[0]), Number(rawWorld[1]), Number(rawWorld[2])]
+    } else if (rawWorld && typeof rawWorld === "object") {
+      const w = rawWorld as Record<string, unknown>
+      const wx = Number(w.x)
+      const wy = w.y !== undefined ? Number(w.y) : 0
+      const wz = Number(w.z)
+      if (![wx, wy, wz].every(Number.isFinite)) {
+        throw new Error("Note target 'world' object requires finite x, y, and z coordinates.")
+      }
+      out.world = [wx, wy, wz]
+    } else {
+      throw new Error("Note target 'world' must be [x, y, z] or { x, y, z }.")
+    }
+  }
+
+  if (!out.objectId && !out.setting && !out.rect && !out.world && !out.selector) {
+    throw new Error("Note target must specify at least one of: objectId, setting, rect, world, or selector.")
+  }
+
+  return out
+}
+
+export function normalizeNoteArgs(
+  raw: Record<string, unknown> | undefined,
+): { clear: true } | { clear: false; note: DevNotePayload } {
+  const input = raw ?? {}
+  if (input.clear === true || input.dismiss === true) {
+    return { clear: true }
+  }
+  const rawTitle = typeof input.title === "string" ? input.title.trim() : ""
+  if (!rawTitle) {
+    throw new Error('ui.note requires a non-empty "title" string (or { clear: true }).')
+  }
+  if (input.body !== undefined && input.body !== null && typeof input.body !== "string") {
+    throw new Error('Argument "body" must be a string.')
+  }
+  if (input.step !== undefined && input.step !== null && typeof input.step !== "string") {
+    throw new Error('Argument "step" must be a string (for example "2/5").')
+  }
+  if (input.accent !== undefined && input.accent !== null && typeof input.accent !== "string") {
+    throw new Error('Argument "accent" must be a string.')
+  }
+  if (input.dismissible !== undefined && typeof input.dismissible !== "boolean") {
+    throw new Error('Argument "dismissible" must be a boolean.')
+  }
+  const target = normalizeNoteTarget(input.target)
+  const body = typeof input.body === "string" && input.body.trim() ? input.body.trim() : undefined
+  const step = typeof input.step === "string" && input.step.trim() ? input.step.trim() : undefined
+  const accent = typeof input.accent === "string" && input.accent.trim() ? input.accent.trim() : undefined
+  const dismissible = typeof input.dismissible === "boolean" ? input.dismissible : true
+  const tourId = typeof input.tourId === "string" && input.tourId.trim() ? input.tourId.trim() : undefined
+  const stepIndex = typeof input.stepIndex === "number" && Number.isFinite(input.stepIndex) ? Math.round(input.stepIndex) : undefined
+  const stepCount = typeof input.stepCount === "number" && Number.isFinite(input.stepCount) ? Math.round(input.stepCount) : undefined
+  const prevUrl = typeof input.prevUrl === "string" && input.prevUrl.trim() ? input.prevUrl.trim() : undefined
+  const nextUrl = typeof input.nextUrl === "string" && input.nextUrl.trim() ? input.nextUrl.trim() : undefined
+  const singleTab = typeof input.singleTab === "boolean" ? input.singleTab : undefined
+
+  return {
+    clear: false,
+    note: {
+      title: rawTitle,
+      ...(body !== undefined ? { body } : {}),
+      ...(step !== undefined ? { step } : {}),
+      ...(accent !== undefined ? { accent } : {}),
+      ...(target !== undefined ? { target } : {}),
+      dismissible,
+      ...(tourId !== undefined ? { tourId } : {}),
+      ...(stepIndex !== undefined ? { stepIndex } : {}),
+      ...(stepCount !== undefined ? { stepCount } : {}),
+      ...(prevUrl !== undefined ? { prevUrl } : {}),
+      ...(nextUrl !== undefined ? { nextUrl } : {}),
+      ...(singleTab !== undefined ? { singleTab } : {}),
+    },
+  }
+}
+
+export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDefinition {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Tour definition must be a JSON object or non-empty array of steps.")
+  }
+  const isArray = Array.isArray(raw)
+  const container = isArray ? { steps: raw } : (raw as Record<string, unknown>)
+  const rawSteps = container.steps
+  if (!Array.isArray(rawSteps) || rawSteps.length === 0) {
+    throw new Error("Tour definition requires a non-empty 'steps' array.")
+  }
+
+  const rawId = typeof container.id === "string" && container.id.trim() ? container.id.trim() : defaultId
+  const id = rawId.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "tour"
+  const title = typeof container.title === "string" && container.title.trim() ? container.title.trim() : undefined
+  const baseUrl = typeof container.baseUrl === "string" && container.baseUrl.trim() ? container.baseUrl.trim().replace(/\/$/, "") : undefined
+  const singleTab = typeof container.singleTab === "boolean" ? container.singleTab : undefined
+
+  const steps: TourStepDefinition[] = rawSteps.map((item, idx) => {
+    const stepNum = idx + 1
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`Tour step ${stepNum} must be an object.`)
+    }
+    const s = item as Record<string, unknown>
+    const stepTitle = typeof s.title === "string" ? s.title.trim() : ""
+    if (!stepTitle) {
+      throw new Error(`Tour step ${stepNum} is missing a non-empty "title".`)
+    }
+    const rawUrl = typeof s.url === "string" ? s.url.trim() : typeof s.page === "string" ? s.page.trim() : typeof s.path === "string" ? s.path.trim() : ""
+    if (!rawUrl) {
+      throw new Error(`Tour step ${stepNum} ("${stepTitle}") is missing a non-empty "url".`)
+    }
+    let resolvedUrl: string
+    try {
+      resolvedUrl = resolveNavigationPath(rawUrl)
+    } catch (err) {
+      throw new Error(`Tour step ${stepNum} ("${stepTitle}"): ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    const rawBody = s.body ?? s.description
+    if (rawBody !== undefined && rawBody !== null && typeof rawBody !== "string") {
+      throw new Error(`Tour step ${stepNum} ("${stepTitle}"): "body" must be a string.`)
+    }
+    const body = typeof rawBody === "string" && rawBody.trim() ? rawBody.trim() : undefined
+
+    const setup: TourSetupCommand[] = []
+    if (s.setup !== undefined) {
+      if (!Array.isArray(s.setup)) {
+        throw new Error(`Tour step ${stepNum} ("${stepTitle}"): "setup" must be an array of commands.`)
+      }
+      for (let cIdx = 0; cIdx < s.setup.length; cIdx++) {
+        const entry = s.setup[cIdx]
+        if (typeof entry === "string" && entry.trim()) {
+          setup.push({ command: entry.trim() })
+          continue
+        }
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          throw new Error(`Tour step ${stepNum} ("${stepTitle}") setup[${cIdx}] must be a command object.`)
+        }
+        const cmdObj = entry as Record<string, unknown>
+        const cmdName =
+          typeof cmdObj.command === "string"
+            ? cmdObj.command.trim()
+            : typeof cmdObj.cmd === "string"
+              ? cmdObj.cmd.trim()
+              : typeof cmdObj.id === "string"
+                ? cmdObj.id.trim()
+                : ""
+        if (!cmdName) {
+          throw new Error(`Tour step ${stepNum} ("${stepTitle}") setup[${cIdx}] is missing "command".`)
+        }
+        let cmdArgs: Record<string, unknown> | undefined
+        if (cmdObj.args !== undefined) {
+          if (!cmdObj.args || typeof cmdObj.args !== "object" || Array.isArray(cmdObj.args)) {
+            throw new Error(`Tour step ${stepNum} ("${stepTitle}") setup[${cIdx}] "args" must be a JSON object.`)
+          }
+          cmdArgs = { ...(cmdObj.args as Record<string, unknown>) }
+        } else {
+          const inline: Record<string, unknown> = {}
+          for (const [k, v] of Object.entries(cmdObj)) {
+            if (k !== "command" && k !== "cmd" && k !== "id") inline[k] = v
+          }
+          if (Object.keys(inline).length > 0) cmdArgs = inline
+        }
+        setup.push(cmdArgs ? { command: cmdName, args: cmdArgs } : { command: cmdName })
+      }
+    }
+
+    let target: DevNoteTarget | undefined
+    const rawTarget = s.target ?? s.noteTarget
+    if (rawTarget !== undefined) {
+      try {
+        target = normalizeNoteTarget(rawTarget)
+      } catch (err) {
+        throw new Error(`Tour step ${stepNum} ("${stepTitle}"): ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    const accent = typeof s.accent === "string" && s.accent.trim() ? s.accent.trim() : undefined
+    const dismissible = typeof s.dismissible === "boolean" ? s.dismissible : undefined
+
+    return {
+      title: stepTitle,
+      ...(body !== undefined ? { body } : {}),
+      url: resolvedUrl,
+      setup,
+      ...(target !== undefined ? { target } : {}),
+      ...(accent !== undefined ? { accent } : {}),
+      ...(dismissible !== undefined ? { dismissible } : {}),
+    }
+  })
+
+  return {
+    id,
+    ...(title !== undefined ? { title } : {}),
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
+    ...(singleTab !== undefined ? { singleTab } : {}),
+    steps,
+  }
+}
+
+export function buildTourStepUrl(
+  origin: string,
+  stepUrl: string,
+  tourId: string,
+  stepNumber: number,
+  singleTab = false,
+): string {
+  const resolved = resolveNavigationPath(stepUrl)
+  const u = new URL(resolved, origin.endsWith("/") ? origin : `${origin}/`)
+  u.searchParams.set("tour", tourId)
+  u.searchParams.set("step", String(stepNumber))
+  if (singleTab) u.searchParams.set("singleTab", "1")
+  return u.href
+}
+
+const ACCENT_PALETTE: Record<string, { border: string; text: string; glow: string; badgeBg: string }> = {
+  cyan: {
+    border: "rgba(124, 197, 214, 0.55)",
+    text: "#7cc5d6",
+    glow: "rgba(124, 197, 214, 0.28)",
+    badgeBg: "rgba(124, 197, 214, 0.16)",
+  },
+  amber: {
+    border: "rgba(245, 185, 66, 0.6)",
+    text: "#f5b942",
+    glow: "rgba(245, 185, 66, 0.28)",
+    badgeBg: "rgba(245, 185, 66, 0.18)",
+  },
+  emerald: {
+    border: "rgba(92, 214, 154, 0.58)",
+    text: "#5cd69a",
+    glow: "rgba(92, 214, 154, 0.28)",
+    badgeBg: "rgba(92, 214, 154, 0.16)",
+  },
+  rose: {
+    border: "rgba(255, 122, 144, 0.58)",
+    text: "#ff7a90",
+    glow: "rgba(255, 122, 144, 0.28)",
+    badgeBg: "rgba(255, 122, 144, 0.16)",
+  },
+  violet: {
+    border: "rgba(180, 142, 247, 0.58)",
+    text: "#b48ef7",
+    glow: "rgba(180, 142, 247, 0.28)",
+    badgeBg: "rgba(180, 142, 247, 0.16)",
+  },
+}
+
+function resolveAccentColors(accent?: string) {
+  if (!accent) return ACCENT_PALETTE.cyan!
+  const key = accent.trim().toLowerCase()
+  if (ACCENT_PALETTE[key]) return ACCENT_PALETTE[key]!
+  return {
+    border: accent,
+    text: accent,
+    glow: "rgba(124, 197, 214, 0.28)",
+    badgeBg: "rgba(124, 197, 214, 0.16)",
+  }
+}
+
+export function registerUiNoteCommand(
+  commands: LabCommandRegistry,
+  handlers?: {
+    onShow?: (note: DevNotePayload) => DevNoteResolvedRect | null
+    onClear?: () => void
+    getDocumentTitle?: () => string
+  },
+): void {
+  let fallbackTitle = handlers?.getDocumentTitle?.() ?? (typeof document !== "undefined" ? document.title : "Arcade")
+  let activeNoteState: DevNotePayload | null = null
+
+  commands.register({
+    id: "ui.note",
+    aliases: ["note", "show-me"],
+    label: "Show Pinned Page Note & Highlight Target",
+    shortLabel: "Note",
+    category: "Navigation",
+    undoable: false,
+    readOnly: true,
+    args: {
+      title: { type: "string", description: "Short pinned tab/card title (sets document.title to '▸ <title>')" },
+      body: { type: "string", description: "One-line description of what to look at" },
+      step: { type: "string", description: "Optional tour step counter such as '2/5'" },
+      accent: { type: "string", description: "Optional accent colour (cyan, amber, emerald, rose, violet, or CSS colour)" },
+      target: { type: "object", description: "Optional highlight target ({ objectId, setting, rect, world, selector } or string)" },
+      dismissible: { type: "boolean", description: "Whether Esc and × dismiss the note (default true)" },
+      clear: { type: "boolean", description: "Dismiss any active note and restore document.title" },
+      tourId: { type: "string", description: "Optional tour identifier" },
+      stepIndex: { type: "number", min: 1, max: 999, description: "Optional 1-based step index" },
+      stepCount: { type: "number", min: 1, max: 999, description: "Optional total steps in tour" },
+      prevUrl: { type: "string", description: "Optional previous step URL" },
+      nextUrl: { type: "string", description: "Optional next step URL" },
+      singleTab: { type: "boolean", description: "Navigate within the same tab on Next/Prev" },
+    },
+    enabled: () => true,
+    run: (_ctx, rawArgs) => {
+      const normalized = normalizeNoteArgs(rawArgs as Record<string, unknown> | undefined)
+      if (normalized.clear) {
+        activeNoteState = null
+        handlers?.onClear?.()
+        return {
+          active: false,
+          documentTitle: handlers?.getDocumentTitle?.() ?? fallbackTitle,
+        }
+      }
+      const { note } = normalized
+      activeNoteState = note
+      const formattedDocTitle = note.title.startsWith("▸ ") ? note.title : `▸ ${note.title}`
+      fallbackTitle = formattedDocTitle
+      const resolvedRect = handlers?.onShow ? handlers.onShow(note) : null
+      return {
+        active: true,
+        title: note.title,
+        documentTitle: handlers?.getDocumentTitle?.() ?? formattedDocTitle,
+        body: note.body ?? null,
+        step: note.step ?? null,
+        accent: note.accent ?? "cyan",
+        target: note.target ?? null,
+        targetResolved: Boolean(resolvedRect),
+        targetRect: resolvedRect ?? null,
+        dismissible: note.dismissible,
+        tourId: note.tourId ?? null,
+        stepIndex: note.stepIndex ?? null,
+        stepCount: note.stepCount ?? null,
+      }
+    },
+  })
+
+  if (!commands.get("ui.note.clear")) {
+    commands.register({
+      id: "ui.note.clear",
+      aliases: ["note.clear"],
+      label: "Dismiss Pinned Page Note",
+      shortLabel: "Dismiss Note",
+      category: "Navigation",
+      undoable: false,
+      readOnly: true,
+      enabled: () => true,
+      run: () => {
+        activeNoteState = null
+        handlers?.onClear?.()
+        return {
+          active: false,
+          documentTitle: handlers?.getDocumentTitle?.() ?? fallbackTitle,
+        }
+      },
+    })
+  }
+  void activeNoteState
 }
 
 function detectGameName(pathname: string): string {
@@ -573,10 +1159,148 @@ if (import.meta.env?.DEV && typeof window !== "undefined") {
   getSubmitListeners()
 }
 
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rad = Math.max(0, Math.min(r, w * 0.5, h * 0.5))
+  ctx.beginPath()
+  ctx.moveTo(x + rad, y)
+  ctx.arcTo(x + w, y, x + w, y + h, rad)
+  ctx.arcTo(x + w, y + h, x, y + h, rad)
+  ctx.arcTo(x, y + h, x, y, rad)
+  ctx.arcTo(x, y, x + w, y, rad)
+  ctx.closePath()
+}
+
+function drawActiveNoteOverlayToCanvas(
+  targetCanvas: HTMLCanvasElement,
+  sourceCanvas: HTMLCanvasElement,
+  rt: PageControlRuntime | null | undefined,
+) {
+  if (!rt) return
+  const note = rt.getActiveNote()
+  if (!note) return
+  const ctx = targetCanvas.getContext("2d")
+  if (!ctx) return
+
+  const cw = targetCanvas.width
+  const ch = targetCanvas.height
+  const cRect = sourceCanvas.getBoundingClientRect()
+  const refW = Math.max(1, cRect.width || window.innerWidth || cw)
+  const refH = Math.max(1, cRect.height || window.innerHeight || ch)
+  const sx = cw / refW
+  const sy = ch / refH
+  const colors = resolveAccentColors(note.accent)
+
+  // 1. Draw target highlight ring if resolved and overlapping the canvas
+  const targetRect = note.target ? rt.resolveNoteTargetRect(note.target, false) : null
+  if (targetRect && targetRect.width > 0 && targetRect.height > 0) {
+    const localX = targetRect.x - cRect.left
+    const localY = targetRect.y - cRect.top
+    const overlapsCanvas =
+      localX + targetRect.width > 4 && localX < refW - 4 && localY + targetRect.height > 4 && localY < refH - 4
+    if (overlapsCanvas) {
+      const pad = 6
+      const rx = (localX - pad) * sx
+      const ry = (localY - pad) * sy
+      const rw = (targetRect.width + pad * 2) * sx
+      const rh = (targetRect.height + pad * 2) * sy
+      const radius = targetRect.shape === "pill" ? Math.min(rw, rh) * 0.5 : 8 * sx
+
+      ctx.save()
+      if (note.target?.selector) {
+        const domEl = document.querySelector<HTMLElement>(note.target.selector)
+        const text = domEl?.innerText?.replace(/\s+/g, " ").trim()
+        if (text) {
+          roundRectPath(ctx, localX * sx, localY * sy, targetRect.width * sx, targetRect.height * sy, 6 * sx)
+          ctx.fillStyle = "rgba(12, 16, 20, 0.88)"
+          ctx.fill()
+          ctx.font = `600 ${Math.max(10, Math.round(12 * sx))}px system-ui, -apple-system, sans-serif`
+          ctx.fillStyle = "#eef4f8"
+          ctx.textBaseline = "middle"
+          ctx.fillText(text, (localX + 10) * sx, (localY + targetRect.height * 0.5) * sy)
+        }
+      }
+
+      roundRectPath(ctx, rx - 3 * sx, ry - 3 * sy, rw + 6 * sx, rh + 6 * sy, radius + 3 * sx)
+      ctx.strokeStyle = colors.glow
+      ctx.lineWidth = Math.max(3, 5 * sx)
+      ctx.stroke()
+
+      roundRectPath(ctx, rx, ry, rw, rh, radius)
+      ctx.strokeStyle = colors.text
+      ctx.lineWidth = Math.max(2, 2.2 * sx)
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+
+  // 2. Draw top-centered "Show me" card
+  ctx.save()
+  const topPx = 10 * sy
+  const titleFont = `600 ${Math.max(11, Math.round(13 * sx))}px system-ui, -apple-system, sans-serif`
+  const bodyFont = `400 ${Math.max(10, Math.round(11.5 * sx))}px system-ui, -apple-system, sans-serif`
+  const monoFont = `600 ${Math.max(9, Math.round(10.5 * sx))}px ui-monospace, SFMono-Regular, Menlo, monospace`
+
+  ctx.font = titleFont
+  const titleText = `▸ ${note.title}`
+  const titleW = ctx.measureText(titleText).width
+  ctx.font = bodyFont
+  const bodyText = note.body ? (note.body.length > 96 ? `${note.body.slice(0, 95)}…` : note.body) : ""
+  const bodyW = bodyText ? ctx.measureText(bodyText).width : 0
+  ctx.font = monoFont
+  const stepText = note.step ?? ""
+  const stepW = stepText ? ctx.measureText(stepText).width + 14 * sx : 0
+  const navW = note.prevUrl || note.nextUrl || (note.stepCount && note.stepCount > 1) ? 94 * sx : 0
+
+  const padX = 14 * sx
+  const cardW = Math.min(cw - 20 * sx, Math.max(260 * sx, titleW + stepW + navW + padX * 2 + 28 * sx, bodyW + padX * 2))
+  const cardH = (bodyText ? 48 : 30) * sy
+  const cardX = (cw - cardW) * 0.5
+  const cardY = topPx
+
+  roundRectPath(ctx, cardX, cardY, cardW, cardH, 9 * sx)
+  ctx.fillStyle = "rgba(11, 15, 20, 0.93)"
+  ctx.fill()
+  ctx.strokeStyle = colors.border
+  ctx.lineWidth = Math.max(1, 1.25 * sx)
+  ctx.stroke()
+
+  // Left accent bar
+  roundRectPath(ctx, cardX + 4 * sx, cardY + 6 * sy, 3 * sx, cardH - 12 * sy, 2 * sx)
+  ctx.fillStyle = colors.text
+  ctx.fill()
+
+  let curX = cardX + padX
+  const row1Y = cardY + (bodyText ? 18 : 19) * sy
+
+  if (stepText) {
+    const bw = ctx.measureText(stepText).width + 10 * sx
+    const bh = 15 * sy
+    roundRectPath(ctx, curX, row1Y - 11.5 * sy, bw, bh, 4 * sx)
+    ctx.fillStyle = colors.badgeBg
+    ctx.fill()
+    ctx.font = monoFont
+    ctx.fillStyle = colors.text
+    ctx.fillText(stepText, curX + 5 * sx, row1Y - 1 * sy)
+    curX += bw + 8 * sx
+  }
+
+  ctx.font = titleFont
+  ctx.fillStyle = "#f0f5f8"
+  ctx.fillText(titleText, curX, row1Y)
+
+  if (bodyText) {
+    ctx.font = bodyFont
+    ctx.fillStyle = "#a5b5c2"
+    ctx.fillText(bodyText, cardX + padX, cardY + 36 * sy, cardW - padX * 2)
+  }
+  ctx.restore()
+}
+
 async function captureWebGPUOr2DCanvas(
   canvas: HTMLCanvasElement,
   customCapture: ((target: HTMLCanvasElement) => Promise<void> | void) | undefined,
   maxSize = 1280,
+  includeOverlay = true,
 ): Promise<{ dataUrl: string; width: number; height: number; sourceWidth: number; sourceHeight: number }> {
   const scratch = document.createElement("canvas")
   const srcW = Math.max(1, canvas.width || canvas.clientWidth || 320)
@@ -643,6 +1367,10 @@ async function captureWebGPUOr2DCanvas(
     outCanvas = scaled
   }
 
+  if (includeOverlay) {
+    drawActiveNoteOverlayToCanvas(outCanvas, canvas, typeof window !== "undefined" ? window.__arcadeDevControl : null)
+  }
+
   return {
     dataUrl: outCanvas.toDataURL("image/png"),
     width: outCanvas.width,
@@ -696,6 +1424,9 @@ const COMMAND_ALIASES: Record<string, string> = {
   redo: "edit.redo",
   reroll: "ground.reroll",
   frame: "object.frame",
+  note: "ui.note",
+  "show-me": "ui.note",
+  "note.clear": "ui.note.clear",
 }
 
 // Singleton per-page DevControl runtime (only active in DEV when served by the Arcade dev router)
@@ -707,6 +1438,11 @@ class PageControlRuntime {
   private reconnectTimer = 0
   private indicatorEl: HTMLElement | null = null
   private indicatorTimer = 0
+  private noteEl: HTMLElement | null = null
+  private ringEl: HTMLElement | null = null
+  private ringRaf = 0
+  private activeNote: DevNotePayload | null = null
+  private baseDocumentTitle: string | null = null
   private lastActiveAt = Date.now()
   private fallbackReady = false
   readonly pageId: string
@@ -717,6 +1453,8 @@ class PageControlRuntime {
     if (!import.meta.env?.DEV) return
     if (typeof window === "undefined" || typeof document === "undefined") return
     this.routerConfig = this.readRouterConfig()
+    this.syncWindowTourName()
+    window.addEventListener("keydown", e => this.handleNoteKeydown(e), { capture: true })
     if (!this.routerConfig) return
 
     const bumpActivity = () => {
@@ -735,10 +1473,369 @@ class PageControlRuntime {
     this.pollUntilReady()
   }
 
+  getActiveNote(): DevNotePayload | null {
+    return this.activeNote
+  }
+
+  private readUrlTourMeta(): { id: string; step: number; singleTab?: boolean } | null {
+    try {
+      const sp = new URLSearchParams(location.search)
+      const id = sp.get("tour")?.trim()
+      const step = Number(sp.get("step"))
+      if (id && Number.isFinite(step) && step >= 1) {
+        return {
+          id,
+          step: Math.round(step),
+          ...(sp.get("singleTab") === "1" ? { singleTab: true } : {}),
+        }
+      }
+    } catch {}
+    return null
+  }
+
+  private syncWindowTourName() {
+    const meta = this.readUrlTourMeta()
+    if (meta) {
+      try {
+        window.name = `arcade-tour:${meta.id}:${meta.step}`
+      } catch {}
+    }
+  }
+
+  private handleNoteKeydown(event: KeyboardEvent) {
+    if (!this.activeNote) return
+    const target = event.target as HTMLElement | null
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) {
+      return
+    }
+    if (event.key === "Escape" && this.activeNote.dismissible !== false) {
+      const modalOpen = Boolean(document.querySelector(".lab-palette-backdrop:not([hidden]), .lab-modal-backdrop:not([hidden])"))
+      if (modalOpen) return
+      this.clearNote()
+      this.sendStatus()
+    }
+  }
+
+  private ensureNoteStyle() {
+    if (document.querySelector("style[data-arcade-note-style]")) return
+    const style = document.createElement("style")
+    style.dataset.arcadeNoteStyle = ""
+    style.textContent = `
+      [data-arcade-note][hidden], [data-arcade-note-ring][hidden] {
+        display: none !important;
+      }
+      @keyframes arcade-note-pulse {
+        0%, 100% { transform: scale(1); opacity: 0.96; }
+        50% { transform: scale(1.035); opacity: 0.68; }
+      }
+      @keyframes arcade-note-card-flash {
+        0% { transform: translateX(-50%) scale(1.035); }
+        100% { transform: translateX(-50%) scale(1); }
+      }
+      [data-arcade-note] button:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.14) !important;
+        color: #fff !important;
+      }
+      [data-arcade-note] button:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+    `
+    document.head.append(style)
+  }
+
+  resolveNoteTargetRect(target: DevNoteTarget, revealSetting = false): DevNoteResolvedRect | null {
+    if (target.rect) {
+      const [rx, ry, rw, rh] = target.rect
+      const normalized = rx >= 0 && rx <= 1 && ry >= 0 && ry <= 1 && rw > 0 && rw <= 1 && rh > 0 && rh <= 1
+      const vw = window.innerWidth || 1280
+      const vh = window.innerHeight || 800
+      return {
+        x: normalized ? rx * vw : rx,
+        y: normalized ? ry * vh : ry,
+        width: normalized ? rw * vw : rw,
+        height: normalized ? rh * vh : rh,
+        shape: "rect",
+      }
+    }
+
+    if (target.setting) {
+      const panels = [...this.panels]
+      const found = findControlRow(panels, target.setting)
+      if (found) {
+        const rowEl = found.panel.getControlElement(found.control.key, revealSetting)
+        if (rowEl) {
+          const r = rowEl.getBoundingClientRect()
+          if (r.width > 0 && r.height > 0) {
+            return { x: r.left, y: r.top, width: r.width, height: r.height, shape: "rect", label: found.control.label }
+          }
+        }
+      }
+    }
+
+    const adapter = this.activeAdapter()
+    if (adapter.resolveTargetRect) {
+      const custom = adapter.resolveTargetRect(target)
+      if (custom && custom.width > 0 && custom.height > 0) return custom
+    }
+
+    const harness = (globalThis as { __arcadeHarness?: { resolveTargetRect?: (t: DevNoteTarget) => DevNoteResolvedRect | null } }).__arcadeHarness
+    if (harness?.resolveTargetRect) {
+      const hRect = harness.resolveTargetRect(target)
+      if (hRect && hRect.width > 0 && hRect.height > 0) return hRect
+    }
+
+    if (target.selector) {
+      try {
+        const el = document.querySelector<HTMLElement>(target.selector)
+        if (el && !el.hidden) {
+          const r = el.getBoundingClientRect()
+          if (r.width > 0 && r.height > 0) {
+            return { x: r.left, y: r.top, width: r.width, height: r.height, shape: "rect" }
+          }
+        }
+      } catch {}
+    }
+
+    if (target.objectId) {
+      const q = target.objectId
+      const candidates = [
+        `[data-object-id="${CSS.escape(q)}"]`,
+        `[data-actor-id="${CSS.escape(q)}"]`,
+        `[data-catalog-id="${CSS.escape(q)}"]`,
+        `[data-game="${CSS.escape(q)}"]`,
+        `#${CSS.escape(q)}`,
+      ]
+      for (const sel of candidates) {
+        try {
+          const el = document.querySelector<HTMLElement>(sel)
+          if (el && !el.hidden) {
+            const r = el.getBoundingClientRect()
+            if (r.width > 0 && r.height > 0) {
+              return { x: r.left, y: r.top, width: r.width, height: r.height, shape: "rect" }
+            }
+          }
+        } catch {}
+      }
+    }
+
+    return null
+  }
+
+  private updateTargetRing(initial = false) {
+    if (this.ringRaf) {
+      cancelAnimationFrame(this.ringRaf)
+      this.ringRaf = 0
+    }
+    const note = this.activeNote
+    if (!note?.target) {
+      if (this.ringEl) this.ringEl.hidden = true
+      return
+    }
+
+    const rect = this.resolveNoteTargetRect(note.target, initial)
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      if (this.ringEl) this.ringEl.hidden = true
+    } else {
+      if (!this.ringEl || !document.body.contains(this.ringEl)) {
+        const ring = document.createElement("div")
+        ring.dataset.arcadeNoteRing = ""
+        ring.setAttribute("aria-hidden", "true")
+        document.body.append(ring)
+        this.ringEl = ring
+      }
+      const colors = resolveAccentColors(note.accent)
+      const pad = 6
+      const borderRadius = rect.shape === "pill" ? "999px" : "8px"
+      this.ringEl.hidden = false
+      this.ringEl.style.cssText = `position:fixed;left:${Math.round(rect.x - pad)}px;top:${Math.round(rect.y - pad)}px;width:${Math.round(rect.width + pad * 2)}px;height:${Math.round(rect.height + pad * 2)}px;border-radius:${borderRadius};border:2px solid ${colors.text};box-shadow:0 0 0 4px ${colors.glow},0 0 18px ${colors.glow};pointer-events:none;z-index:9998;box-sizing:border-box;animation:arcade-note-pulse 1.8s ease-in-out infinite;`
+    }
+
+    this.ringRaf = requestAnimationFrame(() => this.updateTargetRing(false))
+  }
+
+  private navigateTourStep(direction: "prev" | "next") {
+    const note = this.activeNote
+    if (!note) return
+    const targetUrl = direction === "prev" ? note.prevUrl : note.nextUrl
+    const targetStep =
+      typeof note.stepIndex === "number" ? (direction === "prev" ? note.stepIndex - 1 : note.stepIndex + 1) : undefined
+
+    if (note.singleTab && targetUrl) {
+      location.assign(targetUrl)
+      return
+    }
+
+    if (note.tourId && targetStep !== undefined) {
+      const targetWinName = `arcade-tour:${note.tourId}:${targetStep}`
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(
+          JSON.stringify({
+            type: "tour.focus",
+            tourId: note.tourId,
+            step: targetStep,
+            url: targetUrl,
+            singleTab: Boolean(note.singleTab),
+          }),
+        )
+      }
+      try {
+        const existing = window.open("", targetWinName)
+        if (existing && existing !== window && existing.location?.href && existing.location.href !== "about:blank") {
+          existing.focus()
+          return
+        }
+        if (existing && existing.location?.href === "about:blank") {
+          existing.close()
+        }
+      } catch {}
+    }
+
+    if (targetUrl) {
+      location.assign(targetUrl)
+    }
+  }
+
+  showNote(note: DevNotePayload): DevNoteResolvedRect | null {
+    this.ensureNoteStyle()
+    if (this.baseDocumentTitle === null) {
+      const current = document.title || ""
+      this.baseDocumentTitle = current.startsWith("▸ ") ? current.slice(2) : current
+    }
+    this.activeNote = note
+    document.title = note.title.startsWith("▸ ") ? note.title : `▸ ${note.title}`
+    if (note.tourId && note.stepIndex) {
+      try {
+        window.name = `arcade-tour:${note.tourId}:${note.stepIndex}`
+      } catch {}
+    }
+
+    if (!this.noteEl || !document.body.contains(this.noteEl)) {
+      const el = document.createElement("aside")
+      el.dataset.arcadeNote = ""
+      el.setAttribute("role", "region")
+      el.setAttribute("aria-label", "Show me note")
+      document.body.append(el)
+      this.noteEl = el
+    }
+
+    const colors = resolveAccentColors(note.accent)
+    const hasTopbar = Boolean(document.querySelector(".lab-topbar, .hub-bar"))
+    const topPx = hasTopbar ? 46 : 12
+    this.noteEl.hidden = false
+    this.noteEl.style.cssText = `position:fixed;top:${topPx}px;left:50%;transform:translateX(-50%);z-index:10000;pointer-events:none;max-width:min(760px,calc(100vw - 28px));background:rgba(11,15,20,0.93);backdrop-filter:blur(10px);color:#f0f5f8;border:1px solid ${colors.border};border-left:3.5px solid ${colors.text};border-radius:9px;padding:7px 12px;box-shadow:0 8px 26px rgba(0,0,0,0.48);font:12.5px/1.35 system-ui,-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;gap:10px;animation:arcade-note-card-flash 0.22s ease-out;`
+
+    this.noteEl.replaceChildren()
+
+    if (note.step) {
+      const stepBadge = document.createElement("span")
+      stepBadge.dataset.arcadeNoteStep = ""
+      stepBadge.textContent = note.step
+      stepBadge.style.cssText = `font:600 10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 6px;border-radius:4px;background:${colors.badgeBg};color:${colors.text};white-space:nowrap;flex-shrink:0;`
+      this.noteEl.append(stepBadge)
+    }
+
+    const textCol = document.createElement("div")
+    textCol.style.cssText = "display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;"
+
+    const titleEl = document.createElement("div")
+    titleEl.dataset.arcadeNoteTitle = ""
+    titleEl.textContent = `▸ ${note.title}`
+    titleEl.style.cssText = "font-weight:600;font-size:13px;color:#f0f5f8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+    textCol.append(titleEl)
+
+    if (note.body) {
+      const bodyEl = document.createElement("div")
+      bodyEl.dataset.arcadeNoteBody = ""
+      bodyEl.textContent = note.body
+      bodyEl.style.cssText = "font-size:11.5px;color:#a5b5c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+      bodyEl.title = note.body
+      textCol.append(bodyEl)
+    }
+    this.noteEl.append(textCol)
+
+    const hasTourNav = Boolean(note.prevUrl || note.nextUrl || (note.stepCount && note.stepCount > 1))
+    if (hasTourNav) {
+      const navWrap = document.createElement("div")
+      navWrap.style.cssText = "display:flex;align-items:center;gap:4px;pointer-events:auto;flex-shrink:0;"
+      const btnCss =
+        "pointer-events:auto;font:600 11px/1 system-ui,-apple-system,sans-serif;padding:4px 7px;border-radius:5px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.06);color:#d7e2ea;cursor:pointer;"
+
+      const prevBtn = document.createElement("button")
+      prevBtn.type = "button"
+      prevBtn.dataset.arcadeNotePrev = ""
+      prevBtn.tabIndex = -1
+      prevBtn.textContent = "‹ Prev"
+      prevBtn.disabled = !note.prevUrl && (note.stepIndex === undefined || note.stepIndex <= 1)
+      prevBtn.style.cssText = btnCss
+      prevBtn.onclick = e => {
+        e.stopPropagation()
+        prevBtn.blur()
+        this.navigateTourStep("prev")
+      }
+
+      const nextBtn = document.createElement("button")
+      nextBtn.type = "button"
+      nextBtn.dataset.arcadeNoteNext = ""
+      nextBtn.tabIndex = -1
+      nextBtn.textContent = "Next ›"
+      nextBtn.disabled = !note.nextUrl && (note.stepIndex === undefined || note.stepCount === undefined || note.stepIndex >= note.stepCount)
+      nextBtn.style.cssText = btnCss
+      nextBtn.onclick = e => {
+        e.stopPropagation()
+        nextBtn.blur()
+        this.navigateTourStep("next")
+      }
+
+      navWrap.append(prevBtn, nextBtn)
+      this.noteEl.append(navWrap)
+    }
+
+    if (note.dismissible !== false) {
+      const closeBtn = document.createElement("button")
+      closeBtn.type = "button"
+      closeBtn.dataset.arcadeNoteDismiss = ""
+      closeBtn.tabIndex = -1
+      closeBtn.title = "Dismiss note (Esc)"
+      closeBtn.setAttribute("aria-label", "Dismiss note")
+      closeBtn.textContent = "×"
+      closeBtn.style.cssText =
+        "pointer-events:auto;font:600 14px/1 system-ui,-apple-system,sans-serif;width:22px;height:22px;border-radius:5px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.05);color:#9fb0bd;cursor:pointer;display:grid;place-items:center;flex-shrink:0;padding:0;"
+      closeBtn.onclick = e => {
+        e.stopPropagation()
+        this.clearNote()
+        this.sendStatus()
+      }
+      this.noteEl.append(closeBtn)
+    }
+
+    const initialRect = note.target ? this.resolveNoteTargetRect(note.target, true) : null
+    this.updateTargetRing(false)
+    this.sendStatus()
+    return initialRect
+  }
+
+  clearNote() {
+    this.activeNote = null
+    if (this.ringRaf) {
+      cancelAnimationFrame(this.ringRaf)
+      this.ringRaf = 0
+    }
+    if (this.noteEl) this.noteEl.hidden = true
+    if (this.ringEl) this.ringEl.hidden = true
+    if (this.baseDocumentTitle !== null) {
+      document.title = this.baseDocumentTitle
+    }
+  }
+
   private isPageReady(): boolean {
     if (this.adapter !== null) return true
     if (location.pathname.endsWith("/lab.html") || location.pathname.endsWith("/dev.html")) {
       return this.fallbackReady
+    }
+    if (location.pathname.includes("/outbreak/")) {
+      const h = (globalThis as { __arcadeHarness?: { ready?: boolean } }).__arcadeHarness
+      return Boolean(h?.ready) || this.fallbackReady
     }
     if (this.panels.size > 0) return true
     if ((globalThis as { carrier?: unknown }).carrier !== undefined) return true
@@ -747,7 +1844,10 @@ class PageControlRuntime {
 
   private pollUntilReady() {
     const started = Date.now()
-    const isStructuredPage = location.pathname.endsWith("/lab.html") || location.pathname.endsWith("/dev.html")
+    const isStructuredPage =
+      location.pathname.endsWith("/lab.html") ||
+      location.pathname.endsWith("/dev.html") ||
+      location.pathname.includes("/outbreak/")
     const maxWait = isStructuredPage ? 6000 : 1200
     const timer = window.setInterval(() => {
       if (this.isPageReady()) {
@@ -920,6 +2020,7 @@ class PageControlRuntime {
         return {
           game: detectGameName(location.pathname),
           settings: labAll?.settings ?? {},
+          note: this.activeNote,
           ...(c?.camera
             ? {
                 camera: {
@@ -938,6 +2039,14 @@ class PageControlRuntime {
 
   private ensureStandardCommands(adapter: DevControlAdapter) {
     const { commands } = adapter
+    if (!commands.get("ui.note")) {
+      registerUiNoteCommand(commands, {
+        onShow: note => this.showNote(note),
+        onClear: () => this.clearNote(),
+        getDocumentTitle: () => document.title,
+      })
+    }
+
     if (!commands.get("nav.open")) {
       commands.register({
         id: "nav.open",
@@ -988,6 +2097,7 @@ class PageControlRuntime {
           const pageState = regState ?? (await adapter.getState())
           return {
             page: this.buildSummary(),
+            note: this.activeNote,
             ...pageState,
           }
         },
@@ -1003,16 +2113,18 @@ class PageControlRuntime {
         undoable: false,
         args: {
           maxSize: { type: "number", min: 0, max: 4096, description: "Max long-edge pixel dimension (default 1280, 0 for native)" },
+          raw: { type: "boolean", description: "Omit 2D note overlay when compositing with live DOM" },
         },
         enabled: () => true,
         run: async (_ctx, args) => {
           const maxSize = typeof args?.maxSize === "number" ? args.maxSize : 1280
+          const includeOverlay = args?.raw !== true
           const canvas = adapter.getCanvas?.() ?? document.querySelector<HTMLCanvasElement>("canvas")
           if (!canvas || (canvas.closest("[hidden]") && adapter.kind === "hub")) {
             const synth = synthesizeHubCanvas()
-            return await captureWebGPUOr2DCanvas(synth, undefined, maxSize)
+            return await captureWebGPUOr2DCanvas(synth, undefined, maxSize, includeOverlay)
           }
-          return await captureWebGPUOr2DCanvas(canvas, adapter.captureCanvas, maxSize)
+          return await captureWebGPUOr2DCanvas(canvas, adapter.captureCanvas, maxSize, includeOverlay)
         },
       })
     }
@@ -1044,6 +2156,7 @@ class PageControlRuntime {
   buildSummary(): DevPageSummary {
     const adapter = this.activeAdapter()
     this.ensureStandardCommands(adapter)
+    const tourMeta = this.readUrlTourMeta()
     return {
       id: this.pageId,
       kind: adapter.kind,
@@ -1055,6 +2168,8 @@ class PageControlRuntime {
       visible: !document.hidden,
       mode: adapter.getMode?.() ?? "view",
       section: adapter.getSection?.(),
+      note: this.activeNote,
+      tour: tourMeta,
       commands: adapter.commands.describe(),
       updatedAt: Date.now(),
       lastActiveAt: this.lastActiveAt,
@@ -1122,7 +2237,15 @@ class PageControlRuntime {
   }
 
   private isReadOnlyCommand(id: string): boolean {
-    return id === "state" || id === "screenshot" || id === "camera.get" || id === "lab.get" || id === "preset.export"
+    return (
+      id === "state" ||
+      id === "screenshot" ||
+      id === "camera.get" ||
+      id === "lab.get" ||
+      id === "preset.export" ||
+      id === "ui.note" ||
+      id === "ui.note.clear"
+    )
   }
 
   private async handleRpc(msg: { requestId: string; command: string; args?: Record<string, unknown> }) {
@@ -1192,9 +2315,28 @@ class PageControlRuntime {
       }
       ws.onmessage = event => {
         try {
-          const msg = JSON.parse(String(event.data)) as { type?: string; requestId?: string; command?: string; args?: Record<string, unknown> }
+          const msg = JSON.parse(String(event.data)) as {
+            type?: string
+            requestId?: string
+            command?: string
+            args?: Record<string, unknown>
+            url?: string
+          }
           if (msg.type === "invoke" && msg.requestId && msg.command) {
             void this.handleRpc({ requestId: msg.requestId, command: msg.command, args: msg.args })
+          } else if (msg.type === "tour.activate") {
+            try {
+              window.focus()
+            } catch {}
+            if (this.noteEl) {
+              this.noteEl.style.animation = "none"
+              void this.noteEl.offsetWidth
+              this.noteEl.style.animation = "arcade-note-card-flash 0.28s ease-out"
+            }
+            this.lastActiveAt = Date.now()
+            this.sendStatus()
+          } else if (msg.type === "tour.navigate" && typeof msg.url === "string" && msg.url) {
+            location.assign(msg.url)
           } else if (msg.type === "ping") {
             this.sendStatus()
           }
