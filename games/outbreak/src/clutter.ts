@@ -322,12 +322,21 @@ export class ExteriorClutterRenderer {
       [3, "clutter", 18.55, 39.42, 0.48, 0.92, 0.25],
       [6, "clutter", 21.85, 36.45, -0.25, 0.88, 0.35],
       [7, "clutter", 22.45, 35.82, 0.62, 0.82, 0.40],
-      // Front walkway & porch steps edge rubble (visible in both street.png and open.png!)
+      // Front walkway & porch steps edge rubble + porch corner boxes/crates (visible in street.png and open.png!)
+      [7, "clutter", 26.48, 36.15, 0.18, 0.88, 0.15],
+      [7, "clutter", 28.88, 36.22, -0.24, 0.85, 0.15],
+      [2, "clutter", 26.35, 36.92, 0.55, 0.80, 0.20],
       [0, "rubble", 26.78, 36.95, 0.38, 0.78, 0.20],
       [1, "rubble", 28.62, 37.35, -0.52, 0.82, 0.20],
       [4, "clutter", 26.82, 38.25, 0.74, 0.76, 0.30],
       [1, "rubble", 28.58, 38.85, -0.88, 0.80, 0.25],
       [0, "rubble", 26.72, 35.85, 1.05, 0.75, 0.30],
+      // East sidewalk leaf/brick clutter (visible in open.png under the east sodium streetlamp)
+      [10, "rubble", 38.22, 26.80, 1.48, 0.92, 0.15],
+      [10, "rubble", 39.45, 29.40, -1.52, 0.90, 0.15],
+      [10, "rubble", 38.18, 32.10, 1.60, 0.94, 0.20],
+      [4, "clutter", 38.85, 30.80, 0.42, 0.85, 0.20],
+      [1, "rubble", 39.25, 27.90, -0.75, 0.88, 0.20],
       // Road & flashlight cone scattered grit/rubble/papers (x = 24..34, z = 41..47)
       [1, "rubble", 27.65, 42.35, 0.52, 0.82, 0.20],
       [4, "clutter", 28.85, 43.15, -0.44, 0.78, 0.25],
