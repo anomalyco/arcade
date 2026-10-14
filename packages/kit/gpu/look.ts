@@ -1,0 +1,1252 @@
+import type { LabControl } from "../lab-panel"
+import { Rng } from "../sim/rng"
+
+export type LookPresetId =
+  | "current"
+  | "noir"
+  | "painterly"
+  | "cinematic_dusk"
+  | "sodium_70s"
+  | "cozy_golden_hour"
+
+export type LookTonemapMode = 0 | 1 | 2 | 3
+export type LookCompareMode = 0 | 1 | 2
+
+export type LookGroup =
+  | "Tone & Curve"
+  | "Split-Tone & Palette"
+  | "Lighting & Silhouette"
+  | "Atmosphere & Shafts"
+  | "Lens & Film"
+  | "Painterly & Ink"
+
+export type LookPalette = {
+  sky: readonly [number, number, number]
+  practical: readonly [number, number, number]
+  wall: readonly [number, number, number]
+  wood: readonly [number, number, number]
+  stone: readonly [number, number, number]
+  asphalt: readonly [number, number, number]
+  foliage: readonly [number, number, number]
+  ink: readonly [number, number, number]
+}
+
+export type LookNumericKey =
+  | "exposure"
+  | "tonemap"
+  | "contrast"
+  | "toe"
+  | "shoulder"
+  | "blackCrush"
+  | "saturation"
+  | "temperature"
+  | "splitTone"
+  | "shadowTintR"
+  | "shadowTintG"
+  | "shadowTintB"
+  | "highlightTintR"
+  | "highlightTintG"
+  | "highlightTintB"
+  | "paletteMix"
+  | "foliageShift"
+  | "ambientFill"
+  | "shadowColorR"
+  | "shadowColorG"
+  | "shadowColorB"
+  | "practicalWarmth"
+  | "practicalIntensity"
+  | "moonIntensity"
+  | "rimStrength"
+  | "contactShade"
+  | "surfaceWetness"
+  | "fogDensity"
+  | "fogHeightFalloff"
+  | "fogColorR"
+  | "fogColorG"
+  | "fogColorB"
+  | "shaftStrength"
+  | "shaftSlats"
+  | "bloom"
+  | "halation"
+  | "vignette"
+  | "grain"
+  | "grainSeed"
+  | "chromatic"
+  | "diffuseWrap"
+  | "diffuseBands"
+  | "bandSoftness"
+  | "painterlySmooth"
+  | "outlineStrength"
+  | "outlineWidth"
+
+export type LookSettings = Record<LookNumericKey, number> & {
+  preset: LookPresetId
+  grainAnimated: boolean
+}
+
+export type LookParamSpec = {
+  key: LookNumericKey | "grainAnimated"
+  label: string
+  group: LookGroup
+  type: "range" | "select" | "toggle"
+  min?: number
+  max?: number
+  step?: number
+  unit?: "" | "×" | "m" | "px"
+  options?: readonly { value: number; label: string }[]
+  /** All Look parameters update live shader uniforms without rebuilding geometry or resetting transport. */
+  boundary: "uniform"
+}
+
+export const LOOK_TONEMAP_OPTIONS: readonly { value: LookTonemapMode; label: string }[] = [
+  { value: 0, label: "Current (ACES)" },
+  { value: 1, label: "Filmic (Lamplight)" },
+  { value: 2, label: "AgX (Sobotka)" },
+  { value: 3, label: "ACES Hue-Preserving" },
+] as const
+
+export const LOOK_GROUPS: readonly LookGroup[] = [
+  "Tone & Curve",
+  "Split-Tone & Palette",
+  "Lighting & Silhouette",
+  "Atmosphere & Shafts",
+  "Lens & Film",
+  "Painterly & Ink",
+] as const
+
+export const LOOK_PARAM_SPECS: readonly LookParamSpec[] = [
+  // Tone & Curve
+  { key: "exposure", label: "Exposure", group: "Tone & Curve", type: "range", min: 0.2, max: 2.5, step: 0.02, unit: "×", boundary: "uniform" },
+  { key: "tonemap", label: "Tonemap", group: "Tone & Curve", type: "select", options: LOOK_TONEMAP_OPTIONS, boundary: "uniform" },
+  { key: "contrast", label: "Contrast", group: "Tone & Curve", type: "range", min: 0.6, max: 1.8, step: 0.02, unit: "×", boundary: "uniform" },
+  { key: "toe", label: "Shadow toe", group: "Tone & Curve", type: "range", min: 0.0, max: 0.8, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "shoulder", label: "Highlight shoulder", group: "Tone & Curve", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "blackCrush", label: "Black crush", group: "Tone & Curve", type: "range", min: 0.0, max: 0.2, step: 0.005, unit: "", boundary: "uniform" },
+  { key: "saturation", label: "Saturation", group: "Tone & Curve", type: "range", min: 0.0, max: 1.6, step: 0.02, unit: "×", boundary: "uniform" },
+  { key: "temperature", label: "Temperature", group: "Tone & Curve", type: "range", min: -1.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
+
+  // Split-Tone & Palette
+  { key: "splitTone", label: "Split-tone strength", group: "Split-Tone & Palette", type: "range", min: 0.0, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "shadowTintR", label: "Shadow tint R", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "shadowTintG", label: "Shadow tint G", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "shadowTintB", label: "Shadow tint B", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "highlightTintR", label: "Highlight tint R", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "highlightTintG", label: "Highlight tint G", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "highlightTintB", label: "Highlight tint B", group: "Split-Tone & Palette", type: "range", min: 0.2, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "paletteMix", label: "Preset palette blend", group: "Split-Tone & Palette", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "foliageShift", label: "Foliage warmth shift", group: "Split-Tone & Palette", type: "range", min: -0.6, max: 0.6, step: 0.01, unit: "", boundary: "uniform" },
+
+  // Lighting & Silhouette
+  { key: "ambientFill", label: "Ambient / sky fill", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.2, step: 0.01, unit: "×", boundary: "uniform" },
+  { key: "shadowColorR", label: "Shadow colour R", group: "Lighting & Silhouette", type: "range", min: 0.1, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "shadowColorG", label: "Shadow colour G", group: "Lighting & Silhouette", type: "range", min: 0.1, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "shadowColorB", label: "Shadow colour B", group: "Lighting & Silhouette", type: "range", min: 0.1, max: 1.5, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "practicalWarmth", label: "Practical warmth", group: "Lighting & Silhouette", type: "range", min: -0.8, max: 1.2, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "practicalIntensity", label: "Practical intensity", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
+  { key: "moonIntensity", label: "Moon / sun intensity", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
+  { key: "rimStrength", label: "Rim / silhouette light", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 2.0, step: 0.05, unit: "×", boundary: "uniform" },
+  { key: "contactShade", label: "Contact shading", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 1.5, step: 0.05, unit: "", boundary: "uniform" },
+  { key: "surfaceWetness", label: "Surface damp sheen", group: "Lighting & Silhouette", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+
+  // Atmosphere & Shafts
+  { key: "fogDensity", label: "Fog density", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.2, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "fogHeightFalloff", label: "Fog height falloff", group: "Atmosphere & Shafts", type: "range", min: 0.3, max: 4.5, step: 0.1, unit: "m", boundary: "uniform" },
+  { key: "fogColorR", label: "Fog colour R", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "fogColorG", label: "Fog colour G", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "fogColorB", label: "Fog colour B", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "shaftStrength", label: "Light shaft strength", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
+  { key: "shaftSlats", label: "Venetian slats / cookie", group: "Atmosphere & Shafts", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+
+  // Lens & Film
+  { key: "bloom", label: "Bloom strength", group: "Lens & Film", type: "range", min: 0.0, max: 2.5, step: 0.05, unit: "×", boundary: "uniform" },
+  { key: "halation", label: "Film halation", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "vignette", label: "Lens vignette", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "grain", label: "Film grain", group: "Lens & Film", type: "range", min: 0.0, max: 1.2, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "grainSeed", label: "Grain seed", group: "Lens & Film", type: "range", min: 1, max: 9999, step: 1, unit: "", boundary: "uniform" },
+  { key: "grainAnimated", label: "Temporal grain", group: "Lens & Film", type: "toggle", boundary: "uniform" },
+  { key: "chromatic", label: "Chromatic softness", group: "Lens & Film", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
+
+  // Painterly & Ink
+  { key: "diffuseWrap", label: "Diffuse wrap", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "diffuseBands", label: "Diffuse bands (0=off)", group: "Painterly & Ink", type: "range", min: 0, max: 6, step: 1, unit: "", boundary: "uniform" },
+  { key: "bandSoftness", label: "Band softness", group: "Painterly & Ink", type: "range", min: 0.02, max: 0.46, step: 0.02, unit: "", boundary: "uniform" },
+  { key: "painterlySmooth", label: "Kuwahara brush smooth", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.0, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "outlineStrength", label: "Ink outline strength", group: "Painterly & Ink", type: "range", min: 0.0, max: 1.5, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "outlineWidth", label: "Ink outline width", group: "Painterly & Ink", type: "range", min: 0.5, max: 3.0, step: 0.25, unit: "px", boundary: "uniform" },
+] as const
+
+export type LookPresetDef = {
+  id: LookPresetId
+  index: number
+  label: string
+  directionRef: string
+  summary: string
+  palette: LookPalette
+  defaults: Readonly<LookSettings>
+}
+
+export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
+  current: {
+    id: "current",
+    index: 0,
+    label: "Current",
+    directionRef: "Identity baseline",
+    summary: "Exact identity pass — reproduces today's approved game and stage output without grading or surface overrides.",
+    palette: {
+      sky: [0.48, 0.61, 0.90],
+      practical: [1.0, 0.68, 0.36],
+      wall: [0.44, 0.40, 0.33],
+      wood: [0.55, 0.43, 0.31],
+      stone: [0.47, 0.45, 0.40],
+      asphalt: [0.24, 0.26, 0.28],
+      foliage: [0.31, 0.38, 0.22],
+      ink: [0.08, 0.09, 0.12],
+    },
+    defaults: {
+      preset: "current",
+      exposure: 1.0,
+      tonemap: 0,
+      contrast: 1.0,
+      toe: 0.0,
+      shoulder: 0.0,
+      blackCrush: 0.0,
+      saturation: 1.0,
+      temperature: 0.0,
+      splitTone: 0.0,
+      shadowTintR: 1.0,
+      shadowTintG: 1.0,
+      shadowTintB: 1.0,
+      highlightTintR: 1.0,
+      highlightTintG: 1.0,
+      highlightTintB: 1.0,
+      paletteMix: 0.0,
+      foliageShift: 0.0,
+      ambientFill: 1.0,
+      shadowColorR: 1.0,
+      shadowColorG: 1.0,
+      shadowColorB: 1.0,
+      practicalWarmth: 0.0,
+      practicalIntensity: 1.0,
+      moonIntensity: 1.0,
+      rimStrength: 0.0,
+      contactShade: 0.0,
+      surfaceWetness: 0.0,
+      fogDensity: 0.0,
+      fogHeightFalloff: 2.2,
+      fogColorR: 0.16,
+      fogColorG: 0.2,
+      fogColorB: 0.26,
+      shaftStrength: 0.0,
+      shaftSlats: 0.35,
+      bloom: 1.0,
+      halation: 0.0,
+      vignette: 0.0,
+      grain: 0.0,
+      grainSeed: 73,
+      grainAnimated: true,
+      chromatic: 0.0,
+      diffuseWrap: 0.0,
+      diffuseBands: 0,
+      bandSoftness: 0.18,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.0,
+      outlineWidth: 1.25,
+    },
+  },
+  noir: {
+    id: "noir",
+    index: 1,
+    label: "Noir / Limbo",
+    directionRef: "Outbreak Dir 3 + Lamplight amber-limbo / hybrid-noir",
+    summary: "Crushed inky shadows, cold steel-cyan moonlight, sparse warm amber practicals, dense silver-ash height fog with venetian light shafts, wet road sheen, and film grain.",
+    palette: {
+      sky: [0.42, 0.56, 0.72],
+      practical: [1.0, 0.62, 0.24],
+      wall: [0.28, 0.30, 0.33],
+      wood: [0.34, 0.29, 0.24],
+      stone: [0.31, 0.33, 0.36],
+      asphalt: [0.13, 0.15, 0.18],
+      foliage: [0.17, 0.22, 0.19],
+      ink: [0.02, 0.03, 0.05],
+    },
+    defaults: {
+      preset: "noir",
+      exposure: 1.12,
+      tonemap: 1,
+      contrast: 1.24,
+      toe: 0.28,
+      shoulder: 0.32,
+      blackCrush: 0.025,
+      saturation: 0.28,
+      temperature: -0.22,
+      splitTone: 0.86,
+      shadowTintR: 0.64,
+      shadowTintG: 0.78,
+      shadowTintB: 1.08,
+      highlightTintR: 1.14,
+      highlightTintG: 0.92,
+      highlightTintB: 0.66,
+      paletteMix: 0.55,
+      foliageShift: -0.35,
+      ambientFill: 0.55,
+      shadowColorR: 0.58,
+      shadowColorG: 0.74,
+      shadowColorB: 1.04,
+      practicalWarmth: 0.46,
+      practicalIntensity: 1.45,
+      moonIntensity: 1.65,
+      rimStrength: 1.35,
+      contactShade: 0.85,
+      surfaceWetness: 0.78,
+      fogDensity: 0.48,
+      fogHeightFalloff: 1.8,
+      fogColorR: 0.12,
+      fogColorG: 0.16,
+      fogColorB: 0.22,
+      shaftStrength: 1.85,
+      shaftSlats: 0.62,
+      bloom: 1.2,
+      halation: 0.32,
+      vignette: 0.82,
+      grain: 0.42,
+      grainSeed: 73,
+      grainAnimated: true,
+      chromatic: 0.22,
+      diffuseWrap: 0.12,
+      diffuseBands: 0,
+      bandSoftness: 0.16,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.0,
+      outlineWidth: 1.0,
+    },
+  },
+  painterly: {
+    id: "painterly",
+    index: 2,
+    label: "Painterly",
+    directionRef: "Outbreak Dir 2 (Tiny Glade / Ghibli gouache)",
+    summary: "Warm gouache twilight with periwinkle shadows, peach-gold practicals, 3-band soft wrap diffuse, Kuwahara brush smoothing, and warm ink outlines.",
+    palette: {
+      sky: [0.46, 0.58, 0.88],
+      practical: [1.0, 0.75, 0.46],
+      wall: [0.62, 0.57, 0.52],
+      wood: [0.64, 0.48, 0.34],
+      stone: [0.54, 0.51, 0.56],
+      asphalt: [0.32, 0.36, 0.48],
+      foliage: [0.36, 0.49, 0.29],
+      ink: [0.16, 0.14, 0.22],
+    },
+    defaults: {
+      preset: "painterly",
+      exposure: 1.12,
+      tonemap: 2,
+      contrast: 0.94,
+      toe: 0.06,
+      shoulder: 0.28,
+      blackCrush: 0.0,
+      saturation: 1.22,
+      temperature: 0.12,
+      splitTone: 0.72,
+      shadowTintR: 0.76,
+      shadowTintG: 0.84,
+      shadowTintB: 1.16,
+      highlightTintR: 1.14,
+      highlightTintG: 0.98,
+      highlightTintB: 0.8,
+      paletteMix: 0.84,
+      foliageShift: 0.22,
+      ambientFill: 1.36,
+      shadowColorR: 0.68,
+      shadowColorG: 0.8,
+      shadowColorB: 1.18,
+      practicalWarmth: 0.36,
+      practicalIntensity: 1.25,
+      moonIntensity: 1.15,
+      rimStrength: 0.65,
+      contactShade: 0.35,
+      surfaceWetness: 0.0,
+      fogDensity: 0.22,
+      fogHeightFalloff: 2.8,
+      fogColorR: 0.24,
+      fogColorG: 0.3,
+      fogColorB: 0.44,
+      shaftStrength: 0.75,
+      shaftSlats: 0.1,
+      bloom: 1.2,
+      halation: 0.18,
+      vignette: 0.25,
+      grain: 0.0,
+      grainSeed: 73,
+      grainAnimated: false,
+      chromatic: 0.0,
+      diffuseWrap: 0.55,
+      diffuseBands: 3,
+      bandSoftness: 0.22,
+      painterlySmooth: 0.85,
+      outlineStrength: 0.68,
+      outlineWidth: 1.5,
+    },
+  },
+  cinematic_dusk: {
+    id: "cinematic_dusk",
+    index: 3,
+    label: "Cinematic dusk",
+    directionRef: "Outbreak Dir 1 + Lamplight dusk",
+    summary: "Cool slate-indigo twilight sky fill against warm 2700K tungsten practical pools, AgX tonemapping, grounded contact occlusion, and crisp dusk shafts.",
+    palette: {
+      sky: [0.36, 0.50, 0.78],
+      practical: [1.0, 0.67, 0.33],
+      wall: [0.46, 0.43, 0.38],
+      wood: [0.56, 0.42, 0.29],
+      stone: [0.46, 0.45, 0.42],
+      asphalt: [0.21, 0.24, 0.28],
+      foliage: [0.29, 0.37, 0.21],
+      ink: [0.07, 0.09, 0.13],
+    },
+    defaults: {
+      preset: "cinematic_dusk",
+      exposure: 1.04,
+      tonemap: 2,
+      contrast: 1.14,
+      toe: 0.22,
+      shoulder: 0.24,
+      blackCrush: 0.01,
+      saturation: 1.06,
+      temperature: 0.06,
+      splitTone: 0.48,
+      shadowTintR: 0.82,
+      shadowTintG: 0.9,
+      shadowTintB: 1.08,
+      highlightTintR: 1.08,
+      highlightTintG: 0.98,
+      highlightTintB: 0.86,
+      paletteMix: 0.38,
+      foliageShift: 0.04,
+      ambientFill: 0.82,
+      shadowColorR: 0.78,
+      shadowColorG: 0.88,
+      shadowColorB: 1.06,
+      practicalWarmth: 0.32,
+      practicalIntensity: 1.2,
+      moonIntensity: 1.1,
+      rimStrength: 0.45,
+      contactShade: 0.55,
+      surfaceWetness: 0.15,
+      fogDensity: 0.18,
+      fogHeightFalloff: 2.4,
+      fogColorR: 0.14,
+      fogColorG: 0.18,
+      fogColorB: 0.26,
+      shaftStrength: 0.95,
+      shaftSlats: 0.3,
+      bloom: 1.05,
+      halation: 0.15,
+      vignette: 0.48,
+      grain: 0.18,
+      grainSeed: 73,
+      grainAnimated: true,
+      chromatic: 0.1,
+      diffuseWrap: 0.15,
+      diffuseBands: 0,
+      bandSoftness: 0.18,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.0,
+      outlineWidth: 1.0,
+    },
+  },
+  sodium_70s: {
+    id: "sodium_70s",
+    index: 4,
+    label: "70s sodium",
+    directionRef: "Outbreak Dir 5 (1970s Kodak 5247 / Crewdson)",
+    summary: "2100K high-pressure sodium orange street/porch glow against muted olive-slate shadows, faded suburban tones, red-orange film halation, and 35mm grain.",
+    palette: {
+      sky: [0.38, 0.44, 0.46],
+      practical: [1.0, 0.51, 0.18],
+      wall: [0.50, 0.48, 0.40],
+      wood: [0.46, 0.35, 0.22],
+      stone: [0.44, 0.43, 0.38],
+      asphalt: [0.23, 0.24, 0.23],
+      foliage: [0.28, 0.32, 0.20],
+      ink: [0.09, 0.08, 0.06],
+    },
+    defaults: {
+      preset: "sodium_70s",
+      exposure: 0.98,
+      tonemap: 1,
+      contrast: 1.18,
+      toe: 0.28,
+      shoulder: 0.42,
+      blackCrush: 0.015,
+      saturation: 0.62,
+      temperature: 0.28,
+      splitTone: 0.92,
+      shadowTintR: 0.78,
+      shadowTintG: 0.86,
+      shadowTintB: 0.8,
+      highlightTintR: 1.22,
+      highlightTintG: 0.88,
+      highlightTintB: 0.58,
+      paletteMix: 0.62,
+      foliageShift: -0.22,
+      ambientFill: 0.68,
+      shadowColorR: 0.76,
+      shadowColorG: 0.82,
+      shadowColorB: 0.78,
+      practicalWarmth: 0.95,
+      practicalIntensity: 1.45,
+      moonIntensity: 0.75,
+      rimStrength: 0.35,
+      contactShade: 0.5,
+      surfaceWetness: 0.3,
+      fogDensity: 0.3,
+      fogHeightFalloff: 2.1,
+      fogColorR: 0.22,
+      fogColorG: 0.18,
+      fogColorB: 0.14,
+      shaftStrength: 1.15,
+      shaftSlats: 0.45,
+      bloom: 1.45,
+      halation: 0.85,
+      vignette: 0.72,
+      grain: 0.68,
+      grainSeed: 73,
+      grainAnimated: true,
+      chromatic: 0.45,
+      diffuseWrap: 0.1,
+      diffuseBands: 0,
+      bandSoftness: 0.18,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.0,
+      outlineWidth: 1.0,
+    },
+  },
+  cozy_golden_hour: {
+    id: "cozy_golden_hour",
+    index: 5,
+    label: "Cozy golden hour",
+    directionRef: "Outbreak Dir 4 (Overgrown autumn golden hour)",
+    summary: "Low-angle amber golden-hour sunlight, warm terracotta bounce, lush olive/chartreuse foliage, dusty golden window shafts, and soft halation.",
+    palette: {
+      sky: [0.95, 0.62, 0.32],
+      practical: [1.0, 0.72, 0.35],
+      wall: [0.58, 0.50, 0.39],
+      wood: [0.62, 0.44, 0.27],
+      stone: [0.55, 0.48, 0.38],
+      asphalt: [0.30, 0.26, 0.22],
+      foliage: [0.42, 0.46, 0.18],
+      ink: [0.14, 0.09, 0.05],
+    },
+    defaults: {
+      preset: "cozy_golden_hour",
+      exposure: 1.14,
+      tonemap: 3,
+      contrast: 1.12,
+      toe: 0.18,
+      shoulder: 0.32,
+      blackCrush: 0.0,
+      saturation: 1.18,
+      temperature: 0.52,
+      splitTone: 0.78,
+      shadowTintR: 1.06,
+      shadowTintG: 0.86,
+      shadowTintB: 0.72,
+      highlightTintR: 1.2,
+      highlightTintG: 0.96,
+      highlightTintB: 0.68,
+      paletteMix: 0.74,
+      foliageShift: 0.48,
+      ambientFill: 1.05,
+      shadowColorR: 1.12,
+      shadowColorG: 0.88,
+      shadowColorB: 0.68,
+      practicalWarmth: 0.58,
+      practicalIntensity: 1.25,
+      moonIntensity: 1.4,
+      rimStrength: 0.85,
+      contactShade: 0.45,
+      surfaceWetness: 0.1,
+      fogDensity: 0.32,
+      fogHeightFalloff: 2.0,
+      fogColorR: 0.32,
+      fogColorG: 0.21,
+      fogColorB: 0.12,
+      shaftStrength: 2.1,
+      shaftSlats: 0.25,
+      bloom: 1.35,
+      halation: 0.42,
+      vignette: 0.52,
+      grain: 0.22,
+      grainSeed: 73,
+      grainAnimated: true,
+      chromatic: 0.12,
+      diffuseWrap: 0.22,
+      diffuseBands: 0,
+      bandSoftness: 0.18,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.0,
+      outlineWidth: 1.0,
+    },
+  },
+}
+
+export const LOOK_PRESET_IDS = Object.keys(LOOK_PRESETS) as readonly LookPresetId[]
+
+export function isLookPresetId(value: unknown): value is LookPresetId {
+  return typeof value === "string" && value in LOOK_PRESETS
+}
+
+export function resolveLookPresetId(raw: unknown): LookPresetId | null {
+  if (typeof raw !== "string") return null
+  const trimmed = raw.trim().toLowerCase()
+  if (isLookPresetId(trimmed)) return trimmed
+  const slug = trimmed.replace(/[^a-z0-9]+/g, "")
+  const aliases: Record<string, LookPresetId> = {
+    current: "current",
+    identity: "current",
+    default: "current",
+    baseline: "current",
+    noir: "noir",
+    limbo: "noir",
+    noirlimbo: "noir",
+    amberlimbo: "noir",
+    hybridnoir: "noir",
+    horror: "noir",
+    dir3: "noir",
+    painterly: "painterly",
+    ghibli: "painterly",
+    tinyglade: "painterly",
+    gouache: "painterly",
+    dir2: "painterly",
+    cinematicdusk: "cinematic_dusk",
+    dusk: "cinematic_dusk",
+    cinematic: "cinematic_dusk",
+    dir1: "cinematic_dusk",
+    sodium70s: "sodium_70s",
+    "70ssodium": "sodium_70s",
+    sodium: "sodium_70s",
+    "70s": "sodium_70s",
+    suburban: "sodium_70s",
+    dir5: "sodium_70s",
+    cozygoldenhour: "cozy_golden_hour",
+    goldenhour: "cozy_golden_hour",
+    cozy: "cozy_golden_hour",
+    dir4: "cozy_golden_hour",
+  }
+  if (slug in aliases) return aliases[slug]!
+  for (const id of LOOK_PRESET_IDS) {
+    const def = LOOK_PRESETS[id]
+    if (def.label.toLowerCase() === trimmed || def.label.toLowerCase().replace(/[^a-z0-9]+/g, "") === slug) {
+      return id
+    }
+  }
+  return null
+}
+
+export function createLookSettings(preset: LookPresetId = "current"): LookSettings {
+  return { ...LOOK_PRESETS[preset].defaults }
+}
+
+export function applyLookPreset(target: LookSettings, preset: LookPresetId): LookSettings {
+  const def = LOOK_PRESETS[preset] ?? LOOK_PRESETS.current
+  Object.assign(target, def.defaults)
+  return target
+}
+
+/**
+ * Returns true if the given LookSettings match the "Current" identity look.
+ * When true, shared game renderers run their untouched baseline pipelines for bit-exact parity.
+ */
+export function isIdentityLook(settings: LookSettings | null | undefined): boolean {
+  if (!settings) return true
+  const base = LOOK_PRESETS.current.defaults
+  if (settings.preset !== "current") return false
+  for (const spec of LOOK_PARAM_SPECS) {
+    if (spec.key === "grainSeed" || spec.key === "grainAnimated" || spec.key === "bandSoftness" || spec.key === "outlineWidth" || spec.key === "fogHeightFalloff" || spec.key === "shaftSlats" || spec.key === "fogColorR" || spec.key === "fogColorG" || spec.key === "fogColorB") {
+      continue
+    }
+    const a = settings[spec.key]
+    const b = base[spec.key]
+    if (typeof a === "number" && typeof b === "number") {
+      if (Math.abs(a - b) > 1e-4) return false
+    } else if (a !== b) {
+      return false
+    }
+  }
+  return true
+}
+
+function snapLookValue(val: number, spec: LookParamSpec): number {
+  const min = spec.min ?? 0
+  const max = spec.max ?? 1
+  const step = spec.step ?? 0.01
+  const clamped = Math.max(min, Math.min(max, val))
+  const steps = Math.round((clamped - min) / step)
+  return Number(Math.min(max, Math.max(min, min + steps * step)).toPrecision(12))
+}
+
+export function resolveLookGroup(raw?: string): LookGroup | "all" | null {
+  if (!raw || raw.trim() === "" || raw.trim().toLowerCase() === "all") return "all"
+  const q = raw.trim().toLowerCase()
+  const slug = q.replace(/[^a-z0-9]+/g, "")
+  const map: Record<string, LookGroup> = {
+    tone: "Tone & Curve",
+    curve: "Tone & Curve",
+    tonecurve: "Tone & Curve",
+    grade: "Tone & Curve",
+    splittone: "Split-Tone & Palette",
+    palette: "Split-Tone & Palette",
+    splittonepalette: "Split-Tone & Palette",
+    lighting: "Lighting & Silhouette",
+    silhouette: "Lighting & Silhouette",
+    lightingsilhouette: "Lighting & Silhouette",
+    atmosphere: "Atmosphere & Shafts",
+    shafts: "Atmosphere & Shafts",
+    fog: "Atmosphere & Shafts",
+    atmosphereshafts: "Atmosphere & Shafts",
+    lens: "Lens & Film",
+    film: "Lens & Film",
+    lensfilm: "Lens & Film",
+    painterly: "Painterly & Ink",
+    ink: "Painterly & Ink",
+    painterlyink: "Painterly & Ink",
+  }
+  if (slug in map) return map[slug]!
+  for (const g of LOOK_GROUPS) {
+    if (g.toLowerCase() === q || g.toLowerCase().replace(/[^a-z0-9]+/g, "") === slug) return g
+  }
+  return null
+}
+
+/**
+ * Deterministic seeded randomization of a Look parameter group (or all groups),
+ * using an isolated `tuningSeed` that never mutates structural room/world seeds.
+ */
+export function randomizeLookSettings(
+  current: LookSettings,
+  tuningSeed: number,
+  group: LookGroup | "all" = "all",
+): LookSettings {
+  const groupIdx = group === "all" ? 0 : LOOK_GROUPS.indexOf(group) + 1
+  const rng = new Rng(((Math.trunc(tuningSeed) || 1) ^ (groupIdx * 0x9e3779b9)) >>> 0)
+  const anchorPreset = isLookPresetId(current.preset) && current.preset !== "current" ? current.preset : "cinematic_dusk"
+  const base = LOOK_PRESETS[anchorPreset].defaults
+  const next: LookSettings = { ...current }
+
+  for (const spec of LOOK_PARAM_SPECS) {
+    if (group !== "all" && spec.group !== group) continue
+    if (spec.key === "grainSeed" || spec.type === "toggle") continue
+    if (spec.type === "select" && spec.options) {
+      const idx = Math.floor(rng.next() * spec.options.length)
+      next.tonemap = (spec.options[idx]?.value ?? 0) as LookTonemapMode
+      continue
+    }
+    if (spec.type === "range" && spec.min !== undefined && spec.max !== undefined) {
+      const key = spec.key as LookNumericKey
+      if (key === "diffuseBands") {
+        // Keep diffuseBands at 0 (smooth) unless Painterly group is randomized or preset is painterly
+        if (group === "Painterly & Ink" || current.preset === "painterly") {
+          next.diffuseBands = rng.next() < 0.25 ? 0 : 2 + Math.floor(rng.next() * 4)
+        }
+        continue
+      }
+      const span = spec.max - spec.min
+      const center = base[key]
+      const spread = key === "blackCrush" ? 0.35 : 0.55
+      const raw = center + (rng.next() - 0.5) * span * spread
+      next[key] = snapLookValue(raw, spec)
+    }
+  }
+  return next
+}
+
+export type LookPresetSchemaV1 = {
+  version: 1
+  preset: LookPresetId
+  tuningSeed: number
+  roomSeed: number
+  settings: LookSettings
+}
+
+export function validateLookSettings(
+  input: unknown,
+): { ok: true; value: LookSettings } | { ok: false; error: string } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "Look settings must be a JSON object." }
+  }
+  const raw = input as Record<string, unknown>
+  const presetId = resolveLookPresetId(raw.preset ?? "current")
+  if (!presetId) {
+    return { ok: false, error: `Unknown look preset "${String(raw.preset)}".` }
+  }
+  const out = createLookSettings(presetId)
+  for (const spec of LOOK_PARAM_SPECS) {
+    if (!(spec.key in raw)) continue
+    const v = raw[spec.key]
+    if (spec.type === "toggle") {
+      if (typeof v !== "boolean") {
+        return { ok: false, error: `Parameter "${spec.key}" must be a boolean.` }
+      }
+      out.grainAnimated = v
+      continue
+    }
+    if (typeof v !== "number" || !Number.isFinite(v)) {
+      return { ok: false, error: `Parameter "${spec.key}" must be a finite number.` }
+    }
+    if (spec.type === "select" && spec.options) {
+      if (!spec.options.some(o => o.value === v)) {
+        return { ok: false, error: `Invalid option ${v} for "${spec.key}".` }
+      }
+      out.tonemap = v as LookTonemapMode
+      continue
+    }
+    const min = spec.min ?? 0
+    const max = spec.max ?? 1
+    if (v < min - 1e-6 || v > max + 1e-6) {
+      return { ok: false, error: `Parameter "${spec.key}" (${v}) is outside bounds [${min}, ${max}].` }
+    }
+    out[spec.key as LookNumericKey] = snapLookValue(v, spec)
+  }
+  return { ok: true, value: out }
+}
+
+export function exportLookPreset(
+  settings: LookSettings,
+  meta?: { tuningSeed?: number; roomSeed?: number },
+): LookPresetSchemaV1 {
+  const checked = validateLookSettings(settings)
+  if (!checked.ok) throw new Error(checked.error)
+  return {
+    version: 1,
+    preset: checked.value.preset,
+    tuningSeed: Math.max(1, Math.min(9999, Math.trunc(meta?.tuningSeed ?? 108))),
+    roomSeed: Math.max(1, Math.min(999, Math.trunc(meta?.roomSeed ?? 7))),
+    settings: checked.value,
+  }
+}
+
+export function importLookPreset(
+  rawJson: string | unknown,
+): { ok: true; value: LookPresetSchemaV1 } | { ok: false; error: string } {
+  let parsed: unknown = rawJson
+  if (typeof rawJson === "string") {
+    try {
+      parsed = JSON.parse(rawJson)
+    } catch {
+      return { ok: false, error: "Invalid JSON syntax." }
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, error: "Look preset must be a JSON object." }
+  }
+  const obj = parsed as Record<string, unknown>
+  if (obj.version !== undefined && obj.version !== 1) {
+    return { ok: false, error: `Unsupported look preset version: ${String(obj.version)} (expected 1).` }
+  }
+  const candidateSettings = (obj.settings && typeof obj.settings === "object" ? obj.settings : obj) as Record<string, unknown>
+  const merged = {
+    preset: obj.preset ?? candidateSettings.preset ?? "current",
+    ...candidateSettings,
+  }
+  const validated = validateLookSettings(merged)
+  if (!validated.ok) return validated
+  const tuningSeed = typeof obj.tuningSeed === "number" && Number.isFinite(obj.tuningSeed) ? Math.max(1, Math.min(9999, Math.trunc(obj.tuningSeed))) : 108
+  const roomSeed = typeof obj.roomSeed === "number" && Number.isFinite(obj.roomSeed) ? Math.max(1, Math.min(999, Math.trunc(obj.roomSeed))) : 7
+  return {
+    ok: true,
+    value: {
+      version: 1,
+      preset: validated.value.preset,
+      tuningSeed,
+      roomSeed,
+      settings: validated.value,
+    },
+  }
+}
+
+export function createLookControls(
+  settings: Record<string, any>,
+  options?: {
+    onPresetChange?: (preset: LookPresetId) => void
+    onChange?: (key: string, value: number | string | boolean) => void
+    onRandomizeGroup?: (group: LookGroup) => void
+    includePresetPicker?: boolean
+  },
+): LabControl[] {
+  const controls: LabControl[] = []
+  if (options?.includePresetPicker !== false) {
+    controls.push({
+      key: "preset",
+      label: "Look preset",
+      group: "Preset",
+      type: "select",
+      options: LOOK_PRESET_IDS.map(id => ({ value: id, label: LOOK_PRESETS[id].label })),
+      change: val => {
+        const pid = resolveLookPresetId(val) ?? "current"
+        options?.onPresetChange?.(pid)
+      },
+    })
+  }
+  for (const group of LOOK_GROUPS) {
+    for (const spec of LOOK_PARAM_SPECS) {
+      if (spec.group !== group) continue
+      if (spec.type === "select" && spec.options) {
+        controls.push({
+          key: spec.key,
+          label: spec.label,
+          group: spec.group,
+          type: "select",
+          options: spec.options,
+          change: v => options?.onChange?.(spec.key, v),
+        })
+      } else if (spec.type === "toggle") {
+        controls.push({
+          key: spec.key,
+          label: spec.label,
+          group: spec.group,
+          change: v => options?.onChange?.(spec.key, v),
+        })
+      } else if (spec.type === "range") {
+        controls.push({
+          key: spec.key,
+          label: spec.label,
+          group: spec.group,
+          type: "range",
+          min: spec.min!,
+          max: spec.max!,
+          step: spec.step,
+          unit: spec.unit,
+          change: v => options?.onChange?.(spec.key, v),
+        })
+      }
+    }
+    if (options?.onRandomizeGroup) {
+      const grp = group
+      controls.push({
+        key: `randomize.${grp}`,
+        label: `Randomize ${grp}`,
+        group: grp,
+        type: "action",
+        run: () => options.onRandomizeGroup!(grp),
+      })
+    }
+  }
+  void settings
+  return controls
+}
+
+/**
+ * Packed LookUniforms layout: 16 vec4f = 64 floats (256 bytes).
+ * u0:  exposure, tonemap, contrast, toe
+ * u1:  shoulder, blackCrush, saturation, temperature
+ * u2:  splitTone, shadowTintR, shadowTintG, shadowTintB
+ * u3:  highlightTintR, highlightTintG, highlightTintB, paletteMix
+ * u4:  ambientFill, shadowColorR, shadowColorG, shadowColorB
+ * u5:  practicalWarmth, practicalIntensity, moonIntensity, rimStrength
+ * u6:  contactShade, surfaceWetness, fogDensity, fogHeightFalloff
+ * u7:  fogColorR, fogColorG, fogColorB, shaftStrength
+ * u8:  shaftSlats, bloom, halation, vignette
+ * u9:  grain, grainSeed, grainAnimated, chromatic
+ * u10: diffuseWrap, diffuseBands, bandSoftness, painterlySmooth
+ * u11: outlineStrength, outlineWidth, foliageShift, activeFlag (1 = look active, 0 = identity)
+ * u12: paletteWall.rgb, compareMode (0=before, 1=after, 2=wipe)
+ * u13: paletteWood.rgb, wipeSplit (0..1)
+ * u14: paletteStone.rgb, presetIndex
+ * u15: paletteFoliage.rgb, inkLuma / reserved
+ */
+export const LOOK_UNIFORM_FLOATS = 64
+
+export function packLookUniforms(
+  settings: LookSettings,
+  out: Float32Array = new Float32Array(LOOK_UNIFORM_FLOATS),
+  offset = 0,
+  extra?: { compareMode?: LookCompareMode; wipeSplit?: number; forceActive?: boolean },
+): Float32Array {
+  const presetDef = LOOK_PRESETS[settings.preset] ?? LOOK_PRESETS.current
+  const pal = presetDef.palette
+  const active = extra?.forceActive ? 1 : isIdentityLook(settings) ? 0 : 1
+
+  // u0
+  out[offset + 0] = settings.exposure
+  out[offset + 1] = settings.tonemap
+  out[offset + 2] = settings.contrast
+  out[offset + 3] = settings.toe
+  // u1
+  out[offset + 4] = settings.shoulder
+  out[offset + 5] = settings.blackCrush
+  out[offset + 6] = settings.saturation
+  out[offset + 7] = settings.temperature
+  // u2
+  out[offset + 8] = settings.splitTone
+  out[offset + 9] = settings.shadowTintR
+  out[offset + 10] = settings.shadowTintG
+  out[offset + 11] = settings.shadowTintB
+  // u3
+  out[offset + 12] = settings.highlightTintR
+  out[offset + 13] = settings.highlightTintG
+  out[offset + 14] = settings.highlightTintB
+  out[offset + 15] = settings.paletteMix
+  // u4
+  out[offset + 16] = settings.ambientFill
+  out[offset + 17] = settings.shadowColorR
+  out[offset + 18] = settings.shadowColorG
+  out[offset + 19] = settings.shadowColorB
+  // u5
+  out[offset + 20] = settings.practicalWarmth
+  out[offset + 21] = settings.practicalIntensity
+  out[offset + 22] = settings.moonIntensity
+  out[offset + 23] = settings.rimStrength
+  // u6
+  out[offset + 24] = settings.contactShade
+  out[offset + 25] = settings.surfaceWetness
+  out[offset + 26] = settings.fogDensity
+  out[offset + 27] = settings.fogHeightFalloff
+  // u7
+  out[offset + 28] = settings.fogColorR
+  out[offset + 29] = settings.fogColorG
+  out[offset + 30] = settings.fogColorB
+  out[offset + 31] = settings.shaftStrength
+  // u8
+  out[offset + 32] = settings.shaftSlats
+  out[offset + 33] = settings.bloom
+  out[offset + 34] = settings.halation
+  out[offset + 35] = settings.vignette
+  // u9
+  out[offset + 36] = settings.grain
+  out[offset + 37] = settings.grainSeed
+  out[offset + 38] = settings.grainAnimated ? 1 : 0
+  out[offset + 39] = settings.chromatic
+  // u10
+  out[offset + 40] = settings.diffuseWrap
+  out[offset + 41] = settings.diffuseBands
+  out[offset + 42] = settings.bandSoftness
+  out[offset + 43] = settings.painterlySmooth
+  // u11
+  out[offset + 44] = settings.outlineStrength
+  out[offset + 45] = settings.outlineWidth
+  out[offset + 46] = settings.foliageShift
+  out[offset + 47] = active
+  // u12
+  out[offset + 48] = pal.wall[0]
+  out[offset + 49] = pal.wall[1]
+  out[offset + 50] = pal.wall[2]
+  out[offset + 51] = extra?.compareMode ?? 1
+  // u13
+  out[offset + 52] = pal.wood[0]
+  out[offset + 53] = pal.wood[1]
+  out[offset + 54] = pal.wood[2]
+  out[offset + 55] = extra?.wipeSplit ?? 0.5
+  // u14
+  out[offset + 56] = pal.stone[0]
+  out[offset + 57] = pal.stone[1]
+  out[offset + 58] = pal.stone[2]
+  out[offset + 59] = presetDef.index
+  // u15
+  out[offset + 60] = pal.foliage[0]
+  out[offset + 61] = pal.foliage[1]
+  out[offset + 62] = pal.foliage[2]
+  out[offset + 63] = pal.ink[0] * 0.2126 + pal.ink[1] * 0.7152 + pal.ink[2] * 0.0722
+
+  return out
+}
+
+/**
+ * Shared WGSL struct and shading/post functions for `LookSettings`.
+ * Used by both the Lab "Looks" debug room and Outbreak's opt-in look hook.
+ */
+export const lookStructWgsl = /* wgsl */ `
+struct LookUniforms {
+  u0: vec4f,  // exposure, tonemap, contrast, toe
+  u1: vec4f,  // shoulder, blackCrush, saturation, temperature
+  u2: vec4f,  // splitTone, shadowTintR, shadowTintG, shadowTintB
+  u3: vec4f,  // highlightTintR, highlightTintG, highlightTintB, paletteMix
+  u4: vec4f,  // ambientFill, shadowColorR, shadowColorG, shadowColorB
+  u5: vec4f,  // practicalWarmth, practicalIntensity, moonIntensity, rimStrength
+  u6: vec4f,  // contactShade, surfaceWetness, fogDensity, fogHeightFalloff
+  u7: vec4f,  // fogColorR, fogColorG, fogColorB, shaftStrength
+  u8: vec4f,  // shaftSlats, bloom, halation, vignette
+  u9: vec4f,  // grain, grainSeed, grainAnimated, chromatic
+  u10: vec4f, // diffuseWrap, diffuseBands, bandSoftness, painterlySmooth
+  u11: vec4f, // outlineStrength, outlineWidth, foliageShift, activeFlag
+  u12: vec4f, // paletteWall.rgb, compareMode
+  u13: vec4f, // paletteWood.rgb, wipeSplit
+  u14: vec4f, // paletteStone.rgb, presetIndex
+  u15: vec4f, // paletteFoliage.rgb, inkLuma
+}
+
+fn lookQuantizeDiffuse(ndlRaw: f32, wrap: f32, bands: f32, softness: f32) -> f32 {
+  let wrapped = clamp((ndlRaw + wrap) / (1.0 + max(wrap, 0.0)), 0.0, 1.0);
+  if (bands < 1.5) {
+    return wrapped;
+  }
+  let b = max(2.0, round(bands));
+  let scaled = wrapped * b;
+  let cell = floor(scaled);
+  let f = scaled - cell;
+  let s = clamp(softness, 0.02, 0.48);
+  return clamp((cell + smoothstep(0.5 - s, 0.5 + s, f)) / b, 0.0, 1.0);
+}
+
+fn lookPracticalColor(baseCol: vec3f, warmth: f32) -> vec3f {
+  let warmTarget = vec3f(1.05, 0.52, 0.16);
+  let coolTarget = vec3f(0.72, 0.88, 1.08);
+  if (warmth >= 0.0) {
+    return mix(baseCol, warmTarget * length(baseCol) * 0.65, clamp(warmth, 0.0, 1.0));
+  }
+  return mix(baseCol, coolTarget * length(baseCol) * 0.65, clamp(-warmth, 0.0, 1.0));
+}
+
+fn lookTonemapACES(x: vec3f) -> vec3f {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0));
+}
+
+fn lookTonemapFilmic(x: vec3f) -> vec3f {
+  let expCh = vec3f(1.0) - exp(-x * 1.35);
+  let lum = max(dot(x, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
+  let expLum = 1.0 - exp(-lum * 1.35);
+  let huePres = clamp(x / lum * expLum, vec3f(0.0), vec3f(1.2));
+  let c = mix(expCh, huePres, 0.42);
+  let over = max(c - vec3f(0.62), vec3f(0.0));
+  return clamp(min(c, vec3f(0.62)) + vec3f(0.38) * (vec3f(1.0) - exp(-over / 0.38)), vec3f(0.0), vec3f(1.0));
+}
+
+fn lookTonemapAgX(val: vec3f) -> vec3f {
+  let agxMat = mat3x3f(
+    0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+    0.0784335999999992, 0.878468636469772, 0.0784336,
+    0.0792237451477643, 0.0791661274605434, 0.879142973793104
+  );
+  let agxMatInv = mat3x3f(
+    1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+    -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+    -0.0990297440797205, -0.0989611768448433, 1.15107367264116
+  );
+  var v = agxMat * max(val, vec3f(1e-6));
+  v = clamp((log2(v) - (-12.47393)) / (4.026069 - (-12.47393)), vec3f(0.0), vec3f(1.0));
+  let x2 = v * v;
+  let x4 = x2 * x2;
+  v = 15.5 * x4 * x2 - 40.14 * x4 * v + 31.96 * x4 - 6.868 * x2 * v + 0.4298 * x2 + 0.1191 * v - 0.00232;
+  v = agxMatInv * v;
+  return clamp(pow(max(v, vec3f(0.0)), vec3f(2.2)), vec3f(0.0), vec3f(1.0));
+}
+
+fn lookApplyTonemap(hdr: vec3f, mode: i32, huePreserve: f32) -> vec3f {
+  let x = max(hdr, vec3f(0.0));
+  if (mode == 1) {
+    return lookTonemapFilmic(x);
+  }
+  if (mode == 2) {
+    return lookTonemapAgX(x);
+  }
+  let baseAces = lookTonemapACES(x);
+  let peak = max(x.r, max(x.g, x.b));
+  let hp = select(huePreserve, 0.52, mode == 3);
+  return mix(baseAces, x * (lookTonemapACES(vec3f(peak)).r / max(peak, 1e-4)), hp);
+}
+
+fn lookHash12(p: vec2f) -> f32 {
+  var p3 = fract(vec3f(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+fn lookGradeColor(
+  L: LookUniforms,
+  hdrIn: vec3f,
+  bloomIn: vec3f,
+  uv: vec2f,
+  fragXY: vec2f,
+  time: f32,
+  shaftLift: f32,
+  baseBloomScale: f32,
+  baseVignetteFloor: f32,
+  baseHuePreserve: f32,
+) -> vec3f {
+  let exposure = L.u0.x;
+  let tonemapMode = i32(round(L.u0.y));
+  let contrast = L.u0.z;
+  let toe = L.u0.w;
+  let shoulder = L.u1.x;
+  let blackCrush = L.u1.y;
+  let saturation = L.u1.z;
+  let temperature = L.u1.w;
+  let splitTone = L.u2.x;
+  let shadowTint = L.u2.yzw;
+  let highlightTint = L.u3.xyz;
+  let bloomMult = L.u8.y;
+  let halation = L.u8.z;
+  let vigStrength = L.u8.w;
+  let grainStrength = L.u9.x;
+  let grainSeed = L.u9.y;
+  let grainAnim = L.u9.z > 0.5;
+
+  // 1. Add bloom & warm film halation before tone mapping
+  let halationTint = vec3f(1.08, 0.34, 0.10) * halation * 0.28;
+  var hdr = hdrIn + bloomIn * (baseBloomScale * bloomMult + halationTint);
+
+  // 2. Exposure & colour temperature in linear HDR
+  hdr *= exposure * vec3f(1.0 + temperature * 0.24, 1.0 + temperature * 0.03, 1.0 - temperature * 0.24);
+  hdr = max(hdr, vec3f(0.0));
+
+  // 3. Mid-grey contrast curve around 0.18 (Lamplight post.wgsl)
+  if (abs(contrast - 1.0) > 0.001) {
+    hdr = vec3f(0.18) * pow(max(hdr / 0.18, vec3f(1e-4)), vec3f(contrast));
+  }
+
+  // 4. Tonemap (Current ACES / Filmic / AgX / ACES Hue-Preserving)
+  var c = lookApplyTonemap(hdr, tonemapMode, baseHuePreserve);
+
+  // 5. Highlight shoulder compression
+  if (shoulder > 0.001) {
+    let knee = 1.0 - shoulder * 0.45;
+    let over = max(c - vec3f(knee), vec3f(0.0));
+    let comp = min(c, vec3f(knee)) + (1.0 - knee) * (vec3f(1.0) - exp(-over / max(1.0 - knee, 0.06)));
+    c = mix(c, comp, clamp(shoulder, 0.0, 1.0));
+  }
+
+  // 6. Shadow toe curve (Lamplight paper.wgsl)
+  if (toe > 0.001) {
+    let toeK = toe * 0.055;
+    let t = c * c / max(c + vec3f(toeK), vec3f(1e-5));
+    c = mix(c, t * (1.0 + toeK), clamp(toe * 0.75, 0.0, 0.85));
+  }
+
+  // 7. Split-toning & saturation (with selective warm practical hue retention when practicalWarmth > 0)
+  let luma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+  let splitCurve = mix(shadowTint, highlightTint, smoothstep(0.02, 0.55, luma));
+  let activeSplit = mix(vec3f(1.0), splitCurve, clamp(splitTone, 0.0, 1.5));
+  let mono = vec3f(luma) * activeSplit;
+  let warmBias = clamp((c.r - max(c.g * 0.85, c.b)) / max(c.r, 1e-4) - 0.12, 0.0, 1.0) * clamp(L.u5.x, 0.0, 1.0);
+  let effSat = mix(saturation, max(saturation, 0.82), warmBias * 0.75);
+  c = mix(mono, c * activeSplit, effSat);
+
+  // 8. Black crush (scaled for linear space before sRGB encoding so deep shadows crush without eating midtones)
+  if (blackCrush > 0.0005) {
+    let linearCrush = blackCrush * 0.08;
+    c = max(vec3f(0.0), (c - vec3f(linearCrush)) / max(1.0 - linearCrush, 0.1));
+  }
+
+  // 9. Optical lens vignette
+  let fromC = (uv - 0.5) * vec2f(1.0, 0.82);
+  let vDist = length(fromC);
+  let baseVig = mix(1.0, baseVignetteFloor, smoothstep(0.32, 0.85, vDist));
+  let extraVig = 1.0 - clamp(vigStrength * 0.48, 0.0, 0.85) * smoothstep(0.28, 0.88, vDist);
+  c *= baseVig * extraVig;
+
+  // 10. Seeded dual-scale triangular film grain in midtones & light shafts
+  if (grainStrength > 0.001) {
+    let timeSalt = select(0.0, floor(time * 24.0) * 19.37, grainAnim);
+    let seedVec = vec2f(grainSeed * 1.13 + timeSalt, grainSeed * 2.71 - timeSalt * 0.63);
+    let finePx = floor(fragXY * 0.9) + seedVec;
+    let coarsePx = floor(fragXY * 0.45) + seedVec * 1.7 + vec2f(53.0, 91.0);
+    let gFine = lookHash12(finePx) + lookHash12(finePx + vec2f(71.0, 193.0)) - 1.0;
+    let gCoarse = lookHash12(coarsePx) + lookHash12(coarsePx + vec2f(29.0, 113.0)) - 1.0;
+    let grainVal = (gFine * 0.72 + gCoarse * 0.28) * 0.5;
+    let midMask = smoothstep(0.004, 0.12, luma) * (1.0 - smoothstep(0.75, 1.0, luma));
+    let amp = (0.026 + 0.024 * shaftLift) * grainStrength * (0.25 + 0.75 * midMask);
+    c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));
+  }
+
+  return clamp(c, vec3f(0.0), vec3f(1.0));
+}
+`

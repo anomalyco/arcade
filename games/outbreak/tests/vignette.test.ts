@@ -15,16 +15,23 @@ import { makeTown } from "../shared/map"
 import { buildLevel } from "../src/level"
 
 describe("Outbreak vignette scene, presets, and material recipes", () => {
-  test("priority order starts with Direction 3 (Noir) first and Direction 2 (Painterly) second", () => {
+  test("priority order starts with Direction 3 (Noir) first and Direction 2 (Painterly) second, mapped to shared LookPresetIds", () => {
     expect(VIGNETTE_DIRECTION_ORDER[0]).toBe(3)
     expect(VIGNETTE_DIRECTION_ORDER[1]).toBe(2)
     expect(VIGNETTE_DIRECTIONS[3].slug).toBe("noir")
-    expect(VIGNETTE_DIRECTIONS[3].values.flashlightPower).toBeGreaterThan(1)
+    expect(VIGNETTE_DIRECTIONS[3].lookPreset).toBe("noir")
+    expect(VIGNETTE_DIRECTIONS[3].values.flashlightOn).toBe(true)
+    expect(VIGNETTE_DIRECTIONS[3].values.flashlightIntensity).toBeGreaterThan(1)
     expect(VIGNETTE_DIRECTIONS[2].slug).toBe("painterly")
+    expect(VIGNETTE_DIRECTIONS[2].lookPreset).toBe("painterly")
     expect(VIGNETTE_DIRECTIONS[2].values.diffuseWrap).toBeGreaterThan(0.5)
+    expect(VIGNETTE_DIRECTIONS[1].lookPreset).toBe("cinematic_dusk")
+    expect(VIGNETTE_DIRECTIONS[5].lookPreset).toBe("sodium_70s")
     expect(VIGNETTE_DIRECTIONS[5].values.streetLampTemp).toBeLessThan(2200)
     expect(VIGNETTE_DIRECTIONS[5].values.windowLightTemp).toBeGreaterThan(2600)
+    expect(VIGNETTE_DIRECTIONS[4].lookPreset).toBe("cozy_golden_hour")
     expect(VIGNETTE_DIRECTIONS[4].values.overgrowth).toBeGreaterThan(0.5)
+    expect(VIGNETTE_DIRECTIONS[0].lookPreset).toBe("current")
   })
 
   test("all 7 vignette surface defaults and direction overrides pass shared surface-materials validation", () => {

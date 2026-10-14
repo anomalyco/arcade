@@ -600,6 +600,40 @@ async function main() {
       throw new CliError(4, "invalid_args", "Usage: arcade lab get [path] | arcade lab set <path> <value> | arcade lab preset save|load")
     }
 
+    if (sub === "look") {
+      const action = args[0]
+      if (action === "preset") {
+        const preset = args[1]
+        if (!preset) throw new CliError(4, "invalid_args", "Usage: arcade look preset <current|noir|painterly|cinematic_dusk|sodium_70s|cozy_golden_hour>")
+        const res = await invokeRemote(target, flags, "look.preset", { preset })
+        if (flags.json) console.log(JSON.stringify(res, null, 2))
+        else console.log(`Look preset: ${res.result.label} (${res.result.preset})`)
+        return
+      }
+      if (action === "set") {
+        const key = args[1]
+        const rawVal = args[2]
+        if (!key || rawVal === undefined) throw new CliError(4, "invalid_args", "Usage: arcade look set <key> <value>")
+        const res = await invokeRemote(target, flags, "look.set", { key, value: parseAutoValue(rawVal) })
+        if (flags.json) console.log(JSON.stringify(res, null, 2))
+        else console.log(`Look set ${res.result.key}: ${String(res.result.before)} -> ${String(res.result.value)}`)
+        return
+      }
+      if (action === "randomize") {
+        const rArgs: Record<string, unknown> = {}
+        for (let i = 1; i < args.length; i++) {
+          const a = args[i]!
+          if (a === "--seed") rArgs.seed = Number(args[++i])
+          else if (!a.startsWith("-") && !rArgs.group) rArgs.group = a
+        }
+        const res = await invokeRemote(target, flags, "look.randomize", rArgs)
+        if (flags.json) console.log(JSON.stringify(res, null, 2))
+        else console.log(`Look randomized (${res.result.group}, tuningSeed=${res.result.tuningSeed}, roomSeed=${res.result.roomSeed})`)
+        return
+      }
+      throw new CliError(4, "invalid_args", "Usage: arcade look preset <id> | arcade look set <key> <value> | arcade look randomize [group] [--seed <n>]")
+    }
+
     if (sub === "env") {
       const name = args[0]
       if (!name || name.startsWith("--")) {

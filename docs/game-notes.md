@@ -288,6 +288,20 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
   Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
   `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`.
+- **Keep opt-in rendering styles ("Looks") on a separate pipeline from the identity default.** `packages/kit/gpu/look.ts`
+  (`@arcade/kit/look`) and `packages/kit/lab/looks.ts` share a 64-float `LookUniforms` block, six presets (`Current`,
+  `Noir / Limbo`, `Painterly`, `Cinematic dusk`, `70s sodium`, `Cozy golden hour`), deterministic per-group `tuningSeed`
+  randomization, versioned preset import/export, and `look.preset` / `look.set` / `look.randomize` Lab commands. When
+  `isIdentityLook` is true (`Current`), `Renderer` (`packages/kit/gpu/renderer.ts`) keeps its untouched baseline shaders
+  and pipelines (`diffBytes = 0` on Outbreak's street frame). Non-identity presets lazily compile `makeLookSceneShader`
+  and `makeLookPostShader`, binding `LookUniforms` to existing scene slot 7 and post slot 4 without changing bind-group
+  layouts. `Noir / Limbo` reuses Outbreak's already-traced polar sight row 0 for a shadow-casting player flashlight cone
+  at zero extra ray cost, while preserving warm practical lamp hues during desaturation; `Painterly` combines 3-band
+  smoothstepped wrap diffuse, a 4-quadrant variance-weighted Kuwahara filter, and depth/normal ink outlines. On Metal
+  (`1280×800`, 1 warmup + 7 alternating rounds), whole-frame Debug Room GPU medians are `1.442 ms` (`Current`),
+  `1.659 ms` (`Noir / Limbo`), and `1.630 ms` (`Painterly`); in Outbreak (`1000×680`), queue-completed frame-span
+  medians are `3.313 ms` (`Current`), `4.025 ms` (`Noir / Limbo`), and `3.813 ms` (`Painterly`). Evidence:
+  `perf/looks.json` and `packages/kit/lab/prove-looks.ts`.
 - **Share procedural material recipes between the Lab swatch and production scene shader.** `packages/kit/gpu/surface-materials.ts`
   and `packages/kit/lab/materials.ts` evaluate the same WGSL recipes for matte wood planks (`roughness = 0.84`, no broad
   specular sheen, staggered board lengths, butt-joint AO, warm/cool plank tint), 2×2 quadrant Voronoi cobblestone

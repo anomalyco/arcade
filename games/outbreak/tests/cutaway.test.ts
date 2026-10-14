@@ -9,6 +9,16 @@ test("opaque Outbreak entry point has no discard; default shared hooks are uncha
   expect(solid).not.toContain("discard")
   expect(shaders.scene.split("@fragment fn fsSolid")[0]).toContain("roofCut(o.world")
   expect(makeSceneShader({cutaway:"if (o.world.y > 3.0) { discard; }"}).split("@fragment fn fsSolid")[1]).toContain("discard")
+
+  // Default Outbreak scene/post shaders must remain free of LookUniforms bindings under Current identity
+  expect(shaders.scene).not.toContain("LookUniforms")
+  expect(shaders.post).not.toContain("LookUniforms")
+
+  // Opt-in Look shaders keep fsSolid free of discard while wiring LookUniforms
+  const lookSolid = shaders.lookScene.split("@fragment fn fsSolid")[1]!
+  expect(lookSolid).not.toContain("discard")
+  expect(shaders.lookScene).toContain("struct LookUniforms")
+  expect(shaders.lookPost).toContain("struct GradeAndLook")
 })
 
 test("every roof or high interior triangle is routed to its building's custom cutaway chunk while exterior trees stay opaque", () => {

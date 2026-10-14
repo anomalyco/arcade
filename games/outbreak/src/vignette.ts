@@ -6,7 +6,24 @@ import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh, VERT_BYTES } from "@arcade/kit/gpu/mesh"
 import { Renderer, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
-import { FRAME_FLOATS, makeSceneShader, postShader, spriteShader } from "@arcade/kit/gpu/shaders"
+import {
+  FRAME_FLOATS,
+  makeLookPostShader,
+  makeLookSceneShader,
+  makeSceneShader,
+  postShader,
+  spriteShader,
+  type SceneHooks,
+} from "@arcade/kit/gpu/shaders"
+import {
+  LOOK_PARAM_SPECS,
+  applyLookPreset,
+  createLookControls,
+  createLookSettings,
+  type LookCompareMode,
+  type LookPresetId,
+  type LookSettings,
+} from "@arcade/kit/look"
 import {
   MATERIAL_PARAM_SPECS,
   MATERIAL_RECIPES,
@@ -21,11 +38,21 @@ import {
 import type { LabWorldObject, SectionFactory } from "@arcade/kit/lab/types"
 import { Rng } from "@arcade/kit/sim/rng"
 import { clockText, dayCycle, wrapHour } from "../shared/day-cycle"
+import {
+  DEFAULT_FLASHLIGHT_TUNING,
+  createFlashlightState,
+  flashlightColor,
+  flashlightControls,
+  stepFlashlight,
+  type FlashlightState,
+  type FlashlightTuning,
+} from "../shared/flashlight"
 import { BUILDING_RECTS, CHUNK, propShape, sightRects, SIZE, type Prop, type Town } from "../shared/map"
 import { SceneryMemory } from "../shared/scenery-memory"
 import { supportHeight } from "../shared/terrain"
 import { FOG_SIZE, Vision } from "../shared/vision"
 import { buildLevel, hex } from "./level"
+import { outbreakPostFinish } from "./shaders"
 import { Survivor } from "./survivor"
 
 export type VignetteSurfaceId =
@@ -144,6 +171,8 @@ export function isVignetteSurfaceId(v: unknown): v is VignetteSurfaceId {
 export type VignetteDirectionSpec = {
   id: VignetteDirectionId
   slug: string
+  lookPreset: LookPresetId
+  lookOverrides?: Partial<LookSettings>
   label: string
   summary: string
   rendererGaps: string
@@ -166,10 +195,11 @@ export type VignetteDirectionSpec = {
     windowLightPower: number
     windowLightTemp: number
     windowLightFalloff: number
-    flashlightPower: number
-    flashlightAngle: number
+    flashlightOn: boolean
+    flashlightIntensity: number
+    flashlightCone: number
     flashlightRange: number
-    flashlightTemp: number
+    flashlightWarmth: number
     flashlightAim: number
     flashlightHaze: number
     clutterDensity: number
@@ -187,9 +217,41 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
   3: {
     id: 3,
     slug: "noir",
+    lookPreset: "noir",
+    lookOverrides: {
+      tonemap: 0,
+      exposure: 1.06,
+      contrast: 1.02,
+      toe: 0.0,
+      shoulder: 0.12,
+      blackCrush: 0.0,
+      saturation: 0.78,
+      temperature: -0.14,
+      splitTone: 0.24,
+      paletteMix: 0.0,
+      foliageShift: 0.0,
+      ambientFill: 1.0,
+      shadowColorR: 0.92,
+      shadowColorG: 0.98,
+      shadowColorB: 1.08,
+      practicalWarmth: 0.0,
+      practicalIntensity: 1.0,
+      moonIntensity: 1.0,
+      rimStrength: 0.12,
+      contactShade: 0.12,
+      surfaceWetness: 0.22,
+      fogDensity: 0.0,
+      shaftStrength: 0.0,
+      bloom: 1.0,
+      halation: 0.06,
+      vignette: 0.16,
+      grain: 0.10,
+      chromatic: 0.04,
+      diffuseWrap: 0.0,
+    },
     label: "3 · High-contrast noir / survival horror",
     summary: "Crushed shadows, cold steel-cyan moonlight, polar-shadowed player flashlight cone, damp specular road/porch sheen, and stark shadow edges.",
-    rendererGaps: "Implemented in renderer: polar-shadowed flashlight cone, wet low-roughness specular sheen, cold moonlight, and tight shadow softness. Remaining gaps: volumetric flashlight fog beam and animated rain-ripple normals (would need a cone raymarch or ripple pass).",
+    rendererGaps: "Implemented in renderer: shared LookSettings ('noir') + gameplay flashlight (shared/flashlight.ts) with volumetric cone mist, wet low-roughness specular sheen, cold moonlight, and tight shadow softness. Remaining gaps: animated rain-ripple normals.",
     values: {
       hour: 22.4,
       exposure: 0.94,
@@ -209,10 +271,11 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightPower: 0.42,
       windowLightTemp: 2450,
       windowLightFalloff: 0.74,
-      flashlightPower: 1.85,
-      flashlightAngle: 17.5,
+      flashlightOn: true,
+      flashlightIntensity: 1.85,
+      flashlightCone: 35,
       flashlightRange: 10.5,
-      flashlightTemp: 4600,
+      flashlightWarmth: 0.25,
       flashlightAim: 45.5,
       flashlightHaze: 1.15,
       clutterDensity: 1.0,
@@ -232,9 +295,21 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
   2: {
     id: 2,
     slug: "painterly",
+    lookPreset: "painterly",
+    lookOverrides: {
+      exposure: 1.0,
+      contrast: 0.98,
+      saturation: 1.06,
+      paletteMix: 0.0,
+      ambientFill: 1.0,
+      fogDensity: 0.0,
+      painterlySmooth: 0.42,
+      outlineStrength: 0.18,
+      vignette: 0.12,
+    },
     label: "2 · Painterly stylised (Tiny Glade / Ghibli)",
     summary: "Warm gouache twilight, periwinkle shadows + peach-gold practicals, 3-band soft diffuse wrap, and broad hand-painted Voronoi/plank shapes with suppressed micro-grit.",
-    rendererGaps: "Implemented in renderer: 3-band smoothstepped diffuse wrap with warm rim tint, suppressed high-frequency fBm micro-grit, and warped shingle/stone cells. Remaining gaps: curved silhouette mesh wobble and post-process anisotropic Kuwahara brush filter (handled in shared Looks/post pass).",
+    rendererGaps: "Implemented in renderer: shared LookSettings ('painterly') Kuwahara brush smoothing & ink outlines + gouache twilight surface washes and sage wainscot. Remaining gaps: curved silhouette mesh wobble.",
     values: {
       hour: 18.0,
       exposure: 1.12,
@@ -254,10 +329,11 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightPower: 1.05,
       windowLightTemp: 2700,
       windowLightFalloff: 1.15,
-      flashlightPower: 0.0,
-      flashlightAngle: 24,
+      flashlightOn: false,
+      flashlightIntensity: 0.0,
+      flashlightCone: 48,
       flashlightRange: 15,
-      flashlightTemp: 4800,
+      flashlightWarmth: 0.45,
       flashlightAim: 43,
       flashlightHaze: 0.0,
       clutterDensity: 1.15,
@@ -277,9 +353,10 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
   1: {
     id: 1,
     slug: "dusk",
+    lookPreset: "cinematic_dusk",
     label: "1 · Grounded cinematic dusk (current target)",
     summary: "Cool slate-indigo twilight sky fill against warm 2700K tungsten porch/window pools, matte weathered clapboard, variegated shingles, and clumped fescue lawn.",
-    rendererGaps: "Implemented in renderer: shared surface-materials WGSL + 5-tap polar shadows and per-fixture Kelvin/falloff tuning. Remaining gaps: directional moon shadow maps and multi-species shrub meshes.",
+    rendererGaps: "Implemented in renderer: shared LookSettings ('cinematic_dusk') + surface-materials WGSL + 5-tap polar shadows. Remaining gaps: directional moon shadow maps.",
     values: {
       hour: 18.2,
       exposure: 1.05,
@@ -299,10 +376,11 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightPower: 1.10,
       windowLightTemp: 2650,
       windowLightFalloff: 1.05,
-      flashlightPower: 0.0,
-      flashlightAngle: 24,
+      flashlightOn: false,
+      flashlightIntensity: 0.0,
+      flashlightCone: 48,
       flashlightRange: 15,
-      flashlightTemp: 4800,
+      flashlightWarmth: 0.45,
       flashlightAim: 43,
       flashlightHaze: 0.0,
       clutterDensity: 1.0,
@@ -314,9 +392,10 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
   5: {
     id: 5,
     slug: "suburban-70s",
+    lookPreset: "sodium_70s",
     label: "5 · Desaturated 70s/80s suburban (sodium)",
-    summary: "2050K high-pressure sodium orange streetlamp vs 2850K warm tungsten interiors, muted 1970s walnut/ochre/avocado surfaces.",
-    rendererGaps: "Implemented in renderer: 2050K sodium streetlamp vs 2850K tungsten interior colour split and faded 1970s surface palettes. Film grain, halation bloom, and split-tone grading belong to the shared Looks post pass.",
+    summary: "2050K high-pressure sodium orange streetlamp vs 2850K warm tungsten interiors, muted 1970s walnut/ochre/avocado surfaces, halation, and 35mm film grain.",
+    rendererGaps: "Implemented in renderer: shared LookSettings ('sodium_70s' halation + 35mm grain + split-tone grade) + 2050K sodium streetlamp vs 2850K tungsten interior colour split.",
     values: {
       hour: 19.3,
       exposure: 0.98,
@@ -336,10 +415,11 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightPower: 1.20,
       windowLightTemp: 2850,
       windowLightFalloff: 1.10,
-      flashlightPower: 0.0,
-      flashlightAngle: 24,
+      flashlightOn: false,
+      flashlightIntensity: 0.0,
+      flashlightCone: 48,
       flashlightRange: 15,
-      flashlightTemp: 4800,
+      flashlightWarmth: 0.45,
       flashlightAim: 43,
       flashlightHaze: 0.0,
       clutterDensity: 1.10,
@@ -359,9 +439,10 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
   4: {
     id: 4,
     slug: "cozy-apocalypse",
+    lookPreset: "cozy_golden_hour",
     label: "4 · Warm cozy-apocalypse (golden hour)",
     summary: "Low amber golden-hour sun, warm window sun-shaft floor pools, and overgrown moss/turf creeping through cracked concrete and asphalt.",
-    rendererGaps: "Implemented in renderer: low-elevation golden-hour directional sun, window sun-shaft floor pools, mossy crack overgrowth in concrete/asphalt, and boosted ground cover. Remaining gaps: 3D climbing ivy meshes on walls/gables and tall wildflower cards (owned by foliage agent).",
+    rendererGaps: "Implemented in renderer: shared LookSettings ('cozy_golden_hour') + low-elevation golden-hour sun, window sun-shaft floor pools, and mossy crack overgrowth. Remaining gaps: 3D climbing ivy vines (owned by foliage agent).",
     values: {
       hour: 17.2,
       exposure: 1.14,
@@ -381,10 +462,11 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightPower: 1.05,
       windowLightTemp: 2500,
       windowLightFalloff: 1.05,
-      flashlightPower: 0.0,
-      flashlightAngle: 24,
+      flashlightOn: false,
+      flashlightIntensity: 0.0,
+      flashlightCone: 48,
       flashlightRange: 15,
-      flashlightTemp: 4800,
+      flashlightWarmth: 0.45,
       flashlightAim: 43,
       flashlightHaze: 0.0,
       clutterDensity: 1.25,
@@ -404,6 +486,7 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
   0: {
     id: 0,
     slug: "shipped",
+    lookPreset: "current",
     label: "0 · Current shipped (baseline)",
     summary: "Exact shipped Outbreak lighting, practical lamps, and default surface-materials recipes.",
     rendererGaps: "Baseline production Outbreak configuration.",
@@ -426,10 +509,11 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       windowLightPower: 1.0,
       windowLightTemp: 2650,
       windowLightFalloff: 1.0,
-      flashlightPower: 0.0,
-      flashlightAngle: 24,
-      flashlightRange: 15,
-      flashlightTemp: 4800,
+      flashlightOn: false,
+      flashlightIntensity: 0.0,
+      flashlightCone: 52,
+      flashlightRange: 19,
+      flashlightWarmth: 0.45,
       flashlightAim: 43,
       flashlightHaze: 0.0,
       clutterDensity: 1.0,
@@ -746,33 +830,21 @@ export function buildVignetteLevel(town: Town): LevelData {
   }
 }
 
-/** Vignette WGSL shaders: uses the production Outbreak scene & post pipeline with per-surface MaterialRecipe uniforms and A/B split. */
-export const vignetteShaders = {
-  sprite: spriteShader(),
-  post: postShader(false, false, {
-    chromatic: 0,
-    bloom: 0.055,
-    grain: 0.002,
-    vignette: 0.90,
-    diagnostics: true,
-    shadowLift: 0,
-    huePreserve: 0.42,
-  }),
-  scene: makeSceneShader({
-    ao: "0.42",
-    lightLeak: "0.006 * vis",
-    lightAttenuation: `let dn = max(d3, 0.55);
+export const vignetteSceneHooks: SceneHooks = {
+  ao: "0.42",
+  lightLeak: "0.006 * vis",
+  lightAttenuation: `let dn = max(d3, 0.55);
     var att = power * win * (0.08 + 3.4 / (1.0 + dn * dn * 0.45));
     if (att <= 0.004) { continue; }`,
-    wallDirectScale: "mix(0.28, 0.46, smoothstep(0.0, 1.5, o.world.y))",
-    ambient:
-      "ambientAt(n) * select(1.0, Vig.params2.z, useVignetteActive(o.pos)) * mix(0.13 * select(1.0, Vig.params1.x, useVignetteActive(o.pos)), 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), mix(vec3f(0.022, 0.015, 0.008), vec3f(0.032, 0.020, 0.009), clamp(select(0.0, Vig.params1.y, useVignetteActive(o.pos)), -1.0, 1.0) * 0.5 + 0.5) * select(1.0, Vig.params1.x, useVignetteActive(o.pos)), interior(o.world.xz) && o.world.y < 2.8)",
-    diagnostics: "F.map.z",
-    smoothShadows: true,
-    shadowTaps: 5,
-    lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; } if (L.extra.w < -0.5 && !useVignetteWorld(world)) { continue; }",
-    fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
-    declarations: /* wgsl */ `
+  wallDirectScale: "mix(0.28, 0.46, smoothstep(0.0, 1.5, o.world.y))",
+  ambient:
+    "ambientAt(n) * select(1.0, Vig.params2.z, useVignetteActive(o.pos)) * mix(0.13 * select(1.0, Vig.params1.x, useVignetteActive(o.pos)), 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), mix(vec3f(0.022, 0.015, 0.008), vec3f(0.032, 0.020, 0.009), clamp(select(0.0, Vig.params1.y, useVignetteActive(o.pos)), -1.0, 1.0) * 0.5 + 0.5) * select(1.0, Vig.params1.x, useVignetteActive(o.pos)), interior(o.world.xz) && o.world.y < 2.8)",
+  diagnostics: "F.map.z",
+  smoothShadows: true,
+  shadowTaps: 5,
+  lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; } if (L.extra.w < -0.5 && !useVignetteWorld(world)) { continue; }",
+  fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
+  declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
 ${surfaceMaterialCoreWgsl}
 
@@ -1258,12 +1330,6 @@ fn eyeVisible(p: vec2f) -> f32 {
       col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.34, 0.65, inHouse);
     }
   }
-  if (isNoir) {
-    // Subtle Noir shadow toe & sub-LSB dither to prevent banding in deep night gradients
-    col = pow(max(col, vec3f(0.0)), vec3f(1.035)) * 0.97;
-    let dither = (hash2(o.pos.xy) + hash2(o.pos.xy * 1.7 + 13.0) - 1.0) * 0.0012;
-    col = max(vec3f(0.0), col + vec3f(dither));
-  }
   if (mat != 12 && mat != 21 && mat != 2) {
     let luminance = dot(col, vec3f(0.2126, 0.7152, 0.0722));
     let peripheral = mix(vec3f(luminance) * vec3f(0.83, 0.94, 1.05), col, 0.72);
@@ -1282,7 +1348,15 @@ fn eyeVisible(p: vec2f) -> f32 {
     }
   }
 `,
-  }),
+}
+
+/** Vignette WGSL shaders: uses the production Outbreak scene, lookScene, post, and lookPost pipelines. */
+export const vignetteShaders = {
+  sprite: spriteShader(),
+  post: postShader(false, false, outbreakPostFinish),
+  scene: makeSceneShader(vignetteSceneHooks),
+  lookScene: makeLookSceneShader(vignetteSceneHooks),
+  lookPost: makeLookPostShader(outbreakPostFinish),
 }
 
 function computeGroundRectFromVP(viewProj: Float32Array, top = 5.5): [number, number, number, number] {
@@ -1332,6 +1406,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
     if (patch) Object.assign(surfaceState[id], patch)
   }
 
+  const lookSettings: LookSettings = createLookSettings(primaryDir.lookPreset)
+  if (primaryDir.lookOverrides) Object.assign(lookSettings, primaryDir.lookOverrides)
+  const flashlightState: FlashlightState = createFlashlightState(primaryDir.values.flashlightOn)
+
   const flatSurfaceSettings: Record<string, number> = {}
   for (const id of VIGNETTE_SURFACE_IDS) {
     for (const spec of MATERIAL_PARAM_SPECS) {
@@ -1345,64 +1423,64 @@ export const outbreakVignetteSection: SectionFactory = context => {
    * - `uniform`: live uniform/light buffer update; does not rebuild static level geometry.
    * - `structural`: rebuilds single-lot static mesh (`houseSeed`, `clutterDensity`, `foliageDensity`, `treeSlot`) while preserving camera/lights/recipes.
    */
-  const s: LabSettings & {
-    directionPreset: VignetteDirectionId
-    cameraPreset: VignetteCameraPreset
-    cutawayMode: 0 | 1 | 2
-    compareMode: 0 | 1 | 2
-    compareSplit: number
-    diagnostic: number
-    hour: number
-    exposure: number
-    ambientFill: number
-    skyFill: number
-    skyTemp: number
-    moonStrength: number
-    moonTemp: number
-    shadowSoftness: number
-    diffuseWrap: number
-    streetLampPower: number
-    streetLampTemp: number
-    streetLampFalloff: number
-    porchLightPower: number
-    porchLightTemp: number
-    porchLightFalloff: number
-    windowLightPower: number
-    windowLightTemp: number
-    windowLightFalloff: number
-    flashlightPower: number
-    flashlightAngle: number
-    flashlightRange: number
-    flashlightTemp: number
-    flashlightAim: number
-    flashlightHaze: number
-    activeSurface: VignetteSurfaceId
-    tuningSeed: number
-    baseR: number
-    baseG: number
-    baseB: number
-    roughness: number
-    scale: number
-    elementRatio: number
-    irregularity: number
-    grainScale: number
-    colorVariation: number
-    jointWidth: number
-    wear: number
-    macroVariation: number
-    clutterDensity: number
-    foliageDensity: number
-    overgrowth: number
-    treeSlot: number
-    houseSeed: number
-    playing: boolean
-  } = {
+  const s: LabSettings &
+    FlashlightTuning & {
+      directionPreset: VignetteDirectionId
+      cameraPreset: VignetteCameraPreset
+      cutawayMode: 0 | 1 | 2
+      compareMode: 0 | 1 | 2
+      compareSplit: number
+      diagnostic: number
+      hour: number
+      exposure: number
+      ambientFill: number
+      skyFill: number
+      skyTemp: number
+      moonStrength: number
+      moonTemp: number
+      shadowSoftness: number
+      diffuseWrap: number
+      streetLampPower: number
+      streetLampTemp: number
+      streetLampFalloff: number
+      porchLightPower: number
+      porchLightTemp: number
+      porchLightFalloff: number
+      windowLightPower: number
+      windowLightTemp: number
+      windowLightFalloff: number
+      flashlightOn: boolean
+      flashlightAim: number
+      flashlightHaze: number
+      activeSurface: VignetteSurfaceId
+      tuningSeed: number
+      baseR: number
+      baseG: number
+      baseB: number
+      roughness: number
+      scale: number
+      elementRatio: number
+      irregularity: number
+      grainScale: number
+      colorVariation: number
+      jointWidth: number
+      wear: number
+      macroVariation: number
+      clutterDensity: number
+      foliageDensity: number
+      overgrowth: number
+      treeSlot: number
+      houseSeed: number
+      playing: boolean
+    } = {
     directionPreset: 3,
     cameraPreset: "game",
     cutawayMode: 1,
     compareMode: 0,
     compareSplit: 0.5,
     diagnostic: 0,
+    ...DEFAULT_FLASHLIGHT_TUNING,
+    ...lookSettings,
     ...primaryDir.values,
     activeSurface: "asphalt",
     tuningSeed: 101,
@@ -1537,12 +1615,32 @@ export const outbreakVignetteSection: SectionFactory = context => {
     }
   }
 
+  function syncLookSettingsFromState() {
+    for (const spec of LOOK_PARAM_SPECS) {
+      const val = s[spec.key]
+      if (spec.key === "grainAnimated" && typeof val === "boolean") {
+        lookSettings.grainAnimated = val
+      } else if (spec.key !== "grainAnimated" && typeof val === "number" && Number.isFinite(val)) {
+        lookSettings[spec.key] = val
+      }
+    }
+  }
+
   function applyDirectionPreset(dirId: VignetteDirectionId) {
     const spec = VIGNETTE_DIRECTIONS[dirId] ?? VIGNETTE_DIRECTIONS[3]
     const prevClutter = s.clutterDensity
     const prevFoliage = s.foliageDensity
     s.directionPreset = spec.id
+    applyLookPreset(lookSettings, spec.lookPreset)
+    if (spec.lookOverrides) Object.assign(lookSettings, spec.lookOverrides)
+    for (const lSpec of LOOK_PARAM_SPECS) {
+      ;(s as LabSettings)[lSpec.key] = lookSettings[lSpec.key]
+    }
     Object.assign(s, spec.values)
+    flashlightState.flashlightOn = s.flashlightOn
+    flashlightState.battery = 1
+    flashlightState.batteryDepleted = false
+    flashlightState.flashlightOutput = s.flashlightOn ? 1 : 0
 
     for (const id of VIGNETTE_SURFACE_IDS) {
       surfaceState[id] = { ...VIGNETTE_SURFACES[id].defaults, ...(spec.surfaces[id] ?? {}) }
@@ -1710,13 +1808,31 @@ export const outbreakVignetteSection: SectionFactory = context => {
     { key: "shadowSoftness", label: "Shadow softness", group: "Sky & Shadows", type: "range", min: 0.04, max: 0.6, step: 0.02, unit: "m" },
     { key: "diffuseWrap", label: "Painterly wrap", group: "Sky & Shadows", type: "range", min: 0, max: 1, step: 0.05, unit: "" },
 
-    // --- Practical Lights & Flashlight ---
-    { key: "flashlightPower", label: "Flashlight power", group: "Practical Lights", type: "range", min: 0, max: 2.5, step: 0.05, unit: "×" },
-    { key: "flashlightHaze", label: "Flashlight haze", group: "Practical Lights", type: "range", min: 0, max: 2.0, step: 0.05, unit: "×" },
-    { key: "flashlightAim", label: "Flashlight yaw", group: "Practical Lights", type: "range", min: -180, max: 180, step: 1, unit: "deg" },
-    { key: "flashlightAngle", label: "Flashlight cone", group: "Practical Lights", type: "range", min: 10, max: 55, step: 1, unit: "deg" },
-    { key: "flashlightRange", label: "Flashlight reach", group: "Practical Lights", type: "range", min: 6, max: 28, step: 1, unit: "m" },
-    { key: "flashlightTemp", label: "Flashlight colour", group: "Practical Lights", type: "range", min: 2400, max: 6200, step: 100, unit: "K" },
+    // --- Practical Lights & Flashlight (shared games/outbreak/shared/flashlight.ts) ---
+    {
+      key: "flashlightOn",
+      label: "Flashlight switch",
+      group: "Flashlight",
+      change: val => {
+        flashlightState.flashlightOn = Boolean(val)
+        flashlightState.flashlightOutput = flashlightState.flashlightOn ? 1 : 0
+      },
+    },
+    ...flashlightControls.map(
+      (fc): LabControl => ({
+        key: fc.key,
+        label: fc.label,
+        group: fc.group,
+        type: "range",
+        min: fc.min,
+        max: fc.max,
+        step: fc.step,
+        unit: fc.unit,
+        folded: fc.key.startsWith("flashlightD") || fc.key.startsWith("flashlightR") || fc.key === "flashlightFlicker",
+      }),
+    ),
+    { key: "flashlightHaze", label: "Volumetric cone haze", group: "Flashlight", type: "range", min: 0, max: 2.0, step: 0.05, unit: "×" },
+    { key: "flashlightAim", label: "Beam yaw", group: "Flashlight", type: "range", min: -180, max: 180, step: 1, unit: "deg" },
     { key: "streetLampPower", label: "Streetlamp power", group: "Practical Lights", type: "range", min: 0, max: 2.5, step: 0.05, unit: "×" },
     { key: "streetLampTemp", label: "Streetlamp colour", group: "Practical Lights", type: "range", min: 1800, max: 5500, step: 50, unit: "K" },
     { key: "streetLampFalloff", label: "Streetlamp radius", group: "Practical Lights", type: "range", min: 0.5, max: 1.8, step: 0.05, unit: "×" },
@@ -1860,6 +1976,18 @@ export const outbreakVignetteSection: SectionFactory = context => {
       unit: "",
       change: () => rebuildVignetteLevel(),
     },
+
+    // --- Shared @arcade/kit LookSettings Controls ---
+    ...createLookControls(lookSettings, { includePresetPicker: false }).map(
+      (c): LabControl => ({
+        ...c,
+        folded: true,
+        change: val => {
+          ;(c as { change?: (v: any) => void }).change?.(val)
+          syncLookSettingsFromState()
+        },
+      }),
+    ),
   ]
 
   function renderVignetteToStage(width: number, height: number, outputView: GPUTextureView): number | null {
@@ -1967,11 +2095,13 @@ export const outbreakVignetteSection: SectionFactory = context => {
       )
     }
 
-    // Player flashlight cone (polar-shadowed directional cone light, used in Noir direction 3)
-    const flashPower = useShippedGlobal ? 0 : s.flashlightPower
+    // Player flashlight cone via shared games/outbreak/shared/flashlight.ts
+    const flashActive = !useShippedGlobal && s.flashlightOn && s.flashlightIntensity > 0.001
+    const flashPower = flashActive ? s.flashlightIntensity * Math.max(0.2, flashlightState.flashlightOutput) : 0
     let flashSlot = -1
     const beamDeg = isInteriorCam && Math.abs(s.flashlightAim - 45.5) < 3 ? 54.5 : s.flashlightAim
     const effRange = isInteriorCam && Math.abs(s.flashlightRange - 10.5) < 1 ? 6.2 : s.flashlightRange
+    const halfConeDeg = s.flashlightCone * 0.5
     const beamRad = (beamDeg * Math.PI) / 180
     const dirX = Math.cos(beamRad)
     const dirZ = Math.sin(beamRad)
@@ -1980,8 +2110,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
     const fy = groundY + 1.08
     if (flashPower > 0.001 && count < MAX_LIGHTS) {
       flashSlot = count
-      const fCol = kelvinToRgb(isInteriorCam ? Math.min(s.flashlightTemp, 3200) : s.flashlightTemp)
-      const cosHalf = Math.cos((s.flashlightAngle * Math.PI) / 180)
+      const fCol = flashlightColor(isInteriorCam ? Math.max(s.flashlightWarmth, 0.72) : s.flashlightWarmth)
+      const cosHalf = Math.cos((halfConeDeg * Math.PI) / 180)
       lights.set(
         [
           fx,
@@ -2008,7 +2138,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
     vignetteUniforms[109] = fz
     vignetteUniforms[110] = dirX
     vignetteUniforms[111] = dirZ
-    vignetteUniforms[112] = Math.tan((s.flashlightAngle * Math.PI) / 180)
+    vignetteUniforms[112] = Math.tan((halfConeDeg * Math.PI) / 180)
     vignetteUniforms[113] = effRange
     vignetteUniforms[114] = useShippedGlobal ? 0 : s.flashlightHaze
     vignetteUniforms[115] = flashSlot
@@ -2060,6 +2190,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
     doorBatch.count = town.doors.length
     const batches = [...(avatar ? avatar.draw(player, 1 / 60, simTime, (x, z) => supportHeight(town, x, z)) : []), doorBatch]
 
+    syncLookSettingsFromState()
+    const lookCompareMode: LookCompareMode = s.compareMode === 1 ? 0 : s.compareMode === 2 ? 2 : 1
+    r.setLook(lookSettings, { mode: lookCompareMode, wipeSplit: s.compareSplit })
+
     const renderInput: FrameInput = {
       frame,
       lights,
@@ -2076,6 +2210,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
       addSprites: empty,
       addCount: 0,
       grade: [simTime, s.diagnostic, 0, useShippedGlobal ? 1.0 : s.exposure],
+      look: lookSettings,
+      lookCompare: { mode: lookCompareMode, wipeSplit: s.compareSplit },
     }
 
     r.drawTo(renderInput, outputView)
@@ -2186,7 +2322,13 @@ export const outbreakVignetteSection: SectionFactory = context => {
       stage.cameraOverride = undefined
     },
     update(dt) {
-      if (s.playing) simTime += dt
+      if (s.playing) {
+        simTime += dt
+        flashlightState.flashlightOn = s.flashlightOn
+        // Keep battery topped up in static vignette inspection while exercising stepFlashlight
+        if (flashlightState.battery < 0.65) flashlightState.battery = 1
+        stepFlashlight(flashlightState, dt, simTime, s)
+      }
     },
     prepare() {
       vision.update(player.x, player.y, player.aim, blockers, {
@@ -2197,7 +2339,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
     },
     telemetry: () => {
       const dir = VIGNETTE_DIRECTIONS[s.directionPreset] ?? VIGNETTE_DIRECTIONS[3]
-      return `Outbreak vignette · ${dir.slug} · ${clockText(s.hour)} {"vertices":${staticVertices},"chunks":${renderer?.drawnChunks ?? 0},"lights":${town.lamps.length + (s.flashlightPower > 0 ? 1 : 0)}}`
+      return `Outbreak vignette · ${dir.slug} (${dir.lookPreset}) · ${clockText(s.hour)} {"vertices":${staticVertices},"chunks":${renderer?.drawnChunks ?? 0},"lights":${town.lamps.length + (s.flashlightOn && s.flashlightIntensity > 0 ? 1 : 0)}}`
     },
     registerCommands(commands: LabCommandRegistry) {
       commands.registerAll([
