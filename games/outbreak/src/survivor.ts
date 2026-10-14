@@ -33,18 +33,19 @@ export class Survivor {
   private data = new Float32Array(15 * 12)
   readonly batches: Batch[] = []
 
-  constructor(renderer: Pick<Renderer, "addModel">) {
+  /** `palette` recolours the jacket and trousers (co-op seats); the default is the offline survivor. */
+  constructor(renderer: Pick<Renderer, "addModel">, palette: { torso: number; legs: number } = { torso: 0x8c6b42, legs: 0x41474b }) {
     const box = (w: number, y0: number, h: number, d: number, color: number) => {
       const m = new Mesh(); m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, hex(color), MAT.actor); return m
     }
-    const pelvis = box(.25, -.07, .18, .34, 0x41474b)
-    const torso = box(.28, -.02, .48, .4, 0x8c6b42)
+    const pelvis = box(.25, -.07, .18, .34, palette.legs)
+    const torso = box(.28, -.02, .48, .4, palette.torso)
     torso.box(-.29, .07, -.15, -.14, .4, .15, hex(0x4d6259), MAT.actor)
     torso.box(-.3, .28, -.14, -.28, .32, .14, hex(0xa3a48a), MAT.actor)
     const head = box(.18, .01, .24, .18, 0xad8266)
     head.box(-.1, .19, -.11, .1, .28, .11, hex(0x3b342d), MAT.actor)
     const foot = box(.21, -.075, .09, .14, 0x3b3029)
-    this.models = [pelvis, torso, head, box(.15, -.29, .33, .15, 0x8c6b42), box(.11, -.28, .3, .11, 0x9b7858), box(.17, -.42, .46, .17, 0x41474b), box(.13, -.41, .43, .14, 0x41474b), foot].map(m => renderer.addModel(m))
+    this.models = [pelvis, torso, head, box(.15, -.29, .33, .15, palette.torso), box(.11, -.28, .3, .11, 0x9b7858), box(.17, -.42, .46, .17, palette.legs), box(.13, -.41, .43, .14, palette.legs), foot].map(m => renderer.addModel(m))
   }
 
   reset(): void {
