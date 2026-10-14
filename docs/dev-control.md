@@ -4,6 +4,17 @@ To show Kit an orientation, scene, asset, or parameter setup in his already-open
 
 `scripts/dev.ts` (`bun run dev`) exposes a loopback-only control endpoint (`/__arcade/control`) protected by a per-server `0600` token file (`.arcade-control.json` and `~/.cache/arcade/dev-control.json`) and strict same-origin checks. Production builds and Cloudflare Workers never include the control endpoint or client runtime.
 
+To drive pages opened from another machine through Tailscale Serve, list the exact hostname in
+`ARCADE_DEV_ALLOWED_HOSTS` (or Vite's `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, which the dev server also needs):
+
+```sh
+__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=kits-mac-studio.taila8e7c7.ts.net PORT=5180 bun run dev
+tailscale serve --bg --https=5180 http://127.0.0.1:5180
+```
+
+Listed hosts are accepted only over HTTPS with an Origin matching Host, plus the page token. The CLI endpoint stays
+loopback-only; run `bun run arcade` on the machine serving the pages.
+
 ## Commands
 
 Read-only commands:

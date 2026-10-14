@@ -572,6 +572,16 @@ function synthesizeHubCanvas(): HTMLCanvasElement {
   return out
 }
 
+export function buildDevControlWsUrl(
+  loc: { protocol: string; host: string },
+  controlPath: string,
+  pageToken: string,
+  pageId: string,
+): string {
+  const proto = loc.protocol === "https:" ? "wss:" : "ws:"
+  return `${proto}//${loc.host}${controlPath}?token=${encodeURIComponent(pageToken)}&pageId=${encodeURIComponent(pageId)}`
+}
+
 const COMMAND_ALIASES: Record<string, string> = {
   select: "object.select",
   spawn: "ground.spawn-here",
@@ -1057,8 +1067,7 @@ class PageControlRuntime {
 
   private connect() {
     if (!this.routerConfig) return
-    const proto = location.protocol === "https:" ? "wss:" : "ws:"
-    const wsUrl = `${proto}//${location.host}${this.routerConfig.controlPath}?token=${encodeURIComponent(this.routerConfig.pageToken)}&pageId=${encodeURIComponent(this.pageId)}`
+    const wsUrl = buildDevControlWsUrl(location, this.routerConfig.controlPath, this.routerConfig.pageToken, this.pageId)
     try {
       const ws = new WebSocket(wsUrl)
       this.ws = ws
