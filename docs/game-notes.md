@@ -191,23 +191,24 @@ a death frame strip. Stills and encoded run/death frames were inspected. Continu
 cost have not been measured. Reproduce encoding with `bash scripts/animation-film.sh` and the sheet with
 `python3 scripts/animation-sheet.py` (Pillow required).
 
-### Running attitude revision
+### Running attitude and weapon stability revision
 
-The first New gait lost the old run's forward attitude. A fixed-speed, 60-frame steady sample measured chest pitch
-at about 26°/47° in Old versus 9°/11° in New at 4.2/6.3 m/s. New also removed the pelvis's 9.7° forward pitch and
-moved its hips backward enough to keep the head nearly over the root. This was a pose change, not only a camera effect.
+The first New gait lost the old run's forward attitude, and its world-space weapon spring (`m.gun` chasing world
+`[a.x + ..., hold.up, a.y + ...]` at 6 Hz) lagged 18–34 cm behind the moving soldier and vibrated at 30 Hz (`deltaRms`
+0.0665 m) under `compare.html`'s decoupled `mux` tick rate.
 
-`anim-locomotion.ts` now springs a separate running-posture value through the existing walk/run transition, with
-25% more at sprint speed and a forward-travel weight. `anim.ts` pitches the pelvis about its rolled hip-to-hip axis,
-then gives the chest the same travel-directed attitude. The hip joints retain their exact positions; the head stays
-attached and compensates its pitch, and the weapon keeps its independent world frame. Root acceleration lean,
-support drop, pelvis yaw and chest counter-rotation keep their existing roles.
+`human-locomotion.ts` and `human-profile.ts` now spring both `runPosture` (`Run lean · rad`, default `0.34`) and
+`crouchDepth` (`Crouch depth · m`, default `0.08`) through the walk→run→sprint speed ramp, with `leanScale=1.25` and
+`headStability=0.8` (`Head stabilisation`). Forward run and sprint lower the pelvis (`~14.5 / 17.2 cm` total drop),
+bend the knees (`~75° / 72°` vs `50°` at walk), pitch the pelvis (`-12.5° / -15.6°`) and chest (`-28.9° / -38.9°`)
+forward while keeping the head stabilised (`-6.9° / -7.7°`) and world-locked toe contacts at zero slip. Strafe and
+backpedal suppress forward run lean and damp backward velocity lean so backpedalling stays upright.
 
-Animation → Run posture defaults to 0.18 rad. Zero reproduces the pre-revision New pose: 720-frame sequences of
-Old and zero-posture New matched the saved `39ef8bf` bodies exactly, including seeded fire and hit events. The new
-default measures roughly 7°/18° pelvis/chest pitch at run and 9°/23° at sprint. Fifteen animation cases include exact
-current/refined agreement on cadence, contact state, toe locks, pelvis position and weapon pose, plus finite joints
-and bounded, continuous posture through acceleration, braking and reversal. The earlier cadence limitation remains.
+`anim.ts` anchors `m.gun` to a stabilised shoulder posture frame (root + crouch + lean/dip, excluding cyclic hip sway
+`m.sway`, pelvic roll `m.drop` and spine counter-twist `m.twist`) and carries root displacement `(dx, dy)` and aim
+delta `dAim` 1:1 before stepping the `weaponHz * ergonomics` springs. This keeps the rifle compact in front of the
+crouched chest (`~0.26 m` ahead of the shoulders) with zero world-velocity lag, zero 30 Hz `mux` sawtooth jitter, and
+lower positional and angular RMS/delta-RMS than Old across steady run, sprint, strafe, circle, stop and aim sweeps.
 
 `scripts/prove-running.ts` captures the real viewer/Game/Renderer on headless Metal. Its three-way comparison uses
 Old, current New (`runPosture=0`) and refined New, with five matched routes and gameplay, side and three-quarter

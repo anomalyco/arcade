@@ -30,7 +30,8 @@ avatar.profile = humanProfiles.zombie // uneven timing, dragged right foot, dela
 ```
 
 Presets are immutable. Spread a preset to tune an individual actor; it will not change other actors or the Lab.
-The neutral soldier preserves PR #9's restored forward posture: `runPosture=0.18`. Weapon clips can replace rest
+The neutral soldier defaults to the crouch-run posture: `leanScale=1.25`, `runPosture=0.34`, `crouchDepth=0.08`,
+`headStability=0.8`. Weapon clips can replace rest
 hand targets before IK. Profile hand poses do not implement spells, attacks, pathfinding or new zombie AI.
 
 The comparison fixture uses the test mesh and a hand-attached staff. Runtime Blackout wizards use the released
