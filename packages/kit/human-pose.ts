@@ -15,6 +15,32 @@ export function poseArms(torso: Frame, left: V3, right: V3): Pick<HumanBody, "ua
     fa: [limb(eL, hL, [0, 1, 0], torso.x), limb(eR, hR, [0, 1, 0], torso.x)] }
 }
 
+/** Two-stage spring-driven unarmed hand targets with natural sagittal pendulum arc and runner's elbow bend. */
+export function unarmedHands(a: Locomotion, torso: Frame, breathPhase = 0): [V3, V3] {
+  const m = a.motion, run = m.run * a.gait
+  const hand = (i: 0 | 1): V3 => {
+    const side = i === 0 ? -1 : 1
+    const sw = m.arms[i]!.x, hw = m.hands[i]!.x
+    const fwd = 0.05 + (hw >= 0 ? hw * 1.15 : hw * 0.92) + 0.07 * run
+    const up = -0.09 + (sw >= 0 ? sw * (0.38 + 0.28 * run) : -sw * 0.12) + 0.05 * run - side * 0.012 * Math.sin(breathPhase)
+    const inward = Math.max(0, sw) * (0.12 + 0.10 * run)
+    return at(torso, fwd, up, side * (0.23 - inward))
+  }
+  return [hand(0), hand(1)]
+}
+
+/** Solve unarmed arms with a backward-and-down sagittal elbow pole so elbows swing naturally instead of flaring sideways. */
+export function poseUnarmedArms(torso: Frame, left: V3, right: V3): Pick<HumanBody, "ua" | "fa"> {
+  const shL = at(torso, 0, RIG.shoulderY, -RIG.shoulderW), shR = at(torso, 0, RIG.shoulderY, RIG.shoulderW)
+  const poleL = dirIn(torso, -0.65, -1, -0.18), poleR = dirIn(torso, -0.65, -1, 0.18)
+  const [eL, hL] = ik(shL, left, RIG.upper, RIG.fore, poleL)
+  const [eR, hR] = ik(shR, right, RIG.upper, RIG.fore, poleR)
+  return {
+    ua: [limb(shL, eL, torso.x, torso.y), limb(shR, eR, torso.x, torso.y)],
+    fa: [limb(eL, hL, torso.x, torso.y), limb(eR, hR, torso.x, torso.y)],
+  }
+}
+
 /** Contact owns the rendered boot; relaxed swing ankles recover before touchdown. */
 export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "sh" | "ft"> {
   const th: Frame[] = [], sh: Frame[] = [], ft: Frame[] = [], m = a.motion
