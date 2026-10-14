@@ -56,6 +56,8 @@ import {
   randomizeOutbreakWeather,
   toSharedWeatherSettings,
 } from "./weather"
+import { CoopView } from "./coop-view"
+import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
 import { shaders } from "./shaders"
@@ -161,7 +163,10 @@ async function main() {
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format, shaders)
   const seed = Number(params.get("seed") ?? 7) >>> 0
-  let session = new LocalSession(seed, settings.houseSeed, settings.terrain, settings)
+  // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
+  const coop = CoopView.fromUrl(renderer, params)
+  const makeSession = (s: number) => coop.net ?? new LocalSession(s, settings.houseSeed, settings.terrain, settings)
+  let session: LocalSession | NetSession = makeSession(seed)
   let vision = new Vision()
   let scenery = new SceneryMemory()
   const input = new Input(canvas, ["KeyE"])
@@ -183,7 +188,8 @@ async function main() {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
   const cam = new Camera()
-  const avatar = new Survivor(renderer)
+  let avatar = new Survivor(renderer)
+  let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
   const groundWear = new GroundWearRenderer(renderer)
@@ -782,6 +788,8 @@ async function main() {
     combatFx.setLevel(data)
   }
   function regenerate() {
+    // A co-op room's neighbourhood is fixed by the room: only presentation settings rebuild the level.
+    if (coop.net) return level()
     const previous = session.view
     session = new LocalSession(previous.town.seed, settings.houseSeed, settings.terrain, settings)
     Object.assign(session.view.player, previous.player)
@@ -807,8 +815,8 @@ async function main() {
     ambientMotion.reset()
   }
   function reset(nextSeed = seed) {
-    session.close()
-    session = new LocalSession(nextSeed, settings.houseSeed, settings.terrain, settings)
+    if (session !== coop.net) session.close()
+    session = makeSession(nextSeed)
     vision = new Vision()
     revision = -1
     peekBlend = 0
@@ -909,6 +917,12 @@ async function main() {
   syncTextures()
   function draw(dt: number) {
     if (settings.textures === 2) syncTextures()
+    coop.net?.sync(dt)
+    if (coop.localPalette !== avatarPalette) {
+      avatarPalette = coop.localPalette
+      avatar = avatarPalette ? new Survivor(renderer, coop.localPalette!) : avatar
+      updateProfile()
+    }
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
     settings.hour = Math.round(hour * 20) / 20
     if (peek) {
@@ -928,8 +942,9 @@ async function main() {
       renderer.resize(canvas.width, canvas.height)
     }
     cam.zoomOffset = settings.zoom - 24
-    const camX = p.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
-    const camY = p.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
+    const drawn = coop.pose(p)
+    const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
+    const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
     cam.follow(camX, camY, 0, 0, dt, false)
     cam.update(w / h)
     if (revision !== session.view.revision) {
@@ -1016,9 +1031,11 @@ async function main() {
         count++ * LIGHT_FLOATS,
       )
     }
+    count = coop.flashlights(lights, count, town, settings, lightOccluders)
 
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift)
+    const survivorBatches = avatar.draw(drawn, dt, time, (x, z) => supportHeight(town, x, z) + lift)
+    const coopBatches = coop.bodies(dt, time, town, vision)
     const zombieBatches = zombieCrowd.draw(
       zombies,
       dt,
@@ -1220,6 +1237,7 @@ async function main() {
       ...clutterBatches,
       ...motionOut.batches,
       ...survivorBatches,
+      ...coopBatches,
       ...fxOut.batches,
       ...zombieBatches,
       doorBatch,
@@ -1250,6 +1268,7 @@ async function main() {
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
     status.textContent = formatStatus()
+    coop.overlay(cam, w, h, town, vision)
     syncWorldPrompt(w, h)
     syncHotbar()
     const meterNow = performance.now()
@@ -1393,6 +1412,7 @@ async function main() {
       },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
+    coop: () => coop.inspect(),
     reset,
     freeze: (value = true) => {
       frozen = value
