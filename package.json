@@ -13,8 +13,12 @@
     "check:packages": "bun run --filter '@arcade/*' check"
   },
   "devDependencies": {
-    "vite": "^8.3.4",
     "playwright-core": "^1.64.0",
-    "typescript": "^5.9.3"
+    "typegpu": "0.12.7",
+    "typescript": "^5.9.3",
+    "unplugin-typegpu": "0.12.5",
+    "vite": "^8.3.4",
+    "wesl": "0.7.31",
+    "wesl-plugin": "0.6.81"
   }
 }
