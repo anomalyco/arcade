@@ -264,21 +264,21 @@ struct VOut {
       gloss = s.gloss;
       cavity = s.cavity;
     } else if (kind == 2) {
-      let edgeWarp = select(0.0, (surfaceNoise(p * 2.8 + vec2f(1.7, 4.3)) - 0.42) * 0.26, isAfter);
+      let edgeWarp = select(0.0, (surfaceNoise(p * 7.2 + vec2f(1.7, 4.3)) - 0.45) * 0.085, isAfter);
       let pyW = p.y + edgeWarp;
       let pxW = p.x - edgeWarp * 0.85;
-      let inVerge = U.config.w < 0.5 && pyW > 3.26 && pyW < 3.82 && abs(pxW) > 0.88 && pxW > -7.6;
-      let inSidewalkWeeds = isAfter && U.config.w < 0.5 && p.y >= 1.98 && pyW < 2.26 && abs(pxW) > 0.88 && pxW > -7.6;
-      let inWalkWeeds = isAfter && U.config.w < 0.5 && p.y < 2.02 && abs(abs(p.x) - 0.72) < 0.22 && edgeWarp > 0.01;
+      let inVerge = U.config.w < 0.5 && pyW > 3.30 && pyW < 3.78 && abs(pxW) > 0.88 && pxW > -7.6;
+      let inSidewalkWeeds = isAfter && U.config.w < 0.5 && p.y >= 1.98 && pyW < 2.12 && abs(pxW) > 0.88 && pxW > -7.6;
+      let inWalkWeeds = isAfter && U.config.w < 0.5 && p.y < 2.02 && abs(abs(p.x) - 0.72) < 0.14 && edgeWarp > 0.015;
       if (inVerge || inSidewalkWeeds || inWalkWeeds) {
-        let vDist = select(0.06, min(pyW - 3.26, 3.82 - pyW), inVerge);
-        let vEdge = smoothstep(0.0, 0.10, vDist);
+        let vDist = select(0.05, min(pyW - 3.30, 3.78 - pyW), inVerge);
+        let vEdge = smoothstep(0.0, 0.08, vDist);
         if (isAfter) {
-          let s = evalGrassSoil(p, vec3f(0.028, 0.044, 0.016) * (0.48 + 0.52 * vEdge), false, defaultMaterialRecipe(4));
+          let s = evalGrassSoil(p, vec3f(0.036, 0.046, 0.018) * (0.76 + 0.24 * vEdge), false, defaultMaterialRecipe(4));
           let grassMod = clamp(texGrass / vec3f(0.045, 0.085, 0.022), vec3f(0.68), vec3f(1.36));
           albedo = s.albedo * mix(vec3f(1.0), grassMod, 0.52);
           gloss = s.gloss;
-          cavity = s.cavity * (0.58 + 0.42 * vEdge);
+          cavity = s.cavity * (0.82 + 0.18 * vEdge);
           n = normalize(n + surfaceNormalShift + vec3f(texGrassNorm.x * 0.22, 0.0, texGrassNorm.y * 0.22));
         } else {
           let s = evalLegacyMaterial(4, o.world, n, vec3f(0.024, 0.036, 0.014));
@@ -604,18 +604,18 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
     plantFn(px, pz, ph, pr, Math.floor(rng.next() * 1e6))
   }
   if (!isLegacy) {
-    for (let wx = x - 0.1; wx <= r + 0.1; wx += 0.54 + rng.next() * 0.38) {
+    for (let wx = x - 0.1; wx <= r + 0.1; wx += 0.58 + rng.next() * 0.42) {
       if (Math.abs(wx) < 1.55) continue
-      const wz = e + 0.68 + rng.next() * 0.78
+      const wz = e + 0.72 + rng.next() * 0.68
       emitGrassTuft(m, wx, 0.0, wz, {
-        bladeCount: 5,
-        radius: 0.26 + rng.next() * 0.14,
-        height: 0.22 + rng.next() * 0.18,
-        width: params.bladeWidth * 1.18,
-        curvature: Math.min(1, params.bladeCurvature * 1.18),
+        bladeCount: 3,
+        radius: 0.16 + rng.next() * 0.08,
+        height: 0.11 + rng.next() * 0.09,
+        width: params.bladeWidth * 0.88,
+        curvature: Math.min(1, params.bladeCurvature * 1.15),
         leanAngle: Math.PI * 0.5 + (rng.next() - 0.5) * 1.4,
-        rootColor: rgb(0x121e0c),
-        tipColor: rgb(rng.pick([0x385220, 0x465c26, 0x2e461b])),
+        rootColor: rgb(0x1c1e12),
+        tipColor: rgb(rng.pick([0x3e3c24, 0x484226, 0x343820])),
         rng,
       })
     }
