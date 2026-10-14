@@ -896,6 +896,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Object",
       shortcut: "Space",
       accelerators: ["space"],
+      icon: "zap",
       radial: { context: "object", slot: 0 },
       enabled: ctx => Boolean(activeTargetObject(ctx)),
       disabledReason: () => "No target object",
@@ -925,6 +926,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Mode",
       shortcut: "P",
       accelerators: ["p"],
+      icon: "gamepad",
       radial: { context: "object", slot: 1 },
       enabled: ctx => activeTargetObject(ctx)?.category === "character",
       disabledReason: () => "Only characters can be possessed",
@@ -941,6 +943,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Object",
       shortcut: "D",
       accelerators: ["d"],
+      icon: "copy",
       radial: { context: "object", slot: 2 },
       enabled: ctx => {
         const obj = activeTargetObject(ctx)
@@ -984,6 +987,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Inspector",
       shortcut: "I",
       accelerators: ["i"],
+      icon: "search",
       radial: { context: "object", slot: 3 },
       enabled: ctx => Boolean(activeTargetObject(ctx)),
       disabledReason: () => "No object to inspect",
@@ -1004,6 +1008,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Object",
       shortcut: "⌫",
       accelerators: ["backspace", "delete"],
+      icon: "trash",
       radial: { context: "object", slot: 4 },
       enabled: ctx => {
         const obj = activeTargetObject(ctx)
@@ -1045,6 +1050,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Object",
       shortcut: "0",
       accelerators: ["0"],
+      icon: "reset",
       radial: { context: "object", slot: 5 },
       enabled: ctx => Boolean(activeTargetObject(ctx)?.movable),
       disabledReason: () => "Fixed room specimen",
@@ -1076,6 +1082,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Object",
       shortcut: "G",
       accelerators: ["g"],
+      icon: "move",
       radial: { context: "object", slot: 6 },
       enabled: ctx => Boolean(activeTargetObject(ctx)?.movable),
       disabledReason: () => "Fixed room specimen",
@@ -1110,6 +1117,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "F",
       accelerators: ["f"],
+      icon: "frame",
       radial: { context: "object", slot: 7 },
       enabled: () => true,
       run: ctx => {
@@ -1132,6 +1140,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "Space",
       accelerators: ["space"],
+      icon: "zap",
       radial: { context: "ground", slot: 0 },
       enabled: () => true,
       run: ctx => {
@@ -1168,6 +1177,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "P",
       accelerators: ["p"],
+      icon: "user-plus",
       radial: { context: "ground", slot: 1 },
       enabled: () => Boolean(spawn),
       disabledReason: () => "No character adapter available",
@@ -1195,6 +1205,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "A",
       accelerators: ["a", "e"],
+      icon: "pin-plus",
       radial: { context: "ground", slot: 2 },
       args: {
         asset: { type: "string", description: "Prop kind, character ID, or light kind" },
@@ -1358,6 +1369,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "L",
       accelerators: ["l", "i"],
+      icon: "light",
       radial: { context: "ground", slot: 3 },
       enabled: () => true,
       run: ctx => {
@@ -1386,6 +1398,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "⌫",
       accelerators: ["backspace", "delete"],
+      icon: "eraser",
       radial: { context: "ground", slot: 4 },
       enabled: () => true,
       run: () => {
@@ -1405,6 +1418,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "R",
       accelerators: ["r", "0"],
+      icon: "shuffle",
       radial: { context: "ground", slot: 5 },
       enabled: () => Boolean(activeSection().reroll || resolveEnvOwner().reroll),
       disabledReason: () => "Current section has no room seed",
@@ -1426,6 +1440,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Object",
       shortcut: "G",
       accelerators: ["g"],
+      icon: "move",
       radial: { context: "ground", slot: 6 },
       enabled: () => Boolean(activeTargetObject()?.movable),
       disabledReason: () => "No movable object selected",
@@ -1453,6 +1468,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Scene",
       shortcut: "F",
       accelerators: ["f"],
+      icon: "frame",
       radial: { context: "ground", slot: 7 },
       enabled: () => true,
       run: () => frameActiveTarget(),
@@ -4734,12 +4750,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       radialState.openPointer(localX, localY, rect.width, rect.height, performance.now(), ctx)
     }
     radialDOM.sync()
-    viewportCursor.update({
-      state: "radial",
-      x: localX,
-      y: localY,
-      radialVec: { dx: 0, dy: -8 },
-    })
+    viewportCursor.update({ state: "radial", native: true })
     syncTransportAndHints()
   }
 
@@ -4768,12 +4779,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       })
     }
     radialDOM.sync()
-    viewportCursor.update({
-      state: "radial",
-      x: radialState.visualX,
-      y: radialState.visualY,
-      radialVec: { dx: 0, dy: -8 },
-    })
+    viewportCursor.update({ state: "radial", native: true })
     syncTransportAndHints()
   }
 
@@ -4782,24 +4788,18 @@ export function createWorkbench(opts: WorkbenchOptions) {
     syncTransportAndHints()
   })
 
-  viewportEl.addEventListener("pointermove", event => {
-    if (radialState.phase === "closed" || event.target === canvas) return
-    const vRect = viewportEl.getBoundingClientRect()
-    const localX = event.clientX - vRect.left
-    const localY = event.clientY - vRect.top
+  // While the radial menu is open the OS cursor stays visible (no drawn-glyph lag); the menu draws the direction.
+  function trackRadialPointer(localX: number, localY: number) {
     radialState.movePointer(localX, localY)
     radialDOM.sync()
     const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
-    if (activeSector && !activeSector.enabled) {
-      viewportCursor.update({ state: "disabled", x: localX, y: localY })
-    } else {
-      viewportCursor.update({
-        state: "radial",
-        x: localX,
-        y: localY,
-        radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
-      })
-    }
+    viewportCursor.update({ state: activeSector && !activeSector.enabled ? "disabled" : "radial", native: true })
+  }
+
+  viewportEl.addEventListener("pointermove", event => {
+    if (radialState.phase === "closed" || event.target === canvas) return
+    const vRect = viewportEl.getBoundingClientRect()
+    trackRadialPointer(event.clientX - vRect.left, event.clientY - vRect.top)
   })
 
   viewportEl.addEventListener("pointerup", event => {
@@ -4869,19 +4869,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       lastPointerViewport = { x: localX, y: localY }
 
       if (radialState.phase !== "closed") {
-        radialState.movePointer(localX, localY)
-        radialDOM.sync()
-        const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
-        if (activeSector && !activeSector.enabled) {
-          viewportCursor.update({ state: "disabled", x: localX, y: localY })
-        } else {
-          viewportCursor.update({
-            state: "radial",
-            x: localX,
-            y: localY,
-            radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
-          })
-        }
+        trackRadialPointer(localX, localY)
         return
       }
       const [u, v] = canvasUV(event)

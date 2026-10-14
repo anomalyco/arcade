@@ -8,6 +8,7 @@ export {
   type LabCommandArgSchema,
   type LabCommandCategory,
   type LabCommandContext,
+  type LabCommandIcon,
   type LabCommandDescriptor,
   type LabCommandInvokeResult,
   type LabSceneState,

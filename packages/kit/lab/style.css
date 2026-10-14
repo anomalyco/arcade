@@ -1453,126 +1453,248 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   user-select: text;
 }
 
-/* Contextual 8-Sector Radial Marking Menu */
+/* Contextual radial menu: 8 equal wedges around a context hub.
+   Origin is the menu centre; position is a transform so moving it never lays out. */
 .lab-radial {
+  --radial-ring: 236px;
   position: absolute;
+  left: 0;
+  top: 0;
   width: 0;
   height: 0;
-  pointer-events: auto;
   z-index: 60;
   outline: none;
+  cursor: default;
+  pointer-events: none;
 }
 
-.lab-radial::before {
-  content: "";
+.lab-radial[data-highlight="disabled"] {
+  cursor: not-allowed;
+}
+
+.lab-radial-body {
   position: absolute;
-  left: -96px;
-  top: -96px;
-  width: 192px;
-  height: 192px;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+.lab-radial-disc,
+.lab-radial-highlight,
+.lab-radial-pointer {
+  position: absolute;
+  left: calc(var(--radial-ring) / -2);
+  top: calc(var(--radial-ring) / -2);
+  width: var(--radial-ring);
+  height: var(--radial-ring);
+  overflow: visible;
+}
+
+/* The disc is the hit target: presses anywhere on it select by direction. */
+.lab-radial-disc {
+  pointer-events: auto;
   border-radius: 50%;
-  border: 1px dashed #3b4c5c88;
-  background: radial-gradient(circle, #0d131999 0%, #0d1319d8 52%, transparent 72%);
+  filter: drop-shadow(0 10px 24px rgb(0 0 0 / 45%));
+}
+
+.lab-radial-band {
+  fill: rgb(17 18 21 / 95%);
+  stroke: rgb(255 255 255 / 9%);
+  stroke-width: 1px;
+}
+
+.lab-radial-sep {
+  stroke: rgb(255 255 255 / 6%);
+  stroke-width: 1px;
+}
+
+.lab-radial-hub {
+  fill: rgb(22 23 27);
+  stroke: rgb(255 255 255 / 10%);
+  stroke-width: 1px;
+}
+
+.lab-radial-highlight,
+.lab-radial-pointer {
   pointer-events: none;
+  opacity: 0;
+}
+
+.lab-radial[data-highlight="on"] .lab-radial-highlight,
+.lab-radial[data-highlight="disabled"] .lab-radial-highlight,
+.lab-radial[data-pointer="on"] .lab-radial-pointer {
+  opacity: 1;
+}
+
+.lab-radial-wedge {
+  fill: var(--acc-a);
+}
+
+.lab-radial-lip {
+  fill: none;
+  stroke: var(--acc);
+  stroke-width: 2px;
+  stroke-linecap: round;
+}
+
+.lab-radial[data-highlight="disabled"] .lab-radial-wedge {
+  fill: rgb(242 121 121 / 8%);
+}
+
+.lab-radial[data-highlight="disabled"] .lab-radial-lip {
+  stroke: rgb(242 121 121 / 45%);
+}
+
+.lab-radial-pointer-arc {
+  fill: none;
+  stroke: var(--acc);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+}
+
+.lab-radial-pointer-tip {
+  fill: var(--acc);
+}
+
+.lab-radial[data-highlight="disabled"] .lab-radial-pointer-arc {
+  stroke: #f27979;
+}
+
+.lab-radial[data-highlight="disabled"] .lab-radial-pointer-tip {
+  fill: #f27979;
 }
 
 .lab-radial-center {
   position: absolute;
   left: 0;
   top: 0;
+  width: 60px;
   transform: translate(-50%, -50%);
-  min-width: 82px;
-  max-width: 124px;
-  padding: 4px 7px;
-  border-radius: 99px;
-  background: #11171ef2;
-  border: 1.5px solid #486073;
-  box-shadow: 0 4px 16px #000000aa;
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 1px;
   text-align: center;
   pointer-events: none;
-  z-index: 2;
 }
 
 .lab-radial-target {
-  font-size: 10px;
-  font-weight: 600;
-  color: #e6f0f7;
-  white-space: nowrap;
+  max-width: 100%;
+  font: 600 10.5px/1.15 var(--sans);
+  color: var(--tx);
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 112px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .lab-radial-sub {
-  font-size: 9px;
-  color: #8fa5b5;
+  max-width: 100%;
+  font: 500 9px/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--tx3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 112px;
+}
+
+.lab-radial-sub:empty {
+  display: none;
 }
 
 .lab-radial-sector {
+  all: unset;
   position: absolute;
   left: 0;
   top: 0;
+  width: 64px;
   transform: translate(calc(-50% + var(--sector-x, 0px)), calc(-50% + var(--sector-y, 0px)));
-  min-width: 78px;
-  padding: 4px 7px;
-  border-radius: 5px;
-  background: #151c24f2;
-  border: 1px solid #303d4b;
-  color: #dce6ef;
-  box-shadow: 0 4px 12px #00000088;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 5px;
-  font: inherit;
-  font-size: 10.5px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 60ms ease, border-color 60ms ease;
-  z-index: 3;
+  gap: 4px;
+  color: #b4b9c1;
+  pointer-events: none;
 }
 
-.lab-radial-sector:hover:not([aria-disabled="true"]),
-.lab-radial-sector[data-active="true"]:not([aria-disabled="true"]) {
-  background: #1f3947;
-  border-color: var(--acc);
-  color: #ffffff;
-}
-
-.lab-radial-sector[aria-disabled="true"] {
-  opacity: 0.36;
-  border-style: dashed;
-  cursor: default;
-}
-
-.lab-radial-sector[data-active="true"][aria-disabled="true"] {
-  border-color: #d9757588;
-  opacity: 0.52;
-}
-
-.lab-radial-slot {
-  font: 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #7e92a2;
+.lab-radial-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
 }
 
 .lab-radial-label {
-  font-weight: 500;
+  max-width: 100%;
+  font: 500 10.5px/1.1 var(--sans);
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lab-radial-sector[data-active="true"] {
+  color: #fff;
+}
+
+.lab-radial-sector[data-active="true"] .lab-radial-icon {
+  opacity: 1;
+  color: #cfe0ff;
+}
+
+.lab-radial-sector[aria-disabled="true"] {
+  opacity: 0.32;
+}
+
+.lab-radial-sector[aria-disabled="true"][data-active="true"] {
+  opacity: 0.5;
+  color: #f2b3b3;
+}
+
+.lab-radial-caption {
+  position: absolute;
+  left: 0;
+  top: calc(var(--radial-ring) / 2 + 2px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: rgb(17 18 21 / 92%);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 8%), 0 6px 16px rgb(0 0 0 / 40%);
+  font: 500 11px/1.25 var(--sans);
+  color: var(--tx);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.lab-radial-caption-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lab-radial-caption[data-tone="hint"] {
+  color: var(--tx2);
+}
+
+.lab-radial-caption[data-tone="disabled"] {
+  color: #f2a0a0;
 }
 
 .lab-radial-kbd {
-  font: 9px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #96b0c2;
-  background: #0e1318;
-  border: 1px solid #27333f;
+  font: 500 9.5px/1 var(--mono);
+  color: var(--tx2);
+  background: rgb(255 255 255 / 6%);
+  padding: 2px 4px;
   border-radius: 3px;
-  padding: 1px 3px;
 }
 
 /* Marquee Box Selection Overlay */
