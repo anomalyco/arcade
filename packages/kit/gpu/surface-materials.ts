@@ -945,22 +945,26 @@ export const surfaceMaterial = /* wgsl */ `
         albedo = s.albedo;
         gloss = s.gloss;
       } else {
-        // Painted wood clapboard siding with staggered lap seams, subtle wood grain, and base splash wear.
-        let row = floor(o.world.y / 0.18);
+        // Painted wood clapboard siding with crisp horizontal lap shadows, staggered plank seams, and subtle grain.
+        let course = o.world.y / 0.165;
+        let row = floor(course);
+        let fy = fract(course);
         let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
-        albedo *= 0.95 + (hash2(vec2f(row, plank)) - 0.5) * 0.08;
-        albedo *= mix(0.70, 1.0, seam(o.world.y / 0.18, 0.025, 5.55));
+        albedo *= 0.96 + (hash2(vec2f(row, plank)) - 0.5) * 0.09;
+        let lapShadow = mix(0.56, 1.05, smoothstep(0.0, 0.22, fy)) * mix(1.04, 0.90, fy);
+        albedo *= mix(1.0, lapShadow * mix(0.62, 1.0, seam(course, 0.032, 6.06)), 1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 6.06));
         albedo *= 0.97 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.14;
-        albedo *= mix(0.84, 1.0, smoothstep(0.13, 0.55, o.world.y));
+        albedo *= mix(0.84, 1.0, smoothstep(0.28, 0.65, o.world.y));
       }
     }
     if (mat == 21) {
-      let row = floor(o.world.z / 0.24);
-      let q = vec2f(o.world.x / 0.36 + fract(row * 0.5), o.world.z / 0.24);
+      let row = floor(o.world.z / 0.23);
+      let q = vec2f(o.world.x / 0.34 + fract(row * 0.5) + (hash2(vec2f(row, 3.1)) - 0.5) * 0.15, o.world.z / 0.23);
       let tabHash = hash2(floor(q)) - 0.5;
-      albedo *= 0.97 + tabHash * 0.30 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.16));
-      albedo *= mix(0.55, 1.0, seam(q.x, 0.018, 2.77) * seam(q.y, 0.035, 4.16));
-      albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.14;
+      let rowShade = mix(0.76, 1.08, fract(o.world.z / 0.23));
+      albedo *= (0.98 + tabHash * 0.34 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.35))) * rowShade;
+      albedo *= mix(0.48, 1.0, seam(q.x, 0.020, 2.94) * seam(q.y, 0.042, 4.35));
+      albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.16;
     }
     if (mat == 23) {
       let p = vec2f(o.world.x + o.world.z, o.world.y);
