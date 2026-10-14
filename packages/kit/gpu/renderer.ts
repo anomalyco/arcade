@@ -7,6 +7,7 @@ import type { SmokeVolumes } from "@arcade/kit/fx/volume"
 import type { Particles } from "@arcade/kit/fx/particles"
 import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
+import { installFramePacer } from "../gpu-perf"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
@@ -191,7 +192,14 @@ export class Renderer {
     private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string },
   ) {
     const d = device
+    this.notifyPacer = installFramePacer(
+      () => this.inflight === 0,
+      () => this.onIdle !== null,
+      d,
+    )
     this.smokeRenderer = new VolumeRenderer(d)
+    this.splatterRenderer = new SplatterRenderer(d)
+    this.particleRenderer = new ParticleRenderer(d, DEPTH, SAMPLES)
     const U = GPUBufferUsage
     this.frameBuf = d.createBuffer({ size: FRAME_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
     this.motionBuf = d.createBuffer({ size: Math.max(80, LOOK_UNIFORM_FLOATS * 4), usage: U.UNIFORM | U.COPY_DST })
@@ -557,6 +565,7 @@ export class Renderer {
   private scheduled = false
   inflight = 0
   onIdle: (() => void) | null = null
+  private readonly notifyPacer: () => void
 
   /**
    * Queues a frame. Calls within one task collapse to the last (Game reuses its arrays, so the latest input is always
@@ -665,8 +674,8 @@ export class Renderer {
     this.inflight++
     void this.device.queue.onSubmittedWorkDone().then(() => {
       this.inflight--
-      if (this.pending) this.flushPending()
       this.onIdle?.()
+      this.notifyPacer()
     })
   }
 

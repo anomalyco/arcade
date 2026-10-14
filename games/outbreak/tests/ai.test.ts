@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
 import { BARRICADE_DURATION, PISTOL_RELOAD_TIME, SEARCH_DURATION } from "../shared/combat"
 import { ITEM_CATALOG } from "../shared/inventory"
+import { sightRects } from "../shared/map"
 import { LocalSession } from "../shared/session"
-import { agentZombieProfile } from "../src/zombies"
+import { supportHeight } from "../shared/terrain"
+import { Vision } from "../shared/vision"
+import { ZombieCrowdRenderer, agentZombieProfile } from "../src/zombies"
 import { zombieTuning } from "../src/zombie-profile"
 
 describe("Outbreak AI & survival combat integration", () => {
@@ -164,5 +167,47 @@ describe("Outbreak AI & survival combat integration", () => {
       if (session.ai.getBarricadePlanks(frontDoor.id) === 0) break
     }
     expect(session.ai.getBarricadePlanks(frontDoor.id)).toBe(0)
+  })
+
+  test("ZombieCrowdRenderer SoA draws all 500 zombies without 128-zombie limb cutoff and supports limb detachment", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const town = session.view.town
+    for (let i = 0; i < 500; i++) {
+      session.ai.spawnZombie(town, 10 + (i * 7) % 76, 10 + (i * 13) % 76, "chase")
+    }
+    const crowd = new ZombieCrowdRenderer({ addModel: () => 0 })
+    const vision = new Vision()
+    vision.update(48, 48, 0, sightRects(town), { range: 96, cone: 360, awareness: 96 })
+    const batches = crowd.draw(
+      session.view.zombies,
+      TICK_DT,
+      (x, z) => supportHeight(town, x, z),
+      vision,
+      [0, 0, 96, 96],
+      zombieTuning,
+      true,
+    )
+    expect(batches.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000])
+
+    const first = session.view.zombies[0]!
+    const stateBefore = crowd.getAgentBones(first.id)
+    expect(stateBefore?.bones.pelvis).toBeDefined()
+    expect(stateBefore?.bones["left.upperArm"]).toBeDefined()
+
+    const detached = crowd.detachAgentLimb(first, "left.upperArm", TICK_DT, [1, 0.5, 0])
+    expect(detached.length).toBe(2)
+    expect(crowd.debris.length).toBe(2)
+
+    const batchesAfter = crowd.draw(
+      session.view.zombies,
+      TICK_DT,
+      (x, z) => supportHeight(town, x, z),
+      vision,
+      [0, 0, 96, 96],
+      zombieTuning,
+      true,
+    )
+    // 500 zombies minus 1 detached upperArm/foreArm + 1 debris piece each = 1000
+    expect(batchesAfter.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000])
   })
 })

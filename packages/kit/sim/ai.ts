@@ -972,6 +972,9 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     }
   }
 
+  const MAX_REPATHS_PER_TICK = 4
+  let repathsThisTick = 0
+
   for (let i = 0; i < agents.length; i++) {
     const a = agents[i]!
     if (a.state === "dead") {
@@ -1305,7 +1308,8 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           moveDirX = (effGoalX - a.x) / ed
           moveDirY = (effGoalY - a.y) / ed
         } else {
-          if (time >= a.repathAt || a.path.length === 0) {
+          if ((time >= a.repathAt || a.path.length === 0) && repathsThisTick < MAX_REPATHS_PER_TICK) {
+            repathsThisTick++
             a.path = nav.path(a, { x: goalX, y: goalY }) ?? [{ x: goalX, y: goalY }]
             a.repathAt = time + (a.state === "chase" ? 0.42 : 0.75) + (a.id % 5) * 0.07
           }
