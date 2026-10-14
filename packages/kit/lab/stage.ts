@@ -21,6 +21,14 @@ struct Light {pos:vec4f,color:vec4f,dir:vec4f}
 export type LabLight={x:number;y:number;z:number;radius:number;r:number;g:number;b:number;power:number;dx?:number;dy?:number;dz?:number;cone?:number}
 export type CameraWriter=(width:number,height:number,vp:Float32Array,inverse:Float32Array,eye:Float32Array,focus:readonly number[])=>void
 export type StageMarker={x:number;y:number;z:number;radius?:number;yaw?:number;pitch?:number;roll?:number;kind?:"select"|"hover"|"ghost"|"invalid"|"reticle"}
+export type StageTileViewport = {
+  x: number
+  y: number
+  width: number
+  height: number
+  clear?: boolean
+  present?: boolean
+}
 
 const DEFAULT_PITCH = Math.atan2(22, 23)
 const DEFAULT_DIST = Math.hypot(22, 23)
@@ -150,9 +158,12 @@ export class Stage {
   private depthView!:GPUTextureView
   private output!:GPUTexture
   private outputView!:GPUTextureView
+  private tileCustomOutput:GPUTexture|null=null
+  private tileCustomOutputView:GPUTextureView|null=null
   private scenePass!:GPURenderPassDescriptor
   private readonly timer:FrameTimer|null
   private width=0;private height=0
+  private outWidth=0;private outHeight=0
   gpuMs:number|null=null
   lightCount=0
   sceneMode=0
@@ -182,20 +193,27 @@ export class Stage {
     this.tyreGroup=d.createBindGroup({layout:tyreLayout,entries:[{binding:0,resource:{buffer:this.tyreBuffer}},{binding:1,resource:{buffer:this.tyreLights}}]})
     this.timer=d.features.has("timestamp-query")?new FrameTimer(d):null
   }
-  resize(width:number,height:number){
-    if(width===this.width&&height===this.height)return
-    this.width=width;this.height=height
-    for(const t of this.textures)t.destroy()
+  resize(width:number,height:number,sceneWidth=width,sceneHeight=height){
     const d=this.device,usage=GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING
-    const hdr=d.createTexture({size:[width,height],format:"rgba16float",usage:usage|GPUTextureUsage.COPY_SRC})
-    const msaa=d.createTexture({size:[width,height],format:"rgba16float",sampleCount:4,usage:GPUTextureUsage.RENDER_ATTACHMENT})
-    const depth=d.createTexture({size:[width,height],format:"depth24plus",sampleCount:4,usage})
-    this.output=d.createTexture({size:[width,height],format:this.format,usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC})
-    this.outputView=this.output.createView()
-    this.textures=[hdr,msaa,depth,this.output];this.hdr=hdr.createView();const depthView=depth.createView()
+    if(width!==this.outWidth||height!==this.outHeight){
+      this.outWidth=width;this.outHeight=height
+      this.output?.destroy()
+      this.output=d.createTexture({size:[width,height],format:this.format,usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST})
+      this.outputView=this.output.createView()
+    }
+    if(sceneWidth===this.width&&sceneHeight===this.height)return
+    this.width=sceneWidth;this.height=sceneHeight
+    for(const t of this.textures)t.destroy()
+    this.tileCustomOutput?.destroy()
+    this.tileCustomOutput=null
+    this.tileCustomOutputView=null
+    const hdr=d.createTexture({size:[sceneWidth,sceneHeight],format:"rgba16float",usage:usage|GPUTextureUsage.COPY_SRC})
+    const msaa=d.createTexture({size:[sceneWidth,sceneHeight],format:"rgba16float",sampleCount:4,usage:GPUTextureUsage.RENDER_ATTACHMENT})
+    const depth=d.createTexture({size:[sceneWidth,sceneHeight],format:"depth24plus",sampleCount:4,usage})
+    this.textures=[hdr,msaa,depth];this.hdr=hdr.createView();const depthView=depth.createView()
     this.hdrTexture=hdr;this.depthView=depthView
     this.scenePass={colorAttachments:[{view:msaa.createView(),resolveTarget:this.hdr,loadOp:"clear",storeOp:"discard",clearValue:{r:0,g:0,b:0,a:1}}],depthStencilAttachment:{view:depthView,depthLoadOp:"clear",depthStoreOp:"store",depthClearValue:1}}
-    this.volume.resize(width,height,depthView)
+    this.volume.resize(sceneWidth,sceneHeight,depthView)
     this.postGroup=d.createBindGroup({layout:this.postLayout,entries:[{binding:0,resource:this.hdr}]})
     this.updateCamera()
   }
@@ -400,20 +418,56 @@ export class Stage {
     this.tyreFrame[22]=count;for(let i=0;i<4;i++)this.tyreFrame[24+i]=f[40+i]!
     this.device.queue.writeBuffer(this.buffer,0,f);this.device.queue.writeBuffer(this.tyreLights,0,this.lightData)
   }
-  async render(particles:Particles,volumes:SmokeVolumes,trail:SmokeTrail,debug:number,measure=false,draw?:(pass:GPURenderPassEncoder)=>void){
+  async render(
+    particles:Particles,
+    volumes:SmokeVolumes,
+    trail:SmokeTrail,
+    debug:number,
+    measure=false,
+    draw?:(pass:GPURenderPassEncoder)=>void,
+    tileViewport?:StageTileViewport,
+  ){
     if(this.measuring)return null
     if(this.customRender){
+      if(tileViewport){
+        if(!this.tileCustomOutput){
+          this.tileCustomOutput=this.device.createTexture({
+            size:[this.width,this.height],
+            format:this.format,
+            usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC,
+          })
+          this.tileCustomOutputView=this.tileCustomOutput.createView()
+        }
+        const ms=await this.customRender(this.width,this.height,this.tileCustomOutputView!,this.tileCustomOutput,debug,false)
+        const enc=this.device.createCommandEncoder()
+        if(tileViewport.clear){
+          const clr=enc.beginRenderPass({colorAttachments:[{view:this.outputView,loadOp:"clear",storeOp:"store",clearValue:{r:0.04,g:0.05,b:0.06,a:1}}]})
+          clr.end()
+        }
+        enc.copyTextureToTexture(
+          {texture:this.tileCustomOutput},
+          {texture:this.output,origin:[tileViewport.x,tileViewport.y,0]},
+          [tileViewport.width,tileViewport.height],
+        )
+        if(tileViewport.present!==false){
+          enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.outWidth,this.outHeight])
+        }
+        this.device.queue.submit([enc.finish()])
+        if(tileViewport.present!==false)this.onFrameSubmitted?.()
+        if(ms!==null)this.gpuMs=ms
+        return ms
+      }
       const ms=await this.customRender(this.width,this.height,this.outputView,this.output,debug,measure)
       const enc=this.device.createCommandEncoder()
-      enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.width,this.height])
+      enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.outWidth,this.outHeight])
       this.device.queue.submit([enc.finish()])
       this.onFrameSubmitted?.()
       if(ms!==null)this.gpuMs=ms
       return ms
     }
-    const timed=!!this.timer&&(measure||this.frames++%45===0)
+    const timed=!tileViewport&&!!this.timer&&(measure||this.frames++%45===0)
     this.uploadLighting(debug)
-    if(this.showMarkers){
+    if(this.showMarkers&&!tileViewport){
       for(const m of this.markers){
         const tint=m.kind==="invalid"?[1,0.32,0.32]:m.kind==="ghost"?[0.52,0.92,0.72]:m.kind==="reticle"?[0.62,0.88,0.96]:m.kind==="hover"?[0.75,0.86,0.95]:[0.38,0.84,0.96]
         this.meshes.instance(this.ringModel,m.x,m.y+0.02,m.z,m.yaw??0,m.roll??0,m.pitch??0,m.radius??0.85,tint)
@@ -435,17 +489,24 @@ export class Stage {
     if(debug!==5)this.volume.render(enc,this.hdr,volumes)
     this.afterScene?.(enc,this.hdrTexture,this.depthView,this.width,this.height)
     const output=this.outputView
-    const post=enc.beginRenderPass({colorAttachments:[{view:output,loadOp:"clear",storeOp:"store",clearValue:{r:0,g:0,b:0,a:1}}]})
+    const loadOp=tileViewport&&!tileViewport.clear?"load":"clear"
+    const post=enc.beginRenderPass({colorAttachments:[{view:output,loadOp,storeOp:"store",clearValue:{r:0.04,g:0.05,b:0.06,a:1}}]})
+    if(tileViewport){
+      post.setViewport(tileViewport.x,tileViewport.y,tileViewport.width,tileViewport.height,0,1)
+      post.setScissorRect(tileViewport.x,tileViewport.y,tileViewport.width,tileViewport.height)
+    }
     post.setPipeline(this.post);post.setBindGroup(0,this.group);post.setBindGroup(1,this.postGroup);post.draw(3);post.end()
     if(timed)this.timer!.finish(enc,output)
-    enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.width,this.height])
+    if(!tileViewport||tileViewport.present!==false){
+      enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.outWidth,this.outHeight])
+    }
     this.device.queue.submit([enc.finish()])
-    this.onFrameSubmitted?.()
+    if(!tileViewport||tileViewport.present!==false)this.onFrameSubmitted?.()
     if(timed){this.measuring=true;try{this.gpuMs=await this.timer!.collect()}finally{this.measuring=false}}
     return timed?this.gpuMs:null
   }
   async captureToCanvas(target:HTMLCanvasElement):Promise<void>{
-    const w=this.width,h=this.height
+    const w=this.outWidth||this.width,h=this.outHeight||this.height
     if(w<=0||h<=0||!this.output)return
     const bytesPerRow=Math.ceil((w*4)/256)*256
     const readBuf=this.device.createBuffer({

@@ -382,6 +382,42 @@ describe("Shared Lab & Camera Commands", () => {
     expect(resolveTourAssetUrl("look-review", "street.png")).toBe("/__arcade/tour-assets/look-review/street.png")
     expect(resolveNavigationPath("tour/look-review/1")).toBe("/arcade/getaway/dev.html#tour/look-review/1")
 
+    // "kind": "grid" steps auto-resolve to /arcade/getaway/lab.html and append grid.open setup command
+    const gridTour = validateTourDefinition(
+      [
+        {
+          kind: "grid",
+          title: "Looks Grid · 6 Style Directions",
+          preset: "looks",
+          section: "looks",
+          cols: 3,
+        },
+        {
+          kind: "grid",
+          title: "Explosion Variants · 4 Live Recipes",
+          preset: "explosions",
+          section: "effects",
+          cols: 2,
+        },
+      ],
+      "grid-demo",
+    )
+    expect(gridTour.steps[0]?.kind).toBe("grid")
+    expect(gridTour.steps[0]?.url).toBe("/arcade/getaway/lab.html")
+    expect(gridTour.steps[0]?.setup).toEqual([
+      {
+        command: "grid.open",
+        args: {
+          title: "Looks Grid · 6 Style Directions",
+          preset: "looks",
+          section: "looks",
+          cols: 3,
+        },
+      },
+    ])
+    expect(gridTour.steps[1]?.kind).toBe("grid")
+    expect(gridTour.steps[1]?.preset).toBe("explosions")
+
     // Invalid tours throw descriptive errors
     expect(() => validateTourDefinition([])).toThrow(/non-empty 'steps'/)
     expect(() => validateTourDefinition([{ title: "", url: "lab" }])).toThrow(/missing a non-empty "title"/)

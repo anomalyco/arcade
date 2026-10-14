@@ -946,25 +946,60 @@ export function createFoliage(context: LabContext): LabSection {
     return { buf, count: packed.byteLength / VERT_BYTES }
   }
 
+  const meshCache = new Map<string, { after: { buf: GPUBuffer; count: number }; before: { buf: GPUBuffer; count: number } }>()
   let afterMesh = uploadPackedMesh(buildLotFoliageMesh(7, foliageSettings, false))
   let beforeMesh = uploadPackedMesh(buildLotFoliageMesh(7, foliageSettings, true))
   let builtSeed = 7
   let builtStageMode: FoliageStageMode = "lot"
+  let builtKey = ""
 
   const ensureMeshes = () => {
     const nextSeed = Math.max(1, Math.min(999, Math.round(Number(settings.seed) || 7)))
     const nextStage: FoliageStageMode = settings.stageMode === "swatch" ? "swatch" : "lot"
-    if (!meshDirty && nextSeed === builtSeed && nextStage === builtStageMode) return
+    const desiredPreset = isFoliagePresetId(settings.treePreset) ? settings.treePreset : foliageSettings.treePreset
+    const effectiveParams: FoliageParams =
+      desiredPreset !== foliageSettings.treePreset
+        ? { ...foliageSettings, ...FOLIAGE_PRESETS[desiredPreset].defaults, treePreset: desiredPreset }
+        : foliageSettings
+    const key = [
+      nextSeed,
+      nextStage,
+      effectiveParams.treePreset,
+      effectiveParams.crownShape,
+      effectiveParams.treeHeight.toFixed(2),
+      effectiveParams.crownRadius.toFixed(2),
+      effectiveParams.clumpCount,
+      effectiveParams.grassDensity.toFixed(2),
+    ].join(":")
+    if (!meshDirty && key === builtKey) return
     builtSeed = nextSeed
     builtStageMode = nextStage
+    builtKey = key
     meshDirty = false
-    if (nextStage === "lot") {
-      afterMesh = uploadPackedMesh(buildLotFoliageMesh(builtSeed, foliageSettings, false), afterMesh)
-      beforeMesh = uploadPackedMesh(buildLotFoliageMesh(builtSeed, foliageSettings, true), beforeMesh)
-    } else {
-      afterMesh = uploadPackedMesh(buildSwatchFoliageMesh(builtSeed, foliageSettings, false), afterMesh)
-      beforeMesh = uploadPackedMesh(buildSwatchFoliageMesh(builtSeed, foliageSettings, true), beforeMesh)
+    const cached = meshCache.get(key)
+    if (cached) {
+      afterMesh = cached.after
+      beforeMesh = cached.before
+      return
     }
+    if (meshCache.size >= 12) {
+      const oldestKey = meshCache.keys().next().value
+      if (oldestKey) {
+        const old = meshCache.get(oldestKey)
+        old?.after.buf.destroy()
+        old?.before.buf.destroy()
+        meshCache.delete(oldestKey)
+      }
+    }
+    const nextAfter = uploadPackedMesh(
+      nextStage === "lot" ? buildLotFoliageMesh(builtSeed, effectiveParams, false) : buildSwatchFoliageMesh(builtSeed, effectiveParams, false),
+    )
+    const nextBefore = uploadPackedMesh(
+      nextStage === "lot" ? buildLotFoliageMesh(builtSeed, effectiveParams, true) : buildSwatchFoliageMesh(builtSeed, effectiveParams, true),
+    )
+    meshCache.set(key, { after: nextAfter, before: nextBefore })
+    afterMesh = nextAfter
+    beforeMesh = nextBefore
   }
 
   const applyCameraMode = () => {

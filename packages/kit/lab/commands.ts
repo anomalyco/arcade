@@ -121,6 +121,18 @@ export type LabSceneState = {
     details: { query: string; modifiedOnly: boolean; showAll: boolean; modified: string[] }
     watch: { section: string; key: string; label: string; value: string | null }[]
   }
+  grid?: {
+    active: boolean
+    id: string
+    title: string
+    section: string
+    cols: number
+    rows: number
+    focusedTile: number | null
+    hoveredTile: number | null
+    frameCostMs: number | null
+    tiles: { tile: number; label: string; subtitle: string }[]
+  } | null
 }
 
 export type LabCommand<TArgs extends LabCommandArgs = LabCommandArgs> = {

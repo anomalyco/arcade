@@ -2005,6 +2005,174 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   cursor: pointer;
 }
 
+/* Variation Grid Overlay (2..9 synchronized tiles inside 1 canvas) */
+.lab-grid-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 35;
+}
+
+.lab-grid-cells {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lab-grid-cell {
+  position: absolute;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  box-sizing: border-box;
+  pointer-events: none;
+  transition: box-shadow 0.1s ease;
+}
+
+.lab-grid-cell[data-hovered="true"] {
+  box-shadow: inset 0 0 0 2px var(--acc);
+}
+
+.lab-grid-cell-pill {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 14, 18, 0.88);
+  backdrop-filter: blur(6px);
+  color: #eef3f7;
+  font: 600 11px/1 var(--sans);
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+
+.lab-grid-cell-pill:hover,
+.lab-grid-cell[data-hovered="true"] .lab-grid-cell-pill {
+  border-color: var(--acc);
+  background: rgba(18, 25, 34, 0.95);
+}
+
+.lab-grid-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(77, 141, 255, 0.24);
+  color: #8cc0ff;
+  font: 700 10px/1 var(--mono);
+}
+
+.lab-grid-label {
+  white-space: nowrap;
+}
+
+.lab-grid-meta {
+  position: absolute;
+  left: 7px;
+  bottom: 7px;
+  max-width: calc(100% - 14px);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(10, 13, 17, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #9fb0bd;
+  font: 500 10px/1.3 var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.72;
+  transition: opacity 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.lab-grid-cell[data-hovered="true"] .lab-grid-meta {
+  opacity: 1;
+  color: #eef4f8;
+  border-color: rgba(77, 141, 255, 0.55);
+  background: rgba(12, 16, 22, 0.94);
+}
+
+.lab-grid-bar,
+.lab-grid-focus-bar {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  background: rgba(12, 15, 20, 0.92);
+  border: 1px solid #2c333d;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  font: 500 11px/1 var(--sans);
+  color: var(--tx);
+}
+
+.lab-grid-bar-title,
+.lab-grid-focus-title {
+  font-weight: 600;
+  color: #f0f4f8;
+  white-space: nowrap;
+}
+
+.lab-grid-bar-meta,
+.lab-grid-focus-meta {
+  font: 500 10px/1 var(--mono);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+
+.lab-grid-focus-badge {
+  font: 700 10px/1 var(--mono);
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(77, 141, 255, 0.22);
+  color: #8cc0ff;
+}
+
+.lab-grid-focus-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lab-grid-pill,
+.lab-grid-action-btn {
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid #2b313a;
+  background: #171a20;
+  color: var(--tx2);
+  font: 600 10.5px/1 var(--mono);
+  cursor: pointer;
+}
+
+.lab-grid-pill:hover,
+.lab-grid-action-btn:hover {
+  background: #222730;
+  color: #fff;
+  border-color: #3c4552;
+}
+
+.lab-grid-pill[aria-pressed="true"] {
+  background: rgba(77, 141, 255, 0.26);
+  color: #fff;
+  border-color: var(--acc);
+}
+
+
 
 
 

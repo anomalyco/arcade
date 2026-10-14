@@ -10,7 +10,17 @@ import {
 } from "../dev-control"
 import { LabCommandRegistry, type LabCommandContext, type LabSceneState } from "./commands"
 import { computeSnapshotDiffs, createCompareWipeDOM } from "./compare-ab"
-import { effectOptions } from "./effects"
+import { effectOptions, type createEffects } from "./effects"
+import {
+  computeVariationGridLayout,
+  createVariationGridDOM,
+  pickVariationGridTileAt,
+  resolveVariationGridConfig,
+  summarizeTileSettings,
+  VARIATION_GRID_PRESETS,
+  type VariationGridConfig,
+  type VariationTileConfig,
+} from "./variation-grid"
 import {
   FOLIAGE_CROWN_SHAPES,
   FOLIAGE_PARAM_SPECS,
@@ -30,7 +40,7 @@ import {
 import { FOLIAGE_LIGHTING_PRESETS } from "./foliage"
 import { lightingDefaults } from "./lighting"
 import type { LookLabController } from "./looks"
-import { LOOK_PRESETS, LOOK_PRESET_IDS, resolveLookPresetId, type LookGroup } from "../gpu/look"
+import { applyLookPreset, LOOK_PRESETS, LOOK_PRESET_IDS, resolveLookPresetId, type LookGroup, type LookSettings } from "../gpu/look"
 import { createRadialMenuDOM, RadialMenuStateMachine, type RadialReleaseResult } from "./radial"
 import { applyGameRecipe, buildGameRecipe, type GameRecipePayload } from "./recipe"
 import {
@@ -145,10 +155,11 @@ export type WorkbenchOptions = {
   advanceSim: (dt: number) => void
   spawn?: ReturnType<typeof createSpawn>
   looks?: LookLabController
+  effects?: ReturnType<typeof createEffects>
 }
 
 export function createWorkbench(opts: WorkbenchOptions) {
-  const { root, canvas, panel, context, sections, globalSettings, selectSection, renderNow, advanceSim, spawn, looks } = opts
+  const { root, canvas, panel, context, sections, globalSettings, selectSection, renderNow, advanceSim, spawn, looks, effects } = opts
   const { stage, input } = context
   const isBench = new URLSearchParams(location.search).has("bench")
 
@@ -172,6 +183,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let compareWipeEnabled = false
   let compareWipeSplit = 0.5
   let isCapturingWipe = false
+  let variationGrid: VariationGridConfig | null = null
+  let focusedGridTile: number | null = null
+  let hoveredGridTile: number | null = null
+  let variationGridCostMs: number | null = null
   let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" | "outliner" = "canvas"
   let toastTimer = 0
 
@@ -252,7 +267,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
   wipeBtn.dataset.action = "compare-wipe"
   wipeBtn.title = "Toggle Split-Screen A/B Wipe (⇧V)"
   wipeBtn.textContent = "Wipe"
-  compareGroup.append(pinABtn, flipBtn, wipeBtn)
+  const gridBtn = document.createElement("button")
+  gridBtn.type = "button"
+  gridBtn.className = "lab-btn"
+  gridBtn.dataset.action = "compare-grid"
+  gridBtn.setAttribute("aria-pressed", "false")
+  gridBtn.title = "Toggle Multi-Tile Variation Grid (1–9 focus tile, Esc/G back)"
+  gridBtn.textContent = "⊞ Grid"
+  compareGroup.append(pinABtn, flipBtn, wipeBtn, gridBtn)
   const compareDivider = document.createElement("div")
   compareDivider.className = "lab-divider"
   topbar.querySelector<HTMLElement>(".lab-transport")!.after(compareDivider, compareGroup)
@@ -271,6 +293,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const wipeDOM = createCompareWipeDOM(viewportEl, split => {
     compareWipeSplit = split
     syncCompareWipeOverlay()
+  })
+
+  const gridDOM = createVariationGridDOM(viewportHud, {
+    onFocusTile: tileNum => focusVariationTile(tileNum),
+    onHoverTile: tileNum => {
+      hoveredGridTile = tileNum
+      syncVariationGridOverlay()
+    },
+    onCloseGrid: () => closeVariationGrid(),
   })
 
   const outlinerEl = root.querySelector<HTMLElement>(".lab-outliner")!
@@ -445,6 +476,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
     const targetFrames = frames
     sec.retrigger?.()
+    if (variationGrid && sec.id === "effects" && effects) {
+      effects.resetVariantSlots(variationGrid.tiles)
+    }
     stepSimulationDeterministic(targetFrames)
     return true
   }
@@ -541,6 +575,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   function toggleCompareWipe() {
+    if (variationGrid) closeVariationGrid()
     if (!slotA) {
       pinBaselineSlotA()
     }
@@ -557,6 +592,280 @@ export function createWorkbench(opts: WorkbenchOptions) {
       syncCompareWipeOverlay()
       showToast("Split-screen A/B wipe off")
     }
+  }
+
+  function syncVariationGridOverlay() {
+    gridDOM.sync({
+      enabled: Boolean(variationGrid),
+      config: variationGrid,
+      focusedTile: focusedGridTile,
+      hoveredTile: hoveredGridTile,
+      frameCostMs: variationGridCostMs,
+    })
+  }
+
+  function applyTileSettingsToSection(sec: LabSection, tile: VariationTileConfig) {
+    if (sec.id === "looks") {
+      if (tile.preset) {
+        const pid = resolveLookPresetId(tile.preset)
+        if (pid) applyLookPreset(sec.settings as unknown as LookSettings, pid)
+      }
+      if (tile.settings) {
+        for (const [k, v] of Object.entries(tile.settings)) {
+          if (k === "preset") {
+            const pid = resolveLookPresetId(v)
+            if (pid) applyLookPreset(sec.settings as unknown as LookSettings, pid)
+          } else {
+            sec.settings[k] = v
+          }
+        }
+      }
+      return
+    }
+    if (tile.settings) {
+      for (const [k, v] of Object.entries(tile.settings)) {
+        sec.settings[k] = v
+      }
+    }
+    if (tile.lighting) {
+      Object.assign(stage.lighting, tile.lighting)
+    }
+  }
+
+  function openVariationGrid(rawArgs?: Record<string, unknown>): VariationGridConfig {
+    if (mode === "play") setPlayMode("edit")
+    if (compareWipeEnabled) {
+      compareWipeEnabled = false
+      syncCompareWipeOverlay()
+    }
+    const secBefore = activeSection()
+    const config = resolveVariationGridConfig(rawArgs, secBefore.id, String(secBefore.settings.effect ?? ""))
+    if (config.section && sections.some(s => s.id === config.section) && globalSettings.section !== config.section) {
+      selectSection(config.section)
+    }
+    variationGrid = config
+    focusedGridTile = null
+    hoveredGridTile = null
+    variationGridCostMs = null
+    if (config.section === "effects" && effects) {
+      const firstEff = config.tiles[0]?.settings?.effect
+      if (typeof firstEff === "string" && firstEff) {
+        effects.params.effect = firstEff
+      }
+      elapsed = 0
+      frames = 0
+      effects.reset(String(effects.params.effect))
+      effects.resetVariantSlots(config.tiles)
+    } else {
+      activeSection().retrigger?.()
+    }
+    panel.sync()
+    syncChrome()
+    void renderNow()
+    showToast(`Variation Grid · ${config.title} (${config.tiles.length} tiles · Click or 1–${config.tiles.length} to focus)`)
+    return config
+  }
+
+  function focusVariationTile(tileNumber: number | null) {
+    if (!variationGrid) {
+      throw new Error("Variation grid is not currently open.")
+    }
+    if (tileNumber === null || tileNumber === 0) {
+      focusedGridTile = null
+      syncChrome()
+      void renderNow()
+      showToast(`Variation Grid (${variationGrid.cols}×${variationGrid.rows}) · Click or press 1–${variationGrid.tiles.length} to focus a tile`)
+      return { focusedTile: null, tile: null }
+    }
+    const idx = Math.round(tileNumber) - 1
+    if (idx < 0 || idx >= variationGrid.tiles.length) {
+      throw new Error(`Tile ${tileNumber} is out of range (1..${variationGrid.tiles.length}).`)
+    }
+    focusedGridTile = idx + 1
+    const tile = variationGrid.tiles[idx]!
+    const sec = activeSection()
+    applyTileSettingsToSection(sec, tile)
+    if (sec.id === "effects") {
+      sec.retrigger?.()
+      if ("playing" in sec.settings && !sec.settings.playing && frames > 0) {
+        stepSimulationDeterministic(frames)
+      }
+    }
+    panel.sync()
+    syncChrome()
+    void renderNow()
+    showToast(`Tile ${focusedGridTile}/${variationGrid.tiles.length} · ${tile.label} (Press Esc or G to return to Grid)`)
+    return { focusedTile: focusedGridTile, tile }
+  }
+
+  function closeVariationGrid() {
+    if (!variationGrid) return
+    variationGrid = null
+    focusedGridTile = null
+    hoveredGridTile = null
+    variationGridCostMs = null
+    syncChrome()
+    void renderNow()
+    showToast("Closed Variation Grid")
+  }
+
+  function advanceVariationGridSim(dt: number) {
+    if (!variationGrid || focusedGridTile !== null) return
+    const sec = activeSection()
+    const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
+    if (!playing) return
+    if (sec.id === "effects" && effects) {
+      effects.advanceVariantSlots(variationGrid.tiles, dt)
+    }
+  }
+
+  let isRenderingGrid = false
+
+  async function renderVariationGrid(width: number, height: number, debug: number): Promise<number | null> {
+    if (!variationGrid || focusedGridTile !== null) return null
+    if (isRenderingGrid) return variationGridCostMs
+    isRenderingGrid = true
+    const sec = activeSection()
+    const config = variationGrid
+    const layout = computeVariationGridLayout(config.tiles.length, width, height, config.cols)
+    const t0 = performance.now()
+
+    const savedSecSettings: Record<string, LabValue> = {}
+    for (const k of Object.keys(sec.settings)) savedSecSettings[k] = sec.settings[k]!
+    const savedLighting = { ...stage.lighting }
+
+    try {
+      for (let i = 0; i < config.tiles.length; i++) {
+        const tile = config.tiles[i]!
+        const rect = layout.rects[i]!
+        stage.resize(width, height, layout.tileWidth, layout.tileHeight)
+        stage.updateCamera()
+        stage.meshes.reset()
+        stage.transients.reset()
+
+        for (const [k, v] of Object.entries(savedSecSettings)) sec.settings[k] = v
+        Object.assign(stage.lighting, savedLighting)
+
+        applyTileSettingsToSection(sec, tile)
+
+        const tileVp = {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          clear: i === 0,
+          present: i === config.tiles.length - 1,
+        }
+
+        if (sec.id === "effects" && effects) {
+          const sharePlayground = Boolean(spawn?.hasActiveScene())
+          if (sharePlayground) {
+            stage.sceneMode = spawn!.section.settings.environment === "yard" ? 3 : 4
+            spawn!.section.prepare?.()
+          }
+          const slot = effects.prepareVariantSlot(i, tile.settings ?? {})
+          const drawPass = sharePlayground
+            ? (pass: GPURenderPassEncoder) => {
+                spawn!.section.draw?.(pass)
+                sec.draw?.(pass)
+              }
+            : sec.draw
+          await stage.render(slot.particles, slot.volume, slot.trail, debug, false, drawPass, tileVp)
+        } else {
+          const sharePlayground = Boolean(spawn?.hasActiveScene() && sec.id === "lighting")
+          if (sharePlayground) {
+            stage.sceneMode = spawn!.section.settings.environment === "yard" ? 3 : 4
+            spawn!.section.prepare?.()
+            stage.dynamicLights = null
+          }
+          sec.prepare?.()
+          const drawPass = sharePlayground
+            ? (pass: GPURenderPassEncoder) => {
+                spawn!.section.draw?.(pass)
+                sec.draw?.(pass)
+              }
+            : sec.draw
+          await stage.render(context.particles, context.volume, context.trail, debug, false, drawPass, tileVp)
+        }
+      }
+    } finally {
+      for (const [k, v] of Object.entries(savedSecSettings)) sec.settings[k] = v
+      Object.assign(stage.lighting, savedLighting)
+      isRenderingGrid = false
+    }
+
+    const dtMs = performance.now() - t0
+    variationGridCostMs = variationGridCostMs === null ? dtMs : variationGridCostMs * 0.8 + dtMs * 0.2
+    syncVariationGridOverlay()
+    return variationGridCostMs
+  }
+
+  function drawVariationGridOverlayToCanvas(target: HTMLCanvasElement) {
+    if (!variationGrid || focusedGridTile !== null) return
+    const ctx = target.getContext("2d")
+    if (!ctx) return
+    const cw = target.width
+    const ch = target.height
+    const layout = computeVariationGridLayout(variationGrid.tiles.length, cw, ch, variationGrid.cols)
+    ctx.save()
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)"
+    ctx.lineWidth = 1
+    for (let c = 1; c < layout.cols; c++) {
+      const x = c * layout.tileWidth + 0.5
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, ch)
+      ctx.stroke()
+    }
+    for (let r = 1; r < layout.rows; r++) {
+      const y = r * layout.tileHeight + 0.5
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(cw, y)
+      ctx.stroke()
+    }
+
+    for (let i = 0; i < variationGrid.tiles.length; i++) {
+      const tile = variationGrid.tiles[i]!
+      const rect = layout.rects[i]!
+      const num = String(i + 1)
+      const label = tile.label
+      const summary = summarizeTileSettings(tile)
+
+      ctx.font = "600 11px system-ui, -apple-system, sans-serif"
+      const lw = ctx.measureText(label).width
+      const pw = lw + 32
+      const ph = 22
+      const px = rect.x + 8
+      const py = rect.y + 8
+
+      ctx.fillStyle = "rgba(11, 14, 18, 0.88)"
+      ctx.fillRect(px, py, pw, ph)
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.2)"
+      ctx.strokeRect(px, py, pw, ph)
+
+      ctx.fillStyle = "rgba(77, 141, 255, 0.26)"
+      ctx.fillRect(px + 4, py + 4, 15, 14)
+      ctx.font = "700 10px ui-monospace, SFMono-Regular, Menlo, monospace"
+      ctx.fillStyle = "#8cc0ff"
+      ctx.textBaseline = "middle"
+      ctx.fillText(num, px + 8, py + 11)
+
+      ctx.font = "600 11px system-ui, -apple-system, sans-serif"
+      ctx.fillStyle = "#eef3f7"
+      ctx.fillText(label, px + 24, py + 11.5)
+
+      if (summary) {
+        ctx.font = "500 9.5px ui-monospace, SFMono-Regular, Menlo, monospace"
+        const sw = Math.min(rect.width - 16, ctx.measureText(summary).width + 12)
+        const sy = rect.y + rect.height - 24
+        ctx.fillStyle = "rgba(10, 13, 17, 0.82)"
+        ctx.fillRect(px, sy, sw, 18)
+        ctx.fillStyle = "#a5b5c2"
+        ctx.fillText(summary, px + 6, sy + 9.5, sw - 12)
+      }
+    }
+    ctx.restore()
   }
 
   function recordHistory(label: string, before: FullSnapshot) {
@@ -1215,6 +1524,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
           elapsed = 0
           frames = 0
           sec.retrigger?.()
+          if (variationGrid && sec.id === "effects" && effects) {
+            effects.resetVariantSlots(variationGrid.tiles)
+          }
         }
         panel.sync()
         syncChrome()
@@ -1711,6 +2023,93 @@ export function createWorkbench(opts: WorkbenchOptions) {
       run: () => toggleCompareWipe(),
     },
     {
+      id: "grid.open",
+      aliases: ["grid"],
+      label: "Open Multi-Tile Variation Grid",
+      shortLabel: "Grid",
+      category: "Compare",
+      args: {
+        preset: {
+          type: "string",
+          description: "Named variation grid preset ('looks', 'explosions', 'smoke', 'materials', 'foliage', 'lighting')",
+        },
+        section: { type: "string", description: "Target Lab section ID" },
+        title: { type: "string", description: "Grid title" },
+        cols: { type: "number", min: 1, max: 4, description: "Columns count (1..4)" },
+        tiles: { type: "object", description: "Array of 2..9 tile definitions ({ label, preset?, settings?, lighting?, subtitle? })" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode. Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const cfg = openVariationGrid(args as Record<string, unknown> | undefined)
+        return {
+          active: true,
+          id: cfg.id,
+          title: cfg.title,
+          section: cfg.section,
+          cols: cfg.cols,
+          rows: cfg.rows,
+          tileCount: cfg.tiles.length,
+          focusedTile: focusedGridTile,
+          frameCostMs: variationGridCostMs !== null ? Number(variationGridCostMs.toFixed(2)) : null,
+          tiles: cfg.tiles.map((t, i) => ({
+            tile: i + 1,
+            label: t.label,
+            subtitle: summarizeTileSettings(t),
+            preset: t.preset ?? null,
+            settings: t.settings ?? null,
+          })),
+        }
+      },
+    },
+    {
+      id: "grid.focus",
+      label: "Focus or Unfocus Variation Grid Tile",
+      shortLabel: "Focus Tile",
+      category: "Compare",
+      shortcut: "1–9",
+      args: {
+        tile: {
+          type: "number",
+          min: 0,
+          max: 9,
+          description: "Tile number 1..9 to focus full-size, or 0 to return to multi-tile grid",
+        },
+      },
+      enabled: () => Boolean(variationGrid) && mode !== "play",
+      disabledReason: () => (variationGrid ? "Unavailable in Play mode" : "Variation grid is not open. Run 'arcade grid' first."),
+      run: (_ctx, args) => {
+        const rawTile = typeof args?.tile === "number" ? args.tile : null
+        const res = focusVariationTile(rawTile)
+        return {
+          active: true,
+          id: variationGrid?.id ?? null,
+          focusedTile: res.focusedTile,
+          tile: res.tile
+            ? {
+                tile: res.focusedTile,
+                label: res.tile.label,
+                subtitle: summarizeTileSettings(res.tile),
+              }
+            : null,
+        }
+      },
+    },
+    {
+      id: "grid.close",
+      aliases: ["grid.off"],
+      label: "Close Variation Grid",
+      shortLabel: "Close Grid",
+      category: "Compare",
+      shortcut: "Esc",
+      enabled: () => Boolean(variationGrid),
+      disabledReason: () => "Variation grid is not open",
+      run: () => {
+        closeVariationGrid()
+        return { active: false }
+      },
+    },
+    {
       id: "transport.toggle",
       label: "Pause / Resume Simulation",
       shortLabel: "Pause",
@@ -1803,6 +2202,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
         elapsed = 0
         frames = 0
         sec.retrigger?.()
+        if (variationGrid && sec.id === "effects" && effects) {
+          effects.resetVariantSlots(variationGrid.tiles)
+        }
         panel.sync()
         syncChrome()
         void renderNow()
@@ -2500,6 +2902,24 @@ export function createWorkbench(opts: WorkbenchOptions) {
         frames,
         diffs: slotA ? computeSnapshotDiffs(slotA.snapshot, slotB?.snapshot ?? captureSnapshot()) : [],
       },
+      grid: variationGrid
+        ? {
+            active: true,
+            id: variationGrid.id,
+            title: variationGrid.title,
+            section: variationGrid.section,
+            cols: variationGrid.cols,
+            rows: variationGrid.rows,
+            focusedTile: focusedGridTile,
+            hoveredTile: hoveredGridTile,
+            frameCostMs: variationGridCostMs !== null ? Number(variationGridCostMs.toFixed(2)) : null,
+            tiles: variationGrid.tiles.map((t, i) => ({
+              tile: i + 1,
+              label: t.label,
+              subtitle: summarizeTileSettings(t),
+            })),
+          }
+        : null,
       layout: chromeReady
         ? {
             library: { open: libraryDrawer.open, category: libraryDrawer.category, query: libraryDrawer.query },
@@ -2877,6 +3297,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     captureCanvas: async target => {
       await renderNow()
       await stage.captureToCanvas(target)
+      drawVariationGridOverlayToCanvas(target)
     },
     getMode: () => mode,
     getSection: () => globalSettings.section,
@@ -3665,6 +4086,16 @@ export function createWorkbench(opts: WorkbenchOptions) {
       hintText.textContent = ejected
         ? "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · F8/P Re-possess · Esc Exit Play"
         : `${moveClusterLabel()}/Arrows Move · Space Brake · Shift Boost/Sprint · F8 Eject · Esc Exit Play`
+    } else if (variationGrid) {
+      const n = variationGrid.tiles.length
+      focusPill.textContent =
+        focusedGridTile !== null
+          ? `Grid Tile ${focusedGridTile}/${n}`
+          : `Grid (${variationGrid.cols}×${variationGrid.rows})`
+      hintText.textContent =
+        focusedGridTile !== null
+          ? `1–${n} Switch Tile · Esc/G Back to Grid · 2F/RMB Orbit · Space Retrigger · K Pause`
+          : `Click or 1–${n} Focus Tile · 2F/RMB Orbit Shared Camera · Space Retrigger · K Pause · Esc/G Close Grid`
     } else if (ghost) {
       focusPill.textContent = `Place · ${ghost.kind}`
       hintText.textContent = "Click/Enter Place · ⇧Click Repeat · [ ] Rotate · Arrows Nudge · Esc Cancel"
@@ -3840,7 +4271,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     flipBtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
     flipBtn.textContent = slotA ? `${activeSlot}·V` : "V"
     wipeBtn.setAttribute("aria-pressed", String(compareWipeEnabled))
+    gridBtn.setAttribute("aria-pressed", String(Boolean(variationGrid)))
     syncCompareWipeOverlay()
+    syncVariationGridOverlay()
 
     undoBtn.disabled = undoStack.length === 0
     undoBtn.title = undoStack.length ? `Undo ${undoStack.at(-1)!.label} (⌘Z)` : "Undo (⌘Z)"
@@ -3852,7 +4285,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const selObj = selList.at(-1) ?? null
 
     // Viewport HUD badge
-    hudBadge.hidden = sec.id === "audio"
+    hudBadge.hidden = sec.id === "audio" || Boolean(variationGrid && focusedGridTile === null)
     if (mode === "play") {
       hudBadge.textContent = ejected
         ? `PLAY (EJECTED) · ${spawn?.characterLabel() ?? "Character"} (F8 possess · Esc stop)`
@@ -4145,6 +4578,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
   pinABtn.onclick = () => pinBaselineSlotA()
   flipBtn.onclick = () => flipCompareSlot()
   wipeBtn.onclick = () => toggleCompareWipe()
+  gridBtn.onclick = () => {
+    if (variationGrid) closeVariationGrid()
+    else openVariationGrid()
+  }
   recipeBtn.onclick = () => openRecipeModal()
   undoBtn.onclick = () => undo()
   redoBtn.onclick = () => redo()
@@ -4707,6 +5144,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     elapsed = 0
     frames = 0
     sec.retrigger?.()
+    if (variationGrid && sec.id === "effects" && effects) {
+      effects.resetVariantSlots(variationGrid.tiles)
+    }
     panel.sync()
     syncChrome()
     void renderNow()
@@ -4961,6 +5401,25 @@ export function createWorkbench(opts: WorkbenchOptions) {
         trackRadialPointer(localX, localY)
         return
       }
+      if (variationGrid && focusedGridTile === null) {
+        hoveredGroundSample = null
+        hoveredObjectId = null
+        const layout = computeVariationGridLayout(variationGrid.tiles.length, vRect.width, vRect.height, variationGrid.cols)
+        const hit = pickVariationGridTileAt(layout, localX, localY)
+        const nextTile = hit?.tileNumber ?? null
+        if (nextTile !== hoveredGridTile) {
+          hoveredGridTile = nextTile
+          syncVariationGridOverlay()
+        }
+        const tile = nextTile ? variationGrid.tiles[nextTile - 1] : null
+        viewportCursor.update({
+          state: tile ? "hover" : "default",
+          x: localX,
+          y: localY,
+          label: tile ? `${nextTile} · ${tile.label}` : undefined,
+        })
+        return
+      }
       const [u, v] = canvasUV(event)
       const sec = activeSection()
       const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
@@ -5078,7 +5537,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     },
     marquee: {
       shouldMarquee: event => {
-        if (spawn?.getGhost() || activeTransform) return false
+        if (spawn?.getGhost() || activeTransform || (variationGrid && focusedGridTile === null)) return false
         if (event.shiftKey && !event.altKey && !boxSelectMode) return false
         if (event.altKey || boxSelectMode) return true
         if (!hasBoxSelectableObjects()) return false
@@ -5146,6 +5605,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
     onPrimaryClick: event => {
       marqueeEl.hidden = true
       if (mode === "play") return
+      if (variationGrid && focusedGridTile === null) {
+        const vRect = viewportEl.getBoundingClientRect()
+        const layout = computeVariationGridLayout(variationGrid.tiles.length, vRect.width, vRect.height, variationGrid.cols)
+        const hit = pickVariationGridTileAt(layout, event.clientX - vRect.left, event.clientY - vRect.top)
+        if (hit) {
+          focusVariationTile(hit.tileNumber)
+          return
+        }
+      }
       const [u, v] = canvasUV(event)
       const ghost = spawn?.getGhost()
       if (ghost && globalSettings.section === "spawn") {
@@ -5410,6 +5878,25 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
     // Edit Mode Canvas / Library Shortcuts
     const sec = activeSection()
+    if (variationGrid && !event.repeat && !cmd && !event.altKey) {
+      if (/^[1-9]$/.test(event.key)) {
+        const n = Number(event.key)
+        if (n >= 1 && n <= variationGrid.tiles.length) {
+          event.preventDefault()
+          focusVariationTile(focusedGridTile === n ? null : n)
+          return
+        }
+      }
+      if (event.key === "Escape" || key === "g") {
+        event.preventDefault()
+        if (focusedGridTile !== null) {
+          focusVariationTile(null)
+        } else {
+          closeVariationGrid()
+        }
+        return
+      }
+    }
     if (event.key === "Escape" && !event.repeat) {
       if (viewportGestures?.hasActivePointer()) {
         event.preventDefault()
@@ -5452,6 +5939,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
       elapsed = 0
       frames = 0
       sec.retrigger?.()
+      if (variationGrid && sec.id === "effects" && effects) {
+        effects.resetVariantSlots(variationGrid.tiles)
+      }
       panel.sync()
       syncChrome()
       void renderNow()
@@ -5575,6 +6065,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
       frames = 0
       hoveredObjectId = null
       activeTransform = null
+      if (variationGrid && globalSettings.section !== variationGrid.section) {
+        variationGrid = null
+        focusedGridTile = null
+        hoveredGridTile = null
+        variationGridCostMs = null
+      }
       if (mode === "play" && globalSettings.section !== "spawn") {
         setPlayMode("edit")
       }
@@ -5719,6 +6215,26 @@ export function createWorkbench(opts: WorkbenchOptions) {
     toggleEject,
     get ejected() {
       return ejected
+    },
+    isVariationGridMultiView: () => Boolean(variationGrid && focusedGridTile === null),
+    renderVariationGrid,
+    advanceVariationGridSim,
+    get variationGridCostMs() {
+      return variationGridCostMs
+    },
+    grid: {
+      open: openVariationGrid,
+      focus: focusVariationTile,
+      close: closeVariationGrid,
+      get active() {
+        return Boolean(variationGrid)
+      },
+      get focusedTile() {
+        return focusedGridTile
+      },
+      get config() {
+        return variationGrid
+      },
     },
     frameActiveTarget,
     syncChrome,

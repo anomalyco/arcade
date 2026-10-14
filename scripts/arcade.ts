@@ -62,7 +62,7 @@ function parseGlobalFlags(rawArgv: string[]): { flags: GlobalFlags; rest: string
     const arg = rawArgv[i]!
     if (arg === "--json") {
       const next = rawArgv[i + 1]
-      if (next && (next.trim().startsWith("[") || next.trim().startsWith("{")) && rawArgv.includes("tour")) {
+      if (next && (next.trim().startsWith("[") || next.trim().startsWith("{")) && (rawArgv.includes("tour") || rawArgv.includes("grid"))) {
         flags.inlineJson = rawArgv[++i]
       } else {
         flags.json = true
@@ -273,11 +273,13 @@ Mutating commands (show unobtrusive page indicator, respect live user input, rec
   arcade transport play|pause|step [n]|speed <mult>|retrigger [--seed <n>]
   arcade possess [id|name]                     Possess character / enter Play mode (mode.play)
   arcade release                               Exit Play mode & release held input (mode.play)
+  arcade grid [preset] [--json '[...]']        Open multi-tile Variation Grid (looks, explosions, smoke, materials, foliage, lighting)
+  arcade grid focus <1..9|0> | grid close      Focus a Variation Grid tile full-size or close the grid
   arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
                                                Pin a "Show me" card & optional highlight ring on the active page
   arcade tour <file.json|name> [--multi-tab] [--open pro|local|none] [--base-url <url>]
   arcade tour --json '[...]'                   Open a single-tab studio tour (or --multi-tab) and persist in .arcade-tours/
-  arcade tour --add-step <tour> --title "<t>"  Append a scene or page step to a tour in .arcade-tours/
+  arcade tour --add-step <tour> --title "<t>"  Append a scene, grid, or page step to a tour in .arcade-tours/
   arcade run <command> [json-args] [--seed <n>] Run any command ID from 'arcade cmd list'
 
 Global options:
@@ -739,6 +741,73 @@ async function main() {
       return
     }
 
+    if (sub === "grid") {
+      const action = args[0]
+      if (action === "close" || action === "off" || action === "--close") {
+        const res = await invokeRemote(target, flags, "grid.close", {})
+        if (flags.json) console.log(JSON.stringify(res, null, 2))
+        else console.log("Variation grid closed.")
+        return
+      }
+      if (action === "focus") {
+        const raw = args[1]
+        const tile = raw === undefined || raw === "back" || raw === "grid" || raw === "0" ? 0 : Number(raw)
+        if (!Number.isFinite(tile)) {
+          throw new CliError(4, "invalid_args", "Usage: arcade grid focus <1..9|0|back>")
+        }
+        const res = await invokeRemote(target, flags, "grid.focus", { tile })
+        if (flags.json) console.log(JSON.stringify(res, null, 2))
+        else if (res.result.focusedTile) {
+          console.log(`Focused tile ${res.result.focusedTile}: ${res.result.tile?.label ?? ""}`)
+        } else {
+          console.log("Returned to multi-tile variation grid.")
+        }
+        return
+      }
+
+      const openArgs: Record<string, unknown> = {}
+      let inlineJson = flags.inlineJson
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i]!
+        if (a === "open") continue
+        if (a === "--section" || a === "-s") openArgs.section = String(args[++i] ?? "")
+        else if (a.startsWith("--section=")) openArgs.section = a.slice("--section=".length)
+        else if (a === "--title" || a === "-t") openArgs.title = String(args[++i] ?? "")
+        else if (a.startsWith("--title=")) openArgs.title = a.slice("--title=".length)
+        else if (a === "--cols") openArgs.cols = Number(args[++i])
+        else if (a.startsWith("--cols=")) openArgs.cols = Number(a.slice("--cols=".length))
+        else if (a === "--preset") openArgs.preset = String(args[++i] ?? "")
+        else if (a.startsWith("--preset=")) openArgs.preset = a.slice("--preset=".length)
+        else if (a.trim().startsWith("[") || a.trim().startsWith("{")) inlineJson = a
+        else if (!openArgs.preset && !a.startsWith("-")) openArgs.preset = a
+      }
+
+      if (inlineJson) {
+        try {
+          const parsed = JSON.parse(inlineJson)
+          if (Array.isArray(parsed)) {
+            openArgs.tiles = parsed
+          } else if (parsed && typeof parsed === "object") {
+            Object.assign(openArgs, parsed)
+          }
+        } catch (err) {
+          throw new CliError(4, "invalid_args", `Invalid grid JSON payload: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+
+      const res = await invokeRemote(target, flags, "grid.open", openArgs)
+      if (flags.json) {
+        console.log(JSON.stringify(res, null, 2))
+      } else {
+        const r = res.result
+        console.log(`Variation Grid: ${r.title} (${r.tileCount} tiles · ${r.cols}×${r.rows} in section "${r.section}")`)
+        for (const t of r.tiles ?? []) {
+          console.log(`  [${t.tile}] ${t.label}${t.subtitle ? ` — ${t.subtitle}` : ""}`)
+        }
+      }
+      return
+    }
+
     if (sub === "note") {
       let clear = false
       let title = ""
@@ -846,7 +915,8 @@ async function main() {
       let addStepMode = false
       let stepTitle: string | undefined
       let stepBody: string | undefined
-      let stepKind: "scene" | "page" | undefined
+      let stepKind: "scene" | "page" | "grid" | undefined
+      let stepPreset: string | undefined
       let stepUrl: string | undefined
       let stepMarkdown: string | undefined
       let stepImages: string[] | undefined
@@ -889,8 +959,12 @@ async function main() {
           stepBody = a.slice("--body=".length)
         } else if (a === "--kind") {
           const k = String(args[++i] ?? "").toLowerCase()
-          if (k !== "scene" && k !== "page") throw new CliError(4, "invalid_args", `Invalid --kind "${k}". Expected "scene" or "page".`)
+          if (k !== "scene" && k !== "page" && k !== "grid") {
+            throw new CliError(4, "invalid_args", `Invalid --kind "${k}". Expected "scene", "page", or "grid".`)
+          }
           stepKind = k
+        } else if (a === "--preset") {
+          stepPreset = String(args[++i] ?? "")
         } else if (a === "--step-url") {
           stepUrl = String(args[++i] ?? "")
         } else if (a === "--markdown") {
@@ -938,6 +1012,7 @@ async function main() {
         const newStep: Record<string, unknown> = {
           title: stepTitle.trim(),
           ...(stepKind ? { kind: stepKind } : {}),
+          ...(stepPreset ? { preset: stepPreset } : {}),
           ...(stepBody ? { body: stepBody } : {}),
           ...(stepUrl ? { url: stepUrl } : {}),
           ...(stepMarkdown ? { markdown: stepMarkdown } : {}),

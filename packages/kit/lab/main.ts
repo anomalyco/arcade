@@ -267,6 +267,12 @@ export async function lab(options:LabOptions) {
     const width=Math.max(1,Math.round(viewportHost.clientWidth||innerWidth))
     const height=Math.max(1,Math.round(viewportHost.clientHeight||innerHeight))
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height}
+    if(workbench?.isVariationGridMultiView()){
+      const ms=await workbench.renderVariationGrid(width,height,settings.debug)
+      panel!.header.textContent=`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGrid ${workbench.variationGridCostMs?.toFixed(2)??"—"} ms`
+      workbench.setTelemetry(panel!.header.textContent)
+      return ms
+    }
     stage.resize(width,height)
     stage.updateCamera();stage.meshes.reset();stage.transients.reset()
     const sharePlayground=Boolean(spawn?.hasActiveScene()&&(active.id==="effects"||active.id==="lighting"))
@@ -290,6 +296,7 @@ export async function lab(options:LabOptions) {
       spawn.section.update?.(step)
     }
     active.update?.(step)
+    workbench?.advanceVariationGridSim(step)
     workbench?.onTick(dt)
   }
 
@@ -307,9 +314,11 @@ export async function lab(options:LabOptions) {
       const s=Math.max(0,Math.min(dt,1/15))
       if(spawn?.hasActiveScene()&&(active.id==="effects"||active.id==="lighting"))spawn.section.update?.(s)
       active.update?.(s)
+      workbench?.advanceVariationGridSim(s)
     },
     spawn,
     looks,
+    effects,
   })
 
   select("effects")

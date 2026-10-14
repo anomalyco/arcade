@@ -1,4 +1,6 @@
-import { Emitter, type ParticleSpec } from "../fx/particles"
+import { Emitter, Particles, type ParticleSpec } from "../fx/particles"
+import { SmokeTrail } from "../fx/smoke-trail"
+import { SmokeVolumes } from "../fx/volume"
 import {
   applyExplosionSmokeLive,
   explosionDefaults,
@@ -256,5 +258,196 @@ export function createEffects(context:LabContext) {
     },
     telemetry:()=>`${particles.count+trail.count} particles · ${volume.count}/4 volumes`,
   }
-  return {section,params,reset,advance}
+  type VariantSlot = {
+    sig: string
+    merged: typeof params
+    particles: Particles
+    volume: SmokeVolumes
+    trail: SmokeTrail
+    emitter: Emitter
+    source: { smokeDistance: number; smokeX: number; smokeZ: number; smokeActive: boolean; idle: number }
+    seed: number
+    time: number
+  }
+  const variantSlots: VariantSlot[] = []
+
+  const resetSlot = (slot: VariantSlot, overrides: Record<string, unknown>) => {
+    slot.merged = { ...params, ...(overrides as Partial<typeof params>) }
+    const p = slot.merged
+    const eff = String(p.effect || effect)
+    slot.time = 0
+    slot.seed = Math.max(1, Math.round(Number(p.seed) || 7))
+    const slotRng = () => {
+      slot.seed = (Math.imul(slot.seed, 1664525) + 1013904223) | 0
+      return (slot.seed >>> 0) / 4294967296
+    }
+    const activeWalls = context.activeWalls?.() ?? walls
+    slot.particles.reset()
+    slot.trail.reset()
+    slot.trail.seedWind(slot.seed)
+    slot.emitter.reset()
+    slot.volume.reset(activeWalls, slot.seed)
+    Object.assign(slot.source, { smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0 })
+    for (const key of Object.keys(smokeDefaults) as SmokeKey[]) slot.volume.settings[key] = p[key]
+    if (eff === "explosion") applyExplosionSmokeLive(slot.volume, p, p.density)
+    else {
+      slot.volume.colorShift = 0
+      slot.volume.coreGlow = 0
+    }
+    const tx = p.targetX
+    const tz = p.targetZ
+    const gy = context.activeGround ? context.activeGround(tx, tz) : 0
+    if (eff === "smoke") slot.volume.spawn(tx, tz)
+    if (eff === "explosion") spawnExplosion(slot.particles, slot.volume, tx, gy, tz, p, slotRng, p.size, p.density)
+    if (eff === "sparks" || eff === "debris") {
+      const name = eff
+      const spec = specs[name] ?? specs.sparks
+      for (let i = 0; i < p.rate; i++) {
+        const cSpec: ParticleSpec = { ...spec, size: spec.size * p.size, alpha: spec.alpha * p.density }
+        const angle = slotRng() * Math.PI * 2
+        const spd = (2 + slotRng() * 6) * p.speed
+        slot.particles.spawn(cSpec, tx, gy + 0.8, tz, Math.cos(angle) * spd, (2 + slotRng() * 5) * p.speed, Math.sin(angle) * spd, slotRng() * 6.28)
+      }
+    }
+  }
+
+  const ensureVariantSlot = (idx: number, overrides: Record<string, unknown>): VariantSlot => {
+    const sig = JSON.stringify([params.seed, params.roomSeed, params.targetX, params.targetZ, overrides])
+    let slot = variantSlots[idx]
+    if (!slot) {
+      slot = {
+        sig,
+        merged: { ...params, ...(overrides as Partial<typeof params>) },
+        particles: new Particles(),
+        volume: new SmokeVolumes(),
+        trail: new SmokeTrail(),
+        emitter: new Emitter(),
+        source: { smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0 },
+        seed: Math.max(1, Math.round(params.seed)),
+        time: 0,
+      }
+      variantSlots[idx] = slot
+      resetSlot(slot, overrides)
+    } else if (slot.sig !== sig) {
+      slot.sig = sig
+      resetSlot(slot, overrides)
+    }
+    return slot
+  }
+
+  const resetVariantSlots = (tiles?: readonly { settings?: Record<string, unknown> }[]) => {
+    if (tiles) {
+      tiles.forEach((t, idx) => {
+        const slot = ensureVariantSlot(idx, t.settings ?? {})
+        resetSlot(slot, t.settings ?? {})
+      })
+    } else {
+      for (const slot of variantSlots) {
+        if (slot) resetSlot(slot, slot.merged)
+      }
+    }
+  }
+
+  const advanceVariantSlots = (tiles: readonly { settings?: Record<string, unknown> }[], dt: number) => {
+    const activeWalls = context.activeWalls?.() ?? walls
+    const groundFn = context.activeGround
+    tiles.forEach((t, idx) => {
+      const slot = ensureVariantSlot(idx, t.settings ?? {})
+      const p = slot.merged
+      const eff = String(p.effect || effect)
+      slot.time += dt
+      const tx = p.targetX
+      const tz = p.targetZ
+      const slotRng = () => {
+        slot.seed = (Math.imul(slot.seed, 1664525) + 1013904223) | 0
+        return (slot.seed >>> 0) / 4294967296
+      }
+      if (eff === "tyre" && slot.time < 3.5) {
+        slot.trail.follow(slot.source, tx + Math.sin(slot.time * 1.8) * 2, tz + Math.cos(slot.time * 1.8) * 1.5, 0, 0, dt, p.density)
+      }
+      if (eff === "water" || eff === "fire" || eff === "nitro") {
+        slot.emitter.step(tx, 0.3, tz, dt, p.rate, "rate", (ex, ey, ez) => {
+          const spec = specs[eff] ?? specs.sparks
+          const cSpec: ParticleSpec = { ...spec, size: spec.size * p.size, alpha: spec.alpha * p.density }
+          const angle = slotRng() * Math.PI * 2
+          const spd = (eff === "nitro" ? 3 : eff === "fire" ? 0.7 : 2 + slotRng() * 6) * p.speed
+          let vx = Math.cos(angle) * spd
+          let vy = (2 + slotRng() * 5) * p.speed
+          let vz = Math.sin(angle) * spd
+          if (eff === "water") {
+            vx *= 0.3
+            vz *= 0.3
+            vy = 8 * p.speed + slotRng() * 3
+          }
+          if (eff === "fire") vy = 1 + slotRng() * 2
+          if (eff === "nitro") {
+            vx = -8 * p.speed
+            vy = 0
+            vz = (slotRng() - 0.5) * 0.5
+            ex = tx - 2.6
+            ey = 0.4
+            ez = tz + 0.45
+          }
+          slot.particles.spawn(cSpec, ex, ey, ez, vx, vy, vz, slotRng() * 6.28)
+        })
+      }
+      if (eff === "explosion") applyExplosionSmokeLive(slot.volume, p, p.density)
+      slot.particles.update(dt, activeWalls, groundFn)
+      slot.volume.update(dt)
+      slot.trail.update(dt)
+      const loopPeriod = eff === "smoke" ? p.growthTime + p.hold + p.fade + 0.6 : eff === "tyre" ? Math.max(4, p.interval * 2.5) : p.interval
+      if (p.loop && slot.time >= loopPeriod - 1e-6) {
+        resetSlot(slot, t.settings ?? {})
+      }
+    })
+  }
+
+  const prepareVariantSlot = (idx: number, overrides: Record<string, unknown>) => {
+    const slot = ensureVariantSlot(idx, overrides)
+    const p = slot.merged
+    const eff = String(p.effect || effect)
+    for (const key of Object.keys(smokeDefaults) as SmokeKey[]) slot.volume.settings[key] = p[key]
+    if (eff === "explosion") {
+      applyExplosionSmokeLive(slot.volume, p, p.density)
+      const tx = p.targetX
+      const tz = p.targetZ
+      const gy = context.activeGround ? context.activeGround(tx, tz) : 0
+      const flash = explosionFlashLight(tx, gy, tz, slot.time, p)
+      if (flash) {
+        const s = stage.lighting
+        const deg = Math.PI / 180
+        const count = Math.max(0, Math.min(7, Math.round(s.count)))
+        const lights: LabLight[] = [flash]
+        for (let i = 0; i < count; i++) {
+          const spot = i === 1
+          const cool = i % 2 === 1
+          const power = spot ? (s.spot ? s.spotPower : 0) : s.lamps ? s.lampPower : 0
+          lights.push({
+            x: stageLightX[i]!,
+            y: s.lampHeight,
+            z: stageLightZ[i]!,
+            radius: s.lampRadius,
+            r: cool ? 0.28 : 1.8,
+            g: cool ? 0.85 : 0.95,
+            b: cool ? 1.6 : 0.4,
+            power,
+            dx: Math.sin(s.spotYaw * deg) * Math.cos(s.spotPitch * deg),
+            dy: -Math.sin(s.spotPitch * deg),
+            dz: Math.cos(s.spotYaw * deg) * Math.cos(s.spotPitch * deg),
+            cone: spot ? Math.cos(s.spotAngle * deg) : -2,
+          })
+        }
+        stage.dynamicLights = lights
+      } else {
+        stage.dynamicLights = null
+      }
+    } else {
+      slot.volume.colorShift = 0
+      slot.volume.coreGlow = 0
+      if (!context.hasPlaygroundScene?.()) stage.dynamicLights = null
+    }
+    return { particles: slot.particles, volume: slot.volume, trail: slot.trail }
+  }
+
+  return {section,params,reset,advance,resetVariantSlots,advanceVariantSlots,prepareVariantSlot}
 }

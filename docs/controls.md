@@ -93,3 +93,6 @@ Arcade Lab workbench standard:
   - Releases all held keys, exits Play mode back to Edit mode, and restores `prePlayCheckpoint` (with a `[Keep Play State]` toast action to keep the post-Play state as an undoable transaction).
 - **Studio Tour mini-tab navigation (`Alt+[` / `Alt+]`)**:
   - When a single-tab studio tour is active, `Alt+[` / `Alt+]` (physical `BracketLeft` / `BracketRight` with `Alt`/`Option`) or clicking any mini-tab in the top strip switches between tour steps in place.
+- **Multi-Tile Variation Grid (`⊞ Grid` button, `1`–`9`, `Esc` / `G`)**:
+  - Clicking `⊞ Grid` in the top Compare bar (or running `arcade grid [preset]`) splits the single WebGPU canvas into 2–9 synchronized variant tiles sharing one camera, simulation clock, and seed.
+  - Clicking a tile or pressing `1`–`9` focuses that tile full-size; pressing `Esc` or `G` returns to the multi-tile grid (or closes the grid when already in multi-tile view).

@@ -236,7 +236,7 @@ try {
   // 4. Verify single-tab Studio Tab Strip & static `kind: "page"` landing page on `.arcade-tours/look-review.json`
   const lookTourRes = runArcade(["tour", ".arcade-tours/look-review.json", "--no-open", "--base-url", origin, "--json"], 0).json
   check(lookTourRes.ok === true && lookTourRes.id === "look-review" && lookTourRes.singleTab === true, "Expected single-tab look-review tour")
-  check(lookTourRes.steps.length === 4, `Expected 4 steps in look-review, got ${lookTourRes.steps.length}`)
+  check(lookTourRes.steps.length === 6, `Expected 6 steps in look-review, got ${lookTourRes.steps.length}`)
 
   // Open Step 1 (static comparison page with 6 images)
   await page.goto(lookTourRes.steps[0].url, { waitUntil: "domcontentloaded" })
@@ -269,15 +269,15 @@ try {
     }))
     return { tabCount: tabs.length, tabs, imgs }
   })
-  check(lookPageAudit.tabCount === 4, `Expected 4 mini-tabs in studio strip, got ${lookPageAudit.tabCount}`)
+  check(lookPageAudit.tabCount === 6, `Expected 6 mini-tabs in studio strip, got ${lookPageAudit.tabCount}`)
   check(lookPageAudit.tabs[0]?.selected === true && lookPageAudit.tabs[0]?.kind === "page", "Step 1 mini-tab should be selected and kind=page")
   check(lookPageAudit.imgs.length === 6 && lookPageAudit.imgs.every(i => i.w > 100 && i.h > 100), "All 6 comparison images loaded from dev server")
   const lookPagePng = join(artifactsDir, "look-review-step-01-page.png")
   await page.screenshot({ path: lookPagePng })
   console.log(`✓ Look Review Step 1 (Studio Page with 6 comparison images): ${lookPagePng}`)
 
-  // Click Mini-Tab 3 ("Vignette · Noir, game camera") -> navigates within the SAME browser tab
-  await page.locator('[data-studio-step="3"]').click()
+  // Click Mini-Tab 5 ("Vignette · Noir, game camera") -> navigates within the SAME browser tab
+  await page.locator('[data-studio-step="5"]').click()
   for (let i = 0; i < 80; i++) {
     const st = await page
       .evaluate(() => ({
@@ -286,12 +286,12 @@ try {
         selectedStep: document.querySelector('[data-studio-step][aria-selected="true"]')?.getAttribute("data-studio-step"),
       }))
       .catch(() => null)
-    if (st?.path === "/arcade/outbreak/lab.html" && st.stepText === "3/4" && st.selectedStep === "3") break
+    if (st?.path === "/arcade/outbreak/lab.html" && st.stepText === "5/6" && st.selectedStep === "5") break
     await Bun.sleep(100)
   }
   check(context.pages().length === 1, "Studio Tab Strip must keep only 1 browser tab open")
 
-  // Set a sentinel on window, then press Alt+] to switch from Step 3 (Noir) to Step 4 (Street close-up, Dusk) IN PLACE with zero reload!
+  // Set a sentinel on window, then press Alt+] to switch from Step 5 (Noir) to Step 6 (Street close-up, Dusk) IN PLACE with zero reload!
   await page.evaluate(() => {
     ;(window as any).__inPlaceSentinel = "alive"
   })
@@ -305,7 +305,7 @@ try {
       stepText: document.querySelector("[data-arcade-note-step]")?.textContent ?? "",
       preset: (document.querySelector("[data-lab]")?.shadowRoot?.querySelector('[data-key="directionPreset"]') as HTMLSelectElement | null)?.value,
     }))
-    if (st.selectedStep === "4" && st.stepText === "4/4" && st.preset === "1") break
+    if (st.selectedStep === "6" && st.stepText === "6/6" && st.preset === "1") break
     await Bun.sleep(80)
   }
   const inPlaceAudit = await page.evaluate(() => ({
@@ -315,7 +315,7 @@ try {
     preset: (document.querySelector("[data-lab]")?.shadowRoot?.querySelector('[data-key="directionPreset"]') as HTMLSelectElement | null)?.value,
   }))
   check(inPlaceAudit.sentinel === "alive", "Switching between same-page Lab steps in Studio Tab Strip must not reload the page")
-  check(inPlaceAudit.selectedStep === "4" && inPlaceAudit.preset === "1", `Expected in-place switch to step 4 (dusk=1), got ${JSON.stringify(inPlaceAudit)}`)
+  check(inPlaceAudit.selectedStep === "6" && inPlaceAudit.preset === "1", `Expected in-place switch to step 6 (dusk=1), got ${JSON.stringify(inPlaceAudit)}`)
   console.log("✓ Studio Tab Strip: same-page in-place step switch verified (0 reloads, 1 tab)")
 
   // Close the studio tour strip
@@ -420,6 +420,60 @@ try {
     )
     console.log(`✓ ${hostGame} Lab Play mode verified (QWERTY + Dvorak, unselected, Details/select focus, F8 eject, ■ Stop button, Esc checkpoint)`)
   }
+
+  // 6. Verify Multi-Tile Variation Grid: 6-tile Looks grid & 4-tile Explosion variants grid
+  await page.goto(`${origin}/arcade/getaway/lab.html?section=looks`, { waitUntil: "domcontentloaded" })
+  await page.waitForFunction(
+    () => Boolean(document.querySelector('[data-action="compare-grid"]') && document.querySelector("canvas")),
+    undefined,
+    { timeout: 30000 },
+  )
+  await Bun.sleep(200)
+
+  const gridLooksOpen = runArcade(["grid", "looks", "--json"], 0)
+  check(gridLooksOpen.json?.ok === true, `arcade grid looks failed: ${gridLooksOpen.stderr || gridLooksOpen.stdout}`)
+  check(gridLooksOpen.json?.result?.tileCount === 6, `Expected 6 tiles in looks grid, got ${gridLooksOpen.json?.result?.tileCount}`)
+  await Bun.sleep(450)
+
+  const looksGridState = runArcade(["state", "--json"], 0)
+  const looksGridInfo = looksGridState.json?.state?.grid
+  check(looksGridInfo?.active === true && looksGridInfo?.cols === 3 && looksGridInfo?.rows === 2, "Expected active 3x2 looks grid in state")
+  check(typeof looksGridInfo?.frameCostMs === "number" && looksGridInfo.frameCostMs > 0, `Expected measured frameCostMs for 6-tile looks grid, got ${looksGridInfo?.frameCostMs}`)
+
+  const looksGridShot = join(artifactsDir, "grid-looks-6.png")
+  const shotLooksRes = runArcade(["screenshot", "--out", looksGridShot, "--json"], 0)
+  check(shotLooksRes.status === 0 && existsSync(looksGridShot), "Failed to capture 6-tile looks grid screenshot")
+  console.log(`✓ 6-tile Looks Variation Grid verified (3×2 single WebGPU canvas, frame cost: ${looksGridInfo.frameCostMs.toFixed(2)} ms, screenshot: ${looksGridShot})`)
+
+  // Focus tile 2 (Noir) via keyboard '2', then return to grid via 'Escape'
+  await page.locator("canvas").focus()
+  await page.keyboard.press("2")
+  await Bun.sleep(150)
+  const focusedState = runArcade(["state", "--json"], 0).json?.state?.grid
+  check(focusedState?.focusedTile === 2, `Expected focusedTile=2 after pressing '2', got ${focusedState?.focusedTile}`)
+  await page.keyboard.press("Escape")
+  await Bun.sleep(150)
+  const unfocusedState = runArcade(["state", "--json"], 0).json?.state?.grid
+  check(unfocusedState?.active === true && unfocusedState?.focusedTile === null, "Expected Escape from focused tile to return to multi-tile grid")
+
+  // Switch to 4-tile Explosion variants grid
+  const gridExpOpen = runArcade(["grid", "explosions", "--json"], 0)
+  check(gridExpOpen.json?.ok === true, `arcade grid explosions failed: ${gridExpOpen.stderr || gridExpOpen.stdout}`)
+  check(gridExpOpen.json?.result?.tileCount === 4, `Expected 4 tiles in explosions grid, got ${gridExpOpen.json?.result?.tileCount}`)
+  await Bun.sleep(500)
+
+  const expGridInfo = runArcade(["state", "--json"], 0).json?.state?.grid
+  check(expGridInfo?.active === true && expGridInfo?.cols === 2 && expGridInfo?.rows === 2, "Expected active 2x2 explosions grid in state")
+  const expGridShot = join(artifactsDir, "grid-explosions-4.png")
+  const shotExpRes = runArcade(["screenshot", "--out", expGridShot, "--json"], 0)
+  check(shotExpRes.status === 0 && existsSync(expGridShot), "Failed to capture 4-tile explosions grid screenshot")
+  console.log(`✓ 4-tile Explosion Variants Grid verified (2×2 synchronized timeline, frame cost: ${expGridInfo.frameCostMs?.toFixed(2)} ms, screenshot: ${expGridShot})`)
+
+  // Focus tile 3 via CLI 'arcade grid focus 3', then close via 'arcade grid close'
+  const cliFocusRes = runArcade(["grid", "focus", "3", "--json"], 0)
+  check(cliFocusRes.json?.result?.focusedTile === 3, "arcade grid focus 3 failed")
+  const cliCloseRes = runArcade(["grid", "close", "--json"], 0)
+  check(cliCloseRes.json?.result?.active === false, "arcade grid close failed")
 
   check(pageErrors.length === 0, `Unexpected page errors:\n${pageErrors.join("\n")}`)
 

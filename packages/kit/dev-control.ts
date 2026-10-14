@@ -72,7 +72,7 @@ export type TourPageImage = {
 }
 
 export type TourStepDefinition = {
-  kind?: "scene" | "page"
+  kind?: "scene" | "page" | "grid"
   title: string
   body?: string
   url: string
@@ -82,6 +82,10 @@ export type TourStepDefinition = {
   dismissible?: boolean
   markdown?: string
   images?: TourPageImage[]
+  preset?: string
+  section?: string
+  cols?: number
+  tiles?: Record<string, unknown>[]
 }
 
 export type TourDefinition = {
@@ -920,8 +924,8 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
     }
 
     const rawKind = typeof s.kind === "string" ? s.kind.trim().toLowerCase() : ""
-    if (rawKind && rawKind !== "scene" && rawKind !== "page") {
-      throw new Error(`Tour step ${stepNum} ("${stepTitle}"): invalid kind "${String(s.kind)}". Expected "scene" or "page".`)
+    if (rawKind && rawKind !== "scene" && rawKind !== "page" && rawKind !== "grid") {
+      throw new Error(`Tour step ${stepNum} ("${stepTitle}"): invalid kind "${String(s.kind)}". Expected "scene", "page", or "grid".`)
     }
 
     if (s.markdown !== undefined && s.markdown !== null && typeof s.markdown !== "string") {
@@ -971,13 +975,16 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
     }
 
     const isPage = rawKind === "page" || Boolean(markdown || (images && images.length > 0))
+    const isGrid = rawKind === "grid" || Array.isArray(s.tiles)
     const rawUrl = typeof s.url === "string" ? s.url.trim() : typeof s.page === "string" ? s.page.trim() : typeof s.path === "string" ? s.path.trim() : ""
-    if (!rawUrl && !isPage) {
+    if (!rawUrl && !isPage && !isGrid) {
       throw new Error(`Tour step ${stepNum} ("${stepTitle}") is missing a non-empty "url".`)
     }
     let resolvedUrl: string
     if (!rawUrl && isPage) {
       resolvedUrl = `/arcade/getaway/dev.html#tour/${encodeURIComponent(id)}/${stepNum}`
+    } else if (!rawUrl && isGrid) {
+      resolvedUrl = "/arcade/getaway/lab.html"
     } else {
       try {
         resolvedUrl = resolveNavigationPath(rawUrl)
@@ -1035,6 +1042,20 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
       }
     }
 
+    const gridPreset = typeof s.preset === "string" && s.preset.trim() ? s.preset.trim() : undefined
+    const gridSection = typeof s.section === "string" && s.section.trim() ? s.section.trim() : undefined
+    const gridCols = typeof s.cols === "number" && Number.isFinite(s.cols) ? Math.round(s.cols) : undefined
+    const gridTiles = Array.isArray(s.tiles) ? (s.tiles as Record<string, unknown>[]) : undefined
+
+    if (isGrid && !setup.some(c => c.command === "grid.open" || c.command === "grid")) {
+      const gridArgs: Record<string, unknown> = { title: stepTitle }
+      if (gridPreset) gridArgs.preset = gridPreset
+      if (gridSection) gridArgs.section = gridSection
+      if (gridCols !== undefined) gridArgs.cols = gridCols
+      if (gridTiles) gridArgs.tiles = gridTiles
+      setup.push({ command: "grid.open", args: gridArgs })
+    }
+
     let target: DevNoteTarget | undefined
     const rawTarget = s.target ?? s.noteTarget
     if (rawTarget !== undefined) {
@@ -1049,7 +1070,13 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
     const dismissible = typeof s.dismissible === "boolean" ? s.dismissible : undefined
 
     return {
-      ...(isPage ? { kind: "page" as const } : rawKind === "scene" ? { kind: "scene" as const } : {}),
+      ...(isPage
+        ? { kind: "page" as const }
+        : isGrid
+          ? { kind: "grid" as const }
+          : rawKind === "scene"
+            ? { kind: "scene" as const }
+            : {}),
       title: stepTitle,
       ...(body !== undefined ? { body } : {}),
       url: resolvedUrl,
@@ -1059,6 +1086,10 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
       ...(dismissible !== undefined ? { dismissible } : {}),
       ...(markdown !== undefined ? { markdown } : {}),
       ...(images !== undefined && images.length > 0 ? { images } : {}),
+      ...(gridPreset !== undefined ? { preset: gridPreset } : {}),
+      ...(gridSection !== undefined ? { section: gridSection } : {}),
+      ...(gridCols !== undefined ? { cols: gridCols } : {}),
+      ...(gridTiles !== undefined ? { tiles: gridTiles } : {}),
     }
   })
 
@@ -2404,10 +2435,23 @@ class PageControlRuntime {
           parsed.searchParams.get("section")?.trim() ||
           parsed.hash.replace(/^#/, "").split("/")[0]?.trim() ||
           ""
+        const isGridStep =
+          step.kind === "grid" || step.setup.some(c => c.command === "grid.open" || c.command === "grid" || c.command === "grid.focus")
+        if (!isGridStep && adapter.commands.get("grid.close")) {
+          await this.invokeCommandDirect(adapter, "grid.close")
+        }
         const hasSectionCmd = step.setup.some(c =>
-          ["scene.select-section", "look.preset", "look.set", "foliage.preset", "foliage.set", "vignette.preset", "vignette.camera"].includes(
-            c.command,
-          ),
+          [
+            "scene.select-section",
+            "look.preset",
+            "look.set",
+            "foliage.preset",
+            "foliage.set",
+            "vignette.preset",
+            "vignette.camera",
+            "grid.open",
+            "grid",
+          ].includes(c.command),
         )
         const desiredSection = urlSection || (!hasSectionCmd ? "spawn" : "")
         if (desiredSection && adapter.getSection?.() !== desiredSection) {

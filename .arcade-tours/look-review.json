@@ -51,6 +51,42 @@
       ]
     },
     {
+      "kind": "grid",
+      "title": "Looks Grid · 6 Style Directions",
+      "body": "3×2 live WebGPU Variation Grid in the Looks debug room (Current, Noir, Painterly, Dusk, 70s Sodium, Cozy). Click a tile or press 1–6 to focus full-size; Esc/G returns to the grid.",
+      "url": "/arcade/getaway/lab.html?section=looks",
+      "setup": [
+        {
+          "command": "grid.open",
+          "args": {
+            "preset": "looks"
+          }
+        }
+      ],
+      "accent": "amber",
+      "preset": "looks",
+      "section": "looks",
+      "cols": 3
+    },
+    {
+      "kind": "grid",
+      "title": "Explosion Variants · 4 Live Recipes",
+      "body": "2×2 synchronized live WebGPU grid (Standard Blast, Heavy Fireball, Dense Soot Column, High-Velocity Shrapnel) sharing one timeline and seed. Press Space to retrigger all 4, K to pause, or 1–4 to zoom.",
+      "url": "/arcade/getaway/lab.html?section=effects",
+      "setup": [
+        {
+          "command": "grid.open",
+          "args": {
+            "preset": "explosions"
+          }
+        }
+      ],
+      "accent": "rose",
+      "preset": "explosions",
+      "section": "effects",
+      "cols": 2
+    },
+    {
       "title": "Outbreak · Current street",
       "body": "#1 weakness: everything is evenly lit. Lawns, sidewalks and yards all read; the targets are dark except the light pools.",
       "url": "/arcade/outbreak/?seed=7",
