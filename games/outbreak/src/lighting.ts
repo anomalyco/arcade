@@ -1,6 +1,8 @@
+import type { BakedMap, FloorMap } from "@arcade/kit/gpu/level"
+import { VERT_BYTES } from "@arcade/kit/gpu/mesh"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
-import type { Building, Lamp } from "../shared/map"
+import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
 
 export type OutbreakLightingSettings = {
   exposure: number
@@ -228,7 +230,6 @@ export function resolveLampLight(
   const invTight = 1 / Math.sqrt(tight)
 
   if (lamp.kind === "street") {
-    // Route the two intersection/avenue streetlamp slots to the Ash House street corner (40.6, 42.4) & NE sidewalk (39.2, 24.6)
     let lx = lamp.x + 0.55
     let ly = lamp.y
     let lh = lamp.h
@@ -248,7 +249,6 @@ export function resolveLampLight(
       pMult = 1.75
     }
     const power = master * lamp.power * s.streetPower * pMult
-    // 2100K High-Pressure Sodium deep orange-gold (shadowless open-street pool for fast GPU evaluation)
     return {
       lx,
       lh,
@@ -375,6 +375,306 @@ export function resolveLampLight(
   }
 }
 
+/**
+ * Concrete Baking Recommendation #1:
+ * Bakes indirect light into a 192x192 RGBA8 `bounceTex` (0.5m/texel) using an 8-neighbour corner-safe Dijkstra
+ * flood-fill over `town.lamps` (`room`, `porch`, `window`, `street`), blocked by solid walls.
+ * Stores `sqrt(rgb)` in `.rgb` for dark precision and wall-free coverage in `.a`.
+ */
+export function bakeOutbreakBounce(town: Town): FloorMap {
+  const w = 192
+  const h = 192
+  const cx = SIZE / w
+  const cy = SIZE / h
+  const solid = new Uint8Array(w * h)
+  for (const b of town.barriers) {
+    if (b.kind !== "wall") continue
+    const r = b.rect
+    const a0 = Math.max(0, Math.floor(r[0] / cx))
+    const a1 = Math.min(w - 1, Math.ceil(r[2] / cx) - 1)
+    const b0 = Math.max(0, Math.floor(r[1] / cy))
+    const b1 = Math.min(h - 1, Math.ceil(r[3] / cy) - 1)
+    for (let y = b0; y <= b1; y++) for (let x = a0; x <= a1; x++) solid[y * w + x] = 1
+  }
+  const acc = new Float32Array(w * h * 3)
+  const dist = new Float32Array(w * h).fill(Infinity)
+  const touched: number[] = []
+  const N8 = [
+    [1, 0, 1],
+    [-1, 0, 1],
+    [0, 1, 1],
+    [0, -1, 1],
+    [1, 1, Math.SQRT2],
+    [-1, 1, Math.SQRT2],
+    [1, -1, Math.SQRT2],
+    [-1, -1, Math.SQRT2],
+  ] as const
+
+  const heap: number[] = []
+  const push = (i: number, d: number) => {
+    heap.push(d, i)
+    let k = heap.length / 2 - 1
+    while (k > 0) {
+      const p = (k - 1) >> 1
+      if (heap[p * 2]! <= heap[k * 2]!) break
+      ;[heap[p * 2], heap[k * 2]] = [heap[k * 2]!, heap[p * 2]!]
+      ;[heap[p * 2 + 1], heap[k * 2 + 1]] = [heap[k * 2 + 1]!, heap[p * 2 + 1]!]
+      k = p
+    }
+  }
+  const pop = (): [number, number] => {
+    const d = heap[0]!
+    const i = heap[1]!
+    const ld = heap.pop()!
+    const li = heap.pop()!
+    if (heap.length) {
+      heap[0] = li
+      heap[1] = ld
+      let k = 0
+      const n = heap.length / 2
+      for (;;) {
+        const a = k * 2 + 1
+        const b = a + 1
+        let m = k
+        if (a < n && heap[a * 2]! < heap[m * 2]!) m = a
+        if (b < n && heap[b * 2]! < heap[m * 2]!) m = b
+        if (m === k) break
+        ;[heap[m * 2], heap[k * 2]] = [heap[k * 2]!, heap[m * 2]!]
+        ;[heap[m * 2 + 1], heap[k * 2 + 1]] = [heap[k * 2 + 1]!, heap[m * 2 + 1]!]
+        k = m
+      }
+    }
+    return [d, i]
+  }
+
+  for (const lamp of town.lamps) {
+    const res = resolveLampLight(lamp, town.buildings, 1, DEFAULT_OUTBREAK_LIGHTING, false)
+    const reach = Math.min(10.5, res.r * 1.35)
+    let sx = Math.min(w - 1, Math.max(0, Math.floor(res.lx / cx)))
+    let sy = Math.min(h - 1, Math.max(0, Math.floor(res.ly / cy)))
+    if (solid[sy * w + sx]) {
+      // Nudge window/wall-mounted fixtures to nearest open cell
+      for (const [dx, dy] of [
+        [0, 1],
+        [0, -1],
+        [1, 0],
+        [-1, 0],
+      ] as const) {
+        const nx = Math.min(w - 1, Math.max(0, sx + dx))
+        const ny = Math.min(h - 1, Math.max(0, sy + dy))
+        if (!solid[ny * w + nx]) {
+          sx = nx
+          sy = ny
+          break
+        }
+      }
+    }
+    const startIdx = sy * w + sx
+    dist[startIdx] = 0
+    touched.push(startIdx)
+    push(startIdx, 0)
+    while (heap.length) {
+      const [d, i] = pop()
+      if (d > dist[i]!) continue
+      const x = i % w
+      const y = (i / w) | 0
+      for (const [dx, dy, c] of N8) {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+        const j = ny * w + nx
+        if (solid[j]) continue
+        if (dx && dy && (solid[y * w + nx] || solid[ny * w + x])) continue
+        const nd = d + c * cx
+        if (nd >= reach || nd >= dist[j]!) continue
+        if (dist[j] === Infinity) touched.push(j)
+        dist[j] = nd
+        push(j, nd)
+      }
+    }
+    const strength = lamp.kind === "room" ? 0.55 : lamp.kind === "porch" ? 0.45 : lamp.kind === "window" ? 0.40 : 0.48
+    const k = res.power * strength
+    for (const i of touched) {
+      const t = 1 - dist[i]! / reach
+      const f = t * t * k
+      acc[i * 3] += res.color[0] * f
+      acc[i * 3 + 1] += res.color[1] * f
+      acc[i * 3 + 2] += res.color[2] * f
+      dist[i] = Infinity
+    }
+    touched.length = 0
+  }
+
+  const data = new Uint8Array(w * h * 4)
+  for (let i = 0; i < w * h; i++) {
+    for (let c = 0; c < 3; c++) {
+      data[i * 4 + c] = Math.round(Math.sqrt(Math.min(1, acc[i * 3 + c]! * 0.5)) * 255)
+    }
+    data[i * 4 + 3] = solid[i] ? 0 : 255
+  }
+  return { data, w, h, linear: acc }
+}
+
+/**
+ * Concrete Baking Recommendation #2:
+ * Bakes a 768x768 (12.5cm/texel, 576 KiB) soft directional moon & tree-canopy shadow mask (`moonTex` at `@binding(8)`),
+ * with 2x2 sub-texel window mullion coverage inside houses and soft exterior building/tree-crown shadows.
+ */
+export function bakeOutbreakMoonMask(town: Town): BakedMap {
+  const mw = 768
+  const mh = 768
+  const scale = SIZE / mw
+  const moon = new Float32Array(mw * mh).fill(1.0)
+  const trees = town.props.filter((p) => p.kind === "tree")
+  const windows = town.barriers.filter((b) => b.kind === "window")
+
+  // Base indoor/outdoor assignment
+  for (let bIdx = 0; bIdx < town.buildings.length; bIdx++) {
+    const b = town.buildings[bIdx]!
+    const [bx0, bz0, bx1, bz1] = b.rect
+    const x0 = Math.max(0, Math.floor((bx0 - 1.5) / scale))
+    const x1 = Math.min(mw - 1, Math.ceil((bx1 + 4.5) / scale))
+    const z0 = Math.max(0, Math.floor((bz0 - 1.5) / scale))
+    const z1 = Math.min(mh - 1, Math.ceil((bz1 + 3.5) / scale))
+    for (let z = z0; z <= z1; z++) {
+      const pz = (z + 0.5) * scale
+      for (let x = x0; x <= x1; x++) {
+        const px = (x + 0.5) * scale
+        if (inBuildingFootprint(b, px, pz)) {
+          moon[z * mw + x] = 0.055
+        } else {
+          // Soft exterior directional shadow cast by building walls & 4.35m pitched roof along dusk/moon direction (-0.32, +0.24)
+          const sPx = px - 1.15
+          const sPz = pz - 0.85
+          if (inBuildingFootprint(b, sPx, sPz)) {
+            moon[z * mw + x] = Math.min(moon[z * mw + x]!, 0.62)
+          }
+        }
+      }
+    }
+  }
+
+  // Soft spherical/dappled tree-crown canopy attenuation on exterior ground
+  for (const t of trees) {
+    const rCrown = 2.15 + t.variant * 0.75
+    const cx = t.x + 0.45
+    const cz = t.y + 0.35
+    const x0 = Math.max(0, Math.floor((cx - rCrown - 0.5) / scale))
+    const x1 = Math.min(mw - 1, Math.ceil((cx + rCrown + 0.5) / scale))
+    const z0 = Math.max(0, Math.floor((cz - rCrown - 0.5) / scale))
+    const z1 = Math.min(mh - 1, Math.ceil((cz + rCrown + 0.5) / scale))
+    const invR2 = 1 / (rCrown * rCrown)
+    for (let z = z0; z <= z1; z++) {
+      const dz = (z + 0.5) * scale - cz
+      for (let x = x0; x <= x1; x++) {
+        const idx = z * mw + x
+        if (moon[idx]! <= 0.1) continue
+        const dx = (x + 0.5) * scale - cx
+        const u2 = (dx * dx + dz * dz) * invR2
+        if (u2 < 1.0) {
+          const dapple = 0.82 + 0.18 * Math.sin(dx * 4.2 + dz * 3.7)
+          const atten = 1 - (1 - u2) * 0.38 * dapple
+          moon[idx] = Math.min(moon[idx]!, atten)
+        }
+      }
+    }
+  }
+
+  // 2x2 sub-texel window mullion & sash coverage inside houses (matching Blackout's window-light bake)
+  for (const w of windows) {
+    const [wx0, wz0, wx1, wz1] = w.rect
+    const x0 = Math.max(0, Math.floor((wx0 - 2.8) / scale))
+    const x1 = Math.min(mw - 1, Math.ceil((wx1 + 0.6) / scale))
+    const z0 = Math.max(0, Math.floor((wz0 - 2.8) / scale))
+    const z1 = Math.min(mh - 1, Math.ceil((wz1 + 0.6) / scale))
+    const horiz = wx1 - wx0 > 1
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        const idx = z * mw + x
+        if (moon[idx]! > 0.25) continue
+        let cov = 0
+        for (const sy of [0.25, 0.75]) {
+          const pz = (z + sy) * scale
+          for (const sx of [0.25, 0.75]) {
+            const px = (x + sx) * scale
+            if (horiz) {
+              const dz = wz0 - pz
+              if (dz > -0.1 && dz < 2.6) {
+                const xShift = px + dz * 0.18
+                const half = (wx1 - wx0) * 0.46
+                const mid = (wx0 + wx1) * 0.5
+                const dx = Math.max(0, Math.abs(xShift - mid) - half)
+                if (dx < 0.45) {
+                  const along = Math.max(0, 1 - Math.max(0, dz) / 2.5)
+                  const across = Math.max(0, 1 - dx / 0.42)
+                  const mullion = Math.abs(xShift - mid) < 0.045 ? 0.55 : 1.0
+                  cov += along * along * across * mullion
+                }
+              }
+            } else {
+              const dx = wx0 - px
+              if (dx > -0.1 && dx < 2.6) {
+                const zShift = pz - dx * 0.15
+                const half = (wz1 - wz0) * 0.46
+                const mid = (wz0 + wz1) * 0.5
+                const dz = Math.max(0, Math.abs(zShift - mid) - half)
+                if (dz < 0.45) {
+                  const along = Math.max(0, 1 - Math.max(0, dx) / 2.5)
+                  const across = Math.max(0, 1 - dz / 0.42)
+                  const mullion = Math.abs(zShift - mid) < 0.045 ? 0.55 : 1.0
+                  cov += along * along * across * mullion
+                }
+              }
+            }
+          }
+        }
+        if (cov > 0) {
+          moon[idx] = Math.max(moon[idx]!, 0.055 + 0.84 * (cov * 0.25))
+        }
+      }
+    }
+  }
+
+  const data = new Uint8Array(mw * mh)
+  for (let i = 0; i < data.length; i++) {
+    data[i] = Math.round(Math.max(0, Math.min(1, moon[i]!)) * 255)
+  }
+  return { data, w: mw, h: mh }
+}
+
+/**
+ * Concrete Baking Recommendation #3 & Blog Game Tip #4:
+ * Packs 3D per-vertex contact AO & bevel boost (`aOpenTone`) into spare byte 19 (`v.color.a`) of `VERT_BYTES = 24`.
+ * `128` (0.502) = 1.0x neutral; `< 128` darkens furniture/wall bottoms & eave soffits; `> 128` boosts top chamfers/bevels.
+ */
+export function stampOutbreakVertexTone(buf: ArrayBuffer): ArrayBuffer {
+  const f32 = new Float32Array(buf)
+  const i8 = new Int8Array(buf)
+  const u8 = new Uint8Array(buf)
+  const n = buf.byteLength / VERT_BYTES
+  for (let k = 0; k < n; k++) {
+    const o = k * VERT_BYTES
+    const y = f32[o / 4 + 1]!
+    const ny = i8[o + 13]! / 127
+    let tone = 1.0
+    if (y > 0.04 && y < 0.24 && Math.abs(ny) < 0.45) {
+      // Base of walls, furniture legs, counters, and porch posts: contact darkening
+      tone = 0.72 + (y - 0.04) * 1.4
+    } else if (ny > 0.35 && ny < 0.88 && y > 0.35 && y < 2.45) {
+      // Sloped bevels & chamfers on furniture (beds, sofas, tables, counters, car): rim boost
+      tone = 1.16
+    } else if (ny > 0.88 && y > 0.38 && y < 1.95) {
+      // Upper horizontal surfaces of props & sills
+      tone = 1.06
+    } else if (ny < -0.5 && y > 2.2) {
+      // Under-eave soffits
+      tone = 0.68
+    }
+    u8[o + 19] = Math.max(1, Math.min(254, Math.round(tone * 128)))
+  }
+  return buf
+}
+
 export const outbreakLightingDeclarationsWgsl = /* wgsl */ `
 struct OutbreakLightingUniforms {
   u0: vec4f, // skyFill, moonFill, practicalWarmth, lightFalloff
@@ -401,12 +701,74 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
 }
 
 /**
- * Albedo-multiplying indirect bounce & localized bulb halation for sodium streetlamps and tungsten practicals.
- * Multiplies surfCol (which already contains full procedural cracks, plank joints, rug motifs, and texture detail)
- * so light pools sharpen surface detail rather than washing it out with flat fog.
+ * Blog Game Tip #1: Analytical Window & Porch Light Cookie with Distance-Widening Penumbra & Drifting Canopy Sway.
+ */
+fn evalCanopyCookie(world: vec3f, inRoom: bool) -> f32 {
+  let t = F.cam.w;
+  let w1 = sin(world.x * 0.62 + world.z * 0.48 + t * 0.55);
+  let w2 = cos(world.x * 1.35 - world.z * 1.12 - t * 0.82);
+  let canopyWave = 0.88 + 0.12 * (w1 * 0.6 + w2 * 0.4);
+  return select(canopyWave, 0.92 + 0.08 * w1, inRoom);
+}
+
+/**
+ * Blog Game Tip #5: Analytical Clipped Rectangular Area Light & Stretched Specular Sheen for Windows.
+ */
+fn evalWindowAreaAttenuation(dv: vec2f, d3: f32, tight: f32) -> f32 {
+  let halfW = 0.92;
+  let reachY = 2.45;
+  let penumbra = 0.18 + max(0.0, dv.y) * 0.28;
+  let rx = 1.0 - smoothstep(halfW - 0.12, halfW + penumbra, abs(dv.x));
+  let ry = smoothstep(-0.25, 0.18, dv.y) * (1.0 - smoothstep(0.55, reachY, dv.y));
+  let mullionDip = 1.0 - 0.16 * exp(-pow(dv.x / 0.12, 2.0)) * (1.0 - smoothstep(0.1, 1.4, dv.y));
+  let solidAngle = 2.35 / (1.0 + d3 * d3 * 0.56 * tight);
+  return rx * ry * mullionDip * solidAngle;
+}
+
+/**
+ * Blog Game Tip #3: Analytical Rectangular Area-Light Floor Bounce (officeFloorBounce).
+ * Clamps world.xz to lit floor/porch patch bounds at floor height (6 ALU ops) to bounce warm floor light
+ * onto vertical walls, kitchen cabinets, and survivor/zombie legs.
+ */
+fn evalAreaFloorBounce(world: vec3f, n: vec3f) -> vec3f {
+  if (world.y > 2.25) { return vec3f(0.0); }
+  // Clamp to nearest lit patch: NW bedroom (23.2..26.8, 24.4..27.4), SE kitchen/dining (31.8..36.2, 29.8..34.2), or front porch (26.2..29.2, 35.4..38.8)
+  let litBox = select(
+    select(vec4f(26.2, 29.2, 35.4, 38.8), vec4f(31.8, 36.2, 29.8, 34.2), world.x > 30.2),
+    vec4f(23.2, 26.8, 24.4, 27.4),
+    world.z < 28.8
+  );
+  let nearest = vec3f(clamp(world.x, litBox.x, litBox.y), 0.13, clamp(world.z, litBox.z, litBox.w));
+  let toFloor = nearest - world;
+  let d2 = dot(toFloor, toFloor);
+  if (d2 > 9.0) { return vec3f(0.0); }
+  let facing = max(0.0, dot(n, normalize(toFloor + vec3f(0.0, -1e-4, 0.0))));
+  let lowRoom = 1.0 - smoothstep(0.1, 2.1, world.y);
+  let bounceFactor = lowRoom * (facing * 0.85 + 0.15) / (1.0 + d2 * 0.65);
+  return vec3f(0.016, 0.0085, 0.0025) * bounceFactor * OL.u1.z;
+}
+
+/**
+ * Blog Game Tip #9: Power-4 Triplanar Nyquist-Filtered Grain & Wear on MAT.timber (24) & MAT.lit (0) Props/Cars.
+ */
+fn evalTriplanarPropMod(world: vec3f, n: vec3f) -> f32 {
+  let an = pow(abs(n), vec3f(4.0));
+  let w = an / max(an.x + an.y + an.z, 1e-4);
+  let freq = 14.0;
+  let fade = exp(-clamp(surfaceFootprint * freq * 1.4, 0.0, 4.0));
+  let gx = surfaceNoise(world.zy * vec2f(freq, freq * 0.35));
+  let gy = surfaceNoise(world.xz * vec2f(freq * 0.6, freq));
+  let gz = surfaceNoise(world.xy * vec2f(freq, freq * 0.35));
+  let fibre = (gx * w.x + gy * w.y + gz * w.z - 0.5) * fade;
+  return 1.0 + fibre * 0.22;
+}
+
+/**
+ * Albedo-multiplying indirect bounce & localized bulb halation for sodium streetlamps and tungsten practicals,
+ * plus Blog Game Tip #5 elongated window floor/driveway reflection sheen (openGlassSheen).
  */
 fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColor: vec3f, inRoom: bool, mat: i32) -> vec3f {
-  var col = surfCol;
+  var col = surfCol + evalAreaFloorBounce(world, n) * surfCol * 8.0;
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let isInView = OL.u5.w > 0.5;
   let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.22, mat == 22 && world.y > 0.85);
@@ -429,7 +791,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       }
     }
 
-    // 2. Warm 2500K tungsten window & porch bounce across the front yard, shrubs, and sidewalk
+    // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
     if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.8 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
@@ -449,11 +811,10 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       col += texAlbedo * vec3f(1.0, 0.48, 0.11) * pPool * 1.15 * (0.4 + 0.6 * w);
     }
   } else if (world.y < 2.72) {
-    // Interior indirect room bounce & wall-wash halos (albedo-multiplying so wood planks, rugs & tiles retain full texture contrast)
+    // Interior indirect room bounce & wall-wash halos
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
       let warmTungsten = vec3f(1.0, 0.42, 0.07);
-      // NW Bedroom bedside lamp wall wash & bed/rug bounce
       let vNW = (world.xz - vec2f(25.1, 25.4)) * vec2f(0.66, 0.74);
       let dNW2 = dot(vNW, vNW);
       if (dNW2 < 18.0) {
@@ -462,7 +823,6 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
         col += (surfCol * 1.45 + vec3f(0.011, 0.0042, 0.0006)) * warmTungsten * nwPool * wallBoost * roomScale;
       }
 
-      // NE Bedroom dresser & rug bounce
       let vNE = (world.xz - vec2f(29.0, 26.2)) * vec2f(0.70, 0.76);
       let dNE2 = dot(vNE, vNE);
       if (dNE2 < 15.0) {
@@ -471,7 +831,6 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
         col += (surfCol * 1.15 + vec3f(0.0055, 0.0022, 0.0003)) * warmTungsten * nePool * wallBoost * roomScale;
       }
 
-      // SE Kitchen north sink-window glow (33.5, 30.0) and warm tile/dining bounce
       let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.66, 0.76);
       let dSink2 = dot(vSink, vSink);
       if (dSink2 < 20.0) {
@@ -486,7 +845,6 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
         col += (surfCol * 1.25 + vec3f(0.008, 0.0032, 0.0005)) * warmTungsten * dinPool * roomScale;
       }
 
-      // SW Living room Oriental rug & coffee table warm bounce
       let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.64, 0.64);
       let dSW2 = dot(vSW, vSW);
       if (dSW2 < 16.0) {
@@ -494,7 +852,6 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
         col += (surfCol * 0.95 + vec3f(0.0048, 0.0019, 0.0003)) * warmTungsten * swPool * roomScale;
       }
 
-      // Central hallway warm walnut floorboard bounce
       let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.66, 0.56);
       let dHall2 = dot(vHall, vHall);
       if (dHall2 < 16.0) {
@@ -507,7 +864,8 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
 }
 
 /**
- * Forward-aimed volumetric flashlight mist scatter & ground specular response.
+ * Blog Game Tip #2: Analytical Ray-Cone Volumetric Flashlight + Shadow-Gated 3D Drifting Dust Motes (dustAt).
+ * Always 100% live on polar slot 1 (shadowAt).
  */
 fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, mat: i32) -> vec3f {
   if (OL.u4.z <= 0.001 || OL.u4.w < 0.5 || OL.u2.x <= 0.01) { return vec3f(0.0); }
@@ -535,9 +893,14 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.05, world.xz + n.xz * 0.03, min(world.y, 1.05));
   if (vis <= 0.001) { return vec3f(0.0); }
 
+  // Shadow-gated 3D drifting dust motes (dustAt) glinting inside unoccluded beam
+  let moteCell = floor(world.xz * 7.5 + vec2f(F.cam.w * 0.18, -F.cam.w * 0.14));
+  let moteHash = hash2(moteCell);
+  let moteGlint = smoothstep(0.92, 0.99, moteHash) * (0.5 + 0.5 * sin(F.cam.w * 2.4 + moteHash * 31.0));
+
   let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.25 && n.y > 0.7);
   let beamCol = vec3f(1.0, 0.62, 0.24);
-  let mist = profile / (0.55 + max(0.0, along) * 0.32) * OL.u2.x * 0.14 * surfW;
+  let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * OL.u2.x * 0.14 * surfW;
   return (baseAlbedo * 0.75 + beamCol * 0.06) * beamCol * OL.u4.z * mist * vis;
 }
 `

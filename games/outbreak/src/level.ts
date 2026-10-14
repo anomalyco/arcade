@@ -3,6 +3,7 @@ import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
+import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
 import { emitCurvedGrassBlade, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
@@ -444,7 +445,7 @@ function compileLevel(town: Town): LevelData {
         x0 = Math.min(x0, source.v[i]!); x1 = Math.max(x1, source.v[i]!)
         z0 = Math.min(z0, source.v[i + 2]!); z1 = Math.max(z1, source.v[i + 2]!); top = Math.max(top, source.v[i + 1]!)
       }
-      return [{ data: source.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
+      return [{ data: stampOutbreakVertexTone(source.pack()), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
     }
     const opaque = new Mesh()
     const screen = new Mesh()
@@ -502,7 +503,7 @@ function compileLevel(town: Town): LevelData {
         top = Math.max(top, m.v[i + 1]!)
         z0 = Math.min(z0, m.v[i + 2]!); z1 = Math.max(z1, m.v[i + 2]!)
       }
-      return [{ data: m.pack(), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
+      return [{ data: stampOutbreakVertexTone(m.pack()), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
     }
     const screenChunks = (): LevelChunk[] => {
       if (!screen.count) return []
@@ -575,5 +576,10 @@ function compileLevel(town: Town): LevelData {
       }
     }
   }
-  return { chunks: chunks([...meshes,...props],true), glass: chunks(glasses), floor: { data, w: resolution, h: resolution }, bounce: { data: new Uint8Array([0, 0, 0, 255]), w: 1, h: 1 } }
+  return {
+    chunks: chunks([...meshes, ...props], true),
+    glass: chunks(glasses),
+    floor: { data, w: resolution, h: resolution, moon: bakeOutbreakMoonMask(town) },
+    bounce: bakeOutbreakBounce(town),
+  }
 }

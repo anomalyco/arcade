@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { flashlightColor } from "../shared/flashlight"
 import { makeTown } from "../shared/map"
 import {
+  bakeOutbreakBounce,
+  bakeOutbreakMoonMask,
   DEFAULT_OUTBREAK_LIGHTING,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
   outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
+  stampOutbreakVertexTone,
 } from "../src/lighting"
 
 describe("Outbreak lighting module & Lab controls", () => {
@@ -107,5 +110,43 @@ describe("Outbreak lighting module & Lab controls", () => {
     expect(restBuf[15]).toBeCloseTo(-1, 4)
     expect(aimedBuf[14]).toBeCloseTo(1, 5)
     expect(aimedBuf[15]).toBeCloseTo(0, 5)
+  })
+
+  test("bakes 192x192 Dijkstra bounceTex, 768x768 soft moonTex, and per-vertex aOpenTone in byte 19", () => {
+    const town = makeTown(7)
+    const bounce = bakeOutbreakBounce(town)
+    expect(bounce.w).toBe(192)
+    expect(bounce.h).toBe(192)
+    expect(bounce.data.byteLength).toBe(192 * 192 * 4)
+    // Non-zero warm indirect bounce inside Ash House NW bedroom (x=25, z=25.5 -> cell (50, 51))
+    const nwIdx = (51 * 192 + 50) * 4
+    expect(bounce.data[nwIdx]!).toBeGreaterThan(20)
+    expect(bounce.data[nwIdx]!).toBeGreaterThan(bounce.data[nwIdx + 2]!)
+    expect(bounce.data[nwIdx + 3]).toBe(255)
+
+    const moon = bakeOutbreakMoonMask(town)
+    expect(moon.w).toBe(768)
+    expect(moon.h).toBe(768)
+    expect(moon.data.byteLength).toBe(768 * 768)
+    // Open road cell (44, 44 -> (352, 352)) is unoccluded (255); deep interior is sheltered (< 40)
+    expect(moon.data[352 * 768 + 352]).toBe(255)
+    expect(moon.data[220 * 768 + 220]!).toBeLessThan(40)
+
+    const buf = new ArrayBuffer(48)
+    const f32 = new Float32Array(buf)
+    const i8 = new Int8Array(buf)
+    const u8 = new Uint8Array(buf)
+    // Vertex 0: wall base y=0.10, ny=0 -> contact darkened (< 128)
+    f32[1] = 0.1
+    i8[12] = 127
+    i8[13] = 0
+    u8[19] = 255
+    // Vertex 1: bevel face y=0.65, ny=0.707 -> bevel boosted (> 128)
+    f32[6 + 1] = 0.65
+    i8[24 + 13] = 90
+    u8[24 + 19] = 255
+    stampOutbreakVertexTone(buf)
+    expect(u8[19]!).toBeLessThan(128)
+    expect(u8[24 + 19]!).toBeGreaterThan(128)
   })
 })

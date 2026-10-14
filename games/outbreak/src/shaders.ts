@@ -21,17 +21,14 @@ export const outbreakPostFinish: PostFinishOptions = {
 
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
-  bounce: "vec3f(0.0)",
+  bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.36 * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0) * OL.u1.z)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `let dn = max(d3, 0.85);
     let tight = max(0.5, OL.u0.w);
-    if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
-      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.85) / 0.58, 0.0, 1.0);
-      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.42) - 0.72) / 0.98, 0.0, 1.0);
-      win = rx * rx * ry * ry * (0.78 + 0.22 * smoothstep(0.0, 0.14, abs(dv.x)));
-    }
     var att = power * win * (0.025 + 2.25 / (1.0 + dn * dn * 0.62 * tight));
-    if (L.extra.w > -0.5 && L.pos.w > 4.2 && L.cone.w < -0.5 && hl > 2.0) {
+    if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
+      att = power * win * evalWindowAreaAttenuation(dv, dn, tight);
+    } else if (L.extra.w > -0.5 && L.pos.w > 4.2 && L.cone.w < -0.5 && hl > 2.0) {
       let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.16);
       att *= 0.88 + 0.78 * smoothstep(0.0, 3.4, dv.y) * xFall * xFall;
     }
@@ -44,7 +41,11 @@ export const outbreakSceneHooks: SceneHooks = {
   lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
   material: " ",
   postLightMaterial: `${surfaceMaterial}
-    let inRoom = interior(o.world.xz + n.xz * 0.28);`,
+    let inRoom = interior(o.world.xz + n.xz * 0.28);
+    let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
+      * select(1.0, 1.15, n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
+      * select(1.0, 0.68, n.y < -0.5 && o.world.y > 2.2);
+    albedo *= vTone;`,
   fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
@@ -115,7 +116,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
   return mix(los0, los1, fract(f)) * mask * range;
 }`,
-  directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
@@ -199,6 +200,9 @@ fn eyeVisible(p: vec2f) -> f32 {
       col *= mix(1.0, 0.56, smoothstep(2.15, 2.78, o.world.y));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       col = mix(col, vec3f(wallLum) * vec3f(1.26, 0.92, 0.54), w * 0.74) * 0.82;
+    } else if ((mat == 0 || mat == 24) && o.world.y > 0.14 && o.world.y < 2.65) {
+      // Blog Game Tip #9: Local-space power-4 triplanar grain & wear on props, doors, and parked car
+      col *= evalTriplanarPropMod(o.world, n);
     }
     if (!inRoom) {
       let vigDark = clamp(OL.u2.w, 0.0, 1.2);
@@ -249,15 +253,17 @@ fn eyeVisible(p: vec2f) -> f32 {
         col *= .88;
         if (inRoom && o.world.y < 2.8) { col *= max(explored, visible); }
       } else {
-        let luminance=dot(col,vec3f(.2126,.7152,.0722));
-        let periphTint = mix(vec3f(.83,.94,1.05), vec3f(1.04,.96,.84), w);
-        let peripheral=mix(vec3f(luminance)*periphTint,col,.76);
+        // Blog Game Tip #6: Pre-fog silhouette darkening & warm-practical hue retention (warmBias) in remembered rooms
+        let luminance = dot(col, vec3f(.2126, .7152, .0722));
+        let warmBias = clamp((col.r - col.b * 1.15) / max(col.r + 0.005, 1e-4), 0.0, 1.0);
+        let periphTint = mix(vec3f(.83, .94, 1.05), vec3f(1.04, .96, .84), w);
+        let peripheral = mix(vec3f(luminance) * periphTint, col, .76 + .20 * warmBias);
         if (inRoom && o.world.y < 2.8) {
-          let room=mix(vec3f(luminance)*periphTint,col,.88+.12*visible);
+          let room = mix(vec3f(luminance) * periphTint, col, .88 + .12 * max(visible, warmBias));
           let reveal = max(explored, visible * 0.92);
-          col=mix(o.color*.012, room * mix(F.effects.w, 1.0, .86), reveal);
+          col = mix(o.color * .012, room * mix(F.effects.w, 1.0, .86), reveal);
         } else {
-          col=mix(peripheral*(.88+.12*explored),col,.88+.12*visible);
+          col = mix(peripheral * (.88 + .12 * explored), col, .88 + .12 * visible);
         }
       }
     } else {

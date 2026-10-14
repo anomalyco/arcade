@@ -966,7 +966,10 @@ fn hash(p: vec2f) -> f32 {
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
   let px = o.pos.xy;
   let grain = hash(px + fract(G.x * 13.7) * 1000.0) + hash(px * 1.37 + fract(G.x * 7.3) * 500.0) - 1.0;
-  c += grain * ${finish ? finish.grain.toFixed(4) : looks ? "select(0.022, 0.009, enhanced)" : "0.022"} * (1.0 - l * 0.6);
+  ${finish?.shadowLiftColor ? `let midMask = smoothstep(0.02, 0.20, l) * (1.0 - smoothstep(0.75, 1.0, l));
+  c += grain * ${finish.grain.toFixed(4)} * (0.25 + 0.75 * midMask);
+  let ign = fract(52.9829189 * fract(dot(floor(px), vec2f(0.06711056, 0.00583715))));
+  c += (ign - 0.5) / 255.0 * step(0.001, l);` : `c += grain * ${finish ? finish.grain.toFixed(4) : looks ? "select(0.022, 0.009, enhanced)" : "0.022"} * (1.0 - l * 0.6);`}
   return vec4f(c, 1.0);
 }
 `
@@ -1047,14 +1050,22 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
       col *= 1.0 - clamp(fOcc * LK.u6.x * 0.62, 0.0, 0.78);
     }
 
-    // Height-settled peripheral fog & localized east-window moonlight shaft (no diagonal floor stripes)
+    // Closed-form 3D settled height fog & localized east-window moonlight shaft
     let fogDens = LK.u6.z;
     let shaftStr = LK.u7.w;
     if (fogDens > 0.001 || shaftStr > 0.001) {
       let hFall = max(0.35, LK.u6.w);
+      let rayVec = o.world - F.cam.xyz;
+      let rayDist = max(length(rayVec), 0.001);
+      let kVert = (rayVec.y / rayDist) / hFall;
       let dPlanFocus = length(o.world.xz - F.eye.xy);
-      let hFactor = exp(-max(o.world.y, 0.0) / hFall);
-      let fogTau = fogDens * 0.014 * max(0.0, dPlanFocus - 14.5) * hFactor;
+      let s0 = min(rayDist, max(0.0, rayDist - max(0.0, dPlanFocus - 12.0) * 1.25));
+      let vertInt = select(
+        (rayDist - s0) * exp(-0.5 * (F.cam.y + o.world.y) / hFall),
+        exp(-F.cam.y / hFall) * (exp(-s0 * kVert) - exp(-rayDist * kVert)) / kVert,
+        abs(kVert) > 1e-3
+      );
+      let fogTau = clamp(fogDens * 0.016 * max(0.0, vertInt), 0.0, 2.5);
       let trans = exp(-fogTau);
       let fogCol = pow(max(LK.u7.xyz, vec3f(0.002)), vec3f(2.2)) * clamp(LK.u4.x * 0.45, 0.02, 1.0);
       // East-window cool moonlight shaft slicing into the right side of the house interior
@@ -1514,7 +1525,10 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
     c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
     let px = o.pos.xy;
     let grain = hash(px + fract(G.x * 13.7) * 1000.0) + hash(px * 1.37 + fract(G.x * 7.3) * 500.0) - 1.0;
-    c += grain * baseGrain * (1.0 - l * 0.6);
+    ${finish?.shadowLiftColor ? `let midMask = smoothstep(0.02, 0.20, l) * (1.0 - smoothstep(0.75, 1.0, l));
+    c += grain * baseGrain * (0.25 + 0.75 * midMask);
+    let ign = fract(52.9829189 * fract(dot(floor(px), vec2f(0.06711056, 0.00583715))));
+    c += (ign - 0.5) / 255.0 * step(0.001, l);` : `c += grain * baseGrain * (1.0 - l * 0.6);`}
     if (compareMode == 2) {
       let line = 1.0 - smoothstep(texel.x * 1.2, texel.x * 2.8, abs(uv.x - wipeSplit));
       c = mix(c, vec3f(0.92, 0.96, 1.0), line * 0.85);
