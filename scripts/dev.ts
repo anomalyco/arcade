@@ -1,5 +1,5 @@
 // Single-origin developer router: every workspace game at its production path on one local URL.
-//   bun run dev              games, Sandbox and Catalogue from this checkout
+//   bun run dev              games, the Lab and Catalogue from this checkout
 //   bun run dev --workers    also start each game's Worker on first /api or /ws request
 // Launch through Nexus from the repository root: nexus run <name> -- bun run dev
 import { execFileSync, spawn, type ChildProcess } from "node:child_process"

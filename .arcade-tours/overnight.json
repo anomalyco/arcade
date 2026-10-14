@@ -65,7 +65,7 @@
     {
       "title": "Outbreak Vignette · Noir Look",
       "body": "Single-lot vignette in Noir direction: cold moonlit roof courses, volumetric flashlight haze, and split room lamps.",
-      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "url": "/arcade/lab/?game=outbreak&section=outbreak-vignette",
       "setup": [
         {
           "command": "vignette.preset",
@@ -89,7 +89,7 @@
     {
       "title": "Outbreak Vignette · Painterly Look",
       "body": "Same single-house lot with Painterly gouache twilight: brush-stroke cell modulation, sage wainscot, and warm window pools.",
-      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "url": "/arcade/lab/?game=outbreak&section=outbreak-vignette",
       "setup": [
         {
           "command": "vignette.preset",
@@ -113,7 +113,7 @@
     {
       "title": "Lab Looks · Noir vs Current A/B Wipe",
       "body": "Deliberate Look Debug Room 50/50 split wipe: Current baseline (left) vs Noir look with window shafts & wet floor (right).",
-      "url": "/arcade/getaway/lab.html?section=looks",
+      "url": "/arcade/lab/?section=looks",
       "setup": [
         {
           "command": "look.preset",
@@ -144,7 +144,7 @@
     {
       "title": "Lab Foliage · Outbreak House Lot Stage",
       "body": "Procedural oak canopy, bark, and grass tufts staged directly on the Outbreak house lot at dusk.",
-      "url": "/arcade/getaway/lab.html?section=foliage",
+      "url": "/arcade/lab/?section=foliage",
       "setup": [
         {
           "command": "foliage.preset",
@@ -164,7 +164,7 @@
     {
       "title": "Lab Effects · Looping Explosion",
       "body": "Fireball core glow, shockwave debris, scorch decal, and dynamic flash light looping every 2.2s.",
-      "url": "/arcade/getaway/lab.html?section=effects",
+      "url": "/arcade/lab/?section=effects",
       "setup": [
         {
           "command": "effect.trigger",
@@ -218,7 +218,7 @@
     {
       "title": "Lab Workbench · Outliner & Car Details",
       "body": "Muscle car selected in Outliner with contextual vehicle & skid controls prioritized in the Details inspector.",
-      "url": "/arcade/getaway/lab.html",
+      "url": "/arcade/lab/",
       "setup": [
         {
           "command": "outliner.select",
@@ -242,7 +242,7 @@
     {
       "title": "Lab Materials · Generated Rug Texture",
       "body": "Generated Oriental area rug (sage & terracotta, layer 12) mapped onto the surface swatch.",
-      "url": "/arcade/getaway/lab.html?section=materials",
+      "url": "/arcade/lab/?section=materials",
       "setup": [
         {
           "command": "scene.select-section",

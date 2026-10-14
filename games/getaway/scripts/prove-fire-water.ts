@@ -11,7 +11,7 @@ const errors:string[]=[],results:unknown[]=[]
 try{
  const page=await browser.newPage({viewport:{width:1000,height:720},deviceScaleFactor:1})
  page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error"&&!m.text().includes("404"))errors.push(m.text())})
- await page.goto(`${process.env.LAB_URL??"http://fx-kit-blackout.localhost:1355"}/lab.html?bench`)
+ await page.goto(`${process.env.LAB_URL??"http://127.0.0.1:5180/arcade/lab"}/?bench`)
  await page.waitForFunction(()=>!!(window as any).lab,undefined,{timeout:30000}).catch(error=>{throw new Error(`${error.message}\n${errors.slice(0,3).join("\n")}`)})
  if(errors.length)throw new Error(errors.slice(0,3).join("\n"))
  const adapter=await page.evaluate(()=>{const a=(window as any).lab.adapter;return {vendor:a.vendor,architecture:a.architecture,device:a.device}})

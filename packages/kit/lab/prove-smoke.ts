@@ -21,7 +21,7 @@ const errors:string[]=[],report:Record<string,unknown>={source:baseline,viewport
 const live:{variant:string,page:Page,server:ViteDevServer}[]=[]
 try {
   for(const variant of ["before","after"]){
-    const dir=resolve(root,"games/getaway")
+    const dir=resolve(root,"games/lab")
     const server=await createServer({root:dir,configFile:resolve(dir,"vite.config.ts"),plugins:variant==="before"?[{name:"smoke-baseline",enforce:"pre",load(id){return originals.get(id)}}]:[],server:{host:"127.0.0.1",port:0}})
     await server.listen()
     const addr=server.httpServer!.address();assert(addr&&typeof addr!=="string")
@@ -30,7 +30,7 @@ try {
     page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error")errors.push(m.text())})
     await page.addInitScript(()=>{window.AudioContext=class {constructor(){throw new Error("Live audio is disabled in this proof")}} as any})
     try {
-      await page.goto(`http://127.0.0.1:${addr.port}/lab.html?bench`)
+      await page.goto(`http://127.0.0.1:${addr.port}/?bench`)
       await page.waitForFunction(()=>!!(window as any).lab,undefined,{timeout:60000})
       await page.locator('[data-catalog-id="effects:smoke"]').click()
       await page.getByRole("button",{name:"Transport play",exact:true}).click()

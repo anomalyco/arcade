@@ -54,7 +54,7 @@ const report: Record<string, unknown> = {
 
 try {
   for (const variant of ["before", "after"] as const) {
-    const dir = resolve(root, "games/blackout")
+    const dir = resolve(root, "games/lab")
     const server = await createServer({
       root: dir,
       configFile: resolve(dir, "vite.config.ts"),
@@ -89,7 +89,7 @@ try {
       } as any
     })
 
-    await page.goto(`http://127.0.0.1:${addr.port}/lab.html?bench`)
+    await page.goto(`http://127.0.0.1:${addr.port}/?bench`)
     await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 60000 })
 
     const adapter = await page.evaluate(() => {

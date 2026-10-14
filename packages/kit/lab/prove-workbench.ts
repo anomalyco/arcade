@@ -29,7 +29,7 @@ const report: Record<string, unknown> = {}
 try {
   const hosts: { game: string; url: string }[] = []
   for (const game of ["getaway", "blackout"] as const) {
-    const dir = resolve(root, "games", game)
+    const dir = resolve(root, "games/lab") // One Lab app; both former hosts load the same sections
     const server = await createServer({
       root: dir,
       configFile: resolve(dir, "vite.config.ts"),
@@ -58,7 +58,7 @@ try {
       } as any
     })
 
-    await page.goto(`${url}/lab.html?bench`)
+    await page.goto(`${url}/?bench`)
     await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
 
     const adapter = await page.evaluate(() => {

@@ -243,7 +243,7 @@ const browser = await chromium.launch({
   args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"],
 })
 
-const dir = resolve(root, "games/getaway")
+const dir = resolve(root, "games/lab")
 const server = await createServer({
   root: dir,
   configFile: resolve(dir, "vite.config.ts"),
@@ -280,7 +280,7 @@ try {
       )
     }
 
-    await page.goto(`${url}/lab.html?bench`)
+    await page.goto(`${url}/?bench`)
     await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
     const adapter = await page.evaluate(() => {
       const a = (window as any).lab.adapter
@@ -419,7 +419,7 @@ try {
   // 2. Verify Lab Panel Tunables (Edge AA + Shadow Softness) & Temporal Stability + Video
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 })
-    await page.goto(`${url}/lab.html?bench`)
+    await page.goto(`${url}/?bench`)
     await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
 
     // Select Stage Lighting & Grade to inspect Scene -> Edge AA and Shadows -> Softness
@@ -527,11 +527,11 @@ try {
   await pageBefore.route("**/packages/kit/lab/stage-shader.ts*", route =>
     route.fulfill({ status: 200, contentType: "application/javascript", body: legacyStageShaderModule }),
   )
-  await pageBefore.goto(`${url}/lab.html?bench`)
+  await pageBefore.goto(`${url}/?bench`)
   await pageBefore.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
 
   const pageAfter = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 })
-  await pageAfter.goto(`${url}/lab.html?bench`)
+  await pageAfter.goto(`${url}/?bench`)
   await pageAfter.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
 
   const setupScene = async (p: typeof pageBefore, kind: "room" | "yard") => {

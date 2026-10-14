@@ -14,7 +14,7 @@ const servers:ViteDevServer[]=[]
 try {
   const hosts=process.env.LAB_URL?[process.env.LAB_URL]:[]
   if(!hosts.length)for(const game of ["getaway","blackout"]){
-    const dir=resolve(root,"games",game),server=await createServer({root:dir,configFile:resolve(dir,"vite.config.ts"),server:{host:"127.0.0.1",port:0}})
+    const dir=resolve(root,"games/lab"),server=await createServer({root:dir,configFile:resolve(dir,"vite.config.ts"),server:{host:"127.0.0.1",port:0}})
     servers.push(server);await server.listen();const address=server.httpServer!.address()
     if(!address||typeof address==="string")throw new Error("No fixture port")
     hosts.push(`http://localhost:${address.port}`)
@@ -22,7 +22,7 @@ try {
   for(const [hostIndex,host] of hosts.entries()){
     const page=await browser.newPage({viewport:{width:1000,height:720}})
     page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error"&&!m.text().includes("404"))errors.push(m.text())})
-    await page.goto(`${host}/lab.html?bench`)
+    await page.goto(`${host}/?bench`)
     await page.waitForFunction(()=>!!(window as any).lab,{},{timeout:60000})
     const adapter=await page.evaluate(()=>{const a=(window as any).lab.adapter;return {vendor:a.vendor,architecture:a.architecture}})
     if(!adapter.architecture.includes("metal"))throw new Error(`Not Metal: ${JSON.stringify(adapter)}`)

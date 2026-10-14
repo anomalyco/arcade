@@ -1,3 +1,4 @@
+import { labUrl } from "@arcade/kit/lab-url"
 import { normalizeRoom } from "../shared/protocol"
 import { type Env, lobbyOf } from "./env"
 
@@ -10,6 +11,7 @@ export default {
   async fetch(req, env): Promise<Response> {
     const url = new URL(req.url)
     const path = url.pathname.replace(/^\/arcade\/getaway(?=\/|$)/, "")
+    if (path === "/lab.html") return Response.redirect(labUrl(req.url, "getaway"), 301)
     if (path === "/api/health") return new Response("ok", { headers: { "content-type": "text/plain" } })
     if (path === "/api/quick") return json({ room: await lobbyOf(env).quick() })
     if (path === "/api/create") return json({ room: await lobbyOf(env).create() })

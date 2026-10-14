@@ -484,8 +484,8 @@ async function main() {
     if (command.id === "characters") {
       link.href = "characters.html"
       link.setAttribute("aria-current", "page")
-    } else if (command.id === "sandbox") {
-      link.href = "lab.html"
+    } else if (command.id === "lab") {
+      link.href = command.href
     } else {
       link.href = `${hubHref}${command.href.slice("dev.html".length)}`
     }
