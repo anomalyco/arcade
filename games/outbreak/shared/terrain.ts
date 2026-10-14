@@ -8,7 +8,6 @@ const distance = (x: number, z: number, a: number, b: number, c: number, d: numb
 export function terrainVertex(town: Town, x: number, z: number): number {
   let free = Math.min(distance(x,z,38,0,50,96), distance(x,z,0,38,96,50))
   for (const b of town.buildings) {
-    for (const r of buildingFootprint(b)) free = Math.min(free, distance(x, z, ...r))
     free = Math.min(free, distance(x,z,...b.rect), distance(x,z,b.rect[0]+4.5,b.rect[3],b.rect[0]+7,frontageEnd(b)+2),distance(x,z,b.rect[0]-3,b.rect[1],b.rect[0]-.35,frontageEnd(b)+2))
   }
   const s = town.seed * .37
@@ -24,15 +23,18 @@ export function groundHeight(town: Town, x: number, z: number): number {
 
 /** Rendered walking surfaces, including the shallow curb ramp and the level thresholds. */
 export function supportHeight(town: Town, x: number, z: number): number {
-  let height=groundHeight(town,x,z)
   for (const b of town.buildings) {
-    const [a,c,,e]=b.rect
+    const [a,,,e]=b.rect
     if (inBuildingFootprint(b, x, z)) return .13
     if (x>=a+5 && x<=a+6.4 && z>=e && z<=frontageEnd(b)+2) return .13
     if (x>=a+4.5 && x<=a+7 && z>=e && z<=e+1.3) return .13
-    if (x>=a-3 && x<=a-.35 && z>=c && z<=frontageEnd(b)+2) height=Math.max(.035,height)
   }
   if ((x>=40 && x<=48) || (z>=40 && z<=48)) return .014
+  let height=groundHeight(town,x,z)
+  for (const b of town.buildings) {
+    const [a,c,,e]=b.rect
+    if (x>=a-3 && x<=a-.35 && z>=c && z<=frontageEnd(b)+2) height=Math.max(.035,height)
+  }
   const curb = (v: number) => v>=38 && v<=40 ? .014+.086 * Math.min(1,(40-v)/.25) : v>=48 && v<=50 ? .014+.086 * Math.min(1,(v-48)/.25) : 0
   if ((x>=38 && x<=50) || (z>=38 && z<=50)) return Math.max(height,.014,curb(x),curb(z))
   return height

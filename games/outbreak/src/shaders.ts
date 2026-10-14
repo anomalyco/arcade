@@ -1,43 +1,51 @@
 import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
-import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
+import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
+import { outbreakLightingDeclarationsWgsl } from "./lighting"
 
 export const outbreakPostFinish: PostFinishOptions = {
-  chromatic: 0,
-  bloom: .055,
-  grain: .002,
-  vignette: .90,
+  chromatic: 0.001,
+  bloom: 0.068,
+  halation: 0.055,
+  grain: 0.014,
+  vignette: 0.78,
   diagnostics: true,
-  shadowLift: 0,
-  huePreserve: .42,
+  shadowLift: 0.52,
+  shadowLiftColor: [0.0095, 0.0078, 0.0062],
+  saturation: 0.88,
+  shadowTint: [1.06, 0.97, 0.82],
+  highlightTint: [1.14, 0.96, 0.72],
+  huePreserve: 0.52,
 }
 
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
-  bounce: "vec3f(0.0)",
+  bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.58 * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0) * OL.u1.z)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `let dn = max(d3, 0.85);
-    if (L.cone.w > 0.5 && L.pos.w < 4.5) {
-      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.96) / 0.65, 0.0, 1.0);
-      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.55) - 0.85) / 1.25, 0.0, 1.0);
-      win = rx * rx * ry * ry * (0.78 + 0.22 * smoothstep(0.0, 0.14, abs(dv.x)));
-    }
-    var att = power * win * (0.04 + 2.45 / (1.0 + dn * dn * 0.55));
-    if (L.extra.w > -0.5 && L.pos.w > 7.5) {
-      let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.065);
-      att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * xFall * xFall;
+    let tight = max(0.5, OL.u0.w);
+    var att = power * win * (0.025 + 2.25 / (1.0 + dn * dn * 0.62 * tight));
+    if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
+      att = power * win * evalWindowAreaAttenuation(dv, dn, tight);
+    } else if (L.extra.w > -0.5 && L.pos.w > 4.2 && L.cone.w < -0.5 && hl > 2.0) {
+      let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.16);
+      att *= 0.88 + 0.78 * smoothstep(0.0, 3.4, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
-  wallDirectScale: "mix(0.18, 0.33, smoothstep(0.0, 1.5, o.world.y))",
-  ambient: "ambientAt(n) * mix(0.05, 1.0, select(1.0, select(fd.g, 0.04, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.008, 0.005, 0.0025), inRoom && o.world.y < 2.8)",
+  wallDirectScale: "mix(0.18, 0.34, smoothstep(0.0, 1.5, o.world.y))",
+  ambient: "outbreakSkyAmbient(n, F.ambient.rgb) * mix(0.03, 0.88, select(1.0, select(fd.g * 0.28, 0.03, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.004, 0.0024, 0.0010), inRoom && o.world.y < 2.8)",
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
-  lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
+  lightMask: "if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }",
   material: " ",
-  postLightMaterial: `${surfaceMaterial}
-    let inRoom = interior(o.world.xz + n.xz * 0.28);`,
+  postLightMaterial: `${outbreakSurfaceMaterialWgsl}
+    let inRoom = interior(o.world.xz + n.xz * 0.28);
+    let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
+      * select(1.0, 1.15, n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
+      * select(1.0, 0.68, n.y < -0.5 && o.world.y > 2.2);
+    albedo *= vTone;`,
   fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
@@ -47,7 +55,8 @@ export const outbreakSceneHooks: SceneHooks = {
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
-${surfaceMaterialDeclarations}
+${outbreakLightingDeclarationsWgsl}
+${outbreakSurfaceMaterialDeclarationsWgsl}
 ${foliageWindDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   switch id {
@@ -107,7 +116,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
   return mix(los0, los1, fract(f)) * mask * range;
 }`,
-  directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 1.75, 0.08, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
@@ -126,71 +135,70 @@ fn eyeVisible(p: vec2f) -> f32 {
   if (mat == 6) {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
     let outsideView = !interior(F.eye.xy);
-    col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
+    col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.28, 0.145, 0.036) * nightLamps, outsideView);
   } else if (mat == 21) {
-    // Subtle cool twilight sky sheen on upper roof shingle slopes; eaves stay shadowed.
-    let eave = smoothstep(2.88, 3.55, o.world.y);
-    col = col * mix(0.62, 1.08, eave) + vec3f(0.005, 0.010, 0.022) * F.ambient.w * eave * max(0.0, n.y);
+    // Weathered 3-tab slate-taupe roof shingles catching twilight sky, ridge rim, and granule lip sheen; eaves stay grounded.
+    let eave = smoothstep(2.82, 3.62, o.world.y);
+    let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
+    let courseStep = smoothstep(0.62, 0.96, fract(o.world.z / 0.24));
+    let w = clamp(OL.u0.z, 0.0, 1.0);
+    let roofTint = mix(vec3f(0.018, 0.032, 0.068), vec3f(0.118, 0.145, 0.188), w);
+    let extRoofScale = select(1.0, 0.46, OL.u5.w > 0.5);
+    let roofGlint = (0.58 * eave + 0.36 * courseStep + 0.95 * ridgeRim + 2.15 * surfaceAlpha * (0.45 + 0.55 * eave)) * F.ambient.w * OL.u2.z * max(0.0, n.y);
+    col = (col * mix(1.08, 1.66, eave) + roofTint * roofGlint) * extRoofScale;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
-    if (mat == 20) {
-      let kind = i32(round(o.aux));
-      if (kind == 0) {
-        // Overgrown dark-clump variation across lawns & yards so turf reads with deep mossy shadows and organic patches.
-        let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.42, 1.05, smoothstep(0.26, 0.76, turfPatch));
-      } else if (kind == 1) {
-        // Textured cracked asphalt: dark gutters & wheel ruts, jagged fracture lines, coarse aggregate, and localized moonlit crown sheen.
-        let p = o.world.xz;
-        let roadU = clamp((p.y - 40.0) / 8.0, 0.0, 1.0);
-        let crown = 1.0 - abs(roadU * 2.0 - 1.0);
-        let gutter = smoothstep(0.0, 0.18, roadU) * smoothstep(0.0, 0.18, 1.0 - roadU);
-        let ruts = max(0.0, 1.0 - pow((roadU - 0.28) * 6.5, 2.0)) + max(0.0, 1.0 - pow((roadU - 0.72) * 6.5, 2.0));
-        let roadMacro = surfaceNoise(p * 0.28 + vec2f(3.7, 8.1));
-        let w1 = surfaceNoise(p * 1.45 + vec2f(1.7, 5.3));
-        let w2 = surfaceNoise(p * 2.95 + vec2f(8.2, 2.9));
-        let warp = w1 * 0.65 + w2 * 0.35;
-        let fx = abs(fract(p.x * 0.34 + warp * 0.52) - 0.5);
-        let fy = abs(fract(p.y * 0.42 - warp * 0.48 + roadMacro * 0.35) - 0.5);
-        let mask = smoothstep(0.38, 0.64, roadMacro);
-        let cracks = clamp(((1.0 - smoothstep(0.004, 0.016, fx)) + (1.0 - smoothstep(0.005, 0.018, fy)) * 0.85) * mask, 0.0, 1.0);
-        let grit = (w2 - 0.5) * 0.32;
-        let dxRoad = (p.x - 29.0) * 0.07;
-        let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        col *= (0.50 + 0.32 * gutter - 0.12 * ruts + 0.18 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
-        let sheen = crown * crown * (0.45 + 0.55 * centerFocus) * (0.65 + 0.65 * roadMacro) * (1.0 - 0.65 * cracks);
-        col += vec3f(0.011, 0.018, 0.035) * F.ambient.w * sheen;
-      } else if (kind == 2) {
-        let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
-        if (!inVerge) {
-          col = col * 0.84 + vec3f(0.007, 0.011, 0.022) * F.ambient.w;
-        }
-      }
-    } else if (mat == 4 && !inRoom) {
-      col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y));
+    let w = clamp(OL.u0.z, 0.0, 1.0);
+    ${groundSurfaceHookWgsl}
+    if (mat == 4 && !inRoom) {
+      // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
+      let eaveShadow = smoothstep(2.05, 2.74, o.world.y);
+      let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.22;
+      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
+      col *= mix(1.0, 0.52, clamp(eaveShadow + lowShadow + underPorchGable * 0.35, 0.0, 1.0));
+      let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      col = mix(col, vec3f(wallLum) * vec3f(1.28, 0.96, 0.58), w * 0.74) * 0.96;
+    } else if (mat == 0 && o.world.y > 0.14 && o.world.y < 2.65) {
+      // Blog Game Tip #9: Local-space power-4 triplanar grain & wear on props, doors, and parked car
+      col *= evalTriplanarPropMod(o.world, n);
     }
-    if (!inRoom && o.world.y < 0.35) {
-      let dp = o.world.xz - lights[0].pos.xz;
-      let d2 = dot(dp, dp);
-      if (d2 < 14.0) {
-        let aura = max(0.0, 1.0 - d2 / 14.0);
-        col += o.color * vec3f(0.52, 0.31, 0.11) * aura * aura * nightLamps;
+    if (!inRoom) {
+      let vigDark = clamp(OL.u2.w, 0.0, 1.2);
+      let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.052, 0.064));
+      let periphShade = mix(1.0, clamp(1.18 - dCenter * 0.42, 0.46, 1.0), vigDark);
+      let extCutDim = select(1.0, select(0.68, 0.92, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
+      col *= periphShade * extCutDim;
+    } else {
+      let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), w * 0.58) * 0.66;
+      // Warm amber kitchen sink window pane glow (3D muntins are MAT.timber = 0, panes are MAT.lamp = 2)
+      if (mat == 2 && o.world.x > 32.64 && o.world.x < 34.06 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.05 && o.world.y < 2.22) {
+        col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
       }
     }
     if (mat == 22) {
-      // Above the Grassland + Botanics subsurface chlorophyll translucency & 4th-power grazing Fresnel rim.
+      // Compress near-field window/porch point-light hotspots on foundation shrub crowns so leaves stay rich olive-gold instead of bleaching white
+      col = col / (1.0 + max(vec3f(0.0), col - vec3f(0.10)) * 3.2);
+      // Subsurface leaf translucency & grazing rim shifted toward muted autumn olive-ochre
       let tipWeight = clamp(abs(o.aux), 0.0, 1.0);
       let keyDir = normalize(F.monitorBounds.xyz);
       let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
       let backNormal = max(0.0, dot(-n, keyDir));
-      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.24 * tipWeight;
-      let chloroTint = mix(vec3f(0.10, 0.24, 0.05), vec3f(0.28, 0.44, 0.14), sqrt(tipWeight));
-      let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.14 * tipWeight * F.ambient.w;
-      col += o.color * (chloroTint * transLobe + vec3f(0.32, 0.52, 0.22) * fresnelRim);
+      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight;
+      let chloroTint = mix(vec3f(0.20, 0.24, 0.10), vec3f(0.42, 0.36, 0.18), sqrt(tipWeight));
+      let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 3.2) * 0.20 * tipWeight * F.ambient.w;
+      col += o.color * (chloroTint * transLobe + vec3f(0.40, 0.36, 0.22) * fresnelRim);
+      let folLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      col = mix(col, vec3f(folLum) * vec3f(1.16, 1.02, 0.64), w * 0.38);
       if (o.world.y < 0.48) {
         let lawnPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.40, 0.95, smoothstep(0.26, 0.76, lawnPatch));
+        col *= mix(0.56, 1.06, smoothstep(0.26, 0.76, lawnPatch));
       }
+    }
+    col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, o.color, inRoom, mat), nightLamps);
+    // Darken cutaway wall-top molding (y = 2.73..2.83) so interior walls have a crisp dark charcoal cap
+    if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
+      col *= 0.08;
     }
     if (mat != 12) {
       let visible = eyeVisible(o.world.xz + n.xz * 0.06);
@@ -199,17 +207,26 @@ fn eyeVisible(p: vec2f) -> f32 {
         col *= .88;
         if (inRoom && o.world.y < 2.8) { col *= max(explored, visible); }
       } else {
-        let luminance=dot(col,vec3f(.2126,.7152,.0722));
-        let peripheral=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.72);
+        // Blog Game Tip #6: Pre-fog silhouette darkening & warm-practical hue retention (warmBias) in remembered rooms
+        let luminance = dot(col, vec3f(.2126, .7152, .0722));
+        let warmBias = clamp((col.r - col.b * 1.15) / max(col.r + 0.005, 1e-4), 0.0, 1.0);
+        let periphTint = mix(vec3f(.83, .94, 1.05), vec3f(1.04, .96, .84), w);
+        let peripheral = mix(vec3f(luminance) * periphTint, col, .76 + .20 * warmBias);
         if (inRoom && o.world.y < 2.8) {
-          let room=mix(vec3f(luminance)*vec3f(.90,.96,1.0),col,.88+.12*visible);
-          let reveal = max(explored, visible * 0.92);
-          col=mix(o.color*.008, room * mix(F.effects.w, 1.0, .82), reveal);
+          let room = mix(vec3f(luminance) * periphTint, col, .88 + .12 * max(visible, warmBias));
+          let reveal = max(explored, visible * 0.94);
+          col = mix(o.color * .012, room * mix(F.effects.w, 1.0, .86), reveal);
         } else {
-          col=mix(peripheral*(.86+.14*explored),col,.86+.14*visible);
+          col = mix(peripheral * (.88 + .12 * explored), col, .88 + .12 * visible);
         }
       }
+    } else {
+      let actorRim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * OL.u2.z;
+      let topCatch = max(0.0, n.y) * 0.45 * OL.u2.z;
+      let rimCol = mix(vec3f(0.032, 0.048, 0.082), vec3f(0.058, 0.046, 0.032), w);
+      col += rimCol * F.ambient.w * (actorRim + topCatch);
     }
+    col += evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
   }
 `,
 }

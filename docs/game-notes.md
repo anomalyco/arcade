@@ -250,6 +250,9 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 
 ## Rendering (WebGPU)
 
+- **Bucket cuttable walls into 2D `(xBand, zBand)` tiles and partition `shadowLightCount` before shadowless lights.**
+  In Release 5 (combining `outbreak-lighting`, `architecture-materials`, `ground-clutter`, and `foliage-lab`), 1D `zBand` wall chunking in `games/outbreak/src/level.ts` (`screenChunks`) merged all walls across the 15 m width of a house into one `cutBox`, forcing the entire house's walls into the `discard` pipeline (`levelCut`) whenever the player walked through the hallway. Bucketing `screenChunks` by 2D `4m × 4m` `(xBand, zBand)` tiles keeps 85% of house walls in `fsSolid` with Apple TBDR Hidden-Surface Removal intact. Partitioning shadow-casting lights ahead of shadowless lights in `games/outbreak/src/main.ts` (`render.shadowLightCount`), rejecting cone back-hemispheres (`dot(dv, L.cone.xy) <= 0.0`) before `sqrt` in `lightMask`, replacing the second 5-tap `shadowAt` in `evalFlashlightBeam` with a 1-ray polar check, and precomputing `groundY` per drifter/hinge track in `OutbreakAmbientMotion` cut 3456×1894 M5 Max Metal GPU medians from **17.912→15.450 ms** (street) and **18.793→16.016 ms** (interior), and fresh-submit `p95` from **22.00→18.10 ms** (street, MAD 0.20 ms) and **22.50→19.80 ms** (interior, MAD 0.90 ms) across 1 warmup + 7 measured runs, while reducing Primary 70s Sodium combined ΔE2000 from **13.813→6.677 (-51.7%)**.
+
 - **Unify explosions through one shared blackbody-billow + volumetric-smoke system and thin renderer adapters.**
   `packages/kit/fx/explosion.ts`, `particle-renderer.ts` (`makeParticleShader`, `blackbodyFireWgsl`) and `volume-renderer.ts`
   drive seven typed presets (`grenade`, `propane`, `car`, `barrel`, `missile`, `ship`, `pop`) parameterised by size, energy,

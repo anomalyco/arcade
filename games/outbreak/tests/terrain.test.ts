@@ -3,6 +3,7 @@ import { makeTown, sightRects, solidRects, propShape, frontageEnd } from "../sha
 import { clearLine, distToRect } from "@arcade/kit/sim/geom"
 import { groundHeight, supportHeight } from "../shared/terrain"
 import { buildLevel } from "../src/level"
+import { archSettings, resolveHouseDecay } from "../src/architecture"
 import { Vision } from "../shared/vision"
 import { SceneryMemory } from "../shared/scenery-memory"
 
@@ -75,3 +76,26 @@ test("furnished houses retain a clear entrance-to-room lane and supported setbac
     }
   }
 })
+
+test("house decay state, clutter density, weathering and clutter seed vary meshes deterministically", () => {
+  const town = makeTown(7)
+  const saved = { ...archSettings }
+  try {
+    archSettings.houseDecay = 0
+    expect(resolveHouseDecay(town, 0)).toBe(3)
+    expect(resolveHouseDecay(town, 1)).toBe(4)
+    const ransacked = buildLevel(town)
+    archSettings.houseDecay = 1
+    expect(resolveHouseDecay(town, 0)).toBe(1)
+    const tidy = buildLevel(town)
+    expect(tidy.chunks).not.toEqual(ransacked.chunks)
+    archSettings.houseDecay = 4
+    const barricaded = buildLevel(town)
+    expect(barricaded.chunks).not.toEqual(tidy.chunks)
+    archSettings.clutterDensity = 0
+    const emptyClutter = buildLevel(town)
+    expect(emptyClutter.chunks).not.toEqual(barricaded.chunks)
+  } finally {
+    Object.assign(archSettings, saved)
+  }
+}, 20_000)

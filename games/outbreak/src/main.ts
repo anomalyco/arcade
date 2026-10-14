@@ -30,8 +30,20 @@ import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
+import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
+import { ExteriorClutterRenderer } from "./clutter"
+import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
+import { archSettings } from "./architecture"
+import {
+  DEFAULT_OUTBREAK_LIGHTING,
+  OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_LOOK_LIGHTING_PRESETS,
+  outbreakLightingControls,
+  packOutbreakLightingUniforms,
+  resolveLampLight,
+} from "./lighting"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
@@ -49,16 +61,14 @@ const settings = {
   awareness: 2.5,
   range: 27,
   shroud: 0.32,
-  exposure: 0.92,
   zoom: 46,
   houseSeed: 7,
   terrain: 0.22,
   foliageDensity: 1,
+  houseDecay: 0,
+  weathering: 1,
   weather: 0,
-  lighting: 1,
   diagnostic: 0,
-  skyFill: 1,
-  moonFill: 1,
   textures: 1,
   rugStyle: 0,
   wallStyle: 0,
@@ -68,10 +78,12 @@ const settings = {
   texRoughness: 0.0,
   humanProfile: 0,
   lookPreset: "current",
+  ...DEFAULT_OUTBREAK_LIGHTING,
   ...DEFAULT_AI_CONFIG,
   aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
   ...DEFAULT_FLASHLIGHT_TUNING,
+  ...DEFAULT_GROUND_SETTINGS,
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
 }
@@ -129,6 +141,9 @@ async function main() {
   const avatar = new Survivor(renderer)
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
+  const groundWear = new GroundWearRenderer(renderer)
+  const exteriorClutter = new ExteriorClutterRenderer(renderer)
+  const ambientMotion = new OutbreakAmbientMotion(renderer)
   const updateProfile = () => {
     avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
   }
@@ -181,6 +196,17 @@ async function main() {
     },
     ...flashlightControls,
     ...staminaControls,
+    ...groundControls,
+    {
+      key: "randomizeGroundTuning",
+      label: "Randomize ground & clutter",
+      group: "Ground & Clutter",
+      type: "action",
+      run: () => {
+        Object.assign(settings, randomizeGroundSettings(settings, settings.groundTuningSeed))
+        lab.refresh()
+      },
+    },
     { key: "textures", label: "Material mode", group: "Materials", options: [{ label: "Textured + procedural", value: 1 }, { label: "Procedural fallback", value: 0 }, { label: "A/B split", value: 2 }] },
     { key: "rugStyle", label: "Rug style", group: "Materials", options: [{ label: "Oriental & Persian", value: 0 }, { label: "Swapped Medallion", value: 1 }, { label: "Procedural geometric", value: 2 }] },
     { key: "wallStyle", label: "Wall finish", group: "Materials", options: [{ label: "Damask & plaster", value: 0 }, { label: "Fine linen plaster", value: 1 }, { label: "Procedural plaster", value: 2 }] },
@@ -213,24 +239,39 @@ async function main() {
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
     { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
     { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
-    { key: "exposure", label: "Exposure", group: "Look", min: 0.5, max: 2, step: 0.05 },
-    { key: "skyFill", label: "Sky fill", group: "Look", min: 0, max: 1.5, step: 0.05 },
-    { key: "moonFill", label: "Moonlight fill", group: "Look", min: 0, max: 2, step: 0.05 },
+    ...outbreakLightingControls,
     { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
     { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
     { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: 0.4, step: 0.02 },
     { key: "foliageDensity", label: "Foliage density", group: "Generation", min: 0.5, max: 1.5, step: 0.05 },
+    {
+      key: "houseDecay",
+      label: "House decay",
+      group: "Generation",
+      options: [
+        { label: "Auto (by seed)", value: 0 },
+        { label: "Tidy", value: 1 },
+        { label: "Abandoned", value: 2 },
+        { label: "Ransacked", value: 3 },
+        { label: "Barricaded", value: 4 },
+      ],
+    },
+    { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
-    { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: 0.05 },
   ]
   const doorMesh = new Mesh()
-  doorMesh.box(0, 0.13, -0.1, 1.4, 2.3, 0.1, hex(0x463322), MAT.timber)
-  doorMesh.box(0.08, 0.35, -0.11, 1.32, 2.1, -0.105, hex(0x57402b), MAT.timber)
-  doorMesh.box(1.14, 1.08, 0.1, 1.25, 1.19, 0.18, hex(0xc9a96a), MAT.shiny)
-  for (const x of [0.15, 0.75]) {
-    for (const y of [0.42, 1.36]) {
-      doorMesh.box(x, y, 0.101, x + 0.48, y + 0.7, 0.125, hex(0x5b432d), MAT.timber)
-      doorMesh.box(x + 0.035, y + 0.04, 0.126, x + 0.445, y + 0.66, 0.132, hex(0x3a2a1c), MAT.timber)
+  // Deep weathered walnut stiles & rails, 6 recessed craft panels, tarnished brass kickplate, and antique lockset
+  doorMesh.box(0, 0.13, -0.09, 1.4, 2.3, 0.09, hex(0x322216), MAT.timber)
+  doorMesh.box(0.07, 0.15, 0.09, 1.33, 0.32, 0.102, hex(0x6e5834), MAT.shiny)
+  doorMesh.box(0.08, 0.35, -0.10, 1.32, 2.12, -0.092, hex(0x3e2b1c), MAT.timber)
+  // Escutcheon backplate, brass knob & deadbolt cylinder
+  doorMesh.box(1.13, 0.98, 0.09, 1.24, 1.28, 0.115, hex(0x4a3c24), MAT.shiny)
+  doorMesh.box(1.15, 1.05, 0.115, 1.22, 1.13, 0.165, hex(0xc29e58), MAT.shiny)
+  doorMesh.box(1.155, 1.19, 0.115, 1.215, 1.24, 0.14, hex(0xb89450), MAT.shiny)
+  for (const x of [0.14, 0.74]) {
+    for (const [y0, y1] of [[0.38, 0.98], [1.08, 1.66], [1.76, 2.14]] as const) {
+      doorMesh.box(x, y0, 0.091, x + 0.50, y1, 0.112, hex(0x422e1e), MAT.timber)
+      doorMesh.box(x + 0.04, y0 + 0.04, 0.113, x + 0.46, y1 - 0.04, 0.122, hex(0x23170e), MAT.timber)
     }
   }
   const doorModel = renderer.addModel(doorMesh)
@@ -248,6 +289,7 @@ async function main() {
   const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   const lampPower = new Float32Array(MAX_LIGHTS)
+  const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
   const alphaSprites = new Float32Array(1024 * SPRITE_FLOATS)
   const addSprites = new Float32Array(256 * SPRITE_FLOATS)
   const render: FrameInput = {
@@ -392,7 +434,16 @@ async function main() {
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
       if (key === "hour") session.view.hour = wrapHour(settings.hour)
-      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (
+        key === "houseSeed" ||
+        key === "terrain" ||
+        key === "foliageDensity" ||
+        key === "houseDecay" ||
+        key === "clutterDensity" ||
+        key === "weathering" ||
+        key === "clutterSeed"
+      )
+        regenerate()
       if (
         key === "textures" ||
         key === "rugStyle" ||
@@ -400,12 +451,21 @@ async function main() {
         key === "floorStyle" ||
         key === "texScale" ||
         key === "texContrast" ||
-        key === "texRoughness"
+        key === "texRoughness" ||
+        key === "wearAmount" ||
+        key === "curbDirt" ||
+        key === "puddleWetness" ||
+        key === "clutterDensity" ||
+        key === "rubbleAmount" ||
+        key === "motionStrength" ||
+        key === "windGustiness" ||
+        key === "clutterSeed"
       )
         syncTextures()
       if (key === "lookPreset") {
         const pid = resolveLookPresetId(settings.lookPreset) ?? "current"
         applyLookPreset(lookSettings, pid)
+        Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
         lab.refresh()
       }
     },
@@ -570,6 +630,10 @@ async function main() {
   let vertices = 0
   function level() {
     session.view.town.foliageDensity = settings.foliageDensity
+    archSettings.houseDecay = settings.houseDecay
+    archSettings.clutterDensity = settings.clutterDensity
+    archSettings.weathering = settings.weathering
+    archSettings.clutterSeed = settings.clutterSeed
     const data = buildLevel(session.view.town)
     vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
     renderer.setLevel(data)
@@ -583,8 +647,10 @@ async function main() {
     session.view.time = previous.time
     session.view.revision = previous.revision + 1
     session.view.town.doors.forEach((d, i) => {
-      d.open = previous.town.doors[i]!.open
-      d.locked = previous.town.doors[i]!.locked
+      const prev = previous.town.doors[i]!
+      d.open = prev.open
+      if (prev.locked !== undefined) d.locked = prev.locked
+      else delete d.locked
     })
     session.view.town.windows.forEach((w, i) => {
       w.open = previous.town.windows[i]!.open
@@ -596,6 +662,7 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    ambientMotion.reset()
   }
   function reset(nextSeed = seed) {
     session.close()
@@ -607,6 +674,7 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    ambientMotion.reset()
     level()
     scenery = new SceneryMemory()
     renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -781,15 +849,23 @@ async function main() {
       -1,
     ])
     let count = 1
+    let flashlightSlot = -1
+    const playerGroundY = supportHeight(town, p.x, p.y)
+    const flashRgb = flashlightColor(settings.flashlightWarmth)
     if (p.flashlightOutput > 0.001 && settings.flashlightIntensity > 0.001) {
-      const [fr, fg, fb] = flashlightColor(settings.flashlightWarmth)
+      const inBld = town.buildings.some(
+        (b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1,
+      )
       const fx = p.x + Math.cos(p.aim) * 0.25
       const fy = p.y + Math.sin(p.aim) * 0.25
-      const fh = 1.22 + supportHeight(town, p.x, p.y)
+      const fh = 1.18 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
-      const power = p.flashlightOutput * settings.flashlightIntensity
+      const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.0
+      const power = p.flashlightOutput * settings.flashlightIntensity * directScale
+      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 6.4)
+      flashlightSlot = count
       lights.set(
-        [fx, fh, fy, settings.flashlightRange, fr, fg, fb, power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, 0.08, -1],
+        [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -839,42 +915,57 @@ async function main() {
     const cutFlag = activePeek ? 1 + peekBlend : 1
     const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
+    const inInteriorView = town.buildings.some(
+      (b) => cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1,
+    )
+    const unshadowedLamps: number[][] = []
     for (const [i, lamp] of town.lamps.entries()) {
-      const lampScale = day.lamps * settings.lighting
-      lampPower[i] = lampScale
-      const power = lampScale * lamp.power
-      if (power <= 0.001) continue
-      const lx = lamp.x + (lamp.kind === "street" ? 0.55 : 0)
-      const ly = lamp.y
-      const r = lamp.radius
-      const rEff = r * (r <= 7.5 ? 0.85 : 0.92)
-      if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
+      const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings, inInteriorView)
+      lampPower[i] = resolved.fixtureBrightness
+      if (resolved.power <= 0.001) continue
+      const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
+      const dCam = Math.hypot(lx - camX, ly - camY)
+      if (dCam > (lamp.kind === "street" ? 15.5 : 16.5)) continue
+      if (inInteriorView && !castShadows) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
       if (lamp.kind === "room") {
         const b = town.buildings.find(
-          (bld) => lx >= bld.rect[0] && lx <= bld.rect[2] && ly >= bld.rect[1] && ly <= bld.rect[3],
+          (bld) => lamp.x >= bld.rect[0] && lamp.x <= bld.rect[2] && lamp.y >= bld.rect[1] && lamp.y <= bld.rect[3],
         )
         if (b) {
           const roofOpen =
             cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1
-          if (!roofOpen && (b.kind !== "house" || ly < b.rect[1] + 5.5 || b.rect[3] - r > vy1)) continue
+          if (!roofOpen) continue
         }
       }
-      const color =
-        lamp.kind === "street"
-          ? [1, 0.72, 0.44]
-          : lamp.kind === "porch"
-            ? [1, 0.58, 0.18]
-            : lamp.kind === "window"
-              ? [1, 0.54, 0.16]
-              : [1, 0.54, 0.18]
-      const cone =
-        lamp.kind === "window" ? [0, 1, -0.75, 1] : [0, 0, 0, lamp.kind === "room" || lamp.kind === "porch" ? -1 : 0]
-      lights.set(
-        [lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind === "room" ? 0.16 : 0.22, i],
-        count++ * LIGHT_FLOATS,
-      )
+      const usePolarShadow = castShadows && lamp.kind === "room"
+      const packed = [lx, lh, ly, r, ...color, power, ...cone, 0, usePolarShadow ? lightOccluders : 0, softness, i]
+      if (usePolarShadow) {
+        lights.set(packed, count++ * LIGHT_FLOATS)
+      } else {
+        unshadowedLamps.push(packed)
+      }
     }
+    const shadowLightCount = count
+    for (const packed of unshadowedLamps) {
+      if (count >= MAX_LIGHTS) break
+      lights.set(packed, count++ * LIGHT_FLOATS)
+    }
+    packOutbreakLightingUniforms(
+      {
+        settings,
+        playerX: p.x,
+        playerY: p.y,
+        playerH: playerGroundY,
+        playerAim: p.aim,
+        flashlightOutput: p.flashlightOutput,
+        flashlightSlot,
+        inInteriorView,
+      },
+      flashRgb,
+      lightingUniforms,
+    )
+    renderer.setCustomUniforms(lightingUniforms)
     frame.set(cam.viewProj, 0)
     frame.set([...cam.eye, time], 16)
     const texCfgBits =
@@ -883,7 +974,8 @@ async function main() {
       (((settings.wallStyle & 3) << 4) >>> 0) |
       (((settings.floorStyle & 3) << 6) >>> 0) |
       ((Math.round((settings.texScale - 0.5) / 0.05) & 63) << 8) |
-      ((Math.round(settings.texContrast / 0.05) & 63) << 14)
+      ((Math.round(settings.texContrast / 0.05) & 63) << 14) |
+      ((Math.round(settings.weathering * 5) & 15) << 20)
     frame.set([canvas.width, canvas.height, count, texCfgBits], 20)
     frame.set([cutX, cutY, cutFlag, cutRadius], 24)
     frame.set(
@@ -898,7 +990,7 @@ async function main() {
     const focus = cam.project(focusX, 1, focusY, w, h)
     frame.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, cutHeight, count], 32)
     frame.set([...day.direction, day.sun], 36)
-    frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
+    frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, packGroundCfgBits(settings)], 40)
     frame.set([sightAim, Math.cos((sightCone * Math.PI) / 360), sightAwareness, settings.shroud], 44)
     town.doors.forEach((door, i) =>
       doorData.set(
@@ -916,7 +1008,7 @@ async function main() {
       sashData.set([(wx0 + wx1) / 2, 0.38, (wy0 + wy1) / 2, yaw, 1, 1, 1, 1, 0, 0, 1, 0], openWindows++ * 12)
     }
     sashBatch.count = openWindows
-    render.alphaCount = zombieCrowd.renderDebugOverlay(
+    const debugAlphaCount = zombieCrowd.renderDebugOverlay(
       Boolean(settings.aiDebugOverlay),
       zombies,
       noises,
@@ -930,16 +1022,34 @@ async function main() {
       alphaSprites,
       0,
     )
+    const tightView = cam.groundRect(0.8)
+    const groundWearBatches = groundWear.collectBatches(town, tightView, settings)
+    const clutterBatches = exteriorClutter.collectBatches(town, tightView, settings)
+    const motionOut = ambientMotion.stepAndCollect(
+      dt,
+      time,
+      town,
+      p,
+      tightView,
+      settings,
+      alphaSprites,
+      debugAlphaCount,
+    )
+    render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
     render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     render.batches = [
+      ...groundWearBatches,
+      ...clutterBatches,
+      ...motionOut.batches,
       ...survivorBatches,
       ...fxOut.batches,
       ...zombieBatches,
       doorBatch,
       ...(openWindows ? [sashBatch] : []),
     ]
-    render.lightCount = render.shadowLightCount = count
+    render.lightCount = count
+    render.shadowLightCount = shadowLightCount
     render.occluderCount = lightOccluders
     render.lampCount = town.lamps.length
     render.view = view
@@ -1087,6 +1197,17 @@ async function main() {
       explored: vision.explored.filter((v) => v > 0).length,
       vertices,
       splatter: combatFx.splatter?.inspect() ?? null,
+      ground: {
+        wearAmount: settings.wearAmount,
+        curbDirt: settings.curbDirt,
+        puddleWetness: settings.puddleWetness,
+        clutterDensity: settings.clutterDensity,
+        rubbleAmount: settings.rubbleAmount,
+        motionStrength: settings.motionStrength,
+        windGustiness: settings.windGustiness,
+        clutterSeed: settings.clutterSeed,
+        groundTuningSeed: settings.groundTuningSeed,
+      },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
@@ -1123,7 +1244,16 @@ async function main() {
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
       if (key === "hour" && typeof value === "number") session.view.hour = wrapHour(value)
-      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (
+        key === "houseSeed" ||
+        key === "terrain" ||
+        key === "foliageDensity" ||
+        key === "houseDecay" ||
+        key === "clutterDensity" ||
+        key === "weathering" ||
+        key === "clutterSeed"
+      )
+        regenerate()
       if (
         key === "textures" ||
         key === "rugStyle" ||
@@ -1131,7 +1261,15 @@ async function main() {
         key === "floorStyle" ||
         key === "texScale" ||
         key === "texContrast" ||
-        key === "texRoughness"
+        key === "texRoughness" ||
+        key === "wearAmount" ||
+        key === "curbDirt" ||
+        key === "puddleWetness" ||
+        key === "clutterDensity" ||
+        key === "rubbleAmount" ||
+        key === "motionStrength" ||
+        key === "windGustiness" ||
+        key === "clutterSeed"
       )
         syncTextures()
       if (key === "lookPreset") {
@@ -1177,6 +1315,7 @@ async function main() {
       peekBlend = 0
       lastPeek = null
       session.rebuildCollision()
+      avatar.reset()
       cam.snap(x, y)
       cam.dist = settings.zoom
     },
@@ -1219,6 +1358,10 @@ async function main() {
       return null
     },
     async step(dt = 1 / 60, command?: Partial<Command>) {
+      while (renderer.inflight > 0 || renderer.hasPending) {
+        await Promise.resolve()
+        await device.queue.onSubmittedWorkDone()
+      }
       session.update(
         dt,
         { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command },
@@ -1228,7 +1371,10 @@ async function main() {
       frames++
       draw(dt)
       await Promise.resolve()
-      await device.queue.onSubmittedWorkDone()
+      while (renderer.inflight > 0 || renderer.hasPending) {
+        await device.queue.onSubmittedWorkDone()
+        await Promise.resolve()
+      }
       return harness.state()
     },
   }

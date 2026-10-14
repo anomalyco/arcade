@@ -13,6 +13,15 @@ export type Town = { seed: number; houseSeed: number; terrain: number; foliageDe
 
 /** One footprint source for geometry, collision, roof cutaways and room memory. */
 export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
+/** Authoritative collision footprints for parked driveway sedans and abandoned street vehicles. */
+export const EXTERIOR_VEHICLE_COLLIDERS: readonly Rect[] = [
+  [19.45, 32.10, 21.20, 36.20], // Ash driveway sedan
+  [18.45, 62.10, 20.20, 66.20], // Elm driveway sedan
+  [10.25, 45.25, 14.15, 47.25], // West street abandoned sedan
+  [53.45, 40.35, 57.35, 42.35], // East street (hardware frontage) abandoned coupe
+  [45.45, 56.55, 47.45, 60.45], // South avenue abandoned sedan
+  [40.55, 15.85, 42.55, 19.75], // North avenue abandoned cruiser
+]
 export const frontageEnd = (b: Building) => b.kind === "house" ? b.rect[3] + 2.5 : b.rect[3]
 /** Authoritative union-of-rects floor footprint: houses have an L-shaped plan (stepped-in north bedroom block + stepped north-east wing + full-width south block). */
 export function buildingFootprint(b: Building): readonly Rect[] {
@@ -124,7 +133,7 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
 
 /** Windows/fences remain movement blockers but never eye-height sight blockers. */
 export const sightRects = (town: Town): Rect[] => [...town.barriers.filter(b => b.kind === "wall").map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect)]
-export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})]
+export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]}), ...EXTERIOR_VEHICLE_COLLIDERS]
 
 export function nearbyDoor(town: Town, x: number, y: number): Door | undefined {
   return town.doors.filter(d => distToRect(x, y, d.rect) <= 1.8).sort((a, b) => distToRect(x, y, a.rect) - distToRect(x, y, b.rect))[0]

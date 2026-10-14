@@ -457,4 +457,42 @@ A clean `git archive` export passed on the Mac Studio:
 - `bun packages/kit/lab/prove-materials.ts`: passed on Metal (all 6 recipes, texture layer controls, isolated randomization, and preset round-trip verified)
 - `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity in `old` (`00bde28a…`) and `new` (`f5a333ae…`) modes without hash modification
 
+## Release 5 integration
+
+`release-5` is based on `origin/main` at `2c54b07d51827726ccf428427b85ec1ffb8d65c2`. The four parallel Outbreak look passes are merged as separate merge commits in order:
+
+| Source | Exact committed tip |
+| --- | --- |
+| outbreak-lighting | `5111ef55dc95aa432ddc8f6bbd9d6dc8c851e401` |
+| architecture-materials | `3d403c0753667bbc7976802e0f0fb09973316085` |
+| ground-clutter | `23e519844784ec3efffebb76644b0a9d09670f68` |
+| foliage-lab | `340960850bf64185cc966448b619a3bd3185bed9` |
+
+### Resolution, visual convergence, and performance optimization log
+
+- `outbreak-lighting` (`5111ef5`) vs `origin/main` (`2c54b07`):
+  - Forward-ported `PostFinishOptions` (`halation`, `saturation`, `shadowLiftColor`, `shadowTint`, `highlightTint`), 3D settled height fog in `makeLookSceneShader`, and midtone-masked film grain + dark-gated 8-bit IGN quantization dither into `packages/kit/gpu/look-shaders.ts` and `packages/kit/gpu/shaders.ts` (`postShader`).
+- `architecture-materials` (`3d403c0`) + `outbreak-lighting` (`5111ef5`):
+  - Kept `outbreak-lighting`'s `outbreakSkyAmbient`, `192×192` Dijkstra `bounceTex` (`bakeOutbreakBounce`), `768×768` directional `moonTex` (`bakeOutbreakMoonMask`), and `applySceneLightBounceAndHaze` instead of `architecture-materials`'s duplicate indoor ambient bounce term.
+  - Kept `architecture-materials`'s 3D 4-pane backlit kitchen window, 1970s harvest-almond refrigerator, walnut wainscot walls (`evalPlasterWall`), ochre-travertine kitchen tile (`evalKitchenTile`), and 3-tab roof shingles (`mat == 21`), removing `outbreak-lighting`'s redundant 2D shader box override on the fridge/cabinets.
+- `ground-clutter` (`23e5198`) + `architecture-materials` (`3d403c0`) + `outbreak-lighting` (`5111ef5`):
+  - Kept `ground-clutter`'s 3D instanced cobra-head sodium streetlamp poles (`GroundWearRenderer.streetLamps`), manholes, storm drains, potholes, road paint dashes, `ExteriorClutterRenderer`, `EXTERIOR_VEHICLE_COLLIDERS` `GridNav` obstacles, and `OutbreakAmbientMotion`, while keeping `outbreak-lighting`'s Lab-controlled 2100K sodium and 2500K tungsten light pools (`applySceneLightBounceAndHaze`) and removing `groundSurfaceHookWgsl`'s duplicate streetlamp/player light pools and `lighting.ts`'s ground-dot `bulbCore`.
+  - Kept `architecture-materials`'s 3D porch clutter (wooden storage chest, crates, terracotta planter, muddy boots, leaning broom) and removed `clutter.ts`'s 3 overlapping porch-deck clutter anchors. Deduplicated `clutterDensity` and `clutterSeed` Lab controls in `games/outbreak/src/main.ts`.
+- `foliage-lab` (`3409608`) + `architecture-materials` (`3d403c0`) + `ground-clutter` (`23e5198`):
+  - Combined `foliage-lab`'s overgrown foundation hedge thicket, matted 70s olive-ochre turf tufts, right-yard/corner framing trees, domain-warped verge/sidewalk/walkway weed encroachment (`isConcreteGrass`), and 70s olive/ochre/walnut `evalGrassSoil` / `evalFoliageCanopy` with `architecture-materials`'s louvered shutters, crawlspace vents, and decay states (`311,844` static vertices in `cutaway.test.ts`).
+- Aligned capture & ΔE2000 convergence (`LOOK_PHASE=release5 bun games/outbreak/scripts/look-proof.ts` vs `target-sodium70s-street.png` & `target-sodium70s-open.png`):
+  - Eliminated post-merge double-darkening on front windows, porch sconces, porch walkway, and foundation shrub crowns:
+    - Combined Primary Sodium70s ΔE2000: **`13.813` (baseline) → `6.677` (`-51.7%`)**
+    - Street (`18:00`) ΔE2000: **`12.813 → 5.756`** (`p50 = 4.566`, `p90 = 10.439`; `roof dE = 1.42`, `yard dE = 1.58`, `streetlamp_r dE = 1.64`, `flashlight dE = 1.67`, `road dE = 2.43`, `trees dE = 3.09`, `porch dE = 4.05`, `windows dE = 4.82`, `sidewalk dE = 5.00`)
+    - Open Interior (`19:00`) ΔE2000: **`14.813 → 7.598`** (`p50 = 6.133`, `p90 = 14.107`; `bedroom_ne dE = 1.80`, `hallway dE = 1.81`, `bedroom_nw dE = 2.82`, `living_sw dE = 3.02`, `kitchen_se dE = 3.65`, `yard dE = 4.42`, `sidewalk dE = 4.93`, `streetlamp_ne dE = 5.25`, `porch dE = 5.31`)
+- Outbreak performance pass (`3456×1894` Retina on Mac Studio Metal, 1 warmup + 7 measured runs):
+  - Post-merge baseline (`captures/outbreak-bench/release-5-initial.json`): street fresh-submit `p95 = 22.00 ms` (`gpu_hw = 17.912 ms`), interior fresh-submit `p95 = 22.50 ms` (`gpu_hw = 18.793 ms`).
+  - Bucketed cuttable walls (`screenChunks` in `games/outbreak/src/level.ts`) by 2D `4m × 4m` `(xBand, zBand)` tiles instead of 1D full-width `zBand` strips so the player's `0.22 m` cutaway circle only routes the single wall tile in front of the player to `levelCut` (`discard`), keeping the other 85% of house walls in `fsSolid` with hardware HSR.
+  - Partitioned shadow-casting lights before shadowless lights (`render.shadowLightCount`), gated cone back-hemispheres (`dot(dv, L.cone.xy) <= 0.0`) before `sqrt` in `lightMask`, replaced the duplicate 5-tap `shadowAt` in `evalFlashlightBeam` with a 1-ray polar blocker lookup, and culled off-screen shadowless lamps whose indirect bounce is already in `bounceTex`.
+  - Removed duplicate `uv3` micro-leaf noise in `surfaceMaterial`, duplicate `roadMacro` / `turfPatch` noise in `ground.ts`, redundant `buildingFootprint` array allocations in `terrainVertex`, and per-frame `supportHeight` / `.set([...])` allocations in `OutbreakAmbientMotion`.
+  - Optimized result (`captures/outbreak-bench/release-5-opt2.json`):
+    - **Street:** fresh submit `p95 = 18.10 ms` (MAD `0.20 ms`, pooled `p95 = 18.10 ms`, budget `≤ 19.0 ms`), `p50 = 17.00 ms`, `56.21 states/s`, `realtime_ratio = 0.9946` (`min = 0.9931`, budget `≥ 0.99`), dependent GPU `15.450 ms` (MAD `0.011 ms`).
+    - **Interior:** fresh submit `p95 = 19.80 ms` (MAD `0.90 ms`, pooled `p95 = 19.90 ms`, budget `≤ 21.0 ms`), `p50 = 16.80 ms`, `55.94 states/s`, `realtime_ratio = 0.9960` (`min = 0.9948`, budget `≥ 0.99`), dependent GPU `16.016 ms` (MAD `0.245 ms`).
+
+
 
