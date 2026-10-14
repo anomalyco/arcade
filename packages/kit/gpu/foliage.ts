@@ -933,16 +933,18 @@ export function buildFoliageTree(
 ): void {
   const rng = new Rng(seed)
   const isTree = h > 2.1
+  const isBoxwoodGlobe = !isTree && (shapeOverride === "dome" || h / Math.max(0.25, radius) >= 1.44)
   const naturalHabit: FoliageCrownShape = (["dome", "layered", "spreading", "dome"] as const)[Math.abs(seed) & 3]!
-  const shape: FoliageCrownShape = shapeOverride ?? (isTree ? (params.crownShape === "dome" ? naturalHabit : params.crownShape) : "spreading")
+  const shape: FoliageCrownShape =
+    shapeOverride ?? (isTree ? (params.crownShape === "dome" ? naturalHabit : params.crownShape) : isBoxwoodGlobe ? "dome" : "spreading")
 
   const heightRatio = h / Math.max(1.2, params.treeHeight)
   const radiusRatio = radius / Math.max(0.7, params.crownRadius)
-  const boughs = isTree ? Math.max(3, Math.round(params.branchCount)) : Math.max(3, Math.min(5, Math.round(params.branchCount * 0.75)))
+  const boughs = isTree ? Math.max(3, Math.round(params.branchCount)) : isBoxwoodGlobe ? 5 : 4
   const gapAngle = rng.next() * Math.PI * 2
-  const gapHalfWidth = 0.16 + params.porosity * 0.72
-  const leanX = (rng.next() - 0.5) * (isTree ? 0.26 : 0.05)
-  const leanZ = (rng.next() - 0.5) * (isTree ? 0.26 : 0.05)
+  const gapHalfWidth = isBoxwoodGlobe ? 0 : 0.16 + params.porosity * (isTree ? 0.72 : 0.35)
+  const leanX = (rng.next() - 0.5) * (isTree ? 0.26 : 0.03)
+  const leanZ = (rng.next() - 0.5) * (isTree ? 0.26 : 0.03)
 
   const barkColor: Rgb =
     params.treePreset === "birch" || shape === "columnar"
@@ -1014,19 +1016,23 @@ export function buildFoliageTree(
     return mixRgb(gCol, autumnPalette[idx % autumnPalette.length]!, aWeight)
   })
 
-  const crownCenter: Point = [x + leanX * 0.5, ground + h * 0.58, z + leanZ * 0.5]
+  const crownCenter: Point = [x + leanX * 0.5, ground + h * (isBoxwoodGlobe ? 0.48 : 0.58), z + leanZ * 0.5]
   const angleRad = (params.branchAngle * Math.PI) / 180
   const cosPitch = Math.cos(angleRad)
   const sinPitch = Math.sin(angleRad)
   const clumpsPerBough = isTree ? Math.max(1, Math.round(params.clumpCount)) : 1
-  const clumpScale = params.clumpSize * Math.max(0.45, Math.min(1.45, radiusRatio))
-  const cardScale = params.leafCardSize * Math.max(0.55, Math.min(1.40, radiusRatio))
+  const clumpScale = isTree
+    ? params.clumpSize * Math.max(0.45, Math.min(1.45, radiusRatio))
+    : radius * (isBoxwoodGlobe ? 0.46 : 0.54)
+  const cardScale = isTree
+    ? params.leafCardSize * Math.max(0.55, Math.min(1.40, radiusRatio))
+    : Math.max(0.085, radius * (isBoxwoodGlobe ? 0.19 : 0.23))
   // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer perimeter woods
   const isPerimeterTree = isTree && (x < 10 || x > 74 || z < 18 || z > 72)
-  const sprigsPerClump = isTree ? (isPerimeterTree ? 5 : 9) : 6
+  const sprigsPerClump = isTree ? (isPerimeterTree ? 5 : 9) : isBoxwoodGlobe ? 6 : 6
 
   for (let b = 0; b < boughs; b++) {
-    const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * 0.42
+    const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * (isBoxwoodGlobe ? 0.18 : 0.42)
     const gapDelta = Math.abs(Math.atan2(Math.sin(baseAngle - gapAngle), Math.cos(baseAngle - gapAngle)))
     const inGap = gapDelta < gapHalfWidth
     const tierFrac = boughs > 1 ? b / (boughs - 1) : 0.5
@@ -1039,14 +1045,17 @@ export function buildFoliageTree(
     } else if (shape === "layered") {
       shapeProfile = 1.08 - tierFrac * 0.30
     } else if (shape === "spreading") {
-      shapeProfile = 1.16 - tierFrac * 0.18
+      shapeProfile = 1.12 - tierFrac * 0.18
     }
 
-    const reach =
-      radius *
-      shapeProfile *
-      (inGap ? Math.max(0.26, 0.48 - params.porosity * 0.28) : 0.62 + rng.next() * 0.34) *
-      (0.72 + 0.28 * sinPitch)
+    const reach = isBoxwoodGlobe
+      ? radius * (0.38 + rng.next() * 0.16) * (0.94 - tierFrac * 0.16)
+      : !isTree
+        ? radius * (inGap ? 0.36 : 0.48 + rng.next() * 0.24) * (1.02 - tierFrac * 0.14)
+        : radius *
+          shapeProfile *
+          (inGap ? Math.max(0.26, 0.48 - params.porosity * 0.28) : 0.62 + rng.next() * 0.34) *
+          (0.72 + 0.28 * sinPitch)
 
     const startH =
       ground +
@@ -1146,15 +1155,7 @@ export function buildFoliageTree(
   )
 
   if (params.treePreset === "hydrangea") {
-    for (let i = 0; i < 12; i++) {
-      const a = i * 2.39996 + (seed % 7) * 0.2
-      const dist = radius * (0.24 + (i % 4) * 0.18)
-      const bx = x + Math.cos(a) * dist
-      const bz = z + Math.sin(a) * dist
-      const by = ground + h * (0.44 + (1 - (i % 4) * 0.18) * 0.34)
-      const bloomCol: Rgb = i % 3 === 0 ? [0.87, 0.90, 0.84] : [0.77, 0.82, 0.74]
-      m.prism(bx, bz, 0.075, 0.055, by, by + 0.09, 6, bloomCol, MAT.foliage, 0.45)
-    }
+    emitHydrangeaPanicles(m, x, ground, z, h, radius, seed)
   }
 
   // Root-flare curved grass tufts around the trunk base, leaving an open side gap
@@ -1175,6 +1176,46 @@ export function buildFoliageTree(
       tipColor: [params.tipColorR, params.tipColorG, params.tipColorB],
       rng,
     })
+  }
+}
+
+/**
+ * Emits multi-floret creamy-white / pale-celadon / warm-ivory hydrangea corymb panicles
+ * nestled across the upper and outer dome of a flowering bush.
+ */
+export function emitHydrangeaPanicles(
+  m: Mesh,
+  x: number,
+  ground: number,
+  z: number,
+  h: number,
+  radius: number,
+  seed: number,
+): void {
+  const rng = new Rng(seed ^ 0x6f1a)
+  const palette: readonly Rgb[] = [
+    [0.86, 0.89, 0.82],
+    [0.78, 0.83, 0.74],
+    [0.91, 0.90, 0.81],
+    [0.72, 0.79, 0.68],
+  ]
+  for (let i = 0; i < 18; i++) {
+    const a = i * 2.39996 + (rng.next() - 0.5) * 0.24
+    const rFrac = 0.20 + Math.sqrt((i + 0.4) / 18) * 0.66
+    const dist = radius * rFrac
+    const bx = x + Math.cos(a) * dist
+    const bz = z + Math.sin(a) * dist * 0.88
+    const domeY = Math.sqrt(Math.max(0.12, 1 - rFrac * rFrac * 0.78))
+    const by = ground + h * (0.34 + domeY * 0.54) + (rng.next() - 0.5) * 0.05
+    const mainR = 0.068 + (rng.next() * 0.032) * (1.1 - rFrac * 0.25)
+    const col = palette[i % palette.length]!
+    const rimCol = scaleRgb(col, 0.82)
+    m.prism(bx, bz, mainR, mainR * 0.72, by, by + mainR * 1.15, 6, col, MAT.foliage, 0.45)
+    // Secondary satellite floret puff for organic corymb silhouette
+    const sa = a + 1.1 + rng.next() * 0.8
+    const sx = bx + Math.cos(sa) * mainR * 0.68
+    const sz = bz + Math.sin(sa) * mainR * 0.68
+    m.prism(sx, sz, mainR * 0.66, mainR * 0.48, by - 0.015, by + mainR * 0.88, 5, rimCol, MAT.foliage, 0.42)
   }
 }
 

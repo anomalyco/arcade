@@ -7,6 +7,7 @@ import {
   buildLegacyFoliageTree,
   emitCurvedGrassBlade,
   emitGrassTuft,
+  emitHydrangeaPanicles,
   foliageSettings,
   foliageWindDeclarationsWgsl,
   isFoliageCrownShape,
@@ -560,30 +561,23 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
   plantFn(2.4, 0.85, params.treeHeight * 0.88, params.crownRadius * 0.88, seed * 47 + 13)
   plantFn(-9.4, -1.8, params.treeHeight * 0.92, params.crownRadius * 0.85, seed * 59 + 19)
 
-  // 2. Foundation shrubs along the house front & porch
+  // 2. Foundation shrubs along the house front & porch (including twin boxwood globes & corner hydrangea)
   const rng = new Rng(seed + 71)
   for (const [px, pz, ph, pr] of [
-    [x + 0.55, e + 0.48, 1.12, 0.76],
-    [x + 1.65, e + 0.44, 0.68, 0.48],
-    [x + 2.85, e + 0.46, 0.56, 0.44],
-    [x + 4.05, e + 0.40, 0.62, 0.46],
-    [-2.05, e + 0.48, 0.88, 0.58],
-    [2.05, e + 0.48, 0.88, 0.58],
-    [3.25, e + 0.44, 0.58, 0.44],
-    [4.45, e + 0.42, 0.56, 0.44],
-    [r - 1.05, e + 0.58, 0.98, 0.78],
+    [x + 0.45, e + 0.52, 1.32, 0.84],
+    [x + 1.65, e + 0.44, 0.64, 0.44],
+    [x + 2.85, e + 0.46, 0.52, 0.38],
+    [x + 4.05, e + 0.40, 0.58, 0.40],
+    [-2.05, e + 0.48, 0.88, 0.50],
+    [1.85, e + 0.48, 0.88, 0.50],
+    [2.95, e + 0.50, 0.84, 0.48],
+    [4.25, e + 0.42, 0.56, 0.40],
+    [r - 1.05, e + 0.62, 1.12, 0.88],
   ] as const) {
-    plantFn(px, pz, ph, pr, Math.floor(rng.next() * 1e6), "spreading")
+    plantFn(px, pz, ph, pr, Math.floor(rng.next() * 1e6))
   }
-  // Creamy-white hydrangea blooms on the front-right corner shrub
-  for (let i = 0; i < 14; i++) {
-    const a = i * 2.399
-    const dist = 0.12 + (i % 4) * 0.15
-    const px = r - 1.05 + Math.cos(a) * dist
-    const pz = e + 0.58 + Math.sin(a) * dist * 0.82
-    const py = 0.48 + (1 - (i % 4) * 0.18) * 0.42 + (i % 2) * 0.05
-    m.prism(px, pz, 0.075, 0.055, py, py + 0.09, 6, rgb(i % 3 === 0 ? 0xdde3d5 : 0xc5cebc))
-  }
+  // Multi-floret creamy-white hydrangea panicles on the front-right corner shrub
+  emitHydrangeaPanicles(m, r - 1.05, 0.018, e + 0.62, 1.12, 0.88, seed + 31)
 
   // 3. Lawn & verge grass
   if (isLegacy) {
