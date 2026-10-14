@@ -748,39 +748,14 @@ struct MaterialRecipe {
   u2: vec4f, // colorVariation, jointWidth, wear, macroVariation
 }
 
-struct SurfaceTexUniforms {
-  // x: enabled (1=textured, 0=procedural, 2=A/B split at styles.w), y: globalScale, z: globalContrast, w: globalRoughness
-  global: vec4f,
-  // x: rugStyle, y: wallStyle, z: floorStyle, w: splitX
-  styles: vec4f,
-  // Per-recipe: x=layer (-1=none, 0..15=layer), y=texScale, z=texRotationRad, w=texContrast
-  recipeTex: array<vec4f, 6>,
-  // Per-recipe packed (roughnessOffset, blend) pairs (2 recipes per vec4f)
-  recipeExtra: array<vec4f, 3>,
-}
-
 @group(0) @binding(10) var materialTexArray: texture_2d_array<f32>;
 @group(0) @binding(11) var materialSampler: sampler;
-@group(0) @binding(12) var<uniform> surfaceTexUniforms: SurfaceTexUniforms;
 
 struct SurfaceSample {
   albedo: vec3f,
   gloss: vec2f,
   roughness: f32,
   cavity: f32,
-}
-
-fn surfaceTexEnabledAt(worldX: f32) -> bool {
-  let mode = surfaceTexUniforms.global.x;
-  if (mode > 1.5) {
-    return worldX >= surfaceTexUniforms.styles.w;
-  }
-  return mode > 0.5;
-}
-
-fn recipeTexExtra(recipeIdx: i32) -> vec2f {
-  let v = surfaceTexUniforms.recipeExtra[recipeIdx / 2];
-  return select(v.xy, v.zw, (recipeIdx & 1) == 1);
 }
 
 fn textureLayerRefLinear(layer: i32) -> vec3f {
@@ -809,16 +784,14 @@ fn materialMipLod(effScale: f32) -> f32 {
 }
 
 fn sampleMaterialFast(layer: i32, uv0: vec2f, scale: f32) -> vec4f {
-  let effScale = scale * surfaceTexUniforms.global.y;
-  return textureSampleLevel(materialTexArray, materialSampler, uv0 * effScale, layer, materialMipLod(effScale));
+  return textureSampleLevel(materialTexArray, materialSampler, uv0 * scale, layer, materialMipLod(scale));
 }
 
 fn modulateFast(procCol: vec3f, tex: vec4f, refLin: vec3f, blend: f32) -> vec3f {
   let ratio = clamp(tex.rgb / refLin, vec3f(0.35), vec3f(2.15));
   let lumRatio = dot(ratio, vec3f(0.299, 0.587, 0.114));
   let balanced = mix(vec3f(lumRatio), ratio, 0.58);
-  let k = surfaceTexUniforms.global.z * blend;
-  return procCol * clamp(vec3f(1.0) + (balanced - vec3f(1.0)) * k, vec3f(0.38), vec3f(1.85));
+  return procCol * clamp(vec3f(1.0) + (balanced - vec3f(1.0)) * blend, vec3f(0.38), vec3f(1.85));
 }
 
 // Four distinct lattice corners. Kept separate from the legacy material noise to preserve its look.
@@ -904,16 +877,14 @@ fn evalWoodPlanks(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample
   let boardValue = 0.94 + hVal * 0.34 * colVar;
   var col = baseTint * boardTint * boardValue;
 
-  if (!surfaceTexEnabledAt(p.x) || surfaceTexUniforms.styles.z >= 1.5) {
-    // Procedural heartwood grain fallback when texture is disabled.
-    let ringFreq = 9.0 * gScale * scale;
-    let fadeMed = 1.0 - smoothstep(0.35, 0.98, surfaceFootprint * ringFreq);
-    let longStreak = (surfaceNoise(vec2f(p.x * 0.85 + hVal * 7.0, p.y * 13.5) * gScale + vec2f(row, plank) * 3.1) - 0.5) * fadeMed;
-    let curve = abs(v - 0.5 + 0.18 * hHue) * 2.2 + 0.12 * (u - 0.5) * (u - 0.5) + 0.14 * longStreak;
-    let cathedral = (0.5 + 0.5 * sin(curve * 11.0 * gScale)) - 0.5;
-    let fiber = grain(vec2f(p.x * 1.3 + hVal * 9.0, p.y * 25.0) * gScale, 1.0);
-    col *= 1.0 + longStreak * 0.22 + cathedral * 0.10 * fadeMed + fiber * 0.18;
-  }
+  // Longitudinal heartwood grain + subtle parabolic cathedral figure (readable at gameplay zoom ~34-42m).
+  let ringFreq = 9.0 * gScale * scale;
+  let fadeMed = 1.0 - smoothstep(0.35, 0.98, surfaceFootprint * ringFreq);
+  let longStreak = (surfaceNoise(vec2f(p.x * 0.85 + hVal * 7.0, p.y * 13.5) * gScale + vec2f(row, plank) * 3.1) - 0.5) * fadeMed;
+  let curve = abs(v - 0.5 + 0.18 * hHue) * 2.2 + 0.12 * (u - 0.5) * (u - 0.5) + 0.14 * longStreak;
+  let cathedral = (0.5 + 0.5 * sin(curve * 11.0 * gScale)) - 0.5;
+  let fiber = grain(vec2f(p.x * 1.3 + hVal * 9.0, p.y * 25.0) * gScale, 1.0);
+  col *= 1.0 + longStreak * 0.16 + cathedral * 0.08 * fadeMed + fiber * 0.14;
 
   // Anti-aliased long edge seams AND staggered butt-joint seams stay crisp over the texture.
   let seamLong = seam(p.y / boardWidth, max(0.004, jWidth * 0.42), 1.0 / boardWidth);
@@ -1017,10 +988,8 @@ fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialReci
   let underTone = baseTint * vec3f(0.92, 0.87, 0.78);
   var col = mix(baseTint, underTone, exposedPlaster * (0.5 + 0.5 * colVar));
 
-  if (!surfaceTexEnabledAt(world.x) || surfaceTexUniforms.styles.y >= 1.5) {
-    let stipple = grain(uv, 9.0 * gScale) * 0.18;
-    col *= 1.0 + stipple * (1.0 + 0.35 * exposedPlaster);
-  }
+  let stipple = grain(uv, 9.0 * gScale) * 0.15;
+  col *= 1.0 + stipple * (1.0 + 0.35 * exposedPlaster);
 
   let streak = surfaceNoise(vec2f(uv.x * 2.4 * scale, uv.y * 0.45)) * smoothstep(1.5, 2.75, world.y) * wear * 0.14;
   let baseWear = (1.0 - smoothstep(0.12, 0.48, world.y)) * wear * 0.20;
@@ -1072,13 +1041,13 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     }
     let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
     let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.18;
-    let grit = select(grain(p, 10.5 * gScale) * 0.22, 0.0, surfaceTexEnabledAt(p.x));
+    let grit = grain(p, 10.5 * gScale) * 0.16;
     let macroTone = (warp / max(0.001, 0.035 * irreg)) * 0.18 * macroVar;
     col *= 0.95 + grit + macroTone - edgeDirt;
     col = mix(col * vec3f(0.38, 0.37, 0.32), col, joint);
     cavity = joint;
   } else {
-    let coarseAgg = select(grain(p, 7.2 * gScale) * 0.34, 0.0, surfaceTexEnabledAt(p.x));
+    let coarseAgg = grain(p, 7.2 * gScale) * 0.24;
     let patchField = surfaceNoise(p * 0.42 * scale + vec2f(3.1, 6.7));
     let tarPatch = smoothstep(0.58 - wear * 0.15, 0.68 - wear * 0.10, patchField) * wear;
     let crackField = abs(surfaceNoise(p * 0.78 * scale + vec2f(patchField * 0.45)) - 0.5);
@@ -1131,10 +1100,8 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   var turfCol = mix(lushTint, dryTint, dryMix);
   turfCol *= 0.88 + (c1 - 0.45) * 0.32 * colVar;
 
-  if (!surfaceTexEnabledAt(p.x)) {
-    let tuftStreak = grain(vec2f(p.x * 1.6 + p.y * 0.4, p.y * 2.4 - p.x * 0.3), 8.5 * gScale) * 0.28;
-    turfCol *= 1.0 + tuftStreak;
-  }
+  let tuftStreak = grain(vec2f(p.x * 1.6 + p.y * 0.4, p.y * 2.4 - p.x * 0.3), 8.5 * gScale) * 0.20;
+  turfCol *= 1.0 + tuftStreak;
 
   let soilMask = smoothstep(0.54 - wear * 0.22, 0.76 - wear * 0.12, clumpField) * (0.45 + 0.55 * macroVar);
   let soilCol = vec3f(0.18, 0.145, 0.098) * (0.86 + 0.28 * c1);
@@ -1182,8 +1149,7 @@ fn evalKitchenTile(p: vec2f, baseTint: vec3f) -> SurfaceSample {
   var col = baseTint * (0.96 + hTile * 0.10);
   let joint = seam(q.x, 0.018, 1.0 / tileSize) * seam(q.y, 0.018, 1.0 / tileSize);
   col = mix(col * vec3f(0.45, 0.42, 0.36), col, joint);
-  let localRough = clamp(0.62 + (1.0 - joint) * 0.20, 0.35, 0.95);
-  return SurfaceSample(col, roughnessToGloss(localRough, 0.03), localRough, joint);
+  return SurfaceSample(col, vec2f(0.0), 0.78, joint);
 }
 `
 
@@ -1191,7 +1157,14 @@ fn evalKitchenTile(p: vec2f, baseTint: vec3f) -> SurfaceSample {
 export const surfaceMaterialDeclarations = surfaceMaterialCoreWgsl
 
 export const surfaceMaterial = /* wgsl */ `
-    let texOn = surfaceTexEnabledAt(o.world.x);
+    let texCfg = u32(max(0.0, F.screen.w));
+    let texModeBits = texCfg & 3u;
+    let texOn = select(texModeBits == 1u, o.world.x >= F.eye.x, texModeBits == 2u);
+    let rugStyleBits = (texCfg >> 2u) & 3u;
+    let wallStyleBits = (texCfg >> 4u) & 3u;
+    let floorStyleBits = (texCfg >> 6u) & 3u;
+    let texScaleMult = select(1.0, 0.5 + f32((texCfg >> 8u) & 63u) * 0.05, ((texCfg >> 8u) & 63u) > 0u);
+    let texContrastMult = select(1.0, f32((texCfg >> 14u) & 63u) * 0.05, ((texCfg >> 14u) & 63u) > 0u);
     if (mat == 20) {
       let kind = i32(round(o.aux));
       let p = o.world.xz;
@@ -1200,19 +1173,16 @@ export const surfaceMaterial = /* wgsl */ `
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(8, p, 0.58);
-          albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.82);
-          let normAtten = (1.0 - smoothstep(0.08, 0.48, surfaceFootprint)) * 0.24;
-          let tilt = (tex.a - 0.91) * 3.0;
-          n = normalize(n + vec3f(tilt, 0.0, -tilt * 0.85) * normAtten);
+          let tex = sampleMaterialFast(8, p, 0.58 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.82 * texContrastMult);
         }
       } else if (kind == 1) {
         let s = evalAsphaltConcrete(p, albedo, false, defaultMaterialRecipe(3));
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(7, p, 0.55);
-          albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.85);
+          let tex = sampleMaterialFast(7, p, 0.55 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.85 * texContrastMult);
         }
       } else if (kind == 2) {
         let isShopFloor = p.x > 52.9 && (p.y < 38.1 || p.y > 53.9);
@@ -1221,16 +1191,16 @@ export const surfaceMaterial = /* wgsl */ `
           albedo = s.albedo;
           gloss = s.gloss;
           if (texOn) {
-            let tex = sampleMaterialFast(1, p, 0.88);
-            albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85);
+            let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85 * texContrastMult);
           }
         } else {
           let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
           albedo = s.albedo;
           gloss = s.gloss;
           if (texOn) {
-            let tex = sampleMaterialFast(6, p, 0.58);
-            albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.82);
+            let tex = sampleMaterialFast(6, p, 0.58 * texScaleMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.82 * texContrastMult);
           }
         }
       } else if (kind == 3) {
@@ -1244,17 +1214,17 @@ export const surfaceMaterial = /* wgsl */ `
         let inKitchen = p.x > b.z - 6.08 && p.x < b.z - 0.05 && p.y > b.y + 5.68 && p.y < b.w - 0.05;
         if (inKitchen && texOn) {
           let s = evalKitchenTile(p, vec3f(0.42, 0.37, 0.29));
-          let tex = sampleMaterialFast(1, p, 0.88);
-          albedo = modulateFast(s.albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85);
+          let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
+          albedo = modulateFast(s.albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85 * texContrastMult);
           gloss = s.gloss;
         } else {
           let s = evalWoodPlanks(p, albedo, defaultMaterialRecipe(0));
           albedo = s.albedo;
           gloss = s.gloss;
-          if (texOn && surfaceTexUniforms.styles.z < 1.5) {
-            let styleScale = select(0.65, 0.95, surfaceTexUniforms.styles.z > 0.5);
+          if (texOn && floorStyleBits < 2u) {
+            let styleScale = select(0.65, 0.95, floorStyleBits == 1u) * texScaleMult;
             let tex = sampleMaterialFast(0, p, styleScale);
-            albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.82);
+            albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.82 * texContrastMult);
           }
         }
       } else if (kind == 6) {
@@ -1262,8 +1232,8 @@ export const surfaceMaterial = /* wgsl */ `
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(15, p, 0.68);
-          albedo = modulateFast(albedo, tex, vec3f(0.2950, 0.2326, 0.1649), 0.72);
+          let tex = sampleMaterialFast(15, p, 0.68 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.2950, 0.2326, 0.1649), 0.72 * texContrastMult);
         }
       } else {
         let s = evalGrassSoil(p, albedo, true, defaultMaterialRecipe(4));
@@ -1271,41 +1241,35 @@ export const surfaceMaterial = /* wgsl */ `
         gloss = s.gloss;
       }
     }
-    if (mat == 0 && o.world.y > 0.131 && o.world.y < 0.156 && o.world.x < 37.5 && texOn && surfaceTexUniforms.styles.x < 1.5) {
+    if (mat == 0 && o.world.y > 0.131 && o.world.y < 0.156 && o.world.x < 37.5 && texOn && rugStyleBits < 2u) {
       let p = o.world.xz;
       let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
       if (p.x >= b.x + 1.53 && p.x <= b.x + 4.67 && p.y >= b.w - 4.37 && p.y <= b.w - 0.83) {
         let span = vec2f(3.10, 3.50);
         let uv = clamp((p - vec2f(b.x + 1.55, b.w - 4.35)) / span, vec2f(0.015), vec2f(0.985));
         let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
-        let layer = select(12, 13, surfaceTexUniforms.styles.x > 0.5);
+        let layer = select(12, 13, rugStyleBits == 1u);
         let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, materialMipLod(0.32));
         let refLin = select(vec3f(0.3882, 0.2897, 0.1774), vec3f(0.3522, 0.1986, 0.1107), layer == 13);
-        let centered = refLin + (tex.rgb - refLin) * surfaceTexUniforms.global.z;
+        let centered = refLin + (tex.rgb - refLin) * texContrastMult;
         albedo = clamp(centered * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
-        gloss = vec2f(0.0);
-        n = vec3f(0.0, 1.0, 0.0);
       } else if (p.x >= b.x + 5.00 && p.x <= b.x + 6.90 && p.y >= b.y + 1.33 && p.y <= b.y + 4.27) {
         let span = vec2f(1.86, 2.90);
         let uv = clamp((p - vec2f(b.x + 5.02, b.y + 1.35)) / span, vec2f(0.015), vec2f(0.985));
         let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
-        let layer = select(13, 12, surfaceTexUniforms.styles.x > 0.5);
+        let layer = select(13, 12, rugStyleBits == 1u);
         let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, materialMipLod(0.45));
         let refLin = select(vec3f(0.3882, 0.2897, 0.1774), vec3f(0.3522, 0.1986, 0.1107), layer == 13);
-        let centered = refLin + (tex.rgb - refLin) * surfaceTexUniforms.global.z;
+        let centered = refLin + (tex.rgb - refLin) * texContrastMult;
         albedo = clamp(centered * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
-        gloss = vec2f(0.0);
-        n = vec3f(0.0, 1.0, 0.0);
       } else if (p.x >= b.z - 4.97 && p.x <= b.z - 2.23 && p.y >= b.y + 6.43 && p.y <= b.y + 7.24) {
         let span = vec2f(2.70, 0.77);
         let uv = clamp((p - vec2f(b.z - 4.95, b.y + 6.45)) / span, vec2f(0.015), vec2f(0.985));
         let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
         let tex = textureSampleLevel(materialTexArray, materialSampler, uv, 14, materialMipLod(0.65));
         let refLin = vec3f(0.2887, 0.2220, 0.1674);
-        let centered = refLin + (tex.rgb - refLin) * surfaceTexUniforms.global.z;
+        let centered = refLin + (tex.rgb - refLin) * texContrastMult;
         albedo = clamp(centered * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
-        gloss = vec2f(0.0);
-        n = vec3f(0.0, 1.0, 0.0);
       }
     }
     if (mat == 4) {
@@ -1314,10 +1278,10 @@ export const surfaceMaterial = /* wgsl */ `
         let s = evalPlasterWall(o.world, n, vec3f(0.44, 0.38, 0.31), defaultMaterialRecipe(2));
         albedo = s.albedo;
         gloss = s.gloss;
-        if (texOn && surfaceTexUniforms.styles.y < 1.5) {
-          let wallScale = select(0.78, 1.15, surfaceTexUniforms.styles.y > 0.5);
+        if (texOn && wallStyleBits < 2u) {
+          let wallScale = select(0.78, 1.15, wallStyleBits == 1u) * texScaleMult;
           let tex = sampleMaterialFast(2, wallUv, wallScale);
-          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.75);
+          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.75 * texContrastMult);
         }
       } else if (o.aux > 19.5) {
         if (o.aux > 20.5) {
@@ -1325,8 +1289,8 @@ export const surfaceMaterial = /* wgsl */ `
           albedo = s.albedo;
           gloss = s.gloss;
           if (texOn) {
-            let tex = sampleMaterialFast(2, wallUv, 0.78);
-            albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.70);
+            let tex = sampleMaterialFast(2, wallUv, 0.78 * texScaleMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.70 * texContrastMult);
           }
         } else {
           let course = o.world.y / 0.165;
@@ -1335,8 +1299,8 @@ export const surfaceMaterial = /* wgsl */ `
           let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
           albedo *= 0.96 + (hash2(vec2f(row, plank)) - 0.5) * 0.09;
           if (texOn) {
-            let tex = sampleMaterialFast(3, wallUv, 0.72);
-            albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.78);
+            let tex = sampleMaterialFast(3, wallUv, 0.72 * texScaleMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.78 * texContrastMult);
           }
           let lapShadow = mix(0.56, 1.05, smoothstep(0.0, 0.22, fy)) * mix(1.04, 0.90, fy);
           albedo *= mix(1.0, lapShadow * mix(0.62, 1.0, seam(course, 0.032, 6.06)), 1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 6.06));
@@ -1352,8 +1316,8 @@ export const surfaceMaterial = /* wgsl */ `
       let rowShade = mix(0.76, 1.08, fract(o.world.z / 0.23));
       albedo *= (0.98 + tabHash * 0.30 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.35))) * rowShade;
       if (texOn) {
-        let tex = sampleMaterialFast(4, o.world.xz, 0.68);
-        albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.82);
+        let tex = sampleMaterialFast(4, o.world.xz, 0.68 * texScaleMult);
+        albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.82 * texContrastMult);
       }
       albedo *= mix(0.48, 1.0, seam(q.x, 0.020, 2.94) * seam(q.y, 0.042, 4.35));
       albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.12;
@@ -1364,8 +1328,8 @@ export const surfaceMaterial = /* wgsl */ `
       let q = vec2f(p.x / 0.25 + fract(row * 0.5), p.y / 0.085);
       albedo = mix(vec3f(0.32, 0.30, 0.26), albedo * (0.8 + 0.35 * hash2(floor(q))), seam(q.x, 0.025, 4.0) * seam(q.y, 0.06, 11.76));
       if (texOn) {
-        let tex = sampleMaterialFast(5, p, 0.85);
-        albedo = modulateFast(albedo, tex, vec3f(0.3143, 0.1732, 0.1377), 0.78);
+        let tex = sampleMaterialFast(5, p, 0.85 * texScaleMult);
+        albedo = modulateFast(albedo, tex, vec3f(0.3143, 0.1732, 0.1377), 0.78 * texContrastMult);
       }
     }
     if (mat == 22) {
@@ -1386,6 +1350,27 @@ export const resolveSurfaceMaterialWgsl = ""
  * (shiny/gridded floorboards, Cartesian gridded pavers, flat plaster walls, uniform asphalt, blotchy grass).
  */
 export const legacyMaterialComparisonWgsl = /* wgsl */ `
+struct SurfaceTexUniforms {
+  global: vec4f,
+  styles: vec4f,
+  recipeTex: array<vec4f, 6>,
+  recipeExtra: array<vec4f, 3>,
+}
+
+@group(0) @binding(12) var<uniform> surfaceTexUniforms: SurfaceTexUniforms;
+
+fn surfaceTexEnabledAt(worldX: f32) -> bool {
+  let mode = surfaceTexUniforms.global.x;
+  if (mode > 1.5) {
+    return worldX >= surfaceTexUniforms.styles.w;
+  }
+  return mode > 0.5;
+}
+
+fn recipeTexExtra(recipeIdx: i32) -> vec2f {
+  let v = surfaceTexUniforms.recipeExtra[recipeIdx / 2];
+  return select(v.xy, v.zw, (recipeIdx & 1) == 1);
+}
 fn evalLegacyMaterial(recipeId: i32, world: vec3f, normal: vec3f, baseTint: vec3f) -> SurfaceSample {
   let p = world.xz;
   var albedo = baseTint;

@@ -310,10 +310,15 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   (`buildLinearMipChain` in `packages/kit/textures/loader.ts`); Alpha stores a restrained linear authored roughness estimate
   (not measured), and `lawn_grass_normal` stores a mild luminance-derived tangent normal + height (labelled derived, not measured).
   In `packages/kit/gpu/surface-materials.ts`, compile-time constant layer indices per material branch avoid Apple Silicon
-  `texture_2d_array` slice-divergence stalls (`41.8 → 24.2 ms` interior GPU interval), and skipping redundant high-frequency
-  procedural `grain` calls while textures are active keeps `3456×1894` M5 Max Metal `bench-outbreak.ts` (1 warmup + 7 runs) at
-  `15.813 → 19.564 ms` street GPU (`p95` fresh submit `19.4 → 21.5 ms`, MAD `0.0 ms`, realtime ratio `0.9942`) and
-  `19.252 → 24.196 ms` interior GPU (`p95` fresh submit `22.8 → 27.3 ms`, MAD `0.1 ms`, realtime ratio `0.9975`). Lab Materials
+  `texture_2d_array` slice-divergence stalls (`41.8 → 24.2 ms` interior GPU interval). Evaluating `postLightMaterial` after
+  `lightSum` (so material/texture locals do not stay live across the polar shadow loop), packing Outbreak's texture Lab bits into
+  unused `F.screen.w` instead of a third uniform buffer, omitting unused `bounceTex`/`floorPattern`/`city` branches when
+  `postLightMaterial` is supplied, replacing the 4-iteration `interior(p)` loop with a branchless quadrant `select`, and
+  resetting Chromium `DOMTimer` nesting via `MessageChannel` in `scheduleFrame` bring `3456×1894` M5 Max Metal `bench-outbreak.ts`
+  (1 warmup + 7 runs) below the pre-texture baseline: street GPU **`15.813 → 12.802 ms` (`-19.0%`, MAD `0.006 ms`)**, street
+  fresh-submit `p95` **`19.400 → 16.800 ms` (`-13.4%`, MAD `0.000 ms`, `57.73` states/s)**, interior GPU **`19.252 → 14.473 ms`
+  (`-24.8%`, MAD `0.026 ms`)**, and interior fresh-submit `p95` **`22.800 → 18.400 ms` (`-19.3%`, MAD `0.300 ms`, `57.09`
+  states/s)**, with `0.12%–0.21%` mean RGB difference (`0.31–0.55 / 255`) against the unoptimized textured output. Lab Materials
   and Outbreak's Backquote panel expose per-recipe texture map selection, scale, rotation, contrast, roughness trim, and
   procedural A/B comparison.
 - **Exclude a convex receiver from its own shadow test, and supersample only near analytic edges.** The Lab's fullscreen

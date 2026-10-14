@@ -207,7 +207,14 @@ async function main() {
       lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.16:.22, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
-    frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
+    const texCfgBits =
+      ((settings.textures & 3) >>> 0) |
+      (((settings.rugStyle & 3) << 2) >>> 0) |
+      (((settings.wallStyle & 3) << 4) >>> 0) |
+      (((settings.floorStyle & 3) << 6) >>> 0) |
+      ((Math.round((settings.texScale - 0.5) / 0.05) & 63) << 8) |
+      ((Math.round(settings.texContrast / 0.05) & 63) << 14)
+    frame.set([canvas.width, canvas.height, count, texCfgBits], 20)
     frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*settings.moonFill*(1-settings.weather*.85)], 28)
     const focus = cam.project(p.x, 1, p.y, w, h)
     frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, 1.0, count], 32)
@@ -228,15 +235,26 @@ async function main() {
       frames = 0; meterAt = meterNow; meterSubmits = renderer.submittedFrames
     }
   }
-  let pacerTimer = 0, rafScheduled = false
+  let pacerTimer = 0, rafScheduled = false, channelPending = false
+  const paceChannel = new MessageChannel()
   const canDrawNow = (nowMs: number) =>
     renderer.inflight === 0 &&
-    nowMs - lastDrawAt >= TICK_DT * 1000 - 2.2 &&
+    nowMs - lastDrawAt >= TICK_DT * 1000 - 0.65 &&
     (pendingDrawDt > 0 || clock.readyForStep(nowMs))
   const msUntilNextDraw = (nowMs: number) => {
     const stepWait = pendingDrawDt > 0 ? 0 : clock.msUntilNextStep(nowMs)
-    const paceWait = Math.max(0, TICK_DT * 1000 - 2.0 - (nowMs - lastDrawAt))
+    const paceWait = Math.max(0, TICK_DT * 1000 - 0.55 - (nowMs - lastDrawAt))
     return Math.max(stepWait, paceWait)
+  }
+  paceChannel.port1.onmessage = () => {
+    channelPending = false
+    if (frozen || document.hidden) return
+    const now = performance.now()
+    if (canDrawNow(now)) {
+      tick(now)
+    } else {
+      scheduleFrame()
+    }
   }
   const scheduleFrame = () => {
     if (frozen || document.hidden) return
@@ -244,15 +262,14 @@ async function main() {
       rafScheduled = true
       requestAnimationFrame(rafLoop)
     }
-    if (!pacerTimer) {
-      const waitMs = Math.max(1, Math.ceil(msUntilNextDraw(performance.now())))
+    if (!pacerTimer && !channelPending) {
+      const rem = msUntilNextDraw(performance.now())
+      const waitMs = renderer.inflight === 0 && rem <= 3.5 ? 0 : Math.max(1, Math.floor(rem - 1.5))
       pacerTimer = window.setTimeout(() => {
         pacerTimer = 0
-        const now = performance.now()
-        if (!frozen && !document.hidden && canDrawNow(now)) {
-          tick(now)
-        } else if (!frozen && !document.hidden) {
-          scheduleFrame()
+        if (!frozen && !document.hidden && !channelPending) {
+          channelPending = true
+          paceChannel.port2.postMessage(null)
         }
       }, waitMs)
     }
@@ -297,7 +314,10 @@ async function main() {
     const now = performance.now()
     if (!frozen && !document.hidden && renderer.inflight === 0) {
       if (canDrawNow(now)) tick(now)
-      else scheduleFrame()
+      else {
+        if (pacerTimer) { clearTimeout(pacerTimer); pacerTimer = 0 }
+        scheduleFrame()
+      }
     }
   }
   draw(TICK_DT)

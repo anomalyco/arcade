@@ -218,7 +218,6 @@ export class Renderer {
         { binding: 9, visibility: S.FRAGMENT, texture: {} },
         { binding: 10, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
         { binding: 11, visibility: S.FRAGMENT, sampler: {} },
-        { binding: 12, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -389,7 +388,6 @@ export class Renderer {
         { binding: 9, resource: this.visibilityTex.createView() },
         { binding: 10, resource: this.materialTexView },
         { binding: 11, resource: this.materialSampler },
-        { binding: 12, resource: { buffer: this.surfaceTexBuf } },
       ],
     })
   }

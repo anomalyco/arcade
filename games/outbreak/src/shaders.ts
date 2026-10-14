@@ -8,6 +8,7 @@ export const shaders = {
   post: postShader(false,false,{chromatic:0,bloom:.055,grain:.002,vignette:.90,diagnostics:true,shadowLift:0,huePreserve:.42}),
   scene: makeSceneShader({
     ao: "0.42",
+    bounce: "vec3f(0.0)",
     lightLeak: "0.006 * vis",
     lightAttenuation: `let dn = max(d3, 0.55);
     var att = power * win * (0.08 + 3.4 / (1.0 + dn * dn * 0.45));
@@ -18,7 +19,8 @@ export const shaders = {
     smoothShadows: true,
     shadowTaps: 5,
     lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
-    material: surfaceMaterial,
+    material: " ",
+    postLightMaterial: surfaceMaterial,
     fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
     declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
@@ -29,9 +31,12 @@ fn houseRect(id: i32) -> vec4f {
   }
 }
 fn interior(p:vec2f) -> bool {
-  if (p.x < 21.25 || p.x > 72.75 || p.y < 23.25 || p.y > 67.75 || (p.x > 36.75 && p.x < 53.25) || (p.y > 37.75 && p.y < 54.25)) { return false; }
-  for(var i=0;i<4;i++) { let b=houseRect(i); if(all(p>b.xy+0.25)&&all(p<b.zw-0.25)){return true;} }
-  return false;
+  let b = select(
+    select(vec4f(53.25, 54.25, 71.75, 67.75), vec4f(53.25, 23.25, 72.75, 37.75), p.y < 45.0),
+    select(vec4f(21.25, 54.25, 35.75, 65.25), vec4f(22.25, 24.25, 36.75, 35.25), p.y < 45.0),
+    p.x < 45.0
+  );
+  return all(p > b.xy) && all(p < b.zw);
 }
 fn roofCut(p:vec3f, id:i32) -> bool {
   let b=houseRect(id);
