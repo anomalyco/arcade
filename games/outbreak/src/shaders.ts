@@ -18,11 +18,12 @@ export const shaders = {
     }
     var att = power * win * (0.04 + 2.45 / (1.0 + dn * dn * 0.55));
     if (L.extra.w > -0.5 && L.pos.w > 7.5) {
-      att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * exp(-pow(dv.x / 3.8, 2.0));
+      let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.065);
+      att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
     wallDirectScale: "mix(0.28, 0.46, smoothstep(0.0, 1.5, o.world.y))",
-    ambient: "ambientAt(n) * mix(0.08, 1.0, select(floorData(o.world.xz + n.xz * 0.28).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), vec3f(0.016, 0.011, 0.006), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)",
+    ambient: "ambientAt(n) * mix(0.08, 1.0, select(1.0, select(floorData(o.world.xz).g, 0.06, abs(n.y) < 0.5), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.016, 0.011, 0.006), interior(o.world.xz + n.xz * 0.28) && o.world.y < 2.8)",
     diagnostics: "F.map.z",
     smoothShadows: true,
     shadowTaps: 5,
@@ -101,7 +102,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
   return los * max(cone, near) * range;
 }`,
-    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(floorData(o.world.xz + n.xz * 0.28).g * 1.75, 1.0, !interior(o.world.xz + n.xz * 0.28) || o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
+    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 1.75, 0.08, abs(n.y) < 0.5), 1.0, !interior(o.world.xz + n.xz * 0.28) || o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
     cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
@@ -130,14 +131,46 @@ fn eyeVisible(p: vec2f) -> f32 {
     col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
   }
   if(mat == 4 && !inRoom) { col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y)); }
+  if(mat == 20 && i32(round(o.aux)) == 0) {
+    // Overgrown dark-clump variation across lawns & yards so turf reads with deep mossy shadows and organic patches.
+    let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
+    col *= mix(0.42, 1.05, smoothstep(0.26, 0.76, turfPatch));
+  }
   if(mat == 20 && i32(round(o.aux)) == 1) {
-    // Cool moonlit sky sheen on asphalt road crown, strongest away from curb edges.
-    let crown = 1.0 - abs(clamp((o.world.z - 40.0) / 8.0, 0.0, 1.0) * 2.0 - 1.0) * 0.35;
-    col += vec3f(0.018, 0.026, 0.052) * F.ambient.w * crown * (0.88 + 0.24 * surfaceNoise(o.world.xz * 0.35));
+    // Textured cracked asphalt: dark gutters & wheel ruts, jagged fracture lines, coarse aggregate, and localized moonlit crown sheen.
+    let p = o.world.xz;
+    let roadU = clamp((p.y - 40.0) / 8.0, 0.0, 1.0);
+    let crown = 1.0 - abs(roadU * 2.0 - 1.0);
+    let gutter = smoothstep(0.0, 0.18, roadU) * smoothstep(0.0, 0.18, 1.0 - roadU);
+    let ruts = max(0.0, 1.0 - pow((roadU - 0.28) * 6.5, 2.0)) + max(0.0, 1.0 - pow((roadU - 0.72) * 6.5, 2.0));
+    let roadMacro = surfaceNoise(p * 0.28 + vec2f(3.7, 8.1));
+    let w1 = surfaceNoise(p * 1.45 + vec2f(1.7, 5.3));
+    let w2 = surfaceNoise(p * 2.95 + vec2f(8.2, 2.9));
+    let warp = w1 * 0.65 + w2 * 0.35;
+    // Warped grid fracture seams produce jagged branching linear cracks rather than closed oval loops.
+    let fx = abs(fract(p.x * 0.34 + warp * 0.52) - 0.5);
+    let fy = abs(fract(p.y * 0.42 - warp * 0.48 + roadMacro * 0.35) - 0.5);
+    let mask = smoothstep(0.38, 0.64, roadMacro);
+    let cracks = clamp(((1.0 - smoothstep(0.004, 0.016, fx)) + (1.0 - smoothstep(0.005, 0.018, fy)) * 0.85) * mask, 0.0, 1.0);
+    let grit = (w2 - 0.5) * 0.32;
+    // Darken base asphalt and outer road edges; keep a subtle moonlit sheen on the central crown broken by aggregate & cracks.
+    let dxRoad = (p.x - 29.0) * 0.07;
+    let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
+    col *= (0.50 + 0.32 * gutter - 0.12 * ruts + 0.18 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
+    let sheen = crown * crown * (0.45 + 0.55 * centerFocus) * (0.65 + 0.65 * roadMacro) * (1.0 - 0.65 * cracks);
+    col += vec3f(0.011, 0.018, 0.035) * F.ambient.w * sheen;
   }
   if(mat == 20 && i32(round(o.aux)) == 2) {
-    // Cool moonlit fill on concrete sidewalks and curbs.
-    col += vec3f(0.012, 0.018, 0.036) * F.ambient.w;
+    // Weathered concrete sidewalks and curbs with subtle slab variation.
+    col = col * 0.84 + vec3f(0.007, 0.011, 0.022) * F.ambient.w;
+  }
+  if (!inRoom && o.world.y < 0.35) {
+    let dp = o.world.xz - lights[0].pos.xz;
+    let d2 = dot(dp, dp);
+    if (d2 < 14.0) {
+      let aura = max(0.0, 1.0 - d2 / 14.0);
+      col += o.color * vec3f(0.52, 0.31, 0.11) * aura * aura * nightLamps;
+    }
   }
   if(mat == 21) {
     // Subtle cool twilight sky sheen on upper roof shingle slopes; eaves stay shadowed.
@@ -150,10 +183,14 @@ fn eyeVisible(p: vec2f) -> f32 {
     let keyDir = normalize(F.monitorBounds.xyz);
     let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
     let backNormal = max(0.0, dot(-n, keyDir));
-    let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.48 * tipWeight;
-    let chloroTint = mix(vec3f(0.18, 0.46, 0.04), vec3f(0.58, 0.85, 0.12), sqrt(clamp(tipWeight, 0.0, 1.0)));
-    let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.22 * tipWeight * F.ambient.w;
-    col += o.color * (chloroTint * transLobe + vec3f(0.50, 0.85, 0.30) * fresnelRim) + col * 0.18 * tipWeight;
+    let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.32 * tipWeight;
+    let chloroTint = mix(vec3f(0.16, 0.38, 0.05), vec3f(0.46, 0.68, 0.14), sqrt(clamp(tipWeight, 0.0, 1.0)));
+    let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.15 * tipWeight * F.ambient.w;
+    col += o.color * (chloroTint * transLobe + vec3f(0.42, 0.72, 0.26) * fresnelRim) + col * 0.14 * tipWeight;
+    if (o.world.y < 0.48) {
+      let lawnPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
+      col *= mix(0.40, 0.95, smoothstep(0.26, 0.76, lawnPatch));
+    }
   }
   // Scenery and illumination are not an enemy-visibility mask. Exterior form remains readable.
   // Dynamic entities use the authoritative CPU Vision before submitting a draw (the local survivor is exempt).
