@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9 }
+export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -360,8 +360,8 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     var win = 1.0 - x * x;
     win *= win;
     // Surfaces right next to a fixture (wall tops, desks under a panel) never get hotter than the floor below it.
-    let dn = max(d3, max(hl, 1.25));
-    var att = power * win * (0.1 + 2.6 / (1.0 + dn * dn * 0.3));
+    ${hooks.lightAttenuation ?? `let dn = max(d3, max(hl, 1.25));
+    var att = power * win * (0.1 + 2.6 / (1.0 + dn * dn * 0.3));`}
     if (L.cone.w > 0.5 && dPlan > 0.001) {
       let c = dot(dv / dPlan, L.cone.xy);
       let t = clamp((c - L.cone.z) / 0.25, 0.0, 1.0);
@@ -651,7 +651,7 @@ fn shadeScene(o: VOut) -> vec4f {
       let base = mix(0.55, 1.0, smoothstep(0.0, 0.8, o.world.y));
       amb *= base;
       // Walls face the fixtures square on; keep them a step below the floor pools so rooms don't blow out.
-      direct *= mix(0.22, 0.38, smoothstep(0.0, 1.5, o.world.y));
+      direct *= ${hooks.wallDirectScale ?? "mix(0.22, 0.38, smoothstep(0.0, 1.5, o.world.y))"};
       ${looks ? "if (mat == 4 && look(4u)) { direct *= 1.4; }" : ""}
     }
     // Moonlight through the windows, on the floor and low surfaces.

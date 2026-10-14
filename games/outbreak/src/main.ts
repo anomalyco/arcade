@@ -19,7 +19,7 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...zombieTuning }
 const controls: LabControl[] = [
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
@@ -32,9 +32,11 @@ const controls: LabControl[] = [
   { key: "shroud", label: "Explored shroud", group: "Vision", min: .02, max: .4, step: .01 },
   { key: "exposure", label: "Exposure", group: "Look", min: .5, max: 2, step: .05 },
   { key: "skyFill", label: "Sky fill", group: "Look", min: 0, max: 1.5, step: .05 },
+  { key: "moonFill", label: "Moonlight fill", group: "Look", min: 0, max: 2, step: .05 },
   { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
   { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
   { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: .4, step: .02 },
+  { key: "foliageDensity", label: "Foliage density", group: "Generation", min: .5, max: 1.5, step: .05 },
   { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: .05 },
   { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: .05 },
 ]
@@ -111,10 +113,11 @@ async function main() {
   const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
     if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
-    if (key === "houseSeed" || key === "terrain") regenerate()
+    if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
   })
   let vertices = 0
   function level() {
+    session.view.town.foliageDensity = settings.foliageDensity
     const data=buildLevel(session.view.town)
     vertices=[...data.chunks,...data.glass].reduce((n,c)=>n+c.data.byteLength/24,0)
     renderer.setLevel(data)
@@ -176,13 +179,13 @@ async function main() {
       const lx = lamp.x + (lamp.kind === "street" ? .55 : 0), ly = lamp.y, r = lamp.radius
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
       if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
-      const color=lamp.kind==="street"?[1,.76,.52]:lamp.kind==="porch"?[1,.60,.30]:[1,.54,.24]
-      const cone=lamp.kind==="window"?[0,1,-.3,1]:[0,0,0,lamp.kind==="room"?-1:0]
-      lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.18:.22, i], count++ * LIGHT_FLOATS)
+      const color=lamp.kind==="street"?[1,.78,.54]:lamp.kind==="porch"?[1,.66,.28]:lamp.kind==="window"?[1,.60,.24]:[1,.52,.19]
+      const cone=lamp.kind==="window"?[0,1,-.15,1]:lamp.kind==="porch"?[0,1,-.35,1]:[0,0,0,lamp.kind==="room"?-1:0]
+      lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.16:.22, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
-    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
+    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*settings.moonFill*(1-settings.weather*.85)], 28)
     const focus = cam.project(p.x, 1, p.y, w, h)
     frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, 1.0, count], 32)
     frame.set([...day.direction, day.sun], 36); frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
@@ -297,7 +300,7 @@ async function main() {
       settings[key] = value
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
       if (key === "hour") session.view.hour = wrapHour(value)
-      if (key === "houseSeed" || key === "terrain") regenerate()
+      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
     },
     pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
     async step(dt = 1 / 60, command?: Partial<Command>) {

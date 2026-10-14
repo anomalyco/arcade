@@ -7,17 +7,17 @@ export const advanceHour = (hour: number, dt: number, timeScale: number) => wrap
 export function dayCycle(hour: number) {
   hour = wrapHour(hour)
   const elevation = Math.sin((hour - 6) / 24 * Math.PI * 2)
-  const daylight = smooth((elevation + .24) / .55)
-  const dusk = Math.max(0, 1 - Math.abs(hour - 18) / 2) * (1 - daylight * .5)
+  const daylight = smooth((elevation + .12) / .52)
+  const dusk = Math.max(0, 1 - Math.abs(hour - 18.2) / 2.2) * (1 - daylight * .6)
   const arc = (hour - 6) / 24 * Math.PI * 2
   const sign = elevation >= 0 ? 1 : -1
-  const raw = [Math.cos(arc) * sign, Math.max(.12, Math.abs(elevation)), .35]
+  const raw = [Math.cos(arc) * sign, Math.max(.22, Math.abs(elevation)), .38]
   const length = Math.hypot(...raw)
   return {
-    ambient: [.035 + daylight * .32 + dusk * .015, .055 + daylight * .34, .095 + daylight * .36] as const,
+    ambient: [.024 + daylight * .33 + dusk * .014, .042 + daylight * .35 + dusk * .026, .086 + daylight * .36 + dusk * .058] as const,
     direction: raw.map(v => v / length) as [number, number, number],
     sun: daylight,
-    strength: .045 + daylight * .65,
+    strength: .12 + daylight * .58 + dusk * .06,
     lamps: 1 - smooth((elevation + .03) / .15),
   }
 }
