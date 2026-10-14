@@ -9,6 +9,7 @@ export type GameRecipeTarget =
   | "shared-effects"
   | "lighting"
   | "spawn"
+  | "foliage"
 
 export type GameRecipePayload = {
   schema: "arcade-game-recipe/v1"
@@ -126,6 +127,29 @@ export function buildGameRecipe(opts: {
       seed,
       values,
       codeSnippet: `// packages/kit/lab/lighting.ts\nexport const lightingRecipe = { ${entries} }`,
+    }
+  }
+
+  if (sectionId === "foliage") {
+    const presetId = String(settings.treePreset ?? "oak")
+    const values: Record<string, number | boolean | string> = {}
+    for (const [k, v] of Object.entries(settings)) {
+      if (INTERNAL_KEYS.has(k) || k === "cameraMode" || k === "lightingPreset" || k === "compare" || k === "tuningSeed") continue
+      if (typeof v === "number" && Number.isFinite(v)) values[k] = Number(v.toFixed(4))
+      else if (typeof v === "boolean" || typeof v === "string") values[k] = v
+    }
+    const entries = Object.entries(values)
+      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+      .join(", ")
+    return {
+      schema: "arcade-game-recipe/v1",
+      target: "foliage",
+      modulePath: "packages/kit/gpu/foliage.ts",
+      exportName: "FOLIAGE_PRESETS",
+      group: presetId,
+      seed,
+      values,
+      codeSnippet: `// packages/kit/gpu/foliage.ts -> FOLIAGE_PRESETS.${presetId}.defaults\n${presetId}: { ${entries} },`,
     }
   }
 

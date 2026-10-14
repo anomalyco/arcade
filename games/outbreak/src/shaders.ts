@@ -1,5 +1,6 @@
 import { makeSceneShader, spriteShader, postShader } from "@arcade/kit/gpu/shaders"
 import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
+import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
 
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
@@ -30,10 +31,17 @@ export const shaders = {
         gloss = s.gloss;
       }
     `,
-    fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
+    fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
+    vertex: /* wgsl */ `
+  if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
+    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, defaultFoliageWindConfig());
+    o.world = fw[0];
+    o.normal = fw[1];
+  }`,
     declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
 ${surfaceMaterialDeclarations}
+${foliageWindDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   switch id {
     ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
@@ -115,6 +123,18 @@ fn eyeVisible(p: vec2f) -> f32 {
     // Subtle cool twilight sky sheen on upper roof shingle slopes; eaves stay shadowed.
     let eave = smoothstep(2.88, 3.55, o.world.y);
     col = col * mix(0.62, 1.08, eave) + vec3f(0.005, 0.010, 0.022) * F.ambient.w * eave * max(0.0, n.y);
+  }
+  if(mat == 22) {
+    // Above the Grassland + Botanics subsurface chlorophyll translucency & 4th-power grazing Fresnel rim.
+    let tipWeight = clamp(abs(o.aux), 0.0, 1.2);
+    let keyDir = normalize(F.monitorBounds.xyz);
+    let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
+    let backNormal = max(0.0, dot(-n, keyDir));
+    let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.48 * tipWeight;
+    let chloroTint = mix(vec3f(0.18, 0.46, 0.04), vec3f(0.58, 0.85, 0.12), sqrt(clamp(tipWeight, 0.0, 1.0)));
+    let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.22 * tipWeight * F.ambient.w;
+    let lampTrans = spill(o.world) * 0.16 * tipWeight;
+    col += o.color * (chloroTint * transLobe + vec3f(0.50, 0.85, 0.30) * fresnelRim + lampTrans);
   }
   // Scenery and illumination are not an enemy-visibility mask. Exterior form remains readable.
   // Dynamic entities use the authoritative CPU Vision before submitting a draw (the local survivor is exempt).

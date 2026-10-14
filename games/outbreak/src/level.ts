@@ -5,7 +5,7 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
-import { scatterClusteredGroundCover } from "@arcade/kit/gpu/surface-materials"
+import { emitCurvedGrassBlade, emitGrassFurShells, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
@@ -121,36 +121,156 @@ function compileLevel(town: Town): LevelData {
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
     m.facet(a,c,b,hex(0x586044),MAT.ground,0); m.facet(a,d,c,hex(0x586044),MAT.ground,0)
   }
-  const tufts = scatterClusteredGroundCover({
+  const grassRng = new Rng(town.seed ^ 0x73c9)
+  const tufts = scatterGrassClumps({
     seed: town.seed ^ 0x453a,
-    bounds: [0.5, 0.5, SIZE - 0.5, SIZE - 0.5],
-    clusterCount: Math.round(210 * (town.foliageDensity ?? 1)),
-    tuftsPerCluster: 4,
+    bounds: [1.5, 1.5, SIZE - 1.5, SIZE - 1.5],
+    clusterCount: Math.round(145 * (town.foliageDensity ?? 1)),
+    tuftsPerCluster: 3,
+    params: foliageSettings,
     avoid: (x, z) =>
-      (x > 37.8 && x < 50.2) ||
-      (z > 37.8 && z < 50.2) ||
-      town.buildings.some(b => x > b.rect[0] - 3.1 && x < b.rect[2] + 0.3 && z > b.rect[1] - 0.4 && z < b.rect[3] + 1.8),
+      (x > 38.0 && x < 50.0) ||
+      (z > 38.0 && z < 50.0) ||
+      town.buildings.some(
+        b =>
+          (inBuildingFootprint(b, x, z) || (x > b.rect[0] - 3.05 && x < b.rect[0] + 0.2 && z > b.rect[1] - 0.3 && z < b.rect[3] + 0.88) || (x >= b.rect[0] && x <= b.rect[2] && z >= b.rect[3] && z < b.rect[3] + 0.88)) ||
+          (x > b.rect[0] + 4.35 && x < b.rect[0] + 7.15 && z >= b.rect[3] && z < frontageEnd(b) + 2.1),
+      ),
   })
   for (const t of tufts) {
-    const { x, z, radius: r, height: h, tint: c } = t
-    const y = supportHeight(town, x, z), m = at(x, z)
-    m.facet([x - r * .7, y, z - r * .3], [x + r * .2, y + h, z + r * .3], [x + r * .8, y, z - r * .2], c, MAT.foliage)
-    m.facet([x - r * .2, y, z - r * .8], [x - r * .3, y + h * .85, z + r * .2], [x + r * .4, y, z + r * .7], c, MAT.foliage)
+    const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+    emitGrassTuft(m, t.x, y, t.z, {
+      bladeCount: 3,
+      radius: t.radius * 1.15,
+      height: t.height * 1.12,
+      width: t.width * 1.15,
+      curvature: t.curvature,
+      leanAngle: t.leanAngle,
+      rootColor: t.rootColor,
+      tipColor: t.tipColor,
+      rng: grassRng,
+    })
   }
-  // Clustered curb-verge & front-lawn edge ground cover with natural gaps.
+  // Dense front-lawn, walkway-edge & side-yard grass clumps + 4-layer volumetric fur shells around every building frontage.
+  for (const [bIdx, b] of town.buildings.entries()) {
+    const [bx0, bz0, bx1, bz1] = b.rect
+    const sidewalkZ = frontageEnd(b) - 0.08
+    const lawnPatches: readonly [number, number, number, number, number][] = [
+      [bx0 + 0.25, bz1 + 0.90, bx0 + 4.85, sidewalkZ, 30],
+      [bx0 + 6.55, bz1 + 0.90, Math.min(37.7, bx1 - 0.25), sidewalkZ, 32],
+      [Math.max(2.0, bx0 - 7.5), bz0 + 0.5, bx0 - 3.15, sidewalkZ, 28],
+      [bx1 + 0.35, bz0 + 0.5, Math.min(37.7, bx1 + 3.2), sidewalkZ, 20],
+    ]
+    for (const [pIdx, [lx0, lz0, lx1, lz1, count]] of lawnPatches.entries()) {
+      if (lz1 <= lz0 + 0.2 || lx1 <= lx0 + 0.2 || (lx0 > 37.8 && lx0 < 50.2)) continue
+      emitGrassFurShells(
+        at((lx0 + lx1) * 0.5, (lz0 + lz1) * 0.5),
+        lx0,
+        lz0,
+        lx1,
+        lz1,
+        (gx, gz) => supportHeight(town, gx, gz),
+        foliageSettings,
+        4,
+        2.2,
+      )
+      const patchClumps = scatterGrassClumps({
+        seed: (town.seed ^ (bIdx * 4099 + pIdx * 613)) >>> 0,
+        bounds: [lx0, lz0, lx1, lz1],
+        clusterCount: Math.max(2, Math.round(count * (town.foliageDensity ?? 1))),
+        tuftsPerCluster: 4,
+        params: foliageSettings,
+        avoid: (gx, gz) => (gx > 37.8 && gx < 50.2) || (gz > 37.8 && gz < 50.2),
+      })
+      for (const t of patchClumps) {
+        const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+        emitGrassTuft(m, t.x, y, t.z, {
+          bladeCount: 3,
+          radius: t.radius * 1.25,
+          height: t.height * 1.22,
+          width: t.width * 1.25,
+          curvature: t.curvature,
+          leanAngle: t.leanAngle,
+          rootColor: t.rootColor,
+          tipColor: t.tipColor,
+          rng: grassRng,
+        })
+      }
+    }
+  }
+  // Volumetric grass fur shells over the outer woodland/street yards and curb verge strips.
+  for (const [fx0, fz0, fx1, fz1] of [
+    [6.0, 20.0, 17.8, 37.8],
+    [6.0, 50.2, 20.5, 70.0],
+  ] as const) {
+    emitGrassFurShells(
+      at((fx0 + fx1) * 0.5, (fz0 + fz1) * 0.5),
+      fx0,
+      fz0,
+      fx1,
+      fz1,
+      (gx, gz) => supportHeight(town, gx, gz),
+      foliageSettings,
+      3,
+      3.0,
+    )
+  }
+  for (const [vx0, vx1] of [
+    [2.5, 18.6],
+    [22.0, 26.6],
+    [28.8, 37.5],
+    [53.0, 72.5],
+  ] as const) {
+    for (const [vz0, vz1] of [
+      [39.35, 39.75],
+      [48.25, 48.65],
+    ] as const) {
+      emitGrassFurShells(at((vx0 + vx1) * 0.5, vz0), vx0, vz0, vx1, vz1, () => 0.10, foliageSettings, 3, 2.2)
+    }
+  }
+  // Shadowed root-collar tussock tufts around every exterior street/yard tree.
+  for (const [pIdx, p] of town.props.entries()) {
+    if (p.kind !== "tree") continue
+    const treeRng = new Rng((town.seed ^ (pIdx * 2749 + 0x517c)) >>> 0)
+    const collarCount = Math.max(3, Math.round(6 * (town.foliageDensity ?? 1)))
+    for (let c = 0; c < collarCount; c++) {
+      const a = c * 2.39996 + treeRng.next() * 0.45
+      const d = 0.42 + treeRng.next() * 1.25
+      const tx = p.x + Math.cos(a) * d
+      const tz = p.y + Math.sin(a) * d
+      if ((tx > 37.9 && tx < 50.1) || (tz > 37.9 && tz < 50.1)) continue
+      const y = supportHeight(town, tx, tz), m = at(tx, tz)
+      emitGrassTuft(m, tx, y, tz, {
+        bladeCount: 3,
+        radius: 0.16 + treeRng.next() * 0.10,
+        height: foliageSettings.bladeHeight * (0.95 + treeRng.next() * 0.45),
+        width: foliageSettings.bladeWidth * 1.2,
+        curvature: foliageSettings.bladeCurvature,
+        leanAngle: a + (treeRng.next() - 0.5) * 0.5,
+        rootColor: [foliageSettings.rootColorR * 0.85, foliageSettings.rootColorG * 0.85, foliageSettings.rootColorB * 0.85],
+        tipColor: [foliageSettings.tipColorR * 1.05, foliageSettings.tipColorG * 1.08, foliageSettings.tipColorB * 0.95],
+        rng: treeRng,
+      })
+    }
+  }
+  // Clustered curb-verge & front-lawn edge curved grass tufts with natural gaps.
   const vergeRng = new Rng(town.seed ^ 0x91e1)
-  for (let v = 2; v < SIZE - 2; v += 0.95 + vergeRng.next() * 1.45) {
+  for (let v = 2; v < SIZE - 2; v += 0.58 + vergeRng.next() * 0.82) {
     if (v > 37.5 && v < 50.5) continue
-    for (const zBase of [37.82, 39.55, 48.45, 50.18]) {
-      if (vergeRng.next() < 0.24) continue
-      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 1.0 || (v > b.rect[0] - 3.2 && v < b.rect[0] - 0.2))) continue
-      const count = zBase > 39 && zBase < 49 ? 3 : 2
+    for (const zBase of [37.84, 39.48, 39.66, 48.34, 48.54, 50.16]) {
+      if (vergeRng.next() < 0.16) continue
+      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 0.95 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.25))) continue
+      const inCurbStrip = zBase > 39 && zBase < 49
+      const count = inCurbStrip ? 3 : 2
+      const lean = vergeRng.next() * Math.PI * 2
       for (let k = 0; k < count; k++) {
-        const x = v + (vergeRng.next() - 0.5) * 0.62, z = zBase + (vergeRng.next() - 0.5) * 0.22
-        const y = supportHeight(town, x, z), m = at(x, z), r = 0.10 + vergeRng.next() * 0.12, h = 0.11 + vergeRng.next() * 0.14
-        const c = hex(vergeRng.pick([0x5a6840, 0x4d5c37, 0x6f7348, 0x7b7846]))
-        m.facet([x - r, y, z], [x + r * .2, y + h, z + r * .4], [x + r, y, z - r * .2], c, MAT.foliage)
-        m.facet([x, y, z - r], [x - r * .4, y + h * .85, z], [x + r * .2, y, z + r], c, MAT.foliage)
+        const x = v + (vergeRng.next() - 0.5) * 0.46, z = zBase + (vergeRng.next() - 0.5) * 0.14
+        // Curb verge strip sits on the y = 0.10 sidewalk/verge slab; lawn edge sits on terrain supportHeight.
+        const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
+        const m = at(x, z), h = (0.20 + vergeRng.next() * 0.16) * (foliageSettings.bladeHeight / 0.30)
+        const rootCol = hex(vergeRng.pick([0x1c2b12, 0x182510, 0x242c16]))
+        const tipCol = hex(vergeRng.pick([0x6e883c, 0x5e7634, 0x828442]))
+        emitCurvedGrassBlade(m, x, y, z, h, foliageSettings.bladeWidth * 1.22, foliageSettings.bladeCurvature, lean + (vergeRng.next() - 0.5) * 0.5, rootCol, tipCol)
       }
     }
   }

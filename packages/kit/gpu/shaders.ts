@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string }
+export type SceneHooks = { declarations?: string; vertex?: string; surface?: string; directional?: string; ao?: string; material?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -168,7 +168,7 @@ struct VOut {
   @location(1) normal: vec3f,
   @location(2) color: vec3f,
   @location(3) @interpolate(flat) mat: f32,
-  @location(4) @interpolate(flat) aux: f32,
+  ${hooks.vertex ? "@location(4) aux: f32," : "@location(4) @interpolate(flat) aux: f32,"}
   @location(5) @interpolate(flat) extra: vec4f,
   ${motion ? "@location(6) previous: vec4f," : ""}
 }
@@ -191,6 +191,7 @@ struct VOut {
     // Corner in the normal slot for the fragment's round falloff; phase rides in z.
     o.normal = vec3f(v.normal.xy, ph);
   }
+  ${hooks.vertex ?? ""}
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.color = pow(v.color.rgb, vec3f(2.2));
   o.mat = v.matAux.x;
@@ -580,7 +581,7 @@ fn shadeScene(o: VOut) -> vec4f {
     let a = (1.0 - smoothstep(0.2, 1.0, r)) * k * tw * 1.6;
     return vec4f(o.color * a, 0.0);
   }
-  let n = normalize(o.normal);
+  var n = normalize(o.normal);
   let V = normalize(F.cam.xyz - o.world);
   var col: vec3f;
   var alpha = 1.0;
@@ -686,9 +687,9 @@ fn shadeScene(o: VOut) -> vec4f {
   ${hooks.diagnostics ? `if (${hooks.diagnostics} > 0.5 && ${hooks.diagnostics} < 4.5) {
     return vec4f(select(vec3f(0.0), o.color, i32(${hooks.diagnostics}) == 1), alpha);
   }` : ""}
-  let a = alpha * o.extra.z;
   ${hooks.surface ?? ""}
-  return vec4f(col * a, a);
+  let a = alpha * o.extra.z;
+  return vec4f(select(col * a, col, mat == 22), a);
 }
 
 @fragment fn fs(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {

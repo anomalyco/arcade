@@ -1,4 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import { buildFoliageTree, foliageSettings } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
@@ -79,92 +80,9 @@ function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
   }
 }
 
-function branch(m:Mesh,a:Point,b:Point,r:number) {
-  const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],len=Math.hypot(dx,dy,dz)
-  const axis=[dx/len,dy/len,dz/len],side=Math.hypot(dx,dz)
-  const u=side<.001?[1,0,0]:[-dz/side,0,dx/side]
-  const v=[axis[1]!*u[2]!-axis[2]!*u[1]!,axis[2]!*u[0]!-axis[0]!*u[2]!,axis[0]!*u[1]!-axis[1]!*u[0]!]
-  const p=(end:number,i:number)=>{const q=end?b:a,s=r*(end?.4:1),c=Math.cos(i*6.283/5),n=Math.sin(i*6.283/5);return q.map((x,j)=>x+s*(u[j]!*c+v[j]!*n))}
-  for(let i=0;i<5;i++)m.quadAuto(p(0,i),p(1,i),p(1,i+1),p(0,i+1),rgb(0x484332),MAT.timber)
-}
-
-/** Shadowed inner foliage core + peripheral ruffled leaf rosettes for fine organic silhouettes. */
-function leafRosette(m:Mesh,px:number,py:number,pz:number,size:number,tiltX:number,tiltZ:number,rng:Rng,tone:Rgb) {
-  const a=rng.next()*6.283,w=size*(.76+rng.next()*.22)
-  const f=[Math.cos(a)*size,Math.sin(a)*size],side=[-Math.sin(a)*w,Math.cos(a)*w]
-  const dome=size*.34,droop=size*.18
-  const center:Point=[px+tiltX*.05,py+dome,pz+tiltZ*.05]
-  const a0:Point=[px-f[0]!,py-droop*.5-tiltX*f[0]!*.22,pz-f[1]!]
-  const a1:Point=[px+side[0]!,py-droop-tiltZ*side[1]!*.22,pz+side[1]!]
-  const a2:Point=[px+f[0]!,py-droop*.7+tiltX*f[0]!*.22,pz+f[1]!]
-  const a3:Point=[px-side[0]!,py-droop+tiltZ*side[1]!*.22,pz-side[1]!]
-  const k=.88+rng.next()*.26,col:Rgb=[tone[0]*k,tone[1]*k,tone[2]*k]
-  for(const [p0,p1] of [[a0,a1],[a1,a2],[a2,a3],[a3,a0]])m.facet(center,p0!,p1!,col,MAT.foliage)
-}
-
-function foliageCluster(m:Mesh,cx:number,cy:number,cz:number,rx:number,ry:number,rng:Rng,base:Rgb,rosettes:number) {
-  // Compact dark inner shadow core so the cluster has volume without looking like a balloon.
-  const segs=5,top:Point=[cx,cy+ry*.55,cz],ring:Point[]=[]
-  const dark:Rgb=[base[0]*.52,base[1]*.55,base[2]*.48]
-  for(let i=0;i<segs;i++){
-    const a=(i/segs)*6.283+(rng.next()-.5)*.28,r=rx*(.52+rng.next()*.18)
-    ring.push([cx+Math.cos(a)*r,cy-ry*.18,cz+Math.sin(a)*r])
-  }
-  for(let i=0;i<segs;i++)m.facet(top,ring[i]!,ring[(i+1)%segs]!,dark,MAT.foliage)
-  // Peripheral overlapping leaf rosettes break the silhouette into crisp leafy lobes.
-  for(let s=0;s<rosettes;s++){
-    const a=s*(6.283/rosettes)+(rng.next()-.5)*.55
-    const radial=rx*(s===0?.18:.48+rng.next()*.44)
-    const ox=Math.cos(a)*radial,oz=Math.sin(a)*radial
-    const oy=s===0?ry*.48:ry*(.24-(radial/rx)*.36+(rng.next()-.5)*.22)
-    const sz=rx*(s===0?.46:.34+rng.next()*.22)
-    const lift=s===0?1.12:.86+(1-radial/rx)*.28
-    const tone:Rgb=[Math.min(1,base[0]*lift),Math.min(1,base[1]*lift),Math.min(1,base[2]*lift)]
-    leafRosette(m,cx+ox,cy+oy,cz+oz,sz,Math.cos(a),Math.sin(a),rng,tone)
-  }
-}
-
-/** Broadleaf scaffold: layered bough clusters, dark inner cores, ruffled peripheral leaf sprays and crown gaps. */
+/** Broadleaf scaffold: layered bough clusters, bent-normal peripheral leaf rosettes, interior canopy AO and base grass tufts. */
 export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number) {
-  const rng=new Rng(seed),tree=h>2.1,boughs=tree?6:4,gapAngle=rng.next()*6.283
-  const leanX=(rng.next()-.5)*(tree?.22:.04),leanZ=(rng.next()-.5)*(tree?.22:.04)
-  if(tree)branch(m,[x,ground,z],[x+leanX,ground+h*.72,z+leanZ],.16)
-  // sRGB palette: rich olive, warm autumn-ochre green, deep forest green, and sunlit sage.
-  const palette:Rgb[]=[[0.36,0.44,0.24],[0.44,0.48,0.26],[0.28,0.37,0.19],[0.49,0.50,0.27],[0.32,0.41,0.22]]
-  for(let b=0;b<boughs;b++){
-    const baseAngle=b*6.283/boughs+(rng.next()-.5)*.45
-    const gapDelta=Math.abs(Math.atan2(Math.sin(baseAngle-gapAngle),Math.cos(baseAngle-gapAngle)))
-    const inGap=gapDelta<.55
-    const tierFrac=b/(boughs-1)
-    const reach=radius*(inGap?.36:.52+(1-tierFrac*.25)*(.30+rng.next()*.26))
-    const startH=ground+h*(tree?.28+tierFrac*.22:.10+tierFrac*.12)
-    const tipH=ground+h*(tree?.50+tierFrac*.34+(rng.next()-.4)*.08:.42+tierFrac*.36)
-    const start:Point=[x+leanX*.35,startH,z+leanZ*.35]
-    const tip:Point=[x+Math.cos(baseAngle)*reach,tipH,z+Math.sin(baseAngle)*reach]
-    if(tree)branch(m,start,tip,.068*(1-tierFrac*.28))
-    const clusterTone=palette[(b+Math.floor(rng.next()*2))%palette.length]!
-    const rx=radius*(tree?(inGap?.34:.46+rng.next()*.16):.46+rng.next()*.16)
-    const ry=h*(tree?.16+rng.next()*.06:.28+rng.next()*.10)
-    foliageCluster(m,tip[0],tip[1],tip[2],rx,ry,rng,clusterTone,tree?5:4)
-    if(tree&&!inGap&&b%2===0){
-      const subA=baseAngle+(rng.next()-.5)*.65,subR=reach*.58
-      const sx=x+Math.cos(subA)*subR,sz=z+Math.sin(subA)*subR,sy=tip[1]+h*.12
-      foliageCluster(m,sx,sy,sz,rx*.76,ry*.85,rng,palette[(b+3)%palette.length]!,4)
-    }
-  }
-  const crownTone=palette[seed%palette.length]!
-  foliageCluster(m,x+leanX*.45,ground+h*(tree?.84:.68),z+leanZ*.45,radius*(tree?.44:.48),h*(tree?.15:.24),rng,crownTone,tree?5:4)
-  const coverCount=tree?4:2
-  for(let c=0;c<coverCount;c++){
-    const a=gapAngle+1.2+c*1.45+(rng.next()-.5)*.35,d=radius*(tree?.26:.42)*(0.65+rng.next()*.45)
-    const gx=x+Math.cos(a)*d,gz=z+Math.sin(a)*d,sz=(tree?.24:.15)+rng.next()*.09,gh=(tree?.16:.11)+rng.next()*.06
-    const col:Rgb=[.30+.08*rng.next(),.38+.08*rng.next(),.19+.05*rng.next()]
-    const top=[gx,ground+gh,gz]
-    for(let k=0;k<3;k++){
-      const ka=a+k*2.09,ka2=ka+1.15
-      m.facet(top,[gx+Math.cos(ka)*sz,ground+.01,gz+Math.sin(ka)*sz],[gx+Math.cos(ka2)*sz,ground+.01,gz+Math.sin(ka2)*sz],col,MAT.foliage)
-    }
-  }
+  buildFoliageTree(m,x,z,h,radius,seed,ground,foliageSettings)
 }
 
 /** Procedural bungalow over authoritative room and opening boundaries. */
