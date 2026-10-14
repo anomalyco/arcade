@@ -622,7 +622,7 @@ export class Game {
         const blast = e.how === "frag" || e.how === "claymore" || e.how === "vehicle" || e.how === "roadkill"
         if (v?.body) {
           this.corpses = this.corpses.filter((c) => c.id !== e.victim)
-          this.corpses.push({ id: e.victim, gun: v.gun, bare: v.bare, t0: t, rd: ragdoll(v.body, v.gun, v.svx, v.svy, e.dx, e.dy, blast ? blastStyle() : deathStyle(e.how as Gun), this.solids) })
+          this.corpses.push({ id: e.victim, gun: v.gun, bare: v.bare, t0: t, rd: ragdoll(v.body, v.gun, v.svx, v.svy, e.dx, e.dy, blast ? blastStyle() : deathStyle(e.how as Gun), this.solids, v.hiddenBones) })
           v.body = null
           this.blood(v.x, v.y, Math.atan2(e.dy, e.dx), 2)
         }

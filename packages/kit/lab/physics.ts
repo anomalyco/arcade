@@ -39,7 +39,7 @@ export function createPhysics(context:LabContext,initial?:PhysicsAdapter) {
     for(const body of adapter?.bodies??[]){if(!body.enabled)continue;total++;if(body.awake)awake++;if(settings.colliders&&(body.awake||settings.sleeping)&&count<capacity*24)box(body)}
     d.queue.writeBuffer(uniform,0,context.stage.viewProj)
     if(count)d.queue.writeBuffer(buffer,0,vertices.buffer,0,count*24)
-  },draw:pass=>{if(count){pass.setPipeline(pipeline);pass.setBindGroup(0,group);pass.setVertexBuffer(0,buffer);pass.draw(count)}},
+  },draw:pass=>{(adapter as {draw?:(p:GPURenderPassEncoder)=>void}|undefined)?.draw?.(pass);if(count){pass.setPipeline(pipeline);pass.setBindGroup(0,group);pass.setVertexBuffer(0,buffer);pass.draw(count)}},
     telemetry:()=>adapter?`${total} bodies · ${awake} awake · ${total-awake} sleeping\n${count/24}/${capacity} colliders · orange awake / cyan sleeping`:"Physics · adapter pending\n0 bodies"}
   return {section,attach:(next:PhysicsAdapter)=>{adapter=next}}
 }

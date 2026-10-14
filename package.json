@@ -3,8 +3,13 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.4.2",
+  "bin": {
+    "arcade": "./scripts/arcade.ts"
+  },
   "workspaces": ["games/getaway", "games/blackout", "games/outbreak", "games/carrier", "packages/*"],
   "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "arcade": "bun scripts/arcade.ts",
     "check:packages": "bun run --filter '@arcade/*' check"
   },
   "devDependencies": {

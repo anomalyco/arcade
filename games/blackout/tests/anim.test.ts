@@ -7,10 +7,34 @@ import { ragdoll, ragdollBody, stepRagdoll } from "../src/game/ragdoll"
 import { angleDiff } from "../shared/geom"
 import { at } from "../src/game/rig"
 import { RIG } from "../src/render/person"
+import { humanProfiles } from "@arcade/kit/human-profile"
+import { animationLab, animationControls } from "../src/game/anim-settings"
+import { LabNavigation } from "@arcade/kit/lab-navigation"
+import { bodyBones, boneVisible, detach, type BoneId } from "@arcade/kit/human-pose"
 
 const defaults = { ...animation }
 afterEach(() => Object.assign(animation, defaults))
 const dt = 1 / 60
+
+test("runtime wizards consume shared posture while retaining all weapon frames and casting clips", () => {
+  for (const gun of ["rifle", "shotgun", "sniper"] as const) {
+    const wizard = newAvatar("wizard", 0, 0, 0, gun), soldier = newAvatar("wizard", 0, 0, 0, gun)
+    for (let n = 0; n < 180; n++) {
+      animate(wizard, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, 0.2, true)
+      animate(soldier, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, 0.2)
+      expect(wizard.body!.gun).not.toBeNull()
+      // Different stride phases may change the small authored weapon sway, not its aim ownership.
+      expect(wizard.body!.gun!.x.reduce((dot, value, axis) => dot + value * soldier.body!.gun!.x[axis]!, 0)).toBeGreaterThan(.999)
+    }
+    expect(wizard.profile).toBeUndefined()
+    expect(wizard.motion.stride / soldier.motion.stride).toBeCloseTo(humanProfiles.wizard.strideScale, 10)
+    const freeHand = wizard.body!.fa[0]
+    wizard.throwAt = 3
+    animate(wizard, dt, 3.15, 3.3, 0, 0, 0, 0.2, true)
+    expect(wizard.body!.fa[0]).not.toEqual(freeHand)
+    expect(wizard.body!.gun).not.toBeNull()
+  }
+})
 
 for (const [name, vx, vy, spin] of [["walk", 1.4, 0, 0], ["run", 4.2, 0, 0], ["sprint", 6.3, 0, 0], ["backpedal", -1.5, 0, 0], ["strafe left", 0, -2, 0], ["strafe right", 0, 2, 0], ["turn", 0, 0, 1.4]] as const) {
   test(`${name}: both the lock and rendered toe have zero planted slip`, () => {
@@ -30,7 +54,7 @@ for (const [name, vx, vy, spin] of [["walk", 1.4, 0, 0], ["run", 4.2, 0, 0], ["s
       }
       if (vy !== 0) expect(a.feet[1].p[2] - a.feet[0].p[2]).toBeGreaterThanOrEqual(0.199999)
       expect(Math.abs(angleDiff(a.legYaw, a.aim))).toBeLessThanOrEqual(1.050001)
-      expect(a.body!.pelvis.p[1]).toBeGreaterThan(0.75)
+      expect(a.body!.pelvis.p[1]).toBeGreaterThan(vx >= 4.2 ? 0.66 : 0.75)
       expect(a.body!.head.p).toEqual(at(a.body!.torso, 0.02, RIG.neckY, 0))
       if (n > 60 && vx > 0) for (let i = 0; i < 2; i++) if (a.feet[i]!.planted) {
         const ankle = at(a.body!.sh[i]!, 0, -RIG.shin, 0)
@@ -120,7 +144,94 @@ test("sprint has flight instead of stretching a locked leg or crouching to reach
   expect(flight).toBeGreaterThan(30)
 })
 
-test("running posture changes the trunk, not cadence, contacts, root height or gun aim", () => {
+test("per-actor profiles preserve the default soldier and isolate zombie tuning", () => {
+  const a = newAvatar("same", 0, 0, 0, "rifle"), b = newAvatar("same", 0, 0, 0, "rifle")
+  b.profile = { ...humanProfiles.soldier }
+  const zombie = newAvatar("zombie", 0, 0, 0, "rifle")
+  zombie.profile = { ...humanProfiles.zombie }
+  for (let n = 0; n < 180; n++) {
+    for (const actor of [a, b, zombie]) animate(actor, dt, n * dt, n * dt * 1.1, 0, 1.1, 0, n * dt * 0.2)
+    expect(a.body).toEqual(b.body)
+    expect(zombie.body!.gun).toBeNull()
+    expect(zombie.body!.head.p).toEqual(at(zombie.body!.torso, 0.02, RIG.neckY, 0))
+  }
+  expect(a.body!.torso).not.toEqual(zombie.body!.torso)
+})
+
+test("Lab profile selection, Copy and keyboard reset use the same settings", () => {
+  const settings = animationLab({}, new URLSearchParams()), nav = new LabNavigation(settings, animationControls)
+  const preset = animationControls.find(c => c.key === "profilePreset")!
+  nav.set(preset, "zombie")
+  for (const [key, value] of Object.entries(humanProfiles.zombie)) expect(settings[key as keyof typeof settings]).toBe(value)
+  expect(JSON.parse(nav.json("Animation")).handPose).toBe("reach")
+  nav.active = nav.rows.find(row => row.group === "Animation" && !row.control)
+  nav.reset(true)
+  expect({ ...animation }).toEqual(defaults)
+})
+
+test("missing limbs remain finite through future animation and do not mutate authoritative inputs", () => {
+  const a = newAvatar("missing", 0, 0, 0, "rifle")
+  a.profile = { ...humanProfiles.zombie }
+  a.hiddenBones = new Set<BoneId>()
+  for (let n = 0; n < 120; n++) {
+    const previous = a.body && bodyBones(a.body)
+    animate(a, dt, n * dt, n * dt, 0, 1, 0, 0)
+    if (n === 60) {
+      const before = JSON.stringify(a.body)
+      const pieces = detach(bodyBones(a.body!), previous ?? undefined, dt, "right.upperArm", a.hiddenBones)
+      expect(pieces.map(p => p.bone)).toEqual(["right.upperArm", "right.foreArm"])
+      expect(JSON.stringify(a.body)).toBe(before)
+    }
+    expect(Object.values(bodyBones(a.body!)).flatMap(frame => Object.values(frame).flat()).every(Number.isFinite)).toBe(true)
+    expect(a.vx).toBe(1)
+  }
+  expect(boneVisible("right.foreArm", a.hiddenBones)).toBe(false)
+  expect(boneVisible("left.foreArm", a.hiddenBones)).toBe(true)
+})
+
+test("profiles keep poses bounded at dt spikes with missing limbs and preserve rifle aim", () => {
+  for (const profile of Object.values(humanProfiles)) {
+    const a = newAvatar("spikes", 0, 0, 0, "rifle"), soldier = newAvatar("spikes", 0, 0, 0, "rifle")
+    a.profile = { ...profile }; a.hiddenBones = new Set(["left.thigh", "right.upperArm"])
+    let x = 0, t = 0
+    for (let n = 0; n < 240; n++) {
+      const step = [1 / 240, 1 / 60, 0.05, 0.2, 2][n % 5]!
+      t += step; x += Math.min(step, 0.05) * 4.2
+      for (const actor of [a, soldier]) animate(actor, step, t, x, 0, 4.2, 0, Math.sin(n / 60) * 0.4)
+      for (const frame of Object.values(bodyBones(a.body!))) {
+        expect(Object.values(frame).flat().every(Number.isFinite)).toBe(true)
+        expect(Math.hypot(frame.p[0] - x, frame.p[1], frame.p[2])).toBeLessThan(2.5)
+        for (const axis of [frame.x, frame.y, frame.z]) expect(Math.hypot(...axis)).toBeCloseTo(1, 10)
+      }
+      expect(Math.abs(angleDiff(Math.atan2(a.body!.pelvis.x[2], a.body!.pelvis.x[0]), a.aim))).toBeLessThan(1.2)
+      if (profile.handPose === "weapon") expect(a.body!.gun).toEqual(soldier.body!.gun)
+    }
+  }
+})
+
+test("corpse detachment starts at its displayed pose and retains the missing-limb mask", () => {
+  const a = newAvatar("corpse-detach", 0, 0, 0, "rifle")
+  a.hiddenBones = new Set(["left.foreArm"])
+  for (let n = 0; n < 90; n++) animate(a, dt, n * dt, n * dt * 4.2, 0, 4.2, 0, 0)
+  const r = ragdoll(a.body!, a.gun, 4.2, 0, 1, 0, { push: 0, lift: 0, spin: 0, buckle: 0 }, [], a.hiddenBones)
+  expect(boneVisible("left.foreArm", r.hiddenBones)).toBe(false)
+  a.hiddenBones.clear()
+  expect(boneVisible("left.foreArm", r.hiddenBones)).toBe(false)
+  const previous = bodyBones(ragdollBody(r, 0, a.gun))
+  stepRagdoll(r, dt)
+  const current = bodyBones(ragdollBody(r, 0, a.gun)), snapshot = JSON.stringify(r.pos)
+  const parts = detach(current, previous, dt, "right.upperArm", r.hiddenBones)
+  expect(parts.map(p => p.bone)).toEqual(["right.upperArm", "right.foreArm"])
+  for (const part of parts) {
+    expect(part.frame).toEqual(current[part.bone]!)
+    part.linear.forEach((v, i) => expect(v).toBeCloseTo((current[part.bone]!.p[i]! - previous[part.bone]!.p[i]!) / dt, 10))
+  }
+  expect(JSON.stringify(r.pos)).toBe(snapshot)
+  stepRagdoll(r, 0.2)
+  expect(Object.values(bodyBones(ragdollBody(r, 0, a.gun))).flatMap(f => Object.values(f).flat()).every(Number.isFinite)).toBe(true)
+})
+
+test("running posture and crouch depth shape the trunk and knees without altering cadence, contacts or gun aim", () => {
   const before = newAvatar("attitude", 0, 0, 0, "rifle"), after = newAvatar("attitude", 0, 0, 0, "rifle")
   let x = 0, y = 0
   for (let n = 0; n < 600; n++) {
@@ -129,26 +240,31 @@ test("running posture changes the trunk, not cadence, contacts, root height or g
     const vx = Math.cos(direction) * speed, vy = Math.sin(direction) * speed
     x += vx * dt; y += vy * dt
     animation.runPosture = 0
+    animation.crouchDepth = 0
     animate(before, dt, n * dt, x, y, vx, vy, 0)
-    animation.runPosture = 0.18
+    animation.runPosture = defaults.runPosture
+    animation.crouchDepth = defaults.crouchDepth
     animate(after, dt, n * dt, x, y, vx, vy, 0)
     expect(after.phase).toBe(before.phase)
     expect(after.feet).toEqual(before.feet)
     expect(after.motion.swings).toEqual(before.motion.swings)
     expect(after.motion.toes).toEqual(before.motion.toes)
-    expect(after.body!.pelvis.p).toEqual(before.body!.pelvis.p)
-    expect(after.body!.gun).toEqual(before.body!.gun)
+    expect(after.body!.pelvis.p[0]).toBeCloseTo(before.body!.pelvis.p[0], 12)
+    expect(after.body!.pelvis.p[2]).toBeCloseTo(before.body!.pelvis.p[2], 12)
+    expect(after.body!.pelvis.p[1]).toBeLessThanOrEqual(before.body!.pelvis.p[1] + 1e-12)
+    expect(after.body!.gun!.x).toEqual(before.body!.gun!.x)
     expect(after.body!.head.p).toEqual(at(after.body!.torso, 0.02, RIG.neckY, 0))
     for (let i = 0; i < 2; i++) if (after.feet[i]!.planted) expect(after.body!.ft[i]).toEqual(before.body!.ft[i])
     if (n === 220) {
-      expect(after.body!.pelvis.x[1]).toBeLessThan(-0.12)
-      expect(after.body!.torso.x[1]).toBeLessThan(before.body!.torso.x[1] - 0.12)
+      expect(after.body!.pelvis.p[1]).toBeLessThan(before.body!.pelvis.p[1] - 0.07)
+      expect(after.body!.pelvis.x[1]).toBeLessThan(-0.2)
+      expect(after.body!.torso.x[1]).toBeLessThan(before.body!.torso.x[1] - 0.2)
     }
   }
 })
 
 test("run lean stays bounded and continuous across acceleration, braking and reversal", () => {
-  for (const posture of [0, 0.18, 0.3]) {
+  for (const posture of [0, 0.18, 0.3, 0.45]) {
     animation.runPosture = posture
     const a = newAvatar("lean-bounds", 0, 0, 0, "rifle")
     let x = 0, y = 0, previous = 0
@@ -160,10 +276,124 @@ test("run lean stays bounded and continuous across acceleration, braking and rev
       expect(Number.isFinite(a.motion.posture.x)).toBe(true)
       expect(a.motion.posture.x).toBeGreaterThanOrEqual(0)
       expect(a.motion.posture.x).toBeLessThanOrEqual(posture * 1.25 + 1e-9)
-      expect(Math.abs(a.motion.posture.x - previous)).toBeLessThan(0.035)
-      expect(Math.abs(Math.asin(a.body!.torso.x[1]))).toBeLessThan(0.75)
+      expect(Math.abs(a.motion.posture.x - previous)).toBeLessThan(0.05)
+      expect(Math.abs(Math.asin(a.body!.torso.x[1]))).toBeLessThan(0.85)
       expect(bodyJoints(a.body!, a.gun).flat().every(Number.isFinite)).toBe(true)
       previous = a.motion.posture.x
     }
+  }
+})
+
+test("crouch run increases trunk lean, pelvis lowering and knee bend with speed while keeping strafe/backpedal sensible", () => {
+  const sample = (vx: number, vy: number) => {
+    const a = newAvatar("posture-speed", 0, 0, 0, "rifle")
+    let x = 0, y = 0, pelY = 0, pelX = 0, headX = 0, pelPitch = 0, chestPitch = 0, headPitch = 0, kneeBend = 0
+    const warmup = 120, count = 240
+    for (let n = 0; n < warmup + count; n++) {
+      x += vx * dt; y += vy * dt
+      animate(a, dt, n * dt, x, y, vx, vy, 0)
+      if (n < warmup) continue
+      const b = a.body!
+      const deg = (f: typeof b.pelvis) => Math.atan2(f.x[1], Math.hypot(f.x[0], f.x[2])) * 180 / Math.PI
+      pelY += b.pelvis.p[1]
+      pelX += b.pelvis.p[0] - x
+      headX += b.head.p[0] - x
+      pelPitch += deg(b.pelvis)
+      chestPitch += deg(b.torso)
+      headPitch += deg(b.head)
+      for (let i = 0; i < 2; i++) {
+        const dotY = b.th[i]!.y[0] * b.sh[i]!.y[0] + b.th[i]!.y[1] * b.sh[i]!.y[1] + b.th[i]!.y[2] * b.sh[i]!.y[2]
+        kneeBend += Math.acos(Math.max(-1, Math.min(1, dotY))) * 90 / Math.PI
+      }
+    }
+    return {
+      pelY: pelY / count, pelX: pelX / count, headX: headX / count,
+      pelPitch: pelPitch / count, chestPitch: chestPitch / count, headPitch: headPitch / count,
+      kneeBend: kneeBend / count, posture: a.motion.posture.x,
+    }
+  }
+  const walk = sample(1.4, 0), run = sample(4.2, 0), sprint = sample(6.3, 0)
+  const strafe = sample(0, 4.2), back = sample(-4.2, 0)
+  // Forward lean and crouch scale monotonically: walk -> run -> sprint.
+  expect(-walk.chestPitch).toBeLessThan(10)
+  expect(-run.chestPitch).toBeGreaterThan(24)
+  expect(-sprint.chestPitch).toBeGreaterThan(-run.chestPitch + 6)
+  expect(-run.pelPitch).toBeGreaterThan(10)
+  expect(-sprint.pelPitch).toBeGreaterThan(-run.pelPitch + 2)
+  expect(run.pelY).toBeLessThan(walk.pelY - 0.08)
+  expect(sprint.pelY).toBeLessThan(run.pelY - 0.02)
+  expect(run.kneeBend).toBeGreaterThan(walk.kneeBend + 15)
+  expect(sprint.kneeBend).toBeGreaterThan(walk.kneeBend + 15)
+  // Hips behind root, head forward of pelvis, head stabilised to look ahead.
+  expect(run.pelX).toBeLessThan(-0.02)
+  expect(run.headX - run.pelX).toBeGreaterThan(0.28)
+  expect(sprint.headX - sprint.pelX).toBeGreaterThan(0.35)
+  expect(Math.abs(run.headPitch)).toBeLessThan(8.5)
+  // Strafe and backpedal do not pitch forward into a run lean.
+  expect(strafe.posture).toBeCloseTo(0, 8)
+  expect(back.posture).toBeCloseTo(0, 8)
+  expect(Math.abs(strafe.pelPitch)).toBeLessThan(0.5)
+  expect(Math.abs(back.pelPitch)).toBeLessThan(0.5)
+  expect(back.chestPitch).toBeGreaterThan(-5)
+  expect(back.chestPitch).toBeLessThan(1)
+})
+
+test("weapon frame is at least as stable as old during locomotion, stops and 30 Hz mux stepping while keeping aim accurate", () => {
+  const measure = (mode: "old" | "new", scenario: "run" | "strafe" | "stop" | "aim" | "mux") => {
+    animation.animationMode = mode
+    const a = newAvatar("gun-stability", 0, 0, 0, "rifle")
+    let x = 0, y = 0, bodyX = 0
+    const gripX: number[] = [], gripZ: number[] = [], muzZ: number[] = [], shDist: number[] = [], yawErr: number[] = [], pitchArr: number[] = []
+    for (let n = 0; n < 300; n++) {
+      const t = n * dt
+      const vx = scenario === "strafe" ? 0 : scenario === "stop" ? (n < 150 ? 4.2 : 0) : 4.2
+      const vy = scenario === "strafe" ? (Math.floor(t * 2) % 2 === 0 ? 4.2 : -4.2) : 0
+      const aim = scenario === "aim" ? Math.sin(t * 3) * 0.8 : 0
+      if (scenario === "mux") {
+        if (n % 2 === 0) bodyX += vx / 30
+        x = bodyX
+      } else {
+        x += vx * dt; y += vy * dt
+      }
+      animate(a, dt, t, x, y, vx, vy, aim)
+      if (scenario === "stop" ? n >= 140 && n < 210 : n >= 90) {
+        const g = a.body!.gun!, sh = at(a.body!.torso, 0, RIG.shoulderY, 0)
+        const muzzle = at(g, 0.66, 0.03, 0)
+        gripX.push(g.p[0] - x); gripZ.push(g.p[2] - y); muzZ.push(muzzle[2] - y)
+        shDist.push(Math.hypot(g.p[0] - sh[0], g.p[2] - sh[2]))
+        yawErr.push(angleDiff(Math.atan2(g.x[2], g.x[0]), aim))
+        pitchArr.push(Math.asin(g.x[1]))
+      }
+    }
+    const rms = (arr: number[]) => {
+      const m = arr.reduce((s, v) => s + v, 0) / arr.length
+      return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length)
+    }
+    const hf = (arr: number[]) => {
+      let s = 0
+      for (let i = 1; i < arr.length; i++) s += (arr[i]! - arr[i - 1]!) ** 2
+      return Math.sqrt(s / (arr.length - 1))
+    }
+    return {
+      gripXRms: rms(gripX), gripXHf: hf(gripX), gripZRms: rms(gripZ), gripZHf: hf(gripZ),
+      muzZRms: rms(muzZ), muzZHf: hf(muzZ), yawRms: rms(yawErr), yawHf: hf(yawErr),
+      pitchRms: rms(pitchArr), pitchHf: hf(pitchArr),
+      maxYawErr: Math.max(...yawErr.map(Math.abs)),
+      minShDist: Math.min(...shDist), maxShDist: Math.max(...shDist),
+    }
+  }
+  for (const scenario of ["run", "strafe", "stop", "aim", "mux"] as const) {
+    const oldM = measure("old", scenario), newM = measure("new", scenario)
+    expect(newM.gripXRms).toBeLessThanOrEqual(oldM.gripXRms + 1e-4)
+    expect(newM.gripXHf).toBeLessThanOrEqual(oldM.gripXHf + 1e-4)
+    expect(newM.muzZRms).toBeLessThanOrEqual(oldM.muzZRms + 1e-4)
+    expect(newM.muzZHf).toBeLessThanOrEqual(oldM.muzZHf + 1e-4)
+    expect(newM.yawRms).toBeLessThanOrEqual(oldM.yawRms + 1e-4)
+    expect(newM.yawHf).toBeLessThanOrEqual(oldM.yawHf + 1e-4)
+    expect(newM.pitchRms).toBeLessThanOrEqual(oldM.pitchRms + 1e-4)
+    expect(newM.pitchHf).toBeLessThanOrEqual(oldM.pitchHf + 1e-4)
+    expect(newM.maxYawErr).toBeLessThan(0.035)
+    expect(newM.minShDist).toBeGreaterThan(0.18)
+    expect(newM.maxShDist).toBeLessThan(0.33)
   }
 })

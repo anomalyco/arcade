@@ -1,5 +1,8 @@
 # Lab Workbench
 
+For tuning workflows and enforceable authoring rules, use [Lab authoring guide](lab.md). This document records
+the implemented workbench API and proof; research proposals are not supported actions.
+
 Desktop workbench for the shared isolation Lab (`packages/kit/lab/`, served at `/lab.html` in Getaway and Blackout).
 Embedded game debug overlays (`new LabPanel(...)` in Getaway, Blackout and Outbreak) retain their lightweight floating
 overlay behavior (`layout: "floating"`, `capture: "open"`). The standalone Lab mounts the three-column workbench shell
@@ -62,39 +65,77 @@ Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.
   `Getaway effects` only mount the active effect's parameter group(s) (for example, `▾ Emitter`, `▾ Glass shards` and
   `▾ Environment` when `Glass shards` is selected).
 - `ItemWorld` (`packages/kit/lab/spawn-types.ts` and `games/getaway/src/lab/spawn.ts`) adds `entries()`, `move(id, at)`,
-  `remove(id)`, `drawGhost(kind, at)`, `snapshot()` and `restore(placements)` using `StreetProps` body IDs and models
-  without modifying game physics or default constants.
+  `remove(id)`, `drawGhost(kind, at)`, `snapshot()`, `restore(placements)`, `environments`, `setEnvironment(kind, seed)`,
+  `clearSkids()`, `setSkidsEnabled(enabled)`, `setSmokeEnabled(enabled)` and `skidStats()` using `StreetProps` body IDs
+  and models without modifying game physics or default constants.
+- **Car skid marks, lamp mounts and fender geometry (`games/getaway/src/lab/spawn.ts`, `games/getaway/src/render/car-mesh.ts`, `packages/kit/lab/game-sprites.ts`, `packages/kit/lab/stage-shader.ts`):**
+  - Wires `emissions.skids = fx` (`Fx` from `@arcade/kit/vehicle/fx`) and advances `fx.update(dt)` + `emissions.update(dt)`
+    once per simulation tick (`update(dt)`), never inside `prepare()`.
+  - Fixes planar decal orientation in `GameSprites` (`right = (cos(r), 0, -sin(r))`, `up = (sin(r), 0, cos(r))`) to match
+    `games/getaway/src/render/shaders.ts` so consecutive skid ribbon segments (`kind = 4`, up to 1,600 segments) join
+    end-to-end along curves and diagonals, and adds car contact shadow (`kind = 9`, `shape = 5`) and forward headlight
+    fan support (`shape = 6`).
+  - **Lamp pose & fixture sphere fix:** Restricts `stage-shader.ts`'s `0.12 m` debug light-core sphere raytracing to the
+    `Lighting` calibration stage (`F.options.w < 2.0`), eliminating the floating orange/red spheres on the car hood and
+    rear bumper. Builds Lab cars with `buildCar(spec, undefined, 4)` (`Soft pool` bevelled 3D headlamp/taillamp lenses
+    without duplicate `lights = 0` polygons) and computes both front spot `headlights` (preserving the twin rounded
+    headlight arcs), rear `tailLights`, and lens bloom halos from `lampMounts(spec)` + `bodyPoint(car, pose, ...)` using
+    full chassis `height`, `roll` and `pitch` (with vertical aim pitch clamped to `[-0.42, -0.18]` so brake dive brings
+    the twin arcs closer without throttle squat flinging them to the horizon).
+  - **Front fender & side seam fix (`car-mesh.ts`):** Previously `hullStations` added the full longitudinal `archR`
+    (`0.47 m`) vertically to `wheelR` (`0.37 m`), pushing `k.b` (`0.84 m`) above the belt crease `k.s` (`0.74–0.80 m`)
+    and folding the side/shoulder bands upside-down over the front wheel arch; `muscle` also had its front width/height
+    kink at `z = zf - 0.8 = 1.45` right on top of the front axle (`1.48`), a door `seam` extending to `y = 0.90` above
+    the `0.83` belt crease into empty air, and a lower rocker strip floating `3.4 cm` outside the lower chamfer. Keeping
+    arch lift below `k.s - 0.05`, moving the full-width fender station ahead of the arch (`zf - 0.32`), and keeping
+    `seam` and rocker trim flush within the vertical side wall eliminates the fender fold, silhouette spike and brake-dive
+    tire poke-through while preserving exact vertex counts for `splitChassis`.
+  - Exposes `Vehicle & Skids` in the car inspector (`Skid marks`, `Skid width` `0.04–0.45 m`, `Skid life` `1–30 s`,
+    `Tyre smoke`, `Clear skids`, `Reset scene`) with exact value entry.
+- **Persistent Playground and switchable environments (`packages/kit/lab/yard.ts`, `spawn.ts`, `main.ts`, `workbench.ts`):**
+  - Expands the default `Proving Yard` (`72 m × 76 m`) with a central 60 m acceleration/braking lane and 10 m scale ticks,
+    a west skid pad with painted drift rings, three ramps/suspension steps (`yardRamps`), and a walled/glass effect test
+    alcove (`yardWalls` + `yardBoxes` in `stage-shader.ts` so rendering, polar shadows, smoke volumes, particles and
+    vehicle/prop collisions agree).
+  - Switching between `Effects`, `Objects` (`Spawn`), `Lighting` and `Physics` while a Playground scene is active keeps
+    the car, placed props, skid marks, smoke trails and camera in the same persistent 3D world instead of resetting pools.
+  - The top-bar `Env` picker switches the Playground between `Proving Yard` and real seeded `Getaway · Street`,
+    `Getaway · Alley` and `Getaway · Plaza` chunks (rebuilding `PropPhysics` wall hashes, relocating the car to a
+    validated collision-free spawn with a fresh `EmissionState` so teleports never bridge long segments, and clearing
+    incompatible transient trails while preserving effect/lighting settings and seed locks).
 
 ## Input ownership and modes
 
 Priority order:
 
-1. **Text editing / modal dialog** (`Search library`, `Search controls`, `Exact <control>`, Preset JSON modal): owns
+1. **Text editing / modal dialog** (`Search library`, `Search controls`, `Exact <control>`, Gizmo numeric `X`/`Z`/`°` inputs, Preset/Recipe JSON modal): owns
    printable keys, `Space`, arrows and clipboard shortcuts; `Escape` closes the active editor or clears search.
-2. **Active placement ghost or move ghost** (`Place <item>`, `Move <object>`): `Click` or `Enter` commits (`Shift+Click`
-   stamps and stays armed), `[` / `]` rotates yaw by 15° (`Shift` 1°), arrow keys nudge on the ground plane, `Escape`
-   cancels without recording history.
-3. **Focused Inspector (`LabPanel`)**: `↑`/`↓` rows, `←`/`→` adjust (`Shift` ×10, `Alt` ×0.1), `Tab`/`Shift+Tab` groups,
+2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or `M` / `ContextMenu`)**:
+   - Uses 8 fixed compass sectors (`0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°`), a `14 px` center dead zone, `96 px` ring radius, and `180 ms` tap-to-latch vs. hold-flick-release threshold.
+   - Unavailable commands stay dimmed (`aria-disabled="true"`) in their fixed compass slot so neighbor angles never shift.
+   - Object ring (`N` Trigger `Space`, `NE` Possess `P`, `E` Duplicate `D`, `SE` Inspect `I`, `S` Delete `⌫`, `SW` Reset `0`, `W` Move `G`, `NW` Frame `F`) vs. Empty-Ground ring (`N` Trigger FX `Space`, `NE` Spawn Char `P`, `E` Spawn Here `A`/`E`, `SE` Drop Light `L`, `S` Clear FX `⌫`, `SW` Reroll `R`, `W` Move Here `G`, `NW` Frame `F`).
+   - When latched open, owns `1`–`8`, sector accelerator keys, `Arrows`, `Enter` and `Escape`.
+3. **Active placement ghost or modal transform** (`Place <item>`, `Move <object>` `G`, `Rotate <object>` `⇧R` or `G`→`R`):
+   - `Click` or `Enter` commits as 1 undo transaction (`Shift+Click` stamps and stays armed for ghosts), `[` / `]` rotates yaw by 15° (`Shift` 1°), arrow keys nudge on the ground plane, typing digits (`0–9`, `-`, `.`, `Tab` for `X`/`Z`) enters exact coordinate/angle values live, and `Escape` cancels and restores pre-gesture state with 0 history entries.
+   - Selected movable objects also display an in-viewport **Transform Gizmo** (`packages/kit/lab/transform.ts`) with draggable Move (`✥`) and Rotate (`↻`) handles and inline numeric `X` / `Z` / `°` inputs, plus a context-aware viewport reticle (`[data-viewport-cursor]`) that hides in `Play` mode.
+4. **Focused Inspector (`LabPanel`)**: `↑`/`↓` rows, `←`/`→` adjust (`Shift` ×10, `Alt` ×0.1), `Tab`/`Shift+Tab` groups,
    `Enter`/`Space` edit or toggle, `0` reset control, `Shift+0` reset group, `R` randomize group, `C` copy group JSON,
    `Escape` returns focus to the canvas.
-4. **Play mode (`mode === "play"`)**: Entered explicitly with `P` (or the top-bar `Play · P` button) when a character
-   exists (`?bench` auto-enables `input.enabled` on `Spawn character` for non-interactive regression scripts). Owns
-   `WASD`, Dvorak `, o a e`, arrows, `Space` (handbrake) and `Shift` (boost/sprint). Pressing `Escape` or focusing any
-   sidebar/toolbar control immediately exits `Play` to `Edit` and calls `input.release()`.
-5. **Edit canvas (`mode === "edit"`)**: `Space` retriggers with the same seed, `F` frames the active target/object, `R`
-   rerolls the room seed while respecting `Lock FX`/`Lock Env`, `Q`/`E` cycles the active effect/item, `1`–`4` switches
-   library categories, `A` arms prop placement, `G` moves the selected object, `Backspace`/`Delete` removes a deletable
-   placed object, `⌘D` duplicates it, `⌘Z`/`⇧⌘Z` undoes/redoes authored edits, `Tab` focuses the Inspector, `⌘K` or `/`
-   focuses library search, and `Backquote` hides/shows the workbench chrome. Browser shortcuts (`⌘R`, `⌘L`, etc.) are
-   never swallowed.
+5. **Play mode (`mode === "play"`)**: Entered explicitly with `P` (or `Play · P` / Radial `Possess`) when a character
+   exists (`?bench` auto-enables `input.enabled` on `Spawn character` for non-interactive regression scripts). Captures a
+   `prePlayCheckpoint` on entry. Owns `WASD`, Dvorak `, o a e`, arrows, `Space` (handbrake) and `Shift` (boost/sprint).
+   Pressing `Escape` or focusing any sidebar/toolbar control immediately exits `Play` to `Edit`, calls `input.release()`,
+   and restores `prePlayCheckpoint` (with a `[Keep Play State]` toast action if the user wants to keep the aftermath).
+6. **Edit canvas (`mode === "edit"`)**:
+   - **Pointer & Selection**: `Click` selects, `Shift+Click` toggles/adds to multi-selection, `LMB Drag` orbits, `Shift+LMB` / `MMB Drag` pans, and `Alt+LMB Drag` (or `LMB Drag` when the top-bar `Box` mode toggle is active) draws a marquee selection box without fighting camera orbit. Multi-selection exposes shared Inspector fields (`Position X`, `Position Z`, `Yaw`, `Light power`, `Light radius`) and commits group move, duplicate (`D` / `⌘D`) and delete (`⌫` / `Delete`) as single undo transactions.
+   - **Trackpad & Wheel (`packages/kit/lab/viewport-input.ts`)**: Shared classifier across Lab and Catalogue viewports. In the Lab viewport, two-finger scroll orbits (`twoFingerScroll: "orbit"`), `Shift` + two-finger scroll pans, and two-finger pinch (`Ctrl+wheel` or Safari `gesturestart`/`gesturechange`) zooms the 3D camera inside the canvas (`preventDefault()` scoped strictly to `canvas`), with smooth exponential camera damping (`stage.stepCamera(dt)`). `Meta+wheel` and browser `Cmd` shortcuts are never intercepted. Automated Playwright proofs dispatch synthetic `WheelEvent`s; physical multi-finger trackpad hardware feel is not established by synthetic events.
+   - **Transport, Frozen-Frame Scrub & A/B Compare (`packages/kit/lab/compare-ab.ts`, `recipe.ts`)**: `Space` retriggers with the locked seed, `K` toggles transport Pause/Play, `.` steps forward 1 frame (`Shift+.` 5 frames), `,` steps backward 1 frame (`Shift+,` 5 frames). Scrubbing any parameter while paused at frame `fN` deterministically re-simulates `fN` ticks of the locked seed in place. `B` pins Baseline `Slot A`, `V` flips between `Slot A` and Candidate `Slot B` at the same frame, `Shift+V` toggles the draggable split-screen A/B wipe, and `Copy Recipe` exports typed game settings (`arcade-game-recipe/v1`) with zero URL parameters.
 
 ## Limits
 
 - Undo/redo tracks authored state (parameter gestures, group randomize/reset, room seed rerolls, preset imports, and
-  placed props/lights/characters in `Spawn`). It does not rewind live particle or rigid-body simulation ticks.
-- Full 3D transform gizmo handles and autonomous object behavior presets (`Patrol`, `Chase`, `Orbit` from the proposal)
-  are not included in this pass; object placement and movement use cursor ground-raycast ghosts (`yardGround` including
-  the ramp) plus keyboard nudging and Inspector `Position X` / `Position Z` / `Yaw` sliders.
+  placed props/lights/characters in `Spawn`). It does not rewind live particle or rigid-body simulation ticks; exiting `Play` restores `prePlayCheckpoint`.
+- Autonomous object behavior presets (`Patrol`, `Chase`, `Orbit` from the proposal) are not included in this pass; object placement and transforms use cursor ground-raycast ghosts (`yardGround` including ramps), in-viewport 2D projected Move/Rotate handles, modal `G`/`⇧R` numeric entry, and Inspector sliders.
 - `Audio` never creates or unlocks a live `AudioContext` on section entry or catalog selection; waveform and spectrogram
   previews render through `OfflineAudioContext`, and live playback occurs only after clicking `Audition`.
 
@@ -113,13 +154,32 @@ Run the headless Metal browser proofs through `hivemind`:
 
 ```sh
 hivemind run --fetch captures/lab-workbench -- bun packages/kit/lab/prove-workbench.ts
+hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
 hivemind run -- bun games/getaway/scripts/prove-lab-effects.ts
 hivemind run -- bun games/getaway/scripts/prove-lab-spawn.ts
 ```
 
-Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, relative to the local
-artifact root. Combined-branch results are recorded separately in `docs/integration.md`:
+Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, `2026-10-13-lab-car-playground/`, and `2026-10-13-lab-interaction/`, relative to the local artifact root:
 
+- `after-radial-menu.png` — 8-sector fixed-compass Radial Marking Menu opened over the scene with disabled-in-place slots and shortcut badges.
+- `after-marquee-multiselect.png` — `Alt+Drag` marquee box selection across multiple props with live count badge and multi-select Inspector.
+- `after-transform-gizmo.png` — in-viewport Move (`✥`) and Rotate (`↻`) handles with inline `X` / `Z` / `°` numeric entry.
+- `after-compare-ab-wipe.png` — frozen-frame `f35` split-screen A/B wipe comparing `Slot A (Baseline)` vs. `Slot B (Candidate)` with parameter delta readout.
+- `before-car-skids-1280x800.png` and `after-car-skids-1280x800.png` — matched 1280×800 workbench pair on the identical
+  keyboard launch + drift + handbrake trajectory (`0/1600` vs `188/1600` connected rear-wheel skid segments).
+- `before-canvas-native-1280x800.png` and `after-canvas-native-1280x800.png` — full-bleed native game scale canvas pair.
+- `after-shared-playground-effects.png` and `after-select-car-inspector.png` — switching `Effects` (`Grenade smoke`),
+  `Lighting` and `Objects` (`Getaway · Muscle`) in the same persistent Playground while retaining the car, 6 props and
+  `73/1600` skid segments.
+- `after-street-environment-skids.png` — switching `Env` to `Getaway · Street`, relocating to a validated street spawn,
+  and painting `86/1600` skid segments across the crosswalk.
+- `closeup-before-front-fender.png` and `closeup-before-rear.png` — pre-fix close-ups showing the floating orange/red
+  light-core spheres, front fender wheel-arch Z-fold, protruding door seam and floating rocker strip.
+- `closeup-front-fender.png`, `closeup-rear-lamps.png`, `closeup-throttle-squat.png`, `closeup-brake-dive.png` and
+  `closeup-kerb-roll.png` — post-fix close-ups showing clean fender geometry, bevelled 3D lenses, preserved twin
+  headlight arcs, and `bodyPoint`-locked lamps through throttle squat (`pitch = -0.0707 rad`, `headY = 0.6818 m`),
+  brake dive (`pitch = +0.0899 rad`, `headY = 0.2880 m`) and kerb roll (`roll = -0.0805 rad`).
+- `car-playground-proof.json` — verified counts, budgets and `lampPoseProof` across both `getaway` and `blackout` hosts.
 - `before-default.png` and `before-blackout-effects.png` — prior floating panel with duplicate `Controls` headers and
   all 20 effect groups exposed.
 - `after-default-1280x800.png` — workbench layout at 1280×800 with Left Library, framed smoke room, Right Inspector and

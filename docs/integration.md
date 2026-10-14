@@ -244,3 +244,112 @@ Evidence is under `2026-10-13-arcade-integration/upstream-reconciliation/`, rela
 
 Smoke-volume refinement, workbench car-skid/lamp changes, radial UX and the unfinished human rig remain separate
 follow-up PRs. The verified base release does not wait for them.
+
+## Release 2 integration
+
+`release-2` is based on `origin/main` at `6cad7da45004c1cb2a7a7a4388aa799ee10489ee` (after PR #13 `076fb7c` and
+subsequent Carrier merges on `main`). Each follow-up source is merged separately in order:
+
+| Source | Exact committed tip | Original PR |
+| --- | --- | --- |
+| feat/dev-hub | `c13993f224d539a6489048c04a854f839cb68d0f` | #16 |
+| feat/dev-hub-single-origin | `e4d06b8acf3a80b51a3fca2e9c6e0993c705d18a` | #17 |
+| lab-workbench | `806d4f50b56ea089244fa014fce08bd61be322ad` | #15 |
+| smoke-volume-refinement | `52142be34971ce75f03e75f22fbd3550a6b73c41` | #14 |
+| docs/lab-authoring-guide | `a53508f743f543b99df692fe1c46f822ebdc9556` | — |
+| shared-human-rig | `5a55cb394ea1f01de6a3bddc809ba13e565f27af` | — |
+| lab-interaction | `a91975bfaf3355daa4064379cfedfc54cb391ff8` | — |
+| perf/outbreak-autoresearch | `2fbba0994aa5d4f82d473dbddcfa4d2b619bf9aa` | #19 |
+| materials | `f5750cf8254e1917aa1cd5cf7441c04c6c665cf6` | — |
+| shadow-edges | `df1310ad60c8718dc53c1a31ea5af93c381eacd1` | — |
+| rig-page | `5b3740c043ef7105c72cd8bf78a2f4f92d9e4d64` | — |
+| soldier-run | `a5971c3ded4815652f71aebae9ac0ab9e5fb1952` | — |
+| dev-control | `28d86be3bcd59cc104387a27ae500a7f883ab750` | — |
+
+### Resolution log
+
+- `packages/kit/lab/main.ts`: preserved both the `hubCommands` import and the top-bar `Hub` link from `#16/#17`
+  alongside `#15`'s persistent playground world, switchable yard environments and camera framing hooks, and
+  `lab-interaction`'s `commandRegistry` export and GPU output readback (`readbackOutputPixels`).
+- `packages/kit/lab/effects.ts`: combined `#15`'s `activeWalls`/`activeGround` environment queries and playground
+  tyre-trail retention with `#14`'s seeded `volume.reset(activeWalls, seed)` and `growthTime + hold + fade + 1`
+  smoke loop duration.
+- `shared-human-rig`: merged cleanly onto the combined branch. Exact 900-frame SHA-256 soldier parity against
+  `822303310da0bd95901879570e27c5b942ca4aa9` passed in both `old` (`00bde28a…`) and `new` (`f6efd0e3…`) modes.
+- `lab-interaction` + Catalogue camera grammar: wired `packages/kit/dev-hub-viewer.ts` and
+  `packages/kit/orbit-gestures.ts` to the shared `classifyWheelGesture(event, { pinchZoom: false, twoFingerScroll: "zoom" })`
+  from `packages/kit/lab/viewport-input.ts` so Catalogue and Characters share `Shift+scroll` pan and wheel zoom with
+  the Lab while preserving browser `Ctrl+wheel`/pinch and `Meta` shortcut passthrough. Updated
+  `packages/kit/lab/prove-workbench.ts` step 10 (`fixture:smoke-room` A/B scrub) to adjust `#14`'s `Radius`
+  (`radius`) and `Extinction` (`extinction`) sliders rather than the pre-`#14` generic `Size`/`Density` sliders.
+- `perf/outbreak-autoresearch` (#19) vs `shared-human-rig`: resolved `games/outbreak/src/main.ts` and
+  `games/outbreak/src/survivor.ts` semantically so `FrameClock` fixed-tick pacing, camera-frustum lamp culling,
+  active-building cutaway routing, and substepped `Survivor.draw` preserve `shared-human-rig`'s Zombie pose preview
+  (`strideScale`, `timingBias`, `footDrag`, `chest`/`head` springs, and `human()` harness query) while keeping
+  default Survivor behavior unchanged. Shared `@arcade/kit/gpu/renderer.ts` single-in-flight pacing (`inflight >= 1`,
+  `onIdle`) and `depthStoreOp: hasSmoke ? "store" : "discard"` leave Getaway, Carrier, and Lab `Stage` untouched and
+  preserve Blackout's `requestAnimationFrame` coalescing (`this.pending` is immediately scheduled when `onSubmittedWorkDone`
+  completes).
+- `materials` vs `lab-interaction` & `perf/outbreak-autoresearch`: preserved `lab-interaction`'s workbench catalog/inspector
+  alongside `materials`'s 6 `material-recipe:*` Library entries, `Material Swatch Stage`, and `recipe` inspector title;
+  preserved `#19`'s `solidCutaway: ""` and building cutaway routing in `games/outbreak/src/{shaders,level}.ts` while
+  adopting `scatterClusteredGroundCover`, cupped leaf sprays, and the 6 procedural material recipes (`evalWoodPlanks`,
+  `evalCobblestone`, `evalPlasterWall`, `evalAsphaltConcrete`, `evalGrassSoil`, `evalFoliageCanopy`). Updated
+  `games/outbreak/tests/cutaway.test.ts` seed-7 static vertex count from `196,722` to `139,620` (reflecting the
+  clustered ground-cover and cupped-leaf geometry reduction).
+- `shadow-edges` vs `#14`, `#15`, `lab-interaction`, `#19`, and `materials`: retained `#14`'s `packages/kit/fx/volume.ts`
+  and `volume-shader.ts` as canonical (16-direction corner-safe arrival, occupancy vs half-float density, and 12 Lab
+  controls), updated `packages/kit/lab/workbench.ts` so paused edits to live-update smoke controls (`Appearance` /
+  non-`retrigger` controls) update in-place without retriggering `volume.time`, and adopted `shadow-edges`'s
+  `stage-shader.ts` entry-slab normals, `boxShadow` contact-hardening penumbras, 4× RGSS edge AA, `lighting.ts`
+  `edgeAA` / `shadowSoftness` controls, `car-mesh.ts` `hullDeckY` cab/scoop seating, and `games/outbreak/src/shaders.ts`
+  2-tap `eyeVisible` angular interpolation.
+- `rig-page` + `dev-control` vs `lab-interaction`: unified command registration onto the single canonical
+  `LabCommandRegistry` (`@arcade/kit/lab-commands` / `packages/kit/lab/commands.ts`), wired
+  `games/blackout/src/dev/characters.ts` through `registerDevControl(devControlAdapter)` from `@arcade/kit/dev-control`,
+  exposed `gestures.isDragging()` from `packages/kit/orbit-gestures.ts` for Catalogue's `isBusy()` guard, and pointed
+  `resolveNavigationPath("characters")` at `/arcade/blackout/characters.html`.
+- `soldier-run` vs `rig-page`: combined `soldier-run`'s crouch-run soldier posture (`runPosture: 0.34, crouchDepth: 0.08,
+  headStability: 0.8, leanScale: 1.25`), stabilised shoulder weapon hold, and 1:1 root weapon translation with
+  `rig-page`'s `profile.torsoLean > 0` / `profile.footDrag > 0` zombie/wizard gait and hand-pose refinements. Both
+  900-frame SHA-256 reference hashes in `prove-human-parity.ts` (`old` `00bde28a…`, `new` `22f0e022…`) match exactly
+  without modification.
+
+### Verification
+
+A clean `git archive` export passed on the Studio via Hivemind:
+
+- `bun install --frozen-lockfile`
+- `bun run check:packages`: 87 passed
+- `games/getaway`: 245 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 410 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove-human-parity.ts`, and `scripts/prove-characters.ts`
+- `games/outbreak`: 25 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove.ts`, and `scripts/prove-human.ts`
+- `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun scripts/prove-dev-control.ts`: token/origin security (`403`), Catalogue/Lab/Game remote control and screenshot
+  verification across all 4 games, `busy`/`unavailable` conflict guards, and production bundle exclusion passed on Metal.
+- `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity in `old` (`00bde28a…`) and `new` (`22f0e022…`) modes, plus crouch-lean, head-stabilisation, zero-foot-slide, and weapon-stability checks.
+- `(cd games/blackout && bun scripts/prove-characters.ts)`: 5 real character actors (`soldier`, `wizard`, `zombie`,
+  `survivor`, `outbreak-zombie`), Hub top-bar `Characters` nav link, possess (`P`) + walk/run/stop + `Escape` release,
+  orbit/pan/zoom/frame/lineup camera, limb detachment with zero spawn pop + blood splatter, and 23 `LabCommandRegistry`
+  commands (`select`, `possess`, `release`, `profile.set`, `action.*`, `limb.detach`, `character.reset`, `transport.*`,
+  `camera.*`, `lab.*`, `nav.open`, `state`, `screenshot`) passed on Metal with 0 audio contexts and 0 browser errors.
+- `bun scripts/prove-dev-hub.ts`: single-origin redirect, all four game prefixes, Vite HMR across all four games,
+  Catalogue 25-asset rotation/pause/reload persistence, and `--workers` health + WebSocket forwarding passed on Metal.
+- `bun packages/kit/lab/prove-workbench.ts`: radial menu (8 fixed compass sectors, dead-zone cancel, Spawn Here),
+  marquee multi-select + single-keystroke group undo, transform gizmo + `G`/`R` numeric entry, context-aware viewport
+  cursor + sloped ground reticle, trackpad gestures (`Ctrl+wheel` pinch zoom, two-finger orbit, `Shift+scroll` pan),
+  pre-Play checkpoint restore on `Escape`, and frozen-frame A/B flip (`V`) + GPU readback split wipe (`Shift+V`) on
+  both Lab hosts (`getaway` and `blackout`) on Metal.
+- `bun packages/kit/lab/prove-car-playground.ts`: launch/drift/hard-brake skids (`52`/`68`/`92`), persistence across
+  `Effects` → `Lighting` → `Objects`, `Getaway · Street` environment (`86` skids), deterministic `Reset scene`, and
+  `bodyPoint` lamp pose on both Lab hosts on Metal.
+- `bun packages/kit/lab/prove-smoke.ts`: live `Appearance` (`Extinction`) edits preserve `volume.time` without
+  retriggering, WGSL corner/front compute probes pass, and paired Metal timing passes.
+- `bun packages/kit/lab/prove-shadow-edges.ts`: `edgeAA` and `shadowSoftness` controls, 0 pixel diff across 30
+  stationary frames, and 9 alternating Metal GPU pairs (`+0.2147 ms` room, `+0.0206 ms` yard) passed on Studio.
+- `bun packages/kit/lab/prove-materials.ts`: all 6 procedural material recipes (`wood_planks`, `cobblestone`,
+  `plaster_wall`, `asphalt_concrete`, `grass_soil`, `foliage_canopy`), swatch modes, isolated `tuningSeed`
+  randomization, and versioned preset round-trip passed on Metal.
+- `BENCH_LABEL=release-2-shadow-edges-studio-clean bun games/outbreak/scripts/bench-outbreak.ts` (Studio M5 Max Metal, 3456×1894 Retina, 1 warmup + 7 × 2 s runs):
+  - Street: fresh submit `p95 = 28.60 ms` (MAD `2.60 ms`), `p50 = 15.50 ms`, `55.42 states/s`, `realtime_ratio = 0.9985` (`3.395 m/s`), dependent GPU `14.191 ms` (MAD `0.012 ms`).
+  - Interior: fresh submit `p95 = 24.20 ms` (MAD `0.10 ms`), `p50 = 23.50 ms`, `40.82 states/s`, `realtime_ratio = 0.9979` (`3.393 m/s`), dependent GPU `21.411 ms` (MAD `0.022 ms`).

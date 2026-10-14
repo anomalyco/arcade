@@ -114,10 +114,11 @@ them in `prepare`, and release section-specific external listeners in `leave`. F
 
 ### Connect Materials and Physics through adapters
 
-Materials is a catalog/renderer stub. Both entries import the actual game `MAT` constants (plus Getaway's smoke
-code); they list 25 codes without duplicating the numbers. `MaterialAdapter.prepare(code, context)` and
-`draw(pass, code)` are the hook for each game's calibration sphere/box shader. Until a renderer is supplied,
-the section shows neutral geometry and “renderer pending”; selecting a code does not pretend to render it.
+Materials runs the shared procedural material recipes from `packages/kit/gpu/surface-materials.ts` across Room, Material
+Ball, and Surface Plane swatches under the Lab's lighting presets, with Before/After/A-B Split comparison, typed
+parameter ranges/units, Reset, Undo/Redo, versioned preset export/import, and a separate deterministic `tuningSeed` for
+group randomization. Both entries also import the actual game `MAT` constants (25 codes) in the folded Game Catalog group,
+and `MaterialAdapter.prepare(code, context)` / `draw(pass, code)` remain available for game-specific code hooks.
 The shared Lab itself imports no game modules.
 
 Physics uses the merged `getaway-clutter` solver and shares the Spawn section's props. The adapter supplies
@@ -232,9 +233,18 @@ Outbreak configures F-only interaction to avoid the Dvorak E movement binding. R
 dimensions are shared. Outbreak's civilian meshes and unarmed planted-foot gait adapt only the needed parts of
 Blackout's soldier code.
 
-Remaining migration targets: separate locomotion from Blackout's gun/reload/melee animation; split material-specific
+Human locomotion, profiles and semantic detachment now live in `human-locomotion`, `human-profile` and `human-pose`
+on the canonical rig. Blackout supplies weapon/reload/melee clips. See [Human rig](human-rig.md) for ownership,
+attachments, stable cosmetic IDs and velocity spaces.
+
+Remaining migration targets: split material-specific
 scene shading from the shared WGSL contract; generalize the map-aware LightCuller when another game needs its
 monitor/bounce caches. The Outbreak map/lighting writer and gameplay Session stay game-owned.
+
+Custom discard routing is separate from appearance hooks. `solidCutaway` defaults to the old `cutaway` hook;
+Outbreak explicitly leaves it empty and marks roof/high chunks with `LevelChunk.customCutaway`. Pure opaque
+triangles have no screen cutaway bounds, while walls retain the existing screen test. Other consumers retain
+their existing shader and routing behavior. Measurement and limits: `perf/outbreak-performance.md`.
 
 Getaway's renderer and input are not migrated in this milestone. See `games/outbreak/README.md` for proof and limits.
 

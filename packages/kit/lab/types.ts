@@ -38,10 +38,14 @@ export type LabSection = {
   frameTarget?():{x:number;y:number;z:number;dist?:number}
   objects?():readonly LabWorldObject[]
   selectedObjectId?:string
+  selectedObjectIds?:readonly string[]
   selectObject?(id:string|null):void
+  selectObjects?(ids:readonly string[]):void
   moveObject?(id:string,x:number,z:number,yaw?:number):boolean
   deleteObject?(id:string):boolean
+  deleteObjects?(ids?:readonly string[]):number
   duplicateObject?(id:string):string|null
+  duplicateObjects?(ids?:readonly string[]):string[]
   groundHeight?(x:number,z:number):number
 }
 export type LabContext = {
@@ -51,7 +55,11 @@ export type LabContext = {
   volume:SmokeVolumes
   trail:SmokeTrail
   sync():void
+  transact?:(label:string,run:()=>void)=>void
   input:LabInput
+  activeWalls?:()=>readonly (readonly [number,number,number,number])[]
+  activeGround?:(x:number,z:number)=>number
+  hasPlaygroundScene?:()=>boolean
 }
 export type SectionFactory = (context:LabContext)=>LabSection
 /** Shape is compatible with getaway-clutter's Body; no dependency on that worktree's solver. */

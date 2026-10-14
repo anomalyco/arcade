@@ -3,8 +3,10 @@ import { angleDiff } from "../../shared/geom"
 import { Rng, seedOf } from "../../shared/rng"
 import { GUNPTS, HIP, HOLD, RIG } from "../render/person"
 import { animation } from "./anim-settings"
-import { angleSpring, locomotion, newMotion, pelvisPoint, plantedFoot, stiffness } from "./anim-locomotion"
+import { angleSpring, locomotion, newMotion, pelvisPoint, stiffness } from "./anim-locomotion"
 import { bodyJoints } from "./anim-pose"
+import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
+import { boneVisible, jointVelocities, poseArms, poseLegs, type BoneId, type HumanBody, type HiddenBones } from "@arcade/kit/human-pose"
 import {
   type Frame,
   type PushPart,
@@ -66,17 +68,9 @@ export const EV = {
 } as const
 
 /** Every posed part of one soldier, as world frames. */
-export type Body = {
+export type Body = HumanBody & {
   /** Joint velocities from consecutive presentation frames; never networked. */
   velocities?: V3[]
-  pelvis: Frame
-  torso: Frame
-  head: Frame
-  ua: [Frame, Frame]
-  fa: [Frame, Frame]
-  th: [Frame, Frame]
-  sh: [Frame, Frame]
-  ft: [Frame, Frame]
   gun: Frame | null
   pump: Frame | null
   mag: Frame | null
@@ -86,6 +80,9 @@ type Foot = { p: V3; yaw: number; pitch: number; planted: boolean; lift: V3; lif
 
 /** Animation state for one soldier on screen. */
 export type Avatar = {
+  /** Per-actor presentation override. Omit to follow the Lab's soldier defaults. */
+  profile?: HumanProfile
+  hiddenBones?: Set<BoneId>
   id: string
   x: number
   y: number
@@ -417,18 +414,26 @@ function restOffset(i: number, gait: number): [number, number] {
  * Advances one soldier's animation and poses it. `now` is seconds on the same clock as reloadAt and fire().
  * Returns EV cue bits for sounds and effects.
  */
+// The game's staff/wand/orb use the weapon frame and action clips. Only their body posture is shared.
+const wizardProfile: HumanProfile = { ...humanProfiles.wizard, handPose: "weapon" }
+const actorProfile = (a: Avatar, wizard: boolean) => a.profile ?? (wizard ? wizardProfile : animation)
+
 export function animate(a: Avatar, dt: number, now: number, x: number, y: number, vx: number, vy: number, aim: number, wizard = false): number {
   let ev = 0
   dt = Math.max(1e-4, Math.min(0.05, dt))
   a.t += dt
   const enhanced = animation.animationMode === "new"
+  const profile = actorProfile(a, wizard)
   const distance = Math.hypot(x - a.x, y - a.y)
-  const teleport = Math.hypot(x - a.x, y - a.y) > 2.5 || !a.body
+  const teleport = distance > 2.5 || !a.body
+  const dx = teleport ? 0 : x - a.x
+  const dy = teleport ? 0 : y - a.y
+  const dAim = teleport ? 0 : angleDiff(aim, a.aim)
   a.x = x
   a.y = y
   a.vx = vx
   a.vy = vy
-  a.aimVel += (angleDiff(aim, a.aim) / dt - a.aimVel) * Math.min(1, dt * 12)
+  a.aimVel += (dAim / dt - a.aimVel) * Math.min(1, dt * 12)
   a.aim = aim
   if (a.gun !== a.prevGun) {
     if (a.prevGun !== null || teleport) {
@@ -473,7 +478,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   const s = smooth(a.sprint)
 
   if (enhanced) {
-    if (locomotion(a, dt, distance, teleport)) ev |= EV.step
+    if (locomotion(a, dt, distance, teleport, profile)) ev |= EV.step
   } else {
     a.motion.enabled = false
     // Retained gait for the Lab's Old comparison.
@@ -574,13 +579,8 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   a.heat *= Math.exp(-dt * (now - a.firedAt < 0.2 ? 0.8 : 4))
   a.flash *= Math.exp(-dt * 22)
   if (enhanced) {
-    angleSpring(a.motion.chest, aim + (a.bare ? 0 : BLADE[a.gun]) - a.motion.twist.x * 0.65, animation.chestHz, dt)
-    angleSpring(a.motion.head, aim, animation.headHz, dt)
-    const ergonomics = animation[`${a.gun}Ergonomics`]
-    angleSpring(a.motion.weapon, aim, animation.weaponHz * ergonomics, dt)
-    const c = Math.cos(a.motion.weapon.x), sn = Math.sin(a.motion.weapon.x), hold = HOLD[a.gun]
-    const target = [a.x + c * hold.fwd - sn * hold.side, hold.up, a.y + sn * hold.fwd + c * hold.side]
-    a.motion.gun.forEach((s, i) => stepSpring(s, stiffness(animation.weaponHz * ergonomics), 1, dt, target[i]!))
+    angleSpring(a.motion.chest, aim + (a.bare || profile.handPose !== "weapon" ? 0 : BLADE[a.gun]) - a.motion.twist.x * 0.65, profile.chestHz, dt)
+    angleSpring(a.motion.head, aim, profile.headHz, dt)
   }
 
   // Clips: reload first, then the pump or bolt cycle.
@@ -606,8 +606,8 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 
   const prevHand = a.body ? at(a.body.fa[0], 0, -RIG.fore, 0) : null
   const previous = enhanced && !teleport && a.body ? bodyJoints(a.body, a.gun) : null
-  a.body = build(a, now, k, clip, ct, wizard)
-  if (previous) a.body.velocities = bodyJoints(a.body, a.gun).map((p, i) => p.map((v, axis) => clamp((v - previous[i]![axis]!) / dt, -15, 15)) as V3)
+  a.body = build(a, now, k, clip, ct, wizard, dt, dx, dy, dAim, teleport)
+  if (previous) a.body.velocities = jointVelocities(bodyJoints(a.body, a.gun), previous, dt)
   if (prevHand) {
     const h = at(a.body.fa[0], 0, -RIG.fore, 0)
     a.handVel = [(h[0] - prevHand[0]) / dt, (h[1] - prevHand[1]) / dt, (h[2] - prevHand[2]) / dt]
@@ -616,8 +616,9 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 }
 
 /** Builds the pose: pelvis over the feet, a twisting torso aiming the gun, IK arms on the gun and IK legs to the feet. */
-function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number, wizard: boolean): Body {
+function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number, wizard: boolean, dt: number, dx: number, dy: number, dAim: number, teleport: boolean): Body {
   const enhanced = animation.animationMode === "new"
+  const profile = actorProfile(a, wizard)
   const m = a.motion
   const t = a.t
   const g = a.gun
@@ -659,7 +660,8 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
     pelvis = roll(pelvis, m.drop.x)
     // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
     // both leg reaches remain identical. The waist, shoulders and head lean together.
-    pelvis = pitch(pelvis, -0.7 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
+    pelvis = pitch(pelvis, -0.65 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
+    if (profile.torsoLean > 0) pelvis = pitch(pelvis, -0.35 * clamp(profile.torsoLean, 0, 0.35))
   }
 
   // Lean in the torso's own axes: travel lean and hit pushes come in plan space.
@@ -690,15 +692,17 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   // Sprinting squares the chest up to the run and carries the gun with it.
   const run = angleDiff(a.legYaw, a.aim) * port * 0.7
   const sw = swingPhase(a, now)
-  const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x : a.aim + run + (a.bare ? 0 : BLADE[g]) * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
+  const blade = a.bare || enhanced && profile.handPose !== "weapon" ? 0 : BLADE[g]
+  const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x + run - blade * 0.4 * port : a.aim + run + blade * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
-  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? 0.06 + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? 0.08 + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * (enhanced ? 1 : 2.2) + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
-  torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * 0.4)
+  torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * (enhanced ? 0.85 : 0.4))
+  if (enhanced) torso = profileTorso(torso, profile)
 
   // Gun: hung off the shoulder line along the exact aim, then recoil, sway, clip tilt and the raise.
   const staff = wizard && g === "rifle"
@@ -709,6 +713,16 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   gunRoll += 0.35 * port
   gunPull += 0.1 * port
   gunDrop += 0.12 * port
+  if (enhanced) {
+    const ergonomics = animation[`${g}Ergonomics`]
+    if (teleport) {
+      m.weapon.x = a.aim + run
+      m.weapon.v = 0
+    } else {
+      m.weapon.x += dAim
+      angleSpring(m.weapon, a.aim + run + clamp(-a.aimVel * 0.008 / ergonomics, -0.03, 0.03), animation.weaponHz * ergonomics, dt)
+    }
+  }
   const gy = enhanced ? m.weapon.x : a.aim + run
   const ga = Math.cos(gy)
   const gs = Math.sin(gy)
@@ -719,13 +733,44 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
     gy +
     a.recYaw.x +
     Math.sin(t * 0.9 + a.seed) * sway2 +
-    Math.sin(th) * 0.03 * moving +
+    Math.sin(th) * (enhanced ? 0.008 : 0.03) * moving +
     a.heat * 0.035 * Math.sin(t * 41 + a.seed) +
     a.hitTwist.x * 0.3 -
     gunYaw
   let gunF = yawFrame([shoulderC[0] + ga * hold.fwd - gs * hold.side, shoulderC[1] + hold.up - rest - gunDrop - raise * 0.22, shoulderC[2] + gs * hold.fwd + ga * hold.side], yaw)
-  if (enhanced) gunF = moved(gunF, [m.gun[0].x, m.gun[1].x - gunDrop - raise * 0.22, m.gun[2].x])
-  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (enhanced ? 0.008 : 0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
+  if (enhanced) {
+    // Anchor the weapon to the steady posture frame (root + crouch + lean/dip, without hip sway or spine twist)
+    // and carry world translation 1:1 with the root so locomotion never drags or vibrates the gun.
+    const steadyPelvis = pitch(
+      yawFrame([
+        a.x - a.leanX.x * 0.35 + a.hitX.x * 0.5,
+        HIP - (0.04 + m.run * 0.02) * a.gait - m.crouch.x + m.bob.x * 0.2 + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
+        a.y - a.leanY.x * 0.35 + a.hitY.x * 0.5,
+      ], a.legYaw),
+      -0.65 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)),
+    )
+     const steadyYaw = (sw?.twist ?? 0) + a.aim + run + (a.bare || profile.handPose !== "weapon" ? 0 : BLADE[g]) * (1 - 0.4 * port) + a.hitTwist.x + a.recYaw.x * 0.4
+     const steadyTb = steadyYaw - a.aim
+     let steadyTorso = yawFrame(at(steadyPelvis, 0, RIG.waist, 0), steadyYaw)
+     steadyTorso = pitch(steadyTorso, -(fwd * Math.cos(steadyTb) + leanSide * Math.sin(steadyTb)))
+     steadyTorso = roll(steadyTorso, leanSide * Math.cos(steadyTb) - fwd * Math.sin(steadyTb) * 0.85)
+     steadyTorso = profileTorso(steadyTorso, profile)
+     const gunShoulder = at(steadyTorso, 0, RIG.shoulderY, 0)
+     const postureFwd = Math.max(0, postureX * ca + postureY * sa)
+     const holdFwd = hold.fwd - (staff ? 0 : 0.08 * postureFwd)
+     const holdUp = hold.up + (staff ? 0 : 0.035 * postureFwd)
+     const target: V3 = [gunShoulder[0] + ga * holdFwd - gs * hold.side, gunShoulder[1] + holdUp - rest, gunShoulder[2] + gs * holdFwd + ga * hold.side]
+     const kGun = stiffness(animation.weaponHz * animation[`${g}Ergonomics`])
+     if (teleport) {
+       m.gun.forEach((s, i) => { s.x = target[i]!; s.v = 0 })
+     } else {
+       m.gun[0].x += dx
+       m.gun[2].x += dy
+       m.gun.forEach((s, i) => stepSpring(s, kGun, 1, dt, target[i]!))
+     }
+     gunF = moved(gunF, [m.gun[0].x, m.gun[1].x - gunDrop - raise * 0.22, m.gun[2].x])
+  }
+  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (enhanced ? 0.006 : 0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
   gunF = roll(gunF, a.recRoll.x + gunRoll + clamp(-a.aimVel * 0.03, -0.3, 0.3) + raise * 0.5)
   // A swing with a gun in hand: a bash, the gun driven forward.
   const bash = sw && !a.bare ? Math.sin(Math.PI * sw.strike) * sw.back : 0
@@ -747,11 +792,24 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   }
   let handL = handAt(clip?.left, false)
   let handR = handAt(clip?.right, true)
+  const hands = enhanced ? profileHands(torso, profile) : null
+  if (hands && !clip) {
+    ;[handL, handR] = hands
+    if (profile.handPose === "reach" && moving > 0) {
+      const lurch = Math.sin(th) * 0.055 * moving
+      const claw = Math.cos(th) * 0.035 * moving
+      handL = [handL[0] + torso.x[0] * lurch, handL[1] + claw, handL[2] + torso.x[2] * lurch]
+      handR = [handR[0] - torso.x[0] * lurch * 0.7, handR[1] - claw * 0.8, handR[2] - torso.x[2] * lurch * 0.7]
+    } else if (profile.handPose === "staff" && moving > 0) {
+      const swing = Math.sin(th) * 0.05 * moving
+      handL = [handL[0] + torso.x[0] * swing, handL[1] + Math.abs(swing) * 0.25, handL[2] + torso.x[2] * swing]
+    }
+  }
   if (a.bare) {
     // Arms out ahead, clawing; a swing raises the right hand behind the shoulder and rakes it across.
     const bob = Math.sin(t * 5 + a.seed) * 0.03
-    handL = at(torso, 0.42, RIG.shoulderY - 0.1 + bob, -0.17)
-    handR = at(torso, 0.42, RIG.shoulderY - 0.1 - bob, 0.17)
+    handL = hands?.[0] ?? at(torso, 0.42, RIG.shoulderY - 0.1 + bob, -0.17)
+    handR = hands?.[1] ?? at(torso, 0.42, RIG.shoulderY - 0.1 - bob, 0.17)
     if (sw) {
       const back = at(torso, -0.08, RIG.shoulderY + 0.22, 0.42)
       const end = at(torso, 0.5, RIG.shoulderY - 0.15, -0.25)
@@ -771,48 +829,36 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
     handL = lerp3(handL, down, Math.sin(Math.PI * Math.min(1, pw * 1.3)))
   }
 
-  const shL = at(torso, 0, RIG.shoulderY, -RIG.shoulderW)
-  const shR = at(torso, 0, RIG.shoulderY, RIG.shoulderW)
-  const [eL, hL] = ik(shL, handL, RIG.upper, RIG.fore, dirIn(torso, -0.15, -1, -1.1))
-  const [eR, hR] = ik(shR, handR, RIG.upper, RIG.fore, dirIn(torso, -0.5, -1, 0.8))
-  const up: V3 = [0, 1, 0]
-  const ua: [Frame, Frame] = [limb(shL, eL, torso.x, torso.y), limb(shR, eR, torso.x, torso.y)]
-  const fa: [Frame, Frame] = [limb(eL, hL, up, torso.x), limb(eR, hR, up, torso.x)]
+  const { ua, fa } = poseArms(torso, handL, handR)
 
   // Head follows the aim, looks down at the gun while reloading.
   let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), a.aim + a.hitTwist.x * 1.6 + clamp(a.aimVel * 0.02, -0.25, 0.25))
   if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + a.hitTwist.x)
-  const headLean = fwd - (postureX * ca + postureY * sa)
-  head = pitch(head, -0.1 - look * 1.1 - a.torsoKick.x * 0.6 - headLean * 0.3 + Math.sin(2 * th) * 0.03 * moving)
-  head = roll(head, side * 0.5 - a.hitTwist.x * 0.5)
+  const stab = enhanced ? clamp(profile.headStability ?? 0.8, 0, 1) : 0
+  const headLean = fwd - (postureX * ca + postureY * sa) * stab
+  const baseHeadPitch = enhanced ? -0.1 * (1 - 0.35 * stab) : -0.1
+  head = pitch(head, baseHeadPitch - look * 1.1 - a.torsoKick.x * 0.6 - headLean * (0.3 * (1 - 0.55 * stab)) + Math.sin(2 * th) * 0.03 * (1 - 0.7 * stab) * moving)
+  head = roll(head, side * 0.5 * (1 - 0.5 * stab) - a.hitTwist.x * 0.5)
+  if (enhanced) {
+    if (profile.torsoLean > 0) head = pitch(head, -0.22 * clamp(profile.torsoLean, 0, 0.35) + Math.sin(th) * 0.04 * moving * clamp(profile.footDrag, 0, 1))
+    head = roll(head, clamp(profile.headTilt, -0.3, 0.3))
+  }
 
   // Legs.
-  const th2: Frame[] = []
-  const sh2: Frame[] = []
-  const ft2: Frame[] = []
-  for (let i = 0; i < 2; i++) {
+  const legs = enhanced ? poseLegs(a, pelvis) : null
+  const th2: Frame[] = legs?.th ?? []
+  const sh2: Frame[] = legs?.sh ?? []
+  const ft2: Frame[] = legs?.ft ?? []
+  for (let i = 0; !enhanced && i < 2; i++) {
     const s = i === 0 ? -1 : 1
     const hip = at(pelvis, 0, 0, s * RIG.hipW)
     const f = a.feet[i]!
-    const contact = enhanced && f.planted ? plantedFoot(a, i) : null
-    const ankle: V3 = contact?.p ?? [f.p[0], f.p[1] + RIG.ankle, f.p[2]]
+    const ankle: V3 = [f.p[0], f.p[1] + RIG.ankle, f.p[2]]
     const pole = dirIn(pelvis, 1, 0, s * 0.3)
     const [knee, ank] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
     th2.push(limb(hip, knee, pole, pelvis.x))
     sh2.push(limb(knee, ank, pole, pelvis.x))
-    // Contact owns the rendered boot too: IK's clamped endpoint must not drag it.
-    const swingReach = enhanced && !f.planted ? smooth(m.swings[i]! / 0.22) * (1 - smooth((m.swings[i]! - 0.75) / 0.25)) : 0
-    let foot = contact ?? pitch(yawFrame(enhanced ? lerp3(ankle, ank, swingReach) : ank, f.yaw), f.pitch)
-    if (enhanced && !f.planted) {
-      const u = m.swings[i]!
-      const relaxed = smooth(u / 0.22) * (1 - smooth((u - 0.68) / 0.32))
-      const shinPitch = Math.atan2(sh2[i]!.x[1], Math.hypot(sh2[i]!.x[0], sh2[i]!.x[2]))
-      foot = pitch(foot, (shinPitch - 0.12 - f.pitch) * relaxed)
-      // Heel and toe cannot penetrate the bind sole, even while the ankle relaxes.
-      const low = Math.min(at(foot, -0.08, -RIG.ankle, 0)[1], at(foot, 0.19, -RIG.ankle, 0)[1])
-      if (low < 0) foot = moved(foot, [foot.p[0], foot.p[1] - low, foot.p[2]])
-    }
-    ft2.push(foot)
+    ft2.push(pitch(yawFrame(ank, f.yaw), f.pitch))
   }
 
   let mag: Frame | null = null
@@ -820,7 +866,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   if (magState === "gun") mag = moved(gunF, at(gunF, pts.mag[0], pts.mag[1], pts.mag[2]))
   else if (magState === "hand") mag = moved(gunF, at(fa[0], 0, -RIG.fore - 0.02, 0))
   const pump = g === "shotgun" ? moved(gunF, at(gunF, pts.fore - pumpBack, 0.005, 0)) : null
-  if (a.bare) return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: null, pump: null, mag: null }
+  if (a.bare || enhanced && profile.handPose !== "weapon") return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: null, pump: null, mag: null }
   return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: gunF, pump, mag }
 }
 
@@ -830,26 +876,29 @@ export function glow(c: Rgb3, k = 1.5): [number, number, number] {
 }
 
 /** Pushes every part of a posed body. */
-export function emitBody(push: PushPart, b: Body, gun: Gun, rgb: Rgb3, models: PartModels, flash: number, alpha = 1): void {
+export function emitBody(push: PushPart, b: Body, gun: Gun, rgb: Rgb3, models: PartModels, flash: number, alpha = 1, hidden?: HiddenBones): void {
   const color = glow(rgb)
-  emit(push, models.pelvis, b.pelvis, color, flash, alpha)
-  emit(push, models.torso, b.torso, color, flash, alpha)
-  emit(push, models.head, b.head, color, flash, alpha)
+  if (boneVisible("pelvis", hidden)) emit(push, models.pelvis, b.pelvis, color, flash, alpha)
+  if (boneVisible("torso", hidden)) emit(push, models.torso, b.torso, color, flash, alpha)
+  if (boneVisible("head", hidden)) emit(push, models.head, b.head, color, flash, alpha)
   for (let i = 0; i < 2; i++) {
-    emit(push, models.upperArm, b.ua[i]!, color, flash, alpha)
-    emit(push, models.foreArm, b.fa[i]!, color, flash, alpha)
-    emit(push, models.thigh, b.th[i]!, color, flash, alpha)
-    emit(push, models.shin, b.sh[i]!, color, flash, alpha)
-    emit(push, models.foot, b.ft[i]!, color, flash, alpha)
+    const side = i === 0 ? "left" : "right"
+    if (boneVisible(`${side}.upperArm`, hidden)) emit(push, models.upperArm, b.ua[i]!, color, flash, alpha)
+    if (boneVisible(`${side}.foreArm`, hidden)) emit(push, models.foreArm, b.fa[i]!, color, flash, alpha)
+    if (boneVisible(`${side}.thigh`, hidden)) emit(push, models.thigh, b.th[i]!, color, flash, alpha)
+    if (boneVisible(`${side}.shin`, hidden)) emit(push, models.shin, b.sh[i]!, color, flash, alpha)
+    if (boneVisible(`${side}.foot`, hidden)) emit(push, models.foot, b.ft[i]!, color, flash, alpha)
   }
-  if (b.gun) emit(push, models.gun[gun], b.gun, color, 0, alpha)
-  if (b.pump) emit(push, models.pump, b.pump, color, 0, alpha)
-  if (b.mag) emit(push, models.mag[gun], b.mag, color, 0, alpha)
+  if (boneVisible("right.foreArm", hidden)) {
+    if (b.gun) emit(push, models.gun[gun], b.gun, color, 0, alpha)
+    if (b.pump) emit(push, models.pump, b.pump, color, 0, alpha)
+    if (b.mag) emit(push, models.mag[gun], b.mag, color, 0, alpha)
+  }
 }
 
 /** Pushes the parts of one living soldier in its current pose. */
 export function pose(push: PushPart, a: Avatar, color: Rgb3, models: PartModels): void {
-  if (a.body) emitBody(push, a.body, a.gun, color, models, a.flash)
+  if (a.body) emitBody(push, a.body, a.gun, color, models, a.flash, 1, a.hiddenBones)
 }
 
 /** World position of the muzzle, and the ejection port, from the last pose. */

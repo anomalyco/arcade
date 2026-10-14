@@ -72,7 +72,7 @@ for view in {row["view"] for row in data["evidence"]}:
         for old, current, refined in zip(rows["old"]["samples"], rows["current"]["samples"], rows["refined"]["samples"]):
             for field in ["tick", "time", "root", "velocity", "aim", "seed"]:
                 assert old[field] == current[field] == refined[field], (view, route, field)
-            for field in ["phase", "duty", "feet", "gun", "pelvisPosition"]:
+            for field in ["phase", "duty", "feet"]:
                 assert current[field] == refined[field], (view, route, field)
             count += 1
         agreement.append({"view": view, "route": route, "matchingFrames": count})

@@ -2,6 +2,7 @@ import { Emitter, type ParticleSpec } from "../fx/particles"
 import { walls } from "./stage"
 import type { LabControl } from "../lab-panel"
 import type { LabContext, LabSection } from "./types"
+import { smokeDefaults, smokeRanges, type SmokeKey } from "../fx/volume-settings"
 
 export const effectSpecs:Record<string,ParticleSpec>={
   sparks:{kind:"spark",life:1.8,size:0.07,growth:-0.02,gravity:12,drag:0.4,bounce:0.5,r:1,g:0.55,b:0.12,alpha:1},
@@ -18,7 +19,8 @@ export const effectOptions=[
 const specs=effectSpecs
 export function createEffects(context:LabContext) {
   const {particles,volume,trail,stage}=context,emitter=new Emitter()
-  const params={rate:75,size:1,speed:1,density:1,effect:"smoke",playing:true,loop:true,targetX:-1,targetZ:0,seed:7,roomSeed:1}
+  const params={...smokeDefaults,rate:75,size:1,speed:1,density:1,effect:"smoke",playing:true,loop:true,targetX:-1,targetZ:0,seed:7,roomSeed:1}
+  const applySmoke=()=>{for(const key of Object.keys(smokeDefaults) as SmokeKey[])volume.settings[key]=params[key]}
   let effect="smoke",time=0,seed=7
   const source={smokeDistance:0,smokeX:0,smokeZ:0,smokeActive:false,idle:0}
   const random=()=>{seed=Math.imul(seed,1664525)+1013904223|0;return(seed>>>0)/4294967296}
@@ -34,10 +36,16 @@ export function createEffects(context:LabContext) {
     particles.spawn(current,x,y,z,vx,vy,vz,random()*6.28)
   }
   const reset=(name=effect)=>{
-    effect=name;time=0;seed=Math.max(1,Math.round(params.seed));particles.reset();trail.reset();trail.seedWind(seed);emitter.reset();volume.reset(walls)
+    effect=name;time=0;seed=Math.max(1,Math.round(params.seed))
+    const activeWalls=context.activeWalls?.()??walls
+    particles.reset()
+    if(!context.hasPlaygroundScene?.()||effect==="tyre"){trail.reset();trail.seedWind(seed)}
+    emitter.reset();volume.reset(activeWalls,seed)
     Object.assign(source,{smokeDistance:0,smokeX:0,smokeZ:0,smokeActive:false,idle:0})
     const tx=params.targetX,tz=params.targetZ
-    if(effect==="smoke"||effect==="explosion")volume.spawn(tx,tz,5.5*params.size,effect==="smoke"?9:5,params.density,effect==="explosion"?0.45:0)
+    applySmoke()
+    if(effect==="smoke")volume.spawn(tx,tz)
+    if(effect==="explosion")volume.spawn(tx,tz,5.5*params.size,5,params.density,0.45)
     if(effect==="sparks"||effect==="debris"||effect==="explosion")for(let i=0;i<params.rate;i++)emit(tx,0.8,tz)
     params.effect=effect;context.sync()
   }
@@ -52,24 +60,42 @@ export function createEffects(context:LabContext) {
   const advance=(dt:number)=>{
     time+=dt
     const tx=params.targetX,tz=params.targetZ
+    const activeWalls=context.activeWalls?.()??walls
+    const groundFn=context.activeGround
     if(effect==="tyre"&&time<3.5){trail.follow(source,tx+Math.sin(time*1.8)*2,tz+Math.cos(time*1.8)*1.5,0,0,dt,params.density)}
     if(effect==="water"||effect==="fire"||effect==="nitro")emitter.step(tx,0.3,tz,dt,params.rate,"rate",emit)
-    particles.update(dt,walls);volume.update(dt);trail.update(dt)
-    if(params.loop&&time>(effect==="smoke"?10:effect==="tyre"?8:5))reset()
+    particles.update(dt,activeWalls,groundFn);volume.update(dt);trail.update(dt)
+    if(params.loop&&time>(effect==="smoke"?params.growthTime+params.hold+params.fade+1:effect==="tyre"?8:5))reset()
   }
   const controls:LabControl[]=[
     {key:"effect",label:"Effect",group:"Emitter",type:"select",options:effectOptions,change:value=>reset(String(value))},
     {key:"playing",label:"Play",group:"Emitter"},{key:"loop",label:"Loop",group:"Emitter"},
     {key:"trigger",label:"Retrigger",group:"Emitter",type:"action",run:()=>reset()},
     {key:"rate",label:"Rate",group:"Parameters",type:"range",min:5,max:180,step:1,unit:"/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"},
-    {key:"size",label:"Size",group:"Parameters",type:"range",min:0.3,max:2,step:0.05,unit:"m",visible:s=>s.effect!=="tyre"},
+    {key:"size",label:"Size",group:"Parameters",type:"range",min:0.3,max:2,step:0.05,unit:"m",visible:s=>s.effect!=="tyre"&&s.effect!=="smoke"},
     {key:"speed",label:"Speed",group:"Parameters",type:"range",min:0.2,max:2,step:0.05,unit:"m/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"},
-    {key:"density",label:"Density",group:"Parameters",type:"range",min:0.1,max:2,step:0.05,unit:""},
+    {key:"density",label:"Density",group:"Parameters",type:"range",min:0.1,max:2,step:0.05,unit:"",visible:s=>s.effect!=="smoke"},
+    ...(Object.keys(smokeDefaults) as SmokeKey[]).map((key):LabControl=>{
+      const [min,max,step,unit,group]=smokeRanges[key]
+      const labels:Record<SmokeKey,string>={radius:"Radius",height:"Height",softness:"Edge softness",billowScale:"Billow scale",growthTime:"Growth time",rise:"Rise",wind:"Wind",turbulence:"Turbulence",extinction:"Extinction",lighting:"Lighting",hold:"Hold",fade:"Fade"}
+      return {key,label:labels[key],group,type:"range",min,max,step,unit,visible:s=>s.effect==="smoke",change:applySmoke}
+    }),
+    ...["Shape","Motion","Appearance","Lifetime"].map((group):LabControl=>({
+      key:`random-${group}`,label:`Randomize ${group}`,group,type:"action",visible:s=>s.effect==="smoke",run:()=>{
+        // Deliberately use the middle 60% of documented ranges for useful starting points.
+        for(const key of Object.keys(smokeDefaults) as SmokeKey[]){
+          const [min,max,step,,g]=smokeRanges[key]
+          if(g===group)params[key]=Number((Math.round((min+(max-min)*(0.2+Math.random()*0.6))/step)*step).toFixed(3))
+        }
+        if(group==="Shape")params.softness=Math.min(params.softness,params.radius*0.4)
+        applySmoke();context.sync()
+      },
+    })),
     {key:"targetX",label:"Origin X",group:"Origin & Seed",type:"range",min:-4.8,max:4.8,step:0.2,unit:"m",change:()=>reset()},
     {key:"targetZ",label:"Origin Z",group:"Origin & Seed",type:"range",min:-3.2,max:4.0,step:0.2,unit:"m",change:()=>reset()},
     {key:"seed",label:"Effect seed",group:"Origin & Seed",type:"range",min:1,max:999,step:1,unit:"",change:()=>reset()},
     {key:"copy",label:"Copy",group:"Actions",type:"action",run:async button=>{
-      try{await navigator.clipboard.writeText(JSON.stringify({effect,rate:params.rate,size:params.size,speed:params.speed,density:params.density},null,2));button.textContent="Copied"}
+      try{await navigator.clipboard.writeText(JSON.stringify(params,null,2));button.textContent="Copied"}
       catch{button.textContent="Copy failed"}
     }},
     {key:"carve",label:"Carve",group:"Actions",type:"action",run:()=>volume.carve(-6,0,6,0,0.7),visible:s=>s.effect==="smoke"||s.effect==="explosion"},

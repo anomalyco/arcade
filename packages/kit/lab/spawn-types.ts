@@ -17,6 +17,7 @@ export type SpawnedPropEntry={
 export type LabCharacter={
   point:SpawnPoint
   updatesTrail?:boolean
+  setPoint?(at:SpawnPoint):void
   update(dt:number,input:LabInput):void
   prepare():void
   lights():readonly LabLight[]
@@ -25,12 +26,21 @@ export type LabCharacter={
   leave?():void
 }
 export type CharacterSpawnable={id:string;label:string;create(context:LabContext,at:SpawnPoint):LabCharacter}
+export type PlaygroundEnvironmentInfo={
+  kind:string
+  seed:number
+  spawn:SpawnPoint
+  walls:readonly (readonly [number,number,number,number])[]
+  ground:(x:number,z:number)=>number
+  lights:readonly LabLight[]
+}
 export type ItemWorld=PhysicsAdapter & {
   items:readonly {id:string;label:string}[]
   spawn(id:string,at:SpawnPoint):string|void
   clear():void
   /** The character adapter owns car/prop contacts; the item world owns fixed-step simulation. */
   prepare():void
+  draw?(pass:GPURenderPassEncoder):void
   lights:LabLight[]
   inspect():unknown
   entries?():readonly SpawnedPropEntry[]
@@ -39,6 +49,12 @@ export type ItemWorld=PhysicsAdapter & {
   drawGhost?(kind:string,at:SpawnPoint):void
   snapshot?():readonly {kind:string;x:number;y:number;z:number;yaw:number}[]
   restore?(placements:readonly {kind:string;x:number;y:number;z:number;yaw:number}[]):void
+  environments?:readonly {value:string;label:string}[]
+  setEnvironment?(kind:string,seed:number):PlaygroundEnvironmentInfo
+  clearSkids?():void
+  setSkidsEnabled?(enabled:boolean):void
+  setSmokeEnabled?(enabled:boolean):void
+  skidStats?():{skids:number;budget:number;sparks:number;tyreSmoke:number}
 }
 export type SpawnAdapters={
   items:ItemWorld

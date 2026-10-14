@@ -4,7 +4,7 @@ import { audioAssets } from "../../scripts/audio-assets"
 export default defineConfig({
   plugins: [audioAssets()],
   base: "./",
-  build: { target: "esnext", outDir: "dist/arcade/blackout", emptyOutDir: true, rollupOptions: { input: { main: "index.html", compare: "compare.html", lab: "lab.html" } } },
+  build: { target: "esnext", outDir: "dist/arcade/blackout", emptyOutDir: true, rollupOptions: { input: { main: "index.html", compare: "compare.html", lab: "lab.html", dev: "dev.html", characters: "characters.html" } } },
   server: {
     fs: { allow: ["../.."] },
     allowedHosts: true,

@@ -19,7 +19,12 @@ export function blackoutSpawn(context:LabContext):CharacterSpawnable {
     const point={...at},body={x:at.x,y:at.z,vx:0,vy:0},avatar=newAvatar("lab",at.x,at.z,-Math.PI/2,"rifle")
     let time=0,aim=-Math.PI/2
     animate(avatar,1/60,0,body.x,body.y,0,0,aim)
-    return {point,update(dt,input){
+    return {point,setPoint(nextAt){
+      body.x=nextAt.x;body.y=nextAt.z;body.vx=0;body.vy=0
+      aim=Math.PI/2-nextAt.yaw
+      Object.assign(point,{x:body.x,y:yardGround(body.x,body.y),z:body.y,yaw:nextAt.yaw})
+      animate(avatar,1/60,time,body.x,body.y,0,0,aim)
+    },update(dt,input){
       time+=dt
       // Fixed follow camera is pitched from +Z: screen up is -Z, screen right is +X.
       const mx=Number(input.right)-Number(input.left),mz=Number(input.down)-Number(input.up)

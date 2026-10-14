@@ -15,7 +15,11 @@ export const shaders = {
     shadowTaps: 5,
     lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
     material: surfaceMaterial + `
-      if (mat == 4 && interior(o.world.xz+n.xz*.3)) { albedo = vec3f(.36,.33,.27); }
+      if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
+        let s = evalPlasterWall(o.world, n, vec3f(.38, .34, .28), defaultMaterialRecipe(2));
+        albedo = s.albedo;
+        gloss = s.gloss;
+      }
     `,
     fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
     declarations: /* wgsl */ `
@@ -38,9 +42,12 @@ fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - F.eye.xy;
   let distance = length(delta);
   let a = (atan2(delta.y, delta.x) + TAU) % TAU;
-  let ray = u32(floor(a / TAU * f32(RAYS))) % RAYS;
-  let reach = polar[ray * 2u].x;
-  let los = 1.0 - smoothstep(reach + 0.025, reach + 0.10, distance);
+  let f = a / TAU * f32(RAYS) - 0.5;
+  let ray0 = u32(i32(floor(f)) + i32(RAYS)) % RAYS;
+  let ray1 = (ray0 + 1u) % RAYS;
+  let los0 = 1.0 - smoothstep(polar[ray0 * 2u].x + 0.025, polar[ray0 * 2u].x + 0.10, distance);
+  let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
+  let los = mix(los0, los1, fract(f));
   let facing = dot(delta / max(distance, 0.001), vec2f(cos(F.effects.x), sin(F.effects.x)));
   let cone = smoothstep(F.effects.y, F.effects.y + 0.035, facing);
   let near = 1.0 - smoothstep(F.effects.z - 0.2, F.effects.z, distance);
@@ -54,6 +61,8 @@ fn eyeVisible(p: vec2f) -> f32 {
         for(var i=0;i<4;i++) { if(roofCut(o.world,i)){discard;} }
       }
     `,
+    // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
+    solidCutaway: "",
     surface: /* wgsl */ `
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, o.world.xz * F.map.xy, 0.0).r;
