@@ -241,17 +241,24 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   return o;
 }
 
-fn cutaway(world: vec3f, frag: vec4f) -> bool {
-  if (F.eye.z < 0.5 || world.y < F.focus.z) { return false; }
-  // Only what stands between the camera and you: south of you on the plan.
-  if (world.z < F.eye.y + 0.25) { return false; }
+fn bayer4x4(frag: vec4f) -> f32 {
+  let p = vec2u(frag.xy) % 4u;
+  let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (m[p.y * 4u + p.x] + 0.5) / 16.0;
+}
+
+fn cutawayBubble(world: vec3f, frag: vec4f, minHeight: f32, southOnly: bool, opacity: f32) -> bool {
+  if (F.eye.z < 0.5 || world.y < minHeight || opacity <= 0.001) { return false; }
+  if (southOnly && world.z < F.eye.y + 0.25) { return false; }
   let ndc = vec2f(frag.x / F.screen.x * 2.0 - 1.0, 1.0 - frag.y / F.screen.y * 2.0);
   let dv = (ndc - F.focus.xy) * vec2f(F.screen.x / F.screen.y, 1.0);
   let r = length(dv) / F.eye.w;
   if (r > 1.0) { return false; }
-  let p = vec2u(frag.xy) % 4u;
-  let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-  return (m[p.y * 4u + p.x] + 0.5) / 16.0 < smoothstep(1.0, 0.6, r) * 0.85;
+  return bayer4x4(frag) < smoothstep(1.0, 0.6, r) * opacity;
+}
+
+fn cutaway(world: vec3f, frag: vec4f) -> bool {
+  return cutawayBubble(world, frag, F.focus.z, F.eye.z <= 1.001, 0.85);
 }
 
 /** Shadow of one lower occluder (enter t0, exit t1, height h) on a point at distance d and height y. */

@@ -17,6 +17,12 @@ import {
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
 import { dayCycle } from "./day-cycle"
+import {
+  DEFAULT_FLASHLIGHT_TUNING,
+  flashlightAwarenessAt,
+  type FlashlightState as SurvivorFlashlightState,
+  type FlashlightTuning,
+} from "./flashlight"
 import { propShape, sightRects, SIZE, solidRects, type Town } from "./map"
 
 export {
@@ -131,7 +137,8 @@ export function spawnTownZombies(
         (b) => candidate.x > b.rect[0] + 0.2 && candidate.x < b.rect[2] - 0.2 && candidate.y > b.rect[1] + 0.2 && candidate.y < b.rect[3] - 0.2,
       )
       if (insideHouse) continue
-      agents.push(createAIAgent(nextId++, town.seed, candidate.x, candidate.y, rng.range(-Math.PI, Math.PI)))
+      const awayAim = Math.atan2(candidate.y - avoidY, candidate.x - avoidX) + rng.range(-0.7, 0.7)
+      agents.push(createAIAgent(nextId++, town.seed, candidate.x, candidate.y, awayAim))
     }
   }
 
@@ -154,7 +161,8 @@ export function spawnTownZombies(
       (b) => candidate.x > b.rect[0] + 0.2 && candidate.x < b.rect[2] - 0.2 && candidate.y > b.rect[1] + 0.2 && candidate.y < b.rect[3] - 0.2,
     )
     if (insideHouse) continue
-    agents.push(createAIAgent(nextId++, town.seed, candidate.x, candidate.y, rng.range(-Math.PI, Math.PI)))
+    const awayAim = Math.atan2(candidate.y - avoidY, candidate.x - avoidX) + rng.range(-0.7, 0.7)
+    agents.push(createAIAgent(nextId++, town.seed, candidate.x, candidate.y, awayAim))
   }
 
   return agents
@@ -336,27 +344,31 @@ export class OutbreakAISubsystem {
       vy: number
       aim: number
       noise: number
-      flashlightOn?: boolean
-    },
+    } & SurvivorFlashlightState,
     hour: number,
     time: number,
     dt: number,
+    flashlightTuning: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone"> = DEFAULT_FLASHLIGHT_TUNING,
   ): { topologyChanged: boolean; playerDamage: number } {
     this.tick++
     const day = dayCycle(hour)
     const darkness = 1 - day.sun
     const nightFactor = 1 + darkness * (this.config.nightMultiplier - 1)
-    const lightLevel = samplePointLightLevel(town, hour, player.x, player.y, 1)
-    const flashlight: FlashlightState | null = player.flashlightOn
-      ? {
-          on: true,
-          x: player.x,
-          y: player.y,
-          aim: player.aim,
-          range: 15.5,
-          halfAngle: 0.42,
-        }
-      : null
+    const baseLightLevel = samplePointLightLevel(town, hour, player.x, player.y, 1)
+    const lightLevel = Math.min(1.5, baseLightLevel + (player.flashlightOn ? player.flashlightOutput * 0.55 : 0))
+    const flashlight: FlashlightState | null =
+      player.flashlightOn && player.flashlightOutput > 0.01
+        ? {
+            on: true,
+            x: player.x,
+            y: player.y,
+            aim: player.aim,
+            range: player.lightSignature || flashlightTuning.flashlightRange,
+            halfAngle: (flashlightTuning.flashlightCone * Math.PI) / 360,
+            output: player.flashlightOutput,
+            awarenessAt: (zx, zy) => flashlightAwarenessAt(player, zx, zy, this.sightBlockers, flashlightTuning),
+          }
+        : null
 
     const target: PerceptionTarget = {
       id: "player",

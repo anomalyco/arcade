@@ -9,7 +9,9 @@ import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { aiControls, DEFAULT_AI_CONFIG, type AIState } from "../shared/ai"
 import { LocalSession, type Command } from "../shared/session"
-import { vaultLift, type PeekInfo } from "../shared/interact"
+import { DEFAULT_FLASHLIGHT_TUNING, flashlightColor, flashlightControls } from "../shared/flashlight"
+import { HOTBAR_SIZE } from "../shared/inventory"
+import { holdProgress, vaultLift, type PeekInfo } from "../shared/interact"
 import { DEFAULT_STAMINA_TUNING, staminaControls } from "../shared/stamina"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, propShape, SIZE } from "../shared/map"
@@ -44,6 +46,7 @@ const settings = {
   skyFill: 1,
   humanProfile: 0,
   ...DEFAULT_STAMINA_TUNING,
+  ...DEFAULT_FLASHLIGHT_TUNING,
   ...zombieTuning,
   ...DEFAULT_AI_CONFIG,
   ...(peaceful ? { zombieCount: 0 } : {}),
@@ -52,8 +55,12 @@ const settings = {
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#game")!
   const status = document.querySelector<HTMLElement>("#status")!
+  const promptEl = document.querySelector<HTMLElement>("#prompt")
   const staminaEl = document.querySelector<HTMLElement>("#stamina")
   const staminaFill = document.querySelector<HTMLElement>("#stamina-fill")
+  const batteryEl = document.querySelector<HTMLElement>("#battery")
+  const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
+  const hotbarEl = document.querySelector<HTMLElement>("#hotbar")
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
     return
@@ -76,18 +83,23 @@ async function main() {
   let session = new LocalSession(seed, settings.houseSeed, settings.terrain, settings)
   let vision = new Vision()
   let scenery = new SceneryMemory()
-  const input = new Input(canvas)
+  const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
+  let pendingHotbarSlot: number | undefined
+  let pendingHotbarDelta = 0
   let pendingFlashlightToggle = false
   let pendingBarricade = false
-  let pendingSlot: 1 | 2 | 3 | undefined
   input.onKey = (code) => {
-    if (code === "KeyL") pendingFlashlightToggle = true
+    const slot = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"].indexOf(code)
+    if (slot >= 0) {
+      if (slot === 0 && session.view.inventory.selectedSlot === 0) pendingFlashlightToggle = true
+      pendingHotbarSlot = slot
+    }
     if (code === "KeyB") pendingBarricade = true
-    if (code === "Digit1") pendingSlot = 1
-    if (code === "Digit2") pendingSlot = 2
-    if (code === "Digit3") pendingSlot = 3
+  }
+  input.onWheel = (delta) => {
+    if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
   const cam = new Camera()
   const avatar = new Survivor(renderer)
@@ -143,6 +155,7 @@ async function main() {
         session.ai.setZombieState("wander")
       },
     },
+    ...flashlightControls,
     ...staminaControls,
     {
       key: "humanProfile",
@@ -181,7 +194,7 @@ async function main() {
   doorMesh.box(0.08, 0.35, -0.11, 1.32, 2.1, -0.105, hex(0x8b7253), MAT.wall)
   doorMesh.box(1.15, 1.1, 0.1, 1.24, 1.17, 0.17, hex(0xb9a071))
   for (const x of [0.15, 0.75]) {
-    for (const y of [0.42, 0.36 + 1]) {
+    for (const y of [0.42, 1.36]) {
       doorMesh.box(x, y, 0.101, x + 0.48, y + 0.7, 0.125, hex(0x91754e))
       doorMesh.box(x + 0.035, y + 0.04, 0.126, x + 0.445, y + 0.66, 0.132, hex(0x70583d))
     }
@@ -236,23 +249,32 @@ async function main() {
       clock.pause(wallNow)
       return 0
     }
-    const substeps = clock.frame(wallNow, liveMove(), () => input.takeEnter(), () => input.takeCycle())
+    const substeps = clock.frame(
+      wallNow,
+      liveMove(),
+      () => input.takeEnter(),
+      () => {
+        const f = input.takeSecondary() || pendingFlashlightToggle
+        pendingFlashlightToggle = false
+        return f
+      },
+      () => input.takeJump(),
+      () => input.interactHeld,
+    )
     if (!substeps.length) return 0
     const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
+    const hotbarSlot = pendingHotbarSlot
+    const hotbarDelta = pendingHotbarDelta
     const fireEdge = input.takeFirePress()
     const reloadEdge = input.takeReload()
     const meleeEdge = input.takeMelee()
+    const barricadeEdge = pendingBarricade
+    pendingHotbarSlot = undefined
+    pendingHotbarDelta = 0
+    pendingBarricade = false
     let stepped = 0
     for (const [idx, step] of substeps.entries()) {
       const p = session.view.player
-      const toggleFl = idx === 0 && pendingFlashlightToggle
-      const barricade = idx === 0 && pendingBarricade
-      const slot = idx === 0 ? pendingSlot : undefined
-      if (idx === 0) {
-        pendingFlashlightToggle = false
-        pendingBarricade = false
-        pendingSlot = undefined
-      }
       session.update(
         step.dt,
         {
@@ -261,13 +283,15 @@ async function main() {
           sprint: step.sprint,
           aim: Math.atan2(target.y - p.y, target.x - p.x),
           interact: step.interact,
-          cycle: step.cycle,
+          flashlight: step.flashlight,
+          jump: step.jump,
+          interactHeld: step.interactHeld,
           fire: idx === 0 ? fireEdge : false,
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
-          barricade,
-          toggleFlashlight: toggleFl,
-          slot,
+          barricade: idx === 0 ? barricadeEdge : false,
+          ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
+          ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
         },
         settings.timeScale,
         settings,
@@ -278,28 +302,16 @@ async function main() {
     pendingDrawDt += stepped
     return substeps.length
   }
-  window.addEventListener(
-    "keydown",
-    () => {
-      const now = performance.now()
-      if (!frozen && !document.hidden) stepSimulation(now)
-    },
-    true,
-  )
-  window.addEventListener(
-    "keyup",
-    () => {
-      const now = performance.now()
-      if (!frozen && !document.hidden) stepSimulation(now)
-    },
-    true,
-  )
   window.addEventListener("keydown", () => {
-    clock.recordMove(performance.now(), liveMove())
+    const now = performance.now()
+    clock.recordMove(now, liveMove())
+    if (!frozen && !document.hidden) stepSimulation(now)
     scheduleFrame()
   })
   window.addEventListener("keyup", () => {
-    clock.recordMove(performance.now(), liveMove())
+    const now = performance.now()
+    clock.recordMove(now, liveMove())
+    if (!frozen && !document.hidden) stepSimulation(now)
     scheduleFrame()
   })
   document.addEventListener("visibilitychange", () => {
@@ -445,41 +457,79 @@ async function main() {
     clock.reset(performance.now(), liveMove())
   }
   reset()
+  const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
   const formatStatus = () => {
     const { player: p, hour, time, prompt, zombies } = session.view
-    const interactKey = keyLabel("KeyE")
-    const cycleKey = keyLabel("KeyQ")
+    const primaryKey = keyLabel("KeyE")
     const reloadKey = keyLabel("KeyR")
-    const barricadeKey = keyLabel("KeyB")
     let promptText = ""
     if (p.channel) {
       const pct = Math.min(100, Math.round((p.channel.elapsed / Math.max(0.1, p.channel.duration)) * 100))
       promptText = ` · ${p.channel.label} (${pct}%)`
     } else if (prompt) {
-      const nextIdx = (prompt.actions.findIndex((a) => a.id === prompt.activeAction.id) + 1) % prompt.actions.length
-      const next = prompt.actions.length > 1 ? prompt.actions[nextIdx] : undefined
-      const canBarricade =
-        (prompt.kind === "door" || prompt.kind === "window") &&
-        p.planks > 0 &&
-        session.ai.getBarricadePlanks(prompt.id) < 3
-      const barricadeHint = canBarricade ? ` [${barricadeKey} Barricade]` : ""
-      promptText = ` · ${interactKey} ${prompt.activeAction.label}${next ? ` (${cycleKey} ${next.label})` : ""}${barricadeHint}`
+      const second = prompt.secondary ? `  ·  Hold ${primaryKey} ${prompt.secondary.label}` : ""
+      promptText = ` · ${primaryKey} ${prompt.primary.label}${second}`
     }
     const weaponText =
       p.reloadRemaining > 0
         ? ` · Reloading…`
         : p.equippedItem === "pistol"
           ? ` · 9mm ${p.magAmmo}/${p.magCapacity} (+${p.reserveAmmo}${p.magAmmo === 0 && p.reserveAmmo > 0 ? ` ${reloadKey}` : ""})`
-          : ` · Hands`
+          : ""
     const plankText = p.planks > 0 ? ` · ${p.planks}🪵` : ""
-    const flText = p.flashlightOn ? " · 🔦ON" : ""
     const alerted = zombies.filter((z) => z.state === "chase" || z.state === "alert" || z.state === "bash").length
     const alertText = alerted > 0 ? ` · ${alerted} pursuing` : ""
     const lootText = p.lootMessage && time < p.lootMessageUntil ? ` · ${p.lootMessage}` : ""
-    return `${clockText(hour)}${weaponText}${plankText}${flText}${p.exhausted ? " · Exhausted" : ""}${alertText}${promptText}${lootText}`
+    return `${clockText(hour)}${weaponText}${plankText}${p.exhausted ? " · Exhausted" : ""}${alertText}${promptText}${lootText}`
+  }
+  const syncWorldPrompt = (w: number, h: number) => {
+    if (!promptEl) return
+    const { player: p, town, prompt } = session.view
+    if (!prompt) {
+      promptEl.hidden = true
+      return
+    }
+    const isPeeking = Boolean(session.view.peek)
+    const anchorHeight = (isPeeking ? 0.15 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
+    const proj = cam.project(prompt.worldX, anchorHeight, prompt.worldY, w, h)
+    if (!proj.ok) {
+      promptEl.hidden = true
+      return
+    }
+    const primaryKey = esc(keyLabel("KeyE"))
+    const primaryHtml = `<span><kbd>${primaryKey}</kbd>${esc(prompt.primary.label)}</span>`
+    const secondaryHtml = prompt.secondary
+      ? `<span class="sep">·</span><span><kbd>Hold ${primaryKey}</kbd>${esc(prompt.secondary.label)}</span>`
+      : ""
+    const hold = holdProgress(p)
+    const holdHtml = hold > 0 ? `<i class="hold" style="width:${(hold * 100).toFixed(1)}%"></i>` : ""
+    promptEl.innerHTML = `${primaryHtml}${secondaryHtml}${holdHtml}`
+    promptEl.hidden = false
+    promptEl.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
+  }
+  let lastHotbarKey = ""
+  const syncHotbar = () => {
+    if (!hotbarEl) return
+    const { inventory, player: p } = session.view
+    const fKey = keyLabel("KeyF")
+    const key = `${inventory.selectedSlot}|${p.flashlightOn}|${fKey}|${inventory.slots.map((s) => (s ? `${s.id}:${s.shortLabel}:${s.active ? 1 : 0}:${s.count ?? ""}` : "")).join(",")}`
+    if (key === lastHotbarKey) return
+    lastHotbarKey = key
+    hotbarEl.innerHTML = Array.from({ length: HOTBAR_SIZE }, (_, i) => {
+      const item = inventory.slots[i]
+      const sel = i === inventory.selectedSlot
+      const on = (item?.kind === "flashlight" && p.flashlightOn) || (item?.kind === "pistol" && p.equippedItem === "pistol")
+      const label = item
+        ? `${esc(item.shortLabel)}${item.kind === "flashlight" ? ` (${esc(fKey)})` : item.count && item.count > 1 ? ` ×${item.count}` : ""}`
+        : "—"
+      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
+    }).join("")
   }
   onKeyLayoutChange(() => {
+    lastHotbarKey = ""
     status.textContent = formatStatus()
+    syncWorldPrompt(innerWidth, innerHeight)
+    syncHotbar()
   })
   function draw(dt: number) {
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
@@ -552,29 +602,15 @@ async function main() {
       -1,
     ])
     let count = 1
-    if (p.flashlightOn && count < MAX_LIGHTS) {
-      const flX = p.x + Math.cos(p.aim) * 0.28
-      const flY = p.y + Math.sin(p.aim) * 0.28
-      const flH = 1.25 + supportHeight(town, p.x, p.y)
+    if (p.flashlightOutput > 0.001 && settings.flashlightIntensity > 0.001) {
+      const [fr, fg, fb] = flashlightColor(settings.flashlightWarmth)
+      const fx = p.x + Math.cos(p.aim) * 0.25
+      const fy = p.y + Math.sin(p.aim) * 0.25
+      const fh = 1.22 + supportHeight(town, p.x, p.y)
+      const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
+      const power = p.flashlightOutput * settings.flashlightIntensity
       lights.set(
-        [
-          flX,
-          flH,
-          flY,
-          15.5,
-          1.0,
-          0.95,
-          0.82,
-          0.75,
-          Math.cos(p.aim),
-          Math.sin(p.aim),
-          Math.cos(0.42),
-          1,
-          0,
-          lightOccluders,
-          0.08,
-          -1,
-        ],
+        [fx, fh, fy, settings.flashlightRange, fr, fg, fb, power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, 0.08, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -652,7 +688,8 @@ async function main() {
     const cutX = activePeek ? activePeek.cutX : p.x
     const cutY = activePeek ? activePeek.cutY : p.y
     const cutFlag = activePeek ? 1 + peekBlend : 1
-    const cutRadius = activePeek ? 0.48 + 0.08 * peekBlend : 0.48
+    const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.48
+    const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
     frame.set(cam.viewProj, 0)
     frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
@@ -667,7 +704,7 @@ async function main() {
     const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
     const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
     const focus = cam.project(focusX, 1, focusY, w, h)
-    frame.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, 1.0, count], 32)
+    frame.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, cutHeight, count], 32)
     frame.set([...day.direction, day.sun], 36)
     frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
     frame.set([sightAim, Math.cos((sightCone * Math.PI) / 360), sightAwareness, settings.shroud], 44)
@@ -722,7 +759,18 @@ async function main() {
       staminaEl.dataset.active = String(p.sprinting || p.exhausted || p.stamina < 0.999)
       staminaEl.dataset.exhausted = String(p.exhausted)
     }
+    if (batteryEl && batteryFill) {
+      const pct = Math.max(0, Math.min(100, p.battery * 100))
+      batteryFill.style.width = `${pct.toFixed(1)}%`
+      batteryEl.dataset.active = String(p.flashlightOn || p.batteryDepleted || p.battery < 0.999)
+      batteryEl.dataset.low = String(p.battery > 0 && p.battery < settings.flashlightFlicker)
+      batteryEl.dataset.depleted = String(p.batteryDepleted)
+      batteryEl.style.opacity =
+        p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
+    }
     status.textContent = formatStatus()
+    syncWorldPrompt(w, h)
+    syncHotbar()
     const meterNow = performance.now()
     const elapsed = (meterNow - meterAt) / 1000
     if (elapsed > 0.25) {
@@ -817,6 +865,17 @@ async function main() {
     state: () => ({
       ...session.view,
       peekBlend,
+      flashlight: {
+        on: session.view.player.flashlightOn,
+        battery: session.view.player.battery,
+        depleted: session.view.player.batteryDepleted,
+        output: session.view.player.flashlightOutput,
+        signature: session.view.player.lightSignature,
+        cone: settings.flashlightCone,
+        range: settings.flashlightRange,
+        intensity: settings.flashlightIntensity,
+        color: flashlightColor(settings.flashlightWarmth),
+      },
       explored: vision.explored.filter((v) => v > 0).length,
       vertices,
       splatter: combatFx.splatter?.inspect() ?? null,
@@ -867,9 +926,10 @@ async function main() {
         vx: 0,
         vy: 0,
         peekingWindowId: null,
-        lastPeekedWindowId: null,
-        cycledTargetId: null,
-        cycledActionIndex: 0,
+        holdTargetId: null,
+        holdElapsed: 0,
+        holdTriggered: false,
+        holdPendingPrimary: null,
         vault: null,
         channel: null,
       })

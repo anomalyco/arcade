@@ -15,7 +15,7 @@ export type StandardAction =
   | "sprint"
   | "crouch"
   | "interact"
-  | "cycleAction"
+  | "secondaryInteract"
   | "reload"
   | "jump"
   | "handbrake"
@@ -40,7 +40,7 @@ export const STANDARD_BINDINGS: ActionBindings = {
   sprint: ["ShiftLeft", "ShiftRight"],
   crouch: ["ControlLeft", "KeyC"],
   interact: ["KeyE", "KeyF"],
-  cycleAction: ["KeyQ"],
+  secondaryInteract: ["KeyF"],
   reload: ["KeyR"],
   jump: ["Space"],
   handbrake: ["Space"],

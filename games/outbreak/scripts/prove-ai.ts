@@ -61,13 +61,16 @@ try {
     }
   }
 
-  // Beat 1: Dusk street with wandering zombies + AI debug overlay showing green WANDER cones
+  // Beat 1: Dusk street with wandering zombies + AI debug overlay showing green WANDER cones (flashlight initially off)
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
     h.setLab("timeScale", 0)
     h.setLab("hour", 19.1)
     h.setLab("zoom", 38)
     h.pose(29.5, 43.2, 0)
+    if (h.state().flashlight.on) {
+      await h.step(1 / 60, { flashlight: true })
+    }
     h.setZombieState("wander")
     h.spawnZombie(35.2, 42.6, "wander", 0.25)
     h.spawnZombie(36.0, 44.1, "wander", -0.35)
@@ -87,10 +90,10 @@ try {
     await captureFrame(f === 22 ? "01-wander-debug" : undefined)
   }
 
-  // Beat 2: Turn on flashlight & fire pistol at zombie pack -> muzzle flash, blood splatter, limb detach, gunshot noise ring!
+  // Beat 2: Turn on flashlight (F) & fire pistol at zombie pack -> muzzle flash, blood splatter, limb detach, gunshot noise ring!
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
-    await h.step(1 / 60, { toggleFlashlight: true, aim: -0.08 })
+    await h.step(1 / 60, { flashlight: true, aim: -0.08 })
   })
   for (let f = 0; f < 65; f++) {
     const shouldFire = f === 4 || f === 14 || f === 26 || f === 38

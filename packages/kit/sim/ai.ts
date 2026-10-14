@@ -46,6 +46,10 @@ export type FlashlightState = {
   range: number
   /** Half-angle in radians. */
   halfAngle: number
+  /** Normalized beam output (0..1, accounting for battery dimming/flicker). */
+  output?: number
+  /** Optional authoritative awareness callback (0..1) from the game's flashlight module. */
+  awarenessAt?: (observerX: number, observerY: number) => number
 }
 
 export type PerceptionTarget = {
@@ -411,20 +415,25 @@ export function evaluateSight(
   }
 
   // 2. Flashlight beam sensing:
-  // (a) Beam shining directly onto the zombie, or (b) zombie seeing the flashlight's lit ground pool.
+  // (a) Beam shining directly onto the zombie (via authoritative awarenessAt or geometric cone),
+  // or (b) zombie seeing the flashlight's lit ground pool.
   const fl = target.flashlight
-  if (fl?.on) {
+  if (fl?.on && (fl.output ?? 1) > 0.01) {
+    const flOutput = fl.output ?? 1
     const fromFlX = agent.x - fl.x
     const fromFlY = agent.y - fl.y
     const flDist = Math.hypot(fromFlX, fromFlY)
     const flAngleToAgent = Math.abs(angleDiff(Math.atan2(fromFlY, fromFlX), fl.aim))
-    if (
-      flDist <= fl.range &&
-      flAngleToAgent <= fl.halfAngle + 0.14 &&
-      clearLine(fl.x, fl.y, agent.x, agent.y, sightBlockers)
-    ) {
+    const directAwareness = fl.awarenessAt
+      ? fl.awarenessAt(agent.x, agent.y)
+      : flDist <= fl.range &&
+          flAngleToAgent <= fl.halfAngle + 0.14 &&
+          clearLine(fl.x, fl.y, agent.x, agent.y, sightBlockers)
+        ? flOutput * (1 - 0.45 * (flDist / Math.max(1, fl.range)))
+        : 0
+    if (directAwareness > 0.01) {
       // Beam hits the zombie directly!
-      const beamGain = 2.6 * config.flashlightBoost * (1 - 0.45 * (flDist / Math.max(1, fl.range)))
+      const beamGain = 2.6 * config.flashlightBoost * directAwareness
       return {
         seesTarget: offAngle <= periphHalf,
         sensesLight: true,
@@ -446,9 +455,9 @@ export function evaluateSight(
       const by = fl.y + fdy * (beamHit * frac)
       const bDist = Math.hypot(bx - agent.x, by - agent.y)
       const bAngle = Math.abs(angleDiff(Math.atan2(by - agent.y, bx - agent.x), agent.aim))
-      const maxPoolDist = config.sightRange * agent.perceptionScale * config.flashlightBoost
+      const maxPoolDist = config.sightRange * agent.perceptionScale * config.flashlightBoost * flOutput
       if (bDist <= maxPoolDist && bAngle <= periphHalf && clearLine(agent.x, agent.y, bx, by, sightBlockers)) {
-        const poolGain = 1.45 * config.flashlightBoost * (1 - 0.6 * (bDist / Math.max(1, maxPoolDist)))
+        const poolGain = 1.45 * config.flashlightBoost * flOutput * (1 - 0.6 * (bDist / Math.max(1, maxPoolDist)))
         return {
           seesTarget: false,
           sensesLight: true,

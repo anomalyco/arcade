@@ -21,8 +21,9 @@ export class Input<Selection extends string = string> {
   private equipPressed = false
   private meleePressed = false
   private enterPressed = false
+  private secondaryPressed = false
   private seatPressed = false
-  private cyclePressed = false
+  private jumpPressed = false
   mouse = { x: innerWidth / 2, y: innerHeight / 2 }
   firing = false
   /** One pending edge, never a queue of shots. Expire it across stalls or focus changes. */
@@ -96,7 +97,7 @@ export class Input<Selection extends string = string> {
     this.casts = []
     this.keys.clear()
     this.firePressedAt = -Infinity
-    this.firing = this.looking = this.reloadPressed = this.equipPressed = this.meleePressed = this.enterPressed = this.seatPressed = this.cyclePressed = false
+    this.firing = this.looking = this.reloadPressed = this.equipPressed = this.meleePressed = this.enterPressed = this.secondaryPressed = this.seatPressed = this.jumpPressed = false
   }
 
   private key(e: MuxKey): void {
@@ -114,8 +115,9 @@ export class Input<Selection extends string = string> {
     if (e.code === "KeyG" && !repeat) this.equipPressed = true
     if (e.code === "KeyV" && !repeat) this.meleePressed = true
     if (this.interactCodes.includes(e.code) && !repeat) this.enterPressed = true
+    if (e.code === "KeyF" && !repeat) this.secondaryPressed = true
     if (e.code === "KeyC" && !repeat) this.seatPressed = true
-    if (e.code === "KeyQ" && !repeat) this.cyclePressed = true
+    if (e.code === "Space" && !repeat) this.jumpPressed = true
   }
 
   private mouseEvent(e: MouseEvent, buttons: Partial<MuxMouse> = {}): void {
@@ -204,10 +206,17 @@ export class Input<Selection extends string = string> {
     return r && this.enabled
   }
 
-  /** Q: cycle contextual interaction action when multiple actions apply. */
-  takeCycle(): boolean {
-    const r = this.cyclePressed
-    this.cyclePressed = false
+  /** F: secondary contextual interaction action (e.g. Open/Close window, Lock/Unlock door). */
+  takeSecondary(): boolean {
+    const r = this.secondaryPressed
+    this.secondaryPressed = false
+    return r && this.enabled
+  }
+
+  /** Space: contextual vault / climb-through / jump edge. */
+  takeJump(): boolean {
+    const r = this.jumpPressed
+    this.jumpPressed = false
     return r && this.enabled
   }
 

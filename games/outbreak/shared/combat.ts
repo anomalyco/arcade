@@ -196,11 +196,19 @@ export class OutbreakCombatSubsystem {
     return {
       kind: "container",
       candidates: (town, actor) => {
+        if (actor.peekingWindowId) return []
         const out: RawInteractCandidate[] = []
         const walls = town.barriers.filter((b) => b.kind === "wall").map((b) => b.rect)
         for (const c of this.containers) {
           if (c.searched) continue
-          if (distToRect(actor.x, actor.y, c.rect) > INTERACT_RANGE) continue
+          if (distToRect(actor.x, actor.y, c.rect) > 1.45) continue
+          const cBuilding = town.buildings.find(
+            (b) => c.x >= b.rect[0] && c.x <= b.rect[2] && c.y >= b.rect[1] && c.y <= b.rect[3],
+          )
+          const aBuilding = town.buildings.find(
+            (b) => actor.x >= b.rect[0] && actor.x <= b.rect[2] && actor.y >= b.rect[1] && actor.y <= b.rect[3],
+          )
+          if (cBuilding !== aBuilding) continue
           const nx = Math.max(c.rect[0], Math.min(c.rect[2], actor.x))
           const ny = Math.max(c.rect[1], Math.min(c.rect[3], actor.y))
           if (!clearLine(actor.x, actor.y, nx, ny, walls)) continue
@@ -209,8 +217,10 @@ export class OutbreakCombatSubsystem {
             kind: "container",
             id: c.id,
             rect: c.rect,
+            worldX: c.x,
+            worldY: c.y,
+            primary: searchAction,
             actions: [searchAction],
-            defaultAction: searchAction,
           })
         }
         return out

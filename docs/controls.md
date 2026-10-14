@@ -23,12 +23,10 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
      physical code letter (`KeyE` → `E` on QWERTY, `.` on Dvorak; `moveClusterLabel()` → `WASD` on QWERTY, `,AOE` on
      Dvorak).
 
-3. ** Primary interact/use is physical `KeyE`.**
-   - `KeyE` is the primary interact, use, enter/exit vehicle, door/window, and ship-operations key across games.
-   - Where `KeyF` has no competing binding (Blackout and Outbreak on foot), `KeyF` remains accepted as a silent alias
-     for muscle memory while HUD prompts display `keyLabel("KeyE")`.
-   - In aircraft flight (Carrier pilot), `KeyQ` / `KeyE` are left/right yaw rudder per PC flight-sim convention, so
-     aircraft countermeasures/carrier landing use `KeyF`.
+3. **Primary interact/use is physical `KeyE`; secondary object action is `Hold KeyE`; `KeyF` is Flashlight.**
+   - `KeyE` is the primary interact, use, enter/exit vehicle, door/window/fence, and ship-operations key across games.
+   - Where an interactable object offers two contextual actions (such as Outbreak's windows and doors), **both actions are shown simultaneously** in a floating world-space prompt near the object (`[E] Peek  ·  [Hold E] Open` on closed windows; `[E] Climb  ·  [Hold E] Close` on open windows; `[E] Open  ·  [Hold E] Lock` on doors; `[E] Vault` on fences), with no hidden action cycling and `KeyQ` kept free.
+   - `KeyF` is the dedicated **Flashlight** toggle in Outbreak (matching PC survival-horror conventions), accepted as a silent alias for `KeyE` in Blackout on foot, and used for aircraft countermeasures/carrier landing in Carrier flight (where `KeyQ`/`KeyE` are yaw rudder).
 
 4. **Input ownership and release discipline.**
    - Ignore gameplay bindings when focus is inside `<input>`, `<textarea>`, `<select>`, or `contentEditable`, or while
@@ -41,12 +39,14 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
 | Action | PC Convention | Arcade Standard (`e.code`) | QWERTY Prompt | Dvorak Prompt | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Move / Steer / Pitch-Roll | `WASD` / Arrows | `KeyW`, `KeyA`, `KeyS`, `KeyD` + `Arrow*` | `WASD` | `,AOE` | Screen-axis move in top-down games; throttle/steer in vehicles |
-| Interact / Use / Enter-Exit | `E` | `KeyE` (`KeyF` alias on foot) | `E` | `.` | Doors, windows, bomb plant/defuse, enter/exit vehicle, Ship Ops |
-| Contextual Action Cycle / Secondary | `Q` | `KeyQ` | `Q` | `'` | Cycles window/door actions in Outbreak; cop gadget in Getaway; left rudder in flight |
+| Interact / Primary Action | `E` | `KeyE` (`KeyF` alias in Blackout) | `E` | `.` | Primary contextual verb (Peek closed window, Climb open window, Vault fence, Open/Close door, Enter/Exit vehicle, Ship Ops) |
+| Secondary Object Action | `Hold E` | `KeyE` (`0.38 s` hold) | `Hold E` | `Hold .` | Shown simultaneously alongside `E` in Outbreak (`Hold E` Open/Close window, `Hold E` Lock door) |
+| Flashlight / Flares | `F` | `KeyF` | `F` | `U` | Flashlight toggle in Outbreak; flares / carrier land in Carrier flight |
+| Gadget / Rudder (Context) | `Q` | `KeyQ` | `Q` | `'` | Kept free in Outbreak/Blackout; cop gadget in Getaway; left yaw rudder in Carrier flight |
 | Sprint / Boost / Afterburner | `Shift` | `ShiftLeft`, `ShiftRight` | `SHIFT` | `SHIFT` | Stamina sprint in Outbreak; run in Blackout; nitro/boost in Getaway & Carrier |
 | Crouch / Seat / Camera | `Ctrl` / `C` | `ControlLeft`, `KeyC` | `CTRL` / `C` | `CTRL` / `J` | `KeyC` cycles vehicle seat in Blackout and toggles camera in Carrier |
 | Reload | `R` | `KeyR` | `R` | `P` | Firearm reload in Blackout |
-| Jump / Handbrake / Turret Fire | `Space` | `Space` | `SPACE` | `SPACE` | Drift/handbrake in Getaway; secondary trigger in Carrier jets/boats/turrets |
+| Jump / Handbrake / Vault / Turret Fire | `Space` | `Space` | `SPACE` | `SPACE` | Contextual fence vault & open-window climb-through in Outbreak; drift/handbrake in Getaway; secondary trigger in Carrier |
 | Primary Fire / Cast / Aim | `LMB` + Mouse | `Mouse0` + Cursor / Pointer Lock | `CLICK` | `CLICK` | Cursor aim in Blackout/Outbreak; Pointer Lock in Carrier |
 | Look Ahead / Scope / Free Look | `RMB` | `Mouse2` (`KeyX` alias in flight) | `RIGHT CLICK` | `RIGHT CLICK` | Far scout in Blackout; turret zoom / flight free-look in Carrier |
 | Equipment / Grenade | `G` / `MMB` | `KeyG`, `Mouse1` | `G` | `I` | Frag / claymore in Blackout |
@@ -64,7 +64,7 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
 
 | Surface | Move / Steer | Sprint / Boost | Handbrake / Jump | Interact / Use | Fire / Aim / Look | Reload / Equip / Melee / Swap | Camera / Seat / Horn | UI / Scoreboard / Chat / Audio / Lab | Audit fixes applied |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **Outbreak** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` (stamina sprint) | — (`KeyE` climbs open window) | `KeyE` (`KeyF` alias) door & window open/close/peek/climb; `KeyQ` cycles action | Cursor aim | — | Scroll wheel / Lab zoom | `Backquote` Lab | Switched interact from `KeyF`-only to `KeyE` (with `KeyF` alias); removed `KeyE`/`Comma`/`KeyO` from `move()`; added layout-aware prompts |
+| **Outbreak** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` (stamina sprint) | `Space` contextual vault (fences & open windows) | `KeyE` primary (`Peek` closed window, `Climb` open window, `Vault` fence, `Open/Close` door); `Hold KeyE` secondary (`Open/Close` window, `Lock` door) shown simultaneously; `KeyQ` free | Cursor aim | `KeyF` flashlight toggle; `Digit1`–`Digit5` & Wheel 5-slot hotbar (slot 1: Flashlight) | Lab zoom | `Backquote` Lab | `KeyF` toggles flashlight; simultaneous dual-action prompts (`E` primary + `Hold E` secondary) anchored near objects with `KeyQ` free; `Digit1`–`Digit5` / Wheel hotbar; layout-aware prompts |
 | **Blackout (On Foot)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` | — | `KeyE` (`KeyF` alias) enter vehicle, hold to plant/defuse bomb | `Mouse0` fire, Cursor aim, `Mouse2` look ahead, Wheel zoom | `KeyR` reload, `KeyG`/`Mouse1` equip, `KeyV` melee, `Digit1`–`Digit3` gun, `Digit4`–`Digit5` equip | — | `Tab` scores, `KeyT` pin scores/teams, `Digit1`–`Digit4` end vote, `KeyM` mute, `KeyB` sandbox bots, `Backquote` Lab | Unified bomb plant/defuse (`interactHeld`) and vehicle enter/exit on `KeyE` (`KeyF` alias); removed logical `e.key` matching (`r`/`g`/`v`/`f`/`t`/`m`/`b`); layout-aware HUD prompts |
 | **Blackout (Driving)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | — | `ShiftLeft` / `ShiftRight` handbrake | `KeyE` (`KeyF` alias) exit vehicle | Passengers shoot (`Mouse0`) and look (`Mouse2`) | — | `KeyC` cycle seat, `KeyH` horn | `Tab` scores, `KeyT` teams, `KeyM` mute, `Backquote` Lab | Prompt updated to `keyLabel("KeyE")` / `keyLabel("KeyC")` / `keyLabel("KeyH")` |
 | **Blackout (Wizards)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` | — | `KeyE` (`KeyF` alias) | `Mouse0` cast spell at cursor, `Mouse2` look ahead | `Digit1`/`Digit2` or Wheel select spell, `KeyV` staff bonk | — | `Tab` scores, `KeyT` teams, `KeyM` mute, `Backquote` Lab | Removed `spellMode` `KeyE` movement workaround now that `KeyD` and `KeyE` are bound by physical `e.code` |

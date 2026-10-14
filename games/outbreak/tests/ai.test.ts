@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
 import { BARRICADE_DURATION, PISTOL_RELOAD_TIME, SEARCH_DURATION } from "../shared/combat"
+import { ITEM_CATALOG } from "../shared/inventory"
 import { LocalSession } from "../shared/session"
 import { agentZombieProfile } from "../src/zombies"
 import { zombieTuning } from "../src/zombie-profile"
@@ -61,16 +62,21 @@ describe("Outbreak AI & survival combat integration", () => {
     expect(chaseProfile.footDrag).toBeLessThan(wanderProfile.footDrag)
   })
 
-  test("pistol firing consumes ammo, emits loud gunshot noise, staggers/kills zombie, and reloads with R", () => {
+  test("pistol firing consumes ammo, syncs with inventory ITEM_CATALOG, emits loud gunshot noise, staggers/kills zombie, and reloads with R", () => {
+    expect(ITEM_CATALOG.pistol.shortLabel).toBe("9MM")
+    expect(ITEM_CATALOG.ammo.stackable).toBe(true)
+
     const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
     const p = session.view.player
     Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0, magAmmo: 2, reserveAmmo: 6 })
     const target = session.ai.spawnZombie(session.view.town, 34, 44, "wander", Math.PI)
     const distant = session.ai.spawnZombie(session.view.town, 62, 44, "wander", Math.PI)
 
-    // Shot 1: hits and staggers target, emits gunshot noise that wakes distant zombie 32m away
+    // Shot 1: hits and staggers target, populates pistol & ammo in hotbar inventory, emits gunshot noise
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0)
     expect(p.magAmmo).toBe(1)
+    expect(session.view.inventory.slots.some((s) => s?.kind === "pistol")).toBe(true)
+    expect(session.view.inventory.slots.find((s) => s?.kind === "ammo")?.count).toBe(6)
     expect(target.hp).toBeLessThan(100)
     expect(target.state).toBe("stagger")
     expect(session.view.noises.some((n) => n.kind === "gunshot" && n.radius >= 50)).toBe(true)
