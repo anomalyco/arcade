@@ -663,6 +663,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
     // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
     // both leg reaches remain identical. The waist, shoulders and head lean together.
     pelvis = pitch(pelvis, -0.7 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
+    if (profile.torsoLean > 0) pelvis = pitch(pelvis, -0.35 * clamp(profile.torsoLean, 0, 0.35))
   }
 
   // Lean in the torso's own axes: travel lean and hit pushes come in plan space.
@@ -752,7 +753,18 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   let handL = handAt(clip?.left, false)
   let handR = handAt(clip?.right, true)
   const hands = enhanced ? profileHands(torso, profile) : null
-  if (hands && !clip) [handL, handR] = hands
+  if (hands && !clip) {
+    ;[handL, handR] = hands
+    if (profile.handPose === "reach" && moving > 0) {
+      const lurch = Math.sin(th) * 0.055 * moving
+      const claw = Math.cos(th) * 0.035 * moving
+      handL = [handL[0] + torso.x[0] * lurch, handL[1] + claw, handL[2] + torso.x[2] * lurch]
+      handR = [handR[0] - torso.x[0] * lurch * 0.7, handR[1] - claw * 0.8, handR[2] - torso.x[2] * lurch * 0.7]
+    } else if (profile.handPose === "staff" && moving > 0) {
+      const swing = Math.sin(th) * 0.05 * moving
+      handL = [handL[0] + torso.x[0] * swing, handL[1] + Math.abs(swing) * 0.25, handL[2] + torso.x[2] * swing]
+    }
+  }
   if (a.bare) {
     // Arms out ahead, clawing; a swing raises the right hand behind the shoulder and rakes it across.
     const bob = Math.sin(t * 5 + a.seed) * 0.03
@@ -785,7 +797,10 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   const headLean = fwd - (postureX * ca + postureY * sa)
   head = pitch(head, -0.1 - look * 1.1 - a.torsoKick.x * 0.6 - headLean * 0.3 + Math.sin(2 * th) * 0.03 * moving)
   head = roll(head, side * 0.5 - a.hitTwist.x * 0.5)
-  if (enhanced) head = roll(head, clamp(profile.headTilt, -0.3, 0.3))
+  if (enhanced) {
+    if (profile.torsoLean > 0) head = pitch(head, -0.22 * clamp(profile.torsoLean, 0, 0.35) + Math.sin(th) * 0.04 * moving * clamp(profile.footDrag, 0, 1))
+    head = roll(head, clamp(profile.headTilt, -0.3, 0.3))
+  }
 
   // Legs.
   const legs = enhanced ? poseLegs(a, pelvis) : null

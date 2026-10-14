@@ -1,6 +1,7 @@
 export const hubCommands = [
   { id: "games", label: "Games", href: "dev.html#games" },
   { id: "sandbox", label: "Sandbox", href: "lab.html" },
+  { id: "characters", label: "Characters", href: "characters.html" },
   { id: "catalogue", label: "Catalogue", href: "dev.html#catalogue" },
 ] as const
 export const hubGames = [
@@ -55,6 +56,7 @@ export function devRoute(url: string, mounted: readonly string[]): DevRoute {
   if (!match || !mounted.includes(match[1]!)) return { kind: "missing" }
   const game = match[1]!, rest = match[2]
   if (!rest) return { kind: "redirect", location: `/arcade/${game}/${search}` }
+  if (game !== "blackout" && rest === "/characters.html" && mounted.includes("blackout")) return { kind: "redirect", location: `/arcade/blackout/characters.html${search}` }
   if (/^\/(api\/|ws(\/|$))/.test(rest)) return { kind: "worker", game }
   return { kind: "vite", game, path: rest + search }
 }

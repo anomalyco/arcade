@@ -32,8 +32,14 @@ export function profileTorso(frame: Frame, profile: HumanProfile): Frame {
 /** Caller-owned action clips may replace these rest targets before IK. */
 export function profileHands(torso: Frame, profile: HumanProfile): [V3, V3] | null {
   const asymmetry = clamp(profile.armAsymmetry, -0.18, 0.18)
-  if (profile.handPose === "staff") return [at(torso, 0.16, 0.05, -0.25), at(torso, 0.32, 0.31, 0.32)]
-  if (profile.handPose === "reach") return [at(torso, clamp(profile.armReach, 0.2, 0.52), 0.33 + asymmetry, -0.17), at(torso, clamp(profile.armReach, 0.2, 0.52), 0.33 - asymmetry, 0.17)]
+  if (profile.handPose === "staff") return [at(torso, 0.22, 0.18, -0.24), at(torso, 0.30, 0.28, 0.28)]
+  if (profile.handPose === "reach") {
+    const reach = clamp(profile.armReach, 0.2, 0.52)
+    return [
+      at(torso, clamp(reach + asymmetry * 0.45, 0.2, 0.54), 0.35 + asymmetry, -0.15),
+      at(torso, clamp(reach - asymmetry * 0.55, 0.18, 0.52), 0.27 - asymmetry * 0.85, 0.20),
+    ]
+  }
   return null
 }
 
