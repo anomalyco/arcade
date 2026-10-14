@@ -133,21 +133,21 @@ function compileLevel(town: Town): LevelData {
   }
   // Segment streets at chunk edges to retain useful culling.
   for (let v = 0; v < SIZE; v += CHUNK) {
-    floor(at(44, v), 40, v, 48, v + CHUNK, .014, 0x34383b, 5)
+    floor(at(44, v), 40, v, 48, v + CHUNK, .014, 0x454d5c, 5)
     for(const [a,b] of [[0,40],[48,96]]) {
       const x0=Math.max(v,a!),x1=Math.min(v+CHUNK,b!)
-      if(x1>x0) floor(at(v,44),x0,40,x1,48,.014,0x34383b,5)
+      if(x1>x0) floor(at(v,44),x0,40,x1,48,.014,0x454d5c,5)
     }
   }
   for(let v=0;v<SIZE;v++) {
     if(v>=38 && v<50) continue
     for(const s of [38,48]) {
       const a=s===38?s:s+.25,b=s===38?s+1.75:s+2
-      floor(at(s,v),a,v,b,v+1,.1,0x8b8b7c,6)
-      floor(at(v,s),v,a,v+1,b,.1,0x8b8b7c,6)
+      floor(at(s,v),a,v,b,v+1,.1,0x989ba4,6)
+      floor(at(v,s),v,a,v+1,b,.1,0x989ba4,6)
       const edge=s===38?40:48, inner=s===38?39.75:48.25, m=at(s,v)
-      m.quadAuto([edge,.014,v],[edge,.014,v+1],[inner,.1,v+1],[inner,.1,v],hex(0x99988a),MAT.ground,2)
-      at(v,s).quadAuto([v,.014,edge],[v+1,.014,edge],[v+1,.1,inner],[v,.1,inner],hex(0x99988a),MAT.ground,2)
+      m.quadAuto([edge,.014,v],[edge,.014,v+1],[inner,.1,v+1],[inner,.1,v],hex(0xa4a7b0),MAT.ground,2)
+      at(v,s).quadAuto([v,.014,edge],[v+1,.014,edge],[v+1,.1,inner],[v,.1,inner],hex(0xa4a7b0),MAT.ground,2)
     }
   }
   for(const [x,z] of [[32,39.8],[48.1,31],[59,48.1],[39.8,63]]) {
@@ -162,9 +162,9 @@ function compileLevel(town: Town): LevelData {
   }
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
-    floor(m, x, z, r, end, .13, b.kind === "house" ? 0x886f54 : 0x89968b, b.kind === "house" ? 2 : 1)
-    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x7b786b, 3)
-    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x7e7a6d,3)
+    floor(m, x, z, r, end, .13, b.kind === "house" ? 0x765a3e : 0x89968b, b.kind === "house" ? 2 : 1)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0xa29d90, 6)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0xa6a194,6)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x646659,7)
     const gravel=new Rng(town.seed+id*177)
     for(let k=0;k<45;k++) {
@@ -190,23 +190,25 @@ function compileLevel(town: Town): LevelData {
     } else if (b.kind === "window") {
       m.box(x, .13, z, r, .85, end, color, MAT.wall,20)
       m.box(x, 2.15, z, r, 2.8, end, color, MAT.wall,20)
-      m.box(x-.08,.8,z-.08,r+.08,.88,end+.08,hex(0x96978b),MAT.wall)
-      m.box(x-.07,2.13,z-.07,r+.07,2.23,end+.07,hex(0x96978b),MAT.wall)
+      m.box(x-.08,.78,z-.06,r+.08,.87,end+.12,hex(0xd4cfc2),MAT.wall)
+      m.box(x-.07,2.13,z-.06,r+.07,2.23,end+.08,hex(0xd4cfc2),MAT.wall)
       const g = at(x, z, true)
       g.box(x + .025, .87, z + .025, r - .025, 2.14, end - .025, hex(0x809c9e), MAT.glass)
       const owner=town.buildings.findIndex(h=>x>=h.rect[0]-.01&&r<=h.rect[2]+.01&&z>=h.rect[1]&&end<=h.rect[3])
       const house=town.buildings[owner]!
       const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])
-      // A warm recessed curtain, behind the glass and frame, with open gaps for sight.
+      // Warm interior window glow flush with the outer sash and sill so it reads clearly from the top-down camera.
       if(r-x>1) {
-        m.box(x+.07,.89,z-.10,r-.07,2.11,z-.075,hex(0xb68c51),MAT.lamp,lamp)
-        for(const px of [x+.1,r-.45])for(let i=0;i<4;i++)m.box(px+i*.075,.9,z-.06,px+i*.075+.065,2.1,z-.015,hex(i%2?0x938462:0x786b50),MAT.lamp,lamp)
-        m.box(x+.1,1.44,z-.01,r-.1,1.49,end+.02,hex(0x89897a),MAT.wall)
-      }else for(const pz of [z+.1,end-.45])m.box(x+.07,.9,pz,x+.10,2.1,pz+.35,hex(0x938462),MAT.lamp,lamp)
+        m.box(x+.05,.88,z+.02,r-.05,1.46,end+.015,hex(0xf2a649),MAT.lamp,lamp)
+        m.box(x+.05,1.48,z+.02,r-.05,2.11,end+.005,hex(0xc98238),MAT.lamp,lamp)
+        m.box(x+.04,.872,end+.005,r-.04,.885,end+.11,hex(0xdba056),MAT.lamp,lamp)
+        for(const px of [x+.08,r-.38])for(let i=0;i<3;i++)m.box(px+i*.08,.89,z+.03,px+i*.08+.065,2.11,end+.02,hex(i%2?0xab783c:0x8f6230),MAT.lamp,lamp)
+        m.box(x+.06,1.44,z-.01,r-.06,1.50,end+.04,hex(0xd8d4c8),MAT.wall)
+      }else for(const pz of [z+.1,end-.45])m.box(x+.07,.9,pz,x+.10,2.1,pz+.35,hex(0xc98238),MAT.lamp,lamp)
       if (r - x > 1) {
-        for (const px of [x, (x + r) / 2, r - .06]) m.box(px, .85, z - .03, px + .06, 2.2, end + .03, hex(0x96978b), MAT.wall)
+        for (const px of [x, (x + r) / 2 - .03, r - .06]) m.box(px, .85, z - .03, px + .06, 2.2, end + .04, hex(0xd8d4c8), MAT.wall)
       } else {
-        for (const pz of [z, (z + end) / 2, end - .06]) m.box(x - .03, .85, pz, r + .03, 2.2, pz + .06, hex(0x96978b), MAT.wall)
+        for (const pz of [z, (z + end) / 2, end - .06]) m.box(x - .03, .85, pz, r + .03, 2.2, pz + .06, hex(0xd8d4c8), MAT.wall)
       }
     } else {
       const horizontal = r - x > end - z, length = horizontal ? r - x : end - z
@@ -223,10 +225,11 @@ function compileLevel(town: Town): LevelData {
     const m = at(p.x, p.y)
     if(p.kind!=="street") {
       if(p.kind==="room") {
+        if(p.h>2.3) continue
         if(p.h>2)m.prism(p.x,p.y,.012,.012,p.h,2.75,5,hex(0x4f5047))
         else m.prism(p.x,p.y,.027,.025,p.h<1.2?.65:.13,p.h-.15,6,hex(0x5a4b35))
-        m.prism(p.x,p.y,.23,.125,p.h-.13,p.h+.16,9,hex(0x9d7949),MAT.lamp,id)
-        m.prism(p.x,p.y,.19,.19,p.h-.14,p.h-.13,9,hex(0xd1ad6a),MAT.lamp,id)
+        m.prism(p.x,p.y,.23,.125,p.h-.13,p.h+.16,9,hex(0xe8b86b),MAT.lamp,id)
+        m.prism(p.x,p.y,.19,.19,p.h-.14,p.h-.13,9,hex(0xffdca0),MAT.lamp,id)
       } else {
         m.box(p.x-.1,p.h-.18,p.y-.08,p.x+.1,p.h+.18,p.y+.08,hex(0xffd49a),MAT.lamp,id)
         m.box(p.x-.15,p.h+.18,p.y-.12,p.x+.15,p.h+.24,p.y+.12,hex(0x343b38))

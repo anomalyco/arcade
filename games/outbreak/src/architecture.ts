@@ -71,15 +71,24 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
   const trim=rgb(0x96978b),roof=rgb(0x495260),brick=rgb(0x624b40)
   if(b.kind!=="house"){m.box(x-.15,2.8,z-.15,r+.15,2.94,e+.15,rgb(0x555a54),MAT.roof,id);return}
-  m.quadAuto([x-.42,2.88,e+.42],[r+.42,2.88,e+.42],[r+.42,ridge,mid],[x-.42,ridge,mid],roof,MAT.roof,id)
-  m.quadAuto([x-.42,ridge,mid],[r+.42,ridge,mid],[r+.42,2.88,z-.42],[x-.42,2.88,z-.42],roof,MAT.roof,id)
+  const slopeY = (pz: number) => 2.88 + (ridge - 2.88) * (1 - Math.abs(pz - mid) / (mid - (z - .42)))
+  const xCuts = [x - .42, x + .36, r - .36, r + .42]
+  for (const [z0, z1] of [[e + .42, e - .36], [e - .36, mid], [mid, z + .36], [z + .36, z - .42]] as const) {
+    const y0 = slopeY(z0), y1 = slopeY(z1)
+    for (let xi = 0; xi < 3; xi++) {
+      const x0 = xCuts[xi]!, x1 = xCuts[xi + 1]!
+      m.quadAuto([x0, y0, z0], [x1, y0, z0], [x1, y1, z1], [x0, y1, z1], roof, MAT.roof, id)
+    }
+  }
   for(const px of [x-.01,r+.01])m.facet([px,2.8,z],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
   m.box(x-.45,2.68,z-.42,r+.45,2.86,z-.31,trim,MAT.roof,id)
   m.box(x-.45,2.68,e+.31,r+.45,2.86,e+.42,trim,MAT.roof,id)
   // Dark soffit and half-round gutter read as a thin sheltered edge, not a white outline.
   m.box(x-.42,2.65,e+.03,r+.42,2.7,e+.4,rgb(0x555b55),MAT.roof,id)
   m.box(x-.48,2.74,e+.4,r+.48,2.80,e+.49,rgb(0x686f6b),MAT.roof,id)
-  m.box(x-.42,ridge-.04,mid-.1,r+.42,ridge+.04,mid+.1,roof,MAT.roof,id)
+  for (let xi = 0; xi < 3; xi++) {
+    m.box(xCuts[xi]!, ridge - .04, mid - .1, xCuts[xi + 1]!, ridge + .04, mid + .1, roof, MAT.roof, id)
+  }
   m.box(r-1.8,3.25,mid+1.1,r-1.15,4.7,mid+1.75,brick,MAT.brick)
   m.box(r-1.88,4.67,mid+1.02,r-1.07,4.78,mid+1.83,rgb(0x79796e))
   m.box(r-1.68,4.78,mid+1.22,r-1.27,4.79,mid+1.63,rgb(0x1e2427))

@@ -5,18 +5,21 @@ import { BUILDING_RECTS } from "../shared/map"
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
 export const shaders = {
   sprite: spriteShader(),
-  post: postShader(false,false,{chromatic:0,bloom:.045,grain:.002,vignette:.92,diagnostics:true,shadowLift:0,huePreserve:.35}),
+  post: postShader(false,false,{chromatic:0,bloom:.055,grain:.002,vignette:.90,diagnostics:true,shadowLift:0,huePreserve:.42}),
   scene: makeSceneShader({
-    ao: "0.35",
-    lightLeak: "0.004 * vis",
-    ambient: "ambientAt(n) * mix(0.25, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8))",
+    ao: "0.42",
+    lightLeak: "0.006 * vis",
+    lightAttenuation: `let dn = max(d3, 0.55);
+    var att = power * win * (0.08 + 3.4 / (1.0 + dn * dn * 0.45));`,
+    wallDirectScale: "mix(0.20, 0.34, smoothstep(0.0, 1.5, o.world.y))",
+    ambient: "ambientAt(n) * mix(0.09, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), vec3f(0.014, 0.009, 0.005), interior(o.world.xz) && o.world.y < 2.8)",
     diagnostics: "F.map.z",
     smoothShadows: true,
     shadowTaps: 5,
     lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
     material: surfaceMaterial + `
       if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
-        let s = evalPlasterWall(o.world, n, vec3f(.38, .34, .28), defaultMaterialRecipe(2));
+        let s = evalPlasterWall(o.world, n, vec3f(.34, .29, .23), defaultMaterialRecipe(2));
         albedo = s.albedo;
         gloss = s.gloss;
       }
@@ -51,7 +54,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
   return los * max(cone, near) * range;
 }`,
-    directional: "mix(vec3f(0.52, 0.68, 1.0), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g, 1.0, o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
+    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g * 0.35, 1.0, !interior(o.world.xz) || o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
     cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)))) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
@@ -63,19 +66,33 @@ fn eyeVisible(p: vec2f) -> f32 {
     surface: /* wgsl */ `
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, o.world.xz * F.map.xy, 0.0).r;
-  if(mat == 2) { col *= .38; }
-  if(mat == 4 && !interior(o.world.xz+n.xz*.3)) { col *= mix(1.0,.66,smoothstep(2.25,2.8,o.world.y)); }
+  if(mat == 2) { col *= .88; }
+  if(mat == 4 && !interior(o.world.xz+n.xz*.3)) { col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y)); }
+  if(mat == 20 && i32(round(o.aux)) == 1) {
+    // Cool moonlit sky sheen on asphalt road crown, strongest away from curb edges.
+    let crown = 1.0 - abs(clamp((o.world.z - 40.0) / 8.0, 0.0, 1.0) * 2.0 - 1.0) * 0.35;
+    col += vec3f(0.018, 0.026, 0.052) * F.ambient.w * crown * (0.88 + 0.24 * surfaceNoise(o.world.xz * 0.35));
+  }
+  if(mat == 20 && i32(round(o.aux)) == 2) {
+    // Cool moonlit fill on concrete sidewalks and curbs.
+    col += vec3f(0.012, 0.018, 0.036) * F.ambient.w;
+  }
+  if(mat == 21) {
+    // Subtle cool twilight sky sheen on upper roof shingle slopes; eaves stay shadowed.
+    let eave = smoothstep(2.88, 3.55, o.world.y);
+    col = col * mix(0.62, 1.08, eave) + vec3f(0.005, 0.010, 0.022) * F.ambient.w * eave * max(0.0, n.y);
+  }
   // Scenery and illumination are not an enemy-visibility mask. Exterior form remains readable.
   // Dynamic entities use the authoritative CPU Vision before submitting a draw (the local survivor is exempt).
   if (mat != 12 && mat != 21 && mat != 2) {
     let luminance=dot(col,vec3f(.2126,.7152,.0722));
-    let peripheral=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.55);
+    let peripheral=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.72);
     if (interior(o.world.xz) && o.world.y < 2.8) {
       // Room discovery is deliberately coarser than actor LOS. No view-cone-shaped blackout.
-      let room=mix(vec3f(luminance)*vec3f(.90,.96,1.0),col,.86+.14*visible);
+      let room=mix(vec3f(luminance)*vec3f(.90,.96,1.0),col,.88+.12*visible);
       col=mix(o.color*.008, room * mix(F.effects.w, 1.0, .82), explored);
     } else {
-      col=mix(peripheral*(.72+.18*explored),col,.7+.3*visible);
+      col=mix(peripheral*(.86+.14*explored),col,.86+.14*visible);
     }
   }
 `,
