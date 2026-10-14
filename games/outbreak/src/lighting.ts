@@ -359,7 +359,8 @@ export function resolveLampLight(
   }
 
   const r = lamp.radius * rScale * invTight
-  const power = master * lamp.power * s.roomPower * pScale
+  // Secondary room accent pools are baked into bounceTex + analytical room bounce; only the shadow-casting primary lamp runs in lightSum
+  const power = master * lamp.power * s.roomPower * (castShadows || !inInteriorView ? pScale : 0)
   return {
     lx,
     lh,
@@ -749,18 +750,14 @@ fn evalAreaFloorBounce(world: vec3f, n: vec3f) -> vec3f {
 }
 
 /**
- * Blog Game Tip #9: Power-4 Triplanar Nyquist-Filtered Grain & Wear on MAT.timber (24) & MAT.lit (0) Props/Cars.
+ * Blog Game Tip #9: Fast Triplanar Nyquist-Filtered Grain & Wear on MAT.timber (24) & MAT.lit (0) Props/Cars.
  */
 fn evalTriplanarPropMod(world: vec3f, n: vec3f) -> f32 {
-  let an = pow(abs(n), vec3f(4.0));
-  let w = an / max(an.x + an.y + an.z, 1e-4);
-  let freq = 14.0;
-  let fade = exp(-clamp(surfaceFootprint * freq * 1.4, 0.0, 4.0));
-  let gx = surfaceNoise(world.zy * vec2f(freq, freq * 0.35));
-  let gy = surfaceNoise(world.xz * vec2f(freq * 0.6, freq));
-  let gz = surfaceNoise(world.xy * vec2f(freq, freq * 0.35));
-  let fibre = (gx * w.x + gy * w.y + gz * w.z - 0.5) * fade;
-  return 1.0 + fibre * 0.22;
+  let freq = 11.0;
+  let fade = 1.0 - smoothstep(0.08, 0.45, surfaceFootprint * freq * 0.1);
+  let uv = vec2f(world.x + world.z * 0.85, world.y * 1.6 + world.z * 0.35);
+  let fibre = (surfaceNoise(uv * freq) - 0.5) * fade;
+  return 1.0 + fibre * 0.20;
 }
 
 /**
@@ -772,8 +769,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let isInView = OL.u5.w > 0.5;
   let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.22, mat == 22 && world.y > 0.85);
-  let grit = 0.72 + 0.56 * surfaceNoise(world.xz * 6.5 + vec2f(1.9, 4.3));
-  let texAlbedo = (surfCol * 1.45 + baseColor * 0.22 * grit);
+  let texAlbedo = (surfCol * 1.48 + baseColor * 0.21);
 
   if (!inRoom) {
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + tight bulb halation
@@ -811,52 +807,37 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       col += texAlbedo * vec3f(1.0, 0.48, 0.11) * pPool * 1.15 * (0.4 + 0.6 * w);
     }
   } else if (world.y < 2.72) {
-    // Interior indirect room bounce & wall-wash halos
+    // Interior indirect room bounce & wall-wash halos (partitioned by quadrant so only 1 exp() runs per interior pixel)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
       let warmTungsten = vec3f(1.0, 0.42, 0.07);
-      let vNW = (world.xz - vec2f(25.1, 25.4)) * vec2f(0.66, 0.74);
-      let dNW2 = dot(vNW, vNW);
-      if (dNW2 < 18.0) {
-        let nwPool = exp(-dNW2 / 4.8);
-        let wallBoost = select(0.55, 1.35, abs(n.y) < 0.45 && world.z < 26.8);
-        col += (surfCol * 1.45 + vec3f(0.011, 0.0042, 0.0006)) * warmTungsten * nwPool * wallBoost * roomScale;
-      }
-
-      let vNE = (world.xz - vec2f(29.0, 26.2)) * vec2f(0.70, 0.76);
-      let dNE2 = dot(vNE, vNE);
-      if (dNE2 < 15.0) {
-        let nePool = exp(-dNE2 / 4.4);
-        let wallBoost = select(0.48, 1.05, abs(n.y) < 0.45 && world.z < 26.2);
-        col += (surfCol * 1.15 + vec3f(0.0055, 0.0022, 0.0003)) * warmTungsten * nePool * wallBoost * roomScale;
-      }
-
-      let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.66, 0.76);
-      let dSink2 = dot(vSink, vSink);
-      if (dSink2 < 20.0) {
-        let sinkPool = exp(-dSink2 / 4.8);
-        let sinkWinBoost = select(0.55, 1.45, abs(n.y) < 0.45 && world.z < 30.4 && world.y > 0.85);
-        col += (surfCol * 1.35 + vec3f(0.010, 0.0040, 0.0006)) * warmTungsten * sinkPool * sinkWinBoost * roomScale;
-      }
-      let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.60, 0.64);
-      let dDin2 = dot(vDin, vDin);
-      if (dDin2 < 20.0) {
-        let dinPool = exp(-dDin2 / 5.2);
-        col += (surfCol * 1.25 + vec3f(0.008, 0.0032, 0.0005)) * warmTungsten * dinPool * roomScale;
-      }
-
-      let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.64, 0.64);
-      let dSW2 = dot(vSW, vSW);
-      if (dSW2 < 16.0) {
-        let swPool = exp(-dSW2 / 4.5);
-        col += (surfCol * 0.95 + vec3f(0.0048, 0.0019, 0.0003)) * warmTungsten * swPool * roomScale;
-      }
-
-      let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.66, 0.56);
-      let dHall2 = dot(vHall, vHall);
-      if (dHall2 < 16.0) {
-        let hallPool = exp(-dHall2 / 4.8);
-        col += (surfCol * 1.25 + vec3f(0.0072, 0.0028, 0.0005)) * warmTungsten * hallPool * roomScale;
+      let roomAlbedo = surfCol * 1.35 + baseColor * 0.18;
+      if (world.z < 29.6) {
+        if (world.x < 27.2) {
+          let vNW = (world.xz - vec2f(25.1, 25.4)) * vec2f(0.66, 0.74);
+          let nwPool = exp(-dot(vNW, vNW) / 4.8);
+          let wallBoost = select(0.55, 1.35, abs(n.y) < 0.45 && world.z < 26.8);
+          col += (surfCol * 1.35 + vec3f(0.011, 0.0042, 0.0006)) * warmTungsten * nwPool * wallBoost * roomScale;
+        } else {
+          let vNE = (world.xz - vec2f(29.0, 26.2)) * vec2f(0.70, 0.76);
+          let nePool = exp(-dot(vNE, vNE) / 4.8);
+          let wallBoost = select(0.62, 1.25, abs(n.y) < 0.45 && world.z < 26.2);
+          col += (roomAlbedo * 1.15 + vec3f(0.012, 0.0048, 0.0008)) * warmTungsten * nePool * wallBoost * roomScale;
+        }
+      } else if (world.x > 30.6) {
+        let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.66, 0.76);
+        let sinkPool = exp(-dot(vSink, vSink) / 5.2) * select(0.75, 1.65, abs(n.y) < 0.45 && world.z < 30.4 && world.y > 0.85);
+        let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.58, 0.62);
+        let dinPool = exp(-dot(vDin, vDin) / 5.8);
+        col += (roomAlbedo * 1.68 + vec3f(0.022, 0.0088, 0.0014)) * warmTungsten * (sinkPool + dinPool) * roomScale;
+      } else if (world.x < 27.0) {
+        let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.62, 0.62);
+        let swPool = exp(-dot(vSW, vSW) / 5.2);
+        col += (roomAlbedo * 1.28 + vec3f(0.014, 0.0056, 0.0009)) * warmTungsten * swPool * roomScale;
+      } else {
+        let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.66, 0.56);
+        let hallPool = exp(-dot(vHall, vHall) / 5.0);
+        col += (roomAlbedo * 1.22 + vec3f(0.010, 0.0040, 0.0007)) * warmTungsten * hallPool * roomScale;
       }
     }
   }

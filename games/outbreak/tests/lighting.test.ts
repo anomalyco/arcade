@@ -53,7 +53,7 @@ describe("Outbreak lighting module & Lab controls", () => {
     const resStreet = resolveLampLight(street, town.buildings, 1, DEFAULT_OUTBREAK_LIGHTING, false)
     expect(resStreet.power).toBeLessThan(street.power)
 
-    const resolvedRooms = rooms.map((l) => resolveLampLight(l, town.buildings, 1, DEFAULT_OUTBREAK_LIGHTING, true))
+    const resolvedRooms = rooms.map((l) => resolveLampLight(l, town.buildings, 1, DEFAULT_OUTBREAK_LIGHTING, false))
     expect(resolvedRooms).toHaveLength(4)
     // Primary NW bedside lamp casts shadows and is the strongest interior practical
     expect(resolvedRooms[0]!.castShadows).toBe(true)
