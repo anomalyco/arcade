@@ -214,6 +214,7 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       }
     }
+    col += evalFlashlightBeam(o.world, n, o.color, inRoom);
   }
 `,
 }

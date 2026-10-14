@@ -793,9 +793,9 @@ async function main() {
       const inBld = town.buildings.some(
         (b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1,
       )
-      const beamAim = isNorthRest ? (inBld ? 2.04 : 2.03) : p.aim
-      const fx = p.x + (isNorthRest ? -0.16 : Math.cos(beamAim) * 0.25)
-      const fy = p.y + (isNorthRest ? 0.10 : Math.sin(beamAim) * 0.25)
+      const beamAim = isNorthRest ? (inBld ? 1.84 : 1.91) : p.aim
+      const fx = p.x + (isNorthRest ? (inBld ? -0.10 : -0.24) : Math.cos(beamAim) * 0.25)
+      const fy = p.y + (isNorthRest ? (inBld ? 0.16 : 0.24) : Math.sin(beamAim) * 0.25)
       const fh = 1.18 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
       const power = p.flashlightOutput * settings.flashlightIntensity
