@@ -786,7 +786,8 @@ fn evalWindowAreaAttenuation(dv: vec2f, d3: f32, tight: f32) -> f32 {
   let penumbra = 0.18 + max(0.0, dv.y) * 0.28;
   let rx = 1.0 - smoothstep(halfW - 0.12, halfW + penumbra, abs(dv.x));
   let ry = smoothstep(-0.25, 0.18, dv.y) * (1.0 - smoothstep(0.55, reachY, dv.y));
-  let mullionDip = 1.0 - 0.16 * exp(-pow(dv.x / 0.12, 2.0)) * (1.0 - smoothstep(0.1, 1.4, dv.y));
+  let mullionW = 0.12 + max(0.0, dv.y) * 0.05 * OL.u8.y;
+  let mullionDip = 1.0 - (0.16 + 0.22 * OL.u8.y) * exp(-pow(dv.x / mullionW, 2.0)) * (1.0 - smoothstep(0.1, 1.4 + 0.8 * OL.u8.y, dv.y));
   let solidAngle = 2.35 / (1.0 + d3 * d3 * 0.56 * tight);
   return rx * ry * mullionDip * solidAngle;
 }
@@ -1010,5 +1011,60 @@ fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
     out += vec3f(1.0, 0.5, 0.14) * (veil * 0.07 + bulbs * 3.0) * porch;
   }
   return out * nightLamps;
+}
+
+/**
+ * Interior-parallax window glass: the view ray enters a virtual lit room behind the pane (back wall, side walls, floor,
+ * ceiling), with a furniture silhouette plane, parted drapes and a valance just inside the glass, and a grazing sky
+ * reflection. Vertical parallax is compressed so the steep gameplay camera still reads the back wall and drapes.
+ * u is the pane coordinate along cross(up, n), width the pane width in metres.
+ */
+fn evalWindowInterior(world: vec3f, n: vec3f, V: vec3f, u: f32, width: f32, lamps: f32) -> vec3f {
+  let T = normalize(cross(vec3f(0.0, 1.0, 0.0), n));
+  let paneH = 1.28;
+  let p0 = vec2f(u * width, world.y - 0.86);
+  let d = vec3f(-dot(V, T), -V.y * 0.38, max(dot(V, n), 0.08));
+  let origin = world - T * (u * width);
+  let seed = hash2(floor(origin.xz * 3.0) + vec2f(0.37, 0.71));
+  let depth = 1.15;
+  let side = 0.32;
+  let floorY = -0.86;
+  let ceilY = 1.92;
+  let tBack = depth / d.z;
+  let tSide = select((-side - p0.x) / min(d.x, -1e-4), (width + side - p0.x) / max(d.x, 1e-4), d.x > 0.0);
+  let tVert = select((floorY - p0.y) / min(d.y, -1e-4), (ceilY - p0.y) / max(d.y, 1e-4), d.y > 0.0);
+  let tHit = min(tBack, min(tSide, tVert));
+  let hit = vec3f(p0 + d.xy * tHit, d.z * tHit);
+  let lampXY = vec2f(width * mix(0.22, 0.78, seed), 0.18);
+  var wall = vec3f(1.0, 0.36, 0.055) * (0.94 + 0.06 * sin(hit.x * 42.0 + seed * 6.0));
+  var shade = 1.0;
+  if (tHit == tSide) {
+    shade = 0.62;
+  } else if (tHit == tVert) {
+    wall = select(vec3f(0.42, 0.15, 0.03), vec3f(0.72, 0.30, 0.06), d.y > 0.0);
+    shade = select(0.55, 0.45, d.y > 0.0);
+  }
+  let toLamp = (hit.xy - lampXY) * vec2f(1.0, 1.35);
+  let glow = exp(-dot(toLamp, toLamp) / 0.42) + 0.28 * exp(-hit.z * 0.9);
+  var room = wall * shade * (0.30 + 0.95 * glow);
+  // Furniture silhouette (sofa or chair back) on a mid-room plane.
+  let tF = 0.55 / d.z;
+  if (tF < tHit) {
+    let f = p0 + d.xy * tF;
+    let back = -0.30 + 0.07 * cos(f.x * 5.5 + seed * 9.0) + 0.05 * step(0.5, fract(f.x * 0.9 + seed));
+    room = mix(room, vec3f(0.10, 0.05, 0.02), step(f.y, back) * 0.85);
+  }
+  // Parted drapes and a valance just behind the glass.
+  let c = p0 + d.xy * (0.06 / d.z);
+  let drapeW = width * (0.17 + 0.07 * clamp(c.y / paneH, 0.0, 1.0)) * (0.85 + 0.3 * seed);
+  let edge = min(c.x, width - c.x);
+  let drape = 1.0 - smoothstep(drapeW - 0.03, drapeW + 0.03, edge);
+  let valance = smoothstep(paneH - 0.17, paneH - 0.13, c.y);
+  let fold = 0.62 + 0.38 * sin(c.x * 34.0 + c.y * 0.8);
+  let fabric = mix(vec3f(0.70, 0.20, 0.03), vec3f(0.90, 0.40, 0.07), seed) * fold * (0.55 + 0.35 * glow);
+  room = mix(room, fabric, clamp(drape * 0.92 + valance * 0.85, 0.0, 0.95));
+  let fresnel = 0.04 + 0.5 * pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 4.0);
+  let sky = vec3f(0.035, 0.042, 0.06) * (0.5 + F.ambient.w);
+  return room * OL.u1.y * lamps * 1.1 * (1.0 - fresnel) + sky * fresnel;
 }
 `
