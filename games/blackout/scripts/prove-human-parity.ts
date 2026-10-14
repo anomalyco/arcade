@@ -14,7 +14,7 @@ const EXPECTED_HASHES = {
   // stagger and 3-step phase-wrap bob beat), smooth Williams Contact->Down->Passing->Up COM curve without
   // discontinuous touchdown dip impulse, terminal-stance heel-off roll + dorsiflexed heel-strike preparation
   // with near-zero contact foot velocity, and phase-compensated opposing arm swing.
-  new: "17bb751b28e85ae0296821526dbab0c9e938a91865953d9378824b388f72e388",
+  new: "756db0b50d8755b4941daa5d490e3ea669682932408842e857b86b3ecd7914ff",
 } as const
 
 type Api = {

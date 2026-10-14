@@ -15,15 +15,15 @@ export function poseArms(torso: Frame, left: V3, right: V3): Pick<HumanBody, "ua
     fa: [limb(eL, hL, [0, 1, 0], torso.x), limb(eR, hR, [0, 1, 0], torso.x)] }
 }
 
-/** Two-stage spring-driven unarmed hand targets with natural sagittal pendulum arc and runner's elbow bend. */
+/** Two-stage spring-driven unarmed hand targets: relaxed pendulum at walk, compact bent-elbow pump at run. */
 export function unarmedHands(a: Locomotion, torso: Frame, breathPhase = 0): [V3, V3] {
   const m = a.motion, run = m.run * a.gait
   const hand = (i: 0 | 1): V3 => {
     const side = i === 0 ? -1 : 1
     const sw = m.arms[i]!.x, hw = m.hands[i]!.x
-    const fwd = 0.05 + (hw >= 0 ? hw * 1.15 : hw * 0.92) + 0.07 * run
-    const up = -0.09 + (sw >= 0 ? sw * (0.38 + 0.28 * run) : -sw * 0.12) + 0.05 * run - side * 0.012 * Math.sin(breathPhase)
-    const inward = Math.max(0, sw) * (0.12 + 0.10 * run)
+    const fwd = 0.01 + 0.05 * run + (hw >= 0 ? hw * (0.95 + 0.20 * run) : hw * (0.85 + 0.07 * run))
+    const up = -0.125 + 0.08 * run + (sw >= 0 ? sw * (0.14 + 0.52 * run) : Math.abs(sw) * (0.04 + 0.08 * run)) - side * 0.008 * Math.sin(breathPhase)
+    const inward = Math.max(0, sw) * (0.05 + 0.16 * run)
     return at(torso, fwd, up, side * (0.23 - inward))
   }
   return [hand(0), hand(1)]

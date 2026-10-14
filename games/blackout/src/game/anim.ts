@@ -701,7 +701,10 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
-  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? 0.08 + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const baseFwd = a.unarmed ? 0.045 + 0.025 * m.run : 0.035 + 0.045 * m.run
+  const steadyBase = a.unarmed ? baseFwd : 0.075 + 0.005 * m.run
+  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? baseFwd + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const steadyFwd = (a.bare ? 0.2 : 0) + steadyBase + leanFwd - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * (enhanced ? 1 : 2.2) + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
   torso = roll(torso, side * Math.cos(tb) + (enhanced ? (m.bank?.x ?? 0) : 0) - fwd * Math.sin(tb) * (enhanced ? 0.85 : 0.4))
@@ -755,8 +758,8 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
      const steadyYaw = (sw?.twist ?? 0) + a.aim + run + (a.bare || a.unarmed || profile.handPose !== "weapon" ? 0 : BLADE[g]) * (1 - 0.4 * port) + a.hitTwist.x + a.recYaw.x * 0.4
      const steadyTb = steadyYaw - a.aim
      let steadyTorso = yawFrame(at(steadyPelvis, 0, RIG.waist, 0), steadyYaw)
-     steadyTorso = pitch(steadyTorso, -(fwd * Math.cos(steadyTb) + leanSide * Math.sin(steadyTb)))
-     steadyTorso = roll(steadyTorso, leanSide * Math.cos(steadyTb) - fwd * Math.sin(steadyTb) * 0.85)
+     steadyTorso = pitch(steadyTorso, -(steadyFwd * Math.cos(steadyTb) + leanSide * Math.sin(steadyTb)))
+     steadyTorso = roll(steadyTorso, leanSide * Math.cos(steadyTb) - steadyFwd * Math.sin(steadyTb) * 0.85)
      steadyTorso = profileTorso(steadyTorso, profile)
      const gunShoulder = at(steadyTorso, 0, RIG.shoulderY, 0)
      const postureFwd = Math.max(0, postureX * ca + postureY * sa)
@@ -839,7 +842,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + a.hitTwist.x)
   const stab = enhanced ? clamp(profile.headStability ?? 0.8, 0, 1) : 0
   const headLean = fwd - (postureX * ca + postureY * sa) * stab
-  const baseHeadPitch = enhanced ? -0.1 * (1 - 0.35 * stab) : -0.1
+  const baseHeadPitch = enhanced ? (a.unarmed ? -0.015 - 0.045 * m.run : -0.04 - 0.06 * m.run) * (1 - 0.35 * stab) : -0.1
   head = pitch(head, baseHeadPitch - look * 1.1 - a.torsoKick.x * 0.6 - headLean * (0.3 * (1 - 0.55 * stab)) + Math.sin(2 * th) * 0.03 * (1 - 0.7 * stab) * moving)
   head = roll(head, side * 0.5 * (1 - 0.5 * stab) - a.hitTwist.x * 0.5)
   if (enhanced) {

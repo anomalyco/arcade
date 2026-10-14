@@ -8,6 +8,7 @@ export type Locomotion = {
   x: number; y: number; vx: number; vy: number; aim: number
   svx: number; svy: number; acx: number; acy: number
   legYaw: number; gait: number; duty: number; phase: number; back: boolean; turning: boolean
+  unarmed?: boolean
   feet: [Foot, Foot]; motion: ReturnType<typeof newMotion>
   leanX: Spring; leanY: Spring; dip: Spring; hitX: Spring; hitY: Spring
   body?: { gun?: { p: V3 } | null } | null
@@ -319,7 +320,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const armLeadRad = 0.22 + 1.06 * curGait.run
   const phaseArm = -Math.cos(TAU * a.phase + armLeadRad) * a.gait
   const armSignal = moving ? footNorm * 0.25 + phaseArm * 0.75 : footNorm
-  const armAmp = (0.28 + 0.12 * curGait.run) * armScale * a.gait
+  const armAmp = (0.16 + 0.22 * curGait.run) * armScale * a.gait
   const armK = stiffness(Math.max(6.5, animation.chestHz * 1.6))
   const handK = stiffness(Math.max(5.5, animation.chestHz * 1.3))
   for (let i = 0; i < 2; i++) {
@@ -357,13 +358,18 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const bankScale = clamp(animation.turnBank ?? 1, 0, 2)
   stepSpring(m.bank, k, 0.9, dt, clamp(latAccel * 0.008 * bankScale * a.gait, -0.18, 0.18))
   // Keep PR #9's running attitude separate from root acceleration and contact timing.
+  // Unarmed civilians run with an upright athletic lean rather than the soldier's deep rifle crouch-run.
+  const postureScale = a.unarmed ? 0.32 : 1
+  const crouchScale = a.unarmed ? 0.25 : 1
   const speedRamp = curGait.run * a.gait * (0.65 + 0.35 * smooth((speed - 1.8) / 2.4) + 0.244 * smooth((speed - 4.2) / 2.1))
-  const posture = clamp(animation.runPosture, 0, 0.45) * speedRamp * smooth(forward)
-  const crouch = clamp(animation.crouchDepth ?? 0, 0, 0.16) * speedRamp * (0.35 + 0.65 * smooth(forward))
+  const posture = clamp(animation.runPosture, 0, 0.45) * postureScale * speedRamp * smooth(forward)
+  const crouch = clamp(animation.crouchDepth ?? 0, 0, 0.16) * crouchScale * speedRamp * (0.35 + 0.65 * smooth(forward))
   stepSpring(m.posture, k, 1, dt, posture)
   stepSpring(m.crouch, k, 1, dt, crouch)
   const backScale = forward < 0 ? 0.35 + 0.65 * (1 - smooth(-forward)) : 1
-  const lean = (v: number, accel: number) => clamp((v * 0.025 * backScale + accel * 0.007) * animation.leanScale, -0.24, 0.24)
+  const walkLeanRamp = a.unarmed ? 0.22 + 0.78 * smooth((speed - 1.65) / 1.75) : 1
+  const unarmedLeanScale = a.unarmed ? 0.62 : 1
+  const lean = (v: number, accel: number) => clamp((v * 0.025 * backScale * walkLeanRamp + accel * 0.007) * animation.leanScale * unarmedLeanScale, -0.24, 0.24)
   stepSpring(a.leanX, stiffness(2.5), 1, dt, lean(a.svx, a.acx))
   stepSpring(a.leanY, stiffness(2.5), 1, dt, lean(a.svy, a.acy))
   stepSpring(a.dip, k, 0.8, dt, -Math.min(0.035, Math.hypot(a.acx, a.acy) * 0.002))
@@ -388,7 +394,9 @@ export function plantedFoot(a: Avatar, i: number) {
 /** Head is the lean pivot; hips move underneath rather than throwing the head forward. */
 export function pelvisPoint(a: Avatar): V3 {
   const m = a.motion, c = Math.cos(m.pelvis.x), s = Math.sin(m.pelvis.x)
+  const walkDrop = a.unarmed ? 0.014 : 0.04
+  const runDrop = a.unarmed ? 0.026 : 0.02
   return [a.x - a.leanX.x * 0.22 - s * m.sway.x + a.hitX.x * 0.5,
-    HIP - (0.04 + m.run * 0.02) * a.gait - m.crouch.x + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
+    HIP - (walkDrop + m.run * runDrop) * a.gait - m.crouch.x + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
     a.y - a.leanY.x * 0.22 + c * m.sway.x + a.hitY.x * 0.5]
 }
