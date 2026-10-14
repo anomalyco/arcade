@@ -86,6 +86,7 @@ const settings = {
   ...DEFAULT_GROUND_SETTINGS,
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
+  infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
 
 async function main() {
@@ -234,6 +235,15 @@ async function main() {
     },
     { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: 0.05 },
     { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
+    {
+      key: "infiniteAmmo",
+      label: "Infinite ammo",
+      group: "Combat",
+      options: [
+        { label: "Off", value: 0 },
+        { label: "On", value: 1 },
+      ],
+    },
     { key: "cone", label: "Vision cone", group: "Vision", min: 60, max: 180, step: 1 },
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
