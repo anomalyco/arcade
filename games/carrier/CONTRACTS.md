@@ -439,9 +439,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   one step full thrust, the burner and the stroke: `STROKE` 285 m (87% of the runway) on `CENTERLINE_X` to the bow in
   `VEHICLES[kind].strokeTime` (Hornet 4.2 s, ~141 m/s; `catapult(kind)` derives the acceleration), glued to the hull
   pose every step; leaves with the ship's plan velocity plus the launch speed, nose up.
-- `shared/landing.ts`: `landTarget(plane, airborne, ships, team, hulls, t, vehicle)` is the "F LAND" prompt (the
-  nearest friendly carrier with an open deck within `LANDING.range` 2 km, under `ceiling`, above stall, `cooldown` 5 s
-  after launch); `startLanding` / `landingStep` fly a scripted landing in the carrier's ship-local frame (curves to a
+- `shared/landing.ts`: `landTarget(plane, airborne, ship, hull, t, vehicle)` is the "F LAND" prompt (your own
+  carrier only, its deck open, within `LANDING.range` 1.2 km, under `ceiling` 600 m, the nose within `look` 30° of the
+  line to it, above stall, `cooldown` 5 s after launch); `startLanding` / `landingStep` fly a scripted landing in the carrier's ship-local frame (curves to a
   join point behind the stern, a 3.5° glideslope, the trap, a hold) that always ends on the deck (`LANDING.timeout`
   hard stop) and reports done exactly once. Input is ignored meanwhile; F is flares whenever the prompt is not up.
 - `src/flight/seam.ts` (`FlightModule`) is the game's `FlightSeam`: LAUNCH HORNET in SHIP OPERATIONS → the room gives
@@ -703,7 +703,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   event (shared/launch.ts hooks): parked, a quiet steady idle; at `launchStart` the engine surges from idle to full over
   ~0.7 s with the afterburner lighting 0.3 s in, and one live catapult voice (`jet-catapult.ts`: a strong shove, then a
   steam-and-shuttle rush whose low-pass and level follow `launch.progress`) runs the stroke; at `launchEnd` the rush lets
-  go over about a second; then engine and wind and a subtle gear retract. Remote launches play the same voice at their
+  go over about a second; then engine and wind. Remote launches play the same voice at their
   jet (progress from the relayed catapult z), distance-attenuated. Your own jet keeps a steady perspective: no Doppler,
   a fixed from-behind cone, no air absorption, no flyby or crack. The landing is one trap take (no tailhook, gear-down or
   capture chime). Interface: one very quiet tick per button click, nothing on hover or when panels open. A kill is one
@@ -741,7 +741,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   and panned with the jet, on top of the engine's own Doppler; head-on merges above 300 m/s get a procedural N-wave
   crack. Levels (offline, 0.5 s RMS): your Hornet in chase idle -38, military -33, afterburner -28 dBFS against a gun
   burst at -15 and medium weather at -21; a close pass peaks at -20, a distant one at -27.
-- **Where each recorded slot plays**: carrier ops (the trap, the gear retract). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
+- **Where each recorded slot plays**: carrier ops (the trap). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
   impacts (metal when we are hit); cockpit tones synthesized (sine seeker growl and
   lock, two-tone warning chimes) on the UI bus. Explosions (`jet-boom.ts`, `boomsFor().play(kind, dist, size)`): the
   scenario's take crossfading into `boom-far` from 400 m to 2.2 km, travel delay, heavy reverb and slapback, a water

@@ -71,7 +71,7 @@ export class MixerLab {
       <div class="row"><button data-act="samples">Recorded sounds on</button></div>
       <h2>Test</h2>
       <div class="row"><button data-test="flyby">Flyby</button><button data-test="flyby-ab">Burner pass</button><button data-test="boom">Crack</button></div>
-      <div class="row"><button data-test="catapult">Catapult</button><button data-test="trap">Trap</button><button data-test="gear-up">Gear</button><button data-test="crash">Crash</button></div>
+      <div class="row"><button data-test="catapult">Catapult</button><button data-test="trap">Trap</button><button data-test="crash">Crash</button></div>
       <h2>Explosions</h2>
       <div class="row">${BOOM_KINDS.map((k) => `<button data-boom="${k}">${k.replace("-", " ")}</button>`).join("")}</div>
       <div class="row"><button data-act="far">Far (2.5 km)</button></div>
@@ -125,7 +125,7 @@ export class MixerLab {
       if (t === "flyby-ab") jets.testFlyby(true)
       if (t === "boom") jets.sfx.boom(0.9, { at: { x: 20, y: 10, z: -30 } })
       if (t === "catapult") jets.testLaunch()
-      if (t === "trap" || t === "gear-up" || t === "crash") jets.testEvent(t)
+      if (t === "trap" || t === "crash") jets.testEvent(t)
       show()
     })
     show()

@@ -17,16 +17,17 @@
 import { CENTERLINE_X, DECK_Y, STERN_Z, BOW_Z } from "./carrier-spec"
 import { type Hull, deckOpen } from "./fleet"
 import { LAUNCH, type ShipLike, deckVelocity } from "./launch"
-import { type Plane, type Quat, type ShipPoseLike, type Vec3, planeSpeed, quatAxis, quatMul, quatSlerp, setPlaneQuat, shipQuat, shipToWorld } from "./plane"
+import { type Plane, type Quat, type ShipPoseLike, type Vec3, planeSpeed, quatAxis, quatMul, quatRotate, quatSlerp, setPlaneQuat, shipQuat, shipToWorld } from "./plane"
 
 const DEG = Math.PI / 180
 
 export const LANDING = {
-  // The "F LAND" prompt.
-  /** Plan distance from a friendly carrier's centre (m), height above its deck (m), and no prompt this long after a
-   *  launch (s). */
-  range: 2000,
-  ceiling: 1000,
+  // The "F LAND" prompt (your own carrier only).
+  /** Plan distance from its centre (m), height above its deck (m), how far off the nose it may be (rad), and no prompt
+   *  this long after a launch (s). */
+  range: 1200,
+  ceiling: 600,
+  look: 30 * DEG,
   cooldown: 5,
   // The sequence.
   /** Touchdown point (the Hornet's centre, ship-local z), glideslope, and the join point this far behind it (m). */
@@ -203,26 +204,22 @@ export function landingPose(l: Landing, ship: ShipPoseLike, out: Plane): Plane {
 /** A carrier the jet might land on: its pose, crew ship id and team. */
 export type LandingShip = ShipLike & { id: number; team: number }
 
+const nose: Vec3 = [0, 0, 0]
+
 /**
- * The carrier the "F LAND" prompt offers, or null: the nearest friendly one (`team`) with an open deck (no deck fire, not
- * sinking: `hulls`) within LANDING.range in plan, the jet below LANDING.ceiling above its deck, flying above stall, at
- * least LANDING.cooldown s after its launch (`airborne`).
+ * Whether the "F LAND" prompt offers `ship` (your own carrier): its deck open (no deck fire, not sinking: `hull`), within
+ * LANDING.range in plan, the jet below LANDING.ceiling above the deck and pointing at it (nose within LANDING.look of the
+ * line to the ship), flying above stall, at least LANDING.cooldown s after its launch (`airborne`).
  */
-export function landTarget<S extends LandingShip>(plane: Plane, airborne: number, ships: readonly S[], team: number, hulls: ReadonlyMap<number, Pick<Hull, "deckFire" | "sinkAt">> | null, t: number, vehicle: LandingVehicle): S | null {
-  if (plane.crashed || airborne < LANDING.cooldown) return null
+export function landTarget<S extends ShipLike>(plane: Plane, airborne: number, ship: S | undefined, hull: Pick<Hull, "deckFire" | "sinkAt"> | undefined, t: number, vehicle: LandingVehicle): S | null {
+  if (!ship || plane.crashed || airborne < LANDING.cooldown || !deckOpen(hull, t)) return null
   if (planeSpeed(plane) < vehicle.stallSpeed || plane.stall > 0.5) return null
-  let best: S | null = null
-  let bd = Infinity
-  for (const s of ships) {
-    if (s.team !== team || !deckOpen(hulls?.get(s.id), t)) continue
-    const d = Math.hypot(plane.x - s.x, plane.z - s.z)
-    if (d > LANDING.range || plane.y - (s.heave + DECK_Y) > LANDING.ceiling) continue
-    if (d < bd) {
-      bd = d
-      best = s
-    }
-  }
-  return best
+  const dx = ship.x - plane.x
+  const dy = ship.heave + DECK_Y - plane.y
+  const dz = ship.z - plane.z
+  if (Math.hypot(dx, dz) > LANDING.range || -dy > LANDING.ceiling) return null
+  quatRotate(plane.qx, plane.qy, plane.qz, plane.qw, 0, 0, 1, nose)
+  return (nose[0] * dx + nose[1] * dy + nose[2] * dz) / Math.hypot(dx, dy, dz) >= Math.cos(LANDING.look) ? ship : null
 }
 
 // ---- the sequence -------------------------------------------------------------------------------------------------------

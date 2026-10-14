@@ -241,9 +241,10 @@ export class FlightModule {
     if (!ctx || f.phase === "idle") return false
     const deck = ctx.deck()
     f.readInput(dt, paused)
-    // "F LAND": near a friendly carrier with an open deck, F lands (and drops no flares).
+    // "F LAND": close to your own carrier, pointing at it, deck open: F lands (and drops no flares).
     const me = this.crew && playerOf(this.crew, this.net.id)
-    const target = f.phase === "flying" && me ? landTarget(f.plane, f.airborne, this.drawnShips, me.team, this.hulls, this.seaT, landingVehicle(f.vehicle)) : null
+    const own = me ? this.drawnShips.find((s) => s.id === me.ship) : undefined
+    const target = f.phase === "flying" && me ? landTarget(f.plane, f.airborne, own, this.hulls?.get(me.ship), this.seaT, landingVehicle(f.vehicle)) : null
     f.landPrompt = !!target
     this.weaponInput.flaresBlocked = !!target
     if (target && !paused && this.input.land) f.land(target)
@@ -391,7 +392,7 @@ export class FlightModule {
       }
       w.setOwnModel(f.phase === "flying" || f.phase === "landing" ? m : null)
     } else w.setOwnModel(null)
-    this.audio.own(airborne ? f : null, this.pose)
+    this.audio.own(airborne ? f : null)
     // A crash breaks the jet up where it hit (once). A jet that was shot down already has its breakup and burning
     // wreck: no crash for it.
     const crashed = airborne && f.phase === "crashed" ? f.plane.crashed : ""
