@@ -6,3 +6,4 @@ dist
 .env*
 captures
 .arcade-control.json
+.arcade-tours/assets/

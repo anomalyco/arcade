@@ -1,0 +1,109 @@
+{
+  "id": "look-review",
+  "title": "Outbreak Look Review",
+  "singleTab": true,
+  "steps": [
+    {
+      "kind": "page",
+      "title": "Paint-Over Targets · Street & Open",
+      "body": "Side-by-side comparison of current Outbreak captures vs Noir and Dusk paint-over targets (0 WebGPU cost).",
+      "url": "/arcade/getaway/dev.html#tour/look-review/1",
+      "setup": [],
+      "accent": "amber",
+      "markdown": "### Key Visual Findings\n- **#1 Value Structure (Darkness owns the frame)**: In the current captures (`street.png`, `open.png`), lawns, sidewalks, and yards are evenly lit. In the Noir and Dusk targets, darkness owns the frame outside the warm practical light pools and flashlight cone.\n- **#2 Ground & Curb Detail**: Current sidewalks and roads read as clean gridded slabs and flat asphalt. Targets break up edges with cracked wet asphalt, weeds over curb joints, gravel, and fallen leaves.",
+      "images": [
+        {
+          "src": "street.png",
+          "label": "Current · Street",
+          "caption": "Evenly lit lawn, sidewalk slabs, and flat road.",
+          "tag": "Current"
+        },
+        {
+          "src": "target-noir-street.png",
+          "label": "Target · Noir Street",
+          "caption": "Darkness owns the frame; high-contrast lamp pools and wet cracked asphalt.",
+          "tag": "Noir Target"
+        },
+        {
+          "src": "target-dusk-street.png",
+          "label": "Target · Dusk Street",
+          "caption": "Warm dusk bounce, broken curb joints, weeds, gravel, and fallen leaves.",
+          "tag": "Dusk Target"
+        },
+        {
+          "src": "open.png",
+          "label": "Current · Open House",
+          "caption": "Current cutaway interior and surrounding yard value balance.",
+          "tag": "Current"
+        },
+        {
+          "src": "target-noir-open.png",
+          "label": "Target · Noir Open House",
+          "caption": "Warm interior room pools contrasted against deep moonlit yard shadow.",
+          "tag": "Noir Target"
+        },
+        {
+          "src": "target-dusk-open.png",
+          "label": "Target · Dusk Open House",
+          "caption": "Rich wood/rug warmth inside with grounded foliage and dark exterior.",
+          "tag": "Dusk Target"
+        }
+      ]
+    },
+    {
+      "title": "Outbreak · Current street",
+      "body": "#1 weakness: everything is evenly lit. Lawns, sidewalks and yards all read; the targets are dark except the light pools.",
+      "url": "/arcade/outbreak/?seed=7",
+      "setup": [],
+      "accent": "cyan"
+    },
+    {
+      "title": "Vignette · Noir, game camera",
+      "body": "Same lot with the Noir preset. Compare value structure with the paint-over tab: darkness should own the frame.",
+      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "setup": [
+        {
+          "command": "vignette.preset",
+          "args": {
+            "direction": "noir"
+          }
+        },
+        {
+          "command": "vignette.camera",
+          "args": {
+            "preset": "game",
+            "cutaway": "cutaway"
+          }
+        }
+      ],
+      "target": {
+        "setting": "directionPreset"
+      },
+      "accent": "violet"
+    },
+    {
+      "title": "Vignette · Street close-up",
+      "body": "#2 weakness: the ground. Bright gridded slabs and a flat road vs dirty cracked asphalt, weeds over edges, gravel, leaves.",
+      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "setup": [
+        {
+          "command": "vignette.preset",
+          "args": {
+            "direction": "dusk"
+          }
+        },
+        {
+          "command": "vignette.camera",
+          "args": {
+            "preset": "street",
+            "cutaway": "cutaway"
+          }
+        }
+      ],
+      "target": {
+        "setting": "activeSurface"
+      },
+      "accent": "emerald"
+    }
+  ]
+}

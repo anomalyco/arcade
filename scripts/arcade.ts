@@ -14,12 +14,13 @@
 //   bun run arcade transport play|pause|step [frames]|speed <mult>|retrigger [--seed <n>]
 //   bun run arcade possess [id|name] | release
 //   bun run arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
-//   bun run arcade tour <file.json|name> | tour --json '[...]' [--single-tab] [--open pro|local|none] [--base-url <url>]
+//   bun run arcade tour <file.json|name> | tour --json '[...]' [--multi-tab] [--open pro|local|none] [--base-url <url>]
+//   bun run arcade tour --add-step <name|file> --title "<title>" [--kind page|scene] [--url <url>] [--body <text>] [--markdown <md>] [--images <files>]
 //   bun run arcade screenshot [--out <file.png>] [--max-size <px>|--downscale <px>|--full]
 //   bun run arcade state [--json]
 
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 import {
@@ -274,8 +275,9 @@ Mutating commands (show unobtrusive page indicator, respect live user input, rec
   arcade release                               Exit Play mode & release held input (mode.play)
   arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
                                                Pin a "Show me" card & optional highlight ring on the active page
-  arcade tour <file.json|name> [--single-tab] [--open pro|local|none] [--base-url <url>]
-  arcade tour --json '[...]'                   Open a multi-tab (or --single-tab) guided tour and persist in .arcade-tours/
+  arcade tour <file.json|name> [--multi-tab] [--open pro|local|none] [--base-url <url>]
+  arcade tour --json '[...]'                   Open a single-tab studio tour (or --multi-tab) and persist in .arcade-tours/
+  arcade tour --add-step <tour> --title "<t>"  Append a scene or page step to a tour in .arcade-tours/
   arcade run <command> [json-args] [--seed <n>] Run any command ID from 'arcade cmd list'
 
 Global options:
@@ -835,17 +837,29 @@ async function main() {
         return
       }
 
-      let singleTab = false
+      let singleTabOverride: boolean | undefined
       let openMode: string | undefined
       let baseUrl: string | undefined
       let tourIdOverride: string | undefined
       let inlineJson = flags.inlineJson
       let sourceArg: string | undefined
+      let addStepMode = false
+      let stepTitle: string | undefined
+      let stepBody: string | undefined
+      let stepKind: "scene" | "page" | undefined
+      let stepUrl: string | undefined
+      let stepMarkdown: string | undefined
+      let stepImages: string[] | undefined
+      let stepSetupRaw: string | undefined
+      let stepTargetRaw: string | undefined
+      let stepAccent: string | undefined
 
       for (let i = 0; i < args.length; i++) {
         const a = args[i]!
         if (a === "--single-tab") {
-          singleTab = true
+          singleTabOverride = true
+        } else if (a === "--multi-tab") {
+          singleTabOverride = false
         } else if (a === "--no-open" || a === "--dry-run") {
           openMode = "none"
         } else if (a === "--open") {
@@ -860,6 +874,38 @@ async function main() {
           tourIdOverride = String(args[++i] ?? "")
         } else if (a.startsWith("--id=")) {
           tourIdOverride = a.slice("--id=".length)
+        } else if (a === "--add-step") {
+          addStepMode = true
+          if (args[i + 1] && !args[i + 1]!.startsWith("-") && !sourceArg) {
+            sourceArg = args[++i]
+          }
+        } else if (a === "--title") {
+          stepTitle = String(args[++i] ?? "")
+        } else if (a.startsWith("--title=")) {
+          stepTitle = a.slice("--title=".length)
+        } else if (a === "--body") {
+          stepBody = String(args[++i] ?? "")
+        } else if (a.startsWith("--body=")) {
+          stepBody = a.slice("--body=".length)
+        } else if (a === "--kind") {
+          const k = String(args[++i] ?? "").toLowerCase()
+          if (k !== "scene" && k !== "page") throw new CliError(4, "invalid_args", `Invalid --kind "${k}". Expected "scene" or "page".`)
+          stepKind = k
+        } else if (a === "--step-url") {
+          stepUrl = String(args[++i] ?? "")
+        } else if (a === "--markdown") {
+          stepMarkdown = String(args[++i] ?? "")
+        } else if (a === "--images") {
+          stepImages = String(args[++i] ?? "")
+            .split(",")
+            .map(s => s.trim())
+            .filter(Boolean)
+        } else if (a === "--setup") {
+          stepSetupRaw = String(args[++i] ?? "")
+        } else if (a === "--target") {
+          stepTargetRaw = String(args[++i] ?? "")
+        } else if (a === "--accent") {
+          stepAccent = String(args[++i] ?? "")
         } else if (a.startsWith("-")) {
           throw new CliError(4, "invalid_args", `Unknown tour flag "${a}".`)
         } else if (!sourceArg) {
@@ -869,14 +915,54 @@ async function main() {
         }
       }
 
+      let rawTourData: unknown
+      if (addStepMode) {
+        const tourId = (tourIdOverride || sourceArg || "tour").replace(/\.json$/, "")
+        if (!stepTitle?.trim()) {
+          throw new CliError(4, "invalid_args", "arcade tour --add-step requires --title \"<title>\".")
+        }
+        const existingFile = [resolve(sourceArg ?? ""), join(toursDir, `${tourId}.json`)].find(p => existsSync(p) && statSync(p).isFile())
+        let existingTour: { id: string; title?: string; singleTab?: boolean; steps: unknown[] } = {
+          id: tourId,
+          singleTab: true,
+          steps: [],
+        }
+        if (existingFile) {
+          try {
+            const parsed = JSON.parse(readFileSync(existingFile, "utf8"))
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed.steps)) {
+              existingTour = parsed
+            }
+          } catch {}
+        }
+        const newStep: Record<string, unknown> = {
+          title: stepTitle.trim(),
+          ...(stepKind ? { kind: stepKind } : {}),
+          ...(stepBody ? { body: stepBody } : {}),
+          ...(stepUrl ? { url: stepUrl } : {}),
+          ...(stepMarkdown ? { markdown: stepMarkdown } : {}),
+          ...(stepImages?.length ? { images: stepImages } : {}),
+          ...(stepSetupRaw ? { setup: JSON.parse(stepSetupRaw) } : {}),
+          ...(stepTargetRaw ? { target: stepTargetRaw } : {}),
+          ...(stepAccent ? { accent: stepAccent } : {}),
+        }
+        rawTourData = {
+          ...existingTour,
+          steps: [...existingTour.steps, newStep],
+        }
+        sourceArg = undefined
+        if (!openMode) openMode = "none"
+      }
+
       if (!inlineJson && sourceArg && (sourceArg.trim().startsWith("[") || sourceArg.trim().startsWith("{"))) {
         inlineJson = sourceArg
         sourceArg = undefined
       }
 
-      let rawTourData: unknown
       let defaultId = tourIdOverride || "tour"
-      if (inlineJson) {
+      if (rawTourData !== undefined) {
+        defaultId = (rawTourData as { id?: string }).id || defaultId
+      } else if (inlineJson) {
         try {
           rawTourData = JSON.parse(inlineJson)
         } catch (err) {
@@ -901,7 +987,7 @@ async function main() {
           throw new CliError(4, "invalid_args", `Failed to parse tour JSON ${foundFile}: ${err instanceof Error ? err.message : String(err)}`)
         }
       } else {
-        throw new CliError(4, "invalid_args", "Usage: arcade tour <file.json|name> | arcade tour --json '[...]' [--single-tab] [--open pro|local|none]")
+        throw new CliError(4, "invalid_args", "Usage: arcade tour <file.json|name> | arcade tour --json '[...]' [--multi-tab] [--open pro|local|none]")
       }
 
       let validated: TourDefinition
@@ -914,12 +1000,48 @@ async function main() {
         throw new CliError(4, "invalid_args", err instanceof Error ? err.message : String(err))
       }
 
-      // Persist in .arcade-tours/<id>.json for replay (without baking transient CLI --base-url / --single-tab overrides)
+      // Copy any referenced local image files into .arcade-tours/assets/<id>/ and normalize their src to the basename
+      const assetsDir = join(toursDir, "assets", validated.id)
+      const cacheAssetsDir = join(homedir(), ".cache", "arcade", "tour-assets", validated.id)
+      for (const step of validated.steps) {
+        if (!step.images?.length) continue
+        mkdirSync(assetsDir, { recursive: true })
+        mkdirSync(cacheAssetsDir, { recursive: true })
+        for (const img of step.images) {
+          const expanded = img.src.startsWith("~/") ? join(homedir(), img.src.slice(2)) : img.src
+          const localCandidates = [
+            resolve(expanded),
+            join(assetsDir, basename(expanded)),
+            join(homedir(), "code", "home", "artifacts", "2026-10-14-outbreak-review", basename(expanded)),
+          ]
+          const existingAsset = localCandidates.find(p => existsSync(p) && statSync(p).isFile())
+          if (existingAsset) {
+            const base = basename(existingAsset)
+            const dstLocal = join(assetsDir, base)
+            const dstCache = join(cacheAssetsDir, base)
+            if (resolve(existingAsset) !== resolve(dstLocal)) {
+              try {
+                copyFileSync(existingAsset, dstLocal)
+              } catch {}
+            }
+            if (resolve(existingAsset) !== resolve(dstCache)) {
+              try {
+                copyFileSync(existingAsset, dstCache)
+              } catch {}
+            }
+            if (!img.src.startsWith("http") && !img.src.startsWith("/")) {
+              img.src = base
+            }
+          }
+        }
+      }
+
+      // Persist in .arcade-tours/<id>.json for replay (without baking transient CLI --base-url / --multi-tab overrides)
       mkdirSync(toursDir, { recursive: true })
       const savedFile = join(toursDir, `${validated.id}.json`)
       writeFileSync(savedFile, JSON.stringify(validated, null, 2) + "\n", "utf8")
 
-      const runtimeSingleTab = Boolean(singleTab || validated.singleTab)
+      const runtimeSingleTab = singleTabOverride !== undefined ? singleTabOverride : validated.singleTab !== false
       const runtimeBaseUrl = baseUrl ? baseUrl.replace(/\/$/, "") : validated.baseUrl
 
       // Register tour on the dev control server

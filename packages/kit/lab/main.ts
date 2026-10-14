@@ -37,7 +37,7 @@ export async function lab(options:LabOptions) {
         <span class="lab-brand"><b>Lab</b><span data-readout="game">${game?game[0]!.toUpperCase()+game.slice(1):""}</span></span>
         <div class="lab-mode-seg" role="group" aria-label="Interaction mode">
           <button type="button" class="lab-btn" data-action="mode-edit" aria-label="Edit mode" aria-pressed="true">Edit</button>
-          <button type="button" class="lab-btn" data-action="mode-play" aria-label="Play mode" aria-pressed="false" title="Possess character (P)">Play</button>
+          <button type="button" class="lab-btn" data-action="mode-play" aria-label="Play mode" aria-pressed="false" title="Enter Play mode and possess character (P · Alt+P · F8 eject · Esc stop)">▶ Play</button>
         </div>
         <div class="lab-divider"></div>
         <div class="lab-transport" role="group" aria-label="Transport">
@@ -187,6 +187,25 @@ export async function lab(options:LabOptions) {
     for(const opt of allowed)debugSelect.add(new Option(opt.label,String(opt.value)))
     debugSelect.value=String(settings.debug)
   }
+  const searchParams=new URLSearchParams(location.search)
+  const bench=searchParams.has("bench")
+  let seededPlayground=false
+  const ensureDefaultPlayground=()=>{
+    if(seededPlayground||bench||!spawn||spawn.hasActiveScene())return
+    seededPlayground=true
+    const defaultChar=game==="blackout"&&spawn.adapters.characters.some(c=>c.id==="blackout:soldier")?"blackout:soldier":"getaway:muscle"
+    spawn.section.settings.character=defaultChar
+    spawn.spawnCharacterAt(defaultChar,{x:0,y:0,z:8,yaw:Math.PI})
+    spawn.section.settings.item="cone"
+    spawn.section.settings.count=5
+    spawn.section.settings.spacing=2
+    spawn.spawnItems("row",{x:0,y:0,z:2,yaw:Math.PI})
+    spawn.section.settings.item="propane"
+    spawn.spawnItems("one",{x:0,y:0,z:-10,yaw:Math.PI})
+    spawn.section.settings.item="hydrant"
+    spawn.spawnItems("one",{x:-13,y:0,z:-7,yaw:0})
+    spawn.section.selectObject?.("character:active")
+  }
   function select(id:string) {
     const next=sections.find(s=>s.id===id)
     if(!next)throw new Error(`Unknown Lab section: ${id}`)
@@ -199,6 +218,7 @@ export async function lab(options:LabOptions) {
       if(id!=="spawn"&&id!=="physics")stage.focus.fill(0)
       particles.reset();volume.reset();trail.reset()
     }
+    if(id==="spawn")ensureDefaultPlayground()
     active=next;settings.section=id
     sectionSelect.value=id
     syncDebugOptions(id)
@@ -224,6 +244,7 @@ export async function lab(options:LabOptions) {
       void render()
     },
   })
+  panel.setReturnFocus(canvas)
   inspectorMount.append(panel.host)
 
   const formatHeaderTelemetry=(raw:string)=>{
@@ -292,8 +313,6 @@ export async function lab(options:LabOptions) {
   })
 
   select("effects")
-  const searchParams=new URLSearchParams(location.search)
-  const bench=searchParams.has("bench")
   const resolveDeepSection=()=>{
     const rawHash=location.hash.replace(/^#/, "").trim().toLowerCase()
     const fromHash=rawHash.startsWith("section=")?rawHash.slice("section=".length):rawHash
@@ -308,16 +327,6 @@ export async function lab(options:LabOptions) {
   }else if(!bench){
     if(spawn){
       select("spawn")
-      spawn.section.settings.character="getaway:muscle"
-      spawn.spawnCharacterAt("getaway:muscle",{x:0,y:0,z:8,yaw:Math.PI})
-      spawn.section.settings.item="cone"
-      spawn.section.settings.count=5
-      spawn.section.settings.spacing=2
-      spawn.spawnItems("row",{x:0,y:0,z:2,yaw:Math.PI})
-      spawn.section.settings.item="propane"
-      spawn.spawnItems("one",{x:0,y:0,z:-10,yaw:Math.PI})
-      spawn.section.settings.item="hydrant"
-      spawn.spawnItems("one",{x:-13,y:0,z:-7,yaw:0})
       stage.frameTarget(0,0.4,2,20)
     }else{
       stage.frameTarget(-1,0.5,0,15)
@@ -333,6 +342,7 @@ export async function lab(options:LabOptions) {
       }
     }
   }
+  if(!bench)canvas.focus({preventScroll:true})
   window.addEventListener("hashchange",()=>{
     const target=resolveDeepSection()
     if(target&&settings.section!==target){
@@ -358,6 +368,8 @@ export async function lab(options:LabOptions) {
       importPreset:(json:string)=>workbench!.applyPresetJson(json),
       setMode:(m:"edit"|"play")=>workbench!.setPlayMode(m),
       getMode:()=>workbench!.mode,
+      getEjected:()=>workbench!.ejected,
+      toggleEject:()=>workbench!.toggleEject(),
       frame:()=>workbench!.frameActiveTarget(),
       commands:workbench!.commands,
       state:()=>workbench!.state(),

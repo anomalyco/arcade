@@ -67,6 +67,7 @@ import {
   getTwoFingerScrollMode,
   setTwoFingerScrollMode,
 } from "../orbit-gestures"
+import { moveClusterLabel, observeKeyLayout, onKeyLayoutChange } from "../client/controls"
 import { yardGround } from "./yard"
 
 export type CatalogCategory = LabLibraryCategory
@@ -152,6 +153,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const isBench = new URLSearchParams(location.search).has("bench")
 
   let mode: "edit" | "play" = "edit"
+  let ejected = false
   let activeCatalogId = "fixture:smoke-room"
   let simSpeed = 1
   let elapsed = 0
@@ -586,26 +588,44 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   function setPlayMode(next: "edit" | "play", restoreCheckpoint = true) {
     if (next === "play") {
-      if (globalSettings.section !== "spawn") selectSection("spawn")
-      if (spawn && !spawn.hasCharacter()) {
-        spawn.spawnCharacterAt()
-      }
-      if (!spawn?.hasCharacter()) {
-        showToast("Spawn a character first to enter Play mode", true)
+      if (!spawn || !spawn.adapters.characters.length) {
+        showToast("No controllable character or vehicle in this Lab", true)
         return
+      }
+      if (globalSettings.section !== "spawn") selectSection("spawn")
+      if (!spawn.hasCharacter()) {
+        const hostGame = location.pathname.match(/\/arcade\/([^/]+)\//)?.[1] ?? ""
+        const preferred =
+          String(spawn.section.settings.character || "") ||
+          (hostGame === "blackout" && spawn.adapters.characters.some(c => c.id === "blackout:soldier") ? "blackout:soldier" : "") ||
+          spawn.adapters.characters[0]?.id
+        spawn.spawnCharacterAt(preferred)
+      }
+      if (!spawn.hasCharacter()) {
+        showToast("No controllable character or vehicle in this Lab", true)
+        return
+      }
+      if (!currentSelectedIds().includes("character:active")) {
+        spawn.section.selectObject?.("character:active")
       }
       spawn.setGhost(null)
       activeTransform = null
       prePlayCheckpoint = captureSnapshot()
+      if ("playing" in spawn.section.settings) {
+        spawn.section.settings.playing = true
+      }
+      stage.hasDampedTarget = false
       mode = "play"
+      ejected = false
       input.enabled = true
       focusZone = "canvas"
       viewportCursor.update({ state: "hidden" })
       canvas.focus({ preventScroll: true })
-      showToast(`Playing ${spawn.characterLabel() ?? "Character"} · Esc to return & restore checkpoint`)
+      showToast(`Playing ${spawn.characterLabel() ?? "Character"} · F8 eject · Esc to return & restore checkpoint`)
     } else {
       const wasPlay = mode === "play"
       mode = "edit"
+      ejected = false
       input.enabled = false
       input.release()
       if (wasPlay) {
@@ -628,6 +648,34 @@ export function createWorkbench(opts: WorkbenchOptions) {
           showToast("Edit mode")
         }
       }
+    }
+    syncChrome()
+  }
+
+  function toggleEject() {
+    if (!spawn || !spawn.adapters.characters.length) {
+      showToast("No controllable character or vehicle in this Lab", true)
+      return
+    }
+    if (mode !== "play") {
+      setPlayMode("play")
+      if ((mode as string) !== "play") return
+    }
+    ejected = !ejected
+    if (ejected) {
+      input.enabled = false
+      input.release()
+      stage.camCustom = true
+      viewportCursor.update({ state: "default" })
+      showToast("Ejected to Edit camera (sim running) · F8 or P to re-possess · Esc to stop")
+    } else {
+      if ("playing" in spawn.section.settings) spawn.section.settings.playing = true
+      stage.hasDampedTarget = false
+      input.enabled = true
+      focusZone = "canvas"
+      viewportCursor.update({ state: "hidden" })
+      canvas.focus({ preventScroll: true })
+      showToast(`Playing ${spawn.characterLabel() ?? "Character"} · F8 eject · Esc to stop`)
     }
     syncChrome()
   }
@@ -926,11 +974,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortcut: "P",
       accelerators: ["p"],
       radial: { context: "object", slot: 1 },
-      enabled: ctx => activeTargetObject(ctx)?.category === "character",
-      disabledReason: () => "Only characters can be possessed",
+      enabled: ctx => (ctx?.pickedObject ? ctx.pickedObject.category === "character" : Boolean(spawn?.adapters.characters.length)),
+      disabledReason: ctx =>
+        ctx?.pickedObject && ctx.pickedObject.category !== "character"
+          ? "Only characters can be possessed"
+          : "No controllable character or vehicle in this Lab",
       run: ctx => {
-        const obj = activeTargetObject(ctx)
-        if (obj) selectWorldObject(obj)
+        const obj = ctx?.pickedObject ?? activeTargetObject(ctx)
+        if (obj?.category === "character") selectWorldObject(obj)
         setPlayMode("play")
       },
     },
@@ -1469,7 +1520,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
         mode: { type: "string", enum: ["edit", "play"], description: "Target mode ('edit' or 'play')" },
         target: { type: "string", description: "Optional character ID/name to possess" },
       },
-      enabled: () => Boolean(spawn),
+      enabled: () => Boolean(spawn?.adapters.characters.length),
+      disabledReason: () => "No controllable character or vehicle in this Lab",
       run: (_ctx, args) => {
         const nextMode = args?.mode === "edit" || args?.mode === "play" ? args.mode : mode === "play" ? "edit" : "play"
         const rawTarget = typeof args?.target === "string" ? args.target.trim() : ""
@@ -1492,6 +1544,26 @@ export function createWorkbench(opts: WorkbenchOptions) {
         void renderNow()
         return {
           mode,
+          ejected,
+          characterId: spawn?.section.settings.character ?? null,
+          characterLabel: spawn?.characterLabel() ?? null,
+        }
+      },
+    },
+    {
+      id: "mode.eject",
+      label: "Toggle Eject Camera in Play Mode",
+      shortLabel: "Eject",
+      category: "Mode",
+      shortcut: "F8",
+      enabled: () => Boolean(spawn?.adapters.characters.length),
+      disabledReason: () => "No controllable character or vehicle in this Lab",
+      run: () => {
+        toggleEject()
+        void renderNow()
+        return {
+          mode,
+          ejected,
           characterId: spawn?.section.settings.character ?? null,
           characterLabel: spawn?.characterLabel() ?? null,
         }
@@ -3573,8 +3645,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
     focusPill.dataset.mode = mode
     if (mode === "play") {
       const charName = spawn?.characterLabel() ?? "Character"
-      focusPill.textContent = `Play · ${charName}`
-      hintText.textContent = "WASD/Arrows Move · Space Brake · Shift Boost/Sprint · Esc Exit Play"
+      focusPill.textContent = ejected ? `Play (Ejected) · ${charName}` : `Play · ${charName}`
+      hintText.textContent = ejected
+        ? "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · F8/P Re-possess · Esc Exit Play"
+        : `${moveClusterLabel()}/Arrows Move · Space Brake · Shift Boost/Sprint · F8 Eject · Esc Exit Play`
     } else if (ghost) {
       focusPill.textContent = `Place · ${ghost.kind}`
       hintText.textContent = "Click/Enter Place · ⇧Click Repeat · [ ] Rotate · Arrows Nudge · Esc Cancel"
@@ -3736,6 +3810,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
     editModeBtn.setAttribute("aria-pressed", String(mode === "edit" && !boxSelectMode))
     playModeBtn.setAttribute("aria-pressed", String(mode === "play"))
     playModeBtn.dataset.playActive = String(mode === "play")
+    playModeBtn.textContent = mode === "play" ? "■ Stop" : "▶ Play"
+    playModeBtn.title =
+      mode === "play"
+        ? "Stop Play mode and restore pre-Play checkpoint (Esc · F8 eject)"
+        : "Enter Play mode and possess character (P · Alt+P · F8 eject)"
     boxModeBtn.setAttribute("aria-pressed", String(mode === "edit" && boxSelectMode))
     const twoFingerMode = getTwoFingerScrollMode()
     scrollModeBtn.setAttribute("aria-pressed", String(twoFingerMode === "pan"))
@@ -3759,7 +3838,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     // Viewport HUD badge
     hudBadge.hidden = sec.id === "audio"
     if (mode === "play") {
-      hudBadge.textContent = `PLAY · ${spawn?.characterLabel() ?? "Character"} (Esc to exit)`
+      hudBadge.textContent = ejected
+        ? `PLAY (EJECTED) · ${spawn?.characterLabel() ?? "Character"} (F8 possess · Esc stop)`
+        : `PLAY · ${spawn?.characterLabel() ?? "Character"} (F8 eject · Esc to exit)`
     } else if (spawn?.getGhost()) {
       const g = spawn.getGhost()!
       hudBadge.textContent = `Place ${g.kind} · (${g.x.toFixed(1)}, ${g.z.toFixed(1)}) · ${Math.round((g.yaw * 180) / Math.PI)}°`
@@ -4509,8 +4590,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
     detailsModifiedCount.textContent = n ? String(n) : ""
 
     const actionIds = selList.length
-      ? ["object.trigger", "object.frame", "object.duplicate", "object.delete", "object.move", ...(selObj?.category === "character" ? ["object.possess"] : [])]
-      : [...(sec.retrigger ? ["ground.trigger-here"] : []), "ground.frame", "ground.reroll", "ground.clear"]
+      ? ["object.trigger", "object.frame", "object.duplicate", "object.delete", "object.move", ...(spawn ? ["object.possess"] : [])]
+      : [...(sec.retrigger ? ["ground.trigger-here"] : []), "ground.frame", "ground.reroll", "ground.clear", ...(spawn ? ["object.possess"] : [])]
     const ctx: LabCommandContext = { pickedObject: null, groundHit: null, source: "ui" }
     const states = actionIds.map(id => {
       const cmd = commands.get(id)
@@ -4653,12 +4734,20 @@ export function createWorkbench(opts: WorkbenchOptions) {
       hoveredGroundSample = null
       viewportCursor.update({ state: "hidden" })
     })
-    zone.addEventListener("pointerdown", () => {
+    zone.addEventListener("pointerdown", event => {
+      const t = event.target as HTMLElement | null
+      if (t?.closest('[data-action="mode-play"], [data-action="mode-edit"], [data-command="object.possess"], [data-command="mode.play"], [data-command="mode.eject"]')) {
+        return
+      }
       if (mode === "play") setPlayMode("edit")
       hoveredGroundSample = null
       viewportCursor.update({ state: "hidden" })
     })
-    zone.addEventListener("focusin", () => {
+    zone.addEventListener("focusin", event => {
+      const t = event.target as HTMLElement | null
+      if (t?.closest('[data-action="mode-play"], [data-action="mode-edit"], [data-command="object.possess"], [data-command="mode.play"], [data-command="mode.eject"]')) {
+        return
+      }
       if (mode === "play") setPlayMode("edit")
       hoveredGroundSample = null
       viewportCursor.update({ state: "hidden" })
@@ -4835,7 +4924,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   viewportGestures = bindOrbitGestures(canvas, {
     target: stage,
     smooth: true,
-    isEnabled: () => mode === "edit",
+    isEnabled: () => mode === "edit" || (mode === "play" && ejected),
     canPrimaryOrbit: () => !spawn?.getGhost() && !activeTransform,
     onPointerDownIntercept: event => {
       focusZone = "canvas"
@@ -4858,7 +4947,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       })
     },
     onHoverMove: event => {
-      if (mode === "play") {
+      if (mode === "play" && !ejected) {
         hoveredGroundSample = null
         viewportCursor.update({ state: "hidden" })
         return
@@ -5103,17 +5192,21 @@ export function createWorkbench(opts: WorkbenchOptions) {
     },
   })
 
+  onKeyLayoutChange(() => syncTransportAndHints())
+
   // Global Workbench Keyboard Controller
   window.addEventListener("keydown", event => {
+    observeKeyLayout(event)
     const target = event.composedPath()[0]
     const inText =
-      target instanceof HTMLInputElement && (target.type === "text" || target.type === "search" || target.type === "number") ||
+      (target instanceof HTMLInputElement && (target.type === "text" || target.type === "search" || target.type === "number")) ||
       target instanceof HTMLTextAreaElement ||
-      target instanceof HTMLSelectElement ||
       (target instanceof HTMLElement && target.isContentEditable)
+    const inSelect = target instanceof HTMLSelectElement
 
     const key = event.key.toLowerCase()
     const cmd = event.metaKey || event.ctrlKey
+    const isPlayShortcut = !cmd && (key === "p" || (event.altKey && (key === "π" || event.code === "KeyP")))
 
     // Modal Escape
     if (!modalBackdrop.hidden) {
@@ -5167,17 +5260,50 @@ export function createWorkbench(opts: WorkbenchOptions) {
       return
     }
 
-    // Play Mode: Only Escape exits Play and releases held input; all other keys belong to gameplay
+    // Play Mode: Escape exits Play and restores pre-Play checkpoint; F8 toggles Eject camera
     if (mode === "play") {
       if (event.key === "Escape") {
         event.preventDefault()
         event.stopImmediatePropagation()
         setPlayMode("edit")
+      } else if (event.key === "F8" && !event.repeat) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        toggleEject()
+      } else if (ejected && isPlayShortcut && !event.repeat) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        toggleEject()
+      } else if (ejected && key === "f" && !event.repeat) {
+        event.preventDefault()
+        frameActiveTarget()
       }
       return
     }
 
-    // If focus is inside the Inspector (LabPanel), let LabPanel's own capture handler own the keys
+    // Play (P / Alt+P) and Eject (F8) work from anywhere in Edit mode outside text inputs (including Details, Outliner, Library, and <select> dropdowns)
+    if (isPlayShortcut && !event.repeat) {
+      event.preventDefault()
+      if (inSelect) (target as HTMLElement).blur()
+      setPlayMode("play")
+      return
+    }
+    if (event.key === "F8" && !event.repeat) {
+      event.preventDefault()
+      if (inSelect) (target as HTMLElement).blur()
+      toggleEject()
+      return
+    }
+    if (inSelect) {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        ;(target as HTMLElement).blur()
+        canvas.focus({ preventScroll: true })
+      }
+      return
+    }
+
+    // If focus is inside the Inspector (LabPanel), let LabPanel's own capture handler own the remaining keys
     if (document.activeElement === panel.host) return
 
     // Active Placement Ghost or Move Ghost modal controls
@@ -5602,6 +5728,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
       },
     },
     setPlayMode,
+    toggleEject,
+    get ejected() {
+      return ejected
+    },
     frameActiveTarget,
     syncChrome,
     commands,

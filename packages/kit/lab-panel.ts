@@ -710,6 +710,15 @@ export class LabPanel {
     if ((event.metaKey || event.ctrlKey) && !this.editor && this.searchBox.parentElement!.hidden && (key !== "k" || this.layoutMode === "inspector")) {
       return false
     }
+    if (
+      this.layoutMode === "inspector" &&
+      !this.editor &&
+      this.searchBox.parentElement!.hidden &&
+      !typing &&
+      (key === "p" || key === "π" || event.key === "F8" || (event.altKey && (event.code === "KeyP" || event.code === "BracketLeft" || event.code === "BracketRight")))
+    ) {
+      return false
+    }
     event.stopImmediatePropagation()
     if (event.type === "keyup") {
       this.held.delete(event.code)
@@ -768,7 +777,8 @@ export class LabPanel {
     }
     if (event.key === "Escape") {
       if (this.layoutMode === "inspector") {
-        this.previousFocus?.focus({ preventScroll: true })
+        if (this.previousFocus) this.previousFocus.focus({ preventScroll: true })
+        else this.host.blur()
         this.onFocusChange?.(false, this.navigation.active)
       } else {
         this.toggle()

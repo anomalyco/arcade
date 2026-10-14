@@ -64,7 +64,15 @@ export type TourSetupCommand = {
   args?: Record<string, unknown>
 }
 
+export type TourPageImage = {
+  src: string
+  label?: string
+  caption?: string
+  tag?: string
+}
+
 export type TourStepDefinition = {
+  kind?: "scene" | "page"
   title: string
   body?: string
   url: string
@@ -72,6 +80,8 @@ export type TourStepDefinition = {
   target?: DevNoteTarget
   accent?: string
   dismissible?: boolean
+  markdown?: string
+  images?: TourPageImage[]
 }
 
 export type TourDefinition = {
@@ -94,7 +104,7 @@ export type DevPageSummary = {
   mode: "edit" | "play" | "view"
   section?: string
   note?: DevNotePayload | null
-  tour?: { id: string; step: number; singleTab?: boolean } | null
+  tour?: { id: string; step: number; singleTab?: boolean; applied?: boolean } | null
   commands: LabCommandDescriptor[]
   updatedAt: number
   lastActiveAt: number
@@ -587,8 +597,11 @@ export function resolveNavigationPath(target: string): string {
 
   const lower = baseRaw.toLowerCase()
   let baseResolved: string | null = null
-  if (lower === "hub" || lower === "games") baseResolved = "/arcade/getaway/dev.html#games"
-  else if (lower === "catalogue" || lower === "catalog") baseResolved = "/arcade/getaway/dev.html#catalogue"
+  if (lower === "hub" || lower === "games" || lower === "studio") baseResolved = "/arcade/getaway/dev.html#games"
+  else if (lower.startsWith("tour/")) {
+    baseResolved = `/arcade/getaway/dev.html#${raw}`
+    extraSuffix = ""
+  } else if (lower === "catalogue" || lower === "catalog") baseResolved = "/arcade/getaway/dev.html#catalogue"
   else if (lower.startsWith("catalogue/") || lower.startsWith("catalog/")) {
     const asset = baseRaw.slice(baseRaw.indexOf("/") + 1)
     baseResolved = `/arcade/getaway/dev.html#catalogue/${encodeURIComponent(asset)}`
@@ -861,6 +874,23 @@ export function normalizeNoteArgs(
   }
 }
 
+export function resolveTourAssetUrl(tourId: string, rawSrc: string): string {
+  const trimmed = rawSrc.trim()
+  if (!trimmed) return ""
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("/__arcade/") ||
+    trimmed.startsWith("/arcade/")
+  ) {
+    return trimmed
+  }
+  const cleanId = tourId.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "tour"
+  const fileName = trimmed.split("/").pop() ?? trimmed
+  return `/__arcade/tour-assets/${encodeURIComponent(cleanId)}/${encodeURIComponent(fileName)}`
+}
+
 export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDefinition {
   if (!raw || typeof raw !== "object") {
     throw new Error("Tour definition must be a JSON object or non-empty array of steps.")
@@ -876,7 +906,7 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
   const id = rawId.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "tour"
   const title = typeof container.title === "string" && container.title.trim() ? container.title.trim() : undefined
   const baseUrl = typeof container.baseUrl === "string" && container.baseUrl.trim() ? container.baseUrl.trim().replace(/\/$/, "") : undefined
-  const singleTab = typeof container.singleTab === "boolean" ? container.singleTab : undefined
+  const singleTab = typeof container.singleTab === "boolean" ? container.singleTab : true
 
   const steps: TourStepDefinition[] = rawSteps.map((item, idx) => {
     const stepNum = idx + 1
@@ -888,15 +918,72 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
     if (!stepTitle) {
       throw new Error(`Tour step ${stepNum} is missing a non-empty "title".`)
     }
+
+    const rawKind = typeof s.kind === "string" ? s.kind.trim().toLowerCase() : ""
+    if (rawKind && rawKind !== "scene" && rawKind !== "page") {
+      throw new Error(`Tour step ${stepNum} ("${stepTitle}"): invalid kind "${String(s.kind)}". Expected "scene" or "page".`)
+    }
+
+    if (s.markdown !== undefined && s.markdown !== null && typeof s.markdown !== "string") {
+      throw new Error(`Tour step ${stepNum} ("${stepTitle}"): "markdown" must be a string.`)
+    }
+    const markdown = typeof s.markdown === "string" && s.markdown.trim() ? s.markdown.trim() : undefined
+
+    let images: TourPageImage[] | undefined
+    if (s.images !== undefined) {
+      if (!Array.isArray(s.images)) {
+        throw new Error(`Tour step ${stepNum} ("${stepTitle}"): "images" must be an array.`)
+      }
+      images = s.images.map((imgItem, imgIdx) => {
+        if (typeof imgItem === "string" && imgItem.trim()) {
+          return { src: imgItem.trim() }
+        }
+        if (!imgItem || typeof imgItem !== "object" || Array.isArray(imgItem)) {
+          throw new Error(`Tour step ${stepNum} ("${stepTitle}") images[${imgIdx}] must be a string or { src, label?, caption?, tag? }.`)
+        }
+        const imgObj = imgItem as Record<string, unknown>
+        const rawSrc =
+          typeof imgObj.src === "string"
+            ? imgObj.src.trim()
+            : typeof imgObj.url === "string"
+              ? imgObj.url.trim()
+              : typeof imgObj.path === "string"
+                ? imgObj.path.trim()
+                : ""
+        if (!rawSrc) {
+          throw new Error(`Tour step ${stepNum} ("${stepTitle}") images[${imgIdx}] is missing "src".`)
+        }
+        const label =
+          typeof imgObj.label === "string" && imgObj.label.trim()
+            ? imgObj.label.trim()
+            : typeof imgObj.title === "string" && imgObj.title.trim()
+              ? imgObj.title.trim()
+              : undefined
+        const caption = typeof imgObj.caption === "string" && imgObj.caption.trim() ? imgObj.caption.trim() : undefined
+        const tag = typeof imgObj.tag === "string" && imgObj.tag.trim() ? imgObj.tag.trim() : undefined
+        return {
+          src: rawSrc,
+          ...(label !== undefined ? { label } : {}),
+          ...(caption !== undefined ? { caption } : {}),
+          ...(tag !== undefined ? { tag } : {}),
+        }
+      })
+    }
+
+    const isPage = rawKind === "page" || Boolean(markdown || (images && images.length > 0))
     const rawUrl = typeof s.url === "string" ? s.url.trim() : typeof s.page === "string" ? s.page.trim() : typeof s.path === "string" ? s.path.trim() : ""
-    if (!rawUrl) {
+    if (!rawUrl && !isPage) {
       throw new Error(`Tour step ${stepNum} ("${stepTitle}") is missing a non-empty "url".`)
     }
     let resolvedUrl: string
-    try {
-      resolvedUrl = resolveNavigationPath(rawUrl)
-    } catch (err) {
-      throw new Error(`Tour step ${stepNum} ("${stepTitle}"): ${err instanceof Error ? err.message : String(err)}`)
+    if (!rawUrl && isPage) {
+      resolvedUrl = `/arcade/getaway/dev.html#tour/${encodeURIComponent(id)}/${stepNum}`
+    } else {
+      try {
+        resolvedUrl = resolveNavigationPath(rawUrl)
+      } catch (err) {
+        throw new Error(`Tour step ${stepNum} ("${stepTitle}"): ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
 
     const rawBody = s.body ?? s.description
@@ -962,6 +1049,7 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
     const dismissible = typeof s.dismissible === "boolean" ? s.dismissible : undefined
 
     return {
+      ...(isPage ? { kind: "page" as const } : rawKind === "scene" ? { kind: "scene" as const } : {}),
       title: stepTitle,
       ...(body !== undefined ? { body } : {}),
       url: resolvedUrl,
@@ -969,6 +1057,8 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
       ...(target !== undefined ? { target } : {}),
       ...(accent !== undefined ? { accent } : {}),
       ...(dismissible !== undefined ? { dismissible } : {}),
+      ...(markdown !== undefined ? { markdown } : {}),
+      ...(images !== undefined && images.length > 0 ? { images } : {}),
     }
   })
 
@@ -976,7 +1066,7 @@ export function validateTourDefinition(raw: unknown, defaultId = "tour"): TourDe
     id,
     ...(title !== undefined ? { title } : {}),
     ...(baseUrl !== undefined ? { baseUrl } : {}),
-    ...(singleTab !== undefined ? { singleTab } : {}),
+    singleTab,
     steps,
   }
 }
@@ -986,7 +1076,7 @@ export function buildTourStepUrl(
   stepUrl: string,
   tourId: string,
   stepNumber: number,
-  singleTab = false,
+  singleTab = true,
 ): string {
   const resolved = resolveNavigationPath(stepUrl)
   const u = new URL(resolved, origin.endsWith("/") ? origin : `${origin}/`)
@@ -1177,7 +1267,10 @@ function drawActiveNoteOverlayToCanvas(
 ) {
   if (!rt) return
   const note = rt.getActiveNote()
-  if (!note) return
+  const studioTour = rt.getStudioTour()
+  const studioStep = rt.getStudioStep()
+  const showStrip = Boolean(studioTour && studioTour.singleTab !== false && rt.isStudioStripExpanded())
+  if (!note && !showStrip) return
   const ctx = targetCanvas.getContext("2d")
   if (!ctx) return
 
@@ -1188,6 +1281,52 @@ function drawActiveNoteOverlayToCanvas(
   const refH = Math.max(1, cRect.height || window.innerHeight || ch)
   const sx = cw / refW
   const sy = ch / refH
+
+  // 0. Draw Studio Tab Strip across the top if active
+  if (showStrip && studioTour) {
+    ctx.save()
+    const stripH = 28 * sy
+    ctx.fillStyle = "rgba(12, 14, 18, 0.96)"
+    ctx.fillRect(0, 0, cw, stripH)
+    ctx.fillStyle = "rgba(44, 52, 62, 0.85)"
+    ctx.fillRect(0, stripH - 1, cw, 1)
+
+    const monoFont = `600 ${Math.max(8, Math.round(10 * sx))}px ui-monospace, SFMono-Regular, Menlo, monospace`
+    const tabFont = `500 ${Math.max(9, Math.round(11 * sx))}px system-ui, -apple-system, sans-serif`
+    let x = 10 * sx
+    ctx.font = monoFont
+    ctx.fillStyle = "#7cc5d6"
+    ctx.textBaseline = "middle"
+    const badge = `◫ ${studioStep}/${studioTour.steps.length}`
+    ctx.fillText(badge, x, stripH * 0.5)
+    x += ctx.measureText(badge).width + 12 * sx
+
+    for (let i = 0; i < studioTour.steps.length; i++) {
+      const s = studioTour.steps[i]!
+      const num = i + 1
+      const active = num === studioStep
+      const shortTitle = s.title.length > 24 ? `${s.title.slice(0, 23)}…` : s.title
+      const label = `${num} ${shortTitle}`
+      ctx.font = tabFont
+      const tw = ctx.measureText(label).width + 14 * sx
+      if (x + tw > cw - 50 * sx) break
+      const th = 20 * sy
+      const ty = (stripH - th) * 0.5
+      roundRectPath(ctx, x, ty, tw, th, 4 * sx)
+      const stepColors = resolveAccentColors(s.accent)
+      ctx.fillStyle = active ? "rgba(77, 141, 255, 0.2)" : "rgba(255, 255, 255, 0.04)"
+      ctx.fill()
+      ctx.strokeStyle = active ? stepColors.text : "rgba(255, 255, 255, 0.1)"
+      ctx.lineWidth = Math.max(1, (active ? 1.4 : 0.8) * sx)
+      ctx.stroke()
+      ctx.fillStyle = active ? "#f2f6fa" : "#8b949e"
+      ctx.fillText(label, x + 7 * sx, stripH * 0.5)
+      x += tw + 5 * sx
+    }
+    ctx.restore()
+  }
+
+  if (!note) return
   const colors = resolveAccentColors(note.accent)
 
   // 1. Draw target highlight ring if resolved and overlapping the canvas
@@ -1235,7 +1374,7 @@ function drawActiveNoteOverlayToCanvas(
 
   // 2. Draw top-centered "Show me" card
   ctx.save()
-  const topPx = 10 * sy
+  const topPx = (showStrip ? 36 : 10) * sy
   const titleFont = `600 ${Math.max(11, Math.round(13 * sx))}px system-ui, -apple-system, sans-serif`
   const bodyFont = `400 ${Math.max(10, Math.round(11.5 * sx))}px system-ui, -apple-system, sans-serif`
   const monoFont = `600 ${Math.max(9, Math.round(10.5 * sx))}px ui-monospace, SFMono-Regular, Menlo, monospace`
@@ -1382,11 +1521,60 @@ async function captureWebGPUOr2DCanvas(
 
 function synthesizeHubCanvas(): HTMLCanvasElement {
   const out = document.createElement("canvas")
-  out.width = Math.max(640, Math.min(1280, window.innerWidth || 960))
-  out.height = Math.max(400, Math.min(800, window.innerHeight || 600))
+  out.width = Math.max(640, Math.min(1280, window.innerWidth || 1280))
+  out.height = Math.max(400, Math.min(800, window.innerHeight || 800))
   const ctx = out.getContext("2d")!
-  ctx.fillStyle = "#0e1318"
+  ctx.fillStyle = "#0c0d0f"
   ctx.fillRect(0, 0, out.width, out.height)
+
+  const studioPage = document.querySelector<HTMLElement>("[data-arcade-studio-page]:not([hidden])")
+  if (studioPage) {
+    const titleText = studioPage.querySelector<HTMLElement>("[data-studio-page-title]")?.textContent ?? document.title
+    const bodyText = studioPage.querySelector<HTMLElement>("[data-studio-page-body]")?.textContent ?? ""
+    ctx.fillStyle = "#f0f5f8"
+    ctx.font = "700 20px system-ui, -apple-system, sans-serif"
+    ctx.fillText(titleText, 32, 118)
+    if (bodyText) {
+      ctx.fillStyle = "#9fb0bd"
+      ctx.font = "400 13px system-ui, -apple-system, sans-serif"
+      ctx.fillText(bodyText.slice(0, 130), 32, 142)
+    }
+
+    const imgs = [...studioPage.querySelectorAll<HTMLImageElement>("img[data-studio-image]")]
+    if (imgs.length > 0) {
+      const cols = Math.min(3, Math.max(1, imgs.length <= 2 ? imgs.length : 3))
+      const rows = Math.ceil(imgs.length / cols)
+      const gridTop = 166
+      const availW = out.width - 64
+      const availH = out.height - gridTop - 24
+      const gap = 14
+      const cellW = Math.floor((availW - gap * (cols - 1)) / cols)
+      const cellH = Math.floor((availH - gap * (rows - 1)) / rows)
+      imgs.forEach((img, idx) => {
+        const col = idx % cols
+        const row = Math.floor(idx / cols)
+        const cx = 32 + col * (cellW + gap)
+        const cy = gridTop + row * (cellH + gap)
+        ctx.fillStyle = "#141518"
+        ctx.fillRect(cx, cy, cellW, cellH)
+        ctx.strokeStyle = "#252a32"
+        ctx.strokeRect(cx, cy, cellW, cellH)
+        if (img.complete && img.naturalWidth > 0) {
+          try {
+            ctx.drawImage(img, cx + 2, cy + 2, cellW - 4, cellH - 28)
+          } catch {}
+        }
+        const label = img.dataset.studioLabel || img.alt || ""
+        if (label) {
+          ctx.fillStyle = "#d8dbe0"
+          ctx.font = "600 11.5px system-ui, -apple-system, sans-serif"
+          ctx.fillText(label, cx + 10, cy + cellH - 10)
+        }
+      })
+    }
+    return out
+  }
+
   ctx.fillStyle = "#171f27"
   ctx.fillRect(0, 0, out.width, 44)
   ctx.fillStyle = "#e4e9ed"
@@ -1416,7 +1604,7 @@ const COMMAND_ALIASES: Record<string, string> = {
   "lab.set": "scene.set-param",
   env: "scene.set-env",
   "env.set": "scene.set-env",
-  possess: "object.possess",
+  possess: "mode.play",
   release: "mode.play",
   "preset.save": "preset.export",
   "preset.load": "preset.import",
@@ -1427,6 +1615,85 @@ const COMMAND_ALIASES: Record<string, string> = {
   note: "ui.note",
   "show-me": "ui.note",
   "note.clear": "ui.note.clear",
+}
+
+const STUDIO_SESSION_KEY = "arcade.studio.tour.v1"
+
+function renderMarkdownFragment(markdown: string): DocumentFragment {
+  const frag = document.createDocumentFragment()
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n")
+  let listEl: HTMLUListElement | null = null
+
+  const appendInline = (parent: HTMLElement, text: string) => {
+    const tokenRe = /(\*\*[^*]+\*\*|`[^`]+`)/g
+    let lastIdx = 0
+    let match: RegExpExecArray | null
+    while ((match = tokenRe.exec(text)) !== null) {
+      if (match.index > lastIdx) {
+        parent.append(document.createTextNode(text.slice(lastIdx, match.index)))
+      }
+      const raw = match[0]
+      if (raw.startsWith("**") && raw.endsWith("**")) {
+        const strong = document.createElement("strong")
+        strong.style.color = "#f0f5f8"
+        strong.textContent = raw.slice(2, -2)
+        parent.append(strong)
+      } else if (raw.startsWith("`") && raw.endsWith("`")) {
+        const code = document.createElement("code")
+        code.style.cssText =
+          "font:11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:1px 5px;border-radius:4px;background:#0e0f11;border:1px solid #23252a;color:#7cc5d6;"
+        code.textContent = raw.slice(1, -1)
+        parent.append(code)
+      }
+      lastIdx = match.index + raw.length
+    }
+    if (lastIdx < text.length) {
+      parent.append(document.createTextNode(text.slice(lastIdx)))
+    }
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) {
+      listEl = null
+      continue
+    }
+    if (line.startsWith("### ")) {
+      listEl = null
+      const h3 = document.createElement("h3")
+      h3.style.cssText = "margin:10px 0 4px;font:600 13px/1.35 system-ui,-apple-system,sans-serif;color:#e6eef4;"
+      appendInline(h3, line.slice(4))
+      frag.append(h3)
+    } else if (line.startsWith("## ")) {
+      listEl = null
+      const h2 = document.createElement("h2")
+      h2.style.cssText = "margin:12px 0 6px;font:600 15px/1.35 system-ui,-apple-system,sans-serif;color:#f0f5f8;"
+      appendInline(h2, line.slice(3))
+      frag.append(h2)
+    } else if (line.startsWith("# ")) {
+      listEl = null
+      const h1 = document.createElement("h1")
+      h1.style.cssText = "margin:12px 0 6px;font:700 17px/1.3 system-ui,-apple-system,sans-serif;color:#f0f5f8;"
+      appendInline(h1, line.slice(2))
+      frag.append(h1)
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      if (!listEl) {
+        listEl = document.createElement("ul")
+        listEl.style.cssText = "margin:4px 0 8px;padding-left:18px;display:flex;flex-direction:column;gap:4px;color:#b8c4ce;font-size:12.5px;line-height:1.45;"
+        frag.append(listEl)
+      }
+      const li = document.createElement("li")
+      appendInline(li, line.slice(2))
+      listEl.append(li)
+    } else {
+      listEl = null
+      const p = document.createElement("p")
+      p.style.cssText = "margin:4px 0 8px;color:#b8c4ce;font-size:12.5px;line-height:1.5;"
+      appendInline(p, line)
+      frag.append(p)
+    }
+  }
+  return frag
 }
 
 // Singleton per-page DevControl runtime (only active in DEV when served by the Arcade dev router)
@@ -1443,6 +1710,13 @@ class PageControlRuntime {
   private ringRaf = 0
   private activeNote: DevNotePayload | null = null
   private baseDocumentTitle: string | null = null
+  private studioTour: TourDefinition | null = null
+  private studioStep = 1
+  private studioCollapsed = false
+  private studioStripEl: HTMLElement | null = null
+  private studioPageEl: HTMLElement | null = null
+  private studioLightboxEl: HTMLElement | null = null
+  private tourStepAppliedInPlace = false
   private lastActiveAt = Date.now()
   private fallbackReady = false
   readonly pageId: string
@@ -1453,6 +1727,7 @@ class PageControlRuntime {
     if (!import.meta.env?.DEV) return
     if (typeof window === "undefined" || typeof document === "undefined") return
     this.routerConfig = this.readRouterConfig()
+    this.restoreStudioSession()
     this.syncWindowTourName()
     window.addEventListener("keydown", e => this.handleNoteKeydown(e), { capture: true })
     if (!this.routerConfig) return
@@ -1466,9 +1741,23 @@ class PageControlRuntime {
     document.addEventListener("visibilitychange", () => this.sendStatus())
     window.addEventListener("hashchange", () => {
       this.lastActiveAt = Date.now()
+      const meta = this.readUrlTourMeta()
+      if (meta && this.studioTour && meta.id === this.studioTour.id && meta.step !== this.studioStep) {
+        this.studioStep = meta.step
+        this.saveStudioSession()
+      }
+      this.syncStudioUI()
       this.sendStatus()
     })
-    window.addEventListener("popstate", () => this.sendStatus())
+    window.addEventListener("popstate", () => {
+      const meta = this.readUrlTourMeta()
+      if (meta && this.studioTour && meta.id === this.studioTour.id) {
+        this.studioStep = meta.step
+        this.saveStudioSession()
+      }
+      this.syncStudioUI()
+      this.sendStatus()
+    })
     this.connect()
     this.pollUntilReady()
   }
@@ -1477,20 +1766,118 @@ class PageControlRuntime {
     return this.activeNote
   }
 
-  private readUrlTourMeta(): { id: string; step: number; singleTab?: boolean } | null {
+  getStudioTour(): TourDefinition | null {
+    return this.studioTour
+  }
+
+  getStudioStep(): number {
+    return this.studioStep
+  }
+
+  isStudioStripExpanded(): boolean {
+    return Boolean(this.studioTour && this.studioTour.singleTab !== false && !this.studioCollapsed)
+  }
+
+  private readUrlTourMeta(): { id: string; step: number; singleTab?: boolean; applied?: boolean } | null {
     try {
       const sp = new URLSearchParams(location.search)
       const id = sp.get("tour")?.trim()
       const step = Number(sp.get("step"))
+      const multiTabParam = sp.get("multiTab") === "1" || sp.get("singleTab") === "0"
       if (id && Number.isFinite(step) && step >= 1) {
         return {
           id,
           step: Math.round(step),
-          ...(sp.get("singleTab") === "1" ? { singleTab: true } : {}),
+          singleTab: !multiTabParam,
+          ...(this.tourStepAppliedInPlace ? { applied: true } : {}),
+        }
+      }
+      const hashMatch = (location.hash || "").match(/^#tour\/([a-zA-Z0-9_-]+)(?:\/(\d+))?/)
+      if (hashMatch) {
+        return {
+          id: hashMatch[1]!,
+          step: hashMatch[2] ? Math.max(1, Number(hashMatch[2])) : 1,
+          singleTab: true,
+          ...(this.tourStepAppliedInPlace ? { applied: true } : {}),
         }
       }
     } catch {}
     return null
+  }
+
+  private restoreStudioSession() {
+    const urlMeta = this.readUrlTourMeta()
+    try {
+      const raw = sessionStorage.getItem(STUDIO_SESSION_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as { tour?: TourDefinition; step?: number; collapsed?: boolean }
+        if (parsed && parsed.tour && Array.isArray(parsed.tour.steps)) {
+          if (!urlMeta || urlMeta.id === parsed.tour.id) {
+            this.studioTour = parsed.tour
+            this.studioStep = urlMeta ? urlMeta.step : Math.max(1, Math.min(parsed.tour.steps.length, Number(parsed.step) || 1))
+            this.studioCollapsed = Boolean(parsed.collapsed)
+          }
+        }
+      }
+    } catch {}
+    if (urlMeta) {
+      this.studioStep = urlMeta.step
+      if (this.studioTour && this.studioTour.id !== urlMeta.id) {
+        this.studioTour = null
+      }
+    }
+  }
+
+  private saveStudioSession() {
+    try {
+      if (!this.studioTour || this.studioTour.singleTab === false) {
+        sessionStorage.removeItem(STUDIO_SESSION_KEY)
+        return
+      }
+      sessionStorage.setItem(
+        STUDIO_SESSION_KEY,
+        JSON.stringify({
+          tour: this.studioTour,
+          step: this.studioStep,
+          collapsed: this.studioCollapsed,
+        }),
+      )
+    } catch {}
+  }
+
+  closeStudioTour() {
+    this.studioTour = null
+    this.tourStepAppliedInPlace = false
+    try {
+      sessionStorage.removeItem(STUDIO_SESSION_KEY)
+    } catch {}
+    if (this.studioStripEl) this.studioStripEl.hidden = true
+    this.hideStudioPage()
+    this.clearNote()
+    document.documentElement.removeAttribute("data-arcade-studio-open")
+    document.documentElement.removeAttribute("data-arcade-studio-collapsed")
+    document.documentElement.style.setProperty("--arcade-studio-strip-h", "0px")
+    try {
+      const u = new URL(location.href)
+      let changed = false
+      for (const k of ["tour", "step", "singleTab"]) {
+        if (u.searchParams.has(k)) {
+          u.searchParams.delete(k)
+          changed = true
+        }
+      }
+      if (u.hash.startsWith("#tour/")) {
+        u.hash = "#games"
+        changed = true
+      }
+      if (changed) history.replaceState(null, "", u.pathname + u.search + u.hash)
+    } catch {}
+    this.sendStatus()
+  }
+
+  private isPageStep(step: TourStepDefinition | undefined): boolean {
+    if (!step) return false
+    return step.kind === "page" || Boolean((step.markdown || (step.images && step.images.length > 0)) && step.url.includes("#tour/"))
   }
 
   private syncWindowTourName() {
@@ -1503,9 +1890,45 @@ class PageControlRuntime {
   }
 
   private handleNoteKeydown(event: KeyboardEvent) {
+    const target = event.composedPath()[0] as HTMLElement | null
+    const inText =
+      Boolean(target) &&
+      ((target instanceof HTMLInputElement && (target.type === "text" || target.type === "search" || target.type === "number")) ||
+        target instanceof HTMLTextAreaElement ||
+        Boolean(target?.isContentEditable))
+
+    if (this.studioLightboxEl && !this.studioLightboxEl.hidden && event.key === "Escape") {
+      event.preventDefault()
+      event.stopPropagation()
+      this.studioLightboxEl.hidden = true
+      return
+    }
+
+    if (this.studioTour && this.studioTour.singleTab !== false && !inText && this.studioTour.steps.length > 1) {
+      const isAltPrev =
+        event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        (event.code === "BracketLeft" || event.key === "[" || event.key === "“" || (event.key === "ArrowLeft" && !document.activeElement?.hasAttribute("data-lab")))
+      const isAltNext =
+        event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        (event.code === "BracketRight" || event.key === "]" || event.key === "‘" || (event.key === "ArrowRight" && !document.activeElement?.hasAttribute("data-lab")))
+      if (isAltPrev || isAltNext) {
+        event.preventDefault()
+        event.stopPropagation()
+        const count = this.studioTour.steps.length
+        const nextStep = isAltPrev ? (this.studioStep > 1 ? this.studioStep - 1 : count) : this.studioStep < count ? this.studioStep + 1 : 1
+        void this.goToTourStep(nextStep)
+        return
+      }
+    }
+
     if (!this.activeNote) return
-    const target = event.target as HTMLElement | null
-    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) {
+    if (inText || (target && target.tagName === "SELECT")) {
       return
     }
     if (event.key === "Escape" && this.activeNote.dismissible !== false) {
@@ -1521,7 +1944,20 @@ class PageControlRuntime {
     const style = document.createElement("style")
     style.dataset.arcadeNoteStyle = ""
     style.textContent = `
-      [data-arcade-note][hidden], [data-arcade-note-ring][hidden] {
+      :root {
+        --arcade-studio-strip-h: 0px;
+      }
+      html[data-arcade-studio-open="true"]:not([data-arcade-studio-collapsed="true"]) {
+        --arcade-studio-strip-h: 30px;
+      }
+      html[data-arcade-studio-open="true"]:not([data-arcade-studio-collapsed="true"]) .lab-workbench {
+        margin-top: 30px !important;
+        height: calc(100dvh - 30px) !important;
+      }
+      html[data-arcade-studio-open="true"]:not([data-arcade-studio-collapsed="true"]) .hub-bar {
+        margin-top: 30px !important;
+      }
+      [data-arcade-note][hidden], [data-arcade-note-ring][hidden], [data-arcade-studio-strip][hidden], [data-arcade-studio-page][hidden], [data-arcade-studio-lightbox][hidden] {
         display: none !important;
       }
       @keyframes arcade-note-pulse {
@@ -1539,6 +1975,193 @@ class PageControlRuntime {
       [data-arcade-note] button:disabled {
         opacity: 0.35;
         cursor: default;
+      }
+      [data-arcade-studio-strip] {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 30px;
+        z-index: 10002;
+        background: #0c0d0f;
+        border-bottom: 1px solid #23252a;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        font: 11.5px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        color: #d8dbe0;
+        user-select: none;
+        box-sizing: border-box;
+      }
+      html[data-arcade-studio-collapsed="true"] [data-arcade-studio-strip] {
+        right: auto;
+        top: 6px;
+        left: 8px;
+        height: 24px;
+        border-radius: 999px;
+        border: 1px solid #2c2f35;
+        background: rgba(12, 13, 15, 0.94);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+        padding: 0 6px 0 8px;
+      }
+      html[data-arcade-studio-collapsed="true"] [data-studio-tabs],
+      html[data-arcade-studio-collapsed="true"] [data-studio-kbd] {
+        display: none !important;
+      }
+      [data-studio-brand] {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+        font-size: 11px;
+        color: #9fb0bd;
+        padding-right: 4px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      [data-studio-counter] {
+        font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #7cc5d6;
+        background: rgba(124, 197, 214, 0.14);
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+      [data-studio-tabs] {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+        padding: 2px 0;
+      }
+      [data-studio-tabs]::-webkit-scrollbar {
+        display: none;
+      }
+      [data-studio-step] {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px 0 6px;
+        border-radius: 4px;
+        border: 1px solid #23252a;
+        background: #141518;
+        color: #8b9098;
+        font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+        transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+      }
+      [data-studio-step]:hover {
+        background: #1e2024;
+        color: #d8dbe0;
+        border-color: #2c2f35;
+      }
+      [data-studio-step][aria-selected="true"] {
+        background: rgba(77, 141, 255, 0.16);
+        color: #f2f6fa;
+        border-color: var(--step-accent, #4d8dff);
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--step-accent, #4d8dff) 35%, transparent);
+      }
+      [data-studio-step-num] {
+        font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--step-accent, #7cc5d6);
+        opacity: 0.85;
+      }
+      [data-studio-step][aria-selected="true"] [data-studio-step-num] {
+        opacity: 1;
+      }
+      .arcade-studio-btn {
+        display: inline-grid;
+        place-items: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 4px;
+        border-radius: 4px;
+        border: 1px solid #23252a;
+        background: #141518;
+        color: #9fb0bd;
+        font: 600 11px/1 system-ui, -apple-system, sans-serif;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .arcade-studio-btn:hover:not(:disabled) {
+        background: #1e2024;
+        color: #fff;
+        border-color: #353942;
+      }
+      .arcade-studio-btn:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      [data-studio-kbd] {
+        font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #5b6068;
+        padding: 0 4px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      [data-arcade-studio-page] {
+        position: fixed;
+        top: var(--arcade-studio-strip-h, 30px);
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 9500;
+        background: #0c0d0f;
+        color: #d8dbe0;
+        overflow-y: auto;
+        padding: 66px 24px 28px;
+        font: 12.5px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        box-sizing: border-box;
+      }
+      [data-studio-page-inner] {
+        max-width: 1360px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      [data-studio-image-grid] {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      @media (max-width: 960px) {
+        [data-studio-image-grid] {
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        }
+      }
+      .arcade-studio-img-card {
+        background: #141518;
+        border: 1px solid #23252a;
+        border-radius: 7px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        cursor: zoom-in;
+        transition: border-color 0.12s ease;
+      }
+      .arcade-studio-img-card:hover {
+        border-color: #4d8dff;
+      }
+      .arcade-studio-img-card img {
+        width: 100%;
+        height: 196px;
+        object-fit: cover;
+        display: block;
+        background: #08090b;
+      }
+      .arcade-studio-img-meta {
+        padding: 6px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        border-top: 1px solid #1e2024;
       }
     `
     document.head.append(style)
@@ -1655,6 +2278,14 @@ class PageControlRuntime {
   }
 
   private navigateTourStep(direction: "prev" | "next") {
+    if (this.studioTour && this.studioTour.singleTab !== false) {
+      const count = this.studioTour.steps.length
+      const nextStep = direction === "prev" ? Math.max(1, this.studioStep - 1) : Math.min(count, this.studioStep + 1)
+      if (nextStep !== this.studioStep) {
+        void this.goToTourStep(nextStep)
+      }
+      return
+    }
     const note = this.activeNote
     if (!note) return
     const targetUrl = direction === "prev" ? note.prevUrl : note.nextUrl
@@ -1696,8 +2327,502 @@ class PageControlRuntime {
     }
   }
 
+  private canApplyStepInPlace(step: TourStepDefinition, targetUrl: string): boolean {
+    try {
+      const cur = new URL(location.href)
+      const dst = new URL(targetUrl, location.origin)
+      if (cur.origin !== dst.origin || cur.pathname !== dst.pathname) return false
+      if (cur.searchParams.has("bench") !== dst.searchParams.has("bench")) return false
+      const stripParams = (sp: URLSearchParams, isLab: boolean) => {
+        const copy = new URLSearchParams(sp)
+        copy.delete("tour")
+        copy.delete("step")
+        copy.delete("singleTab")
+        copy.delete("multiTab")
+        if (isLab) copy.delete("section")
+        copy.sort()
+        return copy.toString()
+      }
+      const isLab = cur.pathname.endsWith("/lab.html")
+      return stripParams(cur.searchParams, isLab) === stripParams(dst.searchParams, isLab)
+    } catch {
+      void step
+      return false
+    }
+  }
+
+  private async invokeCommandDirect(adapter: DevControlAdapter, rawCmd: string, args?: Record<string, unknown>) {
+    const cmdId = this.resolveCommandId(adapter.commands, rawCmd)
+    const out = adapter.commands.invoke(cmdId, args, {
+      pickedObject: null,
+      groundHit: null,
+      source: "cli",
+    })
+    if (out.ok && out.result instanceof Promise) {
+      try {
+        await out.result
+      } catch {}
+    }
+    return out
+  }
+
+  async goToTourStep(stepNumber: number): Promise<void> {
+    const tour = this.studioTour
+    if (!tour || stepNumber < 1 || stepNumber > tour.steps.length) return
+    const step = tour.steps[stepNumber - 1]!
+    this.studioStep = stepNumber
+    this.saveStudioSession()
+    const targetUrl = buildTourStepUrl(location.origin, step.url, tour.id, stepNumber, true)
+
+    if (this.canApplyStepInPlace(step, targetUrl)) {
+      this.tourStepAppliedInPlace = true
+      history.replaceState(null, "", targetUrl)
+      this.renderStudioStrip()
+      await this.applyStepInPlace(tour, stepNumber)
+      this.sendStatus()
+      return
+    }
+
+    this.tourStepAppliedInPlace = false
+    location.assign(targetUrl)
+  }
+
+  private async applyStepInPlace(tour: TourDefinition, stepNumber: number): Promise<void> {
+    await this.waitForReady()
+    const step = tour.steps[stepNumber - 1]
+    if (!step) return
+    const adapter = this.activeAdapter()
+    this.ensureStandardCommands(adapter)
+
+    if (this.isPageStep(step)) {
+      this.renderStudioPage(tour, step, stepNumber)
+    } else {
+      this.hideStudioPage()
+      if (location.pathname.endsWith("/lab.html")) {
+        const parsed = new URL(step.url, location.origin)
+        const urlSection =
+          parsed.searchParams.get("section")?.trim() ||
+          parsed.hash.replace(/^#/, "").split("/")[0]?.trim() ||
+          ""
+        const hasSectionCmd = step.setup.some(c =>
+          ["scene.select-section", "look.preset", "look.set", "foliage.preset", "foliage.set", "vignette.preset", "vignette.camera"].includes(
+            c.command,
+          ),
+        )
+        const desiredSection = urlSection || (!hasSectionCmd ? "spawn" : "")
+        if (desiredSection && adapter.getSection?.() !== desiredSection) {
+          await this.invokeCommandDirect(adapter, "scene.select-section", { section: desiredSection })
+        }
+      } else if (location.pathname.endsWith("/dev.html")) {
+        const parsed = new URL(step.url, location.origin)
+        const targetHash = parsed.hash || "#games"
+        if (location.hash !== targetHash) {
+          location.hash = targetHash
+          await new Promise(r => setTimeout(r, 60))
+        }
+      }
+    }
+
+    for (const cmd of step.setup) {
+      const currentAdapter = this.activeAdapter()
+      this.ensureStandardCommands(currentAdapter)
+      await this.invokeCommandDirect(currentAdapter, cmd.command, cmd.args)
+    }
+
+    const prevUrl =
+      stepNumber > 1 ? buildTourStepUrl(location.origin, tour.steps[stepNumber - 2]!.url, tour.id, stepNumber - 1, true) : undefined
+    const nextUrl =
+      stepNumber < tour.steps.length
+        ? buildTourStepUrl(location.origin, tour.steps[stepNumber]!.url, tour.id, stepNumber + 1, true)
+        : undefined
+
+    this.showNote({
+      title: step.title,
+      ...(step.body ? { body: step.body } : {}),
+      step: `${stepNumber}/${tour.steps.length}`,
+      ...(step.accent ? { accent: step.accent } : {}),
+      ...(step.target ? { target: step.target } : {}),
+      dismissible: step.dismissible ?? true,
+      tourId: tour.id,
+      stepIndex: stepNumber,
+      stepCount: tour.steps.length,
+      ...(prevUrl ? { prevUrl } : {}),
+      ...(nextUrl ? { nextUrl } : {}),
+      singleTab: true,
+    })
+  }
+
+  private renderStudioStrip() {
+    if (typeof document === "undefined" || !document.body) return
+    this.ensureNoteStyle()
+    const tour = this.studioTour
+    const meta = this.readUrlTourMeta()
+    if (!tour || tour.singleTab === false || meta?.singleTab === false) {
+      if (this.studioStripEl) this.studioStripEl.hidden = true
+      document.documentElement.removeAttribute("data-arcade-studio-open")
+      document.documentElement.removeAttribute("data-arcade-studio-collapsed")
+      document.documentElement.style.setProperty("--arcade-studio-strip-h", "0px")
+      return
+    }
+
+    document.documentElement.setAttribute("data-arcade-studio-open", "true")
+    if (this.studioCollapsed) {
+      document.documentElement.setAttribute("data-arcade-studio-collapsed", "true")
+      document.documentElement.style.setProperty("--arcade-studio-strip-h", "0px")
+    } else {
+      document.documentElement.removeAttribute("data-arcade-studio-collapsed")
+      document.documentElement.style.setProperty("--arcade-studio-strip-h", "30px")
+    }
+
+    if (!this.studioStripEl || !document.body.contains(this.studioStripEl)) {
+      const nav = document.createElement("nav")
+      nav.dataset.arcadeStudioStrip = ""
+      nav.setAttribute("aria-label", "Arcade Studio Tour Tabs")
+      document.body.prepend(nav)
+      this.studioStripEl = nav
+    }
+
+    const strip = this.studioStripEl
+    strip.hidden = false
+    strip.replaceChildren()
+
+    const brand = document.createElement("span")
+    brand.dataset.studioBrand = ""
+    const icon = document.createElement("span")
+    icon.textContent = "◫"
+    icon.style.color = "#4d8dff"
+    const tourTitle = document.createElement("span")
+    tourTitle.textContent = tour.title || tour.id
+    const counter = document.createElement("span")
+    counter.dataset.studioCounter = ""
+    counter.textContent = `${this.studioStep}/${tour.steps.length}`
+    brand.append(icon, tourTitle, counter)
+    strip.append(brand)
+
+    const prevBtn = document.createElement("button")
+    prevBtn.type = "button"
+    prevBtn.className = "arcade-studio-btn"
+    prevBtn.dataset.studioPrev = ""
+    prevBtn.tabIndex = -1
+    prevBtn.title = "Previous step (Alt+[)"
+    prevBtn.setAttribute("aria-label", "Previous tour step")
+    prevBtn.textContent = "‹"
+    prevBtn.disabled = tour.steps.length <= 1
+    prevBtn.onclick = e => {
+      e.stopPropagation()
+      const prev = this.studioStep > 1 ? this.studioStep - 1 : tour.steps.length
+      void this.goToTourStep(prev)
+    }
+
+    const nextBtn = document.createElement("button")
+    nextBtn.type = "button"
+    nextBtn.className = "arcade-studio-btn"
+    nextBtn.dataset.studioNext = ""
+    nextBtn.tabIndex = -1
+    nextBtn.title = "Next step (Alt+])"
+    nextBtn.setAttribute("aria-label", "Next tour step")
+    nextBtn.textContent = "›"
+    nextBtn.disabled = tour.steps.length <= 1
+    nextBtn.onclick = e => {
+      e.stopPropagation()
+      const next = this.studioStep < tour.steps.length ? this.studioStep + 1 : 1
+      void this.goToTourStep(next)
+    }
+
+    strip.append(prevBtn, nextBtn)
+
+    const tabsWrap = document.createElement("div")
+    tabsWrap.dataset.studioTabs = ""
+    tabsWrap.setAttribute("role", "tablist")
+
+    tour.steps.forEach((step, idx) => {
+      const stepNum = idx + 1
+      const isSelected = stepNum === this.studioStep
+      const colors = resolveAccentColors(step.accent)
+      const tab = document.createElement("button")
+      tab.type = "button"
+      tab.setAttribute("role", "tab")
+      tab.dataset.studioStep = String(stepNum)
+      tab.dataset.stepKind = this.isPageStep(step) ? "page" : "scene"
+      tab.setAttribute("aria-selected", String(isSelected))
+      tab.tabIndex = isSelected ? 0 : -1
+      tab.title = `${stepNum}. ${step.title}${step.body ? ` — ${step.body}` : ""}`
+      tab.style.setProperty("--step-accent", colors.text)
+
+      const numSpan = document.createElement("span")
+      numSpan.dataset.studioStepNum = ""
+      numSpan.textContent = String(stepNum)
+
+      const labelSpan = document.createElement("span")
+      labelSpan.dataset.studioStepTitle = ""
+      labelSpan.textContent = step.title
+
+      tab.append(numSpan, labelSpan)
+      if (this.isPageStep(step)) {
+        const kindBadge = document.createElement("span")
+        kindBadge.textContent = "▤"
+        kindBadge.style.cssText = "font-size:10px;opacity:0.7;"
+        kindBadge.title = "Studio landing page (0 WebGPU cost)"
+        tab.append(kindBadge)
+      }
+
+      tab.onclick = e => {
+        e.stopPropagation()
+        tab.blur()
+        void this.goToTourStep(stepNum)
+      }
+      tab.onkeydown = e => {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault()
+          e.stopPropagation()
+          const delta = e.key === "ArrowLeft" ? -1 : 1
+          const next = ((stepNum - 1 + delta + tour.steps.length) % tour.steps.length) + 1
+          void this.goToTourStep(next)
+        }
+      }
+
+      tabsWrap.append(tab)
+    })
+
+    strip.append(tabsWrap)
+
+    const kbdHint = document.createElement("span")
+    kbdHint.dataset.studioKbd = ""
+    kbdHint.title = "Switch mini tabs with Alt+[ and Alt+]"
+    kbdHint.textContent = "⌥[ ⌥]"
+    strip.append(kbdHint)
+
+    const collapseBtn = document.createElement("button")
+    collapseBtn.type = "button"
+    collapseBtn.className = "arcade-studio-btn"
+    collapseBtn.dataset.studioCollapse = ""
+    collapseBtn.tabIndex = -1
+    collapseBtn.title = this.studioCollapsed ? "Expand studio tab strip" : "Collapse studio tab strip"
+    collapseBtn.setAttribute("aria-label", this.studioCollapsed ? "Expand studio tab strip" : "Collapse studio tab strip")
+    collapseBtn.textContent = this.studioCollapsed ? "▾" : "▴"
+    collapseBtn.onclick = e => {
+      e.stopPropagation()
+      this.studioCollapsed = !this.studioCollapsed
+      this.saveStudioSession()
+      this.renderStudioStrip()
+      if (this.activeNote) this.showNote(this.activeNote)
+    }
+
+    const closeBtn = document.createElement("button")
+    closeBtn.type = "button"
+    closeBtn.className = "arcade-studio-btn"
+    closeBtn.dataset.studioClose = ""
+    closeBtn.tabIndex = -1
+    closeBtn.title = "Close studio tour strip"
+    closeBtn.setAttribute("aria-label", "Close studio tour strip")
+    closeBtn.textContent = "×"
+    closeBtn.onclick = e => {
+      e.stopPropagation()
+      this.closeStudioTour()
+    }
+
+    strip.append(collapseBtn, closeBtn)
+    const activeTab = tabsWrap.querySelector<HTMLElement>('[aria-selected="true"]')
+    activeTab?.scrollIntoView({ inline: "center", block: "nearest" })
+  }
+
+  private openStudioLightbox(images: TourPageImage[], tourId: string, initialIdx: number) {
+    if (!document.body) return
+    if (!this.studioLightboxEl || !document.body.contains(this.studioLightboxEl)) {
+      const lb = document.createElement("div")
+      lb.dataset.arcadeStudioLightbox = ""
+      lb.style.cssText =
+        "position:fixed;inset:0;z-index:10005;background:rgba(6,8,10,0.92);backdrop-filter:blur(8px);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;"
+      document.body.append(lb)
+      this.studioLightboxEl = lb
+    }
+    let cur = initialIdx
+    const lb = this.studioLightboxEl
+    lb.hidden = false
+
+    const renderLb = () => {
+      lb.replaceChildren()
+      const item = images[cur]!
+      const src = resolveTourAssetUrl(tourId, item.src)
+
+      const topRow = document.createElement("div")
+      topRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;width:min(1280px,94vw);margin-bottom:10px;color:#e6eef4;"
+      const labelEl = document.createElement("div")
+      labelEl.style.cssText = "font:600 14px/1.3 system-ui,-apple-system,sans-serif;"
+      labelEl.textContent = `${cur + 1}/${images.length} · ${item.label || item.src}${item.caption ? ` — ${item.caption}` : ""}`
+
+      const btnGroup = document.createElement("div")
+      btnGroup.style.cssText = "display:flex;gap:6px;"
+      const prev = document.createElement("button")
+      prev.type = "button"
+      prev.className = "arcade-studio-btn"
+      prev.style.cssText = "width:28px;height:26px;"
+      prev.textContent = "‹"
+      prev.onclick = e => {
+        e.stopPropagation()
+        cur = (cur - 1 + images.length) % images.length
+        renderLb()
+      }
+      const next = document.createElement("button")
+      next.type = "button"
+      next.className = "arcade-studio-btn"
+      next.style.cssText = "width:28px;height:26px;"
+      next.textContent = "›"
+      next.onclick = e => {
+        e.stopPropagation()
+        cur = (cur + 1) % images.length
+        renderLb()
+      }
+      const close = document.createElement("button")
+      close.type = "button"
+      close.className = "arcade-studio-btn"
+      close.style.cssText = "width:28px;height:26px;"
+      close.textContent = "×"
+      close.onclick = e => {
+        e.stopPropagation()
+        lb.hidden = true
+      }
+      btnGroup.append(prev, next, close)
+      topRow.append(labelEl, btnGroup)
+
+      const img = document.createElement("img")
+      img.src = src
+      img.alt = item.label || item.src
+      img.style.cssText = "max-width:94vw;max-height:calc(100dvh - 96px);border-radius:6px;border:1px solid #2c2f35;box-shadow:0 16px 48px rgba(0,0,0,0.65);object-fit:contain;"
+      lb.append(topRow, img)
+    }
+
+    lb.onclick = () => {
+      lb.hidden = true
+    }
+    renderLb()
+  }
+
+  private renderStudioPage(tour: TourDefinition, step: TourStepDefinition, stepNumber: number) {
+    if (typeof document === "undefined" || !document.body) return
+    this.ensureNoteStyle()
+    if (!this.studioPageEl || !document.body.contains(this.studioPageEl)) {
+      const page = document.createElement("section")
+      page.dataset.arcadeStudioPage = ""
+      page.setAttribute("aria-label", "Studio Tour Landing Page")
+      document.body.append(page)
+      this.studioPageEl = page
+    }
+
+    const pageEl = this.studioPageEl
+    pageEl.hidden = false
+    pageEl.replaceChildren()
+
+    const inner = document.createElement("div")
+    inner.dataset.studioPageInner = ""
+
+    const hiddenMeta = document.createElement("div")
+    hiddenMeta.hidden = true
+    const h1 = document.createElement("h1")
+    h1.dataset.studioPageTitle = ""
+    h1.textContent = step.title
+    hiddenMeta.append(h1)
+    if (step.body) {
+      const lead = document.createElement("p")
+      lead.dataset.studioPageBody = ""
+      lead.textContent = step.body
+      hiddenMeta.append(lead)
+    }
+    inner.append(hiddenMeta)
+
+    if (step.markdown) {
+      const mdCard = document.createElement("div")
+      mdCard.dataset.studioMarkdown = ""
+      mdCard.style.cssText = "background:#141518;border:1px solid #23252a;border-radius:7px;padding:10px 14px;"
+      mdCard.append(renderMarkdownFragment(step.markdown))
+      inner.append(mdCard)
+    }
+
+    if (step.images && step.images.length > 0) {
+      const grid = document.createElement("div")
+      grid.dataset.studioImageGrid = ""
+      step.images.forEach((item, idx) => {
+        const card = document.createElement("figure")
+        card.className = "arcade-studio-img-card"
+        card.style.margin = "0"
+        card.dataset.studioImageCard = String(idx + 1)
+
+        const img = document.createElement("img")
+        img.dataset.studioImage = String(idx + 1)
+        img.dataset.studioLabel = item.label || item.src
+        img.src = resolveTourAssetUrl(tour.id, item.src)
+        img.alt = item.label || item.src
+        img.loading = "eager"
+
+        const meta = document.createElement("figcaption")
+        meta.className = "arcade-studio-img-meta"
+
+        const titleRow = document.createElement("div")
+        titleRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;"
+
+        const nameSpan = document.createElement("span")
+        nameSpan.style.cssText = "font-weight:600;font-size:12.5px;color:#e6eef4;"
+        nameSpan.textContent = item.label || item.src
+        titleRow.append(nameSpan)
+
+        if (item.tag) {
+          const tagSpan = document.createElement("span")
+          tagSpan.style.cssText =
+            "font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:2px 6px;border-radius:4px;background:rgba(77,141,255,0.16);color:#8ab4ff;text-transform:uppercase;"
+          tagSpan.textContent = item.tag
+          titleRow.append(tagSpan)
+        }
+        meta.append(titleRow)
+
+        if (item.caption) {
+          const cap = document.createElement("div")
+          cap.style.cssText = "font-size:11.5px;color:#8b9098;line-height:1.35;"
+          cap.textContent = item.caption
+          meta.append(cap)
+        }
+
+        card.append(img, meta)
+        card.onclick = () => this.openStudioLightbox(step.images!, tour.id, idx)
+        grid.append(card)
+      })
+      inner.append(grid)
+    }
+
+    pageEl.append(inner)
+  }
+
+  private hideStudioPage() {
+    if (this.studioPageEl) {
+      this.studioPageEl.hidden = true
+    }
+    if (this.studioLightboxEl) {
+      this.studioLightboxEl.hidden = true
+    }
+  }
+
+  private syncStudioUI() {
+    if (typeof document === "undefined" || !document.body) return
+    this.renderStudioStrip()
+    if (this.studioTour && this.studioTour.singleTab !== false) {
+      const currentStep = this.studioTour.steps[this.studioStep - 1]
+      const onTourHash = location.hash.startsWith("#tour/")
+      if (currentStep && this.isPageStep(currentStep) && (onTourHash || location.pathname.endsWith("/dev.html"))) {
+        this.renderStudioPage(this.studioTour, currentStep, this.studioStep)
+      } else {
+        this.hideStudioPage()
+      }
+    } else {
+      this.hideStudioPage()
+    }
+  }
+
   showNote(note: DevNotePayload): DevNoteResolvedRect | null {
     this.ensureNoteStyle()
+    if (note.tourId && note.stepIndex && this.studioTour && this.studioTour.id === note.tourId) {
+      this.studioStep = note.stepIndex
+      this.saveStudioSession()
+    }
+    this.syncStudioUI()
     if (this.baseDocumentTitle === null) {
       const current = document.title || ""
       this.baseDocumentTitle = current.startsWith("▸ ") ? current.slice(2) : current
@@ -1720,8 +2845,10 @@ class PageControlRuntime {
     }
 
     const colors = resolveAccentColors(note.accent)
-    const hasTopbar = Boolean(document.querySelector(".lab-topbar, .hub-bar"))
-    const topPx = hasTopbar ? 46 : 12
+    const studioPageVisible = Boolean(document.querySelector<HTMLElement>("[data-arcade-studio-page]:not([hidden])"))
+    const hasTopbar = !studioPageVisible && Boolean(document.querySelector(".lab-topbar, .hub-bar"))
+    const stripOffset = this.isStudioStripExpanded() ? 30 : 0
+    const topPx = (hasTopbar ? 42 : 8) + stripOffset
     this.noteEl.hidden = false
     this.noteEl.style.cssText = `position:fixed;top:${topPx}px;left:50%;transform:translateX(-50%);z-index:10000;pointer-events:none;max-width:min(760px,calc(100vw - 28px));background:rgba(11,15,20,0.93);backdrop-filter:blur(10px);color:#f0f5f8;border:1px solid ${colors.border};border-left:3.5px solid ${colors.text};border-radius:9px;padding:7px 12px;box-shadow:0 8px 26px rgba(0,0,0,0.48);font:12.5px/1.35 system-ui,-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;gap:10px;animation:arcade-note-card-flash 0.22s ease-out;`
 
@@ -1852,12 +2979,14 @@ class PageControlRuntime {
     const timer = window.setInterval(() => {
       if (this.isPageReady()) {
         window.clearInterval(timer)
+        this.syncStudioUI()
         this.sendStatus()
         return
       }
       if (Date.now() - started > maxWait) {
         this.fallbackReady = true
         window.clearInterval(timer)
+        this.syncStudioUI()
         this.sendStatus()
       }
     }, 40)
@@ -1900,6 +3029,7 @@ class PageControlRuntime {
     if (adapter) {
       this.ensureStandardCommands(adapter)
     }
+    this.syncStudioUI()
     this.sendStatus()
   }
 
@@ -1909,6 +3039,7 @@ class PageControlRuntime {
       this.defaultAdapter = this.createDefaultGameAdapter()
       this.ensureStandardCommands(this.defaultAdapter)
     }
+    this.syncStudioUI()
     this.sendStatus()
   }
 
@@ -2119,8 +3250,9 @@ class PageControlRuntime {
         run: async (_ctx, args) => {
           const maxSize = typeof args?.maxSize === "number" ? args.maxSize : 1280
           const includeOverlay = args?.raw !== true
+          const studioPageVisible = Boolean(document.querySelector<HTMLElement>("[data-arcade-studio-page]:not([hidden])"))
           const canvas = adapter.getCanvas?.() ?? document.querySelector<HTMLCanvasElement>("canvas")
-          if (!canvas || (canvas.closest("[hidden]") && adapter.kind === "hub")) {
+          if (studioPageVisible || !canvas || (canvas.closest("[hidden]") && adapter.kind === "hub")) {
             const synth = synthesizeHubCanvas()
             return await captureWebGPUOr2DCanvas(synth, undefined, maxSize, includeOverlay)
           }
@@ -2311,7 +3443,16 @@ class PageControlRuntime {
       const ws = new WebSocket(wsUrl)
       this.ws = ws
       ws.onopen = () => {
+        this.syncStudioUI()
         this.sendStatus()
+        const urlMeta = this.readUrlTourMeta()
+        const tourId = urlMeta?.id ?? this.studioTour?.id
+        const step = urlMeta?.step ?? this.studioStep
+        if (tourId) {
+          try {
+            ws.send(JSON.stringify({ type: "tour.get", tourId, step }))
+          } catch {}
+        }
       }
       ws.onmessage = event => {
         try {
@@ -2321,9 +3462,22 @@ class PageControlRuntime {
             command?: string
             args?: Record<string, unknown>
             url?: string
+            tour?: TourDefinition
+            step?: number
           }
           if (msg.type === "invoke" && msg.requestId && msg.command) {
             void this.handleRpc({ requestId: msg.requestId, command: msg.command, args: msg.args })
+          } else if (msg.type === "tour.state" && msg.tour) {
+            const urlMeta = this.readUrlTourMeta()
+            this.studioTour = msg.tour
+            if (urlMeta && urlMeta.id === msg.tour.id) {
+              this.studioStep = urlMeta.step
+            } else if (typeof msg.step === "number" && msg.step >= 1) {
+              this.studioStep = msg.step
+            }
+            this.saveStudioSession()
+            this.syncStudioUI()
+            if (this.activeNote) this.showNote(this.activeNote)
           } else if (msg.type === "tour.activate") {
             try {
               window.focus()
