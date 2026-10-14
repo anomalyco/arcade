@@ -406,10 +406,10 @@ export async function lab(options:LabOptions) {
     },
   }
   let last=0
-  const tick=async(now:number)=>{
+  const tick=(now:number)=>{
     const dt=last?Math.max(0,Math.min(0.033,(now-last)/1000)):0;last=now
-    if(!bench&&!document.hidden){advance(dt);await render()}
     requestAnimationFrame(tick)
+    if(!bench&&!document.hidden){advance(dt);void render()}
   }
   await render()
   if(bench)Object.assign(window,{lab:api,fx:{adapter:adapter.info,...effects,particles,volume,trail,stage,render,debug:(n:number)=>{settings.debug=n;syncDebugOptions(settings.section);panel!.sync()}}})

@@ -374,6 +374,7 @@ export class Game {
     if (dynamic) this.spellFx.setMap(map)
     const staticMap = dynamic ? { ...map, props: [] } : map
     const level = buildLevel(staticMap, castle)
+    this.splatterFx = new Splatter(blackoutSplatterSurfaces(level))
     this.bounceFull = level.bounce
     this.bounceBase = bakeBounce(map, 0)
     this.bounceIntensity = -1
