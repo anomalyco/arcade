@@ -15,7 +15,7 @@ import { LabInput } from "./input"
 import { createSpawn } from "./spawn"
 import type { SpawnFactory } from "./spawn-types"
 import { createWorkbench } from "./workbench"
-import { hubCommands } from "../dev-hub-model"
+import { hubCommands, hubPath } from "../dev-hub-model"
 
 export type { LabContext, LabSection, LabWorldObject, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
 export type { SpawnFactory, SpawnAdapters, CharacterSpawnable, LabCharacter, ItemWorld, SpawnPoint } from "./spawn-types"
@@ -26,15 +26,22 @@ export type LabOptions = {
   physics?:(context:LabContext)=>PhysicsAdapter
   sections?:readonly SectionFactory[]
   spawn?:SpawnFactory
+  /** Top-bar label after "Lab"; defaults to the game in the URL prefix. */
+  brand?:string
+  /** Mounts host controls (game picker, audio) in the top bar before the debug view. */
+  toolbar?:(slot:HTMLElement)=>void
 }
 export async function lab(options:LabOptions) {
   document.title="Lab"
-  const game=location.pathname.match(/\/arcade\/([^/]+)\//)?.[1]??""
+  const prefix=location.pathname.match(/\/arcade\/([^/]+)\//)?.[1]??""
+  const game=options.brand??(prefix?prefix[0]!.toUpperCase()+prefix.slice(1):"")
+  // Relative hub links resolve under a game prefix; the shared Lab lives beside the games.
+  const hubHref=prefix==="lab"?`${hubPath}#games`:hubCommands[0].href
   document.body.innerHTML=`
     <div class="lab-workbench" data-lab-workbench>
       <header class="lab-topbar" aria-label="Workbench toolbar">
-        <a class="lab-btn lab-hub" href="${hubCommands[0].href}" aria-label="Dev Hub" title="Dev Hub">Hub</a>
-        <span class="lab-brand"><b>Lab</b><span data-readout="game">${game?game[0]!.toUpperCase()+game.slice(1):""}</span></span>
+        <a class="lab-btn lab-hub" href="${hubHref}" aria-label="Dev Hub" title="Dev Hub">Hub</a>
+        <span class="lab-brand"><b>Lab</b><span data-readout="game">${game}</span></span>
         <div class="lab-mode-seg" role="group" aria-label="Interaction mode">
           <button type="button" class="lab-btn" data-action="mode-edit" aria-label="Edit mode" aria-pressed="true">Edit</button>
           <button type="button" class="lab-btn" data-action="mode-play" aria-label="Play mode" aria-pressed="false" title="Possess character (P)">Play</button>
@@ -55,6 +62,7 @@ export async function lab(options:LabOptions) {
           <span class="lab-mono lab-clock" data-readout="elapsed">0.00s · f0</span>
         </div>
         <div class="lab-topbar-right">
+          <div class="lab-topbar-extra" data-topbar-extra></div>
           <select class="lab-select lab-view" data-control="debug" aria-label="Debug view" title="Debug view"></select>
           <button type="button" class="lab-search-btn" data-action="palette" aria-label="Search everything" title="Search scene, library, commands and settings (⌘K)">
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.2 10.2 13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -137,6 +145,7 @@ export async function lab(options:LabOptions) {
   const canvas=viewportHost.querySelector("canvas")!
   const sectionSelect=workbenchRoot.querySelector<HTMLSelectElement>('[data-control="section"]')!
   const debugSelect=workbenchRoot.querySelector<HTMLSelectElement>('[data-control="debug"]')!
+  options.toolbar?.(workbenchRoot.querySelector<HTMLElement>("[data-topbar-extra]")!)
 
   const adapter=await navigator.gpu?.requestAdapter({powerPreference:"high-performance"})
   if(!adapter)throw new Error("WebGPU unavailable")
