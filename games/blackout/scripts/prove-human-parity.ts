@@ -13,7 +13,7 @@ const EXPECTED_HASHES = {
   // run-realism pass: mocap-calibrated running heel kick-up and knee drive in poseLegs, unwrapped sagittal
   // shin-relative swing ankle pitch, seeded pair-balanced per-step variation (stride, timing, lift, lateral
   // placement, toe-out yaw, arm swing), start/stop weight transfer, turn banking, and secondary head lag.
-  new: "3ae7dc130987d3ed3b4de90c79902359919089406532374929b42c1485b5c5e7",
+  new: "dcca71fd2a0ce386aeff806a3f15f6afa2fc96f1f76643b7e47242fb8f332f79",
 } as const
 
 type Api = {
