@@ -137,10 +137,19 @@ Audio entry/selection must stay silent. Render waveform/spectrogram previews off
 Audition. Neither a generic Retrigger nor a preset import should automatically unlock/play audio. Release live audio
 on section leave, blur or hidden-tab transitions.
 
-Scene sound is the exception that follows the scene: once the user's first click or key unlocks audio, the Lab plays
-the car (engine, tyres, skids, impacts), effect one-shots (explosion, glass, shots, sparks, splats), fire and water
-beds, footsteps and street ambience on the shared runtime. Sections report effects through `LabContext.emit`
-(`gameEffects`, Fire and water, and shared Effects already do); characters are sampled each simulated tick. The
+Scene sound is the exception that follows the scene: once the user's first click or key unlocks audio, each loaded
+game plays its own sound through a `LabAudioAdapter` (`packages/kit/lab/audio-adapter.ts`), loaded with that game's
+Lab adapters and attached to the Lab's single `AudioContext`. Getaway's adapter (`games/getaway/src/lab/audio.ts`) runs
+the game's `GameAudio` on its own `AudioEngine`, with the Lab car as the local player's car: the approved procedural
+DriverVoice engine and gearbox, tyre squeal and scrub, nitro, crash and scrape samples, landing thumps, exhaust pops and
+the city bed. Blackout's (`games/blackout/src/lab/audio.ts`) drives its `Sound` the way `Game` does: animation-cued
+footsteps and gun mechanics for the soldier, plus gunshots, bullet impacts, casing and magazine clinks and explosions
+for effects. Outbreak has no sound yet. The shared runtime only stands in where no loaded game has a sound: glass,
+sparks, splats, vehicle-effect crashes, fire and water beds, and explosions when Blackout isn't loaded. Sections report
+effects through `LabContext.emit`; characters hand `LabCharacter.sound()` state to the adapters every simulated tick.
+`bun games/lab/scripts/prove-game-audio.ts` renders each game's path and the Lab's into separate offline contexts and
+requires identical nodes, connections and AudioParam automation (an engine held at fixed RPM, a slide, footsteps,
+gun cues, an explosion) and samples within -120 dBFS. The
 top-bar speaker toggles mute (`M` in Edit mode, never in text fields or Play), its slider sets master volume, and the
 Audio section's **Lab volume** group sets Vehicles, Effects, Ambience and UI. All of it persists in `localStorage`
 (`arcade.lab.audio.v1`). `?bench` stays silent unless `&sound` is added, and automated browsers start muted.

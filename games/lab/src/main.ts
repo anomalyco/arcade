@@ -46,7 +46,9 @@ function gamePicker(slot: HTMLElement) {
 async function start() {
   const modules = await Promise.all(games.map(async game => ({ game, module: (await game.load()).default })))
   const wantsPlayground = modules.some(({ game, module }) => game.id === "getaway" || module.characters)
-  const playground = wantsPlayground ? (await loadPlayground()).getawaySpawn : undefined
+  const { getawaySpawn: playground, getawayLabAudio } = wantsPlayground ? await loadPlayground() : {}
+  if (getawayLabAudio) sound.add(getawayLabAudio())
+  for (const { module } of modules) if (module.audio) sound.add(module.audio())
   const sections: SectionFactory[] = [...modules.flatMap(({ module }) => module.sections), audioSection(sound)]
   const spawn: SpawnFactory | undefined = playground && (context => {
     const base = playground(context)

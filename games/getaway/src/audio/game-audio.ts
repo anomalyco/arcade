@@ -2,7 +2,7 @@ import { keyLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { flatCount, type Input } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
-import { audio, type AudioEngine, type SfxName } from "./audio"
+import type { AudioEngine, SfxName } from "./engine"
 import { DriverVoice, EngineVoice } from "./synth"
 import { character, Gearbox } from "./drivetrain"
 import { StreetAcoustics } from "./environment"
@@ -308,7 +308,7 @@ export class GameAudio {
     this.a.stopNitro()
   }
 
-  constructor(hudRoot?: HTMLElement, city?: City, private a: AudioEngine = audio) {
+  constructor(hudRoot: HTMLElement | undefined, city: City | undefined, private a: AudioEngine) {
     this.acoustics = new StreetAcoustics(city)
     if (hudRoot) this.mountHint(hudRoot)
   }

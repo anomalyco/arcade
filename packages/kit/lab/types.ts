@@ -83,6 +83,8 @@ export type LabEvent = {
   effect:string
   /** Effect-specific detail, for example the struck surface. */
   variant?:string
+  /** The section's settings when it fired (weapon, surface, …). */
+  settings?:Readonly<LabSettings>
   x:number
   y:number
   z:number

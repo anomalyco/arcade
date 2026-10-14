@@ -22,17 +22,18 @@ describe("lab mix", () => {
 
 describe("scene cues", () => {
   const known = new Set([...LAB_CUES, ...DEFAULT_CUES].map(cue => cue.id))
-  test("every effect sound names a registered cue", () => {
-    for (const effect of ["explosion", "fireball", "glass", "monitor", "shot", "muzzle", "sparks", "vehicle", "landing", "blood", "pops"]) {
-      const sounds = effectSounds(effect, "glass")
+  test("every shared effect sound names a registered cue", () => {
+    for (const effect of ["explosion", "fireball", "glass", "monitor", "sparks", "vehicle", "blood", "nitro"]) {
+      const sounds = effectSounds(effect)
       expect(sounds.length).toBeGreaterThan(0)
       for (const sound of sounds) expect(known.has(sound.cue)).toBe(true)
     }
-    expect(effectSounds("headlights")).toEqual([])
   })
-  test("shots ring glass only on glass", () => {
-    expect(effectSounds("shot", "glass").map(s => s.cue)).toEqual(["lab_gunshot", "lab_glass"])
-    expect(effectSounds("shot", "wall").map(s => s.cue)).toEqual(["lab_gunshot", "impact_metal_clink"])
+  test("effects with a game sound have no shared stand-in", () => {
+    for (const effect of ["muzzle", "tracer", "holes", "impact", "casings", "magazines", "landing", "pops", "scorch", "headlights"]) expect(effectSounds(effect)).toEqual([])
+    expect(effectSounds("shot", "wall")).toEqual([])
+    expect(effectSounds("shot", "glass").map(s => s.cue)).toEqual(["lab_glass"])
+    expect(LAB_CUES.some(cue => cue.id === "lab_gunshot" || cue.id === "lab_footstep")).toBe(false)
   })
   test("fire and water beds", () => {
     expect(effectBed("fire")).toBe("fire")
