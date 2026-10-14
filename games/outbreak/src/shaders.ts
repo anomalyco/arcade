@@ -1,7 +1,7 @@
 import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
-import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
+import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
 
 export const outbreakPostFinish: PostFinishOptions = {
@@ -40,7 +40,7 @@ export const outbreakSceneHooks: SceneHooks = {
   shadowTaps: 5,
   lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
   material: " ",
-  postLightMaterial: `${surfaceMaterial}
+  postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
       * select(1.0, 1.15, n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
@@ -56,7 +56,7 @@ export const outbreakSceneHooks: SceneHooks = {
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
 ${outbreakLightingDeclarationsWgsl}
-${surfaceMaterialDeclarations}
+${outbreakSurfaceMaterialDeclarationsWgsl}
 ${foliageWindDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   switch id {
@@ -149,55 +149,8 @@ fn eyeVisible(p: vec2f) -> f32 {
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let w = clamp(OL.u0.z, 0.0, 1.0);
-    if (mat == 20) {
-      let kind = i32(round(o.aux));
-      if (kind == 0) {
-        // Muted 70s olive-ochre-moss lawn turf with clump variation & fallen autumn leaf flecks.
-        let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.56, 1.22, smoothstep(0.24, 0.76, turfPatch));
-        let turfLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.34, 0.94, 0.50), w);
-        col = mix(col, oliveOchre, 0.74);
-      } else if (kind == 1) {
-        // Textured cracked asphalt: dark gutters & wheel ruts, alligator fracture lines, coarse aggregate, and warm-slate twilight sheen.
-        let p = o.world.xz;
-        let roadU = clamp((p.y - 40.0) / 8.0, 0.0, 1.0);
-        let crown = 1.0 - abs(roadU * 2.0 - 1.0);
-        let gutter = smoothstep(0.0, 0.18, roadU) * smoothstep(0.0, 0.18, 1.0 - roadU);
-        let ruts = max(0.0, 1.0 - pow((roadU - 0.28) * 6.5, 2.0)) + max(0.0, 1.0 - pow((roadU - 0.72) * 6.5, 2.0));
-        let roadMacro = surfaceNoise(p * 0.28 + vec2f(3.7, 8.1));
-        let w1 = surfaceNoise(p * 1.45 + vec2f(1.7, 5.3));
-        let w2 = surfaceNoise(p * 2.95 + vec2f(8.2, 2.9));
-        let warp = w1 * 0.65 + w2 * 0.35;
-        let fx = abs(fract(p.x * 0.34 + warp * 0.52) - 0.5);
-        let fy = abs(fract(p.y * 0.42 - warp * 0.48 + roadMacro * 0.35) - 0.5);
-        let mask = smoothstep(0.38, 0.64, roadMacro);
-        let cracks = clamp(((1.0 - smoothstep(0.004, 0.016, fx)) + (1.0 - smoothstep(0.005, 0.018, fy)) * 0.85) * mask, 0.0, 1.0);
-        let grit = (w2 - 0.5) * 0.38;
-        let dxRoad = (p.x - 31.5) * 0.055;
-        let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        col *= (0.88 + 0.34 * gutter - 0.08 * ruts + 0.20 * (roadMacro - 0.5) + grit) * (1.0 - 0.52 * cracks);
-        let wetRoad = (0.55 + 0.45 * crown) * (0.52 + 0.48 * centerFocus) * (0.64 + 0.76 * w1) * (1.0 - 0.52 * cracks);
-        let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.112, 0.090, 0.072), w);
-        col += roadSheenCol * F.ambient.w * OL.u2.y * wetRoad;
-      } else if (kind == 2 || kind == 6) {
-        let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
-        if (!inVerge) {
-          let gritWalk = 0.74 + 0.52 * surfaceNoise(o.world.xz * 7.5);
-          let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-          let warmStone = vec3f(walkLum) * vec3f(1.24, 0.88, 0.50);
-          col = mix(col * 0.56, warmStone * 0.50, w) * gritWalk;
-          // Warm porch walkway reflection streak
-          let dxWalk = o.world.x - 27.7;
-          if (abs(dxWalk) < 4.5 && o.world.z > 35.3 && o.world.z < 40.4) {
-            let walkCore = exp(-(dxWalk * dxWalk) / 1.15) * smoothstep(40.4, 35.5, o.world.z);
-            let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            let extScale = select(1.0, 0.68, OL.u5.w > 0.5);
-            col += col * vec3f(1.15, 0.65, 0.22) * (walkCore * 0.95 + sideSpread * 0.45) * OL.u2.y * nightLamps * extScale;
-          }
-        }
-      }
-    } else if (mat == 4 && !inRoom) {
+    ${groundSurfaceHookWgsl}
+    if (mat == 4 && !inRoom) {
       // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
       let eaveShadow = smoothstep(2.05, 2.74, o.world.y);
       let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.28;

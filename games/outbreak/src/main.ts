@@ -30,7 +30,10 @@ import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
+import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
+import { ExteriorClutterRenderer } from "./clutter"
+import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
 import {
@@ -63,9 +66,7 @@ const settings = {
   terrain: 0.22,
   foliageDensity: 1,
   houseDecay: 0,
-  clutterDensity: 1,
   weathering: 1,
-  clutterSeed: 17,
   weather: 0,
   diagnostic: 0,
   textures: 1,
@@ -82,6 +83,7 @@ const settings = {
   aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
   ...DEFAULT_FLASHLIGHT_TUNING,
+  ...DEFAULT_GROUND_SETTINGS,
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
 }
@@ -139,6 +141,9 @@ async function main() {
   const avatar = new Survivor(renderer)
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
+  const groundWear = new GroundWearRenderer(renderer)
+  const exteriorClutter = new ExteriorClutterRenderer(renderer)
+  const ambientMotion = new OutbreakAmbientMotion(renderer)
   const updateProfile = () => {
     avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
   }
@@ -191,6 +196,17 @@ async function main() {
     },
     ...flashlightControls,
     ...staminaControls,
+    ...groundControls,
+    {
+      key: "randomizeGroundTuning",
+      label: "Randomize ground & clutter",
+      group: "Ground & Clutter",
+      type: "action",
+      run: () => {
+        Object.assign(settings, randomizeGroundSettings(settings, settings.groundTuningSeed))
+        lab.refresh()
+      },
+    },
     { key: "textures", label: "Material mode", group: "Materials", options: [{ label: "Textured + procedural", value: 1 }, { label: "Procedural fallback", value: 0 }, { label: "A/B split", value: 2 }] },
     { key: "rugStyle", label: "Rug style", group: "Materials", options: [{ label: "Oriental & Persian", value: 0 }, { label: "Swapped Medallion", value: 1 }, { label: "Procedural geometric", value: 2 }] },
     { key: "wallStyle", label: "Wall finish", group: "Materials", options: [{ label: "Damask & plaster", value: 0 }, { label: "Fine linen plaster", value: 1 }, { label: "Procedural plaster", value: 2 }] },
@@ -240,9 +256,7 @@ async function main() {
         { label: "Barricaded", value: 4 },
       ],
     },
-    { key: "clutterDensity", label: "Clutter density", group: "Generation", min: 0, max: 2, step: 0.1, unit: "×" },
     { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
-    { key: "clutterSeed", label: "Clutter seed", group: "Generation", min: 1, max: 99, step: 1, unit: "" },
     { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
   ]
   const doorMesh = new Mesh()
@@ -437,7 +451,15 @@ async function main() {
         key === "floorStyle" ||
         key === "texScale" ||
         key === "texContrast" ||
-        key === "texRoughness"
+        key === "texRoughness" ||
+        key === "wearAmount" ||
+        key === "curbDirt" ||
+        key === "puddleWetness" ||
+        key === "clutterDensity" ||
+        key === "rubbleAmount" ||
+        key === "motionStrength" ||
+        key === "windGustiness" ||
+        key === "clutterSeed"
       )
         syncTextures()
       if (key === "lookPreset") {
@@ -640,6 +662,7 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    ambientMotion.reset()
   }
   function reset(nextSeed = seed) {
     session.close()
@@ -651,6 +674,7 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    ambientMotion.reset()
     level()
     scenery = new SceneryMemory()
     renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -955,7 +979,7 @@ async function main() {
     const focus = cam.project(focusX, 1, focusY, w, h)
     frame.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, cutHeight, count], 32)
     frame.set([...day.direction, day.sun], 36)
-    frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
+    frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, packGroundCfgBits(settings)], 40)
     frame.set([sightAim, Math.cos((sightCone * Math.PI) / 360), sightAwareness, settings.shroud], 44)
     town.doors.forEach((door, i) =>
       doorData.set(
@@ -973,7 +997,7 @@ async function main() {
       sashData.set([(wx0 + wx1) / 2, 0.38, (wy0 + wy1) / 2, yaw, 1, 1, 1, 1, 0, 0, 1, 0], openWindows++ * 12)
     }
     sashBatch.count = openWindows
-    render.alphaCount = zombieCrowd.renderDebugOverlay(
+    const debugAlphaCount = zombieCrowd.renderDebugOverlay(
       Boolean(settings.aiDebugOverlay),
       zombies,
       noises,
@@ -987,9 +1011,25 @@ async function main() {
       alphaSprites,
       0,
     )
+    const groundWearBatches = groundWear.collectBatches(town, view, settings)
+    const clutterBatches = exteriorClutter.collectBatches(town, view, settings)
+    const motionOut = ambientMotion.stepAndCollect(
+      dt,
+      time,
+      town,
+      p,
+      view,
+      settings,
+      alphaSprites,
+      debugAlphaCount,
+    )
+    render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
     render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     render.batches = [
+      ...groundWearBatches,
+      ...clutterBatches,
+      ...motionOut.batches,
       ...survivorBatches,
       ...fxOut.batches,
       ...zombieBatches,
@@ -1144,6 +1184,17 @@ async function main() {
       explored: vision.explored.filter((v) => v > 0).length,
       vertices,
       splatter: combatFx.splatter?.inspect() ?? null,
+      ground: {
+        wearAmount: settings.wearAmount,
+        curbDirt: settings.curbDirt,
+        puddleWetness: settings.puddleWetness,
+        clutterDensity: settings.clutterDensity,
+        rubbleAmount: settings.rubbleAmount,
+        motionStrength: settings.motionStrength,
+        windGustiness: settings.windGustiness,
+        clutterSeed: settings.clutterSeed,
+        groundTuningSeed: settings.groundTuningSeed,
+      },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
@@ -1197,7 +1248,15 @@ async function main() {
         key === "floorStyle" ||
         key === "texScale" ||
         key === "texContrast" ||
-        key === "texRoughness"
+        key === "texRoughness" ||
+        key === "wearAmount" ||
+        key === "curbDirt" ||
+        key === "puddleWetness" ||
+        key === "clutterDensity" ||
+        key === "rubbleAmount" ||
+        key === "motionStrength" ||
+        key === "windGustiness" ||
+        key === "clutterSeed"
       )
         syncTextures()
       if (key === "lookPreset") {

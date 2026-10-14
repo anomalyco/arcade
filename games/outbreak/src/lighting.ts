@@ -781,9 +781,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       if (dS2 < 95.0) {
         let sodiumCol = vec3f(1.0, 0.40, 0.06);
         let poolS = exp(-dS2 / select(20.0, 28.0, isInView)) * groundMask;
-        let rawD2 = dot(world.xz - sPos, world.xz - sPos);
-        let bulbCore = exp(-rawD2 / 0.65) * select(0.09, 0.14, isInView) * step(world.y, 0.55);
-        col += texAlbedo * sodiumCol * poolS * select(1.35, 2.85, isInView) * sScale + sodiumCol * bulbCore * sScale;
+        col += texAlbedo * sodiumCol * poolS * select(1.35, 2.85, isInView) * sScale;
       }
     }
 

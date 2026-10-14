@@ -23,7 +23,7 @@ import {
   type FlashlightState as SurvivorFlashlightState,
   type FlashlightTuning,
 } from "./flashlight"
-import { propShape, sightRects, SIZE, solidRects, type Town } from "./map"
+import { EXTERIOR_VEHICLE_COLLIDERS, propShape, sightRects, SIZE, solidRects, type Town } from "./map"
 
 export {
   createAIAgent,
@@ -251,6 +251,7 @@ export class OutbreakAISubsystem {
         const s = propShape(p)
         return s ? [s.rect] : []
       }),
+      ...EXTERIOR_VEHICLE_COLLIDERS,
     ]
     this.nav.rebuild(navObstacleRects, this.portals, 0.28)
   }

@@ -308,21 +308,21 @@ function compileLevel(town: Town): LevelData {
   }
   // Segment streets at chunk edges to retain useful culling.
   for (let v = 0; v < SIZE; v += CHUNK) {
-    floor(at(44, v), 40, v, 48, v + CHUNK, .014, 0x454d5c, 5)
+    floor(at(44, v), 40, v, 48, v + CHUNK, .014, 0x545658, 5)
     for(const [a,b] of [[0,40],[48,96]]) {
       const x0=Math.max(v,a!),x1=Math.min(v+CHUNK,b!)
-      if(x1>x0) floor(at(v,44),x0,40,x1,48,.014,0x454d5c,5)
+      if(x1>x0) floor(at(v,44),x0,40,x1,48,.014,0x545658,5)
     }
   }
   for(let v=0;v<SIZE;v++) {
     if(v>=38 && v<50) continue
     for(const s of [38,48]) {
       const a=s===38?s:s+.25,b=s===38?s+1.75:s+2
-      floor(at(s,v),a,v,b,v+1,.1,0x868a94,6)
-      floor(at(v,s),v,a,v+1,b,.1,0x868a94,6)
+      floor(at(s,v),a,v,b,v+1,.1,0x78746a,6)
+      floor(at(v,s),v,a,v+1,b,.1,0x78746a,6)
       const edge=s===38?40:48, inner=s===38?39.75:48.25, m=at(s,v)
-      m.quadAuto([edge,.014,v],[edge,.014,v+1],[inner,.1,v+1],[inner,.1,v],hex(0x9296a0),MAT.ground,2)
-      at(v,s).quadAuto([v,.014,edge],[v+1,.014,edge],[v+1,.1,inner],[v,.1,inner],hex(0x9296a0),MAT.ground,2)
+      m.quadAuto([edge,.014,v],[edge,.014,v+1],[inner,.1,v+1],[inner,.1,v],hex(0x7c786e),MAT.ground,2)
+      at(v,s).quadAuto([v,.014,edge],[v+1,.014,edge],[v+1,.1,inner],[v,.1,inner],hex(0x7c786e),MAT.ground,2)
     }
   }
   for(const [x,z] of [[33.8,40.08],[48.1,31],[59,48.1],[39.8,63]]) {
@@ -331,20 +331,20 @@ function compileLevel(town: Town): LevelData {
   }
   for (let v = 52; v < SIZE; v += 5) {
     const m = at(v, 44)
-    m.box(v, .025, 43.9, v + 2.4, .027, 44.02, hex(0xb9ab7a))
-    at(44, v).box(43.9, .025, v, 44.02, .027, v + 2.4, hex(0xb9ab7a))
+    m.box(v, .025, 43.9, v + 2.4, .027, 44.02, hex(0x58523d))
+    at(44, v).box(43.9, .025, v, 44.02, .027, v + 2.4, hex(0x58523d))
   }
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
     for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
       floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
     }
-    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x483f33, 6)
-    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x5a5042,6)
-    floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x6a6254, 6)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x6e6658,6)
+    floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x66625a,7)
     // Concrete curb-cut ramp flare at the street edge of the driveway
     if(b.kind==="house"&&end<40){
-      m.quadAuto([x-3.18,.015,40.0],[x-.18,.015,40.0],[x-.30,.101,39.75],[x-3.05,.101,39.75],hex(0x888b94),MAT.lit)
+      m.quadAuto([x-3.18,.015,40.0],[x-.18,.015,40.0],[x-.30,.101,39.75],[x-3.05,.101,39.75],hex(0x5c5850),MAT.lit)
     }
     const gravel=new Rng(town.seed+id*177)
     for(let k=0;k<36;k++) {
