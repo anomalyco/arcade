@@ -1,17 +1,17 @@
 {
   "files": ["scripts/prove-smoke-realistic.ts", "scripts/prove-fx-playwright.ts", "scripts/prove-fx-integration.ts", "scripts/prove-motion-blur.ts", "scripts/prove-lab-spawn.ts", "scripts/prove-lab-effects.ts", "scripts/prove-effects-defaults.ts", "scripts/prove-fire-water.ts"],
   "compilerOptions": {
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
     "moduleResolution": "bundler",
-    "types": ["bun"],
+    "types": ["bun", "@webgpu/types"],
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/sim-smoke.ts", "scripts/prove-lab-keyboard.ts", "../../scripts/dev.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/sim-smoke.ts", "scripts/prove-lab-keyboard.ts", "../../scripts/dev.ts", "../../scripts/dev-control-server.ts", "../../scripts/arcade.ts", "../../scripts/prove-dev-control.ts"]
 }

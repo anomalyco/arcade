@@ -5,24 +5,33 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { createServer as createHttpServer, request, type IncomingMessage, type ServerResponse } from "node:http"
-import { connect, createServer as createNetServer } from "node:net"
+import { connect, createServer as createNetServer, type Socket } from "node:net"
 import { join, resolve } from "node:path"
 import { createServer as createViteServer, type Plugin, type ViteDevServer } from "vite"
 import { devRoute, hubPath } from "../packages/kit/dev-hub-model"
+import { createDevControlServer } from "./dev-control-server"
 
 const root = resolve(import.meta.dirname, "..")
 const workspaces: string[] = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).workspaces
 const games = workspaces.filter(path => path.startsWith("games/")).map(path => path.slice("games/".length))
 const workers = process.argv.includes("--workers")
 const port = Number(process.env.PORT) || 5180, host = process.env.HOST || "127.0.0.1"
+const control = createDevControlServer({ root, host, port, games, workers })
 
 const server = createHttpServer((req, res) => { void handle(req, res) })
 const vites = new Map<string, Promise<ViteDevServer>>(), ready = new Set<string>()
 const workerPorts = new Map<string, Promise<number>>(), children: ChildProcess[] = []
 
-function routerMeta(): Plugin {
-  const content = JSON.stringify({ games, workers })
-  return { name: "arcade-dev-router", transformIndexHtml: () => [{ tag: "meta", attrs: { name: "arcade-dev-router", content }, injectTo: "head-prepend" }] }
+function routerMeta(game: string): Plugin {
+  const content = JSON.stringify({ games, workers, controlPath: control.controlPath, pageToken: control.pageToken })
+  const bootUrl = `/arcade/${game}/@fs${resolve(root, "packages/kit/dev-control.ts")}`
+  return {
+    name: "arcade-dev-router",
+    transformIndexHtml: () => [
+      { tag: "meta", attrs: { name: "arcade-dev-router", content }, injectTo: "head-prepend" },
+      { tag: "script", attrs: { type: "module", src: bootUrl }, injectTo: "head" },
+    ],
+  }
 }
 
 function mount(game: string) {
@@ -37,8 +46,8 @@ function mount(game: string) {
       base: `/arcade/${game}/`,
       cacheDir: join(dir, "node_modules/.vite-hub"),
       clearScreen: false,
-      plugins: [routerMeta()],
-      server: { middlewareMode: true, ws: { server } },
+      plugins: [routerMeta(game)],
+      server: { middlewareMode: true, ws: { server }, fs: { allow: [root] } },
     }).then(instance => { ready.add(game); return instance })
     vites.set(game, vite)
     vite.catch(() => vites.delete(game))
@@ -88,6 +97,7 @@ function text(res: ServerResponse, status: number, body: string, type = "text/pl
 const workerOff = (game: string) => JSON.stringify({ error: `The ${game} Worker is off. Restart with: bun run dev --workers` })
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
+  if (await control.handleHttp(req, res)) return
   const target = devRoute(req.url ?? "/", games)
   try {
     if (target.kind === "redirect") return void res.writeHead(302, { location: target.location }).end()
@@ -110,6 +120,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 }
 
 server.on("upgrade", (req, socket, head) => {
+  if (control.handleUpgrade(req, socket as Socket)) return
   const protocol = String(req.headers["sec-websocket-protocol"] ?? "")
   const target = devRoute(req.url ?? "/", games)
   if (protocol === "vite-hmr" || protocol === "vite-ping") {
@@ -131,6 +142,7 @@ server.on("upgrade", (req, socket, head) => {
 })
 
 async function stop() {
+  control.cleanupStateFiles()
   for (const child of children) child.kill()
   await Promise.allSettled([...vites.values()].map(async vite => (await vite).close()))
   server.close(); process.exit(0)
@@ -138,6 +150,7 @@ async function stop() {
 
 process.once("SIGINT", stop); process.once("SIGTERM", stop)
 server.listen(port, host, () => {
+  control.writeStateFiles()
   console.log(`Arcade dev: http://${host}:${port}${hubPath}`)
   console.log(`Games: ${games.map(game => `/arcade/${game}/`).join(" ")}${workers ? " · Workers on demand" : " · Workers off (--workers)"}`)
 })

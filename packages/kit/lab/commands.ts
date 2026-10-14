@@ -17,7 +17,7 @@ export const RADIAL_COMPASS: readonly { slot: RadialSlot; compass: string; angle
 ]
 
 export type LabCommandArgField = {
-  type: "string" | "number" | "boolean"
+  type: "string" | "number" | "boolean" | "value"
   required?: boolean
   description?: string
   min?: number
@@ -34,6 +34,8 @@ export type LabCommandContext = {
   screenX?: number
   screenY?: number
   args?: LabCommandArgs
+  source?: "ui" | "cli"
+  seed?: number
 }
 
 export type LabCommandDescriptor = {
@@ -108,12 +110,12 @@ export type LabCommand<TArgs extends LabCommandArgs = LabCommandArgs> = {
   enabled: (ctx?: LabCommandContext) => boolean
   available?: (state: LabSceneState, ctx?: LabCommandContext) => boolean
   disabledReason?: (ctx?: LabCommandContext) => string
-  run: (ctx?: LabCommandContext, args?: TArgs) => void
+  run: (ctx?: LabCommandContext, args?: TArgs) => unknown
 }
 
 export type LabCommandInvokeResult =
-  | { ok: true; id: string; label: string; undoable: boolean; state: LabSceneState | null }
-  | { ok: false; id: string; error: string }
+  | { ok: true; id: string; label: string; undoable: boolean; state: LabSceneState | null; result?: unknown }
+  | { ok: false; id: string; error: string; code?: "unknown_command" | "invalid_args" | "unavailable" | "busy" | "error" }
 
 export type ResolvedRadialSector = {
   slot: RadialSlot
@@ -128,9 +130,21 @@ export function validateCommandArgs(
   schema: LabCommandArgSchema | undefined,
   args: Record<string, unknown> | undefined,
 ): { ok: true; value: LabCommandArgs } | { ok: false; error: string } {
+  if (args !== undefined && (typeof args !== "object" || args === null || Array.isArray(args))) {
+    return { ok: false, error: "Arguments must be a JSON object." }
+  }
   if (!schema) return { ok: true, value: (args ?? {}) as LabCommandArgs }
   const input = args ?? {}
+  for (const key of Object.keys(input)) {
+    if (!(key in schema) && key !== "seed") {
+      const allowed = Object.keys(schema).length ? Object.keys(schema).join(", ") : "none"
+      return { ok: false, error: `Unknown argument "${key}". Allowed arguments: ${allowed}.` }
+    }
+  }
   const out: Record<string, LabValue> = {}
+  if (typeof input.seed === "number" && Number.isFinite(input.seed)) {
+    out.seed = input.seed
+  }
   for (const [key, field] of Object.entries(schema)) {
     const raw = input[key]
     if (raw === undefined || raw === null) {
@@ -153,6 +167,11 @@ export function validateCommandArgs(
       out[key] = raw
     } else if (field.type === "string") {
       if (typeof raw !== "string") return { ok: false, error: `Argument "${key}" must be a string.` }
+      out[key] = raw
+    } else if (field.type === "value") {
+      if (typeof raw !== "string" && (typeof raw !== "number" || !Number.isFinite(raw)) && typeof raw !== "boolean") {
+        return { ok: false, error: `Argument "${key}" must be a string, finite number, or boolean.` }
+      }
       out[key] = raw
     }
     if (field.enum && !field.enum.includes(out[key] as string | number)) {
@@ -238,27 +257,49 @@ export class LabCommandRegistry {
   invoke(id: string, args?: Record<string, unknown>, ctx?: LabCommandContext): LabCommandInvokeResult {
     const cmd = this.map.get(id)
     if (!cmd) {
-      return { ok: false, id, error: `Unknown command "${id}".` }
+      return { ok: false, id, code: "unknown_command", error: `Unknown command "${id}".` }
     }
     const validated = validateCommandArgs(cmd.args, args)
     if (!validated.ok) {
-      return { ok: false, id, error: validated.error }
+      return { ok: false, id, code: "invalid_args", error: validated.error }
     }
+    const seed = typeof validated.value.seed === "number" ? validated.value.seed : ctx?.seed
     const mergedCtx: LabCommandContext = {
       pickedObject: ctx?.pickedObject ?? null,
       groundHit: ctx?.groundHit ?? null,
       screenX: ctx?.screenX,
       screenY: ctx?.screenY,
       args: validated.value,
+      source: ctx?.source,
+      seed,
     }
     if (!cmd.enabled(mergedCtx)) {
-      return { ok: false, id, error: cmd.disabledReason?.(mergedCtx) ?? `Command "${id}" is currently unavailable.` }
+      return {
+        ok: false,
+        id,
+        code: "unavailable",
+        error: cmd.disabledReason?.(mergedCtx) ?? `Command "${id}" is currently unavailable.`,
+      }
     }
-    const runFn = () => cmd.run(mergedCtx, validated.value)
-    if (cmd.undoable && this.historyTransactor) {
-      this.historyTransactor(cmd.label, runFn)
-    } else {
-      runFn()
+    let result: unknown
+    const runFn = () => {
+      result = cmd.run(mergedCtx, validated.value)
+    }
+    try {
+      if (cmd.undoable && this.historyTransactor) {
+        this.historyTransactor(cmd.label, runFn)
+      } else {
+        runFn()
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const isUnavailable = /unavailable|play mode/i.test(message)
+      return {
+        ok: false,
+        id: cmd.id,
+        code: isUnavailable ? "unavailable" : "invalid_args",
+        error: message,
+      }
     }
     return {
       ok: true,
@@ -266,6 +307,7 @@ export class LabCommandRegistry {
       label: cmd.label,
       undoable: Boolean(cmd.undoable),
       state: this.state(mergedCtx),
+      ...(result !== undefined ? { result } : {}),
     }
   }
 
