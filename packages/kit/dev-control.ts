@@ -4,6 +4,13 @@ import {
   type LabCommandInvokeResult,
   type LabSceneState,
 } from "./lab-commands"
+import {
+  LOOK_PRESETS,
+  LOOK_PRESET_IDS,
+  randomizeLookSettings,
+  resolveLookGroup,
+  resolveLookPresetId,
+} from "./gpu/look"
 import { formatLabValue, inferControlUnit, type LabControl, type LabPanel, type LabRow, type LabValue } from "./lab-panel"
 import type { Stage } from "./lab/stage"
 
@@ -393,6 +400,106 @@ export function registerPanelLabCommands(commands: LabCommandRegistry, opts: Pan
         throw new Error(`Unknown lab setting "${rawPath}". Available keys: ${available.slice(0, 30).join(", ") || "none"}.`)
       },
     },
+    {
+      id: "look.preset",
+      label: "Apply Rendering Look Preset",
+      shortLabel: "Look Preset",
+      category: "Preset",
+      undoable: true,
+      args: {
+        preset: { type: "string", required: true, description: "Look preset ID or name" },
+      },
+      enabled: () => (canEdit ? canEdit() : true),
+      disabledReason: () => disabledReason?.() ?? "Unavailable in Play mode",
+      run: (_ctx, args) => {
+        const raw = String(args?.preset ?? "").trim()
+        const pid = resolveLookPresetId(raw)
+        if (!pid) {
+          throw new Error(`Unknown look preset "${raw}". Valid presets: ${LOOK_PRESET_IDS.join(", ")}.`)
+        }
+        const harness = (globalThis as { __arcadeHarness?: { setLookPreset?: (p: string) => unknown } }).__arcadeHarness
+        if (harness?.setLookPreset) {
+          const settings = harness.setLookPreset(pid)
+          void render?.()
+          return { preset: pid, label: LOOK_PRESETS[pid].label, settings }
+        }
+        const panels = getPanels()
+        const found = findControlRow(panels, "lookPreset") ?? findControlRow(panels, "preset")
+        if (found) {
+          found.panel.navigation.set(found.control, pid)
+          found.panel.sync()
+          void render?.()
+          return { preset: pid, label: LOOK_PRESETS[pid].label }
+        }
+        throw new Error("Active page does not expose a Look preset control.")
+      },
+    },
+    {
+      id: "look.set",
+      label: "Set Rendering Look Parameter",
+      shortLabel: "Look Set",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        key: { type: "string", required: true, description: "Look parameter key" },
+        value: { type: "value", required: true, description: "New value" },
+      },
+      enabled: () => (canEdit ? canEdit() : true),
+      disabledReason: () => disabledReason?.() ?? "Unavailable in Play mode",
+      run: (_ctx, args) => {
+        const key = String(args?.key ?? "").trim()
+        const val = args?.value
+        if (!key || val === undefined) throw new Error("look.set requires key and value.")
+        const panels = getPanels()
+        const found = findControlRow(panels, key)
+        if (found && found.control.type !== "action") {
+          const before = found.panel.navigation.settings[found.control.key]
+          const next = coerceControlValue(found.control, val)
+          found.panel.navigation.set(found.control, next)
+          found.panel.sync()
+          void render?.()
+          return { key: found.control.key, before, value: found.panel.navigation.settings[found.control.key] }
+        }
+        const harness = (globalThis as { __arcadeHarness?: { setLook?: (p: Record<string, unknown>) => unknown; getLook?: () => Record<string, unknown> } }).__arcadeHarness
+        if (harness?.setLook && harness.getLook) {
+          const cur = harness.getLook()
+          if (key in cur) {
+            const before = cur[key]
+            harness.setLook({ [key]: val })
+            void render?.()
+            return { key, before, value: harness.getLook()[key] }
+          }
+        }
+        throw new Error(`Unknown look parameter "${key}".`)
+      },
+    },
+    {
+      id: "look.randomize",
+      label: "Randomize Rendering Look Parameters",
+      shortLabel: "Look Randomize",
+      category: "Preset",
+      undoable: true,
+      args: {
+        group: { type: "string", required: false, description: "Look group to randomize" },
+        seed: { type: "number", required: false, min: 1, max: 9999, description: "Tuning seed" },
+      },
+      enabled: () => (canEdit ? canEdit() : true),
+      disabledReason: () => disabledReason?.() ?? "Unavailable in Play mode",
+      run: (ctx, args) => {
+        const rawGroup = typeof args?.group === "string" ? args.group : "all"
+        const grp = resolveLookGroup(rawGroup)
+        if (!grp) throw new Error(`Unknown look group "${rawGroup}".`)
+        const seed = typeof args?.seed === "number" ? args.seed : (ctx?.seed ?? 108)
+        const harness = (globalThis as { __arcadeHarness?: { setLook?: (p: any) => any; getLook?: () => any } }).__arcadeHarness
+        if (harness?.setLook && harness.getLook) {
+          const next = randomizeLookSettings(harness.getLook(), seed, grp)
+          harness.setLook(next)
+          void render?.()
+          return { group: grp, tuningSeed: seed, settings: next }
+        }
+        throw new Error("Active page does not expose Look randomization.")
+      },
+    },
   ])
 }
 
@@ -421,6 +528,9 @@ export function resolveNavigationPath(target: string): string {
   }
   if (lower === "lab" || lower === "sandbox" || lower === "getaway-lab") {
     return "/arcade/getaway/lab.html"
+  }
+  if (lower === "looks" || lower === "looks-lab") {
+    return "/arcade/getaway/lab.html#looks"
   }
   if (lower === "blackout-lab") {
     return "/arcade/blackout/lab.html"
@@ -699,6 +809,12 @@ class PageControlRuntime {
       this.defaultAdapter = this.createDefaultGameAdapter()
       this.ensureStandardCommands(this.defaultAdapter)
     }
+    this.sendStatus()
+  }
+
+  registerCommands(setup: (commands: LabCommandRegistry) => void) {
+    const adapter = this.activeAdapter()
+    setup(adapter.commands)
     this.sendStatus()
   }
 
@@ -983,6 +1099,15 @@ class PageControlRuntime {
     if ((command === "scene.set-env" || command === "env") && args?.name !== undefined) {
       return `CLI: env ${String(args.name)}`
     }
+    if (command === "look.preset" && args?.preset !== undefined) {
+      return `CLI: look preset ${String(args.preset)}`
+    }
+    if (command === "look.set" && args?.key !== undefined) {
+      return `CLI: look set ${String(args.key)} = ${String(args?.value)}`
+    }
+    if (command === "look.randomize") {
+      return `CLI: look randomize ${String(args?.group ?? "all")}`
+    }
     if (command === "nav.open" && args?.target !== undefined) {
       return `CLI: open ${String(args.target)}`
     }
@@ -1111,6 +1236,11 @@ export function attachLabPanelControl(panel: LabPanel): () => void {
   const rt = getRuntime()
   rt?.addPanel(panel)
   return () => rt?.removePanel(panel)
+}
+
+export function registerGameCommands(setup: (commands: LabCommandRegistry) => void): void {
+  const rt = getRuntime()
+  rt?.registerCommands(setup)
 }
 
 export function ensureDevControlConnected(): void {

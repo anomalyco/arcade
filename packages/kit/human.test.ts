@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { locomotion, newMotion, pelvisPoint, type Locomotion, type Foot } from "./human-locomotion"
 import { humanProfiles, profileHands, profileTorso } from "./human-profile"
-import { attachment, bodyBones, boneVisible, detach, frameMotion, limbIds, pointVelocity, poseArms, poseLegs, type BoneId } from "./human-pose"
+import { attachment, bodyBones, boneVisible, detach, frameMotion, limbIds, pointVelocity, poseArms, poseLegs, unarmedHands, type BoneId } from "./human-pose"
 import { at, len, moved, scale, spring, turn, yawFrame, RIG, type V3 } from "./rig"
 
 function actor(): Locomotion {
@@ -139,4 +139,39 @@ test("mid-swing retargeting, strafe transitions, reversals and pole vector preve
       prevFootP = footP; prevAnkles = ankles
     }
   }
+})
+
+test("phase-synchronised walk-run-sprint ramp and unarmed arm follow-through stay continuous", () => {
+  const a = actor(), dt = 1 / 60, profile = humanProfiles.soldier
+  let x = 0, prevPhase = 0, prevLegYaw = 0
+  let midTransitionBobMax = 0
+  for (let n = 0; n < 360; n++) {
+    // Ramp 1.0 -> 6.3 -> 1.0 m/s
+    const u = n < 180 ? n / 180 : (360 - n) / 180
+    const speed = 1.0 + u * 5.3
+    a.vx = speed; a.vy = 0; a.svx = speed; a.svy = 0
+    x += speed * dt
+    const stepDist = x - a.x
+    a.x = x
+    locomotion(a, dt, stepDist, n === 0, profile)
+    if (n > 0) {
+      const dPhase = ((a.phase - prevPhase + 1.5) % 1) - 0.5
+      expect(dPhase).toBeGreaterThanOrEqual(-1e-6)
+      expect(dPhase).toBeLessThan(0.08)
+      expect(Math.abs(a.legYaw - prevLegYaw)).toBeLessThan(0.05)
+    }
+    if (a.motion.run > 0.35 && a.motion.run < 0.65) {
+      midTransitionBobMax = Math.max(midTransitionBobMax, Math.abs(a.motion.bob.x))
+    }
+    const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
+    const torso = profileTorso(yawFrame(at(pelvis, 0, RIG.waist, 0), 0), profile)
+    const hands = unarmedHands(a, torso, n * dt * 2)
+    expect(hands[0].every(Number.isFinite)).toBe(true)
+    expect(hands[1].every(Number.isFinite)).toBe(true)
+    prevPhase = a.phase; prevLegYaw = a.legYaw
+  }
+  // Phase-shifted harmonic avoids destructive cancellation at gait.run ~ 0.5
+  expect(midTransitionBobMax).toBeGreaterThan(0.008)
+  expect(Math.abs(a.motion.arms[0].x)).toBeGreaterThan(0.01)
+  expect(Math.sign(a.motion.arms[0].x)).toBe(-Math.sign(a.motion.arms[1].x))
 })

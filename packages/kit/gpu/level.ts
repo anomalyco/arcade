@@ -5,8 +5,9 @@ export type LevelChunk = {
   /**
    * true: uses the discard entry point while the player is inside cutBox (and opaque outside).
    * "outside": drawn with the opaque entry point only while the player is outside cutBox (100% discarded inside).
+   * "a2c": drawn with the alpha-to-coverage pipeline after opaque chunks so main opaque geometry retains TBDR HSR.
    */
-  customCutaway?: boolean | "outside"
+  customCutaway?: boolean | "outside" | "a2c"
 }
 export type BakedMap = { data: Uint8Array<ArrayBuffer>; w: number; h: number }
 export type FloorMap = BakedMap & { linear?: Float32Array; moon?: BakedMap }

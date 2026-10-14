@@ -8,14 +8,14 @@ import type { SmokeVolumes } from "./volume"
 export const explosionDefaults = {
   fireballSize: 1.25,
   fireballDuration: 0.58,
-  fireballTemp: 1.2,
-  smokeAmount: 1.15,
-  smokeDarkness: 0.82,
-  smokeColorShift: 0.78,
-  smokeRise: 0.68,
-  smokeSpreadSpeed: 1.1,
-  smokeTurbulence: 0.85,
-  smokeLinger: 3.9,
+  fireballTemp: 1.25,
+  smokeAmount: 1.05,
+  smokeDarkness: 0.72,
+  smokeColorShift: 0.84,
+  smokeRise: 1.02,
+  smokeSpreadSpeed: 0.95,
+  smokeTurbulence: 0.92,
+  smokeLinger: 3.5,
   sparkCount: 56,
   debrisCount: 22,
   flashIntensity: 6.5,
@@ -64,8 +64,8 @@ export function applyExplosionSmokeLive(volume: SmokeVolumes, settings: Readonly
   volume.coreGlow = settings.fireballTemp * Math.min(1.6, Math.max(0.2, settings.smokeAmount))
   volume.settings.rise = settings.smokeRise
   volume.settings.turbulence = Math.min(1, settings.smokeTurbulence)
-  volume.settings.height = Math.max(2.6, Math.min(4.0, 2.75 + settings.fireballSize * 0.42 + settings.smokeRise * 0.45))
-  volume.settings.extinction = Math.max(0.8, Math.min(5.0, 2.7 * Math.max(0.25, settings.smokeAmount) * densityScale))
+  volume.settings.height = Math.max(3.1, Math.min(5.2, 3.35 + settings.fireballSize * 0.58 + settings.smokeRise * 0.65))
+  volume.settings.extinction = Math.max(0.8, Math.min(4.8, 2.55 * Math.max(0.25, settings.smokeAmount) * densityScale))
 }
 
 const reusableSpec: ParticleSpec = {
@@ -107,10 +107,10 @@ export function spawnExplosion(
 
   applyExplosionSmokeLive(volume, settings, densityScale)
   if (smokeAmt > 0.02) {
-    const smokeRadius = Math.max(1.8, Math.min(8.5, (3.3 + fbSize * 1.15) * (0.72 + 0.28 * settings.smokeSpreadSpeed)))
-    const growthTime = Math.max(0.22, Math.min(1.8, (0.56 * fbSize) / Math.max(0.25, settings.smokeSpreadSpeed)))
+    const smokeRadius = Math.max(1.6, Math.min(7.5, (2.15 + fbSize * 0.88) * (0.68 + 0.32 * settings.smokeSpreadSpeed)))
+    const growthTime = Math.max(0.2, Math.min(1.5, (0.44 * fbSize) / Math.max(0.25, settings.smokeSpreadSpeed)))
     const totalLife = Math.max(0.9, fbDur * 0.65 + settings.smokeLinger)
-    volume.spawn(x, z, smokeRadius, totalLife, Math.min(2.0, smokeAmt * 1.12), settings.smokeDarkness, growthTime)
+    volume.spawn(x, z, smokeRadius, totalLife, Math.min(2.0, smokeAmt * 1.05), settings.smokeDarkness, growthTime)
   }
 
   // 1. Ground scorch mark (drawn first on the ground plane beneath the plume)
@@ -178,30 +178,30 @@ export function spawnExplosion(
   const outerCount = 14
   for (let i = 0; i < outerCount; i++) {
     const a = ((i + (random() - 0.5) * 0.55) / outerCount) * Math.PI * 2
-    const r0 = (0.16 + random() * 0.24) * fbSize
-    const speed = (2.8 + random() * 3.6) * fbSize
-    const vy = (1.1 + random() * 2.1) * fbSize
-    const life = fbDur * (0.96 + random() * 0.46)
+    const r0 = (0.12 + random() * 0.18) * fbSize
+    const speed = (1.7 + random() * 2.3) * fbSize
+    const vy = (1.8 + random() * 2.8) * fbSize
+    const life = fbDur * (1.05 + random() * 0.52)
     Object.assign(reusableSpec, {
       kind: "fireball",
       life,
-      size: (0.46 + random() * 0.24) * fbSize,
-      growth: ((1.32 + random() * 0.52) * fbSize) / life,
-      gravity: -2.8 * (0.7 + settings.smokeRise * 0.55),
-      drag: 5.5,
+      size: (0.42 + random() * 0.20) * fbSize,
+      growth: ((0.95 + random() * 0.38) * fbSize) / life,
+      gravity: -3.6 * (0.7 + settings.smokeRise * 0.55),
+      drag: 5.8,
       bounce: 0,
       r: 1,
       g: 1,
       b: 1,
       alpha: 0.94,
-      temperature: fbTemp * (0.78 + random() * 0.28),
-      turbulence: 0.68 + settings.smokeTurbulence * 0.42,
+      temperature: fbTemp * (0.72 + random() * 0.26),
+      turbulence: 0.72 + settings.smokeTurbulence * 0.42,
       ease: 2.6,
     })
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * r0,
-      y + 0.32 + random() * 0.35 * fbSize,
+      y + 0.36 + random() * 0.38 * fbSize,
       z + Math.sin(a) * r0,
       Math.cos(a) * speed,
       vy,
@@ -213,30 +213,30 @@ export function spawnExplosion(
   const domeCount = 12
   for (let i = 0; i < domeCount; i++) {
     const a = ((i + 0.5 + (random() - 0.5) * 0.5) / domeCount) * Math.PI * 2
-    const r0 = (0.08 + random() * 0.18) * fbSize
-    const speed = (1.5 + random() * 2.6) * fbSize
-    const vy = (2.1 + random() * 3.2) * fbSize
-    const life = fbDur * (0.78 + random() * 0.32)
+    const r0 = (0.06 + random() * 0.14) * fbSize
+    const speed = (1.0 + random() * 1.7) * fbSize
+    const vy = (2.6 + random() * 3.6) * fbSize
+    const life = fbDur * (0.84 + random() * 0.36)
     Object.assign(reusableSpec, {
       kind: "fireball",
       life,
-      size: (0.52 + random() * 0.26) * fbSize,
-      growth: ((1.45 + random() * 0.48) * fbSize) / life,
-      gravity: -3.6 * (0.7 + settings.smokeRise * 0.55),
-      drag: 5.8,
+      size: (0.46 + random() * 0.22) * fbSize,
+      growth: ((1.05 + random() * 0.36) * fbSize) / life,
+      gravity: -4.4 * (0.7 + settings.smokeRise * 0.55),
+      drag: 6.0,
       bounce: 0,
       r: 1,
       g: 1,
       b: 1,
       alpha: 0.96,
-      temperature: fbTemp * (1.08 + random() * 0.32),
-      turbulence: 0.58 + settings.smokeTurbulence * 0.38,
+      temperature: fbTemp * (1.06 + random() * 0.32),
+      turbulence: 0.62 + settings.smokeTurbulence * 0.38,
       ease: 2.8,
     })
     particles.spawn(
       reusableSpec,
       x + Math.cos(a) * r0,
-      y + 0.45 + random() * 0.45 * fbSize,
+      y + 0.48 + random() * 0.48 * fbSize,
       z + Math.sin(a) * r0,
       Math.cos(a) * speed,
       vy,
@@ -247,13 +247,13 @@ export function spawnExplosion(
 
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2 + random() * 0.6
-    const life = fbDur * (0.44 + random() * 0.14)
+    const life = fbDur * (0.46 + random() * 0.16)
     Object.assign(reusableSpec, {
       kind: "fireball",
       life,
-      size: (0.62 + random() * 0.18) * fbSize,
-      growth: (1.85 * fbSize) / life,
-      gravity: -2.4,
+      size: (0.68 + random() * 0.18) * fbSize,
+      growth: (1.18 * fbSize) / life,
+      gravity: -3.4,
       drag: 6.5,
       bounce: 0,
       r: 1,
@@ -261,17 +261,17 @@ export function spawnExplosion(
       b: 1,
       alpha: 0.98,
       temperature: fbTemp * (1.48 + random() * 0.22),
-      turbulence: 0.48 + settings.smokeTurbulence * 0.3,
+      turbulence: 0.52 + settings.smokeTurbulence * 0.3,
       ease: 3.1,
     })
     particles.spawn(
       reusableSpec,
-      x + Math.cos(a) * 0.08 * fbSize,
-      y + (0.52 + i * 0.14) * fbSize,
-      z + Math.sin(a) * 0.08 * fbSize,
-      Math.cos(a) * 0.9 * fbSize,
-      (1.4 + i * 0.6) * fbSize,
-      Math.sin(a) * 0.9 * fbSize,
+      x + Math.cos(a) * 0.06 * fbSize,
+      y + (0.62 + i * 0.18) * fbSize,
+      z + Math.sin(a) * 0.06 * fbSize,
+      Math.cos(a) * 0.65 * fbSize,
+      (2.0 + i * 0.85) * fbSize,
+      Math.sin(a) * 0.65 * fbSize,
       random() * 6.283,
     )
   }
@@ -279,31 +279,31 @@ export function spawnExplosion(
   // Anterior soot-crusting crown billows that roll over the hot core
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2 + 0.35 + (random() - 0.5) * 0.35
-    const life = fbDur * (1.25 + random() * 0.65)
+    const life = fbDur * (1.32 + random() * 0.65)
     Object.assign(reusableSpec, {
       kind: "fireball",
       life,
-      size: (0.48 + random() * 0.22) * fbSize,
-      growth: (1.45 * fbSize) / life,
-      gravity: -3.8 * (0.75 + settings.smokeRise * 0.5),
-      drag: 5.4,
+      size: (0.44 + random() * 0.20) * fbSize,
+      growth: (1.08 * fbSize) / life,
+      gravity: -4.6 * (0.75 + settings.smokeRise * 0.5),
+      drag: 5.6,
       bounce: 0,
       r: 1,
       g: 1,
       b: 1,
       alpha: 0.92,
-      temperature: fbTemp * (0.62 + random() * 0.28),
-      turbulence: 0.82 + settings.smokeTurbulence * 0.42,
+      temperature: fbTemp * (0.58 + random() * 0.26),
+      turbulence: 0.86 + settings.smokeTurbulence * 0.42,
       ease: 2.7,
     })
     particles.spawn(
       reusableSpec,
-      x + Math.cos(a) * 0.24 * fbSize,
-      y + (0.62 + random() * 0.38) * fbSize,
-      z + Math.sin(a) * 0.24 * fbSize,
-      Math.cos(a) * 2.2 * fbSize,
-      (2.2 + random() * 1.9) * fbSize,
-      Math.sin(a) * 2.2 * fbSize,
+      x + Math.cos(a) * 0.18 * fbSize,
+      y + (0.68 + random() * 0.42) * fbSize,
+      z + Math.sin(a) * 0.18 * fbSize,
+      Math.cos(a) * 1.45 * fbSize,
+      (2.8 + random() * 2.2) * fbSize,
+      Math.sin(a) * 1.45 * fbSize,
       random() * 6.283,
     )
   }
@@ -386,7 +386,7 @@ export function explosionFlashLight(
   z: number,
   age: number,
   settings: Readonly<ExplosionSettings>,
-): { x: number; y: number; z: number; radius: number; r: number; g: number; b: number; power: number } | null {
+): { x: number; y: number; z: number; radius: number; r: number; g: number; b: number; power: number; cone: number } | null {
   if (settings.flashIntensity <= 0.01 || age < 0) return null
   const fbDur = Math.max(0.15, settings.fireballDuration)
   const maxAge = fbDur * 1.55
@@ -405,5 +405,6 @@ export function explosionFlashLight(
     g: 0.42 + 0.52 * mixWhite,
     b: 0.06 + 0.48 * mixWhite,
     power,
+    cone: -3,
   }
 }

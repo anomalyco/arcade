@@ -1,10 +1,24 @@
 * { box-sizing: border-box }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #080b0d; color: #d6d4c6; font: 12px ui-monospace, monospace }
 #game { display: block; width: 100%; height: 100%; cursor: crosshair }
+#prompt { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid #ffffff29; border-radius: 5px; background: #0f1515e0; color: #e6e4d6; font-size: 11.5px; white-space: nowrap; box-shadow: 0 4px 14px #00000070; overflow: hidden }
+#prompt[hidden] { display: none !important }
+#prompt kbd { display: inline-block; padding: 1px 5px; margin-right: 4px; border: 1px solid #ffffff38; border-radius: 3px; background: #1d2626; color: #f2f0e4; font: inherit; font-weight: 600 }
+#prompt .sep { opacity: .45 }
+#prompt .hold { position: absolute; left: 0; bottom: 0; height: 2px; background: #c5cfb8; pointer-events: none }
 #hud { position: fixed; left: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 6px; pointer-events: none }
-#stamina { width: 148px; height: 4px; border-radius: 2px; background: #0b1011b8; border: 1px solid #ffffff1f; overflow: hidden; opacity: .28; transition: opacity .22s ease, border-color .18s ease }
-#stamina[data-active="true"] { opacity: .94 }
-#stamina[data-exhausted="true"] { border-color: #d96b4388 }
+#meters { display: flex; gap: 6px; align-items: center }
+#stamina, #battery { width: 108px; height: 4px; border-radius: 2px; background: #0b1011b8; border: 1px solid #ffffff1f; overflow: hidden; opacity: .32; transition: opacity .22s ease, border-color .18s ease }
+#stamina[data-active="true"], #battery[data-active="true"] { opacity: .94 }
+#stamina[data-exhausted="true"], #battery[data-depleted="true"] { border-color: #d96b4388 }
 #stamina-fill { display: block; height: 100%; width: 100%; background: #c5cfb8; transition: background-color .15s ease }
-#stamina[data-exhausted="true"] #stamina-fill { background: #d96b43 }
+#battery-fill { display: block; height: 100%; width: 100%; background: #e3c878; transition: background-color .15s ease }
+#battery[data-low="true"] #battery-fill { background: #e09a48 }
+#stamina[data-exhausted="true"] #stamina-fill, #battery[data-depleted="true"] #battery-fill { background: #d96b43 }
+#hotbar { display: flex; gap: 4px }
+#hotbar .slot { display: inline-flex; align-items: center; gap: 5px; min-width: 42px; height: 24px; padding: 0 7px; border: 1px solid #ffffff1a; border-radius: 4px; background: #0f1515b8; color: #8c9488; font-size: 10.5px; font-variant-numeric: tabular-nums }
+#hotbar .slot[data-selected="true"] { border-color: #d6d4c675; background: #182121dc; color: #e8e6d8 }
+#hotbar .slot[data-on="true"] b { color: #f0d584 }
+#hotbar .slot kbd { font: inherit; opacity: .65 }
+#hotbar .slot b { font-weight: 500 }
 #status { padding: 8px 11px; border: 1px solid #ffffff1c; border-radius: 5px; background: #121919bc; font-variant-numeric: tabular-nums }

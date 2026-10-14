@@ -281,9 +281,8 @@ try {
     assert(duringLightingState.character !== null, "Car persisted while editing Lighting")
     assert.equal(duringLightingState.items.props.length, 6, "Props persisted while editing Lighting")
 
-    // Switch to Objects category and select the Car from "In Current Scene"
-    await page.getByRole("button", { name: "Category Objects", exact: true }).click()
-    await page.locator('[data-catalog-id="scene-obj:character:active"]').click()
+    // Select the Car from the Outliner (scene objects live there, not in the Library)
+    await page.locator('.lab-tobj[data-object-id="character:active"]').click()
     await step(2)
     const backToCarState = await page.evaluate(() => ({
       section: (window as any).lab.settings.section,

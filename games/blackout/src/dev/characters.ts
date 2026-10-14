@@ -3,7 +3,7 @@ import { hubCommands, hubTargets } from "@arcade/kit/dev-hub-model"
 import { applyArrowCameraKey, bindOrbitGestures, computeGrabPanDelta } from "@arcade/kit/orbit-gestures"
 import { LabPanel, formatLabValue, inferControlUnit, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
 import { humanProfiles, humanProfileControls, type HumanPreset, type HumanProfile } from "@arcade/kit/human-profile"
-import { attachment, bodyBones, boneParent, boneVisible, detach, poseArms, type BoneId, type BonePose, type PartMotion } from "@arcade/kit/human-pose"
+import { attachment, bodyBones, boneParent, boneVisible, detach, poseArms, poseUnarmedArms, unarmedHands, type BoneId, type BonePose, type PartMotion } from "@arcade/kit/human-pose"
 import { at, clamp, emit, len, moved, pitch, roll, scale, turn, yawFrame, type Frame, type PushPart, type V3 } from "@arcade/kit/rig"
 import { mat4 } from "wgpu-matrix"
 import { SPEED, SPRINT_SPEED } from "../../shared/config"
@@ -1611,23 +1611,18 @@ async function main() {
       const baseSpeed = actor.action === "run" ? SPEED : actor.preset === "zombie" ? 1.15 : 1.45
       const speed = baseSpeed * simSpeed
       if (actor === selected) {
-        const period = actor.action === "run" ? 2.4 : 4.2
-        const wrapped = actor.actionTime >= period
+        const distFromHome = Math.hypot(a.x - actor.homeX, a.y - actor.homeY)
+        const wrapped = distFromHome >= 5.8
         if (wrapped) {
-          actor.actionTime %= period
+          actor.actionTime = 0
           a.body = null
           actor.previousBones = undefined
         }
         const dir = 0.72
         vx = Math.cos(dir) * speed
         vy = Math.sin(dir) * speed
-        const startReset = wrapped || actor.actionTime <= dt * simSpeed * 1.5
-        if (startReset && Math.hypot(a.x - actor.homeX, a.y - actor.homeY) > 0.05) {
-          a.body = null
-          actor.previousBones = undefined
-        }
-        nextX = (startReset ? actor.homeX : a.x) + vx * dt
-        nextY = (startReset ? actor.homeY : a.y) + vy * dt
+        nextX = (wrapped ? actor.homeX : a.x) + vx * dt
+        nextY = (wrapped ? actor.homeY : a.y) + vy * dt
         aim = dir + Math.sin(actor.actionTime * 1.8) * 0.14
         if (wrapped && followSelected) {
           orbitState.focusX = nextX
@@ -1647,18 +1642,13 @@ async function main() {
     }
 
     a.profile = actor.profile
+    a.unarmed = actor.unarmedSwing && actor.profile.handPose === "weapon"
     animate(a, dt, a.t + dt, nextX, nextY, vx, vy, aim, actor.wizardCast)
 
     if (actor.unarmedSwing && actor.profile.handPose === "weapon" && a.body) {
       const torso = a.body.torso
-      const moving = a.gait * clamp(Math.hypot(a.svx, a.svy) / 3.4, 0, 1)
-      // Oppose actual foot forward/back separation (Lamplight walk.rs:1494) rather than open-loop sine.
-      const fdx = a.feet[1].p[0] - a.feet[0].p[0], fdz = a.feet[1].p[2] - a.feet[0].p[2]
-      const footSep = clamp((fdx * Math.cos(a.legYaw) + fdz * Math.sin(a.legYaw)) / Math.max(0.35, a.motion.stride * 0.5), -1, 1)
-      const sw = footSep * (0.24 + 0.1 * a.motion.run) * moving
-      const hL = at(torso, sw + 0.07, -0.02 + 0.015 * Math.sin(a.t * 2), -0.24)
-      const hR = at(torso, -sw + 0.07, -0.02 - 0.015 * Math.sin(a.t * 2), 0.24)
-      const arms = poseArms(torso, hL, hR)
+      const [hL, hR] = unarmedHands(a, torso, a.t * 2)
+      const arms = poseUnarmedArms(torso, hL, hR)
       a.body.ua = arms.ua
       a.body.fa = arms.fa
       a.body.gun = null

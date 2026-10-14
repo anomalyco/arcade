@@ -1,4 +1,4 @@
-import { LabPanel, type LabSettings, type LabValue } from "../lab-panel"
+import { formatLabValue, inferControlUnit, LabPanel, type LabControl, type LabSettings, type LabValue } from "../lab-panel"
 import {
   coerceControlValue,
   findControlRow,
@@ -11,7 +11,26 @@ import {
 import { LabCommandRegistry, type LabCommandContext, type LabSceneState } from "./commands"
 import { computeSnapshotDiffs, createCompareWipeDOM } from "./compare-ab"
 import { effectOptions } from "./effects"
+import {
+  FOLIAGE_CROWN_SHAPES,
+  FOLIAGE_PARAM_SPECS,
+  FOLIAGE_PRESETS,
+  FOLIAGE_PRESET_IDS,
+  exportFoliagePreset,
+  foliageSettings,
+  foliageTextureUrls,
+  importFoliagePreset,
+  isFoliagePresetId,
+  randomizeFoliageParams,
+  resetFoliageParams,
+  setFoliageTextureUrls,
+  type FoliageCameraMode,
+  type FoliageCompareMode,
+} from "../gpu/foliage"
+import { FOLIAGE_LIGHTING_PRESETS } from "./foliage"
 import { lightingDefaults } from "./lighting"
+import type { LookLabController } from "./looks"
+import { LOOK_PRESETS, LOOK_PRESET_IDS, resolveLookPresetId, type LookGroup } from "../gpu/look"
 import { createRadialMenuDOM, RadialMenuStateMachine, type RadialReleaseResult } from "./radial"
 import { applyGameRecipe, buildGameRecipe, type GameRecipePayload } from "./recipe"
 import {
@@ -37,7 +56,11 @@ import {
   type NumericAxis,
   type TransformMode,
 } from "./transform"
-import type { LabContext, LabSection, LabWorldObject } from "./types"
+import type { LabContext, LabLibraryCategory, LabSection, LabWorldObject } from "./types"
+import { createLibrary, isLibraryAsset, isPlaceable, LIBRARY_CATEGORIES, libraryCategoryOf, sectionLibraryCategory } from "./library"
+import { createOutliner, OUTLINER_GROUPS, outlinerGroupOf } from "./outliner"
+import { createPalette, type PaletteItem } from "./palette"
+import { createWatchList, loadWatchPins, saveWatchPins, watchPinId, type WatchPin } from "./watch"
 import {
   applyArrowCameraKey,
   bindOrbitGestures,
@@ -46,7 +69,7 @@ import {
 } from "../orbit-gestures"
 import { yardGround } from "./yard"
 
-export type CatalogCategory = "effects" | "objects" | "lighting" | "audio"
+export type CatalogCategory = LabLibraryCategory
 export type CatalogCollection = "all" | "fixtures" | "blackout" | "getaway" | "shared"
 
 export type CatalogEntry = {
@@ -120,18 +143,15 @@ export type WorkbenchOptions = {
   renderNow: () => Promise<unknown>
   advanceSim: (dt: number) => void
   spawn?: ReturnType<typeof createSpawn>
+  looks?: LookLabController
 }
 
 export function createWorkbench(opts: WorkbenchOptions) {
-  const { root, canvas, panel, context, sections, globalSettings, selectSection, renderNow, advanceSim, spawn } = opts
+  const { root, canvas, panel, context, sections, globalSettings, selectSection, renderNow, advanceSim, spawn, looks } = opts
   const { stage, input } = context
   const isBench = new URLSearchParams(location.search).has("bench")
 
   let mode: "edit" | "play" = "edit"
-  let activeCategory: CatalogCategory = "effects"
-  let activeCollection: CatalogCollection = "all"
-  let searchQuery = ""
-  let selectedCatalogIndex = 0
   let activeCatalogId = "fixture:smoke-room"
   let simSpeed = 1
   let elapsed = 0
@@ -150,7 +170,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let compareWipeEnabled = false
   let compareWipeSplit = 0.5
   let isCapturingWipe = false
-  let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" = "canvas"
+  let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" | "outliner" = "canvas"
   let toastTimer = 0
 
   const undoStack: HistoryEntry[] = []
@@ -193,12 +213,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
   marqueeEl.dataset.labMarquee = ""
   marqueeEl.hidden = true
   viewportHud.append(marqueeEl)
-  const sectionSelect = topbar.querySelector<HTMLSelectElement>('[data-control="section"]')!
-  const envSelect = topbar.querySelector<HTMLSelectElement>('[data-control="environment"]')!
-  const seedBadge = topbar.querySelector<HTMLElement>('[data-readout="seed"]')!
-  const rerollBtn = topbar.querySelector<HTMLButtonElement>('[data-action="reroll"]')!
-  const lockEffectBtn = topbar.querySelector<HTMLButtonElement>('[data-action="lock-effect"]')!
-  const lockEnvBtn = topbar.querySelector<HTMLButtonElement>('[data-action="lock-env"]')!
+  const sectionSelect = root.querySelector<HTMLSelectElement>('[data-control="section"]')!
+  const envSelect = root.querySelector<HTMLSelectElement>('[data-control="environment"]')!
+  const seedBadge = root.querySelector<HTMLElement>('[data-readout="seed"]')!
+  const rerollBtn = root.querySelector<HTMLButtonElement>('[data-action="reroll"]')!
+  const lockEffectBtn = root.querySelector<HTMLButtonElement>('[data-action="lock-effect"]')!
+  const lockEnvBtn = root.querySelector<HTMLButtonElement>('[data-action="lock-env"]')!
   const debugSelect = topbar.querySelector<HTMLSelectElement>('[data-control="debug"]')!
   const frameBtn = topbar.querySelector<HTMLButtonElement>('[data-action="frame"]')!
   const undoBtn = topbar.querySelector<HTMLButtonElement>('[data-action="undo"]')!
@@ -233,28 +253,50 @@ export function createWorkbench(opts: WorkbenchOptions) {
   compareGroup.append(pinABtn, flipBtn, wipeBtn)
   const compareDivider = document.createElement("div")
   compareDivider.className = "lab-divider"
-  topbarRight.insertBefore(compareDivider, frameBtn)
-  topbarRight.insertBefore(compareGroup, compareDivider)
+  topbar.querySelector<HTMLElement>(".lab-transport")!.after(compareDivider, compareGroup)
 
   const recipeBtn = document.createElement("button")
   recipeBtn.type = "button"
-  recipeBtn.className = "lab-btn"
+  recipeBtn.className = "lab-menu-item"
+  recipeBtn.setAttribute("role", "menuitem")
   recipeBtn.dataset.action = "copy-recipe"
   recipeBtn.setAttribute("aria-label", "Copy recipe for game")
   recipeBtn.title = "Copy typed settings recipe for game source (no URL params)"
-  recipeBtn.textContent = "Recipe"
-  topbarRight.insertBefore(recipeBtn, exportBtn)
+  recipeBtn.textContent = "Copy recipe for game"
+  exportBtn.before(recipeBtn)
+  void topbarRight
 
   const wipeDOM = createCompareWipeDOM(viewportEl, split => {
     compareWipeSplit = split
     syncCompareWipeOverlay()
   })
 
-  // Library elements
-  const searchInput = libraryEl.querySelector<HTMLInputElement>('[data-control="library-search"]')!
-  const catTabs = [...libraryEl.querySelectorAll<HTMLButtonElement>("[data-cat]")]
-  const filterPills = [...libraryEl.querySelectorAll<HTMLButtonElement>("[data-collection]")]
-  const catalogListEl = libraryEl.querySelector<HTMLElement>(".lab-catalog-list")!
+  const outlinerEl = root.querySelector<HTMLElement>(".lab-outliner")!
+  const moreBtn = topbar.querySelector<HTMLButtonElement>('[data-action="more"]')!
+  const moreMenu = topbar.querySelector<HTMLElement>("[data-more-menu]")!
+  const paletteBtn = topbar.querySelector<HTMLButtonElement>('[data-action="palette"]')!
+  const statsReadout = bottombar.querySelector<HTMLElement>('[data-readout="stats"]')!
+  const detailsIcon = inspectorEl.querySelector<HTMLElement>("[data-details-icon]")!
+  const detailsMeta = inspectorEl.querySelector<HTMLElement>("[data-details-meta]")!
+  const detailsActions = inspectorEl.querySelector<HTMLElement>("[data-details-actions]")!
+  const detailsSearch = inspectorEl.querySelector<HTMLInputElement>('[data-control="details-search"]')!
+  const detailsModifiedBtn = inspectorEl.querySelector<HTMLButtonElement>('[data-action="details-modified"]')!
+  const detailsModifiedCount = inspectorEl.querySelector<HTMLElement>("[data-modified-count]")!
+  const detailsAllBtn = inspectorEl.querySelector<HTMLButtonElement>('[data-action="details-all"]')!
+  /** Approved defaults captured before any fixture or user edit; drive Reset and modified highlighting. */
+  const defaultsBySection = new Map(sections.map(s => [s.id, { ...s.settings } as LabSettings]))
+  const lockedIds = new Set<string>()
+  let watchPins: WatchPin[] = loadWatchPins()
+  let detailsQuery = ""
+  let detailsModifiedOnly = false
+  let detailsShowAll = false
+  let detailsViewSig = ""
+  let detailsRelevant: Set<string> | null = null
+  let detailsActionsSig = ""
+  let lastSelectionSig = ""
+  let selectingFromOutliner = false
+  let telemetryText = ""
+  let chromeReady = false
 
   // Viewport HUD elements
   const hudBadge = viewportEl.querySelector<HTMLElement>("[data-hud-badge]")!
@@ -264,13 +306,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const inspectorTitle = inspectorEl.querySelector<HTMLElement>(".lab-inspector-title")!
   const inspectorSub = inspectorEl.querySelector<HTMLElement>(".lab-inspector-sub")!
 
-  // Bottom transport elements
-  const playPauseBtn = bottombar.querySelector<HTMLButtonElement>('[data-action="transport-play"]')!
-  const retriggerBtn = bottombar.querySelector<HTMLButtonElement>('[data-action="transport-retrigger"]')!
-  const stepBtn = bottombar.querySelector<HTMLButtonElement>('[data-action="transport-step"]')!
-  const loopBtn = bottombar.querySelector<HTMLButtonElement>('[data-action="transport-loop"]')!
-  const speedSelect = bottombar.querySelector<HTMLSelectElement>('[data-control="transport-speed"]')!
-  const timeReadout = bottombar.querySelector<HTMLElement>('[data-readout="elapsed"]')!
+  // Transport elements (top bar)
+  const playPauseBtn = root.querySelector<HTMLButtonElement>('[data-action="transport-play"]')!
+  const retriggerBtn = root.querySelector<HTMLButtonElement>('[data-action="transport-retrigger"]')!
+  const stepBtn = root.querySelector<HTMLButtonElement>('[data-action="transport-step"]')!
+  const loopBtn = root.querySelector<HTMLButtonElement>('[data-action="transport-loop"]')!
+  const speedSelect = root.querySelector<HTMLSelectElement>('[data-control="transport-speed"]')!
+  const timeReadout = root.querySelector<HTMLElement>('[data-readout="elapsed"]')!
   const focusPill = bottombar.querySelector<HTMLElement>("[data-focus-pill]")!
   const hintText = bottombar.querySelector<HTMLElement>("[data-hint-text]")!
 
@@ -353,7 +395,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       frames = prevFrames
       elapsed = prevElapsed
     }
-    if (sec.id === "blackout-effects" || sec.id === "getaway-effects") {
+    if (sec.id === "blackout-effects" || sec.id === "getaway-effects" || sec.id === "outbreak-vignette") {
       sec.enter?.()
       sec.retrigger?.()
     } else if (sec.id === "effects" || sec.id === "fire-water" || sec.id === "splatter") {
@@ -655,7 +697,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   function selectWorldObject(obj: LabWorldObject | null, shiftKey = false) {
     if (!obj) {
       if (!shiftKey) {
-        activeSection().selectObjects ? activeSection().selectObjects!([]) : activeSection().selectObject?.(null)
+        applySectionSelection(activeSection(), [])
         if (spawn) spawn.section.selectObjects?.([])
       }
       panel.sync()
@@ -672,7 +714,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const next = applyClickSelection(targetSec.selectedObjectIds ?? (targetSec.selectedObjectId ? [targetSec.selectedObjectId] : []), obj.id, shiftKey)
       targetSec.selectObjects(next.ids)
     } else {
-      targetSec.selectObject?.(obj.id)
+      applySectionSelection(targetSec, [obj.id])
     }
     if (targetSec.id === "blackout-effects" && obj.id.startsWith("specimen:")) {
       targetSec.retrigger?.()
@@ -680,6 +722,38 @@ export function createWorkbench(opts: WorkbenchOptions) {
     panel.sync()
     syncChrome()
     void renderNow()
+  }
+
+  /** Sections without selection hooks still get a workbench-tracked single selection. */
+  function applySectionSelection(sec: LabSection, ids: readonly string[]) {
+    if (sec.selectObjects) sec.selectObjects(ids)
+    else if (sec.selectObject) sec.selectObject(ids.at(-1) ?? null)
+    else {
+      sec.selectedObjectId = ids.at(-1)
+      sec.selectedObjectIds = ids.length ? [ids.at(-1)!] : []
+    }
+  }
+
+  /** Replace the selection with explicit ids (Outliner, ⌘K, CLI). Ids owned by another section than the primary are dropped. */
+  function setSelectionIds(ids: readonly string[]) {
+    const objs = allSceneObjects()
+    const valid = ids.filter(id => objs.some(o => o.id === id))
+    if (!valid.length) {
+      selectWorldObject(null, false)
+      return []
+    }
+    const primary = valid.at(-1)!
+    const spawnOwned = (id: string) => Boolean(spawn?.section.objects?.().some(o => o.id === id))
+    const useSpawn = spawnOwned(primary)
+    const owned = valid.filter(id => spawnOwned(id) === useSpawn)
+    if (useSpawn && globalSettings.section !== "spawn") selectSection("spawn")
+    const sec = activeSection()
+    applySectionSelection(sec, owned)
+    if (sec.id === "blackout-effects" && primary.startsWith("specimen:")) sec.retrigger?.()
+    panel.sync()
+    syncChrome()
+    void renderNow()
+    return currentSelectedIds()
   }
 
   function applyActiveTransformToWorld(st: ActiveTransformState) {
@@ -1947,6 +2021,349 @@ export function createWorkbench(opts: WorkbenchOptions) {
         throw new Error(`Unknown selection target "${id}".`)
       },
     },
+    {
+      id: "foliage.set",
+      label: "Set Foliage Parameter(s)",
+      shortLabel: "Foliage Set",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        key: { type: "string", description: "Foliage parameter key (or pass parameter keys directly)" },
+        value: { type: "value", description: "Parameter value when using { key, value }" },
+        treePreset: { type: "string", enum: FOLIAGE_PRESET_IDS, description: "Species preset" },
+        crownShape: { type: "string", enum: FOLIAGE_CROWN_SHAPES.map(s => s.value), description: "Crown silhouette shape" },
+        stageMode: { type: "string", enum: ["lot", "swatch"], description: "Stage environment ('lot' = Outbreak house lot, 'swatch' = Hero tree pad)" },
+        cameraMode: { type: "string", enum: ["close", "game"], description: "Camera view mode" },
+        lightingPreset: { type: "string", enum: Object.keys(FOLIAGE_LIGHTING_PRESETS), description: "Stage lighting preset" },
+        compare: { type: "number", min: 0, max: 2, description: "Comparison mode (0=Before, 1=After, 2=Split)" },
+        tuningSeed: { type: "number", min: 1, max: 9999, description: "Parameter randomize seed" },
+        ...Object.fromEntries(
+          FOLIAGE_PARAM_SPECS.map(s => [
+            s.key,
+            { type: "number" as const, min: s.min, max: s.max, description: `${s.group} · ${s.label}${s.unit ? ` (${s.unit})` : ""}` },
+          ]),
+        ),
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const foliageSec = sections.find(s => s.id === "foliage")
+        if (!foliageSec) throw new Error("Foliage section is not available on this page.")
+        if (globalSettings.section !== "foliage") selectSection("foliage")
+        const updates: [string, unknown][] = []
+        if (typeof args?.key === "string" && args.key.trim() && args.value !== undefined) {
+          updates.push([args.key.trim(), args.value])
+        } else if (args && typeof args === "object") {
+          for (const [k, v] of Object.entries(args)) {
+            if (k !== "key" && k !== "value" && v !== undefined) updates.push([k, v])
+          }
+        }
+        if (updates.length === 0) {
+          throw new Error("foliage.set requires { key, value } or parameter key/value pairs.")
+        }
+        const applied: Record<string, LabValue> = {}
+        for (const [k, rawVal] of updates) {
+          const ctrl = foliageSec.controls.find(c => c.key === k || c.label.toLowerCase() === k.toLowerCase())
+          if (ctrl && ctrl.type !== "action") {
+            const coerced = coerceControlValue(ctrl, rawVal)
+            panel.navigation.set(ctrl, coerced)
+            applied[ctrl.key] = foliageSec.settings[ctrl.key]!
+          } else if (k in foliageSec.settings) {
+            foliageSec.settings[k] = rawVal as LabValue
+            applied[k] = foliageSec.settings[k]!
+          } else {
+            throw new Error(`Unknown foliage parameter "${k}".`)
+          }
+        }
+        foliageSec.prepare?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return { section: "foliage", applied, settings: { ...foliageSettings } }
+      },
+    },
+    {
+      id: "foliage.randomize",
+      label: "Randomize Foliage Parameters",
+      shortLabel: "Randomize Foliage",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        scope: { type: "string", enum: ["all", "tree", "grass"], description: "Scope to randomize ('all', 'tree', or 'grass')" },
+        tuningSeed: { type: "number", min: 1, max: 9999, description: "Optional deterministic tuning seed" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const foliageSec = sections.find(s => s.id === "foliage")
+        if (!foliageSec) throw new Error("Foliage section is not available on this page.")
+        if (globalSettings.section !== "foliage") selectSection("foliage")
+        const scope = args?.scope === "tree" || args?.scope === "grass" ? args.scope : "all"
+        const tSeed =
+          typeof args?.tuningSeed === "number" && Number.isFinite(args.tuningSeed)
+            ? Math.max(1, Math.min(9999, Math.round(args.tuningSeed)))
+            : Math.max(1, Math.min(9999, Math.round(Number(foliageSec.settings.tuningSeed) || 41)))
+        const next = randomizeFoliageParams(foliageSettings, tSeed, scope)
+        Object.assign(foliageSettings, next)
+        foliageSec.settings.tuningSeed = (tSeed % 9999) + 1
+        foliageSec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          scope,
+          seed: Number(foliageSec.settings.seed),
+          usedTuningSeed: tSeed,
+          nextTuningSeed: Number(foliageSec.settings.tuningSeed),
+          settings: { ...foliageSettings },
+        }
+      },
+    },
+    {
+      id: "foliage.preset",
+      label: "Load, Reset, or Export Foliage Preset",
+      shortLabel: "Foliage Preset",
+      category: "Preset",
+      undoable: true,
+      args: {
+        preset: {
+          type: "string",
+          enum: [...FOLIAGE_PRESET_IDS, "reset"],
+          description: "Named tree/foliage preset ('oak', 'maple', 'birch', 'pine', 'hydrangea') or 'reset'",
+        },
+        lighting: {
+          type: "string",
+          enum: Object.keys(FOLIAGE_LIGHTING_PRESETS),
+          description: "Optional Outbreak lighting preset ('outbreak_dusk', 'outbreak_day', 'outbreak_night', 'cold_moon')",
+        },
+        stageMode: {
+          type: "string",
+          enum: ["lot", "swatch"],
+          description: "Optional stage mode ('lot' = Outbreak house lot, 'swatch' = Hero tree pad)",
+        },
+        cameraMode: {
+          type: "string",
+          enum: ["close", "game"],
+          description: "Optional camera mode ('close' or 'game')",
+        },
+        compare: {
+          type: "number",
+          min: 0,
+          max: 2,
+          description: "Optional comparison mode (0=Before, 1=After, 2=Split)",
+        },
+        json: { type: "string", description: "Optional FoliagePresetV1 JSON payload to import" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const foliageSec = sections.find(s => s.id === "foliage")
+        if (!foliageSec) throw new Error("Foliage section is not available on this page.")
+        if (globalSettings.section !== "foliage") selectSection("foliage")
+
+        if (typeof args?.json === "string" && args.json.trim()) {
+          const imported = importFoliagePreset(args.json)
+          if (!imported.ok) throw new Error(imported.error)
+          const val = imported.value
+          foliageSec.settings.seed = val.seed
+          foliageSec.settings.tuningSeed = val.tuningSeed
+          foliageSec.settings.cameraMode = val.cameraMode
+          foliageSec.settings.compare = val.compare
+          foliageSec.settings.lightingPreset = val.lightingPreset
+          Object.assign(foliageSettings, val.params)
+          foliageSec.enter?.()
+          foliageSec.retrigger?.()
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return { action: "imported", preset: val }
+        }
+
+        if (typeof args?.preset === "string" && args.preset.trim()) {
+          const p = args.preset.trim().toLowerCase()
+          if (p === "reset") {
+            resetFoliageParams(foliageSettings.treePreset, foliageSettings)
+          } else if (isFoliagePresetId(p)) {
+            resetFoliageParams(p, foliageSettings)
+          } else {
+            throw new Error(`Unknown foliage preset "${args.preset}". Valid: ${FOLIAGE_PRESET_IDS.join(", ")}, reset.`)
+          }
+        }
+        if (typeof args?.lighting === "string" && args.lighting in FOLIAGE_LIGHTING_PRESETS) {
+          foliageSec.settings.lightingPreset = args.lighting
+          const lp = FOLIAGE_LIGHTING_PRESETS[args.lighting]
+          if (lp && Object.keys(lp.values).length > 0) Object.assign(stage.lighting, lp.values)
+        }
+        if (args?.stageMode === "lot" || args?.stageMode === "swatch") {
+          const stgCtrl = foliageSec.controls.find(c => c.key === "stageMode")
+          if (stgCtrl) panel.navigation.set(stgCtrl, args.stageMode)
+        }
+        if (args?.cameraMode === "close" || args?.cameraMode === "game") {
+          const camCtrl = foliageSec.controls.find(c => c.key === "cameraMode")
+          if (camCtrl) panel.navigation.set(camCtrl, args.cameraMode)
+        }
+        if (args?.compare === 0 || args?.compare === 1 || args?.compare === 2) {
+          foliageSec.settings.compare = args.compare
+        }
+        foliageSec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+
+        const exported = exportFoliagePreset({
+          seed: Number(foliageSec.settings.seed) || 7,
+          tuningSeed: Number(foliageSec.settings.tuningSeed) || 41,
+          stageMode: foliageSec.settings.stageMode === "swatch" ? "swatch" : "lot",
+          cameraMode: (foliageSec.settings.cameraMode === "game" ? "game" : "close") as FoliageCameraMode,
+          compare: (Number(foliageSec.settings.compare) === 0 ? 0 : Number(foliageSec.settings.compare) === 2 ? 2 : 1) as FoliageCompareMode,
+          lightingPreset: String(foliageSec.settings.lightingPreset || "outbreak_dusk"),
+          params: foliageSettings,
+        })
+        return {
+          preset: foliageSettings.treePreset,
+          exported,
+          json: JSON.stringify(exported, null, 2),
+        }
+      },
+    },
+    {
+      id: "foliage.textures",
+      label: "Bind Foliage & Grass Texture Maps",
+      shortLabel: "Foliage Textures",
+      category: "Preset",
+      undoable: false,
+      args: {
+        grassAlbedo: { type: "string", description: "URL/path for grass & soil albedo texture" },
+        grassNormal: { type: "string", description: "URL/path for grass & soil detail normal map" },
+        barkAlbedo: { type: "string", description: "URL/path for bark albedo/normal texture" },
+        leafAtlas: { type: "string", description: "URL/path for brushy leaf-cluster RGBA atlas" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        setFoliageTextureUrls({
+          grassAlbedo: typeof args?.grassAlbedo === "string" ? args.grassAlbedo : undefined,
+          grassNormal: typeof args?.grassNormal === "string" ? args.grassNormal : undefined,
+          barkAlbedo: typeof args?.barkAlbedo === "string" ? args.barkAlbedo : undefined,
+          leafAtlas: typeof args?.leafAtlas === "string" ? args.leafAtlas : undefined,
+        })
+        void renderNow()
+        return { textures: { ...foliageTextureUrls } }
+      },
+    },
+    {
+      id: "look.preset",
+      label: "Apply Rendering Look Preset",
+      shortLabel: "Look Preset",
+      category: "Preset",
+      undoable: true,
+      args: {
+        preset: {
+          type: "string",
+          required: true,
+          description: "Preset ID or name (current, noir, painterly, cinematic_dusk, sodium_70s, cozy_golden_hour)",
+        },
+      },
+      enabled: () => Boolean(looks) && mode !== "play",
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode. Run 'arcade release' first." : "Looks section unavailable."),
+      run: (_ctx, args) => {
+        if (!looks) throw new Error("Looks controller is not available.")
+        const raw = String(args?.preset ?? "").trim()
+        const pid = resolveLookPresetId(raw)
+        if (!pid) {
+          throw new Error(`Unknown look preset "${raw}". Valid presets: ${LOOK_PRESET_IDS.join(", ")}.`)
+        }
+        if (globalSettings.section !== "looks") selectSection("looks")
+        const settings = looks.applyPreset(pid)
+        activeCatalogId = `look-preset:${pid}`
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          preset: pid,
+          label: LOOK_PRESETS[pid].label,
+          settings,
+        }
+      },
+    },
+    {
+      id: "look.set",
+      label: "Set Rendering Look Parameter",
+      shortLabel: "Look Set",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        key: { type: "string", required: true, description: "Look parameter key (e.g. exposure, contrast, shaftStrength, fogDensity)" },
+        value: { type: "value", required: true, description: "Parameter value" },
+      },
+      enabled: () => Boolean(looks) && mode !== "play",
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode. Run 'arcade release' first." : "Looks section unavailable."),
+      run: (_ctx, args) => {
+        if (!looks) throw new Error("Looks controller is not available.")
+        const key = String(args?.key ?? "").trim()
+        const val = args?.value
+        if (!key || val === undefined) throw new Error("look.set requires key and value.")
+        if (globalSettings.section !== "looks") selectSection("looks")
+        const found = findControlRow([panel], key)
+        if (found && found.control.type !== "action") {
+          const before = panel.navigation.settings[found.control.key]
+          const next = coerceControlValue(found.control, val)
+          panel.navigation.set(found.control, next)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return {
+            key: found.control.key,
+            label: found.control.label,
+            group: found.row.group,
+            before,
+            value: panel.navigation.settings[found.control.key],
+            preset: looks.getLookSettings().preset,
+          }
+        }
+        const res = looks.setParam(key, val as string | number | boolean)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          ...res,
+          preset: looks.getLookSettings().preset,
+        }
+      },
+    },
+    {
+      id: "look.randomize",
+      label: "Randomize Rendering Look Parameters",
+      shortLabel: "Look Randomize",
+      category: "Preset",
+      undoable: true,
+      args: {
+        group: {
+          type: "string",
+          required: false,
+          description: "Group to randomize (all, tone, split_tone, lighting, atmosphere, lens, painterly)",
+        },
+        seed: {
+          type: "number",
+          required: false,
+          min: 1,
+          max: 9999,
+          description: "Deterministic tuning seed (leaves roomSeed unchanged)",
+        },
+      },
+      enabled: () => Boolean(looks) && mode !== "play",
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode. Run 'arcade release' first." : "Looks section unavailable."),
+      run: (ctx, args) => {
+        if (!looks) throw new Error("Looks controller is not available.")
+        if (globalSettings.section !== "looks") selectSection("looks")
+        const rawGroup = typeof args?.group === "string" ? args.group : "all"
+        const explicitSeed = typeof args?.seed === "number" ? args.seed : ctx?.seed
+        const out = looks.randomizeGroup(rawGroup as LookGroup | "all", explicitSeed)
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return out
+      },
+    },
   ])
 
   function buildSceneState(): Omit<LabSceneState, "commands"> {
@@ -1995,6 +2412,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
         frames,
         diffs: slotA ? computeSnapshotDiffs(slotA.snapshot, slotB?.snapshot ?? captureSnapshot()) : [],
       },
+      layout: chromeReady
+        ? {
+            library: { open: libraryDrawer.open, category: libraryDrawer.category, query: libraryDrawer.query },
+            locked: [...lockedIds],
+            details: { query: detailsQuery, modifiedOnly: detailsModifiedOnly, showAll: detailsShowAll, modified: panel.modifiedControls().map(c => c.key) },
+            watch: watchPins.map(p => ({ section: p.sectionId, key: p.key, label: p.label, value: readWatchPin(p)?.text ?? null })),
+          }
+        : undefined,
       history: {
         canUndo: undoStack.length > 0,
         canRedo: redoStack.length > 0,
@@ -2084,6 +2509,279 @@ export function createWorkbench(opts: WorkbenchOptions) {
     },
   })
 
+  const resolveSettingSection = (key: string, section?: string): string => {
+    if (section) {
+      const q = section.toLowerCase()
+      const sec = sections.find(s => s.id.toLowerCase() === q || s.label.toLowerCase() === q)
+      if (!sec) throw new Error(`Unknown section "${section}". Available: ${sections.map(s => s.id).join(", ")}.`)
+      return sec.id
+    }
+    const active = activeSection()
+    if (active.controls.some(c => c.key === key && c.type !== "action")) return active.id
+    const owner = sections.find(s => s.controls.some(c => c.key === key && c.type !== "action"))
+    if (!owner) throw new Error(`Unknown setting "${key}".`)
+    return owner.id
+  }
+
+  commands.registerAll([
+    {
+      id: "outliner.select",
+      label: "Select in Outliner",
+      shortLabel: "Select",
+      category: "Object",
+      args: {
+        id: { type: "string", description: "Object id or label (prop:0, character:active, Cone)" },
+        ids: { type: "string", description: "Comma-separated object ids to select together" },
+        kind: { type: "string", description: "Select every object of a kind (for example cone)" },
+        additive: { type: "boolean", description: "Add to the current selection" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const objs = allSceneObjects()
+        const want: string[] = []
+        const resolve = (raw: string) => {
+          const q = raw.trim().toLowerCase()
+          const o =
+            objs.find(x => x.id.toLowerCase() === q) ??
+            objs.find(x => x.label.toLowerCase() === q) ??
+            objs.find(x => x.label.toLowerCase().includes(q) || x.id.toLowerCase().includes(q))
+          if (!o) throw new Error(`No scene object matches "${raw}". In scene: ${objs.map(x => x.id).join(", ") || "nothing"}.`)
+          return o.id
+        }
+        if (typeof args?.id === "string" && args.id.trim()) want.push(resolve(args.id))
+        if (typeof args?.ids === "string") for (const part of args.ids.split(",")) if (part.trim()) want.push(resolve(part))
+        if (typeof args?.kind === "string" && args.kind.trim()) {
+          const k = args.kind.trim().toLowerCase()
+          const matches = objs.filter(o => (o.kind ?? "").toLowerCase() === k || o.label.toLowerCase().startsWith(k))
+          if (!matches.length) throw new Error(`No objects of kind "${args.kind}" in the scene.`)
+          want.push(...matches.map(o => o.id))
+        }
+        const next = args?.additive ? [...new Set([...currentSelectedIds(), ...want])] : want
+        selectingFromOutliner = true
+        try {
+          setSelectionIds(next)
+        } finally {
+          selectingFromOutliner = false
+        }
+        const primary = currentSelectedIds().at(-1)
+        if (primary) outliner.reveal(primary)
+        return { selected: currentSelectedIds() }
+      },
+    },
+    {
+      id: "outliner.lock",
+      label: "Lock / Unlock Object Picking",
+      shortLabel: "Lock",
+      category: "Object",
+      args: {
+        id: { type: "string", required: true, description: "Object id" },
+        locked: { type: "boolean", description: "Explicit lock state (omit to toggle)" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const id = String(args?.id ?? "")
+        if (!allSceneObjects().some(o => o.id === id)) throw new Error(`Unknown scene object "${id}".`)
+        const want = typeof args?.locked === "boolean" ? args.locked : !lockedIds.has(id)
+        if (want) lockedIds.add(id)
+        else lockedIds.delete(id)
+        syncChrome()
+        return { id, locked: want, lockedIds: [...lockedIds] }
+      },
+    },
+    {
+      id: "outliner.collapse",
+      label: "Collapse / Expand Outliner Group",
+      shortLabel: "Collapse",
+      category: "Navigation",
+      args: {
+        group: { type: "string", required: true, enum: OUTLINER_GROUPS.map(g => g.id) },
+        collapsed: { type: "boolean", description: "Explicit state (omit to toggle)" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const group = String(args?.group)
+        const want = typeof args?.collapsed === "boolean" ? args.collapsed : !outliner.collapsedGroups.includes(group)
+        outliner.setGroupCollapsed(group, want)
+        return { group, collapsed: want }
+      },
+    },
+    {
+      id: "outliner.focus",
+      label: "Focus Outliner",
+      shortLabel: "Outliner",
+      category: "Navigation",
+      shortcut: "⇧Tab",
+      enabled: () => true,
+      run: () => {
+        if (mode === "play") setPlayMode("edit")
+        outliner.focus()
+      },
+    },
+    {
+      id: "library.toggle",
+      label: "Toggle Library Drawer",
+      shortLabel: "Library",
+      category: "Navigation",
+      shortcut: "Ctrl Space",
+      args: {
+        open: { type: "boolean", description: "Explicit open state (omit to toggle)" },
+        category: { type: "string", enum: LIBRARY_CATEGORIES.map(c => c.id), description: "Category to show" },
+        query: { type: "string", description: "Search text" },
+      },
+      enabled: () => true,
+      run: (ctx, args) => {
+        const open = typeof args?.open === "boolean" ? args.open : args?.category || args?.query ? true : !libraryDrawer.open
+        if (typeof args?.category === "string") libraryDrawer.setCategory(args.category as LabLibraryCategory)
+        libraryDrawer.setOpen(open)
+        if (typeof args?.query === "string") libraryDrawer.setQuery(args.query)
+        if (open && ctx?.source !== "cli" && !args?.category) libraryDrawer.focusSearch()
+        else if (!open && focusZone === "library") canvas.focus({ preventScroll: true })
+        return { open: libraryDrawer.open, category: libraryDrawer.category, visible: libraryDrawer.visibleIds }
+      },
+    },
+    {
+      id: "library.place",
+      label: "Place Library Item",
+      shortLabel: "Place",
+      category: "Scene",
+      undoable: false,
+      args: {
+        id: { type: "string", required: true, description: "Catalog id or label (spawn-prop:hydrant, effects:smoke, Hydrant)" },
+        at: { type: "string", description: "Ground point 'x,z' (omit to arm a placement ghost or just select the item)" },
+        yaw: { type: "number", description: "Yaw in degrees" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const raw = String(args?.id ?? "").trim()
+        const q = raw.toLowerCase()
+        const catalog = buildCatalog().filter(isLibraryAsset)
+        const entry =
+          catalog.find(e => e.id.toLowerCase() === q) ??
+          catalog.find(e => e.label.toLowerCase() === q || e.label.toLowerCase() === `place ${q}`) ??
+          catalog.find(e => e.id.toLowerCase().endsWith(`:${q}`)) ??
+          catalog.find(e => e.label.toLowerCase().includes(q))
+        if (!entry) throw new Error(`Unknown Library item "${raw}".`)
+        let at: { x: number; y: number; z: number } | null = null
+        if (typeof args?.at === "string" && args.at.trim()) {
+          const parts = args.at.split(",").map(p => Number(p.trim()))
+          if (parts.length !== 2 || !parts.every(Number.isFinite)) throw new Error(`Invalid point "${args.at}". Expected "x,z".`)
+          const groundFn = isPlaceable(entry.id) && spawn ? spawn.section.groundHeight ?? yardGround : groundFnFor(activeSection())
+          at = { x: parts[0]!, y: groundFn(parts[0]!, parts[1]!), z: parts[1]! }
+        }
+        return placeLibraryEntry(entry, at, typeof args?.yaw === "number" ? args.yaw : 0)
+      },
+    },
+    {
+      id: "palette.open",
+      label: "Search Everything",
+      shortLabel: "Search",
+      category: "Navigation",
+      shortcut: "⌘K",
+      args: { query: { type: "string", description: "Initial query (@ scene, # settings, + library, > commands)" } },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        if (mode === "play") setPlayMode("edit")
+        palette.open(typeof args?.query === "string" ? args.query : "")
+        return { open: palette.isOpen, results: palette.results.map(r => ({ kind: r.kind, label: r.label, meta: r.meta })) }
+      },
+    },
+    {
+      id: "watch.pin",
+      label: "Pin Setting to Watch",
+      shortLabel: "Pin",
+      category: "Inspector",
+      args: {
+        key: { type: "string", required: true, description: "Setting key (skidWidth, radius, exposure)" },
+        section: { type: "string", description: "Section id (defaults to the active section, then any section with the key)" },
+        pinned: { type: "boolean", description: "Explicit pin state (omit to toggle)" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const key = String(args?.key ?? "").trim()
+        const sectionId = resolveSettingSection(key, typeof args?.section === "string" ? args.section : undefined)
+        const pinned = pinSetting(sectionId, key, typeof args?.pinned === "boolean" ? args.pinned : undefined)
+        return { section: sectionId, key, pinned, watch: watchPins.map(p => watchPinId(p)) }
+      },
+    },
+    {
+      id: "watch.unpin",
+      label: "Unpin Setting from Watch",
+      shortLabel: "Unpin",
+      category: "Inspector",
+      args: {
+        key: { type: "string", description: "Setting key (omit with all=true to clear)" },
+        section: { type: "string", description: "Section id" },
+        all: { type: "boolean", description: "Clear every pin" },
+      },
+      enabled: () => watchPins.length > 0,
+      disabledReason: () => "Watch list is empty",
+      run: (_ctx, args) => {
+        if (args?.all) {
+          setWatchPins([])
+          return { watch: [] }
+        }
+        const key = String(args?.key ?? "").trim()
+        const pin = watchPins.find(p => p.key === key && (typeof args?.section !== "string" || p.sectionId === args.section))
+        if (!pin) throw new Error(`"${key}" is not pinned.`)
+        setWatchPins(watchPins.filter(p => p !== pin))
+        return { watch: watchPins.map(p => watchPinId(p)) }
+      },
+    },
+    {
+      id: "details.filter",
+      label: "Filter Details",
+      shortLabel: "Filter",
+      category: "Inspector",
+      args: {
+        modified: { type: "boolean", description: "Show only modified settings" },
+        query: { type: "string", description: "Search text" },
+        all: { type: "boolean", description: "Show section settings unrelated to the selection" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        if (typeof args?.modified === "boolean") detailsModifiedOnly = args.modified
+        else if (args?.query === undefined && args?.all === undefined) detailsModifiedOnly = !detailsModifiedOnly
+        if (typeof args?.query === "string") {
+          detailsQuery = args.query
+          detailsSearch.value = args.query
+        }
+        if (typeof args?.all === "boolean") detailsShowAll = args.all
+        applyDetailsView()
+        syncDetails()
+        return {
+          modifiedOnly: detailsModifiedOnly,
+          query: detailsQuery,
+          showAll: detailsShowAll,
+          visible: panel.navigation.visibleRows.filter(r => r.control).map(r => r.control!.key),
+        }
+      },
+    },
+    {
+      id: "details.reveal",
+      label: "Jump to Setting",
+      shortLabel: "Jump",
+      category: "Inspector",
+      args: {
+        key: { type: "string", required: true, description: "Setting key" },
+        section: { type: "string", description: "Section id (switches section when needed)" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const key = String(args?.key ?? "").trim()
+        const sectionId = resolveSettingSection(key, typeof args?.section === "string" ? args.section : undefined)
+        const ok = revealSetting(sectionId, key)
+        if (!ok) throw new Error(`Setting "${key}" is not available in the current state.`)
+        return { section: sectionId, key }
+      },
+    },
+  ])
+
+  for (const s of sections) {
+    s.registerCommands?.(commands)
+  }
   devControlHandle = registerDevControl({
     kind: "lab",
     commands,
@@ -2197,6 +2895,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
             spawn.spawnItems("row", { x: 0, y: 0, z: 2, yaw: Math.PI })
             spawn.section.settings.item = "propane"
             spawn.spawnItems("one", { x: 0, y: 0, z: -10, yaw: Math.PI })
+            spawn.section.selectObject?.("character:active")
             stage.frameTarget(0, 0.4, 2, 18)
           }
         },
@@ -2241,6 +2940,46 @@ export function createWorkbench(opts: WorkbenchOptions) {
         },
       },
     )
+
+    const outbreakVignetteSec = sections.find(s => s.id === "outbreak-vignette")
+    if (outbreakVignetteSec) {
+      entries.push({
+        id: "fixture:outbreak-vignette",
+        label: "Outbreak lot vignette",
+        group: "Starting Fixtures",
+        category: "effects",
+        collection: "fixtures",
+        tag: "Vignette",
+        sectionId: "outbreak-vignette",
+        isActive: () => globalSettings.section === "outbreak-vignette",
+        run: () => {
+          activeCatalogId = "fixture:outbreak-vignette"
+          selectSection("outbreak-vignette")
+          frameActiveTarget()
+        },
+      })
+      const dirCtrl = outbreakVignetteSec.controls.find(c => c.key === "directionPreset" && "options" in c)
+      if (dirCtrl && "options" in dirCtrl) {
+        for (const opt of dirCtrl.options) {
+          const id = `outbreak-vignette:dir-${opt.value}`
+          entries.push({
+            id,
+            label: opt.label,
+            group: "Outbreak Art Directions",
+            category: "lighting",
+            collection: "shared",
+            tag: "Outbreak",
+            sectionId: "outbreak-vignette",
+            isActive: () => globalSettings.section === "outbreak-vignette" && outbreakVignetteSec.settings.directionPreset === opt.value,
+            run: () => {
+              activeCatalogId = id
+              if (globalSettings.section !== "outbreak-vignette") selectSection("outbreak-vignette")
+              panel.navigation.set(dirCtrl, opt.value)
+            },
+          })
+        }
+      }
+    }
 
     // 2. Shared FX presets
     for (const opt of effectOptions) {
@@ -2543,7 +3282,80 @@ export function createWorkbench(opts: WorkbenchOptions) {
       })
     }
 
-    // 8. Lighting Category
+    const foliageSec = sections.find(s => s.id === "foliage")
+    if (foliageSec) {
+      for (const id of FOLIAGE_PRESET_IDS) {
+        const def = FOLIAGE_PRESETS[id]
+        const catId = `foliage-preset:${id}`
+        entries.push({
+          id: catId,
+          label: def.label,
+          group: "Foliage & Trees (Outbreak)",
+          category: "objects",
+          collection: "shared",
+          tag: "Foliage",
+          sectionId: "foliage",
+          isActive: () => globalSettings.section === "foliage" && foliageSec.settings.treePreset === id,
+          run: () => {
+            activeCatalogId = catId
+            if (globalSettings.section !== "foliage") selectSection("foliage")
+            const c = foliageSec.controls.find(ctrl => ctrl.key === "treePreset")
+            if (c) panel.navigation.set(c, id)
+            frameActiveTarget()
+          },
+        })
+      }
+      entries.push({
+        id: "section:foliage",
+        label: "Foliage Workbench Stage",
+        group: "Calibration & Solvers",
+        category: "objects",
+        collection: "shared",
+        tag: "Foliage",
+        sectionId: "foliage",
+        isActive: () => globalSettings.section === "foliage",
+        run: () => selectSection("foliage"),
+      })
+    }
+
+    // 8. Lighting & Looks Categories
+    const looksSec = sections.find(s => s.id === "looks")
+    if (looksSec && looks) {
+      entries.push({
+        id: "section:looks",
+        label: "Looks Debug Room",
+        group: "Rendering Styles (Looks)",
+        category: "lighting",
+        collection: "shared",
+        tag: "Room",
+        sectionId: "looks",
+        isActive: () => globalSettings.section === "looks",
+        run: () => selectSection("looks"),
+      })
+      for (const pid of LOOK_PRESET_IDS) {
+        const def = LOOK_PRESETS[pid]
+        const id = `look-preset:${pid}`
+        entries.push({
+          id,
+          label: def.label,
+          group: "Rendering Styles (Looks)",
+          category: "lighting",
+          collection: "shared",
+          tag: "Look",
+          sectionId: "looks",
+          isActive: () => globalSettings.section === "looks" && looksSec.settings.preset === pid,
+          run: () => {
+            const before = captureSnapshot()
+            activeCatalogId = id
+            if (globalSettings.section !== "looks") selectSection("looks")
+            looks.applyPreset(pid)
+            recordHistory(`Look preset: ${def.label}`, before)
+            panel.sync()
+            void renderNow()
+          },
+        })
+      }
+    }
     entries.push({
       id: "section:lighting",
       label: "Stage Lighting & Grade",
@@ -2628,80 +3440,45 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
     }
 
-    // 10. Registered LabCommands (when searching with ⌘K / /)
-    if (searchQuery.trim()) {
-      for (const cmd of commands.all()) {
+    // 10. Section registrations: every section is reachable from the Library, with optional items of its own.
+    for (const sec of sections) {
+      const category = sec.library?.category ?? sectionLibraryCategory(sec.id)
+      for (const item of sec.library?.items?.() ?? []) {
+        const id = `${sec.id}:${item.id}`
+        if (entries.some(e => e.id === id)) continue
         entries.push({
-          id: `cmd:${cmd.id}`,
-          label: cmd.label,
-          group: "Commands",
-          category: activeCategory,
+          id,
+          label: item.label,
+          group: item.group ?? sec.label,
+          category,
           collection: "shared",
-          tag: cmd.shortcut ?? cmd.category,
-          sectionId: globalSettings.section,
-          isActive: () => false,
+          tag: item.tag ?? sec.library?.tag ?? sec.label,
+          sectionId: sec.id,
+          isActive: () => globalSettings.section === sec.id && Boolean(item.active?.()),
           run: () => {
-            if (cmd.enabled()) {
-              cmd.run()
-            } else {
-              showToast(cmd.disabledReason?.() ?? "Command unavailable", true)
-            }
+            activeCatalogId = id
+            if (globalSettings.section !== sec.id) selectSection(sec.id)
+            item.select()
+            frameActiveTarget()
           },
+        })
+      }
+      if (!entries.some(e => e.id === `section:${sec.id}`)) {
+        entries.push({
+          id: `section:${sec.id}`,
+          label: sec.library?.label ?? sec.label,
+          group: "Sections",
+          category,
+          collection: "shared",
+          tag: sec.library?.tag ?? "Section",
+          sectionId: sec.id,
+          isActive: () => globalSettings.section === sec.id,
+          run: () => selectSection(sec.id),
         })
       }
     }
 
     return entries
-  }
-
-  function filteredCatalog(): CatalogEntry[] {
-    const all = buildCatalog()
-    const q = searchQuery.trim().toLowerCase()
-    return all.filter(item => {
-      if (!q && item.category !== activeCategory) return false
-      if (activeCollection !== "all" && item.collection !== activeCollection) return false
-      if (q) {
-        const hay = `${item.label} ${item.group} ${item.tag} ${item.collection}`.toLowerCase()
-        return hay.includes(q)
-      }
-      return true
-    })
-  }
-
-  function renderCatalog() {
-    const items = filteredCatalog()
-    selectedCatalogIndex = Math.max(0, Math.min(selectedCatalogIndex, items.length - 1))
-    catalogListEl.replaceChildren()
-    let lastGroup = ""
-    items.forEach((item, idx) => {
-      if (item.group !== lastGroup) {
-        lastGroup = item.group
-        const g = document.createElement("div")
-        g.className = "lab-catalog-group"
-        g.textContent = item.group
-        catalogListEl.append(g)
-      }
-      const btn = document.createElement("button")
-      btn.type = "button"
-      btn.className = "lab-catalog-item"
-      btn.dataset.catalogId = item.id
-      const active = Boolean(item.isActive?.()) || (focusZone === "library" && idx === selectedCatalogIndex)
-      btn.setAttribute("aria-selected", String(active))
-      const nameSpan = document.createElement("span")
-      nameSpan.textContent = item.label
-      const tagSpan = document.createElement("span")
-      tagSpan.className = "lab-catalog-tag"
-      tagSpan.textContent = item.tag
-      btn.append(nameSpan, tagSpan)
-      btn.onclick = () => {
-        selectedCatalogIndex = idx
-        item.run(true)
-        panel.sync()
-        syncChrome()
-        void renderNow()
-      }
-      catalogListEl.append(btn)
-    })
   }
 
   function resolveEnvOwner(): LabSection {
@@ -2740,7 +3517,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
   function syncTransportAndHints() {
     const sec = activeSection()
     const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
-    playPauseBtn.textContent = playing ? "Pause" : "Play"
+    playPauseBtn.textContent = playing ? "❚❚" : "▶"
+    playPauseBtn.title = playing ? "Pause (K)" : "Play (K)"
     playPauseBtn.setAttribute("aria-pressed", String(playing))
     const hasLoop = "loop" in sec.settings
     loopBtn.disabled = !hasLoop
@@ -2768,13 +3546,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
       hintText.textContent = "↑↓ Row · ←→ Adjust (⇧×10 ⌥×0.1) · Enter Exact · 0 Reset · R Randomize · Esc Canvas"
     } else if (focusZone === "library") {
       focusPill.textContent = "Edit · Library"
-      hintText.textContent = "↑↓ Browse · Enter Select · / Search · Tab Inspector · Esc Canvas"
+      hintText.textContent = "Type to filter · ↑↓ Browse · Enter Select · Drag a tile into the viewport to place · Ctrl+Space Close · Esc Canvas"
+    } else if (focusZone === "outliner") {
+      focusPill.textContent = "Edit · Outliner"
+      hintText.textContent = "↑↓ Select · ⇧↑↓ Extend · ←→ Collapse/Expand · Space Toggle · ⌘Click Toggle · ⇧Click Range · Enter Frame · ⌫ Delete · Esc Canvas"
+    } else if (focusZone === "palette") {
+      focusPill.textContent = "Search"
+      hintText.textContent = "@ Scene · # Settings · + Library · > Commands · ↑↓ Move · Enter Run · Esc Close"
     } else {
       focusPill.textContent = "Edit · Canvas"
       if (sec.id === "spawn") {
-        hintText.textContent = "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · Drag Box Select · RMB Tap Radial · G Move · P Play · F Frame"
+        hintText.textContent = "Click Select · ⇧Click Add · Drag Box · 2F/RMB Orbit · RMB Tap Radial · G Move · P Play · F Frame · ⇧Tab Outliner · Ctrl+Space Library · ⌘K Search"
       } else {
-        hintText.textContent = "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · RMB Tap Radial · Space Retrigger · F Frame · R Reroll · ⌘K Search"
+        hintText.textContent = "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · RMB Tap Radial · Space Retrigger · F Frame · R Reroll · Ctrl+Space Library · ⌘K Search"
       }
     }
   }
@@ -2784,7 +3568,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     stage.showMarkers = root.dataset.closed !== "true"
     const objects = allSceneObjects()
     const selIds = currentSelectedIds()
-    const showSelectionRing = selIds.length > 0 || activeCategory === "objects" || Boolean(activeTransform)
+    const showSelectionRing = selIds.length > 0 || Boolean(activeTransform)
     const selectedList = selIds.length > 0
       ? objects.filter(o => selIds.includes(o.id))
       : showSelectionRing && objects[0]
@@ -2926,38 +3710,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     redoBtn.disabled = redoStack.length === 0
     redoBtn.title = redoStack.length ? `Redo ${redoStack.at(-1)!.label} (⇧⌘Z)` : "Redo (⇧⌘Z)"
 
-    for (const tab of catTabs) {
-      tab.setAttribute("aria-pressed", String(tab.dataset.cat === activeCategory))
-    }
-    for (const pill of filterPills) {
-      pill.setAttribute("aria-pressed", String(pill.dataset.collection === activeCollection))
-    }
-
-    // Inspector header title
     const objs = allSceneObjects()
     const selList = currentSelectedObjects()
     const selObj = selList.at(-1) ?? null
-    if (selList.length > 1 && sec.id === "spawn") {
-      const c = computeSelectionCentroid(selList)
-      inspectorTitle.textContent = `${selList.length} Objects Selected`
-      inspectorSub.textContent = `${sec.label} · Centroid (${c.x.toFixed(1)}, ${c.z.toFixed(1)})`
-    } else if (selObj && sec.id === "spawn") {
-      inspectorTitle.textContent = selObj.label
-      inspectorSub.textContent = `${sec.label} · (${selObj.x.toFixed(1)}, ${selObj.z.toFixed(1)})`
-    } else if ("effect" in sec.settings) {
-      const effCtrl = sec.controls.find(c => c.key === "effect" && "options" in c)
-      const effLabel = effCtrl && "options" in effCtrl ? effCtrl.options.find(o => o.value === sec.settings.effect)?.label : String(sec.settings.effect)
-      inspectorTitle.textContent = effLabel || sec.label
-      inspectorSub.textContent = sec.label
-    } else if ("recipe" in sec.settings) {
-      const recCtrl = sec.controls.find(c => c.key === "recipe" && "options" in c)
-      const recLabel = recCtrl && "options" in recCtrl ? recCtrl.options.find(o => o.value === sec.settings.recipe)?.label : String(sec.settings.recipe)
-      inspectorTitle.textContent = recLabel || sec.label
-      inspectorSub.textContent = sec.label
-    } else {
-      inspectorTitle.textContent = sec.label
-      inspectorSub.textContent = "Inspector"
-    }
 
     // Viewport HUD badge
     hudBadge.hidden = sec.id === "audio"
@@ -2986,7 +3741,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
     syncEnvironmentSelector()
     syncTransportAndHints()
     syncStageMarkers()
-    renderCatalog()
+    if (chromeReady) {
+      const selSig = currentSelectedIds().join("|")
+      if (selSig !== lastSelectionSig) {
+        lastSelectionSig = selSig
+        detailsShowAll = false
+        if (!selectingFromOutliner && selList.length === 1) outliner.reveal(selList[0]!.id)
+      }
+      applyDetailsView()
+      syncDetails()
+      outliner.render()
+      libraryDrawer.render()
+      watchList.render(watchPins)
+    }
     devControlHandle?.notifyUpdate()
   }
 
@@ -3027,6 +3794,18 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const obj = parsed as Record<string, unknown>
     if (obj.version !== 1) {
       return { ok: false, error: `Unsupported preset schema version: ${String(obj.version)} (expected 1).` }
+    }
+    if (obj.section === undefined && looks && ("preset" in obj || (obj.settings && typeof obj.settings === "object" && "exposure" in (obj.settings as Record<string, unknown>)))) {
+      const before = captureSnapshot()
+      if (globalSettings.section !== "looks") selectSection("looks")
+      const res = looks.importPresetJson(obj)
+      if (!res.ok) return res
+      recordHistory("Import look preset", before)
+      panel.sync()
+      syncChrome()
+      void renderNow()
+      showToast("Imported look preset")
+      return { ok: true }
     }
     if (typeof obj.section !== "string" || !sections.some(s => s.id === obj.section)) {
       return { ok: false, error: `Unknown Lab section: "${String(obj.section)}".` }
@@ -3253,68 +4032,526 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
-  // Wire library events
-  searchInput.onfocus = () => {
-    if (mode === "play") setPlayMode("edit")
-    focusZone = "library"
-    syncTransportAndHints()
+  // Library drawer, Outliner, ⌘K palette, Watch list and Details
+  function groundFnFor(sec: LabSection): (x: number, z: number) => number {
+    return sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
   }
-  searchInput.oninput = () => {
-    searchQuery = searchInput.value
-    selectedCatalogIndex = 0
-    renderCatalog()
+
+  function groundHitAtClient(clientX: number, clientY: number, groundFn = groundFnFor(activeSection())) {
+    const rect = canvas.getBoundingClientRect()
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
+    const [u, v] = canvasUV({ clientX, clientY })
+    return stage.pickGround(u, v, groundFn)
   }
-  searchInput.onkeydown = event => {
-    const items = filteredCatalog()
-    if (event.key === "ArrowDown") {
-      event.preventDefault()
-      selectedCatalogIndex = items.length ? (selectedCatalogIndex + 1) % items.length : 0
-      renderCatalog()
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault()
-      selectedCatalogIndex = items.length ? (selectedCatalogIndex - 1 + items.length) % items.length : 0
-      renderCatalog()
-    } else if (event.key === "Enter") {
-      event.preventDefault()
-      const chosen = items[selectedCatalogIndex]
-      if (chosen) {
-        chosen.run(true)
-        panel.sync()
+
+  function catalogKindOf(id: string) {
+    return id.slice(id.indexOf(":") + 1)
+  }
+
+  /** Place a Library entry at a ground point (drag-drop, CLI), or arm its placement ghost / run it when no point is given. */
+  function placeLibraryEntry(entry: CatalogEntry, at: { x: number; y: number; z: number } | null, yawDeg = 0) {
+    const yaw = (yawDeg * Math.PI) / 180
+    if (!at || !spawn || !isPlaceable(entry.id)) {
+      const before = captureSnapshot()
+      entry.run(true)
+      let movedEmitter: string | null = null
+      if (at) {
+        const sec = activeSection()
+        const emitter = sec.objects?.().find(o => o.category === "emitter")
+        if (emitter && sec.moveObject?.(emitter.id, at.x, at.z, emitter.yaw) !== false && sec.moveObject) {
+          movedEmitter = emitter.id
+          elapsed = 0
+          frames = 0
+          sec.retrigger?.()
+        }
+      }
+      recordHistory(`Library ${entry.label}`, before)
+      panel.sync()
+      syncChrome()
+      void renderNow()
+      return { id: entry.id, placed: false, armed: !at && isPlaceable(entry.id), movedEmitter, section: globalSettings.section }
+    }
+    const before = captureSnapshot()
+    if (globalSettings.section !== "spawn") selectSection("spawn")
+    spawn.setGhost(null)
+    const kind = catalogKindOf(entry.id)
+    const point = { x: at.x, y: at.y, z: at.z, yaw }
+    if (entry.id.startsWith("spawn-prop:")) {
+      spawn.section.settings.item = kind
+      spawn.spawnItems("one", point)
+    } else if (entry.id.startsWith("spawn-light:")) {
+      spawn.section.settings.light = kind
+      spawn.lightAt(point)
+    } else {
+      spawn.section.settings.character = kind
+      spawn.spawnCharacterAt(kind, { ...point, yaw: yawDeg ? yaw : Math.PI })
+      spawn.section.selectObject?.("character:active")
+    }
+    recordHistory(`Place ${entry.label.replace(/^Place /, "")}`, before)
+    panel.sync()
+    syncChrome()
+    void renderNow()
+    return { id: entry.id, placed: true, at: { x: at.x, y: at.y, z: at.z, yaw: yawDeg }, selected: currentSelectedIds() }
+  }
+
+  let dragGhostActive = false
+  const libraryDrawer = createLibrary<CatalogEntry>(libraryEl, {
+    entries: () => buildCatalog(),
+    run: entry => {
+      if (mode === "play") setPlayMode("edit")
+      entry.run(true)
+      panel.sync()
+      syncChrome()
+      void renderNow()
+    },
+    dragOver: (entry, clientX, clientY) => {
+      const vRect = viewportEl.getBoundingClientRect()
+      const placeable = Boolean(spawn) && isPlaceable(entry.id)
+      const groundFn = placeable ? spawn!.section.groundHeight ?? yardGround : groundFnFor(activeSection())
+      const hit = groundHitAtClient(clientX, clientY, groundFn)
+      viewportEl.dataset.drop = String(Boolean(hit))
+      if (!hit) {
+        if (dragGhostActive) {
+          spawn?.setGhost(null)
+          dragGhostActive = false
+          syncChrome()
+          void renderNow()
+        }
+        viewportCursor.update({ state: "hidden" })
+        return false
+      }
+      viewportCursor.update({ state: "place", x: clientX - vRect.left, y: clientY - vRect.top })
+      if (placeable && spawn) {
+        if (globalSettings.section !== "spawn") selectSection("spawn")
+        const valid = spawn.isValidYardPoint(hit.x, hit.z)
+        const kind = catalogKindOf(entry.id)
+        spawn.setGhost({ category: entry.id.startsWith("spawn-light:") ? "light" : "prop", kind, x: hit.x, y: hit.y, z: hit.z, yaw: 0, shape: "one", valid })
+        dragGhostActive = !entry.id.startsWith("spawn-char:")
+        if (!dragGhostActive) spawn.setGhost(null)
         syncChrome()
         void renderNow()
+        return valid
       }
+      return true
+    },
+    drop: (entry, clientX, clientY) => {
+      viewportEl.dataset.drop = "false"
+      const placeable = Boolean(spawn) && isPlaceable(entry.id)
+      const hit = groundHitAtClient(clientX, clientY, placeable ? spawn!.section.groundHeight ?? yardGround : groundFnFor(activeSection()))
+      dragGhostActive = false
+      placeLibraryEntry(entry, hit)
       canvas.focus({ preventScroll: true })
-    } else if (event.key === "Escape") {
-      event.preventDefault()
-      if (searchInput.value) {
-        searchInput.value = ""
-        searchQuery = ""
-        renderCatalog()
-      } else {
-        focusZone = "canvas"
-        canvas.focus({ preventScroll: true })
-        syncTransportAndHints()
+      showToast(hit ? `Placed ${entry.label.replace(/^Place /, "")} at (${hit.x.toFixed(1)}, ${hit.z.toFixed(1)})` : entry.label)
+    },
+    dragCancel: () => {
+      viewportEl.dataset.drop = "false"
+      if (dragGhostActive) spawn?.setGhost(null)
+      dragGhostActive = false
+      syncChrome()
+      void renderNow()
+    },
+    onOpenChange: isOpen => {
+      try {
+        localStorage.setItem("arcade.lab.library-open", String(isOpen))
+      } catch {}
+      root.dataset.drawer = String(isOpen)
+      void renderNow()
+    },
+    onFocusChange: focused => {
+      if (focused) {
+        if (mode === "play") setPlayMode("edit")
+        focusZone = "library"
+      } else if (focusZone === "library") focusZone = "canvas"
+      syncTransportAndHints()
+    },
+    onExitToCanvas: () => {
+      focusZone = "canvas"
+      canvas.focus({ preventScroll: true })
+      syncTransportAndHints()
+    },
+  }, (() => {
+    try {
+      return localStorage.getItem("arcade.lab.library-open") !== "false"
+    } catch {
+      return true
+    }
+  })())
+  root.dataset.drawer = String(libraryDrawer.open)
+
+  const outliner = createOutliner(root.querySelector<HTMLElement>("[data-outliner-mount]")!, {
+    objects: () => allSceneObjects(),
+    selectedIds: () => currentSelectedIds(),
+    isLocked: id => lockedIds.has(id),
+    select: ids => {
+      if (mode === "play") setPlayMode("edit")
+      selectingFromOutliner = true
+      try {
+        setSelectionIds(ids)
+      } finally {
+        selectingFromOutliner = false
+      }
+    },
+    toggleLock: id => {
+      if (lockedIds.has(id)) lockedIds.delete(id)
+      else lockedIds.add(id)
+      if (hoveredObjectId === id) hoveredObjectId = null
+      syncChrome()
+    },
+    frame: id => {
+      const obj = allSceneObjects().find(o => o.id === id)
+      if (!obj) return
+      stage.frameTarget(obj.x, obj.y, obj.z, 14)
+      void renderNow()
+    },
+    onFocusChange: focused => {
+      if (focused) {
+        if (mode === "play") setPlayMode("edit")
+        focusZone = "outliner"
+      } else if (focusZone === "outliner") focusZone = "canvas"
+      syncTransportAndHints()
+    },
+    onExitToCanvas: () => {
+      focusZone = "canvas"
+      canvas.focus({ preventScroll: true })
+      syncTransportAndHints()
+    },
+  })
+  outliner.addButton.onclick = () => libraryDrawer.focusSearch()
+
+  function sectionLabel(id: string) {
+    return sections.find(s => s.id === id)?.label ?? id
+  }
+
+  function objectGroupLabel(obj: LabWorldObject) {
+    return OUTLINER_GROUPS.find(g => g.id === outlinerGroupOf(obj))!.label
+  }
+
+  function paletteItems(): PaletteItem[] {
+    const items: PaletteItem[] = []
+    for (const obj of allSceneObjects()) {
+      items.push({
+        id: `object:${obj.id}`,
+        kind: "object",
+        label: obj.label,
+        meta: `${objectGroupLabel(obj)} · ${obj.id}`,
+        run: () => {
+          setSelectionIds([obj.id])
+          stage.frameTarget(obj.x, obj.y, obj.z, 14)
+          outliner.reveal(obj.id)
+          canvas.focus({ preventScroll: true })
+          void renderNow()
+        },
+      })
+    }
+    for (const entry of buildCatalog()) {
+      if (!isLibraryAsset(entry)) continue
+      const cat = LIBRARY_CATEGORIES.find(c => c.id === libraryCategoryOf(entry))!
+      items.push({
+        id: `library:${entry.id}`,
+        kind: "library",
+        label: entry.label,
+        meta: `${cat.label} · ${entry.group}`,
+        hint: entry.tag,
+        run: () => {
+          if (mode === "play") setPlayMode("edit")
+          libraryDrawer.setCategory(cat.id)
+          entry.run(true)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        },
+      })
+    }
+    for (const cmd of commands.all()) {
+      if (cmd.id.startsWith("palette.")) continue
+      if (Object.values(cmd.args ?? {}).some(a => a.required)) continue
+      const enabled = cmd.enabled({ pickedObject: null, groundHit: null, source: "ui" })
+      items.push({
+        id: `command:${cmd.id}`,
+        kind: "command",
+        label: cmd.label,
+        meta: `${cmd.category} · ${cmd.id}`,
+        hint: cmd.shortcut,
+        disabled: !enabled,
+        run: () => {
+          const res = commands.invoke(cmd.id, undefined, { source: "ui" })
+          if (!res.ok) showToast(res.error, true)
+          syncChrome()
+        },
+      })
+    }
+    for (const sec of sections) {
+      for (const c of sec.controls) {
+        if (c.type === "action") continue
+        items.push({
+          id: `setting:${sec.id}:${c.key}`,
+          kind: "setting",
+          label: c.label,
+          meta: `${sec.label} · ${c.group ?? "Controls"}`,
+          run: () => {
+            revealSetting(sec.id, c.key)
+          },
+        })
+      }
+    }
+    return items
+  }
+
+  const palette = createPalette(root, {
+    items: paletteItems,
+    onOpenChange: open => {
+      if (open) {
+        if (mode === "play") setPlayMode("edit")
+        focusZone = "palette"
+      } else if (focusZone === "palette") focusZone = "canvas"
+      syncTransportAndHints()
+    },
+  })
+  paletteBtn.onclick = () => palette.open()
+
+  function clearDetailsFilters() {
+    detailsQuery = ""
+    detailsSearch.value = ""
+    detailsModifiedOnly = false
+    detailsShowAll = true
+    detailsViewSig = ""
+    applyDetailsView()
+  }
+
+  /** Jump to a setting: switch section if needed, clear filters hiding it, then scroll, focus and flash the row. */
+  function revealSetting(sectionId: string, key: string): boolean {
+    if (!sections.some(s => s.id === sectionId)) return false
+    if (mode === "play") setPlayMode("edit")
+    if (globalSettings.section !== sectionId) {
+      const before = captureSnapshot()
+      selectSection(sectionId)
+      recordHistory(`Section ${sectionLabel(sectionId)}`, before)
+    }
+    applyDetailsView()
+    let ok = panel.reveal(key)
+    if (!ok) {
+      clearDetailsFilters()
+      ok = panel.reveal(key)
+    }
+    const control = sections.find(s => s.id === sectionId)?.controls.find(c => c.key === key)
+    if (ok) {
+      panel.setReturnFocus(canvas)
+      focusZone = "inspector"
+    } else {
+      showToast(`${control?.label ?? key} is not available in the current state`, true)
+    }
+    syncChrome()
+    void renderNow()
+    return ok
+  }
+
+  function readWatchPin(pin: WatchPin) {
+    const sec = sections.find(s => s.id === pin.sectionId)
+    const c = sec?.controls.find(ctrl => ctrl.key === pin.key)
+    if (!sec || !c || c.type === "action" || !(pin.key in sec.settings)) return null
+    const v = sec.settings[pin.key]!
+    const text =
+      "options" in c
+        ? c.options.find(o => o.value === v)?.label ?? String(v)
+        : "min" in c
+          ? formatLabValue(v, c.step, inferControlUnit(c.key, c.label, c.unit))
+          : v === (c.on ?? true)
+            ? "On"
+            : "Off"
+    const d = defaultsBySection.get(sec.id)?.[pin.key]
+    const modified =
+      !c.derived && d !== undefined && (typeof v === "number" && typeof d === "number" ? Math.abs(v - d) > ("min" in c ? (c.step ?? 0.01) * 1e-3 : 1e-9) : v !== d)
+    return { text, modified, sectionLabel: sec.label }
+  }
+
+  function setWatchPins(next: WatchPin[]) {
+    watchPins = next
+    saveWatchPins(watchPins)
+    watchList.render(watchPins)
+    panel.sync()
+    devControlHandle?.notifyUpdate()
+  }
+
+  function pinSetting(sectionId: string, key: string, pinned?: boolean) {
+    const sec = sections.find(s => s.id === sectionId)
+    const c = sec?.controls.find(ctrl => ctrl.key === key)
+    if (!sec || !c || c.type === "action") throw new Error(`Unknown setting "${key}" in section "${sectionId}".`)
+    const id = watchPinId({ sectionId, key })
+    const exists = watchPins.some(p => watchPinId(p) === id)
+    const want = pinned ?? !exists
+    if (want && !exists) setWatchPins([...watchPins, { sectionId, key, label: c.label, group: c.group ?? "Controls" }])
+    else if (!want && exists) setWatchPins(watchPins.filter(p => watchPinId(p) !== id))
+    return want
+  }
+
+  const watchList = createWatchList(viewportEl.querySelector<HTMLElement>(".lab-viewport-hud")!, {
+    read: readWatchPin,
+    reveal: pin => revealSetting(pin.sectionId, pin.key),
+    unpin: pin => setWatchPins(watchPins.filter(p => watchPinId(p) !== watchPinId(pin))),
+  })
+  watchList.render(watchPins)
+
+  function applyDetailsView(force = false) {
+    const sec = activeSection()
+    const selected = detailsSelection()
+    const relevant = sec.detailsGroups?.(selected)
+    const only = relevant && selected.length && !detailsShowAll ? new Set(relevant) : null
+    const q = detailsQuery.trim().toLowerCase()
+    const sig = JSON.stringify([sec.id, relevant ?? null, only ? [...only] : null, q, detailsModifiedOnly, panel.navigation.rows.length])
+    detailsAllBtn.hidden = !(relevant && selected.length)
+    detailsAllBtn.setAttribute("aria-pressed", String(detailsShowAll))
+    detailsModifiedBtn.setAttribute("aria-pressed", String(detailsModifiedOnly))
+    detailsRelevant = only
+    if (!force && sig === detailsViewSig) return
+    detailsViewSig = sig
+    panel.setView({
+      order: relevant ?? [],
+      filter:
+        only || q || detailsModifiedOnly
+          ? (row, modified) => {
+              if (only && !only.has(row.group)) return false
+              if (detailsModifiedOnly && !modified) return false
+              if (q && !`${row.control?.label ?? ""} ${row.control?.key ?? ""} ${row.group}`.toLowerCase().includes(q)) return false
+              return true
+            }
+          : undefined,
+    })
+  }
+
+  const CATEGORY_ICON: Record<string, string> = { character: "♟", prop: "▣", emitter: "✺", light: "✦", specimen: "◇" }
+
+  /** Selected objects owned by the active section; a Spawn selection kept while tuning an effect does not drive Details. */
+  function detailsSelection(): LabWorldObject[] {
+    const sec = activeSection()
+    return currentSelectedObjects().filter(o => resolveObjectOwner(o.id) === sec)
+  }
+
+  function syncDetails() {
+    const sec = activeSection()
+    const selList = detailsSelection()
+    const selObj = selList.at(-1) ?? null
+    inspectorSub.textContent = sec.label
+    if (selList.length > 1) {
+      const c = computeSelectionCentroid(selList)
+      const counts = new Map<string, number>()
+      for (const o of selList) {
+        const k = o.label.replace(/\s*(#\d+|\(\d+\)|\d+)$/, "")
+        counts.set(k, (counts.get(k) ?? 0) + 1)
+      }
+      inspectorTitle.textContent = `${selList.length} objects`
+      detailsMeta.textContent = `${[...counts].map(([k, n]) => (n > 1 ? `${k} ×${n}` : k)).join(" · ")} · centroid (${c.x.toFixed(1)}, ${c.z.toFixed(1)})`
+      detailsIcon.textContent = "▦"
+    } else if (selObj) {
+      inspectorTitle.textContent = selObj.label
+      detailsMeta.textContent = `${objectGroupLabel(selObj)} · ${selObj.kind ?? selObj.category} · (${selObj.x.toFixed(1)}, ${selObj.z.toFixed(1)})`
+      detailsIcon.textContent = selObj.vehicle ? "◧" : CATEGORY_ICON[selObj.category] ?? "◇"
+    } else {
+      const envOwner = resolveEnvOwner()
+      const envCtrl = envOwner.controls.find(c => (c.key === "environment" || c.key === "room") && "options" in c)
+      const envLabel = envCtrl && "options" in envCtrl ? envCtrl.options.find(o => o.value === envOwner.settings[envCtrl.key])?.label : null
+      const seed = envOwner.settings.seed ?? envOwner.settings.roomSeed
+      let title = sec.detailsGroups ? "Scene" : sec.label
+      const primary = sec.controls.find(c => (c.key === "effect" || c.key === "recipe" || c.key === "treePreset" || c.key === "preset") && "options" in c)
+      if (!sec.detailsGroups && primary && "options" in primary) title = primary.options.find(o => o.value === sec.settings[primary.key])?.label ?? sec.label
+      if (sec.id === "looks" && "preset" in sec.settings) {
+        const pid = resolveLookPresetId(sec.settings.preset) ?? "current"
+        title = LOOK_PRESETS[pid].label
+        inspectorSub.textContent = `Looks · ${LOOK_PRESETS[pid].directionRef}`
+      }
+      inspectorTitle.textContent = title
+      detailsMeta.textContent = ["Nothing selected · scene settings", envLabel, seed !== undefined ? `seed ${seed}` : null].filter(Boolean).join(" · ")
+      detailsIcon.textContent = LIBRARY_CATEGORIES.find(c => c.id === (sec.library?.category ?? sectionLibraryCategory(sec.id)))?.icon ?? "◇"
+    }
+    const relevantRows = new Set(panel.navigation.rows.filter(r => r.control && (!detailsRelevant || detailsRelevant.has(r.group))).map(r => r.control!))
+    const n = panel.modifiedControls().filter(c => relevantRows.has(c)).length
+    detailsModifiedCount.textContent = n ? String(n) : ""
+
+    const actionIds = selList.length
+      ? ["object.trigger", "object.frame", "object.duplicate", "object.delete", "object.move", ...(selObj?.category === "character" ? ["object.possess"] : [])]
+      : [...(sec.retrigger ? ["ground.trigger-here"] : []), "ground.frame", "ground.reroll", "ground.clear"]
+    const ctx: LabCommandContext = { pickedObject: null, groundHit: null, source: "ui" }
+    const states = actionIds.map(id => {
+      const cmd = commands.get(id)
+      return { id, cmd, enabled: Boolean(cmd && mode !== "play" && cmd.enabled(ctx)) }
+    })
+    const sig = JSON.stringify(states.map(s => [s.id, s.enabled]))
+    if (sig !== detailsActionsSig) {
+      detailsActionsSig = sig
+      detailsActions.replaceChildren()
+      for (const { id, cmd, enabled } of states) {
+        if (!cmd) continue
+        const b = document.createElement("button")
+        b.type = "button"
+        b.className = "lab-act"
+        b.dataset.command = id
+        b.disabled = !enabled
+        b.title = enabled ? cmd.label : cmd.disabledReason?.(ctx) ?? "Unavailable"
+        const label = id === "ground.trigger-here" ? "Retrigger" : id === "ground.clear" ? "Clear FX" : id === "object.possess" ? "Play" : cmd.shortLabel
+        b.append(label)
+        if (cmd.shortcut) {
+          const k = document.createElement("kbd")
+          k.textContent = cmd.shortcut
+          b.append(k)
+        }
+        b.onclick = () => {
+          const res = commands.invoke(id, undefined, { source: "ui" })
+          if (!res.ok) showToast(res.error, true)
+          syncChrome()
+        }
+        detailsActions.append(b)
       }
     }
   }
 
-  for (const tab of catTabs) {
-    tab.onclick = () => {
-      if (mode === "play") setPlayMode("edit")
-      activeCategory = tab.dataset.cat as CatalogCategory
-      selectedCatalogIndex = 0
-      syncChrome()
+  detailsSearch.addEventListener("input", () => {
+    detailsQuery = detailsSearch.value
+    applyDetailsView()
+    syncDetails()
+  })
+  detailsSearch.addEventListener("focus", () => {
+    if (mode === "play") setPlayMode("edit")
+  })
+  detailsSearch.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      event.preventDefault()
+      if (detailsSearch.value) {
+        detailsSearch.value = ""
+        detailsQuery = ""
+        applyDetailsView()
+      } else canvas.focus({ preventScroll: true })
+    } else if (event.key === "Enter" || event.key === "ArrowDown") {
+      event.preventDefault()
+      panel.setReturnFocus(canvas)
+      focusZone = "inspector"
+      panel.focusFirst()
+      syncTransportAndHints()
     }
+  })
+  detailsModifiedBtn.onclick = () => {
+    detailsModifiedOnly = !detailsModifiedOnly
+    applyDetailsView()
+    syncDetails()
+  }
+  detailsAllBtn.onclick = () => {
+    detailsShowAll = !detailsShowAll
+    applyDetailsView()
   }
 
-  for (const pill of filterPills) {
-    pill.onclick = () => {
-      if (mode === "play") setPlayMode("edit")
-      activeCollection = pill.dataset.collection as CatalogCollection
-      selectedCatalogIndex = 0
-      syncChrome()
-    }
+  moreBtn.onclick = () => {
+    moreMenu.hidden = !moreMenu.hidden
+    moreBtn.setAttribute("aria-expanded", String(!moreMenu.hidden))
   }
+  moreMenu.addEventListener("click", () => {
+    moreMenu.hidden = true
+    moreBtn.setAttribute("aria-expanded", "false")
+  })
+  document.addEventListener("pointerdown", event => {
+    if (!moreMenu.hidden && !moreMenu.contains(event.target as Node) && !moreBtn.contains(event.target as Node)) {
+      moreMenu.hidden = true
+      moreBtn.setAttribute("aria-expanded", "false")
+    }
+  })
+  chromeReady = true
 
   // Wire transport bar events
   playPauseBtn.onclick = () => {
@@ -3369,7 +4606,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   // Exiting Play mode and hiding custom viewport cursor whenever user interacts with UI panels outside canvas
-  for (const zone of [topbar, libraryEl, inspectorEl, bottombar, modalBackdrop]) {
+  for (const zone of [topbar, outlinerEl, libraryEl, inspectorEl, bottombar, modalBackdrop]) {
     zone.addEventListener("pointerenter", () => {
       hoveredGroundSample = null
       viewportCursor.update({ state: "hidden" })
@@ -3406,7 +4643,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   function pickObjectAt(u: number, v: number): LabWorldObject | null {
     const sec = activeSection()
-    const objects = allSceneObjects()
+    const objects = allSceneObjects().filter(o => !lockedIds.has(o.id))
     if (!objects.length) return null
     const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
     const hit = stage.pickGround(u, v, groundFn)
@@ -3746,7 +4983,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         marqueeEl.style.top = `${mRect.top}px`
         marqueeEl.style.width = `${mRect.width}px`
         marqueeEl.style.height = `${mRect.height}px`
-        const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
+        const hits = pickObjectsInMarquee(allSceneObjects().filter(o => !lockedIds.has(o.id)), (x, y, z) => stage.projectWorld(x, y, z), mRect)
         marqueeEl.textContent = hits.length ? `${hits.length}` : ""
         viewportCursor.update({ state: "marquee", x: currentX - vRect.left, y: currentY - vRect.top })
         syncStageMarkers()
@@ -3762,7 +4999,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
           rect.width,
           rect.height,
         )
-        const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
+        const hits = pickObjectsInMarquee(allSceneObjects().filter(o => !lockedIds.has(o.id)), (x, y, z) => stage.projectWorld(x, y, z), mRect)
         if (hits.length > 0) {
           const hasSpawnHits = Boolean(spawn && hits.some(h => spawn.section.objects?.().some(o => o.id === h.id)))
           if (hasSpawnHits && globalSettings.section !== "spawn") {
@@ -3845,15 +5082,22 @@ export function createWorkbench(opts: WorkbenchOptions) {
       return
     }
 
-    // Cmd/Ctrl-K opens library search palette from anywhere outside text editing
+    // Cmd/Ctrl-K opens universal search (scene objects, library, commands, settings) from anywhere
     if (cmd && key === "k") {
       event.preventDefault()
-      if (mode === "play") setPlayMode("edit")
-      if (root.dataset.closed === "true") panel.toggle()
-      searchInput.focus()
-      searchInput.select()
+      if (palette.isOpen) palette.close()
+      else commands.execute("palette.open", { pickedObject: null, groundHit: null, source: "ui" })
       return
     }
+
+    // Ctrl+Space toggles the Library drawer (layout-independent: physical Space key)
+    if (event.ctrlKey && !event.metaKey && event.code === "Space") {
+      event.preventDefault()
+      if (!event.repeat) commands.execute("library.toggle", { pickedObject: null, groundHit: null, source: "ui" })
+      return
+    }
+
+    if (palette.isOpen) return
 
     // Undo / Redo in Edit mode outside text inputs
     if (cmd && key === "z" && !inText && mode === "edit") {
@@ -4037,8 +5281,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
     if (event.key === "/") {
       event.preventDefault()
-      searchInput.focus()
-      searchInput.select()
+      palette.open()
+    } else if (event.key === "Tab" && event.shiftKey && document.activeElement === canvas) {
+      event.preventDefault()
+      outliner.focus()
     } else if (event.key === "Tab" && document.activeElement === canvas) {
       event.preventDefault()
       panel.setReturnFocus(canvas)
@@ -4120,7 +5366,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
     } else if (key === "a" && !event.repeat) {
       event.preventDefault()
-      activeCategory = "objects"
+      libraryDrawer.setCategory("objects")
       if (globalSettings.section !== "spawn" && spawn) selectSection("spawn")
       if (spawn) {
         const item = String(spawn.section.settings.item || "cone")
@@ -4143,11 +5389,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
         event.preventDefault()
         commands.execute("object.duplicate")
       }
-    } else if (["1", "2", "3", "4"].includes(event.key) && !event.repeat) {
+    } else if (/^[1-7]$/.test(event.key) && !event.repeat) {
       event.preventDefault()
-      const map: Record<string, CatalogCategory> = { "1": "effects", "2": "objects", "3": "lighting", "4": "audio" }
-      activeCategory = map[event.key]!
-      syncChrome()
+      libraryDrawer.setCategory(LIBRARY_CATEGORIES[Number(event.key) - 1]!.id, true)
     }
   })
 
@@ -4168,6 +5412,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         timeReadout.textContent = `${elapsed.toFixed(2)}s · f${frames}`
       }
       syncStageMarkers()
+      if (chromeReady) watchList.render(watchPins)
     },
     onSectionChanged() {
       elapsed = 0
@@ -4178,20 +5423,18 @@ export function createWorkbench(opts: WorkbenchOptions) {
         setPlayMode("edit")
       }
       panel.setReturnFocus(canvas)
+      detailsViewSig = ""
       syncChrome()
     },
     onPanelTransaction(label: string, beforeSettings: LabSettings) {
+      // Capture "before" by briefly writing the old values through the live settings, so settings aliased by
+      // several sections (for example Spawn skidWidth and Getaway effects skids.width) snapshot consistently.
+      const live = panel.navigation.settings
+      const afterValues: LabSettings = {}
+      for (const k of Object.keys(beforeSettings)) if (k in live) afterValues[k] = live[k]!
+      for (const [k, v] of Object.entries(beforeSettings)) if (k in live) live[k] = v
       const beforeSnap = captureSnapshot()
-      const secId = globalSettings.section
-      if (secId === "lighting") {
-        for (const [k, v] of Object.entries(beforeSettings)) {
-          if (k in beforeSnap.lighting) beforeSnap.lighting[k] = v
-        }
-      } else if (beforeSnap.sections[secId]) {
-        for (const [k, v] of Object.entries(beforeSettings)) {
-          if (k in beforeSnap.sections[secId]!) beforeSnap.sections[secId]![k] = v
-        }
-      }
+      for (const [k, v] of Object.entries(afterValues)) live[k] = v
       const afterSnap = captureSnapshot()
       if (JSON.stringify(beforeSnap) !== JSON.stringify(afterSnap)) {
         undoStack.push({ label, before: beforeSnap, after: afterSnap })
@@ -4256,6 +5499,26 @@ export function createWorkbench(opts: WorkbenchOptions) {
       root.dataset.closed = String(!visible)
       syncStageMarkers()
     },
+    sectionDefaults: (id: string) => defaultsBySection.get(id),
+    togglePin: (control: LabControl, _group: string) => {
+      pinSetting(globalSettings.section, control.key)
+    },
+    isPinned: (key: string) => watchPins.some(p => p.sectionId === globalSettings.section && p.key === key),
+    setTelemetry(text: string) {
+      if (text === telemetryText) return
+      telemetryText = text
+      statsReadout.textContent = text.replace(/\n/g, " · ")
+    },
+    outliner,
+    library: libraryDrawer,
+    palette,
+    watch: {
+      get pins() {
+        return [...watchPins]
+      },
+      el: watchList.el,
+    },
+    revealSetting,
     recordHistory,
     captureSnapshot,
     undo,

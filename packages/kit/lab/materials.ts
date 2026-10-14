@@ -2,18 +2,26 @@ import {
   MATERIAL_PARAM_SPECS,
   MATERIAL_RECIPES,
   MATERIAL_RECIPE_IDS,
+  MATERIAL_TEXTURE_PARAM_SPECS,
+  SURFACE_TEX_UNIFORM_FLOATS,
+  TEXTURE_SELECT_OPTIONS,
   cloneMaterialParams,
+  cloneMaterialTextureParams,
   isMaterialRecipeId,
   legacyMaterialComparisonWgsl,
   packMaterialParams,
+  packSurfaceTexUniforms,
   randomizeMaterialParams,
+  randomizeMaterialTextureParams,
   scatterClusteredGroundCover,
   surfaceMaterialCoreWgsl,
   type MaterialCompareMode,
   type MaterialRecipeId,
   type MaterialRecipeParams,
   type MaterialSwatchMode,
+  type MaterialTextureParams,
 } from "../gpu/surface-materials"
+import { createFallbackMaterialTextureArray, createMaterialSampler, loadMaterialTextureArray } from "../textures/loader"
 import type { LabControl } from "../lab-panel"
 import { lightingDefaults } from "./lighting"
 import { frameShader } from "./stage-shader"
@@ -192,7 +200,7 @@ struct VOut {
   let recipeId = clamp(select(rawKind, activeRecipe, rawKind < 0), 0, 5);
   let compareMode = i32(round(M.config.y));
   let splitX = M.config.w;
-  let useAfter = select(compareMode == 1, o.world.x >= splitX, compareMode == 2);
+  let useAfter = select(compareMode >= 1, o.world.x >= splitX, compareMode == 2);
 
   // Triplanar-aware evaluation coordinate so vertical block faces and the calibration sphere equator don't stretch xz.
   let evalWorld = select(vec3f(o.world.x + o.world.z * 0.35, o.world.y, o.world.y + o.world.z * 0.25), o.world, abs(n.y) > 0.52);
@@ -250,8 +258,8 @@ struct VOut {
 
   var color = sample.albedo * diff * 1.15 + spec;
 
-  // Subtle split indicator line in A/B Split mode (compareMode == 2).
-  if (compareMode == 2) {
+  // Subtle split indicator line in A/B Split modes (compareMode == 2 or 3).
+  if (compareMode == 2 || compareMode == 3) {
     let splitLine = 1.0 - smoothstep(max(surfaceFootprint * 0.75, 0.008), max(surfaceFootprint * 1.8, 0.022), abs(o.world.x - splitX));
     color = mix(color, vec3f(0.85, 0.92, 0.98), splitLine * 0.65);
   }
@@ -445,6 +453,15 @@ export function createMaterials(context: LabContext, adapters: readonly Material
     foliage_canopy: cloneMaterialParams("foliage_canopy"),
   }
 
+  const textureStore: Record<MaterialRecipeId, MaterialTextureParams> = {
+    wood_planks: cloneMaterialTextureParams("wood_planks"),
+    cobblestone: cloneMaterialTextureParams("cobblestone"),
+    plaster_wall: cloneMaterialTextureParams("plaster_wall"),
+    asphalt_concrete: cloneMaterialTextureParams("asphalt_concrete"),
+    grass_soil: cloneMaterialTextureParams("grass_soil"),
+    foliage_canopy: cloneMaterialTextureParams("foliage_canopy"),
+  }
+
   const settings: Record<string, string | number | boolean> = {
     recipe: "wood_planks",
     swatch: "room",
@@ -469,6 +486,29 @@ export function createMaterials(context: LabContext, adapters: readonly Material
         },
       })
     }
+    Object.defineProperty(settings, `${id}.textureLayer`, {
+      configurable: true,
+      enumerable: true,
+      get: () => textureStore[id].textureLayer,
+      set: (value: number) => {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          textureStore[id].textureLayer = Math.max(-1, Math.min(15, Math.round(value)))
+        }
+      },
+    })
+    for (const spec of MATERIAL_TEXTURE_PARAM_SPECS) {
+      const key = `${id}.${spec.key}`
+      Object.defineProperty(settings, key, {
+        configurable: true,
+        enumerable: true,
+        get: () => textureStore[id][spec.key],
+        set: (value: number) => {
+          if (typeof value === "number" && Number.isFinite(value)) {
+            textureStore[id][spec.key] = Math.max(spec.min, Math.min(spec.max, value))
+          }
+        },
+      })
+    }
   }
 
   // GPU pipeline and buffers sharing the production WGSL recipe evaluators.
@@ -482,19 +522,54 @@ export function createMaterials(context: LabContext, adapters: readonly Material
     size: materialUniformData.byteLength,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
+  const surfaceTexData = new Float32Array(SURFACE_TEX_UNIFORM_FLOATS)
+  const surfaceTexBuffer = device.createBuffer({
+    size: surfaceTexData.byteLength,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+
+  const fallbackTex = createFallbackMaterialTextureArray(device)
+  let materialTex = fallbackTex.texture
+  let materialTexView = fallbackTex.view
+  let texturesLoaded = false
+  const materialSampler = createMaterialSampler(device)
 
   const bindLayout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "2d-array" } },
+      { binding: 11, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      { binding: 12, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
     ],
   })
-  const bindGroup = device.createBindGroup({
+  let bindGroup = device.createBindGroup({
     layout: bindLayout,
     entries: [
       { binding: 0, resource: { buffer: frameBuffer } },
       { binding: 1, resource: { buffer: materialUniformBuffer } },
+      { binding: 10, resource: materialTexView },
+      { binding: 11, resource: materialSampler },
+      { binding: 12, resource: { buffer: surfaceTexBuffer } },
     ],
+  })
+
+  void loadMaterialTextureArray(device).then(loaded => {
+    if (!loaded) return
+    materialTex.destroy()
+    materialTex = loaded.texture
+    materialTexView = loaded.view
+    texturesLoaded = true
+    bindGroup = device.createBindGroup({
+      layout: bindLayout,
+      entries: [
+        { binding: 0, resource: { buffer: frameBuffer } },
+        { binding: 1, resource: { buffer: materialUniformBuffer } },
+        { binding: 10, resource: materialTexView },
+        { binding: 11, resource: materialSampler },
+        { binding: 12, resource: { buffer: surfaceTexBuffer } },
+      ],
+    })
   })
 
   const module = device.createShaderModule({ code: materialSwatchShader, label: "Lab materials swatch" })
@@ -586,6 +661,8 @@ export function createMaterials(context: LabContext, adapters: readonly Material
         { value: 1, label: "New recipe (After)" },
         { value: 0, label: "Current baseline (Before)" },
         { value: 2, label: "A/B split (Before | After)" },
+        { value: 3, label: "A/B split (Procedural | Textured)" },
+        { value: 4, label: "Procedural only (No texture)" },
       ],
       change: () => context.sync(),
     },
@@ -623,6 +700,28 @@ export function createMaterials(context: LabContext, adapters: readonly Material
   for (const id of MATERIAL_RECIPE_IDS) {
     const def = MATERIAL_RECIPES[id]
     const groupName = def.label
+    controls.push({
+      key: `${id}.textureLayer`,
+      label: "Texture map",
+      group: groupName,
+      type: "select",
+      options: TEXTURE_SELECT_OPTIONS.map(o => ({ ...o })),
+      visible: s => s.recipe === id,
+      change: () => context.sync(),
+    })
+    for (const spec of MATERIAL_TEXTURE_PARAM_SPECS) {
+      controls.push({
+        key: `${id}.${spec.key}`,
+        label: spec.label,
+        group: groupName,
+        type: "range",
+        min: spec.min,
+        max: spec.max,
+        step: spec.step,
+        unit: spec.unit,
+        visible: s => s.recipe === id,
+      })
+    }
     for (const spec of MATERIAL_PARAM_SPECS) {
       controls.push({
         key: `${id}.${spec.key}`,
@@ -645,7 +744,9 @@ export function createMaterials(context: LabContext, adapters: readonly Material
       run: () => {
         const seed = Math.max(1, Math.min(9999, Math.round(Number(settings.tuningSeed) || 1)))
         const next = randomizeMaterialParams(id, seed)
+        const nextTex = randomizeMaterialTextureParams(id, seed)
         Object.assign(recipeStore[id], next)
+        Object.assign(textureStore[id], nextTex)
         settings.tuningSeed = (seed % 9999) + 1
         context.sync()
       },
@@ -693,8 +794,9 @@ export function createMaterials(context: LabContext, adapters: readonly Material
       const def = activeRecipeDef()
       const swatchMode: MaterialSwatchMode =
         settings.swatch === "ball" ? "ball" : settings.swatch === "plane" ? "plane" : "room"
+      const rawCompare = Number(settings.compare)
       const compareMode: MaterialCompareMode =
-        Number(settings.compare) === 0 ? 0 : Number(settings.compare) === 2 ? 2 : 1
+        rawCompare === 0 ? 0 : rawCompare === 2 ? 2 : rawCompare === 3 ? 3 : rawCompare === 4 ? 4 : 1
 
       materialUniformData[0] = def.index
       materialUniformData[1] = compareMode
@@ -706,6 +808,17 @@ export function createMaterials(context: LabContext, adapters: readonly Material
         packMaterialParams(recipeStore[id], materialUniformData, 4 + idx * 12)
       }
       device.queue.writeBuffer(materialUniformBuffer, 0, materialUniformData)
+
+      const texEnabled = !texturesLoaded ? 0 : compareMode === 4 ? 0 : compareMode === 3 ? 2 : 1
+      packSurfaceTexUniforms(
+        {
+          enabled: texEnabled,
+          splitX: 0.0,
+          recipes: textureStore,
+        },
+        surfaceTexData,
+      )
+      device.queue.writeBuffer(surfaceTexBuffer, 0, surfaceTexData)
 
       // Mirror Stage's current frame uniform block into our material pipeline uniform buffer.
       currentAdapterEntry()?.adapter.prepare?.(currentAdapterEntry()!.code, context)
@@ -727,8 +840,19 @@ export function createMaterials(context: LabContext, adapters: readonly Material
     telemetry() {
       const def = activeRecipeDef()
       const params = recipeStore[def.id]
-      const cmp = Number(settings.compare) === 0 ? "Before" : Number(settings.compare) === 2 ? "A/B Split" : "After"
-      return `Materials · ${def.label} (${cmp}) {"roughness":${params.roughness.toFixed(2)},"scale":${params.scale.toFixed(2)},"wear":${params.wear.toFixed(2)}}`
+      const tex = textureStore[def.id]
+      const rawCmp = Number(settings.compare)
+      const cmp =
+        rawCmp === 0
+          ? "Before"
+          : rawCmp === 2
+            ? "A/B Split"
+            : rawCmp === 3
+              ? "Proc|Tex Split"
+              : rawCmp === 4
+                ? "Procedural"
+                : "After"
+      return `Materials · ${def.label} (${cmp}) {"tex":${tex.textureLayer},"roughness":${params.roughness.toFixed(2)},"scale":${params.scale.toFixed(2)},"wear":${params.wear.toFixed(2)}}`
     },
   }
 }

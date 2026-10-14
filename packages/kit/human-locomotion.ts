@@ -28,10 +28,13 @@ export function angleSpring(s: Spring, goal: number, hz: number, dt: number): vo
 
 export function newMotion(x: number, y: number, aim: number) {
   return {
-    enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0,
+    enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0, strafeSign: 0,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
     bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(), crouch: spring(), bank: spring(),
+    yawOffset: spring(),
+    arms: [spring(), spring()] as [Spring, Spring],
+    hands: [spring(), spring()] as [Spring, Spring],
     gun: [spring(), spring(), spring()] as [Spring, Spring, Spring],
     swings: [0, 0], durations: [0.2, 0.2], contacts: [1, 1],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
@@ -44,16 +47,18 @@ export function gaitAt(speed: number, back = false, strafe = 0, animation: Human
   const h = RIG.thigh + RIG.shin
   const froude = speed * speed / (9.81 * h)
   const run = smooth((froude - 0.36) / 0.28)
-  const stride = h * (speed / Math.sqrt(9.81 * h) + 0.7) / 0.83 * animation.strideScale
+  // Speed increases mostly via stride at low speeds and increasingly via cadence at high speeds (Alexander 1984).
+  const effSpeed = speed - 0.22 * Math.max(0, speed - 3.6) * smooth((speed - 3.0) / 3.3)
+  const stride = h * (effSpeed / Math.sqrt(9.81 * h) + 0.7) / 0.83 * animation.strideScale
   // Arcade sprint is 6.3 m/s: shorter support and a longer flight, not an unreachable planted leg.
   return { run, stride: stride * (back ? 0.85 : 1 - 0.18 * strafe), duty: 0.6 - 0.16 * run - 0.2 * smooth((speed - 2.5) / 3) }
 }
 
-function home(a: Avatar, i: number, lead: number, vx = a.svx, vy = a.svy): V3 {
+function home(a: Avatar, i: number, lead: number, vx = a.svx, vy = a.svy, extraWidth = 0): V3 {
   const side = i === 0 ? -1 : 1
   const c = Math.cos(a.legYaw), s = Math.sin(a.legYaw)
   const m = a.motion
-  const width = 0.145
+  const width = 0.145 + extraWidth
   const stagger = (i === 0 ? 0.08 : -0.06) * (1 - a.gait)
   return [m.centreX.x + c * stagger - s * side * width + vx * lead, 0,
     m.centreY.x + s * stagger + c * side * width + vy * lead]
@@ -82,7 +87,14 @@ function computeTarget(a: Avatar, i: number, remaining: number, strafe: number, 
   const support = gait.duty * gait.stride / Math.max(pspeed, 0.1)
   const halfStance = Math.min(0.15, support * 0.45, 0.24 / Math.max(pspeed, 0.1))
   const lag = clamp(((a.x - m.centreX.x) * pvx + (a.y - m.centreY.x) * pvy) / Math.max(pspeed * pspeed, 0.25), -0.22, 0.22)
-  return separate(a, i, home(a, i, remaining + halfStance + lag, pvx, pvy), smooth((strafe - 0.05) / 0.20))
+  // Overgrowth-style lateral shuffle: the outside/leading foot steps out first while the inside/following
+  // foot steps up beside it without lunging across the leading leg.
+  const side = i === 0 ? -1 : 1
+  const lat = -pvx * Math.sin(a.aim) + pvy * Math.cos(a.aim)
+  const isLead = side * lat > 0
+  const strafeLeadScale = strafe > 0.05 ? (isLead ? 1 + 0.08 * strafe : 1 - 0.32 * strafe) : 1
+  const extraWidth = strafe * (isLead ? 0.025 : 0.01)
+  return separate(a, i, home(a, i, (remaining + halfStance) * strafeLeadScale + lag, pvx, pvy, extraWidth), smooth((strafe - 0.05) / 0.20))
 }
 
 function reset(a: Avatar): void {
@@ -90,8 +102,8 @@ function reset(a: Avatar): void {
   m.centreX = { x: a.x, v: a.vx }
   m.centreY = { x: a.y, v: a.vy }
   for (const s of [m.pelvis, m.chest, m.head, m.weapon]) { s.x = a.aim; s.v = 0 }
-  for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch, m.bank]) { s.x = 0; s.v = 0 }
-  m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0
+  for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch, m.bank, m.yawOffset, ...m.arms, ...m.hands]) { s.x = 0; s.v = 0 }
+  m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0; m.strafeSign = 0
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
     f.p = home(a, i, 0); f.lift = [...f.p]; f.yaw = a.legYaw; f.pitch = 0; f.planted = true
@@ -113,23 +125,48 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   if (teleport || !m.enabled || stranded) reset(a)
   const lateral = -a.svx * Math.sin(a.aim) + a.svy * Math.cos(a.aim)
   const strafe = smooth((Math.abs(lateral) / Math.max(speed, 0.01) - 0.5) * 2)
+  const strafeSign = strafe > 0.25 && Math.abs(lateral) > 0.25 ? Math.sign(lateral) : 0
+  if (strafeSign !== 0 && strafeSign !== m.strafeSign) {
+    // Lead with the outside foot when starting or reversing a side-step (Overgrowth HandleFootStance).
+    m.next = strafeSign > 0 ? 1 : 0
+    m.strafeSign = strafeSign
+  } else if (strafe < 0.1) m.strafeSign = 0
   const moving = speed > (m.moving ? 0.12 : 0.25)
-  if (moving && !m.moving) { m.start = 0.015; m.stepDebt = 1; m.next = lateral > 0 ? 1 : 0; a.dip.v -= 0.2 }
+  if (moving && !m.moving) {
+    m.start = 0.015; m.stepDebt = 1; m.next = lateral > 0 ? 1 : 0
+    // Start anticipation: subtle crouch dip and initial lean impulse into acceleration.
+    a.dip.v -= 0.22
+    a.leanX.v += a.acx * 0.008 * animation.leanScale
+    a.leanY.v += a.acy * 0.008 * animation.leanScale
+  }
   m.moving = moving
   m.start = Math.max(0, m.start - dt)
+  const transK = stiffness(clamp(animation.transitionHz ?? 6, 2, 14))
   // Angular limits are ownership constraints, not springs that can remain outside the limit.
   if (moving) {
     let direction = Math.atan2(a.svy, a.svx)
     const error = Math.abs(angleDiff(direction, a.aim))
-    if (a.back ? error < 1.72 : error > 2.05) a.back = !a.back
-    if (a.back) direction += Math.PI
-    // Sideways shuffles retain a wider silhouette and let the lead boot open.
     const limit = 1.05 - strafe * 0.6
-    const goal = a.aim + clamp(angleDiff(direction, a.aim), -limit, limit)
+    const flipped = a.back ? error < 1.72 : error > 2.05
+    if (flipped) {
+      const oldDir = direction + (a.back ? Math.PI : 0)
+      const oldGoal = a.aim + clamp(angleDiff(oldDir, a.aim), -limit, limit)
+      a.back = !a.back
+      const newDir = direction + (a.back ? Math.PI : 0)
+      const newGoal = a.aim + clamp(angleDiff(newDir, a.aim), -limit, limit)
+      // Inertialize the quadrant flip (Holden / Bollo GDC 2018) so legYaw has C1 velocity continuity.
+      m.yawOffset.x = clamp(m.yawOffset.x + angleDiff(oldGoal, newGoal), -0.85, 0.85)
+    }
+    if (a.back) direction += Math.PI
+    stepSpring(m.yawOffset, transK, 1, dt, 0)
+    // Sideways shuffles retain a wider silhouette and let the lead boot open.
+    const rawGoal = a.aim + clamp(angleDiff(direction, a.aim), -limit, limit)
+    const goal = a.aim + clamp(angleDiff(rawGoal + m.yawOffset.x, a.aim), -1.05, 1.05)
     a.legYaw += angleDiff(goal, a.legYaw) * (1 - Math.exp(-dt * 9))
     a.turning = false
   } else {
     a.back = false
+    stepSpring(m.yawOffset, transK, 1, dt, 0)
     const error = angleDiff(a.aim, a.legYaw)
     if (Math.abs(error) > 1.05) a.turning = true
     if (a.turning) {
@@ -142,7 +179,16 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   m.run = gait.run; m.stride = gait.stride
   a.duty = gait.duty
   const wheel = teleport ? 0 : distance / gait.stride
-  a.phase = (a.phase + wheel) % 1
+  // Phase-synchronised blending: softly lock the normalized gait phase to the active swing foot
+  // so walk <-> run <-> sprint speed ramps keep body oscillations matched to actual footfalls.
+  let phaseSync = 0
+  if (!teleport && wheel > 0 && a.feet[0].planted !== a.feet[1].planted) {
+    const swIdx = !a.feet[0].planted ? 0 : 1
+    const targetPhase = (swIdx * 0.5 + a.duty * 0.5 + m.swings[swIdx]! * (1 - a.duty) * 0.5) % 1
+    const diff = ((targetPhase - a.phase + 1.5) % 1) - 0.5
+    phaseSync = clamp(diff * 0.15, -wheel * 0.35, wheel * 0.35)
+  }
+  a.phase = (a.phase + wheel + phaseSync + 1) % 1
   m.stepDebt = Math.min(1, m.stepDebt + wheel * 2)
   const follow = stiffness(animation.footCentreHz)
   stepSpring(m.centreX, follow, 0.65, dt, a.x + a.svx * 0.025)
@@ -229,7 +275,8 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     const i = a.feet[preferred]!.planted ? preferred : 1 - preferred
     const other = 1 - i
     const overstretched = metrics[i]!.rootBehind > 0.34
-    const supported = a.feet[other]!.planted || (gait.run > 0.5 && m.swings[other]! > 0.35) || (overstretched && m.swings[other]! > 0.18)
+    const flightRelease = 0.35 + 0.16 * strafe
+    const supported = a.feet[other]!.planted || (gait.run > 0.5 && m.swings[other]! > flightRelease) || (overstretched && m.swings[other]! > 0.18)
     // An ahead-of-root contact is supporting the next step, not asking for another one.
     const urgent = travelling ? (metrics[i]!.behind > 0.26 || overstretched) : metrics[i]!.err > 0.22
     if (a.feet[i]!.planted && supported && (urgent || moving && m.stepDebt >= 1) && m.contacts[i]! >= 0.04) {
@@ -238,7 +285,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       m.swings[i] = 0
       // Shorter/faster lead-follow shuffle, slower backpedal. Do not reset the wheel at transition.
       const cadence = Math.max(0.95, speed / gait.stride)
-      m.durations[i] = moving ? clamp((1 - gait.duty) / cadence * (a.back ? 1.12 : 1 - strafe * 0.12), 0.11, 0.22 + gait.run * 0.08) : 0.19
+      m.durations[i] = moving ? clamp((1 - gait.duty) / cadence * (a.back ? 1.12 : 1 - strafe * 0.14), 0.11, 0.22 + gait.run * 0.08) : 0.19
       m.durations[i]! *= 1 + (i === 0 ? -1 : 1) * clamp(animation.timingBias, -0.3, 0.3)
       m.targets[i] = computeTarget(a, i, m.durations[i]!, strafe, gait, speed, moving)
       m.next = 1 - i; m.stepDebt = Math.max(0, m.stepDebt - 1)
@@ -248,14 +295,28 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   angleSpring(m.pelvis, a.aim + clamp(angleDiff(midYaw, a.aim), -1.05, 1.05), animation.bodyHz, dt)
   m.pelvis.x = a.aim + clamp(angleDiff(m.pelvis.x, a.aim), -1.05, 1.05)
   const dx = a.feet[1].p[0] - a.feet[0].p[0], dz = a.feet[1].p[2] - a.feet[0].p[2]
-  const twist = clamp((dx * Math.cos(a.legYaw) + dz * Math.sin(a.legYaw)) * 0.32, -0.17, 0.17)
+  const footForward = dx * Math.cos(a.legYaw) + dz * Math.sin(a.legYaw)
+  const twist = clamp(footForward * 0.32, -0.17, 0.17)
+  // Two-stage arm & forearm follow-through springs opposing actual foot separation (Lamplight walk.rs:1494).
+  const armScale = clamp(animation.armSwing ?? 1, 0, 2)
+  const footNorm = clamp(footForward / Math.max(0.35, gait.stride * 0.48), -1, 1)
+  const armAmp = (0.24 + 0.12 * gait.run) * armScale * a.gait
+  const armK = stiffness(Math.max(3.5, animation.chestHz * 1.1))
+  const handK = stiffness(Math.max(2.8, animation.chestHz * 0.85))
+  for (let i = 0; i < 2; i++) {
+    const side = i === 0 ? -1 : 1
+    stepSpring(m.arms[i]!, armK, 0.85, dt, -side * footNorm * armAmp)
+    stepSpring(m.hands[i]!, handK, 0.78, dt, m.arms[i]!.x)
+  }
   const support = a.feet[0].planted === a.feet[1].planted ? 0 : a.feet[0].planted ? -1 : 1
   const theta = TAU * (a.phase - a.duty / 2)
   const k = stiffness(animation.bodyHz)
   const dropAmp = clamp(animation.hipDrop ?? 0.095, 0, 0.22) * (animation.swayScale / 0.095 * 0.087)
   const dropGoal = -support * dropAmp
   const bobScale = clamp(animation.bobScale ?? 1, 0, 2)
-  const bobGoal = (1 - 2 * gait.run) * 0.035 * bobScale * Math.cos(theta * 2) * a.gait
+  // Phase-shifted harmonic preserves full bounce amplitude across the walk->run transition (gait.run = 0.5)
+  // while shifting the vertical peak from mid-stance (walk) to flight (run).
+  const bobGoal = 0.035 * bobScale * Math.cos(theta * 2 - Math.PI * gait.run) * a.gait
   const limp = animation.footDrag > 0 ? clamp(animation.footDrag, 0, 0.95) * a.gait : 0
   stepSpring(m.twist, k, 0.85, dt, twist * animation.twistScale)
   stepSpring(m.sway, k, 0.85, dt, support * (0.055 - gait.run * 0.02) * animation.swayScale)

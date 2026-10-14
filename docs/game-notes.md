@@ -235,14 +235,18 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   applies swing sole floor clearance (`low < 0`) to `ankle[1]` before solving `ik(hip, ankle)`, blends late-swing ankles
   into the `-0.12 rad` toe-pivot touchdown frame over `u = 0.75..1.0`, and uses `dirIn(pelvis, 1, 0.28, side * 0.25)` so
   forward crouch-run pelvis pitch cannot tilt the knee pole into the swing chord.
-- **Keep run-posture lean aligned with `legYaw` and expose hip drop, bounce, turn bank and step lift in the Lab.** `anim.ts`
+- **Keep run-posture lean aligned with `legYaw` and expose hip drop, bounce, turn bank, step lift, arm swing and transition Hz in the Lab.** `anim.ts`
   projects `m.posture.x` along `a.legYaw` rather than `a.svx / speed`, reducing 180°-reversal pelvis pitch jumps from
   `0.406 rad` (`23.3°`) to `0.032 rad` (`1.8°`) while keeping steady run/sprint posture and weapon stability metrics intact.
-  `human-profile.ts` adds `hipDrop`, `bobScale`, `turnBank` and `stepLift` to the shared `Profile`/`Animation` Lab controls.
-  Outbreak's `src/survivor.ts` replaces its raw `sqrt(0.815^2 - d^2)` pelvis clamp with a sprung `reachDrop` filter and
-  re-anchored swing targets, cutting sloped reversal pelvis jumps from `0.358 m` / `0.566 m` to `0.049 m` / `0.040 m`.
-  `games/blackout/src/dev/characters.ts` no longer mutates `a.x, a.y` before `animate()` on loop wraps, eliminating the
-  `6.24 m` walk / `10.44 m` run loop-wrap leg stretch.
+  `human-locomotion.ts` phase-locks `a.phase` softly to the active swing foot, uses a phase-shifted bounce harmonic
+  `cos(2*theta - pi*run)` (preventing amplitude cancellation at `run = 0.5`), curves stride length sublinearly above
+  `3.6 m/s`, inertializes forward/backpedal quadrant flips (`m.yawOffset` at `transitionHz`), and uses an Overgrowth-style
+  lead-follow lateral strafe shuffle. `human-profile.ts` adds `hipDrop`, `bobScale`, `turnBank`, `stepLift`, `armSwing`
+  and `transitionHz` to the shared `Profile`/`Animation` Lab controls. Outbreak's `src/survivor.ts` replaces its raw
+  `sqrt(0.815^2 - d^2)` pelvis clamp with a sprung `reachDrop` filter, re-anchored swing targets, pelvic twist, and
+  two-stage arm/hand follow-through springs, cutting sloped reversal pelvis jumps from `0.358 m` / `0.566 m` to
+  `0.049 m` / `0.040 m`. `games/blackout/src/dev/characters.ts` squares up the unarmed Survivor's chest, uses
+  `unarmedHands()`, and wraps loops by stage distance (`5.8 m`) so toggling `Walk loop` ↔ `Run loop` transitions in place.
 
 ## Rendering (WebGPU)
 
@@ -310,6 +314,20 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
   Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
   `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`.
+- **Keep opt-in rendering styles ("Looks") on a separate pipeline from the identity default.** `packages/kit/gpu/look.ts`
+  (`@arcade/kit/look`) and `packages/kit/lab/looks.ts` share a 64-float `LookUniforms` block, six presets (`Current`,
+  `Noir / Limbo`, `Painterly`, `Cinematic dusk`, `70s sodium`, `Cozy golden hour`), deterministic per-group `tuningSeed`
+  randomization, versioned preset import/export, and `look.preset` / `look.set` / `look.randomize` Lab commands. When
+  `isIdentityLook` is true (`Current`), `Renderer` (`packages/kit/gpu/renderer.ts`) keeps its untouched baseline shaders
+  and pipelines (`diffBytes = 0` on Outbreak's street frame). Non-identity presets lazily compile `makeLookSceneShader`
+  and `makeLookPostShader`, binding `LookUniforms` to existing scene slot 7 and post slot 4 without changing bind-group
+  layouts. `Noir / Limbo` reuses Outbreak's already-traced polar sight row 0 for a shadow-casting player flashlight cone
+  at zero extra ray cost, while preserving warm practical lamp hues during desaturation; `Painterly` combines 3-band
+  smoothstepped wrap diffuse, a 4-quadrant variance-weighted Kuwahara filter, and depth/normal ink outlines. On Metal
+  (`1280×800`, 1 warmup + 7 alternating rounds), whole-frame Debug Room GPU medians are `1.442 ms` (`Current`),
+  `1.659 ms` (`Noir / Limbo`), and `1.630 ms` (`Painterly`); in Outbreak (`1000×680`), queue-completed frame-span
+  medians are `3.313 ms` (`Current`), `4.025 ms` (`Noir / Limbo`), and `3.813 ms` (`Painterly`). Evidence:
+  `perf/looks.json` and `packages/kit/lab/prove-looks.ts`.
 - **Share procedural material recipes between the Lab swatch and production scene shader.** `packages/kit/gpu/surface-materials.ts`
   and `packages/kit/lab/materials.ts` evaluate the same WGSL recipes for matte wood planks (`roughness = 0.84`, no broad
   specular sheen, staggered board lengths, butt-joint AO, warm/cool plank tint), 2×2 quadrant Voronoi cobblestone
@@ -321,6 +339,28 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   120 steps against `076fb7c`), static vertices drop `196,722 → 139,620`; median paired frame-span deltas are `-1.1 ms`
   street (`9.0 → 7.9 ms`, range `-3.9 to +0.9 ms`) and `+0.3 ms` interior (`9.0 → 9.9 ms`, range `-4.3 to +2.2 ms`,
   inside spread). Default Blackout and Getaway shaders remain unchanged.
+- **Project generated flat-diffuse material textures with linear-light mips and procedural breakup.** `scripts/textures/prepare.ts`
+  prepares 16 `gpt-image-1.5` orthographic top-down diffuse textures into a 1,098 KB lossless `256×256` RGBA WebP manifest
+  (`packages/kit/textures/`, served prefix-safely under each game's `texture-assets/` route via `scripts/texture-assets.ts`).
+  Isotropic materials (`wallpaper_plaster`, `sidewalk_concrete`, `street_asphalt`, `lawn_grass`, `tree_bark`, `leaf_atlas`,
+  `cobblestone_pavers`) use Lamplight's mirrored-quadrant wrap; directional course materials (`wood_floorboards`, `kitchen_tile`,
+  `clapboard_siding`, `asphalt_shingles`, `brick_masonry`) use toroidal raised-cosine cross-blending so horizontal courses stay
+  upright; rectangular rugs (`rug_oriental_sage`, `rug_persian_burgundy`, `rug_braided_runner`) use bilateral symmetry on
+  normalized `[0, 1]²` floor rectangles. RGB stores sRGB base-color variation with a 9-level linear-light mip chain
+  (`buildLinearMipChain` in `packages/kit/textures/loader.ts`); Alpha stores a restrained linear authored roughness estimate
+  (not measured), and `lawn_grass_normal` stores a mild luminance-derived tangent normal + height (labelled derived, not measured).
+  In `packages/kit/gpu/surface-materials.ts`, compile-time constant layer indices per material branch avoid Apple Silicon
+  `texture_2d_array` slice-divergence stalls (`41.8 → 24.2 ms` interior GPU interval). Evaluating `postLightMaterial` after
+  `lightSum` (so material/texture locals do not stay live across the polar shadow loop), packing Outbreak's texture Lab bits into
+  unused `F.screen.w` instead of a third uniform buffer, omitting unused `bounceTex`/`floorPattern`/`city` branches when
+  `postLightMaterial` is supplied, replacing the 4-iteration `interior(p)` loop with a branchless quadrant `select`, and
+  resetting Chromium `DOMTimer` nesting via `MessageChannel` in `scheduleFrame` bring `3456×1894` M5 Max Metal `bench-outbreak.ts`
+  (1 warmup + 7 runs) below the pre-texture baseline: street GPU **`15.813 → 12.802 ms` (`-19.0%`, MAD `0.006 ms`)**, street
+  fresh-submit `p95` **`19.400 → 16.800 ms` (`-13.4%`, MAD `0.000 ms`, `57.73` states/s)**, interior GPU **`19.252 → 14.473 ms`
+  (`-24.8%`, MAD `0.026 ms`)**, and interior fresh-submit `p95` **`22.800 → 18.400 ms` (`-19.3%`, MAD `0.300 ms`, `57.09`
+  states/s)**, with `0.12%–0.21%` mean RGB difference (`0.31–0.55 / 255`) against the unoptimized textured output. Lab Materials
+  and Outbreak's Backquote panel expose per-recipe texture map selection, scale, rotation, contrast, roughness trim, and
+  procedural A/B comparison.
 - **Exclude a convex receiver from its own shadow test, and supersample only near analytic edges.** The Lab's fullscreen
   raytraced stage (`packages/kit/lab/stage-shader.ts`) evaluates inside a 4× MSAA pass, where a single fullscreen triangle
   otherwise runs once at pixel center and broadcasts a flat `frag_depth` across all four subsamples. Entry-slab normals

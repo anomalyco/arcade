@@ -8,8 +8,11 @@ The rules below apply to new authoring work. Existing gaps are listed explicitly
 
 ## Tune one change and reproduce it
 
-1. Open the Getaway or Blackout host's `/lab.html`. Choose a library effect or fixture, then its environment.
-   Backquote toggles the workbench chrome; games use the same panel as a floating overlay.
+1. Open the Getaway or Blackout host's `/lab.html`. Choose an effect or fixture in the Library drawer
+   (`Ctrl+Space`), then its environment in the Outliner's World footer. Select what you are tuning in the Outliner or
+   viewport; Details shows its settings first. `⌘K` finds objects, Library items, commands and setting names, and
+   the pin on a Details row adds it to the Watch list. Backquote toggles the workbench chrome; games use the same
+   panel as a floating overlay.
 2. Record the settings, room seed, effect seed, lighting and camera. In game-effect sections, keep `Lock FX` on
    while rerolling the room with `R`; `Lock Env` prevents room regeneration. Locks are section-dependent.
 3. Use `Space` on the Edit canvas to retrigger the active section. Adjust one Inspector value, then retrigger

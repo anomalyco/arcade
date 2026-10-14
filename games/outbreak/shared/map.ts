@@ -14,6 +14,17 @@ export type Town = { seed: number; houseSeed: number; terrain: number; foliageDe
 /** One footprint source for geometry, collision, roof cutaways and room memory. */
 export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
 export const frontageEnd = (b: Building) => b.kind === "house" ? b.rect[3] + 2.5 : b.rect[3]
+/** Authoritative union-of-rects floor footprint: houses have an L-shaped plan (stepped-in north bedroom block + stepped north-east wing + full-width south block). */
+export function buildingFootprint(b: Building): readonly Rect[] {
+  const [x, z, r, e] = b.rect
+  return b.kind === "house" ? [[x, z + 5.5, r, e], [x + 2, z, x + 9.5, z + 5.5], [x + 9.5, z + 1.5, r, z + 5.5]] : [b.rect]
+}
+export function inBuildingFootprint(b: Building, px: number, pz: number): boolean {
+  for (const [x0, z0, x1, z1] of buildingFootprint(b)) {
+    if (px >= x0 && px <= x1 && pz >= z0 && pz <= z1) return true
+  }
+  return false
+}
 export function propShape(p: Prop): { rect: Rect; height: number } | undefined {
   const shapes = {bed:[1.72,2.6,1],sofa:[1.2,2.6,1.1],table:[1.5,1,.82],shelf:[1.7,.8,1.8],coffee:[1.1,1.5,.52],counter:[.8,2.4,1.02],fridge:[.8,.9,1.9],dresser:[2.2,.7,1.1],chair:[.55,.55,1.05],nightstand:[.55,.55,.65],stove:[.75,.8,.95]} as const
   if(p.kind==="tree") return undefined
@@ -37,13 +48,7 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
       wall(wRect, color, "window")
       town.windows.push({ id: `${id}-${winId}`, buildingId: id, buildingIndex, rect: wRect, open: false, openable })
     }
-    // South entrance and two glazed openings, plus a window on the east wall.
-    const doorX = x + 5
-    wall([x, y, r, y + .22], color)
-    wall([x, y, x + .22, b], color)
-    wall([r - .22, y, r, y + 4], color)
-    addWindow("east", [r - .22, y + 4, r, y + 6.5], true)
-    wall([r - .22, y + 6.5, r, b], color)
+    const doorX = x + 5, split = y + 5.5
     wall([x, b - .22, x + 1.5, b], color)
     addWindow("south-west", [x + 1.5, b - .22, x + 3.5, b], kind === "house")
     wall([x + 3.5, b - .22, doorX, b], color)
@@ -51,16 +56,37 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
     wall([doorX + 1.4, b - .22, r - 4, b], color)
     addWindow("south-east", [r - 4, b - .22, r - 1.5, b], kind === "house")
     wall([r - 1.5, b - .22, r, b], color)
-    // Bedroom / store stockroom, with an internal door facing the entrance.
-    const split = y + 5.5
-    wall([x, split, doorX, split + .2], color)
-    town.doors.push({ id: `${id}-room`, rect: [doorX, split, doorX + 1.4, split + .2], open: false })
-    wall([doorX + 1.4, split, r, split + .2], color)
+    if (kind === "house") {
+      // L-shaped house plan: stepped-in north bedroom block [x+2..x+9.5, y..split] + stepped north-east wing + full-width south block [x..r, split..b]
+      const bx0 = x + 2, bx1 = x + 9.5
+      wall([bx0, y, bx1, y + .22], color)
+      wall([bx0, y, bx0 + .22, split], color)
+      wall([bx1 - .22, y, bx1, split], color)
+      wall([bx1, y + 1.5, r, y + 1.72], color)
+      wall([x, split, bx0 + .22, split + .2], color)
+      wall([bx0 + .22, split, doorX, split + .2], color)
+      town.doors.push({ id: `${id}-room`, rect: [doorX, split, doorX + 1.4, split + .2], open: false })
+      wall([doorX + 1.4, split, bx1, split + .2], color)
+      wall([bx1 - .22, split, r - .22, split + .22], color)
+      wall([x, split, x + .22, b], color)
+      wall([r - .22, y + 1.5, r, y + 4], color)
+      addWindow("east", [r - .22, y + 4, r, y + 6.5], true)
+      wall([r - .22, y + 6.5, r, b], color)
+    } else {
+      wall([x, y, r, y + .22], color)
+      wall([x, y, x + .22, b], color)
+      wall([r - .22, y, r, y + 4], color)
+      addWindow("east", [r - .22, y + 4, r, y + 6.5], true)
+      wall([r - .22, y + 6.5, r, b], color)
+      wall([x, split, doorX, split + .2], color)
+      town.doors.push({ id: `${id}-room`, rect: [doorX, split, doorX + 1.4, split + .2], open: false })
+      wall([doorX + 1.4, split, r, split + .2], color)
+    }
     const prop = (px: number, py: number, type: Prop["kind"]) => town.props.push({ x: px, y: py, kind: type, variant: rng.next() })
     if (kind === "house") {
-      prop(x+4,y+2,"bed");prop(r-2.3,y+1.1,"dresser")
-      prop(x+2.7,y+2,"nightstand");prop(x+7.7,y+.7,"shelf")
-      prop(r-4,y+3,"table");prop(r-4,y+3.9,"chair")
+      prop(x+3.85,y+2,"bed");prop(x+7.55,y+.95,"dresser")
+      prop(x+2.65,y+1.1,"nightstand");prop(x+1.35,y+6.15,"shelf")
+      prop(x+3.45,y+6.15,"table");prop(x+8.75,y+3.8,"chair")
       prop(x+1.1,b-2.2,"sofa");prop(x+2.7,b-2.2,"coffee");prop(x+4.2,b-1.1,"chair")
       prop(r-.8,b-2,"counter");prop(r-.8,b-4,"fridge")
       prop(r-.8,b-.65,"stove")
@@ -86,12 +112,12 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
   for (const p of [8, 52, 78]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:5.8,power:.28,kind:"street"})
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect
-    town.lamps.push({x:x+5.7,y:e+.42,h:2.35,radius:5.8,power:.68,kind:"porch"})
-    town.lamps.push({x:x+2.6,y:z+1.85,h:1.24,radius:4.0,power:.30,kind:"room"})
-    town.lamps.push({x:x+1.25,y:e-1.25,h:1.42,radius:4.5,power:.34,kind:"room"})
-    town.lamps.push({x:r-3.2,y:e-3.6,h:2.10,radius:4.6,power:.30,kind:"room"})
-    town.lamps.push({x:x+6.1,y:z+4.2,h:2.38,radius:4.2,power:.22,kind:"room"})
-    if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.08,h:1.35,radius:2.6,power:.26,kind:"window"})
+    town.lamps.push({x:x+5.7,y:e+.55,h:2.42,radius:8.8,power:1.05,kind:"porch"})
+    town.lamps.push({x:x+2.65,y:z+1.15,h:1.08,radius:3.6,power:.30,kind:"room"})
+    town.lamps.push({x:x+1.95,y:e-1.75,h:2.32,radius:4.6,power:.44,kind:"room"})
+    town.lamps.push({x:r-3.45,y:e-3.35,h:2.38,radius:4.5,power:.36,kind:"room"})
+    town.lamps.push({x:x+5.75,y:z+2.85,h:2.38,radius:4.2,power:.32,kind:"room"})
+    if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.12,h:1.45,radius:3.5,power:.44,kind:"window"})
   }
   return town
 }

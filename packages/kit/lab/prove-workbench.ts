@@ -90,7 +90,6 @@ try {
     if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-default-1280x800.png") })
 
     // 2. Select Glass with keyboard, frame target, retrigger, change shard size, reroll room keeping effect, reset, undo
-    await page.keyboard.press("Meta+k")
     await page.getByRole("searchbox", { name: "Search library" }).fill("Glass shards")
     await page.keyboard.press("Enter")
     await page.evaluate(() => {
@@ -565,7 +564,15 @@ try {
     assert.equal(dims1920.ch, dims1920.vh)
     if (hostIdx === 0) await page.screenshot({ path: resolve(out, "after-flame-hydrant-1920x1080.png") })
 
+    // 12. Outliner + Details + Library drawer + ⌘K + Watch, at 1920x1080 and 1280x800
+    const layoutReport: Record<string, unknown> = {}
+    for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 800 }]) {
+      await page.setViewportSize(size)
+      layoutReport[`${size.width}x${size.height}`] = await layoutPass(page, step, size.width, hostIdx === 0)
+    }
+
     report[game] = {
+      layout: layoutReport,
       adapter,
       dims1280,
       dims1920,
@@ -596,4 +603,193 @@ try {
 } finally {
   await browser.close()
   for (const s of servers) await s.close()
+}
+
+type Page = Awaited<ReturnType<typeof browser.newPage>>
+
+async function detailsGroups(page: Page) {
+  return page.evaluate(() => {
+    const root = document.querySelector("[data-lab]")!.shadowRoot!
+    return [...root.querySelectorAll("[data-controls] h3 .fold")].map(el => (el.textContent ?? "").replace(/^[▾▸]\s*/, "").trim())
+  })
+}
+
+async function selected(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as any).lab.workbench.getSelectedIds())
+}
+
+async function invoke(page: Page, id: string, args?: Record<string, unknown>) {
+  const res = await page.evaluate(([i, a]) => (window as any).lab.workbench.invoke(i, a, { source: "cli" }), [id, args] as const)
+  assert.equal(res.ok, true, `${id} failed: ${res.error}`)
+  return res.result
+}
+
+async function layoutPass(page: Page, step: (n: number) => Promise<void>, width: number, capture: boolean) {
+  const shot = async (name: string) => {
+    if (capture) await page.screenshot({ path: resolve(out, `layout-${name}-${width}.png`) })
+  }
+  const outRow = (text: string) => page.locator(".lab-trow", { hasText: text }).first()
+  await invoke(page, "library.toggle", { open: true, category: "effects" })
+  await page.locator('[data-catalog-id="fixture:car-cones"]').click()
+  await step(3)
+  await page.locator("canvas").focus()
+  await page.keyboard.press("Escape")
+  await step(1)
+
+  // Outliner: only scene objects, grouped by type with counts, repeated kinds folded
+  const tree = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-outliner-tree] .lab-trow")].map(el => ({
+      type: el.dataset.rowType,
+      text: [el.querySelector(".lab-tname")?.textContent, el.querySelector(".lab-tcount")?.textContent].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(),
+    })),
+  )
+  const groups = tree.filter(r => r.type === "group").map(r => r.text)
+  assert(groups.includes("Vehicles 1"), `Vehicles group with count, got ${JSON.stringify(groups)}`)
+  assert(groups.includes("Props 6"), `Props group with count 6, got ${JSON.stringify(groups)}`)
+  assert(tree.some(r => r.type === "fold" && r.text === "Cone ×5"), "Five cones fold into one 'Cone ×5' row")
+  assert(!tree.some(r => /Place |Fixture/.test(r.text ?? "")), "Outliner lists scene objects only, never Library items")
+  assert.equal((await detailsGroups(page))[0], "Environment", "Nothing selected shows scene/environment settings first")
+  await shot("outliner-scene")
+
+  // Fold row selects all members; Details shows shared transform plus item settings only
+  await page.locator(".lab-tfold", { hasText: "Cone" }).click()
+  await step(1)
+  const coneIds = await selected(page)
+  assert.equal(coneIds.length, 5, "Clicking the fold selects all five cones")
+  const multiGroups = await detailsGroups(page)
+  assert.equal(multiGroups[0], "Transform", "Transform comes first for a selection")
+  assert(multiGroups.includes("Items") && !multiGroups.includes("Vehicle & Skids"), `Multi-select Details stays relevant, got ${multiGroups}`)
+  assert.equal(await page.locator(".lab-inspector-title").textContent(), "5 objects")
+  await shot("multiselect")
+
+  // Single vehicle selection: Transform, Character, Vehicle & Skids
+  await outRow("Getaway · Muscle").click()
+  await step(1)
+  assert.deepEqual(await selected(page), ["character:active"])
+  assert.deepEqual(await detailsGroups(page), ["Transform", "Character", "Vehicle & Skids"])
+  await shot("select-vehicle")
+
+  // Shift-click range from the vehicle to the propane tank
+  await outRow("Propane").click({ modifiers: ["Shift"] })
+  await step(1)
+  const range = await selected(page)
+  assert(range.length === 7 && range.includes("character:active"), `Shift range selects vehicle..propane, got ${range}`)
+
+  // Viewport click selects a cone and the Outliner reveals and highlights it
+  await page.locator("canvas").focus()
+  await page.keyboard.press("Escape")
+  await step(1)
+  const conePoint = await page.evaluate(() => {
+    const st = (window as any).lab.context.stage
+    const s = (window as any).lab.sections.find((x: any) => x.id === "spawn")
+    const cone = s.objects().find((o: any) => o.kind === "cone")
+    const p = st.projectWorld(cone.x, cone.y + 0.35, cone.z)
+    const r = document.querySelector("canvas")!.getBoundingClientRect()
+    return { id: cone.id, x: r.left + p.u * r.width, y: r.top + p.v * r.height }
+  })
+  await page.mouse.click(conePoint.x, conePoint.y)
+  await step(1)
+  assert.deepEqual(await selected(page), [conePoint.id], "Viewport click selected the cone")
+  assert.equal(await page.locator(`.lab-tobj[data-object-id="${conePoint.id}"]`).getAttribute("aria-selected"), "true", "Outliner reveals viewport selection")
+
+  // Keyboard: Shift+Tab focuses the Outliner, arrows move the selection, Escape returns to the canvas
+  await page.locator("canvas").focus()
+  await page.keyboard.press("Shift+Tab")
+  assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute("data-outliner-tree")), true, "Shift+Tab focuses the Outliner")
+  await page.keyboard.press("ArrowDown")
+  await step(1)
+  const afterArrow = await selected(page)
+  assert(afterArrow.length === 1 && afterArrow[0] !== conePoint.id, "ArrowDown moved the selection to the next row")
+  await page.keyboard.press("Escape")
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), "CANVAS")
+
+  // Lock makes an object unpickable in the viewport
+  await invoke(page, "outliner.lock", { id: conePoint.id, locked: true })
+  await page.keyboard.press("Escape")
+  await page.mouse.click(conePoint.x, conePoint.y)
+  await step(1)
+  assert(!(await selected(page)).includes(conePoint.id), "Locked cone is not pickable")
+  await invoke(page, "outliner.lock", { id: conePoint.id, locked: false })
+
+  // Modified highlight, Modified-only filter, per-field reset as one undo entry
+  await invoke(page, "outliner.select", { id: "character:active" })
+  await invoke(page, "scene.set-param", { key: "skidWidth", value: 0.3 })
+  await step(1)
+  const modifiedFlag = await page.evaluate(() => document.querySelector("[data-lab]")!.shadowRoot!.querySelector('label:has([data-key="skidWidth"])')!.getAttribute("data-modified"))
+  assert.equal(modifiedFlag, "true", "Non-default value is highlighted")
+  const filtered = await invoke(page, "details.filter", { modified: true })
+  assert(filtered.visible.includes("skidWidth") && !filtered.visible.includes("skidLife"), `Modified only shows changed fields, got ${filtered.visible}`)
+  await shot("modified-filter")
+  await invoke(page, "details.filter", { modified: false })
+
+  // Watch pin: pin from the row, live value, jump back
+  const root = page.locator("[data-lab]")
+  await root.locator('label:has([data-key="skidWidth"])').hover()
+  await root.locator('[aria-label="Pin Skid width to Watch"]').click()
+  await invoke(page, "watch.pin", { key: "exposure", section: "lighting", pinned: true })
+  await page.waitForFunction(() => document.querySelectorAll("[data-lab-watch] .lab-watch-row").length === 2)
+  const watchValue = await page.locator('[data-watch-key="spawn:skidWidth"] .lab-watch-value').textContent()
+  assert.equal(watchValue, "0.3 m", "Watch shows the live pinned value")
+  await root.locator('[aria-label="Reset Skid width to default"]').click()
+  await step(1)
+  assert.equal(await page.evaluate(() => (window as any).lab.sections.find((s: any) => s.id === "spawn").settings.skidWidth), 0.16, "Per-field reset restores the default")
+  assert.equal(await page.locator('[data-watch-key="spawn:skidWidth"] .lab-watch-value').textContent(), "0.16 m", "Watch follows the reset")
+  await page.locator("canvas").focus()
+  await page.keyboard.press("Meta+z")
+  assert.equal(await page.evaluate(() => (window as any).lab.sections.find((s: any) => s.id === "spawn").settings.skidWidth), 0.3, "Undo restores the value before the field reset")
+  await shot("watch-pins")
+
+  // ⌘K: scene objects, commands and settings in one search
+  await page.keyboard.press("Meta+k")
+  await page.keyboard.type("propane")
+  await shot("palette")
+  const paletteKinds = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".lab-palette-item")].map(el => el.dataset.kind))
+  assert.equal(paletteKinds[0], "object", "Scene object ranks first for its name")
+  await page.keyboard.press("Enter")
+  await step(1)
+  const propaneSel = await selected(page)
+  assert(propaneSel.length === 1 && propaneSel[0]!.startsWith("prop:"), "⌘K selected the propane tank")
+  await page.keyboard.press("Meta+k")
+  await page.keyboard.type("skid life")
+  await page.keyboard.press("Enter")
+  await step(1)
+  assert.equal(await page.evaluate(() => (window as any).lab.context && document.querySelector<any>("[data-lab]").shadowRoot.activeElement?.dataset.row), "skidLife", "⌘K setting jump focuses the field")
+  await page.locator("canvas").focus()
+  await page.keyboard.press("Meta+k")
+  await page.keyboard.type(">toggle library")
+  await page.keyboard.press("Enter")
+  assert.equal((await page.evaluate(() => (window as any).lab.workbench.state().layout.library.open)), false, "⌘K ran the Library toggle command")
+  await page.locator("canvas").focus()
+  await shot("drawer-closed")
+  await page.keyboard.press("Control+Space")
+  assert.equal((await page.evaluate(() => (window as any).lab.workbench.state().layout.library.open)), true, "Ctrl+Space reopens the Library")
+
+  // Library: drag a prop into the viewport to place it at the ground point
+  await page.locator("canvas").focus()
+  await page.getByRole("button", { name: "Category Objects", exact: true }).click()
+  const propsBefore = await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length)
+  const tile = page.locator('[data-catalog-id="spawn-prop:barrier"]')
+  await tile.scrollIntoViewIfNeeded()
+  const tb = (await tile.boundingBox())!
+  const vb = (await page.locator("canvas").boundingBox())!
+  await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(vb.x + vb.width * 0.7, vb.y + vb.height * 0.4, { steps: 10 })
+  await step(1)
+  await shot("library-drag")
+  await page.mouse.up()
+  await step(1)
+  assert.equal(await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length), propsBefore + 1, "Dragging a Library tile placed the prop")
+  const dropped = await selected(page)
+  assert.equal(dropped.length, 1, "Dropped prop is selected")
+
+  // CLI-equivalent registry commands for the new layout
+  const placed = await invoke(page, "library.place", { id: "spawn-prop:cone", at: "4,6" })
+  assert.equal(placed.placed, true)
+  const cones = await invoke(page, "outliner.select", { kind: "cone" })
+  assert.equal(cones.selected.length, 6, "outliner.select kind=cone selects every cone")
+  await shot("library-placed")
+  await invoke(page, "watch.unpin", { all: true })
+  await page.keyboard.press("Escape")
+  return { groups, multiGroups, coneCount: coneIds.length, rangeCount: range.length, dropped: dropped[0] }
 }

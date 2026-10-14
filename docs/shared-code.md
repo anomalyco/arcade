@@ -119,7 +119,9 @@ Ball, and Surface Plane swatches under the Lab's lighting presets, with Before/A
 parameter ranges/units, Reset, Undo/Redo, versioned preset export/import, and a separate deterministic `tuningSeed` for
 group randomization. Both entries also import the actual game `MAT` constants (25 codes) in the folded Game Catalog group,
 and `MaterialAdapter.prepare(code, context)` / `draw(pass, code)` remain available for game-specific code hooks.
-The shared Lab itself imports no game modules.
+The shared Lab itself imports no game modules. `packages/kit/textures/` and `scripts/texture-assets.ts` supply the
+16-layer `256×256` `rgba8unorm-srgb` material texture array (`texture-assets/*.webp`, 1.10 MB prepared, 1.18 MB sources)
+with linear-light mipmaps, authored roughness in alpha, derived lawn detail normal, and per-recipe Lab controls.
 
 Physics uses the merged `getaway-clutter` solver and shares the Spawn section's props. The adapter supplies
 `bodies`, `update(dt)`, `reset()` and optional `wakeAll()`. `DebugBody` uses the client's position, half-extents,
@@ -223,7 +225,10 @@ polar-light compute, cutaway chunks, MSAA/HDR targets and the five-level bloom/p
 accepts pure WGSL surface and directional-light hooks, with Blackout's shader behavior as its default.
 An optional exploration texture is available at binding 9; Blackout never samples it. Binding 7 retains the motion
 uniform, and binding 8 holds the separate fine moon mask. The shipped Blackout look/motion variants share this engine.
-`gpu/surface-materials.ts` supplies opt-in matte outdoor finishes and footprint-filtered detail. Outbreak selects
+`gpu/surface-materials.ts` supplies opt-in matte outdoor finishes and footprint-filtered detail. `gpu/look.ts`
+(`@arcade/kit/look`) and `lab/looks.ts` supply the shared `LookSettings` presets, WGSL grading/lighting hooks, and the
+Lab `Looks` debug room; `Renderer.setLook` / `FrameInput.look` opt into `makeLookSceneShader` and `makeLookPostShader`
+while keeping `"Current"` pixel-identical to the baseline pipelines. Outbreak selects
 the existing dense shadow kernel and custom post constants through shared shader options; default Blackout output
 is preserved. House and terrain generation remain game-owned. See `docs/outbreak-look.md` for measured cost and gaps.
 

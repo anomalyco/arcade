@@ -21,7 +21,19 @@ export type LabOptions = {
   onTransaction?: (label: string, before: LabSettings, after: LabSettings) => void
   onToggle?: (visible: boolean) => void
   onFocusChange?: (focused: boolean, activeRow?: LabRow) => void
+  /** Inspector layout: per-row pin button for an external watch list. */
+  onPin?: (control: LabControl, group: string) => void
+  isPinned?: (key: string) => boolean
 }
+
+/** Details view state for the inspector layout: group priority and a row filter. */
+export type LabPanelView = {
+  order?: readonly string[]
+  filter?: (row: LabRow, modified: boolean) => boolean
+}
+
+const RESET_ICON = `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 0 1.4-3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M4.6 1.8v3.1h3.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+const PIN_ICON = `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M6 2h4l-.6 4.2 2.4 2.3v1H4.2v-1l2.4-2.3z" fill="currentColor"/><path d="M8 9.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
 
 /** Presentation controls. Open panels capture keys before the game's bubble listeners. */
 export class LabPanel {
@@ -53,6 +65,10 @@ export class LabPanel {
   private fScrub: { control: LabControl; startX: number; startValue: number; before: LabSettings } | null = null
   private lastPointerX = 0
   private detachControl?: () => void
+  private onPin?: (control: LabControl, group: string) => void
+  private isPinned?: (key: string) => boolean
+  private baseOrder: string[] = []
+  private view: LabPanelView = {}
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const change = typeof options === "function" ? options : undefined
@@ -63,6 +79,8 @@ export class LabPanel {
     this.onTransaction = typeof options === "object" ? options.onTransaction : undefined
     this.onToggle = typeof options === "object" ? options.onToggle : undefined
     this.onFocusChange = typeof options === "object" ? options.onFocusChange : undefined
+    this.onPin = typeof options === "object" ? options.onPin : undefined
+    this.isPinned = typeof options === "object" ? options.isPinned : undefined
     this.navigation = new LabNavigation({}, [], (key, value) => {
       if (controls.some(control => control.key === key)) change?.(key, value)
       for (const copy of this.copies.values()) copy.textContent = "Copy"
@@ -109,7 +127,64 @@ export class LabPanel {
       [aria-selected=true]{background:#2e4350;border-color:#7cc5d666} [aria-invalid=true]{outline:2px solid #f88}
       .hint{position:sticky;bottom:-10px;margin:8px -4px -4px;padding:5px 4px;background:#111519;color:#8fa0ad;font-size:9.5px;white-space:nowrap;overflow-x:auto;border-top:1px solid #ffffff12}
       :host([data-layout=inspector]) .hint{display:none}
-    </style><button class="pill" type="button" aria-expanded="false">~ Lab</button><section aria-label="Debug controls"><header>FPS — · Frame ms — / —\nGPU ms —</header><nav><button data-preset="on">All On</button><button data-preset="off">All Off</button></nav><div class="search" hidden><input type="text" aria-label="Search controls" role="combobox" aria-autocomplete="list" aria-controls="lab-matches" aria-expanded="true" placeholder="Filter inspector controls…"><div id="lab-matches" role="listbox"></div></div><div data-controls></div><div class="hint">↑↓ · ←→ ⇧/⌥ · ↵/␣ · Esc · /⌘K · ⇥/⇧⇥ · R · 0/⇧0 · C · ~</div></section>`
+      .field{display:contents} .rst,.pin,.gmods{display:none}
+      :host([data-layout=inspector]){--acc:var(--lab-accent,#4d8dff);--tx:#d8dbe0;--tx2:#8b9098;--tx3:#5b6068;--line:#23252a;--line2:#2c2f35;--fieldbg:#0e0f11;--mono:ui-monospace,"SF Mono",Menlo,monospace;color:var(--tx);font:12px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+      :host([data-layout=inspector]) section{background:#141518;padding:0}
+      :host([data-layout=inspector]) header{display:none}
+      :host([data-layout=inspector]) nav{padding:4px 8px;margin:0;border-bottom:1px solid var(--line)}
+      :host([data-layout=inspector]) [data-controls]{padding:0 0 28px;margin:0}
+      :host([data-layout=inspector]) .search{padding:6px 8px;margin:0;background:#141518;border-color:var(--line)}
+      :host([data-layout=inspector]) button,:host([data-layout=inspector]) select,:host([data-layout=inspector]) input[type=text]{background:var(--fieldbg);border:0;box-shadow:inset 0 0 0 1px var(--line);border-radius:3px;font-size:11px}
+      :host([data-layout=inspector]) h3{height:24px;margin:0;padding:0 4px 0 2px;border-top:1px solid var(--line);gap:4px;font:600 11px/1 inherit;color:var(--tx);letter-spacing:0}
+      :host([data-layout=inspector]) h3:first-child{border-top:0}
+      :host([data-layout=inspector]) h3:hover{background:#ffffff08}
+      :host([data-layout=inspector]) .fold{flex:1;min-width:0;height:22px;box-shadow:none;background:none;color:var(--tx);font-weight:600;font-size:11px;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      :host([data-layout=inspector]) .gmods{display:inline;font:600 10px/1 var(--mono);color:var(--acc);padding:0 4px}
+      :host([data-layout=inspector]) .actions{opacity:0;gap:1px}
+      :host([data-layout=inspector]) h3:hover .actions,:host([data-layout=inspector]) h3:focus-within .actions,:host([data-layout=inspector]) h3[data-active=true] .actions{opacity:1}
+      :host([data-layout=inspector]) .actions button{width:20px;height:18px;padding:0;box-shadow:none;background:none;color:var(--tx3);font-size:0;display:grid;place-items:center}
+      :host([data-layout=inspector]) .actions button::before{font-size:12px;line-height:1}
+      :host([data-layout=inspector]) .actions button[aria-label^="Randomize"]::before{content:"⚄"}
+      :host([data-layout=inspector]) .actions button[aria-label^="Reset"]::before{content:"↺"}
+      :host([data-layout=inspector]) .actions button[data-copy]::before{content:"⧉"}
+      :host([data-layout=inspector]) .actions button:hover:not(:disabled){background:#ffffff12;color:var(--tx)}
+      :host([data-layout=inspector]) label{display:grid;grid-template-columns:42% minmax(0,1fr) 16px 16px;align-items:center;gap:0 5px;height:24px;padding:0 4px 0 12px;border-radius:0;cursor:default}
+      :host([data-layout=inspector]) label:hover{background:#ffffff07}
+      :host([data-layout=inspector]) label.range{grid-template-columns:42% minmax(0,1fr) 16px 16px;gap:0 5px}
+      :host([data-layout=inspector]) .name{grid-column:1;grid-row:1;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+      :host([data-layout=inspector]) label[data-modified=true] .name{color:var(--tx)}
+      :host([data-layout=inspector]) label[data-boundary=spawn] .name::after{content:"";display:inline-block;width:5px;height:5px;margin-left:5px;border-radius:50%;background:#d9a03c;vertical-align:middle}
+      :host([data-layout=inspector]) .field output{white-space:nowrap;overflow:hidden}
+      :host([data-layout=inspector]) label > select{grid-column:2;grid-row:1;max-width:none;width:100%;min-width:0;margin:0;height:18px;padding:0 4px}
+      :host([data-layout=inspector]) label > input[type=checkbox]{grid-column:2;grid-row:1;justify-self:start;width:14px;height:14px;accent-color:var(--acc)}
+      :host([data-layout=inspector]) label[data-modified=true] > select{color:color-mix(in srgb,var(--acc) 70%,var(--tx));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
+      :host([data-layout=inspector]) label[data-modified=true] > input[type=checkbox]{outline:1px solid color-mix(in srgb,var(--acc) 50%,transparent);outline-offset:2px}
+      :host([data-layout=inspector]) .field{grid-column:2;grid-row:1;display:block;position:relative;height:18px;border-radius:3px;background:var(--fieldbg);box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
+      :host([data-layout=inspector]) .field::before{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--p,0) * 100%);background:#d8dbe012;pointer-events:none}
+      :host([data-layout=inspector]) label[data-modified=true] .field::before{background:color-mix(in srgb,var(--acc) 20%,transparent)}
+      :host([data-layout=inspector]) .field:hover{box-shadow:inset 0 0 0 1px var(--line2)}
+      :host([data-layout=inspector]) .field input[type=range]{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;pointer-events:none}
+      :host([data-layout=inspector]) .field output{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding:0 6px;border-radius:3px;font:11px/1 var(--mono);color:var(--tx);background:none}
+      :host([data-layout=inspector]) .field output:hover{background:none}
+      :host([data-layout=inspector]) label[data-modified=true] output{color:color-mix(in srgb,var(--acc) 70%,var(--tx));font-weight:600}
+      :host([data-layout=inspector]) .field input.exact{position:absolute;inset:0;width:100%;height:100%;padding:0 6px;text-align:right;font:11px/1 var(--mono);box-shadow:inset 0 0 0 1px var(--acc)}
+      :host([data-layout=inspector]) .rst,:host([data-layout=inspector]) .pin{display:grid;place-items:center;width:16px;height:16px;padding:0;box-shadow:none;background:none;color:var(--tx3);visibility:hidden}
+      :host([data-layout=inspector]) .rst{grid-column:3;grid-row:1} :host([data-layout=inspector]) .pin{grid-column:4;grid-row:1}
+      :host([data-layout=inspector]) label[data-modified=true] .rst{visibility:visible;color:var(--acc)}
+      :host([data-layout=inspector]) label:hover .pin,:host([data-layout=inspector]) .pin[aria-pressed=true]{visibility:visible}
+      :host([data-layout=inspector]) .pin[aria-pressed=true]{color:var(--acc)}
+      :host([data-layout=inspector]) .rst:hover,:host([data-layout=inspector]) .pin:hover{background:#ffffff12!important;color:var(--tx)}
+      :host([data-layout=inspector]) button[data-key]{display:inline-flex;align-items:center;width:auto;height:20px;margin:3px 0 3px 8px;padding:0 8px;font-weight:500;background:#191a1e;color:var(--tx)}
+      :host([data-layout=inspector]) h3 + button[data-key],:host([data-layout=inspector]) label + button[data-key]{margin-left:12px}
+      :host([data-layout=inspector]) button[data-key]:hover:not(:disabled){background:#1e2024;box-shadow:inset 0 0 0 1px var(--line2)}
+      :host([data-layout=inspector]) [data-active=true]{outline:0;background:color-mix(in srgb,var(--acc) 14%,transparent);border-radius:0}
+      :host([data-layout=inspector]) button[data-key][data-active=true]{box-shadow:inset 0 0 0 1px var(--acc);border-radius:3px}
+      :host([data-layout=inspector][data-capture=focus]:not(:focus-within)) [data-active=true]{background:none}
+      :host([data-layout=inspector][data-capture=focus]:not(:focus-within)) button[data-key][data-active=true]{background:#191a1e;box-shadow:inset 0 0 0 1px var(--line)}
+      :host([data-layout=inspector]) [data-flash=true]{animation:flash 1.3s ease-out}
+      @keyframes flash{0%,35%{background:color-mix(in srgb,var(--acc) 38%,transparent)}100%{background:transparent}}
+      :host([data-layout=inspector]) .empty{padding:12px;color:var(--tx3)}
+    </style><button class="pill" type="button" aria-expanded="false">~ Lab</button><section aria-label="Debug controls"><header>FPS — · Frame ms — / —\nGPU ms —</header><nav><button data-preset="on">All On</button><button data-preset="off">All Off</button></nav><div class="search" hidden><input type="text" aria-label="Search controls" role="combobox" aria-autocomplete="list" aria-controls="lab-matches" aria-expanded="true" placeholder="Filter inspector controls…"><div id="lab-matches" role="listbox"></div></div><div data-controls></div><div class="empty" hidden>No matching settings</div><div class="hint">↑↓ · ←→ ⇧/⌥ · ↵/␣ · Esc · /⌘K · ⇥/⇧⇥ · R · 0/⇧0 · C · ~</div></section>`
     this.panel = root.querySelector("section")!
     this.header = root.querySelector("header")!
     this.pill = root.querySelector(".pill")!
@@ -206,14 +281,17 @@ export class LabPanel {
     for (const key of Object.keys(this.navigation.settings)) delete this.navigation.settings[key]
     for (const key of Object.keys(this.navigation.defaults)) delete this.navigation.defaults[key]
     this.inputs.clear(); this.elements.clear(); this.copies.clear()
+    this.baseOrder.length = 0
     this.host.shadowRoot!.querySelector("[data-controls]")!.replaceChildren()
     this.host.shadowRoot!.querySelector<HTMLElement>("nav")!.hidden = true
   }
-  addControls(settings: LabSettings, controls: readonly LabControl[]) {
+  /** `defaults` supplies approved values for Reset and modified highlighting; otherwise the current values are captured. */
+  addControls(settings: LabSettings, controls: readonly LabControl[], defaults?: Readonly<LabSettings>) {
     for (const c of controls) if (c.type !== "action") {
       Object.defineProperty(this.navigation.settings, c.key, { configurable: true, enumerable: true, get: () => settings[c.key], set: value => { settings[c.key] = value } })
-      if (!(c.key in this.navigation.defaults)) this.navigation.defaults[c.key] = settings[c.key]!
+      if (!(c.key in this.navigation.defaults)) this.navigation.defaults[c.key] = defaults && c.key in defaults ? defaults[c.key]! : settings[c.key]!
     }
+    for (const c of controls) { const g = c.group ?? "Controls"; if (!this.baseOrder.includes(g)) this.baseOrder.push(g) }
     const added = this.navigation.append(controls)
     for (const row of added) {
       const element = row.control ? this.control(row.control) : this.group(row.group)
@@ -254,7 +332,9 @@ export class LabPanel {
     copy.type = "button"; copy.textContent = "Copy"; copy.dataset.copy = ""; copy.setAttribute("aria-label", `Copy ${group} JSON`)
     copy.onclick = () => { void this.copy(group) }
     this.copies.set(group, copy)
-    actions.className = "actions"; actions.hidden = !this.groupActions; actions.append(random, reset, copy); heading.append(fold, actions)
+    const mods = document.createElement("span")
+    mods.className = "gmods"; mods.dataset.mods = ""; mods.title = "Modified settings in this group"
+    actions.className = "actions"; actions.hidden = !this.groupActions; actions.append(random, reset, copy); heading.append(fold, mods, actions)
     return heading
   }
   private control(c: LabControl) {
@@ -274,6 +354,8 @@ export class LabPanel {
       return button
     }
     const label = document.createElement("label")
+    const name = document.createElement("span")
+    name.className = "name"; name.textContent = c.label; name.title = c.label
     let input: HTMLInputElement | HTMLSelectElement
     if ("options" in c) {
       const select = document.createElement("select")
@@ -287,7 +369,7 @@ export class LabPanel {
         }
         this.sync()
       }
-      input = select; label.append(c.label, select)
+      input = select; label.append(name, select)
     } else {
       input = document.createElement("input")
       if ("min" in c) {
@@ -337,7 +419,9 @@ export class LabPanel {
         }
         output.addEventListener("pointerup", finishScrub)
         output.addEventListener("pointercancel", finishScrub)
-        label.append(c.label, output, input)
+        const field = document.createElement("span")
+        field.className = "field"; field.append(output, input)
+        label.append(name, field)
       } else {
         input.type = "checkbox"
         input.onchange = () => {
@@ -346,12 +430,98 @@ export class LabPanel {
           this.commitTransaction(c.label, before)
           this.sync()
         }
-        label.append(input, c.label)
+        label.append(input, name)
       }
     }
     input.dataset.key = c.key; input.setAttribute("aria-label", c.label)
     this.inputs.set(c, input)
+    if (this.layoutMode === "inspector") {
+      const reset = document.createElement("button")
+      reset.type = "button"; reset.className = "rst"; reset.tabIndex = -1; reset.innerHTML = RESET_ICON
+      reset.title = "Reset to default (0)"; reset.setAttribute("aria-label", `Reset ${c.label} to default`)
+      reset.onclick = event => { event.preventDefault(); this.resetControl(c.key) }
+      label.append(reset)
+      if (this.onPin) {
+        const pin = document.createElement("button")
+        pin.type = "button"; pin.className = "pin"; pin.tabIndex = -1; pin.innerHTML = PIN_ICON
+        pin.title = "Pin to Watch"; pin.setAttribute("aria-label", `Pin ${c.label} to Watch`)
+        pin.onclick = event => {
+          event.preventDefault()
+          const row = this.navigation.rows.find(r => r.control === c)
+          this.onPin?.(c, row?.group ?? c.group ?? "Controls")
+          this.sync()
+        }
+        label.append(pin)
+      }
+    }
     return label
+  }
+
+  /** Reset one control to its default as a single authored transaction. */
+  resetControl(key: string): boolean {
+    const row = this.navigation.rows.find(r => r.control?.key === key)
+    const c = row?.control
+    if (!c || c.type === "action" || !(key in this.navigation.defaults)) return false
+    const before = this.snapshotSettings()
+    this.navigation.set(c, this.navigation.defaults[key]!)
+    this.commitTransaction(`Reset ${c.label}`, before)
+    this.sync()
+    return true
+  }
+
+  isModified(key: string): boolean {
+    const c = this.navigation.rows.find(r => r.control?.key === key)?.control
+    return Boolean(c && this.navigation.isModified(c))
+  }
+
+  /** Modified controls among rows whose own `visible` condition holds (ignores the Details view filter). */
+  modifiedControls(): LabControl[] {
+    const out: LabControl[] = []
+    for (const row of this.navigation.rows) {
+      const c = row.control
+      if (!c || c.type === "action") continue
+      if (c.visible && !c.visible(this.navigation.settings)) continue
+      if (this.navigation.isModified(c)) out.push(c)
+    }
+    return out
+  }
+
+  /** Apply Details ordering and filtering (inspector layout). Re-sorts rows and remounts their elements. */
+  setView(view: LabPanelView) {
+    this.view = view
+    this.navigation.filter = view.filter ? row => view.filter!(row, Boolean(row.control && this.navigation.isModified(row.control))) : undefined
+    const order = view.order ?? []
+    const rank = (group: string) => {
+      const i = order.indexOf(group)
+      return i >= 0 ? i : order.length + Math.max(0, this.baseOrder.indexOf(group))
+    }
+    const sorted = this.navigation.rows.map((row, index) => ({ row, index })).sort((a, b) => rank(a.row.group) - rank(b.row.group) || a.index - b.index).map(x => x.row)
+    const changed = sorted.some((row, i) => row !== this.navigation.rows[i])
+    if (changed) {
+      this.navigation.rows.splice(0, this.navigation.rows.length, ...sorted)
+      this.host.shadowRoot!.querySelector("[data-controls]")!.replaceChildren()
+    }
+    this.sync()
+  }
+
+  get currentView(): LabPanelView { return this.view }
+
+  /** Unfold, activate, scroll to and flash a control row. Returns false if the key is not mounted or not visible. */
+  reveal(key: string, focus = true): boolean {
+    const row = this.navigation.rows.find(r => r.control?.key === key)
+    if (!row || !this.navigation.isRowVisible(row)) return false
+    if (!this.visible) this.toggle()
+    this.navigation.jump(row)
+    this.sync()
+    const element = this.elements.get(row)
+    if (!element) return false
+    if (focus) element.focus({ preventScroll: true })
+    element.scrollIntoView({ block: "center" })
+    element.dataset.flash = "false"
+    void element.offsetWidth
+    element.dataset.flash = "true"
+    setTimeout(() => { if (element.dataset.flash === "true") element.dataset.flash = "false" }, 1400)
+    return true
   }
   /** Refresh values advanced by the game outside panel input. */
   refresh(): void { this.sync() }
@@ -397,9 +567,39 @@ export class LabPanel {
       if ("options" in c || "min" in c) input.value = String(this.navigation.settings[c.key])
       else if (c.type !== "action" && input instanceof HTMLInputElement) input.checked = this.navigation.settings[c.key] === (c.on ?? true)
       if ("min" in c) {
-        const unit = inferControlUnit(c.key, c.label, c.unit)
+        const raw = inferControlUnit(c.key, c.label, c.unit)
+        const unit = this.layoutMode === "inspector" ? raw.replace(/\s*·\s*retrigger$/, "") : raw
         input.parentElement!.querySelector("output")!.value = formatLabValue(this.navigation.settings[c.key]!, c.step, unit)
       }
+      if (this.layoutMode === "inspector") {
+        const label = input.closest("label")
+        if (label) {
+          label.dataset.modified = String(this.navigation.isModified(c))
+          if (c.unit?.includes("retrigger") && !label.dataset.boundary) {
+            label.dataset.boundary = "spawn"
+            label.querySelector(".name")?.setAttribute("title", `${c.label} · spawn-time value: retrigger (Space) to see the change`)
+          }
+          if ("min" in c) {
+            const span = c.max - c.min
+            const p = span > 0 ? (Number(this.navigation.settings[c.key]) - c.min) / span : 0
+            input.parentElement!.style.setProperty("--p", String(Math.max(0, Math.min(1, p))))
+          }
+          const pin = label.querySelector<HTMLButtonElement>(".pin")
+          if (pin) pin.setAttribute("aria-pressed", String(Boolean(this.isPinned?.(c.key))))
+        }
+      }
+    }
+    if (this.layoutMode === "inspector") {
+      for (const [row, element] of this.elements) {
+        if (row.control) continue
+        const mods = element.querySelector<HTMLElement>("[data-mods]")
+        if (!mods) continue
+        let n = 0
+        for (const r of this.navigation.rows) if (r.group === row.group && r.control && (!r.control.visible || r.control.visible(this.navigation.settings)) && this.navigation.isModified(r.control)) n++
+        mods.textContent = n ? String(n) : ""
+      }
+      const empty = this.host.shadowRoot!.querySelector<HTMLElement>(".empty")
+      if (empty) empty.hidden = !this.navigation.filter || this.navigation.rows.some(r => r.control && this.navigation.isRowVisible(r))
     }
   }
   focusFirst() {
@@ -487,7 +687,7 @@ export class LabPanel {
     if (this.focusOnly && document.activeElement !== this.host && !this.held.has(event.code) && !(toggle && !typing)) return false
     if (!this.visible && !this.held.has(event.code) && !(toggle && !typing)) return false
     const key = event.key.toLowerCase()
-    if ((event.metaKey || event.ctrlKey) && !this.editor && this.searchBox.parentElement!.hidden && key !== "k") {
+    if ((event.metaKey || event.ctrlKey) && !this.editor && this.searchBox.parentElement!.hidden && (key !== "k" || this.layoutMode === "inspector")) {
       return false
     }
     event.stopImmediatePropagation()

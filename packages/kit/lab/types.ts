@@ -16,6 +16,30 @@ export type LabWorldObject = {
   radius?: number
   movable?: boolean
   deletable?: boolean
+  /** Catalog kind (for example "cone"); the Outliner folds repeated kinds into one row. */
+  kind?: string
+  /** Characters that are vehicles group under Vehicles in the Outliner. */
+  vehicle?: boolean
+}
+
+/** Library drawer categories. */
+export type LabLibraryCategory = "effects" | "objects" | "lighting" | "audio" | "materials" | "foliage" | "looks"
+
+export type LabLibraryItem = {
+  id: string
+  label: string
+  tag?: string
+  group?: string
+  select(): void
+  active?(): boolean
+}
+
+/** How a section appears in the Library drawer. Sections without this still get one entry, categorised by id. */
+export type LabSectionLibrary = {
+  category?: LabLibraryCategory
+  label?: string
+  tag?: string
+  items?(): readonly LabLibraryItem[]
 }
 
 /** All hooks execute on the client. Section-owned simulations never change multiplayer state. */
@@ -47,6 +71,10 @@ export type LabSection = {
   duplicateObject?(id:string):string|null
   duplicateObjects?(ids?:readonly string[]):string[]
   groundHeight?(x:number,z:number):number
+  /** Details panel: control groups relevant to the selection, in display order. Omit to show every group. */
+  detailsGroups?(selected:readonly LabWorldObject[]):readonly string[]|undefined
+  library?:LabSectionLibrary
+  registerCommands?(commands:import("../lab-commands").LabCommandRegistry):void
 }
 export type LabContext = {
   device:GPUDevice

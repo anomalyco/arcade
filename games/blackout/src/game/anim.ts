@@ -147,6 +147,8 @@ export type Avatar = {
   plantAt: number
   /** No gun, just hands (infected claws, the gun game knife); and the last melee swing, on the animation clock. */
   bare: boolean
+  /** Civilian unarmed locomotion (squared-up chest without infected claw hunch). */
+  unarmed?: boolean
   /** Slower, readable wind-up for the skeleton's rake. */
   shambler?: boolean
   swingAt: number
@@ -579,7 +581,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   a.heat *= Math.exp(-dt * (now - a.firedAt < 0.2 ? 0.8 : 4))
   a.flash *= Math.exp(-dt * 22)
   if (enhanced) {
-    angleSpring(a.motion.chest, aim + (a.bare || profile.handPose !== "weapon" ? 0 : BLADE[a.gun]) - a.motion.twist.x * 0.65, profile.chestHz, dt)
+    angleSpring(a.motion.chest, aim + (a.bare || a.unarmed || profile.handPose !== "weapon" ? 0 : BLADE[a.gun]) - a.motion.twist.x * 0.65, profile.chestHz, dt)
     angleSpring(a.motion.head, aim, profile.headHz, dt)
   }
 
@@ -693,7 +695,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   // Sprinting squares the chest up to the run and carries the gun with it.
   const run = angleDiff(a.legYaw, a.aim) * port * 0.7
   const sw = swingPhase(a, now)
-  const blade = a.bare || enhanced && profile.handPose !== "weapon" ? 0 : BLADE[g]
+  const blade = a.bare || a.unarmed || enhanced && profile.handPose !== "weapon" ? 0 : BLADE[g]
   const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x + run - blade * 0.4 * port : a.aim + run + blade * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
@@ -750,7 +752,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
       ], a.legYaw),
       -0.65 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)),
     )
-     const steadyYaw = (sw?.twist ?? 0) + a.aim + run + (a.bare || profile.handPose !== "weapon" ? 0 : BLADE[g]) * (1 - 0.4 * port) + a.hitTwist.x + a.recYaw.x * 0.4
+     const steadyYaw = (sw?.twist ?? 0) + a.aim + run + (a.bare || a.unarmed || profile.handPose !== "weapon" ? 0 : BLADE[g]) * (1 - 0.4 * port) + a.hitTwist.x + a.recYaw.x * 0.4
      const steadyTb = steadyYaw - a.aim
      let steadyTorso = yawFrame(at(steadyPelvis, 0, RIG.waist, 0), steadyYaw)
      steadyTorso = pitch(steadyTorso, -(fwd * Math.cos(steadyTb) + leanSide * Math.sin(steadyTb)))

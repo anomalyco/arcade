@@ -458,3 +458,39 @@ test("reversals, sharp turns, strafe transitions, hard stops and mux stepping ha
     }
   }
 })
+
+test("walk-to-run-to-sprint-to-walk speed ramp and strafe reversals keep phase, posture and feet continuous", () => {
+  const a = newAvatar("speed-ramp", 0, 0, 0, "rifle")
+  let x = 0, prevPhase = 0, prevPosture = 0, prevCrouch = 0
+  let prevFeet: [number, number, number][] | null = null
+  for (let n = 0; n < 480; n++) {
+    const u = n < 240 ? n / 240 : (480 - n) / 240
+    const vx = 0.8 + u * 5.5
+    x += vx * dt
+    animate(a, dt, n * dt, x, 0, vx, 0, 0)
+    if (n > 0) {
+      const dPhase = ((a.phase - prevPhase + 1.5) % 1) - 0.5
+      expect(dPhase).toBeGreaterThanOrEqual(-1e-6)
+      expect(dPhase).toBeLessThan(0.08)
+      expect(Math.abs(a.motion.posture.x - prevPosture)).toBeLessThan(0.025)
+      expect(Math.abs(a.motion.crouch.x - prevCrouch)).toBeLessThan(0.01)
+      for (let i = 0; i < 2; i++) {
+        const df = Math.hypot(a.feet[i]!.p[0] - prevFeet![i]![0], a.feet[i]!.p[1] - prevFeet![i]![1], a.feet[i]!.p[2] - prevFeet![i]![2])
+        expect(df).toBeLessThan(0.28)
+      }
+    }
+    prevPhase = a.phase; prevPosture = a.motion.posture.x; prevCrouch = a.motion.crouch.x
+    prevFeet = a.feet.map(f => [...f.p] as [number, number, number])
+  }
+
+  // Strafe left <-> right reversal keeps feet uncrossed in aim space and leads with the outside foot
+  const st = newAvatar("strafe-shuffle", 0, 0, 0, "rifle")
+  let y = 0
+  for (let n = 0; n < 240; n++) {
+    const vy = n < 80 ? 3.8 : n < 160 ? -3.8 : 3.8
+    y += vy * dt
+    animate(st, dt, n * dt, 0, y, 0, vy, 0)
+    expect(st.feet[1].p[2] - st.feet[0].p[2]).toBeGreaterThanOrEqual(0.195)
+    expect(Math.abs(angleDiff(st.legYaw, st.aim))).toBeLessThanOrEqual(0.55)
+  }
+})

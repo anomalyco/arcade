@@ -78,7 +78,9 @@ fn fbm3(p: vec2f) -> f32 {
     light=vec3f(2.2);
   }
   if(F.eye.w==3.0){light=vec3f(dot(light,vec3f(0.333)));}
-  var o:Out;o.position=F.vp*vec4f(world,1);o.uv=c;
+  var o:Out;
+  let clipWorld=select(world,world+toward*(s.pos.w*1.35*max(0.0,1.0-0.30*dot(c,c))),kind==7.0);
+  o.position=F.vp*vec4f(clipWorld,1);o.uv=c;
   o.color=vec4f(select(s.color.rgb*light,light,kind==7.0),s.color.a);
   o.world=world;o.kind=kind;o.misc=s.misc;
   if(F.eye.w==5.0){o.color=vec4f(normal*0.5+0.5,s.color.a);}
@@ -90,35 +92,36 @@ fn fbm3(p: vec2f) -> f32 {
     let seed=o.misc.x;let age=clamp(o.misc.y,0.0,1.0);
     let tempScale=max(0.1,o.misc.z);let turb=max(0.25,o.misc.w);
     let r=length(o.uv);
-    let q=o.uv*(1.75+turb*0.65)+vec2f(cos(seed*1.3)*3.7,sin(seed*1.7)*3.7-age*1.65);
+    let q=o.uv*(1.85+turb*0.72)+vec2f(cos(seed*1.3)*3.7,sin(seed*1.7)*3.7-age*1.85);
     let warp=vec2f(vnoise(q*1.25+vec2f(0.0,-age*2.1)),vnoise(q*1.25+vec2f(7.4,age*1.8)))-0.5;
     let n1=vnoise(q+warp*(0.95*turb));
     let n2=vnoise(q*2.25-warp*1.15+vec2f(age*1.6,-age*2.5));
     let n3=vnoise(q*4.6+vec2f(-seed*2.1,age*3.6));
     let billow=n1*0.52+n2*0.32+n3*0.16;
-    let lobeRadius=0.73+(billow-0.48)*(0.36+turb*0.18);
-    let edgeSoft=mix(0.11,0.24,age);
+    let lobeRadius=0.72+(billow-0.48)*(0.38+turb*0.18);
+    let edgeSoft=mix(0.10,0.22,age);
     let shapeMask=(1.0-smoothstep(lobeRadius-edgeSoft,lobeRadius+edgeSoft,r))*(1.0-smoothstep(0.84,1.0,r));
     let groundSoft=smoothstep(0.01,0.22,o.world.y);
-    alpha*=shapeMask*groundSoft;
+    let smokeHandoff=1.0-smoothstep(0.72,1.0,age+(1.0-billow)*0.14);
+    alpha*=shapeMask*groundSoft*smokeHandoff;
     if(alpha<0.003){discard;}
     let ridge=clamp(n1*0.64+n2*0.36,0.0,1.0);
-    let crevice=1.0-ridge;
-    let radialCore=1.0-smoothstep(0.0,0.84,r);
-    // Outer convex billow domes cool into dark carbon soot first while crevices and core roar orange-yellow.
-    let heatDistribution=mix(radialCore*0.72+crevice*0.56,radialCore*0.24+crevice*1.02,smoothstep(0.05,0.44,age));
-    let coolEnvelope=pow(max(0.0,1.0-age),1.28);
-    let flashSpike=pow(max(0.0,1.0-age*4.2),2.0)*radialCore*0.95;
-    let T=clamp((heatDistribution*coolEnvelope*1.45+flashSpike)*tempScale,0.0,2.0);
-    let puffUp=clamp(0.42+0.42*o.uv.y+0.34*(ridge-0.5),0.12,1.0);
-    // Exterior soot crust is self-occluded from the internal blast flash; clamp scene light so soot stays deep charcoal.
-    let extLight=clamp(o.color.rgb,vec3f(0.18),vec3f(0.95,0.88,0.82));
-    let sootTint=mix(vec3f(0.032,0.028,0.026),vec3f(0.18,0.17,0.165),clamp(age*0.85,0.0,1.0));
-    let sootRgb=sootTint*extLight*(0.45+0.85*puffUp);
-    var blackbody=mix(vec3f(0.92,0.042,0.003),vec3f(2.65,0.48,0.028),smoothstep(0.14,0.42,T));
-    blackbody=mix(blackbody,vec3f(4.6,2.25,0.36),smoothstep(0.42,0.80,T));
-    blackbody=mix(blackbody,vec3f(7.2,6.2,4.4),smoothstep(0.80,1.35,T));
-    let incand=smoothstep(0.14,0.34,T);
+    let crevice=pow(1.0-ridge,1.28);
+    let radialCore=1.0-smoothstep(0.0,0.80,r);
+    // Outer convex billow domes cool into dark carbon soot first while crevices and core roar yellow-orange.
+    let heatDistribution=mix(radialCore*0.74+crevice*0.56,radialCore*0.16+crevice*1.08,smoothstep(0.04,0.34,age));
+    let coolEnvelope=pow(max(0.0,1.0-age),1.38);
+    let flashSpike=pow(max(0.0,1.0-age*4.4),2.0)*radialCore*1.05;
+    let T=clamp((heatDistribution*coolEnvelope*1.42+flashSpike)*tempScale,0.0,2.0);
+    let puffUp=clamp(0.38+0.44*o.uv.y+0.38*(ridge-0.5),0.12,1.0);
+    // Exterior soot crust has dark charcoal crevices and warm-grey top-lit billow domes matching the nascent smoke column.
+    let extLight=clamp(o.color.rgb,vec3f(0.20,0.21,0.23),vec3f(0.96,0.90,0.84));
+    let sootTint=mix(vec3f(0.036,0.033,0.031),vec3f(0.22,0.22,0.23),clamp(age*0.82+puffUp*0.26,0.0,1.0));
+    let sootRgb=sootTint*extLight*(0.42+0.88*puffUp);
+    var blackbody=mix(vec3f(0.95,0.048,0.004),vec3f(2.75,0.52,0.032),smoothstep(0.16,0.44,T));
+    blackbody=mix(blackbody,vec3f(4.8,2.35,0.38),smoothstep(0.44,0.80,T));
+    blackbody=mix(blackbody,vec3f(7.4,6.4,4.6),smoothstep(0.80,1.35,T));
+    let incand=smoothstep(0.16,0.36,T);
     let rgb=mix(sootRgb,blackbody,incand);
     if(F.eye.w==2.0){return vec4f(0.12,0.025,0.008,0.06);}
     if(F.eye.w==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}

@@ -1,4 +1,5 @@
 import { Rng } from "../sim/rng"
+import { DEFAULT_TEXTURE_MANIFEST, TEXTURE_LAYER, type TextureAssetId } from "../textures/manifest"
 
 export type MaterialRecipeId =
   | "wood_planks"
@@ -24,6 +25,16 @@ export type MaterialParamKey =
 
 export type MaterialRecipeParams = Record<MaterialParamKey, number>
 
+export type MaterialTextureParamKey =
+  | "textureLayer"
+  | "texScale"
+  | "texRotation"
+  | "texContrast"
+  | "texRoughness"
+  | "texBlend"
+
+export type MaterialTextureParams = Record<MaterialTextureParamKey, number>
+
 export type MaterialParamSpec = {
   key: MaterialParamKey
   label: string
@@ -33,6 +44,16 @@ export type MaterialParamSpec = {
   step: number
   unit: "" | "m" | "×"
   /** Live shader uniform update; does not rebuild scene meshes or reset transport. */
+  boundary: "uniform"
+}
+
+export type MaterialTextureParamSpec = {
+  key: Exclude<MaterialTextureParamKey, "textureLayer">
+  label: string
+  min: number
+  max: number
+  step: number
+  unit: "" | "°" | "×"
   boundary: "uniform"
 }
 
@@ -51,13 +72,31 @@ export const MATERIAL_PARAM_SPECS: readonly MaterialParamSpec[] = [
   { key: "macroVariation", label: "Macro breakup", group: "Weathering", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
 ] as const
 
+export const MATERIAL_TEXTURE_PARAM_SPECS: readonly MaterialTextureParamSpec[] = [
+  { key: "texScale", label: "Texture scale", min: 0.25, max: 3.0, step: 0.05, unit: "×", boundary: "uniform" },
+  { key: "texRotation", label: "Texture rotation", min: -180, max: 180, step: 5, unit: "°", boundary: "uniform" },
+  { key: "texContrast", label: "Texture contrast", min: 0.0, max: 2.0, step: 0.05, unit: "×", boundary: "uniform" },
+  { key: "texRoughness", label: "Roughness trim", min: -0.35, max: 0.35, step: 0.01, unit: "", boundary: "uniform" },
+  { key: "texBlend", label: "Texture blend", min: 0.0, max: 1.0, step: 0.05, unit: "", boundary: "uniform" },
+] as const
+
+export const TEXTURE_SELECT_OPTIONS: readonly { value: number; label: string }[] = [
+  { value: -1, label: "Procedural only (None)" },
+  ...DEFAULT_TEXTURE_MANIFEST.filter(m => m.wrapMode !== "derived_normal").map(m => ({
+    value: m.layer,
+    label: `${m.layer}: ${m.label}`,
+  })),
+]
+
 export type MaterialRecipeDef = {
   id: MaterialRecipeId
   index: number
   label: string
   category: string
   summary: string
+  defaultTextureId: TextureAssetId
   defaults: Readonly<MaterialRecipeParams>
+  textureDefaults: Readonly<MaterialTextureParams>
 }
 
 export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeDef>> = {
@@ -67,6 +106,7 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
     label: "Wood planks",
     category: "Flooring & Timber",
     summary: "Matte heartwood grain, staggered board lengths, butt-joint AO, and warm/cool per-board variation.",
+    defaultTextureId: "wood_floorboards",
     defaults: {
       baseR: 0.55,
       baseG: 0.43,
@@ -81,6 +121,14 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
       wear: 0.42,
       macroVariation: 0.48,
     },
+    textureDefaults: {
+      textureLayer: TEXTURE_LAYER.wood_floorboards,
+      texScale: 1.0,
+      texRotation: 0,
+      texContrast: 1.0,
+      texRoughness: 0.0,
+      texBlend: 0.82,
+    },
   },
   cobblestone: {
     id: "cobblestone",
@@ -88,6 +136,7 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
     label: "Cobblestone & pavers",
     category: "Paths & Masonry",
     summary: "Voronoi irregular stone distribution, worn rounded edges, recessed dirt joints, and mineral variation.",
+    defaultTextureId: "cobblestone_pavers",
     defaults: {
       baseR: 0.47,
       baseG: 0.45,
@@ -102,13 +151,22 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
       wear: 0.58,
       macroVariation: 0.52,
     },
+    textureDefaults: {
+      textureLayer: TEXTURE_LAYER.cobblestone_pavers,
+      texScale: 1.0,
+      texRotation: 0,
+      texContrast: 1.0,
+      texRoughness: 0.0,
+      texBlend: 0.78,
+    },
   },
   plaster_wall: {
     id: "plaster_wall",
     index: 2,
     label: "Plaster & painted wall",
     category: "Architecture",
-    summary: "Trowel stipple, side-by-side paint/plaster mixture patches, baseboard contact, and causal ledge runoff.",
+    summary: "Trowel stipple, wallpaper/plaster mixture patches, baseboard contact, and causal ledge runoff.",
+    defaultTextureId: "wallpaper_plaster",
     defaults: {
       baseR: 0.44,
       baseG: 0.40,
@@ -123,6 +181,14 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
       wear: 0.48,
       macroVariation: 0.5,
     },
+    textureDefaults: {
+      textureLayer: TEXTURE_LAYER.wallpaper_plaster,
+      texScale: 1.0,
+      texRotation: 0,
+      texContrast: 1.0,
+      texRoughness: 0.0,
+      texBlend: 0.80,
+    },
   },
   asphalt_concrete: {
     id: "asphalt_concrete",
@@ -130,6 +196,7 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
     label: "Asphalt & concrete",
     category: "Roads & Sidewalks",
     summary: "Multi-scale crushed aggregate, tar repair seams, wheel-track wear, and worn concrete expansion joints.",
+    defaultTextureId: "street_asphalt",
     defaults: {
       baseR: 0.24,
       baseG: 0.26,
@@ -144,6 +211,14 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
       wear: 0.52,
       macroVariation: 0.58,
     },
+    textureDefaults: {
+      textureLayer: TEXTURE_LAYER.street_asphalt,
+      texScale: 1.0,
+      texRotation: 0,
+      texContrast: 1.0,
+      texRoughness: 0.0,
+      texBlend: 0.80,
+    },
   },
   grass_soil: {
     id: "grass_soil",
@@ -151,6 +226,7 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
     label: "Grass & soil",
     category: "Terrain & Grounds",
     summary: "Voronoi clump-correlated turf, directional blade tufts, dry-to-lush hue shifts, and dark loam exposure.",
+    defaultTextureId: "lawn_grass",
     defaults: {
       baseR: 0.34,
       baseG: 0.39,
@@ -165,6 +241,14 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
       wear: 0.46,
       macroVariation: 0.64,
     },
+    textureDefaults: {
+      textureLayer: TEXTURE_LAYER.lawn_grass,
+      texScale: 1.0,
+      texRotation: 0,
+      texContrast: 1.0,
+      texRoughness: 0.0,
+      texBlend: 0.82,
+    },
   },
   foliage_canopy: {
     id: "foliage_canopy",
@@ -172,6 +256,7 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
     label: "Foliage & ground cover",
     category: "Vegetation",
     summary: "Cluster-correlated leaf masses, crown gaps, top/bottom canopy shading, and low ground-cover rosettes.",
+    defaultTextureId: "leaf_atlas",
     defaults: {
       baseR: 0.29,
       baseG: 0.36,
@@ -186,6 +271,14 @@ export const MATERIAL_RECIPES: Readonly<Record<MaterialRecipeId, MaterialRecipeD
       wear: 0.44,
       macroVariation: 0.56,
     },
+    textureDefaults: {
+      textureLayer: TEXTURE_LAYER.leaf_atlas,
+      texScale: 1.0,
+      texRotation: 0,
+      texContrast: 1.0,
+      texRoughness: 0.0,
+      texBlend: 0.80,
+    },
   },
 }
 
@@ -199,7 +292,11 @@ export function cloneMaterialParams(recipeId: MaterialRecipeId): MaterialRecipeP
   return { ...MATERIAL_RECIPES[recipeId].defaults }
 }
 
-function snapToStep(value: number, spec: MaterialParamSpec): number {
+export function cloneMaterialTextureParams(recipeId: MaterialRecipeId): MaterialTextureParams {
+  return { ...MATERIAL_RECIPES[recipeId].textureDefaults }
+}
+
+function snapToStep(value: number, spec: { min: number; max: number; step: number }): number {
   const clamped = Math.max(spec.min, Math.min(spec.max, value))
   const steps = Math.round((clamped - spec.min) / spec.step)
   return Number(Math.min(spec.max, Math.max(spec.min, spec.min + steps * spec.step)).toPrecision(12))
@@ -220,6 +317,40 @@ export function validateMaterialParams(
     }
     if (v < spec.min - 1e-6 || v > spec.max + 1e-6) {
       return { ok: false, error: `Parameter "${spec.key}" (${v}) is outside [${spec.min}, ${spec.max}].` }
+    }
+    out[spec.key] = snapToStep(v, spec)
+  }
+  return { ok: true, value: out }
+}
+
+export function validateMaterialTextureParams(
+  recipeId: MaterialRecipeId,
+  input: unknown,
+): { ok: true; value: MaterialTextureParams } | { ok: false; error: string } {
+  const defaults = MATERIAL_RECIPES[recipeId].textureDefaults
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "Material texture parameters must be an object." }
+  }
+  const raw = input as Record<string, unknown>
+  const layer = raw.textureLayer ?? defaults.textureLayer
+  if (typeof layer !== "number" || !Number.isInteger(layer) || layer < -1 || layer > 15) {
+    return { ok: false, error: `Invalid textureLayer: ${String(layer)} (expected integer -1..15).` }
+  }
+  const out: MaterialTextureParams = {
+    textureLayer: layer,
+    texScale: defaults.texScale,
+    texRotation: defaults.texRotation,
+    texContrast: defaults.texContrast,
+    texRoughness: defaults.texRoughness,
+    texBlend: defaults.texBlend,
+  }
+  for (const spec of MATERIAL_TEXTURE_PARAM_SPECS) {
+    const v = raw[spec.key] ?? defaults[spec.key]
+    if (typeof v !== "number" || !Number.isFinite(v)) {
+      return { ok: false, error: `Invalid or non-finite texture parameter "${spec.key}".` }
+    }
+    if (v < spec.min - 1e-6 || v > spec.max + 1e-6) {
+      return { ok: false, error: `Texture parameter "${spec.key}" (${v}) is outside [${spec.min}, ${spec.max}].` }
     }
     out[spec.key] = snapToStep(v, spec)
   }
@@ -254,8 +385,21 @@ export function randomizeMaterialParams(recipeId: MaterialRecipeId, tuningSeed: 
   return out
 }
 
+export function randomizeMaterialTextureParams(recipeId: MaterialRecipeId, tuningSeed: number): MaterialTextureParams {
+  const rng = new Rng((Math.trunc(tuningSeed) || 1) ^ (MATERIAL_RECIPES[recipeId].index * 0x85ebca6b))
+  const base = MATERIAL_RECIPES[recipeId].textureDefaults
+  return {
+    textureLayer: base.textureLayer,
+    texScale: snapToStep(0.65 + rng.next() * 0.9, MATERIAL_TEXTURE_PARAM_SPECS[0]!),
+    texRotation: snapToStep((rng.next() - 0.5) * 40, MATERIAL_TEXTURE_PARAM_SPECS[1]!),
+    texContrast: snapToStep(0.65 + rng.next() * 0.75, MATERIAL_TEXTURE_PARAM_SPECS[2]!),
+    texRoughness: snapToStep((rng.next() - 0.5) * 0.22, MATERIAL_TEXTURE_PARAM_SPECS[3]!),
+    texBlend: snapToStep(0.55 + rng.next() * 0.45, MATERIAL_TEXTURE_PARAM_SPECS[4]!),
+  }
+}
+
 export type MaterialSwatchMode = "room" | "ball" | "plane"
-export type MaterialCompareMode = 0 | 1 | 2
+export type MaterialCompareMode = 0 | 1 | 2 | 3 | 4
 
 export type MaterialPresetV1 = {
   version: 1
@@ -265,12 +409,13 @@ export type MaterialPresetV1 = {
   tuningSeed: number
   roomSeed: number
   params: MaterialRecipeParams
+  textureParams?: MaterialTextureParams
 }
 
 export function exportMaterialPreset(preset: Omit<MaterialPresetV1, "version">): MaterialPresetV1 {
   const checked = validateMaterialParams(preset.params)
   if (!checked.ok) throw new Error(checked.error)
-  return {
+  const out: MaterialPresetV1 = {
     version: 1,
     recipe: preset.recipe,
     swatch: preset.swatch,
@@ -279,6 +424,12 @@ export function exportMaterialPreset(preset: Omit<MaterialPresetV1, "version">):
     roomSeed: Math.max(1, Math.min(999, Math.trunc(preset.roomSeed) || 7)),
     params: checked.value,
   }
+  if (preset.textureParams) {
+    const texChecked = validateMaterialTextureParams(preset.recipe, preset.textureParams)
+    if (!texChecked.ok) throw new Error(texChecked.error)
+    out.textureParams = texChecked.value
+  }
+  return out
 }
 
 export function importMaterialPreset(
@@ -303,7 +454,7 @@ export function importMaterialPreset(
   if (obj.swatch !== "room" && obj.swatch !== "ball" && obj.swatch !== "plane") {
     return { ok: false, error: `Invalid swatch mode: "${String(obj.swatch)}".` }
   }
-  if (obj.compare !== 0 && obj.compare !== 1 && obj.compare !== 2) {
+  if (obj.compare !== 0 && obj.compare !== 1 && obj.compare !== 2 && obj.compare !== 3 && obj.compare !== 4) {
     return { ok: false, error: `Invalid compare mode: "${String(obj.compare)}".` }
   }
   if (typeof obj.tuningSeed !== "number" || !Number.isFinite(obj.tuningSeed) || obj.tuningSeed < 1 || obj.tuningSeed > 9999) {
@@ -314,6 +465,12 @@ export function importMaterialPreset(
   }
   const paramsRes = validateMaterialParams(obj.params)
   if (!paramsRes.ok) return paramsRes
+  let textureParams: MaterialTextureParams | undefined
+  if (obj.textureParams !== undefined) {
+    const texRes = validateMaterialTextureParams(obj.recipe, obj.textureParams)
+    if (!texRes.ok) return texRes
+    textureParams = texRes.value
+  }
   return {
     ok: true,
     value: {
@@ -324,6 +481,7 @@ export function importMaterialPreset(
       tuningSeed: Math.trunc(obj.tuningSeed),
       roomSeed: Math.trunc(obj.roomSeed),
       params: paramsRes.value,
+      ...(textureParams ? { textureParams } : {}),
     },
   }
 }
@@ -342,6 +500,53 @@ export function packMaterialParams(params: MaterialRecipeParams, out = new Float
   out[offset + 9] = params.jointWidth
   out[offset + 10] = params.wear
   out[offset + 11] = params.macroVariation
+  return out
+}
+
+export const SURFACE_TEX_UNIFORM_FLOATS = 44
+
+export type SurfaceTexUniformInput = {
+  /** 1 = textured + procedural, 0 = procedural fallback, 2 = A/B split (procedural < splitX, textured >= splitX) */
+  enabled?: number
+  globalScale?: number
+  globalContrast?: number
+  globalRoughness?: number
+  rugStyle?: number
+  wallStyle?: number
+  floorStyle?: number
+  splitX?: number
+  recipes?: Partial<Record<MaterialRecipeId, Partial<MaterialTextureParams>>>
+}
+
+/**
+ * Packs the 44-float `SurfaceTexUniforms` buffer consumed by `@group(0) @binding(12)` in `surfaceMaterialCoreWgsl`.
+ */
+export function packSurfaceTexUniforms(
+  input: SurfaceTexUniformInput = {},
+  out = new Float32Array(SURFACE_TEX_UNIFORM_FLOATS),
+): Float32Array {
+  out[0] = input.enabled ?? 1
+  out[1] = input.globalScale ?? 1
+  out[2] = input.globalContrast ?? 1
+  out[3] = input.globalRoughness ?? 0
+  out[4] = input.rugStyle ?? 0
+  out[5] = input.wallStyle ?? 0
+  out[6] = input.floorStyle ?? 0
+  out[7] = input.splitX ?? 27.7
+
+  for (const id of MATERIAL_RECIPE_IDS) {
+    const def = MATERIAL_RECIPES[id]
+    const idx = def.index
+    const t = { ...def.textureDefaults, ...input.recipes?.[id] }
+    const baseOff = 8 + idx * 4
+    out[baseOff + 0] = t.textureLayer
+    out[baseOff + 1] = t.texScale
+    out[baseOff + 2] = (t.texRotation * Math.PI) / 180
+    out[baseOff + 3] = t.texContrast
+    const extraOff = 32 + idx * 2
+    out[extraOff + 0] = t.texRoughness
+    out[extraOff + 1] = t.texBlend
+  }
   return out
 }
 
@@ -529,12 +734,16 @@ function defaultRecipeStructWgsl(id: MaterialRecipeId): string {
 }
 
 /**
- * Shared WGSL procedural material functions used by both the production scene shader (Outbreak)
+ * Shared WGSL procedural + projected-texture material functions used by both the production scene shader (Outbreak)
  * and the interactive Lab Materials workbench.
- * Filter widths (`surfaceFootprint`) must be initialized in uniform control flow before calling these functions.
+ * Filter widths (`surfaceFootprint`, `surfaceGradX`, `surfaceGradY`) must be initialized in uniform control flow
+ * before calling these functions.
  */
 export const surfaceMaterialCoreWgsl = /* wgsl */ `
 var<private> surfaceFootprint: f32;
+var<private> surfaceTime: f32;
+var<private> surfaceNormalShift: vec3f;
+var<private> surfaceAlpha: f32;
 
 struct MaterialRecipe {
   u0: vec4f, // baseR, baseG, baseB, roughness
@@ -542,11 +751,50 @@ struct MaterialRecipe {
   u2: vec4f, // colorVariation, jointWidth, wear, macroVariation
 }
 
+@group(0) @binding(10) var materialTexArray: texture_2d_array<f32>;
+@group(0) @binding(11) var materialSampler: sampler;
+
 struct SurfaceSample {
   albedo: vec3f,
   gloss: vec2f,
   roughness: f32,
   cavity: f32,
+}
+
+fn textureLayerRefLinear(layer: i32) -> vec3f {
+  switch layer {
+    case 0: { return vec3f(0.4035, 0.1731, 0.0646); }
+    case 1: { return vec3f(0.6427, 0.5308, 0.3801); }
+    case 2: { return vec3f(0.7567, 0.6302, 0.4162); }
+    case 3: { return vec3f(0.6159, 0.5723, 0.5086); }
+    case 4: { return vec3f(0.1056, 0.1172, 0.1297); }
+    case 5: { return vec3f(0.3143, 0.1732, 0.1377); }
+    case 6: { return vec3f(0.4007, 0.3581, 0.3189); }
+    case 7: { return vec3f(0.0931, 0.0927, 0.0950); }
+    case 8: { return vec3f(0.1918, 0.1757, 0.0541); }
+    case 9: { return vec3f(0.5001, 0.5000, 0.9996); }
+    case 10: { return vec3f(0.2501, 0.2102, 0.1684); }
+    case 11: { return vec3f(0.2654, 0.1868, 0.0342); }
+    case 12: { return vec3f(0.3882, 0.2897, 0.1774); }
+    case 13: { return vec3f(0.3522, 0.1986, 0.1107); }
+    case 14: { return vec3f(0.2887, 0.2220, 0.1674); }
+    default: { return vec3f(0.2950, 0.2326, 0.1649); }
+  }
+}
+
+fn materialMipLod(effScale: f32) -> f32 {
+  return clamp(log2(max(surfaceFootprint * effScale * 256.0, 1.0)) - 0.35, 0.0, 8.0);
+}
+
+fn sampleMaterialFast(layer: i32, uv0: vec2f, scale: f32) -> vec4f {
+  return textureSampleLevel(materialTexArray, materialSampler, uv0 * scale, layer, materialMipLod(scale));
+}
+
+fn modulateFast(procCol: vec3f, tex: vec4f, refLin: vec3f, blend: f32) -> vec3f {
+  let ratio = clamp(tex.rgb / refLin, vec3f(0.35), vec3f(2.15));
+  let lumRatio = dot(ratio, vec3f(0.299, 0.587, 0.114));
+  let balanced = mix(vec3f(lumRatio), ratio, 0.58);
+  return procCol * clamp(vec3f(1.0) + (balanced - vec3f(1.0)) * blend, vec3f(0.38), vec3f(1.85));
 }
 
 // Four distinct lattice corners. Kept separate from the legacy material noise to preserve its look.
@@ -559,6 +807,24 @@ fn surfaceNoise(p: vec2f) -> f32 {
     mix(hash2(i + vec2f(0.0, 1.0)), hash2(i + vec2f(1.0, 1.0)), u.x),
     u.y
   );
+}
+
+// Analytical value-noise height (x) and gradient (yz) with C1 smoothstep derivatives (zero dpdx quad blockiness).
+fn surfaceNoiseGrad(p: vec2f) -> vec3f {
+  let i = floor(p);
+  let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  let du = 6.0 * f * (1.0 - f);
+  let a = hash2(i);
+  let b = hash2(i + vec2f(1.0, 0.0));
+  let c = hash2(i + vec2f(0.0, 1.0));
+  let d = hash2(i + vec2f(1.0, 1.0));
+  let k0 = b - a;
+  let k1 = c - a;
+  let k2 = a - b - c + d;
+  let val = a + k0 * u.x + k1 * u.y + k2 * u.x * u.y;
+  let grad = du * vec2f(k0 + k2 * u.y, k1 + k2 * u.x);
+  return vec3f(val, grad.x, grad.y);
 }
 
 fn surfaceFbm(p: vec2f) -> f32 {
@@ -602,7 +868,7 @@ fn defaultMaterialRecipe(id: i32) -> MaterialRecipe {
   }
 }
 
-/** Recipe 0: Matte wood planks with staggered lengths, butt-joint AO, cathedral heartwood figure, and warm/cool board tint. */
+/** Recipe 0: Matte wood planks with staggered lengths, butt-joint AO, cathedral heartwood figure, and projected oak floorboards texture. */
 fn evalWoodPlanks(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
   let boardWidth = 0.165 / scale;
@@ -639,9 +905,9 @@ fn evalWoodPlanks(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample
   let curve = abs(v - 0.5 + 0.18 * hHue) * 2.2 + 0.12 * (u - 0.5) * (u - 0.5) + 0.14 * longStreak;
   let cathedral = (0.5 + 0.5 * sin(curve * 11.0 * gScale)) - 0.5;
   let fiber = grain(vec2f(p.x * 1.3 + hVal * 9.0, p.y * 25.0) * gScale, 1.0);
-  col *= 1.0 + longStreak * 0.22 + cathedral * 0.10 * fadeMed + fiber * 0.18;
+  col *= 1.0 + longStreak * 0.16 + cathedral * 0.08 * fadeMed + fiber * 0.14;
 
-  // Anti-aliased long edge seams AND staggered butt-joint seams.
+  // Anti-aliased long edge seams AND staggered butt-joint seams stay crisp over the texture.
   let seamLong = seam(p.y / boardWidth, max(0.004, jWidth * 0.42), 1.0 / boardWidth);
   let seamButt = seam(uCoord, max(0.003, jWidth * 0.18), 1.0 / effLen);
   let joints = seamLong * seamButt;
@@ -658,7 +924,7 @@ fn evalWoodPlanks(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample
   return SurfaceSample(col, roughnessToGloss(localRough, 0.035), localRough, joints);
 }
 
-/** Recipe 1: Irregular Voronoi cobblestone / stone pavers (fast 2x2 quadrant Voronoi) with varied stone sizes, worn edges, and recessed dirt joints. */
+/** Recipe 1: Irregular Voronoi cobblestone / stone pavers with projected stone texture, worn edges, and recessed dirt joints. */
 fn evalCobblestone(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
   let stoneSize = max(0.15, r.u1.y);
@@ -670,7 +936,6 @@ fn evalCobblestone(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSampl
   let wear = r.u2.z;
   let macroVar = r.u2.w;
 
-  // Domain warp before cell partitioning so stone rows curve organically and vary in width.
   let nWarp = surfaceNoise(p * 0.85 + vec2f(1.7, 4.1)) - 0.5;
   let q = p * cellScale + vec2f(nWarp, -nWarp * 0.8) * 0.38 * irreg;
   let baseCell = floor(q - 0.5);
@@ -717,7 +982,7 @@ fn evalCobblestone(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSampl
   let bevel = smoothstep(jWidth, jWidth + 0.16 + wear * 0.14, wornEdge);
   let rimWear = (1.0 - bevel) * stoneMask * wear * 0.18;
   let slopeShade = 1.0 + dot(delta1, vec2f(-0.32, -0.32)) * 0.14;
-  let mineralGrit = grain(p, 11.5 * gScale) * 0.24;
+  let mineralGrit = grain(p, 11.5 * gScale) * 0.20;
   stoneCol = stoneCol * slopeShade * (0.86 + 0.14 * bevel + mineralGrit) + vec3f(0.06, 0.055, 0.045) * rimWear;
 
   let macroNoise = surfaceNoise(p * 0.45 + vec2f(6.2, 1.9));
@@ -730,7 +995,7 @@ fn evalCobblestone(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSampl
   return SurfaceSample(col, roughnessToGloss(localRough, 0.05), localRough, mix(0.45, 1.0, bevel * stoneMask));
 }
 
-/** Recipe 2: Plaster & painted wall with side-by-side paint/plaster mixture patches, trowel stipple, and causal runoff/base wear. */
+/** Recipe 2: Plaster & wallpapered wall with triplanar damask/linen texture, plaster patches, and causal runoff/base wear. */
 fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
   let gScale = max(0.25, r.u1.w);
@@ -744,7 +1009,7 @@ fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialReci
   let underTone = baseTint * vec3f(0.92, 0.87, 0.78);
   var col = mix(baseTint, underTone, exposedPlaster * (0.5 + 0.5 * colVar));
 
-  let stipple = grain(uv, 9.0 * gScale) * 0.18;
+  let stipple = grain(uv, 9.0 * gScale) * 0.15;
   col *= 1.0 + stipple * (1.0 + 0.35 * exposedPlaster);
 
   let streak = surfaceNoise(vec2f(uv.x * 2.4 * scale, uv.y * 0.45)) * smoothstep(1.5, 2.75, world.y) * wear * 0.14;
@@ -756,7 +1021,7 @@ fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialReci
   return SurfaceSample(col, roughnessToGloss(localRough, 0.03), localRough, 1.0 - baseWear);
 }
 
-/** Recipe 3: Asphalt road & concrete sidewalk slabs with multi-scale crushed aggregate, tar seams, and worn joints. */
+/** Recipe 3: Asphalt road & concrete sidewalk slabs with projected aggregate/concrete textures, tar seams, and worn joints. */
 fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
   let slabSize = max(0.4, r.u1.y) / scale;
@@ -772,14 +1037,6 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
   var cavity = 1.0;
 
   if (isConcrete) {
-    // Grass verge strip between the concrete sidewalk (z=38..39.32) and street curb (z=39.78..40.0) on house frontages.
-    let inNorthVerge = p.y > 39.32 && p.y < 39.78 && (p.x < 37.8 || p.x > 50.2);
-    let inSouthVerge = p.y > 48.22 && p.y < 48.68 && (p.x < 37.8 || p.x > 50.2);
-    let inDrivewayApron = (p.x > 18.8 && p.x < 21.8) || (p.x > 49.8 && p.x < 52.8);
-    let inFrontWalk = (p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0);
-    if ((inNorthVerge || inSouthVerge) && !inDrivewayApron && !inFrontWalk) {
-      return evalGrassSoil(p, vec3f(0.24, 0.30, 0.17), false, defaultMaterialRecipe(4));
-    }
     let isCurb = (p.y >= 39.78 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.22) || (p.x >= 39.78 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.22);
     let warp = (surfaceNoise(p * 1.4 + 2.3) - 0.5) * 0.035 * irreg;
     let q = p / slabSize + warp;
@@ -798,23 +1055,21 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     }
     let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
     let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.18;
-    let grit = grain(p, 10.5 * gScale) * 0.22;
+    let grit = grain(p, 10.5 * gScale) * 0.16;
     let macroTone = (warp / max(0.001, 0.035 * irreg)) * 0.18 * macroVar;
     col *= 0.95 + grit + macroTone - edgeDirt;
     col = mix(col * vec3f(0.38, 0.37, 0.32), col, joint);
     cavity = joint;
   } else {
-    let coarseAgg = grain(p, 7.2 * gScale) * 0.34;
+    let coarseAgg = grain(p, 7.2 * gScale) * 0.24;
     let patchField = surfaceNoise(p * 0.42 * scale + vec2f(3.1, 6.7));
     let tarPatch = smoothstep(0.58 - wear * 0.15, 0.68 - wear * 0.10, patchField) * wear;
     let crackField = abs(surfaceNoise(p * 0.78 * scale + vec2f(patchField * 0.45)) - 0.5);
     let crackAa = max(surfaceFootprint * 0.78 * scale, 0.006);
     let crack = (1.0 - smoothstep(0.006, 0.016 + crackAa, crackField)) * step(0.45, patchField) * wear;
     let macroTone = (surfaceNoise(p * 0.20 + vec2f(8.3, 1.4)) - 0.5) * 0.24 * macroVar;
-    // Darkened wet gutter pan along the street curbs (z=40.0..40.35 and z=47.65..48.0).
     let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
     let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.38, gutterDist)) * 0.36;
-    // Scattered fallen autumn leaves near the gutter and sidewalk edge.
     let leafCell = floor(p * 9.5);
     let leafHash = hash2(leafCell + vec2f(4.7, 9.1));
     let leafMask = step(0.955, leafHash) * (1.0 - smoothstep(0.0, 1.35, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.5));
@@ -823,14 +1078,24 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     col = mix(col, col * vec3f(0.76, 0.78, 0.82), tarPatch * 0.55);
     col = mix(col, col * 0.50, crack * 0.68);
     col = mix(col, vec3f(0.42, 0.28, 0.14), leafMask * 0.75);
-    localRough = clamp(r.u0.w - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
+    localRough = clamp(localRough - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
     cavity = (1.0 - crack * 0.4) * gutterShade;
   }
 
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
 }
 
-/** Recipe 4: Clump-correlated lawn turf & dark garden soil/mulch. */
+fn evalMulchBed(p: vec2f, baseTint: vec3f, scale: f32, gScale: f32) -> SurfaceSample {
+  let barkG = surfaceNoiseGrad(vec2f(p.x * 4.2, p.y * 6.5) * gScale);
+  let damp = smoothstep(0.32, 0.72, surfaceNoise(p * 0.85 * scale));
+  var col = mix(baseTint * vec3f(0.92, 0.84, 0.72), baseTint * vec3f(0.48, 0.42, 0.34), damp * 0.65);
+  col *= 0.82 + (barkG.x - 0.5) * 0.38;
+  let atten = 1.0 - smoothstep(0.08, 0.45, surfaceFootprint);
+  surfaceNormalShift = vec3f(barkG.y * 0.16, 0.0, barkG.z * 0.16) * atten;
+  return SurfaceSample(col, vec2f(0.0), 0.95, 0.88);
+}
+
+/** Recipe 4: Clump-correlated lawn turf with impostor blade-tuft relief, mowed/overgrown zones & wind waves. */
 fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
   let clumpSize = max(0.25, r.u1.y) / scale;
@@ -839,37 +1104,79 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   let colVar = r.u2.x;
   let wear = r.u2.z;
   let macroVar = r.u2.w;
+  surfaceNormalShift = vec3f(0.0);
 
   if (isMulchBed) {
-    let bark = grain(vec2f(p.x * 1.4, p.y * 2.2), 9.5 * gScale) * 0.36;
-    let damp = smoothstep(0.35, 0.72, surfaceNoise(p * 0.85 * scale));
-    var col = mix(baseTint * vec3f(1.05, 0.98, 0.88), baseTint * vec3f(0.68, 0.62, 0.54), damp * 0.55);
-    col *= 0.94 + bark;
-    return SurfaceSample(col, vec2f(0.0), 0.95, 1.0);
+    return evalMulchBed(p, baseTint, scale, gScale);
   }
 
-  // Two-octave warped clump field gives organic turf patches without Voronoi cell outlines or 9-tap loop overhead.
-  let c0 = surfaceNoise(p * (0.65 / clumpSize) + vec2f(1.3, 4.2));
-  let c1 = surfaceNoise(p * (1.45 / clumpSize) + vec2f(c0 * 1.4 * irreg, 6.7));
-  let clumpField = c0 * 0.58 + c1 * 0.42;
+  // Wind-aligned coordinate frame (matching applyFoliageVertexWind's windDir = (0.88, 0.47))
+  let windUv = vec2f(p.x * 0.88 + p.y * 0.47, p.y * 0.88 - p.x * 0.47);
+  let windPhase = (p.x * 0.88 + p.y * 0.47) * 0.42 + surfaceTime * 1.45;
+  let windCross = (-p.x * 0.47 + p.y * 0.88) * 0.42;
+  let windWave = sin(windPhase) * 0.55 + sin(windPhase * 0.37 + windCross * 0.90 + surfaceTime * 0.45) * 0.45;
+  let windCrest = smoothstep(-0.25, 0.68, windWave);
 
-  let lushTint = baseTint * vec3f(0.84, 0.96, 0.66);
-  let dryTint = baseTint * vec3f(1.08, 0.96, 0.64);
-  let dryMix = smoothstep(0.32, 0.78, clumpField) * colVar * 0.72;
-  var turfCol = mix(lushTint, dryTint, dryMix);
-  turfCol *= 0.88 + (c1 - 0.45) * 0.32 * colVar;
+  // 1. Mowed vs. Overgrown clump architecture (readable at 34-46m game camera)
+  let c0 = surfaceNoise(p * (0.62 / clumpSize) + vec2f(1.3, 4.2));
+  let c1 = surfaceNoise(p * (1.45 / clumpSize) + vec2f(c0 * 1.3 * irreg, 6.7));
+  let clumpField = c0 * 0.56 + c1 * 0.44;
+  let overgrownMask = smoothstep(0.34, 0.72, clumpField);
 
-  let tuftStreak = grain(vec2f(p.x * 1.6 + p.y * 0.4, p.y * 2.4 - p.x * 0.3), 8.5 * gScale) * 0.28;
-  turfCol *= 1.0 + tuftStreak;
+  // 2. Multi-scale impostor blade-tuft micro-relief + high-frequency detail normal (visible at 34-46m AND close-up)
+  let tuftMed = surfaceNoiseGrad(windUv * vec2f(3.2, 2.2) * gScale + vec2f(4.2, 7.1));
+  let detailG = surfaceNoiseGrad(windUv * vec2f(14.5, 11.0) * gScale + vec2f(1.7, 8.3));
+  let bladeFreq = 26.0 * gScale;
+  let bladeAtten = 1.0 - smoothstep(0.04, 0.32, surfaceFootprint * bladeFreq * 0.08);
+  let bladeFine = (surfaceNoise(windUv * vec2f(bladeFreq, bladeFreq * 0.65) + vec2f(windWave * 0.35, 2.9)) - 0.5) * bladeAtten;
 
-  let soilMask = smoothstep(0.54 - wear * 0.22, 0.76 - wear * 0.12, clumpField) * (0.45 + 0.55 * macroVar);
-  let soilCol = vec3f(0.18, 0.145, 0.098) * (0.86 + 0.28 * c1);
-  let col = mix(turfCol, soilCol, soilMask * 0.62);
+  let tuftHeight = c1 * 0.32 + tuftMed.x * 0.36 + (detailG.x - 0.5) * 0.28 + bladeFine * 0.32;
+  let bladeCrest = smoothstep(0.24, 0.72, tuftHeight + overgrownMask * 0.14);
+  let rootThatch = 1.0 - smoothstep(0.18, 0.52, tuftHeight);
 
-  return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.06), r.u0.w, 0.92 + 0.08 * c0);
+  // Deep forest-moss root thatch in crevices -> rich olive-emerald mid-turf -> muted sage-olive tips on crests
+  let deepRootTint = baseTint * vec3f(0.32, 0.44, 0.26);
+  let lushMidTint = baseTint * vec3f(0.68, 0.84, 0.54);
+  let sunlitTipTint = baseTint * vec3f(0.96, 1.10, 0.66);
+  let dryStrawTint = baseTint * vec3f(0.92, 0.80, 0.48);
+
+  let dryMix = smoothstep(0.42 - wear * 0.18, 0.78 - wear * 0.10, c0 * 0.65 + (1.0 - c1) * 0.35) * colVar * 0.72;
+  var turfCol = mix(deepRootTint, lushMidTint, smoothstep(0.14, 0.56, tuftHeight));
+  turfCol = mix(turfCol, sunlitTipTint, bladeCrest * (0.44 + 0.32 * overgrownMask));
+  turfCol = mix(turfCol, dryStrawTint, dryMix * (0.42 + 0.48 * bladeCrest));
+
+  // Subtle wind-driven value waves across the lawn
+  let gustWave = smoothstep(0.34, 0.74, windCrest * 0.65 + c0 * 0.35) * (0.30 + 0.55 * overgrownMask);
+  turfCol = mix(turfCol, turfCol * vec3f(1.10, 1.14, 0.90), gustWave * 0.26);
+
+  // Broad painterly lawn value waves & damp mossy troughs
+  let macroPatch = surfaceNoise(p * 0.22 + vec2f(5.1, 2.7));
+  let macroShade = mix(0.74, 1.12, smoothstep(0.24, 0.76, macroPatch));
+  let soilMask = smoothstep(0.50 - wear * 0.20, 0.80 - wear * 0.10, 1.0 - clumpField) * rootThatch * macroVar;
+  let soilCol = vec3f(0.015, 0.018, 0.010) * (0.82 + 0.25 * c1);
+  var col = mix(turfCol * macroShade, soilCol, soilMask * 0.52);
+
+  // Scattered warm autumn fallen leaf flecks on the lawn and verge
+  let leafCell = floor(p * 8.2);
+  let leafHash = hash2(leafCell + vec2f(3.7, 7.9));
+  let leafPatch = smoothstep(0.42, 0.72, c0 * 0.6 + macroPatch * 0.4);
+  let leafMask = step(0.958, leafHash) * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 8.2));
+  let leafCol = select(vec3f(0.14, 0.07, 0.02), vec3f(0.18, 0.11, 0.03), fract(leafHash * 19.3) > 0.5);
+  col = mix(col, leafCol, leafMask * 0.72);
+
+  // High-frequency ground detail normal + tuft mound normal so the lawn never reads as a flat plane
+  let normAtten = 1.0 - smoothstep(0.14, 0.85, surfaceFootprint);
+  let detailAtten = 1.0 - smoothstep(0.05, 0.36, surfaceFootprint);
+  let nx = (tuftMed.y * 0.38 + detailG.y * 0.46 * detailAtten + bladeFine * 0.28 + windWave * 0.10) * normAtten;
+  let nz = (tuftMed.z * 0.38 + detailG.z * 0.46 * detailAtten + bladeFine * 0.22 + windWave * 0.06) * normAtten;
+  surfaceNormalShift = vec3f(nx, 0.0, nz);
+
+  let cavity = clamp(mix(0.46, 0.98, bladeCrest) * (0.80 + 0.20 * overgrownMask), 0.38, 1.0);
+  let localRough = clamp(r.u0.w - gustWave * 0.10 - bladeCrest * 0.06, 0.48, 0.96);
+  return SurfaceSample(col, roughnessToGloss(localRough, 0.04), localRough, cavity);
 }
 
-/** Recipe 5: Clustered foliage canopy with 3D bough variation, top/bottom normal separation, and self-occlusion. */
+/** Recipe 5: Clustered foliage canopy with procedural leaf-cluster platelets, inter-leaf gaps, and spherized dome shading. */
 fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
   let clusterSize = max(0.2, r.u1.y) / scale;
@@ -877,6 +1184,7 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   let colVar = r.u2.x;
   let wear = r.u2.z;
   let macroVar = r.u2.w;
+  surfaceNormalShift = vec3f(0.0);
 
   let n0 = surfaceNoise(world.xz * 2.1 + 1.3) - 0.5;
   let warp = vec3f(n0, 0.0, -n0 * 0.8) * clusterSize * 0.9 * r.u1.z;
@@ -884,18 +1192,50 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   let hCluster = hash2(clusterCell.xz + vec2f(clusterCell.y * 3.7, 11.3)) - 0.5;
   let hHue = fract((hCluster + 0.5) * 13.7) - 0.5;
 
-  let leafClump = surfaceNoise(world.xz * 5.8 + vec2f(world.y * 2.1, -world.y * 1.7)) - 0.5;
-  let fineLeaf = grain(world.xz + vec2f(world.y * 0.7), 11.5 * gScale);
+  // Non-degenerate 3D tangent projection for individual 6-10cm overlapping leaf platelets & midribs
+  let uv3 = vec2f(world.x + world.z * 0.73 + world.y * 0.41, world.y * 1.17 - world.x * 0.43 + world.z * 0.81);
+  let clusterG = surfaceNoiseGrad(uv3 * (7.2 * gScale) + vec2f(1.7, 6.3));
+  let bladeG = surfaceNoiseGrad(uv3 * (16.5 * gScale) + vec2f(clusterG.x * 0.6 + 5.4, 2.9));
+  let microLeaf = clusterG.x * 0.56 + bladeG.x * 0.44;
+  // Dark inter-leaf crevices separate each card into a cluster of small individual leaves
+  let leafGap = 1.0 - smoothstep(0.24, 0.50, microLeaf);
+  let leafPlate = smoothstep(0.40, 0.80, microLeaf);
+
   let topMask = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
-  let heightLift = smoothstep(0.05, 1.2, fract(world.y * 0.65));
-  let canopyLift = mix(0.56 - wear * 0.12, 1.32, clamp(topMask * 0.72 + heightLift * 0.28 + leafClump * 0.22, 0.0, 1.0));
-  let warmTip = clamp(leafClump + topMask * 0.35 - 0.1, -0.4, 0.6);
-  let hueTint = vec3f(1.0 + (hHue * 0.18 + warmTip * 0.22) * colVar, 1.0 + (hHue * 0.08 + warmTip * 0.14) * colVar, 1.0 - (hHue * 0.16 + warmTip * 0.20) * colVar);
-  var col = baseTint * hueTint * (0.94 + hCluster * 0.32 * colVar) * canopyLift;
+  let heightLift = smoothstep(0.05, 1.2, fract(world.y * 0.55));
+  let canopyLift = mix(0.64 - wear * 0.08, 1.24, clamp(topMask * 0.68 + heightLift * 0.22 + (microLeaf - 0.5) * 0.28, 0.0, 1.0));
+  let warmTip = clamp((microLeaf - 0.45) + topMask * 0.35 - 0.10, -0.4, 0.55);
+  let hueTint = vec3f(
+    1.0 + (hHue * 0.16 + warmTip * 0.18) * colVar,
+    1.0 + (hHue * 0.08 + warmTip * 0.10) * colVar,
+    1.0 - (hHue * 0.14 + warmTip * 0.16) * colVar
+  );
+  var col = baseTint * hueTint * (0.94 + hCluster * 0.26 * colVar) * canopyLift;
+  col *= (1.0 - 0.26 * leafGap + 0.14 * leafPlate) * (1.0 + n0 * 0.14 * macroVar);
 
-  col *= 1.0 + leafClump * 0.34 + fineLeaf * 0.32 + n0 * 0.18 * macroVar;
+  let leafBumpAtten = (1.0 - smoothstep(0.08, 0.55, surfaceFootprint)) * 0.32;
+  surfaceNormalShift = vec3f(
+    clusterG.y * 0.55 + bladeG.y * 0.45,
+    (clusterG.z - bladeG.y) * 0.25,
+    clusterG.z * 0.55 + bladeG.z * 0.45
+  ) * leafBumpAtten;
 
-  return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.05), r.u0.w, mix(0.68, 1.0, topMask));
+  let cavity = clamp(mix(0.56, 1.0, topMask) * (1.0 - 0.22 * leafGap), 0.42, 1.0);
+  return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.05), r.u0.w, cavity);
+}
+
+/**
+ * Evaluates 1980s kitchen ceramic/vinyl floor tiles with thin recessed grout joints.
+ */
+fn evalKitchenTile(p: vec2f, baseTint: vec3f) -> SurfaceSample {
+  let tileSize = 0.38;
+  let q = p / tileSize;
+  let cell = floor(q);
+  let hTile = hash2(cell * 1.91 + 0.7) - 0.5;
+  var col = baseTint * (0.96 + hTile * 0.10);
+  let joint = seam(q.x, 0.018, 1.0 / tileSize) * seam(q.y, 0.018, 1.0 / tileSize);
+  col = mix(col * vec3f(0.45, 0.42, 0.36), col, joint);
+  return SurfaceSample(col, vec2f(0.0), 0.78, joint);
 }
 `
 
@@ -903,91 +1243,220 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
 export const surfaceMaterialDeclarations = surfaceMaterialCoreWgsl
 
 export const surfaceMaterial = /* wgsl */ `
+    let texCfg = u32(max(0.0, F.screen.w));
+    let texModeBits = texCfg & 3u;
+    let texOn = select(texModeBits == 1u, o.world.x >= F.eye.x, texModeBits == 2u);
+    let rugStyleBits = (texCfg >> 2u) & 3u;
+    let wallStyleBits = (texCfg >> 4u) & 3u;
+    let floorStyleBits = (texCfg >> 6u) & 3u;
+    let texScaleMult = select(1.0, 0.5 + f32((texCfg >> 8u) & 63u) * 0.05, ((texCfg >> 8u) & 63u) > 0u);
+    let texContrastMult = select(1.0, f32((texCfg >> 14u) & 63u) * 0.05, ((texCfg >> 14u) & 63u) > 0u);
     if (mat == 20) {
       let kind = i32(round(o.aux));
       let p = o.world.xz;
-      if (kind == 0) {
-        let s = evalGrassSoil(p, albedo, false, defaultMaterialRecipe(4));
-        albedo = s.albedo;
-        gloss = s.gloss;
+      let inNorthVerge = kind == 2 && p.y > 39.32 && p.y < 39.78 && (p.x < 37.8 || p.x > 50.2);
+      let inSouthVerge = kind == 2 && p.y > 48.22 && p.y < 48.68 && (p.x < 37.8 || p.x > 50.2);
+      let inVergeGrass = (inNorthVerge || inSouthVerge) && !((p.x > 18.8 && p.x < 21.8) || (p.x > 49.8 && p.x < 52.8)) && !((p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0));
+      if (kind == 0 || inVergeGrass) {
+        var vEdge = 1.0;
+        var grassTint = albedo;
+        if (inVergeGrass) {
+          let vDist = select(min(p.y - 48.22, 48.68 - p.y), min(p.y - 39.32, 39.78 - p.y), inNorthVerge);
+          vEdge = smoothstep(0.0, 0.08, vDist);
+          grassTint = vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge);
+        }
+        let s = evalGrassSoil(p, grassTint, false, defaultMaterialRecipe(4));
+        albedo = s.albedo * s.cavity * select(1.0, 0.55 + 0.45 * vEdge, inVergeGrass);
+        n = normalize(n + surfaceNormalShift);
+        if (texOn && !inVergeGrass) {
+          let tex = sampleMaterialFast(8, p, 0.58 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.82 * texContrastMult);
+        }
       } else if (kind == 1) {
         let s = evalAsphaltConcrete(p, albedo, false, defaultMaterialRecipe(3));
         albedo = s.albedo;
-        gloss = s.gloss;
+        if (texOn) {
+          let tex = sampleMaterialFast(7, p, 0.55 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.85 * texContrastMult);
+        }
       } else if (kind == 2) {
-        let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
-        albedo = s.albedo;
-        gloss = s.gloss;
+        let isShopFloor = p.x > 52.9 && (p.y < 38.1 || p.y > 53.9);
+        if (isShopFloor) {
+          let s = evalKitchenTile(p, albedo);
+          albedo = s.albedo;
+          if (texOn) {
+            let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85 * texContrastMult);
+          }
+        } else {
+          let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
+          albedo = s.albedo * s.cavity;
+          if (texOn) {
+            let tex = sampleMaterialFast(6, p, 0.58 * texScaleMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.82 * texContrastMult);
+          }
+        }
       } else if (kind == 3) {
-        // Gravel drive: crushed stone aggregate with wheel-track compaction and dark soil crevices.
-        let ruts = exp(-pow((fract((p.x - 19.0) * 0.377) - 0.26) * 5.2, 2.0)) + exp(-pow((fract((p.x - 19.0) * 0.377) - 0.74) * 5.2, 2.0));
+        let uDrive = fract((p.x - 19.0) * 0.377);
+        let ruts = exp(-pow((uDrive - 0.26) * 5.2, 2.0)) + exp(-pow((uDrive - 0.74) * 5.2, 2.0));
         let pebbles = grain(p, 18.0) * 0.78 + grain(p + vec2f(3.7, 1.9), 9.5) * 0.42;
-        let edgeFade = smoothstep(0.0, 0.24, min(fract((p.x - 19.0) * 0.377), 1.0 - fract((p.x - 19.0) * 0.377)));
-        albedo *= (0.78 + pebbles + (surfaceNoise(p * 2.6) - 0.5) * 0.32 - 0.14 * clamp(ruts, 0.0, 1.0)) * (0.76 + 0.24 * edgeFade);
-        gloss = vec2f(0.0);
+        let edgeFade = smoothstep(0.0, 0.24, min(uDrive, 1.0 - uDrive));
+        let mossNoise = surfaceNoise(p * 1.8 + vec2f(2.4, 5.1));
+        let centerMoss = exp(-pow((uDrive - 0.50) * 7.5, 2.0)) * smoothstep(0.38, 0.72, mossNoise);
+        albedo *= (0.74 + pebbles + (surfaceNoise(p * 2.6) - 0.5) * 0.32 - 0.14 * clamp(ruts, 0.0, 1.0)) * (0.76 + 0.24 * edgeFade);
+        albedo = mix(albedo, vec3f(0.022, 0.036, 0.014), centerMoss * 0.58);
       } else if (kind == 4) {
-        let s = evalWoodPlanks(p, albedo, defaultMaterialRecipe(0));
-        albedo = s.albedo;
-        gloss = s.gloss;
-      } else if (kind == 6) {
-        let s = evalCobblestone(p, albedo, defaultMaterialRecipe(1));
-        albedo = s.albedo;
-        gloss = s.gloss;
+        let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
+        let inKitchen = p.x > b.z - 6.08 && p.x < b.z - 0.05 && p.y > b.y + 5.68 && p.y < b.w - 0.05;
+        if (inKitchen && texOn) {
+          let s = evalKitchenTile(p, vec3f(0.42, 0.37, 0.29));
+          let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
+          albedo = modulateFast(s.albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.85 * texContrastMult);
+        } else {
+          let s = evalWoodPlanks(p, albedo, defaultMaterialRecipe(0));
+          albedo = s.albedo;
+          if (texOn && floorStyleBits < 2u) {
+            let styleScale = select(0.65, 0.95, floorStyleBits == 1u) * texScaleMult;
+            let tex = sampleMaterialFast(0, p, styleScale);
+            albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.82 * texContrastMult);
+          }
+        }
       } else {
-        let s = evalGrassSoil(p, albedo, true, defaultMaterialRecipe(4));
-        albedo = s.albedo;
-        gloss = s.gloss;
+        let s = evalMulchBed(p, albedo, 1.0, 1.0);
+        albedo = s.albedo * s.cavity;
+        n = normalize(n + surfaceNormalShift);
       }
-    }
-    if (mat == 4 && o.aux > 19.5) {
-      if (o.aux > 20.5) {
-        let s = evalPlasterWall(o.world, n, albedo, defaultMaterialRecipe(2));
+    } else if (mat == 0 && o.world.y > 0.131 && o.world.y < 0.156 && o.world.x < 37.5 && texOn && rugStyleBits < 2u) {
+      let p = o.world.xz;
+      let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
+      if (p.x >= b.x + 1.53 && p.x <= b.x + 4.44 && p.y >= b.w - 4.37 && p.y <= b.w - 0.83) {
+        let span = vec2f(2.87, 3.50);
+        let uv = clamp((p - vec2f(b.x + 1.55, b.w - 4.35)) / span, vec2f(0.015), vec2f(0.985));
+        let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+        let layer = select(12, 13, rugStyleBits == 1u);
+        let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, materialMipLod(0.32));
+        let refLin = select(vec3f(0.3882, 0.2897, 0.1774), vec3f(0.3522, 0.1986, 0.1107), layer == 13);
+        let centered = refLin + (tex.rgb - refLin) * texContrastMult;
+        albedo = clamp(centered * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
+      } else if (p.x >= b.x + 4.90 && p.x <= b.x + 6.84 && p.y >= b.y + 1.33 && p.y <= b.y + 4.27) {
+        let span = vec2f(1.90, 2.90);
+        let uv = clamp((p - vec2f(b.x + 4.92, b.y + 1.35)) / span, vec2f(0.015), vec2f(0.985));
+        let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+        let layer = select(13, 12, rugStyleBits == 1u);
+        let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, materialMipLod(0.45));
+        let refLin = select(vec3f(0.3882, 0.2897, 0.1774), vec3f(0.3522, 0.1986, 0.1107), layer == 13);
+        let centered = refLin + (tex.rgb - refLin) * texContrastMult;
+        albedo = clamp(centered * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
+      } else if (p.x >= b.z - 4.97 && p.x <= b.z - 2.23 && p.y >= b.y + 6.43 && p.y <= b.y + 7.24) {
+        let span = vec2f(2.70, 0.77);
+        let uv = clamp((p - vec2f(b.z - 4.95, b.y + 6.45)) / span, vec2f(0.015), vec2f(0.985));
+        let edgeBevel = smoothstep(0.0, 0.035, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+        let tex = textureSampleLevel(materialTexArray, materialSampler, uv, 14, materialMipLod(0.65));
+        let refLin = vec3f(0.2887, 0.2220, 0.1674);
+        let centered = refLin + (tex.rgb - refLin) * texContrastMult;
+        albedo = clamp(centered * 0.90 * mix(0.72, 1.0, edgeBevel), vec3f(0.02), vec3f(0.95));
+      }
+    } else if (mat == 4) {
+      let wallUv = vec2f(o.world.x + o.world.z, o.world.y);
+      let inWallRoom = interior(o.world.xz + n.xz * 0.3);
+      if (inWallRoom || o.aux > 20.5) {
+        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.32, 0.27, 0.21), inWallRoom), defaultMaterialRecipe(2));
         albedo = s.albedo;
-        gloss = s.gloss;
-      } else {
-        // Painted wood clapboard siding with crisp horizontal lap shadows, staggered plank seams, and subtle grain.
+        if (texOn && (!inWallRoom || wallStyleBits < 2u)) {
+          let wallScale = select(0.78, select(0.78, 1.15, wallStyleBits == 1u), inWallRoom) * texScaleMult;
+          let tex = sampleMaterialFast(2, wallUv, wallScale);
+          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), select(0.70, 0.75, inWallRoom) * texContrastMult);
+        }
+      } else if (o.aux > 19.5) {
         let course = o.world.y / 0.165;
         let row = floor(course);
         let fy = fract(course);
         let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
         albedo *= 0.96 + (hash2(vec2f(row, plank)) - 0.5) * 0.09;
+        if (texOn) {
+          let tex = sampleMaterialFast(3, wallUv, 0.72 * texScaleMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.78 * texContrastMult);
+        }
         let lapShadow = mix(0.56, 1.05, smoothstep(0.0, 0.22, fy)) * mix(1.04, 0.90, fy);
         albedo *= mix(1.0, lapShadow * mix(0.62, 1.0, seam(course, 0.032, 6.06)), 1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 6.06));
-        albedo *= 0.97 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.14;
+        albedo *= 0.97 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.12;
         albedo *= mix(0.84, 1.0, smoothstep(0.28, 0.65, o.world.y));
       }
-    }
-    if (mat == 21) {
+    } else if (mat == 21) {
       let row = floor(o.world.z / 0.23);
       let q = vec2f(o.world.x / 0.34 + fract(row * 0.5) + (hash2(vec2f(row, 3.1)) - 0.5) * 0.15, o.world.z / 0.23);
       let tabHash = hash2(floor(q)) - 0.5;
       let rowShade = mix(0.76, 1.08, fract(o.world.z / 0.23));
-      albedo *= (0.98 + tabHash * 0.34 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.35))) * rowShade;
+      albedo *= (0.98 + tabHash * 0.30 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.35))) * rowShade;
+      if (texOn) {
+        let tex = sampleMaterialFast(4, o.world.xz, 0.68 * texScaleMult);
+        albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.82 * texContrastMult);
+      }
       albedo *= mix(0.48, 1.0, seam(q.x, 0.020, 2.94) * seam(q.y, 0.042, 4.35));
-      albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.16;
-    }
-    if (mat == 23) {
+      albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.12;
+    } else if (mat == 23) {
       let p = vec2f(o.world.x + o.world.z, o.world.y);
       let row = floor(p.y / 0.085);
       let q = vec2f(p.x / 0.25 + fract(row * 0.5), p.y / 0.085);
       albedo = mix(vec3f(0.32, 0.30, 0.26), albedo * (0.8 + 0.35 * hash2(floor(q))), seam(q.x, 0.025, 4.0) * seam(q.y, 0.06, 11.76));
-    }
-    if (mat == 22) {
-      let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
-      albedo = s.albedo;
-      gloss = s.gloss;
-    }
-    if (mat == 24) {
+      if (texOn) {
+        let tex = sampleMaterialFast(5, p, 0.85 * texScaleMult);
+        albedo = modulateFast(albedo, tex, vec3f(0.3143, 0.1732, 0.1377), 0.78 * texContrastMult);
+      }
+    } else if (mat == 22) {
+      if (o.aux < -0.02) {
+        // Curved 3D grass blade: root contact AO, vascular vein striation, wind-crest highlight & feathered tip.
+        let bladeT = clamp(-o.aux, 0.0, 1.0);
+        let rootAO = mix(0.24, 1.0, smoothstep(0.0, 0.32, bladeT));
+        let vein = grain(o.world.xz * 2.4 + vec2f(o.world.y * 1.6), 16.0) * 0.16;
+        let crestNoise = surfaceNoise(o.world.xz * 0.32 + vec2f(surfaceTime * 0.28, surfaceTime * 0.16));
+        let crestHighlight = smoothstep(0.42, 0.72, crestNoise) * 0.22 * bladeT;
+        albedo = mix(albedo * (0.92 + vein), vec3f(0.28, 0.42, 0.18), crestHighlight) * rootAO * mix(0.80, 1.06, pow(bladeT, 0.62));
+      } else {
+        let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
+        albedo = s.albedo * mix(0.58, 1.0, s.cavity);
+        n = normalize(n + surfaceNormalShift);
+        if (o.aux > 0.0) {
+          let uv3 = vec2f(o.world.x + o.world.z * 0.73 + o.world.y * 0.41, o.world.y * 1.17 - o.world.x * 0.43 + o.world.z * 0.81);
+          let brush1 = surfaceNoise(uv3 * 5.8 + vec2f(2.1, 4.7));
+          let brush2 = surfaceNoise(uv3 * 13.5 + vec2f(brush1 * 0.7 + 6.3, 1.9));
+          let brushField = brush1 * 0.58 + brush2 * 0.42;
+          albedo *= mix(0.84, 1.06, brushField);
+        }
+      }
+    } else if (mat == 24) {
       albedo *= 0.84 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24;
-      gloss = vec2f(0.0);
     }
 `
+
+export const resolveSurfaceMaterialWgsl = ""
 
 /**
  * Legacy pre-recipe material evaluation retained for honest A/B comparison in the Lab workbench
  * (shiny/gridded floorboards, Cartesian gridded pavers, flat plaster walls, uniform asphalt, blotchy grass).
  */
 export const legacyMaterialComparisonWgsl = /* wgsl */ `
+struct SurfaceTexUniforms {
+  global: vec4f,
+  styles: vec4f,
+  recipeTex: array<vec4f, 6>,
+  recipeExtra: array<vec4f, 3>,
+}
+
+@group(0) @binding(12) var<uniform> surfaceTexUniforms: SurfaceTexUniforms;
+
+fn surfaceTexEnabledAt(worldX: f32) -> bool {
+  let mode = surfaceTexUniforms.global.x;
+  if (mode > 1.5) {
+    return worldX >= surfaceTexUniforms.styles.w;
+  }
+  return mode > 0.5;
+}
+
+fn recipeTexExtra(recipeIdx: i32) -> vec2f {
+  let v = surfaceTexUniforms.recipeExtra[recipeIdx / 2];
+  return select(v.xy, v.zw, (recipeIdx & 1) == 1);
+}
 fn evalLegacyMaterial(recipeId: i32, world: vec3f, normal: vec3f, baseTint: vec3f) -> SurfaceSample {
   let p = world.xz;
   var albedo = baseTint;
@@ -1023,13 +1492,36 @@ fn evalLegacyMaterial(recipeId: i32, world: vec3f, normal: vec3f, baseTint: vec3
 }
 
 fn evalRecipeById(recipeId: i32, world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
+  var s: SurfaceSample;
   switch recipeId {
-    case 0: { return evalWoodPlanks(world.xz, baseTint, r); }
-    case 1: { return evalCobblestone(world.xz, baseTint, r); }
-    case 2: { return evalPlasterWall(world, normal, baseTint, r); }
-    case 3: { return evalAsphaltConcrete(world.xz, baseTint, false, r); }
-    case 4: { return evalGrassSoil(world.xz, baseTint, false, r); }
-    default: { return evalFoliageCanopy(world, normal, baseTint, r); }
+    case 0: { s = evalWoodPlanks(world.xz, baseTint, r); }
+    case 1: { s = evalCobblestone(world.xz, baseTint, r); }
+    case 2: { s = evalPlasterWall(world, normal, baseTint, r); }
+    case 3: { s = evalAsphaltConcrete(world.xz, baseTint, false, r); }
+    case 4: { s = evalGrassSoil(world.xz, baseTint, false, r); }
+    default: { s = evalFoliageCanopy(world, normal, baseTint, r); }
   }
+  if (surfaceTexEnabledAt(world.x)) {
+    let tc = surfaceTexUniforms.recipeTex[recipeId];
+    let te = recipeTexExtra(recipeId);
+    let layer = i32(round(tc.x));
+    if (layer >= 0 && te.y > 0.001) {
+      let c = cos(tc.z);
+      let sn = sin(tc.z);
+      let an = abs(normal);
+      var uv0 = world.xz;
+      if (an.x > an.y && an.x >= an.z) { uv0 = vec2f(world.z, world.y); }
+      else if (an.z > an.y && an.z > an.x) { uv0 = world.xy; }
+      let effScale = tc.y * max(0.25, r.u1.x) * surfaceTexUniforms.global.y;
+      let uv = vec2f(uv0.x * c - uv0.y * sn, uv0.x * sn + uv0.y * c) * effScale;
+      let lod = clamp(log2(max(surfaceFootprint * effScale * 256.0, 1.0)) - 0.35, 0.0, 8.0);
+      let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, lod);
+      let refLin = textureLayerRefLinear(layer);
+      s.albedo = modulateFast(s.albedo, tex, refLin, te.y * tc.w);
+      s.roughness = clamp(mix(s.roughness, tex.a, 0.55 * te.y) + te.x + surfaceTexUniforms.global.w, 0.05, 0.99);
+      s.gloss = roughnessToGloss(s.roughness, 0.04);
+    }
+  }
+  return s;
 }
 `

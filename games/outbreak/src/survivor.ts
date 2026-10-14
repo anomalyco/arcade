@@ -1,6 +1,6 @@
 import { Mesh, MAT } from "@arcade/kit/gpu/mesh"
 import { Renderer, type Batch } from "@arcade/kit/gpu/renderer"
-import { RIG, HIP, at, dirIn, emit, ik, limb, pitch, roll, spring, stepSpring, smoother, yawFrame, type V3, type PushPart } from "@arcade/kit/rig"
+import { RIG, HIP, at, clamp, dirIn, emit, ik, limb, pitch, roll, spring, stepSpring, smoother, yawFrame, type V3, type PushPart } from "@arcade/kit/rig"
 import { angleSpring } from "@arcade/kit/human-locomotion"
 import { profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
 import { poseArms, type BonePose } from "@arcade/kit/human-pose"
@@ -16,6 +16,9 @@ export class Survivor {
   private chest = spring()
   private head = spring()
   private reachDrop = spring()
+  private twist = spring()
+  private arms = [spring(), spring()] as const
+  private hands = [spring(), spring()] as const
   private models: number[]
   private feet = [-1, 1].map(() => ({ p: [0, 0, 0] as V3, lift: [0, 0, 0] as V3, target: [0, 0, 0] as V3, prevU: 0, planted: true, yaw: 0 }))
   private phase = 0
@@ -45,7 +48,9 @@ export class Survivor {
   reset(): void {
     this.last = [Infinity, Infinity]
     this.phase = this.yaw = this.svx = this.svy = 0
-    this.leanX = spring(); this.leanY = spring(); this.reachDrop = spring()
+    this.leanX = spring(); this.leanY = spring(); this.reachDrop = spring(); this.twist = spring()
+    this.arms[0].x = this.arms[0].v = this.arms[1].x = this.arms[1].v = 0
+    this.hands[0].x = this.hands[0].v = this.hands[1].x = this.hands[1].v = 0
     this.chest = spring(); this.head = spring(); this.bones = {}
   }
 
@@ -54,7 +59,12 @@ export class Survivor {
     const prevX = this.last[0], prevY = this.last[1]
     const teleport = Math.hypot(p.x - prevX, p.y - prevY) > 2.5
     this.last = [p.x, p.y]
-    if (teleport) { this.yaw = p.aim; this.svx = p.vx; this.svy = p.vy; this.phase = 0; this.chest = { x: p.aim, v: 0 }; this.head = { x: p.aim, v: 0 }; this.reachDrop = spring() }
+    if (teleport) {
+      this.yaw = p.aim; this.svx = p.vx; this.svy = p.vy; this.phase = 0
+      this.chest = { x: p.aim, v: 0 }; this.head = { x: p.aim, v: 0 }; this.reachDrop = spring(); this.twist = spring()
+      this.arms[0].x = this.arms[0].v = this.arms[1].x = this.arms[1].v = 0
+      this.hands[0].x = this.hands[0].v = this.hands[1].x = this.hands[1].v = 0
+    }
     const profile = this.profile
     const steps = teleport ? 1 : Math.max(1, Math.ceil(dt / (1 / 60) - 1e-4))
     const h = dt / steps
@@ -123,17 +133,39 @@ export class Survivor {
         desiredDrop = Math.max(desiredDrop, Math.max(0, Math.min(.18, baseHeight - reachY)))
       }
       stepSpring(this.reachDrop, 140, .85, h, desiredDrop)
+      const fdx = this.feet[1]!.p[0] - this.feet[0]!.p[0], fdz = this.feet[1]!.p[2] - this.feet[0]!.p[2]
+      const footFwd = fdx * c + fdz * s
+      stepSpring(this.twist, 160, .85, h, clamp(footFwd * .32, -.17, .17) * (profile?.twistScale ?? 1.2))
+      const armAmp = (.24 + .10 * moving) * (profile?.armSwing ?? 1) * moving
+      const footNorm = clamp(footFwd / .42, -1, 1)
+      for (let i = 0; i < 2; i++) {
+        const side = i === 0 ? -1 : 1
+        stepSpring(this.arms[i]!, 220, .85, h, -side * footNorm * armAmp)
+        stepSpring(this.hands[i]!, 150, .78, h, this.arms[i]!.x)
+      }
     }
     const footSupport = (this.feet[0]!.p[1] + this.feet[1]!.p[1]) * .5
     const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4) - this.reachDrop.x
-    const pelvis = roll(yawFrame([p.x, height, p.y], this.yaw), Math.cos(this.phase * Math.PI * 2) * .06 * moving)
-    const lean = this.leanX.x * Math.cos(p.aim) + this.leanY.x * Math.sin(p.aim)
-    if (profile) { angleSpring(this.chest, p.aim, profile.chestHz, dt); angleSpring(this.head, p.aim, profile.headHz, dt) }
-    let torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), profile ? this.chest.x : p.aim), -.05 - lean)
+    const pelvis = roll(yawFrame([p.x, height, p.y], this.yaw + this.twist.x), Math.cos(this.phase * Math.PI * 2) * (.07 + .03 * (profile?.hipDrop ?? 0)) * moving)
+    const ca = Math.cos(p.aim), sa = Math.sin(p.aim)
+    const lean = this.leanX.x * ca + this.leanY.x * sa
+    const sideLean = (-this.leanX.x * sa + this.leanY.x * ca) * (profile?.turnBank ?? 1)
+    if (profile) { angleSpring(this.chest, p.aim - this.twist.x * .65, profile.chestHz, dt); angleSpring(this.head, p.aim, profile.headHz, dt) }
+    const torsoYaw = profile ? this.chest.x : p.aim - this.twist.x * .65
+    let torso = roll(pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), torsoYaw), -.05 - lean - .14 * moving * (profile?.runPosture ?? .18)), sideLean * .75)
     if (profile) torso = profileTorso(torso, profile)
-    let head = yawFrame(at(torso, .02, RIG.neckY, 0), profile ? this.head.x : p.aim)
+    let head = pitch(yawFrame(at(torso, .02, RIG.neckY, 0), profile ? this.head.x : p.aim), lean * .35 * (profile?.headStability ?? .75))
     if (profile) head = roll(head, profile.headTilt)
-    const hands = profile && profileHands(torso, profile)
+    const rawHands = profile && profileHands(torso, profile)
+    let hands = rawHands
+    if (rawHands && profile?.handPose === "reach" && moving > 0) {
+      const th = this.phase * Math.PI * 2
+      const lurch = Math.sin(th) * .055 * moving, claw = Math.cos(th) * .035 * moving
+      hands = [
+        [rawHands[0][0] + torso.x[0] * lurch, rawHands[0][1] + claw, rawHands[0][2] + torso.x[2] * lurch],
+        [rawHands[1][0] - torso.x[0] * lurch * .7, rawHands[1][1] - claw * .8, rawHands[1][2] - torso.x[2] * lurch * .7],
+      ]
+    }
     const arms = hands ? poseArms(torso, ...hands) : null
     this.bones = { pelvis, torso, head }
     this.batches.length = 0
@@ -156,9 +188,12 @@ export class Survivor {
       this.bones[`${name}.thigh`] = thigh; this.bones[`${name}.shin`] = shin; this.bones[`${name}.foot`] = boot
       draw(5, thigh); draw(6, shin); draw(7, boot)
       const shoulder = at(torso, 0, RIG.shoulderY, side * RIG.shoulderW)
-      const swing = Math.sin(this.phase * Math.PI * 2 + i * Math.PI) * .22 * moving
-      const hand = at(torso, swing + .07, -.02 + .015 * Math.sin(time * 2), side * .24)
-      const [elbow, wrist] = ik(shoulder, hand, RIG.upper, RIG.fore, dirIn(torso, -.4, -1, side))
+      const sw = this.arms[i]!.x, hw = this.hands[i]!.x
+      const fwd = .05 + (hw >= 0 ? hw * 1.15 : hw * .92) + .06 * moving
+      const up = -.09 + (sw >= 0 ? sw * (.36 + .24 * moving) : -sw * .12) + .04 * moving - side * .015 * Math.sin(time * 2)
+      const inward = Math.max(0, sw) * (.12 + .08 * moving)
+      const hand = at(torso, fwd, up, side * (.23 - inward))
+      const [elbow, wrist] = ik(shoulder, hand, RIG.upper, RIG.fore, dirIn(torso, -.65, -1, side * .18))
       const upper = arms?.ua[i] ?? limb(shoulder, elbow, torso.x, torso.y), fore = arms?.fa[i] ?? limb(elbow, wrist, torso.x, torso.y)
       this.bones[`${name}.upperArm`] = upper; this.bones[`${name}.foreArm`] = fore
       draw(3, upper); draw(4, fore)

@@ -69,3 +69,22 @@ test("sloped reversals keep survivor and zombie pelvis height and foot transitio
     }
   }
 })
+
+test("unarmed survivor arm swing opposes foot stride and scales with speed", () => {
+  let model = 0
+  const avatar = new Survivor({ addModel: () => model++ })
+  const p = { x: 0, y: 0, vx: 3.2, vy: 0, aim: 0 }
+  let time = 0, maxArmSpread = 0, maxTorsoCounterTwist = 0
+  for (let n = 0; n < 120; n++) {
+    const dt = 1 / 60
+    p.x += p.vx * dt; time += dt
+    avatar.draw(p, dt, time, () => 0)
+    const lHand = avatar.bones["left.foreArm"]!.p, rHand = avatar.bones["right.foreArm"]!.p
+    maxArmSpread = Math.max(maxArmSpread, Math.abs(lHand[0] - rHand[0]))
+    const pelYaw = Math.atan2(avatar.bones.pelvis!.x[2], avatar.bones.pelvis!.x[0])
+    const torYaw = Math.atan2(avatar.bones.torso!.x[2], avatar.bones.torso!.x[0])
+    maxTorsoCounterTwist = Math.max(maxTorsoCounterTwist, Math.abs( pelYaw - torYaw ))
+  }
+  expect(maxArmSpread).toBeGreaterThan(0.15)
+  expect(maxTorsoCounterTwist).toBeGreaterThan(0.05)
+})
