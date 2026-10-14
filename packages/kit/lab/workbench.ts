@@ -5481,7 +5481,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
     } else if (key === "p" && !event.repeat) {
       event.preventDefault()
       setPlayMode("play")
-    } else if ((key === "m" || event.key === "ContextMenu") && !event.repeat) {
+    } else if (event.key === "ContextMenu" && !event.repeat) {
+      // M is the Lab's mute key (docs/controls.md); the radial opens from RMB tap, Ctrl+click or the menu key.
       event.preventDefault()
       openRadialFromKeyboard()
     } else if (key === "i" && !event.repeat) {

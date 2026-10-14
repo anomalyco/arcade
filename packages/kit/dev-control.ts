@@ -2348,7 +2348,7 @@ class PageControlRuntime {
         copy.sort()
         return copy.toString()
       }
-      const isLab = cur.pathname.endsWith("/lab.html")
+      const isLab = isLabPath(cur.pathname)
       return stripParams(cur.searchParams, isLab) === stripParams(dst.searchParams, isLab)
     } catch {
       void step
@@ -2403,7 +2403,7 @@ class PageControlRuntime {
       this.renderStudioPage(tour, step, stepNumber)
     } else {
       this.hideStudioPage()
-      if (location.pathname.endsWith("/lab.html")) {
+      if (isLabPath(location.pathname)) {
         const parsed = new URL(step.url, location.origin)
         const urlSection =
           parsed.searchParams.get("section")?.trim() ||

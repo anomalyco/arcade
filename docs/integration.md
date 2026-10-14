@@ -91,7 +91,7 @@ The integration worktree has these named client previews:
 - Getaway: <http://arcade-review-getaway.localhost:1355/?peaceful=1&seed=7>
 - Blackout: <http://arcade-review-blackout.localhost:1355/?sandbox=1&seed=1>
 - Wizards: <http://arcade-review-blackout.localhost:1355/?sandbox=1&mode=wizards&seed=1>
-- Shared Lab: <http://arcade-review-blackout.localhost:1355/lab.html>
+- Shared Lab: <http://arcade-review-blackout.localhost:1355/lab.html> (now the single Lab app at `/arcade/lab/`)
 - Outbreak: <http://arcade-review-outbreak.localhost:1355/?solo&seed=7>
 
 These client previews support local play. The sniper network proof uses a mocked socket feeding the real shared World.

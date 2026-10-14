@@ -231,7 +231,7 @@ try {
     await page.locator('[data-catalog-id="fixture:car-cones"]').click()
     await step(4)
     await page.locator("canvas").focus()
-    await page.keyboard.press("m")
+    await page.keyboard.press("ContextMenu")
     const radialAudit = await page.evaluate(() => {
       const root = document.querySelector<HTMLElement>("[data-lab-radial]")!
       const sectors = [...root.querySelectorAll<HTMLElement>(".lab-radial-sector")].map(el => ({

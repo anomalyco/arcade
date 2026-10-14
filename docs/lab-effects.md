@@ -1,6 +1,6 @@
 # Tune game effects in the Lab
 
-Open either game's `/lab.html` and choose **Blackout effects** or **Getaway effects**. The controls edit
+Open the Lab (`/arcade/lab/`) and choose **Blackout effects** or **Getaway effects**. The controls edit
 the settings objects read by the production emitters. Choose an effect, trigger it, or turn on Loop.
 Play pauses the simulation; Clear effects removes the active presentation state. Copy JSON exports
 the game, room/effect seeds, selected effect and every parameter group.

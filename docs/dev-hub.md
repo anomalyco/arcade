@@ -11,7 +11,7 @@ nexus run arcade -- bun run dev   # on Kit's Mac: http://arcade.localhost:1355/
 
 `scripts/dev.ts` is one HTTP server that mounts every workspace game (`games/*` in the root `package.json`) at its
 production path: `/arcade/getaway/`, `/arcade/blackout/`, `/arcade/outbreak/`, `/arcade/carrier/`. `/` and `/arcade/`
-redirect to the hub at `/arcade/getaway/dev.html`. Paths match production, so relative assets, `lab.html`,
+redirect to the hub at `/arcade/getaway/dev.html`. Paths match production, so relative assets,
 `compare.html`, `audio-assets/` and the games' directory-relative `api/` and `ws` URLs resolve the same way locally.
 
 Each game runs in its own Vite dev server, in middleware mode with base `/arcade/<id>/`, created on the first request
@@ -50,7 +50,9 @@ no landing link). Its links depend on how the page is served:
 The router announces itself with a `<meta name="arcade-dev-router">` tag that lists its mounted games. The hub never
 probes ports or other previews. Carrier and Outbreak stay inside the closed Prototypes disclosure.
 
-Sandbox opens the host's shared `lab.html`. The Lab toolbar's Hub link returns to Games on the same host.
+The Lab link opens the single Lab app at `/arcade/lab/` (mounted like a game from `games/lab`). Old
+`/arcade/<game>/lab.html` URLs redirect to `/arcade/lab/?game=<game>`, locally and in production. The Lab toolbar's
+Hub link returns to Games at `/arcade/getaway/dev.html`.
 Browser back/forward work across hub, games and Lab because they share one origin and history.
 
 ## Catalogue

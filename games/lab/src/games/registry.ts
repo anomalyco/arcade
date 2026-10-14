@@ -21,7 +21,7 @@ export type LabGameEntry = {
 
 export const LAB_GAMES: readonly LabGameEntry[] = [
   { id: "getaway", label: "Getaway", sections: ["getaway-effects"], load: () => import("./getaway") },
-  { id: "blackout", label: "Blackout", sections: ["blackout-effects", "fire-water", "splatter"], defaultSection: "blackout-effects", load: () => import("./blackout") },
+  { id: "blackout", label: "Blackout", sections: ["blackout-effects", "fire-water", "splatter"], load: () => import("./blackout") },
   { id: "outbreak", label: "Outbreak", sections: ["outbreak-vignette"], defaultSection: "outbreak-vignette", load: () => import("./outbreak") },
 ]
 

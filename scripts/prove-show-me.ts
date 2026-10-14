@@ -286,7 +286,7 @@ try {
         selectedStep: document.querySelector('[data-studio-step][aria-selected="true"]')?.getAttribute("data-studio-step"),
       }))
       .catch(() => null)
-    if (st?.path === "/arcade/outbreak/lab.html" && st.stepText === "3/4" && st.selectedStep === "3") break
+    if (st?.path === "/arcade/lab/" && st.stepText === "3/4" && st.selectedStep === "3") break
     await Bun.sleep(100)
   }
   check(context.pages().length === 1, "Studio Tab Strip must keep only 1 browser tab open")
@@ -324,7 +324,7 @@ try {
 
   // 5. Verify Lab Play mode on Getaway Lab & Blackout Lab for both QWERTY and Dvorak layouts
   for (const hostGame of ["getaway", "blackout"] as const) {
-    await page.goto(`${origin}/arcade/${hostGame}/lab.html`, { waitUntil: "domcontentloaded" })
+    await page.goto(`${origin}/arcade/lab/?game=${hostGame}`, { waitUntil: "domcontentloaded" })
     await page.waitForFunction(
       () => Boolean(document.querySelector('[data-action="mode-play"]') && document.querySelector("canvas")),
       undefined,

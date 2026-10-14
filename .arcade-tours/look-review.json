@@ -60,7 +60,7 @@
     {
       "title": "Vignette · Noir, game camera",
       "body": "Same lot with the Noir preset. Compare value structure with the paint-over tab: darkness should own the frame.",
-      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "url": "/arcade/lab/?game=outbreak&section=outbreak-vignette",
       "setup": [
         {
           "command": "vignette.preset",
@@ -84,7 +84,7 @@
     {
       "title": "Vignette · Street close-up",
       "body": "#2 weakness: the ground. Bright gridded slabs and a flat road vs dirty cracked asphalt, weeds over edges, gravel, leaves.",
-      "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
+      "url": "/arcade/lab/?game=outbreak&section=outbreak-vignette",
       "setup": [
         {
           "command": "vignette.preset",

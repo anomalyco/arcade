@@ -1,6 +1,6 @@
 # Lab
 
-The shared client-side isolation sandbox. Both games serve it at `/lab.html`; Backquote opens its controls.
+The shared client-side isolation sandbox, served by the Lab app (`games/lab`, `/arcade/lab/`); Backquote opens its controls.
 Choose sections in the panel. `main.ts` owns the device, shared scene and active-section lifecycle.
 
 - Effects: eight FX presets, playback, parameters, Copy, carving and debug views.

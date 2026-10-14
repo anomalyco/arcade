@@ -1,6 +1,6 @@
 # arcade
 
-- Bun workspace: `games/blackout/`, `games/getaway/`, `games/outbreak/`, `games/carrier/` and `packages/*` share the root `bun.lock`. Run
+- Bun workspace: `games/blackout/`, `games/getaway/`, `games/outbreak/`, `games/carrier/`, `games/lab/` and `packages/*` share the root `bun.lock`. Run
   `bun install --frozen-lockfile` at the root, `bun run check:packages`, then `bun run check` inside each affected game.
   `bunfig.toml` selects hoisted dependencies for shared tooling and historical benchmark exports. Keep Vite, Wrangler,
   TypeScript and Playwright versions aligned across workspace games. `landing/`, `redirects/` and `games/wings/` are
@@ -31,6 +31,8 @@
   `games/getaway/shared/**` because its script typecheck includes the cross-game benchmark.
   Blackout and Outbreak also watch `games/getaway/public/sfx/**`: the shared audio asset plugin copies the manifest's
   samples into each game's own `audio-assets/` route for prefix-safe Lab loading.
+  The Lab (`games/lab`, Worker `arcade-lab`, `/arcade/lab`) bundles Getaway, Blackout and Outbreak's Lab adapters, so its
+  workflow also watches those games. Each game Worker redirects its old `/lab.html` to `/arcade/lab/?game=<game>`.
   Keep installs at the root in both check and deploy jobs; checks build and smoke-load each production bundle before deployment.
   Local `bun run deploy` still runs inside a game. Cloudflare Builds must install from the repository root before
   running the game's build/deploy command (for example `bun run --cwd games/getaway build`).
