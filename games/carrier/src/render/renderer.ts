@@ -3,6 +3,7 @@ import { FRAME, FRAME_FLOATS } from "./frame"
 import { LIT_WGSL, createLitPipelines, splitFoliage, type LitPipelines } from "./lit"
 import { VERT_BYTES } from "./mesh"
 import { Post, type Grade } from "./post"
+import { installFramePacer } from "../../../../packages/kit/gpu-perf"
 
 export type { Grade } from "./post"
 
@@ -68,6 +69,7 @@ export class Renderer {
     format: GPUTextureFormat,
   ) {
     const d = device
+    this.notifyPacer = installFramePacer(() => this.inflight === 0, () => false, d)
     this.frameBuf = d.createBuffer({ label: "frame", size: FRAME_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const frameLayout = d.createBindGroupLayout({
       label: "frame",
@@ -145,11 +147,12 @@ export class Renderer {
   readonly currentFrame = new Float32Array(FRAME_FLOATS)
   private scheduled = false
   private inflight = 0
+  private readonly notifyPacer: () => void
 
   /**
    * Queues a frame. Calls within one task collapse to the last (callers reuse their arrays, so the latest input is
-   * always consistent), and at most two frames are in flight: a slow GPU drops frames instead of building an unbounded
-   * backlog. A dropped frame is drawn once the GPU catches up, so the latest state always reaches the screen.
+   * always consistent), and at most one frame is in flight: a slow GPU drops frames instead of building an unbounded
+   * backlog or submitting out-of-band in microtasks.
    */
   render(frame: Float32Array, grade: Grade): void {
     this.currentFrame.set(frame.subarray(0, FRAME_FLOATS))
@@ -168,7 +171,7 @@ export class Renderer {
     this.scheduled = false
     const f = this.pendingFrame
     const g = this.pendingGrade
-    if (!f || !g || this.inflight >= 2 || !this.mainPass) return
+    if (!f || !g || this.inflight >= 1 || !this.mainPass) return
     this.pendingFrame = null
     this.pendingGrade = null
     this.draw(f, g)
@@ -179,7 +182,7 @@ export class Renderer {
 
   private done = (): void => {
     this.inflight--
-    if (this.pendingFrame) this.schedule()
+    this.notifyPacer()
   }
 
   private draw(frame: Float32Array, grade: Grade): void {
