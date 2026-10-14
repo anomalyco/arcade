@@ -207,6 +207,7 @@ fn eyeVisible(p: vec2f) -> f32 {
       }
     }
     col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, o.color, inRoom, mat), nightLamps);
+    if (mat != 12) { col *= evalActorGroundShadow(o.world, n, inRoom); }
     // Darken cutaway wall-top molding (y = 2.73..2.83) so interior walls have a crisp dark charcoal cap
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
       col *= 0.08;

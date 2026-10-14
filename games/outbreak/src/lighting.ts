@@ -35,9 +35,6 @@ export type OutbreakLightingSettings = {
   porchAirGlow: number
   windowInteriorDepth: number
   actorLampShadow: number
-  actorBounce: number
-  asphaltSheen: number
-  foliageContact: number
 }
 
 export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
@@ -60,9 +57,6 @@ export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   porchAirGlow: 0,
   windowInteriorDepth: 0,
   actorLampShadow: 0,
-  actorBounce: 0,
-  asphaltSheen: 0,
-  foliageContact: 0,
 }
 
 /** Preset lighting profiles so switching `@arcade/kit/look` presets in the Lab dials in the base lighting primitives too. */
@@ -151,9 +145,6 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "porchAirGlow", label: "Porch lantern glow", group: "Atmosphere", min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "windowInteriorDepth", label: "Window interior depth", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
   { key: "actorLampShadow", label: "Actor lamp shadow", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
-  { key: "actorBounce", label: "Directional actor bounce", group: "Atmosphere", min: 0, max: 1.5, step: 0.05, unit: "×" },
-  { key: "asphaltSheen", label: "Wet asphalt lamp sheen", group: "Atmosphere", min: 0, max: 1.5, step: 0.05, unit: "×" },
-  { key: "foliageContact", label: "Foliage contact bend", group: "Atmosphere", min: 0, max: 1.5, step: 0.05, unit: "×" },
 ]
 
 export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 48
@@ -188,8 +179,8 @@ export type OutbreakLightingFrameState = {
  * u5: flashColorR, flashColorG, flashColorB, inInteriorView (1 or 0)
  * u6: playerX, playerY, playerH, exposure
  * u7: streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
- * u8: porchAirGlow, windowInteriorDepth, actorLampShadow, actorBounce
- * u9: asphaltSheen, foliageContact, streetPoolOrigin, reserved
+ * u8: porchAirGlow, windowInteriorDepth, actorLampShadow, reserved
+ * u9: reserved, reserved, streetPoolOrigin, reserved
  * u10: zombie0X, zombie0Y, zombie1X, zombie1Y
  * u11: reserved
  */
@@ -249,10 +240,7 @@ export function packOutbreakLightingUniforms(
   out[32] = s.porchAirGlow
   out[33] = s.windowInteriorDepth
   out[34] = s.actorLampShadow
-  out[35] = s.actorBounce
   // u9
-  out[36] = s.asphaltSheen
-  out[37] = s.foliageContact
   out[38] = s.streetPoolOrigin
   // u10
   out.set(state.zombies, 40)
@@ -747,8 +735,8 @@ struct OutbreakLightingUniforms {
   u5: vec4f, // flashColorR, flashColorG, flashColorB, inInteriorView
   u6: vec4f, // playerX, playerY, playerH, exposure
   u7: vec4f, // streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
-  u8: vec4f, // porchAirGlow, windowInteriorDepth, actorLampShadow, actorBounce
-  u9: vec4f, // asphaltSheen, foliageContact, streetPoolOrigin, reserved
+  u8: vec4f, // porchAirGlow, windowInteriorDepth, actorLampShadow, reserved
+  u9: vec4f, // reserved, reserved, streetPoolOrigin, reserved
   u10: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
   u11: vec4f, // reserved
 }
@@ -1067,4 +1055,42 @@ fn evalWindowInterior(world: vec3f, n: vec3f, V: vec3f, u: f32, width: f32, lamp
   let sky = vec3f(0.035, 0.042, 0.06) * (0.5 + F.ambient.w);
   return room * OL.u1.y * lamps * 1.1 * (1.0 - fresnel) + sky * fresnel;
 }
+
+/**
+ * Analytic soft capsule shadow cast by the survivor and the two nearest zombies away from the streetlamp lens on outdoor
+ * ground, plus a tight boot-contact occlusion under each actor. Shadow length follows the lamp's height over the actor,
+ * the penumbra widens toward the tip, and the darkening fades with distance from the lamp.
+ */
+fn actorShadowTerm(g: vec2f, feet: vec2f, lamp: vec3f, actorH: f32, directional: f32) -> f32 {
+  let rel = g - feet;
+  let contact = exp(-dot(rel, rel) / 0.035);
+  let away = feet - lamp.xz;
+  let dh = length(away);
+  let reach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
+  let dir = away / max(dh, 1e-3);
+  let t = clamp(dot(rel, dir) / reach, 0.0, 1.0);
+  let dist = length(rel - dir * (t * reach));
+  let radius = 0.17 + 0.22 * t;
+  let lampNear = (1.0 - smoothstep(8.0, 16.0, dh)) * directional;
+  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * lampNear;
+  return max(shadow * 0.72, contact * 0.48);
+}
+
+fn evalActorGroundShadow(world: vec3f, n: vec3f, inRoom: bool) -> f32 {
+  let k = OL.u8.z;
+  if (k <= 0.001 || n.y < 0.6 || world.y > OL.u6.z + 0.35) { return 1.0; }
+  let g = world.xz;
+  let p = OL.u6.xy;
+  let z0 = OL.u10.xy;
+  let z1 = OL.u10.zw;
+  let near = min(dot(g - p, g - p), min(dot(g - z0, g - z0), dot(g - z1, g - z1)));
+  if (near > 9.0) { return 1.0; }
+  // Outdoors the sodium lens is the dominant caster; indoors only the boot contact remains.
+  let lamp = OL.u7.xyz;
+  let directional = select(1.0, 0.0, inRoom || OL.u5.w > 0.5);
+  let occ = max(actorShadowTerm(g, p, lamp, 1.72, directional), max(actorShadowTerm(g, z0, lamp, 1.68, directional), actorShadowTerm(g, z1, lamp, 1.68, directional)));
+  return 1.0 - occ * k;
+}
+
+
 `
