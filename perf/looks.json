@@ -20,87 +20,87 @@
     "measuredPairs": 7,
     "presets": {
       "current": {
-        "medianGpuMs": 1.4418,
-        "madGpuMs": 0.4518,
+        "medianGpuMs": 3.4821,
+        "madGpuMs": 1.5218,
         "deltaVsCurrentMs": 0,
         "samples": [
-          1.3661,
-          1.4418,
-          1.4545,
-          1.8936,
-          1.9432,
-          0.754,
-          0.6898
+          0.638,
+          4.5341,
+          3.4821,
+          0.6695,
+          0.6471,
+          4.9135,
+          5.0039
         ]
       },
       "noir": {
-        "medianGpuMs": 1.6591,
-        "madGpuMs": 0.5854,
-        "deltaVsCurrentMs": 0.2173,
+        "medianGpuMs": 2.904,
+        "madGpuMs": 2.1291,
+        "deltaVsCurrentMs": -0.5781,
         "samples": [
-          1.5814,
-          1.6591,
-          1.6612,
-          2.2445,
-          2.418,
-          0.805,
-          0.7913
+          2.904,
+          5.7881,
+          0.7412,
+          0.7749,
+          0.7769,
+          5.148,
+          4.728
         ]
       },
       "painterly": {
-        "medianGpuMs": 1.63,
-        "madGpuMs": 0.4723,
-        "deltaVsCurrentMs": 0.1882,
+        "medianGpuMs": 0.8063,
+        "madGpuMs": 0.0214,
+        "deltaVsCurrentMs": -2.6758,
         "samples": [
-          1.596,
-          1.63,
-          1.7263,
-          2.1023,
-          2.616,
-          0.8383,
-          0.8113
+          0.7972,
+          3.5097,
+          0.7866,
+          0.8063,
+          0.7849,
+          6.7242,
+          5.7253
         ]
       },
       "cinematic_dusk": {
-        "medianGpuMs": 1.5987,
-        "madGpuMs": 0.3385,
-        "deltaVsCurrentMs": 0.1569,
+        "medianGpuMs": 0.8113,
+        "madGpuMs": 0.0546,
+        "deltaVsCurrentMs": -2.6708,
         "samples": [
-          1.5482,
-          1.5987,
-          1.8623,
-          1.9561,
-          2.8228,
-          1.2602,
-          0.7866
+          0.7649,
+          4.9761,
+          0.7567,
+          0.8113,
+          0.7586,
+          4.5597,
+          4.9767
         ]
       },
       "sodium_70s": {
-        "medianGpuMs": 1.7489,
-        "madGpuMs": 0.2012,
-        "deltaVsCurrentMs": 0.3071,
+        "medianGpuMs": 0.7731,
+        "madGpuMs": 0.0275,
+        "deltaVsCurrentMs": -2.709,
         "samples": [
-          1.5477,
-          1.6565,
-          1.7489,
-          1.9058,
-          2.8998,
-          3.185,
-          0.775
+          0.7731,
+          6.4218,
+          0.7456,
+          0.7862,
+          0.764,
+          0.7395,
+          6.1521
         ]
       },
       "cozy_golden_hour": {
-        "medianGpuMs": 1.797,
-        "madGpuMs": 0.232,
-        "deltaVsCurrentMs": 0.3552,
+        "medianGpuMs": 0.7824,
+        "madGpuMs": 0.0155,
+        "deltaVsCurrentMs": -2.6997,
         "samples": [
-          1.565,
-          1.5678,
-          1.797,
-          1.8329,
-          3.3642,
-          3.535,
-          0.7834
+          0.7824,
+          5.2585,
+          0.7441,
+          0.7979,
+          0.7742,
+          0.7672,
+          7.2992
         ]
       }
     }
@@ -115,87 +115,87 @@
     "measuredPairs": 7,
     "presets": {
       "current": {
-        "medianSpanMs": 3.3125,
-        "madSpanMs": 0.05,
+        "medianSpanMs": 8.2375,
+        "madSpanMs": 0.7125,
         "deltaVsCurrentMs": 0,
         "samples": [
-          3.6375,
-          3.25,
+          8.95,
           3.275,
-          3.4125,
-          3.3125,
-          3.3625,
-          3.2875
+          3.4,
+          8.7375,
+          8.2,
+          8.2375,
+          9.125
         ]
       },
       "noir": {
-        "medianSpanMs": 4.025,
-        "madSpanMs": 0.0875,
-        "deltaVsCurrentMs": 0.7125,
+        "medianSpanMs": 8.775,
+        "madSpanMs": 3.3,
+        "deltaVsCurrentMs": 0.5375,
         "samples": [
-          4.1125,
-          4.0375,
-          3.8625,
-          4.05,
-          3.8,
-          3.8,
-          4.025
+          12.075,
+          4.35,
+          4.7125,
+          8.775,
+          4.85,
+          9.7,
+          9.8625
         ]
       },
       "painterly": {
-        "medianSpanMs": 3.8125,
-        "madSpanMs": 0.0125,
-        "deltaVsCurrentMs": 0.5,
+        "medianSpanMs": 8.4625,
+        "madSpanMs": 1.65,
+        "deltaVsCurrentMs": 0.225,
         "samples": [
-          3.975,
-          3.825,
-          3.575,
-          3.8125,
-          3.8,
-          3.875,
-          3.8
+          10.1125,
+          4.8125,
+          4.2375,
+          9.1875,
+          4.275,
+          8.4625,
+          9.8125
         ]
       },
       "cinematic_dusk": {
-        "medianSpanMs": 3.75,
-        "madSpanMs": 0.1125,
-        "deltaVsCurrentMs": 0.4375,
+        "medianSpanMs": 6.6125,
+        "madSpanMs": 2.5,
+        "deltaVsCurrentMs": -1.625,
         "samples": [
-          3.9,
-          3.85,
-          3.5625,
-          3.5375,
-          3.75,
-          3.8625,
-          3.725
+          8.575,
+          4.675,
+          3.9625,
+          6.6125,
+          4.1125,
+          11.4,
+          9.8
         ]
       },
       "sodium_70s": {
-        "medianSpanMs": 3.65,
-        "madSpanMs": 0.075,
-        "deltaVsCurrentMs": 0.3375,
+        "medianSpanMs": 5.375,
+        "madSpanMs": 1.3625,
+        "deltaVsCurrentMs": -2.8625,
         "samples": [
-          3.5375,
-          3.725,
-          3.5,
-          3.65,
-          3.7375,
-          3.575,
-          3.725
+          8.35,
+          4.3625,
+          4.0125,
+          5.375,
+          4.5375,
+          8.475,
+          10.9625
         ]
       },
       "cozy_golden_hour": {
-        "medianSpanMs": 3.6625,
-        "madSpanMs": 0.1125,
-        "deltaVsCurrentMs": 0.35,
+        "medianSpanMs": 5.425,
+        "madSpanMs": 1.3875,
+        "deltaVsCurrentMs": -2.8125,
         "samples": [
-          3.6875,
-          3.6625,
-          3.4875,
-          3.55,
-          4.975,
-          3.6,
-          3.875
+          8.5125,
+          4.625,
+          4.0375,
+          5.425,
+          5.2,
+          8.375,
+          9.2375
         ]
       }
     }

@@ -969,26 +969,28 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
   const base = makeSceneShader({
     ...hooks,
     declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\n`,
-    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  lookAlbedo = o.color;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.018); }\n`,
-    material: `${hooks.material ?? ""}\n    if (lookUseAfter) {
+    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  lookAlbedo = o.color;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.012); }\n`,
+    material: `    if (lookUseAfter) {
       let palMix = LK.u3.w;
-      let folShift = LK.u11.z;
       if (palMix > 0.001) {
-        if (mat == 4) { albedo = mix(albedo, pow(max(LK.u12.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.55); }
+        if (mat == 4) { albedo = mix(albedo, pow(max(LK.u12.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.45); }
         else if (mat == 20) {
           let k = i32(round(o.aux));
-          if (k == 4) { albedo = mix(albedo, pow(max(LK.u13.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.68); }
-          else if (k == 6 || k == 2) { albedo = mix(albedo, pow(max(LK.u14.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.62); }
+          if (k == 4) { albedo = mix(albedo, pow(max(LK.u13.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.45); }
+          else if (k == 6 || k == 2) { albedo = mix(albedo, pow(max(LK.u14.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.40); }
           else if (k == 1) {
-            // Road asphalt in Painterly: lift to soft periwinkle-slate gouache
-            let roadTarget = select(pow(max(LK.u14.xyz * 0.65, vec3f(0.02)), vec3f(2.2)), vec3f(0.15, 0.18, 0.32), i32(round(LK.u14.w)) == 2);
-            albedo = mix(albedo, roadTarget, palMix * 0.72);
+            let roadTarget = select(pow(max(LK.u14.xyz * 0.65, vec3f(0.02)), vec3f(2.2)), vec3f(0.115, 0.142, 0.255), i32(round(LK.u14.w)) == 2);
+            albedo = mix(albedo, roadTarget, palMix * 0.52);
           }
-          else if (k == 0 || k == 5) { albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.72); }
+          else if (k == 0 || k == 5) { albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.48); }
         } else if (mat == 22) {
-          albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.75);
+          albedo = mix(albedo, pow(max(LK.u15.xyz, vec3f(0.02)), vec3f(2.2)), palMix * 0.48);
         }
       }
+    }
+    ${hooks.material ?? ""}
+    if (lookUseAfter) {
+      let folShift = LK.u11.z;
       if ((mat == 22 || (mat == 20 && (i32(round(o.aux)) == 0 || i32(round(o.aux)) == 5))) && abs(folShift) > 0.001) {
         let warmFol = albedo * vec3f(1.38, 1.08, 0.52);
         let coolFol = vec3f(dot(albedo, vec3f(0.3, 0.5, 0.2))) * vec3f(0.70, 0.86, 0.96);
@@ -1126,95 +1128,115 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
 
     // Painterly gouache twilight choreography (retains real shingle/plank/stone/furniture detail & AO while lifting shadows to periwinkle gouache & warm peach-gold pools)
     if (i32(round(LK.u14.w)) == 2 || (LK.u10.w > 0.35 && LK.u10.y >= 2.0)) {
+      // Multi-scale cell brush strokes so flat surfaces read as hand-painted gouache dabs
+      let warp = vec2f(noise2(o.world.xz * 2.8 + 1.3) - 0.5, noise2(o.world.xz * 2.8 + 7.9) - 0.5) * 0.35;
+      let brushCell = floor((o.world.xz + warp) * 3.6);
+      let cellTone = (hash2(brushCell) - 0.5) * 0.22;
       let dab = noise2(o.world.xz * 4.5 + vec2f(o.world.y * 2.1, 3.7)) - 0.5;
-      let dabMed = noise2(o.world.xz * 9.5 + vec2f(dab * 1.8, 6.2)) - 0.5;
       let dabBroad = noise2(o.world.xz * 1.15 + vec2f(7.1, 2.3)) - 0.5;
-      let brushStroke = dab * 0.22 + dabMed * 0.16 + dabBroad * 0.14;
+      let brushStroke = cellTone + dab * 0.16 + dabBroad * 0.14;
       let isIn = interior(o.world.xz) && o.world.y < 2.8;
       let fData = floorData(o.world.xz);
-      let ao = 1.0 - fData.r * 0.78 * (1.0 - smoothstep(0.0, 1.1, o.world.y));
-      // Detect cutaway mode (when player is inside the house, F.eye.y < 34.0) so exterior yard stays darker dusk in interior view
+      let ao = 1.0 - fData.r * 0.82 * (1.0 - smoothstep(0.0, 1.1, o.world.y));
       let inCutawayView = F.eye.y < 34.0;
       let extScale = select(1.0, 0.28, inCutawayView);
 
       if (!isIn) {
-        // Modulate real procedural lookAlbedo (preserving shingle tabs, flagstones, sidewalk joints, car, and foliage clusters)
         var gouacheAlbedo = lookAlbedo * (1.0 + brushStroke);
+        if (mat == 2) {
+          // Window curtains & lamp bulbs in Painterly: warm glowing peach-gold gouache
+          col = mix(col, vec3f(1.75, 1.12, 0.42) * (0.85 + 0.3 * extScale), clamp(LK.u10.w, 0.0, 1.0));
+        } else if (mat == 6) {
+          // Window glass: warm golden-peach reflection
+          col = mix(col, vec3f(1.35, 0.88, 0.36) * (0.75 + 0.25 * extScale), clamp(LK.u10.w * 0.7, 0.0, 1.0));
+          alpha = max(alpha, 0.55 * clamp(LK.u10.w, 0.0, 1.0));
+        } else {
         if (mat == 20) {
           let k = i32(round(o.aux));
           if (k == 1) {
-            // Street asphalt: blend procedural aggregate with mottled periwinkle-lavender gouache (#5f6c96)
-            gouacheAlbedo = mix(lookAlbedo * vec3f(1.25, 1.42, 2.25), vec3f(0.095, 0.122, 0.235), 0.55) * (1.0 + brushStroke * 1.35);
+            // Street asphalt: mottled periwinkle-lavender gouache brush dabs (#5f6c96)
+            gouacheAlbedo = mix(lookAlbedo * vec3f(1.25, 1.42, 2.25), vec3f(0.105, 0.132, 0.248), 0.48) * (1.0 + brushStroke * 1.35);
           } else if (k == 2) {
-            // Sidewalk concrete: keep slab seams from lookAlbedo, lift toward warm periwinkle-cream
-            gouacheAlbedo = lookAlbedo * vec3f(1.18, 1.25, 1.58) * (1.0 + brushStroke * 0.85);
+            // Sidewalk concrete: keep slab expansion joints crisp, warm periwinkle-cream stone
+            let jx = smoothstep(0.0, 0.035, abs(fract(o.world.x / 1.6 + 0.5) - 0.5));
+            let jz = smoothstep(0.0, 0.035, abs(fract(o.world.z / 1.6 + 0.5) - 0.5));
+            let joint = 0.55 + 0.45 * (jx * jz);
+            gouacheAlbedo = lookAlbedo * vec3f(1.22, 1.28, 1.62) * joint * (1.0 + brushStroke * 0.75);
           } else if (k == 6) {
-            // Front cobblestone walk: keep Voronoi stone joints & bevels from lookAlbedo, warm honey-buff tint
-            gouacheAlbedo = lookAlbedo * vec3f(1.48, 1.26, 0.98) * (1.0 + brushStroke * 0.9);
+            // Front cobblestone walk: accentuate individual rounded stone pavers & recessed joints
+            gouacheAlbedo = lookAlbedo * vec3f(1.58, 1.32, 0.98) * (1.0 + brushStroke * 0.85);
           } else if (k == 0 || k == 5) {
-            // Lawn turf & garden beds: keep clump texture from lookAlbedo, deep Ghibli sage-moss & sunlit olive
-            let lushShift = mix(vec3f(0.76, 1.16, 0.64), vec3f(1.24, 1.44, 0.62), clamp(0.5 + dabBroad * 1.4 + dab * 0.8, 0.0, 1.0));
-            gouacheAlbedo = lookAlbedo * lushShift * (1.05 + brushStroke * 0.9);
+            // Lawn turf & garden beds: clumped Ghibli sage-moss & sunlit olive brush dabs
+            let lushShift = mix(vec3f(0.76, 1.18, 0.64), vec3f(1.26, 1.46, 0.62), clamp(0.5 + dabBroad * 1.4 + cellTone * 1.8, 0.0, 1.0));
+            gouacheAlbedo = lookAlbedo * lushShift * (1.08 + brushStroke * 0.85);
           } else if (k == 3) {
-            gouacheAlbedo = lookAlbedo * vec3f(1.22, 1.25, 1.42) * (1.0 + brushStroke);
+            gouacheAlbedo = lookAlbedo * vec3f(1.26, 1.28, 1.46) * (1.0 + brushStroke);
           }
         } else if (mat == 21) {
-          // Roof shingles: preserve individual shingle tab variation from lookAlbedo, shift to slate-periwinkle gouache
-          gouacheAlbedo = lookAlbedo * vec3f(1.32, 1.52, 2.38) * (1.0 + brushStroke * 0.95);
+          // Hand-painted roof shingle tiles: crisp staggered courses & tile-to-tile gouache value steps
+          let sRow = floor(o.world.z / 0.26);
+          let sCol = floor(o.world.x / 0.42 + fract(sRow * 0.5));
+          let tileVar = (hash2(vec2f(sCol, sRow)) - 0.5) * 0.34;
+          let rowLine = smoothstep(0.0, 0.14, fract(o.world.z / 0.26));
+          let colLine = smoothstep(0.0, 0.09, abs(fract(o.world.x / 0.42 + fract(sRow * 0.5) + 0.5) - 0.5));
+          let tileSeam = 0.52 + 0.48 * (rowLine * colLine);
+          gouacheAlbedo = lookAlbedo * vec3f(1.38, 1.58, 2.45) * (1.0 + tileVar) * tileSeam;
         } else if (mat == 22) {
-          // Trees & bushes: preserve 3D cluster normal shading & leaf detail, boost Ghibli moss-sage & sunlit olive-gold
+          // Trees & bushes: 3-band Ghibli foliage clusters with crisp leaf-clump shadows
           let crownH = clamp((o.world.y - 0.3) / 3.6, 0.0, 1.0);
-          let sunSide = clamp(n.y * 0.55 - n.x * 0.25 + 0.35 + dab * 0.32, 0.0, 1.0);
+          let sunSide = clamp(n.y * 0.55 - n.x * 0.25 + 0.35 + dab * 0.35, 0.0, 1.0);
           let bandF = lookQuantizeDiffuse(clamp(crownH * 0.5 + sunSide * 0.65, 0.0, 1.0), 0.18, max(3.0, LK.u10.y), LK.u10.z);
-          let folTint = mix(vec3f(0.54, 0.94, 0.66), vec3f(1.42, 1.65, 0.68), bandF);
-          gouacheAlbedo = lookAlbedo * folTint * (1.08 + brushStroke * 0.8);
+          let folTint = mix(vec3f(0.52, 0.92, 0.64), vec3f(1.46, 1.68, 0.68), bandF);
+          gouacheAlbedo = lookAlbedo * folTint * (1.10 + cellTone * 0.9);
         } else if (mat == 4) {
-          // Exterior clapboard siding: preserve lap seams from lookAlbedo, warm cream plaster tint
-          gouacheAlbedo = lookAlbedo * vec3f(1.38, 1.32, 1.28) * (1.0 + brushStroke * 0.65);
+          // Exterior clapboard siding: distinct horizontal lap courses
+          let lap = 0.72 + 0.28 * smoothstep(0.0, 0.22, fract(o.world.y / 0.18));
+          gouacheAlbedo = lookAlbedo * vec3f(1.42, 1.36, 1.32) * lap;
         } else if (mat == 5) {
-          // Road center dashes: soften into muted periwinkle-slate so they don't read as harsh yellow/white tape
-          gouacheAlbedo = vec3f(0.105, 0.132, 0.245) * (1.0 + brushStroke);
+          gouacheAlbedo = vec3f(0.112, 0.140, 0.258) * (1.0 + brushStroke);
         }
 
-        // Broad peach-gold gouache glow spilling from front windows (24.4, 34.0), (31.2, 34.0) and porch (27.7, 35.0)
-        let dWinL = length(o.world.xz - vec2f(24.4, 34.3));
-        let dWinR = length(o.world.xz - vec2f(31.2, 34.3));
-        let dPorch = length((o.world.xz - vec2f(27.7, 36.2)) * vec2f(0.85, 0.62));
-        let spillL = exp(-(dWinL * dWinL) / 8.0);
-        let spillR = exp(-(dWinR * dWinR) / 8.0);
-        let spillP = exp(-(dPorch * dPorch) / 14.5);
-        let warmSpill = clamp(spillL * 0.68 + spillR * 0.68 + spillP * 0.96, 0.0, 1.25) * step(o.world.y, 2.75);
-        let peachLight = vec3f(1.22, 0.78, 0.34) * warmSpill * (0.55 + 0.45 * extScale);
+        // Broad peach-gold gouache glow spilling from front windows (24.5, 35.5), (34.25, 35.5) and porch (27.7, 36.8)
+        let dWinL = length(o.world.xz - vec2f(24.5, 35.8));
+        let dWinR = length(o.world.xz - vec2f(34.25, 35.8));
+        let dPorch = length((o.world.xz - vec2f(27.7, 37.2)) * vec2f(0.82, 0.58));
+        let spillL = exp(-(dWinL * dWinL) / 9.5);
+        let spillR = exp(-(dWinR * dWinR) / 9.5);
+        let spillP = exp(-(dPorch * dPorch) / 16.5);
+        let warmSpill = clamp(spillL * 0.75 + spillR * 0.75 + spillP * 1.05, 0.0, 1.35) * step(o.world.y, 2.75);
+        let peachLight = vec3f(1.28, 0.82, 0.36) * warmSpill * (0.55 + 0.45 * extScale);
 
-        // Soft flower-bush blossoms along the house foundation (z ~ 33.5..35.2)
-        if (mat == 22 && o.world.z > 33.2 && o.world.z < 35.6 && o.world.x > 22.0 && o.world.x < 33.8) {
-          let blossom = smoothstep(0.28, 0.48, hash2(floor(o.world.xz * 5.5)));
-          gouacheAlbedo = mix(gouacheAlbedo, vec3f(0.55, 0.45, 0.22), blossom * 0.55);
+        // Soft flower-bush blossoms along the house foundation (z ~ 35.0..36.8)
+        if (mat == 22 && o.world.z > 34.8 && o.world.z < 37.2 && o.world.x > 22.0 && o.world.x < 36.8) {
+          let blossom = smoothstep(0.24, 0.44, hash2(floor(o.world.xz * 5.5)));
+          gouacheAlbedo = mix(gouacheAlbedo, vec3f(0.68, 0.54, 0.26), blossom * 0.65);
         }
 
         let hemiN = 0.62 + 0.38 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-        let skyAmb = vec3f(0.56, 0.62, 0.84) * hemiN * ao * extScale;
-        let paintedExt = col * 0.32 + gouacheAlbedo * (skyAmb + peachLight * 1.35) + peachLight * 0.042 * ao;
+        let skyAmb = vec3f(0.62, 0.68, 0.90) * hemiN * ao * extScale;
+        let paintedExt = col * 0.32 + gouacheAlbedo * (skyAmb + peachLight * 1.38) + peachLight * 0.045 * ao;
         col = mix(col, paintedExt, clamp(LK.u10.w, 0.0, 1.0));
+        }
       } else {
-        // Interior cutaway gouache: preserve real wood plank seams, rugs, furniture & wall AO while warming palette
-        var intAlbedo = lookAlbedo * (1.0 + brushStroke * 0.75);
-        if (mat == 20 && i32(round(o.aux)) == 4) {
-          // Hardwood floor: keep plank seams & board variation from lookAlbedo, shift to rich honey-sienna gouache
-          let rowSeam = smoothstep(0.0, 0.09, abs(fract(o.world.z / 0.165 + 0.5) - 0.5));
-          intAlbedo = lookAlbedo * vec3f(1.22, 0.84, 0.46) * (0.58 + 0.52 * rowSeam) * (1.0 + brushStroke * 0.75);
+        // Interior cutaway gouache: crisp honey-sienna wood plank seams, two-tone wainscot walls, and cozy golden room pools
+        var intAlbedo = lookAlbedo * (1.0 + brushStroke * 0.65);
+        if (n.y > 0.75 && o.world.y < 0.28) {
+          let row = floor(o.world.z / 0.20);
+          let plank = floor((o.world.x + fract(row * 0.37) * 1.4) / 1.45);
+          let bTone = (hash2(vec2f(row, plank)) - 0.5) * 0.28;
+          let seamZ = smoothstep(0.0, 0.08, abs(fract(o.world.z / 0.20 + 0.5) - 0.5));
+          let seamX = smoothstep(0.0, 0.04, abs(fract((o.world.x + fract(row * 0.37) * 1.4) / 1.45 + 0.5) - 0.5));
+          let plankJoint = 0.42 + 0.58 * (seamZ * seamX);
+          intAlbedo = lookAlbedo * vec3f(1.22, 0.84, 0.46) * (1.0 + bTone) * plankJoint;
         } else if (mat == 4) {
-          // Two-tone painted interior wall: sage-grey lower wainscot (y < 1.05) + warm cream-peach upper plaster, keeping plaster stipple
           let isUpper = smoothstep(0.88, 1.12, o.world.y);
           let wainscot = lookAlbedo * vec3f(0.52, 0.62, 0.52) * (1.0 + brushStroke * 0.8);
           let upperWall = lookAlbedo * vec3f(1.08, 0.94, 0.80) * (1.0 + brushStroke * 0.8);
           intAlbedo = mix(wainscot, upperWall, isUpper);
         } else if (mat == 0) {
-          // Furniture (beds, tables, chairs, cabinets): warm tactile gouache tint with normal shading
-          let furnShade = 0.55 + 0.45 * clamp(n.y * 0.6 + 0.4, 0.0, 1.0);
+          let furnShade = 0.52 + 0.48 * clamp(n.y * 0.6 + 0.4, 0.0, 1.0);
           intAlbedo = lookAlbedo * vec3f(0.95, 0.90, 0.78) * furnShade;
         }
-        // Cozy golden lamp pools in all 4 rooms (NW bed, SW bed/living, SE dining, NE kitchen table), respecting wall/furniture AO
         let dNW = length(o.world.xz - vec2f(25.2, 25.4));
         let dSW = length(o.world.xz - vec2f(23.6, 32.6));
         let dSE = length(o.world.xz - vec2f(31.5, 30.6));
@@ -1231,11 +1253,9 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
         col = mix(col, paintedInt, clamp(LK.u10.w, 0.0, 1.0));
       }
       if (mat == 9) {
-        // Cutaway wall-top trim in Painterly: soft slate-indigo border with brush mottling
         col = mix(col, vec3f(0.042, 0.050, 0.082) * (1.0 + dab * 0.16), clamp(LK.u10.w, 0.0, 1.0));
       }
       if (mat == 3) {
-        // Glowing warm peach-gold window panes
         col = mix(col, vec3f(1.55, 1.02, 0.42), clamp(LK.u10.w * 0.85, 0.0, 1.0));
       }
     }
@@ -1386,8 +1406,8 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
   let dabWarp = vec2f(cos(dabAng), sin(dabAng)) * texel * (0.85 * strength);
   let uvW = clamp(uv + dabWarp, vec2f(0.002), vec2f(0.998));
 
-  let r1 = texel * (1.2 + strength * 1.4);
-  let r2 = texel * (2.4 + strength * 2.8);
+  let r1 = texel * (0.9 + strength * 0.7);
+  let r2 = texel * (1.6 + strength * 1.1);
   let lw = vec3f(0.2126, 0.7152, 0.0722);
 
   var m = array<vec3f, 4>(center, center, center, center);
@@ -1397,10 +1417,10 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
     let sx = select(-1.0, 1.0, (q & 1) != 0);
     let sy = select(-1.0, 1.0, (q & 2) != 0);
     let d = vec2f(sx, sy);
-    let c1 = clean(textureSampleLevel(src, samp, clamp(uvW + d * r1, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
-    let c2 = clean(textureSampleLevel(src, samp, clamp(uvW + vec2f(d.x * r2.x, d.y * r1.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
-    let c3 = clean(textureSampleLevel(src, samp, clamp(uvW + vec2f(d.x * r1.x, d.y * r2.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
-    let c4 = clean(textureSampleLevel(src, samp, clamp(uvW + d * r2, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c1 = clean(textureSampleLevel(src, samp, clamp(uv + d * r1, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c2 = clean(textureSampleLevel(src, samp, clamp(uv + vec2f(d.x * r2.x, d.y * r1.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c3 = clean(textureSampleLevel(src, samp, clamp(uv + vec2f(d.x * r1.x, d.y * r2.y), vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let c4 = clean(textureSampleLevel(src, samp, clamp(uv + d * r2, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
     let mean = (center + c1 + c2 + c3 + c4) * 0.2;
     let l1 = dot(c1, lw); let l2 = dot(c2, lw); let l3 = dot(c3, lw); let l4 = dot(c4, lw);
     let lm = (lC + l1 + l2 + l3 + l4) * 0.2;
@@ -1408,10 +1428,10 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32) -> vec3f {
     m[q] = mean;
     s2[q] = v;
   }
-  let w0 = 1.0 / (1.0 + s2[0] * 380.0);
-  let w1 = 1.0 / (1.0 + s2[1] * 380.0);
-  let w2 = 1.0 / (1.0 + s2[2] * 380.0);
-  let w3 = 1.0 / (1.0 + s2[3] * 380.0);
+  let w0 = 1.0 / (1.0 + s2[0] * 1400.0);
+  let w1 = 1.0 / (1.0 + s2[1] * 1400.0);
+  let w2 = 1.0 / (1.0 + s2[2] * 1400.0);
+  let w3 = 1.0 / (1.0 + s2[3] * 1400.0);
   let painted = (m[0] * w0 + m[1] * w1 + m[2] * w2 + m[3] * w3) / (w0 + w1 + w2 + w3);
   return mix(center, painted, clamp(strength, 0.0, 1.0));
 }

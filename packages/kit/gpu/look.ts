@@ -121,7 +121,7 @@ export const LOOK_PARAM_SPECS: readonly LookParamSpec[] = [
   { key: "contrast", label: "Contrast", group: "Tone & Curve", type: "range", min: 0.6, max: 1.8, step: 0.02, unit: "×", boundary: "uniform" },
   { key: "toe", label: "Shadow toe", group: "Tone & Curve", type: "range", min: 0.0, max: 0.8, step: 0.02, unit: "", boundary: "uniform" },
   { key: "shoulder", label: "Highlight shoulder", group: "Tone & Curve", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "blackCrush", label: "Black crush", group: "Tone & Curve", type: "range", min: 0.0, max: 0.2, step: 0.005, unit: "", boundary: "uniform" },
+  { key: "blackCrush", label: "Black crush", group: "Tone & Curve", type: "range", min: 0.0, max: 0.2, step: 0.001, unit: "", boundary: "uniform" },
   { key: "saturation", label: "Saturation", group: "Tone & Curve", type: "range", min: 0.0, max: 1.6, step: 0.02, unit: "×", boundary: "uniform" },
   { key: "temperature", label: "Temperature", group: "Tone & Curve", type: "range", min: -1.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
 
@@ -351,7 +351,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       shadowTintG: 0.88,
       shadowTintB: 1.14,
       highlightTintR: 1.12,
-      highlightTintG: 0.99,
+      highlightTintG: 1.0,
       highlightTintB: 0.82,
       paletteMix: 0.88,
       foliageShift: 0.28,
