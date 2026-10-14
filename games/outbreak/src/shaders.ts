@@ -128,21 +128,11 @@ fn eyeVisible(p: vec2f) -> f32 {
     let outsideView = !interior(F.eye.xy);
     col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
   } else if (mat == 21) {
-    // Deep weathered slate-charcoal roof with shadowed eaves, cool moonlit ridge/rake rims, and crisp course-edge highlights.
+    // Deep weathered slate-charcoal roof reusing surfaceAlpha (courseLip * tabSlot) from surfaceMaterial.
     let eave = smoothstep(2.82, 3.62, o.world.y);
     let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
-    let ewWing = abs(o.normal.x) > abs(o.normal.z) && abs(o.normal.y) < 0.96;
-    let slopeCoord = select(o.world.z, o.world.x, ewWing);
-    let spanCoord = select(o.world.x, o.world.z, ewWing);
-    let row = floor(slopeCoord / 0.25);
-    let fy = fract(slopeCoord / 0.25);
-    let fx = fract(spanCoord / 0.38 + fract(row * 0.5) + (hash2(vec2f(row, 3.1)) - 0.5) * 0.18);
-    let tabHash = hash2(floor(vec2f(spanCoord / 0.38 + fract(row * 0.5), row)));
-    let courseLip = exp(-pow((fy - 0.78) * 10.5, 2.0)) * smoothstep(0.03, 0.10, min(fx, 1.0 - fx));
-    let courseTrough = 1.0 - 0.52 * (1.0 - smoothstep(0.04, 0.22, fy));
-    let slotTrough = mix(0.38, 1.0, smoothstep(0.015, 0.075, min(fx, 1.0 - fx)));
-    let moonGlint = (0.22 * eave + 0.95 * ridgeRim + (0.65 + 0.55 * tabHash) * courseLip * (0.35 + 0.65 * eave)) * F.ambient.w * max(0.0, n.y);
-    col = col * mix(0.54, 0.96, eave) * courseTrough * slotTrough + vec3f(0.007, 0.014, 0.030) * moonGlint;
+    let moonGlint = (0.22 * eave + 0.95 * ridgeRim + 1.35 * surfaceAlpha * (0.35 + 0.65 * eave)) * F.ambient.w * max(0.0, n.y);
+    col = col * mix(0.56, 0.96, eave) + vec3f(0.007, 0.014, 0.030) * moonGlint;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     if (mat == 20) {

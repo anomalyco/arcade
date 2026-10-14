@@ -57,38 +57,45 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x987652),MAT.timber)
     m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xc4ab78))
   } else if(kind==="stove") {
-    m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x74583c),MAT.timber)
-    m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0xa8a292))
+    m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x483624),MAT.timber)
+    m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0x4e483e))
   } else if(kind==="counter"||kind==="dresser"||kind==="fridge") {
     const {rect:[a,c,r,e],height}=propShape(p)!
-    const pale=kind==="fridge"?0x786044:0x765a3e
+    const pale=kind==="fridge"?0x4c3826:0x483422
     m.box(a,.13,c,r,height-.06,e,hex(pale),MAT.timber)
-    m.box(a-.02,height-.06,c-.02,r+.02,height,e+.02,hex(kind==="counter"?0xb2ac9c:0x8c6c4a),MAT.timber)
+    m.box(a-.02,height-.06,c-.02,r+.02,height,e+.02,hex(kind==="counter"?0x564e42:0x5a422c),MAT.timber)
     if(kind==="counter"){
-      for(const dz of [-.85,.0,.85])m.box(a-.01,.2,z+dz-.32,a-.005,.88,z+dz+.32,hex(0x8e704e),MAT.timber)
+      for(const dz of [-.85,.0,.85])m.box(a-.01,.2,z+dz-.32,a-.005,.88,z+dz+.32,hex(0x5c442e),MAT.timber)
     }else if(kind==="fridge"){
-      m.box(a-.015,.22,c+.05,a,height-.12,e-.05,hex(0x8c6e4c),MAT.timber)
+      m.box(a-.015,.22,c+.05,a,height-.12,e-.05,hex(0x5a422c),MAT.timber)
     }else {
       for(let i=0;i<3;i++)for(const [da,dr] of [[a+.05,(a+r)/2-.03],[(a+r)/2+.03,r-.05]]){
-        m.box(da!,.20+i*.27,e+.002,dr!,.43+i*.27,e+.022,hex(0x8e6e4c),MAT.timber)
+        m.box(da!,.20+i*.27,e+.002,dr!,.43+i*.27,e+.022,hex(0x5c442c),MAT.timber)
         const mx=(da!+dr!)/2
-        m.box(mx-.08,.30+i*.27,e+.022,mx+.08,.34+i*.27,e+.055,hex(0xc2a874))
+        m.box(mx-.08,.30+i*.27,e+.022,mx+.08,.34+i*.27,e+.055,hex(0x9a8254))
       }
       // Potted plant & keepsake box on top of the bedroom dresser
-      m.prism(a+.42,c+.35,.12,.09,height,height+.16,7,hex(0x7e4c34))
-      m.prism(a+.42,c+.35,.19,.08,height+.14,height+.36,7,hex(0x485e38),MAT.foliage)
+      m.prism(a+.42,c+.35,.12,.09,height,height+.16,7,hex(0x5e3824))
+      m.prism(a+.42,c+.35,.19,.08,height+.14,height+.36,7,hex(0x3a4d2c),MAT.foliage)
     }
   } else if(kind==="chair") {
-    m.box(x-.26,.50,z-.26,x+.26,.58,z+.26,hex(0x826242),MAT.timber)
-    m.box(x-.26,.58,z+.19,x+.26,1.04,z+.26,hex(0x8c6b48),MAT.timber)
+    m.box(x-.26,.50,z-.26,x+.26,.58,z+.26,hex(0x523c26),MAT.timber)
+    m.box(x-.26,.58,z+.19,x+.26,1.04,z+.26,hex(0x5c432c),MAT.timber)
     for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.50,z+dz+.025,legs)
   } else if (kind === "table") {
-    // Rich walnut dining/study table with beveled plank top and fruit bowl centerpiece
-    m.bevelBox(x - .72, .72, z - .95, x + .72, .82, z + .95, .03, wood, hex(0x8e6b46), MAT.timber, MAT.timber)
+    // Rich weathered walnut dining/study table with beveled plank top, candle/dishes, and surrounding chairs
+    m.bevelBox(x - .72, .72, z - .95, x + .72, .82, z + .95, .03, hex(0x4a3420), hex(0x5c4028), MAT.timber, MAT.timber)
     for (const dx of [-.60, .60]) for (const dz of [-.80, .80]) m.box(x + dx - .045, .13, z + dz - .045, x + dx + .045, .72, z + dz + .045, legs)
-    m.prism(x, z, .20, .14, .82, .91, 8, hex(0x63482e), MAT.timber)
-    m.prism(x - .05, z - .03, .07, .05, .89, .96, 6, hex(0xd4882e))
-    m.prism(x + .06, z + .04, .065, .045, .89, .95, 6, hex(0x789438))
+    // Centerpiece bowl, ceramic dinner plates, wine bottle, mug & scattered papers on the table
+    m.prism(x, z - .08, .18, .13, .82, .90, 8, hex(0x422e1c), MAT.timber)
+    m.prism(x - .04, z - .10, .06, .04, .88, .94, 6, hex(0x9e5e20))
+    m.prism(x + .05, z - .05, .055, .04, .88, .93, 6, hex(0x526828))
+    // Ceramic plates & bottle/mug
+    m.prism(x - .34, z + .36, .14, .12, .82, .845, 8, hex(0x8c8576), MAT.lit)
+    m.prism(x + .32, z - .42, .14, .12, .82, .845, 8, hex(0x827c6e), MAT.lit)
+    m.prism(x + .22, z + .28, .045, .035, .82, 1.06, 6, hex(0x233826), MAT.shiny)
+    m.prism(x - .18, z + .54, .05, .045, .82, .91, 6, hex(0x7c7464), MAT.lit)
+    m.yawBox(x + .24, z + .56, .24, .18, .82, .835, -.32, hex(0x9a9280), MAT.lit)
   } else {
     for (const dx of [-.8, .8]) m.box(x + dx - .06, .1, z - .38, x + dx + .06, 1.8, z + .38, legs)
     for (const h of [.3, .85, 1.4]) {
