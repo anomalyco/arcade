@@ -46,6 +46,7 @@ type DrifterTrack = {
   kind: "leaf" | "paper" | "bag" | "can"
   anchorX: number
   anchorZ: number
+  groundY: number
   spanAlong: number
   spanAcross: number
   speed: number
@@ -58,6 +59,7 @@ type HingeProp = {
   kind: "gate" | "sign"
   x: number
   z: number
+  groundY: number
   baseYaw: number
   amp: number
   freq: number
@@ -222,6 +224,7 @@ export class OutbreakAmbientMotion {
         kind,
         anchorX: ax,
         anchorZ: az,
+        groundY: supportHeight(town, ax, az),
         spanAlong: sAlong,
         spanAcross: sAcross,
         speed: spd,
@@ -240,6 +243,7 @@ export class OutbreakAmbientMotion {
         kind: "leaf",
         anchorX: ax,
         anchorZ: az,
+        groundY: supportHeight(town, ax, az),
         spanAlong: 3.2 + rng.next() * 4.5,
         spanAcross: 0.6 + rng.next() * 1.2,
         speed: 0.95 + rng.next() * 0.85,
@@ -260,6 +264,7 @@ export class OutbreakAmbientMotion {
         kind,
         anchorX: ax,
         anchorZ: az,
+        groundY: supportHeight(town, ax, az),
         spanAlong: kind === "can" ? 0.75 : 4.2 + rng.next() * 3.5,
         spanAcross: kind === "can" ? 0.08 : 0.7 + rng.next() * 1.1,
         speed: 0.90 + rng.next() * 0.65,
@@ -273,14 +278,14 @@ export class OutbreakAmbientMotion {
     // Swinging gates & wind-rocking street signs (placed safely off walk paths so they never obstruct navigation)
     this.hinges = [
       // Front-yard / side-fence swinging picket gates
-      { kind: "gate", x: 18.12, z: 38.05, baseYaw: 0.38, amp: 0.34, freq: 1.45, phase: 0.5 },
-      { kind: "gate", x: 25.45, z: 38.02, baseYaw: -0.42, amp: 0.28, freq: 1.65, phase: 2.1 },
-      { kind: "gate", x: 18.12, z: 68.05, baseYaw: 0.35, amp: 0.32, freq: 1.50, phase: 1.4 },
+      { kind: "gate" as const, x: 18.12, z: 38.05, baseYaw: 0.38, amp: 0.34, freq: 1.45, phase: 0.5 },
+      { kind: "gate" as const, x: 25.45, z: 38.02, baseYaw: -0.42, amp: 0.28, freq: 1.65, phase: 2.1 },
+      { kind: "gate" as const, x: 18.12, z: 68.05, baseYaw: 0.35, amp: 0.32, freq: 1.50, phase: 1.4 },
       // Tilted street warning signs at curb corners
-      { kind: "sign", x: 35.35, z: 39.52, baseYaw: -0.25, amp: 0.22, freq: 2.35, phase: 0.8 },
-      { kind: "sign", x: 39.42, z: 48.48, baseYaw: 2.85, amp: 0.24, freq: 2.15, phase: 3.2 },
-      { kind: "sign", x: 50.45, z: 39.52, baseYaw: -0.35, amp: 0.20, freq: 2.45, phase: 1.9 },
-    ]
+      { kind: "sign" as const, x: 35.35, z: 39.52, baseYaw: -0.25, amp: 0.22, freq: 2.35, phase: 0.8 },
+      { kind: "sign" as const, x: 39.42, z: 48.48, baseYaw: 2.85, amp: 0.24, freq: 2.15, phase: 3.2 },
+      { kind: "sign" as const, x: 50.45, z: 39.52, baseYaw: -0.35, amp: 0.20, freq: 2.45, phase: 1.9 },
+    ].map(h => ({ ...h, groundY: supportHeight(town, h.x, h.z) }))
   }
 
   stepAndCollect(
@@ -367,7 +372,7 @@ export class OutbreakAmbientMotion {
         const z = tr.anchorZ + Math.cos(ph * 1.9) * tr.spanAcross * Math.min(1.2, motion)
         if (x < vx0 - 1 || x > vx1 + 1 || z < vy0 - 1 || z > vy1 + 1) continue
         if (canCount >= 32) continue
-        const y = supportHeight(town, x, z) + 0.004
+        const y = tr.groundY + 0.004
         const o = canCount++ * INST_FLOATS
         this.canData[o] = x
         this.canData[o + 1] = y
@@ -395,7 +400,7 @@ export class OutbreakAmbientMotion {
       const z = tr.anchorZ + WIND_DIR_Z * along + CROSS_DIR_Z * across
       if (x < vx0 - 1 || x > vx1 + 1 || z < vy0 - 1 || z > vy1 + 1) continue
 
-      const groundY = supportHeight(town, x, z)
+      const groundY = tr.groundY
       // Lift off the ground during wind gusts, skitter along ground in lulls
       const liftWave = Math.max(0, Math.sin(ph * 2.1 + tr.phase * 0.7) * 0.7 + (gust - 0.75) * 0.6)
       const edgeFade = 1 - Math.pow(Math.abs(uTravel) * 2, 4)
@@ -472,18 +477,24 @@ export class OutbreakAmbientMotion {
       if (pSize > 0.12) {
         if (paperCount < 64) {
           const o = paperCount++ * INST_FLOATS
-          this.paperData.set([px, py, pz, yaw, 1, 1, 1, 0.85, pitch, roll, 1, 0], o)
+          const d = this.paperData
+          d[o] = px; d[o + 1] = py; d[o + 2] = pz; d[o + 3] = yaw
+          d[o + 4] = 1; d[o + 5] = 1; d[o + 6] = 1; d[o + 7] = 0.85
+          d[o + 8] = pitch; d[o + 9] = roll; d[o + 10] = 1; d[o + 11] = 0
         }
       } else if (leafCount < 128) {
         const o = leafCount++ * INST_FLOATS
-        this.leafData.set([px, py, pz, yaw, 1, 1, 1, 0.90, pitch, roll, 1, 0], o)
+        const d = this.leafData
+        d[o] = px; d[o + 1] = py; d[o + 2] = pz; d[o + 3] = yaw
+        d[o + 4] = 1; d[o + 5] = 1; d[o + 6] = 1; d[o + 7] = 0.90
+        d[o + 8] = pitch; d[o + 9] = roll; d[o + 10] = 1; d[o + 11] = 0
       }
     }
 
     // 4. Evaluate wind-swinging gates & wind-rocking street signs
     for (const h of this.hinges) {
       if (h.x < vx0 - 2 || h.x > vx1 + 2 || h.z < vy0 - 2 || h.z > vy1 + 2) continue
-      const y = supportHeight(town, h.x, h.z)
+      const y = h.groundY
       const gust = evaluateWindGust(effTime, h.x, h.z, gustiness)
       const osc =
         (Math.sin(effTime * h.freq + h.phase) * 0.68 + Math.sin(effTime * h.freq * 2.1 + h.phase * 1.7) * 0.32) *
@@ -494,14 +505,24 @@ export class OutbreakAmbientMotion {
       if (h.kind === "gate") {
         if (gateCount >= 16) continue
         const o = gateCount++ * INST_FLOATS
-        this.gatePostData.set([h.x, y, h.z, h.baseYaw, 1, 1, 1, 1, 0, 0, 1, 0], o)
-        this.gateLeafData.set([h.x, y, h.z, h.baseYaw + osc, 1, 1, 1, 1, 0, 0, 1, 0], o)
+        const gp = this.gatePostData, gl = this.gateLeafData
+        gp[o] = h.x; gp[o + 1] = y; gp[o + 2] = h.z; gp[o + 3] = h.baseYaw
+        gp[o + 4] = 1; gp[o + 5] = 1; gp[o + 6] = 1; gp[o + 7] = 1
+        gp[o + 8] = 0; gp[o + 9] = 0; gp[o + 10] = 1; gp[o + 11] = 0
+        gl[o] = h.x; gl[o + 1] = y; gl[o + 2] = h.z; gl[o + 3] = h.baseYaw + osc
+        gl[o + 4] = 1; gl[o + 5] = 1; gl[o + 6] = 1; gl[o + 7] = 1
+        gl[o + 8] = 0; gl[o + 9] = 0; gl[o + 10] = 1; gl[o + 11] = 0
       } else {
         if (signCount >= 16) continue
         const o = signCount++ * INST_FLOATS
         const postLean = 0.08
-        this.signPostData.set([h.x, y, h.z, h.baseYaw, 1, 1, 1, 1, postLean, -0.05, 1, 0], o)
-        this.signPlateData.set([h.x, y, h.z, h.baseYaw + osc * 1.25, 1, 1, 1, 1, postLean, -0.05 + osc * 0.45, 1, 0], o)
+        const sp = this.signPostData, pl = this.signPlateData
+        sp[o] = h.x; sp[o + 1] = y; sp[o + 2] = h.z; sp[o + 3] = h.baseYaw
+        sp[o + 4] = 1; sp[o + 5] = 1; sp[o + 6] = 1; sp[o + 7] = 1
+        sp[o + 8] = postLean; sp[o + 9] = -0.05; sp[o + 10] = 1; sp[o + 11] = 0
+        pl[o] = h.x; pl[o + 1] = y; pl[o + 2] = h.z; pl[o + 3] = h.baseYaw + osc * 1.25
+        pl[o + 4] = 1; pl[o + 5] = 1; pl[o + 6] = 1; pl[o + 7] = 1
+        pl[o + 8] = postLean; pl[o + 9] = -0.05 + osc * 0.45; pl[o + 10] = 1; pl[o + 11] = 0
       }
     }
 
@@ -509,6 +530,7 @@ export class OutbreakAmbientMotion {
     let alphaCount = startAlphaCount
     const maxAlpha = Math.floor(alphaSprites.length / SPRITE_FLOATS)
     if (motion > 0.05 && density > 0.1) {
+      const playerGroundY = supportHeight(town, player.x, player.y)
       for (let m = 0; m < 18 && alphaCount < maxAlpha; m++) {
         const ph = m * 2.39996 + settings.clutterSeed * 0.71
         const inBeam = m < 10 && player.flashlightOn && player.flashlightOutput > 0.1
@@ -517,7 +539,7 @@ export class OutbreakAmbientMotion {
         const baseX = inBeam ? player.x + Math.cos(player.aim) * dist - Math.sin(player.aim) * spread : 27.7 + spread
         const baseZ = inBeam ? player.y + Math.sin(player.aim) * dist + Math.cos(player.aim) * spread : 36.6 + Math.cos(effTime * 0.42 + ph) * 1.4
         if (baseX < vx0 || baseX > vx1 || baseZ < vy0 || baseZ > vy1) continue
-        const my = supportHeight(town, baseX, baseZ) + 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(effTime * 0.75 + ph * 1.9))
+        const my = (inBeam ? playerGroundY : 0.13) + 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(effTime * 0.75 + ph * 1.9))
         const pulse = (0.5 + 0.5 * Math.sin(effTime * 1.6 + ph * 3.1)) * Math.min(1.2, motion)
         const o = alphaCount++ * SPRITE_FLOATS
         alphaSprites[o] = baseX

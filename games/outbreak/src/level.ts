@@ -392,7 +392,7 @@ function compileLevel(town: Town): LevelData {
           m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0x787060), MAT.wall)
         }
         // Warm tungsten sill bounce
-        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(isLeftWin ? 0x48240a : 0x562a0c), MAT.lamp, lamp)
+        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(isLeftWin ? 0xa25818 : 0xb2621c), MAT.lamp, lamp)
         const doubleWin = r - x > 2.2
         if (doubleWin) {
           const mid = (x + r) / 2
@@ -401,8 +401,8 @@ function compileLevel(town: Town): LevelData {
         const panes = doubleWin ? [[x+.07, (x+r)/2-.05], [(x+r)/2+.05, r-.07]] : [[x+.07, r-.07]]
         for (const [pIdx, [wx0, wx1]] of panes.entries()) {
           // Warm golden-tungsten inner window glow + drape silhouettes
-          const lowGlow = isLeftWin ? (pIdx === 0 ? 0x4c260a : 0x3e1e08) : (pIdx === 0 ? 0x562a0c : 0x62300e)
-          const hiGlow = isLeftWin ? 0x321806 : 0x3e1d08
+          const lowGlow = isLeftWin ? (pIdx === 0 ? 0xa25618 : 0x8e4a14) : (pIdx === 0 ? 0xae5c1a : 0xbe661e)
+          const hiGlow = isLeftWin ? 0x783e10 : 0x884612
           m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(lowGlow), MAT.lamp, lamp)
           m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(hiGlow), MAT.lamp, lamp)
           for (const [cx0, cx1] of [[wx0!, wx0! + .24], [wx1! - .24, wx1!]]) {
@@ -478,8 +478,9 @@ function compileLevel(town: Town): LevelData {
           m.box(sx - .08, 1.88, sz, sx + .08, 1.93, sz + .15, hex(0x1e2228), MAT.lit)
           m.box(sx - .06, 1.63, sz + .01, sx + .06, 1.67, sz + .13, hex(0x1e2228), MAT.lit)
           // Warm amber lantern glass cage
-          m.box(sx - .055, 1.67, sz + .02, sx + .055, 1.88, sz + .13, hex(0xffc470), MAT.lamp, id)
+          m.box(sx - .055, 1.67, sz + .02, sx + .055, 1.88, sz + .13, hex(0xffd68c), MAT.lamp, id)
         }
+        m.prism(p.x, p.y - .22, .10, .08, 2.24, 2.38, 7, hex(0xffe0a6), MAT.lamp, id)
       }
       continue
     }
@@ -559,9 +560,11 @@ function compileLevel(town: Town): LevelData {
       // Bucket cuttable walls into 4m Z-bands so north/partition/south walls don't merge into one room-spanning cutBox.
       const bands = new Map<number, Mesh>()
       for (let i = 0; i < screen.v.length; i += 33) {
+        const xBand = Math.floor(Math.min(screen.v[i]!, screen.v[i + 11]!, screen.v[i + 22]!) / 4)
         const zBand = Math.floor(Math.min(screen.v[i + 2]!, screen.v[i + 13]!, screen.v[i + 24]!) / 4)
-        let bm = bands.get(zBand)
-        if (!bm) { bm = new Mesh(); bands.set(zBand, bm) }
+        const key = xBand * 64 + zBand
+        let bm = bands.get(key)
+        if (!bm) { bm = new Mesh(); bands.set(key, bm) }
         bm.v.push(...screen.v.slice(i, i + 33))
       }
       return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => ({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))

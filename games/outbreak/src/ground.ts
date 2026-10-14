@@ -104,15 +104,15 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
 
   let n1 = surfaceNoise(p * 1.45 + vec2f(2.3, 6.7));
   let n2 = surfaceNoise(p * 0.34 + vec2f(3.7, 8.1));
-  let grit = grain(p, 11.5);
+  let grit = (hash2(floor(p * 11.5)) - 0.5) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 11.5));
 
   if (isConcrete) {
     let isCurb = (p.y >= 39.74 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.26) || (p.x >= 39.74 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.26);
     let isWalkway = (p.y < 39.82 && p.x > 26.4 && p.x < 29.0) || p.y < 38.02 || p.y > 49.98;
     let isNS = (p.x >= 37.95 && p.x <= 40.05) || (p.x >= 47.95 && p.x <= 50.05);
     // Preserve baseTint while calibrating porch walkway vs street sidewalk reflectance
-    col = baseTint * select(vec3f(0.84, 0.79, 0.71), vec3f(0.28, 0.25, 0.21), isWalkway);
-    if (isCurb) { col = baseTint * vec3f(0.68, 0.64, 0.58); }
+    col = baseTint * select(vec3f(0.58, 0.56, 0.52), vec3f(0.72, 0.66, 0.56), isWalkway);
+    if (isCurb) { col = baseTint * vec3f(0.56, 0.54, 0.50); }
 
     let along = select(p.x, p.y, isNS || isWalkway);
     let across = select(p.y, p.x, isNS || isWalkway);
@@ -157,7 +157,7 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     cavity = mix(0.52, 1.0, joint * (1.0 - slabCrack * 0.55) * (1.0 - borderSpill * 0.45));
   } else {
     // Preserve baseTint for 1970s weathered warm-slate asphalt
-    col = baseTint * vec3f(1.32, 1.25, 1.14);
+    col = baseTint * vec3f(1.12, 1.15, 1.18);
     let roadU = clamp((p.y - 40.0) * 0.125, 0.0, 1.0);
     let dRut = min(abs(roadU - 0.26), abs(roadU - 0.74));
     let rut = max(0.0, 1.0 - dRut * dRut * 36.0);
@@ -212,33 +212,30 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
       let kind = i32(round(o.aux));
       let p = o.world.xz;
       if (kind == 0) {
-        let turfPatch = surfaceNoise(p * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.56, 1.18, smoothstep(0.24, 0.76, turfPatch));
         let turfLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.34, 0.94, 0.50), w);
-        col = mix(col, oliveOchre, 0.72);
+        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.26, 0.96, 0.58), w);
+        col = mix(col, oliveOchre, 0.72) * 0.94;
       } else if (kind == 1) {
         let gParams = unpackGroundParams();
         let roadU = clamp((p.y - 40.0) * 0.125, 0.0, 1.0);
         let crown = 1.0 - abs(roadU * 2.0 - 1.0);
-        let roadMacro = surfaceNoise(p * 0.32 + vec2f(3.7, 8.1));
         let dxRoad = (p.x - 31.5) * 0.055;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.68 + 0.64 * roadMacro) * gParams.z;
-        let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.115, 0.094, 0.074), w);
+        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * gParams.z;
+        let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.078, 0.076, 0.072), w);
         col += roadSheenCol * F.ambient.w * OL.u2.y * sheen;
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.28 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.72);
         if (!inVerge) {
           let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-          let warmStone = vec3f(walkLum) * vec3f(1.24, 0.88, 0.50);
-          col = mix(col, warmStone, w * 0.68);
+          let warmStone = vec3f(walkLum) * vec3f(1.18, 0.94, 0.58);
+          col = mix(col, warmStone, w * 0.65) * 0.76;
           let dxWalk = o.world.x - 27.7;
-          if (abs(dxWalk) < 4.5 && o.world.z > 35.3 && o.world.z < 40.4) {
-            let walkCore = exp(-(dxWalk * dxWalk) / 1.15) * smoothstep(40.4, 35.5, o.world.z);
-            let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            let extScale = select(1.0, 0.68, OL.u5.w > 0.5);
-            col += col * vec3f(1.15, 0.65, 0.22) * (walkCore * 0.95 + sideSpread * 0.45) * OL.u2.y * nightLamps * extScale;
+          if (abs(dxWalk) < 4.5 && o.world.z > 34.8 && o.world.z < 40.4) {
+            let walkCore = exp(-(dxWalk * dxWalk) / 1.25) * smoothstep(40.4, 35.0, o.world.z);
+            let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.4, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
+            let extScale = select(1.05, 0.68, OL.u5.w > 0.5);
+            col += col * vec3f(1.15, 0.68, 0.24) * (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale;
           }
         }
       }

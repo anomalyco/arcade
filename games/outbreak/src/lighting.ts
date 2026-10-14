@@ -23,18 +23,18 @@ export type OutbreakLightingSettings = {
 
 export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   exposure: 1.04,
-  skyFill: 0.88,
+  skyFill: 0.90,
   moonFill: 0.98,
   lighting: 1.0,
   practicalWarmth: 0.88,
-  porchPower: 0.62,
-  windowPower: 0.76,
-  roomPower: 0.78,
-  streetPower: 0.96,
-  lightFalloff: 1.15,
+  porchPower: 0.86,
+  windowPower: 0.96,
+  roomPower: 0.80,
+  streetPower: 0.78,
+  lightFalloff: 1.12,
   flashlightHaze: 0.22,
   wetSpecular: 0.56,
-  rimStrength: 0.72,
+  rimStrength: 0.76,
   vignetteDarkness: 0.34,
 }
 
@@ -265,18 +265,18 @@ export function resolveLampLight(
   }
 
   if (lamp.kind === "porch") {
-    const interiorDim = inInteriorView ? 0.48 : 1.0
+    const interiorDim = inInteriorView ? 0.44 : 1.0
     const power = master * lamp.power * s.porchPower * interiorDim
-    const r = lamp.radius * (inInteriorView ? 0.52 : 0.62) * invTight
+    const r = lamp.radius * (inInteriorView ? 0.50 : 0.66) * invTight
     return {
       lx: lamp.x,
       lh: 2.24,
       ly: lamp.y - 0.14,
       r,
       rEff: r * 0.85,
-      color: [1.0, 0.52 - 0.05 * w, 0.14 - 0.04 * w],
+      color: [1.0, 0.56 - 0.04 * w, 0.16 - 0.04 * w],
       power,
-      fixtureBrightness: master * s.porchPower * interiorDim * 0.72,
+      fixtureBrightness: master * s.porchPower * (inInteriorView ? 0.62 : 1.16),
       cone: [0, 0, 0, -1],
       softness: 0.18,
       castShadows: !inInteriorView,
@@ -284,21 +284,21 @@ export function resolveLampLight(
   }
 
   if (lamp.kind === "window") {
-    const interiorDim = inInteriorView ? 0.48 : 1.0
+    const interiorDim = inInteriorView ? 0.46 : 1.0
     const power = master * lamp.power * s.windowPower * interiorDim
-    const r = lamp.radius * 0.76 * invTight
+    const r = lamp.radius * 0.80 * invTight
     return {
       lx: lamp.x,
       lh: 1.42,
       ly: lamp.y + 0.06,
       r,
       rEff: r * 0.85,
-      color: [1.0, 0.50 - 0.05 * w, 0.13 - 0.04 * w],
+      color: [1.0, 0.54 - 0.04 * w, 0.15 - 0.04 * w],
       power,
-      fixtureBrightness: master * s.windowPower * interiorDim * 0.78,
+      fixtureBrightness: master * s.windowPower * (inInteriorView ? 0.68 : 1.32),
       cone: [0, 1, -0.65, 1],
       softness: 0.20,
-      castShadows: !inInteriorView,
+      castShadows: false,
     }
   }
 
@@ -765,50 +765,53 @@ fn evalTriplanarPropMod(world: vec3f, n: vec3f) -> f32 {
  * plus Blog Game Tip #5 elongated window floor/driveway reflection sheen (openGlassSheen).
  */
 fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColor: vec3f, inRoom: bool, mat: i32) -> vec3f {
-  var col = surfCol + evalAreaFloorBounce(world, n) * surfCol * 8.0;
+  var col = surfCol;
+  if (inRoom && abs(n.y) < 0.5 && world.y < 2.15) {
+    col += evalAreaFloorBounce(world, n) * surfCol * 8.0;
+  }
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let isInView = OL.u5.w > 0.5;
-  let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.22, mat == 22 && world.y > 0.85);
+  let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
   let texAlbedo = (surfCol * 1.48 + baseColor * 0.21);
 
   if (!inRoom) {
-    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + tight bulb halation
+    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool
     let sScale = OL.u1.w;
     if (sScale > 0.001) {
       let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
       let dS2 = dot(dvS, dvS);
       if (dS2 < 95.0) {
-        let sodiumCol = vec3f(1.0, 0.40, 0.06);
+        let sodiumCol = vec3f(1.0, 0.45, 0.09);
         let poolS = exp(-dS2 / select(20.0, 28.0, isInView)) * groundMask;
-        col += texAlbedo * sodiumCol * poolS * select(1.35, 2.85, isInView) * sScale;
+        col += texAlbedo * sodiumCol * poolS * select(1.12, 2.75, isInView) * sScale;
       }
     }
 
     // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
-    if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.8 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
-      let dWinL2 = dot((world.xz - vec2f(24.5, 36.8)) * vec2f(0.75, 0.65), (world.xz - vec2f(24.5, 36.8)) * vec2f(0.75, 0.65));
-      let dWinR2 = dot((world.xz - vec2f(34.25, 36.8)) * vec2f(0.75, 0.65), (world.xz - vec2f(34.25, 36.8)) * vec2f(0.75, 0.65));
-      let dPorch2 = dot((world.xz - vec2f(27.7, 37.8)) * vec2f(0.68, 0.52), (world.xz - vec2f(27.7, 37.8)) * vec2f(0.68, 0.52));
-      let cutZoneScale = select(0.88, select(0.52, 1.08, world.z > 38.0), isInView);
-      let spill = ((exp(-dWinL2 / 14.0) + exp(-dWinR2 / 14.0)) * wScale * 0.68 + exp(-dPorch2 / 16.0) * pScale * 0.78) * cutZoneScale * groundMask;
-      col += texAlbedo * vec3f(1.0, 0.44, 0.07) * spill * w;
+    if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
+      let dWinL2 = dot((world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64));
+      let dWinR2 = dot((world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64));
+      let dPorch2 = dot((world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52), (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52));
+      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView);
+      let spill = ((exp(-dWinL2 / 14.5) + exp(-dWinR2 / 14.5)) * wScale * 0.88 + exp(-dPorch2 / 15.5) * pScale * 1.05) * cutZoneScale * groundMask;
+      col += texAlbedo * vec3f(1.0, 0.54, 0.14) * spill * w;
     }
 
     // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0)
     let dp = world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85);
     let dp2 = dot(dp * vec2f(0.60, 0.76), dp * vec2f(0.60, 0.76));
     if (!isInView && dp2 < 26.0 && world.y < 0.45 && world.z > 39.9) {
-      let pPool = exp(-dp2 / 7.8);
-      col += texAlbedo * vec3f(1.0, 0.48, 0.11) * pPool * 1.15 * (0.4 + 0.6 * w);
+      let pPool = exp(-dp2 / 7.5);
+      col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (0.4 + 0.6 * w);
     }
   } else if (world.y < 2.72) {
     // Interior indirect room bounce & wall-wash halos (partitioned by quadrant so only 1 exp() runs per interior pixel)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
-      let warmTungsten = vec3f(1.0, 0.42, 0.07);
+      let warmTungsten = vec3f(1.0, 0.50, 0.08);
       let roomAlbedo = surfCol * 1.35 + baseColor * 0.18;
       if (world.z < 29.6) {
         if (world.x < 27.2) {
@@ -834,8 +837,8 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
         col += (roomAlbedo * 1.28 + vec3f(0.014, 0.0056, 0.0009)) * warmTungsten * swPool * roomScale;
       } else {
         let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.66, 0.56);
-        let hallPool = exp(-dot(vHall, vHall) / 5.0);
-        col += (roomAlbedo * 1.22 + vec3f(0.010, 0.0040, 0.0007)) * warmTungsten * hallPool * roomScale;
+        let hallPool = exp(-dot(vHall, vHall) / 4.5);
+        col += (roomAlbedo * 0.65 + vec3f(0.005, 0.0020, 0.0003)) * warmTungsten * hallPool * roomScale;
       }
     }
   }
@@ -869,7 +872,10 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let profile = radial * axial;
   if (profile <= 0.01) { return vec3f(0.0); }
 
-  let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.05, world.xz + n.xz * 0.03, min(world.y, 1.05));
+  let aF = (atan2(rel.y, rel.x) + TAU) % TAU;
+  let rayF = u32(i32(floor(aF / TAU * f32(RAYS))) + i32(RAYS)) % RAYS;
+  let hitF = polar[(fSlot * RAYS + rayF) * 2u].x;
+  let vis = 1.0 - smoothstep(hitF - 0.05, hitF + 0.20, length(rel));
   if (vis <= 0.001) { return vec3f(0.0); }
 
   // Shadow-gated 3D drifting dust motes (dustAt) glinting inside unoccluded beam

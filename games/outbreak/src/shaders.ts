@@ -38,7 +38,7 @@ export const outbreakSceneHooks: SceneHooks = {
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
-  lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
+  lightMask: "if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }",
   material: " ",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     let inRoom = interior(o.world.xz + n.xz * 0.28);
@@ -135,17 +135,17 @@ fn eyeVisible(p: vec2f) -> f32 {
   if (mat == 6) {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
     let outsideView = !interior(F.eye.xy);
-    col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
+    col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.28, 0.145, 0.036) * nightLamps, outsideView);
   } else if (mat == 21) {
     // Weathered 3-tab slate-taupe roof shingles catching twilight sky, ridge rim, and granule lip sheen; eaves stay grounded.
     let eave = smoothstep(2.82, 3.62, o.world.y);
     let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
     let courseStep = smoothstep(0.62, 0.96, fract(o.world.z / 0.24));
     let w = clamp(OL.u0.z, 0.0, 1.0);
-    let roofTint = mix(vec3f(0.014, 0.026, 0.058), vec3f(0.115, 0.100, 0.088), w);
-    let extRoofScale = select(1.0, 0.44, OL.u5.w > 0.5);
-    let roofGlint = (0.52 * eave + 0.32 * courseStep + 0.85 * ridgeRim + 1.85 * surfaceAlpha * (0.45 + 0.55 * eave)) * F.ambient.w * OL.u2.z * max(0.0, n.y);
-    col = (col * mix(0.96, 1.52, eave) + roofTint * roofGlint) * extRoofScale;
+    let roofTint = mix(vec3f(0.018, 0.032, 0.068), vec3f(0.118, 0.145, 0.188), w);
+    let extRoofScale = select(1.0, 0.46, OL.u5.w > 0.5);
+    let roofGlint = (0.58 * eave + 0.36 * courseStep + 0.95 * ridgeRim + 2.15 * surfaceAlpha * (0.45 + 0.55 * eave)) * F.ambient.w * OL.u2.z * max(0.0, n.y);
+    col = (col * mix(1.08, 1.66, eave) + roofTint * roofGlint) * extRoofScale;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let w = clamp(OL.u0.z, 0.0, 1.0);
@@ -153,12 +153,12 @@ fn eyeVisible(p: vec2f) -> f32 {
     if (mat == 4 && !inRoom) {
       // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
       let eaveShadow = smoothstep(2.05, 2.74, o.world.y);
-      let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.28;
+      let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.22;
       let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
-      col *= mix(1.0, 0.44, clamp(eaveShadow + lowShadow + underPorchGable * 0.42, 0.0, 1.0));
+      col *= mix(1.0, 0.52, clamp(eaveShadow + lowShadow + underPorchGable * 0.35, 0.0, 1.0));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(wallLum) * vec3f(1.26, 0.92, 0.54), w * 0.74) * 0.86;
-    } else if ((mat == 0 || mat == 24) && o.world.y > 0.14 && o.world.y < 2.65) {
+      col = mix(col, vec3f(wallLum) * vec3f(1.28, 0.96, 0.58), w * 0.74) * 0.96;
+    } else if (mat == 0 && o.world.y > 0.14 && o.world.y < 2.65) {
       // Blog Game Tip #9: Local-space power-4 triplanar grain & wear on props, doors, and parked car
       col *= evalTriplanarPropMod(o.world, n);
     }
@@ -170,13 +170,15 @@ fn eyeVisible(p: vec2f) -> f32 {
       col *= periphShade * extCutDim;
     } else {
       let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(roomLum) * vec3f(1.38, 0.82, 0.36), w * 0.68) * 0.54;
+      col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), w * 0.58) * 0.66;
       // Warm amber kitchen sink window pane glow (3D muntins are MAT.timber = 0, panes are MAT.lamp = 2)
       if (mat == 2 && o.world.x > 32.64 && o.world.x < 34.06 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.05 && o.world.y < 2.22) {
         col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
       }
     }
     if (mat == 22) {
+      // Compress near-field window/porch point-light hotspots on foundation shrub crowns so leaves stay rich olive-gold instead of bleaching white
+      col = col / (1.0 + max(vec3f(0.0), col - vec3f(0.10)) * 3.2);
       // Subsurface leaf translucency & grazing rim shifted toward muted autumn olive-ochre
       let tipWeight = clamp(abs(o.aux), 0.0, 1.0);
       let keyDir = normalize(F.monitorBounds.xyz);
@@ -184,13 +186,13 @@ fn eyeVisible(p: vec2f) -> f32 {
       let backNormal = max(0.0, dot(-n, keyDir));
       let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight;
       let chloroTint = mix(vec3f(0.20, 0.24, 0.10), vec3f(0.42, 0.36, 0.18), sqrt(tipWeight));
-      let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 3.2) * 0.22 * tipWeight * F.ambient.w;
-      col += o.color * (chloroTint * transLobe + vec3f(0.44, 0.38, 0.26) * fresnelRim);
+      let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 3.2) * 0.20 * tipWeight * F.ambient.w;
+      col += o.color * (chloroTint * transLobe + vec3f(0.40, 0.36, 0.22) * fresnelRim);
       let folLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(folLum) * vec3f(1.16, 0.98, 0.78), w * 0.64);
+      col = mix(col, vec3f(folLum) * vec3f(1.16, 1.02, 0.64), w * 0.38);
       if (o.world.y < 0.48) {
         let lawnPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.48, 1.02, smoothstep(0.26, 0.76, lawnPatch));
+        col *= mix(0.56, 1.06, smoothstep(0.26, 0.76, lawnPatch));
       }
     }
     col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, o.color, inRoom, mat), nightLamps);

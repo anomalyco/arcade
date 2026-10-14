@@ -862,7 +862,7 @@ async function main() {
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
       const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.0
       const power = p.flashlightOutput * settings.flashlightIntensity * directScale
-      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 9.5)
+      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 6.4)
       flashlightSlot = count
       lights.set(
         [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, 0.06, -1],
@@ -918,12 +918,15 @@ async function main() {
     const inInteriorView = town.buildings.some(
       (b) => cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1,
     )
+    const unshadowedLamps: number[][] = []
     for (const [i, lamp] of town.lamps.entries()) {
       const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings, inInteriorView)
       lampPower[i] = resolved.fixtureBrightness
       if (resolved.power <= 0.001) continue
       const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
-      if (Math.hypot(lx - p.x, ly - p.y) > 40) continue
+      const dCam = Math.hypot(lx - camX, ly - camY)
+      if (dCam > (lamp.kind === "street" ? 15.5 : 16.5)) continue
+      if (inInteriorView && !castShadows) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
       if (lamp.kind === "room") {
         const b = town.buildings.find(
@@ -935,10 +938,18 @@ async function main() {
           if (!roofOpen) continue
         }
       }
-      lights.set(
-        [lx, lh, ly, r, ...color, power, ...cone, 0, castShadows ? lightOccluders : 0, softness, i],
-        count++ * LIGHT_FLOATS,
-      )
+      const usePolarShadow = castShadows && lamp.kind === "room"
+      const packed = [lx, lh, ly, r, ...color, power, ...cone, 0, usePolarShadow ? lightOccluders : 0, softness, i]
+      if (usePolarShadow) {
+        lights.set(packed, count++ * LIGHT_FLOATS)
+      } else {
+        unshadowedLamps.push(packed)
+      }
+    }
+    const shadowLightCount = count
+    for (const packed of unshadowedLamps) {
+      if (count >= MAX_LIGHTS) break
+      lights.set(packed, count++ * LIGHT_FLOATS)
     }
     packOutbreakLightingUniforms(
       {
@@ -1011,14 +1022,15 @@ async function main() {
       alphaSprites,
       0,
     )
-    const groundWearBatches = groundWear.collectBatches(town, view, settings)
-    const clutterBatches = exteriorClutter.collectBatches(town, view, settings)
+    const tightView = cam.groundRect(0.8)
+    const groundWearBatches = groundWear.collectBatches(town, tightView, settings)
+    const clutterBatches = exteriorClutter.collectBatches(town, tightView, settings)
     const motionOut = ambientMotion.stepAndCollect(
       dt,
       time,
       town,
       p,
-      view,
+      tightView,
       settings,
       alphaSprites,
       debugAlphaCount,
@@ -1036,7 +1048,8 @@ async function main() {
       doorBatch,
       ...(openWindows ? [sashBatch] : []),
     ]
-    render.lightCount = render.shadowLightCount = count
+    render.lightCount = count
+    render.shadowLightCount = shadowLightCount
     render.occluderCount = lightOccluders
     render.lampCount = town.lamps.length
     render.view = view
@@ -1302,6 +1315,7 @@ async function main() {
       peekBlend = 0
       lastPeek = null
       session.rebuildCollision()
+      avatar.reset()
       cam.snap(x, y)
       cam.dist = settings.zoom
     },
@@ -1344,6 +1358,10 @@ async function main() {
       return null
     },
     async step(dt = 1 / 60, command?: Partial<Command>) {
+      while (renderer.inflight > 0 || renderer.hasPending) {
+        await Promise.resolve()
+        await device.queue.onSubmittedWorkDone()
+      }
       session.update(
         dt,
         { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command },
@@ -1353,7 +1371,10 @@ async function main() {
       frames++
       draw(dt)
       await Promise.resolve()
-      await device.queue.onSubmittedWorkDone()
+      while (renderer.inflight > 0 || renderer.hasPending) {
+        await device.queue.onSubmittedWorkDone()
+        await Promise.resolve()
+      }
       return harness.state()
     },
   }
