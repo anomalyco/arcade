@@ -262,6 +262,7 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | perf/outbreak-autoresearch | `2fbba0994aa5d4f82d473dbddcfa4d2b619bf9aa` | #19 |
 | materials | `f5750cf8254e1917aa1cd5cf7441c04c6c665cf6` | — |
 | shadow-edges | `df1310ad60c8718dc53c1a31ea5af93c381eacd1` | — |
+| rig-page | `5b3740c043ef7105c72cd8bf78a2f4f92d9e4d64` | — |
 
 ### Resolution log
 
@@ -273,11 +274,11 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
   smoke loop duration.
 - `shared-human-rig`: merged cleanly onto the combined branch. Exact 900-frame SHA-256 soldier parity against
   `822303310da0bd95901879570e27c5b942ca4aa9` passed in both `old` (`00bde28a…`) and `new` (`f6efd0e3…`) modes.
-- `lab-interaction` + Catalogue camera grammar: wired `packages/kit/dev-hub-viewer.ts` to the shared
-  `classifyWheelGesture(event, { pinchZoom: false, twoFingerScroll: "zoom" })` from `packages/kit/lab/viewport-input.ts`
-  so Catalogue shares Shift+scroll pan and wheel zoom with the Lab while preserving browser Ctrl-wheel/pinch and
-  Meta shortcut passthrough (`Stage.orbit/pan/zoomBy` keep `smooth = false` by default for demand-driven Catalogue rendering).
-  Updated `packages/kit/lab/prove-workbench.ts` step 10 (`fixture:smoke-room` A/B scrub) to adjust `#14`'s `Radius`
+- `lab-interaction` + Catalogue camera grammar: wired `packages/kit/dev-hub-viewer.ts` and
+  `packages/kit/orbit-gestures.ts` to the shared `classifyWheelGesture(event, { pinchZoom: false, twoFingerScroll: "zoom" })`
+  from `packages/kit/lab/viewport-input.ts` so Catalogue and Characters share `Shift+scroll` pan and wheel zoom with
+  the Lab while preserving browser `Ctrl+wheel`/pinch and `Meta` shortcut passthrough. Updated
+  `packages/kit/lab/prove-workbench.ts` step 10 (`fixture:smoke-room` A/B scrub) to adjust `#14`'s `Radius`
   (`radius`) and `Extinction` (`extinction`) sliders rather than the pre-`#14` generic `Size`/`Density` sliders.
 - `perf/outbreak-autoresearch` (#19) vs `shared-human-rig`: resolved `games/outbreak/src/main.ts` and
   `games/outbreak/src/survivor.ts` semantically so `FrameClock` fixed-tick pacing, camera-frustum lamp culling,
@@ -301,8 +302,12 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
   `stage-shader.ts` entry-slab normals, `boxShadow` contact-hardening penumbras, 4× RGSS edge AA, `lighting.ts`
   `edgeAA` / `shadowSoftness` controls, `car-mesh.ts` `hullDeckY` cab/scoop seating, and `games/outbreak/src/shaders.ts`
   2-tap `eyeVisible` angular interpolation.
-- Pending additions (rig-page, dev-control, and soldier-run) enter as separate merge commits once their committed
-  branch tips are finalized; uncommitted worktree changes are never copied.
+- `rig-page` vs `lab-interaction`: unified command registration onto the single canonical `LabCommandRegistry`
+  (`@arcade/kit/lab-commands` / `packages/kit/lab/commands.ts`), adding `aliases`, `readOnly`, structured `result`
+  return values, and error codes (`unknown_command`, `invalid_args`, `unavailable`, `error`) to `LabCommandRegistry`
+  and removing the duplicate registry class from `games/blackout/src/dev/characters.ts`.
+- Pending additions (dev-control and soldier-run) enter as separate merge commits once their committed branch tips are
+  finalized; uncommitted worktree changes are never copied.
 
 ### Verification
 
@@ -311,10 +316,15 @@ A clean `git archive` export passed on the Studio via Hivemind:
 - `bun install --frozen-lockfile`
 - `bun run check:packages`: 82 passed
 - `games/getaway`: 240 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
-- `games/blackout`: 403 passed, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 403 passed, typechecks, production build, smoke, Worker dry-run, and `scripts/prove-characters.ts`
 - `games/outbreak`: 25 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove.ts`, and `scripts/prove-human.ts`
 - `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
 - `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity against `8223033` in both `old` and `new` modes
+- `(cd games/blackout && bun scripts/prove-characters.ts)`: 5 real character actors (`soldier`, `wizard`, `zombie`,
+  `survivor`, `outbreak-zombie`), Hub top-bar `Characters` nav link, possess (`P`) + walk/run/stop + `Escape` release,
+  orbit/pan/zoom/frame/lineup camera, limb detachment with zero spawn pop + blood splatter, and 20 `LabCommandRegistry`
+  commands (`select`, `possess`, `release`, `profile.set`, `action.*`, `limb.detach`, `character.reset`, `transport.*`,
+  `camera.*`, `lab.*`) passed on Metal with 0 audio contexts and 0 browser errors.
 - `bun scripts/prove-dev-hub.ts`: single-origin redirect, all four game prefixes, Vite HMR across all four games,
   Catalogue 25-asset rotation/pause/reload persistence, and `--workers` health + WebSocket forwarding passed on Metal.
 - `bun packages/kit/lab/prove-workbench.ts`: radial menu (8 fixed compass sectors, dead-zone cancel, Spawn Here),
