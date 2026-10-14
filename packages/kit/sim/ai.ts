@@ -171,6 +171,8 @@ export type AIAgent = {
   clamberElapsed: number
   clamberDuration: number
   detachedLimbs: string[]
+  /** Id of the perception target this agent is attending to when several survivors are present. */
+  focusId: string
 }
 
 export type PortalBashEvent = {
@@ -824,6 +826,7 @@ export function createAIAgent(id: number, seed: number, x: number, y: number, ai
     clamberElapsed: 0,
     clamberDuration: 0.52,
     detachedLimbs: [],
+    focusId: "",
   }
 }
 
@@ -926,6 +929,18 @@ function computeWindowClamberDest(win: NavPortal, fromX: number, fromY: number):
   }
 }
 
+/** The target an agent attends to: its focus when several survivors are present, otherwise the only target. */
+function focusOf(a: AIAgent, targets: readonly PerceptionTarget[]): PerceptionTarget | undefined {
+  if (targets.length <= 1) return targets[0]
+  for (const t of targets) if (t.id === a.focusId) return t
+  return targets[0]
+}
+
+function focusScore(a: AIAgent, target: PerceptionTarget, sight: SightEvaluation): number {
+  const dist = Math.hypot(target.x - a.x, target.y - a.y)
+  return (sight.seesTarget ? 100 : 0) + sight.visualGain * (target.id === a.focusId ? 1.3 : 1) - dist * 0.01
+}
+
 /**
  * Advances the entire AI crowd for one fixed tick.
  * Uses spatial hashing and staggered perception/repath updates to stay well under 1 ms for 50–100 agents.
@@ -1019,14 +1034,29 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     const senseDt = dt * (scheduledTick ? (a.state === "chase" || a.state === "alert" ? 2 : 4) : 1)
 
     if (shouldSense && targets.length > 0) {
-      const target = targets[0]!
       const effectivePerceptionAgent = {
         x: a.x,
         y: a.y,
         aim: a.aim,
         perceptionScale: a.perceptionScale * Math.sqrt(nightFactor),
       }
-      const sight = evaluateSight(effectivePerceptionAgent, target, sightBlockers, config)
+      let target = targets[0]!
+      let sight = evaluateSight(effectivePerceptionAgent, target, sightBlockers, config)
+      if (targets.length > 1) {
+        // Several survivors: attend to the strongest stimulus, with a little stickiness to the current focus.
+        let best = focusScore(a, target, sight)
+        for (let k = 1; k < targets.length; k++) {
+          const other = targets[k]!
+          const otherSight = evaluateSight(effectivePerceptionAgent, other, sightBlockers, config)
+          const score = focusScore(a, other, otherSight)
+          if (score > best) {
+            best = score
+            target = other
+            sight = otherSight
+          }
+        }
+      }
+      a.focusId = target.id
       a.seesTarget = sight.seesTarget
 
       if (sight.visualGain > 0) {
@@ -1147,9 +1177,10 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         a.repathAt = 0
       }
     } else if (a.state === "chase") {
-      if (a.seesTarget && targets[0]) {
-        a.targetX = targets[0].x
-        a.targetY = targets[0].y
+      const focus = focusOf(a, targets)
+      if (a.seesTarget && focus) {
+        a.targetX = focus.x
+        a.targetY = focus.y
       } else if (Math.hypot(a.targetX - a.x, a.targetY - a.y) < 0.95 || a.stateTime > 8.0) {
         if (!a.seesTarget) {
           a.state = "search"
@@ -1242,14 +1273,15 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       const distToGoal = Math.hypot(goalX - a.x, goalY - a.y)
 
       // Check close-range attack against survivor when chasing
-      if (a.state === "chase" && a.seesTarget && targets[0] && distToGoal <= 0.92) {
-        const want = Math.atan2(targets[0].y - a.y, targets[0].x - a.x)
+      const focus = focusOf(a, targets)
+      if (a.state === "chase" && a.seesTarget && focus && distToGoal <= 0.92) {
+        const want = Math.atan2(focus.y - a.y, focus.x - a.x)
         a.aim += clamp(angleDiff(want, a.aim), -dt * 10, dt * 10)
         if (a.attackCooldown <= 0) {
           a.attackCooldown = 1.05 / Math.max(0.5, a.aggression * config.aggression)
           attacks.push({
             agentId: a.id,
-            targetId: targets[0].id,
+            targetId: focus.id,
             x: a.x,
             y: a.y,
             damage: 20 * config.aggression,
@@ -1414,10 +1446,8 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       const actualDx = a.x - prevX
       const actualDy = a.y - prevY
       const actualMoveAngle = Math.hypot(actualDx, actualDy) > expectedStep * 0.2 ? Math.atan2(actualDy, actualDx) : Math.atan2(uy, ux)
-      const wantAim =
-        a.seesTarget && targets[0]
-          ? Math.atan2(targets[0].y - a.y, targets[0].x - a.x)
-          : actualMoveAngle
+      const seen = a.seesTarget ? focusOf(a, targets) : undefined
+      const wantAim = seen ? Math.atan2(seen.y - a.y, seen.x - a.x) : actualMoveAngle
       const turnRate =
         (a.state === "chase" ? 6.8 : a.state === "investigate" || a.state === "search" ? 3.8 : 2.3) * dt
       a.aim += clamp(angleDiff(wantAim, a.aim), -turnRate, turnRate)
