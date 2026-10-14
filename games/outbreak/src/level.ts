@@ -2,7 +2,7 @@ import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
-import { house, plant } from "./architecture"
+import { house, plant, archSettings } from "./architecture"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
@@ -17,86 +17,109 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     plant(m,x,z,4.6+p.variant*1.8,2.05+p.variant*.75,Math.floor(p.variant*1e6),supportHeight(town,x,z))
     return
   }
-  const wood = hex(0x7a5c3e), legs = hex(0x3b352e)
+  const wood = hex(0x64462a), legs = hex(0x322920)
   if (kind === "bed") {
-    // Honey-oak frame, headboard & footboard, crisp white sheets/pillows, and quilted olive-green blanket
+    // 1970s honey-walnut frame, paneled headboard & footboard with corner posts, sage pillows, cream sheet & moss-olive quilt
     m.box(x - .82, .12, z - 1.22, x + .82, .42, z + 1.22, wood, MAT.timber)
-    m.box(x - .86, .15, z - 1.30, x + .86, 1.06, z - 1.16, hex(0x8c6b48), MAT.timber)
-    m.box(x - .84, .14, z + 1.16, x + .84, .58, z + 1.26, hex(0x826242), MAT.timber)
-    m.bevelBox(x - .78, .42, z - 1.15, x + .78, .64, z + 1.15, .06, hex(0xcfc8b8), hex(0xe0dacb))
-    // Quilted olive bedspread over lower two-thirds + cream fold-back sheet strip
-    m.bevelBox(x - .80, .44, z - .38, x + .80, .67, z + 1.16, .05, hex(0x42523b), hex(0x526449))
-    m.box(x - .79, .65, z - .48, x + .79, .68, z - .32, hex(0xdad4c4))
-    for (const qz of [z - .02, z + .38, z + .78]) m.box(x - .76, .668, qz, x + .76, .676, qz + .03, hex(0x364430))
-    // Two plump white pillows
-    for (const px of [x - .38, x + .38]) m.bevelBox(px - .31, .64, z - 1.06, px + .31, .78, z - .62, .04, hex(0xd4cebf), hex(0xeae4d6))
-  } else if (kind === "sofa") {
-    // Readable warm sage-olive 3-cushion sofa with rolled arms, terracotta & cream throw pillows, and side lamp table
-    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x646e58))
-    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x707b63),hex(0x889478))
-    for(const dz of [-.74,0,.74]){
-      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x768268),hex(0x909c80))
-      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x7c886e),hex(0x94a084))
+    m.box(x - .86, .15, z - 1.30, x + .86, 1.08, z - 1.16, hex(0x5c3e24), MAT.timber)
+    for (const px of [x - .86, x + .78]) m.box(px, .15, z - 1.32, px + .08, 1.16, z - 1.14, hex(0x4a311c), MAT.timber)
+    m.box(x - .74, .52, z - 1.158, x - .04, .96, z - 1.14, hex(0x48301b), MAT.timber)
+    m.box(x + .04, .52, z - 1.158, x + .74, .96, z - 1.14, hex(0x48301b), MAT.timber)
+    m.box(x - .85, .14, z + 1.15, x + .85, .62, z + 1.27, hex(0x583b22), MAT.timber)
+    for (const [fx0, fx1] of [[x - .74, x - .04], [x + .04, x + .74]] as const) {
+      m.box(fx0, .20, z + 1.271, fx1, .54, z + 1.29, hex(0x462e1a), MAT.timber)
     }
-    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x6c765f),hex(0x849076))
+    // Warm cream-oatmeal mattress sheet & fold-back strip
+    m.bevelBox(x - .78, .42, z - 1.15, x + .78, .64, z + 1.15, .06, hex(0x887e6a), hex(0x988d78))
+    // Quilted 1970s moss-olive bedspread with soft folds
+    m.bevelBox(x - .80, .44, z - .38, x + .80, .67, z + 1.15, .05, hex(0x3a4632), hex(0x48563e))
+    m.box(x - .79, .65, z - .50, x + .79, .685, z - .30, hex(0x9a8e76))
+    for (const qz of [z - .02, z + .38, z + .78]) m.box(x - .76, .668, qz, x + .76, .676, qz + .04, hex(0x2e3828))
+    // Two plump sage-olive pillows
+    m.yawBox(x - .38, z - .84, .58, .38, .64, .78, .06, hex(0x646854), MAT.lit, 0, hex(0x747862))
+    m.yawBox(x + .38, z - .83, .58, .38, .64, .77, -.08, hex(0x606450), MAT.lit, 0, hex(0x70745e))
+  } else if (kind === "sofa") {
+    // 1970s sage-olive 3-cushion sofa with rolled arms, warm rust-ochre & olive-tan throw pillows, and side lamp table
+    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x3c4434))
+    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x46503e),hex(0x56624c))
+    for(const dz of [-.74,0,.74]){
+      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x4c5642),hex(0x5c6850))
+      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x505a46),hex(0x606c54))
+    }
+    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x444e3c),hex(0x54604a))
     for(const dx of [-.42,.42])for(const dz of [-1.05,1.05])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.22,z+dz+.04,legs)
-    // Bright terracotta throw pillow at north end + cream cushion at south end
-    m.bevelBox(x-.24,.62,z-.98,x+.22,.84,z-.58,.045,hex(0xa24c2c),hex(0xc25e38))
-    m.bevelBox(x-.24,.62,z+.60,x+.24,.83,z+1.02,.045,hex(0xc4b28e),hex(0xdfd0ae))
+    // Angled warm rust-ochre throw pillows + draped blanket at south end
+    m.yawBox(x-.04,z-.68,.40,.36,.62,.82,.26,hex(0x784422),MAT.lit,0,hex(0x8e522a))
+    m.yawBox(x+.04,z+.12,.38,.34,.62,.81,-.22,hex(0x6e4220),MAT.lit,0,hex(0x845028))
+    m.yawBox(x+.02,z+.82,.42,.36,.62,.82,-.14,hex(0x746852),MAT.lit,0,hex(0x867860))
     // End table at south arm of sofa under the living room table lamp
-    m.bevelBox(x-.32,.13,z+1.38,x+.32,.66,z+1.96,.025,wood,hex(0x8f6d4a),MAT.timber,MAT.timber)
+    m.bevelBox(x-.32,.13,z+1.38,x+.32,.66,z+1.96,.025,wood,hex(0x725234),MAT.timber,MAT.timber)
   } else if(kind==="coffee") {
-    m.bevelBox(x-.52,.42,z-.78,x+.52,.52,z+.78,.035,wood,hex(0x8c6a46),MAT.timber,MAT.timber)
+    m.bevelBox(x-.52,.42,z-.78,x+.52,.52,z+.78,.035,hex(0x583e24),hex(0x6e4e2e),MAT.timber,MAT.timber)
     for(const dx of [-.42,.42])for(const dz of [-.65,.65])m.box(x+dx-.035,.13,z+dz-.035,x+dx+.035,.43,z+dz+.035,legs)
-    // Open book, ceramic mug, and small potted centerpiece plant on coffee table
-    m.box(x-.22,.52,z+.14,x+.20,.56,z+.52,hex(0xd8d2c0))
-    m.prism(x-.16,z-.38,.07,.065,.52,.63,8,hex(0xc8c0aa))
-    m.prism(x+.14,z-.22,.12,.09,.52,.66,8,hex(0x7c4a32))
-    m.prism(x+.14,z-.22,.18,.08,.64,.82,7,hex(0x465c36),MAT.foliage)
+    // Open book, papers, ceramic mug, and warm brass bowl on coffee table
+    m.yawBox(x-.10,z+.24,.34,.26,.52,.56,.14,hex(0x8e8470),MAT.lit,0,hex(0x9e947e))
+    m.yawBox(x+.14,z-.08,.28,.22,.52,.545,-.18,hex(0x786e5c),MAT.lit)
+    m.prism(x-.14,z-.42,.10,.08,.52,.62,8,hex(0x7a5c34),MAT.shiny)
+    m.prism(x+.18,z-.32,.06,.055,.52,.61,7,hex(0x867c68),MAT.lit)
   } else if(kind==="nightstand") {
-    m.bevelBox(x-.28,.14,z-.28,x+.28,.66,z+.28,.02,wood,hex(0x8e6c48),MAT.timber,MAT.timber)
-    m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x987652),MAT.timber)
-    m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xc4ab78))
+    m.bevelBox(x-.28,.14,z-.28,x+.28,.66,z+.28,.02,wood,hex(0x6e4e30),MAT.timber,MAT.timber)
+    m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x785636),MAT.timber)
+    m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xa89060))
   } else if(kind==="stove") {
-    m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x74583c),MAT.timber)
-    m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0xa8a292))
+    m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x584028),MAT.timber)
+    m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0x685e50))
   } else if(kind==="counter"||kind==="dresser"||kind==="fridge") {
     const {rect:[a,c,r,e],height}=propShape(p)!
-    const pale=kind==="fridge"?0x786044:0x765a3e
+    const pale=kind==="fridge"?0x5c4228:0x583e26
     m.box(a,.13,c,r,height-.06,e,hex(pale),MAT.timber)
-    m.box(a-.02,height-.06,c-.02,r+.02,height,e+.02,hex(kind==="counter"?0xb2ac9c:0x8c6c4a),MAT.timber)
+    m.box(a-.02,height-.06,c-.02,r+.02,height,e+.02,hex(kind==="counter"?0x6c6050:0x6e4e30),MAT.timber)
     if(kind==="counter"){
-      for(const dz of [-.85,.0,.85])m.box(a-.01,.2,z+dz-.32,a-.005,.88,z+dz+.32,hex(0x8e704e),MAT.timber)
+      for(const dz of [-.85,.0,.85])m.box(a-.01,.2,z+dz-.32,a-.005,.88,z+dz+.32,hex(0x6e4e32),MAT.timber)
     }else if(kind==="fridge"){
-      m.box(a-.015,.22,c+.05,a,height-.12,e-.05,hex(0x8c6e4c),MAT.timber)
+      m.box(a-.015,.22,c+.05,a,height-.12,e-.05,hex(0x6c4c30),MAT.timber)
     }else {
       for(let i=0;i<3;i++)for(const [da,dr] of [[a+.05,(a+r)/2-.03],[(a+r)/2+.03,r-.05]]){
-        m.box(da!,.20+i*.27,e+.002,dr!,.43+i*.27,e+.022,hex(0x8e6e4c),MAT.timber)
+        m.box(da!,.20+i*.27,e+.002,dr!,.43+i*.27,e+.022,hex(0x6e4e30),MAT.timber)
         const mx=(da!+dr!)/2
-        m.box(mx-.08,.30+i*.27,e+.022,mx+.08,.34+i*.27,e+.055,hex(0xc2a874))
+        m.box(mx-.08,.30+i*.27,e+.022,mx+.08,.34+i*.27,e+.055,hex(0xa88e5c))
       }
-      // Potted plant & keepsake box on top of the bedroom dresser
-      m.prism(a+.42,c+.35,.12,.09,height,height+.16,7,hex(0x7e4c34))
-      m.prism(a+.42,c+.35,.19,.08,height+.14,height+.36,7,hex(0x485e38),MAT.foliage)
+      // Keepsake box & small ceramic bowl on top of the bedroom dresser
+      m.yawBox(a+.52,c+.35,.28,.20,height,height+.10,.12,hex(0x583c24),MAT.timber)
+      m.prism(r-.48,c+.36,.08,.06,height,height+.09,7,hex(0x887c68),MAT.lit)
     }
   } else if(kind==="chair") {
-    m.box(x-.26,.50,z-.26,x+.26,.58,z+.26,hex(0x826242),MAT.timber)
-    m.box(x-.26,.58,z+.19,x+.26,1.04,z+.26,hex(0x8c6b48),MAT.timber)
+    m.box(x-.26,.50,z-.26,x+.26,.58,z+.26,hex(0x5e4228),MAT.timber)
+    m.box(x-.26,.58,z+.19,x+.26,1.04,z+.26,hex(0x6a4c30),MAT.timber)
     for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.50,z+dz+.025,legs)
   } else if (kind === "table") {
-    // Rich walnut dining/study table with beveled plank top and fruit bowl centerpiece
-    m.bevelBox(x - .72, .72, z - .95, x + .72, .82, z + .95, .03, wood, hex(0x8e6b46), MAT.timber, MAT.timber)
-    for (const dx of [-.60, .60]) for (const dz of [-.80, .80]) m.box(x + dx - .045, .13, z + dz - .045, x + dx + .045, .72, z + dz + .045, legs)
-    m.prism(x, z, .20, .14, .82, .91, 8, hex(0x63482e), MAT.timber)
-    m.prism(x - .05, z - .03, .07, .05, .89, .96, 6, hex(0xd4882e))
-    m.prism(x + .06, z + .04, .065, .045, .89, .95, 6, hex(0x789438))
+    const inLivingNorth = (x > 22 && x < 27 && z < 31.5) || (x > 21 && x < 26 && z > 54 && z < 61.5)
+    if (inLivingNorth) {
+      // 1970s living-room sideboard chest with drawers & dark framed mirror backboard (matching target-sodium70s-open)
+      m.bevelBox(x - .68, .13, z - .38, x + .68, .78, z + .38, .025, hex(0x5c4026), hex(0x704e30), MAT.timber, MAT.timber)
+      for (const dy of [.22, .48]) m.box(x - .60, dy, z + .38, x + .60, dy + .20, z + .405, hex(0x6a4a2c), MAT.timber)
+      m.box(x - .56, .78, z - .36, x + .56, 1.56, z - .28, hex(0x46311d), MAT.timber)
+      m.box(x - .46, .86, z - .278, x + .46, 1.48, z - .26, hex(0x282622), MAT.shiny)
+    } else {
+      // Rich honey-walnut dining table with beveled plank top and centerpiece
+      m.bevelBox(x - .72, .72, z - .95, x + .72, .82, z + .95, .03, hex(0x5c3e22), hex(0x724e2c), MAT.timber, MAT.timber)
+      for (const dx of [-.60, .60]) for (const dz of [-.80, .80]) m.box(x + dx - .045, .13, z + dz - .045, x + dx + .045, .72, z + dz + .045, legs)
+      m.prism(x, z - .06, .15, .11, .82, .90, 8, hex(0x48321e), MAT.timber)
+      m.prism(x, z - .06, .06, .05, .89, .95, 6, hex(0xb88642), MAT.lit)
+      m.prism(x - .28, z + .32, .12, .10, .82, .845, 8, hex(0x988e7a), MAT.lit)
+      m. yawBox(x + .22, z + .46, .22, .16, .82, .835, -.28, hex(0xa29882), MAT.lit)
+    }
   } else {
-    for (const dx of [-.8, .8]) m.box(x + dx - .06, .1, z - .38, x + dx + .06, 1.8, z + .38, legs)
-    for (const h of [.3, .85, 1.4]) {
-      m.box(x - .85, h, z - .4, x + .85, h + .07, z + .4, wood, MAT.timber)
+    // Multi-shelf wooden bookcase with back panel, dense varied book rows, and top shelf items
+    m.box(x - .84, .13, z - .40, x + .84, 1.82, z - .34, hex(0x382616), MAT.timber)
+    for (const dx of [-.8, .8]) m.box(x + dx - .06, .13, z - .38, x + dx + .06, 1.82, z + .38, legs, MAT.timber)
+    for (const [sIdx, h] of [.28, .76, 1.24, 1.72].entries()) {
+      m.box(x - .85, h, z - .4, x + .85, h + .06, z + .4, wood, MAT.timber)
+      if (sIdx === 3) continue
       for (let i = 0; i < 5; i++) {
         const px = x - .68 + i * .3
-        m.box(px, h + .07, z - .25, px + .2, h + .2 + (p.variant + i * .13) % .27, z + .25, hex(i % 2 ? 0xa39b7c : 0x5a7973))
+        const bookCol = hex([0x7c7056, 0x485c52, 0x784030, 0x565c66, 0x6e583e][(i + sIdx) % 5]!)
+        m.box(px, h + .06, z - .25, px + .22, h + .22 + (p.variant + i * .13) % .22, z + .24, bookCol)
       }
     }
   }
@@ -105,7 +128,7 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
 const levelCache = new Map<string, LevelData>()
 export function buildLevel(town: Town): LevelData {
-  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}`
+  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}`
   const cached=levelCache.get(key)
   if(cached)return cached
   const level=compileLevel(town)
@@ -316,8 +339,8 @@ function compileLevel(town: Town): LevelData {
     for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
       floor(m, fx0, fz0, fx1, fz1, .13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
     }
-    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x847f73, 6)
-    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x8a8579,6)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x483f33, 6)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x5a5042,6)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x747678,7)
     // Concrete curb-cut ramp flare at the street edge of the driveway
     if(b.kind==="house"&&end<40){
@@ -342,76 +365,95 @@ function compileLevel(town: Town): LevelData {
   for (const b of town.barriers) {
     const [x, z, r, end] = b.rect, m = at(x, z), color = hex(b.color)
     if (b.kind === "wall") {
-      m.box(x,.13,z,r,2.78,end,color,MAT.wall,20,hex(0x303744))
-      m.box(x+.03,2.78,z+.03,r-.03,2.80,end-.03,hex(0xb8b0a0),MAT.lit)
-      m.box(x - .02, .14, z - .02, r + .02, .28, end + .02, hex(0x594836), MAT.lit)
+      m.box(x,.13,z,r,2.78,end,color,MAT.wall,20,hex(0x4a4338))
+      m.box(x+.03,2.78,z+.03,r-.03,2.80,end-.03,hex(0x28231d),MAT.lit)
+      m.box(x - .02, .14, z - .02, r + .02, .26, end + .02, hex(0x3a2a1c), MAT.timber)
     } else if (b.kind === "window") {
       // Lower wall apron and upper wall header around the 0.85..2.15m window opening
       m.box(x, .13, z, r, .84, end, color, MAT.wall, 20)
-      m.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, hex(0x303744))
-      m.box(x+.03, 2.78, z+.03, r-.03, 2.80, end-.03, hex(0xb8b0a0), MAT.lit)
+      m.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, hex(0x4a4338))
+      m.box(x+.03, 2.78, z+.03, r-.03, 2.80, end-.03, hex(0x28231d), MAT.lit)
       const owner=town.buildings.findIndex(h=>x>=h.rect[0]-.01&&r<=h.rect[2]+.01&&z>=h.rect[1]&&end<=h.rect[3])
       const house=town.buildings[owner]!
       const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])
       const g = at(x, z, true)
       if (r - x > 1) {
         const zm = (z + end) / 2
-        // Projecting exterior stone/wood sill + shadow apron, and deep interior honey-wood sill
-        m.box(x-.08, .79, z+.04, r+.08, .86, end+.14, hex(0xdcd8ce), MAT.wall)
-        m.box(x-.05, .74, end, r+.05, .79, end+.08, hex(0x7c786e), MAT.wall)
-        m.box(x-.06, .80, z-.10, r+.06, .86, z+.06, hex(0x9a7852), MAT.timber)
-        // Recessed window header & deep side jamb reveals (26cm deep so frame recession reads from outside & inside)
-        m.box(x-.07, 2.14, z-.05, r+.07, 2.23, end+.09, hex(0xdcd8ce), MAT.wall)
+        const isLeftWin = x < house.rect[0] + 5
+        // Projecting weathered putty-taupe sill + water-stain apron, and interior walnut sill
+        m.box(x-.08, .79, z+.04, r+.08, .86, end+.14, hex(0x787060), MAT.wall)
+        m.box(x-.05, .72, end, r+.05, .79, end+.08, hex(0x3c362e), MAT.wall)
+        m.box(x-.06, .80, z-.10, r+.06, .86, z+.06, hex(0x64482e), MAT.timber)
+        // Recessed window header & deep side jamb reveals
+        m.box(x-.07, 2.14, z-.05, r+.07, 2.23, end+.09, hex(0x787060), MAT.wall)
         for (const px of [x, r - .07]) {
-          m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0xdcd8ce), MAT.wall)
+          m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0x787060), MAT.wall)
         }
-        // Warm amber-gold sill & interior reveal bounce (rich saturation so it never clips to white)
-        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(0x8a4814), MAT.lamp, lamp)
+        // Warm tungsten sill bounce
+        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(isLeftWin ? 0x48240a : 0x562a0c), MAT.lamp, lamp)
         const doubleWin = r - x > 2.2
         if (doubleWin) {
           const mid = (x + r) / 2
-          m.box(mid - .05, .85, z-.03, mid + .05, 2.16, end+.05, hex(0xdcd8ce), MAT.wall)
+          m.box(mid - .05, .85, z-.03, mid + .05, 2.16, end+.05, hex(0x787060), MAT.wall)
         }
         const panes = doubleWin ? [[x+.07, (x+r)/2-.05], [(x+r)/2+.05, r-.07]] : [[x+.07, r-.07]]
-        for (const [wx0, wx1] of panes) {
-          // Dark silhouette side curtains at left/right 24cm edges + warm amber-orange inner glow valence
-          m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(0x783c10), MAT.lamp, lamp)
-          m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(0x5c2c0b), MAT.lamp, lamp)
+        for (const [pIdx, [wx0, wx1]] of panes.entries()) {
+          // Warm golden-tungsten inner window glow + drape silhouettes
+          const lowGlow = isLeftWin ? (pIdx === 0 ? 0x4c260a : 0x3e1e08) : (pIdx === 0 ? 0x562a0c : 0x62300e)
+          const hiGlow = isLeftWin ? 0x321806 : 0x3e1d08
+          m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(lowGlow), MAT.lamp, lamp)
+          m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(hiGlow), MAT.lamp, lamp)
           for (const [cx0, cx1] of [[wx0!, wx0! + .24], [wx1! - .24, wx1!]]) {
-            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x362212), MAT.wall)
+            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x281a0f), MAT.wall)
           }
           // Recessed vertical & horizontal sash muntins at the window mid-plane zm
           const midX = (wx0! + wx1!) / 2
-          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0xe2dfd6), MAT.wall)
+          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0x7e7666), MAT.wall)
           // See-through glass pane recessed at zm
-          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x5a4838), MAT.glass)
+          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x463626), MAT.glass)
         }
         // Recessed horizontal meeting rail across the sash mid-plane
-        m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0xe2dfd6), MAT.wall)
+        m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0x7e7666), MAT.wall)
       } else {
         const xm = (x + r) / 2
         // East wall window: projecting exterior sill, deep interior wooden sill, recessed jambs, side drapes & see-through glass
-        m.box(x+.04, .79, z-.08, r+.14, .86, end+.08, hex(0xdcd8ce), MAT.wall)
-        m.box(x-.10, .80, z-.06, x+.06, .86, end+.06, hex(0x9a7852), MAT.timber)
-        m.box(x-.05, 2.14, z-.07, r+.09, 2.23, end+.07, hex(0xdcd8ce), MAT.wall)
-        for (const pz of [z, end - .07]) m.box(x-.04, .84, pz, r+.06, 2.16, pz+.07, hex(0xdcd8ce), MAT.wall)
-        m.box(xm-.04, .861, z+.08, xm+.05, .872, end-.08, hex(0xb87632), MAT.lamp, lamp)
+        m.box(x+.04, .79, z-.08, r+.14, .86, end+.08, hex(0x787060), MAT.wall)
+        m.box(x-.10, .80, z-.06, x+.06, .86, end+.06, hex(0x64482e), MAT.timber)
+        m.box(x-.05, 2.14, z-.07, r+.09, 2.23, end+.07, hex(0x787060), MAT.wall)
+        for (const pz of [z, end - .07]) m.box(x-.04, .84, pz, r+.06, 2.16, pz+.07, hex(0x787060), MAT.wall)
+        m.box(xm-.04, .861, z+.08, xm+.05, .872, end-.08, hex(0x88521e), MAT.lamp, lamp)
         for (const [cz0, cz1] of [[z+.08, z+.30], [end-.30, end-.08]]) {
-          m.box(x-.03, .87, cz0!, x+.03, 2.13, cz1!, hex(0x8e5c2c), MAT.lamp, lamp)
+          m.box(x-.03, .87, cz0!, x+.03, 2.13, cz1!, hex(0x6c421a), MAT.lamp, lamp)
         }
         const midZ = (z + end) / 2
-        m.box(xm - .026, .86, midZ - .03, xm + .026, 2.14, midZ + .03, hex(0xe2dfd6), MAT.wall)
-        m.box(xm - .024, 1.46, z+.06, xm + .024, 1.51, end-.06, hex(0xe2dfd6), MAT.wall)
-        g.box(xm - .01, .86, z+.07, xm + .01, 2.14, end-.07, hex(0x8aa8ac), MAT.glass)
+        m.box(xm - .026, .86, midZ - .03, xm + .026, 2.14, midZ + .03, hex(0x7e7666), MAT.wall)
+        m.box(xm - .024, 1.46, z+.06, xm + .024, 1.51, end-.06, hex(0x7e7666), MAT.wall)
+        g.box(xm - .01, .86, z+.07, xm + .01, 2.14, end-.07, hex(0x6e888c), MAT.glass)
       }
     } else {
+      // Weathered & partially damaged timber picket fence in warm 70s putty-grey cedar
       const horizontal = r - x > end - z, length = horizontal ? r - x : end - z
-      const picketCol = hex(0x8e8c83), railCol = hex(0x7c7a71)
-      for (let d = 0; d < length; d += .35) {
+      const fenceRng = new Rng((town.houseSeed ^ Math.floor(x * 31 + z * 59)) >>> 0)
+      const wMult = archSettings.weathering
+      const railCol = hex(0x6e685a), rotCol = hex(0x3a382c)
+      let pIdx = 0
+      for (let d = 0; d < length; d += .34, pIdx++) {
         const px = x + (horizontal ? d : 0), pz = z + (horizontal ? 0 : d)
-        m.box(px, .05, pz, px + (horizontal ? .15 : .08), 1.16, pz + (horizontal ? .08 : .15), picketCol, MAT.lit)
+        if (pIdx % 7 === 0) {
+          m.box(px - .02, .03, pz - .02, px + .12, 1.22, pz + .12, hex(0x645e50), MAT.timber, 0, hex(0x867e6e))
+          continue
+        }
+        const roll = fenceRng.next()
+        if (wMult > 0.25 && roll < 0.08 * Math.min(1.5, wMult)) continue
+        const broken = wMult > 0.2 && roll > 0.90
+        const topH = broken ? 0.62 + fenceRng.next() * 0.30 : 1.10 + (fenceRng.next() - 0.5) * 0.10
+        const pCol = hex(fenceRng.pick([0x8a8272, 0x7c7566, 0x948c7b, 0x70695b]))
+        const w = horizontal ? .14 : .07, dp = horizontal ? .07 : .14
+        const yaw = (fenceRng.next() - 0.5) * 0.12 * Math.min(1.5, wMult)
+        m.yawBox(px + w / 2, pz + dp / 2, w, dp, .04, topH, yaw, pCol, MAT.timber, 0, hex(0x9a9280))
+        m.box(px, .03, pz, px + w, .18, pz + dp, rotCol, MAT.timber)
       }
-      for (const h of [.32, .86]) m.box(x, h, z, r, h + .07, end, railCol, MAT.lit)
+      for (const h of [.30, .84]) m.box(x, h, z, r, h + .065, end, railCol, MAT.timber)
     }
   }
   for (const p of town.props) { const mesh=new Mesh(); furniture(mesh,p,town); props.push(mesh) }
@@ -426,11 +468,16 @@ function compileLevel(town: Town): LevelData {
         m.prism(p.x,p.y,.23,.125,p.h-.13,p.h+.16,9,hex(0xe8b86b),MAT.lamp,id)
         m.prism(p.x,p.y,.19,.19,p.h-.14,p.h-.13,9,hex(0xffdca0),MAT.lamp,id)
       } else {
-        // Warm porch sconce beside the door + warm overhead porch bulb under the gable arch
-        const sx=p.x+.86, sz=p.y-.38
-        m.box(sx-.06,1.68,sz,sx+.06,1.88,sz+.12,hex(0xffcf88),MAT.lamp,id)
-        m.box(sx-.09,1.88,sz-.02,sx+.09,1.93,sz+.14,hex(0x2d3238),MAT.lit)
-        m.prism(p.x,p.y-.22,.10,.08,2.24,2.38,7,hex(0xffe0a6),MAT.lamp,id)
+        // Twin flanking dark-iron coach lantern sconces beside the front door + recessed gable ceiling fixture
+        for (const side of [-1, 1] as const) {
+          const sx = p.x + side * 0.94, sz = p.y - 0.46
+          // Wall mounting backplate & top/bottom iron bracket
+          m.box(sx - .05, 1.62, sz - .02, sx + .05, 1.92, sz + .02, hex(0x1e2228), MAT.lit)
+          m.box(sx - .08, 1.88, sz, sx + .08, 1.93, sz + .15, hex(0x1e2228), MAT.lit)
+          m.box(sx - .06, 1.63, sz + .01, sx + .06, 1.67, sz + .13, hex(0x1e2228), MAT.lit)
+          // Warm amber lantern glass cage
+          m.box(sx - .055, 1.67, sz + .02, sx + .055, 1.88, sz + .13, hex(0xffc470), MAT.lamp, id)
+        }
       }
       continue
     }

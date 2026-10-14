@@ -137,14 +137,15 @@ fn eyeVisible(p: vec2f) -> f32 {
     let outsideView = !interior(F.eye.xy);
     col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
   } else if (mat == 21) {
-    // Weathered charcoal-slate roof shingles catching twilight sky & warm sodium/porch bounce; eaves stay grounded.
-    let eave = smoothstep(2.85, 3.55, o.world.y);
+    // Weathered 3-tab slate-taupe roof shingles catching twilight sky, ridge rim, and granule lip sheen; eaves stay grounded.
+    let eave = smoothstep(2.82, 3.62, o.world.y);
+    let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
     let courseStep = smoothstep(0.62, 0.96, fract(o.world.z / 0.24));
-    let tabGrain = 0.72 + 0.56 * surfaceNoise(o.world.xz * 6.2);
     let w = clamp(OL.u0.z, 0.0, 1.0);
     let roofTint = mix(vec3f(0.014, 0.026, 0.058), vec3f(0.115, 0.100, 0.088), w);
     let extRoofScale = select(1.0, 0.44, OL.u5.w > 0.5);
-    col = col * mix(1.02, 1.58, eave) * tabGrain * extRoofScale + roofTint * F.ambient.w * OL.u2.z * (0.58 * eave + 0.42 * courseStep) * max(0.0, n.y) * extRoofScale;
+    let roofGlint = (0.52 * eave + 0.32 * courseStep + 0.85 * ridgeRim + 1.85 * surfaceAlpha * (0.45 + 0.55 * eave)) * F.ambient.w * OL.u2.z * max(0.0, n.y);
+    col = (col * mix(0.96, 1.52, eave) + roofTint * roofGlint) * extRoofScale;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let w = clamp(OL.u0.z, 0.0, 1.0);
@@ -197,9 +198,13 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       }
     } else if (mat == 4 && !inRoom) {
-      col *= mix(1.0, 0.56, smoothstep(2.15, 2.78, o.world.y));
+      // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
+      let eaveShadow = smoothstep(2.05, 2.74, o.world.y);
+      let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.28;
+      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
+      col *= mix(1.0, 0.44, clamp(eaveShadow + lowShadow + underPorchGable * 0.42, 0.0, 1.0));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(wallLum) * vec3f(1.26, 0.92, 0.54), w * 0.74) * 0.82;
+      col = mix(col, vec3f(wallLum) * vec3f(1.26, 0.92, 0.54), w * 0.74) * 0.86;
     } else if ((mat == 0 || mat == 24) && o.world.y > 0.14 && o.world.y < 2.65) {
       // Blog Game Tip #9: Local-space power-4 triplanar grain & wear on props, doors, and parked car
       col *= evalTriplanarPropMod(o.world, n);
@@ -213,15 +218,9 @@ fn eyeVisible(p: vec2f) -> f32 {
     } else {
       let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       col = mix(col, vec3f(roomLum) * vec3f(1.38, 0.82, 0.36), w * 0.68) * 0.54;
-      // Warm amber kitchen sink window glow (north kitchen wall above sink at x=32.72..34.05, z=29.65..30.18, y=1.18..2.32)
-      if (o.world.x > 32.72 && o.world.x < 34.05 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.18 && o.world.y < 2.32) {
-        let paneX = abs(fract((o.world.x - 32.72) / 0.665) - 0.5);
-        let paneY = abs(fract((o.world.y - 1.18) / 0.57) - 0.5);
-        let muntin = smoothstep(0.04, 0.09, min(paneX, paneY));
-        col = mix(vec3f(0.08, 0.045, 0.02), vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)), muntin * nightLamps);
-      } else if (o.world.x > 30.9 && o.world.x < 36.8 && o.world.z > 29.65 && o.world.z < 30.55 && o.world.y > 0.85) {
-        // Subdue cream refrigerator & flanking upper kitchen cabinets into warm walnut-tan
-        col *= vec3f(0.52, 0.40, 0.28);
+      // Warm amber kitchen sink window pane glow (3D muntins are MAT.timber = 0, panes are MAT.lamp = 2)
+      if (mat == 2 && o.world.x > 32.64 && o.world.x < 34.06 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.05 && o.world.y < 2.22) {
+        col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
       }
     }
     if (mat == 22) {
@@ -260,7 +259,7 @@ fn eyeVisible(p: vec2f) -> f32 {
         let peripheral = mix(vec3f(luminance) * periphTint, col, .76 + .20 * warmBias);
         if (inRoom && o.world.y < 2.8) {
           let room = mix(vec3f(luminance) * periphTint, col, .88 + .12 * max(visible, warmBias));
-          let reveal = max(explored, visible * 0.92);
+          let reveal = max(explored, visible * 0.94);
           col = mix(o.color * .012, room * mix(F.effects.w, 1.0, .86), reveal);
         } else {
           col = mix(peripheral * (.88 + .12 * explored), col, .88 + .12 * visible);

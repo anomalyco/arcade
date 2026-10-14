@@ -32,6 +32,7 @@ import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakCombatFX } from "./combat-fx"
 import { buildLevel, hex } from "./level"
+import { archSettings } from "./architecture"
 import {
   DEFAULT_OUTBREAK_LIGHTING,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
@@ -61,6 +62,10 @@ const settings = {
   houseSeed: 7,
   terrain: 0.22,
   foliageDensity: 1,
+  houseDecay: 0,
+  clutterDensity: 1,
+  weathering: 1,
+  clutterSeed: 17,
   weather: 0,
   diagnostic: 0,
   textures: 1,
@@ -223,16 +228,36 @@ async function main() {
     { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
     { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: 0.4, step: 0.02 },
     { key: "foliageDensity", label: "Foliage density", group: "Generation", min: 0.5, max: 1.5, step: 0.05 },
+    {
+      key: "houseDecay",
+      label: "House decay",
+      group: "Generation",
+      options: [
+        { label: "Auto (by seed)", value: 0 },
+        { label: "Tidy", value: 1 },
+        { label: "Abandoned", value: 2 },
+        { label: "Ransacked", value: 3 },
+        { label: "Barricaded", value: 4 },
+      ],
+    },
+    { key: "clutterDensity", label: "Clutter density", group: "Generation", min: 0, max: 2, step: 0.1, unit: "×" },
+    { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
+    { key: "clutterSeed", label: "Clutter seed", group: "Generation", min: 1, max: 99, step: 1, unit: "" },
     { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
   ]
   const doorMesh = new Mesh()
-  doorMesh.box(0, 0.13, -0.1, 1.4, 2.3, 0.1, hex(0x463322), MAT.timber)
-  doorMesh.box(0.08, 0.35, -0.11, 1.32, 2.1, -0.105, hex(0x57402b), MAT.timber)
-  doorMesh.box(1.14, 1.08, 0.1, 1.25, 1.19, 0.18, hex(0xc9a96a), MAT.shiny)
-  for (const x of [0.15, 0.75]) {
-    for (const y of [0.42, 1.36]) {
-      doorMesh.box(x, y, 0.101, x + 0.48, y + 0.7, 0.125, hex(0x5b432d), MAT.timber)
-      doorMesh.box(x + 0.035, y + 0.04, 0.126, x + 0.445, y + 0.66, 0.132, hex(0x3a2a1c), MAT.timber)
+  // Deep weathered walnut stiles & rails, 6 recessed craft panels, tarnished brass kickplate, and antique lockset
+  doorMesh.box(0, 0.13, -0.09, 1.4, 2.3, 0.09, hex(0x322216), MAT.timber)
+  doorMesh.box(0.07, 0.15, 0.09, 1.33, 0.32, 0.102, hex(0x6e5834), MAT.shiny)
+  doorMesh.box(0.08, 0.35, -0.10, 1.32, 2.12, -0.092, hex(0x3e2b1c), MAT.timber)
+  // Escutcheon backplate, brass knob & deadbolt cylinder
+  doorMesh.box(1.13, 0.98, 0.09, 1.24, 1.28, 0.115, hex(0x4a3c24), MAT.shiny)
+  doorMesh.box(1.15, 1.05, 0.115, 1.22, 1.13, 0.165, hex(0xc29e58), MAT.shiny)
+  doorMesh.box(1.155, 1.19, 0.115, 1.215, 1.24, 0.14, hex(0xb89450), MAT.shiny)
+  for (const x of [0.14, 0.74]) {
+    for (const [y0, y1] of [[0.38, 0.98], [1.08, 1.66], [1.76, 2.14]] as const) {
+      doorMesh.box(x, y0, 0.091, x + 0.50, y1, 0.112, hex(0x422e1e), MAT.timber)
+      doorMesh.box(x + 0.04, y0 + 0.04, 0.113, x + 0.46, y1 - 0.04, 0.122, hex(0x23170e), MAT.timber)
     }
   }
   const doorModel = renderer.addModel(doorMesh)
@@ -395,7 +420,16 @@ async function main() {
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
       if (key === "hour") session.view.hour = wrapHour(settings.hour)
-      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (
+        key === "houseSeed" ||
+        key === "terrain" ||
+        key === "foliageDensity" ||
+        key === "houseDecay" ||
+        key === "clutterDensity" ||
+        key === "weathering" ||
+        key === "clutterSeed"
+      )
+        regenerate()
       if (
         key === "textures" ||
         key === "rugStyle" ||
@@ -574,6 +608,10 @@ async function main() {
   let vertices = 0
   function level() {
     session.view.town.foliageDensity = settings.foliageDensity
+    archSettings.houseDecay = settings.houseDecay
+    archSettings.clutterDensity = settings.clutterDensity
+    archSettings.weathering = settings.weathering
+    archSettings.clutterSeed = settings.clutterSeed
     const data = buildLevel(session.view.town)
     vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
     renderer.setLevel(data)
@@ -901,7 +939,8 @@ async function main() {
       (((settings.wallStyle & 3) << 4) >>> 0) |
       (((settings.floorStyle & 3) << 6) >>> 0) |
       ((Math.round((settings.texScale - 0.5) / 0.05) & 63) << 8) |
-      ((Math.round(settings.texContrast / 0.05) & 63) << 14)
+      ((Math.round(settings.texContrast / 0.05) & 63) << 14) |
+      ((Math.round(settings.weathering * 5) & 15) << 20)
     frame.set([canvas.width, canvas.height, count, texCfgBits], 20)
     frame.set([cutX, cutY, cutFlag, cutRadius], 24)
     frame.set(
@@ -1141,7 +1180,16 @@ async function main() {
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
       if (key === "hour" && typeof value === "number") session.view.hour = wrapHour(value)
-      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (
+        key === "houseSeed" ||
+        key === "terrain" ||
+        key === "foliageDensity" ||
+        key === "houseDecay" ||
+        key === "clutterDensity" ||
+        key === "weathering" ||
+        key === "clutterSeed"
+      )
+        regenerate()
       if (
         key === "textures" ||
         key === "rugStyle" ||
