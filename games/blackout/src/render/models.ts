@@ -1,8 +1,7 @@
 import type { LightDef, MapDef, Prop } from "../../shared/maps"
-import { FLOATS_PER_VERT, MAT, Mesh, type Rgb } from "./mesh"
+import { FLOATS_PER_VERT, MAT, Mesh, hex, type Rgb } from "./mesh"
 
-/** sRGB hex to a 0..1 triple (the shader linearises). */
-export const hex = (h: number): Rgb => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255]
+export { hex }
 
 /** Deterministic 0..1 generator from a seed. */
 export function rng(seed: number): () => number {
