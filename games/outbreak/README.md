@@ -1,7 +1,9 @@
 # Outbreak
 
-Unlisted local-session prototype at `/arcade/outbreak/?solo`. WASD, Dvorak or arrows move, the mouse aims,
-and F opens or closes a nearby door. Backquote opens the shared Lab.
+Unlisted local-session prototype at `/arcade/outbreak/?solo`. Physical WASD (`KeyW`, `KeyA`, `KeyS`, `KeyD`) or arrows move,
+`Shift` sprints with stamina and exhaustion recovery, the mouse aims, `E` (`KeyE`, with `KeyF` alias) interacts with
+doors and windows (peek interior, open/close, climb through, lock/unlock doors), and `Q` cycles contextual actions.
+On-screen prompts adapt to the user's keyboard layout (`navigator.keyboard.getLayoutMap()`). Backquote opens the shared Lab.
 
 The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
 shared-material work, actual comparison captures, seven paired cost runs and remaining visual gaps.

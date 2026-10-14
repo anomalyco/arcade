@@ -1,5 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
-import { keyLabel } from "@arcade/kit/client/controls"
+import { keyLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { Renderer, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
@@ -7,9 +7,10 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { LocalSession, type Command } from "../shared/session"
+import { vaultLift, type PeekInfo } from "../shared/interact"
 import { DEFAULT_STAMINA_TUNING, staminaControls } from "../shared/stamina"
 import { FrameClock, TICK_DT } from "../shared/clock"
-import { nearbyDoor, sightRects, propShape, SIZE } from "../shared/map"
+import { sightRects, propShape, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
@@ -77,6 +78,14 @@ async function main() {
   const doorModel = renderer.addModel(doorMesh)
   const doorData = new Float32Array(8 * 12)
   const doorBatch: Batch = { model: doorModel, data: doorData, count: 0 }
+  const sashMesh = new Mesh()
+  sashMesh.box(-1.0, 1.48, -.06, 1.0, 2.12, .06, hex(0xa8a99c), MAT.wall)
+  sashMesh.box(-.92, 1.54, -.02, .92, 2.06, .02, hex(0x809c9e), MAT.glass)
+  const sashModel = renderer.addModel(sashMesh)
+  const sashData = new Float32Array(12 * 12)
+  const sashBatch: Batch = { model: sashModel, data: sashData, count: 0 }
+  let peekBlend = 0
+  let lastPeek: PeekInfo | null = null
   const frame = new Float32Array(FRAME_FLOATS), lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS), occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   const lampPower = new Float32Array(MAX_LIGHTS), empty = new Float32Array(0)
   const render: FrameInput = { frame, lights, lightCount: 0, shadowLightCount: 0, occluders, occluderCount: 0, lampPower, lampCount: 0, view: [0, 0, SIZE, SIZE], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, 1] }
@@ -95,7 +104,7 @@ async function main() {
     let stepped = 0
     for (const step of substeps) {
       const p = session.view.player
-      session.update(step.dt, { mx: step.mx, my: step.my, sprint: step.sprint, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact }, settings.timeScale, settings)
+      session.update(step.dt, { mx: step.mx, my: step.my, sprint: step.sprint, aim: Math.atan2(target.y - p.y, target.x - p.x), interact: step.interact, cycle: step.cycle }, settings.timeScale, settings)
       stepped += step.dt
       frames++
     }
@@ -131,12 +140,14 @@ async function main() {
     Object.assign(session.view.player,previous.player)
     session.view.hour=previous.hour; session.view.time=previous.time
     session.view.revision=previous.revision+1
-    session.view.town.doors.forEach((d,i)=>{d.open=previous.town.doors[i]!.open})
+    session.view.town.doors.forEach((d,i)=>{d.open=previous.town.doors[i]!.open;d.locked=previous.town.doors[i]!.locked})
+    session.view.town.windows.forEach((w,i)=>{w.open=previous.town.windows[i]!.open;w.openable=previous.town.windows[i]!.openable})
     session.rebuildCollision()
     revision=-1; level(); avatar.reset()
   }
   function reset(nextSeed = seed) {
     session.close(); session = new LocalSession(nextSeed,settings.houseSeed,settings.terrain); vision = new Vision(); revision = -1
+    peekBlend = 0; lastPeek = null
     avatar.reset()
     level()
     scenery=new SceneryMemory()
@@ -144,19 +155,42 @@ async function main() {
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.zoom
     pendingDrawDt = 0
-    clock.reset(performance.now(), input.move())
+    clock.reset(performance.now(), liveMove())
   }
   reset()
+  const formatStatus = () => {
+    const { player: p, hour, prompt } = session.view
+    const interactKey = keyLabel("KeyE")
+    const cycleKey = keyLabel("KeyQ")
+    let promptText = ""
+    if (prompt) {
+      const nextIdx = (prompt.actions.findIndex(a => a.id === prompt.activeAction.id) + 1) % prompt.actions.length
+      const next = prompt.actions.length > 1 ? prompt.actions[nextIdx] : undefined
+      promptText = ` · ${interactKey} ${prompt.activeAction.label}${next ? ` (${cycleKey} ${next.label})` : ""}`
+    }
+    return `${clockText(hour)}${p.exhausted ? " · Exhausted" : ""}${promptText}`
+  }
+  onKeyLayoutChange(() => { status.textContent = formatStatus() })
   function draw(dt: number) {
-    const { player: p, town, hour, time } = session.view
+    const { player: p, town, hour, time, peek } = session.view
     settings.hour = Math.round(hour * 20) / 20
+    if (peek) {
+      lastPeek = peek
+      peekBlend = Math.min(1, peekBlend + dt * 6.5)
+    } else {
+      peekBlend = Math.max(0, peekBlend - dt * 5.5)
+      if (peekBlend <= .001) lastPeek = null
+    }
+    const activePeek = peek ?? (peekBlend > .001 ? lastPeek : null)
     const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio, 2)
     if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
       canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr)
       renderer.resize(canvas.width, canvas.height)
     }
     cam.zoomOffset = settings.zoom - 24
-    cam.follow(p.x, p.y, 0, 0, dt, false)
+    const camX = p.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
+    const camY = p.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
+    cam.follow(camX, camY, 0, 0, dt, false)
     cam.update(w / h)
     if (revision !== session.view.revision) {
       revision = session.view.revision; blockers = sightRects(town)
@@ -166,13 +200,18 @@ async function main() {
       for(const b of town.barriers)if(b.kind==="window")occluders.set([...b.rect,.85,0,0,0],lightOccluders++*OCC_FLOATS)
       for(const p of town.props){const s=propShape(p);if(s)occluders.set([...s.rect,s.height,0,0,0],lightOccluders++*OCC_FLOATS)}
     }
-    vision.update(p.x, p.y, p.aim, blockers, settings)
+    vision.update(p.x, p.y, p.aim, blockers, settings, peek)
     if (scenery.update(town,vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
     const view = cam.groundRect(5.5)
     const [vx0, vy0, vx1, vy1] = view
     const day = dayCycle(hour)
     lights.fill(0)
-    lights.set([p.x, 1.65+supportHeight(town,p.x,p.y), p.y, settings.range, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, .01, -1])
+    const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
+    const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
+    const sightAim = peek ? peek.aim : p.aim
+    const sightCone = activePeek ? settings.cone + (Math.max(settings.cone, activePeek.cone) - settings.cone) * peekBlend : settings.cone
+    const sightAwareness = activePeek ? settings.awareness + (Math.max(settings.awareness, activePeek.awareness) - settings.awareness) * peekBlend : settings.awareness
+    lights.set([sightX, 1.65+supportHeight(town,p.x,p.y), sightY, settings.range, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, .01, -1])
     let count = 1
     for (const [i, lamp] of town.lamps.entries()) {
       const lampScale = day.lamps * settings.lighting
@@ -186,16 +225,32 @@ async function main() {
       const cone=lamp.kind==="window"?[0,1,-.3,1]:[0,0,0,lamp.kind==="room"?-1:0]
       lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.18:.22, i], count++ * LIGHT_FLOATS)
     }
+    const cutX = activePeek ? activePeek.cutX : p.x
+    const cutY = activePeek ? activePeek.cutY : p.y
+    const cutFlag = activePeek ? 1 + peekBlend : 1
+    const cutRadius = activePeek ? .48 + .08 * peekBlend : .48
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
     frame.set([canvas.width, canvas.height, count, town.lamps.length], 20)
-    frame.set([p.x, p.y, 1, .48], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
-    const focus = cam.project(p.x, 1, p.y, w, h)
+    frame.set([cutX, cutY, cutFlag, cutRadius], 24); frame.set([...day.ambient.map(v=>v*settings.skyFill*(1-settings.weather*.3)), day.strength*(1-settings.weather*.85)], 28)
+    const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
+    const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
+    const focus = cam.project(focusX, 1, focusY, w, h)
     frame.set([focus.x / w * 2 - 1, 1 - focus.y / h * 2, 1.0, count], 32)
     frame.set([...day.direction, day.sun], 36); frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
-    frame.set([p.aim, Math.cos(settings.cone * Math.PI / 360), settings.awareness, settings.shroud], 44)
+    frame.set([sightAim, Math.cos(sightCone * Math.PI / 360), sightAwareness, settings.shroud], 44)
     town.doors.forEach((door, i) => doorData.set([door.rect[0], 0, (door.rect[1] + door.rect[3]) / 2, door.open ? -Math.PI / 2 : 0, 1, 1, 1, 1, 0, 0, 1, 0], i * 12))
     doorBatch.count = town.doors.length
-    render.batches = [...avatar.draw(p, dt, time, (x,z)=>supportHeight(town,x,z)), doorBatch]
+    let openWindows = 0
+    for (const win of town.windows) {
+      if (!win.open) continue
+      const [wx0, wy0, wx1, wy1] = win.rect
+      const horizontal = wx1 - wx0 > wy1 - wy0
+      const yaw = horizontal ? 0 : Math.PI / 2
+      sashData.set([(wx0 + wx1) / 2, .38, (wy0 + wy1) / 2, yaw, 1, 1, 1, 1, 0, 0, 1, 0], openWindows++ * 12)
+    }
+    sashBatch.count = openWindows
+    const lift = vaultLift(p)
+    render.batches = [...avatar.draw(p, dt, time, (x,z)=>supportHeight(town,x,z)+lift), doorBatch, ...(openWindows ? [sashBatch] : [])]
     render.lightCount = render.shadowLightCount = count; render.occluderCount = lightOccluders; render.lampCount = town.lamps.length
     render.view = view; render.grade = [time, settings.diagnostic, 0, settings.exposure]
     renderer.render(render)
@@ -205,8 +260,7 @@ async function main() {
       staminaEl.dataset.active = String(p.sprinting || p.exhausted || p.stamina < .999)
       staminaEl.dataset.exhausted = String(p.exhausted)
     }
-    const door = nearbyDoor(town, p.x, p.y)
-    status.textContent = `${clockText(hour)}${p.exhausted ? " · Exhausted" : ""}${door ? ` · ${keyLabel("KeyE")} ${door.open ? "Close" : "Open"} door` : ""}`
+    status.textContent = formatStatus()
     const meterNow = performance.now(), elapsed = (meterNow - meterAt) / 1000
     if (elapsed > .25) {
       lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
@@ -291,7 +345,7 @@ async function main() {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
     human: () => ({ profile: avatar.profile, bones: avatar.bones }),
-    state: () => ({ ...session.view, explored: vision.explored.filter(v => v > 0).length, vertices }),
+    state: () => ({ ...session.view, peekBlend, explored: vision.explored.filter(v => v > 0).length, vertices }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
     freeze: (value = true) => {
@@ -300,7 +354,7 @@ async function main() {
       pendingDrawDt = 0
       lastDrawAt = -Infinity
       input.release()
-      clock.reset(performance.now(), input.move())
+      clock.reset(performance.now(), liveMove())
       if (!frozen) scheduleFrame()
     },
     setLab(key: keyof typeof settings, value: number) {
@@ -311,7 +365,12 @@ async function main() {
       if (key === "hour") session.view.hour = wrapHour(value)
       if (key === "houseSeed" || key === "terrain") regenerate()
     },
-    pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
+    pose(x: number, y: number, aim: number) {
+      Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0, peekingWindowId: null, lastPeekedWindowId: null, cycledTargetId: null, cycledActionIndex: 0, vault: null })
+      peekBlend = 0; lastPeek = null
+      session.rebuildCollision()
+      cam.snap(x, y); cam.dist = settings.zoom
+    },
     async step(dt = 1 / 60, command?: Partial<Command>) {
       session.update(dt, { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }, settings.timeScale, settings)
       frames++

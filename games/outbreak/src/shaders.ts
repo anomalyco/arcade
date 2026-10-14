@@ -34,12 +34,19 @@ fn interior(p:vec2f) -> bool {
   for(var i=0;i<4;i++) { let b=houseRect(i); if(all(p>b.xy+0.25)&&all(p<b.zw-0.25)){return true;} }
   return false;
 }
-fn roofCut(p:vec3f, id:i32) -> bool {
+fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
-  return all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy+0.35)&&all(p.xz<b.zw-0.35);
+  if (!(all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy+0.35)&&all(p.xz<b.zw-0.35))) {
+    return false;
+  }
+  if (F.eye.z <= 1.0001 || F.eye.z >= 1.999) { return true; }
+  let alpha = clamp(F.eye.z - 1.0, 0.0, 1.0);
+  let q = vec2u(frag.xy) % 4u;
+  let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (m[q.y * 4u + q.x] + 0.5) / 16.0 < alpha;
 }
 fn eyeVisible(p: vec2f) -> f32 {
-  let delta = p - F.eye.xy;
+  let delta = p - lights[0].pos.xz;
   let distance = length(delta);
   let a = (atan2(delta.y, delta.x) + TAU) % TAU;
   let f = a / TAU * f32(RAYS) - 0.5;
@@ -56,9 +63,9 @@ fn eyeVisible(p: vec2f) -> f32 {
 }`,
     directional: "mix(vec3f(0.52, 0.68, 1.0), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g, 1.0, o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
     cutaway: `
-      if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)))) { discard; }
+      if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
-        for(var i=0;i<4;i++) { if(roofCut(o.world,i)){discard;} }
+        for(var i=0;i<4;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
       }
     `,
     // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.

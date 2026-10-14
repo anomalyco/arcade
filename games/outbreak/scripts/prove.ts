@@ -69,25 +69,53 @@ try {
   const after = await page.evaluate(() => { const h = (window as any).__arcadeHarness; h.freeze(); return h.state().player })
   assert.equal(after.x, before.x); assert.equal(after.y, before.y)
   await page.keyboard.press("Backquote")
-  // Real F key edge toggles exactly once; Dvorak E moves right without opening a door.
+  // Real E key edge (and F alias) toggles door; Dvorak physical D (code: KeyD, key: "e") moves right without opening a door.
   const entrance=await page.evaluate(()=>(window as any).__arcadeHarness.state().town.doors[0].rect[3])
   await pose(27.7, entrance+1, -Math.PI / 2)
   await page.evaluate(() => (window as any).__arcadeHarness.freeze(false))
-  await page.keyboard.press("f")
+  await page.keyboard.press("KeyE")
   await page.waitForFunction(() => (window as any).__arcadeHarness.state().town.doors[0].open)
-  await page.keyboard.down("d")
+  await page.keyboard.down("KeyD")
   await page.waitForFunction(x => (window as any).__arcadeHarness.state().player.x > x + .15, 27.7)
-  await page.keyboard.up("d")
+  await page.keyboard.up("KeyD")
   const dvorakX = await page.evaluate(() => {
     const h = (window as any).__arcadeHarness
-    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyE", key: "e", bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyD", key: "e", bubbles: true }))
     return h.state().player.x
   })
   await page.waitForFunction(x => (window as any).__arcadeHarness.state().player.x > x + .15, dvorakX)
-  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyE", key: "e", bubbles: true })))
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyD", key: "e", bubbles: true })))
   assert.equal(await page.evaluate(() => (window as any).__arcadeHarness.state().revision), 2)
+
+  // Sprint with ShiftLeft drains stamina and moves faster than walk.
+  await page.keyboard.down("ShiftLeft")
+  await page.keyboard.down("KeyD")
+  await page.waitForFunction(() => (window as any).__arcadeHarness.state().player.stamina < .92)
+  await page.keyboard.up("KeyD")
+  await page.keyboard.up("ShiftLeft")
+
+  // Window interaction on Elm house: Peek (unexplored -> visible + roof cutaway), Stop peek, Open window, Climb through.
   await page.evaluate(() => (window as any).__arcadeHarness.freeze())
+  await pose(23.5, 66.1, -Math.PI / 2, 18, 38)
+  assert.equal(await page.evaluate(() => (window as any).__arcadeHarness.fog(29, 63)), "unexplored")
+  await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    await h.step(1 / 60, { interact: true })
+    for (let i = 0; i < 12; i++) await h.step(1 / 60)
+  })
+  assert.equal(await page.evaluate(() => (window as any).__arcadeHarness.fog(29, 63)), "visible")
+  assert(await page.evaluate(() => (window as any).__arcadeHarness.state().peekBlend > .8))
+  await shot("06-window-peek")
+  await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    // Release peek -> Open window -> Climb through
+    await h.step(1 / 60, { interact: true })
+    await h.step(1 / 60, { interact: true })
+    await h.step(1 / 60, { interact: true })
+    for (let i = 0; i < 24; i++) await h.step(1 / 60)
+  })
+  assert(await page.evaluate(() => (window as any).__arcadeHarness.state().player.y < 65.0))
   assert.deepEqual(errors, [])
-  await Bun.write(resolve(out, "proof.json"), JSON.stringify({ adapter, captures: ["01-dusk-street", "02-house-interior", "02-house-closed", "03-door-reveal", "04-explored-shroud", "05-night-lamps"], errors, door: "blocked → visible → explored", lab: "time slider + live input isolation", input: "F door + WASD and Dvorak movement" }, null, 2))
+  await Bun.write(resolve(out, "proof.json"), JSON.stringify({ adapter, captures: ["01-dusk-street", "02-house-interior", "02-house-closed", "03-door-reveal", "04-explored-shroud", "05-night-lamps", "06-window-peek"], errors, door: "blocked → visible → explored", window: "peek LOS + roof cutaway → open → climb through", sprint: "ShiftLeft stamina drain + recovery", lab: "time slider + live input isolation", input: "E interact (F alias) + physical WASD/Dvorak movement" }, null, 2))
   console.log(`Metal proof passed: ${out}`)
 } finally { await browser.close(); fixture.stop(true) }

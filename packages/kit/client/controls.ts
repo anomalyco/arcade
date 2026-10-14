@@ -102,6 +102,7 @@ const CODE_FALLBACK_LABELS: Readonly<Record<string, string>> = {
 const resolvedLabels = new Map<string, string>()
 const listeners = new Set<() => void>()
 let layoutMapInitialized = false
+let hasAuthoritativeLayoutMap = false
 
 function notifyListeners(): void {
   for (const fn of listeners) fn()
@@ -151,6 +152,7 @@ export async function refreshKeyLayout(): Promise<void> {
         apply(code, map.get(code))
       }
     }
+    hasAuthoritativeLayoutMap = resolvedLabels.size > 0
     if (changed) notifyListeners()
   } catch {
     // Fallback labels remain active when permission or secure-context restrictions block getLayoutMap().
@@ -179,6 +181,7 @@ export function observeKeyLayout(e: {
   ctrlKey?: boolean
   metaKey?: boolean
 }): void {
+  if (hasAuthoritativeLayoutMap) return
   if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return
   if (!e.code.startsWith("Key") && !["Comma", "Period", "Slash", "Semicolon", "Quote"].includes(e.code)) return
   if (e.key.length !== 1) return
@@ -194,12 +197,14 @@ export function setKeyLayoutMapForTest(
   entries: ReadonlyMap<string, string> | Readonly<Record<string, string>> | null,
 ): void {
   resolvedLabels.clear()
+  hasAuthoritativeLayoutMap = false
   if (entries) {
     const iter = entries instanceof Map ? entries.entries() : Object.entries(entries)
     for (const [code, value] of iter) {
       const glyph = normalizeGlyph(value)
       if (glyph) resolvedLabels.set(code, glyph)
     }
+    hasAuthoritativeLayoutMap = resolvedLabels.size > 0
   }
   notifyListeners()
 }
