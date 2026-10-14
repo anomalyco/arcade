@@ -264,16 +264,21 @@ struct VOut {
       gloss = s.gloss;
       cavity = s.cavity;
     } else if (kind == 2) {
-      let inVerge = U.config.w < 0.5 && p.y > 3.32 && p.y < 3.76 && abs(p.x) > 0.9 && p.x > -7.6;
-      if (inVerge) {
-        let vDist = min(p.y - 3.32, 3.76 - p.y);
-        let vEdge = smoothstep(0.0, 0.08, vDist);
+      let edgeWarp = select(0.0, (surfaceNoise(p * 2.8 + vec2f(1.7, 4.3)) - 0.42) * 0.26, isAfter);
+      let pyW = p.y + edgeWarp;
+      let pxW = p.x - edgeWarp * 0.85;
+      let inVerge = U.config.w < 0.5 && pyW > 3.26 && pyW < 3.82 && abs(pxW) > 0.88 && pxW > -7.6;
+      let inSidewalkWeeds = isAfter && U.config.w < 0.5 && p.y >= 1.98 && pyW < 2.26 && abs(pxW) > 0.88 && pxW > -7.6;
+      let inWalkWeeds = isAfter && U.config.w < 0.5 && p.y < 2.02 && abs(abs(p.x) - 0.72) < 0.22 && edgeWarp > 0.01;
+      if (inVerge || inSidewalkWeeds || inWalkWeeds) {
+        let vDist = select(0.06, min(pyW - 3.26, 3.82 - pyW), inVerge);
+        let vEdge = smoothstep(0.0, 0.10, vDist);
         if (isAfter) {
-          let s = evalGrassSoil(p, vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge), false, defaultMaterialRecipe(4));
+          let s = evalGrassSoil(p, vec3f(0.028, 0.044, 0.016) * (0.48 + 0.52 * vEdge), false, defaultMaterialRecipe(4));
           let grassMod = clamp(texGrass / vec3f(0.045, 0.085, 0.022), vec3f(0.68), vec3f(1.36));
           albedo = s.albedo * mix(vec3f(1.0), grassMod, 0.52);
           gloss = s.gloss;
-          cavity = s.cavity * (0.55 + 0.45 * vEdge);
+          cavity = s.cavity * (0.58 + 0.42 * vEdge);
           n = normalize(n + surfaceNormalShift + vec3f(texGrassNorm.x * 0.22, 0.0, texGrassNorm.y * 0.22));
         } else {
           let s = evalLegacyMaterial(4, o.world, n, vec3f(0.024, 0.036, 0.014));
@@ -549,14 +554,6 @@ function addOutbreakLotArchitecture(m: Mesh, seed: number): void {
     m.box(wx0 + 0.04, 1.45, e - 0.02, wx1 - 0.04, 1.50, e + 0.06, rgb(0xdcd9cf), MAT.wall)
   }
 
-  // Foundation soil beds flanking the porch
-  for (const [a, d] of [
-    [x + 0.15, -1.55],
-    [1.55, r - 0.15],
-  ] as const) {
-    m.quad([a, 0.018, e + 0.92], [d, 0.018, e + 0.92], [d, 0.018, e + 0.04], [a, 0.018, e + 0.04], [0, 1, 0], rgb(0x28291f), MAT.ground, 5)
-  }
-
   // Streetlamp pole & warm luminaire on the front-right curb verge
   const lx = 4.2, lz = 3.65
   m.prism(lx, lz, 0.12, 0.065, 0.08, 3.8, 8, rgb(0x353d3c))
@@ -578,29 +575,53 @@ function buildLotFoliageMesh(seed: number, params: Readonly<FoliageParams>, isLe
         buildFoliageTree(m, px, pz, ph, pr, s, 0.018, params, shape)
       }
 
-  // 1. Symmetric left & right street/yard trees + foreground right yard tree (so A/B split compares matched trees)
-  plantFn(-5.4, 0.55, params.treeHeight, params.crownRadius, seed * 31 + 7)
-  plantFn(5.4, 0.55, params.treeHeight, params.crownRadius, seed * 31 + 7)
-  plantFn(2.4, 0.85, params.treeHeight * 0.88, params.crownRadius * 0.88, seed * 47 + 13)
-  plantFn(-9.4, -1.8, params.treeHeight * 0.92, params.crownRadius * 0.85, seed * 59 + 19)
+  // 1. Symmetric left & right side-yard / street-framing trees (leaving front windows & porch columns unobstructed)
+  plantFn(-6.2, -0.25, params.treeHeight * 1.15, params.crownRadius * 1.18, seed * 31 + 7)
+  plantFn(6.2, -0.25, params.treeHeight * 1.15, params.crownRadius * 1.18, seed * 31 + 7)
+  plantFn(-9.2, -2.4, params.treeHeight * 1.10, params.crownRadius * 1.12, seed * 59 + 19)
+  plantFn(8.6, -2.4, params.treeHeight * 1.10, params.crownRadius * 1.12, seed * 59 + 19)
+  plantFn(-6.8, 5.2, params.treeHeight * 1.05, params.crownRadius * 1.08, seed * 47 + 13)
+  plantFn(6.8, 5.2, params.treeHeight * 1.05, params.crownRadius * 1.08, seed * 47 + 13)
 
-  // 2. Foundation shrubs along the house front & porch (including twin boxwood globes & corner hydrangea)
+  // 2. Overgrown, irregular foundation hedge & bramble thicket along the house front & porch
   const rng = new Rng(seed + 71)
   for (const [px, pz, ph, pr] of [
-    [x + 0.45, e + 0.52, 1.32, 0.84],
-    [x + 1.65, e + 0.44, 0.64, 0.44],
-    [x + 2.85, e + 0.46, 0.52, 0.38],
-    [x + 4.05, e + 0.40, 0.58, 0.40],
-    [-2.05, e + 0.48, 0.88, 0.50],
-    [1.85, e + 0.48, 0.88, 0.50],
-    [2.95, e + 0.50, 0.84, 0.48],
-    [4.25, e + 0.42, 0.56, 0.40],
-    [r - 1.05, e + 0.62, 1.12, 0.88],
+    [x + 0.35, e + 0.56, 1.18, 0.80],
+    [x + 0.95, e + 0.96, 0.68, 0.56],
+    [x + 1.65, e + 0.46, 0.72, 0.58],
+    [x + 2.45, e + 0.78, 0.54, 0.48],
+    [x + 3.25, e + 0.44, 0.66, 0.54],
+    [-1.95, e + 0.58, 1.08, 0.72],
+    [1.95, e + 0.58, 1.08, 0.72],
+    [2.95, e + 0.52, 0.92, 0.64],
+    [3.75, e + 0.82, 0.56, 0.48],
+    [4.55, e + 0.44, 0.68, 0.56],
+    [5.45, e + 0.76, 0.56, 0.48],
+    [r - 1.05, e + 0.62, 1.16, 0.84],
+    [r - 0.25, e + 1.02, 0.76, 0.62],
   ] as const) {
+    m.prism(px, pz, pr * 1.05, pr * 0.95, 0.006, 0.018, 7, rgb(0x14180f), MAT.ground, 5)
     plantFn(px, pz, ph, pr, Math.floor(rng.next() * 1e6))
   }
-  // Multi-floret creamy-white hydrangea panicles on the front-right corner shrub
-  emitHydrangeaPanicles(m, r - 1.05, 0.018, e + 0.62, 1.12, 0.88, seed + 31)
+  if (!isLegacy) {
+    for (let wx = x - 0.1; wx <= r + 0.1; wx += 0.54 + rng.next() * 0.38) {
+      if (Math.abs(wx) < 1.55) continue
+      const wz = e + 0.68 + rng.next() * 0.78
+      emitGrassTuft(m, wx, 0.0, wz, {
+        bladeCount: 5,
+        radius: 0.26 + rng.next() * 0.14,
+        height: 0.22 + rng.next() * 0.18,
+        width: params.bladeWidth * 1.18,
+        curvature: Math.min(1, params.bladeCurvature * 1.18),
+        leanAngle: Math.PI * 0.5 + (rng.next() - 0.5) * 1.4,
+        rootColor: rgb(0x121e0c),
+        tipColor: rgb(rng.pick([0x385220, 0x465c26, 0x2e461b])),
+        rng,
+      })
+    }
+  }
+  // Delicate creamy-white hydrangea blossom flecks on the front-right corner shrub
+  emitHydrangeaPanicles(m, r - 1.05, 0.018, e + 0.62, 1.16, 0.84, seed + 31)
 
   // 3. Lawn & verge grass
   if (isLegacy) {
