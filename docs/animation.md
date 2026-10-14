@@ -18,8 +18,7 @@ angles, not by Cartesian hand targets; and never let a planted foot pull a leg p
 
 Numbers below come from `games/blackout/scripts/animation/gait-metrics.ts` and `pose-diff.ts` at fixed
 speeds (walk 1.4, run 4.2, sprint 6.3 m/s, `dt = 1/60`) on main on 2026-10-14 (`23e8250`), unless a line says otherwise. Mocap
-means the Bandai Namco walk and run clips described in
-[the fixtures README](../games/blackout/scripts/animation/fixtures/mocap/README.md).
+means the walk and run reference clips that `common.ts` downloads on first use.
 
 ## Code map
 

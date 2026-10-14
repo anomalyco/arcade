@@ -23,10 +23,7 @@ export function parseArgs(argv: string[], defaults: { tag: string; out: string }
   return { tag, out, values, flags }
 }
 
-/**
- * Bandai Namco Research Motion Dataset clips (CC BY-NC 4.0), fetched on first use and checked by hash.
- * See fixtures/mocap/README.md for attribution and why they are not committed.
- */
+/** Reference walk and run mocap clips, fetched into fixtures/mocap on first use and checked by hash. */
 const SOURCE = "https://raw.githubusercontent.com/BandaiNamcoResearchInc/Bandai-Namco-Research-Motiondataset/74ead3ba1ae4696404e6086233779f60de8bf9ef/dataset"
 export const MOCAP = {
   walk: {

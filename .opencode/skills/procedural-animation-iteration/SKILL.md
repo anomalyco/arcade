@@ -92,9 +92,8 @@ bun games/blackout/scripts/animation/render-video.ts [--out dir]
   `stitch-sheets.py` builds `*-sheet-<tag>-*.png` and before/ideal/after comparisons. Takes about 2 min.
 - `render-video.ts`: a 4 s side-view clip, 2 s walking then 2 s running, encoded with ffmpeg. Use it
   only to show Kit, not to judge timing (see Pitfalls).
-- `common.ts`: argument parsing, paths, and the mocap loader. The two Bandai Namco BVH clips download
-  into `fixtures/mocap/` on first use and are hash-checked; see its README for licence and offline use
-  (`--bvh-dir`).
+- `common.ts`: argument parsing, paths, and the mocap loader. The walk and run BVH clips download
+  into `fixtures/mocap/` on first use and are hash-checked; pass `--bvh-dir` to use local copies.
 - `@arcade/kit/pose-diff` (`packages/kit/pose-diff.ts`): `extractBodyJoints`, `extractBonePoseJoints`,
   `normalizeJoints`, `projectOrtho`, `computePoseAngles`, `parseBvh`, `extractBvhCycle`,
   `retargetBvhFrame`, `buildWilliamsReferenceCycle`, `jointsFromAngles`,
