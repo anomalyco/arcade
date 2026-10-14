@@ -2531,6 +2531,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
         lighting: { type: "string", enum: Object.keys(FOLIAGE_LIGHTINGS), description: "Test-room lighting (night, dusk, day)" },
         look: { type: "string", enum: FOLIAGE_LOOKS, description: "Look post grade" },
         walker: { type: "boolean", description: "Walkers trampling the vegetation" },
+        flashlight: { type: "boolean", description: "Lead walker carries a flashlight at night" },
+        seed: { type: "number", min: 1, max: 999, description: "Structure seed (rebuilds the room)" },
         tuningSeed: { type: "number", min: 1, max: 9999, description: "Parameter randomize seed" },
         ...Object.fromEntries(
           FOLIAGE_PARAM_SPECS.map(s => [

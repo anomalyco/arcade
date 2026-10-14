@@ -1828,6 +1828,7 @@ export function emitGrassTuft(
   }
 }
 
+/** Broadleaf weed rosette (dandelion/plantain): six lanceolate leaves radiating from a low crown, tips lifted. */
 export function emitWeedMat(
   m: Mesh,
   x: number,
@@ -1838,25 +1839,27 @@ export function emitWeedMat(
   rng: Rng,
   baseCol: Rgb = [0.16, 0.25, 0.11],
 ): void {
-  const center: Point = [x, y + height, z]
-  const sides = 5
-  const ring: Point[] = []
+  const leaves = 6
   const rot = rng.next() * Math.PI * 2
-  for (let i = 0; i < sides; i++) {
-    const a = rot + (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.36
-    const r = radius * (i % 2 === 0 ? 1.15 + rng.next() * 0.25 : 0.72 + rng.next() * 0.22)
-    ring.push([x + Math.cos(a) * r, y + 0.008, z + Math.sin(a) * r])
-  }
-  const cCol = scaleRgb(baseCol, 0.92 + rng.next() * 0.16)
-  const rCol = scaleRgb(baseCol, 0.54 + rng.next() * 0.12)
-  for (let i = 0; i < sides; i++) {
-    const p0 = ring[i]!
-    const p1 = ring[(i + 1) % sides]!
-    const n0 = normalize3(p0[0] - x, radius * 1.45, p0[2] - z)
-    const n1 = normalize3(p1[0] - x, radius * 1.45, p1[2] - z)
-    m.vert(center, [0, 1, 0], cCol, MAT.foliage, -0.35)
-    m.vert(p0, n0, rCol, MAT.foliage, -0.1)
-    m.vert(p1, n1, rCol, MAT.foliage, -0.1)
+  const heart: Point = [x, y + height * 0.35, z]
+  const heartCol = scaleRgb(baseCol, 0.6)
+  for (let i = 0; i < leaves; i++) {
+    const a = rot + (i / leaves) * Math.PI * 2 + (rng.next() - 0.5) * 0.4
+    const len = radius * (0.8 + rng.next() * 0.45)
+    const wid = len * 0.24
+    const dx = Math.cos(a), dz = Math.sin(a)
+    const mid: Point = [x + dx * len * 0.5, y + height * 0.55, z + dz * len * 0.5]
+    const tip: Point = [x + dx * len, y + height * (0.4 + rng.next() * 0.5), z + dz * len]
+    const l: Point = [mid[0] - dz * wid, mid[1] - height * 0.15, mid[2] + dx * wid]
+    const r: Point = [mid[0] + dz * wid, mid[1] - height * 0.15, mid[2] - dx * wid]
+    const n = normalize3(dx * 0.25, 1, dz * 0.25)
+    const leafCol = scaleRgb(baseCol, 0.9 + rng.next() * 0.2)
+    m.vert(heart, n, heartCol, MAT.foliage, -0.08)
+    m.vert(l, n, leafCol, MAT.foliage, -0.3)
+    m.vert(tip, n, scaleRgb(leafCol, 1.1), MAT.foliage, -0.55)
+    m.vert(heart, n, heartCol, MAT.foliage, -0.08)
+    m.vert(tip, n, scaleRgb(leafCol, 1.1), MAT.foliage, -0.55)
+    m.vert(r, n, leafCol, MAT.foliage, -0.3)
   }
 }
 

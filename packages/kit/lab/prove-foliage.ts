@@ -101,6 +101,18 @@ try {
     await invoke("foliage.set", { walker: false })
   }
 
+  // Bending A/B at an identical tick: same walker positions with actor bend strength 0 vs the preset value.
+  await invoke("foliage.preset", { tool: "grass", kind: "grass", preset: "overgrown", lighting: "night", look: "current", cameraMode: "close" })
+  await invoke("foliage.set", { walker: true, flashlight: false, grassWind: 0, trampleStrength: 0 })
+  await page.evaluate(() => (window as any).lab.sections.find((s: any) => s.id === "foliage").retrigger())
+  await step(60, 1 / 30)
+  await shot("grass-bend-off")
+  await invoke("foliage.set", { trampleStrength: 1 })
+  await step(1, 0)
+  await shot("grass-bend-on")
+  await invoke("foliage.preset", { kind: "grass", preset: "overgrown" })
+  await invoke("foliage.set", { walker: false, flashlight: true })
+
   await invoke("foliage.preset", { tool: "lot", lighting: "night", look: "sodium_70s", cameraMode: "game" })
   await step(4)
   await shot("lot-night-70s")

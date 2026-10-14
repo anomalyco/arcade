@@ -498,7 +498,7 @@ function walkerPath(tool: FoliageLabTool, t: number): { x: number; z: number; he
   }
   if (tool === "tree") return loop(0, -1.2, 3.6, 2.4, 1.3)
   if (tool === "bush") return loop(0, -2.2, 6.2, 1.25, 1.3)
-  if (tool === "grass") return loop(2.6, -2.6, 3.6, 2.2, 1.2)
+  if (tool === "grass") return loop(2.4, -2.4, 2.0, 1.3, 1.0)
   return loop(0, 0.2, 7.5, 0.9, 1.3)
 }
 
@@ -784,9 +784,9 @@ export function createFoliage(context: LabContext): LabSection {
       const pitch = 0.32
       lights.push({
         x: a.x + Math.cos(a.heading) * 0.24, y: 1.1, z: a.z + Math.sin(a.heading) * 0.24,
-        radius: 11, r: 1.0, g: 0.86, b: 0.66, power: 5.5,
+        radius: 12, r: 1.0, g: 0.86, b: 0.66, power: 8,
         dx: Math.cos(a.heading) * Math.cos(pitch), dy: -Math.sin(pitch), dz: Math.sin(a.heading) * Math.cos(pitch),
-        cone: Math.cos((24 * Math.PI) / 180),
+        cone: Math.cos((30 * Math.PI) / 180),
       })
     }
     stage.dynamicLights = lights.slice(0, 8)
