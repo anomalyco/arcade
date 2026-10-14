@@ -263,8 +263,9 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   }
 
   // 1. Ambient / sky hemisphere fill + shadow colour tint
+  let isNoirRoom = useLook && i32(round(L.u14.w)) == 1;
   let hemi = 0.35 + 0.65 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-  let baseAmb = vec3f(0.032, 0.044, 0.072) * ambientFill * shadowCol;
+  let baseAmb = vec3f(0.032, 0.044, 0.072) * ambientFill * select(1.0, 0.35, isNoirRoom) * shadowCol;
   var diff = baseAmb * hemi * sample.cavity;
   var spec = vec3f(0.0);
 
@@ -274,7 +275,7 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   if (moonNdl > 0.001 && moonInt > 0.001) {
     let winCookie = windowApertureCookie(o.world, moonDir, slats);
     let mVis = roomShadowVis(o.world + n * 0.02, moonDir, 12.0) * winCookie;
-    let moonCol = vec3f(0.48, 0.64, 0.94) * shadowCol * 0.42 * moonInt;
+    let moonCol = vec3f(0.48, 0.64, 0.94) * shadowCol * select(0.42, 0.24, isNoirRoom) * moonInt;
     diff += moonCol * moonNdl * mVis * sample.cavity;
     if (sample.gloss.x > 0.0) {
       let h = normalize(moonDir + V);

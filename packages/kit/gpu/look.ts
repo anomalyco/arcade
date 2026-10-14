@@ -271,32 +271,32 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
     },
     defaults: {
       preset: "noir",
-      exposure: 0.96,
+      exposure: 1.06,
       tonemap: 1,
-      contrast: 1.36,
-      toe: 0.46,
-      shoulder: 0.34,
-      blackCrush: 0.045,
-      saturation: 0.22,
-      temperature: -0.26,
+      contrast: 1.26,
+      toe: 0.32,
+      shoulder: 0.32,
+      blackCrush: 0.018,
+      saturation: 0.24,
+      temperature: -0.24,
       splitTone: 0.88,
-      shadowTintR: 0.62,
-      shadowTintG: 0.78,
-      shadowTintB: 1.1,
+      shadowTintR: 0.64,
+      shadowTintG: 0.8,
+      shadowTintB: 1.12,
       highlightTintR: 1.14,
       highlightTintG: 0.94,
       highlightTintB: 0.68,
       paletteMix: 0.62,
       foliageShift: -0.42,
-      ambientFill: 0.16,
-      shadowColorR: 0.48,
-      shadowColorG: 0.64,
-      shadowColorB: 0.92,
+      ambientFill: 0.34,
+      shadowColorR: 0.56,
+      shadowColorG: 0.72,
+      shadowColorB: 1.02,
       practicalWarmth: 0.48,
       practicalIntensity: 1.25,
-      moonIntensity: 0.85,
+      moonIntensity: 1.15,
       rimStrength: 1.45,
-      contactShade: 0.95,
+      contactShade: 0.9,
       surfaceWetness: 0.85,
       fogDensity: 0.42,
       fogHeightFalloff: 1.6,
@@ -307,12 +307,12 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       shaftSlats: 0.65,
       bloom: 1.15,
       halation: 0.28,
-      vignette: 0.95,
+      vignette: 0.88,
       grain: 0.38,
       grainSeed: 73,
       grainAnimated: true,
       chromatic: 0.18,
-      diffuseWrap: 0.04,
+      diffuseWrap: 0.08,
       diffuseBands: 0,
       bandSoftness: 0.16,
       painterlySmooth: 0.0,
@@ -1206,23 +1206,24 @@ fn lookGradeColor(
 
   // 6. Shadow toe curve (Lamplight paper.wgsl)
   if (toe > 0.001) {
-    let toeK = toe * 0.095;
+    let toeK = toe * 0.055;
     let t = c * c / max(c + vec3f(toeK), vec3f(1e-5));
-    c = mix(c, t * (1.0 + toeK * 0.5), clamp(toe * 0.9, 0.0, 0.95));
+    c = mix(c, t * (1.0 + toeK * 0.5), clamp(toe * 0.75, 0.0, 0.85));
   }
 
-  // 7. Split-toning & saturation (with selective warm practical hue retention when practicalWarmth > 0)
+  // 7. Split-toning & saturation (preserve warm amber/sodium practical hues from pre-grade hdrIn before split-toning)
   let luma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   let splitCurve = mix(shadowTint, highlightTint, smoothstep(0.02, 0.55, luma));
   let activeSplit = mix(vec3f(1.0), splitCurve, clamp(splitTone, 0.0, 1.5));
   let mono = vec3f(luma) * activeSplit;
-  let warmBias = clamp((c.r - max(c.g * 0.85, c.b)) / max(c.r, 1e-4) - 0.12, 0.0, 1.0) * clamp(L.u5.x, 0.0, 1.0);
-  let effSat = mix(saturation, max(saturation, 0.82), warmBias * 0.75);
-  c = mix(mono, c * activeSplit, effSat);
+  let warmBias = clamp((hdrIn.r - hdrIn.b * 1.05) / max(hdrIn.r + 0.005, 1e-4) - 0.08, 0.0, 1.0) * clamp(L.u5.x * 1.6, 0.0, 1.0);
+  let warmTinted = c * mix(activeSplit, vec3f(1.18, 0.88, 0.52), warmBias * 0.65);
+  let effSat = mix(saturation, max(saturation, 0.92), warmBias * 0.88);
+  c = mix(mono, warmTinted, effSat);
 
-  // 8. Black crush (carves deep shadows to near-black while keeping lit pools & beams intact)
+  // 8. Black crush (carves deep shadows to near-black while keeping dim moonlight & lit beams intact)
   if (blackCrush > 0.0005) {
-    let linearCrush = blackCrush * 0.14;
+    let linearCrush = blackCrush * 0.045;
     c = max(vec3f(0.0), (c - vec3f(linearCrush)) / max(1.0 - linearCrush, 0.1));
   }
 

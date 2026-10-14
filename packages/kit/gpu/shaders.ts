@@ -968,8 +968,8 @@ export type PostFinishOptions = {
 export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
   const base = makeSceneShader({
     ...hooks,
-    declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\n`,
-    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.09); }\n`,
+    declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\n`,
+    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  lookAlbedo = o.color;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.09); }\n`,
     material: `${hooks.material ?? ""}\n    if (lookUseAfter) {
       let palMix = LK.u3.w;
       let folShift = LK.u11.z;
@@ -996,6 +996,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
         albedo *= 1.0 - 0.28 * wMask;
         gloss = mix(gloss, vec2f(110.0, 1.1), wMask);
       }
+      lookAlbedo = albedo;
     }\n`,
     surface: `${hooks.surface ?? ""}\n  if (lookUseAfter) {
     // Rim / silhouette light on characters, trees, props & wall edges
@@ -1033,12 +1034,53 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
       }
       col = col * trans + fogCol * (1.0 - trans) + shaftAdd;
     }
-    // Cold steel-blue moonlight rim on roof shingles (mat 21), tree canopies (mat 22), parked car, and wet central porch walk in Noir mode
+    // Cold steel-blue moonlight rim, volumetric flashlight air haze, and room wall-wash halos in Noir mode
     if (i32(round(LK.u14.w)) == 1) {
+      // Darken cutaway wall-top caps (mat 9) and unlit exterior walls in Noir
+      if (mat == 9) {
+        col *= 0.14;
+      }
+      if (mat == 4 && !interior(o.world.xz + n.xz * 0.3)) {
+        let nearPorch = exp(-pow((o.world.x - 27.7) / 1.8, 2.0)) * step(33.2, o.world.z);
+        col *= mix(0.26, 0.85, nearPorch);
+      }
+      // Dim unlit bulb meshes (SW living room, NE kitchen, and streetlamps)
+      if (mat == 2) {
+        let isLitRoomBulb = (o.world.x < 27.5 && o.world.z < 28.5) || (o.world.x > 28.0 && o.world.z > 28.5 && o.world.z < 33.8);
+        let isPorchBulb = abs(o.world.x - 27.7) < 2.0 && o.world.z > 33.8 && o.world.z < 36.2;
+        if (!isLitRoomBulb && !isPorchBulb) {
+          col *= 0.04;
+        }
+      }
+      // Subtle steel-blue moonlight on shingle roof (mat 21), trees (mat 22), sidewalk, road, and interior floorboards
       let moonRimDir = normalize(vec3f(-0.35, 0.82, -0.45));
-      let roofOrTree = select(0.35, 1.0, mat == 21 || mat == 22);
-      let topCatch = max(0.0, dot(n, moonRimDir)) * roofOrTree;
-      col += vec3f(0.012, 0.019, 0.030) * topCatch * LK.u5.z;
+      let topCatch = max(0.22, dot(n, moonRimDir));
+      let isRoofOrTree = mat == 21 || mat == 22;
+      let surfBoost = select(select(0.42, 0.18, interior(o.world.xz)), 1.35, isRoofOrTree);
+      col += lookAlbedo * vec3f(0.048, 0.068, 0.102) * topCatch * surfBoost * LK.u5.z;
+
+      // Interior room wall-wash halos & plank-seam contrast
+      if (interior(o.world.xz) && o.world.y < 2.75) {
+        // Darken unlit SW living room & NE kitchen corners
+        let inSW = smoothstep(28.5, 26.8, o.world.x) * smoothstep(28.2, 29.8, o.world.z);
+        let inNE = smoothstep(28.0, 29.8, o.world.x) * smoothstep(28.5, 27.0, o.world.z);
+        col *= 1.0 - 0.58 * max(inSW, inNE * 0.75);
+
+        // Cool silvery-blue wall wash behind NW bedroom nightstand lamp (25.1, 25.4)
+        let dNW = length(o.world.xz - vec2f(25.1, 25.0));
+        let nwWash = exp(-(dNW * dNW) / 4.8) * (0.35 + 0.65 * step(abs(n.y), 0.5));
+        col += vec3f(0.036, 0.052, 0.082) * nwWash;
+        // Rich warm amber-gold wall wash above SE dining table lamp (31.5, 29.5)
+        let dSE = length(o.world.xz - vec2f(31.5, 29.3));
+        let seWash = exp(-(dSE * dSE) / 5.8) * (0.3 + 0.7 * step(abs(n.y), 0.5));
+        col += vec3f(0.145, 0.068, 0.016) * seWash;
+        // Plank-seam contrast on interior wood floor
+        if (n.y > 0.8 && o.world.y < 0.3) {
+          let plankSeam = smoothstep(0.0, 0.08, abs(fract(o.world.z / 0.165 + 0.5) - 0.5));
+          col = col * (0.42 + 0.62 * plankSeam) + lookAlbedo * vec3f(0.016, 0.020, 0.026) * plankSeam;
+        }
+      }
+
       // Wet central porch walkway & road curb reflection streak (x ~ 27.7, z ~ 34.5..41.5)
       if (n.y > 0.85 && o.world.y < 0.25) {
         let dxWalk = (o.world.x - 27.7);
@@ -1047,6 +1089,32 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
           let streak = exp(-(dxWalk * dxWalk) / 0.55) * exp(-max(0.0, dzWalk) * 0.34);
           let grit = 0.65 + 0.7 * hash2(floor(o.world.xz * 28.0));
           col += vec3f(0.055, 0.052, 0.044) * streak * grit * LK.u6.y;
+        }
+      }
+
+      // Volumetric flashlight air haze + wet road/floor beam scatter (independent of dark asphalt albedo)
+      if (LK.u5.w > 1.0 && u32(F.screen.z) > 0u && lights[0].color.w <= 0.001 && o.world.y < 2.1) {
+        let pPos = lights[0].pos.xz;
+        let isDefaultAim = abs(F.effects.x - (-1.5707963)) < 0.05;
+        let aimDir = select(vec2f(cos(F.effects.x), sin(F.effects.x)), normalize(vec2f(0.67, 0.74)), isDefaultAim);
+        let handOrigin = pPos + vec2f(0.18, 0.10);
+        let dv0 = o.world.xz - handOrigin;
+        let d0 = length(dv0);
+        let along = dot(dv0, aimDir);
+        let perp = abs(dv0.x * (-aimDir.y) + dv0.y * aimDir.x);
+        if (along > 0.05 && d0 < 14.5) {
+          let halfW = 0.14 + along * 0.23;
+          let beamMask = exp(-(perp * perp) / (halfW * halfW * 0.55)) * smoothstep(halfW * 1.4, halfW * 0.25, perp);
+          if (beamMask > 0.001) {
+            let vis0 = shadowAt(0u, pPos, lights[0].pos.y, 0.04, o.world.xz + n.xz * 0.04, o.world.y);
+            let distFade = pow(max(0.0, 1.0 - d0 / 14.5), 1.25) / (1.0 + d0 * 0.18);
+            let hotSpot = exp(-d0 * d0 * 0.55) * 0.85;
+            let inHouse = pPos.y < 35.0;
+            let hazeCol = select(vec3f(0.075, 0.092, 0.118), vec3f(0.115, 0.092, 0.062), inHouse);
+            let gritSpec = 0.75 + 0.5 * noise2(o.world.xz * 18.0);
+            let plankMod = select(1.0, 0.45 + 0.65 * smoothstep(0.0, 0.08, abs(fract(o.world.z / 0.165 + 0.5) - 0.5)), inHouse && n.y > 0.8);
+            col += hazeCol * (distFade + hotSpot) * beamMask * vis0 * gritSpec * plankMod * (LK.u5.w * 0.85);
+          }
         }
       }
     }
