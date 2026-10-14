@@ -33,6 +33,8 @@ export class SmokeVolumes {
   private walls: readonly Wall[] = []
   count = 0
   time = 0
+  colorShift = 0.75
+  coreGlow = 1
   constructor(settings: Partial<SmokeSettings> = {}) { this.settings = smokeSettings(settings) }
   sustain(x: number, z: number) {
     for (let s = 0; s < VOLUMES; s++) if (this.life[s] && Math.hypot(x-this.bounds[s*8+4],z-this.bounds[s*8+5]) < 2) {
@@ -45,8 +47,8 @@ export class SmokeVolumes {
     this.field.fill(0);this.holes.fill(0);this.age.fill(0);this.advection.fill(0);this.count=0;this.time=0
     for(let i=0;i<3;i++){seed=Math.imul(seed,1664525)+1013904223|0;this.advection[i]=(seed>>>0)/4294967296*28}
   }
-  spawn(x: number, z: number, radius = this.settings.radius, life = this.settings.growthTime+this.settings.hold+this.settings.fade, power = 1, soot = 0) {
-    if (![x,z,radius,life,power,soot].every(Number.isFinite)) return false
+  spawn(x: number, z: number, radius = this.settings.radius, life = this.settings.growthTime+this.settings.hold+this.settings.fade, power = 1, soot = 0, growthTime = soot > 0 ? Math.min(0.75, this.settings.growthTime * 0.42) : this.settings.growthTime) {
+    if (![x,z,radius,life,power,soot,growthTime].every(Number.isFinite)) return false
     let slot = -1
     for (let s=0;s<VOLUMES;s++) if (!this.life[s]) {slot=s;break}
     if (slot<0) return false
@@ -56,8 +58,8 @@ export class SmokeVolumes {
     this.bounds[b+2]=24;this.bounds[b+3]=0;this.bounds[b+4]=x;this.bounds[b+5]=z
     this.bounds[b+6]=Math.max(0,Math.min(1,soot));this.bounds[b+7]=0
     this.age[slot]=0;this.life[slot]=Math.max(0.1,life);this.radius[slot]=Math.max(0.1,Math.min(10,radius));this.power[slot]=Math.max(0,Math.min(2,power))
-    this.fadeTime[slot]=Math.min(this.life[slot],this.settings.fade)
-    this.growthTime[slot]=this.settings.growthTime
+    this.fadeTime[slot]=Math.min(this.life[slot],soot>0?Math.min(this.life[slot]*0.55,this.settings.fade):this.settings.fade)
+    this.growthTime[slot]=Math.max(0.08,growthTime)
     this.arrival.fill(Infinity,start,start+CELLS);this.holes.fill(0,start,start+CELLS)
     this.solid.fill(0,start,start+CELLS);this.density.fill(0,start,start+CELLS);this.field.fill(0,start*2,(start+CELLS)*2)
     // Conservative rasterization includes thin walls between cell centres.
@@ -124,15 +126,21 @@ export class SmokeVolumes {
       this.age[s]+=dt
       if(this.age[s]>=this.life[s]){this.life[s]=0;this.bounds[s*8+7]=0;this.density.fill(0,start,start+CELLS);this.field.fill(0,start*2,(start+CELLS)*2);continue}
       this.count++
-      const age=this.age[s],reach=this.radius[s]*Math.min(1,age/this.growthTime[s])
+      const age=this.age[s],soot=this.bounds[s*8+6],u=Math.min(1,age/this.growthTime[s])
+      const progress=soot>0?0.64*(1-Math.pow(1-u,2.8))+0.36*(1-Math.exp(-age/(this.growthTime[s]*1.4))):u
+      const reach=this.radius[s]*progress
       this.bounds[s*8+3]=reach
-      const fade=Math.min(1,age*5)*Math.min(1,(this.life[s]-age)/this.fadeTime[s])
-      this.bounds[s*8+7]=fade
+      const fade=Math.min(1,age*(soot>0?12:5))*Math.min(1,(this.life[s]-age)/this.fadeTime[s])
+      this.bounds[s*8+7]=soot>0?Math.max(0.001,Math.min(1,age/this.life[s])):fade
+      const soft=soot>0?Math.max(this.settings.softness,Math.min(2.6,this.radius[s]*0.52)):this.settings.softness
       for(let i=0;i<CELLS;i++){
         const at=start+i,distance=this.arrival[at]
         this.holes[at]=Math.max(0,this.holes[at]-dt*1.5)
-        const edge=Math.max(0,Math.min(1,(reach-distance)/this.settings.softness))
-        const d=this.solid[at]?0:fade*edge*edge*(3-2*edge)*this.power[s]*(1-this.holes[at])
+        const edge=Math.max(0,Math.min(1,(reach-distance)/soft))
+        // Keep the central fireball zone clear of low-res volumetric fog while the high-res fireball billows burn (0..0.42s),
+        // then fill the rising column with dense soot as the fireball crusts over.
+        const coreClear=soot>0&&age<0.44?Math.min(1,Math.max(0.08,Math.pow(age/0.44,1.8)+Math.max(0,(distance-1.15)/1.45))):1
+        const d=this.solid[at]?0:fade*coreClear*edge*edge*(3-2*edge)*this.power[s]*(1-this.holes[at])
         this.density[at]=d;this.field[at*2]=half(d);this.field[at*2+1]=this.solid[at]?0x3c00:0
       }
     }

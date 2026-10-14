@@ -222,6 +222,28 @@ placement/free-leg deviations are not reproduced: contacts and weapon transforms
 current pose. Paintovers are art targets, not biomechanical measurements. Continuous playback still needs visual
 review; sampled images and numerical checks do not establish it. Runtime CPU/GPU cost is unmeasured.
 
+### Procedural locomotion transition and contact continuity pass
+
+- **Re-anchor mid-swing `f.lift` when landing targets update.** Updating `m.targets[i]` directly in `f.lift + (target - f.lift) * e`
+  retroactively scaled target deltas by completed swing progress `e(u)`, causing up to `0.352 m` touchdown snaps on hard
+  stops (`!travelling`) and `0.514 m` (`30.82 m/s`) mid-air kicks when crossing the binary `strafe > 0.2` separation gate.
+  `packages/kit/human-locomotion.ts` now folds mid-swing target changes into `f.lift` (`(cur - desired * ep) / (1 - ep)`),
+  weights aim-space foot separation with a smooth ramp `smooth((strafe - 0.05) / 0.20)`, blends authoritative velocity into
+  reversal lookahead, redirects late-swing airborne feet once on 180° reversals, and guards against unannounced caller
+  teleports (`stranded` feet `> 0.72 m` from root).
+- **Keep sole floor clearance before IK, align touchdown pitch, and bias the knee pole above horizontal.** `packages/kit/human-pose.ts`
+  applies swing sole floor clearance (`low < 0`) to `ankle[1]` before solving `ik(hip, ankle)`, blends late-swing ankles
+  into the `-0.12 rad` toe-pivot touchdown frame over `u = 0.75..1.0`, and uses `dirIn(pelvis, 1, 0.28, side * 0.25)` so
+  forward crouch-run pelvis pitch cannot tilt the knee pole into the swing chord.
+- **Keep run-posture lean aligned with `legYaw` and expose hip drop, bounce, turn bank and step lift in the Lab.** `anim.ts`
+  projects `m.posture.x` along `a.legYaw` rather than `a.svx / speed`, reducing 180°-reversal pelvis pitch jumps from
+  `0.406 rad` (`23.3°`) to `0.032 rad` (`1.8°`) while keeping steady run/sprint posture and weapon stability metrics intact.
+  `human-profile.ts` adds `hipDrop`, `bobScale`, `turnBank` and `stepLift` to the shared `Profile`/`Animation` Lab controls.
+  Outbreak's `src/survivor.ts` replaces its raw `sqrt(0.815^2 - d^2)` pelvis clamp with a sprung `reachDrop` filter and
+  re-anchored swing targets, cutting sloped reversal pelvis jumps from `0.358 m` / `0.566 m` to `0.049 m` / `0.040 m`.
+  `games/blackout/src/dev/characters.ts` no longer mutates `a.x, a.y` before `animate()` on loop wraps, eliminating the
+  `6.24 m` walk / `10.44 m` run loop-wrap leg stretch.
+
 ## Rendering (WebGPU)
 
 - **Keep game-owned roof discard out of the opaque entry point, cull off-screen lamps, and pace fixed ticks.**
@@ -326,6 +348,21 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   Seven paired measurements show +0.166 ms render GPU time (MAD 0.008 ms); upload-inclusive queue timing is noisier
   at +0.206 ms (MAD 0.032 ms). Storage rises by 83,004 CPU bytes
   and 27,648 field-texture bytes. Both paths remain bounded, and updates allocate no arrays.
+- **Couple blackbody fireball crusting to buoyant, billow-eroded soot volumes.** `packages/kit/fx/explosion.ts`,
+  `particle-renderer.ts`, `volume.ts` and `volume-shader.ts` replace the Lab's 75 flat orange Gaussian sprites and
+  constant-tint linear smoke crawl with a multi-phase explosion. `ParticleRenderer` adds procedural domain-warped
+  fireball billows (`kind = 7`) where a Planckian temperature ramp cools convex outer lobes into dark charcoal soot
+  first while deep fissures roar white-yellow-orange, plus planar ground shockwave/dust rings (`kind = 5`), charred
+  ground scorch decals (`kind = 6`), temperature-cooling ballistic sparks (`kind = 1`) and elongated 3D shrapnel
+  splinters (`kind = 2`). For `soot > 0` explosions, `SmokeVolumes` uses a two-stage blast ease-out + buoyant drift,
+  keeps the central fireball cavity clear during the initial `0.44 s` flash so low-res smoke does not muddy the
+  high-res fireball, erodes outer cloud edges with 3D billow noise to eliminate `0.5 m` grid-cell stepping, and
+  shifts smoke albedo from deep charcoal soot (`#13110f`) through warm umber-grey to pale ash-grey (`colorShift`).
+  The Lab exposes typed `Fireball`, `Explosion Smoke` and `Blast & Debris` controls, `Loop interval` (default `2.2 s`),
+  and deterministic `tuningSeed` randomization (`effect.randomize`, `effect.trigger`, `effect.loop`) that retriggers
+  one-shot effects immediately. Across 7 alternating Metal pairs at `1280×800` (20 active explosion frames per run,
+  including dynamic polar-shadow flash lighting), median whole-frame GPU time is `0.8041 ms` vs `0.4542 ms` baseline
+  (`+0.3464 ms`, MAD `0.0107 ms`; `packages/kit/lab/prove-explosion.ts`).
 - **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
   `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
   vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.

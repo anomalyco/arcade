@@ -353,3 +353,47 @@ A clean `git archive` export passed on the Studio via Hivemind:
 - `BENCH_LABEL=release-2-shadow-edges-studio-clean bun games/outbreak/scripts/bench-outbreak.ts` (Studio M5 Max Metal, 3456×1894 Retina, 1 warmup + 7 × 2 s runs):
   - Street: fresh submit `p95 = 28.60 ms` (MAD `2.60 ms`), `p50 = 15.50 ms`, `55.42 states/s`, `realtime_ratio = 0.9985` (`3.395 m/s`), dependent GPU `14.191 ms` (MAD `0.012 ms`).
   - Interior: fresh submit `p95 = 24.20 ms` (MAD `0.10 ms`), `p50 = 23.50 ms`, `40.82 states/s`, `realtime_ratio = 0.9979` (`3.393 m/s`), dependent GPU `21.411 ms` (MAD `0.022 ms`).
+
+## Release 3 integration
+
+`release-3` is based on `origin/main` at `418e76b2a9cfb1fb112b5a33107c797c73d3bb06`. Each finished source branch is merged separately in order:
+
+| Source | Exact committed tip |
+| --- | --- |
+| view-controls | `ca088be1215aa9e7913f00549ab29f6194dc7405` |
+| outbreak-interact | `1cfa1ee15cbdf513919567a6cfff95067d650102` |
+| locomotion-pass | `163c7116f2d73d70a81453e8e111334f6c8d9c32` |
+| explosion-fx | `a4e3deb480e8279c3881ddcf61d4c37dd3dbe7f8` |
+| outbreak-art | `d5ec4f64cf655b3a01e0108924ca582f03c7cbdf` |
+
+### Excluded from Release 3
+
+- `foliage-lab` (`52d68e4`): mid-pass iteration, 1 commit behind `main`.
+- `looks`, `lab-layout`, `generated-textures`, `outbreak-vignette`: active exploratory branches not ready for integration.
+
+### Resolution log
+
+- `view-controls` + `locomotion-pass` (`games/blackout/src/dev/characters.ts`): preserved `view-controls`'s unified trackpad/pointer camera gestures, ray-plane grab-pan, and `followSelected` tracking alongside `locomotion-pass`'s walk/run cycle wrap continuity (`a.body = null`, `orbitState.focusX`/`focusZ` wrap snap) and foot-separation-driven unarmed arm swing.
+- `view-controls` + `explosion-fx` (`packages/kit/lab/workbench.ts`): preserved `view-controls`'s ray-plane grab-pan and ground-plane projected rotate ring gizmo alongside `explosion-fx`'s `effect.trigger`, `effect.randomize`, and `effect.loop` commands and immediate one-shot retrigger on randomize/parameter edits.
+- `outbreak-interact` + `locomotion-pass` (`games/outbreak/src/survivor.ts`): preserved `outbreak-interact`'s narrowed `Pick<Pose, "x" | "y" | "vx" | "vy" | "aim">` signature alongside `locomotion-pass`'s continuous swing target re-anchoring, terrain mid-swing clearance boost, anticipatory support floor, and `reachDrop` touchdown spring.
+- `outbreak-interact` + `outbreak-art` (`games/outbreak/shared/map.ts`, `games/outbreak/src/main.ts`, `games/outbreak/src/shaders.ts`):
+  - `Town` carries both `foliageDensity: number` (`outbreak-art`) and `windows: WindowOpening[]` (`outbreak-interact`), with `Door.locked?: boolean` and `addWindow(...)` registrations preserved alongside `outbreak-art`'s tree/lamp placements.
+  - `games/outbreak/src/main.ts` combines `DEFAULT_STAMINA_TUNING` and `staminaControls`, physical `KeyE`/`KeyQ` layout-aware interaction prompts, open window `sashBatch`, and window peek camera/LOS/cutaway blending with `outbreak-art`'s `exposure: .92`, `foliageDensity` and `moonFill` Lab controls, dark timber door mesh, porch/window light cones, and tightened `.22` base cutaway radius (`.22 + .08 * peekBlend` while peeking).
+  - `games/outbreak/src/shaders.ts` combines `outbreak-art`'s recessed see-through window glass (`mat == 6`), rectangular window ground spill, interior reveal (`max(explored, visible * 0.92)`), inward moonlight shafts, and extended south porch cutaway bounds (`p.z < b.w + 1.65`) with `outbreak-interact`'s 4×4 Bayer dithered `roofCut(p, id, o.pos)` for window-peek roof fade (`F.eye.z`) and `lights[0].pos.xz` sight origin in `eyeVisible`.
+
+### Verification
+
+A clean `git archive` export passed on the Mac Studio:
+
+- `bun install --frozen-lockfile`
+- `bun run check:packages`: 104 passed
+- `games/getaway`: 262 passed, 12 existing skips, typechecks, production build, smoke, and Worker dry-run
+- `games/blackout`: 428 passed, typechecks, production build, smoke, Worker dry-run, `scripts/prove-human-parity.ts`, and `scripts/prove-characters.ts`
+- `games/outbreak`: 36 passed, typechecks, production build, smoke, Worker dry-run, and `scripts/prove.ts`
+- `games/carrier`: 373 passed, typechecks, production build, smoke, and Worker dry-run
+- `bun packages/kit/lab/prove-workbench.ts`: passed on both `getaway` and `blackout` Lab hosts on Metal
+- `bun packages/kit/lab/prove-explosion.ts`: passed on Metal (`beforeGpuMedianMs = 0.4648 ms`, `afterGpuMedianMs = 0.8320 ms`, `deltaGpuMedianMs = +0.3610 ms`, MAD `0.0152 ms`)
+- `bun games/blackout/scripts/prove-human-parity.ts`: exact 900-frame SHA-256 soldier parity in `old` (`00bde28a…`) and `new` (`623c4d5a…`) modes without hash modification
+- `BENCH_LABEL=release-3-studio-d5ec4f6 bun games/outbreak/scripts/bench-outbreak.ts` (Mac Studio Metal):
+  - Street: fresh submit `p95 = 18.60 ms` (MAD `0.10 ms`), `p50 = 16.85 ms`, `55.95 states/s`, `realtime_ratio = 0.9988` (`3.396 m/s`), dependent GPU `15.464 ms` (MAD `0.012 ms`)
+  - Interior: fresh submit `p95 = 21.60 ms` (MAD `0.50 ms`), `p50 = 19.90 ms`, `48.31 states/s`, `realtime_ratio = 0.9972` (`3.390 m/s`), dependent GPU `18.431 ms` (MAD `0.003 ms`)

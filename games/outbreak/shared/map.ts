@@ -4,11 +4,12 @@ import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 export const CHUNK = 32
 export const SIZE = CHUNK * 3
 export type Barrier = { rect: Rect; kind: "wall" | "window" | "fence"; color: number }
-export type Door = { id: string; rect: Rect; open: boolean }
+export type Door = { id: string; rect: Rect; open: boolean; locked?: boolean }
+export type WindowOpening = { id: string; buildingId: string; buildingIndex: number; rect: Rect; open: boolean; openable: boolean }
 export type Building = { id: string; kind: "house" | "hardware" | "pharmacy"; rect: Rect; color: number }
 export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove"; variant: number }
 export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
-export type Town = { seed: number; houseSeed: number; terrain: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; props: Prop[]; lamps: Lamp[] }
+export type Town = { seed: number; houseSeed: number; terrain: number; foliageDensity: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; windows: WindowOpening[]; props: Prop[]; lamps: Lamp[] }
 
 /** One footprint source for geometry, collision, roof cutaways and room memory. */
 export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
@@ -21,29 +22,34 @@ export function propShape(p: Prop): { rect: Rect; height: number } | undefined {
 }
 
 /** Fixed street topology; seeded house palettes, trees and shelf stock. All dimensions are metres. */
-export function makeTown(seed: number, houseSeed = seed, terrain = .22): Town {
+export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageDensity = 1): Town {
   const rng = new Rng(seed)
   const houses = new Rng(houseSeed)
-  const town: Town = { seed, houseSeed, terrain, chunks: [], buildings: [], barriers: [], doors: [], props: [], lamps: [] }
+  const town: Town = { seed, houseSeed, terrain, foliageDensity, chunks: [], buildings: [], barriers: [], doors: [], windows: [], props: [], lamps: [] }
   for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) town.chunks.push([x * CHUNK, y * CHUNK, (x + 1) * CHUNK, (y + 1) * CHUNK])
   const wall = (rect: Rect, color: number, kind: Barrier["kind"] = "wall") => town.barriers.push({ rect, color, kind })
   const building = (id: string, kind: Building["kind"], rect: Rect) => {
     const [x, y, r, b] = rect
+    const buildingIndex = town.buildings.length
     const color = kind === "house" ? houses.pick([0xb3afa0, 0x899d95, 0xb4a181, 0x9caaa9]) : kind === "hardware" ? 0x8e7564 : 0x718b82
     town.buildings.push({ id, kind, rect, color })
+    const addWindow = (winId: string, wRect: Rect, openable = true) => {
+      wall(wRect, color, "window")
+      town.windows.push({ id: `${id}-${winId}`, buildingId: id, buildingIndex, rect: wRect, open: false, openable })
+    }
     // South entrance and two glazed openings, plus a window on the east wall.
     const doorX = x + 5
     wall([x, y, r, y + .22], color)
     wall([x, y, x + .22, b], color)
     wall([r - .22, y, r, y + 4], color)
-    wall([r - .22, y + 4, r, y + 6.5], color, "window")
+    addWindow("east", [r - .22, y + 4, r, y + 6.5], true)
     wall([r - .22, y + 6.5, r, b], color)
     wall([x, b - .22, x + 1.5, b], color)
-    wall([x + 1.5, b - .22, x + 3.5, b], color, "window")
+    addWindow("south-west", [x + 1.5, b - .22, x + 3.5, b], kind === "house")
     wall([x + 3.5, b - .22, doorX, b], color)
     town.doors.push({ id: `${id}-front`, rect: [doorX, b - .22, doorX + 1.4, b], open: false })
     wall([doorX + 1.4, b - .22, r - 4, b], color)
-    wall([r - 4, b - .22, r - 1.5, b], color, "window")
+    addWindow("south-east", [r - 4, b - .22, r - 1.5, b], kind === "house")
     wall([r - 1.5, b - .22, r, b], color)
     // Bedroom / store stockroom, with an internal door facing the entrance.
     const split = y + 5.5
@@ -75,17 +81,17 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22): Town {
     if ((x > 36 && x < 53) || (y > 36 && y < 53) || town.buildings.some(b => distToRect(x, y, b.rect) < 4.5)) continue
     town.props.push({ x, y, kind: "tree", variant: rng.next() })
   }
-  for(const [x,y] of [[12,27],[14.7,30],[11,33],[14,59],[12,63]]) town.props.push({x:x!,y:y!,kind:"tree",variant:rng.next()})
-  town.props.push({x:16.1,y:32.8,kind:"tree",variant:.36})
-  for (const p of [12, 34, 58, 80]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:6.3,power:.38,kind:"street"})
+  for(const [x,y] of [[12.8,24.5],[15.6,29.4],[11.5,33.2],[15.4,35.8],[13.8,49.2],[14,59],[12,63]]) town.props.push({x:x!,y:y!,kind:"tree",variant:rng.next()})
+  town.props.push({x:16.4,y:32.6,kind:"tree",variant:.46})
+  for (const p of [8, 52, 78]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:5.8,power:.28,kind:"street"})
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect
-    town.lamps.push({x:x+5.7,y:e+.65,h:2.4,radius:4,power:.32,kind:"porch"})
-    town.lamps.push({x:x+2.7,y:z+2,h:1.12,radius:4.8,power:.26,kind:"room"})
-    town.lamps.push({x:x+1.25,y:e-3.7,h:1.55,radius:5.2,power:.38,kind:"room"})
-    town.lamps.push({x:r-3.2,y:e-2.8,h:2.25,radius:5.2,power:.3,kind:"room"})
-    town.lamps.push({x:r-3,y:z+2.7,h:1.55,radius:4.5,power:.22,kind:"room"})
-    if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.05,h:1.4,radius:2.4,power:.13,kind:"window"})
+    town.lamps.push({x:x+5.7,y:e+.42,h:2.35,radius:5.8,power:.68,kind:"porch"})
+    town.lamps.push({x:x+2.6,y:z+1.85,h:1.24,radius:4.0,power:.30,kind:"room"})
+    town.lamps.push({x:x+1.25,y:e-1.25,h:1.42,radius:4.5,power:.34,kind:"room"})
+    town.lamps.push({x:r-3.2,y:e-3.6,h:2.10,radius:4.6,power:.30,kind:"room"})
+    town.lamps.push({x:x+6.1,y:z+4.2,h:2.38,radius:4.2,power:.22,kind:"room"})
+    if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.08,h:1.35,radius:2.6,power:.26,kind:"window"})
   }
   return town
 }

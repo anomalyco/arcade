@@ -44,6 +44,96 @@ export function snapYawRad(rad: number, shiftKey: boolean, altKey: boolean): num
   return (snapYawDeg(deg, shiftKey, altKey) * Math.PI) / 180
 }
 
+export function normalizeYawRad(rad: number): number {
+  const deg = (rad * 180) / Math.PI
+  const normDeg = ((((deg + 180) % 360) + 360) % 360) - 180
+  return (normDeg * Math.PI) / 180
+}
+
+/**
+ * Computes object yaw from a ground-plane pointer hit `(hitX, hitZ)` around `(pivotX, pivotZ)`.
+ * Because Stage meshes transform local `+Z` forward to `[sin(yaw), cos(yaw)]`, `atan2(hitX - pivotX, hitZ - pivotZ)`
+ * places the rotate handle and forward arrow directly under the pointer on the ground plane.
+ * - Unmodified drag: continuous angle tracking the pointer 1:1
+ * - `Shift`: 15° snap steps
+ * - `Alt/Option`: 1° fine snap steps
+ */
+export function computePointerYawRad(
+  pivotX: number,
+  pivotZ: number,
+  hitX: number,
+  hitZ: number,
+  shiftKey = false,
+  altKey = false,
+): number {
+  const raw = Math.atan2(hitX - pivotX, hitZ - pivotZ)
+  if (shiftKey || altKey) {
+    return snapYawRad(raw, shiftKey, altKey)
+  }
+  return normalizeYawRad(raw)
+}
+
+export type ProjectedGroundRing = {
+  visible: boolean
+  screenX: number
+  screenY: number
+  ringPoints: { x: number; y: number }[]
+  handleOffset: { x: number; y: number }
+  handleScreen: { x: number; y: number }
+}
+
+/**
+ * Projects a ground-plane circle of world `radius` around `(pivotX, pivotY, pivotZ)` into screen space
+ * (matching the 3D selection ring ellipse) and computes the screen offset of the rotate handle at `yawRad`.
+ */
+export function projectGroundRotateRing(
+  pivotX: number,
+  pivotY: number,
+  pivotZ: number,
+  radius: number,
+  yawRad: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  projectWorld: (x: number, y: number, z: number) => { u: number; v: number; visible: boolean },
+  segments = 36,
+): ProjectedGroundRing {
+  const w = Math.max(1, viewportWidth)
+  const h = Math.max(1, viewportHeight)
+  const centerProj = projectWorld(pivotX, pivotY, pivotZ)
+  const screenX = centerProj.u * w
+  const screenY = centerProj.v * h
+  const r = Math.max(0.5, radius)
+
+  const ringPoints: { x: number; y: number }[] = []
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2
+    const p = projectWorld(pivotX + Math.sin(a) * r, pivotY, pivotZ + Math.cos(a) * r)
+    ringPoints.push({
+      x: p.u * w - screenX,
+      y: p.v * h - screenY,
+    })
+  }
+
+  const handleProj = projectWorld(pivotX + Math.sin(yawRad) * r, pivotY, pivotZ + Math.cos(yawRad) * r)
+  const hx = handleProj.u * w
+  const hy = handleProj.v * h
+
+  return {
+    visible: centerProj.visible,
+    screenX,
+    screenY,
+    ringPoints,
+    handleOffset: {
+      x: hx - screenX,
+      y: hy - screenY,
+    },
+    handleScreen: {
+      x: hx,
+      y: hy,
+    },
+  }
+}
+
 export function createTransformState(
   mode: TransformMode,
   primary: LabWorldObject,
@@ -141,8 +231,22 @@ export function createTransformGizmoDOM(host: HTMLElement, callbacks: TransformG
   root.dataset.transformGizmo = ""
   root.hidden = true
 
-  const ring = document.createElement("div")
-  ring.className = "lab-gizmo-ring"
+  const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+  ring.setAttribute("class", "lab-gizmo-ring")
+  ring.setAttribute("viewBox", "-240 -240 480 480")
+  ring.setAttribute("aria-hidden", "true")
+
+  const ringPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon")
+  ringPoly.setAttribute("class", "lab-gizmo-ring-ellipse")
+
+  const ringSpoke = document.createElementNS("http://www.w3.org/2000/svg", "line")
+  ringSpoke.setAttribute("class", "lab-gizmo-ring-spoke")
+  ringSpoke.setAttribute("x1", "0")
+  ringSpoke.setAttribute("y1", "0")
+  ringSpoke.setAttribute("x2", "0")
+  ringSpoke.setAttribute("y2", "-42")
+
+  ring.append(ringPoly, ringSpoke)
 
   const moveBtn = document.createElement("button")
   moveBtn.type = "button"
@@ -244,6 +348,8 @@ export function createTransformGizmoDOM(host: HTMLElement, callbacks: TransformG
     z: number
     yawRad: number
     activeMode: TransformMode | null
+    ringPoints?: readonly { x: number; y: number }[]
+    handleOffset?: { x: number; y: number }
   }) {
     if (!opts.visible) {
       root.hidden = true
@@ -254,10 +360,32 @@ export function createTransformGizmoDOM(host: HTMLElement, callbacks: TransformG
     root.style.left = `${Math.round(opts.screenX)}px`
     root.style.top = `${Math.round(opts.screenY)}px`
 
-    const rx = Math.round(Math.sin(opts.yawRad) * 42 * 10) / 10
-    const ry = Math.round(-Math.cos(opts.yawRad) * 42 * 10) / 10
+    const rx = opts.handleOffset ? Math.round(opts.handleOffset.x * 10) / 10 : Math.round(Math.sin(opts.yawRad) * 42 * 10) / 10
+    const ry = opts.handleOffset ? Math.round(opts.handleOffset.y * 10) / 10 : Math.round(Math.cos(opts.yawRad) * 42 * 10) / 10
     rotateBtn.style.setProperty("--rot-x", `${rx}px`)
     rotateBtn.style.setProperty("--rot-y", `${ry}px`)
+    ringSpoke.setAttribute("x2", String(rx))
+    ringSpoke.setAttribute("y2", String(ry))
+
+    if (opts.ringPoints && opts.ringPoints.length > 0) {
+      ringPoly.setAttribute(
+        "points",
+        opts.ringPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" "),
+      )
+      let maxY = 24
+      for (const p of opts.ringPoints) {
+        if (p.y > maxY) maxY = p.y
+      }
+      numBar.style.top = `${Math.round(Math.min(140, Math.max(42, maxY + 18)))}px`
+    } else {
+      const fallbackPts: string[] = []
+      for (let i = 0; i < 32; i++) {
+        const a = (i / 32) * Math.PI * 2
+        fallbackPts.push(`${(Math.sin(a) * 42).toFixed(1)},${(Math.cos(a) * 42).toFixed(1)}`)
+      }
+      ringPoly.setAttribute("points", fallbackPts.join(" "))
+      numBar.style.top = "52px"
+    }
 
     if (document.activeElement !== fieldX.input) {
       fieldX.input.value = String(Number(opts.x.toFixed(2)))

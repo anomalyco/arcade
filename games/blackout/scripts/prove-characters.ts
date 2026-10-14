@@ -222,7 +222,7 @@ try {
   await recordStep(35)
   await page.keyboard.down("ShiftLeft")
   await page.keyboard.up("KeyS")
-  await page.keyboard.down("Comma") // Dvorak forward (W)
+  await page.keyboard.down("KeyW")
   await recordStep(35)
 
   const posAfterWalk = await page.evaluate(() => {
@@ -235,7 +235,7 @@ try {
   // 3. Press Escape while keys are still held -> exits Possess mode and releases keys!
   await page.keyboard.press("Escape")
   await page.keyboard.up("KeyD")
-  await page.keyboard.up("Comma")
+  await page.keyboard.up("KeyW")
   await page.keyboard.up("ShiftLeft")
   const afterEscPossessing = await page.evaluate(() => (window as any).charactersProof.possessing)
   check(afterEscPossessing === false, "Escape did not exit Possess mode")

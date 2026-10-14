@@ -1,3 +1,4 @@
+import { keyLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { flatCount, type Input } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
@@ -971,8 +972,10 @@ export class GameAudio {
       "position:absolute;top:22px;right:24px;font:500 10px/1 var(--display);letter-spacing:0.3em;color:var(--faint);opacity:0.8;pointer-events:none"
     root.appendChild(el)
     this.hint = el
-    this.a.onMute((m) => {
-      if (this.hint) this.hint.textContent = `M  SOUND ${m ? "OFF" : "ON"}`
-    })
+    const syncHint = (m = this.a.muted) => {
+      if (this.hint) this.hint.textContent = `${keyLabel("KeyM")}  SOUND ${m ? "OFF" : "ON"}`
+    }
+    this.a.onMute(syncHint)
+    onKeyLayoutChange(() => syncHint())
   }
 }

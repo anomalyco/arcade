@@ -772,6 +772,15 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
   var cavity = 1.0;
 
   if (isConcrete) {
+    // Grass verge strip between the concrete sidewalk (z=38..39.32) and street curb (z=39.78..40.0) on house frontages.
+    let inNorthVerge = p.y > 39.32 && p.y < 39.78 && (p.x < 37.8 || p.x > 50.2);
+    let inSouthVerge = p.y > 48.22 && p.y < 48.68 && (p.x < 37.8 || p.x > 50.2);
+    let inDrivewayApron = (p.x > 18.8 && p.x < 21.8) || (p.x > 49.8 && p.x < 52.8);
+    let inFrontWalk = (p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0);
+    if ((inNorthVerge || inSouthVerge) && !inDrivewayApron && !inFrontWalk) {
+      return evalGrassSoil(p, vec3f(0.24, 0.30, 0.17), false, defaultMaterialRecipe(4));
+    }
+    let isCurb = (p.y >= 39.78 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.22) || (p.x >= 39.78 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.22);
     let warp = (surfaceNoise(p * 1.4 + 2.3) - 0.5) * 0.035 * irreg;
     let q = p / slabSize + warp;
     let cell = floor(q);
@@ -780,15 +789,19 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let hWarm = fract((hSlab + 0.5) * 11.3) - 0.5;
     col *= (0.94 + hSlab * 0.18 * colVar) * vec3f(1.0 + hWarm * 0.06 * colVar, 1.0 + hWarm * 0.02 * colVar, 1.0 - hWarm * 0.07 * colVar);
 
-    let sx = seam(q.x, max(0.003, jWidth * 0.14), 1.0 / slabSize);
-    let sy = seam(q.y, max(0.003, jWidth * 0.14), 1.0 / slabSize);
-    let joint = sx * sy;
+    let sx = seam(q.x, max(0.003, jWidth * 0.16), 1.0 / slabSize);
+    let sy = seam(q.y, max(0.003, jWidth * 0.16), 1.0 / slabSize);
+    var joint = sx * sy;
+    if (isCurb) {
+      joint = seam(q.x * 0.75, 0.006, 0.75 / slabSize);
+      col *= vec3f(0.84, 0.86, 0.90);
+    }
     let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
-    let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.16;
-    let grit = grain(p, 10.5 * gScale) * 0.20;
+    let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.18;
+    let grit = grain(p, 10.5 * gScale) * 0.22;
     let macroTone = (warp / max(0.001, 0.035 * irreg)) * 0.18 * macroVar;
-    col *= 0.96 + grit + macroTone - edgeDirt;
-    col = mix(col * vec3f(0.45, 0.44, 0.38), col, joint);
+    col *= 0.95 + grit + macroTone - edgeDirt;
+    col = mix(col * vec3f(0.38, 0.37, 0.32), col, joint);
     cavity = joint;
   } else {
     let coarseAgg = grain(p, 7.2 * gScale) * 0.34;
@@ -798,12 +811,20 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
     let crackAa = max(surfaceFootprint * 0.78 * scale, 0.006);
     let crack = (1.0 - smoothstep(0.006, 0.016 + crackAa, crackField)) * step(0.45, patchField) * wear;
     let macroTone = (surfaceNoise(p * 0.20 + vec2f(8.3, 1.4)) - 0.5) * 0.24 * macroVar;
+    // Darkened wet gutter pan along the street curbs (z=40.0..40.35 and z=47.65..48.0).
+    let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
+    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.38, gutterDist)) * 0.36;
+    // Scattered fallen autumn leaves near the gutter and sidewalk edge.
+    let leafCell = floor(p * 9.5);
+    let leafHash = hash2(leafCell + vec2f(4.7, 9.1));
+    let leafMask = step(0.955, leafHash) * (1.0 - smoothstep(0.0, 1.35, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.5));
 
-    col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar);
+    col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar) * gutterShade;
     col = mix(col, col * vec3f(0.76, 0.78, 0.82), tarPatch * 0.55);
-    col = mix(col, col * 0.52, crack * 0.65);
+    col = mix(col, col * 0.50, crack * 0.68);
+    col = mix(col, vec3f(0.42, 0.28, 0.14), leafMask * 0.75);
     localRough = clamp(r.u0.w - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
-    cavity = 1.0 - crack * 0.4;
+    cavity = (1.0 - crack * 0.4) * gutterShade;
   }
 
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
@@ -863,14 +884,16 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   let hCluster = hash2(clusterCell.xz + vec2f(clusterCell.y * 3.7, 11.3)) - 0.5;
   let hHue = fract((hCluster + 0.5) * 13.7) - 0.5;
 
+  let leafClump = surfaceNoise(world.xz * 5.8 + vec2f(world.y * 2.1, -world.y * 1.7)) - 0.5;
+  let fineLeaf = grain(world.xz + vec2f(world.y * 0.7), 11.5 * gScale);
   let topMask = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
   let heightLift = smoothstep(0.05, 1.2, fract(world.y * 0.65));
-  let canopyLift = mix(0.68 - wear * 0.14, 1.24, clamp(topMask * 0.75 + heightLift * 0.25, 0.0, 1.0));
-  let hueTint = vec3f(1.0 + hHue * 0.18 * colVar, 1.0 + hHue * 0.08 * colVar, 1.0 - hHue * 0.16 * colVar);
-  var col = baseTint * hueTint * (0.94 + hCluster * 0.30 * colVar) * canopyLift;
+  let canopyLift = mix(0.56 - wear * 0.12, 1.32, clamp(topMask * 0.72 + heightLift * 0.28 + leafClump * 0.22, 0.0, 1.0));
+  let warmTip = clamp(leafClump + topMask * 0.35 - 0.1, -0.4, 0.6);
+  let hueTint = vec3f(1.0 + (hHue * 0.18 + warmTip * 0.22) * colVar, 1.0 + (hHue * 0.08 + warmTip * 0.14) * colVar, 1.0 - (hHue * 0.16 + warmTip * 0.20) * colVar);
+  var col = baseTint * hueTint * (0.94 + hCluster * 0.32 * colVar) * canopyLift;
 
-  let leafDetail = grain(world.xz + vec2f(world.y * 0.7), 7.5 * gScale) * 0.28;
-  col *= 1.0 + leafDetail + n0 * 0.18 * macroVar;
+  col *= 1.0 + leafClump * 0.34 + fineLeaf * 0.32 + n0 * 0.18 * macroVar;
 
   return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.05), r.u0.w, mix(0.68, 1.0, topMask));
 }
@@ -897,8 +920,10 @@ export const surfaceMaterial = /* wgsl */ `
         gloss = s.gloss;
       } else if (kind == 3) {
         // Gravel drive: crushed stone aggregate with wheel-track compaction and dark soil crevices.
-        let ruts = exp(-pow((fract(p.x * 0.38) - 0.32) * 5.5, 2.0)) + exp(-pow((fract(p.x * 0.38) - 0.72) * 5.5, 2.0));
-        albedo *= 0.72 + grain(p, 16.0) * 0.65 + surfaceNoise(p * 3.0) * 0.35 + 0.08 * clamp(ruts, 0.0, 1.0);
+        let ruts = exp(-pow((fract((p.x - 19.0) * 0.377) - 0.26) * 5.2, 2.0)) + exp(-pow((fract((p.x - 19.0) * 0.377) - 0.74) * 5.2, 2.0));
+        let pebbles = grain(p, 18.0) * 0.78 + grain(p + vec2f(3.7, 1.9), 9.5) * 0.42;
+        let edgeFade = smoothstep(0.0, 0.24, min(fract((p.x - 19.0) * 0.377), 1.0 - fract((p.x - 19.0) * 0.377)));
+        albedo *= (0.78 + pebbles + (surfaceNoise(p * 2.6) - 0.5) * 0.32 - 0.14 * clamp(ruts, 0.0, 1.0)) * (0.76 + 0.24 * edgeFade);
         gloss = vec2f(0.0);
       } else if (kind == 4) {
         let s = evalWoodPlanks(p, albedo, defaultMaterialRecipe(0));
@@ -920,22 +945,26 @@ export const surfaceMaterial = /* wgsl */ `
         albedo = s.albedo;
         gloss = s.gloss;
       } else {
-        // Painted wood clapboard siding with staggered lap seams, subtle wood grain, and base splash wear.
-        let row = floor(o.world.y / 0.18);
+        // Painted wood clapboard siding with crisp horizontal lap shadows, staggered plank seams, and subtle grain.
+        let course = o.world.y / 0.165;
+        let row = floor(course);
+        let fy = fract(course);
         let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
-        albedo *= 0.95 + (hash2(vec2f(row, plank)) - 0.5) * 0.08;
-        albedo *= mix(0.70, 1.0, seam(o.world.y / 0.18, 0.025, 5.55));
+        albedo *= 0.96 + (hash2(vec2f(row, plank)) - 0.5) * 0.09;
+        let lapShadow = mix(0.56, 1.05, smoothstep(0.0, 0.22, fy)) * mix(1.04, 0.90, fy);
+        albedo *= mix(1.0, lapShadow * mix(0.62, 1.0, seam(course, 0.032, 6.06)), 1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 6.06));
         albedo *= 0.97 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.14;
-        albedo *= mix(0.84, 1.0, smoothstep(0.13, 0.55, o.world.y));
+        albedo *= mix(0.84, 1.0, smoothstep(0.28, 0.65, o.world.y));
       }
     }
     if (mat == 21) {
-      let row = floor(o.world.z / 0.24);
-      let q = vec2f(o.world.x / 0.36 + fract(row * 0.5), o.world.z / 0.24);
+      let row = floor(o.world.z / 0.23);
+      let q = vec2f(o.world.x / 0.34 + fract(row * 0.5) + (hash2(vec2f(row, 3.1)) - 0.5) * 0.15, o.world.z / 0.23);
       let tabHash = hash2(floor(q)) - 0.5;
-      albedo *= 0.97 + tabHash * 0.30 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.16));
-      albedo *= mix(0.55, 1.0, seam(q.x, 0.018, 2.77) * seam(q.y, 0.035, 4.16));
-      albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.14;
+      let rowShade = mix(0.76, 1.08, fract(o.world.z / 0.23));
+      albedo *= (0.98 + tabHash * 0.34 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.35))) * rowShade;
+      albedo *= mix(0.48, 1.0, seam(q.x, 0.020, 2.94) * seam(q.y, 0.042, 4.35));
+      albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.16;
     }
     if (mat == 23) {
       let p = vec2f(o.world.x + o.world.z, o.world.y);

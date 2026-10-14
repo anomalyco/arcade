@@ -14,7 +14,6 @@ export class WeaponInput {
   /** Off: nothing is read (not flying, menus, debug panel). */
   enabled = true
   private keys = new Set<string>()
-  private chars = new Map<string, string>()
   private downs = new Set<string>()
   private mouseFire = false
   private wheel = 0
@@ -29,18 +28,11 @@ export class WeaponInput {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.code === "Space") e.preventDefault()
       if (this.keys.has(e.code)) return
-      const k = e.key.toLowerCase()
       this.keys.add(e.code)
-      this.keys.add(k)
-      this.chars.set(e.code, k)
       this.downs.add(e.code)
-      this.downs.add(k)
     })
     addEventListener("keyup", (e) => {
       this.keys.delete(e.code)
-      const down = this.chars.get(e.code)
-      if (down !== undefined) this.keys.delete(down)
-      this.chars.delete(e.code)
       if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
     })
     addEventListener("blur", () => this.release())
@@ -70,7 +62,6 @@ export class WeaponInput {
 
   release(): void {
     this.keys.clear()
-    this.chars.clear()
     this.downs.clear()
     this.mouseFire = false
   }
@@ -89,7 +80,7 @@ export class WeaponInput {
   get fire(): boolean {
     if (!this.enabled) return false
     if (this.trigger !== null) return this.trigger
-    return this.mouseFire || this.any("Space", " ")
+    return this.mouseFire || this.any("Space")
   }
 
   /** Slot picked this frame by a number key (0-based), or -1. */
@@ -104,12 +95,12 @@ export class WeaponInput {
   /** Cycle steps this frame: wheel notches (down = next) and V. */
   get cycle(): number {
     if (!this.enabled) return 0
-    return this.wheel + (this.pressed("KeyV", "v") ? 1 : 0)
+    return this.wheel + (this.pressed("KeyV") ? 1 : 0)
   }
 
   /** Flares asked for this frame. */
   get flares(): boolean {
-    return this.enabled && !this.flaresBlocked && this.pressed("KeyF", "f")
+    return this.enabled && !this.flaresBlocked && this.pressed("KeyF")
   }
 
   endFrame(): void {

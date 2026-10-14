@@ -15,8 +15,9 @@ export class Survivor {
   bones: BonePose = {}
   private chest = spring()
   private head = spring()
+  private reachDrop = spring()
   private models: number[]
-  private feet = [-1, 1].map(() => ({ p: [0, 0, 0] as V3, lift: [0, 0, 0] as V3, planted: true, yaw: 0 }))
+  private feet = [-1, 1].map(() => ({ p: [0, 0, 0] as V3, lift: [0, 0, 0] as V3, target: [0, 0, 0] as V3, prevU: 0, planted: true, yaw: 0 }))
   private phase = 0
   private yaw = 0
   private last: [number, number] = [Infinity, Infinity]
@@ -44,16 +45,16 @@ export class Survivor {
   reset(): void {
     this.last = [Infinity, Infinity]
     this.phase = this.yaw = this.svx = this.svy = 0
-    this.leanX = spring(); this.leanY = spring()
+    this.leanX = spring(); this.leanY = spring(); this.reachDrop = spring()
     this.chest = spring(); this.head = spring(); this.bones = {}
   }
 
-  draw(p: Pose, dt: number, time: number, support: (x:number,z:number)=>number): Batch[] {
+  draw(p: Pick<Pose, "x" | "y" | "vx" | "vy" | "aim">, dt: number, time: number, support: (x:number,z:number)=>number): Batch[] {
     dt = Math.max(.0001, Math.min(.2, dt))
     const prevX = this.last[0], prevY = this.last[1]
     const teleport = Math.hypot(p.x - prevX, p.y - prevY) > 2.5
     this.last = [p.x, p.y]
-    if (teleport) { this.yaw = p.aim; this.svx = p.vx; this.svy = p.vy; this.phase = 0; this.chest = { x: p.aim, v: 0 }; this.head = { x: p.aim, v: 0 } }
+    if (teleport) { this.yaw = p.aim; this.svx = p.vx; this.svy = p.vy; this.phase = 0; this.chest = { x: p.aim, v: 0 }; this.head = { x: p.aim, v: 0 }; this.reachDrop = spring() }
     const profile = this.profile
     const steps = teleport ? 1 : Math.max(1, Math.ceil(dt / (1 / 60) - 1e-4))
     const h = dt / steps
@@ -75,7 +76,7 @@ export class Survivor {
       this.yaw += angleDiff(want, this.yaw) * Math.min(1, h * 9)
       const c = Math.cos(this.yaw), s = Math.sin(this.yaw)
       const rest = (i: number): V3 => { const x=sx-s*(i?.13:-.13),z=sy+c*(i?.13:-.13); return [x,support(x,z),z] }
-      if (teleport && step === 1) this.feet.forEach((f, i) => { f.p = rest(i); f.lift = [...f.p]; f.planted = true; f.yaw = this.yaw })
+      if (teleport && step === 1) this.feet.forEach((f, i) => { f.p = rest(i); f.lift = [...f.p]; f.target = [...f.p]; f.prevU = 0; f.planted = true; f.yaw = this.yaw })
       const needsStep = this.feet.some((f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > .2 || !f.planted)
       const rate = Math.max(speed / ((.7 + .22 * speed) * (profile?.strideScale ?? 1)), needsStep ? 1.7 : 0)
       this.phase = (this.phase + rate * h) % 1
@@ -83,9 +84,9 @@ export class Survivor {
       this.feet.forEach((f, i) => {
         const phase = (this.phase + i * (.5 + (profile?.timingBias ?? 0) * .25)) % 1
         if (rate > 0 && phase >= duty) {
-          if (f.planted) { f.planted = false; f.lift = [...f.p] }
           const u = (phase - duty) / (1 - duty), e = smoother(u)
-          const lead = (1 - phase) / rate + duty / rate * .5
+          if (f.planted) { f.planted = false; f.lift = [...f.p]; f.prevU = 0 }
+          const lead = Math.min(.32, (1 - phase) / rate + duty / rate * .5)
           const target = rest(i)
           target[0] += vx * lead; target[2] += vy * lead
           // Preserve Blackout's minimum side-step separation.
@@ -93,18 +94,39 @@ export class Survivor {
           const lat = (-(target[0] - other.p[0]) * s + (target[2] - other.p[2]) * c) * side
           if (lat < .16) { target[0] -= s * side * (.16 - lat); target[2] += c * side * (.16 - lat) }
           target[1]=support(target[0],target[2])
+          const ep = smoother(f.prevU)
+          if (ep > 0 && ep < .95) {
+            const curX = f.lift[0] + (f.target[0] - f.lift[0]) * ep
+            const curY = f.lift[1] + (f.target[1] - f.lift[1]) * ep
+            const curZ = f.lift[2] + (f.target[2] - f.lift[2]) * ep
+            f.lift = [(curX - target[0] * ep) / (1 - ep), (curY - target[1] * ep) / (1 - ep), (curZ - target[2] * ep) / (1 - ep)]
+          }
+          f.target = target; f.prevU = u
           const clearance = i === 1 ? 1 - (profile?.footDrag ?? 0) : 1
-          f.p = [f.lift[0] + (target[0] - f.lift[0]) * e, f.lift[1]+(target[1]-f.lift[1])*e+Math.sin(Math.PI * u) * (.06 + .09 * moving) * clearance, f.lift[2] + (target[2] - f.lift[2]) * e]
+          // Mid-swing terrain clearance boost & floor guard (Lamplight arachnid/mod.rs & walk.rs:1419, 1446)
+          const midY = support((f.lift[0] + target[0]) * .5, (f.lift[2] + target[2]) * .5)
+          const boost = Math.max(0, midY - Math.max(f.lift[1], target[1]))
+          const px = f.lift[0] + (target[0] - f.lift[0]) * e, pz = f.lift[2] + (target[2] - f.lift[2]) * e
+          const py = Math.max(support(px, pz), f.lift[1] + (target[1] - f.lift[1]) * e + Math.sin(Math.PI * u) * ((.06 + .09 * moving) * clearance + boost))
+          f.p = [px, py, pz]
           f.yaw += angleDiff(this.yaw, f.yaw) * e
-        } else if (!f.planted) { f.planted = true; f.p[1] = support(f.p[0],f.p[2]) }
+        } else if (!f.planted) { f.planted = true; f.prevU = 0; f.p[1] = support(f.p[0],f.p[2]) }
       })
+      // Anticipatory support floor: blend root support with foot landing/planted heights (Lamplight arachnid/mod.rs:502)
+      const footSupport = (this.feet[0]!.p[1] + this.feet[1]!.p[1]) * .5
+      const supportY = support(sx, sy) * .65 + footSupport * .35
+      const baseHeight = supportY + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
+      let desiredDrop = 0
+      for (const f of this.feet) {
+        const distance = Math.min(.72, Math.hypot(f.p[0] - sx, f.p[2] - sy))
+        const reachY = Math.sqrt(Math.max(0, .815 ** 2 - distance ** 2)) + RIG.ankle + f.p[1]
+        desiredDrop = Math.max(desiredDrop, Math.max(0, Math.min(.18, baseHeight - reachY)))
+      }
+      stepSpring(this.reachDrop, 140, .85, h, desiredDrop)
     }
-    let height = support(p.x,p.y)+HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4)
-    for (const f of this.feet) {
-      const distance = Math.hypot(f.p[0] - p.x, f.p[2] - p.y)
-      height = Math.min(height, Math.sqrt(Math.max(0, .815 ** 2 - distance ** 2)) + RIG.ankle + f.p[1])
-    }
-    const pelvis = yawFrame([p.x, height, p.y], this.yaw)
+    const footSupport = (this.feet[0]!.p[1] + this.feet[1]!.p[1]) * .5
+    const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - .05 * moving - .035 * moving * Math.cos(this.phase * Math.PI * 4) - this.reachDrop.x
+    const pelvis = roll(yawFrame([p.x, height, p.y], this.yaw), Math.cos(this.phase * Math.PI * 2) * .06 * moving)
     const lean = this.leanX.x * Math.cos(p.aim) + this.leanY.x * Math.sin(p.aim)
     if (profile) { angleSpring(this.chest, p.aim, profile.chestHz, dt); angleSpring(this.head, p.aim, profile.headHz, dt) }
     let torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), profile ? this.chest.x : p.aim), -.05 - lean)
@@ -127,7 +149,7 @@ export class Survivor {
       const side = i ? 1 : -1, foot = this.feet[i]!
       const hip = at(pelvis, 0, 0, side * RIG.hipW)
       const ankle: V3 = [foot.p[0], foot.p[1] + RIG.ankle, foot.p[2]]
-      const pole = dirIn(pelvis, 1, 0, side * .3)
+      const pole = dirIn(pelvis, 1, .28, side * .25)
       const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
       const thigh = limb(hip, knee, pole, pelvis.x), shin = limb(knee, end, pole, pelvis.x), boot = yawFrame(end, foot.yaw)
       const name = i === 0 ? "left" : "right"

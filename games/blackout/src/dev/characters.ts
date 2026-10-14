@@ -1,6 +1,6 @@
 import "@arcade/kit/dev-hub.css"
 import { hubCommands, hubTargets } from "@arcade/kit/dev-hub-model"
-import { bindOrbitGestures } from "@arcade/kit/orbit-gestures"
+import { applyArrowCameraKey, bindOrbitGestures, computeGrabPanDelta } from "@arcade/kit/orbit-gestures"
 import { LabPanel, formatLabValue, inferControlUnit, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
 import { humanProfiles, humanProfileControls, type HumanPreset, type HumanProfile } from "@arcade/kit/human-profile"
 import { attachment, bodyBones, boneParent, boneVisible, detach, poseArms, type BoneId, type BonePose, type PartMotion } from "@arcade/kit/human-pose"
@@ -201,6 +201,7 @@ function injectStyles() {
     body.characters-page {
       height: 100dvh;
       overflow: hidden;
+      overscroll-behavior: none;
       display: flex;
       flex-direction: column;
       background: var(--bg);
@@ -251,6 +252,7 @@ function injectStyles() {
       width: 100%;
       height: 100%;
       touch-action: none;
+      overscroll-behavior: none;
       cursor: grab;
     }
     .characters-stage canvas:active {
@@ -639,12 +641,20 @@ async function main() {
       this.yaw += dyaw
       this.pitch = clamp(this.pitch + dpitch, 0.08, 1.38)
     },
-    pan(dx: number, dz: number) {
-      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw)
-      const s = this.dist * 0.0015
-      this.focusX += (cy * dx + sy * dz) * s
-      this.focusZ += (-sy * dx + cy * dz) * s
+    panGrab(u0: number, v0: number, u1: number, v1: number) {
+      const rect = canvas.getBoundingClientRect()
+      const w = Math.max(1, rect.width || canvas.clientWidth || 1280)
+      const h = Math.max(1, rect.height || canvas.clientHeight || 800)
+      const { dx, dz } = computeGrabPanDelta(u0, v0, u1, v1, this.yaw, this.pitch, this.dist, w / h, 0.5)
+      this.focusX += dx
+      this.focusZ += dz
       followSelected = false
+    },
+    pan(dx: number, dz: number) {
+      const rect = canvas.getBoundingClientRect()
+      const w = Math.max(1, rect.width || canvas.clientWidth || 1280)
+      const h = Math.max(1, rect.height || canvas.clientHeight || 800)
+      this.panGrab(0.5, 0.5, 0.5 - dx / w, 0.5 - dz / h)
     },
     zoomBy(factor: number) {
       this.dist = clamp(this.dist * factor, 2.0, 28)
@@ -811,11 +821,7 @@ async function main() {
     const next = resolveActor(id)
     if (!next) return
     if (selected !== next) {
-      selected.avatar.x = selected.homeX
-      selected.avatar.y = selected.homeY
-      selected.avatar.vx = 0
-      selected.avatar.vy = 0
-      selected.avatar.aim = selected.homeAim
+      selected.avatar.body = null
       selected.actionTime = 0
       animate(selected.avatar, 1 / 60, selected.avatar.t + 1 / 60, selected.homeX, selected.homeY, 0, 0, selected.homeAim, selected.wizardCast)
     }
@@ -1360,30 +1366,81 @@ async function main() {
     if (possessing) pointerMovedOnCanvas = true
   })
 
-  bindOrbitGestures(canvas, {
+  function pickActorAtClient(clientX: number, clientY: number): StageActor | null {
+    const rect = canvas.getBoundingClientRect()
+    const px = clientX - rect.left
+    const py = clientY - rect.top
+    let best: StageActor | null = null
+    let bestDist = Math.max(42, 300 / Math.max(2, orbitState.dist))
+    for (const actor of actors) {
+      for (const h of [0.25, 0.7, 1.15, 1.55]) {
+        const proj = cam.project(actor.avatar.x, h, actor.avatar.y, rect.width, rect.height)
+        if (!proj.ok) continue
+        const d = Math.hypot(proj.x - px, proj.y - py)
+        if (d < bestDist) {
+          bestDist = d
+          best = actor
+        }
+      }
+    }
+    return best
+  }
+
+  const charMenu = document.createElement("div")
+  charMenu.className = "context-menu"
+  charMenu.popover = "auto"
+  charMenu.setAttribute("role", "menu")
+  charMenu.setAttribute("aria-label", "Character actions")
+  charMenu.innerHTML = `
+    <button type="button" role="menuitem" data-char-menu="frame">Frame<kbd>F</kbd></button>
+    <button type="button" role="menuitem" data-char-menu="possess">Possess / Release<kbd>P</kbd></button>
+    <button type="button" role="menuitem" data-char-menu="walk">Walk loop</button>
+    <button type="button" role="menuitem" data-char-menu="run">Run loop</button>
+    <button type="button" role="menuitem" data-char-menu="stop">Stop</button>
+    <button type="button" role="menuitem" data-char-menu="detach">Detach limb</button>
+    <button type="button" role="menuitem" data-char-menu="reset">Reset<kbd>0</kbd></button>
+  `
+  document.body.append(charMenu)
+
+  function openCharMenu(x: number, y: number) {
+    const hit = pickActorAtClient(x, y)
+    if (hit && hit.id !== selected.id) {
+      void commands.invoke("select", { target: hit.id, frame: false }, { source: "ui" })
+    }
+    charMenu.style.left = `${Math.min(x, innerWidth - 200)}px`
+    charMenu.style.top = `${Math.min(y, innerHeight - 240)}px`
+    charMenu.showPopover()
+    charMenu.querySelector<HTMLElement>("button")?.focus()
+  }
+
+  charMenu.addEventListener("click", event => {
+    const btn = (event.target as Element).closest<HTMLElement>("[data-char-menu]")
+    if (!btn) return
+    const action = btn.dataset.charMenu
+    charMenu.hidePopover()
+    if (action === "frame") void commands.invoke("camera.set", { frame: "close" }, { source: "ui" })
+    else if (action === "possess") void commands.invoke(possessing ? "release" : "possess", {}, { source: "ui" })
+    else if (action === "walk") void commands.invoke("action.walk", {}, { source: "ui" })
+    else if (action === "run") void commands.invoke("action.run", {}, { source: "ui" })
+    else if (action === "stop") void commands.invoke("action.stop", {}, { source: "ui" })
+    else if (action === "detach") void commands.invoke("limb.detach", { limb: limbSelect.value }, { source: "ui" })
+    else if (action === "reset") void commands.invoke("character.reset", {}, { source: "ui" })
+    canvas.focus({ preventScroll: true })
+  })
+
+  const gestures = bindOrbitGestures(canvas, {
     target: orbitState,
     canPrimaryOrbit: () => !possessing,
+    onChange: () => notifyDevControl(),
+    onContextClick: (x, y) => {
+      if (!possessing) openCharMenu(x, y)
+    },
     onPrimaryClick: event => {
       if (possessing) {
         swing(selected.avatar, selected.avatar.t)
         return
       }
-      const rect = canvas.getBoundingClientRect()
-      const px = event.clientX - rect.left
-      const py = event.clientY - rect.top
-      let best: StageActor | null = null
-      let bestDist = Math.max(42, 300 / Math.max(2, orbitState.dist))
-      for (const actor of actors) {
-        for (const h of [0.25, 0.7, 1.15, 1.55]) {
-          const proj = cam.project(actor.avatar.x, h, actor.avatar.y, rect.width, rect.height)
-          if (!proj.ok) continue
-          const d = Math.hypot(proj.x - px, proj.y - py)
-          if (d < bestDist) {
-            bestDist = d
-            best = actor
-          }
-        }
-      }
+      const best = pickActorAtClient(event.clientX, event.clientY)
       if (best) {
         void commands.invoke("select", { target: best.id, frame: false }, { source: "ui" })
       }
@@ -1446,15 +1503,31 @@ async function main() {
     const target = event.composedPath()[0]
     const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
     if (event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.key === "Escape" && possessing) {
-      event.preventDefault()
-      void commands.invoke("release", {}, { source: "ui" })
-      return
+    if (event.key === "Escape") {
+      if (possessing) {
+        event.preventDefault()
+        void commands.invoke("release", {}, { source: "ui" })
+        return
+      }
+      if (gestures.hasActivePointer()) {
+        event.preventDefault()
+        gestures.cancelDrag()
+        return
+      }
     }
     if (typing) return
     if (labPanel.visible && document.activeElement === labPanel.host) return
+    if (!possessing && document.activeElement === canvas && applyArrowCameraKey(orbitState, event)) {
+      event.preventDefault()
+      notifyDevControl()
+      return
+    }
     const key = event.key.toLowerCase()
-    if (key === "p" && !possessing) {
+    if ((key === "m" || event.key === "ContextMenu") && !possessing) {
+      event.preventDefault()
+      const box = canvas.getBoundingClientRect()
+      openCharMenu(box.left + box.width / 2, box.top + box.height / 2)
+    } else if (key === "p" && !possessing) {
       event.preventDefault()
       void commands.invoke("possess", {}, { source: "ui" })
     } else if (key === "f" && !possessing) {
@@ -1539,18 +1612,27 @@ async function main() {
       const speed = baseSpeed * simSpeed
       if (actor === selected) {
         const period = actor.action === "run" ? 2.4 : 4.2
-        if (actor.actionTime >= period) {
+        const wrapped = actor.actionTime >= period
+        if (wrapped) {
           actor.actionTime %= period
-          a.x = actor.homeX - 0.6
-          a.y = actor.homeY + 0.8
+          a.body = null
           actor.previousBones = undefined
         }
         const dir = 0.72
         vx = Math.cos(dir) * speed
         vy = Math.sin(dir) * speed
-        nextX = (actor.actionTime <= dt * simSpeed * 1.5 ? actor.homeX - 0.6 : a.x) + vx * dt
-        nextY = (actor.actionTime <= dt * simSpeed * 1.5 ? actor.homeY + 0.8 : a.y) + vy * dt
+        const startReset = wrapped || actor.actionTime <= dt * simSpeed * 1.5
+        if (startReset && Math.hypot(a.x - actor.homeX, a.y - actor.homeY) > 0.05) {
+          a.body = null
+          actor.previousBones = undefined
+        }
+        nextX = (startReset ? actor.homeX : a.x) + vx * dt
+        nextY = (startReset ? actor.homeY : a.y) + vy * dt
         aim = dir + Math.sin(actor.actionTime * 1.8) * 0.14
+        if (wrapped && followSelected) {
+          orbitState.focusX = nextX
+          orbitState.focusZ = nextY
+        }
       } else {
         vx = 0
         vy = 0
@@ -1570,7 +1652,10 @@ async function main() {
     if (actor.unarmedSwing && actor.profile.handPose === "weapon" && a.body) {
       const torso = a.body.torso
       const moving = a.gait * clamp(Math.hypot(a.svx, a.svy) / 3.4, 0, 1)
-      const sw = Math.sin(a.phase * Math.PI * 2) * (0.24 + 0.1 * a.motion.run) * moving
+      // Oppose actual foot forward/back separation (Lamplight walk.rs:1494) rather than open-loop sine.
+      const fdx = a.feet[1].p[0] - a.feet[0].p[0], fdz = a.feet[1].p[2] - a.feet[0].p[2]
+      const footSep = clamp((fdx * Math.cos(a.legYaw) + fdz * Math.sin(a.legYaw)) / Math.max(0.35, a.motion.stride * 0.5), -1, 1)
+      const sw = footSep * (0.24 + 0.1 * a.motion.run) * moving
       const hL = at(torso, sw + 0.07, -0.02 + 0.015 * Math.sin(a.t * 2), -0.24)
       const hR = at(torso, -sw + 0.07, -0.02 - 0.015 * Math.sin(a.t * 2), 0.24)
       const arms = poseArms(torso, hL, hR)

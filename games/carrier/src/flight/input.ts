@@ -26,7 +26,6 @@ export class FlightInput {
   /** Take Pointer Lock on a click itself (the harness). In the game src/input.ts owns the lock on the same canvas. */
   grab = true
   private keys = new Set<string>()
-  private chars = new Map<string, string>()
   private downs = new Set<string>()
   private stickX = 0
   private stickY = 0
@@ -43,18 +42,11 @@ export class FlightInput {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
       if (this.keys.has(e.code)) return
-      const k = e.key.toLowerCase()
       this.keys.add(e.code)
-      this.keys.add(k)
-      this.chars.set(e.code, k)
       this.downs.add(e.code)
-      this.downs.add(k)
     })
     addEventListener("keyup", (e) => {
       this.keys.delete(e.code)
-      const down = this.chars.get(e.code)
-      if (down !== undefined) this.keys.delete(down)
-      this.chars.delete(e.code)
       if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
     })
     addEventListener("blur", () => this.release())
@@ -113,7 +105,6 @@ export class FlightInput {
 
   release(): void {
     this.keys.clear()
-    this.chars.clear()
     this.downs.clear()
     this.buttons = 0
     this.stickX = this.stickY = 0
@@ -130,7 +121,7 @@ export class FlightInput {
   }
 
   get freeLook(): boolean {
-    return (this.buttons & 6) !== 0 || this.any("KeyX", "x")
+    return (this.buttons & 6) !== 0 || this.any("KeyX")
   }
 
   /** Mouse movement for the free-look camera since the last frame (CSS px). */
@@ -139,12 +130,12 @@ export class FlightInput {
   }
 
   get cameraToggle(): boolean {
-    return this.pressed("KeyC", "c")
+    return this.pressed("KeyC")
   }
 
   /** F: land, while the HUD offers it (otherwise F is flares, src/weapons/input.ts). */
   get land(): boolean {
-    return this.pressed("KeyF", "f")
+    return this.pressed("KeyF")
   }
 
   /** Launch from the deck in the offline harness (flight.html): Enter. The game launches from SHIP OPERATIONS. */
@@ -154,13 +145,13 @@ export class FlightInput {
 
   /** Fills `out` with this frame's controls and springs the mouse stick back toward centre. */
   controls(dt: number, out: PlaneControls): PlaneControls {
-    const up = this.any("KeyW", "w")
-    const down = this.any("KeyS", "s")
+    const up = this.any("KeyW")
+    const down = this.any("KeyS")
     out.throttle = up && !down ? 1 : down && !up ? -1 : 0
     out.boost = this.any("ShiftLeft", "ShiftRight")
     out.yaw = (this.any("KeyE") ? 1 : 0) - (this.any("KeyQ") ? 1 : 0)
     const keyPitch = (this.any("ArrowDown") ? 1 : 0) - (this.any("ArrowUp") ? 1 : 0)
-    const keyRoll = (this.any("ArrowRight", "KeyD", "d") ? 1 : 0) - (this.any("ArrowLeft", "KeyA", "a") ? 1 : 0)
+    const keyRoll = (this.any("ArrowRight", "KeyD") ? 1 : 0) - (this.any("ArrowLeft", "KeyA") ? 1 : 0)
     out.pitch = clamp(this.stickY + keyPitch, -1, 1)
     out.roll = clamp(this.stickX + keyRoll, -1, 1)
     if (this.override) {

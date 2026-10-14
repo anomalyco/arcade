@@ -25,19 +25,25 @@ import type { createSpawn, SpawnSceneSnapshot } from "./spawn"
 import type { StageMarker } from "./stage"
 import {
   applyNumericTransformKey,
+  computePointerYawRad,
   createTransformGizmoDOM,
   createTransformState,
   createViewportCursorDOM,
+  projectGroundRotateRing,
   sampleGroundNormal,
   snapGroundCoord,
-  snapYawRad,
   type ActiveTransformState,
   type GroundSurfaceSample,
   type NumericAxis,
   type TransformMode,
 } from "./transform"
 import type { LabContext, LabSection, LabWorldObject } from "./types"
-import { bindSafariTrackpadGestures, classifyWheelGesture } from "./viewport-input"
+import {
+  applyArrowCameraKey,
+  bindOrbitGestures,
+  getTwoFingerScrollMode,
+  setTwoFingerScrollMode,
+} from "../orbit-gestures"
 import { yardGround } from "./yard"
 
 export type CatalogCategory = "effects" | "objects" | "lighting" | "audio"
@@ -167,9 +173,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
   boxModeBtn.dataset.action = "mode-box"
   boxModeBtn.setAttribute("aria-label", "Box select mode")
   boxModeBtn.setAttribute("aria-pressed", "false")
-  boxModeBtn.title = "Marquee Box Select mode (or Alt+Drag in Orbit mode)"
+  boxModeBtn.title = "Force Marquee Box Select mode (LMB drag on empty already box-selects when objects exist)"
   boxModeBtn.textContent = "Box"
   editModeBtn.parentElement?.append(boxModeBtn)
+
+  const scrollModeBtn = document.createElement("button")
+  scrollModeBtn.type = "button"
+  scrollModeBtn.className = "lab-btn"
+  scrollModeBtn.dataset.action = "toggle-trackpad-scroll"
+  scrollModeBtn.setAttribute("aria-label", "Trackpad two-finger scroll mode")
+  scrollModeBtn.setAttribute("aria-pressed", String(getTwoFingerScrollMode() === "pan"))
+  scrollModeBtn.title = "Two-finger trackpad scroll action: Orbit (default) or Pan (Shift+2F always pans, Pinch/Wheel zooms)"
+  scrollModeBtn.textContent = getTwoFingerScrollMode() === "pan" ? "2F: Pan" : "2F: Orbit"
+  editModeBtn.parentElement?.append(scrollModeBtn)
 
   const viewportHud = viewportEl.querySelector<HTMLElement>(".lab-viewport-hud")!
   const marqueeEl = document.createElement("div")
@@ -763,10 +779,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       event.preventDefault()
       event.stopPropagation()
       hoveredGizmoHandle = null
-      openRadialAtScreen(event.clientX, event.clientY, false)
-      try {
-        canvas.setPointerCapture(event.pointerId)
-      } catch {}
+      openRadialAtScreen(event.clientX, event.clientY, true)
     }
   })
 
@@ -1604,6 +1617,125 @@ export function createWorkbench(opts: WorkbenchOptions) {
       },
     },
     {
+      id: "effect.trigger",
+      aliases: ["transport.retrigger", "retrigger"],
+      label: "Retrigger Active Effect",
+      shortLabel: "Retrigger",
+      category: "Transport",
+      shortcut: "Space",
+      args: {
+        effect: { type: "string", description: "Optional effect ID to select before triggering" },
+        seed: { type: "number", description: "Optional effect seed" },
+      },
+      enabled: () => Boolean(activeSection().retrigger),
+      run: (ctx, args) => {
+        const sec = activeSection()
+        if (typeof args?.effect === "string" && args.effect.trim() && "effect" in sec.settings) {
+          sec.settings.effect = args.effect.trim()
+        }
+        const nextSeed = typeof args?.seed === "number" ? args.seed : ctx?.seed
+        if (typeof nextSeed === "number") {
+          if ("effectSeed" in sec.settings) sec.settings.effectSeed = nextSeed
+          else if ("seed" in sec.settings) sec.settings.seed = nextSeed
+        }
+        elapsed = 0
+        frames = 0
+        sec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          section: sec.id,
+          effect: sec.settings.effect ?? null,
+          seed: sec.settings.effectSeed ?? sec.settings.seed ?? null,
+          elapsed: 0,
+          frames: 0,
+        }
+      },
+    },
+    {
+      id: "effect.randomize",
+      aliases: ["randomize"],
+      label: "Randomize Active Effect Parameters & Retrigger",
+      shortLabel: "Randomize",
+      category: "Inspector",
+      shortcut: "R",
+      undoable: true,
+      args: {
+        group: { type: "string", description: "Optional parameter group name to randomize (omit for all active groups)" },
+        seed: { type: "number", description: "Optional deterministic tuning seed" },
+      },
+      enabled: () => mode !== "play",
+      run: (ctx, args) => {
+        const sec = activeSection()
+        const nextSeed = typeof args?.seed === "number" ? args.seed : ctx?.seed
+        if (typeof nextSeed === "number" && "tuningSeed" in sec.settings) {
+          sec.settings.tuningSeed = nextSeed
+        }
+        const targetGroup = typeof args?.group === "string" && args.group.trim() ? args.group.trim().toLowerCase() : null
+        const customActions = sec.controls.filter(
+          c =>
+            c.type === "action" &&
+            /^Randomize\b/i.test(c.label) &&
+            (c.visible ? c.visible(sec.settings) : true) &&
+            (!targetGroup || (c.group ?? "").toLowerCase().includes(targetGroup) || c.label.toLowerCase().includes(targetGroup)),
+        )
+        if (customActions.length > 0) {
+          const dummyBtn = document.createElement("button")
+          for (const act of customActions) {
+            if (act.type === "action") void act.run(dummyBtn)
+          }
+        } else {
+          const groups = new Set(
+            panel.navigation.visibleRows
+              .filter(r => r.control && r.group !== "Emitter" && r.group !== "Environment" && r.group !== "Origin & Seed")
+              .map(r => r.group)
+              .filter(g => !targetGroup || g.toLowerCase().includes(targetGroup)),
+          )
+          for (const g of groups) panel.navigation.randomize(g)
+        }
+        elapsed = 0
+        frames = 0
+        sec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          section: sec.id,
+          effect: sec.settings.effect ?? null,
+          tuningSeed: sec.settings.tuningSeed ?? null,
+          settings: { ...sec.settings },
+        }
+      },
+    },
+    {
+      id: "effect.loop",
+      aliases: ["transport.loop"],
+      label: "Set Effect Loop & Interval",
+      shortLabel: "Loop",
+      category: "Transport",
+      args: {
+        loop: { type: "boolean", description: "Enable or disable looping (omit to toggle)" },
+        interval: { type: "number", min: 0.2, max: 15, description: "Loop interval in seconds" },
+      },
+      enabled: () => "loop" in activeSection().settings,
+      run: (_ctx, args) => {
+        const sec = activeSection()
+        if (typeof args?.loop === "boolean") sec.settings.loop = args.loop
+        else sec.settings.loop = !sec.settings.loop
+        if (typeof args?.interval === "number" && "interval" in sec.settings) {
+          sec.settings.interval = args.interval
+        }
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          loop: Boolean(sec.settings.loop),
+          interval: "interval" in sec.settings ? Number(sec.settings.interval) : null,
+        }
+      },
+    },
+    {
       id: "scene.select-section",
       label: "Switch Lab Section",
       shortLabel: "Section",
@@ -1704,6 +1836,16 @@ export function createWorkbench(opts: WorkbenchOptions) {
         const key = String(args?.key ?? "").trim()
         const val = args?.value
         if (!key || val === undefined) throw new Error("scene.set-param requires key and value.")
+        if (key === "twoFingerScroll") {
+          const prev = getTwoFingerScrollMode()
+          const next = String(val).toLowerCase()
+          if (next !== "orbit" && next !== "pan") {
+            throw new Error(`Invalid twoFingerScroll value "${String(val)}". Expected "orbit" or "pan".`)
+          }
+          setTwoFingerScrollMode(next)
+          syncChrome()
+          return { key: "twoFingerScroll", label: "Trackpad two-finger scroll", group: "Viewport", before: prev, value: next }
+        }
         const found = findControlRow([panel], key)
         if (found) {
           const { control: c, row } = found
@@ -1810,7 +1952,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
   function buildSceneState(): Omit<LabSceneState, "commands"> {
     const sec = activeSection()
     const envOwner = resolveEnvOwner()
-    const cleanSettings: Record<string, LabValue> = {}
+    const cleanSettings: Record<string, LabValue> = {
+      twoFingerScroll: getTwoFingerScrollMode(),
+    }
     for (const k of Object.keys(sec.settings)) {
       const v = sec.settings[k]
       if (typeof v === "boolean" || typeof v === "number" || typeof v === "string") {
@@ -1912,6 +2056,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
         const st = buildSceneState()
         return { settings: st.settings, lighting: st.lighting }
       }
+      if (rawPath === "twoFingerScroll") {
+        const val = getTwoFingerScrollMode()
+        return { key: "twoFingerScroll", label: "Trackpad two-finger scroll", group: "Viewport", value: val, formatted: val }
+      }
       const found = findControlRow([panel], rawPath)
       if (found) {
         const { control: c, row } = found
@@ -1950,7 +2098,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       showToast(text, Boolean(isError))
     },
     isBusy: () => {
-      if (dragState?.moved) return { busy: true, reason: "User is dragging the viewport camera" }
+      if (viewportGestures?.isDragging()) return { busy: true, reason: "User is dragging the viewport camera" }
       if (activeTransform) return { busy: true, reason: `User is transforming ${activeTransform.primaryId}` }
       if (panel.isInteracting()) return { busy: true, reason: "User is scrubbing or editing in the Inspector" }
       if (!modalBackdrop.hidden) return { busy: true, reason: "Preset dialog is open" }
@@ -2624,9 +2772,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     } else {
       focusPill.textContent = "Edit · Canvas"
       if (sec.id === "spawn") {
-        hintText.textContent = "Click Select · A Place · G Move · ⌫ Delete · P Play · F Frame · ⌘Z Undo"
+        hintText.textContent = "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · Drag Box Select · RMB Tap Radial · G Move · P Play · F Frame"
       } else {
-        hintText.textContent = "Space Retrigger · F Frame · R Reroll Room · Q/E Cycle · Tab Inspector · ⌘K Search"
+        hintText.textContent = "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · RMB Tap Radial · Space Retrigger · F Frame · R Reroll · ⌘K Search"
       }
     }
   }
@@ -2715,19 +2863,38 @@ export function createWorkbench(opts: WorkbenchOptions) {
       movableSelected.length > 0 &&
       (selIds.length > 0 || Boolean(activeTransform))
     if (showGizmo) {
+      stage.updateCamera()
       const c = computeSelectionCentroid(movableSelected)
-      const proj = stage.projectWorld(c.x, c.y + 0.25, c.z)
+      const primaryObj = movableSelected.at(-1)
+      const ringRadius = primaryObj?.radius ?? 0.75
+      const ringY = c.y + 0.02 + 0.03 * ringRadius
       const rect = viewportEl.getBoundingClientRect()
-      if (proj.visible && rect.width > 0 && rect.height > 0) {
-        transformGizmo.sync({
-          visible: true,
-          screenX: proj.u * rect.width,
-          screenY: proj.v * rect.height,
-          x: c.x,
-          z: c.z,
-          yawRad: c.yaw,
-          activeMode: activeTransform?.mode ?? null,
-        })
+      if (rect.width > 0 && rect.height > 0) {
+        const projected = projectGroundRotateRing(
+          c.x,
+          ringY,
+          c.z,
+          ringRadius,
+          c.yaw,
+          rect.width,
+          rect.height,
+          (x, y, z) => stage.projectWorld(x, y, z),
+        )
+        if (projected.visible) {
+          transformGizmo.sync({
+            visible: true,
+            screenX: projected.screenX,
+            screenY: projected.screenY,
+            x: c.x,
+            z: c.z,
+            yawRad: c.yaw,
+            activeMode: activeTransform?.mode ?? null,
+            ringPoints: projected.ringPoints,
+            handleOffset: projected.handleOffset,
+          })
+        } else {
+          transformGizmo.sync({ visible: false, screenX: 0, screenY: 0, x: 0, z: 0, yawRad: 0, activeMode: null })
+        }
       } else {
         transformGizmo.sync({ visible: false, screenX: 0, screenY: 0, x: 0, z: 0, yawRad: 0, activeMode: null })
       }
@@ -2744,6 +2911,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     playModeBtn.setAttribute("aria-pressed", String(mode === "play"))
     playModeBtn.dataset.playActive = String(mode === "play")
     boxModeBtn.setAttribute("aria-pressed", String(mode === "edit" && boxSelectMode))
+    const twoFingerMode = getTwoFingerScrollMode()
+    scrollModeBtn.setAttribute("aria-pressed", String(twoFingerMode === "pan"))
+    scrollModeBtn.textContent = twoFingerMode === "pan" ? "2F: Pan" : "2F: Orbit"
     pinABtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
     pinABtn.textContent = slotA ? `A·f${slotA.frames}` : "A"
     flipBtn.setAttribute("aria-pressed", String(Boolean(slotA && activeSlot === "A")))
@@ -2986,7 +3156,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
     if (mode === "play") setPlayMode("edit")
     boxSelectMode = !boxSelectMode
     syncChrome()
-    showToast(boxSelectMode ? "Box Select mode · Drag on canvas to marquee select" : "Orbit mode · Drag to orbit, Alt+Drag to marquee select")
+    showToast(boxSelectMode ? "Box Select mode · Drag on canvas to marquee select" : "Standard Edit mode · Drag on empty space box-selects when objects exist; RMB/2F orbits")
+  }
+  scrollModeBtn.onclick = () => {
+    const next = getTwoFingerScrollMode() === "orbit" ? "pan" : "orbit"
+    setTwoFingerScrollMode(next)
+    syncChrome()
+    showToast(`Trackpad two-finger scroll: ${next === "pan" ? "Pan" : "Orbit"} (Shift+2F pans, Pinch/Wheel zooms)`)
   }
 
   sectionSelect.onchange = () => {
@@ -3211,16 +3387,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   // Canvas pointer & camera & world picking
-  let dragState: {
-    button: number
-    shift: boolean
-    marquee: boolean
-    startX: number
-    startY: number
-    lastX: number
-    lastY: number
-    moved: boolean
-  } | null = null
+  let viewportGestures: ReturnType<typeof bindOrbitGestures> | undefined
+
+  function hasBoxSelectableObjects(): boolean {
+    const sec = activeSection()
+    if (!sec.selectObjects && !(spawn && ["effects", "lighting", "physics"].includes(sec.id) && spawn.section.selectObjects)) {
+      return false
+    }
+    return allSceneObjects().length > 0
+  }
 
   function canvasUV(event: { clientX: number; clientY: number }): [number, number] {
     const rect = canvas.getBoundingClientRect()
@@ -3328,41 +3503,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
     syncTransportAndHints()
   })
 
-  canvas.addEventListener("pointerdown", event => {
-    canvas.focus({ preventScroll: true })
-    focusZone = "canvas"
-    if (mode === "play") return
-
-    // If radial menu is already latched open, clicking canvas resolves or cancels it
-    if (radialState.phase === "latched") {
-      const rect = viewportEl.getBoundingClientRect()
-      const res = radialState.releasePointer(event.clientX - rect.left, event.clientY - rect.top, performance.now())
-      radialDOM.sync()
-      handleRadialResult(res)
-      return
-    }
-
-    // RMB or Ctrl+LMB opens the contextual radial marking menu (no camera pan)
-    if (event.button === 2 || (event.button === 0 && event.ctrlKey && !event.metaKey)) {
-      event.preventDefault()
-      openRadialAtScreen(event.clientX, event.clientY, false)
-      canvas.setPointerCapture(event.pointerId)
-      return
-    }
-
-    dragState = {
-      button: event.button,
-      shift: event.shiftKey,
-      marquee: event.button === 0 && (event.altKey || boxSelectMode) && !spawn?.getGhost() && !activeTransform,
-      startX: event.clientX,
-      startY: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
-      moved: false,
-    }
-    canvas.setPointerCapture(event.pointerId)
-  })
-
   viewportEl.addEventListener("pointermove", event => {
     if (radialState.phase === "closed" || event.target === canvas) return
     const vRect = viewportEl.getBoundingClientRect()
@@ -3399,186 +3539,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
     void renderNow()
   })
 
-  canvas.addEventListener("pointermove", event => {
-    if (mode === "play") {
-      hoveredGroundSample = null
-      viewportCursor.update({ state: "hidden" })
-      return
-    }
-    const vRect = viewportEl.getBoundingClientRect()
-    const localX = event.clientX - vRect.left
-    const localY = event.clientY - vRect.top
-    lastPointerViewport = { x: localX, y: localY }
-
-    if (radialState.phase !== "closed") {
-      radialState.movePointer(localX, localY)
-      radialDOM.sync()
-      const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
-      if (activeSector && !activeSector.enabled) {
-        viewportCursor.update({ state: "disabled", x: localX, y: localY })
-      } else {
-        viewportCursor.update({
-          state: "radial",
-          x: localX,
-          y: localY,
-          radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
-        })
-      }
-      return
-    }
-    const [u, v] = canvasUV(event)
-    const sec = activeSection()
-    const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
-
-    if (activeTransform) {
-      hoveredGroundSample = null
-      if (activeTransform.mode === "move") {
-        const hit = stage.pickGround(u, v, groundFn)
-        if (hit) {
-          activeTransform.currentX = snapGroundCoord(hit.x, event.altKey)
-          activeTransform.currentZ = snapGroundCoord(hit.z, event.altKey)
-          applyActiveTransformToWorld(activeTransform)
-          viewportCursor.update({
-            state: "move",
-            x: localX,
-            y: localY,
-          })
-          panel.sync()
-          syncChrome()
-          void renderNow()
-        }
-      } else {
-        const proj = stage.projectWorld(activeTransform.currentX, groundFn(activeTransform.currentX, activeTransform.currentZ) + 0.25, activeTransform.currentZ)
-        const cx = proj.u * vRect.width
-        const cy = proj.v * vRect.height
-        const rawRad = Math.atan2(localX - cx, -(localY - cy))
-        activeTransform.currentYaw = snapYawRad(rawRad, event.shiftKey, event.altKey)
-        applyActiveTransformToWorld(activeTransform)
-        viewportCursor.update({
-          state: "rotate",
-          x: localX,
-          y: localY,
-        })
-        panel.sync()
-        syncChrome()
-        void renderNow()
-      }
-      return
-    }
-
-    if (dragState) {
-      const dx = event.clientX - dragState.lastX
-      const dy = event.clientY - dragState.lastY
-      if (Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY) > 4) {
-        dragState.moved = true
-      }
-      dragState.lastX = event.clientX
-      dragState.lastY = event.clientY
-      if (dragState.moved) {
-        hoveredGroundSample = null
-        if (dragState.marquee) {
-          const rect = canvas.getBoundingClientRect()
-          const mRect = normalizeMarqueeRect(
-            dragState.startX - rect.left,
-            dragState.startY - rect.top,
-            event.clientX - rect.left,
-            event.clientY - rect.top,
-            rect.width,
-            rect.height,
-          )
-          marqueeEl.hidden = false
-          marqueeEl.style.left = `${mRect.left}px`
-          marqueeEl.style.top = `${mRect.top}px`
-          marqueeEl.style.width = `${mRect.width}px`
-          marqueeEl.style.height = `${mRect.height}px`
-          const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
-          marqueeEl.textContent = hits.length ? `${hits.length}` : ""
-          viewportCursor.update({ state: "marquee", x: localX, y: localY })
-          syncStageMarkers()
-          return
-        }
-        if (dragState.button === 1 || dragState.shift) {
-          stage.pan(-dx, -dy, true)
-          viewportCursor.update({ state: "pan", x: localX, y: localY })
-        } else if (dragState.button === 0) {
-          stage.orbit(-dx * 0.0065, dy * 0.0055, true)
-          viewportCursor.update({ state: "orbit", x: localX, y: localY })
-        }
-        syncStageMarkers()
-        void renderNow()
-        return
-      }
-    }
-
-    const ghost = spawn?.getGhost()
-    if (ghost && globalSettings.section === "spawn") {
-      hoveredGroundSample = null
-      const hit = stage.pickGround(u, v, groundFn)
-      if (hit) {
-        const gx = snapGroundCoord(hit.x, event.altKey)
-        const gz = snapGroundCoord(hit.z, event.altKey)
-        const isValid = spawn!.isValidYardPoint(gx, gz)
-        const gs = sampleGroundNormal(gx, gz, groundFn)
-        spawn!.setGhost({
-          ...ghost,
-          x: gx,
-          y: gs.y,
-          z: gz,
-          valid: isValid,
-        })
-        viewportCursor.update({
-          state: isValid ? "place" : "disabled",
-          x: localX,
-          y: localY,
-          normal: { nx: gs.nx, ny: gs.ny, nz: gs.nz },
-        })
-        syncChrome()
-        void renderNow()
-      } else {
-        viewportCursor.update({ state: "disabled", x: localX, y: localY })
-      }
-      return
-    }
-
-    if (hoveredGizmoHandle) {
-      viewportCursor.update({ state: hoveredGizmoHandle, x: localX, y: localY })
-      return
-    }
-
-    const picked = pickObjectAt(u, v)
-    const nextHover = picked?.id ?? null
-    if (picked) {
-      hoveredGroundSample = null
-      viewportCursor.update({ state: "hover", x: localX, y: localY, label: picked.label })
-    } else {
-      const hit = stage.pickGround(u, v, groundFn)
-      if (!hit || (sec.id === "spawn" && spawn && !spawn.isValidYardPoint(hit.x, hit.z))) {
-        hoveredGroundSample = null
-        viewportCursor.update({ state: "disabled", x: localX, y: localY })
-      } else {
-        hoveredGroundSample = sampleGroundNormal(hit.x, hit.z, groundFn)
-        viewportCursor.update({
-          state: boxSelectMode ? "marquee" : "default",
-          x: localX,
-          y: localY,
-          normal: {
-            nx: hoveredGroundSample.nx,
-            ny: hoveredGroundSample.ny,
-            nz: hoveredGroundSample.nz,
-          },
-        })
-      }
-    }
-    if (nextHover !== hoveredObjectId) {
-      hoveredObjectId = nextHover
-      syncChrome()
-      void renderNow()
-    } else if (hoveredGroundSample) {
-      syncStageMarkers()
-      void renderNow()
-    }
-  })
-
   canvas.addEventListener("pointerup", event => {
     if (radialState.phase === "holding") {
       const rect = viewportEl.getBoundingClientRect()
@@ -3588,103 +3548,277 @@ export function createWorkbench(opts: WorkbenchOptions) {
       return
     }
     if (activeTransform?.viaHandle) {
-      dragState = null
+      viewportGestures?.cancelDrag()
       commitActiveTransform()
-      return
     }
-    if (!dragState) return
-    const wasMoved = dragState.moved
-    const wasMarquee = dragState.marquee
-    const startX = dragState.startX
-    const startY = dragState.startY
-    dragState = null
+  })
 
-    if (wasMarquee && wasMoved) {
-      marqueeEl.hidden = true
-      const rect = canvas.getBoundingClientRect()
-      const mRect = normalizeMarqueeRect(
-        startX - rect.left,
-        startY - rect.top,
-        event.clientX - rect.left,
-        event.clientY - rect.top,
-        rect.width,
-        rect.height,
-      )
-      const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
-      if (hits.length > 0) {
-        const hasSpawnHits = Boolean(spawn && hits.some(h => spawn.section.objects?.().some(o => o.id === h.id)))
-        if (hasSpawnHits && globalSettings.section !== "spawn") {
-          selectSection("spawn")
-        }
-        const targetSec = activeSection()
-        const next = applyMarqueeSelection(currentSelectedIds(), hits.map(h => h.id), event.shiftKey)
-        if (targetSec.selectObjects) {
-          targetSec.selectObjects(next.ids)
-        } else if (next.primaryId) {
-          targetSec.selectObject?.(next.primaryId)
-        }
-        showToast(`Selected ${next.ids.length} object${next.ids.length === 1 ? "" : "s"}`)
-      } else if (!event.shiftKey) {
-        selectWorldObject(null, false)
+  viewportGestures = bindOrbitGestures(canvas, {
+    target: stage,
+    smooth: true,
+    isEnabled: () => mode === "edit",
+    canPrimaryOrbit: () => !spawn?.getGhost() && !activeTransform,
+    onPointerDownIntercept: event => {
+      focusZone = "canvas"
+      if (radialState.phase === "latched") {
+        const rect = viewportEl.getBoundingClientRect()
+        const res = radialState.releasePointer(event.clientX - rect.left, event.clientY - rect.top, performance.now())
+        radialDOM.sync()
+        handleRadialResult(res)
+        return true
       }
-      panel.sync()
-      syncChrome()
-      void renderNow()
-      return
-    }
-    marqueeEl.hidden = true
+      return false
+    },
+    onCameraDragMove: (dragKind, event) => {
+      hoveredGroundSample = null
+      const vRect = viewportEl.getBoundingClientRect()
+      viewportCursor.update({
+        state: dragKind,
+        x: event.clientX - vRect.left,
+        y: event.clientY - vRect.top,
+      })
+    },
+    onHoverMove: event => {
+      if (mode === "play") {
+        hoveredGroundSample = null
+        viewportCursor.update({ state: "hidden" })
+        return
+      }
+      const vRect = viewportEl.getBoundingClientRect()
+      const localX = event.clientX - vRect.left
+      const localY = event.clientY - vRect.top
+      lastPointerViewport = { x: localX, y: localY }
 
-    if (mode === "play" || wasMoved || event.button !== 0) return
+      if (radialState.phase !== "closed") {
+        radialState.movePointer(localX, localY)
+        radialDOM.sync()
+        const activeSector = radialState.zone === "ring" && radialState.activeSlot !== null ? radialState.sectors[radialState.activeSlot] : null
+        if (activeSector && !activeSector.enabled) {
+          viewportCursor.update({ state: "disabled", x: localX, y: localY })
+        } else {
+          viewportCursor.update({
+            state: "radial",
+            x: localX,
+            y: localY,
+            radialVec: { dx: localX - radialState.visualX, dy: localY - radialState.visualY },
+          })
+        }
+        return
+      }
+      const [u, v] = canvasUV(event)
+      const sec = activeSection()
+      const groundFn = sec.groundHeight ?? (spawn && ["effects", "lighting", "physics"].includes(sec.id) ? spawn.section.groundHeight : undefined) ?? (() => 0)
 
-    const [u, v] = canvasUV(event)
-    const ghost = spawn?.getGhost()
-    if (ghost && globalSettings.section === "spawn") {
-      const before = captureSnapshot()
-      if (spawn!.commitGhost()) {
-        recordHistory(`Place ${ghost.kind}`, before)
-        if (!event.shiftKey) spawn!.setGhost(null)
+      if (activeTransform) {
+        hoveredGroundSample = null
+        if (activeTransform.mode === "move") {
+          const hit = stage.pickGround(u, v, groundFn)
+          if (hit) {
+            activeTransform.currentX = snapGroundCoord(hit.x, event.altKey)
+            activeTransform.currentZ = snapGroundCoord(hit.z, event.altKey)
+            applyActiveTransformToWorld(activeTransform)
+            viewportCursor.update({
+              state: "move",
+              x: localX,
+              y: localY,
+            })
+            panel.sync()
+            syncChrome()
+            void renderNow()
+          }
+        } else {
+          const pivotY = groundFn(activeTransform.currentX, activeTransform.currentZ) + 0.03
+          const hit = stage.pickPlaneY(u, v, pivotY) ?? stage.pickGround(u, v, groundFn)
+          if (hit) {
+            activeTransform.currentYaw = computePointerYawRad(
+              activeTransform.currentX,
+              activeTransform.currentZ,
+              hit.x,
+              hit.z,
+              event.shiftKey,
+              event.altKey,
+            )
+            applyActiveTransformToWorld(activeTransform)
+            viewportCursor.update({
+              state: "rotate",
+              x: localX,
+              y: localY,
+            })
+            panel.sync()
+            syncChrome()
+            void renderNow()
+          }
+        }
+        return
+      }
+
+      const ghost = spawn?.getGhost()
+      if (ghost && globalSettings.section === "spawn") {
+        hoveredGroundSample = null
+        const hit = stage.pickGround(u, v, groundFn)
+        if (hit) {
+          const gx = snapGroundCoord(hit.x, event.altKey)
+          const gz = snapGroundCoord(hit.z, event.altKey)
+          const isValid = spawn!.isValidYardPoint(gx, gz)
+          const gs = sampleGroundNormal(gx, gz, groundFn)
+          spawn!.setGhost({
+            ...ghost,
+            x: gx,
+            y: gs.y,
+            z: gz,
+            valid: isValid,
+          })
+          viewportCursor.update({
+            state: isValid ? "place" : "disabled",
+            x: localX,
+            y: localY,
+            normal: { nx: gs.nx, ny: gs.ny, nz: gs.nz },
+          })
+          syncChrome()
+          void renderNow()
+        } else {
+          viewportCursor.update({ state: "disabled", x: localX, y: localY })
+        }
+        return
+      }
+
+      if (hoveredGizmoHandle) {
+        viewportCursor.update({ state: hoveredGizmoHandle, x: localX, y: localY })
+        return
+      }
+
+      const picked = pickObjectAt(u, v)
+      const nextHover = picked?.id ?? null
+      if (picked) {
+        hoveredGroundSample = null
+        viewportCursor.update({ state: "hover", x: localX, y: localY, label: picked.label })
+      } else {
+        const hit = stage.pickGround(u, v, groundFn)
+        if (!hit || (sec.id === "spawn" && spawn && !spawn.isValidYardPoint(hit.x, hit.z))) {
+          hoveredGroundSample = null
+          viewportCursor.update({ state: "disabled", x: localX, y: localY })
+        } else {
+          hoveredGroundSample = sampleGroundNormal(hit.x, hit.z, groundFn)
+          viewportCursor.update({
+            state: boxSelectMode ? "marquee" : "default",
+            x: localX,
+            y: localY,
+            normal: {
+              nx: hoveredGroundSample.nx,
+              ny: hoveredGroundSample.ny,
+              nz: hoveredGroundSample.nz,
+            },
+          })
+        }
+      }
+      if (nextHover !== hoveredObjectId) {
+        hoveredObjectId = nextHover
+        syncChrome()
+        void renderNow()
+      } else if (hoveredGroundSample) {
+        syncStageMarkers()
+        void renderNow()
+      }
+    },
+    marquee: {
+      shouldMarquee: event => {
+        if (spawn?.getGhost() || activeTransform) return false
+        if (event.shiftKey && !event.altKey && !boxSelectMode) return false
+        if (event.altKey || boxSelectMode) return true
+        if (!hasBoxSelectableObjects()) return false
+        const [u, v] = canvasUV(event)
+        return pickObjectAt(u, v) === null
+      },
+      onMove: (startX, startY, currentX, currentY) => {
+        hoveredGroundSample = null
+        const rect = canvas.getBoundingClientRect()
+        const vRect = viewportEl.getBoundingClientRect()
+        const mRect = normalizeMarqueeRect(
+          startX - rect.left,
+          startY - rect.top,
+          currentX - rect.left,
+          currentY - rect.top,
+          rect.width,
+          rect.height,
+        )
+        marqueeEl.hidden = false
+        marqueeEl.style.left = `${mRect.left}px`
+        marqueeEl.style.top = `${mRect.top}px`
+        marqueeEl.style.width = `${mRect.width}px`
+        marqueeEl.style.height = `${mRect.height}px`
+        const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
+        marqueeEl.textContent = hits.length ? `${hits.length}` : ""
+        viewportCursor.update({ state: "marquee", x: currentX - vRect.left, y: currentY - vRect.top })
+        syncStageMarkers()
+      },
+      onEnd: (startX, startY, endX, endY, event) => {
+        marqueeEl.hidden = true
+        const rect = canvas.getBoundingClientRect()
+        const mRect = normalizeMarqueeRect(
+          startX - rect.left,
+          startY - rect.top,
+          endX - rect.left,
+          endY - rect.top,
+          rect.width,
+          rect.height,
+        )
+        const hits = pickObjectsInMarquee(allSceneObjects(), (x, y, z) => stage.projectWorld(x, y, z), mRect)
+        if (hits.length > 0) {
+          const hasSpawnHits = Boolean(spawn && hits.some(h => spawn.section.objects?.().some(o => o.id === h.id)))
+          if (hasSpawnHits && globalSettings.section !== "spawn") {
+            selectSection("spawn")
+          }
+          const targetSec = activeSection()
+          const next = applyMarqueeSelection(currentSelectedIds(), hits.map(h => h.id), event.shiftKey)
+          if (targetSec.selectObjects) {
+            targetSec.selectObjects(next.ids)
+          } else if (next.primaryId) {
+            targetSec.selectObject?.(next.primaryId)
+          }
+          showToast(`Selected ${next.ids.length} object${next.ids.length === 1 ? "" : "s"}`)
+        } else if (!event.shiftKey) {
+          selectWorldObject(null, false)
+        }
         panel.sync()
         syncChrome()
         void renderNow()
-      }
-      return
-    }
-
-    if (activeTransform) {
-      commitActiveTransform()
-      return
-    }
-
-    const picked = pickObjectAt(u, v)
-    selectWorldObject(picked, event.shiftKey)
-  })
-
-  canvas.addEventListener("contextmenu", event => event.preventDefault())
-
-  canvas.addEventListener("wheel", event => {
-    const action = classifyWheelGesture(event, { pinchZoom: true, twoFingerScroll: "orbit" })
-    if (action.kind === "ignore") return
-    event.preventDefault()
-    if (action.kind === "zoom") {
-      stage.zoomBy(action.factor, true)
-    } else if (action.kind === "pan") {
-      stage.pan(action.dx, action.dy, true)
-    } else if (action.kind === "orbit") {
-      stage.orbit(action.dyaw, action.dpitch, true)
-    }
-    syncStageMarkers()
-    void renderNow()
-  }, { passive: false })
-
-  bindSafariTrackpadGestures(canvas, {
-    isEnabled: () => mode === "edit",
-    onPinchZoom: factor => {
-      stage.zoomBy(factor, true)
-      syncStageMarkers()
-      void renderNow()
+      },
+      onCancel: () => {
+        marqueeEl.hidden = true
+      },
     },
-    onRotateYaw: dyaw => {
-      stage.orbit(dyaw, 0, true)
+    onPrimaryClick: event => {
+      marqueeEl.hidden = true
+      if (mode === "play") return
+      const [u, v] = canvasUV(event)
+      const ghost = spawn?.getGhost()
+      if (ghost && globalSettings.section === "spawn") {
+        const before = captureSnapshot()
+        if (spawn!.commitGhost()) {
+          recordHistory(`Place ${ghost.kind}`, before)
+          if (!event.shiftKey) spawn!.setGhost(null)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        }
+        return
+      }
+      if (activeTransform) {
+        commitActiveTransform()
+        return
+      }
+      const picked = pickObjectAt(u, v)
+      selectWorldObject(picked, event.shiftKey)
+    },
+    onContextClick: (x, y) => {
+      if (mode === "play") return
+      openRadialAtScreen(x, y, true)
+    },
+    wheelOptions: () => ({
+      pinchZoom: true,
+      twoFingerScroll: getTwoFingerScrollMode(),
+    }),
+    onChange: () => {
       syncStageMarkers()
       void renderNow()
     },
@@ -3696,6 +3830,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const inText =
       target instanceof HTMLInputElement && (target.type === "text" || target.type === "search" || target.type === "number") ||
       target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
       (target instanceof HTMLElement && target.isContentEditable)
 
     const key = event.key.toLowerCase()
@@ -3875,6 +4010,31 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
     // Edit Mode Canvas / Library Shortcuts
     const sec = activeSection()
+    if (event.key === "Escape" && !event.repeat) {
+      if (viewportGestures?.hasActivePointer()) {
+        event.preventDefault()
+        viewportGestures.cancelDrag()
+        syncChrome()
+        void renderNow()
+        return
+      }
+      if (boxSelectMode) {
+        event.preventDefault()
+        boxSelectMode = false
+        syncChrome()
+        return
+      }
+      if (currentSelectedIds().length > 0) {
+        event.preventDefault()
+        selectWorldObject(null, false)
+        return
+      }
+    } else if (document.activeElement === canvas && applyArrowCameraKey(stage, event, true)) {
+      event.preventDefault()
+      syncStageMarkers()
+      void renderNow()
+      return
+    }
     if (event.key === "/") {
       event.preventDefault()
       searchInput.focus()
@@ -3928,7 +4088,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       event.preventDefault()
       frameActiveTarget()
     } else if (key === "r" && !event.repeat) {
-      if (event.shiftKey && commands.get("object.rotate")?.enabled()) {
+      if ((event.shiftKey || (sec.id === "spawn" && currentSelectedObjects().some(o => o.movable))) && commands.get("object.rotate")?.enabled()) {
         event.preventDefault()
         commands.execute("object.rotate")
       } else {
@@ -4041,16 +4201,36 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const sec = activeSection()
       const isPaused = "playing" in sec.settings && !sec.settings.playing
       const changedKeys = Object.keys(beforeSettings).filter(k => beforeSettings[k] !== sec.settings[k])
+      const nonTransportKeys = changedKeys.filter(k => !["playing", "loop", "interval", "tuningSeed"].includes(k))
+      const isRandomizeOrReset = /^Randomize\b|^Reset\b/i.test(label)
+      const isOneShotEffect =
+        (sec.id === "effects" && ["explosion", "sparks", "debris", "tyre"].includes(String(sec.settings.effect))) ||
+        (sec.id === "fire-water" && ["explosion", "fireball"].includes(String(sec.settings.effect))) ||
+        sec.id === "splatter"
       const needsRetrigger =
+        isOneShotEffect ||
+        (isRandomizeOrReset && sec.id === "effects" && (!isPaused || nonTransportKeys.some(k => {
+          const ctrl = sec.controls.find(c => c.key === k)
+          return Boolean(ctrl?.unit?.includes("retrigger"))
+        }))) ||
         sec.id !== "effects" ||
         sec.settings.effect !== "smoke" ||
-        changedKeys.some(k => {
+        nonTransportKeys.some(k => {
           const ctrl = sec.controls.find(c => c.key === k)
           return Boolean(ctrl?.unit?.includes("retrigger") || ["effect", "targetX", "targetZ", "seed"].includes(k))
         })
-      if (isPaused && frames > 0 && needsRetrigger) {
+      if (isPaused && frames > 0 && needsRetrigger && nonTransportKeys.length > 0) {
         resimulateFrozenFrame()
-      } else if (!isBench && (sec.id === "blackout-effects" || sec.id === "getaway-effects")) {
+      } else if (
+        !isBench &&
+        nonTransportKeys.length > 0 &&
+        (sec.id === "blackout-effects" ||
+          sec.id === "getaway-effects" ||
+          isOneShotEffect ||
+          (sec.id === "effects" && (isRandomizeOrReset || needsRetrigger)))
+      ) {
+        elapsed = 0
+        frames = 0
         sec.retrigger?.()
       }
       if (slotA && activeSlot === "B") {

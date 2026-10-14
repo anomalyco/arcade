@@ -4,6 +4,7 @@ import { at, clamp, pitch, roll, type Frame, type V3 } from "./rig"
 /** Flat, serializable presentation values; metres, radians and Hz. */
 export type HumanProfile = {
   strideScale: number; swayScale: number; twistScale: number; leanScale: number
+  hipDrop: number; bobScale: number; turnBank: number; stepLift: number
   runPosture: number; crouchDepth: number; headStability: number
   bodyHz: number; footCentreHz: number; chestHz: number; headHz: number
   timingBias: number; footDrag: number; torsoLean: number; torsoRoll: number
@@ -13,6 +14,7 @@ export type HumanProfile = {
 export type HumanPreset = "soldier" | "wizard" | "zombie"
 const soldier: Readonly<HumanProfile> = Object.freeze({
   strideScale: 1, swayScale: 1.6, twistScale: 1.6, leanScale: 1.25,
+  hipDrop: 0.095, bobScale: 1, turnBank: 1, stepLift: 1,
   runPosture: 0.34, crouchDepth: 0.08, headStability: 0.8,
   bodyHz: 3, footCentreHz: 4, chestHz: 5, headHz: 7,
   timingBias: 0, footDrag: 0, torsoLean: 0, torsoRoll: 0,
@@ -20,8 +22,10 @@ const soldier: Readonly<HumanProfile> = Object.freeze({
 })
 export const humanProfiles: Readonly<Record<HumanPreset, Readonly<HumanProfile>>> = Object.freeze({
   soldier,
-  wizard: Object.freeze({ ...soldier, strideScale: 0.85, swayScale: 0.7, twistScale: 0.6, leanScale: 1, runPosture: 0.12, crouchDepth: 0.02, torsoLean: -0.04, handPose: "staff" }),
-  zombie: Object.freeze({ ...soldier, strideScale: 0.8, leanScale: 1, runPosture: 0.18, crouchDepth: 0.03, headStability: 0.2, timingBias: 0.28, footDrag: 0.9,
+  wizard: Object.freeze({ ...soldier, strideScale: 0.85, swayScale: 0.7, twistScale: 0.6, leanScale: 1,
+    hipDrop: 0.06, bobScale: 0.7, turnBank: 0.8, stepLift: 0.85, runPosture: 0.12, crouchDepth: 0.02, torsoLean: -0.04, handPose: "staff" }),
+  zombie: Object.freeze({ ...soldier, strideScale: 0.8, leanScale: 1, hipDrop: 0.13, bobScale: 1.15, turnBank: 0.6, stepLift: 0.9,
+    runPosture: 0.18, crouchDepth: 0.03, headStability: 0.2, timingBias: 0.28, footDrag: 0.9,
     chestHz: 2, headHz: 1, torsoLean: 0.24, torsoRoll: 0.12, headTilt: 0.2,
     armAsymmetry: 0.13, handPose: "reach" }),
 })
@@ -50,7 +54,12 @@ const range = (key: keyof HumanProfile, label: string, min: number, max: number,
 export const humanProfileControls: LabControl[] = [
   range("strideScale", "Stride", 0.6, 1.4, 0.05, "×"),
   range("swayScale", "Sway", 0, 2, 0.1, "×"), range("twistScale", "Twist", 0, 2, 0.1, "×"),
-  range("leanScale", "Lean", 0, 2, 0.05, "×"), range("bodyHz", "Pelvis spring · Hz", 1, 8, 0.25, "Hz"),
+  range("leanScale", "Lean", 0, 2, 0.05, "×"),
+  range("hipDrop", "Hip drop · rad", 0, 0.22, 0.01, "rad"),
+  range("bobScale", "Bounce", 0, 2, 0.05, "×"),
+  range("turnBank", "Turn bank", 0, 2, 0.05, "×"),
+  range("stepLift", "Step lift", 0.5, 1.8, 0.05, "×"),
+  range("bodyHz", "Pelvis spring · Hz", 1, 8, 0.25, "Hz"),
   range("runPosture", "Run lean · rad", 0, 0.45, 0.01, "rad"),
   range("crouchDepth", "Crouch depth · m", 0, 0.16, 0.01, "m"),
   range("headStability", "Head stabilisation", 0, 1, 0.05, ""),

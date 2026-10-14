@@ -33,6 +33,7 @@ const INTERNAL_KEYS = new Set([
   "seed",
   "roomSeed",
   "effectSeed",
+  "tuningSeed",
   "targetX",
   "targetZ",
   "selectedX",
