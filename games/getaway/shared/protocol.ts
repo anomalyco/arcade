@@ -1,3 +1,4 @@
+import { seedOf as rawSeedOf } from "@arcade/kit/sim/rng"
 import { VEHICLE_BY_ID, VEHICLES, type Role } from "./config"
 import type { Body, Input } from "./sim/vehicle"
 import type { SimEvent, WorldView } from "./sim/world"
@@ -145,7 +146,5 @@ export function randomCode(rand: () => number = Math.random): string {
 }
 
 export function seedOf(room: string): number {
-  let h = 2166136261
-  for (let i = 0; i < room.length; i++) h = Math.imul(h ^ room.charCodeAt(i), 16777619)
-  return (h >>> 0) % 1_000_000
+  return rawSeedOf(room) % 1_000_000
 }

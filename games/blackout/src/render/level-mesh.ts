@@ -1,3 +1,4 @@
+import { MinHeap, RectGrid } from "../../shared/geom"
 import type { LightDef, MapDef, Wall } from "../../shared/maps"
 import { SHOP_H as SHOP_TOP } from "../../shared/maps/downtown-town"
 import { MAT, Mesh, type Rgb } from "./mesh"
@@ -45,30 +46,14 @@ function bounds(m: Mesh): [number, number, number, number] {
   return [x0 - 0.2, z0 - 0.2, x1 + 0.2, z1 + 0.2]
 }
 
-/** A spatial lookup of wall rects, for finding free wall ends (door jambs). */
-class WallGrid {
-  private cells = new Map<number, number[]>()
-  constructor(private walls: readonly Wall[]) {
-    walls.forEach((w, i) => {
-      for (let cy = Math.floor(w.rect[1] / 2); cy <= Math.floor(w.rect[3] / 2); cy++)
-        for (let cx = Math.floor(w.rect[0] / 2); cx <= Math.floor(w.rect[2] / 2); cx++) {
-          const k = cy * 4096 + cx
-          let c = this.cells.get(k)
-          if (!c) this.cells.set(k, (c = []))
-          c.push(i)
-        }
-    })
+const wallQueryScratch: number[] = []
+function wallHits(grid: RectGrid, r: Rect4, skip: number): boolean {
+  for (const i of grid.query(r[0], r[1], r[2], r[3], wallQueryScratch)) {
+    if (i === skip) continue
+    const w = grid.rects[i]!
+    if (w[0] < r[2] && w[2] > r[0] && w[1] < r[3] && w[3] > r[1]) return true
   }
-  hits(r: Rect4, skip: number): boolean {
-    for (let cy = Math.floor(r[1] / 2); cy <= Math.floor(r[3] / 2); cy++)
-      for (let cx = Math.floor(r[0] / 2); cx <= Math.floor(r[2] / 2); cx++)
-        for (const i of this.cells.get(cy * 4096 + cx) ?? []) {
-          if (i === skip) continue
-          const w = this.walls[i]!.rect
-          if (w[0] < r[2] && w[2] > r[0] && w[1] < r[3] && w[3] > r[1]) return true
-        }
-    return false
-  }
+  return false
 }
 
 /** Wall art and fittings on a face. `side` is the face's outward normal along the short axis. */
@@ -148,7 +133,7 @@ function decorate(m: Mesh, w: Wall, i: number, seed: number): void {
   }
 }
 
-function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number): void {
+function wallGeometry(m: Mesh, w: Wall, i: number, grid: RectGrid, seed: number): void {
   const [x0, z0, x1, z1] = w.rect
   if (STREET_WALLS.has(w.style)) return streetWall(m, w, i, seed)
   switch (w.style) {
@@ -212,7 +197,7 @@ function wallGeometry(m: Mesh, w: Wall, i: number, grid: WallGrid, seed: number)
               [x0 + 0.05, z1 + 0.01, x1 - 0.05, z1 + 0.08],
             ]
         ends.forEach((e, k) => {
-          if (grid.hits(e, i)) return
+          if (wallHits(grid, e, i)) return
           const t = 0.07
           if (horizontal) {
             const ex = k === 0 ? x0 : x1
@@ -644,54 +629,19 @@ export function bakeBounce(map: MapDef, monitorIntensity = 1): FloorMap {
     [-1, -1, Math.SQRT2],
   ] as const
   const STRENGTH: Record<string, number> = { desk: 0.6, panel: 1, pendant: 1, exit: 0.8, vending: 1.2, server: 0.7, bulb: 0.9, street: 0.8, signal: 0.5, neon: 1.1, fire: 1.2, flood: 0.8, glow: 0.9 }
+  const heap = new MinHeap()
   for (const l of [...map.lights, ...deskMonitorLights(map)]) {
     // The wider cyan spill is baked once; only the tight 1.35 m pool is evaluated at runtime.
     const reach = (l.id >= map.lights.length ? 2.1 : l.r) * 1.5
     const sx = Math.min(w - 1, Math.max(0, Math.floor(l.x / cx)))
     const sy = Math.min(h - 1, Math.max(0, Math.floor(l.y / cy)))
-    // Dijkstra over the grid with a simple binary heap.
-    const heap: number[] = []
-    const push = (i: number, d: number) => {
-      heap.push(d, i)
-      let k = heap.length / 2 - 1
-      while (k > 0) {
-        const p = ((k - 1) >> 1)
-        if (heap[p * 2]! <= heap[k * 2]!) break
-        ;[heap[p * 2], heap[k * 2]] = [heap[k * 2]!, heap[p * 2]!]
-        ;[heap[p * 2 + 1], heap[k * 2 + 1]] = [heap[k * 2 + 1]!, heap[p * 2 + 1]!]
-        k = p
-      }
-    }
-    const pop = (): [number, number] => {
-      const d = heap[0]!
-      const i = heap[1]!
-      const ld = heap.pop()!
-      const li = heap.pop()!
-      // pop() took index then distance from the end; restore order.
-      if (heap.length) {
-        heap[0] = li
-        heap[1] = ld
-        let k = 0
-        const n = heap.length / 2
-        for (;;) {
-          const a = k * 2 + 1
-          const b = a + 1
-          let m = k
-          if (a < n && heap[a * 2]! < heap[m * 2]!) m = a
-          if (b < n && heap[b * 2]! < heap[m * 2]!) m = b
-          if (m === k) break
-          ;[heap[m * 2], heap[k * 2]] = [heap[k * 2]!, heap[m * 2]!]
-          ;[heap[m * 2 + 1], heap[k * 2 + 1]] = [heap[k * 2 + 1]!, heap[m * 2 + 1]!]
-          k = m
-        }
-      }
-      return [d, i]
-    }
+    heap.clear()
     dist[sy * w + sx] = 0
     touched.push(sy * w + sx)
-    push(sy * w + sx, 0)
-    while (heap.length) {
-      const [d, i] = pop()
+    heap.push(sy * w + sx, 0)
+    while (heap.size) {
+      const d = heap.peekKey()
+      const i = heap.pop()
       if (d > dist[i]!) continue
       const x = i % w
       const y = (i / w) | 0
@@ -707,7 +657,7 @@ export function bakeBounce(map: MapDef, monitorIntensity = 1): FloorMap {
         if (nd >= reach || nd >= dist[j]!) continue
         if (dist[j] === Infinity) touched.push(j)
         dist[j] = nd
-        push(j, nd)
+        heap.push(j, nd)
       }
     }
     const k = l.power * (STRENGTH[l.kind] ?? 1) * (l.id >= map.lights.length ? monitorIntensity : 1)
@@ -733,7 +683,7 @@ export function bakeBounce(map: MapDef, monitorIntensity = 1): FloorMap {
 export function buildLevel(map: MapDef, castle = false): LevelData {
   const [W, H] = map.size
   const jobs: Job[] = []
-  const grid = new WallGrid(map.walls)
+  const grid = new RectGrid(map.walls.map((w) => w.rect))
   const seed = map.seed
 
   const downtown = map.kind === "downtown"

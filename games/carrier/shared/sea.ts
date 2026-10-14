@@ -55,21 +55,12 @@ export const SEA_UNIFORM_LAYOUT = {
   foam: SEA_MAX_WAVES * 8 + 4,
 } as const
 /** 136 floats = 544 bytes. */
+import { mulberry32 } from "./rng"
+
 export const SEA_UNIFORM_FLOATS = SEA_MAX_WAVES * 8 + 8
 
 const TAU = Math.PI * 2
 const DEG = Math.PI / 180
-
-function mulberry32(seed: number): () => number {
-  let s = seed >>> 0
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0
-    let t = s
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 function wave(angle: number, lambda: number, amp: number, steep: number, phase: number): Wave {
   const k = TAU / lambda
