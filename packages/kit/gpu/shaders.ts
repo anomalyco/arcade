@@ -580,7 +580,7 @@ fn shadeScene(o: VOut) -> vec4f {
     let a = (1.0 - smoothstep(0.2, 1.0, r)) * k * tw * 1.6;
     return vec4f(o.color * a, 0.0);
   }
-  let n = normalize(o.normal);
+  var n = normalize(o.normal);
   let V = normalize(F.cam.xyz - o.world);
   var col: vec3f;
   var alpha = 1.0;

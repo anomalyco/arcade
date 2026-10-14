@@ -18,13 +18,7 @@ export const shaders = {
     smoothShadows: true,
     shadowTaps: 5,
     lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
-    material: surfaceMaterial + `
-      if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
-        let s = evalPlasterWall(o.world, n, vec3f(.44, .38, .31), defaultMaterialRecipe(2));
-        albedo = s.albedo;
-        gloss = s.gloss;
-      }
-    `,
+    material: surfaceMaterial,
     fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world)));",
     declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;

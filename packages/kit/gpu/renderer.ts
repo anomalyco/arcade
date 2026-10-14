@@ -11,6 +11,8 @@ import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
 import { FRAME_FLOATS, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
 import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
+import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
+import { createFallbackMaterialTextureArray, createMaterialSampler, loadMaterialTextureArray } from "../textures/loader"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
@@ -104,6 +106,14 @@ export class Renderer {
   private visibilityTex: GPUTexture
   private bounceTex: GPUTexture
   private floorSampler: GPUSampler
+  private materialTex: GPUTexture
+  private materialTexView: GPUTextureView
+  private materialSampler: GPUSampler
+  private surfaceTexBuf: GPUBuffer
+  private surfaceTexData = new Float32Array(SURFACE_TEX_UNIFORM_FLOATS)
+  private surfaceTexInput: SurfaceTexUniformInput = { enabled: 1 }
+  private texturesLoaded = false
+  readonly texturesReady: Promise<void>
   private chunks: Chunk[] = []
   private glassChunks: Chunk[] = []
   private sceneGroup!: GPUBindGroup
@@ -173,6 +183,13 @@ export class Renderer {
     this.visibilityTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
+    const fallbackMaterials = createFallbackMaterialTextureArray(d)
+    this.materialTex = fallbackMaterials.texture
+    this.materialTexView = fallbackMaterials.view
+    this.materialSampler = createMaterialSampler(d)
+    this.surfaceTexBuf = d.createBuffer({ size: SURFACE_TEX_UNIFORM_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
+    packSurfaceTexUniforms({ ...this.surfaceTexInput, enabled: 0 }, this.surfaceTexData)
+    d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
     this.gradeBuf = d.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST })
     this.inst = { buf: d.createBuffer({ size: 4096 * INST_FLOATS * 4, usage: U.VERTEX | U.COPY_DST }), count: 0, cap: 4096 }
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
@@ -199,6 +216,9 @@ export class Renderer {
         { binding: 7, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 8, visibility: S.FRAGMENT, texture: {} },
         { binding: 9, visibility: S.FRAGMENT, texture: {} },
+        { binding: 10, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
+        { binding: 11, visibility: S.FRAGMENT, sampler: {} },
+        { binding: 12, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -320,6 +340,28 @@ export class Renderer {
       fragment: { module: motionPost, entryPoint: "composite", targets: [{ format }] },
     })
     for (let i = 0; i < BLOOM_LEVELS; i++) this.postParams.push(d.createBuffer({ size: 16, usage: U.UNIFORM | U.COPY_DST }))
+    this.texturesReady = this.initMaterialTextures()
+  }
+
+  private async initMaterialTextures(): Promise<void> {
+    const loaded = await loadMaterialTextureArray(this.device)
+    if (!loaded) return
+    this.materialTex.destroy()
+    this.materialTex = loaded.texture
+    this.materialTexView = loaded.view
+    this.texturesLoaded = true
+    packSurfaceTexUniforms(this.surfaceTexInput, this.surfaceTexData)
+    this.device.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
+    this.makeSceneGroup()
+  }
+
+  setSurfaceTexUniforms(input: SurfaceTexUniformInput): void {
+    this.surfaceTexInput = { ...this.surfaceTexInput, ...input }
+    packSurfaceTexUniforms(
+      { ...this.surfaceTexInput, enabled: this.texturesLoaded ? (this.surfaceTexInput.enabled ?? 1) : 0 },
+      this.surfaceTexData,
+    )
+    this.device.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
   }
 
   /** Compiles a shader module and reports any compile errors with their line. */
@@ -345,6 +387,9 @@ export class Renderer {
         { binding: 7, resource: { buffer: this.motionBuf } },
         { binding: 8, resource: this.moonTex.createView() },
         { binding: 9, resource: this.visibilityTex.createView() },
+        { binding: 10, resource: this.materialTexView },
+        { binding: 11, resource: this.materialSampler },
+        { binding: 12, resource: { buffer: this.surfaceTexBuf } },
       ],
     })
   }

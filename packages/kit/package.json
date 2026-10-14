@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./audio": "./audio/index.ts",
+    "./textures": "./textures/index.ts",
     "./*.css": "./*.css",
     "./*": "./*.ts"
   },

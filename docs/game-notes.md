@@ -299,6 +299,23 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   120 steps against `076fb7c`), static vertices drop `196,722 → 139,620`; median paired frame-span deltas are `-1.1 ms`
   street (`9.0 → 7.9 ms`, range `-3.9 to +0.9 ms`) and `+0.3 ms` interior (`9.0 → 9.9 ms`, range `-4.3 to +2.2 ms`,
   inside spread). Default Blackout and Getaway shaders remain unchanged.
+- **Project generated flat-diffuse material textures with linear-light mips and procedural breakup.** `scripts/textures/prepare.ts`
+  prepares 16 `gpt-image-1.5` orthographic top-down diffuse textures into a 1,098 KB lossless `256×256` RGBA WebP manifest
+  (`packages/kit/textures/`, served prefix-safely under each game's `texture-assets/` route via `scripts/texture-assets.ts`).
+  Isotropic materials (`wallpaper_plaster`, `sidewalk_concrete`, `street_asphalt`, `lawn_grass`, `tree_bark`, `leaf_atlas`,
+  `cobblestone_pavers`) use Lamplight's mirrored-quadrant wrap; directional course materials (`wood_floorboards`, `kitchen_tile`,
+  `clapboard_siding`, `asphalt_shingles`, `brick_masonry`) use toroidal raised-cosine cross-blending so horizontal courses stay
+  upright; rectangular rugs (`rug_oriental_sage`, `rug_persian_burgundy`, `rug_braided_runner`) use bilateral symmetry on
+  normalized `[0, 1]²` floor rectangles. RGB stores sRGB base-color variation with a 9-level linear-light mip chain
+  (`buildLinearMipChain` in `packages/kit/textures/loader.ts`); Alpha stores a restrained linear authored roughness estimate
+  (not measured), and `lawn_grass_normal` stores a mild luminance-derived tangent normal + height (labelled derived, not measured).
+  In `packages/kit/gpu/surface-materials.ts`, compile-time constant layer indices per material branch avoid Apple Silicon
+  `texture_2d_array` slice-divergence stalls (`41.8 → 24.2 ms` interior GPU interval), and skipping redundant high-frequency
+  procedural `grain` calls while textures are active keeps `3456×1894` M5 Max Metal `bench-outbreak.ts` (1 warmup + 7 runs) at
+  `15.813 → 19.564 ms` street GPU (`p95` fresh submit `19.4 → 21.5 ms`, MAD `0.0 ms`, realtime ratio `0.9942`) and
+  `19.252 → 24.196 ms` interior GPU (`p95` fresh submit `22.8 → 27.3 ms`, MAD `0.1 ms`, realtime ratio `0.9975`). Lab Materials
+  and Outbreak's Backquote panel expose per-recipe texture map selection, scale, rotation, contrast, roughness trim, and
+  procedural A/B comparison.
 - **Exclude a convex receiver from its own shadow test, and supersample only near analytic edges.** The Lab's fullscreen
   raytraced stage (`packages/kit/lab/stage-shader.ts`) evaluates inside a 4× MSAA pass, where a single fullscreen triangle
   otherwise runs once at pixel center and broadcasts a flat `frag_depth` across all four subsamples. Entry-slab normals

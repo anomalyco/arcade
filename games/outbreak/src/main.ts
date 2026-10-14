@@ -19,8 +19,15 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, humanProfile: 0, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, foliageDensity: 1, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, moonFill: 1, textures: 1, rugStyle: 0, wallStyle: 0, floorStyle: 0, texScale: 1.0, texContrast: 1.0, texRoughness: 0.0, humanProfile: 0, ...zombieTuning }
 const controls: LabControl[] = [
+  { key: "textures", label: "Material mode", group: "Materials", options: [{ label: "Textured + procedural", value: 1 }, { label: "Procedural fallback", value: 0 }, { label: "A/B split", value: 2 }] },
+  { key: "rugStyle", label: "Rug style", group: "Materials", options: [{ label: "Oriental & Persian", value: 0 }, { label: "Swapped Medallion", value: 1 }, { label: "Procedural geometric", value: 2 }] },
+  { key: "wallStyle", label: "Wall finish", group: "Materials", options: [{ label: "Damask & plaster", value: 0 }, { label: "Fine linen plaster", value: 1 }, { label: "Procedural plaster", value: 2 }] },
+  { key: "floorStyle", label: "Floorboards", group: "Materials", options: [{ label: "Wide honey oak", value: 0 }, { label: "Narrow strip oak", value: 1 }, { label: "Procedural planks", value: 2 }] },
+  { key: "texScale", label: "Texture scale", group: "Materials", min: .5, max: 2, step: .05, unit: "×" },
+  { key: "texContrast", label: "Texture contrast", group: "Materials", min: 0, max: 2, step: .05, unit: "×" },
+  { key: "texRoughness", label: "Roughness trim", group: "Materials", min: -.3, max: .3, step: .02, unit: "" },
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
   { key: "diagnostic", label: "Contribution", group: "Diagnostics", options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory"].map((label,value)=>({label,value})) },
@@ -110,10 +117,23 @@ async function main() {
   window.addEventListener("keyup", () => { clock.recordMove(performance.now(), input.move()); scheduleFrame() })
   document.addEventListener("visibilitychange", () => { if (document.hidden) clock.pause(performance.now()); else scheduleFrame() })
   window.addEventListener("blur", () => clock.pause(performance.now()))
+  const syncTextures = () => {
+    renderer.setSurfaceTexUniforms({
+      enabled: settings.textures,
+      globalScale: settings.texScale,
+      globalContrast: settings.texContrast,
+      globalRoughness: settings.texRoughness,
+      rugStyle: settings.rugStyle,
+      wallStyle: settings.wallStyle,
+      floorStyle: settings.floorStyle,
+      splitX: session.view.player.x,
+    })
+  }
   const lab = new LabPanel(settings, controls, params, () => { input.release(); clock.pause(performance.now()) }, key => {
     if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
     if (key === "hour") session.view.hour = wrapHour(settings.hour)
     if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+    if (key === "textures" || key === "rugStyle" || key === "wallStyle" || key === "floorStyle" || key === "texScale" || key === "texContrast" || key === "texRoughness") syncTextures()
   })
   let vertices = 0
   function level() {
@@ -144,7 +164,10 @@ async function main() {
     clock.reset(performance.now(), input.move())
   }
   reset()
+  await renderer.texturesReady
+  syncTextures()
   function draw(dt: number) {
+    if (settings.textures === 2) syncTextures()
     const { player: p, town, hour, time } = session.view
     settings.hour = Math.round(hour * 20) / 20
     const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio, 2)
@@ -301,6 +324,7 @@ async function main() {
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
       if (key === "hour") session.view.hour = wrapHour(value)
       if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (key === "textures" || key === "rugStyle" || key === "wallStyle" || key === "floorStyle" || key === "texScale" || key === "texContrast" || key === "texRoughness") syncTextures()
     },
     pose(x: number, y: number, aim: number) { Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }); cam.snap(x, y); cam.dist = settings.zoom },
     async step(dt = 1 / 60, command?: Partial<Command>) {

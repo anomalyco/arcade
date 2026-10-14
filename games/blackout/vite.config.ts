@@ -1,8 +1,9 @@
 import { defineConfig } from "vite"
 import { audioAssets } from "../../scripts/audio-assets"
+import { textureAssets } from "../../scripts/texture-assets"
 
 export default defineConfig({
-  plugins: [audioAssets()],
+  plugins: [audioAssets(), textureAssets()],
   base: "./",
   build: { target: "esnext", outDir: "dist/arcade/blackout", emptyOutDir: true, rollupOptions: { input: { main: "index.html", compare: "compare.html", lab: "lab.html", dev: "dev.html", characters: "characters.html" } } },
   server: {
