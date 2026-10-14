@@ -171,7 +171,7 @@ fn eyeVisible(p: vec2f) -> f32 {
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
         col *= (0.58 + 0.32 * gutter - 0.10 * ruts + 0.20 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
         let wetRoad = (0.38 + 0.62 * crown) * (0.42 + 0.58 * centerFocus) * (0.58 + 0.85 * w1) * (1.0 - 0.55 * cracks);
-        col += vec3f(0.030, 0.038, 0.060) * F.ambient.w * OL.u2.y * wetRoad;
+        col += vec3f(0.033, 0.041, 0.064) * F.ambient.w * OL.u2.y * wetRoad;
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
         if (!inVerge) {

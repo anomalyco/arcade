@@ -789,7 +789,7 @@ async function main() {
     const playerGroundY = supportHeight(town, p.x, p.y)
     const flashRgb = flashlightColor(settings.flashlightWarmth)
     if (p.flashlightOutput > 0.001 && settings.flashlightIntensity > 0.001) {
-      const isNorthRest = Math.abs(p.aim - -Math.PI / 2) < 0.04
+      const isNorthRest = Math.abs(p.aim - -Math.PI / 2) < 0.005
       const inBld = town.buildings.some(
         (b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1,
       )
@@ -799,9 +799,10 @@ async function main() {
       const fh = 1.18 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
       const power = p.flashlightOutput * settings.flashlightIntensity
+      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 9.2)
       flashlightSlot = count
       lights.set(
-        [fx, fh, fy, settings.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(beamAim), Math.sin(beamAim), cosHalf, 1, 0, lightOccluders, 0.06, -1],
+        [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(beamAim), Math.sin(beamAim), cosHalf, 1, 0, lightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }

@@ -24,13 +24,13 @@ export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   moonFill: 0.85,
   lighting: 1.0,
   practicalWarmth: 0.62,
-  porchPower: 0.39,
+  porchPower: 0.37,
   windowPower: 0.42,
   roomPower: 0.50,
   streetPower: 0.15,
   lightFalloff: 1.45,
   flashlightHaze: 1.15,
-  wetSpecular: 0.82,
+  wetSpecular: 0.84,
   rimStrength: 0.90,
   vignetteDarkness: 0.75,
 }
@@ -89,7 +89,7 @@ export function packOutbreakLightingUniforms(
   const { settings: s } = state
   // When facing the static north pose (-PI/2) at rest, angle the left-hand beam down-left into the street/hallway
   // matching the Noir & Dusk paint-overs; when actively aiming elsewhere, follow playerAim.
-  const isNorthRestPose = Math.abs(state.playerAim - -Math.PI / 2) < 0.04
+  const isNorthRestPose = Math.abs(state.playerAim - -Math.PI / 2) < 0.005
   const beamAngle = isNorthRestPose ? (state.inInteriorView ? 1.80 : 1.98) : state.playerAim
   const dirX = Math.cos(beamAngle)
   const dirY = Math.sin(beamAngle)
@@ -313,26 +313,30 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, V: vec3f, baseAlbedo: vec3f, inRoo
   let fDir = OL.u3.zw;
   let fSide = vec2f(-fDir.y, fDir.x);
 
-  // Project camera ray to the floor/beam plane (y = 0.13) when inside a room so low partition stubs don't carve a black notch out of the air cone
+  // Project camera ray to the floor/beam plane (y = 0.13) when inside a room so full-height partition stubs don't carve a black notch out of the cone
+  let isInView = OL.u5.w > 0.5;
+  let maxBeamY = select(1.75, 2.84, isInView);
+  if (world.y > maxBeamY) { return vec3f(0.0); }
   let rayFloorXZ = select(
     world.xz,
-    world.xz - V.xz / max(V.y, 0.35) * clamp(world.y - 0.13, 0.0, 1.45),
-    OL.u5.w > 0.5 && world.y > 0.16 && world.y < 1.65 && world.z > 31.2
+    world.xz - V.xz / max(V.y, 0.35) * clamp(world.y - 0.13, 0.0, 2.70),
+    isInView && world.y > 0.16 && world.z > 31.1
   );
   let rel = rayFloorXZ - fOrig;
   let along = dot(rel, fDir);
   let across = abs(dot(rel, fSide));
   let tanHalf = max(0.12, OL.u4.x);
   let fRange = max(2.8, OL.u4.y);
-  if (along < -0.22 || along > fRange || across > (0.28 + max(0.0, along) * tanHalf * 1.85) || world.y > 1.75) {
+  let coneR = 0.09 + max(0.0, along) * tanHalf;
+  if (along < -0.22 || along > fRange || across > coneR * 1.45) {
     return vec3f(0.0);
   }
 
-  // Crisp neutral-cool white-halogen beam colour (5200K-5600K)
-  let beamTint = mix(vec3f(0.94, 0.95, 0.98), OL.u5.xyz, 0.16);
+  // Crisp neutral white-halogen beam colour (5000K-5400K)
+  let beamTint = select(vec3f(0.99, 0.95, 0.88), vec3f(0.90, 0.95, 1.02), isInView);
   let hazeAmt = OL.u2.x;
   let wetAmt = OL.u2.y;
-  let fPower = OL.u4.z * 2.25;
+  let fPower = OL.u4.z * 2.22;
 
   // On the player's own body (within 0.55m of player XY), only illuminate a tiny point at the left hand
   if (mat == 12) {
@@ -344,44 +348,47 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, V: vec3f, baseAlbedo: vec3f, inRoo
     }
   }
 
-  let coneR = 0.09 + max(0.0, along) * tanHalf;
-  let radialCore = exp(-pow(across / (coneR * select(0.58, 0.52, OL.u5.w > 0.5)), 2.0));
-  let radialAura = exp(-pow(across / (coneR * select(1.12, 0.92, OL.u5.w > 0.5)), 1.55)) * (1.0 - smoothstep(coneR * 0.82, coneR * 1.65, across));
-  let radialEdge = 1.0 - smoothstep(coneR * 0.62, coneR * 1.32, across);
+  let radialCore = exp(-pow(across / (coneR * select(0.58, 0.54, isInView)), 2.0));
+  let radialAura = exp(-pow(across / (coneR * select(1.10, 0.94, isInView)), 1.55)) * (1.0 - smoothstep(coneR * 0.80, coneR * 1.42, across));
+  let radialEdge = 1.0 - smoothstep(coneR * 0.62, coneR * 1.30, across);
   let axialIn = smoothstep(-0.08, 0.16, along);
-  let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.32, 1.38, OL.u5.w > 0.5));
-  let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, rayFloorXZ, 0.25);
-  if (vis <= 0.001) { return vec3f(0.0); }
+  let wallStop = select(1.0, smoothstep(35.15, 34.35, rayFloorXZ.y) * smoothstep(35.22, 34.75, world.z), isInView && fOrig.y < 34.5);
+  let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.32, 1.38, isInView)) * wallStop;
+  let profile = (radialCore * radialEdge * 0.72 + radialAura * 0.38) * axialIn * axialOut;
+  if (profile <= 0.008) { return vec3f(0.0); }
 
   let isTrueFloor = world.y < 0.165 && n.y > 0.75;
-  let inHallBeam = OL.u5.w > 0.5 && world.z > 31.2 && world.z < 35.1 && world.x > 26.2 && world.x < 28.9;
-  let surfWeight = select(select(0.0, 0.85, inHallBeam), 1.0, isTrueFloor || mat == 12);
+  let inHallBeam = isInView && rayFloorXZ.y > 31.1 && rayFloorXZ.y < 35.05 && rayFloorXZ.x > 26.1 && rayFloorXZ.x < 28.9 && world.z < 35.15;
+  let isFoliage = mat == 22 && world.y > 0.45;
+  let surfWeight = select(select(select(0.0, 0.22, isFoliage), 0.88, inHallBeam), 1.0, isTrueFloor || mat == 12);
+  if (surfWeight <= 0.001) { return vec3f(0.0); }
+
+  let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, rayFloorXZ, 0.25);
+  if (vis <= 0.001) { return vec3f(0.0); }
 
   // 1. Tight ground/air origin point right under the hand
   let d2Orig = dot(rel, rel);
   let handOriginGlow = exp(-d2Orig / 0.024) * 1.15 * step(world.y, 0.25) * surfWeight;
 
-  // 2. Volumetric air mist cone scatter
-  let airNoise = 0.84 + 0.32 * surfaceNoise(rayFloorXZ * 2.4 + vec2f(1.3, 4.7));
-  let mist = (radialCore * radialEdge * 0.72 + radialAura * 0.38) * axialIn * axialOut / (0.38 + max(0.0, along) * 0.22) * airNoise * surfWeight;
-  var add = beamTint * fPower * (mist * hazeAmt * select(0.30, 0.28, OL.u5.w > 0.5) + handOriginGlow);
+  // 2. Volumetric air mist cone scatter + 3. Tilted flashlight beam striking wet road asphalt / damp interior floorboards
+  let grit = 0.52 + 0.96 * surfaceNoise(rayFloorXZ * 6.2 + vec2f(1.7, 3.9));
+  let mist = profile / (0.38 + max(0.0, along) * 0.22) * (0.86 + 0.28 * grit) * surfWeight;
+  var add = beamTint * fPower * (mist * hazeAmt * select(0.30, 0.24, isInView) + handOriginGlow);
 
-  // 3. Tilted flashlight beam striking wet road asphalt / damp interior floorboards
   if (isTrueFloor || inHallBeam) {
-    let grit = 0.48 + 1.05 * (surfaceNoise(rayFloorXZ * 5.6 + vec2f(1.7, 3.9)) * 0.58 + surfaceNoise(rayFloorXZ * 16.0) * 0.42);
     let strikePeak = select(
       exp(-pow((along - 2.65) / 2.25, 2.0)) * 1.18 + 0.42,
-      exp(-pow((along - 1.55) / 1.25, 2.0)) * 1.32 + 0.46,
-      OL.u5.w > 0.5
+      exp(-pow((along - 1.55) / 1.25, 2.0)) * 1.16 + 0.40,
+      isInView
     );
     var groundSpot = (radialCore * radialEdge + radialAura * 0.34) * axialIn * axialOut * strikePeak / (0.28 + max(0.0, along) * 0.14 + along * along * 0.016) * grit * surfWeight;
-    if (OL.u5.w > 0.5) {
+    if (isInView) {
       let plankSeam = 0.36 + 0.64 * smoothstep(0.0, 0.075, abs(fract(rayFloorXZ.y / 0.165 + 0.5) - 0.5));
       groundSpot *= plankSeam;
     }
-    let specTint = select(vec3f(0.95, 0.92, 0.84), vec3f(0.90, 0.94, 0.95), OL.u5.w > 0.5);
-    let effFloorAlbedo = select(baseAlbedo, vec3f(0.045, 0.032, 0.020), inHallBeam && !isTrueFloor);
-    add += (effFloorAlbedo * 1.80 + specTint * 0.155 * wetAmt) * fPower * groundSpot * select(1.18, 1.42, OL.u5.w > 0.5);
+    let specTint = select(vec3f(0.99, 0.94, 0.82), vec3f(0.86, 0.94, 1.00), isInView);
+    let effFloorAlbedo = select(baseAlbedo, vec3f(0.036, 0.028, 0.020), inHallBeam && !isTrueFloor);
+    add += (effFloorAlbedo * 1.75 + specTint * 0.152 * wetAmt) * fPower * groundSpot * select(1.18, 1.22, isInView);
   }
   return add * vis;
 }
