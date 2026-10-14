@@ -81,10 +81,10 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect
     town.lamps.push({x:x+5.7,y:e+1.15,h:2.42,radius:6.8,power:1.05,kind:"porch"})
-    town.lamps.push({x:x+2.6,y:z+1.85,h:1.18,radius:3.6,power:.26,kind:"room"})
-    town.lamps.push({x:x+1.25,y:e-1.35,h:1.28,radius:4.2,power:.32,kind:"room"})
-    town.lamps.push({x:r-2.8,y:e-3.1,h:2.15,radius:4.6,power:.28,kind:"room"})
-    town.lamps.push({x:x+5.7,y:z+5.5,h:2.45,radius:4.2,power:.26,kind:"room"})
+    town.lamps.push({x:x+2.6,y:z+1.85,h:1.24,radius:4.6,power:.38,kind:"room"})
+    town.lamps.push({x:x+1.25,y:e-1.25,h:1.48,radius:5.4,power:.45,kind:"room"})
+    town.lamps.push({x:r-3.2,y:e-3.6,h:2.15,radius:5.4,power:.38,kind:"room"})
+    town.lamps.push({x:x+6.1,y:z+4.2,h:2.40,radius:5.2,power:.34,kind:"room"})
     if(b.kind==="house")for(const wx of [x+2.5,r-2.75])town.lamps.push({x:wx,y:e+.12,h:1.42,radius:2.1,power:.22,kind:"window"})
   }
   return town

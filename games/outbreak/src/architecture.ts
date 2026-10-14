@@ -200,7 +200,10 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(cx-1.28,.08,e+1.28,cx+1.28,.132,e+1.46,rgb(0xc6bfb0),MAT.wall)
   m.box(cx+1.02,1.22,e+.01,cx+1.22,1.44,e+.10,rgb(0x2b3036),MAT.wall)
   // Door casing, lintel, sill and supported coir mat share the real 1.4m opening.
-  for(const px of [x+4.92,x+6.40])m.box(px,.13,e-.24,px+.09,2.38,e+.07,rgb(0xeae4d7),MAT.wall)
+  for(const px of [x+4.92,x+6.40]){
+    m.box(px,.13,e-.24,px+.09,2.38,e+.07,rgb(0xeae4d7),MAT.wall)
+    m.box(px,.13,z+5.48,px+.08,2.34,z+5.72,rgb(0xc8bfae),MAT.wall)
+  }
   m.box(x+4.92,2.30,e-.24,x+6.49,2.42,e+.07,rgb(0xeae4d7),MAT.wall)
   m.box(x+5,.13,e-.28,x+6.4,.15,e+.18,rgb(0x9a9382))
   m.box(cx-.52,.132,e+.20,cx+.52,.155,e+.74,rgb(0x523f2c),MAT.timber)
@@ -246,22 +249,75 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     [r+1.05,e-2.6,4.2,1.22],
     [r+.55,e+.35,1.38,.82],
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
-  // Two furnished zones, with the 1.4m entrance-to-bedroom circulation lane kept empty.
-  const rug=(a:number,c:number,d:number,f:number,color:number)=>{
-    m.box(a,.132,c,d,.14,f,rgb(0x796449));m.box(a+.10,.141,c+.10,d-.10,.145,f-.10,rgb(color))
-    for(let t=0;t<3;t++)m.box(a+.16+t*.08,.146,c+.15,a+.20+t*.08,.15,f-.15,rgb(0x8f7956))
+  // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner.
+  // Living room Oriental rug with cream border, slate-sage field, terracotta frame, and central medallion
+  {
+    const rx0=x+1.55,rz0=e-4.35,rx1=x+4.65,rz1=e-.85,rmx=(rx0+rx1)/2,rmz=(rz0+rz1)/2
+    m.box(rx0,.132,rz0,rx1,.138,rz1,rgb(0xc2b498))
+    m.box(rx0+.11,.1385,rz0+.11,rx1-.11,.141,rz1-.11,rgb(0x46585a))
+    m.box(rx0+.23,.1415,rz0+.23,rx1-.23,.144,rz1-.23,rgb(0x985b46))
+    m.box(rx0+.34,.1445,rz0+.34,rx1-.34,.147,rz1-.34,rgb(0x5c6d66))
+    m.box(rmx-.52,.1475,rmz-.72,rmx+.52,.150,rmz+.72,rgb(0xa26048))
+    m.box(rmx-.30,.1505,rmz-.45,rmx+.30,.152,rmz+.45,rgb(0xc4a274))
   }
-  rug(x+.45,e-3.7,x+4.5,e-.5,0x514d3f)
-  rug(x+3.05,z+.65,x+5.05,z+4.2,0x6c5545)
-  // Upper kitchen cupboards and a tiled splashback, supported by the east wall.
+  // Bedroom burgundy Persian rug placed beside the bed in the open bedroom floor
+  {
+    const bx0=x+5.02,bz0=z+1.35,bx1=x+6.88,bz1=z+4.25,bmx=(bx0+bx1)/2,bmz=(bz0+bz1)/2
+    m.box(bx0,.132,bz0,bx1,.138,bz1,rgb(0xb8a07e))
+    m.box(bx0+.09,.1385,bz0+.09,bx1-.09,.141,bz1-.09,rgb(0x363e4a))
+    m.box(bx0+.18,.1415,bz0+.18,bx1-.18,.145,bz1-.18,rgb(0x884235))
+    m.box(bmx-.38,.1455,bmz-.62,bmx+.38,.148,bmz+.62,rgb(0xa86848))
+    m.box(bmx-.20,.1485,bmz-.32,bmx+.20,.151,bmz+.32,rgb(0xc8a472))
+  }
+  // Kitchen woven runner mat in front of the north sink/stove run
+  m.box(r-4.95,.132,z+6.45,r-2.25,.139,z+7.22,rgb(0xa49b86))
+  m.box(r-4.86,.1395,z+6.53,r-2.34,.144,z+7.14,rgb(0x4c564e))
+  // Living room east media console, flatscreen TV, partition stub, and flanking potted houseplants
+  m.box(x+4.86,.13,e-3.62,x+5.06,2.78,e-1.38,rgb(b.color),MAT.wall,20,rgb(0x303744))
+  m.box(x+4.89,2.78,e-3.59,x+5.03,2.80,e-1.41,rgb(0xb8b0a0),MAT.lit)
+  m.bevelBox(x+4.44,.13,e-3.55,x+4.85,.62,e-1.45,.03,rgb(0x6e533a),rgb(0x856648),MAT.timber,MAT.timber)
+  m.box(x+4.58,.62,e-2.85,x+4.72,.70,e-2.15,rgb(0x22262b))
+  m.box(x+4.61,.70,e-3.20,x+4.70,1.38,e-1.80,rgb(0x181c22),MAT.shiny)
+  for(const pz of [e-3.88,e-1.12]){
+    m.prism(x+4.68,pz,.16,.12,.13,.42,7,rgb(0x8c543a))
+    plant(m,x+4.68,pz,.55,.32,town.houseSeed+Math.floor(pz*31),.38)
+  }
+  // North-wall kitchen run: cream refrigerator, base cabinets, stainless double sink, 4-burner stove & upper cabinets
+  const kz=z+5.72
+  // Cream-white refrigerator on left of kitchen run
+  m.bevelBox(r-5.95,.13,kz,r-5.05,1.88,kz+.72,.03,rgb(0xc6c2b4),rgb(0xd4d0c2))
+  m.box(r-5.96,1.32,kz+.71,r-5.04,1.35,kz+.74,rgb(0x5a5850))
+  m.box(r-5.16,.82,kz+.72,r-5.12,1.24,kz+.76,rgb(0x7a786e))
+  m.box(r-5.16,1.40,kz+.72,r-5.12,1.72,kz+.76,rgb(0x7a786e))
+  // Base cabinets & warm butcher/stone countertop with stainless double sink
+  m.box(r-5.00,.13,kz,r-2.25,.90,kz+.64,rgb(0x6e5840),MAT.timber)
+  m.box(r-5.02,.90,kz-.01,r-2.23,.96,kz+.67,rgb(0xb8b2a2))
+  for(let i=0;i<4;i++)m.box(r-4.92+i*.66,.20,kz+.64,r-4.34+i*.66,.84,kz+.66,rgb(0x856c50),MAT.timber)
+  m.box(r-4.18,.961,kz+.10,r-3.12,.972,kz+.54,rgb(0x8c9698),MAT.shiny)
+  for(const sx of [r-4.10,r-3.60])m.box(sx,.973,kz+.15,sx+.42,.982,kz+.48,rgb(0x3a4446),MAT.shiny)
+  m.box(r-3.67,.97,kz+.05,r-3.61,1.18,kz+.12,rgb(0xb0b8ba),MAT.shiny)
+  // White 4-burner range stove on right of north counter
+  m.box(r-2.22,.13,kz,r-1.38,.94,kz+.68,rgb(0xc2beb0))
+  m.box(r-2.23,.94,kz-.01,r-1.37,.965,kz+.69,rgb(0x323838))
+  for(const dx of [-.22,.22])for(const dz of [.18,.48])m.prism(r-1.80+dx,kz+dz,.11,.11,.966,.982,8,rgb(0x1b2022))
+  m.box(r-2.12,.26,kz+.68,r-1.48,.76,kz+.70,rgb(0x282e30),MAT.shiny)
+  // Warm tiled backsplash & upper wall cupboards above north kitchen run
+  m.box(r-5.00,.96,kz,r-1.38,1.68,kz+.04,rgb(0x9e8c6c),MAT.wall)
+  m.box(r-5.00,1.72,kz,r-2.25,2.38,kz+.38,rgb(0x7c664c),MAT.timber)
+  for(let i=0;i<4;i++)m.box(r-4.94+i*.67,1.76,kz+.38,r-4.35+i*.67,2.32,kz+.40,rgb(0x947b5c),MAT.timber)
+  // East-wall upper cupboards and framed art prints
   m.box(r-.245,1.02,e-3.2,r-.23,1.67,e-.85,rgb(0x727d70),MAT.wall)
-  m.box(r-.65,1.78,e-3.2,r-.25,2.37,e-1.2,rgb(0x85785e),MAT.wall)
-  for(let i=0;i<3;i++)m.box(r-.67,1.82,e-3.15+i*.64,r-.65,2.33,e-2.56+i*.64,rgb(0x998769),MAT.wall)
-  // Radiator and framed print occupy a wall, rather than adding another partition.
+  m.box(r-.60,1.78,e-3.2,r-.25,2.37,e-1.2,rgb(0x7c664c),MAT.timber)
+  for(let i=0;i<3;i++)m.box(r-.62,1.82,e-3.15+i*.64,r-.60,2.33,e-2.56+i*.64,rgb(0x947b5c),MAT.timber)
+  // Framed paintings on bedroom north wall, living room west wall, and kitchen east wall
   for(let i=0;i<8;i++)m.box(r-3.7+i*.13,.3,z+.25,r-3.62+i*.13,.85,z+.42,rgb(0x87877a),MAT.wall)
-  for(const [px,pz] of [[x+3,z+.23],[r-3,e-.27]]){
-    m.box(px!-.55,1.25,pz!,px!+.55,2,pz!+.055,rgb(0x534838),MAT.wall)
-    m.box(px!-.46,1.34,pz!+.056,px!+.46,1.91,pz!+.062,rgb(0x81856f),MAT.wall)
+  for(const [px,pz] of [[x+4.1,z+.23],[x+6.2,z+.23],[r-3,e-.27]]){
+    m.box(px!-.52,1.28,pz!,px!+.52,1.98,pz!+.055,rgb(0x4e3d2c),MAT.wall)
+    m.box(px!-.43,1.37,pz!+.056,px!+.43,1.89,pz!+.062,rgb(0x8c8872),MAT.wall)
+  }
+  for(const [py,pz] of [[1.32,e-2.6],[1.32,e-1.2]]){
+    m.box(x+.22,py!,pz!-.44,x+.27,py!+.64,pz!+.44,rgb(0x4e3d2c),MAT.wall)
+    m.box(x+.271,py!+.08,pz!-.36,x+.28,py!+.56,pz!+.36,rgb(0x8e8670),MAT.wall)
   }
   for(const barrier of town.barriers){
     const [a,c,d,f]=barrier.rect

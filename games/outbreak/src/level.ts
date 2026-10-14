@@ -16,57 +16,79 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     plant(m,x,z,4.6+p.variant*1.8,2.05+p.variant*.75,Math.floor(p.variant*1e6),supportHeight(town,x,z))
     return
   }
-  const wood = hex(0x75604b), legs = hex(0x3b3934)
+  const wood = hex(0x7a5c3e), legs = hex(0x3b352e)
   if (kind === "bed") {
-    m.box(x - .8, .12, z - 1.2, x + .8, .45, z + 1.2, wood, MAT.timber)
-    m.bevelBox(x - .78, .45, z - 1.15, x + .78, .65, z + 1.15, .07, hex(0x637578), hex(0x889c9b))
-    m.box(x - .65, .66, z - 1.0, x + .65, .77, z - .6, hex(0xc0baab))
-    m.box(x - .86, .15, z - 1.3, x + .86, 1, z - 1.17, wood, MAT.timber)
+    // Honey-oak frame, headboard & footboard, crisp white sheets/pillows, and quilted olive-green blanket
+    m.box(x - .82, .12, z - 1.22, x + .82, .42, z + 1.22, wood, MAT.timber)
+    m.box(x - .86, .15, z - 1.30, x + .86, 1.06, z - 1.16, hex(0x8c6b48), MAT.timber)
+    m.box(x - .84, .14, z + 1.16, x + .84, .58, z + 1.26, hex(0x826242), MAT.timber)
+    m.bevelBox(x - .78, .42, z - 1.15, x + .78, .64, z + 1.15, .06, hex(0xcfc8b8), hex(0xe0dacb))
+    // Quilted olive bedspread over lower two-thirds + cream fold-back sheet strip
+    m.bevelBox(x - .80, .44, z - .38, x + .80, .67, z + 1.16, .05, hex(0x42523b), hex(0x526449))
+    m.box(x - .79, .65, z - .48, x + .79, .68, z - .32, hex(0xdad4c4))
+    for (const qz of [z - .02, z + .38, z + .78]) m.box(x - .76, .668, qz, x + .76, .676, qz + .03, hex(0x364430))
+    // Two plump white pillows
+    for (const px of [x - .38, x + .38]) m.bevelBox(px - .31, .64, z - 1.06, px + .31, .78, z - .62, .04, hex(0xd4cebf), hex(0xeae4d6))
   } else if (kind === "sofa") {
-    m.box(x-.55,.22,z-1.25,x+.55,.46,z+1.25,hex(0x555d50))
-    m.bevelBox(x-.6,.35,z-1.3,x-.36,1.0,z+1.3,.055,hex(0x5d6557),hex(0x6a7160))
-    for(const dz of [-.72,0,.72])m.bevelBox(x-.32,.45,z+dz-.33,x+.51,.61,z+dz+.33,.06,hex(0x626b5b),hex(0x747b68))
-    for(const s of [-1,1])m.box(x-.55,.4,z+s*1.17-.12,x+.55,.83,z+s*1.17+.12,hex(0x5d6557))
-    for(const dx of [-.4,.4])for(const dz of [-1,1])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.23,z+dz+.04,legs)
-    m.bevelBox(x-.27,.63,z+.65,x+.23,.82,z+1.02,.045,hex(0x9b8360),hex(0x9b8360))
+    // Warm olive-sage 3-cushion sofa with rolled arms, rust & ochre throw pillows, and side lamp table
+    m.box(x-.56,.20,z-1.26,x+.56,.45,z+1.26,hex(0x58604e))
+    m.bevelBox(x-.62,.35,z-1.32,x-.34,1.02,z+1.32,.06,hex(0x636c58),hex(0x78826a))
+    for(const dz of [-.74,0,.74]){
+      m.bevelBox(x-.32,.44,z+dz-.35,x+.53,.62,z+dz+.35,.055,hex(0x68725d),hex(0x808a72))
+      m.bevelBox(x-.38,.60,z+dz-.34,x-.16,.96,z+dz+.34,.045,hex(0x6e7862),hex(0x848e76))
+    }
+    for(const s of [-1,1])m.bevelBox(x-.56,.40,z+s*1.18-.14,x+.56,.84,z+s*1.18+.14,.04,hex(0x5f6854),hex(0x747e68))
+    for(const dx of [-.42,.42])for(const dz of [-1.05,1.05])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.22,z+dz+.04,legs)
+    // Rust-orange throw pillow at north end + cream cushion & draped throw at south end
+    m.bevelBox(x-.24,.62,z-.98,x+.22,.84,z-.58,.045,hex(0x8f4326),hex(0xa85232))
+    m.bevelBox(x-.24,.62,z+.60,x+.24,.83,z+1.02,.045,hex(0xb5a482),hex(0xcfc09e))
+    // End table at south arm of sofa under the living room table lamp
+    m.bevelBox(x-.32,.13,z+1.38,x+.32,.66,z+1.96,.025,wood,hex(0x8f6d4a),MAT.timber,MAT.timber)
   } else if(kind==="coffee") {
-    m.bevelBox(x-.55,.43,z-.75,x+.55,.52,z+.75,.035,wood,hex(0x887554),MAT.timber,MAT.timber)
-    for(const dx of [-.43,.43])for(const dz of [-.63,.63])m.box(x+dx-.035,.13,z+dz-.035,x+dx+.035,.43,z+dz+.035,legs)
-    m.box(x-.2,.52,z+.1,x+.19,.56,z+.48,hex(0x9e987f))
-    m.prism(x+.2,z-.32,.09,.085,.52,.65,8,hex(0xb2aa8e))
+    m.bevelBox(x-.52,.42,z-.78,x+.52,.52,z+.78,.035,wood,hex(0x8c6a46),MAT.timber,MAT.timber)
+    for(const dx of [-.42,.42])for(const dz of [-.65,.65])m.box(x+dx-.035,.13,z+dz-.035,x+dx+.035,.43,z+dz+.035,legs)
+    // Open book, ceramic mug, and small potted centerpiece plant on coffee table
+    m.box(x-.22,.52,z+.14,x+.20,.56,z+.52,hex(0xd8d2c0))
+    m.prism(x-.16,z-.38,.07,.065,.52,.63,8,hex(0xc8c0aa))
+    m.prism(x+.14,z-.22,.12,.09,.52,.66,8,hex(0x7c4a32))
+    m.prism(x+.14,z-.22,.18,.08,.64,.82,7,hex(0x465c36),MAT.foliage)
   } else if(kind==="nightstand") {
-    m.box(x-.275,.15,z-.275,x+.275,.65,z+.275,wood,MAT.timber)
-    m.box(x-.23,.36,z+.276,x+.23,.6,z+.29,hex(0x927957),MAT.timber)
-    m.box(x-.055,.48,z+.29,x+.055,.51,z+.32,hex(0xab9c77))
+    m.bevelBox(x-.28,.14,z-.28,x+.28,.66,z+.28,.02,wood,hex(0x8e6c48),MAT.timber,MAT.timber)
+    m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x987652),MAT.timber)
+    m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xc4ab78))
   } else if(kind==="stove") {
-    m.box(x-.375,.13,z-.4,x+.375,.94,z+.4,hex(0x878b7e))
-    m.box(x-.39,.94,z-.41,x+.39,.95,z+.41,hex(0x424a44))
-    for(const dx of [-.17,.17])for(const dz of [-.2,.2])m.prism(x+dx,z+dz,.11,.11,.951,.965,8,hex(0x242c2b))
-    m.box(x-.38,.3,z-.3,x-.376,.76,z+.3,hex(0x343c39))
+    m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x74583c),MAT.timber)
+    m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0xa8a292))
   } else if(kind==="counter"||kind==="dresser"||kind==="fridge") {
     const {rect:[a,c,r,e],height}=propShape(p)!
-    const pale=kind==="fridge"?0x8a9187:0x82765f
+    const pale=kind==="fridge"?0x786044:0x765a3e
     m.box(a,.13,c,r,height-.06,e,hex(pale),MAT.timber)
-    m.box(a-.02,height-.06,c-.02,r+.02,height,e+.02,hex(kind==="counter"?0x929387:0x7e7460))
+    m.box(a-.02,height-.06,c-.02,r+.02,height,e+.02,hex(kind==="counter"?0xb2ac9c:0x8c6c4a),MAT.timber)
     if(kind==="counter"){
-      m.box(a+.1,height+.002,z-.65,r-.1,height+.008,z-.05,hex(0x353f3d))
-      m.box(a+.18,height+.009,z-.57,r-.18,height+.015,z-.13,hex(0x616e68))
-      m.box(r-.15,height,z-.4,r-.10,height+.25,z-.35,hex(0x858d85))
-      for(const dz of [-.85,.0,.85])m.box(a-.01,.2,z+dz-.32,a-.005,.88,z+dz+.32,hex(0x94856a),MAT.timber)
+      for(const dz of [-.85,.0,.85])m.box(a-.01,.2,z+dz-.32,a-.005,.88,z+dz+.32,hex(0x8e704e),MAT.timber)
     }else if(kind==="fridge"){
-      m.box(a-.015,1.35,c+.03,a,1.37,e-.03,hex(0x3d4541));m.box(a-.055,.88,e-.15,a,1.2,e-.11,hex(0x565f59))
-    }else for(let i=0;i<3;i++){
-      m.box(a+.04,.22+i*.26,e+.002,r-.04,.44+i*.26,e+.02,hex(0x988366),MAT.timber)
-      m.box(x-.12,.3+i*.26,e+.02,x+.12,.34+i*.26,e+.065,hex(0xaea079))
+      m.box(a-.015,.22,c+.05,a,height-.12,e-.05,hex(0x8c6e4c),MAT.timber)
+    }else {
+      for(let i=0;i<3;i++)for(const [da,dr] of [[a+.05,(a+r)/2-.03],[(a+r)/2+.03,r-.05]]){
+        m.box(da!,.20+i*.27,e+.002,dr!,.43+i*.27,e+.022,hex(0x8e6e4c),MAT.timber)
+        const mx=(da!+dr!)/2
+        m.box(mx-.08,.30+i*.27,e+.022,mx+.08,.34+i*.27,e+.055,hex(0xc2a874))
+      }
+      // Potted plant & keepsake box on top of the bedroom dresser
+      m.prism(a+.42,c+.35,.12,.09,height,height+.16,7,hex(0x7e4c34))
+      m.prism(a+.42,c+.35,.19,.08,height+.14,height+.36,7,hex(0x485e38),MAT.foliage)
     }
   } else if(kind==="chair") {
-    m.box(x-.27,.52,z-.27,x+.27,.60,z+.27,wood,MAT.timber)
-    m.box(x-.27,.6,z+.20,x+.27,1.05,z+.27,wood,MAT.timber)
-    for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.52,z+dz+.025,legs)
+    m.box(x-.26,.50,z-.26,x+.26,.58,z+.26,hex(0x826242),MAT.timber)
+    m.box(x-.26,.58,z+.19,x+.26,1.04,z+.26,hex(0x8c6b48),MAT.timber)
+    for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.50,z+dz+.025,legs)
   } else if (kind === "table") {
-    m.box(x - .75, .7, z - .5, x + .75, .82, z + .5, wood, MAT.timber)
-    for (const dx of [-.65, .65]) for (const dz of [-.4, .4]) m.box(x + dx - .05, .1, z + dz - .05, x + dx + .05, .7, z + dz + .05, legs)
-    m.box(x - .2, .82, z - .15, x + .2, .87, z + .15, hex(0xb5b0a0))
+    // Rich walnut dining/study table with beveled plank top and fruit bowl centerpiece
+    m.bevelBox(x - .72, .72, z - .95, x + .72, .82, z + .95, .03, wood, hex(0x8e6b46), MAT.timber, MAT.timber)
+    for (const dx of [-.60, .60]) for (const dz of [-.80, .80]) m.box(x + dx - .045, .13, z + dz - .045, x + dx + .045, .72, z + dz + .045, legs)
+    m.prism(x, z, .20, .14, .82, .91, 8, hex(0x63482e), MAT.timber)
+    m.prism(x - .05, z - .03, .07, .05, .89, .96, 6, hex(0xd4882e))
+    m.prism(x + .06, z + .04, .065, .045, .89, .95, 6, hex(0x789438))
   } else {
     for (const dx of [-.8, .8]) m.box(x + dx - .06, .1, z - .38, x + dx + .06, 1.8, z + .38, legs)
     for (const h of [.3, .85, 1.4]) {
@@ -189,11 +211,13 @@ function compileLevel(town: Town): LevelData {
   for (const b of town.barriers) {
     const [x, z, r, end] = b.rect, m = at(x, z), color = hex(b.color)
     if (b.kind === "wall") {
-      m.box(x,.13,z,r,2.8,end,color,MAT.wall,20,hex(0xb5ad99))
-      m.box(x - .02, .14, z - .02, r + .02, .3, end + .02, hex(0x4b4a41), MAT.wall)
+      m.box(x,.13,z,r,2.78,end,color,MAT.wall,20,hex(0x303744))
+      m.box(x+.03,2.78,z+.03,r-.03,2.80,end-.03,hex(0xb8b0a0),MAT.lit)
+      m.box(x - .02, .14, z - .02, r + .02, .28, end + .02, hex(0x594836), MAT.lit)
     } else if (b.kind === "window") {
       m.box(x, .13, z, r, .85, end, color, MAT.wall,20)
-      m.box(x, 2.15, z, r, 2.8, end, color, MAT.wall,20)
+      m.box(x, 2.15, z, r, 2.78, end, color, MAT.wall,20, hex(0x303744))
+      m.box(x+.03, 2.78, z+.03, r-.03, 2.80, end-.03, hex(0xb8b0a0), MAT.lit)
       m.box(x-.08,.78,z-.06,r+.08,.87,end+.12,hex(0xd8d5cb),MAT.wall)
       m.box(x-.07,2.13,z-.06,r+.07,2.23,end+.08,hex(0xd8d5cb),MAT.wall)
       const g = at(x, z, true)
@@ -288,13 +312,13 @@ function compileLevel(town: Town): LevelData {
         const id = Math.max(0, Math.min(BUILDING_RECTS.length - 1, Math.round(source.v[i + 10]!)))
         const b = BUILDING_RECTS[id]!
         customId = id
-        strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] - .35
+        strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
       } else if (maxY > 2.8 && !hasFoliage) {
         for (let id = 0; id < BUILDING_RECTS.length; id++) {
           const b = BUILDING_RECTS[id]!
-          if (maxX > b[0] + .25 && minX < b[2] - .25 && maxZ > b[1] + .25 && minZ < b[3] - .25) {
+          if (maxX > b[0] + .25 && minX < b[2] - .25 && maxZ > b[1] + .25 && minZ < b[3] + 1.65) {
             customId = id
-            strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] - .35 && minY > 2.801
+            strictlyInsideCutout = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65 && minY > 2.801
             break
           }
         }
@@ -328,7 +352,7 @@ function compileLevel(town: Town): LevelData {
       return [{ data: screen.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
     }
     const customChunks = BUILDING_RECTS.flatMap((b, id) => {
-      const bounds = [b[0] - .1, 0, b[1] - .1, b[2] + .1, 5, b[3] + .1] as const
+      const bounds = [b[0] - .1, 0, b[1] - .1, b[2] + .1, 5, b[3] + 1.7] as const
       return [
         ...pack(interiorCapByBuilding[id]!, bounds, "outside"),
         ...pack(customByBuilding[id]!, bounds, true),

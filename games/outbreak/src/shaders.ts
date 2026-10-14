@@ -12,15 +12,15 @@ export const shaders = {
     lightAttenuation: `let dn = max(d3, 0.55);
     var att = power * win * (0.08 + 3.4 / (1.0 + dn * dn * 0.45));
     if (att <= 0.004) { continue; }`,
-    wallDirectScale: "mix(0.20, 0.34, smoothstep(0.0, 1.5, o.world.y))",
-    ambient: "ambientAt(n) * mix(0.09, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), vec3f(0.014, 0.009, 0.005), interior(o.world.xz) && o.world.y < 2.8)",
+    wallDirectScale: "mix(0.28, 0.46, smoothstep(0.0, 1.5, o.world.y))",
+    ambient: "ambientAt(n) * mix(0.13, 1.0, select(floorData(o.world.xz).g, 1.0, o.world.y > 2.8)) + select(vec3f(0.0), vec3f(0.022, 0.015, 0.008), interior(o.world.xz) && o.world.y < 2.8)",
     diagnostics: "F.map.z",
     smoothShadows: true,
     shadowTaps: 5,
     lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
     material: surfaceMaterial + `
       if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
-        let s = evalPlasterWall(o.world, n, vec3f(.34, .29, .23), defaultMaterialRecipe(2));
+        let s = evalPlasterWall(o.world, n, vec3f(.44, .38, .31), defaultMaterialRecipe(2));
         albedo = s.albedo;
         gloss = s.gloss;
       }
@@ -41,7 +41,7 @@ fn interior(p:vec2f) -> bool {
 }
 fn roofCut(p:vec3f, id:i32) -> bool {
   let b=houseRect(id);
-  return all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy+0.35)&&all(p.xz<b.zw-0.35);
+  return all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&p.x>b.x+0.35&&p.x<b.z-0.35&&p.z>b.y+0.35&&p.z<b.w+1.65;
 }
 fn eyeVisible(p: vec2f) -> f32 {
   let delta = p - F.eye.xy;
