@@ -11,10 +11,10 @@ export const outbreakPostFinish: PostFinishOptions = {
   grain: 0.014,
   vignette: 0.78,
   diagnostics: true,
-  shadowLift: 0.32,
-  shadowLiftColor: [0.0065, 0.0052, 0.0040],
-  saturation: 0.90,
-  shadowTint: [1.06, 0.97, 0.80],
+  shadowLift: 0.52,
+  shadowLiftColor: [0.0095, 0.0078, 0.0062],
+  saturation: 0.88,
+  shadowTint: [1.06, 0.97, 0.82],
   highlightTint: [1.14, 0.96, 0.72],
   huePreserve: 0.52,
 }
@@ -37,7 +37,7 @@ export const outbreakSceneHooks: SceneHooks = {
     }
     if (att <= 0.0035) { continue; }`,
   wallDirectScale: "mix(0.18, 0.34, smoothstep(0.0, 1.5, o.world.y))",
-  ambient: "outbreakSkyAmbient(n, F.ambient.rgb) * mix(0.04, 0.84, select(1.0, select(fd.g * 0.48, 0.04, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.005, 0.0032, 0.0016), inRoom && o.world.y < 2.8)",
+  ambient: "outbreakSkyAmbient(n, F.ambient.rgb) * mix(0.03, 0.88, select(1.0, select(fd.g * 0.28, 0.03, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.004, 0.0024, 0.0010), inRoom && o.world.y < 2.8)",
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
@@ -115,7 +115,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
   return mix(los0, los1, fract(f)) * mask * range;
 }`,
-  directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.92, 0.74, 0.52), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.85, 0.05, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
@@ -141,8 +141,9 @@ fn eyeVisible(p: vec2f) -> f32 {
     let courseStep = smoothstep(0.62, 0.96, fract(o.world.z / 0.24));
     let tabGrain = 0.74 + 0.52 * surfaceNoise(o.world.xz * 6.2);
     let w = clamp(OL.u0.z, 0.0, 1.0);
-    let roofTint = mix(vec3f(0.014, 0.026, 0.058), vec3f(0.036, 0.032, 0.028), w);
-    col = col * mix(0.82, 1.28, eave) * tabGrain + roofTint * F.ambient.w * OL.u2.z * (0.58 * eave + 0.42 * courseStep) * max(0.0, n.y);
+    let roofTint = mix(vec3f(0.014, 0.026, 0.058), vec3f(0.062, 0.054, 0.048), w);
+    let extRoofScale = select(1.0, 0.52, OL.u5.w > 0.5);
+    col = col * mix(0.88, 1.38, eave) * tabGrain * extRoofScale + roofTint * F.ambient.w * OL.u2.z * (0.58 * eave + 0.42 * courseStep) * max(0.0, n.y) * extRoofScale;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let w = clamp(OL.u0.z, 0.0, 1.0);
@@ -151,10 +152,10 @@ fn eyeVisible(p: vec2f) -> f32 {
       if (kind == 0) {
         // Muted 70s olive-ochre-moss lawn turf with clump variation & fallen autumn leaf flecks.
         let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.54, 1.16, smoothstep(0.24, 0.76, turfPatch));
+        col *= mix(0.50, 1.08, smoothstep(0.24, 0.76, turfPatch));
         let turfLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.22, 0.96, 0.64), w);
-        col = mix(col, oliveOchre, 0.56);
+        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.25, 0.92, 0.56), w);
+        col = mix(col, oliveOchre, 0.68);
       } else if (kind == 1) {
         // Textured cracked asphalt: dark gutters & wheel ruts, alligator fracture lines, coarse aggregate, and warm-slate twilight sheen.
         let p = o.world.xz;
@@ -173,41 +174,41 @@ fn eyeVisible(p: vec2f) -> f32 {
         let grit = (w2 - 0.5) * 0.36;
         let dxRoad = (p.x - 31.5) * 0.055;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        col *= (0.64 + 0.30 * gutter - 0.08 * ruts + 0.18 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
-        let wetRoad = (0.42 + 0.58 * crown) * (0.45 + 0.55 * centerFocus) * (0.62 + 0.78 * w1) * (1.0 - 0.52 * cracks);
-        let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.052, 0.042, 0.034), w);
+        col *= (0.72 + 0.32 * gutter - 0.08 * ruts + 0.18 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
+        let wetRoad = (0.48 + 0.52 * crown) * (0.48 + 0.52 * centerFocus) * (0.64 + 0.76 * w1) * (1.0 - 0.50 * cracks);
+        let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.072, 0.058, 0.048), w);
         col += roadSheenCol * F.ambient.w * OL.u2.y * wetRoad;
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
         if (!inVerge) {
           let gritWalk = 0.76 + 0.48 * surfaceNoise(o.world.xz * 7.5);
           let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-          let warmStone = vec3f(walkLum) * vec3f(1.18, 0.94, 0.66);
-          col = mix(col * 0.78, warmStone * 0.76, w) * gritWalk + vec3f(0.015, 0.011, 0.006) * F.ambient.w * gritWalk;
+          let warmStone = vec3f(walkLum) * vec3f(1.22, 0.90, 0.56);
+          col = mix(col * 0.56, warmStone * 0.48, w) * gritWalk;
           // Warm porch walkway reflection streak
           let dxWalk = o.world.x - 27.7;
           if (abs(dxWalk) < 4.5 && o.world.z > 35.3 && o.world.z < 40.4) {
             let walkCore = exp(-(dxWalk * dxWalk) / 1.15) * smoothstep(40.4, 35.5, o.world.z);
             let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            let extScale = select(1.0, 0.45, OL.u5.w > 0.5);
-            col += vec3f(0.068, 0.042, 0.016) * (walkCore * 1.05 + sideSpread * 0.55) * gritWalk * OL.u2.y * nightLamps * extScale;
+            let extScale = select(1.0, 0.65, OL.u5.w > 0.5);
+            col += vec3f(0.055, 0.032, 0.010) * (walkCore * 1.05 + sideSpread * 0.45) * gritWalk * OL.u2.y * nightLamps * extScale;
           }
         }
       }
     } else if (mat == 4 && !inRoom) {
       col *= mix(1.0, 0.56, smoothstep(2.15, 2.78, o.world.y));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(wallLum) * vec3f(1.22, 0.95, 0.64), w * 0.65);
+      col = mix(col, vec3f(wallLum) * vec3f(1.24, 0.92, 0.56), w * 0.72) * 0.78;
     }
     if (!inRoom) {
       let vigDark = clamp(OL.u2.w, 0.0, 1.2);
       let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.055, 0.068));
       let periphShade = mix(1.0, clamp(1.16 - dCenter * 0.44, 0.42, 1.0), vigDark);
-      let extCutDim = select(1.0, select(0.62, 0.92, o.world.x > 37.2), OL.u5.w > 0.5);
+      let extCutDim = select(1.0, select(0.58, 0.85, o.world.x > 37.2), OL.u5.w > 0.5);
       col *= periphShade * extCutDim;
     } else {
       let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(roomLum) * vec3f(1.28, 0.88, 0.52), w * 0.58) * 0.72;
+      col = mix(col, vec3f(roomLum) * vec3f(1.32, 0.86, 0.46), w * 0.62) * 0.62;
     }
     col += evalSceneLightHazeAndBounce(o.world, n, o.color, inRoom) * nightLamps;
     // Darken cutaway wall-top molding (y = 2.75..2.82) so interior walls have a clean dark slate cap
