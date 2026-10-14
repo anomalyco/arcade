@@ -7,10 +7,19 @@ export const MAX_SUBSTEPS = 12
 export const MAX_HITCH_SECONDS = 0.5
 export const MAX_HITCH_MS = MAX_HITCH_SECONDS * 1000
 
-export type MoveSample = { mx: number; my: number }
-export type TimedSubstep = { dt: number; mx: number; my: number; interact: boolean }
+export type MoveSample = { mx: number; my: number; sprint?: boolean }
+export type TimedSubstep = {
+  dt: number
+  mx: number
+  my: number
+  sprint: boolean
+  interact: boolean
+  flashlight: boolean
+  jump: boolean
+  interactHeld: boolean
+}
 
-type MoveTransition = { atMs: number; mx: number; my: number }
+type MoveTransition = { atMs: number; mx: number; my: number; sprint: boolean }
 
 /**
  * Deterministic fixed-tick accumulator with bounded hitch recovery and timestamped input transitions.
@@ -26,16 +35,16 @@ export class FrameClock {
   private lastMs: number | null = null
   private accMs = 0
   private simCursorMs = 0
-  private activeMove: MoveSample = { mx: 0, my: 0 }
-  private latestMove: MoveSample = { mx: 0, my: 0 }
+  private activeMove: { mx: number; my: number; sprint: boolean } = { mx: 0, my: 0, sprint: false }
+  private latestMove: { mx: number; my: number; sprint: boolean } = { mx: 0, my: 0, sprint: false }
   private transitions: MoveTransition[] = []
 
   reset(nowMs: number | null = null, move: MoveSample = { mx: 0, my: 0 }): void {
     this.lastMs = nowMs
     this.accMs = 0
     this.simCursorMs = nowMs ?? 0
-    this.activeMove = { mx: move.mx, my: move.my }
-    this.latestMove = { mx: move.mx, my: move.my }
+    this.activeMove = { mx: move.mx, my: move.my, sprint: Boolean(move.sprint) }
+    this.latestMove = { mx: move.mx, my: move.my, sprint: Boolean(move.sprint) }
     this.transitions.length = 0
   }
 
@@ -49,10 +58,11 @@ export class FrameClock {
 
   /** Record a movement transition at its wall-clock timestamp so substeps do not replay it across earlier time. */
   recordMove(atMs: number, move: MoveSample): void {
-    if (move.mx === this.latestMove.mx && move.my === this.latestMove.my) return
-    this.latestMove = { mx: move.mx, my: move.my }
+    const sprint = Boolean(move.sprint)
+    if (move.mx === this.latestMove.mx && move.my === this.latestMove.my && sprint === this.latestMove.sprint) return
+    this.latestMove = { mx: move.mx, my: move.my, sprint }
     if (this.lastMs === null) {
-      this.activeMove = { mx: move.mx, my: move.my }
+      this.activeMove = { mx: move.mx, my: move.my, sprint }
       return
     }
     const clampedAt = Math.max(this.simCursorMs, atMs)
@@ -60,8 +70,9 @@ export class FrameClock {
     if (prev && Math.abs(prev.atMs - clampedAt) <= 1e-4) {
       prev.mx = move.mx
       prev.my = move.my
+      prev.sprint = sprint
     } else {
-      this.transitions.push({ atMs: clampedAt, mx: move.mx, my: move.my })
+      this.transitions.push({ atMs: clampedAt, mx: move.mx, my: move.my, sprint })
     }
   }
 
@@ -87,7 +98,14 @@ export class FrameClock {
     return Math.max(0, TICK_MS - (this.accMs + elapsedMs))
   }
 
-  frame(nowMs: number, liveMove: MoveSample, takeInteract?: () => boolean): TimedSubstep[] {
+  frame(
+    nowMs: number,
+    liveMove: MoveSample,
+    takeInteract?: () => boolean,
+    takeFlashlight?: () => boolean,
+    takeJump?: () => boolean,
+    isInteractHeld?: () => boolean,
+  ): TimedSubstep[] {
     if (this.lastMs === null) {
       this.reset(nowMs, liveMove)
       return []
@@ -103,7 +121,7 @@ export class FrameClock {
       this.simCursorMs += droppedMs
       while (this.transitions.length && this.transitions[0]!.atMs <= this.simCursorMs) {
         const t = this.transitions.shift()!
-        this.activeMove = { mx: t.mx, my: t.my }
+        this.activeMove = { mx: t.mx, my: t.my, sprint: t.sprint }
       }
     } else {
       this.accMs = totalAccMs
@@ -114,6 +132,9 @@ export class FrameClock {
 
     const out: TimedSubstep[] = []
     const interact = takeInteract ? takeInteract() : false
+    const flashlight = takeFlashlight ? takeFlashlight() : false
+    const jump = takeJump ? takeJump() : false
+    const interactHeld = isInteractHeld ? isInteractHeld() : false
     for (let i = 0; i < steps; i++) {
       this.accMs = Math.max(0, this.accMs - TICK_MS)
       const tickStart = this.simCursorMs
@@ -122,20 +143,20 @@ export class FrameClock {
 
       while (this.transitions.length && this.transitions[0]!.atMs <= tickStart + 1e-4) {
         const t = this.transitions.shift()!
-        this.activeMove = { mx: t.mx, my: t.my }
+        this.activeMove = { mx: t.mx, my: t.my, sprint: t.sprint }
       }
 
       let stepMove = this.activeMove
-      let impulseMove: MoveSample | null = null
+      let impulseMove: { mx: number; my: number; sprint: boolean } | null = null
       while (this.transitions.length && this.transitions[0]!.atMs <= tickEnd + 1e-4) {
         const t = this.transitions.shift()!
         if ((t.mx !== 0 || t.my !== 0) && !impulseMove) {
-          impulseMove = { mx: t.mx, my: t.my }
+          impulseMove = { mx: t.mx, my: t.my, sprint: t.sprint }
         }
         if (tickEnd - t.atMs >= TICK_MS * 0.5 - 1e-4) {
-          stepMove = { mx: t.mx, my: t.my }
+          stepMove = { mx: t.mx, my: t.my, sprint: t.sprint }
         }
-        this.activeMove = { mx: t.mx, my: t.my }
+        this.activeMove = { mx: t.mx, my: t.my, sprint: t.sprint }
       }
       if (stepMove.mx === 0 && stepMove.my === 0 && impulseMove) {
         stepMove = impulseMove
@@ -145,7 +166,11 @@ export class FrameClock {
         dt: TICK_DT,
         mx: stepMove.mx,
         my: stepMove.my,
+        sprint: stepMove.sprint,
         interact: i === 0 ? interact : false,
+        flashlight: i === 0 ? flashlight : false,
+        jump: i === 0 ? jump : false,
+        interactHeld,
       })
     }
     return out

@@ -104,7 +104,7 @@ export class AudioEngine {
     addEventListener("keydown", unlock, true)
     addEventListener("touchend", unlock, true)
     addEventListener("keydown", (e) => {
-      if ((e.code !== "KeyM" && e.key.toLowerCase() !== "m") || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.code !== "KeyM" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
       this.setMuted(!this.muted)

@@ -75,10 +75,10 @@ try{
         await focus();await page.keyboard.down("w");await step(60);await page.keyboard.up("w")
         const walk=(await state()).character
         if(initial.z-walk.z<3)throw new Error("Soldier did not walk")
-        await page.keyboard.down("Shift");await page.keyboard.down(",");await step(60);await page.keyboard.up(",");await page.keyboard.up("Shift")
+        await page.keyboard.down("Shift");await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent("keydown",{code:"KeyW",key:",",bubbles:true})));await step(60);await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent("keyup",{code:"KeyW",key:",",bubbles:true})));await page.keyboard.up("Shift")
         const sprint=(await state()).character
         if(walk.z-sprint.z<5)throw new Error("Dvorak sprint failed")
-        await page.keyboard.down("e");await step(30);await page.keyboard.up("e")
+        await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent("keydown",{code:"KeyD",key:"e",bubbles:true})));await step(30);await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent("keyup",{code:"KeyD",key:"e",bubbles:true})))
         if((await state()).character.x<sprint.x+1)throw new Error("Dvorak right failed")
         await select("Item","hydrant");await click("Spawn item");await select("Light","torch");await click("Drop light");await step(1)
         await shot("soldier")

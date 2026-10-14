@@ -6,8 +6,8 @@ const DETENT = 0.1
 const HOLD_DELAY = 0.35
 const HOLD_REPEAT = 0.12
 
-const UP = ["KeyW", "w", "ArrowUp"]
-const DOWN = ["KeyS", "s", "ArrowDown"]
+const UP = ["KeyW", "ArrowUp"]
+const DOWN = ["KeyS", "ArrowDown"]
 const DIGITS = Array.from({ length: 10 }, (_, i) => [`Digit${i}`, `Numpad${i}`])
 const FULL = ["Equal", "NumpadAdd"]
 

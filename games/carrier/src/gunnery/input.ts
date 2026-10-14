@@ -13,7 +13,6 @@ export class TurretInput {
   /** Take Pointer Lock on a click itself (the harness). */
   grab = false
   private keys = new Set<string>()
-  private chars = new Map<string, string>()
   private dx = 0
   private dy = 0
   private left = false
@@ -27,16 +26,10 @@ export class TurretInput {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.code === "Space" && this.enabled) e.preventDefault()
       if (this.keys.has(e.code)) return
-      const k = e.key.toLowerCase()
       this.keys.add(e.code)
-      this.keys.add(k)
-      this.chars.set(e.code, k)
     })
     addEventListener("keyup", (e) => {
       this.keys.delete(e.code)
-      const down = this.chars.get(e.code)
-      if (down !== undefined) this.keys.delete(down)
-      this.chars.delete(e.code)
       if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
     })
     addEventListener("blur", () => this.release())
@@ -70,7 +63,6 @@ export class TurretInput {
 
   release(): void {
     this.keys.clear()
-    this.chars.clear()
     this.left = false
     this.right = false
   }
@@ -87,7 +79,7 @@ export class TurretInput {
   get fire(): boolean {
     if (!this.enabled) return false
     if (this.trigger !== null) return this.trigger
-    return this.left || this.keys.has("Space") || this.keys.has(" ")
+    return this.left || this.keys.has("Space")
   }
 
   get scope(): boolean {

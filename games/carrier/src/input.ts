@@ -11,9 +11,7 @@
  */
 export class Input {
   private keys = new Set<string>()
-  /** The character each held key produced when it went down. */
-  private chars = new Map<string, string>()
-  /** Codes and characters that went down since the last `endFrame` (taps shorter than a frame still count). */
+  /** Codes that went down since the last `endFrame` (taps shorter than a frame still count). */
   private downs = new Set<string>()
   private drag = false
   private dx = 0
@@ -31,19 +29,11 @@ export class Input {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
       if (this.keys.has(e.code)) return
-      const k = e.key.toLowerCase()
       this.keys.add(e.code)
-      this.keys.add(k)
-      this.chars.set(e.code, k)
       this.downs.add(e.code)
-      this.downs.add(k)
     })
     addEventListener("keyup", (e) => {
-      // Release the character seen on press: Shift or Option can change e.key before the key comes up.
       this.keys.delete(e.code)
-      const down = this.chars.get(e.code)
-      if (down !== undefined) this.keys.delete(down)
-      this.chars.delete(e.code)
       // macOS drops keyups for other keys while Cmd is held.
       if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
     })
@@ -124,7 +114,6 @@ export class Input {
 
   release(): void {
     this.keys.clear()
-    this.chars.clear()
     this.downs.clear()
     this.drag = false
   }
@@ -133,24 +122,24 @@ export class Input {
     return this.keys.has(code)
   }
 
-  /** Whether any of these codes or characters went down since the last `endFrame`. */
-  pressed(...keys: string[]): boolean {
-    for (const k of keys) if (this.downs.has(k)) return true
+  /** Whether any of these physical codes went down since the last `endFrame`. */
+  pressed(...codes: string[]): boolean {
+    for (const c of codes) if (this.downs.has(c)) return true
     return false
   }
 
-  private any(code: string, char: string, arrow: string): boolean {
-    return this.keys.has(code) || this.keys.has(char) || this.keys.has(arrow)
+  private any(code: string, arrow: string): boolean {
+    return this.keys.has(code) || this.keys.has(arrow)
   }
 
   /** Pan intent to the right, -1..1. */
   get right(): number {
-    return (this.any("KeyD", "d", "ArrowRight") ? 1 : 0) - (this.any("KeyA", "a", "ArrowLeft") ? 1 : 0)
+    return (this.any("KeyD", "ArrowRight") ? 1 : 0) - (this.any("KeyA", "ArrowLeft") ? 1 : 0)
   }
 
   /** Pan intent ahead, -1..1. */
   get ahead(): number {
-    return (this.any("KeyW", "w", "ArrowUp") ? 1 : 0) - (this.any("KeyS", "s", "ArrowDown") ? 1 : 0)
+    return (this.any("KeyW", "ArrowUp") ? 1 : 0) - (this.any("KeyS", "ArrowDown") ? 1 : 0)
   }
 
   get fast(): boolean {

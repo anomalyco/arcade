@@ -4,19 +4,20 @@ import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 export const CHUNK = 32
 export const SIZE = CHUNK * 3
 export type Barrier = { rect: Rect; kind: "wall" | "window" | "fence"; color: number }
-export type Door = { id: string; rect: Rect; open: boolean }
+export type Door = { id: string; rect: Rect; open: boolean; locked?: boolean }
+export type WindowOpening = { id: string; buildingId: string; buildingIndex: number; rect: Rect; open: boolean; openable: boolean }
 export type Building = { id: string; kind: "house" | "hardware" | "pharmacy"; rect: Rect; color: number }
 export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove"; variant: number }
 export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
-export type Town = { seed: number; houseSeed: number; terrain: number; foliageDensity: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; props: Prop[]; lamps: Lamp[] }
+export type Town = { seed: number; houseSeed: number; terrain: number; foliageDensity: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; windows: WindowOpening[]; props: Prop[]; lamps: Lamp[] }
 
 /** One footprint source for geometry, collision, roof cutaways and room memory. */
 export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
 export const frontageEnd = (b: Building) => b.kind === "house" ? b.rect[3] + 2.5 : b.rect[3]
-/** Authoritative union-of-rects floor footprint: houses have an L-shaped plan (stepped-in north bedroom block + full-width south living/kitchen block). */
+/** Authoritative union-of-rects floor footprint: houses have an L-shaped plan (stepped-in north bedroom block + stepped north-east wing + full-width south block). */
 export function buildingFootprint(b: Building): readonly Rect[] {
   const [x, z, r, e] = b.rect
-  return b.kind === "house" ? [[x, z + 5.5, r, e], [x + 2, z, x + 9.5, z + 5.5]] : [b.rect]
+  return b.kind === "house" ? [[x, z + 5.5, r, e], [x + 2, z, x + 9.5, z + 5.5], [x + 9.5, z + 1.5, r, z + 5.5]] : [b.rect]
 }
 export function inBuildingFootprint(b: Building, px: number, pz: number): boolean {
   for (const [x0, z0, x1, z1] of buildingFootprint(b)) {
@@ -35,41 +36,47 @@ export function propShape(p: Prop): { rect: Rect; height: number } | undefined {
 export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageDensity = 1): Town {
   const rng = new Rng(seed)
   const houses = new Rng(houseSeed)
-  const town: Town = { seed, houseSeed, terrain, foliageDensity, chunks: [], buildings: [], barriers: [], doors: [], props: [], lamps: [] }
+  const town: Town = { seed, houseSeed, terrain, foliageDensity, chunks: [], buildings: [], barriers: [], doors: [], windows: [], props: [], lamps: [] }
   for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) town.chunks.push([x * CHUNK, y * CHUNK, (x + 1) * CHUNK, (y + 1) * CHUNK])
   const wall = (rect: Rect, color: number, kind: Barrier["kind"] = "wall") => town.barriers.push({ rect, color, kind })
   const building = (id: string, kind: Building["kind"], rect: Rect) => {
     const [x, y, r, b] = rect
+    const buildingIndex = town.buildings.length
     const color = kind === "house" ? houses.pick([0xb3afa0, 0x899d95, 0xb4a181, 0x9caaa9]) : kind === "hardware" ? 0x8e7564 : 0x718b82
     town.buildings.push({ id, kind, rect, color })
+    const addWindow = (winId: string, wRect: Rect, openable = true) => {
+      wall(wRect, color, "window")
+      town.windows.push({ id: `${id}-${winId}`, buildingId: id, buildingIndex, rect: wRect, open: false, openable })
+    }
     const doorX = x + 5, split = y + 5.5
     wall([x, b - .22, x + 1.5, b], color)
-    wall([x + 1.5, b - .22, x + 3.5, b], color, "window")
+    addWindow("south-west", [x + 1.5, b - .22, x + 3.5, b], kind === "house")
     wall([x + 3.5, b - .22, doorX, b], color)
     town.doors.push({ id: `${id}-front`, rect: [doorX, b - .22, doorX + 1.4, b], open: false })
     wall([doorX + 1.4, b - .22, r - 4, b], color)
-    wall([r - 4, b - .22, r - 1.5, b], color, "window")
+    addWindow("south-east", [r - 4, b - .22, r - 1.5, b], kind === "house")
     wall([r - 1.5, b - .22, r, b], color)
     if (kind === "house") {
-      // L-shaped house plan: stepped-in north bedroom block [x+2..x+9.5, y..split] + full-width south block [x..r, split..b]
+      // L-shaped house plan: stepped-in north bedroom block [x+2..x+9.5, y..split] + stepped north-east wing + full-width south block [x..r, split..b]
       const bx0 = x + 2, bx1 = x + 9.5
       wall([bx0, y, bx1, y + .22], color)
       wall([bx0, y, bx0 + .22, split], color)
       wall([bx1 - .22, y, bx1, split], color)
+      wall([bx1, y + 1.5, r, y + 1.72], color)
       wall([x, split, bx0 + .22, split + .2], color)
       wall([bx0 + .22, split, doorX, split + .2], color)
       town.doors.push({ id: `${id}-room`, rect: [doorX, split, doorX + 1.4, split + .2], open: false })
       wall([doorX + 1.4, split, bx1, split + .2], color)
-      wall([bx1 - .22, split, r, split + .22], color)
+      wall([bx1 - .22, split, r - .22, split + .22], color)
       wall([x, split, x + .22, b], color)
-      wall([r - .22, split, r, split + 1.5], color)
-      wall([r - .22, split + 1.5, r, split + 4.0], color, "window")
-      wall([r - .22, split + 4.0, r, b], color)
+      wall([r - .22, y + 1.5, r, y + 4], color)
+      addWindow("east", [r - .22, y + 4, r, y + 6.5], true)
+      wall([r - .22, y + 6.5, r, b], color)
     } else {
       wall([x, y, r, y + .22], color)
       wall([x, y, x + .22, b], color)
       wall([r - .22, y, r, y + 4], color)
-      wall([r - .22, y + 4, r, y + 6.5], color, "window")
+      addWindow("east", [r - .22, y + 4, r, y + 6.5], true)
       wall([r - .22, y + 6.5, r, b], color)
       wall([x, split, doorX, split + .2], color)
       town.doors.push({ id: `${id}-room`, rect: [doorX, split, doorX + 1.4, split + .2], open: false })

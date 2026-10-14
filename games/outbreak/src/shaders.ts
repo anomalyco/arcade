@@ -58,20 +58,31 @@ fn interior(p:vec2f) -> bool {
   let s = select(vec4f(53.0, 23.0, 73.0, 38.0), vec4f(53.0, 54.0, 72.0, 68.0), p.y > 45.0);
   return all(p > s.xy + 0.22) && all(p < s.zw - 0.22);
 }
-fn roofCut(p:vec3f, id:i32) -> bool {
+fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
-  if (F.eye.x < b.x - 0.1 || F.eye.x > b.z + 0.1 || F.eye.y < b.y - 0.1 || F.eye.y > b.w + 0.1) { return false; }
-  if (id < 2) {
-    let eyeIn = F.eye.y > b.y + 5.4 || (F.eye.x > b.x + 1.9 && F.eye.x < b.x + 9.6);
-    if (!eyeIn) { return false; }
-    let south = p.x > b.x + 0.35 && p.x < b.z - 0.35 && p.z > b.y + 5.65 && p.z < b.w + 1.65;
-    let north = p.x > b.x + 2.25 && p.x < b.x + 9.25 && p.z > b.y + 0.35 && p.z < b.y + 5.85;
-    return south || north;
+  if (F.eye.z <= 1.0001) {
+    if (F.eye.x < b.x - 0.1 || F.eye.x > b.z + 0.1 || F.eye.y < b.y - 0.1 || F.eye.y > b.w + 0.1) { return false; }
+    if (id < 2) {
+      let eyeIn = F.eye.y > b.y + 5.4 || (F.eye.x > b.x + 1.9 && F.eye.x < b.x + 9.6);
+      if (!eyeIn) { return false; }
+      let south = p.x > b.x + 0.35 && p.x < b.z - 0.35 && p.z > b.y + 5.65 && p.z < b.w + 1.65;
+      let north = p.x > b.x + 2.25 && p.x < b.x + 9.25 && p.z > b.y + 0.35 && p.z < b.y + 5.85;
+      return south || north;
+    }
+    return p.x>b.x+0.35&&p.x<b.z-0.35&&p.z>b.y+0.35&&p.z<b.w+1.65;
   }
-  return p.x>b.x+0.35&&p.x<b.z-0.35&&p.z>b.y+0.35&&p.z<b.w+1.65;
+  if (!(all(F.eye.xy>b.xy-0.1)&&all(F.eye.xy<b.zw+0.1)&&all(p.xz>b.xy-0.55)&&all(p.xz<b.zw+1.65))) {
+    return false;
+  }
+  let alpha = clamp(F.eye.z - 1.0, 0.0, 1.0);
+  let worldR = length(p.xz - F.eye.xy) / (5.8 * alpha + 0.001);
+  if (worldR > 1.0) { return false; }
+  let fade = smoothstep(1.0, 0.48, worldR) * alpha;
+  if (fade >= 0.995) { return true; }
+  return bayer4x4(frag) < fade;
 }
 fn eyeVisible(p: vec2f) -> f32 {
-  let delta = p - F.eye.xy;
+  let delta = p - lights[0].pos.xz;
   let distance = length(delta);
   let a = (atan2(delta.y, delta.x) + TAU) % TAU;
   let f = a / TAU * f32(RAYS) - 0.5;
@@ -88,9 +99,14 @@ fn eyeVisible(p: vec2f) -> f32 {
 }`,
     directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(floorData(o.world.xz + n.xz * 0.28).g * 1.75, 1.0, !interior(o.world.xz + n.xz * 0.28) || o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
     cutaway: `
-      if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)))) { discard; }
+      if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
-        for(var i=0;i<4;i++) { if(roofCut(o.world,i)){discard;} }
+        for(var i=0;i<4;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
+      }
+      if (F.eye.z > 1.0001 && o.world.y > 0.88 && (mat == 4 || mat == 9 || mat == 2 || mat == 6)) {
+        let alpha = clamp(F.eye.z - 1.0, 0.0, 1.0);
+        let wr = length(o.world.xz - F.eye.xy) / (3.4 * alpha + 0.001);
+        if (wr < 1.0 && bayer4x4(o.pos) < smoothstep(1.0, 0.45, wr) * alpha * 0.92) { discard; }
       }
     `,
     // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
