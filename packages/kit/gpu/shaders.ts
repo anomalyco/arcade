@@ -969,7 +969,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
   const base = makeSceneShader({
     ...hooks,
     declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\n`,
-    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  lookAlbedo = o.color;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.09); }\n`,
+    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.u12.w));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;\n  lookAlbedo = o.color;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.u10.w * 0.018); }\n`,
     material: `${hooks.material ?? ""}\n    if (lookUseAfter) {
       let palMix = LK.u3.w;
       let folShift = LK.u11.z;
@@ -1126,91 +1126,93 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
 
     // Painterly gouache twilight choreography (retains real shingle/plank/stone/furniture detail & AO while lifting shadows to periwinkle gouache & warm peach-gold pools)
     if (i32(round(LK.u14.w)) == 2 || (LK.u10.w > 0.35 && LK.u10.y >= 2.0)) {
-      let dab = noise2(o.world.xz * 3.8 + vec2f(o.world.y * 1.9, 3.7)) - 0.5;
-      let dabBroad = noise2(o.world.xz * 0.95 + vec2f(7.1, 2.3)) - 0.5;
+      let dab = noise2(o.world.xz * 4.5 + vec2f(o.world.y * 2.1, 3.7)) - 0.5;
+      let dabMed = noise2(o.world.xz * 9.5 + vec2f(dab * 1.8, 6.2)) - 0.5;
+      let dabBroad = noise2(o.world.xz * 1.15 + vec2f(7.1, 2.3)) - 0.5;
+      let brushStroke = dab * 0.22 + dabMed * 0.16 + dabBroad * 0.14;
       let isIn = interior(o.world.xz) && o.world.y < 2.8;
       let fData = floorData(o.world.xz);
-      let ao = 1.0 - fData.r * 0.72 * (1.0 - smoothstep(0.0, 1.1, o.world.y));
+      let ao = 1.0 - fData.r * 0.78 * (1.0 - smoothstep(0.0, 1.1, o.world.y));
       // Detect cutaway mode (when player is inside the house, F.eye.y < 34.0) so exterior yard stays darker dusk in interior view
       let inCutawayView = F.eye.y < 34.0;
-      let extScale = select(1.0, 0.42, inCutawayView);
+      let extScale = select(1.0, 0.28, inCutawayView);
 
       if (!isIn) {
         // Modulate real procedural lookAlbedo (preserving shingle tabs, flagstones, sidewalk joints, car, and foliage clusters)
-        var gouacheAlbedo = lookAlbedo * (1.0 + dab * 0.16 + dabBroad * 0.12);
+        var gouacheAlbedo = lookAlbedo * (1.0 + brushStroke);
         if (mat == 20) {
           let k = i32(round(o.aux));
           if (k == 1) {
             // Street asphalt: blend procedural aggregate with mottled periwinkle-lavender gouache (#5f6c96)
-            let dabFine = noise2(o.world.xz * 7.5 + vec2f(dab * 1.5, 4.1)) - 0.5;
-            gouacheAlbedo = mix(lookAlbedo * vec3f(1.2, 1.35, 2.15), vec3f(0.115, 0.145, 0.275), 0.62) * (1.0 + dab * 0.22 + dabFine * 0.18 + dabBroad * 0.15);
+            gouacheAlbedo = mix(lookAlbedo * vec3f(1.25, 1.42, 2.25), vec3f(0.095, 0.122, 0.235), 0.55) * (1.0 + brushStroke * 1.35);
           } else if (k == 2) {
             // Sidewalk concrete: keep slab seams from lookAlbedo, lift toward warm periwinkle-cream
-            gouacheAlbedo = lookAlbedo * vec3f(1.35, 1.42, 1.78) * (1.0 + dab * 0.14);
+            gouacheAlbedo = lookAlbedo * vec3f(1.18, 1.25, 1.58) * (1.0 + brushStroke * 0.85);
           } else if (k == 6) {
             // Front cobblestone walk: keep Voronoi stone joints & bevels from lookAlbedo, warm honey-buff tint
-            gouacheAlbedo = lookAlbedo * vec3f(1.65, 1.42, 1.12) * (1.0 + dab * 0.14);
+            gouacheAlbedo = lookAlbedo * vec3f(1.48, 1.26, 0.98) * (1.0 + brushStroke * 0.9);
           } else if (k == 0 || k == 5) {
-            // Lawn turf & garden beds: keep clump texture from lookAlbedo, boost lush sage & moss-olive
-            let lushShift = mix(vec3f(0.95, 1.38, 0.78), vec3f(1.45, 1.65, 0.72), clamp(0.5 + dabBroad * 1.2 + dab * 0.5, 0.0, 1.0));
-            gouacheAlbedo = lookAlbedo * lushShift * 1.25;
+            // Lawn turf & garden beds: keep clump texture from lookAlbedo, deep Ghibli sage-moss & sunlit olive
+            let lushShift = mix(vec3f(0.76, 1.16, 0.64), vec3f(1.24, 1.44, 0.62), clamp(0.5 + dabBroad * 1.4 + dab * 0.8, 0.0, 1.0));
+            gouacheAlbedo = lookAlbedo * lushShift * (1.05 + brushStroke * 0.9);
           } else if (k == 3) {
-            gouacheAlbedo = lookAlbedo * vec3f(1.35, 1.38, 1.55) * (1.0 + dab * 0.18);
+            gouacheAlbedo = lookAlbedo * vec3f(1.22, 1.25, 1.42) * (1.0 + brushStroke);
           }
         } else if (mat == 21) {
           // Roof shingles: preserve individual shingle tab variation from lookAlbedo, shift to slate-periwinkle gouache
-          gouacheAlbedo = lookAlbedo * vec3f(1.45, 1.68, 2.55) * (1.0 + dab * 0.14);
+          gouacheAlbedo = lookAlbedo * vec3f(1.32, 1.52, 2.38) * (1.0 + brushStroke * 0.95);
         } else if (mat == 22) {
           // Trees & bushes: preserve 3D cluster normal shading & leaf detail, boost Ghibli moss-sage & sunlit olive-gold
           let crownH = clamp((o.world.y - 0.3) / 3.6, 0.0, 1.0);
-          let sunSide = clamp(n.y * 0.55 - n.x * 0.25 + 0.35 + dab * 0.25, 0.0, 1.0);
+          let sunSide = clamp(n.y * 0.55 - n.x * 0.25 + 0.35 + dab * 0.32, 0.0, 1.0);
           let bandF = lookQuantizeDiffuse(clamp(crownH * 0.5 + sunSide * 0.65, 0.0, 1.0), 0.18, max(3.0, LK.u10.y), LK.u10.z);
-          let folTint = mix(vec3f(0.68, 1.15, 0.82), vec3f(1.65, 1.88, 0.78), bandF);
-          gouacheAlbedo = lookAlbedo * folTint * 1.22;
+          let folTint = mix(vec3f(0.54, 0.94, 0.66), vec3f(1.42, 1.65, 0.68), bandF);
+          gouacheAlbedo = lookAlbedo * folTint * (1.08 + brushStroke * 0.8);
         } else if (mat == 4) {
           // Exterior clapboard siding: preserve lap seams from lookAlbedo, warm cream plaster tint
-          gouacheAlbedo = lookAlbedo * vec3f(1.55, 1.48, 1.42) * (1.0 + dab * 0.08);
+          gouacheAlbedo = lookAlbedo * vec3f(1.38, 1.32, 1.28) * (1.0 + brushStroke * 0.65);
         } else if (mat == 5) {
           // Road center dashes: soften into muted periwinkle-slate so they don't read as harsh yellow/white tape
-          gouacheAlbedo = vec3f(0.135, 0.165, 0.295) * (1.0 + dab * 0.15);
+          gouacheAlbedo = vec3f(0.105, 0.132, 0.245) * (1.0 + brushStroke);
         }
 
         // Broad peach-gold gouache glow spilling from front windows (24.4, 34.0), (31.2, 34.0) and porch (27.7, 35.0)
         let dWinL = length(o.world.xz - vec2f(24.4, 34.3));
         let dWinR = length(o.world.xz - vec2f(31.2, 34.3));
         let dPorch = length((o.world.xz - vec2f(27.7, 36.2)) * vec2f(0.85, 0.62));
-        let spillL = exp(-(dWinL * dWinL) / 8.5);
-        let spillR = exp(-(dWinR * dWinR) / 8.5);
-        let spillP = exp(-(dPorch * dPorch) / 15.0);
-        let warmSpill = clamp(spillL * 0.72 + spillR * 0.72 + spillP * 1.02, 0.0, 1.3) * step(o.world.y, 2.75);
-        let peachLight = vec3f(1.28, 0.84, 0.38) * warmSpill * (0.65 + 0.35 * extScale);
+        let spillL = exp(-(dWinL * dWinL) / 8.0);
+        let spillR = exp(-(dWinR * dWinR) / 8.0);
+        let spillP = exp(-(dPorch * dPorch) / 14.5);
+        let warmSpill = clamp(spillL * 0.68 + spillR * 0.68 + spillP * 0.96, 0.0, 1.25) * step(o.world.y, 2.75);
+        let peachLight = vec3f(1.22, 0.78, 0.34) * warmSpill * (0.55 + 0.45 * extScale);
 
         // Soft flower-bush blossoms along the house foundation (z ~ 33.5..35.2)
         if (mat == 22 && o.world.z > 33.2 && o.world.z < 35.6 && o.world.x > 22.0 && o.world.x < 33.8) {
           let blossom = smoothstep(0.28, 0.48, hash2(floor(o.world.xz * 5.5)));
-          gouacheAlbedo = mix(gouacheAlbedo, vec3f(0.58, 0.48, 0.24), blossom * 0.55);
+          gouacheAlbedo = mix(gouacheAlbedo, vec3f(0.55, 0.45, 0.22), blossom * 0.55);
         }
 
-        let hemiN = 0.65 + 0.35 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-        let skyAmb = vec3f(0.76, 0.82, 1.04) * hemiN * ao * extScale;
-        let paintedExt = col * 0.35 + gouacheAlbedo * (skyAmb + peachLight * 1.45) + peachLight * 0.055 * ao;
+        let hemiN = 0.62 + 0.38 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+        let skyAmb = vec3f(0.56, 0.62, 0.84) * hemiN * ao * extScale;
+        let paintedExt = col * 0.32 + gouacheAlbedo * (skyAmb + peachLight * 1.35) + peachLight * 0.042 * ao;
         col = mix(col, paintedExt, clamp(LK.u10.w, 0.0, 1.0));
       } else {
         // Interior cutaway gouache: preserve real wood plank seams, rugs, furniture & wall AO while warming palette
-        var intAlbedo = lookAlbedo * (1.0 + dab * 0.12);
+        var intAlbedo = lookAlbedo * (1.0 + brushStroke * 0.75);
         if (mat == 20 && i32(round(o.aux)) == 4) {
           // Hardwood floor: keep plank seams & board variation from lookAlbedo, shift to rich honey-sienna gouache
-          intAlbedo = lookAlbedo * vec3f(1.38, 1.02, 0.62) * (1.0 + dab * 0.12);
+          let rowSeam = smoothstep(0.0, 0.09, abs(fract(o.world.z / 0.165 + 0.5) - 0.5));
+          intAlbedo = lookAlbedo * vec3f(1.22, 0.84, 0.46) * (0.58 + 0.52 * rowSeam) * (1.0 + brushStroke * 0.75);
         } else if (mat == 4) {
           // Two-tone painted interior wall: sage-grey lower wainscot (y < 1.05) + warm cream-peach upper plaster, keeping plaster stipple
           let isUpper = smoothstep(0.88, 1.12, o.world.y);
-          let wainscot = lookAlbedo * vec3f(0.68, 0.78, 0.66) * (1.0 + dab * 0.12);
-          let upperWall = lookAlbedo * vec3f(1.28, 1.12, 0.96) * (1.0 + dab * 0.12);
+          let wainscot = lookAlbedo * vec3f(0.52, 0.62, 0.52) * (1.0 + brushStroke * 0.8);
+          let upperWall = lookAlbedo * vec3f(1.08, 0.94, 0.80) * (1.0 + brushStroke * 0.8);
           intAlbedo = mix(wainscot, upperWall, isUpper);
         } else if (mat == 0) {
           // Furniture (beds, tables, chairs, cabinets): warm tactile gouache tint with normal shading
-          let furnShade = 0.62 + 0.38 * clamp(n.y * 0.6 + 0.4, 0.0, 1.0);
-          intAlbedo = lookAlbedo * vec3f(1.18, 1.12, 0.98) * furnShade;
+          let furnShade = 0.55 + 0.45 * clamp(n.y * 0.6 + 0.4, 0.0, 1.0);
+          intAlbedo = lookAlbedo * vec3f(0.95, 0.90, 0.78) * furnShade;
         }
         // Cozy golden lamp pools in all 4 rooms (NW bed, SW bed/living, SE dining, NE kitchen table), respecting wall/furniture AO
         let dNW = length(o.world.xz - vec2f(25.2, 25.4));
@@ -1218,23 +1220,23 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
         let dSE = length(o.world.xz - vec2f(31.5, 30.6));
         let dNE = length(o.world.xz - vec2f(30.4, 26.8));
         let dHall = length(o.world.xz - vec2f(27.7, 29.5));
-        let warmPool = exp(-(dNW * dNW) / 9.5) * 0.78
-          + exp(-(dSW * dSW) / 8.5) * 0.68
-          + exp(-(dSE * dSE) / 10.5) * 0.85
-          + exp(-(dNE * dNE) / 9.0) * 0.65
-          + exp(-(dHall * dHall) / 14.0) * 0.38;
-        let hemiIn = 0.62 + 0.38 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-        let roomLight = (vec3f(0.38, 0.35, 0.34) + vec3f(0.88, 0.58, 0.26) * warmPool) * hemiIn * ao;
-        let paintedInt = col * 0.42 + intAlbedo * roomLight + vec3f(0.045, 0.028, 0.01) * warmPool * ao;
+        let warmPool = exp(-(dNW * dNW) / 8.5) * 0.75
+          + exp(-(dSW * dSW) / 7.5) * 0.65
+          + exp(-(dSE * dSE) / 9.5) * 0.82
+          + exp(-(dNE * dNE) / 8.0) * 0.62
+          + exp(-(dHall * dHall) / 12.0) * 0.35;
+        let hemiIn = 0.58 + 0.42 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+        let roomLight = (vec3f(0.24, 0.22, 0.22) + vec3f(0.78, 0.50, 0.22) * warmPool) * hemiIn * ao;
+        let paintedInt = col * 0.38 + intAlbedo * roomLight + vec3f(0.032, 0.018, 0.006) * warmPool * ao;
         col = mix(col, paintedInt, clamp(LK.u10.w, 0.0, 1.0));
       }
       if (mat == 9) {
         // Cutaway wall-top trim in Painterly: soft slate-indigo border with brush mottling
-        col = mix(col, vec3f(0.055, 0.065, 0.105) * (1.0 + dab * 0.14), clamp(LK.u10.w, 0.0, 1.0));
+        col = mix(col, vec3f(0.042, 0.050, 0.082) * (1.0 + dab * 0.16), clamp(LK.u10.w, 0.0, 1.0));
       }
       if (mat == 3) {
         // Glowing warm peach-gold window panes
-        col = mix(col, vec3f(1.65, 1.08, 0.45), clamp(LK.u10.w * 0.85, 0.0, 1.0));
+        col = mix(col, vec3f(1.55, 1.02, 0.42), clamp(LK.u10.w * 0.85, 0.0, 1.0));
       }
     }
   }\n`,
