@@ -263,49 +263,50 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   }
 
   // 1. Ambient / sky hemisphere fill + shadow colour tint
-  let hemi = 0.42 + 0.58 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-  let baseAmb = vec3f(0.055, 0.072, 0.115) * ambientFill * shadowCol;
+  let hemi = 0.35 + 0.65 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+  let baseAmb = vec3f(0.032, 0.044, 0.072) * ambientFill * shadowCol;
   var diff = baseAmb * hemi * sample.cavity;
   var spec = vec3f(0.0);
 
   // 2. Directional cold moonlight / sunlight through window & over yard
   let moonDir = normalize(vec3f(-0.68, 0.54, -0.49));
-  let moonNdl = lookQuantizeDiffuse(dot(n, moonDir), wrap * 0.65 + 0.15, bands, bandSoft);
+  let moonNdl = lookQuantizeDiffuse(dot(n, moonDir), wrap * 0.5, bands, bandSoft);
   if (moonNdl > 0.001 && moonInt > 0.001) {
     let winCookie = windowApertureCookie(o.world, moonDir, slats);
     let mVis = roomShadowVis(o.world + n * 0.02, moonDir, 12.0) * winCookie;
-    let moonCol = vec3f(0.56, 0.72, 1.02) * shadowCol * 0.68 * moonInt;
-    diff += moonCol * moonNdl * (0.14 + 0.86 * mVis) * sample.cavity;
+    let moonCol = vec3f(0.48, 0.64, 0.94) * shadowCol * 0.42 * moonInt;
+    diff += moonCol * moonNdl * mVis * sample.cavity;
     if (sample.gloss.x > 0.0) {
       let h = normalize(moonDir + V);
-      let s = pow(max(0.0, dot(n, h)), sample.gloss.x) * (sample.gloss.x + 2.0) * 0.006;
+      let s = pow(max(0.0, dot(n, h)), sample.gloss.x) * (sample.gloss.x + 2.0) * 0.007;
       spec += moonCol * s * sample.gloss.y * mVis;
     }
   }
 
   // 2b. Character flashlight cone cutting across the steps & cobblestone walk in Noir / Rim mode
   if (rimStrength > 0.5) {
-    let torchPos = vec3f(-0.35, 1.32, 0.25);
-    let torchAim = normalize(vec3f(0.08, -0.36, 0.93));
+    let torchPos = vec3f(-0.22, 1.18, 0.22);
+    let torchAim = normalize(vec3f(0.28, -0.34, 0.90));
     let toTorch = torchPos - o.world;
     let td = length(toTorch);
-    if (td > 0.15 && td < 6.5) {
+    if (td > 0.15 && td < 7.2) {
       let tdir = toTorch / td;
-      let cone = smoothstep(0.76, 0.93, dot(-tdir, torchAim));
-      let fade = pow(max(0.0, 1.0 - td / 6.5), 1.6);
+      let cosAng = dot(-tdir, torchAim);
+      let cone = pow(smoothstep(0.84, 0.985, cosAng), 1.6);
+      let fade = pow(max(0.0, 1.0 - td / 7.2), 1.35);
       let tndl = lookQuantizeDiffuse(dot(n, tdir), wrap, bands, bandSoft);
-      let torchIntensity = clamp((rimStrength - 0.5) * 1.4, 0.0, 1.8) * cone * fade;
-      let torchCol = vec3f(0.82, 0.92, 1.08);
-      diff += torchCol * torchIntensity * tndl * 1.85;
+      let torchIntensity = clamp((rimStrength - 0.5) * 2.2, 0.0, 3.2) * cone * fade;
+      let torchCol = vec3f(0.84, 0.94, 1.12);
+      diff += torchCol * torchIntensity * (0.2 + 0.8 * tndl) * 2.1;
       if (sample.gloss.x > 0.0) {
         let h = normalize(tdir + V);
-        let s = pow(max(0.0, dot(n, h)), sample.gloss.x) * (sample.gloss.x + 2.0) * 0.008;
-        spec += torchCol * torchIntensity * s * sample.gloss.y;
+        let s = pow(max(0.0, dot(n, h)), sample.gloss.x) * (sample.gloss.x + 2.0) * 0.012;
+        spec += torchCol * torchIntensity * s * sample.gloss.y * 1.6;
       }
     }
   }
 
-  // 3. Two warm practical lamps (Interior sconce + Threshold post lamp)
+  // 3. Two warm practical lamps (Interior sconce + Threshold post lamp) — tight pools that carve shapes out of darkness
   let lampPos = array<vec3f, 2>(
     vec3f(-3.75, 1.82, -3.42),
     vec3f(1.45, 1.98, 1.15)
@@ -314,8 +315,8 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
     vec3f(1.05, 0.66, 0.32),
     vec3f(1.02, 0.62, 0.28)
   );
-  let lampRad = array<f32, 2>(7.2, 8.0);
-  let lampPow = array<f32, 2>(2.35, 2.55);
+  let lampRad = array<f32, 2>(4.6, 5.2);
+  let lampPow = array<f32, 2>(1.85, 2.05);
 
   for (var i = 0; i < 2; i++) {
     let lpos = lampPos[i];
@@ -326,15 +327,23 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
     let ldir = delta / max(dist, 0.001);
     let x = dist / rad;
     let win = (1.0 - x * x) * (1.0 - x * x);
-    let atten = lampPow[i] * practicalInt * win / (1.0 + dist * dist * 0.28);
-    let vis = 0.08 + 0.92 * roomShadowVis(o.world + n * 0.02, ldir, dist - 0.18);
+    let atten = lampPow[i] * practicalInt * win / (1.0 + dist * dist * 0.55);
+    let vis = 0.03 + 0.97 * roomShadowVis(o.world + n * 0.02, ldir, dist - 0.18);
     let lcol = lookPracticalColor(lampBaseCol[i], practicalWarmth);
     let ndl = lookQuantizeDiffuse(dot(n, ldir), wrap, bands, bandSoft);
     diff += lcol * atten * ndl * vis * mix(0.65, 1.0, sample.cavity);
     if (sample.gloss.x > 0.0 && sample.gloss.y > 0.0) {
       let h = normalize(ldir + V);
-      let s = pow(max(0.0, dot(n, h)), sample.gloss.x) * (sample.gloss.x + 2.0) * 0.007;
+      let s = pow(max(0.0, dot(n, h)), sample.gloss.x) * (sample.gloss.x + 2.0) * 0.009;
       spec += lcol * atten * s * sample.gloss.y * vis;
+      // Wet floor elongated mirror streak under practical lamps
+      if (wetness > 0.05 && n.y > 0.8) {
+        let k = lpos.y / max(0.1, lpos.y + F.eye.y);
+        let pm = lpos.xz + (F.eye.xz - lpos.xz) * k;
+        let q = o.world.xz - pm;
+        let streak = exp(-dot(q, q) / 0.28) * wetness * 0.38;
+        spec += lcol * practicalInt * streak * vis;
+      }
     }
   }
 
@@ -536,7 +545,27 @@ fn evaluateRoomAtmosphere(
   let shaftLift = (1.0 - exp(-shaftSum * 1.45)) * shaftStrength;
   let warmCol = lookPracticalColor(vec3f(1.0, 0.62, 0.26), practicalWarmth);
   let shaftCol = mix(vec3f(0.68, 0.82, 1.08), vec3f(1.08, 0.84, 0.52), clamp(L.u1.w * 0.5 + 0.25, 0.0, 1.0));
-  let inScatter = fogCol * (1.0 - trans) + shaftCol * (shaftLift * 0.34) + warmCol * (warmAir * (0.25 + fogDensity * 0.75));
+  // Volumetric flashlight cone air haze in front of character when rim/flashlight is active
+  var torchAir = 0.0;
+  if (L.u5.w > 0.5) {
+    let torchPos = vec3f(-0.22, 1.18, 0.22);
+    let torchAim = normalize(vec3f(0.28, -0.34, 0.90));
+    for (var ti = 0; ti < 8; ti++) {
+      let t = 8.0 + f32(ti) * 1.1;
+      if (t >= rayLen) { break; }
+      let p = origin + dir * t;
+      let v = p - torchPos;
+      let along = dot(v, torchAim);
+      if (along > 0.05 && along < 5.5) {
+        let perp2 = max(0.0, dot(v, v) - along * along);
+        let coneR = 0.08 + along * 0.22;
+        torchAir += exp(-perp2 / (coneR * coneR)) * (1.0 - along / 5.5) * 0.045;
+      }
+    }
+  }
+  // Convert perceptual fogColor sliders to linear light so fog never washes dark Noir scenes grey
+  let linearFogCol = pow(max(fogCol, vec3f(0.0)), vec3f(2.2)) * clamp(L.u4.x * 0.65, 0.04, 1.2);
+  let inScatter = linearFogCol * (1.0 - trans) + shaftCol * (shaftLift * 0.36) + warmCol * (warmAir * (0.18 + fogDensity * 0.45)) + vec3f(0.75, 0.88, 1.08) * torchAir * clamp(L.u5.w - 0.5, 0.0, 1.5);
   return vec4f(inScatter, trans);
 }
 

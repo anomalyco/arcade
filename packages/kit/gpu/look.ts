@@ -271,48 +271,48 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
     },
     defaults: {
       preset: "noir",
-      exposure: 1.12,
+      exposure: 0.96,
       tonemap: 1,
-      contrast: 1.24,
-      toe: 0.28,
-      shoulder: 0.32,
-      blackCrush: 0.025,
-      saturation: 0.28,
-      temperature: -0.22,
-      splitTone: 0.86,
-      shadowTintR: 0.64,
+      contrast: 1.36,
+      toe: 0.46,
+      shoulder: 0.34,
+      blackCrush: 0.045,
+      saturation: 0.22,
+      temperature: -0.26,
+      splitTone: 0.88,
+      shadowTintR: 0.62,
       shadowTintG: 0.78,
-      shadowTintB: 1.08,
+      shadowTintB: 1.1,
       highlightTintR: 1.14,
-      highlightTintG: 0.92,
-      highlightTintB: 0.66,
-      paletteMix: 0.55,
-      foliageShift: -0.35,
-      ambientFill: 0.55,
-      shadowColorR: 0.58,
-      shadowColorG: 0.74,
-      shadowColorB: 1.04,
-      practicalWarmth: 0.46,
-      practicalIntensity: 1.45,
-      moonIntensity: 1.65,
-      rimStrength: 1.35,
-      contactShade: 0.85,
-      surfaceWetness: 0.78,
-      fogDensity: 0.48,
-      fogHeightFalloff: 1.8,
-      fogColorR: 0.12,
-      fogColorG: 0.16,
-      fogColorB: 0.22,
-      shaftStrength: 1.85,
-      shaftSlats: 0.62,
-      bloom: 1.2,
-      halation: 0.32,
-      vignette: 0.82,
-      grain: 0.42,
+      highlightTintG: 0.94,
+      highlightTintB: 0.68,
+      paletteMix: 0.62,
+      foliageShift: -0.42,
+      ambientFill: 0.16,
+      shadowColorR: 0.48,
+      shadowColorG: 0.64,
+      shadowColorB: 0.92,
+      practicalWarmth: 0.48,
+      practicalIntensity: 1.25,
+      moonIntensity: 0.85,
+      rimStrength: 1.45,
+      contactShade: 0.95,
+      surfaceWetness: 0.85,
+      fogDensity: 0.42,
+      fogHeightFalloff: 1.6,
+      fogColorR: 0.04,
+      fogColorG: 0.06,
+      fogColorB: 0.09,
+      shaftStrength: 2.1,
+      shaftSlats: 0.65,
+      bloom: 1.15,
+      halation: 0.28,
+      vignette: 0.95,
+      grain: 0.38,
       grainSeed: 73,
       grainAnimated: true,
-      chromatic: 0.22,
-      diffuseWrap: 0.12,
+      chromatic: 0.18,
+      diffuseWrap: 0.04,
       diffuseBands: 0,
       bandSoftness: 0.16,
       painterlySmooth: 0.0,
@@ -1206,9 +1206,9 @@ fn lookGradeColor(
 
   // 6. Shadow toe curve (Lamplight paper.wgsl)
   if (toe > 0.001) {
-    let toeK = toe * 0.055;
+    let toeK = toe * 0.095;
     let t = c * c / max(c + vec3f(toeK), vec3f(1e-5));
-    c = mix(c, t * (1.0 + toeK), clamp(toe * 0.75, 0.0, 0.85));
+    c = mix(c, t * (1.0 + toeK * 0.5), clamp(toe * 0.9, 0.0, 0.95));
   }
 
   // 7. Split-toning & saturation (with selective warm practical hue retention when practicalWarmth > 0)
@@ -1220,9 +1220,9 @@ fn lookGradeColor(
   let effSat = mix(saturation, max(saturation, 0.82), warmBias * 0.75);
   c = mix(mono, c * activeSplit, effSat);
 
-  // 8. Black crush (scaled for linear space before sRGB encoding so deep shadows crush without eating midtones)
+  // 8. Black crush (carves deep shadows to near-black while keeping lit pools & beams intact)
   if (blackCrush > 0.0005) {
-    let linearCrush = blackCrush * 0.08;
+    let linearCrush = blackCrush * 0.14;
     c = max(vec3f(0.0), (c - vec3f(linearCrush)) / max(1.0 - linearCrush, 0.1));
   }
 
@@ -1230,7 +1230,7 @@ fn lookGradeColor(
   let fromC = (uv - 0.5) * vec2f(1.0, 0.82);
   let vDist = length(fromC);
   let baseVig = mix(1.0, baseVignetteFloor, smoothstep(0.32, 0.85, vDist));
-  let extraVig = 1.0 - clamp(vigStrength * 0.48, 0.0, 0.85) * smoothstep(0.28, 0.88, vDist);
+  let extraVig = 1.0 - clamp(vigStrength * 0.65, 0.0, 0.92) * smoothstep(0.20, 0.84, vDist);
   c *= baseVig * extraVig;
 
   // 10. Seeded dual-scale triangular film grain in midtones & light shafts
