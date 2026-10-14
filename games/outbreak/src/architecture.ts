@@ -14,17 +14,33 @@ export const archSettings = {
   clutterSeed: 17,
 }
 
-/** Weathered clapboard garden shed with hipped shingle roof in the north-west side yard by the picket fence. */
+export type HouseDecayState = 1 | 2 | 3 | 4 // 1=Tidy, 2=Abandoned, 3=Ransacked, 4=Barricaded
+
+export function resolveHouseDecay(town: Town, id: number): HouseDecayState {
+  if (archSettings.houseDecay >= 1 && archSettings.houseDecay <= 4) {
+    return archSettings.houseDecay as HouseDecayState
+  }
+  if (town.houseSeed === 7) return id === 0 ? 3 : 4
+  return ((((town.houseSeed + id * 3) % 4) + 4) % 4 + 1) as HouseDecayState
+}
+
+/** Weathered clapboard garden shed with hipped shingle roof, slightly ajar door & leaning boards in the NW side yard. */
 function gardenShed(m:Mesh,x0:number,z0:number,x1:number,z1:number,ground:number) {
-  const y=ground, wallCol=rgb(0x6c7582), trimCol=rgb(0x9ca3ad), roofCol=rgb(0x384252), ridgeCol=rgb(0x4b5668)
-  const mx=(x0+x1)/2, mz=(z0+z1)/2, eave=y+1.52, peak=y+2.08
-  m.box(x0,y+.02,z0,x1,eave,z1,wallCol,MAT.lit)
+  const y=ground, wallCol=rgb(0x464f5a), trimCol=rgb(0x636b75), roofCol=rgb(0x28313f), ridgeCol=rgb(0x364254)
+  const mx=(x0+x1)/2, mz=(z0+z1)/2, eave=y+1.52, peak=y+2.10
+  m.box(x0,y+.02,z0,x1,eave,z1,wallCol,MAT.timber)
+  m.box(x0-.02,y+.01,z0-.02,x1+.02,y+.22,z1+.02,rgb(0x2a2f28),MAT.timber)
   for(const px of [x0,x1-.06])for(const pz of [z0,z1-.06])m.box(px,y+.02,pz,px+.06,eave,pz+.06,trimCol,MAT.lit)
-  // Double shed doors on the south face (+z)
-  m.box(mx-.42,y+.06,z1+.002,mx-.02,eave-.12,z1+.03,rgb(0x525a66),MAT.lit)
-  m.box(mx+.02,y+.06,z1+.002,mx+.42,eave-.12,z1+.03,rgb(0x525a66),MAT.lit)
-  // Four-sided hipped shingle roof (MAT.lit so it stays in the fast opaque pipeline)
-  const ox0=x0-.12,ox1=x1+.12,oz0=z0-.12,oz1=z1+.12,top:Point=[mx,peak,mz]
+  // Dark interior gap + weathered double shed doors on south face (+z) with cross-buck Z braces
+  m.box(mx-.44,y+.04,z1-.01,mx+.44,eave-.10,z1+.01,rgb(0x101318),MAT.lit)
+  m.box(mx-.42,y+.06,z1+.01,mx-.04,eave-.12,z1+.04,rgb(0x3b434d),MAT.timber)
+  m.box(mx+.04,y+.06,z1+.01,mx+.42,eave-.12,z1+.05,rgb(0x363e48),MAT.timber)
+  for(const dy of [.28,1.18])m.box(mx-.40,y+dy,z1+.04,mx+.40,y+dy+.05,z1+.06,trimCol,MAT.lit)
+  // Leaning weathered salvage planks against east shed wall
+  m.quadAuto([x1+.16,y+.02,z0+.35],[x1+.16,y+.02,z0+.58],[x1+.02,y+1.18,z0+.56],[x1+.02,y+1.18,z0+.33],rgb(0x584632),MAT.timber)
+  // Four-sided hipped roof with overhanging eaves & dark fascia
+  const ox0=x0-.15,ox1=x1+.15,oz0=z0-.15,oz1=z1+.15,top:Point=[mx,peak,mz]
+  m.box(ox0,eave-.05,oz0,ox1,eave+.01,oz1,rgb(0x222730),MAT.lit)
   m.facet([ox0,eave,oz1],[ox1,eave,oz1],top,roofCol,MAT.lit)
   m.facet([ox1,eave,oz0],[ox0,eave,oz0],top,roofCol,MAT.lit)
   m.facet([ox0,eave,oz0],[ox0,eave,oz1],top,ridgeCol,MAT.lit)
@@ -33,34 +49,45 @@ function gardenShed(m:Mesh,x0:number,z0:number,x1:number,z1:number,ground:number
 function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
   const y=ground, from=m.length
   // Soft contact shadow under chassis
-  m.quad([-.92,y+.004,2.14],[.92,y+.004,2.14],[.92,y+.004,-2.14],[-.92,y+.004,-2.14],[0,1,0],rgb(0x111419),MAT.lit)
-  const paintSide=rgb(0x636f80),paintTop=rgb(0x7c899c),paintRoof=rgb(0x8a98ad),trim=rgb(0x232830),glass=rgb(0x25303f),pillar=rgb(0x94a2b6)
-  // Four wheels with dark tires and alloy rims
+  m.quad([-.94,y+.004,2.16],[.94,y+.004,2.16],[.94,y+.004,-2.16],[-.94,y+.004,-2.16],[0,1,0],rgb(0x0c0f14),MAT.lit)
+  const paintSide=rgb(0x3a424e),paintTop=rgb(0x475160),paintRoof=rgb(0x4d5868),trim=rgb(0x1b1f26),glass=rgb(0x161e28),pillar=rgb(0x566172)
+  // Four wheels with dark tires and weathered steel/alloy rims
   for(const sx of [-.78,.78])for(const sz of [-1.28,1.22]){
-    m.box(sx-.11,y+.01,sz-.31,sx+.11,y+.56,sz+.31,rgb(0x17191d),MAT.lit)
-    m.box(sx+(sx<0?-.12:.09),y+.14,sz-.19,sx+(sx<0?-.09:.12),y+.43,sz+.19,rgb(0x78808e),MAT.shiny)
+    m.box(sx-.11,y+.01,sz-.31,sx+.11,y+.56,sz+.31,rgb(0x14161a),MAT.lit)
+    m.box(sx+(sx<0?-.12:.09),y+.14,sz-.19,sx+(sx<0?-.09:.12),y+.43,sz+.19,rgb(0x525864),MAT.shiny)
   }
   // Lower body hull: long hood at north (-z), trunk deck at south (+z)
   m.bevelBox(-.84,y+.22,-2.04,.84,y+.76,2.02,.055,paintSide,paintTop,MAT.lit,MAT.lit)
-  // Front (-z) & rear (+z) wrap-around dark bumpers + side rub strips
+  // Weathered grime/oxidation patches on hood & trunk + dark panel seams so the car reads as abandoned/weathered
+  m.box(-.64,y+.761,-1.82,-.12,y+.766,-1.05,rgb(0x363c44),MAT.lit)
+  m.box(.14,y+.761,-1.65,.62,y+.766,-.88,rgb(0x3c3834),MAT.lit)
+  m.box(-.58,y+.761,1.18,.48,y+.766,1.82,rgb(0x383f4a),MAT.lit)
+  m.box(-.72,y+.761,-1.92,.72,y+.768,-1.88,rgb(0x1e232a),MAT.lit)
+  m.box(-.72,y+.761,1.12,.72,y+.768,1.15,rgb(0x1e232a),MAT.lit)
+  // Front (-z) & rear (+z) wrap-around dark bumpers + side rub strips + door vertical seam
   m.box(-.86,y+.20,1.86,.86,y+.43,2.09,trim,MAT.lit)
   m.box(-.86,y+.20,-2.09,.86,y+.43,-1.86,trim,MAT.lit)
   m.box(-.86,y+.35,-1.86,.86,y+.41,1.86,trim,MAT.lit)
-  // Hood creases (-z) and trunk lid seam (+z)
-  for(const sx of [-.56,.56])m.box(sx-.022,y+.76,-1.94,sx+.022,y+.778,-.74,rgb(0x687486),MAT.lit)
-  m.box(-.015,y+.76,-1.96,.015,y+.778,-.74,rgb(0x8e9cb2),MAT.lit)
-  m.box(-.68,y+.755,-.74,.68,y+.772,-.62,trim,MAT.lit)
-  for(const sx of [-.72,.72])m.box(sx-.015,y+.758,1.08,sx+.015,y+.772,1.94,rgb(0x525c6b),MAT.lit)
+  m.box(-.85,y+.24,-.02,.85,y+.74,.02,trim,MAT.lit)
+  // Hood creases (-z), cowl vent grille, windshield wipers & trunk lid seam (+z)
+  for(const sx of [-.56,.56])m.box(sx-.024,y+.76,-1.94,sx+.024,y+.782,-.74,rgb(0x323944),MAT.lit)
+  m.box(-.018,y+.76,-1.96,.018,y+.784,-.74,rgb(0x5c687a),MAT.lit)
+  m.box(-.68,y+.755,-.76,.68,y+.776,-.60,rgb(0x16191f),MAT.lit)
+  for(const wx of [-.42,.12])m.box(wx,y+.775,-.72,wx+.36,y+.79,-.67,rgb(0x12151a),MAT.lit)
+  for(const sx of [-.72,.72])m.box(sx-.018,y+.758,1.08,sx+.018,y+.776,1.94,rgb(0x2e3540),MAT.lit)
   // Tapered cabin greenhouse: windshield at -z, roof in center, rear window at +z facing the street camera
   const bL=-.78,bR=.78,tL=-.65,tR=.65,y0=y+.75,y1=y+1.26
   const zRearBot=1.12,zRearTop=.48,zFrontTop=-.34,zFrontBot=-.76
-  // Solid greenhouse hull (brighter C/A pillars and roof)
   m.quadAuto([tL,y1,zRearTop],[tR,y1,zRearTop],[tR,y1,zFrontTop],[tL,y1,zFrontTop],paintRoof,MAT.lit)
+  // Roof weathering patch & twin dark roof drip-rail channels / crossbars
+  m.box(-.46,y1+.001,-.22,.38,y1+.005,.36,rgb(0x3a414d),MAT.lit)
+  for(const rx of [tL+.03,tR-.03])m.box(rx-.018,y1,zFrontTop+.04,rx+.018,y1+.022,zRearTop-.04,trim,MAT.lit)
+  for(const rz of [-.16,.26])m.box(tL+.02,y1+.015,rz-.02,tR-.02,y1+.032,rz+.02,rgb(0x252a32),MAT.lit)
   m.quadAuto([bL,y0,zRearBot],[bR,y0,zRearBot],[tR,y1,zRearTop],[tL,y1,zRearTop],pillar,MAT.lit)
   m.quadAuto([tL,y1,zFrontTop],[tR,y1,zFrontTop],[bR,y0,zFrontBot],[bL,y0,zFrontBot],pillar,MAT.lit)
   m.quadAuto([bL,y0,zFrontBot],[bL,y0,zRearBot],[tL,y1,zRearTop],[tL,y1,zFrontTop],paintSide,MAT.lit)
   m.quadAuto([bR,y0,zRearBot],[bR,y0,zFrontBot],[tR,y1,zFrontTop],[tR,y1,zRearTop],paintSide,MAT.lit)
-  // Inset rear window (+z, facing camera) & front windshield (-z) with crisp dark glass + thin silver trim
+  // Inset rear window (+z, facing camera) & front windshield (-z) with dark glass + defroster lines
   m.quadAuto([bL+.09,y0+.03,zRearBot+.006],[bR-.09,y0+.03,zRearBot+.006],[tR-.08,y1-.03,zRearTop+.006],[tL+.08,y1-.03,zRearTop+.006],glass,MAT.shiny)
   m.quadAuto([tL+.08,y1-.03,zFrontTop-.006],[tR-.08,y1-.03,zFrontTop-.006],[bR-.09,y0+.03,zFrontBot-.006],[bL+.09,y0+.03,zFrontBot-.006],glass,MAT.shiny)
   // Inset side door windows separated by B-pillar, plus front side mirrors near A-pillar (-z)
@@ -68,16 +95,16 @@ function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
     m.quadAuto([bL-.005,y0+.03,za],[bL-.005,y0+.03,zb],[tL-.005,y1-.03,tb],[tL-.005,y1-.03,ta],glass,MAT.shiny)
     m.quadAuto([bR+.005,y0+.03,zb],[bR+.005,y0+.03,za],[tR+.005,y1-.03,ta],[tR+.005,y1-.03,tb],glass,MAT.shiny)
   }
-  for(const s of [-1,1])m.box(s*.84,y+.74,-.52,s*.97,y+.84,-.38,paintTop,MAT.lit)
+  for(const s of [-1,1])m.box(s*.84,y+.74,-.52,s*.97,y+.84,-.38,paintSide,MAT.lit)
   // Rear (+z, facing camera): tail-light clusters, amber turn strips, trunk garnish & recessed license plate
-  m.box(-.22,y+.47,2.00,.22,y+.63,2.04,rgb(0x3a414d),MAT.lit)
-  m.box(-.16,y+.49,2.01,.16,y+.60,2.05,rgb(0xc8c5ba),MAT.lit)
+  m.box(-.22,y+.47,2.00,.22,y+.63,2.04,rgb(0x232830),MAT.lit)
+  m.box(-.16,y+.49,2.01,.16,y+.60,2.05,rgb(0x8e8a7e),MAT.lit)
   for(const sx of [-.56,.56]){
-    m.box(sx-.22,y+.48,2.00,sx+.22,y+.65,2.04,rgb(0x8e2c28),MAT.shiny)
-    m.box(sx-.22,y+.58,2.005,sx+.22,y+.65,2.045,rgb(0xb56c28),MAT.shiny)
-    m.box(sx-.18,y+.48,-2.05,sx+.18,y+.66,-2.00,rgb(0xc2cbd8),MAT.shiny)
+    m.box(sx-.22,y+.48,2.00,sx+.22,y+.65,2.04,rgb(0x6e201c),MAT.shiny)
+    m.box(sx-.22,y+.58,2.005,sx+.22,y+.65,2.045,rgb(0x8e521c),MAT.shiny)
+    m.box(sx-.18,y+.48,-2.05,sx+.18,y+.66,-2.00,rgb(0x8892a0),MAT.shiny)
   }
-  m.box(-.42,y+.47,-2.05,.42,y+.65,-2.00,rgb(0x1c2026),MAT.lit)
+  m.box(-.42,y+.47,-2.05,.42,y+.65,-2.00,rgb(0x14171c),MAT.lit)
   // Slight natural parking yaw (~3 deg) and translate to driveway
   const yaw=-.055, c=Math.cos(yaw), s=Math.sin(yaw)
   for(let i=from;i<m.v.length;i+=11){
@@ -297,7 +324,41 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     m.box(px,.12,e+.1,px+.07,2.77,e+.17,trim,MAT.timber)
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
   }
-  for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,trim,MAT.wall)
+  for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,rgb(0x787368),MAT.wall)
+  // Louvered exterior window shutters, crawlspace foundation vents, utility meter & decay-driven repairs/barricades
+  const decay = resolveHouseDecay(town, id)
+  const shutterCol = rgb(0x202a27), slatCol = rgb(0x161d1b)
+  for (const [winIdx, [wx0, wx1]] of [[0, [x + 1.5, x + 3.5]], [1, [r - 4.0, r - 1.5]]] as const) {
+    for (const [sideIdx, sx] of [[-1, wx0 - .36], [1, wx1 + .04]] as const) {
+      const crooked = decay >= 2 && winIdx === 0 && sideIdx === 1
+      const dy = crooked ? -.05 : 0
+      m.box(sx, .82 + dy, e + .008, sx + .32, 2.18 + dy, e + .048, shutterCol, MAT.wall)
+      for (let sy = .92 + dy; sy <= 2.08 + dy; sy += .14) {
+        m.box(sx + .04, sy, e + .049, sx + .28, sy + .05, e + .062, slatCol, MAT.wall)
+      }
+    }
+    // Cast-iron foundation crawlspace vent grate below each front window
+    const vmx = (wx0 + wx1) / 2
+    m.box(vmx - .22, .11, e + .025, vmx + .22, .27, e + .048, rgb(0x171a1e), MAT.lit)
+    // Weathered water-stain drip streaks below window sill corners
+    if (archSettings.weathering > 0.2) {
+      for (const cxW of [wx0 + .06, wx1 - .06]) {
+        m.box(cxW - .05, .36, e + .003, cxW + .05, .74, e + .012, rgb(0x46423a), MAT.wall)
+      }
+    }
+    // Exterior barricade planks across windows when house decay is Barricaded (4) or on right window in Ransacked/Abandoned
+    if (decay === 4 || (decay === 2 && winIdx === 0)) {
+      m.quadAuto([wx0 - .12, 1.02, e + .07], [wx1 + .12, 1.24, e + .07], [wx1 + .12, 1.40, e + .07], [wx0 - .12, 1.18, e + .07], rgb(0x5e462e), MAT.timber)
+      m.quadAuto([wx0 - .10, 1.78, e + .075], [wx1 + .10, 1.56, e + .075], [wx1 + .10, 1.72, e + .075], [wx0 - .10, 1.94, e + .075], rgb(0x523c26), MAT.timber)
+    }
+  }
+  // Mismatched siding repair patch & utility meter + conduit pipe on side wall
+  if (decay >= 2) {
+    m.box(x + 3.62, .48, e + .004, x + 4.46, .96, e + .018, rgb(0x5e5648), MAT.timber)
+    m.box(r - 1.38, .42, e + .004, r - .42, .82, e + .018, rgb(0x565044), MAT.timber)
+  }
+  m.box(x - .08, 1.15, z + 6.8, x + .01, 1.52, z + 7.12, rgb(0x3a4046), MAT.lit)
+  m.box(x - .04, .35, z + 6.93, x + .01, 2.68, z + 6.99, rgb(0x4a5058), MAT.lit)
   // Framing side-yard trees, sidewalk-overhanging street canopies, corner shrubs, and driveway border hedges.
   for(const [px,pz,ph,pr] of [
     // Continuous dark border hedge & overarching woodland trees along the left driveway fence
@@ -348,8 +409,8 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(r-4.95,.132,z+6.45,r-2.25,.139,z+7.22,rgb(0xa49b86))
   m.box(r-4.86,.1395,z+6.53,r-2.34,.144,z+7.14,rgb(0x4c564e))
   // Living room east media console, flatscreen TV, partition stub, and flanking potted houseplants
-  m.box(x+4.86,.13,e-3.62,x+5.06,2.78,e-1.38,rgb(b.color),MAT.wall,20,rgb(0x303744))
-  m.box(x+4.89,2.78,e-3.59,x+5.03,2.80,e-1.41,rgb(0xb8b0a0),MAT.lit)
+  m.box(x+4.86,.13,e-3.62,x+5.06,2.78,e-1.38,rgb(b.color),MAT.wall,20,rgb(0x1b2028))
+  m.box(x+4.89,2.78,e-3.59,x+5.03,2.80,e-1.41,rgb(0x2a2e36),MAT.lit)
   m.bevelBox(x+4.44,.13,e-3.55,x+4.85,.62,e-1.45,.03,rgb(0x6e533a),rgb(0x856648),MAT.timber,MAT.timber)
   m.box(x+4.58,.62,e-2.85,x+4.72,.70,e-2.15,rgb(0x22262b))
   m.box(x+4.61,.70,e-3.20,x+4.70,1.38,e-1.80,rgb(0x181c22),MAT.shiny)
@@ -407,7 +468,7 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   for(const barrier of town.barriers){
     const [a,c,d,f]=barrier.rect
     if(a<x||d>r||c<z||f>e||barrier.kind==="fence")continue
-    m.box(a-.032,.025,c-.032,d+.032,.33,f+.032,rgb(0x74463a),MAT.brick)
-    m.box(a-.036,.33,c-.036,d+.036,.37,f+.036,trim,MAT.wall)
+    m.box(a-.032,.025,c-.032,d+.032,.33,f+.032,rgb(0x523027),MAT.brick)
+    m.box(a-.036,.33,c-.036,d+.036,.37,f+.036,rgb(0x6e685d),MAT.wall)
   }
 }

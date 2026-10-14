@@ -341,76 +341,98 @@ function compileLevel(town: Town): LevelData {
   for (const b of town.barriers) {
     const [x, z, r, end] = b.rect, m = at(x, z), color = hex(b.color)
     if (b.kind === "wall") {
-      m.box(x,.13,z,r,2.78,end,color,MAT.wall,20,hex(0x303744))
-      m.box(x+.03,2.78,z+.03,r-.03,2.80,end-.03,hex(0xb8b0a0),MAT.lit)
-      m.box(x - .02, .14, z - .02, r + .02, .28, end + .02, hex(0x594836), MAT.lit)
+      m.box(x,.13,z,r,2.78,end,color,MAT.wall,20,hex(0x1b2028))
+      m.box(x+.03,2.78,z+.03,r-.03,2.80,end-.03,hex(0x2a2e36),MAT.lit)
+      m.box(x - .02, .14, z - .02, r + .02, .26, end + .02, hex(0x36281c), MAT.timber)
     } else if (b.kind === "window") {
       // Lower wall apron and upper wall header around the 0.85..2.15m window opening
       m.box(x, .13, z, r, .84, end, color, MAT.wall, 20)
-      m.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, hex(0x303744))
-      m.box(x+.03, 2.78, z+.03, r-.03, 2.80, end-.03, hex(0xb8b0a0), MAT.lit)
+      m.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, hex(0x1b2028))
+      m.box(x+.03, 2.78, z+.03, r-.03, 2.80, end-.03, hex(0x2a2e36), MAT.lit)
       const owner=town.buildings.findIndex(h=>x>=h.rect[0]-.01&&r<=h.rect[2]+.01&&z>=h.rect[1]&&end<=h.rect[3])
       const house=town.buildings[owner]!
       const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])
       const g = at(x, z, true)
       if (r - x > 1) {
         const zm = (z + end) / 2
-        // Projecting exterior stone/wood sill + shadow apron, and deep interior honey-wood sill
-        m.box(x-.08, .79, z+.04, r+.08, .86, end+.14, hex(0xdcd8ce), MAT.wall)
-        m.box(x-.05, .74, end, r+.05, .79, end+.08, hex(0x7c786e), MAT.wall)
-        m.box(x-.06, .80, z-.10, r+.06, .86, z+.06, hex(0x9a7852), MAT.timber)
-        // Recessed window header & deep side jamb reveals (26cm deep so frame recession reads from outside & inside)
-        m.box(x-.07, 2.14, z-.05, r+.07, 2.23, end+.09, hex(0xdcd8ce), MAT.wall)
+        const isLeftWin = x < house.rect[0] + 5
+        // Projecting weathered stone/wood sill + dark water-stain apron, and deep interior walnut sill
+        m.box(x-.08, .79, z+.04, r+.08, .86, end+.14, hex(0x8e887a), MAT.wall)
+        m.box(x-.05, .72, end, r+.05, .79, end+.08, hex(0x46423b), MAT.wall)
+        m.box(x-.06, .80, z-.10, r+.06, .86, z+.06, hex(0x6e5236), MAT.timber)
+        // Recessed window header & deep side jamb reveals
+        m.box(x-.07, 2.14, z-.05, r+.07, 2.23, end+.09, hex(0x8e887a), MAT.wall)
         for (const px of [x, r - .07]) {
-          m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0xdcd8ce), MAT.wall)
+          m.box(px, .84, z-.04, px+.07, 2.16, end+.06, hex(0x8e887a), MAT.wall)
         }
-        // Warm amber-gold sill & interior reveal bounce (rich saturation so it never clips to white)
-        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(0x8a4814), MAT.lamp, lamp)
+        // Subdued warm amber sill bounce (rich saturation without clipping to white)
+        m.box(x+.08, .861, zm-.05, r-.08, .874, zm+.06, hex(isLeftWin ? 0x522608 : 0x68320c), MAT.lamp, lamp)
         const doubleWin = r - x > 2.2
         if (doubleWin) {
           const mid = (x + r) / 2
-          m.box(mid - .05, .85, z-.03, mid + .05, 2.16, end+.05, hex(0xdcd8ce), MAT.wall)
+          m.box(mid - .05, .85, z-.03, mid + .05, 2.16, end+.05, hex(0x8e887a), MAT.wall)
         }
         const panes = doubleWin ? [[x+.07, (x+r)/2-.05], [(x+r)/2+.05, r-.07]] : [[x+.07, r-.07]]
-        for (const [wx0, wx1] of panes) {
-          // Dark silhouette side curtains at left/right 24cm edges + warm amber-orange inner glow valence
-          m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(0x783c10), MAT.lamp, lamp)
-          m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(0x5c2c0b), MAT.lamp, lamp)
+        for (const [pIdx, [wx0, wx1]] of panes.entries()) {
+          // Deep amber-orange inner glow + half-drawn blind/curtain silhouettes for moody depth
+          const lowGlow = isLeftWin ? (pIdx === 0 ? 0x482208 : 0x381a06) : (pIdx === 0 ? 0x56280a : 0x622e0c)
+          const hiGlow = isLeftWin ? 0x2c1304 : 0x3c1b07
+          m.box(wx0!+.18, .88, z-.06, wx1!-.18, 1.44, z-.03, hex(lowGlow), MAT.lamp, lamp)
+          m.box(wx0!+.18, 1.48, z-.06, wx1!-.18, 2.10, z-.03, hex(hiGlow), MAT.lamp, lamp)
           for (const [cx0, cx1] of [[wx0!, wx0! + .24], [wx1! - .24, wx1!]]) {
-            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x362212), MAT.wall)
+            m.box(cx0!, .87, z-.04, cx1!, 2.13, z+.03, hex(0x24170d), MAT.wall)
           }
           // Recessed vertical & horizontal sash muntins at the window mid-plane zm
           const midX = (wx0! + wx1!) / 2
-          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0xe2dfd6), MAT.wall)
+          m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0x9a9486), MAT.wall)
           // See-through glass pane recessed at zm
-          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x5a4838), MAT.glass)
+          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x463628), MAT.glass)
         }
         // Recessed horizontal meeting rail across the sash mid-plane
-        m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0xe2dfd6), MAT.wall)
+        m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0x9a9486), MAT.wall)
       } else {
         const xm = (x + r) / 2
         // East wall window: projecting exterior sill, deep interior wooden sill, recessed jambs, side drapes & see-through glass
-        m.box(x+.04, .79, z-.08, r+.14, .86, end+.08, hex(0xdcd8ce), MAT.wall)
-        m.box(x-.10, .80, z-.06, x+.06, .86, end+.06, hex(0x9a7852), MAT.timber)
-        m.box(x-.05, 2.14, z-.07, r+.09, 2.23, end+.07, hex(0xdcd8ce), MAT.wall)
-        for (const pz of [z, end - .07]) m.box(x-.04, .84, pz, r+.06, 2.16, pz+.07, hex(0xdcd8ce), MAT.wall)
-        m.box(xm-.04, .861, z+.08, xm+.05, .872, end-.08, hex(0xb87632), MAT.lamp, lamp)
+        m.box(x+.04, .79, z-.08, r+.14, .86, end+.08, hex(0x8e887a), MAT.wall)
+        m.box(x-.10, .80, z-.06, x+.06, .86, end+.06, hex(0x6e5236), MAT.timber)
+        m.box(x-.05, 2.14, z-.07, r+.09, 2.23, end+.07, hex(0x8e887a), MAT.wall)
+        for (const pz of [z, end - .07]) m.box(x-.04, .84, pz, r+.06, 2.16, pz+.07, hex(0x8e887a), MAT.wall)
+        m.box(xm-.04, .861, z+.08, xm+.05, .872, end-.08, hex(0x78481a), MAT.lamp, lamp)
         for (const [cz0, cz1] of [[z+.08, z+.30], [end-.30, end-.08]]) {
-          m.box(x-.03, .87, cz0!, x+.03, 2.13, cz1!, hex(0x8e5c2c), MAT.lamp, lamp)
+          m.box(x-.03, .87, cz0!, x+.03, 2.13, cz1!, hex(0x5e3a18), MAT.lamp, lamp)
         }
         const midZ = (z + end) / 2
-        m.box(xm - .026, .86, midZ - .03, xm + .026, 2.14, midZ + .03, hex(0xe2dfd6), MAT.wall)
-        m.box(xm - .024, 1.46, z+.06, xm + .024, 1.51, end-.06, hex(0xe2dfd6), MAT.wall)
-        g.box(xm - .01, .86, z+.07, xm + .01, 2.14, end-.07, hex(0x8aa8ac), MAT.glass)
+        m.box(xm - .026, .86, midZ - .03, xm + .026, 2.14, midZ + .03, hex(0x9a9486), MAT.wall)
+        m.box(xm - .024, 1.46, z+.06, xm + .024, 1.51, end-.06, hex(0x9a9486), MAT.wall)
+        g.box(xm - .01, .86, z+.07, xm + .01, 2.14, end-.07, hex(0x6e888c), MAT.glass)
       }
     } else {
+      // Weathered & partially damaged timber picket fence with 4x4 posts, height/yaw jitter, missing/snapped pickets & mossy rot
       const horizontal = r - x > end - z, length = horizontal ? r - x : end - z
-      const picketCol = hex(0x8e8c83), railCol = hex(0x7c7a71)
-      for (let d = 0; d < length; d += .35) {
+      const fenceRng = new Rng((town.houseSeed ^ Math.floor(x * 31 + z * 59)) >>> 0)
+      const wMult = archSettings.weathering
+      const railCol = hex(0x524d43), rotCol = hex(0x282b22)
+      let pIdx = 0
+      for (let d = 0; d < length; d += .34, pIdx++) {
         const px = x + (horizontal ? d : 0), pz = z + (horizontal ? 0 : d)
-        m.box(px, .05, pz, px + (horizontal ? .15 : .08), 1.16, pz + (horizontal ? .08 : .15), picketCol, MAT.lit)
+        // Heavy 4x4 structural post every 7 pickets
+        if (pIdx % 7 === 0) {
+          m.box(px - .02, .03, pz - .02, px + .12, 1.22, pz + .12, hex(0x4a453c), MAT.timber, 0, hex(0x635d52))
+          continue
+        }
+        const roll = fenceRng.next()
+        // Occasional missing picket gap when weathered
+        if (wMult > 0.25 && roll < 0.11 * Math.min(1.5, wMult)) continue
+        const broken = wMult > 0.2 && roll > 0.88
+        const topH = broken ? 0.56 + fenceRng.next() * 0.32 : 1.08 + (fenceRng.next() - 0.5) * 0.12
+        const pCol = hex(fenceRng.pick([0x6c685d, 0x5e5a50, 0x767266, 0x524e45]))
+        const w = horizontal ? .14 : .07, dp = horizontal ? .07 : .14
+        const yaw = (fenceRng.next() - 0.5) * 0.14 * Math.min(1.5, wMult)
+        m.yawBox(px + w / 2, pz + dp / 2, w, dp, .04, topH, yaw, pCol, MAT.timber, 0, hex(0x7c776b))
+        // Dark mossy rot at picket base
+        m.box(px, .03, pz, px + w, .20, pz + dp, rotCol, MAT.timber)
       }
-      for (const h of [.32, .86]) m.box(x, h, z, r, h + .07, end, railCol, MAT.lit)
+      for (const h of [.30, .84]) m.box(x, h, z, r, h + .065, end, railCol, MAT.timber)
     }
   }
   for (const p of town.props) { const mesh=new Mesh(); furniture(mesh,p,town); props.push(mesh) }

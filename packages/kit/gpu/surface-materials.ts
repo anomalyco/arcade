@@ -1311,10 +1311,11 @@ export const surfaceMaterial = /* wgsl */ `
             albedo = mix(albedo, vec3f(0.11, 0.032, 0.018), clamp(rustStain * 0.72, 0.0, 0.75));
           } else if (onWalk) {
             let walkEdge = min(p.x - (bPorch.x + 5.0), (bPorch.x + 6.4) - p.x);
-            let walkGrime = smoothstep(0.0, 0.22, walkEdge);
-            let walkCrack = abs(surfaceNoise(p * 2.1 + vec2f(4.3, 1.9)) - 0.5);
-            let crackLine = (1.0 - smoothstep(0.008, 0.028, walkCrack)) * 0.45 * weatherMult;
-            albedo *= (0.64 + 0.28 * walkGrime) * (1.0 - crackLine);
+            let walkGrime = smoothstep(0.0, 0.24, walkEdge);
+            let wNoise = surfaceNoise(p * 5.2 + vec2f(2.1, 6.7));
+            let walkCrack = abs(surfaceNoise(p * 1.85 + vec2f(wNoise * 0.45, 1.9)) - 0.5);
+            let crackLine = (1.0 - smoothstep(0.005, 0.018, walkCrack)) * step(0.54, wNoise) * 0.38 * weatherMult;
+            albedo *= (0.58 + 0.30 * walkGrime) * (1.0 - crackLine);
           }
         }
       } else if (kind == 3) {
@@ -1381,27 +1382,42 @@ export const surfaceMaterial = /* wgsl */ `
       let wallUv = vec2f(o.world.x + o.world.z, o.world.y);
       let inWallRoom = interior(o.world.xz + n.xz * 0.3);
       if (inWallRoom || o.aux > 20.5) {
-        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.32, 0.27, 0.21), inWallRoom), defaultMaterialRecipe(2));
+        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.26, 0.22, 0.17), inWallRoom), defaultMaterialRecipe(2));
         albedo = s.albedo;
         if (texOn && (!inWallRoom || wallStyleBits < 2u)) {
           let wallScale = select(0.78, select(0.78, 1.15, wallStyleBits == 1u), inWallRoom) * texScaleMult;
           let tex = sampleMaterialFast(2, wallUv, wallScale);
-          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), select(0.70, 0.75, inWallRoom) * texContrastMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), select(0.70, 0.78, inWallRoom) * texContrastMult);
+        }
+        if (inWallRoom) {
+          // Aged survival-horror interior plaster: water-damage ceiling stains, wainscot scuffing & peeling patches.
+          let stainField = surfaceNoise(vec2f(wallUv.x * 1.45, o.world.y * 0.65) + vec2f(3.7, 8.2));
+          let topDamp = smoothstep(1.85, 2.68, o.world.y) * smoothstep(0.38, 0.76, stainField) * 0.34 * weatherMult;
+          let baseGrime = (1.0 - smoothstep(0.14, 0.68, o.world.y)) * (0.22 + 0.18 * stainField) * weatherMult;
+          let chairRail = exp(-pow((o.world.y - 0.92) * 18.0, 2.0)) * 0.16;
+          albedo *= (1.0 - topDamp - baseGrime - chairRail);
         }
       } else if (o.aux > 19.5) {
         let course = o.world.y / 0.165;
         let row = floor(course);
         let fy = fract(course);
         let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
-        albedo *= 0.96 + (hash2(vec2f(row, plank)) - 0.5) * 0.09;
+        let boardVar = hash2(vec2f(row, plank)) - 0.5;
+        albedo *= 0.82 + boardVar * 0.14;
         if (texOn) {
           let tex = sampleMaterialFast(3, wallUv, 0.72 * texScaleMult);
-          albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.78 * texContrastMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.82 * texContrastMult);
         }
-        let lapShadow = mix(0.56, 1.05, smoothstep(0.0, 0.22, fy)) * mix(1.04, 0.90, fy);
-        albedo *= mix(1.0, lapShadow * mix(0.62, 1.0, seam(course, 0.032, 6.06)), 1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 6.06));
-        albedo *= 0.97 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.12;
-        albedo *= mix(0.84, 1.0, smoothstep(0.28, 0.65, o.world.y));
+        let lapShadow = mix(0.46, 1.04, smoothstep(0.0, 0.24, fy)) * mix(1.04, 0.86, fy);
+        albedo *= mix(1.0, lapShadow * mix(0.54, 1.0, seam(course, 0.036, 6.06)), 1.0 - smoothstep(0.28, 0.72, surfaceFootprint * 6.06));
+        // Exterior clapboard weathering: vertical rain/grime streaks, peeling paint patches & foundation splashback.
+        let grimeField = surfaceNoise(vec2f(wallUv.x * 2.1, o.world.y * 0.48) + vec2f(5.3, 1.7));
+        let peelField = surfaceNoise(wallUv * 2.65 + vec2f(8.9, 3.4));
+        let grimeStreak = smoothstep(0.44, 0.78, grimeField) * (0.24 * weatherMult);
+        let peelMask = smoothstep(0.66 - 0.10 * weatherMult, 0.78 - 0.06 * weatherMult, peelField) * clamp(weatherMult, 0.0, 1.5);
+        albedo = mix(albedo, vec3f(0.16, 0.13, 0.10), peelMask * 0.58);
+        albedo *= (0.96 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.14) * (1.0 - grimeStreak);
+        albedo *= mix(0.62, 1.0, smoothstep(0.28, 0.82, o.world.y));
       }
     } else if (mat == 21) {
       // Slope-aware 3-tab architectural asphalt shingles with crisp course overlap shadows, moonlit tab lips, and weathered streaks.
