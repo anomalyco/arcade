@@ -1,4 +1,5 @@
 import { FrameTimer } from "../fx/frame-timer"
+import { installFramePacer } from "../gpu-perf"
 import { ParticleRenderer } from "../fx/particle-renderer"
 import { Particles } from "../fx/particles"
 import { SmokeRenderer } from "../fx/tyre-renderer"
@@ -168,9 +169,13 @@ export class Stage {
   lightCount=0
   sceneMode=0
   private measuring=false
+  private pendingTimer:Promise<number|null>|null=null
+  private inflight=0
+  private readonly notifyPacer:()=>void
   private frames=0
   constructor(device:GPUDevice,private readonly context:GPUCanvasContext,private readonly format:GPUTextureFormat,private readonly camera:CameraWriter){
     const d=this.device=device
+    this.notifyPacer=installFramePacer(()=>this.inflight===0,()=>false,d)
     this.meshes=new LabMeshes(d)
     this.ringModel=this.meshes.add(buildRingVertices(),10,c=>c,0.75)
     this.particles=new ParticleRenderer(d);this.volume=new VolumeRenderer(d)
@@ -427,7 +432,7 @@ export class Stage {
     draw?:(pass:GPURenderPassEncoder)=>void,
     tileViewport?:StageTileViewport,
   ){
-    if(this.measuring)return null
+    if(measure&&this.pendingTimer)await this.pendingTimer
     if(this.customRender){
       if(tileViewport){
         if(!this.tileCustomOutput){
@@ -453,6 +458,8 @@ export class Stage {
           enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.outWidth,this.outHeight])
         }
         this.device.queue.submit([enc.finish()])
+        this.inflight++
+        void this.device.queue.onSubmittedWorkDone().then(()=>{this.inflight--;this.notifyPacer()},()=>undefined)
         if(tileViewport.present!==false)this.onFrameSubmitted?.()
         if(ms!==null)this.gpuMs=ms
         return ms
@@ -461,11 +468,13 @@ export class Stage {
       const enc=this.device.createCommandEncoder()
       enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.outWidth,this.outHeight])
       this.device.queue.submit([enc.finish()])
+      this.inflight++
+      void this.device.queue.onSubmittedWorkDone().then(()=>{this.inflight--;this.notifyPacer()},()=>undefined)
       this.onFrameSubmitted?.()
       if(ms!==null)this.gpuMs=ms
       return ms
     }
-    const timed=!tileViewport&&!!this.timer&&(measure||this.frames++%45===0)
+    const timed=!tileViewport&&!!this.timer&&!this.measuring&&(measure||this.frames++%45===0)
     this.uploadLighting(debug)
     if(this.showMarkers&&!tileViewport){
       for(const m of this.markers){
@@ -501,11 +510,19 @@ export class Stage {
       enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.outWidth,this.outHeight])
     }
     this.device.queue.submit([enc.finish()])
+    this.inflight++
+    void this.device.queue.onSubmittedWorkDone().then(()=>{this.inflight--;this.notifyPacer()},()=>undefined)
     if(!tileViewport||tileViewport.present!==false)this.onFrameSubmitted?.()
-    // Only explicit measurements must be valid; the periodic HUD sample reports "unavailable" instead of failing
-    // (software adapters exceed the interval bound).
-    if(timed){this.measuring=true;try{this.gpuMs=await this.timer!.collect()}catch(error){if(measure)throw error;this.gpuMs=null}finally{this.measuring=false}}
-    return timed?this.gpuMs:null
+    // Only explicit measurements must be valid; the periodic HUD sample collects asynchronously so rAF never stalls.
+    if(timed){
+      this.measuring=true
+      if(measure){
+        try{this.gpuMs=await this.timer!.collect()}catch(error){throw error}finally{this.measuring=false}
+        return this.gpuMs
+      }
+      this.pendingTimer=this.timer!.collect().then(ms=>{this.gpuMs=ms;return ms}).catch(()=>{this.gpuMs=null;return null}).finally(()=>{this.measuring=false;this.pendingTimer=null})
+    }
+    return this.gpuMs
   }
   async captureToCanvas(target:HTMLCanvasElement):Promise<void>{
     const w=this.outWidth||this.width,h=this.outHeight||this.height

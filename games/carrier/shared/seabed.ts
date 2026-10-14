@@ -1,4 +1,4 @@
-import { coralAt, terrainHeight, type Archipelago } from "./islands"
+import { archBlobs, DEEP, newPolar, stampBlobSeabed, type Archipelago } from "./islands"
 
 /**
  * Seabed bake for the ocean shader: a square RGBA8 texture over the archipelago bounds plus a margin.
@@ -41,20 +41,35 @@ function edt1d(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Fl
 }
 
 /** Squared distance (in texels) from every texel to the nearest texel where `seed` is true. */
-function edt2d(seed: Uint8Array, res: number): Float64Array {
+function edt2d(seed: Uint8Array, res: number, defaultSeedVal: number): Float64Array {
   const out = new Float64Array(res * res)
   const f = new Float64Array(res)
   const d = new Float64Array(res)
   const v = new Int32Array(res)
   const z = new Float64Array(res + 1)
   for (let x = 0; x < res; x++) {
-    for (let y = 0; y < res; y++) f[y] = seed[y * res + x] ? 0 : INF
+    let allDefault = true
+    for (let y = 0; y < res; y++) {
+      const sv = seed[y * res + x]!
+      if (sv !== defaultSeedVal) allDefault = false
+      f[y] = sv ? 0 : INF
+    }
+    if (allDefault) {
+      if (!defaultSeedVal) for (let y = 0; y < res; y++) out[y * res + x] = INF
+      continue
+    }
     edt1d(f, res, d, v, z)
     for (let y = 0; y < res; y++) out[y * res + x] = d[y]!
   }
   for (let y = 0; y < res; y++) {
     const row = y * res
-    for (let x = 0; x < res; x++) f[x] = out[row + x]!
+    let allZero = true
+    for (let x = 0; x < res; x++) {
+      const val = out[row + x]!
+      if (val !== 0) allZero = false
+      f[x] = val
+    }
+    if (allZero) continue
     edt1d(f, res, d, v, z)
     for (let x = 0; x < res; x++) out[row + x] = d[x]!
   }
@@ -68,36 +83,36 @@ export function bakeSeabed(arch: Archipelago, res = 1024): Seabed {
   const z0 = (bz0 + bz1) / 2 - size / 2
   const texel = size / res
   const n = res * res
-  const heights = new Float32Array(n)
+  const heights = new Float32Array(n).fill(DEEP)
   const land = new Uint8Array(n)
-  const water = new Uint8Array(n)
+  const water = new Uint8Array(n).fill(1)
   const coral = new Uint8Array(n)
-  for (let j = 0; j < res; j++) {
-    const z = z0 + (j + 0.5) * texel
-    for (let i = 0; i < res; i++) {
-      const h = terrainHeight(arch, x0 + (i + 0.5) * texel, z)
-      const k = j * res + i
-      heights[k] = h
-      if (h > 0) land[k] = 1
-      else {
-        water[k] = 1
-        if (h > -20) coral[k] = Math.round(coralAt(arch, x0 + (i + 0.5) * texel, z) * 255)
-      }
-    }
+  const blobs = archBlobs(arch)
+  const o = newPolar()
+  for (let bi = 0; bi < blobs.length; bi++) {
+    stampBlobSeabed(blobs[bi]!, x0, z0, texel, res, heights, land, water, coral, o)
   }
-  const toLand = edt2d(land, res)
-  const toWater = edt2d(water, res)
+  const toLand = edt2d(land, res, 0)
+  const toWater = edt2d(water, res, 1)
   const data = new Uint8Array(n * 4)
+  const u32 = new Uint32Array(data.buffer)
+  const maxTexelDist = (SEABED_SHORE * (254.5 / 255)) / texel + 0.5
+  const maxSqDist = maxTexelDist * maxTexelDist
   for (let k = 0; k < n; k++) {
     const h = heights[k]!
     const isLand = land[k] === 1
+    const sq = isLand ? toWater[k]! : toLand[k]!
+    if (!isLand && h <= -SEABED_DEPTH && sq >= maxSqDist) {
+      u32[k] = 0x00ff00ff
+      continue
+    }
     // The shoreline lies between texel centres, half a texel short of the nearest opposite texel.
-    const dist = Math.max(0, Math.sqrt(isLand ? toWater[k]! : toLand[k]!) - 0.5) * texel
-    const o = k * 4
-    data[o] = isLand ? 0 : Math.min(255, Math.round((-h / SEABED_DEPTH) * 255))
-    data[o + 1] = isLand ? 255 : 0
-    data[o + 2] = Math.min(255, Math.round((dist / SEABED_SHORE) * 255))
-    data[o + 3] = coral[k]!
+    const dist = Math.max(0, Math.sqrt(sq) - 0.5) * texel
+    const oIdx = k * 4
+    data[oIdx] = isLand ? 0 : Math.min(255, Math.round((-h / SEABED_DEPTH) * 255))
+    data[oIdx + 1] = isLand ? 255 : 0
+    data[oIdx + 2] = Math.min(255, Math.round((dist / SEABED_SHORE) * 255))
+    data[oIdx + 3] = !isLand && h > -20 ? coral[k]! : 0
   }
   return { x0, z0, size, res, data }
 }
