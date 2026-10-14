@@ -1,4 +1,6 @@
 import "@arcade/kit/dev-hub.css"
+import "./characters.css"
+import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import { hubCommands, hubTargets } from "@arcade/kit/dev-hub-model"
 import { applyArrowCameraKey, bindOrbitGestures, computeGrabPanDelta } from "@arcade/kit/orbit-gestures"
 import { LabPanel, formatLabValue, inferControlUnit, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
@@ -195,218 +197,6 @@ function clearSubtree(hidden: Set<BoneId>, root: BoneId) {
   }
 }
 
-function injectStyles() {
-  const style = document.createElement("style")
-  style.textContent = `
-    body.characters-page {
-      height: 100dvh;
-      overflow: hidden;
-      overscroll-behavior: none;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg);
-      user-select: none;
-    }
-    .hub-bar .bar-actions {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .hub-bar .bar-actions .hub-env {
-      margin-left: 4px;
-    }
-    .hub-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      height: 28px;
-      padding: 0 10px;
-      font-size: 12px;
-      font-weight: 500;
-      border-radius: 6px;
-      background: var(--raised);
-      border: 1px solid var(--line-strong);
-      color: var(--text);
-    }
-    .hub-btn kbd {
-      padding: 0 4px;
-      border-radius: 3px;
-      background: #ffffff10;
-      color: var(--muted);
-      font-size: 11px;
-    }
-    .hub-btn[aria-pressed="true"], .hub-btn[data-active="true"] {
-      background: #8cc4e826;
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .characters-stage {
-      position: relative;
-      flex: 1;
-      min-height: 0;
-      background: #0d1014;
-    }
-    .characters-stage canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      touch-action: none;
-      overscroll-behavior: none;
-      cursor: grab;
-    }
-    .characters-stage canvas:active {
-      cursor: grabbing;
-    }
-    .characters-stage[data-possessing="true"] canvas {
-      cursor: crosshair;
-    }
-    aside[data-lab] {
-      top: 54px !important;
-    }
-    .char-hud-top {
-      position: absolute;
-      left: 14px;
-      top: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-      z-index: 4;
-    }
-    .actor-tabs {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-      padding: 3px;
-      background: #0f1114e6;
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
-      backdrop-filter: blur(8px);
-    }
-    .actor-tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      height: 28px;
-      padding: 0 10px;
-      border: 0;
-      border-radius: 5px;
-      background: none;
-      color: var(--muted);
-      font-weight: 500;
-    }
-    .actor-tab:hover {
-      color: var(--text);
-      background: var(--raised);
-    }
-    .actor-tab[aria-selected="true"] {
-      background: #8cc4e824;
-      color: var(--text);
-      box-shadow: inset 0 0 0 1px #8cc4e866;
-    }
-    .actor-tab small {
-      font-size: 10.5px;
-      color: var(--muted);
-      font-weight: 400;
-    }
-    .possess-banner {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      height: 34px;
-      padding: 0 12px;
-      background: #13261de8;
-      border: 1px solid #7fd49b66;
-      border-radius: 8px;
-      color: #d8f7e2;
-      font-size: 12px;
-    }
-    .possess-banner kbd {
-      padding: 1px 5px;
-      background: #ffffff14;
-      border-radius: 4px;
-    }
-    .char-dock {
-      position: absolute;
-      left: 14px;
-      right: 14px;
-      bottom: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      pointer-events: none;
-      z-index: 4;
-    }
-    .dock-group {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 5px;
-      padding: 5px 7px;
-      background: #0f1114e6;
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
-      backdrop-filter: blur(8px);
-      pointer-events: auto;
-    }
-    .dock-group label {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      color: var(--muted);
-      font-size: 12px;
-      padding: 0 4px;
-    }
-    .dock-group button, .dock-group select {
-      height: 27px;
-      padding: 0 9px;
-      font-size: 12px;
-    }
-    .dock-group button[aria-pressed="true"] {
-      background: #8cc4e826;
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .dock-group input[type="range"] {
-      width: 84px;
-      accent-color: var(--accent);
-      padding: 0;
-    }
-    .dock-group output {
-      min-width: 36px;
-      text-align: right;
-      font: 11.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      color: var(--text);
-      font-variant-numeric: tabular-nums;
-    }
-    .dock-sep {
-      width: 1px;
-      height: 18px;
-      background: var(--line-strong);
-      margin: 0 2px;
-    }
-    .char-status {
-      position: absolute;
-      left: 14px;
-      bottom: 58px;
-      margin: 0;
-      padding: 4px 8px;
-      border-radius: 6px;
-      background: #0f1114cc;
-      color: var(--muted);
-      font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-      pointer-events: none;
-    }
-    .char-status:empty {
-      display: none;
-    }
-  `
-  document.head.append(style)
-}
-
 function parseActorHash(hash: string): ActorId | null {
   const clean = hash.replace(/^#/, "").trim().toLowerCase()
   if (clean === "soldier" || clean === "wizard" || clean === "zombie" || clean === "survivor" || clean === "outbreak-zombie") {
@@ -416,7 +206,6 @@ function parseActorHash(hash: string): ActorId | null {
 }
 
 async function main() {
-  injectStyles()
   document.body.classList.add("characters-page")
   const targets = hubTargets(location.pathname, document.querySelector<HTMLMetaElement>('meta[name="arcade-dev-router"]')?.content)
   const environment = targets.kind === "router" ? "Local" : "Production"
@@ -1500,8 +1289,7 @@ async function main() {
   }
 
   window.addEventListener("keydown", event => {
-    const target = event.composedPath()[0]
-    const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+    const typing = isEditableEventTarget(event.composedPath()[0])
     if (event.metaKey || event.ctrlKey || event.altKey) return
     if (event.key === "Escape") {
       if (possessing) {

@@ -281,24 +281,31 @@ package scripts. For comparison panes, also adopt modifier forwarding in `packag
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
 Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel.
 
-In rough order of value against risk.
+In rough order of value against risk:
 
-1. **Matchmaker and lobby Durable Object.** `server/matchmaking.ts` and `server/lobby.ts` are nearly identical across
-   the games. Blackout's lobby persists room reports in storage; Getaway's keeps them in memory. Share the persistent one,
-   with the "is this room open" rule and stale window as options.
-2. **Room plumbing.** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
-   handshake (only Blackout has it today), and seat bookkeeping. The game supplies the simulation and the snapshot.
-3. **Seeded RNG.** Two mulberry32 implementations: a function in Getaway, a class in Blackout. Keep one.
-4. **Keyboard input.** Layout-aware keys (`e.code` and `e.key`), release by keydown character, Cmd and blur release, and
-   the receiver for multiplexed input from `compare.html`. Each game keeps its own bindings.
-5. **Dev and proof tooling.** `scripts/dev.ts` (same apart from ports), the before/after capture and benchmark harness
-   (`scripts/compare.ts` in both), the multiplayer benchmark, the perf readout and effect switches in the debug overlay,
-   and the `?peaceful&seed` convention. One runner with a small scenario hook per game.
-6. **Post-processing chain.** HDR target, MSAA resolve, five-level bloom, composite and grade, with cached views. Both
-   renderers build the same chain. Getaway could also take Blackout's packed 24-byte vertex format.
-7. **Session interface.** Local (solo, practice) and network sessions behind one interface, as both games already do.
-8. **Camera feel.** Trauma-squared shake, punch and presentation-only hit-stop.
-9. **Audio basics.** Unlock on first gesture, mute key.
-
-Later, once both games use it: snapshot interpolation (Getaway `interp.ts`/`netcode.ts`, Blackout `smooth.ts`) differs
-too much today.
+1. **Matchmaker and lobby Durable Object (completed in `@arcade/kit/sim/matchmaking`).** `SharedMatchmaker`,
+   `pickOpenRoom`, `randomRoomCode`, and `cleanPlayerName` are shared across Getaway, Blackout, and Carrier, with
+   configurable `maxPlayers`, `staleMs`, `isOpen`, and `preferPhase`. All three `Lobby` Durable Objects persist room
+   reports in `ctx.storage`.
+2. **2D OBB contacts, spatial grids, and binary min-heaps (completed in `@arcade/kit/sim/{obb,geom}`).** `obb.ts`
+   provides the shared Box2D 2-point SAT manifold and block impulse solver across Getaway (`ShapeXZ`, `resolveXZ`) and
+   Blackout (`ShapeXY`, `resolveXY`); `geom.ts` provides `RectGrid` and `MinHeap` across `ai.ts`, `nav.ts`,
+   `level-mesh.ts`, and `lighting.ts`.
+3. **Seeded RNG and hashing (completed in `@arcade/kit/sim/rng`).** One module exports `mulberry32`, `Rng` (with
+   `.seed()`), `seedOf`, `hash2`, and `hash3` across all games and the audio runtime.
+4. **Physical keyboard controls and HUD labels (completed in `@arcade/kit/client/{controls,input}`).** Physical
+   `KeyboardEvent.code` bindings, `KeyStateTracker`, `isEditableEventTarget`, `requestCanvasPointerLock`, and
+   layout-aware `keyLabel` / `moveClusterLabel` prompts are shared across Getaway, Blackout, Outbreak, Carrier, and Lab.
+5. **Dev supervisors, build hashes, and rolling perf telemetry (completed in `scripts/{build-id,game-dev}.ts` & `@arcade/kit/gpu-perf`).**
+   `writeBuildId` and `runGameDev` unify per-game build-ID and dev supervisors; `PerfSampler` unifies rolling p50/p95/FPS
+   telemetry formatting across `DebugOverlay` panels.
+6. **Modular Look & Vignette shaders (`@arcade/kit/gpu/look-shaders`, `@arcade/kit/lab/looks-room`, `games/outbreak/src/vignette/`).**
+   `makeLookSceneShader` and `makeLookPostShader` live in `gpu/look-shaders.ts` (re-exported by `gpu/shaders.ts`), the
+   Lab Looks calibration room lives in `lab/looks-room.ts`, and Outbreak's vignette splits into `vignette/{presets,shaders,section}.ts`.
+7. **Remaining candidates:**
+   - **Room plumbing:** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
+     handshake, and seat bookkeeping.
+   - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
+     vertex layout while Blackout and Outbreak share `@arcade/kit/gpu/{renderer,mesh}`.
+   - **Session & snapshot interpolation:** Local and network sessions behind one interface; snapshot interpolation
+     (Getaway `interp.ts`/`netcode.ts`, Blackout `smooth.ts`) stays game-owned.
