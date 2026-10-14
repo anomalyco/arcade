@@ -798,7 +798,8 @@ async function main() {
       const fy = p.y + Math.sin(p.aim) * 0.25
       const fh = 1.18 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
-      const power = p.flashlightOutput * settings.flashlightIntensity
+      const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.0
+      const power = p.flashlightOutput * settings.flashlightIntensity * directScale
       const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 9.5)
       flashlightSlot = count
       lights.set(

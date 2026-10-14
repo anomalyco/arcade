@@ -20,20 +20,20 @@ export type OutbreakLightingSettings = {
 }
 
 export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
-  exposure: 1.04,
-  skyFill: 0.92,
-  moonFill: 1.05,
+  exposure: 0.96,
+  skyFill: 0.54,
+  moonFill: 0.62,
   lighting: 1.0,
-  practicalWarmth: 0.78,
-  porchPower: 0.64,
-  windowPower: 0.78,
-  roomPower: 0.82,
-  streetPower: 0.95,
-  lightFalloff: 1.05,
-  flashlightHaze: 0.45,
-  wetSpecular: 0.52,
-  rimStrength: 0.65,
-  vignetteDarkness: 0.42,
+  practicalWarmth: 0.82,
+  porchPower: 0.48,
+  windowPower: 0.62,
+  roomPower: 0.72,
+  streetPower: 0.92,
+  lightFalloff: 1.25,
+  flashlightHaze: 0.35,
+  wetSpecular: 0.48,
+  rimStrength: 0.62,
+  vignetteDarkness: 0.46,
 }
 
 /** Preset lighting profiles so switching `@arcade/kit/look` presets in the Lab dials in the base lighting primitives too. */
@@ -228,34 +228,34 @@ export function resolveLampLight(
   const invTight = 1 / Math.sqrt(tight)
 
   if (lamp.kind === "street") {
-    // Route the two intersection/avenue streetlamp slots to the Ash House street corner (39.8, 42.2) & NE sidewalk (39.2, 24.6)
+    // Route the two intersection/avenue streetlamp slots to the Ash House street corner (40.2, 42.4) & NE sidewalk (39.2, 24.8)
     let lx = lamp.x + 0.55
     let ly = lamp.y
     let lh = lamp.h
-    let r = lamp.radius * 1.15 * invTight
+    let r = lamp.radius * 1.10 * invTight
     let pMult = 1.0
     if (lamp.x === 52 && lamp.y === 39) {
-      lx = 39.8
-      ly = 42.2
+      lx = 40.2
+      ly = 42.4
       lh = 3.65
-      r = 11.2 * invTight
-      pMult = 2.65
+      r = 10.5 * invTight
+      pMult = 2.25
     } else if (lamp.x === 50 && lamp.y === 8) {
       lx = 39.2
       ly = 24.8
       lh = 3.65
-      r = 11.5 * invTight
-      pMult = 2.85
+      r = 10.8 * invTight
+      pMult = 2.35
     }
     const power = master * lamp.power * s.streetPower * pMult
-    // 2100K High-Pressure Sodium orange-gold
+    // 2100K High-Pressure Sodium deep orange-gold
     return {
       lx,
       lh,
       ly,
       r,
       rEff: r * 0.9,
-      color: [1.0, 0.52 - 0.06 * w, 0.16 - 0.04 * w],
+      color: [1.0, 0.46 - 0.05 * w, 0.10 - 0.03 * w],
       power,
       fixtureBrightness: master * s.streetPower * 0.95,
       cone: [0, 0, 0, 0],
@@ -265,18 +265,18 @@ export function resolveLampLight(
   }
 
   if (lamp.kind === "porch") {
-    const interiorDim = inInteriorView ? 0.68 : 1.0
+    const interiorDim = inInteriorView ? 0.46 : 1.0
     const power = master * lamp.power * s.porchPower * interiorDim
-    const r = lamp.radius * (inInteriorView ? 0.62 : 0.72) * invTight
+    const r = lamp.radius * (inInteriorView ? 0.52 : 0.64) * invTight
     return {
       lx: lamp.x,
-      lh: 2.28,
-      ly: lamp.y - 0.12,
+      lh: 2.24,
+      ly: lamp.y - 0.14,
       r,
-      rEff: r * 0.88,
-      color: [1.0, 0.58 - 0.05 * w, 0.20 - 0.05 * w],
+      rEff: r * 0.86,
+      color: [1.0, 0.52 - 0.05 * w, 0.14 - 0.04 * w],
       power,
-      fixtureBrightness: master * s.porchPower * interiorDim * 0.88,
+      fixtureBrightness: master * s.porchPower * interiorDim * 0.72,
       cone: [0, 0, 0, -1],
       softness: 0.18,
       castShadows: true,
@@ -284,18 +284,18 @@ export function resolveLampLight(
   }
 
   if (lamp.kind === "window") {
-    const interiorDim = inInteriorView ? 0.64 : 1.0
+    const interiorDim = inInteriorView ? 0.48 : 1.0
     const power = master * lamp.power * s.windowPower * interiorDim
-    const r = lamp.radius * 0.86 * invTight
+    const r = lamp.radius * 0.76 * invTight
     return {
       lx: lamp.x,
       lh: 1.42,
-      ly: lamp.y + 0.08,
+      ly: lamp.y + 0.06,
       r,
-      rEff: r * 0.86,
-      color: [1.0, 0.56 - 0.05 * w, 0.18 - 0.04 * w],
+      rEff: r * 0.85,
+      color: [1.0, 0.50 - 0.05 * w, 0.13 - 0.04 * w],
       power,
-      fixtureBrightness: master * s.windowPower * interiorDim * 0.92,
+      fixtureBrightness: master * s.windowPower * interiorDim * 0.78,
       cone: [0, 1, -0.65, 1],
       softness: 0.20,
       castShadows: !inInteriorView,
@@ -309,11 +309,11 @@ export function resolveLampLight(
   let lx = lamp.x
   let ly = lamp.y
   let lh = lamp.h
-  let rScale = 0.82
-  let pScale = 0.72
-  let fixtureScale = 0.75
+  let rScale = 0.76
+  let pScale = 0.62
+  let fixtureScale = 0.65
   let castShadows = false
-  let color: [number, number, number] = [1.0, 0.58 - 0.06 * w, 0.20 - 0.05 * w]
+  let color: [number, number, number] = [1.0, 0.50 - 0.05 * w, 0.13 - 0.04 * w]
 
   if (b && b.kind === "house") {
     const relX = lamp.x - b.rect[0]
@@ -322,39 +322,39 @@ export function resolveLampLight(
       // #1 NW bedroom nightstand lamp: warm primary focal pool next to bed
       lx = b.rect[0] + 2.75
       ly = b.rect[1] + 1.25
-      lh = 1.32
-      rScale = 1.05
-      pScale = 1.35
-      fixtureScale = 1.35
+      lh = 1.28
+      rScale = 0.96
+      pScale = 1.15
+      fixtureScale = 1.25
       castShadows = true
-      color = [1.0, 0.62 - 0.05 * w, 0.22 - 0.04 * w]
+      color = [1.0, 0.54 - 0.05 * w, 0.14 - 0.04 * w]
     } else if (relX > 4.0 && relY < 4.5) {
       // #4 NE bedroom dresser / rug fill
       lx = b.rect[0] + 6.85
       ly = b.rect[1] + 2.15
-      lh = 1.65
-      rScale = 0.76
-      pScale = 0.58
-      fixtureScale = 0.35
-      color = [1.0, 0.56 - 0.05 * w, 0.18 - 0.04 * w]
+      lh = 1.55
+      rScale = 0.68
+      pScale = 0.42
+      fixtureScale = 0.25
+      color = [1.0, 0.48 - 0.04 * w, 0.12 - 0.03 * w]
     } else if (relX < 4.5 && relY >= 4.5) {
       // #2 SW living room: warm pool over Oriental rug & coffee table
       lx = b.rect[0] + 2.75
       ly = b.rect[3] - 2.35
-      lh = 1.48
-      rScale = 0.78
-      pScale = 0.66
-      fixtureScale = 0.32
-      color = [1.0, 0.54 - 0.05 * w, 0.17 - 0.04 * w]
+      lh = 1.42
+      rScale = 0.72
+      pScale = 0.52
+      fixtureScale = 0.25
+      color = [1.0, 0.48 - 0.04 * w, 0.12 - 0.03 * w]
     } else {
       // #3 SE kitchen/dining: warm pool over kitchen sink counter & dining table
       lx = b.rect[2] - 3.35
       ly = b.rect[3] - 3.15
-      lh = 1.78
-      rScale = 0.94
-      pScale = 1.12
-      fixtureScale = 0.65
-      color = [1.0, 0.58 - 0.05 * w, 0.20 - 0.04 * w]
+      lh = 1.68
+      rScale = 0.86
+      pScale = 0.88
+      fixtureScale = 0.52
+      color = [1.0, 0.52 - 0.05 * w, 0.14 - 0.04 * w]
     }
   }
 
@@ -395,13 +395,13 @@ struct OutbreakLightingUniforms {
 fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let skyLum = dot(rawSky, vec3f(0.299, 0.587, 0.114));
-  let suburbanSky = vec3f(skyLum) * vec3f(1.06, 0.94, 0.82);
-  let sky = mix(rawSky, suburbanSky, w * 0.88);
-  return mix(sky * 0.44, sky, n.y * 0.5 + 0.5);
+  let suburbanSky = vec3f(skyLum) * vec3f(1.18, 0.90, 0.62);
+  let sky = mix(rawSky, suburbanSky, w * 0.92);
+  return mix(sky * 0.42, sky, n.y * 0.5 + 0.5);
 }
 
 /**
- * General atmospheric light haze & soft indirect bounce evaluated over active practicals and sodium streetlamps.
+ * General albedo-preserving indirect bounce & localized atmospheric light haze for sodium streetlamps and tungsten practicals.
  */
 fn evalSceneLightHazeAndBounce(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool) -> vec3f {
   var add = vec3f(0.0);
@@ -409,89 +409,90 @@ fn evalSceneLightHazeAndBounce(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom
   let isInView = OL.u5.w > 0.5;
 
   if (!inRoom) {
-    // 1. High-pressure sodium streetlamp atmospheric haze & warm ground/sidewalk bounce
+    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + tight bulb haze
     let sScale = OL.u1.w;
     if (sScale > 0.001) {
-      let sPos = select(vec2f(39.8, 42.2), vec2f(39.2, 24.8), isInView);
+      let sPos = select(vec2f(40.8, 42.4), vec2f(39.2, 24.5), isInView);
       let dvS = world.xz - sPos;
       let dS2 = dot(dvS, dvS);
-      if (dS2 < 110.0) {
-        let sodiumCol = vec3f(1.0, 0.48, 0.14);
-        let hazeS = exp(-dS2 / select(24.0, 28.0, isInView));
-        let coreS = exp(-dS2 / 1.8) * 0.45;
-        add += (baseAlbedo * 0.65 + vec3f(0.065, 0.032, 0.010)) * sodiumCol * (hazeS + coreS) * sScale;
+      if (dS2 < 95.0) {
+        let sodiumCol = vec3f(1.0, 0.42, 0.09);
+        let poolS = exp(-dS2 / select(18.0, 22.0, isInView));
+        let bulbHaze = exp(-dS2 / 1.4) * 0.065;
+        add += (baseAlbedo * 0.95 * poolS + vec3f(0.022, 0.009, 0.002) * poolS + sodiumCol * bulbHaze) * sodiumCol * sScale;
       }
     }
 
-    // 2. Warm tungsten window & porch atmospheric bounce across the front yard, shrubs, and sidewalk
+    // 2. Warm 2500K tungsten window & porch bounce across the front yard, shrubs, and sidewalk
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
+    let extCutScale = select(1.0, 0.56, isInView);
     if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.8 && world.z < 46.5 && world.x > 17.5 && world.x < 40.5) {
-      let dWinL2 = dot(world.xz - vec2f(24.5, 36.2), world.xz - vec2f(24.5, 36.2));
-      let dWinR2 = dot(world.xz - vec2f(34.25, 36.2), world.xz - vec2f(34.25, 36.2));
-      let dPorch2 = dot((world.xz - vec2f(27.7, 37.2)) * vec2f(0.75, 0.62), (world.xz - vec2f(27.7, 37.2)) * vec2f(0.75, 0.62));
-      let spill = (exp(-dWinL2 / 11.5) + exp(-dWinR2 / 11.5)) * wScale * 0.65 + exp(-dPorch2 / 14.5) * pScale * 0.85;
-      add += (baseAlbedo * 0.52 + vec3f(0.038, 0.022, 0.007)) * vec3f(1.0, 0.58, 0.20) * spill * w;
+      let dWinL2 = dot(world.xz - vec2f(24.5, 36.4), world.xz - vec2f(24.5, 36.4));
+      let dWinR2 = dot(world.xz - vec2f(34.25, 36.4), world.xz - vec2f(34.25, 36.4));
+      let dPorch2 = dot((world.xz - vec2f(27.7, 37.4)) * vec2f(0.82, 0.65), (world.xz - vec2f(27.7, 37.4)) * vec2f(0.82, 0.65));
+      let spill = ((exp(-dWinL2 / 9.5) + exp(-dWinR2 / 9.5)) * wScale * 0.55 + exp(-dPorch2 / 11.5) * pScale * 0.68) * extCutScale;
+      add += (baseAlbedo * 0.72 + vec3f(0.018, 0.009, 0.002)) * vec3f(1.0, 0.50, 0.12) * spill * w;
     }
 
-    // 3. Soft warm lantern/flashlight ground pool around the survivor on the street
-    let dp = world.xz - OL.u6.xy;
-    let dp2 = dot(dp, dp);
-    if (!isInView && dp2 < 18.0 && world.y < 0.45) {
-      let pPool = exp(-dp2 / 5.2);
-      add += (baseAlbedo * 0.55 + vec3f(0.032, 0.022, 0.012)) * pPool * (0.5 + 0.5 * w);
+    // 3. Warm golden-amber lantern/porch spill around the survivor on the street (z = 40.1..45.2)
+    let dp = world.xz - vec2f(OL.u6.x, OL.u6.y + 0.55);
+    let dp2 = dot(dp * vec2f(0.85, 0.95), dp * vec2f(0.85, 0.95));
+    if (!isInView && dp2 < 16.0 && world.y < 0.45 && world.z > 39.8) {
+      let pPool = exp(-dp2 / 4.8);
+      add += (baseAlbedo * 0.92 + vec3f(0.024, 0.013, 0.004)) * vec3f(1.0, 0.56, 0.18) * pPool * (0.4 + 0.6 * w);
     }
   } else if (world.y < 2.74) {
-    // Interior indirect room bounce & wall-wash halos (NW bedside lamp, SE kitchen sink/window & dining, SW living room, hallway)
+    // Interior indirect room bounce & wall-wash halos (albedo-multiplying so wood planks, rugs & tiles retain full texture contrast)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
       // NW Bedroom bedside lamp wall wash & bed/rug bounce
       let vNW = (world.xz - vec2f(25.1, 25.4)) * vec2f(0.68, 0.76);
       let dNW2 = dot(vNW, vNW);
-      if (dNW2 < 20.0) {
-        let nwPool = exp(-dNW2 / 5.2);
-        let wallBoost = select(0.65, 1.55, abs(n.y) < 0.45 && world.z < 26.8);
-        add += (baseAlbedo * 0.085 + vec3f(0.026, 0.013, 0.0042)) * nwPool * wallBoost * roomScale;
+      if (dNW2 < 18.0) {
+        let nwPool = exp(-dNW2 / 4.6);
+        let wallBoost = select(0.55, 1.45, abs(n.y) < 0.45 && world.z < 26.8);
+        add += (baseAlbedo * 0.085 + vec3f(0.014, 0.0062, 0.0014)) * vec3f(1.0, 0.52, 0.14) * nwPool * wallBoost * roomScale;
       }
 
       // NE Bedroom dresser & rug bounce
       let vNE = (world.xz - vec2f(29.0, 26.2)) * vec2f(0.72, 0.78);
       let dNE2 = dot(vNE, vNE);
-      if (dNE2 < 16.0) {
-        let nePool = exp(-dNE2 / 4.8);
-        let wallBoost = select(0.62, 1.25, abs(n.y) < 0.45 && world.z < 26.2);
-        add += (baseAlbedo * 0.068 + vec3f(0.016, 0.0082, 0.0028)) * nePool * wallBoost * roomScale;
+      if (dNE2 < 15.0) {
+        let nePool = exp(-dNE2 / 4.2);
+        let wallBoost = select(0.52, 1.15, abs(n.y) < 0.45 && world.z < 26.2);
+        add += (baseAlbedo * 0.062 + vec3f(0.0075, 0.0032, 0.0008)) * vec3f(1.0, 0.50, 0.14) * nePool * wallBoost * roomScale;
       }
 
-      // SE Kitchen north sink-window glow (33.5, 30.0), east window (36.5, 30.2), and warm tile/dining bounce
-      let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.65, 0.75);
+      // SE Kitchen north sink-window glow (33.5, 30.0) and warm tile/dining bounce
+      let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.68, 0.78);
       let dSink2 = dot(vSink, vSink);
-      if (dSink2 < 22.0) {
-        let sinkPool = exp(-dSink2 / 5.6);
-        let sinkWinBoost = select(0.75, 1.85, abs(n.y) < 0.45 && world.z < 30.4 && world.y > 0.85);
-        add += (baseAlbedo * 0.115 + vec3f(0.036, 0.018, 0.0055)) * sinkPool * sinkWinBoost * roomScale;
+      if (dSink2 < 20.0) {
+        let sinkPool = exp(-dSink2 / 4.8);
+        let sinkWinBoost = select(0.62, 1.65, abs(n.y) < 0.45 && world.z < 30.4 && world.y > 0.85);
+        add += (baseAlbedo * 0.095 + vec3f(0.016, 0.0072, 0.0016)) * vec3f(1.0, 0.52, 0.14) * sinkPool * sinkWinBoost * roomScale;
       }
-      let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.58, 0.62);
+      let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.62, 0.65);
       let dDin2 = dot(vDin, vDin);
-      if (dDin2 < 22.0) {
-        let dinPool = exp(-dDin2 / 6.2);
-        add += (baseAlbedo * 0.095 + vec3f(0.024, 0.012, 0.0038)) * dinPool * roomScale;
+      if (dDin2 < 20.0) {
+        let dinPool = exp(-dDin2 / 5.2);
+        add += (baseAlbedo * 0.082 + vec3f(0.011, 0.0048, 0.0011)) * vec3f(1.0, 0.50, 0.13) * dinPool * roomScale;
       }
 
       // SW Living room Oriental rug & coffee table warm bounce
-      let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.62, 0.62);
+      let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.65, 0.65);
       let dSW2 = dot(vSW, vSW);
-      if (dSW2 < 18.0) {
-        let swPool = exp(-dSW2 / 5.4);
-        add += (baseAlbedo * 0.078 + vec3f(0.018, 0.0092, 0.0030)) * swPool * roomScale;
+      if (dSW2 < 16.0) {
+        let swPool = exp(-dSW2 / 4.6);
+        add += (baseAlbedo * 0.068 + vec3f(0.0082, 0.0036, 0.0009)) * vec3f(1.0, 0.48, 0.12) * swPool * roomScale;
       }
 
       // Central hallway warm walnut floorboard bounce
-      let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.65, 0.55);
+      let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.68, 0.58);
       let dHall2 = dot(vHall, vHall);
-      if (dHall2 < 18.0) {
-        let hallPool = exp(-dHall2 / 5.2);
-        add += (baseAlbedo * 0.072 + vec3f(0.015, 0.0078, 0.0026)) * hallPool * roomScale;
+      if (dHall2 < 16.0) {
+        let hallPool = exp(-dHall2 / 4.5);
+        add += (baseAlbedo * 0.065 + vec3f(0.0068, 0.0030, 0.0007)) * vec3f(1.0, 0.48, 0.12) * hallPool * roomScale;
       }
     }
   }
@@ -527,9 +528,9 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.05, world.xz + n.xz * 0.03, min(world.y, 1.05));
   if (vis <= 0.001) { return vec3f(0.0); }
 
-  let surfW = select(0.15 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.25 && n.y > 0.7);
-  let beamCol = OL.u5.xyz;
-  let mist = profile / (0.45 + max(0.0, along) * 0.25) * OL.u2.x * 0.22 * surfW;
-  return (baseAlbedo * 0.85 + beamCol * 0.18) * OL.u4.z * mist * vis;
+  let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.25 && n.y > 0.7);
+  let beamCol = vec3f(1.0, 0.62, 0.24);
+  let mist = profile / (0.55 + max(0.0, along) * 0.32) * OL.u2.x * 0.14 * surfW;
+  return (baseAlbedo * 0.75 + beamCol * 0.06) * beamCol * OL.u4.z * mist * vis;
 }
 `

@@ -6,38 +6,38 @@ import { outbreakLightingDeclarationsWgsl } from "./lighting"
 
 export const outbreakPostFinish: PostFinishOptions = {
   chromatic: 0.001,
-  bloom: 0.072,
-  halation: 0.052,
+  bloom: 0.068,
+  halation: 0.055,
   grain: 0.014,
   vignette: 0.78,
   diagnostics: true,
-  shadowLift: 0.88,
-  shadowLiftColor: [0.012, 0.0105, 0.0088],
-  saturation: 0.72,
-  shadowTint: [1.03, 0.99, 0.90],
-  highlightTint: [1.10, 0.98, 0.80],
-  huePreserve: 0.48,
+  shadowLift: 0.32,
+  shadowLiftColor: [0.0065, 0.0052, 0.0040],
+  saturation: 0.90,
+  shadowTint: [1.06, 0.97, 0.80],
+  highlightTint: [1.14, 0.96, 0.72],
+  huePreserve: 0.52,
 }
 
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
   bounce: "vec3f(0.0)",
-  lightLeak: "0.008 * vis",
+  lightLeak: "0.006 * vis",
   lightAttenuation: `let dn = max(d3, 0.85);
     let tight = max(0.5, OL.u0.w);
     if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
-      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.88) / 0.62, 0.0, 1.0);
-      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.45) - 0.75) / 1.05, 0.0, 1.0);
+      let rx = clamp(1.0 - max(0.0, abs(dv.x) - 0.85) / 0.58, 0.0, 1.0);
+      let ry = clamp(1.0 - max(0.0, abs(dv.y - 0.42) - 0.72) / 0.98, 0.0, 1.0);
       win = rx * rx * ry * ry * (0.78 + 0.22 * smoothstep(0.0, 0.14, abs(dv.x)));
     }
-    var att = power * win * (0.03 + 2.35 / (1.0 + dn * dn * 0.58 * tight));
+    var att = power * win * (0.025 + 2.25 / (1.0 + dn * dn * 0.62 * tight));
     if (L.extra.w > -0.5 && L.pos.w > 4.2 && L.cone.w < -0.5 && hl > 2.0) {
-      let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.14);
-      att *= 0.92 + 0.95 * smoothstep(0.0, 3.6, dv.y) * xFall * xFall;
+      let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.16);
+      att *= 0.88 + 0.78 * smoothstep(0.0, 3.4, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
   wallDirectScale: "mix(0.18, 0.34, smoothstep(0.0, 1.5, o.world.y))",
-  ambient: "outbreakSkyAmbient(n, F.ambient.rgb) * mix(0.08, 0.96, select(1.0, select(fd.g * 0.78, 0.08, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.008, 0.0055, 0.0032), inRoom && o.world.y < 2.8)",
+  ambient: "outbreakSkyAmbient(n, F.ambient.rgb) * mix(0.04, 0.84, select(1.0, select(fd.g * 0.48, 0.04, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.005, 0.0032, 0.0016), inRoom && o.world.y < 2.8)",
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
@@ -115,7 +115,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
   return mix(los0, los1, fract(f)) * mask * range;
 }`,
-  directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.84, 0.78, 0.68), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 1.75, 0.08, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.92, 0.74, 0.52), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.85, 0.05, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
@@ -180,26 +180,34 @@ fn eyeVisible(p: vec2f) -> f32 {
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
         if (!inVerge) {
-          let gritWalk = 0.78 + 0.44 * surfaceNoise(o.world.xz * 7.5);
-          let walkTint = mix(vec3f(0.018, 0.020, 0.025), vec3f(0.028, 0.022, 0.015), w);
-          col = col * 0.88 * gritWalk + walkTint * F.ambient.w * gritWalk;
+          let gritWalk = 0.76 + 0.48 * surfaceNoise(o.world.xz * 7.5);
+          let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+          let warmStone = vec3f(walkLum) * vec3f(1.18, 0.94, 0.66);
+          col = mix(col * 0.78, warmStone * 0.76, w) * gritWalk + vec3f(0.015, 0.011, 0.006) * F.ambient.w * gritWalk;
           // Warm porch walkway reflection streak
           let dxWalk = o.world.x - 27.7;
-          if (abs(dxWalk) < 4.8 && o.world.z > 35.3 && o.world.z < 40.4) {
-            let walkCore = exp(-(dxWalk * dxWalk) / 1.25) * smoothstep(40.4, 35.5, o.world.z);
-            let sideSpread = exp(-(dxWalk * dxWalk) / 8.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            col += vec3f(0.085, 0.054, 0.024) * (walkCore * 1.15 + sideSpread * 0.65) * gritWalk * OL.u2.y * nightLamps;
+          if (abs(dxWalk) < 4.5 && o.world.z > 35.3 && o.world.z < 40.4) {
+            let walkCore = exp(-(dxWalk * dxWalk) / 1.15) * smoothstep(40.4, 35.5, o.world.z);
+            let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
+            let extScale = select(1.0, 0.45, OL.u5.w > 0.5);
+            col += vec3f(0.068, 0.042, 0.016) * (walkCore * 1.05 + sideSpread * 0.55) * gritWalk * OL.u2.y * nightLamps * extScale;
           }
         }
       }
     } else if (mat == 4 && !inRoom) {
       col *= mix(1.0, 0.56, smoothstep(2.15, 2.78, o.world.y));
+      let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      col = mix(col, vec3f(wallLum) * vec3f(1.22, 0.95, 0.64), w * 0.65);
     }
     if (!inRoom) {
       let vigDark = clamp(OL.u2.w, 0.0, 1.2);
       let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.055, 0.068));
       let periphShade = mix(1.0, clamp(1.16 - dCenter * 0.44, 0.42, 1.0), vigDark);
-      col *= periphShade;
+      let extCutDim = select(1.0, select(0.62, 0.92, o.world.x > 37.2), OL.u5.w > 0.5);
+      col *= periphShade * extCutDim;
+    } else {
+      let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      col = mix(col, vec3f(roomLum) * vec3f(1.28, 0.88, 0.52), w * 0.58) * 0.72;
     }
     col += evalSceneLightHazeAndBounce(o.world, n, o.color, inRoom) * nightLamps;
     // Darken cutaway wall-top molding (y = 2.75..2.82) so interior walls have a clean dark slate cap
