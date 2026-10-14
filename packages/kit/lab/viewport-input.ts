@@ -8,6 +8,8 @@ export {
   type ViewportCursorUpdate,
 } from "./viewport-cursor"
 
+export type TwoFingerScrollMode = "orbit" | "pan" | "zoom"
+
 export type WheelGestureAction =
   | { kind: "ignore" }
   | { kind: "zoom"; factor: number; source: "pinch" | "wheel" }
@@ -15,10 +17,39 @@ export type WheelGestureAction =
   | { kind: "pan"; dx: number; dy: number; source: "trackpad-pan" }
 
 export type ViewportWheelOptions = {
-  /** Whether Ctrl+wheel (standard browser trackpad pinch) zooms the 3D camera inside the canvas. Default: true in Lab. */
+  /** Whether Ctrl+wheel (standard browser trackpad pinch) zooms the 3D camera inside the canvas. Default: true. */
   pinchZoom?: boolean
-  /** Unmodified two-finger trackpad scroll action. Default: "orbit" in Lab ("zoom" in single-asset Catalogue). */
-  twoFingerScroll?: "orbit" | "pan" | "zoom"
+  /** Unmodified two-finger trackpad scroll action. Default: "orbit". */
+  twoFingerScroll?: TwoFingerScrollMode
+}
+
+/** Minimum 1D pixel deltaY treated as a discrete physical mouse wheel notch in DOM_DELTA_PIXEL mode (standard notches are 100 or 120). */
+export const MOUSE_WHEEL_MIN_DELTA_Y = 80
+
+/** Pointer movement threshold (px) before a primary/middle button press becomes a drag. */
+export const PRIMARY_DRAG_THRESHOLD_PX = 4
+
+/** Pointer movement threshold (px) distinguishing an RMB / Ctrl+LMB tap (radial/context menu) from an orbit/pan drag. */
+export const RADIAL_TAP_THRESHOLD_PX = 8
+
+const TWO_FINGER_SCROLL_STORAGE_KEY = "arcade.viewport.twoFingerScroll.v1"
+let currentTwoFingerScrollMode: "orbit" | "pan" = "orbit"
+
+export function getTwoFingerScrollMode(): "orbit" | "pan" {
+  try {
+    const stored = globalThis.localStorage?.getItem(TWO_FINGER_SCROLL_STORAGE_KEY)
+    if (stored === "orbit" || stored === "pan") {
+      currentTwoFingerScrollMode = stored
+    }
+  } catch {}
+  return currentTwoFingerScrollMode
+}
+
+export function setTwoFingerScrollMode(mode: "orbit" | "pan"): void {
+  currentTwoFingerScrollMode = mode
+  try {
+    globalThis.localStorage?.setItem(TWO_FINGER_SCROLL_STORAGE_KEY, mode)
+  } catch {}
 }
 
 export function clampWheelDelta(delta: number, limit = 120): number {
@@ -27,12 +58,33 @@ export function clampWheelDelta(delta: number, limit = 120): number {
 }
 
 /**
- * Shared wheel & trackpad classifier used across Lab and Catalogue viewports.
+ * Documented heuristic distinguishing a physical mouse scroll wheel from a MacBook/Magic Trackpad two-finger scroll:
+ * 1. Non-pixel `deltaMode` (`DOM_DELTA_LINE = 1` or `DOM_DELTA_PAGE = 2`) is always a discrete mouse wheel.
+ * 2. In `DOM_DELTA_PIXEL` (`deltaMode === 0`), a purely vertical 1D step (`deltaX === 0`) with integer delta and
+ *    `|deltaY| >= 80` (standard Chromium/WebKit mouse wheel notches are 100 or 120 px) is a physical mouse wheel.
+ * 3. Any event with a horizontal `deltaX` component, fractional pixel delta, or continuous `|deltaY| < 80` is a trackpad scroll.
+ */
+export function isMouseWheelEvent(event: {
+  deltaX?: number
+  deltaY: number
+  deltaMode?: number
+}): boolean {
+  const mode = event.deltaMode ?? 0
+  if (mode !== 0) return true
+  const rawDx = Number.isFinite(event.deltaX) ? (event.deltaX ?? 0) : 0
+  const rawDy = Number.isFinite(event.deltaY) ? event.deltaY : 0
+  if (rawDx !== 0) return false
+  if (!Number.isInteger(rawDy)) return false
+  return Math.abs(rawDy) >= MOUSE_WHEEL_MIN_DELTA_Y
+}
+
+/**
+ * Shared wheel & trackpad classifier used across Lab, Catalogue, and Characters 3D viewports:
  * - Meta+wheel is never intercepted so browser/OS shortcuts stay untouched.
- * - Ctrl+wheel (W3C trackpad pinch) zooms the 3D camera when `pinchZoom !== false`.
- * - Shift + two-finger scroll pans the camera on the ground plane.
- * - Alt + scroll zooms the camera.
- * - Unmodified two-finger scroll orbits (default in Lab), pans, or zooms according to `twoFingerScroll`.
+ * - Ctrl+wheel (W3C trackpad pinch) zooms the 3D camera inside the canvas when `pinchZoom !== false`.
+ * - Shift + two-finger scroll (or Shift + wheel) pans the camera on the ground plane.
+ * - Alt/Option + scroll or a physical mouse wheel (`isMouseWheelEvent`) zooms the camera.
+ * - Unmodified two-finger trackpad scroll orbits (default), pans, or zooms according to `twoFingerScroll`.
  */
 export function classifyWheelGesture(
   event: {
@@ -71,7 +123,7 @@ export function classifyWheelGesture(
     }
   }
 
-  if (event.altKey || scrollMode === "zoom") {
+  if (event.altKey || scrollMode === "zoom" || isMouseWheelEvent(event)) {
     return {
       kind: "zoom",
       factor: Math.exp(dy * 0.003),
@@ -115,17 +167,18 @@ export function bindSafariTrackpadGestures(
   let lastRotation = 0
 
   const onStart = (event: Event) => {
-    if (callbacks.isEnabled && !callbacks.isEnabled()) return
     const g = event as SafariGestureLike
+    // Always prevent Safari whole-page zoom when pinching inside the 3D canvas.
     event.preventDefault()
+    if (callbacks.isEnabled && !callbacks.isEnabled()) return
     lastScale = typeof g.scale === "number" && g.scale > 0 ? g.scale : 1
     lastRotation = typeof g.rotation === "number" ? g.rotation : 0
   }
 
   const onChange = (event: Event) => {
-    if (callbacks.isEnabled && !callbacks.isEnabled()) return
     const g = event as SafariGestureLike
     event.preventDefault()
+    if (callbacks.isEnabled && !callbacks.isEnabled()) return
     const scale = typeof g.scale === "number" && g.scale > 0 ? g.scale : 1
     const rotation = typeof g.rotation === "number" ? g.rotation : 0
     if (lastScale > 0 && Math.abs(scale - lastScale) > 1e-4) {
@@ -141,7 +194,6 @@ export function bindSafariTrackpadGestures(
   }
 
   const onEnd = (event: Event) => {
-    if (callbacks.isEnabled && !callbacks.isEnabled()) return
     event.preventDefault()
     lastScale = 1
     lastRotation = 0

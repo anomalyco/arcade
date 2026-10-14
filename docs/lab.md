@@ -94,14 +94,34 @@ Test an intentional gameplay-physics change in the actual simulation separately 
 
 ## Preserve input and audio ownership
 
-Text editors, search and preset dialogs own printable keys, arrows, Space and clipboard/text-undo shortcuts. They must
-not trigger canvas actions. Placement/move ghosts precede Inspector navigation; focused Inspector precedes gameplay.
-Standalone `LabPanel` uses `capture: "focus"`, `layout: "inspector"`; game overlays use floating/open capture.
+Text editors, search, `<select>` dropdowns and preset dialogs own printable keys, arrows, Space and clipboard/text-undo
+shortcuts. They must not trigger canvas actions. Placement/move ghosts precede Inspector navigation; focused Inspector
+precedes gameplay. Standalone `LabPanel` uses `capture: "focus"`, `layout: "inspector"`; game overlays use floating/open
+capture.
 
 Canvas click in Edit selects/places and never possesses a character. Enter Play explicitly with `P` or the Play button
-when a character exists. Escape or sidebar/toolbar focus exits Play and releases held keys, including Dvorak movement,
-Space and Shift. Preserve browser shortcuts. Authored Undo/Redo covers edits and placements, not simulation time rewind;
-exiting Play currently keeps the live aftermath rather than restoring a pre-Play checkpoint.
+when a character exists. Escape or sidebar/toolbar focus exits Play and releases held keys, including Dvorak movement
+(`,AOE`), Space and Shift. Preserve browser shortcuts (`⌘R`, `⌘L`, `⌘W`, `Meta+wheel`). Authored Undo/Redo covers edits
+and placements, not simulation time rewind; exiting Play restores the pre-Play checkpoint (with a toast option to keep
+the Play state).
+
+All 3D debug surfaces (Lab, Catalogue and Characters) share one viewport gesture grammar (`@arcade/kit/orbit-gestures`
+and `packages/kit/lab/viewport-input.ts`):
+
+- **Trackpad**: two-finger scroll orbits (`2F: Orbit` default, switchable to `2F: Pan` in the Lab topbar or via
+  `twoFingerScroll`), `Shift` + two-finger scroll pans, and two-finger pinch (`Ctrl+wheel` and Safari
+  `gesturestart`/`gesturechange`) zooms (`preventDefault()` scoped strictly to `<canvas>` with `overscroll-behavior: none`
+  so horizontal swipes and pinches never navigate or zoom the page).
+- **Mouse**: wheel zooms (distinguished from trackpad scroll by `deltaMode !== 0` or 1D integer `|deltaY| >= 80`),
+  `RMB` or `MMB` drag orbits, and `Shift` + `RMB`/`MMB` drag pans.
+- **Primary pointer (`LMB`)**: click (`<= 4 px`) selects (`Shift+click` toggles multi-selection); click-drag (`> 4 px`)
+  on empty space box-selects where multi-object selection exists (Lab sections with scene objects, or when `Box`/`Alt`
+  is active) and orbits elsewhere (Catalogue, Characters, or Lab sections without selectable objects; `Shift+drag` pans
+  when not adding to an existing selection).
+- **Context / Radial**: unmoved `RMB` tap or `Ctrl+click` (`<= 8 px` threshold) or `M` / `ContextMenu` opens the
+  contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters.
+- **Keyboard**: `F` frames the active target, `Arrows` orbit (`Shift+Arrows` pan) when the canvas is focused, and `Esc`
+  cancels active transforms/ghosts/radial/drags, clears selection, or exits Play/Possess.
 
 Audio entry/selection must stay silent. Render waveform/spectrogram previews offline; live playback requires explicit
 Audition. Neither a generic Retrigger nor a preset import should automatically unlock/play audio. Release live audio

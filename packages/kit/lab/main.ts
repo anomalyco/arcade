@@ -116,7 +116,7 @@ export async function lab(options:LabOptions) {
         </div>
         <div class="lab-hints">
           <span class="lab-focus-pill" data-focus-pill>Edit · Canvas</span>
-          <span data-hint-text>Space Retrigger · F Frame · R Reroll Room · Q/E Cycle · Tab Inspector · ⌘K Search</span>
+          <span data-hint-text>2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · RMB Tap Radial · Space Retrigger · F Frame · R Reroll · ⌘K Search</span>
         </div>
       </footer>
       <div class="lab-modal-backdrop" data-preset-modal hidden>

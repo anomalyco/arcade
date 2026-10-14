@@ -254,17 +254,17 @@ try {
     await page.keyboard.press("Escape")
     assert.equal(await page.evaluate(() => document.querySelector<HTMLElement>("[data-lab-radial]")!.hidden), true)
 
-    // Hold RMB > 180ms inside <14px dead zone cancels with 0 actions
+    // RMB drag (>8px) orbits camera with 0 prop mutations and does not open radial menu
     const canvasBox = (await page.locator("canvas").boundingBox())!
     const cx = canvasBox.x + canvasBox.width * 0.5
     const cy = canvasBox.y + canvasBox.height * 0.5
     const propsBeforeDeadZone = await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length)
     await page.mouse.move(cx, cy)
     await page.mouse.down({ button: "right" })
-    await page.mouse.move(cx + 5, cy - 4)
-    await page.waitForTimeout(210)
+    await page.mouse.move(cx + 35, cy - 20, { steps: 4 })
     await page.mouse.up({ button: "right" })
-    assert.equal(await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length), propsBeforeDeadZone, "Dead zone cancel executed 0 mutations")
+    assert.equal(await page.evaluate(() => (window as any).lab.spawn.inspect().items.props.length), propsBeforeDeadZone, "RMB drag orbited with 0 mutations")
+    assert.equal(await page.evaluate(() => document.querySelector<HTMLElement>("[data-lab-radial]")!.hidden), true, "RMB drag did not open radial menu")
 
     // Action-count acceptance test: RMB on ground -> 'a' (Spawn Here) places hydrant, P + W drives into it, Esc restores unbroken prePlayCheckpoint
     await page.evaluate(() => {
@@ -388,15 +388,12 @@ try {
       const p = st.projectWorld(prop.x, prop.y + 0.35, prop.z)
       return { x: vp.left + p.u * vp.width, y: vp.top + p.v * vp.height }
     })
-    await page.mouse.move(propScreen.x, propScreen.y)
-    await page.mouse.down({ button: "right" })
+    await page.mouse.click(propScreen.x, propScreen.y, { button: "right" })
     // Move NE (slot 1 = Possess, disabled on prop)
     await page.mouse.move(propScreen.x + 55, propScreen.y - 55)
     assert.equal(await page.evaluate(() => (window as any).lab.workbench.cursor.state), "disabled", "Cursor state is disabled over unavailable radial sector")
     if (hostIdx === 0) await page.screenshot({ path: resolve(out, "cursor-disabled-radial.png") })
-    await page.mouse.move(propScreen.x, propScreen.y)
-    await page.waitForTimeout(200)
-    await page.mouse.up({ button: "right" })
+    await page.keyboard.press("Escape")
 
     // Hover text input / sidebar -> cursor state "hidden" (native OS cursor)
     const searchBoxRect = (await page.getByRole("searchbox", { name: "Search library" }).boundingBox())!
