@@ -11,7 +11,7 @@
 - Read `docs/game-notes.md` before rendering, performance, input, multiplayer or feel work, and add techniques there
   once they are proven in a game, with where they live and what they measured. `docs/shared-code.md` lists code both
   games duplicate and what to extract into `packages/kit/`; check it before writing something a game already has.
-- Read [docs/lab.md](docs/lab.md) before adding or tuning effects, materials, physics, audio or rendering options.
+- Read [docs/lab.md](docs/lab.md) before adding or tuning effects, materials, physics, audio or rendering options. To show Kit an orientation, asset, or sandbox setup in his open browser tab, use `bun run arcade …` ([docs/dev-control.md](docs/dev-control.md)).
   All tunable values belong in typed settings bound to the shared `LabPanel` (Backquote), with meaningful labels,
   explicit units/ranges/steps, approved defaults and Reset. Query parameters are for automation only.
   Use the production effect/material/physics implementation through adapters, never a Lab-only facsimile; label

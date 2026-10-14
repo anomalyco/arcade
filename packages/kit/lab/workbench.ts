@@ -1,4 +1,13 @@
 import { LabPanel, type LabSettings, type LabValue } from "../lab-panel"
+import {
+  coerceControlValue,
+  findControlRow,
+  formatControlValue,
+  readStageCameraState,
+  registerDevControl,
+  registerPanelLabCommands,
+  registerStageCameraCommands,
+} from "../dev-control"
 import { LabCommandRegistry, type LabCommandContext, type LabSceneState } from "./commands"
 import { computeSnapshotDiffs, createCompareWipeDOM } from "./compare-ab"
 import { effectOptions } from "./effects"
@@ -1100,24 +1109,159 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortcut: "A",
       accelerators: ["a", "e"],
       radial: { context: "ground", slot: 2 },
-      enabled: () => Boolean(spawn),
-      disabledReason: () => "No prop adapter available",
-      run: ctx => {
+      args: {
+        asset: { type: "string", description: "Prop kind, character ID, or light kind" },
+        at: { type: "string", description: "Coordinates 'x,z' or named spot (center, ahead, ramp, pad, alcove, lane)" },
+        yaw: { type: "number", description: "Yaw in degrees" },
+        shape: { type: "string", enum: ["one", "row", "grid"] },
+        count: { type: "number", min: 1, max: 24 },
+        seed: { type: "number", description: "Optional seed" },
+      },
+      enabled: ctx => Boolean(spawn) && (ctx?.source !== "cli" || mode !== "play"),
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode (character is possessed). Run 'arcade release' first." : "No prop adapter available"),
+      run: (ctx, args) => {
         if (!spawn) return
-        const before = captureSnapshot()
-        if (globalSettings.section !== "spawn") selectSection("spawn")
-        const hit = ctx?.groundHit
-        if (hit) {
-          spawn.spawnItems("one", { x: hit.x, y: hit.y, z: hit.z, yaw: 0 })
-          recordHistory(`Place ${spawn.section.settings.item}`, before)
-          showToast(`Placed ${spawn.section.settings.item} at (${hit.x.toFixed(1)}, ${hit.z.toFixed(1)})`)
-        } else {
-          const item = String(spawn.section.settings.item || "cone")
-          spawn.setGhost({ category: "prop", kind: item, x: 0, y: yardGround(0, 2), z: 2, yaw: 0, shape: "one", valid: true })
+        const hasExplicitSpawn = Boolean(args?.asset || args?.at)
+        if (!hasExplicitSpawn) {
+          const before = captureSnapshot()
+          if (globalSettings.section !== "spawn") selectSection("spawn")
+          const hit = ctx?.groundHit
+          if (hit) {
+            spawn.spawnItems("one", { x: hit.x, y: hit.y, z: hit.z, yaw: 0 })
+            recordHistory(`Place ${spawn.section.settings.item}`, before)
+            showToast(`Placed ${spawn.section.settings.item} at (${hit.x.toFixed(1)}, ${hit.z.toFixed(1)})`)
+          } else {
+            const item = String(spawn.section.settings.item || "cone")
+            spawn.setGhost({ category: "prop", kind: item, x: 0, y: yardGround(0, 2), z: 2, yaw: 0, shape: "one", valid: true })
+          }
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return
         }
+
+        const groundFn = activeSection().groundHeight ?? spawn.section.groundHeight ?? yardGround
+        const parseSpot = (rawAt: string | undefined): { x: number; y: number; z: number } => {
+          if (!rawAt || !rawAt.trim()) return { x: 0, y: groundFn(0, 2), z: 2 }
+          const s = rawAt.trim().toLowerCase()
+          const spots: Record<string, [number, number]> = {
+            center: [0, 0],
+            origin: [0, 0],
+            ramp: [18, -6],
+            pad: [-18, 0],
+            "skid-pad": [-18, 0],
+            alcove: [0, -18],
+            glass: [0, -18],
+            lane: [0, 8],
+          }
+          if (s === "ahead") {
+            const ch = allSceneObjects().find(o => o.category === "character")
+            if (ch) {
+              const yaw = ch.yaw ?? Math.PI
+              const ax = Math.round((ch.x + Math.sin(yaw) * 4) * 100) / 100
+              const az = Math.round((ch.z + Math.cos(yaw) * 4) * 100) / 100
+              return { x: ax, y: groundFn(ax, az), z: az }
+            }
+            return { x: 0, y: groundFn(0, 2), z: 2 }
+          }
+          if (s in spots) {
+            const [sx, sz] = spots[s]!
+            return { x: sx, y: groundFn(sx, sz), z: sz }
+          }
+          const parts = s.split(",").map(p => Number(p.trim()))
+          if (parts.length === 2 && parts.every(Number.isFinite)) {
+            const [px, pz] = parts as [number, number]
+            return { x: px, y: groundFn(px, pz), z: pz }
+          }
+          if (parts.length === 3 && parts.every(Number.isFinite)) {
+            const [px, py, pz] = parts as [number, number, number]
+            return { x: px, y: py, z: pz }
+          }
+          throw new Error(`Invalid spawn location "${rawAt}". Expected "x,z", "x,y,z", or named spot (${Object.keys(spots).concat("ahead").join(", ")}).`)
+        }
+
+        const rawAsset = String(args?.asset ?? spawn.section.settings.item ?? "cone").trim()
+        const spot = ctx?.groundHit ?? parseSpot(typeof args?.at === "string" ? args.at : undefined)
+        const yawDeg = typeof args?.yaw === "number" ? args.yaw : 0
+        const yawRad = (yawDeg * Math.PI) / 180
+        const before = captureSnapshot()
+
+        if (globalSettings.section !== "spawn") selectSection("spawn")
+        if (typeof ctx?.seed === "number") {
+          spawn.section.settings.seed = ctx.seed
+        }
+
+        const q = rawAsset.toLowerCase().replace(/^getaway:prop:/, "")
+        const charMatch =
+          spawn.adapters.characters.find(c => c.id.toLowerCase() === q) ??
+          spawn.adapters.characters.find(c => c.id.toLowerCase().endsWith(`:${q}`)) ??
+          spawn.adapters.characters.find(c => c.label.toLowerCase() === q)
+        if (charMatch) {
+          spawn.section.settings.character = charMatch.id
+          spawn.spawnCharacterAt(charMatch.id, { x: spot.x, y: spot.y, z: spot.z, yaw: typeof args?.yaw === "number" ? yawRad : Math.PI })
+          spawn.section.selectObject?.("character:active")
+          recordHistory(`Spawn ${charMatch.label}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          const spawnedObj = allSceneObjects().find(o => o.id === "character:active")
+          return {
+            spawned: "character",
+            id: "character:active",
+            characterId: charMatch.id,
+            label: charMatch.label,
+            at: { x: spot.x, y: spot.y, z: spot.z, yaw: yawDeg },
+            object: spawnedObj ?? null,
+          }
+        }
+
+        const lightClean = q.replace(/^light:/, "")
+        if (lightClean === "lamp" || lightClean === "spotlight" || lightClean === "torch") {
+          spawn.section.settings.light = lightClean
+          spawn.lightAt({ x: spot.x, y: spot.y, z: spot.z, yaw: yawRad })
+          recordHistory(`Place ${lightClean}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return {
+            spawned: "light",
+            kind: lightClean,
+            id: spawn.section.selectedObjectId,
+            at: { x: spot.x, y: spot.y, z: spot.z, yaw: yawDeg },
+          }
+        }
+
+        const propMatch =
+          spawn.adapters.items.items.find(i => i.id.toLowerCase() === q) ??
+          spawn.adapters.items.items.find(i => i.label.toLowerCase() === q) ??
+          spawn.adapters.items.items.find(i => i.label.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
+        if (!propMatch) {
+          const validProps = spawn.adapters.items.items.map(i => i.id).join(", ")
+          const validChars = spawn.adapters.characters.map(c => c.id).join(", ")
+          throw new Error(`Unknown spawn asset "${rawAsset}". Valid props: ${validProps}. Valid characters: ${validChars}.`)
+        }
+        spawn.section.settings.item = propMatch.id
+        if (typeof args?.count === "number") {
+          spawn.section.settings.count = args.count
+        }
+        const shape = (typeof args?.shape === "string" ? args.shape : "one") as "one" | "row" | "grid"
+        spawn.spawnItems(shape, { x: spot.x, y: spot.y, z: spot.z, yaw: yawRad })
+        recordHistory(`Place ${propMatch.label}`, before)
         panel.sync()
         syncChrome()
         void renderNow()
+        const selId = spawn.section.selectedObjectId
+        const spawnedObj = selId ? allSceneObjects().find(o => o.id === selId) : null
+        return {
+          spawned: "prop",
+          kind: propMatch.id,
+          label: propMatch.label,
+          id: selId,
+          shape,
+          at: { x: spot.x, y: spot.y, z: spot.z, yaw: yawDeg },
+          object: spawnedObj ?? null,
+          totalProps: spawn.adapters.items.entries?.().length ?? 0,
+        }
       },
     },
     {
@@ -1234,8 +1378,37 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortLabel: "Play",
       category: "Mode",
       shortcut: "P",
+      args: {
+        mode: { type: "string", enum: ["edit", "play"], description: "Target mode ('edit' or 'play')" },
+        target: { type: "string", description: "Optional character ID/name to possess" },
+      },
       enabled: () => Boolean(spawn),
-      run: () => setPlayMode(mode === "play" ? "edit" : "play"),
+      run: (_ctx, args) => {
+        const nextMode = args?.mode === "edit" || args?.mode === "play" ? args.mode : mode === "play" ? "edit" : "play"
+        const rawTarget = typeof args?.target === "string" ? args.target.trim() : ""
+        if (nextMode === "play" && rawTarget && spawn && rawTarget !== "character:active" && rawTarget !== "active") {
+          const q = rawTarget.toLowerCase()
+          const charMatch =
+            spawn.adapters.characters.find(c => c.id.toLowerCase() === q) ??
+            spawn.adapters.characters.find(c => c.id.toLowerCase().endsWith(`:${q}`)) ??
+            spawn.adapters.characters.find(c => c.label.toLowerCase() === q || c.label.toLowerCase().includes(q))
+          if (!charMatch) {
+            throw new Error(`Unknown character "${rawTarget}". Available: ${spawn.adapters.characters.map(c => c.id).join(", ")}.`)
+          }
+          if (globalSettings.section !== "spawn") selectSection("spawn")
+          if (spawn.section.settings.character !== charMatch.id || !spawn.hasCharacter()) {
+            spawn.section.settings.character = charMatch.id
+            spawn.spawnCharacterAt(charMatch.id)
+          }
+        }
+        setPlayMode(nextMode)
+        void renderNow()
+        return {
+          mode,
+          characterId: spawn?.section.settings.character ?? null,
+          characterLabel: spawn?.characterLabel() ?? null,
+        }
+      },
     },
     {
       id: "edit.undo",
@@ -1243,8 +1416,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortLabel: "Undo",
       category: "Preset",
       shortcut: "⌘Z",
-      enabled: () => undoStack.length > 0,
-      run: () => { undo() },
+      enabled: () => mode !== "play" && undoStack.length > 0,
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode" : "Nothing to undo"),
+      run: () => {
+        const label = undoStack.at(-1)?.label ?? null
+        const ok = undo()
+        return { undone: ok, label, undoCount: undoStack.length, redoCount: redoStack.length }
+      },
     },
     {
       id: "edit.redo",
@@ -1252,24 +1430,75 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortLabel: "Redo",
       category: "Preset",
       shortcut: "⇧⌘Z",
-      enabled: () => redoStack.length > 0,
-      run: () => { redo() },
+      enabled: () => mode !== "play" && redoStack.length > 0,
+      disabledReason: () => (mode === "play" ? "Unavailable in Play mode" : "Nothing to redo"),
+      run: () => {
+        const label = redoStack.at(-1)?.label ?? null
+        const ok = redo()
+        return { redone: ok, label, undoCount: undoStack.length, redoCount: redoStack.length }
+      },
     },
     {
       id: "preset.export",
       label: "Export Preset JSON",
       shortLabel: "Export",
       category: "Preset",
+      args: {
+        name: { type: "string", description: "Optional preset name to save in local library" },
+      },
       enabled: () => true,
-      run: () => openPresetModal("export"),
+      run: (ctx, args) => {
+        const payload = buildPresetPayload()
+        const name = typeof args?.name === "string" && args.name.trim() ? args.name.trim() : null
+        if (name) {
+          try {
+            const existing = JSON.parse(localStorage.getItem("arcade.lab.presets.v1") ?? "{}") as Record<string, LabPresetSchema>
+            existing[name] = payload
+            localStorage.setItem("arcade.lab.presets.v1", JSON.stringify(existing))
+          } catch {}
+        }
+        if (ctx?.source !== "cli" && !name) {
+          openPresetModal("export")
+        }
+        return {
+          name,
+          preset: payload,
+          json: JSON.stringify(payload, null, 2),
+        }
+      },
     },
     {
       id: "preset.import",
       label: "Import Preset JSON",
       shortLabel: "Import",
       category: "Preset",
-      enabled: () => true,
-      run: () => openPresetModal("import"),
+      args: {
+        name: { type: "string", description: "Saved preset name" },
+        json: { type: "string", description: "Serialized LabPresetSchema JSON" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (ctx, args) => {
+        let rawJson = typeof args?.json === "string" ? args.json : ""
+        if (!rawJson && typeof args?.name === "string" && args.name.trim()) {
+          const name = args.name.trim()
+          try {
+            const saved = JSON.parse(localStorage.getItem("arcade.lab.presets.v1") ?? "{}") as Record<string, unknown>
+            if (saved[name]) rawJson = JSON.stringify(saved[name])
+          } catch {}
+          if (!rawJson) throw new Error(`No saved preset named "${name}".`)
+        }
+        if (rawJson) {
+          const res = applyPresetJson(rawJson)
+          if (!res.ok) throw new Error(res.error)
+          void renderNow()
+          return { loaded: true, section: globalSettings.section, preset: buildPresetPayload() }
+        }
+        if (ctx?.source === "cli") {
+          throw new Error("preset.import requires either 'name' or 'json'.")
+        }
+        openPresetModal("import")
+      },
     },
     {
       id: "preset.copy-recipe",
@@ -1312,8 +1541,28 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortLabel: "Pause",
       category: "Transport",
       shortcut: "K",
+      args: {
+        action: { type: "string", enum: ["play", "pause", "toggle"], description: "Optional explicit transport action" },
+      },
       enabled: () => "playing" in activeSection().settings,
-      run: () => playPauseBtn.click(),
+      run: (_ctx, args) => {
+        const sec = activeSection()
+        const act = args?.action
+        if (act === "play") {
+          if ("playing" in sec.settings) sec.settings.playing = true
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else if (act === "pause") {
+          if ("playing" in sec.settings) sec.settings.playing = false
+          panel.sync()
+          syncChrome()
+          void renderNow()
+        } else {
+          playPauseBtn.click()
+        }
+        return { playing: Boolean(sec.settings.playing ?? true), elapsed: Number(elapsed.toFixed(3)), frames, speed: simSpeed }
+      },
     },
     {
       id: "transport.step",
@@ -1328,6 +1577,30 @@ export function createWorkbench(opts: WorkbenchOptions) {
       run: (_ctx, args) => {
         const count = typeof args?.frames === "number" ? Math.max(1, Math.min(120, Math.round(args.frames))) : 1
         for (let i = 0; i < count; i++) stepBtn.click()
+        return { playing: false, stepped: count, elapsed: Number(elapsed.toFixed(3)), frames, speed: simSpeed }
+      },
+    },
+    {
+      id: "transport.speed",
+      label: "Set Simulation Speed",
+      shortLabel: "Speed",
+      category: "Transport",
+      args: {
+        speed: { type: "number", required: true, min: 0.05, max: 4, description: "Simulation speed multiplier" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const nextSpeed = Number(args?.speed ?? 1)
+        simSpeed = nextSpeed
+        speedSelect.value = String(nextSpeed)
+        const sec = activeSection()
+        if ("slowMotion" in sec.settings) {
+          sec.settings.slowMotion = Math.min(1, simSpeed)
+        }
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return { speed: simSpeed, playing: Boolean(sec.settings.playing ?? true), elapsed: Number(elapsed.toFixed(3)), frames }
       },
     },
     {
@@ -1339,7 +1612,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
       args: {
         section: { type: "string", required: true, enum: sections.map(s => s.id), description: "Target section ID" },
       },
-      enabled: () => true,
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
       run: (_ctx, args) => {
         const secId = String(args?.section ?? "")
         if (sections.some(s => s.id === secId)) {
@@ -1350,6 +1624,71 @@ export function createWorkbench(opts: WorkbenchOptions) {
       },
     },
     {
+      id: "scene.set-env",
+      label: "Set Scene Environment or Lighting Look",
+      shortLabel: "Env",
+      category: "Scene",
+      undoable: true,
+      args: {
+        name: { type: "string", required: true, description: "Environment ID/label or lighting look" },
+        seed: { type: "number", description: "Optional room/world seed" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (ctx, args) => {
+        const rawName = String(args?.name ?? "").trim()
+        if (!rawName) throw new Error("scene.set-env requires an environment name.")
+        const q = rawName.toLowerCase()
+        const slug = q.replace(/[^a-z0-9]+/g, "")
+
+        const lookEntry = Object.entries(LIGHTING_LOOKS).find(
+          ([k, v]) => k.toLowerCase() === q || v.label.toLowerCase() === q || k.replace(/_/g, "") === slug,
+        )
+        if (lookEntry) {
+          const [lookKey, look] = lookEntry
+          activeCatalogId = `lighting-look:${lookKey}`
+          Object.assign(stage.lighting, look.values)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return { kind: "lighting-look", environment: lookKey, label: look.label }
+        }
+
+        const owner = resolveEnvOwner()
+        const envControl = owner.controls.find(c => (c.key === "environment" || c.key === "room") && "options" in c)
+        if (envControl && "options" in envControl) {
+          const opt = envControl.options.find(
+            o =>
+              String(o.value).toLowerCase() === q ||
+              o.label.toLowerCase() === q ||
+              o.label.toLowerCase().includes(q) ||
+              String(o.value).toLowerCase().replace(/[^a-z0-9]+/g, "") === slug,
+          )
+          if (!opt) {
+            const validOpts = envControl.options.map(o => `${String(o.value)} (${o.label})`).join(", ")
+            throw new Error(`Unknown environment "${rawName}". Available: ${validOpts}, or looks: ${Object.keys(LIGHTING_LOOKS).join(", ")}.`)
+          }
+          const nextSeed = typeof args?.seed === "number" ? args.seed : ctx?.seed
+          if (typeof nextSeed === "number") {
+            if ("seed" in owner.settings) owner.settings.seed = nextSeed
+            if ("roomSeed" in owner.settings) owner.settings.roomSeed = nextSeed
+          }
+          owner.settings[envControl.key] = opt.value
+          envControl.change?.(opt.value)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return {
+            kind: "environment",
+            environment: opt.value,
+            label: opt.label,
+            seed: owner.settings.seed ?? owner.settings.roomSeed ?? 7,
+          }
+        }
+        throw new Error(`Active section "${activeSection().id}" has no switchable environment.`)
+      },
+    },
+    {
       id: "scene.set-param",
       label: "Set Inspector Parameter",
       shortLabel: "Set Param",
@@ -1357,32 +1696,60 @@ export function createWorkbench(opts: WorkbenchOptions) {
       undoable: true,
       args: {
         key: { type: "string", required: true, description: "Parameter key on active section or lighting" },
-        value: { type: "number", required: true, description: "Numeric parameter value" },
+        value: { type: "value", required: true, description: "Parameter value (number, boolean, or option)" },
       },
-      enabled: () => true,
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
       run: (_ctx, args) => {
-        const key = String(args?.key ?? "")
+        const key = String(args?.key ?? "").trim()
         const val = args?.value
-        if (val === undefined) return
-        const sec = activeSection()
-        const ctrl = sec.controls.find(c => c.key === key)
-        if (ctrl) {
-          panel.navigation.set(ctrl, val)
+        if (!key || val === undefined) throw new Error("scene.set-param requires key and value.")
+        const found = findControlRow([panel], key)
+        if (found) {
+          const { control: c, row } = found
+          if (c.type === "action") {
+            void c.run(document.createElement("button"))
+            panel.sync()
+            syncChrome()
+            void renderNow()
+            return { key: c.key, label: c.label, group: row.group, action: "triggered" }
+          }
+          const prev = panel.navigation.settings[c.key]
+          const next = coerceControlValue(c, val)
+          panel.navigation.set(c, next)
           panel.sync()
           syncChrome()
           void renderNow()
-        } else if (key in sec.settings) {
-          sec.settings[key] = val
+          return {
+            key: c.key,
+            label: c.label,
+            group: row.group,
+            before: prev,
+            value: panel.navigation.settings[c.key],
+            formatted: formatControlValue(c, panel.navigation.settings[c.key]!),
+          }
+        }
+        const sec = activeSection()
+        if (key in sec.settings) {
+          const prev = sec.settings[key]
+          const ctrl = sec.controls.find(c => c.key === key)
+          const next = ctrl ? coerceControlValue(ctrl, val) : val
+          sec.settings[key] = next
           resimulateFrozenFrame()
           panel.sync()
           syncChrome()
           void renderNow()
-        } else if (key in stage.lighting && (typeof val === "number" || typeof val === "boolean")) {
+          return { key, label: ctrl?.label ?? key, before: prev, value: next }
+        }
+        if (key in stage.lighting && (typeof val === "number" || typeof val === "boolean")) {
+          const prev = (stage.lighting as Record<string, LabValue>)[key]
           ;(stage.lighting as Record<string, LabValue>)[key] = val
           panel.sync()
           syncChrome()
           void renderNow()
+          return { key, label: key, group: "Lighting", before: prev, value: val }
         }
+        throw new Error(`Unknown lab setting "${key}".`)
       },
     },
     {
@@ -1391,14 +1758,51 @@ export function createWorkbench(opts: WorkbenchOptions) {
       shortLabel: "Select",
       category: "Object",
       args: {
-        id: { type: "string", required: true, description: "Scene object ID (e.g. prop:0, character:active)" },
+        id: { type: "string", required: true, description: "Scene object ID (e.g. prop:0, character:active) or catalog entry" },
         additive: { type: "boolean", required: false, description: "Add/toggle in multi-selection" },
       },
-      enabled: () => true,
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
       run: (_ctx, args) => {
-        const id = String(args?.id ?? "")
-        const obj = allSceneObjects().find(o => o.id === id) ?? null
-        selectWorldObject(obj, Boolean(args?.additive))
+        const id = String(args?.id ?? "").trim()
+        if (!id) throw new Error("object.select requires a non-empty id.")
+        const q = id.toLowerCase()
+        const objs = allSceneObjects()
+        const obj =
+          objs.find(o => o.id === id || o.id.toLowerCase() === q) ??
+          objs.find(o => o.label.toLowerCase() === q) ??
+          objs.find(o => (q === "character" || q === "car" || q === "player") && o.category === "character") ??
+          objs.find(o => o.label.toLowerCase().includes(q) || o.id.toLowerCase().includes(q)) ??
+          null
+        if (obj) {
+          selectWorldObject(obj, Boolean(args?.additive))
+          return { kind: "object", selected: obj }
+        }
+        const catalog = buildCatalog()
+        const entry =
+          catalog.find(c => c.id.toLowerCase() === q) ??
+          catalog.find(c => c.label.toLowerCase() === q) ??
+          catalog.find(c => c.label.toLowerCase().includes(q) || c.id.toLowerCase().endsWith(`:${q}`))
+        if (entry) {
+          const before = captureSnapshot()
+          entry.run(true)
+          recordHistory(`Select ${entry.label}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return { kind: "catalog", selected: { id: entry.id, label: entry.label, sectionId: entry.sectionId } }
+        }
+        const secMatch = sections.find(s => s.id.toLowerCase() === q || s.label.toLowerCase() === q)
+        if (secMatch) {
+          const before = captureSnapshot()
+          selectSection(secMatch.id)
+          recordHistory(`Section ${secMatch.label}`, before)
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return { kind: "section", selected: { id: secMatch.id, label: secMatch.label } }
+        }
+        throw new Error(`Unknown selection target "${id}".`)
       },
     },
   ])
@@ -1458,6 +1862,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
+  let devControlHandle: { notifyUpdate: () => void; dispose: () => void } | undefined
+
   commands.configure({
     getState: buildSceneState,
     transact: (label, fn) => {
@@ -1465,6 +1871,92 @@ export function createWorkbench(opts: WorkbenchOptions) {
       fn()
       recordHistory(label, before)
     },
+  })
+
+  registerStageCameraCommands(commands, {
+    stage,
+    render: () => renderNow(),
+    canEdit: () => mode !== "play",
+    disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+    resolveFrameTarget: query => {
+      if (!query || query === "scene" || query === "active") {
+        const ft = activeSection().frameTarget?.()
+        return ft ? { x: ft.x, y: ft.y, z: ft.z, dist: ft.dist ?? 15 } : { x: 0, y: 0.5, z: 0, dist: 16 }
+      }
+      const q = query.trim().toLowerCase()
+      const objs = allSceneObjects()
+      const obj =
+        objs.find(o => o.id === query || o.id.toLowerCase() === q) ??
+        objs.find(o => o.label.toLowerCase() === q) ??
+        objs.find(o => o.label.toLowerCase().includes(q) || o.id.toLowerCase().includes(q)) ??
+        null
+      if (!obj) return null
+      selectWorldObject(obj)
+      return { x: obj.x, y: obj.y, z: obj.z, dist: 14, label: obj.label }
+    },
+  })
+
+  commands.register({
+    id: "lab.get",
+    label: "Get Lab Parameter Value(s)",
+    shortLabel: "Lab Get",
+    category: "Inspector",
+    undoable: false,
+    args: {
+      path: { type: "string", description: "Control key, group.key, or label (omit for all controls)" },
+    },
+    enabled: () => true,
+    run: (_ctx, args) => {
+      const rawPath = typeof args?.path === "string" ? args.path.trim() : ""
+      if (!rawPath || rawPath === "all" || rawPath === "*") {
+        const st = buildSceneState()
+        return { settings: st.settings, lighting: st.lighting }
+      }
+      const found = findControlRow([panel], rawPath)
+      if (found) {
+        const { control: c, row } = found
+        if (c.type === "action") return { key: c.key, label: c.label, group: row.group, type: "action" }
+        const val = panel.navigation.settings[c.key]!
+        return {
+          key: c.key,
+          label: c.label,
+          group: row.group,
+          value: val,
+          formatted: formatControlValue(c, val),
+        }
+      }
+      const sec = activeSection()
+      if (rawPath in sec.settings) {
+        return { key: rawPath, label: rawPath, group: sec.label, value: sec.settings[rawPath] }
+      }
+      if (rawPath in stage.lighting) {
+        return { key: rawPath, label: rawPath, group: "Lighting", value: (stage.lighting as Record<string, LabValue>)[rawPath] }
+      }
+      throw new Error(`Unknown lab setting "${rawPath}".`)
+    },
+  })
+
+  devControlHandle = registerDevControl({
+    kind: "lab",
+    commands,
+    getCanvas: () => canvas,
+    captureCanvas: async target => {
+      await renderNow()
+      await stage.captureToCanvas(target)
+    },
+    getMode: () => mode,
+    getSection: () => globalSettings.section,
+    onIndicator: (text, isError) => {
+      showToast(text, Boolean(isError))
+    },
+    isBusy: () => {
+      if (dragState?.moved) return { busy: true, reason: "User is dragging the viewport camera" }
+      if (activeTransform) return { busy: true, reason: `User is transforming ${activeTransform.primaryId}` }
+      if (panel.isInteracting()) return { busy: true, reason: "User is scrubbing or editing in the Inspector" }
+      if (!modalBackdrop.hidden) return { busy: true, reason: "Preset dialog is open" }
+      return { busy: false }
+    },
+    getState: () => commands.state()!,
   })
 
   function buildCatalog(): CatalogEntry[] {
@@ -2325,6 +2817,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     syncTransportAndHints()
     syncStageMarkers()
     renderCatalog()
+    devControlHandle?.notifyUpdate()
   }
 
   // Preset Export / Import with schema validation

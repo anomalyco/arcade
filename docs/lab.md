@@ -2,7 +2,8 @@
 
 Use the shared Lab to tune a production effect, material, physics response or audio cue, then verify it in the game.
 This is the canonical authoring contract. [lab-workbench.md](lab-workbench.md) describes the current shell and input
-API; [shared-code.md](shared-code.md) covers adapters; [game-notes.md](game-notes.md) records measured techniques.
+API; [dev-control.md](dev-control.md) covers driving an open browser page with `bun run arcade …`;
+[shared-code.md](shared-code.md) covers adapters; [game-notes.md](game-notes.md) records measured techniques.
 The rules below apply to new authoring work. Existing gaps are listed explicitly and do not add release gates.
 
 ## Tune one change and reproduce it

@@ -120,24 +120,9 @@ export type LabCommand<TArgs extends LabCommandArgs = LabCommandArgs> = {
   run: (ctx?: LabCommandContext, args?: TArgs) => unknown
 }
 
-export type LabCommandInvokeResult<T = unknown> =
-  | {
-      ok: true
-      id: string
-      command: string
-      label: string
-      undoable: boolean
-      readOnly: boolean
-      result: T
-      state: LabSceneState | null
-    }
-  | {
-      ok: false
-      id: string
-      command: string
-      code: "unknown_command" | "invalid_args" | "unavailable" | "error"
-      error: string
-    }
+export type LabCommandInvokeResult<T = any> =
+  | { ok: true; id: string; label: string; undoable: boolean; state: LabSceneState | null; result?: T }
+  | { ok: false; id: string; error: string; code?: "unknown_command" | "invalid_args" | "unavailable" | "busy" | "error" }
 
 export type ResolvedRadialSector = {
   slot: RadialSlot
@@ -152,9 +137,21 @@ export function validateCommandArgs(
   schema: LabCommandArgSchema | undefined,
   args: Record<string, unknown> | undefined,
 ): { ok: true; value: LabCommandArgs } | { ok: false; error: string } {
+  if (args !== undefined && (typeof args !== "object" || args === null || Array.isArray(args))) {
+    return { ok: false, error: "Arguments must be a JSON object." }
+  }
   if (!schema) return { ok: true, value: (args ?? {}) as LabCommandArgs }
   const input = args ?? {}
-  const out: Record<string, unknown> = { ...input }
+  for (const key of Object.keys(input)) {
+    if (!(key in schema) && key !== "seed") {
+      const allowed = Object.keys(schema).length ? Object.keys(schema).join(", ") : "none"
+      return { ok: false, error: `Unknown argument "${key}". Allowed arguments: ${allowed}.` }
+    }
+  }
+  const out: Record<string, LabValue> = {}
+  if (typeof input.seed === "number" && Number.isFinite(input.seed)) {
+    out.seed = input.seed
+  }
   for (const [key, field] of Object.entries(schema)) {
     const raw = input[key]
     if (raw === undefined || raw === null) {
@@ -178,8 +175,13 @@ export function validateCommandArgs(
     } else if (field.type === "string") {
       if (typeof raw !== "string") return { ok: false, error: `Argument "${key}" must be a string.` }
       out[key] = raw
-    } else {
+    } else if (field.type === "value") {
+      if (typeof raw !== "string" && (typeof raw !== "number" || !Number.isFinite(raw)) && typeof raw !== "boolean") {
+        return { ok: false, error: `Argument "${key}" must be a string, finite number, or boolean.` }
+      }
       out[key] = raw
+    } else {
+      out[key] = raw as LabValue
     }
     if (field.enum && !field.enum.some(c => c === out[key] || String(c).toLowerCase() === String(out[key]).toLowerCase())) {
       return { ok: false, error: `Argument "${key}" must be one of: ${field.enum.join(", ")}.` }
@@ -267,27 +269,16 @@ export class LabCommandRegistry {
     return this.invoke(id, args, ctx).ok
   }
 
-  invoke<T = unknown>(id: string, args?: Record<string, unknown>, ctx?: Partial<LabCommandContext>): LabCommandInvokeResult<T> {
+  invoke<T = any>(id: string, args?: Record<string, unknown>, ctx?: Partial<LabCommandContext>): LabCommandInvokeResult<T> {
     const cmd = this.get(id)
     if (!cmd) {
-      return {
-        ok: false,
-        id,
-        command: id,
-        code: "unknown_command",
-        error: `Unknown command "${id}".`,
-      }
+      return { ok: false, id, code: "unknown_command", error: `Unknown command "${id}".` }
     }
     const validated = validateCommandArgs(cmd.args, args)
     if (!validated.ok) {
-      return {
-        ok: false,
-        id: cmd.id,
-        command: cmd.id,
-        code: "invalid_args",
-        error: validated.error,
-      }
+      return { ok: false, id, code: "invalid_args", error: validated.error }
     }
+    const seed = typeof validated.value.seed === "number" ? validated.value.seed : ctx?.seed
     const mergedCtx: LabCommandContext = {
       pickedObject: ctx?.pickedObject ?? null,
       groundHit: ctx?.groundHit ?? null,
@@ -295,45 +286,43 @@ export class LabCommandRegistry {
       screenY: ctx?.screenY,
       args: validated.value,
       source: ctx?.source,
-      seed: typeof validated.value.seed === "number" ? validated.value.seed : ctx?.seed,
+      seed,
     }
     if (!cmd.enabled(mergedCtx)) {
       return {
         ok: false,
-        id: cmd.id,
-        command: cmd.id,
+        id,
         code: "unavailable",
-        error: cmd.disabledReason?.(mergedCtx) ?? `Command "${cmd.id}" is currently unavailable.`,
+        error: cmd.disabledReason?.(mergedCtx) ?? `Command "${id}" is currently unavailable.`,
       }
     }
+    let result: unknown
+    const runFn = () => {
+      result = cmd.run(mergedCtx, validated.value)
+    }
     try {
-      let result: unknown
-      const runFn = () => {
-        result = cmd.run(mergedCtx, validated.value)
-      }
       if (cmd.undoable && this.historyTransactor) {
         this.historyTransactor(cmd.label, runFn)
       } else {
         runFn()
       }
-      return {
-        ok: true,
-        id: cmd.id,
-        command: cmd.id,
-        label: cmd.label,
-        undoable: Boolean(cmd.undoable),
-        readOnly: Boolean(cmd.readOnly),
-        result: (result === undefined ? { ok: true } : result) as T,
-        state: this.state(mergedCtx),
-      }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const isUnavailable = /unavailable|play mode/i.test(message)
       return {
         ok: false,
         id: cmd.id,
-        command: cmd.id,
-        code: "error",
-        error: err instanceof Error ? err.message : String(err),
+        code: isUnavailable ? "unavailable" : "invalid_args",
+        error: message,
       }
+    }
+    return {
+      ok: true,
+      id: cmd.id,
+      label: cmd.label,
+      undoable: Boolean(cmd.undoable),
+      state: this.state(mergedCtx),
+      ...(result !== undefined ? { result: result as T } : {}),
     }
   }
 

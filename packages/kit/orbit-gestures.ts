@@ -100,5 +100,6 @@ export function bindOrbitGestures(canvas: HTMLElement, options: OrbitGestureOpti
 
   return {
     cancelDrag() { drag = undefined },
+    isDragging() { return Boolean(drag) },
   }
 }

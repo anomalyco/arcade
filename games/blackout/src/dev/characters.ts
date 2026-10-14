@@ -29,6 +29,7 @@ import { wizardModels, wizardWeapon } from "../render/wizard"
 import { outbreakPersonModels, zombieModels } from "../render/zombie"
 import { juiceSettings } from "../ui/debug-overlay"
 import { modelForBone, registerPartModels } from "./rig-demo"
+import { registerDevControl } from "@arcade/kit/dev-control"
 import {
   LabCommandRegistry,
   type LabCommand as CommandDef,
@@ -1674,11 +1675,8 @@ async function main() {
     getSection: () => selected.id,
     getState: () => buildPageState(),
   }
-  const rt = (window as unknown as { __arcadeDevControl?: { setAdapter?: (a: unknown) => void; sendStatus?: () => void } }).__arcadeDevControl
-  if (rt?.setAdapter) {
-    rt.setAdapter(devControlAdapter)
-    notifyDevControl = () => rt.sendStatus?.()
-  }
+  const devControl = registerDevControl(devControlAdapter)
+  notifyDevControl = devControl.notifyUpdate
 
   const w = window as unknown as {
     ready: boolean
